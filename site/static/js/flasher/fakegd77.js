@@ -3,12 +3,15 @@
 // A simulated GD-77 in update mode, for the tests and the page's practice mode (#sim=gd77): the loader as
 // docs/spec/update-gd77.md reads it (a port of gd77boot.FakeBootloader), a WebHID model to reach it through, and a
 // synthetic stock update file with a made-up codec in the shape of a real build (a port of the odrflash tests'
-// synthetic image and update file). No vendor data.
+// synthetic image and update file). No vendor data. Also a GD-77 that runs ODR with stub entry (#sim=odr-gd77): its
+// debug link, the hand-over and the K22F stub's protocol and interlock as stub/f4stub.py's FakeF4 has them.
 
 import { UpdateFile, forward, PERIOD, BODY_AT, INFO_LEN, REPORT, parse } from "./gd77.js";
 import { encodeBranch } from "./gd77codec.js";
-import { sha256, u32le } from "./bytes.js";
+import { concat, crc32, fromHex, le32, sha256, u32le } from "./bytes.js";
 import { rng, randomBytes } from "./fake.js";
+import { frame as dlFrame, parseFrames } from "./link.js";
+import { STUB_MAGIC } from "./stub.js";
 
 const bytesOf = (s) => Uint8Array.from(s, (c) => c.charCodeAt(0));
 const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -191,3 +194,215 @@ export async function gd77Simulation(G) {
 }
 
 export const loaderFor = (file, opts) => new FakeGd77Loader(new UpdateFile(file), opts);
+
+// ---------------------------------------------------------------------------------------------------------------
+// a GD-77 running ODR with stub entry, and the K22F stub it hands over to (#sim=odr-gd77)
+
+const be32 = (n) => new Uint8Array([(n >>> 24) & 0xFF, (n >>> 16) & 0xFF, (n >>> 8) & 0xFF, n & 0xFF]);
+const u32be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+const blank = (b) => b.every((x) => x === 0xFF);
+const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, BADARG = 0x0D, REFUSED = 0x0F, NOCONFIG = 0x11;
+
+// The radio: its loader below the application base, an ODR already installed, a codec in its area, radio data in the
+// last sector, the SPI flash's first megabyte the radio's own. st: flash-boards.json gd77.stub.
+//   stubEntry  ODR built with CONFIG_STUB_ENTRY        adopt     the stub keeps ODR's USB device (else a new port)
+//   cutAfter   programs before the cable is pulled     badAt     a flash address that programs wrong (verify fails)
+export class FakeGd77Odr {
+	constructor(st, { board = "gd77", spiSize = 0x200000, stubEntry = true, adopt = true, cutAfter = null, badAt = null, codecId = "gd77", seed = 77 } = {}) {
+		this.st = st;
+		this.b = st.boards[board];
+		this.flash = new Uint8Array(st.flash_kb * 1024).fill(0xFF);
+		const r = rng(seed);
+		this.flash.set(randomBytes(r, st.app_base), 0);
+		const app = randomBytes(r, 0x30000).map((x) => (x < 90 ? x : 0));
+		app.set(le32(0x2000FEF0), 0);
+		this.flash.set(app, st.app_base);
+		this.flash.set(randomBytes(r, this.b.codec_image_end - this.b.codec[0]), this.b.codec[0]);
+		this.flash.set(randomBytes(r, st.sector), this.flash.length - st.sector);
+		this.spi = new Uint8Array(spiSize).fill(0xFF);
+		this.spi.set(randomBytes(r, 0x100000), 0);
+		this.mode = "odr";		// "odr", "stub", or "loader" (no application committed: no serial port)
+		this.record = new Uint8Array(0);
+		this.git = "1c2d3e4f";
+		Object.assign(this, { board, stubEntry, adopt, cutAfter, badAt, codecId });
+		this.programs = 0;
+		this.events = [];
+		this.port = 0;
+	}
+
+	word(addr) { return u32le(this.flash, addr - this.st.flash_base); }
+
+	// ---- the serial port, as a link.js stream (the same USB identity for ODR and the stub)
+
+	serialStream() {
+		const radio = this, port = this.port;
+		const s = {
+			buf: new Uint8Array(0), inb: new Uint8Array(0),
+			clear() { s.buf = new Uint8Array(0); },
+			take(n) { const o = s.buf.slice(0, n); s.buf = s.buf.slice(n); return o; },
+			async write(data) {
+				if (port !== radio.port) throw new Error("the device has been lost");
+				if (radio.mode === "stub") {
+					if (radio.cutAfter !== null && radio.programs >= radio.cutAfter) throw new Error("the device has been lost");
+					s.inb = radio.stubFeed(concat(s.inb, data), (b) => { s.buf = concat(s.buf, b); });
+					return;
+				}
+				if (radio.mode !== "odr") throw new Error("no serial port: the radio isn't running ODR");
+				s.buf = concat(s.buf, radio.odrAnswer(data));
+			},
+			async close() {},
+		};
+		return s;
+	}
+
+	// ODR's debug link: VERSION, and STUB (0x1A) with the K22F's run address as the load address
+	odrAnswer(req) {
+		const f = parseFrames(req)[0];
+		if (!f) return new Uint8Array(0);
+		const ok = (p) => dlFrame(f.cmd | 0x80, f.seq, concat(new Uint8Array([0]), p));
+		const fail = (st) => dlFrame(f.cmd | 0x80, f.seq, new Uint8Array([st]));
+		if (f.cmd === 0x02) {
+			const name = this.b.debuglink_names[0];
+			return ok(new TextEncoder().encode(`proto=1\ngit=${this.git}\nboard=${name}\nfeatures=FM,DMR\ncodec=${this.codecId}\ndisplay=128x64x1\n`));
+		}
+		if (f.cmd === 0x1A && this.stubEntry) {
+			const op = f.payload[0], q = f.payload;
+			if (op === 0) return ok(concat(le32(STUB_MAGIC), le32(this.st.run), le32(8192), new Uint8Array([59, 0, 0]), le32(0)));
+			if (op === 1) { this.stubLen = u32le(q, 5); this.stubCrc = u32le(q, 9); this.stubEntryAt = u32le(q, 13); this.loaded = new Uint8Array(this.stubLen); return ok(le32(0)); }
+			if (op === 2) { this.loaded.set(q.subarray(5), u32le(q, 1)); return ok(le32(u32le(q, 1) + q.length - 5)); }
+			if (op === 3) {
+				if (!this.loaded || crc32(this.loaded) !== this.stubCrc || this.stubEntryAt !== this.st.run) return fail(4);
+				this.mode = "stub";
+				this.record = new Uint8Array(0);
+				this.events.push("stub (from ODR)");
+				if (!this.adopt) this.port++;	// the old port is gone; serialStream() is the new one
+				return ok(new Uint8Array(0));
+			}
+			return fail(3);
+		}
+		return fail(1);
+	}
+
+	// ---- the stub (stub/common/stubeng.c's rules, as FakeF4 with k22stub.K22)
+
+	stubFeed(inb, send) {
+		while (inb.length >= 6) {
+			if (inb[0] !== 0x02) { inb = inb.slice(1); continue; }
+			const n = (inb[2] << 8) | inb[3];
+			if (inb.length < 6 + n) break;
+			const op = inb[1], p = inb.slice(6, 6 + n);
+			const bad = inb.subarray(6, 6 + n).reduce((a, x) => (a + x) & 0xFF, 0) !== inb[4];
+			inb = inb.slice(6 + n);
+			const reply = (st, body = new Uint8Array(0)) => send(concat(new Uint8Array([0x02, st, body.length >> 8, body.length & 0xFF,
+				body.reduce((a, x) => (a + x) & 0xFF, 0), 0x03]), body));
+			if (bad) reply(BADSUM);
+			else this.stubOp(op, p, reply);
+		}
+		return inb;
+	}
+
+	// {appBase, appEnd, xfloor} of a board record the stub takes (k22stub.py K22Chip.parse_record), or null
+	parse(rec) {
+		if (rec.length !== this.st.record_len || rec[0] === 0 || rec[1] !== 1 || rec.subarray(20, 24).some((x) => x)) return null;
+		return { appBase: u32be(rec, 4), appEnd: u32be(rec, 8) || this.flash.length, xfloor: u32be(rec, 12) };
+	}
+
+	// HELLO v3 (stub-k22f.md 1): name, protocol, max payload, flash KB, the security byte, flags, application base, SPI
+	// size and JEDEC ID, then the board id, the record length and the record
+	hello() {
+		const rec = this.record, on = rec.length > 0;
+		return concat(new TextEncoder().encode(this.st.name), new Uint8Array([this.st.protocol, 4104 >> 8, 4104 & 0xFF, this.st.flash_kb >> 8,
+			this.st.flash_kb & 0xFF, 0x55, (this.adopt ? 1 : 0) | (on ? 0x80 : 0)]), be32(on ? this.parse(rec).appBase : 0),
+		be32(on ? this.spi.length : 0), new Uint8Array([0xEF, 0x40, 0x18, on ? rec[0] : 0, rec.length]), rec);
+	}
+
+	stubOp(op, p, reply) {
+		const st = this.st, BLOCK = 4096;
+		if ([0x10, 0x11, 0x12, 0x13].includes(op) && !this.record.length) return reply(NOCONFIG);
+		const c = this.record.length ? this.parse(this.record) : null;
+		const appBlank = () => c && this.word(c.appBase) === 0xFFFFFFFF;
+		const commitEnd = () => c.appBase - (c.appBase % st.sector) + st.sector;
+		const mem = (addr) => (p.length > 6 && p[6] === 1 ? [this.spi, addr] : [this.flash, addr - st.flash_base]);
+		if (op === 0x01) return reply(OK, this.hello());
+		if (op === 0x14) {
+			const got = this.parse(p);
+			const ok = got && got.appBase === st.app_base;
+			this.record = ok ? p.slice() : new Uint8Array(0);
+			this.events.push(ok ? "config" : "config refused");
+			return reply(ok ? OK : BADARG);
+		}
+		if (op === 0x07) {
+			const a = u32be(p, 0), k = (p[4] << 8) | p[5];
+			const [m, o] = mem(a);
+			const body = new Uint8Array(5 * k);
+			for (let i = 0; i < k; i++) {
+				const blk = m.subarray(o + i * BLOCK, o + (i + 1) * BLOCK);
+				body.set(be32(crc32(blk)), i * 5);
+				body[i * 5 + 4] = blank(blk) ? 1 : 0;
+			}
+			return reply(OK, body);
+		}
+		if (op === 0x09) {
+			const a = u32be(p, 0), k = p[4];
+			const [m, o0] = mem(a);
+			for (let i = 0; i < k; i++) {
+				const blk = m.subarray(o0 + i * BLOCK, o0 + (i + 1) * BLOCK);
+				const data = blank(blk) ? new Uint8Array(0) : blk;
+				reply(OK, concat(be32(crc32(blk)), new Uint8Array([blank(blk) ? 2 : 0, data.length >> 8, data.length & 0xFF]), data));
+			}
+			return;
+		}
+		if (op === 0x02) {
+			const a = u32be(p, 0), n = (p[4] << 8) | p[5];
+			return reply(OK, this.flash.slice(a - st.flash_base, a - st.flash_base + n));
+		}
+		if (op === 0x10) {
+			const s = p[0], a = st.flash_base + s * st.sector;
+			const commit = a <= c.appBase && c.appBase < a + st.sector;
+			if (u32be(p, 1) !== st.magic || a < c.appBase || a >= c.appEnd || (!commit && !appBlank())) return reply(REFUSED);
+			this.flash.fill(0xFF, a - st.flash_base, a - st.flash_base + st.sector);
+			this.events.push(`erase ${s}`);
+			return reply(OK);
+		}
+		if (op === 0x11) {
+			const a = u32be(p, 0), data = p.subarray(4), u = st.prog_unit;
+			if (a % u || data.length % u || a < c.appBase || a + data.length > c.appEnd || (a + data.length > commitEnd() && !appBlank())) return reply(REFUSED);
+			const o = a - st.flash_base;
+			if (!blank(this.flash.subarray(o, o + data.length))) return reply(REFUSED);
+			this.flash.set(data, o);
+			if (this.badAt !== null && this.badAt >= a && this.badAt < a + data.length) this.flash[this.badAt - st.flash_base] ^= 0x01;
+			this.programs++;
+			this.events.push(`program 0x${a.toString(16)}`);
+			return reply(OK);
+		}
+		if (op === 0x12) {
+			const a = u32be(p, 0);
+			if (u32be(p, 4) !== st.magic || a % BLOCK || a < c.xfloor || a >= this.spi.length) return reply(REFUSED);
+			this.spi.fill(0xFF, a, a + BLOCK);
+			return reply(OK);
+		}
+		if (op === 0x13) {
+			const a = u32be(p, 0), data = p.subarray(4);
+			if (a < c.xfloor || !blank(this.spi.subarray(a, a + data.length))) return reply(REFUSED);
+			this.spi.set(data, a);
+			return reply(OK);
+		}
+		if (op === 0x0D) {
+			if (u32be(p, 0) !== st.magic) return reply(REFUSED);
+			reply(OK);
+			this.events.push("reset");
+			return this.powerOn();
+		}
+		return reply(BADOP);
+	}
+
+	// A reset or power cycle: ODR when the application's first word is there; else the loader finds no application
+	powerOn() {
+		this.port++;
+		this.record = new Uint8Array(0);
+		this.mode = this.word(this.st.app_base) === 0xFFFFFFFF ? "loader" : "odr";
+	}
+}
+
+// The board record of gd77.stub as bytes
+export const recordOf = (st, board = "gd77") => fromHex(st.boards[board].record);

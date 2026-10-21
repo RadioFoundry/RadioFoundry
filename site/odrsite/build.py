@@ -136,6 +136,7 @@ class Site:
 			"flash-boards.json": self.flash,
 			"c7000-stub.json": repo.c7000_stub(),
 			"f4-stub.json": repo.f4_stub(),
+			"k22-stub.json": repo.k22_stub(),
 			"screens.json": self.screens,
 			"releases.json": {"releases": self.release_list()},
 		}

@@ -13,6 +13,10 @@ Python it was ported from (site/tests/flasher.test.mjs):
   - for the GD-77: a synthetic stock update file with a made-up codec (the odrflash tests' builders), what
     updatefile.py and gd77codec.py make of it with an application image, and every frame gd77boot's updater sends to
     its model loader, so site/tests/gd77.test.mjs checks gd77.js and gd77codec.js byte for byte
+  - for the GD-77's K22F stub: its board record from stub/k22stub.py config_record(), the HELLO replies its simulated
+    stub (FakeF4 with k22stub.K22) gives before and after CONFIG, and two installs on a simulated flash (the
+    application alone, then an image merged with the codec) with the sectors k22stub.py erases and the flash it leaves,
+    so site/tests/k22stub.test.mjs checks k22stub.js and the fake radio against the Python
   - for the codeplug editor: the radio's own codeplug code on the host (tests/host/cpsSim), a codeplug it stored
     and what it reads back, so site/tests/codeplug.test.mjs checks the JavaScript decoder and encoder against it
 
@@ -88,11 +92,13 @@ def main(out):
 	# the synthetic codecs' maps go into the flash-boards data, as a real build's would (docs/spec/codec-placement.md)
 	test_maps = {**c7000(out, rng), **db25d(out, rng)}
 	gd77(out)
+	k22(out)
 	codeplug(out)
 	fb = repo.flash_boards()
 	fb["codec_maps"].update(test_maps)
 	fb["c7000"]["codec_maps"].update(test_maps)
-	for name, obj in (("c7000-stub.json", repo.c7000_stub()), ("f4-stub.json", repo.f4_stub()), ("flash-boards.json", fb), ("features.json", {"features": feats}),
+	for name, obj in (("c7000-stub.json", repo.c7000_stub()), ("f4-stub.json", repo.f4_stub()), ("k22-stub.json", repo.k22_stub()),
+			  ("flash-boards.json", fb), ("features.json", {"features": feats}),
 			  ("variants.json", {"variants": variants}), ("radios.json", {"radios": radios})):
 		with open(os.path.join(out, name), "w") as f:
 			json.dump(obj, f)
@@ -239,6 +245,59 @@ def gd77(out):
 		with open(os.path.join(out, name), "wb") as f:
 			f.write(data)
 	with open(os.path.join(out, "gd77.json"), "w") as f:
+		json.dump(doc, f, indent=1)
+
+
+def k22(out):
+	"""stub/k22stub.py's board record, HELLO from its fake stub before and after CONFIG (and a refused record), the stack
+	pointers its chip accepts, and installs on a simulated flash: what the tool erases and the flash it leaves"""
+	import hashlib
+	import tempfile
+	k22 = repo._tool("stub", "k22stub.py")
+	f4 = k22.f4stub
+	st = f4.stubtool
+	sha = lambda b: hashlib.sha256(bytes(b)).hexdigest()
+
+	def ask(fake, op, payload=b""):
+		fake.write(bytes([0x02, op, len(payload) >> 8, len(payload) & 0xFF, st.sum8(payload), 0x03]) + payload)
+		r = bytes(fake.out)
+		fake.out.clear()
+		return {"status": r[1], "body": r[6:].hex()}
+
+	rec = k22.config_record("gd77")
+	bad = bytearray(rec)
+	bad[4:8] = (0x2000).to_bytes(4, "big")		# an application base below the loader's end
+	fake = f4.FakeF4(b"\xff" * (k22.FLASH_KB * 1024), spi=b"\xff" * 0x200000, chip=k22.K22)
+	doc = {"record": rec.hex(), "hello": {"before": ask(fake, f4.OP_HELLO), "refused": ask(fake, f4.OP_CONFIG, bytes(bad)),
+					      "erase_before": ask(fake, f4.OP_ERASE, bytes([9]) + k22.MAGIC.to_bytes(4, "big")),
+					      "config": ask(fake, f4.OP_CONFIG, rec), "after": ask(fake, f4.OP_HELLO)},
+	       "sp": {hex(a): k22.K22.sp_ok(a) for a in (0x1FFF0000, 0x1FFF0004, 0x2000FEF0, 0x20010000, 0x20010004, 0x2000FEF2,
+							   0x20000000, 0x0800C000)}}
+	rnd = random.Random(22)
+	flash = bytearray(rnd.getrandbits(8) for _ in range(k22.FLASH_KB * 1024))
+	app = bytearray(rnd.getrandbits(8) for _ in range(300000))
+	app[:4] = (0x2000FEF0).to_bytes(4, "little")
+	b = k22.BOARDS["gd77"]
+	merged = bytearray(b"\xff" * (b["codec_image_end"] - k22.APP_BASE))
+	merged[:len(app) - 5000] = app[:-5000]
+	merged[b["codec"][0] - k22.APP_BASE:] = bytes(rnd.getrandbits(8) for _ in range(b["codec_image_end"] - b["codec"][0]))
+	files = {"k22_flash.bin": bytes(flash), "k22_app.bin": bytes(app), "k22_merged.bin": bytes(merged)}
+	for name, data in files.items():
+		with open(os.path.join(out, name), "wb") as f:
+			f.write(data)
+	fake = f4.FakeF4(bytes(flash), chip=k22.K22)
+	radio = f4.F4Radio(fake, log=lambda *a: None, chip=k22.K22)
+	radio.hello()
+	radio.configure("gd77")
+	doc["installs"] = []
+	with tempfile.TemporaryDirectory(prefix="odr-k22-fixture-") as tmp:
+		for name in ("k22_app.bin", "k22_merged.bin"):
+			fake.erased = []
+			segs = f4.load_segments(os.path.join(out, name), "gd77", k22.K22)
+			nw, nk = radio.write_image("gd77", segs, backup_dir=tmp)
+			doc["installs"].append({"image": name, "segments": [[a, len(d), sha(d)] for a, d in segs], "erased": fake.erased,
+					       "written": nw, "same": nk, "flash_sha256": sha(fake.flash)})
+	with open(os.path.join(out, "k22.json"), "w") as f:
 		json.dump(doc, f, indent=1)
 
 

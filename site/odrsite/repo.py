@@ -370,7 +370,35 @@ def gd77_flash():
 		"codec_id": gc.CODEC_ID, "placed": gc.PLACED, "specs": specs,
 		"update": {"period": uf.PERIOD, "info_len": uf.INFO_LEN, "body_at": uf.BODY_AT, "flash_base": uf.FLASH_BASE},
 		"loader": {"vid": gb.VID, "pid": gb.PID, "report": gb.REPORT, "step_timeout_ms": int(gb.STEP_TIMEOUT * 1000),
-			   "erase_timeout_ms": int(gb.ERASE_TIMEOUT * 1000)}}
+			   "erase_timeout_ms": int(gb.ERASE_TIMEOUT * 1000)},
+		"stub": k22_flash()}
+
+
+def k22_flash():
+	"""What the web flasher's cable route on a GD-77 already running ODR needs (stub/k22stub.py, docs/spec/stub-k22f.md):
+	the K22F stub's chip facts (HELLO name, op magic, flash map, program unit, where the application starts), and per
+	radio the flash its firmware owns, the codec area, and the board record the stub takes in CONFIG (config_record(),
+	as hex), so the page and k22stub.py send the same bytes. "stack": the lowest and highest initial stack pointer the
+	radio's loader takes (K22Chip.sp_ok, scanned). The stub image goes to k22-stub.json (k22_stub())."""
+	k22 = _tool("stub", "k22stub.py")
+	ok = [a for a in range(k22.RUN_ADDR - 0x10000, k22.RUN_ADDR + 4 * k22.SRAM_SIZE, 4) if k22.K22.sp_ok(a)]
+	return {"title": k22.K22.title, "name": k22.K22.name.decode(), "magic": k22.MAGIC, "protocol": k22.VERSION,
+		"flash_base": k22.FLASH_BASE, "flash_kb": k22.FLASH_KB, "sector": k22.SECTOR, "prog_unit": k22.PROG_UNIT,
+		"app_base": k22.APP_BASE, "run": k22.RUN_ADDR, "erase_timeout_ms": int(k22.ERASE_TIMEOUT * 1000),
+		"stack": [ok[0], ok[-1]], "record_len": k22.REC_LEN,
+		"boards": {bid: {"name": b["name"], "stub_id": b["id"], "record": k22.config_record(bid).hex(),
+				 "owned": [list(r) for r in b["owned"]], "codec": list(b["codec"]),
+				 "codec_image_end": b["codec_image_end"], "app_end": b["app_end"], "spi_floor": b["spi_floor"],
+				 "debuglink_names": list(b["names"])}
+			   for bid, b in k22.BOARDS.items()}}
+
+
+def k22_stub():
+	"""The K22F stub k22stub.py embeds, checked against its SHA-256 by k22stub itself, as base64 for the page."""
+	import base64
+	k22 = _tool("stub", "k22stub.py")
+	return {"format": "odr-k22-stub/1", "sha256": k22.K22STUB_SHA256, "run": k22.RUN_ADDR, "protocol": k22.VERSION,
+		"data": base64.b64encode(k22.stub_image()).decode()}
 
 
 def _tool(*parts):

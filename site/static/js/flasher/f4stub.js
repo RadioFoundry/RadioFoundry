@@ -8,15 +8,22 @@
 //
 // An install erases sector 3 first: from then until its first word is written at the very end, the bootloader stays
 // in DFU at power-on, so an update cut short leaves a radio the bootloader route finishes.
+//
+// The client is the shared stub engine's (stub/common/stubeng), as f4stub.py's F4Radio is: a chip (F4 below, the
+// K22F's in k22stub.js) gives HELLO's name, the op magic, the flash map, the program unit and the application base;
+// the protocol, the install order and the checks are the same for every target. A protocol 3 stub writes nothing until
+// it has accepted a board record (CONFIG); configure() sends the radio's record and checks the echo in the next HELLO.
 
-import { be32, concat, crc32, sleep } from "./bytes.js";
+import { be32, concat, crc32, equal, fromHex, sleep, toHex, u32le } from "./bytes.js";
 import { FrameError, OK, Stub, StubError, unpack } from "./stub.js";
 
 export const BLOCK = 4096, FLASH_BASE = 0x08000000, APP_BASE = 0x0800C000, STUB_RUN = 0x20000000;
 export const F4_MAGIC = 0x46345342;	// 'F4SB': ERASE, XERASE and RESET carry it
 export const MEM_INTERNAL = 0, MEM_SPI = 1;
-const OP = { HELLO: 0x01, PEEK: 0x02, SUMS: 0x07, READ: 0x09, RESET: 0x0D, ERASE: 0x10, PROGRAM: 0x11, XERASE: 0x12, XPROGRAM: 0x13 };
-const SUM_MAX = 800, READ_PACK = 16, ERASE_TIMEOUT = 6000;
+export const OP = { HELLO: 0x01, PEEK: 0x02, SUMS: 0x07, READ: 0x09, RESET: 0x0D, ERASE: 0x10, PROGRAM: 0x11, XERASE: 0x12, XPROGRAM: 0x13, CONFIG: 0x14 };
+export const BADARG = 0x0D, REFUSED = 0x0F, NOCONFIG = 0x11;
+export const HELLO_CONFIGURED = 0x80, HELLO_LEN = 26;	// HELLO v3: flags bit 7, and its length without the record echo
+const SUM_MAX = 800, READ_PACK = 16, SUM_RUN = 256;
 const be16 = (n) => new Uint8Array([(n >> 8) & 0xFF, n & 0xFF]);
 const u16be = (b, o) => (b[o] << 8) | b[o + 1];
 const u32be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
@@ -24,6 +31,7 @@ const isBlank = (b) => b.every((x) => x === 0xFF);
 const memByte = (mem) => (mem === MEM_INTERNAL ? new Uint8Array(0) : new Uint8Array([mem]));
 const hex8 = (n) => "0x" + n.toString(16).toUpperCase().padStart(8, "0");
 
+// The stub image of data/f4-stub.json (or k22-stub.json: the same format)
 export function f4Image(json) {
 	return Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
 }
@@ -39,22 +47,110 @@ export function f405Sectors(flashKb = 1024) {
 	return out;
 }
 
+// One stub target as the page sees it (stub/f4stub.py Chip): HELLO's name, the op magic, the flash map and program
+// unit, the application base, the erase time-out (ms), the oldest protocol served, and the stack pointers the radio's
+// loader accepts in a vector table
+export const F4 = Object.freeze({
+	title: "STM32F4", name: "F4STUB", magic: F4_MAGIC, flashBase: FLASH_BASE, flashKb: 1024, progUnit: 4, appBase: APP_BASE,
+	eraseTimeout: 6000, minVersion: 2, sectors: f405Sectors, spOk: (sp) => ((sp & 0x2FFE0000) >>> 0) === 0x20000000,
+});
+
+// Adjacent or overlapping [lo, hi) ranges as one (the GD-77's codec starts inside a sector the firmware also uses)
+function joined(ranges) {
+	const out = [];
+	for (const [lo, hi] of [...ranges].sort((a, b) => a[0] - b[0])) {
+		if (out.length && lo <= out[out.length - 1][1]) out[out.length - 1][1] = Math.max(hi, out[out.length - 1][1]);
+		else out.push([lo, hi]);
+	}
+	return out;
+}
+
 export class F4Stub extends Stub {
-	// reopen: async () => a new stream, for a stub that enumerated again (the old port is gone), or null
-	constructor(stream, { log = () => {}, retries = 3, reopen = null } = {}) {
+	// reopen: async () => a new stream, for a stub that enumerated again (the old port is gone), or null.
+	// chip: the target (F4, or k22stub.js's). board: the radio's profile with its board record ({name, stub_id, record}
+	// and, for spiWrite, spi_floor), what configure() sends; without one a protocol 3 stub stays unconfigured and only
+	// reads the internal flash
+	constructor(stream, { log = () => {}, retries = 3, reopen = null, chip = F4, board = null } = {}) {
 		super(stream, { log, retries });
 		this.reopen = reopen;
+		this.chip = chip;
+		this.board = board;
+		this.configured = false;	// the stub echoes this.board's record (protocol 3)
 	}
 
-	async hello() {
-		const r = await this.request(OP.HELLO, new Uint8Array(0), { retries: 0, timeout: 500 });
-		if (String.fromCharCode(...r.subarray(0, 6)) !== "F4STUB" || r.length < 17) throw new StubError("unexpected hello: not the STM32F4 stub");
-		this.info = {
+	// Status 0x11 is the stub's own refusal of a write before a board record; the rest stay the generic error
+	async request(op, payload, opts) {
+		try {
+			return await super.request(op, payload, opts);
+		} catch (e) {
+			if (e.status === NOCONFIG) {
+				this.configured = false;
+				throw Object.assign(new StubError("the loader has no board configuration (status 0x11): nothing was written"), { status: NOCONFIG });
+			}
+			throw e;
+		}
+	}
+
+	async hello({ retries = 0 } = {}) {
+		const c = this.chip;
+		const r = await this.request(OP.HELLO, new Uint8Array(0), { retries, timeout: 500 });
+		if (String.fromCharCode(...r.subarray(0, 6)) !== c.name || r.length < 17) throw new StubError(`unexpected hello: not the ${c.title} stub`);
+		const i = {
 			version: r[6], maxPayload: u16be(r, 7), flashKb: u16be(r, 9), rdp: r[11], adopted: !!(r[12] & 1), appBase: u32be(r, 13),
-			spiSize: r.length >= 24 ? u32be(r, 17) : 0, spiId: r.length >= 24 ? [...r.subarray(21, 24)].map((b) => b.toString(16).padStart(2, "0")).join("") : "",
+			spiSize: r.length >= 24 ? u32be(r, 17) : 0, spiId: r.length >= 24 ? toHex(r.subarray(21, 24)) : "",
+			boardId: 0, record: new Uint8Array(0),
 		};
-		if (this.info.appBase !== APP_BASE) throw new StubError(`the stub reports the application at ${hex8(this.info.appBase)}, this page knows ${hex8(APP_BASE)}`);
-		return this.info;
+		if (i.version >= 3) {
+			// version 3: board id, record length and the record echo after the JEDEC ID; the application base 0 before a record
+			if (r.length < HELLO_LEN || r.length !== HELLO_LEN + r[25]) throw new StubError(`HELLO v${i.version} is ${r.length} bytes: malformed`);
+			i.boardId = r[12] & HELLO_CONFIGURED ? r[24] : 0;
+			i.record = r.slice(HELLO_LEN);
+		} else if (i.version < c.minVersion) {
+			throw new StubError(`${c.title} stub protocol ${i.version}: too old for this page`);
+		} else if (i.appBase !== c.appBase) {
+			throw new StubError(`the stub reports the application at ${hex8(i.appBase)}, this page knows ${hex8(c.appBase)}`);
+		}
+		this.info = i;
+		// a stub left configured by an earlier run keeps its record: the echo alone tells whether it is this radio's
+		if (i.version >= 3) this.configured = this.echoes();
+		return i;
+	}
+
+	// The last HELLO echoes exactly this radio's record, with the application base the page writes from
+	echoes() {
+		const b = this.board, i = this.info;
+		return !!(b && i && i.version >= 3 && i.boardId === b.stub_id && i.appBase === this.chip.appBase && equal(i.record, fromHex(b.record)));
+	}
+
+	// Send the radio's board record (CONFIG) and check the echo in the next HELLO; the stub writes nothing before. A stub
+	// already configured with exactly this record is left as it is. A protocol 2 stub has no CONFIG: its wiring is the
+	// DM-1701's and MD-380's, built in, so it serves only a radio with that wiring (v2_wiring).
+	async configure() {
+		const b = this.board;
+		if (!b) throw new StubError("no board profile for this radio: the loader stays unconfigured and nothing is written");
+		if (this.info.version < 3) {
+			if (!b.v2_wiring) throw new StubError(`this loader (protocol ${this.info.version}) can't serve the ${b.name}: switch the radio off and on, then start again`);
+			return;
+		}
+		if (this.configured) return;
+		try {
+			await this.request(OP.CONFIG, fromHex(b.record), { retries: 0 });
+		} catch (e) {
+			this.configured = false;
+			if (e.status === BADARG) throw new StubError(`the loader refused the ${b.name}'s board record: nothing was written`);
+			throw e;
+		}
+		await this.hello({ retries: this.retries });	// a request like any other here: a damaged reply is asked for again
+		if (!this.configured) {
+			throw new StubError(`the loader did not take the ${b.name}'s board record (HELLO echoes ${toHex(this.info.record) || "none"}, application base ${hex8(this.info.appBase)}): nothing was written`);
+		}
+		const i = this.info;
+		this.log(`loader configured for the ${b.name}: ${i.spiSize ? `SPI flash ${i.spiSize / 1024} KB (JEDEC ${i.spiId})` : "no SPI flash answered"}`);
+	}
+
+	// Writes to a protocol 3 stub wait for its board record (the stub refuses them too, with status 0x11)
+	needConfigured() {
+		if (this.info?.version >= 3 && !this.configured) throw new StubError(`the loader is not configured for ${this.board ? `the ${this.board.name}` : "this radio"}: nothing was written`);
 	}
 
 	// After the jump the stub either adopted ODR's USB device (the same port answers at once) or enumerated again (the
@@ -88,11 +184,13 @@ export class F4Stub extends Stub {
 
 	attached() {
 		const i = this.info;
-		this.log(`STM32F4 stub v${i.version}: ${i.flashKb} KB flash, ${i.spiSize ? `SPI flash ${i.spiSize / 1024} KB (JEDEC ${i.spiId})` : "no SPI flash"}, USB ${i.adopted ? "adopted from ODR" : "enumerated again"}`);
+		const spi = i.spiSize ? `SPI flash ${i.spiSize / 1024} KB (JEDEC ${i.spiId})` : i.version >= 3 && !this.configured ? "not configured yet" : "no SPI flash";
+		this.log(`${this.chip.title} stub v${i.version}: ${i.flashKb} KB flash, ${spi}, USB ${i.adopted ? "adopted from ODR" : "enumerated again"}`);
 		return i;
 	}
 
 	needSpi() {
+		this.needConfigured();
 		if (!this.info?.spiSize) throw new StubError(`the loader found no SPI flash (stub version ${this.info?.version})`);
 	}
 
@@ -115,8 +213,8 @@ export class F4Stub extends Stub {
 	async diff(data, start, mem = MEM_INTERNAL) {
 		const bad = [];
 		const n = data.length / BLOCK;
-		for (let off = 0; off < n; off += 256) {	// 1 MB per request: a slow SPI flash stays inside its time-out
-			(await this.blockSums(start + off * BLOCK, Math.min(256, n - off), mem)).forEach(({ crc }, i) => {
+		for (let off = 0; off < n; off += SUM_RUN) {	// 1 MB per request: a slow SPI flash stays inside its time-out
+			(await this.blockSums(start + off * BLOCK, Math.min(SUM_RUN, n - off), mem)).forEach(({ crc }, i) => {
 				const o = (off + i) * BLOCK;
 				if (crc32(data.subarray(o, o + BLOCK)) !== crc) bad.push(start + o);
 			});
@@ -157,46 +255,103 @@ export class F4Stub extends Stub {
 		return out;
 	}
 
-	erase(sector) {
-		return this.request(OP.ERASE, concat(new Uint8Array([sector]), be32(F4_MAGIC)), { retries: 0, timeout: ERASE_TIMEOUT });
+	// n bytes of internal flash from addr, through the whole 4 KB blocks around them (a 2 KB sector)
+	async readRange(addr, n) {
+		const lo = addr - (addr % BLOCK), hi = Math.ceil((addr + n) / BLOCK) * BLOCK;
+		return (await this.readFlash(lo, hi - lo)).slice(addr - lo, addr - lo + n);
 	}
 
-	// data (whole words) at addr in pieces of up to 4 KB, all-0xFF pieces skipped (erased already)
+	async erase(sector) {
+		this.needConfigured();
+		return this.request(OP.ERASE, concat(new Uint8Array([sector]), be32(this.chip.magic)), { retries: 0, timeout: this.chip.eraseTimeout });
+	}
+
+	// data (whole program units: 4 bytes on the STM32F4, 8 on the K22F) at addr in pieces of up to 4 KB, all-0xFF
+	// pieces skipped (erased already)
 	async program(addr, data) {
-		if (addr % 4 || data.length % 4) throw new StubError(`program ${hex8(addr)}+${data.length}: words only`);
+		this.needConfigured();
+		const unit = this.chip.progUnit;
+		if (addr % unit || data.length % unit) throw new StubError(`program ${hex8(addr)}+${data.length}: whole ${unit}-byte units only`);
 		for (let off = 0; off < data.length; off += BLOCK) {
 			const piece = data.subarray(off, off + BLOCK);
 			if (!isBlank(piece)) await this.request(OP.PROGRAM, concat(be32(addr + off), piece), { retries: 0, timeout: 2000 });
 		}
 	}
 
-	// System reset: the bootloader runs, then the application (or stays in DFU if sector 3 holds none)
+	// System reset: the radio's loader runs, then the application (on the STM32F4 the bootloader stays in DFU if
+	// sector 3 holds none)
 	resetChip() {
-		return this.request(OP.RESET, be32(F4_MAGIC), { retries: 0 });
+		return this.request(OP.RESET, be32(this.chip.magic), { retries: 0 });
 	}
 
 	checkChip() {
-		if (this.info.flashKb !== 1024) throw new StubError(`the chip reports ${this.info.flashKb} KB of flash; the DM-1701 and MD-380 have 1024`);
+		const c = this.chip;
+		if (this.info.flashKb !== c.flashKb) throw new StubError(`the chip reports ${this.info.flashKb} KB of flash; the ${c.title} radios here have ${c.flashKb}`);
+	}
+
+	// The sector indexes of want (Map index => {index, addr, size, data}: a sector's whole new content) whose flash
+	// differs. By CRC per 4 KB block where the sectors in want cover the block, one request per run of such blocks; a
+	// block that also holds a sector not in want (2 KB sectors) is read and compared byte for byte.
+	async mismatched(want) {
+		const blocks = new Map();
+		for (const s of want.values()) {
+			for (let b = s.addr - (s.addr % BLOCK); b < s.addr + s.size; b += BLOCK) {
+				if (!blocks.has(b)) blocks.set(b, []);
+				blocks.get(b).push(s);
+			}
+		}
+		const bad = new Set(), whole = [];
+		for (const b of [...blocks.keys()].sort((x, y) => x - y)) {
+			const secs = blocks.get(b).sort((x, y) => x.addr - y.addr);
+			const expect = new Uint8Array(BLOCK);
+			let at = b;
+			for (const s of secs) {
+				const lo = Math.max(s.addr, b), hi = Math.min(s.addr + s.size, b + BLOCK);
+				if (lo !== at) break;
+				expect.set(s.data.subarray(lo - s.addr, hi - s.addr), lo - b);
+				at = hi;
+			}
+			if (at === b + BLOCK) {
+				whole.push({ b, expect, secs });
+				continue;
+			}
+			const cur = await this.readFlash(b, BLOCK);
+			for (const s of secs) {
+				const lo = Math.max(s.addr, b), hi = Math.min(s.addr + s.size, b + BLOCK);
+				if (!equal(cur.subarray(lo - b, hi - b), s.data.subarray(lo - s.addr, hi - s.addr))) bad.add(s.index);
+			}
+		}
+		for (let k = 0; k < whole.length;) {
+			let j = k;
+			while (j + 1 < whole.length && whole[j + 1].b === whole[j].b + BLOCK && j + 1 - k < SUM_RUN) j++;
+			const sums = await this.blockSums(whole[k].b, j - k + 1);
+			for (let n = k; n <= j; n++) if (crc32(whole[n].expect) !== sums[n - k].crc) for (const s of whole[n].secs) bad.add(s.index);
+			k = j + 1;
+		}
+		return [...bad].sort((x, y) => x - y);
 	}
 
 	// {sectors: [{index, addr, size, data, kept}], changed: [index]} for every sector holding firmware-owned flash.
 	// Owned bytes come from the segments (0xFF where they have none); the rest of a sector is read back from the radio
-	// and written again unchanged (kept; no radio shares a sector since the codec moved). owned: [[lo, hi)] (data/f4-stub.json)
+	// and written again unchanged (kept: the GD-77's codec starts in the sector the application ends in). owned:
+	// [[lo, hi)] (data/f4-stub.json, flash-boards.json gd77.stub)
 	async plan(owned, segs) {
+		const c = this.chip;
+		const ranges = joined(owned);
 		for (const [addr, data] of segs) {
-			if (!owned.some(([lo, hi]) => lo <= addr && addr + data.length <= hi))
+			if (!ranges.some(([lo, hi]) => lo <= addr && addr + data.length <= hi))
 				throw new StubError(`image data at ${hex8(addr)} is outside the flash the firmware owns: a codec-merged image or the wrong radio?`);
 		}
-		if (!segs.length || segs[0][0] !== APP_BASE || segs[0][1].length < 8) throw new StubError(`the image must start at ${hex8(APP_BASE)} with the vector table`);
-		const sp = (segs[0][1][0] | (segs[0][1][1] << 8) | (segs[0][1][2] << 16) | (segs[0][1][3] << 24)) >>> 0;
-		if ((sp & 0x2FFE0000) >>> 0 !== 0x20000000) throw new StubError(`the image's first word ${hex8(sp)} is not a RAM stack pointer: the bootloader would not start it`);
-		const sectors = [], changed = [];
-		for (const sec of f405Sectors(this.info.flashKb)) {
+		if (!segs.length || segs[0][0] !== c.appBase || segs[0][1].length < 8) throw new StubError(`the image must start at ${hex8(c.appBase)} with the vector table`);
+		const sp = u32le(segs[0][1], 0);
+		if (!c.spOk(sp)) throw new StubError(`the image's first word ${hex8(sp)} is not a RAM stack pointer: the radio's loader would not start it`);
+		const sectors = [];
+		for (const sec of c.sectors(this.info.flashKb)) {
 			const end = sec.addr + sec.size;
-			const parts = owned.filter(([lo, hi]) => lo < end && hi > sec.addr).map(([lo, hi]) => [Math.max(lo, sec.addr), Math.min(hi, end)]);
+			const parts = ranges.filter(([lo, hi]) => lo < end && hi > sec.addr).map(([lo, hi]) => [Math.max(lo, sec.addr), Math.min(hi, end)]);
 			if (!parts.length) continue;
 			const whole = parts.length === 1 && parts[0][0] === sec.addr && parts[0][1] === end;
-			const buf = whole ? new Uint8Array(sec.size).fill(0xFF) : await this.readFlash(sec.addr, sec.size);
+			const buf = whole ? new Uint8Array(sec.size).fill(0xFF) : await this.readRange(sec.addr, sec.size);
 			const kept = whole ? null : buf.slice();
 			for (const [lo, hi] of parts) buf.fill(0xFF, lo - sec.addr, hi - sec.addr);
 			for (const [addr, data] of segs) {
@@ -204,53 +359,57 @@ export class F4Stub extends Stub {
 				if (lo < hi) buf.set(data.subarray(lo - addr, hi - addr), lo - sec.addr);
 			}
 			sectors.push({ ...sec, data: buf, kept });
-			if ((await this.diff(buf, sec.addr)).length) changed.push(sec.index);
 		}
-		return { sectors, changed };
+		return { sectors, changed: await this.mismatched(new Map(sectors.map((s) => [s.index, s]))) };
 	}
 
-	// Install a build, in the order the stub's interlock enforces: erase sector 3 (the bootloader stays in DFU from
-	// here to the end), erase and program every other changed sector, program sector 3 but its first word, verify all
-	// by CRC, program the first word (the commit), verify it. onKept(sector) runs before anything is erased, for each
-	// sector to be rewritten that holds bytes that are not the firmware's (keep a copy). progress(done, total, what).
-	// Returns {written, same}.
+	// Install a build, in the order the stub's interlock enforces: erase the commit sector (the one at the application
+	// base: sector 3 on the STM32F4, from here to the end the radio's loader finds no application), erase and program
+	// every other changed sector, program the commit sector but its first program unit, verify all by CRC, program that
+	// unit (the commit), verify it. onKept(sector) runs before anything is erased, for each sector to be rewritten that
+	// holds bytes that are not the firmware's (keep a copy). progress(done, total, sector). Returns {written, same}.
 	async writeImage(owned, segs, { onKept = async () => {}, progress = () => {}, plan = null } = {}) {
 		this.checkChip();
+		this.needConfigured();
+		const c = this.chip, unit = c.progUnit;
 		const p = plan || await this.plan(owned, segs);
 		if (!p.changed.length) return { written: 0, same: p.sectors.length };
 		const by = new Map(p.sectors.map((s) => [s.index, s]));
+		const commit = p.sectors.find((s) => s.addr <= c.appBase && c.appBase < s.addr + s.size);
 		for (const i of p.changed) if (by.get(i).kept) await onKept(by.get(i));
-		const order = [3, ...p.changed.filter((i) => i !== 3)];
-		const s3 = by.get(3);
-		await this.erase(3);
+		const order = [commit.index, ...p.changed.filter((i) => i !== commit.index)];
+		await this.erase(commit.index);
 		for (const [n, i] of order.slice(1).entries()) {
 			progress(n + 1, order.length, i);
 			await this.erase(i);
 			await this.program(by.get(i).addr, by.get(i).data);
 		}
-		progress(order.length, order.length, 3);
-		await this.program(APP_BASE + 4, s3.data.subarray(4));
-		const bad = [];
-		for (const i of order) {
-			const want = i === 3 ? concat(new Uint8Array([0xFF, 0xFF, 0xFF, 0xFF]), s3.data.subarray(4)) : by.get(i).data;
-			if ((await this.diff(want, by.get(i).addr)).length) bad.push(i);
-		}
-		if (bad.length) throw new StubError(`verify before the commit: sector(s) ${bad.join(", ")} differ. Nothing is committed: the radio starts in its bootloader until an install finishes`);
-		await this.program(APP_BASE, s3.data.subarray(0, 4));
-		if ((await this.diff(s3.data.subarray(0, BLOCK), APP_BASE)).length) throw new StubError("the commit word did not verify");
+		progress(order.length, order.length, commit.index);
+		await this.program(c.appBase + unit, commit.data.subarray(unit));
+		const expect = new Map(order.map((i) => [i, by.get(i)]));
+		expect.set(commit.index, { ...commit, data: concat(new Uint8Array(unit).fill(0xFF), commit.data.subarray(unit)) });
+		const bad = await this.mismatched(expect);
+		if (bad.length) throw new StubError(`verify before the commit: sector(s) ${bad.join(", ")} differ. Nothing is committed: the radio does not start the firmware until an install finishes`);
+		await this.program(c.appBase, commit.data.subarray(0, unit));
+		if ((await this.mismatched(new Map([[commit.index, commit]]))).length) throw new StubError("the commit word did not verify");
 		return { written: order.length, same: p.sectors.length - order.length };
 	}
 
 	// Write data (whole 4 KB sectors) into the SPI flash from start: only the sectors whose CRC differs are erased and
-	// programmed (blank pieces skipped), each read back by the stub, then all checked again. Returns {written, same}.
+	// programmed (blank pieces skipped), each read back by the stub, then all checked again. Below the board's
+	// spi_floor (the GD-77's first megabyte, the radio's own data) nothing is written: a file that differs there is
+	// refused first. Returns {written, same}.
 	async spiWrite(data, start = 0, { progress = () => {}, signal } = {}) {
 		this.needSpi();
 		if (start % BLOCK || data.length % BLOCK || start + data.length > this.info.spiSize) throw new StubError("SPI flash writes are whole 4 KB sectors inside the chip");
 		const todo = await this.diff(data, start, MEM_SPI);
+		const floor = this.board?.spi_floor || 0;
+		const low = todo.filter((a) => a < floor);
+		if (low.length) throw new StubError(`the SPI flash below 0x${floor.toString(16)} is the radio's own data and is never written; ${low.length} sector(s) there differ, first at 0x${low[0].toString(16)}: nothing was written`);
 		for (const [n, a] of todo.entries()) {
 			if (signal?.aborted) throw new StubError("stopped");
 			const sec = data.subarray(a - start, a - start + BLOCK);
-			await this.request(OP.XERASE, concat(be32(a), be32(F4_MAGIC)), { retries: 0, timeout: 2000 });
+			await this.request(OP.XERASE, concat(be32(a), be32(this.chip.magic)), { retries: 0, timeout: 2000 });
 			for (let off = 0; off < BLOCK; off += 1024) {
 				const piece = sec.subarray(off, off + 1024);
 				if (!isBlank(piece)) await this.request(OP.XPROGRAM, concat(be32(a + off), piece), { retries: 0, timeout: 2000 });
