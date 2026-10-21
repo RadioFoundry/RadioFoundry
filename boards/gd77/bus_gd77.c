@@ -75,6 +75,7 @@ static const i2c_bus_t soft_bus_b = I2C_GPIO_BUS(&soft_i2c_b);
 
 static const i2c_bus_t *i2c_a, *i2c_b;
 static SemaphoreHandle_t i2c_a_lock;
+static volatile bool i2c_a_busy;	// a task-level transaction is on the wire (gd77_i2c_write_isr stays off)
 
 #define I2C_HW_HZ	100000u		// the rate the software buses run at, until a radio shows the chips take more
 // I2C on the pins: open drain with the pull-ups the software bus uses
@@ -126,7 +127,9 @@ bool gd77_i2c_write(uint8_t addr7, const uint8_t *data, uint32_t n)
 	if (i2c_a == NULL || !lock()) {
 		return false;
 	}
+	i2c_a_busy = true;
 	bool ok = i2c_a->write(i2c_a->ctx, addr7, data, n);
+	i2c_a_busy = false;
 	unlock();
 	return ok;
 }
@@ -136,9 +139,21 @@ bool gd77_i2c_write_read(uint8_t addr7, const uint8_t *w, uint32_t wn, uint8_t *
 	if (i2c_a == NULL || !lock()) {
 		return false;
 	}
+	i2c_a_busy = true;
 	bool ok = i2c_a->write_read(i2c_a->ctx, addr7, w, wn, r, rn);
+	i2c_a_busy = false;
 	unlock();
 	return ok;
+}
+
+// From the modem interrupts (the DMR per-burst RF switch): one write on bus A, refused at once when a task-level
+// transaction is on the wire. The interrupt runs to its end before any task continues, so the two never interleave
+bool gd77_i2c_write_isr(uint8_t addr7, const uint8_t *data, uint32_t n)
+{
+	if (i2c_a == NULL || i2c_a_busy) {
+		return false;
+	}
+	return i2c_a->write(i2c_a->ctx, addr7, data, n);
 }
 
 // Bus B carries no radio function; it is set up (released lines) and offered for the diagnostics only
@@ -214,9 +229,9 @@ static bool lcd_xfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
 const spi_bus_t gd77_lcd_bus = { .select = lcd_select, .xfer = lcd_xfer };
 
 // HR_C6000 port: SPI0, mode 1, about 770 kHz at a 49 MHz bus (bus / 2 / 64 x 2, clock_math.h k22f_dspi_hz), the chip
-// select by GPIO, or SPI0's PCS0 on the same pin with the GPIO version's 1 us setup and hold. Interrupts stay on:
-// nothing else uses SPI0 until the DMR glue does, which will have to mask the modem's interrupt lines around
-// thread-level transfers (modem-hrc6000.md 1)
+// select by GPIO, or SPI0's PCS0 on the same pin with the GPIO version's 1 us setup and hold. Each transaction masks
+// interrupts up to the RTOS syscall level, where the modem interrupts run (dmr_gd77.c), so they never land inside one
+// (modem-hrc6000.md 1)
 static const k22f_dspi_cfg_t c6k_spi = { .inst = 0, .cpol = false, .cpha = true, .pbr = 0, .br = 6, .dbr = true,
 					 .cs_ns = 1000 };
 #define C6K_PCS		0u	// PTD0 = SPI0_PCS0
@@ -272,13 +287,17 @@ void gd77_c6k_bus_init(void)
 bool gd77_c6k_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
 {
 	(void)ctx;
+	UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
 	if (c6k_pcs) {
-		return k22f_dspi_xfer_pcs(0, C6K_PCS, hdr, NULL, hdr_len, len == 0u) &&
-		       (len == 0u || k22f_dspi_xfer_pcs(0, C6K_PCS, tx, rx, len, true));
+		bool ok = k22f_dspi_xfer_pcs(0, C6K_PCS, hdr, NULL, hdr_len, len == 0u) &&
+			  (len == 0u || k22f_dspi_xfer_pcs(0, C6K_PCS, tx, rx, len, true));
+		portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
+		return ok;
 	}
 	c6k_bus->select(true);
 	bool ok = c6k_bus->xfer(hdr, NULL, hdr_len) && c6k_bus->xfer(tx, rx, len);
 	c6k_bus->select(false);
+	portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
 	return ok;
 }
 
