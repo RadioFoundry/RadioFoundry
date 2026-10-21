@@ -177,6 +177,9 @@ static const char features[] = "features="
 #if CONFIG_CRASH_LOG
 	"CRASH_LOG,"
 #endif
+#if CONFIG_CRASH_TEST_TX
+	"CRASH_TEST_TX,"	// test_crash.py's on-air test looks for it
+#endif
 #if CONFIG_SCAN
 	"SCAN,"
 #endif
