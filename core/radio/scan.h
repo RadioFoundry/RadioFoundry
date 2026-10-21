@@ -45,11 +45,11 @@ typedef struct {
 	bool heard;
 	bool synced;		// this stop: sync heard
 	scan_cfg_t cfg;
-	// Where the scan started (CANCEL goes back there; priority and dual watch revisit it)
+	// Where the scan started (CANCEL goes back there; priority revisits it). Dual watch keeps its two channels
+	// in the radio core, which alternates between them on SCAN_ACT_NEXT
 	uint16_t origin_pos;
 	uint32_t origin_hz;
 	bool origin_vfo;
-	uint16_t dual_pos;	// SCAN_DUAL: the other channel's zone position
 	uint16_t sweep_pos;	// the zone sweep's last position (priority revisits don't move it)
 	uint8_t since_priority;	// stops since the start channel
 	// Nuisance delete: zone positions, or VFO frequencies, left out until the scan stops
@@ -80,9 +80,12 @@ void scan_tuned(scan_t *s, uint32_t now_ms);
 scan_act_t scan_poll(scan_t *s, uint32_t now_ms, bool active, bool carrier, bool sync);
 // Monitor held, or anything else that stops the stepping for a while; resume restarts the current stop's listen
 void scan_pause(scan_t *s, bool paused, uint32_t now_ms);
+// Our own transmission on this stop (dual watch keeps going through PTT): every poll while it lasts. After it, the
+// stop waits as after a signal (RESUME: the delay, or a reply holds it)
+void scan_talked(scan_t *s, uint32_t now_ms);
 
-// The next zone position of count, skipping nuisance-deleted and unusable ones, with priority revisits (SCAN_ZONE)
-// or alternating with the start channel (SCAN_DUAL). -1 when nothing can be scanned
+// The next zone position of count, skipping nuisance-deleted and unusable ones, with priority revisits (SCAN_ZONE).
+// -1 when nothing can be scanned
 int scan_next_pos(scan_t *s, uint16_t count, scan_usable_fn usable, void *ctx);
 // The next VFO frequency after hz by step inside [lo_hz, hi_hz], wrapping, skipping nuisance frequencies. 0 if none
 uint32_t scan_next_hz(const scan_t *s, uint32_t hz, uint32_t step);

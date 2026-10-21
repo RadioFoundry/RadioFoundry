@@ -117,7 +117,7 @@ below are for the DM-1701.
 | `CONFIG_CHANNEL_EDIT` | = `CHANNEL_LIST` | editing a channel on the radio, New channel from current settings, keypad text entry (`docs/spec/ui.md` 2.1). Needs `CONFIG_CHANNEL_LIST`; without it the channel's settings are read only |
 | `CONFIG_KEY_ASSIGN` | y | side key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's side keys do (`docs/spec/ui.md` 3.1) |
 | `CONFIG_SCAN` | y | zone, VFO band and dual watch scan (`docs/spec/radio-features.md` 2) |
-| `CONFIG_DUAL_WATCH` | y (with `SCAN`) | the dual watch screens: Home with both channels, the Scan chooser, the channel picker and the dual watch actions ([dual-watch](ux/dual-watch.md)). Off: dual watch stays reachable only from the debug link |
+| `CONFIG_DUAL_WATCH` | y (with `SCAN`) | the dual watch screens: Home with both channels, the Scan chooser, the channel picker and the dual watch actions ([dual-watch](ux/dual-watch.md)); in the radio core, channels of other zones and the VFO, and PTT on the selected channel without ending the watch (`docs/spec/radio-features.md` 2.1). Off: dual watch stays reachable only from the debug link (two channels of the current zone) |
 | `CONFIG_BEEP` | y | key, TX permit / deny, call end, time-out warning, battery and scan beeps (`docs/spec/radio-features.md` 4) |
 | `CONFIG_FONT_XL` | n (DM-32: y) | 16x32 font, for 240 px and wider displays |
 | `CONFIG_FONT_AA` | n (DM-32: y) | the fonts from 6x12 up anti-aliased (JetBrains Mono Bold, 2 bits a pixel) on color panels instead of the bitmap ones; a mono panel would draw them as plain ink, so mono radios leave it off. Glyphs: 15.6 KB with `FONT_XL` (8.2 KB without) in place of 9.2 KB (5.3 KB) of bitmap ones (`core/ui/fonts.c`) |

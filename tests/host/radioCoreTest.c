@@ -2454,6 +2454,16 @@ void radio_req_zone_pos(uint16_t pos) { (void)pos; }
 void radio_req_scan_vfo(uint32_t lo, uint32_t hi) { (void)lo; (void)hi; }
 void radio_req_tone_burst(bool on) { (void)on; }
 void radio_req_scan(uint8_t cmd) { req(RREQ_SCAN, cmd); }
+void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel)
+{
+	radio_req_t r = { RREQ_DUAL, 0, 0 };
+	if (ref != NULL) {
+		r.arg = (int32_t)radio_dual_arg(&ref[0], sel == 0);
+		r.arg2 = radio_dual_arg(&ref[1], sel != 0);
+	}
+	radio_sm_request(&sm, &r, now);
+}
+bool radio_get_vfo(channel_t *out) { *out = sm.vfo_ch; return sm.vfo_seeded; }
 void radio_req_roam(uint8_t cmd) { req(RREQ_ROAM, cmd); }
 void radio_req_beep(uint8_t b) { req(RREQ_BEEP, b); }
 void radio_req_vibrate(uint8_t v) { req(RREQ_VIBRATE, v); }
@@ -2510,6 +2520,35 @@ bool codeplug_set_channel(uint16_t n, const channel_t *ch)
 
 static int job_runs;
 static void test_job(void *ctx) { (void)ctx; job_runs++; }
+
+#if CONFIG_DUAL_WATCH
+// Dual watch through the UI's service (ui_svc_dual on radio_req_dual): any zone or the VFO; what can't work is refused
+// at once, the rest goes to the radio core (radioFeaturesTest covers the watch itself)
+static void test_ui_dual(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_ZONE_POS, 0);
+	const ui_dual_ref_t a = { false, 0, 0 }, tones = { false, 2, 1 }, vfo = { true, 0, 0 };
+	const ui_dual_ref_t same[2] = { a, a }, empty[2] = { a, { false, 0, 2 } }, past[2] = { a, { false, 1, 1 } };
+	const ui_dual_ref_t nozone[2] = { a, { false, 5, 0 } };
+	CHECK(!ui_svc_dual(same, 0) && !ui_svc_dual(empty, 0) && !ui_svc_dual(past, 1) && !ui_svc_dual(nozone, 0));
+	CHECK(sm.view.scan == SCAN_OFF);
+	// Another zone's channel as B, selected: the watch runs, then stops on B
+	const ui_dual_ref_t pair[2] = { a, tones };
+	CHECK(ui_svc_dual(pair, 1) && sm.view.scan == SCAN_DUAL && sm.dual_sel == 1);
+	CHECK(ui_svc_dual(pair, 1) && sm.view.scan == SCAN_DUAL);	// again: nothing changes
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.zone_index == 2 && sm.view.zone_pos == 1);
+	// The VFO's settings while on a channel, and the VFO as A
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO, 0);
+	channel_t v;
+	CHECK(!sm.view.vfo && ui_svc_vfo_get(&v) && v.rx_hz == sm.vfo_ch.rx_hz && v.rx_hz != 0);
+	const ui_dual_ref_t withvfo[2] = { vfo, a };
+	CHECK(ui_svc_dual(withvfo, 0) && sm.view.scan == SCAN_DUAL);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.vfo);
+}
+#endif
 
 static void test_ui_glue(void)
 {
@@ -3561,6 +3600,9 @@ int main(void)
 	test_dmr_contact_added();
 	test_ui_requests();
 	test_ui_glue();
+#if CONFIG_DUAL_WATCH
+	test_ui_dual();
+#endif
 	test_ui_settings();
 	test_soft_volume();
 	test_side_keys();
