@@ -1,0 +1,57 @@
+{
+  "_about": "What the web site and the web flasher show for this radio (docs/dev/website.md). Hardware facts stay in docs/spec.",
+  "id": "gd77",
+  "name": "Radioddity GD-77",
+  "maker": "Radioddity",
+  "model": "GD-77",
+  "also": [
+    "TYT MD-760"
+  ],
+  "kind": "handheld",
+  "readme": "Radioddity GD-77",
+  "status": "testing",
+  "bands": "136-174 / 400-470 MHz",
+  "power": "1 / 5 W",
+  "cpu": "MK22FN512",
+  "display": "monochrome, 128 × 64",
+  "gallery": "128x64",
+  "docs": {
+    "hardware": "docs/spec/hardware-gd77.md",
+    "codec": "docs/spec/codec-gd77.md",
+    "update": "docs/spec/update-gd77.md"
+  },
+  "flash": {
+    "backend": "gd77-hid",
+    "board": "gd77",
+    "link": "usb",
+    "bootloader": [
+      "Turn the radio off and connect the programming cable to the radio and to the computer.",
+      "Hold both side keys below PTT.",
+      "Turn the radio on with the volume knob while you hold both keys.",
+      "Release the keys."
+    ],
+    "stock_versions": [
+      "V3.2.1",
+      "V3.2.2",
+      "V4.2.8",
+      "V4.3.3",
+      "V4.3.6",
+      "V4.3.9",
+      "V6.0.1"
+    ]
+  },
+  "backup": {
+    "stock": "none",
+    "odr": "none",
+    "spi_size": 0
+  },
+  "frame": {
+    "shape": "handheld",
+    "body": "#1e2024",
+    "accent": "#d0342c",
+    "lens": [
+      24,
+      30
+    ]
+  }
+}

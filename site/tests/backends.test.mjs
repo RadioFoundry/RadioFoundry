@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 
 import { register, backendOf, bundleBackend, allBackends } from "../static/js/flasher/backends.js";
 import "../static/js/flasher/c7000ui.js";
+import "../static/js/flasher/gd77ui.js";
 
 const radio = (backend, board = "x") => ({ flash: { backend, board } });
 
@@ -50,4 +51,23 @@ test("HR_C7000 backend: connect and check replace now and codec; its bundles are
 	assert.equal(b.stepLabel("done", "install"), "c7_done");
 	assert.equal(bundleBackend({ parts: new Map([["c7000-progmem", {}]]) }).id, "c7000-stub");
 	for (const s of ["connect", "check", "write", "done", "backup", "restore"]) assert.equal(typeof b.views[s], "function", s);
+});
+
+test("GD-77 backend: install only, through its update file and update mode; the help task's own way back", () => {
+	const fb = { gd77: { boards: ["gd77"] } };
+	const r = radio("gd77-hid", "gd77");
+	const b = backendOf(r);
+	assert.equal(b.id, "gd77-hid");
+	assert.ok(b.available(r, fb, "install"));
+	assert.ok(!b.available(r, fb, "backup"));
+	assert.ok(!b.available(radio("gd77-hid", "gd99"), fb, "install"));
+	assert.ok(!b.available(r, {}, "install"));
+	assert.deepEqual(b.steps("install", { recovering: false }), ["radio", "build", "update_file", "write", "done"]);
+	assert.deepEqual(b.steps("install", { recovering: true }), ["build", "update_file", "write", "done"]);
+	assert.equal(b.steps("backup", { recovering: false }), null);
+	assert.equal(b.stepLabel("done", "install"), "gd77_done");
+	assert.deepEqual(b.recovery.choices, ["again"]);
+	assert.deepEqual(b.recovery.extra().map((x) => x.id), ["original"]);
+	for (const s of ["update_file", "write", "done"]) assert.equal(typeof b.views[s], "function", s);
+	assert.equal(bundleBackend({ parts: new Map([["internal-flash", {}]]) }), null);
 });

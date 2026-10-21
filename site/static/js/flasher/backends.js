@@ -15,7 +15,9 @@
 //                           or null, stockText: i18n key}. "updatemode": the page first checks the radio reaches its
 //                           bootloader; stock "file": stock firmware comes back from the user's stock file, "restore":
 //                           from a backup through the restore task. Optional extra(radio, fb): more reinstall choices,
-//                           [{id, title, text, prepare()}] (string keys; prepare() runs once the install task is set up)
+//                           [{id, title, text, prepare()}] (string keys; prepare() runs once the install task is set up).
+//                           Optional choices: the shared ways back offered (default again, codec, backup, stock);
+//                           alias: {shared id: id offered in its place}; againText: the reinstall's string key
 //   ownsBundle(bundle)      optional: this backend restores the backup bundle with its own view
 //   ownImage(fb, board, data)  optional: splits a user's own image file into {image, codec} (a merged codec slot)
 //   release()               optional: let go of a port or loader the backend still holds (start over, other radio)

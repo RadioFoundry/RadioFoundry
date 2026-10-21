@@ -30,6 +30,8 @@ import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
+import * as gd77ui from "./gd77ui.js";
+import { gd77Simulation } from "./fakegd77.js";
 import { FakeC7000, c7000Simulation } from "./fakec7000.js";
 import { slotBytes, locateCodec } from "./c7000.js";
 import { Stub } from "./stub.js";
@@ -483,7 +485,8 @@ function startView() {
 		h("p", { class: "small muted" }, S.sim ? h("a", { href: "#", onclick: (e) => { e.preventDefault(); location.hash = ""; location.reload(); } }, t("flash.sim.leave"))
 			: [h("a", { href: "#sim", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try")), " · ",
 				h("a", { href: "#sim=c7000", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_c7000")), " · ",
-				h("a", { href: "#sim=c7000-odr", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_c7000_odr"))]));
+				h("a", { href: "#sim=c7000-odr", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_c7000_odr")), " · ",
+				h("a", { href: "#sim=gd77", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_gd77"))]));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1556,16 +1559,19 @@ function fixChooser(st, go) {
 	const rec = backend().recovery;
 	const files = S.board?.codec?.sources?.join(", ") || "";
 	const opts = {
-		again: [t("flash.help.fix.again"), t("flash.help.fix.again_text")],
+		again: [t("flash.help.fix.again"), t(rec.againText || "flash.help.fix.again_text")],
 		codec: [t("flash.help.fix.codec"), t("flash.help.fix.codec_text", { files })],
 		backup: [t("flash.help.fix.backup"), t(st.symptom === "channels" ? "flash.help.fix.backup_channels" : "flash.help.fix.backup_text")],
 		stock: [t("flash.help.fix.stock"), t(rec.stockText, { files })],
 	};
-	// a backend's own ways back (the DB25-D's update mode) come after the reinstall
+	// a backend's own ways back (the DB25-D's update mode) come after the reinstall. A backend may offer only some of the
+	// shared ones (choices) and stand its own in for others (alias: the GD-77 puts its original update file back)
 	const extra = rec.extra?.(S.radio, fb()) || [];
 	for (const x of extra) opts[x.id] = [t(x.title), t(x.text)];
-	const order = { novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"] }[st.symptom]
-		|| ["again", ...extra.map((x) => x.id), "backup", "stock"];
+	const offered = new Set([...(rec.choices || ["again", "codec", "backup", "stock"]), ...extra.map((x) => x.id)]);
+	const wanted = ({ novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"] }[st.symptom]
+		|| ["again", ...extra.map((x) => x.id), "backup", "stock"]).map((id) => rec.alias?.[id] || id).filter((id) => offered.has(id));
+	const order = wanted.length ? [...new Set(wanted)] : ["again", ...extra.map((x) => x.id)].filter((id) => offered.has(id));
 	const start = () => {
 		const pick = st.pick;
 		const own = extra.find((x) => x.id === pick);
@@ -1621,7 +1627,12 @@ async function main() {
 	}
 	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	if (location.hash.includes("sim=c7000")) {
+	gd77ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText });
+	if (location.hash.includes("sim=gd77")) {
+		// a GD-77 in update mode, with a made-up stock update file whose codec the page knows (fakegd77.js)
+		const sim = await gd77Simulation(S.data.fb.gd77);
+		S.sim = { fb: { ...S.data.fb, gd77: sim.gd77 }, gd77Donor: sim.donor };
+	} else if (location.hash.includes("sim=c7000")) {
 		// a DM-1801 Pro on its cable: running stock firmware, or (#sim=c7000-odr) ODR with the stub hand-over;
 		// #sim=c7000-db25d: a DB25-D PRO running its original firmware 018, reached through its debug console
 		const db25 = location.hash.includes("c7000-db25d");
