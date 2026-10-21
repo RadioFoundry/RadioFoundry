@@ -114,8 +114,8 @@ Names are the manual's. Only the bits we rely on are listed.
 | 0x41 | TxNxtSlotEn (7), RxNxtSlotEn (6), SyncFail (5), begin_v_layer2 (4) | written at every timeslot interrupt: **0x80** send in the next slot, **0x50** receive in the next slot (+ access-success flag), **0x40** receive (manual), **0x00** neither, **0x20** drop sync and search again. Bit 3 is CC_Match_Ctrl (1 = deframe without a CC match) |
 | 0x42 | TransSlot (7), RecvSlot (6), UsedSlot (5) | read at the timeslot interrupt: what the slot now starting is |
 | 0x43 / 0x44 | RSSI H / L | not used (the AT1846S RSSI is used instead) |
-| 0x45 / 0x46 | Mod2 / Mod1 amplitude | from calibration: the DMR pair in DMR, the FM pair in FM |
-| 0x47 / 0x48 | reference oscillator offset / two-point bias | 0x21 / 0x00 at init (trace); 0x48 = 0 in FM |
+| 0x45 / 0x46 | Mod2 / Mod1 amplitude | from calibration: the DMR pair in DMR, the FM pair in FM. The GD-77 calibrates 0x46 only, one value for both modes ([hardware-gd77.md](hardware-gd77.md) 6.4) |
+| 0x47 / 0x48 | reference oscillator offset / two-point bias | 0x21 / 0x00 at init (trace); 0x48 = 0 in FM. The GD-77 writes a calibrated bias here instead, low byte in 0x47 and the bits above in 0x48, with its offset in 0x04 (`hrc6000_set_mod_bias`) |
 | 0x49 / 0x4A | modulation limits | 0xFF / 0xFF in FM |
 | 0x50 | LocalDataType (7-4), LocalVoD (3, 1 = voice), data-header-2 (2), LCSS (1-0) | the burst to send in the next slot: data burst = DT << 4; voice burst = 0x08 \| (n << 4) with n = 0..5 for A..F |
 | 0x51 (R) | DLLRecvDataType (7-4), DLLRecvPI (3), DLLRecvCRC (2, 1 = error), SyncClass (1-0: 0 none / EMB only, 1 voice, 2 data, 3 RC) | read on every "received data" interrupt. For voice, bit 7 is set and bits 6-4 are 1..6 for A..F, so the 4-bit field reads 0x9..0xE: **use the low 3 bits** |

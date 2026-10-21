@@ -231,8 +231,8 @@ is dropped: one interrupt per 30 ms slot. Configuration port transactions mask i
 ### 5.4 Transmit path
 
 Written, off by default. Build variable `CONFIG_GD77_TX=y` marks both bands as transmit capable; without it `tx()`
-refuses. With it `tx()` still refuses until a calibration point (`boards/gd77/cal_gd77.h`, power drive per level)
-is valid for the frequency, which needs the calibration fields (6.4) named.
+refuses and the transmit code isn't built. With it `tx()` still refuses unless the calibration point
+(`gd77_cal_at`, 6.4) is valid for the frequency: a valid block for the band and the frequency inside its TX range.
 
 | Line | Role | Tag |
 |---|---|---|
@@ -250,7 +250,12 @@ The band split for the path lines is 188.74368 MHz (U). The other band's RX line
 | To | Steps |
 |---|---|
 | Transmit | RX paths off, tune, reg 0x30 to transmit, the band's TX path on, PTA17 high, DAC0 ramp up |
-| Receive | PTA17 low, DAC0 ramp down, TX paths off, tune, reg 0x30 to receive, the band's RX path on, the RX DAC0 value |
+| Receive | PTA17 low, DAC0 ramp down, TX paths off, tune, reg 0x30 to receive, the band's RX path on |
+
+DAC0 stays at 0 while receiving (U). Before the transmit order `tx()` writes the calibration's transmit values
+(6.4): the AT1846S gains, PA driver current and deviation, and the HR_C6000 modulation amplitude, bias and offset. In
+DMR it writes them when it arms; the per-burst switching writes only the tuning registers, so they hold for every
+burst. Before the receive order `rx()` writes the receive values (6.4).
 
 The ramp has 19 steps, value = drive x 16 x k / 19, 10 µs apart and 40 µs for the five steps nearest full drive
 (U). In DMR, `tx()` only arms: the HR_C6000's RF TX interrupt runs the transmit order before each burst and the RF RX
@@ -347,38 +352,79 @@ never writes them (`boards/gd77/cal_blocks_gd77.h`, on the generic loader `drive
 | UHF | 0x7C00 | 180 MHz and up | U |
 | VHF | 0x7C70 | below 180 MHz | U |
 
-Header: two ranges of two 16-bit little-endian values, type 0 at +0 and type 1 at +4, most likely in 100 kHz units
-(I: the limits below are 136.0 to 520.0 MHz with a 260.1 to 399.9 MHz hole).
-
-Fields (offsets from the block start; no field is named yet):
-
-| Id | Offset | Size | Shape |
-|---|---|---|---|
-| 0x40 | 0x08 | 3 | unknown |
-| 0x41 | 0x0B | 48 | unknown; an array (24 x 16 bit or 48 x 8 bit) |
-| 0x42 | 0x3B | 4 | unknown |
-| 0x43 | 0x3F | 20 | unknown; an array |
-| 0x44 | 0x53 | 2 | unknown |
-| 0x01 | 0x55 | 8 | unknown |
-| 0x30, 0x31, 0x32 | 0x5D, 0x5E, 0x5F | 1 each | unknown |
-| 0x33, 0x34 | 0x60, 0x62 | 2 each | unknown |
-| 0x50 | 0x64 | 8 | unknown; the first three bytes are range checked |
-| 0x51 | 0x6C | 3 | unknown |
+Header: two ranges of two 16-bit little-endian values in 100 kHz units, low then high. The range at +0 is the RX range
+and the one at +4 the TX range (I: the TX values are spread over +4's range and the squelch nodes over +0's). The
+block check below tests only the TX range.
 
 A block is used only when it reads the same twice, isn't all 0xFF or all 0x00, and passes these checks:
 
 | Check | Limit |
 |---|---|
 | field 0x50 bytes 0, 1, 2 | below 0x20, 0x40, 0x10 |
-| type 1 range, each value | 0x550-0x1450 (1360-5200), not 0xA29-0xF9F (2601-3999) |
-| type 1 range | low below high |
+| TX range, each value | 0x550-0x1450 (1360-5200), not 0xA29-0xF9F (2601-3999) |
+| TX range | low below high |
 
-The radio code reads a field with `gd77_cal_field(hz, id, buf, max)`, which picks the block by frequency and returns
-the raw bytes, or 0 bytes without a valid block, so the caller keeps its uncalibrated value. Diagnostics line 8 shows
-each block's state (`cal` UHF then VHF: `o` ok, `f` read failed, `b` blank, `r` rejected). What each field means, and
-so how it reaches the AT1846S and the HR_C6000, is open (section 11). Until then the radio code's calibration
-point (`gd77_cal_at`, `boards/gd77/cal_gd77.h`) returns the safe values and no calibration at every frequency, and
-the transmitter stays refused.
+Fields (offsets from the block start), all U. "Per node" fields hold one value per frequency node (below);
+"25 / 12.5" fields hold the 25 kHz value first, then the 12.5 kHz one (I):
+
+| Id | Offset | Size | Holds | Goes to | Out of range |
+|---|---|---|---|---|---|
+| 0x40 | 0x08 | 3 | u16 LE two-point bias (at most 0x400), then an 8-bit DC offset | HR_C6000 4:0x47 = bias bits 7:0, 4:0x48 = the bits above; 4:0x04 = offset | bias above 0x400: no TX point |
+| 0x41 | 0x0B | 48 | TX drive per node, two bytes each: power flag 0 (low), then 1 (high) (I: polarity) | DAC0 = byte x 16 | - |
+| 0x42 | 0x3B | 4 | four values over the RX range | not used (?) | - |
+| 0x43 | 0x3F | 20 | 8 squelch base bytes per node on the RX range; then three (high, low) pairs for 25 kHz and three for 12.5 kHz | the pairs: AT1846S regs 0x48, 0x60, 0x3F = high << 7 \| low; the base: not applied (squelch is the core's) | a pair with high or low 0x7F or above, or high below low: 0x213F, 0x1930, 0x29D0 |
+| 0x44 | 0x53 | 2 | two squelch table bytes | not used (?) | - |
+| 0x01 | 0x55 | 8 | modulation amplitude per node | HR_C6000 4:0x46, FM and DMR | - |
+| 0x30 | 0x5D | 1 | codec DAC level | not applied: ODR sets 4:0x37 itself | - |
+| 0x31 | 0x5E | 1 | unknown | not used (?) | - |
+| 0x32 | 0x5F | 1 | voice gain for tone and DTMF transmit | not applied | - |
+| 0x33 | 0x60 | 2 | CTCSS deviation, 25 / 12.5 | AT1846S reg 0x59 bits 5:0 with CTCSS or no tone | 0x40 and up: 0x0B |
+| 0x34 | 0x62 | 2 | DCS deviation, 25 / 12.5 | AT1846S reg 0x59 bits 5:0 with DCS | 0x40 and up: 0x0B (I) |
+| 0x50 | 0x64 | 8 | PA driver current, microphone PGA gain, TX voice gain, gain after the TX ADC; then u16 LE FM deviation, 25 / 12.5 | AT1846S reg 0x0A bits 14:11, 0x0A bits 10:6, 0x41 bits 6:0, 0x44 bits 11:8; reg 0x59 bits 15:6 | 16 and up: 5; 0x20 and up: 0x10; 0x80 and up: 0x1E; 16 and up: 2; 0x400 and up: 0x3A |
+| 0x51 | 0x6C | 3 | RX DAC analog gain, RX digital volume, a third byte | AT1846S reg 0x44 bits 7:4, 3:0; the third byte not used (?) | 16 and up: 0xD, 0xC |
+
+The register writes keep the other bits of each register. Reg 0x0A has no default in this radio's profile, so its
+other bits are read from the chip first. DMR transmits with the 12.5 kHz values. 4:0x45, the HR_C6000's other
+modulation register, has no calibration: ODR reads it once after the chip's power-on sequence and writes that value
+back with every 4:0x46.
+
+Frequency nodes. The frequency is taken in 100 kHz units, rounded down. The node layout depends on the TX range (ids
+0x41, 0x01) or the RX range (id 0x43); a range not in this table has no layout and gives no TX point:
+
+| Range (MHz) | Id 0x41 nodes | Ids 0x01 and 0x43 nodes |
+|---|---|---|
+| low end to 520 | 24: from the low end every 5 MHz, the last at 520 | 8, every 15 MHz from the low end |
+| low end to 480 | 16: from the low end every 5 MHz, the last at 480 | 8, every 10 MHz |
+| low end to 470 | 14: from the low end every 5 MHz, the last at 470 | 7, every 10 MHz |
+| 320 to 400 | 16: every 5 MHz, the last at 400 | 8, every 10 MHz |
+| 300 to 400 | 20: every 5 MHz, the last at 400 | 7, every 15 MHz |
+| 136 to 174 | 8: 136.0, 140, 145 .. 165, 174 | 8: 136.0, 140, 145 .. 170 |
+
+The 320 and 300 MHz low ends fail the block check, so only an RX range can use those rows. For 136 to 174 the nodes
+count from 135.0 MHz, and the first stands at 136.0.
+
+| Rule | Value |
+|---|---|
+| Between two nodes | linear, rounded toward the lower node's value |
+| Id 0x41 at or above its last node | the last node is the range's high end, so the value is the last byte |
+| Id 0x01 above its last node, up to the high end | the line through the last two node values spread over [last node, high end], plus their difference; saturated to 0..255 |
+| Id 0x43 | the byte of the node at or below the frequency, no interpolation |
+| Outside the range | ids 0x41 and 0x01: no TX point (the block's own rule for id 0x41 there is the byte 0xA0, which ODR doesn't use); id 0x43: no squelch base |
+
+The calibration point. `gd77_cal_at(hz, out)` (`boards/gd77/cal_gd77.c`) picks the block by frequency and converts
+it (`gd77_cal_convert`, pure, host tested in `tests/host/gd77CalTest.c`). Its validity:
+
+| Flag | True when | Then |
+|---|---|---|
+| `valid` (the return value) | the block for the band is valid, its TX range has a node layout, the frequency is inside it and the bias is at most 0x400 | `tx()` may transmit with the TX values |
+| `rx_valid` | the block for the band is valid | the receive values come from the block |
+| `sq_valid` | also the frequency is inside the RX range and that range has a node layout | `sq_open` is the block's |
+
+Without `valid` every TX value is the safe one (drive 0) and `tx()` refuses. Without `rx_valid` the receive values are
+the fallbacks of the field table, which `rx()` writes all the same, so a band without a valid block doesn't keep the
+other band's values. Board power level 0 is low and level 1 high (I). The raw bytes stay readable with
+`gd77_cal_field(hz, id, buf, max)`. Diagnostics line 8 shows each block's state (`cal` UHF then VHF: `o` ok, `f`
+read failed, `b` blank, `r` rejected).
 
 ## 7. Display
 
@@ -469,7 +515,6 @@ Each needs a radio on the bench.
 | Microphone input | MIC_P (0xE0 bit 1) or LINEIN1 | speak into the microphone with the `pcm` line running; compare levels |
 | Voice port | SPI1 on PTB10, PTB11, PTB16, PTB17 | the `vp` count on the diagnostics page stays 0 during DMR receive |
 | Time slot edges | both edges of PTC18 | the `ts` counts: one accepted per 30 ms, the other edge dropped |
-| RX DAC0 value | what DAC0 drives during receive | measure with and without it |
 | Bus pin mux (4.2) | the hardware options listed | check against the K22F data sheet's pin mux table, then try one |
 | Backlight PWM (4.2, 7) | FTM0 channel 3 on PTC4 ALT4, or another timer | the data sheet's pin mux table, then `GD77_BACKLIGHT_PWM=1` |
 | HSRUN target (2.2) | 95.232 MHz in HSRUN | `GD77_CLOCK_TARGET=1`: `board.clk.hsrun=1` and the core clock in the board view (14) |
@@ -478,7 +523,8 @@ Each needs a radio on the bench.
 | Data flash size | 16 to 128 Mbit; ODR needs 2 MB for its areas (6.2) | the `nor` diagnostics line's JEDEC ID |
 | EEPROM | 24C512 class at 0x50 | the `eep` diagnostics line |
 | Calibration blocks | 0x7C00 / 0x7C70 hold valid blocks on a factory radio | the `cal` diagnostics line shows `oo` |
-| Calibration fields | what each id in 6.4 means | change one field's value in RAM and watch the AT1846S registers and the output |
+| Calibration fields | the field table in 6.4: power flag 0 = low, sub-index 0 = 25 kHz, +4 = TX range, +0 = RX range; ids 0x31, 0x42, 0x44 and byte 2 of 0x51 unused | with a factory block loaded, compare the AT1846S and HR_C6000 registers and DAC0 with the table at each power level and bandwidth, then measure power and deviation on a dummy load |
+| Calibration values | real value ranges; whether the RX range always equals the TX range | read the blocks of several factory radios (EEPROM 0x7C00-0x7CDF) |
 
 ## 12. Bring-up status
 
@@ -497,7 +543,7 @@ Each needs a radio on the bench.
 | DMR receive (interrupts, slot engine, voice port) | written, unverified |
 | DMR voice codec (5.6) | the radio's own codec run in place, merged on the user's machine ([codec-gd77.md](codec-gd77.md)); host checked, unverified |
 | Storage: settings and codeplug on the data flash (6.2), EEPROM read only (6.3) | written, host tested, unverified |
-| Factory calibration: both blocks loaded and checked (6.4) | written, host tested; fields not named, not applied |
+| Factory calibration: both blocks loaded and checked, converted and applied (6.4) | written, host tested, unverified |
 | USB serial: host link, debug link, board view (13, 14) | written, unverified; the CPS and the network adapter off |
 | Update image packaging | open |
 
