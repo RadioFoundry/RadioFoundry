@@ -73,7 +73,9 @@ void md9600_backlight(uint8_t percent)
 	uint32_t duty;
 	if (percent == 0) {
 		duty = 0;
-	} else if (percent >= 100) {
+	} else if (percent >= 100 || md9600_opt_backlight_switched()) {
+		// 100 %, or a radio whose option block says its backlight can't be dimmed (hardware-md9600.md 7.3): a duty
+		// in the dimming window would leave it dark or flickering there
 		duty = BL_ARR + 1u;	// always high
 	} else {
 		duty = BL_DIM_MIN + (uint32_t)(percent - 1u) * (BL_DIM_MAX - BL_DIM_MIN) / 98u;

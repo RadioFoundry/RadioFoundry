@@ -753,10 +753,18 @@ md9600RfTest: $(MD9600_RF) $(MD9600_RF_H)
 md9600RfTestV5: $(MD9600_RF) $(MD9600_RF_H)
 	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow -DCONFIG_MD9600_V5=1 -o $@ $(MD9600_RF)
 
+# The MD-9600's calibration and option block reader on the generic calibration block (synthetic blocks only)
+MD9600_CAL := md9600CalTest.c $(MD9600)/cal_md9600.c $(ROOT)/drivers/cal/calblock/calblock.c
+TESTS   += md9600CalTest
+
+md9600CalTest: $(MD9600_CAL) $(MD9600)/cal_md9600.h $(ROOT)/drivers/cal/calblock/calblock.h $(CORE)/radio/cal_curve.h
+	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow -o $@ $(MD9600_CAL)
+
 run: run-md9600
-run-md9600: md9600RfTest md9600RfTestV5
+run-md9600: md9600RfTest md9600RfTestV5 md9600CalTest
 	./md9600RfTest
 	./md9600RfTestV5
+	./md9600CalTest
 .PHONY: run-md9600
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the

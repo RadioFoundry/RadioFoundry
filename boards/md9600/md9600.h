@@ -52,10 +52,8 @@ uint16_t md9600_flash_device(void);	// JEDEC memory type and capacity, 0 = none
 md9600_rev_t md9600_flash_rev_load(void);
 bool md9600_flash_rev_store(md9600_rev_t rev);
 
-// Receiver front-end tuning from the factory calibration (cal_md9600.c, docs/spec/hardware-md9600.md 11)
-void md9600_cal_load(void);
-uint16_t md9600_cal_rx_tune(uint32_t hz);	// 12-bit DAC value
-const char *md9600_cal_source(void);		// "factory" or "none"
+// Factory calibration and the hardware option block: cal_md9600.h (docs/spec/hardware-md9600.md 11)
+#include "cal_md9600.h"
 
 // Board revision in use and the RF state (radio_md9600.c)
 md9600_rev_state_t md9600_rev_state(void);
