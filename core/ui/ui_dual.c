@@ -12,6 +12,7 @@
 #include "ui_svc.h"
 #include "fmt.h"
 #include "font.h"
+#include "gfx.h"
 #include "codeplug/codeplug.h"
 
 #define START_GRACE_MS	500	// the radio view may still show no watch this soon after asking for one
@@ -164,20 +165,8 @@ void ui_dual_stop(void)
 	ui_dual_t *d = dual();
 	if (!d->on)
 		return;
-	const ui_dual_ref_t *r = &ref[d->sel];
-	ui_svc_dual(NULL, 0);
+	ui_svc_dual(NULL, 0);	// the radio stops on the selected channel
 	d->on = false;
-	const radio_view_t *v = ui_view();
-	if (r->vfo) {
-		if (!v->vfo)
-			radio_req_vfo(true);
-	} else {
-		if (v->vfo)
-			radio_req_vfo(false);
-		if (v->zone_index != r->zone)
-			radio_req_zone(r->zone);
-		radio_req_zone_pos(r->pos);
-	}
 	ui_toast(d->sel ? "Dual watch off: on B" : "Dual watch off: on A");
 }
 
@@ -490,6 +479,24 @@ enum { DA_SELECT, DA_CHANGE_A, DA_CHANGE_B, DA_CALLER, DA_STOP, DA_COUNT };
 
 static uint16_t actions_count(void) { return DA_COUNT; }
 
+// The last caller and how long ago: "Joe Smith TG 91 10s ago", "Joe Smith 10s ago", then the caller alone
+static void caller_age(sbuf_t *b, const char *caller, uint32_t ms)
+{
+	char alt[48];
+	bool more = true;
+	sb_str(b, TEXT_ALT_OPEN);
+	for (int level = 0; more; level++) {
+		gfx_text_alt(caller, level, alt, sizeof alt, &more);
+		sb_str(b, alt);
+		sb_chr(b, ' ');
+		sb_age_long(b, ms);
+		sb_str(b, TEXT_ALT_NEXT);
+		if (!more)
+			sb_str(b, alt);
+	}
+	sb_str(b, TEXT_ALT_CLOSE);
+}
+
 static void pane_value(sbuf_t *b, uint8_t i)
 {
 	const ui_dual_pane_t *p = &dual()->pane[i];
@@ -530,10 +537,12 @@ static void actions_item(uint16_t i, ui_item_t *it)
 		break;
 	case DA_CALLER:
 		sb_str(&b, "Caller");
-		if (d->caller[0])
-			sb_str(&vb, d->caller);
-		else
+		if (!d->caller[0])
 			it->flags |= UI_ITEM_DIM;
+		else if (d->rx != UI_DUAL_NONE)
+			sb_str(&vb, d->caller);		// on the air now
+		else
+			caller_age(&vb, d->caller, ui_st.now_ms - d->last_ms);
 		break;
 	case DA_STOP:
 		sb_str(&b, d->sel ? "Stop, stay on B" : "Stop, stay on A");

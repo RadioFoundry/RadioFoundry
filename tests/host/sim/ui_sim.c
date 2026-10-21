@@ -1136,15 +1136,19 @@ bool ui_svc_scan_skip(void) { radio_req_channel_step(1); return true; }
 // keys act on it); `tune:a` / `tune:b` move it to a channel, as the alternating receiver does when a call holds it
 static ui_dual_ref_t sim_dual[2];
 static void sim_tune(int pane);
+static uint8_t sim_sel;
 bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
 {
 	if (ref == NULL) {
+		if (view.scan == 3)
+			sim_tune(sim_sel);	// the radio stops on the selected channel
 		view.scan = 0;
 		changed();
 		return true;
 	}
 	sim_dual[0] = ref[0];
 	sim_dual[1] = ref[1];
+	sim_sel = sel;
 	sim_tune(sel);
 	view.scan = 3;	// SCAN_DUAL
 	changed();

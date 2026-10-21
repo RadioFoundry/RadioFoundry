@@ -109,7 +109,7 @@ Every screen in every class is in the gallery (`docs/ux/screens/*/home_dual*.png
 | **Up / Down**, the knob | The selected channel moves through its zone (skipping the other one); on the VFO, a step |
 | **Left / Right** (DM-1801 Pro, DM-32UV) | Selects A / B (a press; hold is the radio's user function) |
 | **A/B** key | Selects the other channel |
-| **#** | Dual watch actions: **1** Talk on B (or A), **2** Change A, **3** Change B, **4** Caller (the last caller's actions; dim until a call was heard), **5** Stop, stay on A (or B). Change A and B open the picker |
+| **#** | Dual watch actions: **1** Talk on B (or A), **2** Change A, **3** Change B, **4** Caller (the last caller and how long ago; OK opens their actions; dim until a call was heard), **5** Stop, stay on A (or B). Change A and B open the picker |
 | **\*** | Quick settings of the selected channel |
 | **Back** | Stops, staying on the selected channel |
 
@@ -138,7 +138,8 @@ Open question 2 asks whether SK2 long (Scan today) should become Dual watch on t
 - If the radio ends the watch (hotspot mode, a channel change from the debug link), Home says "Dual watch stopped".
 - A channel picked for A or B can't be the other one's.
 - Changing A or B clears the calls listed for it (they were on the old channel).
-- The last B is remembered until power off; the Scan screen offers it.
+- The last B is remembered until power off; the Scan screen offers it. The radio powers up on the selected channel,
+  even when it was listening to the other one at the time.
 - PTT is never moved to the other channel by a call there: "# 1 talk on B" is one press away, and the
   selection stays where you put it.
 

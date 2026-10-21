@@ -2547,6 +2547,17 @@ static void test_ui_dual(void)
 	const ui_dual_ref_t withvfo[2] = { vfo, a };
 	CHECK(ui_svc_dual(withvfo, 0) && sm.view.scan == SCAN_DUAL);
 	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.vfo);
+	// Saved while the watch is on B: powers up on the selected A all the same
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE_POS, 0);
+	CHECK(ui_svc_dual(pair, 0) && sm.dual_sel == 0);
+	for (int i = 0; i < 1000 && sm.dual_at != 1; i++) {
+		poll_for(RADIO_POLL_MS);
+	}
+	CHECK(sm.view.scan == SCAN_DUAL && sm.dual_at == 1 && sm.view.zone_index == 2);
+	CHECK(ui_svc_dual(pair, 0));		// a request saves the position
+	boot();
+	CHECK(!sm.view.vfo && sm.view.zone_index == 0 && sm.view.zone_pos == 0);
 }
 #endif
 

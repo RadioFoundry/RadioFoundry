@@ -3173,11 +3173,29 @@ static void persist(radio_sm_t *sm, uint32_t now_ms)
 		return;		// the hotspot's frequencies are the host's, not the radio's
 	}
 	settings_t *st = settings_begin();
-	st->vfo = sm->view.vfo;
-	if (sm->have_channels) {
-		st->zone_index = sm->view.zone_index;
-		st->zone_pos = sm->view.zone_pos;
-		st->channel = sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
+	bool vfo = sm->view.vfo;
+	uint16_t zone = sm->view.zone_index, pos = sm->view.zone_pos;
+	const zone_t *z = sm->have_channels ? &sm->zone : NULL;
+#if CONFIG_SCAN && CONFIG_DUAL_WATCH
+	zone_t buf;
+	if (dual_running(sm) && !dual_here(sm, sm->dual_sel)) {
+		// Dual watch on the other channel now: power up on the selected one
+		const radio_dual_ref_t *r = &sm->dual[sm->dual_sel];
+		vfo = r->vfo;
+		if (!r->vfo) {
+			if (r->zone != zone) {
+				z = read_zone(r->zone, &buf) ? &buf : NULL;
+			}
+			zone = r->zone;
+			pos = r->pos;
+		}
+	}
+#endif
+	st->vfo = vfo;
+	if (z != NULL) {
+		st->zone_index = zone;
+		st->zone_pos = pos;
+		st->channel = pos < z->count ? z->channels[pos] : 0;
 	}
 	if (sm->vfo_seeded) {
 		const channel_t *v = &sm->vfo_ch;
