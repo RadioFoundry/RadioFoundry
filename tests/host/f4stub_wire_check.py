@@ -169,6 +169,9 @@ def main():
     # The profiles against the boards' sources
     root = os.path.join(HERE, "..", "..")
     for bid, prof in f4stub.BOARDS.items():
+        if not os.path.isdir(os.path.join(root, "boards", bid)):
+            print("note: boards/%s is not in this tree; its profile is not checked against the sources" % bid)
+            continue
         ld = open(os.path.join(root, "boards", bid, bid + ".ld")).read()
         m = re.search(r"FLASH\s*\(rx\)\s*:\s*ORIGIN\s*=\s*(0x[0-9A-Fa-f]+),\s*LENGTH\s*=\s*(0x[0-9A-Fa-f]+)", ld)
         check(m is not None and int(m.group(1), 16) == f4stub.APP_BASE == prof["owned"][0][0]
@@ -178,9 +181,11 @@ def main():
         check(m is not None and "P%s%s" % (m.group(1), m.group(2)) == prof["spi"]["cs"],
               "%s: the profile's chip select is pins.h's" % bid)
         check(f4stub.config_record(bid)[0] == prof["id"], "%s: record board id" % bid)
-    m = re.search(r"#define PIN_LCD_CS\s+GPIO([A-I]), GPIO_PIN_(\d+)", open(os.path.join(root, "boards", "md9600", "pins.h")).read())
-    check(m is not None and ("P%s%s" % m.groups(),) == f4stub.BOARDS["md9600"]["spi"]["idle"],
-          "md9600: the LCD chip select on the shared bus is held high")
+    if os.path.isdir(os.path.join(root, "boards", "md9600")):
+        m = re.search(r"#define PIN_LCD_CS\s+GPIO([A-I]), GPIO_PIN_(\d+)",
+                      open(os.path.join(root, "boards", "md9600", "pins.h")).read())
+        check(m is not None and ("P%s%s" % m.groups(),) == f4stub.BOARDS["md9600"]["spi"]["idle"],
+              "md9600: the LCD chip select on the shared bus is held high")
     check(len({b["id"] for b in f4stub.BOARDS.values()}) == len(f4stub.BOARDS), "board ids are unique")
 
     print("f4stub_wire_check %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),

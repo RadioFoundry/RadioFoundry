@@ -17,13 +17,13 @@
 #include "stubeng.h"
 #include "f4stub_flash.h"
 #include "f4stub_spi.h"
-#include "f4stub_usb.h"
+#include "stubnor.h"
+#include "stubrt.h"
+#include "stubusb.h"
 
 #define HANDOFF_USB_ADOPT	0x1u	// r0 bit 0: ODR's CDC-ACM device is configured (stub_entry.c)
-#define IDLE_MS			200u	// a request that stops arriving for this long is dropped (as the debug link's)
 #define HSE_DEFAULT_HZ		8000000u	// until a board record says otherwise: only the stub's own timing uses it
 
-extern uint32_t _sbss, _ebss;
 void stub_main(uint32_t flags) __attribute__((noreturn, used));
 
 // First bytes of the image (the linker puts .entry at 0x20000000): set the stack, keep r0, go to C
@@ -36,58 +36,8 @@ __attribute__((naked, section(".entry"))) void f4stub_entry(void)
 		".ltorg\n\t");
 }
 
-// ---- freestanding C library pieces the compiler may call
+// ---- the clock ODR left running (for the cycle counter's rate and the SPI prescaler)
 
-void *memcpy(void *dst, const void *src, size_t n)
-{
-	uint8_t *d = dst;
-	const uint8_t *s = src;
-	while (n-- > 0) {
-		*d++ = *s++;
-	}
-	return dst;
-}
-
-void *memmove(void *dst, const void *src, size_t n)
-{
-	uint8_t *d = dst;
-	const uint8_t *s = src;
-	if (d < s) {
-		while (n-- > 0) {
-			*d++ = *s++;
-		}
-	} else {
-		while (n-- > 0) {
-			d[n] = s[n];
-		}
-	}
-	return dst;
-}
-
-int memcmp(const void *a, const void *b, size_t n)
-{
-	const uint8_t *x = a, *y = b;
-	for (; n > 0; n--, x++, y++) {
-		if (*x != *y) {
-			return *x - *y;
-		}
-	}
-	return 0;
-}
-
-void *memset(void *dst, int c, size_t n)
-{
-	uint8_t *d = dst;
-	while (n-- > 0) {
-		*d++ = (uint8_t)c;
-	}
-	return dst;
-}
-
-// ---- time: the cycle counter at the clock ODR left running
-
-static uint32_t cycles_per_ms;
-static uint32_t last_cyc, acc_cyc, now_ms;
 static uint32_t hse_hz = HSE_DEFAULT_HZ;
 
 static uint32_t hclk_hz(void)
@@ -119,31 +69,6 @@ static uint32_t pclk_hz(uint32_t hclk, bool apb2)
 	return ppre >= 4u ? hclk >> (ppre - 3u) : hclk;
 }
 
-static void clock_setup(void)
-{
-	cycles_per_ms = hclk_hz() / 1000u;
-	if (cycles_per_ms == 0) {
-		cycles_per_ms = 16000u;
-	}
-}
-
-uint32_t stub_ms(void)
-{
-	uint32_t c = DWT->CYCCNT;
-	acc_cyc += c - last_cyc;
-	last_cyc = c;
-	now_ms += acc_cyc / cycles_per_ms;
-	acc_cyc %= cycles_per_ms;
-	return now_ms;
-}
-
-void stub_delay_ms(uint32_t ms)
-{
-	uint32_t t0 = stub_ms();
-	while (stub_ms() - t0 < ms) {
-	}
-}
-
 // ---- the port the protocol engine drives
 
 static void port_write(void *ctx, const uint8_t *buf, uint32_t n)
@@ -173,19 +98,19 @@ static bool port_program(void *ctx, uint32_t addr, const uint32_t *words, uint32
 static bool port_xread(void *ctx, uint32_t addr, void *dst, uint32_t n)
 {
 	(void)ctx;
-	return f4spi_read(addr, dst, n);
+	return stubnor_read(addr, dst, n);
 }
 
 static bool port_xerase(void *ctx, uint32_t addr)
 {
 	(void)ctx;
-	return f4spi_erase(addr);
+	return stubnor_erase(addr);
 }
 
 static bool port_xprogram(void *ctx, uint32_t addr, const uint8_t *data, uint32_t n)
 {
 	(void)ctx;
-	return f4spi_program(addr, data, n);
+	return stubnor_program(addr, data, n);
 }
 
 // CONFIG: the board record decides the crystal (for the stub's timing) and the SPI flash wiring
@@ -197,19 +122,10 @@ static bool port_configure(void *ctx, const uint8_t *rec, uint32_t n, stubeng_co
 		return false;
 	}
 	hse_hz = b.hse_hz;
-	(void)stub_ms();	// count the time so far at the old rate
-	clock_setup();
+	stubrt_clock_rate(hclk_hz());
 	out->app_base = b.app_base;
 	out->xsize = f4spi_init(&b, pclk_hz(hclk_hz(), b.spi_bus == 1u), out->xid);
 	return true;
-}
-
-static void port_reset(void *ctx)
-{
-	(void)ctx;
-	usb_flush(200);		// the RESET reply leaves the FIFO first
-	stub_delay_ms(20);
-	NVIC_SystemReset();
 }
 
 static stubeng_port_t port = {
@@ -222,7 +138,7 @@ static stubeng_port_t port = {
 	.read = port_read,
 	.erase = port_erase,
 	.program = port_program,
-	.reset = port_reset,
+	.reset = stubrt_reset,
 	.xread = port_xread,
 	.xerase = port_xerase,
 	.xprogram = port_xprogram,
@@ -231,49 +147,20 @@ static stubeng_port_t port = {
 static stubeng_t engine;
 static char serial[25];
 
-// ODR's USB serial number (boards/*/usb_*.c): the 96-bit UID as hex, lowest byte first. The same string keeps the
-// host's port name when the stub has to enumerate again
-static void make_serial(void)
-{
-	static const char hex[] = "0123456789ABCDEF";
-	const uint8_t *uid = (const uint8_t *)UID_BASE;
-	for (unsigned i = 0; i < 12u; i++) {
-		serial[2u * i] = hex[uid[i] >> 4];
-		serial[2u * i + 1u] = hex[uid[i] & 0x0Fu];
-	}
-	serial[24] = '\0';
-}
-
 void stub_main(uint32_t flags)
 {
-	for (uint32_t *p = &_sbss; p < &_ebss; p++) {
-		*p = 0;
-	}
-	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-	DWT->CYCCNT = 0;
-	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-	clock_setup();
+	stubrt_zero_bss();
+	stubrt_clock_start(hclk_hz());
 
 	f4flash_init();
-	make_serial();
+	// ODR's USB serial number (boards/*/usb_*.c): the 96-bit UID as hex, lowest byte first. The same string keeps the
+	// host's port name when the stub has to enumerate again
+	stubrt_hex(serial, (const uint8_t *)UID_BASE, 12);
 	port.flash = f4_flash(*(const volatile uint16_t *)FLASHSIZE_BASE);
 	port.security = (uint8_t)(FLASH->OPTCR >> 8);
-	if (usb_start((flags & HANDOFF_USB_ADOPT) != 0, serial)) {
+	if (usb_start((flags & HANDOFF_USB_ADOPT) != 0, 0, serial)) {
 		port.flags |= F4_HELLO_USB_ADOPTED;
 	}
 	stubeng_init(&engine, &port);
-
-	uint32_t last_rx = stub_ms();
-	for (;;) {
-		uint8_t buf[64];
-		usb_poll();
-		uint32_t n = usb_read(buf, sizeof(buf));
-		if (n > 0) {
-			stubeng_feed(&engine, buf, n);
-			last_rx = stub_ms();
-		} else if (stub_ms() - last_rx > IDLE_MS) {
-			stubeng_idle(&engine);
-			last_rx = stub_ms();
-		}
-	}
+	stubrt_serve(&engine);
 }
