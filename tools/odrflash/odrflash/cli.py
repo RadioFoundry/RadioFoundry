@@ -15,7 +15,7 @@ import uuid
 from . import __version__, boards, bootkey, codecsave, debuglink, manifest as mf, plan as planmod, state, stockfw
 from . import dfu as dfumod
 from . import release as relmod
-from . import serialflash
+from . import serialflash, stubroute
 
 EPILOG = """\
 examples:
@@ -385,8 +385,11 @@ def cmd_flash(args):
         return cmd_flash_serial(args, board, man, image, merged)
     if board.family == "hrc7000-iap":
         raise UsageError("%s is installed with the web flasher or stub/stubtool.py, not with odrflash" % board.name)
+    if args.route == serialflash.STUB:
+        return cmd_flash_stub(args, board, image, merged)
     if args.route != serialflash.AUTO:
-        raise UsageError("--route is for the radios flashed over a programming cable (DM-1801 Pro, DM-32UV)")
+        raise UsageError("--route is for the radios flashed over a programming cable (DM-1801 Pro, DM-32UV) and "
+                         "--route stub (radios running ODR with stub entry)")
     stock = load_stock(args)
     if merged and stock is not None:
         say("stock    the image carries the codec, so the stock file only gives the bootloader key")
@@ -523,6 +526,29 @@ def _progress(unit):
             sys.stdout.write("writing  %d/%d %s (%d%%)\n" % (done, total, unit, pct))
         sys.stdout.flush()
     return progress
+
+
+def cmd_flash_stub(args, board, image, merged):
+    """The STM32F4 radios and the GD-77 through the flash stub (stubroute.py): ODR must be running with stub entry."""
+    if board.id not in stubroute.BOARDS:
+        raise UsageError("the %s has no flash stub; use the bootloader route" % board.name)
+    if args.simulate:
+        raise UsageError("--simulate does not cover the stub route")
+    if merged:
+        warn("the codec in this image is ignored: the stub route keeps the radio's own codec")
+    if args.codec == "merge" or (args.stock and args.codec == "auto"):
+        warn("the stub route never writes a codec; --stock is ignored (use the bootloader route to write one)")
+    say("route    stub: the radio must be ON and run ODR built with CONFIG_STUB_ENTRY=y")
+    if args.dry_run:
+        say("dry run: %d bytes would be written (changed sectors only)" % len(image))
+        return 0
+    if not args.yes and not ask_yes("Write the changed sectors now?", default=True):
+        return 1
+    try:
+        rc = stubroute.run(board, image, args.port, log=say)
+    except stubroute.StubRouteError as e:
+        raise UsageError(str(e))
+    return rc
 
 
 def cmd_flash_serial(args, board, man, app, slot):
