@@ -237,12 +237,13 @@ The chip description in `hrc5000.c` carries these; the HR_C6000 description in `
 | Item | HR_C6000 | HR_C5000 | Status |
 |---|---|---|---|
 | Configuration page | 4 | 0 | (F) bench |
-| Reg 0x10 in DMR | 0x6E | 0x6B simplex, 0x4F on a repeater | (F) manual, bit 2 = ISRepeater |
+| Reg 0x10 in DMR | 0x6E | 0x6B simplex, 0x4F on a repeater channel; RepeaterSlot (b0) stays 1 and the engine picks the slot from the TC (next row) | (C) manual: b2 ISRepeater = repeated operation, b0 RepeaterSlot. On air through an MMDVM duplex hotspot (issue 108): 0x4F with the engine's slot choice lands every call on the channel's slot, both slots, 2026-10-21. 0x6E / 0x6F (timeslot mode, RepeaterSlot 0 / 1) did not steer the slot: 6 key-ups each went out 2,1,1,1,1,1 and 1,1,1,1,2,1 (2026-10-20) |
 | Own DMR ID 0x14-0x16 | big endian | 0x14 holds the low byte | (F) manual (LocalSreAddress L, M, H) |
 | TX start / stop | access policy and vocoder control written | `tx_begin` / `tx_end` hooks absent | (?) the vocoder runs on the MCU, so 0x22 (EncodeStart) and 0x60 are not used for voice |
 | Reg 0x5F (sync / slot report) | read at every burst | absent: DMO / RMO come from the channel | (?) not in the manual's table |
 | Embedded LC LCSS | chip | MCU writes it in 0x50 for every voice burst: A-F = 0x08 0x19 0x2B 0x3B 0x4A 0x58 | (?) |
-| CRC_MCU_Control (0x40 bit 3) | present | absent: for CSBK, MBC header and data header write 10 bytes and the chip appends the CRC | (?) |
+| CRC_MCU_Control (0x40 bit 3) | present | absent: for CSBK, MBC header and data header write 10 bytes and the chip appends the CRC | (C) on air 2026-10-20: CSBKs and data from the MD-380 decode with good CRC on a DM-32UV and an MMDVM hotspot |
+| CACH TC report | 0x52 bit 2, refreshed in received slots | 0x52 bit 2 too (the manual calls bits 3-0 reserved), but **it changes only in slots opened for receive**, and 1 means TS2 is starting | (C) per-tick probe of a hotspot downlink, 2026-10-21: with receive open in both slots the bit alternates every tick (0x55555555 over 32 ticks); with one slot closed it stops changing. That froze the engine's lock (it closed the other slot once locked) and every repeater key-up was rejected or landed on either slot. The chip flag `tc_last_rx` keeps both slots open and reads the bit only after a received slot. Polarity from the calls: read as the slot that had ended, every call landed on the other slot |
 | Mic gain | 0xE4 = 0x20 + gain | 0x0F = raw value (`C5000_MIC_GAIN` in `radio_md380.c`) | (?) |
 
 DMR set-up (`hrc5000_set_mode_dmr`) writes 0x06 before the reset-release block (0x00 = 0xFF) and FM after it (?);
@@ -443,6 +444,11 @@ Skyworks SKY72310-11 (unverified as the part fitted to this radio). From the dat
   7 power down and Mux_out (bit 0 full power down, 1 synthesizer power down, 2 integer-N, 3 10-bit modulator, 8:6
   Mux_out source, 9 tristate); 8 modulation control; 9 modulation data; 14 delta-sigma (0x080, bit 5 signed mode).
 - N = f_vco / f_pd with f_pd = f_osc / R <= 50 MHz; the 18-bit dividend is round(2^18 x frac(N)) in unsigned mode.
+- **The driver uses the signed mode** (register 14 bit 5): N_reg = round(N) - 32 and a two's complement dividend for a
+  fraction of -0.5..+0.5. Sent unsigned, every channel whose fraction was over one half came out one phase detector
+  step (8.4 MHz) low with lock detect high: at 443.7, 444.0-444.5, 435 and 450 MHz the radio received nothing, at
+  440, 445 and 446.075 it did (DM-32UV as the sender, 2026-10-20, issue 108). Either the unsigned-mode write doesn't
+  take or the part runs signed; signed encoding is right in both cases (C) on air.
 - A new ratio takes effect on the dividend MSB write: order divider, LSB, MSB.
 - Lock detect high = locked (on the Mux_out / LD pin, wired to PD10 (unverified)). The pin is the PS output, open collector
   (unverified): the MCU's pull-up gives the high (5.7).
@@ -451,6 +457,13 @@ Skyworks SKY72310-11 (unverified as the part fitted to this radio). From the dat
 board picks the smallest reference divider that keeps N in the fractional range (2 or 3 at 16.8 MHz), the phase
 detector gain at its maximum (?: the loop filter was designed for a value we don't know) and Mux_out = the
 oscillator. The lock detect output's configuration isn't in our copy of the data sheet (?).
+
+**TX carrier offset (issue 108).** One MD-380 UHF measured about +1.9 kHz high at 448.700 MHz (an MMDVM hotspot's
+DMR BER test decoded it only from 448.70175 to 448.70200 MHz, BER 0.14-0.28 %; a DM-32UV measured the same way sat
+within 50 Hz of 448.700). Hotspot modems (ADF7021) decode only about +-250 Hz around the carrier, so that radio never
+woke a duplex hotspot. `MD380_TX_OFFSET_HZ` (`radio_md380.c`, a build define) corrects it; -1900 put it within 250 Hz.
+Whether the offset is the unit's own error, which the calibration's reference tune (11) should take out, or the way
+ODR applies that tune, is open (?): measure a second radio before setting a default.
 
 ### 5.3 Frequency plan
 
@@ -502,11 +515,20 @@ line read back afterwards), or by ear.
 DAC1 is the APC reference, scaled from the calibration's power rows (11.2). Two levels, 1 W and 5 W. TX is refused
 without an accepted calibration table (no safe uncalibrated drive is known).
 
-DMR: the PA follows the bursts. The RF TX interrupt keys it (at the first burst of a transmission the receiver is
-switched off and the synthesizer moved to the TX frequency first, without waiting for lock; the interrupt precedes the
-burst by some milliseconds (?)). A TIM7 one-shot drops it 30 ms later, as the stock firmware is reported to do
-(F) [gotchas] 3.4; the slot engine's PA-off at the next timeslot interrupt stays as the fallback. The synthesizer
-returns to RX at `tx_off()`.
+DMR: the PA follows the bursts. The RF TX interrupt keys it (APC_EN); a TIM7 one-shot drops it 30 ms later
+[gotchas] 3.4, and the slot engine's PA-off at the next timeslot interrupt stays as the fallback.
+
+The radio has one synthesizer, so it can't receive while it is set up to transmit. The switch to TX (receiver off,
+the HR_C5000's transmit set, the TX VCO locked, TX_5V up) happens before the first burst, never at it: done in the RF TX
+interrupt, the first burst went out unlocked and a one-burst wake-up never reached a repeater (C, issue 108). When:
+
+| Start | Switch to TX |
+|---|---|
+| Own timing (simplex, the repeater wake-up) | at the modem's `tx_begin`, or at radio `tx()` if that comes later |
+| Aligned to a repeater's slots | at the engine's `tx_slot_found`, two ticks before the first burst. Until then the receiver stays on: the engine needs the downlink's TC to find the slot (4, the CACH TC row) |
+
+On a split channel the synthesizer returns to RX at the engine's TX done, so the radio hears the repeater's answer to
+its wake-up; simplex stays on TX until `tx_off()` (C, issue 108).
 
 ### 5.7 The 5C rail (SAVE)
 

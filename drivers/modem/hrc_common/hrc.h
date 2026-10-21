@@ -37,6 +37,9 @@ typedef struct {
 	bool sync_reg;			// the sync type register 0x5F exists
 	bool mode_per_channel;		// 4:0x10 depends on the channel (repeater or not) and is rewritten when it changes
 	uint8_t (*dmr_mode)(bool repeater);		// 4:0x10 for DMR
+	// 4:0x52 bit 2 is the TC of the last burst received, 1 = TS2 starting, and changes only in slots opened for
+	// receive: the repeater slot lock keeps both slots open
+	bool tc_last_rx;
 	// Bytes of a data / control burst's page 2 payload the MCU writes when the chip adds the CRC itself (kind is a
 	// DMR_BURST_*); 0: the burst goes as given
 	uint8_t (*crc_len)(uint8_t kind);

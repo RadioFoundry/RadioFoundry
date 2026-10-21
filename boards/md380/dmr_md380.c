@@ -106,9 +106,23 @@ static bool sys_line_low(void *ctx)
 	return !PIN_READ(PIN_C5000_SYS_INT);
 }
 
+// The transmission's RF switch to TX is due (md380_dmr_tx_prepare): at tx_begin for own timing, at the engine's
+// tx_slot_found for an aligned start. Before that the receiver stays on: an aligned start waits for the repeater's slot
+// timing, which the HR_C5000 only gives while it receives (issue 108). Cleared at TX done
+static volatile bool tx_rf_due;
+
+// Timeslot ISR (the modem interrupts are in already): RF to TX two ticks ahead of the first burst, the synthesizer
+// locking meanwhile
+static void tx_slot_found(void *ctx)
+{
+	(void)ctx;
+	tx_rf_due = true;
+	md380_rf_dmr_prepare();
+}
+
 static const hrc6000_dmr_ops_t ops = {
 	.rf = rf, .now_us = now_us, .lock = lock, .unlock = unlock, .notify = notify, .sys_line_low = sys_line_low,
-	.ctx = NULL,
+	.tx_slot_found = tx_slot_found, .ctx = NULL,
 };
 
 // --- Interrupts ---
@@ -346,6 +360,12 @@ static void dmr_task(void *arg)
 			trace_lc();	// before the burst: an LC looked at when its report was taken
 			trace_event(&ev);
 #endif
+			if (ev.kind == DMR_EV_TX_DONE) {
+				lock(NULL);
+				tx_rf_due = false;
+				md380_rf_dmr_tx_done();
+				unlock(NULL);
+			}
 			dmr_event_cb_t cb = stack_cb;
 			if (cb != NULL) {
 				cb(&ev, stack_ctx);
@@ -383,6 +403,17 @@ void md380_dmr_leave(void)
 void md380_dmr_rx_restart(void)
 {
 	hrc6000_dmr_rx_restart(&eng);
+}
+
+void md380_dmr_tx_prepare(void)
+{
+	if (!tx_rf_due) {
+		return;
+	}
+	lock(NULL);
+	md380_rf_dmr_prepare();
+	unlock(NULL);
+	md380_rf_dmr_wait_lock();
 }
 
 bool md380_dmr_tx_active(void)
@@ -438,7 +469,12 @@ static void rx_lock_slot(int8_t ts)
 
 static bool tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 {
-	return active && hrc6000_dmr_tx_begin(&eng, timing, ts, access);
+	if (!active) {
+		return false;
+	}
+	tx_rf_due = timing != DMR_TIMING_ALIGNED;
+	md380_dmr_tx_prepare();
+	return hrc6000_dmr_tx_begin(&eng, timing, ts, access);
 }
 
 static bool tx_queue(const dmr_tx_burst_t *b)
@@ -540,16 +576,17 @@ const hal_dmr_modem_t md380_dmr = {
 // --- Bring-up counters ---
 
 // The RF switch counters live in radio_md380.c: a reset keeps their values here and reports the difference
-static uint32_t rf_base[2];
+static uint32_t rf_base[3];
 
 void md380_dmr_stats(md380_dmr_stats_t *out)
 {
 	out->active = active;
 	out->stack_attached = stack_cb != NULL;
 	hrc6000_dmr_stats(&eng, &out->modem);
-	md380_rf_dmr_counters(&out->rf_skipped, &out->rf_unarmed);
+	md380_rf_dmr_counters(&out->rf_skipped, &out->rf_unarmed, &out->rf_rx_back);
 	out->rf_skipped -= rf_base[0];
 	out->rf_unarmed -= rf_base[1];
+	out->rf_rx_back -= rf_base[2];
 }
 
 void md380_dmr_stats_reset(void)
@@ -558,7 +595,7 @@ void md380_dmr_stats_reset(void)
 	lock(NULL);
 	memset(&eng.st, 0, offsetof(hrc6000_dmr_stats_t, last_r5f));
 	unlock(NULL);
-	md380_rf_dmr_counters(&rf_base[0], &rf_base[1]);
+	md380_rf_dmr_counters(&rf_base[0], &rf_base[1], &rf_base[2]);
 }
 
 typedef struct {
@@ -748,6 +785,7 @@ bool md380_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " rj", m->tx_rejected);
 		put_kv(&o, " sk", s.rf_skipped);
 		put_kv(&o, " na", s.rf_unarmed);
+		put_kv(&o, " rb", s.rf_rx_back);
 		break;
 	default:
 		return false;

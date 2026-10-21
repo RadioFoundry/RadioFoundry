@@ -399,6 +399,18 @@ async function codecFromRadio(link, probe, status) {
 	if (got) S.savedCodec = { ...got, from: "radio", stored: S.sim ? false : await saveCodec(S.board, got.segments) };
 }
 
+// A stock file the user picked (the .bin, or the vendor's zip with it inside), identified. A zip without exactly one
+// firmware file shows as an unrecognized file, with the reason in the console
+async function pickedStock(f) {
+	try {
+		const st = await stockfw.stockFile(f.name, f.data, fb());
+		return { ...st, info: await stockfw.identify(st.data, fb()) };
+	} catch (e) {
+		console.warn(e.message);
+		return { ...f, info: { sha: null, known: null, profile: null } };
+	}
+}
+
 async function getKey(board) {
 	if (S.key) return S.key;
 	if (S.sim) return (S.key = S.sim.key);
@@ -1032,7 +1044,7 @@ function codecView() {
 		const codecLine = !fromSaved ? null : S.savedCodec.from === "browser" ? t("flash.codec.codec_saved")
 			: t(S.savedCodec.stored ? "flash.codec.codec_from_radio" : "flash.codec.codec_from_radio_unsaved");
 		const picker = S.sim ? button(t("flash.sim.use_stock"), async () => { await useStock({ name: "simulated-stock.bin", data: S.sim.stock }); })
-			: filePicker(t("flash.codec.stock_pick"), ".bin", useStock);
+			: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", useStock);
 		const loadedText = S.stock && t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_unknown") });
 		const loaded = !S.stock ? null : S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad");
 		// a download link only where there is a known one; no vague pointers
@@ -1066,7 +1078,7 @@ function codecView() {
 		forward(button(t("flash.nav.to_write"), next, { primary: true, disabled: !(ready || viaStub) }));
 	};
 	async function useStock(f) {
-		S.stock = { ...f, info: await stockfw.identify(f.data, fb()) };
+		S.stock = await pickedStock(f);
 		if (!S.keyFromRadio) S.key = null;
 		draw();
 	}
@@ -1333,7 +1345,7 @@ function backupView() {
 			status.replaceChildren(h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, p.codec || "?")),
 			h("details", { class: "small" }, h("summary", {}, t("flash.backup.add_stock")),
-				filePicker(t("flash.codec.stock_pick"), ".bin", async (f) => { S.stock = { ...f, info: await stockfw.identify(f.data, fb()) }; })),
+				filePicker(t("flash.codec.stock_pick"), ".bin,.zip", async (f) => { S.stock = await pickedStock(f); })),
 			backupNow({ when: "task", actions: (b) => S.forward(b),
 				onDone: () => S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true })) }));
 		} catch (e) {
@@ -1390,7 +1402,7 @@ function restoreView() {
 	if (S.restoreTarget === "codeplug") parts.push(afterRestore());
 	else if (S.restoreTarget && !S.stock && (S.restoreTarget === "stock" || (!S.sim && !S.key && !savedKey(S.board))))
 		parts.push(panel(t("flash.codec.stock_title"), h("p", {}, t("flash.restore.stock_needed")),
-			filePicker(t("flash.codec.stock_pick"), ".bin", async (f) => { S.stock = { ...f, info: await stockfw.identify(f.data, fb()) }; render(); })));
+			filePicker(t("flash.codec.stock_pick"), ".bin,.zip", async (f) => { S.stock = await pickedStock(f); render(); })));
 	else if (S.restoreTarget) {
 		parts.push(bootloaderPanel(t("flash.restore.write_title"), async (key) =>
 			(S.restoreTarget === "odr" ? planInternal(b, S.board) : planStock(S.stock.data, key, S.board, fb())), () => {
@@ -1594,7 +1606,7 @@ function fixChooser(st, go) {
 function stockRecovery(go) {
 	if (!S.stock?.info?.known) {
 		const picker = S.sim ? button(t("flash.sim.use_stock"), async () => { S.stock = { name: "simulated-stock.bin", data: S.sim.stock, info: await stockfw.identify(S.sim.stock, fb()) }; render(); })
-			: filePicker(t("flash.codec.stock_pick"), ".bin", async (f) => { S.stock = { ...f, info: await stockfw.identify(f.data, fb()) }; render(); });
+			: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", async (f) => { S.stock = await pickedStock(f); render(); });
 		const where = S.radio.flash.stock_download ? h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download")) : null;
 		return panel(t("flash.help.stock_title"), h("p", {}, t("flash.help.stock_need", { files: S.board.codec.sources.join(", ") }), " ", where),
 			S.stock ? notice(t("flash.codec.stock_loaded", { name: S.stock.name, what: t("flash.codec.stock_unknown") }), "bad") : null, picker);

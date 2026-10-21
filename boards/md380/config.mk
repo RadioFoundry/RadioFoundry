@@ -26,5 +26,5 @@ LTO_3P ?= 1
 # leaves these off
 BOARD_UNSUPPORTED := FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL AM_RX BCAST_FM
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
-# radios (docs/spec/ppp.md), and this one has the adapter. Stub entry and NAND storage aren't used on this radio
-MAXIMAL_SKIP := NET_PPP STUB_ENTRY NAND_STORAGE
+# radios (docs/spec/ppp.md), and this one has the adapter. NAND storage isn't used on this radio
+MAXIMAL_SKIP := NET_PPP NAND_STORAGE

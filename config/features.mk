@@ -176,9 +176,9 @@ CONFIG_AUDIO_PROBE ?= n
 # runtime RAM-monitor entry: debug link command 0x1A loads the host's flash-access stub into free RAM and jumps to it
 # without a power cycle, for bench recovery and flash work (docs/spec/debuglink.md 3.18, hardware-dm32.md 17.2; needs
 # DEBUGLINK and a platform with hal_system_t.enter_stub: the HR_C7000, and the STM32F4 with an 8 KB staging buffer,
-# docs/spec/stub-stm32f4.md). On by default on the HR_C7000 radios (their config.mk), where the web flasher and
-# stub/stubtool.py update through it; off elsewhere for now
-CONFIG_STUB_ENTRY ?= n
+# docs/spec/stub-stm32f4.md). On by default wherever the debug link is: updates through it need no key combo at
+# power-on (the web flasher and stub/stubtool.py). A board leaves it off in its config.mk only for a stated reason
+CONFIG_STUB_ENTRY ?= $(CONFIG_DEBUGLINK)
 # the crash log: a CPU fault, a task stack overflow, running out of heap or a failed assertion keeps a record (registers,
 # fault status, task, stack words) where a reset doesn't clear it and restarts the radio; the next start shows it
 # (core/crash, docs/spec/crash-log.md). Off: a crash stops the radio until a power cycle, as before. Needs nothing else

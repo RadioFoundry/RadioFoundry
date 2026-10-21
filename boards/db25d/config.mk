@@ -7,8 +7,6 @@
 # window (db25d_dmr.ld). The switches that are off are listed below
 CONFIG_USB ?= n
 CONFIG_HOSTLINK ?= y
-# The stub without a power cycle (debug link STUB, then stubtool --odr-enter): updates over the cable with no keys
-CONFIG_STUB_ENTRY ?= $(CONFIG_DEBUGLINK)
 # The core's storage over ODR's NAND block range (hardware-db25d.md 6.6)
 CONFIG_NAND_STORAGE ?= y
 # DMR (hardware-db25d.md 4.5, 9): receive and transmit checked on the SDR bench. Voice needs the codec merged (8). With

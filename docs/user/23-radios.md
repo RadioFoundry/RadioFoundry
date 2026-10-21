@@ -9,7 +9,7 @@ and what has been checked on it.
 | Radio | Also sold as | ODR status |
 |---|---|---|
 | [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | Supported and in the releases |
-| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | In testing on a radio. Not in the releases |
+| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | Fully operational on a UHF radio (check your TX frequency, below). Not in the releases |
 | [Baofeng DM-32UV](#baofeng-dm-32uv) | | In bring-up on a radio: FM and DMR receive and transmit work. Not in the releases |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Bring-up on a radio: FM and DMR voice receive and transmit, the hotspot and the network services, settings storage, cable programming and volume work. Not for general use |
 | [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data, hotspot and SFR modes; VHF transmit and VOX are unchecked. No release |
@@ -169,8 +169,12 @@ DM-1701, the one for the UV380 family.
 
 ## TYT MD-380
 
-Covers the TYT MD-380, the MD-390 and the Retevis RT3. **In testing**: the port has run on a radio, but much of what follows still
-comes from the documentation of the hardware. Installing: [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md).
+Covers the TYT MD-380, the MD-390 and the Retevis RT3. **Fully operational on a UHF radio**: FM, DMR in simplex and through a
+repeater or duplex hotspot, and programming. The VHF image is untested. Installing: [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md).
+
+> **Check your TX frequency.** Accuracy depends on the radio's factory calibration. Confirm it against an external
+> reference (a frequency counter, a service monitor, or a hotspot's MMDVMCal BER test) before you rely on it. One MD-380
+> measured 1.9 kHz high, enough that an MMDVM hotspot never decoded it.
 
 ### MD-380 keys
 
