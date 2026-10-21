@@ -21,7 +21,8 @@ typedef struct {
 	bool big;		// lists and labels one size up: the radio is built with CONFIG_FONT_BIG
 } sim_geom_t;
 
-typedef enum { SIM_MAP_K, SIM_MAP_M, SIM_MAP_V, SIM_MAP_F, SIM_MAP_COUNT } sim_map_t;
+// K DM-1701, M GD-77 style, V MD-9600 front panel + hand-mic keypad, F few keys, P the MD-9600 front panel alone
+typedef enum { SIM_MAP_K, SIM_MAP_M, SIM_MAP_V, SIM_MAP_F, SIM_MAP_P, SIM_MAP_COUNT } sim_map_t;
 
 extern const sim_geom_t sim_geoms[];
 extern const int sim_geom_count;

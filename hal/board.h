@@ -61,6 +61,10 @@ typedef struct {
 	// map bits in role order: side key 1, side key 2, top key. Fewer roles than 3: the last ones are missing
 	const uint8_t *side_keys;
 	uint8_t side_key_count;
+	// Optional: what the screen hints call the keys that send QUICK and CONTEXT on a radio without * and # keys
+	// ("P1", "P2"; docs/spec/ui.md 1); NULL: "*" and "#"
+	const char *quick_label;
+	const char *context_label;
 	const hal_radio_t *radio;
 	const hal_power_t *power;
 	const hal_flash_t *flash;

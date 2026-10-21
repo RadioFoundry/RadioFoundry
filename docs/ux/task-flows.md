@@ -9,7 +9,7 @@ Step-by-step flows for the 22 most frequent or most important tasks, with press 
 |---|---|---|---|
 | **K** | DM-1701, MD-UV380, DM-32UV | keypad, channel knob or encoder, 2 side keys | color |
 | **M** | GD-77 | keypad, no knob/encoder, 2 side keys | 128x64 mono |
-| **V** | MD-9600 (mobile) | mic keypad + mic function keys, front encoder | color |
+| **V** | MD-9600 (mobile) | front panel keys (P1-P4) and encoder; mic keypad + mic function keys | 128x64 mono |
 | **F** | few-key radios | Up/Down/Select/Back, knob, PTT, no keypad | any |
 
 ## Counting rules

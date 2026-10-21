@@ -40,6 +40,9 @@ The manual names keys by the job they do. Each radio puts those jobs on its own 
 These are the defaults. **Settings > Keys** can give SK1, SK2 and the DM-1701's top side key other jobs
 ([Settings](12-settings.md#keys-key-8)).
 
+The hints at the bottom of the screen use these names. A radio that knows its own name for a key shows that instead
+(the MD-9600 shows "P1 Quick", not "\* Quick"), and a radio without number keys leaves out hints that need them.
+
 On a radio without a key for a job, the menus reach it:
 
 | Job | Without the key |
@@ -469,7 +472,7 @@ models it covers.
 | Radio | Note |
 |---|---|
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned as a variant of the DM-1701 board |
-| TYT MD-9600, Retevis RT90 | Mobile. Bring-up: the firmware builds (FM receive only); not run on a radio yet |
+| TYT MD-9600, Retevis RT90 | Mobile. Bring-up: the firmware builds (FM receive only); not run on a radio yet. P1 and P2 do the jobs of **\*** and **#** |
 | Radioddity GD-77 family | Planned. Needs a new processor platform |
 | Radioddity GD-88 | Planned |
 | Radioddity DB40-D | Mobile. Planned. Hardware needed |

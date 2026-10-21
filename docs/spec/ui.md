@@ -38,6 +38,11 @@ The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The 
 are left out whole from the right. A toast is one centered line instead. A banner or a two-line toast starts in a gap
 between lines of the screen under it (a row all one color), never through a line of text.
 
+Hints and toasts call the QUICK and CONTEXT keys `*` and `#`. A radio without those keys gives its own names
+(`board.quick_label`, `board.context_label`: "P1" and "P2" on the MD-9600), and each `*` or `#` that stands alone is
+drawn as that name ("OK Menu  P1 Quick"). On a radio with no digit keys a hint group that starts with a digit
+("0-9 find") is left out. Toasts keep their numbers.
+
 Text is shortened with a middle ellipsis only as a last resort (P5 allows it for names on Home). Before that:
 
 - A list row keeps its label whole and gives the value the room left: values carry text alternates (`font.h`) down to
@@ -301,7 +306,8 @@ pixels, so they hold on any display.
 ## 7. Host simulator and tests
 
 `tests/host/sim/` runs the real `core/ui` files against a simulated board (any display geometry, any of the key
-maps K DM-1701, M GD-77 style, V MD-380 style, F few keys), radio core, the usability-test codeplug (3 zones,
+maps K DM-1701, M GD-77 style, V the MD-9600's front panel with the hand-mic keypad, F few keys, P the MD-9600's
+front panel alone), radio core, the usability-test codeplug (3 zones,
 40 channels, 30 contacts) and the services of section 4.
 
 ```
@@ -342,10 +348,11 @@ draw the anti-aliased fonts (`CONFIG_FONT_AA`, as the DM-32 is built), and `240x
 | `expect:<key>=<value>` | check: `screen focus depth count zone pos vfo freq mode tx txid txpriv talk locked query banner toast power sq ts cc temporary writes checks sent text scanning privacy hearall monitor hotspot beeps radio_tot radio_backlight beep pttblock poweroff usbnet set<id>` (`beep` the last beep kind, `set<id>` a setting's stored value; `_` = space, `*` = anything) |
 
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
-and key map pairs (K at 160x120i5, M at 128x64, V at 160x128, K at 240x320) plus the few-key fallbacks: 160 flow runs.
+and key map pairs (K at 160x120i5, M at 128x64, V at 128x64, K at 240x320) plus the few-key fallbacks and the
+MD-9600's front panel alone (P at 128x64: no digits, P1 / P2 named in the hints).
 A crawler then visits every reachable screen and checks the rules that hold everywhere: BACK leaves every screen, long
 BACK reaches Home, long QUICK locks on Home and nowhere else, long CONTEXT opens the talk target picker on a DMR channel, the status strip is drawn (except About while idle),
-PTT shows TX, and every field-use screen is at most 3 presses deep. The About check scrolls the page to its end at
+PTT shows TX, and every field-use screen is at most 3 presses deep. The crawler runs with K, M, F and P. The About check scrolls the page to its end at
 every display class and fails if any text was shortened.
 
 `uiSim --ellipsis [GEOM]` lists every text shortened with a middle ellipsis on the gallery screens and the settings

@@ -85,6 +85,9 @@ const board_t board = {
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
 	.side_keys = side_keys,
 	.side_key_count = sizeof(side_keys),
+	// No * or # on the front panel: the hints name P1 and P2 instead (docs/spec/ui.md 1)
+	.quick_label = "P1",
+	.context_label = "P2",
 	.radio = &md9600_radio,
 	.power = &md9600_power,
 	.flash = &md9600_flash,
