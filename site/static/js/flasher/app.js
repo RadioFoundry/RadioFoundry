@@ -1046,7 +1046,10 @@ function codecView() {
 		const picker = S.sim ? button(t("flash.sim.use_stock"), async () => { await useStock({ name: "simulated-stock.bin", data: S.sim.stock }); })
 			: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", useStock);
 		const loadedText = S.stock && t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_unknown") });
-		const loaded = !S.stock ? null : S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad");
+		// a known file without a codec profile (MD-380 D2.30) gives the bootloader key, not the codec: say what it's good for
+		const keyOnly = S.stock?.info.known && !fb().profiles[S.stock.info.sha];
+		const loaded = !S.stock ? null : keyOnly ? notice(`${loadedText}. ${t("flash.codec.stock_key_only", { files: S.board.codec.sources.join(", ") })}`, "action")
+			: S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad");
 		// a download link only where there is a known one; no vague pointers
 		const where = h("p", {}, t("flash.codec.stock_files", { files: S.board.codec.sources.join(", ") }),
 			S.radio.flash.stock_download ? [" ", h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download"))] : null);

@@ -23,6 +23,12 @@ firmware (the KD4Z toolkit). One program, `md380_migrate.py`, does the whole mov
 | TYT's `MD-380-D2.32(AD).bin`, or the bootloader key file | The tool derives the bootloader key from the stock file and checks it. A key file (`--key`) works too |
 | The programming cable | The radio's USB cable |
 
+Where to get the stock file: TYT's download page ([tyt888.com/download.html](https://www.tyt888.com/download.html)) ships
+the firmware update as a Windows program, and the `.bin` is inside it. The archive at
+[md380.org/firmware/orig](https://md380.org/firmware/orig/) has every known MD-380 release as plain files. Use
+**D2.32** (`MD-380-D2.32(AD).bin`): it gives both the bootloader key and the voice codec. D2.30 gives the key only.
+The web flasher also takes TYT's download zip as it is, and checks every file by its SHA-256.
+
 A tester kit (`md380_migrate.py package`) is one folder with the script, its helpers, the image, a `README.txt` and
 a `requirements.txt`.
 

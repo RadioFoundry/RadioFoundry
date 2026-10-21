@@ -320,6 +320,7 @@
  "flash.codec.stock_pick": "Select Stock Firmware File",
  "flash.codec.stock_loaded": "{name}: {what}",
  "flash.codec.stock_unknown": "not a recognized stock firmware file",
+ "flash.codec.stock_key_only": "This file gives the bootloader key, but not the voice codec. Keep the codec already on the radio, or select {files} for the codec.",
  "flash.codec.advanced": "Advanced",
  "flash.codec.force": "Codec:",
  "flash.codec.force_auto": "Automatic",
