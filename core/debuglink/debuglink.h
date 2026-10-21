@@ -41,6 +41,7 @@ enum {
 	DL_VIEW_SFR,		// the MMDVM hotspot's SFR mode (was in DL_VIEW_HOTSPOT until view version 2)
 	DL_VIEW_TASKS,		// every task's least free stack (debuglink_view_tasks.c)
 	DL_VIEW_CRASH,		// the crash log's record from before this start (debuglink_crash.c)
+	DL_VIEW_BOARD,		// the board's own keys (board.view_line): pins, ADC, clock, flash, calibration
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		2	// bumped when a key changes meaning or goes away (new keys don't bump it)

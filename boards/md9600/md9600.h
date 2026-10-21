@@ -66,6 +66,9 @@ typedef struct {
 void md9600_radio_diag(md9600_radio_diag_t *d);
 void md9600_radio_early(void);	// board_init: the revision and the power-on synthesizer set-up
 
+// The debug link's board view keys (view_md9600.c)
+bool md9600_view_line(uint8_t i, char *buf, uint8_t len);
+
 // Diagnostics page (diag_md9600.c)
 bool md9600_diag_line(uint8_t i, char *buf, uint8_t len);
 void md9600_diag_reset(void);

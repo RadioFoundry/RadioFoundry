@@ -92,6 +92,9 @@ const board_t board = {
 	.diag_line = md9600_diag_line,
 	.diag_reset = md9600_diag_reset,
 #endif
+#if CONFIG_DEBUGLINK
+	.view_line = md9600_view_line,
+#endif
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,
 #endif

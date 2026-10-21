@@ -516,8 +516,23 @@ size. Security registers hold the calibration (11.1).
 
 The reference port puts its codeplug / "EEPROM" image at 0 and the calibration copy at 0x010000. The stock TYT codeplug
 and the stock user database (CSV builds) also live in this flash: the stock firmware needs its flash content restored
-to run again, so a full backup before the first ODR flash is mandatory (D) [ref notes]. ODR's map: TODO for the
-clean side (reuse the DM-1701 map, keeping 0x010000-0x010FFF free if the calibration copy is wanted).
+to run again, so a full backup before the first ODR flash is mandatory (D) [ref notes].
+
+What the stock firmware keeps where (unverified; the meaning of most blocks is open):
+
+| Range | Content | ODR area over it (19.5) |
+|---|---|---|
+| security registers 1-2 | factory calibration, 512 bytes (11) | none: never written |
+| security register 3 | hardware option block, 64 bytes (11.1) | none: never written |
+| 0x002000-0x0021FF | settings and state blocks | open-firmware "EEPROM" image |
+| 0x02EF00-0x02F00C | the current channel / VFO records and a state record | open-firmware flash image |
+| 0x040000-0x049FFF | lists of 200-byte records | open-firmware flash image |
+| 0x060000-0x0B97FF | fonts and bitmaps (the update file's resource segment) | open-firmware flash image |
+| 0x100000-0x2077FF | further blocks, some loaded into RAM at start | open-firmware flash image |
+
+The update file rewrites the resource segment at 0x060000, but nothing restores the codeplug, settings or lists except
+a backup. The security registers are the only factory data that a backup can't put back without the stock CPS, which
+is why ODR never writes them (19.5).
 
 ---
 
@@ -730,3 +745,68 @@ record from a menu or the CPS is not written yet. The diagnostics page shows the
 | PE10 | in, pull-up | - | PTT | unverified |
 | PE2-PE6, PD7 | out | CS high, PE6 high (powered down) | HR_C6000 (held in power-down) | unverified |
 
+
+### 19.5 Data flash, calibration and the board record
+
+| Area | Range | Use |
+|---|---|---|
+| Open-firmware "EEPROM" image | 0x000000-0x00FFFF | codeplug part 1 (open-firmware-cps.md 7) |
+| Free | 0x010000-0x010FFF | kept free (no calibration copy: the calibration stays in the security registers) |
+| Settings ring | 0x011000-0x018FFF | 8 sectors ([settings-store.md](settings-store.md)) |
+| Sector journal | 0x019000-0x01AFFF | 2 sectors |
+| Board record | 0x01F000-0x01FFFF | the stored board revision (19.3) |
+| Open-firmware flash image | 0x020000-0xDFFFFF | codeplug part 2; the CPS may write up to 0xE00000 |
+| Native codeplug | 0xE00000-0xEFFFFF | reserved |
+| Staging | 0xF00000-0xF3FFFF | TFTP and fast CPS writes ([tftp.md](tftp.md) 4) |
+
+This is the DM-1701's map; a part smaller than 16 MB gets no map and the radio runs from RAM. The settings ring and the
+journal sit under the foreign region guard ([settings-store.md](settings-store.md) 5), so stock data found there is
+left alone until the debug link claims it.
+
+**Board record.** Records of 8 bytes ("M96R", a format byte, the revision and its complement, a spare byte) are
+appended to the sector, and the newest valid one counts. A power cut while one is written leaves the one before it.
+The sector is erased only when its 512 slots are used; a cut during that erase leaves no record, which the radio
+treats as a new radio (probe or build default, transmit refused).
+
+**Security registers.** ODR reads registers 1-3 once at start-up and never erases or programs them, and never writes a
+status register (the registers' one-time lock bits are there). The SPI NOR driver has no command for either, and
+`tests/host/spiNorTest.c` checks that no such command reaches the chip. The open-firmware CPS can read them as area 10
+and can't write them.
+
+**Calibration.** `boards/md9600/cal_md9600.h` is the interface for the radio code, on the generic reader in
+`drivers/cal/calblock/`. Both blocks are kept whole as read, unknown bytes included.
+
+| Block | Read as | State | Values |
+|---|---|---|---|
+| Calibration | registers 1 and 2, 256 bytes each, one 512-byte block | `factory`, `blank` (all 0xFF or 0x00), `unreadable` (a failed read of either register drops the whole block) | every row of 11.2 by frequency: front-end tuning, the four PA levels, squelch 9 and 1 open and close, CTCSS and DCS deviation; the reference tune per band (byte - 128); the RSSI points; raw bytes |
+| Hardware options | register 3, first 64 bytes | as above | band edges; the backlight on / off bit |
+
+A row whose points are all 0xFF or all 0x00 has no value. Rows interpolate linearly between points (rounded) and
+continue the last slope past the top point. Front-end tuning without a value is mid scale (2048). The four band edges
+are sorted by value, so the order of the halfwords in the block doesn't matter: the two below 300 MHz are VHF, the two
+above UHF, and anything else (a nibble above 9, three edges in one band, two equal) gives none. With the backlight bit
+set, any brightness above 0 drives the backlight fully on. Transmit stays refused whatever the PA rows hold.
+
+### 19.6 Debug link keys
+
+The `board` view section ([debuglink.md](debuglink.md) 3.7) carries, each as `board.<key>`:
+
+| Key | Value |
+|---|---|
+| `rev`, `rev.source`, `rev.usable`, `rev.confirmed` | the revision in use (`V1-V3`, `V4`, `V4A/V5`, `none`), where it came from (`stored`, `probe`, `default`, `none`), whether this image drives it, whether a person set it |
+| `rev.stored` | the board record now (a change takes effect at the next start) |
+| `probe` | `off`, or the revision the receiver probe picked (`none`: no verdict) |
+| `clock`, `sysclk_hz` | `crystal`, `bypass` (an external clock on the HSE pin), `hsi_pll` or `hsi`; the core clock |
+| `flash.id`, `flash.size`, `flash.map` | JEDEC memory type and capacity (`0x4018` for a 25Q128), bytes, 1 when the map of 19.5 is in use |
+| `cal`, `opt` | the calibration and option block states (19.5) |
+| `opt.backlight_switched`, `opt.vhf_hz`, `opt.uhf_hz` | the option bit; the band edges as `low-high` in Hz, `0-0` when there are none |
+| `keys` | the matrix, one hex digit per row K0-K3, bits 0-2 = columns K4-K6, 1 = pressed |
+| `ptt` | 1 while the hand-mic PTT is down |
+| `supply_mv` | the supply voltage (scale unverified, 10.3) |
+| `lo_hz`, `retunes`, `refused` | the synthesizer's last frequency, retunes and refused retunes |
+| `pin.power`, `pin.c5`, `pin.r5`, `pin.tx` | output levels: Power_Control; C5 UHF and VHF; R5 UHF and VHF; T5 UHF, T5 VHF and the PA loop enable (`000` in this build) |
+| `adc.noise_u`, `adc.noise_v`, `adc.rssi_u`, `adc.rssi_v`, `adc.mic`, `adc.supply`, `adc.mic_row`, `adc.mic_col` | the ADC1 scan, raw 12-bit (10.3) |
+
+`tests/hil/test_md9600.py` checks them on a radio: identity, every key present, the transmitter switches low, the
+clock, the flash and its map, both blocks readable, no key or PTT down at rest, the ADC scan in range and a plausible
+supply, and the receiver tuned when the revision is driven. It never transmits and skips on any other radio.
