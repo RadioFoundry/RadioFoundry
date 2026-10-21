@@ -105,6 +105,8 @@ const board_t board = {
 #if CONFIG_CPS_OPENFW
 	.cps = &cps,
 #endif
+	.hwopts = md9600_hwopts,
+	.hwopt_count = MD9600_HWOPT_COUNT,
 };
 
 // hardware-md9600.md 1.2: an 8 MHz HSE; SYSCLK 72 MHz from a 2 MHz PLL input (M 4, N 72, P 2), USB 48 MHz (Q 3),

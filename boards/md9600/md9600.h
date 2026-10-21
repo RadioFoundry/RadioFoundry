@@ -54,17 +54,34 @@ bool md9600_flash_rev_store(md9600_rev_t rev);
 
 // Factory calibration and the hardware option block: cal_md9600.h (docs/spec/hardware-md9600.md 11)
 #include "cal_md9600.h"
+// What the RF code takes from it (rfcal_md9600.c): PA drive per power level and the squelch thresholds, each used
+// only when its rows look plausible (md9600_cal_rf_rows)
+#define MD9600_POWER_LEVELS	4u		// 5 W, 10 W, 25 W, 40 W (labels, unverified)
+enum { MD9600_CALOK_RX = 1u << 0, MD9600_CALOK_PA = 1u << 1, MD9600_CALOK_SQL = 1u << 2 };
+bool md9600_cal_apc(uint32_t hz, uint8_t power, uint16_t *dac);	// false: no plausible PA rows
+bool md9600_cal_squelch(uint32_t hz, uint16_t *l1_open, uint16_t *l9_open);	// 12-bit noise readings
+uint8_t md9600_cal_rf_rows(uint8_t band);	// MD9600_CALOK_* bits for a band (md9600_band_t)
 
-// Board revision in use and the RF state (radio_md9600.c)
+// Board revision in use and the RF state (radio_md9600.c, rfseq_md9600.c)
 md9600_rev_state_t md9600_rev_state(void);
 typedef struct {
 	uint32_t lo_hz;		// the synthesizer's last frequency
 	uint8_t band;
-	uint32_t retunes, refused;
-	int16_t probe;		// receiver probe: -1 not run, else the md9600_rev_t it picked
+	uint8_t state;		// md9600_rf_state_t
+	uint32_t retunes, refused, errors;
+	uint8_t last_err;	// md9600_rf_err_t
+	bool tx_armed;
+	int16_t probe;		// receiver probe: -1 not run, else the md9600_rev_t it picked (0 = no verdict)
 } md9600_radio_diag_t;
 void md9600_radio_diag(md9600_radio_diag_t *d);
 void md9600_radio_early(void);	// board_init: the revision and the power-on synthesizer set-up
+// Transmit arm for this power cycle (hwopt_md9600.c); false when refused (rfseq_md9600.h)
+bool md9600_radio_tx_arm(bool on);
+// Hardware options (hwopt_md9600.c, hal_hwopt.h): the board revision, and the transmit arm with CONFIG_MD9600_TX
+#define MD9600_HWOPT_COUNT	(CONFIG_MD9600_TX ? 2u : 1u)	// needs config.h
+extern const hal_hwopt_t md9600_hwopts[];
+// The other analog inputs: the sub-audio input on ADC3 (PA2), 12-bit, one conversion
+uint16_t md9600_adc3_qt(void);
 
 // The debug link's board view keys (view_md9600.c)
 bool md9600_view_line(uint8_t i, char *buf, uint8_t len);

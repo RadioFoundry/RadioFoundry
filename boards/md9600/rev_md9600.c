@@ -125,3 +125,37 @@ md9600_rev_t md9600_rev_probe_pick(uint16_t baseline, const uint16_t *readings, 
 	}
 	return pick;
 }
+
+static void cat(char *buf, uint8_t len, uint8_t *n, const char *t)
+{
+	while (*t && *n + 1u < len) {
+		buf[(*n)++] = *t++;
+	}
+	buf[*n] = '\0';
+}
+
+bool md9600_rev_text(uint8_t line, md9600_rev_state_t s, int16_t probe, char *buf, uint8_t len)
+{
+	static const char *const sources[] = { "none", "stored", "probe", "default" };
+	uint8_t n = 0;
+	if (len == 0 || line >= MD9600_REV_TEXT_LINES) {
+		return false;
+	}
+	buf[0] = '\0';
+	if (line == 0) {
+		const md9600_rev_desc_t *d = md9600_rev_desc(s.rev);
+		cat(buf, len, &n, "rev ");
+		cat(buf, len, &n, d != NULL ? d->name : "?");
+		cat(buf, len, &n, " ");
+		// A revision this image doesn't drive (stored, in practice) keeps the receiver off: that, not the source
+		cat(buf, len, &n, d != NULL && !s.usable ? "unbuilt" : s.source < 4 ? sources[s.source] : "?");
+	} else if (line == 1) {
+		// Only a stored revision allows transmit: ask for one until there is one
+		cat(buf, len, &n, s.confirmed ? "rev confirmed" : "Set rev: Adv>Hardware");
+	} else {
+		const md9600_rev_desc_t *p = probe >= 0 ? md9600_rev_desc((md9600_rev_t)probe) : NULL;
+		cat(buf, len, &n, "probe ");
+		cat(buf, len, &n, probe < 0 ? "off" : p != NULL ? p->name : "none");
+	}
+	return true;
+}

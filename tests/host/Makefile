@@ -775,6 +775,12 @@ MD9600_RF := md9600RfTest.c $(MD9600)/rev_md9600.c $(MD9600)/rfplan_md9600.c $(R
 MD9600_RF_H := $(MD9600)/rfplan_md9600.h $(ROOT)/drivers/rf/sky72310/sky72310.h $(ROOT)/drivers/rf/pll1590/pll1590.h \
 	$(ROOT)/drivers/rf/lmx2571/lmx2571.h $(ROOT)/drivers/rf/ak2365a/ak2365a.h $(ROOT)/drivers/bus/wire3.h
 TESTS   += md9600RfTest md9600RfTestV5
+# The RF sequencing and the calibration rows against a fake board, with transmit in the build and without it
+MD9600_SEQ := md9600RfSeqTest.c $(MD9600)/rfseq_md9600.c $(MD9600)/cal_md9600.c $(MD9600)/rfcal_md9600.c \
+	$(MD9600)/hwopt_md9600.c $(ROOT)/drivers/cal/calblock/calblock.c $(filter-out md9600RfTest.c,$(MD9600_RF))
+MD9600_SEQ_H := $(MD9600_RF_H) $(MD9600)/rfseq_md9600.h $(MD9600)/md9600.h
+MD9600_ALL := -DCONFIG_MD9600_V1V3=1 -DCONFIG_MD9600_V4=1 -DCONFIG_MD9600_V5=1
+TESTS   += md9600RfSeqTest md9600RfSeqTestNoTx md9600RfSeqTestV5
 
 md9600RfTest: $(MD9600_RF) $(MD9600_RF_H)
 	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow -DCONFIG_MD9600_V1V3=1 -DCONFIG_MD9600_V4=1 -DCONFIG_MD9600_V5=1 -o $@ $(MD9600_RF)
@@ -789,11 +795,23 @@ TESTS   += md9600CalTest
 md9600CalTest: $(MD9600_CAL) $(MD9600)/cal_md9600.h $(ROOT)/drivers/cal/calblock/calblock.h $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow -o $@ $(MD9600_CAL)
 
+md9600RfSeqTest: $(MD9600_SEQ) $(MD9600_SEQ_H)
+	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow $(MD9600_ALL) -DCONFIG_MD9600_TX=1 -o $@ $(MD9600_SEQ)
+
+md9600RfSeqTestNoTx: $(MD9600_SEQ) $(MD9600_SEQ_H)
+	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow $(MD9600_ALL) -DCONFIG_MD9600_TX=0 -o $@ $(MD9600_SEQ)
+
+md9600RfSeqTestV5: $(MD9600_SEQ) $(MD9600_SEQ_H)
+	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow -DCONFIG_MD9600_V5=1 -DCONFIG_MD9600_TX=1 -o $@ $(MD9600_SEQ)
+
 run: run-md9600
-run-md9600: md9600RfTest md9600RfTestV5 md9600CalTest
+run-md9600: md9600RfTest md9600RfTestV5 md9600RfSeqTest md9600RfSeqTestNoTx md9600RfSeqTestV5 md9600CalTest
 	./md9600RfTest
 	./md9600RfTestV5
 	./md9600CalTest
+	./md9600RfSeqTest
+	./md9600RfSeqTestNoTx
+	./md9600RfSeqTestV5
 .PHONY: run-md9600
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the

@@ -61,6 +61,14 @@ typedef struct {
 // Which revision to drive. stored and probed are MD9600_REV_UNKNOWN when absent; build_default is the image's default
 md9600_rev_state_t md9600_rev_resolve(md9600_rev_t stored, md9600_rev_t probed, md9600_rev_t build_default);
 
+// The diagnostics page's revision lines, at most MD9600_REV_TEXT_MAX characters (the 128x64 panel's small font):
+// line 0 the revision and its source ("rev V4A/V5 default", "rev V4 unbuilt": not in this image, receiver off), line 1 the prompt to store
+// one until there is ("Set rev: Adv>Hardware"), line 2 the probe ("probe off", "probe V4", "probe none"; probe is
+// -1 when it didn't run). False past the last line. buf takes len bytes, NUL terminated
+#define MD9600_REV_TEXT_MAX	25u
+#define MD9600_REV_TEXT_LINES	3u
+bool md9600_rev_text(uint8_t line, md9600_rev_state_t s, int16_t probe, char *buf, uint8_t len);
+
 // Probe verdict: baseline is the noise reading with no synthesizer programmed, readings[i] the reading with
 // candidate cand[i] programmed. A candidate wins when its change from the baseline is at least threshold and at least
 // twice every other candidate's. Otherwise MD9600_REV_UNKNOWN
