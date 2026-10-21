@@ -13,7 +13,8 @@
 //
 // Everything runs in the page: release images come from this site, custom images from the build API, stock files
 // and backups from the user's disk, which never leave it. Add #sim to the address for a simulated radio (no hardware;
-// for trying the flow), #sim=odr for one that already runs ODR.
+// for trying the flow), #sim=odr for one that already runs ODR, #sim=gd77 / #sim=odr-gd77 for a GD-77 in update mode
+// or running ODR.
 
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import * as stockfw from "./stockfw.js";
@@ -31,7 +32,7 @@ import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
 import * as gd77ui from "./gd77ui.js";
-import { gd77Simulation } from "./fakegd77.js";
+import { gd77Simulation, FakeGd77Odr } from "./fakegd77.js";
 import { FakeC7000, c7000Simulation } from "./fakec7000.js";
 import { slotBytes, locateCodec } from "./c7000.js";
 import { Stub } from "./stub.js";
@@ -486,7 +487,8 @@ function startView() {
 			: [h("a", { href: "#sim", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try")), " · ",
 				h("a", { href: "#sim=c7000", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_c7000")), " · ",
 				h("a", { href: "#sim=c7000-odr", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_c7000_odr")), " · ",
-				h("a", { href: "#sim=gd77", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_gd77"))]));
+				h("a", { href: "#sim=gd77", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_gd77")), " ",
+				h("a", { href: "#sim=odr-gd77", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_gd77_odr"))]));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -788,6 +790,7 @@ async function ensureFirmware() {
 			img.set([0x80, 0xC0, 0x20, 0x70], 0x1000);
 			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1100);
 		}
+		if (S.radio?.flash.board === "gd77") img.set([0xF0, 0xFE, 0x00, 0x20], 0);	// the K22F's RAM ends at 0x20010000
 		return (S.firmware = { manifest: await forDevBuild(S.board, img), image: img, source: t("flash.sim.image_name") });
 	}
 	throw new Error(t("flash.build.no_image"));
@@ -1628,10 +1631,12 @@ async function main() {
 	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
 	gd77ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText });
-	if (location.hash.includes("sim=gd77")) {
-		// a GD-77 in update mode, with a made-up stock update file whose codec the page knows (fakegd77.js)
+	if (/sim=(odr-)?gd77/.test(location.hash)) {
+		// a GD-77 in update mode, with a made-up stock update file whose codec the page knows (fakegd77.js); with
+		// #sim=odr-gd77 it also runs ODR with stub entry, for the cable route
 		const sim = await gd77Simulation(S.data.fb.gd77);
-		S.sim = { fb: { ...S.data.fb, gd77: sim.gd77 }, gd77Donor: sim.donor };
+		S.sim = { fb: { ...S.data.fb, gd77: sim.gd77 }, gd77Donor: sim.donor,
+			gd77Odr: location.hash.includes("odr-gd77") ? new FakeGd77Odr(sim.gd77.stub) : null };
 	} else if (location.hash.includes("sim=c7000")) {
 		// a DM-1801 Pro on its cable: running stock firmware, or (#sim=c7000-odr) ODR with the stub hand-over;
 		// #sim=c7000-db25d: a DB25-D PRO running its original firmware 018, reached through its debug console
