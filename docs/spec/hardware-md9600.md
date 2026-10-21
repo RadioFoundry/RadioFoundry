@@ -590,7 +590,10 @@ the V16.45 ones 0x20001BB0.
 ## 15. USB
 
 OTG_FS on PA11 / PA12, mini-USB on the rear, straight to the MCU (no UART bridge) (D). The bootloader's DFU device is
-separate (14.2).
+separate (14.2). No VBUS sensing: PA9, the OTG_FS VBUS pin, is the mic and GPS supply switch (unverified), so the core
+must run with VBUS sensing off. The stock application's device is DFU class with two alternate settings, the internal
+flash and the SPI flash, self powered (unverified). TYT's CPS reads and writes the radio through it; the commands
+inside its transfers are not known (17 #21).
 
 ---
 
@@ -680,10 +683,10 @@ Bring-up state (2026-10-20): the image builds; nothing has run on a radio. `boar
 | Area | State |
 |---|---|
 | Clocks | 19.2 |
-| Display | ST7567 on SPI2 (mode 3, 18 MHz) with the flash under one lock; TIM8 CH1 backlight |
+| Display | ST7567 on SPI2 (mode 3, 18 MHz) with the flash under one lock; TIM8 CH1 backlight, fully on when the option block says it can't be dimmed. The 128x64 layouts; hints name P1 and P2 ([ui.md](ui.md) 1) |
 | Keys | the 4 x 3 matrix (rows open drain, driven low one at a time), the encoder on EXTI10 / EXTI11 into the shared quadrature decoder, PTT on PE10. The power key goes to the power code, not the key map |
 | Power | no battery (`CAP_NO_BATTERY`). "Off" saves, sets a flag in RTC backup register 18 and resets; at start-up the flag holds the radio until the power key is pressed and released. Supply voltage from ADC1 IN1 |
-| Flash | SPI NOR with the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug at 0 and 0x020000); the board revision record at 0x01F000. Security registers read only |
+| Flash | SPI NOR with the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug at 0 and 0x020000); the board revision record at 0x01F000, appended. Security registers read only: calibration and option block (19.5) |
 | Receive | FM on both bands, every revision (19.3). Front-end tuning from calibration rows 0x30 / 0x39 (11.2) when they aren't blank, else mid scale |
 | Transmit | refused: it needs a confirmed revision, the PA calibration and the HR_C6000 glue |
 | Not yet | DMR, sub-audio, GPS, the hand-mic keypad, FM transmit, the CPS's own command set, update packaging |
@@ -810,3 +813,19 @@ The `board` view section ([debuglink.md](debuglink.md) 3.7) carries, each as `bo
 `tests/hil/test_md9600.py` checks them on a radio: identity, every key present, the transmitter switches low, the
 clock, the flash and its map, both blocks readable, no key or PTT down at rest, the ADC scan in range and a plausible
 supply, and the receiver tuned when the revision is driven. It never transmits and skips on any other radio.
+
+### 19.7 USB, programming and updates
+
+| Path | State |
+|---|---|
+| USB device | CDC serial with the other ODR STM32 radios' IDs (1FC9:0094, network personality 0096, not built yet), product "MD-9600", serial number from the chip UID; VBUS sensing off (15) |
+| Debug link | on the same port ([debuglink.md](debuglink.md)); the `board` view section (19.6) |
+| Codeplug | the open-firmware CPS protocol as radio type 5 ([open-firmware-cps.md](open-firmware-cps.md)) and the fast codeplug protocol, writing through the journal (19.5). Area 10 reads the security registers; the CPS calibration window is empty (no calibration in the main array), so no CPS can write calibration |
+| TYT's CPS | not supported: its command set is unknown (17 #21). Nothing of it is implemented |
+| ROM DFU | debug link REBOOT mode 1 ([debuglink.md](debuglink.md) 3.11), only at RDP level 0, with the same safe pin levels as at power-up first (`board_sysboot_prepare`) |
+| TYT bootloader | the stock route (14.1, 14.2): keys held at power-up, then DFU with the MD-9600 key |
+| Flash stub | `CONFIG_STUB_ENTRY` (off by default, as on the DM-1701): `board_stub_prepare` switches the transmitter off first. Not tried on this radio |
+
+Open: the odrflash board entry, the web flasher's radio entry and the update image packaging are not written; they are
+the owner's decision.
+
