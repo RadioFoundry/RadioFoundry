@@ -338,12 +338,26 @@ TESTS   += codecDescTest
 codecDescTest: codecDescTest.c $(ROOT)/platform/stm32f4/codec_desc.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ codecDescTest.c
 
+# The GPS rate hunt (drivers/gps/gps_rx/gps_baud.c) with canned NMEA, and the two-level analog keypad
+# (drivers/input/adckeys) the MD-9600 hand microphone uses
+TESTS   += gpsBaudTest adckeysTest
+
+gpsBaudTest: gpsBaudTest.c $(ROOT)/drivers/gps/gps_rx/gps_baud.c $(ROOT)/drivers/gps/gps_rx/gps_baud.h \
+             $(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/gps_rx/gps_rx.h $(ROOT)/drivers/gps/nmea_line/nmea_line.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ gpsBaudTest.c $(ROOT)/drivers/gps/gps_rx/gps_baud.c \
+		$(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c
+
+adckeysTest: adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c $(ROOT)/drivers/input/adckeys/adckeys.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c
+
 run: run-md380
-run-md380: sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest codecDescTest
+run-md380: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest adckeysTest md380RfbusTest codecDescTest
 	./sky72310Test
 	./hrc5000Test
 	./nmeaLineTest
 	./gpsRxTest
+	./gpsBaudTest
+	./adckeysTest
 	./md380RfbusTest
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380

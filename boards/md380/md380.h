@@ -88,10 +88,8 @@ const char *md380_cal_source(void);	// "factory" or "none"
 const char *md380_cal_why(void);	// why the table was refused, for the diagnostics page
 uint8_t md380_cal_byte(uint16_t offset);
 
-// GPS (gps_md380.c): the module is listened for at start-up and powered by the user's setting once heard
+// GPS (gps_md380.c): the module is listened for at start-up (platform/stm32f4/gps_uart/gps_uart.h has the rest)
 void md380_gps_init(void);
-bool md380_gps_present(void);
-void md380_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes);
 
 // Radio diagnostics (radio_md380.c; cached values, no bus traffic)
 typedef struct {

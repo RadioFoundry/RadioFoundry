@@ -6,6 +6,7 @@
 #include "config.h"
 #include "md380.h"
 #include "hrc/dmr_glue.h"
+#include "gps_uart/gps_uart.h"
 #include "hrc/vocoder.h"
 #include "pins.h"
 #include "FreeRTOS.h"
@@ -134,7 +135,7 @@ const board_t board = {
 #if CONFIG_CPS_OPENFW
 	.cps = &cps,
 #endif
-	.gps_present = md380_gps_present,
+	.gps_present = stm32_gps_present,
 };
 
 // hardware-md380.md 1.2: 8 MHz HSE, 72 MHz system clock, APB1 36 MHz, APB2 72 MHz, USB 48 MHz from PLL Q
