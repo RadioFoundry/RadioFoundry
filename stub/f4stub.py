@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""f4stub: the host side of the STM32F4 flash stub (DM-1701 first, then the MD-380). docs/spec/stub-stm32f4.md.
+"""f4stub: the host side of the STM32F4 flash stub (DM-1701, MD-380, MD-9600). docs/spec/stub-stm32f4.md.
 
 The stub (stub/stm32f4, built with `make -C stub/stm32f4`) is loaded by a running ODR built with CONFIG_STUB_ENTRY=y
 through the debug link's STUB command, over the radio's USB serial port. It then answers on the same port (or, if it
@@ -13,7 +13,7 @@ had to enumerate again, on a port with the same serial number). stubtool.py hand
     stubtool.py PORT --odr-enter --verify-progmem flash.bin               compare by CRC
     stubtool.py PORT --odr-enter --q128 spi.bin                           back up the external SPI flash (16 MB)
     stubtool.py PORT --odr-enter --write-q128 spi.bin                     put it back (changed 4 KB sectors only)
-    stubtool.py PORT --attach --boot reset                                restart into the firmware
+    stubtool.py PORT --attach --board md9600 --boot reset                 restart into the firmware
     f4stub.py --self-test                                                 against a simulated radio, no hardware
     f4stub.py --embed build/stub-stm32f4/f4stub.bin                       put a new stub build into this file
     f4stub.py --check-embedded build/stub-stm32f4/f4stub.bin              exit 1 when the build differs from it
@@ -26,6 +26,10 @@ Framing and the debug link loader are stubtool.Radio's; what differs is here: th
 new, SUMS and READ take a flash address), 4 KB blocks inside coarse erase sectors (16 to 128 KB), the sector 3
 interlock and the update order that goes with it, and the bytes a sector shares with other data, which are read back
 and kept (no radio has such a sector since the codec moved).
+
+One stub image serves every radio. The board facts (SPI flash wiring, crystal, bootloader end) are in BOARDS below and
+go to the stub as a CONFIG record (config_record) right after HELLO; the stub writes nothing until it has one, and the
+tool checks its echo in the next HELLO. The board comes from the running ODR's VERSION reply, or from --board.
 """
 import base64
 import hashlib
@@ -39,88 +43,103 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stubtool  # noqa: E402  (the shared framing, LZ4 decoder and debug link loader)
 
 # --- F4STUB begin (f4stub.py --embed rewrites everything up to the end marker)
-F4STUB_SHA256 = "5330a97316614b4d25d3eb6591aa54ed43f45f364a586c4242ea3e7969c80c0f"
+F4STUB_SHA256 = "3fb649554c4e608dd1c25aa0fd9a67952cc8511489584d451c86bc88aeb01a97"
 F4STUB_B64 = (
-    "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"
+    "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"
 )
 # --- F4STUB end
 
 MAGIC = 0x46345342                     # 'F4SB': ERASE and RESET (stub/stm32f4/f4stub.h)
 OP_HELLO, OP_PEEK, OP_SUMS, OP_READ, OP_RESET, OP_ERASE, OP_PROGRAM = 0x01, 0x02, 0x07, 0x09, 0x0D, 0x10, 0x11
-OP_XERASE, OP_XPROGRAM = 0x12, 0x13
+OP_XERASE, OP_XPROGRAM, OP_CONFIG = 0x12, 0x13, 0x14
 MEM_INTERNAL, MEM_SPI = 0, 1           # the memory byte SUMS and READ end with (stub version 2)
-OK, BADSUM, BADOP, BADARG, TOOLONG, REFUSED, FLASHERR = 0x05, 0x0A, 0x0B, 0x0D, 0x0E, 0x0F, 0x10
+OK, BADSUM, BADOP, BADARG, TOOLONG, REFUSED, FLASHERR, NOCONFIG = 0x05, 0x0A, 0x0B, 0x0D, 0x0E, 0x0F, 0x10, 0x11
+VERSION = 3                            # the embedded stub's protocol: 3 added CONFIG and HELLO's record echo
+HELLO_CONFIGURED = 0x80                # HELLO flags: a board record is in force
+HELLO_LEN = 26                         # HELLO v3 without the record echo
+REC_LEN, REC_LAYOUT = 24, 1            # the board record (stub/stm32f4/f4stub.h)
 BLOCK = 4096
 FLASH_BASE = 0x08000000
 APP_BASE = 0x0800C000                  # sector 3: the bootloader starts the application here; 0-2 are never written
@@ -130,17 +149,58 @@ ERASE_TIMEOUT = 6.0                    # 128 KB: 2 s worst case in the data shee
 RUN_ADDR = 0x20000000                  # the stub's link address, which ODR reports as STUB INFO's load_addr
 SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the stack use all of it after the jump
 
-# Flash the firmware owns on each radio (docs/spec/hardware-dm1701.md 1.4, hardware-md380.md 1.3). Everything else in
-# a sector that is rewritten is read back from the radio and written again unchanged (no radio shares a sector with
-# the codec any more, since it moved; the rule stays for one that does). Sectors with no owned byte are never erased,
-# except "codec": the codec's own sectors (the DM-1701's 10 and 11, the MD-380's 8 to 11), written only from an image
-# merged with the codec (docs/spec/codec-placement.md), which carries all of them.
+# Flash the firmware owns on each radio (docs/spec/hardware-dm1701.md 1.4, hardware-md380.md 1.3, hardware-md9600.md
+# 1.3). Everything else in a sector that is rewritten is read back from the radio and written again unchanged (no
+# radio shares a sector with the codec any more, since it moved; the rule stays for one that does). Sectors with no
+# owned byte are never erased, except "codec": the codec's own sectors (the DM-1701's 10 and 11, the MD-380's and the
+# MD-9600's 8 to 11), written only from an image merged with the codec (docs/spec/codec-placement.md), which carries
+# all of them.
+#
+# The rest of a profile is the stub's board record (config_record): "id" (echoed by HELLO), the crystal, the
+# bootloader's end (APP_BASE on all three), and the SPI flash: SPI block, mode, the fastest clock, SCK / MISO / MOSI and
+# their alternate function, the chip select, and other chip selects on that bus to hold high.
+SPI1_PD7 = {"bus": 1, "mode": 0, "hz": 4500000, "sck": "PB3", "miso": "PB4", "mosi": "PB5", "af": 5, "cs": "PD7",
+            "idle": ()}
 BOARDS = {
-    "dm1701": {"name": "Baofeng DM-1701", "names": ("DM-1701", "dm1701"),
+    # hardware-dm1701.md 2, the W25Q128 on SPI1 (mode 0, 4.5 MHz as ODR runs it)
+    "dm1701": {"id": 1, "name": "Baofeng DM-1701", "names": ("DM-1701", "dm1701"), "hse": 8000000, "spi": SPI1_PD7,
                "owned": [(0x0800C000, 0x080C0000)], "codec": (0x080C0000, 0x08100000)},
-    "md380": {"name": "TYT MD-380", "names": ("MD-380", "MD-380 VHF", "md380"),
-              "owned": [(0x0800C000, 0x08080000)], "codec": (0x08080000, 0x08100000)},
+    # hardware-md380.md 12.1: the same wiring
+    "md380": {"id": 2, "name": "TYT MD-380", "names": ("MD-380", "MD-380 VHF", "md380"), "hse": 8000000,
+              "spi": SPI1_PD7, "owned": [(0x0800C000, 0x08080000)], "codec": (0x08080000, 0x08100000)},
+    # hardware-md9600.md 12.1 (unverified on a radio): SPI2 shared with the LCD, mode 3 as ODR runs both; the LCD's chip
+    # select PD14 held high. SPI1 / PD7 is the HR_C6000's voice port on this radio, which is why the wiring is a record
+    "md9600": {"id": 3, "name": "TYT MD-9600", "names": ("MD-9600", "MD9600", "md9600", "RT90"), "hse": 8000000,
+               "spi": {"bus": 2, "mode": 3, "hz": 4500000, "sck": "PB13", "miso": "PB14", "mosi": "PB15", "af": 5,
+                       "cs": "PB12", "idle": ("PD14",)},
+               "owned": [(0x0800C000, 0x08080000)], "codec": (0x08080000, 0x08100000)},
 }
+
+
+def pin_byte(name):
+    """'PB12' -> 0x1C (port << 4 | pin), None -> 0xFF"""
+    if name is None:
+        return 0xFF
+    if len(name) < 3 or name[0] != "P" or not "A" <= name[1] <= "I" or not 0 <= int(name[2:]) <= 15:
+        raise ValueError("pin %r" % name)
+    return (ord(name[1]) - ord("A")) << 4 | int(name[2:])
+
+
+def config_record(board_id):
+    """The 24-byte board record the stub's CONFIG takes (stub/stm32f4/f4stub.h)"""
+    b = BOARDS[board_id]
+    spi = b["spi"]
+    idle = list(spi["idle"]) + [None] * (2 - len(spi["idle"])) if spi else [None, None]
+    rec = bytes([b["id"], REC_LAYOUT, spi["bus"] if spi else 0, spi["mode"] if spi else 0])
+    rec += b["hse"].to_bytes(4, "big") + APP_BASE.to_bytes(4, "big") + (spi["hz"] if spi else 0).to_bytes(4, "big")
+    rec += bytes([pin_byte(spi and spi["sck"]), pin_byte(spi and spi["miso"]), pin_byte(spi and spi["mosi"]),
+                  spi["af"] if spi else 0, pin_byte(spi and spi["cs"]), pin_byte(idle[0]), pin_byte(idle[1]), 0])
+    assert len(rec) == REC_LEN
+    return rec
+
+
+def board_by_id(num):
+    return next((bid for bid, b in BOARDS.items() if b["id"] == num), None)
 
 
 class F4Error(stubtool.DumpError):
@@ -276,6 +336,9 @@ class F4Radio(stubtool.Radio):
         self.flash_kb = 0
         self.rdp = 0
         self.adopted = False
+        self.version = 0           # from HELLO
+        self.board = None          # the BOARDS key the stub is configured for (version 3), or None
+        self.record = b""          # the board record HELLO echoes
 
     def check_stub(self, image, load, size):
         check_stub_fits(image, load, size)
@@ -293,9 +356,50 @@ class F4Radio(stubtool.Radio):
         self.app_base = int.from_bytes(r[13:17], "big")
         self.spi_size = int.from_bytes(r[17:21], "big") if len(r) >= 24 else 0
         self.spi_id = r[21:24].hex() if len(r) >= 24 else ""
-        if self.app_base != APP_BASE:
+        if self.version >= 3:
+            if len(r) < HELLO_LEN or len(r) != HELLO_LEN + r[25]:
+                raise F4Error("HELLO v%d is %d bytes: malformed" % (self.version, len(r)))
+            self.record = bytes(r[HELLO_LEN:])
+            self.board = board_by_id(r[24]) if r[12] & HELLO_CONFIGURED else None
+        elif self.app_base != APP_BASE:
             raise F4Error("the stub reports the application at 0x%08X, this tool knows 0x%08X" % (self.app_base, APP_BASE))
         return self.version, self.max_payload
+
+    def configure(self, board_id):
+        """Send the board's record (CONFIG) and check the echo in the next HELLO; the stub writes nothing before. Also
+        what stubtool.Radio.odr_enter calls once the stub answers (board_id None there unless run() passed one). A stub
+        already configured with exactly this record is left as it is. board_id None: keep what a configured stub has
+        (an --attach without --board), else stay unconfigured (reads of the internal flash only). A version 2 stub has
+        no CONFIG: its wiring is fixed to the DM-1701 / MD-380 one, so it is refused for any other radio."""
+        if board_id is not None and board_id not in BOARDS:
+            raise F4Error("%s is not an STM32F4 radio this stub knows (%s)" % (board_id, ", ".join(BOARDS)))
+        if self.version < 3:
+            if board_id not in (None, "dm1701", "md380"):
+                raise F4Error("this stub (protocol %d) drives the DM-1701 / MD-380 SPI flash wiring and can't serve "
+                              "the %s: restart the radio and enter again" % (self.version, BOARDS[board_id]["name"]))
+            self.board = board_id
+            return
+        if board_id is None:
+            if self.board is not None:
+                self.log("stub already configured for the %s" % BOARDS[self.board]["name"])
+            return
+        rec = config_record(board_id)
+        if self.board == board_id and self.record == rec:
+            return
+        self.request(OP_CONFIG, rec, retries=0)
+        self.hello()
+        if self.board != board_id or self.record != rec or self.app_base != APP_BASE:
+            self.board = None
+            raise F4Error("the stub did not take the %s's board record (HELLO echoes %s): nothing written"
+                          % (BOARDS[board_id]["name"], self.record.hex() or "none"))
+        self.log("stub configured for the %s: %s" % (BOARDS[board_id]["name"], "SPI flash %d KB (JEDEC %s)" % (
+            self.spi_size // 1024, self.spi_id) if self.spi_size else "no SPI flash answered"))
+
+    def need_board(self, board_id=None):
+        """Writes need the stub configured, for board_id when given"""
+        if self.board is None or (board_id is not None and self.board != board_id):
+            raise F4Error("the stub is not configured for %s: nothing written" % (
+                BOARDS[board_id]["name"] if board_id else "a radio (pass --board)"))
 
     def attach(self):
         """After ENTER: the stub either adopted ODR's USB device (same port, answers at once) or enumerated again (the
@@ -329,7 +433,9 @@ class F4Radio(stubtool.Radio):
                     time.sleep(0.3)
         self.log("STM32F4 stub v%d: %d KB flash, RDP byte 0x%02X, %s, USB %s" % (
             self.version, self.flash_kb, self.rdp,
-            "SPI flash %d KB (JEDEC %s)" % (self.spi_size // 1024, self.spi_id) if self.spi_size else "no SPI flash",
+            "configured for the %s" % BOARDS[self.board]["name"] if self.board else
+            ("SPI flash %d KB (JEDEC %s)" % (self.spi_size // 1024, self.spi_id) if self.spi_size else
+             "not configured yet" if self.version >= 3 else "no SPI flash"),
             "adopted from ODR" if self.adopted else "enumerated again"))
 
     def peek(self, addr, n):
@@ -341,7 +447,8 @@ class F4Radio(stubtool.Radio):
 
     def need_spi(self):
         if not self.spi_size:
-            raise F4Error("the stub found no SPI flash (stub version %d)" % self.version)
+            raise F4Error("the stub found no SPI flash (stub version %d%s)" % (
+                self.version, ", not configured: pass --board" if self.version >= 3 and self.board is None else ""))
 
     def sums(self, addr, count, mem=MEM_INTERNAL):
         """[(crc32, blank)] per 4 KB block from addr (internal flash, or the SPI flash from 0)."""
@@ -410,7 +517,7 @@ class F4Radio(stubtool.Radio):
     # ---- whole-image work
     def check_board(self):
         if self.flash_kb != 1024:
-            raise F4Error("the chip reports %d KB of flash; the DM-1701 and MD-380 have 1024" % self.flash_kb)
+            raise F4Error("the chip reports %d KB of flash; every radio in BOARDS has 1024" % self.flash_kb)
 
     def plan(self, board_id, segments):
         """{sector index: new content} for every sector that holds firmware-owned flash, and which of those differ
@@ -456,6 +563,7 @@ class F4Radio(stubtool.Radio):
         DFU from here until the end; erase and program every other changed sector; program sector 3 except its first
         word; verify everything by CRC; program the first word (the commit); verify it. Returns (written, unchanged)."""
         self.check_board()
+        self.need_board(board_id)
         new, changed, kept = self.plan(board_id, segments)
         if not changed:
             return 0, len(new)
@@ -513,6 +621,7 @@ class F4Radio(stubtool.Radio):
         and programmed (blank pieces skipped), each read back by the stub, then all checked again. Returns (written,
         unchanged)."""
         self.need_spi()
+        self.need_board()
         if start % BLOCK or len(data) % BLOCK or start + len(data) > self.spi_size:
             raise F4Error("SPI flash writes are whole 4 KB sectors inside the chip's %d KB" % (self.spi_size // 1024))
         todo = self.verify_file(data, start, MEM_SPI)
@@ -617,13 +726,16 @@ def run(a, port, reopen, log=print):
         elif found is not None and found != board:
             raise F4Error("the radio says it is a %s, not a %s" % (found, board))
         image = open(a.odr_stub, "rb").read() if a.odr_stub else stub_image()
-        radio.odr_enter(image, RUN_ADDR)
+        radio.odr_enter(image, RUN_ADDR, board=board)
     else:
         radio.attach()
+        if board is None and radio.board is not None:
+            board = radio.board            # a stub configured by an earlier run
     radio.check_board()
+    radio.configure(board)
     if a.write_app:
         if board is None:
-            raise F4Error("which radio? pass --board dm1701 or --board md380")
+            raise F4Error("which radio? pass --board (%s)" % ", ".join(BOARDS))
         segs = load_segments(a.write_app, board)
         t0 = time.monotonic()
         nw, nk = radio.write_image(board, segs, backup_dir=a.backup_dir or os.path.expanduser("~"),
@@ -678,9 +790,12 @@ def run(a, port, reopen, log=print):
 # ---- self-test: the stub's rules simulated behind a fake serial port
 
 class FakeF4:
-    """The stub's protocol and safety rules (stub/stm32f4/f4stub_proto.c) on a simulated 1 MB flash."""
+    """The stub's protocol and safety rules (stub/common/stubeng.c) on a simulated 1 MB flash."""
 
-    def __init__(self, flash, flash_kb=1024, fail_after=None, spi=None):
+    def __init__(self, flash, flash_kb=1024, fail_after=None, spi=None, version=VERSION):
+        self.version = version
+        self.record = b"" if version >= 3 else config_record("dm1701")     # version 2: wiring built in
+        self.configs = 0
         self.flash = bytearray(flash)
         self.spi = bytearray(spi) if spi is not None else None
         self.flash_kb = flash_kb
@@ -730,10 +845,23 @@ class FakeF4:
         return int.from_bytes(self.flash[o:o + 4], "little")
 
     def handle(self, op, p):
+        if op in (OP_ERASE, OP_PROGRAM, OP_XERASE, OP_XPROGRAM) and not self.record:
+            return self.frame(NOCONFIG)
         if op == OP_HELLO:
-            self.frame(OK, b"F4STUB" + bytes([2]) + (4104).to_bytes(2, "big") + self.flash_kb.to_bytes(2, "big")
-                       + bytes([0x55, 1]) + APP_BASE.to_bytes(4, "big")
-                       + (len(self.spi) if self.spi else 0).to_bytes(4, "big") + bytes([0xEF, 0x40, 0x18]))
+            rec = self.record
+            on = bool(rec) and self.version >= 3
+            body = (b"F4STUB" + bytes([self.version]) + (4104).to_bytes(2, "big") + self.flash_kb.to_bytes(2, "big")
+                    + bytes([0x55, 1 | (HELLO_CONFIGURED if on else 0)])
+                    + (int.from_bytes(rec[8:12], "big") if rec else 0).to_bytes(4, "big")
+                    + (len(self.spi) if self.spi and rec else 0).to_bytes(4, "big") + bytes([0xEF, 0x40, 0x18]))
+            if self.version >= 3:
+                body += bytes([rec[0] if on else 0, len(rec)]) + rec
+            self.frame(OK, body)
+        elif op == OP_CONFIG and self.version >= 3:
+            self.configs += 1
+            ok = len(p) == REC_LEN and p[0] != 0 and p[1] == REC_LAYOUT and int.from_bytes(p[8:12], "big") == APP_BASE
+            self.record = bytes(p) if ok else b""
+            self.frame(OK if ok else BADARG)
         elif op == OP_SUMS:
             a, k = int.from_bytes(p[:4], "big"), int.from_bytes(p[4:6], "big")
             mem, o = self.mem(p, 6, a)
@@ -825,6 +953,8 @@ def self_test():
     fake = FakeF4(f)
     r = F4Radio(fake, log=quiet)
     r.hello()
+    check(r.board is None and r.record == b"", "hello: a fresh stub is unconfigured")
+    r.configure("dm1701")
     check(r.flash_kb == 1024 and r.adopted, "hello parsed")
     segs = [(APP_BASE, app(300000, 3))]
     nw, nk = r.write_image("dm1701", segs, backup_dir=tmp)
@@ -887,6 +1017,7 @@ def self_test():
     fake = FakeF4(f, fail_after=10)
     r = F4Radio(fake, log=quiet)
     r.hello()
+    r.configure("dm1701")
     try:
         r.write_image("dm1701", segs, backup_dir=tmp)
         check(False, "interrupted write raises")
@@ -903,6 +1034,7 @@ def self_test():
     fake = FakeF4(f)
     r = F4Radio(fake, log=quiet)
     r.hello()
+    r.configure("md380")
     segs = [(APP_BASE, app(0x08080000 - APP_BASE, 17))]
     nw, nk = r.write_image("md380", segs, backup_dir=tmp)
     fl = fake.flash
@@ -915,14 +1047,79 @@ def self_test():
     except F4Error:
         pass
 
+    # MD-9600: the same application sectors as the MD-380, its own SPI flash wiring in the board record
+    rec = config_record("md9600")
+    check(rec.hex() == "03010203007a12000800c0000044aa201d1e1f051c3eff00", "md9600 board record %s" % rec.hex())
+    check(config_record("dm1701")[2:4] == b"\x01\x00" and config_record("dm1701")[16:24] == bytes(
+        [0x13, 0x14, 0x15, 5, 0x37, 0xFF, 0xFF, 0]), "dm1701 board record: SPI1 mode 0, PB3-PB5, PD7")
+    f = stock(11)
+    fake = FakeF4(f)
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    try:
+        r.write_image("md9600", [(APP_BASE, app(5000, 3))], backup_dir=tmp)
+        check(False, "md9600: no write before the board record")
+    except F4Error:
+        check(fake.erased == [] and fake.configs == 0, "md9600: refused by the tool before anything is sent")
+    r.configure("md9600")
+    check(r.board == "md9600" and r.record == rec and fake.record == rec, "md9600: configured, the echo checked")
+    segs = [(APP_BASE, app(400000, 7))]
+    nw, nk = r.write_image("md9600", segs, backup_dir=tmp)
+    check(sorted(fake.erased) == [3, 4, 5, 6, 7] and bytes(fake.flash[0x80000:]) == bytes(f[0x80000:]),
+          "md9600: sectors 3-7 written, the codec sectors 8-11 untouched %s" % fake.erased)
+    check(bytes(fake.flash[0xC000:0xC000 + 400000]) == segs[0][1], "md9600: application in place")
+    try:
+        r.write_image("dm1701", segs, backup_dir=tmp)
+        check(False, "a stub configured for the MD-9600 is not used for a DM-1701 image")
+    except F4Error:
+        pass
+    r.configure("md9600")
+    check(fake.configs == 1, "the same record twice is sent once")
+    r2 = F4Radio(fake, log=quiet)          # --attach without --board: the stub's own record says which radio
+    r2.hello()
+    check(r2.board == "md9600", "attach: the configured board read back from HELLO")
+    mp = os.path.join(tmp, "odr_md9600_codec.bin")
+    merged = bytearray(b"\xff" * (0x100000 - 0xC000))
+    merged[:400000] = app(400000, 7)
+    merged[0xE0000 - 0xC000:0xE0000 - 0xC000 + 0x9000] = app(0x9000, 5)
+    open(mp, "wb").write(merged)
+    check([(a, len(d)) for a, d in load_segments(mp, "md9600")] == [(APP_BASE, 400000), (0x08080000, 0x80000)],
+          "md9600: a merged image splits at sector 8")
+
+    # A stub that answers CONFIG but doesn't echo the record: nothing written
+    fake = FakeF4(stock(11))
+    fake.handle_orig = fake.handle
+    fake.handle = lambda op, p: (fake.frame(OK) if op == OP_CONFIG else fake.handle_orig(op, p))
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    try:
+        r.configure("md9600")
+        check(False, "a missing echo is refused")
+    except F4Error:
+        check(r.board is None, "a missing echo leaves the tool unconfigured")
+
+    # A protocol 2 stub (attached from an older run): fixed DM-1701 / MD-380 wiring, so no MD-9600
+    fake = FakeF4(stock(11), version=2)
+    r = F4Radio(fake, log=quiet)
+    r.hello()
+    try:
+        r.configure("md9600")
+        check(False, "a protocol 2 stub is refused for the MD-9600")
+    except F4Error:
+        pass
+    r.configure("md380")
+    nw, _ = r.write_image("md380", [(APP_BASE, app(5000, 3))], backup_dir=tmp)
+    check(nw == 5 and fake.configs == 0, "a protocol 2 stub still installs on the MD-380 (%d)" % nw)
+
     # A sector shared with other data (no radio has one since the codec moved; the rule stays): the bytes after the
     # owned range are read back and kept, and the sector saved first
-    BOARDS["shared"] = {"name": "test", "names": (), "owned": [(0x0800C000, 0x08050C44)], "codec": None}
+    BOARDS["shared"] = dict(BOARDS["md380"], id=99, name="test", names=(), owned=[(0x0800C000, 0x08050C44)], codec=None)
     try:
         f = stock(13)
         fake = FakeF4(f)
         r = F4Radio(fake, log=quiet)
         r.hello()
+        r.configure("shared")
         segs = [(APP_BASE, app(0x08050C44 - APP_BASE - 1000, 17))]
         r.write_image("shared", segs, backup_dir=tmp)
         fl = fake.flash
@@ -947,6 +1144,7 @@ def self_test():
     fake = FakeF4(stock(5), spi=spi)
     r = F4Radio(fake, log=quiet)
     r.hello()
+    r.configure("dm1701")
     check(r.spi_size == 0x100000 and r.spi_id == "ef4018", "hello: SPI flash size and ID")
     path = os.path.join(tmp, "spi.bin")
     r.dump(path, 0, mem=MEM_SPI)
@@ -962,6 +1160,7 @@ def self_test():
     fake = FakeF4(stock(5))
     r = F4Radio(fake, log=quiet)
     r.hello()
+    r.configure("dm1701")
     try:
         r.spi_write(b"\xff" * BLOCK)
         check(False, "no SPI flash: refused")
@@ -978,7 +1177,7 @@ def self_test():
     r = F4Radio(odr, log=quiet)
     r.attach = lambda: None
     try:
-        r.odr_enter(stub_image(), RUN_ADDR)
+        r.odr_enter(stub_image(), RUN_ADDR, board="dm1701")
     except stubtool.DumpError as e:
         check(False, "odr_enter refused the embedded STM32F4 stub: %s" % e)
     check(odr.entered and bytes(odr.mem[:len(stub_image())]) == stub_image(), "odr_enter sends the embedded STM32F4 stub")
@@ -992,7 +1191,7 @@ def self_test():
         r = F4Radio(odr, log=quiet)
         r.attach = lambda: None
         try:
-            r.odr_enter(img, RUN_ADDR)
+            r.odr_enter(img, RUN_ADDR, board="dm1701")
             check(False, "STM32F4 odr_enter refuses %s" % what)
         except stubtool.DumpError:
             check(not odr.entered and odr.total is None, "STM32F4 odr_enter refuses %s before BEGIN" % what)

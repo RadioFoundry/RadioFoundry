@@ -518,6 +518,10 @@ GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
 
 
+# The STM32 radios' profiles live in f4stub.py (BOARDS); their ids, for --board
+F4_BOARD_IDS = ("dm1701", "md380", "md9600")
+
+
 def c7_board(name):
     """The C7_BOARDS key for a board id or a VERSION board= name, or None."""
     for bid, b in C7_BOARDS.items():
@@ -2091,16 +2095,20 @@ def main(argv=None):
                     help="power-on load: write and start the stub at ADDR (default 0x%X). The universal stub runs from any "
                          "base that doesn't overlap its run area; a legacy stub must be linked for it (the DB25-D's first stage "
                          "took the legacy 0x30000 stub at 0x30000)" % LOAD_ADDR)
-    ap.add_argument("--board", choices=("dm1701", "md380") + tuple(C7_BOARDS),
-                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (dm32, dm1801pro, db25d: the board "
-                         "profile the universal stub gets). Found from the radio's VERSION reply with --odr-enter; give it at "
-                         "power-on and with --attach (without it the stub gets a profile that drives no board pins)")
+    ap.add_argument("--board", choices=F4_BOARD_IDS + tuple(C7_BOARDS),
+                    help="the radio: an STM32 one (dm1701, md380, md9600: stub/f4stub.py) or an HR_C7000 one (dm32, "
+                         "dm1801pro, db25d). Either way it picks the board profile the stub gets. Found from the radio's "
+                         "VERSION reply with --odr-enter; give it at power-on and with --attach (without it the HR_C7000 stub "
+                         "gets a profile that drives no board pins, and the STM32 route is not taken)")
     ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
                     "is saved before it is erased (default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test:
         import f4stub
+        if set(F4_BOARD_IDS) != set(f4stub.BOARDS):
+            print("FAIL: stubtool's --board list %s differs from f4stub.BOARDS" % (F4_BOARD_IDS,))
+            return 1
         return self_test() | f4stub.self_test()
     if not a.port:
         ap.error("give PORT")
@@ -2131,7 +2139,7 @@ def main(argv=None):
             import f4stub
             reopen = f4stub.PortFollower(serial, a.port)
         radio = Radio(port, retries=a.retries)
-        # The STM32 radios (DM-1701, MD-380) run their own stub over USB: stub/f4stub.py
+        # The STM32 radios (DM-1701, MD-380, MD-9600) run their own stub over USB: stub/f4stub.py
         import f4stub
         if a.board is None and a.odr_enter:
             name = version_board(radio)
@@ -2143,7 +2151,7 @@ def main(argv=None):
         if a.board in f4stub.BOARDS:
             return f4stub.run(a, port, reopen)
         if a.write_q128:
-            raise DumpError("--write-q128 is for the STM32 radios (DM-1701, MD-380)")
+            raise DumpError("--write-q128 is for the STM32 radios (%s)" % ", ".join(F4_BOARD_IDS))
         if a.odr_enter:
             radio.odr_enter(open(a.odr_stub, "rb").read() if a.odr_stub else ("legacy" if a.legacy_stub else None), board=a.board)
         elif a.attach:
