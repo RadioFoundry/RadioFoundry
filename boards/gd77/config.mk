@@ -6,7 +6,7 @@
 # DMR: the HR_C6000's DMR glue, the vocoder port (SPI1) and the codec are not wired
 CONFIG_DMR ?= n
 # USB serial (CDC-ACM) with the host link and the debug link (docs/spec/hardware-gd77.md 13). Not yet: the network
-# adapter personality, and the open-firmware CPS until the storage map is wired
+# adapter personality, and the open-firmware CPS (not checked against this radio's storage map)
 CONFIG_USB_NETWORK ?= n
 CONFIG_CPS_OPENFW ?= n
 # APRS sends AFSK through the FM transmitter, which is refused until the PA path is confirmed
