@@ -18,6 +18,7 @@ and the release images never contain it. Each radio uses the codec from its own 
    | DB25-D PRO | Radioddity `DB25-D PRO 909E.Dx.EARSAB.018_2025-01-21.bin` | `341536cbac0c1b2471f8198ebc456946e5fe026d96d153df14d6aa5566304f8b` |
    | DB25-D PRO | Radioddity `DB25-D PRO 909E.Dx.EARSAB.018_2024-09-23.bin` | `f2a4b214720b971b58cdadcc53d44695e1462b75296afc41f2a0b53a704d36b4` |
    | DB25-D PRO | the 2024-05-09 build, `909E.D6x.EARSAB.018` | `9e199f54cd6545d153d39542ca5be3ac1076ee215eb93ca630a83cbdbbff4606` |
+   | GD-77 | the stock firmware V3.2.1, V3.2.2, V4.2.8, V4.3.3, V4.3.6, V4.3.9 or V6.0.1 as a flat flash image from address 0x4000 (not the update file itself: [codec-gd77.md](../docs/spec/codec-gd77.md)) | recognized by the hashes of the codec's parts |
    | MD-380 | TYT `MD-380-D2.32(AD).bin` ("Firmware 2.32", D002.032) | `e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43` |
    | DM-1801 Pro | A 1 MB program flash read of the radio running its stock firmware (`stub/stubtool.py --progmem`) | Any file whose codec code window hashes to `8f7641b6…` (`tools/hrc7000_codec.py`) |
 

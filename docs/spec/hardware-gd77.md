@@ -259,8 +259,9 @@ interrupt the receive order after it, both from the interrupt with the AT1846S w
 
 ### 5.6 Vocoder
 
-No DMR voice codec on this radio yet. The vocoder reports none (`present()` false), so DMR carries data and signaling
-but no voice, and FM is unaffected. Beeps and tones use the PCM stream (section 8).
+The codec is the radio's own AMBE+2 library, run on the MCU from flash: [codec-gd77.md](codec-gd77.md). The HR_C6000
+only frames the voice. Without the codec merged in, the vocoder reports none (`present()` false), so DMR carries data and
+signaling but no voice, and FM is unaffected. Beeps and tones use the PCM stream (section 8).
 
 ## 6. Memory map
 
@@ -269,7 +270,9 @@ but no voice, and FM is unaffected. Beeps and tones use the PCM stream (section 
 | Range | Use | Tag |
 |---|---|---|
 | 0x00000000..0x00003FFF | the radio's bootloader; never written | U |
-| 0x00004000..0x0007F7FF | the ODR application, vector table first (`boards/gd77/gd77.ld`) | U |
+| 0x00004000..0x00055CFF | the ODR application, vector table first (`boards/gd77/gd77.ld`) | U |
+| 0x00055D00..0x0007B7FF | the radio's AMBE+2 codec, merged in on the user's machine: code, table window, descriptor ([codec-gd77.md](codec-gd77.md)) | U |
+| 0x0007B800..0x0007F7FF | not used | U |
 | 0x0007F800..0x0007FFFF | the last 2 KB sector: radio data that must survive; never linked into or written | U |
 | 0x1FFF0000..0x1FFFFFFF | SRAM_L: .data, .bss, newlib's small heap | U |
 | 0x20000000..0x2000FEEF | SRAM_U: `ODR_CPU_RAM` state, the RTOS heap with every task stack, the main stack | U |
@@ -441,8 +444,10 @@ power-off sequence is in 15.3.
 ## 10. Update path and image packaging
 
 Holding both side keys at power-on starts the radio's update mode (U). `make BOARD=gd77` produces the raw application
-image (`odr_gd77.bin`, linked for flash 0x4000) with its `.elf` and `.map`. The update path needs a packaging step
-that this repository doesn't have yet (section 12).
+image (`odr_gd77.bin`, linked for flash 0x4000) with its `.elf` and `.map`, and, with a stock firmware file in
+`codecs/`, `odr_gd77_codec.bin`: the same image with the codec merged in (`tools/gd77_codec.py`), a flat image from
+flash 0x4000 up to 0x7B800. The update path takes the radio's own update file format, which needs a packaging step that
+this repository doesn't have yet (section 12).
 
 ## 11. Open items
 
@@ -490,7 +495,7 @@ Each needs a radio on the bench.
 | AT1846S profile, RF switching order, DAC0 ramp (5.1, 5.5) | written, host tested, unverified |
 | Transmit (FM and DMR) | written; refused unless built with `CONFIG_GD77_TX=y` and calibrated |
 | DMR receive (interrupts, slot engine, voice port) | written, unverified |
-| DMR voice codec (5.6) | none: DMR without voice |
+| DMR voice codec (5.6) | the radio's own codec run in place, merged on the user's machine ([codec-gd77.md](codec-gd77.md)); host checked, unverified |
 | Storage: settings and codeplug on the data flash (6.2), EEPROM read only (6.3) | written, host tested, unverified |
 | Factory calibration: both blocks loaded and checked (6.4) | written, host tested; fields not named, not applied |
 | USB serial: host link, debug link, board view (13, 14) | written, unverified; the CPS and the network adapter off |
