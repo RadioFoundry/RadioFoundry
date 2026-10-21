@@ -9,6 +9,9 @@
 #include "pin_table.h"
 #include "platform.h"
 #include "FreeRTOS.h"
+#if CONFIG_USB
+#include "usb/usb_device.h"
+#endif
 
 // The RTOS heap, with every task stack, in the upper SRAM; data and bss are in the lower half (gd77.ld)
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
@@ -72,6 +75,9 @@ const board_t board = {
 	.diag_line = gd77_diag_line,
 #endif
 	.system = &k22f_system,
+#if CONFIG_USB
+	.host_port = &usb_cdc_stream,
+#endif
 	// No thresholds until the battery channel's scale is measured (power_gd77.c)
 	.battery_low_mv = 0,
 	.battery_critical_mv = 0,

@@ -105,6 +105,9 @@ k22f_status_t k22f_i2s_start(const k22f_i2s_stream_t *s);
 void k22f_i2s_stop(void);
 uint32_t k22f_i2s_errors(void);		// FIFO and sync errors seen
 
+// --- USB (usb.c, CONFIG_USB): the port glue is drivers/usb/usb_port.h; this is for the diagnostics ---
+bool k22f_usb_trim_error(void);		// the IRC48M clock recovery ran out of trim range
+
 // --- I2C0 master, polled (i2c.c): the generic bus interface (bus/i2c_bus.h) on the controller ---
 // Clock on, SCL at most max_hz from the bus clock; the board has put the pins on I2C0 first. K22F_ERR_ARG when the
 // rate is out of reach
