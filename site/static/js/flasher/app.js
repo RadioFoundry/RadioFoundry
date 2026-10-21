@@ -13,7 +13,7 @@
 //
 // Everything runs in the page: release images come from this site, custom images from the build API, stock files
 // and backups from the user's disk, which never leave it. Add #sim to the address for a simulated radio (no hardware;
-// for trying the flow), #sim=odr for one that already runs ODR.
+// for trying the flow), #sim=odr for one that already runs ODR, #sim=md9600 / #sim=odr-md9600 for an MD-9600.
 
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import * as stockfw from "./stockfw.js";
@@ -1639,10 +1639,12 @@ async function main() {
 		}
 		S.fakeC7.powerOn();
 	} else if (location.hash.includes("sim")) {
-		S.sim = await simulation(S.data.fb, "dm1701");
+		// a DM-1701, or with #sim=md9600 / #sim=odr-md9600 an MD-9600 (its board record and stock profiles; simulated only)
+		const simBoard = location.hash.includes("md9600") ? "md9600" : "dm1701";
+		S.sim = await simulation(S.data.fb, simBoard);
 		S.fakeRadio = new FakeRadio(S.sim, { state: location.hash.includes("sim=odr") ? "odr" : "stock", spiSize: 0x400000 });
 		// a smaller SPI flash keeps the simulated backup quick
-		for (const r of S.data.radios) if (r.id === "dm1701") r.backup = { ...r.backup, spi_size: 0x400000 };
+		for (const r of S.data.radios) if (r.id === simBoard) r.backup = { ...r.backup, spi_size: 0x400000 };
 	}
 	S.backupParts = [];
 	const m = location.hash.match(/radio=(\w+)/);

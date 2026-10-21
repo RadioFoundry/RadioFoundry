@@ -209,7 +209,8 @@ Sentry; the page then works the same and offers the download only.
 
 Add `#sim` to the flasher's address to run every step against the simulated radio. `#sim=c7000` simulates a
 DM-1801 Pro on stock firmware, `#sim=c7000-odr` one that runs ODR with the loader hand-over. `#sim=odr` is a DM-1701
-running ODR, which updates through the STM32F4 loader.
+running ODR, which updates through the STM32F4 loader; `#sim=md9600` and `#sim=odr-md9600` are the same for an
+MD-9600 (its stock profiles and board record).
 
 ### Radio access backends
 
@@ -232,7 +233,7 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 
 | Backend | Radios | Module |
 |---|---|---|
-| `anyroad-dfu` | DM-1701, MD-380 | `app.js` (`dfu.js`, `f4stub.js`) |
+| `anyroad-dfu` | DM-1701, MD-380, MD-9600 | `app.js` (`dfu.js`, `f4stub.js`) |
 | `c7000-stub` | DM-1801 Pro, DM-32UV, DB25-D PRO | `c7000ui.js` (`stub.js`, `c7000.js`) |
 | `none` | DB25-D for now | none: the radio is listed but grayed out |
 
@@ -376,6 +377,13 @@ power-on, which that route finishes.
 | A write answered `11` (not configured) | Stops; the page checks the echo before every write, so this means the loader lost its record |
 | Protocol 2 (an older loader still running from an earlier session) | No CONFIG: accepted only for a radio with the DM-1701's wiring (`v2_wiring`), so never for the MD-9600 |
 | A backup through the loader whose record is refused | The page restarts the radio into ODR before it reports the error |
+
+The MD-9600 (`boards/md9600/radio.json`) is on the page as a bring-up radio, like the MD-380 before it: status
+`testing` (the build step shows the testers-only warning), not releasable in odrflash, and the bootloader steps from
+[hardware-md9600.md](../spec/hardware-md9600.md) 14.1. Its record puts the SPI flash on SPI2 with chip select PB12
+and holds the LCD's PD14 high; a protocol 2 loader, which has the DM-1701's SPI1 wiring built in, is refused for it.
+None of this has run on an MD-9600: the bootloader keys, the DFU write, the loader route and whether the TYT
+bootloader stays in update mode after an interrupted loader install are all unverified.
 
 `data/flash-boards.json` carries per board (`f4stub`, from `stub/f4stub.py` `BOARDS` and `config_record()`): the
 owned flash, the stub's board id, the 24-byte record as hex, and `v2_wiring`, with the protocol version and record

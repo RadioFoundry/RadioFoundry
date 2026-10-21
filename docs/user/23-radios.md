@@ -13,6 +13,7 @@ and what has been checked on it.
 | [Baofeng DM-32UV](#baofeng-dm-32uv) | | In bring-up on a radio: FM and DMR receive and transmit work. Not in the releases |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Bring-up on a radio: FM and DMR voice receive and transmit, the hotspot and the network services, settings storage, cable programming and volume work. Not for general use |
 | [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data, hotspot and SFR modes; VHF transmit and VOX are unchecked. No release |
+| TYT MD-9600 ([planned radios](#planned-radios)) | Retevis RT90 | Bring-up: builds, never run on a radio. The web flasher offers it for testers (the bootloader route, and the flash stub once ODR runs with stub entry); neither route has been tried on an MD-9600 ([hardware-md9600](../spec/hardware-md9600.md) 14.4). No release |
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
 
@@ -472,7 +473,7 @@ models it covers.
 | Radio | Note |
 |---|---|
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned as a variant of the DM-1701 board |
-| TYT MD-9600, Retevis RT90 | Mobile. Bring-up: the firmware builds (FM and DMR receive, GPS, hand-mic keypad); not run on a radio yet. P1 and P2 do the jobs of **\*** and **#** |
+| TYT MD-9600, Retevis RT90 | Mobile. Bring-up: the firmware builds (FM and DMR receive, GPS, hand-mic keypad); not run on a radio yet. P1 and P2 do the jobs of **\*** and **#**. Bootloader (unverified): disconnect DC, hold **P1** and the orange key while you reconnect it |
 | Radioddity GD-77 family | Planned. Needs a new processor platform |
 | Radioddity GD-88 | Planned |
 | Radioddity DB40-D | Mobile. Planned. Hardware needed |
