@@ -83,7 +83,8 @@ selected one marked with an arrow at its left, green while a call comes in on it
 With `ui_svc_receivers()` > 1, both panes can receive at once, each with its caller and RX pill. Under the panes there is
 a line per receiving pane: "Receiving on A" with its meter, and "Receiving on B, muted" for the one that is not
 heard; where there is room for one line only, "Receiving on A and B". The strip says RX. Gallery: `home_dual_two_rx`,
-`home_dual_two_rx_large_text`. The simulator has `receivers:2`, `rxa:` / `rxb:` and the `rxaend` / `rxbend` tokens.
+`home_dual_two_rx_large_text`. The simulator has `receivers:2`, `rxa:` / `rxb:` and the `rxaend` / `rxbend` tokens; uiFlowTest
+checks a call on each, one ending (the other is then the one heard, and the ended call is listed), and talking on B.
 
 <img src="screens/240x320/home_dual_two_rx.png" width="200" alt="Two receivers: a call on each">
 

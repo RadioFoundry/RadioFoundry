@@ -73,6 +73,12 @@ static const flow_t flows[] = {
 	{ "11 dual watch: stop stays on B", "quick 7 1 5 ok ctx 1", "back", "dual=0 pos=5", 1, false },
 	{ "11 dual watch: quick 7 stops it", "quick 7 1 5 ok", "quick 7", "dual=0 pos=3", 2, false },
 	{ "11 dual watch: a quick setting keeps it on", "down quick 7 1 5 ok", "quick 8 back", "dual=1 sel=A", 3, false },
+	{ "11 dual watch, two receivers: a call on each", "receivers:2 quick 7 1 5 ok",
+	  "rxa:3101234,91,g wait:300 rxb:3107777,3100,g wait:300", "dual=1 sel=A rx=A calls=0", 0, false },
+	{ "11 dual watch, two receivers: A's call ends", "receivers:2 quick 7 1 5 ok",
+	  "rxa:3101234,91,g wait:300 rxb:3107777,3100,g wait:300 rxaend wait:300", "dual=1 rx=B calls=1 last=A", 0, false },
+	{ "11 dual watch, two receivers: talk on B", "receivers:2 quick 7 1 5 ok rxb:3107777,3100,g wait:300 rxbend",
+	  "ctx 1", "dual=1 sel=B last=B pos=5", 2, false },
 	{ "11 dual watch key on and off", "quick 7 1 5 ok back", "dualkey", "dual=1", 1, false },
 	// task-flows.md 12 says 3: the VFO row is first but Channels opens on the current zone (flow 2), so one Up
 	{ "C channels: every channel", "", "ok 5", "screen=channels focus=3_", 2, false },

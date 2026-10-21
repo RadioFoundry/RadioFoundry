@@ -1576,6 +1576,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "bzone") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].zone);
 	else if (strcmp(key, "bvfo") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].vfo);
 	else if (strcmp(key, "sel") == 0) snprintf(got, sizeof got, "%c", ui_st.dual.sel ? 'B' : 'A');
+	else if (strcmp(key, "rx") == 0) snprintf(got, sizeof got, "%c", "AB-"[ui_st.dual.rx > 1 ? 2 : ui_st.dual.rx]);
+	else if (strcmp(key, "last") == 0) snprintf(got, sizeof got, "%c", "AB-"[ui_st.dual.last > 1 ? 2 : ui_st.dual.last]);
+	else if (strcmp(key, "calls") == 0) snprintf(got, sizeof got, "%u", ui_st.dual.calls);
 #endif
 	else if (strcmp(key, "privacy") == 0) snprintf(got, sizeof got, "%u", view.dmr.privacy);
 	else if (strcmp(key, "hearall") == 0) snprintf(got, sizeof got, "%u", view.dmr.hear_all_latch);
