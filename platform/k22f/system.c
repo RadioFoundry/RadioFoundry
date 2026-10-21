@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The MCU for the debug link and the core (hal_system.h): chip identity from the SIM, memory reads, reset. The K22F
-// has no ROM bootloader to reboot into, so HAL_REBOOT_ROM_DFU is refused; there is no runtime stub entry yet
+// The MCU for the debug link and the core (hal_system.h): chip identity from the SIM, memory reads, reset, and with
+// CONFIG_STUB_ENTRY the hand-over to the flash stub (stub_entry.c). The K22F has no ROM bootloader to reboot into, so
+// HAL_REBOOT_ROM_DFU is refused
 #include <string.h>
+#include "config.h"
 #include "platform.h"
+#include "stub_handoff.h"
 
 // SIM_FCFG1 PFSIZE codes to KB (reference manual 12.2.16); 0 for a code this part family doesn't use
 static uint16_t flash_kb(uint32_t pfsize)
@@ -50,4 +53,9 @@ const hal_system_t k22f_system = {
 	.chip = chip,
 	.read = read_mem,
 	.reboot = reboot,
+#if CONFIG_STUB_ENTRY
+	.stub_region = k22f_stub_region,	// stub_entry.c
+	.enter_stub = k22f_enter_stub,
+	.stub_run_addr = K22F_STUB_RUN_ADDR,	// the staging buffer is copied to SRAM_L's base at entry
+#endif
 };

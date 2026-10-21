@@ -141,6 +141,12 @@ k22f_status_t k22f_flash_program(uint32_t addr, const void *data, uint32_t len);
 
 // --- System (system.c) ---
 extern const hal_system_t k22f_system;
+// Runtime flash-stub entry (CONFIG_STUB_ENTRY, stub_entry.c, stub_handoff.h): the staging buffer the debug link loads
+// the image into, and the quiesce, park, copy-to-SRAM_L and jump. board_stub_prepare is the optional board hook run
+// first: transmitter off, nothing else
+uint8_t *k22f_stub_region(uint32_t *size);
+bool k22f_enter_stub(uint32_t entry);
+void board_stub_prepare(void);
 uint16_t k22f_reset_cause(void);	// the last reset's sources: RCM_SRS0 | RCM_SRS1 << 8 (ftfa_math.h k22f_reset_name)
 void k22f_reset(void) __attribute__((noreturn));
 
