@@ -99,13 +99,19 @@ reports must be 0x20000000.
 
 | File | What |
 |---|---|
-| `common/` | the protocol engine every stub target shares (`stubeng.h` documents the port a target supplies): framing, ops, safety rules, SUMS and READ. Host tested |
-| `stm32f4/` | the STM32F4 target: entry, USB, flash controller, SPI flash, the board record check, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (7,840 bytes, at most 8 KB) |
+| `common/` | what every stub target shares: the protocol engine (`stubeng.h` documents the port a target supplies: framing, ops, safety rules, SUMS and READ; host tested), the runtime and main loop (`stubrt`), the CDC-ACM device's descriptors and requests (`stubcdc`), the SPI NOR commands (`stubnor`) |
+| `stm32f4/` | the STM32F4 target: entry, USB, flash controller, SPI flash, the board record check, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (7,572 bytes, at most 8 KB) |
+| `k22f/` | the Kinetis K22F target (GD-77), the same shape: `make -C stub/k22f` writes `build/stub-k22f/k22stub.bin` (7,812 bytes, at most 8 KB). Spec: [docs/spec/stub-k22f.md](../docs/spec/stub-k22f.md) |
+| `k22stub.py` | the K22F host side and the GD-77 profile on top of `f4stub.py`'s radio class, with its build embedded the same way; `stubtool.py` hands the GD-77 to it (`--odr-enter`, or `--attach --board gd77`); `--self-test` runs without a radio |
 | `f4stub.py` | its host side and the board profiles, with the stub build embedded (checked by SHA-256; `--embed` puts a new build in, and CI fails while a fresh build differs); `stubtool.py` hands the DM-1701, MD-380 and MD-9600 to it (`--odr-enter`, or `--attach --board md9600`); `--self-test` runs without a radio |
 
 Status (2026-10-21): built and host tested (`tests/host`: the protocol engine with the board record, and the host tool
 against the real engine through a pipe). Protocol 2 ran on the DM-1701 ([stub-stm32f4.md](../docs/spec/stub-stm32f4.md)
 11); protocol 3 (the board record), the MD-380 and the MD-9600 have not run on a radio yet.
+
+The GD-77 (K22F) gets the same: one stub image, the board record sent with CONFIG, the same install order. Its record
+also limits the writable flash (0x4000 up to the last sector) and keeps the SPI NOR's first megabyte read only. Built
+and host tested; not run on a radio.
 
 ## HR_C7000 status
 

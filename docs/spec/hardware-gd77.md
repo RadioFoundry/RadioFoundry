@@ -276,8 +276,8 @@ signaling but no voice, and FM is unaffected. Beeps and tones use the PCM stream
 |---|---|---|
 | 0x00000000..0x00003FFF | the radio's bootloader; never written | U |
 | 0x00004000..0x00055CFF | the ODR application, vector table first (`boards/gd77/gd77.ld`) | U |
-| 0x00055D00..0x0007B7FF | the radio's AMBE+2 codec, merged in on the user's machine: code, table window, descriptor ([codec-gd77.md](codec-gd77.md)) | U |
-| 0x0007B800..0x0007F7FF | not used | U |
+| 0x00055D00..0x0007B77F | the radio's AMBE+2 codec, merged in on the user's machine: code, table window, descriptor at 0x7B700 ([codec-gd77.md](codec-gd77.md)) | U |
+| 0x0007B780..0x0007F7FF | not used (the rest of sector 0x7B000 is left erased) | U |
 | 0x0007F800..0x0007FFFF | the last 2 KB sector: radio data that must survive; never linked into or written | U |
 | 0x1FFF0000..0x1FFFFFFF | SRAM_L: .data, .bss, newlib's small heap | U |
 | 0x20000000..0x2000FEEF | SRAM_U: `ODR_CPU_RAM` state, the RTOS heap with every task stack, the main stack | U |
@@ -492,8 +492,15 @@ power-off sequence is in 15.3.
 Holding both side keys at power-on starts the radio's update mode (U). `make BOARD=gd77` produces the raw application
 image (`odr_gd77.bin`, linked for flash 0x4000) with its `.elf` and `.map`, and, with a stock firmware file in
 `codecs/`, `odr_gd77_codec.bin`: the same image with the codec merged in (`tools/gd77_codec.py`), a flat image from
-flash 0x4000 up to 0x7B800. The radio's loader takes an update file over USB HID: odrflash and the web flasher write the image into a copy of an
-update file the user supplies and send it ([update-gd77.md](update-gd77.md)). Unverified on a radio.
+flash 0x4000 up to 0x7B780, the codec descriptor's end. The radio's loader takes an update file over USB HID: odrflash
+and the web flasher write the image into a copy of an update file the user supplies and send it
+([update-gd77.md](update-gd77.md)). Unverified on a radio.
+
+A radio already running an ODR build with `CONFIG_STUB_ENTRY=y` can be updated without update mode, through the K22F
+flash stub ([stub-k22f.md](stub-k22f.md)): `stub/stubtool.py PORT --odr-enter --write-app odr_gd77_codec.bin` (or the
+plain `odr_gd77.bin`, which keeps the codec in place). It writes only the 2 KB sectors that changed, never below 0x4000
+or the last sector, and backs up or restores the whole flash and the SPI NOR above its first megabyte. Unverified: it
+has not run on a radio.
 
 ## 11. Open items
 
@@ -546,6 +553,7 @@ Each needs a radio on the bench.
 | Factory calibration: both blocks loaded and checked, converted and applied (6.4) | written, host tested, unverified |
 | USB serial: host link, debug link, board view (13, 14) | written, unverified; the CPS and the network adapter off |
 | Update image packaging and flashing (odrflash, web flasher) | written and host tested; unverified on a radio |
+| Flash stub entry and the K22F stub (10, [stub-k22f.md](stub-k22f.md)) | written, host tested, unverified; `CONFIG_STUB_ENTRY` off by default |
 
 ## 13. USB
 
