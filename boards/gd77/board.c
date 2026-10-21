@@ -16,10 +16,10 @@
 // The RTOS heap, with every task stack, in the upper SRAM; data and bss are in the lower half (gd77.ld)
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
 
-// Receive only until the PA path and calibration are confirmed (radio_gd77.c tx() refuses as well)
+// Receive only unless built with CONFIG_GD77_TX (boards/gd77/config.mk); radio_gd77.c tx() also wants calibration
 static const band_t bands[] = {
-	{ 136000000, 174000000, false },
-	{ 400000000, 470000000, false },
+	{ 136000000, 174000000, CONFIG_GD77_TX != 0 },
+	{ 400000000, 470000000, CONFIG_GD77_TX != 0 },
 };
 
 static const char *const power_names[] = { "L", "H" };
@@ -56,7 +56,7 @@ static const uint8_t side_keys[] = { KEY_SIDE_B1, KEY_SIDE_B9, KEY_TOP };
 
 const board_t board = {
 	.name = "GD-77",
-	.caps = CAP_KEYPAD,
+	.caps = CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -71,6 +71,13 @@ const board_t board = {
 	.radio = &gd77_radio,
 	.power = &gd77_power,
 	.flash = &gd77_flash,
+#if CONFIG_BEEP || CONFIG_DMR
+	.audio = &gd77_audio,
+#endif
+#if CONFIG_DMR
+	.dmr = &gd77_dmr,
+	.vocoder = &gd77_vocoder,
+#endif
 #if CONFIG_DIAG
 	.diag_line = gd77_diag_line,
 #endif

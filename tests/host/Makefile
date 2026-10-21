@@ -1054,14 +1054,28 @@ k22fUsbTest: k22fUsbTest.c $(K22F)/k22f_usb_regs.h
 hrc6000ClockTest: hrc6000ClockTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRC6K)/hrc6000.h $(HRCDMR)/hrc.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000ClockTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 
+# The GD-77 audio and RF side: PCM framing between the I2S rings and 20 ms blocks; the AT1846S with the radio's
+# profile, the path line bands, the switch sequences, the DAC0 ramp, the HR_C6000 board values, the timeslot edge rule
+TESTS   += gd77PcmTest gd77RfTest
+gd77PcmTest: gd77PcmTest.c $(GD77)/pcm_gd77.c $(GD77)/pcm_gd77.h
+	$(CC) $(CFLAGS) -I$(GD77) -Wshadow -o $@ gd77PcmTest.c $(GD77)/pcm_gd77.c
+GD77RF  := $(GD77)/rf_gd77.c $(GD77)/c6k_gd77.c $(ROOT)/drivers/rf/at1846s/at1846s.c $(SUBAUDIO) $(HRC6K)/hrc6000.c \
+           $(HRCDMR)/hrc.c
+gd77RfTest: gd77RfTest.c $(GD77RF) $(GD77)/rf_gd77.h $(GD77)/c6k_gd77.h $(GD77)/dmr_gd77.h \
+            $(ROOT)/drivers/rf/at1846s/at1846s.h $(HRC6K)/hrc6000.h $(HRCDMR)/hrc.h
+	$(CC) $(CFLAGS) -I$(GD77) -I$(ROOT)/hal -Wshadow -o $@ gd77RfTest.c $(GD77RF)
+
 run: run-gd77
-run-gd77: k22fPlatformTest spiGpioTest gd77BoardTest hrc6000ClockTest k22fSystemTest k22fUsbTest
+run-gd77: k22fPlatformTest spiGpioTest gd77BoardTest hrc6000ClockTest k22fSystemTest k22fUsbTest gd77PcmTest \
+          gd77RfTest
 	./k22fPlatformTest
 	./k22fSystemTest
 	./k22fUsbTest
 	./spiGpioTest
 	./gd77BoardTest
 	./hrc6000ClockTest
+	./gd77PcmTest
+	./gd77RfTest
 .PHONY: run-gd77
 
 # The generic 24-series I2C EEPROM driver against a model of the part (page wrap, write cycle, acknowledge polling)

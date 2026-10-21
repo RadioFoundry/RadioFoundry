@@ -4,6 +4,7 @@
 // (docs/spec/hardware-gd77.md 11): key bits, the battery channel, the chips' answers, the clock
 #include <stdio.h>
 #include "gd77.h"
+#include "dmr_gd77.h"
 #include "config.h"
 #include "platform.h"
 #include "ftfa_math.h"
@@ -53,6 +54,37 @@ bool gd77_diag_line(uint8_t i, char *buf, uint8_t len)
 		snprintf(buf, len, "eep %s cal %c%c nor- %lu", gd77_eeprom_present() ? "ok" : "--",
 			 st[gd77_cal_state(GD77_CAL_UHF)], st[gd77_cal_state(GD77_CAL_VHF)],
 			 (unsigned long)gd77_flash_refusals());
+		break;
+	}
+	case 9: {	// the RF side: DAC0 drive, transmit built, refusals
+		snprintf(buf, len, "tx %s dac %u ref %lu", d.tx_build ? "built" : "off", d.drive,
+			 (unsigned long)d.tx_refused);
+		break;
+	}
+	case 10: {	// PCM stream: 20 ms blocks, dropped, transmit underruns, I2S errors
+#if CONFIG_BEEP || CONFIG_DMR
+		gd77_audio_stats_t a;
+		gd77_audio_stats(&a);
+		snprintf(buf, len, "pcm %s %lu d%lu u%lu e%lu", a.running ? "on" : "off", (unsigned long)a.blocks,
+			 (unsigned long)a.dropped, (unsigned long)a.underruns, (unsigned long)a.i2s_errors);
+#else
+		snprintf(buf, len, "pcm -");
+#endif
+		break;
+	}
+	case 11: {	// DMR: slot interrupts (and the other edges dropped), system, RF TX, RF RX interrupts
+		gd77_dmr_stats_t m;
+		gd77_dmr_stats(&m);
+		snprintf(buf, len, "dmr %s ts%lu/%lu si%lu tx%lu rx%lu", m.active ? "on" : "off",
+			 (unsigned long)m.slot_ints, (unsigned long)m.slot_dups, (unsigned long)m.sys_ints,
+			 (unsigned long)m.rftx_ints, (unsigned long)m.rfrx_ints);
+		break;
+	}
+	case 12: {	// DMR bursts delivered: voice, data and control, CRC errors; voice port errors
+		gd77_dmr_stats_t m;
+		gd77_dmr_stats(&m);
+		snprintf(buf, len, "V%lu D%lu crc%lu vp%lu", (unsigned long)m.rx_voice, (unsigned long)m.rx_data,
+			 (unsigned long)m.rx_crc_err, (unsigned long)m.voice_errors);
 		break;
 	}
 	default:
