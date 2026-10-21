@@ -8,6 +8,9 @@
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "hrc/dmr_glue.h"
+#include "hrc/vocoder.h"
+#include "gps_uart/gps_uart.h"
 #if CONFIG_USB
 #include "usb/usb_device.h"
 #endif
@@ -37,7 +40,9 @@ static const char *const power_names[] = { "5W", "10W", "25W", "40W" };
 
 // docs/ux/information-architecture.md 7.4 on the front panel (hardware-md9600.md 9.1): Enter and Back, P1 / P2 as
 // QUICK / CONTEXT, Up / Down, P3 monitor, P4 talk target, the orange key a user key. The encoder sends ENC_STEP. The
-// power key isn't in the map: power_md9600.c watches it. The hand-mic keypad is not read yet
+// power key isn't in the map: power_md9600.c watches it. The hand mic's keypad (9.3): digits, * and # as QUICK and
+// CONTEXT, its up / down as the panel's, A and B user keys, C monitor, D talk target, A/B between channel and VFO (the
+// roles of A-D and A/B are a proposal, unverified)
 static const keymap_entry_t keymap[] = {
 	{ KEY_ENTER, ACT_SELECT, ACT_SELECT, false, false },
 	{ KEY_BACK, ACT_BACK, ACT_BACK, false, false },
@@ -49,6 +54,25 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_P4, ACT_TALK_TARGET, ACT_USER_2, false, false },
 	{ KEY_ALARM, ACT_USER_3, ACT_USER_3, false, false },
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ KEY_MIC_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false },
+	{ KEY_MIC_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false },
+	{ KEY_MIC_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false },
+	{ KEY_MIC_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false },
+	{ KEY_MIC_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false },
+	{ KEY_MIC_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false },
+	{ KEY_MIC_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false },
+	{ KEY_MIC_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
+	{ KEY_MIC_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false },
+	{ KEY_MIC_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
+	{ KEY_MIC_STAR, ACT_QUICK, ACT_QUICK, false, false },
+	{ KEY_MIC_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false },
+	{ KEY_MIC_UP, ACT_NAV_UP, ACT_NAV_UP, false, true },
+	{ KEY_MIC_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
+	{ KEY_MIC_A, ACT_USER_1, ACT_USER_1, false, false },
+	{ KEY_MIC_B, ACT_USER_4, ACT_USER_4, false, false },
+	{ KEY_MIC_C, ACT_MONITOR, ACT_MONITOR, true, false },
+	{ KEY_MIC_D, ACT_TALK_TARGET, ACT_TALK_TARGET, false, false },
+	{ KEY_MIC_AB, ACT_VFO_TOGGLE, ACT_VFO_TOGGLE, false, false },
 };
 
 // Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): P3, P4, the orange key
@@ -72,8 +96,9 @@ static const hal_cps_t cps = {
 const board_t board = {
 	.name = "MD-9600",
 	// A mobile on a fixed supply: no battery. No CAP_VOLUME_POT: the knob sets the volume in the analog path only.
-	// No CAP_KEYPAD until the hand-mic keypad is read; no CAP_GPS until the GPS receive path is written
-	.caps = CAP_ENCODER | CAP_NO_BATTERY,
+	// No CAP_KEYPAD: the keypad is on the hand mic, which may not have one, so text entry keeps the panel's way. The
+	// GPS module is optional: gps_present says
+	.caps = CAP_ENCODER | CAP_NO_BATTERY | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -89,6 +114,13 @@ const board_t board = {
 	.quick_label = "P1",
 	.context_label = "P2",
 	.radio = &md9600_radio,
+#if CONFIG_DMR
+	.dmr = &stm32_hrc_dmr,
+	.audio = &md9600_audio,
+	.vocoder = &stm32_vocoder,
+#endif
+	.gps_present = stm32_gps_present,
+	.gps_enable = stm32_gps_enable,
 	.power = &md9600_power,
 	.flash = &md9600_flash,
 #if CONFIG_DIAG
@@ -236,4 +268,5 @@ void board_init(void)
 	md9600_flash.init();
 	md9600_cal_load();
 	md9600_radio_early();
+	md9600_gps_init();
 }

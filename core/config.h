@@ -203,6 +203,9 @@
 #ifndef CONFIG_MD9600_TX
 #define CONFIG_MD9600_TX		0
 #endif
+#ifndef CONFIG_MD9600_DMR_TX
+#define CONFIG_MD9600_DMR_TX		0
+#endif
 #ifndef CONFIG_AM_RX
 #define CONFIG_AM_RX			CONFIG_FM
 #endif

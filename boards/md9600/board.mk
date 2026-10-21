@@ -16,7 +16,8 @@ LDSCRIPT   := boards/md9600/md9600.ld
 # The linker script's CPU-only RAM (CCM: no DMA): zeroed at start-up for ODR_CPU_RAM, left alone for _NOINIT
 MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ccmbss"' -DODR_CPU_RAM_NOINIT_SECTION='".ccmram"'
 BOARD_DIRS := boards/md9600 drivers/display/st7567 drivers/flash/spi_nor drivers/input/keymatrix drivers/input/quadrature \
-	drivers/cal/calblock
+	drivers/cal/calblock drivers/input/adckeys platform/stm32f4/hrc drivers/modem/hrc6000 drivers/modem/hrc_common \
+	drivers/gps/nmea_line drivers/gps/gps_rx platform/stm32f4/gps_uart
 # Built only with CONFIG_USB
 BOARD_USB_DIRS := drivers/usb
 HAL_MODULES := hal hal_cortex hal_rcc hal_rcc_ex hal_gpio hal_pwr hal_pwr_ex hal_flash hal_flash_ex hal_dma

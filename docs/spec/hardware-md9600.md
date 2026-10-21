@@ -145,7 +145,7 @@ applied, used for the standby flag (10.2) and for non-permanent settings (D) [re
 | Pin | Function | Notes |
 |---|---|---|
 | PE0 / PE1 | Key matrix rows K0 / K1 (open drain) | (D) |
-| PE2 / PE3 / PE4 / PE5 | HR_C6000 configuration port CS / CLK / MISO / MOSI (bit-banged) | (D), as the DM-1701 |
+| PE2 / PE3 / PE4 / PE5 | HR_C6000 configuration port CS / CLK / MISO / MOSI (bit-banged) | (D); MISO and MOSI are the other way round from the DM-1701 (unverified) |
 | PE6 | C6000_PWD, HR_C6000 power down | (D) |
 | PE7 | FM_MUTE: FM audio to the volume control, high = unmuted | (D) |
 | PE8 / PE9 | VCO_VCC_U_SW / VCO_VCC_V_SW: per band, high = RX VCO, low = TX VCO | (D) |
@@ -416,7 +416,13 @@ column < 4 means a key is down (D) [ref]:
 | 3 | * | 0 | # | D |
 | 4 | (unused) | A/B | Up | Down |
 
-The mic has 16 keys plus its own up / down / A/B (unverified). Thresholds and the mic's resistor ladder are unverified (?).
+The mic has 16 keys plus its own up / down / A/B (unverified). Level windows in raw 12-bit counts, both levels at or
+above 3445 with no key down (unverified):
+
+| Level | Window 0 | Window 1 | Window 2 | Window 3 | Window 4 |
+|---|---|---|---|---|---|
+| Row (PA6) | 2830-3444 | 2215-2705 | 1477-2090 | 862-1352 | 247-737 |
+| Column (PA7) | 0-1106 | 1231-1844 | 1969-2705 | 2830-3320 | - |
 
 ### 9.4 PTT
 
@@ -689,8 +695,12 @@ Bring-up state (2026-10-20): the image builds; nothing has run on a radio. `boar
 | Power | no battery (`CAP_NO_BATTERY`). "Off" saves, sets a flag in RTC backup register 18 and resets; at start-up the flag holds the radio until the power key is pressed and released. Supply voltage from ADC1 IN1 |
 | Flash | SPI NOR with the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug at 0 and 0x020000); the board revision record at 0x01F000, appended. Security registers read only: calibration and option block (19.5) |
 | Receive | FM on both bands, every revision (19.3). Front-end tuning from calibration rows 0x30 / 0x39 (11.2) when they aren't blank, else mid scale |
-| Transmit | the sequence is written (19.8) but refused: `CONFIG_MD9600_TX` is off, and a build with it still needs the run-time arm, a stored revision and plausible PA rows. FM modulation needs the HR_C6000 glue |
-| Not yet | DMR, sub-audio, GPS, the hand-mic keypad, FM transmit, the CPS's own command set, update packaging |
+| DMR | receive on the shared HR_C6000 glue (configuration port PE2-PE5, voice port SPI1 at 4.5 MHz, interrupts PC0-PC2, I2S3 PCM). Reference offset and DMR modulation pair (11.2 rows 0x130-0x149) rewritten at each retune. The codec profiles `md9600-v0609-csv` and `md9600-v1645-csv` pin only the tag and code length; placement is open ([codec-md9600.md](codec-md9600.md)) |
+| Audio | FM from the IF chip (FM_MUTE high), PCM (DMR voice, beeps) from the HR_C6000 line out with FM held back, AF_SW muting otherwise (`boards/md9600/speaker_md9600.h`) |
+| GPS | USART1 RX (PA10), receive interrupt; 9600 baud first, then 4800, 19200, 38400, 57600, 115200, 3 s each. A silent line ends the search after the first window; a module once heard feeds APRS positions. PA9 stays on (it also powers the mic) |
+| Hand mic | the keypad of 9.3 through `drivers/input/adckeys`, three equal scans per key. Key roles of A-D and A/B are a proposal (unverified). No `CAP_KEYPAD`: a mic may have no keypad |
+| Transmit | the sequence is written (19.8) but refused: `CONFIG_MD9600_TX` is off, and a build with it still needs the run-time arm, a stored revision and plausible PA rows. FM modulation needs the HR_C6000 glue DMR transmit glue is behind `CONFIG_MD9600_DMR_TX` (off) and a run-time gate; its per-burst RF keying hook (`md9600_rf_dmr_key`) is not connected to this sequence yet |
+| Not yet | sub-audio, FM transmit, DMR transmit, split duplex and the two-PLL burst switching (17 #5, #17), the CPS's own command set, update packaging |
 
 ### 19.2 Clock plan and memory map
 
@@ -817,6 +827,10 @@ The `board` view section ([debuglink.md](debuglink.md) 3.7) carries, each as `bo
 | `lo_hz`, `retunes`, `refused` | the synthesizer's last frequency, retunes and refused retunes |
 | `pin.power`, `pin.c5`, `pin.r5`, `pin.tx` | output levels: Power_Control; C5 UHF and VHF; R5 UHF and VHF; T5 UHF, T5 VHF and the PA loop enable (`000` in this build) |
 | `adc.noise_u`, `adc.noise_v`, `adc.rssi_u`, `adc.rssi_v`, `adc.mic`, `adc.supply`, `adc.mic_row`, `adc.mic_col` | the ADC1 scan, raw 12-bit (10.3) |
+| `c6000`, `c6000.dmr`, `c6000.errors`, `c6000.tx_refused` | the HR_C6000 answered after set-up (with 4:0x10), in DMR, failed transfers, bursts the RF switch refused |
+| `speaker` | bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out |
+| `mic_key` | the hand-mic key decoded on the last scan, 255 for none |
+| `gps`, `gps.baud`, `gps.nmea` | module heard; the rate listened at (0 once given up); valid / bad sentences / bytes |
 
 `tests/hil/test_md9600.py` checks them on a radio: identity, every key present, the transmitter switches low, the
 clock, the flash and its map, both blocks readable, no key or PTT down at rest, the ADC scan in range and a plausible

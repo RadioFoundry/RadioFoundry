@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "board.h"
+#include "config.h"
 #include "rfplan_md9600.h"
 
 // Ops each board file provides
@@ -39,8 +40,12 @@ void md9600_backlight(uint8_t percent);
 // Physical key bits returned by md9600_input.scan() (matrix positions in docs/spec/hardware-md9600.md 9.1)
 enum {
 	KEY_P1, KEY_P2, KEY_P3, KEY_P4, KEY_ALARM, KEY_BACK, KEY_ENTER, KEY_UP, KEY_DOWN, KEY_POWER, KEY_PTT,
+	// The hand mic's keypad (9.3, input_md9600.c)
+	KEY_MIC_0, KEY_MIC_1, KEY_MIC_2, KEY_MIC_3, KEY_MIC_4, KEY_MIC_5, KEY_MIC_6, KEY_MIC_7, KEY_MIC_8, KEY_MIC_9,
+	KEY_MIC_STAR, KEY_MIC_HASH, KEY_MIC_A, KEY_MIC_B, KEY_MIC_C, KEY_MIC_D, KEY_MIC_AB, KEY_MIC_UP, KEY_MIC_DOWN,
 	KEY_COUNT
 };
+_Static_assert(KEY_COUNT <= 32, "key bits are a 32-bit mask");
 // The raw matrix (columns low per row, bits 0-2 = K4-K6), for the diagnostics page
 void md9600_input_raw(uint8_t rows[4]);
 
@@ -93,6 +98,34 @@ bool md9600_view_line(uint8_t i, char *buf, uint8_t len);
 // Diagnostics page (diag_md9600.c)
 bool md9600_diag_line(uint8_t i, char *buf, uint8_t len);
 void md9600_diag_reset(void);
+
+// HR_C6000, PCM audio and the speaker routing (c6000_md9600.c). Radio task, after md9600_radio_early
+void md9600_c6000_init(void);
+void md9600_c6000_mode(bool dmr, uint32_t hz);	// set_mode: into or out of DMR at the receive frequency
+void md9600_c6000_retune(uint32_t hz);		// after every receiver retune: reference offset, DMR receiver restart
+void md9600_speaker_fm(bool on, bool vhf);	// the core's FM squelch (hal_radio_t.audio)
+typedef struct {
+	bool up;		// the chip answered after its power-on set-up
+	bool dmr;		// in DMR
+	uint8_t r10;		// 4:0x10 read after the set-up
+	uint8_t speaker;	// bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out
+	uint32_t errors;	// bus transfers that failed
+	uint32_t tx_refused;	// bursts the RF switch refused to key
+} md9600_c6000_diag_t;
+void md9600_c6000_diag(md9600_c6000_diag_t *d);
+extern const hal_audio_t md9600_audio;
+#if CONFIG_MD9600_DMR_TX
+// The run-time gate on DMR transmit (off at start-up); nothing in the firmware turns it on yet
+void md9600_dmr_tx_allow(bool on);
+// The RF chain's per-burst keying, from the modem interrupts; the default refuses (c6000_md9600.c)
+bool md9600_rf_dmr_key(bool tx);
+#endif
+
+// GPS (gps_md9600.c): the module's NMEA on USART1, detected at run time (13)
+void md9600_gps_init(void);
+
+// The hand mic's keypad, for diagnostics: the key decoded on the last scan (ADCKEYS_NONE for none)
+uint8_t md9600_mic_key(void);
 
 // A DMA stream's memory address must be in main SRAM (0x2000_0000): the DMA controllers can't reach the CCM
 #define DMA_RAM_OK(p)	configASSERT(((uintptr_t)(p) >> 24) == 0x20u)

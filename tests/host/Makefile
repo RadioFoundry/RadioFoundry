@@ -804,14 +804,20 @@ md9600RfSeqTestNoTx: $(MD9600_SEQ) $(MD9600_SEQ_H)
 md9600RfSeqTestV5: $(MD9600_SEQ) $(MD9600_SEQ_H)
 	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow -DCONFIG_MD9600_V5=1 -DCONFIG_MD9600_TX=1 -o $@ $(MD9600_SEQ)
 
+# The speaker routing's pin levels (boards/md9600/speaker_md9600.h)
+TESTS   += md9600AudioTest
+md9600AudioTest: md9600AudioTest.c $(MD9600)/speaker_md9600.h
+	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow -o $@ md9600AudioTest.c
+
 run: run-md9600
-run-md9600: md9600RfTest md9600RfTestV5 md9600RfSeqTest md9600RfSeqTestNoTx md9600RfSeqTestV5 md9600CalTest
+run-md9600: md9600RfTest md9600RfTestV5 md9600RfSeqTest md9600RfSeqTestNoTx md9600RfSeqTestV5 md9600CalTest md9600AudioTest
 	./md9600RfTest
 	./md9600RfTestV5
 	./md9600CalTest
 	./md9600RfSeqTest
 	./md9600RfSeqTestNoTx
 	./md9600RfSeqTestV5
+	./md9600AudioTest
 .PHONY: run-md9600
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the

@@ -9,6 +9,7 @@
 #include "md9600.h"
 #include "pins.h"
 #include "debuglink/dl_fmt.h"
+#include "gps_uart/gps_uart.h"
 
 static const char *const sources[] = { "none", "stored", "probe", "default" };
 static const char *const adc_names[MD9600_ADC_COUNT] = { "noise_u", "noise_v", "rssi_u", "rssi_v", "mic", "supply",
@@ -38,6 +39,47 @@ static uint8_t latch(GPIO_TypeDef *port, uint16_t pin)
 }
 
 #define LATCH(p)	latch(PIN_PORT(p), PIN_MASK(p))
+
+// The HR_C6000, the speaker routing, the hand-mic keypad and the GPS receiver (c6000_md9600.c, input_md9600.c,
+// gps_md9600.c)
+static bool audio_line(uint8_t i, char *buf, uint8_t len)
+{
+	md9600_c6000_diag_t c;
+	uint32_t good, bad, bytes;
+	md9600_c6000_diag(&c);
+	stm32_gps_counts(&good, &bad, &bytes);
+	switch (i) {
+	case 0:		// the chip answered after its set-up, and its 4:0x10
+		dl_fmt(buf, len, "c6000=%u r10=0x%02x", c.up ? 1u : 0u, c.r10);
+		return true;
+	case 1:
+		dl_fmt(buf, len, "c6000.dmr=%u", c.dmr ? 1u : 0u);
+		return true;
+	case 2:
+		dl_fmt(buf, len, "c6000.errors=%u", (unsigned)c.errors);
+		return true;
+	case 3:		// DMR bursts the RF switch would not key (0 unless something asked to transmit)
+		dl_fmt(buf, len, "c6000.tx_refused=%u", (unsigned)c.tx_refused);
+		return true;
+	case 4:		// bit 0 amplifier on, bit 1 FM audio through, bit 2 codec line out
+		dl_fmt(buf, len, "speaker=%u", c.speaker);
+		return true;
+	case 5:		// the hand-mic key decoded on the last scan, 255 for none (the md9600.h key number)
+		dl_fmt(buf, len, "mic_key=%u", md9600_mic_key());
+		return true;
+	case 6:
+		dl_fmt(buf, len, "gps=%u", stm32_gps_present() ? 1u : 0u);
+		return true;
+	case 7:		// the rate listened at, 0 once given up
+		dl_fmt(buf, len, "gps.baud=%u", (unsigned)stm32_gps_baud());
+		return true;
+	case 8:
+		dl_fmt(buf, len, "gps.nmea=%u/%u/%u", (unsigned)good, (unsigned)bad, (unsigned)bytes);
+		return true;
+	default:
+		return false;
+	}
+}
 
 bool md9600_view_line(uint8_t i, char *buf, uint8_t len)
 {
@@ -137,7 +179,7 @@ bool md9600_view_line(uint8_t i, char *buf, uint8_t len)
 		dl_fmt(buf, len, "adc.%s=%u", adc_names[a], md9600_adc_raw(a));
 		return true;
 	}
-	return false;
+	return audio_line((uint8_t)(a - MD9600_ADC_COUNT), buf, len);
 }
 
 #endif	// CONFIG_DEBUGLINK

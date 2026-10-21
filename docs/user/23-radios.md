@@ -472,7 +472,7 @@ models it covers.
 | Radio | Note |
 |---|---|
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned as a variant of the DM-1701 board |
-| TYT MD-9600, Retevis RT90 | Mobile. Bring-up: the firmware builds (FM receive only); not run on a radio yet. P1 and P2 do the jobs of **\*** and **#** |
+| TYT MD-9600, Retevis RT90 | Mobile. Bring-up: the firmware builds (FM and DMR receive, GPS, hand-mic keypad); not run on a radio yet. P1 and P2 do the jobs of **\*** and **#** |
 | Radioddity GD-77 family | Planned. Needs a new processor platform |
 | Radioddity GD-88 | Planned |
 | Radioddity DB40-D | Mobile. Planned. Hardware needed |

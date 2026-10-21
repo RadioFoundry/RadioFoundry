@@ -222,21 +222,21 @@ void md9600_radio_early(void)
 static void init(void)
 {
 	md9600_rf_pa_safe(&rf);
+	md9600_c6000_init();
 }
 
 static void set_mode(radio_mode_t mode)
 {
 	dmr_mode = mode == RADIO_MODE_DMR;
 	md9600_rf_set_dmr(&rf, dmr_mode);
+	md9600_c6000_mode(dmr_mode, rf.rx_hz);
 }
 
 static void audio(bool on)
 {
 	uint8_t band = MD9600_UHF;
 	(void)md9600_band_of(rf.rx_hz, &band);
-	PIN_WRITE(PIN_AF_BAND, band == MD9600_VHF);
-	PIN_WRITE(PIN_FM_MUTE, on && !dmr_mode);	// FM audio from the IF chip; DMR audio from the HR_C6000
-	PIN_WRITE(PIN_AF_MUTE, !on);
+	md9600_speaker_fm(on, band == MD9600_VHF);	// with the PCM requests (c6000_md9600.c)
 }
 
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
@@ -248,6 +248,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	if (!md9600_cal_squelch(hz, &sql_l1, &sql_l9)) {
 		sql_l1 = sql_l9 = 0;	// once per retune, not per status poll
 	}
+	md9600_c6000_retune(hz);
 	return true;
 }
 
