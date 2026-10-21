@@ -1077,9 +1077,10 @@ run-i2c-eeprom: i2cEepromTest
 CAL     := $(ROOT)/drivers/cal
 TESTS   += gd77StorageTest
 gd77StorageTest: gd77StorageTest.c $(GD77)/storage_gd77.c $(GD77)/storage_gd77.h $(GD77)/cal_blocks_gd77.c $(GD77)/cal_blocks_gd77.h \
+                 $(GD77)/cal_gd77.c $(GD77)/cal_gd77.h \
                  $(CAL)/cal_block.c $(CAL)/cal_block.h $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(GD77) -I. -Wshadow -o $@ gd77StorageTest.c $(GD77)/storage_gd77.c \
-		$(GD77)/cal_blocks_gd77.c $(CAL)/cal_block.c $(STORE)
+		$(GD77)/cal_blocks_gd77.c $(GD77)/cal_gd77.c $(CAL)/cal_block.c $(STORE)
 
 run: run-gd77-storage
 run-gd77-storage: gd77StorageTest

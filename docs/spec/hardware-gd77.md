@@ -287,7 +287,9 @@ A block is used only when it reads the same twice, isn't all 0xFF or all 0x00, a
 The radio code reads a field with `gd77_cal_field(hz, id, buf, max)`, which picks the block by frequency and returns
 the raw bytes, or 0 bytes without a valid block, so the caller keeps its uncalibrated value. Diagnostics line 8 shows
 each block's state (`cal` UHF then VHF: `o` ok, `f` read failed, `b` blank, `r` rejected). What each field means, and
-so how it reaches the AT1846S and the HR_C6000, is open (section 11).
+so how it reaches the AT1846S and the HR_C6000, is open (section 11). Until then the radio code's calibration
+point (`gd77_cal_at`, `boards/gd77/cal_gd77.h`) returns the safe values and no calibration at every frequency, and
+the transmitter stays refused.
 
 ## 7. Display
 
