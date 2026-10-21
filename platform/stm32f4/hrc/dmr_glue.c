@@ -1,27 +1,23 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// MD-380 DMR modem: the HR_C6000 slot engine (drivers/modem/hrc_common/hrc6000_dmr.c) in its HR_C5000 variant on the
-// board's three modem interrupt lines, with the deferred event task that calls the DMR stack
-// (docs/spec/dmr-modem.md 6, docs/spec/hardware-md380.md 4). The same structure as the DM-1701's dmr_dm1701.c: the
-// interrupt lines are the same pins (PC0-PC2), the difference is the RF switch (radio_md380.c).
+// The HR_C6000 / HR_C5000 DMR glue the STM32F4 radios share (dmr_glue.h): the slot engine on the chip's three
+// interrupt lines and the deferred event task that calls the DMR stack (docs/spec/dmr-modem.md 6).
 //
 // What runs where:
-//   EXTI0 (PC0, timeslot, priority 5)  drop the PA of the burst that ended, set up the next slot (TX burst or receive), slot tick event
-//   EXTI1 (PC1, system, priority 5)    copy out a received burst (status, page 2 payload or the 27-byte voice frame
-//                                      over SPI2), send rejected, voice lost; clears the chip's flags
-//   EXTI2 (PC2, RF TX, priority 5)     key the PA for our burst (at the first one the synthesizer to TX)
-//   "dmr" task (priority 5, 512 words) drains the engine's events and calls the stack's callback; every 10 ms the
-//                                      watchdog (timing stall, PA left on)
+//   EXTI0 (pin 0, timeslot, priority 5)  the board's service hook, drop the PA of the burst that ended, set up the next
+//                                        slot (TX burst or receive), slot tick event
+//   EXTI1 (pin 1, system, priority 5)    copy out a received burst (status, page 2 payload or the 27-byte voice frame
+//                                        over the voice port), send rejected, voice lost; clears the chip's flags
+//   EXTI2 (pin 2, RF TX, priority 5)     key the PA for our burst (the board's RF switch)
+//   "dmr" task (priority 5, 512 words)   drains the engine's events and calls the stack's callback; every 10 ms the
+//                                        watchdog (timing stall, PA left on)
 // Priority 5 is configMAX_SYSCALL, so the ISRs may notify the task. Task-level calls into the engine raise BASEPRI to 5
 // for the duration of their register work, which keeps the three ISRs out (they share the bit-banged config port).
 #include <stddef.h>
 #include <string.h>
-#include "md380.h"
-#include "dmr_md380.h"
-#include "config.h"
+#include "hrc/dmr_glue.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
-#include "pins.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "debuglink/dlog.h"
@@ -33,10 +29,15 @@
 #define DMR_TASK_PRIORITY	(configMAX_PRIORITIES - 2)
 #define DMR_TASK_STACK		512	// words: the stack's callback runs on it
 #define DMR_POLL_MS		10
-#define MODEM_IRQ_PRIORITY	5	// as the DM-1701; must stay >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY
+// The three lines on pins 0-2 of the board's port: EXTI0-2
+#define INT_TS		GPIO_PIN_0
+#define INT_SYS		GPIO_PIN_1
+#define INT_RFTX	GPIO_PIN_2
+#define MODEM_IRQ_PRIORITY	5	// the chips' three lines, one level; must stay >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY
 
 static hrc6000_dmr_t eng ODR_CPU_RAM;	// the slot ISRs' state: CCM, off the DMA bus
 static TaskHandle_t task;
+static const stm32_hrc_dmr_board_t *hooks;
 static volatile bool active;
 static dmr_event_cb_t volatile stack_cb;
 static void *volatile stack_ctx;
@@ -98,12 +99,12 @@ static void notify(void *ctx)
 
 static bool rf(void *ctx, bool tx)
 {
-	return md380_rf_dmr_switch(tx);
+	return hooks->rf_switch(tx);
 }
 
 static bool sys_line_low(void *ctx)
 {
-	return !PIN_READ(PIN_C5000_SYS_INT);
+	return (hooks->int_port->IDR & INT_SYS) == 0;
 }
 
 static const hrc6000_dmr_ops_t ops = {
@@ -113,16 +114,16 @@ static const hrc6000_dmr_ops_t ops = {
 
 // --- Interrupts ---
 
-#define MODEM_INT_PINS	(PIN_MASK(PIN_C5000_TS_INT) | PIN_MASK(PIN_C5000_SYS_INT) | PIN_MASK(PIN_C5000_RFTX_INT))
+#define MODEM_INT_PINS	(INT_TS | INT_SYS | INT_RFTX)
 
 static void exti_setup(void)
 {
 	__HAL_RCC_SYSCFG_CLK_ENABLE();
-	stm32_gpio_clock(PIN_PORT(PIN_C5000_TS_INT));
+	stm32_gpio_clock(hooks->int_port);
 	GPIO_InitTypeDef g = {
 		.Pin = MODEM_INT_PINS, .Mode = GPIO_MODE_IT_FALLING, .Pull = GPIO_PULLUP, .Speed = GPIO_SPEED_FREQ_LOW,
 	};
-	HAL_GPIO_Init(PIN_PORT(PIN_C5000_TS_INT), &g);
+	HAL_GPIO_Init(hooks->int_port, &g);
 	HAL_NVIC_SetPriority(EXTI0_IRQn, MODEM_IRQ_PRIORITY, 0);
 	HAL_NVIC_SetPriority(EXTI1_IRQn, MODEM_IRQ_PRIORITY, 0);
 	HAL_NVIC_SetPriority(EXTI2_IRQn, MODEM_IRQ_PRIORITY, 0);
@@ -147,19 +148,22 @@ static void exti_enable(bool on)
 
 void EXTI0_IRQHandler(void)
 {
-	__HAL_GPIO_EXTI_CLEAR_IT(PIN_MASK(PIN_C5000_TS_INT));
+	__HAL_GPIO_EXTI_CLEAR_IT(INT_TS);
+	if (hooks->ts_service != NULL) {
+		hooks->ts_service();
+	}
 	hrc6000_dmr_isr_timeslot(&eng);
 }
 
 void EXTI1_IRQHandler(void)
 {
-	__HAL_GPIO_EXTI_CLEAR_IT(PIN_MASK(PIN_C5000_SYS_INT));
+	__HAL_GPIO_EXTI_CLEAR_IT(INT_SYS);
 	hrc6000_dmr_isr_sys(&eng);
 }
 
 void EXTI2_IRQHandler(void)
 {
-	__HAL_GPIO_EXTI_CLEAR_IT(PIN_MASK(PIN_C5000_RFTX_INT));
+	__HAL_GPIO_EXTI_CLEAR_IT(INT_RFTX);
 	hrc6000_dmr_isr_rftx(&eng);
 }
 
@@ -314,7 +318,7 @@ static void trace_lc(void)
 }
 #endif
 
-void md380_dmr_set_trace(bool on)
+void stm32_hrc_dmr_set_trace(bool on)
 {
 #if CONFIG_DEBUGLINK
 	tr.off = !on;
@@ -337,7 +341,7 @@ static void dmr_task(void *arg)
 		ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(DMR_POLL_MS));
 		if (active) {
 			hrc6000_dmr_poll(&eng);
-			if (!PIN_READ(PIN_C5000_SYS_INT)) {
+			if (sys_line_low(NULL)) {
 				NVIC_SetPendingIRQ(EXTI1_IRQn);	// a flag still holds the line low: no edge will come
 			}
 		}
@@ -354,10 +358,11 @@ static void dmr_task(void *arg)
 	}
 }
 
-// --- radio_md380.c interface ---
+// --- The board's radio code ---
 
-void md380_dmr_board_init(hrc_t *modem)
+void stm32_hrc_dmr_init(hrc_t *modem, const stm32_hrc_dmr_board_t *b)
 {
+	hooks = b;
 	hrc6000_dmr_init(&eng, modem, &ops);
 	exti_setup();
 	exti_enable(false);
@@ -366,31 +371,31 @@ void md380_dmr_board_init(hrc_t *modem)
 	}
 }
 
-void md380_dmr_enter(void)
+void stm32_hrc_dmr_enter(void)
 {
 	hrc6000_dmr_run(&eng);
 	active = true;
 	exti_enable(true);
 }
 
-void md380_dmr_leave(void)
+void stm32_hrc_dmr_leave(void)
 {
 	exti_enable(false);
 	active = false;
 	hrc6000_dmr_halt(&eng);
 }
 
-void md380_dmr_rx_restart(void)
+void stm32_hrc_dmr_rx_restart(void)
 {
 	hrc6000_dmr_rx_restart(&eng);
 }
 
-bool md380_dmr_tx_active(void)
+bool stm32_hrc_dmr_tx_active(void)
 {
 	return active && hrc6000_dmr_is_transmitting(&eng);
 }
 
-void md380_dmr_tx_drop(void)
+void stm32_hrc_dmr_tx_drop(void)
 {
 	if (!active) {
 		return;
@@ -417,7 +422,7 @@ static void stop(void)
 {
 	stack_cb = NULL;
 	if (active && hrc6000_dmr_is_transmitting(&eng)) {
-		md380_dmr_tx_drop();
+		stm32_hrc_dmr_tx_drop();
 	}
 }
 
@@ -439,6 +444,16 @@ static void rx_lock_slot(int8_t ts)
 static bool tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 {
 	return active && hrc6000_dmr_tx_begin(&eng, timing, ts, access);
+}
+
+static void tx_listen(void)
+{
+	hrc6000_dmr_tx_listen(&eng);
+}
+
+static int8_t tx_fill(const dmr_tx_burst_t *b)
+{
+	return hrc6000_dmr_tx_fill(&eng, b);
 }
 
 static bool tx_queue(const dmr_tx_burst_t *b)
@@ -529,36 +544,45 @@ static bool bs_keyed(void)
 #define SPLIT_OPS
 #endif
 
-const hal_dmr_modem_t md380_dmr = {
+const hal_dmr_modem_t stm32_hrc_dmr = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
-	.is_transmitting = is_transmitting,
+	.is_transmitting = is_transmitting, .tx_listen = tx_listen, .tx_fill = tx_fill,
 	SPLIT_OPS
 };
 
 // --- Bring-up counters ---
 
-// The RF switch counters live in radio_md380.c: a reset keeps their values here and reports the difference
-static uint32_t rf_base[2];
+// The RF switch counters live in the board's radio code: a reset keeps their values here and reports the difference
+static uint32_t rf_base[3];
 
-void md380_dmr_stats(md380_dmr_stats_t *out)
+static void rf_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_retries)
+{
+	*skipped = *unarmed = *rx_retries = 0;
+	if (hooks != NULL && hooks->rf_counters != NULL) {
+		hooks->rf_counters(skipped, unarmed, rx_retries);
+	}
+}
+
+void stm32_hrc_dmr_stats(stm32_hrc_dmr_stats_t *out)
 {
 	out->active = active;
 	out->stack_attached = stack_cb != NULL;
 	hrc6000_dmr_stats(&eng, &out->modem);
-	md380_rf_dmr_counters(&out->rf_skipped, &out->rf_unarmed);
+	rf_counters(&out->rf_skipped, &out->rf_unarmed, &out->rf_rx_retries);
 	out->rf_skipped -= rf_base[0];
 	out->rf_unarmed -= rf_base[1];
+	out->rf_rx_retries -= rf_base[2];
 }
 
-void md380_dmr_stats_reset(void)
+void stm32_hrc_dmr_stats_reset(void)
 {
 	// Every field before last_r5f is a uint32_t counter (hrc6000_dmr.h); the ISRs update them, so under the lock
 	lock(NULL);
 	memset(&eng.st, 0, offsetof(hrc6000_dmr_stats_t, last_r5f));
 	unlock(NULL);
-	md380_rf_dmr_counters(&rf_base[0], &rf_base[1]);
+	rf_counters(&rf_base[0], &rf_base[1], &rf_base[2]);
 }
 
 typedef struct {
@@ -616,14 +640,14 @@ static void put_four(out_t *o, const char *label, const uint32_t *v)
 }
 
 // Lines of at most about 26 characters (the diagnostics page)
-bool md380_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
+bool stm32_hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 {
 	static const char *const sync_names[] = { "MS", "BS", "T1", "T2", "--" };
 	if (len == 0) {
 		return false;
 	}
-	md380_dmr_stats_t s;
-	md380_dmr_stats(&s);
+	stm32_hrc_dmr_stats_t s;
+	stm32_hrc_dmr_stats(&s);
 	const hrc6000_dmr_stats_t *m = &s.modem;
 	out_t o = { buf, buf + len - 1 };
 	switch (i) {
@@ -673,7 +697,7 @@ bool md380_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_four(&o, labels[i - 6], &m->by_type[(i - 6) * 4]);
 		break;
 	}
-	case 10:	// ... by 0x5F bits 1-0 (on a C5000 the board reconstructs it: no 0x5F: all in column 0)
+	case 10:	// ... by 0x5F bits 1-0 (an HR_C5000 has no 0x5F: all in column 0)
 		put_four(&o, "5F", m->by_r5f);
 		break;
 	case 11:	// ... by delay after the tick: <1 <3 <6 ms (then line 12: <12 <22 >=22); post-access interrupts
@@ -741,6 +765,19 @@ bool md380_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		}
 		break;
 	}
+	case 21:	// the split duplex TX half's BS outbound (split-duplex.md 11.6)
+#if CONFIG_HOTSPOT_SPLIT
+		put_kv(&o, "bs sl", bs.st.slots);
+		put_kv(&o, " b", bs.st.bursts);
+		put_kv(&o, " u", bs.st.underruns);
+		put_kv(&o, " k", bs.st.keyups);
+		put_kv(&o, " c", bs.st.cach_written);
+		put_kv(&o, " rf", bs.st.rf_fail);
+		put_kv(&o, " st", bs.st.stalls);
+#else
+		put(&o, "bs -");
+#endif
+		break;
 	case 15:
 		put_kv(&o, "tx", m->tx_bursts);
 		put_kv(&o, " rf", m->rftx_ints);

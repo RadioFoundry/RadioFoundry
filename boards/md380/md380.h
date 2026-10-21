@@ -28,7 +28,6 @@ extern const hal_input_t md380_input;
 extern const hal_radio_t md380_radio;
 extern const hal_power_t md380_power;
 extern hal_flash_t md380_flash;
-extern const hal_dmr_modem_t md380_dmr;
 extern const hal_audio_t md380_audio;
 extern const hal_vocoder_t md380_vocoder;
 
@@ -57,14 +56,6 @@ uint32_t md380_subtone_samples(void);
 #endif
 int16_t md380_temperature_c10(void);
 
-// DMR PCM audio counters (audio_md380.c, CONFIG_DMR)
-typedef struct {
-	uint32_t blocks;
-	uint32_t overruns;
-	uint32_t dropped;
-} md380_audio_stats_t;
-void md380_audio_stats(md380_audio_stats_t *out);
-void md380_audio_reset_stats(void);
 
 // Physical key bits returned by md380_input.scan() (matrix positions in docs/spec/hardware-md380.md 9.1)
 enum {

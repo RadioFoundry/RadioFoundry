@@ -5,6 +5,7 @@
 #include "board.h"
 #include "config.h"
 #include "md380.h"
+#include "hrc/dmr_glue.h"
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -113,7 +114,7 @@ const board_t board = {
 	.diag_reset = md380_diag_reset,
 #endif
 #if CONFIG_DMR
-	.dmr = &md380_dmr,
+	.dmr = &stm32_hrc_dmr,
 	.audio = &md380_audio,
 	.vocoder = &md380_vocoder,
 #endif

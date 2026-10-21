@@ -3,7 +3,7 @@
 // DM-1701 radio: AT1846S (I2C3) + HR_C6000 (bit-banged config SPI, voice SPI2) + RF path GPIOs + APC DAC +
 // calibration. FM receive and transmit (docs/spec/hardware-dm1701.md 4-8, 12; docs/spec/modem-hrc6000.md 3, 8), and the
 // RF side of DMR (modem-hrc6000.md 3.1, 4.3; hardware-dm1701.md 5.3, 6): set_mode(DMR) puts both chips in DMR and starts
-// the slot engine (dmr_dm1701.c); tx() in DMR only arms the per-burst keying (TX frequency and PA drive) and the PA
+// the slot engine (platform/stm32f4/hrc/dmr_glue.c); tx() in DMR only arms the per-burst keying (TX frequency and PA drive) and the PA
 // then follows the bursts from the modem interrupts through dm1701_rf_dmr_switch(), which writes AT1846S reg 0x30
 // directly over I2C3 (never through the task-level driver and its cache, which is resynced when DMR TX ends).
 // tx_off() in DMR belongs after DMR_EV_TX_DONE; called while a transmission runs it drops it.
@@ -449,12 +449,20 @@ void dm1701_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_r
 	*rx_retries = r.rf_rx_retries;
 }
 
+// The shared DMR glue's view of this board: the modem's interrupt lines are PC0-PC2
+static const stm32_hrc_dmr_board_t dmr_board = {
+	.int_port = GPIOC,
+	.rf_switch = dm1701_rf_dmr_switch,
+	.ts_service = dm1701_rf_dmr_service,
+	.rf_counters = dm1701_rf_dmr_counters,
+};
+
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
 static void dmr_disarm(void)
 {
 	r.dmr_armed = false;
-	if (dm1701_dmr_tx_active()) {
-		dm1701_dmr_tx_drop();
+	if (stm32_hrc_dmr_tx_active()) {
+		stm32_hrc_dmr_tx_drop();
 	}
 	pa_off();
 }
@@ -482,7 +490,7 @@ static void dmr_enter(void)
 #if CONFIG_DMR
 	count(hrc6000_dmr_enter(&r.modem, cal.dmr_i, cal.dmr_q, DMR_MIC_GAIN));
 #endif
-	dm1701_dmr_enter();
+	stm32_hrc_dmr_enter();
 }
 
 // --- hal_radio_t ---
@@ -590,7 +598,7 @@ static void init(void)
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	audio(false);
 	r.diag.c6000_ok = hrc_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
-	dm1701_dmr_board_init(&r.modem);
+	stm32_hrc_dmr_init(&r.modem, &dmr_board);
 }
 
 static void set_mode(radio_mode_t mode)
@@ -605,7 +613,7 @@ static void set_mode(radio_mode_t mode)
 	} else {
 		if (prev == RADIO_MODE_DMR) {
 			dmr_disarm();
-			dm1701_dmr_leave();
+			stm32_hrc_dmr_leave();
 			rf_resync();
 			r.tx_on = false;
 		}
@@ -717,7 +725,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 		// New channel: the DMR modulation pair for it, and the receiver searches again (5.1). Back from our own
 		// transmission on the same channel the engine has already restarted it, or kept a repeater's timing
 		count(hrc_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
-		dm1701_dmr_rx_restart();
+		stm32_hrc_dmr_rx_restart();
 	}
 	r.tx_on = false;
 	return true;
@@ -808,7 +816,7 @@ static void tx_off(void)
 
 static void status(radio_status_t *st)
 {
-	if (dm1701_dmr_tx_active() || r.afsk) {
+	if (stm32_hrc_dmr_tx_active() || r.afsk) {
 		*st = r.last_status;	// keep I2C3 free for the per-burst switching / the AFSK tone switching
 		return;
 	}

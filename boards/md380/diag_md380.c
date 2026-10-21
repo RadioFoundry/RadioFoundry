@@ -6,6 +6,7 @@
 #include "config.h"
 #if CONFIG_DMR
 #include "dmr_md380.h"
+#include "hrc/i2s_pcm.h"
 #endif
 
 #if CONFIG_DIAG
@@ -57,10 +58,10 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 #if CONFIG_DMR
 	// The DMR modem counters first (bring-up), then the board readings
-	if (i < MD380_DMR_DIAG_LINES) {
-		return md380_dmr_stats_line(i, buf, len);
+	if (i < STM32_HRC_DMR_DIAG_LINES) {
+		return stm32_hrc_dmr_stats_line(i, buf, len);
 	}
-	i -= MD380_DMR_DIAG_LINES;
+	i -= STM32_HRC_DMR_DIAG_LINES;
 #endif
 	out_t o = { buf, buf + len - 1 };
 	md380_radio_diag_t d;
@@ -154,8 +155,8 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 #if CONFIG_DMR
 	case 10: {	// DMR PCM audio: blocks, overruns, blocks dropped
-		md380_audio_stats_t a;
-		md380_audio_stats(&a);
+		stm32_i2s_pcm_stats_t a;
+		stm32_i2s_pcm_stats(&a);
 		put(&o, "aud blk ");
 		put_u(&o, a.blocks);
 		put(&o, " ov ");
@@ -175,8 +176,8 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 void md380_diag_reset(void)
 {
 #if CONFIG_DMR
-	md380_dmr_stats_reset();
-	md380_audio_reset_stats();
+	stm32_hrc_dmr_stats_reset();
+	stm32_i2s_pcm_reset_stats();
 #endif
 }
 
