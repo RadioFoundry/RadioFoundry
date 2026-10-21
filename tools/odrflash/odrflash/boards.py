@@ -199,7 +199,27 @@ DB25D = Board(
     first_stage=(0x1000, bytes([0x2C, 0x11, 0x01, 0xC0])),
 )
 
-BOARDS = {b.id: b for b in (DM1701, DM32, DM1801PRO, MD380, DB25D)}
+# Bring-up, not released (docs/spec/hardware-gd77.md 10, docs/spec/update-gd77.md). Kinetis K22F with 2 KB flash sectors; the
+# radio's loader (flash below 0x4000) is never written, and neither is the last sector (0x7F800), which holds its
+# activation record. The loader takes an update file over USB HID (gd77boot.py, updatefile.py): odrflash writes the
+# image into a copy of a stock update file the user supplies (--stock), which also gives the codec. The codec window
+# is the span the merge uses: the code region at 0x55D00 and the table window up to the descriptor (codec-gd77.md).
+GD77 = Board(
+    id="gd77",
+    name="Radioddity GD-77",
+    family="gd77-hid",
+    app_base=0x00004000,
+    flash_end=0x00080000,
+    sectors=[Sector(i, 0x4000 + 0x800 * i, 0x800) for i in range((0x7F800 - 0x4000) // 0x800)],
+    codec=CodecProfile(id="gd77-p1", windows=[(0x00055D00, 0x0007B800 - 0x00055D00)],
+                       installed=[], sources=["GD-77 update files V3.2.1, V3.2.2, V4.2.8, V4.3.3, V4.3.6, V4.3.9, V6.0.1"]),
+    debuglink_names=["GD-77", "GD77", "gd77"],
+    releasable=False,
+    keep_codec_supported=False,
+    protected=[(0x00000000, 0x00004000), (0x0007F800, 0x00080000)],
+)
+
+BOARDS = {b.id: b for b in (DM1701, DM32, DM1801PRO, MD380, GD77, DB25D)}
 
 
 def get(board_id):

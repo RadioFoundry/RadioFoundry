@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The K22F codec descriptor: where the merge put the radio's stock codec in internal flash (docs/spec/codec-gd77.md).
-// 128 bytes at 0x7B780, written with the codec by the merge tool (tools/odrflash/odrflash/gd77codec.py); keep the two
+// 128 bytes at 0x7B700, written with the codec by the merge tool (tools/odrflash/odrflash/gd77codec.py); keep the two
 // in step. Same layout as the STM32 radios' descriptor (platform/stm32f4/codec_desc.h). The codec runs in place
 // from flash, so the firmware only needs to know where its code is and that the bytes there are what the merge wrote.
 // No hardware here: the host tests run it (tests/host/codecDescTest.c).
@@ -13,7 +13,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define CODEC_DESC_ADDR		0x0007B780u
+#define CODEC_DESC_ADDR		0x0007B700u
 #define CODEC_DESC_MAGIC	0x43534544u	// "DESC" little-endian
 #define CODEC_DESC_VERSION	1u
 #define CODEC_DESC_WINDOWS	5u		// table windows (the layout allows five; the GD-77 uses one)

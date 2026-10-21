@@ -7,7 +7,7 @@
  * vector table first. The last 2 KB sector, 0x7F800..0x7FFFF, holds radio data that must survive and is never written.
  * The application ends at 0x55D00: above it the flash is the stock AMBE+2 codec's, which the merge on the user's machine
  * writes (docs/spec/codec-gd77.md): its code at 0x55D00..0x67C57, its table window somewhere in 0x67C58..0x7B5F7 (it
- * depends on the stock build) and a descriptor at 0x7B780. The application never links past 0x55D00.
+ * depends on the stock build) and a descriptor at 0x7B700. The application never links past 0x55D00.
  *
  * SRAM is two 64 KB halves that meet at 0x20000000; no object may straddle the boundary, so they are two regions.
  * SRAM_L (0x1FFF0000) holds .data and .bss; SRAM_U (0x20000000) holds what the core marks ODR_CPU_RAM (.ramu_bss,

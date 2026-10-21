@@ -5,7 +5,7 @@
 // (docs/spec/hardware-gd77.md 5).
 //
 // The merge on the user's machine (tools/odrflash/odrflash/gd77codec.py) writes the codec's code at CODE_BASE, its table
-// window at the build's own address, and the descriptor at 0x7B780 (platform/k22f/codec_desc.h). The code reaches its
+// window at the build's own address, and the descriptor at 0x7B700 (platform/k22f/codec_desc.h). The code reaches its
 // tables through absolute addresses, which don't change; the merge rewrites what does (a few code pointers and the
 // branches between the parts). None of it is part of this repository or a release. Without a valid descriptor and codec,
 // present() is false and the radio is FM only.

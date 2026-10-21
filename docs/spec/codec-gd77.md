@@ -35,7 +35,7 @@ The low block's place is the start of ODR's application, so the merge moves the 
 | Main block | `CODE_BASE` = 0x55D00 |
 | Low block | right after the main block, keeping its address modulo 4 |
 | Table window | stays at the build's stock address, 0x67C58..0x7B5F7 over all builds; its two islands' calls into the code are rewritten |
-| Descriptor | 0x7B780, 128 bytes (`platform/k22f/codec_desc.h`, same layout as the STM32 radios'): tag, code window, table window, a CRC-32 of each |
+| Descriptor | 0x7B700, 128 bytes (`platform/k22f/codec_desc.h`, same layout as the STM32 radios'): tag, code window, table window, a CRC-32 of each |
 
 The application ends at 0x55D00 (`boards/gd77/gd77.ld`): 335,104 bytes. The code region is at most 73,360 bytes, so
 the whole codec footprint is the region plus the 80 KB the table windows of the seven builds span. The merged image is

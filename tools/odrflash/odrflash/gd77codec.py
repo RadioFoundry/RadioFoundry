@@ -27,7 +27,7 @@ import zlib
 
 FLASH_BASE = 0x4000			# flat image offset 0 is this flash address
 CODE_BASE = 0x00055D00			# where the main block goes (boards/gd77/gd77.ld ends the application here)
-DESC_ADDR = 0x0007B780			# the descriptor (platform/k22f/codec_desc.h)
+DESC_ADDR = 0x0007B700			# the descriptor (platform/k22f/codec_desc.h)
 DESC_LEN = 0x80
 DESC_MAGIC = 0x43534544			# "DESC"
 DESC_VERSION = 1

@@ -16,6 +16,7 @@ from . import __version__, boards, bootkey, codecsave, debuglink, manifest as mf
 from . import dfu as dfumod
 from . import release as relmod
 from . import serialflash
+from . import gd77codec, gd77boot, updatefile
 
 EPILOG = """\
 examples:
@@ -383,6 +384,8 @@ def cmd_flash(args):
     board, man, image, merged = load_image(args, args.board)
     if board.family == "bfuv32-serial":
         return cmd_flash_serial(args, board, man, image, merged)
+    if board.family == "gd77-hid":
+        return cmd_flash_gd77(args, board, image)
     if board.family == "hrc7000-iap":
         raise UsageError("%s is installed with the web flasher or stub/stubtool.py, not with odrflash" % board.name)
     if args.route != serialflash.AUTO:
@@ -523,6 +526,66 @@ def _progress(unit):
             sys.stdout.write("writing  %d/%d %s (%d%%)\n" % (done, total, unit, pct))
         sys.stdout.flush()
     return progress
+
+
+def gd77_update_file(args, board, image):
+    """(update file bytes, donor, flat image, codec profile or None): the image with the codec merged in, written into
+    a copy of the stock update file --stock (its header is the donor's)."""
+    if not args.stock:
+        raise UsageError("the %s update needs --stock FILE: one of the radio's own update files (.sgl). It supplies the "
+                         "file header the radio's loader expects and, unless --codec keep, the AMBE codec" % board.name)
+    with open(os.path.expanduser(args.stock), "rb") as f:
+        donor = f.read()
+    try:
+        u = updatefile.UpdateFile(donor)
+        flat = updatefile.unpack(u)
+        spec = gd77codec.find_spec(flat)
+        if args.codec == planmod.KEEP:
+            out, prof = image, None
+        else:
+            if spec is None:
+                raise UsageError("%s is not one of the supported GD-77 builds (%s), so its codec cannot be placed. "
+                                 "Use --codec keep to flash without voice" % (u.label(), ", ".join(sorted(gd77codec.load_specs()))))
+            out, prof = gd77codec.merge(image, gd77codec.pack(flat, spec)), spec["profile"]
+        if len(out) > u.room:
+            raise UsageError("the image is %d bytes, the stock update file has room for %d" % (len(out), u.room))
+        return updatefile.pack(out, u), u, out, prof
+    except (updatefile.UpdateFileError, gd77codec.PackError) as e:
+        raise UsageError(str(e))
+
+
+def cmd_flash_gd77(args, board, image):
+    """The GD-77 through its bootloader's USB HID update (gd77boot.py): untested on a radio."""
+    if args.route not in (serialflash.AUTO, serialflash.BOOTLOADER):
+        raise UsageError("the %s has no stub route yet; the bootloader route is the only one" % board.name)
+    new, donor, out, prof = gd77_update_file(args, board, image)
+    say("stock    %s: header and codec source" % donor.label())
+    say("codec    %s" % ("MERGED: %s placed at 0x%X" % (prof, gd77codec.CODE_BASE) if prof else "none: the image has no voice"))
+    say("image    %d bytes of flash from 0x%X written into an update file of %d bytes" % (len(out), updatefile.FLASH_BASE, len(new)))
+    warn("not yet tried on a radio: if the loader refuses the file, nothing is erased before the names are checked")
+    if args.dry_run:
+        say("dry run: nothing was sent")
+        return 0
+    u2 = updatefile.UpdateFile(new)
+    if args.simulate:
+        link = gd77boot.FakeBootloader(u2)
+    else:
+        say("radio    switch it off, hold both side keys, switch it on and connect the USB cable (update mode)")
+        link = gd77boot.HidLink()
+    if not args.yes and not args.simulate and not ask_yes("Erase and write the radio's application now?", default=True):
+        return 1
+    last = [-1]
+
+    def progress(done, total):
+        pct = 100 * done // total
+        if pct != last[0] and pct % 10 == 0:
+            last[0] = pct
+            say("write    %d%%" % pct)
+    gd77boot.Updater(link).flash(u2, progress=progress)
+    if args.simulate and link.received() != u2.body[:u2.length]:
+        raise UsageError("simulation: the model loader received something else than the file's body")
+    say("done     the radio restarts by itself")
+    return 0
 
 
 def cmd_flash_serial(args, board, man, app, slot):
@@ -763,6 +826,15 @@ def cmd_key(args):
 
 def cmd_merge(args):
     board = boards.get(args.board or "dm1701")
+    if board.family == "gd77-hid":
+        with open(os.path.expanduser(args.image), "rb") as f:
+            image = f.read()
+        new, donor, out, prof = gd77_update_file(args, board, image)
+        with open(args.output, "wb") as f:
+            f.write(new)
+        say("wrote    %s (%d bytes, an update file%s: keep it to yourself)"
+            % (args.output, len(new), " containing the proprietary codec" if prof else ""))
+        return 0
     with open(os.path.expanduser(args.image), "rb") as f:
         image = f.read()
     with open(os.path.expanduser(args.stock), "rb") as f:
@@ -855,6 +927,7 @@ def build_parser():
     m.add_argument("--key")
     m.add_argument("-o", "--output", required=True)
     m.add_argument("--board")
+    m.add_argument("--codec", choices=("auto", "keep", "merge"), default="auto", help="GD-77: keep: no codec in the file")
     m.set_defaults(fn=cmd_merge)
 
     g = sub.add_parser("download", help="download a release image and manifest, verified")
