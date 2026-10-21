@@ -654,6 +654,7 @@ last (unidentified synthesizer, needs its power-on quirk).
 | 23 | Encoder steps per detent and rest state (ODR: 2, resting where A = B) | Turn the knob, read the debug link's encoder counts |
 | 24 | The V1-V3 per-channel reference divider setting (5.3) | Retune across a band on V1-V3 |
 | 25 | Receiver probe thresholds per revision (section 19.3) | Noise readings per revision with the probe words |
+| 26 | Synthesizer settle times, the APC ramp, the PA drive rows and the squelch thresholds as ODR uses them (19.8) | Scope the synthesizer and PA lines on a retune and a key-up; power meter per level |
 
 ## 18. Sources
 
@@ -688,7 +689,7 @@ Bring-up state (2026-10-20): the image builds; nothing has run on a radio. `boar
 | Power | no battery (`CAP_NO_BATTERY`). "Off" saves, sets a flag in RTC backup register 18 and resets; at start-up the flag holds the radio until the power key is pressed and released. Supply voltage from ADC1 IN1 |
 | Flash | SPI NOR with the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug at 0 and 0x020000); the board revision record at 0x01F000, appended. Security registers read only: calibration and option block (19.5) |
 | Receive | FM on both bands, every revision (19.3). Front-end tuning from calibration rows 0x30 / 0x39 (11.2) when they aren't blank, else mid scale |
-| Transmit | refused: it needs a confirmed revision, the PA calibration and the HR_C6000 glue |
+| Transmit | the sequence is written (19.8) but refused: `CONFIG_MD9600_TX` is off, and a build with it still needs the run-time arm, a stored revision and plausible PA rows. FM modulation needs the HR_C6000 glue |
 | Not yet | DMR, sub-audio, GPS, the hand-mic keypad, FM transmit, the CPS's own command set, update packaging |
 
 ### 19.2 Clock plan and memory map
@@ -719,8 +720,15 @@ All three are on by default; a build with fewer drives only those boards. The re
    threshold and twice every other one's. It never drives PE15. The thresholds are unmeasured, so it is off by default.
 3. The build default, `MD9600_REV_DEFAULT` (v5).
 
-A stored revision this image can't drive leaves the receiver off rather than programming the wrong chip. Setting the
-record from a menu or the CPS is not written yet. The diagnostics page shows the revision, its source and the probe.
+A stored revision this image can't drive leaves the receiver off rather than programming the wrong chip. The record
+is set with Settings > Advanced > Hardware > Board revision or the debug link's HWOPT (`odr_debug.py hwopt "Board
+revision" V4A/V5`); it applies from the next start-up. The open-firmware CPS has no item for it. Until a record is
+stored the radio receives with the probe's or the default's revision and never transmits, and the diagnostics page
+asks for one ("Set rev: Adv>Hardware"). Its first three lines show the revision and its source ("unbuilt" for a
+stored revision this image doesn't drive), that prompt or "rev confirmed", and the probe ("off" when not built).
+
+The default is one constant, `MD9600_REV_DEFAULT` in `boards/md9600/board.mk`. Which revision it should be is the
+owner's decision; v5 stands until then.
 
 ### 19.4 Pin use in ODR
 
@@ -729,7 +737,7 @@ record from a menu or the CPS is not written yet. The diagnostics page shows the
 | PA0, PA1, PA3, PA6, PA7, PB0, PB1, PC5 | analog in | - | ADC1 scan: RSSI, supply, mic level, mic keypad, noise | unverified |
 | PA4, PA5 | analog out | 0 | DAC1 UHF tuning, DAC2 VHF tuning / APC | unverified |
 | PA8, PC9, PA13, PA14 | out | low, then high in receive | C5 and R5 supplies (PA13 / PA14 are SWD: connect under reset) | unverified |
-| PD5, PD6, PC4 | out | low | T5 supplies, PA loop: never high in this build | unverified |
+| PD5, PD6, PC4 | out | low | T5 supplies, PA loop: high only in an armed `CONFIG_MD9600_TX` build (19.8) | unverified |
 | PD15 | out | low, high in receive | Power_Control | unverified |
 | PE8, PE9 | out | high | RX VCOs | unverified |
 | PB7 | out | low | MOD2 routing | unverified |
@@ -738,7 +746,7 @@ record from a menu or the CPS is not written yet. The diagnostics page shows the
 | PE15 | in, out on V1-V4 | high after the reset pulse | AK2365A reset | unverified |
 | PB2, PB6, PC13, PE7 | out | low, PB6 high (muted) | FM stages, amplifier mute, audio band, FM mute | unverified |
 | PC6 | TIM8 CH1 | off | backlight | unverified |
-| PC7, PC8 | out | low | tone and beep PWM (not driven yet) | unverified |
+| PC7, PC8 | out, TIM8 CH2 / CH3 when driven | low | sub-audio tone and beep PWM (19.9) | unverified |
 | PA9 | out | high | mic and GPS supply | unverified |
 | PB12, PD14, PD13, PD12 | out | high, high, low, low then high | flash CS, LCD CS, A0, reset | unverified |
 | PB13-PB15 | SPI2 AF5 | - | flash and LCD | unverified |
@@ -829,3 +837,48 @@ supply, and the receiver tuned when the revision is driven. It never transmits a
 Open: the odrflash board entry, the web flasher's radio entry and the update image packaging are not written; they are
 the owner's decision.
 
+### 19.8 RF sequencing
+
+`boards/md9600/rfseq_md9600.c` holds the order of every RF step for every revision; `radio_md9600.c` maps its lines to
+the pins of 19.4. No synthesizer has a lock detect line (5.3), so each gets a fixed settle time after its words. All
+times are unverified.
+
+| Step | Receive | Transmit (`CONFIG_MD9600_TX`, armed) |
+|---|---|---|
+| 1 | PA loop and both T5 off, APC reference 0 | the same |
+| 2 | Power_Control, both R5, both C5 on | both R5 off, FM stages off |
+| 3 | both VCO_VCC high (RX VCOs) | the band's C5 on; the other band's C5 off on V4 and V4A / V5, on for V1-V3; U_V_MOD_SW to the band; the band's VCO_VCC low (TX VCO) |
+| 4 | the band's synthesizer words for the LO (5.2), then 2 ms | the words for the carrier, then 2 ms |
+| 5 | front-end tuning: DAC1 (UHF) or DAC2 (VHF) from calibration | the band's T5 on, 1 ms |
+| 6 | the IF: AK2365A set-up and 2 ms for its calibration (V1-V4), or the filter and route lines (V4A / V5) | RF_APC_SW on |
+| 7 | U_V_AF_SW to the band, FM_SW on in FM, off in DMR; 3 ms | APC reference (DAC2) up to the calibrated level in 8 steps of 250 us |
+
+Return to receive ramps the APC reference down in the same steps, opens the loop, drops both T5, then runs the receive
+column with the last receive settings. For DMR bursts the PA alone (T5, the loop, the ramp) switches while the
+synthesizer stays on the carrier. DMR receive uses the 12.5 kHz IF setting.
+
+At power-up, with the revision known: receivers on, then on V1-V4 the AK2365A reset (PE15 low for 10 us), and on V4
+the VHF synthesizer set for 145 MHz receive. PE15 stays an input on V4A / V5.
+
+Transmit is refused unless all hold: the build has `CONFIG_MD9600_TX` (off by default); a person armed it for this
+power cycle (Settings > Advanced > Hardware > Transmit, or HWOPT; every start is unarmed); the revision comes from a
+stored record; the frequency is in a band; the calibration's PA rows are present at every point and rise with the
+power level (11.2). A refusal or a bus failure leaves the PA loop and both T5 off and the receiver back on. Disarming
+drops the PA at once.
+
+Calibration as the RF code uses it (11.2, all unverified): front-end tuning, PA drive per level (5 W row 0x20, 10 W
+0x1A0, 25 W 0x190, 40 W 0x10, VHF 9 bytes later), squelch level 1 and level 9 opening thresholds. DAC values and noise
+thresholds are the byte x 16. The noise reading maps linearly onto the core's squelch scale through the two
+thresholds: level 1's maps to 64, level 9's to 40. Without them it is the 12-bit reading / 16. RSSI uses the curves of
+5.7. The diagnostics page shows which row groups each band accepts ("calrf V RPS U RPS"), the sequencer state, the
+arm and the last refusal.
+
+### 19.9 Other RF-side lines
+
+| Line | Use in ODR |
+|---|---|
+| PA2, ADC3 IN2 (QT_DQT_IN) | one software-started conversion for the diagnostics page ("qt"). No sub-audio decoder runs on it yet |
+| PC3, ADC2 IN13 (discriminator audio) | not sampled yet. The software CTCSS / DCS detector (`drivers/rf/subaudio`) is the intended consumer; the sample rate and DMA set-up are open |
+| PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase. No tone generator drives it yet |
+| PC8, TIM8 CH3 | beep PWM, same helper |
+| PA temperature, fan | no sensor or fan line is known on any revision (?) |
