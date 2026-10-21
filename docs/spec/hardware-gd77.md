@@ -156,8 +156,24 @@ on the bench.
 
 ### 5.1 AT1846S
 
-On I2C bus A at 7-bit 0x71. Register 0x04 = 0x0FD0, the 26 MHz reference setting, which is what the shared driver
-(`drivers/rf/at1846s`) writes. Bands 136 to 174 MHz and 400 to 470 MHz (U). The RSSI scale is the DM-1701's (U).
+On I2C bus A at 7-bit 0x71. Register 0x04 = 0x0FD0, the 26 MHz reference setting. Bands 136 to 174 MHz and 400 to
+470 MHz (U). The shared driver (`drivers/rf/at1846s`) runs with this radio's profile (`boards/gd77/rf_gd77.c`), all
+(U):
+
+| Item | Value |
+|---|---|
+| Init | soft reset, 0x30 = 0x0004, 0x04 = 0x0FD0, 27 register values, then the chip's calibration: 0x30 = 0x40A4 (50 ms), 0x40A6 (100 ms), 0x4006 (10 ms) |
+| GPIO | 0x1F = 0x1000: GPIO6 is the squelch output, the others Hi-Z |
+| Bandwidth | 9 page 0 and 11 page 1 registers per bandwidth (0x15, 0x32, 0x3A, 0x3F, 0x3C, 0x48, 0x62, 0x65, 0x66; page 1 0x06..0x0F, 0x12) |
+| FM / DMR mode tables | none: both modes use the same AT1846S values |
+| Reg 0x30, 12.5 kHz | idle 0x4006, receive 0x4026, transmit 0x40C6 (FM and DMR) |
+| Reg 0x30, 25 kHz | idle 0x7006, receive 0x7026, transmit 0x70C6 |
+| Reg 0x05 | 0x8763; 0x8543 at exactly 136.5, 147.875, 159.25, 409.5, 420.875, 432.25, 443.625, 466.375, 477.75, 489.125 and 500.5 MHz (multiples of 11.375 MHz); 0x8643 at 170.625, 504.63417 and 511.875 MHz |
+| Frequency | 0x29 / 0x2A = the frequency in 62.5 Hz units (MHz x 16000), as on the DM-1701 |
+| Tuning | 0x30 idle, 0x05, 0x29, 0x2A, then 0x30 for the new state |
+
+CTCSS and DCS use the shared driver's tone registers. The RSSI scale (reg 0x1B high byte) is the DM-1701's: UHF
+rssi - 151 dBm, VHF -164 + rssi x 32 / 27 dBm (U). Squelch is the core's, on RSSI and noise from reg 0x1B.
 
 ### 5.2 HR_C6000 control
 
@@ -165,16 +181,68 @@ PTE0 and PTE1 both start high. PTE1 goes low after 10 ms and the chip runs; PTE0
 reset and which is power-down isn't settled (?). Configuration access waits 10 ms after PTE1 goes low, then runs the
 power-on sequence of [modem-hrc6000.md](modem-hrc6000.md) with the 12.288 MHz clock row (section 2.2).
 
+After the shared power-on sequence the board sets (`boards/gd77/c6k_gd77.c`, all U):
+
+| Register | Value | Meaning |
+|---|---|---|
+| 0x12 | 0x17 | RF TX interrupt advance (about 2.3 ms before a burst) |
+| 0xC0 | 0x0A | RF RX interrupt advance |
+| 0x0D..0x0F | 0x10, 0x8E, 0xB8 | voice superframe |
+| 0x27..0x29 | 0x40, 0x7D, 0x40 | |
+| 0x2A..0x2F | 0x0B, 0x0B, 0x17, 0x05, 0x04, 0x0B | 0x2B Sql_l, 0x2C Sql_h, 0x2E tx_pre_on, 0x2F I2S bit clock 512 kHz |
+| 0x32, 0x33 | 0x02, 0xFF | I2S frame sync 8 kHz |
+| 0x4B | 0x1B | |
+| 0xE0 | 0x8B with the microphone on | codec under MCU control, LINEOUT2, microphone on MIC_P |
+| 0xE1..0xE3, 0xE5 | 0x0F, 0x06, 0x52, 0x1A | codec |
+| 0xE4 | 0x40 + mic gain | LINEOUT +2 dB, first mic stage 0 dB |
+| page 1 0x10, 0x30, 0x40, 0x51 | 32, 16, 7 and 5 bytes | auxiliary tables (0x10 as the shared table but byte 24 = 0x10) |
+
+The microphone input (MIC_P rather than LINEIN1) and the 0xE4 base are per board in the driver (`hrc_t.mic_input`,
+`mic_gain_base`).
+
+The voice port (V_SPI) is SPI1: PTB10 chip select (driven as a GPIO), PTB11 clock, PTB16 out, PTB17 in, mode 1,
+about 1.2 MHz (U). One frame is 0x03 / 0x83, address 0, 27 bytes.
+
 ### 5.3 Interrupts
 
-PTC7 (RF receive), PTC16 (RF transmit), PTC17 (system) on the falling edge, PTC18 (time slot) on either edge (U). No
-handler is attached yet: they come with DMR.
+PTC7 (RF receive), PTC16 (RF transmit), PTC17 (system) on the falling edge, PTC18 (time slot) on either edge (U).
+One PORTC handler (`boards/gd77/dmr_gd77.c`) at the RTOS syscall priority serves all four and feeds the shared slot
+engine (`hrc6000_dmr`). The time slot line interrupts on both edges, so an edge within 5 ms of the last accepted one
+is dropped: one interrupt per 30 ms slot. Configuration port transactions mask interrupts up to that level.
 
 ### 5.4 Transmit path
 
-Not enabled. The candidates are PTA17 (TX / PA enable), PTE2, PTE3, PTC13, PTC15 (RF switches) and DAC0 (power
-drive), all **?**. The factory calibration is located (6.4) but none of its fields is named. `tx()` refuses and both bands are marked
-receive only until both are settled on a radio.
+Written, off by default. Build variable `CONFIG_GD77_TX=y` marks both bands as transmit capable; without it `tx()`
+refuses. With it `tx()` still refuses until a calibration point (`boards/gd77/cal_gd77.h`, power drive per level)
+is valid for the frequency, which needs the calibration fields (6.4) named.
+
+| Line | Role | Tag |
+|---|---|---|
+| PTA17 | TX enable | U |
+| PTE2 | UHF TX path | U |
+| PTE3 | VHF TX path | U |
+| PTC15 | UHF RX path | U |
+| PTC13 | VHF RX path | U |
+| DAC0 | power drive: 8-bit drive value x 16 | U |
+
+The band split for the path lines is 188.74368 MHz (U). The other band's RX line is held low.
+
+### 5.5 RF switching order
+
+| To | Steps |
+|---|---|
+| Transmit | RX paths off, tune, reg 0x30 to transmit, the band's TX path on, PTA17 high, DAC0 ramp up |
+| Receive | PTA17 low, DAC0 ramp down, TX paths off, tune, reg 0x30 to receive, the band's RX path on, the RX DAC0 value |
+
+The ramp has 19 steps, value = drive x 16 x k / 19, 10 µs apart and 40 µs for the five steps nearest full drive
+(U). In DMR, `tx()` only arms: the HR_C6000's RF TX interrupt runs the transmit order before each burst and the RF RX
+interrupt the receive order after it, both from the interrupt with the AT1846S written over I2C at 100 kHz (about
+1.7 ms, inside the 2.3 ms advance).
+
+### 5.6 Vocoder
+
+No DMR voice codec on this radio yet. The vocoder reports none (`present()` false), so DMR carries data and signaling
+but no voice, and FM is unaffected. Beeps and tones use the PCM stream (section 8).
 
 ## 6. Memory map
 
@@ -301,12 +369,20 @@ reverse), 0xC0 (common normal), 0xA4, 0xA7, 0xAF; column offset 4 (U). Whether t
 ## 8. Audio path
 
 The HR_C6000's codec handles the speaker and the microphone, as on the DM-1701. For FM receive the chip passes audio
-through (`hrc6000_fm_audio`) and PTB0 switches the speaker amplifier (?).
+through (`hrc6000_fm_audio`) and PTB0 switches the speaker amplifier (?). For PCM (beeps, DMR voice) the board sets
+0xE2 bit 1 (DAC to the line out) and 0xE0 bit 3 (LINEOUT2), and in DMR keeps 0x22 bits 1 and 2 set (U). The
+microphone is on MIC_P (U, section 5.2).
 
 Digital audio runs over I2S0 with the HR_C6000 as master (U): a 512 kHz bit clock, an 8 kHz frame sync one bit early,
 two 32-bit words a frame, MSB first, the 16-bit sample in the low half of each word. The K22F's receiver takes the
 clocks and the transmitter runs synchronous to it. DMA channel 0 (DMAMUX source 12) drains the receiver and channel 1
 (source 13) fills the transmitter (`platform/k22f/i2s.c`). An alternative I2S pin set is on PTC1, PTC5..PTC7 (?).
+
+Each ring is 320 halfwords (160 frames, 20 ms) with an interrupt at half and full. Receive keeps slot 0; transmit
+writes the mono sample into both slots (`boards/gd77/pcm_gd77.c`). Two halves make one 160-sample block, handed to
+the core through `hal_audio` from an audio task, as on the DM-1701. A block the task hasn't taken when the next one
+completes is dropped and counted; a transmit half with no block is sent as silence. The stream start waits up to
+25 ms for the first half and fails if none comes.
 
 ## 9. User interface hardware
 
@@ -337,8 +413,8 @@ direct keys at bits 20 to 23.
 ### 9.2 Power, battery, LEDs
 
 PTE26 holds power. The power knob switch on PTA13 reads high while on; three low polls in a row start the shutdown
-(U). The battery reading takes ADC0_DP1 with a provisional 3:1 divider and a 3.3 V reference (?), so the board sets no
-low-battery thresholds yet. The LEDs are the PTC14 / PTB18 pair (?), red on PTB18 in the code.
+(U). The battery reading takes ADC0_DP1 (channel 1) with a provisional 3:1 divider and a 3.3 V reference (?), so the
+board sets no low-battery thresholds yet. The LEDs are the PTC14 / PTB18 pair (?), red on PTB18 in the code.
 
 ## 10. Update path and image packaging
 
@@ -362,7 +438,11 @@ Each needs a radio on the bench.
 | K22F package | 100-pin class, suffix unknown | read the part marking |
 | Battery divider | channel and scale | measure the pack against the raw reading (`bat raw`) |
 | Data flash chip select | PTA19 released to a pull-up | the `nor` diagnostics line shows a JEDEC ID |
-| Transmit path | PTA17, RF switches, DAC0, calibration location | with the radio on a dummy load, after the receive path works |
+| Transmit path | PTA17, RF switches, DAC0 as in 5.4 and 5.5 | with the radio on a dummy load, after the receive path works |
+| Microphone input | MIC_P (0xE0 bit 1) or LINEIN1 | speak into the microphone with the `pcm` line running; compare levels |
+| Voice port | SPI1 on PTB10, PTB11, PTB16, PTB17 | the `vp` count on the diagnostics page stays 0 during DMR receive |
+| Time slot edges | both edges of PTC18 | the `ts` counts: one accepted per 30 ms, the other edge dropped |
+| RX DAC0 value | what DAC0 drives during receive | measure with and without it |
 | Bus pin mux (4.2) | the hardware options listed | check against the K22F data sheet's pin mux table, then try one |
 | Data flash size | 16 to 128 Mbit; ODR needs 2 MB for its areas (6.2) | the `nor` diagnostics line's JEDEC ID |
 | EEPROM | 24C512 class at 0x50 | the `eep` diagnostics line |
@@ -374,13 +454,16 @@ Each needs a radio on the bench.
 | Area | State |
 |---|---|
 | SoC: start-up, vector table, clocks, SysTick, GPIO / PORT, DSPI, PIT, ADC, DAC, watchdog off | written, builds |
-| SoC: I2S0 with DMA | written, not started by the board |
+| SoC: I2S0 with DMA | written, started by the board's audio stream |
 | SoC: flash self-programming | stub, returns not implemented |
 | SoC: I2C controller, USB device | not written |
 | Display, keys, power hold, power switch, backlight, LEDs | written, unverified |
 | FM receive (AT1846S, HR_C6000 FM path) | written, unverified |
-| Transmit | refused |
-| DMR (vocoder port, interrupts, codec) | not wired |
+| Audio: PCM stream, speaker amplifier, beeps (8) | written, host tested (framing), unverified |
+| AT1846S profile, RF switching order, DAC0 ramp (5.1, 5.5) | written, host tested, unverified |
+| Transmit (FM and DMR) | written; refused unless built with `CONFIG_GD77_TX=y` and calibrated |
+| DMR receive (interrupts, slot engine, voice port) | written, unverified |
+| DMR voice codec (5.6) | none: DMR without voice |
 | Storage: settings and codeplug on the data flash (6.2), EEPROM read only (6.3) | written, host tested, unverified |
 | Factory calibration: both blocks loaded and checked (6.4) | written, host tested; fields not named, not applied |
 | USB (programming, debug link) | not wired |
