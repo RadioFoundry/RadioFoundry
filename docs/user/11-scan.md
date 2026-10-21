@@ -8,14 +8,15 @@ Which radios have scan and dual watch verified is in the [Radio reference](23-ra
 
 | Start | Stop |
 |---|---|
-| Hold **Talk target** | Hold **Talk target** again |
-| **\***, **7**, **2** (Scan this zone) | **\***, **7** again |
-| **OK**, **6** (Tools), **1** (Scan), **2** | **Back** on Home |
+| **OK**, **6** (Tools), **1** (Scan) | **Back** on Home |
+| A side key set to **Scan** (Settings > Keys) | The same key again |
 
 On a channel the radio scans the current zone ("Scanning this zone"). In the VFO it sweeps the band the VFO frequency
 is in ("Scanning the band"). The status line shows SCAN, and the channel name changes as the scan moves.
 
 A scan needs at least one other channel to go to. It doesn't run in hotspot mode or while you transmit.
+
+If dual watch is running, starting a scan stops it. The radio stays on the selected channel and scans from there.
 
 ## How the scan moves
 
@@ -60,13 +61,13 @@ VFO. It is two frequencies, not the two timeslots of one DMR frequency.
 ### Start it
 
 1. Go to the channel you want as A.
-2. Press **\***, then **7**. The Scan screen opens: **1** Dual watch, **2** Scan this zone.
-3. Press **1**. The first time, the radio asks for B (next step). Later it starts at once with the last B, shown on
-   the row: "Dual watch + Metro DMR". So `*`, `7`, `1` is all it takes.
+2. Press **\***, then **7** (the **Dual watch** quick tile). The first time, the radio asks for B (next step). Later
+   it starts at once with the last B. Two presses are all it takes. Holding **SK2** does the same.
 
 Home shows both channels, A over B, and "DUAL" in the status strip.
 
-<img src="../ux/screens/160x120i5/dual_chooser.png" width="200" alt="Scan: Dual watch or Scan this zone">
+The radio keeps the last B when you switch it off. It is found again by its channel number: in A's zone first, then in
+the first zone that holds it. If the channel is gone from the codeplug, the picker opens instead.
 
 ### Pick B
 
@@ -80,7 +81,7 @@ then the zones. Pick a zone to see its channels, or **VFO** to watch the VFO fre
 
 <img src="../ux/screens/160x120i5/dual_zones.png" width="200" alt="Zone for B: the VFO or a zone">
 
-To pick another B later, press **\***, **7** and then **#** on the Dual watch row.
+To pick another B later, press **#**, **3** (Change B) while dual watch runs.
 
 ### Read Home
 
@@ -97,8 +98,18 @@ its zone. The selected channel has an arrow under its letter.
 | "B Joe Smith TG 91 10s ago" | The last calls, newest first, with their channel |
 | "Heard 7s ago" (amber, on the channel) | On small screens: when the last call came in on this channel |
 | "# 1 talk on B" | A call came in on B in the last 10 s. **#**, **1** talks back there |
+| "# 1 back to A" | Talk back is on and **PTT** is on B (see below) |
 
-A call on the other channel never moves **PTT**. You choose.
+By default a call on the other channel never moves **PTT**. You choose.
+
+### Talk back
+
+Turn on **Settings > Talk > Dual watch talk back** (off by default) and **PTT** follows the call. When a call ends on
+the other channel, that channel becomes the selected one ("Talk back on B"), so **PTT** answers there. The 10 s timer
+starts over with each reply and each call there. After it, the selection goes back ("Talking on A"). **#**, **1**, the
+**A/B** key or **Left** / **Right** go back at once. While it is on, the hint row says "# 1 back to A  Back stop".
+
+<img src="../ux/screens/240x320/home_dual_talk_back.png" width="200" alt="Talk back on B">
 
 ### Talk on B
 
@@ -130,7 +141,8 @@ step the frequency.
 ### Stop it
 
 Press **Back** on Home. The radio stays on the selected channel ("Dual watch off: on B"). These stop it too: **\***,
-**7**; the **Scan** key; holding **Talk target**; **#**, **5**; and a side key set to **Dual watch**. If the radio ends it
+**7**; holding **SK2**; **#**, **5**; and a side key set to **Dual watch**. Starting a scan (**OK**, **6**, **1**, or the
+**Scan** key) stops it, staying on the selected channel. If the radio ends it
 itself, for example in hotspot mode, Home says "Dual watch stopped".
 
 ### Keys
@@ -142,12 +154,11 @@ itself, for example in hotspot mode, Home says "Dual watch stopped".
 | **\*** | The quick settings of the selected channel |
 | **Up** / **Down**, the knob | The selected channel moves through its zone (VFO: a step) |
 | **A/B** key (Settings > Keys), **Left** / **Right** | The other channel / A / B. With dual watch off, the **A/B** key starts it |
-| **Dual watch** key (Settings > Keys) | Starts (with the last B) and stops |
+| **Dual watch** key (Settings > Keys), hold **SK2** (the tone key on the DB25-D PRO) | Starts (with the last B) and stops |
 | **Back** | Stops, staying on the selected channel |
 
-While dual watch runs, the Scan key and **Talk target** hold stop it instead of starting a zone scan. Starting dual watch stops a zone scan. The last B is remembered until the
-radio is switched off. With **Large text** on (Settings > Display) Home shows one line per channel, the selected one
-marked with a bar.
+Starting dual watch stops a zone scan. With **Large text** on (Settings > Display) Home shows one line per channel, the selected one
+marked with an arrow.
 
 [Design and layouts for every display](../ux/dual-watch.md)
 

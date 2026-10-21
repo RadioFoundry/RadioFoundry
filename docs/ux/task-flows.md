@@ -172,36 +172,35 @@ Per-contact key: privacy follows the talk target automatically when the contact 
 
 ## 11. Scan
 
-Start: `QUICK`, `7`, `2` (or long `TALK_TARGET`). `QUICK`, `7`, `1` starts dual watch instead ([dual-watch.md](dual-watch.md)). Home shows "Scanning: Zone Local" in the status strip and the channel name updating; when a channel stops the scan, Activity shows it.
+Start: Tools > Scan (`SELECT`, `6`, `1`), or a side key set to Scan. Quick tile 7 and a long `TALK_TARGET` are dual watch instead ([dual-watch.md](dual-watch.md)); if it is running, the scan stops it, staying on the selected channel. Home shows "Scanning: Zone Local" in the status strip and the channel name updating; when a channel stops the scan, Activity shows it.
 
 While scanning (Home keys): `PTT` talks on the channel that last stopped (or the start channel if none, setting); `NAV_UP`/`NAV_DOWN` skip ahead; `CONTEXT` on a stopped channel gives "Skip channel for now" (nuisance delete), "Stay here" (stop scan on this channel), "Always skip" (edit scan list, permanent). `BACK` stops scanning and returns to the start channel.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
-| Start | 3 (long `TALK_TARGET`: 1) | 3 | 3 | 3 | 3 |
+| Start | 3 | 3 | 3 | 3 | 3 |
 | Nuisance skip | 2 (`#`,`1`) | 2 | 2 | 3 | 2 |
 | Stop | 1 | 1 | 1 | 1 | 1 |
-
-The Scan screen (`QUICK`, `7`) asks first, so a zone scan is one press more than when tile 7 started it at once.
 
 ### 11b. Dual watch
 
 Two channels, A and B (any channel of any zone, or the VFO); `PTT` talks on the selected one. The behavior, screens and per-radio keys are in [dual-watch.md](dual-watch.md).
 
-Start: `QUICK`, `7`, `1`. The first time the B picker opens: a channel number, then `SELECT`. For a B in another zone or the VFO: `UP` to the Zone row, `SELECT`, pick the zone (or the VFO), `SELECT`, then the channel. Later starts use the last B and take three presses.
+Start: `QUICK`, `7` (tile 7, Dual watch; long `TALK_TARGET` does the same). The first time the B picker opens: a channel number, then `SELECT`. For a B in another zone or the VFO: `UP` to the Zone row, `SELECT`, pick the zone (or the VFO), `SELECT`, then the channel. Later starts use the last B (kept across power off) and take two presses. `QUICK`, `7` again stops it.
 
-While it runs (Home keys): `PTT` talks on the selected channel and the watch goes on; `CONTEXT`, `1` talks on the other channel (an `A/B` side key or `NAV_LEFT`/`NAV_RIGHT`: one press); `NAV_UP`/`NAV_DOWN` and the knob move the selected channel; `CONTEXT` also changes A or B and shows the last caller. `BACK` stops, staying on the selected channel.
+While it runs (Home keys): `PTT` talks on the selected channel and the watch goes on; `CONTEXT`, `1` talks on the other channel (an `A/B` side key or `NAV_LEFT`/`NAV_RIGHT`: one press); `NAV_UP`/`NAV_DOWN` and the knob move the selected channel; `CONTEXT` also changes A or B and shows the last caller. With Settings > Talk > Dual watch talk back on, a call that ends on the other channel selects it for 10 s so `PTT` answers there; `CONTEXT`, `1` goes back. `BACK` stops, staying on the selected channel.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
-| Start with the last B | 3 | 3 | 3 | 3 | 3 |
-| Start, B from this zone by number | 5 | 5 | 5 | 5 | 5 |
-| Start, B on the VFO | 7 | 7 | 7 | 7 | 7 |
-| Start, B in another zone | 8 | 8 | 8 | 8 | 8 |
+| Start with the last B | 2 | 2 | 2 | 2 | 2 |
+| Start, B from this zone by number | 4 | 4 | 4 | 4 | 4 |
+| Start, B on the VFO | 6 | 6 | 6 | 6 | 6 |
+| Start, B in another zone | 7 | 7 | 7 | 7 | 7 |
 | Talk on B | 2 (`#`,`1`; 1 with an A/B key) | 2 | 2 | 2 | 2 |
 | Stop | 1 (`BACK`) | 1 | 1 | 1 | 1 |
+| Talk back on (Settings > Talk) | 10 | 10 | 10 | 10 | 10 |
 
-The budgets are the ones `tests/host/uiFlowTest.c` checks ("11 dual watch ..."). Zone scan starts in 3 (`QUICK`, `7`, `2`).
+The budgets are the ones `tests/host/uiFlowTest.c` checks ("11 dual watch ..."). Zone scan starts in 3 (Tools > Scan: `SELECT`, `6`, `1`).
 
 ## 12. Enter a VFO frequency
 
@@ -346,7 +345,7 @@ channels and rows quick settings don't have.
 | Power / squelch | 3 / 5 | yes |
 | Privacy | 3 | yes |
 | Scan start / stop | 3 / 1 | yes |
-| Dual watch start (last B / pick B) / stop | 3 / 5 / 1 | yes |
+| Dual watch start (last B / pick B) / stop | 2 / 4 / 1 | yes |
 | Dual watch, talk on B | 2 | yes |
 | VFO 446.000 | 7 | yes |
 | Lock | 1 | yes |

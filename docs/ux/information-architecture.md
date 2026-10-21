@@ -131,7 +131,7 @@ Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools t
 | 4 | To VFO (copy the channel to the VFO and open it) | To VFO |
 | 5 | Hear all (promiscuous) on/off | Monitor latch on/off |
 | 6 | Privacy on/off | VOX on/off |
-| 7 | Scan: dual watch or this zone (on: stops it) | Scan: dual watch or this zone (on: stops it) |
+| 7 | Dual watch (On / Off; a zone scan is in Tools > Scan) | Dual watch (On / Off; a zone scan is in Tools > Scan) |
 | 8 | Talk target | Bandwidth 12.5/25 kHz |
 | 9 | Brightness | Brightness |
 | 0 | All settings | All settings |
@@ -183,7 +183,7 @@ Notation: `short / long`. "-" means none. All maps also follow the text-field ru
 | 0-9 | digits / speed dial |
 | Channel encoder detent | `ENC_STEP` (Home: channel; editors: value; lists: focus, forward = down) |
 | Upper side key (row 2 D5) and middle side key (row 2 D7): see [hardware-dm1701.md](../spec/hardware-dm1701.md) 10 and 20 | `MONITOR` (while held) on the middle key |
-| SK2 (lower side) | `TALK_TARGET` / Scan on/off |
+| SK2 (lower side) | `TALK_TARGET` / Dual watch on/off |
 | Top (orange) key | Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built (hold again to cancel), else speak status |
 | PTT | `PTT` |
 
@@ -203,7 +203,7 @@ zones of any size step through it. No `NAV_LEFT`/`NAV_RIGHT`.
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | SK1 | `MONITOR` |
-| SK2 | `TALK_TARGET` / Scan |
+| SK2 | `TALK_TARGET` / Dual watch |
 | Top / alarm key (if present) | `EMERGENCY` or assignable |
 | PTT | `PTT` |
 
@@ -223,7 +223,7 @@ scroll wheel does; Home and editors follow the number. (Until 2026-10-10 the kno
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | SK1 | `MONITOR` |
-| SK2 | `TALK_TARGET` / Scan |
+| SK2 | `TALK_TARGET` / Dual watch |
 | Top orange key (if present) | assignable (default Power cycle / Speak status) |
 | PTT | `PTT` |
 

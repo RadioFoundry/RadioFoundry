@@ -65,6 +65,7 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 | Mic gain | 0 to 10 | 5 | Microphone level, 2 dB a step. 5 is the radio's normal level. Sets DMR, and FM on the radios that set the level in their microphone path ([Radio reference](23-radios.md)). A change counts from the next transmission | Works (DMR); FM not checked on air |
 | Monitor by default | On, Off | Off | Digital monitor (DMR: every talkgroup, promiscuous) goes on each time you select a DMR channel. **Back** on Home turns it off until the next channel | Works |
 | Show talker alias | On, Off | On | Show received talker aliases (names) under the caller's ID | Works |
+| Dual watch talk back | On, Off | Off | Off: a call on the other channel never moves **PTT**. On: when a call ends on the other channel, that channel becomes the selected one for 10 s (restarting with each reply and call there), so **PTT** answers there ([Dual watch](11-scan.md#talk-back)) | Works |
 
 ### Privacy (key 4)
 

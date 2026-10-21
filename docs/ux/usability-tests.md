@@ -85,7 +85,7 @@ Targets are for regular DMR users; new users get 2x the time target. "Presses" =
 | T10 | Check whether Joe's radio is on. | Radio check sent, result read aloud by participant | 2-5 | 15 s |
 | T11 | Turn the power down to low. Then the squelch up two steps (FM channel). | Both changed on Home | 3 / 5 | 20 s |
 | T12 | Turn on privacy for this channel. | Privacy icon on Home | 3 | 10 s |
-| T13 | Scan this zone; skip the noisy channel; stop. | Scan started, channel skipped, stopped | 3 + 2 + 1 | 30 s |
+| T13 | Scan this zone (Tools > Scan); skip the noisy channel; stop. | Scan started, channel skipped, stopped | 3 + 2 + 1 | 30 s |
 | T14 | Listen on 446.000 MHz. | VFO at 446.000 | 10 | 30 s |
 | T15 | Lock the keys, then unlock them. | Lock and unlock events | 2 | 10 s |
 | T16 | Does the radio have a GPS fix? What is your grid square? | Correct answer | 0-3 | 15 s |
@@ -97,9 +97,9 @@ Targets are for regular DMR users; new users get 2x the time target. "Presses" =
 | T22 | (any screen, after T21) Get back to the start screen and undo the temporary changes. | Home, defaults restored | 2 | 5 s |
 | T23 | Five-second test: show Home for 2 s, cover it. "Which channel? Where will PTT go? Is the battery OK?" | 3 of 3 correct | - | 2 s look |
 | T24 | Emergency (radio with emergency configured, in a shielded setup or dummy load). Start, then cancel. | Started and canceled, no accidental start in other tasks | 1 + 1 | 10 s |
-| T25 | Listen to this channel and to "Metro DMR" at the same time (channel 5 of this zone). Then stop. | Dual watch on with A = this channel, B = channel 5; then off, staying on the selected channel | 5 + 1 | 25 s |
+| T25 | Listen to this channel and to "Metro DMR" at the same time (channel 5 of this zone). Then stop. | Dual watch on with A = this channel, B = channel 5; then off, staying on the selected channel | 4 + 1 | 25 s |
 | T26 | (during T25, scripted call on B) A call just came in on the other channel. Which channel will your PTT talk on, and answer the call there. | Participant names the selected channel (A); TX on B after `#`, `1` | 2 + 1 | 15 s |
-| T27 | Listen to this channel and to the VFO at the same time. | Dual watch on with B = the VFO | 7 | 30 s |
+| T27 | Listen to this channel and to the VFO at the same time. | Dual watch on with B = the VFO | 6 | 30 s |
 
 Accessibility subset (voice prompts on, no looking): T1, T3, T5, T6, T9, T11, T15, T18. Target: all completed, time at most 2x the sighted target.
 
