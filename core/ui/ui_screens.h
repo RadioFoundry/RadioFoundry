@@ -64,6 +64,12 @@ typedef struct {
 	uint8_t last;		// the pane the last call came in on, UI_DUAL_NONE
 	uint32_t last_ms;	// when that call ended
 	char caller[40];	// the current or last caller: "Joe Smith TG 91", "FM signal"
+	uint8_t calls;		// calls in hist[]
+	struct {
+		uint8_t pane;
+		uint32_t ms;	// when it ended
+		char caller[28];
+	} hist[4];		// the last calls, newest first: Home lists them where there is room
 	ui_dual_pane_t pane[2];
 } ui_dual_t;
 #endif

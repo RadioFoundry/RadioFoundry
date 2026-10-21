@@ -151,6 +151,7 @@ bool ui_dual_start(const ui_dual_ref_t *b)
 	d->both = ui_svc_receivers() > 1;
 	d->rx = d->last = UI_DUAL_NONE;
 	d->caller[0] = 0;
+	d->calls = 0;
 	pane_fill(0);
 	pane_fill(1);
 	ui_toast(d->both ? "Dual watch: hearing both" : "Dual watch on: alternating");
@@ -211,6 +212,11 @@ static void set_pane(uint8_t pane, const ui_dual_ref_t *r)
 		b_known = true;
 	if (d->last == pane)
 		d->last = UI_DUAL_NONE;	// the last call was on the old channel
+	uint8_t keep = 0;		// and so were its calls in the list
+	for (uint8_t k = 0; k < d->calls; k++)
+		if (d->hist[k].pane != pane)
+			d->hist[keep++] = d->hist[k];
+	d->calls = keep;
 	pane_fill(pane);
 }
 
@@ -364,6 +370,14 @@ bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 		if (d->rx != UI_DUAL_NONE) {
 			d->last = d->rx;
 			d->last_ms = now;
+			const unsigned n = sizeof d->hist / sizeof d->hist[0];
+			memmove(&d->hist[1], &d->hist[0], (n - 1) * sizeof d->hist[0]);
+			d->hist[0].pane = d->rx;
+			d->hist[0].ms = now;
+			strncpy(d->hist[0].caller, d->caller, sizeof d->hist[0].caller - 1);
+			d->hist[0].caller[sizeof d->hist[0].caller - 1] = 0;
+			if (d->calls < n)
+				d->calls++;
 		}
 		d->rx = rx;
 		dirty = true;
@@ -465,7 +479,7 @@ static void actions_item(uint16_t i, ui_item_t *it)
 		pane_value(&vb, 1);
 		break;
 	case DA_CALLER:
-		sb_str(&b, "Last caller");
+		sb_str(&b, "Caller");
 		if (d->caller[0])
 			sb_str(&vb, d->caller);
 		else
@@ -630,10 +644,6 @@ static void zone_item(uint16_t i, ui_item_t *it)
 	if (!codeplug_zone((uint16_t)(i - 1u), &z))
 		return;
 	strcpy(it->label, z.name);
-	sbuf_t b;
-	sb_init(&b, it->value, sizeof it->value);
-	sb_u32(&b, z.count, 1);
-	sb_str(&b, " channels");
 	if (i - 1u == pick_zone)
 		it->flags |= UI_ITEM_TEMP;
 }

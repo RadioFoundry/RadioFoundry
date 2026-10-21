@@ -103,6 +103,22 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "talk_target_picker", "call:3101234,91,g tt" },
 	{ "talk_target_picker_vfo", "ok 4 up ok quick 4 tt" },
 	{ "scan_actions", "quick 7 2 ctx" },
+#if CONFIG_DUAL_WATCH
+	// Dual watch (docs/ux/dual-watch.md): A = channel 3, B = channel 5 of the zone unless the script picks another
+	{ "dual_chooser", "quick 7" },
+	{ "dual_pick", "quick 7 1" },
+	{ "dual_zones", "quick 7 1 up ok" },
+	{ "home_dual", "quick 7 1 5 ok wait:3000" },
+	{ "home_dual_rx_b", "quick 7 1 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 tune:b rx:3101234,91,g wait:2500" },
+	{ "home_dual_heard", "quick 7 1 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000" },
+	{ "home_dual_on_b", "quick 7 1 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 ctx 1 wait:3000" },
+	{ "home_dual_tx", "quick 7 1 5 ok wait:3000 pttdown" },
+	{ "home_dual_vfo", "quick 7 1 up ok up ok wait:3000" },
+	{ "home_dual_other_zone", "quick 7 1 up ok down ok ok wait:3000 tune:b fmrx" },
+	{ "home_dual_fm", "quick 7 1 down ok wait:3000" },
+	{ "home_dual_large_text", "ok 7 2 down down down down down ok long:back quick 7 1 5 ok wait:3000 tune:b rx:3101234,91,g" },
+	{ "dual_actions", "quick 7 1 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 ctx" },
+#endif
 	{ "emergency", "emergency:3101234" },
 	{ "volume", "softvol volkey up up" },
 	{ "volume_muted", "softvol volkey down down down down down down down down" },
@@ -384,6 +400,9 @@ static const struct { const char *name; unsigned flags; } gallery_color[] = {
 	{ "home_plain", G_COLOR | G_THEMES },	// the plain strip's state pills
 	{ "rx_group", G_THEMES },
 	{ "tx", G_THEMES },
+#if CONFIG_DUAL_WATCH
+	{ "home_dual_rx_b", G_THEMES },
+#endif
 	{ "channels", G_COLORS | G_THEMES },	// the focus row in the color
 	{ "settings_display", G_THEMES },
 };
