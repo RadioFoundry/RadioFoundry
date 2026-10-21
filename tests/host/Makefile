@@ -648,14 +648,18 @@ run-taskStack: taskStackTest
 	./taskStackTest
 .PHONY: run-taskStack
 
-# The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
+# The flash stubs' shared protocol engine (stub/common/stubeng.c) with the STM32F4 target's board record check
+# (stub/stm32f4/f4stub_board.c, docs/spec/stub-stm32f4.md)
+F4STUB_SRC := $(ROOT)/stub/common/stubeng.c $(ROOT)/stub/stm32f4/f4stub_board.c
+F4STUB_H   := $(ROOT)/stub/common/stubeng.h $(ROOT)/stub/stm32f4/f4stub.h
+F4STUB_INC := -I$(ROOT)/stub/common -I$(ROOT)/stub/stm32f4
 TESTS   += f4stubTest
-f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
-	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c
+f4stubTest: f4stubTest.c $(F4STUB_SRC) $(F4STUB_H)
+	$(CC) $(CFLAGS) -Wshadow $(F4STUB_INC) -o $@ f4stubTest.c $(F4STUB_SRC)
 
 TESTS   += f4stubSim
-f4stubSim: f4stubSim.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
-	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubSim.c $(ROOT)/stub/stm32f4/f4stub_proto.c
+f4stubSim: f4stubSim.c $(F4STUB_SRC) $(F4STUB_H)
+	$(CC) $(CFLAGS) -Wshadow $(F4STUB_INC) -o $@ f4stubSim.c $(F4STUB_SRC)
 
 run: run-f4stub
 run-f4stub: f4stubTest f4stubSim

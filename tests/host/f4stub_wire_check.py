@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""The host tool (stub/f4stub.py) against the stub's real protocol engine (f4stubSim, built from
-stub/stm32f4/f4stub_proto.c): installs on a simulated DM-1701 and MD-380 flash, a read-back and the refusals, all
-over the stub's wire protocol. Run by `make -C tests/host`."""
+"""The host tool (stub/f4stub.py) against the stub's real protocol engine (f4stubSim, built from stub/common/stubeng.c
+and stub/stm32f4/f4stub_board.c): the board records, installs on a simulated DM-1701, MD-380 and MD-9600 flash, a
+read-back and the refusals, all over the stub's wire protocol. Also checks each board profile against the board's
+own sources (linker script, pins.h), so a profile can't drift from the firmware. Run by `make -C tests/host`."""
 import os
+import re
 import select
 import subprocess
 import sys
@@ -44,7 +46,7 @@ class PipePort:
         pass
 
 
-def run(sim, flash, job, want_spi=False):
+def run(sim, flash, job, want_spi=False, board="dm1701"):
     with tempfile.TemporaryDirectory(prefix="odr-f4wire-") as d:
         fin, fout = os.path.join(d, "in.bin"), os.path.join(d, "out.bin")
         open(fin, "wb").write(flash)
@@ -52,6 +54,8 @@ def run(sim, flash, job, want_spi=False):
                                 stderr=subprocess.PIPE)
         radio = f4stub.F4Radio(PipePort(proc), log=lambda *a: None)
         radio.hello()
+        if board:
+            radio.configure(board)
         result = job(radio, d)
         proc.stdin.close()
         log = proc.stderr.read().decode()
@@ -94,7 +98,8 @@ def main():
 
     md_app = bytearray((i * 13 + 1) & 0xFF for i in range(0x08080000 - 0x0800C000 - 4))
     md_app[:4] = (0x2001FFFC).to_bytes(4, "little")
-    out, res, log = run(sim, bytes(flash), lambda r, d: r.write_image("md380", [(0x0800C000, bytes(md_app))], backup_dir=d))
+    out, res, log = run(sim, bytes(flash), lambda r, d: r.write_image("md380", [(0x0800C000, bytes(md_app))], backup_dir=d),
+                        board="md380")
     check(res[0] == 5, "md380 install: sectors 3-7 %s" % (res,))
     check(out[0x80000:] == bytes(flash[0x80000:]), "md380 codec sectors 8-11 untouched")
     check(out[0xC000:0xC000 + len(md_app)] == bytes(md_app), "md380 image in place")
@@ -136,6 +141,47 @@ def main():
     check(res == (2, 254) and log.count("xerase") == 2, "SPI write: 2 sectors written %s" % (res,))
     check(spi_out == bytes(new) and bad == [], "SPI flash holds the new copy")
     check(out == bytes(flash), "internal flash untouched by SPI work")
+
+    # MD-9600: its board record reaches the engine (SPI2, mode 3, chip select PB12), then an install in sectors 3-7
+    out, res, log = run(sim, bytes(flash), lambda r, d: r.write_image("md9600", [(0x0800C000, bytes(md_app))],
+                                                                      backup_dir=d), board="md9600")
+    check("config 3 2 3 1C" in log, "md9600 record decoded by the stub: %r" % log.splitlines()[:1])
+    check(res[0] == 5 and out[0x80000:] == bytes(flash[0x80000:]) and out[:0xC000] == boot,
+          "md9600 install: sectors 3-7, bootloader and codec sectors untouched %s" % (res,))
+
+    # Unconfigured: the engine refuses every write itself (the tool's own check bypassed)
+    def raw_writes(r, d):
+        got = []
+        for op, payload in ((f4stub.OP_ERASE, bytes([5]) + f4stub.MAGIC.to_bytes(4, "big")),
+                            (f4stub.OP_PROGRAM, (0x08060000).to_bytes(4, "big") + b"\x00" * 4),
+                            (f4stub.OP_XERASE, (0x3000).to_bytes(4, "big") + f4stub.MAGIC.to_bytes(4, "big"))):
+            try:
+                r.request(op, payload, retries=0)
+                got.append("ok")
+            except stubtool.DumpError as e:
+                got.append(str(e))
+        return got, r.board, r.app_base
+
+    out, (got, bd, base), log = run(sim, bytes(flash), raw_writes, board=None)
+    check(len(got) == 3 and all("status 0x11" in g for g in got), "unconfigured: every write refused %s" % got)
+    check(bd is None and base == 0 and out == bytes(flash), "unconfigured: no board, no app base, nothing changed")
+
+    # The profiles against the boards' sources
+    root = os.path.join(HERE, "..", "..")
+    for bid, prof in f4stub.BOARDS.items():
+        ld = open(os.path.join(root, "boards", bid, bid + ".ld")).read()
+        m = re.search(r"FLASH\s*\(rx\)\s*:\s*ORIGIN\s*=\s*(0x[0-9A-Fa-f]+),\s*LENGTH\s*=\s*(0x[0-9A-Fa-f]+)", ld)
+        check(m is not None and int(m.group(1), 16) == f4stub.APP_BASE == prof["owned"][0][0]
+              and int(m.group(2), 16) == prof["owned"][0][1], "%s: the profile's application area is the .ld's" % bid)
+        pins = open(os.path.join(root, "boards", bid, "pins.h")).read()
+        m = re.search(r"#define PIN_FLASH_CS\s+GPIO([A-I]), GPIO_PIN_(\d+)", pins)
+        check(m is not None and "P%s%s" % (m.group(1), m.group(2)) == prof["spi"]["cs"],
+              "%s: the profile's chip select is pins.h's" % bid)
+        check(f4stub.config_record(bid)[0] == prof["id"], "%s: record board id" % bid)
+    m = re.search(r"#define PIN_LCD_CS\s+GPIO([A-I]), GPIO_PIN_(\d+)", open(os.path.join(root, "boards", "md9600", "pins.h")).read())
+    check(m is not None and ("P%s%s" % m.groups(),) == f4stub.BOARDS["md9600"]["spi"]["idle"],
+          "md9600: the LCD chip select on the shared bus is held high")
+    check(len({b["id"] for b in f4stub.BOARDS.values()}) == len(f4stub.BOARDS), "board ids are unique")
 
     print("f4stub_wire_check %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                    "" if len(fails) == 1 else "s"))

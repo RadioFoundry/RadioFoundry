@@ -82,11 +82,16 @@ a power cycle. A stub older than version 6 (a HELLO shorter than 19 bytes) gets 
 
 The universal stub is built outside this repository with the monitor's source; `stub/embed_stub.py` embeds it. `stub/db25d_update.sh IMAGE [PORT]` is the one command for a DB25-D update.
 
-## STM32F4 radios (DM-1701, MD-380)
+## STM32F4 radios (DM-1701, MD-380, MD-9600)
 
 A second stub, with its source here, for the STM32F405 radios behind the AnyRoad / TYT bootloader. A running ODR built
 with `CONFIG_STUB_ENTRY=y` loads it over the USB debug link; it then installs builds (changed sectors only, the codec
 kept), backs up and verifies the internal flash, and reads and writes the external SPI flash. Spec: [docs/spec/stub-stm32f4.md](../docs/spec/stub-stm32f4.md).
+
+One image serves all three radios, as the HR_C7000's universal stub does: after HELLO the host sends a CONFIG with the
+radio's board record (SPI flash bus, pins, mode and chip select, other chip selects to hold high, the crystal, the
+bootloader's end), and checks the echo in the next HELLO. The stub writes nothing before that. The profiles are
+`BOARDS` in `f4stub.py`; the board comes from ODR's VERSION `board=`, or from `--board` with `--attach`.
 
 The STM32F4 stub is linked for the SRAM base. ODR stages it in an 8 KB buffer and copies it there, so `--odr-enter`
 checks it differently from the HR_C7000 monitors: it must start with the STM32F4 stub's entry code, and the base ODR
@@ -94,11 +99,13 @@ reports must be 0x20000000.
 
 | File | What |
 |---|---|
-| `stm32f4/` | the stub's C source, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (about 5.3 KB) |
-| `f4stub.py` | its host side, with the stub build embedded (checked by SHA-256; `--embed` puts a new build in, and CI fails while a fresh build differs); `stubtool.py` hands the DM-1701 and MD-380 to it (`--odr-enter`, or `--attach --board dm1701`); `--self-test` runs without a radio |
+| `common/` | the protocol engine every stub target shares (`stubeng.h` documents the port a target supplies): framing, ops, safety rules, SUMS and READ. Host tested |
+| `stm32f4/` | the STM32F4 target: entry, USB, flash controller, SPI flash, the board record check, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (7,840 bytes, at most 8 KB) |
+| `f4stub.py` | its host side and the board profiles, with the stub build embedded (checked by SHA-256; `--embed` puts a new build in, and CI fails while a fresh build differs); `stubtool.py` hands the DM-1701, MD-380 and MD-9600 to it (`--odr-enter`, or `--attach --board md9600`); `--self-test` runs without a radio |
 
-Status (2026-10-16): built and host tested (`tests/host`: the protocol engine, and the host tool against the real
-engine through a pipe), and run on the DM-1701 ([stub-stm32f4.md](../docs/spec/stub-stm32f4.md) 11).
+Status (2026-10-21): built and host tested (`tests/host`: the protocol engine with the board record, and the host tool
+against the real engine through a pipe). Protocol 2 ran on the DM-1701 ([stub-stm32f4.md](../docs/spec/stub-stm32f4.md)
+11); protocol 3 (the board record), the MD-380 and the MD-9600 have not run on a radio yet.
 
 ## HR_C7000 status
 

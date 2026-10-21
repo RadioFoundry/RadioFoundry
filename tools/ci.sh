@@ -38,7 +38,7 @@
 #        audio-probe        (DM-1701 only, the board with an audio tap) the default config with CONFIG_AUDIO_PROBE=y
 #                           and LTO=1 (without LTO it no longer fits), so the probe keeps building
 #        vhf                (MD-380 only) the VHF band image, default config
-#      and the STM32F4 flash stub (stub/stm32f4, with the DM-1701 or MD-380 compiler).
+#      and the STM32F4 flash stub (stub/stm32f4, with the DM-1701's compiler).
 #      Each must build with zero compiler and linker warnings. Sizes go to build/ci/size-report.md. The default and the
 #      maximal configuration must pass the static stack check (make stack-check, docs/dev/stack-check.md): each task's
 #      deepest call chain fits its stack with the margin.
@@ -330,8 +330,9 @@ for bm in boards/*/board.mk boards/*/; do
 	# shellcheck disable=SC2086
 	build "$b" maximal $all_on $(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
 done
-# The STM32F4 flash stub (stub/stm32f4): one image for the DM-1701 and the MD-380, loaded by CONFIG_STUB_ENTRY builds
-if [ -z "$ONLY" ] || case ",$ONLY," in *,dm1701,*|*,md380,*) true ;; *) false ;; esac; then
+# The STM32F4 flash stub (stub/stm32f4): one image for the DM-1701, the MD-380 and the MD-9600, loaded by
+# CONFIG_STUB_ENTRY builds
+if [ -z "$ONLY" ] || case ",$ONLY," in *,dm1701,*|*,md380,*|*,md9600,*) true ;; *) false ;; esac; then
 	cc=$(make -s BOARD=dm1701 print-cc 2>/dev/null)
 	if [ -z "$cc" ] || ! command -v "$cc" > /dev/null 2>&1; then
 		skip "STM32F4 flash stub: compiler ${cc:-?} not installed"
