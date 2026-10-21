@@ -848,13 +848,16 @@ run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
 .PHONY: run-settings
 
 # The SPI NOR driver against a model of the chip at the bus, and the journal and settings store on it (16 MB and
-# 1 MB parts, power cuts tearing page programs and erases)
+# 1 MB parts, power cuts tearing page programs and erases); the MD-9600's map and board record sector on it too
 TESTS   += spiNorTest
+MD9600_STORE := $(ROOT)/boards/md9600/store_md9600.c $(ROOT)/boards/md9600/rev_md9600.c
 
 spiNorTest: spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c $(ROOT)/drivers/flash/spi_nor/spi_nor.h \
-            $(ROOT)/drivers/bus/spi_bus.h $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c \
-		$(CORE)/storage/storage.c $(CORE)/settings/settings.c
+            $(ROOT)/drivers/bus/spi_bus.h $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h) \
+            $(MD9600_STORE) $(ROOT)/boards/md9600/store_md9600.h $(ROOT)/boards/md9600/rfplan_md9600.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -I$(ROOT)/boards/md9600 -Wshadow -DCONFIG_MD9600_V1V3=1 -DCONFIG_MD9600_V4=1 \
+		-DCONFIG_MD9600_V5=1 -o $@ spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c \
+		$(CORE)/storage/storage.c $(CORE)/settings/settings.c $(MD9600_STORE)
 
 # The SPI NAND driver against a model of the chip at the bus: ID, page reads through the cache, ECC status, bad-block
 # marks, a chip that stays busy or doesn't answer; program loads, internal data moves, erase, the block lock, the write
