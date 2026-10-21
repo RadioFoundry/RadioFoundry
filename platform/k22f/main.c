@@ -13,15 +13,14 @@ int main(void)
 {
 	NVIC_SetPriorityGrouping(0);	// all 4 bits preemption (FreeRTOS needs this)
 	k22f_time_init();
-	board_early_init();
-	k22f_time_init();		// the clock changed; restart the count from the new rate
+	board_early_init();		// the clock switch keeps the time base going (time.c)
 	app_start();
 	vTaskStartScheduler();
 	for (;;) {
 	}
 }
 
-// Without the crash log a crash stops the radio here (CONFIG_CRASH_LOG has no K22F capture yet)
+// Without the crash log a crash stops the radio here (with it: crash_k22f.c and core/crash)
 #if !CONFIG_CRASH_LOG
 void vApplicationStackOverflowHook(TaskHandle_t task, char *name)
 {

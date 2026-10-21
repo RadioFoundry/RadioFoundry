@@ -73,6 +73,7 @@ typedef enum IRQn {
 // --- SIM: clock gates, dividers, chip identity (chapter 12) ---
 #define SIM_BASE		0x40047000u
 #define SIM_SOPT1		K22F_REG32(SIM_BASE + 0x0000)
+#define SIM_SOPT1CFG		K22F_REG32(SIM_BASE + 0x0004)
 #define SIM_SOPT2		K22F_REG32(SIM_BASE + 0x1004)
 #define SIM_SDID		K22F_REG32(SIM_BASE + 0x1024)
 #define SIM_SCGC4		K22F_REG32(SIM_BASE + 0x1034)
@@ -89,6 +90,11 @@ typedef enum IRQn {
 
 #define SIM_SOPT2_PLLFLLSEL(x)	((uint32_t)(x) << 16)	// 0 FLL, 1 PLL, 3 IRC48M
 #define SIM_SOPT2_PLLFLLSEL_MASK	(3u << 16)
+#define SIM_SOPT2_USBSRC	(1u << 18)	// USB clock from PLLFLLSEL (else the USB_CLKIN pin)
+#define SIM_SOPT1_USBREGEN	(1u << 31)	// USB voltage regulator on
+#define SIM_SOPT1CFG_URWE	(1u << 24)	// SOPT1 USBREGEN may be written
+#define SIM_CLKDIV2_USB_MASK	0xFu		// USBDIV, USBFRAC
+#define SIM_SCGC4_I2C0		(1u << 6)
 #define SIM_SCGC4_USBOTG	(1u << 18)
 #define SIM_SCGC5_PORTA		(1u << 9)	// PORTA..PORTE: bits 9..13
 #define SIM_SCGC5_PORTS		(0x1Fu << 9)
@@ -148,6 +154,7 @@ typedef enum IRQn {
 #define SMC_PMPROT_AHSRUN	0x80u
 #define SMC_PMCTRL_RUNM_RUN	0x00u
 #define SMC_PMCTRL_RUNM_HSRUN	0x60u
+#define SMC_PMCTRL_RUNM_MASK	0x60u
 #define SMC_PMSTAT_RUN		0x01u
 #define SMC_PMSTAT_HSRUN	0x80u
 
@@ -158,6 +165,23 @@ typedef enum IRQn {
 #define RCM_BASE		0x4007F000u
 #define RCM_SRS0		K22F_REG8(RCM_BASE + 0x0)
 #define RCM_SRS1		K22F_REG8(RCM_BASE + 0x1)
+// Reset sources: SRS0 bit 0 wakeup, 1 low voltage, 2 loss of clock, 3 loss of lock, 5 watchdog, 6 reset pin,
+// 7 power-on; SRS1 bit 0 JTAG, 1 core lockup, 2 software (SYSRESETREQ), 3 MDM-AP, 4 EzPort, 5 stop mode ack error
+
+// --- FTFA flash controller and FMC flash cache (chapters 28, 29) ---
+#define FTFA_BASE		0x40020000u
+#define FTFA_FSTAT		K22F_REG8(FTFA_BASE + 0x0)
+#define FTFA_FSEC		K22F_REG8(FTFA_BASE + 0x2)
+#define FTFA_FOPT		K22F_REG8(FTFA_BASE + 0x3)
+#define FTFA_FCCOB(i)		K22F_REG8(FTFA_BASE + 0x4u + ((uint32_t)(i) ^ 3u))	// FCCOB0..B, big-endian in each word
+#define FTFA_FSTAT_CCIF		0x80u	// command complete; write 1 to launch
+#define FTFA_FSTAT_RDCOLERR	0x40u
+#define FTFA_FSTAT_ACCERR	0x20u
+#define FTFA_FSTAT_FPVIOL	0x10u
+#define FTFA_FSTAT_MGSTAT0	0x01u
+#define FMC_BASE		0x4001F000u
+#define FMC_PFB0CR		K22F_REG32(FMC_BASE + 0x4)
+#define FMC_PFB0CR_INVALIDATE	((0xFu << 20) | (1u << 19))	// CINV_WAY every way, S_B_INV the speculation buffer
 
 // --- WDOG (chapter 23) ---
 #define WDOG_BASE		0x40052000u
@@ -190,6 +214,43 @@ typedef enum IRQn {
 #define GPIO_PTOR(port)		K22F_REG32(GPIO_BASE(port) + 0x0Cu)
 #define GPIO_PDIR(port)		K22F_REG32(GPIO_BASE(port) + 0x10u)
 #define GPIO_PDDR(port)		K22F_REG32(GPIO_BASE(port) + 0x14u)
+
+// --- I2C0 (chapter 52) ---
+#define I2C0_BASE		0x40066000u
+#define I2C0_F			K22F_REG8(I2C0_BASE + 0x1)
+#define I2C0_C1			K22F_REG8(I2C0_BASE + 0x2)
+#define I2C0_S			K22F_REG8(I2C0_BASE + 0x3)
+#define I2C0_D			K22F_REG8(I2C0_BASE + 0x4)
+#define I2C0_C2			K22F_REG8(I2C0_BASE + 0x5)
+#define I2C0_FLT		K22F_REG8(I2C0_BASE + 0x6)
+#define I2C_C1_IICEN		0x80u
+#define I2C_C1_MST		0x20u	// 0 -> 1 sends START, 1 -> 0 sends STOP
+#define I2C_C1_TX		0x10u
+#define I2C_C1_TXAK		0x08u	// 1 = NACK the next byte received
+#define I2C_C1_RSTA		0x04u	// repeated START
+#define I2C_S_TCF		0x80u
+#define I2C_S_BUSY		0x20u
+#define I2C_S_ARBL		0x10u	// write 1 to clear
+#define I2C_S_IICIF		0x02u	// write 1 to clear
+#define I2C_S_RXAK		0x01u	// 1 = no acknowledge
+
+// --- FTM (chapter 39): the field values ftm.c writes ---
+#define FTM_SC_CLKS_SYSTEM	(1u << 3)
+#define FTM_SC_PS(x)		((uint32_t)(x) & 7u)	// divide by 2^x
+#define FTM_CSC_MSB		0x20u
+#define FTM_CSC_ELSB		0x08u	// with MSB: high-true pulses
+
+// --- USB0 (chapter 47): the TinyUSB driver has the controller, these are the clock and regulator parts ---
+#define USB0_BASE		0x40072000u
+#define USB0_CONTROL		K22F_REG8(USB0_BASE + 0x108)
+#define USB0_CLK_RECOVER_CTRL	K22F_REG8(USB0_BASE + 0x140)
+#define USB0_CLK_RECOVER_IRC_EN	K22F_REG8(USB0_BASE + 0x144)
+#define USB0_CLK_RECOVER_INT_STATUS	K22F_REG8(USB0_BASE + 0x15C)
+#define USB_CONTROL_DPPULLUPNONOTG	0x10u	// the D+ pull-up in device mode
+#define USB_CLK_RECOVER_EN		0x80u	// trim IRC48M to the host's SOF
+#define USB_CLK_RECOVER_IRC_EN_IRC	0x02u	// IRC48M on
+#define USB_CLK_RECOVER_IRC_EN_REG	0x01u	// its regulator on
+#define USB_CLK_RECOVER_OVF_ERROR	0x10u	// the trim ran out of range
 
 // --- PIT (chapter 41) ---
 #define PIT_BASE		0x40037000u

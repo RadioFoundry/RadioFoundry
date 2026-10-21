@@ -116,9 +116,11 @@ __attribute__((naked)) void Reset_Handler(void)
 		"b	reset_c\n");
 }
 
-static uint8_t reset_cause;
+// Read after RAM is laid out (a value stored before the .bss loop would be cleared by it); the registers keep the
+// last reset's sources until the next reset
+static uint16_t reset_cause;
 
-uint8_t k22f_reset_cause(void)
+uint16_t k22f_reset_cause(void)
 {
 	return reset_cause;
 }
@@ -133,7 +135,6 @@ void reset_c(void)
 	__NOP();
 	WDOG_STCTRLH = WDOG_STCTRLH_RESERVED | WDOG_STCTRLH_WAITEN | WDOG_STCTRLH_STOPEN | WDOG_STCTRLH_ALLOWUPDATE |
 		       WDOG_STCTRLH_CLKSRC;
-	reset_cause = RCM_SRS0;
 	SCB->VTOR = (uint32_t)(uintptr_t)k22f_vectors;
 	SCB->CPACR |= (3u << 20) | (3u << 22);		// CP10, CP11: the FPU, full access
 	__DSB();
@@ -148,6 +149,7 @@ void reset_c(void)
 	for (uint32_t *d = _sramu_bss; d < _eramu_bss;) {
 		*d++ = 0;
 	}
+	reset_cause = (uint16_t)(RCM_SRS0 | ((uint16_t)RCM_SRS1 << 8));
 	__libc_init_array();
 	__enable_irq();
 	(void)main();

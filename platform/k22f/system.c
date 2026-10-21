@@ -5,9 +5,6 @@
 #include <string.h>
 #include "platform.h"
 
-#define FTFA_FSEC	K22F_REG8(0x40020002u)
-#define FTFA_FOPT	K22F_REG8(0x40020003u)
-
 // SIM_FCFG1 PFSIZE codes to KB (reference manual 12.2.16); 0 for a code this part family doesn't use
 static uint16_t flash_kb(uint32_t pfsize)
 {

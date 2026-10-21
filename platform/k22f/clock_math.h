@@ -25,6 +25,8 @@
 // The FLL from the slow internal reference at reset (FEI, DCO low range): what runs before clock set-up, and the
 // fallback when the external clock never shows up
 #define K22F_FEI_HZ		20971520u
+// The fast internal reference the switch passes through (MCG FBI mode)
+#define K22F_FIRC_HZ		4000000u
 
 typedef struct {
 	uint32_t ref_hz;	// the external reference on EXTAL0
@@ -93,6 +95,37 @@ static inline const char *k22f_clock_check(const k22f_clock_t *c)
 		return "flash clock above 25 MHz or the bus clock";
 	}
 	return 0;
+}
+
+// The RUN-mode form of an HSRUN plan, for flash programming and standby (clock.c k22f_clock_step_down): the core runs
+// at the bus clock and nothing else changes. False when that still breaks a RUN limit (a bus clock above 50 MHz)
+static inline bool k22f_clock_run_variant(const k22f_clock_t *c, k22f_clock_t *run)
+{
+	*run = *c;
+	run->div_core = c->div_bus;
+	run->hsrun = false;
+	return k22f_clock_check(run) == 0;
+}
+
+// The time base's fold (time.c): d more core cycles into whole milliseconds and a remainder below per_ms. 32-bit
+// arithmetic unless the sum wraps (only when nothing read the clock for close to a whole counter period)
+static inline void k22f_time_fold(uint64_t *ms, uint32_t *rem, uint32_t d, uint32_t per_ms)
+{
+	uint32_t t = *rem + d;
+	if (t < d) {
+		uint64_t t64 = (uint64_t)*rem + d;
+		*ms += t64 / per_ms;
+		*rem = (uint32_t)(t64 % per_ms);
+	} else {
+		*ms += t / per_ms;
+		*rem = t % per_ms;
+	}
+}
+
+// A clock change: the part millisecond counted at the old rate carries over in proportion
+static inline uint32_t k22f_time_rescale(uint32_t rem, uint32_t old_per_ms, uint32_t new_per_ms)
+{
+	return (uint32_t)((uint64_t)rem * new_per_ms / old_per_ms);
 }
 
 // The DSPI baud rate for CTAR prescaler / scaler codes (PBR 0..3 = 2, 3, 5, 7; BR 0..15 = 2, 4, 6, 8, 16 .. 32768)
