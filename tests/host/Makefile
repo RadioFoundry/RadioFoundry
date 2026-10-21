@@ -1070,3 +1070,18 @@ run: run-i2c-eeprom
 run-i2c-eeprom: i2cEepromTest
 	./i2cEepromTest
 .PHONY: run-i2c-eeprom
+
+# GD-77 storage and calibration (docs/spec/hardware-gd77.md 6.2-6.4): the board's NOR map and write guard with
+# core/storage and core/settings on it under power cuts, the logical space split, and the calibration blocks
+# (drivers/cal/cal_block and the GD-77 layout) on synthetic data
+CAL     := $(ROOT)/drivers/cal
+TESTS   += gd77StorageTest
+gd77StorageTest: gd77StorageTest.c $(GD77)/storage_gd77.c $(GD77)/storage_gd77.h $(GD77)/cal_blocks_gd77.c $(GD77)/cal_blocks_gd77.h \
+                 $(CAL)/cal_block.c $(CAL)/cal_block.h $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(GD77) -I. -Wshadow -o $@ gd77StorageTest.c $(GD77)/storage_gd77.c \
+		$(GD77)/cal_blocks_gd77.c $(CAL)/cal_block.c $(STORE)
+
+run: run-gd77-storage
+run-gd77-storage: gd77StorageTest
+	./gd77StorageTest
+.PHONY: run-gd77-storage
