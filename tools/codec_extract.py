@@ -40,20 +40,24 @@ import zlib  # noqa: E402
 
 DM1701_V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
 MD380_D2032 = "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
+MD9600_V0609 = "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09"
+MD9600_V1645 = "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532"
 
 EPILOG = """\
 examples:
   %(prog)s --stock "DM-1701(CSV)-V02.06.bin"                       (the key is derived from the stock file)
   %(prog)s --stock "DM-1701(CSV)-V02.06.bin" --key ~/keys/dm1701.key
   %(prog)s --stock "MD-380-D2.32(AD).bin"                          (MD-380: image build/md380/odr_md380.bin)
+  %(prog)s --stock "MD9600-CSV-V06.09.bin"                         (MD-9600: image build/md9600/odr_md9600.bin)
   %(prog)s --stock stock.bin --key dm1701.key --image build/dm1701/odr_dm1701.bin -o build/dm1701/odr_dm1701_codec.bin
   %(prog)s --self-test
 
 then flash:  tools/stm32_dfu.py --model dm1701 --key ~/keys/dm1701.key build/dm1701/odr_dm1701_codec.bin
 
-Supported stock files: Baofeng's DM-1701 V02.06 CSV firmware (sha256 0314efd4...) and TYT's MD-380 "Firmware 2.32"
-D002.032 (sha256 e1a1a11a...). The key file is the radio's 1024-byte firmware key (DM-1701 sha256 d983ce95...,
-MD-380 5254139c...); without --key it is derived from the stock file and checked by that hash. Neither is in this
+Supported stock files: Baofeng's DM-1701 V02.06 CSV firmware (sha256 0314efd4...), TYT's MD-380 "Firmware 2.32"
+D002.032 (sha256 e1a1a11a...) and TYT's MD-9600 06.09 CSV (79a561ed...) and 16.45 CSV (de368437...). The key file is
+the radio's 1024-byte firmware key (DM-1701 sha256 d983ce95..., MD-380 5254139c..., MD-9600 c3d665b2...); without --key
+it is derived from the stock file and checked by that hash. Neither is in this
 repository. For flashing release images, tools/odrflash does all of this in one step.
 """
 
@@ -186,6 +190,27 @@ def self_test():
     expect_error(lambda: extract(mstock, bad_key, mprofiles), "MD-380 wrong key refused")
     check(find_profile(mstock, mprofiles)["board"] == "md380", "MD-380 profile found by SHA-256")
 
+    # MD-9600 06.09 and 16.45 CSV: a two-segment container, the code in sectors 7 and 8 moved to the start of sector 11,
+    # the table window at the build's own address in sector 9
+    for sha, tab_at, tag in ((MD9600_V0609, 0x080AB13C, 0x0609), (MD9600_V1645, 0x080AC2BC, 0x1645)):
+        gstock, gprofiles, gcode, gtables = build_synthetic_stock(key, rng, sha)
+        greal = PROFILES[sha]
+        check(parse_container(gstock) == greal["segments"], "MD-9600 %04X container parsed" % tag)
+        gp, gwins = extract(gstock, key, gprofiles)
+        check([a for a, _ in gwins] == [0x080E0000, tab_at, DESC_ADDR],
+              "MD-9600 %04X: the code in sector 11, the tables at the build's address, the descriptor" % tag)
+        check(gwins[0][1] != gcode and len(gwins[0][1]) == len(gcode), "MD-9600 %04X: the code moved" % tag)
+        gd = gwins[2][1]
+        check(struct.unpack_from("<7I", gd, 0) == (0x43534544, 1, tag, 0x080E0000, len(gcode), zlib.crc32(gwins[0][1]), 1),
+              "MD-9600 %04X descriptor header and code window" % tag)
+        gimage = struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(rng.randrange(256) for _ in range(0x74000 - 8))
+        gmerged = merge(gimage, gp, gwins)
+        check(len(gmerged) == FLASH_END - APP_BASE, "MD-9600 %04X merged image ends with the descriptor" % tag)
+        check(not stm32_dfu.check_image(gmerged, "md9600"), "stm32_dfu accepts the MD-9600 %04X merged image" % tag)
+        expect_error(lambda: merge(gimage + b"\0" * (tab_at - 0x08080000 + 1), gp, gwins),
+                     "MD-9600 %04X: application reaching the tables refused" % tag)
+        expect_error(lambda: extract(gstock, bad_key, gprofiles), "MD-9600 %04X wrong key refused" % tag)
+
     # main() end to end on the synthetic file
     import contextlib
     import io
@@ -232,9 +257,9 @@ def test_desc(path, board="dm1701"):
     import random
     rng = random.Random(1701)
     key = bytes(rng.randrange(256) for _ in range(KEY_LEN))
-    stock, profiles, _, _ = build_synthetic_stock(key, rng, MD380_D2032 if board == "md380" else DM1701_V0206)
+    stock, profiles, _, _ = build_synthetic_stock(key, rng, {"md380": MD380_D2032, "md9600": MD9600_V0609}.get(board, DM1701_V0206))
     p, wins = extract(stock, key, profiles)
-    lo = 0x08080000 if board == "md380" else 0x080C0000
+    lo = 0x08080000 if board in ("md380", "md9600") else 0x080C0000
     out = bytearray(b"\xFF" * (FLASH_END - lo))
     for a, d in wins:
         out[a - lo:a - lo + len(d)] = d
@@ -246,15 +271,16 @@ def test_desc(path, board="dm1701"):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0], epilog=EPILOG,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--stock", help="the radio's stock firmware file (DM-1701 V02.06 CSV or MD-380 D002.032)")
+    ap.add_argument("--stock", help="the radio's stock firmware file (DM-1701 V02.06 CSV, MD-380 D002.032 or MD-9600 "
+                    "06.09 / 16.45 CSV)")
     ap.add_argument("--key", help="the radio's firmware key file (1024 bytes); derived from the stock file when left out")
-    ap.add_argument("--board", choices=("dm1701", "md380"),
+    ap.add_argument("--board", choices=("dm1701", "md380", "md9600"),
                     help="refuse a stock file for another radio (the stock file picks the board otherwise)")
     ap.add_argument("--image", help="built OpenDigitalRadio image (default: build/<board>/odr_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image to write (default: <image>_codec.bin next to the image)")
     ap.add_argument("--self-test", action="store_true", help="check the tool's logic on a synthetic file and key")
     ap.add_argument("--test-desc", metavar="FILE", help="write the codec sectors for a synthetic codec, as merged "
-                    "(tests/host/codecDescTest.c; --board md380 for the MD-380's)")
+                    "(tests/host/codecDescTest.c; --board md380 / md9600 for theirs)")
     args = ap.parse_args()
 
     if args.self_test:

@@ -68,8 +68,10 @@ ALIASES = {
 CODEC_WINDOWS = {
     "dm1701": [(0x080D19F0, 0x080E3A72), (0x080E3A74, 0x080F3C90)],
     "md380": [(0x0808FC64, 0x0809AC5C), (0x080E0000, 0x080F0884)],
+    # the 06.09 and 16.45 builds keep their tables at different addresses in sector 9: this is both builds'
+    "md9600": [(0x080AB13C, 0x080BD2F2), (0x080E0000, 0x080EF214)],
 }
-CODEC_SIG_ADDR = {"dm1701": 0x080E3A74, "md380": 0x080E0000}
+CODEC_SIG_ADDR = {"dm1701": 0x080E3A74, "md380": 0x080E0000, "md9600": 0x080E0000}
 CODEC_SIG = 0x4FF0E92D
 
 STOCK_MAGIC = b"OutSecurityBin"

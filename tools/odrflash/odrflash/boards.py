@@ -180,6 +180,37 @@ MD380 = Board(
     protected=[(0x08000000, 0x0800C000)],
 )
 
+# Bring-up, not released (docs/spec/hardware-md9600.md). The TYT bootloader takes the DM-1701's DFU protocol and sector
+# order with its own key (tools/stm32_dfu.py --model md9600). The application has sectors 3-7 (boards/md9600/md9600.ld);
+# the codec goes where the merge puts it (docs/spec/codec-md9600.md "Hosting"): the tables stay in sector 9 at the build's
+# stock address (the 06.09 and 16.45 files differ, so the window below is what both builds' tables cover), the code goes
+# to the start of sector 11 and the descriptor to its end. Both stock builds report the one codec id.
+_M0609 = stockfw.PROFILES["79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09"]
+_M1645 = stockfw.PROFILES["de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532"]
+_MTAB_LO = max(_M0609["tables"][0], _M1645["tables"][0])
+_MTAB_HI = min(_M0609["tables"][0] + _M0609["tables"][1], _M1645["tables"][0] + _M1645["tables"][1])
+
+MD9600 = Board(
+    id="md9600",
+    name="TYT MD-9600",
+    family="anyroad-dfu",
+    app_base=0x0800C000,
+    flash_end=0x08100000,
+    sectors=_f405_sectors(),
+    codec=CodecProfile(id=_M0609["codec_profile"],
+                       windows=[(_M0609["placement"]["code"], _M0609["code"][1]), (_MTAB_LO, _MTAB_HI - _MTAB_LO),
+                                (stockfw.DESC_ADDR, stockfw.DESC_LEN)],
+                       installed=[], sources=[_M0609["name"], _M1645["name"]]),
+    debuglink_names=["MD-9600", "MD9600", "md9600", "RT90"],
+    releasable=False,
+    keep_codec_supported=True,
+    key_sha256=stockfw.MD9600_KEY_SHA256,
+    dfu_ids=(0x0483, 0xDF11),
+    dfu_string1="AnyRoad Technology",
+    dfu_product="Digital Radio in USB mode",
+    protected=[(0x08000000, 0x0800C000)],
+)
+
 # Bring-up, not released (docs/spec/hardware-db25d.md 2, 7, 8). The vendor IAP loader (0x03000000..0x0300BFFF) is never
 # written. The first stage fills the sector at 0x0300C000, ODR starts at 0x0300D000, the codec slot is the same as the
 # DM-32UV's. No tool here flashes it: the web flasher does (IAP loader, or the stub from ODR), and stub/stubtool.py.
@@ -199,7 +230,7 @@ DB25D = Board(
     first_stage=(0x1000, bytes([0x2C, 0x11, 0x01, 0xC0])),
 )
 
-BOARDS = {b.id: b for b in (DM1701, DM32, DM1801PRO, MD380, DB25D)}
+BOARDS = {b.id: b for b in (DM1701, DM32, DM1801PRO, MD380, MD9600, DB25D)}
 
 
 def get(board_id):

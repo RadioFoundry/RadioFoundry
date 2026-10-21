@@ -5,8 +5,9 @@
  *
  * The application gets sectors 3-7 (0x0800C000..0x0807FFFF, 464 KB in one piece) and never links into sectors 8-11,
  * the MD-380's layout: those whole sectors stay free for the stock codec, so a later update can keep it without an
- * erase (docs/spec/codec-placement.md). Where the MD-9600's codec goes in them is not settled yet
- * (docs/spec/codec-md9600.md). */
+ * erase (docs/spec/codec-placement.md). The codec goes there as docs/spec/codec-md9600.md "Hosting" says: the table
+ * window stays at its stock address in sector 9, the code moves to the start of sector 11 and the descriptor sits at the
+ * end of sector 11 (boards/md9600/vocoder_md9600.c). Sectors 8 and 10 stay free. */
 
 ENTRY(Reset_Handler)
 

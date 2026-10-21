@@ -18,7 +18,7 @@ ROOT = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 
 # Board -> codec tool (each takes --stock, --image, -o and keeps its supported stock files in PROFILES)
-CODEC_TOOLS = {"dm1701": "codec_extract", "md380": "codec_extract", "dm32": "hrc7000_codec",
+CODEC_TOOLS = {"dm1701": "codec_extract", "md380": "codec_extract", "md9600": "codec_extract", "dm32": "hrc7000_codec",
                "dm1801pro": "hrc7000_codec", "db25d": "hrc7000_codec"}
 SKIP = ("README.md", ".gitignore")
 
@@ -64,7 +64,7 @@ def main():
     tool = CODEC_TOOLS.get(args.board)
     if tool is None or not os.path.isdir(args.dir):
         return 0
-    # one tool may serve several boards (codec_extract: DM-1701 and MD-380): only this board's stock files count
+    # one tool may serve several boards (codec_extract: DM-1701, MD-380 and MD-9600): only this board's stock files count
     mod = __import__(tool)
     profiles = {h: p for h, p in mod.PROFILES.items() if p.get("board", args.board) == args.board}
     if hasattr(mod, "identify"):	# a tool that knows a file by more than its SHA-256 (a program flash dump)
