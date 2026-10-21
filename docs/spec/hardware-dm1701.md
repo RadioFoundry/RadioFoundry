@@ -239,6 +239,10 @@ keypad rows, power latch, mic power low; PA enables, PA band select and beep low
 high; backlight low; RX audio mux and flash CS high; CTCSS PWM high. The application drives the power latch high as its
 first action, otherwise the radio turns off when the user releases nothing more than the power switch transient.
 
+Transmitter safe state (`board_rf_safe`, [crash-log.md](crash-log.md) 8), at every fault, reset and stub entry and first
+in `main()`: PA_EN1 (PC5) and PA_EN2 (PC4) low, PA band select (PC6) low, the APC DAC (PA4, DAC1 channel 1) 0 when its
+clock is on. The AT1846S and HR_C6000 keep their state until the next start.
+
 Sources: CubeMX project (.ioc) and generated GPIO/MSP init; firmware constants for the 10 W pin swap and GPS power;
 HR_C6000 datasheet pin names.
 

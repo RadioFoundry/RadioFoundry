@@ -101,6 +101,13 @@ reverse) with PTA23 low, 200 us, the band's TX supply, then the PA ramp up (4.4)
 page's TX-off delay, the ramp down, both supplies and both PA selects low, PTA23 high, 300 us, the retune, the RX path of
 the band, 200 us (BIN).
 
+Transmitter safe state (`board_rf_safe`, [crash-log.md](crash-log.md) 8), at every fault, reset and stub entry and first
+in `main()`: TX supplies PTA27 and PTB2 low, PA selects PTA26 and PTB3 low, DAC B 0 and powered down, PTA23 high; on
+the fault and reset paths also the modem's FM_PTT and LAYER2_TXRX_CTRL 0. The first stage (`boot/db25d`) drives the
+same pins (not the DAC) right after the power latch. The BK4819s keep their state until the next start. Found on the
+radio (2026-10-21): a fault while transmitting, then the soft reset, left the PA keyed at about 15 W of supply draw with
+the radio stopped before the display was lit, until a power cycle.
+
 ### 3.3 Keys, encoder, power, LEDs, audio
 
 | Pin | Use | Tag |

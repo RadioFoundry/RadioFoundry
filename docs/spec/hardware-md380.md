@@ -170,6 +170,10 @@ down high and its clock low; the SKY72310 clock high; the SKY72310 chip select h
 DMR_SW high; speaker muted, amplifier off, FM muted; LEDs off; keypad rows low; the flash chip select high. PD8 and
 PD9 are left as inputs (section 13). These are our safe choices, not stock values (?).
 
+Transmitter safe state (`board_rf_safe`, [crash-log.md](crash-log.md) 8), at every fault, reset and stub entry and first
+in `main()`: APC_EN (PC4) and 5TC (PC5) low, VCO_SEL (PA9) high (the receive VCO), the APC DAC (PA4, DAC1 channel 1) 0
+when its clock is on. The SKY72310 and HR_C5000 keep their state until the next start.
+
 PA13 and PA14 are the SWD pins. The radio needs them as the IF bandwidth switch and the microphone supply, so
 `radio_md380.c` takes them over at radio init; a debugger then has to connect under reset. Build with
 `MD380_DEFS=-DMD380_KEEP_SWD` to leave them alone: the microphone is then
