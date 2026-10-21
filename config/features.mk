@@ -142,8 +142,8 @@ CONFIG_UI_COLOR ?= y
 CONFIG_UI_SETTINGS ?= y
 # channel / zone scan, VFO band scan, dual watch, nuisance delete (docs/spec/radio-features.md)
 CONFIG_SCAN ?= y
-# the dual watch screens: two channels on Home, which one PTT uses and which one a call came in on (needs SCAN;
-# docs/ux/dual-watch.md)
+# the dual watch screens: two channels on Home, which one PTT uses and which one a call came in on; the radio core's
+# dual watch across zones and with the VFO, PTT on the selected channel (needs SCAN; docs/ux/dual-watch.md)
 CONFIG_DUAL_WATCH ?= $(CONFIG_SCAN)
 # side key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's side keys do
 # (core/input/keyassign.c, docs/spec/ui.md 3.1)

@@ -47,7 +47,7 @@ codeplugs that wrote 0 for "no time-out" now get the radio's.
 ## 2. Scan (CONFIG_SCAN)
 
 Requests: `radio_req_scan(cmd)` with stop, zone, VFO, dual, cancel, nuisance or toggle; `radio_req_scan_vfo(lo, hi)`;
-`radio_req_scan_dual(pos)`. The view shows `scan` (off / zone / vfo / dual), `scan_phase` and `scan_skipped`; the
+`radio_req_scan_dual(pos)`; `radio_req_dual(ref, sel)` (2.1). The view shows `scan` (off / zone / vfo / dual), `scan_phase` and `scan_skipped`; the
 tuned channel or frequency is the core view's as usual.
 
 - **Zone scan** visits the current zone's channels in order, from the one it started on, skipping empty positions and
@@ -55,7 +55,8 @@ tuned channel or frequency is the core view's as usual.
   channel change would.
 - **VFO scan** steps the VFO frequency by its step from `lo` to `hi` and wraps. Without a range it sweeps the board
   band the VFO frequency is in. Both ends must be in one band, at least one step apart.
-- **Dual watch** alternates between the current channel and a second one (`pos`), skip flags ignored. The UI on top of it (A and B, the screens, the keys) is in [dual-watch.md](../ux/dual-watch.md).
+- **Dual watch** alternates between two channels, skip flags ignored (2.1). `radio_req_scan_dual(pos)` (the debug
+  link's) watches the current channel and position `pos` of the current zone.
 - **Priority** (zone scan): the start channel again after every 2 others.
 
 Each stop: 50 ms settle (readings from the previous frequency are ignored), then `scan_dwell_ms` listening. A signal
@@ -74,8 +75,30 @@ up again if the signal comes back. MONITOR held pauses the scan (`paused`).
 Stopping: STOP stays where the scan is. CANCEL goes back to the starting channel or frequency. PTT on a held signal
 stops there and talks back on it; PTT while still searching goes back to the start channel and transmits there. A
 channel, zone, VFO or frequency change by the user ends the scan where the user put it. **Nuisance delete** skips
-the current channel (VFO: frequency, up to 8) until the scan ends, and moves on. A scan starts only when there is
-another channel to go to; it does not run in hotspot mode or while transmitting.
+the current channel (VFO: frequency, up to 8) until the scan ends, and moves on (not in dual watch). A scan starts
+only when there is another channel to go to; it does not run in hotspot mode or while transmitting.
+
+### 2.1 Dual watch
+
+The radio has one receiver, so dual watch alternates it between two channels with the scan's timing (a pseudo dual
+watch; a receive set with a receiver per channel is #96). `radio_req_dual(ref, sel)` names the two, A and B: each a
+channel (zone index and position, any zone) or the VFO with its own settings. `ref[sel]` is the selected channel.
+`NULL` stops the watch on the selected channel. The view shows `scan=dual`, and the tuned channel as usual: its
+`zone_index`, `zone_pos` and zone name, or `vfo=1`, so the screens can tell which of the two the receiver is on.
+
+| Event | What happens |
+|---|---|
+| Start | Refused when both name the same channel, or one can't be read (an empty position, no such zone, a build without a VFO). The receiver listens where it is when that is one of the two, else it tunes the selected one |
+| The same pair again | Only the selection changes: no retune, the stop goes on (cheap; the UI asks again on every change) |
+| A new pair | The receiver stays where it is when that channel is still one of the two (a call it holds too), else it tunes the selected one |
+| A signal | Holds the receiver as in a scan, then the resume delay. Resume mode stop counts as carrier: a signal never ends the watch |
+| DMR reply window | Holds the selected channel while it runs (PTT talks there). On the other channel it doesn't |
+| PTT | Tunes the selected channel first if the receiver is on the other, and transmits there. The watch goes on: after the transmission (DMR: after its tail) the selected channel waits the resume delay, and a reply holds it |
+| A channel, zone, VFO, tone, bandwidth, mode, timeslot or color code change | Ends the watch on the selected channel, then applies the change there |
+| Hotspot mode, `radio_req_scan` stop | Ends it where the receiver is. Cancel ends it on the selected channel |
+
+`radio_get_vfo()` returns the VFO's settings while a channel is tuned (a VFO pane). Built without `CONFIG_DUAL_WATCH`
+only the debug link's dual watch is left: two channels of the current zone, and PTT ends it as it ends any scan.
 
 ## 3. FM transmit extras
 

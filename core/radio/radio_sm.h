@@ -130,12 +130,23 @@ typedef enum {
 	RREQ_VOLUME,		// arg: the volume step 0..RADIO_VOLUME_MAX (radios without a knob)
 	RREQ_VOLUME_OVERRIDE,	// arg: the step over the knob, -1 = back to the knob
 	RREQ_VFO_COPY,		// the channel's settings into the VFO, and open it (CONFIG_VFO); no-op in the VFO
+	RREQ_DUAL,		// dual watch (CONFIG_DUAL_WATCH): arg channel A, arg2 channel B, radio_dual_arg()
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
 static inline int32_t radio_tone_arg(uint8_t which, subtone_t t)
 {
 	return (int32_t)(((uint32_t)(which & 3u) << 24) | ((uint32_t)t.type << 16) | t.value);
+}
+
+// RREQ_DUAL's arguments: a dual watch channel in 32 bits, the VFO or zone << 16 | position, with RADIO_DUAL_SEL on
+// the selected one. Neither selected: stop on the selected channel
+#define RADIO_DUAL_VFO	(1u << 31)
+#define RADIO_DUAL_SEL	(1u << 30)
+static inline uint32_t radio_dual_arg(const radio_dual_ref_t *r, bool sel)
+{
+	uint32_t a = r->vfo ? RADIO_DUAL_VFO : ((uint32_t)(r->zone & 0x3FFFu) << 16) | r->pos;
+	return a | (sel ? RADIO_DUAL_SEL : 0u);
 }
 
 typedef struct {
@@ -206,6 +217,9 @@ typedef struct {
 	bool tot_warned;		// the time-out warning sounded for this transmission
 #if CONFIG_SCAN
 	scan_t scan;
+	radio_dual_ref_t dual[2];	// SCAN_DUAL: the two channels
+	uint8_t dual_sel;		// ... the selected one (PTT)
+	uint8_t dual_at;		// ... the one the receiver is on
 #endif
 	batt_t batt;
 	uint32_t batt_ms;		// last battery reading

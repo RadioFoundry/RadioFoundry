@@ -1612,16 +1612,98 @@ static void dmr_end(radio_sm_t *sm) { (void)sm; }
 
 // --- Scan (radio/scan.c decides; this tunes) ---
 #if CONFIG_SCAN
-typedef struct {
-	radio_sm_t *sm;
-	bool dual;		// dual watch: the user picked both channels, scan skip doesn't apply
-} scan_ctx_t;
-
 static bool scan_usable(uint16_t pos, void *ctx)
 {
-	const scan_ctx_t *c = ctx;
+	const radio_sm_t *sm = ctx;
 	channel_t ch;
-	return pos < c->sm->zone.count && codeplug_channel(c->sm->zone.channels[pos], &ch) && (c->dual || !ch.scan_skip);
+	return pos < sm->zone.count && codeplug_channel(sm->zone.channels[pos], &ch) && !ch.scan_skip;
+}
+
+// Dual watch (SCAN_DUAL): the receiver alternates between two channels, dual[0] and dual[1], skip flags ignored. With
+// CONFIG_DUAL_WATCH each is a channel of any zone or the VFO, and PTT talks on the selected one without ending the
+// watch; without it, two channels of the current zone (the debug link's) and PTT ends it as any scan
+
+static bool dual_running(const radio_sm_t *sm)
+{
+	return sm->scan.kind == SCAN_DUAL;
+}
+
+static bool dual_same(const radio_dual_ref_t *a, const radio_dual_ref_t *b)
+{
+	return a->vfo == b->vfo && (a->vfo || (a->zone == b->zone && a->pos == b->pos));
+}
+
+// The receiver is on channel i now
+static bool dual_here(const radio_sm_t *sm, uint8_t i)
+{
+	const radio_dual_ref_t *r = &sm->dual[i];
+	return r->vfo ? sm->view.vfo : !sm->view.vfo && r->zone == sm->view.zone_index && r->pos == sm->view.zone_pos;
+}
+
+// A channel's zone (the current one, or read into buf) and its settings; NULL when it can't be watched. buf may be
+// NULL without CONFIG_DUAL_WATCH: only the current zone then
+static const zone_t *dual_read(const radio_sm_t *sm, const radio_dual_ref_t *r, zone_t *buf, channel_t *ch)
+{
+	const zone_t *z = NULL;
+	if (r->vfo) {
+		return NULL;
+	}
+	if (sm->have_channels && r->zone == sm->view.zone_index) {
+		z = &sm->zone;
+	}
+#if CONFIG_DUAL_WATCH
+	else if (read_zone(r->zone, buf)) {
+		z = buf;
+	}
+#else
+	(void)buf;
+#endif
+	return z != NULL && r->pos < z->count && codeplug_channel(z->channels[r->pos], ch) ? z : NULL;
+}
+
+static bool dual_ok(const radio_sm_t *sm, const radio_dual_ref_t *r)
+{
+	if (r->vfo) {
+		return CONFIG_DUAL_WATCH && VFO_AVAILABLE;
+	}
+	channel_t ch;
+#if CONFIG_DUAL_WATCH
+	zone_t z;
+	return dual_read(sm, r, &z, &ch) != NULL;
+#else
+	return dual_read(sm, r, NULL, &ch) != NULL;
+#endif
+}
+
+// Tune channel i (the VFO with its own settings). False when it can't be read now (the codeplug changed)
+static bool dual_tune(radio_sm_t *sm, uint8_t i, uint32_t now_ms)
+{
+	const radio_dual_ref_t *r = &sm->dual[i];
+	channel_t ch;
+#if CONFIG_DUAL_WATCH
+	if (r->vfo) {
+		if (!VFO_AVAILABLE) {
+			return false;
+		}
+		enter_vfo(sm, now_ms);
+		sm->dual_at = i;
+		return true;
+	}
+	zone_t buf;
+	const zone_t *z = dual_read(sm, r, &buf, &ch);
+#else
+	const zone_t *z = dual_read(sm, r, NULL, &ch);
+#endif
+	if (z == NULL) {
+		return false;
+	}
+	if (z != &sm->zone) {
+		set_zone(sm, r->zone, z);	// the view reports the tuned channel's zone, as it does its position
+	}
+	set_channel(sm, r->pos, &ch);
+	tune(sm, now_ms);
+	sm->dual_at = i;
+	return true;
 }
 
 static void scan_publish(radio_sm_t *sm)
@@ -1647,7 +1729,11 @@ static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 	uint8_t kind = sc->kind;
 	scan_end(sc);
 	if (cancel) {
-		if (kind == SCAN_VFO) {
+		if (kind == SCAN_DUAL) {
+			if (!dual_here(sm, sm->dual_sel)) {
+				dual_tune(sm, sm->dual_sel, now_ms);	// dual watch: back on the selected channel
+			}
+		} else if (kind == SCAN_VFO) {
 			if (sm->view.ch.rx_hz != sc->origin_hz) {
 				vfo_set_hz(sm, sc->origin_hz);
 				tune(sm, now_ms);
@@ -1667,30 +1753,48 @@ static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 static bool scan_step(radio_sm_t *sm, uint32_t now_ms)
 {
 	scan_t *sc = &sm->scan;
-	if (sc->kind == SCAN_VFO) {
+	if (sc->kind == SCAN_DUAL) {
+		if (!dual_tune(sm, (uint8_t)!sm->dual_at, now_ms)) {
+			scan_stop(sm, false, now_ms);
+			return false;
+		}
+	} else if (sc->kind == SCAN_VFO) {
 		uint32_t hz = scan_next_hz(sc, sm->view.ch.rx_hz, sm->view.vfo_step_hz);
 		if (hz == 0 || !in_band(hz, false)) {
 			scan_stop(sm, false, now_ms);
 			return false;
 		}
 		vfo_set_hz(sm, hz);
+		tune(sm, now_ms);
 	} else {
-		scan_ctx_t c = { sm, sc->kind == SCAN_DUAL };
-		int pos = scan_next_pos(sc, sm->zone.count, scan_usable, &c);
+		int pos = scan_next_pos(sc, sm->zone.count, scan_usable, sm);
 		channel_t ch;
 		if (pos < 0 || !codeplug_channel(sm->zone.channels[pos], &ch)) {
 			scan_stop(sm, false, now_ms);
 			return false;
 		}
 		set_channel(sm, (uint16_t)pos, &ch);
+		tune(sm, now_ms);
 	}
-	tune(sm, now_ms);
 	scan_tuned(sc, now_ms);
 	scan_publish(sm);
 	return true;
 }
 
-static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi_hz, uint16_t dual_pos, uint32_t now_ms)
+static void scan_config(const radio_sm_t *sm, uint8_t kind, scan_cfg_t *cfg)
+{
+	memset(cfg, 0, sizeof(*cfg));
+	cfg->dwell_ms = sm->set.scan_dwell_ms < SCAN_SETTLE_MS ? SCAN_SETTLE_MS : sm->set.scan_dwell_ms;
+	cfg->hold_ms = (uint16_t)(sm->set.scan_hold_s * 1000u);
+	cfg->delay_ms = sm->set.scan_delay_ms;
+	cfg->resume = sm->set.scan_resume;
+	cfg->priority = sm->set.scan_priority;
+	if (kind == SCAN_DUAL && cfg->resume == SCAN_RESUME_STOP) {
+		cfg->resume = SCAN_RESUME_CARRIER;	// a signal holds dual watch; it doesn't end it
+	}
+}
+
+static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi_hz, uint32_t now_ms)
 {
 	scan_t *sc = &sm->scan;
 	if (scan_on(sc)) {
@@ -1720,29 +1824,21 @@ static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi
 		if (!same_band || hi_hz < lo_hz + sm->view.vfo_step_hz) {
 			return;
 		}
-	} else if (sm->view.vfo || !sm->have_channels || (kind == SCAN_DUAL && (dual_pos >= sm->zone.count ||
-			dual_pos == sm->view.zone_pos))) {
+	} else if (sm->view.vfo || !sm->have_channels) {
 		return;
 	}
-	scan_cfg_t cfg = {
-		.dwell_ms = sm->set.scan_dwell_ms < SCAN_SETTLE_MS ? SCAN_SETTLE_MS : sm->set.scan_dwell_ms,
-		.hold_ms = (uint16_t)(sm->set.scan_hold_s * 1000u),
-		.delay_ms = sm->set.scan_delay_ms,
-		.resume = sm->set.scan_resume,
-		.priority = sm->set.scan_priority,
-	};
+	scan_cfg_t cfg;
+	scan_config(sm, kind, &cfg);
 	sc->origin_vfo = sm->view.vfo;
 	sc->origin_pos = sm->view.zone_pos;
 	sc->origin_hz = sm->view.ch.rx_hz;
-	sc->dual_pos = dual_pos;
 	sc->lo_hz = lo_hz;
 	sc->hi_hz = hi_hz;
 	scan_begin(sc, kind, &cfg, now_ms);
 	if (kind != SCAN_VFO) {
 		// Nothing to scan when no other channel qualifies
 		scan_t probe = *sc;
-		scan_ctx_t c = { sm, kind == SCAN_DUAL };
-		int next = scan_next_pos(&probe, sm->zone.count, scan_usable, &c);
+		int next = scan_next_pos(&probe, sm->zone.count, scan_usable, sm);
 		if (next < 0 || next == sm->view.zone_pos) {
 			scan_end(sc);
 			return;
@@ -1751,6 +1847,91 @@ static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi
 	activity(sm, now_ms);
 	scan_step(sm, now_ms);
 }
+
+// Dual watch on ref[0] and ref[1], ref[sel] selected. Asked again with the same pair: only the selection changes. A
+// new pair keeps the receiver where it is (a call it holds too) if that channel is still one of the two, else it
+// starts on the selected one
+static void dual_start(radio_sm_t *sm, const radio_dual_ref_t ref[2], uint8_t sel, uint32_t now_ms)
+{
+	scan_t *sc = &sm->scan;
+	if (sel > 1 || dual_same(&ref[0], &ref[1]) || !dual_ok(sm, &ref[0]) || !dual_ok(sm, &ref[1])) {
+		return;
+	}
+	bool running = dual_running(sm);
+	if (scan_on(sc) && !running) {
+		scan_stop(sm, false, now_ms);
+	}
+	sm->dual[0] = ref[0];
+	sm->dual[1] = ref[1];
+	sm->dual_sel = sel;
+	bool here = false;
+	for (uint8_t i = 0; i < 2; i++) {
+		if (dual_here(sm, i)) {
+			sm->dual_at = i;
+			here = true;
+		}
+	}
+	if (running && here) {
+		return;
+	}
+	if (!running) {
+		scan_cfg_t cfg;
+		scan_config(sm, SCAN_DUAL, &cfg);
+		scan_begin(sc, SCAN_DUAL, &cfg, now_ms);
+		activity(sm, now_ms);
+	}
+	if (!here) {
+		if (!dual_tune(sm, sel, now_ms)) {
+			scan_end(sc);
+			scan_publish(sm);
+			return;
+		}
+		scan_tuned(sc, now_ms);
+	}
+	scan_publish(sm);
+}
+
+#if CONFIG_DUAL_WATCH
+// PTT in dual watch: on the selected channel (tuned first if the receiver is on the other), and the watch goes on
+// after the transmission (scan_talked every poll while it lasts)
+static void dual_talk(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!dual_here(sm, sm->dual_sel) && !dual_tune(sm, sm->dual_sel, now_ms)) {
+		scan_stop(sm, false, now_ms);
+		return;
+	}
+	scan_talked(&sm->scan, now_ms);
+	scan_publish(sm);
+}
+
+static radio_dual_ref_t dual_ref(uint32_t a)
+{
+	radio_dual_ref_t r = { false, 0, 0 };
+	if ((a & RADIO_DUAL_VFO) != 0) {
+		r.vfo = true;
+	} else {
+		r.zone = (uint16_t)((a >> 16) & 0x3FFFu);
+		r.pos = (uint16_t)a;
+	}
+	return r;
+}
+
+static void dual_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
+{
+	uint32_t a = (uint32_t)req->arg, b = req->arg2;
+	if (sm->view.state == RS_TX || sm->hotspot || sm->ptt) {
+		return;
+	}
+	if (((a | b) & RADIO_DUAL_SEL) == 0) {
+		if (dual_running(sm)) {
+			scan_stop(sm, true, now_ms);	// on the selected channel
+		}
+		return;
+	}
+	radio_dual_ref_t ref[2] = { dual_ref(a), dual_ref(b) };
+	dual_start(sm, ref, (b & RADIO_DUAL_SEL) != 0 ? 1 : 0, now_ms);
+}
+#endif
 
 // Every poll while scanning: pause on the monitor, what the receiver hears, move on
 static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_ms)
@@ -1771,6 +1952,10 @@ static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_
 		if (sm->view.dmr.state == RDMR_RX_OTHER) {
 			carrier = sync = false;
 		}
+#if CONFIG_DUAL_WATCH
+		// Dual watch: the reply window holds the selected channel (PTT talks there)
+		active = active || (dual_running(sm) && sm->dual_at == sm->dual_sel && sm->view.dmr.reply_active);
+#endif
 	} else
 #endif
 	{
@@ -1809,23 +1994,29 @@ static void scan_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms
 		scan_stop(sm, true, now_ms);
 		break;
 	case RSCAN_ZONE:
-		scan_start(sm, SCAN_ZONE, 0, 0, 0, now_ms);
+		scan_start(sm, SCAN_ZONE, 0, 0, now_ms);
 		break;
 	case RSCAN_VFO:
-		scan_start(sm, SCAN_VFO, 0, 0, 0, now_ms);
+		scan_start(sm, SCAN_VFO, 0, 0, now_ms);
 		break;
-	case RSCAN_DUAL:
-		scan_start(sm, SCAN_DUAL, 0, 0, (uint16_t)req->arg2, now_ms);
+	case RSCAN_DUAL: {
+		// The current channel (selected) and position arg2 of the current zone
+		radio_dual_ref_t ref[2] = {
+			{ sm->view.vfo, sm->view.vfo ? 0 : sm->view.zone_index, sm->view.vfo ? 0 : sm->view.zone_pos },
+			{ false, sm->view.zone_index, (uint16_t)req->arg2 },
+		};
+		dual_start(sm, ref, 0, now_ms);
 		break;
+	}
 	case RSCAN_TOGGLE:
 		if (scan_on(&sm->scan)) {
 			scan_stop(sm, false, now_ms);
 		} else {
-			scan_start(sm, sm->view.vfo ? SCAN_VFO : SCAN_ZONE, 0, 0, 0, now_ms);
+			scan_start(sm, sm->view.vfo ? SCAN_VFO : SCAN_ZONE, 0, 0, now_ms);
 		}
 		break;
 	case RSCAN_NUISANCE:
-		if (scan_on(&sm->scan)) {
+		if (scan_on(&sm->scan) && !dual_running(sm)) {	// dual watch: both channels were picked
 			bool ok = sm->scan.kind == SCAN_VFO ? scan_nuisance_hz(&sm->scan, sm->view.ch.rx_hz)
 				: scan_nuisance_pos(&sm->scan, sm->view.zone_pos);
 			if (ok) {
@@ -1839,6 +2030,7 @@ static void scan_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms
 }
 #else
 static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms) { (void)sm; (void)cancel; (void)now_ms; }
+static bool dual_running(const radio_sm_t *sm) { (void)sm; return false; }
 #endif
 
 static void persist(radio_sm_t *sm, uint32_t now_ms);
@@ -2520,6 +2712,11 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 #if CONFIG_SCAN
+#if CONFIG_DUAL_WATCH
+	if (dual_running(sm)) {
+		dual_talk(sm, now_ms);
+	} else
+#endif
 	if (scan_on(&sm->scan)) {
 		// On a signal: talk back on it. Still searching: back to the start channel
 		bool on_signal = sm->scan.phase == SCAN_PH_HOLD || sm->scan.phase == SCAN_PH_RESUME;
@@ -3394,7 +3591,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		roam_cancel(sm, now_ms);	// the user does something: back to the site a roaming search started from
 	}
 	if (retunes(req->type)) {
-		scan_stop(sm, false, now_ms);
+		scan_stop(sm, dual_running(sm), now_ms);	// dual watch: the change starts from the selected one
 	}
 	switch (req->type) {
 	case RREQ_CH_STEP:
@@ -3775,9 +3972,14 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_SCAN:
 		scan_request(sm, req, now_ms);
 		break;
+#if CONFIG_DUAL_WATCH
+	case RREQ_DUAL:
+		dual_request(sm, req, now_ms);
+		break;
+#endif
 	case RREQ_SCAN_VFO:
 		if (!busy && !sm->ptt) {
-			scan_start(sm, SCAN_VFO, (uint32_t)req->arg, req->arg2, 0, now_ms);
+			scan_start(sm, SCAN_VFO, (uint32_t)req->arg, req->arg2, now_ms);
 		}
 		break;
 #endif
@@ -4153,6 +4355,11 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 			return;		// retuned: this poll's readings belong to the last stop
 		}
 	}
+#if CONFIG_DUAL_WATCH
+	else if (dual_running(sm) && !sm->hotspot) {
+		scan_talked(&sm->scan, now_ms);	// transmitting: the wait after it starts when it ends
+	}
+#endif
 #endif
 #if CONFIG_VOX
 	vox_poll(sm, now_ms);

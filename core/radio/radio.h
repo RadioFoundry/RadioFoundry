@@ -343,10 +343,22 @@ void radio_req_dmr_privacy(uint8_t type, uint16_t key);
 // step between lo_hz and hi_hz (both 0: the band the VFO is in), dual watch alternates between the current channel
 // and zone position pos. Stop stays where the scan is, cancel goes back to where it started. Nuisance leaves the
 // current stop out until the scan ends and moves on. Any channel, zone or VFO change, PTT, or hotspot mode stops it
+// (dual watch: PTT doesn't, and a change starts from the selected channel; radio_req_dual)
 typedef enum { RSCAN_STOP, RSCAN_ZONE, RSCAN_VFO, RSCAN_DUAL, RSCAN_CANCEL, RSCAN_NUISANCE, RSCAN_TOGGLE } radio_scan_cmd_t;
 void radio_req_scan(uint8_t cmd);		// radio_scan_cmd_t; TOGGLE: stop if scanning, else zone (or VFO in the VFO)
 void radio_req_scan_vfo(uint32_t lo_hz, uint32_t hi_hz);
-void radio_req_scan_dual(uint16_t pos);
+void radio_req_scan_dual(uint16_t pos);		// the current channel (selected) and zone position pos
+// Dual watch (CONFIG_DUAL_WATCH; docs/spec/radio-features.md 2.1): the receiver alternates between two channels, each
+// a channel of any zone or the VFO (its own settings). ref[sel] is the selected one: PTT retunes to it, transmits,
+// and the watch goes on after. Asking again with the same pair only changes the selection. NULL: stop on the
+// selected channel
+typedef struct {
+	bool vfo;
+	uint16_t zone, pos;	// a channel: zone index and position in it
+} radio_dual_ref_t;
+void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel);
+// The VFO's own settings, whether or not the radio is in the VFO now (CONFIG_DUAL_WATCH). False: no VFO frequency yet
+bool radio_get_vfo(channel_t *out);
 // DMR repeater roaming (CONFIG_DMR_ROAMING; no-op otherwise; docs/spec/dmr-roaming.md 6.1): the current zone's
 // roaming flag (stored), roam now (a search at once, clears a lock), lock to the current site (RAM only)
 typedef enum {

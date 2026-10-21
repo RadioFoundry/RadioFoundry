@@ -879,7 +879,8 @@ static void ptt(bool down)
 		}
 		view.state = RS_TX;
 		view.tx_elapsed_ms = 0;
-		view.scan = 0;		// as the radio core does today: PTT ends any scan, dual watch too (#96)
+		if (view.scan != 3)
+			view.scan = 0;	// as the radio core does: PTT ends a scan; dual watch goes on (SCAN_DUAL)
 		if (view.dmr.active) {
 			if (focus_id) {
 				// one-shot: the focused row's target, kept for the reply window

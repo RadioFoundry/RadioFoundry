@@ -225,31 +225,47 @@ bool ui_svc_scan_skip(void)
 	radio_req_scan(RSCAN_NUISANCE);
 	return true;
 }
+#endif
 
-// Today's radio core alternates between the current channel and another position of the same zone (radio-features.md
-// 2), and PTT or a channel change ends it (the UI starts it again after a transmission). Other zones and the VFO need
-// the receive-set model of #96
+#if CONFIG_DUAL_WATCH
+// The radio core alternates the one receiver between the two channels (radio-features.md 2.1). The same pair again
+// only changes the selection there, so this is cheap to call on every change. Refused here, where the answer is
+// needed now (the request itself is queued): the same channel twice, a channel that can't be read
 bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
 {
 	if (ref == NULL) {
-		radio_req_scan(RSCAN_STOP);
+		radio_req_dual(NULL, 0);
 		return true;
 	}
-	const ui_dual_ref_t *on = &ref[sel], *other = &ref[!sel];
-	static radio_view_t view;	// static: not on the UI task's stack
-	const radio_view_t *v = &view;
-	radio_get_view(&view);
-	if (on->vfo || other->vfo || on->zone != other->zone || on->zone != v->zone_index || on->pos == other->pos)
+	static zone_t z;	// static: not on the UI task's stack
+	static channel_t ch;
+	radio_dual_ref_t r[2];
+	for (uint8_t i = 0; i < 2; i++) {
+		r[i] = (radio_dual_ref_t){ ref[i].vfo, ref[i].vfo ? 0 : ref[i].zone, ref[i].vfo ? 0 : ref[i].pos };
+		if (r[i].vfo) {
+			if (!(CONFIG_VFO_FM || CONFIG_VFO_DMR))
+				return false;
+		} else if (r[i].pos >= CODEPLUG_ZONE_MAX || !codeplug_zone(r[i].zone, &z) || r[i].pos >= z.count ||
+			   !codeplug_channel(z.channels[r[i].pos], &ch)) {
+			return false;
+		}
+	}
+	if (sel > 1 || (r[0].vfo == r[1].vfo && r[0].zone == r[1].zone && r[0].pos == r[1].pos))
 		return false;
-	if (v->vfo || v->zone_pos != on->pos)
-		radio_req_zone_pos(on->pos);
-	radio_req_scan_dual(other->pos);
+	radio_req_dual(r, sel);
 	return true;
 }
 
+// One receiver on every radio in the tree: dual watch alternates. A board with more would report them here once the
+// radio core drives them (#96); saying so before would have the screens claim both are heard
 uint8_t ui_svc_receivers(void)
 {
-	return 1;	// a board with two receivers reports them here (#96)
+	return 1;
+}
+
+bool ui_svc_vfo_get(channel_t *out)
+{
+	return radio_get_vfo(out);
 }
 #endif
 
