@@ -240,9 +240,23 @@ typedef enum IRQn {
 #define FTM_CSC_MSB		0x20u
 #define FTM_CSC_ELSB		0x08u	// with MSB: high-true pulses
 
-// --- USB0 (chapter 47): the TinyUSB driver has the controller, these are the clock and regulator parts ---
+// --- USB0 (chapter 47): TinyUSB drives the controller in ODR; the flash stub and the hand-over to it
+// (platform/k22f/stub_entry.c) use the registers below. Each is 8 bits wide, 4 bytes apart; the bits are in
+// k22f_usb_regs.h ---
 #define USB0_BASE		0x40072000u
+#define USB0_ISTAT		K22F_REG8(USB0_BASE + 0x080)
+#define USB0_INTEN		K22F_REG8(USB0_BASE + 0x084)
+#define USB0_ERRSTAT		K22F_REG8(USB0_BASE + 0x088)
+#define USB0_STAT		K22F_REG8(USB0_BASE + 0x090)
+#define USB0_CTL		K22F_REG8(USB0_BASE + 0x094)
+#define USB0_ADDR		K22F_REG8(USB0_BASE + 0x098)
+#define USB0_BDTPAGE1		K22F_REG8(USB0_BASE + 0x09C)	// buffer descriptor table address bits 15:9 (in 7:1)
+#define USB0_BDTPAGE2		K22F_REG8(USB0_BASE + 0x0B0)	// bits 23:16
+#define USB0_BDTPAGE3		K22F_REG8(USB0_BASE + 0x0B4)	// bits 31:24
+#define USB0_ENDPT(n)		K22F_REG8(USB0_BASE + 0x0C0 + 4u * (uint32_t)(n))
+#define USB0_USBCTRL		K22F_REG8(USB0_BASE + 0x100)
 #define USB0_CONTROL		K22F_REG8(USB0_BASE + 0x108)
+#define USB0_USBTRC0		K22F_REG8(USB0_BASE + 0x10C)
 #define USB0_CLK_RECOVER_CTRL	K22F_REG8(USB0_BASE + 0x140)
 #define USB0_CLK_RECOVER_IRC_EN	K22F_REG8(USB0_BASE + 0x144)
 #define USB0_CLK_RECOVER_INT_STATUS	K22F_REG8(USB0_BASE + 0x15C)
@@ -350,6 +364,7 @@ typedef enum IRQn {
 // --- eDMA and DMAMUX (chapters 21, 22) ---
 #define DMA_BASE		0x40008000u
 #define DMA_CR			K22F_REG32(DMA_BASE + 0x000)
+#define DMA_CR_ACTIVE		(1u << 31)	// a channel is executing
 #define DMA_ES			K22F_REG32(DMA_BASE + 0x004)
 #define DMA_ERQ			K22F_REG32(DMA_BASE + 0x00C)
 #define DMA_CERQ		K22F_REG8(DMA_BASE + 0x01A)

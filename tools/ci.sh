@@ -38,7 +38,7 @@
 #        audio-probe        (DM-1701 only, the board with an audio tap) the default config with CONFIG_AUDIO_PROBE=y
 #                           and LTO=1 (without LTO it no longer fits), so the probe keeps building
 #        vhf                (MD-380 only) the VHF band image, default config
-#      and the STM32F4 flash stub (stub/stm32f4, with the DM-1701's compiler).
+#      and the STM32F4 and K22F flash stubs (stub/stm32f4, stub/k22f, with the DM-1701's and the GD-77's compiler).
 #      Each must build with zero compiler and linker warnings. Sizes go to build/ci/size-report.md. The default and the
 #      maximal configuration must pass the static stack check (make stack-check, docs/dev/stack-check.md): each task's
 #      deepest call chain fits its stack with the margin.
@@ -149,8 +149,9 @@ for f in sys.argv[1:]:
 	   python3 tools/ui_gallery_compare.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 tools/crash_decode.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
 	   python3 stub/stubtool.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 stub/f4stub.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
-		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, gd77_codec, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate, hrc7000_codec, ui_gallery_compare, stubtool and f4stub self-tests"
+	   python3 stub/f4stub.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 stub/k22stub.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
+		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, gd77_codec, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate, hrc7000_codec, ui_gallery_compare, stubtool, f4stub and k22stub self-tests"
 	else
 		tail -30 "$OUT/odrflash-tests.log"
 		bad "flashing tool tests (see $OUT/odrflash-tests.log)"
@@ -349,6 +350,25 @@ if [ -z "$ONLY" ] || case ",$ONLY," in *,dm1701,*|*,md380,*|*,md9600,*) true ;; 
 	else
 		grep -E 'error|ASSERT' "$OUT/stub-stm32f4.log" | head -10
 		bad "STM32F4 flash stub: build failed (see $OUT/stub-stm32f4.log)"
+	fi
+fi
+# The K22F flash stub (stub/k22f) for the GD-77, the same checks
+if [ -z "$ONLY" ] || case ",$ONLY," in *,gd77,*) true ;; *) false ;; esac; then
+	cc=$(make -s BOARD=gd77 print-cc 2>/dev/null)
+	if [ -z "$cc" ] || ! command -v "$cc" > /dev/null 2>&1; then
+		skip "K22F flash stub: compiler ${cc:-?} not installed"
+	elif make -C stub/k22f BUILD="$(pwd)/$OUT/stub-k22f" > "$OUT/stub-k22f.log" 2>&1; then
+		if grep -qi 'warning:' "$OUT/stub-k22f.log"; then
+			grep -i 'warning:' "$OUT/stub-k22f.log" | sort -u | head -10
+			bad "K22F flash stub: warnings (see $OUT/stub-k22f.log)"
+		elif ! python3 stub/k22stub.py --check-embedded "$OUT/stub-k22f/k22stub.bin" > /dev/null; then
+			bad "K22F flash stub: the copy embedded in stub/k22stub.py differs from this build (python3 stub/k22stub.py --embed $OUT/stub-k22f/k22stub.bin)"
+		else
+			ok "K22F flash stub: $(wc -c < "$OUT/stub-k22f/k22stub.bin" | tr -d ' ') bytes (at most 8192), the embedded copy matches"
+		fi
+	else
+		grep -E 'error|ASSERT' "$OUT/stub-k22f.log" | head -10
+		bad "K22F flash stub: build failed (see $OUT/stub-k22f.log)"
 	fi
 fi
 echo

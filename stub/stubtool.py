@@ -518,8 +518,9 @@ GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
 
 
-# The STM32 radios' profiles live in f4stub.py (BOARDS); their ids, for --board
+# The STM32 radios' profiles live in f4stub.py (BOARDS), the K22F radios' in k22stub.py (BOARDS); their ids, for --board
 F4_BOARD_IDS = ("dm1701", "md380", "md9600")
+K22_BOARD_IDS = ("gd77",)
 
 
 def c7_board(name):
@@ -2059,8 +2060,9 @@ def main(argv=None):
     ap.add_argument("--end", type=lambda s: int(s, 0), help="old form: end (exclusive)")
     ap.add_argument("--verify-progmem", metavar="FILE", help="compare the program flash with FILE by CRC (no data transfer)")
     ap.add_argument("--verify-q128", metavar="FILE", help="compare the data flash with FILE by CRC")
-    ap.add_argument("--write-q128", metavar="FILE", help="STM32 radios: write FILE into the SPI flash from --q128-range's "
-                    "start (default 0), changed 4 KB sectors only, each verified by CRC")
+    ap.add_argument("--write-q128", metavar="FILE", help="STM32 radios and the GD-77: write FILE into the SPI flash from "
+                    "--q128-range's start (default 0), changed 4 KB sectors only, each verified by CRC (the GD-77's first "
+                    "MB is the radio's own data: never written)")
     ap.add_argument("--probe", action="store_true", help="chip IDs, a first block of each flash and some registers")
     ap.add_argument("--peek", metavar="ADDR:LEN", help="print LEN bytes of radio memory (hex dump)")
     ap.add_argument("--retries", type=int, default=6)
@@ -2095,21 +2097,24 @@ def main(argv=None):
                     help="power-on load: write and start the stub at ADDR (default 0x%X). The universal stub runs from any "
                          "base that doesn't overlap its run area; a legacy stub must be linked for it (the DB25-D's first stage "
                          "took the legacy 0x30000 stub at 0x30000)" % LOAD_ADDR)
-    ap.add_argument("--board", choices=F4_BOARD_IDS + tuple(C7_BOARDS),
-                    help="the radio: an STM32 one (dm1701, md380, md9600: stub/f4stub.py) or an HR_C7000 one (dm32, "
-                         "dm1801pro, db25d). Either way it picks the board profile the stub gets. Found from the radio's "
-                         "VERSION reply with --odr-enter; give it at power-on and with --attach (without it the HR_C7000 stub "
-                         "gets a profile that drives no board pins, and the STM32 route is not taken)")
-    ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
-                    "is saved before it is erased (default the home directory, never a git tree)")
+    ap.add_argument("--board", choices=F4_BOARD_IDS + K22_BOARD_IDS + tuple(C7_BOARDS),
+                    help="the radio: an STM32 one (dm1701, md380, md9600: stub/f4stub.py), a K22F one (gd77: "
+                         "stub/k22stub.py) or an HR_C7000 one (dm32, dm1801pro, db25d). Either way it picks the board "
+                         "profile the stub gets. Found from the radio's VERSION reply with --odr-enter; give it at "
+                         "power-on and with --attach (without it the HR_C7000 stub gets a profile that drives no board "
+                         "pins, and the STM32 and K22F routes are not taken)")
+    ap.add_argument("--backup-dir", metavar="DIR", help="STM32 and GD-77 --write-app: where a sector that also holds codec "
+                    "bytes is saved before it is erased (default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test:
         import f4stub
-        if set(F4_BOARD_IDS) != set(f4stub.BOARDS):
-            print("FAIL: stubtool's --board list %s differs from f4stub.BOARDS" % (F4_BOARD_IDS,))
+        import k22stub
+        if set(F4_BOARD_IDS) != set(f4stub.BOARDS) or set(K22_BOARD_IDS) != set(k22stub.BOARDS):
+            print("FAIL: stubtool's --board lists %s %s differ from f4stub.BOARDS / k22stub.BOARDS" % (F4_BOARD_IDS,
+                                                                                                    K22_BOARD_IDS))
             return 1
-        return self_test() | f4stub.self_test()
+        return self_test() | f4stub.self_test() | k22stub.self_test()
     if not a.port:
         ap.error("give PORT")
     jobs = []                                   # (mem, file, start, end, twice)
@@ -2139,19 +2144,24 @@ def main(argv=None):
             import f4stub
             reopen = f4stub.PortFollower(serial, a.port)
         radio = Radio(port, retries=a.retries)
-        # The STM32 radios (DM-1701, MD-380, MD-9600) run their own stub over USB: stub/f4stub.py
+        # The STM32 radios (DM-1701, MD-380, MD-9600) and the K22F ones (GD-77) run the shared engine's stubs over
+        # USB: stub/f4stub.py, stub/k22stub.py
         import f4stub
+        import k22stub
         if a.board is None and a.odr_enter:
             name = version_board(radio)
-            a.board = f4stub.board_for(name) if name else None
+            a.board = (f4stub.board_for(name) or k22stub.board_for(name)) if name else None
             if a.board is None and name:
                 a.board = c7_board(name)
                 if a.board is None:
                     print("ODR reports board %r: not one with a stub profile, using the generic one" % name)
         if a.board in f4stub.BOARDS:
             return f4stub.run(a, port, reopen)
+        if a.board in k22stub.BOARDS:
+            return k22stub.run(a, port, reopen)
         if a.write_q128:
-            raise DumpError("--write-q128 is for the STM32 radios (%s)" % ", ".join(F4_BOARD_IDS))
+            raise DumpError("--write-q128 is for the STM32 radios and the GD-77 (%s)" % ", ".join(F4_BOARD_IDS +
+                                                                                              K22_BOARD_IDS))
         if a.odr_enter:
             radio.odr_enter(open(a.odr_stub, "rb").read() if a.odr_stub else ("legacy" if a.legacy_stub else None), board=a.board)
         elif a.attach:

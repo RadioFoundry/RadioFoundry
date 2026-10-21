@@ -653,6 +653,23 @@ run-f4stub: f4stubTest f4stubSim
 	python3 f4stub_wire_check.py ./f4stubSim
 .PHONY: run-f4stub
 
+# The same engine with the Kinetis K22F target's board record check (stub/k22f/k22stub_board.c,
+# docs/spec/stub-k22f.md), and the host tool (stub/k22stub.py) against it through a pipe
+K22STUB_SRC := $(ROOT)/stub/common/stubeng.c $(ROOT)/stub/k22f/k22stub_board.c
+K22STUB_H   := $(ROOT)/stub/common/stubeng.h $(ROOT)/stub/k22f/k22stub.h
+K22STUB_INC := -I$(ROOT)/stub/common -I$(ROOT)/stub/k22f
+TESTS   += k22stubTest k22stubSim
+k22stubTest: k22stubTest.c $(K22STUB_SRC) $(K22STUB_H)
+	$(CC) $(CFLAGS) -Wshadow $(K22STUB_INC) -o $@ k22stubTest.c $(K22STUB_SRC)
+k22stubSim: k22stubSim.c $(K22STUB_SRC) $(K22STUB_H)
+	$(CC) $(CFLAGS) -Wshadow $(K22STUB_INC) -o $@ k22stubSim.c $(K22STUB_SRC)
+
+run: run-k22stub
+run-k22stub: k22stubTest k22stubSim
+	./k22stubTest
+	python3 k22stub_wire_check.py ./k22stubSim
+.PHONY: run-k22stub
+
 # DM-32UV drivers and board logic: FD6818 frames on a fake three-wire chip, ST7789 init stream and 2x scaling, key
 # matrix decode with the column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the factory
 # calibration decoder (docs/spec/hardware-dm32.md, modem-hrc7000.md)
@@ -1074,7 +1091,7 @@ gd77KeymapTest: gd77KeymapTest.c $(GD77)/keymap_gd77.h $(GD77)/keys.h $(ROOT)/ha
 gd77KeymapEmTest: gd77KeymapTest.c $(GD77)/keymap_gd77.h $(GD77)/keys.h $(ROOT)/hal/hal_input.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(GD77) -Wshadow -DCONFIG_DMR_EMERGENCY=1 -o $@ gd77KeymapTest.c
 # The USB glue: token STAT to buffer descriptor, the register bits, the serial number string
-k22fUsbTest: k22fUsbTest.c $(K22F)/k22f_usb_regs.h
+k22fUsbTest: k22fUsbTest.c $(K22F)/k22f_usb_regs.h $(K22F)/stub_handoff.h
 	$(CC) $(CFLAGS) -I$(K22F) -Wshadow -o $@ k22fUsbTest.c
 hrc6000ClockTest: hrc6000ClockTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRC6K)/hrc6000.h $(HRCDMR)/hrc.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000ClockTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c

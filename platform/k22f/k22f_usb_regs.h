@@ -6,6 +6,7 @@
 #ifndef K22F_USB_REGS_H
 #define K22F_USB_REGS_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define USB_ISTAT_USBRST_MASK		0x01u
@@ -44,6 +45,34 @@
 #define USB_USBTRC0_USB_RESUME_INT_MASK	0x01u
 #define USB_USBTRC0_USBRESMEN_MASK	0x20u
 #define USB_USBTRC0_USBRESET_MASK	0x80u
+#define USB_USBTRC0_SET_ONE_MASK	0x40u	// reserved: software writes it as 1
+#define USB_ADDR_MASK			0x7Fu
+
+// A buffer descriptor's first word (reference manual 47.3.4); the second is the buffer's address. The controller
+// writes the token's PID over bits 5:2 (KEEP, NINC, DTS, BDT_STALL) and the byte count when it hands the descriptor back
+#define USB_BD_OWN			0x80u	// the controller owns it
+#define USB_BD_DATA1			0x40u	// DATA1 (else DATA0) sent, or expected with DTS
+#define USB_BD_DTS			0x08u	// check the received data toggle
+#define USB_BD_STALL			0x04u	// answer the token with STALL
+#define USB_BD_BC_SHIFT			16u
+#define USB_BD_BC_MASK			0x3FFu
+#define USB_TOKEN_PID_SETUP		0xDu	// the PID a SETUP token leaves (OUT 0x1, IN 0x9)
+
+static inline uint32_t k22f_usb_bd_word(uint32_t bc, bool data1, bool dts)
+{
+	return ((bc & USB_BD_BC_MASK) << USB_BD_BC_SHIFT) | (data1 ? USB_BD_DATA1 : 0u) | (dts ? USB_BD_DTS : 0u) |
+	       USB_BD_OWN;
+}
+
+static inline uint8_t k22f_usb_bd_pid(uint32_t w)
+{
+	return (uint8_t)((w >> 2) & 0xFu);
+}
+
+static inline uint32_t k22f_usb_bd_bc(uint32_t w)
+{
+	return (w >> USB_BD_BC_SHIFT) & USB_BD_BC_MASK;
+}
 
 
 // The buffer descriptor table: 16 endpoints x 2 directions (0 = OUT, 1 = IN) x 2 (even, odd), 8 bytes each, 512-byte
