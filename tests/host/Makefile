@@ -447,6 +447,21 @@ TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
+# The debug link's hardware options command (core/debuglink/debuglink_hwopt.c), with options and without
+TESTS   += hwoptTest hwoptTestNone
+HWOPTT  := hwoptTest.c $(CORE)/debuglink/debuglink_hwopt.c $(CORE)/debuglink/dl_fmt.c
+HWOPTT_H := $(ROOT)/hal/hal_hwopt.h $(ROOT)/hal/board.h $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h
+hwoptTest: $(HWOPTT) $(HWOPTT_H)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(HWOPTT)
+hwoptTestNone: $(HWOPTT) $(HWOPTT_H)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DHWOPT_NONE_BOARD -o $@ $(HWOPTT)
+
+run: run-hwopt
+run-hwopt: hwoptTest hwoptTestNone
+	./hwoptTest
+	./hwoptTestNone
+.PHONY: run-hwopt
+
 # The crash log's record, its start-up side on a fake store, the packed report (core/crash/crash.c), and the UI's side
 # of it with the report (core/ui/ui_svc_crash.c), the debug link's (core/debuglink/debuglink_crash.c)
 TESTS   += crashTest

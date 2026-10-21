@@ -47,7 +47,14 @@ enum {
 	DL_CMD_SNMP		= 0x19,	// the SNMP agent: settings, communities, notification port, test (debuglink_snmp.c, 3.17)
 	DL_CMD_STUB		= 0x1A,	// load and enter the RAM-monitor stub (CONFIG_STUB_ENTRY; debuglink_stub.c, 3.18)
 	DL_CMD_CRASH		= 0x1B,	// the crash log: clear, crash on purpose (CONFIG_CRASH_LOG; debuglink_crash.c, 3.19)
-	DL_CMD_CODEPLUG		= 0x1C,	// the fast codeplug protocol (CONFIG_CPS_FAST; core/cps/cps_fast.c, 3.20, cps-fast.md)
+	DL_CMD_CODEPLUG		= 0x1C,
+	DL_CMD_HWOPT		= 0x1E,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.21)	// the fast codeplug protocol (CONFIG_CPS_FAST; core/cps/cps_fast.c, 3.20, cps-fast.md)
+};
+
+// DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.21)
+enum {
+	DL_HWOPT_OP_LIST	= 0,	// none -> key=value text: hwopt.count, hwopt.<i>.name / value / restart / choices
+	DL_HWOPT_OP_SET		= 1,	// option u8, choice u8 -> none (refused: the board didn't store it, or on air)
 };
 
 // DL_CMD_CRASH operations (first payload byte; docs/spec/debuglink.md 3.19)

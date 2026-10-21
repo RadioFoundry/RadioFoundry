@@ -20,6 +20,7 @@ typedef enum {
 	SCR_CRASH,			// the crash log's record (arg 1: the prompt after the restart; CONFIG_CRASH_SCREEN)
 	SCR_CRASH_TO,			// the crash report's target, picked from the contacts (CONFIG_CRASH_REPORT)
 	SCR_TEXT, SCR_CHPICK, SCR_DISCARD,	// the channel editor's name entry, contact / list picker, unsaved changes
+	SCR_HWOPT,			// the board's hardware options (Settings > Advanced > Hardware; hal_hwopt.h)
 	SCR_COUNT
 } ui_scr_t;
 

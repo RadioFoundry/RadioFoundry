@@ -74,6 +74,8 @@ APRS = 0x11
 APRS_OP_SEND_NOW, APRS_OP_STATUS, APRS_OP_MESSAGE, APRS_OP_TEST_CALL, APRS_OP_SET, APRS_OP_NMEA = range(1, 7)
 CRASH = 0x1B                        # the crash log (CONFIG_CRASH_LOG; docs/spec/debuglink.md 3.19)
 CRASH_OP_CLEAR, CRASH_OP_TEST = range(2)
+HWOPT = 0x1E                        # the board's hardware options (docs/spec/debuglink.md 3.21)
+HWOPT_OP_LIST, HWOPT_OP_SET = range(2)
 CRASH_TESTS = {"trap": 1, "assert": 2}
 CRASH_TOKEN = 0x48535243            # 'CRSH'
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
@@ -516,6 +518,17 @@ class DebugLink:
     def crash_test(self, kind):
         """Crash on purpose (kind: 'trap' or 'assert'); the radio restarts about 100 ms after the reply."""
         self.request(CRASH, struct.pack("<BBI", CRASH_OP_TEST, CRASH_TESTS[kind], CRASH_TOKEN))
+
+    def hwopts(self):
+        """The board's hardware options: [{name, value (-1 = none stored), restart, choices}]"""
+        kv = parse_kv(self.request(HWOPT, bytes([HWOPT_OP_LIST]))[1].decode("ascii", "replace"))
+        return [{"name": kv.get(f"hwopt.{i}.name", ""), "value": int(kv.get(f"hwopt.{i}.value", "-1")),
+                 "restart": kv.get(f"hwopt.{i}.restart") == "1",
+                 "choices": kv.get(f"hwopt.{i}.choices", "").split("|")} for i in range(int(kv.get("hwopt.count", "0")))]
+
+    def hwopt_set(self, option, choice):
+        """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
+        self.request(HWOPT, bytes([HWOPT_OP_SET, option, choice]))
 
     def version(self):
         return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
@@ -1513,6 +1526,25 @@ def cmd_crash(link, a):
     return 0
 
 
+def cmd_hwopt(link, a):
+    opts = link.hwopts()
+    if a.option is not None:
+        names = [o["name"].lower() for o in opts]
+        i = int(a.option) if a.option.isdigit() else names.index(a.option.lower()) if a.option.lower() in names else -1
+        if not 0 <= i < len(opts) or a.choice not in opts[i]["choices"]:
+            print("hwopt: OPTION (number or name) and one of its choices; see `hwopt` for the list", file=sys.stderr)
+            return 2
+        link.hwopt_set(i, opts[i]["choices"].index(a.choice))
+        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if opts[i]["restart"] else ""))
+        return 0
+    for i, o in enumerate(opts):
+        v = o["choices"][o["value"]] if 0 <= o["value"] < len(o["choices"]) else "not set"
+        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])}){'  restart' if o['restart'] else ''}")
+    if not opts:
+        print("no hardware options on this radio")
+    return 0
+
+
 def cmd_reboot(link, a):
     c = link.chip()
     print_chip(c)
@@ -1609,6 +1641,9 @@ def main(argv=None):
     p = sub.add_parser("crash", help="the crash log: show, clear, test trap|assert (docs/spec/crash-log.md)")
     p.add_argument("op", nargs="?", default="show", choices=["show", "clear", "test"])
     p.add_argument("kind", nargs="?", default="trap")
+    p = sub.add_parser("hwopt", help="hardware options: list, or set OPTION CHOICE (docs/spec/debuglink.md 3.21)")
+    p.add_argument("option", nargs="?", help="number or name, e.g. 'Board revision'")
+    p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
@@ -1665,6 +1700,8 @@ def main(argv=None):
                 return cmd_reboot(link, a)
             elif a.cmd == "crash":
                 return cmd_crash(link, a)
+            elif a.cmd == "hwopt":
+                return cmd_hwopt(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
             elif a.cmd == "aprobe":

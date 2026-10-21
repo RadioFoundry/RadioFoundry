@@ -134,6 +134,9 @@ void debuglink_view_crash(dl_text_t *t);
 size_t debuglink_cmd_crash(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_crash_service(void);
 
+// The board's hardware options (debuglink_hwopt.c, docs/spec/debuglink.md 3.21, hal_hwopt.h): DL_CMD_HWOPT
+size_t debuglink_cmd_hwopt(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+
 // The debug link's own counters: frames answered, bad CRC, too long, timed out (debuglink.c)
 #define DL_LINK_COUNTERS	4
 void debuglink_link_counters(uint32_t out[DL_LINK_COUNTERS]);

@@ -108,6 +108,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1A` | STUB | operation u8 + arguments (3.18); `CONFIG_STUB_ENTRY` builds on a supported SoC, else status 4 | region info, progress, or a reason (3.18) |
 | `0x1B` | CRASH | operation u8 + arguments (3.19); `CONFIG_CRASH_LOG` builds, else status 4 | none (3.19) |
 | `0x1C` | CODEPLUG | operation u8 + arguments (3.20); `CONFIG_CPS_FAST` builds, else status 4 | layout, block sums, an LZ4 stream, or a reason (3.20) |
+| `0x1E` | HWOPT | operation u8 + arguments (3.21) | the options as key=value text, or none (3.21) |
 
 ### 3.1 VERSION
 
@@ -594,6 +595,19 @@ A refusal (`DL_ST_REFUSED`) carries a reason byte: 1 outside the image or a prot
 written, 3 no staging area, 4 staging full, 5 staging busy, 6 out of order, 7 CRC, 8 bad stream, 9 flash failure.
 `tools/cps_fast.py info | read | write | verify` drives it.
 
+### 3.21 HWOPT
+
+The board's hardware options (`hal/hal_hwopt.h`): facts a person states because software can't read them, such as
+the MD-9600's board revision. The board stores them outside the settings record. Settings > Advanced > Hardware shows
+the same list; a radio without options has no such row and answers an empty list here.
+
+| Op | Name | Arguments | Reply after the status |
+|---|---|---|---|
+| 0 | LIST | none | key=value text: `hwopt.count`, then per option i `hwopt.<i>.value` (the stored choice, -1 none), `hwopt.<i>.restart` (1: applies from the next start-up), `hwopt.<i>.name`, `hwopt.<i>.choices` (labels separated by `\|`) |
+| 1 | SET | option u8, choice u8 | none. Refused (7) while transmitting or when the board doesn't store it; bad argument (2) for an unknown option or choice |
+
+`odr_debug.py hwopt` lists them; `odr_debug.py hwopt "Board revision" V4A/V5` sets one.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -604,6 +618,7 @@ written, 3 no staging area, 4 staging full, 5 staging busy, 6 out of order, 7 CR
   peripherals. Nothing in the debug link writes or erases internal flash or the option bytes.
 - STUB ENTER is refused while transmitting, and the transmitter is switched to receive before the jump (3.18).
 - CRASH TEST needs its token and is refused while transmitting (3.19).
+- HWOPT SET is refused while transmitting (3.21).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the stock bootloader is proprietary).

@@ -22,6 +22,7 @@
 #include "hal_netif.h"
 #include "hal_bcast.h"
 #include "hal_afsk.h"
+#include "hal_hwopt.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -103,6 +104,10 @@ typedef struct {
 	// with the stored value at start-up and on each change; the module is still probed at start-up whatever the
 	// setting says, so board_has_gps() is known. NULL = the module is always on
 	void (*gps_enable)(bool on);
+	// Optional: hardware options a person states because software can't read them (hal_hwopt.h): Settings >
+	// Advanced > Hardware and the debug link's HWOPT. NULL / 0 = none
+	const hal_hwopt_t *hwopts;
+	uint8_t hwopt_count;
 } board_t;
 
 extern const board_t board;
