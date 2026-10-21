@@ -167,8 +167,7 @@ Checked on hardware (2026-10-17, both flashed through the stub), with `tests/hil
 `tests/host/crashTest.c`: the CRC, sealing and the count in a row, the build ID, the start-up side on a fake store,
 the packed report and the summary line; `ui_svc_crash.c` on fake settings, contacts and data service (the record for
 the screen, seen, clear, the report to a private or group contact, its progress and the sent mark); and
-`debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals, the deferred test, and
-the on-air test with and without `CONFIG_CRASH_TEST_TX`: `crashTestTx` is the same test built with it).
+`debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals and the deferred test).
 `tests/host/crashCaptureTest.c`: `crash_capture.c` on a stand-in RTOS; every way in (a fault record, a stack
 overflow, out of heap, an assertion inside the capture) calls `board_rf_safe` first, with interrupts off, before the
 store and the restart. `tests/host/bootDb25dTest.c` (`test_tx_off`): the DB25-D first stage drives the transmitter
@@ -220,8 +219,7 @@ the DB25-D the first stage's handful of instructions), which ODR can't change.
 
 Unverified on hardware: that each radio's transmitter actually stops (current and RF) at a crash while keyed, and that
 the DAC B write before `hrc_clock_init` is harmless on every HR_C7000 radio (the vendor loaders leave the peripheral
-clock gates on, as far as known: `hardware-dm32.md` 1.1). The bench check: a `CONFIG_CRASH_TEST_TX` build, PTT held over
-the debug link, `odr_debug.py crash test trap --on-air` ([debuglink.md](debuglink.md) 3.19); the supply current and the
-SDR bench's capture drop to receive levels within a millisecond of the crash, and the radio restarts receiving.
-`tests/hil/test_crash.py` (`test_crash_while_transmitting`, `--allow-reboot --allow-rf`) does the radio's side: keyed
-on `--fm-mhz` at the lowest power, the trap, the record kept, and not transmitting after the restart.
+clock gates on, as far as known: `hardware-dm32.md` 1.1). The debug link's crash test is refused while transmitting,
+so a bench check needs a local test build that lets it through: keyed at the lowest power, the trap, then the supply
+current and the SDR bench's capture drop to receive levels within a millisecond of the crash, and the radio restarts
+receiving.
