@@ -4,7 +4,7 @@
  "board": "gd77",
  "isa": "thumb2",
  "stock": {
-  "name": "gd77-v4.3.9.sgl",
+  "name": "GD-77 V4.3.9",
   "sha256": "a08f32f37b742d5ddc919dddb60c1f54360ed46de9f6296370e67f5c4a80677b"
  },
  "main": {
