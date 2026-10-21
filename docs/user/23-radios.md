@@ -470,6 +470,6 @@ models it covers.
 |---|---|
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned as a variant of the DM-1701 board |
 | TYT MD-9600, Retevis RT90 | Mobile. Planned |
-| Radioddity GD-77 family | Bring-up started on the GD-77. Not supported yet: it builds, but hasn't run on a radio, and it can't transmit or store settings. The radio programming utility can install it through the radio's update mode with an original update file (.sgl); that route has not yet been tried on a radio |
+| Radioddity GD-77 family | Bring-up started on the GD-77. Not supported yet: it builds, but hasn't run on a radio, and it can't transmit or store settings. The radio programming utility can install it through the radio's update mode with an original update file (.sgl), and update a radio that already runs it over the USB cable (the update file then only supplies the voice codec). Neither route has been tried on a radio yet |
 | Radioddity GD-88 | Planned |
 | Radioddity DB40-D | Mobile. Planned. Hardware needed |
