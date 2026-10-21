@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // MD-9600 diagnostics page lines: the board revision in use and where it came from, then raw readings for the first
-// power-up (docs/spec/hardware-md9600.md 19): keys, ADC channels, flash, calibration, the synthesizer's last LO
+// power-up (docs/spec/hardware-md9600.md 19): calibration and option blocks, band edges, the synthesizer's last LO,
+// ADC channels, keys, flash. The debug link's board view (view_md9600.c) carries the same and more
 #include <stddef.h>
 #include "md9600.h"
 #include "config.h"
@@ -39,6 +40,14 @@ static void put_x(out_t *o, uint32_t v, int digits)
 	}
 }
 
+// MHz with one decimal: 136.0
+static void put_mhz(out_t *o, uint32_t hz)
+{
+	put_u(o, hz / 1000000u);
+	put(o, ".");
+	put_u(o, (hz / 100000u) % 10u);
+}
+
 static const char *const sources[] = { "none", "stored", "probe", "default" };
 
 bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
@@ -67,10 +76,31 @@ bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 			const md9600_rev_desc_t *pd = md9600_rev_desc((md9600_rev_t)rd.probe);
 			put(&o, pd != NULL ? pd->name : "none");
 		}
-		put(&o, " cal ");
+		break;
+	// The lines below fit the 128x64 panel's small font (25 characters): one reading per line where two don't fit
+	case 2:
+		put(&o, "cal ");
 		put(&o, md9600_cal_source());
 		break;
-	case 2:
+	case 3:		// the option block, and "bl on/off" when it says the backlight can't be dimmed
+		put(&o, "opt ");
+		put(&o, md9600_opt_source());
+		put(&o, md9600_opt_backlight_switched() ? " bl on/off" : "");
+		break;
+	case 4:
+	case 5: {	// the band edges from the option block (hardware-md9600.md 11.1)
+		md9600_band_edges_t e;
+		put(&o, i == 4 ? "VHF " : "UHF ");
+		if (!md9600_opt_band_edges(&e)) {
+			put(&o, "-");
+			break;
+		}
+		put_mhz(&o, i == 4 ? e.vhf_lo_hz : e.uhf_lo_hz);
+		put(&o, "-");
+		put_mhz(&o, i == 4 ? e.vhf_hi_hz : e.uhf_hi_hz);
+		break;
+	}
+	case 6:
 		put(&o, "LO ");
 		put_u(&o, rd.lo_hz / 1000u);
 		put(&o, "k n");
@@ -78,23 +108,20 @@ bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " x");
 		put_u(&o, rd.refused);
 		break;
-	case 3:		// receiver readings for the RSSI / squelch curves (hardware-md9600.md 5.7)
-		put(&o, "U r");
-		put_u(&o, md9600_adc_raw(MD9600_ADC_RSSI_U));
-		put(&o, " n");
-		put_u(&o, md9600_adc_raw(MD9600_ADC_NOISE_U));
-		put(&o, " V r");
-		put_u(&o, md9600_adc_raw(MD9600_ADC_RSSI_V));
-		put(&o, " n");
-		put_u(&o, md9600_adc_raw(MD9600_ADC_NOISE_V));
+	case 7:		// receiver readings for the RSSI / squelch curves (hardware-md9600.md 5.7)
+	case 8:
+		put(&o, i == 7 ? "U rssi " : "V rssi ");
+		put_u(&o, md9600_adc_raw(i == 7 ? MD9600_ADC_RSSI_U : MD9600_ADC_RSSI_V));
+		put(&o, " nz ");
+		put_u(&o, md9600_adc_raw(i == 7 ? MD9600_ADC_NOISE_U : MD9600_ADC_NOISE_V));
 		break;
-	case 4:
+	case 9:
 		put(&o, "supply ");
 		put_u(&o, md9600_supply_mv());
-		put(&o, "mV raw ");
+		put(&o, "mV r");
 		put_u(&o, md9600_adc_raw(MD9600_ADC_SUPPLY));
 		break;
-	case 5:		// the hand-mic keypad ladder and the mic level (hardware-md9600.md 9.3)
+	case 10:	// the hand-mic keypad ladder and the mic level (hardware-md9600.md 9.3)
 		put(&o, "mic r");
 		put_u(&o, md9600_adc_raw(MD9600_ADC_MICKEY_ROW));
 		put(&o, " c");
@@ -102,7 +129,7 @@ bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " l");
 		put_u(&o, md9600_adc_raw(MD9600_ADC_MIC));
 		break;
-	case 6: {	// the raw matrix: columns low per row K0-K3 (bring-up: which bit is which key)
+	case 11: {	// the raw matrix: columns low per row K0-K3 (bring-up: which bit is which key)
 		uint8_t rows[4];
 		md9600_input_raw(rows);
 		put(&o, "keys ");
@@ -111,9 +138,10 @@ bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 		}
 		break;
 	}
-	case 7:
+	case 12:
 		put(&o, "flash ");
 		put_x(&o, md9600_flash_device(), 4);
+		put(&o, md9600_flash.map != NULL ? " mapped" : " no map");
 		break;
 	default:
 		return false;
