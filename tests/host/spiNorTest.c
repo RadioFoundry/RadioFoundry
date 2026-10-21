@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // drivers/flash/spi_nor against a model of a W25Q / GD25Q class chip at the SPI bus (the command set of the Winbond
-// W25Q128JV and GigaDevice GD25Q128 data sheets: 03 read, 02 page program, 20 sector erase, 06 write enable,
-// 05 / 35 / 15 status, 9F JEDEC ID, 48 security register read). The model keeps what the driver must get right:
+// W25Q128JV and GigaDevice GD25Q128 data sheets: 03 read, 0B fast read, 02 page program, 20 sector erase, D8 64 KB
+// block erase, C7 chip erase, 06 write enable, 05 / 35 / 15 status, 9F JEDEC ID, 48 security register read). The model keeps what the driver must get right:
 // erase sets a 4 KB sector to 0xFF, programming only clears bits, a page program that runs past the end of its
 // 256-byte page wraps to the start of the same page, program and erase need the write enable latch (and clear it),
 // the chip stays busy for a while after each, addresses wrap at the chip's size (3-byte addresses reach 16 MB). It
@@ -52,6 +52,7 @@ static struct {
 	// Bookkeeping and faults
 	uint32_t selects, deselects, outside;	// xfer while not selected
 	uint32_t programs, erases;		// operations done
+	uint32_t block_erases, chip_erases;
 	uint32_t page_overruns;			// page programs longer than the room to the page end
 	uint32_t violations;			// programmed a 1 over a 0
 	uint32_t fail_xfer_at;			// fail the n-th xfer from now (0 = never)
@@ -134,6 +135,16 @@ static void chip_execute(void)
 		chip.erases++;
 		chip.wel = false;
 		chip.busy = chip.busy_polls;
+	} else if (chip.cmd == 0xD8 && chip.pos == 4 && chip.wel && chip.busy == 0) {
+		memset(&chip.mem[(chip.addr % chip.size) & ~0xFFFFu], 0xFF, 0x10000);
+		chip.block_erases++;
+		chip.wel = false;
+		chip.busy = chip.busy_polls;
+	} else if (chip.cmd == 0xC7 && chip.pos == 1 && chip.wel && chip.busy == 0) {
+		memset(chip.mem, 0xFF, chip.size);
+		chip.chip_erases++;
+		chip.wel = false;
+		chip.busy = chip.busy_polls;
 	}
 }
 
@@ -183,14 +194,22 @@ static uint8_t chip_byte(uint8_t in)
 	case 0x9F:
 		return p <= 3 ? chip.id[p - 1] : 0xFF;
 	case 0x03:
+	case 0x0B:
 	case 0x02:
 	case 0x20:
+	case 0xD8:
 	case 0x48:
 		if (p <= 3) {
 			chip.addr = (chip.addr << 8) | in;
 			return 0xFF;
 		}
 		if (chip.cmd == 0x03) {
+			return chip.busy != 0 ? 0xFF : chip.mem[chip.addr++ % chip.size];
+		}
+		if (chip.cmd == 0x0B) {
+			if (p == 4) {
+				return 0x5A;	// the dummy byte: data a driver that skips it would take as the first byte
+			}
 			return chip.busy != 0 ? 0xFF : chip.mem[chip.addr++ % chip.size];
 		}
 		if (chip.cmd == 0x48) {
@@ -610,10 +629,54 @@ static void test_store_cuts(void)
 	CHECK(chip.violations == 0 && chip.page_overruns == 0);
 }
 
+// Fast read (0x0B, one dummy byte), the 64 KB block erase and the chip erase, each with its bounded wait
+static void test_fast_read_block_chip(void)
+{
+	spi_nor_t nor = { .bus = &bus, .fast_read = true };
+	uint8_t b[300], r[300];
+
+	chip_create(2u << 20, 0xEF, 0x40, 0x15);
+	CHECK(spi_nor_probe(&nor) && nor.size == (2u << 20) && nor.fast_read);
+	for (unsigned i = 0; i < sizeof(b); i++) {
+		b[i] = (uint8_t)(i * 13u + 1u);
+	}
+	CHECK(spi_nor_program(&nor, 0x1230F0, b, sizeof(b)));
+	memset(r, 0, sizeof(r));
+	CHECK(spi_nor_read(&nor, 0x1230F0, r, sizeof(r)) && memcmp(r, b, sizeof(r)) == 0);
+	CHECK(spi_nor_read(&nor, 0x1230F5, r, 1) && r[0] == b[5]);
+
+	// Block erase: the 64 KB block holding addr, aligned down; its neighbors untouched
+	chip.mem[0x10FFFF] = 0x00;
+	chip.mem[0x130000] = 0x00;
+	uint32_t e0 = chip.block_erases;
+	CHECK(spi_nor_erase_block(&nor, 0x12ABCD));
+	CHECK(chip.block_erases == e0 + 1 && chip.mem[0x1230F0] == 0xFF && chip.mem[0x12FFFF] == 0xFF);
+	CHECK(chip.mem[0x10FFFF] == 0x00 && chip.mem[0x130000] == 0x00);
+	CHECK(!chip.wel && chip.busy == 0);
+
+	// Write protected: refused before any erase
+	chip.protect = true;
+	CHECK(!spi_nor_erase_block(&nor, 0x120000) && !spi_nor_erase_chip(&nor));
+	CHECK(chip.block_erases == e0 + 1 && chip.chip_erases == 0 && chip.mem[0x130000] == 0x00);
+	chip.protect = false;
+
+	// A chip that never finishes: the wait gives up instead of hanging
+	chip.busy_polls = UINT32_MAX;
+	CHECK(!spi_nor_erase_block(&nor, 0x140000));
+	chip_power_on();
+	chip.busy_polls = 2;
+
+	// Chip erase: everything 0xFF
+	CHECK(spi_nor_erase_chip(&nor) && chip.chip_erases == 1);
+	CHECK(chip.mem[0x10FFFF] == 0xFF && chip.mem[0x130000] == 0xFF && !chip.wel && chip.busy == 0);
+	CHECK(chip.violations == 0 && chip.page_overruns == 0);
+}
+
 int main(void)
 {
 	test_probe();
 	test_read_program_erase();
+	test_fast_read_block_chip();
 	test_store_16mb();
 	test_store_small_part();
 	test_store_cuts();

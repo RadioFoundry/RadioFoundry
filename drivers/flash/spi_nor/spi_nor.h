@@ -14,10 +14,12 @@ typedef struct {
 	uint8_t manufacturer;	// JEDEC manufacturer ID (0xEF Winbond, 0xC8 GigaDevice, ...)
 	uint16_t device;	// memory type << 8 | capacity code
 	uint32_t size;		// bytes, from the capacity code (0 if unknown)
+	bool fast_read;		// read with 0x0B (one dummy byte) instead of 0x03; set by the board before use
 } spi_nor_t;
 
 #define SPI_NOR_PAGE_SIZE	256u
 #define SPI_NOR_SECTOR_SIZE	4096u
+#define SPI_NOR_BLOCK_SIZE	65536u
 #define SPI_NOR_MAX_SIZE	0x1000000u	// what 3-byte addresses reach: a larger part is used as 16 MB
 
 // Read the JEDEC ID (0x9F) and fill in manufacturer, device and size (at most SPI_NOR_MAX_SIZE). False if the bus fails
@@ -28,6 +30,10 @@ bool spi_nor_read(const spi_nor_t *nor, uint32_t addr, void *buf, uint32_t len);
 bool spi_nor_program(const spi_nor_t *nor, uint32_t addr, const void *buf, uint32_t len);
 // Erase the 4 KB sector holding addr; waits until done
 bool spi_nor_erase_sector(const spi_nor_t *nor, uint32_t addr);
+// Erase the 64 KB block holding addr (0xD8); waits until done
+bool spi_nor_erase_block(const spi_nor_t *nor, uint32_t addr);
+// Erase the whole chip (0xC7); waits until done (up to 200 s on a 16 MB part). Nothing in the core calls it
+bool spi_nor_erase_chip(const spi_nor_t *nor);
 // Read security register bytes (0x48). addr is the register address as the chip defines it (W25Q: reg << 12 | offset)
 bool spi_nor_read_security(const spi_nor_t *nor, uint32_t addr, void *buf, uint32_t len);
 // Status register 1..3 (0x05 / 0x35 / 0x15)
