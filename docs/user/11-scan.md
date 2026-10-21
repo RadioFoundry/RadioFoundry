@@ -54,10 +54,8 @@ VFO. It is two frequencies, not the two timeslots of one DMR frequency.
 - One of them is **selected**. **PTT** talks on it. Up, Down, the knob and the quick settings act on it, as they do on
   the normal Home. Dual watch goes on after you transmit.
 - The radio has one receiver, so it alternates between A and B. A call on one can be missed while the radio is on the
-  other. Home says "Alternating A and B". A radio with two receivers would hear both and say "Listening to both".
-  No radio does yet ([Radio reference](23-radios.md#dual-watch-on-each-radio)).
-- The radio can only alternate between two channels of the same zone so far. For a B in another zone or the VFO it
-  says "This radio watches 2 channels of one zone". Pick B from the zone you are in.
+  other. A radio with two receivers would hear both and show a call on each channel at once. No radio has that yet
+  ([Radio reference](23-radios.md#dual-watch-on-each-radio)).
 
 ### Start it
 
@@ -89,14 +87,13 @@ To pick another B later, press **\***, **7** and then **#** on the Dual watch ro
 <img src="../ux/screens/240x320/home_dual_rx_b.png" width="200" alt="Dual watch Home, a call coming in on B">
 
 Each channel has a letter, its name, what **PTT** talks to (the talkgroup, or the frequency on FM), its frequency and
-its zone.
+its zone. The selected channel has an arrow under its letter.
 
 | You see | It means |
 |---|---|
-| **PTT** and a filled letter | This is the selected channel: **PTT** talks here |
+| **PTT**, a filled letter and an arrow | This is the selected channel: **PTT** talks here |
 | **TX** (red) and "TALKING on A" | You are transmitting on A |
-| **RX** (green) and "Receiving on B" | A call is coming in on B. The channel shows who is calling |
-| "Alternating A and B" | One receiver, taking turns |
+| **RX** (green) and "Receiving on B" | A call is coming in on B. The channel shows who is calling, with RX at the right of that line |
 | "B Joe Smith TG 91 10s ago" | The last calls, newest first, with their channel |
 | "Heard 7s ago" (amber, on the channel) | On small screens: when the last call came in on this channel |
 | "# 1 talk on B" | A call came in on B in the last 10 s. **#**, **1** talks back there |

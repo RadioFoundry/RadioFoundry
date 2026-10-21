@@ -53,14 +53,13 @@ On a radio without a key for a job, the menus reach it:
 ## Dual watch on each radio
 
 [Dual watch](11-scan.md#dual-watch) listens on two channels, A and B. Every radio built today has one receiver, so
-on every radio it is pseudo dual watch: the radio alternates between A and B, and Home says "Alternating A and B".
-A call on one channel can be missed while the radio is on the other. A radio with two receivers would hear both and
-say "Listening to both". The UI is ready for that (`ui_svc_receivers()` above 1), but no radio reports two receivers
+on every radio it is pseudo dual watch: the radio alternates between A and B. A call on one channel can be missed
+while the radio is on the other. A radio with two receivers would hear both and show a call on each at once. The UI is ready for that (`ui_svc_receivers()` above 1), but no radio reports two receivers
 yet, and the core doesn't use them.
 
 | Radio | Dual watch | Start | Switch A / B |
 |---|---|---|---|
-| DM-1701 | Pseudo, one receiver. The core's alternation between two channels of one zone is checked on air; the new dual watch screens are not yet | **\***, **7**, **1** | **#**, **1**, or a side key set to **A/B** |
+| DM-1701 | Pseudo, one receiver. The core's alternation between two channels of one zone is checked on air; the new dual watch (any zone, the VFO, the screens) is not yet | **\***, **7**, **1** | **#**, **1**, or a side key set to **A/B** |
 | MD-380 | Pseudo, one receiver. Not checked on air | **\***, **7**, **1** | **#**, **1**, or a side key set to **A/B** |
 | DM-32UV | Pseudo, one receiver. Not checked on air (scan isn't checked on this radio yet) | **\***, **7**, **1** | **Left** / **Right**, or a side key set to **A/B** |
 | DB25-D PRO | Pseudo, one receiver. Not checked on air. Its second BK4819 chip is a local oscillator for the receive chain, not a second receiver | A side key set to **Dual watch**, or Tools > Scan | A side key set to **A/B** |
@@ -69,9 +68,8 @@ yet, and the core doesn't use them.
 None of these radios has a key for dual watch until you set one in **Settings > Keys** (**A/B** or **Dual watch**,
 press or hold).
 
-For now the radio alternates only between two channels of one zone. B in another zone or the VFO is refused with a
-message, until the core's receive-set model (issue 96) lands. Nothing about dual watch has been checked on the air
-with the new screens on any radio.
+A and B can be any channel of any zone, or the VFO ([how the core does it](../spec/radio-features.md#21-dual-watch)).
+Nothing about this dual watch has been checked on the air on any radio.
 
 The Anytone AT-D578UV is the radio the two-receiver case is for: its hardware has two receiver chips
 ([Anytone hardware notes](../spec/hardware-anytone.md)). ODR has no board for it, so there is no support.
@@ -176,7 +174,7 @@ Tested on one DM-1701, on air against the SDR bench where RF is involved:
 | FM | Receive and transmit at 12.5 and 25 kHz, CTCSS and DCS tones, 1750 Hz burst, roger beep |
 | DMR voice | Group and private calls both ways, late entry, talker alias, positions in calls, the basic privacy signaling (the scrambling itself hasn't been checked against another radio) |
 | DMR data | Text messages, call alert, radio check, emergency, all both ways |
-| Scan | Zone scan (including stopping for DMR calls), VFO band scan, dual watch (the core alternating two channels of one zone; the dual watch screens in [Scan and dual watch](11-scan.md#dual-watch) are not yet) |
+| Scan | Zone scan (including stopping for DMR calls), VFO band scan, dual watch (the core alternating two channels of one zone; [dual watch](11-scan.md#dual-watch) with any zone and the VFO is not yet) |
 | Hotspot | Voice and data calls both ways. MMDVM SFR repeats a whole call, about 210 ms after the original instead of the intended 90 ms |
 | APRS | Packets sent on FM and over DMR decode off air |
 | Power | Battery saver: it cycles when idle, and monitor and an incoming call wake it |

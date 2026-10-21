@@ -12,15 +12,16 @@ or the VFO: dual watch is two frequencies, not the two timeslots of one DMR freq
 
 - **A** is the channel you were on when dual watch started; **B** is the one you added.
 - One of them is **selected**. PTT transmits on it, and the dual watch keeps going after the transmission. Up / Down,
-  the knob, digits and Quick settings act on it, as they act on the one channel of the normal Home.
+  the knob, digits and Quick settings act on it, as they act on the one channel of the normal Home. A quick setting
+  changed on the selected channel keeps the watch on.
 - A radio with one receiver (every radio today) alternates between A and B, so a call on one can be missed while it
-  is on the other. Home says so ("Alternating A and B"). A radio with two receivers hears both ("Listening to both");
-  that is what `ui_svc_receivers()` > 1 is for. No radio reports two yet. The AT-D578UV, which has two receiver chips
-  ([hardware-anytone.md](../spec/hardware-anytone.md)), would be the first.
-- The UI takes any channel of any zone or the VFO. Today's radio core alternates only between two channels of **one
-  zone**: for any other B, `ui_svc_dual` refuses and the radio shows "This radio watches 2 channels of one zone: Pick
-  B from this zone". Other zones and the VFO need the receive-set model of #96 in the core. The screens, keys and
-  gallery below show the finished UI.
+  is on the other. Home doesn't say so: the mode in the strip implies it, and the user guide has the caveat. A radio
+  with two receivers (`ui_svc_receivers()` > 1, `ui_svc_dual_rx(pane)`) hears both at once (section 3.1). No radio
+  reports two yet. The AT-D578UV, which has two receiver chips ([hardware-anytone.md](../spec/hardware-anytone.md)),
+  would be the first.
+- What the radio core does with the pair (any zone or the VFO, PTT, retunes) is in
+  [radio-features.md 2.1](../spec/radio-features.md#21-dual-watch). The UI refuses only a channel the radio can't
+  read, or the same channel twice: "Can't watch that channel: pick another".
 
 ## 2. Turning it on and off
 
@@ -53,30 +54,40 @@ Two panes of the same size, A over B: neither channel is second class. Each pane
 
 | Row | Shows |
 |---|---|
-| Tag | The letter in a box as tall as the pane |
-| 1 | Channel number and name (the VFO: its frequency); at the right, the state pill |
-| 2 | What PTT talks to (DMR: "TG 3100 USA"), or the frequency (FM); while a call comes in, the caller and the signal in dBm |
+| Tag | The letter in a box as tall as the pane; under the letter, an arrow (▶) on the selected pane only |
+| 1 | Channel number and name (the VFO: its frequency); at the right, the PTT pill (selected pane) or TX |
+| 2 | What PTT talks to (DMR: "TG 3100 USA"), or the frequency (FM); while a call comes in, the caller, and the RX pill at the right |
 | 3 | Frequency, timeslot and color code, or tone and width (where there is room) |
 | 4 | The zone (where there is room: B may be in another zone than A). Where row 3 has room, the zone sits at its right instead |
 
-**Which channel PTT uses** (asked for: "easy to tell which one transmits"): the selected pane's tag is filled and its
-pill says **PTT**. The other pane has no pill. While transmitting, the tag and pill turn red and say **TX**, and the line under the panes says
-"TALKING on A" with the time.
+**Which channel PTT uses** (asked for: "easy to tell which one transmits"): the selected pane's tag is filled and has
+the arrow, and its row 1 always has the **PTT** pill. The other pane has neither. While transmitting, the tag and pill
+turn red and say **TX**, and the line under the panes says "TALKING on A" with the time.
 
-**Where a call is coming in**: that pane's tag and text turn green, its pill says **RX**, row 2 names the caller, and
-the line under the panes says "Receiving on B" with the meter. The other pane dims.
+**Where a call is coming in**: that pane's tag and text turn green, row 2 names the caller with an **RX** pill at its
+right, and the line under the panes says "Receiving on B" with the meter. On the selected pane the pane shows both
+PTT (row 1) and RX (row 2). The other pane dims.
 
-**Where the last call came in**: under the panes, the last calls, newest first, each with its pane's letter: "B Joe
+**Under the panes**: the state line (TALKING or Receiving) when there is one, then the last calls, newest first, each with its pane's letter: "B Joe
 Smith TG 91 10s ago". On displays without room for the list (128x64), the pane the last call came in on says how long
 ago in amber: "Heard 7s ago" in its first row where it fits, else "7s ago" at the right of its second row. For 10 s
 after a call on the other channel, the hint row says "# 1 talk on B  Back stop"; otherwise "# options  Back stop".
 
-The status strip shows **DUAL** (amber) and the selected channel's mode (the radio's own mode alternates). Every color comes with a word (P5).
+The status strip shows **DUAL** (amber) and the selected channel's mode (the radio's own mode alternates). It says RX while a call comes in on either pane. Every color comes with a word (P5).
 
 **Large text** (Settings › Display): one line per channel, "A COUNTY DMR" / "B Metro DMR", as large as fits, the
-selected one marked with a bar, green while a call comes in on it.
+selected one marked with an arrow at its left, green while a call comes in on it. The line receiving a call has its letter in a filled box.
 
-### 3.1 Per display class
+### 3.1 Two receivers
+
+With `ui_svc_receivers()` > 1, both panes can receive at once, each with its caller and RX pill. Under the panes there is
+a line per receiving pane: "Receiving on A" with its meter, and "Receiving on B, muted" for the one that is not
+heard; where there is room for one line only, "Receiving on A and B". The strip says RX. Gallery: `home_dual_two_rx`,
+`home_dual_two_rx_large_text`. The simulator has `receivers:2`, `rxa:` / `rxb:` and the `rxaend` / `rxbend` tokens.
+
+<img src="screens/240x320/home_dual_two_rx.png" width="200" alt="Two receivers: a call on each">
+
+### 3.2 Per display class
 
 The layout picks the richest set of rows that fits, never a smaller font for a row than the normal Home uses for it,
 and both names in one font (the largest both fit, never smaller than row 2; a longer name is shortened):
@@ -125,8 +136,6 @@ Open question 2 asks whether SK2 long (Scan today) should become Dual watch on t
 - Dual watch is a kind of scan to the radio: starting it stops a zone scan, and while it runs the Scan key (or
   `*` `7`, or Tools › Scan) stops it instead of starting a zone scan.
 - If the radio ends the watch (hotspot mode, a channel change from the debug link), Home says "Dual watch stopped".
-- Today's radio core ends the watch when you transmit; the UI starts it again after the transmission. #96 moves
-  this into the core.
 - A channel picked for A or B can't be the other one's.
 - Changing A or B clears the calls listed for it (they were on the old channel).
 - The last B is remembered until power off; the Scan screen offers it.
@@ -151,3 +160,4 @@ Open question 2 asks whether SK2 long (Scan today) should become Dual watch on t
 2. SK2's default on the DM-1701 class: keep Scan on hold, or make it Dual watch?
 3. Should a call on B keep the selection on A (today), or offer a timed "talk back on B" like the reply window?
 4. Should the last B be kept in the codeplug across power off?
+5. DM-1801 Pro: make its A/B key A/B on a press and Dual watch on a hold (Next zone is the default today; zones stay reachable from Zones)?
