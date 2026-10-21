@@ -1063,6 +1063,12 @@ gd77BoardTest: gd77BoardTest.c $(GD77)/pin_table.h $(GD77)/pins.h $(GD77)/keys.h
 k22fSystemTest: k22fSystemTest.c $(K22F)/clock_math.h $(K22F)/ftfa_math.h $(K22F)/periph_math.h $(K22F)/k22f_mux.h \
                 $(K22F)/k22f_pin.h $(GD77)/clock_gd77.h $(GD77)/pin_table.h $(GD77)/bus_cfg.h $(GD77)/pins.h
 	$(CC) $(CFLAGS) -I$(K22F) -I$(GD77) -Wshadow -o $@ k22fSystemTest.c
+# The key map's rules (information-architecture.md 2), with and without DMR emergency on the top key
+TESTS   += gd77KeymapTest gd77KeymapEmTest
+gd77KeymapTest: gd77KeymapTest.c $(GD77)/keymap_gd77.h $(GD77)/keys.h $(ROOT)/hal/hal_input.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(GD77) -Wshadow -DCONFIG_DMR_EMERGENCY=0 -o $@ gd77KeymapTest.c
+gd77KeymapEmTest: gd77KeymapTest.c $(GD77)/keymap_gd77.h $(GD77)/keys.h $(ROOT)/hal/hal_input.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(GD77) -Wshadow -DCONFIG_DMR_EMERGENCY=1 -o $@ gd77KeymapTest.c
 # The USB glue: token STAT to buffer descriptor, the register bits, the serial number string
 k22fUsbTest: k22fUsbTest.c $(K22F)/k22f_usb_regs.h
 	$(CC) $(CFLAGS) -I$(K22F) -Wshadow -o $@ k22fUsbTest.c
@@ -1081,11 +1087,14 @@ gd77RfTest: gd77RfTest.c $(GD77RF) $(GD77)/rf_gd77.h $(GD77)/c6k_gd77.h $(GD77)/
 	$(CC) $(CFLAGS) -I$(GD77) -I$(ROOT)/hal -Wshadow -o $@ gd77RfTest.c $(GD77RF)
 
 run: run-gd77
-run-gd77: k22fPlatformTest spiGpioTest gd77BoardTest hrc6000ClockTest k22fSystemTest k22fUsbTest gd77PcmTest \
+run-gd77: k22fPlatformTest spiGpioTest gd77BoardTest hrc6000ClockTest k22fSystemTest k22fUsbTest gd77KeymapTest \
+          gd77KeymapEmTest gd77PcmTest \
           gd77RfTest
 	./k22fPlatformTest
 	./k22fSystemTest
 	./k22fUsbTest
+	./gd77KeymapTest
+	./gd77KeymapEmTest
 	./spiGpioTest
 	./gd77BoardTest
 	./hrc6000ClockTest
