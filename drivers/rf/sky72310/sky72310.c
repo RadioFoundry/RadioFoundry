@@ -30,6 +30,25 @@ uint32_t sky72310_vco_hz(uint32_t f_osc_hz, uint8_t ref_div, const sky72310_rati
 	return (uint32_t)((total * f_osc_hz / ref_div) >> SKY72310_FRAC_BITS);
 }
 
+uint8_t sky72310_program_words(uint32_t f_osc_hz, uint8_t ref_div, uint32_t f_vco_hz, uint8_t pd_gain,
+			       uint16_t power_mux, uint16_t out[SKY72310_PROGRAM_WORDS])
+{
+	sky72310_ratio_t r;
+	if (!sky72310_ratio(f_osc_hz, ref_div, f_vco_hz, &r)) {
+		return 0;
+	}
+	uint8_t i = 0;
+	out[i++] = sky72310_word(SKY72310_REG_MOD_CTRL, 0);
+	out[i++] = sky72310_word(SKY72310_REG_MOD_DATA, 0);
+	out[i++] = sky72310_word(SKY72310_REG_REF_DIV, (uint16_t)(ref_div - 1u));
+	out[i++] = sky72310_word(SKY72310_REG_DIVIDER, r.n_reg);
+	out[i++] = sky72310_word(SKY72310_REG_DIVIDEND_LSB, (uint16_t)(r.dividend & 0xFFu));
+	out[i++] = sky72310_word(SKY72310_REG_DIVIDEND_MSB, (uint16_t)(r.dividend >> 8));
+	out[i++] = sky72310_word(SKY72310_REG_PD_GAIN, (uint16_t)(pd_gain > 31u ? 31u : pd_gain));
+	out[i++] = sky72310_word(SKY72310_REG_POWER_MUX, power_mux);
+	return i;
+}
+
 static bool wr(sky72310_t *dev, uint8_t reg, uint16_t data)
 {
 	dev->writes++;

@@ -738,6 +738,27 @@ run-db25d: bk4819Test db25dCalTest bootDb25dTest hrc7000ClockTest hrc7000CodecSl
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-db25d
 
+# The MD-9600 (docs/spec/hardware-md9600.md): its synthesizer and IF receiver drivers and the board's revision and
+# frequency plan, with every revision built in, and again with only V4A / V5 as a single-revision image would have
+MD9600  := $(ROOT)/boards/md9600
+MD9600_RF := md9600RfTest.c $(MD9600)/rev_md9600.c $(MD9600)/rfplan_md9600.c $(ROOT)/drivers/rf/sky72310/sky72310.c \
+	$(ROOT)/drivers/rf/pll1590/pll1590.c $(ROOT)/drivers/rf/lmx2571/lmx2571.c $(ROOT)/drivers/rf/ak2365a/ak2365a.c
+MD9600_RF_H := $(MD9600)/rfplan_md9600.h $(ROOT)/drivers/rf/sky72310/sky72310.h $(ROOT)/drivers/rf/pll1590/pll1590.h \
+	$(ROOT)/drivers/rf/lmx2571/lmx2571.h $(ROOT)/drivers/rf/ak2365a/ak2365a.h $(ROOT)/drivers/bus/wire3.h
+TESTS   += md9600RfTest md9600RfTestV5
+
+md9600RfTest: $(MD9600_RF) $(MD9600_RF_H)
+	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow -DCONFIG_MD9600_V1V3=1 -DCONFIG_MD9600_V4=1 -DCONFIG_MD9600_V5=1 -o $@ $(MD9600_RF)
+
+md9600RfTestV5: $(MD9600_RF) $(MD9600_RF_H)
+	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow -DCONFIG_MD9600_V5=1 -o $@ $(MD9600_RF)
+
+run: run-md9600
+run-md9600: md9600RfTest md9600RfTestV5
+	./md9600RfTest
+	./md9600RfTestV5
+.PHONY: run-md9600
+
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
 # radio's own services are mdnsTest's and tftpTest's)
 HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \
