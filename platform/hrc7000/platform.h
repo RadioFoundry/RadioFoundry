@@ -295,6 +295,23 @@ void hrc_crash_fault(const uint32_t *frame, uint32_t vector) __attribute__((nore
 // places .ramfunc in SRAM
 #define HRC_RAMFUNC		__attribute__((section(".ramfunc"), noinline))
 
+// --- Transmitter off (board_rf_safe in board.h, docs/spec/crash-log.md 8) ---
+
+// A pin forced to an output at a level: DR, then DDR, so it never glitches. Plain read-modify-writes without
+// hrc_pin_out's interrupt save (the callers run with interrupts off), inlined so the boards' RAM-resident hook runs
+// nothing from XIP flash
+static inline __attribute__((always_inline)) void hrc_pin_force(uint8_t pin, bool level)
+{
+	uint32_t bank = pin < 32 ? GPIOA_BASE : pin < 64 ? GPIOB_BASE : GPIOC_BASE;
+	uint32_t bit = 1u << (pin & 31u);
+	uint32_t dr = REG32(bank + GPIO_DR);
+	REG32(bank + GPIO_DR) = level ? (dr | bit) : (dr & ~bit);
+	REG32(bank + GPIO_DDR) |= bit;
+}
+// The fault and reset paths: board_rf_safe, then the modem's own transmit state off (FM PTT, the DMR slot engine's
+// TX/RX control). RAM code, interrupts off. Not at start-up, where the modem may still be held in reset
+void hrc_rf_safe(void);
+
 extern const hal_system_t hrc_system;
 
 // The programming cable's UART as the board's host port (uart.c): UART0 unless the board sets HRC_HOST_UART=1

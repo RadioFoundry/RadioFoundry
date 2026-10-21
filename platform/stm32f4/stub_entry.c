@@ -12,6 +12,7 @@
 #if CONFIG_STUB_ENTRY
 #include <stdint.h>
 #include "platform.h"
+#include "board.h"
 #if CONFIG_USB
 #include "usb/usb_device.h"
 #endif
@@ -21,10 +22,6 @@
 #define STUB_FLAG_USB_ADOPT	0x1u		// r0 at entry: the OTG_FS core is a configured CDC-ACM device (ours)
 
 static uint8_t stage[STUB_STAGE_SIZE] __attribute__((aligned(8)));
-
-__attribute__((weak)) void board_stub_prepare(void)
-{
-}
 
 uint8_t *stm32_stub_region(uint32_t *size)
 {
@@ -55,7 +52,7 @@ bool stm32_enter_stub(uint32_t entry)
 		return false;
 	}
 	uint32_t flags = handoff_flags();
-	board_stub_prepare();		// transmitter off; the power latch and the display stay as they are
+	board_rf_safe();		// transmitter off; the power latch and the display stay as they are
 
 	__disable_irq();
 	SysTick->CTRL = 0;

@@ -11,6 +11,7 @@
 #if CONFIG_CRASH_LOG
 #include <string.h>
 #include "platform.h"
+#include "board.h"
 #include "crash/crash.h"
 
 #define FAULT_STACK_WORDS	256
@@ -56,6 +57,7 @@ bool hal_crash_code_addr(uint32_t a)
 
 void hal_crash_restart(void)
 {
+	board_rf_safe();
 	stm32_system.reboot(HAL_REBOOT_NORMAL);	// sysboot.c: interrupts off, NVIC_SystemReset (one copy of it in flash)
 	for (;;) {
 	}
@@ -65,6 +67,7 @@ void hal_crash_restart(void)
 void stm32_fault(const uint32_t *frame, uint32_t exc_return, const uint32_t *hi) __attribute__((used, noreturn));
 void stm32_fault(const uint32_t *frame, uint32_t exc_return, const uint32_t *hi)
 {
+	board_rf_safe();	// first: the capture and the restart take a while, and the start-up may not finish
 	crash_record_t r;
 	memset(&r, 0, sizeof r);
 	r.arch = CRASH_ARCH_CM4;
@@ -114,7 +117,9 @@ __attribute__((naked, used)) void HardFault_Handler(void)
 		"b	stm32_fault\n");
 }
 
-// Off unless SCB->SHCSR enables them (they then escalate no more): the same capture
+// Off unless SCB->SHCSR enables them (they then escalate no more): the same capture. The NMI too (the clock security
+// system, if it is ever turned on): the startup file's default handler would spin with the transmitter as it was
+void NMI_Handler(void) __attribute__((alias("HardFault_Handler")));
 void MemManage_Handler(void) __attribute__((alias("HardFault_Handler")));
 void BusFault_Handler(void) __attribute__((alias("HardFault_Handler")));
 void UsageFault_Handler(void) __attribute__((alias("HardFault_Handler")));

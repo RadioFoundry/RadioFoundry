@@ -122,6 +122,13 @@ static inline bool board_has_gps(void)
 
 // Clocks, pins, anything that must happen before the RTOS starts. Called from the platform's main()
 void board_early_init(void);
+// Transmitter off, now (docs/spec/crash-log.md 8): the TX supplies, the PA selects and keying, the PA drive DAC to 0,
+// the modem's TX state where plain register writes stop it, and the RX/TX switch to receive where it is a plain pin.
+// Called from fault handlers, the crash capture, before every software reset or jump out of the application, and
+// first thing in the platform's main(), before the clocks are set up. So it runs with interrupts off and without the
+// RTOS: register and GPIO writes only, no locks, no flash or NAND, no waits; it may run any number of times and
+// leaves everything else (the power latch, the display) as it is. On the HR_C7000 it is RAM code (HRC_RAMFUNC)
+void board_rf_safe(void);
 // Start-up after the scheduler runs (drivers that sleep), from the first task
 void board_init(void);
 

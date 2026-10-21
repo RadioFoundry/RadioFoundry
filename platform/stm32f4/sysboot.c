@@ -12,6 +12,7 @@
 #include <string.h>
 #include "config.h"
 #include "platform.h"
+#include "board.h"
 #include "hal_system.h"
 
 #define SYSBOOT_MAGIC		0xB007DF11u	// in RTC_BKP19R: enter the ROM bootloader on the next start
@@ -61,6 +62,7 @@ static bool reboot(uint8_t mode)
 		return false;
 	}
 	__disable_irq();
+	board_rf_safe();	// a reset leaves the pins floating until the next start drives them: transmitter off first
 	NVIC_SystemReset();
 	return false;	// not reached
 }
@@ -95,6 +97,7 @@ void stm32_sysboot_check(void)
 		return;	// can't clear it: entering anyway would loop into the ROM on every start
 	}
 
+	board_rf_safe();
 	board_sysboot_prepare();
 
 	__disable_irq();
