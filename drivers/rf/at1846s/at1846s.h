@@ -41,8 +41,35 @@ typedef enum { AT1846S_TONE_NONE, AT1846S_TONE_CTCSS, AT1846S_TONE_DCS, AT1846S_
 // The CTCSS register value used to send DCS (134.4 Hz, the DCS bit rate)
 #define AT1846S_DCS_TONE_REG	13440u
 
+#define AT1846S_STATE_COUNT	5
+
+// A radio's own register values for the chip, where its design differs from the defaults (the DM-1701's, 5.2-5.5):
+// the init list, the bandwidth table, reg 0x30 per state and the reg 0x05 rule. Board data; the driver only walks it
+typedef struct {
+	uint8_t reg;		// page 0
+	uint16_t val;
+	uint16_t wait_ms;	// after the write
+} at1846s_step_t;
+
+typedef struct {
+	uint8_t page;
+	uint8_t reg;
+	uint16_t val[2];	// 12.5 kHz, 25 kHz
+} at1846s_bw_row_t;
+
+typedef struct {
+	const at1846s_step_t *init;	// after the soft reset and its 50 ms, in order
+	uint8_t init_len;
+	const at1846s_bw_row_t *bw;	// written in order on a bandwidth change, then reg 0x30 idle
+	uint8_t bw_len;
+	uint16_t ctrl[AT1846S_STATE_COUNT][2];	// reg 0x30 per at1846s_state_t, 12.5 / 25 kHz
+	bool no_mode_tables;		// set_mode writes nothing: the init and bandwidth values serve FM and DMR
+	uint16_t (*reg05)(uint32_t hz);	// reg 0x05 for a frequency; NULL: 0x8763
+} at1846s_profile_t;
+
 typedef struct {
 	const at1846s_bus_t *bus;
+	const at1846s_profile_t *prof;	// NULL: the driver's defaults
 	uint16_t cache[2][128];
 	uint32_t valid[2][4];	// one bit per cached register
 	int8_t page;		// selected page, -1 unknown
@@ -67,6 +94,12 @@ bool at1846s_tone_match(uint16_t flags, at1846s_tone_t type);
 // --- Register access ---
 
 void at1846s_attach(at1846s_t *dev, const at1846s_bus_t *bus);
+// A radio's own values (before at1846s_init); NULL goes back to the defaults
+void at1846s_set_profile(at1846s_t *dev, const at1846s_profile_t *prof);
+// Reg 0x30 for a state at a bandwidth with this device's profile (at1846s_state_value() is the defaults')
+uint16_t at1846s_ctrl_value(const at1846s_t *dev, at1846s_bw_t bw, at1846s_state_t state);
+// Reg 0x05 for a frequency with this device's profile
+uint16_t at1846s_reg05_value(const at1846s_t *dev, uint32_t hz);
 // Cached write: skipped when the cache already holds the value
 bool at1846s_write(at1846s_t *dev, uint8_t page, uint8_t reg, uint16_t val);
 // Always written

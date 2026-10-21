@@ -96,7 +96,7 @@ static bool set_mic_gain(hrc_t *dev, uint8_t gain)
 	if (gain > 31u) {
 		gain = 31u;
 	}
-	return hrc_write(dev, 4, 0xE4, (uint8_t)(0x20u + gain));
+	return hrc_write(dev, 4, 0xE4, (uint8_t)(dev->mic_gain_base + gain));
 }
 
 static bool dmr_enter(hrc_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_gain)
@@ -105,7 +105,7 @@ static bool dmr_enter(hrc_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_gain)
 	ok &= hrc_write(dev, 4, 0x01, 0xF0);		// two-point modulation TX, IF RX
 	ok &= hrc_set_mod_gain(dev, mod2, mod1);	// DMR pair
 	ok &= hrc_write(dev, 4, 0x10, dmr_mode(false));	// DMR, Tier II, layer 2
-	ok &= hrc_write(dev, 4, 0xE0, 0xC9);		// codec under MCU control, mic on
+	ok &= hrc_write(dev, 4, 0xE0, (uint8_t)(0x89u | dev->mic_input));	// codec under MCU control, mic on
 	ok &= hrc_set_mic_gain(dev, mic_gain);
 	ok &= hrc_write(dev, 4, 0x26, 0xFD);
 	ok &= hrc_write(dev, 4, 0x81, 0x19);		// system interrupt mask: post access, received data, PHY
@@ -242,7 +242,7 @@ bool hrc6000_set_mode_fm_tx(hrc_t *dev, const hrc6000_fm_tx_t *cfg)
 {
 	hrc6000_fm_dev_t dev_coef = hrc6000_fm_deviation(cfg->uhf, cfg->wide);
 	bool ok = hrc_write(dev, 4, 0x10, 0x80);	// FM
-	ok &= hrc_write(dev, 4, 0xE0, 0xC9);	// codec under MCU control, mic on
+	ok &= hrc_write(dev, 4, 0xE0, (uint8_t)(0x89u | dev->mic_input));	// codec under MCU control, mic on
 	ok &= hrc_set_mic_gain(dev, cfg->mic_gain);
 	ok &= hrc_write(dev, 4, 0xC2, 0x00);	// mic AGC off
 	ok &= hrc_write(dev, 4, 0xE5, 0x1A);
