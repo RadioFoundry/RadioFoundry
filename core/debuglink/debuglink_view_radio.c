@@ -34,6 +34,22 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "scan=%s\nscan_phase=%s\nscan_skipped=%u\n", word(v->scan, kinds, 4), word(v->scan_phase, phases, 5),
 		v->scan_skipped);
 	dl_text(t, "scan_probes=%u\nscan_synced=%u\n", v->scan_probes, v->scan_synced);
+	// Dual watch: the two channels ("vfo", or zone index:position), the selected one and the one the receiver is on
+	// now; "-" while it is off
+	radio_dual_ref_t dual[2];
+	uint8_t sel, at;
+	bool on = radio_get_dual(dual, &sel, &at);
+	for (uint8_t i = 0; i < 2; i++) {
+		if (!on) {
+			dl_text(t, "dual.%c=-\n", 'a' + i);
+		} else if (dual[i].vfo) {
+			dl_text(t, "dual.%c=vfo\n", 'a' + i);
+		} else {
+			dl_text(t, "dual.%c=%u:%u\n", 'a' + i, dual[i].zone, dual[i].pos);
+		}
+	}
+	dl_text(t, "dual.built=%u\ndual.sel=%c\ndual.at=%c\ndual.receivers=1\n", CONFIG_DUAL_WATCH,
+		on ? 'a' + sel : '-', on ? 'a' + at : '-');
 	dl_text(t, "tot_warning=%u\ntone_burst=%u\nroger=%u\nvox_keyed=%u\nrx_sleeping=%u\n", v->tot_warning,
 		v->tone_burst, v->roger, v->vox_keyed, v->rx_sleeping);
 	bool mic = board.power != NULL && board.power->mic_level != NULL;

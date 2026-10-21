@@ -359,6 +359,8 @@ typedef struct {
 void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel);
 // The VFO's own settings, whether or not the radio is in the VFO now (CONFIG_DUAL_WATCH). False: no VFO frequency yet
 bool radio_get_vfo(channel_t *out);
+// Dual watch now (CONFIG_SCAN): the two channels, the selected one and the one the receiver is on. False while it is off
+bool radio_get_dual(radio_dual_ref_t ref[2], uint8_t *sel, uint8_t *at);
 // DMR repeater roaming (CONFIG_DMR_ROAMING; no-op otherwise; docs/spec/dmr-roaming.md 6.1): the current zone's
 // roaming flag (stored), roam now (a search at once, clears a lock), lock to the current site (RAM only)
 typedef enum {

@@ -2464,6 +2464,14 @@ void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel)
 	radio_sm_request(&sm, &r, now);
 }
 bool radio_get_vfo(channel_t *out) { *out = sm.vfo_ch; return sm.vfo_seeded; }
+bool radio_get_dual(radio_dual_ref_t ref[2], uint8_t *sel, uint8_t *at)
+{
+	ref[0] = sm.dual[0];
+	ref[1] = sm.dual[1];
+	*sel = sm.dual_sel;
+	*at = sm.dual_at;
+	return sm.scan.kind == SCAN_DUAL;
+}
 void radio_req_roam(uint8_t cmd) { req(RREQ_ROAM, cmd); }
 void radio_req_beep(uint8_t b) { req(RREQ_BEEP, b); }
 void radio_req_vibrate(uint8_t v) { req(RREQ_VIBRATE, v); }
@@ -2538,6 +2546,16 @@ static void test_ui_dual(void)
 	const ui_dual_ref_t pair[2] = { a, tones };
 	CHECK(ui_svc_dual(pair, 1) && sm.view.scan == SCAN_DUAL && sm.dual_sel == 1);
 	CHECK(ui_svc_dual(pair, 1) && sm.view.scan == SCAN_DUAL);	// again: nothing changes
+	{
+		// The debug link's features section: the pair, the selected one, where the receiver is; it still fits a reply
+		static char buf[DL_REPLY_MAX - 6 - 16];
+		dl_text_t t;
+		dl_text_init(&t, buf, sizeof buf);
+		debuglink_view_radio(&sm.view, &t);
+		char at[24];
+		snprintf(at, sizeof at, "dual.sel=b\ndual.at=%c\n", 'a' + sm.dual_at);
+		CHECK(!t.full && strstr(buf, "dual.a=0:0\ndual.b=2:1\n") != NULL && strstr(buf, at) != NULL);
+	}
 	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.zone_index == 2 && sm.view.zone_pos == 1);
 	// The VFO's settings while on a channel, and the VFO as A
 	req(RREQ_VFO, 1);

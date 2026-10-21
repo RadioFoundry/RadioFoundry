@@ -98,7 +98,8 @@ channel (zone index and position, any zone) or the VFO with its own settings. `r
 | Hotspot mode, `radio_req_scan` stop | Ends it where the receiver is. Cancel ends it on the selected channel |
 | Power off | The saved position is the selected channel's, wherever the receiver is: the radio powers up there |
 
-`radio_get_vfo()` returns the VFO's settings while a channel is tuned (a VFO pane). Built without `CONFIG_DUAL_WATCH`
+`radio_get_dual()` returns the pair, the selected one and the one the receiver is on (the debug link's `dual.a dual.b
+dual.sel dual.at`, [debuglink.md 3.7](debuglink.md#37-get_view)). `radio_get_vfo()` returns the VFO's settings while a channel is tuned (a VFO pane). Built without `CONFIG_DUAL_WATCH`
 only the debug link's dual watch is left: two channels of the current zone, and PTT ends it as it ends any scan.
 
 ## 3. FM transmit extras

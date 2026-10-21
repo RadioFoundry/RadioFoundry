@@ -29,8 +29,8 @@ Pass criteria:
   scan_skipped=0.
 - test_vfo_scan: (FM VFO) SCAN_VFO over the VFO frequency + 0..10 steps: rx_hz takes 3+ values, all inside the range,
   within 4 s; CANCEL: the starting frequency again.
-- test_dual_watch: (zone of 2+ channels) dual watch with the next position: zone_pos alternates between exactly the
-  two positions; CANCEL: back to the start.
+- test_dual_watch: (zone of 2+ channels) dual watch with the next position: dual.a / dual.b are the two, dual.sel=a;
+  zone_pos alternates between exactly the two positions and dual.at between a and b; CANCEL: back to the start.
 - test_tx_inhibit (radio_tx): set.tx_inhibit=1, PTT: tx_deny=inhibit, the state never shows tx; input.ptt_downs
   counts the press and the debug log has "input: PTT down (host".
 - test_tot_warning (radio_tx): tot_s 6, tot_warn_s 3: tot_warning=1 between 2.5 and 4.5 s after key-up, then
@@ -292,15 +292,23 @@ def test_vfo_scan(radio):
 def test_dual_watch(radio):
     need_scan(radio)
     size = on_channel(radio, 2)
-    a = as_int(radio.core()["zone_pos"], 0)
+    core = radio.core()
+    a = as_int(core["zone_pos"], 0)
     b = (a + 1) % size
+    zone = core.get("zone_index")
     radio.link.scan("dual", b)
     try:
-        wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+        f = wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+        if "dual.a" in f:       # the debug link's dual watch fields: the pair and the selected one (A)
+            assert (f["dual.a"], f["dual.b"], f["dual.sel"]) == (f"{zone}:{a}", f"{zone}:{b}", "a"), f
         seen, f = collect(radio, "zone_pos", 3.0)
         print("positions:", seen, "phase:", f.get("scan_phase"))
         assert set(seen) <= {str(a), str(b)}, seen
         assert len(set(seen)) == 2 or f.get("scan_phase") in ("probe", "hold", "resume"), (seen, f)
+        if "dual.at" in f:      # where the receiver is: A or B, never neither
+            ats, _ = collect(radio, "dual.at", 2.0, sections=("features",))
+            print("receiver on:", ats)
+            assert set(ats) <= {"a", "b"}, ats
     finally:
         scan_off(radio)
     radio.wait_for(lambda v: v.get("zone_pos") == str(a), 1.0, what="back on the first channel")

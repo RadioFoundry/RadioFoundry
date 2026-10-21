@@ -44,6 +44,11 @@ static radio_view_t shared_view;	// the published copy, under view_lock
 static channel_t shared_vfo;		// the VFO's settings (radio_get_vfo), under view_lock
 static bool shared_vfo_ok;
 #endif
+#if CONFIG_SCAN
+static radio_dual_ref_t shared_dual[2];	// dual watch (radio_get_dual), under view_lock
+static uint8_t shared_dual_sel, shared_dual_at;
+static bool shared_dual_on;
+#endif
 static volatile uint32_t shared_serial;
 static volatile bool power_off_busy;	// radio_req_power_off until the radio core is done
 static volatile bool power_off_wanted;	// published view.power_off
@@ -80,6 +85,13 @@ static void publish(void)
 #if CONFIG_DUAL_WATCH
 	shared_vfo = sm.vfo_ch;
 	shared_vfo_ok = sm.vfo_seeded;
+#endif
+#if CONFIG_SCAN
+	shared_dual_on = sm.scan.kind == SCAN_DUAL;
+	shared_dual[0] = sm.dual[0];
+	shared_dual[1] = sm.dual[1];
+	shared_dual_sel = sm.dual_sel;
+	shared_dual_at = sm.dual_at;
 #endif
 	xSemaphoreGive(view_lock);
 	power_off_wanted = sm.view.power_off;
@@ -306,6 +318,27 @@ bool radio_get_vfo(channel_t *out)
 	return ok;
 #else
 	(void)out;
+	return false;
+#endif
+}
+bool radio_get_dual(radio_dual_ref_t ref[2], uint8_t *sel, uint8_t *at)
+{
+#if CONFIG_SCAN
+	if (view_lock == NULL) {
+		return false;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	ref[0] = shared_dual[0];
+	ref[1] = shared_dual[1];
+	*sel = shared_dual_sel;
+	*at = shared_dual_at;
+	bool on = shared_dual_on;
+	xSemaphoreGive(view_lock);
+	return on;
+#else
+	(void)ref;
+	(void)sel;
+	(void)at;
 	return false;
 #endif
 }
