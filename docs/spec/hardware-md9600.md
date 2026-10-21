@@ -591,6 +591,27 @@ for the application, payload at 0x100, 0x100 trailing bytes. The leading digit o
 family (0 = V1-V3, 1 = V4, 2 = V5) (F: inferred from the three known files). The V06.09 images report SP 0x20001BA0,
 the V16.45 ones 0x20001BB0.
 
+### 14.4 Flashing: stock bootloader and stub
+
+Nothing below has run on an MD-9600 yet: every row is unverified.
+
+| Route | When | How |
+|---|---|---|
+| TYT bootloader | the first install, a radio on stock firmware, or a radio whose application is not committed | keys at power-up (14.1), then DFU with the MD-9600 key (14.2): `tools/stm32_dfu.py --model md9600` |
+| Flash stub | a radio already running ODR built with `CONFIG_STUB_ENTRY=y` | `stub/stubtool.py PORT --odr-enter --write-app build/md9600/odr_md9600.bin` ([stub-stm32f4.md](stub-stm32f4.md)) |
+
+The stub is the DM-1701's and MD-380's image. The host sends it this radio's board record: SPI flash on SPI2 (PB13
+SCK, PB14 MISO, PB15 MOSI, AF5), chip select PB12, mode 3, at most 4.5 MHz, the LCD's chip select PD14 held high while
+the stub runs, an 8 MHz crystal, the bootloader ending at 0x0800C000. The stub never touches SPI1 / PD7, the HR_C6000's
+voice port here.
+
+An update with the stub writes the changed sectors of 3-7 only. It leaves the codec in sectors 8-11 alone unless the
+image is merged with the codec (`odr_md9600_codec.bin`), and never touches the bootloader in 0-2. Sector 3 is erased
+first and its first word written last, so an interrupted update leaves the application invalid. Whether the TYT
+bootloader then stays in DFU on its own, as the DM-1701's does, is unverified. If it doesn't, the key combination of
+14.1 still reaches DFU. The stub also backs up and verifies the whole internal flash and the 16 MB SPI flash
+(`--progmem`, `--q128`), which covers the backup 12.2 asks for once ODR runs, but not before the first install.
+
 ---
 
 ## 15. USB
@@ -846,7 +867,7 @@ supply, and the receiver tuned when the revision is driven. It never transmits a
 | TYT's CPS | not supported: its command set is unknown (17 #21). Nothing of it is implemented |
 | ROM DFU | debug link REBOOT mode 1 ([debuglink.md](debuglink.md) 3.11), only at RDP level 0, with the same safe pin levels as at power-up first (`board_sysboot_prepare`) |
 | TYT bootloader | the stock route (14.1, 14.2): keys held at power-up, then DFU with the MD-9600 key |
-| Flash stub | `CONFIG_STUB_ENTRY` (off by default, as on the DM-1701): `board_stub_prepare` switches the transmitter off first. Not tried on this radio |
+| Flash stub | `CONFIG_STUB_ENTRY` (off by default, as on the DM-1701; in the maximal configuration): `board_stub_prepare` switches the transmitter off first, then the shared STM32F4 stub runs with this radio's board record (14.4). Not tried on this radio |
 
 Open: the odrflash board entry, the web flasher's radio entry and the update image packaging are not written; they are
 the owner's decision.

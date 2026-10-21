@@ -43,5 +43,5 @@ BOARD_UNSUPPORTED := SUBTONE DMR_IP_GATEWAY DMR_UDP_COMPRESS NET_TCP NET_KISS NE
 	VIBRATE NAND_STORAGE
 # FM receive is the checked path: the matrix has no FM-less configuration
 BOARD_REQUIRED := FM
-# Supported but not needed on this radio: the stub entry (no flash route uses it here yet)
-MAXIMAL_SKIP := STUB_ENTRY
+# CONFIG_STUB_ENTRY stays off by default (config/features.mk) and is in the maximal configuration: the STM32F4 flash
+# stub serves this radio through its board record (docs/spec/stub-stm32f4.md)

@@ -517,7 +517,7 @@ The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP e
 
 Load the host's flash-access RAM monitor into a free RAM span and hand the SoC to it at run time, no power cycle
 (`CONFIG_STUB_ENTRY`). Two platforms have it: the HR_C7000 (the "C7 stub", `docs/spec/hardware-dm32.md` 17.2) and the
-STM32F4 (the DM-1701 and the MD-380, [stub-stm32f4.md](stub-stm32f4.md)). Built without the switch, or on a
+STM32F4 (the DM-1701, the MD-380 and the MD-9600, [stub-stm32f4.md](stub-stm32f4.md)). Built without the switch, or on a
 board whose platform has no `hal_system_t.enter_stub`, every operation answers `DL_ST_UNAVAILABLE`. All u32 are little
 endian. The guard is a 32-bit magic key `'C7SB'` (`0x42533743`) on BEGIN and ENTER, plus the exact length and a CRC-32
 of the whole image checked before the jump.
