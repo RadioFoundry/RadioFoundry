@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-77 factory calibration (docs/spec/hardware-gd77.md 6.4): two blocks in the EEPROM, one per band, read once at
-// start-up and never written: pick the block by frequency, read a field by id. What each field means isn't known yet,
-// so every field comes back as raw bytes. The radio code's view of the calibration (one point at a frequency) is
-// cal_gd77.h, built on this once the fields are named.
+// start-up and never written: pick the block by frequency, read a field by id. Every field comes back as raw bytes;
+// what the fields mean and the values they give at a frequency is cal_gd77.h.
 #ifndef CAL_BLOCKS_GD77_H
 #define CAL_BLOCKS_GD77_H
 
@@ -23,21 +22,22 @@ typedef enum {
 	GD77_CAL_BANDS
 } gd77_cal_band_t;
 
-// Field ids in block order, with their sizes. None is named yet (all unknown); the comments give only the shape
+// Field ids in block order, with their sizes and contents (docs/spec/hardware-gd77.md 6.4, all unverified)
 enum {
-	GD77_CAL_ID_40 = 0x40,	// 3 bytes
-	GD77_CAL_ID_41 = 0x41,	// 48 bytes, an array (24 x 16 bit or 48 x 8 bit)
-	GD77_CAL_ID_42 = 0x42,	// 4 bytes
-	GD77_CAL_ID_43 = 0x43,	// 20 bytes, an array
-	GD77_CAL_ID_44 = 0x44,	// 2 bytes
-	GD77_CAL_ID_01 = 0x01,	// 8 bytes
-	GD77_CAL_ID_30 = 0x30,	// 1 byte
-	GD77_CAL_ID_31 = 0x31,	// 1 byte
-	GD77_CAL_ID_32 = 0x32,	// 1 byte
-	GD77_CAL_ID_33 = 0x33,	// 2 bytes
-	GD77_CAL_ID_34 = 0x34,	// 2 bytes
-	GD77_CAL_ID_50 = 0x50,	// 8 bytes; the first three are range checked (below 0x20, 0x40, 0x10)
-	GD77_CAL_ID_51 = 0x51,	// 3 bytes
+	GD77_CAL_ID_40 = 0x40,	// 3 bytes: two-point bias (16 bit), DC offset
+	GD77_CAL_ID_41 = 0x41,	// 48 bytes: TX drive per 5 MHz node, low and high power byte each
+	GD77_CAL_ID_42 = 0x42,	// 4 bytes: not used
+	GD77_CAL_ID_43 = 0x43,	// 20 bytes: 8 squelch base nodes, then 6 threshold pairs (25, 12.5 kHz)
+	GD77_CAL_ID_44 = 0x44,	// 2 bytes: not used
+	GD77_CAL_ID_01 = 0x01,	// 8 bytes: modulation amplitude per node
+	GD77_CAL_ID_30 = 0x30,	// 1 byte: codec DAC level, not applied
+	GD77_CAL_ID_31 = 0x31,	// 1 byte: not used
+	GD77_CAL_ID_32 = 0x32,	// 1 byte: tone transmit voice gain, not applied
+	GD77_CAL_ID_33 = 0x33,	// 2 bytes: CTCSS deviation (25, 12.5 kHz)
+	GD77_CAL_ID_34 = 0x34,	// 2 bytes: DCS deviation (25, 12.5 kHz)
+	GD77_CAL_ID_50 = 0x50,	// 8 bytes: PA driver, mic PGA, voice gain, TX gain, FM deviation (16 bit, 25, 12.5 kHz);
+				// the first three are range checked (below 0x20, 0x40, 0x10)
+	GD77_CAL_ID_51 = 0x51,	// 3 bytes: RX DAC gain, RX volume, unused
 };
 
 extern const cal_layout_t gd77_cal_layout;
@@ -53,7 +53,7 @@ bool gd77_cal_ok(uint32_t hz);
 // Field id of the block for hz into out (at most max bytes): the bytes copied, 0 without a valid block or for an id
 // the layout doesn't have. The caller keeps its uncalibrated default when it gets 0
 uint8_t gd77_cal_field(uint32_t hz, uint8_t id, uint8_t *out, uint8_t max);
-// The header's two ranges (type 0 at +0, type 1 at +4), 16-bit little endian, most likely in 100 kHz units: false
+// The header's two ranges (type 0 at +0: RX, type 1 at +4: TX), 16-bit little endian in 100 kHz units: false
 // without a valid block
 bool gd77_cal_range(gd77_cal_band_t band, uint8_t type, uint16_t *lo, uint16_t *hi);
 // The whole raw block (GD77_CAL_BLOCK bytes) for diagnostics, NULL unless it is valid

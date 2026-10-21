@@ -3,7 +3,7 @@
 // GD-77 RF side (boards/gd77/rf_gd77.c, c6k_gd77.c; docs/spec/hardware-gd77.md 5): the AT1846S driver with the radio's
 // profile against a fake bus (init list, bandwidth table, reg 0x30 per state, the reg 0x05 rule), the band split of
 // the path lines, the order of the switch sequences, the DAC0 ramp, the HR_C6000 board values and microphone wiring,
-// and the timeslot edge rule
+// the calibration's values in their AT1846S and HR_C6000 register fields, and the timeslot edge rule
 #include <stdio.h>
 #include <string.h>
 #include "rf_gd77.h"
@@ -183,7 +183,7 @@ static void test_sequences(void)
 	CHECK(pos(r, nr, GD77_RF_RAMP_DOWN) < pos(r, nr, GD77_RF_TX_PATH_OFF));
 	CHECK(pos(r, nr, GD77_RF_TX_PATH_OFF) < pos(r, nr, GD77_RF_TUNE));
 	CHECK(pos(r, nr, GD77_RF_CHIP_RX) < pos(r, nr, GD77_RF_RX_PATH_ON));
-	CHECK(pos(r, nr, GD77_RF_RX_DRIVE) == nr - 1);
+	CHECK(pos(r, nr, GD77_RF_RX_PATH_ON) == nr - 1);
 	CHECK(pos(r, nr, GD77_RF_TX_EN_ON) < 0 && pos(r, nr, GD77_RF_RAMP_UP) < 0);
 }
 
@@ -301,6 +301,42 @@ static void test_c6k(void)
 	CHECK(c_last(4, 0xE2) == 0x02 && c_last(4, 0xE0) == 0x08 && c_last(4, 0x22) == 0x06);
 }
 
+// The calibration's values (cal_gd77.h) in their register fields: the other bits of each register keep their value
+static void test_cal_regs(void)
+{
+	at1846s_t dev;
+	at1846s_attach(&dev, &rf_bus);
+	at1846s_set_profile(&dev, &gd77_at1846s);
+	CHECK(at1846s_init(&dev));
+	CHECK(at1846s_write(&dev, 0, 0x0A, 0xFFFF));	// so the kept bits show
+	rf_n = 0;
+	at1846s_tx_cal_t a = {
+		.pa_drv = 0x0A, .mic_pga = 0x1A, .voice_gain = 0x0C, .gain_tx = 0x05, .fm_dev = 0x2C0, .tone_dev = 0x15,
+	};
+	CHECK(at1846s_set_tx_cal(&dev, &a));
+	CHECK(rf_last(0, 0x0A) == (0x803F | (0x0A << 11) | (0x1A << 6)));	// bits 14:11 and 10:6
+	CHECK(rf_last(0, 0x41) == ((0x470F & 0xFF80) | 0x0C));		// bits 6:0 of the profile's 0x470F
+	CHECK(rf_last(0, 0x44) == 0x05FF);					// bits 11:8 of 0x06FF
+	CHECK(rf_last(0, 0x59) == ((0x2C0 << 6) | 0x15));			// deviation 15:6, tone deviation 5:0
+	CHECK(at1846s_set_rx_volume(&dev, 0x0E, 0x09));
+	CHECK(rf_last(0, 0x44) == 0x05E9);					// bits 7:4 and 3:0, gain_tx kept
+	// A value wider than its field is cut to the field and touches nothing else
+	a.pa_drv = 0x1F; a.mic_pga = 0x3F; a.voice_gain = 0xFF; a.gain_tx = 0x1F; a.fm_dev = 0xFFFF; a.tone_dev = 0xFF;
+	CHECK(at1846s_set_tx_cal(&dev, &a));
+	CHECK(rf_last(0, 0x0A) == 0xFFFF && rf_last(0, 0x41) == 0x477F && rf_last(0, 0x44) == 0x0FE9);
+	CHECK(rf_last(0, 0x59) == 0xFFFF);
+	CHECK(at1846s_set_rx_volume(&dev, 0xFF, 0xFF) && rf_last(0, 0x44) == 0x0FFF);
+
+	// The HR_C6000 two-point bias and offset
+	hrc_t c;
+	hrc6000_attach(&c, &c_bus);
+	c_n = 0;
+	CHECK(hrc6000_set_mod_bias(&c, 0x234, 0x7B));
+	CHECK(c_last(4, 0x47) == 0x34 && c_last(4, 0x48) == 0x02 && c_last(4, 0x04) == 0x7B);
+	CHECK(hrc6000_set_mod_bias(&c, 0x400, 0x80));
+	CHECK(c_last(4, 0x47) == 0x00 && c_last(4, 0x48) == 0x04 && c_last(4, 0x04) == 0x80);
+}
+
 static void test_slot_edges(void)
 {
 	CHECK(gd77_slot_edge_new(1000, 0, false));
@@ -318,6 +354,7 @@ int main(void)
 	test_sequences();
 	test_ramp();
 	test_c6k();
+	test_cal_regs();
 	test_slot_edges();
 	if (failures) {
 		printf("gd77RfTest: %d failures\n", failures);

@@ -34,14 +34,13 @@ typedef enum {
 	GD77_RF_TX_EN_ON,	// PTA17 high
 	GD77_RF_TX_EN_OFF,	// PTA17 low
 	GD77_RF_RAMP_UP,	// DAC0 from 0 to the drive in GD77_RAMP_STEPS
-	GD77_RF_RAMP_DOWN,	// DAC0 from the drive to 0
-	GD77_RF_RX_DRIVE,	// DAC0 to the receive value, when calibration has one
+	GD77_RF_RAMP_DOWN,	// DAC0 from the drive to 0, where it stays while receiving
 } gd77_rf_step_t;
 
 // The switch sequences, in order. Transmit: receiver path off, tune, chip to TX, transmit path on, TX enable, ramp
-// up. Receive: TX enable off, ramp down, transmit path off, tune, chip to RX, receive path on, receive DAC value
+// up. Receive: TX enable off, ramp down (DAC0 stays at 0), transmit path off, tune, chip to RX, receive path on
 extern const uint8_t gd77_rf_tx_seq[6];
-extern const uint8_t gd77_rf_rx_seq[7];
+extern const uint8_t gd77_rf_rx_seq[6];
 
 // The pins of one band (indices into the board's pin list, see radio_gd77.c)
 typedef struct {

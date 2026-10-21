@@ -117,9 +117,8 @@ const at1846s_profile_t gd77_at1846s = {
 const uint8_t gd77_rf_tx_seq[6] = {
 	GD77_RF_RX_PATH_OFF, GD77_RF_TUNE, GD77_RF_CHIP_TX, GD77_RF_TX_PATH_ON, GD77_RF_TX_EN_ON, GD77_RF_RAMP_UP,
 };
-const uint8_t gd77_rf_rx_seq[7] = {
+const uint8_t gd77_rf_rx_seq[6] = {
 	GD77_RF_TX_EN_OFF, GD77_RF_RAMP_DOWN, GD77_RF_TX_PATH_OFF, GD77_RF_TUNE, GD77_RF_CHIP_RX, GD77_RF_RX_PATH_ON,
-	GD77_RF_RX_DRIVE,
 };
 
 gd77_rf_band_t gd77_rf_band(uint32_t hz)

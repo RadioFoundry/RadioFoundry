@@ -11,8 +11,8 @@
 // interrupt that the task-level driver resyncs after the transmission.
 //
 // Transmit is built only with CONFIG_GD77_TX=y (off by default, boards/gd77/config.mk), and even then tx() refuses
-// without a valid calibration point for the frequency. Every pin role and value here is unverified on a radio. The
-// RSSI scale is the DM-1701's.
+// without a valid calibration point for the frequency (cal_gd77.h). Receive applies the point's AT1846S receive values
+// on every retune. Every pin role and value here is unverified on a radio. The RSSI scale is the DM-1701's.
 #include <stddef.h>
 #include "gd77.h"
 #include "config.h"
@@ -35,6 +35,9 @@
 #define C6K_PWD_WAIT_MS		10u	// PWD low to the first configuration access (modem-hrc6000.md 1)
 #define FM_MIC_GAIN		7u	// 0..31
 #define DMR_MIC_GAIN		7u
+#define C6K_MOD_FALLBACK	0x80u	// 4:0x45 / 4:0x46 when the power-on values can't be read
+
+_Static_assert(AT1846S_BW_12K5 == 0 && AT1846S_BW_25K == 1 && GD77_CAL_BWS == 2, "cal_gd77.h bandwidth index");
 
 // The RF path lines by gd77_rf_band_t index (rf_gd77.h)
 static const uint8_t rf_line[GD77_LINE_COUNT] = {
@@ -54,6 +57,9 @@ static struct {
 	radio_bw_t rx_bw;
 	subtone_t rx_tone;
 	uint8_t drive_now;		// DAC0 now, in the 8-bit drive unit
+	// HR_C6000 4:0x45 / 4:0x46 for every write of the pair. 4:0x45 has no calibration and keeps the value the chip
+	// has after power-on; 4:0x46 starts the same and takes the calibration's value at each transmission
+	uint8_t c6k_mod2, c6k_mod1;
 	gd77_radio_diag_t diag;
 	radio_status_t last_status;	// returned without bus traffic while DMR transmits
 
@@ -74,14 +80,6 @@ static void count(bool ok)
 	if (!ok) {
 		r.diag.rf_errors++;
 	}
-}
-
-// The calibration until the storage side provides it (cal_gd77.h): none, the safe values
-__attribute__((weak)) bool gd77_cal_at(uint32_t hz, gd77_cal_point_t *out)
-{
-	(void)hz;
-	gd77_cal_safe(out);
-	return false;
 }
 
 // --- AT1846S bus: 8-bit register address, then 16 bits high byte first ---
@@ -195,7 +193,6 @@ typedef struct {
 	gd77_rf_band_t band;
 	at1846s_state_t chip_tx;
 	uint8_t drive;
-	const gd77_cal_point_t *cal;
 } seq_t;
 
 static void run_seq(const uint8_t *seq, uint32_t n, const seq_t *c)
@@ -220,11 +217,6 @@ static void run_seq(const uint8_t *seq, uint32_t n, const seq_t *c)
 				ramp(r.drive_now, false);
 			}
 			drive_set(0);
-			break;
-		case GD77_RF_RX_DRIVE:
-			if (c->cal != NULL && c->cal->rx_drive_valid) {
-				drive_set(c->cal->rx_drive);
-			}
 			break;
 		default: break;
 		}
@@ -431,6 +423,11 @@ static void init(void)
 	r.diag.c6k_ok = hrc6000_power_on_init_clock(&r.modem, DMR_MIC_GAIN, &hrc6000_clock_12m288) &&
 			gd77_c6k_board_init(&r.modem);
 	count(r.diag.c6k_ok);
+	// The modulation pair as the chip came up (nothing above writes it), 0x80 each if it can't be read
+	if (!hrc_read(&r.modem, HRC_PAGE_SYS, 0x45, &r.c6k_mod2) || !hrc_read(&r.modem, HRC_PAGE_SYS, 0x46, &r.c6k_mod1)) {
+		count(false);
+		r.c6k_mod2 = r.c6k_mod1 = C6K_MOD_FALLBACK;
+	}
 	count(at1846s_init_finish(&r.rf));
 
 	r.mode = RADIO_MODE_FM;
@@ -441,12 +438,11 @@ static void init(void)
 }
 
 #if CONFIG_DMR
-// HR_C6000 into DMR (modem-hrc6000.md 3.1) with the DMR modulation pair for the frequency, then the slot engine
+// HR_C6000 into DMR (modem-hrc6000.md 3.1), then the slot engine. The modulation pair is the one last written: the
+// calibration's 4:0x46 comes with each transmission (tx())
 static void dmr_enter(void)
 {
-	gd77_cal_point_t cal;
-	(void)gd77_cal_at(r.rx_valid ? r.rx_hz : board.bands[0].lo_hz, &cal);	// on false: the safe values
-	count(hrc6000_dmr_enter(&r.modem, cal.dmr_mod2, cal.dmr_mod1, DMR_MIC_GAIN));
+	count(hrc6000_dmr_enter(&r.modem, r.c6k_mod2, r.c6k_mod1, DMR_MIC_GAIN));
 	gd77_dmr_enter();
 }
 #endif
@@ -480,6 +476,19 @@ static void set_mode(radio_mode_t mode)
 #endif
 }
 
+// The calibration's receive values for the frequency and bandwidth: the block's, or the fallbacks without one, so
+// a band without a valid block doesn't keep the other band's values. The squelch base (sq_open) isn't applied: the
+// core's squelch works on RSSI and noise
+static void apply_rx_cal(uint32_t hz, at1846s_bw_t bw)
+{
+	gd77_cal_point_t cal;
+	(void)gd77_cal_at(hz, &cal);
+	count(at1846s_set_rx_volume(&r.rf, cal.rx_dac_gain, cal.rx_volume));
+	count(at1846s_write(&r.rf, 0, 0x48, cal.sq_reg[bw][0]));
+	count(at1846s_write(&r.rf, 0, 0x60, cal.sq_reg[bw][1]));
+	count(at1846s_write(&r.rf, 0, 0x3F, cal.sq_reg[bw][2]));
+}
+
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 {
 	if (find_band(hz) == NULL) {
@@ -495,34 +504,52 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	r.rx_tone = rx_tone != NULL ? *rx_tone : (subtone_t){ TONE_NONE, 0 };
 	r.rx_valid = true;
 
-	gd77_cal_point_t cal;
-	(void)gd77_cal_at(hz, &cal);	// on false: the safe values
-	count(at1846s_set_bandwidth(&r.rf, rf_bw(bw)));
+	at1846s_bw_t abw = rf_bw(bw);
+	count(at1846s_set_bandwidth(&r.rf, abw));
 	count(at1846s_set_mode(&r.rf, r.mode == RADIO_MODE_DMR ? AT1846S_MODE_DMR : AT1846S_MODE_FM));
 	apply_rx_tone();
-	seq_t c = { .hz = hz, .band = gd77_rf_band(hz), .cal = &cal };
+	apply_rx_cal(hz, abw);
+	seq_t c = { .hz = hz, .band = gd77_rf_band(hz) };
 	run_seq(SEQ(gd77_rf_rx_seq), &c);
 	r.rf_isr_dirty = false;
 	r.rf_rx_pending = false;
 
-	count(hrc6000_set_ref_offset(&r.modem, cal.ref_offset, false));
 	if (r.mode == RADIO_MODE_FM) {
 		count(hrc6000_set_mode_fm_rx(&r.modem));
 	} else if (!same) {
-		// New channel: the DMR modulation pair for it, and the receiver searches again. Back from our own
-		// transmission on the same channel the engine has already restarted it, or kept a repeater's timing
-		count(hrc_set_mod_gain(&r.modem, cal.dmr_mod2, cal.dmr_mod1));
+		// New channel: the receiver searches again. Back from our own transmission on the same channel the engine
+		// has already restarted it, or kept a repeater's timing
 		gd77_dmr_rx_restart();
 	}
 	r.tx_on = false;
 	return true;
 }
 
-// Transmit: refused unless the build has CONFIG_GD77_TX, the band allows it and the calibration has the frequency
+#if CONFIG_GD77_TX
+// The calibration's transmit values: the AT1846S gains, PA driver current and deviation (the tone deviation for the
+// tone being sent), then the HR_C6000 modulation amplitude, bias and offset (the same in FM and DMR)
+static void apply_tx_cal(const gd77_cal_point_t *cal, at1846s_bw_t bw, at1846s_tone_t tone)
+{
+	bool dcs = tone == AT1846S_TONE_DCS || tone == AT1846S_TONE_DCS_INV;
+	at1846s_tx_cal_t a = {
+		.pa_drv = cal->pa_drv,
+		.mic_pga = cal->mic_pga,
+		.voice_gain = cal->voice_gain,
+		.gain_tx = cal->gain_tx,
+		.fm_dev = cal->fm_dev[bw],
+		.tone_dev = dcs ? cal->dcs_dev[bw] : cal->ctcss_dev[bw],
+	};
+	count(at1846s_set_tx_cal(&r.rf, &a));
+	r.c6k_mod1 = cal->c6k_mod1;
+	count(hrc_set_mod_gain(&r.modem, r.c6k_mod2, r.c6k_mod1));
+	count(hrc6000_set_mod_bias(&r.modem, cal->c6k_bias, cal->c6k_offset));
+}
+
+// Transmit: refused unless the band allows it and the calibration has the frequency
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
 {
 	const band_t *band = find_band(hz);
-	if (!CONFIG_GD77_TX || band == NULL || !band->tx) {
+	if (band == NULL || !band->tx) {
 		r.diag.tx_refused++;
 		return false;
 	}
@@ -537,8 +564,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	uint8_t drive = cal.power_drive[power];
 
 	if (r.mode == RADIO_MODE_DMR) {
-		// Arm only: the receiver stays on the RX frequency until our first burst
-		count(hrc_set_mod_gain(&r.modem, cal.dmr_mod2, cal.dmr_mod1));
+		// Arm only: the receiver stays on the RX frequency until our first burst. The per-burst switching
+		// writes only the tuning registers, so the values set here hold for every burst
+		apply_tx_cal(&cal, rf_bw(bw), AT1846S_TONE_NONE);
 		r.dmr_tx_hz = hz;
 		r.dmr_drive = drive;
 		__DMB();
@@ -554,20 +582,34 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		.wide = bw == RADIO_BW_25K,
 		.tone = tone == AT1846S_TONE_NONE ? HRC6000_TONE_NONE
 			: tone == AT1846S_TONE_CTCSS ? HRC6000_TONE_CTCSS : HRC6000_TONE_DCS,
-		.mod2 = cal.fm_mod2,
-		.mod1 = cal.fm_mod1,
-		.ref_offset = cal.ref_offset,
+		.mod2 = r.c6k_mod2,
+		.mod1 = cal.c6k_mod1,
+		.ref_offset = 0,	// replaced by the calibration's bias and offset below
 		.mic_gain = FM_MIC_GAIN,
 	};
 	count(hrc6000_set_mode_fm_tx(&r.modem, &fm));
-	count(at1846s_set_bandwidth(&r.rf, rf_bw(bw)));
+	at1846s_bw_t abw = rf_bw(bw);
+	count(at1846s_set_bandwidth(&r.rf, abw));
 	count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 	count(at1846s_set_tx_tone(&r.rf, tone, tone_value));
-	seq_t c = { .hz = hz, .band = gd77_rf_band(hz), .chip_tx = AT1846S_STATE_FM_TX, .drive = drive, .cal = &cal };
+	apply_tx_cal(&cal, abw, tone);
+	seq_t c = { .hz = hz, .band = gd77_rf_band(hz), .chip_tx = AT1846S_STATE_FM_TX, .drive = drive };
 	run_seq(SEQ(gd77_rf_tx_seq), &c);
 	r.tx_on = true;
 	return true;
 }
+#else
+// Receive-only build: every transmission is refused
+static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
+{
+	(void)hz;
+	(void)bw;
+	(void)power;
+	(void)tx_tone;
+	r.diag.tx_refused++;
+	return false;
+}
+#endif
 
 static void tx_off(void)
 {

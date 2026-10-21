@@ -1128,3 +1128,16 @@ run: run-gd77-storage
 run-gd77-storage: gd77StorageTest
 	./gd77StorageTest
 .PHONY: run-gd77-storage
+
+# The GD-77 calibration point (boards/gd77/cal_gd77.c, hardware-gd77.md 6.4): node layouts, interpolation, every
+# destination value and its fallback, the band split and invalid blocks, on synthetic blocks
+TESTS   += gd77CalTest
+gd77CalTest: gd77CalTest.c $(GD77)/cal_gd77.c $(GD77)/cal_gd77.h $(GD77)/cal_blocks_gd77.c $(GD77)/cal_blocks_gd77.h \
+             $(CAL)/cal_block.c $(CAL)/cal_block.h
+	$(CC) $(CFLAGS) -I$(GD77) -Wshadow -o $@ gd77CalTest.c $(GD77)/cal_gd77.c \
+		$(GD77)/cal_blocks_gd77.c $(CAL)/cal_block.c
+
+run: run-gd77-cal
+run-gd77-cal: gd77CalTest
+	./gd77CalTest
+.PHONY: run-gd77-cal

@@ -450,11 +450,12 @@ static void test_cal_load(void)
 	glitch_every = 0;
 	gd77_cal_load(ee_read, NULL);
 	CHECK(gd77_cal_state(GD77_CAL_UHF) == CAL_BLOCK_OK && gd77_cal_state(GD77_CAL_VHF) == CAL_BLOCK_OK);
-	// The radio code's point: no field is named yet, so even valid blocks give the safe values and no calibration
+	// The radio code's point from the loaded blocks (the conversion itself is gd77CalTest): the UHF block's
+	// fill pattern puts its two-point bias (0x1918) above the limit, so no TX point, but its receive side is used
 	gd77_cal_point_t pt;
 	memset(&pt, 0x55, sizeof(pt));
-	CHECK(!gd77_cal_at(446000000u, &pt) && !pt.valid && pt.power_drive[0] == GD77_CAL_SAFE_DRIVE &&
-	      pt.power_drive[1] == GD77_CAL_SAFE_DRIVE && pt.fm_mod1 == GD77_CAL_SAFE_GAIN && !pt.rx_drive_valid);
+	CHECK(!gd77_cal_at(446000000u, &pt) && !pt.valid && pt.rx_valid && pt.power_drive[0] == GD77_CAL_SAFE_DRIVE &&
+	      pt.power_drive[1] == GD77_CAL_SAFE_DRIVE);
 	// The generic band lookup outside every band
 	static const cal_band_t one[] = { { 100, 200, 0 } };
 	CHECK(cal_band_index(one, 1, 99) < 0 && cal_band_index(one, 1, 200) == 0 && cal_band_index(one, 1, 201) < 0);
