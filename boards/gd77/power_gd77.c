@@ -19,6 +19,7 @@
 
 static bool adc_ok;
 static uint16_t bat_raw;
+static uint16_t dp2_raw = 0xFFFFu, dp3_raw = 0xFFFFu;	// the two open analog roles, read with the battery
 static uint32_t bat_ms;
 static bool bat_valid;
 static uint8_t off_count;
@@ -52,6 +53,11 @@ uint16_t gd77_battery_raw(void)
 	return bat_raw;
 }
 
+uint16_t gd77_adc_raw(uint8_t ch)
+{
+	return ch == ADC_CH_BATTERY ? bat_raw : (ch == ADC_CH_DP2 ? dp2_raw : (ch == ADC_CH_DP3 ? dp3_raw : 0xFFFFu));
+}
+
 static uint16_t battery_mv(void)
 {
 	uint32_t now = hal_millis();
@@ -61,6 +67,9 @@ static uint16_t battery_mv(void)
 			bat_raw = raw;
 			bat_valid = true;
 		}
+		// Here, on the one task that reads the ADC, so no other conversion runs at the same time
+		dp2_raw = k22f_adc_read(0, ADC_CH_DP2);
+		dp3_raw = k22f_adc_read(0, ADC_CH_DP3);
 		bat_ms = now;
 	}
 	if (!bat_valid) {

@@ -41,6 +41,7 @@ enum {
 	DL_VIEW_SFR,		// the MMDVM hotspot's SFR mode (was in DL_VIEW_HOTSPOT until view version 2)
 	DL_VIEW_TASKS,		// every task's least free stack (debuglink_view_tasks.c)
 	DL_VIEW_CRASH,		// the crash log's record from before this start (debuglink_crash.c)
+	DL_VIEW_BOARD,		// the board's own bring-up readings, board.view_line (debuglink_view_board.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		2	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -113,6 +114,8 @@ size_t debuglink_cmd_snmp(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 // The tasks section (debuglink_view_tasks.c): each task's least free stack in bytes. The formatting takes the table
 // apart from the snapshot (task_stack_snapshot) so the host tests can feed it
 void debuglink_view_tasks(dl_text_t *t);
+// The board section (debuglink_view_board.c): board.view_line's lines as board.<key>=<value>; "board.built=0" without
+void debuglink_view_board(dl_text_t *t);
 void debuglink_view_tasks_format(const task_stack_t *ts, unsigned n, unsigned untracked, dl_text_t *t);
 
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT

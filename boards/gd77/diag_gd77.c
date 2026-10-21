@@ -9,6 +9,8 @@
 #include "platform.h"
 #include "ftfa_math.h"
 #include "cal_blocks_gd77.h"
+#include "bus_cfg.h"
+#include "pins.h"
 
 #if CONFIG_DIAG
 bool gd77_diag_line(uint8_t i, char *buf, uint8_t len)
@@ -87,6 +89,114 @@ bool gd77_diag_line(uint8_t i, char *buf, uint8_t len)
 			 (unsigned long)m.rx_crc_err, (unsigned long)m.voice_errors);
 		break;
 	}
+	default:
+		return false;
+	}
+	return true;
+}
+#endif
+
+#if CONFIG_DEBUGLINK
+static const char *bus_state(gd77_bus_id_t id)
+{
+	static const char *const names[] = { "ok", "timeout", "refused", "not_implemented", "flash", "nack", "bus" };
+	k22f_status_t st = gd77_bus_status(id);
+	return (unsigned)st < sizeof(names) / sizeof(names[0]) ? names[st] : "?";
+}
+
+// One key per line; every value is read without side effects: GPIO input registers, the clock state, cached ADC
+// readings, what the chip drivers found at start-up (docs/spec/hardware-gd77.md 14)
+bool gd77_view_line(uint8_t i, char *buf, uint8_t len)
+{
+	static const char *const bus_names[GD77_BUS_COUNT] = { "i2c_a", "i2c_b", "nor", "lcd", "c6000" };
+	gd77_radio_diag_t d;
+	hal_chip_t chip;
+	uint16_t rst = k22f_reset_cause();
+
+	if (len == 0) {
+		return false;
+	}
+	if (i >= 9u && i < 9u + K22F_PORT_COUNT) {
+		uint8_t p = (uint8_t)(i - 9u);
+		snprintf(buf, len, "pins.%c=0x%08lx", 'a' + p, (unsigned long)GPIO_PDIR(p));
+		return true;
+	}
+	if (i >= 20u && i < 20u + GD77_BUS_COUNT) {
+		uint8_t b = (uint8_t)(i - 20u);
+		snprintf(buf, len, "bus.%s=%s:%s", bus_names[b], gd77_bus_cfg[b].hw ? "hw" : "soft", bus_state(b));
+		return true;
+	}
+	switch (i) {
+	case 0:
+		snprintf(buf, len, "clk.core_hz=%lu", (unsigned long)SystemCoreClock);
+		break;
+	case 1:
+		snprintf(buf, len, "clk.bus_hz=%lu", (unsigned long)k22f_bus_clock());
+		break;
+	case 2:
+		snprintf(buf, len, "clk.source=%s", k22f_clock_on_pll() ? "pll" : "fll");
+		break;
+	case 3:
+		snprintf(buf, len, "clk.hsrun=%u", k22f_clock_hsrun());
+		break;
+	case 4:
+		snprintf(buf, len, "clk.stepped_down=%u", k22f_clock_stepped_down());
+		break;
+	case 5:
+		snprintf(buf, len, "reset.cause=%s", k22f_reset_name(rst));
+		break;
+	case 6:
+		snprintf(buf, len, "reset.srs=0x%04x", rst);
+		break;
+	case 7:
+		(void)k22f_system.chip(&chip);
+		snprintf(buf, len, "chip.sdid=0x%08lx", (unsigned long)chip.idcode);
+		break;
+	case 8:
+		(void)k22f_system.chip(&chip);
+		snprintf(buf, len, "chip.flash_kb=%u", chip.flash_kb);
+		break;
+	// 9..13: pins.a .. pins.e above
+	case 14:
+		snprintf(buf, len, "keys.raw=0x%06lx", (unsigned long)gd77_key_raw());
+		break;
+	case 15:
+		snprintf(buf, len, "adc.dp1=%u", gd77_adc_raw(ADC_CH_BATTERY));
+		break;
+	case 16:
+		snprintf(buf, len, "adc.dp2=%u", gd77_adc_raw(ADC_CH_DP2));
+		break;
+	case 17:
+		snprintf(buf, len, "adc.dp3=%u", gd77_adc_raw(ADC_CH_DP3));
+		break;
+	case 18:
+		gd77_radio_diag(&d);
+		snprintf(buf, len, "chip.at1846s=%s:0x%04x", d.rf_ok ? "ok" : "none", d.rf_id);
+		break;
+	case 19:
+		gd77_radio_diag(&d);
+		snprintf(buf, len, "chip.hrc6000=%s", d.c6k_ok ? "ok" : "none");
+		break;
+	// 20..24: bus.<name> above
+	case 25:
+		snprintf(buf, len, "chip.nor_jedec=0x%06lx", (unsigned long)gd77_flash_jedec());
+		break;
+	case 26:
+		snprintf(buf, len, "chip.eeprom=%s", gd77_eeprom_present() ? "ok" : "none");
+		break;
+	case 27:
+		snprintf(buf, len, "i2c0.errors=%lu", (unsigned long)k22f_i2c0_errors());
+		break;
+	case 28:
+#if CONFIG_USB
+		snprintf(buf, len, "usb.trim_error=%u", k22f_usb_trim_error());
+#else
+		snprintf(buf, len, "usb.built=0");
+#endif
+		break;
+	case 29:
+		snprintf(buf, len, "backlight.pwm=%u", gd77_backlight_pwm());
+		break;
 	default:
 		return false;
 	}

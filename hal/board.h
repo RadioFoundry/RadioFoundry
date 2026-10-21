@@ -96,6 +96,10 @@ typedef struct {
 	// with the stored value at start-up and on each change; the module is still probed at start-up whatever the
 	// setting says, so board_has_gps() is known. NULL = the module is always on
 	void (*gps_enable)(bool on);
+	// Optional: line i of the debug link's board view section as "key=value" (the core prefixes "board."), for
+	// bring-up and HIL checks of the board's own hardware: pins, clocks, chip answers. False past the last line.
+	// Read only: it may not change a pin or start a bus transaction that changes a chip's state
+	bool (*view_line)(uint8_t i, char *buf, uint8_t len);
 } board_t;
 
 extern const board_t board;

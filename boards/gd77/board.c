@@ -81,6 +81,9 @@ const board_t board = {
 #if CONFIG_DIAG
 	.diag_line = gd77_diag_line,
 #endif
+#if CONFIG_DEBUGLINK
+	.view_line = gd77_view_line,
+#endif
 	.system = &k22f_system,
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,

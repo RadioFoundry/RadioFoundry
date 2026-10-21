@@ -619,6 +619,21 @@ run-taskStack: taskStackTest
 	./taskStackTest
 .PHONY: run-taskStack
 
+# The debug link's board view section (core/debuglink/debuglink_view_board.c): a fake board with lines, and one
+# without the hook
+BVIEW   := boardViewTest.c $(CORE)/debuglink/debuglink_view_board.c $(CORE)/debuglink/dl_fmt.c
+TESTS   += boardViewTest boardViewNoneTest
+boardViewTest: $(BVIEW) $(CORE)/debuglink/debuglink.h $(ROOT)/hal/board.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(BVIEW)
+boardViewNoneTest: $(BVIEW) $(CORE)/debuglink/debuglink.h $(ROOT)/hal/board.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DNO_HOOK -o $@ $(BVIEW)
+
+run: run-boardView
+run-boardView: boardViewTest boardViewNoneTest
+	./boardViewTest
+	./boardViewNoneTest
+.PHONY: run-boardView
+
 # The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
 TESTS   += f4stubTest
 f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h

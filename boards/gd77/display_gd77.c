@@ -77,6 +77,11 @@ static void backlight_init(void)
 	}
 }
 
+bool gd77_backlight_pwm(void)
+{
+	return pwm;
+}
+
 static void init(void)
 {
 	backlight_init();

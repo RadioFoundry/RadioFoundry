@@ -66,6 +66,9 @@ uint32_t gd77_key_raw(void);
 
 // --- Power (power_gd77.c) ---
 uint16_t gd77_battery_raw(void);	// the last ADC reading of the battery candidate channel
+uint16_t gd77_adc_raw(uint8_t ch);	// the last reading of ADC_CH_BATTERY, _DP2 or _DP3; 0xFFFF = none yet
+// --- Display (display_gd77.c) ---
+bool gd77_backlight_pwm(void);		// the backlight runs on the FTM channel (GD77_BACKLIGHT_PWM)
 
 // --- Data flash (flash_gd77.c) ---
 uint32_t gd77_flash_jedec(void);	// manufacturer << 16 | device, 0 when nothing answered
@@ -95,5 +98,7 @@ void gd77_radio_diag(gd77_radio_diag_t *d);
 
 // --- Diagnostics (diag_gd77.c) ---
 bool gd77_diag_line(uint8_t i, char *buf, uint8_t len);
+// The debug link's board view section (board.view_line): read-only key=value lines for the bring-up HIL tests
+bool gd77_view_line(uint8_t i, char *buf, uint8_t len);
 
 #endif
