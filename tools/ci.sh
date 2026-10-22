@@ -35,7 +35,8 @@
 #      notice naming what installs it, its platform.toml toolchain.build):
 #        default            the board's defaults
 #        no-<FEATURE>       each switch that is on by default, turned off alone (sub-features follow), except those
-#                           the board can't build without (BOARD_REQUIRED: FM on the DB25-D while DMR isn't built)
+#                           the board can't build without (BOARD_REQUIRED: FM on the DB25-D while DMR isn't built).
+#                           no-DEBUGLINK keeps STUB_ENTRY on, so it builds the stub entry's own listener
 #        fm-minimal         FM only: no DMR, USB, VFO, diagnostics, sub-audio tones
 #        maximal            every switch on, except those the board lists as unsupported (BOARD_UNSUPPORTED) or as
 #                           not needed (the board's MAXIMAL_SKIP: NET_PPP on the radios with the USB network adapter)

@@ -112,6 +112,7 @@ def test_net_split_protocol(net, pytestconfig):
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_net_split_rx_half_labels(net, sdr_bench, pytestconfig):
     if "HOTSPOT_SPLIT" not in net.features:
         skip("not_built", "built without the split duplex extension")

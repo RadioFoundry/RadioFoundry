@@ -6,6 +6,7 @@
 
 #include "dmr/ambe/ambeVoice.h"
 #include "dmr/ambe/ambeFec.h"
+#include "vocoder/ambe2_flags.h"
 
 static int failures, checks;
 #define CHECK(cond, ...) do { checks++; if (!(cond)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
@@ -36,7 +37,29 @@ static void fake_decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FR
 		pcm[i] = bits[i];
 	pcm[159] = 1000;
 }
-static const hal_vocoder_t vocoder = { fake_present, fake_reset, fake_encode, fake_decode, NULL };
+static const hal_vocoder_t vocoder = { fake_present, fake_reset, fake_encode, fake_decode, NULL, NULL, NULL, NULL };
+
+// A vocoder with encode options, built as the AMBE+2 hosts are: set_options keeps the flags word, and each frame is
+// two codec calls (two halves) that both pass it. Every call's flags are recorded
+static uint32_t opt_flags = 0xDEADBEEFu;	// "never set" until set_options
+static uint32_t opt_sets, opt_last_set;
+static uint32_t calls_flags[64];
+static int ncalls;
+static uint32_t opt_options(void) { return AMBE2_OPTIONS; }
+static void opt_set(uint32_t opts) { opt_sets++; opt_last_set = opts; opt_flags = ambe2_enc_flags(opts); }
+static uint32_t opt_encode_flags(void) { return opt_flags; }
+static void opt_encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
+{
+	const uint32_t flags = opt_flags;
+	for (int h = 0; h < 2; h++)
+		if (ncalls < 64)
+			calls_flags[ncalls++] = flags;
+	fake_encode(pcm, bits);
+}
+static const hal_vocoder_t opt_vocoder = {
+	.present = fake_present, .reset = fake_reset, .encode = opt_encode, .decode = fake_decode,
+	.options = opt_options, .set_options = opt_set, .encode_flags = opt_encode_flags,
+};
 
 static void makeFrame(int n, uint8_t bits[49], uint8_t frame[9])
 {
@@ -213,11 +236,258 @@ static void testTx(void)
 	src->end(src->ctx);
 }
 
+// One transmission of n blocks from gen(sample index), then its mic statistics
+static ambe_voice_stats_t micOver(int n, int16_t (*gen)(int))
+{
+	const dmr_voice_source_t *src = ambeVoiceSource();
+	uint8_t out[9];
+	src->begin(src->ctx);
+	for (int b = 0; b < n; b++) {
+		for (int i = 0; i < 160; i++)
+			mic[i] = gen(b * 160 + i);
+		block();
+		while (src->next(out, src->ctx))
+			;
+	}
+	ambe_voice_stats_t st;
+	ambeVoiceGetStats(&st);
+	src->end(src->ctx);
+	block();
+	return st;
+}
+
+static uint32_t lcg = 1;
+static int16_t genFloor(int i)	// a cut mic: the ADC's own floor, white, a couple of LSB
+{
+	(void)i;
+	lcg = lcg * 1103515245u + 12345u;
+	return (int16_t)((int)((lcg >> 16) % 5u) - 2);
+}
+static int16_t genTri(int i, int period, int amp)
+{
+	int p = i % period, h = period / 2;
+	return (int16_t)((p < h ? p * 4 * amp / period - amp : (period - p) * 4 * amp / period - amp));
+}
+static int16_t genHum(int i)	// a connected mic in a quiet room: mains hum, steady and loud next to the floor
+{
+	return genTri(i, 160, 60);
+}
+static int16_t genTone(int i)	// a tone burst every 200 ms (UART-injected test pattern) on top of the hum
+{
+	return (int16_t)(genHum(i) + ((i / 800) % 2 == 0 ? genTri(i, 7, 30) : 0));
+}
+static int16_t genSpeech(int i)	// syllables: 400 Hz, 150 ms loud, 100 ms quiet, a 600 ms pause each second
+{
+	int ms = (i / 8) % 1000;
+	int amp = ms >= 400 ? 3 : (ms % 250) < 150 ? 6000 : 300;
+	return genTri(i, 20, amp);
+}
+
+// The mic statistics tell speech from a cut mic and from a steady hum, which the peak can't (a click is a peak)
+static void testMicStats(void)
+{
+	ambeVoiceResetStats();
+	ambe_voice_stats_t st = micOver(200, genFloor);
+	CHECK(st.tx_mic_blocks == 200, "blocks %u", st.tx_mic_blocks);
+	CHECK(st.tx_mic_level_db <= 6 && st.tx_mic_spread_db <= 3 && st.tx_mic_zc >= 60,
+	      "cut mic: level %u spread %u zc %u (<= 6, <= 3, >= 60)", st.tx_mic_level_db, st.tx_mic_spread_db,
+	      st.tx_mic_zc);
+	st = micOver(200, genHum);
+	CHECK(st.tx_mic_blocks == 200, "a new transmission counts from 0: %u", st.tx_mic_blocks);
+	CHECK(st.tx_mic_level_db <= 6 && st.tx_mic_spread_db <= 3 && st.tx_mic_zc <= 8,
+	      "hum: level %u spread %u zc %u (<= 6: the high pass, <= 3, <= 8)", st.tx_mic_level_db, st.tx_mic_spread_db,
+	      st.tx_mic_zc);
+	st = micOver(200, genTone);
+	CHECK(st.tx_mic_level_db >= 21 && st.tx_mic_spread_db >= 18,
+	      "small tone bursts over a louder hum: level %u spread %u (>= 21, >= 18)", st.tx_mic_level_db,
+	      st.tx_mic_spread_db);
+	st = micOver(250, genSpeech);
+	CHECK(st.tx_mic_level_db >= 60 && st.tx_mic_spread_db >= 30 && st.tx_mic_zc >= 12 && st.tx_mic_zc <= 20,
+	      "speech: level %u spread %u zc %u (>= 60, >= 30, 12-20)", st.tx_mic_level_db, st.tx_mic_spread_db,
+	      st.tx_mic_zc);
+	ambeVoiceResetStats();
+	ambeVoiceGetStats(&st);
+	CHECK(st.tx_mic_blocks == 0 && st.tx_mic_spread_db == 0, "reset");
+}
+
+// The option -> flags word mapping of the AMBE+2 hosts (drivers/vocoder/ambe2_flags.h)
+static void testFlagsMap(void)
+{
+	CHECK(ambe2_enc_flags(0) == 0x0800u, "no options: noise gate only (%#x)", (unsigned)ambe2_enc_flags(0));
+	CHECK(ambe2_enc_flags(VOCODER_OPT_NOISE_REDUCTION) == 0x0840u, "noise reduction");
+	CHECK(ambe2_enc_flags(VOCODER_OPT_TONE_FRAMES) == 0x1800u, "tone frames");
+	CHECK(ambe2_enc_flags(VOCODER_OPT_DEFAULT) == 0x1840u, "the defaults are the full pattern");
+	CHECK(AMBE2_ENC_DEFAULT == ambe2_enc_flags(VOCODER_OPT_DEFAULT), "the hosts' initial word");
+	CHECK(ambe2_enc_flags(VOCODER_OPT_AGC) == 0x2800u, "AGC");
+	CHECK(ambe2_enc_flags(VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC) == 0x3840u, "all three");
+	// Nothing ever sets the DC filter off or test mode bits, whatever is asked for
+	CHECK((ambe2_enc_flags(0xFFFFFFFFu) & 0x4100u) == 0, "never 0x100, 0x4000");
+	CHECK(ambe2_enc_flags(0xFFFFFFFFu) == 0x3840u, "all options");
+	CHECK(AMBE2_OPTIONS == (VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC), "offered");
+}
+
+// The checks a frame counter can't make: the same stale voice bytes every burst (the HR_C7000 voice-access flag on the
+// wrong slot, 2026-10-22), a stuck encoder, a silent mic. Each counter starts over with a call / transmission
+static void testRepeats(void)
+{
+	const dmr_voice_sink_t *s = ambeVoiceSink();
+	uint8_t bits[49], frame[9], other[9];
+
+	ambeVoiceResetStats();
+	s->begin(NULL, s->ctx);
+	makeFrame(1, bits, frame);
+	for (int n = 0; n < 6; n++)
+		s->frame(frame, s->ctx);	// one frame six times: the stale RAM signature
+	makeFrame(2, bits, other);
+	s->frame(other, s->ctx);
+	s->frame(frame, s->ctx);
+	s->end(s->ctx);
+	ambe_voice_stats_t st;
+	ambeVoiceGetStats(&st);
+	CHECK(st.rx_in == 8 && st.rx_repeats == 5, "rx repeats %u of %u (5 of 8)", st.rx_repeats, st.rx_in);
+	s->begin(NULL, s->ctx);
+	s->frame(frame, s->ctx);	// the first frame of a new call repeats nothing
+	s->end(s->ctx);
+	ambeVoiceGetStats(&st);
+	CHECK(st.rx_repeats == 5, "a new call starts the comparison over: %u", st.rx_repeats);
+	for (int n = 0; n < 12; n++)
+		block();	// play it all out
+
+	const dmr_voice_source_t *src = ambeVoiceSource();
+	uint8_t out[9];
+	ambeVoiceResetStats();
+	src->begin(src->ctx);
+	for (int i = 0; i < 160; i++)
+		mic[i] = (int16_t)(i == 7 ? -1234 : 0);
+	for (int n = 0; n < 4; n++)
+		block();	// the same mic block four times: three repeats
+	ambeVoiceGetStats(&st);
+	CHECK(st.tx_frames == 4 && st.tx_repeats == 3, "tx repeats %u of %u (3 of 4)", st.tx_repeats, st.tx_frames);
+	CHECK(st.tx_mic_peak == 1234, "mic peak %u", st.tx_mic_peak);
+	while (src->next(out, src->ctx))
+		;
+	src->end(src->ctx);
+
+	// The test signal replaces the mic: frames differ block after block, and the mic peak still shows the mic
+	CHECK(!ambeVoiceTestSignal(), "test signal off by default");
+	ambeVoiceSetTestSignal(true);
+	CHECK(ambeVoiceTestSignal(), "test signal on");
+	ambeVoiceResetStats();
+	src->begin(src->ctx);
+	memset(mic, 0, sizeof mic);
+	bool differs = true;
+	uint8_t prev[49] = { 0 };
+	for (int n = 0; n < 7; n++) {
+		block();
+		CHECK(src->next(out, src->ctx), "test frame %d", n);
+		CHECK(ambeFecDecode(out, bits, NULL) == 0, "test frame %d decodes", n);
+		if (n > 0 && memcmp(bits, prev, sizeof bits) == 0)
+			differs = false;
+		memcpy(prev, bits, sizeof prev);
+	}
+	ambeVoiceGetStats(&st);
+	CHECK(differs && st.tx_repeats == 0, "the test signal's frames all differ (repeats %u)", st.tx_repeats);
+	CHECK(st.tx_mic_peak == 0, "a silent mic shows as 0 with the test signal on: %u", st.tx_mic_peak);
+	src->end(src->ctx);
+	ambeVoiceSetTestSignal(false);
+
+	// The new transmission starts the mic peak over
+	src->begin(src->ctx);
+	mic[3] = 50;
+	block();
+	ambeVoiceGetStats(&st);
+	CHECK(st.tx_mic_peak == 50, "mic peak of the latest transmission: %u", st.tx_mic_peak);
+	while (src->next(out, src->ctx))
+		;
+	src->end(src->ctx);
+	block();
+}
+
+// core -> hal: the options reach the vocoder before the first frame and between frames, and every codec call of a
+// transmission passes the same flags (also the first call after the reset at the start)
+static void testEncodeOptions(void)
+{
+	const dmr_voice_source_t *src = ambeVoiceSource();
+	uint8_t frame[AMBE_FRAME_BYTES];
+
+	// The vocoder without options: nothing in force, nothing supported
+	CHECK(ambeVoiceEncodeOptionsSupported() == 0 && ambeVoiceEncodeOptions() == 0, "no options without hooks");
+
+	ambeVoiceInit(&audio, &opt_vocoder);
+	CHECK(ambeVoiceEncodeOptionsSupported() == AMBE2_OPTIONS, "supported");
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT, "defaults in force (%#x)", (unsigned)ambeVoiceEncodeOptions());
+	opt_sets = 0;
+	ncalls = 0;
+	int r0 = resets;
+	src->begin(src->ctx);
+	for (int i = 0; i < 5; i++)
+		block();
+	CHECK(resets == r0 + 1, "reset at the start of the transmission");
+	CHECK(opt_sets == 1 && opt_last_set == VOCODER_OPT_DEFAULT, "options given once (%u)", (unsigned)opt_sets);
+	CHECK(ncalls == 10, "two calls per frame (%d)", ncalls);
+	for (int i = 0; i < ncalls; i++)
+		CHECK(calls_flags[i] == 0x1840u, "call %d flags %#x", i, (unsigned)calls_flags[i]);
+	CHECK(opt_encode_flags() == 0x1840u, "the debug word");
+
+	// Noise reduction off mid-transmission: from the next frame on, both halves
+	ambeVoiceSetEncodeOptions(VOCODER_OPT_TONE_FRAMES);
+	CHECK(opt_sets == 1, "not applied outside the audio callback");
+	ncalls = 0;
+	block();
+	block();
+	CHECK(opt_sets == 2 && opt_last_set == VOCODER_OPT_TONE_FRAMES, "applied before the next frame");
+	CHECK(ncalls == 4, "calls %d", ncalls);
+	for (int i = 0; i < ncalls; i++)
+		CHECK(calls_flags[i] == 0x1800u, "call %d flags %#x", i, (unsigned)calls_flags[i]);
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_TONE_FRAMES, "in force");
+	src->end(src->ctx);
+	while (src->next(frame, src->ctx))
+		;
+
+	// A new transmission (vocoder reset) keeps them, and the same value isn't given again
+	ncalls = 0;
+	src->begin(src->ctx);
+	block();
+	CHECK(opt_sets == 2 && ncalls == 2 && calls_flags[0] == 0x1800u && calls_flags[1] == 0x1800u,
+	      "kept across the reset (%u, %#x)", (unsigned)opt_sets, (unsigned)calls_flags[0]);
+	src->end(src->ctx);
+	while (src->next(frame, src->ctx))
+		;
+
+	// AGC on: in force, both halves
+	ambeVoiceSetEncodeOptions(VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC);
+	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC), "AGC in force");
+	ncalls = 0;
+	src->begin(src->ctx);
+	block();
+	CHECK(ncalls == 2 && calls_flags[0] == 0x3840u && calls_flags[1] == 0x3840u, "AGC flags (%#x)",
+	      (unsigned)calls_flags[0]);
+	src->end(src->ctx);
+	while (src->next(frame, src->ctx))
+		;
+	// An option the vocoder doesn't take is not in force
+	ambeVoiceSetEncodeOptions(VOCODER_OPT_DEFAULT | 0x80u);
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT, "unknown option not in force");
+	ncalls = 0;
+	src->begin(src->ctx);
+	block();
+	CHECK(ncalls == 2 && calls_flags[0] == 0x1840u, "unknown option dropped (%#x)", (unsigned)calls_flags[0]);
+	src->end(src->ctx);
+	while (src->next(frame, src->ctx))
+		;
+	ambeVoiceSetEncodeOptions(VOCODER_OPT_DEFAULT);
+	ambeVoiceInit(&audio, &vocoder);
+}
+
 int main(void)
 {
 	ambeVoiceInit(&audio, &vocoder);
 	testRx();
 	testTx();
+	testMicStats();
+	testFlagsMap();
+	testEncodeOptions();
+	testRepeats();
 	ambeVoiceStop();
 	CHECK(stops == 1 && !speaker_on, "stop");
 	ambeVoiceSink()->begin(NULL, NULL);

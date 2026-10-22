@@ -30,7 +30,7 @@ static const char *const interval_names[] = { "Off", "1 min", "2 min", "5 min", 
 #define N_INTERVALS	(sizeof(intervals) / sizeof(intervals[0]))
 // aprs_path_t order; the text is aprs_path_text()'s, kept here so the page builds without APRS (the simulator)
 static const char *const path_names[APRS_PATH_COUNT] = { "None", "WIDE1-1", "WIDE1-1,WIDE2-1", "WIDE2-1", "WIDE2-2" };
-static const char *const via_names[] = { "Radio", "DMR", "Both" };
+static const char *const via_names[] = { "AFSK", "DMR", "Both" };
 static const char *const pos_names[] = { "Auto", "GPS", "Computer", "Fixed" };
 static const char *const region_names[APRS_REGION_COUNT] = { "N America", "Europe", "Australia", "New Zealand",
 							      "Japan", "China", "Custom" };

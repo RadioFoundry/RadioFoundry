@@ -68,6 +68,7 @@ tests for every feature, is `tools/bringup.py list --radio <id>`; recorded runs 
 | Channel editor: edit a channel, New channel from current settings, text entry | `CHANNEL_EDIT` | 4,656 | 4,252 | ● | ● | ● | Needs `CHANNEL_LIST`. Without it a channel's settings are read only. Measured 2026-10-17 |
 | Side key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 1,344 | — | ● | ● | ● |  |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 | ● | ● | ● |  |
+| Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | ● | ● | ● | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 | ● | ● | ● |  |
 | Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | ✕ | ✕ | ✕ | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one ODR drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
 
@@ -98,7 +99,7 @@ tests for every feature, is `tools/bringup.py list --radio <id>`; recorded runs 
 | Task stacks in the debug link view | `TASK_STACKS` | 536 | 560 | ● | ● | ● | Each task's least free stack, the `tasks` view section ([debuglink](spec/debuglink.md) 3.7) |
 | Open-firmware CPS protocol (qdmr) | `CPS_OPENFW` | 3,064 | 3,008 | ● | ● | ● |  |
 | Fast codeplug protocol (debug link CODEPLUG) | `CPS_FAST` | 3,732 | 3,948* | ● | ● | ● | Changed 4 KB blocks only, LZ4 both ways, staged commit ([cps-fast.md](spec/cps-fast.md)). DM-1701 figure with LTO (2026-10-18) |
-| Loader hand-over (debug link 0x1A) | `STUB_ENTRY` | 768* | — | ● | ● | ● | Updates and backups over the radio's own link without the bootloader key press: the web flasher and `stub/stubtool.py`. On by default wherever the debug link is; on the STM32 radios a RAM flash stub that also takes 8 KB of RAM ([stub-stm32f4.md](spec/stub-stm32f4.md)) (the DM-1701's RAM is 95 % used with it on) |
+| Loader hand-over (stub entry, command 0x1A) | `STUB_ENTRY` | 768* | — | ● | ● | ● | Updates and backups over the radio's own link without the bootloader key press: the web flasher and `stub/stubtool.py`. On by default on every radio, with or without the debug link ([stub-entry.md](spec/stub-entry.md)); on the STM32 radios a RAM flash stub that also takes 8 KB of RAM ([stub-stm32f4.md](spec/stub-stm32f4.md)) (the DM-1701's RAM is 95 % used with it on) |
 | Crash log | `CRASH_LOG` | 1,572 | 1,756 | ● | ● | ● | A fault, stack overflow, heap exhaustion or failed assertion keeps a record across the restart; the debug link shows it ([crash-log.md](spec/crash-log.md)) |
 | Hardware watchdog | `WATCHDOG` | 932 | 856 | ● | ● | ● | Fed by the idle task; a hang or a starved system resets the radio. Timeout about 5 s on the STM32 radios, 4 s on the HR_C7000 radios ([watchdog.md](spec/watchdog.md)) |
 | Fault trace on the host UART | `FAULT_TRACE` | — | — | ✕ | ✕ | ● | A CPU fault's registers in three framed lines before the restart, about 600 B ([crash-log.md](spec/crash-log.md) 2.3). The STM32 radios' host port is USB |

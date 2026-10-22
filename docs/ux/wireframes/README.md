@@ -32,4 +32,4 @@ The drawings are the design intent. What the firmware draws is in `../screens/<g
 
 `ODR_LAYOUT_SHOTS=DIR uiSim --layout` saves every screen it checked; `uiSim --ellipsis` lists every shortened text.
 
-Screens drawn in each file: Home idle (DMR and FM), RX, TX, incoming message banner and message view, quick settings, Find (contact search), caller actions, Hub, talk target picker.
+Screens drawn in each file: Home idle (DMR and FM), RX, TX, dual watch Home, incoming message banner and message view, quick settings, Find (contact search), caller actions, Hub, talk target picker.

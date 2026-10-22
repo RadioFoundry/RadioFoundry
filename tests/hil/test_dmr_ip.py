@@ -142,6 +142,7 @@ def _udp_until_heard(radio, sdr_bench, freq, cc, own, want_sap, what, tries=3):
 @pytest.mark.feature("dmr_udp_compress")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_udp_compressed_tx(radio, sdr_bench, pytestconfig, ip_settings):
     """A UDP datagram (50000 to 161, 40 octets) in auto mode: one unconfirmed SAP 3 packet with the 9 octet header
     (IPv4 identification, SAID / DAID 0, no port IDs, both ports in the extended headers), 6 blocks instead of 7."""
@@ -158,6 +159,7 @@ def test_udp_compressed_tx(radio, sdr_bench, pytestconfig, ip_settings):
 @pytest.mark.feature("dmr_udp_compress")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_udp_full_header_tx(radio, sdr_bench, pytestconfig, ip_settings):
     """The same datagram with compression off: SAP 4, the full IPv4 / UDP header (28 octets)."""
     freq, cc, own, _ = _setup(radio, pytestconfig)
@@ -170,6 +172,7 @@ def test_udp_full_header_tx(radio, sdr_bench, pytestconfig, ip_settings):
 @pytest.mark.feature("dmr_confirmed")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings):
     """Confirmed for the bench's ID, 2 tries: the C_HEAD (DPF 3, A set, F set, an N(S), FSN 1000) with every block
     (each with its serial number and a CRC-9 the bench's independent check accepts), no response, the whole packet
@@ -206,6 +209,7 @@ def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings):
 @pytest.mark.usb_switch
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_usb_network_udp_to_air(radio, sdr_bench, pytestconfig, ip_settings):
     """The real host path: the radio as a USB network adapter, a UDP datagram from this host to the bench's address
     (12.x.y.z) goes on air as a SAP 3 packet the bench decodes; then back to the serial port."""

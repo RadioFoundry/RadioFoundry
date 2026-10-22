@@ -47,8 +47,22 @@ typedef struct {
 	uint32_t rx_overflows;	// frames dropped, queue full
 	uint32_t rx_bit_errors;	// bits corrected by the FEC
 	uint32_t rx_peak;	// largest decoded sample (absolute) in the latest call that played: near 0 = silent output
+	// The checks a counter can't make: a modem that hands over the same stale voice bytes, or a stuck encoder, sends
+	// or plays the same frame again and again with every other counter clean
+	uint32_t rx_repeats;	// good frames whose parameter bits equal the call's previous good frame
+	uint32_t tx_repeats;	// encoded frames whose parameter bits equal the transmission's previous frame
+	uint32_t tx_mic_peak;	// largest mic sample (absolute) the board delivered in the latest transmission: 0 = no mic
 	uint32_t tx_frames;	// frames encoded
 	uint32_t tx_overflows;	// encoded frames dropped, queue full (the stack didn't pull)
+	// What the mic delivered in the latest transmission, block by block (20 ms), to tell speech from a cut or
+	// disconnected mic: a peak can't (one click or a stray byte makes it large). A block's level is the mean square of
+	// its sample-to-sample differences (a high pass: hum and rumble don't count) in 3 dB steps (10 log10, rounded down):
+	// 0 silent, 6 = 2 LSB rms, about 84 a full-scale 1 kHz sine. Speech moves 20 dB and more between syllables and
+	// pauses; an analog floor, a hum and a digital zero stay within a few dB
+	uint32_t tx_mic_level_db;	// the 90th percentile block's level (the loud parts), dB re 1 LSB
+	uint32_t tx_mic_spread_db;	// that minus the 10th percentile block's level, dB
+	uint32_t tx_mic_zc;		// the median block's zero crossings (of 160): speech 5-40, white noise about 80
+	uint32_t tx_mic_blocks;		// blocks counted
 } ambe_voice_stats_t;
 
 // audio and vocoder from the board; vocoder->present() false: frames are still queued and counted, but play silence
@@ -68,6 +82,17 @@ void ambeVoiceSetMixer(ambe_voice_mixer_t mixer);
 // board delivers it (the samples are scaled, with saturation, before the vocoder). Any task. Set through
 // radio_set_mic_gain (radio/mic_gain.h), which keeps it at 5 when the board applies the gain itself
 void ambeVoiceSetMicGain(uint8_t step);
+// Test signal for DMR transmissions (the debug link's RADIO op 33, RAM only): on, the encoder gets a generated tone
+// that changes pitch every 60 ms in place of the mic, so an over carries known, varying audio whatever the mic hears
+// (the HIL audio smoke test). Any task
+void ambeVoiceSetTestSignal(bool on);
+bool ambeVoiceTestSignal(void);
+// Encode options for DMR transmissions (VOCODER_OPT_*, default VOCODER_OPT_DEFAULT; Settings > Talk & listen > Mic
+// noise reduction). Handed to the vocoder in the audio callback before the next frame it encodes. Any task
+void ambeVoiceSetEncodeOptions(uint32_t opts);
+// The options in force (those set that the vocoder takes), and the ones the vocoder takes (0: none, or no vocoder)
+uint32_t ambeVoiceEncodeOptions(void);
+uint32_t ambeVoiceEncodeOptionsSupported(void);
 void ambeVoiceGetStats(ambe_voice_stats_t *out);
 // Zero the counters (the debug link's RESET_COUNTERS). Counters only: no state changes. From any task; an increment
 // racing the reset may survive it

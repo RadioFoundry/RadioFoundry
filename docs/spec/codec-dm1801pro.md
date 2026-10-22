@@ -12,7 +12,7 @@ a release.
 
 **Result.** The DM-1801 Pro's codec, its init routine and the wrappers that call it are the DM-32UV 049 build, with
 the data tables and the state blocks at different RAM addresses. ODR's DM-32UV hosting
-([codec-dm32.md](codec-dm32.md), `boards/dm32/vocoder_dm32.c`) therefore interfaces with it the same way. The changes
+([codec-dm32.md](codec-dm32.md), `platform/hrc7000/vocoder.c`) therefore interfaces with it the same way. The changes
 for this board are addresses. One thing in that interface was wrong: the encode flags word
 ([section 3](#3-how-the-codec-is-called) and [section 5](#5-cross-check-against-an-independent-build)).
 
@@ -78,7 +78,7 @@ are those of [codec-dm32.md](codec-dm32.md) C: E[0x172C] = 0x1840, E[0x173A] = 0
 7. decoder set (D, D[0x116A], D[0x116C])
 8. clear the state flags (halfwords and bytes around E + 0x1732..0x1736 and D + 0x1162..0x1168, and the bytes at E + 0x1728..0x19D6 and D + 0x1150..0x1498)
 
-`boards/dm32/vocoder_dm32.c` `reset()` makes the same calls with the same values (K).
+`platform/hrc7000/vocoder.c` `reset()` makes the same calls with the same values (K).
 
 ### Encode
 
@@ -93,7 +93,7 @@ are those of [codec-dm32.md](codec-dm32.md) C: E[0x172C] = 0x1840, E[0x173A] = 0
 | sp+8 | E[0x173A] |
 | sp+12 | E |
 
-This is the DM-32UV call ([codec-dm32.md](codec-dm32.md), calling convention) and what `encode()` in `vocoder_dm32.c` passes (K).
+This is the DM-32UV call ([codec-dm32.md](codec-dm32.md), calling convention) and what `encode()` in `platform/hrc7000/vocoder.c` passes (K).
 
 **The flags word (sp+0).** The wrapper has six encode calls in two patterns. Each pattern passes one value on every
 call; none passes 0x1840 first and 0x800 afterwards. Every call is followed by the XOR step and ECC.
@@ -108,14 +108,15 @@ E[0x172C] is 0x1840 after init, and the one routine that writes it again has no 
 outside the codec sets; which pattern DMR voice takes is **not traced**.
 
 The two values give different parameter bits ([section 5](#5-cross-check-against-an-independent-build)): over 234 frames
-of speech, 0x800 and 0x1840 differ in 174 frames (74%). Bit 0x1000 has no effect (0x840 equals 0x1840). Bits 0x40, 0x80,
+of speech, 0x800 and 0x1840 differ in 174 frames (74%). On speech bit 0x1000 has no effect (0x840 equals 0x1840): it is
+tone detection, which acts on a steady tone or tone pair ([codec-md380.md](codec-md380.md), "Encode flags"). Bits 0x40, 0x80,
 0x100, 0x200 and 0x800 are tested in the parameter stage; 0x800 only counts while E[0x138A] is not 0. Both patterns
 produce frames the decoder accepts.
 
-**What ODR's hosts do.** `boards/dm32/vocoder_dm32.c`, `boards/dm1701/vocoder_dm1701.c` and
-`boards/md380/vocoder_md380.c` pass 0x1840 on the first call after a reset and 0x800 on every later call. That
-sequence matches neither pattern. The first call has no measurable effect (the output over 234 frames equals passing
-0x800 on every call), so the hosts in practice run pattern A. Whether that is the pattern DMR voice uses is open.
+**What ODR's hosts do.** `platform/hrc7000/vocoder.c` (this radio and the DM-32UV), `boards/dm1701/vocoder_dm1701.c`
+and `boards/md380/vocoder_md380.c` pass one word on every call, from `drivers/vocoder/ambe2_flags.h`: 0x800, plus
+0x40 for noise reduction, 0x1000 for tone frames and 0x2000 for AGC. The default is 0x1840, pattern B's value
+([dmr-voice.md](dmr-voice.md) 6).
 
 Afterwards the wrapper XORs the bit buffer with a second buffer 0x90 bytes above it, then calls ECC (0x1893C) with
 r0 = r1 = the bit buffer, r2 = E[0x1738], r3 = the buffer minus 440 bytes. The XOR and the ECC step belong to the
@@ -146,7 +147,7 @@ the codec how damaged the frame was, and the codec can conceal damage itself.
 the DM-1801 Pro codec and an independent ARM build): bits 0 and 1 change nothing, so 0..3 decode like a good frame; any
 value with bit 2 or 3 set (4..0xF) makes the decoder repeat the previous frame, which is silence when there is none;
 0x4000 replaces the output with a steady noise at a fixed level (RMS about 1190); every other bit does nothing.
-`vocoder_dm32.c` passes 0 and does its own error correction and concealment in `core/dmr/ambe`. That is right for a
+`platform/hrc7000/vocoder.c` passes 0 and does its own error correction and concealment in `core/dmr/ambe`. That is right for a
 good frame, and 0 is also the status an error-free decode returns (see [codec-md380.md](codec-md380.md)). It gives the
 codec no damage information, so the repeat-previous-frame concealment (4 or 8) never runs and ODR conceals before the
 codec instead. Whether the two sound the same at the edge of coverage is a hardware question, not an interface error.
@@ -179,7 +180,7 @@ Measured on the radio: encode about 12.3 ms per 20 ms frame at the top priority,
 ## 5. Cross-check against an independent build
 
 The DM-1801 Pro codec was run on a host and compared with the MD-380-generation build of the same codec, run in an
-emulator from a running radio's RAM image. The host used the reset sequence of `vocoder_dm32.c` on state blocks at the
+emulator from a running radio's RAM image. The host used the reset sequence of `platform/hrc7000/vocoder.c` on state blocks at the
 addresses in section 1. Neither is part of this repository.
 
 | Check | Result |
@@ -192,13 +193,14 @@ addresses in section 1. Neither is part of this repository.
 
 What this settles:
 
-* The DM-1801 Pro codec is functionally the same codec as the MD-380 one, for decode with any flags and for encode
-  without bit 0x2000.
-* The reset sequence in section 3 and the argument values `vocoder_dm32.c` passes (r1 = E[0x1736], sp+8 = E[0x173A],
+* The DM-1801 Pro codec is functionally the same codec as the MD-380 one, for decode and encode with any flags. The
+  differences with bit 0x2000 set came from different values in the AGC parameter block (E+0x16A2..0x16B6), not from
+  different code ([codec-md380.md](codec-md380.md), "Encode flags").
+* The reset sequence in section 3 and the argument values `platform/hrc7000/vocoder.c` passes (r1 = E[0x1736], sp+8 = E[0x173A],
   decode r3 = D[0x1166], two 80-sample calls per frame) are right. They produced identical output to a radio that
   had been running.
 * The encoder delays its output by one frame: a tone that starts in input frame 10 first changes output frame 11.
-* The encode flags word is the one interface value that differs from what the hosts pass (section 3).
+* The hosts pass the encode flags word as the wrapper does: one value on every call (section 3).
 
 ## 6. Open
 
@@ -207,8 +209,6 @@ What this settles:
 - The return value of the error-correcting decode (0x182BC) on this build. The flags measurement above shows 0..3 are
   harmless and 4..0xF repeat the frame; the MD-380 build returns 0 good and 4 for an uncorrectable C0.
 - What the XOR step before ECC does with the second buffer.
-- Encode flags with bit 0x2000 set: the ARM build and the DM-1801 Pro build give different bits. The wrapper never sets
-  it, so it doesn't affect the interface, but the two builds are not identical on that path.
 - Whether this radio has the 046 HRVocoder variant of the codec in some firmware versions. The image is one version of
   the radio's firmware.
 - Audio quality and timing on hardware.
