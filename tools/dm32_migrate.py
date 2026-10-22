@@ -374,15 +374,16 @@ def prepare_image(sess, args):
     if "image" in sess.cache:
         return sess.cache["image"]
     fl = mod("serial_loader")
+    model = fl.MODELS["dm32"]	# this migration's radio (one tool per family until tools/migrate.py, follow-up F1)
     try:
-        raw, kind = fl.load(args.image)
-        notes = fl.check_image(raw)
+        raw, kind = fl.load(args.image, model)
+        notes = fl.check_image(raw, model)
     except fl.FlashError as e:
         raise MigrateError(str(e))
-    sess.say("   image %s (%s)" % (args.image, "BFUV32-V2 file, header stripped" if kind == "bfuv32" else "raw"))
+    sess.say("   image %s (%s)" % (args.image, "%s file, header stripped" % model.tag if kind == "vendor" else "raw"))
     for n in notes:
         sess.say("   " + n)
-    if not fl.has_codec_slot(raw):
+    if not fl.has_codec_slot(raw, model):
         if getattr(args, "codec_from", None):
             cd = mod("hrc7000_codec")
             with open(args.codec_from, "rb") as f:
@@ -432,7 +433,7 @@ def step_flash(sess, args):
     fl = mod("serial_loader")
     resolve_port(sess, args)
     sess.say("   %d blocks of 1 KB to 0x%08X; the bootloader itself (0x03000000..0x0300C000) is never written"
-             % (fl.blocks_needed(len(raw)), fl.APP_BASE))
+             % (fl.blocks_needed(len(raw)), fl.MODELS["dm32"].app_base))
     if sess.dry:
         sess.say("   [dry run] would wait for update mode and write the image")
         return True
@@ -445,7 +446,8 @@ def step_flash(sess, args):
     sp = None
     try:
         sp = fl.SerialPort(sess.port)
-        fl.Flasher(sp, log=sess.say, progress=fl.progress_bar).flash(raw, os.path.basename(args.image))
+        fl.Flasher(sp, log=sess.say, progress=fl.progress_bar, model=fl.MODELS["dm32"]).flash(raw,
+                                                                                    os.path.basename(args.image))
     except fl.FlashError as e:
         raise MigrateError("flashing failed: %s. The bootloader is never erased: enter update mode again and rerun "
                            "'flash'. Your codeplug backup is in %s" % (e, sess.workdir))
@@ -694,12 +696,12 @@ def cmd_package(sess, args):
     fl = mod("serial_loader")
     for img in args.image:
         with open(img, "rb") as f:
-            raw, _ = fl.unwrap(f.read())
+            raw, _ = fl.unwrap(f.read(), fl.MODELS["dm32"])
         try:
-            fl.check_image(raw)
+            fl.check_image(raw, fl.MODELS["dm32"])
         except fl.FlashError as e:
             raise MigrateError("%s: %s" % (img, e))
-        if not fl.has_codec_slot(raw):
+        if not fl.has_codec_slot(raw, fl.MODELS["dm32"]):
             sess.say("   ! %s has no codec slot: the tester gets FM only" % img)
     sess.say("package %s:" % out)
     for src, dst in files.items():

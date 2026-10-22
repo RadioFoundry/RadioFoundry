@@ -53,7 +53,8 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
 - Read the spec for the subsystem first, and its section of [docs/spec/gotchas.md](docs/spec/gotchas.md).
 - New behavior gets a host test. A bug fix gets the test that would have caught it. If a HIL test can check it on
   the radio, add one, opt-in as the README describes. Anything a HIL test needs to see goes in a debug link view key
-  (`core/debuglink/debuglink_view*.c`).
+  (`core/debuglink/debuglink_view*.c`). HIL skips use `odr_hil.skip(kind, reason)`, a new feature gets an entry
+  in `tests/hil/features.toml`, and its HIL tests a `@pytest.mark.feature("<id>")` marker.
 - A behavior change updates its spec in `docs/spec/`. If users see it, it also updates `docs/user/`. Run
   `python3 tools/check_doc_links.py` after editing docs.
 - A UI change regenerates the gallery and commits only the PNGs it meant to change.

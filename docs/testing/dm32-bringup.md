@@ -8,6 +8,11 @@ knob in the source that the likely failure points at.
 
 Hardware facts: `docs/spec/hardware-dm32.md`, `docs/spec/modem-hrc7000.md`, `docs/spec/codec-dm32.md`.
 
+The feature checklist, with every feature's required HIL tests and the last recorded result, is
+`tools/bringup.py list --radio dm32`. `tools/bringup.py run --radio dm32` records a run
+([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)). This page keeps the hardware steps and what to
+change when one fails.
+
 ## 0. Before anything
 
 1. **Back up both flashes** with the stock tools (hardware-dm32.md 13.4): the 1 MB program flash and the 16 MB data
@@ -20,18 +25,18 @@ Hardware facts: `docs/spec/hardware-dm32.md`, `docs/spec/modem-hrc7000.md`, `doc
 
    ```
    make BOARD=dm32                                   # csky-elf GCC: tools/build-csky-toolchain.sh
-   tools/dm32_pack.py build/dm32/odr_dm32.bin build/dm32/odr_dm32_BFUV32.bin
+   tools/serial_loader.py --model dm32 build/dm32/odr_dm32.bin --wrap build/dm32/odr_dm32_BFUV32.bin
    ```
 
    For DMR voice, merge your own stock codec first (never commit or share the result):
 
    ```
    tools/hrc7000_codec.py --stock DM32.01.01.049.bin    # writes build/dm32/odr_dm32_codec.bin
-   tools/dm32_pack.py build/dm32/odr_dm32_codec.bin build/dm32/odr_dm32_codec_BFUV32.bin
+   tools/serial_loader.py --model dm32 build/dm32/odr_dm32_codec.bin --wrap build/dm32/odr_dm32_codec_BFUV32.bin
    ```
 
-4. Load the image in update mode: `tools/serial_loader.py build/dm32/odr_dm32_codec.bin` (a raw image or the
-   `_BFUV32.bin` file, over the programming cable; `--stock DM32.01.01.049.bin` goes back), or the Baofeng updater
+4. Load the image in update mode: `tools/serial_loader.py --model dm32 build/dm32/odr_dm32_codec.bin` (a raw
+   image, or the `_BFUV32.bin` file without `--model`, over the programming cable; `--stock DM32.01.01.049.bin` goes back), or the Baofeng updater
    with the `_BFUV32.bin` file. To keep the stock codeplug and get it onto ODR, run `tools/dm32_migrate.py all
    --image build/dm32/odr_dm32_codec.bin` instead: it backs the codeplug up with qdmr, flashes, and writes it back
    once ODR runs ([dm32-migration.md](../spec/dm32-migration.md), users:
@@ -59,7 +64,7 @@ programming cable (CH340 or FTDI).
 tools/odr_debug.py --port /dev/cu.usbserial-XXXX version
 tools/odr_debug.py --port /dev/cu.usbserial-XXXX diag
 tools/odr_debug.py --port /dev/cu.usbserial-XXXX screenshot -o /tmp/dm32.png
-python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "dm32 or boot or ui"
+python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "health or boot or ui"
 ```
 
 | Look for | Proves | If not |

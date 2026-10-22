@@ -9,6 +9,8 @@ maker = "TYT"
 model = "MD-380"
 also = ["TYT MD-390", "Retevis RT3"]
 kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 5
 
 [docs]
 hardware = "docs/spec/hardware-md380.md"
@@ -24,14 +26,16 @@ display = "color, 160 × 128"
 gallery = "160x128"
 
 [status]
-level = "testing"
-summary = "Fully operational on a UHF radio¹. FM with CTCSS both ways; DMR voice and SMS in simplex and through a repeater or duplex hotspot, on either slot; codeplug and ID database programming (CPS, web editor). The codec comes from the stock D2.32 file ([codec-md380](docs/spec/codec-md380.md)), kept in flash sectors the application never uses, so an update keeps it. Still open: DCS and the tone deviation, the VHF image (untested), FM TX tones and APRS receive ([bring-up checklist](docs/testing/md380-bringup.md))"
-release = "testing"
+level = "supported"
+summary = """\
+FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug \
+and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the VHF image."""
+release = "stable"
 
-# One band per radio, a build choice (board.mk MD380_BAND). The first value is the default build; ci and the release
+# One band per radio, a build choice (board.mk BAND). The first value is the default build; ci and the release
 # build every other one too. board_name: what the radio reports as board= on the debug link
 [[build_options]]
-name = "MD380_BAND"
+name = "BAND"
 title = "Band"
 help = "The MD-380 comes in a UHF and a VHF version; the label under the battery and the frequencies the radio covers tell which."
 values = [
@@ -66,10 +70,11 @@ key_prefix = "2EDF40B5"
 # The codec where the merge puts it (docs/spec/codec-placement.md): the main table window at its stock address in
 # sector 8, the small ones in sectors 10 and 11, the code moved to the start of sector 11 and the descriptor. The
 # application has sectors 3-7, so an update leaves the codec sectors alone. Stock firmware keeps the code in sectors 6
-# and 7, so no stock version leaves it in place and odrflash merges it from the stock file
+# and 7, so no stock version leaves it in place and odrflash merges it from the stock file. stock lists the SHA-256
+# of each stock file odrflash merges the codec from (tools/odrflash/odrflash/stockfw.py PROFILES)
 [codec]
 tool = "codec_extract"
-stock = "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
+stock = ["e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"]
 
 # How the site draws the radio
 [frame]
@@ -77,3 +82,8 @@ shape = "handheld"
 body = "#1f2124"
 accent = "#3d7bd9"
 lens = [30, 30]
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them
+[cps]
+radio_types = [7]

@@ -261,7 +261,7 @@ class BootloaderRoute(unittest.TestCase):
         self.assertIn("step 1", str(e.exception))
 
     def test_a_dm32_loader_stops_a_dm1801pro_flash(self):
-        fake = self.df.FakeBootloader()					# answers BFUV32-V2
+        fake = self.df.FakeBootloader(model=self.df.MODELS["dm32"])	# another radio's loader ID
         with self.fast, self.assertRaises(sf.SerialError) as e:
             sf.flash_bootloader("/dev/fake", app_image(3000), B, log=lambda m: None, opener=lambda dev: fake)
         self.assertIn("step 3", str(e.exception))

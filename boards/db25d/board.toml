@@ -10,6 +10,8 @@ maker = "Radioddity"
 model = "DB25-D PRO"
 also = ["Kydera CDR-300UV"]
 kind = "mobile"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 4
 # Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
 # build option value's board_name), and the id always counts
 debuglink_aliases = ["DB25-D PRO"]
@@ -25,9 +27,11 @@ display = "1.77\" color, 160 × 128"
 gallery = "160x128"
 
 [status]
-level = "bring-up"
-summary = "Bring-up on a radio: FM receive and transmit, display, keys, host link, settings storage, the open-firmware CPS and volume work. DMR voice receive and transmit checked on the SDR bench; the hotspot, the DMR VFO and the PPP network services work on the radio ([hardware-db25d](docs/spec/hardware-db25d.md) 9). The older DB25-D batches (FD6818) and the Retevis RT73 aren't covered yet"
-release = "testing"
+level = "supported"
+summary = """\
+FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings \
+storage work on the radio. Open: the older FD6818 batches and the Retevis RT73."""
+release = "stable"
 
 # The vendor IAP loader (0x03000000..0x0300BFFF) is never written. ODR's first stage fills the sector at 0x0300C000
 # (board.mk BOOT_*), the application follows it, the codec slot is the DM-32UV's (db25d_dmr.ld). The web flasher (IAP
@@ -35,7 +39,7 @@ release = "testing"
 [flash]
 family = "serial-iap"
 keep_codec = false
-stock_versions = []
+stock_versions = ["909E.DBB.EARSAB.018", "909E.DBB.EARSAB.020"]
 backup = { stock = "full", odr = "full", spi_size = 0 }
 
 [flash.bootloader]
@@ -47,18 +51,22 @@ steps = [
 # The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the stub holds the power latch (pins.h:
 # PTB13 latch, PTB12 power key, hardware-db25d.md 3.3, the same pins under ODR, its first stage and the stock firmware);
 # 2 MB of program flash (Boya, JEDEC 68 40 15).
-# stock_console: the stock firmware answers a debug console the web flasher reads before ODR is installed
+# stock_console: the stock firmware answers a debug console (USMART) the web flasher loads the stub through before
+# ODR is installed (stock_versions: the builds it knows). read_rate: bytes a second of a program flash read
+# through the stub (2 MB in about 45 s on the radio, 2026-10-17: blank sectors and LZ4 beat the 9 KB/s wire)
 [flash.stub]
 id = 3
 hold_power = true
 progmem = 0x200000
 tested = false
-stock_console = true
+stock_console = "usmart"
+read_rate = 46000
 
 # The codec slot and windows come from db25d_dmr.ld (__codec_*, the script CONFIG_DMR selects)
 [codec]
 tool = "hrc7000_codec"
 profile = "db25d-018"
+stock_version = "018 (2024-05-09 or later)"
 sources = ["DB25-D PRO 909E.Dx.EARSAB.018 stock files", "a program flash read of the radio"]
 
 # How the site draws the radio
@@ -67,3 +75,8 @@ shape = "mobile"
 body = "#202226"
 accent = "#c8372d"
 lens = [20, 20]
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them (6, the shim's default)
+[cps]
+radio_types = [6]

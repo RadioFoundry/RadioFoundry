@@ -185,7 +185,7 @@ tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board 
 |---|---|
 | `registry` | Every `board.toml` and `platform.toml` is well formed and agrees with `board.mk`, the linker scripts and `board_t`; `tools/odrflash/odrflash/registry.json` is current; the loader's self-test (`tools/boards.py`) |
 | `host` | `make -C tests/host`, with each board's own tests (`boards/<b>/tests/host.mk`) |
-| `python` | The Python tools, the HIL test collection, doc links, the glossary, the web site build and the flasher's tests |
+| `python` | Every Python file parses, the HIL test collection, odrflash's tests, every tool's `--self-test` (found by searching `tools/` and `stub/`, so a new tool needs no ci.sh change), doc links, the glossary, the web site build and the flasher's tests |
 | `firmware` | Every board whose compiler is installed: the default build, each build option value (`board.toml` `[[build_options]]`, such as a band), each `[ci] extra` configuration, the feature matrix, and the flash stubs of each built platform (`platform.toml` `stubs`) |
 | `licenses` | `tools/license_grep.sh` and `reuse lint` |
 | `similarity` | `tools/similarity_scan.py`, only with `ODR_SIMILARITY_REFS` set |
@@ -318,7 +318,8 @@ On a private repository the hosted runners use the account's Actions minutes: a 
 
 ## The csky-elf image
 
-The C-SKY jobs use the image named by the repository variable `ODR_CSKY_IMAGE`, default `odr/csky-gcc14:latest`:
+The C-SKY jobs use the image named by the repository variable `ODR_CSKY_IMAGE`, default `odr/csky-gcc14:latest`
+(`platform/hrc7000/platform.toml` `[toolchain] image`, which `run.sh` and `push.sh` read):
 the tag `tools/docker/csky-toolchain/build.sh` gives its image on the Gitea runner (`odr/csky-gcc14:20261011b`,
 549 MB). `run.sh` uses an image already on the Docker host, and pulls one only when the name starts with a
 registry host (`ghcr.io/...`, `docker.io/...`), never a bare name from Docker Hub. When the image can't be had the
@@ -337,7 +338,7 @@ ssh <runner-vm> 'docker logout ghcr.io'
 gh auth refresh -h github.com -r write:packages          # optional: drop the scope again
 ```
 
-`push.sh REPO [TAG...]` tags the local image (`SRC`, default `odr/csky-gcc14:latest`) as `REPO:<its dated tag>`
+`push.sh REPO [TAG...]` tags the local image (`SRC`, default the platform's `image`) as `REPO:<its dated tag>`
 and `REPO:latest`, pushes both and prints the digest. It never handles a credential: log in before and out after.
 The same script pushes to Docker Hub (`push.sh docker.io/<user>/odr-csky-gcc14` after `docker login`).
 
@@ -377,7 +378,7 @@ The runner's environment (the LaunchAgent's, or a `.env` file next to `gitea-run
 | `ODR_SDR_BENCH_HOST` | the SDR bench's SSH host or alias (default `sdr-bench`); passwordless SSH from the runner's user |
 | `ODR_PORT` | the radio's serial port when several are present |
 | `ODR_HIL_AMBE` | the speech recording for `test_dmr_voice` (outside the repository) |
-| `ODR_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.odr-radio.lock`); the job holds it with `lockf` for the whole run |
+| `ODR_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.odr-radio.lock`); the job holds it with `lockf` for the whole run. `tools/bringup.py run` takes the same file, with `{port}` in it replaced by the radio's port; without the variable it locks `~/.odr-radio-<port>.lock`, so a bench with two radios runs a bring-up on each |
 
 Run it from Actions, HIL, Run workflow, with the inputs that map to the pytest flags: `rf` (`--allow-rf
 --allow-service-stop`), `usb_switch`, `codeplug_write`, `reboot`, a `-k` selection and extra options. Without any

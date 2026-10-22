@@ -42,7 +42,7 @@ export function randomBytes(r, n) {
 // the stock firmware keeps it. Where the profile moves the code, the synthetic codec gets what stockfw.py's
 // build_synthetic_stock plants (a self reference, an island's call into the code) and a codec map for them.
 const SYN_SELF_REF = 0x40, SYN_BL = 0x110;
-export async function simulation(fbReal, boardId = "dm1701", seed = 1701) {
+export async function simulation(fbReal, boardId, seed = 1701) {
 	const fb = structuredClone(fbReal);
 	const board = fb.boards[boardId];
 	const r = rng(seed);

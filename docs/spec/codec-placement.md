@@ -103,6 +103,11 @@ The codec runs in place from internal flash, so it moves at the merge, and the f
 Entry points stay in the firmware, as offsets from the code start. Every window must lie inside the flash the board
 leaves to the codec (DM-1701 sectors 10 and 11, MD-380 and MD-9600 sectors 8-11).
 
+A board can take its codec from more than one stock file (`[codec] stock` in `board.toml` lists them). The files hold
+the same codec, but each may put its tables at other addresses. The board's codec windows are then the union of every
+file's layout: the image must stay out of all of them, and keeping the codec keeps all of them. A merge writes and
+checks the layout of the file it merges, never the union.
+
 First step, no table addresses rewritten:
 
 | Radio | Code moves to | Tables | Free for ODR |

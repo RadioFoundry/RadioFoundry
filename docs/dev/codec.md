@@ -50,5 +50,9 @@ A merge tool must:
 - write the merged image outside tracked files (default `build/`);
 - leave the flashing to the radio's flash tool.
 
+The board's `board.toml` `[codec]` table names the tool and the route: `stock`, the SHA-256 of each stock file the
+codec is merged from, or `profile` for a codec in a linker slot ([The board registry](board-registry.md#codec)).
+`codecs/` and `tools/codec_auto.py` find the tool there.
+
 Host tests of the voice path (`tests/host/ambeVoiceTest.c`) use vectors recorded from the stock codec's FEC, not the
 codec itself.

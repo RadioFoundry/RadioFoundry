@@ -18,7 +18,7 @@ a stock file keeps the codec). The recipe, for the DM-32UV from docs/spec/codec-
 
 The codec is DVSI's and Baofeng's, not ours: it is never stored in this repository or in a release. This tool reads
 your stock file and writes the merged image to a file you choose (by default next to the built image, in build/, which
-git ignores). Wrap the result for the Baofeng updater with tools/dm32_pack.py.
+git ignores). Wrap the result for the vendor's updater with tools/serial_loader.py --wrap.
 """
 import argparse
 import hashlib
@@ -43,12 +43,10 @@ CODEC_SIG = (0x152514D8, 0x74C776CD)
 # slot in program flash, the codec window at the top of SRAM (the slot's code runs at its start; sized for the largest
 # code among the board's maps), the modem SRAM table window (docs/spec/codec-placement.md), and what the web flasher
 # needs beyond the codec (site/odrsite/repo.py c7000_flash): the program flash size, whether the SPI0 chip select the
-# data flash sits on has one (not on a radio with the SPI NAND there), and whether the stock firmware answers a debug
-# console the page reads before ODR is installed (stock_console). The image starts at app_base.
+# data flash sits on has one (not on a radio with the SPI NAND there). The image starts at app_base.
 BOARDS = {b.id: {"slot": b.codec_slot, "run": b.codec_run, "tables": b.codec_tables, "app_base": b.app_base,
                  "progmem_size": b.stub["progmem"] if b.stub else 0x100000,
-                 "data_flash": not (b.stub and b.stub["nand"]),
-                 "stock_console": bool(b.stub and b.stub["stock_console"])}
+                 "data_flash": not (b.stub and b.stub["nand"])}
           for b in boards.BOARDS.values() if b.codec_tool == "hrc7000_codec"}
 PROGMEM_BASE = 0x03000000   # a program flash dump starts here
 
@@ -233,7 +231,7 @@ examples:
   %(prog)s --stock DM32.01.01.049.bin --image build/dm32/odr_dm32.bin -o build/dm32/odr_dm32_codec.bin
   %(prog)s --self-test
 
-then:  tools/dm32_pack.py build/dm32/odr_dm32_codec.bin build/dm32/odr_dm32_codec_BFUV32.bin
+then:  tools/serial_loader.py --model dm32 build/dm32/odr_dm32_codec.bin --wrap build/dm32/odr_dm32_codec_BFUV32.bin
        and load that file with the Baofeng updater (docs/testing/dm32-bringup.md)
 """
 

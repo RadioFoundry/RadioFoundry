@@ -9,6 +9,8 @@ maker = "Baofeng"
 model = "DM-32UV"
 also = []
 kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 3
 # Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
 # build option value's board_name), and the id always counts
 debuglink_aliases = ["DM-32"]
@@ -27,9 +29,11 @@ display = "color, 240 × 320"
 gallery = "240x320i10x5"
 
 [status]
-level = "bring-up"
-summary = "Runs on a radio. FM and DMR voice receive and transmit, CTCSS/DCS, APRS receive and transmit and GPS data checked, most of it on the SDR bench. Each split duplex half passes on air alone. Still open: FM transmit deviation at 12.5 kHz, an outdoor GPS fix, and the host link after a warm restart from the boot stub ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core but not wired up on this radio yet ([airband-and-broadcast](docs/spec/airband-and-broadcast.md))"
-release = "testing"
+level = "supported"
+summary = """\
+FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and each split duplex half work on air. \
+Open: FM deviation at 12.5 kHz and an outdoor GPS fix."""
+release = "stable"
 
 # The Baofeng serial updater erases the whole application area before it writes (hardware-dm32.md 13.2 step 7), so
 # the codec can't be kept across an update: every flash merges it again. The platform's two "sectors", the application
@@ -75,3 +79,17 @@ shape = "handheld-tall"
 body = "#22252a"
 accent = "#e0a526"
 lens = [24, 34]
+
+
+# What the HIL health checks expect of this radio (tests/hil/test_health.py; a key left out skips its check):
+# display (VERSION display=), features (VERSION features the build must have), no_features (ones it must not),
+# flash_jedec (accepted data flash JEDEC ids), calibration (the diagnostics show the factory calibration), battery_mv
+# ([low, high] a sane reading lies in), codec (accepted stock codec versions)
+[hil]
+display = "240x320x4"
+features = ["HOSTLINK", "DEBUGLINK"]
+no_features = ["USB"]
+flash_jedec = ["C84018", "852018"]
+calibration = true
+battery_mv = [5500, 8800]
+codec = ["049", "046"]

@@ -33,8 +33,8 @@ static void ccm_zero(void)
 }
 __attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
 
-// One band per radio (hardware-md380.md 5.1), chosen at build time (board.mk MD380_BAND)
-#if MD380_VHF
+// One band per radio (hardware-md380.md 5.1), chosen at build time (board.mk BAND)
+#if ODR_BAND_VHF
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 };

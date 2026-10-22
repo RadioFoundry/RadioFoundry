@@ -364,7 +364,7 @@ flash 0x0300C000, whose first words match this radio's (K for the DM-32UV files)
 | 0x0FD | ASCII `END` |
 | 0x100 | the raw application, linked for 0x0300C000, at most 0xF4000 bytes. No checksum, no length field |
 
-Such a file can be made from an ODR image the way `tools/dm32_pack.py` makes a DM-32UV one, and `tools/serial_loader.py
+Such a file can be made from an ODR image with `tools/serial_loader.py --model dm1801pro IMAGE --wrap FILE`, and `tools/serial_loader.py
 --model dm1801pro` takes it and strips the header. Whether the stock updater checks anything more is not known (?).
 `tools/serial_loader.py --model dm1801pro` writes a raw image through this protocol: about ten flashes on 2026-10-15, no
 refused block, erase about 12.6 s (R). The loader at 0x1000 is never written. The stock application is 0xB3780 bytes

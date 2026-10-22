@@ -12,7 +12,7 @@ make BOARD=dm1701 CONFIG_VFO=n           # programmed channels only
 make BOARD=dm1701 CONFIG_DISPLAY_INSET=3 # smaller screen margins
 make BOARD=dm32                          # DM-32UV (csky-elf toolchain: tools/build-csky-toolchain.sh)
 make BOARD=md380                         # MD-380 / MD-390 / RT3, UHF
-make BOARD=md380 MD380_BAND=vhf          # the VHF radios (one band per radio, one image per band)
+make BOARD=md380 BAND=vhf                # the VHF radios (one band per radio, one image per band): build/md380-vhf
 ```
 
 Each switch reaches C as `CONFIG_<NAME>` = 0 or 1, always defined: test it with `#if CONFIG_X`, never `#ifdef`.
@@ -142,7 +142,7 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 
 | Variable | Board | Meaning |
 |---|---|---|
-| `MD380_BAND` | md380 | `uhf` (default, 400-480 MHz) or `vhf` (136-174 MHz): the band table, the frequency plan and the board name ("MD-380 VHF") |
+| `BAND` | md380 | A build option (`board.toml` `[[build_options]]`, `board.mk` `BUILD_OPTIONS`): `uhf` (default, 400-480 MHz) or `vhf` (136-174 MHz), the band table, the frequency plan and the board name ("MD-380 VHF"). Given on the command line, it adds its value to the build directory (`build/md380-vhf`) |
 | `MD380_DEFS` | md380 | extra defines for the bench (`docs/testing/md380-bringup.md`): `-DMD380_PANEL_TYPE=n` and `-DMD380_PANEL_MADCTL_XOR=0xNN` (display controller and orientation), `-DMD380_CH_ACTIVE_HIGH=1` (channel switch polarity), `-DMD380_BATT_COUNTS_X10=n` (battery divider), `-DMD380_KEEP_SWD` (leave PA13 / PA14 to the debugger; the microphone is then unpowered) |
 | `LTO` | 0 (MD-380, DM-1701: 1) | link time optimization (`-flto=auto` at compile and link): about 17 KB smaller on the DM-1701 (20 KB with `LTO_3P=1`). The DM-1701 and MD-380 defaults needed it while their application areas were 336 KB and 275 KB; since the codec moved ([codec-placement.md](spec/codec-placement.md)) they have 720 KB and 464 KB, and it stays on for the smaller image. The DM-32 (csky) doesn't use it |
 | `LTO_3P` | 0 (MD-380: 1) | with `LTO=1`, the third-party code too (HAL, CMSIS, FreeRTOS, TinyUSB): about 3 KB more. FreeRTOS marks what its port's assembly reaches `portDONT_DISCARD`; the vectors are referenced from the assembly start-up. `LTO_EXCLUDE` lists files kept out (file-scope assembly: `platform/stm32f4/codec_call.c`) |
@@ -153,7 +153,7 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 | `CONFIG_MD9600_DMR_TX` | md9600 | `n` (default) or `y`: the HR_C6000's per-burst RF keying for DMR transmit. Still refused at run time until enabled (`docs/spec/hardware-md9600.md` 19.1) |
 | `TCP_CONNS` | dm32 | TCP connections in all states (`core/net/tcp.h`, 4 elsewhere): 3 by default on the DM-32UV, about 1.5 KB RAM each across TCP, HTTP and rigctld |
 | `MAXIMAL_VARS` | DM-1701: `LTO=1` | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
-| `BOARD_UNSUPPORTED` | DM-1701: `FONT_XL`; MD-380, DM-32: see "Board defaults" | set in a board's `config.mk`: switches the radio's hardware code doesn't cover; the maximal build leaves them off (`make print-unsupported`) |
+| `BOARD_UNSUPPORTED` | DM-1701: `FONT_XL`; MD-380, DM-32: see "Board defaults" | set in a board's `config.mk`, one switch a line with the reason in its comment: switches the radio's hardware code doesn't cover; the maximal build leaves them off (`make print-unsupported`) |
 | `BOARD_REQUIRED` | DB25-D: `FM` | set in a board's `config.mk`: switches the board can't build without; ci.sh builds no `no-` configuration for them (`make print-required`) |
 | `MAXIMAL_SKIP` | DM-1701: `NET_PPP APRS_IGATE`; MD-380: `NET_PPP NAND_STORAGE` | set in a board's `config.mk`: switches that work on the radio but that it doesn't need, which the maximal build leaves off too (`make print-maximal-skip`). `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); the DM-1701's `audio-probe` build covers it |
 

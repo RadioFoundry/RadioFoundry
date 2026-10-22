@@ -57,6 +57,95 @@ def placed():
     return prof, stockfw.place(prof, [(prof["code"][0], code), (prof["tables"][0], tables)])
 
 
+class NoDefaultBoard(unittest.TestCase):
+    """Nothing given names the radio: odrflash asks on a terminal and refuses otherwise, never assumes one."""
+
+    def test_refuses_without_a_terminal(self):
+        with mock.patch("sys.stdin.isatty", return_value=False):
+            with self.assertRaises(cli.UsageError) as e:
+                cli.pick_board(None, "download")
+        for b in boards.BOARDS:
+            self.assertIn(b, str(e.exception))
+
+    def test_asks_on_a_terminal(self):
+        ids = sorted(boards.BOARDS)
+        with mock.patch("sys.stdin.isatty", return_value=True), mock.patch("builtins.input", return_value="2"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.pick_board(None, "download").id, boards.by()[1].id)
+        self.assertEqual(cli.pick_board(ids[0], "download").id, ids[0])
+
+    def test_one_candidate_needs_no_question(self):
+        b = boards.by()[0]
+        self.assertIs(cli.pick_board(None, "x", [b]), b)
+
+    def test_the_stock_file_names_the_board(self):
+        stock, profiles, _, _ = synthetic_stock()
+        prof = list(profiles.values())[0]
+        with mock.patch.object(stockfw, "PROFILES", profiles):
+            self.assertEqual(cli.stock_board(stock, None).id, prof["board"])
+            other = next(b for b in boards.BOARDS if b != prof["board"])
+            with self.assertRaises(cli.UsageError):
+                cli.stock_board(stock, other)
+
+
+class BuildOptions(unittest.TestCase):
+    """Hardware build options (board.toml [[build_options]]): the image names, the radio's board name, mismatches."""
+
+    def setUp(self):
+        self.b = next((b for b in boards.BOARDS.values() if b.build_options), None)
+        if self.b is None:
+            self.skipTest("no board has build options")
+        self.o = self.b.build_options[0]
+        self.default, self.other = self.o["values"][0], self.o["values"][1]
+
+    def args(self, *opts):
+        return type("A", (), {"option": list(opts)})()
+
+    def test_image_id_names_only_non_default_values(self):
+        self.assertEqual(self.b.image_id({}), self.b.id)
+        self.assertEqual(self.b.image_id({self.o["name"]: self.default["id"]}), self.b.id)
+        self.assertEqual(self.b.image_id({self.o["name"]: self.other["id"]}), self.b.id + "-" + self.other["id"])
+
+    def test_file_names(self):
+        """The Makefile's names (BUILD, TARGET) and release.py's, from odrflash/names.py"""
+        oth = {self.o["name"]: self.other["id"]}
+        sfx = "-" + self.other["id"]
+        self.assertEqual(self.b.build_image({}), "build/%s/odr_%s.bin" % (self.b.id, self.b.id))
+        self.assertEqual(self.b.build_image(oth, "amateur"), "build/%s-amateur%s/odr_%s%s.bin"
+                         % (self.b.id, sfx, self.b.id, sfx))
+        self.assertEqual(self.b.release_id(oth, "full"), self.b.id + sfx)
+        self.assertEqual(mf.image_name(self.b.release_id(oth, "amateur"), "v1"), "odr-%s-amateur%s-v1.bin" % (self.b.id, sfx))
+        db = next((b for b in boards.BOARDS.values() if b.first_stage), None)
+        if db:
+            self.assertEqual(db.build_image({}), "build/%s/odr_%s_install.bin" % (db.id, db.id))
+
+    def test_the_board_name_gives_the_value(self):
+        probe = {"board": self.other["board_name"]}
+        self.assertEqual(cli.resolve_options(self.args(), self.b, probe), {self.o["name"]: self.other["id"]})
+        self.assertEqual(self.b.options_for_name(self.b.id), {})
+        self.assertIsNone(self.b.options_for_name("no such radio"))
+
+    def test_option_and_radio_disagree(self):
+        probe = {"board": self.other["board_name"]}
+        with self.assertRaises(cli.UsageError):
+            cli.resolve_options(self.args("%s=%s" % (self.o["name"], self.default["id"])), self.b, probe)
+
+    def test_unknown_value_refused(self):
+        with self.assertRaises(cli.UsageError):
+            cli.resolve_options(self.args("%s=nope" % self.o["name"]), self.b, None)
+
+    def test_release_needs_every_value(self):
+        with mock.patch("sys.stdin.isatty", return_value=False), self.assertRaises(cli.UsageError) as e:
+            cli.resolve_options(self.args(), self.b, None, need_all=True)
+        self.assertIn(self.o["name"], str(e.exception))
+
+    def test_an_image_for_other_hardware_is_refused(self):
+        want = {self.o["name"]: self.other["id"]}
+        cli.check_options(self.b, {"build_options": dict(want)}, want)
+        with self.assertRaises(cli.UsageError):
+            cli.check_options(self.b, {}, want)		# no build_options: the default build
+
+
 class StockPlacement(unittest.TestCase):
     """The registry's stock-file boards ([codec] stock): tools/boards.py leaves their codec windows to stockfw, so the
     checks it makes for a linker codec slot are made here."""
@@ -65,12 +154,61 @@ class StockPlacement(unittest.TestCase):
         stock = [b for b in boards.BOARDS.values() if b.codec_stock]
         self.assertTrue(stock)
         for b in stock:
-            prof = stockfw.PROFILES[b.codec_stock]
-            self.assertEqual(prof["board"], b.id)
-            self.assertEqual(prof["key_sha256"], b.key_sha256, "%s: the DFU key is the stock file's" % b.id)
+            for h in b.codec_stock:
+                prof = stockfw.PROFILES[h]
+                self.assertEqual(prof["board"], b.id)
+                self.assertEqual(prof["codec_profile"], b.codec.id, "%s: every stock file holds the board's codec" % b.id)
+                self.assertEqual(prof["key_sha256"], b.key_sha256, "%s: the DFU key is the stock file's" % b.id)
             for a, n in b.codec.windows:
                 self.assertTrue(b.app_region[1] <= a and a + n <= b.flash_end,
                                 "%s: codec window 0x%08X+0x%X outside the flash the linker keeps free" % (b.id, a, n))
+
+
+class TwoStockFiles(unittest.TestCase):
+    """A board whose codec comes from either of two stock files ([codec] stock lists both): the same codec, its tables
+    at different addresses. The board's windows are the union of both layouts; each merge plans against its own."""
+
+    A = {"name": "A.bin", "board": "dm1701", "codec_profile": "dm1701-two", "key_sha256": "",
+         "code": (0x080E0000, 0x1000, "0" * 64), "tables": (0x080E4000, 0x2000, "1" * 64)}
+    B = {"name": "B.bin", "board": "dm1701", "codec_profile": "dm1701-two", "key_sha256": "",
+         "code": (0x080E0000, 0x1000, "2" * 64), "tables": (0x080C0000, 0x2000, "3" * 64)}
+
+    def board(self, profiles):
+        e = json.load(open(os.path.join(os.path.dirname(boards.__file__), "registry.json")))["boards"]["dm1701"]
+        e = dict(e, codec_stock=list(profiles))
+        with mock.patch.dict(stockfw.PROFILES, profiles):
+            return boards.Board(e)
+
+    def segs(self, prof):
+        return [(a, bytes([i + 1]) * n) for i, (a, n, _) in enumerate(stockfw.windows(prof))]
+
+    def test_union_and_each_merge(self):
+        b = self.board({"a" * 64: self.A, "b" * 64: self.B})
+        self.assertEqual(b.codec.windows, [(0x080E0000, 0x1000), (0x080E4000, 0x2000), (0x080C0000, 0x2000)])
+        self.assertEqual(b.codec.sources, ["A.bin", "B.bin"])
+        self.assertEqual(b.codec_codes, [0x080E0000, 0x080E0000])
+        img = app_image(5000)
+        for prof in (self.A, self.B):
+            segs = self.segs(prof)
+            p = plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs, b.merge_windows(prof))
+            written = b"".join(bl for st in p.writes for _, bl in st.blocks)
+            for a, d in segs:
+                self.assertIn(d, written)
+            # against the union, one file's codec never covers the other's tables: the planner refuses
+            with self.assertRaises(plan.PlanError):
+                plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs)
+
+    def test_keep_protects_both(self):
+        b = self.board({"a" * 64: self.A, "b" * 64: self.B})
+        p = plan.make_plan(b, [(b.app_base, app_image(5000))], plan.KEEP)
+        self.assertEqual([s.index for s in p.kept], [10, 11])	# B's tables in sector 10, A's in sector 11
+        only_a = self.board({"a" * 64: self.A})
+        self.assertEqual([s.index for s in plan.make_plan(only_a, [(b.app_base, app_image(5000))], plan.KEEP).kept],
+                         [11])
+
+    def test_different_codecs_refused(self):
+        with self.assertRaises(ValueError):
+            self.board({"a" * 64: self.A, "b" * 64: dict(self.B, codec_profile="dm1701-other")})
 
 
 class SectorMap(unittest.TestCase):
@@ -388,7 +526,7 @@ class SingleImage(unittest.TestCase):
             open(sp, "wb").write(stock)
             with mock.patch.dict(stockfw.PROFILES, profiles, clear=True), \
                     mock.patch.object(dfumod, "check_key", lambda k, b: k), \
-                    mock.patch.object(stockfw, "derive_key", lambda s: KEY):
+                    mock.patch.object(stockfw, "derive_key", lambda s, want=None: KEY):
                 rc, out, err = run_cli(["merge", image, "--stock", sp, "-o", op] + list(extra))
             return rc, out, err, (open(op, "rb").read() if os.path.exists(op) else b"")
 
@@ -544,7 +682,7 @@ class StockLibrary(unittest.TestCase):
 
     def test_md380_board(self):
         b = boards.get("md380")
-        self.assertFalse(b.releasable)
+        self.assertTrue(b.releasable)
         self.assertTrue(b.keep_codec_supported)	# the application has sectors 3-7, the codec 8, 10 and 11
         self.assertEqual(b.codec.id, "md380-d2032-s11")
         self.assertEqual([s.index for s in b.codec_sectors()], [8, 10, 11])

@@ -32,6 +32,8 @@ CONFIG_NET_PPP ?= $(if $(and $(filter y,$(CONFIG_HOSTLINK)),$(filter y,$(CONFIG_
 # browser's two and rigctld (TIME_WAIT slots are reused) and keep 11 KB free; 4 leaves 9.6 KB
 TCP_CONNS ?= 3
 MCU_DEFS += -DTCP_CONNS=$(TCP_CONNS)
-# What the radio has no hardware for (no USB data port): ci's maximal configuration leaves these off. Everything else
-# is in it, FONT_XL and AUDIO_PROBE too (9.9 KB of main RAM free)
-BOARD_UNSUPPORTED := USB USB_NETWORK
+# What the radio has no hardware for, one switch per line with the reason (tools/boards.py checks there is one):
+# ci's maximal configuration leaves these off. Everything else is in it, FONT_XL and AUDIO_PROBE too (9.9 KB of
+# main RAM free)
+BOARD_UNSUPPORTED += USB	# no USB data port: the host link runs on the programming cable's UART
+BOARD_UNSUPPORTED += USB_NETWORK	# no USB data port for the network adapter: PPP on the host UART stands in

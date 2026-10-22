@@ -10,12 +10,15 @@
 #include "dmr_glue.h"
 #include "audio_pcm.h"
 #include "vocoder.h"
+#include "rf/fd6818/fd6818.h"
 
 // Ops each board file provides
 extern const hal_display_t dm1801pro_display;
 extern const hal_input_t dm1801pro_input;
 extern const hal_radio_t dm1801pro_radio;
 extern const hal_power_t dm1801pro_power;
+// The FD6818 set-up tables (rf_tables_dm1801pro.c, hardware-dm1801pro.md 5)
+extern const fd6818_variant_t fd6818_variant_dm1801pro;
 
 // Physical key bits returned by dm1801pro_input.scan(); the matrix positions and the four direct pins are in
 // input_dm1801pro.c (hardware-dm1801pro.md 9.1)

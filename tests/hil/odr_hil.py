@@ -21,6 +21,137 @@ from odr_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse_coun
                        to_rgb, write_png, ACTIONS, PRESS, LONG)
 
 
+# ── skips ───────────────────────────────────────────────────────────────────
+# Every HIL skip names its kind (README.md, "Skip kinds"), so a bring-up run can tell a skip it expects (an --allow-*
+# flag not given) from a gap (the radio lacks what the feature needs) and fail on the gap. The kind travels as the
+# reason's "[kind] " prefix: that survives every path a skip reason takes (skip marks, -rs, the JUnit XML, reports
+# from other processes). skip() also sets .kind on the exception, and hil_plugin.py copies the kind to the report
+# (report.skip_kind) and to the test's user properties ("skip_kind", in the JUnit XML). skip_kind() reads it back.
+# A bare pytest.skip in tests/hil fails tools/check_hil_skips.py (tools/ci.sh).
+
+SKIP_KINDS = {
+    "not_built": "the firmware was built without it (a switch off, or firmware older than the feature)",
+    "no_hw": "the radio lacks the capability",
+    "state": "a precondition the test could set up itself (a mode, a setting, the codeplug, the channel)",
+    "opt_in": "an opt-in option was not given (an --allow-* flag, a frequency, a file, a second radio)",
+    "bench": "the radio, the SDR bench or a host tool is missing, unreachable or busy",
+    "other_board": "a board-specific test on another board",
+}
+
+
+def skip_reason(kind, reason):
+    """The reason text of a skip of this kind: "[kind] reason". ValueError for an unknown kind or an empty reason."""
+    if kind not in SKIP_KINDS:
+        raise ValueError(f"unknown skip kind {kind!r} (one of {', '.join(SKIP_KINDS)})")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("a skip needs a reason")
+    return f"[{kind}] {reason}"
+
+
+def skip(kind, reason):
+    """Skip the running test (or fixture) as pytest.skip does, with its kind."""
+    __tracebackhide__ = True        # pytest reports the caller's line, not this one
+    import pytest
+    e = pytest.skip.Exception(skip_reason(kind, reason))  # hil-skip: the helper
+    e.kind = kind
+    raise e
+
+
+def skip_mark(kind, reason):
+    """pytest.mark.skip with a kind, for marks added at collection."""
+    import pytest
+    return pytest.mark.skip(reason=skip_reason(kind, reason))  # hil-skip: the helper
+
+
+def skip_if(condition, kind, reason):
+    """pytest.mark.skipif with a kind."""
+    import pytest
+    return pytest.mark.skipif(condition, reason=skip_reason(kind, reason))  # hil-skip: the helper
+
+
+def skip_kind(skipped):
+    """The kind of a skip: from a skip exception, a test report or its longrepr, or the reason text. None for a skip
+    without one (pytest's own, or a plugin's)."""
+    kind = getattr(skipped, "kind", None)
+    if kind in SKIP_KINDS:
+        return kind
+    text = getattr(skipped, "longrepr", skipped)
+    if isinstance(text, tuple) and len(text) == 3:         # a skipped report's longrepr: (path, line, reason)
+        text = text[2]
+    text = str(getattr(text, "msg", text))
+    if text.startswith("Skipped: "):
+        text = text[len("Skipped: "):]
+    if text.startswith("["):
+        kind = text[1:text.find("]")]
+        if kind in SKIP_KINDS:
+            return kind
+    return None
+
+
+# ── boards and their HIL expectations ───────────────────────────────────────
+# The one place the HIL tests read board data, all of it from the board registry: the debug link names from
+# tools/odrflash's registry.json (any Python 3), a board's own tables ([hil], [cps]) from tools/boards.py, which
+# needs Python 3.11 (tools/odr_python.sh finds one).
+
+# board.toml [hil] keys (tools/boards.py BOARD_SCHEMA; all optional, a check whose key a board lacks skips): display
+# (VERSION display=), features (VERSION features the build must have), no_features (ones it must not), flash_jedec
+# (accepted data flash JEDEC ids), calibration (true: the diagnostics show the factory calibration), battery_mv
+# ([low, high] a sane reading lies in), codec (accepted stock codec versions)
+HIL_KEYS = ("display", "features", "no_features", "flash_jedec", "calibration", "battery_mv", "codec")
+_ENTRIES = {}
+
+
+def _registry():
+    sys.path.insert(0, os.path.join(ROOT, "tools", "odrflash"))
+    from odrflash import boards
+    return boards
+
+
+def board_names():
+    """boards/<id> -> the board names VERSION can report (the registry's debug link names)."""
+    return {b.id: set(b.debuglink_names) for b in _registry().BOARDS.values()}
+
+
+def board_id(name):
+    """The boards/<id> a VERSION board name means, or None."""
+    b = _registry().from_debuglink_name(name or "")
+    return b.id if b else None
+
+
+def board_entry(board):
+    """A board's registry entry (tools/boards.py get BOARD: board.toml and what is derived), {} for no board."""
+    if not board:
+        return {}
+    if board not in _ENTRIES:
+        import subprocess
+        py = subprocess.run(["sh", os.path.join(ROOT, "tools", "odr_python.sh")], capture_output=True, text=True)
+        if py.returncode != 0:
+            raise RuntimeError(py.stderr.strip())
+        r = subprocess.run([py.stdout.strip(), os.path.join(ROOT, "tools", "boards.py"), "get", board],
+                           capture_output=True, text=True, cwd=ROOT)
+        if r.returncode != 0:
+            raise RuntimeError(f"tools/boards.py get {board}: {r.stderr.strip()}")
+        _ENTRIES[board] = json.loads(r.stdout)
+    return _ENTRIES[board]
+
+
+def board_hil(board):
+    """A board's HIL expectations (board.toml [hil]), {} for none."""
+    return dict(board_entry(board).get("hil", {}))
+
+
+# ── diagnostics ─────────────────────────────────────────────────────────────
+
+def diag_lines(radio):
+    """The radio's diagnostics screen lines (debug link DIAG)."""
+    return radio.link.diag()[1]
+
+
+def find(lines, prefix):
+    """The first line that starts with prefix, or None."""
+    return next((line for line in lines if line.startswith(prefix)), None)
+
+
 class Radio:
     """The radio under test, over its debug link."""
 
@@ -339,8 +470,7 @@ class SdrBench:
         ended before the service comes back."""
         shared = self.bench.uses_daemon()
         if not shared and not self.allow_service_stop:
-            import pytest
-            pytest.skip("stops the SDR bench's gateway service: run with --allow-service-stop")
+            skip("opt_in", "stops the SDR bench's gateway service: run with --allow-service-stop")
         test = os.environ.get("PYTEST_CURRENT_TEST", "").split(" ")[0] or "hil"
         self.bench.label = f"{os.environ['ODR_HIL_NAME']} {test}" if os.environ.get("ODR_HIL_NAME") else test
         self.bench.lease()
@@ -361,8 +491,7 @@ class SdrBench:
 
     @staticmethod
     def _busy(e):
-        import pytest
-        pytest.skip(f"the shared SDR bench stayed busy: {e}")
+        skip("bench", f"the shared SDR bench stayed busy: {e}")
 
     def _claim(self, freq):
         """A shared bench: this test's lease on freq (another session's radio test waits for it)."""
@@ -414,8 +543,7 @@ class SdrBench:
         import tty
         self._need_lease()
         if not self.bench.uses_daemon():
-            import pytest
-            pytest.skip("bench stations need the shared bench daemon (benchd)")
+            skip("bench", "bench stations need the shared bench daemon (benchd)")
         for f in tx:
             self._claim(f)
         cmd = (f"{self.bench.ctl} bridge --session {self.bench.session} --station {shlex.quote(name)}"

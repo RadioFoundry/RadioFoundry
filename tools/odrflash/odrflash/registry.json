@@ -11,7 +11,7 @@
    "platform_stubs": [],
    "family": "serial-iap",
    "link": "serial-cable",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "DB25-D",
     "DB25-D PRO",
@@ -47,7 +47,7 @@
     "2c1101c0"
    ],
    "codec_tool": "hrc7000_codec",
-   "codec_stock": null,
+   "codec_stock": [],
    "codec": {
     "id": "db25d-018",
     "windows": [
@@ -90,7 +90,7 @@
     "nand": true,
     "progmem": 2097152,
     "tested": false,
-    "stock_console": true
+    "stock_console": "usmart"
    },
    "build_options": []
   },
@@ -172,7 +172,9 @@
    "keep_codec_supported": true,
    "first_stage": null,
    "codec_tool": "codec_extract",
-   "codec_stock": "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d",
+   "codec_stock": [
+    "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
+   ],
    "codec": {
     "id": null,
     "windows": null,
@@ -206,7 +208,7 @@
    "platform_stubs": [],
    "family": "serial-loader",
    "link": "serial-cable",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "DM-1801 Pro",
     "DM-1801Pro",
@@ -239,7 +241,7 @@
    "keep_codec_supported": false,
    "first_stage": null,
    "codec_tool": "hrc7000_codec",
-   "codec_stock": null,
+   "codec_stock": [],
    "codec": {
     "id": "dm1801pro-049",
     "windows": [
@@ -281,7 +283,7 @@
     "nand": false,
     "progmem": 1048576,
     "tested": true,
-    "stock_console": false
+    "stock_console": null
    },
    "build_options": []
   },
@@ -294,7 +296,7 @@
    "platform_stubs": [],
    "family": "serial-loader",
    "link": "serial-cable",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "DM-32UV",
     "DM-32",
@@ -327,7 +329,7 @@
    "keep_codec_supported": false,
    "first_stage": null,
    "codec_tool": "hrc7000_codec",
-   "codec_stock": null,
+   "codec_stock": [],
    "codec": {
     "id": "dm32-049",
     "windows": [
@@ -370,7 +372,7 @@
     "nand": false,
     "progmem": 1048576,
     "tested": true,
-    "stock_console": false
+    "stock_console": null
    },
    "build_options": []
   },
@@ -385,7 +387,7 @@
    ],
    "family": "usb-dfu",
    "link": "usb",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "MD-380",
     "MD-380 VHF",
@@ -453,7 +455,9 @@
    "keep_codec_supported": true,
    "first_stage": null,
    "codec_tool": "codec_extract",
-   "codec_stock": "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43",
+   "codec_stock": [
+    "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
+   ],
    "codec": {
     "id": null,
     "windows": null,
@@ -478,14 +482,20 @@
    "stub": null,
    "build_options": [
     {
-     "name": "MD380_BAND",
+     "name": "BAND",
+     "title": "Band",
+     "help": "The MD-380 comes in a UHF and a VHF version; the label under the battery and the frequencies the radio covers tell which.",
      "values": [
       {
        "id": "uhf",
+       "title": "UHF",
+       "text": "400-480 MHz",
        "board_name": "MD-380"
       },
       {
        "id": "vhf",
+       "title": "VHF",
+       "text": "136-174 MHz",
        "board_name": "MD-380 VHF"
       }
      ]

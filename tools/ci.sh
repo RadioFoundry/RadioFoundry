@@ -25,9 +25,9 @@
 #      self-test
 #   1. host tests (make -C tests/host, with each board's boards/<b>/tests/host.mk), and with ODR_CI_SANITIZE=1 again
 #      under ASan and UBSan
-#   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); the flashing tools'
-#      tests (tools/odrflash/tests, codec_extract, stm32_dfu, codeplug_port, md380_migrate, serial_loader, dm32_migrate
-#      and hrc7000_codec self-tests) and the UI gallery comparison's (ui_gallery_compare); the stack check's self-test
+#   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); odrflash's tests
+#      (tools/odrflash/tests) and every tool's --self-test (the tools under tools/ and stub/ that have one); the stack
+#      check's self-test
 #      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
 #      the glossary data is sound and its pages current (tools/glossary.py); the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
 #      pass against odrflash (site/tests/run.sh, needs Node 20+)
@@ -142,7 +142,7 @@ fi
 # ── 2. Python ────────────────────────────────────────────────────────────────
 if step python; then
 echo "== python"
-PY_FILES=$(git ls-files 'tools/*.py' 'tools/**/*.py' 'tests/hil/*.py' 2>/dev/null)
+PY_FILES=$(git ls-files 'tools/*.py' 'tools/**/*.py' 'tests/hil/*.py' 'boards/*/hil/*.py' 2>/dev/null)
 if command -v python3 > /dev/null; then
 	if python3 -c 'import ast, sys
 for f in sys.argv[1:]:
@@ -160,6 +160,46 @@ for f in sys.argv[1:]:
 		fi
 	else
 		skip "HIL test collection: pytest not installed (pip install pytest pyserial)"
+	fi
+	# every HIL skip names its kind (tests/hil/README.md, "Skip kinds"), and the skip helper's own tests (no radio)
+	if python3 tools/check_hil_skips.py > "$OUT/hil-skips.log" 2>&1; then
+		ok "HIL skips: $(tail -1 "$OUT/hil-skips.log" | sed 's/^check_hil_skips: //')"
+	else
+		head -20 "$OUT/hil-skips.log"
+		bad "HIL skips without a kind (see $OUT/hil-skips.log)"
+	fi
+	if python3 -c 'import pytest' 2>/dev/null; then
+		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py > "$OUT/hil-skip-test.log" 2>&1; then
+			ok "HIL skip helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
+		else
+			tail -20 "$OUT/hil-skip-test.log"
+			bad "HIL skip helper tests (see $OUT/hil-skip-test.log)"
+		fi
+	fi
+	# the feature checklist (tests/hil/README.md, "Bring-up mode"): tools/bringup.py check, and the bring-up
+	# plugin's tests with a fake radio. bringup.py needs Python 3.11+ (tomllib): $ODR_PYTHON, else the newest
+	# python3.N on PATH (TODO: the shared ODR_PYTHON lookup once ci.sh has it)
+	BRINGUP_PY=${ODR_PYTHON:-$(IFS=:; for d in $PATH; do for p in "$d"/python3.1[1-9] "$d"/python3.[2-9][0-9]; do
+		[ -x "$p" ] && echo "${p##*.} $p"; done; done | sort -n | tail -1 | cut -d' ' -f2-)}
+	if [ -n "$BRINGUP_PY" ]; then
+		if env -u ODR_PORT "$BRINGUP_PY" tools/bringup.py check --pytest-python python3 > "$OUT/bringup-check.log" 2>&1
+		then
+			ok "feature checklist: $(tail -1 "$OUT/bringup-check.log" | sed 's/^bringup check: //')"
+		else
+			grep '^error' "$OUT/bringup-check.log" | head -20
+			bad "feature checklist (see $OUT/bringup-check.log)"
+		fi
+	else
+		skip "feature checklist: no Python 3.11 or later (set ODR_PYTHON)"
+	fi
+	if python3 -c 'import pytest' 2>/dev/null; then
+		if ODR_PYTHON=$BRINGUP_PY python3 -m pytest -q -p no:cacheprovider tests/hil/test_bringup.py \
+			> "$OUT/bringup-test.log" 2>&1; then
+			ok "bring-up mode tests ($(grep -oE '[0-9]+ (passed|skipped)' "$OUT/bringup-test.log" | paste -sd, -))"
+		else
+			tail -20 "$OUT/bringup-test.log"
+			bad "bring-up mode tests (see $OUT/bringup-test.log)"
+		fi
 	fi
 	# the flashing tools: odrflash's host tests (sector planning, manifests, codec merge, fake bootloader runs) and
 	# the self-tests of the developer tools (no USB, synthetic keys and stock files)
@@ -263,7 +303,8 @@ build() {
 	b=$1; name=$2; shift 2
 	dir="$OUT/$b-$name"
 	log="$dir.log"
-	rm -f "$dir/odr_$b.elf"		# always relink: the size report reads the linker's memory-usage lines
+	target=$(make -s BOARD="$b" BUILD="$dir" "$@" print-vars VARS=TARGET | sed 's/^TARGET=//')	# build options name it
+	rm -f "$target.elf"		# always relink: the size report reads the linker's memory-usage lines
 	if ! make BOARD="$b" BUILD="$dir" -j"$JOBS" "$@" > "$log" 2>&1; then
 		grep -E 'error|undefined' "$log" | head -10
 		bad "$b $name: build failed ($*; see $log)"
@@ -283,7 +324,7 @@ build() {
 			bad "$b $name: stack check (see $dir.stack.log)"
 		fi
 	fi
-	bin=$(ls "$dir"/odr_"$b".bin 2>/dev/null)
+	bin=$target.bin
 	bytes=$(wc -c < "$bin" | tr -d ' ')
 	# --print-memory-usage: "FLASH:  123024 B  336 KB  35.76%" (the app region, codec sectors excluded)
 	set -- $(grep -E '^ *FLASH:' "$log" | head -1)

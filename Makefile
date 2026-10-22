@@ -5,12 +5,37 @@
 ##   make BOARD=dm1701          -> build/dm1701/odr_dm1701.{elf,bin,map}, plus odr_dm1701_codec.bin when the
 ##                                 radio's stock firmware is in codecs/ (codecs/README.md)
 ##   make BOARD=dm1701 size     -> section sizes and the space left before the codec
-##   make test                  -> host tests
+##   make test                  -> host tests (no BOARD needed)
+##   make                       -> lists the boards
 ##
 ## Each board says its platform, linker script and source directories in boards/<board>/board.mk.
 ## Every *.c in the listed directories is built, so adding a file needs no Makefile change.
 
-BOARD ?= dm1701
+# The flashing tools' view of the board registry (tools/boards.py), regenerated when one of its sources changes. Every
+# build and the host tests depend on it, so a board.toml edit reaches odrflash without a separate step. Without a
+# Python 3.11 (tools/odr_python.sh) it stays as it is, with a note; tools/boards.py check fails on a stale copy
+REGISTRY_JSON := tools/odrflash/odrflash/registry.json
+REGISTRY_SRC := $(wildcard boards/*/board.toml boards/*/board.mk boards/*/config.mk boards/*/*.ld boards/*/*.c \
+	boards/*/pins.h platform/*/platform.toml) tools/boards.py
+ODR_PYTHON = $(shell tools/odr_python.sh 2>/dev/null)
+$(REGISTRY_JSON): $(REGISTRY_SRC)
+	@py="$(ODR_PYTHON)"; if [ -n "$$py" ]; then "$$py" tools/boards.py json --for odrflash --out $@ && touch $@; \
+	else echo "note: $@ is older than the board registry; no Python 3.11 to regenerate it (tools/odr_python.sh)"; fi
+registry: $(REGISTRY_JSON)
+.PHONY: registry
+# the rule above is the first in the file: plain make still means all
+.DEFAULT_GOAL := all
+
+# No default radio: an image for the wrong one is easy to miss. Without BOARD, only the host tests run; anything else
+# lists the boards
+ifeq ($(BOARD),)
+test: $(REGISTRY_JSON)
+	$(MAKE) -C tests/host
+.PHONY: test
+ifneq ($(filter-out test registry,$(or $(MAKECMDGOALS),all)),)
+$(error say which radio: make BOARD=<board>, one of: $(sort $(patsubst boards/%/board.mk,%,$(wildcard boards/*/board.mk))))
+endif
+else
 include boards/$(BOARD)/board.mk
 # A release variant (config/variants/<name>.mk): a preset that turns features off. Read before the board's defaults,
 # so it wins over them and the command line wins over it. Empty: the full default build (docs/build-config.md)
@@ -25,8 +50,21 @@ endif
 include config/features.mk
 include platform/$(PLATFORM)/platform.mk
 
-BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))
-TARGET := $(BUILD)/odr_$(BOARD)
+# Hardware build options: hardware versions one image can't serve (the MD-380's UHF and VHF boards). board.mk names
+# them in BUILD_OPTIONS and lists each one's values in <NAME>_VALUES, the default first; board.toml [[build_options]]
+# only adds the words people read (tools/boards.py check holds the two to the same values). Each value reaches C as
+# ODR_<NAME>_<VALUE> = 0 or 1 (ODR_BAND_VHF). A non-default value names the build directory and the image
+# (build/md380-vhf/odr_md380-vhf.bin), the names tools/release.py and odrflash look for
+upper = $(shell echo '$1' | tr a-z- A-Z_)
+$(foreach o,$(BUILD_OPTIONS),$(eval $(o) ?= $(firstword $($(o)_VALUES))))
+$(foreach o,$(BUILD_OPTIONS),$(if $(filter $($(o)),$($(o)_VALUES)),,$(error $(o)=$($(o)) is not a $(BOARD) build: \
+	the values are $($(o)_VALUES))))
+OPTION_SUFFIX := $(subst $() ,,$(foreach o,$(BUILD_OPTIONS),$(if $(filter-out $(firstword $($(o)_VALUES)),$($(o))),-$($(o)))))
+OPTION_DEFS := $(foreach o,$(BUILD_OPTIONS),$(foreach x,$($(o)_VALUES),-DODR_$(call upper,$(o)_$(x))=$(if $(filter $(x),$($(o))),1,0)))
+MCU_DEFS += $(OPTION_DEFS)
+
+BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))$(OPTION_SUFFIX)
+TARGET := $(BUILD)/odr_$(BOARD)$(OPTION_SUFFIX)
 
 CORE_DIRS := core/app core/radio core/ui core/input core/codeplug core/settings core/storage
 ifeq ($(CONFIG_DMR),y)
@@ -202,7 +240,7 @@ OBJ := $(APP_OBJ) $(TP_OBJ)
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
 .PHONY: all codec clean size stack-check test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars
-all: $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin) codec
+all: $(REGISTRY_JSON) $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin) codec
 
 # The codec: merged into $(TARGET)_codec.bin when the radio's stock firmware is in codecs/ (codecs/README.md)
 # A board with a first stage (BOOT_STAGE) merges the codec into the install image, so the merged file starts with the stage
@@ -269,7 +307,7 @@ $(BUILD)/%.o: %.S
 size: $(TARGET).elf
 	$(SIZE) -A $< | grep -E '^\.(isr_vector|text|rodata|data|bss|ccmram)'
 
-test:
+test: $(REGISTRY_JSON)
 	$(MAKE) -C tests/host
 
 # Static worst-case stack depth of every task against its stack (docs/dev/stack-check.md). The platform gives the bytes
@@ -288,10 +326,10 @@ print-config:
 	@$(foreach f,$(FEATURES),echo '$(f)=$(CONFIG_$(f))';)
 print-cc:
 	@echo '$(CC)'
-# Switches the board's hardware support doesn't cover (boards/<board>/config.mk BOARD_UNSUPPORTED): ci's maximal
-# configuration leaves them off
+# Switches the board's hardware support doesn't cover (boards/<board>/config.mk BOARD_UNSUPPORTED, one a line with
+# its reason; strip drops the spaces before each comment): ci's maximal configuration leaves them off
 print-unsupported:
-	@echo '$(BOARD_UNSUPPORTED)'
+	@echo '$(strip $(BOARD_UNSUPPORTED))'
 # Switches the board can't build without (boards/<board>/config.mk BOARD_REQUIRED): ci builds no "no-" configuration
 # for them
 print-required:
@@ -305,6 +343,8 @@ print-maximal-vars:
 	@echo '$(MAXIMAL_VARS)'
 # NAME=value for each make variable in VARS, as this build resolves it (tools/boards.py reads board.mk through it, so
 # conditionals and config.mk count)
+print-build-options:
+	@:$(foreach o,$(BUILD_OPTIONS),$(info $(o)=$($(o)_VALUES)))
 print-vars:
 	@:$(foreach v,$(VARS),$(info $(v)=$($(v))))
 
@@ -312,3 +352,4 @@ clean:
 	rm -rf $(BUILD)
 
 -include $(OBJ:.o=.d)
+endif
