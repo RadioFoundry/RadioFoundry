@@ -28,7 +28,7 @@ import { register } from "./backends.js";
 import { makeDb25d } from "./db25dui.js";
 import { Usmart, Iap, checkInstallImage, stockVersion } from "./db25d.js";
 
-// USB-serial chips found in programming cables (tools/dm32_flash.py USB_SERIAL), for the port chooser
+// USB-serial chips found in programming cables (tools/serial_loader.py USB_SERIAL), for the port chooser
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
 const CH340 = 0x1A86;
 const ROM_WAIT = 180000;		// how long the page listens for the boot ROM per try

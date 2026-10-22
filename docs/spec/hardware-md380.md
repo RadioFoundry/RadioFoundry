@@ -808,7 +808,7 @@ fixes them ([codec-md380.md](codec-md380.md), "Key recovery"; `odrflash/stockfw.
 Entered by holding PTT and the upper side key while switching on (unverified). USB DFU 0483:DF11 with TYT's
 non-standard commands; the same erase-by-sector and block-write protocol as the DM-1701's loader (unverified). Flash an ODR
 image with `tools/stm32_dfu.py --model md380 --key KEY odr_md380.bin`. The image is plain, starts at 0x0800C000, and the
-tool encrypts it for the loader. odrflash knows the board (`boards.py` MD380: not releasable, an update writes
+tool encrypts it for the loader. odrflash knows the board (`boards/md380/board.toml`: release `testing`, an update writes
 sectors 3-7 and keeps the codec).
 
 ### 14.4 The codec

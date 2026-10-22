@@ -23,7 +23,7 @@ back, CPS write and read back) are shared with the other radios' tools (codeplug
 docs/spec/codeplug-port.md).
 
 Needs Python 3.8+, dmrconf (qdmr 0.15 or newer, with the dm32uv driver) on PATH and pyserial. The helpers
-(dm32_flash.py, cps_client.py, codeplug_port.py, odr_debug.py, md380_migrate.py, hrc7000_codec.py) are loaded from this
+(serial_loader.py, cps_client.py, codeplug_port.py, odr_debug.py, md380_migrate.py, hrc7000_codec.py) are loaded from this
 script's directory.
 """
 import argparse
@@ -258,9 +258,9 @@ def resolve_port(sess, args):
     if sess.port or sess.cache.get("port_failed"):
         return sess.port
     try:
-        sess.port = mod("dm32_flash").find_port(getattr(args, "port", None))
+        sess.port = mod("serial_loader").find_port(getattr(args, "port", None))
         sess.say("programming cable: %s" % sess.port)
-    except mod("dm32_flash").FlashError as e:
+    except mod("serial_loader").FlashError as e:
         if not sess.dry:
             raise MigrateError(str(e))
         sess.cache["port_failed"] = True
@@ -373,7 +373,7 @@ def convert(sess, args, yaml_path):
 def prepare_image(sess, args):
     if "image" in sess.cache:
         return sess.cache["image"]
-    fl = mod("dm32_flash")
+    fl = mod("serial_loader")
     try:
         raw, kind = fl.load(args.image)
         notes = fl.check_image(raw)
@@ -414,7 +414,7 @@ def preflight(sess, args):
         import serial  # noqa: F401
     except ImportError:
         missing.append("pyserial: pip install pyserial")
-    for helper in ("dm32_flash", "cps_client", "odr_debug"):
+    for helper in ("serial_loader", "cps_client", "odr_debug"):
         if not os.path.isfile(os.path.join(HERE, helper + ".py")):
             missing.append("%s.py next to this script" % helper)
     for m in missing:
@@ -429,7 +429,7 @@ def preflight(sess, args):
 def step_flash(sess, args):
     sess.step("2. Flash OpenDigitalRadio")
     raw = prepare_image(sess, args)
-    fl = mod("dm32_flash")
+    fl = mod("serial_loader")
     resolve_port(sess, args)
     sess.say("   %d blocks of 1 KB to 0x%08X; the bootloader itself (0x03000000..0x0300C000) is never written"
              % (fl.blocks_needed(len(raw)), fl.APP_BASE))
@@ -660,8 +660,8 @@ The tool asks before each step that needs you at the radio. It keeps every file 
 ~/ODR-DM32-migration/<date-time>/ and never deletes them; send that folder back with your report. If a step fails it
 stops and says how to go on; 'restore --workdir DIR' continues after the flash.
 
-Flash only (no codeplug):   python3 dm32_flash.py {image}
-Back to stock:              python3 dm32_flash.py --stock DM32.01.01.049.bin
+Flash only (no codeplug):   python3 serial_loader.py {image}
+Back to stock:              python3 serial_loader.py --stock DM32.01.01.049.bin
   (the stock codeplug is still in the radio; backup-stock.dfu can be written with dmrconf write --radio dm32uv)
 Bring-up checklist (what to look at on the first boot): dm32-bringup.md if included, else docs/testing/dm32-bringup.md
 in the source.
@@ -671,9 +671,16 @@ in the source.
 def cmd_package(sess, args):
     out = os.path.abspath(args.outdir)
     files = {os.path.abspath(__file__): "dm32_migrate.py"}
-    for helper in ("dm32_flash.py", "cps_client.py", "codeplug_port.py", "odr_debug.py", "md380_migrate.py",
+    for helper in ("serial_loader.py", "cps_client.py", "codeplug_port.py", "odr_debug.py", "md380_migrate.py",
                    "hrc7000_codec.py"):
         files[os.path.join(HERE, helper)] = helper
+    # what serial_loader.py and hrc7000_codec.py import from odrflash: the board registry and the codec maps
+    pkg = os.path.join(HERE, "odrflash", "odrflash")
+    for rel in ["__init__.py", "boards.py", "codecmap.py", "registry.json"] + sorted(
+            os.path.join("codec_maps", d, f) for d in os.listdir(os.path.join(pkg, "codec_maps"))
+            if os.path.isdir(os.path.join(pkg, "codec_maps", d)) for f in os.listdir(os.path.join(pkg, "codec_maps", d))
+            if f.endswith(".json")):
+        files[os.path.join(pkg, rel)] = os.path.join("odrflash", "odrflash", rel)
     bringup = os.path.join(os.path.dirname(HERE), "docs", "testing", "dm32-bringup.md")
     if os.path.isfile(bringup):
         files[bringup] = "dm32-bringup.md"
@@ -684,7 +691,7 @@ def cmd_package(sess, args):
     for src in files:
         if not os.path.isfile(src):
             raise MigrateError("%s not found" % src)
-    fl = mod("dm32_flash")
+    fl = mod("serial_loader")
     for img in args.image:
         with open(img, "rb") as f:
             raw, _ = fl.unwrap(f.read())
@@ -701,6 +708,7 @@ def cmd_package(sess, args):
         return True
     os.makedirs(out, exist_ok=True)
     for src, dst in files.items():
+        os.makedirs(os.path.dirname(os.path.join(out, dst)), exist_ok=True)
         shutil.copyfile(src, os.path.join(out, dst))
     with open(os.path.join(out, "README.txt"), "w", encoding="utf-8") as f:
         f.write(PACKAGE_README.format(image=os.path.basename(args.image[0])))
@@ -949,8 +957,8 @@ def self_test():
     dump = cc.Cps(radio, timeout=0.1).read_image([(0, 0x10000)], image=bytearray(0x10000), block=BULK_BLOCK)
     check(bytes(dump) == bytes(stock) and find_cal_page(dump) == 0x3000, "stock data flash backup, calibration page")
 
-    rc = mod("dm32_flash").self_test()
-    check(rc == 0, "dm32_flash self-test")
+    rc = mod("serial_loader").self_test()
+    check(rc == 0, "serial_loader self-test")
     print("dm32_migrate self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                       "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1

@@ -2,7 +2,7 @@
 
 For the DM-32UV, the DM-1801 Pro and the DB25-D. The tool backs up and checks the radio's two memory chips over the programming
 cable and installs ODR builds. It needs only Python 3 and `pyserial` (`pip install pyserial`). Installing the stock or a
-first ODR build still uses `tools/dm32_flash.py`. Items marked **[confirm]** are not checked on every radio yet.
+first ODR build still uses `tools/serial_loader.py`. Items marked **[confirm]** are not checked on every radio yet.
 
 ## Before you start
 
@@ -86,7 +86,7 @@ The DB25-D also has a 256 MB NAND chip (recordings, and ODR's own area at 0xF000
 
 The radio's bootloader area is never written, so the usual update mode (hold the keys while switching on) always still
 works. Do not unplug the cable or remove the battery while it writes. If it is interrupted, run the same command again
-once the radio is back in loader mode, or use update mode and `tools/dm32_flash.py`. A build for the **DM-1801 Pro** was
+once the radio is back in loader mode, or use update mode and `tools/serial_loader.py`. A build for the **DM-1801 Pro** was
 tested this way **[confirm on the DM-32UV, which also keeps codec data in the program flash]**. Use a raw ODR `.bin`
 (linked for 0x0300C000), not a stock firmware file.
 

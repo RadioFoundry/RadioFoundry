@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# The DM-32UV's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in dm32.ld.
+
+id = "dm32"
+name = "Baofeng DM-32UV"
+maker = "Baofeng"
+model = "DM-32UV"
+also = []
+kind = "handheld"
+# Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
+# build option value's board_name), and the id always counts
+debuglink_aliases = ["DM-32"]
+
+[docs]
+hardware = "docs/spec/hardware-dm32.md"
+codec = "docs/spec/codec-dm32.md"
+install = "docs/user/19-moving-from-stock-dm32.md"
+bringup = "docs/testing/dm32-bringup.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "136-174 / 400-480 MHz"
+power = "1 / 5 W"
+display = "color, 240 × 320"
+gallery = "240x320i10x5"
+
+[status]
+level = "bring-up"
+summary = "Runs on a radio. FM and DMR voice receive and transmit, CTCSS/DCS, APRS receive and transmit and GPS data checked, most of it on the SDR bench. Each split duplex half passes on air alone. Still open: FM transmit deviation at 12.5 kHz, an outdoor GPS fix, and the host link after a warm restart from the boot stub ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core but not wired up on this radio yet ([airband-and-broadcast](docs/spec/airband-and-broadcast.md))"
+release = "testing"
+
+# The Baofeng serial updater erases the whole application area before it writes (hardware-dm32.md 13.2 step 7), so
+# the codec can't be kept across an update: every flash merges it again. The platform's two "sectors", the application
+# and the codec slot (dm32.ld), let manifests say where the codec goes
+[flash]
+family = "serial-loader"
+keep_codec = false
+stock_versions = ["DM32.01.01.049", "DM32.00.01.046"]
+backup = { stock = "full", odr = "full", spi_size = 0x1000000 }
+
+# Baofeng's update mode: keys is the short form tools print, steps the web flasher's and the manual's, id the string
+# the loader answers (also the magic of its firmware files), sign what the radio shows in update mode
+[flash.bootloader]
+keys = "PTT and SK1 (the side key just below PTT)"
+steps = [
+	"Turn the radio off and connect the programming cable.",
+	"Hold PTT and SK1.",
+	"Turn the radio on while you hold both keys. The green LED lights.",
+	"Release the keys.",
+]
+id = "BFUV32-V2"
+sign = "The green LED lights"
+
+# The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the board id HELLO echoes; hold_power: the stub
+# drives the power latch (pins.h PIN_POWER_LATCH, PIN_POWER_KEY) because the radio has a soft power key, not a knob;
+# the program flash size; tested: flashed through the stub on a radio. Whether the data memory is SPI NAND comes from
+# board.mk's drivers
+[flash.stub]
+id = 1
+hold_power = false
+progmem = 0x100000
+tested = true
+
+# The codec slot and windows come from dm32.ld (__codec_*); profile is the id odrflash gives a merged codec
+[codec]
+tool = "hrc7000_codec"
+profile = "dm32-049"
+sources = ["DM32.01.01.049.bin", "DM32.00.01.046HRVocoder.bin"]
+
+# How the site draws the radio
+[frame]
+shape = "handheld-tall"
+body = "#22252a"
+accent = "#e0a526"
+lens = [24, 34]
