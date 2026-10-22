@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """MD-9600 bring-up checks (docs/spec/hardware-md9600.md 19), radio only, never transmits. They read the debug link's
-`board` view section (19.6) and the storage section: identity, the clock that started, the data flash and its map,
-the calibration and option blocks, idle keys, the ADC scan, the synthesizer and the transmitter switches held off.
-Skipped on any other board."""
+`board` view section (19.6), which only this radio has: the board revision record, the clock that started, the data
+flash map and the record sector beside it, the calibration and option blocks, idle keys, the ADC scan, the
+synthesizer and the transmitter switches held off. The display, the build features and the data flash's JEDEC ID are
+the generic health checks' (test_health.py, from board.toml [hil]). Skipped on any other board."""
 import pytest
 
 KEYS = ["rev", "rev.source", "rev.usable", "rev.confirmed", "rev.stored", "probe", "clock", "sysclk_hz", "flash.id",
@@ -22,12 +23,6 @@ def md9600(radio):
 def board_view(r):
     v = r.view(["board"])
     return {k[len("board."):]: val for k, val in v.items() if k.startswith("board.")}
-
-
-def test_identity(md9600):
-    v = md9600.version(fresh=True)
-    assert v["display"] == "128x64x1", "the 128x64 monochrome ST7567"
-    assert {"USB", "DEBUGLINK", "CPS_OPENFW"} <= md9600.features()
 
 
 def test_board_view_keys(md9600):
@@ -52,14 +47,23 @@ def test_clock(md9600):
     assert int(b["sysclk_hz"]) == 72000000
 
 
-def test_data_flash(md9600):
+def test_data_flash_map(md9600):
+    """The board's map over the 16 MB part, with the core's store on it (the part's JEDEC ID is test_health.py's)."""
     b = board_view(md9600)
-    dev = int(b["flash.id"], 16)
-    assert dev & 0xFF == 0x18, f"flash capacity code {dev:#06x}: not a 16 MB part"
     assert int(b["flash.size"]) == 16 * 1024 * 1024 and b["flash.map"] == "1"
     s = md9600.view(["storage"])
     assert s["storage.region"] in ("ours", "foreign"), s["storage.region"]
     assert int(s["storage.errors"]) == 0
+
+
+def test_revision_record(md9600):
+    """A revision is driven, and where it came from: the stored record (store_md9600.c), the probe or the build's
+    default. A stored source means a record is in the sector (a change made since takes effect at the next start)."""
+    b = board_view(md9600)
+    assert b["rev"] != "none" and b["rev.source"] in ("stored", "probe", "default"), (b["rev"], b["rev.source"])
+    assert b["rev.usable"] in ("0", "1")
+    if b["rev.source"] == "stored":
+        assert b["rev.stored"] != "none", "driven from a stored record, but the sector holds none"
 
 
 def test_calibration_and_options_read(md9600):
