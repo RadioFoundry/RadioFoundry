@@ -48,9 +48,10 @@ in the sector at 0x0300C000, the application from 0x0300D000. Both stages start 
 SoC A (`gd88/`) is the DB25-D's stage with A's pins:
 
 1. The power latch (PTB13) high.
-2. The RF switches off. They hang off a 64-bit serial output chain (PTB0 clock, PTB1 data, PTB3 latch); the stage
-   shifts out 64 zero bits and latches them, the chain's power-on state. PTC20 goes low.
-3. UART1 (the programming cable, PTA9 / PTA10) as the loader sets it up, then ten handshakes, then the application.
+2. The transmitter off: PTB2, A's TX line, low.
+3. The 64-bit serial output chain (PTB0 clock, PTB1 data, PTB3 latch; audio routing and the TX route) in its power-on
+   state: the stage shifts out 64 zero bits and latches them. PTC20 goes low.
+4. UART1 (the programming cable, PTA9 / PTA10) as the loader sets it up, then ten handshakes, then the application.
 
 SoC B (`gd88b/`) has no cable. Its UART3 (PTA13 / PTA14) is the link to A:
 

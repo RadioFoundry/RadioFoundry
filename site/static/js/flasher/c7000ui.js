@@ -18,7 +18,7 @@
 import { h, t, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
 import { hex, sha256, sleep } from "./bytes.js";
 import { SerialStream, Link, probe, serialSupported } from "./link.js";
-import { Stub, stubImages, StubError, DONE_LED, MEM } from "./stub.js";
+import { Stub, stubImages, StubError, DONE_LED, MEM, patchUniv, boardLed } from "./stub.js";
 import * as c7 from "./c7000.js";
 import { upgradeSlot } from "./c7000v1.js";
 import { radioTop } from "./radiotop.js";
@@ -45,6 +45,12 @@ const store = (what) => `c7000-${what}-${boardId()}`;
 let db25d = null;
 const hasData = () => C().boards[boardId()].data_flash !== false;	// the SPI data flash the stub reads (the DB25-D has none)
 const stockRadio = () => !!C().boards[boardId()].stock_console;
+// A second SoC with no cable of its own (the GD-88's receiver B): reached through ODR on the first, whose board the
+// radio entry names (flash.via)
+const bridged = () => !!C().boards[boardId()].stub_board?.bridge;
+const answersAs = () => (bridged() ? ctx.fb().boards[S().radio.flash.via] : S().board).debuglink_names;
+const BRIDGE_ROM_WAIT = 70000;		// the second SoC's first stage offers for about a minute
+const BRIDGE_END_MS = 10000;		// the first SoC ends the bridge this long after the page's last byte, then restarts
 const progSize = () => c7.totalSize(C(), boardId());
 const viaIap = () => session().how === "iap";
 // What the radio's screen shows while the stub runs: ODR's loader screen, whatever the original firmware last drew, or
@@ -59,11 +65,11 @@ export function init(context) {
 // Radios the page flashes this way
 export const isC7000 = (radio, fb) => radio?.flash.backend === "c7000-stub" && !!fb.c7000?.boards[radio.flash.board];
 
-// The universal stub image, loaded once (data/c7000-stub.json)
+// The universal stub image, loaded once (data/c7000-stub.json), with this board's pins in its parameter block
 let images = null;
 async function stubs() {
 	if (!images) images = stubImages(await ctx.stubJson());
-	return images;
+	return { ...images, image: patchUniv(images.image, C().boards[boardId()].stub_board) };
 }
 
 // Keep the computer awake and warn before the page is closed while the radio is being read or written
@@ -175,14 +181,32 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		const p = await probe(link);
 		if (p) {
 			c.odr = p;
-			if (!S().board.debuglink_names.includes(p.board))
+			if (!answersAs().includes(p.board))
 				return cableStep(t("flash.err.wrong_board", { board: p.board, name: S().board.name }));
+			if (bridged()) return throughFirst(link);
 			const offer = await Stub.odrOffer(link);
 			if (offer) return fromOdr(offer);
 			return restartOdr();
 		}
+		if (bridged()) return cableStep(t("flash.gd88.bridge.need_odr"));
 		if (stockRadio()) return stockOrNothing();
 		return powerCycle();
+	};
+
+	// The second SoC: ODR on the first hands the cable over, then the second's first stage takes the stub as the boot
+	// ROM would. No power cycle: the first SoC stays on and restarts by itself afterwards
+	const throughFirst = async (link) => {
+		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.odr_found", { git: c.odr.git }))),
+			h("p", {}, t("flash.gd88.bridge.asking")));
+		const stub = mkStub();
+		try {
+			await Stub.bridgeFromOdr(link);
+			await stub.waitForRom(S().fakeC7 ? 3000 : BRIDGE_ROM_WAIT);
+		} catch (e) {
+			show({ led: "off", screen: "on" }, notice(t("flash.gd88.bridge.failed", { error: ctx.errorText(e) }), "bad"));
+			return act(button(t("flash.c7.connect.try_again"), () => find(), { primary: true }));
+		}
+		await load(stub, "bridge");
 	};
 
 	// A DB25-D on the cable that is not ODR: the original firmware answers its debug console (the stub goes in through
@@ -286,18 +310,18 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 				h("li", {}, t("flash.c7.connect.hint_battery")), ch340 ? h("li", {}, t("flash.c7.connect.hint_ch340")) : null));
 	};
 
-	const load = async (stub) => {
+	const load = async (stub, how = "rom") => {
 		const prog = progressBar();
 		show({ led: "off", screen: "off" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.rom_found"))), prog.el);
 		try {
 			// one image for every radio, at the boot ROM's address (the DB25-D's first stage takes it there too)
 			const st = await stubs();
 			await stub.loadThroughRom(st.image, st.load, (d, n) => prog.set(d, n, t("flash.c7.connect.loader")));
-			c.how = "rom";
-			await ready(t("flash.c7.connect.found_rom"));
+			c.how = how;
+			await ready(t(how === "bridge" ? "flash.gd88.bridge.found" : "flash.c7.connect.found_rom"));
 		} catch (e) {
 			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.load_failed", { error: ctx.errorText(e) }), "bad"));
-			act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true }));
+			act(button(t("flash.c7.connect.try_again"), () => (bridged() ? find() : powerCycle()), { primary: true }));
 		}
 	};
 
@@ -307,7 +331,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		const screen = screenNow();
 		show({ led: "wait", screen }, h("p", { class: "c7-big" }, h("b", {}, how)), h("p", { class: "muted" }, t("flash.c7.connect.checking")));
 		try {
-			const led = C().led;
+			const led = boardLed(C(), boardId());
 			await st.configure(C().boards[boardId()].stub_board, led);	// the radio's profile, checked before any write
 			await st.setupLed(led.red, led.green);
 			c.jedec = { progmem: await st.checkId("progmem"), q128: hasData() ? await st.checkId("q128") : null };
@@ -689,7 +713,8 @@ export function doneView() {
 		// After the stub's reset ODR boots, but its host link often stays silent until a power cycle (DM-32UV every
 		// time, DM-1801 Pro most times; dm32-bringup.md open items). So the first check waits only a little past the
 		// boot and then asks for the power cycle; a check after one allows for the boot it starts.
-		await sleep(Math.max(0, (c.resetAt || 0) + (S().fakeC7 ? 1500 : BOOT_MS) - Date.now()));
+		// the second SoC behind the first: the first ends the bridge after a quiet spell and restarts, then reports it
+		await sleep(Math.max(0, (c.resetAt || 0) + (S().fakeC7 ? 1500 : BOOT_MS + (bridged() ? BRIDGE_END_MS : 0)) - Date.now()));
 		const until = Date.now() + (tries++ ? 20000 : 6000);
 		let p = null;
 		while (!p && Date.now() < until) {
@@ -704,6 +729,7 @@ export function doneView() {
 				tries > 1 ? ctx.helpLink() : null);
 			return S().forward(button(t("flash.c7.done.check"), check, { primary: true }));
 		}
+		if (bridged()) return secondDone(p);
 		const wantCodec = c.decision?.mode !== "none";
 		const good = !wantCodec || (p.codec && !["absent", "none"].includes(p.codec));
 		top.set({ led: "off", screen: "on" });
@@ -714,6 +740,20 @@ export function doneView() {
 			c.backupSaved ? h("p", { class: "small muted" }, t(c.odr ? "flash.c7.done.backup_kept_odr" : "flash.c7.done.backup_kept")) : null,
 			// not asked of the radio: any STUB command parks ODR's codec until the next restart (debuglink_stub.c)
 			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")));
+		S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
+		await dropC7();
+	};
+	// The second SoC: ODR on the first says whether it answers on the link again
+	const secondDone = async (p) => {
+		let flags = null;
+		for (let i = 0; i < 5 && !(flags & 2); i++) {
+			flags = await Stub.secondState(new Link(c.stream, { timeout: 1000 }));
+			if (!(flags & 2)) await sleep(S().fakeC7 ? 100 : 1000);
+		}
+		const good = !!(flags & 2);
+		top.set({ led: "off", screen: "on" });
+		fill(status, h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git)),
+			notice(t(good ? "flash.gd88.done.second_up" : "flash.gd88.done.second_down"), good ? "ok" : "bad"), good ? null : ctx.helpLink());
 		S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
 		await dropC7();
 	};

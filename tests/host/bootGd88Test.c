@@ -320,11 +320,13 @@ static void test_stay(void)
 	CHECK(resumed && count("\x02\x24\x00\x03") == BOOT_WINDOW, "%zu handshakes", count("\x02\x24\x00\x03"));
 }
 #else
-// Left keyed by a soft reset: the chain gets 64 zero bits and the latch, PTC20 goes low, the power latch high, before
-// the first handshake
+// Left keyed by a soft reset: PTB2 (TX) goes low, the chain gets 64 zero bits and the latch, PTC20 goes low, the power
+// latch high, before the first handshake
 static void test_chain(void)
 {
 	reset(3);
+	dr[1] = 1u << 2;
+	ddr[1] = 1u << 2;
 	dr[2] = (1u << 20) | 0x3u;
 	ddr[2] = (1u << 20) | 0x3u;
 	run();
@@ -334,6 +336,7 @@ static void test_chain(void)
 	CHECK((dr[2] & (1u << 20)) == 0 && (ddr[2] & (1u << 20)), "PTC20 not driven low");
 	CHECK((dr[2] & 0x3u) == 0x3u, "unrelated pins changed");
 	CHECK((dr[1] & (1u << 13)) && (ddr[1] & (1u << 13)), "power latch not driven high");
+	CHECK((dr[1] & (1u << 2)) == 0 && (ddr[1] & (1u << 2)), "PTB2 (TX) not driven low");
 }
 #endif
 

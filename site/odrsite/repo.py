@@ -367,7 +367,9 @@ def c7000_flash():
 			       # console the page reads (the DB25-D), and the board profile the universal stub gets (CONFIG)
 			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
 			       "stock_console": lay.get("stock_console", False),
-			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand")} if bid in st.C7_BOARDS
+			       # (with its LED pins and pinned UART where they differ from the defaults: the GD-88)
+			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand", "leds", "uart", "bridge")
+					      if k in st.C7_BOARDS[bid]} if bid in st.C7_BOARDS
 			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")}}
 	profiles = []
 	for p in dc.PROFILES.values():

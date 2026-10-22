@@ -86,9 +86,9 @@ routes and pins (latch PTB13, key PTB12, the NAND). `--board gd88b` is B, the se
 tool reaches it through ODR on A ([rx2-link.md](../docs/spec/rx2-link.md) 4): it asks A for the bridge
 (`DL_CMD_RX2`), then loads the stub into B's first stage through it. That route takes no `--odr-enter` and no `--baud`.
 
-Neither SoC has LEDs on GPIO, and on A the default LED pins (PTB0 / PTB1) clock and feed the RF switch chain. So the
-tool patches the image's parameter block before it sends it: no LEDs on both, the latch and key on A, and UART3 only
-on B. The DB25-D, DM-32UV and DM-1801 Pro get the image unchanged.
+The radio's two LEDs are on B (PTA16, PTB17), and on A the default LED pins (PTB0 / PTB1) clock and feed its serial
+output chain. So the tool patches the image's parameter block before it sends it: no LEDs and the latch and key on A;
+B's own LEDs and UART3 only on B. The DB25-D, DM-32UV and DM-1801 Pro get the image unchanged.
 
 ```sh
 stubtool.py PORT --board gd88 --write-app build/gd88/odr_gd88_install.bin --boot reset     # A at power-on

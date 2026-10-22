@@ -145,8 +145,12 @@ def c7000(out, rng):
 	image = bytes(rng.getrandbits(8) for _ in range(300 * 1024 + 5))
 	maps = dc.synthetic_map(found, bytes(code))
 	merged = dc.merge(image, found, *dc.carve(bytes(dump), found), maps)
+	univ = st.stub_univ_image()
 	for name, data in (("lz4_plain.bin", sector), ("lz4_block.bin", st.lz4_encode(sector)), ("c7000_progmem.bin", dump),
-			   ("c7000_image.bin", image), ("c7000_merged.bin", merged)):
+			   ("c7000_image.bin", image), ("c7000_merged.bin", merged),
+			   # the stub image as stubtool patches it for the GD-88's two SoCs
+			   ("c7000_stub_gd88.bin", st.patch_univ(univ, st.C7_BOARDS["gd88"])),
+			   ("c7000_stub_gd88b.bin", st.patch_univ(univ, st.C7_BOARDS["gd88b"]))):
 		with open(os.path.join(out, name), "wb") as f:
 			f.write(data)
 	doc = {"profile": {"name": "synthetic", "board": "dm1801pro", "tag": prof["tag"], "code_len": len(code), "run": prof["code"][2],

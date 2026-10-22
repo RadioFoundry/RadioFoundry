@@ -6,6 +6,10 @@
 // (erase sets a sector to 0xFF, programming only clears bits). The ROM side and the stub side follow stub/stubtool.py's
 // FakeRadio. Bytes reach the host no faster than a 115200 baud cable would carry them (times `speed`).
 //
+// rx2: the radio has a second SoC behind ODR (the GD-88): DL_CMD_RX2 answers, and its BRIDGE hands the cable to the
+// second SoC's first stage, which this model plays with the same flash and stub (the first SoC's ODR answers again
+// after the stub's reset).
+//
 // A DB25-D's original firmware (usmart: its build) also answers the debug console the page loads the stub through
 // (db25d.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was written.
 //
@@ -61,7 +65,8 @@ export async function c7000Simulation(cReal, boardId, seed = 7000) {
 export class FakeC7000 {
 	// firmware: "stock" | "odr" (with stub entry) | "odr-nostub"; speed: how many times faster than a real cable
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
-		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null } = {}) {
+		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, rx2 = false } = {}) {
+		this.rx2 = rx2;
 		this.usmart = usmart;			// a DB25-D's original firmware build ("018"): it has the debug console
 		this.ram = new Map();			// the console's view of RAM: words written since power-on
 		this.frames = [];			// every console frame received, as text
@@ -249,6 +254,18 @@ export class FakeC7000 {
 					this.events.push("stub (from ODR)");
 				}, 100);
 			}
+		} else if (f.cmd === 0x1E && this.rx2) {
+			const p = f.payload;
+			if (p[0] === 0) return reply(0, new Uint8Array([0x0F])), 1;		// present, up, bridge, restart
+			if (p.length !== 5 || u32le(p, 1) !== 0x47445242) return reply(7), 1;
+			reply(0);
+			if (p[0] === 1) setTimeout(() => {				// the second SoC's first stage, through the bridge
+				this.state = "rom";
+				this.inb = new Uint8Array(0);
+				this.loaded = new Uint8Array(0);
+				this.events.push("bridge");
+				this.send(new Uint8Array([0x02, 0x24, 0x00, 0x03]));
+			}, 100);
 		} else reply(3);
 		return 1;
 	}

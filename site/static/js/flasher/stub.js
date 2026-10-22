@@ -26,6 +26,8 @@ export const SSI_PROG = 0x04000000, SSI_DATA = 0x140A0000;
 export const QUAD_ENABLE = 0x1100005C, LCSFC_BAUDR = 0x11000030, SYS_SOFT_RSTN = 0x11000000, TIMER2_VALUE = 0x14000018;
 export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
 export const STUB_MAGIC = 0x42533743, DL_STUB = 0x1A;
+// DL_CMD_RX2: the second SoC of a radio with two (the GD-88), reached through the first (docs/spec/debuglink.md 3.22)
+export const DL_RX2 = 0x1E, RX2_TOKEN = 0x47445242, RX2_F = { present: 1, up: 2, bridge: 4, restart: 8 };
 const ROM_HELLO = [0x02, 0x24, 0x00, 0x03], ROM_ACK = [0x02, 0x05, 0x00, 0x03];
 // memory: SSI base, the GPIO chip select (the data flash's is PTA18), size
 export const MEM = {
@@ -57,6 +59,24 @@ export function stubImages(json) {
 	const image = Uint8Array.from(atob(json.univ.data), (c) => c.charCodeAt(0));
 	return { image, sha: json.univ.sha256, load: json.univ.load, run: json.univ.run, end: json.univ.end };
 }
+
+// The universal stub with the board's pins in its parameter block (stubtool's patch_univ), for the part of the run
+// before CONFIG: the UART it listens on, the power latch and key, the LED pins. Only a board that needs it (LEDs or a
+// UART in its profile: the GD-88, whose default LED pins are its RF chain's clock and data) gets a patched copy
+export function patchUniv(image, board) {
+	if (!board || !(board.leds || board.uart) || !univLayout(image)) return image;
+	const out = image.slice();
+	const leds = board.leds || [33, 32];
+	for (const [off, v] of [[0x8C, board.uart || 0], [0x9C, board.latch], [0xA0, board.key], [0xA8, leds[0]], [0xAC, leds[1]]])
+		for (let k = 0; k < 4; k++) out[off + k] = (v >>> (8 * k)) & 0xFF;
+	return out;
+}
+
+// The LED pins the stub drives on a board: its own (255 = none), else the HR_C7000 radios' usual PTB1 / PTB0
+export const boardLed = (C, id) => {
+	const l = C.boards[id]?.stub_board?.leds;
+	return l ? { red: l[0], green: l[1] } : C.led;
+};
 
 // [run, end) from a universal stub's parameter block ('UCFG' at 0x80, layout 2 or later), or null
 export function univLayout(image) {
@@ -158,6 +178,37 @@ export class Stub {
 		}
 		if (r.length < 14 || u32le(r, 0) !== STUB_MAGIC) return null;
 		return { load: u32le(r, 4), size: u32le(r, 8), chunk: Math.min(r[12] | (r[13] << 8), 59) };
+	}
+
+	// The second SoC (docs/spec/rx2-link.md 4): ODR on the first hands the cable over, and about 100 ms later the port
+	// carries the second SoC's first stage, which offers the boot ROM's handshake for up to a minute (waitForRom,
+	// loadThroughRom). Throws when there is no bridge or ODR refuses it (transmitting)
+	static async bridgeFromOdr(link) {
+		let flags;
+		try {
+			flags = (await link.request(DL_RX2, new Uint8Array([0])))[0];
+		} catch (e) {
+			throw new StubError("this ODR build has no route to the second receiver");
+		}
+		if (!(flags & RX2_F.present)) throw new StubError("this radio has no second receiver");
+		if (!(flags & RX2_F.bridge)) throw new StubError("this ODR build has no route to the second receiver");
+		const p = new Uint8Array([1, RX2_TOKEN & 0xFF, (RX2_TOKEN >>> 8) & 0xFF, (RX2_TOKEN >>> 16) & 0xFF, RX2_TOKEN >>> 24]);
+		try {
+			await link.request(DL_RX2, p);
+		} catch (e) {
+			throw new StubError(/status 7/.test(e.message) ? "the radio is transmitting: release PTT and try again"
+				: `ODR refused the hand-over (${e.message})`);
+		}
+		return flags;
+	}
+
+	// The second SoC's state, from ODR on the first: RX2_F flags, or null when it doesn't say
+	static async secondState(link) {
+		try {
+			return (await link.request(DL_RX2, new Uint8Array([0])))[0];
+		} catch (e) {
+			return null;
+		}
 	}
 
 	// entry: where ODR jumps (the offered load address unless the stub runs elsewhere, as the STM32F4 one does)

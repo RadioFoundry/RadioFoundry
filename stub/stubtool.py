@@ -522,9 +522,10 @@ C7_BOARDS = {
     "gd88": {"id": 4, "name": "GD-88", "names": ("GD-88", "gd88"), "latch": 45, "key": 44, "nand": True,
              "progmem": 0x200000, "leds": (255, 255)},
     # GD-88 SoC B, the second receiver: no cable, reached through A's bridge on its UART3 (docs/spec/rx2-link.md 4); no
-    # latch or key (PTB13 is an RF pin on B), no LEDs, the stub pinned to UART3
+    # latch or key (PTB13 is an RF pin on B), the radio's two status LEDs on PTA16 and PTB17 (high = on), the stub
+    # pinned to UART3
     "gd88b": {"id": 5, "name": "GD-88 receiver B", "names": ("GD-88 B", "gd88b"), "latch": 255, "key": 255,
-              "nand": True, "progmem": 0x200000, "leds": (255, 255), "uart": 0x14090000, "bridge": True},
+              "nand": True, "progmem": 0x200000, "leds": (16, 49), "uart": 0x14090000, "bridge": True},
 }
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
@@ -2038,7 +2039,7 @@ def self_test():
     # GD-88 B: the image pinned to UART3 with no latch, key or LEDs; through A's bridge; refusals
     pb = patch_univ(univ, C7_BOARDS["gd88b"])
     words = [int.from_bytes(pb[o:o + 4], "little") for o in (0x8C, 0x9C, 0xA0, 0xA8, 0xAC)]
-    check(words == [0x14090000, 255, 255, 255, 255], "gd88b image: UART3, no latch, key or LEDs (%s)" % words)
+    check(words == [0x14090000, 255, 255, 16, 49], "gd88b image: UART3, no latch or key, its LEDs (%s)" % words)
     pa = patch_univ(univ, C7_BOARDS["gd88"])
     words = [int.from_bytes(pa[o:o + 4], "little") for o in (0x8C, 0x9C, 0xA0, 0xA8, 0xAC)]
     check(words == [0, 45, 44, 255, 255], "gd88 image: both UARTs, latch and key, no LEDs (%s)" % words)
@@ -2051,7 +2052,7 @@ def self_test():
     r.start(wait=2, board="gd88b")
     r.configure("gd88b")
     check(bridge.bridged and bridge.running and bytes(bridge.loaded[:len(pb)]) == pb, "gd88b stub loaded through the bridge")
-    check(r.configured is C7_BOARDS["gd88b"] and bridge.configs[-1][10:12] == b"\xff\xff", "gd88b configured, no LEDs")
+    check(r.configured is C7_BOARDS["gd88b"] and bridge.configs[-1][10:12] == bytes([16, 49]), "gd88b configured, its LEDs")
     for flags, what in ((0x00, "no second receiver"), (0x03, "no bridge")):
         try:
             Radio(FakeBridged(images, flags=flags), log=quiet).rx2_bridge()
@@ -2297,7 +2298,7 @@ def main(argv=None):
             for b in ([921600, 460800, 230400, 750000, 500000, 375000, 250000] if a.baud == "auto" else [int(a.baud)]):
                 if radio.set_baud(b):
                     break
-        if radio.profile is not None and "leds" in radio.profile:     # a board with no LED pins: never the defaults
+        if radio.profile is not None and "leds" in radio.profile:     # a board with its own LED pins (or none): never the defaults
             a.led_red, a.led_green = board_leds(radio.profile)
         radio.setup_led(a.led_red, a.led_green, a.led_status)
         if a.led_test:

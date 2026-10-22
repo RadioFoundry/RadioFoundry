@@ -9,9 +9,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { crc32, equal, sha256 } from "../static/js/flasher/bytes.js";
+import { crc32, equal, sha256, sleep } from "../static/js/flasher/bytes.js";
 import { decodeBlock, encodeBlock } from "../static/js/flasher/lz4.js";
-import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout } from "../static/js/flasher/stub.js";
+import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout, patchUniv, boardLed } from "../static/js/flasher/stub.js";
 import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation } from "../static/js/flasher/fakec7000.js";
@@ -22,6 +22,21 @@ const bin = (n) => new Uint8Array(readFileSync(join(DIR, n)));
 const C = json("flash-boards.json").c7000;
 const stubs = stubImages(json("c7000-stub.json"));
 const quiet = () => {};
+
+test("the GD-88's stub images are patched as stubtool patches them; other radios get the image unchanged", () => {
+	for (const id of ["gd88", "gd88b"]) {
+		const got = patchUniv(stubs.image, C.boards[id].stub_board);
+		assert.ok(equal(got, bin(`c7000_stub_${id}.bin`)), id);
+	}
+	assert.deepEqual(boardLed(C, "gd88"), { red: 255, green: 255 });
+	assert.deepEqual(boardLed(C, "gd88b"), { red: 16, green: 49 });
+	assert.equal(C.boards.gd88b.stub_board.uart, 0x14090000);
+	assert.equal(C.boards.gd88b.stub_board.bridge, true);
+	for (const id of ["dm32", "dm1801pro", "db25d"]) {
+		assert.equal(patchUniv(stubs.image, C.boards[id].stub_board), stubs.image, id);
+		assert.deepEqual(boardLed(C, id), C.led);
+	}
+});
 
 test("the universal stub decodes to its SHA-256 and fits every way in", async () => {
 	assert.equal(await sha256(stubs.image), stubs.sha);
@@ -83,6 +98,30 @@ async function radio(firmware = "stock", opts = {}) {
 	}
 	return { sim, r };
 }
+
+test("GD-88 receiver B: ODR on the first SoC hands the cable over, the stub loads through the bridge", async (t) => {
+	const { r } = await radio("odr", { rx2: true, board: "GD-88" });
+	t.after(() => r.stop());
+	r.powerOn();
+	await sleep(800);
+	const link = new Link(r.stream, { timeout: 1000 });
+	assert.equal((await probe(link)).board, "GD-88");
+	assert.equal(await Stub.bridgeFromOdr(link), 0x0F);
+	const s = new Stub(r.stream, { log: quiet });
+	await s.waitForRom(3000);
+	const image = patchUniv(stubs.image, C.boards.gd88b.stub_board);
+	await s.loadThroughRom(image, stubs.load);
+	assert.ok(r.events.includes("bridge") && r.state === "stub");
+	assert.ok(equal(r.loaded.subarray(0, image.length), image), "B got the patched image");
+	await s.configure(C.boards.gd88b.stub_board, boardLed(C, "gd88b"));
+	assert.equal(r.stubCfg.board, 5, "the gd88b profile reached the stub");
+	// a refused token, and a radio without a second receiver
+	const plain = await radio("odr");
+	t.after(() => plain.r.stop());
+	plain.r.powerOn();
+	await sleep(800);
+	await assert.rejects(Stub.bridgeFromOdr(new Link(plain.r.stream, { timeout: 300 })), /route to the second receiver/);
+});
 
 test("a sector record that belongs to another sector is caught by the radio's checksums and read again", async (t) => {
 	const { sim, r } = await radio("stock", { faults: { misplace: [0x41000, 0x9F000] } });
