@@ -153,7 +153,7 @@ The same on every screen (information-architecture.md, key maps 7.1 to 7.5):
 | QUICK | Quick settings (closes them again) | lock / unlock the keys |
 | CONTEXT | the focused item's actions; a banner's target while one is up | Recent |
 | TALK_TARGET | the talk target picker | |
-| digits | Find on Home, numbered rows in lists, T9 letters in filters; nothing while PTT keys the radio (on FM, DTMF once it exists, #54) | speed dial (a toast for now); nothing while PTT keys the radio |
+| digits | Find on Home, numbered rows in lists, T9 letters in filters; nothing while PTT keys the radio; on FM the input task gives them, \* and # to the radio core as DTMF and the UI never sees them (`radio-features.md` 3.7) | speed dial (a toast for now); nothing while PTT keys the radio |
 | PTT | talk to the focused person or talkgroup once (one-shot), else the channel's target | |
 
 Radios without some keys fall back as the key maps say (few-key map F in the tests). Up / Down on Home change the

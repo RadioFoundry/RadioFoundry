@@ -160,6 +160,8 @@ CONFIG_CHANNEL_EDIT ?= $(CONFIG_CHANNEL_LIST)
 CONFIG_BEEP ?= y
 # FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
 CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
+# DTMF transmit: keypad digits send touch tones while PTT is held on FM (needs FM; docs/spec/radio-features.md 3.7)
+CONFIG_DTMF ?= $(CONFIG_FM)
 # FM VOX: voice-operated transmit from the microphone level (needs FM; unverified on the bench)
 CONFIG_VOX ?= $(CONFIG_FM)
 # receiver battery saving: FM receiver duty cycling while idle (needs FM)
@@ -336,7 +338,7 @@ ifneq ($(call feature_on,VFO_DMR),)
     $(error CONFIG_VFO_DMR=y needs CONFIG_DMR=y)
   endif
 endif
-$(foreach f,FM_TX_TONES VOX BATTERY_SAVE AM_RX APRS,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
+$(foreach f,FM_TX_TONES DTMF VOX BATTERY_SAVE AM_RX APRS,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
 ifneq ($(call feature_on,AUDIO_PROBE),)
   ifeq ($(call feature_on,DEBUGLINK)$(call feature_on,DMR),yy)
   else

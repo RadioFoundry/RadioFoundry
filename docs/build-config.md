@@ -60,6 +60,7 @@ below are for the DM-1701.
 | `CONFIG_FM` | y | analog FM receive and transmit |
 | `CONFIG_SUBTONE` | = FM | CTCSS / DCS encode and decode. MD-380: software decode from the ADC and PWM encode, 3.3 KB |
 | `CONFIG_FM_TX_TONES` | = FM (MD-380: n) | roger beep and 1750 Hz burst sent over the air (`docs/spec/radio-features.md` 3) |
+| `CONFIG_DTMF` | = FM (MD-380: n) | DTMF digits sent from the keys while PTT is held on FM (`docs/spec/radio-features.md` 3.7) |
 | `CONFIG_VOX` | = FM | voice-operated transmit on FM, from the microphone level (`docs/spec/radio-features.md` 3.4) |
 | `CONFIG_BATTERY_SAVE` | = FM | receiver duty cycling on an idle FM channel (`docs/spec/radio-features.md` 5.4) |
 | `CONFIG_VIBRATE` | n (radios with a vibration motor: y) | vibration alerts on the board's motor (`hal_power_t.vibrate`) for messages, call alerts, private calls and emergencies, and Settings > Sound > Vibrate (`docs/spec/radio-features.md` 4.1). No radio on main has a motor yet; a board without one shows the row dimmed |
@@ -161,7 +162,7 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 
 | Board | Off by default | Why |
 |---|---|---|
-| md380 | `FM_TX_TONES`, `APRS_RX` (maximal build too: `BOARD_UNSUPPORTED`) | no tone path or APRS receive written for the board yet; `APRS_IGATE` follows `APRS_RX` |
+| md380 | `FM_TX_TONES`, `DTMF`, `APRS_RX` (maximal build too: `BOARD_UNSUPPORTED`) | no tone path or APRS receive written for the board yet; `APRS_IGATE` follows `APRS_RX` |
 | md380 | `SFR`, `HOTSPOT_SPLIT` (maximal build too) | HR_C6000 only |
 | md380 | `FONT_XL`, `AM_RX`, `BCAST_FM`, `NET_PPP` (off on most boards; the maximal build leaves them off here too) | a 160 px panel has no use for the font; no air band or broadcast receiver; PPP stands in for USB |
 | dm1701, md380 | `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | the host port is USB, and the one UART is a GPS receive line: nothing a fault handler can print on |

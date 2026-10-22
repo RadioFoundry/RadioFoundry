@@ -17,6 +17,7 @@
 #include "dm1701.h"
 #include "pins.h"
 #include "hal_time.h"
+#include "hal_dtmf.h"
 #include "rf/at1846s/at1846s.h"
 #include "modem/hrc6000/hrc6000.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
@@ -851,11 +852,13 @@ static void volume(uint8_t percent)
 // 3.1 kHz peak, about linear in the field. HIL 2026-10-10: 0x40 measured 7.2 kHz peak on air (SDR bench), too wide
 #define TONE_DEV	0x1Cu
 
+// DTMF deviation, reg 0x59 bits 15:6, for the two tones together (radio-features.md 3.7)
+#define DTMF_DEV	0x1Cu
+
 // FM TX tone (hardware-dm1701.md 5.8): the AT1846S tone generator as the voice source with the HR_C6000 microphone
 // input muted (4:0xE0 bit 6 cleared). The AT1846S modulates it as it does its CTCSS (seen on the SDR bench) once
-// voice_sel selects tone1; with voice_sel left at "nothing" the carrier was unmodulated (gotchas 3.10). Only during FM
-// TX; the next tx() / rx() reapplies the mode tables
-// The DCS turn-off tail (hardware-dm1701.md 5.7); the core holds the carrier for it
+// The DCS turn-off tail (hardware-dm1701.md 5.7); the core holds the carrier for it. The sub-audio selection
+// (reg 0x4E), apart from the tone generator tone_start() uses
 static bool tx_tail(bool on)
 {
 	if (!r.tx_on || r.mode != RADIO_MODE_FM) {
@@ -864,7 +867,10 @@ static bool tx_tail(bool on)
 	return at1846s_tx_tail(&r.rf, on);
 }
 
-static bool tx_tone(uint16_t hz)
+// voice_sel selects tone1; with voice_sel left at "nothing" the carrier was unmodulated (gotchas 3.10). high != 0:
+// tone2 at high as well, voice_sel = both tones (a DTMF pair). Only during FM TX; the next tx() / rx() reapplies the
+// mode tables
+static bool tone_start(uint16_t hz, uint16_t high, uint16_t dev)
 {
 	if (!r.tx_on || r.mode != RADIO_MODE_FM) {
 		return false;
@@ -883,19 +889,41 @@ static bool tx_tone(uint16_t hz)
 			count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)(e0 & ~0x40u)));	// microphone muted
 		}
 		count(at1846s_write(&r.rf, 0, 0x35, (uint16_t)(hz * 10u)));		// tone1 = Hz x 10
-		count(at1846s_write(&r.rf, 0, 0x79, 0xC000));				// single tone
-		count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((TONE_DEV << 6) | (r.saved_59 & 0x3Fu))));	// tone deviation
+		if (high != 0) {
+			count(at1846s_write(&r.rf, 0, 0x36, (uint16_t)(high * 10u)));	// tone2 = Hz x 10
+		}
+		// Single tone mode (0x79 bits 15:14: direct, tone generator; 0x7A bit 14) sends tone1 and tone2 for as
+		// long as it is on, where the chip's DTMF mode (0x7A bit 15) would time each digit itself
+		count(at1846s_write(&r.rf, 0, 0x79, 0xC000));
+		count(at1846s_write(&r.rf, 0, 0x59, (uint16_t)((dev << 6) | (r.saved_59 & 0x3Fu))));	// tone deviation
 		count(at1846s_modify(&r.rf, 0, 0x7A, 0xBFFF, 0x4000));			// single tone enable
-		// voice_sel, 0x3A bits 14:12 = 001: TX the tone1 frequency (AT1846S programming guide, TX voice channel
-		// select). Bits 6:4 are squelch and sub-audio detect enables, not the voice source: writing the tone there
-		// left voice_sel at 000 (TX nothing), an unmodulated carrier
-		count(at1846s_modify(&r.rf, 0, 0x3A, 0x8FFF, 0x1000));
+		// voice_sel, 0x3A bits 14:12 = 001: TX the tone1 frequency, 011: tone1 and tone2 (AT1846S programming guide,
+		// TX voice channel select). Bits 6:4 are squelch and sub-audio detect enables, not the voice source: writing
+		// the tone there left voice_sel at 000 (TX nothing), an unmodulated carrier
+		count(at1846s_modify(&r.rf, 0, 0x3A, 0x8FFF, high != 0 ? 0x3000 : 0x1000));
 		r.tone_hz = hz;
 	} else {
 		tone_restore();
 	}
 	return true;
 }
+
+static bool tx_tone(uint16_t hz)
+{
+	return tone_start(hz, 0, TONE_DEV);
+}
+
+#if CONFIG_DTMF
+// DTMF (radio-features.md 3.7): tone1 the low tone, tone2 the high one. A new digit while one sounds only retunes
+static bool tx_dtmf(char digit)
+{
+	uint16_t low = 0, high = 0;
+	if (digit != 0 && !dtmf_pair(digit, &low, &high)) {
+		return false;
+	}
+	return tone_start(low, high, DTMF_DEV);
+}
+#endif
 
 // Morse keying of the FM TX tone (hardware-dm1701.md 5.8): the tone deviation (reg 0x59 bits 15:6) to 0 for key up,
 // back to the tone value for key down. The tone generator stays the voice source and the HR_C6000 microphone input
@@ -973,6 +1001,9 @@ const hal_radio_t dm1701_radio = {
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
+#if CONFIG_DTMF
+	.tx_dtmf = tx_dtmf,
+#endif
 	.rx_sleep = rx_sleep,
 };
 

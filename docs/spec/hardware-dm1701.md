@@ -608,6 +608,11 @@ ODR's `tx_tone(hz)` (`boards/dm1701/radio_dm1701.c`, the roger beep and the 1750
 3.3) uses tone1 with 0x79 = 0xC000 and tone deviation 0x1C, and mutes the HR_C6000 microphone path (page 4 0xE0
 bit 6). `tx_tone(0)` and every return to receive restore the saved registers.
 
+DTMF (`tx_dtmf`, `radio-features.md` 3.7) is the same path with tone2 as well: 0x35 = the low tone, 0x36 = the high
+tone, voice_sel = 011 (tone1 + tone2), single tone select and enable as above (0x7A bit 15, the chip's own DTMF mode,
+times each digit itself and isn't used). The deviation is `DTMF_DEV` in 0x59 bits 15:6, 0x1C like the single tone
+until measured for the pair. A new digit only rewrites 0x35 and 0x36.
+
 ### 5.9 RSSI, noise, squelch
 
 | Register | Field |

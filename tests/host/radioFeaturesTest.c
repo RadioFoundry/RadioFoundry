@@ -62,6 +62,13 @@ static struct {
 	int vibes;		// vibrate() calls
 	uint16_t vibe_ms[8];	// their lengths
 	uint32_t vibe_at[8];	// and when
+	char dtmf;		// tx_dtmf: the digit sounding
+	int dtmf_calls;
+	char dtmf_log[32];	// the digits started, in order
+	uint32_t dtmf_on[32];	// when each started
+	uint32_t dtmf_off[32];	// and ended (tx_dtmf(0))
+	int dtmf_n;
+	int mixed;		// a DTMF digit and the sub-audio tail on the air together
 } hw;
 
 static bool same_tone(subtone_t a, subtone_t b)
@@ -98,6 +105,7 @@ static bool r_tx_tail(bool on)
 	}
 	hw.tail_starts += on;
 	hw.tail_on = on;
+	hw.mixed += on && hw.dtmf != 0;
 	return true;
 }
 static void r_status(radio_status_t *st)
@@ -130,6 +138,21 @@ static bool r_tx_tone(uint16_t hz)
 	hw.tone_calls++;
 	return true;
 }
+static bool r_tx_dtmf(char digit)
+{
+	hw.dtmf_calls++;
+	hw.mixed += digit != 0 && hw.tail_on;
+	if (digit == 0) {
+		if (hw.dtmf != 0 && hw.dtmf_n > 0) {
+			hw.dtmf_off[hw.dtmf_n - 1] = now;
+		}
+	} else if (hw.dtmf_n < 32) {
+		hw.dtmf_log[hw.dtmf_n] = digit;
+		hw.dtmf_on[hw.dtmf_n++] = now;
+	}
+	hw.dtmf = digit;
+	return true;
+}
 static void r_rx_sleep(bool sleep)
 {
 	hw.asleep = sleep;
@@ -140,6 +163,10 @@ static void r_rx_sleep(bool sleep)
 	}
 }
 static const hal_radio_t fake_radio = {
+	.init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off, .status = r_status,
+	.audio = r_audio, .tx_tone = r_tx_tone, .tx_dtmf = r_tx_dtmf, .rx_sleep = r_rx_sleep, .tx_tail = r_tx_tail,
+};
+static const hal_radio_t fake_radio_no_dtmf = {
 	.init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off, .status = r_status,
 	.audio = r_audio, .tx_tone = r_tx_tone, .rx_sleep = r_rx_sleep, .tx_tail = r_tx_tail,
 };
@@ -2339,6 +2366,193 @@ static void test_dmr_short_press_wake(void)
 	chans[6].tx_hz = 438500000;
 }
 
+// DTMF on FM (radio-features.md 3.7): a key's tone lasts at least RADIO_DTMF_MIN_MS and as long as it is held, digits
+// are RADIO_DTMF_GAP_MS apart, one digit waits in a rollover, and nothing sends outside an FM transmission PTT holds
+static void dtmf(char d, bool down) { req(RREQ_DTMF, (uint8_t)d | (down ? 0x100 : 0)); }
+
+static void test_dtmf(void)
+{
+	start();
+	// Not transmitting: not ready, a key sends nothing
+	CHECK(!sm.view.dtmf_ready);
+	dtmf('5', true);
+	dtmf('5', false);
+	run(100);
+	CHECK(hw.dtmf_calls == 0 && sm.view.dtmf_sent == 0);
+	// PTT held on FM: ready at the next poll
+	req(RREQ_PTT, 1);
+	run(50);
+	CHECK(sm.view.state == RS_TX && sm.view.dtmf_ready && sm.view.dtmf == 0);
+	// A tap: the tone at once, held to the shortest length
+	dtmf('5', true);
+	CHECK(hw.dtmf == '5' && sm.view.dtmf == '5' && strcmp(sm.view.dtmf_digits, "5") == 0 && sm.view.dtmf_sent == 1);
+	dtmf('5', false);
+	run(RADIO_DTMF_MIN_MS - 30);
+	CHECK(hw.dtmf == '5');
+	run(30);
+	CHECK(hw.dtmf == 0 && sm.view.dtmf == 0 && hw.dtmf_off[0] - hw.dtmf_on[0] >= RADIO_DTMF_MIN_MS &&
+	      hw.dtmf_off[0] - hw.dtmf_on[0] < RADIO_DTMF_MIN_MS + RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_TX);
+	// Held: as long as the key, ending with its release
+	run(200);
+	dtmf('1', true);
+	run(400);
+	CHECK(hw.dtmf == '1');
+	dtmf('1', false);
+	CHECK(hw.dtmf == 0 && hw.dtmf_off[1] - hw.dtmf_on[1] == 400);
+	// The same digit again at once: it waits for the gap, so it decodes as two
+	dtmf('1', true);
+	CHECK(hw.dtmf == 0);
+	dtmf('1', false);
+	run(RADIO_DTMF_GAP_MS + RADIO_POLL_MS);
+	CHECK(hw.dtmf_n == 3 && hw.dtmf_log[2] == '1' && hw.dtmf_on[2] - hw.dtmf_off[1] >= RADIO_DTMF_GAP_MS);
+	run(200);
+	CHECK(hw.dtmf == 0);
+	// Rollover: a second key ends the first (after its shortest length) and follows after the gap; a third is dropped
+	dtmf('3', true);
+	run(150);
+	dtmf('4', true);
+	CHECK(hw.dtmf == 0);
+	dtmf('6', true);
+	run(RADIO_DTMF_GAP_MS + RADIO_POLL_MS);
+	CHECK(hw.dtmf == '4');
+	dtmf('3', false);
+	dtmf('6', false);
+	run(200);
+	CHECK(hw.dtmf == '4');
+	dtmf('4', false);
+	CHECK(hw.dtmf == 0 && strcmp(sm.view.dtmf_digits, "51134") == 0 && sm.view.dtmf_sent == 5);
+	// Not digits: nothing
+	run(100);
+	dtmf('E', true);
+	dtmf('x', true);
+	run(100);
+	CHECK(hw.dtmf == 0 && sm.view.dtmf_sent == 5);
+	// The view keeps the newest RADIO_DTMF_SHOWN
+	const char *seq = "*#ABCD07";
+	for (int i = 0; seq[i] != 0; i++) {
+		dtmf(seq[i], true);
+		dtmf(seq[i], false);
+		run(RADIO_DTMF_MIN_MS + RADIO_DTMF_GAP_MS + RADIO_POLL_MS);
+	}
+	CHECK(strcmp(sm.view.dtmf_digits, "*#ABCD07") == 0 && sm.view.dtmf_sent == 13);
+	// PTT released with a key held: the tone stops with the transmission, the digits go
+	dtmf('9', true);
+	CHECK(hw.dtmf == '9');
+	req(RREQ_PTT, 0);
+	CHECK(hw.dtmf == 0 && !sm.view.dtmf_ready && sm.view.dtmf_digits[0] == 0);
+	dtmf('9', false);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE && hw.dtmf == 0);
+
+	// During a 1750 Hz burst: not ready; a burst starting while a digit sounds takes the air
+	req(RREQ_PTT, 1);
+	run(50);
+	dtmf('2', true);
+	CHECK(hw.dtmf == '2');
+	req(RREQ_TONE_BURST, 1);
+	CHECK(hw.dtmf == 0 && hw.tone_hz == RADIO_BURST_HZ);
+	run(50);
+	CHECK(!sm.view.dtmf_ready);
+	dtmf('2', false);
+	dtmf('3', true);
+	run(50);
+	CHECK(hw.dtmf == 0 && hw.dtmf_n == 15);
+	dtmf('3', false);
+	req(RREQ_TONE_BURST, 0);
+	run(50);
+	CHECK(sm.view.dtmf_ready);
+	req(RREQ_PTT, 0);
+	run(300);
+
+	// The time-out with a key held: the tone goes with the transmitter
+	settings(set_tot5);
+	req(RREQ_PTT, 1);
+	run(50);
+	dtmf('8', true);
+	run(5200);
+	CHECK(sm.view.state == RS_TX_DENIED && hw.dtmf == 0 && !sm.view.dtmf_ready);
+	dtmf('8', false);
+	req(RREQ_PTT, 0);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// A DMR channel: never ready
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX && !sm.view.dtmf_ready);
+	int n = hw.dtmf_n;
+	dtmf('1', true);
+	run(50);
+	CHECK(hw.dtmf_n == n);
+	dtmf('1', false);
+	req(RREQ_PTT, 0);
+	run(300);
+
+	// A board without tx_dtmf: never ready
+	board.radio = &fake_radio_no_dtmf;
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX && !sm.view.dtmf_ready);
+	req(RREQ_PTT, 0);
+	run(300);
+	board.radio = &fake_radio;
+}
+
+// DTMF and the DCS turn-off tail: the board's tone generator plays either, never both. A digit held through PTT release
+// stops before the tail starts; keys during the tail send nothing; PTT again during the tail brings DTMF back
+static void test_dtmf_tail(void)
+{
+	start();
+	hw.has_tail = true;
+	req(RREQ_PTT, 1);
+	run(50);
+	dtmf('7', true);
+	CHECK(hw.dtmf == '7' && sm.view.dtmf_ready);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && hw.tail_on && hw.dtmf == 0 && !sm.view.dtmf_ready && hw.mixed == 0);
+	// A key during the tail (the held one let go, another pressed): nothing sends, the tail runs out
+	dtmf('7', false);
+	dtmf('8', true);
+	run(RADIO_SUBTONE_TAIL_MS / 2);
+	CHECK(sm.view.state == RS_TX && hw.tail_on && hw.dtmf == 0 && hw.dtmf_n == 1 && !sm.view.dtmf_ready);
+	dtmf('8', false);
+	run(RADIO_SUBTONE_TAIL_MS);
+	CHECK(sm.view.state == RS_IDLE && !hw.tail_on && hw.dtmf == 0 && hw.dtmf_n == 1 && hw.mixed == 0);
+	// PTT again during the tail: the tail stops and digits send again
+	req(RREQ_PTT, 1);
+	run(50);
+	req(RREQ_PTT, 0);
+	CHECK(hw.tail_on);
+	run(50);
+	req(RREQ_PTT, 1);
+	run(50);
+	CHECK(sm.view.state == RS_TX && !hw.tail_on && sm.view.dtmf_ready);
+	dtmf('9', true);
+	CHECK(hw.dtmf == '9' && hw.dtmf_n == 2);
+	dtmf('9', false);
+	run(RADIO_DTMF_MIN_MS + RADIO_POLL_MS);
+	req(RREQ_PTT, 0);
+	run(RADIO_SUBTONE_TAIL_MS + 50);
+	CHECK(sm.view.state == RS_IDLE && !hw.tail_on && hw.mixed == 0);
+	// With the roger beep: digit off, then the beep, then the tail
+	settings(set_roger);
+	req(RREQ_PTT, 1);
+	run(50);
+	dtmf('1', true);
+	req(RREQ_PTT, 0);
+	CHECK(hw.dtmf == 0 && sm.view.roger && !hw.tail_on);
+	dtmf('1', false);
+	run(2 * RADIO_ROGER_STEP_MS + 20);
+	CHECK(hw.tail_on && hw.dtmf == 0);
+	run(RADIO_SUBTONE_TAIL_MS + 50);
+	CHECK(sm.view.state == RS_IDLE && hw.mixed == 0);
+}
+
 // The TX time-out while a tone is on the air: a 1750 Hz burst held past it, a roger beep running into it. And
 // settings out of range (another firmware's record, a host tool) clamped when they arrive
 static void set_tot5_roger(radio_settings_t *s) { s->tot_s = 5; s->tot_warn_s = 0; s->roger_beep = true; }
@@ -2460,7 +2674,9 @@ int main(void)
 	test_tot_and_beeps();
 	test_bcl_inhibit();
 	test_roger_burst();
+	test_dtmf();
 	test_subtone_tail();
+	test_dtmf_tail();
 	test_tot_tones_and_clamps();
 	test_vox();
 	test_battery();

@@ -208,6 +208,7 @@
  "screen.tools": "Tools",
  "screen.tx": "Transmitting",
  "screen.tx_private": "Transmitting a private call",
+ "screen.tx_dtmf": "Sending touch tones (DTMF) on FM",
  "screen.zone_channels": "Channels in a zone",
  "radios.list_title": "All radios",
  "radios.col_cpu": "Processor",

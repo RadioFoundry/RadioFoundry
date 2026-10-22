@@ -87,6 +87,11 @@ typedef struct {
 
 typedef enum { RADIO_BATT_OK, RADIO_BATT_LOW, RADIO_BATT_CRITICAL } radio_batt_t;	// = batt_level_t
 
+// DTMF (radio-features.md 3.7)
+#define RADIO_DTMF_MIN_MS	100	// shortest tone: a quick tap still decodes
+#define RADIO_DTMF_GAP_MS	60	// shortest pause between two digits: the same digit twice decodes as two
+#define RADIO_DTMF_SHOWN	8	// digits of this transmission the view keeps (the TX screen shows them)
+
 #if CONFIG_DMR
 #define RADIO_ALIAS_MAX		31	// talker alias characters (DMR_TA_TEXT_MAX)
 
@@ -236,6 +241,11 @@ typedef struct {
 	bool tot_warning;	// TX: the time-out is near (tot_warn_s)
 	bool tone_burst;	// TX: the 1750 Hz burst is on
 	bool roger;		// TX: the roger beep is being sent after the PTT release
+	// DTMF (CONFIG_DTMF; radio-features.md 3.7)
+	bool dtmf_ready;	// a digit key would send its tone now (FM TX with PTT held, nothing else on the air)
+	char dtmf;		// the digit sounding, 0 = none
+	char dtmf_digits[RADIO_DTMF_SHOWN + 1];	// the last digits sent in this transmission (oldest first)
+	uint16_t dtmf_sent;	// digits sent since start-up
 	bool vox_keyed;		// TX keyed by VOX
 	bool vox_on;		// VOX listens on this channel (the settings' vox, the channel, an FM channel)
 	bool rx_sleeping;	// battery save: the receiver is off for now
@@ -391,6 +401,11 @@ void radio_req_beep(uint8_t beep);
 void radio_req_vibrate(uint8_t pattern);
 // FM 1750 Hz tone burst while on (CONFIG_FM_TX_TONES): keys up if not transmitting, stops when off
 void radio_req_tone_burst(bool on);
+// A DTMF key down / up (CONFIG_DTMF; radio-features.md 3.7): digit '0'-'9', '*', '#', 'A'-'D'. Ignored unless the
+// view's dtmf_ready; the tone lasts at least RADIO_DTMF_MIN_MS. The input task sends the keypad's edges (any task)
+void radio_req_dtmf(char digit, bool down);
+// The view's dtmf_ready as last published, cheap for the input task (false without CONFIG_DTMF)
+bool radio_dtmf_ready(void);
 // Speaker volume steps (radio-features.md 4.2): 0 (mute) .. RADIO_VOLUME_MAX, passed to hal_radio_t.volume() as a
 // percent, round(step * 100 / RADIO_VOLUME_MAX). The step count is this one constant: the stored form, the screens,
 // the debug link and the boards' tables follow it. A radio without a volume knob (radio_volume_soft(): the board has

@@ -61,19 +61,20 @@ bool debuglink_dmr_diag_line(uint8_t i, char *buf, uint8_t len);
 void debuglink_dmr_reset(void);
 
 // The radio features (debuglink_view_radio.c): the "features" section, and the RADIO operations for scan, beeps, the
-// tone burst, one setting, roaming, vibration, volume and the DMR voice test signal (DL_OP_*; returns a DL_ST_* status)
+// tone burst, one setting, roaming, vibration, volume, the DMR voice test signal and DTMF keys (DL_OP_*; returns a DL_ST_* status)
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t);
 enum {
 	DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24,
 	DL_OP_ROAM = 26, DL_OP_VIBRATE = 29, DL_OP_VOLUME = 30, DL_OP_DMR_FIELDS = 31, DL_OP_VFO_COPY = 32,
 	DL_OP_VOICE_TEST = 33,
+	DL_OP_DTMF = 34,
 };
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
 // RADIO ops the dispatcher hands to debuglink_radio_feature_op: a new DL_OP_* goes here too
 static inline bool debuglink_is_feature_op(uint8_t op)
 {
 	return (op >= DL_OP_SCAN && op <= DL_OP_SETTING) || op == DL_OP_ROAM || op == DL_OP_VIBRATE || op == DL_OP_VOLUME ||
-	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST;
+	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST || op == DL_OP_DTMF;
 }
 // VERSION's codec= (hal_vocoder_id; the name the host tests use)
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)

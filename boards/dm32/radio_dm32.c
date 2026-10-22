@@ -386,6 +386,17 @@ static bool tx_tone_key(bool down)
 	return true;
 }
 
+#if CONFIG_DTMF
+// DTMF (radio-features.md 3.7): the same sender with the digit's two tones at the tone deviation
+static bool tx_dtmf(char digit)
+{
+	if (!transmitting || mode != RADIO_MODE_FM) {
+		return false;
+	}
+	return hrc7000_tx_dtmf(&modem, digit, hrc7000_dtmf_dev(tx_hz, tx_wide));
+}
+#endif
+
 static void status(radio_status_t *st)
 {
 	uint16_t r67 = fd6818_read(&fd, FD_REG_RSSI);
@@ -544,6 +555,9 @@ const hal_radio_t dm32_radio = {
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
+#if CONFIG_DTMF
+	.tx_dtmf = tx_dtmf,
+#endif
 	.rx_sleep = rx_sleep,
 	.status = status,
 	.audio = audio,

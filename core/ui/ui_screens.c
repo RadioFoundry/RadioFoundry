@@ -1348,6 +1348,13 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		gfx_text(big, 0, y, "TALKING", ui_col.tx);
 		if (two) {
 			sb_init(&b, buf, sizeof buf);
+			if (v->dtmf_digits[0] != 0) {
+				// DTMF sent in this transmission (radio-features.md 3.7): what the other end got, newest last
+				sb_str(&b, "DTMF ");
+				sb_str(&b, v->dtmf_digits);
+				gfx_text(sm, 0, y2, buf, ui_col.fg);
+				break;
+			}
 			if (v->tot_s) {
 				uint32_t el = v->tx_elapsed_ms / 1000u;
 				sb_mmss(&b, el < v->tot_s ? v->tot_s - el : 0);

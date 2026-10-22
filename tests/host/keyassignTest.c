@@ -15,11 +15,11 @@ enum { K_OK, K_SK1, K_SK2, K_TOP, K_PTT };
 
 // The DM-1701's side keys: SK1 monitor (held), SK2 talk target / scan, top power / emergency
 static const keymap_entry_t base[] = {
-	{ K_OK, ACT_SELECT, ACT_SELECT, false, false },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false },
-	{ K_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ K_OK, ACT_SELECT, ACT_SELECT, false, false, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false, 0 },
+	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 #define N	(sizeof(base) / sizeof(base[0]))
 static const uint8_t side[] = { K_SK1, K_SK2, K_TOP };

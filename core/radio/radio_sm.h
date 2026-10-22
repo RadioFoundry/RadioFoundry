@@ -137,6 +137,7 @@ typedef enum {
 	RREQ_VOLUME,		// arg: the volume step 0..RADIO_VOLUME_MAX (radios without a knob)
 	RREQ_VOLUME_OVERRIDE,	// arg: the step over the knob, -1 = back to the knob
 	RREQ_VFO_COPY,		// the channel's settings into the VFO, and open it (CONFIG_VFO); no-op in the VFO
+	RREQ_DTMF,		// arg: the digit (ASCII) in bits 7:0, bit 8 = key down (0 = up)
 	RREQ_DUAL,		// dual watch (CONFIG_DUAL_WATCH): arg channel A, arg2 channel B, radio_dual_arg()
 } radio_req_type_t;
 
@@ -277,6 +278,13 @@ typedef struct {
 #if CONFIG_FM_TX_TONES
 	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
 	uint32_t roger_ms;		// roger beep start, 0 = none
+#endif
+#if CONFIG_DTMF
+	bool dtmf_held;			// the key of the digit sounding (view.dtmf) is still down
+	char dtmf_next;			// a digit waiting for the one sounding (or the gap) to end, 0 = none
+	bool dtmf_next_held;		// ... its key is still down
+	uint32_t dtmf_on_ms;		// the digit sounding started
+	uint32_t dtmf_off_ms;		// the last digit ended
 #endif
 #if CONFIG_SUBTONE
 	uint32_t tail_ms;		// sub-audio tail start (hal_radio_t.tx_tail), 0 = none

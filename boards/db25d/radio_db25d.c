@@ -17,6 +17,7 @@
 #include "db25d.h"
 #include "dmr_db25d.h"
 #include "config.h"
+#include "hal_dtmf.h"
 #include "radio/radio.h"
 #include "pins.h"
 #include "platform.h"
@@ -513,6 +514,20 @@ static bool tx_tone(uint16_t hz)
 	return true;
 }
 
+#if CONFIG_DTMF
+// DTMF (radio-features.md 3.7): the chip's two tone generators, as the stock DTMF. Dropped at the end of the
+// transmission like a tone
+static bool tx_dtmf(char digit)
+{
+	uint16_t low = 0, high = 0;
+	if (!transmitting || mode != RADIO_MODE_FM || (digit != 0 && !dtmf_pair(digit, &low, &high))) {
+		return false;
+	}
+	bk4819_dtmf_start(&rf_main, low, high);
+	return true;
+}
+#endif
+
 // The DCS turn-off tail (4.7); the core holds the carrier for it
 static bool tx_tail(bool on)
 {
@@ -627,4 +642,7 @@ const hal_radio_t db25d_radio = {
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
+#if CONFIG_DTMF
+	.tx_dtmf = tx_dtmf,
+#endif
 };

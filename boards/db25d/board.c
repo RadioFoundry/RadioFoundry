@@ -20,32 +20,33 @@ static const band_t bands[] = {
 static const char *const power_names[] = { "L", "H" };
 
 // docs/ux/information-architecture.md 7.4 (mobile: front encoder and a few keys; the encoder push is OK). The hand
-// mic adds the digits, * and # (marked down and up) and P4-P7
+// mic adds the digits, * and # (marked down and up) and P4-P7, which send DTMF A-D while PTT is held on FM (the
+// manual's DTMF A-D keys)
 static const keymap_entry_t keymap[] = {
-	{ KEY_ENC_PUSH, ACT_SELECT, ACT_SELECT, false, false },
-	{ KEY_BE, ACT_BACK, ACT_BACK, false, false },
-	{ KEY_P1, ACT_QUICK, ACT_QUICK, false, false },
-	{ KEY_P2, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ KEY_P3, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ KEY_TONE, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ KEY_VOL, ACT_VOLUME, ACT_VOLUME, false, false },
-	{ KEY_MIC_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false },
-	{ KEY_MIC_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false },
-	{ KEY_MIC_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false },
-	{ KEY_MIC_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false },
-	{ KEY_MIC_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false },
-	{ KEY_MIC_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false },
-	{ KEY_MIC_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false },
-	{ KEY_MIC_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
-	{ KEY_MIC_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false },
-	{ KEY_MIC_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
-	{ KEY_MIC_STAR, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
-	{ KEY_MIC_HASH, ACT_NAV_UP, ACT_NAV_UP, false, true },
-	{ KEY_MIC_P4, ACT_USER_3, ACT_USER_3, false, false },
-	{ KEY_MIC_P5, ACT_USER_4, ACT_USER_4, false, false },
-	{ KEY_MIC_P6, ACT_QUICK, ACT_QUICK, false, false },
-	{ KEY_MIC_P7, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ KEY_ENC_PUSH, ACT_SELECT, ACT_SELECT, false, false, 0 },
+	{ KEY_BE, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ KEY_P1, ACT_QUICK, ACT_QUICK, false, false, 0 },
+	{ KEY_P2, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
+	{ KEY_P3, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ KEY_TONE, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ KEY_VOL, ACT_VOLUME, ACT_VOLUME, false, false, 0 },
+	{ KEY_MIC_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },
+	{ KEY_MIC_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
+	{ KEY_MIC_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false, 0 },
+	{ KEY_MIC_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false, 0 },
+	{ KEY_MIC_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 },
+	{ KEY_MIC_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
+	{ KEY_MIC_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 },
+	{ KEY_MIC_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
+	{ KEY_MIC_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
+	{ KEY_MIC_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
+	{ KEY_MIC_STAR, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, '*' },
+	{ KEY_MIC_HASH, ACT_NAV_UP, ACT_NAV_UP, false, true, '#' },
+	{ KEY_MIC_P4, ACT_USER_3, ACT_USER_3, false, false, 'A' },
+	{ KEY_MIC_P5, ACT_USER_4, ACT_USER_4, false, false, 'B' },
+	{ KEY_MIC_P6, ACT_QUICK, ACT_QUICK, false, false, 'C' },
+	{ KEY_MIC_P7, ACT_CONTEXT, ACT_CONTEXT, false, false, 'D' },
+	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 
 #if CONFIG_CPS_OPENFW

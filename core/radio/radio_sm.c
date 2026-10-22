@@ -10,6 +10,7 @@
 #include "radio/tones.h"
 #include "settings/settings.h"
 #include "config.h"
+#include "hal_dtmf.h"
 #if CONFIG_DMR
 #include "dmr/call/dmr_call.h"
 #include "dmr/ambe/ambeVoice.h"
@@ -3055,12 +3056,135 @@ static void aprs_poll(radio_sm_t *sm, uint32_t now_ms)
 static inline void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (void)now_ms; }
 #endif
 
+// --- DTMF (CONFIG_DTMF; radio-features.md 3.7): a digit key held during an FM transmission sends its pair ---
+
+#if CONFIG_DTMF
+// A digit key would send now: FM TX that PTT holds, with nothing else on the air
+static bool dtmf_allowed(const radio_sm_t *sm)
+{
+	if (board.radio->tx_dtmf == NULL || sm->view.state != RS_TX || sm->view.ch.mode != RADIO_MODE_FM || !sm->ptt ||
+			sm->hotspot || sm->host_audio) {
+		return false;
+	}
+#if CONFIG_FM_TX_TONES
+	if (sm->roger_ms != 0 || sm->view.tone_burst || sm->burst_keyed) {
+		return false;
+	}
+#endif
+	return true;
+}
+
+static void dtmf_start(radio_sm_t *sm, char digit, bool held, uint32_t now_ms)
+{
+	if (!board.radio->tx_dtmf(digit)) {
+		return;
+	}
+	sm->view.dtmf = digit;
+	sm->dtmf_held = held;
+	sm->dtmf_on_ms = now_ms;
+	sm->view.dtmf_sent++;
+	size_t n = strlen(sm->view.dtmf_digits);
+	if (n >= RADIO_DTMF_SHOWN) {
+		memmove(sm->view.dtmf_digits, sm->view.dtmf_digits + 1, RADIO_DTMF_SHOWN - 1);	// keep the newest
+		n = RADIO_DTMF_SHOWN - 1;
+	}
+	sm->view.dtmf_digits[n] = digit;
+	sm->view.dtmf_digits[n + 1] = 0;
+	changed(sm);
+}
+
+// The digit sounding off, the microphone back
+static void dtmf_end(radio_sm_t *sm, uint32_t now_ms)
+{
+	board.radio->tx_dtmf(0);
+	sm->view.dtmf = 0;
+	sm->dtmf_held = false;
+	sm->dtmf_off_ms = now_ms != 0 ? now_ms : 1;
+	changed(sm);
+}
+
+// Everything off at once: the transmission ends, or something else takes the air
+static void dtmf_cancel(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->view.dtmf != 0) {
+		dtmf_end(sm, now_ms);
+	}
+	sm->dtmf_next = 0;
+	if (sm->view.dtmf_ready) {
+		sm->view.dtmf_ready = false;
+		changed(sm);
+	}
+}
+
+// Every poll while transmitting: the tone sounding ends once its key is up and it has had its shortest length; a
+// waiting digit starts after the gap
+static void dtmf_poll(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!dtmf_allowed(sm)) {
+		dtmf_cancel(sm, now_ms);
+		return;
+	}
+	if (!sm->view.dtmf_ready) {
+		sm->view.dtmf_ready = true;
+		changed(sm);
+	}
+	if (sm->view.dtmf != 0 && !sm->dtmf_held && now_ms - sm->dtmf_on_ms >= RADIO_DTMF_MIN_MS) {
+		dtmf_end(sm, now_ms);
+	}
+	if (sm->view.dtmf == 0 && sm->dtmf_next != 0 &&
+			(sm->dtmf_off_ms == 0 || now_ms - sm->dtmf_off_ms >= RADIO_DTMF_GAP_MS)) {
+		char d = sm->dtmf_next;
+		sm->dtmf_next = 0;
+		dtmf_start(sm, d, sm->dtmf_next_held, now_ms);
+	}
+}
+
+// RREQ_DTMF: a key down or up. Up always counts (a key held from before still lets go); down only while allowed
+static void dtmf_key(radio_sm_t *sm, char digit, bool down, uint32_t now_ms)
+{
+	if (!down) {
+		if (sm->view.dtmf == digit) {
+			sm->dtmf_held = false;
+		}
+		if (sm->dtmf_next == digit) {
+			sm->dtmf_next_held = false;
+		}
+		if (sm->view.state == RS_TX) {
+			dtmf_poll(sm, now_ms);
+		}
+		return;
+	}
+	if (!dtmf_valid(digit) || !dtmf_allowed(sm)) {
+		return;
+	}
+	activity(sm, now_ms);
+	if (sm->view.dtmf == digit && sm->dtmf_held) {
+		return;		// the same key again (a repeated edge)
+	}
+	if (sm->dtmf_next != 0) {
+		return;		// one digit waits already: a third key in the rollover is dropped
+	}
+	// Another key down (rollover) ends the digit sounding once it has had its shortest length; this one waits for
+	// that and the gap
+	sm->dtmf_held = false;
+	sm->dtmf_next = digit;
+	sm->dtmf_next_held = true;
+	dtmf_poll(sm, now_ms);
+}
+#else
+static inline void dtmf_cancel(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (void)now_ms; }
+#endif
+
 // --- FM transmit tones and the end of an FM transmission ---
 
 // Back to receive after an FM transmission (PTT released, roger beep done, burst released)
 // keyed: DMR per-burst keying is still armed (dmr_follow releases it), so no tx_off here
 static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 {
+	dtmf_cancel(sm, now_ms);
+#if CONFIG_DTMF
+	sm->view.dtmf_digits[0] = 0;
+#endif
 	if (sm->view.state == RS_TX && !keyed) {
 		board.radio->tx_off();	// ends a sub-audio tail too
 	}
@@ -3265,6 +3389,7 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 #else
 	bool keyed = false;
 #endif
+	dtmf_cancel(sm, now_ms);	// before the roger beep: the board never mixes the two
 #if CONFIG_FM_TX_TONES
 	if (sm->view.tone_burst) {
 		tx_tone(0);
@@ -4113,6 +4238,7 @@ static void tone_burst(radio_sm_t *sm, bool on, uint32_t now_ms)
 			}
 		}
 		roger_cancel(sm);
+		dtmf_cancel(sm, now_ms);
 		if (tx_tone(RADIO_BURST_HZ)) {
 			sm->view.tone_burst = true;
 			changed(sm);
@@ -4597,6 +4723,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		tone_burst(sm, req->arg != 0, now_ms);
 		break;
 #endif
+#if CONFIG_DTMF
+	case RREQ_DTMF:
+		dtmf_key(sm, (char)(req->arg & 0xFF), (req->arg & 0x100) != 0, now_ms);
+		break;
+#endif
 	default:
 		break;
 	}
@@ -5000,8 +5131,12 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 			}
 		}
 #endif
+#if CONFIG_DTMF
+		dtmf_poll(sm, now_ms);	// PTT is up during the tail: no digit sounds over it
+#endif
 		tx_timer(sm, now_ms);
 		if (sm->view.tot_s != 0 && sm->view.tx_elapsed_ms >= (uint32_t)sm->view.tot_s * 1000) {
+			dtmf_cancel(sm, now_ms);
 #if CONFIG_FM_TX_TONES
 			if (sm->roger_ms != 0 || sm->view.tone_burst) {
 				tx_tone(0);
