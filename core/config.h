@@ -166,6 +166,9 @@
 #ifndef CONFIG_FM_TX_TONES
 #define CONFIG_FM_TX_TONES		CONFIG_FM
 #endif
+#ifndef CONFIG_DTMF
+#define CONFIG_DTMF			CONFIG_FM
+#endif
 #ifndef CONFIG_VOX
 #define CONFIG_VOX			CONFIG_FM
 #endif
@@ -324,7 +327,7 @@
 #if (CONFIG_VFO_FM && !(CONFIG_VFO && CONFIG_FM)) || (CONFIG_VFO_DMR && !(CONFIG_VFO && CONFIG_DMR))
 #error "a VFO kind is on without CONFIG_VFO or its mode"
 #endif
-#if (CONFIG_FM_TX_TONES || CONFIG_VOX || CONFIG_BATTERY_SAVE || CONFIG_AM_RX) && !CONFIG_FM
+#if (CONFIG_FM_TX_TONES || CONFIG_DTMF || CONFIG_VOX || CONFIG_BATTERY_SAVE || CONFIG_AM_RX) && !CONFIG_FM
 #error "an FM feature is on without CONFIG_FM"
 #endif
 #if CONFIG_AUDIO_PROBE && !(CONFIG_DEBUGLINK && CONFIG_DMR)

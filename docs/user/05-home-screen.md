@@ -76,6 +76,10 @@ and drops the ID.
 
 On DMR the screen may first show WAITING (the radio waits for a free slot) or WAKING RPT (it wakes up the repeater).
 
+The radio also transmits without PTT on DMR: registration (ARS), text messages, positions, call alerts and their
+answers, and packet data from a computer on USB or serial. While it does, the status line shows TX, the red LED
+lights and Home says SENDING. Data the radio receives shows RX on the status line.
+
 When the radio refuses to transmit, the status line shows NO TX. The screen says why, and the hint row says what to
 do:
 
