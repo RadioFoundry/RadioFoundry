@@ -8,11 +8,13 @@ import time
 
 import pytest
 
+from odr_hil import skip
+
 
 @pytest.fixture
 def dm32(radio):
     if radio.version().get("board") != "DM-32UV":
-        pytest.skip("not a DM-32UV")
+        skip("other_board", "not a DM-32UV")
     return radio
 
 
@@ -71,10 +73,10 @@ def test_dmr_modem_ticks(dm32):
     The HR_C7000 raises timeslot interrupts only once it has synced to a signal, so a quiet channel has nothing to
     check (the SDR bench call tests cover the interrupts then)."""
     if "DMR" not in dm32.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     lines0 = diag_lines(dm32)
     if not find(lines0, "DMR on"):
-        pytest.skip("the radio is not on a DMR channel")
+        skip("state", "the radio is not on a DMR channel")
     time.sleep(2)
     lines1 = diag_lines(dm32)
     ts0 = [int(x) for x in re.findall(r"\d+", find(lines0, "ts "))[:2]]
@@ -82,17 +84,17 @@ def test_dmr_modem_ticks(dm32):
     tk0 = [int(x) for x in re.findall(r"\d+", find(lines0, "DMR on"))[:1]]
     tk1 = [int(x) for x in re.findall(r"\d+", find(lines1, "DMR on"))[:1]]
     if tk1 == tk0 and ts1 == ts0:
-        pytest.skip("no DMR traffic on the channel: the modem raises no slot interrupts until it syncs")
+        skip("bench", "no DMR traffic on the channel: the modem raises no slot interrupts until it syncs")
     assert ts1[1] > ts0[1], f"no RX timeslot interrupts in 2 s ({ts0} -> {ts1}): PIC vector mapping?"
 
 
 def test_codec_present(dm32):
     if "DMR" not in dm32.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     line = find(diag_lines(dm32), "codec ")
     assert line, "no codec line"
     if line.endswith("none"):
-        pytest.skip("no stock codec merged (tools/hrc7000_codec.py): DMR voice is silent")
+        skip("not_built", "no stock codec merged (tools/hrc7000_codec.py): DMR voice is silent")
     assert line in ("codec 049", "codec 046"), line
 
 
@@ -101,14 +103,14 @@ def test_gps_nmea(dm32):
     second, fix or not), few bad ones. Right after start-up it waits out the driver's 5 s listen."""
     line = find(diag_lines(dm32), "gps ")
     if line is None:
-        pytest.skip("a build without the GPS driver")
+        skip("not_built", "a build without the GPS driver")
     if line.startswith("gps no"):
         time.sleep(6)  # just started: the driver may still be listening
         line = find(diag_lines(dm32), "gps ")
     good0, bad0, b0 = (int(x) for x in re.findall(r"\d+", line)[:3])
     assert line.startswith("gps yes"), f"no valid NMEA heard: {line} (b0 = no bytes: PTA9 mux or GPIO 0x2C power)"
     if line.endswith(" off"):
-        pytest.skip("Settings > Location > GPS is off: the module was heard at start-up, then powered down")
+        skip("state", "Settings > Location > GPS is off: the module was heard at start-up, then powered down")
     time.sleep(3)
     good1, bad1, b1 = (int(x) for x in re.findall(r"\d+", find(diag_lines(dm32), "gps "))[:3])
     assert good1 > good0, f"no new sentences in 3 s ({good0} -> {good1})"

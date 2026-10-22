@@ -57,6 +57,21 @@ SDR bench names come from the environment (`docs/testing/dmr-bench.md` 1): `$ODR
 default `sdr-bench`), `$ODR_SDR_BENCH_SERVICE`, `$ODR_SDR_BENCH_DIR`, `$ODR_SDR_BENCH_PY`, `$ODR_SDR_BENCH_ENV_FILE`;
 `$ODR_SDRBENCH` names an odr_sdrbench checkout when the package isn't installed on the test host.
 
+### Skip kinds
+
+Every skip names its kind. The reason starts with it (`-rs` shows `[opt_in] transmits: run with --allow-rf`), the
+report carries it as `report.skip_kind`, and the JUnit XML (`--junitxml`) as the test's `skip_kind` property. A
+bring-up run counts a skip as a failure unless its kind is one the feature and the run allow.
+
+| Kind | Meaning | Example |
+|---|---|---|
+| `not_built` | The firmware was built without it: a switch off, or firmware older than the feature | built without CONFIG_APRS |
+| `no_hw` | The radio lacks the capability | the board has no PWM audio output |
+| `state` | A precondition the test could set up itself: a mode, a setting, the codeplug, the channel | the radio is in hotspot mode |
+| `opt_in` | An opt-in option was not given: an `--allow-*` flag, a frequency, a file, a second radio | run with --allow-rf |
+| `bench` | The radio, the SDR bench or a host tool is missing, unreachable or busy | the shared SDR bench stayed busy |
+| `other_board` | A board-specific test on another board | a wiring check run on a board it doesn't cover |
+
 ## Rig assumptions
 
 - The radio on USB, with a codeplug whose current zone holds a DMR channel on the DMR test frequency (the tests
@@ -216,4 +231,7 @@ SDR clips, and the bench modem's tries counted with a minimum of one. An attenua
   (`transmit` / `voice_call`, `listen_start` / `listen_result`, `capture_start` / `capture_wait`, then
   `analyze_dmr` / `analyze_fm` after the lease, with the gateway back up).
 - Never sleep and capture: use `radio.shot_until(...)` for screenshots that should show a new screen.
+- Skip with `odr_hil.skip(kind, reason)` (marks: `skip_mark(kind, reason)`, `skip_if(condition, kind, reason)`),
+  never `pytest.skip`: the kinds are in [Skip kinds](#skip-kinds), and `tools/check_hil_skips.py` (run by
+  `tools/ci.sh`) fails on a skip without one.
 - Document the pass criteria and tolerances in the module docstring and in the table above.

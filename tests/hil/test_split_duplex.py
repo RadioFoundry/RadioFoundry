@@ -27,6 +27,8 @@ import time
 
 import pytest
 
+from odr_hil import skip
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 TX_SECONDS = 10.0
@@ -35,15 +37,15 @@ TX_SECONDS = 10.0
 def need_split(radio):
     feats = radio.features()
     if "HOTSPOT_SPLIT" not in feats:
-        pytest.skip("built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
+        skip("not_built", "built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
 
 
 def need_role(r, sdh, role):
     """Skip unless the radio offers the split duplex role (INFO "offered": bit 0 TX half, bit 1 RX half)"""
     _, info = sdh.require_split(r)
     if not info["offered"] & (1 << (role - 1)):
-        pytest.skip(f"the radio doesn't offer split duplex role {role} (offered {info['offered']}: its modem glue has "
-                    f"no slot clock or base-station hooks)")
+        skip("no_hw", f"the radio doesn't offer split duplex role {role} (offered {info['offered']}: its modem glue "
+                      f"has no slot clock or base-station hooks)")
 
 
 def leave_hotspot(radio):
@@ -61,7 +63,7 @@ def test_split_protocol(radio):
             ver, info = sdh.require_split(r)
             assert ver == 1
             if info["offered"] == 0:
-                pytest.skip("the radio doesn't offer split duplex (its modem glue has no slot clock)")
+                skip("no_hw", "the radio doesn't offer split duplex (its modem glue has no slot clock)")
             assert info["offered"] & 3 == 3, info
             assert info["role"] == sdh.ROLE_NORMAL
             print(f"INFO {info} (cach method {sdh.CACH_METHODS.get(info['cach'])})")

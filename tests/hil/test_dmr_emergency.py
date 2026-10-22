@@ -13,6 +13,7 @@ import time
 
 import pytest
 
+from odr_hil import skip
 from test_dmr_data import BENCH_SRC, _need, _radio_sends, _setup, heard_tries
 
 CSBK_EMERGENCY_ALARM = 0x27
@@ -32,10 +33,10 @@ def _ext(radio):
 def _emergency_setup(radio, pytestconfig, tx=False):
     freq, cc, own, feats = _setup(radio, pytestconfig, tx=tx)
     if _ext(radio).get("em.built") != 1:
-        pytest.skip("built without CONFIG_DMR_EMERGENCY")
+        skip("not_built", "built without CONFIG_DMR_EMERGENCY")
     tg = int(radio.view(["dmr"])["dmr.target_id"])
     if radio.view(["dmr"]).get("dmr.target_private") == "1":
-        pytest.skip("the test channel talks to a radio, not a talkgroup")
+        skip("state", "the test channel talks to a radio, not a talkgroup")
     return freq, cc, own, tg, feats
 
 
@@ -132,7 +133,7 @@ def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
     carries the emergency service option (so & 0x80), released after the hot mic."""
     freq, cc, own, tg, feats = _emergency_setup(radio, pytestconfig, tx=True)
     if "codec" in radio.view(["dmr"]) and radio.view(["dmr"]).get("dmr.codec") != "1":
-        pytest.skip("no AMBE codec: DMR voice can't be keyed")
+        skip("not_built", "no AMBE codec: DMR voice can't be keyed")
     radio.link.emergency_settings("call", 0, hot_mic_s=3)
     radio.wait_for(lambda x: x.get("em.mode") == "call", sections=("dmr_ext",), what="call mode")
     with sdr_bench.lease():

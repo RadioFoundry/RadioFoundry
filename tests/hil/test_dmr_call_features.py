@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from odr_hil import counter_deltas
+from odr_hil import counter_deltas, skip
 
 BENCH_SRC = 9990301
 STATS = ["call.rx_calls", "call.rx_calls_played", "call.rx_late_entries", "call.rx_voice_bursts",
@@ -20,7 +20,7 @@ STATS = ["call.rx_calls", "call.rx_calls_played", "call.rx_late_entries", "call.
 
 def _on_dmr_channel(radio, pytestconfig):
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     freq = pytestconfig.getoption("--dmr-freq")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
@@ -67,7 +67,7 @@ def test_private_call_to_us(radio, sdr_bench, pytestconfig):
     _on_dmr_channel(radio, pytestconfig)
     own = int(radio.view(["dmr"])["dmr.own_id"])
     if own == 0:
-        pytest.skip("no DMR ID in the codeplug")
+        skip("state", "no DMR ID in the codeplug")
     d, v = _bench_call(radio, sdr_bench, pytestconfig, dst=own, private=True)
     assert d["call.rx_calls"] == 1 and d["call.rx_private_calls"] == 1 and d["call.rx_calls_played"] == 1, d
     assert v["last.src"] == str(BENCH_SRC) and v["last.to_us"] == "1" and v["last.group"] == "0", v
@@ -105,7 +105,7 @@ def test_talker_alias(radio, sdr_bench, pytestconfig):
     """A talker alias in the odd superframes (ISO 8-bit) is assembled and shown."""
     _on_dmr_channel(radio, pytestconfig)
     if "DMR_TALKER_ALIAS" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_TALKER_ALIAS")
+        skip("not_built", "built without CONFIG_DMR_TALKER_ALIAS")
     alias = "ODR HIL N0CALL"
     d, v = _bench_call(radio, sdr_bench, pytestconfig, talker_alias=alias, superframes=10)
     assert d["call.rx_calls"] == 1 and d["call.rx_alias_complete"] == 1, d
@@ -119,7 +119,7 @@ def test_gps_info(radio, sdr_bench, pytestconfig):
     (call.gps_*), kept with the last heard; one step of the fields is 1.1e-5 degree."""
     _on_dmr_channel(radio, pytestconfig)
     if "DMR_GPS" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_GPS")
+        skip("not_built", "built without CONFIG_DMR_GPS")
     lat, lon = 33.7490, -84.3880
     d, v = _bench_call(radio, sdr_bench, pytestconfig, talker_alias="ODR GPS", gps=(lat, lon, 1), superframes=10)
     assert d["call.rx_calls"] == 1 and d["call.rx_gps"] >= 1, d
@@ -163,7 +163,7 @@ def test_privacy_service_option(radio, sdr_bench, pytestconfig):
     audio itself is noise either way: this checks the path, not the cipher (dmrCallTest does that)."""
     _on_dmr_channel(radio, pytestconfig)
     if "DMR_PRIVACY" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_PRIVACY")
+        skip("not_built", "built without CONFIG_DMR_PRIVACY")
     radio.link.dmr_privacy("off")
     d, v = _bench_call(radio, sdr_bench, pytestconfig, service_options=0x40)
     assert d["call.rx_calls"] == 1 and d["call.rx_encrypted_calls"] == 1, d

@@ -32,6 +32,8 @@ import time
 
 import pytest
 
+from odr_hil import skip
+
 GET_VERSION, GET_STATUS, SET_CONFIG, SET_FREQ = 0x00, 0x01, 0x02, 0x04
 SFR_DEBUG = 0xD5
 
@@ -48,7 +50,7 @@ def freq(rx, tx):
 def test_hotspot_sfr_mode(radio):
     feats = radio.features()
     if "SFR" not in feats or "HOTSPOT" not in feats:
-        pytest.skip("built without the SFR (make CONFIG_SFR=y)")
+        skip("not_built", "built without the SFR (make CONFIG_SFR=y)")
     import mmdvm_probe
     hz = int(radio.core()["rx_hz"])
     tx0 = None
@@ -101,7 +103,7 @@ def test_hotspot_sfr_mode(radio):
 def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     feats = radio.features()
     if "SFR" not in feats or "HOTSPOT" not in feats:
-        pytest.skip("built without the SFR (make CONFIG_SFR=y)")
+        skip("not_built", "built without the SFR (make CONFIG_SFR=y)")
     import mmdvm_hotspot as M
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     src = 9990301

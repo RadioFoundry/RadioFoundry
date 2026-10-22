@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, find_ports
+from odr_hil import DebugLink, DebugLinkError, find_ports, skip
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FIXED_RADIO = "192.168.10.1"     # IPGW_FIXED_LINK_DEFAULT
@@ -26,9 +26,9 @@ BENCH_SRC = 9990301
 
 def _need(radio):
     if "DMR_IP_GATEWAY" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_IP_GATEWAY")
+        skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
     if "net.passthrough" not in radio.view(["hotspot"]):
-        pytest.skip("firmware without control station mode (no net.passthrough view key)")
+        skip("not_built", "firmware without control station mode (no net.passthrough view key)")
 
 
 def _udp_link(ip, timeout):
@@ -91,7 +91,7 @@ def test_usb_settings_stored(radio):
     at the next boot only)."""
     _need(radio)
     if "USB" not in radio.features():
-        pytest.skip("no USB on this radio: no USB network settings")
+        skip("no_hw", "no USB on this radio: no USB network settings")
     try:
         radio.link.usb_net_settings(boot_network=True)
         v = radio.view(["hotspot"])

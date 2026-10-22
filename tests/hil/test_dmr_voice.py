@@ -17,7 +17,7 @@ import time
 
 import pytest
 
-from odr_hil import counter_deltas
+from odr_hil import counter_deltas, skip
 
 PRIME = 3   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 # Decoded speech peaks at thousands; a decoder fed the wrong bits gave 6 with every counter clean (DB25-D, 2026-10-17)
@@ -29,18 +29,18 @@ PEAK_MIN = 1000
 def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
     ambe = pytestconfig.getoption("--ambe")
     if not ambe:
-        pytest.skip("give --ambe FILE (or $ODR_HIL_AMBE): a 9-byte-frame .ambe speech recording")
+        skip("opt_in", "give --ambe FILE (or $ODR_HIL_AMBE): a 9-byte-frame .ambe speech recording")
     if not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
         pytest.fail(f"{ambe}: not a 9-byte-frame .ambe file")
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     frames = os.path.getsize(ambe) // 9
     sent = 18 * -(-frames // 18)        # bench_tx.py pads to whole superframes
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     if radio.view(["dmr"]).get("dmr.codec") != "1":
-        pytest.skip("no vocoder merged in this firmware (dmr.codec=0): voice can't play")
+        skip("not_built", "no vocoder merged in this firmware (dmr.codec=0): voice can't play")
     remote = sdr_bench.upload(ambe, "hil_speech.ambe")
     time.sleep(1.0)
     radio.reset_counters()

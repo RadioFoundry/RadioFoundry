@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, as_int, find_ports
+from odr_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
 import cps_client
 
 QDMR = cps_client.REGIONS["qdmr"]
@@ -59,9 +59,9 @@ def test_cps_readback_matches(radio, tmp_path):
 
     v = radio.core()
     if v.get("codeplug") != "open-firmware":
-        pytest.skip(f"the radio runs the {v.get('codeplug')} codeplug: nothing stored to compare with")
+        skip("state", f"the radio runs the {v.get('codeplug')} codeplug: nothing stored to compare with")
     if v.get("vfo") == "1" or as_int(v.get("channel_number"), 0) == 0:
-        pytest.skip("the radio is in the VFO: no channel to compare")
+        skip("state", "the radio is in the VFO: no channel to compare")
     ch = cps_client.decode_channel(a, as_int(v["channel_number"]))
     assert ch is not None, f"channel {v['channel_number']} not marked used in the read"
     assert ch["name"] == v["channel_name"], (ch, v["channel_name"])
@@ -77,10 +77,10 @@ def test_settings_saved(radio):
     """A channel change is saved within SETTINGS_SAVE_DELAY_MS (2 s); no failures or torn records"""
     v = radio.core()
     if v.get("vfo") == "1" or as_int(v.get("zone_size"), 0) < 2:
-        pytest.skip("needs a zone with two channels or more, on a channel")
+        skip("state", "needs a zone with two channels or more, on a channel")
     s0 = storage(radio)
     if s0.get("settings.load") == "ram":
-        pytest.skip("no flash settings area on this board")
+        skip("no_hw", "no flash settings area on this board")
     assert as_int(s0["settings.failures"]) == 0, s0
     pos = (as_int(v["zone_pos"]) + 1) % as_int(v["zone_size"])
     radio.link.zone_pos(pos)
@@ -110,7 +110,7 @@ def reconnect(radio, timeout=20.0):
 def test_settings_survive_restart(radio):
     v = radio.core()
     if v.get("vfo") == "1" or as_int(v.get("zone_size"), 0) < 2:
-        pytest.skip("needs a zone with two channels or more, on a channel")
+        skip("state", "needs a zone with two channels or more, on a channel")
     pos = (as_int(v["zone_pos"]) + 1) % as_int(v["zone_size"])
     radio.link.zone_pos(pos)
     radio.wait_for(lambda s: s.get("settings.dirty") == "0", timeout=5.0, sections=("storage",),
@@ -193,7 +193,7 @@ def test_cps_write_dry_run(radio, backup_dir):
     backup, _ = read_backup(radio, backup_dir, "dryrun")
     number = pick_channel(radio, backup)
     if number == 0:
-        pytest.skip("no stored channel to edit")
+        skip("state", "no stored channel to edit")
     old = cps_client.decode_channel(backup, number)["name"]
     edited = bytearray(backup)
     cps_client.set_channel_name(edited, number, "ODR HIL" if old != "ODR HIL" else "ODR HIL 2")
@@ -216,7 +216,7 @@ def test_cps_write_restore(radio, backup_dir):
     probe, _ = read_backup(radio, backup_dir, "probe")
     number = pick_channel(radio, probe)
     if number == 0:
-        pytest.skip("no stored channel to edit")
+        skip("state", "no stored channel to edit")
     v = radio.core()
     old = cps_client.decode_channel(probe, number)["name"]
     new = "ODR HIL" if old != "ODR HIL" else "ODR HIL 2"
@@ -239,8 +239,8 @@ def test_storage_region(radio):
     assert s.get("storage.region") == info["region"], (s, info)
     if info["region"] == "foreign":
         assert s.get("settings.load") == "foreign" and s.get("storage.journal") == "foreign", s
-        pytest.skip("the settings / journal region holds another firmware's data: dump and claim it with "
-                    "tools/odr_debug.py storage claim (writes are refused until then)")
+        skip("state", "the settings / journal region holds another firmware's data: dump and claim it with "
+                      "tools/odr_debug.py storage claim (writes are refused until then)")
     assert info["region"] == "ours" and s.get("storage.journal") == "ok", (s, info)
     addr, _ = info["ranges"]["settings"]
     assert len(radio.link.storage_read(addr, 64)) == 64

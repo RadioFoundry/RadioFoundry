@@ -6,11 +6,13 @@ map and the clock edges in boards/md380/rfbus_md380.c are right. tests/host/md38
 documented wiring; this is what checks the wiring. Skipped on any other board."""
 import pytest
 
+from odr_hil import skip
+
 
 @pytest.fixture
 def md380(radio):
     if not radio.version().get("board", "").startswith("MD-380"):
-        pytest.skip("not an MD-380")
+        skip("other_board", "not an MD-380")
     return radio
 
 

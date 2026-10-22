@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from odr_hil import LONG, as_int
+from odr_hil import LONG, as_int, skip, skip_if
 from odr_debug import DOWN, UP
 
 
@@ -37,7 +37,7 @@ def home(radio):
         radio.press("quick", LONG)
         radio.wait_for(lambda v: v.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     if radio.screen() != "home":
         radio.press("back", LONG)
     wait_screen(radio, "home", "Home")
@@ -55,7 +55,7 @@ def test_keys_move_the_channel(home):
     r = home
     v = r.core()
     if int(v["zone_size"]) < 2:
-        pytest.skip("the zone has one channel")
+        skip("state", "the zone has one channel")
     pos = int(v["zone_pos"])
     r.press("up")
     v1 = r.wait_for(lambda x: x["zone_pos"] != str(pos), what="channel change on UP")
@@ -136,7 +136,7 @@ def test_talk_target_picker_on_long_context(home):
     """Long # opens the talk target picker on a DMR channel (Recent is Hub 3)."""
     r = home
     if r.core().get("mode") != "dmr":
-        pytest.skip("the channel isn't DMR")
+        skip("state", "the channel isn't DMR")
     r.press("context", LONG)
     wait_screen(r, "picker", "talk target picker on long #")
     r.press("back")
@@ -166,7 +166,7 @@ def test_zones_and_channels_lists(home):
     r.press("5")
     s = wait_screen(r, "channels", "Channels on 5")
     if as_int(s.get("ui.count")) == 0:
-        pytest.skip("no channels in the codeplug")
+        skip("state", "no channels in the codeplug")
     r.press("ok")
     wait_screen(r, "channel", "a channel's settings on OK")
     r.press("back", LONG)
@@ -183,7 +183,7 @@ def test_diagnostics_page(home):
     r.press("7")
     s = r.wait_for(lambda v: v.get("ui.screen") in ("diag", "tools"), sections=("link",), what="diagnostics")
     if s["ui.screen"] != "diag":
-        pytest.skip("built without CONFIG_DIAG")
+        skip("not_built", "built without CONFIG_DIAG")
     r.press("back")
     wait_screen(r, "tools", "BACK leaves the diagnostics")
     r.press("back", LONG)
@@ -216,13 +216,13 @@ def test_injected_keys_count_as_activity(home):
 
 def dmr_home(r):
     if r.core().get("mode") != "dmr":
-        pytest.skip("the current channel isn't DMR")
+        skip("state", "the current channel isn't DMR")
     return r
 
 
 def fm_home(r):
     if r.core().get("mode") != "fm":
-        pytest.skip("the current channel isn't FM")
+        skip("state", "the current channel isn't FM")
     return r
 
 
@@ -286,7 +286,7 @@ def test_quick_copy_to_vfo(home):
     feats = r.features()
     mode = r.core().get("mode")
     if "VFO_FM" not in feats or (mode == "dmr" and "VFO_DMR" not in feats):
-        pytest.skip(f"built without a {mode} VFO")
+        skip("not_built", f"built without a {mode} VFO")
     L = r.link
     chan = r.core()
     L.vfo(True)
@@ -347,14 +347,14 @@ def test_quick_vox_toggle(home):
     r = fm_home(home)
     was = r.view(["features"]).get("vox_on")
     if was is None:
-        pytest.skip("firmware without the vox_on key")
+        skip("not_built", "firmware without the vox_on key")
     r.press("quick")
     wait_screen(r, "quick")
     r.press("6")
     v = r.view(["features", "link"])
     if v.get("vox_on") == was and "build" in v.get("ui.toast", ""):
         leave_quick(r)
-        pytest.skip("built without CONFIG_VOX")
+        skip("not_built", "built without CONFIG_VOX")
     want = "0" if was == "1" else "1"
     r.wait_for(lambda x: x.get("vox_on") == want, sections=("features",), what=f"vox_on={want}")
     r.press("6")
@@ -370,7 +370,7 @@ def test_picker_focus_target(home):
     s = wait_screen(r, "picker", "the talk target picker")
     if as_int(s.get("ui.count"), 0) < 2:
         r.press("back", LONG)
-        pytest.skip("the picker has no talk target rows")
+        skip("state", "the picker has no talk target rows")
     # The focus starts on the first target; the last row ("Type a number...") has none
     v = r.wait_for(lambda x: as_int(x.get("dmr.focus_id"), 0) != 0, sections=("dmr",), what="a focus id")
     assert v["dmr.one_shot"] == "0", v
@@ -405,9 +405,9 @@ def test_long_press_time_reaches_input(home):
     r = home
     before = as_int(r.view(["link"]).get("input.long_ms"))
     if before is None:
-        pytest.skip("firmware without input.long_ms")
+        skip("not_built", "firmware without input.long_ms")
     if before >= 1200:
-        pytest.skip("the long press time is already at its maximum")
+        skip("state", "the long press time is already at its maximum")
     settings_keys(r, "ok 7 8 ok up ok")
     try:
         r.wait_for(lambda x: as_int(x.get("input.long_ms")) == before + 100, sections=("link",),
@@ -423,7 +423,7 @@ def test_auto_lock(home):
     """Settings > Privacy > Auto lock 30 s locks the keys after 30 s without a key; set back to Off after."""
     r = home
     if as_int(r.view(["storage"]).get("settings.auto_lock_s"), 0) != 0:
-        pytest.skip("auto lock is already on")
+        skip("state", "auto lock is already on")
     settings_keys(r, "ok 7 4 down down ok")
     try:
         r.wait_for(lambda x: x.get("settings.auto_lock_s") == "30", sections=("storage",), what="auto lock 30 s")
@@ -460,11 +460,11 @@ def test_theme_is_kept(home):
     r = home
     s = storage(r)
     if "settings.theme" not in s:
-        pytest.skip("firmware without settings.theme")
+        skip("not_built", "firmware without settings.theme")
     if s["settings.theme"] != "0":
-        pytest.skip("the theme isn't Dark")
+        skip("state", "the theme isn't Dark")
     if r.version().get("display", "").endswith("x1"):
-        pytest.skip("a monochrome screen has no themes (the radio says so)")
+        skip("no_hw", "a monochrome screen has no themes (the radio says so)")
     _, before = r.shot_until(lambda d: True, what="Home")
     settings_keys(r, "ok 7 2 down down ok")
     try:
@@ -479,10 +479,12 @@ def test_updown_changes_the_zone(home):
     """Settings > Keys > Up/Down on Home = Zone: Up on Home moves to the next zone, not the next channel."""
     r = home
     s = storage(r)
-    if s.get("settings.updown_home") != "0":
-        pytest.skip("firmware without settings.updown_home, or it isn't Channel")
+    if "settings.updown_home" not in s:
+        skip("not_built", "firmware without settings.updown_home, or it isn't Channel")
+    if s["settings.updown_home"] != "0":
+        skip("state", "firmware without settings.updown_home, or it isn't Channel")
     if as_int(r.core().get("zone_count"), 2) < 2:
-        pytest.skip("only one zone")
+        skip("state", "only one zone")
     zone = as_int(r.core().get("zone_index"))
     settings_keys(r, "ok 7 8 down down ok")
     try:
@@ -501,9 +503,9 @@ def test_privacy_key_entry(home):
     r = home
     s = storage(r)
     if "settings.privacy_type" not in s:
-        pytest.skip("firmware without settings.privacy_type")
+        skip("not_built", "firmware without settings.privacy_type")
     if s["settings.privacy_type"] != "0":
-        pytest.skip("a privacy key is set already: not overwriting it")
+        skip("state", "a privacy key is set already: not overwriting it")
     settings_keys(r, "ok 7 4 ok down ok 1 2 3 ok")
     try:
         r.wait_for(lambda x: x.get("settings.privacy_type") == "1", sections=("storage",), what="key type Motorola")
@@ -526,9 +528,9 @@ def test_ptt_when_locked_off(home):
     r = home
     flags = ui_flags(r)
     if flags is None:
-        pytest.skip("firmware without settings.ui_flags")
+        skip("not_built", "firmware without settings.ui_flags")
     if not flags & 0x10:
-        pytest.skip("PTT when locked is already off")
+        skip("state", "PTT when locked is already off")
     r.lowest_power()
     settings_keys(r, "ok 7 4 down down down ok")
     try:
@@ -565,7 +567,7 @@ def test_usb_network_switch_row(home):
     r.press("4")
     v = r.wait_for(lambda x: x.get("ui.screen") == "info", sections=("link",), what="the USB network page")
     if v.get("ui.count") != "1":
-        pytest.skip("built without CONFIG_USB_NETWORK")
+        skip("not_built", "built without CONFIG_USB_NETWORK")
     assert v.get("ui.focus") == "0", v
     r.press("back", LONG)
     wait_screen(r, "home")
@@ -595,14 +597,14 @@ def test_save_timeslot_to_channel(home):
     save_slot(ts)
 
 
-@pytest.mark.skipif(os.environ.get("ODR_HIL_DELETE_MESSAGE") != "1",
-                    reason="deletes the newest inbox message: set ODR_HIL_DELETE_MESSAGE=1")
+@skip_if(os.environ.get("ODR_HIL_DELETE_MESSAGE") != "1", "opt_in",
+         "deletes the newest inbox message: set ODR_HIL_DELETE_MESSAGE=1")
 def test_delete_message(home):
     """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less."""
     r = home
     n = as_int(r.view(["dmr_data"]).get("data.inbox_count"))
     if not n:
-        pytest.skip("the inbox is empty (or no data core)")
+        skip("state", "the inbox is empty (or no data core)")
     r.press("ok")
     wait_screen(r, "hub")
     r.press("2")
@@ -617,8 +619,8 @@ def test_delete_message(home):
 
 
 @pytest.mark.reboot
-@pytest.mark.skipif(os.environ.get("ODR_HIL_FACTORY_RESET") != "1",
-                    reason="erases the settings and the native area: set ODR_HIL_FACTORY_RESET=1 (and --allow-reboot)")
+@skip_if(os.environ.get("ODR_HIL_FACTORY_RESET") != "1", "opt_in",
+         "erases the settings and the native area: set ODR_HIL_FACTORY_RESET=1 (and --allow-reboot)")
 def test_factory_reset(home):
     """Settings > Advanced (0) > Factory reset > Yes: the settings go back to their defaults, the native area is erased
     (never the codeplug or calibration), and the radio restarts. The channel position survives only as the default."""
