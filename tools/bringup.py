@@ -579,8 +579,19 @@ def check(feats, boards, records, found, all_switches):
         for m in marks:
             if m["id"] not in by_id:
                 errs.append(f"{nid}: marks feature {m['id']}, which tests/hil/features.toml doesn't have")
+        for m in marks:
+            if m.get("gate") and m["optional"]:
+                errs.append(f"{nid}: an optional test can't be {m['id']}'s capability gate")
         if "manual" in info["markers"] and marks and not any(m["owner"] for m in marks):
             errs.append(f"{nid}: marked manual, but its feature marker has no owner= (what the person does)")
+    gates = {}
+    for nid, info in (found or {}).items():
+        for m in info["features"]:
+            if m.get("gate"):
+                gates.setdefault(m["id"], set()).add(re.sub(r"\[.*\]$", "", nid))
+    for fid, g in sorted(gates.items()):
+        if len(g) > 1:
+            errs.append(f"feature {fid} has more than one capability gate: {', '.join(sorted(g))}")
     for s in all_switches:
         if s not in by_switch:
             errs.append(f"switch {s} has no entry in tests/hil/features.toml")
