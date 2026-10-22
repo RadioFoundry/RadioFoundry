@@ -42,6 +42,7 @@ def hotspot_cases():
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 @pytest.mark.parametrize("case", CASES)
 def test_hotspot_on_air(radio, sdr_bench, pytestconfig, hotspot_cases, case):
     H = hotspot_cases

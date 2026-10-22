@@ -85,6 +85,9 @@ endif
 ifeq ($(CONFIG_DEBUGLINK),y)
 CORE_DIRS += core/debuglink
 endif
+ifeq ($(CONFIG_STUB_ENTRY),y)
+CORE_DIRS += core/stubentry
+endif
 ifeq ($(CONFIG_BCAST_FM),y)
 CORE_DIRS += core/bcast
 endif
@@ -104,11 +107,9 @@ endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
 APP_ASM := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.S))
-# The RAM-monitor loader's portable core (core/debuglink is globbed above): compiled only with its switch, so it costs
-# nothing when off (debuglink_stub.c stays in the glob and answers unavailable, as the other optional commands do)
-APP_SRC := $(filter-out core/debuglink/dl_stub.c,$(APP_SRC))
-ifeq ($(CONFIG_STUB_ENTRY),y)
-APP_SRC += core/debuglink/dl_stub.c
+# The stub entry without the debug link: its listener uses the debug link's framing (dl_frame.c, no RTOS or board)
+ifeq ($(CONFIG_STUB_ENTRY)$(CONFIG_DEBUGLINK),yn)
+APP_SRC += core/debuglink/dl_frame.c
 endif
 # The fast codeplug protocol (core/cps is globbed with CPS_OPENFW): only with its own switch
 ifneq ($(CONFIG_CPS_FAST),y)
