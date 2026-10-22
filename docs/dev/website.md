@@ -303,7 +303,11 @@ A radio with a second receiver on another chip (the GD-88: SoC B) names that chi
 done step offers to install the second one: the same steps, as a radio with the second board's id (its releases and
 builds), reached through the first chip. ODR on the first chip hands the cable over to the second chip's first stage
 (`DL_CMD_RX2` BRIDGE, [rx2-link.md](../spec/rx2-link.md) 4), the stub loads and writes as usual, and the first chip
-restarts by itself afterwards; the done step asks it whether the second chip answers. The GD-88 is listed as
+restarts by itself afterwards; the done step asks it whether the second chip answers. A second chip that still runs
+its original firmware has no first stage and no link: the first chip reports it down (`DL_CMD_RX2` flags), so the page
+offers the factory update mode instead (`IAP_B`, steps from `flash.second_bootloader`), with the same write as the
+DB25-D's. `#sim=c7000-gd88-bstock` simulates that second chip. The update-mode texts that describe the screen take the
+radio's form (`db25d.js` `iapSuffix`: `_gd88`, IAP_A or IAP_B on the top line). The GD-88 is listed as
 `stub_tested: false` until the stub has run on a radio.
 
 #### DB25-D PRO

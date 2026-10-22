@@ -540,7 +540,8 @@ function radioView() {
 function secondRadio(r) {
 	const b = r?.flash.second_receiver;
 	return b ? { ...r, id: b, name: t("flash.second.name", { name: r.name }), second_of: r.id,
-		flash: { ...r.flash, board: b, via: r.flash.board, second_receiver: null, bootloader: [] } } : null;
+		flash: { ...r.flash, board: b, via: r.flash.board, second_receiver: null,
+			bootloader: r.flash.second_bootloader || [], second_bootloader: null } } : null;
 }
 
 async function installSecond() {
@@ -1528,9 +1529,9 @@ function answers(items, pick, chosen = null) {
 			h("strong", {}, title), text ? h("span", { class: "small muted" }, text) : null)));
 }
 
-// A symptom's title and text; the update-mode one names the LED, so a radio without one gets the _noled texts
+// A symptom's title and text; the update-mode one describes the screen, in the radio's own form (recovery.iapSuffix)
 function symptomText(id) {
-	const k = id === "iap" && backend().recovery.noLed?.(S.radio, fb()) ? `${id}_noled` : id;
+	const k = id === "iap" ? `${id}${backend().recovery.iapSuffix?.(S.radio) || ""}` : id;
 	return [t(`flash.help.s.${k}`), t(`flash.help.s.${k}_text`)];
 }
 
@@ -1675,7 +1676,8 @@ async function main() {
 	if (location.hash.includes("sim=c7000")) {
 		// a DM-1801 Pro on its cable: running stock firmware, or (#sim=c7000-odr) ODR with the stub hand-over;
 		// #sim=c7000-db25d: a DB25-D PRO running its original firmware 018, reached through its debug console;
-		// #sim=c7000-gd88: a GD-88 running its original firmware 021 (the same console), with receiver B behind it
+		// #sim=c7000-gd88: a GD-88 running its original firmware 021 (the same console), with receiver B behind it;
+		// #sim=c7000-gd88-bstock: B on its original firmware, which does not answer A (its first install is IAP_B)
 		const gd88 = location.hash.includes("c7000-gd88");
 		const db25 = location.hash.includes("c7000-db25d");
 		const board = gd88 ? "gd88" : db25 ? "db25d" : "dm1801pro";
@@ -1685,7 +1687,7 @@ async function main() {
 		S.sim = { fb: { ...S.data.fb, c7000: (simB || sim).c } };
 		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600, faults: { silentAfterReset: true },
 			...(db25 ? { board: "DB25-D", codecId: "db25d-018", dataSize: 0x200000, usmart: "018", stubSpan: [0x1D000, 0x12000] } : {}),
-			...(gd88 ? { board: "GD-88", codecId: "gd88-2501", dataSize: 0x200000, usmart: "021", stubSpan: [0x45000, 0x13000], rx2: { progmem: simB.progmem } } : {}) });
+			...(gd88 ? { board: "GD-88", codecId: "gd88-2501", dataSize: 0x200000, usmart: "021", stubSpan: [0x45000, 0x13000], rx2: { progmem: simB.progmem, stock: location.hash.includes("bstock") } } : {}) });
 		if (location.hash.includes("c7000-odr")) {
 			const img = randomBytes(rng(98), 180 * 1024);
 			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);

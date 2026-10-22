@@ -504,10 +504,13 @@ at the same time as the first, so both VFOs can receive at once. **In developmen
 yet and there is no release for it.
 
 When it is ready, the web installer will put the first chip's image on through the programming cable. The second
-chip's image goes on through the first chip, in the same step, so no second cable or extra step is needed.
+chip's image follows on the same cable, as the installer's next step. The first time, the second chip still runs its
+original firmware, so the installer writes it in the radio's update mode (`IAP_B`). After that it goes through the
+first chip.
 
-To start the radio's update mode, turn it off, connect the programming cable, hold **P2** and press power. The screen
-stays blank.
+To start the radio's update mode, turn it off and connect the programming cable. Hold **P2** and turn the radio on with
+the volume knob. When the LED lights red and the top line shows `IAP_A` or `IAP_B`, release **P2**. Hold **P2** to
+switch between them: `IAP_A` updates the first chip, `IAP_B` the second.
 
 ## Planned radios
 

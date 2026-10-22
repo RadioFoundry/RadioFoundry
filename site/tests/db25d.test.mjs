@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { equal, sha256, be32, concat } from "../static/js/flasher/bytes.js";
 import { stubImages, univFits, StubError } from "../static/js/flasher/stub.js";
 import * as c7 from "../static/js/flasher/c7000.js";
-import { Usmart, HIJACK, Iap, iapPlan, readPacket, checkInstallImage, checkRestoreImage, trimTail, erasePacket, DB25DError, stockVersion } from "../static/js/flasher/db25d.js";
+import { Usmart, HIJACK, Iap, iapPlan, readPacket, checkInstallImage, checkRestoreImage, trimTail, erasePacket, DB25DError, stockVersion, iapSuffix } from "../static/js/flasher/db25d.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
@@ -443,4 +443,18 @@ test("the stub reads the DB25-D's whole 2 MB program flash only once told its si
 	await assert.rejects(s.dump("progmem", 0x1F0000, 0x1F2000), StubError);
 	s.size.progmem = 0x200000;
 	assert.ok(equal(await s.dump("progmem", 0x1F0000, 0x1F2000), progmem.subarray(0x1F0000, 0x1F2000)));
+});
+
+test("update-mode texts: the DB25-D's are the base, the GD-88 (A, and B through it) gets its own", () => {
+	assert.equal(iapSuffix("db25d"), "");
+	assert.equal(iapSuffix("gd88"), "_gd88");
+	assert.equal(iapSuffix("dm1801pro"), "");
+	const en = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url)));
+	for (const k of ["flash.help.s.iap", "flash.help.s.iap_text", "flash.help.fix.iap_text", "flash.db25d.none.stock", "flash.db25d.um.text",
+		"flash.db25d.iap.careful_text"]) {
+		const g = k === "flash.help.s.iap_text" ? "flash.help.s.iap_gd88_text" : `${k}_gd88`;
+		assert.ok(en[g], g);
+		assert.ok(!/red LED|white screen/i.test(en[g]) || /IAP_/.test(en[g]), g);
+	}
+	assert.ok(/IAP_B/.test(JSON.parse(readFileSync(new URL("../../boards/gd88/radio.json", import.meta.url))).flash.second_bootloader.join(" ")));
 });

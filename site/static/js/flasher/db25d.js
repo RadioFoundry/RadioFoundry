@@ -37,6 +37,12 @@ export const APP_SIG = [0x0300C000, 0xC001112C];		// the application's first wor
 // Per radio: the form of the application's version string, the name the page shows for it ("<prefix><build>"), the
 // builds whose console the page drives (each with an address four words from which cover "<tag><build>"), and the
 // set of page texts that name the radio's versions (flash.<texts>.*)
+// The update-mode texts that describe the screen and the LED come in the DB25-D's form; another radio's texts set
+// (CONSOLES.texts) adds a suffix: "_gd88". board: the radio's main board (the GD-88's B is installed as its own board)
+export const iapSuffix = (board) => {
+	const s = CONSOLES[board]?.texts;
+	return s && s !== "db25d" ? `_${s}` : "";
+};
 export const CONSOLES = {
 	db25d: { re: /909E\.[0-9A-Za-z]{2,4}\.EARSAB\.\d{3}/, prefix: "909E.DBB.EARSAB.", tag: "EARSAB.",
 		builds: [["018", 0x03079F3C], ["020", 0x0307DCCC]], texts: "db25d" },

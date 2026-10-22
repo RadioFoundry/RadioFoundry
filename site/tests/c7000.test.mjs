@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { crc32, equal, sha256, sleep } from "../static/js/flasher/bytes.js";
 import { decodeBlock, encodeBlock } from "../static/js/flasher/lz4.js";
-import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout, patchUniv, boardLed } from "../static/js/flasher/stub.js";
+import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout, patchUniv, boardLed, RX2_F } from "../static/js/flasher/stub.js";
 import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation } from "../static/js/flasher/fakec7000.js";
@@ -121,6 +121,19 @@ test("GD-88 receiver B: ODR on the first SoC hands the cable over, the stub load
 	plain.r.powerOn();
 	await sleep(800);
 	await assert.rejects(Stub.bridgeFromOdr(new Link(plain.r.stream, { timeout: 300 })), /route to the second receiver/);
+});
+
+test("GD-88 receiver B on its original firmware: the first SoC reports it down and the bridge reaches nothing", async (t) => {
+	const { r } = await radio("odr", { rx2: { stock: true }, board: "GD-88" });
+	t.after(() => r.stop());
+	r.powerOn();
+	await sleep(800);
+	const link = new Link(r.stream, { timeout: 1000 });
+	const flags = await Stub.secondState(link);
+	assert.ok(flags & RX2_F.present && !(flags & RX2_F.up), "present, not up: the page offers update mode (IAP_B)");
+	await Stub.bridgeFromOdr(link);
+	await assert.rejects(new Stub(r.stream, { log: quiet }).waitForRom(600));
+	assert.ok(!r.events.includes("bridge"));
 });
 
 test("a sector record that belongs to another sector is caught by the radio's checksums and read again", async (t) => {

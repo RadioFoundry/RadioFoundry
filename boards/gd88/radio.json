@@ -23,7 +23,13 @@
     "link": "serial-cable",
     "bootloader": [
       "Turn the radio off and connect the programming cable.",
-      "Hold P2 and press power. The screen stays blank."
+      "Hold P2 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release P2. It can take more than one try.",
+      "If the top line shows IAP_B, hold P2 until it shows IAP_A."
+    ],
+    "second_bootloader": [
+      "Turn the radio off and connect the programming cable.",
+      "Hold P2 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release P2. It can take more than one try.",
+      "If the top line shows IAP_A, hold P2 until it shows IAP_B."
     ],
     "stock_versions": [],
     "stub_tested": false,

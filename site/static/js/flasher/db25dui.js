@@ -15,7 +15,7 @@
 import { h, t, notice, button, panel, progressBar } from "./dom.js";
 import { sleep } from "./bytes.js";
 import * as c7 from "./c7000.js";
-import { CONSOLES, Usmart, Iap, trimTail, DB25DError } from "./db25d.js";
+import { CONSOLES, Usmart, Iap, trimTail, DB25DError, iapSuffix } from "./db25d.js";
 
 const LISTEN_MS = 180000;	// how long the page waits for update mode
 const WORD_RATE = 14;		// console frames per second, written or read back (radio, 2026-10-18: 3,470 in 242 s)
@@ -23,8 +23,8 @@ const WORD_RATE = 14;		// console frames per second, written or read back (radio
 // host: what c7000ui.js hands over ({S, ctx, C, boardId, session, busy, fill, stubImage})
 export function makeDb25d(host) {
 	const { S, ctx, C, boardId, session, busy, fill, stubImage } = host;
-	// texts that name the LED have a _noled form for a radio whose chip on the cable has none (the GD-88's A)
-	const led = (key) => ((C().boards[boardId()].stub_board?.leds || [0]).some((p) => p !== 255) ? key : `${key}_noled`);
+	// the update-mode texts that describe the screen: the radio's own form (the GD-88 shows IAP_A or IAP_B)
+	const own = (key) => `${key}${iapSuffix(S().radio.flash.via || boardId())}`;
 
 	// ---- the original firmware: the stub through its console
 
@@ -102,7 +102,7 @@ export function makeDb25d(host) {
 	function nothing({ show, act, onUpdateMode, onPowerOn, onAgain }) {
 		show({ led: "off", screen: "any" },
 			notice(t("flash.db25d.none.lead"), "info"),
-			h("ul", {}, h("li", {}, t("flash.db25d.none.on")), h("li", {}, t("flash.db25d.none.cable")), h("li", {}, t(led("flash.db25d.none.stock")))),
+			h("ul", {}, h("li", {}, t("flash.db25d.none.on")), h("li", {}, t("flash.db25d.none.cable")), h("li", {}, t(own("flash.db25d.none.stock")))),
 			h("p", { class: "small muted" }, t("flash.db25d.none.odr")));
 		act(button(t("flash.db25d.none.again"), onAgain, { primary: true }), button(t("flash.db25d.none.update_mode"), onUpdateMode),
 			button(t("flash.db25d.none.power_on"), onPowerOn, { quiet: true }));
@@ -114,7 +114,7 @@ export function makeDb25d(host) {
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.db25d.um.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.db25d.stock.version")), h("dd", {}, version)) : null,
-			h("p", {}, t(led("flash.db25d.um.text"))), h("p", { class: "small muted" }, t("flash.db25d.um.safe")));
+			h("p", {}, t(own("flash.db25d.um.text"))), h("p", { class: "small muted" }, t("flash.db25d.um.safe")));
 		act(onUpdateMode ? button(t("flash.db25d.um.go"), onUpdateMode, { primary: true }) : button(t("flash.db25d.none.again"), onAgain, { primary: true }));
 	}
 
@@ -163,7 +163,7 @@ export function makeDb25d(host) {
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
 			h("p", {}, t(restore ? "flash.db25d.iap.restore_lead" : "flash.db25d.iap.lead")),
 			h("ol", { class: "steps c7-big" }, h("li", {}, t(restore ? "flash.db25d.iap.restore_step_go" : "flash.db25d.iap.step_go")), ...steps.map((x) => h("li", {}, x))),
-			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t("flash.db25d.iap.careful_text"))),
+			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(own("flash.db25d.iap.careful_text")))),
 			prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		prog.el.hidden = true;
 		S().forward(go);

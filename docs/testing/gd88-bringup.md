@@ -63,8 +63,9 @@ How to get back to the original firmware (the IAP loader is never written, so it
 3. Use the vendor IAP updater (Windows, it needs a COM port at 115200) to write the A file to `IAP_A` and the B file to
    `IAP_B`. Write the codeplug again afterwards with the vendor CPS.
 
-If P2 power-on shows nothing, that is also information (record it for step 3): the web flasher's radio entry currently
-says the screen stays blank, and the spec says the top line shows `IAP_A` / `IAP_B`. Whichever is true, fix the other.
+Record what P2 power-on shows (step 3). The web flasher's radio entry, its troubleshooting texts and the user guide
+follow the spec: the LED lights red and the top line shows `IAP_A` or `IAP_B`. If the radio shows something else, fix
+them (`boards/gd88/radio.json` `bootloader` and `second_bootloader`, the `_gd88` texts in `site/i18n/en.json`).
 
 ## 3. Step by step
 
@@ -209,10 +210,13 @@ fails until step 9.
 ### 7. B: first install through IAP_B
 
 B on its original firmware does not speak ODR's link and has no cable. Its first install is through the vendor IAP
-loader's `IAP_B` target; there is no ODR route.
+loader's `IAP_B` target. The web flasher offers it: on the Install Receiver B step, A answers but reports B down, and
+the page offers Use Factory Update Mode with the `IAP_B` steps. It writes with the DB25-D's IAP packets (`db25d.js`
+`Iap`), which are assumed, not known, to match. Try the web flasher first; the vendor updater below is the fallback.
 
 1. Radio off, cable in, hold P2 and turn on. Long-press P2 until the top line reads `IAP_B`.
-2. With the vendor IAP updater, write `odr_gd88b_install.bin` (or its `_codec` version) as B's file. This is the
+2. In the web flasher, select Use Factory Update Mode and Install. If the loader does not answer or refuses, save the
+   page's log and use the vendor IAP updater instead: write `odr_gd88b_install.bin` (or its `_codec` version) as B's file. This is the
    **unverified** part: the updater takes the vendor files; ODR's install image starts at 0x0300C000 like them, so it
    should be accepted, but the loader's checks (header? checksum? size?) are not known. If it refuses, record the
    updater's message and the file sizes.

@@ -18,7 +18,7 @@
 import { h, t, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
 import { hex, sha256, sleep } from "./bytes.js";
 import { SerialStream, Link, probe, serialSupported } from "./link.js";
-import { Stub, stubImages, StubError, DONE_LED, MEM, patchUniv, boardLed } from "./stub.js";
+import { Stub, stubImages, StubError, DONE_LED, MEM, patchUniv, boardLed, RX2_F } from "./stub.js";
 import * as c7 from "./c7000.js";
 import { upgradeSlot } from "./c7000v1.js";
 import { radioTop } from "./radiotop.js";
@@ -26,7 +26,7 @@ import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 import { register } from "./backends.js";
 import { makeDb25d } from "./db25dui.js";
-import { Usmart, Iap, checkInstallImage, stockVersion } from "./db25d.js";
+import { CONSOLES, Usmart, Iap, checkInstallImage, stockVersion, iapSuffix } from "./db25d.js";
 
 // USB-serial chips found in programming cables (tools/dm32_flash.py USB_SERIAL), for the port chooser
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
@@ -46,8 +46,6 @@ let db25d = null;
 const hasData = () => C().boards[boardId()].data_flash !== false;	// the SPI data flash the stub reads (the DB25-D has none)
 const stockRadio = () => !!C().boards[boardId()].stock_console;
 // whether the chip the cable reaches has a status LED the stub drives (255, 255: none, the GD-88's main SoC)
-// the radio's chip on the cable has no LED: both stub LED pins are "none" (the GD-88's A)
-const noLed = (radio, fbd) => !(fbd.c7000?.boards[radio.flash.board]?.stub_board?.leds || [0]).some((p) => p !== 255);
 const hasLed = () => (C().boards[boardId()].stub_board?.leds || [0]).some((p) => p !== 255);
 // A second SoC with no cable of its own (the GD-88's receiver B): reached through ODR on the first, whose board the
 // radio entry names (flash.via)
@@ -189,14 +187,32 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			c.odr = p;
 			if (!answersAs().includes(p.board))
 				return cableStep(t("flash.err.wrong_board", { board: p.board, name: S().board.name }));
-			if (bridged()) return throughFirst(link);
+			if (bridged()) return secondState(link);
 			const offer = await Stub.odrOffer(link);
 			if (offer) return fromOdr(offer);
 			return restartOdr();
 		}
-		if (bridged()) return cableStep(t("flash.gd88.bridge.need_odr"));
+		if (bridged()) return noFirst();
 		if (stockRadio()) return stockOrNothing();
 		return powerCycle();
+	};
+
+	// The second SoC behind ODR on the first: a second SoC that does not answer the first may still run its original
+	// firmware, which has no bridge end; its first installation goes through the loader's update mode (IAP_B)
+	const secondState = async (link) => {
+		const flags = await Stub.secondState(link);
+		if (flags === null || !(flags & RX2_F.present) || (flags & RX2_F.up) || !toIap) return throughFirst(link);
+		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.odr_found", { git: c.odr.git }))),
+			notice(t("flash.gd88.bridge.second_down"), "info"), h("p", {}, t("flash.gd88.bridge.second_down_iap")));
+		act(button(t("flash.db25d.none.update_mode"), toIap, { primary: true }),
+			button(t("flash.gd88.bridge.try_anyway"), () => throughFirst(link), { quiet: true }));
+	};
+
+	// ODR does not answer on the cable: the second SoC is reached only through it, or through the update mode
+	const noFirst = () => {
+		if (!toIap) return cableStep(t("flash.gd88.bridge.need_odr"));
+		show({ led: "off", screen: "any" }, notice(t("flash.gd88.bridge.need_odr"), "info"), h("p", {}, t("flash.gd88.bridge.need_odr_iap")));
+		act(button(t("flash.db25d.none.again"), () => find(), { primary: true }), button(t("flash.db25d.none.update_mode"), toIap, { quiet: true }));
 	};
 
 	// The second SoC: ODR on the first hands the cable over, then the second's first stage takes the stub as the boot
@@ -213,8 +229,10 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			await Stub.bridgeFromOdr(link);
 			await stub.waitForRom(S().fakeC7 ? 3000 : BRIDGE_ROM_WAIT);
 		} catch (e) {
-			show({ led: "off", screen: "on" }, notice(t("flash.gd88.bridge.failed", { error: ctx.errorText(e) }), "bad"));
-			return act(button(t("flash.c7.connect.try_again"), () => find(), { primary: true }));
+			show({ led: "off", screen: "on" }, notice(t("flash.gd88.bridge.failed", { error: ctx.errorText(e) }), "bad"),
+				toIap ? h("p", {}, t("flash.gd88.bridge.failed_iap")) : null);
+			return act(button(t("flash.c7.connect.try_again"), () => find(), { primary: true }),
+				toIap && button(t("flash.db25d.none.update_mode"), toIap, { quiet: true }));
 		}
 		await load(stub, "bridge");
 	};
@@ -940,10 +958,10 @@ register({
 	recovery: { first: "fix", stock: "restore", reach: "flash.help.c7_reach", stockText: "flash.help.fix.stock_c7",
 		// the DB25-D's vendor update mode: a reinstall that needs nothing to answer on the cable
 		extra: (radio, fbd) => (fbd.c7000?.boards[radio.flash.board]?.stock_console
-			? [{ id: "updatemode", title: "flash.help.fix.iap", text: `flash.help.fix.iap_text${noLed(radio, fbd) ? "_noled" : ""}`,
+			? [{ id: "updatemode", title: "flash.help.fix.iap", text: `flash.help.fix.iap_text${iapSuffix(radio.flash.board)}`,
 				prepare: () => { session().forceIap = true; } }] : []),
-		// the chip on the cable has no LED (the GD-88's A): the symptom texts that name one have a _noled form
-		noLed },
+		// the update-mode symptom as this radio shows it ("_gd88": IAP_A or IAP_B on the screen)
+		iapSuffix: (radio) => iapSuffix(radio.flash.board) },
 	ownsBundle: hasC7Backup,
 	ownImage: async (fb, board, data) => {
 		const { image, slot } = await splitOwnImage(fb.c7000, board, data);
