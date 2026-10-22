@@ -25,6 +25,7 @@ bands = "136-174 / 400-480 MHz"
 power = "up to 25 W"
 display = "1.77\" color, 160 × 128"
 gallery = "160x128"
+clock = { rtc = "unknown", note = "the SoC RTC on I2C2; whether a backup supply keeps it through power-off is not known (docs/spec/hardware-db25d.md)" }
 
 [status]
 level = "supported"

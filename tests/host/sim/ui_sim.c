@@ -237,8 +237,8 @@ void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int
 }
 
 const sim_geom_t sim_geoms[] = {
-	{ "160x120i5", 160, 120, 16, 5, 0, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
-	{ "160x128", 160, 128, 16, 0, 0, false, false },	// MD-380 / MD-UV380 / MD-9600 class
+	{ "160x120i5", 160, 120, 4, 5, 0, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
+	{ "160x128", 160, 128, 4, 0, 0, false, false },	// MD-380 / MD-UV380 / MD-9600 class
 	{ "128x64", 128, 64, 1, 0, 0, false, false },	// GD-77 class, mono
 	// DM-32UV: 16 colors, the bezel hides 10 px left and right, 5 top and bottom; FONT_BIG
 	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true },

@@ -24,6 +24,7 @@ bands = "400-480 MHz or 136-174 MHz (one band per radio)"
 power = "1 / 5 W"
 display = "color, 160 × 128"
 gallery = "160x128"
+clock = { rtc = "unknown", note = "STM32 RTC; the 32.768 kHz crystal is assumed and no backup supply is known (docs/spec/hardware-md380.md)" }
 
 [status]
 level = "supported"

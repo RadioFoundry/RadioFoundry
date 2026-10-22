@@ -724,13 +724,16 @@ run-f4stub: f4stubTest f4stubSim
 # column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the Baofeng factory calibration decoder
 # (modem-hrc7000.md)
 HRC7    := $(ROOT)/drivers/modem/hrc7000
-TESTS   += fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest
+TESTS   += fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest
 
 fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(SUBAUDIO)
 
 st7567Test: st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c $(ROOT)/drivers/display/st7567/st7567.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c
+
+st7735Test: st7735Test.c $(ROOT)/drivers/display/st7735/st7735.c $(ROOT)/drivers/display/st7735/st7735.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ st7735Test.c $(ROOT)/drivers/display/st7735/st7735.c
 
 st7789Test: st7789Test.c $(ROOT)/drivers/display/st7789/st7789.c $(ROOT)/drivers/display/st7789/st7789.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ st7789Test.c $(ROOT)/drivers/display/st7789/st7789.c
@@ -770,15 +773,22 @@ lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/
 baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
-run: run-drivers
-run-drivers: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
-             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
+# The DM-1801 Pro's start-up pin levels (hardware-dm1801pro.md 3.1)
+TESTS   += dm1801proPinsTest
+dm1801proPinsTest: dm1801proPinsTest.c $(ROOT)/boards/dm1801pro/boot_pins.h $(ROOT)/boards/dm1801pro/pins.h \
+		$(ROOT)/boards/dm1801pro/audio_route.h
+	$(CC) $(CFLAGS) -I$(ROOT)/boards/dm1801pro -Wshadow -o $@ dm1801proPinsTest.c
+
+run: run-dm32
+run-dm32: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest \
+          dm1801proPinsTest hrc7000BsTest hrc7000DmrTestSplit
 	./hrc7000BsTest
 	./hrc7000DmrTestSplit
 	./lis3dhTest
 	./rda5807mTest
 	./fd6818Test
 	./st7567Test
+	./st7735Test
 	./st7789Test
 	./keymatrixTest
 	./sharedPttTest

@@ -26,6 +26,7 @@ bands = "136-174 / 400-470 MHz"
 power = "L / M / H"
 display = "monochrome, 128 × 64"
 gallery = "128x64"
+clock = { rtc = "backed", note = "the SoC RTC on I2C2 with a 32.768 kHz crystal and a 3 V backup cell (docs/spec/hardware-dm1801pro.md 8.2)" }
 
 [status]
 level = "supported"
