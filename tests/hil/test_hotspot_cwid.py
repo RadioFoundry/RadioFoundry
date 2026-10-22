@@ -38,6 +38,7 @@ def freq(rx, tx):
     return bytes([0]) + struct.pack("<II", rx, tx) + bytes([255]) + struct.pack("<I", tx)
 
 
+@pytest.mark.feature("hotspot", optional=True)
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_hotspot_cwid(radio, sdr_bench, pytestconfig):

@@ -93,6 +93,7 @@ def talker_alias_on_air(bursts):
     return bytes(chars).decode("latin-1")
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
@@ -166,6 +167,7 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     assert not failed, "; ".join(f"{i['check']} ({i['detail']})" for i in failed)
 
 
+@pytest.mark.feature("dmr_gps")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_dmr_gps_tx(radio, sdr_bench, pytestconfig):
@@ -232,6 +234,7 @@ def _over(radio, sdr_bench, freq, cc, seconds, tag):
     return sdr, heard
 
 
+@pytest.mark.feature("dmr_talker_alias")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.codeplug_write
@@ -299,6 +302,7 @@ def _repeated_slots(outbound):
     return dict(collections.Counter(2 if 15.0 <= p < 45.0 else 1 for p in pos)), round(agree, 3)
 
 
+@pytest.mark.feature("split_duplex", optional=True)
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.codeplug_write
@@ -422,6 +426,7 @@ def test_dmr_tx_split_repeater(radio, sdr_bench, pytestconfig, backup_dir):
                 time.sleep(8)      # the radio is back to idle and the bench jobs are over
         assert not failed, f"{len(failed)} of {calls} calls failed: {failed}"
 
+@pytest.mark.feature("dmr_privacy")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_dmr_privacy_tx(radio, sdr_bench, pytestconfig):

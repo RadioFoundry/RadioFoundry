@@ -88,6 +88,7 @@ def _n(v, k):
     return int(v.get(k, 0))
 
 
+@pytest.mark.feature("aprs")
 def test_aprs_view_and_settings(radio):
     """The view sections answer, a setting round-trips through the debug link (and is put back)."""
     _need_aprs(radio)
@@ -103,6 +104,7 @@ def test_aprs_view_and_settings(radio):
         radio.link.aprs_set("ssid", old)
 
 
+@pytest.mark.feature("aprs")
 def test_aprs_test_call_and_nmea(radio):
     """A RAM test callsign clears the "no callsign" block; host NMEA becomes the position (source "host")."""
     _need_aprs(radio)
@@ -367,6 +369,7 @@ def check_tones(f):
                                    f"{f['space_dev_hz']:.0f} Hz)"
 
 
+@pytest.mark.feature("aprs")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.parametrize("aprs_air", ["channel", "fm_vfo"], indirect=True)
@@ -379,6 +382,7 @@ def test_aprs_on_air_position(radio, sdr_bench, aprs_air):
     check_tones(f)
 
 
+@pytest.mark.feature("aprs")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_aprs_on_air_status(radio, sdr_bench, aprs_air):
@@ -388,6 +392,7 @@ def test_aprs_on_air_status(radio, sdr_bench, aprs_air):
     check_tones(f)
 
 
+@pytest.mark.feature("aprs")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_aprs_on_air_message(radio, sdr_bench, aprs_air):
@@ -407,6 +412,7 @@ def test_aprs_on_air_message(radio, sdr_bench, aprs_air):
     print(f"message {m.group(3)}: tries {v['aprs.msg_tries']}, acked {v['aprs.msg_acked']}")
 
 
+@pytest.mark.feature("aprs")
 @pytest.mark.radio_tx
 @pytest.mark.parametrize("over", ["serial", pytest.param("network", marks=pytest.mark.usb_switch),
                                   pytest.param("kiss_tcp", marks=pytest.mark.usb_switch)])
@@ -539,6 +545,8 @@ def udt_position(block):
     return valid, (lat if north else -lat), (lon if east else -lon)
 
 
+@pytest.mark.feature("dmr_lrrp")
+@pytest.mark.feature("aprs", optional=True)
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.parametrize("form", ["lrrp", "udt"])

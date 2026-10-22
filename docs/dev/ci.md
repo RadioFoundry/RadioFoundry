@@ -186,7 +186,7 @@ The `python` step also checks the HIL tests without a radio:
 | HIL test collection | pytest can't collect `tests/hil` (skipped without pytest) |
 | HIL skips (`tools/check_hil_skips.py`) | a skip in `tests/hil` doesn't name its kind (`odr_hil.skip(kind, reason)`) |
 | HIL skip helper tests (`tests/hil/test_skip_kinds.py`) | the kinds don't reach the report and the JUnit XML |
-| Feature checklist (`tools/bringup.py check`) | a switch has no entry in `tests/hil/features.toml`, a listed test isn't collected, a test's markers aren't in its entry's `needs`, an `n/a` or `unsupported` state has no reason, a record in `docs/testing/results/` doesn't parse |
+| Feature checklist (`tools/bringup.py check`) | a switch has no entry in `tests/hil/features.toml`, a test's feature marker names a feature that has none, a `manual` test has no owner action, an `n/a` or `unsupported` state has no reason, a record in `docs/testing/results/` doesn't parse |
 | Bring-up mode tests (`tests/hil/test_bringup.py`) | a fake radio lacking a feature doesn't fail a bring-up run |
 
 `tools/bringup.py` needs Python 3.11 or later: ci.sh uses `$ODR_PYTHON`, else the newest `python3.N` on `PATH`, and

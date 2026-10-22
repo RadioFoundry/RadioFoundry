@@ -19,6 +19,7 @@ def _tone_args(text):
     return kind, int(value or 0)
 
 
+@pytest.mark.feature("vfo")
 def test_copy_to_vfo(radio):
     feats = radio.features()
     if "VFO_FM" not in feats:

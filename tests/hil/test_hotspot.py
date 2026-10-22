@@ -9,11 +9,14 @@ mode when it closes the port (the DTR drop, docs/spec/mmdvm-protocol.md 5.1, hos
 radio would be back to normal before the debug link could look (hostlink.left=closed)."""
 import time
 
+import pytest
+
 from odr_hil import skip
 
 GET_VERSION, GET_STATUS = 0x00, 0x01
 
 
+@pytest.mark.feature("hotspot")
 def test_hotspot_version_status(radio):
     if "HOTSPOT" not in radio.features():
         skip("not_built", "built without the hotspot")

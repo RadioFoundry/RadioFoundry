@@ -55,6 +55,7 @@ def leave_hotspot(radio):
     radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot",), what="hotspot left")
 
 
+@pytest.mark.feature("split_duplex")
 def test_split_capability(radio):
     need_split(radio)
     import split_duplex_host as sdh
@@ -71,6 +72,7 @@ def test_split_capability(radio):
                       f"has no slot clock or base-station hooks")
 
 
+@pytest.mark.feature("split_duplex")
 def test_split_protocol(radio):
     need_split(radio)
     import split_duplex_host as sdh
@@ -175,6 +177,7 @@ def tx_half_cach(bs):
     return cach, ok, alt, {c["at"] for c in ok}, good, len(slcs) - good
 
 
+@pytest.mark.feature("split_duplex")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
@@ -224,6 +227,7 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
         assert slc_good >= 10 and slc_bad == 0, f"short LC {slc_good} ok, {slc_bad} bad"
 
 
+@pytest.mark.feature("split_duplex")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_split_tx_half_voice(radio, sdr_bench, pytestconfig):
@@ -333,6 +337,7 @@ def check_rx_labels(first, marks, ups, results):
     assert all(abs(st["residual_us"]) < 5000 for _, st in results), results
 
 
+@pytest.mark.feature("split_duplex")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_split_rx_half_labels(radio, sdr_bench, pytestconfig):

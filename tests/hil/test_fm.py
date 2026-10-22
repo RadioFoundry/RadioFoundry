@@ -10,9 +10,12 @@ then DCS D023N must keep the audio muted (tone_ok=0, the state never rx, for 5 s
 with the RX tone back to none the squelch opens again within 10 s. The VFO's RX tone is put back."""
 import time
 
+import pytest
+
 from odr_hil import skip
 
 
+@pytest.mark.feature("fm", "vfo_fm")
 def test_noaa_receive(radio, pytestconfig):
     if "VFO_FM" not in radio.features():
         skip("not_built", "built without the FM VFO")
@@ -34,6 +37,7 @@ def test_noaa_receive(radio, pytestconfig):
                                         f"(floor {floor}); squelch {radio.core()['squelch']}")
 
 
+@pytest.mark.feature("subtone")
 def test_rx_tone_squelch(radio, pytestconfig):
     if "VFO_FM" not in radio.features() or "SUBTONE" not in radio.features():
         skip("not_built", "built without the FM VFO or CTCSS / DCS")

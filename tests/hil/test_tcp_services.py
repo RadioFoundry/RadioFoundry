@@ -97,6 +97,7 @@ def _net_view(link):
     return link.view(["net"])
 
 
+@pytest.mark.feature("net_tcp", "net_http")
 @pytest.mark.usb_switch
 def test_http_status(net):
     if "NET_HTTP" not in net["features"]:
@@ -145,6 +146,7 @@ def _ui_frame(src, ssid, info):
     return _ax25_addr("APZODR", 0, False) + _ax25_addr(src, ssid, True) + b"\x03\xf0" + info
 
 
+@pytest.mark.feature("net_kiss")
 @pytest.mark.usb_switch
 def test_kiss_tcp(net):
     if "NET_KISS" not in net["features"]:
@@ -181,6 +183,7 @@ def _rig(s, line):
     return s.recv(4096).decode()
 
 
+@pytest.mark.feature("net_rigctl")
 @pytest.mark.usb_switch
 def test_rigctl(net):
     if "NET_RIGCTL" not in net["features"]:
@@ -220,6 +223,7 @@ def test_rigctl(net):
     assert r.returncode == 0 and r.stdout.strip().isdigit(), (r.stdout, r.stderr)
 
 
+@pytest.mark.feature("net_aprsis")
 @pytest.mark.usb_switch
 def test_aprsis(net):
     server = os.environ.get("ODR_HIL_APRSIS_SERVER")

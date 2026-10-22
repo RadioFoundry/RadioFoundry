@@ -74,10 +74,22 @@ bring-up run counts a skip as a failure unless its kind is one the feature and t
 
 ### Bring-up mode
 
-`features.toml` is the feature checklist: one entry per feature (every switch of `config/features.mk`, and the
-features without one), with its spec, its required HIL tests in order, optional and planned tests, what the tests
-need and the owner actions they ask for. It has no radio columns. `tools/bringup.py` (Python 3.11 or later) resolves
-each radio's state for each feature from the board's build data:
+`features.toml` is the feature checklist: one `[feature.<id>]` table per feature (every switch of
+`config/features.mk`, and the features without one) with its switch, spec, optional `source` paths, planned tests
+and the manual steps no single test asks for. It has no radio columns and lists no tests: each test names the
+feature it checks.
+
+```
+@pytest.mark.feature("fm")                                  # required: gates the feature
+@pytest.mark.feature("aprs", optional=True)                 # run and recorded, doesn't gate
+@pytest.mark.feature("channel_knob", owner="turn the knob by the clicks the test asks for")
+```
+
+A test may carry several feature markers. What a test needs comes from its markers and fixtures: `rf` and `radio_tx`
+need `--allow-rf`, `bench_service` and the `sdr_bench` fixture the SDR bench, `manual` a person (`--manual`, and the
+marker's `owner=` says what they do), `second_radio` and the `bench_station` fixture a second radio, `usb_switch`,
+`codeplug_write` and `reboot` their `--allow-*` flags. `tools/bringup.py` (Python 3.11 or later) resolves each
+radio's state for each feature from the board's build data:
 
 | State | When |
 |---|---|
@@ -95,26 +107,26 @@ tools/bringup.py check                            # host-side consistency (tools
 
 `run` takes the radio lock (`$ODR_RADIO_LOCK`, default `~/.odr-radio.lock`, the file the HIL workflow locks) and
 fails at once when another run holds it (`--lock-wait S` waits). It prints the owner actions of the run first; they
-run with `--manual`. pytest runs with `--bringup FEATURES`, which runs only the listed tests and makes a required
-test's skip a failure unless the feature excuses it:
+run with `--manual`. pytest runs with `--bringup FEATURES`, which runs only the tests marked for those features and
+makes a required test's skip a failure unless the test's needs excuse it:
 
 - `other_board`: always excused.
-- `bench`: excused when the feature needs the SDR bench. A run that finds no radio fails.
-- `opt_in`: excused when the feature needs something the run didn't allow (`--allow-rf` for `rf`, `--manual` for
-  `owner_action` and so on). With every need allowed, a missing option such as `--ambe` fails.
+- `bench`: excused when the test needs the SDR bench. A run that finds no radio fails.
+- `opt_in`: excused when the test needs something the run didn't allow (`--allow-rf` for `rf`, `--manual` for a
+  `manual` test and so on). With every need allowed, a missing option such as `--ambe` fails.
 - `not_built`, `no_hw`, `state`: never excused.
 
-An excused skip is recorded but doesn't verify the feature, and an optional test never fails the run. The first
-required test of a feature that depends on hardware glue is its capability gate (`test_split_capability`): it skips
-`no_hw` on a radio that doesn't offer the feature, and bring-up turns that into a failure.
+An excused skip is recorded but doesn't verify the feature, and an optional test never fails the run. A feature that
+depends on hardware glue has a capability gate (`test_split_capability`): it skips `no_hw` on a radio that doesn't
+offer the feature, and bring-up turns that into a failure.
 
 ### Results
 
 Each `run` writes `docs/testing/results/<board>/<date>-<commit>.json`: the commit and whether the tree had changes,
-the date, the features, every test's id, outcome, skip kind and reason, the firmware's VERSION keys (git, board,
+the date, the features, every test's id, the features it counts for, outcome, skip kind and reason, the firmware's VERSION keys (git, board,
 features, codec), the allowed options and the Python and pytest versions. Ports, host names and serial numbers are
 left out. Commit the record with the change it checks. A feature's status never understates the radio. The newest record that
-ran it decides: `pass`, `partial` (excused skips or tests not run), `fail`, or `needs re-run` when files under its
+ran it decides: `pass`, `partial` (excused skips), `fail`, or `needs re-run` when files under its
 `spec` or `source` changed after the record's commit. Before a run, the board's seed record decides (the evidence the
 docs held before bring-up records existed), marked as a seed. With neither, the feature is `built, not yet recorded`.
 Only a failing record shows a failure ([docs/testing/results/README.md](../../docs/testing/results/README.md#status)).
@@ -282,6 +294,6 @@ SDR clips, and the bench modem's tries counted with a minimum of one. An attenua
   never `pytest.skip`: the kinds are in [Skip kinds](#skip-kinds), and `tools/check_hil_skips.py` (run by
   `tools/ci.sh`) fails on a skip without one.
 - Document the pass criteria and tolerances in the module docstring and in the table above.
-- List the test in its feature's entry in `features.toml` (`tests`, or `optional_tests` when it shouldn't gate) and
-  keep the entry's `needs` in step with its markers: `tools/bringup.py check` fails on a listed test pytest doesn't
-  collect, a switch without an entry, and markers the entry's needs don't cover.
+- Mark the test with its feature: `@pytest.mark.feature("<id>")`, `optional=True` when it shouldn't gate, `owner=`
+  when it asks a person for something. `tools/bringup.py check` fails on a marker naming a feature `features.toml`
+  doesn't have, a `manual` test without `owner=`, and a switch without an entry.

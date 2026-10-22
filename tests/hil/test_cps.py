@@ -37,6 +37,7 @@ def storage(radio):
     return radio.view(["storage"])
 
 
+@pytest.mark.feature("cps_openfw")
 def test_cps_info(radio):
     info = cps_session(radio, lambda c: c.info())
     assert info["struct"] == 3, info
@@ -49,6 +50,7 @@ def test_cps_info(radio):
     assert info["git"], info
 
 
+@pytest.mark.feature("cps_openfw")
 def test_cps_readback_matches(radio, tmp_path):
     """Two reads of the qdmr regions are identical; the current channel matches the decoded record"""
     a = cps_session(radio, lambda c: c.read_image(QDMR))
@@ -73,6 +75,7 @@ def test_cps_readback_matches(radio, tmp_path):
     assert as_int(s.get("cps.overflows"), 0) == 0 and as_int(s.get("storage.errors"), 0) == 0, s
 
 
+@pytest.mark.feature("settings_store")
 def test_settings_saved(radio):
     """A channel change is saved within SETTINGS_SAVE_DELAY_MS (2 s); no failures or torn records"""
     v = radio.core()
@@ -106,6 +109,7 @@ def reconnect(radio, timeout=20.0):
     raise AssertionError("the radio did not come back after the restart")
 
 
+@pytest.mark.feature("settings_store")
 @pytest.mark.reboot
 def test_settings_survive_restart(radio):
     v = radio.core()
@@ -185,6 +189,7 @@ def pick_channel(radio, image):
     return number
 
 
+@pytest.mark.feature("cps_openfw")
 def test_cps_write_dry_run(radio, backup_dir):
     """Radio only, nothing written: everything test_cps_write_restore relies on, checked before any write. Two reads
     identical, the backup file reads back, the channel rename changes only that name's 16 bytes, writing the edit
@@ -210,6 +215,7 @@ def test_cps_write_dry_run(radio, backup_dir):
     print(f"dry run: channel {number} {old!r}: {len(changed)} bytes, sectors {[hex(j[0]) for j in write_plan]}")
 
 
+@pytest.mark.feature("cps_openfw")
 @pytest.mark.codeplug_write
 def test_cps_write_restore(radio, backup_dir):
     """Back up, rename one channel over CPS, read it back, restore the backup and verify it byte for byte"""
@@ -231,6 +237,7 @@ def test_cps_write_restore(radio, backup_dir):
     assert as_int(s["cps.commits"]) >= 2 and as_int(s["storage.errors"]) == 0, s
 
 
+@pytest.mark.feature("settings_store")
 def test_storage_region(radio):
     """The settings / journal region: its state is reported, the read window holds, a read outside it is refused.
     A foreign region (another firmware's data) is reported, not claimed: `odr_debug.py storage claim` does that"""

@@ -41,6 +41,7 @@ def _serial_back(timeout):
     return False
 
 
+@pytest.mark.feature("usb_network")
 @pytest.mark.usb_switch
 def test_usb_network_roundtrip(radio):
     if "DMR_IP_GATEWAY" not in radio.features():

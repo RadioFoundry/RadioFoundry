@@ -86,6 +86,7 @@ def _addresses(radio):
     return own, str(host), str(ipaddress.IPv4Address(int(host) ^ 1))
 
 
+@pytest.mark.feature("dmr_control_station")
 def test_usb_settings_stored(radio):
     """Radio only: op 27 stores each setting, the view keys follow; nothing re-enumerates (the power-on setting acts
     at the next boot only)."""
@@ -112,6 +113,7 @@ def test_usb_settings_stored(radio):
     assert v["usb.boot_network"] == "0" and v["net.passthrough"] == "0" and v["net.fixed_link"] == "0", v
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 def test_fixed_link(radio):
     """The fixed link: the host gets 192.168.10.2 by DHCP, pings 192.168.10.1, the debug link answers there."""
@@ -140,6 +142,7 @@ def test_fixed_link(radio):
     assert radio.view(["hotspot"]).get("usb.network") == "0"
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 @pytest.mark.reboot
 def test_boot_network(radio):
@@ -212,6 +215,7 @@ def _received(sock, seconds):
     return got
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
@@ -249,6 +253,7 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
         _back_to_serial(radio, [radio_ip])
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service

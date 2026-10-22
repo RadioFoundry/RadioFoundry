@@ -102,6 +102,7 @@ def zone_on(radio):
     return wait_roam(radio, lambda v: v.get("roam.zone_on") == "1", 1.0, "roaming on for the zone")
 
 
+@pytest.mark.feature("dmr_roaming")
 def test_roam_section(roaming):
     v = roam(roaming)
     missing = [k for k in ROAM_KEYS if k not in v]
@@ -121,6 +122,7 @@ def test_roam_section(roaming):
           f"threshold={v['set.roam_rssi_dbm']} dBm hysteresis={v['set.roam_hyst_db']} dB")
 
 
+@pytest.mark.feature("dmr_roaming")
 def test_roam_settings_round_trip(roaming):
     L = roaming.link
     v = roam(roaming)
@@ -139,6 +141,7 @@ def test_roam_settings_round_trip(roaming):
               as_int(x.get("set.roam_hyst_db", "0")) == old_h, 1.0, "roaming settings back")
 
 
+@pytest.mark.feature("dmr_roaming")
 def test_roam_zone_toggle(roaming):
     if roaming.core().get("vfo") == "1":
         skip("state", "the radio is in the VFO: roaming works on channels")
@@ -158,6 +161,7 @@ def test_roam_zone_toggle(roaming):
     wait_roam(roaming, lambda x: x.get("roam.zone_on") == before, 1.0, "zone flag back")
 
 
+@pytest.mark.feature("dmr_roaming")
 def test_roam_now_passive(roaming):
     if roaming.core().get("vfo") == "1":
         skip("state", "the radio is in the VFO: roaming works on channels")
@@ -185,6 +189,7 @@ def test_roam_now_passive(roaming):
     wait_roam(roaming, lambda x: x.get("roam.state") in ("watch", "search", "survey"), 1.0, "roam now ends the lock")
 
 
+@pytest.mark.feature("dmr_roaming")
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
@@ -238,6 +243,7 @@ def test_roam_to_bench_repeater(roaming, sdr_bench, pytestconfig):
         f"bench_repeater.py saw no wakeup: {out[-800:] if out else ''}"
 
 
+@pytest.mark.feature("dmr_roaming")
 def test_roam_survey_settings_round_trip(roaming):
     L = roaming.link
     L.setting("roam_beacon_s", 30)
@@ -292,6 +298,7 @@ def bench_events(p):
     return events, out
 
 
+@pytest.mark.feature("dmr_roaming")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_roam_beacon_home(roaming, sdr_bench, pytestconfig):
@@ -328,6 +335,7 @@ def test_roam_beacon_home(roaming, sdr_bench, pytestconfig):
                                       "roam.cuts", "roam.beacons")))
 
 
+@pytest.mark.feature("dmr_roaming")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_roam_beacon_other_site(roaming, sdr_bench, pytestconfig):

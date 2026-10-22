@@ -85,6 +85,7 @@ def net(radio):
             time.sleep(2.0)
 
 
+@pytest.mark.feature("split_duplex", optional=True)
 @pytest.mark.usb_switch
 def test_net_split_protocol(net, pytestconfig):
     if "HOTSPOT_SPLIT" not in net.features:
@@ -107,6 +108,7 @@ def test_net_split_protocol(net, pytestconfig):
     net.leave_hotspot()
 
 
+@pytest.mark.feature("split_duplex", optional=True)
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
@@ -134,6 +136,7 @@ def _kiss(cmd, payload=b""):
     return b"\xc0" + bytes([cmd]) + esc + b"\xc0"
 
 
+@pytest.mark.feature("aprs")
 @pytest.mark.usb_switch
 def test_net_kiss(net):
     if "APRS" not in net.features:

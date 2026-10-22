@@ -52,6 +52,7 @@ def em_settings(radio):
                                       x["em.rx_tone"] == 1, x["em.tries"], x["em.hot_mic_s"])
 
 
+@pytest.mark.feature("dmr_emergency")
 def test_emergency_view_and_settings(radio, pytestconfig, em_settings):
     """Radio only: the dmr_ext section is there and the settings request changes it."""
     _emergency_setup(radio, pytestconfig)
@@ -61,6 +62,7 @@ def test_emergency_view_and_settings(radio, pytestconfig, em_settings):
     assert v["em.state"] == "idle" and v["em.hot_mic_s"] == "0", v
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_emergency_alarm_rx(radio, sdr_bench, pytestconfig, em_settings):
@@ -83,6 +85,7 @@ def test_emergency_alarm_rx(radio, sdr_bench, pytestconfig, em_settings):
     assert da["data.event"] == "emergency_alarm" and da["data.event_id"] == BENCH_SRC, da
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_emergency_call_rx(radio, sdr_bench, pytestconfig, em_settings):
@@ -102,6 +105,7 @@ def test_emergency_call_rx(radio, sdr_bench, pytestconfig, em_settings):
     assert last.get("last.emergency", last.get("call.emergency")) == "1", last
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_emergency_alarm_tx(radio, sdr_bench, pytestconfig, em_settings):
@@ -126,6 +130,7 @@ def test_emergency_alarm_tx(radio, sdr_bench, pytestconfig, em_settings):
     radio.wait_for(lambda x: x.get("em.state") == "idle", sections=("dmr_ext",), what="emergency canceled")
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
@@ -149,6 +154,7 @@ def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
     radio.link.emergency("cancel")
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.radio_tx
 def test_emergency_key_hold(radio, pytestconfig, em_settings):
     """The EMERGENCY key action (the DM-1701's top side key held 1.5 s; injected as the action, held for the
