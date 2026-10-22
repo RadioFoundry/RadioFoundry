@@ -52,6 +52,8 @@ bool md380_subtone_rx_match(void);
 // Transmit: send the tone or code as PWM on PC7 until stopped; a none tone sends nothing
 void md380_subtone_tx_start(const subtone_t *tone);
 void md380_subtone_tx_stop(void);
+// The DCS turn-off tail in place of the code (on) or the code again (off); false when no DCS is sent
+bool md380_subtone_tx_tail(bool on);
 // Counters for the diagnostics page: ADC samples seen, detector openings
 uint32_t md380_subtone_samples(void);
 #endif

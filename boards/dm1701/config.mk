@@ -24,6 +24,3 @@ MAXIMAL_SKIP := NET_PPP APRS_IGATE
 # No use on a 160x120 panel (the 16x32 font is for 240 px and wider), and no hardware for the air band (the AT1846S is
 # FM only) or a broadcast receiver (docs/spec/airband-and-broadcast.md), so the maximal configuration leaves them off
 BOARD_UNSUPPORTED := FONT_XL AM_RX BCAST_FM FAULT_TRACE
-# Stub entry stays off here for now: its 8 KB staging buffer takes main RAM to 95 % (docs/spec/stub-stm32f4.md), not yet
-# run on a DM-1701 with every default feature on. CONFIG_STUB_ENTRY=y builds it
-CONFIG_STUB_ENTRY ?= n

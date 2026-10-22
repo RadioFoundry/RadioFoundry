@@ -612,7 +612,8 @@ interrupt (priority 6, running only while a tone is sent) computes a new duty ev
 from a 65-point table for CTCSS, the 23-bit word at 134.4 baud with a light smoothing for DCS. The level ramps up over
 20 ms; `MD380_SUBTONE_PERCENT` (default 30) sets the swing as a share of the duty range. `tx()` starts it after the PA is
 on, `tx_off()` stops it, and the pin returns to its idle low output. TIM3 and DMA2 Stream4's interrupt are the only
-resources added (section 3).
+resources added (section 3). The DCS turn-off tail (`radio-features.md` 3.3a) switches the generator to a 134.4 Hz
+sine at the same swing (`subaudio_tx_tail`, with the interrupt held off for the switch); not yet checked on a radio.
 
 **Unverified, check on a radio** (`docs/testing/md380-bringup.md` 5 and 6):
 

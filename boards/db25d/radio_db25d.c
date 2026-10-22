@@ -475,7 +475,7 @@ static bool tx_stop(void)
 	if (!transmitting) {
 		return false;
 	}
-	bk4819_tx_end(&rf_main);
+	bk4819_tx_end(&rf_main);	// ends a DCS tail still on
 	hal_delay_us(tx_off_us);
 	apc_ramp(tx_pa, false);
 	DAC_DATA_B = 0;
@@ -510,6 +510,19 @@ static bool tx_tone(uint16_t hz)
 		return false;
 	}
 	bk4819_tone_start(&rf_main, hz, DB25D_TX_TONE_GAIN);
+	return true;
+}
+
+// The DCS turn-off tail (4.7); the core holds the carrier for it
+static bool tx_tail(bool on)
+{
+	if (!transmitting || mode != RADIO_MODE_FM) {
+		return false;
+	}
+	if (on) {
+		return bk4819_tx_tail_start(&rf_main);
+	}
+	bk4819_tx_tail_end(&rf_main);
 	return true;
 }
 
@@ -612,5 +625,6 @@ const hal_radio_t db25d_radio = {
 	.audio = audio,
 	.volume = volume,
 	.tx_tone = tx_tone,
+	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
 };

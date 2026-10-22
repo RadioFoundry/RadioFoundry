@@ -75,6 +75,8 @@
 #define RADIO_ROGER_HZ1		1200
 #define RADIO_ROGER_HZ2		900
 #define RADIO_ROGER_STEP_MS	100	// each of the two roger tones
+// The DCS turn-off tail after PTT release (hal_radio_t.tx_tail; radio-features.md)
+#define RADIO_SUBTONE_TAIL_MS	300
 
 // VOX: the mic level counts as voice at or above 100 - 8 x sensitivity; keyed after RADIO_VOX_ATTACK_POLLS polls of
 // voice, never while received audio plays or for RADIO_VOX_RX_GUARD_MS after (the speaker would key it)
@@ -213,6 +215,9 @@ typedef struct {
 #if CONFIG_FM_TX_TONES
 	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
 	uint32_t roger_ms;		// roger beep start, 0 = none
+#endif
+#if CONFIG_SUBTONE
+	uint32_t tail_ms;		// sub-audio tail start (hal_radio_t.tx_tail), 0 = none
 #endif
 #if CONFIG_VOX
 	bool vox_keyed;
