@@ -88,6 +88,8 @@ the project lead, never in public CI).
 - `core/` stays radio independent. Radio differences go through `board_t` and the `hal_*` interfaces
   ([Architecture](architecture.md)).
 - Anything that costs flash goes behind a `CONFIG_` switch ([Building](building.md)).
+- A fact about a radio that the build doesn't need goes in its `board.toml`, once ([The board registry](board-registry.md)).
+  Tools, tests and docs read the boards from the registry; none keeps a list of radios.
 - C11 (gnu11) with `-Wall -Wextra -Wshadow -Wdouble-promotion`. Zero warnings in every configuration.
 - Follow the style of the file you edit. Comments say why, not what.
 - Keep RTOS calls and blocking waits out of the UI's behavior code and the protocol engines, so the host tests can run them.

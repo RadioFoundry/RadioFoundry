@@ -24,9 +24,9 @@ display = "color, 160 × 128"
 gallery = "160x128"
 
 [status]
-level = "testing"
-summary = "Fully operational on a UHF radio¹. FM with CTCSS both ways; DMR voice and SMS in simplex and through a repeater or duplex hotspot, on either slot; codeplug and ID database programming (CPS, web editor). The codec comes from the stock D2.32 file ([codec-md380](docs/spec/codec-md380.md)), kept in flash sectors the application never uses, so an update keeps it. Still open: DCS and the tone deviation, the VHF image (untested), FM TX tones and APRS receive ([bring-up checklist](docs/testing/md380-bringup.md))"
-release = "testing"
+level = "supported"
+summary = "Fully operational on a UHF radio¹: FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or duplex hotspot on either slot, codeplug and ID database programming (CPS, web editor). The codec comes from the stock D2.32 file ([codec-md380](docs/spec/codec-md380.md)) and an update keeps it. Open: DCS, the tone deviation, the untested VHF image, FM TX tones and APRS receive ([bring-up checklist](docs/testing/md380-bringup.md))"
+release = "stable"
 
 # One band per radio, a build choice (board.mk BAND). The first value is the default build; ci and the release
 # build every other one too. board_name: what the radio reports as board= on the debug link
