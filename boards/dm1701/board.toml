@@ -9,6 +9,8 @@ maker = "Baofeng"
 model = "DM-1701"
 also = ["Retevis RT84"]
 kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 1
 
 [docs]
 hardware = "docs/spec/hardware-dm1701.md"
@@ -25,6 +27,7 @@ gallery = "160x120i5"
 [status]
 level = "supported"
 summary = "First target. Most features pass on-air tests: FM, DMR voice and data, text, alerts, emergency, hotspot, MMDVM SFR, split duplex (each half alone), scan, and the network services. Still open: Standalone SFR and a two-radio split duplex pair (below)"
+note = "FM, DMR voice and data, text messages, the hotspot and the USB network services work on air."
 release = "stable"
 
 # The audio tap's probe build: without LTO it no longer fits, so ci keeps it building with LTO=1

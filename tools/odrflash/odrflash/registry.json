@@ -90,7 +90,7 @@
     "nand": true,
     "progmem": 2097152,
     "tested": false,
-    "stock_console": true
+    "stock_console": "usmart"
    },
    "build_options": []
   },
@@ -281,7 +281,7 @@
     "nand": false,
     "progmem": 1048576,
     "tested": true,
-    "stock_console": false
+    "stock_console": null
    },
    "build_options": []
   },
@@ -370,7 +370,7 @@
     "nand": false,
     "progmem": 1048576,
     "tested": true,
-    "stock_console": false
+    "stock_console": null
    },
    "build_options": []
   },
