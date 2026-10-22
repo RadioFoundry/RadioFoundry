@@ -142,6 +142,8 @@ static void hotspot_section(dl_text_t *t)
 
 	hostlink_net_stats(&ns);
 	dl_text(t, "net.host_ip=%08x\nnet.radio_ip=%08x\n", (unsigned)ipGatewayHostIP(), (unsigned)ipGatewayRadioIP());
+	// The board's host netif: without one the gateway's answers have nowhere to go (a link can still negotiate)
+	dl_text(t, "net.netif=%u\n", board.netif != NULL);
 	dl_text(t, "net.frames_in=%u\nnet.to_air=%u\nnet.to_air_refused=%u\n", (unsigned)ns.frames_in,
 		(unsigned)ns.to_air, (unsigned)ns.to_air_refused);
 	dl_text(t, "net.packets_air=%u\nnet.packets_up=%u\nnet.packets_dropped=%u\n", (unsigned)ns.packets_air,
@@ -291,8 +293,8 @@ static void storage_section(dl_text_t *t)
 	settings_read(&sv);
 	dl_text(t, "settings.auto_lock_s=%u\nsettings.long_press_ms=%u\nsettings.repeat_ms=%u\nsettings.mic_gain=%u\n",
 		sv.auto_lock_s, sv.long_press_ms, sv.repeat_ms, sv.mic_gain);
-	dl_text(t, "settings.theme=%u\nsettings.ui_flags=%u\nsettings.updown_home=%u\nsettings.low_batt_pct=%u\n", sv.theme,
-		sv.ui_flags, sv.updown_home, sv.low_batt_pct);
+	dl_text(t, "settings.theme=%u\nsettings.ui_flags=%u\nsettings.updown_home=%u\nsettings.low_batt_pct=%u\n",
+		settings_theme(&sv), sv.ui_flags, settings_updown_home(&sv), sv.low_batt_pct);
 	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", sv.auto_off_min,
 		sv.privacy_type[0], sv.privacy_active);
 	dl_text(t, "storage.job_busy=%u\n", storage_job_busy());
@@ -334,7 +336,7 @@ static void storage_section(dl_text_t *t)
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-						  "sfr", "tasks" };
+						  "sfr", "tasks", "crash", "watchdog" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -412,6 +414,12 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_TASKS:
 		debuglink_view_tasks(t);
+		break;
+	case DL_VIEW_CRASH:
+		debuglink_view_crash(t);
+		break;
+	case DL_VIEW_WATCHDOG:
+		debuglink_view_watchdog(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP

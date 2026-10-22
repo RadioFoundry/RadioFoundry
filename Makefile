@@ -56,6 +56,9 @@ endif
 ifeq ($(CONFIG_SNMP),y)
 CORE_DIRS += core/snmp
 endif
+ifeq ($(CONFIG_CRASH_LOG),y)
+CORE_DIRS += core/crash
+endif
 # The storage layer over SPI NAND, for the boards that list it (BOARD_NAND_DIRS in their board.mk)
 ifeq ($(CONFIG_NAND_STORAGE),y)
 BOARD_DIRS += $(BOARD_NAND_DIRS)
@@ -77,6 +80,11 @@ endif
 # turns on the kernel's trace hooks in the boards' FreeRTOSConfig.h
 ifneq ($(CONFIG_TASK_STACKS),y)
 APP_SRC := $(filter-out core/app/task_stack.c,$(APP_SRC))
+endif
+# The idle task's watchdog feed (core/app is always globbed): only with its switch, which also turns on the idle hook in
+# the boards' FreeRTOSConfig.h
+ifneq ($(CONFIG_WATCHDOG),y)
+APP_SRC := $(filter-out core/app/watchdog.c,$(APP_SRC))
 endif
 # Single files of core/dmr, whose other files belong to other features
 ifeq ($(CONFIG_DMR_PRIVACY),y)
@@ -100,6 +108,12 @@ endif
 ifeq ($(CONFIG_HOTSPOT_SPLIT),y)
 APP_SRC += core/dmr/bsOutbound.c core/dmr/slotEpoch.c
 endif
+# The fault trace line a fault handler prints before the restart (core/crash is globbed with CRASH_LOG): only with its
+# own switch, with or without the crash log
+APP_SRC := $(filter-out core/crash/crash_trace.c,$(APP_SRC))
+ifeq ($(CONFIG_FAULT_TRACE),y)
+APP_SRC += core/crash/crash_trace.c
+endif
 # The IP gateway (the data service above carries its packets: CONFIG_DMR_DATA_CORE follows it)
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
 APP_SRC += core/dmr/ipGateway.c
@@ -121,8 +135,9 @@ APP_SRC += $(sort $(NET_SRC-y))
 MUX_SRC-$(CONFIG_NET_USRP) += core/usbaudio/audio_mux.c core/usbaudio/pcm_slip.c
 MUX_SRC-$(CONFIG_APRS_RX) += core/usbaudio/audio_mux.c core/usbaudio/pcm_slip.c
 APP_SRC += $(sort $(MUX_SRC-y))
-# Their text formatting (key=value views, JSON, protocol lines) is the debug link's dl_fmt.c, built here without it
-ifneq ($(NET_SRC-y),)
+# Their text formatting (key=value views, JSON, protocol lines) is the debug link's dl_fmt.c, built here without it.
+# The crash log's summary line uses it too
+ifneq ($(NET_SRC-y)$(filter y,$(CONFIG_CRASH_LOG)),)
 ifneq ($(CONFIG_DEBUGLINK),y)
 APP_SRC += core/debuglink/dl_fmt.c
 endif
@@ -142,6 +157,11 @@ GITDIRTY := $(if $(shell git ls-files --others --exclude-standard -- $(APP_DIRS)
 endif
 endif
 ODR_VERSION := $(GITVERSION)$(GITDIRTY)
+# The same as the crash record's build number and dirty flag (core/crash/crash.c): the version's leading hex digits
+# (at most 8, then its end or "-") as a number, 0 when it isn't a commit. Worked out here, not in the image
+ODR_GIT_HEAD := $(firstword $(subst -, ,$(ODR_VERSION)))
+ODR_GIT_ID := $(if $(shell printf '%s' '$(ODR_GIT_HEAD)' | grep -Eqx '[0-9a-fA-F]{1,8}' && echo y),0x$(ODR_GIT_HEAD)u,0u)
+ODR_GIT_DIRTY := $(if $(findstring -dirty,$(ODR_VERSION)),1,0)
 DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DODR_BOARD_NAME=\"$(BOARD)\"
 
 OPT ?= -Os
@@ -213,7 +233,7 @@ endif
 endif
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
 $(VERSION_OBJ): $(BUILD)/version
-$(VERSION_OBJ): CFLAGS_APP += -DODR_GIT=\"$(ODR_VERSION)\"
+$(VERSION_OBJ): CFLAGS_APP += -DODR_GIT=\"$(ODR_VERSION)\" -DODR_GIT_ID=$(ODR_GIT_ID) -DODR_GIT_DIRTY=$(ODR_GIT_DIRTY)
 ifeq ($(LTO),1)
 $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto
 endif

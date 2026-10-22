@@ -37,6 +37,8 @@ typedef struct {
 	bool (*enter_stub)(uint32_t entry);
 #if defined(CONFIG_STUB_ENTRY) && CONFIG_STUB_ENTRY
 	uint32_t stub_run_addr;		// last, so a file built without config.h sees the same layout before it
+	// Optional (NULL: any image): the loaded image may run here. The STM32 refuses one that doesn't feed the IWDG
+	bool (*stub_image_ok)(const uint8_t *img, uint32_t len);
 #endif
 } hal_system_t;
 

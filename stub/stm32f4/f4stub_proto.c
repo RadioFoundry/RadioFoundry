@@ -221,11 +221,19 @@ static bool mem_read(f4stub_t *s, int mem, uint32_t addr, void *dst, uint32_t n)
 	return true;
 }
 
+static void feed(f4stub_t *s)
+{
+	if (s->port->feed != NULL) {
+		s->port->feed(s->port->ctx);
+	}
+}
+
 // CRC-32 of one 4 KB block, read through the word buffer in 1 KB pieces; *blank when every byte is 0xFF. False when
 // the SPI flash didn't answer
 static bool block_crc(f4stub_t *s, int mem, uint32_t addr, uint32_t *crc, bool *blank)
 {
 	uint8_t *buf = (uint8_t *)s->words;
+	feed(s);
 	*crc = 0;
 	*blank = true;
 	for (uint32_t off = 0; off < F4STUB_BLOCK; off += 1024u) {
@@ -285,6 +293,7 @@ static void op_read(f4stub_t *s, const uint8_t *p, uint16_t len)
 	uint8_t *o = s->out + F4STUB_FRAME_HDR;
 	for (uint8_t i = 0; i < count; i++) {
 		uint32_t a = addr + (uint32_t)i * F4STUB_BLOCK;
+		feed(s);
 		if (!mem_read(s, mem, a, o + READ_REC_HDR, F4STUB_BLOCK)) {
 			status(s, F4ST_FLASHERR);
 			return;
@@ -316,6 +325,7 @@ static void op_xerase(f4stub_t *s, const uint8_t *p, uint16_t len)
 		status(s, F4ST_BADARG);
 		return;
 	}
+	feed(s);
 	status(s, s->port->xerase(s->port->ctx, addr) ? F4ST_OK : F4ST_FLASHERR);
 }
 
@@ -343,6 +353,7 @@ static void op_xprogram(f4stub_t *s, const uint8_t *p, uint16_t len)
 			return;
 		}
 	}
+	feed(s);
 	if (!s->port->xprogram(s->port->ctx, addr, p + 4, n) || !s->port->xread(s->port->ctx, addr, buf, n) ||
 	    memcmp(buf, p + 4, n) != 0) {
 		status(s, F4ST_FLASHERR);
@@ -370,6 +381,7 @@ static void op_erase(f4stub_t *s, const uint8_t *p, uint16_t len)
 		status(s, F4ST_REFUSED);	// the interlock: erase sector 3 first
 		return;
 	}
+	feed(s);	// a 128 KB sector takes up to 2 s: the target's wait loop feeds as well (f4stub_flash.c)
 	status(s, s->port->erase(s->port->ctx, sector) ? F4ST_OK : F4ST_FLASHERR);
 }
 
@@ -402,6 +414,7 @@ static void op_program(f4stub_t *s, const uint8_t *p, uint16_t len)
 		}
 		memcpy(&s->words[i], p + 4u + i * 4u, 4);
 	}
+	feed(s);
 	if (!s->port->program(s->port->ctx, addr, s->words, n)) {
 		status(s, F4ST_FLASHERR);
 		return;
@@ -418,6 +431,7 @@ static void op_program(f4stub_t *s, const uint8_t *p, uint16_t len)
 static void dispatch(f4stub_t *s, uint8_t op, const uint8_t *p, uint16_t len)
 {
 	s->requests++;
+	feed(s);
 	switch (op) {
 	case F4OP_HELLO:
 		op_hello(s);

@@ -2791,6 +2791,31 @@ static void test_ui_settings(void)
 	settings_read(&sv);
 	CHECK(sv.accent == 0);
 	CHECK(ui_svc_setting_set(UI_SET_UPDOWN_HOME, 7) && ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 2);
+#if CONFIG_CRASH_REPORT
+	// The crash report's mode and target share theme, updown_home and accent (settings.h): each keeps the others
+	CHECK(ui_svc_setting_get(UI_SET_CRASH_MODE) == UI_CRASH_SEND_OFF && ui_svc_setting_get(UI_SET_CRASH_CONTACT) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_THEME, 1) && ui_svc_setting_set(UI_SET_ACCENT, 3) && ui_svc_setting_set(UI_SET_STRIP, 0));
+	CHECK(ui_svc_setting_set(UI_SET_CRASH_MODE, 9) && ui_svc_setting_get(UI_SET_CRASH_MODE) == UI_CRASH_SEND_AUTO);
+	CHECK(ui_svc_setting_set(UI_SET_CRASH_MODE, -1) && ui_svc_setting_get(UI_SET_CRASH_MODE) == UI_CRASH_SEND_OFF);
+	CHECK(ui_svc_setting_set(UI_SET_CRASH_MODE, UI_CRASH_SEND_ASK));
+	CHECK(ui_svc_setting_set(UI_SET_CRASH_CONTACT, CODEPLUG_CONTACTS_MAX + 5) &&
+	      ui_svc_setting_get(UI_SET_CRASH_CONTACT) == CODEPLUG_CONTACTS_MAX);
+	CHECK(ui_svc_setting_set(UI_SET_CRASH_CONTACT, -3) && ui_svc_setting_get(UI_SET_CRASH_CONTACT) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_CRASH_CONTACT, 1000));
+	CHECK(ui_svc_setting_get(UI_SET_THEME) == 1 && ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 2 &&
+	      ui_svc_setting_get(UI_SET_ACCENT) == 3 && ui_svc_setting_get(UI_SET_STRIP) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_THEME, 2) && ui_svc_setting_set(UI_SET_UPDOWN_HOME, 1) &&
+	      ui_svc_setting_set(UI_SET_ACCENT, 5) && ui_svc_setting_set(UI_SET_STRIP, 1));
+	CHECK(ui_svc_setting_get(UI_SET_CRASH_MODE) == UI_CRASH_SEND_ASK && ui_svc_setting_get(UI_SET_CRASH_CONTACT) == 1000);
+	// A stored mode of 3 (no such mode): off
+	settings_t *cs = settings_begin();
+	settings_set_crash_mode(cs, 3);
+	settings_end(now);
+	CHECK(ui_svc_setting_get(UI_SET_CRASH_MODE) == UI_CRASH_SEND_OFF);
+	CHECK(ui_svc_setting_set(UI_SET_CRASH_MODE, UI_CRASH_SEND_OFF) && ui_svc_setting_set(UI_SET_CRASH_CONTACT, 0) &&
+	      ui_svc_setting_set(UI_SET_THEME, 0) && ui_svc_setting_set(UI_SET_ACCENT, 0) &&
+	      ui_svc_setting_set(UI_SET_UPDOWN_HOME, 2));
+#endif
 	CHECK(ui_svc_setting_set(UI_SET_LOW_BATTERY, 80) && ui_svc_setting_get(UI_SET_LOW_BATTERY) == 50);
 	CHECK(ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 100000) && ui_svc_setting_get(UI_SET_AUTO_OFF_MIN) == 1440);
 	CHECK(ui_svc_setting_set(UI_SET_MESSAGE_TONE, 0) && ui_svc_setting_get(UI_SET_MESSAGE_TONE) == 0);
@@ -2807,8 +2832,8 @@ static void test_ui_settings(void)
 	st->long_press_ms = 0;
 	st->repeat_ms = 0;
 	st->pos_format = 9;
-	st->theme = 9;
-	st->updown_home = 9;
+	st->theme = 7;		// bits 0-1 out of range (the bits above hold the crash report's target)
+	st->updown_home = 7;
 	st->privacy_type[0] = 99;
 	settings_end(now);
 	ram[UI_SET_SQUELCH] = 3;

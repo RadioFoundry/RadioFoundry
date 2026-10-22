@@ -1320,6 +1320,95 @@ static void testIpText(void)
 	runMainTask(2000);
 }
 
+#if DMR_DATA_UDP_API
+// One UDP datagram from another task (dmr_data_send_udp, the crash report): queued, sent once, OK when the list is out;
+// refused while one is pending; failed when no channel lets it go for UDP_WAIT_MS, or when the stack gives it up
+static void testUdpSend(void)
+{
+	uint8_t data[DMR_DATA_UDP_MAX + 1];
+	for (int k = 0; k < (int)sizeof(data); k++)
+	{
+		data[k] = (uint8_t)(k * 7);
+	}
+	reset();
+	CHECK(!dmr_data_send_udp(0, false, 4090, 4090, data, 10));// no destination
+	CHECK(!dmr_data_send_udp(RADIO_A, false, 4090, 4090, data, 0));
+	CHECK(!dmr_data_send_udp(RADIO_A, false, 4090, 4090, data, DMR_DATA_UDP_MAX + 1));
+	CHECK(!dmr_data_send_udp(RADIO_A, false, 4090, 4090, NULL, 10));
+
+	CHECK(dmr_data_send_udp(91, true, 4090, 4090, data, 80));
+	CHECK(dmr_data_udp_state() == DMR_REQ_QUEUED);
+	CHECK(!dmr_data_send_udp(RADIO_A, false, 4090, 4090, data, 10));// one at a time
+	runMainTask(100);
+	CHECK(dmr_data_udp_state() == DMR_REQ_OK && sentCount == 1);
+	CHECK(sent[0].dst == 91 && sent[0].group && sent[0].dpf == DMR_DPF_UNCONFIRMED);
+	// What went out is the datagram as given
+	dmrDataRxReset();
+	bool got = false;
+	for (int i = 0; i < lastTxCount; i++)
+	{
+		if (dmrDataRxBurst(&lastTx[i]) == DMR_DATA_RX_PACKET)
+		{
+			dmrDataUDP_t udp;
+			got = dmrDataGetUDP(&dmrDataRxPacket, &udp) && (udp.srcPort == 4090) && (udp.dstPort == 4090) &&
+				  (udp.length == 80) && (memcmp(udp.payload, data, 80) == 0);
+		}
+	}
+	dmrDataRxReset();
+	CHECK(got);
+
+	// A private one, after the last finished
+	sentCount = 0;
+	CHECK(dmr_data_send_udp(RADIO_A, false, 4090, 4090, data, DMR_DATA_UDP_MAX));
+	runMainTask(100);
+	CHECK(dmr_data_udp_state() == DMR_REQ_OK && sentCount == 1 && sent[0].dst == RADIO_A && !sent[0].group);
+
+	// Busy channel: in the transmit queue, which waits for it to clear
+	sentCount = 0;
+	channelClear = false;
+	CHECK(dmr_data_send_udp(RADIO_A, false, 4090, 4090, data, 20));
+	runMainTask(3000);
+	CHECK(dmr_data_udp_state() == DMR_REQ_SENDING && sentCount == 0);
+	channelClear = true;
+	runMainTask(200);
+	CHECK(dmr_data_udp_state() == DMR_REQ_OK && sentCount == 1);
+
+	// A channel that stays busy: the transmit queue gives it up
+	sentCount = 0;
+	channelClear = false;
+	CHECK(dmr_data_send_udp(RADIO_A, false, 4090, 4090, data, 20));
+	runMainTask(60000);
+	CHECK(dmr_data_udp_state() == DMR_REQ_FAILED && sentCount == 0);
+	channelClear = true;
+
+	// Never a channel it may go on: failed after UDP_WAIT_MS, nothing sent
+	sentCount = 0;
+	ch.canTransmit = false;
+	CHECK(dmr_data_send_udp(RADIO_A, false, 4090, 4090, data, 20));
+	runMainTask(UDP_WAIT_MS - 1000);
+	CHECK(dmr_data_udp_state() == DMR_REQ_QUEUED);
+	runMainTask(2000);
+	CHECK(dmr_data_udp_state() == DMR_REQ_FAILED && sentCount == 0);
+	ch.canTransmit = true;
+
+	// The stack ends the list with an error
+	sentCount = 0;
+	txAutoDone = false;
+	CHECK(dmr_data_send_udp(RADIO_A, false, 4090, 4090, data, 20));
+	runMainTask(100);
+	CHECK(dmr_data_udp_state() == DMR_REQ_SENDING && txOpen);
+	txOpen = false;
+	dmrDataServiceTxDone(1);
+	CHECK(dmr_data_udp_state() == DMR_REQ_FAILED);
+	txAutoDone = true;
+	// A failed one can be sent again
+	CHECK(dmr_data_send_udp(RADIO_A, false, 4090, 4090, data, 20));
+	runMainTask(100);
+	CHECK(dmr_data_udp_state() == DMR_REQ_OK);
+	reset();
+}
+#endif
+
 // Control station passthrough (docs/spec/usb-network.md 5): IP based packets to us are the PC's; the link layer stays
 static void testPassthrough(void)
 {
@@ -1466,6 +1555,9 @@ int main(void)
 	testConfirmedRx();
 	testIpText();
 	testPassthrough();
+#if DMR_DATA_UDP_API
+	testUdpSend();
+#endif
 #if !CONFIG_DMR_TMS
 	testTmsOff();
 #endif

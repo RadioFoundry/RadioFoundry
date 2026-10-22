@@ -395,7 +395,7 @@ assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that 
 | 0x10 | 4 | RX frequency: BCD of the frequency in 10 Hz units, stored as a LE 32-bit word (438.500 MHz = 43850000 -> 0x43850000 -> bytes 00 00 85 43) |
 | 0x14 | 4 | TX frequency, same encoding |
 | 0x18 | 1 | Mode: 0 FM, 1 DMR |
-| 0x19 | 1 | Power: 0 = use the radio's master power; n = power level n-1. qdmr maps 1 min, 3 low, 6 mid, 9 high, 10 max; the levels themselves are per radio |
+| 0x19 | 1 | Power: 0 = use the radio's master power; n = power level n-1. qdmr maps 1 min, 3 low, 6 mid, 9 high, 10 max; the levels themselves are per radio. Radios with 9 or more levels read n as level n-1; radios with fewer spread the scale over their levels (2 levels: 1-5 low, 6-10 high) |
 | 0x1A | 1 | Fixed location latitude, low byte |
 | 0x1B | 1 | TX timeout in 15 s units, 0 = off |
 | 0x1C | 2 | Latitude, middle and high bytes |

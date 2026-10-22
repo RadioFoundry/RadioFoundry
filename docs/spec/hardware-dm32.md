@@ -163,7 +163,7 @@ Registers at base +: RBR/THR/DLL 0x00, DLH/IER 0x04, IIR/FCR 0x08, LCR 0x0C, LSR
 | TX ready | USR bit 1 (TX FIFO not full) | KP |
 | RX ready | LSR bit 0 | KP |
 | Interrupts | GPS uses IER = 0x05 (RX data + line status); on stop, IER = 0 and FCR bits 1, 2 to flush | KP |
-| UART0 | 115200 8N1: programming cable (Baofeng CPS, open-firmware CPS, hotspot) | KP, BIN |
+| UART0 | 115200 8N1: programming cable (Baofeng CPS, open-firmware CPS, hotspot). ODR's host port, where a CPU fault's trace lines appear ([crash-log.md](crash-log.md) 2.3) | KP, BIN |
 | UART1 | 9600 8N1: GPS RX only | KP |
 
 ### 3.2 SPI master (DesignWare SSI)
@@ -228,6 +228,17 @@ convention, KP use). Start: CONTROLREG = 0x02, LOADCOUNT = 84 000 000 / Hz, CONT
 LOCK +0x00, OT_LOAD_H +0x04, OT_LOAD_L +0x08, RST_LOAD +0x0C, EN +0x10, KNOCK +0x14. Unlock key 0x5ADA7200, feed value
 0x55AADD22. Disable: LOCK = 0x5ADA7200, EN = 0, LOCK = 0 (KP). Whether the stock bootloader leaves it running is
 unknown.
+
+From the HR_C7000 manual (document 2, WDT registers and the reset chapter): LOCK reads 1 while locked (its reset
+value) and 0 while open; any value but the key locks it. OT_LOAD_H is 3 bits (2:0) over the 32 of OT_LOAD_L: one
+35-bit start value the counter counts up from, the timeout being its overflow at 2^35 (reset values H = 7, L =
+0xC0000000: about 60 s). RST_LOAD (24:0, reset value 0x03F80000) counts on to 0x03FFFFFF before the reset, about 20
+ms. EN is the only switch: no interrupt, no mode bit, no other enable; the watchdog reset is a global reset. The
+counter runs at the 24 MHz crystal (DB25-D bench: H = 7, L = 0xF0000000, 2^28 counts, reset after 11.1 s). Not
+known (INF): whether a soft reset or a watchdog reset clears EN. ODR (`CONFIG_WATCHDOG`, `platform/hrc7000/watchdog.c`) arms it after the clock set-up with
+every write under LOCK: EN = 0, the loads, a feed, EN = 1. It feeds with LOCK = key, KNOCK = 0x55AADD22, LOCK = 0. The
+load is 2^35 - 4 s x 24 MHz. The bench measurement and the
+rest are in [watchdog.md](watchdog.md).
 
 ### 3.6 PWM (backlight)
 
@@ -505,6 +516,10 @@ ground (DS). Whether F1/F2 are routed anywhere on the DM-32UV board is unknown (
 Then individually: audio path pin 0x2E = 1; rows 0x47–0x4B = 1; LCD DB6 (0x4D) = 0; power monitor 0x10 input; power
 latch 0x11 = 1; flash CS 0x12 = 1; columns 0x31–0x34 inputs; PTT 0x2B input; LNA and PA selects (0x22, 0x24, 0x37,
 0x23) = 0; FD6818 GP0/GP1 inputs.
+
+Transmitter safe state (`board_rf_safe`, [crash-log.md](crash-log.md) 8), at every fault, reset and stub entry and first
+in `main()`: the PA selects UHF (0x23) and VHF (0x37) low, DAC B (the PA drive) 0 and powered down; on the fault and
+reset paths also the modem's FM_PTT and LAYER2_TXRX_CTRL 0. The FD6818 keeps its state until the next start.
 
 ---
 
@@ -1115,7 +1130,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `dm32.ld` |
 | SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `ODR_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DODR_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `ODR_CPU_RAM` buffers), start-up stack. See the table below | `dm32.ld` |
 | Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E28 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
-| Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off; cache as 1.3 | `platform/hrc7000/clock.c` |
+| Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off (then `main()` starts it, [watchdog.md](watchdog.md)); cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
 | Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot (as stock); 4: APRS AFSK, tops up the prompt FIFO every 2 ms while sending | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c`, `platform/hrc7000/hrc_afsk.c` |
 | RTOS | FreeRTOS, port from the T-HEAD CK802 one: 17-word frame (r0-r13, r15, PSR, PC), switch at interrupt exit or by `vPortYield` | `platform/hrc7000/freertos/` |
@@ -1163,10 +1178,10 @@ running codec and hung the radio (bench 2026-10-15). The load span is `0x17000..
 `.data`/`.bss`/heap/stack above it) is touched while the image loads, so the host link task keeps running to receive
 it; ODR abandons all of its RAM only at the jump.
 
-The monitor (the universal build, protocol version 6) is 6,940 bytes and runs at `0x30000`, not where it was loaded.
+The monitor (the universal build, protocol version 6) is 7,004 bytes and runs at `0x30000`, not where it was loaded.
 Its first 0x80 bytes are position independent and use no stack: interrupts off, then a copy of the image from the load
 address to `0x30000` and a jump there. It then zeroes its `.bss` and sets its own 4 KB stack. The whole footprint is
-`0x30000..0x37938` (31,032 B: image, `.bss` to `0x36934`, stack `0x36938..0x37938`); the linker refuses a layout over
+`0x30000..0x37978` (31,096 B: image, `.bss` to `0x36974`, stack `0x36978..0x37978`); the linker refuses a layout over
 32 KB or outside SRAM. That range was ODR's `.data`/`.bss`, which is dead after the jump, and it does not overlap the
 loaded copy at `0x17000..0x18B1C`. The entry stops without writing anything if the two would overlap. Deepest stack use
 measured on the DM-32UV and the DM-1801 Pro: 168 bytes. The same image is what the serial boot ROM loads at `0x10000`
@@ -1180,7 +1195,7 @@ monitor's tick source, 84 MHz here, 24 MHz after a boot ROM load) and sends CONF
 echo before any write; an unconfigured monitor refuses writes.
 
 **Quiesce and jump** (`platform/hrc7000/system.c` `enter_stub`, a `.ramfunc` so it runs after flash is handed back):
-CPU interrupts off (`psrclr ie`), every PIC source masked (both banks), the watchdog off (defensive), then
+CPU interrupts off (`psrclr ie`), every PIC source masked (both banks), with `CONFIG_WATCHDOG` the watchdog stretched to 32 s and fed (the stub feeds it; [watchdog.md](watchdog.md) 3.2), otherwise off, then
 `QUAD_ENABLE = 0` and `LCSFC_BAUDR = 4` to put the XIP flash controller back to its reset mode so the program flash
 answers the monitor's SSI again and a later soft reset boots (the same steps `hrc_soft_reset` relies on), and a jump to the entry address. No DMA reaches SRAM on this board, so
 no DMA engine has to be stopped. RTOS tasks are not stopped gracefully; masking interrupts freezes the scheduler and the

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DMR data end to end on the host: data and control bursts reported by a model of the HR_C6000 (class 2 receive
-// reports, the payload in page 2) go through the real slot engine (drivers/modem/hrc6000/hrc6000_dmr.c), a board-like
+// reports, the payload in page 2) go through the real slot engine (drivers/modem/hrc_common/hrc6000_dmr.c), a board-like
 // task, the real call stack (core/dmr/call/dmr_call.c, its data / CSBK dispatch) and the real data service
 // (core/dmr/dmrDataService.c). What the service sends back goes out through the stack's burst list TX and the engine:
 // the page 2 writes, 0x50 (the data type) and 0x40 bit 3 (CRC_MCU_Control) at each set-up are captured and decoded
@@ -10,7 +10,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "modem/hrc6000/hrc6000_dmr.h"
+#include "modem/hrc_common/hrc6000_dmr.h"
+#include "modem/hrc6000/hrc6000.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"
@@ -84,8 +85,8 @@ static bool fake_voice(void *ctx, bool write, uint8_t *buf, uint8_t len)
 
 static void no_delay(uint32_t v) { (void)v; }
 
-static const hrc6000_bus_t bus = { fake_transfer, no_delay, no_delay, NULL, fake_voice };
-static hrc6000_t dev;
+static const hrc_bus_t bus = { fake_transfer, no_delay, no_delay, NULL, fake_voice };
+static hrc_t dev;
 static hrc6000_dmr_t eng;
 static uint32_t t_us;
 static unsigned pa_on_calls;
@@ -93,7 +94,7 @@ static unsigned pa_on_calls;
 static bool fake_rf(void *ctx, bool tx) { if (tx) pa_on_calls++; return true; }
 static uint32_t fake_now(void *ctx) { return t_us; }
 
-static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, NULL, NULL };
+static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, NULL, NULL, NULL };
 
 // --- The board glue: hal_dmr_modem_t over the engine, and a task draining the engine's events into the stack ---
 

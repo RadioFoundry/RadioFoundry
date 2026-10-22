@@ -14,10 +14,11 @@
 //
 // DMR (modem-hrc6000.md 4.3 with the HR_C5000 notes of hardware-md380.md 4): the synthesizer is moved to the TX
 // frequency at the first burst of a transmission (from the RF TX interrupt, without waiting for lock: the interrupt
-// comes some milliseconds before the burst) and back with tx_off(); between bursts only the PA supply and loop are
-// switched, so no burst waits for the synthesizer. Each burst's PA is dropped 30 ms after its RF TX interrupt by a
-// TIM7 one-shot, as the stock firmware does (gotchas 3.4: the phase of the HR_C5000's timeslot interrupt against the
-// burst is unknown); the slot engine's own PA-off at the next timeslot interrupt is the fallback.
+// comes some milliseconds before the burst). On simplex it goes back with tx_off() and between bursts only the PA
+// supply and loop are switched; on a split channel (repeater, duplex hotspot) every burst's end puts the receiver back
+// on the RX frequency, so the radio hears the repeater between its bursts (dmr_rx_back). Each burst's PA is dropped
+// 30 ms after its RF TX interrupt by a TIM7 one-shot (gotchas 3.4: the phase of the HR_C5000's timeslot interrupt
+// against the burst is unknown); the slot engine's own PA-off at the next timeslot interrupt is the fallback.
 #include <stddef.h>
 #include "config.h"
 #include "md380.h"
@@ -25,8 +26,8 @@
 #include "rfbus_md380.h"
 #include "hal_time.h"
 #include "rf/sky72310/sky72310.h"
-#include "modem/hrc6000/hrc6000.h"
-#include "modem/hrc6000/hrc6000_dmr.h"
+#include "modem/hrc5000/hrc5000.h"
+#include "modem/hrc_common/hrc6000_dmr.h"
 #include "dmr_md380.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -47,15 +48,17 @@
 #define MD380_VCO_MULT		1u
 #endif
 
-// Measured TX carrier correction (Hz, added to the TX frequency): none known
+// TX carrier correction (Hz, added to the TX frequency). One radio needed -1900 for a hotspot to decode it
+// (hardware-md380.md 5.2): no default until a second radio shows whether it is the unit or the reference tune
+#ifndef MD380_TX_OFFSET_HZ
 #define MD380_TX_OFFSET_HZ	0
+#endif
 
 #define DAC_MAX			4095u
 #define PLL_PD_GAIN		31u	// phase detector gain, the data sheet's largest (1 mA/rad): a guess (?)
 #define PLL_LOCK_US		5000u	// task-level wait for lock detect after a retune
-#define FM_MIC_GAIN		7
-#define DMR_MIC_GAIN		7
-#define C5000_PWD_WAIT_MS	12	// as the HR_C6000: at least 10 ms after PWD low before the first access
+#define C5000_MIC_GAIN		0xC8	// HR_C5000 4:0x0F, the value the MD-380 sets
+#define C5000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first access (?)
 #define PA_HOLD_TICKS		300u	// TIM7 at 10 kHz: the PA stays keyed 30 ms after the RF TX interrupt
 #define PA_TIMER_PRIORITY	5	// the modem interrupts' level
 
@@ -70,15 +73,17 @@
 
 static struct {
 	sky72310_t pll;
-	hrc6000_t modem;
+	hrc5000_t modem;
 	radio_mode_t mode;
 	bool tx_on;
 	bool rx_valid;
 	uint32_t rx_hz;
 	radio_bw_t rx_bw;
 	bool asleep;
+	uint32_t rx_tune_dac;	// DAC1 for the receiver front end at rx_hz (the PA drive shares DAC1)
 	md380_radio_diag_t diag;
 	uint32_t bus_errors;
+	subtone_t rx_tone;	// the RX sub-audio the detector is set for (CONFIG_SUBTONE)
 
 	// DMR per-burst keying (shared with the modem ISRs)
 	volatile bool dmr_armed;	// tx() in DMR mode: TX frequency and drive known
@@ -86,7 +91,7 @@ static struct {
 	volatile uint32_t dmr_tx_hz;
 	volatile uint32_t dmr_drive;
 	uint8_t dmr_mod2, dmr_mod1;
-	uint32_t rf_skipped, rf_unarmed;
+	uint32_t rf_skipped, rf_unarmed, rf_rx_back;
 } r;
 
 static DAC_HandleTypeDef dac;
@@ -103,7 +108,12 @@ static const sky72310_bus_t pll_bus = {
 	.write = md380_rfbus_pll_write, .locked = md380_rfbus_pll_locked, .delay_us = hal_delay_us,
 };
 
-// Voice port: STM32 SPI2 master, mode 2, prescaler 8 (4.5 MHz), as the DM-1701's HR_C6000 (?)
+// Voice port: STM32 SPI2 master, mode 2, prescaler 32 (1.125 MHz). At 4.5 MHz (prescaler 8) received voice read
+// back with the first bits of every byte wrong (on air 2026-10-18: C0 words clean only two bits off their place, C1
+// broken); at 1.125 MHz the three AMBE frames are in place and C1 checks
+#ifndef MD380_VOICE_SPI_PRESCALER
+#define MD380_VOICE_SPI_PRESCALER	SPI_BAUDRATEPRESCALER_32
+#endif
 static void voice_spi_setup(void)
 {
 	__HAL_RCC_SPI2_CLK_ENABLE();
@@ -116,7 +126,7 @@ static void voice_spi_setup(void)
 	spi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
 	spi2.Init.CLKPhase = SPI_PHASE_1EDGE;
 	spi2.Init.NSS = SPI_NSS_SOFT;
-	spi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
+	spi2.Init.BaudRatePrescaler = MD380_VOICE_SPI_PRESCALER;
 	spi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
 	spi2.Init.TIMode = SPI_TIMODE_DISABLE;
 	spi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -131,16 +141,17 @@ static bool voice_xfer(void *ctx, bool write, uint8_t *buf, uint8_t len)
 	uint32_t mask = md380_rfbus_lock();
 	PIN_WRITE(PIN_C5000_VCS, false);
 	bool ok = HAL_SPI_Transmit(&spi2, hdr, 2, VOICE_SPI_TIMEOUT_MS) == HAL_OK;
-	if (ok) {
-		ok = write ? HAL_SPI_Transmit(&spi2, buf, len, VOICE_SPI_TIMEOUT_MS) == HAL_OK
-			   : HAL_SPI_Receive(&spi2, buf, len, VOICE_SPI_TIMEOUT_MS) == HAL_OK;
+	if (ok && write) {
+		ok = HAL_SPI_Transmit(&spi2, buf, len, VOICE_SPI_TIMEOUT_MS) == HAL_OK;
+	} else if (ok) {
+		ok = HAL_SPI_Receive(&spi2, buf, len, VOICE_SPI_TIMEOUT_MS) == HAL_OK;
 	}
 	PIN_WRITE(PIN_C5000_VCS, true);
 	md380_rfbus_unlock(mask);
 	return ok;
 }
 
-static const hrc6000_bus_t modem_bus = {
+static const hrc_bus_t modem_bus = {
 	.transfer = md380_rfbus_modem_transfer, .delay_ms = hal_delay_ms, .delay_us = hal_delay_us, .ctx = NULL,
 	.voice = voice_xfer,
 };
@@ -157,7 +168,7 @@ static void dac_setup(void)
 	HAL_DAC_ConfigChannel(&dac, &ch, DAC_CHANNEL_1);
 	HAL_DAC_ConfigChannel(&dac, &ch, DAC_CHANNEL_2);
 	HAL_DAC_SetValue(&dac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, 0);
-	HAL_DAC_SetValue(&dac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, hrc6000_c5000_ref_dac(0x80));
+	HAL_DAC_SetValue(&dac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, hrc5000_ref_dac(0x80));
 	HAL_DAC_Start(&dac, DAC_CHANNEL_1);
 	HAL_DAC_Start(&dac, DAC_CHANNEL_2);
 }
@@ -320,7 +331,7 @@ bool md380_rf_dmr_switch(bool tx)
 	if (!r.dmr_tx_tuned) {
 		// First burst: receiver off, the HR_C5000's transmit set, the synthesizer to the transmit VCO
 		rx_path(false);
-		count(hrc6000_c5000_dmr_path(&r.modem, true, r.dmr_mod2, r.dmr_mod1, DMR_MIC_GAIN));
+		count(hrc5000_dmr_path(&r.modem, true, r.dmr_mod2, r.dmr_mod1, C5000_MIC_GAIN));
 		if (!pll_tune(tx_vco_hz(r.dmr_tx_hz), true, false)) {
 			r.rf_skipped++;
 			return false;	// out of range: no RF
@@ -332,10 +343,57 @@ bool md380_rf_dmr_switch(bool tx)
 	return true;
 }
 
-void md380_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed)
+// The transmit side ready before a transmission's first burst (task level with the modem interrupts masked, or the
+// timeslot ISR at tx_slot_found): the receiver off, the HR_C5000's transmit set, the synthesizer on the TX VCO and the
+// transmitter supply up. Done from the RF TX interrupt instead, the first burst of every transmission went out unlocked
+// and with a cold transmitter: a single-burst CSBK (repeater wake-up, radio check) reached no receiver, so a repeater
+// or duplex hotspot never woke (issue 108). The supply alone doesn't radiate: APC_EN keys the PA at the burst
+void md380_rf_dmr_prepare(void)
+{
+	if (!r.dmr_armed || r.dmr_tx_tuned) {
+		return;
+	}
+	rx_path(false);
+	count(hrc5000_dmr_path(&r.modem, true, r.dmr_mod2, r.dmr_mod1, C5000_MIC_GAIN));
+	r.dmr_tx_tuned = pll_tune(tx_vco_hz(r.dmr_tx_hz), true, false);
+	if (r.dmr_tx_tuned) {
+		PIN_WRITE(PIN_TX_5V, true);
+	}
+}
+
+// After md380_rf_dmr_prepare, outside the lock: lock detect, as tx() waits for it in FM
+void md380_rf_dmr_wait_lock(void)
+{
+	if (r.dmr_tx_tuned && !sky72310_wait_lock(&r.pll, PLL_LOCK_US)) {
+		r.diag.pll_fails++;
+	}
+	r.diag.pll_locked = PIN_READ(PIN_PLL_LD);
+}
+
+// A transmission is over (the slot engine's TX done, task level, the modem interrupts masked by the caller): on a
+// split channel (repeater, duplex hotspot) the receiver back on the RX frequency, so the radio hears the repeater's
+// answer to its wake-up. Left on the TX side, every key-up there ended in no_repeater (issue 108). Not per burst: the
+// switch there caught the burst on air. Simplex stays on TX until tx_off() (RX = TX)
+void md380_rf_dmr_tx_done(void)
+{
+	if (!r.dmr_armed || !r.dmr_tx_tuned || !r.rx_valid || r.dmr_tx_hz == r.rx_hz) {
+		return;
+	}
+	pa_timer_stop();
+	pa_off();
+	(void)pll_tune(rx_vco_hz(r.rx_hz), false, false);
+	count(hrc5000_dmr_path(&r.modem, false, r.dmr_mod2, r.dmr_mod1, C5000_MIC_GAIN));
+	dac1_set(r.rx_tune_dac);
+	rx_path(true);
+	r.dmr_tx_tuned = false;
+	r.rf_rx_back++;
+}
+
+void md380_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_back)
 {
 	*skipped = r.rf_skipped;
 	*unarmed = r.rf_unarmed;
+	*rx_back = r.rf_rx_back;
 }
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
@@ -354,30 +412,19 @@ static void dmr_enter(void)
 	md380_cal_point_t cal;
 	md380_cal_at(r.rx_valid ? r.rx_hz : board.bands[0].lo_hz, &cal);	// on false it fills safe defaults
 #if CONFIG_DMR
-	count(hrc6000_dmr_enter(&r.modem, cal.dmr_i, cal.dmr_q, DMR_MIC_GAIN));
-	count(hrc6000_c5000_dmr_path(&r.modem, false, cal.dmr_i, cal.dmr_q, DMR_MIC_GAIN));
+	count(hrc6000_dmr_enter(hrc5000_hrc(&r.modem), cal.dmr_i, cal.dmr_q, C5000_MIC_GAIN));
 #endif
 	md380_dmr_enter();
 }
 
 // --- Speaker (hardware-md380.md 6) ---
 //
-// FM receive audio and DMR voice PCM both reach the amplifier through the HR_C5000 (its FM feed-through, 0x36, or its
-// codec DAC), with FM_MUTE in front of the FM path (?). The volume is the analog knob after the amplifier input.
+// FM receive audio reaches the amplifier through FM_MUTE and FM_SW from the FM receiver, DMR voice PCM through the
+// HR_C5000's codec DAC (set by hrc5000_dmr_path) and DMR_SW (?). The volume is the analog knob after the amplifier
+// input.
 static bool audio_wanted;
 static bool pcm_wanted;
 static SemaphoreHandle_t speaker_lock;
-
-static void pcm_codec_on(void)
-{
-	uint8_t v;
-	if (hrc6000_read(&r.modem, 4, 0xE2, &v) && (v & 0x02u) == 0) {
-		count(hrc6000_write(&r.modem, 4, 0xE2, (uint8_t)(v | 0x02u)));
-	}
-	if (r.mode == RADIO_MODE_DMR) {
-		count(hrc6000_write(&r.modem, 4, 0xE0, 0xC9));
-	}
-}
 
 static void speaker_apply(void)
 {
@@ -388,28 +435,116 @@ static void speaker_apply(void)
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
 	if (fm || pcm) {
-		count(hrc6000_fm_audio(&r.modem, fm));
-		if (pcm) {
-			pcm_codec_on();
-		}
-		PIN_WRITE(PIN_FM_MUTE, !fm);
+		PIN_WRITE(PIN_FM_MUTE, fm);
 		PIN_WRITE(PIN_AMP_EN, true);
 		PIN_WRITE(PIN_SPK_MUTE, false);
 	} else {
 		PIN_WRITE(PIN_SPK_MUTE, true);
 		PIN_WRITE(PIN_AMP_EN, false);
-		PIN_WRITE(PIN_FM_MUTE, true);
-		count(hrc6000_fm_audio(&r.modem, false));
+		PIN_WRITE(PIN_FM_MUTE, false);
 	}
 	if (locked) {
 		xSemaphoreGive(speaker_lock);
 	}
 }
 
+#ifdef MD380_I2S_PROBE
+// Bench knob (docs/testing/md380-bringup.md): edges on the I2S clock (PC10) and word select (PA15), read from the input
+// registers while the pins stay on I2S, 20000 samples once a second, logged with the audio block count and the mode
+#include <string.h>
+#include "debuglink/dlog.h"
+static void i2s_probe_task(void *arg)
+{
+	(void)arg;
+	for (;;) {
+		vTaskDelay(pdMS_TO_TICKS(1000));
+		uint32_t ck = 0, ws = 0;
+		bool lck = (GPIOC->IDR & GPIO_PIN_10) != 0, lws = (GPIOA->IDR & GPIO_PIN_15) != 0;
+		for (int i = 0; i < 20000; i++) {
+			bool c = (GPIOC->IDR & GPIO_PIN_10) != 0, w = (GPIOA->IDR & GPIO_PIN_15) != 0;
+			ck += c != lck;
+			ws += w != lws;
+			lck = c;
+			lws = w;
+		}
+		md380_audio_stats_t a;
+		md380_audio_stats(&a);
+		dlog("i2s ck %u ws %u blk %u %s%s", (unsigned)ck, (unsigned)ws, (unsigned)a.blocks,
+			r.mode == RADIO_MODE_DMR ? "dmr" : "fm", r.tx_on ? " tx" : "");
+#ifdef HRC5000_I2S_CYCLE
+		extern volatile uint8_t hrc5000_i2s_cycle_value;
+		static uint8_t shown_36 = 0xFF;
+		if (hrc5000_i2s_cycle_value != shown_36) {
+			shown_36 = hrc5000_i2s_cycle_value;
+			dlog("0x36 now %02x", shown_36);
+		}
+#endif
+#ifdef HRC5000_INT_LOG
+		static uint8_t shown;
+		while (shown < hrc_int_n) {
+			const hrc_int_rec_t *q = &hrc_int_log[shown++];
+			dlog("si%u f%02x 51=%02x 42=%02x dt%lu lc %02x%02x%02x %02x%02x%02x %02x%02x%02x", q->pass, q->flags,
+				q->r51, q->r42, (unsigned long)q->dt, q->lc[0], q->lc[1], q->lc[2], q->lc[3], q->lc[4], q->lc[5],
+				q->lc[6], q->lc[7], q->lc[8]);
+		}
+#endif
+#ifdef HRC5000_TICK_LOG
+		// A full timeline only (the ISR is done with it), 10 entries a second so the log keeps up; then re-arm
+		static uint8_t tshown;
+		if (hrc_tick_n >= HRC_TICK_LOG_N) {
+			for (int k = 0; k < 10 && tshown < HRC_TICK_LOG_N; k++, tshown++) {
+				const hrc_tick_rec_t *q = &hrc_tick_log[tshown];
+				char hex[2 * sizeof(q->v) + 1];
+				for (unsigned i = 0; i < sizeof(q->v); i++) {
+					static const char d[] = "0123456789abcdef";
+					hex[2 * i] = d[q->v[i] >> 4];
+					hex[2 * i + 1] = d[q->v[i] & 15u];
+				}
+				hex[sizeof(hex) - 1] = 0;
+				dlog("tl%03u %c%u f%02x 42=%02x 51=%02x 52=%02x dt%lu", tshown, q->kind, q->ph, q->flags,
+					q->r42, q->r51, q->r52, (unsigned long)q->dt);
+				if (q->kind == 'T') {	// the 54 hex digits don't fit one log line
+					char half[29];
+					memcpy(half, hex, 28);
+					half[28] = 0;
+					dlog("tv%03u %s", tshown, half);
+					dlog("tw%03u %s", tshown, hex + 28);
+				}
+			}
+			if (tshown >= HRC_TICK_LOG_N) {
+				for (int sn = 0; sn < 2; sn++) {
+					for (int o = 0; o < HRC_SNAP_LEN; o += 16) {
+						char line[33];
+						for (int i = 0; i < 16; i++) {
+							static const char d[] = "0123456789abcdef";
+							line[2 * i] = d[hrc_tick_snap[sn][o + i] >> 4];
+							line[2 * i + 1] = d[hrc_tick_snap[sn][o + i] & 15u];
+						}
+						line[32] = 0;
+						dlog("sn%u %03x %s", sn, o, line);
+					}
+				}
+				tshown = 0;
+				hrc_tick_armed = false;
+				hrc_tick_n = 0;
+			}
+		}
+#endif
+	}
+}
+#endif
+
 static void audio(bool on)
 {
 	audio_wanted = on;
 	speaker_apply();
+}
+
+// The HR_C5000's I2S clocks run for the length of a PCM stream (audio_md380.c). Its set-ups leave them off, and the
+// STM32 is only the slave (hardware-md380.md 6.2)
+void md380_i2s_clock(bool on)
+{
+	count(hrc5000_i2s_clock(&r.modem, on));
 }
 
 #if CONFIG_DMR
@@ -419,7 +554,13 @@ void md380_speaker_pcm(bool on)
 		return;
 	}
 	pcm_wanted = on;
+	if (on && r.mode == RADIO_MODE_DMR) {
+		count(hrc5000_speaker_voice(&r.modem, true));	// after the clocks run, before the amplifier opens
+	}
 	speaker_apply();
+	if (!on) {
+		count(hrc5000_speaker_voice(&r.modem, false));
+	}
 }
 #endif
 
@@ -429,6 +570,9 @@ static void init(void)
 {
 	if (speaker_lock == NULL) {
 		speaker_lock = xSemaphoreCreateMutex();
+#ifdef MD380_I2S_PROBE
+		xTaskCreate(i2s_probe_task, "i2sp", 256, NULL, 1, NULL);
+#endif
 	}
 	stm32_pin_in(PIN_PORT(PIN_C5000_MISO), PIN_MASK(PIN_C5000_MISO), GPIO_PULLUP);
 	stm32_pin_in(PIN_PORT(PIN_PLL_LD), PIN_MASK(PIN_PLL_LD), GPIO_PULLUP);	// open collector (hardware-md380.md 5.2)
@@ -457,15 +601,13 @@ static void init(void)
 	while ((uint32_t)(hal_millis() - pwd_ms) < C5000_PWD_WAIT_MS) {
 		hal_delay_ms(1);
 	}
-	hrc6000_attach_chip(&r.modem, &modem_bus, HRC6000_CHIP_C5000);
-	count(hrc6000_power_on_init(&r.modem, DMR_MIC_GAIN));
-
+	hrc5000_attach(&r.modem, &modem_bus, MD380_VHF);
 	r.mode = RADIO_MODE_FM;
-	count(hrc6000_set_mode_fm_rx(&r.modem));
+	count(hrc5000_power_on(&r.modem));		// the clock, then FM receive
 	audio(false);
 	// 0xFF is a floating data line, never a register value here (FM receive leaves 0x10 = 0x80)
-	r.diag.c5000_ok = hrc6000_read(&r.modem, 4, 0x10, &r.diag.c5000_r10) && r.diag.c5000_r10 != 0xFF;
-	md380_dmr_board_init(&r.modem);
+	r.diag.c5000_ok = hrc_read(hrc5000_hrc(&r.modem), HRC_PAGE_SYS, 0x10, &r.diag.c5000_r10) && r.diag.c5000_r10 != 0xFF;
+	md380_dmr_board_init(hrc5000_hrc(&r.modem));
 }
 
 static void set_mode(radio_mode_t mode)
@@ -481,7 +623,7 @@ static void set_mode(radio_mode_t mode)
 		md380_dmr_leave();
 		r.dmr_tx_tuned = false;
 		r.tx_on = false;
-		count(hrc6000_set_mode_fm_rx(&r.modem));
+		count(hrc5000_set_mode_fm_rx(&r.modem));
 	}
 	if (r.rx_valid && !r.tx_on && !r.asleep) {
 		rx_path(true);	// FM_SW follows the mode
@@ -491,11 +633,21 @@ static void set_mode(radio_mode_t mode)
 // Enter RX: PA off, synthesizer to the receive VCO, receiver supply, front-end tuning, reference, HR_C5000
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 {
-	(void)rx_tone;	// no sub-audio decoding on this board yet (config.mk CONFIG_SUBTONE)
 	if (find_band(hz) == NULL) {
 		return false;
 	}
 	bool same = r.rx_valid && hz == r.rx_hz && bw == r.rx_bw;
+#if CONFIG_SUBTONE
+	// NULL (back from transmit, wake-up) keeps the last tone; a new tone or channel restarts the detector
+	if (rx_tone != NULL && (!same || rx_tone->type != r.rx_tone.type || rx_tone->value != r.rx_tone.value)) {
+		r.rx_tone = *rx_tone;
+		md380_subtone_rx_set(&r.rx_tone);
+	} else if (rx_tone == NULL && !same) {
+		md380_subtone_rx_set(&r.rx_tone);
+	}
+#else
+	(void)rx_tone;
+#endif
 	bool from_tx = r.dmr_tx_tuned;
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();
@@ -513,17 +665,18 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 
 	md380_cal_point_t cal;
 	md380_cal_at(hz, &cal);	// on false it fills safe defaults
+	r.rx_tune_dac = cal.rx_tune_dac;
 	dac1_set(cal.rx_tune_dac);
-	dac2_set(hrc6000_c5000_ref_dac(cal.ref_tune));
-	count(hrc6000_c5000_set_ref(&r.modem, cal.ref_tune));
+	dac2_set(hrc5000_ref_dac(cal.ref_tune));
+	count(hrc5000_set_ref(&r.modem, cal.ref_tune));
 	if (r.mode == RADIO_MODE_FM) {
-		count(hrc6000_set_mode_fm_rx(&r.modem));
+		count(hrc5000_set_mode_fm_rx(&r.modem));
 	} else {
 		if (from_tx || !same) {
-			count(hrc6000_c5000_dmr_path(&r.modem, false, cal.dmr_i, cal.dmr_q, DMR_MIC_GAIN));
+			count(hrc5000_dmr_path(&r.modem, false, cal.dmr_i, cal.dmr_q, C5000_MIC_GAIN));
 		}
 		if (!same) {
-			count(hrc6000_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
+			count(hrc_set_mod_gain(hrc5000_hrc(&r.modem), cal.dmr_i, cal.dmr_q));
 			md380_dmr_rx_restart();
 		}
 	}
@@ -535,7 +688,9 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 // without an accepted calibration table (the APC values would be guesses)
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
 {
-	(void)tx_tone;	// no sub-audio encoder yet
+#if !CONFIG_SUBTONE
+	(void)tx_tone;
+#endif
 	const band_t *band = find_band(hz);
 	if (band == NULL || !band->tx) {
 		return false;
@@ -558,21 +713,13 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
+		md380_dmr_tx_prepare();	// a transmission the stack has already begun gets its first burst too
 		return true;
 	}
 
 	rx_path(false);
-	hrc6000_fm_tx_t fm = {
-		.uhf = !MD380_VHF,
-		.wide = bw == RADIO_BW_25K,
-		.tone = HRC6000_TONE_NONE,
-		.mod2 = cal.fm_i,
-		.mod1 = cal.fm_q,
-		.ref_offset = (int8_t)((int)cal.ref_tune - 128),
-		.mic_gain = FM_MIC_GAIN,
-	};
-	count(hrc6000_set_mode_fm_tx(&r.modem, &fm));
-	count(hrc6000_c5000_set_ref(&r.modem, cal.ref_tune));	// the C5000's own reference registers (4.5)
+	count(hrc5000_set_ref(&r.modem, cal.ref_tune));
+	count(hrc5000_set_mode_fm_tx(&r.modem, bw == RADIO_BW_25K, cal.fm_i, cal.fm_q));
 	set_wide(bw == RADIO_BW_25K);
 	if (!pll_tune(tx_vco_hz(hz), true, true)) {
 		// Not locked: no carrier off frequency. Back to receive
@@ -582,11 +729,19 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	}
 	pa_on(drive);
 	r.tx_on = true;
+#if CONFIG_SUBTONE
+	if (tx_tone != NULL) {
+		md380_subtone_tx_start(tx_tone);	// PWM on PC7 into the modulator (hardware-md380.md 6.4)
+	}
+#endif
 	return true;
 }
 
 static void tx_off(void)
 {
+#if CONFIG_SUBTONE
+	md380_subtone_tx_stop();
+#endif
 	if (r.mode == RADIO_MODE_DMR) {
 		dmr_disarm();	// after DMR_EV_TX_DONE this only disarms; before it, the transmission is cut
 	}
@@ -596,7 +751,7 @@ static void tx_off(void)
 		return;
 	}
 	r.dmr_tx_tuned = false;
-	count(hrc6000_set_mode_fm_rx(&r.modem));
+	count(hrc5000_set_mode_fm_rx(&r.modem));
 	r.tx_on = false;
 }
 
@@ -607,7 +762,11 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = (int16_t)(RSSI_FLOOR_DBM + (int32_t)(rssi * RSSI_SPAN_DB / 4095u));
 	st->noise = (uint8_t)(busy >> 4);	// noise detector level, larger = more noise (?)
 	st->carrier = st->rssi_dbm >= CARRIER_DBM;
+#if CONFIG_SUBTONE
+	st->tone_ok = md380_subtone_rx_match();	// true for a channel without an RX tone
+#else
 	st->tone_ok = true;
+#endif
 }
 
 // Receiver battery saving (FM receive only): receiver supply off and the synthesizer powered down

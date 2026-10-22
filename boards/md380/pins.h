@@ -20,6 +20,7 @@
 #define PIN_AF_ADC		GPIOC, GPIO_PIN_3	// ADC IN13, FM discriminator audio (unused)
 #define ADC_CH_VOLUME		0
 #define ADC_CH_BATTERY		1
+#define ADC_CH_QT		2
 #define ADC_CH_MIC		3
 #define ADC_CH_RSSI		8
 #define ADC_CH_BUSY		9
@@ -46,10 +47,10 @@
 #define PIN_MIC_POWER		GPIOA, GPIO_PIN_14	// MICPWR_SW; SWCLK: driving it breaks SWD
 #define PIN_SPK_MUTE		GPIOB, GPIO_PIN_8	// SPK_C, high = muted (speaker anti-pop)
 #define PIN_AMP_EN		GPIOB, GPIO_PIN_9	// AFCO, high = audio amplifier on
-#define PIN_FM_MUTE		GPIOE, GPIO_PIN_13	// FM receive audio mute (polarity ?)
+#define PIN_FM_MUTE		GPIOE, GPIO_PIN_13	// FM receive audio: high = through, low = muted (bench, hardware-md380.md 6.1)
 #define PIN_LED_GREEN		GPIOE, GPIO_PIN_0	// RX LED
 #define PIN_LED_RED		GPIOE, GPIO_PIN_1	// TX LED
-#define PIN_CTCSS_PWM		GPIOC, GPIO_PIN_7	// CTC/DCS_OUT (unused: no tone encoder yet)
+#define PIN_CTCSS_PWM		GPIOC, GPIO_PIN_7	// CTC/DCS_OUT, TIM3_CH2 (AF2) PWM while a sub-audio tone is sent (subtone_md380.c)
 #define PIN_BEEP_PWM		GPIOC, GPIO_PIN_8	// BEEP, TIM8_CH3 (unused: beeps go through the HR_C5000)
 #define PIN_LCD_BACKLIGHT	GPIOC, GPIO_PIN_6	// LAMP, TIM8_CH1 PWM
 

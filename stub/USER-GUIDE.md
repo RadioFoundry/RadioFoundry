@@ -133,6 +133,10 @@ failed on long reads, so leave it off unless a normal run is too slow and you ha
 - **A message about retries**: the tool checks every block and asks again when a block arrives damaged. A few retries are
   normal. If it gives up, switch the radio off and on and run it again.
 - **"flash does not answer"**: the radio is not in loader mode, or the cable is wrong. Switch off and on and try again.
+- **ODR entry says it "refused to enter this stub" because of the watchdog**: the tool or web page carries a loader
+  older than the radio's firmware. Nothing was written and the radio keeps running. Update the tool, or reload the web
+  page, and run it again. The radio's watchdog never resets it during a backup or an install unless the loader itself
+  hangs.
 - **ODR entry says "no answer from ODR's debug link"**: the radio is not running an ODR build with the loader option, or
   the cable is on a different port. Use the switched-off method above instead.
 - **The radio does not start after a backup**: remove and refit the battery, then switch it on.

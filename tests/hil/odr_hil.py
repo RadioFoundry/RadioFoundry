@@ -162,11 +162,16 @@ class Radio:
 
     def go_home(self):
         self.ensure_awake()
+        if self.link.view(["link"]).get("ui.locked") == "1":
+            # auto lock locks the keys while the radio sits idle; a locked radio ignores every other key
+            self.long_press("quick")
+            self.wait_for(lambda v: v.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
         for _ in range(4):
             s = self.screen()
             if s in ("home", "hotspot"):
                 return s
-            self.press("back")
+            # an emergency call or alarm heard raises this screen; only OK acknowledges and leaves it
+            self.press("ok" if s == "emergency" else "back")
         raise AssertionError(f"could not get to the Home screen (screen {self.screen()})")
 
     def ptt_for(self, seconds):

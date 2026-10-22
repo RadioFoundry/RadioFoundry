@@ -9,9 +9,9 @@ and what has been checked on it.
 | Radio | Also sold as | ODR status |
 |---|---|---|
 | [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | Supported and in the releases |
-| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | In testing on a radio. Not in the releases |
+| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | Fully operational on a UHF radio (check your TX frequency, below). Not in the releases |
 | [Baofeng DM-32UV](#baofeng-dm-32uv) | | In bring-up on a radio: FM and DMR receive and transmit work. Not in the releases |
-| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Bring-up on a radio: FM and DMR receive and transmit, settings storage, cable programming and volume work. Hotspot and network builds not yet run. Not for use |
+| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Bring-up on a radio: FM and DMR voice receive and transmit, the hotspot and the network services, settings storage, cable programming and volume work. Not for general use |
 | [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data, hotspot and SFR modes; VHF transmit and VOX are unchecked. No release |
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -159,8 +159,9 @@ Tested on one DM-1701, on air against the SDR bench where RF is involved:
 | USB network | The switch to network mode, the address from the computer (macOS) and ping |
 
 Partly checked: VOX. Silence and the radio's own beeps don't key it. Keying on a voice hasn't been checked.
-Host-tested only: the split duplex repeater, IP over DMR to another radio and the services in USB network mode,
-control station mode, roaming, ARS and LRRP.
+Each half of the split duplex repeater passes on air with one radio; a real pair of radios hasn't been tested.
+Host-tested only: IP over DMR to another radio and the services in USB network mode, control station mode, roaming,
+ARS and LRRP.
 
 ### DM-1701 with qdmr
 
@@ -169,8 +170,12 @@ DM-1701, the one for the UV380 family.
 
 ## TYT MD-380
 
-Covers the TYT MD-380, the MD-390 and the Retevis RT3. **In testing**: the port has run on a radio, but much of what follows still
-comes from the documentation of the hardware. Installing: [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md).
+Covers the TYT MD-380, the MD-390 and the Retevis RT3. **Fully operational on a UHF radio**: FM, DMR in simplex and through a
+repeater or duplex hotspot, and programming. The VHF image is untested. Installing: [Moving from stock MD-380 firmware](18-moving-from-stock-md380.md).
+
+> **Check your TX frequency.** Accuracy depends on the radio's factory calibration. Confirm it against an external
+> reference (a frequency counter, a service monitor, or a hotspot's MMDVMCal BER test) before you rely on it. One MD-380
+> measured 1.9 kHz high, enough that an MMDVM hotspot never decoded it.
 
 ### MD-380 keys
 
@@ -212,7 +217,7 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
 
 ### What the MD-380 lacks
 
-- No CTCSS or DCS yet: a channel with a tone opens on any carrier and sends no tone.
+- CTCSS works on air both ways. DCS isn't checked on a radio yet. A build with `CONFIG_SUBTONE=n` ([build switches](../build-config.md)) opens a channel with a tone on any carrier and sends no tone.
 - No roger beep, 1750 Hz burst or APRS on FM (the transmit tone path isn't written). APRS positions over DMR work.
 - No APRS receive.
 - MMDVM SFR and the split duplex repeater need the DMR chip of the DM-1701 (HR_C6000) and aren't built for the
@@ -275,6 +280,11 @@ A 240 x 320 color screen. ODR uses its full resolution, with smooth (anti-aliase
 
 ### What the DM-32UV lacks
 
+- No split duplex repeater. The extension is in the build, but the radio offers neither the transmit nor the receive
+  half yet: the HR_C7000 base station transmit mode and the slot clock aren't driven. A host that asks for a role is
+  refused.
+- Not checked on this radio yet: emergency, basic privacy, talker alias, text and data messages, roaming, scan,
+  MMDVM SFR, the network services over PPP and control station mode. They are built in and host tested.
 - No USB. The serial port is on the programming cable: hotspot mode, the debug link and the network (PPP,
   [USB network](14-usb-network.md#network-over-the-programming-cable-ppp)) all run there. USB network mode isn't
   available.
@@ -300,7 +310,8 @@ firmware](19-moving-from-stock-dm32.md)), which adds the offset. The radio repor
 ## Radioddity DB25-D PRO
 
 A mobile radio for 136-174 and 400-480 MHz with a front knob, a few front keys and a hand microphone. **Early
-bring-up, not for use:** ODR builds for it, and FM and DMR receive and transmit work on a radio. It is installed with the
+bring-up, not for general use:** ODR builds for it, and FM and DMR voice receive and transmit work on a radio, with the
+hotspot and the network services. It is installed with the
 [radio programming utility](#installing-the-db25-d-pro) only.
 
 ### Installing the DB25-D PRO
@@ -314,6 +325,10 @@ It is not in the releases, so there is no odrflash route. It marks the radio as 
 | Another version of the original firmware, or a radio that does not start | Installs through the factory update mode of the original loader: turn the radio off, hold P1 and press power. The red LED lights and the display stays blank. No backup is taken this way. The loader itself is never written |
 | OpenDigitalRadio | Hands over to a loader in RAM over the debug link (no keys, no power cycle), writes only the changed sectors and restarts the radio. The backup of the program memory is optional |
 | OpenDigitalRadio that does not answer | "Recover at Power-On": the first stage answers for half a second at every power-on, and the radio programming utility loads the loader then |
+
+A radio that shows a white, backlit screen and a solid red LED at every power-on, without P1 held, is stuck in the
+factory update mode because its application is missing or incomplete. It needs no keys: the utility asks the loader a
+read-only question, says that the radio is in update mode and installs. Nothing is written to find this out.
 
 When nothing answers on the cable, Troubleshooting offers "Reinstall in Factory Update Mode", and Restore puts a backup
 back through the factory update mode the same way. Restore through the console or OpenDigitalRadio is the normal route;
@@ -450,6 +465,7 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 
 ### What the DM-1801 Pro lacks today
 
+- No split duplex repeater: the build offers neither half until the HR_C7000 base station transmit mode is driven.
 - APRS receive is unchecked. APRS sending works on FM and over DMR.
 - VHF transmit is unchecked on air. UHF transmit and receive on both bands work.
 - VOX is unchecked. ODR now reads the microphone level from the microphone's digital audio, but that hasn't been

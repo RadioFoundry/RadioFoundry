@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The DMR receive chain end to end on the host: a model of the HR_C6000's receive reports (the bench call of
 // 2026-10-10: 8 voice LC headers, 16 superframes, 3 terminators, CC 2, MS sync, direct mode) drives the real slot engine
-// (drivers/modem/hrc6000/hrc6000_dmr.c) through its interrupt entry points; a board-like task drains the engine's
+// (drivers/modem/hrc_common/hrc6000_dmr.c) through its interrupt entry points; a board-like task drains the engine's
 // events into the real call stack (core/dmr/call/dmr_call.c) at its own pace (several bursts per batch when it runs
 // late), and the stack's poll runs on yet another cadence. The voice sink checks that every burst on air comes out
 // once, in order, with nothing concealed.
@@ -10,7 +10,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "modem/hrc6000/hrc6000_dmr.h"
+#include "modem/hrc_common/hrc6000_dmr.h"
+#include "modem/hrc6000/hrc6000.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/call/dmr_lc.h"
 
@@ -83,8 +84,8 @@ static bool fake_voice(void *ctx, bool write, uint8_t *buf, uint8_t len)
 
 static void no_delay(uint32_t v) { (void)v; }
 
-static const hrc6000_bus_t bus = { fake_transfer, no_delay, no_delay, NULL, fake_voice };
-static hrc6000_t dev;
+static const hrc_bus_t bus = { fake_transfer, no_delay, no_delay, NULL, fake_voice };
+static hrc_t dev;
 static hrc6000_dmr_t eng;
 static uint32_t t_us;
 
@@ -93,7 +94,7 @@ static uint32_t fake_now(void *ctx) { return t_us; }
 
 static bool fake_sys_line_low(void *ctx) { return rd[4][0x82] != 0; }
 
-static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, fake_sys_line_low, NULL };
+static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, fake_sys_line_low, NULL, NULL };
 
 // --- The board glue (what boards/dm1701/dmr_dm1701.c does): hal_dmr_modem_t over the engine, a draining task ---
 

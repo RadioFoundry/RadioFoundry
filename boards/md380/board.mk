@@ -13,7 +13,7 @@ MCU_DEFS   += $(MD380_DEFS)
 LDSCRIPT   := boards/md380/md380.ld
 # The linker script's CPU-only RAM (CCM: no DMA): zeroed at start-up for ODR_CPU_RAM, left alone for _NOINIT
 MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ccmbss"' -DODR_CPU_RAM_NOINIT_SECTION='".ccmram"'
-BOARD_DIRS := boards/md380 drivers/rf/sky72310 drivers/modem/hrc6000 drivers/display/st7735 drivers/flash/spi_nor \
+BOARD_DIRS := boards/md380 drivers/rf/sky72310 drivers/rf/subaudio drivers/modem/hrc5000 drivers/modem/hrc_common drivers/display/st7735 drivers/flash/spi_nor \
 	drivers/gps/nmea_line drivers/gps/gps_rx
 # Built only with CONFIG_USB
 BOARD_USB_DIRS := drivers/usb

@@ -8,8 +8,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "f4stub_header.h"	// F4STUB_VERSION and the image header
 
-#define F4STUB_VERSION		2u			// 2: the external SPI flash (memory 1, XERASE, XPROGRAM)
 #define F4STUB_BLOCK		4096u			// the unit of SUMS and READ (CRC per block, not per erase sector)
 #define F4STUB_MAX_PAYLOAD	(F4STUB_BLOCK + 8u)	// a PROGRAM of one block (address + 4096) or a READ record
 #define F4STUB_FRAME_HDR	6u			// 02 op/status len_hi len_lo sum 03
@@ -73,6 +73,9 @@ typedef struct {
 	bool (*xread)(void *ctx, uint32_t addr, void *dst, uint32_t n);
 	bool (*xerase)(void *ctx, uint32_t addr);
 	bool (*xprogram)(void *ctx, uint32_t addr, const uint8_t *data, uint32_t n);
+	// Optional (NULL: none): feed the watchdog. The engine calls it at every request, before each erase or program, and
+	// once per 4 KB block in SUMS and READ, so no request runs a second without a feed (docs/spec/watchdog.md 3.1)
+	void (*feed)(void *ctx);
 	uint32_t xsize;		// SPI flash bytes (0: no chip answered)
 	uint8_t xid[3];		// its JEDEC ID
 	uint16_t flash_kb;	// the flash size register

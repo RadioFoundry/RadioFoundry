@@ -90,6 +90,27 @@ static void test_limits(void)
 	CHECK(r.n_reg == 16 && r.dividend == 0);
 }
 
+// Signed mode: a fraction over one half goes to the next N with a negative dividend. Unsigned, these left the MD-380
+// 8.4 MHz low (issue 108: 443.700 MHz RX, LO 393.75 MHz, N 46.875, received nothing; N 47.158 at 446.075 did)
+static void test_signed_fraction(void)
+{
+	sky72310_ratio_t r;
+	CHECK(sky72310_ratio(16800000u, 2, 393750000u, &r));	// N 46.875
+	CHECK(r.n_reg == 47 - 32);
+	CHECK(r.dividend == (1u << 18) - 32768u);		// -0.125 x 2^18
+	CHECK(sky72310_vco_hz(16800000u, 2, &r) == 393750000u);
+	CHECK(sky72310_ratio(16800000u, 2, 396125000u, &r));	// N 47.158: below one half, positive
+	CHECK(r.n_reg == 47 - 32);
+	CHECK(r.dividend < (1u << 17));
+	// Every fraction stays within -0.5 .. +0.5 and maps back within one step
+	for (uint32_t f = 340000000u; f <= 450000000u; f += 777777u) {
+		CHECK(sky72310_ratio(16800000u, 2, f, &r));
+		uint32_t mag = r.dividend >= (1u << 17) ? (1u << 18) - r.dividend : r.dividend;
+		CHECK(mag <= (1u << 17));
+		CHECK(absdiff(sky72310_vco_hz(16800000u, 2, &r), f) <= 33u);
+	}
+}
+
 static void test_words_and_order(void)
 {
 	sky72310_t dev;
@@ -97,7 +118,7 @@ static void test_words_and_order(void)
 	sky72310_attach(&dev, &bus, 16800000u, 12);
 	CHECK(sky72310_init(&dev));
 	CHECK(chip.reg[SKY72310_REG_POWER_MUX] == 0);		// powered, fractional-N, 18-bit, Mux_out = oscillator
-	CHECK(chip.reg[SKY72310_REG_DELTA_SIGMA] == 0x080u);	// figure 13: bits 11-7 00001, unsigned
+	CHECK(chip.reg[SKY72310_REG_DELTA_SIGMA] == 0x0A0u);	// figure 13: bits 11-7 00001, signed mode
 	CHECK(chip.reg[SKY72310_REG_MOD_CTRL] == 0);
 	CHECK(chip.reg[SKY72310_REG_PD_GAIN] == 12);
 	CHECK(chip.words[0] >> 12 == SKY72310_REG_POWER_MUX);
@@ -143,6 +164,7 @@ int main(void)
 	test_datasheet_example();
 	test_limits();
 	test_words_and_order();
+	test_signed_fraction();
 	printf("sky72310Test: %s (%d failures)\n", failures ? "FAILED" : "passed", failures);
 	return failures ? 1 : 0;
 }

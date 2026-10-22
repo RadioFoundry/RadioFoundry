@@ -17,16 +17,37 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
   - `*` = off by default; measured by turning it on in the DM-1701 build (main c0022b4).
 - **Radios:** ● on by default · ○ optional (supported, off by default) · ✕ not compatible (the hardware lacks it, or
   the board code isn't written: the note says which) · — in a bytes column: not built there, so not measured.
+- **A mark in this table is not a statement that the feature works.** ● means the switch is on in that radio's
+  default image, nothing more. A feature can be built in and still do nothing on a radio, or never have been tried on
+  it. What has actually been checked on each radio is in [Checked on each radio](#checked-on-each-radio) below.
 - The DM-32UV builds with csky-elf GCC; its sizes aren't in the per-feature tables (ARM only for now); its whole images are
   at the end.
 
+
+## Checked on each radio
+
+Taken from the test records and bring-up pages named in the last column, as of 2026-10-20. "Checked" means a person or
+a HIL test saw it work on a radio, on air where RF is involved. Anything not listed as checked has no recorded check on
+that radio: it is built in and host tested, and should be treated as unverified. The DM-1701 list is from the HIL run
+of 2026-10-10 and later notes, so it can be out of date for newer features. Per radio checklists with a required test
+for every feature are planned (issue 106).
+
+| Radio | Checked on the radio | Built, not checked, or known not to work | Source |
+|---|---|---|---|
+| DM-1701 | FM receive and transmit (tones, 1750 Hz, roger beep), DMR voice and data both ways, late entry, talker alias, GPS in calls, emergency, scan and dual watch, hotspot voice and data, MMDVM SFR (repeat delay 210 ms, not 90 ms), each split duplex half alone (one radio), battery saver, qdmr, the USB network adapter | Split duplex with a real pair of radios, standalone SFR, ARS, LRRP, the TCP services, mDNS, TFTP, SNMP, IP over DMR end to end, roaming to a repeater, control station mode, VOX with a voice, privacy scrambling against another radio | [on-air-coverage](testing/on-air-coverage.md), [23-radios](user/23-radios.md) |
+| DM-32UV | FM receive and transmit, CTCSS and DCS, DMR voice receive (simplex) and transmit, APRS receive and transmit, GPS data (no fix yet), the debug link and the hotspot on the cable, battery saver | **Split duplex: no role (no BS transmit, no slot clock glue, issue 105).** Air band AM, broadcast FM, USB (not available). FM transmit deviation at 12.5 kHz, a GPS fix, both slots through a duplex hotspot. A DMR receive fault after hours of uptime (2026-10-16, cause unknown). No recorded check: emergency, privacy, talker alias, text and data, roaming, scan, MMDVM SFR, PPP and the network services, control station mode, VOX | [dm32-bringup](testing/dm32-bringup.md), [23-radios](user/23-radios.md) |
+| DM-1801 Pro | FM receive and transmit (UHF), CTCSS and DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, MMDVM SFR on the SDR bench, PPP with the network services and IP over DMR to the SDR bench | **Split duplex: no role.** VHF transmit, VOX, APRS receive. No recorded check on the rest | [23-radios](user/23-radios.md), [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
+| DB25-D PRO | FM receive and transmit, DMR voice receive and transmit on the SDR bench, the hotspot, the DMR VFO, PPP network services, programming over the cable, volume | **Split duplex and MMDVM SFR: not built.** DMR audio from the speaker, a GPS fix, settings kept across power off (new). No recorded check on the rest | [23-radios](user/23-radios.md), [hardware-db25d](spec/hardware-db25d.md) |
+| MD-380 | Fully operational (UHF)¹: FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or duplex hotspot on either slot (issue 108), codeplug and ID database programming (CPS, web editor) | DCS, the VHF image, tone deviation, data from a DMR VFO. Split duplex and SFR not available (HR_C5000) | [md380-bringup](testing/md380-bringup.md), [23-radios](user/23-radios.md) |
+
+¹ TX frequency accuracy depends on each radio's factory calibration: confirm it against an external reference (frequency counter, service monitor, or a hotspot's MMDVMCal BER test). One MD-380 measured +1.9 kHz high, outside an MMDVM hotspot's decode window; `MD380_TX_OFFSET_HZ` corrects it at build time ([hardware-md380](spec/hardware-md380.md)).
 
 ## Radio and voice
 
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | DM-1701 | MD-380 | DM-32UV | Notes |
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | Analog FM receive and transmit | `FM` | 29,296 | 28,056 | ● | ● | ● | Includes its children (tones, VOX, APRS, FM VFO) |
-| CTCSS / DCS encode and decode | `SUBTONE` | 904 | — | ● | ✕ | ● | MD-380: software decode (ADC) and PWM encode not written |
+| CTCSS / DCS encode and decode | `SUBTONE` | 904 | 3,292* | ● | ● | ● | MD-380: software decode (ADC) and PWM encode; CTCSS 100.0 Hz works on air both ways (2026-10-19), DCS not yet checked |
 | FM TX tones: roger beep, 1750 Hz burst | `FM_TX_TONES` | 568 | — | ● | ✕ | ● | MD-380: TX tone path not written |
 | FM VOX | `VOX` | 496 | 1,064 | ● | ● | ● |  |
 | Receiver battery saver | `BATTERY_SAVE` | 296 | 740 | ● | ● | ● |  |
@@ -71,12 +92,17 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | USB device | `USB` | 127,300 | 87,848 | ● | ● | ✕ | DM-32 has no USB (host link on the programming cable's UART). Includes everything on USB |
 | Host link: hotspot, CPS, debug link on the host port | `HOSTLINK` | 115,640 | 77,644 | ● | ● | ● | Includes its children |
 | MMDVM hotspot | `HOTSPOT` | 34,196 | ~12,400 | ● | ● | ● | Includes split duplex and MMDVM SFR where built. MD-380: size estimated |
-| Split duplex repeater (two radios, one duplex modem) | `HOTSPOT_SPLIT` | 12,584 | — | ● | ✕ | ● | MD-380: HR_C6000-only glue |
+| Split duplex repeater (two radios, one duplex modem) | `HOTSPOT_SPLIT` | 12,584 | — | ● | ✕ | ✕ | MD-380: HR_C6000-only glue. DM-32UV: the extension is in the build but the radio offers no TX or RX role, because the HR_C7000 BS transmit and slot clock glue isn't written (issue 105). DM-1701: each half checked alone, no real pair yet |
 | Debug link | `DEBUGLINK` | 32,376 | 29,084 | ● | ● | ● |  |
 | Task stacks in the debug link view | `TASK_STACKS` | 536 | 560 | ● | ● | ● | Each task's least free stack, the `tasks` view section ([debuglink](spec/debuglink.md) 3.7) |
 | Open-firmware CPS protocol (qdmr) | `CPS_OPENFW` | 3,064 | 3,008 | ● | ● | ● |  |
 | Fast codeplug protocol (debug link CODEPLUG) | `CPS_FAST` | 3,732 | 3,948* | ● | ● | ● | Changed 4 KB blocks only, LZ4 both ways, staged commit ([cps-fast.md](spec/cps-fast.md)). DM-1701 figure with LTO (2026-10-18) |
-| Loader hand-over (debug link 0x1A) | `STUB_ENTRY` | 768 | — | ● | ● | ● | Updates and backups over the radio's own link without the bootloader key press: the web flasher and `stub/stubtool.py`. On wherever the debug link is. On the STM32 radios it is a RAM flash stub that also takes 8 KB of RAM ([stub-stm32f4.md](spec/stub-stm32f4.md)) |
+| Loader hand-over (debug link 0x1A) | `STUB_ENTRY` | 768* | — | ○ | ● | ● | Updates and backups over the radio's own link without the bootloader key press: the web flasher and `stub/stubtool.py`. On by default wherever the debug link is; on the STM32 radios a RAM flash stub that also takes 8 KB of RAM ([stub-stm32f4.md](spec/stub-stm32f4.md)), off on the DM-1701 until checked at 95 % RAM |
+| Crash log | `CRASH_LOG` | 1,572 | 1,756 | ● | ● | ● | A fault, stack overflow, heap exhaustion or failed assertion keeps a record across the restart; the debug link shows it ([crash-log.md](spec/crash-log.md)) |
+| Hardware watchdog | `WATCHDOG` | 932 | 856 | ● | ● | ● | Fed by the idle task; a hang or a starved system resets the radio. Timeout about 5 s on the STM32 radios, 4 s on the HR_C7000 radios ([watchdog.md](spec/watchdog.md)) |
+| Fault trace on the host UART | `FAULT_TRACE` | — | — | ✕ | ✕ | ● | A CPU fault's registers in three framed lines before the restart, about 600 B ([crash-log.md](spec/crash-log.md) 2.3). The STM32 radios' host port is USB |
+| Crash log screen | `CRASH_SCREEN` | 1,024 | 1,408* | ● | ● | ● | Settings > Advanced > Crash log: the record's summary and Clear |
+| Crash report over DMR | `CRASH_REPORT` | 1,440 | 1,712* | ● | ● | ● | Sends the crash record as one UDP datagram to a codeplug contact, from the menu or after the restart (Off, Ask, Auto) ([crash-log.md](spec/crash-log.md) 5). Needs the screen |
 
 ## Network (USB network adapter and IP over DMR)
 
@@ -96,7 +122,7 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 | TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | ● | ● | ● | Without the ID database below |
 | DMR ID database over TFTP (`iddb.bin`, combined `codeplug.bin`) | `TFTP_IDDB` | 2,184 | 2,264 | ● | ● | ● | Follows `TFTP` |
 | SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 | ● | ● | ● |  |
-| PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | ○ | ○ | ● | New, untested on hardware; interop tested with pppd. Fits neither default image as it is when measured (DM-1701 688 B short, MD-380 1,588 B short of its 275 KB then; DM-1701 with LTO: +3,948, fits). DM-32: its only IP link, on by default with the gateway and every service (Whole images, DM-32UV) |
+| PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | ○ | ○ | ● | Interop tested with pppd; checked on the DB25-D PRO and the DM-1801 Pro (`docs/spec/ppp.md` 8). Fits neither default image as it is when measured (DM-1701 688 B short, MD-380 1,588 B short of its 275 KB then; DM-1701 with LTO: +3,948, fits). DM-32: its only IP link, on by default with the gateway and every service (Whole images, DM-32UV) |
 
 ## User interface
 

@@ -306,7 +306,8 @@ def test_call_alert_tx(radio, sdr_bench, pytestconfig):
     d = _deltas(before, after, ["data.call_alerts_sent", "data.tx_ok", "data.tx_failed", "data.tx_gave_up"])
     print("radio deltas:", d)
     assert after["data.signal_state"] == "failed" and after["data.signal_kind"] == "call_alert", after
-    assert d["data.call_alerts_sent"] == 3 and d["data.tx_ok"] == 3 and d["data.tx_failed"] == 0, d
+    # tx_ok may include an unrelated send in the window (a registration after the bench restarts): count the alerts
+    assert d["data.call_alerts_sent"] == 3 and d["data.tx_ok"] >= 3 and d["data.tx_failed"] == 0, d
     heard_tries(heard, CSBK_CALL_ALERT, d["data.call_alerts_sent"],
                 lambda x: x[1] == 0 and x[3] == BENCH_SRC and x[4] == own, "call alert")
 

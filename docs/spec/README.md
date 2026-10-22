@@ -20,6 +20,8 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | [aprs.md](aprs.md) | APRS on FM and over DMR |
 | [airband-and-broadcast.md](airband-and-broadcast.md) | Air band AM receive and broadcast FM receive (parked) |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
+| [crash-log.md](crash-log.md) | The crash log: fault capture on each platform, the record kept across the restart, the fault trace, the packed report |
+| [watchdog.md](watchdog.md) | The hardware watchdog: the idle task's feed, timeouts, long operations, leaving the application, bench tests |
 | [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |
 | [codeplug-native.md](codeplug-native.md) | Native codeplug (draft) |
 

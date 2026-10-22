@@ -222,6 +222,15 @@ static size_t wr(const uint8_t *buf, size_t len)
 	return len;
 }
 
+void hrc_host_uart_put_polled(const char *s)
+{
+	size_t n = 0;
+	while (s[n] != 0) {
+		n++;
+	}
+	(void)wr((const uint8_t *)s, n);
+}
+
 uint32_t hrc_host_uart_overruns(void)
 {
 	return rx_overruns;

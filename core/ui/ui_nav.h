@@ -17,6 +17,8 @@ typedef enum {
 	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_APRS_POS, SCR_ABOUT,
 	SCR_VOLUME,			// the volume editor (VOL key, radios without a knob)
 	SCR_CHANNELS, SCR_CHANNEL,	// every codeplug channel by number; one channel's settings (arg = its number)
+	SCR_CRASH,			// the crash log's record (arg 1: the prompt after the restart; CONFIG_CRASH_SCREEN)
+	SCR_CRASH_TO,			// the crash report's target, picked from the contacts (CONFIG_CRASH_REPORT)
 	SCR_TEXT, SCR_CHPICK, SCR_DISCARD,	// the channel editor's name entry, contact / list picker, unsaved changes
 	SCR_COUNT
 } ui_scr_t;
@@ -136,6 +138,11 @@ bool ui_quick_key(const input_event_t *ev);
 void ui_quick_enter(void);
 void ui_volume_draw(void);
 bool ui_volume_key(const input_event_t *ev);
+
+// The crash log after the restart (ui_menus.c, CONFIG_CRASH_SCREEN): the prompt or the automatic report, and the
+// report's end as a toast. reset at ui_app_init, tick every UI tick
+void ui_crash_reset(void);
+void ui_crash_tick(uint32_t now_ms);
 
 // Text helpers
 void ui_sb_target(char *buf, size_t len, const ui_target_t *t);	// "TG 91 World", "Joe 3101234"

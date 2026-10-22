@@ -16,6 +16,7 @@
 #define ODR_DMR_DATA_API_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "config.h"
 #include "dmr/dmrDataService.h"
@@ -35,6 +36,11 @@ typedef enum {
 	DMR_SMS_FORMAT_ETSI_IP = 2,	// ETSI IP text, UTF-16BE on UDP 5016 (docs/spec/dmr-data.md 5.3): the default
 	DMR_SMS_FORMAT_DEFAULT = 0xFF,	// sms_send only: the radio's setting (dmrDataSettings_t.smsFormat)
 } dmr_sms_format_t;
+
+// One UDP datagram on the current DMR channel (its only user so far: the crash report, CONFIG_CRASH_REPORT)
+#define DMR_DATA_UDP_API	(CONFIG_DMR_DATA_CORE && CONFIG_CRASH_REPORT)
+#define DMR_DATA_UDP_MAX	128	// payload bytes
+#define UDP_WAIT_MS		120000	// queued this long without a chance to send (an FM channel, busy): failed
 
 #if CONFIG_DMR_DATA_CORE
 
@@ -62,6 +68,16 @@ bool dmr_signal_radio_check(uint32_t dst);
 // The last call alert / radio check started (kind: DMR_DATA_EV_CALL_ALERT_ACKED for an alert,
 // DMR_DATA_EV_RADIO_CHECK_OK for a check, 0 none yet), its target and state
 dmr_req_state_t dmr_signal_state(uint8_t *kind, uint32_t *dst);
+
+#if DMR_DATA_UDP_API
+// --- One UDP datagram ---
+// Queue len bytes (at most DMR_DATA_UDP_MAX) from src_port to dst_port at dst (a radio, or a talkgroup), unconfirmed,
+// rate 1/2. It goes when the channel lets us (a DMR channel we may transmit on, nothing else of ours on air), or
+// fails after UDP_WAIT_MS. False when one is still queued or going, or the arguments are wrong
+bool dmr_data_send_udp(uint32_t dst, bool group, uint16_t src_port, uint16_t dst_port, const uint8_t *payload, size_t len);
+// The last one: DMR_REQ_IDLE (none yet), QUEUED, SENDING, OK (on air) or FAILED
+dmr_req_state_t dmr_data_udp_state(void);
+#endif
 
 // --- Status ---
 uint32_t dmr_data_serial(void);		// bumped on every event and inbox change

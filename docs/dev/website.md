@@ -90,6 +90,36 @@ All visual decisions are variables in `tokens.css`: colors for light and dark, t
 change. Readability comes first ([principles](../ux/principles.md)): 18 px base type, high contrast, nothing
 squeezed.
 
+## Glossary
+
+`docs/glossary.json` is the one source. `python3 tools/glossary.py --write` generates the two glossary pages from it:
+[user/22-glossary.md](../user/22-glossary.md) (entries with scope `user`) and [glossary.md](glossary.md) (scope `dev`).
+Never edit those pages by hand. `tools/ci.sh` fails when they are stale.
+
+| Field | Meaning |
+|---|---|
+| `term` | The name as the page shows it. A plain word (lowercase, or one capital) also matches in any case and with a plural `s`. An acronym or mixed-case name matches exactly. |
+| `aliases` | Other spellings and plurals. Each follows the same matching rule. |
+| `category` | One of `categories` in the file. It is the page's section. |
+| `scope` | `user`: listed in the user glossary, previewed in the whole site. `dev`: listed in the developer glossary, previewed outside the user guide. |
+| `definition` | One or two short sentences. Say what the standard calls it when a vendor uses another name. |
+| `link` | Optional path under `docs/` of the section that explains it. The preview's "More" link goes there, else to the glossary row. |
+| `preview` | `false` keeps a common word (Monitor, Zone) in the glossary but never marks it in the text. |
+
+The site build (`docs.py`) wraps a term in `<abbr class="gl" title="...">` at build time. The Markdown stays unmarked, so GitHub
+shows plain text. Rules:
+
+- Whole words only. Not inside code, headings, link text, a table's first column, hyphenated words or paths.
+- The first use in each section (a section ends at the next `#` or `##` heading).
+- `<!-- glossary: off -->` in a page turns marking off for that page. `<!-- glossary: off TG, SFR -->` turns off those terms.
+
+`site.js` turns each `<abbr>` into a popover on hover, keyboard focus and tap, with a "More" link (Enter follows it from the
+keyboard). Without JavaScript the `title` shows the definition. `site/tests/glossary_test.py` tests the rules.
+
+To add a term, add an entry to the file, run `python3 tools/glossary.py --write` and `python3 tools/glossary.py --check`.
+`python3 tools/glossary.py --unexplained` lists all-capital words the docs use that have no entry (pin names and
+identifiers with digits or underscores are skipped). Add an entry for each one that matters to a reader, or its name to `excluded`.
+
 ## Translating
 
 `site/i18n/languages.json` lists the languages. The default (English) is at the site root, others under `/<code>/`.
@@ -280,7 +310,7 @@ the ones above, with these changes:
 | ODR runs (debug link answers) | The universal stub (`data/c7000-stub.json`, `stubImages()` in `stub.js`) goes into the RAM span the firmware reports in STUB INFO (0x30000 for a build without DMR, 0x1D000 with it) and copies itself to 0x30000. `univFits()` refuses a span whose copy would overlap or leave SRAM, as `stubtool.py` does. After HELLO the page sends CONFIG with the board's profile and checks the echo before any write. The backup is the 2 MB program memory |
 | ODR runs but does not answer | "Recover at Power-On": the first stage offers the boot ROM handshake for about half a second at power-on. The page answers it and loads the universal stub at 0x10000, as the boot ROM route does (the first stage takes blocks below 0x4E000) |
 | The stock firmware runs | `db25d.js` `Usmart`: the stock firmware's debug console takes one framed command per write (`@AT` + a filler byte + the text + CR LF) and answers `read_addr` and `write_addr`. The page reads the build from its version string (018 or 020; another build is refused), writes the universal stub word by word into 0x54000-0x58000, reads every word back, then points the console's `cmd_rec` entry (0x18000848) at it and sends one more frame, which starts it. Only those addresses can be written, never flash. The stub then copies itself to 0x30000 and the radio continues as from ODR (`c.how = "usmart"`): the 2 MB backup, the codec, the install and a restore all go through the stub. About 4 minutes for the load at 115200 baud |
-| Factory update mode (recovery) | `db25d.js` `Iap`: the loader's update mode (P1 and power) takes `Erase` and 2 KB pages with additive checksums (`docs/spec/hardware-db25d.md` 7). Install: the first stage, ODR and the codec slot (`odr_db25d_install.bin` with the slot merged in, or the build service's equivalent); it must start with the first stage's `2C 11 01 C0`. Restore: a backup's application area and slot (`restoreTarget()`), which must start with the same entry. Offered when nothing answers on the cable, for a stock build the page doesn't know, and in Troubleshooting (`recovery.extra`, "Reinstall in Factory Update Mode", which skips the search) |
+| Factory update mode (recovery) | `db25d.js` `Iap`: the loader's update mode (P1 and power) takes `Erase` and 2 KB pages with additive checksums (`docs/spec/hardware-db25d.md` 7). Install: the first stage, ODR and the codec slot (`odr_db25d_install.bin` with the slot merged in, or the build service's equivalent); it must start with the first stage's `2C 11 01 C0`. Restore: a backup's application area and slot (`restoreTarget()`), which must start with the same entry. Offered when nothing answers on the cable, for a stock build the page doesn't know, and in Troubleshooting (`recovery.extra`, "Reinstall in Factory Update Mode", which skips the search). `Iap.probe()` sends a one-page `Flash Read ` (never Erase) when the console is silent, and again when Troubleshooting forces update mode: a loader that answers (a radio with no valid application, white screen and red LED at power-on) is reported as already in update mode and the install starts without waiting for a banner (`c.iapReady`). Troubleshooting lists the symptom "White screen and a red LED at every power-on" for radios with a `recovery.extra` route; it leads to the reinstall or Restore from Backup |
 
 The first stage is the only way into the stub from a radio that runs ODR without answering. `site/tests/db25d.test.mjs`
 runs the console stub load and the IAP write against simulated radios (`fakec7000.js` with `usmart: "018"` models the

@@ -1542,6 +1542,9 @@ void ui_app_init(void)
 	has_context_key = ui_has_action(ACT_CONTEXT);
 	strcpy(home_hint, has_quick_key ? "OK Menu  * Quick" : "OK Menu  Hold OK Quick");
 	ui_st.home_hint = home_hint;
+#if CONFIG_CRASH_SCREEN
+	ui_crash_reset();
+#endif
 	dirty = true;
 }
 
@@ -1876,6 +1879,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	ui_st.now_ms = now_ms;
 	ui_svc_poll();
 	ui_svc_keys_poll();
+#if CONFIG_CRASH_SCREEN
+	ui_crash_tick(now_ms);
+#endif
 
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
 	uint8_t usb_net = usb_net_state();

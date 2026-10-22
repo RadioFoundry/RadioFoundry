@@ -2420,6 +2420,276 @@ static const ui_scr_def_t roam_screen = {
 	.count = roam_count, .item = roam_item, .select = roam_select, .body = roam_body,
 };
 
+// ======================= Crash log (Settings > Advanced, docs/spec/crash-log.md) =======================
+// arg 0: from the menu (the record, the report's settings); arg 1: the prompt after the restart ("After a crash:
+// Ask"). Only with the crash log; the report's rows only with the crash report
+
+#if CONFIG_CRASH_SCREEN
+enum { CR_SEND, CR_TO, CR_MODE, CR_CLEAR, CR_LATER };
+
+static bool crash_prompt(void) { return ui_frame()->arg == 1; }
+
+static uint8_t crash_rows(uint8_t *out)
+{
+	uint8_t n = 0;
+	if (CONFIG_CRASH_REPORT)
+		out[n++] = CR_SEND;
+	if (crash_prompt()) {
+		out[n++] = CR_LATER;
+		return n;
+	}
+	if (CONFIG_CRASH_REPORT) {
+		out[n++] = CR_TO;
+		out[n++] = CR_MODE;
+	}
+	out[n++] = CR_CLEAR;
+	return n;
+}
+
+static uint16_t crash_count(void)
+{
+	uint8_t r[5];
+	return crash_rows(r);
+}
+
+// The target contact's name (or "TG 9" / its ID without one); "" when none is set or it is gone from the codeplug
+static void crash_target(char *out, size_t len)
+{
+	sbuf_t b;
+	sb_init(&b, out, len);
+#if CONFIG_CRASH_REPORT
+	contact_t c;
+	int32_t num = ui_svc_setting_get(UI_SET_CRASH_CONTACT);
+	if (num <= 0 || !codeplug_contact((uint16_t)num, &c))
+		return;
+	if (c.name[0]) {
+		sb_str(&b, c.name);
+		return;
+	}
+	if (c.type != CONTACT_PRIVATE)
+		sb_str(&b, "TG ");
+	sb_u32(&b, c.id, 1);
+#endif
+}
+
+static const char *const crash_modes[] = { "Off", "Ask", "Auto" };	// UI_CRASH_SEND_*
+
+static const char *crash_body(void)
+{
+	static char t[160];
+	sbuf_t b;
+	sb_init(&b, t, sizeof t);
+	ui_crash_t c;
+	if (!ui_svc_crash_get(&c)) {
+		sb_str(&b, "No crash recorded.");
+		return t;
+	}
+	if (crash_prompt()) {
+		// The question only: it has to fit above the two rows on the smallest screens
+		char to[CODEPLUG_NAME_LEN + 4];
+		crash_target(to, sizeof to);
+		sb_str(&b, "Restarted after a crash. Send the report to ");
+		sb_str(&b, to);
+		sb_str(&b, "?");
+		return t;
+	}
+	sb_str(&b, c.summary);
+	if (c.sent)
+		sb_str(&b, "\nReport sent");
+	if (c.count > 1) {
+		sb_str(&b, "\n");
+		sb_u32(&b, c.count, 1);
+		sb_str(&b, " crashes in a row");
+	}
+	sb_str(&b, "\nRan for ");
+	sb_mmss(&b, c.uptime_ms / 1000u);
+	if (c.build != 0) {
+		sb_str(&b, ", build ");
+		for (int k = 28; k >= 0; k -= 4)
+			sb_chr(&b, "0123456789abcdef"[(c.build >> k) & 0xFu]);
+	}
+	return t;
+}
+
+static void crash_item(uint16_t i, ui_item_t *it)
+{
+	uint8_t r[5];
+	uint8_t n = crash_rows(r);
+	if (i >= n)
+		return;
+	ui_crash_t c;
+	bool have = ui_svc_crash_get(&c);
+	item_num(it, (uint16_t)(i + 1u));
+	switch (r[i]) {
+	case CR_SEND:
+		strcpy(it->label, "Send report");
+		if (!have)
+			it->flags |= UI_ITEM_DIM;
+		break;
+	case CR_TO:
+		strcpy(it->label, "Send to");
+		crash_target(it->value, sizeof it->value);
+		if (it->value[0] == 0)
+			strcpy(it->value, "Not set");
+		break;
+	case CR_MODE: {
+		int32_t m = ui_svc_setting_get(UI_SET_CRASH_MODE);
+		strcpy(it->label, "After a crash");
+		strcpy(it->value, crash_modes[m >= 0 && m <= UI_CRASH_SEND_AUTO ? m : 0]);
+		break;
+	}
+	case CR_CLEAR:
+		strcpy(it->label, "Clear");
+		if (!have)
+			it->flags |= UI_ITEM_DIM;
+		break;
+	default:
+		strcpy(it->label, "Not now");
+		break;
+	}
+}
+
+static bool crash_watch;	// a report of ours is going: say how it ended
+
+static void crash_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	uint8_t r[5];
+	uint8_t n = crash_rows(r);
+	if (i >= n)
+		return;
+	ui_crash_t c;
+	bool have = ui_svc_crash_get(&c);
+	char to[CODEPLUG_NAME_LEN + 4];
+	switch (r[i]) {
+	case CR_SEND:
+		crash_target(to, sizeof to);
+		if (!have) {
+			ui_toast("No crash recorded");
+		} else if (to[0] == 0) {
+			ui_toast("Pick Send to first");
+		} else if (ui_svc_crash_send()) {
+			crash_watch = true;
+			ui_toast("Sending crash report");
+			if (crash_prompt())
+				ui_pop();
+		} else {
+			ui_toast("Can't send now: try again");
+		}
+		break;
+	case CR_TO:
+		if (CONFIG_DMR)
+			ui_push(SCR_CRASH_TO, 0);
+		break;
+	case CR_MODE: {
+		int32_t m = ui_svc_setting_get(UI_SET_CRASH_MODE);
+		int32_t nm = m >= UI_CRASH_SEND_OFF && m < UI_CRASH_SEND_AUTO ? m + 1 : UI_CRASH_SEND_OFF;
+		if (!ui_svc_setting_set(UI_SET_CRASH_MODE, nm))
+			ui_toast("Couldn't save: try again");
+		else if (nm != UI_CRASH_SEND_OFF && ui_svc_setting_get(UI_SET_CRASH_CONTACT) <= 0)
+			ui_toast("Pick Send to as well");
+		break;
+	}
+	case CR_CLEAR:
+		if (have) {
+			ui_svc_crash_clear();
+			ui_toast("Crash record cleared");
+		}
+		break;
+	default:
+		ui_pop();
+		break;
+	}
+}
+
+static void crash_enter(void)
+{
+	ui_svc_crash_seen();	// shown: no prompt for it again, and the next crash counts from 1
+}
+
+static const ui_scr_def_t crash_screen = {
+	.name = "crash", .flags = SF_LIST | SF_NUMBERED, .prefix = "Crash log", .hint = "OK pick  Back",
+	.count = crash_count, .item = crash_item, .select = crash_select, .body = crash_body, .enter = crash_enter,
+};
+
+#if CONFIG_CRASH_REPORT && CONFIG_DMR
+// Send to: the codeplug's contacts, private or group (type to find, as Contacts); OK keeps the one picked
+static void crash_to_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	ui_target_t t;
+	if (!contacts_target(i, &t))
+		return;
+	if (!ui_svc_setting_set(UI_SET_CRASH_CONTACT, (int32_t)ui_filter_raw(i) + 1)) {
+		ui_toast("Couldn't save: try again");
+		return;
+	}
+	static char msg[24 + CODEPLUG_NAME_LEN];	// the toast keeps the pointer
+	sbuf_t b;
+	sb_init(&b, msg, sizeof msg);
+	sb_str(&b, "Crash reports to ");
+	sb_str(&b, t.name[0] ? t.name : "this contact");
+	ui_pop();
+	ui_toast(msg);
+}
+
+static const ui_scr_def_t crash_to_screen = {
+	.name = "crash_to", .flags = SF_LIST | SF_FILTER, .prefix = "Send to",
+	.hint = "0-9 find  OK pick  Back", .empty = "No contacts: add them in qdmr",
+	.count = ui_filter_count, .item = contacts_item, .select = crash_to_select,
+	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
+};
+#endif
+
+// After the restart (ui_app_tick): once the Home screen has been up a moment, a record nobody has seen is asked about
+// (Ask) or sent (Auto); Off leaves it to the menu. Then the report's end, once, as a toast
+#define CRASH_BOOT_MS	1500u
+
+static uint32_t crash_since;
+static bool crash_checked;
+
+void ui_crash_reset(void)
+{
+	crash_since = 0;
+	crash_checked = false;
+	crash_watch = false;
+}
+
+void ui_crash_tick(uint32_t now_ms)
+{
+	if (!crash_checked) {
+		if (crash_since == 0)
+			crash_since = now_ms != 0 ? now_ms : 1;
+		if (now_ms - crash_since < CRASH_BOOT_MS || ui_depth() != 0)
+			return;
+		crash_checked = true;
+		ui_crash_t c;
+		char to[CODEPLUG_NAME_LEN + 4];
+		int32_t mode = CONFIG_CRASH_REPORT ? ui_svc_setting_get(UI_SET_CRASH_MODE) : UI_CRASH_SEND_OFF;
+		if (!ui_svc_crash_get(&c) || c.seen || c.sent || mode == UI_CRASH_SEND_OFF)
+			return;
+		crash_target(to, sizeof to);
+		if (to[0] == 0)
+			return;		// nowhere to send it: the menu shows it
+		if (mode == UI_CRASH_SEND_ASK) {
+			ui_push(SCR_CRASH, 1);
+		} else if (ui_svc_crash_send()) {
+			ui_svc_crash_seen();
+			crash_watch = true;
+			ui_toast("Sending crash report");
+		}
+		return;
+	}
+	if (!crash_watch)
+		return;
+	uint8_t st = ui_svc_crash_tx_state();
+	if (st == UI_CRASH_TX_OK || st == UI_CRASH_TX_FAILED) {
+		crash_watch = false;
+		ui_toast(st == UI_CRASH_TX_OK ? "Crash report sent" : "Crash report not sent");
+	}
+}
+#endif
+
 // ======================= Tools =======================
 
 // Diagnostics keeps number 7 (tests/hil/test_ui.py); Roaming follows (8, or 7 without diagnostics), then APRS
@@ -2547,7 +2817,7 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH };
 
 typedef struct {
 	const char *name;
@@ -2761,6 +3031,10 @@ static const set_item_t s_advanced[] = {
 	ACTION("Codeplug", NULL, SA_CODEPLUG),
 	ACTION("Diagnostics", "debug", SA_DIAG),
 	ACTION("Factory reset", "erase", SA_RESET),
+	// After Factory reset, so its place (and its tests' key presses) stays
+#if CONFIG_CRASH_SCREEN
+	ACTION("Crash log", "crash report fault debug", SA_CRASH),
+#endif
 };
 
 #define GROUP(nm, a) { nm, a, sizeof a / sizeof a[0] }
@@ -2940,6 +3214,7 @@ static void set_range(const set_item_t *s, int32_t *lo, int32_t *hi)
 		*lo = 0;
 		*hi = 65535;
 	}
+
 }
 
 static void group_item(uint16_t i, ui_item_t *it)
@@ -3014,6 +3289,9 @@ static void group_select(uint16_t i, bool hold)
 		case SA_CODEPLUG: ui_push(SCR_INFO, INFO_CODEPLUG); break;
 		case SA_MY_RADIO: ui_push(SCR_INFO, INFO_MY_RADIO); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
+#if CONFIG_CRASH_SCREEN
+		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
+#endif
 		default: break;
 		}
 		break;
@@ -3365,5 +3643,11 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_CHPICK] = &chpick_screen,
 #endif
 #endif
+#endif
+#if CONFIG_CRASH_SCREEN
+	[SCR_CRASH] = &crash_screen,
+#endif
+#if CONFIG_CRASH_REPORT && CONFIG_DMR
+	[SCR_CRASH_TO] = &crash_to_screen,
 #endif
 };

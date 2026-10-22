@@ -105,6 +105,16 @@ export function makeDb25d(host) {
 			button(t("flash.db25d.none.power_on"), onPowerOn, { quiet: true }));
 	}
 
+	// The loader answered a read-only probe: the radio is in update mode already (its application is missing or incomplete,
+	// so it stays there at every power-on, white screen and red LED). The install goes straight on; no keys are needed.
+	function alreadyUpdateMode({ show, act, onUpdateMode, onAgain }, version) {
+		show({ led: "off", screen: "on" },
+			h("p", { class: "c7-big" }, h("b", {}, t("flash.db25d.um.found"))),
+			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.db25d.stock.version")), h("dd", {}, version)) : null,
+			h("p", {}, t("flash.db25d.um.text")), h("p", { class: "small muted" }, t("flash.db25d.um.safe")));
+		act(onUpdateMode ? button(t("flash.db25d.um.go"), onUpdateMode, { primary: true }) : button(t("flash.db25d.none.again"), onAgain, { primary: true }));
+	}
+
 	// ---- the vendor update mode: install, or put a backup back
 
 	// The install task's write step when the radio is reached through update mode
@@ -164,7 +174,9 @@ export function makeDb25d(host) {
 			const started = ctx.flashStarted(report);
 			try {
 				const iap = new Iap(c.stream, { log: (l) => c.log.add(l) });
-				await iap.waitBanner(LISTEN_MS, { signal: stop.signal });
+				// a loader that answered the probe is waiting already: its banner was printed before the page asked
+				if (c.iapReady) c.iapReady = false;
+				else await iap.waitBanner(LISTEN_MS, { signal: stop.signal });
 				await busy(true);
 				fill(status, h("p", { class: "muted c7-big" }, t("flash.db25d.iap.erasing")));
 				prog.el.hidden = false;
@@ -193,7 +205,7 @@ export function makeDb25d(host) {
 		return box;
 	}
 
-	return { stockFound, stubSilent, nothing, iapWriteView, iapRestoreView };
+	return { stockFound, stubSilent, nothing, alreadyUpdateMode, iapWriteView, iapRestoreView };
 }
 
 export { DB25DError };

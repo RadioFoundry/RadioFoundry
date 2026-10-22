@@ -53,6 +53,40 @@ test("key derivation matches odrflash", async () => {
 	assert.equal(toHex(key), fx.derived_key);
 });
 
+// The MD-380 image is far less zero-dominated: the column vote misses hundreds of columns and only the byte-pair
+// refinement finds the key (issue 119). Synthetic file from fixtures.py, the same key as odrflash gives
+test("key derivation refines a bad vote (MD-380-like file)", async () => {
+	const m = fx.md380like;
+	assert.ok(m.vote_wrong > 200, `the vote alone should be far off (${m.vote_wrong} columns)`);
+	const key = await stockfw.deriveKey(bin("stock-md380like.bin"), await sha256(fromHex(m.key)), fb);
+	assert.equal(toHex(key), m.key);
+	assert.equal(toHex(key), m.derived_key);
+});
+
+// Opt-in: a real TYT updater file (never in the repository), e.g. ODR_MD380_STOCK="MD-380-D2.32(AD).bin" site/tests/run.sh
+test("key derivation from a real MD-380 updater file", { skip: !process.env.ODR_MD380_STOCK && "set ODR_MD380_STOCK" }, async () => {
+	const st = await stockfw.stockFile("stock", new Uint8Array(readFileSync(process.env.ODR_MD380_STOCK)), fb);
+	const key = await stockfw.deriveKey(st.data, fb.boards.md380.key_sha256, fb);
+	assert.equal(await sha256(key), fb.boards.md380.key_sha256);
+});
+
+test("stock file from a vendor zip: the one .bin with the container header", async () => {
+	const plain = await stockfw.stockFile("x.bin", stock, fb);
+	assert.equal(plain.data, stock);	// a .bin passes through
+	const z = await zip([
+		{ name: "Firmware 2.32/Upgrade.exe", data: "MZ" },
+		{ name: "Firmware 2.32/MD-380-D2.32(AD).bin", data: stock },
+		{ name: "__MACOSX/Firmware 2.32/._MD-380-D2.32(AD).bin", data: new Uint8Array(212) },
+	]);
+	const got = await stockfw.stockFile("TYT-Tytera-MD-380-FW-v232.zip", z, fb);
+	assert.equal(got.name, "MD-380-D2.32(AD).bin");
+	assert.deepEqual([...got.data.subarray(0, 64)], [...stock.subarray(0, 64)]);
+	assert.equal(got.data.length, stock.length);
+	await assert.rejects(stockfw.stockFile("none.zip", await zip([{ name: "readme.txt", data: "hi" }]), fb), stockfw.StockError);
+	await assert.rejects(stockfw.stockFile("two.zip", await zip([{ name: "a.bin", data: stock }, { name: "b.bin", data: stock }]), fb),
+		stockfw.StockError);
+});
+
 test("codec extraction checks every window", async () => {
 	const { segments: segs } = await stockfw.extract(stock, fromHex(fx.key), fb, profiles);
 	assert.equal(segs.length, 3);	// code (moved), tables, descriptor

@@ -14,6 +14,9 @@
 #if CONFIG_APRS
 #include "hrc_afsk.h"
 #endif
+#if CONFIG_NET_PPP
+#include "hostlink/hostlink_ppp.h"
+#endif
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
@@ -83,6 +86,9 @@ const board_t board = {
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
 #endif
+#if CONFIG_NET_PPP
+	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
+#endif
 	.system = &hrc_system,
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,
@@ -137,6 +143,18 @@ static const hrc_flash_cfg_t flash_cfg = {
 
 // A short pulse tells the user the radio is on (hardware-dm1801pro.md 8)
 #define POWER_ON_PULSE_MS	300
+
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-dm1801pro.md 5.5): both TX path
+// selects and the PA drive (DAC B to 0, powered down). RAM code, register writes only. The FD6818 may still be set to
+// transmit (its bus is a bit-banged transaction): with the TX path off its output reaches no keyed PA, and the next
+// start sets it up again
+HRC_RAMFUNC void board_rf_safe(void)
+{
+	hrc_pin_force(PIN_TX_UHF, false);
+	hrc_pin_force(PIN_TX_VHF, false);
+	DAC_DATA_B = 0;
+	DAC_PD_CTRL |= DAC_B_OFF;
+}
 
 void board_early_init(void)
 {

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The runtime RAM-monitor loader's portable state machine (core/debuglink/dl_stub.c, docs/spec/debuglink.md 3.18):
-// arming, chunked load, the magic / length / CRC-32 guards and the verified ENTER.
+// arming, chunked load, the magic / length / CRC-32 guards and the verified ENTER, and the STM32F4 stub image header
+// rule ENTER applies while the IWDG runs (stub/stm32f4/f4stub_header.h).
 #include <stdio.h>
 #include <string.h>
 #include "debuglink/dl_stub.h"
 #include "debuglink/debuglink_proto.h"
+#include "f4stub_header.h"
 
 static int failures, checks;
 
@@ -55,11 +57,124 @@ static uint32_t get32(const uint8_t *p)
 	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
+// The platform's image check (dl_stub_t.image_ok): the length it was asked about
+static uint32_t checked_len;
+
+static bool refuse_image(const uint8_t *img, uint32_t len)
+{
+	(void)img;
+	checked_len = len;
+	return false;
+}
+
+static bool accept_image(const uint8_t *img, uint32_t len)
+{
+	(void)img;
+	checked_len = len;
+	return true;
+}
+
 // Run one request; returns the reply length, fills *enter / *entry (enter cleared first, as the firmware does)
 static size_t req(dl_stub_t *s, const uint8_t *r, uint16_t len, uint8_t *out, bool *enter, uint32_t *entry)
 {
 	*enter = false;
 	return dl_stub_request(s, r, len, out, CAP, enter, entry);
+}
+
+// The STM32's image check (platform/stm32f4/stub_entry.c) with the IWDG running: the shared header rule
+static bool iwdg_running;
+static bool f4_image_ok(const uint8_t *img, uint32_t len)
+{
+	return f4stub_image_ok(img, len, iwdg_running);
+}
+
+// BEGIN and DATA for a whole image; true when every chunk was taken
+static bool load(dl_stub_t *s, const uint8_t *img, uint32_t len, uint32_t entry_off)
+{
+	uint8_t r[CAP], out[CAP];
+	bool enter;
+	uint32_t entry;
+	r[0] = DL_STUB_OP_BEGIN;
+	put32(r + 1, DL_STUB_MAGIC);
+	put32(r + 5, len);
+	put32(r + 9, storage_crc32(0, img, len));
+	put32(r + 13, LOAD + entry_off);
+	if (req(s, r, 17, out, &enter, &entry) == 0 || out[0] != DL_ST_OK) {
+		return false;
+	}
+	for (uint32_t off = 0; off < len; off += DL_STUB_CHUNK_MAX) {
+		uint32_t k = len - off < DL_STUB_CHUNK_MAX ? len - off : DL_STUB_CHUNK_MAX;
+		r[0] = DL_STUB_OP_DATA;
+		put32(r + 1, off);
+		memcpy(r + 5, img + off, k);
+		if (req(s, r, (uint16_t)(5u + k), out, &enter, &entry) == 0 || out[0] != DL_ST_OK) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static void put_header(uint8_t *img, uint32_t magic, uint32_t version, uint32_t flags)
+{
+	uint8_t *h = img + F4STUB_HDR_OFFSET;
+	put32(h, magic);
+	put16(h + 4, F4STUB_HDR_LAYOUT);
+	put16(h + 6, F4STUB_HDR_SIZE);
+	put32(h + 8, version);
+	put32(h + 12, flags);
+}
+
+// The STM32F4 stub's image header (stub/stm32f4/f4stub_header.h, docs/spec/watchdog.md 3.1): with the IWDG running
+// ENTER needs the magic, a version of at least F4STUB_VERSION_FEEDS_IWDG and the feed flag; without it, anything
+static void test_f4_header(void)
+{
+	static uint8_t region[0x200];
+	uint8_t img[200], r[CAP], out[CAP];
+	bool enter;
+	uint32_t entry;
+	dl_stub_t s;
+	struct {
+		const char *what;
+		bool header;
+		uint32_t magic, version, flags;
+		bool ok_running;
+	} cases[] = {
+		{ "no header (an older stub)", false, 0, 0, 0, false },
+		{ "wrong magic", true, F4STUB_HDR_MAGIC ^ 0x01000000u, F4STUB_VERSION, F4STUB_FLAG_FEEDS_IWDG, false },
+		{ "an old version", true, F4STUB_HDR_MAGIC, F4STUB_VERSION_FEEDS_IWDG - 1u, F4STUB_FLAG_FEEDS_IWDG, false },
+		{ "the feed version without the flag", true, F4STUB_HDR_MAGIC, F4STUB_VERSION_FEEDS_IWDG, 0, false },
+		{ "the feed version", true, F4STUB_HDR_MAGIC, F4STUB_VERSION_FEEDS_IWDG, F4STUB_FLAG_FEEDS_IWDG, true },
+		{ "a later version", true, F4STUB_HDR_MAGIC, F4STUB_VERSION + 1u, F4STUB_FLAG_FEEDS_IWDG | 0x80u, true },
+	};
+	for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+		for (unsigned i = 0; i < sizeof(img); i++) {
+			img[i] = (uint8_t)(i * 13u + c);	// garbage where an old stub has code
+		}
+		if (cases[c].header) {
+			put_header(img, cases[c].magic, cases[c].version, cases[c].flags);
+		}
+		for (int running = 1; running >= 0; running--) {
+			iwdg_running = running != 0;
+			bool want = !iwdg_running || cases[c].ok_running;
+			CHECK(f4stub_image_ok(img, sizeof(img), iwdg_running) == want, "%s, IWDG %s: %s", cases[c].what,
+			      iwdg_running ? "running" : "off", want ? "accepted" : "refused");
+			// The same through ENTER
+			dl_stub_init(&s, region, sizeof(region), LOAD);
+			s.image_ok = f4_image_ok;
+			CHECK(load(&s, img, sizeof(img), 0), "%s: loaded", cases[c].what);
+			r[0] = DL_STUB_OP_ENTER;
+			put32(r + 1, DL_STUB_MAGIC);
+			size_t n = req(&s, r, 5, out, &enter, &entry);
+			if (want) {
+				CHECK(n == 1 && out[0] == DL_ST_OK && enter, "%s, IWDG %s: ENTER ok (%u)", cases[c].what,
+				      iwdg_running ? "running" : "off", out[0]);
+			} else {
+				CHECK(n == 2 && out[0] == DL_ST_REFUSED && out[1] == DL_STUB_REFUSE_WATCHDOG && !enter,
+				      "%s: ENTER refused for the watchdog (%u)", cases[c].what, out[0]);
+			}
+		}
+	}
+	CHECK(!f4stub_image_ok(img, F4STUB_HDR_OFFSET + F4STUB_HDR_SIZE - 1u, true), "an image too short for a header");
 }
 
 int main(void)
@@ -165,6 +280,15 @@ int main(void)
 	CHECK(n == 1 && out[0] == DL_ST_BUSY && !enter, "ENTER while transmitting busy (%u)", out[0]);
 	s.transmitting = false;
 
+	// A platform check that refuses the image (the STM32 with its IWDG running and a stub that doesn't feed it):
+	// refused with the watchdog reason, nothing fires, and the image stays loaded
+	s.image_ok = refuse_image;
+	n = req(&s, r, 5, out, &enter, &entry);
+	CHECK(n == 2 && out[0] == DL_ST_REFUSED && out[1] == DL_STUB_REFUSE_WATCHDOG && !enter,
+	      "ENTER refused for the watchdog (%u, %u)", out[0], out[1]);
+	CHECK(checked_len == sizeof(img), "the check saw the whole image (%u)", checked_len);
+	s.image_ok = accept_image;
+
 	// A good ENTER verifies the CRC-32 and fires, with the right entry address
 	n = req(&s, r, 5, out, &enter, &entry);
 	CHECK(n == 1 && out[0] == DL_ST_OK, "ENTER ok (%u)", out[0]);
@@ -213,6 +337,8 @@ int main(void)
 	put32(r + 1, DL_STUB_MAGIC);
 	n = req(&s, r, 5, out, &enter, &entry);
 	CHECK(out[0] == DL_ST_BAD_ARG && !enter, "ENTER rejects an incomplete image (%u)", out[0]);
+
+	test_f4_header();
 
 	printf("%s: %d checks, %d failures\n", failures ? "FAIL" : "ok", checks, failures);
 	return failures ? 1 : 0;

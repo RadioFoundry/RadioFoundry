@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DB25-D first stage (boot/README.md): holds the power latch, then answers on UART1 (the K1 programming cable) the way
+// DB25-D first stage (boot/README.md): holds the power latch and drives the transmitter off, then answers on UART1 (the K1 programming cable) the way
 // the HR_C7000 serial boot ROM answers on UART0, so stub/stubtool.py loads a stub here exactly as on a DM-32UV or
 // DM-1801 Pro. Without a host it goes on to the application. Runs from XIP flash and never touches the flash controller.
 //
@@ -12,7 +12,8 @@
 // host sends it again.
 //
 // BOOT_WINDOW (boot.S): 0 offers the handshake forever; n offers it n times, about 50 ms apart, then boot_resume()
-// starts the application. On that path only the power latch is changed, which the application drives high itself.
+// starts the application. On that path only the power latch and the transmitter pins are changed, to the levels the
+// application drives them to itself.
 #include <stdint.h>
 
 #ifndef BOOT_HOST_TEST	// tests/host/bootDb25dTest.c supplies these
@@ -52,8 +53,15 @@ static inline void jump(uint32_t a)
 #define U_LCR		0x0Cu
 #define U_LSR		0x14u		// bit 0 data ready, bit 6 transmitter empty
 #define U_USR		0x7Cu		// bit 1 TX FIFO not full
-#define GPIOB		0x14100000u	// DR +0, DDR +4
+#define GPIOA		0x14020000u	// DR +0, DDR +4
+#define GPIOB		0x14100000u
 #define LATCH		(1u << 13)	// PTB13 keeps the radio on once the power key is let go
+// The transmitter's pins (hardware-db25d.md 3.2, boards/db25d/pins.h): PTA26 UHF PA select, PTA27 TX supply A, PTB2 TX
+// supply B, PTB3 VHF PA select, all low = off; PTA23 high = receive. A soft reset can leave them as they were, and the
+// stage may wait here for a host, so they go off before anything that takes time (docs/spec/crash-log.md 8)
+#define TX_OFF_A	((1u << 26) | (1u << 27))
+#define RX_ON_A		(1u << 23)
+#define TX_OFF_B	((1u << 2) | (1u << 3))
 
 #define UART1_DIV	19u		// 36 MHz APB / 16 / 115200, as the IAP loader sets it
 #define RAM_HI		0x00050000u	// start addresses below the stub's stack top
@@ -186,6 +194,10 @@ void boot_main(void)
 {
 	wr(GPIOB, rd(GPIOB) | LATCH);		// level first, then output: the pin never goes low
 	wr(GPIOB + 4, rd(GPIOB + 4) | LATCH);
+	wr(GPIOA, (rd(GPIOA) & ~TX_OFF_A) | RX_ON_A);	// the same for the transmitter pins
+	wr(GPIOA + 4, rd(GPIOA + 4) | TX_OFF_A | RX_ON_A);
+	wr(GPIOB, rd(GPIOB) & ~TX_OFF_B);
+	wr(GPIOB + 4, rd(GPIOB + 4) | TX_OFF_B);
 	uart_setup();
 	while (!handshake()) {
 		boot_resume();			// starts the application; returns only when there is none
