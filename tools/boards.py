@@ -651,7 +651,8 @@ def hardware_switches(root=ROOT):
 
 def hardware_problems(bid, unsupported, unconfirmed, built, hw):
     """A board's hardware switches that read "off by default": each must be built (built: switch -> "y"/"n"), listed in
-    BOARD_UNSUPPORTED, or, while the fact is unknown, in board.toml [hardware] unconfirmed."""
+    BOARD_UNSUPPORTED, or, while the fact is unknown, in board.toml [hardware] unconfirmed. One in BOARD_UNSUPPORTED
+    must also be off by default."""
     out = []
     for s, what in sorted(hw.items()):
         on, gone = built.get(s) == "y", s in unsupported
@@ -659,6 +660,9 @@ def hardware_problems(bid, unsupported, unconfirmed, built, hw):
             if on or gone:
                 out.append("boards/%s/board.toml: hardware.unconfirmed %s, but the board %s: drop the entry"
                            % (bid, s, "builds it" if on else "lists it in BOARD_UNSUPPORTED"))
+        elif on and gone:
+            out.append("boards/%s: %s is in BOARD_UNSUPPORTED (it needs %s) but built by default: add CONFIG_%s ?= n to "
+                       "its config.mk" % (bid, s, what, s))
         elif not on and not gone:
             out.append("boards/%s: %s needs %s and is off by default: build it (config.mk CONFIG_%s ?= y) if the "
                        "radio has it, else BOARD_UNSUPPORTED += %s  # <the reason, from the hardware spec>; a fact "
@@ -1128,6 +1132,8 @@ def self_test():
        "hardware switches: unconfirmed on a switch the board builds fails")
     ok(len(hp("x", {}, {"FONT_BIG": "?"}, {"VIBRATE": "y", "NAND_STORAGE": "y"}, hw)) == 1,
        "hardware switches: unconfirmed on a switch that isn't a hardware switch fails")
+    ok(len(hp("x", {"NAND_STORAGE": "NOR"}, {}, {"VIBRATE": "y", "NAND_STORAGE": "y"}, hw)) == 1,
+       "hardware switches: in BOARD_UNSUPPORTED but built by default fails")
 
     # the survey's Port cells (check 5) and the floor, on a fixture survey
     class Stub:

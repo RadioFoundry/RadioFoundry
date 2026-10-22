@@ -65,7 +65,7 @@ static const hal_cps_t cps = {
 
 const board_t board = {
 	.name = "DB25-D",
-	.caps = CAP_ENCODER | CAP_NO_BATTERY | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -77,8 +77,10 @@ const board_t board = {
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
 	.radio = &db25d_radio,
 	.power = &db25d_power,
+#if CONFIG_GPS
 	.gps_enable = hrc_gps_enable,
 	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+#endif
 #if CONFIG_DIAG
 	.diag_line = db25d_diag_line,
 	.diag_reset = db25d_diag_reset,
@@ -182,7 +184,9 @@ void board_early_init(void)
 void board_init(void)
 {
 	db25d_power.init();
+#if CONFIG_GPS
 	hrc_gps_init(&gps_cfg);
+#endif
 	// Both calibration copies, the higher save counter wins (hardware-db25d.md 6.1). Without the NAND, the flash copy
 	bool nand = db25d_nand_init();
 	db25d_cal_load((const uint8_t *)DB25D_CAL_FLASH_ADDR, nand ? db25d_nand_read : NULL);
