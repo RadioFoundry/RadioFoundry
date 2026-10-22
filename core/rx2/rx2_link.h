@@ -28,6 +28,7 @@ enum {
 	RX2_AUDIO	= 0x04,	// u8 on, u8 volume percent
 	RX2_STUB	= 0x05,	// u32 magic RX2_STUB_MAGIC: enter the flash stub on the link UART (stub/README.md)
 	RX2_RESET	= 0x06,	// u32 magic RX2_STUB_MAGIC: restart
+	RX2_LED		= 0x07,	// u8: the receiver's LEDs that are on (bit 0 LED 1, bit 1 LED 2)
 	RX2_HELLO	= 0x81,	// u8 protocol version, u8 flags, text: the firmware version
 	RX2_STATUS	= 0x82,	// rx2 status, packed (rx2_pack_status)
 	RX2_ACK		= 0x83,	// u8 seq acknowledged, u8 result (0 ok, else refused)
@@ -87,6 +88,7 @@ typedef struct {
 	rx2_tune_t tune;
 	bool audio;		// the core gives it the speaker
 	uint8_t volume;
+	uint8_t leds;		// RX2_LED: the main SoC's status LEDs, which are on the receiver's SoC
 	rx2_status_t st;	// its last STATUS
 	uint32_t frames, tunes, resent;
 } rx2_main_t;
@@ -101,6 +103,8 @@ bool rx2_main_tune(rx2_main_t *m, const rx2_tune_t *t, uint32_t now_ms);
 void rx2_main_stop(rx2_main_t *m);
 void rx2_main_status(const rx2_main_t *m, rx2_status_t *st);
 void rx2_main_audio(rx2_main_t *m, bool on, uint8_t volume);
+// The LEDs on the receiver's SoC (RX2_LED bits): sent on a change and again when it comes back
+void rx2_main_led(rx2_main_t *m, uint8_t leds);
 // Send RX2_STUB or RX2_RESET (the receiver's update route through the main SoC)
 void rx2_main_command(rx2_main_t *m, uint8_t type);
 
@@ -112,6 +116,7 @@ typedef struct {
 	void (*status)(rx2_status_t *st);	// the receiver's state now (up, tuned and heard are filled in here)
 	void (*stub)(void);			// RX2_STUB: never returns on the radio
 	void (*reset)(void);			// RX2_RESET
+	void (*led)(uint8_t leds);		// RX2_LED; NULL: no LEDs
 } rx2_ops_t;
 
 #define RX2_STATUS_EVERY_MS	500u
