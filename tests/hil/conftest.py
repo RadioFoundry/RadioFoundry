@@ -205,7 +205,8 @@ def sdr_bench(pytestconfig):
     if not b.reachable():
         pytest.skip(f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
                     "sync): no bench test runs, the DMR audio smoke neither")
-    return b
+    yield b
+    b.remove_run_dirs()
 
 
 @pytest.fixture(autouse=True)

@@ -747,7 +747,8 @@ straight to the amp (unverified).
 
 APRS receive takes FM receive audio from the I2S stream (squelch gated, 8 kHz): no ADC pin sees the discriminator, but
 the HR_C6000 puts its FM receive audio on I2S (21). The audio tap says so (`AUDIO_TAP_FM_RX`), and the core reads it
-through the shared stream (`aprs.md` 5.3). The HR_C6000's RX RAM carries the same audio ungated, for a later receive
+through the shared stream (`aprs.md` 5.3). The stream is gated by the FM feed-through (4:0x36), so it stays on
+at volume zero (11.2). The HR_C6000's RX RAM carries the same audio ungated, for a later receive
 path of the board's own.
 
 Sources: firmware constants, HR_C6000 documentation, CubeMX.
@@ -1474,7 +1475,9 @@ Verified on one radio with the new firmware; they override the unverified notes 
 - **Calibration**: the working copy at 0x010000 carries the marker. The FM I gain rows (0x170 UHF, 0x179 VHF) are all
   0x00 on both bands while the other gain rows hold values: an all-zero gain row is valid data.
 - **Soft volume**: HR_C6000 4:0x37 (RX gain) scales FM feed-through audio as well as DMR audio; -31 dB is still
-  audible, so the bottom of the knob must also mute the speaker path.
+  audible, so the bottom of the knob must also mute the speaker path. It mutes the amp only: the feed-through (0x36)
+  and the gain (unity at the bottom) stay as for any FM receive, because the I2S copy of the FM audio that APRS receive
+  reads is gated and scaled by both. Before this, a knob at zero turned the feed-through off and APRS heard nothing.
 - **Volume override**: because the MCU reads the knob and sets this gain itself, the debug link can set the level
   instead (RADIO op 30, `radio-features.md` 4.2): a step 0..16 maps to the same 0..100 % scale as the knob, in force
   until it is cleared (RAM only). The knob has no analog path around the gain, so the override fully takes its place (HW,

@@ -285,5 +285,7 @@ SDR clips, and the bench modem's tries counted with a minimum of one. An attenua
   (both of the first two for a test that needs both, see Bench hardware markers) and runs inside
   `with sdr_bench.lease():` (`transmit` / `voice_call`, `listen_start` / `listen_result`, `dmr_watch_start` /
   `dmr_watch_result` for DMR bursts, `capture_start` / `capture_wait` then `analyze_fm` for raw I/Q).
+- Captures go in a run directory on the bench (`sdr_bench.run_dir(tag)`, about 50 MB each). The `sdr_bench` fixture
+  deletes the directories it made when the session ends; set `ODR_HIL_KEEP_RUNS=1` to keep them for a look.
 - Never sleep and capture: use `radio.shot_until(...)` for screenshots that should show a new screen.
 - Document the pass criteria and tolerances in the module docstring and in the table above.
