@@ -88,6 +88,82 @@ def skip_kind(skipped):
     return None
 
 
+# ── boards and their HIL expectations ───────────────────────────────────────
+# The one place the HIL tests read board data. TODO(registry): at integration with the board registry both come
+# from it (the board's debug link names and its board.toml [hil] table), and _HIL_UNTIL_REGISTRY moves into the
+# boards' board.toml files and goes.
+
+HIL_KEYS = ("display", "features", "no_features", "flash_jedec", "calibration", "battery_mv", "codec")
+# Temporary: each board's [hil] table until boards/<id>/board.toml has it. Keys (all optional; a test whose key a
+# board lacks skips): display (VERSION display=), features (VERSION features the build must have), no_features
+# (ones it must not), flash_jedec (accepted data flash JEDEC ids), calibration (true: the diagnostics show the
+# factory calibration), battery_mv ([low, high] a sane reading lies in), codec (accepted stock codec versions).
+_HIL_UNTIL_REGISTRY = {
+    "dm32": {
+        "display": "240x320x4",
+        "features": ["HOSTLINK", "DEBUGLINK"],
+        "no_features": ["USB"],
+        "flash_jedec": ["C84018", "852018"],
+        "calibration": True,
+        "battery_mv": [5500, 8800],
+        "codec": ["049", "046"],
+    },
+}
+_BOARD_NAMES = None
+
+
+def board_names():
+    """boards/<id> -> the board names VERSION can report (board_t .name and BOARD_NAME strings in its sources)."""
+    global _BOARD_NAMES
+    if _BOARD_NAMES is None:
+        import re
+        _BOARD_NAMES = {}
+        bdir = os.path.join(ROOT, "boards")
+        for b in sorted(os.listdir(bdir)):
+            d = os.path.join(bdir, b)
+            if not os.path.exists(os.path.join(d, "board.mk")):
+                continue
+            names = set()
+            for fn in sorted(os.listdir(d)):
+                if fn.endswith((".c", ".h", ".mk")):
+                    text = open(os.path.join(d, fn), errors="replace").read()
+                    names.update(re.findall(r'\.name\s*=\s*"([^"]+)"', text))
+                    names.update(re.findall(r'#\s*define\s+BOARD_NAME\s+"([^"]+)"', text))
+            _BOARD_NAMES[b] = names
+    return _BOARD_NAMES
+
+
+def board_id(name):
+    """The boards/<id> whose sources name this VERSION board name, or None."""
+    return next((b for b, names in board_names().items() if name in names), None)
+
+
+def board_hil(board):
+    """A board's HIL expectations: board.toml [hil] (read with tomllib, Python 3.11+) over the temporary table."""
+    out = dict(_HIL_UNTIL_REGISTRY.get(board, {}))
+    path = os.path.join(ROOT, "boards", board or "", "board.toml")
+    if board and os.path.exists(path):
+        try:
+            import tomllib
+        except ImportError:
+            return out
+        with open(path, "rb") as f:
+            out.update(tomllib.load(f).get("hil", {}))
+    return out
+
+
+# ── diagnostics ─────────────────────────────────────────────────────────────
+
+def diag_lines(radio):
+    """The radio's diagnostics screen lines (debug link DIAG)."""
+    return radio.link.diag()[1]
+
+
+def find(lines, prefix):
+    """The first line that starts with prefix, or None."""
+    return next((line for line in lines if line.startswith(prefix)), None)
+
+
 class Radio:
     """The radio under test, over its debug link."""
 
