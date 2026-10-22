@@ -12,5 +12,3 @@ BOARD_DIRS := boards/dm1801pro drivers/rf/fd6818 drivers/rf/subaudio drivers/mod
 	drivers/bcast/rda5807m drivers/bus/i2c_gpio drivers/sensor/lis3dh
 # State the core marks ODR_CPU_RAM goes to the low SRAM below the codec window (dm1801pro.ld RAM_LO; zeroed by crt0)
 MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ram_lo"'
-# The stock codec host (platform/hrc7000/vocoder.c): its profile id is dm1801pro-049
-MCU_DEFS   += -DHRC_CODEC_BOARD='"dm1801pro"'

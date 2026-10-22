@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // DM-1801 Pro audio path pins PTB14 / PTB15 (hardware-dm1801pro.md 3.1). A table-free helper so the host test
-// (tests/host/dm1801proPinsTest.c) can check the levels every radio state gets.
+// (tests/dm1801proPinsTest.c) can check the levels every radio state gets.
 //
 // PTB15 (PIN_SPK_SOURCE) high puts the FD6818's audio on the speaker and takes it off the HR_C7000's input (FM receive
 // with the squelch open); low leaves the speaker on the HR_C7000's codec and the FD6818's audio on its input. PTB14

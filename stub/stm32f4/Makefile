@@ -7,6 +7,7 @@
 #
 #   make -C stub/stm32f4                 build/stub-stm32f4/f4stub.bin (loaded by stub/stubtool.py --odr-enter)
 #   make -C stub/stm32f4 BUILD=DIR       elsewhere
+#   make -C stub/stm32f4 check           build, then fail if the copy embedded in stub/f4stub.py differs (ci.sh runs it)
 ROOT := ../..
 ARM_GCC_DIR ?= $(firstword $(wildcard $(HOME)/opt/arm-gnu-toolchain-*-arm-none-eabi/bin/) /usr/bin/)
 CROSS ?= $(ARM_GCC_DIR)arm-none-eabi-
@@ -39,7 +40,11 @@ $(BUILD)/f4stub.bin: $(BUILD)/f4stub.elf
 	$(OBJCOPY) -O binary -j .image $< $@
 	@echo "stub image $@: $$(wc -c < $@ | tr -d ' ') bytes (at most 8192)"
 
+check: $(BUILD)/f4stub.bin
+	@python3 ../f4stub.py --check-embedded $< > /dev/null || \
+		{ echo "the copy embedded in stub/f4stub.py differs from $<: python3 stub/f4stub.py --embed $<"; exit 1; }
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all clean
+.PHONY: all check clean

@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""dm32_flash: write a firmware image to a Baofeng DM-32UV or DM-1801 Pro through its own bootloader (update mode),
-over the programming cable. The protocol is docs/spec/hardware-dm32.md 13.2; both radios speak it, with their own ID
-string (--model). Untested on a radio.
+"""serial_loader: write a firmware image through a radio's own update loader (update mode at power-on), over the
+programming cable. The protocol is docs/spec/hardware-dm32.md 13.2. Every radio that speaks it is a board with
+[flash.bootloader] id in its board.toml (the ID string its loader answers, also the magic of its firmware files);
+--model picks one.
 
-    dm32_flash.py odr_dm32_codec.bin                      a raw application image (linked for 0x0300C000)
-    dm32_flash.py odr_dm32_codec_BFUV32.bin               a Baofeng firmware file (the 256-byte header is stripped)
-    dm32_flash.py --stock DM32.01.01.049.bin              back to the stock firmware (same code path)
-    dm32_flash.py IMAGE --port /dev/ttyUSB0 --dry-run     check the image and print the plan, touch nothing
-    dm32_flash.py --list-ports                            the USB-serial cables found
-    dm32_flash.py --model dm1801pro odr_dm1801pro.bin     the DM-1801 Pro (default model: dm32)
-    dm32_flash.py --self-test                             against a simulated bootloader, no radio
+    serial_loader.py --model M odr_M_codec.bin            a raw application image (linked for the board's app base)
+    serial_loader.py --model M FILE                        a vendor firmware file (the 256-byte header is stripped)
+    serial_loader.py --model M --stock FILE                back to the stock firmware (same code path)
+    serial_loader.py --model M IMAGE --port /dev/ttyUSB0 --dry-run   check the image and print the plan, touch nothing
+    serial_loader.py --list-ports                          the USB-serial cables found
+    serial_loader.py --probe                               identify the loader on the cable, write nothing
+    serial_loader.py --self-test                           against a simulated loader, no radio
 
-Update mode: radio off, hold PTT and SK1 (the side key just below PTT), switch on; the DM-32UV's green LED lights.
-The DM-1801 Pro's loader reads PTT (PTB11) and the key on PTB26; which key that is isn't known yet. The bootloader at
-0x03000000..0x0300C000 is never written, so update mode stays available whatever is flashed.
+Update mode: the key combination is the board's [flash.bootloader] keys, printed before each flash. The loader below
+the application is never written, so update mode stays available whatever is flashed.
 
 Needs Python 3.8+ and pyserial (pip install pyserial). Runs on macOS, Linux and Windows.
 """
@@ -26,12 +26,12 @@ import struct
 import sys
 import time
 
-APP_BASE = 0x0300C000
-FLASH_END = 0x03100000
-APP_MAX = FLASH_END - APP_BASE          # 0xF4000: everything the bootloader may write
-SLOT_BASE = 0x030E8000                  # ODR's codec slot (boards/dm32/dm32.ld, tools/hrc7000_codec.py)
+# the board registry (tools/boards.py generates it): which radios speak this protocol, and their flash maps
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "odrflash"))
+from odrflash import boards as odrboards  # noqa: E402
+
 SLOT_MAGIC = 0x43524444                 # "DDRC", first word of the slot header
-FILE_MAGIC = b"BFUV32-V2"               # the DM-32UV's; MODELS has the others
+FILE_MAGIC = b"BFUV32-V2"               # the protocol's first loader and file format (the default --model)
 FILE_END = b"END"
 FILE_HEADER = 0x100
 BAUD = 115200
@@ -39,45 +39,55 @@ BLOCK = 1024
 HEADER_BLOCK = 128
 
 class Model:
-    """What differs between the radios that share the Baofeng bootloader: the ID the radio answers at step 3 (also
-    the magic of its firmware files), the key combination, and whether ODR keeps a codec slot in the image."""
+    """What differs between the radios that share this loader: the ID the radio answers at step 3 (also the magic of
+    its firmware files), the key combination, what the radio shows in update mode, and its flash map (from the board
+    registry: the application base, the end of flash, ODR's codec slot)."""
 
-    def __init__(self, id, name, magic, keys, codec_slot):
+    def __init__(self, id, name, magic, keys, sign, app_base, flash_end, slot):
         self.id = id
         self.name = name
         self.magic = magic
         self.keys = keys
-        self.codec_slot = codec_slot
+        self.sign = sign			# what the radio shows in update mode ("" if not known)
+        self.app_base = app_base
+        self.flash_end = flash_end
+        self.slot = slot			# ODR's codec slot address, or None
+
+    @property
+    def app_max(self):
+        return self.flash_end - self.app_base	# everything the loader may write
+
+    @property
+    def codec_slot(self):
+        return self.slot is not None
 
     @property
     def tag(self):
         return self.magic.decode("ascii")
 
 
-MODELS = {m.id: m for m in (
-    Model("dm32", "DM-32UV", FILE_MAGIC, "PTT and SK1 (the side key just below PTT)", True),
-    # BF1801-V1 is the ID the loader answers (its length, 9, is the step 2 answer too). A firmware file's header is
-    # assumed to be the DM-32's layout with this magic. The loader stays in update mode while PTB11 (PTT) and PTB26
-    # both read low; which key PTB26 is, isn't known.
-    Model("dm1801pro", "DM-1801 Pro", b"BF1801-V1", "PTT and the key on PTB26 (probably SK1)", False),
-)}
-MODEL_DM32 = MODELS["dm32"]
+MODELS = {b.id: Model(b.id, b.model, b.loader_id.encode("ascii"), b.loader_keys, b.loader_sign, b.app_base,
+                      b.flash_end, b.codec_slot[0] if b.codec_slot else None)
+          for b in odrboards.BOARDS.values() if b.loader_id}
+DEFAULT_MODEL = next(m for m in MODELS.values() if m.magic == FILE_MAGIC)
+APP_BASE = DEFAULT_MODEL.app_base       # the default model's map, for callers that don't pass one
+SLOT_BASE = DEFAULT_MODEL.slot
 
 ACK, NAK, CRC_REQ, SOH, STX, EOT = 0x06, 0x15, 0x43, 0x01, 0x02, 0x04
 STEP_TIMEOUT = 2.0                      # steps 1-6 and every 1 KB block
 ERASE_TIMEOUT = 30.0                    # step 7: the radio erases the application area (up to about 15 s)
 RETRIES = 4                             # resends of a block the radio refuses (NAK) or doesn't answer
 
-# USB-serial bridges used in DM-32 programming cables: (VID, PID, name)
+# USB-serial bridges used in programming cables: (VID, PID, name)
 USB_SERIAL = [
     (0x1A86, 0x7523, "CH340"), (0x1A86, 0x5523, "CH341"), (0x1A86, 0x55D4, "CH9102"),
     (0x0403, 0x6001, "FTDI FT232R"), (0x0403, 0x6015, "FTDI FT231X"), (0x0403, 0x6010, "FTDI FT2232"),
     (0x0403, 0x6014, "FTDI FT232H"), (0x10C4, 0xEA60, "CP210x"), (0x067B, 0x2303, "PL2303"),
 ]
 
-def update_mode_hint(model=MODEL_DM32):
+def update_mode_hint(model=DEFAULT_MODEL):
     return ("is the radio in update mode? Switch it off, hold %s and switch it on%s. Check the cable is pushed fully "
-            "into the radio" % (model.keys, ": the green LED lights" if model is MODEL_DM32 else ""))
+            "into the radio" % (model.keys, ": " + model.sign[0].lower() + model.sign[1:] if model.sign else ""))
 
 
 class FlashError(Exception):
@@ -101,7 +111,7 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def unwrap(data, model=MODEL_DM32):
+def unwrap(data, model=DEFAULT_MODEL):
     """(raw application image, 'bfuv32' or 'raw') from a file's bytes."""
     magic = model.magic
     if data.startswith(magic):
@@ -118,24 +128,26 @@ def unwrap(data, model=MODEL_DM32):
     return data, "raw"
 
 
-def check_image(raw, model=MODEL_DM32):
+def check_image(raw, model=DEFAULT_MODEL):
     """Problems that stop a flash (raises) and facts worth printing (returned as lines)."""
     if not raw:
         raise FlashError("the image is empty")
-    if len(raw) > APP_MAX:
+    if len(raw) > model.app_max:
         raise FlashError("the image is %d bytes: it does not fit 0x%08X..0x%08X (%d bytes)"
-                         % (len(raw), APP_BASE, FLASH_END, APP_MAX))
+                         % (len(raw), model.app_base, model.flash_end, model.app_max))
     if raw[:16] == b"\xff" * 16 or raw[:16] == bytes(16):
         raise FlashError("the image starts with 16 blank bytes: not an application")
     notes = ["%d bytes, 0x%08X..0x%08X, %d blocks of 1 KB, sha256 %s"
-             % (len(raw), APP_BASE, APP_BASE + len(raw), blocks_needed(len(raw)), sha256(raw))]
-    if model.codec_slot and has_codec_slot(raw):
-        notes.append("ODR codec slot at 0x%08X: present (DMR voice)" % SLOT_BASE)
+             % (len(raw), model.app_base, model.app_base + len(raw), blocks_needed(len(raw)), sha256(raw))]
+    if model.codec_slot and has_codec_slot(raw, model):
+        notes.append("ODR codec slot at 0x%08X: present (DMR voice)" % model.slot)
     return notes
 
 
-def has_codec_slot(raw):
-    off = SLOT_BASE - APP_BASE
+def has_codec_slot(raw, model=DEFAULT_MODEL):
+    if not model.codec_slot:
+        return False
+    off = model.slot - model.app_base
     return len(raw) >= off + 4 and struct.unpack_from("<I", raw, off)[0] == SLOT_MAGIC
 
 
@@ -168,7 +180,7 @@ class Flasher:
     its own short timeout, and reset_input_buffer()."""
 
     def __init__(self, port, log=print, progress=None, step_timeout=STEP_TIMEOUT, erase_timeout=ERASE_TIMEOUT,
-                 retries=RETRIES, model=MODEL_DM32):
+                 retries=RETRIES, model=DEFAULT_MODEL):
         self.model = model
         self.port = port
         self.log = log
@@ -307,7 +319,7 @@ def find_port(port=None):
         return cables[0][0]
     if not cables:
         raise FlashError("no USB-serial programming cable found (CH340, FTDI, CP210x, PL2303): plug it in, or give "
-                         "--port (dm32_flash.py --list-ports shows what was found)")
+                         "--port (serial_loader.py --list-ports shows what was found)")
     raise FlashError("several USB-serial cables found (%s): give --port" % ", ".join(c[0] for c in cables))
 
 
@@ -346,7 +358,7 @@ class FakeBootloader:
     first transfer arrives damaged (the radio NAKs), `silent` = never answers, `bad_step2` = a wrong model answer,
     `erase_reads` = empty reads before the erase answer, `model` = the step 3 answer."""
 
-    def __init__(self, corrupt=(), silent=False, bad_step2=False, erase_reads=5, model=MODEL_DM32):
+    def __init__(self, corrupt=(), silent=False, bad_step2=False, erase_reads=5, model=DEFAULT_MODEL):
         self.magic = model.magic
         self.inbuf = bytearray()
         self.out = bytearray()
@@ -492,18 +504,18 @@ def self_test():
             check(False, "refuses " + what)
         except FlashError:
             pass
-    for bad, what in ((b"", "empty"), (b"\x01" * (APP_MAX + 1), "too big"), (b"\xff" * 4096, "blank")):
+    for bad, what in ((b"", "empty"), (b"\x01" * (DEFAULT_MODEL.app_max + 1), "too big"), (b"\xff" * 4096, "blank")):
         try:
             check_image(bad)
             check(False, "check_image refuses " + what)
         except FlashError:
             pass
-    check(len(check_image(b"\x01" * APP_MAX)) == 1, "an image filling the area fits")
-    m18 = MODELS["dm1801pro"]
+    check(len(check_image(b"\x01" * DEFAULT_MODEL.app_max)) == 1, "an image filling the area fits")
+    m18 = next(m for m in MODELS.values() if m is not DEFAULT_MODEL)	# another radio on the same loader
     packed18 = m18.magic + b"\xff" * (FILE_HEADER - len(m18.magic) - 3) + FILE_END + raw
-    check(unwrap(packed18, m18) == (raw, "bfuv32"), "DM-1801 Pro file header stripped")
-    for data, model, what in ((packed18, MODEL_DM32, "a DM-1801 Pro file for the DM-32UV"),
-                              (packed, m18, "a DM-32UV file for the DM-1801 Pro")):
+    check(unwrap(packed18, m18) == (raw, "bfuv32"), "%s file header stripped" % m18.name)
+    for data, model, what in ((packed18, DEFAULT_MODEL, "a %s file for the %s" % (m18.name, DEFAULT_MODEL.name)),
+                              (packed, m18, "a %s file for the %s" % (DEFAULT_MODEL.name, m18.name))):
         try:
             unwrap(data, model)
             check(False, "refuses " + what)
@@ -518,10 +530,10 @@ def self_test():
     check(not fake.errors, "bootloader saw errors: %s" % fake.errors)
     fake18 = FakeBootloader(model=m18)
     Flasher(fake18, log=quiet, step_timeout=0.2, model=m18).flash(raw[:5000], "odr18.bin")
-    check(not fake18.errors and fake18.image() == raw[:5000], "DM-1801 Pro flash through its own ID")
+    check(not fake18.errors and fake18.image() == raw[:5000], "%s flash through its own ID" % m18.name)
     try:
         Flasher(FakeBootloader(), log=quiet, step_timeout=0.2, model=m18).flash(raw[:1024])
-        check(False, "a DM-32UV answering a DM-1801 Pro flash stops")
+        check(False, "a %s answering a %s flash stops" % (DEFAULT_MODEL.name, m18.name))
     except FlashError as e:
         check("step 3 (model)" in str(e), "wrong model stops at step 3: %s" % e)
     check("PTB26" in update_mode_hint(m18) and "green LED" in update_mode_hint(), "update mode hints per radio")
@@ -547,9 +559,9 @@ def self_test():
 
     fake = FakeBootloader()
     s2, s3 = Flasher(fake, log=quiet, step_timeout=0.05).probe()
-    check(s2 == b"\x4D\x01\x09" and s3 == FILE_MAGIC, "probe reads the DM-32 identification: %s %r" % (hexs(s2), s3))
+    check(s2 == b"\x4D\x01\x09" and s3 == FILE_MAGIC, "probe reads the default loader's identification: %s %r" % (hexs(s2), s3))
     check(fake.state == 4 and not fake.blocks and fake.header is None, "probe stops before step 4")
-    other = Model("other", "another radio", b"OTHER-LDR", "?", False)
+    other = Model("other", "another radio", b"OTHER-LDR", "?", "", DEFAULT_MODEL.app_base, DEFAULT_MODEL.flash_end, None)
     s2, s3 = Flasher(FakeBootloader(model=other), log=quiet, step_timeout=0.05).probe()
     check(s3 == b"OTHER-LDR", "probe reports another model string: %r" % s3)
     try:
@@ -565,14 +577,14 @@ def self_test():
     except FlashError as e:
         check("step 7" in str(e), "erase timeout names step 7: %s" % e)
 
-    print("dm32_flash self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
+    print("serial_loader self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                     "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1
 
 
 # ---------------------------------------------------------------------------------------------------------------
 
-def load(path, model=MODEL_DM32):
+def load(path, model=DEFAULT_MODEL):
     """(raw image, kind) from a file, checked."""
     with open(path, "rb") as f:
         data = f.read()
@@ -587,16 +599,16 @@ def progress_bar(done, total):
         sys.stdout.write("\n")
 
 
-def run(image_path, port=None, dry_run=False, yes=False, log=print, stock=False, model=MODEL_DM32):
+def run(image_path, port=None, dry_run=False, yes=False, log=print, stock=False, model=DEFAULT_MODEL):
     """Check, announce update mode, flash. Raises FlashError. Used by dm32_migrate.py too."""
     raw, kind = load(image_path, model)
     log("image %s: %s" % (image_path, "Baofeng %s file, header stripped" % model.tag if kind == "bfuv32" else
                           "raw application image"))
     for line in check_image(raw, model):
         log("   " + line)
-    if stock and model.codec_slot and has_codec_slot(raw):
+    if stock and has_codec_slot(raw, model):
         log("   ! --stock, but this is an ODR image (it has the ODR codec slot)")
-    if not stock and model.codec_slot and not has_codec_slot(raw):
+    if not stock and model.codec_slot and not has_codec_slot(raw, model):
         log("   no ODR codec slot: fine for a stock file; an ODR image without it has no DMR voice "
             "(tools/hrc7000_codec.py merges it)")
     if dry_run:
@@ -612,12 +624,12 @@ def run(image_path, port=None, dry_run=False, yes=False, log=print, stock=False,
     log("")
     log("   Radio: switch it OFF. Hold %s and switch it on while" % model.keys)
     log("   holding both. %s Release the keys. Keep the cable in." %
-        ("The green LED lights: that is update mode." if model is MODEL_DM32 else "The radio stays dark or shows no "
-         "normal start-up: that is update mode."))
+        ("%s: that is update mode." % model.sign if model.sign else "The radio stays dark or shows no normal "
+         "start-up: that is update mode."))
     if not yes:
         if not sys.stdin.isatty():
             raise FlashError("needs you at the radio: run in a terminal, or pass --yes")
-        input("   Press Enter when the green LED is on (Ctrl-C stops; nothing is written yet) ")
+        input("   Press Enter when the radio is in update mode (Ctrl-C stops; nothing is written yet) ")
     sp = SerialPort(dev)
     try:
         Flasher(sp, log=log, progress=progress_bar, model=model).flash(raw, os.path.basename(image_path))
@@ -631,24 +643,27 @@ def run(image_path, port=None, dry_run=False, yes=False, log=print, stock=False,
 def probe(port=None, log=print):
     """--probe: identify the update loader of the radio on the cable, write nothing."""
     dev = find_port(port)
-    log("cable: %s. The radio must be in its update mode already (the DM-32: PTT + SK1 at power-on)" % dev)
+    log("cable: %s. The radio must be in its update mode already (%s)"
+        % (dev, "; ".join("%s: %s at power-on" % (m.name, m.keys) for m in MODELS.values())))
     sp = SerialPort(dev)
     try:
         s2, s3 = Flasher(sp, log=log).probe()
     finally:
         sp.close()
-    log("   step 2 answer: %s (the DM-32 answers 4D 01 09)" % (hexs(s2) if s2 else "none"))
-    log("   step 3 answer: %r (the DM-32 answers %r)" % (s3, FILE_MAGIC))
+    log("   step 2 answer: %s (the %s loader answers 4D 01 09)" % (hexs(s2) if s2 else "none", FILE_MAGIC.decode()))
+    log("   step 3 answer: %r (%s)" % (s3, next(("the %s's loader" % m.name for m in MODELS.values() if m.magic == s3),
+                                              "not a known loader ID: " + ", ".join(m.tag for m in MODELS.values()))))
     log("   stopped before step 4: nothing was written. Switch the radio off to leave update mode")
     return 0
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Flash a Baofeng DM-32UV or DM-1801 Pro through its bootloader "
-                                             "(update mode at power-on) over the programming cable.",
+    ap = argparse.ArgumentParser(description="Flash a radio through its own update loader (update mode at power-on) "
+                                             "over the programming cable.",
                                  epilog=__doc__.split("\n\n", 1)[1], formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("image", nargs="?", help="raw application image or a _BFUV32.bin file")
-    ap.add_argument("--model", choices=sorted(MODELS), default="dm32", help="the radio (default: dm32)")
+    ap.add_argument("--model", choices=sorted(MODELS), default=DEFAULT_MODEL.id,
+                    help="the radio (default: %s, the loader with the %s ID)" % (DEFAULT_MODEL.id, FILE_MAGIC.decode()))
     ap.add_argument("--stock", metavar="FILE", help="flash Baofeng's stock firmware file back (recovery)")
     ap.add_argument("--port", help="serial port of the programming cable (default: the only CH340/FTDI/CP210x/PL2303)")
     ap.add_argument("--dry-run", action="store_true", help="check the image and print the plan; touch nothing")
@@ -676,13 +691,13 @@ def main(argv=None):
         run(path, a.port, a.dry_run, a.yes, stock=bool(a.stock), model=MODELS[a.model])
         return 0
     except FlashError as e:
-        print("dm32_flash: %s" % e, file=sys.stderr)
+        print("serial_loader: %s" % e, file=sys.stderr)
         return 1
     except OSError as e:
-        print("dm32_flash: %s" % e, file=sys.stderr)
+        print("serial_loader: %s" % e, file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print("\ndm32_flash: stopped", file=sys.stderr)
+        print("\nserial_loader: stopped", file=sys.stderr)
         return 1
 
 

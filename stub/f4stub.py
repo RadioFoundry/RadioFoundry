@@ -42,6 +42,7 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stubtool  # noqa: E402  (the shared framing, LZ4 decoder and debug link loader)
+from stubtool import odrboards  # noqa: E402  (the board registry, tools/odrflash/odrflash/registry.json)
 
 # --- F4STUB begin (f4stub.py --embed rewrites everything up to the end marker)
 F4STUB_SHA256 = "d861afb6459bc2eb076dca6d82061c25b2c2467594f41e9c742d241785c514d7"
@@ -140,32 +141,15 @@ ERASE_TIMEOUT = 6.0                    # 128 KB: 2 s worst case in the data shee
 RUN_ADDR = 0x20000000                  # the stub's link address, which ODR reports as STUB INFO's load_addr
 SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the stack use all of it after the jump
 
-# Flash the firmware owns on each radio (docs/spec/hardware-dm1701.md 1.4, hardware-md380.md 1.3, hardware-md9600.md
-# 1.3). Everything else in a sector that is rewritten is read back from the radio and written again unchanged (no
-# radio shares a sector with the codec any more, since it moved; the rule stays for one that does). Sectors with no
-# owned byte are never erased, except "codec": the codec's own sectors (the DM-1701's 10 and 11, the MD-380's and the
-# MD-9600's 8 to 11), written only from an image merged with the codec (docs/spec/codec-placement.md), which carries
-# all of them.
-#
-# The rest of a profile is the stub's board record (config_record): "id" (echoed by HELLO), the crystal, the
-# bootloader's end (APP_BASE on all three), and the SPI flash: SPI block, mode, the fastest clock, SCK / MISO / MOSI and
-# their alternate function, the chip select, and other chip selects on that bus to hold high.
-SPI1_PD7 = {"bus": 1, "mode": 0, "hz": 4500000, "sck": "PB3", "miso": "PB4", "mosi": "PB5", "af": 5, "cs": "PD7",
-            "idle": ()}
-BOARDS = {
-    # hardware-dm1701.md 2, the W25Q128 on SPI1 (mode 0, 4.5 MHz as ODR runs it)
-    "dm1701": {"id": 1, "name": "Baofeng DM-1701", "names": ("DM-1701", "dm1701"), "hse": 8000000, "spi": SPI1_PD7,
-               "owned": [(0x0800C000, 0x080C0000)], "codec": (0x080C0000, 0x08100000)},
-    # hardware-md380.md 12.1: the same wiring
-    "md380": {"id": 2, "name": "TYT MD-380", "names": ("MD-380", "MD-380 VHF", "md380"), "hse": 8000000,
-              "spi": SPI1_PD7, "owned": [(0x0800C000, 0x08080000)], "codec": (0x08080000, 0x08100000)},
-    # hardware-md9600.md 12.1 (unverified on a radio): SPI2 shared with the LCD, mode 3 as ODR runs both; the LCD's chip
-    # select PD14 held high. SPI1 / PD7 is the HR_C6000's voice port on this radio, which is why the wiring is a record
-    "md9600": {"id": 3, "name": "TYT MD-9600", "names": ("MD-9600", "MD9600", "md9600", "RT90"), "hse": 8000000,
-               "spi": {"bus": 2, "mode": 3, "hz": 4500000, "sck": "PB13", "miso": "PB14", "mosi": "PB15", "af": 5,
-                       "cs": "PB12", "idle": ("PD14",)},
-               "owned": [(0x0800C000, 0x08080000)], "codec": (0x08080000, 0x08100000)},
-}
+# Flash the firmware owns on each radio: the application region of its linker script (the board registry,
+# tools/boards.py). Everything else in a sector that is rewritten is read back from the radio and written again
+# unchanged (no radio shares a sector with the codec any more, since it moved; the rule stays for one that does).
+# Sectors with no owned byte are never erased, except "codec": the flash from the application's end to the end of
+# flash, the codec's own sectors, written only from an image merged with the codec (docs/spec/codec-placement.md),
+# which carries all of them. The radios: every board whose platform builds this stub.
+BOARDS = {b.id: {"name": b.name, "names": tuple(b.debuglink_names), "owned": [b.app_region],
+                 "codec": (b.app_region[1], b.flash_end)}
+          for b in odrboards.BOARDS.values() if "stub/stm32f4" in b.platform_stubs}
 
 
 def pin_byte(name):
@@ -755,7 +739,7 @@ def run(a, port, reopen, log=print):
     radio.configure(board)
     if a.write_app:
         if board is None:
-            raise F4Error("which radio? pass --board (%s)" % ", ".join(BOARDS))
+            raise F4Error("which radio? pass --board (%s)" % ", ".join(sorted(BOARDS)))
         segs = load_segments(a.write_app, board)
         t0 = time.monotonic()
         nw, nk = radio.write_image(board, segs, backup_dir=a.backup_dir or os.path.expanduser("~"),

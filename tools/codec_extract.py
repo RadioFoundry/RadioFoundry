@@ -36,6 +36,7 @@ from odrflash.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_END, HEADER_
                               derive_key, descriptor, extract, find_profile, layout, merge, parse_container, sha256,
                               windows)
 from odrflash.codecmap import bl_target  # noqa: E402
+from odrflash import boards  # noqa: E402  (the board registry: the boards this tool serves)
 import zlib  # noqa: E402
 
 DM1701_V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
@@ -274,7 +275,7 @@ def main():
     ap.add_argument("--stock", help="the radio's stock firmware file (DM-1701 V02.06 CSV, MD-380 D002.032 or MD-9600 "
                     "06.09 / 16.45 CSV)")
     ap.add_argument("--key", help="the radio's firmware key file (1024 bytes); derived from the stock file when left out")
-    ap.add_argument("--board", choices=("dm1701", "md380", "md9600"),
+    ap.add_argument("--board", choices=sorted(b for b, t in boards.BOARDS.items() if t.codec_tool == "codec_extract"),
                     help="refuse a stock file for another radio (the stock file picks the board otherwise)")
     ap.add_argument("--image", help="built OpenDigitalRadio image (default: build/<board>/odr_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image to write (default: <image>_codec.bin next to the image)")

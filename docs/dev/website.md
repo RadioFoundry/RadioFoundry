@@ -43,7 +43,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
 | Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), grouped by `site/data/screens.json` |
-| Flash layout, codec profiles, stock files, key hashes | `tools/odrflash/odrflash/boards.py` and `stockfw.py`, exported to `data/flash-boards.json` |
+| Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/odrflash/odrflash/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
 
@@ -332,7 +332,7 @@ The page never sends a STUB command to ODR except right before it enters the stu
 until the next restart.
 
 The build writes the layout and the codec profiles to `data/flash-boards.json` (`c7000`, from `stub/stubtool.py`,
-`tools/hrc7000_codec.py` and `tools/dm32_flash.py`) and the universal stub image (with its load address, run address and RAM end) to `data/c7000-stub.json`. Bundle parts:
+`tools/hrc7000_codec.py` and `tools/serial_loader.py`) and the universal stub image (with its load address, run address and RAM end) to `data/c7000-stub.json`. Bundle parts:
 
 | File | Part | Content |
 |---|---|---|
@@ -456,7 +456,7 @@ WebUSB and Web Serial: Chrome, Edge and other Chromium browsers on a computer, o
 the WinUSB driver for the bootloader (Zadig, once), as odrflash does. On Windows the bootloader step shows the Zadig
 steps ([installing](../user/02-installing.md#windows-the-bootloader-driver)), open until this computer has reached a
 bootloader once, and again with any failed connect: without the driver Chrome either doesn't list the bootloader or
-can't open it. The device name comes from `dfu_product` in `boards.py`.
+can't open it. The device name comes from `[flash.dfu] product` in the board's `board.toml`.
 
 ## The Codeplug Editor
 

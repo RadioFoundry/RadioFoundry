@@ -25,7 +25,7 @@ _Irq_Stack_Size = 0x800;
 __codec_slot = 0x030E8000;
 __codec_slot_end = 0x03100000;
 /* The codec window (platform/hrc7000/codec_slot.h: the slot's code runs at its start; the size is the largest code
- * among the board's codec maps; tools/hrc7000_codec.py BOARDS "db25d" keeps the same numbers) and the modem SRAM table
+ * among the board's codec maps; tools/boards.py reads these symbols for the codec tools) and the modem SRAM table
  * window, the union of the builds' stock table addresses */
 __codec_run_lo = 0x00044E00;
 __codec_run_hi = 0x00058000;

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """Host tests for odrflash's serial route (odrflash/serialflash.py): the DM-1801 Pro over its programming cable, through
-the stub (stub/stubtool.py) or Baofeng's update mode (tools/dm32_flash.py), and its release package (tools/release.py).
+the stub (stub/stubtool.py) or Baofeng's update mode (tools/serial_loader.py), and its release package (tools/release.py).
 No serial port: the tools' own simulated radios stand in for the cable.
 
     python3 -m unittest discover -s tools/odrflash/tests -v        (tools/ci.sh runs this)
@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 
 from odrflash import boards, cli, manifest as mf, serialflash as sf  # noqa: E402
 
-B = boards.DM1801PRO
+B = boards.get("dm1801pro")
 SLOT_OFF = 0x030E8000 - 0x0300C000		# the codec slot, from the application base
 FLASH_OFF = 0xC000				# the application base in the program flash (stubtool's APP_START)
 GIT = "e" * 40
@@ -53,14 +53,14 @@ def odr(codec="dm1801pro-049", git=GIT[:8]):
 
 class Tools(unittest.TestCase):
     def test_the_wrapped_tools_load_from_the_checkout(self):
-        self.assertTrue(hasattr(sf.tool("dm32_flash"), "Flasher"))
+        self.assertTrue(hasattr(sf.tool("serial_loader"), "Flasher"))
         self.assertTrue(hasattr(sf.tool("stubtool"), "Radio"))
         self.assertTrue(hasattr(sf.tool("hrc7000_codec"), "merge"))
-        self.assertIn("dm1801pro", sf.tool("dm32_flash").MODELS)
+        self.assertIn("dm1801pro", sf.tool("serial_loader").MODELS)
 
     def test_slot_magic_matches_the_tools(self):
         self.assertEqual(sf.SLOT_MAGIC, sf.tool("hrc7000_codec").SLOT_MAGIC)
-        self.assertEqual(sf.SLOT_MAGIC, sf.tool("dm32_flash").SLOT_MAGIC)
+        self.assertEqual(sf.SLOT_MAGIC, sf.tool("serial_loader").SLOT_MAGIC)
         self.assertEqual(B.codec.windows[0][0] - B.app_base, sf.tool("stubtool").APP_END - FLASH_OFF - 0x18000)
 
     def test_missing_tool_is_explained(self):
@@ -218,10 +218,10 @@ class StubRoute(unittest.TestCase):
 
 
 class BootloaderRoute(unittest.TestCase):
-    """flash_bootloader drives dm32_flash's real Flasher against its simulated loader (FakeBootloader)."""
+    """flash_bootloader drives serial_loader's real Flasher against its simulated loader (FakeBootloader)."""
 
     def setUp(self):
-        self.df = sf.tool("dm32_flash")
+        self.df = sf.tool("serial_loader")
         self.fast = mock.patch.object(self.df, "Flasher", functools.partial(self.df.Flasher, step_timeout=0.05))
 
     def test_writes_the_image_through_the_dm1801pro_id(self):

@@ -162,7 +162,9 @@ ODR_VERSION := $(GITVERSION)$(GITDIRTY)
 ODR_GIT_HEAD := $(firstword $(subst -, ,$(ODR_VERSION)))
 ODR_GIT_ID := $(if $(shell printf '%s' '$(ODR_GIT_HEAD)' | grep -Eqx '[0-9a-fA-F]{1,8}' && echo y),0x$(ODR_GIT_HEAD)u,0u)
 ODR_GIT_DIRTY := $(if $(findstring -dirty,$(ODR_VERSION)),1,0)
-DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DODR_BOARD_NAME=\"$(BOARD)\"
+# ODR_BOARD_ID: the board's id (boards/<id>), for platform code that names things after the board (the HR_C7000 codec
+# host's profile ids, "<id>-<stock tag>"); core/ never uses it
+DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DODR_BOARD_ID=\"$(BOARD)\"
 
 OPT ?= -Os
 # Every function's frame size and calls, next to each object (or each LTO partition, next to the .elf), for the stack
@@ -301,6 +303,10 @@ print-maximal-skip:
 # Make variables ci's maximal configuration adds for this board (boards/<board>/config.mk MAXIMAL_VARS)
 print-maximal-vars:
 	@echo '$(MAXIMAL_VARS)'
+# NAME=value for each make variable in VARS, as this build resolves it (tools/boards.py reads board.mk through it, so
+# conditionals and config.mk count)
+print-vars:
+	@:$(foreach v,$(VARS),$(info $(v)=$($(v))))
 
 clean:
 	rm -rf $(BUILD)

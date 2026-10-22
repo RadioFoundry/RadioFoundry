@@ -135,7 +135,7 @@ def load_image(args, board_hint):
                os.path.basename(man_path)))
         return board, m, image, None
     hint = boards.get(board_hint) if board_hint else None
-    if hint is not None and hint.family == "bfuv32-serial":
+    if hint is not None and hint.family == "serial-loader":
         # a local HR_C7000 build: odr_<board>.bin, or the build's _codec.bin with the codec slot merged in
         app, slot = serialflash.split_slot(hint, image)
         m = mf.for_dev_build(hint, app)
@@ -381,9 +381,9 @@ def cmd_flash(args):
         from . import fakedfu
         sim_key = fakedfu.synthetic_key()
     board, man, image, merged = load_image(args, args.board)
-    if board.family == "bfuv32-serial":
+    if board.family == "serial-loader":
         return cmd_flash_serial(args, board, man, image, merged)
-    if board.family == "hrc7000-iap":
+    if board.family == "serial-iap":
         raise UsageError("%s is installed with the web flasher or stub/stubtool.py, not with odrflash" % board.name)
     if args.route == serialflash.STUB:
         return cmd_flash_stub(args, board, image, merged)
@@ -456,7 +456,7 @@ def cmd_flash(args):
 
     if key is None:
         key = get_key(args, board, stock if isinstance(stock, bytes) else None, sim_key)
-    if board.family != "anyroad-dfu":
+    if board.family != "usb-dfu":
         raise UsageError("flashing the %s isn't supported by odrflash yet" % board.name)
 
     if sim:
