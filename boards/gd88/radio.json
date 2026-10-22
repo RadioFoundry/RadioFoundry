@@ -1,0 +1,46 @@
+{
+  "_about": "What the web site and the web flasher show for this radio (docs/dev/website.md). Hardware facts stay in docs/spec.",
+  "id": "gd88",
+  "name": "Radioddity GD-88",
+  "maker": "Radioddity",
+  "model": "GD-88",
+  "also": [
+    "Kydera DR-880UV"
+  ],
+  "kind": "handheld",
+  "readme": "Radioddity GD-88",
+  "bands": "136-174 / 400-480 MHz",
+  "power": "2.5 / 7 W",
+  "cpu": "2 × HR_C7000",
+  "display": "color, 320 × 240",
+  "gallery": "320x240",
+  "docs": {
+    "hardware": "docs/spec/hardware-gd88.md"
+  },
+  "flash": {
+    "backend": "c7000-stub",
+    "board": "gd88",
+    "link": "serial-cable",
+    "bootloader": [
+      "Turn the radio off and connect the programming cable.",
+      "Hold P2 and press power. The screen stays blank."
+    ],
+    "stock_versions": [],
+    "stub_tested": false,
+    "second_receiver": "via-radio"
+  },
+  "backup": {
+    "stock": "full",
+    "odr": "full",
+    "spi_size": 0
+  },
+  "frame": {
+    "shape": "handheld",
+    "body": "#17181a",
+    "accent": "#e8761e",
+    "lens": [
+      20,
+      20
+    ]
+  }
+}

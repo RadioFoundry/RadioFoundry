@@ -30,7 +30,7 @@ It's early. Read the status section before you flash anything.
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | ○ | ○ | ○ | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port |
 | TYT MD-9600, Retevis RT90 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
 | Radioddity GD-77, TYT MD-760, Baofeng DM-1801 (v1), RD-5R | ○ | ○ | ○ | Planned. Hardware needed. Different MCU (NXP MK22FN512), same HR_C6000 and AT1846S, 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated ([radios](docs/spec/radios.md)) |
-| Radioddity GD-88 | ○ | ○ | ○ | Planned. Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port |
+| Radioddity GD-88 | ● | ● | ○ | In development. Two HR_C7000 chips: the first runs the radio, the second is a real second receiver that receives at the same time. First stages for both, the 320x240 display, keys, power and the link to the second receiver are written; nothing has run on a radio yet. The web installer will put the second chip's image on through the first ([hardware-gd88](docs/spec/hardware-gd88.md), [rx2-link](docs/spec/rx2-link.md)) |
 | Radioddity DB40-D (mobile) | ○ | ○ | ○ | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port |
 
 ● done&nbsp;&nbsp; ◐ partly&nbsp;&nbsp; ○ not yet

@@ -12,6 +12,7 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | Fully operational on a UHF radio (check your TX frequency, below). Not in the releases |
 | [Baofeng DM-32UV](#baofeng-dm-32uv) | | In bring-up on a radio: FM and DMR receive and transmit work. Not in the releases |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Bring-up on a radio: FM and DMR voice receive and transmit, the hotspot and the network services, settings storage, cable programming and volume work. Not for general use |
+| [Radioddity GD-88](#radioddity-gd-88) | Kydera DR-880UV | In development: ODR doesn't run on this radio yet. Not for use |
 | [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data, hotspot and SFR modes; VHF transmit and VOX are unchecked. No release |
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -491,6 +492,19 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
   tried on the radio yet.
 - No air band receive. The broadcast FM tuner is wired, but its screens aren't built yet.
 
+## Radioddity GD-88
+
+A dual band handheld (136-174 and 400-480 MHz) with a 320x240 color display. It has two HR_C7000 chips. The first
+runs the display, keys, PTT, transmitter, GPS and FM broadcast receiver. The second is a second receiver that listens
+at the same time as the first, so both VFOs can receive at once. **In development:** ODR doesn't run on this radio
+yet and there is no release for it.
+
+When it is ready, the web installer will put the first chip's image on through the programming cable. The second
+chip's image goes on through the first chip, in the same step, so no second cable or extra step is needed.
+
+To start the radio's update mode, turn it off, connect the programming cable, hold **P2** and press power. The screen
+stays blank.
+
 ## Planned radios
 
 These radios aren't built yet. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
@@ -501,5 +515,4 @@ models it covers.
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned as a variant of the DM-1701 board |
 | TYT MD-9600, Retevis RT90 | Mobile. Planned |
 | Radioddity GD-77 family | Planned. Needs a new processor platform |
-| Radioddity GD-88 | Planned |
 | Radioddity DB40-D | Mobile. Planned. Hardware needed |

@@ -233,7 +233,7 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 | Backend | Radios | Module |
 |---|---|---|
 | `anyroad-dfu` | DM-1701, MD-380 | `app.js` (`dfu.js`, `f4stub.js`) |
-| `c7000-stub` | DM-1801 Pro, DM-32UV, DB25-D PRO | `c7000ui.js` (`stub.js`, `c7000.js`) |
+| `c7000-stub` | DM-1801 Pro, DM-32UV, GD-88, DB25-D PRO | `c7000ui.js` (`stub.js`, `c7000.js`) |
 | `none` | DB25-D for now | none: the radio is listed but grayed out |
 
 A radio without a backend the page knows gets `none`, so a radio.json value can come before its module. The
@@ -285,7 +285,7 @@ documented, and ODR doesn't overwrite it unless an ID database is uploaded.
 
 ### HR_C7000 radios (the boot stub)
 
-Radios whose `radio.json` says `"backend": "c7000-stub"` (the DM-1801 Pro, the DM-32UV and the DB25-D PRO, which adds
+Radios whose `radio.json` says `"backend": "c7000-stub"` (the DM-1801 Pro, the DM-32UV, the GD-88 and the DB25-D PRO, which adds
 the section below) are flashed over their
 programming cable with Web Serial, through the boot stub ([stub/README.md](../../stub/README.md),
 [debuglink.md](../spec/debuglink.md) 3.18). The Baofeng bootloader is never used and never written. The install has
@@ -297,6 +297,12 @@ its own steps:
 | Back up and check | A first install reads the whole program memory (required) and, if asked, the data memory, keeps the program memory in IndexedDB and downloads a backup bundle. An update reads only the codec slot. The page then decides the codec |
 | Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector |
 | Check | The stub resets the chip; the page asks ODR's VERSION for the build and the codec |
+
+A radio with a second receiver on another chip (the GD-88: SoC B) says so in `radio.json` `flash.second_receiver`
+(`"via-radio"`). The page doesn't reach that chip over the cable. Once ODR runs on the first chip, the first chip
+updates the second one over the link between them ([rx2-link.md](../spec/rx2-link.md)), and the page only sends the
+second chip's image to ODR on the first. `data/radios.json` carries the field in `flash`. Nothing in the page reads it
+yet. The GD-88 is listed as `stub_tested: false` until the stub has run on a radio.
 
 #### DB25-D PRO
 

@@ -32,7 +32,7 @@ and F tags into C, and it should happen before a port starts.
 | TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG (D) | HR_C6000 (D) | 2x SKY72310 (V1-V3), "PLL1590" (V4, C for the name; TYT's V4 firmware folder), LMX2571 (V4A/V5, F) PLLs; AK2365A IF x2 on V1-V4 (D) | 128x64 mono, ST7567 (D) | 25Q128FV, 16 MB (D) | optional, JS-M710 (unverified) | USB DFU on the MCU (D) | Planned |
 | TYT MD-380 / MD-390, Retevis RT3 | STM32F405VGT6 (unverified) | HR_C5000 (unverified) | SKY72310 PLL + GT3136 receiver (unverified) | 160x128 color, HX8302A (unverified, controller ?) | W25Q128FV 16 MB; some early VHF 1 MB (unverified) | optional "G" models (unverified, module ?) | USB DFU, encrypted images (unverified) | Builds, not on a radio yet |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (unverified) | HR_C6000 (unverified) | AT1846S (unverified) | 128x64 mono, UC1701 (unverified) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (unverified) | none (unverified) | USB HID bootloader, .sgl files (F) | Planned: new platform |
-| Radioddity GD-88 | HR_C7000 class SoC (F) | HR_C7000 (F) | ? (two transceivers, F) | 2" color TFT (C), controller ? | ? | yes (C), module ? | Radioddity updater over K-plug cable (C) | Planned |
+| Radioddity GD-88 | HR_C7000 class SoC (F) | HR_C7000 (F) | ? (two transceivers, F) | 2" color TFT (C), controller ? | ? | yes (C), module ? | Radioddity updater over K-plug cable (C) | In development: board files written, not yet run on a radio ([hardware-gd88.md](hardware-gd88.md)) |
 | Baofeng DM-32UV | HR_C7000 SoC, C-SKY CK803S core (F, BIN) | HR_C7000 (F, BIN) | FD6818 (community pin map) | 240x320 color, ST7789 class (community, BIN) | 16 MB data flash (F); program flash size ? | yes (C), ATGM336H (community) | Baofeng bootloader over UART cable (BIN, F) | Builds, not on a radio yet |
 | Baofeng DM-1801 Pro, DM-1801 (current) | HR_C7000 class SoC (C for the HR_C7000, FCC photo; the MCU part ?) | HR_C7000 (C, FCC photo) | ? | 1.77" (C), type and controller ? | ? | none (C) | ? | Planned, hardware needed. Not the GD-77 family |
 | Baofeng DR-1801 / DR-1801UV | ? (inside the AM6102 module ?) | Auctus AM6102 module (C, FCC photo) | ? | ? | ? | ? | ? | Not planned. Looks like a DM-1801 |
@@ -183,8 +183,9 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - Programming and updates go over a USB-serial cable (FTDI-class chip in the cable) into the K1 jack, to SoC A's
   UART1 at 115200. The radio has no USB port, and neither stock image uses the HR_C7000 USB core (COM, BIN):
   [hardware-gd88.md](hardware-gd88.md).
-- **ODR:** reuses `platform/hrc7000` and `drivers/modem/hrc7000` from the DM-32UV. New: the RF chip(s), the display,
-  and core support for two simultaneous receivers if the hardware really has two independent DMR paths.
+- **ODR:** in development (`make BOARD=gd88`, `boards/gd88`). It reuses `platform/hrc7000` and `drivers/modem/hrc7000`
+  from the DM-32UV. New: the RF chip(s), the display, and core support for two simultaneous receivers (SoC B is a real
+  second receiver; the link is in [rx2-link.md](rx2-link.md)). Not yet run on a radio.
 
 ### Baofeng DM-32UV
 

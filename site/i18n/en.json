@@ -526,6 +526,7 @@
  "radio.note.md380": "FM with CTCSS and DMR voice work on a radio. DCS and the tone deviation are still being checked.",
  "radio.note.dm1801pro": "FM with CTCSS/DCS, DMR voice and data, text messages, the hotspot and single frequency repeating work on a radio. VHF transmit and VOX are still being checked.",
  "radio.note.db25d": "FM and DMR voice work, and the hotspot and the network services run on the radio. Installing backs up the original firmware first when the radio allows it.",
+ "radio.note.gd88": "In development. It has two receivers that listen at the same time. ODR does not run on this radio yet, so there is nothing to install.",
  "planned.note.tyt-md-uv380--md-uv390-retevis-rt3s": "Same hardware family as the DM-1701. Next in line.",
  "planned.note.tyt-md-9600-retevis-rt90": "Mobile radio, same hardware family as the DM-1701.",
  "planned.note.radioddity-gd-77-tyt-md-760-baofeng-dm-1801-v1-rd-5r": "Needs a radio for development. A DM-1801 bought new today is not v1.",
