@@ -1,22 +1,23 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """Bring-up mode for the HIL tests (README.md, "Bring-up mode"): pytest --bringup FEATURE[,FEATURE]|all runs the
-required and optional tests of those features from the checklist (features.toml), and a required test that skips
-for a reason its feature doesn't declare fails instead. tools/bringup.py run drives it, writes the plan it reads
-(--bringup-plan) and turns the results it writes (--bringup-out) into a record under docs/testing/results/.
+tests marked @pytest.mark.feature("<id>") for those features, and a required test that skips for a reason its needs
+don't excuse fails instead. tools/bringup.py run drives it and turns the results it writes (--bringup-out) into a
+record under docs/testing/results/.
+
+The marker: @pytest.mark.feature("<id>"[, "<id>" ...][, optional=True][, owner="what a person does"]). A test may
+carry several (required for one feature, optional for another). A test's needs come from its markers and fixtures
+(MARKER_NEEDS, FIXTURE_NEEDS).
 
 Which skips are excused (the skip kinds are odr_hil.SKIP_KINDS):
 - other_board: always (a test for another board).
-- bench: only when the feature needs the SDR bench. A run without a radio is never excused: the radio fixture
-  fails in bring-up mode (no_radio below).
-- opt_in: only when the feature needs something the run didn't allow (needs below, NEED_FLAGS). With every need
-  allowed, a missing option (a frequency, a recording) is the run's fault and fails.
+- bench: only when the test needs the SDR bench. A run without a radio is never excused: the radio fixture fails in
+  bring-up mode (no_radio below).
+- opt_in: only when the test needs something the run didn't allow (NEED_FLAGS). With every need allowed, a missing
+  option (a frequency, a recording) is the run's fault and fails.
 - not_built, no_hw, state, and a skip without a kind: never. Built without the switch, a radio lacking the
   capability and a test that couldn't set itself up are what the checklist is there to catch.
-An optional test never fails for a skip, and an excused skip is recorded but doesn't verify the feature.
-
-This file runs on the Python pytest runs on (3.9 here and there), so it reads features.toml only when tomllib is
-there (3.11 and later); tools/bringup.py passes a JSON plan instead."""
+An optional test never fails for a skip, and an excused skip is recorded but doesn't verify the feature."""
 import json
 import os
 import platform
@@ -29,7 +30,12 @@ from odr_hil import skip, skip_kind
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
-# A feature need -> the run options that allow it (any one of them). radio and bench have none: the radio fixture and
+# Test markers and fixtures -> the need they imply
+MARKER_NEEDS = {"rf": "rf", "radio_tx": "rf", "bench_service": "bench", "usb_switch": "usb_switch",
+                "codeplug_write": "codeplug_write", "reboot": "reboot", "manual": "owner_action",
+                "second_radio": "second_radio"}
+FIXTURE_NEEDS = {"radio": "radio", "sdr_bench": "bench", "bench_station": "second_radio"}
+# A need -> the run options that allow it (any one of them). radio and bench have none: the radio fixture and
 # the bench fixture decide (an unreachable bench is a bench skip, excused for a feature that needs the bench)
 NEED_FLAGS = {
     "radio": (),
@@ -52,13 +58,26 @@ def add_options(parser):
     """conftest.py's pytest_addoption calls this; conftest.py's pytest_configure registers Plugin."""
     g = parser.getgroup("odr-bringup", "OpenDigitalRadio bring-up mode (tools/bringup.py)")
     g.addoption("--bringup", default=None, metavar="FEATURES",
-                help="bring-up mode: run the checklist tests of these features (comma separated, or all); a "
-                     "required test that skips for a reason its feature doesn't declare fails")
-    g.addoption("--bringup-plan", default=None, metavar="FILE",
-                help="the features as JSON (tools/bringup.py writes it); default: features.toml (Python 3.11+)")
+                help="bring-up mode: run the tests marked for these features (comma separated, or all); a "
+                     "required test that skips for a reason its needs don't excuse fails")
     g.addoption("--bringup-out", default=None, metavar="FILE", help="write the bring-up results here as JSON")
     g.addoption("--bringup-collect", default=None, metavar="FILE",
-                help="write every collected test's markers and fixtures as JSON (tools/bringup.py check)")
+                help="write every collected test's features, needs and markers as JSON (tools/bringup.py)")
+
+
+def feature_marks(item):
+    """[(feature, optional, owner)] of a test's feature markers."""
+    out = []
+    for m in item.iter_markers("feature"):
+        for fid in m.args:
+            out.append((fid, bool(m.kwargs.get("optional")), m.kwargs.get("owner")))
+    return out
+
+
+def needs_of(item):
+    """What a test needs, from its markers and fixtures."""
+    out = {MARKER_NEEDS[m.name] for m in item.iter_markers() if m.name in MARKER_NEEDS}
+    return out | {FIXTURE_NEEDS[f] for f in getattr(item, "fixturenames", []) if f in FIXTURE_NEEDS}
 
 
 def no_radio(config, reason):
@@ -79,11 +98,6 @@ def node_id(item):
     return os.path.relpath(path, base).replace(os.sep, "/") + "::" + rest
 
 
-def base_id(nid):
-    """A parametrized id without its parameters: the checklist lists the test, every case of it counts."""
-    return re.sub(r"\[.*\]$", "", nid)
-
-
 # Options whose values name a port or a host: their values never reach a record
 PORT_OPTIONS = ("--radio-port", "--split-rx-port", "--split-ms-port", "--bench-station")
 
@@ -99,22 +113,6 @@ def sanitize(text, secrets=()):
     return text[:400]
 
 
-def load_plan(config):
-    path = config.getoption("--bringup-plan")
-    if path:
-        with open(path) as f:
-            return json.load(f)
-    try:
-        import tomllib
-    except ImportError:
-        raise pytest.UsageError("--bringup without --bringup-plan reads features.toml, which needs Python 3.11 or "
-                                "later: run tools/bringup.py run, or give --bringup-plan")
-    with open(os.path.join(HERE, "features.toml"), "rb") as f:
-        data = tomllib.load(f)
-    return {"features": {e["id"]: {k: e.get(k, []) for k in ("tests", "optional_tests", "needs")}
-                         for e in data.get("feature", [])}}
-
-
 def granted(config):
     """The needs this run allows."""
     out = set()
@@ -127,41 +125,45 @@ def granted(config):
 class BringUp:
     def __init__(self, config):
         self.config = config
-        plan = load_plan(config)
-        feats = plan.get("features", {})
         want = config.getoption("--bringup")
-        names = list(feats) if want == "all" else [w.strip() for w in want.split(",") if w.strip()]
-        unknown = [n for n in names if n not in feats]
-        if unknown:
-            raise pytest.UsageError(f"--bringup: no such feature in the checklist: {', '.join(unknown)}")
-        self.features = names
+        self.all = want == "all"
+        self.features = [] if self.all else [w.strip() for w in want.split(",") if w.strip()]
         self.granted = granted(config)
-        self.tests = {}         # base node id -> {"required": [features], "optional": [features]}
-        for name in names:
-            for key, kind in (("tests", "required"), ("optional_tests", "optional")):
-                for t in feats[name].get(key, []):
-                    self.tests.setdefault(t, {"required": [], "optional": []})[kind].append(name)
-        self.needs = {name: set(feats[name].get("needs", [])) for name in names}
+        self.tests = {}         # node id -> {"required": [features], "optional": [features], "needs": set}
         self.results = {}
-        self.seen = set()
         self.secrets = [v for v in (config.getoption(o, default=None) for o in PORT_OPTIONS) if v]
 
+    def select(self, item, nid):
+        """Whether the run covers the test; remembers its role."""
+        req, opt = [], []
+        for fid, optional, _ in feature_marks(item):
+            if self.all or fid in self.features:
+                (opt if optional else req).append(fid)
+                if self.all and fid not in self.features:
+                    self.features.append(fid)
+        if not req and not opt:
+            return False
+        self.tests[nid] = {"required": sorted(set(req)), "optional": sorted(set(opt) - set(req)),
+                           "needs": needs_of(item)}
+        return True
+
     def role(self, nid):
-        return self.tests.get(base_id(nid))
+        return self.tests.get(nid)
 
     def excused(self, nid, kind):
-        """Whether a skip of this kind is excused for every feature that requires the test."""
-        feats = self.role(nid)["required"]
+        """Whether a skip of this kind is excused for the test."""
+        needs = self.tests[nid]["needs"]
         if kind == "other_board":
             return True
         if kind == "bench":
-            return all("bench" in self.needs[f] for f in feats)
+            return "bench" in needs
         if kind == "opt_in":
-            return all(self.needs[f] - self.granted for f in feats)
+            return bool(needs - self.granted)
         return False
 
     def record(self, nid, report, required, excused=None):
-        r = self.results.setdefault(nid, {"id": nid, "features": sorted(set(sum(self.role(nid).values(), []))),
+        role = self.tests[nid]
+        r = self.results.setdefault(nid, {"id": nid, "features": role["required"], "optional": role["optional"],
                                           "required": required, "outcome": "passed"})
         if report.failed:
             r["outcome"] = "failed"
@@ -181,6 +183,10 @@ class Plugin:
     """The hooks, registered by conftest.py's pytest_configure (a conftest below the rootdir can't name plugins)."""
 
     def __init__(self, config):
+        config.addinivalue_line("markers", "feature(id, ..., optional=False, owner=None): the checklist feature(s) "
+                                "the test checks (tests/hil/features.toml); optional: run and recorded, not gating; "
+                                "owner: what a person does for it")
+        config.addinivalue_line("markers", "second_radio: needs a second radio (--split-rx-port or --bench-station)")
         if config.getoption("--bringup", default=None):
             config._odr_bringup = BringUp(config)
 
@@ -190,7 +196,9 @@ class Plugin:
             found = {}
             for item in items:
                 found[node_id(item)] = {"markers": sorted({m.name for m in item.iter_markers()}),
-                                        "fixtures": sorted(getattr(item, "fixturenames", []))}
+                                        "needs": sorted(needs_of(item)),
+                                        "features": [{"id": f, "optional": o, "owner": w}
+                                                     for f, o, w in feature_marks(item)]}
             with open(out, "w") as f:
                 json.dump(found, f, indent=1, sort_keys=True)
         bu = getattr(config, "_odr_bringup", None)
@@ -199,10 +207,9 @@ class Plugin:
         keep, drop = [], []
         for item in items:
             nid = node_id(item)
-            if bu.role(nid):
+            if bu.select(item, nid):
                 item._odr_bringup_id = nid
                 keep.append(item)
-                bu.seen.add(base_id(nid))
             else:
                 drop.append(item)
         if drop:
@@ -250,7 +257,6 @@ class Plugin:
         doc = {
             "features": bu.features,
             "granted": sorted(bu.granted),
-            "missing": sorted(t for t in bu.tests if t not in bu.seen),
             "tests": [bu.results[k] for k in sorted(bu.results)],
             "firmware": {k: fw[k] for k in FIRMWARE_KEYS if k in fw},
             "options": options,

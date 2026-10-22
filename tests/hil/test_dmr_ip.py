@@ -95,6 +95,7 @@ def _ours(pkts, own):
     return [p for p in pkts if p.get("src") == own and p.get("dst") == BENCH_ID]
 
 
+@pytest.mark.feature("dmr_ip_gateway")
 def test_ip_settings_view(radio, pytestconfig, ip_settings):
     """Radio only: the dmr_ip section is there and the IP settings request changes what it shows."""
     _setup(radio, pytestconfig, tx=False)
@@ -107,6 +108,7 @@ def test_ip_settings_view(radio, pytestconfig, ip_settings):
     assert v["ip.confirmed"] == "off" and v["ip.rule0"] == "none", v
 
 
+@pytest.mark.feature("dmr_ip_gateway")
 def test_gateway_has_netif(radio):
     """Radio only: a build with the IP gateway has a host netif for its answers. Without one, PPP still negotiates
     (LCP and IPCP open) but nothing the gateway sends reaches the host, as on the DM-1801 Pro before its board set it."""
@@ -137,6 +139,7 @@ def _udp_until_heard(radio, sdr_bench, freq, cc, own, want_sap, what, tries=3):
     raise AssertionError(f"{what}: the bench modem heard none of {tries} sends whole (the radio counted each as sent)")
 
 
+@pytest.mark.feature("dmr_udp_compress")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_udp_compressed_tx(radio, sdr_bench, pytestconfig, ip_settings):
@@ -152,6 +155,7 @@ def test_udp_compressed_tx(radio, sdr_bench, pytestconfig, ip_settings):
     assert after["ip.octets_saved"] - before["ip.octets_saved"] == 19, (before, after)
 
 
+@pytest.mark.feature("dmr_udp_compress")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_udp_full_header_tx(radio, sdr_bench, pytestconfig, ip_settings):
@@ -163,6 +167,7 @@ def test_udp_full_header_tx(radio, sdr_bench, pytestconfig, ip_settings):
     assert p["blocks"] == 6, p
 
 
+@pytest.mark.feature("dmr_confirmed")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings):
@@ -197,6 +202,7 @@ def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings):
         warnings.warn("no data terminator LC heard after the confirmed packets")
 
 
+@pytest.mark.feature("dmr_ip_gateway")
 @pytest.mark.usb_switch
 @pytest.mark.radio_tx
 @pytest.mark.bench_service

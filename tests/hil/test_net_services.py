@@ -170,6 +170,7 @@ def _browse_zeroconf(service):
         zc.close()
 
 
+@pytest.mark.feature("mdns")
 @pytest.mark.usb_switch
 def test_mdns(radio):
     need(radio, "MDNS")
@@ -222,6 +223,7 @@ def _read_image(radio_ip):
     return bytearray(d) + bytearray(b"\xff" * (cps_client.IMAGE_SIZE - IMAGE))
 
 
+@pytest.mark.feature("tftp")
 @pytest.mark.usb_switch
 def test_tftp_read(radio):
     need(radio, "TFTP")
@@ -251,6 +253,7 @@ def _pick_channel(image, core):
     return number
 
 
+@pytest.mark.feature("tftp")
 @pytest.mark.usb_switch
 @pytest.mark.codeplug_write
 def test_tftp_write(radio, backup_dir):

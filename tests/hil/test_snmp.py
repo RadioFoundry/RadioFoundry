@@ -55,6 +55,7 @@ def _value(vbs, name):
     raise AssertionError(f"{name} not in the answer")
 
 
+@pytest.mark.feature("snmp")
 @pytest.mark.usb_switch
 def test_snmp_usb(radio, pytestconfig):
     if "SNMP" not in radio.features():

@@ -53,6 +53,8 @@ def call_bursts(bursts):
     return [b for b in bursts if b["family"] in ("bs", "ms", "emb") and b["kind"] != "IDLE"]
 
 
+@pytest.mark.feature("split_duplex", owner="connect a second radio as the RX half (--split-rx-port)")
+@pytest.mark.second_radio
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
@@ -163,6 +165,8 @@ def set_ms_channel(number, rx_hz, tx_hz, ts, cc):
     return edit
 
 
+@pytest.mark.feature("split_duplex", optional=True, owner="connect a third radio as the subscriber (--split-ms-port)")
+@pytest.mark.second_radio
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service

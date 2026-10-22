@@ -51,6 +51,7 @@ def home(radio):
     radio.press("back", LONG)
 
 
+@pytest.mark.feature("ui_navigation")
 def test_keys_move_the_channel(home):
     r = home
     v = r.core()
@@ -64,6 +65,7 @@ def test_keys_move_the_channel(home):
     assert v1["channel_number"] != v["channel_number"] or v1["rx_hz"] != v["rx_hz"]
 
 
+@pytest.mark.feature("ui_navigation")
 def test_hub_and_back(home):
     """OK opens the Hub (seven destinations, numbered); a digit opens one; BACK goes up one level; long BACK goes Home
     from any depth (information-architecture.md, key meanings)."""
@@ -85,6 +87,7 @@ def test_hub_and_back(home):
     assert s["ui.depth"] == "0"
 
 
+@pytest.mark.feature("ui_navigation")
 def test_quick_settings_open_and_close(home, shots):
     """QUICK opens the tile grid, a second QUICK or BACK closes it. Screenshots go through Radio.shot_until: a capture
     freezes the UI's redraws for a moment, so one taken right after a key can still show the old screen."""
@@ -103,6 +106,7 @@ def test_quick_settings_open_and_close(home, shots):
     wait_screen(r, "home", "QUICK closes Quick settings")
 
 
+@pytest.mark.feature("ui_navigation")
 def test_find_by_digits(home, shots):
     """Digits on Home start type-to-find (task-flows.md: find a contact by name with the keypad letters)."""
     r = home
@@ -119,6 +123,7 @@ def test_find_by_digits(home, shots):
     wait_screen(r, "home")
 
 
+@pytest.mark.feature("ui_navigation")
 def test_key_lock(home):
     """Long QUICK locks the keys; while locked, a key only explains how to unlock; long QUICK unlocks."""
     r = home
@@ -132,6 +137,7 @@ def test_key_lock(home):
     r.wait_for(lambda v: v.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
 
 
+@pytest.mark.feature("ui_navigation")
 def test_talk_target_picker_on_long_context(home):
     """Long # opens the talk target picker on a DMR channel (Recent is Hub 3)."""
     r = home
@@ -143,6 +149,7 @@ def test_talk_target_picker_on_long_context(home):
     wait_screen(r, "home")
 
 
+@pytest.mark.feature("ui_navigation")
 def test_recent_from_the_hub(home):
     r = home
     r.press("ok")
@@ -153,6 +160,7 @@ def test_recent_from_the_hub(home):
     wait_screen(r, "home")
 
 
+@pytest.mark.feature("channel_list")
 def test_zones_and_channels_lists(home):
     """Hub 4 lists the VFO and the zones, hub 5 every channel by number; OK on a channel opens its settings page."""
     r = home
@@ -173,6 +181,7 @@ def test_zones_and_channels_lists(home):
     wait_screen(r, "home")
 
 
+@pytest.mark.feature("diag")
 def test_diagnostics_page(home):
     """Diagnostics live in Tools (Hub 6, then 7); long BACK on Home no longer opens them."""
     r = home
@@ -190,6 +199,7 @@ def test_diagnostics_page(home):
     wait_screen(r, "home")
 
 
+@pytest.mark.feature("debuglink")
 def test_screenshot_sanity(home):
     info, data = home.shot_until(lambda d: True, what="a picture")
     # a 16-bit screen drawn in two colors (text on a plain background) holds exactly two pixel values
@@ -199,6 +209,7 @@ def test_screenshot_sanity(home):
         assert len(set(data)) > 2, "the screen is blank"
 
 
+@pytest.mark.feature("debuglink")
 def test_injected_keys_count_as_activity(home):
     r = home
     r.press("quick")
@@ -236,6 +247,7 @@ def leave_quick(r):
     wait_screen(r, "home")
 
 
+@pytest.mark.feature("dmr_voice", optional=True)
 def test_quick_timeslot_for_now(home):
     """Quick 2 flips the timeslot for now (temp bit 0x20); BACK on Home undoes it."""
     r = dmr_home(home)
@@ -252,6 +264,7 @@ def test_quick_timeslot_for_now(home):
                what="the channel's timeslot back on BACK")
 
 
+@pytest.mark.feature("dmr_voice", optional=True)
 def test_quick_color_code_for_now(home):
     """Quick 3, a digit, OK: the color code for now (temp bit 0x40)."""
     r = dmr_home(home)
@@ -279,6 +292,7 @@ def vfo_state(r):
     return {k: v.get(k) for k in VFO_KEYS}
 
 
+@pytest.mark.feature("vfo")
 def test_quick_copy_to_vfo(home):
     """Quick 4 on a channel copies it to the VFO and opens it (a channel's tile 4; the VFO's is Mode). The VFO's own
     frequency, mode, bandwidth, tones, color code, slot and target are put back."""
@@ -317,6 +331,7 @@ def test_quick_copy_to_vfo(home):
         r.wait_for(lambda x: vfo_state(r) == before, sections=("core",), what="the VFO's own settings back")
 
 
+@pytest.mark.feature("dmr_voice", optional=True)
 def test_quick_hear_all_latch(home):
     """Quick 5 latches hear all (every talkgroup on the slot); Quick 5 again or BACK on Home drops it."""
     r = dmr_home(home)
@@ -330,6 +345,7 @@ def test_quick_hear_all_latch(home):
     r.wait_for(lambda x: x.get("dmr.hear_all_latch") == "0", sections=("dmr",), what="hear all off on BACK")
 
 
+@pytest.mark.feature("fm")
 def test_quick_monitor_latch(home):
     """Quick 5 on an FM channel latches the monitor (squelch open) until Quick 5 again."""
     r = fm_home(home)
@@ -342,6 +358,7 @@ def test_quick_monitor_latch(home):
     leave_quick(r)
 
 
+@pytest.mark.feature("vox")
 def test_quick_vox_toggle(home):
     """Quick 6 on an FM channel turns VOX on (setting vox = all) and off again."""
     r = fm_home(home)
@@ -362,6 +379,7 @@ def test_quick_vox_toggle(home):
     leave_quick(r)
 
 
+@pytest.mark.feature("ui_navigation")
 def test_picker_focus_target(home):
     """The talk target picker tells the radio core which row has the focus (the one-shot PTT target); long BACK
     clears it. Nothing transmits: the one-shot only arms on PTT (radio_tx tests key it)."""
@@ -400,6 +418,7 @@ def settings_keys(r, keys):
     wait_screen(r, "home")
 
 
+@pytest.mark.feature("ui_settings")
 def test_long_press_time_reaches_input(home):
     """Settings > Keys > Long press time: the gesture engine uses the new time at once (input.long_ms)."""
     r = home
@@ -419,6 +438,7 @@ def test_long_press_time_reaches_input(home):
     r.wait_for(lambda x: as_int(x.get("input.long_ms")) == before, sections=("link",), what="long press time back")
 
 
+@pytest.mark.feature("ui_settings")
 def test_auto_lock(home):
     """Settings > Privacy > Auto lock 30 s locks the keys after 30 s without a key; set back to Off after."""
     r = home
@@ -455,6 +475,7 @@ def ui_flags(r):
     return as_int(storage(r).get("settings.ui_flags"))
 
 
+@pytest.mark.feature("ui_color")
 def test_theme_is_kept(home):
     """Settings > Display > Theme: Light is stored (settings.theme) and the screen changes; back to Dark after."""
     r = home
@@ -475,6 +496,7 @@ def test_theme_is_kept(home):
     r.wait_for(lambda x: x.get("settings.theme") == "0", sections=("storage",), what="theme Dark again")
 
 
+@pytest.mark.feature("ui_settings")
 def test_updown_changes_the_zone(home):
     """Settings > Keys > Up/Down on Home = Zone: Up on Home moves to the next zone, not the next channel."""
     r = home
@@ -498,6 +520,7 @@ def test_updown_changes_the_zone(home):
     r.wait_for(lambda x: x.get("settings.updown_home") == "0", sections=("storage",), what="Up/Down = Channel again")
 
 
+@pytest.mark.feature("dmr_privacy")
 def test_privacy_key_entry(home):
     """Settings > Privacy: key type Motorola, key typed 123 (slot 1); type Off again removes it."""
     r = home
@@ -521,6 +544,7 @@ def test_privacy_key_entry(home):
     r.wait_for(lambda x: x.get("settings.privacy_type") == "0", sections=("storage",), what="the key removed")
 
 
+@pytest.mark.feature("ui_settings")
 @pytest.mark.radio_tx
 def test_ptt_when_locked_off(home):
     """Settings > Privacy > PTT when locked Off: with the keys locked an injected PTT doesn't transmit and the UI
@@ -556,6 +580,7 @@ def test_ptt_when_locked_off(home):
                what="PTT when locked on again")
 
 
+@pytest.mark.feature("usb_network")
 def test_usb_network_switch_row(home):
     """Tools > USB network: the info page has the one "Switch USB to network" row. The test backs out without
     switching (switching drops the serial link; see the HIL steps in docs/user/14-usb-network.md)."""
@@ -573,6 +598,7 @@ def test_usb_network_switch_row(home):
     wait_screen(r, "home")
 
 
+@pytest.mark.feature("channel_edit")
 @pytest.mark.codeplug_write
 def test_save_timeslot_to_channel(home):
     """Quick 2 then hold OK saves the timeslot into the channel off the UI task (storage.job_busy), the temporary mark
@@ -597,6 +623,7 @@ def test_save_timeslot_to_channel(home):
     save_slot(ts)
 
 
+@pytest.mark.feature("dmr_sms")
 @skip_if(os.environ.get("ODR_HIL_DELETE_MESSAGE") != "1", "opt_in",
          "deletes the newest inbox message: set ODR_HIL_DELETE_MESSAGE=1")
 def test_delete_message(home):
@@ -618,6 +645,7 @@ def test_delete_message(home):
     assert "deleted" in ui(r).get("ui.toast", "")
 
 
+@pytest.mark.feature("ui_settings")
 @pytest.mark.reboot
 @skip_if(os.environ.get("ODR_HIL_FACTORY_RESET") != "1", "opt_in",
          "erases the settings and the native area: set ODR_HIL_FACTORY_RESET=1 (and --allow-reboot)")

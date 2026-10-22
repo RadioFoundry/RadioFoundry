@@ -5,12 +5,15 @@ can leave the codec sectors alone. Read only."""
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "odrflash"))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools"))
 from odrflash import boards  # noqa: E402
 import hrc7000_codec  # noqa: E402
 
 
+@pytest.mark.feature("codec_check")
 def test_version_reports_codec(radio):
     v = radio.version(fresh=True)
     assert "codec" in v, "firmware without the codec= key (older than the release tooling)"
@@ -23,6 +26,7 @@ def test_version_reports_codec(radio):
     assert v["codec"] in allowed, v["codec"]
 
 
+@pytest.mark.feature("codec_check")
 def test_codec_key_agrees_with_dmr_view(radio):
     """codec= and the dmr section's dmr.codec come from the same board check."""
     v = radio.version(fresh=True)
@@ -34,6 +38,7 @@ def test_codec_key_agrees_with_dmr_view(radio):
     assert (v["codec"] not in ("absent", "none")) == present, (v["codec"], dmr.get("dmr.codec"))
 
 
+@pytest.mark.feature("codec_check")
 def test_odrflash_probe_reads_it(radio):
     """odrflash's own minimal debug-link client parses the same reply (frame, CRC, key=value)."""
     from odrflash import debuglink

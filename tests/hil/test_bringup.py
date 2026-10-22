@@ -47,20 +47,24 @@ def radio():
     return FakeRadio()
 
 
+@pytest.mark.feature("fake_split")
 def test_gate(radio):
     if "HOTSPOT_SPLIT" not in radio.features():
         skip("no_hw", "the radio doesn't offer split duplex")
 
 
+@pytest.mark.feature("fake_split", optional=True)
 def test_extra(radio):
     skip("no_hw", "an optional check the radio can't do")
 
 
+@pytest.mark.feature("fake_tx")
 @pytest.mark.radio_tx
 def test_keyed(radio):
     pass
 
 
+@pytest.mark.feature("fake_split", "fake_ok")
 def test_passes(radio):
     pass
 
@@ -71,22 +75,17 @@ def test_unlisted(radio):
 '''
 
 # No fixture of its own: the conftest's radio fixture, with a port that isn't there
-FAKE_LINK_TEST = '''def test_real_radio_fixture(radio):
+FAKE_LINK_TEST = '''import pytest
+
+
+@pytest.mark.feature("fake_link")
+def test_real_radio_fixture(radio):
     pass
 '''
-
-PLAN = {"features": {
-    "fake_split": {"tests": ["test_fake.py::test_gate", "test_fake.py::test_passes"],
-                   "optional_tests": ["test_fake.py::test_extra"], "needs": ["radio"]},
-    "fake_tx": {"tests": ["test_fake.py::test_keyed"], "optional_tests": [], "needs": ["radio", "rf"]},
-    "fake_link": {"tests": ["test_fake_link.py::test_real_radio_fixture"], "optional_tests": [], "needs": ["radio"]},
-}}
-
 
 def fake_tree(tmp_path):
     (tmp_path / "test_fake.py").write_text(FAKE_TESTS)
     (tmp_path / "test_fake_link.py").write_text(FAKE_LINK_TEST)
-    (tmp_path / "plan.json").write_text(json.dumps(PLAN))
     return tmp_path
 
 
@@ -113,8 +112,7 @@ def test_required_skip_fails_the_bringup_run(tmp_path):
     assert plain.returncode == 0 and "2 passed, 3 skipped" in plain.stdout, plain.stdout + plain.stderr
 
     out = t / "out.json"
-    r = pytest_run(t, str(t / "test_fake.py"), "--bringup", "fake_split,fake_tx", "--bringup-plan",
-                   str(t / "plan.json"), "--bringup-out", str(out))
+    r = pytest_run(t, str(t / "test_fake.py"), "--bringup", "fake_split,fake_tx", "--bringup-out", str(out))
     assert r.returncode == 1, r.stdout + r.stderr
     assert "bring-up: a required test of fake_split skipped (no_hw)" in r.stdout, r.stdout
     res = outcomes(out)
@@ -133,8 +131,7 @@ def test_no_radio_fails_in_bringup_mode(tmp_path):
     plain = pytest_run(t, str(t / "test_fake_link.py"))
     assert plain.returncode == 0 and "1 skipped" in plain.stdout, plain.stdout + plain.stderr
     out = t / "out.json"
-    r = pytest_run(t, str(t / "test_fake_link.py"), "--bringup", "fake_link", "--bringup-plan", str(t / "plan.json"),
-                   "--bringup-out", str(out))
+    r = pytest_run(t, str(t / "test_fake_link.py"), "--bringup", "fake_link", "--bringup-out", str(out))
     assert r.returncode == 1, r.stdout + r.stderr
     assert outcomes(out)["test_real_radio_fixture"]["outcome"] == "failed"
     assert "<port>" in out.read_text() and "/nonexistent" not in out.read_text()
@@ -158,38 +155,28 @@ def python311():
 
 
 FAKE_TOML = '''
-[[feature]]
-id = "fake_split"
-summary = "a feature the fake radio lacks"
+[feature.fake_split]
 spec = "tests/hil/README.md"
 source = ["tests/hil/bringup_plugin.py"]
-tests = ["test_fake.py::test_gate", "test_fake.py::test_passes"]
-needs = ["radio"]
 
-[[feature]]
-id = "fake_ok"
-summary = "a feature the fake radio has"
+[feature.fake_ok]
 spec = "tests/hil/README.md"
 source = ["tests/hil/bringup_plugin.py"]
-tests = ["test_fake.py::test_passes"]
-needs = ["radio"]
 
-[[feature]]
-id = "fake_new"
-summary = "a feature no run or seed has recorded"
+[feature.fake_new]
 spec = "tests/hil/README.md"
 source = ["tests/hil/bringup_plugin.py"]
-tests = []
-needs = ["radio"]
 
-[[feature]]
-id = "fake_seeded"
-summary = "a feature only the seed record vouches for"
+[feature.fake_seeded]
 spec = "tests/hil/README.md"
 source = ["tests/hil/bringup_plugin.py"]
-tests = []
-needs = ["radio"]
 '''
+
+
+def collect_args(t):
+    """What tools/bringup.py needs to collect the fake tree: the test file, the conftest, the rootdir."""
+    return ["--pytest-python", sys.executable, "--tests", str(t / "test_fake.py"), "--pytest-arg=-p",
+            "--pytest-arg=conftest", f"--pytest-arg=--rootdir={t}"]
 
 
 def seed(board, rows):
@@ -197,8 +184,8 @@ def seed(board, rows):
             "features": rows}
 
 
-def statuses(common, board):
-    st = bringup(*common, "list", "--radio", board, "--json")
+def statuses(common, board, t):
+    st = bringup(*common, "list", "--radio", board, "--json", *collect_args(t))
     assert st.returncode == 0, st.stdout + st.stderr
     return {x["id"]: (x["status"], x["basis"]) for x in json.loads(st.stdout)}
 
@@ -218,8 +205,8 @@ def test_bringup_run_records_and_status(tmp_path):
     (t / "features.toml").write_text(FAKE_TOML)
     results, lock, board = t / "results", t / "radio.lock", a_board()
     common = ["--features", str(t / "features.toml"), "--results", str(results)]
-    run = ["run", "--radio", board, "--lock", str(lock), "--tests", str(t / "test_fake.py"), "--pytest-python",
-           sys.executable, "--", "-p", "conftest", "--rootdir", str(t), "--radio-port", "/nonexistent/odr-fake-port"]
+    run = ["run", "--radio", board, "--lock", str(lock), *collect_args(t), "--", "--radio-port",
+           "/nonexistent/odr-fake-port"]
 
     # the radio lock held by someone else: nothing runs
     with open(lock, "w") as held:
@@ -232,7 +219,7 @@ def test_bringup_run_records_and_status(tmp_path):
     (results / board).mkdir(parents=True)
     (results / board / "seed.json").write_text(json.dumps(seed(board, {"fake_split": {"result": "pass"},
                                                                          "fake_seeded": {"result": "pass"}})))
-    assert statuses(common, board) == {"fake_split": ("pass", "seed"), "fake_ok": ("built, not yet recorded", None),
+    assert statuses(common, board, t) == {"fake_split": ("pass", "seed"), "fake_ok": ("built, not yet recorded", None),
                                        "fake_new": ("built, not yet recorded", None),
                                        "fake_seeded": ("pass", "seed")}
     assert "rests on a seed record" in bringup(*common, "status", "--radio", board).stdout
@@ -245,12 +232,13 @@ def test_bringup_run_records_and_status(tmp_path):
         rec = json.load(f)
     assert rec["kind"] == "run" and rec["board"] == board and re.fullmatch(r"[0-9a-f]{40}", rec["commit"])
     assert rec["date"].endswith("Z")
-    assert {x["id"].split("::")[-1]: x["outcome"] for x in rec["tests"]} == {"test_gate": "failed",
-                                                                             "test_passes": "passed"}
+    assert {x["id"].split("::")[-1]: x["outcome"] for x in rec["tests"]} == {
+        "test_gate": "failed", "test_passes": "passed", "test_extra": "skipped"}
+    assert rec["features"] == ["fake_split", "fake_ok"]
     assert rec["tools"]["pytest"] and "/nonexistent" not in json.dumps(rec)
 
     # the run's rows replace the seed's: fake_split failed on the radio, and the seed still vouches for fake_seeded
-    assert statuses(common, board) == {"fake_split": ("fail", "run"), "fake_ok": ("pass", "run"),
+    assert statuses(common, board, t) == {"fake_split": ("fail", "run"), "fake_ok": ("pass", "run"),
                                        "fake_new": ("built, not yet recorded", None),
                                        "fake_seeded": ("pass", "seed")}
 
@@ -258,28 +246,29 @@ def test_bringup_run_records_and_status(tmp_path):
     rec["commit"] = "0" * 40
     with open(recs[0], "w") as f:
         json.dump(rec, f)
-    st = statuses(common, board)
+    st = statuses(common, board, t)
     assert st["fake_ok"] == ("needs re-run", "run") and st["fake_split"] == ("fail", "run"), st
     shutil.rmtree(results)
 
 
-def test_check_rejects_a_bad_seed(tmp_path):
-    (tmp_path / "features.toml").write_text(FAKE_TOML)
-    results, board = tmp_path / "results", a_board()
-    common = ["--features", str(tmp_path / "features.toml"), "--results", str(results), "check", "--pytest-python",
-              sys.executable]
+def test_check_rejects_a_bad_seed_and_an_unknown_feature(tmp_path):
+    t = fake_tree(tmp_path)
+    (t / "features.toml").write_text(FAKE_TOML)
+    results, board = t / "results", a_board()
+    common = ["--features", str(t / "features.toml"), "--results", str(results), "check", *collect_args(t)]
     (results / board).mkdir(parents=True)
-    good = seed(board, {"fake_ok": {"result": "pass", "source": "tests/hil/README.md"}})
+    # a row's commit the repository doesn't have (a squash-merged branch) is not an error: the row stands
+    good = seed(board, {"fake_ok": {"result": "pass", "source": "tests/hil/README.md", "commit": "0" * 40}})
     (results / board / "seed.json").write_text(json.dumps(good))
     r = bringup(*common)
     assert "seed.json" not in r.stdout + r.stderr, r.stdout + r.stderr
-    bad = seed(board, {"fake_ok": {"result": "supported"}, "no_such_feature": {"result": "pass"},
-                       "fake_split": {"result": "pass", "commit": "0" * 40}})
+    bad = seed(board, {"fake_ok": {"result": "supported"}, "no_such_feature": {"result": "pass"}})
     bad["source"] = "docs/no-such-doc.md"
     (results / board / "seed.json").write_text(json.dumps(bad))
     out = bringup(*common)
     text = out.stdout + out.stderr
     assert out.returncode != 0
-    for want in ("result is one of", "no_such_feature is not a checklist feature", "is not in this repository",
-                 "source docs/no-such-doc.md does not exist"):
+    for want in ("result is one of", "no_such_feature is not a checklist feature",
+                 "source docs/no-such-doc.md does not exist",
+                 "test_fake.py::test_keyed: marks feature fake_tx, which tests/hil/features.toml doesn't have"):
         assert want in text, text

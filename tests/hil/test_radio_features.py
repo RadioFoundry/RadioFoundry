@@ -149,6 +149,7 @@ def collect(radio, key, seconds, sections=("core",)):
 
 # ── radio only ────────────────────────────────────────────────────────────
 
+@pytest.mark.feature("radio_controls")
 def test_features_section(radio):
     f = features(radio)
     missing = [k for k in FEATURE_KEYS if k not in f]
@@ -164,6 +165,7 @@ def test_features_section(radio):
     print({k: f[k] for k in ("battery", "battery_pct", "battery_mv", "beep.built", "scan.built")})
 
 
+@pytest.mark.feature("settings_store")
 def test_settings_round_trip(radio):
     old = features(radio)["set.scan_hold_s"]
     new = 7 if old != "7" else 8
@@ -172,6 +174,7 @@ def test_settings_round_trip(radio):
     wait_features(radio, lambda v: v.get("set.scan_hold_s") == old, 1.0, "set.scan_hold_s put back")
 
 
+@pytest.mark.feature("beep")
 def test_beep_counts(radio):
     f0 = features(radio)
     if f0.get("beep.built") != "1":
@@ -193,6 +196,7 @@ def test_beep_counts(radio):
         print(f"blocks +{as_int(f['beep.blocks'], 0) - blocks0}")
 
 
+@pytest.mark.feature("vibrate")
 def test_vibrate_counts(radio):
     f0 = features(radio)
     if f0.get("vibe.built") != "1":
@@ -208,6 +212,7 @@ def test_vibrate_counts(radio):
     wait_features(radio, lambda v: v.get("vibe.busy") == "0", 3.0, "the pattern finished")
 
 
+@pytest.mark.feature("radio_controls")
 def test_volume_op(radio):
     f0 = features(radio)
     if "volume.src" not in f0:
@@ -240,6 +245,7 @@ def test_volume_op(radio):
         wait_features(radio, lambda v: v.get("volume.step") == str(old), 1.0, "the old step back")
 
 
+@pytest.mark.feature("scan")
 def test_zone_scan_cancel(radio):
     need_scan(radio)
     on_channel(radio, 2)
@@ -256,6 +262,7 @@ def test_zone_scan_cancel(radio):
     radio.wait_for(lambda v: v.get("zone_pos") == start, 1.0, what="back on the starting channel")
 
 
+@pytest.mark.feature("scan")
 def test_zone_scan_nuisance(radio):
     need_scan(radio)
     on_channel(radio, 3)
@@ -273,6 +280,7 @@ def test_zone_scan_nuisance(radio):
         scan_off(radio)
 
 
+@pytest.mark.feature("scan")
 def test_vfo_scan(radio):
     need_scan(radio)
     if "VFO_FM" not in radio.features():
@@ -294,6 +302,7 @@ def test_vfo_scan(radio):
         radio.wait_for(lambda v: v.get("rx_hz") == str(hz), 1.0, what="back on the starting frequency")
 
 
+@pytest.mark.feature("scan")
 def test_dual_watch(radio):
     need_scan(radio)
     size = on_channel(radio, 2)
@@ -332,6 +341,7 @@ def fm_tx(radio, pytestconfig):
             radio.wait_for(lambda v: v.get("state") != "tx", 3.0, what="TX ended")
 
 
+@pytest.mark.feature("radio_controls")
 @pytest.mark.radio_tx
 def test_tx_inhibit(fm_tx):
     with settings(fm_tx, tx_inhibit=1):
@@ -351,6 +361,7 @@ def test_tx_inhibit(fm_tx):
     assert "input: PTT down (host" in log, log
 
 
+@pytest.mark.feature("radio_controls")
 @pytest.mark.radio_tx
 def test_tot_warning(fm_tx):
     with settings(fm_tx, tot_s=6, tot_warn_s=3):
@@ -371,6 +382,7 @@ def test_tot_warning(fm_tx):
     assert deny == "timeout", deny
 
 
+@pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
 def test_roger_beep(fm_tx):
     if "FM_TX_TONES" not in fm_tx.features():
@@ -393,6 +405,7 @@ def test_roger_beep(fm_tx):
     assert rogers[-1][0] != "tx", f"still transmitting 1 s after release: {rogers[-3:]}"
 
 
+@pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
 def test_tone_burst(fm_tx):
     if "FM_TX_TONES" not in fm_tx.features():
@@ -409,6 +422,7 @@ def test_tone_burst(fm_tx):
 
 # ── the SDR bench transmits ───────────────────────────────────────────────
 
+@pytest.mark.feature("scan")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
@@ -489,6 +503,7 @@ def _bench_call_watch(radio, sdr_bench, pytestconfig, keys=("core", "features"))
     return seen, t_start
 
 
+@pytest.mark.feature("scan")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
@@ -515,6 +530,7 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
     assert str(hz) in held, f"the VFO scan never held on {hz}: {sorted(set(held))}"
 
 
+@pytest.mark.feature("scan")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
@@ -566,6 +582,7 @@ def _battery_save(radio, pytestconfig):
             yield v
 
 
+@pytest.mark.feature("battery_save")
 def test_battery_save(radio, pytestconfig):
     with _battery_save(radio, pytestconfig):
         seen, _ = collect(radio, "rx_sleeping", 2.0, sections=("features",))
@@ -581,6 +598,7 @@ def test_battery_save(radio, pytestconfig):
             radio.link.monitor(False)
 
 
+@pytest.mark.feature("battery_save")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
@@ -607,6 +625,7 @@ def _mic_meter_line(radio):
     return None
 
 
+@pytest.mark.feature("vox")
 def test_mic_level(fm_tx):
     # fm_tx only puts the radio on the FM VFO at its lowest power: nothing here keys, and VOX stays off
     if "VOX" not in fm_tx.features():
@@ -638,6 +657,7 @@ def test_mic_level(fm_tx):
         print(f"vox.level while a beep plays in the speaker: max {max(heard)} ({heard})")
 
 
+@pytest.mark.feature("vox")
 @pytest.mark.radio_tx
 def test_vox_quiet(fm_tx):
     if "VOX" not in fm_tx.features():

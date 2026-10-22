@@ -44,6 +44,7 @@ def _crash(radio, kind):
     return radio.view(["crash"])
 
 
+@pytest.mark.feature("crash_log")
 def test_crash_view(radio):
     _need(radio)
     v = radio.view(["crash"])
@@ -51,6 +52,7 @@ def test_crash_view(radio):
     assert v.get("crash.valid") in ("0", "1"), v
 
 
+@pytest.mark.feature("crash_log")
 def test_crash_test_refused_without_token(radio):
     _need(radio)
     with pytest.raises(DebugLinkError) as e:
@@ -58,6 +60,7 @@ def test_crash_test_refused_without_token(radio):
     assert e.value.status == 7     # refused: no crash without the token
 
 
+@pytest.mark.feature("crash_log")
 @pytest.mark.reboot
 def test_crash_fault_kept(radio):
     """A trap instruction: a CPU exception, kept with the registers, and the radio restarts."""
@@ -76,6 +79,7 @@ def test_crash_fault_kept(radio):
     radio.link.crash_clear()
 
 
+@pytest.mark.feature("crash_log")
 @pytest.mark.reboot
 def test_crash_assert_kept(radio):
     _need(radio)

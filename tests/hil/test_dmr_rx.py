@@ -16,6 +16,7 @@ from odr_hil import counter_deltas, skip
 CALLS, SUPERFRAMES, HEADERS, TERMINATORS = 2, 10, 8, 3
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_dmr_rx_counters(radio, sdr_bench, pytestconfig):

@@ -93,6 +93,9 @@ def segments(text):
     return out
 
 
+@pytest.mark.feature("fm", optional=True, owner=(
+        "key PTT and speak or whistle into the microphone in each recording window; on a radio whose programming "
+        "cable mutes the microphone, take the cable out for each over"))
 @pytest.mark.manual
 @pytest.mark.radio_tx
 @pytest.mark.bench_service

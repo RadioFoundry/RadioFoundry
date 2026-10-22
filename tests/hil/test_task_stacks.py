@@ -12,6 +12,8 @@ larger stack.
 """
 import os
 
+import pytest
+
 from odr_hil import as_int, skip
 
 MIN_FREE = int(os.environ.get("ODR_HIL_STACK_MIN_FREE", "64"))
@@ -30,6 +32,7 @@ def tasks_section(radio):
     return None
 
 
+@pytest.mark.feature("task_stacks")
 def test_every_task_has_stack_left(radio):
     radio.view()    # every section: the host task's deepest replies
     radio.screenshot()

@@ -24,6 +24,7 @@ PRIME = 3   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 PEAK_MIN = 1000
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
