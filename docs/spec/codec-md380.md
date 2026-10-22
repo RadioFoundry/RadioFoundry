@@ -109,11 +109,40 @@ prologues, argument lists and stack argument offsets match; only the addresses d
 | FEC decode | 0x0805170C | +0xAC8 | +0xB54 | (49 bits out, 0, 72 bits in, 1, stack: flags, F_dec): returns 0 good, 4 C0 uncorrectable |
 
 Bits are one per halfword in all buffers, the frame is two calls of 80 samples (half 0, then half 1). Flags: encode
-0x800 or 0x1840 on every call (two calling patterns, each constant; the earlier "0x1840 first, then 0x800"
-reading is not supported, see [codec-dm1801pro.md](codec-dm1801pro.md) section 3); decode 0 for a good frame, 4 (repeat the previous frame)
-or 8. These are the DM-1701's semantics ([codec-dm1701.md](codec-dm1701.md), "Per-frame calls"); the D002.032 call
+see [Encode flags](#encode-flags); decode 0 for a good frame, 4 (repeat the previous frame) or 8. These are the
+DM-1701's semantics ([codec-dm1701.md](codec-dm1701.md), "Per-frame calls"); the D002.032 call
 sites agree: encode at 0x08047FF0 (flags 0x800, half from the wrapper, the 0x2000 word, E), privacy XOR on the 49
 bits, encode ECC at 0x08048038, FEC decode at 0x08048B0C, decode at 0x0804893A.
+
+### Encode flags
+
+The encode call's flags word (stack argument 0) is a set of feature bits, not a "first frame" marker. Measured on
+the DM-1801 Pro build and checked bit for bit against this MD-380 build; the DM-32UV runs the same build as the
+DM-1801 Pro.
+
+| Bit | Effect |
+|---|---|
+| 0x0040 | Noise suppression. Noise alone: 2130 -> 486 RMS. Between words in noisy speech: 1611 -> 522. It also lowers steady tones |
+| 0x0100 | Turns the input DC-removal filter off. Never set |
+| 0x0800 | Noise gate. Acts only while E[0x138A] is not 0 |
+| 0x1000 | Tone detection: a steady tone or tone pair is sent as an AMBE tone frame and is decoded at the right frequency. No effect on speech |
+| 0x2000 | Input AGC: quiet speech about 4x louder, loud speech reduced. Its parameters are E+0x16A2..0x16B6, left at their values after init. The defaults have not been tested on air |
+| 0x4000 | Test mode: one fixed frame whatever the input |
+| others | No measurable effect |
+
+Radios use one of two patterns, each a constant value on every call of a transmission: 0x800, or 0x1840
+(0x1000 | 0x800 | 0x40). A word that changes from call to call is not one of them. A host that passes 0x1840 on
+the first call and 0x800 afterwards gets the 0x800 behavior: over 234 frames the output equals 0x800 on every call.
+
+What ODR passes (`drivers/vocoder/ambe2_flags.h`, used by the MD-380 and DM-1701 hosts and by
+`platform/hrc7000/vocoder.c` for the DM-1801 Pro and DM-32UV): one word on every call, 0x800 plus 0x40 for
+`VOCODER_OPT_NOISE_REDUCTION`, 0x1000 for `VOCODER_OPT_TONE_FRAMES` and 0x2000 for `VOCODER_OPT_AGC`. Noise
+reduction and tone frames are on by default and AGC is off, which gives 0x1840 (0x3840 with Mic AGC on). 0x100 and
+0x4000 are never set ([dmr-voice.md](dmr-voice.md) 6).
+
+Cross-check with the 0x2000 bit: with the same values in the AGC parameter block, all 43 tested flag words give the
+same output on the two builds. The difference seen earlier with 0x2000 set came from different values in that
+block (state), not from different code.
 
 ### Stock init (D002.032, function at 0x08047C7C)
 
@@ -226,6 +255,10 @@ Scripts and notes: kept outside the repository.
 * Calls against the HR_C5000 path with real frames, including the FEC decode results on air.
 
 ## Open items
+
+* On-air check of the encode flags (0x800 against 0x1840): speech in a quiet room and with background noise, a
+  1 kHz tone and a DTMF key into the mic, received on a second radio or the SDR bench. AGC (0x3840): a quiet and a
+  loud talker, levels and pumping between words; whether the parameter block's values after init are usable.
 
 * Other stock versions (D13.20 and similar) need their own profile; only D002.032 is supported.
 * Moving the table windows too (rewriting the `table_refs`) would free sector 8 and pack the codec into sector 11

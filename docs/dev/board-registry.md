@@ -64,7 +64,8 @@ neighbor on the same platform.
 | `install` | Optional: the user manual's page for moving from stock firmware |
 | `bringup` | Optional: the bring-up checklist |
 
-`check` fails when a page doesn't exist.
+`check` fails when a page doesn't exist. The README's radio table links the board to its `bringup` page, else its
+`hardware` page.
 
 ### [hardware]
 
@@ -81,7 +82,7 @@ One-line summaries for the site and the generated tables; the facts stay in `doc
 | Key | Values | Meaning |
 |---|---|---|
 | `level` | `bring-up`, `testing`, `supported` | How far the port is |
-| `summary` | string | What works, then what is open, in one sentence or two; Markdown links allowed |
+| `summary` | string | What works, then what is open, in one sentence or two; Markdown links allowed. The README, the user manual and the web site show it |
 | `release` | `stable`, `testing` | `stable`: release images are built and odrflash fetches them |
 
 ### [[build_options]]
@@ -193,6 +194,7 @@ The toolchain scripts read these values with `tools/platform_toolchain.sh`, whic
 | `tools/boards.py builds <id> [--extra]` | The board's builds besides the default, or its `[ci]` extras |
 | `tools/boards.py json [--for all\|odrflash\|build]` | A merged view, below |
 | `tools/boards.py check` | Every inconsistency; ci.sh's registry step runs it |
+| `tools/boards.py docs [--check] [--floor REF]` | Writes the generated blocks of the README, the user manual's radio pages, the feature matrix and the survey's Port cells (`tools/registry_docs.py`). `--check` lists the stale ones instead; `--floor REF` fails when a radio's marks or status in the README read lower than at commit `REF`. ci.sh runs `--check --floor origin/main` |
 | `tools/boards.py self-test` | The loader's own tests |
 
 `make registry` regenerates `tools/odrflash/odrflash/registry.json` when a source changed. `make` does too, before

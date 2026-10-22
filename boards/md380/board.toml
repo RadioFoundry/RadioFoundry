@@ -29,7 +29,7 @@ gallery = "160x128"
 level = "supported"
 summary = """\
 FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug \
-and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the VHF image."""
+and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image."""
 release = "stable"
 
 # One band per radio, a build choice (board.mk BAND). The first value is the default build; ci and the release

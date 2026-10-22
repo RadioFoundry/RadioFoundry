@@ -160,8 +160,8 @@ what you typed as you go.
 
 ### Stepping
 
-**Up**, **Down** and the channel knob change the VFO frequency by its step. The step comes from the codeplug's VFO
-settings. The quick settings Step tile (8) shows it but can't change it yet ("Step: set it in qdmr for now").
+**Up**, **Down** and the channel knob change the VFO frequency by its step. The step is **Settings > Talk > VFO step**. Its
+default, **Auto**, follows the width: 25 kHz at 25K (and in AM), 12.5 kHz at 12.5K. The step is in the status strip.
 
 ### DMR in the VFO
 

@@ -33,6 +33,8 @@ typedef enum {
 	KEYFN_CALL_BACK,	// talk to the last call heard: its talkgroup, or its caller for a private call
 	KEYFN_HOME_ZONE,	// back to the home zone (Settings > Keys > Home zone)
 	KEYFN_COPY_VFO,		// copy the channel to the VFO and open it (CONFIG_VFO)
+	KEYFN_DUAL_WATCH,	// dual watch on / off (CONFIG_DUAL_WATCH)
+	KEYFN_AB,		// dual watch: the other channel, A / B (starts dual watch when it is off)
 	KEYFN_COUNT
 } keyfn_t;
 

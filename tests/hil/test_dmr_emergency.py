@@ -65,6 +65,7 @@ def test_emergency_view_and_settings(radio, pytestconfig, em_settings):
 @pytest.mark.feature("dmr_emergency")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_emergency_alarm_rx(radio, sdr_bench, pytestconfig, em_settings):
     """An emergency alarm CSBK (opcode 0x27, Motorola FID, octet 2 0 = to a group) to the channel's talkgroup: one
     alert of kind alarm from the bench; nothing is sent back."""
@@ -88,6 +89,7 @@ def test_emergency_alarm_rx(radio, sdr_bench, pytestconfig, em_settings):
 @pytest.mark.feature("dmr_emergency")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_emergency_call_rx(radio, sdr_bench, pytestconfig, em_settings):
     """A group voice call with the emergency service option (LC octet 1 0x80) on the channel's talkgroup: the call
     is played and raises an alert of kind call (another source than the alarm test, so it is a new alert)."""
@@ -108,6 +110,7 @@ def test_emergency_call_rx(radio, sdr_bench, pytestconfig, em_settings):
 @pytest.mark.feature("dmr_emergency")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_emergency_alarm_tx(radio, sdr_bench, pytestconfig, em_settings):
     """The emergency key in alarm-only mode: three alarm CSBKs about a second apart (opcode 0x27, Motorola FID,
     octets 4-6 the channel's talkgroup, 7-9 us), then em.state active until canceled."""
@@ -133,6 +136,7 @@ def test_emergency_alarm_tx(radio, sdr_bench, pytestconfig, em_settings):
 @pytest.mark.feature("dmr_emergency")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
     """Call-only mode with a 3 s hot mic: the radio keys by itself, a group voice call to the talkgroup whose LC
     carries the emergency service option (so & 0x80), released after the hot mic."""

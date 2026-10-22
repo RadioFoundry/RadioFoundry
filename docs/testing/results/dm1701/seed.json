@@ -1,0 +1,78 @@
+{
+ "format": 1,
+ "kind": "seed",
+ "board": "dm1701",
+ "source": "docs/testing/on-air-coverage.md",
+ "date": "2026-10-22",
+ "note": "From the docs' evidence before the first recorded run: docs/testing/on-air-coverage.md and its row in docs/feature-matrix.md",
+ "features": {
+  "fm": {
+   "result": "pass"
+  },
+  "subtone": {
+   "result": "pass"
+  },
+  "fm_tx_tones": {
+   "result": "pass",
+   "note": "tones, 1750 Hz, roger beep"
+  },
+  "dmr_voice": {
+   "result": "pass",
+   "note": "both ways, late entry"
+  },
+  "dmr_data_rx": {
+   "result": "pass"
+  },
+  "dmr_sms": {
+   "result": "pass"
+  },
+  "dmr_talker_alias": {
+   "result": "pass"
+  },
+  "dmr_gps": {
+   "result": "pass",
+   "note": "GPS in calls"
+  },
+  "dmr_emergency": {
+   "result": "pass"
+  },
+  "dmr_signaling": {
+   "result": "pass",
+   "note": "alerts"
+  },
+  "scan": {
+   "result": "pass"
+  },
+  "dual_watch": {
+   "result": "pass"
+  },
+  "hotspot": {
+   "result": "pass",
+   "note": "voice and data"
+  },
+  "sfr": {
+   "result": "pass",
+   "note": "MMDVM SFR, repeat delay 210 ms"
+  },
+  "split_duplex": {
+   "result": "pass",
+   "note": "each half alone (one radio); a two-radio pair not yet"
+  },
+  "battery_save": {
+   "result": "pass"
+  },
+  "cps_openfw": {
+   "result": "pass",
+   "note": "qdmr"
+  },
+  "usb": {
+   "result": "pass"
+  },
+  "usb_network": {
+   "result": "pass"
+  },
+  "debuglink": {
+   "result": "pass"
+  }
+ }
+}
