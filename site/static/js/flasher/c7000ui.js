@@ -46,6 +46,8 @@ let db25d = null;
 const hasData = () => C().boards[boardId()].data_flash !== false;	// the SPI data flash the stub reads (the DB25-D has none)
 const stockRadio = () => !!C().boards[boardId()].stock_console;
 // whether the chip the cable reaches has a status LED the stub drives (255, 255: none, the GD-88's main SoC)
+// the radio's chip on the cable has no LED: both stub LED pins are "none" (the GD-88's A)
+const noLed = (radio, fbd) => !(fbd.c7000?.boards[radio.flash.board]?.stub_board?.leds || [0]).some((p) => p !== 255);
 const hasLed = () => (C().boards[boardId()].stub_board?.leds || [0]).some((p) => p !== 255);
 // A second SoC with no cable of its own (the GD-88's receiver B): reached through ODR on the first, whose board the
 // radio entry names (flash.via)
@@ -938,7 +940,10 @@ register({
 	recovery: { first: "fix", stock: "restore", reach: "flash.help.c7_reach", stockText: "flash.help.fix.stock_c7",
 		// the DB25-D's vendor update mode: a reinstall that needs nothing to answer on the cable
 		extra: (radio, fbd) => (fbd.c7000?.boards[radio.flash.board]?.stock_console
-			? [{ id: "updatemode", title: "flash.help.fix.iap", text: "flash.help.fix.iap_text", prepare: () => { session().forceIap = true; } }] : []) },
+			? [{ id: "updatemode", title: "flash.help.fix.iap", text: `flash.help.fix.iap_text${noLed(radio, fbd) ? "_noled" : ""}`,
+				prepare: () => { session().forceIap = true; } }] : []),
+		// the chip on the cable has no LED (the GD-88's A): the symptom texts that name one have a _noled form
+		noLed },
 	ownsBundle: hasC7Backup,
 	ownImage: async (fb, board, data) => {
 		const { image, slot } = await splitOwnImage(fb.c7000, board, data);

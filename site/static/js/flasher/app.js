@@ -1528,10 +1528,16 @@ function answers(items, pick, chosen = null) {
 			h("strong", {}, title), text ? h("span", { class: "small muted" }, text) : null)));
 }
 
+// A symptom's title and text; the update-mode one names the LED, so a radio without one gets the _noled texts
+function symptomText(id) {
+	const k = id === "iap" && backend().recovery.noLed?.(S.radio, fb()) ? `${id}_noled` : id;
+	return [t(`flash.help.s.${k}`), t(`flash.help.s.${k}_text`)];
+}
+
 function symptomView() {
 	S.forward(null);
 	return h("div", { class: "flasher" }, reassure(),
-		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, t(`flash.help.s.${id}`), t(`flash.help.s.${id}_text`)]),
+		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, ...symptomText(id)]),
 			(id) => { S.help = { symptom: id, stage: id === "dark" ? "battery" : id === "iap" ? "fix" : ["stuck", "stopped"].includes(id) ? backend().recovery.first : "fix" }; next(); })));
 }
 

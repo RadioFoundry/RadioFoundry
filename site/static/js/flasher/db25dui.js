@@ -23,6 +23,8 @@ const WORD_RATE = 14;		// console frames per second, written or read back (radio
 // host: what c7000ui.js hands over ({S, ctx, C, boardId, session, busy, fill, stubImage})
 export function makeDb25d(host) {
 	const { S, ctx, C, boardId, session, busy, fill, stubImage } = host;
+	// texts that name the LED have a _noled form for a radio whose chip on the cable has none (the GD-88's A)
+	const led = (key) => ((C().boards[boardId()].stub_board?.leds || [0]).some((p) => p !== 255) ? key : `${key}_noled`);
 
 	// ---- the original firmware: the stub through its console
 
@@ -100,7 +102,7 @@ export function makeDb25d(host) {
 	function nothing({ show, act, onUpdateMode, onPowerOn, onAgain }) {
 		show({ led: "off", screen: "any" },
 			notice(t("flash.db25d.none.lead"), "info"),
-			h("ul", {}, h("li", {}, t("flash.db25d.none.on")), h("li", {}, t("flash.db25d.none.cable")), h("li", {}, t("flash.db25d.none.stock"))),
+			h("ul", {}, h("li", {}, t("flash.db25d.none.on")), h("li", {}, t("flash.db25d.none.cable")), h("li", {}, t(led("flash.db25d.none.stock")))),
 			h("p", { class: "small muted" }, t("flash.db25d.none.odr")));
 		act(button(t("flash.db25d.none.again"), onAgain, { primary: true }), button(t("flash.db25d.none.update_mode"), onUpdateMode),
 			button(t("flash.db25d.none.power_on"), onPowerOn, { quiet: true }));
@@ -112,7 +114,7 @@ export function makeDb25d(host) {
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.db25d.um.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.db25d.stock.version")), h("dd", {}, version)) : null,
-			h("p", {}, t("flash.db25d.um.text")), h("p", { class: "small muted" }, t("flash.db25d.um.safe")));
+			h("p", {}, t(led("flash.db25d.um.text"))), h("p", { class: "small muted" }, t("flash.db25d.um.safe")));
 		act(onUpdateMode ? button(t("flash.db25d.um.go"), onUpdateMode, { primary: true }) : button(t("flash.db25d.none.again"), onAgain, { primary: true }));
 	}
 
