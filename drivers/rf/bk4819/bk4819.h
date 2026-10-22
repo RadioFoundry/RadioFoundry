@@ -43,6 +43,8 @@ typedef struct {
 	// The receiver ahead of the chip inverts the audio (a high-side LO turns the IF spectrum over, so the deviation's
 	// sign flips): a DCS code then arrives as its inverse, and the chip flags it in the other 0x0C bit. Set by the board
 	bool rx_inverted;
+	bool tx_dcs;		// the transmission bk4819_tx_prepare() set up sends DCS, so it has a turn-off tail
+	bool tail_on;		// bk4819_tx_tail_start() is in effect
 } bk4819_t;
 
 // Registers with a known meaning
@@ -50,6 +52,7 @@ typedef struct {
 #define BK4819_REG_CTCSS_FREQ	0x07	// CTCSS word, or the DCS bit rate
 #define BK4819_REG_DCS_CODE	0x08	// DCS word: low 12 bits, then the high 12 bits with bit 15 set
 #define BK4819_REG_CSS_STATUS	0x0C	// b10 CTCSS found, b14 DCS found, b15 inverted DCS found (as the FD6818)
+#define BK4819_REG_CSS_DETECT	0x52	// b15 sub-audio tail; CTCSS found / lost thresholds (as the FD6818)
 #define BK4819_REG_ENABLES	0x30
 #define BK4819_REG_PA		0x36	// PA bias and gain (the LO's output level)
 #define BK4819_REG_POWER	0x37
@@ -186,6 +189,11 @@ void bk4819_tx_tune(bk4819_t *dev, uint32_t hz);
 // End of TX: tone and sub-audio generators off, then the main chip back to its RX state (still on the TX frequency, so
 // the PA can ramp down before it moves). The caller sets up receive next
 void bk4819_tx_end(bk4819_t *dev);
+// DCS turn-off (hardware-db25d.md 4.7), still transmitting: tail_start sets 0x52 bit 15 and the chip sends the 134.4 Hz
+// tail in place of the code; tail_end (or bk4819_tx_end) writes 0x52 back. False, and nothing written, when the
+// transmission sends no DCS
+bool bk4819_tx_tail_start(bk4819_t *dev);
+void bk4819_tx_tail_end(bk4819_t *dev);
 // TX tone: during the TX state, send a single tone of hz at gain (0..127, the tone generator's own level, which sets
 // the deviation) instead of the microphone: 0x30 = 0xC3FA turns the microphone ADC off. A second start retunes. hz = 0
 // is a stop

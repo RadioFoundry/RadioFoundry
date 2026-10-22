@@ -311,6 +311,23 @@ static void test_sequences(void)
 	chips[0].n = 0;
 	bk4819_tx_prepare(&m, BK4819_TONE_DCS_INV, 023);
 	CHECK(c->n == 5 && c->log[2].reg == 0x51 && c->log[2].val == 0xA030);
+	// DCS ends with the turn-off tail: 0x52 bit 15, then back to 0x028F; again after PTT again, and the end of the
+	// transmission ends a tail still on. No tail after the end, for CTCSS, none, or DMR
+	chips[0].n = 0;
+	CHECK(bk4819_tx_tail_start(&m));
+	bk4819_tx_tail_end(&m);
+	CHECK(c->n == 2 && c->log[0].reg == 0x52 && c->log[0].val == 0x828F && c->log[1].reg == 0x52 && c->log[1].val == 0x028F);
+	CHECK(bk4819_tx_tail_start(&m));
+	chips[0].n = 0;
+	bk4819_tx_end(&m);
+	CHECK(c->n >= 1 && c->log[0].reg == 0x52 && c->log[0].val == 0x028F && !m.tail_on);
+	CHECK(!bk4819_tx_tail_start(&m));
+	bk4819_tx_prepare(&m, BK4819_TONE_CTCSS, 1000);
+	CHECK(!bk4819_tx_tail_start(&m));
+	bk4819_tx_prepare(&m, BK4819_TONE_DCS, 023);
+	bk4819_dmr_tx_prepare(&m);
+	chips[0].n = 0;
+	CHECK(!bk4819_tx_tail_start(&m) && c->n == 0);
 
 	// TX on 461.4625 MHz: idle (0x0200), frequency, 0x37, then 0xC3FE. 0x36 is not touched
 	chips[0].n = 0;
