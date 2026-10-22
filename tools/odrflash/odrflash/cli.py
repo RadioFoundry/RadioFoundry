@@ -529,7 +529,7 @@ def _progress(unit):
 
 
 def cmd_flash_stub(args, board, image, merged):
-    """The STM32F4 radios and the GD-77 through the flash stub (stubroute.py): ODR must be running with stub entry."""
+    """A radio with a flash stub route (stubroute.py): ODR must be running with stub entry."""
     if board.id not in stubroute.BOARDS:
         raise UsageError("the %s has no flash stub; use the bootloader route" % board.name)
     if args.simulate:

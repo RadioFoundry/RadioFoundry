@@ -110,7 +110,7 @@ The serial route loads `tools/serial_loader.py`, `tools/hrc7000_codec.py` and `s
 odrflash executable carries them. A `pipx` install from the subdirectory doesn't, and says so. Neither route of odrflash
 has flashed a radio yet; the tools it wraps have.
 
-### The flash stub route (DM-1701, MD-380, MD-9600)
+### The flash stub route (the STM32F4 radios)
 
 A radio that runs ODR built with `CONFIG_STUB_ENTRY=y` can be updated without the bootloader key press:
 

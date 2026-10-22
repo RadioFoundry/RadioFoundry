@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""The flash stub route for the STM32F4 radios (DM-1701, MD-380, MD-9600): a radio that runs ODR built with
+"""The flash stub route for the boards whose platform builds the STM32F4 flash stub: a radio that runs ODR built with
 CONFIG_STUB_ENTRY=y takes the stub into RAM over its USB debug link (stub/stubtool.py --odr-enter), the stub writes the
 sectors that differ and restarts the radio (docs/spec/stub-stm32f4.md). No bootloader key press
 and no key file. The radio's codec stays: a sector that holds both application and codec bytes is saved first.
@@ -11,9 +11,10 @@ import os
 import sys
 import tempfile
 
-from . import serialflash
+from . import boards, serialflash
 
-BOARDS = ("dm1701", "md380", "md9600")
+# The boards whose platform builds the STM32F4 stub (the board registry)
+BOARDS = tuple(b.id for b in boards.BOARDS.values() if "stub/stm32f4" in b.platform_stubs)
 
 
 class StubRouteError(Exception):
@@ -28,8 +29,7 @@ def argv(board_id, image_path, port, backup_dir=None):
 
 
 def run(board, image, port=None, backup_dir=None, log=print, stubtool=None):
-    """Write `image` (bytes from the board's application base; for the GD-77 a flat image, with the codec merged in when
-    it should be written) through the stub. Returns stubtool's exit code."""
+    """Write `image` (bytes from the board's application base) through the stub. Returns stubtool's exit code."""
     if board.id not in BOARDS:
         raise StubRouteError("the %s has no stub" % board.name)
     if port is None:
