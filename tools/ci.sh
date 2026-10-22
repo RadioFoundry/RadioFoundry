@@ -6,7 +6,9 @@
 #
 #   tools/ci.sh                 host tests, Python checks, every board with its feature matrix, license checks
 #   tools/ci.sh --quick         the same with only each board's default build (no matrix)
-#   tools/ci.sh --board dm1701  one board only (or a comma separated list: --board dm1701,md380)
+#   tools/ci.sh --board dm1701  one board only (or a comma separated list: --board dm1701,md380); an unknown id fails
+#   tools/ci.sh --platform stm32f4   every board on that platform (or a comma separated list), from the registry
+#                               (tools/boards.py list --platform); what each CI firmware job runs
 #   tools/ci.sh --matrix        only the feature matrix (no default builds; what the nightly CI adds per push)
 #   tools/ci.sh --steps host,python   only these steps (registry, host, python, firmware, licenses, similarity;
 #                                     default all)
@@ -16,7 +18,7 @@
 #                               the matrix otherwise leaves about 65 MB per configuration)
 #
 # The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses`, the host tests and
-# `--quick --steps firmware --board <the Arm boards>` and `<the C-SKY boards>`; nightly `--matrix --steps firmware --board <b>`.
+# `--quick --steps firmware --platform <p>` for each platform; nightly `--matrix --steps firmware --platform <p>`.
 #
 # Every step but host needs a Python 3.11 or later (tools/odr_python.sh): the board registry is TOML. Steps, each
 # reported as ok / FAIL / skip:
@@ -64,14 +66,16 @@ cd "$(dirname "$0")/.." || exit 2
 QUICK=0
 MATRIX=0
 ONLY=""
+PLATFORMS=""
 STEPS="registry,host,python,firmware,licenses,similarity"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--quick) QUICK=1 ;;
 	--matrix) MATRIX=1 ;;
 	--board) ONLY="$2"; shift ;;
+	--platform) PLATFORMS="$2"; shift ;;
 	--steps) STEPS="$2"; shift ;;
-	-h|--help) sed -n '5,56p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,60p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
@@ -80,6 +84,7 @@ for s in $(echo "$STEPS" | tr ',' ' '); do
 	case "$s" in registry|host|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
 done
 [ "$QUICK" = 1 ] && [ "$MATRIX" = 1 ] && { echo "ci: --quick and --matrix exclude each other" >&2; exit 2; }
+[ -n "$ONLY" ] && [ -n "$PLATFORMS" ] && { echo "ci: --board and --platform exclude each other" >&2; exit 2; }
 step() { case ",$STEPS," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 JOBS=${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)}
 OUT=build/ci
@@ -97,6 +102,17 @@ skip() { echo "ci: skip  $*"; SKIPPED="$SKIPPED
 # fail with the reason)
 REG_PY=$(tools/odr_python.sh 2> "$OUT/odr-python.log") || REG_PY=""
 reg() { [ -n "$REG_PY" ] && $REG_PY tools/boards.py "$@"; }
+# --platform: its boards from the registry. A platform with no board selects none (not every board); an unknown one
+# fails, as does an unknown --board id, so a typo in a workflow never passes with nothing built
+if [ -n "$PLATFORMS" ]; then
+	[ -n "$REG_PY" ] || { echo "ci: --platform needs the registry: $(cat "$OUT/odr-python.log")" >&2; exit 2; }
+	ONLY=$(reg list --platform "$PLATFORMS" --comma) || exit 2
+	echo "ci: platform $PLATFORMS: ${ONLY:-no boards}"
+	[ -n "$ONLY" ] || ONLY=","
+fi
+for b in $(echo "$ONLY" | tr ',' ' '); do
+	[ -f "boards/$b/board.mk" ] || { echo "ci: unknown board $b (no boards/$b/board.mk)" >&2; exit 2; }
+done
 
 # ── 0. board registry ────────────────────────────────────────────────────────
 if step registry; then

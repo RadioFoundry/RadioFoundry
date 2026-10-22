@@ -11,8 +11,8 @@
 # own checks belong to main's commit, not the pull request's.
 #
 # The pull request's code gets a read-only token that isn't stored in the checkout, no secrets and no cache: nothing
-# a fork couldn't have. The C-SKY jobs log in to the image registry with the job's own token, pull the image and log
-# out before the build runs. The status job is the only one with a write permission (statuses), and it checks out
+# a fork couldn't have. The C-SKY job logs in to the image registry with the job's own token, pulls the image and logs
+# out before any of the pull request's code runs, in main's copy of .github/actions/toolchain. The status job is the only one with a write permission (statuses), and it checks out
 # nothing. Never add secrets, another write permission, actions/cache or the pull request's text (title, body, branch
 # name) in a run step to this file.
 #
@@ -33,8 +33,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ARM_GCC_VERSION: "13.3.rel1"   # ci.yml's and release.yml's pinned toolchain
-  ARM_GCC_SHA256: "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4"
   PANDOC_VERSION: "3.6.4"        # manual.yml's
   TYPST_VERSION: "0.13.1"
   MERGE_REF: refs/pull/${{ github.event.pull_request.number }}/merge   # the pull request merged into main
@@ -60,7 +58,7 @@ jobs:
           git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/files"
           src=false; docs=false
           # ci.yml's paths
-          grep -qE '^(Makefile|AUTHORS|\.gitmodules|REUSE\.toml|(boards|config|core|drivers|hal|platform|tests|third_party|tools|LICENSES)/)' \
+          grep -qE '^(Makefile|AUTHORS|\.gitmodules|REUSE\.toml|\.github/actions/|(boards|config|core|drivers|hal|platform|tests|third_party|tools|LICENSES)/)' \
             "$RUNNER_TEMP/files" && src=true
           # manual.yml's paths
           grep -qE '^(docs/|README\.md$|tools/build_manual\.sh$|tools/manual/|tools/check_doc_links\.py$)' \
@@ -116,78 +114,57 @@ jobs:
           if-no-files-found: ignore
 
   firmware:
-    name: firmware (Arm)   # every Arm radio in one job: one checkout, the Arm toolchain once
+    # one job per platform, not per radio: one checkout and one toolchain for every board on it (tools/ci.sh --platform
+    # takes them from the registry, so a new radio joins with no edit here); each runner has 4 cores
+    name: firmware (${{ matrix.platform }})
     needs: changes
     if: needs.changes.outputs.src == 'true'
     runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.MERGE_REF }}
-          persist-credentials: false
-          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
-      - name: third_party submodules
-        run: tools/checkout-submodules.sh
-      - name: Arm GNU Toolchain (pinned and checksummed; no cache here)
-        run: tools/install-arm-toolchain.sh
-      - name: Default build, warnings, size and app region fit
-        run: |
-          set -eu
-          tools/ci.sh --quick --steps firmware --board dm1701,md380
-          cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: firmware-arm
-          path: |
-            build/ci/size-report.md
-            build/ci/*.log
-            build/ci/*/odr_*.bin
-          if-no-files-found: ignore
-
-  csky:
-    name: firmware (C-SKY)   # every C-SKY radio in one job, beside the Arm one: each runner has 4 cores
-    needs: changes
-    if: needs.changes.outputs.src == 'true'
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # platform/*/platform.toml; a new platform also gets its set-up in .github/actions/toolchain
+        platform: [stm32f4, hrc7000]
     permissions:
       contents: read
       packages: read   # pulling the private csky-elf image with the job token
-    env:
-      ODR_CSKY_IMAGE: ${{ vars.ODR_CSKY_IMAGE || 'odr/csky-gcc14:latest' }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.MERGE_REF }}
           persist-credentials: false
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
+      # main's copy of the toolchain action, never the pull request's: it gets the registry token, and it runs before
+      # any of the pull request's code, so the image is pulled and the registry logged out of first
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}   # main's commit, the one this workflow comes from
+          path: .ci-main
+          persist-credentials: false
+          sparse-checkout: .github/actions
+      - name: Toolchain (platform.toml [toolchain]; no cache here)
+        id: tc
+        uses: ./.ci-main/.github/actions/toolchain
+        with:
+          platform: ${{ matrix.platform }}
+          cache: "false"
+          image: ${{ vars.ODR_CSKY_IMAGE }}
+          registry: ${{ vars.ODR_CSKY_REGISTRY }}
+          registry-user: ${{ github.actor }}
+          registry-token: ${{ github.token }}
       - name: third_party submodules
         run: tools/checkout-submodules.sh
-      - name: Pull the image, then log out before the pull request's code runs
-        if: vars.ODR_CSKY_REGISTRY != ''
+      - name: Default builds, warnings, size and app region fit
         env:
-          REGISTRY: ${{ vars.ODR_CSKY_REGISTRY }}
-          REGISTRY_TOKEN: ${{ github.token }}
-          REGISTRY_USER: ${{ github.actor }}
-        run: |
-          set -u
-          command -v csky-elf-gcc > /dev/null && exit 0   # the self-hosted image: no Docker, no image to pull
-          echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin
-          docker pull "$ODR_CSKY_IMAGE" || true   # missing: the build step reports it as skipped
-          docker logout "$REGISTRY"
-      - name: Default builds in the csky-elf image
+          RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
+          PLATFORM: ${{ matrix.platform }}
         run: |
           set -u
           rc=0
-          if command -v csky-elf-gcc > /dev/null; then   # the self-hosted image has the toolchain
-            tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d || rc=$?
-          else
-            tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d || rc=$?
-          fi
+          $RUN tools/ci.sh --quick --steps firmware --platform "$PLATFORM" || rc=$?
           if [ "$rc" = 3 ]; then
-            echo "::notice::C-SKY builds skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::$PLATFORM builds skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
@@ -195,7 +172,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: firmware-csky
+          name: firmware-${{ matrix.platform }}
           path: |
             build/ci/size-report.md
             build/ci/*.log
@@ -252,7 +229,7 @@ jobs:
 
   pr-checks:
     name: PR checks status
-    needs: [changes, unit-tests, firmware, csky, checks]
+    needs: [changes, unit-tests, firmware, checks]
     if: always()
     # a few seconds of gh at the end: the UI gallery's runner, which is idle by then, so it never holds a build runner
     runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && (vars.ODR_UI_RUNNER || vars.ODR_CI_RUNNER) || 'ubuntu-24.04' }}
