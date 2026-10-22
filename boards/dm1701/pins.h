@@ -47,7 +47,10 @@
 #define PIN_C6000_SYS_INT	GPIOC, GPIO_PIN_1
 #define PIN_C6000_RFTX_INT	GPIOC, GPIO_PIN_2
 
-// SPI flash on SPI1 (PB3 SCK, PB4 MISO, PB5 MOSI, AF5)
+// SPI flash on SPI1 (AF5). The STM32F4 stub's board record reads these four (tools/boards.py F4_SPI_PINS)
+#define PIN_FLASH_SCK		GPIOB, GPIO_PIN_3
+#define PIN_FLASH_MISO		GPIOB, GPIO_PIN_4
+#define PIN_FLASH_MOSI		GPIOB, GPIO_PIN_5
 #define PIN_FLASH_CS		GPIOD, GPIO_PIN_7
 
 // LCD on FSMC bank 1 (data lines double as keypad columns)
