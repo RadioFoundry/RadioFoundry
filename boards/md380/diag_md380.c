@@ -137,6 +137,7 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	}
 	case 8: {
+#if CONFIG_GPS
 		uint32_t good, bad, n;
 		stm32_gps_counts(&good, &bad, &n);
 		put(&o, stm32_gps_present() ? "gps yes " : "gps no ");
@@ -145,6 +146,9 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, bad);
 		put(&o, " b");
 		put_u(&o, n);
+#else
+		put(&o, "gps not built");
+#endif
 		break;
 	}
 	case 9:

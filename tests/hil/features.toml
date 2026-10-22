@@ -118,6 +118,12 @@ switch = "VIBRATE"
 hardware = "a vibration motor"
 spec = "docs/spec/radio-features.md"
 
+[feature.gps]
+switch = "GPS"
+hardware = "a GPS receiver"
+spec = "docs/spec/aprs.md"
+source = ["drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
+
 # ── DMR data ──
 
 [feature.dmr_data_rx]
