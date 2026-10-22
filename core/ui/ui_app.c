@@ -437,6 +437,11 @@ static void open_caller_actions(void)
 		ui_toast("No calls heard yet");
 }
 
+void ui_open_caller_actions(void)
+{
+	open_caller_actions();
+}
+
 // --- banners and events ---
 
 static ui_event_t events[UI_EVENTS];
@@ -776,6 +781,10 @@ static void zone_go(uint16_t zi, bool home)
 
 static void zone_step(int dir)
 {
+#if CONFIG_DUAL_WATCH
+	if (ui_dual_zone_step(dir))	// dual watch: the selected channel's zone, and the watch goes on
+		return;
+#endif
 	uint16_t n = codeplug_zone_count();
 	if (n < 2) {
 		ui_toast("Only one zone");
@@ -815,6 +824,10 @@ static void vfo_key(void)
 		ui_toast("VFO: not in this build");
 		return;
 	}
+#if CONFIG_DUAL_WATCH
+	if (ui_dual_vfo_key())
+		return;
+#endif
 	bool was = view->vfo;	// the view may change at once (the host simulator)
 	radio_req_vfo(!was);
 	ui_toast(was ? "Back to channels" : "VFO");
@@ -822,6 +835,10 @@ static void vfo_key(void)
 
 void ui_scan_toggle(void)
 {
+#if CONFIG_DUAL_WATCH
+	if (ui_st.dual.on)	// dual watch is a kind of scan to the radio: a zone scan takes its place
+		ui_dual_stop();
+#endif
 	bool on = !ui_st.scanning;
 	if (!ui_svc_scan(on)) {
 		ui_toast("Scan: not in this build");
@@ -880,6 +897,10 @@ static bool talk_step(int dir)
 
 bool ui_home_key(const input_event_t *ev)
 {
+#if CONFIG_DUAL_WATCH
+	if (ui_dual_home_key(ev))
+		return true;
+#endif
 	bool press = ev->gesture == GESTURE_PRESS;
 	int d = digit_of(ev);
 	if (is_nav(ev)) {
@@ -973,6 +994,10 @@ bool ui_home_key(const input_event_t *ev)
 			if (ui_st.privacy && ui_svc_privacy(false))
 				ui_st.privacy = false;
 			ui_toast("Changes undone");
+#if CONFIG_DUAL_WATCH
+		} else if (ui_st.dual.on) {
+			ui_dual_back();
+#endif
 		}
 		dirty = true;
 		return true;
@@ -1062,7 +1087,6 @@ static void quick_unavailable(uint8_t kind)
 	case QT_SCAN: ui_toast("Scan: not in this build"); break;
 	case QT_MODE: ui_toast("VFO: one mode in this build"); break;
 	case QT_TO_VFO: ui_toast("VFO: not in this build"); break;
-	case QT_STEP: ui_toast("Step: set it in qdmr"); break;
 	case QT_VOX: ui_toast("VOX: not on this radio yet"); break;
 	default: ui_toast("Not in this build"); break;
 	}
@@ -1115,7 +1139,11 @@ static void quick_activate(int tile)
 			quick_unavailable(kind);
 		break;
 	case QT_SCAN:
+#if CONFIG_DUAL_WATCH
+		ui_dual_key();		// tile 7 is Dual watch; a zone scan is in Tools > Scan
+#else
 		ui_scan_toggle();
+#endif
 		break;
 #if CONFIG_DMR
 	case QT_TIMESLOT: {
@@ -1520,6 +1548,9 @@ void ui_app_init(void)
 #endif
 	view = &view_none;
 	memset(&ui_st, 0, sizeof ui_st);
+#if CONFIG_DUAL_WATCH
+	ui_dual_reset();
+#endif
 	recent_n = 0;
 	recent_seen_ms = 0;
 	recent_tx = false;
@@ -1531,7 +1562,11 @@ void ui_app_init(void)
 	static const uint8_t ui_ids[] = { UI_SET_HINTS, UI_SET_LARGE_TEXT, UI_SET_AUTO_LOCK_S, UI_SET_BRIGHTNESS,
 					  UI_SET_ALIAS_SHOW, UI_SET_PTT_LOCKED, UI_SET_HEAR_ALL_DEFAULT, UI_SET_MESSAGE_TONE,
 					  UI_SET_UPDOWN_HOME, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
-					  UI_SET_STRIP, UI_SET_VIBRATE, UI_SET_VOLUME };
+					  UI_SET_STRIP, UI_SET_VIBRATE, UI_SET_VOLUME,
+#if CONFIG_DUAL_WATCH
+					  UI_SET_DUAL_TALK_BACK,
+#endif
+	};
 	for (uint8_t i = 0; i < sizeof ui_ids; i++)
 		ui_apply_setting(ui_ids[i], ui_svc_setting_get(ui_ids[i]));
 	lock_armed = false;
@@ -1565,6 +1600,9 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	case UI_SET_HEAR_ALL_DEFAULT: ui_st.hear_all_default = v != 0; hear_all_key = 0; break;
 	case UI_SET_MESSAGE_TONE: ui_st.message_tone = v != 0; break;
 	case UI_SET_VIBRATE: ui_st.vibrate = v != 0; break;
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_TALK_BACK: ui_st.dual.talk_back = v != 0; break;
+#endif
 	case UI_SET_VOLUME: ui_st.volume = (uint8_t)(v >= 0 && v <= RADIO_VOLUME_MAX ? v : RADIO_VOLUME_DEFAULT); break;
 	case UI_SET_UPDOWN_HOME: ui_st.updown = (uint8_t)(v >= 0 && v <= 2 ? v : 0); break;
 	case UI_SET_LOW_BATTERY: ui_st.low_batt_pct = (uint8_t)(v >= 0 && v <= 50 ? v : 15); batt_warned = false; break;
@@ -1725,6 +1763,14 @@ void ui_app_key(const input_event_t *ev)
 		case ACT_SCAN:
 			ui_scan_toggle();
 			return;
+#if CONFIG_DUAL_WATCH
+		case ACT_DUAL_WATCH:
+			ui_dual_key();
+			return;
+		case ACT_AB:
+			ui_dual_ab_key();
+			return;
+#endif
 		case ACT_CALL_BACK:
 			call_back_key();
 			return;
@@ -1741,6 +1787,10 @@ void ui_app_key(const input_event_t *ev)
 			return;
 		case ACT_HOME_ZONE:
 			// The codeplug's first zone: the CPS's zone order picks it (no setting; the settings record is full)
+#if CONFIG_DUAL_WATCH
+			if (ui_dual_zone_home())
+				return;
+#endif
 			zone_go(0, true);
 			return;
 		default:
@@ -1752,7 +1802,11 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 	if (ev->action == ACT_USER_2 && ev->gesture == GESTURE_LONG) {
-		ui_scan_toggle();	// long SK2 (DM-1701 key map): scan on / off
+#if CONFIG_DUAL_WATCH
+		ui_dual_key();		// long SK2: dual watch on / off
+#else
+		ui_scan_toggle();	// long SK2: scan on / off
+#endif
 		return;
 	}
 	if (ev->action == ACT_USER_2 && ev->gesture == GESTURE_PRESS) {
@@ -1874,7 +1928,11 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 {
 	static uint32_t serial_seen;
 	static uint8_t battery_seen;
+#if CONFIG_DUAL_WATCH
+	view = ui_dual_view(v);	// in dual watch, the selected channel's settings wherever the receiver is
+#else
 	view = v;
+#endif
 	now = now_ms;
 	ui_st.now_ms = now_ms;
 	ui_svc_poll();
@@ -1924,14 +1982,18 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.banner.kind = UI_BANNER_NONE;
 		dirty = true;
 	}
-	if (ui_st.entry && (now - entry_last >= ENTRY_TIMEOUT_MS || !v->vfo))
+	if (ui_st.entry && (now - entry_last >= ENTRY_TIMEOUT_MS || !view->vfo))
 		entry_cancel();
 	uint16_t unread = ui_svc_msg_unread();
 	if (unread != ui_st.unread) {
 		ui_st.unread = unread;
 		dirty = true;
 	}
-	bool scanning = v->scan != 0;
+	bool scanning = v->scan != 0 && v->scan != 3;	// 3: dual watch, which Home shows on its own (ui_dual.c)
+#if CONFIG_DUAL_WATCH
+	if (ui_dual_tick(v, now_ms))
+		dirty = true;
+#endif
 	if (scanning != ui_st.scanning && (ui_svc_features() & UI_FEAT_SCAN)) {
 		ui_st.scanning = scanning;
 		dirty = true;
@@ -1951,8 +2013,8 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #endif
 #if CONFIG_DMR
 	// The latches the radio keeps (it may drop them itself: hear all ends with the channel)
-	if ((ui_svc_features() & UI_FEAT_HEAR_ALL) && v->dmr.hear_all_latch != ui_st.hear_all) {
-		ui_st.hear_all = v->dmr.hear_all_latch;
+	if ((ui_svc_features() & UI_FEAT_HEAR_ALL) && view->dmr.hear_all_latch != ui_st.hear_all) {
+		ui_st.hear_all = view->dmr.hear_all_latch;
 		dirty = true;
 	}
 	if ((ui_svc_features() & UI_FEAT_PRIVACY) && v->dmr.privacy != ui_st.privacy) {

@@ -34,7 +34,7 @@ typedef struct {
 	// The VFO (vfo_rx_hz 0 = never set)
 	uint32_t vfo_rx_hz;
 	uint32_t vfo_tx_hz;
-	uint32_t vfo_step_hz;		// 0 = the radio's default
+	uint32_t vfo_step_hz;		// 0 = auto, the width's (radio_req_vfo_step_size)
 	uint8_t vfo_mode;		// radio_mode_t in bits 0-3; bits 4-7: the VFO's talk target ID bits 8-11 (see below)
 	uint8_t vfo_bw;			// radio_bw_t in bits 0-3; bits 4-7: the talk target ID bits 12-15 (see below)
 	uint8_t vfo_power;		// board power level, SETTINGS_UNSET8 = default
@@ -175,7 +175,38 @@ typedef struct {
 	// settings are in snmp_rf_manager, snmp_flags and snmp_rf_gap_s above). 0 = the defaults
 	uint32_t snmp_read_hash;	// read community (FNV-1a of the text), 0 = "public"
 	uint32_t snmp_write_hash;	// write community, 0 = none (SET refused)
+
+	// --- Page 1 (bytes 236 on): a save writes one record per SETTINGS_PAGE_BYTES (settings-store.md 2.1) ---
+	// Dual watch (docs/ux/dual-watch.md): the last B, or while the watch runs the channel that isn't selected
+	uint16_t dual_b;		// 0 none, 1..1024 a codeplug channel number, SETTINGS_DUAL_VFO + n VFO n
+	uint8_t dual_state;		// SETTINGS_DUAL_* (0: off at power off)
+	uint8_t vfo_index;		// the VFO in use, 0 or 1 (the second is dual watch's other VFO)
+	// The second VFO (dual watch: each channel has its own), as the first; vfo2_rx_hz 0 = never set
+	uint32_t vfo2_rx_hz;
+	uint32_t vfo2_tx_hz;
+	uint32_t vfo2_talk;		// the DMR talk target: ID in bits 0-23, bit 31 private call, 0 = none
+	uint16_t vfo2_rx_tone;
+	uint16_t vfo2_tx_tone;
+	uint8_t vfo2_mode;		// radio_mode_t
+	uint8_t vfo2_bw;		// radio_bw_t
+	uint8_t vfo2_power;		// board power level, SETTINGS_UNSET8 = default
+	uint8_t vfo2_cc;
+	uint8_t vfo2_ts;
+	uint8_t vfo2_rx_tone_type;	// tone_type_t
+	uint8_t vfo2_tx_tone_type;
+	uint8_t rs_dual_delay;		// radio_settings_t.dual_delay_ms: n - 1 steps of 100 ms, 0 = the default
 } settings_t;
+
+// Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
+// needs are written, each with its own length, so settings_t grows by appending fields; the record's page field
+// allows 16 pages (3776 bytes)
+#define SETTINGS_PAGE_BYTES	236u
+#define SETTINGS_PAGES_MAX	16u
+#define SETTINGS_PAGES		((sizeof(settings_t) + SETTINGS_PAGE_BYTES - 1u) / SETTINGS_PAGE_BYTES)
+#define SETTINGS_PAGE_SHIFT	12	// a record's layout field: the page in bits 12-15, the layout in bits 0-11
+#define SETTINGS_DUAL_VFO	1025u	// dual_b: 1025 the first VFO, 1026 the second
+#define SETTINGS_DUAL_ON	0x01u	// dual_state: it ran at power off, and comes back at power on
+#define SETTINGS_DUAL_B_SEL	0x02u	// ... with B selected: dual_b is then A's (the radio powers up on B)
 
 // The DMR VFO's talk target (docs/spec/settings-store.md 3): a 24-bit ID and a private call flag, packed into bytes
 // that were reserved or held a small value, so the record stays 236 bytes and an older record reads as "none" (0).
@@ -254,6 +285,7 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 #define SETTINGS_UI_PTT_LOCKED		0x10u	// PTT works while the keys are locked
 #define SETTINGS_UI_HEAR_ALL		0x20u	// hear all on whenever a DMR channel is selected
 #define SETTINGS_UI_NO_VIBRATE		0x40u	// vibrate for alerts off (0 = on: older records keep it on)
+#define SETTINGS_UI_DUAL_TALK_BACK	0x80u	// dual watch: after a call on the other channel, PTT talks there a while
 
 // The vocoder's mic options in settings_t.accent bits 6-7: no byte was left for them, and a record from before reads
 // as 0, noise reduction on and AGC off
@@ -319,18 +351,18 @@ typedef enum {
 	SETTINGS_RAM,		// no flash: defaults, nothing saved
 	SETTINGS_DEFAULTS,	// flash usable but no valid record (new radio, or an incompatible layout)
 	SETTINGS_LOADED,	// the newest record, same size
-	SETTINGS_UPGRADED,	// the newest record, written by a firmware with fewer or more fields
+	SETTINGS_UPGRADED,	// the newest record, written by a firmware with fewer or more fields or pages
 	SETTINGS_FOREIGN,	// the settings area holds another firmware's data: defaults, nothing saved until claimed
 } settings_load_t;
 
 typedef struct {
 	uint8_t load;		// settings_load_t
 	bool dirty;		// changes not saved yet
-	uint32_t seq;		// sequence number of the newest record (0 = none)
+	uint32_t seq;		// sequence number of the newest page 0 record, the set in force (0 = none)
 	uint32_t saves;		// records written since boot
 	uint32_t erases;	// sectors erased since boot
 	uint32_t failures;	// saves that failed
-	uint16_t sector;	// ring sector holding the newest record
+	uint16_t sector;	// ring sector holding the newest record (of any page: where the next save follows)
 	uint16_t slot;		// its slot in the sector
 	uint16_t skipped;	// unusable slots seen at load (torn writes)
 } settings_stats_t;

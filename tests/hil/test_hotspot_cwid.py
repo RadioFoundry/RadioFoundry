@@ -39,6 +39,7 @@ def freq(rx, tx):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
     feats = radio.features()
     if "HOTSPOT" not in feats:

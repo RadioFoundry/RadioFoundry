@@ -318,6 +318,7 @@ def print_tx_rows(title, rows, base_row=0):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_variants(probe, sdr_bench, pytestconfig):
     if "VFO_FM" not in probe.features():
         pytest.skip("built without the FM VFO")
@@ -379,6 +380,7 @@ def test_probe_fm_ram_rx(probe, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_ram_tx_variants(probe, sdr_bench, pytestconfig):
     if "VFO_FM" not in probe.features():
         pytest.skip("built without the FM VFO")
@@ -447,6 +449,7 @@ def test_probe_music_fifo(probe, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_music(probe, sdr_bench, pytestconfig):
     """The prompt tone path into the modulator: the FIFO feeds the codec DAC; with 0xE3 bit 0 the DAC loops into the
     ADC that feeds the FM transmit chain. Keyed with the microphone muted, a 1400 Hz tone through the FIFO."""
@@ -493,6 +496,7 @@ MARK_HZ = (2300, 2800)  # LINEIN2's tone: 2.49 kHz one day, 2.60 kHz the next
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_sweep(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone muted, a 600 Hz tone on the I2S stream and a 1000 Hz tone in both TX RAM halves
     (big endian, FM flags unmasked), each bit of SWEEP_REGS flipped for 0.5 s in turn. Each key-up starts with
@@ -706,6 +710,7 @@ def print_steps(title, n, hits, unmapped, missing, texts):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_mode_sweep(probe, sdr_bench, pytestconfig):
     """Experiment 1: every FM value of 0x10 (bit 7 set, 0x81-0xFF), keyed with tones on I2S (600 Hz) and in the TX
     RAM (1000 Hz). On the DM-1701 (2026-10-12): none put a tone on air, none dropped the carrier."""
@@ -719,6 +724,7 @@ def test_probe_fm_tx_mode_sweep(probe, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_hwcfg_sweep(probe, sdr_bench, pytestconfig):
     """Each bit of 0x01 (H/W config: two-point modulation) and page 1 0x50 / 0x51 (FM writes 0) flipped while keyed,
     tones as in test_probe_fm_tx_mode_sweep."""
@@ -741,6 +747,7 @@ OFFSET_TOGGLE_S = 1.5
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_offsets(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone muted, per register: 0.6 s as set, then the value +8, +32, -8, -32 and with bit 7
     flipped (OFFSET_HOLD_S each, back to the base between them), then a toggle between the base and +32 as fast as
@@ -821,6 +828,7 @@ MOD_MS = 2000
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_mod_tone(probe, sdr_bench, pytestconfig):
     """FM transmit from the MCU through 0x04: keyed with the microphone muted, the firmware writes base + a sine into
     0x04 for 2 s; the SDR reports the tone and its deviation. The frequency response and the deviation per step."""
@@ -852,6 +860,7 @@ SWEEP2_REGS = [0x11, 0x21, 0x22, 0x30, 0x31, 0x32, 0x33, 0x34, 0x37, 0x40, 0x41,
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_sweep2(probe, sdr_bench, pytestconfig):
     """As test_probe_fm_tx_sweep, over SWEEP2_REGS: each bit of the keyed value flipped for 0.5 s, tones on I2S
     (600 Hz) and in the TX RAM (1000 Hz, both FM buffers and 0x000-0x02F)."""
@@ -880,6 +889,7 @@ ACK_S = 3.0
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_ram_ack(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone muted, the TX RAM holding a 1 kHz tone (big endian) and the FM flags unmasked, the
     host polls 0x82 and answers each "sending data request" (clear it, then the variant's writes)."""
@@ -941,6 +951,7 @@ def tx_ram_activity(L, seconds=1.0):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_ram_readback(probe, sdr_bench, pytestconfig):
     """Unkeyed: a pattern written through page 2 reads back through page 6 (the TX RAM). Keyed (microphone on, then
     muted), the FM buffers read through page 6: does the chip write the codec's samples there, and does what we
@@ -1007,6 +1018,7 @@ def chase_halves(L, seconds, data_for_half, settle=0.0):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_ram_chase(probe, sdr_bench, pytestconfig):
     """The codec fills the TX RAM FM halves while keyed (test_probe_fm_tx_ram_readback). Keyed with the microphone
     muted, overwrite each half with a 1 kHz tone (big endian, then little endian) as soon as the codec moves to the
@@ -1118,6 +1130,7 @@ def feed_flips():
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_ramfeed_sweep(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone muted, the firmware keeps a 1 kHz tone in the TX RAM FM halves and applies each flip
     for 0.5 s. A flip during which the voice band level jumps (or a 1 kHz tone shows) makes the modulator read the
@@ -1133,6 +1146,7 @@ FEED_RERUN = [(f"4:0x{r:02X} bit {b}", PAGE, r, 1 << b) for r, bits in ((0x01, (
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_ramfeed_rerun(probe, sdr_bench, pytestconfig):
     """FEED_RERUN through the fed sweep, in key-ups of their own"""
     ramfeed_sweep(probe, sdr_bench, pytestconfig, FEED_RERUN, "rerun")
@@ -1207,6 +1221,7 @@ def ramfeed_sweep(probe, sdr_bench, pytestconfig, flips, tag):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_mod_shaped(probe, sdr_bench, pytestconfig):
     """The 0x04 path's quality: a 1 kHz tone at 32 and 16 steps, plain and noise shaped; SINAD in the voice band."""
     if "VFO_FM" not in probe.features():
@@ -1244,6 +1259,7 @@ FEED_COMBOS = [
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_ramfeed_combos(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone muted: FEED_COMBOS applied together while the firmware keeps a 1 kHz tone in the TX
     RAM FM halves for 2 s; the voice band level and tones per combination."""
@@ -1280,6 +1296,7 @@ def test_probe_fm_tx_ramfeed_combos(probe, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_mod_gain(probe, sdr_bench, pytestconfig):
     """Does 0x46 (two-point MOD1 amplitude, hrc6000-registers.md 5.1) scale the 0x04 offset? The same 16-step 1 kHz
     tone through 0x04 with 0x46 as set, halved and quartered: if the deviation follows, a small 0x46 gives finer
@@ -1310,6 +1327,7 @@ def aux_write16(L, addr, value):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_tone_gen(probe, sdr_bench, pytestconfig):
     """The chip's selcall tone generator (hrc6000-registers.md 7.8): eight 16-bit phase steps at aux 0x11A-0x129
     (f / 32000 x 2^16), deviation 0xA0. Keyed with the microphone muted: 2-tone mode, "long A" with tone A set to
@@ -1375,6 +1393,7 @@ def test_probe_fm_tx_tone_gen(probe, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_ext_codec_switch(probe, sdr_bench, pytestconfig):
     """Does 0x06 bit 2 (CodeCMode external) move the FM transmit chain's input to the external codec port (pins 16-20,
     chip block diagram figure 1.1)? LINEIN2's own 2.5 kHz oscillation is a known source on the built-in codec: keyed
@@ -1417,6 +1436,7 @@ EXT_I2S_VARIANTS = [
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_ext_i2s(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone muted and the probe sending a 1 kHz tone on the I2S stream, the external-codec
     settings of EXT_I2S_VARIANTS: a 1 kHz tone on air means the FM chain reads the MCU's I2S samples."""
@@ -1467,6 +1487,7 @@ LOOP_VARIANTS = [
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_linein2_loop(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone (LINEIN1) muted and a 1 kHz tone on the I2S stream: does LINEIN2 hear LINEOUT2, and
     with the loop gain lowered, does the I2S tone reach the air through DAC -> LINEOUT2 -> LINEIN2?"""
@@ -1557,6 +1578,7 @@ PIN_TONE_VARIANTS = [
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_pin_tone(probe, sdr_bench, pytestconfig):
     """Keyed FM with a 1 kHz square wave on PC8 (the stock beep PWM) and each codec input on in turn: a 1 kHz tone on
     air means the beep net reaches the transmit audio. Then, keyed, pins 16-20 as timed GPIO outputs while the MCU's
@@ -1619,6 +1641,7 @@ PWM_VARIANTS = [
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_pin_pwm(probe, sdr_bench, pytestconfig):
     """Keyed FM with MIC_P / MIC_N on and a PWM sine on PC8: the quality (SINAD) of PWM audio through the board's own
     filtering and the chip's FM chain, by carrier and level."""
@@ -1685,6 +1708,7 @@ PWM_SWEEP = [
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_pin_pwm_sweep(probe, sdr_bench, pytestconfig):
     """PWM audio on PC8 below the limiter, and the flat path's frequency response."""
     if "VFO_FM" not in probe.features():
@@ -1698,6 +1722,7 @@ def test_probe_fm_tx_pin_pwm_sweep(probe, sdr_bench, pytestconfig):
 # does the 0x04 path, which skips the 8 kHz codec, reach the 4.8 kHz that 9600 baud FSK needs?
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_wideband(probe, sdr_bench, pytestconfig):
     """The PWM path's noise with no audio, and 0x04 tones up to 6 kHz."""
     if "VFO_FM" not in probe.features():
@@ -1723,6 +1748,7 @@ def test_probe_fm_tx_wideband(probe, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_probe_fm_tx_sinad_reference(probe, sdr_bench, pytestconfig):
     """The measurement's own ceiling: the chip's selcall tone generator (a digital sine inside the FM chain, as in
     test_probe_fm_tx_tone_gen) playing 1 kHz, measured like the PWM and 0x04 paths."""

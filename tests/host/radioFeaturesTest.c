@@ -253,13 +253,15 @@ bool codeplug_channel(uint16_t n, channel_t *out)
 	*out = chans[n];
 	return true;
 }
-uint16_t codeplug_zone_count(void) { return 1; }
+static zone_t zone2;		// dual watch: a second zone when nzones is 2
+static uint16_t nzones;
+uint16_t codeplug_zone_count(void) { return nzones; }
 bool codeplug_zone(uint16_t i, zone_t *out)
 {
-	if (i != 0) {
+	if (i >= nzones) {
 		return false;
 	}
-	*out = zone;
+	*out = i == 0 ? zone : zone2;
 	return true;
 }
 static const contact_t contacts[] = { { "Local", 9, CONTACT_GROUP, 0 } };
@@ -315,6 +317,7 @@ static void setup_codeplug(void)
 	chans[6].contact = 1;
 	add(7, "Last", 146580000, RADIO_MODE_FM);
 	chans[7].tot_s = 30;
+	nzones = 1;
 	memset(&zone, 0, sizeof(zone));
 	strcpy(zone.name, "Z");
 	zone.count = 7;
@@ -516,18 +519,19 @@ static void test_scan_engine(void)
 	CHECK(seq[0] == 1 && seq[1] == 2 && seq[2] == 0 && seq[3] == 4 && seq[4] == 5 && seq[5] == 0);
 	CHECK(seq[6] == 1 && seq[7] == 2);
 
-	// Dual watch: alternates, falls back to the usable one
+	// Our own transmission (dual watch goes on through PTT): marked every poll while it lasts, then the stop waits
+	// the delay as after a signal, and a reply holds it
 	memset(&s, 0, sizeof(s));
 	cfg.priority = false;
-	s.origin_pos = 0;
-	s.dual_pos = 4;
 	scan_begin(&s, SCAN_DUAL, &cfg, 0);
-	CHECK(scan_next_pos(&s, 6, all_usable, NULL) == 4);
-	CHECK(scan_next_pos(&s, 6, all_usable, NULL) == 0);
-	CHECK(scan_next_pos(&s, 6, all_usable, NULL) == 4);
-	scan_nuisance_pos(&s, 4);
-	CHECK(scan_next_pos(&s, 6, all_usable, NULL) == 0);
-	CHECK(scan_next_pos(&s, 6, all_usable, NULL) == 0);
+	scan_talked(&s, 1000);
+	CHECK(s.phase == SCAN_PH_RESUME);
+	scan_talked(&s, 5000);
+	CHECK(scan_poll(&s, 5025, false, false, false) == SCAN_ACT_NONE);
+	CHECK(scan_poll(&s, 6975, false, false, false) == SCAN_ACT_NONE);
+	CHECK(scan_poll(&s, 7000, false, false, false) == SCAN_ACT_NEXT);
+	scan_talked(&s, 8000);
+	CHECK(scan_poll(&s, 8100, true, true, false) == SCAN_ACT_NONE && s.phase == SCAN_PH_HOLD);
 
 	// Nothing usable
 	memset(&s, 0, sizeof(s));
@@ -1007,18 +1011,19 @@ static void test_scan_ptt_and_modes(void)
 	CHECK(n == 7 && seq[0] == 1 && seq[1] == 4 && seq[2] == 0 && seq[3] == 5 && seq[4] == 6 && seq[5] == 0);
 	req(RREQ_SCAN, RSCAN_CANCEL);
 
-	// Dual watch: Home and Last, nothing else
+	// Dual watch (the debug link's request): Home and Last, nothing else; it starts listening where it is
 	req(RREQ_ZONE_POS, 0);
 	req2(RREQ_SCAN, RSCAN_DUAL, 6);
-	CHECK(sm.view.scan == SCAN_DUAL && sm.view.zone_pos == 6);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.view.zone_pos == 0);
 	bool other = false;
-	int home = 0;
+	int home = 0, last = 0;
 	for (int i = 0; i < 120; i++) {
 		run(25);
 		other |= sm.view.zone_pos != 0 && sm.view.zone_pos != 6;
 		home += sm.view.zone_pos == 0;
+		last += sm.view.zone_pos == 6;
 	}
-	CHECK(!other && home > 20);
+	CHECK(!other && home > 20 && last > 20);
 	req(RREQ_SCAN, RSCAN_STOP);
 	// Dual watch with itself, or in the VFO: refused
 	req(RREQ_ZONE_POS, 0);
@@ -1072,9 +1077,10 @@ static void test_vfo_scan(void)
 
 // ---- DMR on the simulated modem (as in radioCoreTest.c) ----
 
+static bool lc_private;		// hear_call: a private call to dst rather than a group call
 static void mk_lc(uint8_t lc[9], uint32_t dst, uint32_t src)
 {
-	dmr_lc_t l = { .flco = DMR_FLCO_GROUP_VOICE, .dst = dst, .src = src };
+	dmr_lc_t l = { .flco = lc_private ? DMR_FLCO_UNIT_VOICE : DMR_FLCO_GROUP_VOICE, .dst = dst, .src = src };
 	dmr_lc_pack(&l, lc);
 }
 
@@ -1278,6 +1284,607 @@ static void test_scan_dmr_mid_call(void)
 	req(RREQ_SCAN, RSCAN_STOP);
 	hw.sig[0].hz = 0;
 }
+
+// ---- Dual watch (CONFIG_DUAL_WATCH): two channels of any zone or the VFO, PTT on the selected one ----
+#if CONFIG_DUAL_WATCH
+static void dual(radio_dual_ref_t a, radio_dual_ref_t b, uint8_t sel)
+{
+	req2(RREQ_DUAL, (int32_t)radio_dual_arg(&a, sel == 0), radio_dual_arg(&b, sel != 0));
+}
+static void dual_stop(void) { req2(RREQ_DUAL, 0, 0); }
+
+static bool on_ref(radio_dual_ref_t r)
+{
+	return r.vfo ? sm.view.vfo : !sm.view.vfo && sm.view.zone_index == r.zone && sm.view.zone_pos == r.pos;
+}
+
+// Run until the receiver is on r (at most ms); false if it never got there
+static bool wait_on(radio_dual_ref_t r, uint32_t ms)
+{
+	for (uint32_t t = 0; t < ms && !on_ref(r); t += 25) {
+		run(25);
+	}
+	return on_ref(r);
+}
+
+static void test_dual_watch(void)
+{
+	start();
+	// Zone 1 "Far": position 0 ch8 Far 446.100 FM, position 1 ch5 Other
+	add(8, "Far", 446100000, RADIO_MODE_FM);
+	memset(&zone2, 0, sizeof(zone2));
+	strcpy(zone2.name, "Far zone");
+	zone2.count = 2;
+	zone2.channels[0] = 8;
+	zone2.channels[1] = 5;
+	nzones = 2;
+	const radio_dual_ref_t home = { false, 0, 0 }, far = { false, 1, 0 }, other = { false, 0, 4 };
+	const radio_dual_ref_t vfo = { true, 0, 0 }, bad = { false, 1, 5 };
+
+	// Refused: the same channel twice, a channel that isn't there, a zone that isn't there
+	req(RREQ_ZONE_POS, 0);
+	dual(home, home, 0);
+	CHECK(sm.view.scan == SCAN_OFF);
+	dual(home, bad, 0);
+	CHECK(sm.view.scan == SCAN_OFF);
+	dual(home, (radio_dual_ref_t){ false, 7, 0 }, 1);
+	CHECK(sm.view.scan == SCAN_OFF && on_ref(home));
+
+	// Across zones: the view reports the tuned channel's zone and position, nothing else is visited
+	dual(home, far, 0);
+	CHECK(sm.view.scan == SCAN_DUAL && on_ref(home));
+	bool stray = false;
+	int at_home = 0, at_far = 0;
+	for (int i = 0; i < 120; i++) {
+		run(25);
+		stray |= !on_ref(home) && !on_ref(far);
+		at_home += on_ref(home);
+		at_far += on_ref(far);
+		if (on_ref(far)) {
+			CHECK(hw.rx_hz == 446100000 && strcmp(sm.view.zone_name, "Far zone") == 0);
+			CHECK(sm.view.zone_size == 2);
+		}
+	}
+	CHECK(!stray && at_home > 20 && at_far > 20 && sm.view.scan == SCAN_DUAL);
+
+	// Asked again: the same pair changes nothing but the selection (no retune)
+	CHECK(wait_on(far, 500));
+	int rx = hw.rx_calls;
+	dual(home, far, 0);
+	dual(far, home, 1);
+	CHECK(hw.rx_calls == rx && on_ref(far) && sm.dual_sel == 1);
+	CHECK(!sm.dual[1].vfo && sm.dual[1].zone == 0 && sm.dual[1].pos == 0);
+	dual(home, far, 0);
+
+	// PTT with the receiver on the other channel: back to the selected one, transmit there, the watch goes on
+	CHECK(wait_on(far, 500));
+	req(RREQ_PTT, 1);
+	CHECK(on_ref(home) && sm.view.state == RS_TX && hw.tx_hz == 146520000 && sm.view.scan == SCAN_DUAL);
+	run(3000);
+	CHECK(on_ref(home) && sm.view.scan == SCAN_DUAL);
+	req(RREQ_PTT, 0);
+	// After it: the wait on the selected channel (a reply is heard there), then the watch again
+	run(850);
+	CHECK(on_ref(home) && sm.view.scan == SCAN_DUAL && sm.view.scan_phase == SCAN_PH_RESUME);
+	CHECK(wait_on(far, 300) && sm.view.scan == SCAN_DUAL);
+
+	// B selected, the receiver on A: PTT retunes to B, in the other zone
+	dual(home, far, 1);
+	CHECK(wait_on(home, 500));
+	req(RREQ_PTT, 1);
+	CHECK(on_ref(far) && hw.tx_hz == 446100000 && sm.view.scan == SCAN_DUAL);
+	req(RREQ_PTT, 0);
+	CHECK(wait_on(home, 1300) && sm.view.scan == SCAN_DUAL);
+
+	// A call holds the receiver on its channel, the watch goes on after the delay
+	signal_on(0, 446100000, 30, no_tone);
+	CHECK(wait_on(far, 500));
+	run(3000);
+	CHECK(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.state == RS_RX);
+	hw.sig[0].hz = 0;
+	run(850);
+	CHECK(on_ref(far) && sm.view.scan_phase == SCAN_PH_RESUME);
+	CHECK(wait_on(home, 500));
+
+	// Stop: on the selected channel (B here), wherever the receiver was
+	CHECK(wait_on(home, 500));
+	dual_stop();
+	CHECK(sm.view.scan == SCAN_OFF && on_ref(far));
+
+	// A new pair keeps the receiver where it is when that channel is still one of the two
+	dual(far, home, 0);
+	CHECK(on_ref(far));
+	dual(other, far, 0);
+	CHECK(sm.view.scan == SCAN_DUAL && on_ref(far) && sm.dual_at == 1);
+	// ... and starts on the selected one when it isn't
+	dual(home, other, 0);
+	CHECK(sm.view.scan == SCAN_DUAL && on_ref(home));
+
+	// A channel change by the user ends the watch, from the selected channel
+	dual(home, far, 0);
+	CHECK(wait_on(far, 500));
+	req(RREQ_CH_STEP, 1);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.zone_index == 0 && sm.view.zone_pos == 1);
+
+	// The VFO as A, with its own settings: the receiver alternates with Other
+	req(RREQ_VFO_SET, 146000000);
+	CHECK(sm.view.vfo);
+	req(RREQ_VFO, 0);
+	CHECK(!sm.view.vfo);
+	dual(vfo, other, 0);
+	CHECK(sm.view.scan == SCAN_DUAL && wait_on(vfo, 500) && sm.view.ch.rx_hz == 146000000 && hw.rx_hz == 146000000);
+	CHECK(wait_on(other, 500) && hw.rx_hz == 145500000);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.vfo && hw.tx_hz == 146000000 && sm.view.scan == SCAN_DUAL);
+	req(RREQ_PTT, 0);
+	// The VFO as B, in the other zone's company
+	dual(far, vfo, 1);
+	CHECK(wait_on(far, 2500));
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.vfo && hw.tx_hz == 146000000 && sm.view.scan == SCAN_DUAL);
+	req(RREQ_PTT, 0);
+	CHECK(wait_on(far, 2500) && sm.view.scan == SCAN_DUAL);
+	dual_stop();
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.vfo);
+
+	// The stop resume mode doesn't end dual watch on a signal; it holds as carrier
+	settings(set_resume_stop);
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE, 0);
+	dual(home, far, 0);
+	signal_on(0, 446100000, 30, no_tone);
+	CHECK(wait_on(far, 500));
+	run(1000);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.view.scan_phase == SCAN_PH_HOLD && on_ref(far));
+	hw.sig[0].hz = 0;
+	dual_stop();
+	settings(set_resume_carrier);
+
+	// DMR: the reply window after a call (a private one here) holds the selected channel; on the other one the
+	// watch goes on
+	const radio_dual_ref_t dmr = { false, 0, 5 };
+	signal_on(0, 438500000, 30, no_tone);
+	dual(dmr, home, 0);
+	CHECK(wait_on(dmr, 500));
+	lc_private = true;
+	hear_call(3101276, 1, 1, false);
+	CHECK(sm.view.dmr.state == RDMR_RX && sm.view.scan_phase == SCAN_PH_HOLD);
+	hear_call(3101276, 1, 2, true);
+	lc_private = false;
+	hw.sig[0].hz = 0;
+	CHECK(sm.view.dmr.reply_active);
+	run(4000);
+	CHECK(on_ref(dmr) && sm.view.dmr.reply_active);
+	dual(dmr, home, 1);		// Home selected: the reply window no longer holds the DMR channel
+	CHECK(wait_on(home, 2500));
+	dual_stop();
+
+	// Monitor with B (FM) selected and the receiver on A (DMR): the squelch opens on B, not digital monitor on A, and
+	// the watch waits there while the key is held, then goes on
+	dual(dmr, far, 1);
+	CHECK(wait_on(dmr, 2500));
+	bool latch = sm.hear_all_latch;
+	req(RREQ_MONITOR, 1);
+	CHECK(on_ref(far) && sm.view.monitor && sm.view.scan == SCAN_DUAL);
+	run(3000);
+	CHECK(on_ref(far) && sm.view.monitor && sm.view.scan_phase == SCAN_PH_PAUSED && hw.audio);
+	req(RREQ_MONITOR, 0);
+	CHECK(!sm.view.monitor && sm.hear_all_latch == latch);
+	CHECK(wait_on(dmr, 2500) && sm.view.scan == SCAN_DUAL);
+	// Already on the selected channel: it stays there
+	CHECK(wait_on(far, 2500));
+	req(RREQ_MONITOR, 1);
+	run(2000);
+	CHECK(on_ref(far) && sm.view.monitor);
+	req(RREQ_MONITOR, 0);
+	dual_stop();
+
+	// Changes for now stay with their channel while the receiver hops: B's bandwidth (a retuning change: the UI starts
+	// the watch again), and power and squelch asked for with the receiver on the other channel go to the selected one
+	req(RREQ_ZONE, 0);
+	dual(home, far, 1);
+	CHECK(wait_on(far, 2500));
+	uint8_t bw = sm.view.ch.bw == RADIO_BW_25K ? RADIO_BW_12K5 : RADIO_BW_25K;
+	req(RREQ_BANDWIDTH, bw);
+	CHECK(on_ref(far) && sm.view.ch.bw == bw && (sm.view.temp & RADIO_TEMP_BW));
+	dual(home, far, 1);
+	CHECK(sm.view.scan == SCAN_DUAL);
+	CHECK(wait_on(home, 2500));
+	uint8_t pw = sm.view.power;
+	req(RREQ_POWER, 1);
+	CHECK(on_ref(far) && sm.view.ch.bw == bw && sm.view.power != pw && sm.view.scan == SCAN_DUAL);
+	uint8_t far_pw = sm.view.power;
+	CHECK(wait_on(home, 2500) && sm.view.power == pw && sm.view.temp == 0);
+	dual(home, far, 0);
+	CHECK(wait_on(far, 2500));
+	uint8_t sq = sm.view.squelch;
+	req(RREQ_SQUELCH, sq > 0 ? -1 : 1);
+	CHECK(on_ref(home) && sm.view.squelch != sq && sm.view.temp == RADIO_TEMP_SQUELCH);
+	uint8_t home_sq = sm.view.squelch;
+	for (int i = 0; i < 3; i++) {
+		CHECK(wait_on(far, 2500) && sm.view.ch.bw == bw && sm.view.power == far_pw);
+		CHECK(sm.view.temp == (RADIO_TEMP_BW | RADIO_TEMP_POWER) && sm.view.squelch == sq);
+		CHECK(wait_on(home, 2500) && sm.view.squelch == home_sq && sm.view.temp == RADIO_TEMP_SQUELCH);
+	}
+	// Stopped by the user: the selected channel keeps its changes for now, the other's are gone
+	dual_stop();
+	CHECK(on_ref(home) && sm.view.temp == RADIO_TEMP_SQUELCH);
+	dual(home, far, 0);
+	CHECK(wait_on(far, 2500) && sm.view.temp == 0 && sm.view.ch.bw != bw);
+	// A new channel in a pane doesn't inherit the old one's
+	dual(home, far, 1);
+	req(RREQ_POWER, 1);
+	CHECK(on_ref(far) && (sm.view.temp & RADIO_TEMP_POWER));
+	dual(home, other, 1);
+	dual(home, far, 1);
+	CHECK(wait_on(far, 2500) && sm.view.temp == 0);
+	// A talk target for now on the DMR channel, chosen while the receiver is on the other: set there, kept over hops
+	dual(dmr, home, 0);
+	CHECK(wait_on(home, 2500));
+	req(RREQ_DMR_TARGET, 2345);
+	CHECK(on_ref(dmr) && sm.view.dmr.target_manual && sm.view.dmr.target_id == 2345);
+	CHECK(wait_on(home, 2500) && wait_on(dmr, 2500));
+	CHECK(sm.view.dmr.target_manual && sm.view.dmr.target_id == 2345);
+	dual_stop();
+}
+
+// Dual watch on one receiver, the wait after a signal (dual_delay_ms): the receiver stays for the reply and looks at the
+// other channel in between. A signal there is shown (view.dual_busy), never played or held, until the wait ends
+static void set_dual_delay_3s(radio_settings_t *s) { s->dual_delay_ms = 3000; }
+static void set_dual_delay_0(radio_settings_t *s) { s->dual_delay_ms = 0; }
+
+// The wait after a call on far ends: how often the receiver looked at home, and whether it played or held there
+static void dual_wait_watch(radio_dual_ref_t home, uint32_t ms, int *looks, bool *played, bool *held)
+{
+	bool was = false;
+	*looks = 0;
+	*played = *held = false;
+	for (uint32_t t = 0; t < ms; t += 25) {
+		run(25);
+		bool here = on_ref(home);
+		*looks += here && !was;
+		*played |= here && (hw.audio || sm.view.state == RS_RX);
+		*held |= here && sm.view.scan_phase == SCAN_PH_HOLD;
+		was = here;
+	}
+}
+
+// A call on far (446.100): held and played there, then it ends
+static bool far_call(radio_dual_ref_t far)
+{
+	signal_on(0, 446100000, 30, no_tone);
+	for (int t = 0; t < 160 && !(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD); t++) {
+		run(25);
+	}
+	bool ok = on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD && hw.audio;
+	run(100);
+	hw.sig[0].hz = 0;
+	return ok;
+}
+
+static void test_dual_wait(void)
+{
+	start();
+	add(8, "Far", 446100000, RADIO_MODE_FM);
+	memset(&zone2, 0, sizeof(zone2));
+	strcpy(zone2.name, "Far zone");
+	zone2.count = 1;
+	zone2.channels[0] = 8;
+	nzones = 2;
+	const radio_dual_ref_t home = { false, 0, 0 }, far = { false, 1, 0 };
+	int looks;
+	bool played, held;
+	CHECK(sm.set.dual_delay_ms == RADIO_DUAL_DELAY_MS && sm.set.dual_delay_ms == 1000);
+
+	// A call on far (B) ends while home (A, selected) has a signal: the looks find it, show it, don't play it
+	dual(home, far, 0);
+	signal_on(0, 446100000, 30, no_tone);
+	CHECK(wait_on(far, 500));
+	run(300);
+	CHECK(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.dual_busy == 0);
+	signal_on(1, 146520000, 30, no_tone);
+	hw.sig[0].hz = 0;
+	dual_wait_watch(home, 900, &looks, &played, &held);
+	CHECK(looks >= 2 && !played && !held && sm.view.dual_busy == 1);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.view.scan_phase == SCAN_PH_RESUME && on_ref(far));
+	// The wait ends: the watch goes to home, which holds and plays; the mark goes
+	run(300);
+	CHECK(on_ref(home) && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.state == RS_RX && hw.audio);
+	CHECK(sm.view.dual_busy == 0);
+	hw.sig[1].hz = 0;
+
+	// Home quiet: the looks find nothing, and no mark
+	CHECK(far_call(far));
+	dual_wait_watch(home, 900, &looks, &played, &held);
+	CHECK(looks >= 2 && sm.view.dual_busy == 0 && on_ref(far));
+
+	// A mark from one look goes at the next look that hears nothing
+	CHECK(far_call(far));
+	signal_on(1, 146520000, 30, no_tone);
+	for (int t = 0; t < 40 && sm.view.dual_busy == 0; t++) {
+		run(25);
+	}
+	CHECK(sm.view.dual_busy == 1);
+	hw.sig[1].hz = 0;
+	for (int t = 0; t < 40 && sm.view.dual_busy != 0 && sm.view.scan_phase == SCAN_PH_RESUME; t++) {
+		run(25);
+	}
+	CHECK(sm.view.dual_busy == 0);
+
+	// The reply on far during the wait: back there within a look, held and played
+	CHECK(far_call(far));
+	for (int t = 0; t < 40 && on_ref(far); t++) {
+		run(25);	// to the first look
+	}
+	CHECK(on_ref(home) && !hw.audio);
+	signal_on(0, 446100000, 30, no_tone);
+	run(300);
+	CHECK(on_ref(far) && sm.view.scan_phase == SCAN_PH_HOLD && sm.view.state == RS_RX && hw.audio);
+	hw.sig[0].hz = 0;
+
+	// PTT during a look: transmits on the selected channel (home here), the look is over
+	CHECK(far_call(far));
+	for (int t = 0; t < 40 && on_ref(far); t++) {
+		run(25);
+	}
+	CHECK(on_ref(home));
+	req(RREQ_PTT, 1);
+	CHECK(on_ref(home) && sm.view.state == RS_TX && hw.tx_hz == 146520000);
+	run(500);
+	req(RREQ_PTT, 0);
+	// The wait after it is home's: the looks are at far
+	dual_wait_watch(far, 800, &looks, &played, &held);
+	CHECK(looks >= 1 && !held && on_ref(home) && sm.view.scan_phase == SCAN_PH_RESUME);
+
+	// The setting: 3 s waits longer, with more looks
+	settings(set_dual_delay_3s);
+	CHECK(far_call(far));
+	dual_wait_watch(home, 2700, &looks, &played, &held);
+	CHECK(looks >= 7 && !played && !held && sm.view.scan_phase == SCAN_PH_RESUME);	// still waiting (maybe in a look)
+	// 0: no wait, no looks: the watch goes on at once
+	settings(set_dual_delay_0);
+	CHECK(far_call(far));
+	CHECK(wait_on(home, 200) && sm.view.scan_phase == SCAN_PH_LISTEN);
+	dual_stop();
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.dual_busy == 0);
+
+	// Stored with the settings (page 1), and read back: 0 is kept as 0, the default for a store without it
+	settings_t st;
+	settings_read(&st);
+	CHECK(st.rs_dual_delay == 1);
+	settings(set_dual_delay_3s);
+	settings_read(&st);
+	CHECK(st.rs_dual_delay == 31);
+	radio_sm_init(&sm, now);
+	CHECK(sm.set.dual_delay_ms == 3000);
+	st.rs_dual_delay = 0;
+	settings_t *w = settings_begin();
+	w->rs_dual_delay = 0;
+	settings_end(now);
+	radio_sm_init(&sm, now);
+	CHECK(sm.set.dual_delay_ms == RADIO_DUAL_DELAY_MS);
+}
+
+// What the debug link sends during the watch (radio-features.md 2.1): a position, a zone or a frequency acts on the
+// selected channel; a scan stop ends the watch and says so (view.dual_stops), so the UI doesn't start it again
+static void test_dual_requests(void)
+{
+	start();
+	add(8, "Far", 446100000, RADIO_MODE_FM);
+	memset(&zone2, 0, sizeof(zone2));
+	strcpy(zone2.name, "Far zone");
+	zone2.count = 2;
+	zone2.channels[0] = 8;
+	zone2.channels[1] = 5;
+	nzones = 2;
+	const radio_dual_ref_t home = { false, 0, 0 }, far = { false, 1, 0 };
+
+	// B selected in the other zone, the receiver on A: a position is B's zone's
+	req(RREQ_ZONE_POS, 0);
+	dual(home, far, 1);
+	CHECK(wait_on(home, 1500));
+	req(RREQ_ZONE_POS, 1);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.zone_index == 1 && sm.view.zone_pos == 1);
+
+	// A zone: from the selected channel, to that zone's first channel
+	req(RREQ_ZONE, 0);
+	dual(home, far, 1);
+	CHECK(wait_on(home, 1500));
+	req(RREQ_ZONE, 1);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.zone_index == 1 && sm.view.zone_pos == 0);
+
+	// A frequency with the other channel on a VFO: the selected one gets the VFO the other isn't on
+	req(RREQ_VFO_SET, 146000000);
+	uint8_t other_vfo = sm.view.vfo_index;
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE, 0);
+	const radio_dual_ref_t v = { true, 0, other_vfo };
+	dual(home, v, 0);
+	CHECK(sm.view.scan == SCAN_DUAL);
+	req(RREQ_VFO_SET, 145000000);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.vfo && sm.view.vfo_index != other_vfo && sm.view.ch.rx_hz == 145000000);
+	CHECK(sm.vfo_other.ch.rx_hz == 146000000);	// the other channel's VFO kept its frequency
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE, 0);
+
+	// A scan stop ends the watch on the selected channel and counts it
+	uint8_t stops = sm.view.dual_stops;
+	dual(home, far, 1);
+	CHECK(wait_on(home, 1500));
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(sm.view.scan == SCAN_OFF && on_ref(far) && sm.view.dual_stops == (uint8_t)(stops + 1u));
+	// ... the UI's own stop (RREQ_DUAL) and a channel change don't count
+	dual(home, far, 0);
+	dual_stop();
+	dual(home, far, 0);
+	req(RREQ_CH_STEP, 1);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.dual_stops == (uint8_t)(stops + 1u));
+	// ... nor does a stop with no watch running
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(sm.view.dual_stops == (uint8_t)(stops + 1u));
+	// Cancel ends it too (on the selected channel)
+	dual(home, far, 1);
+	CHECK(wait_on(home, 1500));
+	req(RREQ_SCAN, RSCAN_CANCEL);
+	CHECK(sm.view.scan == SCAN_OFF && on_ref(far) && sm.view.dual_stops == (uint8_t)(stops + 2u));
+}
+
+// A second receiver (board.rx2): the main one stays on the selected channel, the second has the other; it falls back to
+// alternating while the second one is down or won't take its channel
+static struct {
+	bool up, refuse, deaf, on, audio;	// deaf: takes settings but never says it's on them
+	bool active;
+	rx2_tune_t t;
+	int tunes, stops;
+} r2;
+static bool r2_tune(const rx2_tune_t *t)
+{
+	if (!r2.up || r2.refuse) {
+		return false;
+	}
+	if (!r2.on || memcmp(&r2.t, t, sizeof(*t)) != 0) {
+		r2.tunes++;
+	}
+	r2.t = *t;
+	r2.on = true;
+	return true;
+}
+static void r2_stop(void) { r2.on = false; r2.audio = false; r2.stops++; }
+static void r2_status(rx2_status_t *st)
+{
+	memset(st, 0, sizeof(*st));
+	st->up = r2.up;
+	st->tuned = r2.up && r2.on && !r2.deaf;
+	st->active = st->tuned && r2.active;
+	st->heard = st->active && r2.audio;
+	st->rssi_dbm = -80;
+}
+static void r2_audio(bool on) { r2.audio = on; }
+static const hal_rx2_t fake_rx2 = { .tune = r2_tune, .stop = r2_stop, .status = r2_status, .audio = r2_audio };
+
+static void test_dual_rx2(void)
+{
+	start();
+	memset(&r2, 0, sizeof(r2));
+	r2.up = true;
+	board.rx2 = &fake_rx2;
+	const radio_dual_ref_t home = { false, 0, 0 }, tone = { false, 0, 1 }, other = { false, 0, 4 };
+	const radio_dual_ref_t dmr = { false, 0, 5 };
+
+	// Start: the main receiver on the selected channel, the second on the other, and they stay there
+	dual(home, tone, 0);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.view.rx2 && on_ref(home) && r2.on && r2.tunes == 1);
+	CHECK(r2.t.rx_hz == 146940000 && r2.t.mode == RADIO_MODE_FM && r2.t.rx_tone.type == TONE_CTCSS &&
+	      r2.t.rx_tone.value == 1000 && r2.t.squelch == sm.view.squelch);
+	int rx = hw.rx_calls;
+	bool moved = false;
+	for (int i = 0; i < 200; i++) {
+		run(25);
+		moved |= !on_ref(home);
+	}
+	CHECK(!moved && hw.rx_calls == rx && sm.view.scan == SCAN_DUAL);
+	CHECK(r2.tunes == 1);		// sent again every 2 s, but nothing changed
+
+	// Audio: the second receiver has the speaker while the selected channel is quiet; a signal there takes it
+	r2.active = true;
+	run(50);
+	CHECK(r2.audio);
+	signal_on(0, 146520000, 30, no_tone);
+	run(200);
+	CHECK(sm.view.state == RS_RX && hw.audio && !r2.audio && on_ref(home));
+	hw.sig[0].hz = 0;
+	run(300);
+	CHECK(r2.audio && !hw.audio);
+	// ... and PTT mutes it; the transmission is on the selected channel, with no retune
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 146520000 && !r2.audio && sm.view.scan == SCAN_DUAL && r2.on);
+	req(RREQ_PTT, 0);
+	run(100);
+	CHECK(r2.audio && on_ref(home) && sm.view.rx2);
+	r2.active = false;
+
+	// A new selection swaps the receivers' channels
+	dual(home, tone, 1);
+	CHECK(on_ref(tone) && r2.t.rx_hz == 146520000 && sm.view.rx2 && sm.dual_at == 1);
+	// A new pair
+	dual(other, tone, 1);
+	CHECK(on_ref(tone) && r2.t.rx_hz == 145500000);
+
+	// DMR on the second receiver: color code, timeslot, our ID, the talk group
+	dual(dmr, home, 1);
+	CHECK(on_ref(home) && r2.t.mode == RADIO_MODE_DMR && r2.t.rx_hz == 438500000 && r2.t.color_code == 1 &&
+	      r2.t.timeslot == 1 && r2.t.own_id == 3101276 && r2.t.talk_group == 9);
+
+	// It goes down: the main receiver alternates; back up, it is given the channel again within the retry time
+	dual(home, tone, 0);
+	r2.up = false;
+	r2.on = false;
+	run(100);
+	CHECK(!sm.view.rx2 && sm.view.scan == SCAN_DUAL);
+	CHECK(wait_on(tone, 1000) && wait_on(home, 1000));
+	r2.up = true;
+	int tunes = r2.tunes;
+	run(RADIO_RX2_RETRY_MS + 200);
+	CHECK(sm.view.rx2 && r2.on && r2.tunes == tunes + 1 && on_ref(home));
+
+	// It refuses the channel: alternating at once
+	r2.refuse = true;
+	dual(home, other, 0);
+	CHECK(!sm.view.rx2 && sm.view.scan == SCAN_DUAL);
+	CHECK(wait_on(other, 1000));
+	r2.refuse = false;
+	run(RADIO_RX2_RETRY_MS + 200);
+	CHECK(sm.view.rx2 && on_ref(home));
+
+	// It takes the settings but never says it's on them: alternating after RADIO_RX2_TUNE_MS
+	r2.deaf = true;
+	dual(home, tone, 0);
+	CHECK(sm.view.rx2);
+	run(RADIO_RX2_TUNE_MS - 200);
+	CHECK(sm.view.rx2 && on_ref(home));
+	run(400);
+	CHECK(!sm.view.rx2 && sm.view.scan == SCAN_DUAL);
+	CHECK(wait_on(tone, 1000));
+	r2.deaf = false;
+
+	// The watch ends: the second receiver stops, audio off
+	int stops = r2.stops;
+	run(RADIO_RX2_RETRY_MS + 200);
+	CHECK(sm.view.rx2);
+	r2.active = true;
+	run(100);
+	CHECK(r2.audio);
+	dual_stop();
+	CHECK(sm.view.scan == SCAN_OFF && !sm.view.rx2 && r2.stops == stops + 1 && !r2.on && !r2.audio);
+
+	// A user channel change ends it too
+	dual(home, tone, 0);
+	CHECK(sm.view.rx2);
+	req(RREQ_CH_STEP, 1);
+	CHECK(sm.view.scan == SCAN_OFF && !sm.view.rx2 && !r2.on);
+	r2.active = false;
+	board.rx2 = NULL;
+}
+#else
+// Without it: the debug link's dual watch in the current zone, which PTT ends as any scan; radio_req_dual does nothing
+static void test_dual_watch(void)
+{
+	start();
+	req(RREQ_ZONE_POS, 0);
+	radio_dual_ref_t a = { false, 0, 0 }, b = { false, 0, 4 };
+	req2(RREQ_DUAL, (int32_t)radio_dual_arg(&a, true), radio_dual_arg(&b, false));
+	CHECK(sm.view.scan == SCAN_OFF);
+	req2(RREQ_SCAN, RSCAN_DUAL, 4);
+	CHECK(sm.view.scan == SCAN_DUAL);
+	for (int i = 0; i < 40 && sm.view.zone_pos != 4; i++) {
+		run(25);
+	}
+	CHECK(sm.view.zone_pos == 4);
+	req(RREQ_PTT, 1);		// still searching: back to the start channel, the watch ends
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.zone_pos == 0 && hw.tx_hz == 146520000);
+	req(RREQ_PTT, 0);
+}
+#endif
 
 static void test_tot_and_beeps(void)
 {
@@ -1916,6 +2523,12 @@ int main(void)
 	test_vfo_scan();
 	test_mixed_scan();
 	test_scan_dmr_mid_call();
+	test_dual_watch();
+#if CONFIG_DUAL_WATCH
+	test_dual_wait();
+	test_dual_requests();
+	test_dual_rx2();
+#endif
 	test_tot_and_beeps();
 	test_beep_follows_volume();
 	test_bcl_inhibit();

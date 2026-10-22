@@ -65,6 +65,11 @@
 					// LC from the second complete superframe at worst: about 1.1 s from the retune)
 #define RADIO_SCAN_DMR_CARRIER_MS 150	// DMR: a carrier this recent still counts (direct mode: 30 ms on air in 60)
 #define RADIO_SCAN_DMR_SYNC_AGE_MS 400	// DMR: bursts this recent are sync (a superframe and a slot)
+// Dual watch with a second receiver (board.rx2): how often its settings go again (the link drops repeats), how long
+// it may take to say it is on them, and how long after a failure to try it again (meanwhile the main receiver alternates)
+#define RADIO_RX2_REFRESH_MS	2000
+#define RADIO_RX2_TUNE_MS	1500
+#define RADIO_RX2_RETRY_MS	10000
 #define RADIO_SCAN_HOLD_S	5
 #define RADIO_SCAN_DELAY_MS	2000
 
@@ -134,12 +139,23 @@ typedef enum {
 	RREQ_VOLUME,		// arg: the volume step 0..RADIO_VOLUME_MAX (radios without a knob)
 	RREQ_VOLUME_OVERRIDE,	// arg: the step over the knob, -1 = back to the knob
 	RREQ_VFO_COPY,		// the channel's settings into the VFO, and open it (CONFIG_VFO); no-op in the VFO
+	RREQ_DUAL,		// dual watch (CONFIG_DUAL_WATCH): arg channel A, arg2 channel B, radio_dual_arg()
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
 static inline int32_t radio_tone_arg(uint8_t which, subtone_t t)
 {
 	return (int32_t)(((uint32_t)(which & 3u) << 24) | ((uint32_t)t.type << 16) | t.value);
+}
+
+// RREQ_DUAL's arguments: a dual watch channel in 32 bits, RADIO_DUAL_VFO | which VFO, or zone << 16 | position, with
+// RADIO_DUAL_SEL on the selected one. Neither selected: stop on the selected channel
+#define RADIO_DUAL_VFO	(1u << 31)
+#define RADIO_DUAL_SEL	(1u << 30)
+static inline uint32_t radio_dual_arg(const radio_dual_ref_t *r, bool sel)
+{
+	uint32_t a = r->vfo ? RADIO_DUAL_VFO | (r->pos & 1u) : ((uint32_t)(r->zone & 0x3FFFu) << 16) | r->pos;
+	return a | (sel ? RADIO_DUAL_SEL : 0u);
 }
 
 typedef struct {
@@ -160,6 +176,30 @@ typedef struct {
 } radio_name_t;
 #endif
 
+#if CONFIG_DUAL_WATCH
+// The VFO not in use: dual watch gives each channel its own (radio-features.md 2.1)
+typedef struct {
+	channel_t ch;
+	bool seeded;
+	uint32_t talk_id;
+	bool talk_private;
+} radio_vfo_t;
+#endif
+
+#if CONFIG_SCAN && CONFIG_DUAL_WATCH
+// A dual watch channel's changes for now (P7), kept while the receiver is on the other channel
+typedef struct {
+	bool valid;
+	bool temp_power, temp_squelch;
+	uint8_t power, squelch, temp_ts;
+	uint8_t bw, mode, color_code, timeslot;
+	subtone_t rx_tone, tx_tone;
+	bool manual, manual_private, hear_all_latch;	// DMR: a talk target for now, hear all latched
+	uint8_t manual_ts;
+	uint32_t manual_id;
+} radio_dual_keep_t;
+#endif
+
 typedef struct {
 	radio_view_t view;
 	uint32_t serial;		// bumped on every visible change
@@ -167,8 +207,13 @@ typedef struct {
 	zone_t zone;			// the current zone's channel list
 	channel_t vfo_ch;		// the VFO's settings, kept while on a channel
 	bool vfo_seeded;		// vfo_ch holds a frequency
+	uint32_t vfo_step_set;		// the VFO's step as set, 0 = auto: from the width (view.vfo_step_hz has the one in use)
 	uint32_t vfo_talk_id;		// the DMR VFO's talk target (CONFIG_VFO_DMR), 0 = none chosen: talkgroup 9
 	bool vfo_talk_private;
+	uint8_t vfo_idx;		// which VFO the four above are: 0 or 1 (view.vfo_index)
+#if CONFIG_DUAL_WATCH
+	radio_vfo_t vfo_other;		// the other VFO, swapped in by vfo_use
+#endif
 	bool have_channels;		// some zone holds a readable channel
 
 	uint8_t base_squelch;		// squelch without the temporary change
@@ -210,6 +255,23 @@ typedef struct {
 	bool tot_warned;		// the time-out warning sounded for this transmission
 #if CONFIG_SCAN
 	scan_t scan;
+	radio_dual_ref_t dual[2];	// SCAN_DUAL: the two channels
+	uint8_t dual_sel;		// ... the selected one (PTT)
+	uint8_t dual_at;		// ... the one the receiver is on
+#if CONFIG_DUAL_WATCH
+	bool rx2_on;			// the second receiver (board.rx2) holds the other channel; the main one stays on dual_sel
+	// Each channel's changes for now (P7), kept while the receiver is on the other one: a hop reloads the channel
+	// from the codeplug, which would drop them. Valid until the user stops the watch or the channel changes
+	radio_dual_keep_t dual_keep[2];
+	uint32_t rx2_try_ms;		// last time it was given the other channel, or found down
+	uint32_t rx2_refresh_ms;	// last time its settings went again
+	int8_t rx2_audio_out;		// last board.rx2->audio(), -1 = none yet
+	// One receiver, in the wait after a signal: on the other channel for a look (scan.tuned_ms its start), the wait's
+	// start to go back to, and whether this look heard a signal
+	bool dual_peek;
+	bool dual_peek_heard;
+	uint32_t dual_wait_ms;
+#endif
 #endif
 	batt_t batt;
 	uint32_t batt_ms;		// last battery reading

@@ -212,6 +212,7 @@ T1 pass criteria (all automatic):
 |---|---|---|
 | Q1 radio speech off air | The user talks ~8 s; `bench_tx.py listen --ambe-out` writes the call's AMBE as `.ambe` (9-byte FEC frames) and `.amb` (DSD format, 49 parameter bits per frame) | One call, AMBE FEC corrections 0, non-silence frames during speech; decoded audio intelligible, no clicks or gaps |
 | Q2 speech to the radio | `bench_tx.py voice --ambe <recording>.ambe`: a real recorded call (9-byte frames with FEC) | Clean speech from the speaker, right level |
+| Q3 audio smoke, both ways | `tests/hil/test_dmr_audio_smoke.py`, in every bench pass (`tests/hil/README.md`, Default bench pass). RX as Q2 to the call the radio's channel listens to; TX with the voice layer's test signal (RADIO op 33) in place of the mic, the bench's recording played back to the radio | RX: `voice.rx_peak` >= 1000, frames not one frame repeated (`voice.rx_repeats`). TX: distinct, non-silent frames on air, and the played-back recording decodes to audio on the radio. Missing prerequisites with the radio and bench present fail; they don't skip |
 
 Decoding AMBE to audio needs an AMBE+2 vocoder, and this project ships none (README, `docs/CLEANROOM.md`). What
 exists on the rig, checked 2026-10-09:
@@ -224,7 +225,7 @@ exists on the rig, checked 2026-10-09:
 Options, best first: (1) a DVSI hardware vocoder on USB (ThumbDV / DV3000 class, AMBE-3000 chip): licensed hardware,
 decode `.amb` / raw frames with its own host tool on the Mac or the SDR bench; the cleanest for objective quality
 numbers; (2) an open decoder installed by the tester locally (dsd-fme + mbelib), never vendored here. Independent of
-any vocoder, the objective checks are the AMBE FEC correction count (0 on a clean bench), bit-exact comparison of a
+any vocoder, the radio's own decoder judges a call (Q3: `voice.rx_peak`, the radio's own over played back to it), and the objective checks are the AMBE FEC correction count (0 on a clean bench), bit-exact comparison of a
 known transmitted pattern (firmware request 3) and of a known received pattern (request 4).
 
 ### 5.4 Repeater mode (d)

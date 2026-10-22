@@ -215,6 +215,7 @@ def _received(sock, seconds):
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_passthrough_text(radio, sdr_bench, pytestconfig):
     """Passthrough: an ETSI IP text and a TMS with an ACK request from the bench to the radio's ID reach the PC's
     sockets (UDP 5016, 4007) and only them: the inbox count stays, no TMS ACK goes out, data.pt_yielded counts both."""
@@ -252,6 +253,7 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_passthrough_reply(radio, sdr_bench, pytestconfig):
     """The PC's datagram to the bench's ID goes over the air from the radio's own DMR ID; a confirmed packet from the
     bench still gets the radio's ETSI response in passthrough."""

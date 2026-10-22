@@ -35,7 +35,7 @@ a key the radio doesn't have.
 | **0** to **9** | Home: start Find. Lists: pick a numbered row, or type to filter. VFO: type a frequency. While you transmit with **PTT**: nothing ([touch tones](07-fm.md#touch-tones-dtmf) aren't built yet) | Home: speed dial (not built yet). While you transmit with **PTT**: nothing |
 | **Previous zone**, **Next zone** | Home: previous or next zone | |
 | **Monitor** | FM: opens the squelch while held. DMR: digital monitor (every talkgroup) on or off | |
-| **Talk target** | Talk target picker (DMR channels) | Scan on or off |
+| **Talk target** | Talk target picker (DMR channels) | Dual watch on or off |
 | **Power level** | Home: next power level | Hold 1.5 s: emergency ([Emergency](10-emergency.md)) |
 | **PTT** | Transmit | |
 | Channel knob | Each click is one step. Clockwise: the next channel on Home (as **Up**), the next row down in a list or menu, a higher value in an editor. Counterclockwise: the opposite | |

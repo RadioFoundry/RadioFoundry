@@ -13,7 +13,7 @@ stub does for the DM-32UV and the DM-1801 Pro ([hardware-dm32.md](hardware-dm32.
 | The stub | `stub/stm32f4/` (`make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin`) |
 | Its protocol engine (portable, host tested) | `stub/stm32f4/f4stub_proto.c`, `tests/host/f4stubTest.c` |
 | Host tool | `stub/f4stub.py`, called by `stub/stubtool.py`; `tests/host/f4stub_wire_check.py` runs it against the real engine |
-| Switch | `CONFIG_STUB_ENTRY`, on by default with the debug link, on every radio including the DM-1701 |
+| Switch | `CONFIG_STUB_ENTRY`, on by default on every radio including the DM-1701, with or without the debug link ([stub-entry.md](stub-entry.md)) |
 
 Status (2026-10-16): built, host tested and run on the DM-1701: section 11 has the hardware test and its results.
 
@@ -52,7 +52,7 @@ The bootloader route ([hardware-dm1701.md](hardware-dm1701.md) 15) costs three t
    0x20000000 and the 8 KB span. The data goes into ODR's staging buffer (`stub_region`), which lies anywhere in ODR's
    `.bss`.
 2. ENTER is refused with busy (3) while the radio transmits. Otherwise the reply goes out, the banner "PC Loader
-   Connected" is drawn with the backlight at full (the generic entry code in `core/debuglink/debuglink_stub.c`, so a
+   Connected" is drawn with the backlight at full (the generic entry code in `core/stubentry/stub_entry.c`, so a
    dimmed or switched-off backlight does not hide it), and `enter_stub` runs in the host link task:
 
 | Step | Why |
@@ -278,8 +278,8 @@ never committed.
 | ODR with `CONFIG_STUB_ENTRY=y`, MD-380 | the same code, in an application area of 464 KB (the default image is 320,236 bytes), RAM 78.8 %. The switch fits with no other switch off |
 | ODR with the switch off | no change: the same image, byte for byte in size |
 
-The switch stays off by default: the command hands the whole SoC to whatever image the host sends, guarded by the
-magic, the length and the CRC-32. Turning it on for releases needs a signed or hash-pinned stub first (section 12).
+The switch is on by default. The command hands the whole SoC to whatever image the host sends, guarded by the magic,
+the length and the CRC-32; a signed or hash-pinned stub would close that (section 12).
 
 ## 11. First hardware test (DM-1701)
 

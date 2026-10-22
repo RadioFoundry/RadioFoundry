@@ -175,6 +175,12 @@ radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -o $@ $(RFTEST) -lm
 
+# The same without CONFIG_DUAL_WATCH: only the debug link's dual watch, two channels of one zone, ended by PTT
+TESTS   += radioFeaturesTestNoDual
+radioFeaturesTestNoDual: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(wildcard $(CORE)/usbaudio/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
+		-DCONFIG_NET_USRP=1 -DCONFIG_DUAL_WATCH=0 -o $@ $(RFTEST) -lm
+
 # The volume knob power switch read from the battery sense line (DM-1701, MD-380)
 TESTS   += powerSwitchTest
 
@@ -232,16 +238,21 @@ serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROO
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c
 
 # The VOX mic level (drivers/audio/miclevel): the boards' analog-tap scale and the level from PCM blocks
+# The second receiver's link (core/rx2): frames and both ends back to back
+TESTS   += rx2LinkTest
+rx2LinkTest: rx2LinkTest.c $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h $(ROOT)/hal/hal_rx2.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ rx2LinkTest.c $(CORE)/rx2/rx2_link.c
 TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest rx2LinkTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
 	./radioFeaturesTest
+	./radioFeaturesTestNoDual
 	./roamTest
 	./radioAmTest
 	./bcastTest
@@ -249,6 +260,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest roamTest radioAm
 	./quadratureTest
 	./serialmicTest
 	./miclevelTest
+	./rx2LinkTest
 .PHONY: run-core
 
 # The read-only codeplug (open-firmware layout and built-in channels) and the DM-1701 calibration reader, on fake flash images
@@ -378,7 +390,7 @@ gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 # the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
-UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/radio/tones.c \
+UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c \
            sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
@@ -597,7 +609,7 @@ run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6
 .PHONY: run-split
 
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring (core/debuglink)
-DLINK   := debuglinkTest.c $(CORE)/debuglink/debuglink_proto.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
+DLINK   := debuglinkTest.c $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
 	$(CORE)/debuglink/dl_chip.c
 TESTS   += debuglinkTest
 
@@ -609,16 +621,28 @@ run-debuglink: debuglinkTest
 	./debuglinkTest
 .PHONY: run-debuglink
 
-# The runtime RAM-monitor loader's portable state machine (core/debuglink/dl_stub.c, CONFIG_STUB_ENTRY)
+# The runtime RAM-monitor loader's portable state machine (core/stubentry/stub_load.c, CONFIG_STUB_ENTRY)
 TESTS   += stubEntryTest
-stubEntryTest: stubEntryTest.c $(CORE)/debuglink/dl_stub.c $(CORE)/debuglink/dl_stub.h $(CORE)/debuglink/debuglink_proto.h \
+stubEntryTest: stubEntryTest.c $(CORE)/stubentry/stub_load.c $(CORE)/stubentry/stub_load.h $(CORE)/debuglink/dl_frame.h \
 		$(ROOT)/stub/stm32f4/f4stub_header.h
-	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ stubEntryTest.c $(CORE)/debuglink/dl_stub.c
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ stubEntryTest.c $(CORE)/stubentry/stub_load.c
 
 run: run-stubEntry
 run-stubEntry: stubEntryTest
 	./stubEntryTest
 .PHONY: run-stubEntry
+
+# The stub entry on the wire: golden replies through the debug link's dispatch and the stub entry's own listener
+# (core/stubentry/stub_link.c, the build without the debug link), framing from core/debuglink/dl_frame.c
+SLINK   := stubLinkTest.c $(CORE)/stubentry/stub_load.c $(CORE)/stubentry/stub_link.c $(CORE)/debuglink/dl_frame.c
+TESTS   += stubLinkTest
+stubLinkTest: $(SLINK) $(wildcard $(CORE)/stubentry/*.h) $(CORE)/debuglink/dl_frame.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ $(SLINK)
+
+run: run-stubLink
+run-stubLink: stubLinkTest
+	./stubLinkTest
+.PHONY: run-stubLink
 
 # The debug link's tasks view section: each task's least free stack (core/debuglink/debuglink_view_tasks.c; the
 # kernel's task table is faked)
@@ -645,6 +669,18 @@ run: run-watchdog
 run-watchdog: watchdogTest
 	./watchdogTest
 .PHONY: run-watchdog
+
+# DL_CMD_RX2, the second receiver's SoC on the debug link (core/debuglink/debuglink_rx2.c): the board, clock, radio
+# view and log are faked; watchdog_stub/ holds the stand-in FreeRTOS headers
+RX2DL   := debuglinkRx2Test.c $(CORE)/debuglink/debuglink_rx2.c
+TESTS   += debuglinkRx2Test
+debuglinkRx2Test: $(RX2DL) $(ROOT)/hal/hal_rx2.h $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -o $@ $(RX2DL)
+
+run: run-debuglinkRx2
+run-debuglinkRx2: debuglinkRx2Test
+	./debuglinkRx2Test
+.PHONY: run-debuglinkRx2
 
 # The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
 TESTS   += f4stubTest
@@ -810,7 +846,7 @@ TESTS   += pppTest
 pppTest: pppTest.c fuzz.h $(PPPT) $(CORE)/net/ppp.h $(CORE)/hostlink/hostlink_ppp.h $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_NET_PPP=1 -o $@ pppTest.c $(PPPT)
 
-PPPPEER := pppPeer.c $(PPPT) $(CORE)/net/tcp.c $(CORE)/debuglink/debuglink_proto.c $(CORE)/snmp/snmp.c \
+PPPPEER := pppPeer.c $(PPPT) $(CORE)/net/tcp.c $(CORE)/debuglink/dl_frame.c $(CORE)/snmp/snmp.c \
            $(CORE)/snmp/snmpBer.c $(CORE)/snmp/snmpMib.c
 TESTS   += pppPeer
 
@@ -937,7 +973,7 @@ run-cpsfast: cpsFastTest
 # debug link's VERSION and CODEPLUG, for tools/cps_fast.py (cpsFastClientTest.py)
 PYTHON  ?= $(shell command -v python3)
 TESTS   += cpsSim
-SIMDL   := $(CPSF) $(CORE)/debuglink/debuglink_proto.c
+SIMDL   := $(CPSF) $(CORE)/debuglink/dl_frame.c
 
 cpsSim: cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP=0 -o $@ cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c

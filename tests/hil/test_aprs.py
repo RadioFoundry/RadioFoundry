@@ -369,6 +369,7 @@ def check_tones(f):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 @pytest.mark.parametrize("aprs_air", ["channel", "fm_vfo"], indirect=True)
 def test_aprs_on_air_position(radio, sdr_bench, aprs_air):
     """One position at 50 mW on the test frequency, decoded off air; deviation, twist, phase, TX delay printed."""
@@ -381,6 +382,7 @@ def test_aprs_on_air_position(radio, sdr_bench, aprs_air):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_aprs_on_air_status(radio, sdr_bench, aprs_air):
     text = "ODR HIL status test"
     f = send_and_capture(radio, sdr_bench, aprs_air, "hil_aprs_status", lambda: radio.link.aprs_status(text))
@@ -390,6 +392,7 @@ def test_aprs_on_air_status(radio, sdr_bench, aprs_air):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_aprs_on_air_message(radio, sdr_bench, aprs_air):
     """A message with a message number; then its two retries (no ack can come back to the DM-1701)."""
     to, text = f"{aprs_air.call}-1", "ODR HIL message test"
@@ -541,6 +544,7 @@ def udt_position(block):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 @pytest.mark.parametrize("form", ["lrrp", "udt"])
 def test_aprs_dmr_position(radio, sdr_bench, pytestconfig, form):
     """The position as an LRRP report or a UDT location over DMR at the lowest power, decoded from the bench modem."""

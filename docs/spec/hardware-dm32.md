@@ -1165,9 +1165,9 @@ link task, as on the DM-1701).
 A bench and recovery path: the host loads its own flash-access RAM monitor (the "C7 stub", a small program that reads
 and writes the radio's flash chips with no firmware running) into SRAM and ODR jumps to it at run time, with the radio
 powered on, no power cycle and no DFU. It is the same monitor the serial boot ROM loads with the radio off; this just
-gets it running from a radio that is already up. On by default wherever the debug link is (`CONFIG_STUB_ENTRY`);
-the command answers unavailable on a board whose platform has no `hal_system_t.enter_stub`. The wire format is debug
-link command `0x1A` (`docs/spec/debuglink.md` 3.18).
+gets it running from a radio that is already up. On by default (`CONFIG_STUB_ENTRY`, with or without the debug link: `docs/spec/stub-entry.md`);
+the command answers unavailable on a board whose platform has no `hal_system_t.enter_stub` (every board but the
+HR_C7000 so far). The wire format is debug link command `0x1A` (`docs/spec/debuglink.md` 3.18).
 
 **RAM region.** The monitor is loaded into the stock-codec window, `0x16CDC..0x2F914` (76,344 B), which `dm32.ld` leaves
 out of the image entirely (section 17.1): ODR links nothing there. A radio that hosts its stock codec runs it in that
@@ -1201,7 +1201,7 @@ answers the monitor's SSI again and a later soft reset boots (the same steps `hr
 no DMA engine has to be stopped. RTOS tasks are not stopped gracefully; masking interrupts freezes the scheduler and the
 jump never returns (recover by a power cycle).
 
-**Load protocol.** The host sends the image over the debug link in `DL_STUB_CHUNK_MAX` (59 B) chunks after a BEGIN that
+**Load protocol.** The host sends the image over the debug link in `STUB_CHUNK_MAX` (59 B) chunks after a BEGIN that
 carries the length, a CRC-32 of the whole image, the entry address and a 32-bit magic key (`'C7SB'`); each chunk's
 integrity is the debug link frame's own CRC-16, and the region is zeroed at BEGIN so a dropped chunk fails the final
 check. ENTER repeats the magic, and ODR verifies the exact length and the CRC-32 of the loaded bytes before it quiesces

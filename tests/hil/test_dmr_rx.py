@@ -18,6 +18,7 @@ CALLS, SUPERFRAMES, HEADERS, TERMINATORS = 2, 10, 8, 3
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_dmr_rx_counters(radio, sdr_bench, pytestconfig):
     if "DMR" not in radio.features():
         pytest.skip("built without DMR")
