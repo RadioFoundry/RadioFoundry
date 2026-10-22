@@ -83,6 +83,7 @@ feature it checks.
 @pytest.mark.feature("fm")                                  # required: gates the feature
 @pytest.mark.feature("aprs", optional=True)                 # run and recorded, doesn't gate
 @pytest.mark.feature("channel_knob", owner="turn the knob by the clicks the test asks for")
+@pytest.mark.feature("split_duplex", gate=True)             # the capability gate: runs first
 ```
 
 A test may carry several feature markers. What a test needs comes from its markers and fixtures: `rf` and `radio_tx`
@@ -119,8 +120,10 @@ excuse it:
 - `not_built`, `no_hw`, `state`: never excused.
 
 An excused skip is recorded but doesn't verify the feature, and an optional test never fails the run. A feature that
-depends on hardware glue has a capability gate (`test_split_capability`): it skips `no_hw` on a radio that doesn't
-offer the feature, and bring-up turns that into a failure.
+depends on hardware glue has a capability gate, its one test marked `gate=True` (`test_split_capability`): it checks
+the radio offers the feature and skips `no_hw` when it doesn't. Bring-up runs each feature's gate first. When the gate
+fails or skips, the feature's other required tests fail with "capability gate failed" without running.
+`tools/bringup.py check` fails on a feature with more than one gate.
 
 ### Results
 

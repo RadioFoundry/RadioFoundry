@@ -66,11 +66,11 @@ def add_options(parser):
 
 
 def feature_marks(item):
-    """[(feature, optional, owner)] of a test's feature markers."""
+    """[(feature, optional, owner, gate)] of a test's feature markers."""
     out = []
     for m in item.iter_markers("feature"):
         for fid in m.args:
-            out.append((fid, bool(m.kwargs.get("optional")), m.kwargs.get("owner")))
+            out.append((fid, bool(m.kwargs.get("optional")), m.kwargs.get("owner"), bool(m.kwargs.get("gate"))))
     return out
 
 
@@ -129,22 +129,28 @@ class BringUp:
         self.all = want == "all"
         self.features = [] if self.all else [w.strip() for w in want.split(",") if w.strip()]
         self.granted = granted(config)
-        self.tests = {}         # node id -> {"required": [features], "optional": [features], "needs": set}
+        self.tests = {}         # node id -> {"required": [features], "optional": [features], "gates": [features],
+        #                                     "needs": set}
+        self.gates = {}         # feature -> its capability gate's node id
+        self.gate_failed = {}   # feature -> what its gate did instead of passing
         self.results = {}
         self.secrets = [v for v in (config.getoption(o, default=None) for o in PORT_OPTIONS) if v]
 
     def select(self, item, nid):
         """Whether the run covers the test; remembers its role."""
-        req, opt = [], []
-        for fid, optional, _ in feature_marks(item):
+        req, opt, gates = [], [], []
+        for fid, optional, _, gate in feature_marks(item):
             if self.all or fid in self.features:
                 (opt if optional else req).append(fid)
+                if gate and not optional:
+                    gates.append(fid)
+                    self.gates[fid] = nid
                 if self.all and fid not in self.features:
                     self.features.append(fid)
         if not req and not opt:
             return False
         self.tests[nid] = {"required": sorted(set(req)), "optional": sorted(set(opt) - set(req)),
-                           "needs": needs_of(item)}
+                           "gates": sorted(set(gates)), "needs": needs_of(item)}
         return True
 
     def role(self, nid):
@@ -183,9 +189,10 @@ class Plugin:
     """The hooks, registered by conftest.py's pytest_configure (a conftest below the rootdir can't name plugins)."""
 
     def __init__(self, config):
-        config.addinivalue_line("markers", "feature(id, ..., optional=False, owner=None): the checklist feature(s) "
-                                "the test checks (tests/hil/features.toml); optional: run and recorded, not gating; "
-                                "owner: what a person does for it")
+        config.addinivalue_line("markers", "feature(id, ..., optional=False, owner=None, gate=False): the checklist "
+                                "feature(s) the test checks (tests/hil/features.toml); optional: run and recorded, "
+                                "not gating; owner: what a person does for it; gate: the feature's capability gate, "
+                                "run first in bring-up mode, its other required tests fail unless it passes")
         config.addinivalue_line("markers", "second_radio: needs a second radio (--split-rx-port or --bench-station)")
         if config.getoption("--bringup", default=None):
             config._odr_bringup = BringUp(config)
@@ -197,8 +204,8 @@ class Plugin:
             for item in items:
                 found[node_id(item)] = {"markers": sorted({m.name for m in item.iter_markers()}),
                                         "needs": sorted(needs_of(item)),
-                                        "features": [{"id": f, "optional": o, "owner": w}
-                                                     for f, o, w in feature_marks(item)]}
+                                        "features": [{"id": f, "optional": o, "owner": w, "gate": g}
+                                                     for f, o, w, g in feature_marks(item)]}
             with open(out, "w") as f:
                 json.dump(found, f, indent=1, sort_keys=True)
         bu = getattr(config, "_odr_bringup", None)
@@ -214,7 +221,21 @@ class Plugin:
                 drop.append(item)
         if drop:
             config.hook.pytest_deselected(items=drop)
-            items[:] = keep
+        # capability gates first, the rest in collection order
+        items[:] = [i for i in keep if bu.tests[i._odr_bringup_id]["gates"]] + [
+            i for i in keep if not bu.tests[i._odr_bringup_id]["gates"]]
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_runtest_setup(self, item):
+        """A required test of a feature whose capability gate didn't pass fails without running."""
+        bu = getattr(item.config, "_odr_bringup", None)
+        nid = getattr(item, "_odr_bringup_id", None)
+        if bu is None or nid is None:
+            return
+        shut = [f for f in bu.tests[nid]["required"] if f in bu.gate_failed and bu.gates.get(f) != nid]
+        if shut:
+            pytest.fail("bring-up: capability gate failed, not run: " + "; ".join(
+                f"{f}'s gate {bu.gates[f].split('::')[-1]} {bu.gate_failed[f]}" for f in shut), pytrace=False)
 
     @pytest.hookimpl(wrapper=True, tryfirst=True)
     def pytest_runtest_makereport(self, item, call):
@@ -240,6 +261,9 @@ class Plugin:
                                    f"({kind or 'no kind'}), which its needs don't excuse: {reason}")
         if report.when == "call" or report.outcome != "passed":
             bu.record(nid, report, required, excused)
+        if report.outcome != "passed":
+            for f in bu.tests[nid]["gates"]:
+                bu.gate_failed.setdefault(f, report.outcome)
         return report
 
     def pytest_sessionfinish(self, session, exitstatus):

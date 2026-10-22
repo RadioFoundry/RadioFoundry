@@ -72,6 +72,16 @@ def test_passes(radio):
 def test_unlisted(radio):
     pass
 
+
+@pytest.mark.feature("fake_gated")
+def test_after_gate(radio):
+    pass
+
+
+@pytest.mark.feature("fake_gated", gate=True)
+def test_zgate(radio):
+    skip("no_hw", "the radio doesn't offer the gated feature")
+
 '''
 
 # No fixture of its own: the conftest's radio fixture, with a port that isn't there
@@ -109,7 +119,7 @@ def outcomes(path):
 def test_required_skip_fails_the_bringup_run(tmp_path):
     t = fake_tree(tmp_path)
     plain = pytest_run(t, str(t / "test_fake.py"))
-    assert plain.returncode == 0 and "2 passed, 3 skipped" in plain.stdout, plain.stdout + plain.stderr
+    assert plain.returncode == 0 and "3 passed, 4 skipped" in plain.stdout, plain.stdout + plain.stderr
 
     out = t / "out.json"
     r = pytest_run(t, str(t / "test_fake.py"), "--bringup", "fake_split,fake_tx", "--bringup-out", str(out))
@@ -124,6 +134,19 @@ def test_required_skip_fails_the_bringup_run(tmp_path):
     assert res["test_keyed"]["skip_kind"] == "opt_in"
     assert "test_unlisted" not in res           # not in a selected feature: deselected
     assert "/nonexistent" not in out.read_text()
+
+
+def test_a_failed_gate_fails_the_feature_unrun(tmp_path):
+    t = fake_tree(tmp_path)
+    out = t / "out.json"
+    r = pytest_run(t, str(t / "test_fake.py"), "-v", "--bringup", "fake_gated", "--bringup-out", str(out))
+    assert r.returncode == 1, r.stdout + r.stderr
+    # the gate runs first though it is collected last, and the feature's other required test doesn't run
+    assert r.stdout.index("test_zgate") < r.stdout.index("test_after_gate"), r.stdout
+    res = outcomes(out)
+    assert res["test_zgate"]["outcome"] == "failed"
+    assert res["test_after_gate"]["outcome"] == "failed"
+    assert "capability gate failed, not run: fake_gated's gate test_zgate failed" in res["test_after_gate"]["reason"]
 
 
 def test_no_radio_fails_in_bringup_mode(tmp_path):
@@ -270,7 +293,11 @@ def test_check_rejects_a_bad_seed_and_an_unknown_feature(tmp_path):
     t = fake_tree(tmp_path)
     (t / "features.toml").write_text(FAKE_TOML)
     results, board = t / "results", a_board()
-    common = ["--features", str(t / "features.toml"), "--results", str(results), "check", *collect_args(t)]
+    (t / "test_two_gates.py").write_text("import pytest\n\n\n@pytest.mark.feature('fake_ok', gate=True)\n"
+                                        "def test_one():\n    pass\n\n\n@pytest.mark.feature('fake_ok', gate=True)\n"
+                                        "def test_two():\n    pass\n")
+    common = ["--features", str(t / "features.toml"), "--results", str(results), "check", *collect_args(t),
+              "--tests", str(t / "test_two_gates.py")]
     (results / board).mkdir(parents=True)
     # a row's commit the repository doesn't have (a squash-merged branch) is not an error: the row stands
     good = seed(board, {"fake_ok": {"result": "pass", "source": "tests/hil/README.md", "commit": "0" * 40}})
@@ -285,7 +312,8 @@ def test_check_rejects_a_bad_seed_and_an_unknown_feature(tmp_path):
     assert out.returncode != 0
     for want in ("result is one of", "no_such_feature is not a checklist feature",
                  "source docs/no-such-doc.md does not exist",
-                 "test_fake.py::test_keyed: marks feature fake_tx, which tests/hil/features.toml doesn't have"):
+                 "test_fake.py::test_keyed: marks feature fake_tx, which tests/hil/features.toml doesn't have",
+                 "feature fake_ok has more than one capability gate"):
         assert want in text, text
 
 
