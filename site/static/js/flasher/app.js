@@ -1191,10 +1191,13 @@ function writeView() {
 	const dfu = (opts) => bootloaderPanel(t("flash.write.title"), async () => {
 		// from the cable route the codec step was skipped: decide now, from what the radio reported
 		S.decision ||= decideCodec(S.board, fw.manifest, { haveStock: false, haveSaved: !!S.savedCodec, probe: S.now?.probe || null });
-		let codec = [];
-		if (S.decision.mode === MERGE) codec = S.decision.source === "saved" ? await codecSegments(S.savedCodec.profile, S.savedCodec.segments, fb())
-			: (await stockfw.extract(S.stock.data, S.key, fb())).segments;
-		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec);
+		let codec = [], prof = null;
+		if (S.decision.mode === MERGE && S.decision.source === "saved") {
+			prof = S.savedCodec.profile;
+			codec = await codecSegments(prof, S.savedCodec.segments, fb());
+		} else if (S.decision.mode === MERGE) ({ profile: prof, segments: codec } = await stockfw.extract(S.stock.data, S.key, fb()));
+		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec,
+			prof ? stockfw.layoutWindows(prof, fb()) : S.board.codec.windows);
 	}, next, what, opts);
 	if (!stubRoute()) return dfu();
 	// the bootloader route stays one click away: it finishes an install the loader couldn't

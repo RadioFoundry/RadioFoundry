@@ -192,8 +192,11 @@ test("first install on stock: the codec merged from the stock file, then back up
 	const m = { ...fx.manifest };
 	assert.throws(() => decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV" }), DecisionError);
 	const d = decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV", haveStock: true });
-	const { segments: codec } = await stockfw.extract(sim.stock, sim.key, sim.fb);
-	const plan = makePlan(sim.board, segments(m, image), d.mode, codec);
+	const { profile, segments: codec } = await stockfw.extract(sim.stock, sim.key, sim.fb);
+	// the merge plans against the merged file's layout; with one stock file that is the board's windows
+	assert.deepEqual(stockfw.layoutWindows(profile, sim.fb), sim.board.codec.windows);
+	assert.deepEqual(codec.map(([a, d]) => [a, d.length]), stockfw.layoutWindows(profile, sim.fb));
+	const plan = makePlan(sim.board, segments(m, image), d.mode, codec, stockfw.layoutWindows(profile, sim.fb));
 	radio.enterBootloader();
 	await new Dfu(radio.dfuTransport(), noWait).run(plan, sim.key);
 	assert.deepEqual(radio.violations, []);

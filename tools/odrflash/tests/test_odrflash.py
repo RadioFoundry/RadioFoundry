@@ -141,12 +141,61 @@ class StockPlacement(unittest.TestCase):
         stock = [b for b in boards.BOARDS.values() if b.codec_stock]
         self.assertTrue(stock)
         for b in stock:
-            prof = stockfw.PROFILES[b.codec_stock]
-            self.assertEqual(prof["board"], b.id)
-            self.assertEqual(prof["key_sha256"], b.key_sha256, "%s: the DFU key is the stock file's" % b.id)
+            for h in b.codec_stock:
+                prof = stockfw.PROFILES[h]
+                self.assertEqual(prof["board"], b.id)
+                self.assertEqual(prof["codec_profile"], b.codec.id, "%s: every stock file holds the board's codec" % b.id)
+                self.assertEqual(prof["key_sha256"], b.key_sha256, "%s: the DFU key is the stock file's" % b.id)
             for a, n in b.codec.windows:
                 self.assertTrue(b.app_region[1] <= a and a + n <= b.flash_end,
                                 "%s: codec window 0x%08X+0x%X outside the flash the linker keeps free" % (b.id, a, n))
+
+
+class TwoStockFiles(unittest.TestCase):
+    """A board whose codec comes from either of two stock files ([codec] stock lists both): the same codec, its tables
+    at different addresses. The board's windows are the union of both layouts; each merge plans against its own."""
+
+    A = {"name": "A.bin", "board": "dm1701", "codec_profile": "dm1701-two", "key_sha256": "",
+         "code": (0x080E0000, 0x1000, "0" * 64), "tables": (0x080E4000, 0x2000, "1" * 64)}
+    B = {"name": "B.bin", "board": "dm1701", "codec_profile": "dm1701-two", "key_sha256": "",
+         "code": (0x080E0000, 0x1000, "2" * 64), "tables": (0x080C0000, 0x2000, "3" * 64)}
+
+    def board(self, profiles):
+        e = json.load(open(os.path.join(os.path.dirname(boards.__file__), "registry.json")))["boards"]["dm1701"]
+        e = dict(e, codec_stock=list(profiles))
+        with mock.patch.dict(stockfw.PROFILES, profiles):
+            return boards.Board(e)
+
+    def segs(self, prof):
+        return [(a, bytes([i + 1]) * n) for i, (a, n, _) in enumerate(stockfw.windows(prof))]
+
+    def test_union_and_each_merge(self):
+        b = self.board({"a" * 64: self.A, "b" * 64: self.B})
+        self.assertEqual(b.codec.windows, [(0x080E0000, 0x1000), (0x080E4000, 0x2000), (0x080C0000, 0x2000)])
+        self.assertEqual(b.codec.sources, ["A.bin", "B.bin"])
+        self.assertEqual(b.codec_codes, [0x080E0000, 0x080E0000])
+        img = app_image(5000)
+        for prof in (self.A, self.B):
+            segs = self.segs(prof)
+            p = plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs, b.merge_windows(prof))
+            written = b"".join(bl for st in p.writes for _, bl in st.blocks)
+            for a, d in segs:
+                self.assertIn(d, written)
+            # against the union, one file's codec never covers the other's tables: the planner refuses
+            with self.assertRaises(plan.PlanError):
+                plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs)
+
+    def test_keep_protects_both(self):
+        b = self.board({"a" * 64: self.A, "b" * 64: self.B})
+        p = plan.make_plan(b, [(b.app_base, app_image(5000))], plan.KEEP)
+        self.assertEqual([s.index for s in p.kept], [10, 11])	# B's tables in sector 10, A's in sector 11
+        only_a = self.board({"a" * 64: self.A})
+        self.assertEqual([s.index for s in plan.make_plan(only_a, [(b.app_base, app_image(5000))], plan.KEEP).kept],
+                         [11])
+
+    def test_different_codecs_refused(self):
+        with self.assertRaises(ValueError):
+            self.board({"a" * 64: self.A, "b" * 64: dict(self.B, codec_profile="dm1701-other")})
 
 
 class SectorMap(unittest.TestCase):

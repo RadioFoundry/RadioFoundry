@@ -47,7 +47,7 @@
     "2c1101c0"
    ],
    "codec_tool": "hrc7000_codec",
-   "codec_stock": null,
+   "codec_stock": [],
    "codec": {
     "id": "db25d-018",
     "windows": [
@@ -172,7 +172,9 @@
    "keep_codec_supported": true,
    "first_stage": null,
    "codec_tool": "codec_extract",
-   "codec_stock": "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d",
+   "codec_stock": [
+    "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
+   ],
    "codec": {
     "id": null,
     "windows": null,
@@ -239,7 +241,7 @@
    "keep_codec_supported": false,
    "first_stage": null,
    "codec_tool": "hrc7000_codec",
-   "codec_stock": null,
+   "codec_stock": [],
    "codec": {
     "id": "dm1801pro-049",
     "windows": [
@@ -327,7 +329,7 @@
    "keep_codec_supported": false,
    "first_stage": null,
    "codec_tool": "hrc7000_codec",
-   "codec_stock": null,
+   "codec_stock": [],
    "codec": {
     "id": "dm32-049",
     "windows": [
@@ -453,7 +455,9 @@
    "keep_codec_supported": true,
    "first_stage": null,
    "codec_tool": "codec_extract",
-   "codec_stock": "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43",
+   "codec_stock": [
+    "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
+   ],
    "codec": {
     "id": null,
     "windows": null,

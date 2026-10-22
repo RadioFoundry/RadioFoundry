@@ -43,8 +43,9 @@ function checkSegments(board, segments) {
 		throw new PlanError(`the image must start at the application base ${hex(board.app_base)} (the vector table)`);
 }
 
-// segments: the firmware as [[addr, Uint8Array]]; codecSegments: the codec (merge mode)
-export function makePlan(board, segments, mode, codecSegments = []) {
+// segments: the firmware as [[addr, Uint8Array]]; codecSegments: the codec (merge mode); codecWindows: the windows that
+// codec fills (stockfw.layoutWindows of the merged file), default the board's windows (the union over its stock files)
+export function makePlan(board, segments, mode, codecSegments = [], codecWindows = board.codec.windows) {
 	if (![KEEP, MERGE, RESTORE].includes(mode)) throw new PlanError(`unknown codec mode ${mode}`);
 	const codecSecs = codecSectors(board);
 	const codecIdx = new Set(codecSecs.map((s) => s.index));
@@ -62,7 +63,7 @@ export function makePlan(board, segments, mode, codecSegments = []) {
 	}
 	if (mode !== MERGE && codecSegments.length) throw new PlanError(`codec data given in ${mode} mode`);
 	if (mode === MERGE) {
-		for (const [wlo, wlen] of board.codec.windows)
+		for (const [wlo, wlen] of codecWindows)
 			if (!codecSegments.some(([a, d]) => a <= wlo && wlo + wlen <= a + d.length))
 				throw new PlanError(`merge mode needs the whole codec window ${hex(wlo)}+0x${wlen.toString(16).toUpperCase()}`);
 	}
