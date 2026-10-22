@@ -205,15 +205,16 @@ def record(b):
     return rec
 
 
-# A profile with other wiring than any board's, for the tests here, in tests/host/f4stub_wire_check.py and in the
-# web flasher's (site/tests/fixtures.py): the SPI flash on SPI2 in mode 3 with chip select PB12, a second chip select
-# on that bus (PD14) held high, and the MD-380's application sectors 3-7 with the codec in 8-11
+# A profile with the stub id the registry keeps for tests (0xFE, tools/boards.py STUB_TEST_ID), so HELLO never names a
+# real board for it, for the tests here, in tests/host/f4stub_wire_check.py and in the web flasher's
+# (site/tests/fixtures.py): the SPI flash on SPI2 in mode 3 with chip select PB12, a second chip select on that bus
+# (PD14) held high, and the MD-380's application sectors 3-7 with the codec in 8-11
 TEST_BOARD = "spi2test"
 
 
 def test_board():
     return {"name": "SPI2 test board", "names": (), "owned": [(APP_BASE, 0x08080000)], "codec": (0x08080000, 0x08100000),
-            "id": 3, "hse": 8000000, "boot_end": APP_BASE,
+            "id": 0xFE, "hse": 8000000, "boot_end": APP_BASE,
             "spi": {"bus": 2, "mode": 3, "hz": 4500000, "sck": "PB13", "miso": "PB14", "mosi": "PB15", "af": 5,
                     "cs": "PB12", "idle": ["PD14"]}}
 
@@ -1159,9 +1160,11 @@ def self_test():
 
     # A board with other wiring: the MD-380's application sectors, the SPI flash on SPI2 in mode 3 with chip select
     # PB12, and a second chip select on that bus (PD14) held high. A fixture, so the test doesn't need such a board
+    check(all(b["id"] != test_board()["id"] for b in BOARDS.values()),
+          "the test profile's id 0x%02X is no board's (tools/boards.py STUB_TEST_ID)" % test_board()["id"])
     BOARDS[TEST_BOARD] = test_board()
     rec = config_record(TEST_BOARD)
-    check(rec.hex() == "03010203007a12000800c0000044aa201d1e1f051c3eff00", "test board record %s" % rec.hex())
+    check(rec.hex() == "fe010203007a12000800c0000044aa201d1e1f051c3eff00", "test board record %s" % rec.hex())
     check(config_record("dm1701")[2:4] == b"\x01\x00" and config_record("dm1701")[16:24] == bytes(
         [0x13, 0x14, 0x15, 5, 0x37, 0xFF, 0xFF, 0]), "dm1701 board record: SPI1 mode 0, PB3-PB5, PD7")
     f = stock(11)

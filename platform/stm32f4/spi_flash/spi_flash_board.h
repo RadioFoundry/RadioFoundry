@@ -20,6 +20,10 @@ typedef struct {
 	// The core's areas, given only on a part of at least map_min_size bytes (smaller: nothing is stored)
 	const hal_flash_map_t *map;
 	uint32_t map_min_size;
+	// Optional: the board's lock for a bus the chip shares with another device (a display), held around every
+	// transaction in place of the driver's own mutex. Both or neither
+	void (*bus_take)(void);
+	void (*bus_give)(void);
 } stm32_spi_flash_cfg_t;
 
 // Probe the chip (from board_init; cfg stays valid). False: no accepted chip, size 0
