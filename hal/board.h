@@ -109,6 +109,18 @@ static inline bool board_has_battery(void)
 	return (board.caps & CAP_NO_BATTERY) == 0;
 }
 
+// hz is in one of the radio's bands (board.bands), and one that may transmit when need_tx
+static inline bool board_in_band(uint32_t hz, bool need_tx)
+{
+	for (uint8_t i = 0; i < board.band_count; i++) {
+		const band_t *b = &board.bands[i];
+		if (hz >= b->lo_hz && hz <= b->hi_hz && (b->tx || !need_tx)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // The voltage the radio measures: its battery, its DC input (no battery, hal_power_t.supply_mv set), or neither
 typedef enum { BOARD_VOLTS_NONE, BOARD_VOLTS_BATTERY, BOARD_VOLTS_SUPPLY } board_volts_t;
 
