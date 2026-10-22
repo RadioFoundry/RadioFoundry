@@ -74,7 +74,7 @@ jobs:
 
   firmware:
     # one job per platform: every releasable board on it (board.toml [status] release = "stable") and each of its build
-    # option values' images (the MD-380's UHF and VHF), all from the registry, so a new radio is released with no edit
+    # option values' images (one per band, for example), all from the registry, so a new radio is released with no edit
     # here. One artifact per platform
     name: firmware (${{ matrix.platform }})
     needs: version
