@@ -85,7 +85,7 @@ bring-up run counts a skip as a failure unless its kind is one the feature and t
 | `no_hw` | The radio lacks the capability | the board has no PWM audio output |
 | `state` | A precondition the test could set up itself: a mode, a setting, the codeplug, the channel | the radio is in hotspot mode |
 | `opt_in` | An opt-in option was not given: an `--allow-*` flag, a frequency, a file, a second radio | run with --allow-rf |
-| `bench` | The radio, the SDR bench or a host tool is missing, unreachable or busy | the shared SDR bench stayed busy |
+| `bench` | The radio, the SDR bench or the test host's tools (a program, git history) are missing, unreachable or busy | the shared SDR bench stayed busy; the tree is not a git checkout |
 | `other_board` | A board-specific test on another board | a wiring check run on a board it doesn't cover |
 
 ### Bring-up mode
