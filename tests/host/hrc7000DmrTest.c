@@ -980,10 +980,49 @@ static void test_tx_empty_and_fill(void)
 	count_kind(0xFF, NULL);
 }
 
+// A received burst's arg is the tick of the slot after its own (hrc7000_dmr.h): a deframe late in a slot belongs to
+// that slot, one early in a slot to the one before. The split duplex RX half times its labels from it; the slot clock
+// gives the last boundary
+static void test_rx_slot_arg(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	uint32_t c, t;
+	int8_t ts;
+	CHECK(!hrc7000_dmr_slot_clock(&eng, &c, &t, &ts));	// no slot clock before the first tick
+	tick(false);
+	tick(false);
+	CHECK(hrc7000_dmr_slot_clock(&eng, &c, &t, &ts) && c == 2 && t == now && ts == 0);
+	count_kind(DMR_EV_SLOT_TICK, NULL);
+	dmr_event_t evs[4];
+	dmr_burst_t bs[4];
+	now += 3000;			// 3 ms into slot 2: the burst of slot 1
+	deframe(rti(1, 0, 1, 0, 0, 0));
+	int n = drain(evs, bs, 4);
+	CHECK(n == 1 && evs[0].kind == DMR_EV_BURST_RX && evs[0].arg == 2);
+	now += 24000;			// 27 ms into slot 2: its own burst
+	deframe(rti(2, 0, 1, 0, 0, 0));
+	n = drain(evs, bs, 4);
+	CHECK(n == 1 && evs[0].arg == 3);
+}
+
+// LAYER2_BS_MODE survives a chip reset (modem-hrc7000.md 2.9): the power-on set-up writes it back to its reset value
+static void test_bs_mode_cleared(void)
+{
+	setup();
+	REG(C7_LAYER2_BS_MODE) = 0x904;	// BS TX left on by an earlier build
+	REG(C7_BS_CACH) = 3;
+	hrc7000_power_on_init(&dev, 128, 0);
+	CHECK(REG(C7_LAYER2_BS_MODE) == C7_BS_MODE_RESET);
+	CHECK(REG(C7_BS_CACH) == 0);
+}
+
 int main(void)
 {
 	test_pure();
 	test_rx();
+	test_rx_slot_arg();
+	test_bs_mode_cleared();
 	test_rx_resync();
 	test_cc_scan();
 	test_tx();

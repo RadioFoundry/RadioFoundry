@@ -277,9 +277,10 @@ A 240 x 320 color screen. ODR uses its full resolution, with smooth (anti-aliase
 
 ### What the DM-32UV lacks
 
-- No split duplex repeater. The extension is in the build, but the radio offers neither the transmit nor the receive
-  half yet: the HR_C7000 base station transmit mode and the slot clock aren't driven. A host that asks for a role is
-  refused.
+- Split duplex repeater: each half passes on air with one radio (the transmit half's outbound with its CACH, a
+  host-fed voice call, 5 minutes keyed within 60 Hz; the receive half's slot labels). As the receive half of a pair
+  with a DM-1801 Pro transmitting, it labeled a subscriber's calls with the right slot in 29 of 31 sessions; the other
+  two aren't explained yet. Not tried as the transmit half of a pair.
 - Not checked on this radio yet: emergency, basic privacy, talker alias, text and data messages, roaming, scan,
   MMDVM SFR, the network services over PPP and control station mode. They are built in and host tested.
 - No USB. The serial port is on the programming cable: hotspot mode, the debug link and the network (PPP,
@@ -462,7 +463,8 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 
 ### What the DM-1801 Pro lacks today
 
-- No split duplex repeater: the build offers neither half until the HR_C7000 base station transmit mode is driven.
+- Split duplex repeater: each half passes on air with one radio (the transmit half's outbound with its CACH and a
+  host-fed voice call, the receive half's slot labels). A real pair of radios hasn't been tested.
 - APRS receive is unchecked. APRS sending works on FM and over DMR.
 - VHF transmit is unchecked on air. UHF transmit and receive on both bands work.
 - VOX is unchecked. ODR now reads the microphone level from the microphone's digital audio, but that hasn't been

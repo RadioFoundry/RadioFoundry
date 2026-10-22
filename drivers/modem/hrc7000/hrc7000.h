@@ -72,6 +72,8 @@
 #define C7_LAYER2_SEND_TYPE	0x418u
 #define C7_LAYER2_STATUS	0x41Cu
 #define C7_LAYER2_SLOT_PRE	0x424u
+#define C7_LAYER2_BS_MODE	0x428u	// reset type H: a chip reset leaves it as it was (2.9)
+#define C7_BS_CACH		0x438u
 #define C7_FM_BANDWIDTH		0x500u
 #define C7_FM_DEV_COEF		0x504u
 #define C7_FM_SQL		0x508u
@@ -119,6 +121,8 @@
 // WORK_MODE values: the only two the working firmware writes (2.1)
 #define C7_WORK_MODE_FM		0x80u
 #define C7_WORK_MODE_DMR	0x6Eu
+#define C7_WORK_MODE_PHY	0x22u	// the physical layer in timeslot mode (DS 9.5.3): the CPU's 288 bits per slot, sent as is
+#define C7_BS_MODE_RESET	0x900u	// LAYER2_BS_MODE's reset value: bs_idle_type 9, BS TX / RX off (2.9)
 
 // AUDIO_CONTROL bits (8.1)
 #define C7_AUDIO_RING_FULL	(1u << 31)

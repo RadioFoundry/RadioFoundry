@@ -128,6 +128,10 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_wr(d, C7_SCRAMBLE_REG, 0);
 	hrc7000_wr(d, C7_SYS_INTERP_MASK, SYS_INT_ENABLE);
 	hrc7000_wr(d, C7_LAYER2_SLOT_PRE, 0x551010);
+	// No firmware of ours uses the chip's BS mode, but a chip reset doesn't clear it: a build that set it (a bench
+	// experiment) would leave every normal call stalled (modem-hrc7000.md 2.9)
+	hrc7000_wr(d, C7_LAYER2_BS_MODE, C7_BS_MODE_RESET);
+	hrc7000_wr(d, C7_BS_CACH, 0);
 	hrc7000_wr(d, C7_REG_X06, 0x14);
 	hrc7000_wr(d, C7_RF_RECV_DELAY, 0x36B0);	// 1.4 ms
 	hrc7000_wr(d, C7_RX_IF_FREQ, 0x0BB800);

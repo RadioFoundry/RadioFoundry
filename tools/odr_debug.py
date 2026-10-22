@@ -983,9 +983,11 @@ def parse_counters(lines):
         words = line.split()
         if not words:
             continue
-        if words[0] == "bs":            # "bs slN bN uN kN cN rfN stN": the split duplex TX half's BS outbound
+        if words[0] == "bs":            # "bs slN bN uN kN cN rfN stN" (and the HR_C7000's "bs tiN ttN ..."): the split
+                                        # duplex TX half's BS outbound
             names = {"sl": "slots", "b": "bursts", "u": "underruns", "k": "keyups", "c": "cach", "rf": "rf_fail",
-                     "st": "stalls"}
+                     "st": "stalls", "ti": "ts_ints", "tt": "ts_ticks", "ph": "phy_ints", "ri": "rftx_ints",
+                     "lt": "late", "mg": "max_gap_us"}
             for w in words[1:]:
                 m = re.fullmatch(r"([a-z]+)(\d+)", w)
                 if m and m.group(1) in names:
