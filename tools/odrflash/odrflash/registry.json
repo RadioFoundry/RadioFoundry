@@ -11,7 +11,7 @@
    "platform_stubs": [],
    "family": "serial-iap",
    "link": "serial-cable",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "DB25-D",
     "DB25-D PRO",
@@ -206,7 +206,7 @@
    "platform_stubs": [],
    "family": "serial-loader",
    "link": "serial-cable",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "DM-1801 Pro",
     "DM-1801Pro",
@@ -294,7 +294,7 @@
    "platform_stubs": [],
    "family": "serial-loader",
    "link": "serial-cable",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "DM-32UV",
     "DM-32",
@@ -385,7 +385,7 @@
    ],
    "family": "usb-dfu",
    "link": "usb",
-   "release": "testing",
+   "release": "stable",
    "debuglink_names": [
     "MD-380",
     "MD-380 VHF",

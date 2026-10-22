@@ -36,7 +36,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 |---|---|
 | Radios, their order and status | The board registry, `boards/<radio>/board.toml` (`tools/boards.py json --for site`). `order` sorts them; the lowest is the home page's radio |
 | Planned radios | The rows of the [radio survey](../spec/radios.md) "Summary table" that name no board, by their port status cell: `planned`, `planned, hardware needed`, `in progress, #N` (badge "In progress", linked to the pull request) or `not planned` (not listed) |
-| A radio's one-line note for visitors | board.toml `[status] note` (`[status] summary` is for developers); a catalog may translate it as `radio.note.<radio>`. A planned radio's: `planned.note.<slug of the survey name>` in the string catalog (the build warns when one is missing) |
+| A radio's one-line note for visitors | board.toml `[status] summary`, the same line the README and the user manual show; a catalog may translate it as `radio.note.<radio>`. A planned radio's: `planned.note.<slug of the survey name>` in the string catalog (the build warns when one is missing) |
 | A radio's name, bands, processor, screen, bootloader steps, flash backend, codeplug location | board.toml, the CPU from `platform/<p>/platform.toml`, the backend from the `[flash] family`, the codeplug location from the board's `hal_flash_map_t` |
 | A radio's status badge (Supported, In development) | board.toml `[status] level`: `supported` reads Supported, `testing` and `bring-up` read In development |
 | Which features a radio has, per variant | `make BOARD=<radio> [VARIANT=<v>] print-config` and `print-required`; what it can't have is config.mk `BOARD_UNSUPPORTED`, with its reasons, through the registry |
