@@ -532,7 +532,8 @@ static const char *key_names(const char *text, char *out, size_t cap, bool hint)
 // takes a second line above it, so it is never shortened
 void ui_draw_hint(const char *text, bool toast)
 {
-	char named[96];
+	// Static: only the UI task draws, and the UI task's deepest chain runs through here (docs/dev/stack-check.md)
+	static char named[96];
 	text = key_names(text, named, sizeof named, !toast);
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->small;

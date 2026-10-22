@@ -7,8 +7,8 @@
 #if CONFIG_DMR
 #include "dmr_md380.h"
 #include "hrc/i2s_pcm.h"
-#include "gps_uart/gps_uart.h"
 #endif
+#include "gps_uart/gps_uart.h"
 
 #if CONFIG_DIAG
 
