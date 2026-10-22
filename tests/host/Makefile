@@ -758,6 +758,12 @@ TESTS   += hrc7000ClockTest
 hrc7000ClockTest: hrc7000ClockTest.c $(ROOT)/platform/hrc7000/clock_math.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000ClockTest.c
 
+# Its UART set-up (platform/hrc7000/uart_format.h) on a model UART that drops writes while busy (gotchas.md 2.8)
+TESTS   += hrc7000UartFormatTest
+
+hrc7000UartFormatTest: hrc7000UartFormatTest.c $(ROOT)/platform/hrc7000/uart_format.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000UartFormatTest.c
+
 # The HR_C7000 codec slot (platform/hrc7000/codec_slot.h): versions 1 and 2, the move, the refusals, and the slot
 # tools/hrc7000_codec.py writes (docs/spec/codec-placement.md)
 TESTS   += hrc7000CodecSlotTest

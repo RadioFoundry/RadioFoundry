@@ -119,6 +119,12 @@ again when switching the GPS back on left the UART deaf on the DB25-D. Set it up
 powered; to switch on again, clear the RX FIFO and status (`hrc_uart_rx_clear`) and enable the interrupt
 (hardware-dm32.md 12).
 
+The host port can't wait for a quiet line: it is set up at every boot, and after a reset the host may still be
+sending (the next request of a test run). On the DM-32UV a reset with the host polling left the debug link deaf until a
+power cycle (bench 2026-10-22; quiet resets came back every time): the divisor write was dropped and the low divisor
+byte went out as data. So every HR_C7000 UART set-up (`platform/hrc7000/uart_format.h`) drains the RX FIFO, writes,
+reads LCR, DLL and DLH back, and tries again until they stick (about 100 ms at most).
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 (MD-380) register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,
