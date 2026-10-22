@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// FreeRTOS for the STM32F405 radios (docs/spec/hardware-dm1701.md 3.1: kernel at the lowest priority, max syscall 5)
+// FreeRTOS for the HR_C7000 radios (CK803S; one interrupt level, no priorities: platform/hrc7000/freertos)
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H
 
+// A board changes a setting in boards/<id>/freertos_board.h, read first; every setting below it is a default
+#if __has_include("freertos_board.h")
+#include "freertos_board.h"
+#endif
+
 #include <stdint.h>
-extern uint32_t SystemCoreClock;
+#include "clock_hz.h"
 
 #define configUSE_PREEMPTION			1
-#define configUSE_PORT_OPTIMISED_TASK_SELECTION	1
-#define configCPU_CLOCK_HZ			(SystemCoreClock)
+#define configUSE_PORT_OPTIMISED_TASK_SELECTION	0
+#define configCPU_CLOCK_HZ			HRC_CPU_HZ	// 168 MHz unless board.mk sets it (clock_hz.h)
 #define configTICK_RATE_HZ			1000
 #define configMAX_PRIORITIES			7
 #if CONFIG_CRASH_LOG
@@ -17,8 +22,9 @@ extern uint32_t SystemCoreClock;
 #else
 #define configMINIMAL_STACK_SIZE		128
 #endif
-#define configAPPLICATION_ALLOCATED_HEAP	1		// ucHeap in the CCM (board.c): every task stack is there
-#define configTOTAL_HEAP_SIZE			(28 * 1024)	// task stacks (about 20 KB with DMR: audio 5 KB, radio 3 KB), queues
+#ifndef configTOTAL_HEAP_SIZE
+#define configTOTAL_HEAP_SIZE			(40 * 1024)	// task stacks and queues (the STM32 radios need 28 KB; more room here)
+#endif
 #define configMAX_TASK_NAME_LEN			12
 #define configUSE_16_BIT_TICKS			0
 #define configIDLE_SHOULD_YIELD			1
@@ -57,22 +63,12 @@ extern uint32_t SystemCoreClock;
 #define INCLUDE_xTaskGetCurrentTaskHandle	1
 #define INCLUDE_uxTaskGetStackHighWaterMark	1
 
-#define configPRIO_BITS				4
-#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY		15
-#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY	5
-#define configKERNEL_INTERRUPT_PRIORITY		(configLIBRARY_LOWEST_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))
-#define configMAX_SYSCALL_INTERRUPT_PRIORITY	(configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))
-
 // A failed assertion: with the crash log, kept (the line, the caller) and the radio restarts (core/crash/crash.h)
 #if CONFIG_CRASH_LOG && !defined(__ASSEMBLER__)
 void crash_assert(unsigned line) __attribute__((noreturn));
 #define configASSERT(x)				do { if (!(x)) { crash_assert(__LINE__); } } while (0)
 #else
-#define configASSERT(x)				do { if (!(x)) { __asm volatile ("cpsid i"); for (;;) {} } } while (0)
+#define configASSERT(x)				do { if (!(x)) { __asm__ volatile ("psrclr ie"); for (;;) {} } } while (0)
 #endif
-
-#define vPortSVCHandler				SVC_Handler
-#define xPortPendSVHandler			PendSV_Handler
-#define xPortSysTickHandler			SysTick_Handler
 
 #endif
