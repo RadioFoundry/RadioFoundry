@@ -382,6 +382,26 @@ static void test_sequences(void)
 	CHECK(c->log[2].reg == 0x70 && c->log[2].val == 0 && c->log[3].reg == 0x37 && c->log[3].val == 0x1D0F);
 	CHECK(c->log[4].reg == 0x30 && c->log[4].val == 0x0200 && c->log[5].reg == 0x30 && c->log[5].val == 0xBFF1);
 	CHECK(m.tone_hz == 0 && m.state == BK4819_STATE_RX && find_last(c, 0x36) < 0);
+	// DTMF D (941 + 1633 Hz, radio-features.md 3.7): both generators at the stock level, the microphone ADC off
+	// (0xC3FA) while it sounds, the stock DTMF deviation; a second digit only retunes; 0 is the tone stop (mic back)
+	chips[0].n = 0;
+	bk4819_dtmf_start(&m, 941, 1633);
+	CHECK(c->n == 10);
+	CHECK(c->log[0].reg == 0x47 && c->log[0].val == 0x6342 && c->log[1].reg == 0x70 && c->log[1].val == 0x9090);
+	CHECK(c->log[2].reg == 0x50 && c->log[2].val == 0xBB18 && c->log[3].reg == 0x37 && c->log[3].val == 0x1D0F);
+	CHECK(c->log[5].reg == 0x30 && c->log[5].val == 0xC3FA && m.state == BK4819_STATE_TX_TONE);
+	CHECK(c->log[6].reg == 0x40 && c->log[6].val == 0x348A);
+	CHECK(c->log[7].reg == 0x71 && c->log[7].val == 9715 && c->log[8].reg == 0x72 && c->log[8].val == 16860);
+	CHECK(c->log[9].reg == 0x50 && c->log[9].val == 0x3B18 && m.tone_hz == 941);
+	chips[0].n = 0;
+	bk4819_dtmf_start(&m, 697, 1209);
+	CHECK(c->n == 3 && c->log[0].reg == 0x71 && c->log[0].val == 7196 && c->log[1].reg == 0x72 && c->log[1].val == 12482);
+	CHECK(m.state == BK4819_STATE_TX_TONE);
+	chips[0].n = 0;
+	bk4819_dtmf_start(&m, 0, 0);
+	CHECK(c->n == 7 && c->log[2].reg == 0x70 && c->log[2].val == 0);
+	CHECK(c->log[5].reg == 0x30 && c->log[5].val == BK4819_STATE_TX_MAIN && m.state == BK4819_STATE_TX_MAIN);
+	CHECK(c->log[6].reg == 0x40 && c->log[6].val == 0x34A8 && m.tone_hz == 0);
 	CHECK(bk4819_pa_reg(0) == 0 && bk4819_pa_reg(15) == BK4819_PA_MAX && bk4819_pa_reg(99) == BK4819_PA_MAX);
 	CHECK(bk4819_tone_word(697) == 7196 && bk4819_tone_word(852) == 8796 && bk4819_tone_word(1209) == 12482 &&
 	      bk4819_tone_word(1336) == 13793 && bk4819_tone_word(1477) == 15249 && bk4819_tone_word(1633) == 16860);
