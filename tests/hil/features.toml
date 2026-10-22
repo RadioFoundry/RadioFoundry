@@ -1,0 +1,906 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# The feature checklist (tests/hil/README.md, "Bring-up mode"): one entry per feature, never a column per radio. A
+# radio's state for each entry is resolved by tools/bringup.py from its build data (BOARD_UNSUPPORTED, the switch
+# defaults) and the [features.<id>] overrides of its board.toml, so a new radio adds nothing here. tools/bringup.py
+# check (tools/ci.sh) fails when a switch of config/features.mk has no entry or a listed test isn't collected.
+#
+# Fields:
+#   id              stable name, snake case
+#   switch          the CONFIG_ switch without the prefix; left out for a feature without one
+#   summary         one line
+#   spec            the doc that defines the feature
+#   source          paths whose change makes a recorded result stale (default: the files and directories the
+#                   Makefile builds for the switch, else the files that test CONFIG_<switch>; the spec always counts)
+#   tests           required HIL tests by node id, in order. The first is the capability gate when the feature needs
+#                   hardware glue. Empty: the feature has no HIL test, and bringup.py status says so
+#   optional_tests  run and recorded, but they don't gate
+#   planned_tests   required tests not written yet: the feature shows as incomplete until they exist and pass
+#   needs           what the tests need: radio, rf (--allow-rf), bench (the SDR bench), second_radio
+#                   (--split-rx-port or --bench-station), owner_action (--manual: a person at the radio),
+#                   usb_switch (--allow-usb-switch), codeplug_write (--allow-codeplug-write), reboot (--allow-reboot)
+#   owner           a [feature.owner] table, last in the entry: node id = the owner action the test asks for, so
+#                   a run can ask for them in one batch
+#   host_tests      tests/host programs that cover the feature
+#   doc_claims      docs that claim the feature (default for a switch: docs/feature-matrix.md)
+
+# ── Radio and voice ──
+
+[[feature]]
+id = "fm"
+switch = "FM"
+summary = "Analog FM receive and transmit"
+spec = "docs/spec/radio-features.md"
+source = ["core/radio", "drivers/rf", "hal/hal_radio.h", "hal/hal_audio.h"]
+tests = [
+    "tests/hil/test_fm.py::test_noaa_receive",
+    "tests/hil/test_fm_tx.py::test_fm_tx_bandwidth",
+    "tests/hil/test_fm_tx.py::test_fm_tx_power_levels",
+    "tests/hil/test_ui.py::test_quick_monitor_latch",
+]
+optional_tests = ["tests/hil/test_mic_gain.py::test_mic_gain_deviation"]
+needs = ["radio", "rf", "bench", "owner_action"]
+host_tests = ["radioCoreTest", "micGainTest", "at1846sTest", "bk4819Test", "fd6818Test"]
+doc_claims = ["docs/feature-matrix.md", "docs/user/07-fm.md"]
+
+[feature.owner]
+"tests/hil/test_mic_gain.py::test_mic_gain_deviation" = """\
+    key PTT and speak or whistle into the microphone in each recording window; on a radio whose programming \
+    cable mutes the microphone, take the cable out for each over"""
+
+[[feature]]
+id = "subtone"
+switch = "SUBTONE"
+summary = "CTCSS and DCS encode and decode"
+spec = "docs/spec/radio-features.md"
+tests = [
+    "tests/hil/test_fm.py::test_rx_tone_squelch",
+    "tests/hil/test_fm_tx.py::test_fm_tx_ctcss",
+    "tests/hil/test_fm_tx.py::test_fm_tx_dcs",
+]
+needs = ["radio", "rf", "bench"]
+host_tests = ["subaudioTest", "subaudioDspTest"]
+
+[[feature]]
+id = "fm_tx_tones"
+switch = "FM_TX_TONES"
+summary = "FM TX tones: roger beep, 1750 Hz burst"
+spec = "docs/spec/radio-features.md"
+tests = [
+    "tests/hil/test_radio_features.py::test_roger_beep",
+    "tests/hil/test_radio_features.py::test_tone_burst",
+    "tests/hil/test_fm_tx.py::test_fm_tx_tone_burst",
+    "tests/hil/test_fm_tx.py::test_fm_tx_roger_beep",
+]
+needs = ["radio", "rf", "bench"]
+
+[[feature]]
+id = "vox"
+switch = "VOX"
+summary = "FM VOX"
+spec = "docs/spec/radio-features.md"
+tests = [
+    "tests/hil/test_radio_features.py::test_mic_level",
+    "tests/hil/test_radio_features.py::test_vox_quiet",
+    "tests/hil/test_ui.py::test_quick_vox_toggle",
+]
+needs = ["radio", "rf"]
+host_tests = ["miclevelTest"]
+
+[[feature]]
+id = "battery_save"
+switch = "BATTERY_SAVE"
+summary = "Receiver battery saver"
+spec = "docs/spec/radio-features.md"
+tests = [
+    "tests/hil/test_radio_features.py::test_battery_save",
+    "tests/hil/test_radio_features.py::test_battery_save_wakes_for_signal",
+]
+needs = ["radio", "rf", "bench"]
+
+[[feature]]
+id = "am_rx"
+switch = "AM_RX"
+summary = "Air band AM receive (108-137 MHz)"
+spec = "docs/spec/airband-and-broadcast.md"
+tests = []
+host_tests = ["radioAmTest"]
+
+[[feature]]
+id = "bcast_fm"
+switch = "BCAST_FM"
+summary = "Broadcast FM receiver on a second receiver chip"
+spec = "docs/spec/airband-and-broadcast.md"
+tests = []
+host_tests = ["bcastTest", "rda5807mTest"]
+
+[[feature]]
+id = "dmr_voice"
+switch = "DMR"
+summary = "DMR Tier II voice: modem, call stack, AMBE FEC, vocoder"
+spec = "docs/spec/dmr-voice.md"
+source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "hal/hal_dmr_modem.h",
+          "hal/hal_vocoder.h"]
+tests = [
+    "tests/hil/test_dmr_rx.py::test_dmr_rx_counters",
+    "tests/hil/test_dmr_voice.py::test_dmr_voice_speech",
+    "tests/hil/test_dmr_tx.py::test_dmr_tx_off_air",
+    "tests/hil/test_dmr_call_features.py::test_late_entry",
+    "tests/hil/test_dmr_call_features.py::test_private_call_to_us",
+    "tests/hil/test_dmr_call_features.py::test_private_call_to_other",
+    "tests/hil/test_dmr_call_features.py::test_pi_bit",
+    "tests/hil/test_dmr_call_features.py::test_talk_target_requests",
+]
+optional_tests = [
+    "tests/hil/test_ui.py::test_quick_timeslot_for_now",
+    "tests/hil/test_ui.py::test_quick_color_code_for_now",
+    "tests/hil/test_ui.py::test_quick_hear_all_latch",
+]
+needs = ["radio", "rf", "bench"]
+host_tests = ["ambeFecTest", "ambeVoiceTest", "dmrCallTest", "dmrFecTest", "dmrRxChainTest"]
+doc_claims = ["docs/feature-matrix.md", "docs/user/08-dmr.md"]
+
+[[feature]]
+id = "dmr_privacy"
+switch = "DMR_PRIVACY"
+summary = "Basic privacy (Motorola and Anytone)"
+spec = "docs/spec/dmr-voice.md"
+tests = [
+    "tests/hil/test_dmr_call_features.py::test_privacy_service_option",
+    "tests/hil/test_dmr_tx.py::test_dmr_privacy_tx",
+    "tests/hil/test_ui.py::test_privacy_key_entry",
+]
+needs = ["radio", "rf", "bench"]
+host_tests = ["dmrPrivacyTest"]
+
+[[feature]]
+id = "dmr_talker_alias"
+switch = "DMR_TALKER_ALIAS"
+summary = "Talker alias receive and send"
+spec = "docs/spec/dmr-voice.md"
+tests = [
+    "tests/hil/test_dmr_call_features.py::test_talker_alias",
+    "tests/hil/test_dmr_tx.py::test_dmr_tx_talker_alias",
+]
+needs = ["radio", "rf", "bench", "codeplug_write"]
+
+[[feature]]
+id = "dmr_gps"
+switch = "DMR_GPS"
+summary = "ETSI GPS Info in the embedded LC"
+spec = "docs/spec/dmr-voice.md"
+tests = [
+    "tests/hil/test_dmr_call_features.py::test_gps_info",
+    "tests/hil/test_dmr_tx.py::test_dmr_gps_tx",
+]
+needs = ["radio", "rf", "bench"]
+
+[[feature]]
+id = "dmr_emergency"
+switch = "DMR_EMERGENCY"
+summary = "DMR emergency: alarm, emergency call, hot mic"
+spec = "docs/spec/dmr-emergency.md"
+tests = [
+    "tests/hil/test_dmr_emergency.py::test_emergency_view_and_settings",
+    "tests/hil/test_dmr_emergency.py::test_emergency_alarm_rx",
+    "tests/hil/test_dmr_emergency.py::test_emergency_call_rx",
+    "tests/hil/test_dmr_emergency.py::test_emergency_alarm_tx",
+    "tests/hil/test_dmr_emergency.py::test_emergency_call_tx",
+    "tests/hil/test_dmr_emergency.py::test_emergency_key_hold",
+    "tests/hil/test_dmr_call_features.py::test_emergency_call",
+]
+needs = ["radio", "rf", "bench"]
+
+[[feature]]
+id = "dmr_roaming"
+switch = "DMR_ROAMING"
+summary = "Repeater roaming"
+spec = "docs/spec/dmr-roaming.md"
+tests = [
+    "tests/hil/test_roaming.py::test_roam_section",
+    "tests/hil/test_roaming.py::test_roam_settings_round_trip",
+    "tests/hil/test_roaming.py::test_roam_zone_toggle",
+    "tests/hil/test_roaming.py::test_roam_now_passive",
+    "tests/hil/test_roaming.py::test_roam_survey_settings_round_trip",
+    "tests/hil/test_roaming.py::test_roam_to_bench_repeater",
+    "tests/hil/test_roaming.py::test_roam_beacon_home",
+    "tests/hil/test_roaming.py::test_roam_beacon_other_site",
+]
+needs = ["radio", "rf", "bench"]
+host_tests = ["roamTest"]
+
+[[feature]]
+id = "dmr_signaling"
+switch = "DMR_SIGNALING"
+summary = "CSBK signaling: call alert, radio check"
+spec = "docs/spec/dmr-data.md"
+tests = [
+    "tests/hil/test_dmr_data.py::test_call_alert_rx",
+    "tests/hil/test_dmr_data.py::test_radio_check_rx",
+    "tests/hil/test_dmr_data.py::test_call_alert_tx",
+    "tests/hil/test_dmr_data.py::test_radio_check_tx",
+    "tests/hil/test_dmr_data.py::test_radio_check_tx_etsi",
+]
+needs = ["radio", "rf", "bench"]
+
+[[feature]]
+id = "vfo"
+switch = "VFO"
+summary = "VFO: a hand-tuned frequency, copy to VFO"
+spec = "docs/spec/dmr-voice.md"
+tests = [
+    "tests/hil/test_vfo_copy.py::test_copy_to_vfo",
+    "tests/hil/test_ui.py::test_quick_copy_to_vfo",
+]
+needs = ["radio"]
+
+[[feature]]
+id = "vfo_fm"
+switch = "VFO_FM"
+summary = "FM VFO"
+spec = "docs/spec/dmr-voice.md"
+tests = ["tests/hil/test_fm.py::test_noaa_receive"]
+needs = ["radio"]
+
+[[feature]]
+id = "vfo_dmr"
+switch = "VFO_DMR"
+summary = "DMR VFO: color code, slot and talk target typed in; mode change FM / DMR"
+spec = "docs/spec/dmr-voice.md"
+tests = ["tests/hil/test_vfo_dmr.py::test_vfo_dmr_settings"]
+needs = ["radio"]
+
+[[feature]]
+id = "channel_list"
+switch = "CHANNEL_LIST"
+summary = "Channels list: every channel by number, a channel's settings"
+spec = "docs/spec/ui.md"
+tests = ["tests/hil/test_ui.py::test_zones_and_channels_lists"]
+needs = ["radio"]
+
+[[feature]]
+id = "channel_edit"
+switch = "CHANNEL_EDIT"
+summary = "Channel editor: edit a channel, new channel from current settings, text entry"
+spec = "docs/spec/ui.md"
+tests = ["tests/hil/test_ui.py::test_save_timeslot_to_channel"]
+needs = ["radio", "codeplug_write"]
+host_tests = ["codeplugEditTest"]
+
+[[feature]]
+id = "key_assign"
+switch = "KEY_ASSIGN"
+summary = "Side key assignment (Settings > Keys, codeplug)"
+spec = "docs/spec/ui.md"
+tests = []
+host_tests = ["keyassignTest"]
+
+[[feature]]
+id = "scan"
+switch = "SCAN"
+summary = "Scan, band scan, dual watch, nuisance delete"
+spec = "docs/spec/radio-features.md"
+tests = [
+    "tests/hil/test_radio_features.py::test_zone_scan_cancel",
+    "tests/hil/test_radio_features.py::test_zone_scan_nuisance",
+    "tests/hil/test_radio_features.py::test_vfo_scan",
+    "tests/hil/test_radio_features.py::test_dual_watch",
+    "tests/hil/test_radio_features.py::test_scan_stops_on_dmr_call",
+    "tests/hil/test_radio_features.py::test_vfo_scan_stops_on_signal",
+    "tests/hil/test_radio_features.py::test_dual_watch_stops_on_call",
+]
+needs = ["radio", "rf", "bench"]
+host_tests = ["radioFeaturesTest"]
+
+[[feature]]
+id = "beep"
+switch = "BEEP"
+summary = "Beeps and alert tones"
+spec = "docs/spec/radio-features.md"
+tests = ["tests/hil/test_radio_features.py::test_beep_counts"]
+needs = ["radio"]
+
+[[feature]]
+id = "vibrate"
+switch = "VIBRATE"
+summary = "Vibration alerts (Settings > Sound > Vibrate)"
+spec = "docs/spec/radio-features.md"
+tests = ["tests/hil/test_radio_features.py::test_vibrate_counts"]
+needs = ["radio"]
+
+# ── DMR data ──
+
+[[feature]]
+id = "dmr_data_rx"
+summary = "DMR packet data receive: the data service under text, ARS, LRRP and IP (CONFIG_DMR_DATA_CORE follows them)"
+spec = "docs/spec/dmr-data.md"
+source = ["core/dmr/dmrData.c", "core/dmr/dmrDataService.c", "core/dmr/dmr_data_api.h"]
+tests = [
+    "tests/hil/test_dmr_data.py::test_data_view_and_settings",
+    "tests/hil/test_dmr_data.py::test_unconfirmed_data_rx",
+]
+needs = ["radio", "rf", "bench"]
+host_tests = ["dmrDataTest", "dmrDataServiceTest", "dmrDataChainTest"]
+doc_claims = ["docs/feature-matrix.md"]
+
+[[feature]]
+id = "dmr_sms"
+switch = "DMR_SMS"
+summary = "Text messages (ETSI IP text by default)"
+spec = "docs/spec/dmr-data.md"
+tests = [
+    "tests/hil/test_dmr_data.py::test_etsi_sms_rx",
+    "tests/hil/test_dmr_data.py::test_etsi_sms_tx",
+    "tests/hil/test_ui.py::test_delete_message",
+]
+needs = ["radio", "rf", "bench"]
+
+[[feature]]
+id = "dmr_tms"
+switch = "DMR_TMS"
+summary = "Motorola TMS text format"
+spec = "docs/spec/dmr-data.md"
+tests = [
+    "tests/hil/test_dmr_data.py::test_sms_rx",
+    "tests/hil/test_dmr_data.py::test_sms_tx",
+]
+needs = ["radio", "rf", "bench"]
+
+[[feature]]
+id = "dmr_ars"
+switch = "DMR_ARS"
+summary = "ARS registration"
+spec = "docs/spec/dmr-data.md"
+tests = []
+
+[[feature]]
+id = "dmr_lrrp"
+switch = "DMR_LRRP"
+summary = "LRRP location"
+spec = "docs/spec/dmr-data.md"
+tests = ["tests/hil/test_aprs.py::test_aprs_dmr_position"]
+needs = ["radio", "rf", "bench"]
+host_tests = ["lrrpTest"]
+
+[[feature]]
+id = "dmr_udp_compress"
+switch = "DMR_UDP_COMPRESS"
+summary = "Compressed UDP/IP headers on transmit (SAP 3)"
+spec = "docs/spec/dmr-data.md"
+tests = [
+    "tests/hil/test_dmr_ip.py::test_udp_compressed_tx",
+    "tests/hil/test_dmr_ip.py::test_udp_full_header_tx",
+]
+needs = ["radio", "rf", "bench"]
+
+[[feature]]
+id = "dmr_confirmed"
+switch = "DMR_CONFIRMED"
+summary = "Confirmed packet data"
+spec = "docs/spec/dmr-data.md"
+tests = [
+    "tests/hil/test_dmr_data.py::test_confirmed_data_response",
+    "tests/hil/test_dmr_ip.py::test_confirmed_tx_unanswered",
+]
+needs = ["radio", "rf", "bench"]
+
+[[feature]]
+id = "sfr"
+switch = "SFR"
+summary = "Single frequency repeater (MMDVM SFR)"
+spec = "docs/spec/sfr.md"
+tests = [
+    "tests/hil/test_hotspot_sfr.py::test_hotspot_sfr_mode",
+    "tests/hil/test_hotspot_sfr.py::test_sfr_repeats_bench_call",
+]
+needs = ["radio", "rf", "bench"]
+host_tests = ["sfrTest", "hotspotSfrTest"]
+
+[[feature]]
+id = "aprs"
+switch = "APRS"
+summary = "APRS: AFSK positions, status, messages; DMR positions; KISS TNC"
+spec = "docs/spec/aprs.md"
+tests = [
+    "tests/hil/test_aprs.py::test_aprs_view_and_settings",
+    "tests/hil/test_aprs.py::test_aprs_test_call_and_nmea",
+    "tests/hil/test_aprs.py::test_aprs_on_air_position",
+    "tests/hil/test_aprs.py::test_aprs_on_air_status",
+    "tests/hil/test_aprs.py::test_aprs_on_air_message",
+    "tests/hil/test_aprs.py::test_aprs_tx_link_answers",
+    "tests/hil/test_usb_network_services.py::test_net_kiss",
+]
+optional_tests = ["tests/hil/test_aprs.py::test_aprs_dmr_position"]
+needs = ["radio", "rf", "bench", "usb_switch"]
+host_tests = ["aprsTest", "aprsRadioTest"]
+
+[[feature]]
+id = "aprs_rx"
+switch = "APRS_RX"
+summary = "APRS receive: demodulator, station list, digipeater"
+spec = "docs/spec/aprs.md"
+tests = []
+
+[[feature]]
+id = "aprs_igate"
+switch = "APRS_IGATE"
+summary = "APRS iGate rules (with tools/aprs_gate.py)"
+spec = "docs/spec/aprs.md"
+tests = []
+
+# ── Host link and USB ──
+
+[[feature]]
+id = "usb"
+switch = "USB"
+summary = "USB device"
+spec = "docs/spec/usb-audio.md"
+tests = []
+
+[[feature]]
+id = "hostlink"
+switch = "HOSTLINK"
+summary = "Host link: hotspot, CPS and debug link on the host port"
+spec = "docs/spec/debuglink.md"
+tests = []
+host_tests = ["hostlinkNetTest"]
+
+[[feature]]
+id = "hotspot"
+switch = "HOTSPOT"
+summary = "MMDVM hotspot"
+spec = "docs/spec/mmdvm-protocol.md"
+source = ["core/hotspot", "core/hostlink", "docs/spec/mmdvm-protocol.md"]
+tests = [
+    "tests/hil/test_hotspot.py::test_hotspot_version_status",
+    "tests/hil/test_hotspot_voice.py::test_hotspot_on_air",
+]
+optional_tests = ["tests/hil/test_hotspot_cwid.py::test_hotspot_cwid"]
+needs = ["radio", "rf", "bench"]
+host_tests = ["mmdvmTest", "hotspotDataTest", "hotspotUplinkTest"]
+doc_claims = ["docs/feature-matrix.md", "docs/user/13-hotspot.md"]
+
+[[feature]]
+id = "split_duplex"
+switch = "HOTSPOT_SPLIT"
+summary = "Split duplex repeater: two radios, one duplex modem"
+spec = "docs/spec/split-duplex.md"
+source = ["core/dmr/bsOutbound.c", "core/dmr/slotEpoch.c", "core/hotspot", "drivers/modem",
+          "hal/hal_dmr_modem.h", "tools/split_duplex_host.py"]
+tests = [
+    "tests/hil/test_split_duplex.py::test_split_capability",
+    "tests/hil/test_split_duplex.py::test_split_protocol",
+    "tests/hil/test_split_duplex.py::test_split_tx_half_off_air",
+    "tests/hil/test_split_duplex.py::test_split_tx_half_voice",
+    "tests/hil/test_split_duplex.py::test_split_rx_half_labels",
+    "tests/hil/test_split_pair.py::test_split_pair_repeat",
+]
+planned_tests = [
+    "tests/hil/test_split_duplex.py::test_split_tx_half_continuous",
+    "tests/hil/test_split_duplex.py::test_split_standard_host",
+    "tests/hil/test_split_duplex.py::test_split_state_cleanup",
+]
+optional_tests = [
+    "tests/hil/test_usb_network_services.py::test_net_split_protocol",
+    "tests/hil/test_usb_network_services.py::test_net_split_rx_half_labels",
+    "tests/hil/test_split_pair.py::test_split_pair_handheld",
+    "tests/hil/test_dmr_tx.py::test_dmr_tx_split_repeater",
+]
+needs = ["radio", "rf", "bench", "second_radio", "usb_switch", "codeplug_write", "owner_action"]
+host_tests = ["splitDuplexTest", "hrc6000BsTest", "hrc7000BsTest"]
+doc_claims = ["docs/feature-matrix.md", "docs/user/13-hotspot.md"]
+
+[feature.owner]
+"tests/hil/test_split_pair.py::test_split_pair_repeat" = "connect a second radio as the RX half (--split-rx-port)"
+"tests/hil/test_split_pair.py::test_split_pair_handheld" = "connect a third radio as the subscriber (--split-ms-port)"
+
+[[feature]]
+id = "debuglink"
+switch = "DEBUGLINK"
+summary = "Debug link"
+spec = "docs/spec/debuglink.md"
+tests = [
+    "tests/hil/test_boot.py::test_version_and_features",
+    "tests/hil/test_boot.py::test_ping_latency",
+    "tests/hil/test_boot.py::test_screenshot_geometry",
+    "tests/hil/test_boot.py::test_no_stalls",
+    "tests/hil/test_boot.py::test_view_sections",
+    "tests/hil/test_boot.py::test_diag_has_clock_and_lines",
+    "tests/hil/test_boot.py::test_reset_counters_returns_clock",
+    "tests/hil/test_boot.py::test_log_readable",
+    "tests/hil/test_boot.py::test_unknown_command_and_bad_crc",
+    "tests/hil/test_boot.py::test_oversized_request_rejected",
+    "tests/hil/test_ui.py::test_screenshot_sanity",
+    "tests/hil/test_ui.py::test_injected_keys_count_as_activity",
+]
+needs = ["radio"]
+host_tests = ["debuglinkTest"]
+
+[[feature]]
+id = "task_stacks"
+switch = "TASK_STACKS"
+summary = "Task stacks in the debug link view"
+spec = "docs/spec/debuglink.md"
+tests = ["tests/hil/test_task_stacks.py::test_every_task_has_stack_left"]
+needs = ["radio"]
+host_tests = ["taskStackTest"]
+
+[[feature]]
+id = "cps_openfw"
+switch = "CPS_OPENFW"
+summary = "Open-firmware CPS protocol (qdmr)"
+spec = "docs/spec/cps-protocol.md"
+tests = [
+    "tests/hil/test_cps.py::test_cps_info",
+    "tests/hil/test_cps.py::test_cps_readback_matches",
+    "tests/hil/test_cps.py::test_cps_write_dry_run",
+    "tests/hil/test_cps.py::test_cps_write_restore",
+]
+needs = ["radio", "codeplug_write"]
+host_tests = ["cpsTest", "cpsClientTest"]
+
+[[feature]]
+id = "cps_fast"
+switch = "CPS_FAST"
+summary = "Fast codeplug protocol (debug link CODEPLUG)"
+spec = "docs/spec/cps-fast.md"
+tests = []
+host_tests = ["cpsFastTest", "cpsFastClientTest"]
+
+[[feature]]
+id = "stub_entry"
+switch = "STUB_ENTRY"
+summary = "Loader hand-over (debug link 0x1A)"
+spec = "docs/spec/stub-stm32f4.md"
+tests = []
+host_tests = ["stubEntryTest"]
+
+[[feature]]
+id = "crash_log"
+switch = "CRASH_LOG"
+summary = "Crash log"
+spec = "docs/spec/crash-log.md"
+tests = [
+    "tests/hil/test_crash.py::test_crash_view",
+    "tests/hil/test_crash.py::test_crash_test_refused_without_token",
+    "tests/hil/test_crash.py::test_crash_fault_kept",
+    "tests/hil/test_crash.py::test_crash_assert_kept",
+]
+needs = ["radio", "reboot"]
+host_tests = ["crashTest", "crashCaptureTest"]
+
+[[feature]]
+id = "crash_screen"
+switch = "CRASH_SCREEN"
+summary = "Crash log screen"
+spec = "docs/spec/crash-log.md"
+tests = []
+
+[[feature]]
+id = "crash_report"
+switch = "CRASH_REPORT"
+summary = "Crash report over DMR"
+spec = "docs/spec/crash-log.md"
+tests = []
+
+[[feature]]
+id = "watchdog"
+switch = "WATCHDOG"
+summary = "Hardware watchdog"
+spec = "docs/spec/watchdog.md"
+tests = [
+    "tests/hil/test_watchdog.py::test_watchdog_running",
+    "tests/hil/test_watchdog.py::test_watchdog_test_refused_without_token",
+    "tests/hil/test_watchdog.py::test_watchdog_resets",
+]
+needs = ["radio", "reboot"]
+host_tests = ["watchdogTest"]
+
+[[feature]]
+id = "fault_trace"
+switch = "FAULT_TRACE"
+summary = "Fault trace on the host UART"
+spec = "docs/spec/crash-log.md"
+tests = []
+
+# ── Network ──
+
+[[feature]]
+id = "usb_network"
+switch = "USB_NETWORK"
+summary = "USB network adapter (CDC-NCM)"
+spec = "docs/spec/usb-network.md"
+tests = [
+    "tests/hil/test_ui.py::test_usb_network_switch_row",
+    "tests/hil/test_usb_network.py::test_usb_network_roundtrip",
+]
+needs = ["radio", "usb_switch"]
+
+[[feature]]
+id = "dmr_ip_gateway"
+switch = "DMR_IP_GATEWAY"
+summary = "IP over DMR gateway"
+spec = "docs/spec/dmr-data.md"
+tests = [
+    "tests/hil/test_dmr_ip.py::test_ip_settings_view",
+    "tests/hil/test_dmr_ip.py::test_gateway_has_netif",
+    "tests/hil/test_dmr_ip.py::test_usb_network_udp_to_air",
+]
+needs = ["radio", "rf", "bench", "usb_switch"]
+host_tests = ["ipGatewayTest"]
+
+[[feature]]
+id = "dmr_control_station"
+switch = "DMR_CONTROL_STATION"
+summary = "Control station mode: boot as network, PC answers data, fixed link"
+spec = "docs/spec/usb-network.md"
+tests = [
+    "tests/hil/test_control_station.py::test_usb_settings_stored",
+    "tests/hil/test_control_station.py::test_fixed_link",
+    "tests/hil/test_control_station.py::test_boot_network",
+    "tests/hil/test_control_station.py::test_passthrough_text",
+    "tests/hil/test_control_station.py::test_passthrough_reply",
+]
+needs = ["radio", "rf", "bench", "usb_switch", "reboot"]
+
+[[feature]]
+id = "net_tcp"
+switch = "NET_TCP"
+summary = "Minimal TCP"
+spec = "docs/spec/tcp-services.md"
+tests = ["tests/hil/test_tcp_services.py::test_http_status"]
+needs = ["radio", "usb_switch"]
+host_tests = ["tcpTest"]
+
+[[feature]]
+id = "net_kiss"
+switch = "NET_KISS"
+summary = "KISS over TCP, port 8001"
+spec = "docs/spec/tcp-services.md"
+tests = ["tests/hil/test_tcp_services.py::test_kiss_tcp"]
+needs = ["radio", "usb_switch"]
+
+[[feature]]
+id = "net_http"
+switch = "NET_HTTP"
+summary = "HTTP status page and JSON, port 80"
+spec = "docs/spec/tcp-services.md"
+tests = ["tests/hil/test_tcp_services.py::test_http_status"]
+needs = ["radio", "usb_switch"]
+host_tests = ["httpAssetsTest"]
+
+[[feature]]
+id = "net_http_gzip"
+switch = "NET_HTTP_GZIP"
+summary = "HTTP static files stored and served gzip compressed"
+spec = "docs/spec/tcp-services.md"
+tests = []
+host_tests = ["httpAssetsTest"]
+
+[[feature]]
+id = "net_rigctl"
+switch = "NET_RIGCTL"
+summary = "rigctld, port 4532"
+spec = "docs/spec/tcp-services.md"
+tests = ["tests/hil/test_tcp_services.py::test_rigctl"]
+needs = ["radio", "usb_switch"]
+
+[[feature]]
+id = "net_usrp"
+switch = "NET_USRP"
+summary = "Audio linking (USRP over UDP, port 34001)"
+spec = "docs/spec/usb-audio.md"
+tests = [
+    "tests/hil/test_usrp.py::test_usrp_fm_rx",
+    "tests/hil/test_usrp.py::test_usrp_dmr_rx",
+    "tests/hil/test_usrp.py::test_usrp_fm_tx",
+]
+needs = ["radio", "rf", "bench", "usb_switch"]
+host_tests = ["usrpTest", "usrpNetTest"]
+
+[[feature]]
+id = "net_aprsis"
+switch = "NET_APRSIS"
+summary = "APRS-IS client"
+spec = "docs/spec/aprs.md"
+tests = ["tests/hil/test_tcp_services.py::test_aprsis"]
+needs = ["radio", "usb_switch"]
+
+[[feature]]
+id = "mdns"
+switch = "MDNS"
+summary = "mDNS and DNS-SD (odr-<id>.local)"
+spec = "docs/spec/mdns.md"
+tests = ["tests/hil/test_net_services.py::test_mdns"]
+needs = ["radio", "usb_switch"]
+host_tests = ["mdnsTest"]
+
+[[feature]]
+id = "tftp"
+switch = "TFTP"
+summary = "TFTP codeplug read and write"
+spec = "docs/spec/tftp.md"
+tests = [
+    "tests/hil/test_net_services.py::test_tftp_read",
+    "tests/hil/test_net_services.py::test_tftp_write",
+]
+needs = ["radio", "usb_switch", "codeplug_write"]
+host_tests = ["tftpTest"]
+
+[[feature]]
+id = "tftp_iddb"
+switch = "TFTP_IDDB"
+summary = "DMR ID database over TFTP (iddb.bin, combined codeplug.bin)"
+spec = "docs/spec/tftp.md"
+tests = []
+
+[[feature]]
+id = "snmp"
+switch = "SNMP"
+summary = "SNMP v2c agent and traps (USB and over the air)"
+spec = "docs/spec/snmp.md"
+tests = ["tests/hil/test_snmp.py::test_snmp_usb"]
+needs = ["radio", "usb_switch"]
+host_tests = ["snmpTest", "snmpAgentTest"]
+
+[[feature]]
+id = "net_ppp"
+switch = "NET_PPP"
+summary = "PPP on the serial host port (IPv4 into the gateway)"
+spec = "docs/spec/ppp.md"
+tests = []
+host_tests = ["pppTest"]
+
+# ── User interface ──
+
+[[feature]]
+id = "ui_navigation"
+summary = "Keys and screens: Home, the Hub, Quick settings, type to find, key lock, talk target picker"
+spec = "docs/spec/ui.md"
+source = ["core/ui", "core/input"]
+tests = [
+    "tests/hil/test_ui.py::test_keys_move_the_channel",
+    "tests/hil/test_ui.py::test_hub_and_back",
+    "tests/hil/test_ui.py::test_quick_settings_open_and_close",
+    "tests/hil/test_ui.py::test_find_by_digits",
+    "tests/hil/test_ui.py::test_key_lock",
+    "tests/hil/test_ui.py::test_recent_from_the_hub",
+    "tests/hil/test_ui.py::test_talk_target_picker_on_long_context",
+    "tests/hil/test_ui.py::test_picker_focus_target",
+]
+needs = ["radio"]
+host_tests = ["uiFlowTest", "inputTest"]
+doc_claims = ["docs/user/04-keys-and-navigation.md"]
+
+[[feature]]
+id = "channel_knob"
+summary = "The channel knob: direction and one count per detent"
+spec = "docs/spec/ui.md"
+source = ["drivers/input/quadrature"]
+tests = ["tests/hil/test_encoder.py::test_knob_direction"]
+optional_tests = ["tests/hil/test_encoder.py::test_knob_counts_detents"]
+needs = ["radio", "owner_action"]
+host_tests = ["quadratureTest"]
+
+[feature.owner]
+"tests/hil/test_encoder.py::test_knob_counts_detents" = "turn the channel knob by the clicks the test asks for"
+
+[[feature]]
+id = "ui_settings"
+switch = "UI_SETTINGS"
+summary = "Settings menu on the radio"
+spec = "docs/spec/ui.md"
+tests = [
+    "tests/hil/test_ui.py::test_long_press_time_reaches_input",
+    "tests/hil/test_ui.py::test_auto_lock",
+    "tests/hil/test_ui.py::test_updown_changes_the_zone",
+    "tests/hil/test_ui.py::test_ptt_when_locked_off",
+    "tests/hil/test_ui.py::test_factory_reset",
+]
+needs = ["radio", "rf", "reboot"]
+
+[[feature]]
+id = "diag"
+switch = "DIAG"
+summary = "Diagnostics page"
+spec = "docs/spec/ui.md"
+tests = ["tests/hil/test_ui.py::test_diagnostics_page"]
+needs = ["radio"]
+
+[[feature]]
+id = "ui_color"
+switch = "UI_COLOR"
+summary = "Color screen settings: theme, highlight color, filled status bar"
+spec = "docs/spec/ui.md"
+tests = ["tests/hil/test_ui.py::test_theme_is_kept"]
+needs = ["radio"]
+
+[[feature]]
+id = "font_xl"
+switch = "FONT_XL"
+summary = "16x32 font"
+spec = "docs/spec/ui.md"
+tests = []
+host_tests = ["gfxTest"]
+
+[[feature]]
+id = "font_aa"
+switch = "FONT_AA"
+summary = "Anti-aliased fonts"
+spec = "docs/spec/ui.md"
+tests = []
+host_tests = ["gfxTest"]
+
+[[feature]]
+id = "font_big"
+switch = "FONT_BIG"
+summary = "Larger text"
+spec = "docs/spec/ui.md"
+tests = []
+host_tests = ["gfxTest"]
+
+# ── Radio core, storage and codec ──
+
+[[feature]]
+id = "radio_controls"
+summary = "Volume, TX inhibit, time-out timer and the features view"
+spec = "docs/spec/radio-features.md"
+source = ["core/radio"]
+tests = [
+    "tests/hil/test_radio_features.py::test_features_section",
+    "tests/hil/test_radio_features.py::test_volume_op",
+    "tests/hil/test_radio_features.py::test_tx_inhibit",
+    "tests/hil/test_radio_features.py::test_tot_warning",
+]
+needs = ["radio", "rf"]
+host_tests = ["radioFeaturesTest"]
+
+[[feature]]
+id = "settings_store"
+summary = "Settings storage: saved, kept across a restart, the journal region"
+spec = "docs/spec/settings-store.md"
+source = ["core/settings", "core/storage"]
+tests = [
+    "tests/hil/test_radio_features.py::test_settings_round_trip",
+    "tests/hil/test_cps.py::test_settings_saved",
+    "tests/hil/test_cps.py::test_storage_region",
+    "tests/hil/test_cps.py::test_settings_survive_restart",
+]
+needs = ["radio", "reboot"]
+host_tests = ["settingsTest"]
+
+[[feature]]
+id = "nand_storage"
+switch = "NAND_STORAGE"
+summary = "Settings and codeplug storage on SPI NAND"
+spec = "docs/spec/nand-sectors.md"
+tests = []
+host_tests = ["nandSectorsTest", "spiNandTest"]
+
+[[feature]]
+id = "codec_check"
+summary = "The codec check: VERSION codec= agrees with the DMR view and odrflash's probe"
+spec = "docs/spec/codec-placement.md"
+source = ["tools/odrflash/odrflash"]
+tests = [
+    "tests/hil/test_codec_info.py::test_version_reports_codec",
+    "tests/hil/test_codec_info.py::test_codec_key_agrees_with_dmr_view",
+    "tests/hil/test_codec_info.py::test_odrflash_probe_reads_it",
+]
+needs = ["radio"]
+host_tests = ["codecDescTest"]
+
+# ── Bench ──
+
+[[feature]]
+id = "audio_probe"
+switch = "AUDIO_PROBE"
+summary = "Audio path probe (debug link 0x10): bring-up experiments, not checks"
+spec = "docs/spec/usb-audio.md"
+tests = []
+optional_tests = [
+    "tests/hil/test_audio_probe.py::test_probe_stream_in_fm",
+    "tests/hil/test_audio_probe.py::test_probe_music_fifo",
+]
+needs = ["radio"]

@@ -7,6 +7,7 @@ import os
 
 import pytest
 
+import bringup_plugin
 from odr_hil import DebugLinkError, Radio, SdrBench, find_ports, skip, skip_kind, skip_mark
 
 
@@ -95,9 +96,11 @@ def pytest_addoption(parser):
                      "bandwidth, one over per step")
     g.addoption("--mic-gain-window", type=float, default=30.0,
                 help="test_mic_gain: seconds the SDR bench records per over (unplug, key, talk, release in it)")
+    bringup_plugin.add_options(parser)
 
 
 def pytest_configure(config):
+    config.pluginmanager.register(bringup_plugin.Plugin(config), "odr-bringup")
     config.addinivalue_line("markers", "rf: transmits (needs --allow-rf)")
     config.addinivalue_line("markers", "bench_service: uses the SDR bench's transmitter / receiver through the "
                             "lease (a bench without a shared bench daemon stops its gateway service for it: "
@@ -141,16 +144,18 @@ def pytest_runtest_makereport(item, call):
 def radio(pytestconfig):
     port = pytestconfig.getoption("--radio-port")
     if not port and not find_ports():
-        skip("bench", "no radio on USB (1FC9:0094): plug it in or give --radio-port")
+        bringup_plugin.no_radio(pytestconfig, "no radio on USB (1FC9:0094): plug it in or give --radio-port")
     try:
         r = Radio(port)
     except DebugLinkError as e:
-        skip("bench", f"radio not reachable: {e}")
+        bringup_plugin.no_radio(pytestconfig, f"radio not reachable: {e}")
     try:
         r.ping()
     except DebugLinkError as e:
         r.close()
-        skip("bench", f"the radio doesn't answer the debug link (firmware without CONFIG_DEBUGLINK?): {e}")
+        bringup_plugin.no_radio(pytestconfig, f"the radio doesn't answer the debug link (firmware without "
+                                              f"CONFIG_DEBUGLINK?): {e}")
+    bringup_plugin.remember_firmware(pytestconfig, r)
     yield r
     r.close()
 

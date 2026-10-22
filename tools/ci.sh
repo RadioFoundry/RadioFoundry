@@ -150,6 +150,31 @@ for f in sys.argv[1:]:
 			bad "HIL skip helper tests (see $OUT/hil-skip-test.log)"
 		fi
 	fi
+	# the feature checklist (tests/hil/README.md, "Bring-up mode"): tools/bringup.py check, and the bring-up
+	# plugin's tests with a fake radio. bringup.py needs Python 3.11+ (tomllib): $ODR_PYTHON, else the newest
+	# python3.N on PATH (TODO: the shared ODR_PYTHON lookup once ci.sh has it)
+	BRINGUP_PY=${ODR_PYTHON:-$(IFS=:; for d in $PATH; do for p in "$d"/python3.1[1-9] "$d"/python3.[2-9][0-9]; do
+		[ -x "$p" ] && echo "${p##*.} $p"; done; done | sort -n | tail -1 | cut -d' ' -f2-)}
+	if [ -n "$BRINGUP_PY" ]; then
+		if env -u ODR_PORT "$BRINGUP_PY" tools/bringup.py check --pytest-python python3 > "$OUT/bringup-check.log" 2>&1
+		then
+			ok "feature checklist: $(tail -1 "$OUT/bringup-check.log" | sed 's/^bringup check: //')"
+		else
+			grep '^error' "$OUT/bringup-check.log" | head -20
+			bad "feature checklist (see $OUT/bringup-check.log)"
+		fi
+	else
+		skip "feature checklist: no Python 3.11 or later (set ODR_PYTHON)"
+	fi
+	if python3 -c 'import pytest' 2>/dev/null; then
+		if ODR_PYTHON=$BRINGUP_PY python3 -m pytest -q -p no:cacheprovider tests/hil/test_bringup.py \
+			> "$OUT/bringup-test.log" 2>&1; then
+			ok "bring-up mode tests ($(grep -oE '[0-9]+ (passed|skipped)' "$OUT/bringup-test.log" | paste -sd, -))"
+		else
+			tail -20 "$OUT/bringup-test.log"
+			bad "bring-up mode tests (see $OUT/bringup-test.log)"
+		fi
+	fi
 	# the flashing tools: odrflash's host tests (sector planning, manifests, codec merge, fake bootloader runs) and
 	# the self-tests of the developer tools (no USB, synthetic keys and stock files)
 	if python3 -W ignore -m unittest discover -s tools/odrflash/tests > "$OUT/odrflash-tests.log" 2>&1 &&
