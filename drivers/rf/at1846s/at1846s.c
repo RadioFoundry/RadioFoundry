@@ -355,6 +355,7 @@ static bool dcs_code_regs(at1846s_t *dev, uint16_t code)
 bool at1846s_set_tx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value)
 {
 	bool ok;
+	dev->tx_tone = (uint8_t)type;
 	switch (type) {
 	case AT1846S_TONE_CTCSS:
 		ok = at1846s_write(dev, 0, 0x4A, at1846s_ctcss_reg(value));
@@ -376,6 +377,17 @@ bool at1846s_set_tx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value)
 		ok &= at1846s_modify(dev, 0, 0x4E, TX_SEL_KEEP, 0);
 		return ok;
 	}
+}
+
+bool at1846s_tx_tail(at1846s_t *dev, bool on)
+{
+	if (dev->tx_tone != AT1846S_TONE_DCS && dev->tx_tone != AT1846S_TONE_DCS_INV) {
+		return false;
+	}
+	if (on) {
+		return at1846s_modify(dev, 0, 0x4E, TX_SEL_KEEP, 0x0600);
+	}
+	return at1846s_modify(dev, 0, 0x4E, TX_DCS_KEEP, dev->tx_tone == AT1846S_TONE_DCS_INV ? TX_DCS_INV : TX_DCS_NORMAL);
 }
 
 bool at1846s_set_rx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value)

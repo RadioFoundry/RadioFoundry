@@ -56,6 +56,9 @@ static struct {
 	uint16_t battery_mv;
 	uint8_t mic;
 	bool has_tx_tone;
+	bool has_tail;		// tx_tail starts one (the board's TX tone is DCS)
+	bool tail_on;
+	int tail_starts;
 	int vibes;		// vibrate() calls
 	uint16_t vibe_ms[8];	// their lengths
 	uint32_t vibe_at[8];	// and when
@@ -87,7 +90,16 @@ static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 	hw.tx_hz = hz;
 	return true;
 }
-static void r_tx_off(void) { hw.tx_off_calls++; hw.tone_hz = 0; }
+static void r_tx_off(void) { hw.tx_off_calls++; hw.tone_hz = 0; hw.tail_on = false; }
+static bool r_tx_tail(bool on)
+{
+	if (on && !hw.has_tail) {
+		return false;
+	}
+	hw.tail_starts += on;
+	hw.tail_on = on;
+	return true;
+}
 static void r_status(radio_status_t *st)
 {
 	if (hw.asleep) {
@@ -129,7 +141,7 @@ static void r_rx_sleep(bool sleep)
 }
 static const hal_radio_t fake_radio = {
 	.init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off, .status = r_status,
-	.audio = r_audio, .tx_tone = r_tx_tone, .rx_sleep = r_rx_sleep,
+	.audio = r_audio, .tx_tone = r_tx_tone, .rx_sleep = r_rx_sleep, .tx_tail = r_tx_tail,
 };
 
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
@@ -1429,6 +1441,61 @@ static void test_bcl_inhibit(void)
 
 static void set_roger(radio_settings_t *s) { s->roger_beep = true; }
 
+// The DCS turn-off tail (hal_radio_t.tx_tail): after PTT release (and after the roger beep), the carrier stays up
+// RADIO_SUBTONE_TAIL_MS; PTT again cancels it and the transmission goes on; the time-out ends it
+static void set_tot5(radio_settings_t *s) { s->tot_s = 5; s->tot_warn_s = 0; }
+
+static void test_subtone_tail(void)
+{
+	start();
+	// No tail (no DCS on the board's side): plain unkey
+	req(RREQ_PTT, 1);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 1 && hw.tail_starts == 0);
+	hw.has_tail = true;
+	req(RREQ_PTT, 1);
+	run(500);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && hw.tail_on && hw.tail_starts == 1 && hw.tx_off_calls == 1);
+	run(RADIO_SUBTONE_TAIL_MS - 50);
+	CHECK(sm.view.state == RS_TX && hw.tail_on);
+	run(100);
+	CHECK(sm.view.state == RS_IDLE && !hw.tail_on && hw.tx_off_calls == 2);
+	// Pressed again during the tail: the tail stops, the transmission goes on, and the next release tails again
+	req(RREQ_PTT, 1);
+	req(RREQ_PTT, 0);
+	run(100);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && !hw.tail_on && hw.tx_off_calls == 2);
+	run(1000);
+	CHECK(sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	CHECK(hw.tail_on && hw.tail_starts == 3);
+	run(RADIO_SUBTONE_TAIL_MS + 50);
+	CHECK(sm.view.state == RS_IDLE && !hw.tail_on && hw.tx_off_calls == 3);
+	// After the roger beep
+	settings(set_roger);
+	req(RREQ_PTT, 1);
+	run(200);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.roger && !hw.tail_on);
+	run(2 * RADIO_ROGER_STEP_MS + 20);
+	CHECK(sm.view.state == RS_TX && !sm.view.roger && hw.tail_on && hw.tone_hz == 0);
+	run(RADIO_SUBTONE_TAIL_MS + 50);
+	CHECK(sm.view.state == RS_IDLE && !hw.tail_on && hw.tx_off_calls == 4);
+	// The time-out during the tail (after the roger beep, still on) ends it with the transmission
+	settings(set_tot5);
+	req(RREQ_PTT, 1);
+	run(4600);
+	req(RREQ_PTT, 0);
+	run(2 * RADIO_ROGER_STEP_MS + 20);
+	CHECK(sm.view.state == RS_TX && hw.tail_on);
+	run(250);
+	CHECK(sm.view.state != RS_TX && !hw.tail_on && hw.tx_off_calls == 5);
+	run(1000);
+	CHECK(sm.view.state != RS_TX && hw.tx_off_calls == 5);
+}
+
 static void test_roger_burst(void)
 {
 	start();
@@ -1853,6 +1920,7 @@ int main(void)
 	test_beep_follows_volume();
 	test_bcl_inhibit();
 	test_roger_burst();
+	test_subtone_tail();
 	test_tot_tones_and_clamps();
 	test_vox();
 	test_battery();

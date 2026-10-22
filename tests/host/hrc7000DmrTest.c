@@ -760,6 +760,14 @@ static void test_subtone(void)
 	CHECK(REG(C7_CDCSS_ADDR) == ((0754u << 16) | 0023u));
 	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS_INV, 0023);
 	CHECK(REG(C7_FM_MOD) & (1u << 11));
+	// The turn-off tail: b9 on with DCS; FM_PTT off for the tail, on again for PTT again. None without DCS
+	CHECK(REG(C7_FM_MOD) & (1u << 9));
+	REG(C7_FM_PTT) = 1;
+	CHECK(hrc7000_tx_tail(&dev, true) && REG(C7_FM_PTT) == 0);
+	CHECK(hrc7000_tx_tail(&dev, false) && REG(C7_FM_PTT) == 1);
+	hrc7000_set_subtone(&dev, true, HRC7000_TONE_CTCSS, 1000);
+	CHECK(!hrc7000_tx_tail(&dev, true) && REG(C7_FM_PTT) == 1);
+	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS_INV, 0023);
 	// DCS gets three times the CTCSS value (the field sends it at a third of the deviation, 100 Hz at 0x28), up to
 	// 0x7F: DCS reads the field as signed, and 0xF0 sent the code inverted
 	dev.subaudio_dev = 0x28;

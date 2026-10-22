@@ -14,6 +14,7 @@
 #define FM_MOD_CDCSS		(1u << 2)
 #define FM_MOD_CDCSS_TX_INV	(1u << 11)
 #define FM_MOD_CDCSS_RX_INV	(1u << 10)
+#define FM_MOD_CDCSS_TURN_OFF	(1u << 9)	// at FM_PTT off, the 134.4 Hz turn-off tone before the modulation stops
 #define FM_MOD_DTMF		(1u << 1)
 #define TONE_SEND_START		(1u << 7)	// dtmf_send: the digit on
 #define TONE_DIGIT_1		1u		// 697 + 1209 Hz: FM_TONE1 and FM_TONE3 high halves
@@ -309,12 +310,21 @@ void hrc7000_set_subtone(hrc7000_t *d, bool tx, hrc7000_tone_t type, uint16_t va
 		uint32_t c = hrc7000_rd(d, C7_CDCSS_ADDR);
 		c = tx ? ((c & ~0x1FFu) | (value & 0x1FFu)) : ((c & ~0x1FF0000u) | ((uint32_t)(value & 0x1FFu) << 16));
 		hrc7000_wr(d, C7_CDCSS_ADDR, c);
-		mod |= FM_MOD_CDCSS;
+		mod |= FM_MOD_CDCSS | FM_MOD_CDCSS_TURN_OFF;
 		if (type == HRC7000_TONE_DCS_INV) {
 			mod |= tx ? FM_MOD_CDCSS_TX_INV : FM_MOD_CDCSS_RX_INV;
 		}
 	}
 	hrc7000_wr(d, C7_FM_MOD, mod);
+}
+
+bool hrc7000_tx_tail(hrc7000_t *d, bool on)
+{
+	if ((hrc7000_rd(d, C7_FM_MOD) & FM_MOD_CDCSS) == 0) {
+		return false;
+	}
+	hrc7000_wr(d, C7_FM_PTT, on ? 0u : 1u);
+	return true;
 }
 
 bool hrc7000_subtone_ok(hrc7000_t *d)

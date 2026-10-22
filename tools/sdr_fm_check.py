@@ -4,7 +4,7 @@
 """FM transmit checker for an RTL-SDR capture (rtl_sdr raw unsigned-centered int8 I/Q, "CS8").
 
     tools/sdr_fm_check.py CAPTURE.cs8 --offset -25000 [--center 461887500 --ppm P] [--bw 12.5]
-                          [--expect-ctcss 100.0 | --expect-dcs 023N] [--wav voice.wav] [--tones]
+                          [--expect-ctcss 100.0 | --expect-dcs 023N [--expect-tail 0.2]] [--wav voice.wav] [--tones]
 
 The channel sits --offset Hz from the tuner center (an offset keeps it away from the RTL's DC spike). For every
 keyed segment (carrier above the capture's noise floor) it reports:
@@ -16,6 +16,10 @@ keyed segment (carrier above the capture's noise floor) it reports:
   - the 4-7.5 kHz band RMS of the discriminator output, a reference for the noise / residual FM floor
   - sub-audio: a CTCSS tone (60-260 Hz) with its frequency and peak deviation, or a DCS code (134.4 bit/s NRZ,
     23-bit Golay word) with its polarity and deviation; checked against --expect-ctcss / --expect-dcs
+  - with DCS, the turn-off tail: the 134.4 Hz tone that ends a DCS transmission (receivers close on it before the
+    carrier drops), with its length, the carrier left after it and its deviation, as "sub-audio tail: 134.4 Hz for
+    0.30 s, ending 0.02 s before the carrier, deviation 290 Hz peak", or "sub-audio tail: none"; checked against
+    --expect-tail
   - with --tones: the audio tones in the voice band (a roger beep, a 1750 Hz burst): each run of 40 ms windows whose
     strongest 300-3000 Hz line holds most of the band's power, with its frequency, start and end (s from the start
     of the capture) and peak deviation, as "tone 1750.0 Hz 0.52-2.47 s (1.95 s), deviation 2400 Hz peak"
@@ -304,6 +308,43 @@ def ctcss_find(x, fs):
     return freq, float(np.sqrt(2.0) * np.std(tone)), float(ratio)
 
 
+# --- the sub-audio tail (DCS turn-off) ---
+
+TAIL_WIN_S, TAIL_HOP_S = 0.1, 0.02
+TAIL_LOOK_S = 1.0               # searched at the end of a segment
+TAIL_PURITY = 0.7               # the tone holds this share of the sub-audio power (DCS data: well under half)
+TAIL_MIN_DEV_HZ = 60.0
+TAIL_GAP_S = 0.15               # a modem that stops modulating after its tail leaves a quiet carrier: skipped
+
+
+def sub_tail(x, fs, hz):
+    """A steady tone of hz at the end of the sub-audio signal x: (length s, peak deviation Hz, s of carrier after it),
+    (0, 0, 0) when none. Each window fits the tone (cos and sin); the tail is the run of windows where it holds most of
+    the power, ending at most TAIL_GAP_S before x does (a quiet carrier, the key-off)."""
+    win, hop = int(TAIL_WIN_S * fs), int(TAIL_HOP_S * fs)
+    look = min(len(x), int(TAIL_LOOK_S * fs))
+    y = x[len(x) - look:].astype(np.float64)
+    n_ = np.arange(win) / fs
+    A = np.stack([np.cos(2 * np.pi * hz * n_), np.sin(2 * np.pi * hz * n_)], axis=1)
+    run, amp, gap = 0, [], 0
+    for i in range(look - win, -1, -hop):
+        w = y[i:i + win] - np.mean(y[i:i + win])
+        c, *_ = np.linalg.lstsq(A, w, rcond=None)
+        tone = A @ c
+        p = float(np.sum(w ** 2))
+        a = float(np.hypot(c[0], c[1]))
+        if p <= 0 or float(np.sum(tone ** 2)) < TAIL_PURITY * p or a < TAIL_MIN_DEV_HZ:
+            if run == 0 and (gap + 1) * hop <= TAIL_GAP_S * fs:
+                gap += 1
+                continue
+            break
+        run += 1
+        amp.append(a)
+    if run == 0:
+        return 0.0, 0.0, 0.0
+    return TAIL_WIN_S + (run - 1) * TAIL_HOP_S, float(np.median(amp)), gap * TAIL_HOP_S
+
+
 # --- audio tones (roger beep, 1750 Hz burst) ---
 
 TONE_WIN_S, TONE_HOP_S = 0.04, 0.01
@@ -461,6 +502,7 @@ def analyze(args):
                 print('  tones: none')
 
         freq, tone_dev, ratio = ctcss_find(sub, sub_fs)
+        tail_s = 0.0
         tone_found = ratio >= CTCSS_MIN_DB and tone_dev >= CTCSS_MIN_DEV_HZ
         if is_dcs:
             # every code matched about as often as the best one: the same transmission read as its equivalents
@@ -470,6 +512,16 @@ def analyze(args):
             print('  sub-audio: DCS %s, deviation +-%.0f Hz, %d word matches in %.0f bits%s' %
                   (names[0], dcs_dev, words, nbits,
                    ('; also decodes as ' + ' '.join(names[1:])) if len(names) > 1 else ''))
+            # the turn-off tail: up to the segment's end (only the key-down transient's 10 ms left out)
+            e0 = max(int((b * POWER_WIN_S - TAIL_LOOK_S - 0.3) * FS_AUDIO), s0)
+            e1 = min(int((b * POWER_WIN_S - POWER_WIN_S) * FS_AUDIO), len(audio))
+            st = fir(fir(audio[e0:e1] - carrier, sub_lp)[::8], sub_lp2)
+            tail_s, tail_dev, tail_gap = sub_tail(st, sub_fs, DCS_RATE)
+            if tail_s > 0:
+                print('  sub-audio tail: %.1f Hz for %.2f s, ending %.2f s before the carrier, deviation %.0f Hz peak' %
+                      (DCS_RATE, tail_s, tail_gap, tail_dev))
+            else:
+                print('  sub-audio tail: none')
         elif tone_found:
             near = min(CTCSS, key=lambda c: abs(c - freq))
             print('  sub-audio: CTCSS %.2f Hz (nearest standard %.1f, %+.2f Hz), deviation %.0f Hz peak, %.0f dB'
@@ -481,6 +533,10 @@ def analyze(args):
         if args.expect_ctcss is not None:
             ok = (not is_dcs) and tone_found and abs(freq - args.expect_ctcss) <= 0.5
             print('  expect CTCSS %.1f Hz: %s' % (args.expect_ctcss, 'PASS' if ok else 'FAIL'))
+            failed |= not ok
+        if args.expect_tail is not None:
+            ok = is_dcs and tail_s >= args.expect_tail
+            print('  expect tail %.2f s: %s' % (args.expect_tail, 'PASS' if ok else 'FAIL'))
             failed |= not ok
         if args.expect_dcs is not None:
             code, inv = parse_dcs(args.expect_dcs)
@@ -513,6 +569,7 @@ def main():
     ap.add_argument('--min-seconds', type=float, default=0.3, help='shortest keyed segment reported')
     ap.add_argument('--expect-ctcss', type=float, help='expected CTCSS tone, Hz (e.g. 100.0)')
     ap.add_argument('--expect-dcs', help='expected DCS code and polarity (e.g. 023N, D754I)')
+    ap.add_argument('--expect-tail', type=float, help='expected DCS turn-off tail, at least this many seconds')
     ap.add_argument('--wav', help='write the voice band (300-3000 Hz) of the keyed segments to this WAV')
     ap.add_argument('--tones', action='store_true', help='report the steady audio tones (roger beep, 1750 Hz burst)')
     ap.add_argument('--tone-snr', type=float, help='report the SINAD of a test tone at this frequency, Hz')

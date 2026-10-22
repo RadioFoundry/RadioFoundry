@@ -2555,8 +2555,11 @@ static inline void aprs_rf_abort(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (v
 static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 {
 	if (sm->view.state == RS_TX && !keyed) {
-		board.radio->tx_off();
+		board.radio->tx_off();	// ends a sub-audio tail too
 	}
+#if CONFIG_SUBTONE
+	sm->tail_ms = 0;
+#endif
 	if (sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED) {
 		sm->view.state = RS_IDLE;
 		sm->view.tx_deny = TXDENY_NONE;
@@ -2575,6 +2578,47 @@ static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 	}
 }
 
+#if CONFIG_SUBTONE
+// The sub-audio tail at the end of an FM transmission (the DCS turn-off): the board starts it, the core holds the
+// carrier RADIO_SUBTONE_TAIL_MS, then unkeys. True when it runs (the poll unkeys)
+static bool tail_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->view.state != RS_TX || sm->view.ch.mode != RADIO_MODE_FM || board.radio->tx_tail == NULL ||
+			!board.radio->tx_tail(true)) {
+		return false;
+	}
+	sm->tail_ms = now_ms != 0 ? now_ms : 1;
+	return true;
+}
+
+static void tail_cancel(radio_sm_t *sm)
+{
+	if (sm->tail_ms != 0) {
+		board.radio->tx_tail(false);
+		sm->tail_ms = 0;
+	}
+}
+
+static void tail_poll(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (now_ms - sm->tail_ms >= RADIO_SUBTONE_TAIL_MS) {
+		tail_cancel(sm);
+		fm_tx_end(sm, false, now_ms);
+	}
+}
+#endif
+
+// The end of an FM transmission the user let go of: the sub-audio tail first, if the board sends one
+static void fm_unkey(radio_sm_t *sm, bool keyed, uint32_t now_ms)
+{
+#if CONFIG_SUBTONE
+	if (!keyed && tail_start(sm, now_ms)) {
+		return;		// tail_poll unkeys
+	}
+#endif
+	fm_tx_end(sm, keyed, now_ms);
+}
+
 #if CONFIG_FM_TX_TONES
 static bool tx_tone(uint16_t hz)
 {
@@ -2588,7 +2632,8 @@ static void roger_poll(radio_sm_t *sm, uint32_t now_ms)
 	if (t >= 2u * RADIO_ROGER_STEP_MS) {
 		tx_tone(0);
 		sm->roger_ms = 0;
-		fm_tx_end(sm, false, now_ms);
+		sm->view.roger = false;
+		fm_unkey(sm, false, now_ms);
 	} else if (t >= RADIO_ROGER_STEP_MS && t < RADIO_ROGER_STEP_MS + RADIO_POLL_MS) {
 		tx_tone(RADIO_ROGER_HZ2);
 	}
@@ -2619,6 +2664,14 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		sm->ptt = true;
 		return;
 	}
+#endif
+#if CONFIG_SUBTONE
+	if (sm->tail_ms != 0 && sm->view.state == RS_TX) {
+		tail_cancel(sm);	// pressed again during the tail: the transmission goes on
+		sm->ptt = true;
+		return;
+	}
+	sm->tail_ms = 0;	// a transmission that ended some other way (tx_off() ended its tail)
 #endif
 #if CONFIG_SCAN
 	if (scan_on(&sm->scan)) {
@@ -2722,7 +2775,7 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 #else
 	(void)roger;
 #endif
-	fm_tx_end(sm, keyed, now_ms);
+	fm_unkey(sm, keyed, now_ms);
 }
 
 static void ptt_up(radio_sm_t *sm, uint32_t now_ms)
@@ -4400,6 +4453,14 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 			}
 		}
 #endif
+#if CONFIG_SUBTONE
+		if (sm->tail_ms != 0) {
+			tail_poll(sm, now_ms);
+			if (sm->view.state != RS_TX) {
+				return;
+			}
+		}
+#endif
 		tx_timer(sm, now_ms);
 		if (sm->view.tot_s != 0 && sm->view.tx_elapsed_ms >= (uint32_t)sm->view.tot_s * 1000) {
 #if CONFIG_FM_TX_TONES
@@ -4409,6 +4470,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 				sm->view.roger = false;
 				sm->view.tone_burst = false;
 			}
+#endif
+#if CONFIG_SUBTONE
+			tail_cancel(sm);
 #endif
 			board.radio->tx_off();
 			deny(sm, TXDENY_TIMEOUT);	// until PTT is released

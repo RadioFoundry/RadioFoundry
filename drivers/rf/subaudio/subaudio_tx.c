@@ -49,6 +49,7 @@ void subaudio_tx_init(subaudio_tx_t *t, uint32_t rate, uint16_t full, uint8_t pe
 void subaudio_tx_start(subaudio_tx_t *t, subaudio_kind_t kind, uint16_t value, bool invert)
 {
 	t->kind = kind;
+	t->tail = false;
 	t->phase = 0;
 	t->bit = 0;
 	t->lp = 0;
@@ -63,10 +64,24 @@ void subaudio_tx_start(subaudio_tx_t *t, subaudio_kind_t kind, uint16_t value, b
 	}
 }
 
+bool subaudio_tx_tail(subaudio_tx_t *t, bool on)
+{
+	if (t->kind != SUBAUDIO_DCS && t->kind != SUBAUDIO_DCS_INV) {
+		return false;
+	}
+	t->tail = on;
+	t->phase = 0;		// the tail's sine, or the code's next bit, starts clean
+	t->lp = 0;
+	return true;
+}
+
 uint16_t subaudio_tx_next(subaudio_tx_t *t)
 {
 	int32_t level = 0;	// Q15 of the peak
-	if (t->kind == SUBAUDIO_CTCSS) {
+	if (t->tail) {
+		level = sine_q15(t->phase);	// step is the bit rate, 134.4 Hz
+		t->phase += t->step;
+	} else if (t->kind == SUBAUDIO_CTCSS) {
 		level = sine_q15(t->phase);
 		t->phase += t->step;
 	} else if (t->kind == SUBAUDIO_DCS || t->kind == SUBAUDIO_DCS_INV) {

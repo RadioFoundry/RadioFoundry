@@ -363,6 +363,15 @@ static void tx_off(void)
 
 // FM TX tone (1750 Hz burst, roger beep, Morse): the modem's DTMF sender as a single tone (modem-hrc7000.md 8.3).
 // hrc7000_fm_idle() at the end of the transmission gives the microphone back
+// The DCS turn-off tail, from the modem (modem-hrc7000.md 8.2); the core holds the carrier for it
+static bool tx_tail(bool on)
+{
+	if (!transmitting || mode != RADIO_MODE_FM) {
+		return false;
+	}
+	return hrc7000_tx_tail(&modem, on);
+}
+
 static bool tx_tone(uint16_t hz)
 {
 	if (!transmitting || mode != RADIO_MODE_FM) {
@@ -537,6 +546,7 @@ const hal_radio_t dm32_radio = {
 	.tx = tx,
 	.tx_off = tx_off,
 	.tx_tone = tx_tone,
+	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
 	.rx_sleep = rx_sleep,
 	.status = status,

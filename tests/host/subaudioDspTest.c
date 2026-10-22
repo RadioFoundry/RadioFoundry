@@ -407,6 +407,43 @@ static void test_tx_dcs_bits(void)
 }
 
 // The generator into the detector, sampled at the detector's rate
+// The DCS turn-off tail: a 134.4 Hz sine at the code's swing in place of the code, the code again after it. None for
+// CTCSS
+static void test_tx_tail(void)
+{
+	subaudio_tx_t g;
+	subaudio_tx_init(&g, TXRATE, FULL, 50);
+	subaudio_tx_start(&g, SUBAUDIO_CTCSS, 1000, false);
+	CHECK(!subaudio_tx_tail(&g, true) && !g.tail);
+	subaudio_tx_start(&g, SUBAUDIO_DCS, 023, false);
+	for (unsigned k = 0; k < TXRATE / 2; k++) {
+		(void)subaudio_tx_next(&g);
+	}
+	CHECK(subaudio_tx_tail(&g, true));
+	double worst = 0;
+	unsigned up = 0, n = TXRATE;
+	int prev = (int)(FULL / 2);
+	for (unsigned k = 0; k < n; k++) {
+		int v = subaudio_tx_next(&g);
+		double ideal = FULL / 2.0 + 0.5 * (FULL / 2.0) * sin(2 * PI * 134.4 * k / TXRATE);
+		if (fabs(v - ideal) > worst) {
+			worst = fabs(v - ideal);
+		}
+		up += prev < (int)(FULL / 2) && v >= (int)(FULL / 2);
+		prev = v;
+	}
+	CHECK(worst < 3.0);
+	CHECK(up >= 133 && up <= 135);
+	// Back to the code: the NRZ levels again, no longer a sine
+	CHECK(subaudio_tx_tail(&g, false));
+	unsigned flat = 0;
+	for (unsigned k = 0; k < TXRATE / 4; k++) {
+		int v = subaudio_tx_next(&g);
+		flat += abs(v - (int)(FULL / 2)) > 240;
+	}
+	CHECK(flat > TXRATE / 8);	// most samples sit at the NRZ swing (a sine spends a third of its time there)
+}
+
 static void test_loopback(void)
 {
 	for (unsigned i = 0; i < TONES_PICKER_COUNT; i += 3) {
@@ -456,6 +493,7 @@ int main(void)
 	test_tx_ctcss_frequency_and_shape();
 	test_tx_ramp();
 	test_tx_dcs_bits();
+	test_tx_tail();
 	test_loopback();
 	if (failures) {
 		printf("%d failure(s)\n", failures);

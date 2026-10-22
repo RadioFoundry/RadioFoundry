@@ -192,7 +192,16 @@ static void test_init(void)
 	CHECK(last_write(0x4A) == 8850 && (last_write(0x4E) & 0x0600) == 0x0600);
 	CHECK(at1846s_set_tx_tone(&dev, AT1846S_TONE_DCS, 023));
 	CHECK(((last_write(0x4E) >> 8) & 0xC7) == 0x04);
+	// The DCS turn-off tail: CTCSS select (0x4A still 134.4 Hz), then back to the normal code
+	CHECK(at1846s_tx_tail(&dev, true));
+	CHECK((last_write(0x4E) & 0x0600) == 0x0600 && last_write(0x4A) == 13440);
+	CHECK(at1846s_tx_tail(&dev, false));
+	CHECK(((last_write(0x4E) >> 8) & 0xC7) == 0x04);
+	CHECK(at1846s_set_tx_tone(&dev, AT1846S_TONE_DCS_INV, 023));
+	CHECK(at1846s_tx_tail(&dev, true) && at1846s_tx_tail(&dev, false));
+	CHECK(((last_write(0x4E) >> 6) & 0x1F) == 0x16);	// back to the inverted code
 	CHECK(at1846s_set_tx_tone(&dev, AT1846S_TONE_NONE, 0));
+	CHECK(!at1846s_tx_tail(&dev, true));
 	CHECK((last_write(0x4E) & 0x0600) == 0 && last_write(0x4A) == 0);
 }
 
