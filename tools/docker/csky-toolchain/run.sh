@@ -6,7 +6,8 @@
 #   tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32
 #   ODR_CSKY_IMAGE=ghcr.io/sfowlr/odr-csky-gcc14:20261011b tools/docker/csky-toolchain/run.sh make BOARD=dm32
 #
-# The image is $ODR_CSKY_IMAGE (default odr/csky-gcc14:latest, the tag build.sh's image gets on the Gitea runner).
+# The image is $ODR_CSKY_IMAGE (default platform/hrc7000/platform.toml [toolchain] image, the tag build.sh's image
+# gets on the Gitea runner).
 # When it isn't on this Docker host it is pulled, but only when the name starts with a registry host
 # (ghcr.io/..., docker.io/..., registry.example:5000/...): a bare name is never looked up on Docker Hub, where
 # anyone could own it. Exit status 3 (and a message) when Docker or the image isn't there, so CI can skip the job;
@@ -16,8 +17,8 @@
 # the host's Docker socket (Gitea's act runner: the workspace is a Docker volume, so the new container takes the job
 # container's volumes with --volumes-from). JOBS and ODR_CI_PRUNE are passed through.
 set -eu
-IMG=${ODR_CSKY_IMAGE:-odr/csky-gcc14:latest}
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
+IMG=${ODR_CSKY_IMAGE:-$("$ROOT/tools/platform_toolchain.sh" hrc7000 image)}
 [ $# -gt 0 ] || { echo "usage: $0 command [args...]" >&2; exit 2; }
 
 if ! command -v docker > /dev/null 2>&1 || ! docker info > /dev/null 2>&1; then

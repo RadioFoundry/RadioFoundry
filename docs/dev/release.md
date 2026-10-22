@@ -183,7 +183,7 @@ never handles the key. Updates of a radio that runs ODR need no stock file.
 
 | Job | Does |
 |---|---|
-| `firmware-dm1701` | Installs Arm GNU Toolchain 13.3.rel1 (checked by SHA-256) into `~/opt`, runs `tools/ci.sh --quick --board dm1701` as the gate, builds, runs `tools/release.py` |
+| `firmware-dm1701` | Installs the pinned Arm GNU Toolchain (`platform/stm32f4/platform.toml`, checked by SHA-256) into `~/opt`, runs `tools/ci.sh --quick --board dm1701` as the gate, builds, runs `tools/release.py` |
 | `firmware-dm32` | Only when the repository variable `ODR_RELEASE_DM32` is `true` (below) |
 | `firmware-dm1801pro` | Only when the repository variable `ODR_RELEASE_DM1801PRO` is `true` (below, "The DM-1801 Pro"): the DM-32UV job's toolchain and cache, then `make BOARD=dm1801pro` and `tools/release.py --board dm1801pro` |
 | `odrflash` | On Ubuntu 22.04, macOS 14 (arm64), macOS 13 (x86_64) and Windows 2022: installs the package, runs its tests, builds a single-file executable with PyInstaller 6.11.1 (libusb from the `libusb-package` wheel, the `certifi` CA bundle, and `serial_loader`, `hrc7000_codec` and `stubtool` for the serial route inside) and runs `--version` on it |
@@ -212,9 +212,9 @@ The DM-32UV runs on a radio but is still in bring-up. The workflow job is there 
 on once [docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) passes:
 
 1. Set the repository variable `ODR_RELEASE_DM32=true` (Settings, Secrets and variables, Actions, Variables). The job
-   builds the csky-elf toolchain with `tools/build-csky-toolchain.sh` (binutils 2.43.1, GCC 14.2.0, newlib
-   4.5.0.20241231, pinned in the script; about 45 minutes on four cores) and caches `~/toolchains/csky-elf` keyed by the
-   script's hash, so later releases restore it in seconds. A prebuilt toolchain archive attached to a tools release
+   builds the csky-elf toolchain with `tools/build-csky-toolchain.sh` (GCC from `platform/hrc7000/platform.toml`,
+   binutils and newlib pinned in the script; about 45 minutes on four cores) and caches `~/toolchains/csky-elf` keyed by
+   the hash of both files, so later releases restore it in seconds. A prebuilt toolchain archive attached to a tools release
    would avoid the first build; that's a later choice.
 2. Set `[status] release = "stable"` in `boards/dm32/board.toml` and regenerate `tools/odrflash/odrflash/registry.json`.
 3. Flashing: the DM-32UV uses Baofeng's serial updater protocol ([hardware-dm32.md](../spec/hardware-dm32.md) 13.2), not

@@ -37,7 +37,7 @@ def git(*a):
 
 def features(board_id, variant=None, options=()):
     cmd = (["make", "-s", "-C", ROOT, "BOARD=" + board_id, "print-config"] + (["VARIANT=" + variant] if variant else [])
-           + ["%s=%s" % o for o in options])
+           + ["%s=%s" % o for o in sorted(dict(options).items())])
     r = subprocess.run(cmd, capture_output=True, text=True)
     return ",".join(kv.split("=")[0] for kv in r.stdout.split() if kv.endswith("=y"))
 
@@ -91,20 +91,17 @@ def main(argv=None):
     variant = None if args.variant in (None, "", "full") else args.variant
     if variant and not os.path.isfile(os.path.join(ROOT, "config", "variants", variant + ".mk")):
         raise SystemExit("release: unknown variant %s (config/variants/)" % variant)
-    options = []
+    options = {}
     for opt in args.build_option:
         name, _, value = opt.partition("=")
         if board.build_option(name, value) is None:
             raise SystemExit("release: %s has no build option %s=%s (its options: %s)"
                              % (board.id, name, value, ", ".join("%s=%s" % (o["name"], "|".join(v["id"] for v in o["values"]))
                                                                 for o in board.build_options) or "none"))
-        options.append((name, value))
-    # the Makefile's names: a non-default value is in the build directory and the image (build/md380-vhf/odr_md380-vhf.bin)
-    defaults = {o["name"]: o["values"][0]["id"] for o in board.build_options}
-    suffix = "".join("-" + v for n, v in options if v != defaults[n])
-    build_dir = board.id + ("-" + variant if variant else "") + suffix
-    path = args.bin or os.path.join(ROOT, "build", build_dir, "odr_%s%s%s.bin" % (board.id, suffix,
-                                                                                 "_install" if board.first_stage else ""))
+        options[name] = value
+    # the Makefile's names (odrflash/names.py): a non-default value is in the build directory and the image
+    # (build/md380-vhf/odr_md380-vhf.bin)
+    path = args.bin or os.path.join(ROOT, board.build_image(options, variant))
     with open(path, "rb") as f:
         image = f.read()
     check_no_codec(board, image)
@@ -119,7 +116,7 @@ def main(argv=None):
     tc = args.toolchain if args.toolchain is not None else toolchain(board.id)
     # variant and build option images carry them in their names; the full default build keeps the plain names odrflash
     # fetches
-    name_id = board.id + ("-" + variant if variant else "") + suffix
+    name_id = board.release_id(options, variant)
     bin_name = mf.image_name(name_id, args.version)
     json_name = mf.image_name(name_id, args.version, "json")
     try:
