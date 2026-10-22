@@ -11,6 +11,9 @@
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
 #endif
+#if CONFIG_BCAST_FM
+#include "bcast/rda5807m/rda5807m_hal.h"
+#endif
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
@@ -67,7 +70,7 @@ static const hal_cps_t cps = {
 
 const board_t board = {
 	.name = "GD-88",
-	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -107,6 +110,9 @@ const board_t board = {
 #endif
 #if CONFIG_CPS_OPENFW
 	.cps = &cps,
+#endif
+#if CONFIG_BCAST_FM
+	.bcast = &rda5807m_hal,
 #endif
 };
 
@@ -188,4 +194,7 @@ void board_init(void)
 	gd88_flash.init();
 #endif
 	gd88_rx2_init();
+#if CONFIG_BCAST_FM
+	gd88_bcast_init();
+#endif
 }

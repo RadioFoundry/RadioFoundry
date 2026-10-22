@@ -43,7 +43,7 @@ retailer claim, **?** unknown. **BIN** / **KP** / **COM** / **INF** are the tags
 | TYT MD-9600 / RT90 | no (SKY72310 + FM receive chain, D) | none known (?) | |
 | TYT MD-380 / RT3 | no (GT3136 FM receiver, D/F) | none known (?) | |
 | Radioddity GD-77 family | no (AT1846S, D) | none known (?) | |
-| Radioddity GD-88 | ? (spec sheet lists 136-174 / 400-480 only, F) | ? | RF chips unknown |
+| Radioddity GD-88 | ? (spec sheet lists 136-174 / 400-480 only, F) | **yes** (RDA5807 class at I2C 0x11, INF) | BK4819 pair, AM not wired; broadcast in `boards/gd88/bcast_gd88.c` ([hardware-gd88.md](hardware-gd88.md) 9) |
 | Anytone 878 family | no airband in any spec found (F) | **yes**, 87.5-108 MHz WFM receiver (F, retailers) | chip unknown (?) |
 | Radtel RT-4D (not planned) | yes (BK4819, D) | yes (F) | the BK4819 AF output has an AM type (D, Apache-2.0 UV-K5 firmware) |
 

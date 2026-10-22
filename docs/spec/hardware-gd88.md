@@ -159,7 +159,7 @@ Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
 | NAND | SPI0, CS PTA18 |
 | RTC | internal I2C2, 7-bit 0x70 |
 | IMU | bit-banged I2C PTA7 (SCL) / PTA8 (SDA), 7-bit 0x68, MPU-6050 class |
-| FM receiver | RDA5807 class on the same bit-banged pair, 7-bit 0x11 |
+| FM receiver | RDA5807 class on the same bit-banged pair, 7-bit 0x11. No enable line; its audio is gated by PTC18 |
 | RF chips | bit-banged 3-wire: SCLK PTB16, SDIO PTB24, main chip select PTB25, second chip select PTA19; status lines PTB26/27 |
 | Output expander | 64-bit serial chain: clock PTB0, data PTB1, latch PTB3 (rising edge). Carries the audio routing only (9.3). PTB0 / PTB1 are not LEDs |
 | Band path | The LO BK4819's GPIO4 / GPIO5 (register 0x33): VHF = GPIO5 high, GPIO4 low; UHF the reverse. A has no band, PA or TX supply GPIO |
@@ -199,7 +199,7 @@ The chain is eight bytes. Byte 0 bit 0 is shifted first; a rising edge on PTB3 l
 |---|---|---|
 | 0 (speaker), 1 (headset) | 0-3 | the source: bit 2 x (class - 1) + vfo. Class 1 is analog FM, class 2 DMR (INF). Vfo 0 is A's receiver, 1 is B's |
 | 0, 1 | 5 | amplifier enable |
-| 0, 1 | 6 | another source |
+| 0, 1 | 6 | another source; ODR uses it for the broadcast FM tuner (INF) |
 | 2-5 | 4 | the receive path in use, one-hot: byte 2 DMR A, 3 DMR B, 4 FM A, 5 FM B |
 | 2-5 | 7 | the other VFO during TX |
 | 6, 7 | 0-3 | the transmit route, the source bit of the transmitting class and vfo (byte 6 at volume 6 or less, else byte 7) |
@@ -272,8 +272,9 @@ the SPI NAND. Neither has run on a radio yet.
 | Storage | settings on the SPI NAND, blocks 1920-1951 | none |
 | Calibration | both copies read, never written | the program-flash copy |
 | Update | the cable, through ODR's first stage | through A's bridge (rx2-link.md 4) |
+| Broadcast FM | the RDA5807-class tuner (`CONFIG_BCAST_FM`, on by default, `bcast_gd88.c`): the shared driver on PTA7 / PTA8, its audio on chain bit 6 with the amplifier | - |
 
-Not supported yet: the FM broadcast receiver, the IMU, the headset path on its own, the RTC.
+Not supported yet: the IMU, the headset path on its own, the RTC.
 
 ## 14. Remaining unknowns for bring-up
 
@@ -281,7 +282,8 @@ The code marks each with `TODO(gd88)`.
 
 1. Which RF chips are fitted (read the debug UART chip-ID line or photograph the board).
 2. A's output power control, and so transmit.
-3. FM against DMR for the chain's classes, B's RX path pairs and B's audio source pair.
+3. FM against DMR for the chain's classes, chain bit 6 as the broadcast tuner's source, B's RX path pairs and B's
+   audio source pair.
 4. The front panel's navigation keys, the encoder's direction, whether PTB12 is the knob's contact.
 5. The volume knob's level table, the LCD controller's timing word, DAC C on each SoC.
 6. The NAND's size and B's NAND chip select.

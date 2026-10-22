@@ -61,6 +61,9 @@ typedef struct {
 void gd88_rx2_diag(gd88_rx2_diag_t *d);
 // B's audio to the speaker (true) or not, through A's chain routing; dmr: B is on a DMR channel
 void gd88_audio_b(bool on, bool dmr);
+// The broadcast FM tuner's audio to the speaker (chain source bit 6), with CONFIG_BCAST_FM
+void gd88_audio_bcast(bool on);
+void gd88_bcast_init(void);
 
 // --- Diagnostics (diag_gd88.c) ---
 uint32_t gd88_input_raw(void);		// the last key scan before debouncing

@@ -56,10 +56,10 @@ endif
 # APRS receive needs FM receive audio as PCM, which this radio doesn't give the core (its PCM path is the modem's)
 CONFIG_APRS_RX ?= n
 CONFIG_APRS_IGATE ?= n
-# Not wired yet: the RDA5807-class broadcast receiver (I2C 0x11 on PTA7 / PTA8) and the air band
-CONFIG_BCAST_FM ?= n
+# The RDA5807-class broadcast tuner (CAP_BCAST_FM, I2C 0x11 on PTA7 / PTA8); the air band isn't wired yet
+CONFIG_BCAST_FM ?= y
 CONFIG_AM_RX ?= n
 # What the board can't do yet or lacks: ci's maximal configuration leaves these off
-BOARD_UNSUPPORTED := USB USB_NETWORK NET_USRP HOTSPOT_SPLIT SFR APRS_RX APRS_IGATE BCAST_FM AM_RX AUDIO_PROBE
+BOARD_UNSUPPORTED := USB USB_NETWORK NET_USRP HOTSPOT_SPLIT SFR APRS_RX APRS_IGATE AM_RX AUDIO_PROBE
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
 BOARD_REQUIRED := FM

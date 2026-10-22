@@ -8,9 +8,11 @@
 // - bytes 0 and 1: the loudspeaker and the headset output. Bits 0-3 pick the source, bit 2 * (class - 1) + vfo, where
 //   class 1 is analog FM and 2 DMR, and vfo 0 is A's own receiver, 1 is B's. Bit 5 enables the amplifier.
 // - bytes 2-5, bit 4: the receive path in use, one-hot (byte 2 DMR A, 3 DMR B, 4 FM A, 5 FM B).
+// - bytes 0 and 1, bit 6: another source, taken to be the broadcast FM tuner.
 // - bytes 6 and 7: the transmit route, the source bit of the transmitting (class, vfo). Byte 6 is used.
 // TODO(gd88): unknown, needs a radio: class 1 = FM and class 2 = DMR are inferred, not seen; byte 6 against byte 7 for
-// the TX route (they differ by a volume range); the headset byte is driven along with the loudspeaker byte
+// the TX route (they differ by a volume range); the headset byte is driven along with the loudspeaker byte; bit 6 as
+// the broadcast tuner's source (the vendor code sets it for "no source / tones", and nothing else is left for the tuner)
 #include "gd88.h"
 #include "pins.h"
 #include "platform.h"
@@ -20,6 +22,7 @@
 #define BYTE_TX_ROUTE		6u
 #define BIT_AMP			5u
 #define BIT_RX_PATH		4u
+#define BIT_BCAST		6u
 #define VFO_A			0u
 #define VFO_B			1u
 
@@ -27,6 +30,7 @@ static bool spk_a, spk_b;
 static bool a_dmr, b_dmr;	// the receivers' modes
 static bool a_modem;		// A's speaker source is the modem's line out (DMR voice, beeps)
 static bool receiving;		// A's receive path is on (not transmitting)
+static bool bcast;		// the broadcast FM tuner has the speaker
 
 static uint8_t src_bit(bool dmr, uint8_t vfo)
 {
@@ -51,9 +55,10 @@ static void outputs(void)
 			bit(g, src_bit(d != 0, VFO_A), spk_a && (a_modem == (d != 0)));
 			bit(g, src_bit(d != 0, VFO_B), spk_b && (b_dmr == (d != 0)));
 		}
-		bit(g, BIT_AMP, spk_a || spk_b);
+		bit(g, BIT_BCAST, bcast);
+		bit(g, BIT_AMP, spk_a || spk_b || bcast);
 	}
-	hrc_pin_write(PIN_SPK_AMP, spk_a || spk_b);
+	hrc_pin_write(PIN_SPK_AMP, spk_a || spk_b || bcast);
 	hrc_pin_write(PIN_DIG_AUDIO, spk_a && a_modem);
 }
 
@@ -74,7 +79,7 @@ void gd88_path_init(void)
 	hrc_pin_out(PIN_TX_RX, false);
 	hrc_pin_out(PIN_DIG_AUDIO, false);
 	hrc_pin_out(PIN_SPK_AMP, false);
-	spk_a = spk_b = a_dmr = b_dmr = a_modem = receiving = false;
+	spk_a = spk_b = a_dmr = b_dmr = a_modem = receiving = bcast = false;
 }
 
 void gd88_path_rx(uint32_t hz, bool on, bool dmr)
@@ -128,5 +133,13 @@ void gd88_audio_b(bool on, bool dmr)
 	b_dmr = dmr;
 	outputs();
 	rx_path(receiving);
+	hrc_irq_restore(s);
+}
+
+void gd88_audio_bcast(bool on)
+{
+	uint32_t s = hrc_irq_save();
+	bcast = on;
+	outputs();
 	hrc_irq_restore(s);
 }
