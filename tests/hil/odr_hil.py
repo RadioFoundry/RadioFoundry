@@ -34,7 +34,7 @@ SKIP_KINDS = {
     "no_hw": "the radio lacks the capability",
     "state": "a precondition the test could set up itself (a mode, a setting, the codeplug, the channel)",
     "opt_in": "an opt-in option was not given (an --allow-* flag, a frequency, a file, a second radio)",
-    "bench": "the radio, the SDR bench or a host tool is missing, unreachable or busy",
+    "bench": "the radio, the SDR bench or the test host's tools (a program, git history) are missing, unreachable or busy",
     "other_board": "a board-specific test on another board",
 }
 
