@@ -41,7 +41,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FEATURES_TOML = os.path.join(ROOT, "tests", "hil", "features.toml")
 RESULTS = os.path.join(ROOT, "docs", "testing", "results")
 RECORD_FORMAT = 1
-FIELDS = {"switch", "spec", "source", "planned_tests", "manual"}
+FIELDS = {"switch", "hardware", "spec", "source", "planned_tests", "manual"}
 OVERRIDE_STATES = ("unsupported",)
 # How list shows a resolved state: "required" is the checklist's word, "built" what it means to a reader
 SHOWN = {"required": "built"}
@@ -208,6 +208,28 @@ def git(*args, check=True):
     return r
 
 
+NO_GIT = "not a git checkout: the staleness check needs history"
+_GIT_CHECKOUT = None
+
+
+def git_checkout():
+    """Whether ROOT is a git work tree (a `git archive` export isn't): records and staleness need its history."""
+    global _GIT_CHECKOUT
+    if _GIT_CHECKOUT is None:
+        try:
+            r = git("rev-parse", "--show-toplevel", check=False)
+            _GIT_CHECKOUT = r.returncode == 0 and os.path.realpath(r.stdout.strip()) == os.path.realpath(ROOT)
+        except OSError:	# no git at all
+            _GIT_CHECKOUT = False
+    return _GIT_CHECKOUT
+
+
+def no_git_note(to=sys.stdout):
+    """Says, after a listing, that nothing could be checked for staleness."""
+    if not git_checkout():
+        print(f"\n({NO_GIT}: statuses are as recorded, and none reads 'needs re-run')", file=to)
+
+
 def load_records(results=RESULTS):
     """board -> {"runs": run records newest first, "seed": the seed record or None}. A seed record
     (<board>/seed.json, kind "seed") carries the evidence the repository had before the board's first recorded run."""
@@ -265,6 +287,8 @@ def source_hashes(e, rev=None):
 
 def stale(hashes, e):
     """The feature's paths whose content in the tree differs from the recorded hashes (empty: not stale)."""
+    if not git_checkout():
+        return []		# nothing to compare with; the listing says so (no_git_note)
     if not hashes:
         return ["(no source hashes recorded)"]
     now = source_hashes(e)
@@ -338,6 +362,7 @@ def cmd_list(args):
                      "manual": e["manual"]})
     if args.json:
         print(json.dumps(rows, indent=1))
+        no_git_note(sys.stderr)
         return 0
     print(f"{'feature':22} {'state':11} {'tests':>5}  {'status':24} detail")
     for r in rows:
@@ -348,6 +373,7 @@ def cmd_list(args):
     print_owner([r for r in rows if r["state"] == "required"])
     if found is None:
         print("\n(pytest not installed: tests, needs and owner actions unknown; --pytest-python)")
+    no_git_note()
     return 0
 
 
@@ -372,6 +398,7 @@ def cmd_status(args):
             table[e["id"]][b] = {"status": status, "basis": basis}
     if args.json:
         print(json.dumps(table, indent=1))
+        no_git_note(sys.stderr)
         return 0
     w = max(24, *(len(b) for b in boards))
     print(f"{'feature':22} " + " ".join(f"{b:{w}}" for b in boards))
@@ -380,6 +407,7 @@ def cmd_status(args):
                                       for b in boards))
     if any(c["basis"] == "seed" for row in table.values() for c in row.values()):
         print("\n* rests on a seed record (docs/testing/results/<board>/seed.json), not on a recorded run")
+    no_git_note()
     return 0
 
 
@@ -441,6 +469,8 @@ def cmd_run(args):
     boards = _boards()
     if args.radio not in boards:
         die(f"no board {args.radio!r} (boards/*/board.mk)")
+    if not args.no_record and not git_checkout():
+        die(f"{NO_GIT}, and a record needs the commit: run from a clone, or pass --no-record")
     by_id = {e["id"]: e for e in feats}
     pytest_args = list(args.pytest_args)
     if pytest_args[:1] == ["--"]:
@@ -598,6 +628,8 @@ def check(feats, boards, records, found, all_switches):
 
 
 def has_commit(c):
+    if not git_checkout():
+        return False
     return git("cat-file", "-e", f"{c}^{{commit}}", check=False).returncode == 0
 
 
