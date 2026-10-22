@@ -23,6 +23,7 @@ bands = "136-174 / 400-480 MHz"
 power = "1 / 2 / 5 W"
 display = "1.77\" color, 160 × 128"
 gallery = "160x120i5"
+clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal; no backup supply confirmed (docs/spec/hardware-dm1701.md, VBAT unverified)" }
 
 [status]
 level = "supported"

@@ -369,6 +369,20 @@ doesn't. The boards ignore it for the first 1.5 s after power-up while the readi
 `switch_on()` and powers off (settings saved, latch released). 5.5 V sits well under a flat 2S pack (critical
 6.0 V), so a weak battery never reads as the switch.
 
+### 5.6 Time of day
+
+ODR keeps no wall clock. `hal_time.h` gives only time since start-up, and that is what every record uses: the crash
+log's `uptime_ms`, messages (`ui_msg_t.age_ms`), call history and the APRS station list ("14m ago"). Nothing on the screen shows a time of day, so a
+radio never shows a made-up one after power-on.
+
+The only time of day is the UTC time a GPS or host NMEA fix carries. It travels with that position into DMR GPS and
+LRRP reports. A fixed position carries none, and the reports leave the time out (`utc_hms` 0xFFFFFFFF, date 0).
+
+Some radios have a real-time clock, and some keep it running through power-off. `board.toml` `[hardware] clock`
+records which, with its source (`backed`, `unbacked`, `none`, or `unknown`), and the feature matrix and the site show
+it. A clock driver arrives behind a hardware switch (`CONFIG_RTC`, `hardware` in `tests/hil/features.toml`). Until GPS,
+the network or the user sets it, the radio shows "no time", and records keep using uptime or mark the time unknown.
+
 ## 6. TX power, calibration, band limits
 
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,
