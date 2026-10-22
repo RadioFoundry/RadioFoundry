@@ -114,7 +114,7 @@ void boot_resume(void)
 	longjmp(done, 1);
 }
 
-#include "../../boot/db25d/boot.c"
+#include "../../../boot/db25d/boot.c"
 
 static int fails;
 

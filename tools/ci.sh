@@ -8,26 +8,31 @@
 #   tools/ci.sh --quick         the same with only each board's default build (no matrix)
 #   tools/ci.sh --board dm1701  one board only (or a comma separated list: --board dm1701,md380)
 #   tools/ci.sh --matrix        only the feature matrix (no default builds; what the nightly CI adds per push)
-#   tools/ci.sh --steps host,python   only these steps (host, python, firmware, licenses, similarity; default all)
+#   tools/ci.sh --steps host,python   only these steps (registry, host, python, firmware, licenses, similarity;
+#                                     default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
 #   ODR_CI_SANITIZE=1 tools/ci.sh   the host step also runs the host tests under ASan and UBSan (make SANITIZE=1)
 #   ODR_CI_PRUNE=1 tools/ci.sh  remove each build tree once its size is in the report (the log and the .bin stay;
 #                               the matrix otherwise leaves about 65 MB per configuration)
 #
-# The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps host,python,licenses` and
+# The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses`, the host tests and
 # `--quick --steps firmware --board <the Arm boards>` and `<the C-SKY boards>`; nightly `--matrix --steps firmware --board <b>`.
 #
-# Steps, each reported as ok / FAIL / skip:
-#   1. host tests (make -C tests/host), and with ODR_CI_SANITIZE=1 again under ASan and UBSan
-#   2. Python: every tool and HIL test parses; the board registry checks (tools/boards.py check and self-test, with a
-#      Python 3.11 or later from tools/odr_python.sh); pytest collects tests/hil (when pytest is installed); the flashing tools'
+# Every step but host needs a Python 3.11 or later (tools/odr_python.sh): the board registry is TOML. Steps, each
+# reported as ok / FAIL / skip:
+#   0. registry: boards/*/board.toml and platform/*/platform.toml (tools/boards.py) are well formed and agree
+#      with board.mk, the linker scripts and board_t; tools/odrflash/odrflash/registry.json is current; the loader's
+#      self-test; the facts radio.json and the README still copy agree (tools/test_registry_parity.py)
+#   1. host tests (make -C tests/host, with each board's boards/<b>/tests/host.mk), and with ODR_CI_SANITIZE=1 again
+#      under ASan and UBSan
+#   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); the flashing tools'
 #      tests (tools/odrflash/tests, codec_extract, stm32_dfu, codeplug_port, md380_migrate, serial_loader, dm32_migrate
 #      and hrc7000_codec self-tests) and the UI gallery comparison's (ui_gallery_compare); the stack check's self-test
 #      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
 #      the glossary data is sound and its pages current (tools/glossary.py); the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
 #      pass against odrflash (site/tests/run.sh, needs Node 20+)
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
-#      notice: the DM-32's csky toolchain comes from tools/build-csky-toolchain.sh):
+#      notice naming what installs it, its platform.toml toolchain.build):
 #        default            the board's defaults
 #        no-<FEATURE>       each switch that is on by default, turned off alone (sub-features follow), except those
 #                           the board can't build without (BOARD_REQUIRED: FM on the DB25-D while DMR isn't built)
@@ -36,10 +41,12 @@
 #                           not needed (the board's MAXIMAL_SKIP: NET_PPP on the radios with the USB network adapter)
 #                           and the bench diagnostics (MAXIMAL_SKIP here: AUDIO_PROBE), with the board's MAXIMAL_VARS
 #                           (the DM-1701: LTO=1)
-#        audio-probe        (DM-1701 only, the board with an audio tap) the default config with CONFIG_AUDIO_PROBE=y
-#                           and LTO=1 (without LTO it no longer fits), so the probe keeps building
-#        vhf                (MD-380 only) the VHF band image, default config
-#      and the STM32F4 flash stub (stub/stm32f4, with the DM-1701 or MD-380 compiler).
+#        <value>            each build option value but the first (board.toml [[build_options]], e.g. a band),
+#                           default config; not with --matrix
+#        <extra>            each board.toml [ci] extra configuration (e.g. a bench diagnostic with the variables it
+#                           needs to fit)
+#      and each platform.toml stubs entry (a flash stub: make -C <dir> all check) of a platform with a selected board,
+#      with that platform's compiler.
 #      Each must build with zero compiler and linker warnings. Sizes go to build/ci/size-report.md. The default and the
 #      maximal configuration must pass the static stack check (make stack-check, docs/dev/stack-check.md): each task's
 #      deepest call chain fits its stack with the margin.
@@ -56,20 +63,20 @@ cd "$(dirname "$0")/.." || exit 2
 QUICK=0
 MATRIX=0
 ONLY=""
-STEPS="host,python,firmware,licenses,similarity"
+STEPS="registry,host,python,firmware,licenses,similarity"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--quick) QUICK=1 ;;
 	--matrix) MATRIX=1 ;;
 	--board) ONLY="$2"; shift ;;
 	--steps) STEPS="$2"; shift ;;
-	-h|--help) sed -n '5,48p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,56p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
 done
 for s in $(echo "$STEPS" | tr ',' ' '); do
-	case "$s" in host|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
+	case "$s" in registry|host|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
 done
 [ "$QUICK" = 1 ] && [ "$MATRIX" = 1 ] && { echo "ci: --quick and --matrix exclude each other" >&2; exit 2; }
 step() { case ",$STEPS," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
@@ -85,6 +92,25 @@ bad()  { echo "ci: FAIL  $*"; FAILED="$FAILED
   $*"; }
 skip() { echo "ci: skip  $*"; SKIPPED="$SKIPPED
   $*"; }
+# The registry tools (tools/boards.py) read TOML: Python 3.11 or later. Empty when there is none (the steps that need it
+# fail with the reason)
+REG_PY=$(tools/odr_python.sh 2> "$OUT/odr-python.log") || REG_PY=""
+reg() { [ -n "$REG_PY" ] && $REG_PY tools/boards.py "$@"; }
+
+# ── 0. board registry ────────────────────────────────────────────────────────
+if step registry; then
+echo "== registry"
+if [ -z "$REG_PY" ]; then
+	bad "board registry: $(cat "$OUT/odr-python.log")"
+elif reg check > "$OUT/registry.log" 2>&1 &&
+     reg self-test >> "$OUT/registry.log" 2>&1 &&
+     $REG_PY tools/test_registry_parity.py >> "$OUT/registry.log" 2>&1; then
+	ok "board registry: $(grep '^boards: ' "$OUT/registry.log" | sed 's/^boards: //'), self-test and parity"
+else
+	tail -20 "$OUT/registry.log"
+	bad "board registry (see $OUT/registry.log)"
+fi
+fi
 
 # ── 1. host tests ────────────────────────────────────────────────────────────
 if step host; then
@@ -125,20 +151,6 @@ for f in sys.argv[1:]:
 		ok "python: $(echo "$PY_FILES" | wc -w | tr -d ' ') files parse"
 	else
 		bad "python: syntax errors"
-	fi
-	# the board registry (tools/boards.py, docs/dev/adding-a-radio.md): every board.toml and platform.toml well formed
-	# and consistent with board.mk, the linker scripts and board_t; the loader's self-test; the tools' tables agree
-	if REG_PY=$(tools/odr_python.sh 2> "$OUT/registry.log"); then
-		if $REG_PY tools/boards.py check > "$OUT/registry.log" 2>&1 &&
-		   $REG_PY tools/boards.py self-test >> "$OUT/registry.log" 2>&1 &&
-		   $REG_PY tools/test_registry_parity.py >> "$OUT/registry.log" 2>&1; then
-			ok "board registry: $(grep '^boards: ' "$OUT/registry.log" | sed 's/^boards: //'), self-test and parity"
-		else
-			tail -20 "$OUT/registry.log"
-			bad "board registry (see $OUT/registry.log)"
-		fi
-	else
-		skip "board registry: $(cat "$OUT/registry.log")"
 	fi
 	if python3 -c 'import pytest' 2>/dev/null; then
 		if python3 -m pytest tests/hil --collect-only -q -p no:cacheprovider > "$OUT/hil-collect.log" 2>&1; then
@@ -298,7 +310,19 @@ build() {
 	fi
 }
 
+# builds BOARD [--extra]: each "name VAR=value..." line tools/boards.py builds prints, built. Read from a file, not a
+# pipe: a pipe's loop runs in a subshell, and build's ok / bad would be lost with it
+builds() {
+	reg builds "$@" > "$OUT/$1.builds" || bad "$1: tools/boards.py builds $*"
+	while read -r bname bargs <&3; do
+		# shellcheck disable=SC2086
+		build "$1" "$bname" $bargs
+	done 3< "$OUT/$1.builds"
+	rm -f "$OUT/$1.builds"
+}
+
 if step firmware; then
+[ -n "$REG_PY" ] || bad "firmware: $(cat "$OUT/odr-python.log") (the build options, extras and stubs come from it)"
 {
 	echo "# Image sizes ($(git rev-parse --short=8 HEAD 2>/dev/null), $(date '+%Y-%m-%d %H:%M'))"
 	echo
@@ -320,14 +344,15 @@ for bm in boards/*/board.mk boards/*/; do
 	echo "== firmware: $b"
 	cc=$(make -s BOARD="$b" print-cc 2>/dev/null)
 	if [ -z "$cc" ] || ! command -v "$cc" > /dev/null 2>&1; then
-		skip "$b: compiler ${cc:-?} not installed (DM-32: tools/build-csky-toolchain.sh)"
+		skip "$b: compiler ${cc:-?} not installed ($(reg platform "$(reg get "$b" platform)" toolchain.build 2>/dev/null))"
 		continue
 	fi
+	SELECTED_PLATFORMS="${SELECTED_PLATFORMS:-} $(reg get "$b" platform)"
 	default_bytes=""
 	if [ "$MATRIX" = 0 ]; then
 		build "$b" default
-		# Single-band radios built per band: the other band's image too (default config)
-		[ "$b" = md380 ] && build "$b" vhf MD380_BAND=vhf
+		# Each build option value besides the default (a band): its image, default config
+		builds "$b"
 	fi
 	[ "$QUICK" = 1 ] && continue
 	features=$(make -s BOARD="$b" print-config 2>/dev/null)
@@ -340,30 +365,35 @@ for bm in boards/*/board.mk boards/*/; do
 		case "$required" in *" $f "*) continue ;; esac
 		[ "${kv#*=}" = y ] && build "$b" "no-$f" "CONFIG_$f=n"
 	done
-	[ "$b" = dm1701 ] && build "$b" audio-probe CONFIG_AUDIO_PROBE=y CONFIG_APRS_RX=n LTO=1
+	# The board's [ci] extra configurations (a diagnostic only one board carries, with what it needs to fit)
+	builds "$b" --extra
 	build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
 	# shellcheck disable=SC2086
 	build "$b" maximal $all_on $(make -s BOARD="$b" print-maximal-vars 2>/dev/null)
 done
-# The STM32F4 flash stub (stub/stm32f4): one image for the DM-1701 and the MD-380, loaded by CONFIG_STUB_ENTRY builds
-if [ -z "$ONLY" ] || case ",$ONLY," in *,dm1701,*|*,md380,*) true ;; *) false ;; esac; then
-	cc=$(make -s BOARD=dm1701 print-cc 2>/dev/null)
-	if [ -z "$cc" ] || ! command -v "$cc" > /dev/null 2>&1; then
-		skip "STM32F4 flash stub: compiler ${cc:-?} not installed"
-	elif make -C stub/stm32f4 BUILD="$(pwd)/$OUT/stub-stm32f4" > "$OUT/stub-stm32f4.log" 2>&1; then
-		if grep -qi 'warning:' "$OUT/stub-stm32f4.log"; then
-			grep -i 'warning:' "$OUT/stub-stm32f4.log" | sort -u | head -10
-			bad "STM32F4 flash stub: warnings (see $OUT/stub-stm32f4.log)"
-		elif ! python3 stub/f4stub.py --check-embedded "$OUT/stub-stm32f4/f4stub.bin" > /dev/null; then
-			bad "STM32F4 flash stub: the copy embedded in stub/f4stub.py differs from this build (python3 stub/f4stub.py --embed $OUT/stub-stm32f4/f4stub.bin)"
+# Each platform's flash stubs (platform.toml stubs), once, when any board on the platform was built: one image serves
+# every board on it. Built with that platform's compiler (the first board's print-cc), then the stub's own check target
+for p in $(for x in ${SELECTED_PLATFORMS:-}; do echo "$x"; done | sort -u); do
+	pb=$(reg list --platform "$p" | head -1)
+	cc=$(make -s BOARD="$pb" print-cc 2>/dev/null)
+	for st in $(reg platform "$p" stubs); do
+		sdir="$OUT/$(echo "$st" | tr '/' '-')"
+		log="$sdir.log"
+		rm -rf "$sdir"		# always rebuild: the warning check reads the compiler's output
+		# the stub's Makefile takes the tool prefix (CROSS): the compiler's path without "gcc"
+		if make -C "$st" CROSS="${cc%gcc}" BUILD="$(pwd)/$sdir" all check > "$log" 2>&1; then
+			if grep -qi 'warning:' "$log"; then
+				grep -i 'warning:' "$log" | sort -u | head -10
+				bad "$st: warnings (see $log)"
+			else
+				ok "$st: $(grep -E '^stub image ' "$log" | sed 's/^stub image [^:]*: //'), the check passed"
+			fi
 		else
-			ok "STM32F4 flash stub: $(wc -c < "$OUT/stub-stm32f4/f4stub.bin" | tr -d ' ') bytes (at most 8192), the embedded copy matches"
+			grep -E 'error|ASSERT|differs' "$log" | head -10
+			bad "$st: build or check failed (see $log)"
 		fi
-	else
-		grep -E 'error|ASSERT' "$OUT/stub-stm32f4.log" | head -10
-		bad "STM32F4 flash stub: build failed (see $OUT/stub-stm32f4.log)"
-	fi
-fi
+	done
+done
 echo
 cat "$REPORT"
 echo
