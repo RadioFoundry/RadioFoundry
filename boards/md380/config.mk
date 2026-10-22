@@ -26,7 +26,7 @@ LTO_3P ?= 1
 # Not written for this radio (above), or no use on it (FONT_XL is for 240 px and wider panels, this one is 160 px; no
 # air band receiver or broadcast receiver, docs/spec/airband-and-broadcast.md): tools/ci.sh's maximal configuration
 # leaves these off
-BOARD_UNSUPPORTED := FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL AM_RX BCAST_FM FAULT_TRACE
+BOARD_UNSUPPORTED := FM_TX_TONES APRS_RX APRS_IGATE SFR SFR_VOTING SFR_CWID HOTSPOT_SPLIT FONT_XL AM_RX BCAST_FM FAULT_TRACE
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter. NAND storage isn't used on this radio
 MAXIMAL_SKIP := NET_PPP NAND_STORAGE

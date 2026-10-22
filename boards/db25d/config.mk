@@ -74,6 +74,6 @@ CONFIG_AM_RX ?= n
 CONFIG_FONT_XL ?= n
 # What the board can't do yet or lacks: ci's maximal configuration leaves these off. No USB data port; no split duplex, SFR or USRP (above);
 # no FM receive PCM (APRS_RX, APRS_IGATE); the rest are not wired or are bench tools
-BOARD_UNSUPPORTED := USB USB_NETWORK NET_USRP HOTSPOT_SPLIT SFR APRS_RX APRS_IGATE BCAST_FM AM_RX AUDIO_PROBE FONT_XL
+BOARD_UNSUPPORTED := USB USB_NETWORK NET_USRP HOTSPOT_SPLIT SFR SFR_VOTING SFR_CWID APRS_RX APRS_IGATE BCAST_FM AM_RX AUDIO_PROBE FONT_XL
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
 BOARD_REQUIRED := FM
