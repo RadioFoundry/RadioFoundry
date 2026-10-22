@@ -13,11 +13,13 @@ Sources, each fact in one of them:
   boards/<id>/*.ld              the application region (MEMORY FLASH of memory.ld) and the codec symbols (__codec_*)
   boards/<id>/*.c               the board_t .name values (the names the debug link reports) and hal_flash_map_t
                                 (where the codeplug lives in data flash)
-  boards/<id>/pins.h            the power latch and key pins the stub holds
+  boards/<id>/pins.h            the pins a stub needs: the power latch and key it holds (HR_C7000), the SPI flash's
+                                pins and the chip selects it keeps high (STM32F4)
 
 Derived rather than typed: the flashing link from the family, the CPU from the platform, the protected range (flash
 base to the application), the erasable sectors (the platform geometry from the application up), the stub's NAND flag
-(the board's drivers) and its power pins (pins.h).
+(the board's drivers), its pins (pins.h), and on the STM32F4 the crystal (HSE_VALUE) and the bootloader's end (APP_BASE)
+for the stub's board record.
 
     tools/boards.py list [--platform P] [--release stable|testing] [--comma]   board ids
     tools/boards.py platform P [key.path]        one platform value
@@ -68,7 +70,9 @@ NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory 
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
-             "BUILD_OPTIONS", "BOARD_UNSUPPORTED")
+             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "HSE_VALUE")
+# The pins.h names the STM32F4 stub's board record reads: the SPI flash's clock, data and chip select (stub-stm32f4.md 5.2)
+F4_SPI_PINS = ("PIN_FLASH_SCK", "PIN_FLASH_MISO", "PIN_FLASH_MOSI", "PIN_FLASH_CS")
 
 
 class RegistryError(Exception):
@@ -129,8 +133,15 @@ BOARD_SCHEMA = {
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str)}),
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str)}),
-        "stub": _opt({"id": _req(int), "hold_power": _req(bool), "progmem": _req(int), "tested": _req(bool),
-                      "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int)}),
+        # a board profile of its platform's stub (platform.toml board_stub): id and tested always, the keys the
+        # platform lists in board_stub.keys, nothing another platform's stub takes
+        "stub": _opt({"id": _req(int), "tested": _req(bool),
+                      "hold_power": _opt(bool), "progmem": _opt(int),	# the HR_C7000 universal stub
+                      "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int),
+                      # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
+                      # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
+                      "spi": _opt({"bus": _req(int), "mode": _req(int), "hz": _req(int)}),
+                      "idle_cs": _opt(STR_LIST)}),
     }),
     # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(str), "profile": _opt(str), "sources": _opt(STR_LIST),
@@ -154,7 +165,10 @@ PLATFORM_SCHEMA = {
                        "image": _opt(str)}),
     "ci": _req({"group": _req(str), "container": _req(bool)}),
     "stubs": _req(STR_LIST),
-    "board_stub": _req(bool),
+    # the stub that takes board profiles ([flash.stub]): its tool, the profile keys every board must give, the keys
+    # it takes besides id and tested, and the SoC's SPI alternate function per bus (STM32F4); absent: no board profiles
+    "board_stub": _opt({"tool": _req(str), "keys": _req(STR_LIST), "optional": _req(STR_LIST),
+                        "spi_af": _opt(("list", int))}),
     "codec_symbols": _req(STR_LIST),
     "flash_base": _req(int),
     "default_sectors": _req(str),
@@ -321,13 +335,17 @@ def unsupported_reasons(config_mk):
 
 
 def pin_defines(path):
-    """{NAME: value} of the integer #defines in a pins.h."""
+    """{NAME: value} of the pin #defines in a pins.h: an integer (the HR_C7000's port << 4 | pin), or "PB3" for the
+    STM32 form `GPIOB, GPIO_PIN_3`."""
     if not os.path.isfile(path):
         return {}
     with open(path, encoding="utf-8") as f:
         text = _strip_c_comments(f.read())
-    return {m.group(1): int(m.group(2), 0)
-            for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)}
+    out = {m.group(1): int(m.group(2), 0)
+           for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)}
+    out.update({m.group(1): "P%s%d" % (m.group(2), int(m.group(3)))
+                for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+GPIO([A-K])\s*,\s*GPIO_PIN_(\d+)\s*$", text)})
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -401,15 +419,28 @@ class Board:
         return list(dict.fromkeys(names))
 
     def stub(self):
-        """The universal stub's profile with its pins: the power latch and key from pins.h when the stub must hold
-        the radio on (a soft power key), else none."""
+        """The board's profile for its platform's stub (platform.toml board_stub.tool), with what other files say.
+        stubtool (the HR_C7000 universal stub): the power latch and key from pins.h when the stub must hold the radio
+        on (a soft power key), else none. f4stub: the board record's facts, the SPI flash pins from pins.h, the crystal
+        from HSE_VALUE and the bootloader's end from APP_BASE. None without a profile."""
         s = self.data["flash"].get("stub")
-        if s is None:
+        bs = self.platform.data.get("board_stub")
+        if s is None or bs is None:
             return None
-        hold = s["hold_power"]
-        return {"id": s["id"], "latch": self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
-                "key": self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, "nand": self.nand,
-                "progmem": s["progmem"], "tested": s["tested"], "stock_console": s.get("stock_console")}
+        out = {"tool": bs["tool"], "id": s["id"], "tested": s["tested"]}
+        if "spi" in s:
+            spi, af = s["spi"], bs.get("spi_af") or []
+            pin = {k: self.pins.get(k) for k in F4_SPI_PINS}
+            out.update(hse=int((self.mk.get("HSE_VALUE") or "0").rstrip("uUlL") or "0", 0), boot_end=self.app_base,
+                       spi=dict(spi, af=af[spi["bus"] - 1] if 0 < spi["bus"] <= len(af) else None,
+                                sck=pin["PIN_FLASH_SCK"], miso=pin["PIN_FLASH_MISO"], mosi=pin["PIN_FLASH_MOSI"],
+                                cs=pin["PIN_FLASH_CS"], idle=[self.pins.get(n) for n in s.get("idle_cs", [])]))
+        if "hold_power" in s:
+            hold = s["hold_power"]
+            out.update(latch=self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
+                       key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=self.nand,
+                       progmem=s["progmem"], stock_console=s.get("stock_console"))
+        return out
 
     def codeplug(self):
         """Where the codeplug lives, for the codeplug editor: the data flash address of the open-firmware image (the
@@ -683,16 +714,36 @@ def check(root=ROOT):
                             or not re.fullmatch(r"[0-9A-F]{8}", fl["dfu"]["key_prefix"])):
             bad("flash.dfu key_sha256 is 64 lower-case hex digits, key_prefix 8 upper-case")
         stub = fl.get("stub")
+        bs = b.platform.data.get("board_stub")
         if stub is not None:
-            if not b.platform.data["board_stub"]:
-                bad("[flash.stub] is a board profile of the universal stub: platform %s has none (board_stub)"
+            if bs is None:
+                bad("[flash.stub] is a board profile of its platform's stub: platform %s takes none (board_stub)"
                     % b.platform.id)
-            elif stub["id"] in stub_ids:
-                bad("flash.stub id %d is also the %s's" % (stub["id"], stub_ids[stub["id"]]))
             else:
-                stub_ids[stub["id"]] = bid
-            if stub["hold_power"] and not {"PIN_POWER_LATCH", "PIN_POWER_KEY"} <= set(b.pins):
+                for k in bs["keys"]:
+                    if k not in stub:
+                        bad("flash.stub needs %s on platform %s (platform.toml board_stub.keys)" % (k, b.platform.id))
+                for k in set(stub) - {"id", "tested"} - set(bs["keys"]) - set(bs["optional"]):
+                    bad("flash.stub %s is not a key of the %s stub (platform.toml board_stub)" % (k, bs["tool"]))
+                # ids are per stub: each stub has its own table of boards
+                if (bs["tool"], stub["id"]) in stub_ids:
+                    bad("flash.stub id %d is also the %s's" % (stub["id"], stub_ids[(bs["tool"], stub["id"])]))
+                else:
+                    stub_ids[(bs["tool"], stub["id"])] = bid
+            if stub.get("hold_power") and not {"PIN_POWER_LATCH", "PIN_POWER_KEY"} <= set(b.pins):
                 bad("flash.stub hold_power needs PIN_POWER_LATCH and PIN_POWER_KEY in boards/%s/pins.h" % bid)
+            if "spi" in stub:
+                prof = b.stub()
+                for k in F4_SPI_PINS + tuple(stub.get("idle_cs", [])):
+                    if not isinstance(b.pins.get(k), str):
+                        bad("flash.stub spi needs %s in boards/%s/pins.h as GPIOx, GPIO_PIN_n" % (k, bid))
+                if prof["spi"]["af"] is None:
+                    bad("flash.stub spi bus %d has no alternate function in platform.toml board_stub.spi_af"
+                        % stub["spi"]["bus"])
+                if prof["hse"] <= 0:
+                    bad("flash.stub spi: the board record needs the crystal, HSE_VALUE in board.mk")
+                if stub["spi"]["mode"] not in range(4):
+                    bad("flash.stub spi mode is 0 to 3")
         if b.first_stage and len(b.first_stage[1]) != 4:
             bad("board.mk BOOT_SIGNATURE is the first stage's first word: 4 bytes")
         # board.mk declares the options and their values (the build checks a value against them); board.toml adds
@@ -959,7 +1010,9 @@ def self_test():
         broken(good.replace('hardware = "', 'hardware = "missing/', 1), "a missing docs page", "doesn't exist")
         broken(re.sub(r'(?m)^gallery = ".*"$', 'gallery = "200x100"', good), "a display class the gallery lacks",
                "sim_geoms")
-        broken(re.sub(r"(?m)^hold_power = .*$", "", good), "a missing stub key", "missing key")
+        broken(re.sub(r"(?m)^hold_power = .*$", "", good), "a missing stub key", "needs hold_power")
+        broken(re.sub(r"(?m)^(hold_power = .*)$", r"\1\nspi = { bus = 1, mode = 0, hz = 1000000 }", good),
+               "a key of another platform's stub", "not a key of the stubtool stub")
         two = board_dirs(tmp)[1]
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")

@@ -13,8 +13,10 @@ cpu = "STM32F405"
 ci = { group = "Arm", container = false }
 # Built by ci.sh with this platform's compiler when any of its boards is selected: the flash stub CONFIG_STUB_ENTRY loads
 stubs = ["stub/stm32f4"]
-# No board profiles of a universal stub ([flash.stub]): the platform stub needs no board facts
-board_stub = false
+# Every board's [flash.stub] is its record for that stub (stub/f4stub.py, stub-stm32f4.md 5.2): the SPI flash's bus,
+# mode and clock, with its pins from pins.h. spi_af: the alternate function of SPI1, SPI2 and SPI3 (the STM32F405 data
+# sheet, alternate function map: AF5 for SPI1 and SPI2, AF6 for SPI3)
+board_stub = { tool = "f4stub", keys = ["spi"], optional = ["idle_cs"], spi_af = [5, 5, 6] }
 # Linker symbols every board's scripts must define: none (the codec windows come from the stock file)
 codec_symbols = []
 # Program flash starts here. The factory bootloader holds the flash from here to a board's image (its linker FLASH
