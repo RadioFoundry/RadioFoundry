@@ -18,8 +18,8 @@ A board's files list only how it differs from its platform. The platform's defau
 `platform.mk` (compiler, part defines, HAL modules), `config.mk` (feature defaults), `common.ld` (the sections) and
 `FreeRTOSConfig.h`. Chip glue that every radio with the same chip on that SoC shares is in a subdirectory the board
 lists in `BOARD_DIRS`: `platform/stm32f4/hrc` (an HR_C6000 or HR_C5000: DMR glue, I2S audio, the chip's ports, the
-stock codec host) and `platform/stm32f4/gps_uart` (a GPS module on a USART). The board then keeps only its wiring and
-what its chips leave to it.
+stock codec host), `platform/stm32f4/spi_flash` (the data flash on SPI NOR) and `platform/stm32f4/gps_uart`
+(a GPS module on a USART). The board then keeps only its wiring and what its chips leave to it.
 
 | File | Contents |
 |---|---|
