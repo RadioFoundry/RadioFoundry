@@ -92,6 +92,25 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
 
 [docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) is this list made concrete for the DM-32UV.
 
+## Bring-up records
+
+What the docs claim for a radio comes from its records, so each step above ends with a recorded run.
+
+1. Add `boards/<b>/board.toml` with `[status] level = "bring-up"`, a `summary` and `[docs] hardware`. A bring-up page
+   (`docs/testing/<b>-bringup.md`, `[docs] bringup`) is optional; with one, the README links the radio to it.
+2. `tools/bringup.py list --radio <b>` shows the checklist: every feature of
+   [tests/hil/features.toml](../../tests/hil/features.toml) the board builds, `n/a` for its `BOARD_UNSUPPORTED`
+   switches. Give each switch the board can't support yet a reason (`config.mk`) or a `[features]` entry in
+   `board.toml`.
+3. As a step works, `tools/bringup.py run --radio <b> --feature F -- <pytest options>` runs its tests under the
+   radio lock and writes `docs/testing/results/<b>/<date>-<commit>.json`. Commit the record with the change it
+   checks; a record with failures is the to-do list ([HIL bring-up mode](../../tests/hil/README.md#bring-up-mode)).
+4. A check made before the radio had records (a bench log, a hand test written up in the hardware page) can go in
+   the board's seed record, `docs/testing/results/<b>/seed.json`
+   ([format](../testing/results/README.md#seed-record)). A run replaces a seed row.
+5. Raise `[status] level` to `testing`, then `supported`, as the records cover the radio, update `summary`, and run
+   `tools/boards.py docs`. `--floor` in ci.sh fails a change that makes any radio read lower than on `main`.
+
 ## Tests and CI
 
 - Add host tests for each new driver against a simulated chip (`tests/host/*Test.c`; see the existing driver tests).
@@ -106,7 +125,7 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
   planned row from the survey, or make it the board's row: a planned row that names a board fails `tools/boards.py
   check`. Add the radio to [the user manual's introduction](../user/01-introduction.md).
 - The web site lists the radio from `board.toml`: `order` places it, `[status] level` and `summary` give its badge and
-  its line for visitors. If [radios.md](../spec/radios.md) has a survey row for it, the site drops that row by model.
+  its line for visitors. A survey row that names a board is the board's row, so the site doesn't list it as planned.
 - Before it can be released: its `board.toml` `[flash]` and `[codec]` tables, `[status] release`, the regenerated
   `tools/odrflash/odrflash/registry.json` (`tools/boards.py json --for odrflash --out ...`) and a job in
   `release.yml` ([release.md](release.md)).
