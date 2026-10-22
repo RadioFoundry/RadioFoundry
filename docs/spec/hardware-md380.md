@@ -434,7 +434,7 @@ a call or after our own transmit, the key beep in DMR and FM, and FM receive.
 ### 5.1 Bands and power
 
 One band per radio: UHF 400-480 MHz or VHF 136-174 MHz, 1 W and 5 W (unverified). ODR builds one image per band
-(`make BOARD=md380 MD380_BAND=uhf|vhf`, default UHF); the image's band table refuses the other band. Which band a
+(`make BOARD=md380 BAND=uhf|vhf`, default UHF); the image's band table refuses the other band. Which band a
 radio is can't be read from the hardware by any method we know (?: the calibration's frequency list, 11.2, is a
 candidate for a run-time check).
 

@@ -25,9 +25,9 @@
 #      self-test
 #   1. host tests (make -C tests/host, with each board's boards/<b>/tests/host.mk), and with ODR_CI_SANITIZE=1 again
 #      under ASan and UBSan
-#   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); the flashing tools'
-#      tests (tools/odrflash/tests, codec_extract, stm32_dfu, codeplug_port, md380_migrate, serial_loader, dm32_migrate
-#      and hrc7000_codec self-tests) and the UI gallery comparison's (ui_gallery_compare); the stack check's self-test
+#   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); odrflash's tests
+#      (tools/odrflash/tests) and every tool's --self-test (the tools under tools/ and stub/ that have one); the stack
+#      check's self-test
 #      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
 #      the glossary data is sound and its pages current (tools/glossary.py); the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
 #      pass against odrflash (site/tests/run.sh, needs Node 20+)
@@ -161,21 +161,19 @@ for f in sys.argv[1:]:
 	else
 		skip "HIL test collection: pytest not installed (pip install pytest pyserial)"
 	fi
-	# the flashing tools: odrflash's host tests (sector planning, manifests, codec merge, fake bootloader runs) and
-	# the self-tests of the developer tools (no USB, synthetic keys and stock files)
-	if python3 -W ignore -m unittest discover -s tools/odrflash/tests > "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/codec_extract.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/stm32_dfu.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/codeplug_port.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/md380_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/serial_loader.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/dm32_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/hrc7000_codec.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/ui_gallery_compare.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/crash_decode.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 stub/stubtool.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 stub/f4stub.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
-		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, stm32_dfu, codeplug_port, md380_migrate, serial_loader, dm32_migrate, hrc7000_codec, ui_gallery_compare, stubtool and f4stub self-tests"
+	# the flashing tools: odrflash's host tests (sector planning, manifests, codec merge, fake bootloader runs), and
+	# the self-test of every tool that has one (no USB, synthetic keys and stock files). The APRS decoder and the
+	# stack check have their own steps below (a WAV from the host tests, numpy)
+	selftests=""
+	python3 -W ignore -m unittest discover -s tools/odrflash/tests > "$OUT/odrflash-tests.log" 2>&1 && st_ok=1 || st_ok=""
+	for t in $(grep -l -e '"--self-test"' tools/*.py tools/*/*.py stub/*.py | grep -v -e aprs_afsk_check -e stack_check); do
+		[ -n "$st_ok" ] || break
+		echo "== $t --self-test" >> "$OUT/odrflash-tests.log"
+		python3 "$t" --self-test >> "$OUT/odrflash-tests.log" 2>&1 || { st_ok=""; echo "FAILED: $t" >> "$OUT/odrflash-tests.log"; }
+		selftests="$selftests${selftests:+, }$(basename "$t" .py)"
+	done
+	if [ -n "$st_ok" ]; then
+		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash); self-tests of $selftests"
 	else
 		tail -30 "$OUT/odrflash-tests.log"
 		bad "flashing tool tests (see $OUT/odrflash-tests.log)"
@@ -263,7 +261,8 @@ build() {
 	b=$1; name=$2; shift 2
 	dir="$OUT/$b-$name"
 	log="$dir.log"
-	rm -f "$dir/odr_$b.elf"		# always relink: the size report reads the linker's memory-usage lines
+	target=$(make -s BOARD="$b" BUILD="$dir" "$@" print-vars VARS=TARGET | sed 's/^TARGET=//')	# build options name it
+	rm -f "$target.elf"		# always relink: the size report reads the linker's memory-usage lines
 	if ! make BOARD="$b" BUILD="$dir" -j"$JOBS" "$@" > "$log" 2>&1; then
 		grep -E 'error|undefined' "$log" | head -10
 		bad "$b $name: build failed ($*; see $log)"
@@ -283,7 +282,7 @@ build() {
 			bad "$b $name: stack check (see $dir.stack.log)"
 		fi
 	fi
-	bin=$(ls "$dir"/odr_"$b".bin 2>/dev/null)
+	bin=$target.bin
 	bytes=$(wc -c < "$bin" | tr -d ' ')
 	# --print-memory-usage: "FLASH:  123024 B  336 KB  35.76%" (the app region, codec sectors excluded)
 	set -- $(grep -E '^ *FLASH:' "$log" | head -1)

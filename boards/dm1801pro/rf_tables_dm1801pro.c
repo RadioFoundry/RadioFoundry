@@ -4,7 +4,7 @@
 // with other register tables, an extra 0x0200 step in the 0x30 sequences and no band-word table. The values are
 // unverified on a bench; the 12.5 kHz word in particular is the one the spec lists second (hardware-dm1801pro.md 5.2)
 #include <stddef.h>
-#include "fd6818.h"
+#include "rf/fd6818/fd6818.h"	// not dm1801pro.h: the host test builds this file alone
 
 #define TBL_N(t)	(uint16_t)(sizeof(t) / sizeof((t)[0]))
 

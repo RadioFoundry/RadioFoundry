@@ -7,8 +7,11 @@ programming cable. The protocol is docs/spec/hardware-dm32.md 13.2. Every radio 
 --model picks one.
 
     serial_loader.py --model M odr_M_codec.bin            a raw application image (linked for the board's app base)
-    serial_loader.py --model M FILE                        a vendor firmware file (the 256-byte header is stripped)
-    serial_loader.py --model M --stock FILE                back to the stock firmware (same code path)
+    serial_loader.py FILE                                  a vendor firmware file (its ID names the radio; the 256-byte
+                                                           header is stripped)
+    serial_loader.py --stock FILE                          back to the stock firmware (same code path)
+    serial_loader.py --model M IMAGE --wrap OUT            IMAGE as a vendor firmware file, for the vendor's updater
+    serial_loader.py FILE --unwrap OUT                     the raw image inside a vendor firmware file
     serial_loader.py --model M IMAGE --port /dev/ttyUSB0 --dry-run   check the image and print the plan, touch nothing
     serial_loader.py --list-ports                          the USB-serial cables found
     serial_loader.py --probe                               identify the loader on the cable, write nothing
@@ -31,8 +34,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "odr
 from odrflash import boards as odrboards  # noqa: E402
 
 SLOT_MAGIC = 0x43524444                 # "DDRC", first word of the slot header
-FILE_MAGIC = b"BFUV32-V2"               # the protocol's first loader and file format (the default --model)
-FILE_END = b"END"
+FILE_END = b"END"                       # a vendor firmware file: the loader ID (board.toml [flash.bootloader] id),
+                                        # 0xFF padding, END at 0xFD, then the image
 FILE_HEADER = 0x100
 BAUD = 115200
 BLOCK = 1024
@@ -69,9 +72,6 @@ class Model:
 MODELS = {b.id: Model(b.id, b.model, b.loader_id.encode("ascii"), b.loader_keys, b.loader_sign, b.app_base,
                       b.flash_end, b.codec_slot[0] if b.codec_slot else None)
           for b in odrboards.BOARDS.values() if b.loader_id}
-DEFAULT_MODEL = next(m for m in MODELS.values() if m.magic == FILE_MAGIC)
-APP_BASE = DEFAULT_MODEL.app_base       # the default model's map, for callers that don't pass one
-SLOT_BASE = DEFAULT_MODEL.slot
 
 ACK, NAK, CRC_REQ, SOH, STX, EOT = 0x06, 0x15, 0x43, 0x01, 0x02, 0x04
 STEP_TIMEOUT = 2.0                      # steps 1-6 and every 1 KB block
@@ -85,7 +85,11 @@ USB_SERIAL = [
     (0x0403, 0x6014, "FTDI FT232H"), (0x10C4, 0xEA60, "CP210x"), (0x067B, 0x2303, "PL2303"),
 ]
 
-def update_mode_hint(model=DEFAULT_MODEL):
+def update_mode_hint(model=None):
+    """model None (a probe, the radio not known yet): every radio's key combination."""
+    if model is None:
+        return ("is the radio in update mode? Switch it off and hold its keys while switching it on (%s). Check the "
+                "cable is pushed fully into the radio" % "; ".join("%s: %s" % (m.name, m.keys) for m in MODELS.values()))
     return ("is the radio in update mode? Switch it off, hold %s and switch it on%s. Check the cable is pushed fully "
             "into the radio" % (model.keys, ": " + model.sign[0].lower() + model.sign[1:] if model.sign else ""))
 
@@ -111,13 +115,26 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def unwrap(data, model=DEFAULT_MODEL):
-    """(raw application image, 'bfuv32' or 'raw') from a file's bytes."""
+def model_of(data):
+    """The radio a vendor firmware file is for (its loader ID at the start), or None for a raw image."""
+    return next((m for m in MODELS.values() if data.startswith(m.magic)), None)
+
+
+def wrap(raw, model):
+    """A vendor firmware file for model from a raw application image: what the vendor's own updater and CPS accept."""
+    header = bytearray(b"\xff" * FILE_HEADER)
+    header[:len(model.magic)] = model.magic
+    header[FILE_HEADER - len(FILE_END):] = FILE_END
+    return bytes(header) + raw
+
+
+def unwrap(data, model):
+    """(raw application image, 'vendor' or 'raw') from a file's bytes."""
     magic = model.magic
     if data.startswith(magic):
         if len(data) <= FILE_HEADER or data[FILE_HEADER - len(FILE_END):FILE_HEADER] != FILE_END:
             raise FlashError("starts with %s but the 256-byte header has no END at 0xFD: damaged file" % model.tag)
-        return data[FILE_HEADER:], "bfuv32"
+        return data[FILE_HEADER:], "vendor"
     for other in MODELS.values():
         if other is not model and data.startswith(other.magic):
             raise FlashError("a firmware file for the %s (%s), not the %s" % (other.name, other.tag, model.name))
@@ -128,7 +145,7 @@ def unwrap(data, model=DEFAULT_MODEL):
     return data, "raw"
 
 
-def check_image(raw, model=DEFAULT_MODEL):
+def check_image(raw, model):
     """Problems that stop a flash (raises) and facts worth printing (returned as lines)."""
     if not raw:
         raise FlashError("the image is empty")
@@ -144,7 +161,7 @@ def check_image(raw, model=DEFAULT_MODEL):
     return notes
 
 
-def has_codec_slot(raw, model=DEFAULT_MODEL):
+def has_codec_slot(raw, model):
     if not model.codec_slot:
         return False
     off = model.slot - model.app_base
@@ -180,7 +197,7 @@ class Flasher:
     its own short timeout, and reset_input_buffer()."""
 
     def __init__(self, port, log=print, progress=None, step_timeout=STEP_TIMEOUT, erase_timeout=ERASE_TIMEOUT,
-                 retries=RETRIES, model=DEFAULT_MODEL):
+                 retries=RETRIES, model=None):	# model None: probe() only
         self.model = model
         self.port = port
         self.log = log
@@ -358,7 +375,7 @@ class FakeBootloader:
     first transfer arrives damaged (the radio NAKs), `silent` = never answers, `bad_step2` = a wrong model answer,
     `erase_reads` = empty reads before the erase answer, `model` = the step 3 answer."""
 
-    def __init__(self, corrupt=(), silent=False, bad_step2=False, erase_reads=5, model=DEFAULT_MODEL):
+    def __init__(self, model, corrupt=(), silent=False, bad_step2=False, erase_reads=5):
         self.magic = model.magic
         self.inbuf = bytearray()
         self.out = bytearray()
@@ -486,6 +503,10 @@ def self_test():
             print("FAIL: " + what)
 
     quiet = lambda *a: None
+    # two radios of the registry on this loader: one with ODR's codec slot, and another one
+    M0 = next(m for m in MODELS.values() if m.slot and m.sign)
+    F = lambda *a, **k: Flasher(*a, **dict({"model": M0}, **k))
+    FB = lambda **k: FakeBootloader(**dict({"model": M0}, **k))
     check(crc16_xmodem(b"123456789") == 0x31C3, "CRC-16/XMODEM check value")
     check(crc16_xmodem(b"") == 0, "CRC of nothing")
     hb = header_block("/x/odr_dm32_codec.bin", 870000)
@@ -494,85 +515,87 @@ def self_test():
     check(f[:2] == b"\x00\xFF" and len(f) == 1028 and f[4:1026] == bytes(1022), "block number wraps, zero padding")
 
     raw = bytes((i * 31 + (i >> 10)) & 0xFF for i in range(300 * 1024 + 517))    # 301 blocks: numbers wrap
-    packed = FILE_MAGIC + b"\xff" * (FILE_HEADER - len(FILE_MAGIC) - 3) + FILE_END + raw
-    check(unwrap(packed) == (raw, "bfuv32"), "BFUV32 header stripped")
-    check(unwrap(raw) == (raw, "raw"), "raw image kept")
+    packed = wrap(raw, M0)
+    check(unwrap(packed, M0) == (raw, "vendor"), "vendor header stripped")
+    check(unwrap(raw, M0) == (raw, "raw"), "raw image kept")
     for bad, what in ((packed[:0xFD] + b"XYZ" + raw, "header without END"), (b"\x7fELF" + bytes(100), "ELF"),
                       (b"BFUV31-V1" + bytes(300), "other Baofeng version")):
         try:
-            unwrap(bad)
+            unwrap(bad, M0)
             check(False, "refuses " + what)
         except FlashError:
             pass
-    for bad, what in ((b"", "empty"), (b"\x01" * (DEFAULT_MODEL.app_max + 1), "too big"), (b"\xff" * 4096, "blank")):
+    for bad, what in ((b"", "empty"), (b"\x01" * (M0.app_max + 1), "too big"), (b"\xff" * 4096, "blank")):
         try:
-            check_image(bad)
+            check_image(bad, M0)
             check(False, "check_image refuses " + what)
         except FlashError:
             pass
-    check(len(check_image(b"\x01" * DEFAULT_MODEL.app_max)) == 1, "an image filling the area fits")
-    m18 = next(m for m in MODELS.values() if m is not DEFAULT_MODEL)	# another radio on the same loader
-    packed18 = m18.magic + b"\xff" * (FILE_HEADER - len(m18.magic) - 3) + FILE_END + raw
-    check(unwrap(packed18, m18) == (raw, "bfuv32"), "%s file header stripped" % m18.name)
-    for data, model, what in ((packed18, DEFAULT_MODEL, "a %s file for the %s" % (m18.name, DEFAULT_MODEL.name)),
-                              (packed, m18, "a %s file for the %s" % (DEFAULT_MODEL.name, m18.name))):
+    check(len(check_image(b"\x01" * M0.app_max, M0)) == 1, "an image filling the area fits")
+    m18 = next(m for m in MODELS.values() if m is not M0)	# another radio on the same loader
+    packed18 = wrap(raw, m18)
+    check(unwrap(packed18, m18) == (raw, "vendor"), "%s file header stripped" % m18.name)
+    for data, model, what in ((packed18, M0, "a %s file for the %s" % (m18.name, M0.name)),
+                              (packed, m18, "a %s file for the %s" % (M0.name, m18.name))):
         try:
             unwrap(data, model)
             check(False, "refuses " + what)
         except FlashError as e:
             check("not the" in str(e), "message names both radios: %s" % e)
-    slot = bytearray(b"\x01" * (SLOT_BASE - APP_BASE)) + struct.pack("<I", SLOT_MAGIC) + bytes(100)
-    check(has_codec_slot(bytes(slot)) and not has_codec_slot(raw), "codec slot detection")
+    slot = bytearray(b"\x01" * (M0.slot - M0.app_base)) + struct.pack("<I", SLOT_MAGIC) + bytes(100)
+    check(has_codec_slot(bytes(slot), M0) and not has_codec_slot(raw, M0), "codec slot detection")
 
-    fake = FakeBootloader(corrupt={3, 255, 0})
+    fake = FB(corrupt={3, 255, 0})
     seen = []
-    Flasher(fake, log=quiet, progress=lambda d, t: seen.append(d), step_timeout=0.2).flash(raw, "odr.bin")
+    F(fake, log=quiet, progress=lambda d, t: seen.append(d), step_timeout=0.2).flash(raw, "odr.bin")
     check(not fake.errors, "bootloader saw errors: %s" % fake.errors)
-    fake18 = FakeBootloader(model=m18)
-    Flasher(fake18, log=quiet, step_timeout=0.2, model=m18).flash(raw[:5000], "odr18.bin")
+    fake18 = FB(model=m18)
+    F(fake18, log=quiet, step_timeout=0.2, model=m18).flash(raw[:5000], "odr18.bin")
     check(not fake18.errors and fake18.image() == raw[:5000], "%s flash through its own ID" % m18.name)
     try:
-        Flasher(FakeBootloader(), log=quiet, step_timeout=0.2, model=m18).flash(raw[:1024])
-        check(False, "a %s answering a %s flash stops" % (DEFAULT_MODEL.name, m18.name))
+        F(FB(), log=quiet, step_timeout=0.2, model=m18).flash(raw[:1024])
+        check(False, "a %s answering a %s flash stops" % (M0.name, m18.name))
     except FlashError as e:
         check("step 3 (model)" in str(e), "wrong model stops at step 3: %s" % e)
-    check("PTB26" in update_mode_hint(m18) and "green LED" in update_mode_hint(), "update mode hints per radio")
+    check(m18.keys in update_mode_hint(m18) and M0.sign[1:] in update_mode_hint(M0), "update mode hints per radio")
     check(fake.header == ("odr.bin", len(raw)), "header name and size %r" % (fake.header,))
     check(fake.image() == raw, "image written byte for byte (block numbers 1..255, 0, 1..)")
     check(len(fake.blocks) == 301 and fake.naks == 3, "three damaged blocks NAKed and resent (%d NAKs)" % fake.naks)
     check(fake.done and seen[-1] == 301, "EOT sent, progress to the end")
 
-    fake_always = FakeBootloader()
+    fake_always = FB()
     fake_always.corrupt = type("Always", (set,), {"discard": lambda self, x: None})({2})
     try:
-        Flasher(fake_always, log=quiet, step_timeout=0.2, retries=2).flash(raw[:4096])
+        F(fake_always, log=quiet, step_timeout=0.2, retries=2).flash(raw[:4096])
         check(False, "a block refused every time stops the flash")
     except FlashError as e:
         check("block 2" in str(e) and "3 tries" in str(e), "message names the block: %s" % e)
 
-    for fk, want in ((FakeBootloader(silent=True), "update mode"), (FakeBootloader(bad_step2=True), "step 2")):
+    for fk, want in ((FB(silent=True), "update mode"), (FB(bad_step2=True), "step 2")):
         try:
-            Flasher(fk, log=quiet, step_timeout=0.05).flash(raw[:1024])
+            F(fk, log=quiet, step_timeout=0.05).flash(raw[:1024])
             check(False, "fails: " + want)
         except FlashError as e:
             check(want in str(e), "error mentions %r: %s" % (want, e))
 
-    fake = FakeBootloader()
-    s2, s3 = Flasher(fake, log=quiet, step_timeout=0.05).probe()
-    check(s2 == b"\x4D\x01\x09" and s3 == FILE_MAGIC, "probe reads the default loader's identification: %s %r" % (hexs(s2), s3))
+    fake = FB()
+    s2, s3 = F(fake, log=quiet, step_timeout=0.05).probe()
+    check(s2 == b"\x4D\x01\x09" and s3 == M0.magic, "probe reads the loader's identification: %s %r" % (hexs(s2), s3))
     check(fake.state == 4 and not fake.blocks and fake.header is None, "probe stops before step 4")
-    other = Model("other", "another radio", b"OTHER-LDR", "?", "", DEFAULT_MODEL.app_base, DEFAULT_MODEL.flash_end, None)
-    s2, s3 = Flasher(FakeBootloader(model=other), log=quiet, step_timeout=0.05).probe()
+    check(model_of(packed18) is m18 and model_of(raw) is None, "a vendor file names its radio, a raw image none")
+    check(unwrap(wrap(raw, M0), M0)[0] == raw, "wrap and unwrap round trip")
+    other = Model("other", "another radio", b"OTHER-LDR", "?", "", M0.app_base, M0.flash_end, None)
+    s2, s3 = F(FB(model=other), log=quiet, step_timeout=0.05).probe()
     check(s3 == b"OTHER-LDR", "probe reports another model string: %r" % s3)
     try:
-        Flasher(FakeBootloader(silent=True), log=quiet, step_timeout=0.05).probe()
+        F(FB(silent=True), log=quiet, step_timeout=0.05).probe()
         check(False, "probe of a silent radio fails")
     except FlashError as e:
         check("step 1" in str(e), "silent probe names step 1: %s" % e)
 
-    fake = FakeBootloader(erase_reads=10 ** 9)
+    fake = FB(erase_reads=10 ** 9)
     try:
-        Flasher(fake, log=quiet, step_timeout=0.05, erase_timeout=0.2).flash(raw[:1024])
+        F(fake, log=quiet, step_timeout=0.05, erase_timeout=0.2).flash(raw[:1024])
         check(False, "erase timeout")
     except FlashError as e:
         check("step 7" in str(e), "erase timeout names step 7: %s" % e)
@@ -584,7 +607,7 @@ def self_test():
 
 # ---------------------------------------------------------------------------------------------------------------
 
-def load(path, model=DEFAULT_MODEL):
+def load(path, model):
     """(raw image, kind) from a file, checked."""
     with open(path, "rb") as f:
         data = f.read()
@@ -599,10 +622,10 @@ def progress_bar(done, total):
         sys.stdout.write("\n")
 
 
-def run(image_path, port=None, dry_run=False, yes=False, log=print, stock=False, model=DEFAULT_MODEL):
+def run(image_path, model, port=None, dry_run=False, yes=False, log=print, stock=False):
     """Check, announce update mode, flash. Raises FlashError. Used by dm32_migrate.py too."""
     raw, kind = load(image_path, model)
-    log("image %s: %s" % (image_path, "Baofeng %s file, header stripped" % model.tag if kind == "bfuv32" else
+    log("image %s: %s" % (image_path, "vendor %s file, header stripped" % model.tag if kind == "vendor" else
                           "raw application image"))
     for line in check_image(raw, model):
         log("   " + line)
@@ -650,7 +673,7 @@ def probe(port=None, log=print):
         s2, s3 = Flasher(sp, log=log).probe()
     finally:
         sp.close()
-    log("   step 2 answer: %s (the %s loader answers 4D 01 09)" % (hexs(s2) if s2 else "none", FILE_MAGIC.decode()))
+    log("   step 2 answer: %s (the loaders known so far answer 4D 01 09)" % (hexs(s2) if s2 else "none"))
     log("   step 3 answer: %r (%s)" % (s3, next(("the %s's loader" % m.name for m in MODELS.values() if m.magic == s3),
                                               "not a known loader ID: " + ", ".join(m.tag for m in MODELS.values()))))
     log("   stopped before step 4: nothing was written. Switch the radio off to leave update mode")
@@ -662,8 +685,11 @@ def main(argv=None):
                                              "over the programming cable.",
                                  epilog=__doc__.split("\n\n", 1)[1], formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("image", nargs="?", help="raw application image or a _BFUV32.bin file")
-    ap.add_argument("--model", choices=sorted(MODELS), default=DEFAULT_MODEL.id,
-                    help="the radio (default: %s, the loader with the %s ID)" % (DEFAULT_MODEL.id, FILE_MAGIC.decode()))
+    ap.add_argument("--model", choices=sorted(MODELS),
+                    help="the radio (needed for a raw image; a vendor file names its own)")
+    ap.add_argument("--wrap", metavar="OUT", help="write IMAGE as the radio's vendor firmware file to OUT (for the "
+                    "vendor's updater), flash nothing")
+    ap.add_argument("--unwrap", metavar="OUT", help="write the raw application image of the vendor file IMAGE to OUT")
     ap.add_argument("--stock", metavar="FILE", help="flash Baofeng's stock firmware file back (recovery)")
     ap.add_argument("--port", help="serial port of the programming cable (default: the only CH340/FTDI/CP210x/PL2303)")
     ap.add_argument("--dry-run", action="store_true", help="check the image and print the plan; touch nothing")
@@ -688,7 +714,24 @@ def main(argv=None):
         path = a.stock or a.image
         if not path or (a.stock and a.image):
             ap.error("give one image, or --stock FILE")
-        run(path, a.port, a.dry_run, a.yes, stock=bool(a.stock), model=MODELS[a.model])
+        with open(path, "rb") as f:
+            named = model_of(f.read(64))
+        if a.model and named and named is not MODELS[a.model]:
+            raise FlashError("%s is a firmware file for the %s, not the %s" % (path, named.name, MODELS[a.model].name))
+        model = MODELS[a.model] if a.model else named
+        if model is None:
+            ap.error("which radio? %s is a raw image: give --model (%s)" % (path, ", ".join(sorted(MODELS))))
+        if a.wrap or a.unwrap:
+            with open(path, "rb") as f:
+                data = f.read()
+            raw, kind = unwrap(data, model)
+            if a.unwrap and kind != "vendor":
+                raise FlashError("%s is not a %s file" % (path, model.tag))
+            with open(a.wrap or a.unwrap, "wb") as f:
+                f.write(wrap(raw, model) if a.wrap else raw)
+            print("wrote %s" % (a.wrap or a.unwrap))
+            return 0
+        run(path, model, a.port, a.dry_run, a.yes, stock=bool(a.stock))
         return 0
     except FlashError as e:
         print("serial_loader: %s" % e, file=sys.stderr)
