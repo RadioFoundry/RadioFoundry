@@ -64,7 +64,7 @@ programming cable (CH340 or FTDI).
 tools/odr_debug.py --port /dev/cu.usbserial-XXXX version
 tools/odr_debug.py --port /dev/cu.usbserial-XXXX diag
 tools/odr_debug.py --port /dev/cu.usbserial-XXXX screenshot -o /tmp/dm32.png
-python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "dm32 or boot or ui"
+python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "health or boot or ui"
 ```
 
 | Look for | Proves | If not |
