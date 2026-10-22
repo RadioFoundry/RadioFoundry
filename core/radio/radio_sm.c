@@ -134,17 +134,6 @@ static void apply_tot(radio_sm_t *sm)
 	sm->view.tot_s = t != 0 ? t : sm->set.tot_s;
 }
 
-static bool in_band(uint32_t hz, bool need_tx)
-{
-	for (uint8_t i = 0; i < board.band_count; i++) {
-		const band_t *b = &board.bands[i];
-		if (hz >= b->lo_hz && hz <= b->hi_hz && (b->tx || !need_tx)) {
-			return true;
-		}
-	}
-	return false;
-}
-
 static uint8_t master_power = SETTINGS_UNSET8;	// the settings' power for "default" channels
 
 static uint8_t default_power(void)
@@ -435,7 +424,7 @@ static bool read_zone(uint16_t index, zone_t *z)
 static uint32_t vfo_default_hz(void)
 {
 	for (unsigned i = 0; i < sizeof(vfo_start_hz) / sizeof(vfo_start_hz[0]); i++) {
-		if (in_band(vfo_start_hz[i], true)) {
+		if (board_in_band(vfo_start_hz[i], true)) {
 			return vfo_start_hz[i];
 		}
 	}
@@ -462,7 +451,8 @@ static void vfo_set_hz(radio_sm_t *sm, uint32_t hz)
 static void enter_vfo(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (!sm->vfo_seeded) {
-		uint32_t hz = (!sm->view.vfo && in_band(sm->view.ch.rx_hz, false)) ? sm->view.ch.rx_hz : vfo_default_hz();
+		bool keep = !sm->view.vfo && board_in_band(sm->view.ch.rx_hz, false);
+		uint32_t hz = keep ? sm->view.ch.rx_hz : vfo_default_hz();
 		vfo_set_hz(sm, hz);
 	}
 	sm->view.ch = sm->vfo_ch;
@@ -507,7 +497,7 @@ radio_vfo_copy_t radio_vfo_copy_check(const channel_t *ch, bool in_vfo)
 	if (ch->mode == RADIO_MODE_DMR ? !CONFIG_VFO_DMR : !CONFIG_VFO_FM) {
 		return VFO_COPY_NO_MODE;
 	}
-	if (!in_band(ch->rx_hz, false) || (ch->tx_hz != 0 && !in_band(ch->tx_hz, false))) {
+	if (!board_in_band(ch->rx_hz, false) || (ch->tx_hz != 0 && !board_in_band(ch->tx_hz, false))) {
 		return VFO_COPY_OUT_OF_BAND;
 	}
 	return VFO_COPY_OK;
@@ -597,7 +587,7 @@ static void vfo_step(radio_sm_t *sm, int dir, uint32_t now_ms)
 	int64_t hz = (int64_t)sm->view.ch.rx_hz + (int64_t)dir * sm->view.vfo_step_hz;
 #endif
 	uint32_t next;
-	if (hz > 0 && hz <= (int64_t)UINT32_MAX && in_band((uint32_t)hz, false)) {
+	if (hz > 0 && hz <= (int64_t)UINT32_MAX && board_in_band((uint32_t)hz, false)) {
 		next = (uint32_t)hz;
 	} else {
 		next = band_wrap(sm->view.ch.rx_hz, dir);
@@ -657,7 +647,7 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (ch->mode == RADIO_MODE_DMR ? !CONFIG_DMR : !CONFIG_FM) {
 		return TXDENY_MODE;
 	}
-	if (!in_band(ch->tx_hz, true)) {
+	if (!board_in_band(ch->tx_hz, true)) {
 		return TXDENY_BAND;
 	}
 	if (sm->batt.level == BATT_CRITICAL) {
@@ -2046,7 +2036,7 @@ static bool scan_step(radio_sm_t *sm, uint32_t now_ms)
 		dual_busy_set(sm, (uint8_t)(sm->view.dual_busy & ~(1u << sm->dual_at)));	// the watch hears it itself now
 	} else if (sc->kind == SCAN_VFO) {
 		uint32_t hz = scan_next_hz(sc, sm->view.ch.rx_hz, sm->view.vfo_step_hz);
-		if (hz == 0 || !in_band(hz, false)) {
+		if (hz == 0 || !board_in_band(hz, false)) {
 			scan_stop(sm, false, now_ms);
 			return false;
 		}
@@ -2487,7 +2477,7 @@ static void roam_talk_of(const channel_t *ch, uint32_t *id, bool *priv)
 static bool roam_repeater(const channel_t *ch)
 {
 	return ch->mode == RADIO_MODE_DMR && !ch->rx_only && ch->tx_hz != 0 && ch->tx_hz != ch->rx_hz && !ch->dmo &&
-		in_band(ch->rx_hz, false);
+		board_in_band(ch->rx_hz, false);
 }
 
 static void roam_publish(radio_sm_t *sm, uint32_t now_ms)
@@ -3298,7 +3288,7 @@ bool radio_sm_hotspot_freq_ok(uint32_t rx_hz, uint32_t tx_hz)
 		return false;	// never a transmitter in the air band
 	}
 #endif
-	return rx_hz != 0 && tx_hz != 0 && in_band(rx_hz, false) && in_band(tx_hz, true);
+	return rx_hz != 0 && tx_hz != 0 && board_in_band(rx_hz, false) && board_in_band(tx_hz, true);
 }
 
 uint8_t radio_sm_hotspot_power(uint8_t rf_level)
@@ -3450,8 +3440,8 @@ static void hotspot_enter(radio_sm_t *sm, uint32_t rx_hz, uint32_t now_ms)
 		sm->board_mode = RADIO_MODE_DMR;
 		board.radio->set_mode(RADIO_MODE_DMR);
 	}
-	uint32_t hz = (rx_hz != 0 && in_band(rx_hz, false)) ? rx_hz : sm->view.ch.rx_hz;
-	if (hz != 0 && in_band(hz, false)) {
+	uint32_t hz = (rx_hz != 0 && board_in_band(rx_hz, false)) ? rx_hz : sm->view.ch.rx_hz;
+	if (hz != 0 && board_in_band(hz, false)) {
 		board.radio->rx(hz, RADIO_BW_12K5, &none);
 	}
 	sm->hs_rx_hz = hz;
@@ -3597,7 +3587,7 @@ static void restore_vfo(radio_sm_t *sm, const settings_t *st, uint8_t idx)
 	sm->vfo_talk_id = id <= DMR_ID_MAX ? id : 0;
 	sm->vfo_talk_private = sm->vfo_talk_id != 0 && (v.talk & 0x80000000u) != 0;
 #endif	// a build without the DMR VFO leaves the saved target alone (persist() doesn't write it)
-	if (v.rx_hz == 0 || !in_band(v.rx_hz, false)) {
+	if (v.rx_hz == 0 || !board_in_band(v.rx_hz, false)) {
 		return;
 	}
 	sm->vfo_ch.rx_hz = v.rx_hz;
@@ -4251,7 +4241,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		break;
 	case RREQ_VFO_SET:
-		if (busy || !VFO_AVAILABLE || req->arg <= 0 || !in_band((uint32_t)req->arg, false)) {
+		if (busy || !VFO_AVAILABLE || req->arg <= 0 || !board_in_band((uint32_t)req->arg, false)) {
 			break;
 		}
 		vfo_set_hz(sm, (uint32_t)req->arg);

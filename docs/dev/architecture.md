@@ -18,7 +18,7 @@ reaches it at run time through the board descriptor, `board_t` in [hal/board.h](
  boards/<b>/  the radio: board_t, pins, key map, how its build differs from the platform's, codec hosting, chip glue
    |  uses
  drivers/     chips shared by several radios: AT1846S, BK4819, FD6818, SKY72310, HR_C6000, HR_C7000, ST7735, ST7789,
-              RDA5807M, SPI NOR, key matrix, encoder, NMEA GPS, USB
+              RDA5807M, SPI NOR, key matrix, encoder, NMEA GPS, USB; and the math they share (mic level, battery)
  platform/<p>/ the SoC: start-up, clocks, interrupts, time base, FreeRTOS port glue, and the build defaults its
               boards share (stm32f4, hrc7000)
  third_party/ FreeRTOS, TinyUSB, ST HAL and CMSIS (submodules, permissive licenses)
@@ -28,7 +28,7 @@ reaches it at run time through the board descriptor, `board_t` in [hal/board.h](
 |---|---|
 | `core/` | Portable C. Tests every radio difference through `board` (bands, power levels, display geometry and insets, key map, optional hooks that may be NULL). Host tests compile it unchanged |
 | `hal/` | Headers only: structs of function pointers and the data types between core and board |
-| `drivers/` | One chip each, no knowledge of the radio it sits in beyond what its init call is given |
+| `drivers/` | One chip each, no knowledge of the radio it sits in beyond what its init call is given. Also header-only helpers the boards share, such as `audio/miclevel` (the VOX level) and `power/battery` (the battery average and charge estimate) |
 | `boards/` | The only place that knows the radio. Fills in `board_t`; maps physical keys to logical actions |
 | `platform/` | The SoC, shared by every radio on it (the STM32F405 radios share `platform/stm32f4`), and in subdirectories the glue for a chip on that SoC that several radios share (`platform/stm32f4/hrc`, `gps_uart`, `spi_flash`, `fsmc_keypad`), built for the boards that list it in `BOARD_DIRS`. Also the build defaults: `platform.mk` (compiler, part defines, HAL modules), `config.mk` (feature defaults), `common.ld` (the memory layout), `FreeRTOSConfig.h`. A board's files list only how it differs |
 
