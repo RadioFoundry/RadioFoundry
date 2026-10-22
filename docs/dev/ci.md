@@ -41,7 +41,7 @@ push runs only the manual workflow. A newer push cancels the run in progress (`c
 | Job | Command | Time on the Gitea runner |
 |---|---|---|
 | `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests, 64 suites with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the UI screen gallery (`uiSim --gallery`) | about 3 min on the self-hosted runner: the unit tests 2.8 min on 4 CPUs, gallery 2 s |
-| `checks` | `tools/ci.sh --steps python,licenses` (doc links among the Python checks) | about 1.5 min |
+| `checks` | `tools/ci.sh --steps registry,python,licenses` (doc links among the Python checks) | about 1.5 min |
 | `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --board dm1701,md380`: every Arm radio in one job | about 1 min with the checkout; the toolchain 50 s on a cache miss |
 | `firmware (C-SKY)` | `tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) | about 1 min with the checkout; skipped where the image isn't available |
 
@@ -171,7 +171,7 @@ always builds.
 tools/ci.sh                                   # everything (the release gate), about 10 minutes on an 8-core Mac
 tools/ci.sh --quick                           # what CI runs, without coverage and sanitizers
 SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run
-tools/ci.sh --steps python,licenses           # the checks job
+tools/ci.sh --steps registry,python,licenses  # the checks job
 tools/ci.sh --quick --steps firmware --board md380
 make BOARD=db25d stack-check                  # the stack check alone, after a build (stack-check.md)
 ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --board dm1701    # a nightly matrix job
@@ -179,8 +179,20 @@ tools/coverage.sh                             # build/coverage/index.html
 tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm1801pro   # on a host with the image
 ```
 
-`--steps` takes any of `host`, `python`, `firmware`, `licenses`, `similarity` (comma separated); `--quick` and
-`--matrix` choose the firmware configurations. `tools/install-arm-toolchain.sh` installs the pinned Arm toolchain
+`--steps` takes any of these, comma separated (default all):
+
+| Step | What it checks |
+|---|---|
+| `registry` | Every `board.toml` and `platform.toml` is well formed and agrees with `board.mk`, the linker scripts and `board_t`; `tools/odrflash/odrflash/registry.json` is current; the loader's self-test (`tools/boards.py`) |
+| `host` | `make -C tests/host`, with each board's own tests (`boards/<b>/tests/host.mk`) |
+| `python` | The Python tools, the HIL test collection, doc links, the glossary, the web site build and the flasher's tests |
+| `firmware` | Every board whose compiler is installed: the default build, each build option value (`board.toml` `[[build_options]]`, such as a band), each `[ci] extra` configuration, the feature matrix, and the flash stubs of each built platform (`platform.toml` `stubs`) |
+| `licenses` | `tools/license_grep.sh` and `reuse lint` |
+| `similarity` | `tools/similarity_scan.py`, only with `ODR_SIMILARITY_REFS` set |
+
+Every step but `host` needs Python 3.11 or later for the registry's TOML. `tools/odr_python.sh` finds it:
+`$ODR_PYTHON`, else the newest `python3.N` on `PATH`. A board whose compiler is missing is skipped with the command
+that installs it (its platform's `toolchain.build`). `--quick` and `--matrix` choose the firmware configurations. `tools/install-arm-toolchain.sh` installs the pinned Arm toolchain
 on Linux x86_64 the way CI does, trimmed to the Cortex-M4 multilib (215 MB instead of 1 GB; `FULL=1` for all of it).
 
 ## Coverage

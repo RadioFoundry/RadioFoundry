@@ -368,7 +368,7 @@ bits corrected); the diagnostics line showed 57 bursts keyed and ended, each end
 | Mic and vocoder | The microphone reaches the modem's codec ADC with no pin to switch: PTB14 / PTB15 appear only in the audio on / off routines (3.3), never in a TX path. Mic gain (GCR_ADCL) on a digital channel comes from a setting (0 dB when unset); an analog channel sets +12 dB. WORK_MODE bit 7 cleared (DMR modulator) | BIN |
 | Analog PTT routine | Not used for a digital channel: the RF follows the bursts only (INF from the task's channel-type test) | INF |
 
-ODR (`boards/db25d/dmr_db25d.c`, `radio_db25d.c`; tests in `tests/host/bk4819Test.c` and `db25dCalTest.c`):
+ODR (`boards/db25d/dmr_db25d.c`, `radio_db25d.c`; tests in `tests/host/bk4819Test.c` and `boards/db25d/tests/db25dCalTest.c`):
 
 | Step | ODR |
 |---|---|

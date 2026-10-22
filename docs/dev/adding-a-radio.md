@@ -91,6 +91,7 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
 ## Tests and CI
 
 - Add host tests for each new driver against a simulated chip (`tests/host/*Test.c`; see the existing driver tests).
+  Tests of the board's own code go in `boards/<b>/tests/` with a `host.mk` ([Testing](testing.md#host-tests)).
 - `tools/ci.sh` finds the board by its `board.mk` and builds its feature matrix when the compiler is installed. A
   board without its compiler is skipped with a notice.
 - Add the radio to the status table in the top-level README, to [feature-matrix.md](../feature-matrix.md) and to
