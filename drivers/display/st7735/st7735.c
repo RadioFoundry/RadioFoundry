@@ -170,6 +170,33 @@ void st7735_write_rows(const st7735_t *p, const uint16_t *fb, uint16_t y0, uint1
 	b->end();
 }
 
+void st7735_write_rows_indexed(const st7735_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t y0, uint16_t y1)
+{
+	const st7735_bus_t *b = p->bus;
+	uint16_t chunk[32];
+	uint32_t stride = ((uint32_t)p->width + 1u) / 2u;
+
+	if (y1 > p->height) {
+		y1 = p->height;
+	}
+	if (y0 >= y1) {
+		return;
+	}
+	b->begin();
+	set_window(b, p->col_offset, p->row_offset + y0, p->col_offset + p->width, p->row_offset + y1);
+	for (uint32_t y = y0; y < y1; y++) {
+		const uint8_t *row = fb + y * stride;
+		for (uint32_t x = 0; x < p->width;) {
+			uint32_t n = 0;
+			for (; n < sizeof(chunk) / sizeof(chunk[0]) && x < p->width; n++, x++) {
+				chunk[n] = palette[(row[x >> 1] >> ((x & 1u) ? 0 : 4)) & 0x0Fu];
+			}
+			b->pixels(chunk, n, is_bgr(p));
+		}
+	}
+	b->end();
+}
+
 void st7735_fill_raw(const st7735_t *p, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color)
 {
 	const st7735_bus_t *b = p->bus;
