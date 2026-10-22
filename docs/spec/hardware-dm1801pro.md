@@ -529,6 +529,9 @@ talks to it, and DMR voice works with the radio's own codec (5.6), so ODR's code
 The SoC's I2C2 at 0x14080000, set up as on the DM-32UV ([hardware-dm32.md](hardware-dm32.md) 3.3): CON 0x65, INTR_MASK
 0x40, SCL counts for 400 kHz, FIFO thresholds 6. Address 0x70. K.
 
+The board has a 32.768 kHz crystal and a 3 V backup cell for the clock, so it keeps time through power-off (owner,
+board inspection, 2026-10-22).
+
 | Register | Use |
 |---|---|
 | 0x00 / 0x01 / 0x02 | seconds / minutes / hours |
