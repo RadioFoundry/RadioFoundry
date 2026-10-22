@@ -95,6 +95,12 @@ stubtool.py PORT --board gd88 --write-app build/gd88/odr_gd88_install.bin --boot
 stubtool.py PORT --board gd88b --write-app build/gd88b/odr_gd88b_install.bin --boot reset  # B, A running ODR
 ```
 
+On the DB25-D and the GD-88, 0xC000 holds ODR's first stage and the application starts at 0xD000. `--write-app`
+writes at 0xC000, so these radios take the `_install.bin`, which starts with the stage. The tool reads the radio's
+word at 0xC000 first. When it is the stage's and the image does not start with it, the write is refused: the
+application alone there leaves the radio in its update loader (white screen, red LED) until an IAP install. No board
+list is involved, and a radio whose stage is already gone takes either image. `--replace-stage` overrides the check.
+
 ### Older stubs
 
 The position-dependent stubs (linked for the ROM load at 0x10000, for ODR at 0x17000, and the DB25-D's 0x30000 and

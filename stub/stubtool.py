@@ -1054,7 +1054,7 @@ class Radio:
         for a in range(start, end, SECTOR):
             self._write_cmd(mem, bytes([0x20, a >> 16 & 0xFF, a >> 8 & 0xFF, a & 0xFF]), "erase 0x%X" % a, 3.0)
 
-    def write_image(self, image, progress=None):
+    def write_image(self, image, progress=None, replace_stage=False):
         """Program an ODR application image into the program flash at 0xC000 (where it is linked to run): only the 4 KB
         sectors whose CRC differs from the flash are erased and written, then everything is verified by CRC. The
         bootloader below 0xC000 is never touched. Returns (sectors written, sectors left alone)."""
@@ -1070,9 +1070,10 @@ class Radio:
         self.check_write_range(mem, APP_START, end, app=True)
         self.check_id(mem)
         # The application alone over a first stage leaves the radio in its update loader (white screen, red LED)
-        if self.read_flash(mem, APP_START, 4) == STAGE_MAGIC and image[:4] != STAGE_MAGIC:
+        if not replace_stage and self.read_flash(mem, APP_START, 4) == STAGE_MAGIC and image[:4] != STAGE_MAGIC:
             raise DumpError("this radio has ODR's first stage at 0x%X and the image does not start with it: write the "
-                            "install image (odr_<board>_install.bin), not the application alone" % APP_START)
+                            "install image (odr_<board>_install.bin), not the application alone (--replace-stage "
+                            "writes it anyway)" % APP_START)
         todo = self.verify(mem, padded, APP_START)
         for n, a in enumerate(todo):
             if progress:
@@ -2041,6 +2042,10 @@ def self_test():
                 check(False, "the application alone over a first stage is refused")
             except DumpError as e:
                 check("install image" in str(e), "application over a first stage refused: %s" % e)
+            app = images["progmem"][APP_START:APP_START + 4 * SECTOR]
+            nw, nk = r.write_image(app, replace_stage=True)
+            check(nw >= 1, "--replace-stage writes the application over the first stage")
+            radio.images["progmem"] = bytes(pm)
             nw, nk = r.write_image(bytes(pm[APP_START:APP_START + 4 * SECTOR]))
             check(nk == 4, "an install image over a first stage is written")
         if board in ("db25d", "gd88"):
@@ -2221,7 +2226,10 @@ def main(argv=None):
                     "firmware reports); refused unless it is linked for that span")
     ap.add_argument("--write-app", metavar="IMAGE", help="program an ODR application image (raw .bin linked for 0x0300C000) into the "
                     "program flash at 0xC000: only changed 4 KB sectors are written, then verified; the bootloader is never touched. "
-                    "Use with --odr-enter (radio running ODR) or the boot-ROM load; finish with --boot reset")
+                    "Use with --odr-enter (radio running ODR) or the boot-ROM load; finish with --boot reset. On a radio with "
+                    "ODR's first stage at 0xC000 (DB25-D, GD-88) give the _install.bin, which starts with it")
+    ap.add_argument("--replace-stage", action="store_true", help="let --write-app put an image that does not start with "
+                    "ODR's first stage over one (the radio then starts only what the image holds at 0xC000)")
     ap.add_argument("--attach", action="store_true", help="the stub from an earlier run is still up: skip the boot")
     ap.add_argument("--stub", metavar="FILE", help="load this stub image instead of the embedded universal one (a universal "
                     "image, or a position-dependent one linked for the load address)")
@@ -2333,7 +2341,7 @@ def main(argv=None):
         if a.write_app:
             image = open(a.write_app, "rb").read()
             t0 = time.monotonic()
-            nw, nk = radio.write_image(image, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
+            nw, nk = radio.write_image(image, replace_stage=a.replace_stage, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
             print("\n%s: %d bytes, %d sectors written, %d unchanged, verified by CRC, %.0f s" % (a.write_app, len(image), nw, nk, time.monotonic() - t0))
             print("sha256", fingerprint(a.write_app))
             if not a.boot:
