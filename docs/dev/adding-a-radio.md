@@ -100,8 +100,11 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
   CPS radio types in `[cps]`, and a check only this radio can use in `boards/<b>/hil/test_*.py`.
 - `tools/ci.sh` finds the board by its `board.mk` and builds its feature matrix when the compiler is installed. A
   board without its compiler is skipped with a notice.
-- Add the radio to the status table in the top-level README, to [feature-matrix.md](../feature-matrix.md) and to
-  [the user manual's introduction](../user/01-introduction.md).
+- Run `tools/boards.py docs`: it writes the radio into the README's radio table, the user manual's radio index
+  ([23-radios.md](../user/23-radios.md)), the feature matrix's "Built by default" table and the Port cell of the
+  radio's row in the [radio survey](../spec/radios.md). `tools/ci.sh` fails when that wasn't run. Remove the radio's
+  planned row from the survey, or make it the board's row: a planned row that names a board fails `tools/boards.py
+  check`. Add the radio to [the user manual's introduction](../user/01-introduction.md).
 - The web site lists the radio from `board.toml`: `order` places it, `[status] level` and `summary` give its badge and
   its line for visitors. If [radios.md](../spec/radios.md) has a survey row for it, the site drops that row by model.
 - Before it can be released: its `board.toml` `[flash]` and `[codec]` tables, `[status] release`, the regenerated

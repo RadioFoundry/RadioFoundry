@@ -24,6 +24,8 @@ base to the application), the erasable sectors (the platform geometry from the a
     tools/boards.py get dm32 [key.path]          one value (a list: one item per line), for shell scripts
     tools/boards.py json [--for odrflash|site] [--out FILE | --check FILE]   the merged, derived view
     tools/boards.py check                         registry consistency
+    tools/boards.py docs [--check] [--floor REF]  the docs blocks generated from the registry (tools/registry_docs.py);
+                                                  --floor: fail when a radio reads lower than the README at REF
     tools/boards.py self-test                     the loader's own tests, on fixtures
 
 Needs Python 3.11 or later (tomllib). Scripts find one with tools/odr_python.sh. The tools that flash radios read the
@@ -34,6 +36,9 @@ import json
 import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import registry_docs  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -725,6 +730,12 @@ def check(root=ROOT):
                     if (mk.get("BUILD"), mk.get("TARGET", "") + ".bin") != want:
                         problems.append("%s %s: make names the build %s, %s.bin; the build view says %s, %s"
                                         % (bid, " ".join(args), mk.get("BUILD"), mk.get("TARGET"), *want))
+    # check 5: the radio survey's Port cells (a fixture tree without the survey has none to check)
+    if os.path.isfile(os.path.join(root, registry_docs.SURVEY)):
+        try:
+            problems += registry_docs.survey(root, boards)[1]
+        except registry_docs.DocsError as e:
+            problems.append(str(e))
     if not problems:
         path = os.path.join(root, ODRFLASH_JSON)
         try:
@@ -781,7 +792,67 @@ def odrflash_view(boards):
             "boards": out}
 
 
-def site_view(boards):
+BUILD_FORMAT = "odr-build-matrix/1"
+
+
+def _names():
+    """odrflash/names.py, the one naming rule for build directories, images and release files. It imports nothing, so
+    loading it doesn't load the generated registry."""
+    sys.path.insert(0, os.path.join(ROOT, "tools", "odrflash"))
+    try:
+        from odrflash import names
+    finally:
+        sys.path.pop(0)
+    return names
+
+
+def build_view(boards, root=ROOT):
+    """What a tool that builds from a checkout needs (docs/dev/board-registry.md "The build view"): every board with its
+    platform, build options and release state, each build's make arguments and file names, and each platform's
+    toolchain. A stable interface: a change that breaks a reader bumps BUILD_FORMAT."""
+    names = _names()
+    vdir = os.path.join(root, "config", "variants")
+    variants = sorted(f[:-3] for f in os.listdir(vdir) if f.endswith(".mk")) if os.path.isdir(vdir) else []
+    plats = {}
+    for pid, pl in sorted(load_platforms(root).items()):
+        tc = pl.data["toolchain"]
+        plats[pid] = {"isa": pl.data["isa"], "cpu": pl.data["cpu"], "cc": tc["cc"], "version": tc["version"],
+                      "image": tc.get("image"), "install": tc["build"], "sha256": tc.get("sha256")}
+    out = {}
+    for bid, b in sorted(boards.items()):
+        d = b.data
+        opts = [(o["name"], [v["id"] for v in o["values"]]) for o in d.get("build_options", [])]
+        builds = []
+        for combo in _product(opts):
+            chosen = dict(combo)
+            builds.append({
+                "options": chosen,
+                "make": ["BOARD=" + bid] + ["%s=%s" % kv for kv in combo],
+                "release": ["--board", bid] + [x for n, v in combo if v != dict(opts)[n][0]
+                                               for x in ("--build-option", "%s=%s" % (n, v))],
+                "image_id": names.image_id(bid, opts, chosen),
+                "build_dir": names.build_dir(bid, opts, chosen, names.VARIANT),
+                "image": names.build_image(bid, opts, chosen, names.VARIANT, bool(b.first_stage)),
+                "release_image": names.release_name(names.release_id(bid, opts, chosen, names.VARIANT), "{version}"),
+                "release_manifest": names.release_name(names.release_id(bid, opts, chosen, names.VARIANT), "{version}",
+                                                       "json"),
+            })
+        out[bid] = {
+            "name": d["name"], "platform": b.platform.id, "release": d["status"]["release"],
+            "released": d["status"]["release"] == "stable", "first_stage": bool(b.first_stage),
+            "build_options": [{"name": n, "default": vals[0], "values": vals} for n, vals in opts],
+            "builds": builds,
+        }
+    return {"format": BUILD_FORMAT, "variants": ["full"] + variants, "platforms": plats, "boards": out}
+
+
+def _product(opts):
+    """Every combination of option values, [(name, value), ...] each, the all-default one first."""
+    combos = [[]]
+    for n, vals in opts:
+        combos = [c + [(n, v)] for c in combos for v in vals]
+    return combos
+def site_view(boards, root=ROOT):
     """What the web site and the web flasher read (site/odrsite/repo.py), in the boards' order. The radio entries keep
     the keys the pages' scripts use (site/data/radios.json)."""
     out = []
@@ -806,7 +877,13 @@ def site_view(boards):
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "unsupported": dict(b.unsupported)})
-    return {"format": "odr-site-boards/1", "boards": out}
+    # the survey's radios without a board, planned or in progress (docs/spec/radios.md Port cells)
+    rows, problems = registry_docs.survey(root, boards)
+    if problems:
+        raise RegistryError("; ".join(problems))
+    planned = [{"radio": r["radio"], "status": r["status"], "pr": r["pr"], "hardware_needed": r["hardware_needed"],
+                "note": registry_docs.plain(r["note"])} for r in registry_docs.planned(rows)]
+    return {"format": "odr-site-boards/1", "boards": out, "planned": planned}
 
 
 def full_view(boards, root=ROOT):
@@ -919,6 +996,45 @@ def self_test():
             ok(False, "validate refuses " + what)
         except RegistryError:
             ok(True, "validate refuses " + what)
+
+    # the survey's Port cells (check 5) and the floor, on a fixture survey
+    class Stub:
+        def __init__(self, bid, model, level="supported"):
+            self.id, self.data = bid, {"model": model, "status": {"level": level},
+                                       "docs": {"hardware": "docs/spec/hardware-%s.md" % bid}}
+    tmps = tempfile.mkdtemp(prefix="odr-boards-survey-")
+    try:
+        os.makedirs(os.path.join(tmps, "docs", "spec"))
+        def survey_of(rows):
+            with open(os.path.join(tmps, registry_docs.SURVEY), "w", encoding="utf-8") as f:
+                f.write("## Summary table\n\n| Radio | MCU | Port |\n|---|---|---|\n" + "".join(
+                    "| %s | x | %s |\n" % r for r in rows))
+            return registry_docs.survey(tmps, {"a": Stub("a", "AB-100")})
+        rows, probs = survey_of([("Maker AB-100, Other", "Supported"), ("Maker CD-9", "In progress, #12. Its note"),
+                                 ("Maker EF-1", "Planned, hardware needed"), ("Maker GH-2", "Not planned. No")])
+        ok(probs == [] and [(r["board"], r["status"], r["pr"], r["hardware_needed"], r["note"]) for r in rows] ==
+           [("a", "board", None, False, ""), (None, "in_progress", 12, False, "Its note"),
+            (None, "planned", None, True, ""), (None, None, None, False, "No")],
+           "survey: a board's row, in progress with its PR, planned, not planned %r" % (probs or rows))
+        for cells, what in ((("Maker AB-100", "Planned"),), "a planned row for an existing board"), \
+                           ((("Maker CD-9", "In progress"),), "in progress without a PR number"), \
+                           ((("Maker CD-9", "Soon"),), "a Port cell outside the set"), \
+                           ((("Maker AB-100", "Supported"), ("Maker AB-100 GPS", "Supported")), "two rows for a board"):
+            ok(len(survey_of(cells)[1]) == 1, "survey check 5 finds " + what)
+        ok(registry_docs.rebase_links("[x](hardware-a.md#k) [y](https://e/z)", "docs/spec", "") ==
+           "[x](docs/spec/hardware-a.md#k) [y](https://e/z)", "rebase_links: relative links only")
+        old = ("## Radios and status\n\n| Radio | Builds | Host tests | On the radio | Support |\n"
+               "|---|---|---|---|---|\n"
+               "| [Maker AB-100](x) | ● | ● | %s | ok |\n| Maker CD-9 | ○ | ○ | ○ | %s |\n")
+        claims = registry_docs.readme_claims
+        ok(claims(old % ("●", "In progress (#1)")) == {"AB-100": (3, [2, 2, 2]), "CD-9": (2, [0, 0, 0])},
+           "readme_claims: marks and statuses by model code %r" % claims(old % ("●", "In progress (#1)")))
+        top = claims(old % ("●", "In progress (#1)"))
+        ok(claims(old % ("◐", "In progress (#1)"))["AB-100"][1] < top["AB-100"][1]
+           and claims(old % ("●", "Planned"))["CD-9"][0] < top["CD-9"][0],
+           "readme_claims: a lower mark and a lower status rank lower")
+    finally:
+        shutil.rmtree(tmps)
 
     # a fixture tree: the real registry copied, then broken one way at a time
     tmp = tempfile.mkdtemp(prefix="odr-boards-")
@@ -1059,6 +1175,9 @@ def main(argv=None):
     g.add_argument("--out", metavar="FILE")
     g.add_argument("--check", metavar="FILE", help="fail if FILE differs from what would be written")
     sub.add_parser("check", help="registry consistency")
+    p = sub.add_parser("docs", help="rewrite the docs blocks generated from the registry")
+    p.add_argument("--check", action="store_true", help="fail if a generated block is out of date; write nothing")
+    p.add_argument("--floor", metavar="REF", help="fail when the README lists a radio lower than at REF")
     sub.add_parser("self-test")
     a = ap.parse_args(argv)
     try:
@@ -1070,6 +1189,18 @@ def main(argv=None):
                 print("boards: %s" % p, file=sys.stderr)
             if not problems:
                 print("boards: %d boards, %d platforms, consistent" % (len(load()), len(load_platforms())))
+            return 1 if problems else 0
+        if a.cmd == "docs":
+            boards = load()
+            problems = registry_docs.docs(ROOT, boards, check=a.check)
+            if a.floor:
+                new = registry_docs.generate(ROOT, boards)[0]["README.md"]
+                problems += registry_docs.floor(ROOT, a.floor, new)
+            for p in problems:
+                print("boards: %s" % p, file=sys.stderr)
+            if not problems:
+                print("boards: docs %s%s" % ("current" if a.check else "written",
+                                            ", nothing lower than %s" % a.floor if a.floor else ""))
             return 1 if problems else 0
         # the board's make variables cost a make run each: load only what the command reads
         boards = {} if a.cmd == "platform" else load(only=[a.board] if a.cmd in ("get", "builds") else None)
@@ -1123,7 +1254,7 @@ def main(argv=None):
             else:
                 sys.stdout.write(text)
         return 0
-    except RegistryError as e:
+    except (RegistryError, registry_docs.DocsError) as e:
         print("boards: %s" % e, file=sys.stderr)
         return 1
 
