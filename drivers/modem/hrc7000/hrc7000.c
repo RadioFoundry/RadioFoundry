@@ -39,6 +39,7 @@ void hrc7000_attach(hrc7000_t *d, volatile uint32_t *regs, volatile uint8_t *buf
 	d->tone_on = false;
 	d->crit_enter = NULL;
 	d->crit_exit = NULL;
+	d->dac_gain = 0;
 }
 
 void hrc7000_set_crit(hrc7000_t *d, uint32_t (*enter)(void), void (*exit_fn)(uint32_t state))
@@ -60,7 +61,29 @@ void hrc7000_set_mic_gain(hrc7000_t *d, uint8_t db)
 
 void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code)
 {
-	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, (uint8_t)(0x80u | (code & 0x3Fu)));
+	d->dac_gain = (uint8_t)(code & 0x3Fu);
+	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, (uint8_t)(0x80u | d->dac_gain));
+}
+
+uint8_t hrc7000_dac_code(int db)
+{
+	if (db <= 0) {
+		return (uint8_t)(db < HRC7000_DAC_MIN_DB ? -HRC7000_DAC_MIN_DB : -db);	// 0..31 = 0..-31 dB
+	}
+	return (uint8_t)(64 - (db > HRC7000_DAC_MAX_DB ? HRC7000_DAC_MAX_DB : db));	// 63..32 = +1..+32 dB
+}
+
+int hrc7000_volume_db(unsigned step, unsigned def_step, unsigned steps, int top_db)
+{
+	if (step == 0) {
+		return HRC7000_DAC_MIN_DB;
+	}
+	if (step > steps) {
+		step = steps;
+	}
+	int db = step <= def_step ? -3 * (int)(def_step - step)
+				  : top_db * (int)(step - def_step) / (int)(steps - def_step);	// step <= steps here
+	return db < HRC7000_DAC_MIN_DB ? HRC7000_DAC_MIN_DB : db > HRC7000_DAC_MAX_DB ? HRC7000_DAC_MAX_DB : db;
 }
 
 static void rf_control_wr(hrc7000_t *d)
@@ -91,7 +114,7 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_codec_wr(d, C7_CODEC_CR_ADC, 0x20);
 	hrc7000_codec_wr(d, C7_CODEC_CR_VIC, 0x0C);
 	hrc7000_codec_wr(d, C7_CODEC_CR_CK, 0x40);
-	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, C7_GCR_DACL_0DB);
+	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, (uint8_t)(C7_GCR_DACL_0DB | d->dac_gain));
 	hrc7000_codec_wr(d, C7_CODEC_GCR_MIC1, 0x00);
 	hrc7000_codec_wr(d, C7_CODEC_GCR_ADCL, 0x8B);
 	hrc7000_codec_wr(d, C7_CODEC_CR_DAC_AGC, 0x00);
@@ -228,7 +251,7 @@ void hrc7000_fm_rx(hrc7000_t *d, bool wide)
 	// Not the PCM bits: the PCM stream owns them (platform audio_pcm.c). Clearing the mic PCM bit here stopped a beep's
 	// stream when its own key retuned the receiver, and no beep played again
 	hrc7000_audio_bits(d, C7_AUDIO_FM_PLAY, 0);
-	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, C7_GCR_DACL_0DB);
+	hrc7000_codec_wr(d, C7_CODEC_GCR_DACL, (uint8_t)(C7_GCR_DACL_0DB | d->dac_gain));
 	hrc7000_wr(d, C7_WORK_MODE, C7_WORK_MODE_FM);
 }
 

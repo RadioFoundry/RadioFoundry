@@ -681,6 +681,35 @@ static void test_mic_gain(void)
 	CHECK(buf[C7_CODEC + C7_CODEC_GCR_ADCL] == 0x85u);
 }
 
+// Line out gain (GCR_DACL bits 5:0, bit 7 shared): dB to code both ways of 0 dB and clamped; a soft volume's steps (0 dB
+// at the default step, 3 dB a step below, top_db spread above); the gain survives power-on init and FM receive, which
+// wrote 0 dB over it before (the DB25-D's DMR voice ignored its volume)
+static void test_dac_gain(void)
+{
+	CHECK(hrc7000_dac_code(0) == 0 && hrc7000_dac_code(-7) == 7 && hrc7000_dac_code(-31) == 31);
+	CHECK(hrc7000_dac_code(-40) == 31 && hrc7000_dac_code(1) == 63 && hrc7000_dac_code(16) == 48);
+	CHECK(hrc7000_dac_code(32) == 32 && hrc7000_dac_code(50) == 32);
+	CHECK(hrc7000_volume_db(8, 8, 16, 12) == 0 && hrc7000_volume_db(7, 8, 16, 12) == -3);
+	CHECK(hrc7000_volume_db(1, 8, 16, 12) == -21 && hrc7000_volume_db(0, 8, 16, 12) == HRC7000_DAC_MIN_DB);
+	CHECK(hrc7000_volume_db(12, 8, 16, 12) == 6 && hrc7000_volume_db(16, 8, 16, 12) == 12);
+	CHECK(hrc7000_volume_db(40, 8, 16, 12) == 12 && hrc7000_volume_db(1, 16, 16, 0) == HRC7000_DAC_MIN_DB);
+	for (unsigned s = 2; s <= 16; s++) {
+		CHECK(hrc7000_volume_db(s, 8, 16, 12) > hrc7000_volume_db(s - 1u, 8, 16, 12));	// every step is louder
+	}
+	setup();
+	CHECK(dev.dac_gain == 0);
+	hrc7000_set_dac_gain(&dev, hrc7000_dac_code(-9));
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_DACL] == 0x89u && dev.dac_gain == 9);
+	buf[C7_CODEC + C7_CODEC_GCR_DACL] = 0;
+	hrc7000_power_on_init(&dev, 128, 20);
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_DACL] == 0x89u);
+	buf[C7_CODEC + C7_CODEC_GCR_DACL] = 0;
+	hrc7000_fm_rx(&dev, false);
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_DACL] == 0x89u);
+	hrc7000_set_dac_gain(&dev, hrc7000_dac_code(12));
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_DACL] == (0x80u | 52u));
+}
+
 // Codec mixer route for CPU-made FM TX audio: the last mixer write on is MIX_2 mix_rec (MIX_3 went first), the mic
 // mute bit is left alone (the mix zeroes the ADC's input instead), and off leaves the mixer disabled
 static void test_codec_dac_to_tx(void)
@@ -1179,6 +1208,7 @@ int main(void)
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
 	test_mic_gain();
+	test_dac_gain();
 	test_codec_dac_to_tx();
 	test_audio_lock();
 	test_fm_tx_limit();

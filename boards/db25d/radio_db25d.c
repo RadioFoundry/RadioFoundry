@@ -48,6 +48,12 @@
 #define DB25D_VOL_GAIN_TOP	15u
 #endif
 #define DB25D_VOL_GAIN_DEFAULT	3u
+// The same steps on the PCM path (DMR voice, beeps), which leaves the modem's codec line out and never passes the
+// BK4819's AF gain (4.5): the line out gain, 0 dB at the default step as before the volume reached it, 3 dB a step
+// below and up to this many dB at the top step (hrc7000_volume_db). Not measured at the speaker (INF)
+#ifndef DB25D_PCM_VOL_TOP_DB
+#define DB25D_PCM_VOL_TOP_DB	12
+#endif
 #define TX_RX_OFF_US		50u		// 3.2: RX paths off, then this long before the transmitter is tuned
 #define TX_SETTLE_MS		3u		// ours: the chip's VCO calibration, before the PA is selected. The stock has none beyond the page's delay
 #define TX_SUPPLY_US		200u		// 3.2: PA select and PTA23 low, then this long before the TX supply
@@ -69,6 +75,7 @@ static bool transmitting;
 static bool audio_open;		// what audio() was last asked, restored after a transmission
 static bool vol_muted;		// volume step 0: the chip output stays off whatever audio() asks
 static uint8_t vol_gain = DB25D_VOL_GAIN_DEFAULT;	// the AF DAC gain nibble the volume step selects
+static uint8_t vol_dac;		// the modem's line out gain code the volume step selects (0 = 0 dB, the default step)
 static bool tx_uhf;
 static uint16_t tx_pa;
 static uint16_t tx_off_us;
@@ -200,6 +207,7 @@ static void init(void)
 
 	// The modem block powered as the DMR glue does, so the reference trim reaches the TCXO in FM builds too
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
+	hrc7000_set_dac_gain(&modem, vol_dac);	// before the init, which writes it: a volume given before init() holds
 	hrc7000_power_on_init(&modem, db25d_cal_tx_center(), DB25D_MIC_GAIN_DB);
 	ref_trim(BIAS_DEFAULT_HZ);
 
@@ -238,10 +246,11 @@ static void speaker_source(void)
 
 // The speaker pins: on for an open squelch (audio()) or while the modem plays samples. DMR voice never opens the
 // squelch path (the radio core leaves the speaker to the PCM stream), so without the PCM term a call played silently.
+// Volume step 0 keeps the amplifier off: the line out's least gain (-31 dB) isn't silent.
 // Off: the amplifier first, so the source switch isn't heard; on: the source first
 static void speaker_pins(void)
 {
-	bool on = (audio_open || pcm_on) && !transmitting;
+	bool on = (audio_open || pcm_on) && !transmitting && !vol_muted;
 	uint32_t s = hrc_irq_save();	// also called from the audio task (db25d_speaker_pcm): the pin writes are read-modify-write
 	if (!on) {
 		hrc_pin_write(PIN_SPK_BODY, true);
@@ -579,7 +588,8 @@ static void audio(bool on)
 
 // The speaker volume (the radio core passes the step as a percent, no knob here): the chip's AF DAC gain, register 0x48 bits
 // 3:0, stepping with DB25D_VOL_GAIN_TOP. Step 0 closes the chip output as well, as the gain alone isn't known to be
-// silent. DMR: the chip's output is the modem's input (4.5), so it keeps the stock gain; the volume comes back with FM
+// silent. DMR: the chip's output is the modem's input (4.5), so it keeps the stock gain; the volume comes back with FM.
+// The PCM path's gain (vol_dac) is set in volume() in every mode
 static void volume_apply(void)
 {
 	if (!supported || mode == RADIO_MODE_DMR || transmitting) {
@@ -597,6 +607,11 @@ static void volume(uint8_t percent)
 	}
 	vol_muted = step == 0;
 	vol_gain = step == 0 ? 0 : (uint8_t)(((step - 1u) * DB25D_VOL_GAIN_TOP + (RADIO_VOLUME_MAX - 1u) / 2u) / (RADIO_VOLUME_MAX - 1u));
+	vol_dac = hrc7000_dac_code(hrc7000_volume_db(step, RADIO_VOLUME_DEFAULT, RADIO_VOLUME_MAX, DB25D_PCM_VOL_TOP_DB));
+	if (modem.buf != NULL) {	// attached by init(), which applies vol_dac itself
+		hrc7000_set_dac_gain(&modem, vol_dac);
+		speaker_pins();		// step 0 and back: the amplifier
+	}
 	volume_apply();
 }
 
@@ -624,6 +639,7 @@ const hal_radio_t db25d_radio = {
 	.status = status,
 	.audio = audio,
 	.volume = volume,
+	.volume_pcm = true,	// the modem's line out gain scales DMR voice and beeps (vol_dac)
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,

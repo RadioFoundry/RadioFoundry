@@ -489,7 +489,7 @@ Ordered; (register, value, why). OpenDM32 writes the whole DMR block once here a
 | 4 | FM_BANDWIDTH (0x500) | 0x5F | FM wideband defaults | KP |
 | 5 | FM_DEV_COEF (0x504) | 0x33500 | FM deviation defaults (overwritten per TX/RX) | KP |
 | 6 | SYS_SOFT_RSTN (0x000) | clear bit 4, wait 2 us | codec reset pulse | KP |
-| 7 | codec AICR_DAC, AICR_ADC, CR_MIC1, CR_MIC2, CR_DAC, CR_ADC, CR_VIC, CR_CK, GCR_DACL, GCR_MIC1, GCR_ADCL, CR_DAC_AGC, CR_ADC_AGC, DR_ADC_AGC | 0xC0, 0xC0, 0x00, 0x70, 0x20, 0x20, 0x0C, 0x40, 0x80, 0x00, 0x8B, 0, 0, 0x34 | audio codec on, mic input 2, gains (`hardware-dm32.md` 9.1) | KP |
+| 7 | codec AICR_DAC, AICR_ADC, CR_MIC1, CR_MIC2, CR_DAC, CR_ADC, CR_VIC, CR_CK, GCR_DACL, GCR_MIC1, GCR_ADCL, CR_DAC_AGC, CR_ADC_AGC, DR_ADC_AGC | 0xC0, 0xC0, 0x00, 0x70, 0x20, 0x20, 0x0C, 0x40, 0x80 (with the line out gain, 0 dB unless set), 0x00, 0x8B, 0, 0, 0x34 | audio codec on, mic input 2, gains (`hardware-dm32.md` 9.1) | KP |
 | 8 | LINEOUT_CTRL (0x088) | 0x01 | speaker line out on | KP |
 | 9 | SIG_CENTER | (cal << 24) or (cal << 16) | TX I/Q center | BIN |
 | 10 | RF_MOD_BIAS_CTRL | ((cal + 384) << 16) or 0x4D4D | modulation balance until a TX frequency is known | BIN |
@@ -676,7 +676,7 @@ information bits in the RX RAM (DS, BIN).
 
 | Mode | Writes |
 |---|---|
-| FM receive | FM_BANDWIDTH and FM_DEV_COEF for the bandwidth; FM_PTT = 0; AUDIO_CONTROL = 0x40; GCR_DACL = 0x80 (0 dB); DAC_PD_CTRL bit 1 set (PA drive DAC off); WORK_MODE = 0x80 |
+| FM receive | FM_BANDWIDTH and FM_DEV_COEF for the bandwidth; FM_PTT = 0; AUDIO_CONTROL = 0x40; GCR_DACL = 0x80 with the board's line out gain (`hrc7000_set_dac_gain`, 0 dB unless a soft volume set it); DAC_PD_CTRL bit 1 set (PA drive DAC off); WORK_MODE = 0x80 |
 | FM transmit | FM_BANDWIDTH and FM_DEV_COEF for the bandwidth; DAC_PD_CTRL bit 1 cleared; WORK_MODE = 0x80; FM_PTT = 1. Board: mic switch to analog, RF chip to TX, PA select, DAC B drive |
 | FM audio on / off in DMR context | AUDIO_CONTROL b6 set and WORK_MODE = 0x80 / b6 cleared and WORK_MODE = 0x6E |
 | Mute mic / line out | codec CR_ADC b7 / CR_DAC b7 = 1 |

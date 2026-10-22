@@ -245,9 +245,9 @@ the mic gain also moves the VOX level. Without `CONFIG_DMR` and without the hook
 
 Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no clicks); level 100 is about half of full
 scale so a beep mixed over voice doesn't clip. Beeps follow the radio's volume up to `beep_level`. A radio with an analog
-knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM path (`volume_pcm`, the DM-1701's
-HR_C6000 RX gain) play the beep at `beep_level`, and the volume acts on it in the speaker path. On a radio where the
-MCU sets the volume somewhere the PCM path doesn't pass (the DB25-D's BK4819 AF gain), the core plays each beep at the
+knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM path (`volume_pcm`: the DM-1701's
+HR_C6000 RX gain, the DB25-D's HR_C7000 line out gain) play the beep at `beep_level`, and the volume acts on it in the
+speaker path. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
 volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`); otherwise the beep
 starts the board's PCM audio stream itself and stops it two silent blocks after the pattern. If that stream delivers no
 block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stream, gives the speaker route back and
