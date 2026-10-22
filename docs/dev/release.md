@@ -84,11 +84,13 @@ reports for a matching codec (`codec=` in the debug link's VERSION, [debuglink.m
 
 ## Sector maps
 
-Each board's map comes from the board registry: the application region and the codec symbols from its linker script,
-the sectors from `[flash] sectors` in its `board.toml` (a platform geometry, or `app+slot`), and the STM32 codec
-windows from the stock file's placement (`stockfw.PROFILES`). `tools/boards.py json --for odrflash` writes them to
+Each board's map comes from the board registry. The application region and the codec symbols come from its linker
+script. The sectors are the platform's default geometry (`default_sectors` in `platform.toml`) from the application's
+start up, or `app+slot` on the HR_C7000; a board's `[flash] sectors` overrides that. The protected range is the flash
+from the platform's `flash_base` to the application. `tools/boards.py json --for odrflash` writes them to
 `tools/odrflash/odrflash/registry.json`, which odrflash, `tools/release.py` and the stub tools read; `tools/ci.sh`
-fails when it is out of date.
+fails when it is out of date. The STM32 codec windows come from the stock file's placement (`stockfw.PROFILES`), which
+odrflash reads when it loads the registry.
 
 A flash sector can only be erased whole, so each board's linker script keeps the application out of the sectors that
 hold the codec. Whether an update can leave the codec alone (keep) depends on that map:
@@ -216,7 +218,7 @@ on once [docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) passes:
    would avoid the first build; that's a later choice.
 2. Set `[status] release = "stable"` in `boards/dm32/board.toml` and regenerate `tools/odrflash/odrflash/registry.json`.
 3. Flashing: the DM-32UV uses Baofeng's serial updater protocol ([hardware-dm32.md](../spec/hardware-dm32.md) 13.2), not
-   DFU. odrflash would get a second backend speaking it over pyserial (the `bfuv32-serial` family). The updater erases
+   DFU. odrflash would get a second backend speaking it over pyserial (the `serial-loader` family). The updater erases
    the whole application area before writing (step 7), the codec slot 0x030E8000..0x03100000 included, so **keep is not
    possible on the DM-32UV**: every flash merges the codec from the stock file (`tools/hrc7000_codec.py` logic as a
    library, like `stockfw` for the DM-1701). The manifest already says so (`keep_supported: false`), and odrflash's
@@ -245,7 +247,7 @@ speak either protocol itself; it calls the tools that do:
 `--stock` is a program flash read of this radio; `tools/hrc7000_codec.py` recognizes it by the code window's SHA-256 and
 builds the slot. The release package never carries the codec, so the first install of a release through update mode
 needs that read (`stub/stubtool.py PORT --progmem FILE`, radio off). Later updates go through the stub and keep the
-slot. The DM-32UV shares the family (`bfuv32-serial`) and so the route; its `--stock` is the stock firmware file.
+slot. The DM-32UV shares the family (`serial-loader`) and so the route; its `--stock` is the stock firmware file.
 
 Host tests (`tools/odrflash/tests/test_serialflash.py`) run `write_image` against stubtool's simulated radio and the
 update mode protocol against serial_loader's simulated loader, and check the route and codec choices, the package and the

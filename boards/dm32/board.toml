@@ -9,8 +9,9 @@ maker = "Baofeng"
 model = "DM-32UV"
 also = []
 kind = "handheld"
-# The VERSION board= values that mean this radio (debug link); board_t .name must be one of them
-debuglink_names = ["DM-32UV", "DM-32", "dm32"]
+# Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
+# build option value's board_name), and the id always counts
+debuglink_aliases = ["DM-32"]
 
 [docs]
 hardware = "docs/spec/hardware-dm32.md"
@@ -20,7 +21,6 @@ bringup = "docs/testing/dm32-bringup.md"
 
 # One-line summaries for the site and the generated tables; the facts are in docs.hardware
 [hardware]
-cpu = "HR_C7000"
 bands = "136-174 / 400-480 MHz"
 power = "1 / 5 W"
 display = "color, 240 × 320"
@@ -32,15 +32,11 @@ summary = "Runs on a radio. FM and DMR voice receive and transmit, CTCSS/DCS, AP
 release = "testing"
 
 # The Baofeng serial updater erases the whole application area before it writes (hardware-dm32.md 13.2 step 7), so
-# the codec can't be kept across an update: every flash merges it again. Two "sectors": the application and the codec
-# slot (dm32.ld), so manifests can say where the codec goes
+# the codec can't be kept across an update: every flash merges it again. The platform's two "sectors", the application
+# and the codec slot (dm32.ld), let manifests say where the codec goes
 [flash]
-backend = "c7000-stub"
-family = "bfuv32-serial"
-link = "serial-cable"
+family = "serial-loader"
 keep_codec = false
-sectors = "app+slot"
-protected = [[0x03000000, 0x0300C000]]
 stock_versions = ["DM32.01.01.049", "DM32.00.01.046"]
 backup = { stock = "full", odr = "full", spi_size = 0x1000000 }
 
@@ -57,14 +53,13 @@ steps = [
 id = "BFUV32-V2"
 sign = "The green LED lights"
 
-# The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the board id HELLO echoes, the power latch and
-# power key pins (255 = none), whether the data memory is the SPI NAND, the program flash size; tested: flashed through
-# the stub on a radio
+# The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the board id HELLO echoes; hold_power: the stub
+# drives the power latch (pins.h PIN_POWER_LATCH, PIN_POWER_KEY) because the radio has a soft power key, not a knob;
+# the program flash size; tested: flashed through the stub on a radio. Whether the data memory is SPI NAND comes from
+# board.mk's drivers
 [flash.stub]
 id = 1
-latch = 255
-key = 255
-nand = false
+hold_power = false
 progmem = 0x100000
 tested = true
 

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""The serial route for the HR_C7000 radios (DM-1801 Pro, DM-32UV; boards.py family "bfuv32-serial"): flashing over
+"""The serial route for the HR_C7000 radios (DM-1801 Pro, DM-32UV; boards.py family "serial-loader"): flashing over
 the programming cable, through one of two existing tools that odrflash wraps instead of speaking their protocols again:
 
   stub        a radio that runs ODR built with CONFIG_STUB_ENTRY=y: stub/stubtool.py loads its RAM monitor over the

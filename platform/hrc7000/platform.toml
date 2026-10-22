@@ -5,10 +5,21 @@
 
 id = "hrc7000"
 isa = "csky"
+cpu = "HR_C7000"
 # The compiler print-cc names, and what builds it when it's missing (ci.sh's skip message)
 toolchain = { cc = "csky-elf-gcc", build = "tools/build-csky-toolchain.sh" }
 # One CI job per group; this group runs inside the csky-elf image
 ci = { group = "C-SKY", container = true }
 stubs = []
-# No sector geometry: the boards' serial loaders erase the application area whole ([flash] sectors = "app+slot")
+# Its boards may carry a [flash.stub] profile of the universal HR_C7000 stub (stub/stubtool.py)
+board_stub = true
+# Linker symbols every board's scripts must define: the codec slot in program flash, the codec's RAM window and the
+# modem table window (platform/hrc7000/vocoder.c, tools/hrc7000_codec.py)
+codec_symbols = ["__codec_slot", "__codec_slot_end", "__codec_run_lo", "__codec_run_hi", "__codec_tab_lo", "__codec_tab_hi"]
+# Program flash (XIP) starts here. The factory loader holds the flash from here to a board's image, which is never
+# written
+flash_base = 0x03000000
+# No sector geometry: the boards' loaders erase the application area whole, so a board has two "sectors", the
+# application and the codec slot
+default_sectors = "app+slot"
 [sectors]

@@ -40,51 +40,36 @@ class CodecProfile:
         self.sources = sources		# stock files odrflash can merge it from (names, for messages)
 
 
-def _pair(v):
+def _tuple(v):
     return tuple(v) if v else None
 
 
 class Board:
-    """One registry entry. e: the board's object in registry.json (tools/boards.py odrflash_view)."""
+    """One registry entry. e: the board's object in registry.json (tools/boards.py odrflash_view), whose keys are this
+    class's attributes; only the ones that are richer than JSON are converted here."""
 
     def __init__(self, e):
-        c = e["codec"]
-        dfu = e["dfu"]
-        self.id = e["id"]
-        self.name = e["name"]
-        self.model = e["model"]			# the short name (the stub's and the serial loader's messages)
-        self.platform = e["platform"]
-        self.platform_stubs = e["platform_stubs"]	# the platform's flash stubs (stub/<dir>), platform.toml
-        self.family = e["family"]		# the flashing route (cli.py, site/static/js/flasher)
-        self.release = e["release"]		# "stable" or "testing"
-        self.app_base = e["app_base"]
-        self.flash_end = e["flash_end"]
+        self.__dict__.update(e)
         self.app_region = tuple(e["app_region"])	# the application's flash (the linker script's MEMORY FLASH)
         self.sectors = [Sector(*s) for s in e["sectors"]]	# the sectors the bootloader can erase, in its order
-        self.codec = CodecProfile(c["profile"], [tuple(w) for w in c["windows"]], c["installed"], c["sources"])
-        self.codec_tool = c["tool"]		# the tools/ script that extracts this radio's codec
-        self.codec_stock = c["stock"]		# the stock file (sha256) the codec placement comes from, or None
-        self.codec_code = c["code"]		# the address of the codec's first word in a merged image
-        self.codec_slot = _pair(c["slot"])	# HR_C7000: the slot in program flash, the code's SRAM window, the
-        self.codec_run = _pair(c["run"])	# modem table window (the __codec_* linker symbols)
-        self.codec_tables = _pair(c["tables"])
-        self.debuglink_names = e["debuglink_names"]	# VERSION board= values that mean this board
-        self.keep_codec_supported = e["keep_codec"]
-        self.key_sha256 = dfu["key_sha256"] if dfu else None
-        self.key_prefix = bytes.fromhex(dfu["key_prefix"]) if dfu else None
-        self.dfu_ids = (dfu["vid"], dfu["pid"]) if dfu else None
-        self.dfu_string1 = dfu["string1"] if dfu else None
-        self.dfu_product = dfu["product"] if dfu else None	# the bootloader's USB product name (what Zadig lists)
-        self.protected = [tuple(p) for p in e["protected"]]	# address ranges never written (bootloader)
+        self.protected = [tuple(p) for p in e["protected"]]	# address ranges never written (the factory loader)
+        self.codec_slot, self.codec_run, self.codec_tables = (_tuple(e[k]) for k in ("codec_slot", "codec_run",
+                                                                                      "codec_tables"))
+        self.dfu_ids = _tuple(e["dfu_ids"])
+        self.key_prefix = bytes.fromhex(e["key_prefix"]) if e["key_prefix"] else None
         fs = e["first_stage"]
-        self.first_stage = (fs["size"], bytes.fromhex(fs["head"])) if fs else None
         # (size, first bytes): the image at app_base starts with a first stage this long, then the application (make's
         # odr_<board>_install.bin); None: the application starts at app_base
-        self.loader_id = e["bootloader"].get("id")	# a serial loader's ID string (also its files' magic)
-        self.loader_keys = e["bootloader"].get("keys")	# the key combination that starts it
-        self.loader_sign = e["bootloader"].get("sign", "")	# what the radio shows in update mode
-        self.stub = e["stub"]			# the universal HR_C7000 stub's profile, or None
-        self.build_options = e["build_options"]	# [{"name", "values": [{"id", "board_name"}]}], default first
+        self.first_stage = (fs[0], bytes.fromhex(fs[1])) if fs else None
+        c = dict(e["codec"])
+        if c["id"] is None:
+            # a stock-file placement (STM32): the windows are where the merge puts the stock file's codec
+            from . import stockfw
+            prof = stockfw.PROFILES[e["codec_stock"]]
+            lay = stockfw.layout(prof)
+            c.update(id=prof["codec_profile"], windows=[(a, n) for a, n, _ in lay], sources=c["sources"] or [prof["name"]])
+            self.codec_code = lay[0][0]
+        self.codec = CodecProfile(c["id"], [tuple(w) for w in c["windows"]], c["installed"], c["sources"] or [])
 
     @property
     def releasable(self):
@@ -117,10 +102,37 @@ class Board:
         return None
 
 
+FORMAT = "odr-board-registry/2"
+
+
 def _load():
     with open(REGISTRY, encoding="utf-8") as f:
         data = json.load(f)
+    if data.get("format") != FORMAT:
+        raise RuntimeError("%s is format %r, not %r: regenerate it (tools/boards.py json --for odrflash)"
+                           % (REGISTRY, data.get("format"), FORMAT))
+    _warn_if_stale()
     return {bid: Board(e) for bid, e in data["boards"].items()}
+
+
+def _warn_if_stale():
+    """From a source tree: warn when a registry source is newer than registry.json (it was edited and not regenerated;
+    the build regenerates it, tools/boards.py check fails on it)."""
+    import glob
+    import sys
+    root = os.path.normpath(os.path.join(os.path.dirname(REGISTRY), "..", "..", ".."))
+    if not os.path.isfile(os.path.join(root, "tools", "boards.py")):
+        return		# the odrflash executable or an installed package: no sources
+    try:
+        built = os.path.getmtime(REGISTRY)
+        srcs = [p for pat in ("boards/*/board.toml", "boards/*/board.mk", "boards/*/*.ld", "boards/*/pins.h",
+                              "platform/*/platform.toml") for p in glob.glob(os.path.join(root, pat))]
+        newer = [os.path.relpath(p, root) for p in srcs if os.path.getmtime(p) > built + 1]
+    except OSError:
+        return
+    if newer:
+        sys.stderr.write("odrflash: warning: %s is older than %s; run make or tools/boards.py json --for odrflash --out "
+                         "%s\n" % (os.path.relpath(REGISTRY, root), newer[0], os.path.relpath(REGISTRY, root)))
 
 
 BOARDS = _load()
