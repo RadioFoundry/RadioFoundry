@@ -21,7 +21,8 @@ base to the application), the erasable sectors (the platform geometry from the a
 (the board's drivers), its pins (pins.h), and on the STM32F4 the crystal (HSE_VALUE) and the bootloader's end (APP_BASE)
 for the stub's board record.
 
-    tools/boards.py list [--platform P] [--release stable|testing] [--comma]   board ids
+    tools/boards.py list [--platform P[,Q]] [--release stable|testing] [--comma]   board ids (an unknown platform is
+                                                  an error, so a typo never selects no board)
     tools/boards.py platform P [key.path]        one platform value
     tools/boards.py get dm32 [key.path]          one value (a list: one item per line), for shell scripts
     tools/boards.py json [--for odrflash|site] [--out FILE | --check FILE]   the merged, derived view
@@ -1019,6 +1020,17 @@ def full_view(boards, root=ROOT):
     return {"boards": out, "platforms": {p: pl.data for p, pl in sorted(load_platforms(root).items())}}
 
 
+def select(boards, platforms, platform=None, release=None):
+    """The ids `list` prints: the boards on any of the comma separated platforms, with that release. An unknown
+    platform is an error, so a misspelled one in CI never selects no board and passes."""
+    want = [p for p in (platform or "").split(",") if p]
+    unknown = [p for p in want if p not in platforms]
+    if unknown:
+        raise RegistryError("unknown platform %s (known: %s)" % (", ".join(map(repr, unknown)), ", ".join(platforms)))
+    return [b for b, x in boards.items() if (not want or x.platform.id in want)
+            and (not release or x.data["status"]["release"] == release)]
+
+
 def dumps(view):
     return json.dumps(view, indent=1, sort_keys=False, ensure_ascii=False) + "\n"
 
@@ -1055,6 +1067,20 @@ def self_test():
         if not cond:
             fails.append(what)
         print("%s %s" % ("ok  " if cond else "FAIL", what))
+
+    # list's selection (ci.sh --platform, the workflows' per-platform jobs)
+    from types import SimpleNamespace as NS
+    fake = {"a": NS(platform=NS(id="p1"), data={"status": {"release": "stable"}}),
+            "b": NS(platform=NS(id="p2"), data={"status": {"release": "testing"}}),
+            "c": NS(platform=NS(id="p1"), data={"status": {"release": "testing"}})}
+    ok(select(fake, ["p1", "p2"]) == ["a", "b", "c"] and select(fake, ["p1", "p2"], "p1") == ["a", "c"] and
+       select(fake, ["p1", "p2"], "p2,p1", "testing") == ["b", "c"] and select(fake, ["p1", "p2", "p3"], "p3") == [],
+       "select: by platform, a comma separated list, by release; a platform without boards selects none")
+    try:
+        select(fake, ["p1", "p2"], "p1,px")
+        ok(False, "select refuses an unknown platform")
+    except RegistryError as e:
+        ok("'px'" in str(e), "select refuses an unknown platform (%s)" % e)
 
     tmpc = tempfile.mkdtemp(prefix="odr-boards-c-")
     with open(os.path.join(tmpc, "board.c"), "w", encoding="utf-8") as f:
@@ -1324,7 +1350,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("list", help="board ids, one per line")
-    p.add_argument("--platform")
+    p.add_argument("--platform", help="only the boards on this platform (a comma separated list: on any of them)")
     p.add_argument("--release", choices=RELEASES)
     p.add_argument("--comma", action="store_true", help="one line, comma separated")
     p = sub.add_parser("get", help="one value of one board (a list: one item per line)")
@@ -1372,8 +1398,7 @@ def main(argv=None):
         # the board's make variables cost a make run each: load only what the command reads
         boards = {} if a.cmd == "platform" else load(only=[a.board] if a.cmd in ("get", "builds") else None)
         if a.cmd == "list":
-            ids = [b for b, x in boards.items() if (not a.platform or x.platform.id == a.platform)
-                   and (not a.release or x.data["status"]["release"] == a.release)]
+            ids = select(boards, load_platforms(), a.platform, a.release)
             print(",".join(ids) if a.comma else "\n".join(ids))
         elif a.cmd in ("get", "platform"):
             if a.cmd == "platform":
