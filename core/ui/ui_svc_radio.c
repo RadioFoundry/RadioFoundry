@@ -21,6 +21,9 @@
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
+#if CONFIG_DMR
+#include "dmr/ambe/ambeVoice.h"
+#endif
 
 uint32_t ui_svc_feat_voice(void)
 {
@@ -273,6 +276,18 @@ int32_t ui_svc_reply_shown(const radio_settings_t *s)
 	return 10;
 }
 
+// Mic gain: the step, or step 5 (the board's levels, FM included) while the vocoder's AGC sets the level (Mic gain
+// dimmed)
+static void apply_mic_gain(int32_t step, bool agc)
+{
+	if (CONFIG_DMR && agc) {
+		step = (int32_t)MIC_GAIN_UNITY;
+	} else if (step < 0) {
+		step = 0;
+	}
+	radio_set_mic_gain((uint8_t)(step > (int32_t)MIC_GAIN_STEPS ? (int32_t)MIC_GAIN_STEPS : step));
+}
+
 // The UI's settings that live in radio_settings_t. The radio core saves them (settings store) and restores them at
 // start-up, so ui_svc_setting_get reads them back from it (ui_svc_storage.c) and a value it already has is not sent
 // again. A local copy, so a run of changes doesn't read back one the radio task hasn't taken in yet
@@ -288,8 +303,21 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		rs.talk_permit = value != 0;
 		break;
 	case UI_SET_MIC_GAIN:		// the board's gain (FM and DMR) or DMR's sample scaling (radio/mic_gain.h)
-		radio_set_mic_gain((uint8_t)(v16 > MIC_GAIN_STEPS ? MIC_GAIN_STEPS : v16));
+		apply_mic_gain(value, ui_svc_setting_get(UI_SET_MIC_AGC) != 0);
 		return;
+#if CONFIG_DMR
+	case UI_SET_MIC_AGC:
+	case UI_SET_NOISE_REDUCTION: {	// tone frames stay on (no setting)
+		bool nr = (id == UI_SET_NOISE_REDUCTION ? value : ui_svc_setting_get(UI_SET_NOISE_REDUCTION)) != 0;
+		bool agc = (id == UI_SET_MIC_AGC ? value : ui_svc_setting_get(UI_SET_MIC_AGC)) != 0;
+		ambeVoiceSetEncodeOptions(VOCODER_OPT_TONE_FRAMES | (nr ? VOCODER_OPT_NOISE_REDUCTION : 0u) |
+					  (agc ? VOCODER_OPT_AGC : 0u));
+		if (id == UI_SET_MIC_AGC) {
+			apply_mic_gain(ui_svc_setting_get(UI_SET_MIC_GAIN), agc);
+		}
+		return;
+	}
+#endif
 	case UI_SET_TONE_VOLUME:		// 0..10
 		rs.beep_level = (uint8_t)(v16 > 10 ? 100 : v16 * 10u);
 		break;

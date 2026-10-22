@@ -133,7 +133,10 @@ static bool v_present(void) { return codec_present; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
 static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
-static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL };
+static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC; }
+static void v_set_options(uint32_t opts) { (void)opts; }
+static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, v_options, v_set_options,
+					    NULL };
 static const char *codec_profile;
 static const char *v_profile(void) { return codec_profile; }
 static uint8_t p_mic(void) { return 0; }
@@ -2635,6 +2638,51 @@ static void test_ui_glue(void)
 	settings_t sv;
 	settings_read(&sv);
 	CHECK(sv.auto_lock_s == 60 && sv.mic_gain == 8 && sv.long_press_ms == 900 && sv.gps == 1 && sv.pos_send_s == 300);
+	// Mic noise reduction: on by default, kept in accent bits 6-7, handed to the vocoder's encode options (tone frames
+	// stay on)
+	CHECK(ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 1 && (sv.accent & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0);
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
+	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 0) && ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 0);
+	ui_svc_apply(UI_SET_NOISE_REDUCTION, 0);
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_TONE_FRAMES);
+	settings_read(&sv);
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == SETTINGS_AUDIO_NO_NOISE_REDUCTION);
+	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 7) && ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 1);
+	ui_svc_apply(UI_SET_NOISE_REDUCTION, 1);
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
+	settings_read(&sv);
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == 0);
+	// Mic AGC: off by default, its own bit, added to the options in force
+	CHECK(ui_svc_setting_get(UI_SET_MIC_AGC) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_MIC_AGC, 1) && ui_svc_setting_get(UI_SET_MIC_AGC) == 1);
+	ui_svc_apply(UI_SET_MIC_AGC, 1);
+	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC));
+	settings_read(&sv);
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == SETTINGS_AUDIO_AGC);
+	// ... and kept when noise reduction changes
+	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 0));
+	ui_svc_apply(UI_SET_NOISE_REDUCTION, 0);
+	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC));
+	settings_read(&sv);
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == (SETTINGS_AUDIO_AGC | SETTINGS_AUDIO_NO_NOISE_REDUCTION));
+	CHECK(ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 1) && ui_svc_setting_set(UI_SET_MIC_AGC, 0));
+	ui_svc_apply(UI_SET_MIC_AGC, 0);
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
+	settings_read(&sv);
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == 0);
+	// The debug link's SETTING 31 sets the options in RAM, any combination (0 = the codec's plain 0x800 word); the
+	// store is not touched, and the next settings change brings theirs back
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 31, 0, 0 }, 3) == DL_ST_OK);
+	CHECK(ambeVoiceEncodeOptions() == 0);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 31, 7, 0 }, 3) == DL_ST_OK);
+	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC));
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 31, 8, 0 }, 3) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 31, 0, 1 }, 3) == DL_ST_BAD_ARG);
+	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC));
+	settings_read(&sv);
+	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == 0);
+	ui_svc_apply(UI_SET_NOISE_REDUCTION, ui_svc_setting_get(UI_SET_NOISE_REDUCTION));
+	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
 	// Settings > Location > GPS reaches the board: the stored value at start-up (ui_app applies every setting), then
 	// each change (the setting store keeps it either way)
 	ui_svc_apply(UI_SET_GPS, ui_svc_setting_get(UI_SET_GPS));
@@ -3074,7 +3122,7 @@ static void test_soft_volume(void)
 	CHECK(debuglink_is_feature_op(DL_OP_VOLUME));	// the dispatcher routes it here
 	// VERSION's codec=: a codec stopped for a stub upload (present() false) still reports its profile from flash
 	{
-		const hal_vocoder_t pv = { v_present, v_reset, v_encode, v_decode, v_profile };
+		const hal_vocoder_t pv = { v_present, v_reset, v_encode, v_decode, v_profile, NULL, NULL, NULL };
 		bool was = codec_present;
 		CHECK(strcmp(debuglink_codec_id(NULL), "none") == 0);
 		codec_present = false;

@@ -210,6 +210,12 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_TFTP_WRITE:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
+	case UI_SET_NOISE_REDUCTION:
+		settings_read(&st);
+		return (st.accent & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0;
+	case UI_SET_MIC_AGC:
+		settings_read(&st);
+		return (st.accent & SETTINGS_AUDIO_AGC) != 0;
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
 	case UI_SET_ROAM_BEACON_S:
@@ -415,6 +421,16 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		tftp_codeplug_allow_write(value != 0);
 #endif
 		return true;
+	case UI_SET_NOISE_REDUCTION:	// ui_svc_apply hands them to the vocoder
+	case UI_SET_MIC_AGC: {
+		// The stored bit is set for "on" with AGC, for "off" with noise reduction (0 = the defaults)
+		uint8_t bit = id == UI_SET_MIC_AGC ? SETTINGS_AUDIO_AGC : SETTINGS_AUDIO_NO_NOISE_REDUCTION;
+		bool set = (value != 0) == (id == UI_SET_MIC_AGC);
+		st = settings_begin();
+		st->accent = (uint8_t)(set ? (st->accent | bit) : (st->accent & ~bit));
+		settings_end(hal_millis());
+		return true;
+	}
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
 	case UI_SET_ALERT_ANSWER:

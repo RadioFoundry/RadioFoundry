@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-1801 Pro start-up pin levels (boards/dm1801pro/boot_pins.h) against the stock firmware's boot levels
-// (docs/spec/hardware-dm1801pro.md 3.1)
+// DM-1801 Pro start-up pin levels (boards/dm1801pro/boot_pins.h) against the stock firmware's boot levels, and the
+// audio path pair PTB14 / PTB15 (boards/dm1801pro/audio_route.h) (docs/spec/hardware-dm1801pro.md 3.1)
 #include <stdio.h>
 #include "boot_pins.h"
+#include "audio_route.h"
 
 static int failures;
 
@@ -52,6 +53,17 @@ int main(void)
 
 	// The power latch is set before the table, on its own
 	CHECK(level_of(PIN_POWER_LATCH) == -1);
+
+	// PTB14 is PTB15's complement in every state, as the stock firmware drives them
+	for (int analog = 0; analog <= 1; analog++) {
+		dm1801pro_audio_route_t r = dm1801pro_audio_route(analog != 0);
+		CHECK(r.spk_source == (analog != 0));
+		CHECK(r.mic_path == !r.spk_source);
+	}
+	// Any transmission (FM or DMR) has PTB14 high: the microphone on the codec ADC. DMR transmit with PTB14 low (the
+	// DM-32UV's DMR level) sent near-silent voice (2026-10-22)
+	CHECK(dm1801pro_audio_route(false).mic_path);
+	CHECK(!dm1801pro_audio_route(false).spk_source);
 
 	if (failures) {
 		printf("dm1801proPinsTest: %d failures\n", failures);

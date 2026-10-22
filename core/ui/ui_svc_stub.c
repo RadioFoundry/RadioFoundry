@@ -75,6 +75,7 @@ static int32_t settings[UI_SET_COUNT] = {
 	[UI_SET_ROAM_SURVEY] = 1, [UI_SET_ROAM_BEACON_S] = 60, [UI_SET_ROAM_BEACON_LEN] = 4, [UI_SET_TFTP_WRITE] = 1,
 	[UI_SET_MSG_FORMAT] = 2,	// ETSI IP text
 	[UI_SET_VIBRATE] = 1, [UI_SET_VOLUME] = RADIO_VOLUME_DEFAULT,
+	[UI_SET_NOISE_REDUCTION] = 1,
 };
 // (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's
 // stand-ins in a build without the store)

@@ -9,6 +9,7 @@
 #include "dm1801pro.h"
 #include "config.h"
 #include "pins.h"
+#include "audio_route.h"
 #include "platform.h"
 #include "hal_time.h"
 #include "cal/baofeng/baofeng_cal.h"
@@ -358,7 +359,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		// The FD6818 and the RX path receive until our first burst and between bursts; dmr_rf_switch keys each burst
 		// with the TX path, and the drive waits for the PA one-shot. A hotspot stays keyed like this while it listens,
 		// so receive must work while keyed (set_freq left the FD6818 idle)
-		hrc_pin_write(PIN_MIC_PATH, false);
+		// The microphone reaches the codec ADC with PTB14 high, the same as for FM (audio_route.h); the DM-32UV's DMR
+		// level (low) cut it
+		hrc_pin_write(PIN_MIC_PATH, dm1801pro_audio_route(false).mic_path);
 		hrc7000_set_mic_gain(&modem, hrc7000_mic_db(MIC_GAIN_DMR_DB, mic_offset_db));
 		fd6818_set_bandwidth(&fd, fd.variant->bw_dmr);
 		fd6818_set_state(&fd, FD6818_STATE_RX);
@@ -378,7 +381,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		hrc7000_set_mic_gain(&modem, hrc7000_mic_db(tx_wide ? MIC_GAIN_FM_25K_DB : MIC_GAIN_FM_12K5_DB,
 			mic_offset_db));
 		hrc7000_fm_tx(&modem, tx_wide);
-		hrc_pin_write(PIN_MIC_PATH, true);
+		hrc_pin_write(PIN_MIC_PATH, dm1801pro_audio_route(false).mic_path);
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
 		fd6818_set_state(&fd, FD6818_STATE_TX);
 		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
@@ -484,8 +487,8 @@ static void rx_sleep(bool sleep)
 }
 
 // The speaker hears one of two sources (PTB15, checked on the radio): 1 = the FD6818's audio output directly (FM
-// receive), 0 = the HR_C7000's codec output (beeps, DMR voice). PTB14 is driven as its complement, as the radio's own
-// firmware does; during a transmission the TX path owns PTB14 (the microphone route).
+// receive), 0 = the HR_C7000's codec output (beeps, DMR voice). PTB14 is always its complement, as the radio's own
+// firmware drives it (audio_route.h), during a transmission too.
 //
 // While APRS listens the HR_C7000 must hear the FD6818 all the time (PTB15 = 1 takes the FD6818's audio off its
 // input), so PTB15 stays 0 and an open squelch plays FM through the HR_C7000's own FM playback and the codec instead
@@ -495,10 +498,9 @@ static void speaker_source(void)
 	// of static through at the end of every beep, even with the amplifier turned off first
 	bool fm_open = mode == RADIO_MODE_FM && !transmitting && !pcm_on && rx_audio;
 	bool analog = fm_open && !aprs_listen;
-	hrc_pin_write(PIN_SPK_SOURCE, analog);
-	if (!transmitting) {
-		hrc_pin_write(PIN_MIC_PATH, !analog);
-	}
+	dm1801pro_audio_route_t r = dm1801pro_audio_route(analog);
+	hrc_pin_write(PIN_SPK_SOURCE, r.spk_source);
+	hrc_pin_write(PIN_MIC_PATH, r.mic_path);
 	if (mode == RADIO_MODE_FM && !transmitting) {
 		bool play = fm_open && aprs_listen;
 		uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task

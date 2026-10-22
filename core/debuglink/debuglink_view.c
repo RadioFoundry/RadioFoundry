@@ -297,6 +297,8 @@ static void storage_section(dl_text_t *t)
 		settings_theme(&sv), sv.ui_flags, settings_updown_home(&sv), sv.low_batt_pct);
 	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", sv.auto_off_min,
 		sv.privacy_type[0], sv.privacy_active);
+	// bit 0 noise reduction off, bit 1 AGC on (settings_t.accent bits 6-7)
+	dl_text(t, "settings.audio_flags=%u\n", (unsigned)((sv.accent & SETTINGS_AUDIO_MASK) >> SETTINGS_AUDIO_SHIFT));
 	dl_text(t, "storage.job_busy=%u\n", storage_job_busy());
 	dl_text(t, "storage.sector_writes=%u\nstorage.sector_skips=%u\n", (unsigned)st.sector_writes,
 		(unsigned)st.sector_skips);
