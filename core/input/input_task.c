@@ -31,8 +31,7 @@ static int16_t enc_carry;		// detents the full queue couldn't take: sent with th
 static volatile uint32_t enc_deferred;	// how often that happened
 
 // Injection state, shared with the callers of input_inject_* (any task): every access in a critical section
-static uint32_t inj_mask, inj_until, inj_released_ms;	// generic injected keys
-static bool inj_active;
+static input_inj_state_t inj = { .idle = INPUT_INJECT_MIN_SCANS };	// generic injected keys
 static uint32_t ptt_mask, ptt_until;			// the injected PTT key, on its own timer
 static bool ptt_held;
 static int8_t inj_enc;
@@ -81,16 +80,11 @@ static uint32_t take_injected(uint32_t now, int8_t *enc)
 	bool ptt_expired = false;
 
 	taskENTER_CRITICAL();
-	if (inj_active && due(now, inj_until)) {
-		inj_active = false;
-		inj_mask = 0;
-		inj_released_ms = now;
-	}
 	if (ptt_held && due(now, ptt_until)) {
 		ptt_held = false;
 		ptt_expired = true;
 	}
-	uint32_t m = (inj_active ? inj_mask : 0) | (ptt_held ? ptt_mask : 0);
+	uint32_t m = input_inj_scan(&inj, now) | (ptt_held ? ptt_mask : 0);
 	*enc = inj_enc;
 	inj_enc = 0;
 	taskEXIT_CRITICAL();
@@ -107,14 +101,14 @@ static void input_task(void *arg)
 	for (;;) {
 		uint32_t now = hal_millis();
 		int8_t ienc;
-		uint32_t inj = take_injected(now, &ienc);
+		uint32_t inj_keys = take_injected(now, &ienc);
 		uint32_t keys = board.input->scan();
 		int8_t enc = board.input->encoder != NULL ? board.input->encoder() : 0;	// keypad-only radios have none
 		raw_keys = keys;
 		enc_total += enc;
 		if ((keys != 0) || (enc != 0)) {
 			last_source = INPUT_SRC_KEYS;
-		} else if ((inj != 0) || (ienc != 0)) {
+		} else if ((inj_keys != 0) || (ienc != 0)) {
 			last_source = INPUT_SRC_HOST;
 		}
 		uint32_t tm = timing;
@@ -131,7 +125,7 @@ static void input_task(void *arg)
 			keymap_pending = false;
 			taskEXIT_CRITICAL();
 		}
-		input_engine_step(&engine, keys | inj, (int8_t)steps, now, emit, NULL);
+		input_engine_step(&engine, keys | inj_keys, (int8_t)steps, now, emit, NULL);
 		vTaskDelayUntil(&wake, pdMS_TO_TICKS(INPUT_SCAN_MS));
 	}
 }
@@ -254,12 +248,10 @@ input_inject_t input_inject_keys(uint32_t mask, uint32_t hold_ms)
 		hold_ms = 3u * INPUT_SCAN_MS;
 	}
 	taskENTER_CRITICAL();
-	if (inj_active || (now - inj_released_ms) < INPUT_INJECT_GAP_MS) {
+	if (!input_inj_ready(&inj, now, INPUT_INJECT_GAP_MS)) {
 		r = INPUT_INJ_BUSY;
 	} else {
-		inj_mask = mask;
-		inj_until = now + hold_ms;
-		inj_active = true;
+		input_inj_hold(&inj, mask, now + hold_ms);
 	}
 	taskEXIT_CRITICAL();
 	return r;
@@ -269,8 +261,8 @@ input_inject_t input_inject_keys(uint32_t mask, uint32_t hold_ms)
 static void release_keys(uint32_t mask)
 {
 	taskENTER_CRITICAL();
-	if (inj_active && (inj_mask & mask) != 0) {
-		inj_until = hal_millis();
+	if (inj.active && (inj.mask & mask) != 0) {
+		inj.until = hal_millis();
 	}
 	taskEXIT_CRITICAL();
 }
@@ -285,10 +277,10 @@ static input_inject_t post_direct(uint8_t action, uint8_t gesture, int8_t value)
 		return INPUT_INJ_NO_KEY;
 	}
 	taskENTER_CRITICAL();
-	if (inj_active || (now - inj_released_ms) < INPUT_INJECT_GAP_MS) {
+	if (!input_inj_ready(&inj, now, INPUT_INJECT_GAP_MS)) {
 		r = INPUT_INJ_BUSY;
 	} else {
-		inj_released_ms = now;
+		inj.released_ms = now;
 		wake_ms = now;
 		wake_set = true;
 	}
@@ -401,7 +393,7 @@ input_inject_t input_inject_ptt(bool down, uint32_t max_ms)
 uint32_t input_injected_keys(void)
 {
 	taskENTER_CRITICAL();
-	uint32_t m = (inj_active ? inj_mask : 0) | (ptt_held ? ptt_mask : 0);
+	uint32_t m = (inj.active ? inj.mask : 0) | (ptt_held ? ptt_mask : 0);
 	taskEXIT_CRITICAL();
 	return m;
 }

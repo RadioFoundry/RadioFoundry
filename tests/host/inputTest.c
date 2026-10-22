@@ -225,6 +225,53 @@ static void test_encoder_idle(void)
 	CHECK(now - e.last_activity_ms == 0);	// holding a key counts as activity
 }
 
+// One input task pass over injected keys: the scan runs at now, late if it waited for a shared bus
+static void inj_pass(input_inj_state_t *s)
+{
+	input_engine_step(&e, keys | input_inj_scan(s, now), 0, now, emit, NULL);
+}
+
+// An injected PRESS (80 ms) whose scans stall behind a 150 ms LCD redraw still gives its press: it is held until the
+// debounce has seen it, not only until its time. And the next one waits for scans that see it released
+static void test_inject_late_scans(void)
+{
+	input_inj_state_t s = { .idle = INPUT_INJECT_MIN_SCANS };
+	reset(0);
+	CHECK(input_inj_ready(&s, now, INPUT_INJECT_GAP_MS));
+	input_inj_hold(&s, 1u << K_OK, now + INPUT_INJECT_PRESS_MS);
+	CHECK(!input_inj_ready(&s, now, INPUT_INJECT_GAP_MS));
+	now += 150;		// the first scan after the hold started, already past its end
+	inj_pass(&s);
+	CHECK(s.active);	// one scan saw it: not released yet
+	int passes = 0;
+	while (s.active && passes < 10) {
+		now += INPUT_SCAN_MS;
+		inj_pass(&s);
+		passes++;
+	}
+	CHECK(passes == INPUT_INJECT_MIN_SCANS);	// two more scans saw it held, the third released it
+	CHECK(s.idle == 1);
+
+	// Released, then the scans stall again: the gap has passed in ms, but the debounce hasn't seen the key up twice
+	now = s.released_ms + 2 * INPUT_INJECT_GAP_MS;
+	CHECK(!input_inj_ready(&s, now, INPUT_INJECT_GAP_MS));
+	inj_pass(&s);
+	CHECK(!input_inj_ready(&s, now, INPUT_INJECT_GAP_MS));
+	inj_pass(&s);
+	CHECK(input_inj_ready(&s, now, INPUT_INJECT_GAP_MS));
+	CHECK(count(ACT_SELECT, GESTURE_PRESS) == 1);
+	// The usual case: scans on time, released at its end
+	input_inj_hold(&s, 1u << K_OK, now + INPUT_INJECT_PRESS_MS);
+	uint32_t until = s.until;
+	while (s.active) {
+		now += INPUT_SCAN_MS;
+		inj_pass(&s);
+	}
+	CHECK(s.released_ms == until);
+	run(50, 0);
+	CHECK(count(ACT_SELECT, GESTURE_PRESS) == 2);
+}
+
 int main(void)
 {
 	test_press();
@@ -237,6 +284,7 @@ int main(void)
 	test_chord();
 	test_held_at_start();
 	test_encoder_idle();
+	test_inject_late_scans();
 	printf("# inputTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

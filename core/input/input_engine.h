@@ -42,6 +42,56 @@ typedef struct {
 	input_key_t keys[INPUT_KEYS_MAX];
 } input_engine_t;
 
+// Injected keys (the debug link's KEY): held until a time, then released by a later scan. The hold and the gap after
+// it count scans as well as ms. A scan can run late, after a wait for a bus the keys share (the DM-32UV's key rows are
+// LCD data lines, held for a whole redraw): measured in ms only, a short press expired before the debounce had seen
+// it twice and was lost
+#define INPUT_INJECT_MIN_SCANS	3	// two agreeing scans to debounce, and one to spare
+
+typedef struct {
+	uint32_t mask;
+	uint32_t until;		// hal_millis() the hold ends
+	uint32_t released_ms;
+	uint8_t seen;		// scans that took the held keys
+	uint8_t idle;		// scans since the release (start at INPUT_INJECT_MIN_SCANS)
+	bool active;
+} input_inj_state_t;
+
+// Whether a new hold can start: nothing held, and the release gap_ms and INPUT_INJECT_MIN_SCANS scans ago
+static inline bool input_inj_ready(const input_inj_state_t *s, uint32_t now, uint32_t gap_ms)
+{
+	return !s->active && now - s->released_ms >= gap_ms && s->idle >= INPUT_INJECT_MIN_SCANS;
+}
+
+static inline void input_inj_hold(input_inj_state_t *s, uint32_t mask, uint32_t until)
+{
+	s->mask = mask;
+	s->until = until;
+	s->seen = 0;
+	s->active = true;
+}
+
+// One scan at now: an expired hold is released once INPUT_INJECT_MIN_SCANS scans took it. The keys this scan sees
+static inline uint32_t input_inj_scan(input_inj_state_t *s, uint32_t now)
+{
+	if (s->active && (int32_t)(now - s->until) >= 0 && s->seen >= INPUT_INJECT_MIN_SCANS) {
+		s->active = false;
+		s->mask = 0;
+		s->released_ms = now;
+		s->idle = 0;
+	}
+	if (s->active) {
+		if (s->seen < UINT8_MAX) {
+			s->seen++;
+		}
+		return s->mask;
+	}
+	if (s->idle < UINT8_MAX) {
+		s->idle++;
+	}
+	return 0;
+}
+
 void input_engine_init(input_engine_t *e, const keymap_entry_t *keymap, uint8_t keymap_len, uint32_t now_ms);
 // One scan: raw key mask and encoder detents since the last call
 // Gesture timing in ms (0 = the defaults); keys held now keep their LONG / REPEAT state

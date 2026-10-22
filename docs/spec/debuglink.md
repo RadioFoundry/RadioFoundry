@@ -206,7 +206,10 @@ Actions (`hal_input.h`): 1 up, 2 down, 3 left, 4 right, 5 select, 6 back, 7 quic
 2 REPEAT, 3 DOWN, 4 UP.
 
 Rate limit: one injected key at a time. While one is held, and for 40 ms after its release (two scans for the
-debounce to see it released), KEY answers busy (3). Every hold is capped at 10 s.
+debounce to see it released), KEY answers busy (3). Every hold is capped at 10 s. Both also count key scans: a hold
+ends only after three scans have seen the key, and the next starts only after three scans have seen it released. A
+scan can run late (the DM-32UV's key rows are LCD data lines, busy for a whole redraw), and a hold measured in ms
+alone ended before the debounce saw it: the press was lost.
 
 ### 3.5 PTT
 
