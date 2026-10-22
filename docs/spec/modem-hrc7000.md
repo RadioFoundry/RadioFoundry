@@ -706,7 +706,10 @@ DM-1801 Pro UHF). DCS gets a third of the deviation from the same value (0x28: 1
 12.5 kHz (305 Hz) and 0x7F at 25 kHz (323 Hz) (BENCH, DM-32UV UHF). The boot stub's restart doesn't reset the modem, so the field
 keeps the last transmission's value; ODR's init writes 0x28 rather than reading it back (a DM-32UV read 0xFF there
 after a 25 kHz transmission and sent CTCSS at 1.9 kHz deviation, BENCH). When FM_PTT drops, the chip sends
-the reverse burst / turn-off code before stopping (DS). On a detected tone the FM signaling system interrupt fires
+the reverse burst / turn-off code before stopping (DS). FM_MOD b9 (reset 1) enables the CDCSS turn-off: a 134.4 Hz
+tone (DS). ODR sets b9 with DCS and, for the core's tail (`radio-features.md` 3.3a), drops FM_PTT while the RF stays
+keyed; FM_PTT on again resumes the code. On the DM-32UV (SDR bench): 134.4 Hz for 0.20 s, then the carrier without
+modulation until the core unkeys (BENCH). Unkeying together with FM_PTT, as before, put none of it on air. On a detected tone the FM signaling system interrupt fires
 (SYS_INTERP_LIST b13) and FM_DECODE_FLAG2 b0 (CTCSS) or b1 (CDCSS) goes 1, back to 0 at the end (DS). CDCSS tail
 detection uses FM_FUNCTION_COEF1 = 0x7F499D (134.4 Hz) (DS).
 

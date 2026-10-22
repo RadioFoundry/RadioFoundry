@@ -367,6 +367,7 @@ bool bk4819_rx_tone_ok(bk4819_t *dev, bk4819_tone_t type)
 
 void bk4819_tx_prepare(bk4819_t *dev, bk4819_tone_t type, uint16_t value)
 {
+	dev->tx_dcs = type == BK4819_TONE_DCS || type == BK4819_TONE_DCS_INV;
 	switch (type) {
 	case BK4819_TONE_CTCSS:
 		bk4819_write(dev, 0x40, BK4819_TX_DEV_CTCSS);
@@ -447,9 +448,16 @@ void bk4819_tone_stop(bk4819_t *dev)
 	dev->tone_hz = 0;
 }
 
+#define CSS_DETECT_DEF	0x028Fu		// the thresholds every channel set writes
+#define CSS_TAIL	0x8000u
+
 // The stock tone-stop at the end of a transmission with the TX flag already clear: it ends in the RX state
 void bk4819_tx_end(bk4819_t *dev)
 {
+	if (dev->tail_on) {
+		bk4819_tx_tail_end(dev);
+	}
+	dev->tx_dcs = false;
 	bk4819_write(dev, BK4819_REG_AF, BK4819_AF_MUTE);
 	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
 	bk4819_write(dev, BK4819_REG_TONE_CTRL, 0x0000);
@@ -459,10 +467,27 @@ void bk4819_tx_end(bk4819_t *dev)
 	dev->tone_hz = 0;
 }
 
+bool bk4819_tx_tail_start(bk4819_t *dev)
+{
+	if (!dev->tx_dcs) {
+		return false;
+	}
+	bk4819_write(dev, BK4819_REG_CSS_DETECT, CSS_TAIL | CSS_DETECT_DEF);
+	dev->tail_on = true;
+	return true;
+}
+
+void bk4819_tx_tail_end(bk4819_t *dev)
+{
+	bk4819_write(dev, BK4819_REG_CSS_DETECT, CSS_DETECT_DEF);
+	dev->tail_on = false;
+}
+
 // 4.5 DMR transmit: the stock digital mode set's TX words. The main chip's microphone path stays on (0xC3FE), but with
 // the deviation off nothing of it reaches the carrier
 void bk4819_dmr_tx_prepare(bk4819_t *dev)
 {
+	dev->tx_dcs = false;
 	bk4819_write(dev, 0x40, BK4819_TX_DEV_OFF);
 	bk4819_write(dev, BK4819_REG_SUBAUDIO, BK4819_SUBAUDIO_OFF);
 }

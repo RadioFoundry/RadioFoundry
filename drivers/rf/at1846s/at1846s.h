@@ -49,6 +49,7 @@ typedef struct {
 	int8_t bw;		// at1846s_bw_t applied, -1 none yet
 	int8_t mode;		// at1846s_mode_t applied, -1 none yet
 	uint8_t state;		// at1846s_state_t last set
+	uint8_t tx_tone;	// at1846s_tone_t of the last at1846s_set_tx_tone()
 } at1846s_t;
 
 // --- Pure helpers (no chip access) ---
@@ -94,6 +95,9 @@ bool at1846s_set_freq(at1846s_t *dev, uint32_t hz);
 bool at1846s_set_state(at1846s_t *dev, at1846s_state_t state);
 // Sub-audio (5.7). value: CTCSS Hz x 10, DCS the 9-bit code (octal digits as 3-bit groups, 023 -> 0x13)
 bool at1846s_set_tx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value);
+// The DCS turn-off tail (5.7), while transmitting DCS: on switches TX sub-audio from CDCSS to CTCSS, which sends 0x4A's
+// 134.4 Hz (the DCS bit rate) as a tone; off goes back to the code. False with no DCS set (nothing written)
+bool at1846s_tx_tail(at1846s_t *dev, bool on);
 bool at1846s_set_rx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value);
 // Reg 0x1B: rssi_db (high byte) and noise_db (low byte), 1 dB units, chip scale (5.9)
 bool at1846s_read_signal(at1846s_t *dev, uint8_t *rssi_db, uint8_t *noise_db);

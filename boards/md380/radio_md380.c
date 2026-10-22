@@ -745,6 +745,14 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	return true;
 }
 
+#if CONFIG_SUBTONE
+// The DCS turn-off tail from the PWM generator (hardware-md380.md 6.4); the core holds the carrier for it
+static bool tx_tail(bool on)
+{
+	return r.tx_on && r.mode == RADIO_MODE_FM && md380_subtone_tx_tail(on);
+}
+#endif
+
 static void tx_off(void)
 {
 #if CONFIG_SUBTONE
@@ -799,6 +807,9 @@ const hal_radio_t md380_radio = {
 	.rx = rx,
 	.tx = tx,
 	.tx_off = tx_off,
+#if CONFIG_SUBTONE
+	.tx_tail = tx_tail,
+#endif
 	.status = status,
 	.audio = audio,
 	.rx_sleep = rx_sleep,
