@@ -55,6 +55,11 @@ void stm32_pin_in(GPIO_TypeDef *port, uint16_t pins, uint32_t pull);
 void stm32_pin_af(GPIO_TypeDef *port, uint16_t pins, uint8_t af, bool open_drain, uint32_t pull);
 void stm32_pin_analog(GPIO_TypeDef *port, uint16_t pins);
 
+// SPI master on the registers (spi.c): mode from cpol / cpha, clock PCLK / 2^(br + 1), software chip select
+void stm32_spi_master_init(SPI_TypeDef *spi, bool cpol, bool cpha, uint8_t br);
+// Byte at a time, polled: tx NULL sends 0xFF, rx NULL discards. False on a stuck peripheral
+bool stm32_spi_xfer(SPI_TypeDef *spi, const uint8_t *tx, uint8_t *rx, uint32_t len);
+
 static inline void stm32_pin_write(GPIO_TypeDef *port, uint16_t pins, bool level)
 {
 	port->BSRR = level ? pins : ((uint32_t)pins << 16);
