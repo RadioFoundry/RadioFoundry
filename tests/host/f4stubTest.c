@@ -31,6 +31,9 @@ static int erases[12];
 static bool fail_program;	// the controller "programs" one bit wrong
 static bool fail_erase;
 static int resets;
+static int feeds;		// the watchdog feeds the engine asked for
+static int feeds_at_erase;	// feeds counted when the last erase / program started
+static int feeds_at_program;
 
 #define SPI_SIZE	0x100000u
 static uint8_t spi[SPI_SIZE];
@@ -70,6 +73,7 @@ static bool sim_erase(void *ctx, unsigned sector)
 		return false;
 	}
 	erases[sector]++;
+	feeds_at_erase = feeds;
 	memset(flash + (f4_sector_addr(sector) - F4_FLASH_BASE), 0xFF, f4_sector_size(sector));
 	return true;
 }
@@ -77,6 +81,7 @@ static bool sim_erase(void *ctx, unsigned sector)
 static bool sim_program(void *ctx, uint32_t addr, const uint32_t *words, uint32_t n)
 {
 	(void)ctx;
+	feeds_at_program = feeds;
 	for (uint32_t i = 0; i < n; i++) {
 		uint32_t w = fail_program && i == n / 2 ? words[i] & (words[i] - 1u) : words[i];	// lowest set bit lost
 		uint8_t *p = flash + (addr + 4u * i - F4_FLASH_BASE);
@@ -86,6 +91,12 @@ static bool sim_program(void *ctx, uint32_t addr, const uint32_t *words, uint32_
 		memcpy(p, &old, 4);
 	}
 	return true;
+}
+
+static void sim_feed(void *ctx)
+{
+	(void)ctx;
+	feeds++;
 }
 
 static void sim_reset(void *ctx)
@@ -136,6 +147,7 @@ static f4stub_port_t port = {
 	.xread = sim_xread,
 	.xerase = sim_xerase,
 	.xprogram = sim_xprogram,
+	.feed = sim_feed,
 	.xsize = SPI_SIZE,
 	.xid = { 0xEF, 0x40, 0x14 },
 };
@@ -388,6 +400,44 @@ static void test_sums_and_read(void)
 	CHECK(simple(F4OP_READ, r, 6) == F4ST_BADARG, "read none");
 }
 
+// The watchdog (docs/spec/watchdog.md 3.1): every request feeds, an erase or a program starts on a fresh feed, and the
+// long reads feed once per 4 KB block, so nothing the engine does runs long without one. The target's own busy waits
+// (a 128 KB erase, up to 2 s) feed through stub_ms() as well; that part is the hardware's
+static void test_feeds(void)
+{
+	reset_flash();
+	uint8_t p[6];
+	put32(p, 0x08000000u);		// SUMS of 256 blocks (the whole 1 MB): every block fed
+	p[4] = 0x01;
+	p[5] = 0x00;
+	int f0 = feeds;
+	CHECK(simple(F4OP_SUMS, p, 6) == F4ST_OK, "sums of 256 blocks");
+	CHECK(feeds - f0 >= 256 + 1, "sums: a feed per block (%d)", feeds - f0);
+
+	put32(p, 0x0805C000u);		// READ of 4 blocks
+	p[4] = 4;
+	p[5] = 0;
+	f0 = feeds;
+	CHECK(simple(F4OP_READ, p, 6) == F4ST_OK, "read of 4 blocks");
+	CHECK(feeds - f0 >= 4 + 1, "read: a feed per block (%d)", feeds - f0);
+
+	f0 = feeds;
+	CHECK(erase(3, F4STUB_MAGIC) == F4ST_OK, "erase sector 3");
+	CHECK(feeds_at_erase > f0, "the erase starts on a fresh feed");
+	uint8_t w[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+	f0 = feeds;
+	CHECK(program(0x0800C100u, w, 8) == F4ST_OK, "program 2 words");
+	CHECK(feeds_at_program > f0, "the program starts on a fresh feed");
+
+	f0 = feeds;
+	CHECK(simple(F4OP_HELLO, NULL, 0) == F4ST_OK, "hello");
+	CHECK(feeds - f0 >= 1, "every request feeds");
+
+	port.feed = NULL;		// a port without one: nothing changes
+	CHECK(simple(F4OP_HELLO, NULL, 0) == F4ST_OK, "hello without a feed hook");
+	port.feed = sim_feed;
+}
+
 static void test_erase_rules(void)
 {
 	reset_flash();
@@ -579,6 +629,7 @@ int main(void)
 	test_peek();
 	test_sums_and_read();
 	test_erase_rules();
+	test_feeds();
 	test_program_rules();
 	test_update_order();
 	test_spi();

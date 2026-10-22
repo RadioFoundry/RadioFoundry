@@ -443,7 +443,7 @@ micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(R
 # The crash log's record, its start-up side on a fake store, the packed report (core/crash/crash.c), and the UI's side
 # of it with the report (core/ui/ui_svc_crash.c), the debug link's (core/debuglink/debuglink_crash.c)
 TESTS   += crashTest
-CRASHT  := crashTest.c $(CORE)/crash/crash.c $(CORE)/ui/ui_svc_crash.c $(CORE)/debuglink/debuglink_crash.c \
+CRASHT  := crashTest.c $(CORE)/crash/crash.c $(CORE)/crash/crash_trace.c $(CORE)/ui/ui_svc_crash.c $(CORE)/debuglink/debuglink_crash.c \
 	   $(CORE)/debuglink/dl_fmt.c
 crashTest: $(CRASHT) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(CORE)/ui/ui_svc.h $(CORE)/debuglink/debuglink.h \
 	   $(CORE)/debuglink/debuglink_proto.h
@@ -460,6 +460,8 @@ run: run-crash
 run-crash: crashTest crashCaptureTest
 	./crashTest
 	./crashCaptureTest
+	@if command -v python3 > /dev/null; then python3 $(ROOT)/tools/odr_fault_trace.py --selftest; \
+	else echo "# odr_fault_trace selftest: skipped (no python3)"; fi
 .PHONY: run-crash
 
 run: run-ambe
@@ -614,8 +616,9 @@ run-debuglink: debuglinkTest
 
 # The runtime RAM-monitor loader's portable state machine (core/debuglink/dl_stub.c, CONFIG_STUB_ENTRY)
 TESTS   += stubEntryTest
-stubEntryTest: stubEntryTest.c $(CORE)/debuglink/dl_stub.c $(CORE)/debuglink/dl_stub.h $(CORE)/debuglink/debuglink_proto.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ stubEntryTest.c $(CORE)/debuglink/dl_stub.c
+stubEntryTest: stubEntryTest.c $(CORE)/debuglink/dl_stub.c $(CORE)/debuglink/dl_stub.h $(CORE)/debuglink/debuglink_proto.h \
+		$(ROOT)/stub/stm32f4/f4stub_header.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ stubEntryTest.c $(CORE)/debuglink/dl_stub.c
 
 run: run-stubEntry
 run-stubEntry: stubEntryTest
@@ -634,9 +637,23 @@ run-taskStack: taskStackTest
 	./taskStackTest
 .PHONY: run-taskStack
 
+# The hardware watchdog's portable side: the idle task's feed, the longest idle gap, the bench starve (core/app/
+# watchdog.c), the debug link's watchdog section and DL_CMD_WATCHDOG (core/debuglink/debuglink_watchdog.c). The
+# platform, the clock, the radio's view and the log are faked; watchdog_stub/ holds the stand-in FreeRTOS headers
+WDOG    := watchdogTest.c $(CORE)/app/watchdog.c $(CORE)/debuglink/debuglink_watchdog.c $(CORE)/debuglink/dl_fmt.c
+TESTS   += watchdogTest
+watchdogTest: $(WDOG) $(CORE)/app/watchdog.h $(ROOT)/hal/hal_watchdog.h $(CORE)/debuglink/debuglink.h \
+              $(CORE)/debuglink/debuglink_proto.h $(wildcard watchdog_stub/*.h)
+	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -DCONFIG_WATCHDOG=1 -o $@ $(WDOG)
+
+run: run-watchdog
+run-watchdog: watchdogTest
+	./watchdogTest
+.PHONY: run-watchdog
+
 # The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
 TESTS   += f4stubTest
-f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
+f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h $(ROOT)/stub/stm32f4/f4stub_header.h
 	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c
 
 TESTS   += f4stubSim

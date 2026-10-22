@@ -40,6 +40,11 @@ HRC_RAMFUNC void hrc_soft_reset(void)
 {
 	__asm__ volatile ("psrclr ie");
 	hrc_rf_safe();
+	// Watchdog off: whether a soft reset clears it is unknown, and the bootloader (its update mode, which waits for the
+	// PC) never feeds it
+	REG32(WDT_BASE + 0x00) = WDT_KEY;
+	REG32(WDT_BASE + 0x10) = 0;
+	REG32(WDT_BASE + 0x00) = 0;
 #if HRC_LOADER_CPU_HZ != HRC_CPU_HZ
 	hrc_clock_restore_loader();	// the clock manager survives a soft reset: the loader has to start on its own PLL
 #endif
@@ -48,7 +53,13 @@ HRC_RAMFUNC void hrc_soft_reset(void)
 	SYS_SOFT_RSTN = 0;
 	for (volatile uint32_t i = 0; i < SOFT_RESET_SPINS; i++) {
 	}
-	for (;;) {	// did not reset: the battery has to come out
+#if CONFIG_WATCHDOG
+	// Did not reset: the watchdog, back on with the loads it had, is the last way out
+	REG32(WDT_BASE + 0x00) = WDT_KEY;
+	REG32(WDT_BASE + 0x10) = 1;
+	REG32(WDT_BASE + 0x00) = 0;
+#endif
+	for (;;) {	// did not reset: the battery has to come out (or the watchdog resets it)
 	}
 }
 
@@ -86,9 +97,13 @@ HRC_RAMFUNC static bool enter_stub(uint32_t entry)
 	hrc_rf_safe();					// transmitter off: nothing may radiate while the stub runs
 	PIC_MASK = 0xFFFFFFFFu;				// mask every PIC source, both banks (no peripheral can interrupt)
 	PIC_MASK_1 = 0xFFFFFFFFu;
-	REG32(WDT_BASE + 0x00) = WDT_KEY;		// watchdog off (defensive; clock_init already did)
+#if CONFIG_WATCHDOG
+	hrc_watchdog_stretch();				// the watchdog keeps running, 32 s; the stub feeds it
+#else
+	REG32(WDT_BASE + 0x00) = WDT_KEY;		// watchdog off, whatever the loader left
 	REG32(WDT_BASE + 0x10) = 0;
 	REG32(WDT_BASE + 0x00) = 0;
+#endif
 	QUAD_ENABLE = 0;				// XIP controller back to reset mode: the program flash is the SSI's
 	LCSFC_BAUDR = 4;				// (both registers: a later soft reset keeps the divider)
 							// again, as hrc_soft_reset does. No DMA reaches SRAM on this board

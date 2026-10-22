@@ -19,6 +19,11 @@ SECTIONS
 	.image :
 	{
 		KEEP(*(.entry))
+		/* The image header at a fixed offset (F4STUB_HDR_OFFSET in f4stub_header.h): the entry code is 12 bytes, so
+		 * the location only moves forward; ld refuses an entry that grew past it */
+		. = 0x10;
+		_stub_header = .;
+		KEEP(*(.stub_header))
 		*(.text) *(.text*)
 		*(.rodata) *(.rodata*)
 		*(.data) *(.data*)
@@ -37,6 +42,7 @@ SECTIONS
 
 	/DISCARD/ : { *(.ARM.exidx*) *(.ARM.extab*) *(.comment) }
 
+	ASSERT(_stub_header == ORIGIN(RAM) + 0x10, "the image header is not at offset 0x10")
 	ASSERT(_image_end - ORIGIN(RAM) <= _image_max, "the stub image is over 8 KB (ODR's staging buffer)")
 	ASSERT(_ebss + 4K <= _estack, "no room left for the stack")
 }
