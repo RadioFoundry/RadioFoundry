@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # The STM32F4 flash stub (docs/spec/stub-stm32f4.md): one image for every STM32F405 radio behind the AnyRoad / TYT
-# bootloader (DM-1701, MD-380, MD-9600). No board code: it keeps the pin levels ODR left, and the host sends the board
+# bootloader. No board code: it keeps the pin levels ODR left, and the host sends the board
 # facts (SPI flash wiring, crystal, bootloader end) in a CONFIG record. The protocol engine is shared with other stubs
 # (stub/common).
 #

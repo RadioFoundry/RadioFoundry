@@ -53,7 +53,8 @@ Keys are named by their job. [Key roles](23-radios.md#key-roles) shows which key
 | Talk to another talkgroup or ID | Hold **#** |
 | Choose who to talk to | **Talk target** (DMR), or **\***, **8** |
 | Monitor | Hold **Monitor** |
-| Scan on / off | Hold **Talk target**, or **\***, **7** |
+| Dual watch on / off | Hold **Talk target**, or **\***, **7** |
+| Scan on / off | **OK**, **6**, **1** |
 | Undo temporary changes | **Back** on Home |
 | Save changes to the channel | Hold **OK** |
 | Back to Home | Hold **Back** |

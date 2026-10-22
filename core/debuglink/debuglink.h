@@ -61,33 +61,24 @@ bool debuglink_dmr_diag_line(uint8_t i, char *buf, uint8_t len);
 void debuglink_dmr_reset(void);
 
 // The radio features (debuglink_view_radio.c): the "features" section, and the RADIO operations for scan, beeps, the
-// tone burst, one setting, roaming, vibration and volume (DL_OP_*; returns a DL_ST_* status)
+// tone burst, one setting, roaming, vibration, volume and the DMR voice test signal (DL_OP_*; returns a DL_ST_* status)
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t);
 enum {
 	DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24,
 	DL_OP_ROAM = 26, DL_OP_VIBRATE = 29, DL_OP_VOLUME = 30, DL_OP_DMR_FIELDS = 31, DL_OP_VFO_COPY = 32,
+	DL_OP_VOICE_TEST = 33,
 };
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
 // RADIO ops the dispatcher hands to debuglink_radio_feature_op: a new DL_OP_* goes here too
 static inline bool debuglink_is_feature_op(uint8_t op)
 {
 	return (op >= DL_OP_SCAN && op <= DL_OP_SETTING) || op == DL_OP_ROAM || op == DL_OP_VIBRATE || op == DL_OP_VOLUME ||
-	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY;
+	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST;
 }
-// VERSION's codec=: the vocoder profile the board recognized in flash (signature and hash checked by the board),
-// "absent" when the board has a vocoder but its check failed, "none" without one (FM-only build). The profile comes
-// first: a codec the board has stopped for a stub upload is still in flash, and a flasher asking then must not see it
-// absent. Read only
+// VERSION's codec= (hal_vocoder_id; the name the host tests use)
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)
 {
-	if (v == NULL) {
-		return "none";
-	}
-	const char *id = v->profile != NULL ? v->profile() : NULL;
-	if (id != NULL) {
-		return id;
-	}
-	return v->present() ? "present" : "absent";
+	return hal_vocoder_id(v);
 }
 // The DMR data service (debuglink_dmr_data.c): the dmr_data view section, the DMR_DATA command (docs/spec/debuglink.md
 // 3.12) and its counter reset. Built without CONFIG_DMR_DATA_CORE: "data.built=0", the command answers unavailable
@@ -122,17 +113,17 @@ size_t debuglink_cmd_split(const uint8_t *req, uint16_t len, uint8_t *out, size_
 void debuglink_view_split(dl_text_t *t);
 #endif
 
-// The RAM-monitor loader (debuglink_stub.c, docs/spec/debuglink.md 3.18): the DL_CMD_STUB handler, and the service
-// hook the host link task calls each pass so the jump happens after the ENTER reply has gone out. Built without
-// CONFIG_STUB_ENTRY (or on a board with no hal_system_t.enter_stub) the command answers unavailable and the hook is empty
-size_t debuglink_cmd_stub(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
-void debuglink_stub_service(void);
-
 // The crash log (debuglink_crash.c, docs/spec/debuglink.md 3.19): the crash section, DL_CMD_CRASH and the service hook
 // that crashes on purpose after the reply has gone out. Without CONFIG_CRASH_LOG: "crash.built=0", unavailable, empty
 void debuglink_view_crash(dl_text_t *t);
 size_t debuglink_cmd_crash(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_crash_service(void);
+
+// The second receiver's SoC (debuglink_rx2.c, docs/spec/debuglink.md 3.22): DL_CMD_RX2, and the service hook that starts
+// the update bridge after the reply has gone out. A board without board.rx2 answers INFO with no flags, the rest
+// unavailable
+size_t debuglink_cmd_rx2(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+void debuglink_rx2_service(void);
 
 // The hardware watchdog (debuglink_watchdog.c, docs/spec/debuglink.md 3.21): the watchdog section, DL_CMD_WATCHDOG's
 // bench tests and the service hook that starts them after the reply. Without CONFIG_WATCHDOG: "watchdog.built=0",

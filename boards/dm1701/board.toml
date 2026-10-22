@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # The DM-1701's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
-# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in dm1701.ld.
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/dm1701/memory.ld.
 
 id = "dm1701"
 name = "Baofeng DM-1701"
@@ -61,6 +61,13 @@ string1 = "AnyRoad Technology"
 product = "Digital Radio in USB mode"
 key_sha256 = "d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb3deff"
 key_prefix = "3A0474AD"
+
+# The STM32F4 stub's board record (stub/f4stub.py, stub-stm32f4.md 5.2): its board id (HELLO echoes it), whether
+# protocol 4 has run on a radio, and the SPI flash's bus, mode and clock (its pins: pins.h PIN_FLASH_*)
+[flash.stub]
+id = 1
+tested = false
+spi = { bus = 1, mode = 0, hz = 4500000 }
 
 # The codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after them
 # and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file odrflash merges the codec

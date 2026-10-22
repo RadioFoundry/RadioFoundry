@@ -6,16 +6,12 @@
 PLATFORM   := stm32f4
 BUILD_OPTIONS := BAND
 BAND_VALUES   := uhf vhf
-MCU_DEFS   := -DSTM32F405xx -DHSE_VALUE=8000000U -DUSER_VECT_TAB_ADDRESS -DVECT_TAB_OFFSET=0xC000U
+MCU        := stm32f405
+# The 8 MHz crystal; the image starts at sector 3, where the Tytera bootloader starts it (hardware-md380.md 1.3)
+HSE_VALUE  := 8000000U
+APP_BASE   := 0x0800C000
 # Bench knobs (docs/testing/md380-bringup.md), e.g. MD380_DEFS="-DMD380_PANEL_TYPE=1 -DMD380_KEEP_SWD"
 MD380_DEFS ?=
 MCU_DEFS   += $(MD380_DEFS)
-LDSCRIPT   := boards/md380/md380.ld
-# The linker script's CPU-only RAM (CCM: no DMA): zeroed at start-up for ODR_CPU_RAM, left alone for _NOINIT
-MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ccmbss"' -DODR_CPU_RAM_NOINIT_SECTION='".ccmram"'
 BOARD_DIRS := boards/md380 platform/stm32f4/hrc drivers/rf/sky72310 drivers/rf/subaudio drivers/modem/hrc5000 drivers/modem/hrc_common drivers/display/st7735 drivers/flash/spi_nor \
 	drivers/gps/nmea_line drivers/gps/gps_rx platform/stm32f4/gps_uart
-# Built only with CONFIG_USB
-BOARD_USB_DIRS := drivers/usb
-HAL_MODULES := hal hal_cortex hal_rcc hal_rcc_ex hal_gpio hal_pwr hal_pwr_ex hal_flash hal_flash_ex hal_dma \
-	hal_spi hal_tim hal_tim_ex hal_adc hal_adc_ex hal_dac hal_dac_ex hal_sram ll_fsmc

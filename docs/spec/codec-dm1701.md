@@ -128,7 +128,7 @@ sequence, the state sizes and the call arguments are in "Codec state init and ca
 The code runs in place from internal flash, at the address the merge moves it to. The tables stay at their stock
 address, so the code's 63 table literals stay as they are.
 
-* `boards/dm1701/dm1701.ld` keeps the application out of every flash sector the codec uses:
+* `boards/dm1701/memory.ld` keeps the application out of every flash sector the codec uses:
 
   | region | sectors | range |
   |---|---|---|

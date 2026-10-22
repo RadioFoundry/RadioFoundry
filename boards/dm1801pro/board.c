@@ -35,7 +35,11 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_LEFT, ACT_NAV_LEFT, ACT_USER_1, false, true },
 	{ KEY_RIGHT, ACT_NAV_RIGHT, ACT_USER_4, false, true },
 	{ KEY_VFO_MR, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false },
+#if CONFIG_DUAL_WATCH
+	{ KEY_AB, ACT_AB, ACT_DUAL_WATCH, false, false },	// zones: hold Left / Right, or Zones
+#else
 	{ KEY_AB, ACT_ZONE_UP, ACT_ZONE_UP, false, false },
+#endif
 	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false },
 	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false },
 	{ KEY_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false },

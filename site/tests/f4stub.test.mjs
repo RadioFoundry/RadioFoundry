@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The STM32F4 stub route (f4stub.js) against the simulated radio (fake.js): the hand-over from ODR, the board record
-// (CONFIG, protocol 3) and its echo, an install in the interlock's order, the MD-380's and MD-9600's sectors, a shared
+// (CONFIG, protocol 4) and its echo, an install in the interlock's order, the MD-380's sectors, a board with other SPI wiring (f4stub.py's test profile), a shared
 // sector, a cable pulled halfway, SPI flash writes, and backups through the loader (readers.js). The records and the
 // HELLO layout are checked against stub/f4stub.py's (f4-vectors.json from fixtures.py). Run with
 // site/tests/run.sh, or: node --test site/tests/
@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { crc32, equal, fromHex, toHex } from "../static/js/flasher/bytes.js";
 import { FakeRadio, simulation, randomBytes, rng } from "../static/js/flasher/fake.js";
-import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI } from "../static/js/flasher/f4stub.js";
+import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI, OP } from "../static/js/flasher/f4stub.js";
 import { StubError } from "../static/js/flasher/stub.js";
 import { Link } from "../static/js/flasher/link.js";
 import { readRadio } from "../static/js/flasher/backup.js";
@@ -24,6 +24,9 @@ const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
 const fb = json("flash-boards.json");
 const stubJson = json("f4-stub.json");
 const vectors = json("f4-vectors.json");
+// the registry's boards and f4stub.py's test profile, a board with other SPI wiring than any of them
+const boards = { ...fb.f4stub.boards, [vectors.test_board.id]: vectors.test_board };
+const OTHER = vectors.test_board.id;
 const image = f4Image(stubJson);
 const quiet = () => {};
 const at = (radio, addr, n) => radio.flash.subarray(addr - 0x08000000, addr - 0x08000000 + n);
@@ -44,7 +47,7 @@ async function running(boardId = "dm1701", opts = {}) {
 
 // The hand-over, then the radio's board record as the install step sends it (configure: false leaves it out)
 async function enter(radio, { board = radio.board.id, configure = true } = {}) {
-	const s = new F4Stub(radio.serialStream(), { log: quiet, reopen: async () => radio.serialStream(), board: fb.f4stub.boards[board] });
+	const s = new F4Stub(radio.serialStream(), { log: quiet, reopen: async () => radio.serialStream(), board: boards[board] });
 	await s.enterFromOdr(image, () => {}, { entry: stubJson.run });
 	if (configure) await s.configure();
 	return s;
@@ -231,7 +234,7 @@ test("a read that fails inside the loader restarts the radio before the error go
 });
 
 
-// ---- protocol 3: the board record
+// ---- protocol 4: the board record
 
 // A stream that answers each request op with a fixed reply frame (stub/f4stub.py's FakeF4 bytes)
 function replay(answers, sent = []) {
@@ -259,7 +262,7 @@ test("board records: the page sends stub/f4stub.py's bytes for every radio", () 
 		assert.equal(fromHex(rec).length, fb.f4stub.record_len);
 		assert.equal(fromHex(rec)[0], fb.f4stub.boards[bid].stub_id);
 	}
-	assert.ok(fb.f4stub.boards.dm1701.v2_wiring && fb.f4stub.boards.md380.v2_wiring && !fb.f4stub.boards.md9600.v2_wiring);
+	assert.ok(fb.f4stub.boards.dm1701.v2_wiring && fb.f4stub.boards.md380.v2_wiring && !vectors.test_board.v2_wiring);
 });
 
 test("CONFIG against stub/f4stub.py's simulated stub: the record goes out byte for byte and the echo is accepted", async () => {
@@ -267,7 +270,7 @@ test("CONFIG against stub/f4stub.py's simulated stub: the record goes out byte f
 		const sent = [];
 		const s = new F4Stub(replay({ [OP.HELLO]: [h.before, h.after], [OP.CONFIG]: [h.config] }, sent), { log: quiet, board: fb.f4stub.boards[bid] });
 		const before = await s.hello();
-		assert.equal(before.version, 3);
+		assert.equal(before.version, vectors.protocol);
 		assert.equal(before.appBase, 0, "no application base before a record");
 		assert.equal(before.spiSize, 0);
 		assert.ok(!s.configured);
@@ -334,19 +337,19 @@ test("a record the stub's checks refuse (application base in sector 0) answers b
 
 // A second page session on a stub that still runs (the "again" button, or a page reloaded): HELLO only, no hand-over
 async function reattach(radio, board) {
-	const s = new F4Stub(radio.serialStream(), { log: quiet, board: fb.f4stub.boards[board] });
+	const s = new F4Stub(radio.serialStream(), { log: quiet, board: boards[board] });
 	await s.hello();
 	return s;
 }
 
 test("another radio's record finds no SPI flash, and a stub configured once is not sent CONFIG again", async () => {
 	const { radio } = await running("dm1701");
-	const s = await enter(radio, { board: "md9600" });	// the MD-9600's wiring on a DM-1701
+	const s = await enter(radio, { board: OTHER });	// other wiring on a DM-1701
 	assert.ok(s.configured);
 	assert.equal(s.info.spiSize, 0);
 	assert.throws(() => s.needSpi(), /no SPI flash/);
 	const again = await reattach(radio, "dm1701");
-	assert.ok(!again.configured, "the echo is the MD-9600's record");
+	assert.ok(!again.configured, "the echo is the other record");
 	await again.configure();
 	assert.equal(radio.configs, 2);
 	assert.equal(again.info.spiSize, radio.spi.length);
@@ -356,30 +359,15 @@ test("another radio's record finds no SPI flash, and a stub configured once is n
 	assert.equal(radio.configs, 2, "no second CONFIG");
 });
 
-test("a protocol 2 stub left running serves the DM-1701 but not the MD-9600", async () => {
+test("a protocol 2 stub left running serves the DM-1701 but not a board with other wiring", async () => {
 	const { radio } = await running("dm1701", { stubVersion: 2 });
 	const s = await enter(radio);
 	assert.ok(s.configured);
 	assert.equal(radio.configs, 0, "no CONFIG to a protocol 2 stub");
 	assert.equal(s.info.spiSize, radio.spi.length);
-	const s2 = await reattach(radio, "md9600");
-	await assert.rejects(s2.configure(), /can't serve the TYT MD-9600/);
+	const s2 = await reattach(radio, OTHER);
+	await assert.rejects(s2.configure(), /can't serve the SPI2 test board/);
 	assert.ok(!s2.configured);
-});
-
-test("MD-9600: CONFIG with its own wiring, then an install in sectors 3-7 with the codec sectors untouched (simulated only)", async () => {
-	const { sim, radio } = await running("md9600");
-	const owned = fb.f4stub.boards.md9600.owned;
-	assert.deepEqual(owned, [[APP_BASE, 0x08080000]]);
-	const s = await enter(radio);
-	assert.equal(toHex(s.info.record), vectors.records.md9600);
-	assert.equal(s.info.spiSize, radio.spi.length);
-	const codec = at(radio, 0x08080000, 0x80000).slice();
-	await s.writeImage(owned, [[APP_BASE, app(8, 0x50000)]]);
-	assert.equal(radio.events[1], "erase 3");
-	assert.ok(equal(at(radio, APP_BASE, 0x50000), app(8, 0x50000)));
-	assert.ok(equal(at(radio, 0x08080000, 0x80000), codec), "sectors 8-11 unchanged");
-	for (const [a, d] of sim.codecSegments) assert.ok(equal(at(radio, a, d.length), d));
 });
 
 test("backup through the loader on a radio whose stub refuses the record: the radio restarts into ODR and the error goes up", async () => {

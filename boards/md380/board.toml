@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # The MD-380's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
-# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in md380.ld.
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/md380/memory.ld.
 
 id = "md380"
 name = "TYT MD-380"
@@ -29,7 +29,7 @@ gallery = "160x128"
 level = "supported"
 summary = """\
 FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug \
-and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the VHF image."""
+and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image."""
 release = "stable"
 
 # One band per radio, a build choice (board.mk BAND). The first value is the default build; ci and the release
@@ -66,6 +66,13 @@ string1 = "AnyRoad Technology"
 product = "Digital Radio in USB mode"
 key_sha256 = "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd"
 key_prefix = "2EDF40B5"
+
+# The STM32F4 stub's board record (stub/f4stub.py, stub-stm32f4.md 5.2): its board id (HELLO echoes it), whether
+# protocol 4 has run on a radio, and the SPI flash's bus, mode and clock (its pins: pins.h PIN_FLASH_*)
+[flash.stub]
+id = 2
+tested = false
+spi = { bus = 1, mode = 0, hz = 4500000 }
 
 # The codec where the merge puts it (docs/spec/codec-placement.md): the main table window at its stock address in
 # sector 8, the small ones in sectors 10 and 11, the code moved to the start of sector 11 and the descriptor. The

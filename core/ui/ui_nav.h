@@ -10,6 +10,7 @@
 #include "hal_input.h"
 #include "radio/radio.h"
 #include "ui_screens.h"
+#include "ui_svc.h"
 
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
@@ -20,7 +21,7 @@ typedef enum {
 	SCR_CRASH,			// the crash log's record (arg 1: the prompt after the restart; CONFIG_CRASH_SCREEN)
 	SCR_CRASH_TO,			// the crash report's target, picked from the contacts (CONFIG_CRASH_REPORT)
 	SCR_TEXT, SCR_CHPICK, SCR_DISCARD,	// the channel editor's name entry, contact / list picker, unsaved changes
-	SCR_HWOPT,			// the board's hardware options (Settings > Advanced > Hardware; hal_hwopt.h)
+	SCR_DUAL, SCR_DUAL_PICK, SCR_DUAL_ZONE,	// dual watch: its actions, a channel for A or B (arg: the pane), a zone
 	SCR_COUNT
 } ui_scr_t;
 
@@ -92,6 +93,27 @@ bool ui_has_action(uint8_t action);
 void ui_apply_setting(uint8_t id, int32_t v);
 // Scan on / off (quick 7, Tools 1, long SK2), with a toast that says what scans: the zone, or the band in the VFO
 void ui_scan_toggle(void);
+// Actions for the last caller (CONTEXT on Home), or a toast when there is none
+void ui_open_caller_actions(void);
+// A list row's number key ('1'..'9', '0')
+void item_num_set(ui_item_t *it, uint16_t n);
+
+#if CONFIG_DUAL_WATCH
+// Dual watch (ui_dual.c, docs/ux/dual-watch.md)
+void ui_dual_reset(void);			// at ui_app_init
+bool ui_dual_start(const ui_dual_ref_t *b);	// A = the channel on view, B = b; false with a toast when it can't
+void ui_dual_stop(void);			// off, staying on the selected channel
+void ui_dual_select(uint8_t pane);		// PTT and the keys on pane 0 (A) or 1 (B)
+void ui_dual_ab_key(void);			// the A/B key: the other channel (a toast when the watch is off)
+bool ui_dual_zone_step(int dir);		// the zone keys: the selected channel's zone (false: the watch is off)
+bool ui_dual_zone_home(void);			// the Home zone key: the selected channel to the first zone (same)
+void ui_dual_key(void);				// the Dual watch key: on (the last B, or the picker) / off
+bool ui_dual_home_key(const input_event_t *ev);	// Home's keys while it runs (true: used)
+bool ui_dual_tick(const radio_view_t *v, uint32_t now);	// true: redraw
+const radio_view_t *ui_dual_view(const radio_view_t *v);	// the view with the selected channel's settings
+void ui_dual_back(void);			// Back on Home with nothing to clear: twice stops the watch
+bool ui_dual_vfo_key(void);			// the VFO key: the selected channel to / from the VFO (false: off)
+#endif
 
 // Filtered lists: row i -> raw index; the filter text
 uint16_t ui_filter_count(void);

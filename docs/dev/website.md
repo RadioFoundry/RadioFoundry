@@ -35,8 +35,8 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Shows | Comes from |
 |---|---|
 | Radios, their order and status | The board registry, `boards/<radio>/board.toml` (`tools/boards.py json --for site`). `order` sorts them; the lowest is the home page's radio |
-| Planned radios | The rows of the [radio survey](../spec/radios.md) "Summary table" that name no board, by their port status cell: `planned`, `planned, hardware needed`, `in progress, #N` (badge "In progress", linked to the pull request) or `not planned` (not listed) |
-| A radio's one-line note for visitors | board.toml `[status] summary`, the same line the README and the user manual show; a catalog may translate it as `radio.note.<radio>`. A planned radio's: `planned.note.<slug of the survey name>` in the string catalog (the build warns when one is missing) |
+| Planned radios | The rows of the [radio survey](../spec/radios.md) "Summary table" that name no board, by their Port cell (`tools/registry_docs.py`): `Planned`, `Planned, hardware needed`, `In progress, #N` (badge "In progress", linked to the pull request) or `Not planned` (not listed), each with an optional `. note` |
+| A radio's one-line note for visitors | board.toml `[status] summary`, the same line the README and the user manual show; a catalog may translate it as `radio.note.<radio>`. A planned radio's: the note of its Port cell, which a catalog may translate as `planned.note.<slug of the survey name>` |
 | A radio's name, bands, processor, screen, bootloader steps, flash backend, codeplug location | board.toml, the CPU from `platform/<p>/platform.toml`, the backend from the `[flash] family`, the codeplug location from the board's `hal_flash_map_t` |
 | A radio's status badge (Supported, In development) | board.toml `[status] level`: `supported` reads Supported, `testing` and `bring-up` read In development |
 | Which features a radio has, per variant | `make BOARD=<radio> [VARIANT=<v>] print-config` and `print-required`; what it can't have is config.mk `BOARD_UNSUPPORTED`, with its reasons, through the registry |
@@ -200,7 +200,7 @@ Sentry; the page then works the same and offers the download only.
 | `codeplug.js` | Codeplug formats and the converter registry | |
 | `fake.js` | A simulated radio: bootloader with a flash model, ODR's serial port, a synthetic stock file | `odrflash/fakedfu.py` |
 | `stub.js`, `lz4.js` | The HR_C7000 boot stub: loaded through the boot ROM or handed over by ODR, then reads, sector writes and the LED | `stub/stubtool.py` |
-| `f4stub.js` | The STM32F4 loader (DM-1701, MD-380, MD-9600): handed over by ODR, the board record (CONFIG) and its echo, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
+| `f4stub.js` | The STM32F4 loader: handed over by ODR, the board record (CONFIG) and its echo, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
 | `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/hrc7000_codec.py` |
 | `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, ODR's debug link (VERSION, 0x1A), the stub and both flash chips | |
 | `usmart.js`, `iap.js`, `iapui.js` | The stock side of an HR_C7000 radio, by protocol: the stub loaded through a stock debug console (USMART, `flash.stock_console`), the vendor update mode write (IAP, `flash.update_mode`) and their steps | `docs/spec/hardware-db25d.md` 7 |
@@ -273,8 +273,8 @@ What can be read depends on the firmware running:
 | Radio runs | Read |
 |---|---|
 | ODR | Everything, through the CPS reads (areas 1, 5, 9 and 10): the whole SPI flash, the internal flash, the security registers |
-| ODR with stub entry (DM-1701, MD-380, MD-9600) | The same. The radio info and security registers come over the debug link; the internal flash and the SPI flash come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into ODR. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves ODR running, and the debug link reads everything |
-| Stock (DM-1701, MD-380, MD-9600) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing ODR: flashing never touches the SPI flash, and ODR doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
+| ODR with stub entry (STM32F4) | The same. The radio info and security registers come over the debug link; the internal flash and the SPI flash come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into ODR. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves ODR running, and the debug link reads everything |
+| Stock (STM32F4) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing ODR: flashing never touches the SPI flash, and ODR doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
 
 ### Restore
 
@@ -352,7 +352,7 @@ data memory includes it. Restore writes the program memory back from 0x0300C000 
 
 ### STM32F4 radios (the loader route)
 
-A DM-1701, MD-380 or MD-9600 on stock firmware always installs through its bootloader (`dfu.js`): that is the only way into a
+An STM32F4 radio on stock firmware always installs through its bootloader (`dfu.js`): that is the only way into a
 stock radio. Once it runs ODR, an update can skip the bootloader. When the "current firmware" step finds ODR, the page
 asks for the STUB offer (command 0x1A op 0; on the STM32 it only reports the staging buffer and parks nothing). The
 loader route is used when all of these hold:
@@ -377,25 +377,19 @@ power-on, which that route finishes.
 
 | Loader answer | What the page does |
 |---|---|
-| HELLO before CONFIG: application base 0, no SPI flash, configured flag clear | Expected for protocol 3: it sends CONFIG |
+| HELLO before CONFIG: application base 0, no SPI flash, configured flag clear | Expected for protocol 4: it sends CONFIG |
 | CONFIG refused (status `0D`) | Stops, nothing written; the bootloader route opens |
 | HELLO after CONFIG echoes other bytes, or another application base | Stops, nothing written |
 | A write answered `11` (not configured) | Stops; the page checks the echo before every write, so this means the loader lost its record |
-| Protocol 2 (an older loader still running from an earlier session) | No CONFIG: accepted only for a radio with the DM-1701's wiring (`v2_wiring`), so never for the MD-9600 |
+| Protocol 2 (an older loader still running from an earlier session) | No CONFIG: accepted only for a board whose record matches the wiring built into it (`v2_wiring`) |
 | A backup through the loader whose record is refused | The page restarts the radio into ODR before it reports the error |
 
-The MD-9600 (`boards/md9600/radio.json`) is on the page as a bring-up radio, like the MD-380 before it: status
-`testing` (the build step shows the testers-only warning), not releasable in odrflash, and the bootloader steps from
-[hardware-md9600.md](../spec/hardware-md9600.md) 14.1. Its record puts the SPI flash on SPI2 with chip select PB12
-and holds the LCD's PD14 high; a protocol 2 loader, which has the DM-1701's SPI1 wiring built in, is refused for it.
-None of this has run on an MD-9600: the bootloader keys, the DFU write, the loader route and whether the TYT
-bootloader stays in update mode after an interrupted loader install are all unverified.
-
-`data/flash-boards.json` carries per board (`f4stub`, from `stub/f4stub.py` `BOARDS` and `config_record()`): the
+`data/flash-boards.json` carries per board (`f4stub`, from the board registry's `[flash.stub]` through `stub/f4stub.py` `BOARDS` and `config_record()`): the
 owned flash, the stub's board id, the 24-byte record as hex, and `v2_wiring`, with the protocol version and record
 length at the top. `data/f4-stub.json` gives the image and its protocol. The page sends the record as it is and never
 builds one, so the page and `stubtool.py` can't drift; `site/tests/f4stub.test.mjs` checks the records and the HELLO
-layout against `f4stub.py`'s simulated stub (`f4-vectors.json`, written by `site/tests/fixtures.py`).
+layout against `f4stub.py`'s simulated stub (`f4-vectors.json`, written by `site/tests/fixtures.py`), and a board
+with other SPI wiring against f4stub's test profile.
 
 ### Firmware images and custom builds
 

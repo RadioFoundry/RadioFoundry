@@ -217,54 +217,11 @@ def registry(view="site"):
 BOARD_STATUSES = ("supported", "testing", "in_progress", "planned")
 # a board's [status] level as the site's badge: a radio still being brought up reads "in development"
 LEVEL_STATUS = {"supported": "supported", "testing": "testing", "bring-up": "testing"}
-SURVEY = "docs/spec/radios.md"
-SURVEY_HEADING = "Summary table"
-PORT_COLUMNS = ("Port", "ODR today")	# the survey's port status column (its older name second)
-
-
-def survey_port(cell):
-	"""A survey row's port status: (status, pull request number or None), or None for a radio not planned.
-	The cell starts with "planned", "planned, hardware needed", "in progress, #N" or "not planned"."""
-	text = strip_md(cell).lower()
-	if text.startswith("not planned"):
-		return None
-	if text.startswith("in progress"):
-		m = re.match(r"in progress,?\s*#(\d+)", text)
-		return ("in_progress", int(m.group(1)) if m else None)
-	if text.startswith("planned"):
-		return ("planned", None)
-	raise SourceError("%s: port status %r is none of planned, planned, hardware needed, in progress, #N, not planned"
-			  % (SURVEY, strip_md(cell)))
-
-
-def survey_rows(models):
-	"""The survey's radios that have no board yet, in its order: {radio, support, status, pr, hardware_needed}. A row
-	names a board when the board's model is one of its radios."""
-	for heading, head, rows in md_tables(read(SURVEY)):
-		col = next((c for c in PORT_COLUMNS if c in head), None)
-		if heading != SURVEY_HEADING or col is None:
-			continue
-		out = []
-		for r in rows:
-			if len(r) != len(head):
-				continue
-			radio, port = strip_md(r[0]), r[head.index(col)]
-			if any(re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(m), radio) for m in models):
-				continue
-			st = survey_port(port)
-			if st is None:
-				continue
-			out.append({"radio": radio, "support": strip_md(port), "status": st[0], "pr": st[1],
-				    "hardware_needed": "hardware needed" in port.lower()})
-		return out
-	raise SourceError("%s: no table with a %s column under '## %s'" % (SURVEY, " or ".join(PORT_COLUMNS), SURVEY_HEADING))
-
-
 def boards(feature_names, variant_ids):
 	"""The registry's boards with their status badge and the resolved switches per variant, and the survey's radios
 	without a board."""
-	out = []
-	for r in registry("site")["boards"]:
+	out, reg = [], registry("site")
+	for r in reg["boards"]:
 		bid = r["id"]
 		r["status"] = LEVEL_STATUS[r["level"]]
 		if r["codeplug"] is None:
@@ -283,7 +240,8 @@ def boards(feature_names, variant_ids):
 				raise SourceError("make print-config for %s lists unknown switches %s" % (bid, sorted(unknown)))
 			r["config"][v] = sorted(k for k, val in cfg.items() if val == "y")
 		out.append(r)
-	return out, survey_rows([r["model"] for r in out])
+	# the radio survey's radios without a board (docs/spec/radios.md Port cells, read by the registry)
+	return out, [dict(p, support=p["note"]) for p in reg["planned"]]
 
 
 def screens(gallery):
@@ -396,11 +354,11 @@ def c7000_stub():
 def f4_flash():
 	"""What the web flasher's loader route needs per STM32F4 radio (stub/f4stub.py BOARDS), on a radio that already
 	runs ODR: the flash its firmware owns, and the board record the stub takes in CONFIG (config_record(), as hex), so
-	the page and f4stub.py send the same bytes. v2_wiring: the radio has the wiring a protocol 2 stub had built in (the
-	DM-1701's), so an older stub left running can still serve it. The stub image goes to f4-stub.json (f4_stub()),
+	the page and f4stub.py send the same bytes. v2_wiring: the radio has the wiring a protocol 2 stub had built in
+	(f4stub.V2_WIRING), so an older stub left running can still serve it. The stub image goes to f4-stub.json (f4_stub()),
 	loaded only when it is used."""
 	f4 = _tool("stub", "f4stub.py")
-	v2 = f4.config_record("dm1701")[1:]
+	v2 = f4.V2_WIRING
 	return {"app_base": f4.APP_BASE, "protocol": f4.VERSION, "record_len": f4.REC_LEN,
 		"boards": {bid: {"owned": [list(r) for r in b["owned"]], "codec": list(b["codec"]) if b["codec"] else None,
 				 "name": b["name"], "stub_id": b["id"], "record": f4.config_record(bid).hex(),

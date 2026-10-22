@@ -68,6 +68,19 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 	case 0:
 		dl_text(t, "dmr.built=1\n");
 		dl_text(t, "dmr.active=%u\ndmr.codec=%u\n", d->active, d->codec);
+		// The vocoder's TX state: here, as dmr_stats (the counters) fills most of a reply
+		{
+			ambe_voice_stats_t a;
+			ambeVoiceGetStats(&a);
+			dl_text(t, "voice.tx_mic_peak=%u\nvoice.tx_test=%u\n", (unsigned)a.tx_mic_peak,
+				ambeVoiceTestSignal() ? 1u : 0u);
+		}
+		// Encode options (VOCODER_OPT_*): in force and supported; the codec's own word when the board reports it
+		dl_text(t, "voice.enc_options=0x%X\nvoice.enc_supported=0x%X\n", (unsigned)ambeVoiceEncodeOptions(),
+			(unsigned)ambeVoiceEncodeOptionsSupported());
+		if (board.vocoder != NULL && board.vocoder->encode_flags != NULL) {
+			dl_text(t, "voice.enc_flags=0x%X\n", (unsigned)board.vocoder->encode_flags());
+		}
 		dl_text(t, "dmr.state=%s\n", dmr_state_key(d->state));
 		dl_text(t, "dmr.phase=%s\n", phase_key(cv->phase));
 		dl_text(t, "dmr.tx_error=%s\n", tx_error_key(cv->tx_error));
@@ -85,6 +98,14 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.target_manual=%u\ndmr.privacy=%u\ndmr.alias_tx=%u\n", d->target_manual, d->privacy,
 			d->alias_tx);
 		dl_text(t, "dmr.underruns=%u\n", (unsigned)d->underruns);
+		// The mic content of the latest transmission: here, not in dmr_stats, which is near the reply size
+		{
+			ambe_voice_stats_t a;
+			ambeVoiceGetStats(&a);
+			dl_text(t, "voice.tx_mic_level_db=%u\nvoice.tx_mic_spread_db=%u\nvoice.tx_mic_zc=%u\n"
+				"voice.tx_mic_blocks=%u\n", (unsigned)a.tx_mic_level_db, (unsigned)a.tx_mic_spread_db,
+				(unsigned)a.tx_mic_zc, (unsigned)a.tx_mic_blocks);
+		}
 		break;
 	case 1:
 		call(t, "call", &d->call);
@@ -126,12 +147,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			(unsigned)a.rx_bad_at[2]);
 		dl_text(t, "voice.tx_frames=%u\nvoice.tx_overflows=%u\nvoice.rx_peak=%u\n", (unsigned)a.tx_frames,
 			(unsigned)a.tx_overflows, (unsigned)a.rx_peak);
-		// Encode options (VOCODER_OPT_*): in force and supported; the codec's own word when the board reports it
-		dl_text(t, "voice.enc_options=0x%X\nvoice.enc_supported=0x%X\n", (unsigned)ambeVoiceEncodeOptions(),
-			(unsigned)ambeVoiceEncodeOptionsSupported());
-		if (board.vocoder != NULL && board.vocoder->encode_flags != NULL) {
-			dl_text(t, "voice.enc_flags=0x%X\n", (unsigned)board.vocoder->encode_flags());
-		}
+		dl_text(t, "voice.rx_repeats=%u\nvoice.tx_repeats=%u\n", (unsigned)a.rx_repeats, (unsigned)a.tx_repeats);
 		break;
 	}
 	default:

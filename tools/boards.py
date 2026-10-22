@@ -7,22 +7,27 @@ Sources, each fact in one of them:
   boards/<id>/board.toml        identity, status, build options, CI extras, flashing family, stub profile, codec route,
                                 site data
   platform/<p>/platform.toml    toolchain, CPU, CI group, platform stubs, flash base and sector geometries, codec symbols
-  boards/<id>/board.mk          PLATFORM, LDSCRIPT, BOOT_*, BOARD_DIRS, read through make (print-vars), so the
-                                board's config.mk and its conditionals count; the build reads no TOML
-  boards/<id>/*.ld              the application region (MEMORY FLASH) and the codec symbols (__codec_*)
+  boards/<id>/board.mk          PLATFORM, APP_BASE, LDSCRIPT, BOOT_*, BOARD_DIRS, read through make (print-vars), so
+                                the board's and the platform's config.mk and their conditionals count; the build reads
+                                no TOML
+  boards/<id>/*.ld              the application region (MEMORY FLASH of memory.ld) and the codec symbols (__codec_*)
   boards/<id>/*.c               the board_t .name values (the names the debug link reports) and hal_flash_map_t
                                 (where the codeplug lives in data flash)
-  boards/<id>/pins.h            the power latch and key pins the stub holds
+  boards/<id>/pins.h            the pins a stub needs: the power latch and key it holds (HR_C7000), the SPI flash's
+                                pins and the chip selects it keeps high (STM32F4)
 
 Derived rather than typed: the flashing link from the family, the CPU from the platform, the protected range (flash
 base to the application), the erasable sectors (the platform geometry from the application up), the stub's NAND flag
-(the board's drivers) and its power pins (pins.h).
+(the board's drivers), its pins (pins.h), and on the STM32F4 the crystal (HSE_VALUE) and the bootloader's end (APP_BASE)
+for the stub's board record.
 
     tools/boards.py list [--platform P] [--release stable|testing] [--comma]   board ids
     tools/boards.py platform P [key.path]        one platform value
     tools/boards.py get dm32 [key.path]          one value (a list: one item per line), for shell scripts
     tools/boards.py json [--for odrflash|site] [--out FILE | --check FILE]   the merged, derived view
     tools/boards.py check                         registry consistency
+    tools/boards.py docs [--check] [--floor REF]  the docs blocks generated from the registry (tools/registry_docs.py);
+                                                  --floor: fail when a radio reads lower than the README at REF
     tools/boards.py self-test                     the loader's own tests, on fixtures
 
 Needs Python 3.11 or later (tomllib). Scripts find one with tools/odr_python.sh. The tools that flash radios read the
@@ -33,6 +38,9 @@ import json
 import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import registry_docs  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -66,7 +74,10 @@ APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one fo
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
-MAKE_VARS = ("PLATFORM", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS", "BOARD_UNSUPPORTED")
+MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
+             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "HSE_VALUE")
+# The pins.h names the STM32F4 stub's board record reads: the SPI flash's clock, data and chip select (stub-stm32f4.md 5.2)
+F4_SPI_PINS = ("PIN_FLASH_SCK", "PIN_FLASH_MISO", "PIN_FLASH_MOSI", "PIN_FLASH_CS")
 
 
 class RegistryError(Exception):
@@ -127,8 +138,15 @@ BOARD_SCHEMA = {
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str)}),
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str)}),
-        "stub": _opt({"id": _req(int), "hold_power": _req(bool), "progmem": _req(int), "tested": _req(bool),
-                      "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int)}),
+        # a board profile of its platform's stub (platform.toml board_stub): id and tested always, the keys the
+        # platform lists in board_stub.keys, nothing another platform's stub takes
+        "stub": _opt({"id": _req(int), "tested": _req(bool),
+                      "hold_power": _opt(bool), "progmem": _opt(int),	# the HR_C7000 universal stub
+                      "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int),
+                      # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
+                      # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
+                      "spi": _opt({"bus": _req(int), "mode": _req(int), "hz": _req(int)}),
+                      "idle_cs": _opt(STR_LIST)}),
     }),
     # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(str), "profile": _opt(str), "sources": _opt(STR_LIST),
@@ -152,7 +170,10 @@ PLATFORM_SCHEMA = {
                        "image": _opt(str)}),
     "ci": _req({"group": _req(str), "container": _req(bool)}),
     "stubs": _req(STR_LIST),
-    "board_stub": _req(bool),
+    # the stub that takes board profiles ([flash.stub]): its tool, the profile keys every board must give, the keys
+    # it takes besides id and tested, and the SoC's SPI alternate function per bus (STM32F4); absent: no board profiles
+    "board_stub": _opt({"tool": _req(str), "keys": _req(STR_LIST), "optional": _req(STR_LIST),
+                        "spi_af": _opt(("list", int))}),
     "codec_symbols": _req(STR_LIST),
     "flash_base": _req(int),
     "default_sectors": _req(str),
@@ -216,24 +237,36 @@ def make_vars(root, board, names, args=()):
     return out
 
 
-def ld_expr(text):
-    """The value of a linker script constant expression: numbers (hex, decimal, K and M suffixes), + - * / ( )."""
-    s = re.sub(r"\b(\d+)([KM])\b", lambda m: "(%s*%d)" % (m.group(1), 1024 if m.group(2) == "K" else 1048576), text)
+def ld_expr(text, names=None):
+    """The value of a linker script constant expression: numbers (hex, decimal, K and M suffixes), + - * / ( ), and the
+    symbols in names (the --defsym values and the script's own constants)."""
+    names = names or {}
+    s = re.sub(r"\b[A-Za-z_]\w*\b", lambda m: "(%d)" % names[m.group(0)] if m.group(0) in names else m.group(0), text)
+    s = re.sub(r"\b(\d+)([KM])\b", lambda m: "(%s*%d)" % (m.group(1), 1024 if m.group(2) == "K" else 1048576), s)
     if not re.fullmatch(r"[0-9a-fA-FxX+\-*/() \t]+", s):
         raise RegistryError("can't evaluate linker expression %r" % text)
     return int(eval(s.replace("/", "//"), {"__builtins__": {}}, {}))
 
 
-def parse_ld(text):
-    """{"symbols": {__codec_*: value}, "memory": {region: (origin, length)}} of a linker script."""
+def parse_ld(text, defs=None):
+    """{"symbols": {__codec_*: value}, "memory": {region: (origin, length)}} of a linker script (a board's memory.ld).
+    defs: the symbols the Makefile defines (--defsym __app_base, __app_start). The script's own constant assignments
+    before MEMORY count too; anything after it (INCLUDE common.ld, SECTIONS) is layout, not read."""
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    syms = {m.group(1): ld_expr(m.group(2)) for m in re.finditer(r"(?m)^\s*(__codec_\w+)\s*=\s*([^;]+);", text)}
-    mem = {}
     block = re.search(r"MEMORY\s*\{(.*?)\}", text, re.S)
+    names = dict(defs or {})
+    for m in re.finditer(r"(?m)^\s*(\w+)\s*=\s*([^;]+);", text[:block.start()] if block else text):
+        try:
+            names[m.group(1)] = ld_expr(m.group(2), names)
+        except RegistryError:
+            pass				# not a constant (ORIGIN(), LOADADDR()): layout, not a fact the tools read
+    syms = {m.group(1): ld_expr(m.group(2), names)
+            for m in re.finditer(r"(?m)^\s*(__codec_\w+)\s*=\s*([^;]+);", text)}
+    mem = {}
     if block:
         for m in re.finditer(r"(?m)^\s*(\w+)\s*(?:\([^)]*\))?\s*:\s*ORIGIN\s*=\s*([^,]+),\s*LENGTH\s*=\s*(.+?)\s*$",
                              block.group(1)):
-            mem[m.group(1)] = (ld_expr(m.group(2)), ld_expr(m.group(3)))
+            mem[m.group(1)] = (ld_expr(m.group(2), names), ld_expr(m.group(3), names))
     return {"symbols": syms, "memory": mem}
 
 
@@ -307,13 +340,17 @@ def unsupported_reasons(config_mk):
 
 
 def pin_defines(path):
-    """{NAME: value} of the integer #defines in a pins.h."""
+    """{NAME: value} of the pin #defines in a pins.h: an integer (the HR_C7000's port << 4 | pin), or "PB3" for the
+    STM32 form `GPIOB, GPIO_PIN_3`."""
     if not os.path.isfile(path):
         return {}
     with open(path, encoding="utf-8") as f:
         text = _strip_c_comments(f.read())
-    return {m.group(1): int(m.group(2), 0)
-            for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)}
+    out = {m.group(1): int(m.group(2), 0)
+           for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)}
+    out.update({m.group(1): "P%s%d" % (m.group(2), int(m.group(3)))
+                for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+GPIO([A-K])\s*,\s*GPIO_PIN_(\d+)\s*$", text)})
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -387,15 +424,28 @@ class Board:
         return list(dict.fromkeys(names))
 
     def stub(self):
-        """The universal stub's profile with its pins: the power latch and key from pins.h when the stub must hold
-        the radio on (a soft power key), else none."""
+        """The board's profile for its platform's stub (platform.toml board_stub.tool), with what other files say.
+        stubtool (the HR_C7000 universal stub): the power latch and key from pins.h when the stub must hold the radio
+        on (a soft power key), else none. f4stub: the board record's facts, the SPI flash pins from pins.h, the crystal
+        from HSE_VALUE and the bootloader's end from APP_BASE. None without a profile."""
         s = self.data["flash"].get("stub")
-        if s is None:
+        bs = self.platform.data.get("board_stub")
+        if s is None or bs is None:
             return None
-        hold = s["hold_power"]
-        return {"id": s["id"], "latch": self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
-                "key": self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, "nand": self.nand,
-                "progmem": s["progmem"], "tested": s["tested"], "stock_console": s.get("stock_console")}
+        out = {"tool": bs["tool"], "id": s["id"], "tested": s["tested"]}
+        if "spi" in s:
+            spi, af = s["spi"], bs.get("spi_af") or []
+            pin = {k: self.pins.get(k) for k in F4_SPI_PINS}
+            out.update(hse=int((self.mk.get("HSE_VALUE") or "0").rstrip("uUlL") or "0", 0), boot_end=self.app_base,
+                       spi=dict(spi, af=af[spi["bus"] - 1] if 0 < spi["bus"] <= len(af) else None,
+                                sck=pin["PIN_FLASH_SCK"], miso=pin["PIN_FLASH_MISO"], mosi=pin["PIN_FLASH_MOSI"],
+                                cs=pin["PIN_FLASH_CS"], idle=[self.pins.get(n) for n in s.get("idle_cs", [])]))
+        if "hold_power" in s:
+            hold = s["hold_power"]
+            out.update(latch=self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
+                       key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=self.nand,
+                       progmem=s["progmem"], stock_console=s.get("stock_console"))
+        return out
 
     def codeplug(self):
         """Where the codeplug lives, for the codeplug editor: the data flash address of the open-firmware image (the
@@ -507,9 +557,15 @@ def _layout(root, bid, mk):
     bdir = os.path.join(root, "boards", bid)
     ld = mk.get("LDSCRIPT")
     if not ld:
-        raise RegistryError("boards/%s/board.mk: no LDSCRIPT" % bid)
+        raise RegistryError("boards/%s: no LDSCRIPT (the platform's default is boards/<id>/memory.ld)" % bid)
+    if not mk.get("APP_BASE"):
+        raise RegistryError("boards/%s/board.mk: no APP_BASE" % bid)
+    # the Makefile's --defsym values: the image address, and the application's first byte after any first stage
+    base = int(mk["APP_BASE"], 0)
+    start = base + (int(mk["BOOT_SIZE"], 0) if mk.get("BOOT_STAGE") else 0)
+    defs = {"__app_base": base, "__app_start": start}
     with open(os.path.join(root, ld), encoding="utf-8") as f:
-        main = parse_ld(f.read())
+        main = parse_ld(f.read(), defs)
     if "FLASH" not in main["memory"]:
         raise RegistryError("%s: no MEMORY FLASH region" % ld)
     org, length = main["memory"]["FLASH"]
@@ -517,7 +573,7 @@ def _layout(root, bid, mk):
     for f in sorted(os.listdir(bdir)):
         if f.endswith(".ld"):
             with open(os.path.join(bdir, f), encoding="utf-8") as fh:
-                for k, v in parse_ld(fh.read())["symbols"].items():
+                for k, v in parse_ld(fh.read(), defs)["symbols"].items():
                     if syms.setdefault(k, v) != v:
                         raise RegistryError("boards/%s: %s differs between the linker scripts" % (bid, k))
     return {"flash": (org, org + length), "symbols": syms}
@@ -547,7 +603,10 @@ def load(root=ROOT, only=None):
             raise RegistryError("boards/%s: PLATFORM %r has no platform/<p>/platform.toml" % (bid, mk.get("PLATFORM")))
         out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(bdir),
                          pin_defines(os.path.join(bdir, "pins.h")),
-                         unsupported_reasons(os.path.join(bdir, "config.mk")), flash_map(bdir))
+                         # the platform's config.mk adds its own switches (no USB on a platform without it); the
+                         # board's reason wins for a switch both list
+                         {**unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
+                          **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(bdir))
     return out
 
 
@@ -660,16 +719,36 @@ def check(root=ROOT):
                             or not re.fullmatch(r"[0-9A-F]{8}", fl["dfu"]["key_prefix"])):
             bad("flash.dfu key_sha256 is 64 lower-case hex digits, key_prefix 8 upper-case")
         stub = fl.get("stub")
+        bs = b.platform.data.get("board_stub")
         if stub is not None:
-            if not b.platform.data["board_stub"]:
-                bad("[flash.stub] is a board profile of the universal stub: platform %s has none (board_stub)"
+            if bs is None:
+                bad("[flash.stub] is a board profile of its platform's stub: platform %s takes none (board_stub)"
                     % b.platform.id)
-            elif stub["id"] in stub_ids:
-                bad("flash.stub id %d is also the %s's" % (stub["id"], stub_ids[stub["id"]]))
             else:
-                stub_ids[stub["id"]] = bid
-            if stub["hold_power"] and not {"PIN_POWER_LATCH", "PIN_POWER_KEY"} <= set(b.pins):
+                for k in bs["keys"]:
+                    if k not in stub:
+                        bad("flash.stub needs %s on platform %s (platform.toml board_stub.keys)" % (k, b.platform.id))
+                for k in set(stub) - {"id", "tested"} - set(bs["keys"]) - set(bs["optional"]):
+                    bad("flash.stub %s is not a key of the %s stub (platform.toml board_stub)" % (k, bs["tool"]))
+                # ids are per stub: each stub has its own table of boards
+                if (bs["tool"], stub["id"]) in stub_ids:
+                    bad("flash.stub id %d is also the %s's" % (stub["id"], stub_ids[(bs["tool"], stub["id"])]))
+                else:
+                    stub_ids[(bs["tool"], stub["id"])] = bid
+            if stub.get("hold_power") and not {"PIN_POWER_LATCH", "PIN_POWER_KEY"} <= set(b.pins):
                 bad("flash.stub hold_power needs PIN_POWER_LATCH and PIN_POWER_KEY in boards/%s/pins.h" % bid)
+            if "spi" in stub:
+                prof = b.stub()
+                for k in F4_SPI_PINS + tuple(stub.get("idle_cs", [])):
+                    if not isinstance(b.pins.get(k), str):
+                        bad("flash.stub spi needs %s in boards/%s/pins.h as GPIOx, GPIO_PIN_n" % (k, bid))
+                if prof["spi"]["af"] is None:
+                    bad("flash.stub spi bus %d has no alternate function in platform.toml board_stub.spi_af"
+                        % stub["spi"]["bus"])
+                if prof["hse"] <= 0:
+                    bad("flash.stub spi: the board record needs the crystal, HSE_VALUE in board.mk")
+                if stub["spi"]["mode"] not in range(4):
+                    bad("flash.stub spi mode is 0 to 3")
         if b.first_stage and len(b.first_stage[1]) != 4:
             bad("board.mk BOOT_SIGNATURE is the first stage's first word: 4 bytes")
         # board.mk declares the options and their values (the build checks a value against them); board.toml adds
@@ -702,6 +781,12 @@ def check(root=ROOT):
                     if (mk.get("BUILD"), mk.get("TARGET", "") + ".bin") != want:
                         problems.append("%s %s: make names the build %s, %s.bin; the build view says %s, %s"
                                         % (bid, " ".join(args), mk.get("BUILD"), mk.get("TARGET"), *want))
+    # check 5: the radio survey's Port cells (a fixture tree without the survey has none to check)
+    if os.path.isfile(os.path.join(root, registry_docs.SURVEY)):
+        try:
+            problems += registry_docs.survey(root, boards)[1]
+        except registry_docs.DocsError as e:
+            problems.append(str(e))
     if not problems:
         path = os.path.join(root, ODRFLASH_JSON)
         try:
@@ -758,7 +843,67 @@ def odrflash_view(boards):
             "boards": out}
 
 
-def site_view(boards):
+BUILD_FORMAT = "odr-build-matrix/1"
+
+
+def _names():
+    """odrflash/names.py, the one naming rule for build directories, images and release files. It imports nothing, so
+    loading it doesn't load the generated registry."""
+    sys.path.insert(0, os.path.join(ROOT, "tools", "odrflash"))
+    try:
+        from odrflash import names
+    finally:
+        sys.path.pop(0)
+    return names
+
+
+def build_view(boards, root=ROOT):
+    """What a tool that builds from a checkout needs (docs/dev/board-registry.md "The build view"): every board with its
+    platform, build options and release state, each build's make arguments and file names, and each platform's
+    toolchain. A stable interface: a change that breaks a reader bumps BUILD_FORMAT."""
+    names = _names()
+    vdir = os.path.join(root, "config", "variants")
+    variants = sorted(f[:-3] for f in os.listdir(vdir) if f.endswith(".mk")) if os.path.isdir(vdir) else []
+    plats = {}
+    for pid, pl in sorted(load_platforms(root).items()):
+        tc = pl.data["toolchain"]
+        plats[pid] = {"isa": pl.data["isa"], "cpu": pl.data["cpu"], "cc": tc["cc"], "version": tc["version"],
+                      "image": tc.get("image"), "install": tc["build"], "sha256": tc.get("sha256")}
+    out = {}
+    for bid, b in sorted(boards.items()):
+        d = b.data
+        opts = [(o["name"], [v["id"] for v in o["values"]]) for o in d.get("build_options", [])]
+        builds = []
+        for combo in _product(opts):
+            chosen = dict(combo)
+            builds.append({
+                "options": chosen,
+                "make": ["BOARD=" + bid] + ["%s=%s" % kv for kv in combo],
+                "release": ["--board", bid] + [x for n, v in combo if v != dict(opts)[n][0]
+                                               for x in ("--build-option", "%s=%s" % (n, v))],
+                "image_id": names.image_id(bid, opts, chosen),
+                "build_dir": names.build_dir(bid, opts, chosen, names.VARIANT),
+                "image": names.build_image(bid, opts, chosen, names.VARIANT, bool(b.first_stage)),
+                "release_image": names.release_name(names.release_id(bid, opts, chosen, names.VARIANT), "{version}"),
+                "release_manifest": names.release_name(names.release_id(bid, opts, chosen, names.VARIANT), "{version}",
+                                                       "json"),
+            })
+        out[bid] = {
+            "name": d["name"], "platform": b.platform.id, "release": d["status"]["release"],
+            "released": d["status"]["release"] == "stable", "first_stage": bool(b.first_stage),
+            "build_options": [{"name": n, "default": vals[0], "values": vals} for n, vals in opts],
+            "builds": builds,
+        }
+    return {"format": BUILD_FORMAT, "variants": ["full"] + variants, "platforms": plats, "boards": out}
+
+
+def _product(opts):
+    """Every combination of option values, [(name, value), ...] each, the all-default one first."""
+    combos = [[]]
+    for n, vals in opts:
+        combos = [c + [(n, v)] for c in combos for v in vals]
+    return combos
+def site_view(boards, root=ROOT):
     """What the web site and the web flasher read (site/odrsite/repo.py), in the boards' order. The radio entries keep
     the keys the pages' scripts use (site/data/radios.json)."""
     out = []
@@ -783,7 +928,13 @@ def site_view(boards):
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "unsupported": dict(b.unsupported)})
-    return {"format": "odr-site-boards/1", "boards": out}
+    # the survey's radios without a board, planned or in progress (docs/spec/radios.md Port cells)
+    rows, problems = registry_docs.survey(root, boards)
+    if problems:
+        raise RegistryError("; ".join(problems))
+    planned = [{"radio": r["radio"], "status": r["status"], "pr": r["pr"], "hardware_needed": r["hardware_needed"],
+                "note": registry_docs.plain(r["note"])} for r in registry_docs.planned(rows)]
+    return {"format": "odr-site-boards/1", "boards": out, "planned": planned}
 
 
 def full_view(boards, root=ROOT):
@@ -897,6 +1048,45 @@ def self_test():
         except RegistryError:
             ok(True, "validate refuses " + what)
 
+    # the survey's Port cells (check 5) and the floor, on a fixture survey
+    class Stub:
+        def __init__(self, bid, model, level="supported"):
+            self.id, self.data = bid, {"model": model, "status": {"level": level},
+                                       "docs": {"hardware": "docs/spec/hardware-%s.md" % bid}}
+    tmps = tempfile.mkdtemp(prefix="odr-boards-survey-")
+    try:
+        os.makedirs(os.path.join(tmps, "docs", "spec"))
+        def survey_of(rows):
+            with open(os.path.join(tmps, registry_docs.SURVEY), "w", encoding="utf-8") as f:
+                f.write("## Summary table\n\n| Radio | MCU | Port |\n|---|---|---|\n" + "".join(
+                    "| %s | x | %s |\n" % r for r in rows))
+            return registry_docs.survey(tmps, {"a": Stub("a", "AB-100")})
+        rows, probs = survey_of([("Maker AB-100, Other", "Supported"), ("Maker CD-9", "In progress, #12. Its note"),
+                                 ("Maker EF-1", "Planned, hardware needed"), ("Maker GH-2", "Not planned. No")])
+        ok(probs == [] and [(r["board"], r["status"], r["pr"], r["hardware_needed"], r["note"]) for r in rows] ==
+           [("a", "board", None, False, ""), (None, "in_progress", 12, False, "Its note"),
+            (None, "planned", None, True, ""), (None, None, None, False, "No")],
+           "survey: a board's row, in progress with its PR, planned, not planned %r" % (probs or rows))
+        for cells, what in ((("Maker AB-100", "Planned"),), "a planned row for an existing board"), \
+                           ((("Maker CD-9", "In progress"),), "in progress without a PR number"), \
+                           ((("Maker CD-9", "Soon"),), "a Port cell outside the set"), \
+                           ((("Maker AB-100", "Supported"), ("Maker AB-100 GPS", "Supported")), "two rows for a board"):
+            ok(len(survey_of(cells)[1]) == 1, "survey check 5 finds " + what)
+        ok(registry_docs.rebase_links("[x](hardware-a.md#k) [y](https://e/z)", "docs/spec", "") ==
+           "[x](docs/spec/hardware-a.md#k) [y](https://e/z)", "rebase_links: relative links only")
+        old = ("## Radios and status\n\n| Radio | Builds | Host tests | On the radio | Support |\n"
+               "|---|---|---|---|---|\n"
+               "| [Maker AB-100](x) | ● | ● | %s | ok |\n| Maker CD-9 | ○ | ○ | ○ | %s |\n")
+        claims = registry_docs.readme_claims
+        ok(claims(old % ("●", "In progress (#1)")) == {"AB-100": (3, [2, 2, 2]), "CD-9": (2, [0, 0, 0])},
+           "readme_claims: marks and statuses by model code %r" % claims(old % ("●", "In progress (#1)")))
+        top = claims(old % ("●", "In progress (#1)"))
+        ok(claims(old % ("◐", "In progress (#1)"))["AB-100"][1] < top["AB-100"][1]
+           and claims(old % ("●", "Planned"))["CD-9"][0] < top["CD-9"][0],
+           "readme_claims: a lower mark and a lower status rank lower")
+    finally:
+        shutil.rmtree(tmps)
+
     # a fixture tree: the real registry copied, then broken one way at a time
     tmp = tempfile.mkdtemp(prefix="odr-boards-")
     try:
@@ -936,7 +1126,9 @@ def self_test():
         broken(good.replace('hardware = "', 'hardware = "missing/', 1), "a missing docs page", "doesn't exist")
         broken(re.sub(r'(?m)^gallery = ".*"$', 'gallery = "200x100"', good), "a display class the gallery lacks",
                "sim_geoms")
-        broken(re.sub(r"(?m)^hold_power = .*$", "", good), "a missing stub key", "missing key")
+        broken(re.sub(r"(?m)^hold_power = .*$", "", good), "a missing stub key", "needs hold_power")
+        broken(re.sub(r"(?m)^(hold_power = .*)$", r"\1\nspi = { bus = 1, mode = 0, hz = 1000000 }", good),
+               "a key of another platform's stub", "not a key of the stubtool stub")
         two = board_dirs(tmp)[1]
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")
@@ -1036,6 +1228,9 @@ def main(argv=None):
     g.add_argument("--out", metavar="FILE")
     g.add_argument("--check", metavar="FILE", help="fail if FILE differs from what would be written")
     sub.add_parser("check", help="registry consistency")
+    p = sub.add_parser("docs", help="rewrite the docs blocks generated from the registry")
+    p.add_argument("--check", action="store_true", help="fail if a generated block is out of date; write nothing")
+    p.add_argument("--floor", metavar="REF", help="fail when the README lists a radio lower than at REF")
     sub.add_parser("self-test")
     a = ap.parse_args(argv)
     try:
@@ -1047,6 +1242,18 @@ def main(argv=None):
                 print("boards: %s" % p, file=sys.stderr)
             if not problems:
                 print("boards: %d boards, %d platforms, consistent" % (len(load()), len(load_platforms())))
+            return 1 if problems else 0
+        if a.cmd == "docs":
+            boards = load()
+            problems = registry_docs.docs(ROOT, boards, check=a.check)
+            if a.floor:
+                new = registry_docs.generate(ROOT, boards)[0]["README.md"]
+                problems += registry_docs.floor(ROOT, a.floor, new)
+            for p in problems:
+                print("boards: %s" % p, file=sys.stderr)
+            if not problems:
+                print("boards: docs %s%s" % ("current" if a.check else "written",
+                                            ", nothing lower than %s" % a.floor if a.floor else ""))
             return 1 if problems else 0
         # the board's make variables cost a make run each: load only what the command reads
         boards = {} if a.cmd == "platform" else load(only=[a.board] if a.cmd in ("get", "builds") else None)
@@ -1100,7 +1307,7 @@ def main(argv=None):
             else:
                 sys.stdout.write(text)
         return 0
-    except RegistryError as e:
+    except (RegistryError, registry_docs.DocsError) as e:
         print("boards: %s" % e, file=sys.stderr)
         return 1
 

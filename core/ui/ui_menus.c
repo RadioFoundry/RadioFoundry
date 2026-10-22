@@ -26,10 +26,18 @@
 
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen;	// ui_aprs.c
+#if CONFIG_DUAL_WATCH
+extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
+#endif
 
 static void item_num(ui_item_t *it, uint16_t n)
 {
 	it->num = (char)('0' + n % 10u);
+}
+
+void item_num_set(ui_item_t *it, uint16_t n)
+{
+	item_num(it, n);
 }
 
 // ======================= Hub =======================
@@ -2713,6 +2721,12 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	sb_init(&b, it->value, sizeof it->value);
 	switch (i) {
 	case T_SCAN:
+#if CONFIG_DUAL_WATCH
+		if (ui_st.dual.on) {
+			sb_str(&b, "Dual watch");
+			break;
+		}
+#endif
 		sb_str(&b, ui_st.scanning ? "On" : "Off");
 		if (!(feats() & UI_FEAT_SCAN))
 			it->flags |= UI_ITEM_DIM;
@@ -2768,7 +2782,7 @@ static void tools_select(uint16_t row, bool hold)
 			ui_toast("Scan: not in this build");
 		} else {
 			ui_go_home();
-			ui_scan_toggle();	// says what scans: the zone, or the band in the VFO
+			ui_scan_toggle();	// says what scans: the zone, or the band in the VFO (dual watch ends)
 		}
 		break;
 	case T_POSITION: ui_push(SCR_INFO, INFO_POSITION); break;
@@ -2843,6 +2857,9 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 #if CONFIG_DMR
 					 KEYFN_CALL_BACK,
 #endif
+#if CONFIG_DUAL_WATCH
+					 KEYFN_AB, KEYFN_DUAL_WATCH,
+#endif
 };
 static const char *const n_keyfn_press[] = { "Default", "Nothing", "Monitor", "Talk target", "Power level",
 					     "Next zone", "Previous zone", "Scan", "Key lock", "Home zone",
@@ -2851,6 +2868,9 @@ static const char *const n_keyfn_press[] = { "Default", "Nothing", "Monitor", "T
 #endif
 #if CONFIG_DMR
 					     "Call back",
+#endif
+#if CONFIG_DUAL_WATCH
+					     "A/B", "Dual watch",
 #endif
 };
 static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TARGET, KEYFN_POWER, KEYFN_ZONE_UP,
@@ -2865,6 +2885,9 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 #if CONFIG_DMR
 					KEYFN_CALL_BACK,
 #endif
+#if CONFIG_DUAL_WATCH
+					KEYFN_AB, KEYFN_DUAL_WATCH,
+#endif
 };
 static const char *const n_keyfn_hold[] = { "Default", "Nothing", "Talk target", "Power level", "Next zone",
 					    "Previous zone", "Scan",
@@ -2878,10 +2901,22 @@ static const char *const n_keyfn_hold[] = { "Default", "Nothing", "Talk target",
 #if CONFIG_DMR
 					    "Call back",
 #endif
+#if CONFIG_DUAL_WATCH
+					    "A/B", "Dual watch",
+#endif
 };
 #endif
 static const int16_t v_updown[] = { 0, 1, 2 };
 static const char *const n_updown[] = { "Channel", "Zone", "Talk target" };
+#if CONFIG_VFO
+static const int16_t v_step[] = { 0, 250, 500, 625, 833, 1000, 1250, 2000, 2500, 5000, 10000 };	// 10 Hz units
+static const char *const n_step[] = { "Auto", "2.5 kHz", "5 kHz", "6.25 kHz", "8.33 kHz", "10 kHz", "12.5 kHz",
+				      "20 kHz", "25 kHz", "50 kHz", "100 kHz" };
+#endif
+#if CONFIG_DUAL_WATCH
+static const int16_t v_dual_wait[] = { 500, 1000, 1500, 2000, 3000, 5000 };	// ms
+static const char *const n_dual_wait[] = { "0.5 s", "1 s", "1.5 s", "2 s", "3 s", "5 s" };
+#endif
 static const int16_t v_autooff[] = { 0, 30, 60, 120 };
 static const char *const n_autooff[] = { "Off", "30 min", "1 h", "2 h" };
 #if CONFIG_DMR_SMS
@@ -2930,11 +2965,18 @@ static const set_item_t s_talk[] = {
 	NUMBER("Reply window", NULL, UI_SET_REPLY_S, 0, 30, 1, " s"),
 	LIST("TX timeout", "TOT", UI_SET_TOT_S, v_tot, n_tot),
 	NUMBER("Default squelch", NULL, UI_SET_SQUELCH, 0, 9, 1, NULL),
+#if CONFIG_VFO
+	LIST("VFO step", "frequency tuning channel spacing", UI_SET_VFO_STEP, v_step, n_step),
+#endif
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
 	TOGGLE("Mic AGC", "automatic gain level", UI_SET_MIC_AGC),
 	TOGGLE("Mic noise reduction", "noise suppression background", UI_SET_NOISE_REDUCTION),
 	TOGGLE("Monitor by default", "digital monitor promiscuous hear all", UI_SET_HEAR_ALL_DEFAULT),
 	TOGGLE("Show talker alias", NULL, UI_SET_ALIAS_SHOW),
+#if CONFIG_DUAL_WATCH
+	TOGGLE("Dual watch talk back", "reply other channel A B", UI_SET_DUAL_TALK_BACK),
+	LIST("Dual watch delay", "resume wait reply A B", UI_SET_DUAL_DELAY_MS, v_dual_wait, n_dual_wait),
+#endif
 };
 static const set_item_t s_privacy[] = {
 	LIST("Key type", "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
@@ -3702,5 +3744,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_CRASH_REPORT && CONFIG_DMR
 	[SCR_CRASH_TO] = &crash_to_screen,
+#endif
+#if CONFIG_DUAL_WATCH
+	[SCR_DUAL] = &ui_dual_screen, [SCR_DUAL_PICK] = &ui_dual_pick_screen,
+	[SCR_DUAL_ZONE] = &ui_dual_zone_screen,
 #endif
 };

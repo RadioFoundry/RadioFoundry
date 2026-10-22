@@ -27,6 +27,7 @@ PEAK_MIN = 1000
 @pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
     ambe = pytestconfig.getoption("--ambe")
     if not ambe:
@@ -85,7 +86,7 @@ def test_vocoder_encode_options(radio):
     a mismatch is only printed here; test_dmr_tx_encode_options checks the word after an over."""
     if "DMR" not in radio.features():
         pytest.skip("built without DMR")
-    v = radio.view(["dmr_stats", "storage"])
+    v = radio.view(["dmr", "storage"])
     if "voice.enc_supported" not in v:
         pytest.skip("firmware without the voice.enc_* view keys")
     supported = int(v["voice.enc_supported"], 0)

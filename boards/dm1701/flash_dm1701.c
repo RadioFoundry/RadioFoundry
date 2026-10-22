@@ -47,7 +47,9 @@ static void give(void)
 static void spi_init(void)
 {
 	stm32_pin_out(PIN_PORT(PIN_FLASH_CS), PIN_MASK(PIN_FLASH_CS), true, false);
-	stm32_pin_af(GPIOB, GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5, GPIO_AF5_SPI1, false, GPIO_NOPULL);
+	// SCK, MISO and MOSI are on one port (pins.h)
+	stm32_pin_af(PIN_PORT(PIN_FLASH_SCK), PIN_MASK(PIN_FLASH_SCK) | PIN_MASK(PIN_FLASH_MISO) | PIN_MASK(PIN_FLASH_MOSI),
+		     GPIO_AF5_SPI1, false, GPIO_NOPULL);
 	__HAL_RCC_SPI1_CLK_ENABLE();
 	spi.Instance = SPI1;
 	spi.Init.Mode = SPI_MODE_MASTER;

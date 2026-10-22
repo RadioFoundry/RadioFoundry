@@ -3,21 +3,22 @@
 # STM32F4 flash stub
 
 A small RAM monitor that installs, checks and backs up the internal flash of the STM32F405 radios behind the
-AnyRoad / TYT bootloader: the DM-1701, the MD-380 and the MD-9600, one image for all three. A running ODR loads it
+AnyRoad / TYT bootloader, one image for all of them. A running ODR loads it
 through the debug link ([debuglink.md](debuglink.md) 3.18) and jumps to it with no power cycle. The host then sends
 the radio's board record (section 5.2), and only then can the stub write. It does for the STM32 radios what the
 HR_C7000 stub does for the DM-32UV and the DM-1801 Pro ([hardware-dm32.md](hardware-dm32.md) 17.2, `stub/README.md`).
 
 | Part | Where |
 |---|---|
-| ODR side: staging buffer, quiesce, copy, jump | `platform/stm32f4/stub_entry.c`, `hal_system_t.stub_region / enter_stub / stub_run_addr`, `board_rf_safe` in `boards/dm1701/board.c` and `boards/md380/board.c` |
+| ODR side: staging buffer, quiesce, copy, jump | `platform/stm32f4/stub_entry.c`, `hal_system_t.stub_region / enter_stub / stub_run_addr`, `board_rf_safe` in each board's `board.c` |
 | The stub | `stub/stm32f4/` (`make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin`) |
-| Its protocol engine (portable, host tested) | `stub/stm32f4/f4stub_proto.c`, `tests/host/f4stubTest.c` |
+| Its protocol engine (portable, shared with other stubs, host tested) | `stub/common/stubeng.c` (section 13), `tests/host/f4stubTest.c` |
+| The STM32F4 target's facts and board record check (portable) | `stub/stm32f4/f4stub.h`, `f4stub_board.c` |
 | Host tool | `stub/f4stub.py`, called by `stub/stubtool.py`; `tests/host/f4stub_wire_check.py` runs it against the real engine |
-| Switch | `CONFIG_STUB_ENTRY`, on by default with the debug link, on every radio including the DM-1701 |
+| Switch | `CONFIG_STUB_ENTRY`, on by default on every radio including the DM-1701, with or without the debug link ([stub-entry.md](stub-entry.md)) |
 
-Status (2026-10-21): built, host tested and run on the DM-1701 (section 11, with protocol 2). Protocol 3 (the board
-record) and the MD-380 and MD-9600 are host tested only.
+Status (2026-10-22): built, host tested and run on the DM-1701 (section 11, with protocol 2). Protocol 4 (the board
+record) is host tested only (`tested = false` in each board's `[flash.stub]`).
 
 ## 1. Why
 
@@ -54,7 +55,7 @@ The bootloader route ([hardware-dm1701.md](hardware-dm1701.md) 15) costs three t
    0x20000000 and the 8 KB span. The data goes into ODR's staging buffer (`stub_region`), which lies anywhere in ODR's
    `.bss`.
 2. ENTER is refused with busy (3) while the radio transmits. Otherwise the reply goes out, the banner "PC Loader
-   Connected" is drawn with the backlight at full (the generic entry code in `core/debuglink/debuglink_stub.c`, so a
+   Connected" is drawn with the backlight at full (the generic entry code in `core/stubentry/stub_entry.c`, so a
    dimmed or switched-off backlight does not hide it), and `enter_stub` runs in the host link task:
 
 | Step | Why |
@@ -68,12 +69,12 @@ The bootloader route ([hardware-dm1701.md](hardware-dm1701.md) 15) costs three t
 | Copy the staging buffer to 0x20000000 (8 KB, a forward word copy) | the stub is linked there. The copy runs from flash and its stack is the task stack in CCM, so it overwrites nothing it uses. The buffer lies at or above the target, so a forward copy is safe even if they overlap |
 | CONTROL = 0, r0 = flags, branch to the entry | thread mode on the main stack. The stub sets SP to the top of SRAM first |
 
-Clocks stay as ODR set them (72 MHz, USB 48 MHz; the reduced clock is never active while USB is configured,
+Clocks stay as ODR set them (72 MHz, USB 48 MHz on every STM32F4 radio; the reduced clock is never active while USB is configured,
 [hardware-dm1701.md](hardware-dm1701.md) 1.3). GPIO levels stay, so the power latch holds. The option bytes select the software
 watchdog, so the IWDG runs only when ODR started it (`CONFIG_WATCHDOG`). Once started only a reset stops it, so the
 stub feeds it: first thing in `stub_main`, in `stub_ms()`, which every wait loop reads (the main loop, the flash and
 SPI busy waits, the USB waits, the delays), and from the protocol engine at every request, before each erase or
-program and once per 4 KB block of SUMS and READ (`f4stub_port_t.feed`). A feed does nothing while the IWDG isn't
+program and once per 4 KB block of SUMS and READ (`stubeng_port_t.feed`). A feed does nothing while the IWDG isn't
 running. The image header (3.1) says so; ODR with its IWDG running refuses a stub whose header doesn't
 ([watchdog.md](watchdog.md) 3.1).
 
@@ -95,10 +96,11 @@ flasher (`f4stub.js`) read the same layout, and their self-tests check their num
 | 0x10 | 4 | magic | `0x48533446` (bytes `F4SH`) |
 | 0x14 | 2 | layout | 1; a later layout only appends fields |
 | 0x16 | 2 | size | 16 |
-| 0x18 | 4 | stub version | 3 (`F4STUB_VERSION`, also in HELLO) |
+| 0x18 | 4 | stub version | 4 (`F4STUB_VERSION`, also in HELLO) |
 | 0x1C | 4 | flags | bit 0: feeds the IWDG (`F4STUB_FLAG_FEEDS_IWDG`) |
 
-Versions: 1 the first stub, 2 the SPI flash, 3 the header and the IWDG feeds (`F4STUB_VERSION_FEEDS_IWDG`). Stubs
+Versions: 1 the first stub, 2 the SPI flash, 3 the header and the IWDG feeds (`F4STUB_VERSION_FEEDS_IWDG`), 4 the
+shared engine with CONFIG and the board record (section 5). Stubs
 before version 3 have no header: those bytes are code. While its IWDG runs, ODR enters a stub only when all three hold:
 the magic, a version of at least 3 and the feed flag (`f4stub_image_ok`). Otherwise ENTER is refused with reason 1
 ([debuglink.md](debuglink.md) 3.18). With the IWDG not running any stub is entered. `stubtool.py --odr-enter` and the
@@ -126,8 +128,7 @@ start: RX 128 words, EP0 TX 16, EP1 TX 64, EP2 TX 16. A transfer that ends on a 
 zero-length packet after it. HELLO's flags byte says which start happened.
 
 None of this is a board fact. OTG_FS on PA11 / PA12 is the STM32F405's only full speed port, and ODR has set its
-pins up before the jump. All three radios run it with VBUS sensing off (the MD-9600's PA9 is a supply switch, not
-VBUS) and give ODR's serial number from the UID, so the stub carries no USB settings per radio.
+pins up before the jump. Every STM32F4 radio runs it with VBUS sensing off and gives ODR's serial number from the UID, so the stub carries no USB settings per radio.
 
 Web Serial note: after a re-enumeration the page has to reopen the port. Chrome keeps the permission for the same
 USB IDs and serial number, so `navigator.serial.getPorts()` returns it without a new prompt.
@@ -147,7 +148,7 @@ arriving for 200 ms is dropped. The largest payload is 4104 bytes (`STUBENG_MAX_
 
 | Op | Name | Request | Reply |
 |---|---|---|---|
-| `01` | HELLO | none | `F4STUB`, version u8 (3), max payload u16, flash KB u16, RDP byte u8, flags u8 (bit 0: USB adopted), application base u32 (0x0800C000), SPI flash size u32 (0: no chip answered), its JEDEC ID (3 bytes). Version 1 stopped after the application base |
+| `01` | HELLO | none | `F4STUB`, version u8 (4), max payload u16, flash KB u16, RDP byte u8, flags u8 (bit 0: USB adopted, bit 7: configured), application base u32 (from the board record; 0 before one), SPI flash size u32 (0: none configured or no chip answered), its JEDEC ID (3 bytes), board id u8 (0 before a record), record length u8, the record (the echo, section 5.2). Versions 2 and 3 stopped after the JEDEC ID and always reported 0x0800C000; version 1 stopped after the application base |
 | `02` | PEEK | addr u32, n u16 (1 to max) | n bytes. Allowed: flash, 0x1FFF0000-0x1FFF7A2F (system memory, OTP, UID, flash size), option bytes 0x1FFFC000-0x1FFFC00F, SRAM, CCM. Peripherals are refused |
 | `07` | SUMS | addr u32 (4 KB aligned), count u16 (1 to 820), memory u8 (optional: 0 internal flash, the default; 1 SPI flash, addresses from 0) | count x (CRC-32 u32, blank u8) |
 | `09` | READ | addr u32 (4 KB aligned), count u8 (1 to 255), compress u8, memory u8 (optional, as SUMS) | count frames, one per 4 KB block: CRC-32 u32, method u8 (0 raw, 2 blank), length u16, data. Compression is not offered; a compress request is answered raw |
@@ -189,13 +190,13 @@ The magic is `0x46345342` ("F4SB").
 ### 5.2 The board record
 
 The stub image is the same for every radio; what differs goes in a 24-byte record the host sends with CONFIG (layout
-in `stub/stm32f4/f4stub.h`, profiles in `stub/f4stub.py` `BOARDS`). The host picks the profile from the running ODR's
+in `stub/stm32f4/f4stub.h`, the values from the board registry, read into `stub/f4stub.py` `BOARDS`). The host picks the profile from the running ODR's
 VERSION `board=` (or `--board`), sends it, reads HELLO again and checks that the echo is byte for byte what it sent and
 that the application base is 0x0800C000. Only then does it write.
 
 | Bytes | Field | Checked by the stub |
 |---|---|---|
-| 0 | board id (DM-1701 1, MD-380 2, MD-9600 3) | not 0 |
+| 0 | board id (`[flash.stub]` `id`, unique among the STM32F4 boards) | not 0 |
 | 1 | layout, 1 | equal |
 | 2 | SPI flash bus: 0 none, 1-3 SPI1-SPI3 | at most 3 |
 | 3 | SPI mode, CPOL << 1 \| CPHA | at most 3 |
@@ -208,22 +209,28 @@ that the application base is 0x0800C000. Only then does it write.
 | 21-22 | other chip selects on the bus, held high (0xFF: none) | ports A-I or 0xFF |
 | 23 | 0 | equal |
 
-| Radio | Bus, mode | Pins (SCK, MISO, MOSI, AF, CS) | Held high | Crystal | Application base | Source |
-|---|---|---|---|---|---|---|
-| DM-1701 | SPI1, 0 | PB3, PB4, PB5, 5, PD7 | none | 8 MHz | 0x0800C000 | [hardware-dm1701.md](hardware-dm1701.md) 2 |
-| MD-380 | SPI1, 0 | the same | none | 8 MHz | 0x0800C000 | [hardware-md380.md](hardware-md380.md) 12.1 |
-| MD-9600 | SPI2, 3 | PB13, PB14, PB15, 5, PB12 | PD14 (the LCD) | 8 MHz | 0x0800C000 | [hardware-md9600.md](hardware-md9600.md) 12.1 (unverified) |
+Where each field comes from:
 
-All three run the SPI flash at 4.5 MHz at most (the slowest prescaler at or under it), the DM-1701's checked rate.
-The crystal only sets the stub's own timing (time-outs, the 200 ms idle rule): the stub reads the clock tree ODR left
-and needs the HSE to turn it into Hz. Until a record arrives it assumes 8 MHz.
+| Field | Source |
+|---|---|
+| board id | `[flash.stub]` `id` |
+| bus, mode, fastest clock | `[flash.stub]` `spi = { bus, mode, hz }` |
+| SCK, MISO, MOSI, chip select | `pins.h` `PIN_FLASH_SCK`, `PIN_FLASH_MISO`, `PIN_FLASH_MOSI`, `PIN_FLASH_CS` |
+| alternate function | the bus: `platform/stm32f4/platform.toml` `board_stub.spi_af` (AF5 for SPI1 and SPI2, AF6 for SPI3) |
+| held high | `[flash.stub]` `idle_cs`: `pins.h` names, at most two |
+| crystal | `board.mk` `HSE_VALUE` |
+| application base | `board.mk` `APP_BASE` |
 
-The record matters most on the MD-9600: its SPI1 with chip select PD7, where the other two radios have their flash,
-is the HR_C6000's voice port there ([hardware-md9600.md](hardware-md9600.md) 4.1). A stub with the DM-1701's wiring
-built in would send flash commands to the modem.
+`tools/boards.py get <board> flash.stub` prints a board's values; the radio's hardware page says where they come
+from. The crystal only sets the stub's own timing (time-outs, the 200 ms idle rule): the stub reads the clock tree ODR
+left and needs the HSE to turn it into Hz. Until a record arrives it assumes 8 MHz.
 
-`tests/host/f4stub_wire_check.py` checks each profile against the board's sources: the application area against its
-linker script, the chip select against `pins.h` (and the MD-9600's LCD chip select).
+The record matters most on a radio whose flash is not on the SPI1 wiring a protocol 2 stub had built in
+(`stub/f4stub.py` `V2_WIRING`): there those pins may reach another chip, and a stub with that wiring built in would
+send flash commands to it. A stub before protocol 4 serves only a board whose record matches `V2_WIRING`.
+
+`tools/boards.py check` holds each profile to the board's sources: every pin it names must be in `pins.h` in the
+`GPIOx, GPIO_PIN_n` form, the bus must have an alternate function, and the crystal must be set.
 
 #### Why the host sends the record
 
@@ -251,7 +258,7 @@ The stub enforces these, so a host bug can't break them:
 | Rule | Effect |
 |---|---|
 | Nothing is erased or programmed before a board record is accepted (status `11`) | a host that skipped CONFIG, or sent a record the stub refused, writes nothing |
-| Nothing below the record's application base is erased or programmed; no record can put that base in sector 0, below 0x08004000 or off a sector start | sectors 0-2 (0x08000000-0x0800BFFF), the bootloader, always survive on all three radios, whose profiles all say 0x0800C000 |
+| Nothing below the record's application base is erased or programmed; no record can put that base in sector 0, below 0x08004000 or off a sector start | sectors 0-2 (0x08000000-0x0800BFFF), the bootloader, always survive on every radio, whose `APP_BASE` is 0x0800C000 |
 | Nothing writes FLASH_OPTCR or its key | RDP and write protection never change |
 | The interlock: ERASE of any sector but the one holding the application base (sector 3), and PROGRAM of anything outside it, need the word at the application base (0x0800C000) to read 0xFFFFFFFF | while any application sector is half written, the application looks invalid to the bootloader (section 7) |
 | PROGRAM only goes to words that read erased; nothing is written if one doesn't | no silent AND with old data |
@@ -338,15 +345,15 @@ never committed.
 
 | Item | Size |
 |---|---|
-| Stub image | 6,764 bytes (limit 8 KB, asserted by `f4stub.ld`) |
-| Stub RAM after the jump | about 26 KB of SRAM (image, buffers, 8 KB receive ring) plus the stack |
+| Stub image | 7,968 bytes (limit 8 KB, ODR's staging buffer, asserted by `f4stub.ld`) |
+| Stub RAM after the jump | 28.6 KB of SRAM (image, engine buffers, 8 KB receive ring), then the stack: at least 4 KB is left for it (asserted by `f4stub.ld`); the deepest call chain needs under 1 KB (`-fstack-usage`) |
 | ODR with `CONFIG_STUB_ENTRY=y`, DM-1701 | the STUB state machine, the entry and the banner text, all in sectors 3-9 (720 KB); +8 KB of SRAM (the staging buffer): RAM 95.4 % used, the default build |
 | ODR with `CONFIG_STUB_ENTRY=y`, MD-380 | the same code, in an application area of 464 KB (the default image is 320,236 bytes), RAM 78.8 %. The switch fits with no other switch off |
 | ODR with `CONFIG_STUB_ENTRY=y`, MD-9600 | the same code: 283 KB of the 464 KB application area, RAM 72.5 % (the maximal configuration: 73.9 %) |
 | ODR with the switch off | no change: the same image, byte for byte in size |
 
-The switch stays off by default: the command hands the whole SoC to whatever image the host sends, guarded by the
-magic, the length and the CRC-32. Turning it on for releases needs a signed or hash-pinned stub first (section 12).
+The switch is on by default. The command hands the whole SoC to whatever image the host sends, guarded by the magic,
+the length and the CRC-32; a signed or hash-pinned stub would close that (section 12).
 
 ## 11. First hardware test (DM-1701)
 
@@ -365,7 +372,7 @@ Then, with ODR running (PORT is its USB serial port, `/dev/cu.usbmodem…` on ma
 | Step | Command | Pass |
 |---|---|---|
 | 1 | `python3 tools/odr_debug.py version` | `board=DM-1701`, `git=` the build just flashed |
-| 2 | `python3 stub/stubtool.py PORT --odr-enter --peek 0x08000000:64` | "STM32F4 stub v3: 1024 KB flash, RDP byte 0x55, not configured yet, USB adopted from ODR" (or "enumerated again"), "stub configured for the Baofeng DM-1701: SPI flash 16384 KB (JEDEC ef4018)", then 64 bytes; the screen shows "PC Loader Connected" |
+| 2 | `python3 stub/stubtool.py PORT --odr-enter --peek 0x08000000:64` | "STM32F4 stub v4: 1024 KB flash, RDP byte 0x55, not configured yet, USB adopted from ODR" (or "enumerated again"), "stub configured for the Baofeng DM-1701: SPI flash 16384 KB (JEDEC ef4018)", then 64 bytes; the screen shows "PC Loader Connected" |
 | 3 | the same output | the bytes are the bootloader's vector table (not all 00 or FF): CPU reads from SRAM work at RDP 1 |
 | 4 | `python3 stub/stubtool.py PORT --attach --board dm1701 --progmem ~/dm1701_flash.bin` | 1 MB, sha256 printed |
 | 5 | `python3 stub/stubtool.py PORT --attach --board dm1701 --verify-progmem ~/dm1701_flash.bin` | identical |
@@ -388,7 +395,7 @@ codec sectors stay (the radio still finds its codec). Step 9 is still to do.
 ## 12. Open points
 
 - Step 9 of section 11 (an interrupted write and the recovery) on hardware.
-- Protocol 3 (the board record) on hardware: section 11 again on the DM-1701.
+- Protocol 4 (the board record) on hardware: section 11 again on the DM-1701.
 - MD-380: the bootloader's stack pointer check, and the stub on a real MD-380.
 - MD-9600: everything on a real radio. The SPI2 wiring, mode 3 and the LCD's chip select are taken from the board's
   documentation and ODR's driver, not from a radio ([hardware-md9600.md](hardware-md9600.md) 14.4).

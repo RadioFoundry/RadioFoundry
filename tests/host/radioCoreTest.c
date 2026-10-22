@@ -425,6 +425,33 @@ static void test_startup(void)
 	CHECK(!hw.audio && !hw.led[LED_GREEN] && !hw.led[LED_RED]);
 }
 
+// The VFO's step: auto (0, the default) follows the width; a step set stays whatever the width; kept in the settings
+static void test_vfo_step_auto(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && sm.view.vfo_step_auto && sm.view.vfo_step_hz == 12500);
+	uint32_t hz = sm.view.ch.rx_hz;
+	req(RREQ_VFO_STEP, 1);
+	CHECK(sm.view.ch.rx_hz == hz + 12500);
+	req(RREQ_BANDWIDTH, RADIO_BW_25K);
+	CHECK(sm.view.vfo_step_auto && sm.view.vfo_step_hz == 25000);
+	req(RREQ_VFO_STEP, 1);
+	CHECK(sm.view.ch.rx_hz == hz + 37500);
+	req(RREQ_VFO_STEP_SIZE, 5000);
+	CHECK(!sm.view.vfo_step_auto && sm.view.vfo_step_hz == 5000);
+	req(RREQ_BANDWIDTH, RADIO_BW_12K5);
+	CHECK(sm.view.vfo_step_hz == 5000);
+	settings_t st;
+	settings_read(&st);
+	CHECK(st.vfo_step_hz == 5000);
+	req(RREQ_VFO_STEP_SIZE, 0);
+	CHECK(sm.view.vfo_step_auto && sm.view.vfo_step_hz == 12500);
+	settings_read(&st);
+	CHECK(st.vfo_step_hz == 0);
+}
+
 static void test_channel_step(void)
 {
 	setup_codeplug();
@@ -2453,9 +2480,37 @@ void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
 void radio_req_scan_dual(uint16_t pos) { (void)pos; }
+void radio_req_zone_pos(uint16_t pos) { (void)pos; }
 void radio_req_scan_vfo(uint32_t lo, uint32_t hi) { (void)lo; (void)hi; }
 void radio_req_tone_burst(bool on) { (void)on; }
 void radio_req_scan(uint8_t cmd) { req(RREQ_SCAN, cmd); }
+void radio_req_vfo_step_size(uint32_t hz) { req(RREQ_VFO_STEP_SIZE, (int32_t)hz); }
+void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel)
+{
+	radio_req_t r = { RREQ_DUAL, 0, 0 };
+	if (ref != NULL) {
+		r.arg = (int32_t)radio_dual_arg(&ref[0], sel == 0);
+		r.arg2 = radio_dual_arg(&ref[1], sel != 0);
+	}
+	radio_sm_request(&sm, &r, now);
+}
+bool radio_get_vfo(uint8_t index, channel_t *out)
+{
+	if (index == sm.vfo_idx) {
+		*out = sm.vfo_ch;
+		return sm.vfo_seeded;
+	}
+	*out = sm.vfo_other.ch;
+	return sm.vfo_other.seeded;
+}
+bool radio_get_dual(radio_dual_ref_t ref[2], uint8_t *sel, uint8_t *at)
+{
+	ref[0] = sm.dual[0];
+	ref[1] = sm.dual[1];
+	*sel = sm.dual_sel;
+	*at = sm.dual_at;
+	return sm.scan.kind == SCAN_DUAL;
+}
 void radio_req_roam(uint8_t cmd) { req(RREQ_ROAM, cmd); }
 void radio_req_beep(uint8_t b) { req(RREQ_BEEP, b); }
 void radio_req_vibrate(uint8_t v) { req(RREQ_VIBRATE, v); }
@@ -2512,6 +2567,102 @@ bool codeplug_set_channel(uint16_t n, const channel_t *ch)
 
 static int job_runs;
 static void test_job(void *ctx) { (void)ctx; job_runs++; }
+
+#if CONFIG_DUAL_WATCH
+// Dual watch through the UI's service (ui_svc_dual on radio_req_dual): any zone or the VFO; what can't work is refused
+// at once, the rest goes to the radio core (radioFeaturesTest covers the watch itself)
+static void test_ui_dual(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_ZONE_POS, 0);
+	const ui_dual_ref_t a = { false, 0, 0 }, tones = { false, 2, 1 }, vfo = { true, 0, 0 };
+	const ui_dual_ref_t same[2] = { a, a }, empty[2] = { a, { false, 0, 2 } }, past[2] = { a, { false, 1, 1 } };
+	const ui_dual_ref_t nozone[2] = { a, { false, 5, 0 } };
+	CHECK(!ui_svc_dual(same, 0) && !ui_svc_dual(empty, 0) && !ui_svc_dual(past, 1) && !ui_svc_dual(nozone, 0));
+	CHECK(sm.view.scan == SCAN_OFF);
+	// Another zone's channel as B, selected: the watch runs, then stops on B
+	const ui_dual_ref_t pair[2] = { a, tones };
+	CHECK(ui_svc_dual(pair, 1) && sm.view.scan == SCAN_DUAL && sm.dual_sel == 1);
+	CHECK(ui_svc_dual(pair, 1) && sm.view.scan == SCAN_DUAL);	// again: nothing changes
+	{
+		// The debug link's features section: the pair, the selected one, where the receiver is; it still fits a reply
+		static char buf[DL_REPLY_MAX - 6 - 16];
+		dl_text_t t;
+		dl_text_init(&t, buf, sizeof buf);
+		debuglink_view_radio(&sm.view, &t);
+		char at[24];
+		snprintf(at, sizeof at, "dual.sel=b\ndual.at=%c\n", 'a' + sm.dual_at);
+		CHECK(!t.full && strstr(buf, "dual.a=0:0\ndual.b=2:1\n") != NULL && strstr(buf, at) != NULL);
+	}
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.zone_index == 2 && sm.view.zone_pos == 1);
+	// The VFO's settings while on a channel, and the VFO as A
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO, 0);
+	channel_t v;
+	CHECK(!sm.view.vfo && ui_svc_vfo_get(sm.vfo_idx, &v) && v.rx_hz == sm.vfo_ch.rx_hz && v.rx_hz != 0);
+	const ui_dual_ref_t withvfo[2] = { vfo, a };
+	CHECK(ui_svc_dual(withvfo, 0) && sm.view.scan == SCAN_DUAL);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.vfo);
+	// Saved while the watch is on B: powers up on the selected A all the same
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE_POS, 0);
+	CHECK(ui_svc_dual(pair, 0) && sm.dual_sel == 0);
+	for (int i = 0; i < 1000 && sm.dual_at != 1; i++) {
+		poll_for(RADIO_POLL_MS);
+	}
+	CHECK(sm.view.scan == SCAN_DUAL && sm.dual_at == 1 && sm.view.zone_index == 2);
+	CHECK(ui_svc_dual(pair, 0));		// a request saves the position
+	boot();
+	CHECK(!sm.view.vfo && sm.view.zone_index == 0 && sm.view.zone_pos == 0);
+}
+
+// Two VFOs: dual watch gives each channel its own; each keeps its frequency, both come back at power on, and Copy to
+// VFO goes to the one the other channel isn't on
+static void test_dual_two_vfos(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, 146550000);
+	req(RREQ_VFO, 0);
+	const ui_dual_ref_t v0 = { true, 0, 0 }, v1 = { true, 0, 1 }, a = { false, 0, 0 };
+	const ui_dual_ref_t vfos[2] = { v0, v1 }, same[2] = { v1, v1 };
+	CHECK(!ui_svc_dual(same, 0));
+	CHECK(ui_svc_dual(vfos, 1) && sm.view.scan == SCAN_DUAL);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.vfo && sm.view.vfo_index == 1);	// stopped on B: the second VFO
+	req(RREQ_VFO_SET, 446006250);
+	channel_t c0, c1;
+	CHECK(ui_svc_vfo_get(0, &c0) && c0.rx_hz == 146550000 && ui_svc_vfo_get(1, &c1) && c1.rx_hz == 446006250);
+	// The watch hops between them: each hop tunes that VFO's own frequency
+	CHECK(ui_svc_dual(vfos, 0));
+	bool heard0 = false, heard1 = false;
+	for (int i = 0; i < 400 && !(heard0 && heard1); i++) {
+		poll_for(RADIO_POLL_MS);
+		if (sm.view.vfo && sm.vfo_idx == 0 && hw.rx_hz == 146550000)
+			heard0 = true;
+		if (sm.view.vfo && sm.vfo_idx == 1 && hw.rx_hz == 446006250)
+			heard1 = true;
+	}
+	CHECK(heard0 && heard1);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.vfo && sm.view.vfo_index == 0 && sm.view.ch.rx_hz == 146550000);
+	// Both saved, and the one in use
+	CHECK(ui_svc_dual(vfos, 1));
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.vfo_index == 1);
+	boot();
+	CHECK(sm.view.vfo && sm.view.vfo_index == 1 && sm.view.ch.rx_hz == 446006250);
+	CHECK(ui_svc_vfo_get(0, &c0) && c0.rx_hz == 146550000);
+	// Copy to VFO with B on the first VFO: A's channel goes to the second, the first is untouched
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE_POS, 0);
+	const ui_dual_ref_t chan_vfo[2] = { a, v0 };
+	CHECK(ui_svc_dual(chan_vfo, 0) && sm.dual_sel == 0);
+	uint32_t ch_hz = sm.view.ch.rx_hz;
+	req(RREQ_VFO_COPY, 0);
+	CHECK(sm.view.vfo && sm.view.vfo_index == 1 && sm.view.ch.rx_hz == ch_hz);
+	CHECK(ui_svc_vfo_get(0, &c0) && c0.rx_hz == 146550000);
+}
+#endif
 
 static void test_ui_glue(void)
 {
@@ -2637,6 +2788,18 @@ static void test_ui_glue(void)
 	settings_t sv;
 	settings_read(&sv);
 	CHECK(sv.auto_lock_s == 60 && sv.mic_gain == 8 && sv.long_press_ms == 900 && sv.gps == 1 && sv.pos_send_s == 300);
+#if CONFIG_DUAL_WATCH
+	// Dual watch's B, and whether the watch ran and which channel was selected (it comes back at power on)
+	CHECK(ui_svc_setting_set(UI_SET_DUAL_B, 37) && ui_svc_setting_get(UI_SET_DUAL_B) == 37);
+	CHECK(ui_svc_setting_set(UI_SET_DUAL_B, UI_DUAL_B_VFO | UI_DUAL_ON));
+	CHECK(ui_svc_setting_get(UI_SET_DUAL_B) == (UI_DUAL_B_VFO | UI_DUAL_ON));
+	CHECK(ui_svc_setting_set(UI_SET_DUAL_B, 1024 | UI_DUAL_ON | UI_DUAL_B_SEL));
+	CHECK(ui_svc_setting_get(UI_SET_DUAL_B) == (1024 | UI_DUAL_ON | UI_DUAL_B_SEL));
+	settings_read(&sv);
+	CHECK(sv.dual_b == 1024 && sv.dual_state == (SETTINGS_DUAL_ON | SETTINGS_DUAL_B_SEL) && sv.mic_gain == 8);
+	CHECK(ui_svc_setting_set(UI_SET_DUAL_B, UI_DUAL_B_VFO2) && ui_svc_setting_get(UI_SET_DUAL_B) == UI_DUAL_B_VFO2);
+	CHECK(ui_svc_setting_set(UI_SET_DUAL_B, 0) && ui_svc_setting_get(UI_SET_DUAL_B) == 0);
+#endif
 	// Mic noise reduction: on by default, kept in accent bits 6-7, handed to the vocoder's encode options (tone frames
 	// stay on)
 	CHECK(ui_svc_setting_get(UI_SET_NOISE_REDUCTION) == 1 && (sv.accent & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0);
@@ -3505,7 +3668,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(256);	// the settings record (252 + 4 bytes) goes in, the native erase fails
+	sim_flash_cut_after(304);	// the settings records (page 1: 44 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
@@ -3580,6 +3743,7 @@ int main(void)
 	test_startup();
 	test_persist();
 	test_channel_step();
+	test_vfo_step_auto();
 	test_squelch();
 	test_tx();
 	test_timeout();
@@ -3608,6 +3772,10 @@ int main(void)
 	test_dmr_contact_added();
 	test_ui_requests();
 	test_ui_glue();
+#if CONFIG_DUAL_WATCH
+	test_ui_dual();
+	test_dual_two_vfos();
+#endif
 	test_ui_settings();
 	test_soft_volume();
 	test_side_keys();

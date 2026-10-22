@@ -18,6 +18,13 @@ STACK_OVERHEAD := 68
 
 RTOS := third_party/FreeRTOS-Kernel
 
+$(if $(APP_BASE),,$(error boards/$(BOARD)/board.mk: APP_BASE, the image address, is missing))
+# The low SRAM below the codec window (common.ld .ram_lo, zeroed by crt0) holds the state the core marks ODR_CPU_RAM. A
+# board whose linker script has no such section sets CPU_RAM_SECTION empty
+CPU_RAM_SECTION ?= .ram_lo
+MCU_DEFS += $(if $(CPU_RAM_SECTION),-DODR_CPU_RAM_SECTION='"$(CPU_RAM_SECTION)"')
+LDSCRIPT ?= boards/$(BOARD)/memory.ld
+
 # drivers/gps/*: the shared GPS receive ring under gps_hrc.c (unreferenced, so linked out, on a radio without a GPS)
 PLATFORM_DIRS := platform/hrc7000 platform/hrc7000/freertos drivers/gps/nmea_line drivers/gps/gps_rx
 PLATFORM_INC := -I$(RTOS)/include -Iplatform/hrc7000/freertos

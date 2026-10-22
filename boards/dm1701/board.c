@@ -48,6 +48,14 @@ static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1
 #define TOP_LONG	ACT_USER_3
 #endif
 
+// SK2 (the lowest side key): A/B on a press and Dual watch held (docs/ux/dual-watch.md), the pair on one key. Without
+// dual watch a press is the talk target picker (also long #)
+#if CONFIG_DUAL_WATCH
+#define SK2_SHORT	ACT_AB
+#else
+#define SK2_SHORT	ACT_TALK_TARGET
+#endif
+
 // docs/ux/information-architecture.md 7.1
 static const keymap_entry_t keymap[] = {
 	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false },
@@ -67,7 +75,7 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false },
 	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
 	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ KEY_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
+	{ KEY_SK2, SK2_SHORT, ACT_USER_2, false, false },
 	{ KEY_TOP, ACT_USER_3, TOP_LONG, false, false },
 	{ KEY_FN_LEFT, ACT_USER_1, ACT_USER_1, false, false },
 	{ KEY_FN_RIGHT, ACT_USER_4, ACT_USER_4, false, false },

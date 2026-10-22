@@ -19,7 +19,7 @@
 #include "codec_desc.h"
 
 #define CODEC_TAG		0x0206u		// the descriptor's tag for stock V02.06 CSV
-#define CODEC_FLASH_LO		0x080C0000u	// sectors 10 and 11: the flash dm1701.ld leaves to the codec
+#define CODEC_FLASH_LO		0x080C0000u	// sectors 10 and 11: the flash boards/dm1701/memory.ld leaves to the codec
 
 // The V02.06 CSV codec as the merge places it (tools/odrflash/odrflash/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of
 // the code and tables after the rewrites. The descriptor must carry exactly these

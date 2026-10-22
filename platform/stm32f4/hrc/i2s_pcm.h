@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// PCM audio over I2S3 to the built-in codec of an HR_C6000 or HR_C5000, shared by the STM32F4 radios (DM-1701, MD-380,
-// MD-9600): the stream behind hal_audio_t's start and stop (i2s_pcm.c). The chip is the I2S master; SPI3 receives the
+// PCM audio over I2S3 to the built-in codec of an HR_C6000 or HR_C5000, shared by the STM32F4 radios with one of
+// them: the stream behind hal_audio_t's start and stop (i2s_pcm.c). The chip is the I2S master; SPI3 receives the
 // microphone on PC12 (I2S3_SD), I2S3ext sends speaker PCM on PC11 (I2S3ext_SD), CK on PC10 and WS on PA15. The pins are
-// the same on all three boards. The board keeps the speaker routing (hal_audio_t.speaker_pcm).
+// the same on every such board. The board keeps the speaker routing (hal_audio_t.speaker_pcm).
 #ifndef STM32_I2S_PCM_H
 #define STM32_I2S_PCM_H
 
@@ -13,7 +13,7 @@
 #include "hal_audio.h"
 
 typedef struct {
-	bool ckpol;		// clock idle high (the DM-1701's and MD-9600's set-up), else idle low (the MD-380's)
+	bool ckpol;		// clock idle high, else idle low: as the board's chip set-up leaves it
 	// Bench knob: when neither CK nor WS is driven, the STM32 generates them (SPI3 master receive). Only for a chip
 	// that doesn't drive its I2S; both lines must follow a pull-up and a pull-down first
 	bool master_if_free;

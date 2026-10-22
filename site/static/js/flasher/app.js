@@ -194,7 +194,7 @@ const fb = () => (S.sim ? S.sim.fb : S.data.fb);
 // Every image comes from the build service, so a radio needs only a backend the page has for it (backends.js)
 const available = (r, task) => backendOf(r).available(r, fb(), task);
 
-// The STM32 radios (DM-1701, MD-380, MD-9600): stock firmware is reached through the AnyRoad bootloader (dfu.js), which takes
+// The STM32 radios: stock firmware is reached through the AnyRoad bootloader (dfu.js), which takes
 // the key from the stock file; a radio running ODR with stub entry also updates and backs up through the STM32F4
 // loader (f4stub.js), and backs up over the debug link without it (backup.js). Stock firmware isn't backed up here.
 register({

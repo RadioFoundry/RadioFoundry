@@ -63,6 +63,9 @@ static uint8_t ui_flag(uint8_t id)
 	case UI_SET_ALIAS_SHOW: return SETTINGS_UI_ALIAS;
 	case UI_SET_PTT_LOCKED: return SETTINGS_UI_PTT_LOCKED;
 	case UI_SET_HEAR_ALL_DEFAULT: return SETTINGS_UI_HEAR_ALL;
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_TALK_BACK: return SETTINGS_UI_DUAL_TALK_BACK;
+#endif
 	default: return 0;
 	}
 }
@@ -144,9 +147,26 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_REPLY_S:
 		radio_get_settings(&rs);
 		return ui_svc_reply_shown(&rs);
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_DELAY_MS:
+		radio_get_settings(&rs);
+		return rs.dual_delay_ms;
+#endif
 	case UI_SET_MIC_GAIN:
 		settings_read(&st);
 		return st.mic_gain <= 10 ? st.mic_gain : 5;
+	case UI_SET_VFO_STEP:
+		settings_read(&st);
+		return st.vfo_step_hz >= 1000u && st.vfo_step_hz <= 1000000u ? (int32_t)(st.vfo_step_hz / 10u) : 0;
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_B: {
+		settings_read(&st);
+		if (st.dual_b > UI_DUAL_B_VFO2)
+			return 0;
+		return st.dual_b | ((st.dual_state & SETTINGS_DUAL_ON) ? UI_DUAL_ON : 0) |
+		       ((st.dual_state & SETTINGS_DUAL_B_SEL) ? UI_DUAL_B_SEL : 0);
+	}
+#endif
 	case UI_SET_AUTO_LOCK_S:
 		settings_read(&st);
 		return st.auto_lock_s;
@@ -171,6 +191,9 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_ALIAS_SHOW:
 	case UI_SET_PTT_LOCKED:
 	case UI_SET_HEAR_ALL_DEFAULT:
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_TALK_BACK:
+#endif
 		settings_read(&st);
 		return (st.ui_flags & ui_flag(id)) != 0;
 	case UI_SET_VIBRATE:
@@ -280,6 +303,9 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_BATTERY_SAVER:
 	case UI_SET_REPLY_S:
 	case UI_SET_TALK_PERMIT:
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_DELAY_MS:
+#endif
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
 	case UI_SET_ROAM_BEACON_S:
@@ -293,6 +319,9 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_ALIAS_SHOW:
 	case UI_SET_PTT_LOCKED:
 	case UI_SET_HEAR_ALL_DEFAULT:
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_TALK_BACK:
+#endif
 		st = settings_begin();
 		st->ui_flags = (uint8_t)(value != 0 ? st->ui_flags | ui_flag(id) : st->ui_flags & ~ui_flag(id));
 		settings_end(hal_millis());
@@ -454,6 +483,17 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		}
 		settings_end(hal_millis());
 		hostlink_settings_changed();
+		return true;
+#endif
+	case UI_SET_VFO_STEP:
+		return true;	// ui_svc_apply hands it to the radio core, which saves it
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_B:
+		st = settings_begin();
+		st->dual_b = (uint16_t)clamp16(value & UI_DUAL_CODE, 0, UI_DUAL_B_VFO2);
+		st->dual_state = (uint8_t)(((value & UI_DUAL_ON) ? SETTINGS_DUAL_ON : 0) |
+					   ((value & UI_DUAL_B_SEL) ? SETTINGS_DUAL_B_SEL : 0));
+		settings_end(hal_millis());
 		return true;
 #endif
 	default:

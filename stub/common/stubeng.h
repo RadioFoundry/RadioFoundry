@@ -12,7 +12,8 @@
 //    open for writing (the target's own floor, below every board's bootloader end);
 //  - the address ranges PEEK may read besides the internal flash (RAM, ID registers; never peripherals);
 //  - callbacks: write a reply, read memory, erase a sector, program words, reset, the external SPI flash (read, erase
-//    a 4 KB sector, program inside one), and configure: check and apply the board record the host sends in CONFIG.
+//    a 4 KB sector, program inside one), configure: check and apply the board record the host sends in CONFIG, and
+//    an optional watchdog feed.
 //
 // The board record is the target's business (its layout is in the target's header); the engine keeps a copy for the
 // HELLO echo and takes three facts back from the target: the application base (the first writable internal flash
@@ -133,6 +134,9 @@ typedef struct {
 	// Check and apply a board record (1 to STUBENG_CONFIG_MAX bytes, the target's layout, first byte the nonzero
 	// board id). False: refused, and the stub is left unconfigured
 	bool (*configure)(void *ctx, const uint8_t *rec, uint32_t n, stubeng_config_t *out);
+	// Optional (NULL: none): feed the watchdog. The engine calls it at every request, before each erase or program, and
+	// once per 4 KB block in SUMS and READ, so no request runs a second without a feed (docs/spec/watchdog.md 3.1)
+	void (*feed)(void *ctx);
 } stubeng_port_t;
 
 typedef struct {

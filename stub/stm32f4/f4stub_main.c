@@ -254,6 +254,7 @@ static stubeng_port_t port = {
 	.xread = port_xread,
 	.xerase = port_xerase,
 	.xprogram = port_xprogram,
+	.configure = port_configure,
 	.feed = port_feed,
 };
 static stubeng_t engine;

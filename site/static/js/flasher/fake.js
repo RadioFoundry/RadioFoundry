@@ -97,10 +97,10 @@ export class FakeRadio {
 	// state: "stock" (stock firmware: codec in place, no serial port), "odr", "odr-nocodec", "bootloader".
 	// stubEntry: ODR built with CONFIG_STUB_ENTRY; adopt: the stub keeps ODR's USB device (else the port goes away
 	// and serialStream() gives the new one); cutAfter: stub programs before the "cable" is pulled. stubVersion: the
-	// STM32F4 stub's protocol (3: CONFIG and the record echo; 2: the DM-1701's wiring built in); stubConfig: what the
+	// STM32F4 stub's protocol (4: CONFIG and the record echo; 2 and 3: the DM-1701's wiring built in); stubConfig: what the
 	// stub does with a record it would accept ("ok", "refuse": answers bad argument, "garble": accepts it but HELLO
 	// echoes different bytes)
-	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 3, stubConfig = "ok" } = {}) {
+	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 4, stubConfig = "ok" } = {}) {
 		this.sim = sim;
 		this.board = sim.board;
 		this.key = sim.key;
@@ -291,8 +291,8 @@ export class FakeRadio {
 
 	stubOp(op, p, reply) {
 		const OK = 0x05, BADARG = 0x0D, REFUSED = 0x0F, NOCONFIG = 0x11;
-		const v3 = this.stubVersion >= 3;
-		if (!v3 && !this.stubRecord) this.stubRecord = this.ownRecord();	// protocol 2: the wiring built in
+		const cfg = this.stubVersion >= 4;	// CONFIG (protocol 4)
+		if (!cfg && !this.stubRecord) this.stubRecord = this.ownRecord();	// before protocol 4: the wiring built in
 		const rec = this.stubRecord;
 		const appBase = rec ? u32be(rec, 8) : 0;
 		const spiSize = this.stubSpiSize();
@@ -305,15 +305,15 @@ export class FakeRadio {
 		}
 		if (op === 0x01) {
 			let body = concat(new TextEncoder().encode("F4STUB"), new Uint8Array([this.stubVersion, 0x10, 0x08, 0x04, 0x00, 0x55,
-				(this.adopt ? 1 : 0) | (v3 && rec ? 0x80 : 0)]), be32(v3 ? appBase : APP_BASE), be32(spiSize),
+				(this.adopt ? 1 : 0) | (cfg && rec ? 0x80 : 0)]), be32(cfg ? appBase : APP_BASE), be32(spiSize),
 				new Uint8Array([0xEF, 0x40, 0x18]));
-			if (v3) {
+			if (cfg) {
 				let echo = rec || new Uint8Array(0);
 				if (rec && this.stubConfig === "garble") { echo = echo.slice(); echo[20] ^= 0x01; }
 				body = concat(body, new Uint8Array([rec ? rec[0] : 0, echo.length]), echo);
 			}
 			reply(OK, body);
-		} else if (op === 0x14 && v3) {
+		} else if (op === 0x14 && cfg) {
 			this.configs++;
 			this.stubRecord = null;		// a refused record leaves the stub unconfigured
 			if (!FakeRadio.recordOk(p) || this.stubConfig === "refuse") return reply(BADARG);

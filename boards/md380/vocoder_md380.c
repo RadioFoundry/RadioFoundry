@@ -20,7 +20,7 @@
 #include "codec_desc.h"
 
 #define CODEC_TAG		0x2032u		// the descriptor's tag for stock D002.032
-#define CODEC_FLASH_LO		0x08080000u	// sectors 8-11: the flash md380.ld leaves to the codec
+#define CODEC_FLASH_LO		0x08080000u	// sectors 8-11: the flash boards/md380/memory.ld leaves to the codec
 
 // The D002.032 codec as the merge places it (tools/odrflash/odrflash/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of
 // the code and the main table window after the rewrites, and of the small windows (unchanged). The descriptor must

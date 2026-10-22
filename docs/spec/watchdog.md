@@ -16,7 +16,7 @@ Code: `hal/hal_watchdog.h`, `core/app/watchdog.c` (the feed), `platform/stm32f4/
 
 ## 1. The feed
 
-`vApplicationIdleHook` (`configUSE_IDLE_HOOK` follows `CONFIG_WATCHDOG` in every board's `FreeRTOSConfig.h`) calls
+`vApplicationIdleHook` (`configUSE_IDLE_HOOK` follows `CONFIG_WATCHDOG` in every platform's `FreeRTOSConfig.h`) calls
 `watchdog_idle(hal_millis())` on every pass of the idle loop. It feeds the watchdog and notes how long the idle task
 was away since its last pass: the longest such gap since start is `watchdog.max_gap_ms` on the debug link (6). That
 number shows how close legitimate work comes to the timeout.
@@ -84,10 +84,10 @@ hanging, which is what the watchdog is for.
 Every such image starts with a header at offset 0x10 ([stub-stm32f4.md](stub-stm32f4.md) 3.1): a magic, the stub
 version and a flags word whose bit 0 says the stub feeds the IWDG. The first version that feeds is 3
 (`F4STUB_VERSION_FEEDS_IWDG`). While the IWDG runs, ODR checks the loaded image before ENTER fires
-(`stm32_stub_image_ok`, through `dl_stub_t.image_ok`) and again in `stm32_enter_stub`, with one rule: the magic, a
+(`stm32_stub_image_ok`, through `stub_load_t.image_ok`) and again in `stm32_enter_stub`, with one rule: the magic, a
 version of at least 3 and the feed flag, all three. A stub built before has no header (garbage where the header would
 be): ENTER answers refused (7) with reason 1
-(`DL_STUB_REFUSE_WATCHDOG`, [debuglink.md](debuglink.md) 3.18), ODR keeps running, and nothing is written. So an old
+(`STUB_REFUSE_WATCHDOG`, [debuglink.md](debuglink.md) 3.18), ODR keeps running, and nothing is written. So an old
 `stubtool.py` or a web flasher page that hasn't been redeployed gets a clear refusal, never a reset part way through a
 write. `stubtool.py` says to use a current stub; the page says to reload.
 

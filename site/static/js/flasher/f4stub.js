@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The STM32F4 stub over WebSerial: updating a DM-1701, MD-380 or MD-9600 that already runs ODR without its
+// The STM32F4 stub over WebSerial: updating an STM32F4 radio that already runs ODR without its
 // bootloader, ported from stub/f4stub.py (its protocol, its write order, its checks; docs/spec/stub-stm32f4.md). A
 // running ODR built with CONFIG_STUB_ENTRY=y takes the stub over its debug link and jumps to it; the stub then reads
 // and writes the internal flash from the application base (0x0800C000) up and the SPI flash. The bootloader's sectors
 // 0 to 2 are never written, so the bootloader route (dfu.js) always works afterwards, and a stock radio still needs it
 // first.
 //
-// One stub image serves every radio (protocol 3). The radio's wiring (SPI flash bus, pins, chip select, crystal, the
+// One stub image serves every radio (protocol 4). The radio's wiring (SPI flash bus, pins, chip select, crystal, the
 // bootloader's end) goes to it as a 24-byte board record (CONFIG) made by stub/f4stub.py config_record() and carried in
 // data/flash-boards.json (f4stub.boards.<id>.record), so the page and the Python tool send the same bytes. The stub
 // writes nothing until it has accepted a record (status 0x11), and the page checks the echo in the next HELLO first.
@@ -23,7 +23,8 @@ export const F4_MAGIC = 0x46345342;	// 'F4SB': ERASE, XERASE and RESET carry it
 export const MEM_INTERNAL = 0, MEM_SPI = 1;
 export const OP = { HELLO: 0x01, PEEK: 0x02, SUMS: 0x07, READ: 0x09, RESET: 0x0D, ERASE: 0x10, PROGRAM: 0x11, XERASE: 0x12, XPROGRAM: 0x13, CONFIG: 0x14 };
 export const BADARG = 0x0D, REFUSED = 0x0F, NOCONFIG = 0x11;
-export const HELLO_CONFIGURED = 0x80, HELLO_LEN = 26, REC_LEN = 24;	// HELLO v3 without the record echo; the board record
+export const HELLO_CONFIGURED = 0x80, HELLO_LEN = 26, REC_LEN = 24;	// HELLO v4 without the record echo; the board record
+export const CONFIG_VERSION = 4;	// the first protocol with CONFIG (3 added the image header and the watchdog feed)
 const SUM_MAX = 800, READ_PACK = 16, ERASE_TIMEOUT = 6000;
 const be16 = (n) => new Uint8Array([(n >> 8) & 0xFF, n & 0xFF]);
 const u16be = (b, o) => (b[o] << 8) | b[o + 1];
@@ -76,16 +77,29 @@ export class F4Stub extends Stub {
 		return super.enterFromOdr(image, progress, opts);
 	}
 
-	async hello() {
-		const r = await this.request(OP.HELLO, new Uint8Array(0), { retries: 0, timeout: 500 });
+	// Status 0x11 is the stub's own refusal of a write before a board record; the rest stay the generic error
+	async request(op, payload, opts) {
+		try {
+			return await super.request(op, payload, opts);
+		} catch (e) {
+			if (e.status === NOCONFIG) {
+				this.configured = false;
+				throw Object.assign(new StubError("the loader has no board configuration (status 0x11): nothing was written"), { status: NOCONFIG });
+			}
+			throw e;
+		}
+	}
+
+	async hello({ retries = 0 } = {}) {
+		const r = await this.request(OP.HELLO, new Uint8Array(0), { retries, timeout: 500 });
 		if (String.fromCharCode(...r.subarray(0, 6)) !== "F4STUB" || r.length < 17) throw new StubError("unexpected hello: not the STM32F4 stub");
 		const i = {
 			version: r[6], maxPayload: u16be(r, 7), flashKb: u16be(r, 9), rdp: r[11], adopted: !!(r[12] & 1), appBase: u32be(r, 13),
 			spiSize: r.length >= 24 ? u32be(r, 17) : 0, spiId: r.length >= 24 ? toHex(r.subarray(21, 24)) : "",
 			boardId: 0, record: new Uint8Array(0),
 		};
-		if (i.version >= 3) {
-			// version 3: board id, record length and the record echo after the JEDEC ID; app base 0 before a record
+		if (i.version >= CONFIG_VERSION) {
+			// version 4: board id, record length and the record echo after the JEDEC ID; app base 0 before a record
 			if (r.length < HELLO_LEN || r.length !== HELLO_LEN + r[25]) throw new StubError(`HELLO v${i.version} is ${r.length} bytes: malformed`);
 			i.boardId = r[12] & HELLO_CONFIGURED ? r[24] : 0;
 			i.record = r.slice(HELLO_LEN);
@@ -94,24 +108,24 @@ export class F4Stub extends Stub {
 		}
 		this.info = i;
 		// a stub left configured by an earlier run keeps its record: the echo alone tells whether it is this radio's
-		this.configured = i.version >= 3 ? this.echoes() : this.configured;
+		this.configured = i.version >= CONFIG_VERSION ? this.echoes() : this.configured;
 		return i;
 	}
 
 	// The last HELLO echoes exactly this radio's record, with the application base the page writes from
 	echoes() {
 		const b = this.board, i = this.info;
-		return !!(b && i && i.version >= 3 && i.boardId === b.stub_id && i.appBase === APP_BASE && equal(i.record, fromHex(b.record)));
+		return !!(b && i && i.version >= CONFIG_VERSION && i.boardId === b.stub_id && i.appBase === APP_BASE && equal(i.record, fromHex(b.record)));
 	}
 
 	// Send the radio's board record (CONFIG) and check the echo in the next HELLO; the stub writes nothing before. A stub
-	// already configured with exactly this record is left as it is. A protocol 2 stub has no CONFIG: its wiring is the
+	// already configured with exactly this record is left as it is. A stub before protocol 4 has no CONFIG: its wiring is the
 	// DM-1701's and MD-380's, built in, so it serves only a radio with that wiring (v2_wiring).
 	async configure() {
 		const b = this.board;
 		if (!b) throw new StubError("no board profile for this radio: the loader stays unconfigured and nothing is written");
-		if (this.info.version < 3) {
-			if (!b.v2_wiring) throw new StubError(`this loader (protocol ${this.info.version}) has the DM-1701's SPI flash wiring built in and can't serve the ${b.name}: switch the radio off and on, then start again`);
+		if (this.info.version < CONFIG_VERSION) {
+			if (!b.v2_wiring) throw new StubError(`this loader (protocol ${this.info.version}) has its SPI flash wiring built in and can't serve the ${b.name}: switch the radio off and on, then start again`);
 			this.configured = true;
 			return;
 		}
@@ -167,13 +181,13 @@ export class F4Stub extends Stub {
 
 	attached() {
 		const i = this.info;
-		const spi = i.spiSize ? `SPI flash ${i.spiSize / 1024} KB (JEDEC ${i.spiId})` : i.version >= 3 && !this.configured ? "not configured yet" : "no SPI flash";
+		const spi = i.spiSize ? `SPI flash ${i.spiSize / 1024} KB (JEDEC ${i.spiId})` : i.version >= CONFIG_VERSION && !this.configured ? "not configured yet" : "no SPI flash";
 		this.log(`STM32F4 stub v${i.version}: ${i.flashKb} KB flash, ${spi}, USB ${i.adopted ? "adopted from ODR" : "enumerated again"}`);
 		return i;
 	}
 
 	needSpi() {
-		if (this.info?.version >= 3) this.needConfigured();
+		if (this.info?.version >= CONFIG_VERSION) this.needConfigured();
 		if (!this.info?.spiSize) throw new StubError(`the loader found no SPI flash (stub version ${this.info?.version})`);
 	}
 

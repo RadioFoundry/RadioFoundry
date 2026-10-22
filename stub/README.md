@@ -97,13 +97,13 @@ a power cycle. A stub older than version 6 (a HELLO shorter than 19 bytes) gets 
 
 The universal stub is built outside this repository with the monitor's source; `stub/embed_stub.py` embeds it. `stub/db25d_update.sh IMAGE [PORT]` is the one command for a DB25-D update.
 
-## STM32F4 radios (DM-1701, MD-380, MD-9600)
+## STM32F4 radios
 
 A second stub, with its source here, for the STM32F405 radios behind the AnyRoad / TYT bootloader. A running ODR built
 with `CONFIG_STUB_ENTRY=y` loads it over the USB debug link; it then installs builds (changed sectors only, the codec
 kept), backs up and verifies the internal flash, and reads and writes the external SPI flash. Spec: [docs/spec/stub-stm32f4.md](../docs/spec/stub-stm32f4.md).
 
-One image serves all three radios, as the HR_C7000's universal stub does: after HELLO the host sends a CONFIG with the
+One image serves every STM32F4 radio, as the HR_C7000's universal stub does: after HELLO the host sends a CONFIG with the
 radio's board record (SPI flash bus, pins, mode and chip select, other chip selects to hold high, the crystal, the
 bootloader's end), and checks the echo in the next HELLO. The stub writes nothing before that. The profiles are
 `BOARDS` in `f4stub.py`; the board comes from ODR's VERSION `board=`, or from `--board` with `--attach`.
@@ -114,7 +114,7 @@ reports must be 0x20000000.
 
 The IWDG can't be stopped once ODR starts it (`CONFIG_WATCHDOG`), so the stub feeds it: at start-up, in every wait loop
 (through `stub_ms()`, including the flash erase busy wait), at every request and once per 4 KB block of a long read
-or checksum. Its image has a 16-byte header at offset 0x10 (magic, stub version 3, flags with bit 0 "feeds the
+or checksum. Its image has a 16-byte header at offset 0x10 (magic, stub version 4, flags with bit 0 "feeds the
 IWDG"; `stm32f4/f4stub_header.h`, the one definition the stub and ODR share, layout in
 [stub-stm32f4.md](../docs/spec/stub-stm32f4.md) 3.1). A watchdog build of ODR refuses ENTER unless the header has the
 magic, a version of at least 3 and the flag, so an older `f4stub.py` or web page gets a refusal before anything is
@@ -122,12 +122,13 @@ written, never a reset part way through. `--odr-enter` prints the version it rea
 
 | File | What |
 |---|---|
-| `stm32f4/` | the stub's C source, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (about 6.9 KB) |
-| `f4stub.py` | its host side, with the stub build embedded (checked by SHA-256; `--embed` puts a new build in, and CI fails while a fresh build differs); `stubtool.py` hands the DM-1701 and MD-380 to it (`--odr-enter`, or `--attach --board dm1701`); `--self-test` runs without a radio |
+| `common/` | the protocol engine every stub target shares (`stubeng.h` documents the port a target supplies): framing, ops, safety rules, SUMS and READ. Host tested |
+| `stm32f4/` | the STM32F4 target: entry, USB, flash controller, SPI flash, the board record check, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (7,968 bytes, at most 8 KB) |
+| `f4stub.py` | its host side, with the stub build embedded (checked by SHA-256; `--embed` puts a new build in, and CI fails while a fresh build differs); `stubtool.py` hands every board with an `f4stub` `[flash.stub]` to it (`--odr-enter`, or `--attach --board md380`); the board profiles come from the board registry (`board.toml` `[flash.stub]` and `pins.h`, [board-registry.md](../docs/dev/board-registry.md)); `--self-test` runs without a radio |
 
-Status (2026-10-21): built and host tested (`tests/host`: the protocol engine with the board record, and the host tool
+Status (2026-10-22): built and host tested (`tests/host`: the protocol engine with the board record, and the host tool
 against the real engine through a pipe). Protocol 2 ran on the DM-1701 ([stub-stm32f4.md](../docs/spec/stub-stm32f4.md)
-11); protocol 3 (the board record), the MD-380 and the MD-9600 have not run on a radio yet.
+11); protocol 4 (the board record) and the MD-380 have not run on a radio yet.
 
 ## HR_C7000 status
 

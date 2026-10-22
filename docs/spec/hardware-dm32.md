@@ -1110,9 +1110,9 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 
 | Area | Choice | Where |
 |---|---|---|
-| Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; wrapped with `tools/serial_loader.py --wrap` for the Baofeng updater | `boards/dm32/dm32.ld`, `platform/hrc7000/crt0.S` |
-| Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `dm32.ld` |
-| SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `ODR_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DODR_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `ODR_CPU_RAM` buffers), start-up stack. See the table below | `dm32.ld` |
+| Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; wrapped with `tools/serial_loader.py --wrap` for the Baofeng updater | `boards/dm32/memory.ld`, `platform/hrc7000/crt0.S` |
+| Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `boards/dm32/memory.ld` |
+| SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `ODR_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DODR_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `ODR_CPU_RAM` buffers), start-up stack. See the table below | `boards/dm32/memory.ld` |
 | Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E28 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
 | Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off (then `main()` starts it, [watchdog.md](watchdog.md)); cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
@@ -1128,7 +1128,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 
 ### 17.1 SRAM layout
 
-The application has two RAM regions on either side of the codec's window (`dm32.ld`; the linker fails the build when
+The application has two RAM regions on either side of the codec's window (`boards/dm32/memory.ld`; the linker fails the build when
 either overflows). No DMA reaches SRAM on this board, so any buffer can sit in either. crt0 (`platform/hrc7000/crt0.S`)
 copies `.ramfunc` and `.data` from flash and zeroes `.bss` and `.ram_lo` before `main`; nothing in `.ram_lo` may have
 an initializer (it is `NOLOAD`: an initial value would be dropped).
@@ -1149,11 +1149,11 @@ link task, as on the DM-1701).
 A bench and recovery path: the host loads its own flash-access RAM monitor (the "C7 stub", a small program that reads
 and writes the radio's flash chips with no firmware running) into SRAM and ODR jumps to it at run time, with the radio
 powered on, no power cycle and no DFU. It is the same monitor the serial boot ROM loads with the radio off; this just
-gets it running from a radio that is already up. Off by default (`CONFIG_STUB_ENTRY=n`, a switch like the audio probe);
+gets it running from a radio that is already up. On by default (`CONFIG_STUB_ENTRY`, with or without the debug link: `docs/spec/stub-entry.md`);
 the command answers unavailable on a board whose platform has no `hal_system_t.enter_stub` (every board but the
 HR_C7000 so far). The wire format is debug link command `0x1A` (`docs/spec/debuglink.md` 3.18).
 
-**RAM region.** The monitor is loaded into the stock-codec window, `0x16CDC..0x2F914` (76,344 B), which `dm32.ld` leaves
+**RAM region.** The monitor is loaded into the stock-codec window, `0x16CDC..0x2F914` (76,344 B), which `boards/dm32/memory.ld` leaves
 out of the image entirely (section 17.1): ODR links nothing there. A radio that hosts its stock codec runs it in that
 window, so the first STUB command parks the codec (`hrc_vocoder_park`: it waits for a call in progress, then every
 later call returns silence) before the window is handed out. Without that, an upload on a DMR channel overwrote the
@@ -1185,7 +1185,7 @@ answers the monitor's SSI again and a later soft reset boots (the same steps `hr
 no DMA engine has to be stopped. RTOS tasks are not stopped gracefully; masking interrupts freezes the scheduler and the
 jump never returns (recover by a power cycle).
 
-**Load protocol.** The host sends the image over the debug link in `DL_STUB_CHUNK_MAX` (59 B) chunks after a BEGIN that
+**Load protocol.** The host sends the image over the debug link in `STUB_CHUNK_MAX` (59 B) chunks after a BEGIN that
 carries the length, a CRC-32 of the whole image, the entry address and a 32-bit magic key (`'C7SB'`); each chunk's
 integrity is the debug link frame's own CRC-16, and the region is zeroed at BEGIN so a dropped chunk fails the final
 check. ENTER repeats the magic, and ODR verifies the exact length and the CRC-32 of the loaded bytes before it quiesces

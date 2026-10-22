@@ -107,9 +107,10 @@ static bool sys_line_low(void *ctx)
 	return (hooks->int_port->IDR & INT_SYS) == 0;
 }
 
-// The transmission's RF switch to TX is due (md380_dmr_tx_prepare): at tx_begin for own timing, at the engine's
-// tx_slot_found for an aligned start. Before that the receiver stays on: an aligned start waits for the repeater's slot
-// timing, which the HR_C5000 only gives while it receives (issue 108). Cleared at TX done
+// For a board with tx_prepare (one synthesizer): the transmission's RF switch to TX is due (stm32_hrc_dmr_tx_prepare): at
+// tx_begin for own timing, at the engine's tx_slot_found for an aligned start. Before that the receiver stays on: an
+// aligned start waits for the repeater's slot timing, which the HR_C5000 only gives while it receives (issue 108).
+// Cleared at TX done
 static volatile bool tx_rf_due;
 
 // Timeslot ISR (the modem interrupts are in already): RF to TX two ticks ahead of the first burst, the synthesizer
@@ -118,12 +119,14 @@ static void tx_slot_found(void *ctx)
 {
 	(void)ctx;
 	tx_rf_due = true;
-	md380_rf_dmr_prepare();
+	hooks->tx_prepare();
 }
 
-static const hrc6000_dmr_ops_t ops = {
+// tx_slot_found only for a board with tx_prepare (stm32_hrc_dmr_init): without it the engine starts an aligned
+// transmission at the slot, as before
+static hrc6000_dmr_ops_t ops = {
 	.rf = rf, .now_us = now_us, .lock = lock, .unlock = unlock, .notify = notify, .sys_line_low = sys_line_low,
-	.tx_slot_found = tx_slot_found, .ctx = NULL,
+	.ctx = NULL,
 };
 
 // --- Interrupts ---
@@ -364,10 +367,12 @@ static void dmr_task(void *arg)
 			trace_lc();	// before the burst: an LC looked at when its report was taken
 			trace_event(&ev);
 #endif
-			if (ev.kind == DMR_EV_TX_DONE) {
+			if (ev.kind == DMR_EV_TX_DONE && hooks->tx_prepare != NULL) {
 				lock(NULL);
 				tx_rf_due = false;
-				md380_rf_dmr_tx_done();
+				if (hooks->tx_done != NULL) {
+					hooks->tx_done();
+				}
 				unlock(NULL);
 			}
 			dmr_event_cb_t cb = stack_cb;
@@ -383,6 +388,7 @@ static void dmr_task(void *arg)
 void stm32_hrc_dmr_init(hrc_t *modem, const stm32_hrc_dmr_board_t *b)
 {
 	hooks = b;
+	ops.tx_slot_found = b->tx_prepare != NULL ? tx_slot_found : NULL;
 	hrc6000_dmr_init(&eng, modem, &ops);
 	exti_setup();
 	exti_enable(false);
@@ -410,18 +416,20 @@ void stm32_hrc_dmr_rx_restart(void)
 	hrc6000_dmr_rx_restart(&eng);
 }
 
-void md380_dmr_tx_prepare(void)
+void stm32_hrc_dmr_tx_prepare(void)
 {
-	if (!tx_rf_due) {
+	if (hooks == NULL || hooks->tx_prepare == NULL || !tx_rf_due) {
 		return;
 	}
 	lock(NULL);
-	md380_rf_dmr_prepare();
+	hooks->tx_prepare();
 	unlock(NULL);
-	md380_rf_dmr_wait_lock();
+	if (hooks->tx_wait_lock != NULL) {
+		hooks->tx_wait_lock();
+	}
 }
 
-bool md380_dmr_tx_active(void)
+bool stm32_hrc_dmr_tx_active(void)
 {
 	return active && hrc6000_dmr_is_transmitting(&eng);
 }
@@ -478,7 +486,7 @@ static bool tx_begin(dmr_timing_t timing, int8_t ts, dmr_access_t access)
 		return false;
 	}
 	tx_rf_due = timing != DMR_TIMING_ALIGNED;
-	md380_dmr_tx_prepare();
+	stm32_hrc_dmr_tx_prepare();
 	return hrc6000_dmr_tx_begin(&eng, timing, ts, access);
 }
 
@@ -590,14 +598,14 @@ const hal_dmr_modem_t stm32_hrc_dmr = {
 
 // --- Bring-up counters ---
 
-// The RF switch counters live in radio_md380.c: a reset keeps their values here and reports the difference
+// The RF switch counters live in the board's radio code: a reset keeps their values here and reports the difference
 static uint32_t rf_base[3];
 
-static void rf_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_retries)
+static void rf_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx)
 {
-	*skipped = *unarmed = *rx_retries = 0;
+	*skipped = *unarmed = *rx = 0;
 	if (hooks != NULL && hooks->rf_counters != NULL) {
-		hooks->rf_counters(skipped, unarmed, rx_retries);
+		hooks->rf_counters(skipped, unarmed, rx);
 	}
 }
 
@@ -606,10 +614,10 @@ void stm32_hrc_dmr_stats(stm32_hrc_dmr_stats_t *out)
 	out->active = active;
 	out->stack_attached = stack_cb != NULL;
 	hrc6000_dmr_stats(&eng, &out->modem);
-	md380_rf_dmr_counters(&out->rf_skipped, &out->rf_unarmed, &out->rf_rx_back);
+	rf_counters(&out->rf_skipped, &out->rf_unarmed, &out->rf_rx);
 	out->rf_skipped -= rf_base[0];
 	out->rf_unarmed -= rf_base[1];
-	out->rf_rx_back -= rf_base[2];
+	out->rf_rx -= rf_base[2];
 }
 
 void stm32_hrc_dmr_stats_reset(void)
@@ -618,7 +626,7 @@ void stm32_hrc_dmr_stats_reset(void)
 	lock(NULL);
 	memset(&eng.st, 0, offsetof(hrc6000_dmr_stats_t, last_r5f));
 	unlock(NULL);
-	md380_rf_dmr_counters(&rf_base[0], &rf_base[1], &rf_base[2]);
+	rf_counters(&rf_base[0], &rf_base[1], &rf_base[2]);
 }
 
 typedef struct {
@@ -821,7 +829,7 @@ bool stm32_hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " rj", m->tx_rejected);
 		put_kv(&o, " sk", s.rf_skipped);
 		put_kv(&o, " na", s.rf_unarmed);
-		put_kv(&o, " rb", s.rf_rx_back);
+		put_kv(&o, " rb", s.rf_rx);
 		break;
 	default:
 		return false;

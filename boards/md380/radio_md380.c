@@ -348,7 +348,7 @@ bool md380_rf_dmr_switch(bool tx)
 // transmitter supply up. Done from the RF TX interrupt instead, the first burst of every transmission went out unlocked
 // and with a cold transmitter: a single-burst CSBK (repeater wake-up, radio check) reached no receiver, so a repeater
 // or duplex hotspot never woke (issue 108). The supply alone doesn't radiate: APC_EN keys the PA at the burst
-void md380_rf_dmr_prepare(void)
+static void rf_dmr_prepare(void)
 {
 	if (!r.dmr_armed || r.dmr_tx_tuned) {
 		return;
@@ -361,8 +361,8 @@ void md380_rf_dmr_prepare(void)
 	}
 }
 
-// After md380_rf_dmr_prepare, outside the lock: lock detect, as tx() waits for it in FM
-void md380_rf_dmr_wait_lock(void)
+// After rf_dmr_prepare, outside the lock: lock detect, as tx() waits for it in FM
+static void rf_dmr_wait_lock(void)
 {
 	if (r.dmr_tx_tuned && !sky72310_wait_lock(&r.pll, PLL_LOCK_US)) {
 		r.diag.pll_fails++;
@@ -374,7 +374,7 @@ void md380_rf_dmr_wait_lock(void)
 // split channel (repeater, duplex hotspot) the receiver back on the RX frequency, so the radio hears the repeater's
 // answer to its wake-up. Left on the TX side, every key-up there ended in no_repeater (issue 108). Not per burst: the
 // switch there caught the burst on air. Simplex stays on TX until tx_off() (RX = TX)
-void md380_rf_dmr_tx_done(void)
+static void rf_dmr_tx_done(void)
 {
 	if (!r.dmr_armed || !r.dmr_tx_tuned || !r.rx_valid || r.dmr_tx_hz == r.rx_hz) {
 		return;
@@ -389,7 +389,7 @@ void md380_rf_dmr_tx_done(void)
 	r.rf_rx_back++;
 }
 
-void md380_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_back)
+static void rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_back)
 {
 	*skipped = r.rf_skipped;
 	*unarmed = r.rf_unarmed;
@@ -401,6 +401,9 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.int_port = GPIOC,
 	.rf_switch = md380_rf_dmr_switch,
 	.rf_counters = rf_dmr_counters,
+	.tx_prepare = rf_dmr_prepare,
+	.tx_wait_lock = rf_dmr_wait_lock,
+	.tx_done = rf_dmr_tx_done,
 };
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
@@ -721,7 +724,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
-		md380_dmr_tx_prepare();	// a transmission the stack has already begun gets its first burst too
+		stm32_hrc_dmr_tx_prepare();	// a transmission the stack has already begun gets its first burst too
 		return true;
 	}
 

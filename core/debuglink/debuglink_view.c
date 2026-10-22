@@ -68,7 +68,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "state=%s\n", state_key((uint8_t)v->state));
 	dl_text(t, "tx_deny=%s\n", deny_key(v->tx_deny));
 	dl_text(t, "mode=%s\n", v->ch.mode == RADIO_MODE_DMR ? "dmr" : "fm");
-	dl_text(t, "vfo=%u\n", v->vfo);
+	dl_text(t, "vfo=%u\nvfo_index=%u\n", v->vfo, v->vfo_index);
 	dl_text(t, "zone_index=%u\nzone_pos=%u\nzone_size=%u\nzone_count=%u\n", v->zone_index, v->zone_pos, v->zone_size,
 		(unsigned)codeplug_zone_count());
 	dl_text_kv_str(t, "zone_name", v->zone_name);

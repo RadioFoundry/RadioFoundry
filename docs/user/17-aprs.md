@@ -10,8 +10,8 @@ The radio sends APRS two ways:
 - **Over DMR**: as a position report to an APRS gateway ID (BrandMeister's 5057 by default). This works on DMR
   channels.
 
-APRS is in every build that has FM. Some radios send only, and some can't send APRS on FM yet. The
-[Radio reference](23-radios.md) lists them and says where APRS is verified.
+Not every radio does both. Some send only, some can't send APRS on FM yet, and a build can leave APRS out for flash
+room. The [Radio reference](23-radios.md) lists them and says where APRS is verified.
 
 ## Before you start
 
@@ -34,7 +34,7 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | Path | How far digipeaters pass your packets on: None, WIDE1-1, WIDE1-1,WIDE2-1 (the default), WIDE2-1 or WIDE2-2. See Path below. Dimmed on radios that can't send APRS over the air |
 | Interval | How often: Off, 1, 2, 5, 10 or 30 minutes |
 | SmartBeaconing | More often when you move fast, at once after a turn, rarely when you stand still |
-| Send via | Radio (FM), DMR, or both |
+| Send via | AFSK (on FM), DMR, or both |
 | Position | Where the position comes from, and the fixed position (see Position below) |
 | Position in DMR calls | Your position in your DMR voice calls (see [DMR](08-dmr.md#position-in-calls)) |
 | KISS on USB | The radio works as a KISS TNC for APRS programs on the computer |
@@ -65,11 +65,15 @@ there too, and a codeplug written with a different path changes the radio's. Whi
 ## Receiving
 
 On radios that can receive APRS, the radio decodes packets while you listen on the APRS frequency. Make a channel on
-your region's frequency (144.390 MHz in North America) in FM, or tune the VFO there, and leave the radio on it. Heard
+the frequency shown in **Frequency** on the APRS page (your region's, 144.390 MHz in North America) in FM, or tune
+the VFO there, and leave the radio on it. If the packets are sent on another frequency, set **Frequency** to Custom
+and enter it first. Heard
 stations go into **Stations heard**, messages to your callsign are kept and acknowledged, and the digipeater (if you
 turned it on) passes packets on.
 
-- It listens only on the APRS frequency. On other channels nothing is decoded.
+- It listens only on the APRS frequency, in FM, and the tuned frequency must equal the APRS **Frequency** exactly.
+  On other channels nothing is decoded.
+- The volume knob doesn't matter: a radio turned all the way down still decodes.
 - On the DM-1701 a packet must be strong enough to open the squelch. Keep the squelch at its usual level, not tight.
 - Battery saving pauses while the radio listens for APRS: a sleeping receiver misses packets.
 - Receiving is on by default. Turn it off with `tools/odr_debug.py aprs set rx 0`.

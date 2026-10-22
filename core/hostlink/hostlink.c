@@ -17,6 +17,8 @@
 #endif
 #if CONFIG_DEBUGLINK
 #include "debuglink/debuglink.h"
+#elif CONFIG_STUB_ENTRY
+#include "stubentry/stub_entry.h"
 #endif
 #if CONFIG_CPS_FAST
 #include "cps/cps_fast.h"
@@ -580,7 +582,9 @@ static void hostlink_task(void *arg)
 void hostlink_start(void)
 {
 #if CONFIG_DEBUGLINK
-	debuglink_start();	// registers itself as the side protocol
+	debuglink_start();	// registers itself as the side protocol; hands STUB frames to the stub entry
+#elif CONFIG_STUB_ENTRY
+	stub_entry_start();	// the stub entry's own listener on the same framing (docs/spec/stub-entry.md)
 #endif
 #if CONFIG_APRS
 	aprs_host_start();	// registers the KISS TNC
