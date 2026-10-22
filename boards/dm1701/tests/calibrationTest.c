@@ -26,10 +26,10 @@ static bool fake_read(uint32_t addr, void *buf, uint32_t len)
 static bool fake_write(uint32_t addr, const void *buf, uint32_t len) { writes++; return false; }
 static bool fake_erase(uint32_t addr) { writes++; return false; }
 
-hal_flash_t dm1701_flash = { .init = fake_init, .size = 16u << 20, .erase_size = 4096,
-			     .read = fake_read, .write = fake_write, .erase = fake_erase };
+hal_flash_t stm32_spi_flash = { .init = fake_init, .size = 16u << 20, .erase_size = 4096,
+				.read = fake_read, .write = fake_write, .erase = fake_erase };
 
-bool dm1701_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t len)
+bool stm32_spi_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t len)
 {
 	if (reg < 1 || reg > 3 || offset + len > 256) {
 		return false;

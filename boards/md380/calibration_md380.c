@@ -127,7 +127,7 @@ static bool table_sane(void)
 bool md380_cal_load(void)
 {
 	source = CAL_NONE;
-	if (!md380_flash_read_security(1, 0, &table[0], 256) || !md380_flash_read_security(2, 0, &table[256], 256)) {
+	if (!stm32_spi_flash_read_security(1, 0, &table[0], 256) || !stm32_spi_flash_read_security(2, 0, &table[256], 256)) {
 		why = "read failed";
 		memset(table, 0xFF, sizeof(table));
 		load_frequencies();
