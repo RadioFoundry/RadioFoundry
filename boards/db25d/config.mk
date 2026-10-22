@@ -46,10 +46,6 @@ MCU_DEFS += -DDB25D_DMR_AF_GAIN=$(DB25D_DMR_AF_GAIN)u
 endif
 DB25D_DMR_SPK_SWITCH ?= 0
 MCU_DEFS += -DDB25D_DMR_SPK_SWITCH=$(DB25D_DMR_SPK_SWITCH)
-# The voice-access flag (modem-hrc7000.md 5.3) belongs on the slot LAYER2_STATUS b30 shows at this board's RX timeslot
-# interrupt, not the one after it: with the driver's default the chip never wrote received voice to its voice RAM, and
-# every call played the same stale frame (silence). Checked on the radio 2026-10-17 with bench speech
-MCU_DEFS += -DHRC7000_RX_NEXT_SLOT_XOR=0u
 # DMR transmit (hardware-db25d.md 4.5), checked on the SDR bench; DB25D_DMR_TX=0 builds receive only. DB25D_DMR_TX_INVERT=1
 # flips the 4FSK polarity (the modem's RF_MODE bit 7) for a bench check against the stock setting
 DB25D_DMR_TX ?= 1

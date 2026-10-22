@@ -575,6 +575,13 @@ in an open inbound call, voice headers and terminators are never echo-checked (t
 - Every terminator heard while keyed came with the chip's RS flag and was dropped in the driver. Rule: while sending,
   the driver passes headers and terminators on with `crc_ok` false and the runner checks them itself (14.1).
 
+**14.16 HR_C7000 voice-access slot polarity.** The RX timeslot interrupt decides the slot LAYER2_STATUS b30 shows
+then (`HRC7000_RX_NEXT_SLOT_XOR` 0), not the one after it. With the flag on the other slot the chip never writes the
+voice RAM, and every frame of every call reads the same stale bytes: silence (`voice.rx_peak` about 6), exactly 3 bit
+errors a frame, every other counter clean. The DB25-D and the DM-32UV each found it and set 0 in their board config;
+the DM-1801 Pro kept the driver's old default of 1 and played every DMR call silent (2026-10-22, bench speech: peak 6
+with 1, 32768 with 0). Rule: 0 is the driver default; `test_dmr_voice_speech` checks the peak, a frame counter can't.
+
 ## 15. Testing practice
 
 - An SDR with a burst analyzer (timing, sync, color code, frequency offset) caught every timing bug above; host tests

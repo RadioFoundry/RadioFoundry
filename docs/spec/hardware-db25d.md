@@ -334,7 +334,7 @@ ODR (`bk4819_dmr_rx_enter`, `db25d_dmr_enter`, tests/host/bk4819Test.c):
 | RF_MODE | `DB25D_DMR_RF_MODE` (default 0x034C9860), written after the DMR entry |
 | PTC18 | Low in DMR, high in FM; `DB25D_DMR_SPK_SWITCH=1` keeps it high |
 | Speaker in DMR | The PCM stream (`db25d_speaker_pcm`, from the modem's playback callback) turns the amplifier on and PTC18 low, as `audio()` does for an open squelch. The radio core never opens the squelch path for DMR voice, so before this every call played into a muted amplifier; beeps went silent the same way |
-| Voice-access slot | `HRC7000_RX_NEXT_SLOT_XOR=0` (the driver's default is 1): the flag (modem-hrc7000.md 5.3) belongs on the slot LAYER2_STATUS b30 shows at this board's RX timeslot interrupt. With 1 the chip never wrote received voice to its voice RAM: every frame was the same stale bytes, decoded to silence (peak 6 of 32767) with every counter clean. With 0, bench speech decodes with peaks near 16,000 (RADIO, 2026-10-17) |
+| Voice-access slot | `HRC7000_RX_NEXT_SLOT_XOR=0` (the driver's default since 2026-10-22; it was 1): the flag (modem-hrc7000.md 5.3) belongs on the slot LAYER2_STATUS b30 shows at this board's RX timeslot interrupt. With 1 the chip never wrote received voice to its voice RAM: every frame was the same stale bytes, decoded to silence (peak 6 of 32767) with every counter clean. With 0, bench speech decodes with peaks near 16,000 (RADIO, 2026-10-17) |
 
 Radio results before the stock set (bench MS voice, 461.4625 MHz, CC 2): RF_MODE 0x03269860 gave no sync; 0x03261860 (b15 clear) gave
 sync, the right color code and slot, but no usable burst; a larger AF gain held sync on noise. The PHASE_OUT range read exactly 32 times

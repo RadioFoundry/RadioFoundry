@@ -187,10 +187,12 @@ static void test_rx(void)
 	deframe(rti(1, 0, 3, 0, 1, 0));
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1);
 	CHECK(b.kind == DMR_BURST_VOICE && b.voice_index == 0 && b.len == 27 && b.payload[26] == 26);
-	REG(C7_LAYER2_STATUS) = 0;		// slot 0 now: the coming one is slot 1 (HRC7000_RX_NEXT_SLOT_XOR)
+	// The flag goes on the slot LAYER2_STATUS b30 shows at the interrupt (HRC7000_RX_NEXT_SLOT_XOR 0, every HR_C7000
+	// radio measured). The old default 1 put it on the other slot: the DM-1801 Pro played silence (2026-10-22)
+	REG(C7_LAYER2_STATUS) = 1u << 30;
 	tick(false);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x8040);
-	REG(C7_LAYER2_STATUS) = 1u << 30;
+	REG(C7_LAYER2_STATUS) = 0;
 	tick(false);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);
 	count_kind(DMR_EV_SLOT_TICK, NULL);

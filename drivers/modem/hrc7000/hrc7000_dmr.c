@@ -44,12 +44,13 @@
 // (tx_slave_auto_mode 0) and b0 dll_tx_slot_on set (DS 10.2.2.17)
 #define SLOTON_RX_OPEN_TX	0x20u
 
-// The chip slot the RX timeslot interrupt decides is the one after the slot number LAYER2_STATUS b30 shows then
-// (assumed: the interrupt comes 1.6 ms ahead of the boundary, LAYER2_SLOT_PRE). A board whose interrupt comes after
-// the boundary sets 0 (the DB25-D): with the flag on the other slot the chip leaves the voice RAM unwritten, and every
-// voice burst reads the same stale bytes
+// The chip slot the RX timeslot interrupt decides is the one LAYER2_STATUS b30 shows then (0), not the one after it
+// (1). With the flag on the other slot the chip leaves the voice RAM unwritten, and every voice burst reads the same
+// stale bytes: silence with every counter clean (voice.rx_peak about 6, exactly 3 bit errors a frame). 0 on every
+// HR_C7000 radio measured: DB25-D (2026-10-17), DM-32UV (2026-10-19), DM-1801 Pro (2026-10-22, which had the old
+// default of 1). A board can still override it
 #ifndef HRC7000_RX_NEXT_SLOT_XOR
-#define HRC7000_RX_NEXT_SLOT_XOR	1u
+#define HRC7000_RX_NEXT_SLOT_XOR	0u
 #endif
 
 #define VOICE_LOST_TICKS	13u	// about 390 ms without a voice burst on the call's slot
