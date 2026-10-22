@@ -95,13 +95,15 @@ not available for USB.
 | Entry | Radio off, cable connected, CPS closed. Hold the upper side key P2 and turn the radio on with the volume knob. The status LED lights red and a special screen shows "IAP_A" or "IAP_B" on the top line. Then release P2. It can take more than one try | COM (update guide v2.2, release notes 2024-06) |
 | A or B target | In IAP mode, long-press P2 to switch between IAP_A and IAP_B. The A file goes to IAP_A and the B file to IAP_B. Write the codeplug after updating both | COM |
 | Bootloader code | Not in the update files: they start at the 0x0300C000 application base, so the bootloader sits below it, as on the DM-32UV. No dump is available, so how IAP_B reaches SoC B (A relaying over the UART3 link, or a switch moving the cable to B's UART) is not known | BIN, INF |
+| How IAP_B may reach B | The updater's form has no A or B choice and sends the same commands for both: the target is picked on the radio only. Both applications use the same pads for UART1, PTA9 (RXD, also the K1 PTT line) and PTA10 (TXD), and both have the same release (IO_DIPLEX0 bits 9 and 10 set, both pins GPIO inputs). B releases them at boot. A tells B to release them at the start of every PC session (link id 0x6200) and to listen to PTA9 again at its end (0x6201). That points to the cable's two lines reaching both SoCs, with one owner at a time, so in IAP_B B's loader would answer the cable itself while A's lets go. A relaying (the applications already pass frames both ways over the link) is the other candidate. No reset or boot-strap line from A to B is in either application. ODR's B releases the pads at start-up as the original firmware does. A continuity check from the K1 pads to both SoCs, or a `Flash Read ` probe in IAP_A and in IAP_B, settles it | BIN, INF |
 | Software entry | The string "BLL_IAP_Flash" is a function-name tag in a log call (line constant 1445). That the routine hands over to the bootloader is not shown | BIN, INF |
 | ROM serial boot | The HR_C7000 boot ROM offers serial (UART0) boot or SPI-flash boot, no USB boot (DS). The datasheet names UART0 as the debug and boot-upgrade port. Where A's and B's UART0 balls go on the GD-88 board is unknown | DS, INF |
 
 ## 5. Open questions
 
 1. Is the K1 cable wired to A's UART1 directly, or through a switch that the bootloader also points at B when
-   IAP_B is selected? Needs a board photo or a continuity check with the radio opened (no live probing).
+   IAP_B is selected? Section 4 points to both SoCs' PTA9 / PTA10 on the same lines. Needs a board photo or a
+   continuity check with the radio opened (no live probing).
 2. Which converter chip is in the GD-88 cable as shipped (FTDI per the DB40-D box list and the release notes;
    other batches unknown)? Plugging the cable into a computer and reading its VID:PID answers it, with no radio needed.
 3. The K1 data level (3.3 V like the DB40-D's RJ-45, or something else).

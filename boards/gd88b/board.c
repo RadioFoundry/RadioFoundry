@@ -46,6 +46,10 @@ HRC_RAMFUNC void board_rf_safe(void)
 
 void board_early_init(void)
 {
+	// Off the programming cable's lines first: A's UART1 and PTT use them (pins.h)
+	IO_DIPLEX0 |= DIPLEX0_UART1;
+	hrc_pin_in(PIN_CABLE_RXD);
+	hrc_pin_in(PIN_CABLE_TXD);
 	// The three DAC outputs on their pins, as on A.
 	// TODO(gd88): unknown, needs a radio: whether B's DAC pins are wired as A's
 	IO_DIPLEX2 &= ~(IO_DIPLEX2_DAC_A | IO_DIPLEX2_DAC_B | IO_DIPLEX2_DAC_C);

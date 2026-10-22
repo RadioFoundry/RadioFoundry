@@ -214,6 +214,14 @@ loader's `IAP_B` target. The web flasher offers it: on the Install Receiver B st
 the page offers Use Factory Update Mode with the `IAP_B` steps. It writes with the DB25-D's IAP packets (`db25d.js`
 `Iap`), which are assumed, not known, to match. Try the web flasher first; the vendor updater below is the fallback.
 
+First find out who answers in each mode. This is read only. Enter update mode with `IAP_A` on the top line and send
+`Flash Read ` for one NAND page (address 0, count 1: `db25d.js` `readPacket`, or the DB25-D's IAP script on the bench
+Pi). Record the version banner and the page. Switch to `IAP_B` and repeat. A different banner or different NAND data
+means the cable reaches B's loader directly (hardware-gd88.md 4, "How IAP_B may reach B"). The same answers mean A
+answers both, and relays to B or switches it by another way. The loader's `Flash Read ` reads NAND only, so this
+gives no backup of B's program flash. Also check that A's PTT still works over the cable afterwards: ODR's B leaves
+PTA9 and PTA10 as inputs, as the original firmware does.
+
 1. Radio off, cable in, hold P2 and turn on. Long-press P2 until the top line reads `IAP_B`.
 2. In the web flasher, select Use Factory Update Mode and Install. If the loader does not answer or refuses, save the
    page's log and use the vendor IAP updater instead: write `odr_gd88b_install.bin` (or its `_codec` version) as B's file. This is the

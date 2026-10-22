@@ -36,6 +36,11 @@
 // TODO(gd88): unknown, needs a radio: PTB11 and PTB12's roles. Low from start-up on
 #define PIN_PARK_B11		0x2B
 #define PIN_PARK_B12		0x2C
+// UART1's pads, PTA9 (RXD) and PTA10 (TXD), share the programming cable's lines with A's (A's PTA9 is also the K1
+// PTT line). B never drives them: GPIO inputs from start-up on, as the original firmware leaves them
+#define PIN_CABLE_RXD		0x09	// PTA9
+#define PIN_CABLE_TXD		0x0A	// PTA10
+#define DIPLEX0_UART1		((1u << 9) | (1u << 10))	// IO_DIPLEX0: 1 = GPIO, 0 = UART1
 // The status LEDs, high = on. A's status LEDs: A switches them over the link (RX2_LED).
 // TODO(gd88): unknown, needs a radio: their colors. LED 1 lights while A transmits, LED 2 while it receives
 #define PIN_LED1		0x10	// PTA16
