@@ -96,8 +96,9 @@ def skip_kind(skipped):
 # board.toml [hil] keys (tools/boards.py BOARD_SCHEMA; all optional, a check whose key a board lacks skips): display
 # (VERSION display=), features (VERSION features the build must have), no_features (ones it must not), flash_jedec
 # (accepted data flash JEDEC ids), calibration (true: the diagnostics show the factory calibration), battery_mv
-# ([low, high] a sane reading lies in), codec (accepted stock codec versions)
-HIL_KEYS = ("display", "features", "no_features", "flash_jedec", "calibration", "battery_mv", "codec")
+# ([low, high] a sane reading lies in), supply_mv (the same for a radio that measures its DC input instead), codec
+# (accepted stock codec versions)
+HIL_KEYS = ("display", "features", "no_features", "flash_jedec", "calibration", "battery_mv", "supply_mv", "codec")
 _ENTRIES = {}
 
 
