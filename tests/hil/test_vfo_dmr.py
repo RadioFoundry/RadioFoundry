@@ -6,7 +6,10 @@ are the VFO's own settings (no temporary flag), and a channel change and back ke
 with color code 1, slot 1 and talkgroup 9 (the defaults) afterwards, which is what a VFO that was never touched has."""
 from odr_hil import skip
 
+import pytest
 
+
+@pytest.mark.feature("vfo_dmr")
 def test_vfo_dmr_settings(radio):
     if "VFO_DMR" not in radio.features() or "VFO_FM" not in radio.features():
         skip("not_built", "built without both VFO kinds")

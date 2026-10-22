@@ -38,6 +38,7 @@ def hotspot_cases():
     return H
 
 
+@pytest.mark.feature("hotspot")
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service

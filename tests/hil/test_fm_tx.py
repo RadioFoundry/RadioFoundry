@@ -124,6 +124,7 @@ def key_and_check(radio, sdr_bench, pytestconfig, tag, bw_khz, ctcss=None, dcs=N
     return rc, r
 
 
+@pytest.mark.feature("subtone")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_fm_tx_ctcss(fm_vfo, sdr_bench, pytestconfig):
@@ -133,6 +134,7 @@ def test_fm_tx_ctcss(fm_vfo, sdr_bench, pytestconfig):
     assert 200 <= r["ctcss_dev_hz"] <= 900, f"CTCSS deviation {r['ctcss_dev_hz']} Hz at 12.5 kHz: {r}"
 
 
+@pytest.mark.feature("subtone")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_fm_tx_dcs(fm_vfo, sdr_bench, pytestconfig):
@@ -145,6 +147,7 @@ def test_fm_tx_dcs(fm_vfo, sdr_bench, pytestconfig):
     assert r["dcs_tail_s"] >= 0.15, f"no DCS turn-off tail (134.4 Hz) at the end: {r}"
 
 
+@pytest.mark.feature("fm")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_fm_tx_bandwidth(fm_vfo, sdr_bench, pytestconfig):
@@ -159,6 +162,7 @@ def test_fm_tx_bandwidth(fm_vfo, sdr_bench, pytestconfig):
     assert 1.5 <= ratio <= 2.6, f"25 / 12.5 kHz deviation ratio {ratio:.2f} (tones {devs})"
 
 
+@pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_fm_tx_tone_burst(fm_vfo, sdr_bench, pytestconfig):
@@ -183,6 +187,7 @@ def test_fm_tx_tone_burst(fm_vfo, sdr_bench, pytestconfig):
     assert 500 <= dev <= 2500, f"1750 Hz burst deviation {dev} Hz peak at 12.5 kHz (at most 2500)"
 
 
+@pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_fm_tx_roger_beep(fm_vfo, sdr_bench, pytestconfig):
@@ -221,6 +226,7 @@ def test_fm_tx_roger_beep(fm_vfo, sdr_bench, pytestconfig):
         f"roger_beep 0 still ends with a tone: {results[0]['tones']}"
 
 
+@pytest.mark.feature("fm")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):

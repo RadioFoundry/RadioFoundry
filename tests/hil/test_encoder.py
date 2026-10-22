@@ -31,6 +31,7 @@ def home(radio):
     radio.long_press("back")
 
 
+@pytest.mark.feature("channel_knob")
 def test_knob_direction(home):
     r = home
     v = r.core()
@@ -82,6 +83,7 @@ def _turn(r, clicks, prompt, timeout=30.0):
     return {k: now[k] - before[k] for k in now}, now
 
 
+@pytest.mark.feature("channel_knob", optional=True, owner="turn the channel knob by the clicks the test asks for")
 @pytest.mark.manual
 def test_knob_counts_detents(home):
     r = home

@@ -46,6 +46,7 @@ def freq(rx, tx):
     return bytes([0]) + struct.pack("<II", rx, tx) + bytes([0]) + struct.pack("<I", tx)
 
 
+@pytest.mark.feature("sfr")
 @pytest.mark.radio_tx
 def test_hotspot_sfr_mode(radio):
     feats = radio.features()
@@ -97,6 +98,7 @@ def test_hotspot_sfr_mode(radio):
     radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot", "sfr"), what="hotspot left")
 
 
+@pytest.mark.feature("sfr")
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service

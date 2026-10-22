@@ -24,8 +24,7 @@ feature (`--feature F`) adds `-<feature>`.
 | `date` | The end of the run, ISO 8601 in UTC (`2026-10-22T19:01:33Z`) |
 | `features` | The checklist ids the run covered |
 | `granted` | The needs the run allowed (`radio`, `rf`, `bench` and so on) |
-| `missing` | Listed tests pytest didn't collect (a failure of the run) |
-| `tests` | One object per test case: `id` (node id, with parameters), `features`, `required`, `outcome` (`passed`, `failed`, `skipped`), and for a skip `skip_kind`, `excused` and `reason` |
+| `tests` | One object per test case: `id` (node id, with parameters), `features` (those it gates), `optional` (those it is optional for), `required`, `outcome` (`passed`, `failed`, `skipped`), and for a skip `skip_kind`, `excused` and `reason` |
 | `firmware` | The radio's VERSION keys `proto`, `view`, `git`, `board`, `features`, `codec`, `display` |
 | `options` | The run's flags and frequencies (`allow-rf`, `dmr-freq` and so on) |
 | `tools` | The Python and pytest versions |
@@ -60,7 +59,7 @@ A feature's status never understates the board. For a feature the board builds:
 | Status | When |
 |---|---|
 | `pass`, `fail` | The newest run record that ran the feature passed or failed it |
-| `partial` | That run had excused skips or didn't run every test, and no seed row covers the feature |
+| `partial` | That run had excused skips, and no seed row covers the feature |
 | `needs re-run` | Files under the feature's `spec` or `source` (`tests/hil/features.toml`) changed after the record's commit. The mark isn't downgraded; the feature needs a run |
 | `pass (seed)`, `fail (seed)` | No run passed or failed the feature, and the seed record has a row for it |
 | `built, not yet recorded` | No record covers the feature yet, or it has no HIL test |

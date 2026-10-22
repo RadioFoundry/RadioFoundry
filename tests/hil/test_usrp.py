@@ -61,6 +61,7 @@ def keyed(rows):
     return [r for r in rows if r[2] and r[3]]
 
 
+@pytest.mark.feature("net_usrp")
 @pytest.mark.usb_switch
 def test_usrp_fm_rx(radio, pytestconfig):
     if not pytestconfig.getoption("--allow-usb-switch"):
@@ -98,6 +99,7 @@ def test_usrp_fm_rx(radio, pytestconfig):
                 f"{len(rows)} frames after the squelch closed, the last with keyup {rows[-1][2] if rows else '-'}"
 
 
+@pytest.mark.feature("net_usrp")
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
@@ -130,6 +132,7 @@ def test_usrp_dmr_rx(radio, sdr_bench, pytestconfig):
         assert got[-1][2] is False, "no keyup 0 frame after the call"
 
 
+@pytest.mark.feature("net_usrp")
 @pytest.mark.usb_switch
 @pytest.mark.radio_tx
 @pytest.mark.bench_service

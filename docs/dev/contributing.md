@@ -106,14 +106,14 @@ the project lead, never in public CI).
 
 ### The feature checklist
 
-`tests/hil/features.toml` has one entry per feature and no radio columns
-([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)). `tools/bringup.py check` (in `tools/ci.sh`) fails
-when an entry is missing or out of step with the tests.
+`tests/hil/features.toml` has one entry per feature, no radio columns and no test lists: each HIL test names its
+feature with `@pytest.mark.feature("<id>")` ([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)).
+`tools/bringup.py check` (in `tools/ci.sh`) fails when an entry is missing or a test marks a feature that has none.
 
 | Change | What to do |
 |---|---|
-| A new switch or feature | Add an entry: `id`, `switch`, `summary`, `spec`, the required `tests` in order (the capability gate first when the feature needs hardware glue), `needs` matching the tests' markers, `owner` for tests that ask a person for something. An entry may have no tests yet; `tools/bringup.py status` then shows "built, not yet recorded" |
-| A new HIL test | List it in its feature's `tests`, or `optional_tests` when it shouldn't gate. A required test not written yet goes in `planned_tests` |
+| A new switch or feature | Add a `[feature.<id>]` table: `switch`, `spec`, and `source` when the Makefile's files for the switch aren't the right ones. A feature may have no tests yet; `tools/bringup.py status` then shows "built, not yet recorded" |
+| A new HIL test | Mark it `@pytest.mark.feature("<id>")`, with `optional=True` when it shouldn't gate and `owner="..."` when it asks a person for something. Its needs come from its markers and fixtures. A required test not written yet goes in the feature's `planned_tests` |
 | A radio lacks a feature | Put the switch in the board's `BOARD_UNSUPPORTED` with a reason (state `n/a`). Planned but not working yet: `[features.<id>] state = "unsupported"` and a `reason` in its `board.toml` |
 | A new radio | Nothing here: its states resolve from its build data |
 

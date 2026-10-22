@@ -60,6 +60,7 @@ def _print_lc_trace(radio):
             print("  " + line)
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_private_call_to_us(radio, sdr_bench, pytestconfig):
@@ -76,6 +77,7 @@ def test_private_call_to_us(radio, sdr_bench, pytestconfig):
         assert v["dmr.target_id"] == str(BENCH_SRC) and v["dmr.target_private"] == "1", v
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_private_call_to_other(radio, sdr_bench, pytestconfig):
@@ -86,6 +88,7 @@ def test_private_call_to_other(radio, sdr_bench, pytestconfig):
     assert d["call.rx_voice_bursts"] == 0, d
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_emergency_call(radio, sdr_bench, pytestconfig):
@@ -99,6 +102,7 @@ def test_emergency_call(radio, sdr_bench, pytestconfig):
     assert v["last.emergency"] == "1", v
 
 
+@pytest.mark.feature("dmr_talker_alias")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_talker_alias(radio, sdr_bench, pytestconfig):
@@ -112,6 +116,7 @@ def test_talker_alias(radio, sdr_bench, pytestconfig):
     assert v["call.alias"] == alias and v["call.alias_complete"] == "1", v
 
 
+@pytest.mark.feature("dmr_gps")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_gps_info(radio, sdr_bench, pytestconfig):
@@ -127,6 +132,7 @@ def test_gps_info(radio, sdr_bench, pytestconfig):
     assert abs(float(v["last.gps_lat"]) - lat) < 2e-5 and abs(float(v["last.gps_lon"]) - lon) < 2e-5, v
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_late_entry(radio, sdr_bench, pytestconfig):
@@ -155,6 +161,7 @@ def test_late_entry(radio, sdr_bench, pytestconfig):
     assert v["last.src"] == str(BENCH_SRC), v
 
 
+@pytest.mark.feature("dmr_privacy")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_privacy_service_option(radio, sdr_bench, pytestconfig):
@@ -178,6 +185,7 @@ def test_privacy_service_option(radio, sdr_bench, pytestconfig):
         radio.link.dmr_privacy("off")
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_pi_bit(radio, sdr_bench, pytestconfig):
@@ -188,6 +196,7 @@ def test_pi_bit(radio, sdr_bench, pytestconfig):
     assert d["call.rx_calls"] == 1, d
 
 
+@pytest.mark.feature("dmr_voice")
 def test_talk_target_requests(radio, pytestconfig):
     """Radio only (nothing transmits): a typed private ID, a contact and back to the channel's talk target; the
     privacy key request. Every change shows in the dmr view."""

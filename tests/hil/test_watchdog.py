@@ -30,6 +30,7 @@ def _reconnect(radio, timeout=60.0):
     raise AssertionError("the radio did not come back after the watchdog reset")
 
 
+@pytest.mark.feature("watchdog")
 def test_watchdog_running(radio):
     """Started and fed: a timeout, the feed count going up, and the idle task's longest gap well inside the timeout."""
     v = _view(radio)
@@ -43,6 +44,7 @@ def test_watchdog_running(radio):
     assert as_int(v2["watchdog.max_gap_ms"]) < timeout // 2, v2
 
 
+@pytest.mark.feature("watchdog")
 def test_watchdog_test_refused_without_token(radio):
     _view(radio)
     with pytest.raises(DebugLinkError) as e:
@@ -50,6 +52,7 @@ def test_watchdog_test_refused_without_token(radio):
     assert e.value.status == 7     # refused: no starving the watchdog without the token
 
 
+@pytest.mark.feature("watchdog")
 @pytest.mark.reboot
 @pytest.mark.parametrize("kind", ["starve", "spin", "irq-off"])
 def test_watchdog_resets(radio, kind):

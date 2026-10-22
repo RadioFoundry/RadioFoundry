@@ -198,6 +198,7 @@ def levels(link, settle=0.4, n=5):
     return {ch: (acc[ch][0] / n, acc[ch][1]) for ch in acc}
 
 
+@pytest.mark.feature("audio_probe", optional=True)
 def test_probe_stream_in_fm(probe, pytestconfig):
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
@@ -423,6 +424,7 @@ MUSIC_HZ = 1400
 MUSIC_MS = 2000
 
 
+@pytest.mark.feature("audio_probe", optional=True)
 def test_probe_music_fifo(probe, pytestconfig):
     """Radio only: with the prompt tone path open (0x06 bit 1), does the chip drain the FIFO (about 8000 samples a
     second = 250 writes of 32), and with it closed, not? Tells whether the path runs at all in FM."""
