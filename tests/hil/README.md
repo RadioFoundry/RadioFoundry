@@ -146,7 +146,9 @@ fails or skips, the feature's other required tests fail with "capability gate fa
 Each `run` writes `docs/testing/results/<board>/<date>-<commit>.json`: the commit and whether the tree had changes, the
 git object ids of each feature's spec and source paths, the date, the features, every test's id, the features it counts
 for, outcome, skip kind and reason, the firmware's VERSION keys (git, board, features, codec), the allowed options and
-the Python and pytest versions. Ports, host names and serial numbers are left out. Commit the record with the change it
+the Python and pytest versions. Ports, host names and serial numbers are left out. A record needs the git history
+(the commit, the content hashes): in a tree that isn't a git checkout, such as a `git archive` export, `run` stops
+before testing unless it has `--no-record`, and `list` and `status` say that nothing was checked for staleness. Commit the record with the change it
 checks. A feature's status never understates the radio. The newest record that ran it decides: `pass`, `partial`
 (excused skips), `fail`, or `needs re-run` when its `spec` or `source` paths differ from the content the record hashed
 (`sources`; by content, so a squash merge changes nothing). Before a run, the board's seed record decides (the evidence

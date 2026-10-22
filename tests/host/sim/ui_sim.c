@@ -30,6 +30,7 @@
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
+//   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
@@ -356,6 +357,7 @@ static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_
 			      .set_backlight = d_backlight };
 static uint8_t battery = 84;
 static uint8_t p_battery(void) { return battery; }
+static uint16_t p_supply(void) { return 13800; }	// the sim's view carries the reading (supply:<mv>)
 static hal_power_t power = { .battery_pct = p_battery };
 
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
@@ -1565,9 +1567,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.side_keys = maps[map].side;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
-	// The MD-9600's panel names its QUICK and CONTEXT keys in the hints
-	board.quick_label = map == SIM_MAP_P ? "P1" : NULL;
-	board.context_label = map == SIM_MAP_P ? "P2" : NULL;
+	power.supply_mv = NULL;
 	cur_map = map;
 	gfx_init(&disp);
 	gfx_invalidate();
@@ -2174,6 +2174,13 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "nobattery") == 0) {
 		board.caps |= CAP_NO_BATTERY;
+		advance(1100);
+		return true;
+	}
+	if (strcmp(t, "supply") == 0 && arg != NULL) {
+		board.caps |= CAP_NO_BATTERY;
+		power.supply_mv = p_supply;
+		view.supply_mv = (uint16_t)atoi(arg);
 		advance(1100);
 		return true;
 	}

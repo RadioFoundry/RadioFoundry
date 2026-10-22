@@ -25,6 +25,7 @@ bands = "136-174 / 400-480 MHz"
 power = "up to 25 W"
 display = "1.77\" color, 160 × 128"
 gallery = "160x128"
+unconfirmed = { VIBRATE = "no source says whether the radio has a vibration motor" }
 
 [status]
 level = "supported"

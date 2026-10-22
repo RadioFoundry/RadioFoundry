@@ -76,6 +76,7 @@ One-line summaries for the site and the generated tables; the facts stay in `doc
 | `cpu` | Optional: overrides the platform's CPU in the tables |
 | `bands`, `power`, `display` | Short text |
 | `gallery` | The display class (`160x128`); `check` requires the UI gallery to have it |
+| `unconfirmed` | Optional: hardware switches (`hardware` in `tests/hil/features.toml`) the board neither builds nor lists in `BOARD_UNSUPPORTED`, because no source says yet whether the radio has the part: switch to what is unknown. `check` fails on any other hardware switch that is off by default, and on an entry for a switch the board builds or lists. The feature matrix shows it as ? |
 
 ### [status]
 

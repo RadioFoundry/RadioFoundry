@@ -119,8 +119,10 @@ BOARD_SCHEMA = {
     "part_of": _opt(str),
     "debuglink_aliases": _opt(STR_LIST),
     "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
+    # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
+    # BOARD_UNSUPPORTED because no source says yet whether the radio has the part: switch -> what is missing
     "hardware": _req({"cpu": _opt(str), "bands": _req(str), "power": _req(str), "display": _req(str),
-                      "gallery": _req(str)}),
+                      "gallery": _req(str), "unconfirmed": _opt(("map", str))}),
     # summary: what works, then at most one short clause of what is open; plain text, no links (the README, the
     # user manual's radio table and the site show it)
     "status": _req({"level": _req(LEVELS), "summary": _req(str), "release": _req(RELEASES)}),
@@ -156,6 +158,7 @@ BOARD_SCHEMA = {
     # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED)
     "hil": _opt({"display": _opt(str), "features": _opt(STR_LIST), "no_features": _opt(STR_LIST),
                  "flash_jedec": _opt(STR_LIST), "calibration": _opt(bool), "battery_mv": _opt(RANGE),
+                 "supply_mv": _opt(RANGE),
                  "codec": _opt(STR_LIST)}),
     "features": _opt(("map", {"state": _req(("unsupported",)), "reason": _req(str)})),
     # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
@@ -288,6 +291,15 @@ def _c_sources(board_dir):
         if f.endswith(".c"):
             with open(os.path.join(board_dir, f), encoding="utf-8") as fh:
                 yield f, _strip_c_comments(fh.read())
+
+
+def source_volts(board_dir):
+    """The voltage a board measures, from its sources as hal/board.h board_volts() decides it: "battery" unless board_t
+    .caps has CAP_NO_BATTERY, then "supply" when a hal_power_t sets .supply_mv, else "none"."""
+    texts = [t for _, t in _c_sources(board_dir)]
+    if not any(re.search(r"\.caps\s*=[^;}]*\bCAP_NO_BATTERY\b", t) for t in texts):
+        return "battery"
+    return "supply" if any(re.search(r"\.supply_mv\s*=", t) for t in texts) else "none"
 
 
 def board_t_names(board_dir):
@@ -607,6 +619,7 @@ def load(root=ROOT, only=None):
                          # board's reason wins for a switch both list
                          {**unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
                           **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(bdir))
+        out[bid].volts = source_volts(bdir)
     return out
 
 
@@ -627,6 +640,35 @@ def gallery_classes(root=ROOT):
     return set(re.findall(r'\{\s*"([^"]+)"', m.group(1))) if m else set()
 
 
+def hardware_switches(root=ROOT):
+    """{switch: what it needs}: the features of tests/hil/features.toml with a hardware field."""
+    path = os.path.join(root, "tests", "hil", "features.toml")
+    if not os.path.isfile(path):
+        return {}
+    feats = _read_toml(path).get("feature", {})
+    return {e["switch"]: e["hardware"] for e in feats.values() if e.get("switch") and e.get("hardware")}
+
+
+def hardware_problems(bid, unsupported, unconfirmed, built, hw):
+    """A board's hardware switches that read "off by default": each must be built (built: switch -> "y"/"n"), listed in
+    BOARD_UNSUPPORTED, or, while the fact is unknown, in board.toml [hardware] unconfirmed."""
+    out = []
+    for s, what in sorted(hw.items()):
+        on, gone = built.get(s) == "y", s in unsupported
+        if s in unconfirmed:
+            if on or gone:
+                out.append("boards/%s/board.toml: hardware.unconfirmed %s, but the board %s: drop the entry"
+                           % (bid, s, "builds it" if on else "lists it in BOARD_UNSUPPORTED"))
+        elif not on and not gone:
+            out.append("boards/%s: %s needs %s and is off by default: build it (config.mk CONFIG_%s ?= y) if the "
+                       "radio has it, else BOARD_UNSUPPORTED += %s  # <the reason, from the hardware spec>; a fact "
+                       "no source has yet goes in board.toml [hardware] unconfirmed" % (bid, s, what, s, s))
+    for s in sorted(set(unconfirmed) - set(hw)):
+        out.append("boards/%s/board.toml: hardware.unconfirmed %s is not a hardware switch (tests/hil/features.toml)"
+                   % (bid, s))
+    return out
+
+
 def check(root=ROOT):
     """Every problem found, as strings (empty: the registry is consistent)."""
     problems = []
@@ -634,6 +676,7 @@ def check(root=ROOT):
         boards = load(root)
     except RegistryError as e:
         return [str(e)]
+    hw = hardware_switches(root)
     stub_ids, orders = {}, {}
     classes = gallery_classes(root)
     for bid, b in boards.items():
@@ -646,6 +689,13 @@ def check(root=ROOT):
             if not why:
                 problems.append("boards/%s/config.mk: BOARD_UNSUPPORTED %s has no reason: one switch a line, "
                                 "BOARD_UNSUPPORTED += %s  # <reason>" % (bid, s, s))
+        if hw:
+            try:
+                built = {s: v for s, v in ((k[len("CONFIG_"):], v) for k, v in
+                                           make_vars(root, bid, ["CONFIG_" + s for s in hw]).items())}
+                problems += hardware_problems(bid, b.unsupported, d["hardware"].get("unconfirmed", {}), built, hw)
+            except RegistryError as e:
+                problems.append(str(e))
         for k, p in d["docs"].items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
@@ -927,7 +977,7 @@ def site_view(boards, root=ROOT):
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
-            "unsupported": dict(b.unsupported)})
+            "unsupported": dict(b.unsupported), "volts": b.volts})
     # the survey's radios without a board, planned or in progress (docs/spec/radios.md Port cells)
     rows, problems = registry_docs.survey(root, boards)
     if problems:
@@ -1047,6 +1097,37 @@ def self_test():
             ok(False, "validate refuses " + what)
         except RegistryError:
             ok(True, "validate refuses " + what)
+
+    # the voltage a board measures, from its sources
+    tmpv = tempfile.mkdtemp(prefix="odr-boards-volts-")
+    try:
+        def volts_of(src):
+            with open(os.path.join(tmpv, "board.c"), "w", encoding="utf-8") as f:
+                f.write(src)
+            return source_volts(tmpv)
+        ok(volts_of("const board_t board = { .caps = CAP_KEYPAD | CAP_DMR };") == "battery", "volts: a battery")
+        ok(volts_of("const board_t board = { .caps = CAP_ENCODER | CAP_NO_BATTERY, };") == "none",
+           "volts: no battery, no supply reading")
+        ok(volts_of("const board_t board = { .caps = CAP_NO_BATTERY };\n"
+                    "static const hal_power_t p = { .supply_mv = rd };") == "supply", "volts: the supply")
+        ok(volts_of("// .caps = CAP_NO_BATTERY\nconst board_t board = { .caps = 0 };") == "battery",
+           "volts: a comment doesn't count")
+    finally:
+        shutil.rmtree(tmpv)
+
+    # hardware switches: built, unsupported or unconfirmed, never off by default
+    hw = {"VIBRATE": "a vibration motor", "NAND_STORAGE": "SPI NAND data flash"}
+    hp = hardware_problems
+    ok(hp("x", {"NAND_STORAGE": "NOR"}, {}, {"VIBRATE": "y", "NAND_STORAGE": "n"}, hw) == [],
+       "hardware switches: one built, one in BOARD_UNSUPPORTED")
+    ok(len(hp("x", {}, {}, {"VIBRATE": "y", "NAND_STORAGE": "n"}, hw)) == 1,
+       "hardware switches: off by default and not in BOARD_UNSUPPORTED fails")
+    ok(hp("x", {}, {"NAND_STORAGE": "unknown"}, {"VIBRATE": "y", "NAND_STORAGE": "n"}, hw) == [],
+       "hardware switches: an unconfirmed fact passes")
+    ok(len(hp("x", {}, {"VIBRATE": "unknown"}, {"VIBRATE": "y", "NAND_STORAGE": "y"}, hw)) == 1,
+       "hardware switches: unconfirmed on a switch the board builds fails")
+    ok(len(hp("x", {}, {"FONT_BIG": "?"}, {"VIBRATE": "y", "NAND_STORAGE": "y"}, hw)) == 1,
+       "hardware switches: unconfirmed on a switch that isn't a hardware switch fails")
 
     # the survey's Port cells (check 5) and the floor, on a fixture survey
     class Stub:
