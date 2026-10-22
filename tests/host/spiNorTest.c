@@ -763,10 +763,11 @@ static void test_md9600_rev_cuts(void)
 }
 
 // Over every test: only the commands the driver is meant to send. None may erase (0x44) or program (0x42) a security
-// register, write a status register (0x01, 0x31, 0x11: the security register lock bits), or erase more than a sector
+// register, write a status register (0x01, 0x31, 0x11: the security register lock bits), or erase more than a sector.
+// 0x4B reads the unique ID
 static void test_commands_sent(void)
 {
-	static const uint8_t allowed[] = { 0x03, 0x02, 0x20, 0x06, 0x05, 0x35, 0x15, 0x9F, 0x48 };
+	static const uint8_t allowed[] = { 0x03, 0x02, 0x20, 0x06, 0x05, 0x35, 0x15, 0x9F, 0x48, 0x4B };
 	for (unsigned c = 0; c < 256; c++) {
 		bool ok = false;
 		for (unsigned i = 0; i < sizeof allowed; i++) {
