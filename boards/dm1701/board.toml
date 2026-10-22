@@ -77,11 +77,3 @@ lens = [36, 30]
 # reports them: 8, or 10 when the factory panel type is RGB
 [cps]
 radio_types = [8, 10]
-
-# Why each switch in config.mk's BOARD_UNSUPPORTED is n/a on this radio, by feature (tests/hil/features.toml):
-# tools/bringup.py shows the reason. "unsupported" instead marks a feature planned but not working yet
-[features]
-font_xl = { state = "n/a", reason = "The 160x120 panel is too small for the large font (it is for 240 px and wider)" }
-am_rx = { state = "n/a", reason = "No air band receiver: the AT1846S is FM only" }
-bcast_fm = { state = "n/a", reason = "No broadcast receiver" }
-fault_trace = { state = "n/a", reason = "Needs a host UART: the host port is USB, and the one UART is the GPS receive line" }
