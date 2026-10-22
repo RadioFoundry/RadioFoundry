@@ -135,6 +135,21 @@ for f in sys.argv[1:]:
 	else
 		skip "HIL test collection: pytest not installed (pip install pytest pyserial)"
 	fi
+	# every HIL skip names its kind (tests/hil/README.md, "Skip kinds"), and the skip helper's own tests (no radio)
+	if python3 tools/check_hil_skips.py > "$OUT/hil-skips.log" 2>&1; then
+		ok "HIL skips: $(tail -1 "$OUT/hil-skips.log" | sed 's/^check_hil_skips: //')"
+	else
+		head -20 "$OUT/hil-skips.log"
+		bad "HIL skips without a kind (see $OUT/hil-skips.log)"
+	fi
+	if python3 -c 'import pytest' 2>/dev/null; then
+		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py > "$OUT/hil-skip-test.log" 2>&1; then
+			ok "HIL skip helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
+		else
+			tail -20 "$OUT/hil-skip-test.log"
+			bad "HIL skip helper tests (see $OUT/hil-skip-test.log)"
+		fi
+	fi
 	# the flashing tools: odrflash's host tests (sector planning, manifests, codec merge, fake bootloader runs) and
 	# the self-tests of the developer tools (no USB, synthetic keys and stock files)
 	if python3 -W ignore -m unittest discover -s tools/odrflash/tests > "$OUT/odrflash-tests.log" 2>&1 &&

@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, find_ports
+from odr_hil import DebugLink, DebugLinkError, find_ports, skip
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 
@@ -44,7 +44,7 @@ def _serial_back(timeout):
 @pytest.mark.usb_switch
 def test_usb_network_roundtrip(radio):
     if "DMR_IP_GATEWAY" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_IP_GATEWAY")
+        skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
     own_id = int(radio.view(["dmr"]).get("dmr.own_id", "0"))
     assert 0 < own_id < (1 << 24), "no DMR ID: the gateway can't make an address"
     host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own_id)

@@ -6,13 +6,13 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, as_int, find_ports
+from odr_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
 
 
 def _view(radio):
     v = radio.view(["watchdog"])
     if v.get("watchdog.built") != "1":
-        pytest.skip("built without CONFIG_WATCHDOG")
+        skip("not_built", "built without CONFIG_WATCHDOG")
     return v
 
 

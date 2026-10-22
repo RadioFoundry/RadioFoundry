@@ -6,14 +6,14 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, as_int, find_ports
+from odr_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
 
 CRASH_KIND_FAULT, CRASH_KIND_ASSERT = 1, 4
 
 
 def _need(radio):
     if "CRASH_LOG" not in radio.features():
-        pytest.skip("built without CONFIG_CRASH_LOG")
+        skip("not_built", "built without CONFIG_CRASH_LOG")
 
 
 def _reconnect(radio, timeout=30.0):

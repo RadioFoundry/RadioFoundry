@@ -26,7 +26,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, as_int
+from odr_hil import DebugLink, as_int, skip
 import cps_client
 import tftp_client
 
@@ -74,7 +74,7 @@ def network_mode(radio):
 
 def need(radio, feature):
     if feature not in radio.features():
-        pytest.skip(f"built without CONFIG_{feature}")
+        skip("not_built", f"built without CONFIG_{feature}")
 
 
 def _run_for(cmd, seconds, until=None):
@@ -201,7 +201,7 @@ def test_mdns(radio):
         else:
             res, log = _browse_zeroconf("_odr-debug._udp")
             if res is None and log == "zeroconf not installed":
-                pytest.skip("neither dns-sd nor python zeroconf: the name resolved, browsing not checked")
+                skip("bench", "neither dns-sd nor python zeroconf: the name resolved, browsing not checked")
         assert res is not None, f"_odr-debug._udp not browsed or resolved: {log}"
         name, port, txt, target = res
         assert port == 3334, res
@@ -258,7 +258,7 @@ def test_tftp_write(radio, backup_dir):
     core = radio.core()
     with network_mode(radio) as (udp, radio_ip, own_id):
         if as_int(udp.view(["net"]).get("tftp.write_allowed"), 1) == 0:
-            pytest.skip("TFTP codeplug writes are off on the radio (Settings > Connections)")
+            skip("state", "TFTP codeplug writes are off on the radio (Settings > Connections)")
         backup = _read_image(radio_ip)
         again = _read_image(radio_ip)
         d = cps_client.compare(backup, again, QDMR, skip=())
@@ -271,7 +271,7 @@ def test_tftp_write(radio, backup_dir):
               f"tools/cps_client.py write {path} in serial mode)")
         number = _pick_channel(backup, core)
         if number == 0:
-            pytest.skip("no stored channel to edit")
+            skip("state", "no stored channel to edit")
         old = cps_client.decode_channel(backup, number)["name"]
         edited = bytearray(backup)
         cps_client.set_channel_name(edited, number, "ODR TFTP" if old != "ODR TFTP" else "ODR TFTP 2")

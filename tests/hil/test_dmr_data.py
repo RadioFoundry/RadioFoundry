@@ -24,6 +24,8 @@ import warnings
 
 import pytest
 
+from odr_hil import skip
+
 BENCH_SRC = 9990301
 CSBK_CALL_ALERT, CSBK_CALL_ALERT_ACK, CSBK_RADIO_CHECK = 0x1F, 0x20, 0x24
 FID_MOTOROLA = 0x10
@@ -33,9 +35,9 @@ DT_CSBK, DT_DATA_HEADER = 3, 6
 def _setup(radio, pytestconfig, tx=False):
     feats = radio.features()
     if "DMR" not in feats:
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     if radio.data_view().get("data.built") != 1:
-        pytest.skip("built without the DMR data features")
+        skip("not_built", "built without the DMR data features")
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
@@ -43,14 +45,14 @@ def _setup(radio, pytestconfig, tx=False):
         radio.lowest_power()
     own = int(radio.view(["dmr"])["dmr.own_id"])
     if own == 0:
-        pytest.skip("the radio has no DMR ID (dmr.own_id=0)")
+        skip("state", "the radio has no DMR ID (dmr.own_id=0)")
     time.sleep(1.0)
     return freq, cc, own, feats
 
 
 def _need(feats, name):
     if name not in feats:
-        pytest.skip(f"built without CONFIG_{name}")
+        skip("not_built", f"built without CONFIG_{name}")
 
 
 def _deltas(before, after, keys):

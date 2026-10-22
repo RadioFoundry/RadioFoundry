@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from odr_hil import counter_deltas
+from odr_hil import counter_deltas, skip
 
 CALLS, SUPERFRAMES, HEADERS, TERMINATORS = 2, 10, 8, 3
 
@@ -20,7 +20,7 @@ CALLS, SUPERFRAMES, HEADERS, TERMINATORS = 2, 10, 8, 3
 @pytest.mark.bench_service
 def test_dmr_rx_counters(radio, sdr_bench, pytestconfig):
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
