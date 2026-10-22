@@ -37,7 +37,6 @@ class Site:
 		self.strict = strict
 		self.log = log
 		self.warnings = []
-		self.noted = set()
 		self.i18n = i18n.load()
 		self.tpl = tmpl.Templates(repo.path("site", "templates"), self.i18n.t)
 		self.git = repo.git("rev-parse", "--short=8", "HEAD", default="unknown")
@@ -226,14 +225,9 @@ class Site:
 		return html.escape(self.i18n.opt(lang, "radio.note." + b["id"], docsmod.plain(b["summary"])))
 
 	def note(self, lang, key, src):
-		"""A survey radio's one-line note for visitors (planned.note.<slug>): the survey's notes are written for
-		developers."""
-		if not self.i18n.has(self.i18n.default, key):
-			if key not in self.noted:
-				self.warn("no %s in the %s catalog (a visitor's note on %s)" % (key, self.i18n.default, src))
-				self.noted.add(key)
-			return ""
-		return html.escape(self.t(lang, key))
+		"""A survey radio's note for visitors: the survey's Port cell note (src), which a catalog may translate
+		(planned.note.<slug>)."""
+		return html.escape(self.i18n.opt(lang, key, src))
 
 	def md_inline(self, text, src="README.md"):
 		"""A Markdown table cell from the repository as HTML (links rewritten like the docs)."""
@@ -368,7 +362,7 @@ class Site:
 			"support": self.board_note(lang, b)}, lang)) for b in self.boards]
 		for n, p in enumerate(self.planned):
 			st = p["status"]
-			note = self.note(lang, "planned.note." + docsmod.slug(p["radio"]), p["radio"])
+			note = self.note(lang, "planned.note." + docsmod.slug(p["radio"]), p["note"])
 			if p["pr"]:	# a port on an open branch: its pull request
 				note = ('<a href="%s/pull/%d">#%d</a>' % (html.escape(self.repo_url), p["pr"], p["pr"])
 					+ (" " + note if note else ""))

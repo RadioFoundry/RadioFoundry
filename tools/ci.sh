@@ -110,6 +110,23 @@ else
 	tail -20 "$OUT/registry.log"
 	bad "board registry (see $OUT/registry.log)"
 fi
+# the docs blocks generated from the registry are current, and no radio reads lower than on the base branch
+# (ODR_FLOOR_REF, default origin/main; skipped when this checkout doesn't have it)
+if [ -n "$REG_PY" ]; then
+	FLOOR_REF="${ODR_FLOOR_REF:-origin/main}"
+	if git rev-parse -q --verify "$FLOOR_REF^{commit}" > /dev/null; then
+		FLOOR_ARGS="--floor $FLOOR_REF"
+	else
+		FLOOR_ARGS=
+		skip "radio floor: no $FLOOR_REF in this checkout (ODR_FLOOR_REF)"
+	fi
+	if reg docs --check $FLOOR_ARGS > "$OUT/registry-docs.log" 2>&1; then
+		ok "$(tail -1 "$OUT/registry-docs.log" | sed 's/^boards: //')"
+	else
+		cat "$OUT/registry-docs.log"
+		bad "generated docs (run tools/boards.py docs; see $OUT/registry-docs.log)"
+	fi
+fi
 fi
 
 # ── 1. host tests ────────────────────────────────────────────────────────────
