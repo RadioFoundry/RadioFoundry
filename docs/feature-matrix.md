@@ -110,7 +110,7 @@ switch: the voltage the radio measures, its battery, its DC input (Supply) or no
 | `FM_TX_TONES` | ● | ● | ● | ● | ✕ |
 | `VOX` | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● |
-| `VIBRATE` | ✕ | ● | ? | ? | ✕ |
+| `VIBRATE` | ✕ | ● | ? | ✕ | ✕ |
 | `AUDIO_PROBE` | ○ | ✕ | ○ | ✕ | ○ |
 | `STUB_ENTRY` | ● | ● | ● | ● | ● |
 | `NAND_STORAGE` | ✕ | ✕ | ✕ | ● | ✕ |
