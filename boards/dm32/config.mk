@@ -23,4 +23,5 @@ CONFIG_AM_RX ?= $(CONFIG_FM)
 CONFIG_BCAST_FM ?= y
 # The platform's three TCP connections keep 11 KB of main RAM free; 4 leaves 9.6 KB. ci's maximal configuration has
 # every switch but USB and USB_NETWORK (platform/hrc7000/config.mk), FONT_XL and AUDIO_PROBE too (9.9 KB of main RAM
-# free)
+# free), and NAND_STORAGE (below)
+BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q128 class (docs/spec/hardware-dm32.md 10)

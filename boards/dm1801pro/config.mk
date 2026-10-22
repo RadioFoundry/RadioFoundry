@@ -20,3 +20,4 @@ BOARD_UNSUPPORTED += AM_RX	# the broadcast tuner's air band isn't wired yet
 BOARD_UNSUPPORTED += AUDIO_PROBE	# a bench diagnostic for an audio path this radio doesn't have
 BOARD_UNSUPPORTED += FONT_XL	# the 128x64 panel is too small for the large font
 BOARD_UNSUPPORTED += UI_COLOR	# the 128x64 panel is monochrome: no colors to set
+BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR: 4 KB erase (docs/spec/hardware-dm1801pro.md 6.1)
