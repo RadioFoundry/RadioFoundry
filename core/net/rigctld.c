@@ -61,16 +61,6 @@ static uint32_t freq_now(void)
 	return view->ch.rx_hz;
 }
 
-static bool in_band(uint32_t hz)
-{
-	for (uint8_t i = 0; i < board.band_count; i++) {
-		if ((hz >= board.bands[i].lo_hz) && (hz <= board.bands[i].hi_hz)) {
-			return true;
-		}
-	}
-	return false;
-}
-
 // A decimal number with an optional fraction (Hamlib sends "145500000.000000"); false when it isn't one
 static bool parse_num(const char *s, int32_t *v)
 {
@@ -118,7 +108,7 @@ static int set_freq(const char *arg)
 	int32_t hz;
 	uint32_t now = hal_millis();
 
-	if ((arg == NULL) || !parse_num(arg, &hz) || (hz <= 0) || !in_band((uint32_t)hz)) {
+	if ((arg == NULL) || !parse_num(arg, &hz) || (hz <= 0) || !board_in_band((uint32_t)hz, false)) {
 		return -RIG_EINVAL;
 	}
 	if (view->hotspot) {

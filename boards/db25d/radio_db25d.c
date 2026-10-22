@@ -135,17 +135,6 @@ static void rx_paths(uint32_t hz, bool on)
 }
 
 // The PA control DAC is powered only for a transmission
-static void dac_b_power(bool on)
-{
-	uint32_t st = hrc_irq_save();
-	if (on) {
-		DAC_PD_CTRL &= ~DAC_B_OFF;
-	} else {
-		DAC_PD_CTRL |= DAC_B_OFF;
-	}
-	hrc_irq_restore(st);
-}
-
 static void apc_ramp(uint16_t target, bool up)
 {
 	for (uint16_t i = 0; i <= DB25D_APC_STEPS; i++) {
@@ -162,16 +151,6 @@ static bk4819_tone_t bk_tone(uint8_t type)
 	case TONE_DCS_INV: return BK4819_TONE_DCS_INV;
 	default: return BK4819_TONE_NONE;
 	}
-}
-
-static bool in_band(uint32_t hz)
-{
-	for (uint8_t i = 0; i < board.band_count; i++) {
-		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz) {
-			return true;
-		}
-	}
-	return false;
 }
 
 // The C7000 modem's DC bias, as the stock firmware writes it at every receive set-up, in FM too (4.6): the TX center byte
@@ -291,7 +270,7 @@ static bool tx_stop(void);
 
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 {
-	if (!supported || !in_band(hz)) {
+	if (!supported || !board_in_band(hz, false)) {
 		return false;
 	}
 #if CONFIG_DMR && DB25D_DMR_TX
@@ -333,7 +312,7 @@ static void audio(bool on);
 static bool dmr_tx(uint32_t hz, uint8_t power)
 {
 	db25d_tx_plan_t plan;
-	if (!supported || !in_band(hz) || !db25d_cal_tx_plan(hz, power >= 1, DB25D_TX_DRIVE_PCT, &plan)) {
+	if (!supported || !board_in_band(hz, true) || !db25d_cal_tx_plan(hz, power >= 1, DB25D_TX_DRIVE_PCT, &plan)) {
 		return false;
 	}
 	if (dmr_armed) {
@@ -347,7 +326,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(db25d_cal_tx_center(), db25d_cal_mod(hz)));
 	bk4819_dmr_tx_prepare(&rf_main);
 	DAC_DATA_B = 0;
-	dac_b_power(true);
+	hrc_dac_b_power(true);
 	dmr_armed = true;
 	db25d_dmr_tx_arm();
 	return true;
@@ -359,7 +338,7 @@ static void dmr_disarm(void)
 		db25d_dmr_tx_disarm();
 		dmr_armed = false;
 		DAC_DATA_B = 0;
-		dac_b_power(false);
+		hrc_dac_b_power(false);
 	}
 }
 
@@ -426,7 +405,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	}
 	db25d_tx_plan_t plan;
 	// Power index 1 ("H") is the stock's level 1, table 0x045; "L" the other table
-	if (!supported || !in_band(hz) || !db25d_cal_tx_plan(hz, power >= 1, DB25D_TX_DRIVE_PCT, &plan)) {
+	if (!supported || !board_in_band(hz, true) || !db25d_cal_tx_plan(hz, power >= 1, DB25D_TX_DRIVE_PCT, &plan)) {
 		return false;
 	}
 	tx_stop();
@@ -455,7 +434,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	// PA select (UHF: PTA26 high, PB3 low; VHF the other way round) with the RX supply off, then the one TX supply of the
 	// band (UHF: PTA27 high, PTB2 low; VHF the other way round)
 	DAC_DATA_B = 0;
-	dac_b_power(true);
+	hrc_dac_b_power(true);
 	hrc_pin_write(tx_uhf ? PIN_VHF_TX : PIN_UHF_TX, false);
 	hrc_pin_write(tx_uhf ? PIN_UHF_TX : PIN_VHF_TX, true);
 	hrc_pin_write(PIN_RX_SUPPLY, false);
@@ -484,7 +463,7 @@ static bool tx_stop(void)
 	hrc_pin_write(PIN_UHF_TX, false);
 	hrc_pin_write(PIN_VHF_TX, false);
 	hrc_pin_write(PIN_RX_SUPPLY, true);
-	dac_b_power(false);
+	hrc_dac_b_power(false);
 	transmitting = false;
 	audio(audio_open);
 	return true;
