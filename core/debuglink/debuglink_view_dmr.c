@@ -117,6 +117,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		// SFR user: the other copy of a burst played, the talker's copy dropped, voting's held bursts and fixed frames
 		dl_text(t, "call.rx_sfr_dup=%u\ncall.rx_sfr_direct=%u\ncall.rx_sfr_held=%u\ncall.rx_sfr_fixed=%u\n",
 			(unsigned)c.rx_sfr_dup, (unsigned)c.rx_sfr_direct, (unsigned)c.rx_sfr_held, (unsigned)c.rx_sfr_fixed);
+		dl_text(t, "call.rx_same_voice=%u\n", (unsigned)c.rx_same_voice);
 		dl_text(t, "call.tx_calls=%u\ncall.tx_denied=%u\ncall.tx_underruns=%u\ncall.evq_overflows=%u\n",
 			(unsigned)c.tx_calls, (unsigned)c.tx_denied, (unsigned)c.tx_underruns, (unsigned)c.evq_overflows);
 		dl_text(t, "call.rx_private_calls=%u\ncall.rx_emergency_calls=%u\ncall.rx_encrypted_calls=%u\n",
