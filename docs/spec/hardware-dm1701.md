@@ -575,6 +575,11 @@ bit 0 first. So 0x4B/0x4C take the word **bit-reversed**: 023 -> 0x763813 -> rev
 0x4C = 0x0E37. The programming guide's own example (0x0076 / 0x3813, unreversed) went out as D023 read backwards on
 the SDR bench, and the radio accepted no other radio's DCS; with the reversed word it sends and receives D023N.
 
+DCS turn-off tail (`radio-features.md` 3.3a): 0x4E bits 10:9 from 10 (DCS) to 11 (CTCSS) for the tail. 0x4A already
+holds 13440, so the chip sends 134.4 Hz as a CTCSS tone; back to 10 (and the polarity in bits 8:6, kept) on PTT again.
+The chip's own tail elimination (0x30 bit 11, 0x4E bits 15:14 phase shift) is a CTCSS feature and stays off. Not yet
+measured on the SDR bench (INF).
+
 ### 5.8 Tones, voice channel and TX audio source
 
 | Register | Use |
