@@ -28,6 +28,13 @@ Every feature is on by default wherever the radio has what it needs. A board tur
 it lacks (or board code not written yet) or when the image doesn't fit, and then the most obscure
 large features go first. Bench diagnostics such as `CONFIG_AUDIO_PROBE` stay off.
 
+A feature that needs a part only some radios have (a vibration motor, a GPS receiver, SPI NAND) is a hardware switch:
+`hardware = "..."` on its entry in `tests/hil/features.toml`. Each board then builds it, lists it in
+`BOARD_UNSUPPORTED`, or names it in `board.toml` `[hardware] unconfirmed`, and `tools/boards.py check` enforces that.
+The accelerometer is the next one: today its driver (`drivers/sensor/lis3dh`) only feeds a board's
+diagnostics page under `CONFIG_DIAG`, so it has no switch. The first feature that uses motion brings a hardware
+switch with it.
+
 ## Variants
 
 A variant is a named preset of switches for the prebuilt release images and the web flasher's build picker
@@ -65,6 +72,7 @@ below are for the DM-1701.
 | `CONFIG_VOX` | = FM | voice-operated transmit on FM, from the microphone level (`docs/spec/radio-features.md` 3.4) |
 | `CONFIG_BATTERY_SAVE` | = FM | receiver duty cycling on an idle FM channel (`docs/spec/radio-features.md` 5.4) |
 | `CONFIG_VIBRATE` | n (radios with a vibration motor: y) | vibration alerts on the board's motor (`hal_power_t.vibrate`) for messages, call alerts, private calls and emergencies, and Settings > Sound > Vibrate (`docs/spec/radio-features.md` 4.1). No radio on main has a motor yet; a board without one shows the row dimmed |
+| `CONFIG_GPS` | y (radios without a GPS receiver: n) | the GPS receiver: the board's module driver and its NMEA input (`drivers/gps`, `platform/*/gps*`, `CAP_GPS`). Off, the radio has no GPS; DMR GPS, LRRP and APRS keep the fixed position and report no fix |
 | `CONFIG_APRS` | = FM | APRS (`core/aprs`, `docs/spec/aprs.md`): position, status and message packets as AX.25 / Bell 202 AFSK on FM through `board.afsk`, positions over DMR (LRRP / UDT), beacon triggers, a KISS TNC on the host port. Transmit stays off until the user turns it on. About 2.8 KB RAM on the DM-1701 |
 | `CONFIG_APRS_RX` | = APRS (MD-380: n) | APRS receive: the AFSK demodulator on the board's received audio, station list, messages to us with acks, the digipeater. Useful only where the board can sample received audio: its own AFSK receive path, or FM receive audio on the PCM stream (the DM-1701, `docs/spec/aprs.md` 5.3). About 6 KB RAM more |
 | `CONFIG_APRS_IGATE` | = APRS_RX and HOSTLINK (DM-1701: n, flash) | the iGate rules, RF to APRS-IS and messages back, with the host helper `tools/aprs_gate.py` holding the APRS-IS connection |
