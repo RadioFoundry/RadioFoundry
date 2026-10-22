@@ -330,6 +330,14 @@ warning setting. The debug link reports `battery=none` (with `battery_pct=0` and
 `battery_pct` and `battery_mv` out, and SNMP reports odrBatteryVoltage 0, odrBatteryPercent 0 and odrBatteryState
 ok(1) without ever sending odrLowBattery.
 
+Such a board may measure its DC input instead: it sets `hal_power_t.supply_mv`, and `board_volts()` (`hal/board.h`)
+says `BOARD_VOLTS_SUPPLY`. The radio core reads it once a second, outside transmissions like the battery, into the
+view's `supply_mv`. Nothing acts on it: no level, percentage, warning, TX refusal or power off, since no supply
+thresholds are defined yet. The UI's last tool is then Supply, showing the reading in volts (13.8 V), with no battery
+settings. The debug link has `supply_mv` in place of `battery_pct` and `battery_mv`, `/status` has `supply_mv`, and
+SNMP reports as for no battery. The feature matrix and the web site show each radio's reading: Battery, Supply or
+None.
+
 ### 5.2 Low and critical
 
 Low: the battery low beep, again every 2 minutes; the backlight is capped at 30 % (5.3). Critical: the critical beep

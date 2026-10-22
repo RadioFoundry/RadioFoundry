@@ -118,6 +118,8 @@ static void status_json(dl_text_t *t)
 	dl_text(t, ",\"rssi_dbm\":%d,\"squelch\":%u", v->rssi_dbm, v->squelch);
 	if (board_has_battery()) {	// a radio without a battery leaves both fields out
 		dl_text(t, ",\"battery_pct\":%u,\"battery_mv\":%u", v->battery_pct, v->battery_mv);
+	} else if (board_volts() == BOARD_VOLTS_SUPPLY) {
+		dl_text(t, ",\"supply_mv\":%u", v->supply_mv);
 	}
 	dl_text(t, ",\"hotspot\":%s", bool_s(v->hotspot));
 #if CONFIG_DMR

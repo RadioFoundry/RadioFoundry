@@ -49,7 +49,9 @@ tests for every feature, is `tools/bringup.py list --radio <id>`; recorded runs 
 ● on in the radio's default image · ○ off by default (it builds when switched on) · ✕ not available: the board or its
 platform lists it in `BOARD_UNSUPPORTED` with the reason (`config.mk`) · ? off, and no source says yet whether the
 radio has the part it needs (`board.toml` `[hardware] unconfirmed`). From each board's `make print-config`. A switch
-that needs hardware some radios lack (`hardware` in `tests/hil/features.toml`) is never ○.
+that needs hardware some radios lack (`hardware` in `tests/hil/features.toml`) is never ○. The last row is not a
+switch: the voltage the radio measures, its battery, its DC input (Supply) or none (`board_volts()` in
+`hal/board.h`).
 
 <!-- generated: tools/boards.py docs feature-defaults; edit config/features.mk and boards/*/config.mk -->
 | Feature switch | DM-1701 | DM-1801 Pro | DM-32UV | DB25-D PRO | MD-380 |
@@ -125,6 +127,7 @@ that needs hardware some radios lack (`hardware` in `tests/hil/features.toml`) i
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● |
+| Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery |
 <!-- end generated -->
 
 ## Radio and voice

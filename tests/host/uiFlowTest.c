@@ -878,6 +878,11 @@ static void no_battery_checks(void)
 		{ "Tools: no Battery to open", "nobattery ok 6 9", "toast=No_item" },
 		{ "Power settings with a battery", "ok 7 7", "shows=Battery_saver shows=Low_battery" },
 		{ "Power settings", "nobattery ok 7 7", "hides=Battery_saver hides=Low_battery shows=Auto_power_off" },
+		// a radio that measures its DC input: the last tool is Supply with the reading, nothing battery-only
+		{ "Tools: Supply", "supply:13800 ok 6 up", "shows=Supply shows=13.8_V hides=Battery" },
+		{ "Supply page", "supply:13800 ok 6 9", "screen=info shows=13.8_V hides=%" },
+		{ "Supply: no warning", "supply:9000 battery:14", "banner=none hides=%" },
+		{ "Supply: no battery settings", "supply:13800 ok 7 7", "hides=Battery_saver hides=Low_battery" },
 	};
 	char err[300], buf[200];
 	for (int g = 0; g < sim_geom_count; g++) {

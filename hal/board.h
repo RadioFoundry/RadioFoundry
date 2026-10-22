@@ -109,6 +109,16 @@ static inline bool board_has_battery(void)
 	return (board.caps & CAP_NO_BATTERY) == 0;
 }
 
+// The voltage the radio measures: its battery, its DC input (no battery, hal_power_t.supply_mv set), or neither
+typedef enum { BOARD_VOLTS_NONE, BOARD_VOLTS_BATTERY, BOARD_VOLTS_SUPPLY } board_volts_t;
+
+static inline board_volts_t board_volts(void)
+{
+	if (board_has_battery())
+		return BOARD_VOLTS_BATTERY;
+	return board.power != NULL && board.power->supply_mv != NULL ? BOARD_VOLTS_SUPPLY : BOARD_VOLTS_NONE;
+}
+
 // Settings > Location > GPS took effect (a board without the hook has nothing to switch)
 static inline void board_gps_enable(bool on)
 {

@@ -118,7 +118,7 @@ class Site:
 		for b in self.boards:
 			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "order", "status", "bands",
 					       "power", "gallery", "cpu", "display", "docs", "flash", "backup", "unsupported",
-					       "unsupported_reasons", "required", "config", "screens", "codeplug")}
+					       "unsupported_reasons", "required", "config", "screens", "codeplug", "volts")}
 			r["support"] = docsmod.plain(b["summary"])
 			r["image"] = "static/img/radios/%s.svg" % b["id"]
 			r["frame_image"] = "static/img/radios/%s-frame.svg" % b["id"]
@@ -423,7 +423,8 @@ class Site:
 		       "screen_style": "left:%g%%;top:%g%%;width:%g%%;height:%g%%" % (pct["left"], pct["top"], pct["width"], pct["height"]),
 		       "badge": self.badge(lang, b["status"]), "support": self.board_note(lang, b),
 		       "bands": b["bands"], "power": b["power"], "kind": self.t(lang, "radio.kind." + b["kind"]),
-		       "cpu": b["cpu"], "display": b["display"], "variant_head": vhead, "feature_groups": "".join(groups),
+		       "cpu": b["cpu"], "display": b["display"], "volts": self.t(lang, "radio.volts." + b["volts"]),
+		       "variant_head": vhead, "feature_groups": "".join(groups),
 		       "na_list": ", ".join(html.escape(self.ftitle(lang, f)) for f in na) or "—",
 		       "shots": "".join(shots), "docs_links": docs_links, "gallery": b["gallery"],
 		       "flash_cta": self.tpl.partial("flash_cta" if can_flash else "flash_soon",

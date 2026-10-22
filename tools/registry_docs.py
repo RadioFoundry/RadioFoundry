@@ -241,7 +241,12 @@ def feature_defaults(root, boards):
         marks = ["✕" if s in b.unsupported else "●" if cfg[b.id].get(s) == "y"
                  else "?" if s in b.data["hardware"].get("unconfirmed", {}) else "○" for b in bs]
         out.append("| `%s` | %s |" % (s, " | ".join(marks)))
+    # not a switch: what the board measures (hal/board.h board_volts), for the battery or supply features
+    out.append("| Voltage reading (board, no switch) | %s |" % " | ".join(VOLTS_WORD[b.volts] for b in bs))
     return out
+
+
+VOLTS_WORD = {"battery": "Battery", "supply": "Supply", "none": "None"}
 
 
 # file, block, source the marker names, generator(root, boards, rows)

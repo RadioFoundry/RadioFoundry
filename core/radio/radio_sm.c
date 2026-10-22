@@ -4672,7 +4672,8 @@ static void follow_volume(radio_sm_t *sm)
 	}
 }
 
-// Battery monitor: a reading a second, none during or just after a transmission
+// Battery monitor: a reading a second, none during or just after a transmission. A radio that measures its supply
+// instead gets the reading a second for display, and nothing acts on it: no thresholds are defined for a supply
 static void battery_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	bool tx = sm->view.state == RS_TX;
@@ -4681,6 +4682,13 @@ static void battery_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 	if (tx) {
 		sm->tx_end_ms = now_ms;
+		return;
+	}
+	if (board_volts() == BOARD_VOLTS_SUPPLY) {
+		if (now_ms - sm->batt_ms >= RADIO_BATT_PERIOD_MS) {
+			sm->batt_ms = now_ms;
+			sm->view.supply_mv = board.power->supply_mv();
+		}
 		return;
 	}
 	if (!board_has_battery() || board.power == NULL || board.power->battery_mv == NULL || now_ms - sm->batt_ms < RADIO_BATT_PERIOD_MS ||
