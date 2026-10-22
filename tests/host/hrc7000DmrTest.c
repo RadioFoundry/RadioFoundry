@@ -270,7 +270,8 @@ static void test_rx_sfr_both_copies(void)
 	for (int n = 0; n < 2 * BURSTS + 3; n++) {
 		uint8_t cs = (uint8_t)(n & 1);
 
-		REG(C7_LAYER2_STATUS) = (uint32_t)(cs ^ 1u) << 30;	// the coming slot is chip slot cs
+		// The interrupt decides the slot LAYER2_STATUS b30 shows (gotchas 14.16): chip slot cs comes next
+		REG(C7_LAYER2_STATUS) = (uint32_t)cs << 30;
 		tick(false);
 		bool flag = REG(C7_LAYER2_TXRX_CTRL) == 0x8040;
 		int k = cs == 0 ? n / 2 : (n - 3) / 2;	// direct copy on chip slot 0, the repeat on chip slot 1
@@ -305,14 +306,14 @@ static void test_rx_sfr_both_copies(void)
 	}
 	CHECK(voice == 24 && fresh == 24 && stale == 0);
 	// One copy ends with its terminator: its slot loses the flag, the other keeps it
-	REG(C7_LAYER2_STATUS) = 1u << 30;
+	REG(C7_LAYER2_STATUS) = 0;
 	tick(false);
 	deframe(rti(0, DMR_BURST_TERMINATOR_LC, 2, 2, 0, 0));
 	count_kind(DMR_EV_BURST_RX, NULL);
-	REG(C7_LAYER2_STATUS) = 0;
+	REG(C7_LAYER2_STATUS) = 1u << 30;
 	tick(false);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x8040);	// chip slot 1, the repeat still running
-	REG(C7_LAYER2_STATUS) = 1u << 30;
+	REG(C7_LAYER2_STATUS) = 0;
 	tick(false);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);	// chip slot 0, the talker's copy over
 	// And with nothing more, the repeat's slot loses it too after the voice-lost time
