@@ -104,6 +104,25 @@ class SectorMap(unittest.TestCase):
         self.assertIn("__codec_slot = 0x030E8000;", ld)
         self.assertIs(boards.from_debuglink_name("DM-1801 Pro"), b)
 
+    def test_gd88_boards(self):
+        """Both SoCs: the DB25-D's map (loader below 0x0300C000, first stage, codec slot), each with its own codec
+        maps, and only A answers on the debug link"""
+        from odrflash import codecmap
+        maps = codecmap.load_maps()
+        for bid in ("gd88", "gd88b"):
+            b = boards.get(bid)
+            self.assertEqual((b.app_base, b.flash_end, b.family), (0x0300C000, 0x03100000, boards.DB25D.family))
+            self.assertEqual(b.codec.windows, boards.DB25D.codec.windows)
+            self.assertEqual((b.protected, b.first_stage), (boards.DB25D.protected, boards.DB25D.first_stage))
+            self.assertIn(b.codec.id, maps)
+            self.assertEqual(maps[b.codec.id]["board"], bid)
+        self.assertEqual(sorted(p for p, m in maps.items() if m["board"] == "gd88"),
+                         ["gd88-2210", "gd88-2303", "gd88-2405", "gd88-2406", "gd88-2501"])
+        self.assertEqual(sorted(p for p, m in maps.items() if m["board"] == "gd88b"),
+                         ["gd88b-2210", "gd88b-2303", "gd88b-2401", "gd88b-2501"])
+        self.assertIs(boards.from_debuglink_name("GD-88"), boards.GD88)
+        self.assertIs(boards.get("GD-88B"), boards.GD88B)
+
 
 class Planning(unittest.TestCase):
     def test_keep_small_image(self):

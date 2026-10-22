@@ -6,14 +6,15 @@
 # $(TARGET)_install.bin: the stage followed by the application, written from the stage's address by the loader's
 # update tool or stubtool --write-app.
 BOOT_DIR := boot/$(BOOT_STAGE)
-BOOT_SRC := $(BOOT_DIR)/boot.S $(BOOT_DIR)/boot.c
+BOOT_LD  := boot/hrc7000/stage.ld
+BOOT_SRC := boot/hrc7000/entry.S $(BOOT_DIR)/boot.c
 BOOT_ELF := $(BUILD)/boot/boot.elf
 BOOT_BIN := $(BUILD)/boot/boot.bin
 
-$(BOOT_ELF): $(BOOT_SRC) $(BOOT_DIR)/boot.ld $(BUILD)/flags
+$(BOOT_ELF): $(BOOT_SRC) boot/hrc7000/stage.c $(BOOT_LD) $(BUILD)/flags
 	@mkdir -p $(dir $@)
 	$(CC) $(CPUFLAGS) -Os -ffreestanding -fno-builtin -nostdlib -Wall -Wextra $(BOOT_DEFS) \
-		-Wl,-T,$(BOOT_DIR)/boot.ld,--no-warn-rwx-segments -o $@ $(BOOT_SRC)
+		-Wl,-T,$(BOOT_LD),--no-warn-rwx-segments -o $@ $(BOOT_SRC)
 
 # The loader checks a signature before it starts an application on a normal power-on: pad.py fails the build when the
 # stage lacks it (the radio would stay in update mode) or outgrows its sector

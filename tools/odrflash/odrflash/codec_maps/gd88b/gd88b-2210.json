@@ -5,7 +5,7 @@
  "isa": "csky",
  "stock": {
   "name": "gd88-v2022-10-28-b.bin",
-  "version": "v2022-10-2 B",
+  "version": "B49C.D64.EHRNAB.005 (2022-10-28)",
   "sha256": "3e9cd8a65a36887485718e960539244ba700bca21f1059171fe58794056fb971"
  },
  "code": {

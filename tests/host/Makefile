@@ -749,8 +749,14 @@ db25dCalTest: db25dCalTest.c $(DB25D)/calibration_db25d.c $(DB25D)/db25d.h $(COR
 # Its first stage in front of the application (boot/db25d): the stub load, dropped frames, the window, a cold UART
 TESTS   += bootDb25dTest
 
-bootDb25dTest: bootDb25dTest.c $(ROOT)/boot/db25d/boot.c
+bootDb25dTest: bootDb25dTest.c $(ROOT)/boot/db25d/boot.c $(ROOT)/boot/hrc7000/stage.c
 	$(CC) $(CFLAGS) -Wshadow -o $@ bootDb25dTest.c
+# The GD-88's two first stages (boot/gd88, boot/gd88b): the RF chain and UART1 on A, UART3 and the long window on B
+TESTS   += bootGd88Test bootGd88bTest
+bootGd88Test: bootGd88Test.c $(ROOT)/boot/gd88/boot.c $(ROOT)/boot/hrc7000/stage.c
+	$(CC) $(CFLAGS) -Wshadow -DSOC_B=0 -o $@ bootGd88Test.c
+bootGd88bTest: bootGd88Test.c $(ROOT)/boot/gd88b/boot.c $(ROOT)/boot/hrc7000/stage.c
+	$(CC) $(CFLAGS) -Wshadow -DSOC_B=1 -o $@ bootGd88Test.c
 
 # Its clock arithmetic (platform/hrc7000/clock_math.h): the PLL words, UART divisor, bit-bang phase length
 TESTS   += hrc7000ClockTest
@@ -766,10 +772,12 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
 
 run: run-db25d
-run-db25d: bk4819Test db25dCalTest bootDb25dTest hrc7000ClockTest hrc7000CodecSlotTest
+run-db25d: bk4819Test db25dCalTest bootDb25dTest bootGd88Test bootGd88bTest hrc7000ClockTest hrc7000CodecSlotTest
 	./bk4819Test
 	./db25dCalTest
 	./bootDb25dTest
+	./bootGd88Test
+	./bootGd88bTest
 	./hrc7000ClockTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin

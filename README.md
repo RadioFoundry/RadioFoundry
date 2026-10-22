@@ -225,7 +225,7 @@ of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make su
 | `drivers/` | Chip drivers shared across radios |
 | `platform/` | Per-SoC startup, clocks, interrupts and RTOS glue (`stm32f4`, `hrc7000`) |
 | `boards/` | One directory per radio: board descriptor, pins, feature defaults, linker script, codec hosting |
-| `boot/` | First stages in front of the application, for radios whose loader starts it directly (`boot/db25d`) |
+| `boot/` | First stages in front of the application, for radios whose loader starts it directly (`boot/db25d`, `boot/gd88`, `boot/gd88b`; the common part in `boot/hrc7000`) |
 | `config/` | Build-time feature switches |
 | `third_party/` | Permissively licensed upstream code, as submodules (FreeRTOS, ST HAL and CMSIS, TinyUSB) |
 | `tools/` | Flashing (`odrflash`), release packaging, codec merge, CPS client, debug link client (`odr_debug.py`), CI, SDR bench tools |

@@ -199,7 +199,46 @@ DB25D = Board(
     first_stage=(0x1000, bytes([0x2C, 0x11, 0x01, 0xC0])),
 )
 
-BOARDS = {b.id: b for b in (DM1701, DM32, DM1801PRO, MD380, DB25D)}
+# Bring-up, not released (docs/spec/hardware-gd88.md). Two HR_C7000 SoCs, each with its own 2 MB program flash, IAP
+# loader below 0x0300C000 and codec slot, laid out as on the DB25-D: the first stage at 0x0300C000, ODR at 0x0300D000.
+# A (gd88) is the main SoC with the PC cable; B (gd88b) is the second receiver, reached through A: the loader's
+# second target (P2 held long at power-on), or ODR on A bridging the cable to B's first stage (docs/spec/rx2-link.md 4).
+# Like the DB25-D, the web flasher and stub/stubtool.py install them.
+GD88 = Board(
+    id="gd88",
+    name="Radioddity GD-88",
+    family="hrc7000-iap",
+    app_base=0x0300C000,
+    flash_end=0x03100000,
+    sectors=[Sector(0, 0x0300C000, 0x030E8000 - 0x0300C000), Sector(1, 0x030E8000, 0x03100000 - 0x030E8000)],
+    codec=CodecProfile(id="gd88-2501", windows=[(0x030E8000, 0x03100000 - 0x030E8000)],
+                       installed=[], sources=["GD-88 A B49E.D64.EOPSAB.013 to .021 update files",
+                                              "a program flash read of SoC A"]),
+    debuglink_names=["GD-88", "gd88"],
+    releasable=False,
+    keep_codec_supported=False,
+    protected=[(0x03000000, 0x0300C000)],
+    first_stage=(0x1000, bytes([0x2C, 0x11, 0x01, 0xC0])),
+)
+
+GD88B = Board(
+    id="gd88b",
+    name="Radioddity GD-88 (second receiver)",
+    family="hrc7000-iap",
+    app_base=0x0300C000,
+    flash_end=0x03100000,
+    sectors=[Sector(0, 0x0300C000, 0x030E8000 - 0x0300C000), Sector(1, 0x030E8000, 0x03100000 - 0x030E8000)],
+    codec=CodecProfile(id="gd88b-2501", windows=[(0x030E8000, 0x03100000 - 0x030E8000)],
+                       installed=[], sources=["GD-88 B B49C.D64.EHRNAB.005 to .012 update files",
+                                              "a program flash read of SoC B"]),
+    debuglink_names=["GD-88 B", "gd88b"],
+    releasable=False,
+    keep_codec_supported=False,
+    protected=[(0x03000000, 0x0300C000)],
+    first_stage=(0x1000, bytes([0x2C, 0x11, 0x01, 0xC0])),
+)
+
+BOARDS = {b.id: b for b in (DM1701, DM32, DM1801PRO, MD380, DB25D, GD88, GD88B)}
 
 
 def get(board_id):

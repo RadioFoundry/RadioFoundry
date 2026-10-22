@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The OpenDigitalRadio Authors */
-/* DB25-D first stage entry (boot.c; boot/README.md). The IAP loader jumps to 0x0300C000, the first byte of this
- * sector. On a normal power-on it does so only if the application's first 4 bytes are 2C 11 01 C0 (right after an
- * update it jumps without looking): those are the stock firmware's entry, "lrw r1, [0x0300C0B0]; mtcr r1, psr". The
+/* HR_C7000 first stage entry (boot/<radio>/boot.c, stage.c; boot/README.md): the DB25-D and both GD-88 SoCs. The IAP
+ * loader jumps to 0x0300C000, the first byte of this sector. On a normal power-on it does so only if the application's
+ * first 4 bytes are 2C 11 01 C0 (right after an update it jumps without looking): those are the vendor application's
+ * entry, "lrw r1, [0x0300C0B0]; mtcr r1, psr". The
  * same 6 bytes start this stage, with a harmless PSR (supervisor, interrupts off) in that literal.
  *
  * BOOT_WINDOW = 0: no application behind the stage, the handshake is offered forever.
