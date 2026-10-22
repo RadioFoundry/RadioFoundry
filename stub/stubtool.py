@@ -400,6 +400,9 @@ PAGE = 256
 # The application area of the program flash: an ODR image is linked for 0x0300C000, which is flash offset 0xC000. The
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
 APP_START, APP_END = 0xC000, 0x100000
+# The first word of ODR's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D, the GD-88). Its
+# application is linked for 0x0300D000, so the image written at APP_START is the install image, which starts with it
+STAGE_MAGIC = bytes.fromhex("2c1101c0")
 
 
 class DumpError(Exception):
@@ -1013,6 +1016,10 @@ class Radio:
         self.check_writable()
         self.check_write_range(mem, APP_START, end, app=True)
         self.check_id(mem)
+        # The application alone over a first stage leaves the radio in its update loader (white screen, red LED)
+        if self.read_flash(mem, APP_START, 4) == STAGE_MAGIC and image[:4] != STAGE_MAGIC:
+            raise DumpError("this radio has ODR's first stage at 0x%X and the image does not start with it: write the "
+                            "install image (odr_<board>_install.bin), not the application alone" % APP_START)
         todo = self.verify(mem, padded, APP_START)
         for n, a in enumerate(todo):
             if progress:
@@ -1938,6 +1945,17 @@ def self_test():
         check(r.configured is prof, "the %s profile is confirmed by the HELLO echo" % prof["name"])
         nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
         check(nw == 0 and nk == 4, "writing the same image after CONFIG changes nothing")
+        if board == "db25d":		# a first stage in the radio: only an image that starts with one goes over it
+            pm = bytearray(radio.images["progmem"])
+            pm[APP_START:APP_START + 4] = STAGE_MAGIC
+            radio.images["progmem"] = bytes(pm)
+            try:
+                r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
+                check(False, "the application alone over a first stage is refused")
+            except DumpError as e:
+                check("install image" in str(e), "application over a first stage refused: %s" % e)
+            nw, nk = r.write_image(bytes(pm[APP_START:APP_START + 4 * SECTOR]))
+            check(nk == 4, "an install image over a first stage is written")
         if board == "db25d":
             out = io.BytesIO()
             r.dump(out, "nand", 0, 16 * SECTOR)
