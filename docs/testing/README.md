@@ -15,6 +15,7 @@ repeatable and skips cleanly what it can't reach. What each level is for and whe
 | Manual bench cases | the SDR bench, a person at the radio | `tools/bench/dmr_bench.py run CASE` | `docs/testing/dmr-bench.md` |
 | DM-32UV first hardware test | a DM-32UV on its programming cable, a dummy load | step by step | `docs/testing/dm32-bringup.md` |
 | MD-380 first hardware test | an MD-380 / MD-390 / RT3 on USB, a dummy load, an SDR or signal generator | step by step | `docs/testing/md380-bringup.md` |
+| GD-88 first hardware test | a GD-88 on its programming cable, the original firmware files for both SoCs, a dummy load | step by step | `docs/testing/gd88-bringup.md` |
 
 ## 1. The release gate: `tools/ci.sh`
 
@@ -174,7 +175,7 @@ The SDR bench's names come from the environment: `ODR_SDR_BENCH_HOST` (ssh host 
 end to end by `tools/bench/dmr_bench.py` with automatic checks where possible; `--dry-run` prints every command
 first. `docs/testing/mmdvm-audit.md`: the MMDVM protocol audit of the hotspot. `docs/testing/dm32-bringup.md`: the
 DM-32UV port's first test on a radio, in order, with what to change when a step fails; `docs/testing/md380-bringup.md`
-is the same for the MD-380.
+is the same for the MD-380, and `docs/testing/gd88-bringup.md` for the GD-88 (two SoCs).
 
 The split duplex repeater has no hardware-free gap: `make -C tests/host` runs `splitDuplexTest` (the CACH and short
 LC against the standard's tables, the outbound buffer, the epoch, both roles through the MMDVM core),

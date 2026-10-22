@@ -278,7 +278,7 @@ Not supported yet: the IMU, the headset path on its own, the RTC.
 
 ## 14. Remaining unknowns for bring-up
 
-The code marks each with `TODO(gd88)`.
+The code marks each with `TODO(gd88)`. The first-day plan that settles them is [gd88-bringup.md](../testing/gd88-bringup.md).
 
 1. Which RF chips are fitted (read the debug UART chip-ID line or photograph the board).
 2. A's output power control, and so transmit.
