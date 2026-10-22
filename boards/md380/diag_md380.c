@@ -149,7 +149,7 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 	case 9:
 		put(&o, "flash ");
-		put_x(&o, md380_flash_device(), 4);
+		put_x(&o, stm32_spi_flash_device(), 4);
 		put(&o, " ");
 		put_u(&o, board.flash->size >> 10);
 		put(&o, "K");
