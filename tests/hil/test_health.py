@@ -134,8 +134,8 @@ def test_gps_nmea(board):
     """The GPS module talks: heard at start-up, valid sentences keep coming (about one a second, fix or not), few bad
     ones. Right after start-up it waits out the driver's 5 s listen."""
     line = find(diag_lines(board.radio), "gps ")
-    if line is None:
-        skip("not_built", "a build without the GPS driver")
+    if line is None or line.startswith("gps not built"):
+        skip("not_built", "a build without the GPS driver (CONFIG_GPS=n)")
     if line.startswith("gps no"):
         time.sleep(6)  # just started: the driver may still be listening
         line = board.line("gps ")

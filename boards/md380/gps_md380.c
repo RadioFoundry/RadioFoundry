@@ -12,6 +12,8 @@
 #include "pins.h"
 #include "gps_uart/gps_uart.h"
 
+#if CONFIG_GPS	// off: the driver and its interrupt handler are left out, and the radio has no GPS
+
 static const uint32_t rates[] = { 9600 };	// the usual default of these modules (?)
 
 // Heard: hold the power pin where it is (hardware-md380.md 13.2)
@@ -37,3 +39,4 @@ void md380_gps_init(void)
 {
 	stm32_gps_init(&gps);
 }
+#endif

@@ -75,5 +75,6 @@ BOARD_UNSUPPORTED += BCAST_FM	# the RDA5802N broadcast receiver isn't wired yet
 BOARD_UNSUPPORTED += AM_RX	# the air band isn't wired yet
 BOARD_UNSUPPORTED += AUDIO_PROBE	# a bench diagnostic for an audio path this radio doesn't have
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
+BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (owner, 2026-10-22)
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
 BOARD_REQUIRED := FM
