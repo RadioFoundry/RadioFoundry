@@ -168,8 +168,8 @@ spec = "tests/hil/README.md"
 source = ["tests/hil/bringup_plugin.py"]
 
 [feature.fake_seeded]
-spec = "tests/hil/README.md"
-source = ["tests/hil/bringup_plugin.py"]
+spec = "LICENSE"
+source = ["LICENSE"]
 '''
 
 
@@ -217,7 +217,8 @@ def test_bringup_run_records_and_status(tmp_path):
 
     # before any run: nothing reads as unsupported, and a seed row stands on its own
     (results / board).mkdir(parents=True)
-    # fake_split's row was made on the first commit, whose files differ from today's: it needs a re-run
+    # fake_split's row was made on the first commit, whose files differ from today's: it needs a re-run. fake_seeded's
+    # paths (LICENSE) are as HEAD has them unless someone edits the license in their tree
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     root = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"], cwd=ROOT, capture_output=True,
                           text=True).stdout.split()[0]
