@@ -16,7 +16,7 @@ Code: `hal/hal_watchdog.h`, `core/app/watchdog.c` (the feed), `platform/stm32f4/
 
 ## 1. The feed
 
-`vApplicationIdleHook` (`configUSE_IDLE_HOOK` follows `CONFIG_WATCHDOG` in every board's `FreeRTOSConfig.h`) calls
+`vApplicationIdleHook` (`configUSE_IDLE_HOOK` follows `CONFIG_WATCHDOG` in every platform's `FreeRTOSConfig.h`) calls
 `watchdog_idle(hal_millis())` on every pass of the idle loop. It feeds the watchdog and notes how long the idle task
 was away since its last pass: the longest such gap since start is `watchdog.max_gap_ms` on the debug link (6). That
 number shows how close legitimate work comes to the timeout.

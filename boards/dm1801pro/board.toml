@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # The DM-1801 Pro's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and
-# the web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in dm1801pro.ld.
+# the web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/dm1801pro/memory.ld.
 
 id = "dm1801pro"
 name = "Baofeng DM-1801 Pro"
@@ -56,7 +56,7 @@ hold_power = false
 progmem = 0x100000
 tested = true
 
-# The codec slot and windows come from dm1801pro.ld (__codec_*). The codec comes from the radio's own program flash
+# The codec slot and windows come from boards/dm1801pro/memory.ld (__codec_*). The codec comes from the radio's own program flash
 # (read with stub/stubtool.py), not from a stock file (docs/spec/codec-dm1801pro.md)
 [codec]
 tool = "hrc7000_codec"

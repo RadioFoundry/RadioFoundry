@@ -3,7 +3,9 @@
 # Build configuration
 
 Features that cost flash, and values that differ per radio, are chosen at build time. Defaults live in
-`config/features.mk`, a board overrides them in `boards/<board>/config.mk`, and the make command line overrides both:
+`config/features.mk`. A platform changes them for every radio on it in `platform/<p>/config.mk`, a board changes them
+in `boards/<board>/config.mk`, and the make command line overrides all of them. The Makefile reads the board's file
+before the platform's: both use `?=`, which keeps the first value set, so the board wins over its platform:
 
 ```
 make BOARD=dm1701                        # the board's defaults

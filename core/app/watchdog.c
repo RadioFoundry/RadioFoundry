@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The idle task's watchdog feed (watchdog.h, docs/spec/watchdog.md). Built only with CONFIG_WATCHDOG, which also turns
-// on configUSE_IDLE_HOOK in every board's FreeRTOSConfig.h.
+// on configUSE_IDLE_HOOK in every platform's FreeRTOSConfig.h.
 #include "app/watchdog.h"
 #include "hal_time.h"
 #include "hal_watchdog.h"

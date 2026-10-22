@@ -58,7 +58,7 @@ PROFILES = {
         "code": (0x08074714, 0x1021C, "1d8d04603b288e102f70252c1dd489600dfde656eccea6264e7bf4fac413f0cd"),
         "tables": (0x080D19F0, 0x12850, "b99f14e72bf72555946c1f04e8a1636652e6f62843baaf7a135787879e028894"),
         # The code goes right after the codec's data (which ends at 0x080E3A72) in sector 11, word aligned
-        # (boards/dm1701/dm1701.ld, boards/dm1701/vocoder_dm1701.c); sectors 3-9 are the application's
+        # (boards/dm1701/memory.ld, boards/dm1701/vocoder_dm1701.c); sectors 3-9 are the application's
         "placement": {"code": 0x080E3A74, "tables_len": 0x12082, "tag": 0x0206},
         "placed": {"code": (0x485BFC13, "d88c93ba5c3eac043558d05b182fe824a25aa373f84c48a341b369c0cc942e8c"),
                    "tables": (0xC1EEFA8B, "9ed939d23dd7b20f633d084f4713c35277d0227821070c551990caf8df409215")},
@@ -80,7 +80,7 @@ PROFILES = {
             (0x080F9E74, 0x14, "0af022f016edcb28a3b29d60abdf42846456f22b8b4579a14b2069c7f6f31017"),
             (0x080FD490, 0x20, "b6bc2f43d9a7779d7a8ac938db131b049f72620bc6d288db19bd9ecc15a8c812"),
         ],
-        # The code goes to the start of sector 11, below the small windows there (boards/md380/md380.ld,
+        # The code goes to the start of sector 11, below the small windows there (boards/md380/memory.ld,
         # boards/md380/vocoder_md380.c); the tables stay in sector 8, so sectors 3-7 are the application's
         "placement": {"code": 0x080E0000, "tag": 0x2032},
         "placed": {"code": (0x067E6A77, "d5c68973b33d5709b6d1df719b80841b77f1835d3bef5b61c6c682147da6bebc"),

@@ -25,7 +25,7 @@
 
 #define CODEC_SIGNATURE		0x4FF0E92Du	// push.w {r4-r11, lr}
 #define CODEC_TAG		0x2032u		// the descriptor's tag for stock D002.032
-#define CODEC_FLASH_LO		0x08080000u	// sectors 8-11: the flash md380.ld leaves to the codec
+#define CODEC_FLASH_LO		0x08080000u	// sectors 8-11: the flash boards/md380/memory.ld leaves to the codec
 #define CODEC_FLASH_HI		CODEC_DESC_ADDR
 
 // Entry points (offsets from the code start)
