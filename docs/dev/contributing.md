@@ -102,6 +102,27 @@ the project lead, never in public CI).
 - A UI change updates the gallery (`make -C tests/host ui-gallery`) and commits the PNGs it meant to change.
 - A parser of outside input gets a fuzz loop (`tests/host/fuzz.h`); run it under `SANITIZE=1` ([Testing](testing.md)).
 - A change that touches hardware gets a HIL test when it can be scripted ([Testing](testing.md)).
+- A HIL test skips with `odr_hil.skip(kind, reason)`, never `pytest.skip`. The kind says why (`not_built`, `no_hw`,
+  `state`, `opt_in`, `bench`, `other_board`; [tests/hil/README.md](../../tests/hil/README.md#skip-kinds)), and
+  `tools/check_hil_skips.py` fails on a skip without one.
+
+### The feature checklist
+
+`tests/hil/features.toml` has one entry per feature, no radio columns and no test lists: each HIL test names its
+feature with `@pytest.mark.feature("<id>")` ([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)).
+`tools/bringup.py check` (in `tools/ci.sh`) fails when an entry is missing or a test marks a feature that has none.
+
+| Change | What to do |
+|---|---|
+| A new switch or feature | Add a `[feature.<id>]` table: `switch`, `spec`, and `source` when the Makefile's files for the switch aren't the right ones. A feature may have no tests yet; `tools/bringup.py status` then shows "built, not yet recorded" |
+| A new HIL test | Mark it `@pytest.mark.feature("<id>")`, with `optional=True` when it shouldn't gate, `owner="..."` when it asks a person for something, and `gate=True` on the one test that checks the radio offers a feature that needs hardware glue (its capability gate). Its needs come from its markers and fixtures. A required test not written yet goes in the feature's `planned_tests` |
+| A radio lacks a feature | Add the switch to the board's `BOARD_UNSUPPORTED` in `config.mk`, one a line with the reason: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver` (state `n/a`). Planned but not working yet, where the hardware could: `board.toml` `[features] <id> = { state = "unsupported", reason = "..." }` |
+| A new radio | Nothing here: its states resolve from its build data |
+
+To record a bring-up run, the owner (or someone at the bench) runs `tools/bringup.py list --radio <id>` for the
+checklist and owner actions, then `tools/bringup.py run --radio <id> -- <HIL options>` with the radio on the debug
+link. The run takes the radio lock, counts unexcused skips as failures and writes a record to
+`docs/testing/results/<id>/`. Commit the record. Failures are allowed in a record: they are the to-do list.
 
 ## Documentation
 

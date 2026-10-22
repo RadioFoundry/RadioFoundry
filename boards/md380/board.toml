@@ -9,6 +9,8 @@ maker = "TYT"
 model = "MD-380"
 also = ["TYT MD-390", "Retevis RT3"]
 kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 5
 
 [docs]
 hardware = "docs/spec/hardware-md380.md"
@@ -25,7 +27,9 @@ gallery = "160x128"
 
 [status]
 level = "supported"
-summary = "Fully operational on a UHF radio¹: FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or duplex hotspot on either slot, codeplug and ID database programming (CPS, web editor). The codec comes from the stock D2.32 file ([codec-md380](docs/spec/codec-md380.md)) and an update keeps it. Open: DCS, the tone deviation, the untested VHF image, FM TX tones and APRS receive ([bring-up checklist](docs/testing/md380-bringup.md))"
+summary = """\
+FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug \
+and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the VHF image."""
 release = "stable"
 
 # One band per radio, a build choice (board.mk BAND). The first value is the default build; ci and the release
@@ -78,3 +82,8 @@ shape = "handheld"
 body = "#1f2124"
 accent = "#3d7bd9"
 lens = [30, 30]
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them
+[cps]
+radio_types = [7]

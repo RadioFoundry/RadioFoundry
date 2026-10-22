@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// A simulated HR_C7000 radio on its programming cable, for the tests and the flasher's simulated mode (#sim=c7000):
-// the serial boot ROM's short window after power-on or a soft reset, the firmware it then starts (stock, or ODR
-// answering the debug link VERSION and STUB commands), and the stub's protocol over a model of the two flash chips
-// (erase sets a sector to 0xFF, programming only clears bits). The ROM side and the stub side follow stub/stubtool.py's
-// FakeRadio. Bytes reach the host no faster than a 115200 baud cable would carry them (times `speed`).
+// A simulated HR_C7000 radio on its programming cable, for the tests and the flasher's simulated mode
+// (#sim=<board>-stock): the serial boot ROM's short window after power-on or a soft reset, the firmware it then starts
+// (stock, or ODR answering the debug link VERSION and STUB commands), and the stub's protocol over a model of the two
+// flash chips (erase sets a sector to 0xFF, programming only clears bits). The ROM side and the stub side follow
+// stub/stubtool.py's FakeRadio. Bytes reach the host no faster than a 115200 baud cable would carry them (times
+// `speed`).
 //
-// A DB25-D's original firmware (usmart: its build) also answers the debug console the page loads the stub through
-// (db25d.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was written.
+// A stock firmware with a USMART console (usmart: its build) also answers the debug console the page loads the stub
+// through (usmart.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was
+// written.
 //
 // The stock firmware and codec here are random bytes shaped like the real ones: no vendor code is in ODR.
 
@@ -15,7 +17,7 @@ import { concat, crc32, le32, sha256, sleep, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
 import { encodeBlock } from "./lz4.js";
 import { STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
-import { HIJACK, STUB_WINDOW } from "./db25d.js";
+import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE } from "./usmart.js";
 import { rng, randomBytes } from "./fake.js";
 import { sigBytes } from "./c7000.js";
 
@@ -25,9 +27,22 @@ const be32 = (n) => new Uint8Array([(n >>> 24) & 0xFF, (n >>> 16) & 0xFF, (n >>>
 const u32be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
 const ODR_MARK = new TextEncoder().encode("OpenDigitalRadio");
 
+// A stock console's build from the board's first stock version ("909E.DBB.EARSAB.018" -> "018"), or null
+const consoleBuild = (radio) => (radio?.flash.stock_console ? radio.flash.stock_versions[0]?.slice(-3) || null : null);
+
+// What FakeC7000 needs to play a board, from its flasher data (radio: its radios.json entry): the name it reports, its
+// codec, a small data memory when the stub reads none, and its stock console
+export function fakeC7000Options(radio, fb) {
+	const b = fb.boards[radio.id];
+	return { board: b.debuglink_names[0], codecId: b.codec.id,
+		...(fb.c7000.boards[radio.id].data_flash === false ? { dataSize: 0x200000 } : {}), usmart: consoleBuild(radio) };
+}
+
 // A synthetic stock program flash for a board: bootloader, firmware, the codec at made-up addresses, and the c7000
-// config changed so its profile matches them. Returns {c, progmem, codec: {code, tables}}.
-export async function c7000Simulation(cReal, boardId, seed = 7000) {
+// config changed so its profile matches them. radio (its radios.json entry, optional) adds what its stock firmware
+// starts with: the first stage signature the vendor loader checks, and a stock console's version string. Returns
+// {c, progmem, codec: {code, tables}}.
+export async function c7000Simulation(cReal, boardId, seed = 7000, radio = null) {
 	const c = structuredClone(cReal);
 	const r = rng(seed);
 	const progmem = new Uint8Array(c.boards[boardId].progmem_size || c.progmem_size).fill(0xFF);
@@ -43,9 +58,12 @@ export async function c7000Simulation(cReal, boardId, seed = 7000) {
 	const codeAt = 0xA4000, tabAt = 0x6A000;
 	progmem.set(code, codeAt);
 	progmem.set(tables, tabAt);
-	if (c.boards[boardId].stock_console) {	// the entry the vendor loader checks, and the version string the page reads
-		progmem.set([0x2C, 0x11, 0x01, 0xC0], c.app_start);
-		progmem.set(new TextEncoder().encode("909E.DBB.EARSAB.018.Jan 21 2025"), 0x79F3D - 9);
+	const fs = radio?.flash.first_stage;
+	if (fs) progmem.set(fs.head.match(/../g).map((x) => parseInt(x, 16)), c.app_start);	// the entry the loader checks
+	const build = BUILDS.find(([n]) => n === consoleBuild(radio));
+	if (build) {	// the version string the console's build check reads: "EARSAB.<build>" just after the build's word
+		const version = radio.flash.stock_versions[0];
+		progmem.set(new TextEncoder().encode(`${version}.Jan 21 2025`), build[1] - FLASH_BASE + 1 - version.lastIndexOf("EARSAB"));
 	}
 	c.profiles = c.profiles.filter((p) => p.board !== boardId);
 	c.profiles.push({ ...real, name: `simulated ${real.name}`, code_sha256: await sha256(code), tables_sha256: await sha256(tables),
@@ -62,7 +80,7 @@ export class FakeC7000 {
 	// firmware: "stock" | "odr" (with stub entry) | "odr-nostub"; speed: how many times faster than a real cable
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
 		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null } = {}) {
-		this.usmart = usmart;			// a DB25-D's original firmware build ("018"): it has the debug console
+		this.usmart = usmart;			// a stock firmware build with the USMART console ("018")
 		this.ram = new Map();			// the console's view of RAM: words written since power-on
 		this.frames = [];			// every console frame received, as text
 		this.stubSpan = stubSpan;		// the RAM span ODR offers in STUB INFO (the DB25-D's DMR builds: 0x1D000, 0x12000)

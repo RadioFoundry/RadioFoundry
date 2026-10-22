@@ -13,6 +13,7 @@ import time
 
 import pytest
 
+from odr_hil import skip
 from test_dmr_data import BENCH_SRC, _need, _radio_sends, _setup, heard_tries
 
 CSBK_EMERGENCY_ALARM = 0x27
@@ -32,10 +33,10 @@ def _ext(radio):
 def _emergency_setup(radio, pytestconfig, tx=False):
     freq, cc, own, feats = _setup(radio, pytestconfig, tx=tx)
     if _ext(radio).get("em.built") != 1:
-        pytest.skip("built without CONFIG_DMR_EMERGENCY")
+        skip("not_built", "built without CONFIG_DMR_EMERGENCY")
     tg = int(radio.view(["dmr"])["dmr.target_id"])
     if radio.view(["dmr"]).get("dmr.target_private") == "1":
-        pytest.skip("the test channel talks to a radio, not a talkgroup")
+        skip("state", "the test channel talks to a radio, not a talkgroup")
     return freq, cc, own, tg, feats
 
 
@@ -51,6 +52,7 @@ def em_settings(radio):
                                       x["em.rx_tone"] == 1, x["em.tries"], x["em.hot_mic_s"])
 
 
+@pytest.mark.feature("dmr_emergency")
 def test_emergency_view_and_settings(radio, pytestconfig, em_settings):
     """Radio only: the dmr_ext section is there and the settings request changes it."""
     _emergency_setup(radio, pytestconfig)
@@ -60,6 +62,7 @@ def test_emergency_view_and_settings(radio, pytestconfig, em_settings):
     assert v["em.state"] == "idle" and v["em.hot_mic_s"] == "0", v
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_emergency_alarm_rx(radio, sdr_bench, pytestconfig, em_settings):
@@ -82,6 +85,7 @@ def test_emergency_alarm_rx(radio, sdr_bench, pytestconfig, em_settings):
     assert da["data.event"] == "emergency_alarm" and da["data.event_id"] == BENCH_SRC, da
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_emergency_call_rx(radio, sdr_bench, pytestconfig, em_settings):
@@ -101,6 +105,7 @@ def test_emergency_call_rx(radio, sdr_bench, pytestconfig, em_settings):
     assert last.get("last.emergency", last.get("call.emergency")) == "1", last
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_emergency_alarm_tx(radio, sdr_bench, pytestconfig, em_settings):
@@ -125,6 +130,7 @@ def test_emergency_alarm_tx(radio, sdr_bench, pytestconfig, em_settings):
     radio.wait_for(lambda x: x.get("em.state") == "idle", sections=("dmr_ext",), what="emergency canceled")
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
@@ -132,7 +138,7 @@ def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
     carries the emergency service option (so & 0x80), released after the hot mic."""
     freq, cc, own, tg, feats = _emergency_setup(radio, pytestconfig, tx=True)
     if "codec" in radio.view(["dmr"]) and radio.view(["dmr"]).get("dmr.codec") != "1":
-        pytest.skip("no AMBE codec: DMR voice can't be keyed")
+        skip("not_built", "no AMBE codec: DMR voice can't be keyed")
     radio.link.emergency_settings("call", 0, hot_mic_s=3)
     radio.wait_for(lambda x: x.get("em.mode") == "call", sections=("dmr_ext",), what="call mode")
     with sdr_bench.lease():
@@ -148,6 +154,7 @@ def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
     radio.link.emergency("cancel")
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.radio_tx
 def test_emergency_key_hold(radio, pytestconfig, em_settings):
     """The EMERGENCY key action (the DM-1701's top side key held 1.5 s; injected as the action, held for the

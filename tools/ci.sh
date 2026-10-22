@@ -142,7 +142,7 @@ fi
 # ── 2. Python ────────────────────────────────────────────────────────────────
 if step python; then
 echo "== python"
-PY_FILES=$(git ls-files 'tools/*.py' 'tools/**/*.py' 'tests/hil/*.py' 2>/dev/null)
+PY_FILES=$(git ls-files 'tools/*.py' 'tools/**/*.py' 'tests/hil/*.py' 'boards/*/hil/*.py' 2>/dev/null)
 if command -v python3 > /dev/null; then
 	if python3 -c 'import ast, sys
 for f in sys.argv[1:]:
@@ -161,19 +161,61 @@ for f in sys.argv[1:]:
 	else
 		skip "HIL test collection: pytest not installed (pip install pytest pyserial)"
 	fi
-	# the flashing tools: odrflash's host tests (sector planning, manifests, codec merge, fake bootloader runs), and
-	# the self-test of every tool that has one (no USB, synthetic keys and stock files). The APRS decoder and the
-	# stack check have their own steps below (a WAV from the host tests, numpy)
-	selftests=""
-	python3 -W ignore -m unittest discover -s tools/odrflash/tests > "$OUT/odrflash-tests.log" 2>&1 && st_ok=1 || st_ok=""
-	for t in $(grep -l -e '"--self-test"' tools/*.py tools/*/*.py stub/*.py | grep -v -e aprs_afsk_check -e stack_check); do
-		[ -n "$st_ok" ] || break
-		echo "== $t --self-test" >> "$OUT/odrflash-tests.log"
-		python3 "$t" --self-test >> "$OUT/odrflash-tests.log" 2>&1 || { st_ok=""; echo "FAILED: $t" >> "$OUT/odrflash-tests.log"; }
-		selftests="$selftests${selftests:+, }$(basename "$t" .py)"
-	done
-	if [ -n "$st_ok" ]; then
-		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash); self-tests of $selftests"
+	# every HIL skip names its kind (tests/hil/README.md, "Skip kinds"), and the skip helper's own tests (no radio)
+	if python3 tools/check_hil_skips.py > "$OUT/hil-skips.log" 2>&1; then
+		ok "HIL skips: $(tail -1 "$OUT/hil-skips.log" | sed 's/^check_hil_skips: //')"
+	else
+		head -20 "$OUT/hil-skips.log"
+		bad "HIL skips without a kind (see $OUT/hil-skips.log)"
+	fi
+	if python3 -c 'import pytest' 2>/dev/null; then
+		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py > "$OUT/hil-skip-test.log" 2>&1; then
+			ok "HIL skip helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
+		else
+			tail -20 "$OUT/hil-skip-test.log"
+			bad "HIL skip helper tests (see $OUT/hil-skip-test.log)"
+		fi
+	fi
+	# the feature checklist (tests/hil/README.md, "Bring-up mode"): tools/bringup.py check, and the bring-up
+	# plugin's tests with a fake radio. bringup.py needs Python 3.11+ (tomllib): $ODR_PYTHON, else the newest
+	# python3.N on PATH (TODO: the shared ODR_PYTHON lookup once ci.sh has it)
+	BRINGUP_PY=${ODR_PYTHON:-$(IFS=:; for d in $PATH; do for p in "$d"/python3.1[1-9] "$d"/python3.[2-9][0-9]; do
+		[ -x "$p" ] && echo "${p##*.} $p"; done; done | sort -n | tail -1 | cut -d' ' -f2-)}
+	if [ -n "$BRINGUP_PY" ]; then
+		if env -u ODR_PORT "$BRINGUP_PY" tools/bringup.py check --pytest-python python3 > "$OUT/bringup-check.log" 2>&1
+		then
+			ok "feature checklist: $(tail -1 "$OUT/bringup-check.log" | sed 's/^bringup check: //')"
+		else
+			grep '^error' "$OUT/bringup-check.log" | head -20
+			bad "feature checklist (see $OUT/bringup-check.log)"
+		fi
+	else
+		skip "feature checklist: no Python 3.11 or later (set ODR_PYTHON)"
+	fi
+	if python3 -c 'import pytest' 2>/dev/null; then
+		if ODR_PYTHON=$BRINGUP_PY python3 -m pytest -q -p no:cacheprovider tests/hil/test_bringup.py \
+			> "$OUT/bringup-test.log" 2>&1; then
+			ok "bring-up mode tests ($(grep -oE '[0-9]+ (passed|skipped)' "$OUT/bringup-test.log" | paste -sd, -))"
+		else
+			tail -20 "$OUT/bringup-test.log"
+			bad "bring-up mode tests (see $OUT/bringup-test.log)"
+		fi
+	fi
+	# the flashing tools: odrflash's host tests (sector planning, manifests, codec merge, fake bootloader runs) and
+	# the self-tests of the developer tools (no USB, synthetic keys and stock files)
+	if python3 -W ignore -m unittest discover -s tools/odrflash/tests > "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/codec_extract.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/stm32_dfu.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/codeplug_port.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/md380_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/serial_loader.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/dm32_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/hrc7000_codec.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/ui_gallery_compare.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 tools/crash_decode.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 stub/stubtool.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
+	   python3 stub/f4stub.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
+		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, stm32_dfu, codeplug_port, md380_migrate, serial_loader, dm32_migrate, hrc7000_codec, ui_gallery_compare, stubtool and f4stub self-tests"
 	else
 		tail -30 "$OUT/odrflash-tests.log"
 		bad "flashing tool tests (see $OUT/odrflash-tests.log)"

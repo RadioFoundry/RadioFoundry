@@ -6,6 +6,11 @@ The order to bring the DM-1801 Pro port (`make BOARD=dm1801pro`) up on a radio, 
 change when it doesn't work. Steps 0 to 3, 7 and 8 passed on 2026-10-15 (hardware-dm1801pro.md 12). Hardware facts:
 [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md).
 
+The feature checklist, with every feature's required HIL tests and the last recorded result, is
+`tools/bringup.py list --radio dm1801pro`. `tools/bringup.py run --radio dm1801pro` records a run
+([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)). This page keeps the hardware steps and what to
+change when one fails.
+
 ## 0. Before anything
 
 1. **Back up both flashes** (1 MB program flash, 16 MB data flash). The port never writes the data flash below

@@ -9,6 +9,8 @@ maker = "Baofeng"
 model = "DM-1801 Pro"
 also = ["Baofeng DM-1801"]
 kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 2
 # Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
 # build option value's board_name), and the id always counts
 debuglink_aliases = ["DM-1801Pro"]
@@ -27,7 +29,9 @@ gallery = "128x64"
 
 [status]
 level = "supported"
-summary = "Runs on a radio: FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and SMS, the MMDVM hotspot and single frequency repeating, checked on the SDR bench, and each split duplex half on air. Open: VHF transmit and VOX ([hardware-dm1801pro](docs/spec/hardware-dm1801pro.md) 12). Not the GD-77 family despite the name ([radios](docs/spec/radios.md))"
+summary = """\
+FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, \
+the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX."""
 release = "stable"
 
 # The same Baofeng serial updater as the DM-32UV, with its own ID string; the same flash map, the same codec slot and
