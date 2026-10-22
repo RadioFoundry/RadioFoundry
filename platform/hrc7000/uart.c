@@ -105,6 +105,25 @@ uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged))
 	return n;
 }
 
+// Polled receive and transmit of one character, for a loop that runs with interrupts off (the GD-88's bridge)
+bool hrc_uart_poll_rx(uint32_t base, uint8_t *c)
+{
+	if ((UB(base, UART_LSR) & LSR_DR) == 0) {
+		return false;
+	}
+	*c = (uint8_t)UB(base, UART_RBR);
+	return true;
+}
+
+bool hrc_uart_poll_tx(uint32_t base, uint8_t c)
+{
+	if ((UB(base, UART_USR) & USR_TFNF) == 0) {
+		return false;
+	}
+	UB(base, UART_RBR) = c;
+	return true;
+}
+
 static void host_rx(uint8_t b, bool flagged)
 {
 	hrc_host_uart_rx_tap(b, flagged);

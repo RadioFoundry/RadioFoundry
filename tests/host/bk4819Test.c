@@ -487,6 +487,27 @@ static void test_dmr_tx(void)
 	CHECK(chips[0].protocol_errors == 0 && chips[1].protocol_errors == 0);
 }
 
+// GPIO on register 0x33: data bit 6 - pin, output-disable bit 14 - pin; the other pins' bits are kept (the GD-88's
+// band path: VHF = GPIO5 high / GPIO4 low on the LO chip)
+static void test_gpio(void)
+{
+	reset_chips();
+	bk4819_t l;
+	bk4819_attach(&l, &bus_lo);
+	chip_t *c = &chips[1];
+	c->regs[0x33] = 0x0606;		// GPIO4, GPIO5 outputs disabled, both data bits set
+	bk4819_gpio(&l, 5, true);
+	CHECK(c->regs[0x33] == 0x0406);
+	bk4819_gpio(&l, 4, false);
+	CHECK(c->regs[0x33] == 0x0002);
+	bk4819_gpio(&l, 4, true);
+	bk4819_gpio(&l, 5, false);
+	CHECK(c->regs[0x33] == 0x0004);
+	bk4819_gpio(&l, 7, true);	// no such pin: nothing written
+	CHECK(c->regs[0x33] == 0x0004);
+	CHECK(c->protocol_errors == 0);
+}
+
 int main(void)
 {
 	test_helpers();
@@ -495,6 +516,7 @@ int main(void)
 	test_sequences();
 	test_dmr_rx();
 	test_dmr_tx();
+	test_gpio();
 	if (failures) {
 		printf("bk4819Test: %d failures\n", failures);
 		return 1;

@@ -758,6 +758,17 @@ DB25D   := $(ROOT)/boards/db25d
 db25dCalTest: db25dCalTest.c $(DB25D)/calibration_db25d.c $(DB25D)/db25d.h $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DB25D) -Wshadow -o $@ db25dCalTest.c $(DB25D)/calibration_db25d.c
 
+# The GD-88's factory calibration page, the DB25-D layout on each SoC (hardware-gd88.md 6), and its display driver's
+# init streams and windows (drivers/display/ili9341)
+TESTS   += gd88CalTest ili9341Test
+GD88C   := $(ROOT)/boards/gd88/common
+
+gd88CalTest: gd88CalTest.c $(GD88C)/calibration_gd88.c $(GD88C)/gd88_cal.h $(CORE)/radio/cal_curve.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(GD88C) -Wshadow -o $@ gd88CalTest.c $(GD88C)/calibration_gd88.c
+
+ili9341Test: ili9341Test.c $(ROOT)/drivers/display/ili9341/ili9341.c $(ROOT)/drivers/display/ili9341/ili9341.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ ili9341Test.c $(ROOT)/drivers/display/ili9341/ili9341.c
+
 # Its first stage in front of the application (boot/db25d): the stub load, dropped frames, the window, a cold UART
 TESTS   += bootDb25dTest
 
@@ -784,9 +795,11 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
 
 run: run-db25d
-run-db25d: bk4819Test db25dCalTest bootDb25dTest bootGd88Test bootGd88bTest hrc7000ClockTest hrc7000CodecSlotTest
+run-db25d: bk4819Test db25dCalTest gd88CalTest ili9341Test bootDb25dTest bootGd88Test bootGd88bTest hrc7000ClockTest hrc7000CodecSlotTest
 	./bk4819Test
 	./db25dCalTest
+	./gd88CalTest
+	./ili9341Test
 	./bootDb25dTest
 	./bootGd88Test
 	./bootGd88bTest

@@ -200,4 +200,9 @@ void bk4819_lo_resume(bk4819_t *dev);
 void bk4819_set_rx_ctcss(bk4819_t *dev, uint16_t hz_x10);
 bool bk4819_ctcss_found(bk4819_t *dev);
 
+// GPIO pin 0..6 of the chip as an output at level (register 0x33: data bit 6 - pin, output-disable bit 14 - pin, as the
+// chip's GPIO bank is numbered). A board may wire them to RF switches (the GD-88's band path on its LO chip)
+#define BK4819_REG_GPIO		0x33u
+void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool level);
+
 #endif

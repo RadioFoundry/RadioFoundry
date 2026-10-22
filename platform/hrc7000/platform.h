@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "hal_system.h"
 #include "hal_flash.h"
 
@@ -56,6 +57,7 @@
 #define UART0_BASE		0x14030000u
 #define UART1_BASE		0x14040000u
 #define UART2_BASE		0x14050000u
+#define UART3_BASE		0x14090000u	// the GD-88's link between its two SoCs (hardware-gd88.md 1)
 #define SPI0_BASE		0x140A0000u
 #define SPI2_BASE		0x140E0000u
 #define PWM_BASE		0x140C0000u
@@ -220,7 +222,7 @@ uint32_t hrc_flash_spi0_jedec(void);
 // The task holding the data flash lock and for how long (ms), "-" when free: a stuck flash user shows here
 const char *hrc_flash_spi0_holder(uint32_t *held_ms);
 
-// --- ADC (adc.c): channels 1 (B) and 2 (C) ---
+// --- ADC (adc.c): channels 0..7 (A..H) ---
 
 void hrc_adc_init(void);
 uint16_t hrc_adc_read(uint8_t ch);	// 10 bits, 0 if the conversion doesn't finish
@@ -350,6 +352,24 @@ void hrc_uart_setup(uint32_t base, uint32_t baud);
 void hrc_uart_rx_irq(uint32_t base, bool on);
 void hrc_uart_rx_clear(uint32_t base);	// drain the RX FIFO, clear line status and busy-detect
 uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged));
+bool hrc_uart_poll_rx(uint32_t base, uint8_t *c);	// a character waiting: taken. No interrupts needed
+bool hrc_uart_poll_tx(uint32_t base, uint8_t c);	// false: the TX FIFO is full
+
+// A link to another SoC on a UART (link_uart.c): the GD-88's A and B on UART3 (hardware-gd88.md 1). Receive by
+// interrupt into a ring, transmit by polling the TX FIFO; one writer at a time (the caller serializes). The board muxes
+// the pins first. read takes what has come (never waits); wait blocks the calling task until a byte is there or
+// timeout_ms passes (true: bytes waiting)
+typedef struct {
+	uint32_t rx_bytes, tx_bytes;
+	uint32_t overruns;	// bytes lost because the ring was full
+	uint32_t line_errors;	// characters the UART flagged
+	uint32_t tx_stalls;	// writes cut short: the TX FIFO stayed full
+} hrc_link_uart_stats_t;
+void hrc_link_uart_init(uint32_t base, uint8_t irq, uint32_t baud);
+size_t hrc_link_uart_read(uint8_t *buf, size_t max);
+bool hrc_link_uart_wait(uint32_t timeout_ms);
+size_t hrc_link_uart_write(const uint8_t *buf, size_t len);
+void hrc_link_uart_stats(hrc_link_uart_stats_t *st);
 
 // A GPS module's NMEA output on one of the UARTs, 9600 8N1, receive only (gps_hrc.c; hardware-dm32.md 12, hardware-db25d.md
 // 3.1). The module is powered and listened for for 5 s at start-up; one checksum-valid sentence makes it present (and

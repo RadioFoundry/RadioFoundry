@@ -319,6 +319,17 @@ bool bk4819_ctcss_found(bk4819_t *dev)
 	return (bk4819_read(dev, BK4819_REG_CSS_STATUS) & 0x0400u) != 0;
 }
 
+void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool level)
+{
+	if (pin > 6) {
+		return;
+	}
+	uint16_t data = (uint16_t)(0x40u >> pin);
+	uint16_t v = bk4819_read(dev, BK4819_REG_GPIO) & (uint16_t)~(data << 8);	// output enabled
+	v = level ? (uint16_t)(v | data) : (uint16_t)(v & ~data);
+	bk4819_write(dev, BK4819_REG_GPIO, v);
+}
+
 void bk4819_tx_prepare(bk4819_t *dev, uint16_t ctcss_hz_x10)
 {
 	if (ctcss_hz_x10 != 0) {
