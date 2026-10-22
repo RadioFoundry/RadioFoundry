@@ -12,6 +12,12 @@
 #define VOCODER_FRAME_SAMPLES	160	// 20 ms at 8 kHz
 #define VOCODER_BITS		49
 
+// Encode options (set_options). Each is a codec feature a board may or may not have; options() says which
+#define VOCODER_OPT_NOISE_REDUCTION	0x01u	// suppress steady background noise in the mic signal
+#define VOCODER_OPT_TONE_FRAMES		0x02u	// send a steady tone or tone pair (DTMF) as a tone frame, not as speech
+#define VOCODER_OPT_AGC			0x04u	// input level control: quiet speech raised, loud speech lowered
+#define VOCODER_OPT_DEFAULT		(VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES)
+
 typedef struct {
 	// True when the codec is present and matches the board's profile (signature / hash). False: FM only
 	bool (*present)(void);
@@ -25,6 +31,14 @@ typedef struct {
 	// (codec=) so the flashing tool knows whether the codec in flash can be kept (docs/dev/release.md, tools/odrflash).
 	// Read only: it never changes flash
 	const char *(*profile)(void);
+	// Optional (both NULL without encode options): the VOCODER_OPT_* bits this codec takes, and the options for every
+	// encode from now on (bits it doesn't take are ignored). Kept across reset(); VOCODER_OPT_DEFAULT until set. Same
+	// task as encode(), so one frame is always encoded with one set of options
+	uint32_t (*options)(void);
+	void (*set_options)(uint32_t opts);
+	// Optional: the codec's own word for the options in force, for the debug link only (its meaning is per codec,
+	// docs/spec/codec-*.md)
+	uint32_t (*encode_flags)(void);
 } hal_vocoder_t;
 
 #endif

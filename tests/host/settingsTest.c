@@ -135,11 +135,13 @@ static void test_settings_basic(void)
 	CHECK(st.load == SETTINGS_DEFAULTS && st.seq == 0);
 	settings_read(&s);
 	CHECK(s.brightness == 100 && s.squelch == SETTINGS_UNSET8 && s.beeps == 1);
+	CHECK((s.accent & SETTINGS_AUDIO_MASK) == 0);	// noise reduction on, AGC off (a record from before them: also 0)
 
 	settings_t *w = settings_begin();
 	w->vfo_rx_hz = 146520000;
 	w->squelch = 3;
 	strcpy(w->radio_name, "N0CALL");
+	w->accent = SETTINGS_AUDIO_NO_NOISE_REDUCTION | SETTINGS_AUDIO_AGC | 3u;	// beside a highlight color
 	settings_end(1000);
 	settings_poll(1500);			// not rested yet
 	settings_get_stats(&st);
@@ -165,6 +167,7 @@ static void test_settings_basic(void)
 	settings_read(&s);
 	CHECK(st.load == SETTINGS_LOADED && st.seq == 1);
 	CHECK(s.vfo_rx_hz == 146520000 && s.squelch == 4 && strcmp(s.radio_name, "N0CALL") == 0);
+	CHECK(s.accent == (SETTINGS_AUDIO_NO_NOISE_REDUCTION | SETTINGS_AUDIO_AGC | 3u));
 
 	// A change undone before the save: nothing written
 	w = settings_begin();

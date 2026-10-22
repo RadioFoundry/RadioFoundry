@@ -12,8 +12,12 @@
 #include "radio/mic_gain.h"
 #include "hal_time.h"
 #include "settings/settings.h"
+#if CONFIG_DMR
+#include "dmr/ambe/ambeVoice.h"
+#endif
 
 #define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
+#define DL_SETTING_ENC_OPTIONS	31u	// SETTING id of the vocoder's encode options (VOCODER_OPT_*)
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
@@ -251,6 +255,20 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			radio_set_mic_gain((uint8_t)v);
 			return DL_ST_OK;
 		}
+#if CONFIG_DMR
+		// The encode options for the next frames (dmr-voice.md 6), not stored: a restart or a change of Mic noise
+		// reduction / Mic AGC brings back the settings'. Lets a test send combinations the menu can't (0x800)
+		if (a[0] == DL_SETTING_ENC_OPTIONS) {
+			if (v > (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC)) {
+				return DL_ST_BAD_ARG;
+			}
+			if (ambeVoiceEncodeOptionsSupported() == 0) {
+				return DL_ST_UNAVAILABLE;
+			}
+			ambeVoiceSetEncodeOptions(v);
+			return DL_ST_OK;
+		}
+#endif
 		radio_settings_t s;
 		radio_get_settings(&s);
 		if (!set_one(&s, a[0], v)) {

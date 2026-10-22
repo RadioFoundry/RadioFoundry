@@ -172,7 +172,7 @@ SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit"
             "key_beep": 12, "vox": 13, "vox_level": 14, "vox_tail_ms": 15, "rx_save": 16, "rx_save_idle_s": 17,
             "battery_off_s": 18, "scan_beep": 19, "reply_s": 20, "roam_rssi_dbm": 21, "roam_hyst_db": 22,
             "roam_probe": 23, "roam_check_s": 24, "roam_beacon_s": 25, "roam_beacon_len_s": 26, "roam_survey": 27,
-            "rpt_beacon": 28, "mic_gain": 29}
+            "rpt_beacon": 28, "mic_gain": 29, "enc_options": 31}
 
 
 class DebugLinkError(Exception):

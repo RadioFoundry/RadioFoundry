@@ -71,3 +71,36 @@ def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
         if k == "voice.rx_concealed" and end_race:
             continue
         assert d[k] == 0, f"{k} = {d[k]}: {d}"
+
+
+def test_vocoder_encode_options(radio):
+    """The vocoder's encode options (docs/spec/dmr-voice.md 6), radio only: the options in force follow the Mic noise
+    reduction and Mic AGC settings (settings.audio_flags bit 0 = noise reduction off, bit 1 = AGC on; tone frames
+    always on), and on a board that reports its codec word, the word is 0x800 plus 0x40 for noise reduction, 0x1000
+    for tone frames and 0x2000 for AGC, never 0x100 (DC filter off) or 0x4000 (test mode).
+
+    voice.enc_flags is the word the codec was last given: the audio callback hands new options over before the next
+    frame it encodes. After a change with no transmission since, the word still belongs to the previous options, so
+    a mismatch is only printed here; test_dmr_tx_encode_options checks the word after an over."""
+    if "DMR" not in radio.features():
+        pytest.skip("built without DMR")
+    v = radio.view(["dmr_stats", "storage"])
+    if "voice.enc_supported" not in v:
+        pytest.skip("firmware without the voice.enc_* view keys")
+    supported = int(v["voice.enc_supported"], 0)
+    if supported == 0:
+        pytest.skip("this board's vocoder has no encode options")
+    audio = int(v["settings.audio_flags"], 0)
+    nr_on = (audio & 1) == 0
+    want = (0x1 if nr_on else 0) | 0x2 | (0x4 if audio & 2 else 0)
+    opts = int(v["voice.enc_options"], 0)
+    print(f"enc_supported={supported:#x} enc_options={opts:#x} noise reduction {'on' if nr_on else 'off'} "
+          f"enc_flags={v.get('voice.enc_flags')}")
+    assert opts == want & supported, f"options in force {opts:#x}, expected {want & supported:#x}: {v}"
+    if "voice.enc_flags" in v:
+        flags = int(v["voice.enc_flags"], 0)
+        expect = 0x800 | (0x40 if opts & 1 else 0) | (0x1000 if opts & 2 else 0) | (0x2000 if opts & 4 else 0)
+        assert flags & ~0x3840 == 0 and flags & 0x800, f"codec flags word {flags:#x} is not 0x800 plus option bits"
+        if flags != expect:
+            print(f"codec flags word {flags:#x}, {expect:#x} from the next frame encoded (no transmission since the "
+                  f"options changed)")
