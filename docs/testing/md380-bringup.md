@@ -3,7 +3,7 @@
 
 # MD-380 bring-up checklist
 
-The MD-380 port (`make BOARD=md380`, and `MD380_BAND=vhf` for VHF radios) builds, passes its host tests and has run
+The MD-380 port (`make BOARD=md380`, and `BAND=vhf` for VHF radios) builds, passes its host tests and has run
 on a radio. This is the order to try it in, what each stage proves, and what to change when it doesn't
 work. The stage numbers match the unknowns table in [hardware-md380.md](../spec/hardware-md380.md) section 17. Every
 row names the knob in the source that the likely failure points at.
@@ -37,7 +37,7 @@ audio path to the speaker, issue 2, and the features the board leaves off. The d
 3. Build and flash (the key file is yours; the tool checks it by SHA-256, hardware-md380.md 14.2):
 
    ```
-   make BOARD=md380                          # UHF; MD380_BAND=vhf for a VHF radio
+   make BOARD=md380                          # UHF; BAND=vhf for a VHF radio
    tools/stm32_dfu.py --model md380 --key ~/keys/md380.key build/md380/odr_md380.bin
    ```
 

@@ -7,8 +7,8 @@
     tools/release.py --board dm1701 --variant amateur --version v0.1.0     a release variant (make VARIANT=amateur)
     tools/release.py --board dm1801pro --version v0.1.0     an HR_C7000 radio: build/dm1801pro/odr_dm1801pro.bin, the
                                                             image without the codec slot (never the _codec.bin)
-    tools/release.py --board md380 --build-option MD380_BAND=vhf --version v0.1.0   a build option's image (board.toml
-                                                            [[build_options]]): build/md380-vhf/, odr-md380-vhf-<version>
+    tools/release.py --board md380 --build-option BAND=vhf --version v0.1.0   a build option's image (board.toml
+                                                            [[build_options]]): build/md380-vhf/odr_md380-vhf.bin, odr-md380-vhf-<version>
 
 Writes, into --out:
   odr-<board>-<version>.bin    the codec-less image, as built (a variant or a build option value:
@@ -99,9 +99,12 @@ def main(argv=None):
                              % (board.id, name, value, ", ".join("%s=%s" % (o["name"], "|".join(v["id"] for v in o["values"]))
                                                                 for o in board.build_options) or "none"))
         options.append((name, value))
-    suffix = "".join("-" + v for _, v in options)
+    # the Makefile's names: a non-default value is in the build directory and the image (build/md380-vhf/odr_md380-vhf.bin)
+    defaults = {o["name"]: o["values"][0]["id"] for o in board.build_options}
+    suffix = "".join("-" + v for n, v in options if v != defaults[n])
     build_dir = board.id + ("-" + variant if variant else "") + suffix
-    path = args.bin or os.path.join(ROOT, "build", build_dir, "odr_%s%s.bin" % (board.id, "_install" if board.first_stage else ""))
+    path = args.bin or os.path.join(ROOT, "build", build_dir, "odr_%s%s%s.bin" % (board.id, suffix,
+                                                                                 "_install" if board.first_stage else ""))
     with open(path, "rb") as f:
         image = f.read()
     check_no_codec(board, image)

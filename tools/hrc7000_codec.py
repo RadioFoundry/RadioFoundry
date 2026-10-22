@@ -18,7 +18,7 @@ a stock file keeps the codec). The recipe, for the DM-32UV from docs/spec/codec-
 
 The codec is DVSI's and Baofeng's, not ours: it is never stored in this repository or in a release. This tool reads
 your stock file and writes the merged image to a file you choose (by default next to the built image, in build/, which
-git ignores). Wrap the result for the Baofeng updater with tools/dm32_pack.py.
+git ignores). Wrap the result for the vendor's updater with tools/serial_loader.py --wrap.
 """
 import argparse
 import hashlib
@@ -233,7 +233,7 @@ examples:
   %(prog)s --stock DM32.01.01.049.bin --image build/dm32/odr_dm32.bin -o build/dm32/odr_dm32_codec.bin
   %(prog)s --self-test
 
-then:  tools/dm32_pack.py build/dm32/odr_dm32_codec.bin build/dm32/odr_dm32_codec_BFUV32.bin
+then:  tools/serial_loader.py --model dm32 build/dm32/odr_dm32_codec.bin --wrap build/dm32/odr_dm32_codec_BFUV32.bin
        and load that file with the Baofeng updater (docs/testing/dm32-bringup.md)
 """
 

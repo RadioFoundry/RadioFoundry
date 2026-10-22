@@ -133,7 +133,7 @@ DMR counters.
 
 | Step | Expect | If not |
 |---|---|---|
-| Select a DMR channel on a local repeater or hotspot | `tk` (ticks) climbs by about 33 a second, `ts` interrupts count up | No ticks: the modem never got timing; check the DMR mode register set (`dmr_table` in `fd6818_dm1801pro.c`) and the RX path |
+| Select a DMR channel on a local repeater or hotspot | `tk` (ticks) climbs by about 33 a second, `ts` interrupts count up | No ticks: the modem never got timing; check the DMR mode register set (`dmr_table` in `boards/dm1801pro/rf_tables_dm1801pro.c`) and the RX path |
 | Receive a transmission | `H` (headers) and `V` / `T` counters rise, `crc` stays low | Many `crc` or `u` (unusable): the bandwidth word 0x3048 or the DMR register set |
 | Hear a call | Silence: the codec is located but not hosted yet | |
 | Transmit on a dummy load (data call or a short key-up) | A burst per slot on a meter or SDR, `tx`, `rf` and `ok` rise | `un` (underrun) or `rj`: the per-burst switch takes too long (`dmr_rf_switch`, `RF_BIT_SCALE_US`); no carrier: `dmr_pa_on`, the 28 ms PA delay |

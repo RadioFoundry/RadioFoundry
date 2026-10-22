@@ -376,7 +376,7 @@ site (`firmware/<radio>/`) are not used by the flasher. The `make` command that 
 for the image it produces, stay under "Build it yourself".
 
 A radio whose image depends on more than the feature switches lists the choices in `radio.json` `flash.build_options`
-(the MD-380's band: `MD380_BAND=uhf|vhf`). The build step asks for each one before it builds, or takes it from a
+(the MD-380's band: `BAND=uhf|vhf`). The build step asks for each one before it builds, or takes it from a
 connected radio's debug link name (`board_name`), sends it with the request, and refuses an image whose manifest
 doesn't carry it (`build_options`). The current-firmware step refuses a radio whose name says another value.
 

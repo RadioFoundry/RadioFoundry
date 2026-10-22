@@ -52,7 +52,7 @@ APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one fo
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
-MAKE_VARS = ("PLATFORM", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS")
+MAKE_VARS = ("PLATFORM", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS", "BUILD_OPTIONS")
 
 
 class RegistryError(Exception):
@@ -455,7 +455,7 @@ def load(root=ROOT, only=None):
         validate(data, BOARD_SCHEMA, "boards/%s/board.toml" % bid)
         if data["id"] != bid:
             raise RegistryError("boards/%s/board.toml: id %r must be the directory name" % (bid, data["id"]))
-        mk = make_vars(root, bid, MAKE_VARS + tuple(o["name"] for o in data.get("build_options", [])))
+        mk = make_vars(root, bid, MAKE_VARS + tuple(o["name"] + "_VALUES" for o in data.get("build_options", [])))
         plat = platforms.get(mk.get("PLATFORM", ""))
         if plat is None:
             raise RegistryError("boards/%s: PLATFORM %r has no platform/<p>/platform.toml" % (bid, mk.get("PLATFORM")))
@@ -562,12 +562,18 @@ def check(root=ROOT):
                 bad("flash.stub hold_power needs PIN_POWER_LATCH and PIN_POWER_KEY in boards/%s/pins.h" % bid)
         if b.first_stage and len(b.first_stage[1]) != 4:
             bad("board.mk BOOT_SIGNATURE is the first stage's first word: 4 bytes")
+        # board.mk declares the options and their values (the build checks a value against them); board.toml adds
+        # only the words: both must name the same values in the same order (the first is the default)
+        if [o["name"] for o in d.get("build_options", [])] != (b.mk.get("BUILD_OPTIONS") or "").split():
+            bad("board.mk BUILD_OPTIONS is %r; [[build_options]] names %s"
+                % (b.mk.get("BUILD_OPTIONS"), [o["name"] for o in d.get("build_options", [])]))
         for o in d.get("build_options", []):
-            if len(o["values"]) < 2:
+            ids, mk_ids = [v["id"] for v in o["values"]], (b.mk.get(o["name"] + "_VALUES") or "").split()
+            if len(ids) < 2:
                 bad("build option %s needs at least two values (the first is the default)" % o["name"])
-            elif b.mk.get(o["name"]) != o["values"][0]["id"]:
-                bad("build option %s: the build's default is %r, the first value %r"
-                    % (o["name"], b.mk.get(o["name"]), o["values"][0]["id"]))
+            elif ids != mk_ids:
+                bad("build option %s: board.toml has the values %s, board.mk %s_VALUES %s"
+                    % (o["name"], ids, o["name"], mk_ids))
     if not problems:
         path = os.path.join(root, ODRFLASH_JSON)
         try:
@@ -615,9 +621,7 @@ def odrflash_view(boards):
             "dfu_ids": [dfu["vid"], dfu["pid"]] if dfu else None,
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
             "stub": b.stub(),
-            "build_options": [{"name": o["name"], "values": [{"id": v["id"], "board_name": v["board_name"]}
-                                                              for v in o["values"]]}
-                              for o in d.get("build_options", [])],
+            "build_options": d.get("build_options", []),		# odrflash asks with the same words as the site
         }
         out[bid] = e
     return {"format": "odr-board-registry/2",
@@ -753,6 +757,17 @@ def self_test():
             ok(any("hold_power needs" in p for p in check(tmp)) or "hold_power = true" not in good,
                "check finds a hold_power stub without the pins in pins.h")
             shutil.copy(os.path.join(ROOT, "boards", one, "pins.h"), pins)
+        # a build option whose board.toml values differ from board.mk's
+        opt = next((b for b in board_dirs(tmp) if "[[build_options]]" in open(os.path.join(tmp, "boards", b, "board.toml"),
+                                                                             encoding="utf-8").read()), None)
+        if opt:
+            mk = os.path.join(tmp, "boards", opt, "board.mk")
+            mk_good = open(mk, encoding="utf-8").read()
+            with open(mk, "w", encoding="utf-8") as f:
+                f.write(re.sub(r"(?m)^(\w+_VALUES\s*:=\s*)(\S+)\s+(\S+)", r"\1\3 \2", mk_good))
+            ok(any("_VALUES" in p for p in check(tmp)), "check finds build option values that differ from board.mk")
+            with open(mk, "w", encoding="utf-8") as f:
+                f.write(mk_good)
         with open(path, "w", encoding="utf-8") as f:
             f.write(good.replace('name = "', 'name = "Renamed ', 1))
         ok(any("out of date" in p for p in check(tmp)), "check finds a stale %s" % ODRFLASH_JSON)
