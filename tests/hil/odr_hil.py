@@ -25,7 +25,7 @@ from odr_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse_coun
 # Every HIL skip names its kind (README.md, "Skip kinds"), so a bring-up run can tell a skip it expects (an --allow-*
 # flag not given) from a gap (the radio lacks what the feature needs) and fail on the gap. The kind travels as the
 # reason's "[kind] " prefix: that survives every path a skip reason takes (skip marks, -rs, the JUnit XML, reports
-# from other processes). skip() also sets .kind on the exception, and the conftest copies the kind to the report
+# from other processes). skip() also sets .kind on the exception, and hil_plugin.py copies the kind to the report
 # (report.skip_kind) and to the test's user properties ("skip_kind", in the JUnit XML). skip_kind() reads it back.
 # A bare pytest.skip in tests/hil fails tools/check_hil_skips.py (tools/ci.sh).
 

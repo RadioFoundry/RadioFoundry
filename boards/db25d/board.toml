@@ -68,6 +68,11 @@ body = "#202226"
 accent = "#c8372d"
 lens = [20, 20]
 
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them (6, the shim's default)
+[cps]
+radio_types = [6]
+
 # Why each switch in config.mk's BOARD_UNSUPPORTED is n/a on this radio, by feature (tests/hil/features.toml):
 # tools/bringup.py shows the reason. "unsupported" instead marks a feature planned but not working yet
 [features]
