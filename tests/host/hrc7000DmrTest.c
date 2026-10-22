@@ -677,8 +677,15 @@ static void test_subtone(void)
 	CHECK(REG(C7_CDCSS_ADDR) == ((0754u << 16) | 0023u));
 	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS_INV, 0023);
 	CHECK(REG(C7_FM_MOD) & (1u << 11));
+	// DCS gets three times the CTCSS value (the field sends it at a third of the deviation, 100 Hz at 0x28), up to
+	// 0x7F: DCS reads the field as signed, and 0xF0 sent the code inverted
 	dev.subaudio_dev = 0x28;
 	REG(C7_SUBVOICE_COEF) = 0x07D02810u;
+	hrc7000_fm_tx(&dev, true);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D07F10u);
+	hrc7000_fm_tx(&dev, false);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D07810u);
+	hrc7000_set_subtone(&dev, true, HRC7000_TONE_CTCSS, 1000);
 	hrc7000_fm_tx(&dev, true);
 	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D05010u);
 	hrc7000_fm_tx(&dev, false);
