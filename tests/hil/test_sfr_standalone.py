@@ -20,10 +20,25 @@ name that isn't a callsign: nothing keyed) went up by one. Built without CONFIG_
 
 test_sfr_user_modes (rf, bench_service): a user-role channel (User or User ERDM) hears the talker's direct copy only.
 Receive mode 0 (repeater only) drops it (call.rx_sfr_direct counts its voice bursts, nothing plays); mode 1 (first
-copy) plays it. The radio doesn't transmit."""
+copy) plays it. The radio doesn't transmit.
+
+test_sfr_chain_odr_user (rf, radio_tx: also --sfr-talker-port, --sfr-listener-port): the whole chain with ODR radios
+only, the thing the bench talker can't show. The --radio-port radio is on a repeater-role channel, the talker and the
+listener on user-role channels, all on --sfr-freq. The talker keys TALKER_S seconds at its lowest power with the voice
+layer's test signal in place of the mic (RADIO op 33). One call per listener receive mode (--sfr-listen-modes, default
+0 and 1). Pass per call, judged by what the listener played, not the RF: one call played (call.rx_calls_played +1),
+voice.rx_in at least 90 % of the talker's voice.tx_frames, decoded audio peaking at PEAK_MIN or more (voice.rx_peak)
+and at most a tenth of the frames equal to the one before (voice.rx_repeats; the test signal repeats its cycle).
+A listener that reads one stale burst for the whole call (the HR_C7000 voice-access flag on the other slot, gotchas
+14.15) fails the last two. The repeater's sfr.repeated and the listener's call.rx_sfr_* are printed. TX inhibit is
+cleared for the run on the repeater and the talker and put back; the test signal, receive mode and channels too. With
+an SDR bench configured, the keying runs inside a bench lease, so shared captures wait for it."""
+import contextlib
 import time
 
 import pytest
+
+from odr_hil import counter_deltas
 
 RPT_ROLES = (3, 4)  # sfrRole_t: RPT_STANDARD, RPT_MOTOROLA
 USER_ROLES = (1, 2)  # USER_STANDARD, USER_ERDM
@@ -174,3 +189,114 @@ def test_sfr_user_modes(radio, sdr_bench, pytestconfig):
             f"first copy: the talker's copy didn't play: {got[1]}"
     finally:
         _setting(radio, "sfr_rx", old)
+
+
+TALKER_S = 4.0
+PEAK_MIN = 1000             # as test_dmr_audio_smoke: decoded speech peaks at thousands; stale voice RAM gave 6
+
+
+def _bench_lease(request):
+    """A bench lease when an SDR bench is configured (the radios transmit on a frequency it may be watching), else
+    nothing: this test doesn't need the bench."""
+    try:
+        bench = request.getfixturevalue("sdr_bench")
+    except pytest.skip.Exception:
+        return contextlib.nullcontext()
+    return bench.lease()
+
+
+def _user_radio(port, hz, what):
+    """Open the radio on port and put it on a user-role channel on hz; returns (Radio, snapshot, tx_inhibit)."""
+    from odr_hil import Radio
+    r = Radio(port)
+    try:
+        if "DMR" not in r.features():
+            pytest.skip(f"the {what} is built without DMR")
+        snap = r.snapshot()
+        _sfr_channel(r, hz, USER_ROLES)
+        d = r.view(["dmr", "dmr_stats"])
+        if d.get("dmr.codec") != "1":
+            pytest.skip(f"the {what} has no vocoder merged (dmr.codec=0)")
+        if "voice.rx_repeats" not in d or "voice.tx_test" not in d:
+            pytest.skip(f"the {what}'s firmware lacks voice.rx_repeats or the voice test signal (an older build?)")
+        inhibit = int(r.view(["features"]).get("set.tx_inhibit", "0"))
+        return r, snap, inhibit
+    except BaseException:
+        r.close()
+        raise
+
+
+@pytest.mark.rf
+@pytest.mark.radio_tx
+def test_sfr_chain_odr_user(radio, pytestconfig, request, tx_allowed):
+    talker_port = pytestconfig.getoption("--sfr-talker-port")
+    listener_port = pytestconfig.getoption("--sfr-listener-port")
+    if not (talker_port and listener_port):
+        pytest.skip("needs a talker (--sfr-talker-port) and a listener (--sfr-listener-port) beside the repeater")
+    freq, _, _ = _freq(pytestconfig)
+    hz = round(freq * 1e6)
+    modes = [int(m) for m in pytestconfig.getoption("--sfr-listen-modes").split(",")]
+    _sfr_channel(radio, hz, RPT_ROLES)
+    radio.wait_for(lambda x: x.get("dmr.sfr_rpt") == "1", 5, sections=("dmr",), what="repeater role running")
+    talker, t_snap, t_inhibit = _user_radio(talker_port, hz, "talker")
+    try:
+        listener, l_snap, _ = _user_radio(listener_port, hz, "listener")
+        try:
+            l_mode = int(listener.view(["dmr"]).get("dmr.sfr_rx", 0))
+            _setting(talker, "tx_inhibit", 0)
+            talker.lowest_power()
+            talker.link.voice_test(True)
+            assert talker.view(["dmr"]).get("voice.tx_test") == "1", "the talker's voice test signal didn't turn on"
+            bad = []
+            for mode in modes:
+                _setting(listener, "sfr_rx", mode)
+                bad += _chain_call(request, radio, talker, listener, mode)
+            assert not bad, "; ".join(bad)
+        finally:
+            for step in (lambda: _setting(listener, "sfr_rx", l_mode), lambda: listener.restore(l_snap)):
+                with contextlib.suppress(Exception):
+                    step()
+            listener.close()
+    finally:
+        for step in (lambda: talker.link.ptt(False), lambda: talker.link.voice_test(False),
+                     lambda: _setting(talker, "tx_inhibit", t_inhibit), lambda: talker.restore(t_snap)):
+            with contextlib.suppress(Exception):
+                step()
+        talker.close()
+
+
+def _chain_call(request, radio, talker, listener, mode):
+    """One talker call through the repeater; the failure strings for what the listener played."""
+    listener.reset_counters()
+    _, t0 = talker.counters()
+    _, l0 = listener.counters()
+    r0 = radio.view(["sfr"])
+    with _bench_lease(request):
+        talker.ptt_for(TALKER_S)
+        talker.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="talker TX ended")
+        time.sleep(2.5)          # the repeat's tail and the listener's playback
+    _, t1 = talker.counters()
+    _, l1 = listener.counters()
+    r1 = radio.view(["sfr"])
+    stats = listener.view(["dmr_stats"])
+    tx = counter_deltas(t0, t1, ["voice.tx_frames", "voice.tx_repeats", "call.tx_calls"])
+    d = counter_deltas(l0, l1, ["call.rx_calls", "call.rx_calls_played", "call.rx_late_entries", "call.rx_voice_bursts",
+                                "call.rx_lost_frames", "call.rx_sfr_dup", "call.rx_sfr_direct", "call.rx_sfr_fixed",
+                                "voice.rx_in", "voice.rx_repeats", "voice.rx_bad", "voice.rx_bit_errors"])
+    peak = int(stats.get("voice.rx_peak", 0))
+    rep = int(r1.get("sfr.repeated", 0)) - int(r0.get("sfr.repeated", 0))
+    print(f"listener mode {mode}: talker {tx}; repeater repeated {rep}; listener {d}, rx_peak {peak}")
+    what = f"listener mode {mode}"
+    if tx["call.tx_calls"] != 1 or tx["voice.tx_frames"] < 30 * TALKER_S:
+        return [f"{what}: the talker didn't make one call of {TALKER_S:g} s: {tx}"]
+    bad = []
+    if d["call.rx_calls_played"] != 1:
+        bad.append(f"{what}: {d['call.rx_calls_played']} calls played of {d['call.rx_calls']} heard (one expected)")
+    if d["voice.rx_in"] < 0.9 * tx["voice.tx_frames"]:
+        bad.append(f"{what}: {d['voice.rx_in']} frames into the voice layer of the {tx['voice.tx_frames']} sent")
+    if peak < PEAK_MIN:
+        bad.append(f"{what}: decoded audio peaks at {peak} < {PEAK_MIN}: silent output (stale or wrong voice bits)")
+    if d["voice.rx_repeats"] > d["voice.rx_in"] // 10:
+        bad.append(f"{what}: {d['voice.rx_repeats']} of {d['voice.rx_in']} frames repeat the one before: the same "
+                   "voice bytes again and again")
+    return bad

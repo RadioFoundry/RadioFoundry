@@ -78,6 +78,14 @@ def pytest_addoption(parser):
                 help="test_split_pair_handheld: a third radio, the subscriber calling into the pair (its current "
                      "DMR channel is edited for the run and put back)")
     g.addoption("--split-ms-ts", default="1,2", help="test_split_pair_handheld: the subscriber's slots, in turn")
+    g.addoption("--sfr-talker-port", default=os.environ.get("ODR_SFR_TALKER_PORT"),
+                help="test_sfr_chain_odr_user: an ODR radio as the SFR user that talks (a user-role channel on "
+                     "--sfr-freq); the --radio-port radio is the repeater")
+    g.addoption("--sfr-listener-port", default=os.environ.get("ODR_SFR_LISTENER_PORT"),
+                help="test_sfr_chain_odr_user: an ODR radio as the SFR user that listens (a user-role channel on "
+                     "--sfr-freq)")
+    g.addoption("--sfr-listen-modes", default="0,1",
+                help="test_sfr_chain_odr_user: the listener's receive modes (setting sfr_rx), one call each")
     g.addoption("--split-out-mhz", type=float, default=None,
                 help="MHz: test_split_pair, the repeater output the TX half sends on (its input is --dmr-freq, where "
                      "the bench calls); no default: one you may transmit on, inside the SDR's shared window")
