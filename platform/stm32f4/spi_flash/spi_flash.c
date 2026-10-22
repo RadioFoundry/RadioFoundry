@@ -29,14 +29,18 @@ static spi_nor_t nor = { .bus = &bus };
 
 static void take(void)
 {
-	if (lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
+	if (cfg->bus_take != NULL) {
+		cfg->bus_take();
+	} else if (lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
 		xSemaphoreTake(lock, portMAX_DELAY);
 	}
 }
 
 static void give(void)
 {
-	if (lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
+	if (cfg->bus_give != NULL) {
+		cfg->bus_give();
+	} else if (lock != NULL && xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
 		xSemaphoreGive(lock);
 	}
 }
@@ -46,7 +50,7 @@ static bool init(void)
 	if (cfg == NULL) {
 		return false;
 	}
-	if (lock == NULL) {
+	if (lock == NULL && cfg->bus_take == NULL) {
 		lock = xSemaphoreCreateMutex();
 	}
 	stm32_pin_out(cfg->cs_port, cfg->cs_pin, true, false);

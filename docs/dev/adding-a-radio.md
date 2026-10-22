@@ -22,7 +22,7 @@ in `BOARD_DIRS`. The board then keeps only its wiring and what its chips leave t
 | Subdirectory | For |
 |---|---|
 | `platform/stm32f4/hrc` | an HR_C6000 or HR_C5000: DMR glue, I2S audio, the chip's ports, the stock codec host |
-| `platform/stm32f4/spi_flash` | the data flash on SPI NOR, with its security registers |
+| `platform/stm32f4/spi_flash` | the data flash on SPI NOR, with its security registers. A flash that shares its bus with another device takes the board's bus lock (`bus_take`, `bus_give`) instead of the driver's own mutex |
 | `platform/stm32f4/fsmc_keypad` | a key matrix on the LCD data lines |
 | `platform/stm32f4/gps_uart` | a GPS module on a USART |
 

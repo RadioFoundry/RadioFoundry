@@ -153,7 +153,7 @@ def main():
     out, res, log = run(sim, bytes(flash), lambda r, d: r.write_image(f4stub.TEST_BOARD, [(0x0800C000, bytes(md_app))],
                                                                       backup_dir=d), board=f4stub.TEST_BOARD)
     del f4stub.BOARDS[f4stub.TEST_BOARD]
-    check("config 3 2 3 1C" in log, "test profile record decoded by the stub: %r" % log.splitlines()[:1])
+    check("config 254 2 3 1C" in log, "test profile record decoded by the stub: %r" % log.splitlines()[:1])
     check(res[0] == 5 and out[0x80000:] == bytes(flash[0x80000:]) and out[:0xC000] == boot,
           "test profile install: sectors 3-7, bootloader and codec sectors untouched %s" % (res,))
 
