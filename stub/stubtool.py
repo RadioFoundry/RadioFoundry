@@ -520,7 +520,7 @@ def check_univ_load(image, load, window=None):
 # pins, nothing echoed but 0).
 C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
                     "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"]}
-             for b in odrboards.BOARDS.values() if b.stub}
+             for b in odrboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
 

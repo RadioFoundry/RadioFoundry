@@ -18,10 +18,10 @@ Each fact is in one file. A value another file already holds is derived from it,
 |---|---|
 | `boards/<id>/board.toml` | Identity, status, build option text, CI extras, flashing family, bootloader and stub data, codec route, the site's data |
 | `platform/<p>/platform.toml` | ISA, CPU, toolchain, CI group, platform stubs, flash base, sector geometries, codec symbols |
-| `boards/<id>/board.mk` | `PLATFORM`, `APP_BASE` (the image address), `BOOT_*`, `BOARD_DIRS`, `BUILD_OPTIONS` and each option's `<NAME>_VALUES`, read with `make print-vars` so the board's and the platform's `config.mk` and their conditionals count. `LDSCRIPT` defaults to `memory.ld` |
+| `boards/<id>/board.mk` | `PLATFORM`, `APP_BASE` (the image address), `HSE_VALUE` (the crystal, for the STM32F4 stub), `BOOT_*`, `BOARD_DIRS`, `BUILD_OPTIONS` and each option's `<NAME>_VALUES`, read with `make print-vars` so the board's and the platform's `config.mk` and their conditionals count. `LDSCRIPT` defaults to `memory.ld` |
 | `boards/<id>/memory.ld` | The application region (`MEMORY FLASH`, from `__app_start`) and the codec symbols (`__codec_*`). Every `*.ld` in the board directory is read for the codec symbols |
 | `boards/<id>/*.c` | The `board_t` `.name` values: the names the debug link reports |
-| `boards/<id>/pins.h` | The power latch and key pins the stub holds |
+| `boards/<id>/pins.h` | The pins the stub uses: the power latch and key (HR_C7000), the SPI flash's `PIN_FLASH_SCK`, `_MISO`, `_MOSI`, `_CS` and the `idle_cs` pins (STM32F4), each as `GPIOx, GPIO_PIN_n` on STM32F4 |
 
 Derived values:
 
@@ -33,6 +33,7 @@ Derived values:
 | Erasable sectors | The platform geometry from the application base up |
 | Stub NAND flag | `drivers/flash/spi_nand` in `BOARD_DIRS` |
 | Stub power pins | `PIN_POWER_LATCH` and `PIN_POWER_KEY` in `pins.h`, when `hold_power` is set |
+| Stub board record (STM32F4) | `spi` and `idle_cs`, the `PIN_FLASH_*` pins, the bus's alternate function from the platform's `board_stub.spi_af`, `HSE_VALUE` and `APP_BASE` |
 | Debug link names | The `board_t` names, each build option value's `board_name`, `debuglink_aliases`, the id |
 | Codec windows of a linker slot | The `__codec_slot` symbols |
 | Codec windows of a stock file | The stock file's profile in `tools/odrflash/odrflash/stockfw.py` |
@@ -128,9 +129,15 @@ to the build directory and the image: `make BOARD=md380 BAND=vhf` writes `build/
 `[flash.dfu]` (`usb-dfu`): `vid`, `pid`, `string1`, `product` (the USB identity) and `key_sha256`, `key_prefix` (the
 per-model XOR key's hash and first bytes, never the key).
 
-`[flash.stub]` (a board on a platform with `board_stub`): `id` (the board id the stub echoes), `hold_power` (the stub
-drives the power latch), `progmem` (program flash size), `tested` (flashed through the stub on a radio) and the optional
-`stock_console` (the stock firmware answers a console the web flasher reads).
+`[flash.stub]` (a board on a platform with `board_stub`): `id` (the board id the stub echoes, unique per stub) and
+`tested` (flashed through the stub on a radio), then the keys the platform's `board_stub` names:
+
+| Platform stub | Required | Optional |
+|---|---|---|
+| `stubtool` (HR_C7000) | `hold_power` (the stub drives the power latch), `progmem` (program flash size) | `stock_console` (the stock firmware answers a console the web flasher reads), `read_rate` |
+| `f4stub` (STM32F4) | `spi = { bus, mode, hz }` (the SPI flash's bus 1-3, SPI mode 0-3, fastest clock) | `idle_cs` (up to two `pins.h` names of other chip selects on that bus, held high) |
+
+A key of another platform's stub fails the check.
 
 ### [codec]
 
@@ -159,7 +166,7 @@ How the site draws the radio: `shape`, `body` and `accent` colors, `lens` size.
 | `id`, `isa`, `cpu` | The platform directory, the ISA, the SoC |
 | `ci` | `{ group, container }`: the CI job group, and whether it runs in a container |
 | `stubs` | Platform stubs ci.sh builds with the platform's compiler |
-| `board_stub` | Whether its boards carry a `[flash.stub]` table |
+| `board_stub` | The stub its boards' `[flash.stub]` is for: `tool`, the required `keys`, the `optional` ones and, for SPI wiring, `spi_af` (the alternate function per bus). Absent: no `[flash.stub]` |
 | `codec_symbols` | The linker symbols every board's scripts must define |
 | `flash_base` | Where program flash starts; the factory loader holds it up to the image |
 | `default_sectors`, `[sectors]` | The flash geometries, `[index, address, size]` in the bootloader's erase order |

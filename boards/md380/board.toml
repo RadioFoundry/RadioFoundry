@@ -67,6 +67,13 @@ product = "Digital Radio in USB mode"
 key_sha256 = "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd"
 key_prefix = "2EDF40B5"
 
+# The STM32F4 stub's board record (stub/f4stub.py, stub-stm32f4.md 5.2): its board id (HELLO echoes it), whether
+# protocol 4 has run on a radio, and the SPI flash's bus, mode and clock (its pins: pins.h PIN_FLASH_*)
+[flash.stub]
+id = 2
+tested = false
+spi = { bus = 1, mode = 0, hz = 4500000 }
+
 # The codec where the merge puts it (docs/spec/codec-placement.md): the main table window at its stock address in
 # sector 8, the small ones in sectors 10 and 11, the code moved to the start of sector 11 and the descriptor. The
 # application has sectors 3-7, so an update leaves the codec sectors alone. Stock firmware keeps the code in sectors 6

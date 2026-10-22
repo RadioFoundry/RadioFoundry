@@ -394,19 +394,25 @@ def c7000_stub():
 
 
 def f4_flash():
-	"""The flash each STM32F4 radio's firmware owns (stub/f4stub.py BOARDS), for the web flasher's loader route on a
-	radio that already runs ODR. The stub image goes to f4-stub.json (f4_stub()), loaded only when it is used."""
+	"""What the web flasher's loader route needs per STM32F4 radio (stub/f4stub.py BOARDS), on a radio that already
+	runs ODR: the flash its firmware owns, and the board record the stub takes in CONFIG (config_record(), as hex), so
+	the page and f4stub.py send the same bytes. v2_wiring: the radio has the wiring a protocol 2 stub had built in
+	(f4stub.V2_WIRING), so an older stub left running can still serve it. The stub image goes to f4-stub.json (f4_stub()),
+	loaded only when it is used."""
 	f4 = _tool("stub", "f4stub.py")
-	return {"app_base": f4.APP_BASE, "boards": {bid: {"owned": [list(r) for r in b["owned"]],
-							   "codec": list(b["codec"]) if b["codec"] else None}
-						      for bid, b in f4.BOARDS.items()}}
+	v2 = f4.V2_WIRING
+	return {"app_base": f4.APP_BASE, "protocol": f4.VERSION, "record_len": f4.REC_LEN,
+		"boards": {bid: {"owned": [list(r) for r in b["owned"]], "codec": list(b["codec"]) if b["codec"] else None,
+				 "name": b["name"], "stub_id": b["id"], "record": f4.config_record(bid).hex(),
+				 "v2_wiring": f4.config_record(bid)[1:] == v2}
+			   for bid, b in f4.BOARDS.items()}}
 
 
 def f4_stub():
 	"""The STM32F4 stub f4stub.py embeds, checked against its SHA-256 by f4stub itself, as base64 for the page."""
 	import base64
 	f4 = _tool("stub", "f4stub.py")
-	return {"format": "odr-f4-stub/1", "sha256": f4.F4STUB_SHA256, "run": 0x20000000,
+	return {"format": "odr-f4-stub/1", "sha256": f4.F4STUB_SHA256, "run": f4.RUN_ADDR, "protocol": f4.VERSION,
 		"data": base64.b64encode(f4.stub_image()).decode()}
 
 

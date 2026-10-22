@@ -1,46 +1,85 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The external SPI NOR flash, for the flash stub. Both radios the stub serves wire it the same way: SPI1 on PB3 (SCK),
-// PB4 (MISO), PB5 (MOSI), alternate function 5, chip select PD7, mode 0 (hardware-dm1701.md 2, hardware-md380.md 12).
-// The bus is set up from scratch, since ODR may have left it mid-use. Commands are the common SPI NOR set (JEDEC
-// 0x9F, read 0x03 with 3 address bytes, write enable 0x06, status 0x05, 4 KB sector erase 0x20, page program 0x02,
-// release from power-down 0xAB), so parts up to 16 MB work.
+// The external SPI NOR flash, for the flash stub. The wiring comes from the board record (f4stub.h): the SPI block,
+// SCK / MISO / MOSI and their alternate function, the chip select, the SPI mode, and the other chip selects on the
+// same bus, which are held high (a display on the flash's bus). The bus is set up from scratch, since ODR may
+// have left it mid-use. Commands are the common SPI NOR set (JEDEC 0x9F, read 0x03 with 3 address bytes, write enable
+// 0x06, status 0x05, 4 KB sector erase 0x20, page program 0x02, release from power-down 0xAB), so parts up to 16 MB
+// work, in mode 0 or 3.
 #include <stddef.h>
 #include "stm32f4xx.h"
 #include "f4stub_spi.h"
 #include "f4stub_usb.h"
 
-#define SPI_MAX_HZ	4500000u	// what ODR runs this bus at (boards/dm1701/flash_dm1701.c)
 #define XFER_SPINS	100000u		// per byte: far longer than a byte takes at any prescaler
 #define PAGE		256u
 #define ERASE_MS	1000u		// a 4 KB sector: 400 ms maximum on the W25Q128 data sheet
 #define PROGRAM_MS	10u		// a page: 3 ms maximum
-#define CS_PIN		7u
 
+static SPI_TypeDef *spi;
+static GPIO_TypeDef *cs_port;
+static uint16_t cs_mask;
 static bool up;
+
+static GPIO_TypeDef *port_of(uint8_t pin)
+{
+	return (GPIO_TypeDef *)(GPIOA_BASE + (pin >> 4) * (GPIOB_BASE - GPIOA_BASE));
+}
+
+static void port_clock(uint8_t pin)
+{
+	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN << (pin >> 4);
+	(void)RCC->AHB1ENR;
+}
+
+// A push-pull output driven high (a chip select at rest)
+static void out_high(uint8_t pin)
+{
+	if (pin == F4_PIN_NONE) {
+		return;
+	}
+	unsigned n = pin & 15u;
+	GPIO_TypeDef *g = port_of(pin);
+	port_clock(pin);
+	g->BSRR = 1u << n;
+	g->OTYPER &= ~(1u << n);
+	g->MODER = (g->MODER & ~(3u << (2u * n))) | (1u << (2u * n));
+}
+
+static void alt(uint8_t pin, uint8_t af)
+{
+	unsigned n = pin & 15u;
+	GPIO_TypeDef *g = port_of(pin);
+	port_clock(pin);
+	g->AFR[n >> 3] = (g->AFR[n >> 3] & ~(0xFu << (4u * (n & 7u)))) | ((uint32_t)af << (4u * (n & 7u)));
+	g->OTYPER &= ~(1u << n);
+	g->OSPEEDR = (g->OSPEEDR & ~(3u << (2u * n))) | (2u << (2u * n));
+	g->PUPDR &= ~(3u << (2u * n));
+	g->MODER = (g->MODER & ~(3u << (2u * n))) | (2u << (2u * n));
+}
 
 static void cs(bool active)
 {
-	GPIOD->BSRR = active ? (1u << (CS_PIN + 16u)) : (1u << CS_PIN);
+	cs_port->BSRR = active ? ((uint32_t)cs_mask << 16) : cs_mask;
 }
 
 static bool xfer(const uint8_t *tx, uint8_t *rx, uint32_t n)
 {
 	for (uint32_t i = 0; i < n; i++) {
 		uint32_t spins = XFER_SPINS;
-		while ((SPI1->SR & SPI_SR_TXE) == 0) {
+		while ((spi->SR & SPI_SR_TXE) == 0) {
 			if (--spins == 0) {
 				return false;
 			}
 		}
-		*(volatile uint8_t *)&SPI1->DR = tx != NULL ? tx[i] : 0xFFu;
+		*(volatile uint8_t *)&spi->DR = tx != NULL ? tx[i] : 0xFFu;
 		spins = XFER_SPINS;
-		while ((SPI1->SR & SPI_SR_RXNE) == 0) {
+		while ((spi->SR & SPI_SR_RXNE) == 0) {
 			if (--spins == 0) {
 				return false;
 			}
 		}
-		uint8_t b = *(volatile uint8_t *)&SPI1->DR;
+		uint8_t b = *(volatile uint8_t *)&spi->DR;
 		if (rx != NULL) {
 			rx[i] = b;
 		}
@@ -54,7 +93,7 @@ static bool cmd(const uint8_t *tx, uint32_t ntx, uint8_t *in, const uint8_t *out
 	cs(true);
 	bool ok = xfer(tx, NULL, ntx) && (n == 0 || xfer(out, in, n));
 	uint32_t spins = XFER_SPINS;
-	while ((SPI1->SR & SPI_SR_BSY) != 0 && --spins > 0) {
+	while ((spi->SR & SPI_SR_BSY) != 0 && --spins > 0) {
 	}
 	cs(false);
 	return ok;
@@ -94,34 +133,43 @@ static bool write_enable(void)
 	return cmd(&op, 1, &st, NULL, 1) && (st & 2u) != 0;
 }
 
-uint32_t f4spi_init(uint32_t pclk2_hz, uint8_t id[3])
+uint32_t f4spi_init(const f4_board_t *b, uint32_t pclk_hz, uint8_t id[3])
 {
-	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIODEN;
-	RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
-	(void)RCC->APB2ENR;
-	cs(false);
-	GPIOD->MODER = (GPIOD->MODER & ~(3u << (2u * CS_PIN))) | (1u << (2u * CS_PIN));
-	GPIOD->OTYPER &= ~(1u << CS_PIN);
-	for (unsigned pin = 3; pin <= 5; pin++) {
-		GPIOB->MODER = (GPIOB->MODER & ~(3u << (2u * pin))) | (2u << (2u * pin));
-		GPIOB->OTYPER &= ~(1u << pin);
-		GPIOB->OSPEEDR |= 2u << (2u * pin);
-		GPIOB->PUPDR &= ~(3u << (2u * pin));
-		GPIOB->AFR[0] = (GPIOB->AFR[0] & ~(0xFu << (4u * pin))) | (5u << (4u * pin));
+	id[0] = id[1] = id[2] = 0;
+	up = false;
+	if (b->spi_bus == 0) {
+		return 0;
 	}
-	// The slowest of the prescalers at or under SPI_MAX_HZ: PCLK2 / 2^(br + 1)
+	if (b->spi_bus == 1u) {
+		spi = SPI1;
+		RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
+		(void)RCC->APB2ENR;
+	} else {
+		spi = b->spi_bus == 2u ? SPI2 : SPI3;
+		RCC->APB1ENR |= b->spi_bus == 2u ? RCC_APB1ENR_SPI2EN : RCC_APB1ENR_SPI3EN;
+		(void)RCC->APB1ENR;
+	}
+	// Every chip select on the bus high before the clock line moves
+	cs_port = port_of(b->cs);
+	cs_mask = (uint16_t)(1u << (b->cs & 15u));
+	out_high(b->cs);
+	out_high(b->idle[0]);
+	out_high(b->idle[1]);
+	alt(b->sck, b->af);
+	alt(b->miso, b->af);
+	alt(b->mosi, b->af);
+	// The slowest of the prescalers at or under the record's rate: PCLK / 2^(br + 1)
 	uint32_t br = 0;
-	while (br < 7u && pclk2_hz / (2u << br) > SPI_MAX_HZ) {
+	while (br < 7u && pclk_hz / (2u << br) > b->spi_hz) {
 		br++;
 	}
-	SPI1->CR1 = 0;
-	SPI1->CR2 = 0;
-	SPI1->CR1 = SPI_CR1_MSTR | SPI_CR1_SSM | SPI_CR1_SSI | (br << SPI_CR1_BR_Pos);
-	SPI1->CR1 |= SPI_CR1_SPE;
-	(void)SPI1->DR;
+	spi->CR1 = 0;
+	spi->CR2 = 0;		// ODR may have left DMA requests on
+	spi->CR1 = SPI_CR1_MSTR | SPI_CR1_SSM | SPI_CR1_SSI | (br << SPI_CR1_BR_Pos) | b->spi_mode;
+	spi->CR1 |= SPI_CR1_SPE;
+	(void)spi->DR;
 
 	uint8_t wake = 0xAB, jedec = 0x9F;
-	id[0] = id[1] = id[2] = 0;
 	(void)cmd(&wake, 1, NULL, NULL, 0);
 	stub_delay_ms(1);		// tRES1: 3 us
 	if (!cmd(&jedec, 1, id, NULL, 3)) {
@@ -131,6 +179,7 @@ uint32_t f4spi_init(uint32_t pclk2_hz, uint8_t id[3])
 		return 0;
 	}
 	up = true;
+	(void)wait_ready(ERASE_MS);	// ODR may have handed over in the middle of an erase
 	return id[2] >= 0x18u ? 0x1000000u : 1u << id[2];	// 3 address bytes reach 16 MB
 }
 
