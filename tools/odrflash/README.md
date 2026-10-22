@@ -5,8 +5,9 @@
 
 Flashes OpenDigitalRadio release images onto a radio. Release images never contain the AMBE codec; odrflash either
 keeps the codec already in the radio (it writes only the firmware's own flash sectors) or writes the codec from your
-radio's stock firmware file. Radios: Baofeng DM-1701 today; the DM-1801 Pro flashes over its programming cable (below,
-not released yet); the DM-32UV is designed for but not released yet.
+radio's stock firmware file. Radios: the boards of the [board registry](../../docs/dev/board-registry.md); a USB DFU
+radio flashes over USB, the others over their programming cable (below). A radio installed through the RAM stub
+(`[flash] family = "serial-iap"`) uses the web flasher or `stub/stubtool.py`.
 
 ## Install
 
