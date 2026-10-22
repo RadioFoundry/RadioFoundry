@@ -132,7 +132,7 @@ to the build directory and the image: `make BOARD=md380 BAND=vhf` writes `build/
 `[flash.dfu]` (`usb-dfu`): `vid`, `pid`, `string1`, `product` (the USB identity) and `key_sha256`, `key_prefix` (the
 per-model XOR key's hash and first bytes, never the key).
 
-`[flash.stub]` (a board on a platform with `board_stub`): `id` (the board id the stub echoes, unique per stub) and
+`[flash.stub]` (a board on a platform with `board_stub`): `id` (the board id the stub echoes, unique per stub; 0xFE is reserved for the stub tools' test profiles) and
 `tested` (flashed through the stub on a radio), then the keys the platform's `board_stub` names:
 
 | Platform stub | Required | Optional |
