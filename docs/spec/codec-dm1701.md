@@ -210,11 +210,14 @@ no FPU instructions.
 | decode | PCM out, this half | 80 | 49-bit in buffer (one bit per halfword) | 0 (stock: D+0x98E, zero) | flags, half (0 / 1), D |
 | encode ECC | bit buffer (49 in, 72 out) | same buffer | 0 (stock: E+0x173C, zero) | FEC state | |
 
-* Encode flags: the reading "0x1840 on the first call of a transmission (copied from E+0x1730), 0x800 on every later
-  call" is not supported. On the DM-1801 Pro build of the same wrapper there are two calling patterns: one passes a
-  literal 0x800 on every call, the other passes the copy of the init value 0x1840 on every call, and neither switches
-  from one to the other ([codec-dm1801pro.md](codec-dm1801pro.md) section 3). This radio's wrapper was not re-checked.
-  ODR's host passes 0x1840 once and then 0x800, which behaves as the 0x800 pattern. The encoder reads the PCM and never writes it. Its output is the 49 parameter bits only. Stock applies its
+* Encode flags: a set of feature bits, one value on every call of a transmission (stock's init value at E+0x1730
+  is 0x1840). The bit meanings were measured on the DM-1801 Pro and MD-380 builds of this codec family
+  ([codec-md380.md](codec-md380.md), "Encode flags";
+  [codec-dm1801pro.md](codec-dm1801pro.md) section 3): 0x40 noise suppression, 0x800 noise gate, 0x1000 tone frames,
+  0x2000 input AGC.
+  **On this build they are unverified**: the code is the same family, but the bits were not measured on it. ODR's
+  host passes the same word as the MD-380's (`drivers/vocoder/ambe2_flags.h`, 0x1840 by default). The encoder reads
+  the PCM and never writes it. Its output is the 49 parameter bits only. Stock applies its
   privacy XOR to them (E+0x189C ^= E+0x19BC, 49 halfwords) and then calls encode ECC. Encode ECC turns them into the
   72 air bits in air order (one per halfword, the MSB of byte 0 first).
 * Decode flags: stock unpacks the 72 received bits and runs its own FEC decode. It then XORs the privacy keystream
@@ -260,5 +263,7 @@ no FPU instructions.
 
 * On the radio: audio quality, levels (decoded output is lower than the input; the encoder input level the codec
   expects is unknown) and timing (encode + decode per 20 ms on the STM32 at 144 MHz).
+* The encode flags bits on this build (see "Per-frame calls"): measure 0x40, 0x800, 0x1000 and 0x2000 as on the
+  MD-380 build, or confirm on air.
 * The parameters the stock wrapper passes from its fields are all constants after init. Whether any stock code path
   changes them (E+0x173A, E+0x173C, D+0x98E, D+0x97A) during a call was not traced.

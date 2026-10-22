@@ -212,7 +212,7 @@ static inline void settings_set_vfo_talk(settings_t *s, uint32_t id, bool privat
 
 // settings_t.accent: bits 0-2 the highlight color (0 the theme's own, 1 red, 2 orange, 3 yellow, 4 teal, 5 light blue,
 // 6 purple, 7 pink), bit 3 set: the status strip on the screen's background, not filled (0, the default: filled),
-// bits 4-5 the crash report's mode (below), bits 6-7 zero
+// bits 4-5 the crash report's mode (below), bits 6-7 the vocoder's mic options (SETTINGS_AUDIO_* below)
 #define SETTINGS_ACCENT_COLOR	0x07u
 #define SETTINGS_ACCENT_PLAIN	0x08u
 
@@ -252,6 +252,13 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 #define SETTINGS_UI_PTT_LOCKED		0x10u	// PTT works while the keys are locked
 #define SETTINGS_UI_HEAR_ALL		0x20u	// hear all on whenever a DMR channel is selected
 #define SETTINGS_UI_NO_VIBRATE		0x40u	// vibrate for alerts off (0 = on: older records keep it on)
+
+// The vocoder's mic options in settings_t.accent bits 6-7: no byte was left for them, and a record from before reads
+// as 0, noise reduction on and AGC off
+#define SETTINGS_AUDIO_NO_NOISE_REDUCTION	0x40u	// the vocoder's mic noise reduction off (DMR TX)
+#define SETTINGS_AUDIO_AGC			0x80u	// the vocoder's mic AGC on (DMR TX; mic gain then step 5)
+#define SETTINGS_AUDIO_MASK			0xC0u
+#define SETTINGS_AUDIO_SHIFT			6
 
 // settings_t.net_flags (the USB network personality; 0 = as before)
 #define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB; docs/spec/tftp.md)

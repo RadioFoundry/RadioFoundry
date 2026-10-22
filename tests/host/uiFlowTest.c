@@ -189,8 +189,14 @@ static const flow_t flows[] = {
 	{ "S Up/Down on Home: talk target", "ok 7 8 down down ok ok long:back", "up", "talk=91 toast=Talking_to", 1,
 	  false },
 	{ "S Up/Down: back to the default", "ok 7 8 down down ok ok long:back up", "down", "talk=3100", 1, false },
-	{ "S hear all by default", "ok 7 3 down down down down ok long:back", "up up", "hearall=1 pos=5", 2, false },
-	{ "S hear all by default: BACK", "ok 7 3 down down down down ok long:back up up", "back", "hearall=0", 1, false },
+	{ "S hear all by default", "ok 7 3 down down down down down down ok long:back", "up up", "hearall=1 pos=5", 2,
+	  false },
+	{ "S hear all by default: BACK", "ok 7 3 down down down down down down ok long:back up up", "back", "hearall=0", 1,
+	  false },
+	{ "S mic noise reduction off", "", "ok 7 3 down down down down down ok", "set54=0", 9, false },
+	// Mic AGC on: Mic gain (the row above) shows "AGC", is dimmed and says why
+	{ "S mic AGC on", "", "ok 7 3 down down down down ok", "set55=1 shows=AGC", 8, false },
+	{ "S mic gain while AGC is on", "ok 7 3 down down down down ok", "up ok", "toast=Mic_AGC_sets set13=5", 2, false },
 	{ "S message tone", "", "msg:3101234,Hi", "beep=2", 0, false },
 	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
 	{ "S vibrate on a message", "", "msg:3101234,Hi", "vibes=1 vibe=0", 0, false },

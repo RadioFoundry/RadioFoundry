@@ -353,10 +353,14 @@ static bool afsk_tx_busy(void) { return false; }
 static void afsk_tx_stop(void) {}
 // A transmit path (the APRS RF rows are live); the UI doesn't key, so it never sends
 static const hal_afsk_t afsk = { .tx_start = afsk_tx_start, .tx_busy = afsk_tx_busy, .tx_stop = afsk_tx_stop };
+// A vocoder with encode options (Settings > Talk & listen > Mic AGC and Mic noise reduction are live); only options()
+// is called
+static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC; }
+static const hal_vocoder_t vocoder = { .options = v_options };
 
 board_t board = {
 	.name = "Simulator", .bands = bands, .band_count = 2, .power_count = 9, .power_names = power_names,
-	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk,
+	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk, .vocoder = &vocoder,
 };
 
 static uint32_t now_ms = 1000;
@@ -1363,6 +1367,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_AUTO_LOCK_S, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
 	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
+	ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 1);
+	ui_svc_setting_set(UI_SET_MIC_AGC, 0);
 	ui_svc_setting_set(UI_SET_UPDOWN_HOME, 0);
 	for (uint8_t k = UI_SET_KEY_SIDE1; k <= UI_SET_KEY_TOP_HOLD; k++)
 		ui_svc_setting_set(k, 0);	// the side keys as the board has them
