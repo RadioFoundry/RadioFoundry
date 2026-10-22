@@ -1418,9 +1418,9 @@ static const char *ced_problem(void)
 	const channel_t *c = &ced_ch;
 	if (c->name[0] == 0)
 		return "Give it a name first";
-	if (!ui_in_band(c->rx_hz, false))
+	if (!board_in_band(c->rx_hz, false))
 		return "RX is outside the radio's bands";
-	if (!c->rx_only && !ui_in_band(c->tx_hz, true))
+	if (!c->rx_only && !board_in_band(c->tx_hz, true))
 		return "TX can't transmit there: set RX only";
 	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && c->contact == 0)
 		return "Pick a TX contact first";
@@ -1534,7 +1534,7 @@ static void ced_commit(void)
 			// TX moves with RX, keeping a repeater's offset; where that lands outside every band (or the channel
 			// had no TX frequency) TX becomes RX
 			uint32_t tx = c->tx_hz - c->rx_hz + hz;
-			c->tx_hz = ui_in_band(tx, false) ? tx : hz;
+			c->tx_hz = board_in_band(tx, false) ? tx : hz;
 			c->rx_hz = hz;
 		} else {
 			c->tx_hz = hz;

@@ -134,7 +134,7 @@ static void init(void)
 	hrc_pin_out(PIN_LCD_SCL, false);
 	hrc_pin_out(PIN_LCD_SDA, false);
 	hrc_pin_out(PIN_LCD_RESET, true);
-	spi2 = db25d_adc_raw(2) < ADC2_BITBANG;
+	spi2 = hrc_adc_read(2) < ADC2_BITBANG;
 	if (spi2) {
 		uint32_t s = hrc_irq_save();
 		IO_DIPLEX2 = (IO_DIPLEX2 & ~(DIPLEX2_SCLK_MASK | DIPLEX2_MOSI_MASK)) | DIPLEX2_SCLK_SPI2 | DIPLEX2_MOSI_SPI2;
