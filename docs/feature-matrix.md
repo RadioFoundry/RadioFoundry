@@ -47,7 +47,9 @@ tests for every feature, is `tools/bringup.py list --radio <id>`; recorded runs 
 ## Built by default on each radio
 
 ● on in the radio's default image · ○ off by default (it builds when switched on) · ✕ not available: the board or its
-platform lists it in `BOARD_UNSUPPORTED` with the reason (`config.mk`). From each board's `make print-config`.
+platform lists it in `BOARD_UNSUPPORTED` with the reason (`config.mk`) · ? off, and no source says yet whether the
+radio has the part it needs (`board.toml` `[hardware] unconfirmed`). From each board's `make print-config`. A switch
+that needs hardware some radios lack (`hardware` in `tests/hil/features.toml`) is never ○.
 
 <!-- generated: tools/boards.py docs feature-defaults; edit config/features.mk and boards/*/config.mk -->
 | Feature switch | DM-1701 | DM-1801 Pro | DM-32UV | DB25-D PRO | MD-380 |
@@ -106,10 +108,10 @@ platform lists it in `BOARD_UNSUPPORTED` with the reason (`config.mk`). From eac
 | `FM_TX_TONES` | ● | ● | ● | ● | ✕ |
 | `VOX` | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● |
-| `VIBRATE` | ○ | ● | ○ | ○ | ○ |
+| `VIBRATE` | ✕ | ● | ? | ? | ✕ |
 | `AUDIO_PROBE` | ○ | ✕ | ○ | ✕ | ○ |
 | `STUB_ENTRY` | ● | ● | ● | ● | ● |
-| `NAND_STORAGE` | ○ | ○ | ○ | ● | ○ |
+| `NAND_STORAGE` | ✕ | ✕ | ✕ | ● | ✕ |
 | `CRASH_LOG` | ● | ● | ● | ● | ● |
 | `CRASH_SCREEN` | ● | ● | ● | ● | ● |
 | `CRASH_REPORT` | ● | ● | ● | ● | ● |

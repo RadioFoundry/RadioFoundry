@@ -9,6 +9,9 @@
 #
 # [feature.<id>]    the id: stable, snake case, what the tests' feature markers name
 #   switch          the CONFIG_ switch without the prefix; left out for a feature without one
+#   hardware        what the switch needs that some radios physically lack. tools/boards.py check fails on a board
+#                   that neither builds the switch by default nor lists it in BOARD_UNSUPPORTED with the reason (or,
+#                   while the fact isn't known, in board.toml [hardware] unconfirmed): never "off by default"
 #   spec            the doc that defines the feature
 #   source          paths whose change makes a recorded result stale (default: the files and directories the
 #                   Makefile builds for the switch, else the files that test CONFIG_<switch>; the spec always counts)
@@ -41,10 +44,12 @@ spec = "docs/spec/radio-features.md"
 
 [feature.am_rx]
 switch = "AM_RX"
+hardware = "an AM-capable receiver for the air band"
 spec = "docs/spec/airband-and-broadcast.md"
 
 [feature.bcast_fm]
 switch = "BCAST_FM"
+hardware = "a broadcast FM receiver"
 spec = "docs/spec/airband-and-broadcast.md"
 
 [feature.dmr_voice]
@@ -110,6 +115,7 @@ spec = "docs/spec/radio-features.md"
 
 [feature.vibrate]
 switch = "VIBRATE"
+hardware = "a vibration motor"
 spec = "docs/spec/radio-features.md"
 
 # ── DMR data ──
@@ -152,6 +158,7 @@ spec = "docs/spec/aprs.md"
 
 [feature.aprs_rx]
 switch = "APRS_RX"
+hardware = "FM receive audio sampled by the processor (the AFSK input path)"
 spec = "docs/spec/aprs.md"
 
 [feature.aprs_igate]
@@ -312,6 +319,7 @@ spec = "docs/spec/ui.md"
 
 [feature.ui_color]
 switch = "UI_COLOR"
+hardware = "a color display"
 spec = "docs/spec/ui.md"
 
 [feature.font_xl]
@@ -338,6 +346,7 @@ source = ["core/settings", "core/storage"]
 
 [feature.nand_storage]
 switch = "NAND_STORAGE"
+hardware = "SPI NAND data flash"
 spec = "docs/spec/nand-sectors.md"
 
 [feature.codec_check]
