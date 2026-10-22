@@ -179,6 +179,20 @@ tools/coverage.sh                             # build/coverage/index.html
 tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm1801pro   # on a host with the image
 ```
 
+The `python` step also checks the HIL tests without a radio:
+
+| Check | Fails when |
+|---|---|
+| HIL test collection | pytest can't collect `tests/hil` (skipped without pytest) |
+| HIL skips (`tools/check_hil_skips.py`) | a skip in `tests/hil` doesn't name its kind (`odr_hil.skip(kind, reason)`) |
+| HIL skip helper tests (`tests/hil/test_skip_kinds.py`) | the kinds don't reach the report and the JUnit XML |
+| Feature checklist (`tools/bringup.py check`) | a switch has no entry in `tests/hil/features.toml`, a listed test isn't collected, a test's markers aren't in its entry's `needs`, an `n/a` or `unsupported` state has no reason, a record in `docs/testing/results/` doesn't parse |
+| Bring-up mode tests (`tests/hil/test_bringup.py`) | a fake radio lacking a feature doesn't fail a bring-up run |
+
+`tools/bringup.py` needs Python 3.11 or later: ci.sh uses `$ODR_PYTHON`, else the newest `python3.N` on `PATH`, and
+skips the checklist check with a notice when there is none. Comparing the docs' support claims with the records is
+not checked yet.
+
 `--steps` takes any of `host`, `python`, `firmware`, `licenses`, `similarity` (comma separated); `--quick` and
 `--matrix` choose the firmware configurations. `tools/install-arm-toolchain.sh` installs the pinned Arm toolchain
 on Linux x86_64 the way CI does, trimmed to the Cortex-M4 multilib (215 MB instead of 1 GB; `FULL=1` for all of it).

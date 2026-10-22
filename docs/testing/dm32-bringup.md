@@ -8,6 +8,11 @@ knob in the source that the likely failure points at.
 
 Hardware facts: `docs/spec/hardware-dm32.md`, `docs/spec/modem-hrc7000.md`, `docs/spec/codec-dm32.md`.
 
+The feature checklist, with every feature's required HIL tests and the last recorded result, is
+`tools/bringup.py list --radio dm32`. `tools/bringup.py run --radio dm32` records a run
+([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)). This page keeps the hardware steps and what to
+change when one fails.
+
 ## 0. Before anything
 
 1. **Back up both flashes** with the stock tools (hardware-dm32.md 13.4): the 1 MB program flash and the 16 MB data

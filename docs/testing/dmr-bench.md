@@ -9,6 +9,10 @@ to end.
 
 Status words as in `docs/spec/gotchas.md`: "on air" = checked with the SDR or another radio.
 
+A radio's checklist of required HIL tests is `tools/bringup.py list --radio <id>`
+([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)). The cases here are the manual procedures and what
+the HIL tests don't script yet.
+
 ## 1. The rig
 
 | Part | What | Normally run by |
