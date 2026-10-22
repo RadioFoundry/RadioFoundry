@@ -116,6 +116,12 @@ BOARD_SCHEMA = {
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(str), "profile": _opt(str), "sources": _opt(STR_LIST),
                    "installed": _opt(STR_LIST)}),
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
+    # tests/hil: what the health checks expect (test_health.py) and why a feature is n/a or unsupported here
+    # (tools/bringup.py, which checks the feature ids)
+    "hil": _opt({"display": _opt(str), "features": _opt(STR_LIST), "no_features": _opt(STR_LIST),
+                 "flash_jedec": _opt(STR_LIST), "calibration": _opt(bool), "battery_mv": _opt(RANGE),
+                 "codec": _opt(STR_LIST)}),
+    "features": _opt(("map", {"state": _req(("n/a", "unsupported", "required")), "reason": _req(str)})),
 }
 
 PLATFORM_SCHEMA = {
@@ -706,6 +712,15 @@ def self_test():
         except RegistryError:
             ok(True, "validate refuses: " + what)
     ok(lookup({"v": [{"id": "a"}, {"id": "b"}]}, "v.id") == ["a", "b"], "lookup maps over lists")
+    for bad, what in (({"hil": {"battery_mv": "5V"}}, "a [hil] value of the wrong type"),
+                      ({"hil": {"no_such": 1}}, "an unknown [hil] key"),
+                      ({"features": {"usb": {"state": "maybe", "reason": "x"}}}, "a [features] state"),
+                      ({"features": {"usb": {"state": "n/a"}}}, "a [features] entry without a reason")):
+        try:
+            validate(bad, {k: BOARD_SCHEMA[k] for k in ("hil", "features")}, "t")
+            ok(False, "validate refuses " + what)
+        except RegistryError:
+            ok(True, "validate refuses " + what)
 
     # a fixture tree: the real registry copied, then broken one way at a time
     tmp = tempfile.mkdtemp(prefix="odr-boards-")
@@ -740,7 +755,7 @@ def self_test():
             ok(any(want in p for p in got), "check finds %s (%s)" % (what, got[:2]))
             with open(path, "w", encoding="utf-8") as f:
                 f.write(good)
-        broken(good + "\nnew_key = 1\n", "an unknown key", "unknown key")
+        broken("new_key = 1\n" + good, "an unknown key", "unknown key")	# first: the file may end in a table
         broken(good.replace('id = "%s"' % one, 'id = "other"', 1), "an id that isn't the directory", "directory name")
         broken(re.sub(r'(?m)^family = ".*"$', 'family = "usb-dfu"', good), "a family's missing table", "needs flash.dfu")
         broken(good.replace('hardware = "', 'hardware = "missing/', 1), "a missing docs page", "doesn't exist")

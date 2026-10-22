@@ -90,11 +90,11 @@ A test may carry several feature markers. What a test needs comes from its marke
 need `--allow-rf`, `bench_service` and the `sdr_bench` fixture the SDR bench, `manual` a person (`--manual`, and the
 marker's `owner=` says what they do), `second_radio` and the `bench_station` fixture a second radio, `usb_switch`,
 `codeplug_write` and `reboot` their `--allow-*` flags. `tools/bringup.py` (Python 3.11 or later) resolves each
-radio's state for each feature from the board's build data:
+radio's state for each feature from the board registry (`tools/boards.py`) and the board's build data:
 
 | State | When |
 |---|---|
-| `n/a` | The switch is in the board's `BOARD_UNSUPPORTED`. Needs a reason |
+| `n/a` | The switch is in the board's `BOARD_UNSUPPORTED`. Needs a reason: `board.toml` `[features] <id> = { state = "n/a", reason = "..." }` |
 | `unsupported` | `board.toml` `[features.<id>] state = "unsupported"`: planned, not working yet. Needs a reason |
 | `off` | The board's default build leaves the switch off |
 | `required` | Anything else: the feature's tests must pass on the radio |
@@ -158,8 +158,8 @@ recorded`. Only a failing record shows a failure
 
 | Module | What | Needs |
 |---|---|---|
-| `test_health.py` | Any radio's health: display geometry and build features, data flash JEDEC ID and factory calibration, battery reading, a receiver that reads alive, DMR timeslot interrupts, the stock codec, GPS sentences. Each board's numbers come from its HIL expectations (`odr_hil.board_hil`: `board.toml` `[hil]`); a check the board has no expectation for skips `other_board`, one whose diagnostics line the firmware doesn't print skips `not_built` | radio only; a radio without USB on its programming cable: `--radio-port /dev/cu.usbserial-...` |
-| `test_board_hil.py` | The board data the HIL tests read, without a radio: every board's VERSION name maps back to it, the expectations name known boards and keys, and the health checks pass, fail and skip on a fake radio as they should | nothing |
+| `test_health.py` | Any radio's health: display geometry and build features, data flash JEDEC ID and factory calibration, battery reading, a receiver that reads alive, DMR timeslot interrupts, the stock codec, GPS sentences. Each board's numbers come from its `board.toml` `[hil]` table (keys in `odr_hil.HIL_KEYS`, read through `tools/boards.py`); a check the board has no expectation for skips `other_board`, one whose diagnostics line the firmware doesn't print skips `not_built` | radio only; a radio without USB on its programming cable: `--radio-port /dev/cu.usbserial-...` |
+| `test_board_hil.py` | The board data the HIL tests read, without a radio: every board's VERSION name maps back to it, the expectations use known keys, and the health checks pass, fail and skip on a fake radio as they should | nothing |
 | `test_boot.py` | version / features, ping latency, screenshot geometry, firmware clock vs wall clock (no stalls), view sections, diagnostics clock, error replies (unknown command, bad CRC, oversized request), log ring | radio |
 | `test_task_stacks.py` | after every view section and a screenshot, the `tasks` view section: every task has at least 64 bytes of stack left since it started (`ODR_HIL_STACK_MIN_FREE` overrides), none untracked, the core's and the kernel's tasks present; prints each task's least free stack. Skipped without the section | radio, firmware with `CONFIG_TASK_STACKS` |
 | `test_ui.py` | UP / DOWN change the channel on Home; OK opens the Hub (6 rows), digits open its destinations, BACK goes up, long BACK goes Home from depth 3; Quick settings open and close (BACK and QUICK); digits on Home start Find (`ui.query`); long QUICK locks and unlocks; long # opens Recent; diagnostics through Tools (Hub 5, 7); screenshots `ui_quick.png` and `ui_find.png`; injected keys count as activity; the Quick tiles for now (DMR: slot `dmr.ts` + temp 0x20, color code `dmr.cc` + 0x40, mode + 0x80, hear all `dmr.hear_all_latch`; FM: monitor latch, VOX `vox_on`), each undone by BACK on Home or a second press; the picker's focus row (`dmr.focus_id`, cleared by long BACK); Settings long press time (`input.long_ms`, set back) and auto lock 30 s (`ui.locked` after 30 s, set back to Off); opt-in: the timeslot saved to the channel and back (`storage.job_busy`, `temporary`), deleting the newest message (`$ODR_HIL_DELETE_MESSAGE=1`), factory reset with a restart (`$ODR_HIL_FACTORY_RESET=1`). State is read from the link section (`ui.screen`, `ui.depth`, `ui.count`, `ui.locked`, `ui.query`, `ui.toast`) | radio; `--allow-codeplug-write`, `--allow-reboot` |
