@@ -84,7 +84,7 @@ def main(out):
 	key = synthetic_key(1701)
 	stock, profiles, code, tables = stockfw.build_synthetic_stock(key, rng)
 	(sha, prof), = profiles.items()
-	board = boards.DM1701
+	board = boards.get("dm1701")
 	image = bytes(rng.getrandbits(8) for _ in range(150 * 1024 + 123))
 	_, codec = stockfw.extract(stock, key, profiles)
 	keep = plan.make_plan(board, [(board.app_base, image)], plan.KEEP)

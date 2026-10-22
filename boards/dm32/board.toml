@@ -45,7 +45,7 @@ stock_versions = ["DM32.01.01.049", "DM32.00.01.046"]
 backup = { stock = "full", odr = "full", spi_size = 0x1000000 }
 
 # Baofeng's update mode: keys is the short form tools print, steps the web flasher's and the manual's, id the string
-# the loader answers (also the magic of its firmware files)
+# the loader answers (also the magic of its firmware files), sign what the radio shows in update mode
 [flash.bootloader]
 keys = "PTT and SK1 (the side key just below PTT)"
 steps = [
@@ -55,6 +55,7 @@ steps = [
 	"Release the keys.",
 ]
 id = "BFUV32-V2"
+sign = "The green LED lights"
 
 # The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the board id HELLO echoes, the power latch and
 # power key pins (255 = none), whether the data memory is the SPI NAND, the program flash size; tested: flashed through

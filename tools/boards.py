@@ -34,6 +34,7 @@ KINDS = ("handheld", "mobile")
 FAMILIES = ("anyroad-dfu", "bfuv32-serial", "hrc7000-iap")
 BACKENDS = ("anyroad-dfu", "c7000-stub", "none")
 CODEC_TOOLS = ("codec_extract", "hrc7000_codec")
+ODRFLASH_JSON = "tools/odrflash/odrflash/registry.json"	# the flashing tools' view, generated and committed
 APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one for the codec slot (no geometry)
 
 
@@ -92,7 +93,7 @@ BOARD_SCHEMA = {
         "stock_download": _opt(str),
         "stock_versions": _req(STR_LIST),
         "backup": _req({"stock": _req(("none", "full")), "odr": _req(("none", "full")), "spi_size": _req(int)}),
-        "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str)}),
+        "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str)}),
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str)}),
         "stub": _opt({"id": _req(int), "latch": _req(int), "key": _req(int), "nand": _req(bool),
@@ -490,6 +491,16 @@ def check(root=ROOT):
         for o in d.get("build_options", []):
             if len(o["values"]) < 2:
                 bad("build option %s needs at least two values (the first is the default)" % o["name"])
+    if not problems:
+        path = os.path.join(root, ODRFLASH_JSON)
+        try:
+            with open(path, encoding="utf-8") as f:
+                current = f.read() == dumps(odrflash_view(boards, root))
+        except OSError:
+            current = False
+        if not current:
+            problems.append("%s is out of date: run tools/boards.py json --for odrflash --out %s"
+                            % (ODRFLASH_JSON, ODRFLASH_JSON))
     return problems
 
 
@@ -503,7 +514,8 @@ def odrflash_view(boards, root=ROOT):
         d, fl = b.data, b.data["flash"]
         codec = b.codec(root)
         e = {
-            "id": bid, "name": d["name"], "model": d["model"], "platform": b.platform.id, "family": fl["family"],
+            "id": bid, "name": d["name"], "model": d["model"], "platform": b.platform.id,
+            "platform_stubs": list(b.platform.data["stubs"]), "family": fl["family"],
             "release": d["status"]["release"], "debuglink_names": list(d["debuglink_names"]),
             "app_base": b.app_base, "flash_end": b.flash_end(), "app_region": list(b.app_region),
             "sectors": [list(s) for s in b.sectors()], "protected": [list(p) for p in fl["protected"]],
@@ -515,7 +527,7 @@ def odrflash_view(boards, root=ROOT):
                       "slot": list(b.codec_slot) if b.codec_slot else None,
                       "run": list(b.window("__codec_run_lo", "__codec_run_hi") or ()) or None,
                       "tables": list(b.window("__codec_tab_lo", "__codec_tab_hi") or ()) or None},
-            "bootloader": {k: fl["bootloader"][k] for k in ("keys", "id") if k in fl["bootloader"]},
+            "bootloader": {k: fl["bootloader"][k] for k in ("keys", "id", "sign") if k in fl["bootloader"]},
             "dfu": dict(fl["dfu"]) if "dfu" in fl else None,
             "stub": dict(fl["stub"], stock_console=fl["stub"].get("stock_console", False)) if "stub" in fl else None,
             "build_options": [{"name": o["name"], "values": [{"id": v["id"], "board_name": v["board_name"]}
@@ -633,6 +645,9 @@ def self_test():
         broken(good.replace('hardware = "', 'hardware = "missing/', 1), "a missing docs page", "doesn't exist")
         broken(re.sub(r"(?m)^protected = .*$", "protected = [[0, 1]]", good), "protected not ending at the image",
                "flash.protected")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(good.replace('name = "', 'name = "Renamed ', 1))
+        ok(any("out of date" in p for p in check(tmp)), "check finds a stale %s" % ODRFLASH_JSON)
         os.remove(path)
         ok(any("no board.toml" in p for p in check(tmp)), "check finds a board directory without board.toml")
     finally:

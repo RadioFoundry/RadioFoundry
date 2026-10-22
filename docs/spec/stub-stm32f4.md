@@ -238,7 +238,7 @@ recovery is the same with the keys held.
 
 ## 8. The codec and the other bytes in a sector
 
-The host knows which flash the firmware owns (`f4stub.BOARDS`, from `tools/odrflash/odrflash/boards.py`'s maps):
+The host knows which flash the firmware owns (`f4stub.BOARDS`, from the board registry: the linker script's application region):
 
 | Radio | Owned | Sectors touched by an update | Codec |
 |---|---|---|---|
