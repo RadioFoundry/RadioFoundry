@@ -407,12 +407,12 @@ Grep: `grep -rn "TODO(gd88)" boards drivers`. "Step" is the section 3 step that 
 | 17 | `boards/gd88/common/gd88_rf.h:18` | A's output power control (transmit) | Step the levels into the dummy load, measure | 15 |
 | 18 | `boards/gd88/paths_gd88.c:13` | Chain classes (class 1 = FM, 2 = DMR inferred), byte 6 against 7 for the TX route, headset byte along with the loudspeaker, bit 6 as the broadcast tuner source | FM and DMR on A and B through the speaker/headset; TX at volume above and below 6; broadcast FM | 9, 11, 12, 15 |
 | 19 | `boards/gd88/bcast_gd88.c:17` | `IO_DIPLEX0` bits 5 and 6 as the pads of PTA7/PTA8 (inferred) | Does the RDA5807 answer at 0x11 | 12 |
-| 20 | `boards/gd88b/board.c:50` | Whether B's three DAC pins are wired as A's | Receive checks on B; compare RSSI with A; probe DAC C | 9 |
-| 21 | `boards/gd88b/board.c:64` | B's NAND chip select (for the NAND copy of its calibration page) | Only if B's program-flash copy of the page is bad; otherwise leave | 7 |
+| 20 | `boards/gd88b/board.c:54` | Whether B's three DAC pins are wired as A's | Receive checks on B; compare RSSI with A; probe DAC C | 9 |
+| 21 | `boards/gd88b/board.c:68` | B's NAND chip select (for the NAND copy of its calibration page) | Only if B's program-flash copy of the page is bad; otherwise leave | 7 |
 | 22 | `boards/gd88b/pins.h:15` | B's RX path pairs: mode 0 = FM and mode 1 = DMR is taken | FM and DMR on B: swap if wrong | 9, 10 |
 | 23 | `boards/gd88b/pins.h:21` | B's audio source pair to A: mode 0 = the main chip's AF (FM), mode 1 = the modem's line out | B audible in FM and in DMR through A | 9, 10, 11 |
 | 24 | `boards/gd88b/pins.h:36` | PTB11 and PTB12's roles on B (low from start-up) | Note any effect when high | 9 |
-| 25 | `boards/gd88b/pins.h:40` | The status LEDs' colors (LED 1 lights while A transmits, LED 2 while it receives) | Look | 8 |
+| 25 | `boards/gd88b/pins.h:45` | The status LEDs' colors (LED 1 lights while A transmits, LED 2 while it receives) | Look | 8 |
 
 That is 25 marks and 25 rows. Recount with the grep after any edit.
 
