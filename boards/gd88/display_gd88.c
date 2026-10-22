@@ -86,6 +86,8 @@ static const ili9341_bus_t bus = {
 	.delay_ms = hal_delay_ms,
 };
 
+static bool from_record;
+
 static uint8_t panel_variant(void)
 {
 	const volatile uint8_t *r = (const volatile uint8_t *)PANEL_RECORD;
@@ -96,7 +98,18 @@ static uint8_t panel_variant(void)
 	if (t >= '0' && t <= '9') {
 		t = (uint8_t)(t - '0');
 	}
-	return t < ILI9341_VARIANTS ? t : PANEL_DEFAULT;
+	from_record = t < ILI9341_VARIANTS;
+	return from_record ? t : PANEL_DEFAULT;
+}
+
+uint8_t gd88_panel_variant(void)
+{
+	return panel.variant;
+}
+
+bool gd88_panel_from_record(void)
+{
+	return from_record;
 }
 
 static void lcdc_init(void)

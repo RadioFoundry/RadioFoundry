@@ -11,9 +11,9 @@
 
 #if CONFIG_DIAG
 
-// Lines 0-13 are always there; the storage lines (14-17) follow when it is built in, then the GPS line, then the DMR
+// Lines 0-14 are always there; the storage lines (15-18) follow when it is built in, then the GPS line, then the DMR
 // lines. The page lists lines until the first missing one, so each group starts right after the one before
-#define DIAG_FIXED_LINES	14
+#define DIAG_FIXED_LINES	15
 #define DIAG_STORAGE_LINES	(CONFIG_NAND_STORAGE ? 4 : 0)
 #define DIAG_GPS_LINE		(DIAG_FIXED_LINES + DIAG_STORAGE_LINES)
 #define DIAG_DMR_FIRST		(DIAG_GPS_LINE + 1)
@@ -191,10 +191,16 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, r.uart.line_errors);
 		break;
 	}
-#if CONFIG_NAND_STORAGE
 	case 14:
+		// The display: the panel variant in use (ili9341.h) and where it came from (the panel record or the default)
+		put(&o, "lcd v");
+		put_u(&o, gd88_panel_variant());
+		put(&o, gd88_panel_from_record() ? " rec" : " dflt");
+		break;
+#if CONFIG_NAND_STORAGE
 	case 15:
-	case 16: {
+	case 16:
+	case 17: {
 		// The storage layer over ODR's NAND range : blocks in use, free and bad; then records
 		// written, block erases, blocks emptied by garbage collection and pages that read back wrong since boot;
 		// then torn pages the mount set aside, blocks retired since boot and the next sequence number
@@ -202,29 +208,29 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		gd88_flash_stats(&st);
 		put(&o, "nst ");
 		if (gd88_flash.size == 0) {
-			if (st.status == NAND_SECTORS_FOREIGN && i == 14) {
+			if (st.status == NAND_SECTORS_FOREIGN && i == 15) {
 				// Data ODR didn't write in its range: nothing touched, no storage. The physical block and how many
 				put(&o, "foreign ");
 				put_u(&o, GD88_NAND_ODR_FIRST + st.foreign_block);
 				put(&o, " n");
 				put_u(&o, st.foreign);
-			} else if (i == 14) {
-				put(&o, "none");
 			} else if (i == 15) {
+				put(&o, "none");
+			} else if (i == 16) {
 				// The mount status (nand_sectors_status_t): 0 never mounted (no NAND), 2 bad set-up, 3 foreign
 				put(&o, "st");
 				put_u(&o, st.status);
 			} else {
 				put(&o, "-");
 			}
-		} else if (i == 14) {
+		} else if (i == 15) {
 			put(&o, "u");
 			put_u(&o, st.blocks_used);
 			put(&o, " f");
 			put_u(&o, st.blocks_free);
 			put(&o, " bad");
 			put_u(&o, st.blocks_bad);
-		} else if (i == 15) {
+		} else if (i == 16) {
 			put(&o, "w");
 			put_u(&o, st.writes);
 			put(&o, " e");
@@ -243,7 +249,7 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		}
 		break;
 	}
-	case 17: {
+	case 18: {
 		// The settings: how they were loaded at boot, the newest record's number, saves and failed saves since boot
 		static const char *const load[] = { "ram", "dflt", "load", "upgr", "frgn" };
 		settings_stats_t st;

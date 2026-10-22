@@ -12,6 +12,9 @@
 #include "platform.h"
 
 extern const hal_display_t gd88_display;
+// The panel variant in use (ili9341.h) and whether the panel record in program flash gave it (the debug page)
+uint8_t gd88_panel_variant(void);
+bool gd88_panel_from_record(void);
 extern const hal_input_t gd88_input;
 extern const hal_power_t gd88_power;
 
