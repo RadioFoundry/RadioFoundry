@@ -7,9 +7,10 @@ Sources, each fact in one of them:
   boards/<id>/board.toml        identity, status, build options, CI extras, flashing family, stub profile, codec route,
                                 site data
   platform/<p>/platform.toml    toolchain, CPU, CI group, platform stubs, flash base and sector geometries, codec symbols
-  boards/<id>/board.mk          PLATFORM, LDSCRIPT, BOOT_*, BOARD_DIRS, read through make (print-vars), so the
-                                board's config.mk and its conditionals count; the build reads no TOML
-  boards/<id>/*.ld              the application region (MEMORY FLASH) and the codec symbols (__codec_*)
+  boards/<id>/board.mk          PLATFORM, APP_BASE, LDSCRIPT, BOOT_*, BOARD_DIRS, read through make (print-vars), so
+                                the board's and the platform's config.mk and their conditionals count; the build reads
+                                no TOML
+  boards/<id>/*.ld              the application region (MEMORY FLASH of memory.ld) and the codec symbols (__codec_*)
   boards/<id>/*.c               the board_t .name values (the names the debug link reports) and hal_flash_map_t
                                 (where the codeplug lives in data flash)
   boards/<id>/pins.h            the power latch and key pins the stub holds
@@ -66,7 +67,8 @@ APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one fo
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
-MAKE_VARS = ("PLATFORM", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS", "BOARD_UNSUPPORTED")
+MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
+             "BUILD_OPTIONS", "BOARD_UNSUPPORTED")
 
 
 class RegistryError(Exception):
@@ -216,24 +218,36 @@ def make_vars(root, board, names, args=()):
     return out
 
 
-def ld_expr(text):
-    """The value of a linker script constant expression: numbers (hex, decimal, K and M suffixes), + - * / ( )."""
-    s = re.sub(r"\b(\d+)([KM])\b", lambda m: "(%s*%d)" % (m.group(1), 1024 if m.group(2) == "K" else 1048576), text)
+def ld_expr(text, names=None):
+    """The value of a linker script constant expression: numbers (hex, decimal, K and M suffixes), + - * / ( ), and the
+    symbols in names (the --defsym values and the script's own constants)."""
+    names = names or {}
+    s = re.sub(r"\b[A-Za-z_]\w*\b", lambda m: "(%d)" % names[m.group(0)] if m.group(0) in names else m.group(0), text)
+    s = re.sub(r"\b(\d+)([KM])\b", lambda m: "(%s*%d)" % (m.group(1), 1024 if m.group(2) == "K" else 1048576), s)
     if not re.fullmatch(r"[0-9a-fA-FxX+\-*/() \t]+", s):
         raise RegistryError("can't evaluate linker expression %r" % text)
     return int(eval(s.replace("/", "//"), {"__builtins__": {}}, {}))
 
 
-def parse_ld(text):
-    """{"symbols": {__codec_*: value}, "memory": {region: (origin, length)}} of a linker script."""
+def parse_ld(text, defs=None):
+    """{"symbols": {__codec_*: value}, "memory": {region: (origin, length)}} of a linker script (a board's memory.ld).
+    defs: the symbols the Makefile defines (--defsym __app_base, __app_start). The script's own constant assignments
+    before MEMORY count too; anything after it (INCLUDE common.ld, SECTIONS) is layout, not read."""
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    syms = {m.group(1): ld_expr(m.group(2)) for m in re.finditer(r"(?m)^\s*(__codec_\w+)\s*=\s*([^;]+);", text)}
-    mem = {}
     block = re.search(r"MEMORY\s*\{(.*?)\}", text, re.S)
+    names = dict(defs or {})
+    for m in re.finditer(r"(?m)^\s*(\w+)\s*=\s*([^;]+);", text[:block.start()] if block else text):
+        try:
+            names[m.group(1)] = ld_expr(m.group(2), names)
+        except RegistryError:
+            pass				# not a constant (ORIGIN(), LOADADDR()): layout, not a fact the tools read
+    syms = {m.group(1): ld_expr(m.group(2), names)
+            for m in re.finditer(r"(?m)^\s*(__codec_\w+)\s*=\s*([^;]+);", text)}
+    mem = {}
     if block:
         for m in re.finditer(r"(?m)^\s*(\w+)\s*(?:\([^)]*\))?\s*:\s*ORIGIN\s*=\s*([^,]+),\s*LENGTH\s*=\s*(.+?)\s*$",
                              block.group(1)):
-            mem[m.group(1)] = (ld_expr(m.group(2)), ld_expr(m.group(3)))
+            mem[m.group(1)] = (ld_expr(m.group(2), names), ld_expr(m.group(3), names))
     return {"symbols": syms, "memory": mem}
 
 
@@ -507,9 +521,15 @@ def _layout(root, bid, mk):
     bdir = os.path.join(root, "boards", bid)
     ld = mk.get("LDSCRIPT")
     if not ld:
-        raise RegistryError("boards/%s/board.mk: no LDSCRIPT" % bid)
+        raise RegistryError("boards/%s: no LDSCRIPT (the platform's default is boards/<id>/memory.ld)" % bid)
+    if not mk.get("APP_BASE"):
+        raise RegistryError("boards/%s/board.mk: no APP_BASE" % bid)
+    # the Makefile's --defsym values: the image address, and the application's first byte after any first stage
+    base = int(mk["APP_BASE"], 0)
+    start = base + (int(mk["BOOT_SIZE"], 0) if mk.get("BOOT_STAGE") else 0)
+    defs = {"__app_base": base, "__app_start": start}
     with open(os.path.join(root, ld), encoding="utf-8") as f:
-        main = parse_ld(f.read())
+        main = parse_ld(f.read(), defs)
     if "FLASH" not in main["memory"]:
         raise RegistryError("%s: no MEMORY FLASH region" % ld)
     org, length = main["memory"]["FLASH"]
@@ -517,7 +537,7 @@ def _layout(root, bid, mk):
     for f in sorted(os.listdir(bdir)):
         if f.endswith(".ld"):
             with open(os.path.join(bdir, f), encoding="utf-8") as fh:
-                for k, v in parse_ld(fh.read())["symbols"].items():
+                for k, v in parse_ld(fh.read(), defs)["symbols"].items():
                     if syms.setdefault(k, v) != v:
                         raise RegistryError("boards/%s: %s differs between the linker scripts" % (bid, k))
     return {"flash": (org, org + length), "symbols": syms}
@@ -547,7 +567,10 @@ def load(root=ROOT, only=None):
             raise RegistryError("boards/%s: PLATFORM %r has no platform/<p>/platform.toml" % (bid, mk.get("PLATFORM")))
         out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(bdir),
                          pin_defines(os.path.join(bdir, "pins.h")),
-                         unsupported_reasons(os.path.join(bdir, "config.mk")), flash_map(bdir))
+                         # the platform's config.mk adds its own switches (no USB on a platform without it); the
+                         # board's reason wins for a switch both list
+                         {**unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
+                          **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(bdir))
     return out
 
 

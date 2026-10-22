@@ -50,7 +50,8 @@ In short:
 
 - `config/features.mk` lists every switch with its project default. Sub-features follow their parent
   (`CONFIG_DMR=n` turns off every DMR feature); asking for a sub-feature without its parent is a build error.
-- `boards/<b>/config.mk` changes the defaults for one radio, with `?=` so the command line still wins.
+- `platform/<p>/config.mk` changes the defaults for every radio on a platform, and `boards/<b>/config.mk` for one
+  radio, both with `?=` so the command line still wins. The board's file is read first, so it wins over the platform's.
 - The command line has the last word: `make BOARD=dm1701 CONFIG_HOTSPOT=n CONFIG_SFR=y`.
 - Each switch reaches C as `CONFIG_X=0/1` (`core/config.h` gives defaults for the host tests). Test it with
   `#if CONFIG_X`, never `#ifdef`.
