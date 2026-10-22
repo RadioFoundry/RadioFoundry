@@ -27,10 +27,14 @@ const WORD_RATE = 14;		// console frames per second, written or read back (radio
 export function makeStockRoutes(host) {
 	const { S, ctx, C, boardId, session, busy, iap, fill, stubImage } = host;
 	// a text in the radio's own words where en.json has one (<key>_<radio id>, what its update mode shows), else the
-	// common one. A second SoC's are its radio's
+	// common one. A second SoC takes its own board's text first, then its radio's
 	const own = (key) => {
-		const k = `${key}_${S().radio.second_of || S().radio.id}`;
-		return t(k) !== k ? k : key;
+		const r = S().radio;
+		for (const id of [r.id, r.second_of]) {
+			const k = `${key}_${id}`;
+			if (id && t(k) !== k) return k;
+		}
+		return key;
 	};
 
 	// ---- the original firmware: the stub through its console

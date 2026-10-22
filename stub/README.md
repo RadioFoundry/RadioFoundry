@@ -79,6 +79,22 @@ On the stock routes the stub hands the program flash back from execute-in-place 
 controller before it touches the flash. The clocks are left as stock set them; the host measures timer 2 and sends the
 rates in CONFIG, so the same `db25d` profile serves stock and ODR (both use UART1 on the K1 jack).
 
+### GD-88
+
+The GD-88 has two HR_C7000 SoCs, each with its own program flash. `--board gd88` is A, the one on the cable: the DB25-D's
+routes and pins (latch PTB13, key PTB12, the NAND). `--board gd88b` is B, the second receiver. B has no cable, so the
+tool reaches it through ODR on A ([rx2-link.md](../docs/spec/rx2-link.md) 4): it asks A for the bridge
+(`DL_CMD_RX2`), then loads the stub into B's first stage through it. That route takes no `--odr-enter` and no `--baud`.
+
+The radio's two LEDs are on B (PTA16, PTB17), and on A the default LED pins (PTB0 / PTB1) clock and feed its serial
+output chain. So the tool patches the image's parameter block before it sends it: no LEDs and the latch and key on A;
+B's own LEDs and UART3 only on B, from each board's `[flash.stub]` `leds` and `uart` in `board.toml`. The DB25-D, DM-32UV and DM-1801 Pro get the image unchanged.
+
+```sh
+stubtool.py PORT --board gd88 --write-app build/gd88/odr_gd88_install.bin --boot reset     # A at power-on
+stubtool.py PORT --board gd88b --write-app build/gd88b/odr_gd88b_install.bin --boot reset  # B, A running ODR
+```
+
 ### The first stage
 
 On the DB25-D, 0xC000 holds ODR's first stage and the application starts at 0xD000. `--write-app` writes at 0xC000,

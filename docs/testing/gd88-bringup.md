@@ -65,7 +65,8 @@ How to get back to the original firmware (the IAP loader is never written, so it
 
 Record what P2 power-on shows (step 3). The web flasher's radio entry, its troubleshooting texts and the user guide
 follow the spec: the LED lights red and the top line shows `IAP_A` or `IAP_B`. If the radio shows something else, fix
-them (`boards/gd88/radio.json` `bootloader` and `second_bootloader`, the `_gd88` texts in `site/i18n/en.json`).
+them (`[flash.bootloader]` in `boards/gd88/board.toml` and `boards/gd88b/board.toml`, the `_gd88` and `_gd88b` texts in
+`site/i18n/en.json`).
 
 ## 3. Step by step
 
@@ -109,7 +110,7 @@ the stub its profile and checks the echo. Then it reads the **whole 2 MB program
 | A 2 MB backup, readable twice with the same CRC | Re-read; a mismatch means a flaky cable |
 
 Record: the stub's `stub RAM:` line, the flash IDs, the clock rates the host measured. Settles: the console route on a
-GD-88 (PR checklist "Flashing"), `stub_tested` in `radio.json`, the A program-flash backup. From the backup, check the
+GD-88 (PR checklist "Flashing"), `[flash.stub] tested` in `board.toml`, the A program-flash backup. From the backup, check the
 words at 0x0300C000 (original start-up code), 0x031FD000 (`lcd` panel record) and 0x031FE000 (calibration copy,
 `TUNE`): they are needed in steps 6 and 7. The files stay out of git.
 
@@ -211,11 +212,11 @@ fails until step 9.
 
 B on its original firmware does not speak ODR's link and has no cable. Its first install is through the vendor IAP
 loader's `IAP_B` target. The web flasher offers it: on the Install Receiver B step, A answers but reports B down, and
-the page offers Use Factory Update Mode with the `IAP_B` steps. It writes with the DB25-D's IAP packets (`db25d.js`
+the page offers Use Factory Update Mode with the `IAP_B` steps. It writes with the DB25-D's IAP packets (`iap.js`
 `Iap`), which are assumed, not known, to match. Try the web flasher first; the vendor updater below is the fallback.
 
 First find out who answers in each mode. This is read only. Enter update mode with `IAP_A` on the top line and send
-`Flash Read ` for one NAND page (address 0, count 1: `db25d.js` `readPacket`, or the DB25-D's IAP script on the bench
+`Flash Read ` for one NAND page (address 0, count 1: `iap.js` `readPacket`, or the DB25-D's IAP script on the bench
 Pi). Record the version banner and the page. Switch to `IAP_B` and repeat. A different banner or different NAND data
 means the cable reaches B's loader directly (hardware-gd88.md 4, "How IAP_B may reach B"). The same answers mean A
 answers both, and relays to B or switches it by another way. The loader's `Flash Read ` reads NAND only, so this
@@ -431,11 +432,10 @@ Items without a mark that this plan also settles (from [hardware-gd88.md](../spe
 |---|---|
 | [hardware-gd88.md](../spec/hardware-gd88.md) | Tag each settled fact (sections 4, 5, 9, 10, 11, 13) as seen on a radio, replace the "Status: bring-up" header and the sentence "Neither has run on a radio yet" in 13; strike the answered questions in 5 and 14; add the VID:PID, the panel variant, the key table, the encoder direction, the battery and volume end points, NAND geometry |
 | `TODO(gd88)` comments | Remove each one settled and put the real value in the code with a one-line "settled on the radio" note; the grep above must come back empty or with only the open ones |
-| [README.md](../../README.md) status row for the GD-88 (line 33) | "In development" to the supported state with what works (FM, DMR, dual watch, GPS, broadcast FM; transmit as far as it got) and what doesn't |
-| [feature-matrix.md](../feature-matrix.md) GD-88 row | "None yet" to the list of features checked, and the list of what is not |
-| [docs/user/23-radios.md](../user/23-radios.md) GD-88 section and the radio list at its top | Remove "In development", describe the install and update mode (top line `IAP_A`/`IAP_B`, red LED, or what you saw), key names, the cable, the second receiver |
+| `boards/gd88/board.toml` `[status]` | The level from bring-up to the supported state, and the summary: what works (FM, DMR, dual watch, GPS, broadcast FM; transmit as far as it got) and what doesn't. The README, the feature matrix and [23-radios.md](../user/23-radios.md) tables are generated from it (`tools/boards.py docs`) |
+| [docs/user/23-radios.md](../user/23-radios.md) GD-88 section | Describe the install and update mode (top line `IAP_A`/`IAP_B`, red LED, or what you saw), key names, the cable, the second receiver |
 | User guide / manual radio list | Add the GD-88 where the supported radios are listed |
-| `boards/gd88/radio.json` | `stock_versions` (the original builds the console route works on: `021`), `stub_tested` true, the update-mode instructions (blank screen or `IAP_A`), `_about` the cable if the VID:PID changes the port filter |
+| `boards/gd88/board.toml` and `boards/gd88b/board.toml` | `[flash] stock_versions` (the original builds the console route works on: `021`), `[flash.stub] tested` true, the `[flash.bootloader]` steps (blank screen or `IAP_A`/`IAP_B`) |
 | Web flasher | The cable's VID:PID in the port filter if it has one; the IAP route text; the done step's second-receiver check |
 | [tests/hil/README.md](../../tests/hil/README.md) | The `test_gd88.py` row: what runs, what skips; add tests for the new facts (the keys, the volume ends, the LEDs) |
 | [docs/testing/README.md](README.md) | Update the row for this page |

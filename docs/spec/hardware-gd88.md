@@ -138,7 +138,7 @@ All facts from the same A and B images (BIN). Detail and addresses are kept outs
 | Program flash | 2 MB at 0x03000000 on each SoC. The IAP loader is below 0x0300C000. ODR's first stage takes 0x0300C000-0x0300D000 and the application starts at 0x0300D000 ([boot/README.md](../../boot/README.md)) |
 | Data in program flash | The display record at 0x031FD000 (`lcd` and a type byte) and the calibration copy at 0x031FE000 (section 7) |
 | Codec slot | 0x030E8000-0x03100000 on each SoC. The codec is merged there on the user's machine from that SoC's own vendor image (`tools/hrc7000_codec.py`, boards `gd88` and `gd88b`) |
-| Codec RAM | The code runs at 0x44E00-0x58000. Its tables go to modem SRAM: A 0x18001204-0x18004324, B 0x18000B40-0x18003B10. Both SoCs link with one script (`boards/gd88/gd88_dmr.ld`), which keeps the union free |
+| Codec RAM | The code runs at 0x44E00-0x58000. Its tables go to modem SRAM: A 0x18001204-0x18004324, B 0x18000B40-0x18003B10. Each SoC links with its own `memory.ld` (`boards/gd88`, `boards/gd88b`); both keep the union of the two table windows free |
 | SRAM | 288 KB at 0x10000 |
 
 ## 9. SoC A pins and chips

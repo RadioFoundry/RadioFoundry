@@ -810,6 +810,7 @@
  "flash.iap.um.found": "The radio is in the factory update mode.",
  "flash.iap.um.text": "The loader answered, so the radio's application is missing or incomplete, which is why the screen is white and the LED is red. No keys are needed: select Install to write OpenDigitalRadio.",
  "flash.iap.um.text_gd88": "The loader answered, so the radio's application is missing or incomplete, which is why the radio stays in its update mode. No keys are needed: select Install to write OpenDigitalRadio. Check that the top line shows IAP_A: a long press on P2 switches between IAP_A and IAP_B.",
+ "flash.iap.um.text_gd88b": "The loader answered, so the second receiver's application is missing or incomplete. No keys are needed: select Install to write OpenDigitalRadio. Check that the top line shows IAP_B: a long press on P2 switches between IAP_A and IAP_B.",
  "flash.iap.um.safe": "Nothing was written to find this out. The loader itself is never written, so update mode always remains.",
  "flash.iap.um.go": "Install",
  "flash.iap.none.again": "Search Again",

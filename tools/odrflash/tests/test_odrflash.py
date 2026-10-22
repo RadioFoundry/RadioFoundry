@@ -265,19 +265,20 @@ class SectorMap(unittest.TestCase):
         maps, and only A answers on the debug link"""
         from odrflash import codecmap
         maps = codecmap.load_maps()
+        db25d = boards.get("db25d")
         for bid in ("gd88", "gd88b"):
             b = boards.get(bid)
-            self.assertEqual((b.app_base, b.flash_end, b.family), (0x0300C000, 0x03100000, boards.DB25D.family))
-            self.assertEqual(b.codec.windows, boards.DB25D.codec.windows)
-            self.assertEqual((b.protected, b.first_stage), (boards.DB25D.protected, boards.DB25D.first_stage))
+            self.assertEqual((b.app_base, b.flash_end, b.family), (0x0300C000, 0x03100000, db25d.family))
+            self.assertEqual(b.codec.windows, db25d.codec.windows)
+            self.assertEqual((b.protected, b.first_stage), (db25d.protected, db25d.first_stage))
             self.assertIn(b.codec.id, maps)
             self.assertEqual(maps[b.codec.id]["board"], bid)
         self.assertEqual(sorted(p for p, m in maps.items() if m["board"] == "gd88"),
                          ["gd88-2210", "gd88-2303", "gd88-2405", "gd88-2406", "gd88-2501"])
         self.assertEqual(sorted(p for p, m in maps.items() if m["board"] == "gd88b"),
                          ["gd88b-2210", "gd88b-2303", "gd88b-2401", "gd88b-2501"])
-        self.assertIs(boards.from_debuglink_name("GD-88"), boards.GD88)
-        self.assertIs(boards.get("GD-88B"), boards.GD88B)
+        self.assertIs(boards.from_debuglink_name("GD-88"), boards.get("gd88"))
+        self.assertIs(boards.get("GD-88B"), boards.get("gd88b"))
 
 
 class Planning(unittest.TestCase):
