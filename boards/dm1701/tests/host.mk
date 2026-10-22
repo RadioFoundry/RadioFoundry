@@ -7,7 +7,7 @@ HERE := $(dir $(lastword $(MAKEFILE_LIST)))
 # The calibration reader on a fake flash image
 TESTS   += calibrationTest
 calibrationTest: $(HERE)calibrationTest.c $(HERE)../calibration_dm1701.c $(HERE)../dm1701.h $(CORE)/radio/cal_curve.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -I$(dir $<).. -o $@ $(filter %.c,$^)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(ROOT)/platform/stm32f4 -Wshadow -I$(dir $<).. -o $@ $(filter %.c,$^)
 
 run-boards:: calibrationTest
 	./calibrationTest
