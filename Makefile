@@ -303,6 +303,10 @@ print-maximal-skip:
 # Make variables ci's maximal configuration adds for this board (boards/<board>/config.mk MAXIMAL_VARS)
 print-maximal-vars:
 	@echo '$(MAXIMAL_VARS)'
+# NAME=value for each make variable in VARS, as this build resolves it (tools/boards.py reads board.mk through it, so
+# conditionals and config.mk count)
+print-vars:
+	@:$(foreach v,$(VARS),$(info $(v)=$($(v))))
 
 clean:
 	rm -rf $(BUILD)

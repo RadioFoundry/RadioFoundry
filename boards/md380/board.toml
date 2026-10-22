@@ -9,8 +9,6 @@ maker = "TYT"
 model = "MD-380"
 also = ["TYT MD-390", "Retevis RT3"]
 kind = "handheld"
-# The VERSION board= values that mean this radio (debug link); board_t .name must be one of them
-debuglink_names = ["MD-380", "MD-380 VHF", "md380"]
 
 [docs]
 hardware = "docs/spec/hardware-md380.md"
@@ -20,7 +18,6 @@ bringup = "docs/testing/md380-bringup.md"
 
 # One-line summaries for the site and the generated tables; the facts are in docs.hardware
 [hardware]
-cpu = "STM32F405"
 bands = "400-480 MHz or 136-174 MHz (one band per radio)"
 power = "1 / 5 W"
 display = "color, 160 × 128"
@@ -43,12 +40,8 @@ values = [
 ]
 
 [flash]
-backend = "anyroad-dfu"
-family = "anyroad-dfu"
-link = "usb"
+family = "usb-dfu"
 keep_codec = true
-sectors = "f405"
-protected = [[0x08000000, 0x0800C000]]
 stock_download = "https://md380.org/firmware/orig/"
 stock_versions = ["D002.032"]
 backup = { stock = "none", odr = "full", spi_size = 0x1000000 }

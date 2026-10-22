@@ -9,8 +9,6 @@ maker = "Baofeng"
 model = "DM-1701"
 also = ["Retevis RT84"]
 kind = "handheld"
-# The VERSION board= values that mean this radio (debug link); board_t .name must be one of them
-debuglink_names = ["DM-1701", "dm1701"]
 
 [docs]
 hardware = "docs/spec/hardware-dm1701.md"
@@ -19,7 +17,6 @@ install = "docs/user/02-installing.md"
 
 # One-line summaries for the site and the generated tables; the facts are in docs.hardware
 [hardware]
-cpu = "STM32F405"
 bands = "136-174 / 400-480 MHz"
 power = "1 / 2 / 5 W"
 display = "1.77\" color, 160 × 128"
@@ -37,12 +34,8 @@ extra = [
 ]
 
 [flash]
-backend = "anyroad-dfu"
-family = "anyroad-dfu"
-link = "usb"
+family = "usb-dfu"
 keep_codec = true
-sectors = "f405"
-protected = [[0x08000000, 0x0800C000]]
 stock_download = "https://github.com/daniel5600/BAOFENG-DM1701-Original-Firmware"
 stock_versions = ["V02.06 CSV", "V02.06 noCSV", "V02.03 CSV", "V02.03 noCSV", "V02.02 CSV", "V02.01 CSV"]
 backup = { stock = "none", odr = "full", spi_size = 0x1000000 }

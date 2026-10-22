@@ -57,6 +57,22 @@ def placed():
     return prof, stockfw.place(prof, [(prof["code"][0], code), (prof["tables"][0], tables)])
 
 
+class StockPlacement(unittest.TestCase):
+    """The registry's stock-file boards ([codec] stock): tools/boards.py leaves their codec windows to stockfw, so the
+    checks it makes for a linker codec slot are made here."""
+
+    def test_stock_boards(self):
+        stock = [b for b in boards.BOARDS.values() if b.codec_stock]
+        self.assertTrue(stock)
+        for b in stock:
+            prof = stockfw.PROFILES[b.codec_stock]
+            self.assertEqual(prof["board"], b.id)
+            self.assertEqual(prof["key_sha256"], b.key_sha256, "%s: the DFU key is the stock file's" % b.id)
+            for a, n in b.codec.windows:
+                self.assertTrue(b.app_region[1] <= a and a + n <= b.flash_end,
+                                "%s: codec window 0x%08X+0x%X outside the flash the linker keeps free" % (b.id, a, n))
+
+
 class SectorMap(unittest.TestCase):
     def test_f405_layout(self):
         s = DM1701.sectors
