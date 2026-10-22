@@ -105,10 +105,12 @@ tools/bringup.py status                           # every radio and feature
 tools/bringup.py check                            # host-side consistency (tools/ci.sh)
 ```
 
-`run` takes the radio lock (`$ODR_RADIO_LOCK`, default `~/.odr-radio.lock`, the file the HIL workflow locks) and
-fails at once when another run holds it (`--lock-wait S` waits). It prints the owner actions of the run first; they
-run with `--manual`. pytest runs with `--bringup FEATURES`, which runs only the tests marked for those features and
-makes a required test's skip a failure unless the test's needs excuse it:
+`run` takes the lock of the radio it runs on (`$ODR_RADIO_LOCK`, the file the HIL workflow locks, with `{port}` in it
+replaced by the radio's port; without it `~/.odr-radio-<port>.lock`, the port from `--radio-port`, `$ODR_PORT` or
+`usb`), so a bench with two radios runs a bring-up on each. It fails at once when another run holds it (`--lock-wait S`
+waits). It prints the owner actions of the run first; they run with `--manual`. pytest runs with `--bringup FEATURES`,
+which runs only the tests marked for those features and makes a required test's skip a failure unless the test's needs
+excuse it:
 
 - `other_board`: always excused.
 - `bench`: excused when the test needs the SDR bench. A run that finds no radio fails.

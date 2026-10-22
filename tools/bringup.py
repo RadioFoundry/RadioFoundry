@@ -422,9 +422,28 @@ def _pytest_python(arg):
     return "python3"
 
 
+def lock_path(arg, pytest_args):
+    """The radio lock of this run's radio: --lock, else $ODR_RADIO_LOCK ("{port}" in it becomes the port), else
+    ~/.odr-radio-<port>.lock. The port is --radio-port, else $ODR_PORT, else "usb" (the radio found on USB), so a bench
+    with two radios runs one bring-up on each."""
+    if arg:
+        return arg
+    port = os.environ.get("ODR_PORT") or "usb"
+    for i, a in enumerate(pytest_args):
+        if a == "--radio-port" and i + 1 < len(pytest_args):
+            port = pytest_args[i + 1]
+        elif a.startswith("--radio-port="):
+            port = a.split("=", 1)[1]
+    slug = re.sub(r"[^A-Za-z0-9.-]+", "_", port).strip("_.") or "usb"
+    env = os.environ.get("ODR_RADIO_LOCK")
+    if env:
+        return env.replace("{port}", slug)
+    return os.path.expanduser(f"~/.odr-radio-{slug}.lock")
+
+
 class RadioLock:
-    """The bench's radio lock (docs/dev/ci.md, ODR_RADIO_LOCK, default ~/.odr-radio.lock): an flock on the file, as
-    the hil workflow's lockf -k / flock takes it, held for the whole run."""
+    """The radio lock (lock_path; docs/dev/ci.md): an flock on the file, as the hil workflow's lockf -k / flock takes
+    it, held for the whole run."""
 
     def __init__(self, path, wait):
         self.path, self.wait, self.f = path, wait, None
@@ -479,10 +498,12 @@ def cmd_run(args):
     out_path = os.path.join(tmp, "out.json")
     cmd = [_pytest_python(args.pytest_python), "-m", "pytest", *args.tests, "-v", "-rs", "-p", "no:cacheprovider",
            *args.pytest_arg, "--bringup", ",".join(names), "--bringup-out", out_path, *pytest_args]
+    lock = lock_path(args.lock, pytest_args)
     if args.dry_run:
+        print(f"lock: {lock}")
         print(" ".join(cmd))
         return 0
-    with RadioLock(args.lock, args.lock_wait):
+    with RadioLock(lock, args.lock_wait):
         rc = subprocess.run(cmd, cwd=ROOT).returncode
     if not os.path.exists(out_path):
         die(f"pytest wrote no results (exit {rc})")
@@ -671,8 +692,8 @@ def main(argv=None):
     p = sub.add_parser("run", parents=[py], help="run the radio's required tests and record the result")
     p.add_argument("--radio", required=True, help="board id (boards/<id>) of the radio on the debug link")
     p.add_argument("--feature", help="these features only (comma separated); default every required one")
-    p.add_argument("--lock", default=os.environ.get("ODR_RADIO_LOCK", os.path.expanduser("~/.odr-radio.lock")),
-                   help="the radio lock file ($ODR_RADIO_LOCK, default ~/.odr-radio.lock)")
+    p.add_argument("--lock", help="the radio lock file (default $ODR_RADIO_LOCK, \"{port}\" in it the port, else "
+                                  "~/.odr-radio-<port>.lock)")
     p.add_argument("--lock-wait", type=float, default=0, help="s to wait for the radio lock (default: fail at once)")
     p.add_argument("--no-record", action="store_true", help="run, but write no record")
     p.add_argument("--dry-run", action="store_true", help="print the pytest command, run nothing")
