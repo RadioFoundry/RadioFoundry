@@ -159,6 +159,21 @@ static const hrc_gps_cfg_t gps_cfg = {
 	.rxd_mux_clear = 1u << 11,
 };
 
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-db25d.md 3.2): both TX supplies, both
+// PA selects and the PA drive (DAC B to 0, powered down), with PTA23 (RX_SUPPLY) high as in receive. RAM code, register
+// writes only. The main BK4819 may still be set to transmit (its 3-wire bus is a slow bit-banged transaction): with the
+// supplies and the PA selects off its output reaches no powered PA, and the next start sets it up again
+HRC_RAMFUNC void board_rf_safe(void)
+{
+	hrc_pin_force(PIN_TX_SUPPLY_A, false);
+	hrc_pin_force(PIN_TX_SUPPLY_B, false);
+	hrc_pin_force(PIN_UHF_TX, false);
+	hrc_pin_force(PIN_VHF_TX, false);
+	DAC_DATA_B = 0;
+	DAC_PD_CTRL |= DAC_B_OFF;
+	hrc_pin_force(PIN_RX_SUPPLY, true);
+}
+
 void board_early_init(void)
 {
 	io_init();

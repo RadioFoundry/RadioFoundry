@@ -541,6 +541,15 @@ static void tx_tick(hrc6000_dmr_t *e, uint8_t r42)
 		bool go;
 		if (e->tx_timing == DMR_TIMING_ALIGNED) {
 			go = e->phase_ts[next_phase] != 0 && e->phase_ts[next_phase] == e->tx_ts;
+			if (go && e->ops->tx_slot_found != NULL) {
+				if (!e->tx_found) {
+					// The board switches to TX now, one slot of ours ahead: it listened while we waited
+					e->tx_found = true;
+					e->tx_go_tick = e->tick + 2u;
+					e->ops->tx_slot_found(e->ops->ctx);
+				}
+				go = (int32_t)(e->tick - e->tx_go_tick) >= 0;
+			}
 		} else {
 			go = true;	// own timing just started, or the timing we have: the next slot is ours
 		}
@@ -601,9 +610,11 @@ static void track_tc(hrc6000_dmr_t *e)
 {
 	uint8_t r52 = r(e->dev, R_RX_CC);
 	int8_t heard = (int8_t)(((r52 >> 2) & 1u) ? 2 : 1);
-	if (!HRC6000_DMR_TC_IS_SLOT_NOW) {
+	if (!HRC6000_DMR_TC_IS_SLOT_NOW && !e->dev->chip->tc_last_rx) {
 		heard = (int8_t)(3 - heard);	// it was the slot that ended: the one starting is the other
 	}
+	// The HR_C5000 (tc_last_rx): bit 2 is 1 after a TS1 burst, so 1 = TS2 starting (on air through a duplex hotspot,
+	// 2026-10-21: read as the slot that ended, every call landed on the other slot)
 	if (e->own_ts != 0) {
 		e->own_ts = (int8_t)(3 - e->own_ts);
 	}
@@ -1307,6 +1318,7 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 #endif
 	e->t_tick = t;
 	e->timing = true;
+	uint8_t ctl_ended = e->ctl_now;
 	e->ctl_now = e->ctl_next;
 	uint8_t r42 = r(e->dev, R_SLOT_STAT);
 	e->st.last_r42 = r42;
@@ -1318,7 +1330,9 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 	}
 
 	bool idle = e->tx_state == TXS_IDLE || e->tx_state == TXS_START;
-	if (idle && (e->ctl_now & CTL_RX) != 0 && rmo(e)) {
+	// The HR_C5000's TC is the last received slot's: after a slot not received (ours, sending) it is stale
+	uint8_t tc_ctl = e->dev->chip->tc_last_rx ? ctl_ended : e->ctl_now;
+	if (idle && (tc_ctl & CTL_RX) != 0 && rmo(e)) {
 		track_tc(e);
 	}
 	uint8_t ph = (uint8_t)(e->tick & 1u);
@@ -1349,7 +1363,7 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 			e->idle_restarted = true;
 		} else {
 			uint8_t ctl = rx_ctl(e);
-			if (e->lock_ts > 0) {
+			if (e->lock_ts > 0 && !e->dev->chip->tc_last_rx) {	// closing a slot would freeze the HR_C5000's TC
 				int8_t nts = e->phase_ts[ph ^ 1u];
 				if (nts != 0 && nts != e->lock_ts) {
 					ctl = CTL_NONE;
@@ -1657,6 +1671,7 @@ bool hrc6000_dmr_tx_begin(hrc6000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		e->tx_abort_req = false;
 		e->tx_any_setup = false;
 		e->tx_wait = 0;
+		e->tx_found = false;
 		e->last_kind = KIND_UNSET;
 		e->restart_pending = false;
 		e->tx_state = TXS_START;

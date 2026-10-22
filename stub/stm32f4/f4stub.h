@@ -8,11 +8,12 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "stubeng.h"
+#include "f4stub_header.h"	// F4STUB_VERSION and the image header
 
-#define F4STUB_VERSION		3u		// 2: the SPI flash; 3: CONFIG, the board record, HELLO's echo
-#define F4STUB_NAME		"F4STUB"
-#define F4STUB_MAGIC		0x46345342u	// 'F4SB' (big endian on the wire, as every field here)
+#define F4STUB_BLOCK		4096u			// the unit of SUMS and READ (CRC per block, not per erase sector)
+#define F4STUB_MAX_PAYLOAD	(F4STUB_BLOCK + 8u)	// a PROGRAM of one block (address + 4096) or a READ record
+#define F4STUB_FRAME_HDR	6u			// 02 op/status len_hi len_lo sum 03
+#define F4STUB_MAGIC		0x46345342u		// 'F4SB' (big endian on the wire, as every field here)
 
 #define F4_FLASH_BASE		0x08000000u
 // No board record opens sector 0 (the vector table the chip boots from) for writing. Each board's own bootloader end
@@ -22,28 +23,32 @@
 // HELLO flags (the target's bits)
 #define F4_HELLO_USB_ADOPTED	0x01u	// the stub took over ODR's configured USB device (no re-enumeration)
 
-// The board record (CONFIG payload, 24 bytes, big endian). Pins are port << 4 | pin (port 0 = A ... 8 = I), 0xFF for
-// none. The host keeps one profile per radio (stub/f4stub.py BOARDS)
-#define F4_REC_LEN		24u
-#define F4_REC_LAYOUT		1u	// byte 1: this layout
-#define F4_PIN_NONE		0xFFu
-enum {
-	F4_REC_BOARD	= 0,	// u8, nonzero: the host's board id, echoed by HELLO
-	F4_REC_FORMAT	= 1,	// u8, F4_REC_LAYOUT
-	F4_REC_SPI_BUS	= 2,	// u8: 0 no SPI flash, 1-3 SPI1-SPI3
-	F4_REC_SPI_MODE	= 3,	// u8: CPOL << 1 | CPHA
-	F4_REC_HSE_HZ	= 4,	// u32: the crystal (4-26 MHz), for the clock tree the stub reads back
-	F4_REC_APP_BASE	= 8,	// u32: the first writable flash address, the end of the bootloader
-	F4_REC_SPI_HZ	= 12,	// u32: the fastest SPI clock to use (the stub takes the next slower prescaler)
-	F4_REC_SCK	= 16,	// pins: SCK, MISO, MOSI
-	F4_REC_MISO	= 17,
-	F4_REC_MOSI	= 18,
-	F4_REC_AF	= 19,	// u8: their alternate function number
-	F4_REC_CS	= 20,	// pin: the flash's chip select (driven by the stub)
-	F4_REC_IDLE0	= 21,	// pins: other chip selects on the same bus, held high (the MD-9600's LCD)
-	F4_REC_IDLE1	= 22,
-	F4_REC_ZERO	= 23,	// reserved, 0
-};
+typedef struct {
+	void *ctx;
+	// Send bytes to the host (a whole frame per call)
+	void (*write)(void *ctx, const uint8_t *buf, uint32_t n);
+	// Copy n bytes from a memory address the engine has already checked
+	void (*read)(void *ctx, uint32_t addr, void *dst, uint32_t n);
+	// Erase one flash sector; false on a controller error
+	bool (*erase)(void *ctx, unsigned sector);
+	// Program n words at addr (word aligned, already checked blank); false on a controller error
+	bool (*program)(void *ctx, uint32_t addr, const uint32_t *words, uint32_t n);
+	// Called after the RESET reply has been sent; does not return on the target
+	void (*reset)(void *ctx);
+	// The external SPI flash (NULL where there is none): read, erase one 4 KB sector, program bytes inside one sector
+	// (the engine has checked they read erased); false on a chip that stays busy or doesn't answer
+	bool (*xread)(void *ctx, uint32_t addr, void *dst, uint32_t n);
+	bool (*xerase)(void *ctx, uint32_t addr);
+	bool (*xprogram)(void *ctx, uint32_t addr, const uint8_t *data, uint32_t n);
+	// Optional (NULL: none): feed the watchdog. The engine calls it at every request, before each erase or program, and
+	// once per 4 KB block in SUMS and READ, so no request runs a second without a feed (docs/spec/watchdog.md 3.1)
+	void (*feed)(void *ctx);
+	uint32_t xsize;		// SPI flash bytes (0: no chip answered)
+	uint8_t xid[3];		// its JEDEC ID
+	uint16_t flash_kb;	// the flash size register
+	uint8_t rdp;		// FLASH_OPTCR bits 15:8
+	uint8_t flags;		// F4_HELLO_*
+} f4stub_port_t;
 
 typedef struct {
 	uint8_t board;

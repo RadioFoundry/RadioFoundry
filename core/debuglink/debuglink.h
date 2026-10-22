@@ -41,7 +41,7 @@ enum {
 	DL_VIEW_SFR,		// the MMDVM hotspot's SFR mode (was in DL_VIEW_HOTSPOT until view version 2)
 	DL_VIEW_TASKS,		// every task's least free stack (debuglink_view_tasks.c)
 	DL_VIEW_CRASH,		// the crash log's record from before this start (debuglink_crash.c)
-	DL_VIEW_BOARD,		// the board's own bring-up readings, board.view_line (debuglink_view_board.c)
+	DL_VIEW_WATCHDOG,	// the hardware watchdog: timeout, feeds, longest idle gap, raw registers (debuglink_watchdog.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		2	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -135,6 +135,13 @@ void debuglink_stub_service(void);
 void debuglink_view_crash(dl_text_t *t);
 size_t debuglink_cmd_crash(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_crash_service(void);
+
+// The hardware watchdog (debuglink_watchdog.c, docs/spec/debuglink.md 3.21): the watchdog section, DL_CMD_WATCHDOG's
+// bench tests and the service hook that starts them after the reply. Without CONFIG_WATCHDOG: "watchdog.built=0",
+// unavailable, empty
+void debuglink_view_watchdog(dl_text_t *t);
+size_t debuglink_cmd_watchdog(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+void debuglink_watchdog_service(void);
 
 // The debug link's own counters: frames answered, bad CRC, too long, timed out (debuglink.c)
 #define DL_LINK_COUNTERS	4

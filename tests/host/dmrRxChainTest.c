@@ -94,7 +94,7 @@ static uint32_t fake_now(void *ctx) { return t_us; }
 
 static bool fake_sys_line_low(void *ctx) { return rd[4][0x82] != 0; }
 
-static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, fake_sys_line_low, NULL };
+static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, fake_sys_line_low, NULL, NULL };
 
 // --- The board glue (what boards/dm1701/dmr_dm1701.c does): hal_dmr_modem_t over the engine, a draining task ---
 

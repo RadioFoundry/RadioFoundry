@@ -24,6 +24,7 @@
     "backend": "anyroad-dfu",
     "board": "md380",
     "link": "usb",
+    "stock_download": "https://md380.org/firmware/orig/",
     "bootloader": [
       "Turn the radio off and connect the programming cable.",
       "Hold PTT and the side key just above it.",

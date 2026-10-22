@@ -26,7 +26,7 @@ import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 import { register } from "./backends.js";
 import { makeDb25d } from "./db25dui.js";
-import { Usmart, checkInstallImage, stockVersion } from "./db25d.js";
+import { Usmart, Iap, checkInstallImage, stockVersion } from "./db25d.js";
 
 // USB-serial chips found in programming cables (tools/dm32_flash.py USB_SERIAL), for the port chooser
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
@@ -158,6 +158,8 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		// Troubleshooting asked for update mode: nothing else is tried
 		if (c.forceIap && toIap) {
 			c.forceIap = false;
+			// a radio already in update mode printed its banner at power-on: remember that, so the install doesn't wait for it
+			c.iapReady = !!(await new Iap(c.stream, { log: (l) => c.log.add(l) }).probe());
 			return toIap();
 		}
 		await find();
@@ -194,6 +196,13 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	const stockOrNothing = async () => {
 		if (await new Usmart(c.stream, { log: (l) => c.log.add(l) }).probe()) {
 			return db25d.stockFound({ show, act, onLoaded: fromStock, onAgain: () => find(), onUpdateMode: toIap });
+		}
+		// the loader's update mode answers a read-only probe: a radio whose application won't start stays in it
+		c.iapReady = false;
+		const um = await new Iap(c.stream, { log: (l) => c.log.add(l) }).probe();
+		if (um) {
+			c.iapReady = true;
+			return db25d.alreadyUpdateMode({ show, act, onUpdateMode: toIap, onAgain: () => find() }, um.version);
 		}
 		db25d.nothing({ show, act, onAgain: () => find(), onPowerOn: () => powerCycle(), onUpdateMode: toIap });
 	};

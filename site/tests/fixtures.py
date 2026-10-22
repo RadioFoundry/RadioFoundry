@@ -22,9 +22,11 @@ Python it was ported from (site/tests/flasher.test.mjs):
 
     python3 site/tests/fixtures.py OUT_DIR
 """
+import collections
 import json
 import os
 import random
+import struct
 import subprocess
 import sys
 
@@ -50,6 +52,36 @@ def codec_map_vectors(out):
 	t["new_run"], t["window_addr"] = int(t["new_run"], 0), int(t["window_addr"], 0)
 	with open(os.path.join(out, "codecmap.json"), "w") as f:
 		json.dump(v, f, indent=1)
+
+
+def md380_like(out):
+	"""A stock file whose plain text is like Thumb code, 0x00 common but not dominant, as in the MD-380 image: the column
+	vote gets hundreds of key columns wrong and only the byte-pair refinement finds the key (odrflash's
+	test_derive_key_refines_a_bad_vote). Returns its fixture entry."""
+	rng = random.Random(1)
+	key = synthetic_key(380)
+	vocab = [rng.randrange(1, 65536) for _ in range(48)] + [0]
+	weights = [1.0 / (i + 1) for i in range(48)] + [1.0]
+	n = 0xF2C00
+	nxt = {w: rng.choices(vocab, weights, k=3) for w in vocab}
+	pool = rng.choices(vocab, weights, k=n // 2)
+	hw, cur = [], 0
+	for i in range(n // 2):
+		cur = nxt[cur][i % 3] if rng.random() < 0.6 else pool[i]
+		hw.append(cur)
+	plain = struct.pack("<%dH" % (n // 2), *hw)
+	hdr = bytearray(stockfw.HEADER_LEN)
+	hdr[:len(stockfw.MAGIC)] = stockfw.MAGIC
+	struct.pack_into("<I", hdr, 0x7C, 0xFFFFFFFF)
+	struct.pack_into("<II", hdr, 0x80, 0x0800C000, n)
+	stream = (key * (n // len(key) + 1))[:n]
+	stock = bytes(hdr) + bytes(a ^ b for a, b in zip(plain, stream)) + bytes(0x100)
+	with open(os.path.join(out, "stock-md380like.bin"), "wb") as f:
+		f.write(stock)
+	payload = stock[stockfw.HEADER_LEN:stockfw.HEADER_LEN + n]
+	vote = bytes(collections.Counter(payload[j::1024]).most_common(1)[0][0] for j in range(1024))
+	return {"key": key.hex(), "derived_key": stockfw.derive_key(stock, stockfw.sha256(key)).hex(),
+		"vote_wrong": sum(a != b for a, b in zip(vote, key))}
 
 
 def main(out):
@@ -80,6 +112,7 @@ def main(out):
 		"manifest": m,
 		# the codec as the merge places it (code moved, tables cut, descriptor): what stockfw.js must give
 		"placed": [[a, stockfw.sha256(d), len(d)] for a, d in codec],
+		"md380like": md380_like(out),
 	}
 	for k in ("code", "tables", "extra"):
 		doc["profile"].pop(k, None)

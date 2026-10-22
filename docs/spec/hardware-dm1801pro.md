@@ -99,7 +99,7 @@ PTC6, reset PTC2. Bits go out MSB first. K.
 | Block | Base | Use | Tag |
 |---|---|---|---|
 | System control / IO mux | 0x11000000 | SPI0 pins to the peripheral (IO_DIPLEX1 bits 8:3 cleared), ADC B and C analog (IO_DIPLEX2 bits 20, 21 cleared) | K |
-| UART0 | 0x14030000 | 115200 8N1, the programming cable | K |
+| UART0 | 0x14030000 | 115200 8N1, the programming cable: ODR's host port, where a CPU fault's trace lines appear ([crash-log.md](crash-log.md) 2.3) | K |
 | SPI0 | 0x140A0000 | 16 MB data flash | K |
 | ADC | 0x140D0000 | channel 2 battery (I); channel 1 compared with the VOX thresholds of the calibration page (6.4, I) | K |
 | DAC | 0x140F0000 | channel B PA drive, channel C set once (0x067E): the modem's AF input bias. With the DM-32UV's 0x06E2 the modem missed the sync of about half of the DMR senders; with 0x067E it took every burst, strong and at -87 dBm | K, R |
@@ -223,6 +223,10 @@ SUBVOICE_COEF write with a band test was found (?). So the per-band modulation b
 on the radio examined the VHF bytes are about three times the UHF ones, which keeps f x byte about the same on both
 bands, as the DM-32UV's K / f model assumes ([hardware-dm32.md](hardware-dm32.md) 11.3). ODR uses the UHF tone
 deviations on VHF too (`modem-hrc7000.md` 8.3, I).
+
+Transmitter safe state (`board_rf_safe`, [crash-log.md](crash-log.md) 8), at every fault, reset and stub entry and first
+in `main()`: the TX path selects (0x1F, 0x27) low, DAC B (the PA drive) 0 and powered down; on the fault and reset
+paths also the modem's FM_PTT and LAYER2_TXRX_CTRL 0. The FD6818 keeps its state until the next start.
 
 ### 5.6 DMR
 

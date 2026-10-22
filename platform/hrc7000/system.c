@@ -5,7 +5,9 @@
 #include <string.h>
 #include "config.h"
 #include "platform.h"
+#include "board.h"
 #include "vocoder.h"
+#include "modem/hrc7000/hrc7000.h"
 
 #define SOFT_RESET_SPINS	1000000u
 #define WDT_KEY			0x5ADA7200u
@@ -21,9 +23,28 @@ static void rd(uint32_t addr, void *dst, size_t n)
 	memcpy(dst, (const void *)(uintptr_t)addr, n);
 }
 
+#define TXRX_NONE		0x00u	// LAYER2_TXRX_CTRL: neither slot direction (modem-hrc7000.md; hrc7000_dmr.c)
+
+HRC_RAMFUNC void hrc_rf_safe(void)
+{
+	board_rf_safe();
+	REG32(HRC7000_REG_BASE + C7_FM_PTT) = 0;
+	REG32(HRC7000_REG_BASE + C7_LAYER2_TXRX_CTRL) = TXRX_NONE;
+	hrc_barrier();
+}
+
+// The soft reset keeps some of the chip's state (the clock manager, LCSFC_BAUDR; hardware-dm32.md 1.1), and a DB25-D
+// reset this way while transmitting came back with the PA keyed and hung before the display was lit (2026-10-21). So
+// the transmitter goes off first, before the clock and flash controller changes
 HRC_RAMFUNC void hrc_soft_reset(void)
 {
 	__asm__ volatile ("psrclr ie");
+	hrc_rf_safe();
+	// Watchdog off: whether a soft reset clears it is unknown, and the bootloader (its update mode, which waits for the
+	// PC) never feeds it
+	REG32(WDT_BASE + 0x00) = WDT_KEY;
+	REG32(WDT_BASE + 0x10) = 0;
+	REG32(WDT_BASE + 0x00) = 0;
 #if HRC_LOADER_CPU_HZ != HRC_CPU_HZ
 	hrc_clock_restore_loader();	// the clock manager survives a soft reset: the loader has to start on its own PLL
 #endif
@@ -32,7 +53,13 @@ HRC_RAMFUNC void hrc_soft_reset(void)
 	SYS_SOFT_RSTN = 0;
 	for (volatile uint32_t i = 0; i < SOFT_RESET_SPINS; i++) {
 	}
-	for (;;) {	// did not reset: the battery has to come out
+#if CONFIG_WATCHDOG
+	// Did not reset: the watchdog, back on with the loads it had, is the last way out
+	REG32(WDT_BASE + 0x00) = WDT_KEY;
+	REG32(WDT_BASE + 0x10) = 1;
+	REG32(WDT_BASE + 0x00) = 0;
+#endif
+	for (;;) {	// did not reset: the battery has to come out (or the watchdog resets it)
 	}
 }
 
@@ -67,11 +94,16 @@ HRC_RAMFUNC static bool enter_stub(uint32_t entry)
 		return false;
 	}
 	__asm__ volatile ("psrclr ie");			// CPU interrupts off
+	hrc_rf_safe();					// transmitter off: nothing may radiate while the stub runs
 	PIC_MASK = 0xFFFFFFFFu;				// mask every PIC source, both banks (no peripheral can interrupt)
 	PIC_MASK_1 = 0xFFFFFFFFu;
-	REG32(WDT_BASE + 0x00) = WDT_KEY;		// watchdog off (defensive; clock_init already did)
+#if CONFIG_WATCHDOG
+	hrc_watchdog_stretch();				// the watchdog keeps running, 32 s; the stub feeds it
+#else
+	REG32(WDT_BASE + 0x00) = WDT_KEY;		// watchdog off, whatever the loader left
 	REG32(WDT_BASE + 0x10) = 0;
 	REG32(WDT_BASE + 0x00) = 0;
+#endif
 	QUAD_ENABLE = 0;				// XIP controller back to reset mode: the program flash is the SSI's
 	LCSFC_BAUDR = 4;				// (both registers: a later soft reset keeps the divider)
 							// again, as hrc_soft_reset does. No DMA reaches SRAM on this board

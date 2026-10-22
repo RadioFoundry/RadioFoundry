@@ -133,6 +133,7 @@ static void test_chip(void)
 	CHECK(c->id_low_first && !c->mcu_crc && !c->sync_reg && c->mode_per_channel);
 	CHECK(c->tx_begin == NULL && c->tx_end == NULL);	// nothing at TX start or end
 	CHECK(c->dmr_mode(false) == 0x6B && c->dmr_mode(true) == 0x4F);
+	CHECK(c->tc_last_rx);	// 0x52 bit 2: the last received slot's TC (issue 108)
 	CHECK(c->crc_len(DMR_BURST_CSBK) == 10 && c->crc_len(DMR_BURST_MBC_HEADER) == 10);
 	CHECK(c->crc_len(DMR_BURST_DATA_HEADER) == 10);
 	CHECK(c->crc_len(DMR_BURST_RATE_12_DATA) == 0 && c->crc_len(DMR_BURST_MBC_CONT) == 0);
@@ -287,7 +288,7 @@ static uint32_t t_us;
 static bool fake_rf(void *ctx, bool tx) { return true; }
 static uint32_t fake_now(void *ctx) { return t_us; }
 static void fake_nop(void *ctx) { }
-static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, fake_nop, fake_nop, fake_nop, NULL, NULL };
+static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, fake_nop, fake_nop, fake_nop, NULL, NULL, NULL };
 static hrc6000_dmr_t eng;
 static hrc5000_t c5;
 
@@ -556,6 +557,103 @@ static void test_tick_rx_stale_headers(void)
 	CHECK(st.tr_calls == 1 && st.tr_bursts == 18);
 }
 
+// Through a repeater (issue 108): 0x52 bit 2 is the last received slot's TC, 1 = TS2 starting. Receive stays open in
+// both slots once locked (closing one freezes the bit), and an aligned start calls tx_slot_found two ticks before its
+// first burst, which goes out in the channel's slot
+static int slot_found_calls;
+static uint32_t slot_found_tick;
+static void fake_slot_found(void *ctx) { slot_found_calls++; slot_found_tick = eng.tick; }
+static const hrc6000_dmr_ops_t ops_found = { fake_rf, fake_now, fake_nop, fake_nop, fake_nop, NULL,
+	fake_slot_found, NULL };
+
+static int8_t rep_ts_starting(uint32_t tick) { return (tick & 1u) ? 2 : 1; }
+
+// The chip as measured: the bit changes only when the slot that just ended was opened for receive. 0x41 set at a tick
+// is for the slot starting at the next one, so the slot ending now was set two ticks back
+static uint8_t rep_ctl[2];	// 0x41 as left by the last tick, and by the one before
+static uint8_t rep_bit;
+
+static void rep_tick(void)
+{
+	if ((rep_ctl[1] & 0x50u) == 0x50u) {
+		rep_bit = rep_ts_starting(eng.tick + 1u) == 2 ? 0x04 : 0x00;	// a TS1 burst just ended: TS2 starts
+	}
+	rd[0][0x52] = (uint8_t)(0x10 | rep_bit);	// CC 1
+	t_us += 30000;
+	int from = nx;
+	hrc6000_dmr_isr_timeslot(&eng);
+	rep_ctl[1] = rep_ctl[0];
+	for (int i = from; i < nx; i++) {
+		if (!xlog[i].read && xlog[i].page == 0 && xlog[i].reg == 0x41) {
+			rep_ctl[0] = xlog[i].data[0];
+		}
+	}
+}
+
+static void test_repeater_slot(void)
+{
+	memset(rd, 0, sizeof(rd));
+	hrc5000_attach(&c5, &bus, false);
+	hrc_t *h = hrc5000_hrc(&c5);
+	CHECK(hrc6000_dmr_enter(h, 0x40, 0x40, 0xC8));
+	t_us = 1000000;
+	hrc6000_dmr_init(&eng, h, &ops_found);
+	hrc6000_dmr_run(&eng);
+	dmr_config_t cfg = { .own_id = 0x0A0B0C, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
+	hrc6000_dmr_configure(&eng, &cfg);
+	CHECK(last_write(0, 0x10) == 0x4F);	// repeated operation; the engine picks the slot
+	hrc6000_dmr_rx_lock_slot(&eng, 2);
+	drain();
+
+	nx = 0;
+	rep_ctl[0] = rep_ctl[1] = 0x50;	// receiving since the restart
+	rep_bit = 0;
+	int closed = 0;
+	for (int k = 0; k < 18; k++) {
+		rep_tick();
+		closed += (rep_ctl[0] & 0x50u) != 0x50u;
+	}
+	uint32_t ph = eng.tick & 1u;
+	CHECK(eng.phase_ts[ph] == rep_ts_starting(eng.tick) && eng.phase_ts[ph ^ 1u] == 3 - rep_ts_starting(eng.tick));
+	CHECK(closed == 0);	// the slot lock leaves the other slot open: closed, the bit would freeze
+
+	slot_found_calls = 0;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_IMPOLITE));
+	dmr_tx_burst_t v = mk(DMR_BURST_VOICE, 0, false);
+	CHECK(hrc6000_dmr_tx_queue(&eng, &v));
+	uint32_t tx_tick = 0;
+	for (int k = 0; k < 8 && tx_tick == 0; k++) {
+		int from = nx;
+		rep_tick();
+		for (int i = from; i < nx; i++) {
+			if (!xlog[i].read && xlog[i].page == 0 && xlog[i].reg == 0x41 && xlog[i].data[0] == 0x80) {
+				tx_tick = eng.tick;
+			}
+		}
+	}
+	CHECK(slot_found_calls == 1);
+	CHECK(tx_tick != 0 && tx_tick - slot_found_tick == 2u);
+	CHECK(rep_ts_starting(tx_tick + 1u) == 2);	// set up at this tick, sent in the next slot: TS2
+	// Three bursts, then receive again: the slot timing carries through the ticks not read during the transmission
+	for (uint8_t i = 1; i < 3; i++) {
+		dmr_tx_burst_t b = mk(DMR_BURST_VOICE, i, false);
+		CHECK(hrc6000_dmr_tx_queue(&eng, &b));
+	}
+	hrc6000_dmr_tx_end(&eng);
+	int lost = 0, wrong = 0;
+	for (int k = 0; k < 24; k++) {
+		rep_tick();
+		uint32_t p = eng.tick & 1u;
+		if (eng.tx_state == 0) {	// TXS_IDLE
+			lost += eng.phase_ts[p] == 0;
+			wrong += eng.phase_ts[p] != 0 && eng.phase_ts[p] != rep_ts_starting(eng.tick);
+		}
+	}
+	CHECK(eng.tx_state == 0);
+	CHECK(lost == 0 && wrong == 0);
+	drain();
+}
+
 int main(void)
 {
 	test_chip();
@@ -563,6 +661,7 @@ int main(void)
 	test_engine();
 	test_tick_rx();
 	test_tick_rx_stale_headers();
+	test_repeater_slot();
 	printf("hrc5000Test: %s (%d failures)\n", failures ? "FAILED" : "passed", failures);
 	return failures ? 1 : 0;
 }

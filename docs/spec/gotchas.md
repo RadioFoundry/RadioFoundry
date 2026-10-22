@@ -192,6 +192,13 @@ every TX state ends on its own when the modem stops. Voice now aborts after `DMR
 burst taken (`dmr-voice.md` 2). Radios: all; seen on the MD-380. Tests: `test_tx_modem_stalled` (dmrCallTest),
 `test_dmr_stalled` (radioCoreTest).
 
+**3.13 A crash or a reset must not leave the PA keyed.** A DB25-D faulted while transmitting; the crash capture
+soft-reset the chip, the radio came back stopped before the display was lit and drew about 15 W with the PA keyed
+until a power cycle (2026-10-21). Neither the fault path nor the reset turned the transmitter off, and the boards'
+pin set-up ran after the clock set-up. Rule: every fault handler, crash hook, software reset and stub jump calls
+`board_rf_safe()` first, and so does `main()` before the clocks ([crash-log.md](crash-log.md) 8). A new board must
+provide it, and a new reset or jump path must call it.
+
 ## 4. AMBE codec calling
 
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the

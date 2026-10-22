@@ -39,6 +39,3 @@ MCU_DEFS += -DHRC7000_RX_NEXT_SLOT_XOR=0u
 # What the radio has no hardware for (no USB data port): ci's maximal configuration leaves these off. Everything else
 # is in it, FONT_XL and AUDIO_PROBE too (9.9 KB of main RAM free)
 BOARD_UNSUPPORTED := USB USB_NETWORK
-# The loader hand-over (debug link 0x1A): updates over the programming cable without switching the radio off, from the
-# web flasher or stub/stubtool.py (docs/spec/debuglink.md 3.18)
-CONFIG_STUB_ENTRY ?= $(CONFIG_DEBUGLINK)

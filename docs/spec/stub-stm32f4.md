@@ -10,12 +10,11 @@ HR_C7000 stub does for the DM-32UV and the DM-1801 Pro ([hardware-dm32.md](hardw
 
 | Part | Where |
 |---|---|
-| ODR side: staging buffer, quiesce, copy, jump | `platform/stm32f4/stub_entry.c`, `hal_system_t.stub_region / enter_stub / stub_run_addr`, `board_stub_prepare` in `boards/dm1701/board.c`, `boards/md380/board.c` and `boards/md9600/board.c` |
+| ODR side: staging buffer, quiesce, copy, jump | `platform/stm32f4/stub_entry.c`, `hal_system_t.stub_region / enter_stub / stub_run_addr`, `board_rf_safe` in `boards/dm1701/board.c` and `boards/md380/board.c` |
 | The stub | `stub/stm32f4/` (`make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin`) |
-| Its protocol engine (portable, shared with other stubs, host tested) | `stub/common/stubeng.c` (section 13), `tests/host/f4stubTest.c` |
-| The STM32F4 target's facts and board record check (portable) | `stub/stm32f4/f4stub.h`, `f4stub_board.c` |
-| Host tool and the board profiles | `stub/f4stub.py` (`BOARDS`), called by `stub/stubtool.py`; `tests/host/f4stub_wire_check.py` runs it against the real engine and checks the profiles against the boards' sources |
-| Switch | `CONFIG_STUB_ENTRY` (default off), as for the HR_C7000 |
+| Its protocol engine (portable, host tested) | `stub/stm32f4/f4stub_proto.c`, `tests/host/f4stubTest.c` |
+| Host tool | `stub/f4stub.py`, called by `stub/stubtool.py`; `tests/host/f4stub_wire_check.py` runs it against the real engine |
+| Switch | `CONFIG_STUB_ENTRY`, on by default with the debug link; off on the DM-1701 (RAM, its `config.mk`) |
 
 Status (2026-10-21): built, host tested and run on the DM-1701 (section 11, with protocol 2). Protocol 3 (the board
 record) and the MD-380 and MD-9600 are host tested only.
@@ -61,21 +60,49 @@ The bootloader route ([hardware-dm1701.md](hardware-dm1701.md) 15) costs three t
 | Step | Why |
 |---|---|
 | Note whether USB is in serial mode (`usb_device_mode`) | the handoff flag; in network mode the host bound CDC-NCM to the same endpoint numbers |
-| `board_stub_prepare`: PA enables off (DM-1701 PA_EN1, PA_EN2; MD-380 APC_EN, TX_5V; MD-9600 APC_EN, T5_V, T5_U) | nothing transmits while the stub runs. The backlight (already at full for the banner), power latch and USB pins stay |
+| `board_rf_safe` ([crash-log.md](crash-log.md) 8): transmitter off (DM-1701 PA_EN1, PA_EN2, PA_BAND, APC DAC; MD-380 APC_EN, TX_5V, VCO_SEL, APC DAC) | nothing transmits while the stub runs. The backlight (already at full for the banner), power latch and USB pins stay |
+| `stm32_stub_image_ok` (`CONFIG_WATCHDOG`, also checked at ENTER): with the IWDG running, the image header (3.1) must say the stub feeds the IWDG, or ODR refuses it | a stub that doesn't feed the IWDG would be reset part way through a write |
+| `stm32_watchdog_stretch` (`CONFIG_WATCHDOG`): the IWDG to its longest timeout (prescaler 256, reload 4095: about 32 s, at least 22 s), then a feed | the IWDG can't be stopped; the stub feeds it from here on ([watchdog.md](watchdog.md) 3.1) |
 | Interrupts masked, SysTick off, every NVIC enable and pending bit cleared | the stub polls; ODR's handlers live in flash it may erase |
 | DMA1 and DMA2 reset | circular I2S, SPI and ADC streams write into SRAM, where the stub is about to run |
 | Copy the staging buffer to 0x20000000 (8 KB, a forward word copy) | the stub is linked there. The copy runs from flash and its stack is the task stack in CCM, so it overwrites nothing it uses. The buffer lies at or above the target, so a forward copy is safe even if they overlap |
 | CONTROL = 0, r0 = flags, branch to the entry | thread mode on the main stack. The stub sets SP to the top of SRAM first |
 
-Clocks stay as ODR set them (72 MHz, USB 48 MHz on all three radios; the reduced clock is never active while USB is
-configured, [hardware-dm1701.md](hardware-dm1701.md) 1.3). GPIO levels stay, so the power latch holds. No watchdog runs (the option
-bytes select the software watchdog and ODR does not start it).
+Clocks stay as ODR set them (72 MHz, USB 48 MHz; the reduced clock is never active while USB is configured,
+[hardware-dm1701.md](hardware-dm1701.md) 1.3). GPIO levels stay, so the power latch holds. The option bytes select the software
+watchdog, so the IWDG runs only when ODR started it (`CONFIG_WATCHDOG`). Once started only a reset stops it, so the
+stub feeds it: first thing in `stub_main`, in `stub_ms()`, which every wait loop reads (the main loop, the flash and
+SPI busy waits, the USB waits, the delays), and from the protocol engine at every request, before each erase or
+program and once per 4 KB block of SUMS and READ (`f4stub_port_t.feed`). A feed does nothing while the IWDG isn't
+running. The image header (3.1) says so; ODR with its IWDG running refuses a stub whose header doesn't
+([watchdog.md](watchdog.md) 3.1).
 
 Handoff flags in r0:
 
 | Bit | Meaning |
 |---|---|
 | 0 | USB is ODR's configured CDC-ACM serial port: adopt it |
+
+### 3.1 Image header
+
+16 bytes at offset 0x10 of the image (0x20000010 once copied), right after the 12-byte entry code; the linker script
+puts section `.stub_header` there and fails the build if the entry code grows past it. Little endian. One definition,
+`stub/stm32f4/f4stub_header.h`, shared by the stub and ODR (`platform/stm32f4/stub_entry.c`); `f4stub.py` and the web
+flasher (`f4stub.js`) read the same layout, and their self-tests check their numbers against that file.
+
+| Offset | Size | Field | Value |
+|---|---|---|---|
+| 0x10 | 4 | magic | `0x48533446` (bytes `F4SH`) |
+| 0x14 | 2 | layout | 1; a later layout only appends fields |
+| 0x16 | 2 | size | 16 |
+| 0x18 | 4 | stub version | 3 (`F4STUB_VERSION`, also in HELLO) |
+| 0x1C | 4 | flags | bit 0: feeds the IWDG (`F4STUB_FLAG_FEEDS_IWDG`) |
+
+Versions: 1 the first stub, 2 the SPI flash, 3 the header and the IWDG feeds (`F4STUB_VERSION_FEEDS_IWDG`). Stubs
+before version 3 have no header: those bytes are code. While its IWDG runs, ODR enters a stub only when all three hold:
+the magic, a version of at least 3 and the feed flag (`f4stub_image_ok`). Otherwise ENTER is refused with reason 1
+([debuglink.md](debuglink.md) 3.18). With the IWDG not running any stub is entered. `stubtool.py --odr-enter` and the
+web flasher print the version from the header before they send the image.
 
 ## 4. USB in the stub
 
@@ -120,7 +147,7 @@ arriving for 200 ms is dropped. The largest payload is 4104 bytes (`STUBENG_MAX_
 
 | Op | Name | Request | Reply |
 |---|---|---|---|
-| `01` | HELLO | none | `F4STUB`, version u8 (3), max payload u16, flash KB u16, RDP byte u8, flags u8 (bit 0: USB adopted, bit 7: configured), application base u32 (from the board record; 0 before one), SPI flash size u32 (0: none configured or no chip answered), its JEDEC ID (3 bytes), board id u8 (0 before a record), record length u8, the record (the echo, section 5.2). Version 2 stopped after the JEDEC ID and always reported 0x0800C000; version 1 stopped after the application base |
+| `01` | HELLO | none | `F4STUB`, version u8 (3), max payload u16, flash KB u16, RDP byte u8, flags u8 (bit 0: USB adopted), application base u32 (0x0800C000), SPI flash size u32 (0: no chip answered), its JEDEC ID (3 bytes). Version 1 stopped after the application base |
 | `02` | PEEK | addr u32, n u16 (1 to max) | n bytes. Allowed: flash, 0x1FFF0000-0x1FFF7A2F (system memory, OTP, UID, flash size), option bytes 0x1FFFC000-0x1FFFC00F, SRAM, CCM. Peripherals are refused |
 | `07` | SUMS | addr u32 (4 KB aligned), count u16 (1 to 820), memory u8 (optional: 0 internal flash, the default; 1 SPI flash, addresses from 0) | count x (CRC-32 u32, blank u8) |
 | `09` | READ | addr u32 (4 KB aligned), count u8 (1 to 255), compress u8, memory u8 (optional, as SUMS) | count frames, one per 4 KB block: CRC-32 u32, method u8 (0 raw, 2 blank), length u16, data. Compression is not offered; a compress request is answered raw |

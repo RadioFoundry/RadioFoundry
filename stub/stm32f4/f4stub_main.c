@@ -64,9 +64,53 @@ static uint32_t hclk_hz(void)
 // An APB clock: HCLK / 1, 2, 4, 8 or 16 (PPREx 0xx, 100..111). APB2 clocks SPI1, APB1 SPI2 and SPI3
 static uint32_t pclk_hz(uint32_t hclk, bool apb2)
 {
-	uint32_t ppre = apb2 ? (RCC->CFGR & RCC_CFGR_PPRE2) >> RCC_CFGR_PPRE2_Pos
-			     : (RCC->CFGR & RCC_CFGR_PPRE1) >> RCC_CFGR_PPRE1_Pos;
-	return ppre >= 4u ? hclk >> (ppre - 3u) : hclk;
+	uint32_t ppre2 = (RCC->CFGR & RCC_CFGR_PPRE2) >> RCC_CFGR_PPRE2_Pos;
+	return ppre2 >= 4u ? hclk >> (ppre2 - 3u) : hclk;
+}
+
+// The image header (f4stub_header.h), at F4STUB_HDR_OFFSET by the linker script. ODR reads it before the jump: while its
+// IWDG runs it enters only a stub whose header says it feeds the IWDG (docs/spec/watchdog.md 3.1)
+_Static_assert(sizeof(f4stub_header_t) == F4STUB_HDR_SIZE, "the image header is 16 bytes");
+__attribute__((section(".stub_header"), used)) const f4stub_header_t f4stub_header = {
+	.magic = F4STUB_HDR_MAGIC,
+	.layout = F4STUB_HDR_LAYOUT,
+	.size = F4STUB_HDR_SIZE,
+	.version = F4STUB_VERSION,
+	.flags = F4STUB_FLAG_FEEDS_IWDG,
+};
+
+// The IWDG: ODR started it (CONFIG_WATCHDOG) and nothing but a reset stops it, so the stub feeds it everywhere it can
+// spend time. A write to KR while it isn't running does nothing
+
+void stub_feed(void)
+{
+	IWDG->KR = 0xAAAAu;
+}
+
+static void port_feed(void *ctx)
+{
+	(void)ctx;
+	stub_feed();
+}
+
+// Every loop that waits reads the time here (the main loop, the flash erase and program busy waits, the SPI flash's
+// status polls, the USB waits, the delays), so it feeds the IWDG too
+uint32_t stub_ms(void)
+{
+	stub_feed();
+	uint32_t c = DWT->CYCCNT;
+	acc_cyc += c - last_cyc;
+	last_cyc = c;
+	now_ms += acc_cyc / cycles_per_ms;
+	acc_cyc %= cycles_per_ms;
+	return now_ms;
+}
+
+void stub_delay_ms(uint32_t ms)
+{
+	uint32_t t0 = stub_ms();
+	while (stub_ms() - t0 < ms) {
+	}
 }
 
 // ---- the port the protocol engine drives
@@ -142,15 +186,25 @@ static stubeng_port_t port = {
 	.xread = port_xread,
 	.xerase = port_xerase,
 	.xprogram = port_xprogram,
-	.configure = port_configure,
+	.feed = port_feed,
 };
 static stubeng_t engine;
 static char serial[25];
 
 void stub_main(uint32_t flags)
 {
-	stubrt_zero_bss();
-	stubrt_clock_start(hclk_hz());
+	stub_feed();			// first: ODR stretched the IWDG for the copy and the jump, nothing more
+	for (uint32_t *p = &_sbss; p < &_ebss; p++) {
+		*p = 0;
+	}
+	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+	DWT->CYCCNT = 0;
+	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+	uint32_t hclk = hclk_hz();
+	cycles_per_ms = hclk / 1000u;
+	if (cycles_per_ms == 0) {
+		cycles_per_ms = 16000u;
+	}
 
 	f4flash_init();
 	// ODR's USB serial number (boards/*/usb_*.c): the 96-bit UID as hex, lowest byte first. The same string keeps the

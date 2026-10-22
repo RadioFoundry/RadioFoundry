@@ -402,6 +402,18 @@ async function codecFromRadio(link, probe, status) {
 	if (got) S.savedCodec = { ...got, from: "radio", stored: S.sim ? false : await saveCodec(S.board, got.segments) };
 }
 
+// A stock file the user picked (the .bin, or the vendor's zip with it inside), identified. A zip without exactly one
+// firmware file shows as an unrecognized file, with the reason in the console
+async function pickedStock(f) {
+	try {
+		const st = await stockfw.stockFile(f.name, f.data, fb());
+		return { ...st, info: await stockfw.identify(st.data, fb()) };
+	} catch (e) {
+		console.warn(e.message);
+		return { ...f, info: { sha: null, known: null, profile: null } };
+	}
+}
+
 async function getKey(board) {
 	if (S.key) return S.key;
 	if (S.sim) return (S.key = S.sim.key);
@@ -1038,9 +1050,12 @@ function codecView() {
 		const codecLine = !fromSaved ? null : S.savedCodec.from === "browser" ? t("flash.codec.codec_saved")
 			: t(S.savedCodec.stored ? "flash.codec.codec_from_radio" : "flash.codec.codec_from_radio_unsaved");
 		const picker = S.sim ? button(t("flash.sim.use_stock"), async () => { await useStock({ name: "simulated-stock.bin", data: S.sim.stock }); })
-			: filePicker(t("flash.codec.stock_pick"), ".bin", useStock);
+			: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", useStock);
 		const loadedText = S.stock && t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_unknown") });
-		const loaded = !S.stock ? null : S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad");
+		// a known file without a codec profile (MD-380 D2.30) gives the bootloader key, not the codec: say what it's good for
+		const keyOnly = S.stock?.info.known && !fb().profiles[S.stock.info.sha];
+		const loaded = !S.stock ? null : keyOnly ? notice(`${loadedText}. ${t("flash.codec.stock_key_only", { files: S.board.codec.sources.join(", ") })}`, "action")
+			: S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad");
 		// a download link only where there is a known one; no vague pointers
 		const where = h("p", {}, t("flash.codec.stock_files", { files: S.board.codec.sources.join(", ") }),
 			S.radio.flash.stock_download ? [" ", h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download"))] : null);
@@ -1072,7 +1087,7 @@ function codecView() {
 		forward(button(t("flash.nav.to_write"), next, { primary: true, disabled: !(ready || viaStub) }));
 	};
 	async function useStock(f) {
-		S.stock = { ...f, info: await stockfw.identify(f.data, fb()) };
+		S.stock = await pickedStock(f);
 		if (!S.keyFromRadio) S.key = null;
 		draw();
 	}
@@ -1339,7 +1354,7 @@ function backupView() {
 			status.replaceChildren(h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, p.codec || "?")),
 			h("details", { class: "small" }, h("summary", {}, t("flash.backup.add_stock")),
-				filePicker(t("flash.codec.stock_pick"), ".bin", async (f) => { S.stock = { ...f, info: await stockfw.identify(f.data, fb()) }; })),
+				filePicker(t("flash.codec.stock_pick"), ".bin,.zip", async (f) => { S.stock = await pickedStock(f); })),
 			backupNow({ when: "task", actions: (b) => S.forward(b),
 				onDone: () => S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true })) }));
 		} catch (e) {
@@ -1396,7 +1411,7 @@ function restoreView() {
 	if (S.restoreTarget === "codeplug") parts.push(afterRestore());
 	else if (S.restoreTarget && !S.stock && (S.restoreTarget === "stock" || (!S.sim && !S.key && !savedKey(S.board))))
 		parts.push(panel(t("flash.codec.stock_title"), h("p", {}, t("flash.restore.stock_needed")),
-			filePicker(t("flash.codec.stock_pick"), ".bin", async (f) => { S.stock = { ...f, info: await stockfw.identify(f.data, fb()) }; render(); })));
+			filePicker(t("flash.codec.stock_pick"), ".bin,.zip", async (f) => { S.stock = await pickedStock(f); render(); })));
 	else if (S.restoreTarget) {
 		parts.push(bootloaderPanel(t("flash.restore.write_title"), async (key) =>
 			(S.restoreTarget === "odr" ? planInternal(b, S.board) : planStock(S.stock.data, key, S.board, fb())), () => {
@@ -1459,6 +1474,9 @@ function afterRestore() {
 // always be put back, and every step says so: someone whose radio just went dark is scared it's ruined.
 
 const SYMPTOMS = ["dark", "stuck", "stopped", "novoice", "channels", "revert"];
+// "iap": a white, backlit screen and a solid red LED at every power-on. Only for a radio whose backend has a way back
+// through the vendor update mode (recovery.extra); it is listed after the dark screen it is mistaken for
+const symptoms = () => (backend().recovery.extra?.(S.radio, fb()).length ? ["dark", "iap", ...SYMPTOMS.slice(1)] : SYMPTOMS);
 
 // From a failure: the radio is known, so the page asks what's wrong right away
 function startHelp() {
@@ -1502,8 +1520,8 @@ function answers(items, pick, chosen = null) {
 function symptomView() {
 	S.forward(null);
 	return h("div", { class: "flasher" }, reassure(),
-		panel(t("flash.help.symptom_title"), answers(SYMPTOMS.map((id) => [id, t(`flash.help.s.${id}`), t(`flash.help.s.${id}_text`)]),
-			(id) => { S.help = { symptom: id, stage: id === "dark" ? "battery" : ["stuck", "stopped"].includes(id) ? backend().recovery.first : "fix" }; next(); })));
+		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, t(`flash.help.s.${id}`), t(`flash.help.s.${id}_text`)]),
+			(id) => { S.help = { symptom: id, stage: id === "dark" ? "battery" : id === "iap" ? "fix" : ["stuck", "stopped"].includes(id) ? backend().recovery.first : "fix" }; next(); })));
 }
 
 function recoverView() {
@@ -1571,10 +1589,9 @@ function fixChooser(st, go) {
 	// shared ones (choices) and stand its own in for others (alias: the GD-77 puts its original update file back)
 	const extra = rec.extra?.(S.radio, fb()) || [];
 	for (const x of extra) opts[x.id] = [t(x.title), t(x.text)];
-	const offered = new Set([...(rec.choices || ["again", "codec", "backup", "stock"]), ...extra.map((x) => x.id)]);
-	const wanted = ({ novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"] }[st.symptom]
-		|| ["again", ...extra.map((x) => x.id), "backup", "stock"]).map((id) => rec.alias?.[id] || id).filter((id) => offered.has(id));
-	const order = wanted.length ? [...new Set(wanted)] : ["again", ...extra.map((x) => x.id)].filter((id) => offered.has(id));
+	const order = { novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"],
+		iap: ["updatemode", "backup"] }[st.symptom]
+		|| ["again", ...extra.map((x) => x.id), "backup", "stock"];
 	const start = () => {
 		const pick = st.pick;
 		const own = extra.find((x) => x.id === pick);
@@ -1595,15 +1612,24 @@ function fixChooser(st, go) {
 	};
 	S.forward(button(t("flash.help.continue"), start, { primary: true, disabled: !st.pick }));
 	return panel(t(st.fine ? "flash.help.fine_title" : "flash.help.fix_title"),
-		st.fine ? h("p", {}, t("flash.help.fine_text")) : rec.reach ? h("p", {}, t(rec.reach)) : null,
+		st.symptom === "iap" ? stuckInUpdateMode() : st.fine ? h("p", {}, t("flash.help.fine_text")) : rec.reach ? h("p", {}, t(rec.reach)) : null,
 		answers(order.map((id) => [id, ...opts[id]]), (id) => go("fix", { pick: id }), st.pick));
+}
+
+// A radio that shows a white screen and a red LED at every power-on is in the vendor update mode because its application
+// is missing or incomplete: say so, and how to get into update mode if the radio is not showing it
+function stuckInUpdateMode() {
+	return h("div", {}, h("p", {}, t("flash.help.iap_cause")), h("p", {}, t("flash.help.iap_nokeys")),
+		h("p", { class: "small" }, t("flash.help.iap_enter")),
+		h("ol", { class: "steps small" }, S.radio.flash.bootloader.map((x) => h("li", {}, x))),
+		h("p", { class: "small muted" }, t("flash.help.iap_original")));
 }
 
 // STM32 radios back on their original firmware, from the stock file, through update mode (no backup needed)
 function stockRecovery(go) {
 	if (!S.stock?.info?.known) {
 		const picker = S.sim ? button(t("flash.sim.use_stock"), async () => { S.stock = { name: "simulated-stock.bin", data: S.sim.stock, info: await stockfw.identify(S.sim.stock, fb()) }; render(); })
-			: filePicker(t("flash.codec.stock_pick"), ".bin", async (f) => { S.stock = { ...f, info: await stockfw.identify(f.data, fb()) }; render(); });
+			: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", async (f) => { S.stock = await pickedStock(f); render(); });
 		const where = S.radio.flash.stock_download ? h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download")) : null;
 		return panel(t("flash.help.stock_title"), h("p", {}, t("flash.help.stock_need", { files: S.board.codec.sources.join(", ") }), " ", where),
 			S.stock ? notice(t("flash.codec.stock_loaded", { name: S.stock.name, what: t("flash.codec.stock_unknown") }), "bad") : null, picker);

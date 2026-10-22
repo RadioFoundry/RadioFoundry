@@ -3,8 +3,10 @@
 // Millisecond clock from the DWT cycle counter, so it runs before the scheduler and inside critical sections.
 // The 32-bit cycle counter wraps every 59 s at 72 MHz; it is folded into a 64-bit count on every read, and the RTOS
 // tick hook reads it every millisecond, so no wrap is missed.
+#include "config.h"
 #include "platform.h"
 #include "hal_time.h"
+#include "hal_watchdog.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -53,6 +55,13 @@ void hal_delay_ms(uint32_t ms)
 {
 	if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) {
 		vTaskDelay(pdMS_TO_TICKS(ms));
+#if CONFIG_WATCHDOG
+	} else if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED) {
+		for (uint32_t i = 0; i < ms; i++) {	// start-up: no idle task yet, so the waits feed the watchdog
+			hal_delay_us(1000u);
+			hal_watchdog_feed();
+		}
+#endif
 	} else {
 		hal_delay_us(ms * 1000u);
 	}

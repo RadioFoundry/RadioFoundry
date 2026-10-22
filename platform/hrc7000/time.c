@@ -4,8 +4,10 @@
 // a cycle counter, so the millisecond clock works before the scheduler and inside critical sections. Its 32-bit count
 // wraps every 51 s; it is folded into a 64-bit count on every read and the RTOS tick hook reads it every millisecond.
 // Timer 1 is the RTOS tick, timer 3 the DMR PA one-shot (hrc_timer_oneshot), timer 4 the AFSK FIFO top-up.
+#include "config.h"
 #include "platform.h"
 #include "hal_time.h"
+#include "hal_watchdog.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -62,6 +64,13 @@ void hal_delay_ms(uint32_t ms)
 {
 	if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING && !hrc_in_isr()) {
 		vTaskDelay(pdMS_TO_TICKS(ms));
+#if CONFIG_WATCHDOG
+	} else if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED) {
+		for (uint32_t i = 0; i < ms; i++) {	// start-up: no idle task yet, so the waits feed the watchdog
+			hal_delay_us(1000u);
+			hal_watchdog_feed();
+		}
+#endif
 	} else {
 		hal_delay_us(ms * 1000u);
 	}

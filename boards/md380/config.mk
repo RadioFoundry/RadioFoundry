@@ -5,6 +5,8 @@
 # 160x128 display. The case edge crowds the top row and the two left columns (seen on the radio, 2026-10-16);
 # right and bottom are close but usable (hardware-md380.md 7)
 CONFIG_FONT_XL ?= n
+# The fault trace needs a host UART: this radio's host port is USB, and its one UART is the G models' GPS receive line
+CONFIG_FAULT_TRACE ?= n
 CONFIG_DISPLAY_INSET ?= 0
 CONFIG_DISPLAY_INSET_TOP ?= 1
 CONFIG_DISPLAY_INSET_LEFT ?= 2
@@ -24,7 +26,7 @@ LTO_3P ?= 1
 # Not written for this radio (above), or no use on it (FONT_XL is for 240 px and wider panels, this one is 160 px; no
 # air band receiver or broadcast receiver, docs/spec/airband-and-broadcast.md): tools/ci.sh's maximal configuration
 # leaves these off
-BOARD_UNSUPPORTED := FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL AM_RX BCAST_FM
+BOARD_UNSUPPORTED := FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL AM_RX BCAST_FM FAULT_TRACE
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
-# radios (docs/spec/ppp.md), and this one has the adapter. Stub entry and NAND storage aren't used on this radio
-MAXIMAL_SKIP := NET_PPP STUB_ENTRY NAND_STORAGE
+# radios (docs/spec/ppp.md), and this one has the adapter. NAND storage isn't used on this radio
+MAXIMAL_SKIP := NET_PPP NAND_STORAGE

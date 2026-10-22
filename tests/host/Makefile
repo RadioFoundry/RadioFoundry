@@ -436,15 +436,25 @@ micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(R
 # The crash log's record, its start-up side on a fake store, the packed report (core/crash/crash.c), and the UI's side
 # of it with the report (core/ui/ui_svc_crash.c), the debug link's (core/debuglink/debuglink_crash.c)
 TESTS   += crashTest
-CRASHT  := crashTest.c $(CORE)/crash/crash.c $(CORE)/ui/ui_svc_crash.c $(CORE)/debuglink/debuglink_crash.c \
+CRASHT  := crashTest.c $(CORE)/crash/crash.c $(CORE)/crash/crash_trace.c $(CORE)/ui/ui_svc_crash.c $(CORE)/debuglink/debuglink_crash.c \
 	   $(CORE)/debuglink/dl_fmt.c
 crashTest: $(CRASHT) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(CORE)/ui/ui_svc.h $(CORE)/debuglink/debuglink.h \
 	   $(CORE)/debuglink/debuglink_proto.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(CRASHT)
 
+# The crash capture (core/crash/crash_capture.c) on a stand-in RTOS (stubs/crash_rtos/): the transmitter off first, with
+# interrupts off, on every way in, before the store and the restart (docs/spec/crash-log.md 8)
+TESTS   += crashCaptureTest
+CRASHC  := crashCaptureTest.c $(CORE)/crash/crash_capture.c $(CORE)/crash/crash.c $(CORE)/debuglink/dl_fmt.c
+crashCaptureTest: $(CRASHC) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(ROOT)/hal/board.h $(wildcard stubs/crash_rtos/*.h)
+	$(CC) $(CFLAGS) -Istubs/crash_rtos -I$(ROOT)/hal -Wshadow -o $@ $(CRASHC)
+
 run: run-crash
-run-crash: crashTest
+run-crash: crashTest crashCaptureTest
 	./crashTest
+	./crashCaptureTest
+	@if command -v python3 > /dev/null; then python3 $(ROOT)/tools/odr_fault_trace.py --selftest; \
+	else echo "# odr_fault_trace selftest: skipped (no python3)"; fi
 .PHONY: run-crash
 
 run: run-ambe
@@ -599,8 +609,9 @@ run-debuglink: debuglinkTest
 
 # The runtime RAM-monitor loader's portable state machine (core/debuglink/dl_stub.c, CONFIG_STUB_ENTRY)
 TESTS   += stubEntryTest
-stubEntryTest: stubEntryTest.c $(CORE)/debuglink/dl_stub.c $(CORE)/debuglink/dl_stub.h $(CORE)/debuglink/debuglink_proto.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ stubEntryTest.c $(CORE)/debuglink/dl_stub.c
+stubEntryTest: stubEntryTest.c $(CORE)/debuglink/dl_stub.c $(CORE)/debuglink/dl_stub.h $(CORE)/debuglink/debuglink_proto.h \
+		$(ROOT)/stub/stm32f4/f4stub_header.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ stubEntryTest.c $(CORE)/debuglink/dl_stub.c
 
 run: run-stubEntry
 run-stubEntry: stubEntryTest
@@ -619,29 +630,24 @@ run-taskStack: taskStackTest
 	./taskStackTest
 .PHONY: run-taskStack
 
-# The debug link's board view section (core/debuglink/debuglink_view_board.c): a fake board with lines, and one
-# without the hook
-BVIEW   := boardViewTest.c $(CORE)/debuglink/debuglink_view_board.c $(CORE)/debuglink/dl_fmt.c
-TESTS   += boardViewTest boardViewNoneTest
-boardViewTest: $(BVIEW) $(CORE)/debuglink/debuglink.h $(ROOT)/hal/board.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(BVIEW)
-boardViewNoneTest: $(BVIEW) $(CORE)/debuglink/debuglink.h $(ROOT)/hal/board.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DNO_HOOK -o $@ $(BVIEW)
+# The hardware watchdog's portable side: the idle task's feed, the longest idle gap, the bench starve (core/app/
+# watchdog.c), the debug link's watchdog section and DL_CMD_WATCHDOG (core/debuglink/debuglink_watchdog.c). The
+# platform, the clock, the radio's view and the log are faked; watchdog_stub/ holds the stand-in FreeRTOS headers
+WDOG    := watchdogTest.c $(CORE)/app/watchdog.c $(CORE)/debuglink/debuglink_watchdog.c $(CORE)/debuglink/dl_fmt.c
+TESTS   += watchdogTest
+watchdogTest: $(WDOG) $(CORE)/app/watchdog.h $(ROOT)/hal/hal_watchdog.h $(CORE)/debuglink/debuglink.h \
+              $(CORE)/debuglink/debuglink_proto.h $(wildcard watchdog_stub/*.h)
+	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -DCONFIG_WATCHDOG=1 -o $@ $(WDOG)
 
-run: run-boardView
-run-boardView: boardViewTest boardViewNoneTest
-	./boardViewTest
-	./boardViewNoneTest
-.PHONY: run-boardView
+run: run-watchdog
+run-watchdog: watchdogTest
+	./watchdogTest
+.PHONY: run-watchdog
 
-# The flash stubs' shared protocol engine (stub/common/stubeng.c) with the STM32F4 target's board record check
-# (stub/stm32f4/f4stub_board.c, docs/spec/stub-stm32f4.md)
-F4STUB_SRC := $(ROOT)/stub/common/stubeng.c $(ROOT)/stub/stm32f4/f4stub_board.c
-F4STUB_H   := $(ROOT)/stub/common/stubeng.h $(ROOT)/stub/stm32f4/f4stub.h
-F4STUB_INC := -I$(ROOT)/stub/common -I$(ROOT)/stub/stm32f4
+# The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
 TESTS   += f4stubTest
-f4stubTest: f4stubTest.c $(F4STUB_SRC) $(F4STUB_H)
-	$(CC) $(CFLAGS) -Wshadow $(F4STUB_INC) -o $@ f4stubTest.c $(F4STUB_SRC)
+f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h $(ROOT)/stub/stm32f4/f4stub_header.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c
 
 TESTS   += f4stubSim
 f4stubSim: f4stubSim.c $(F4STUB_SRC) $(F4STUB_H)

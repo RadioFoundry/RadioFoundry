@@ -285,81 +285,82 @@ STUB_DB25D_DMR_B64 = (
 )
 # --- STUB DB25D_DMR end
 # --- STUB UNIV begin (stub/embed_stub.py rewrites everything up to the end marker)
-STUB_UNIV_SHA256 = "254f2332b8e03bbe7b15980f70ec954012ae763d5e70b152fe1dd295672beff6"
+STUB_UNIV_SHA256 = "59f99651682125d04508211a8687ce4d244cd68ab18e7166d98adccfdb3eca20"
 STUB_UNIV_B64 = (
-    "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"
+    "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"
 )
 # --- STUB UNIV end
 
@@ -377,6 +378,9 @@ IO_DIPLEX1 = 0x11000038
 SYS_SOFT_RSTN = 0x11000000
 QUAD_ENABLE = 0x1100005C
 LCSFC_BAUDR = 0x11000030            # XIP flash SCLK divider; a soft reset keeps it
+WDT_LOCK = 0x14010000               # watchdog: unlock key, then EN = 0, then lock (hardware-dm32.md 3.5)
+WDT_EN = 0x14010010
+WDT_KEY = 0x5ADA7200
 TIMER2_VALUE = 0x14000018           # timer 2 current value (counts down; the stub runs it free)
 LED_RED, LED_GREEN = 33, 32         # PTB1 = red, PTB0 = green on the DM-1801 Pro and the DM-32UV (both checked on the radio)
 OK, BADSUM, BADOP, SPITIMEOUT, TOOLONG = 0x05, 0x0A, 0x0B, 0x0C, 0x0E
@@ -396,6 +400,9 @@ PAGE = 256
 # The application area of the program flash: an ODR image is linked for 0x0300C000, which is flash offset 0xC000. The
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
 APP_START, APP_END = 0xC000, 0x100000
+# The first word of ODR's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D). Its
+# application is linked for 0x0300D000, so the image written at APP_START is the install image, which starts with it
+STAGE_MAGIC = bytes.fromhex("2c1101c0")
 
 
 class DumpError(Exception):
@@ -902,6 +909,9 @@ class Radio:
         r = self.dl_request(DL_STUB, b"\x03" + STUB_MAGIC.to_bytes(4, "little"))
         if r[0] == 3:
             raise DumpError("ODR refused to enter the stub: the radio is transmitting. Release PTT and run again")
+        if r[0] == 7 and len(r) > 1 and r[1] == 1:
+            raise DumpError("ODR refused to enter this stub: its watchdog runs and the stub doesn't feed it, so the radio "
+                            "would reset part way through. Use the stub from a current stubtool.py / f4stub.py")
         if r[0] != 0:
             raise DumpError("ODR refused to enter the stub (status %d): image incomplete or CRC mismatch" % r[0])
         self.log("ODR is jumping to the stub")
@@ -917,7 +927,12 @@ class Radio:
     def reset_chip(self):
         """Soft-reset the SoC (hardware-dm32.md 1.1: XIP quad off and the reset divider, then SYS_SOFT_RSTN = 0). The boot
         ROM runs again, offers its serial window briefly, then starts the firmware from flash: the same as a power cycle
-        without the cycle. The soft reset keeps the divider, and the ROM can't read flash at ODR's divider 2."""
+        without the cycle. The soft reset keeps the divider, and the ROM can't read flash at ODR's divider 2. The watchdog
+        goes off first: ODR leaves it running while the stub feeds it, a soft reset may keep it, and the bootloader never
+        feeds it (its update mode waits for the PC). ODR starts it again."""
+        self.poke(WDT_LOCK, WDT_KEY.to_bytes(4, "little"))
+        self.poke(WDT_EN, (0).to_bytes(4, "little"))
+        self.poke(WDT_LOCK, (0).to_bytes(4, "little"))
         self.poke(QUAD_ENABLE, (0).to_bytes(4, "little"))
         self.poke(LCSFC_BAUDR, (4).to_bytes(4, "little"))
         self.send_noreply(0x03, SYS_SOFT_RSTN.to_bytes(4, "big") + (0).to_bytes(4, "little"))
@@ -991,7 +1006,7 @@ class Radio:
         for a in range(start, end, SECTOR):
             self._write_cmd(mem, bytes([0x20, a >> 16 & 0xFF, a >> 8 & 0xFF, a & 0xFF]), "erase 0x%X" % a, 3.0)
 
-    def write_image(self, image, progress=None):
+    def write_image(self, image, progress=None, replace_stage=False):
         """Program an ODR application image into the program flash at 0xC000 (where it is linked to run): only the 4 KB
         sectors whose CRC differs from the flash are erased and written, then everything is verified by CRC. The
         bootloader below 0xC000 is never touched. Returns (sectors written, sectors left alone)."""
@@ -1006,6 +1021,11 @@ class Radio:
         self.check_writable()
         self.check_write_range(mem, APP_START, end, app=True)
         self.check_id(mem)
+        # The application alone over a first stage leaves the radio in its update loader (white screen, red LED)
+        if not replace_stage and self.read_flash(mem, APP_START, 4) == STAGE_MAGIC and image[:4] != STAGE_MAGIC:
+            raise DumpError("this radio has ODR's first stage at 0x%X and the image does not start with it: write the "
+                            "install image (odr_<board>_install.bin), not the application alone (--replace-stage "
+                            "writes it anyway)" % APP_START)
         todo = self.verify(mem, padded, APP_START)
         for n, a in enumerate(todo):
             if progress:
@@ -1931,6 +1951,21 @@ def self_test():
         check(r.configured is prof, "the %s profile is confirmed by the HELLO echo" % prof["name"])
         nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
         check(nw == 0 and nk == 4, "writing the same image after CONFIG changes nothing")
+        if board == "db25d":		# a first stage in the radio: only an image that starts with one goes over it
+            pm = bytearray(radio.images["progmem"])
+            pm[APP_START:APP_START + 4] = STAGE_MAGIC
+            radio.images["progmem"] = bytes(pm)
+            try:
+                r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
+                check(False, "the application alone over a first stage is refused")
+            except DumpError as e:
+                check("install image" in str(e), "application over a first stage refused: %s" % e)
+            app = images["progmem"][APP_START:APP_START + 4 * SECTOR]
+            nw, nk = r.write_image(app, replace_stage=True)
+            check(nw >= 1, "--replace-stage writes the application over the first stage")
+            radio.images["progmem"] = bytes(pm)
+            nw, nk = r.write_image(bytes(pm[APP_START:APP_START + 4 * SECTOR]))
+            check(nk == 4, "an install image over a first stage is written")
         if board == "db25d":
             out = io.BytesIO()
             r.dump(out, "nand", 0, 16 * SECTOR)
@@ -2087,7 +2122,10 @@ def main(argv=None):
                     "firmware reports); refused unless it is linked for that span")
     ap.add_argument("--write-app", metavar="IMAGE", help="program an ODR application image (raw .bin linked for 0x0300C000) into the "
                     "program flash at 0xC000: only changed 4 KB sectors are written, then verified; the bootloader is never touched. "
-                    "Use with --odr-enter (radio running ODR) or the boot-ROM load; finish with --boot reset")
+                    "Use with --odr-enter (radio running ODR) or the boot-ROM load; finish with --boot reset. On a radio with "
+                    "ODR's first stage at 0xC000 (DB25-D) give the _install.bin, which starts with it")
+    ap.add_argument("--replace-stage", action="store_true", help="let --write-app put an image that does not start with "
+                    "ODR's first stage over one (the radio then starts only what the image holds at 0xC000)")
     ap.add_argument("--attach", action="store_true", help="the stub from an earlier run is still up: skip the boot")
     ap.add_argument("--stub", metavar="FILE", help="load this stub image instead of the embedded universal one (a universal "
                     "image, or a position-dependent one linked for the load address)")
@@ -2199,7 +2237,7 @@ def main(argv=None):
         if a.write_app:
             image = open(a.write_app, "rb").read()
             t0 = time.monotonic()
-            nw, nk = radio.write_image(image, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
+            nw, nk = radio.write_image(image, replace_stage=a.replace_stage, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
             print("\n%s: %d bytes, %d sectors written, %d unchanged, verified by CRC, %.0f s" % (a.write_app, len(image), nw, nk, time.monotonic() - t0))
             print("sha256", fingerprint(a.write_app))
             if not a.boot:
@@ -2271,4 +2309,7 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # f4stub imports this file as "stubtool": without this it would load a second copy, and its DumpError would be a
+    # different class from the one main() catches (an STM32 error printed as a traceback)
+    sys.modules.setdefault("stubtool", sys.modules[__name__])
     sys.exit(main())
