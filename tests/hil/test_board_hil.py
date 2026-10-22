@@ -45,8 +45,13 @@ class FakeRadio:
 def outcome(fn, radio):
     """passed, failed or the skip kind of one test_health check run against a fake radio."""
     import test_health
+    return result(lambda: fn(test_health.Board(radio)))
+
+
+def result(call):
+    """passed, failed or the skip kind of call()."""
     try:
-        fn(test_health.Board(radio))
+        call()
     except AssertionError:
         return "failed"
     except BaseException as e:      # a skip (pytest's skip exception is not an Exception)
@@ -82,3 +87,15 @@ def test_health_checks_read_the_expectations():
     other = FakeRadio("no such radio", [])
     assert outcome(h.test_display, other) == "other_board"
     assert outcome(h.test_receiver_alive, other) == "not_built"
+
+
+def test_board_tests_run_on_their_own_board_only():
+    import hil_plugin
+    root = odr_hil.ROOT
+    assert hil_plugin.own_board(f"{root}/boards/x1/hil/test_bus.py") == "x1"
+    assert hil_plugin.own_board(f"{root}/tests/hil/test_health.py") is None
+    assert hil_plugin.own_board(f"{root}/boards/x1/tests/test_bus.py") is None
+    b = sorted(odr_hil.board_names())[0]
+    mine = FakeRadio(sorted(odr_hil.board_names()[b])[0], [])
+    assert result(lambda: hil_plugin.only_on(b, mine)) == "passed"
+    assert result(lambda: hil_plugin.only_on(b, FakeRadio("no such radio", []))) == "other_board"

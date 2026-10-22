@@ -122,6 +122,8 @@ BOARD_SCHEMA = {
                  "flash_jedec": _opt(STR_LIST), "calibration": _opt(bool), "battery_mv": _opt(RANGE),
                  "codec": _opt(STR_LIST)}),
     "features": _opt(("map", {"state": _req(("n/a", "unsupported", "required")), "reason": _req(str)})),
+    # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
+    "cps": _opt({"radio_types": _req(("list", int))}),
 }
 
 PLATFORM_SCHEMA = {
@@ -715,9 +717,10 @@ def self_test():
     for bad, what in (({"hil": {"battery_mv": "5V"}}, "a [hil] value of the wrong type"),
                       ({"hil": {"no_such": 1}}, "an unknown [hil] key"),
                       ({"features": {"usb": {"state": "maybe", "reason": "x"}}}, "a [features] state"),
-                      ({"features": {"usb": {"state": "n/a"}}}, "a [features] entry without a reason")):
+                      ({"features": {"usb": {"state": "n/a"}}}, "a [features] entry without a reason"),
+                      ({"cps": {"radio_types": ["8"]}}, "a [cps] radio type that isn't a number")):
         try:
-            validate(bad, {k: BOARD_SCHEMA[k] for k in ("hil", "features")}, "t")
+            validate(bad, {k: BOARD_SCHEMA[k] for k in ("hil", "features", "cps")}, "t")
             ok(False, "validate refuses " + what)
         except RegistryError:
             ok(True, "validate refuses " + what)
