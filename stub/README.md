@@ -78,6 +78,15 @@ On the stock routes the stub hands the program flash back from execute-in-place 
 controller before it touches the flash. The clocks are left as stock set them; the host measures timer 2 and sends the
 rates in CONFIG, so the same `db25d` profile serves stock and ODR (both use UART1 on the K1 jack).
 
+### The first stage
+
+On the DB25-D, 0xC000 holds ODR's first stage and the application starts at 0xD000. `--write-app` writes at 0xC000,
+so the DB25-D takes the `_install.bin`, which starts with the stage. The tool reads the radio's word at 0xC000 first.
+When it is the stage's and the image does not start with it, the write is refused: the application alone there leaves
+the radio in its update loader (white screen, red LED) until an IAP install. No board list is involved, so any radio
+with the stage is covered, and a radio whose stage is already gone takes either image. `--replace-stage` overrides
+the check.
+
 ### Older stubs
 
 The position-dependent stubs (linked for the ROM load at 0x10000, for ODR at 0x17000, and the DB25-D's 0x30000 and
