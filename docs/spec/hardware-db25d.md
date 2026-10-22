@@ -243,7 +243,7 @@ TX on f (the stock order, BIN; ODR differs where noted):
 
 | Step | Action |
 |---|---|
-| 0 | Still receiving: main chip 0x40 = 0x34D0 and 0x51 = 0x1050 with no sub-audio; with CTCSS 0x40 = 0x34A8, 0x51 = 0x9045 and 0x07 = Hz x 20.64888 truncated (100.0 Hz = 2064). DCS is refused |
+| 0 | Still receiving: main chip 0x40 = 0x34D0 and 0x51 = 0x1050 with no sub-audio; with CTCSS 0x40 = 0x34A8, 0x51 = 0x9045 and 0x07 = Hz x 20.64888 truncated (100.0 Hz = 2064); with DCS 0x40 = 0x34A8, 0x07 = 0x0AD7, 0x51 and the code (4.7) |
 | 1 | ODR only: main chip AF muted, then the stock "audio off" pins: PTB14 low, PTB15 high, PTA24 high (3.3). The first ODR build raised PTB14 here and the speaker popped at key-up (RADIO); whether this order removes the pop and still passes the microphone is not yet checked |
 | 2 | RX front end (PTC19), UHF RX (PTA25) and VHF RX (PTB4) off |
 | 3 | 50 us |
@@ -404,6 +404,34 @@ nothing else on the page trims the frequency (BIN). Before this was written only
 
 `make BOARD=db25d DB25D_TX_CENTER=N` replaces c, to sweep it on the radio: a few ppm per step is expected.
 
+### 4.7 DCS
+
+The main chip sends and detects DCS itself, with the code as the 23-bit Golay word (code bits first,
+`subaudio_dcs_word`) in two writes to 0x08 (BIN):
+
+| Register | Value |
+|---|---|
+| 0x07 | 0x0AD7 (the 134.4 bit/s rate) while the code is set; 0x4AD7 after it on receive |
+| 0x08 | word bits 11:0, then bits 22:12 with bit 15 set (D023: 0x0813, 0x8763; D754: 0x09EC, 0x820F) |
+| 0x51 | 0x8030 normal, 0xA030 inverted (bit 15 on, bit 13 invert, bit 12 = 0 selects DCS, the rest the gain) |
+| 0x40 | 0x34A8 on transmit, as with CTCSS |
+| 0x0C | received: bit 14 the code as set, bit 15 its inverse (bit 10 CTCSS) |
+
+| Order | Steps |
+|---|---|
+| TX (4.4 step 0) | 0x40, 0x07 = 0x0AD7, 0x51, 0x08 twice (BIN) |
+| RX | 0x07 = 0x0AD7, 0x51, 0x08 twice, 0x07 = 0x4AD7 (BIN) |
+
+The receive chain inverts the audio: the LO sits above the signal (f + 51.55 MHz, 4.1), so the IF spectrum is turned
+over and the deviation's sign flips. A normal code arrives as its inverse. ODR sets 0x51 for the code as sent and
+reads 0x0C's other bit: a normal code sets bit 15, an inverted one bit 14 (`bk4819_t.rx_inverted`). The stock
+firmware instead inverts its software decoder's polarity, on PB26 / PB27 (BIN). On the SDR bench another radio's
+D023N and D023I opened the matching setting only, and D754 and CTCSS settings stayed shut; the radio's D023N went out
+as D023N (RADIO). The diagnostics page's `rssi` line shows 0x0C as `c` (hex), polled with the RSSI.
+
+At the end of a DCS transmission the stock firmware writes 0x52 = 0x828F, waits 300 ms and writes 0x028F (a turn-off
+code, BIN). ODR doesn't send it yet.
+
 ## 5. Display
 
 | Item | Finding | Tag |
@@ -516,7 +544,8 @@ data sheet adds:
 | Status (0xC0) | Bit 0 busy, 1 write enabled, 2 erase failed, 3 program failed. Bits 4–5 ECC: 0 clean, 1 corrected, 2 uncorrectable, 3 corrected at or above the bit-flip threshold (feature 0x10) | BIN, DS |
 | ECC | On by default (feature 0xB0 bit 4): 8 bits corrected per 512 + 16 bytes. Spare bytes 2048–2111 are readable, the parity at 2112–2175 isn't | DS |
 | Block lock | Every block locked at power-up (feature 0xA0); reads don't need it cleared, program and erase do | DS |
-| Parameter page | Feature 0xB0 bit 6 set, then a page read of page 0. The stock firmware reads 256 bytes of it at boot | BIN, DS |
+| ID pages | Feature 0xB0 bit 6 (IDR_E) set, then a page read: page 0 is the unique ID, page 1 the parameter page (data sheet 4.12, 4.14); clear the bit after. The stock firmware reads 256 bytes of page 0 at boot, so the unique ID, not the parameter page as an earlier version of this table said | BIN, DS |
+| Unique ID | Page 0 with IDR_E: 16 copies of 32 bytes, each the 16-byte ID followed by its complement. ODR reads it at boot (`spi_nand_read_uid`, the first copy whose complement matches) as the radio's UID for the debug link's INFO_CHIP ([debuglink.md](debuglink.md) 3.9) | DS |
 | Spare bytes | The stock firmware keeps its own block marks at spare offset 4 (column 2052) | BIN |
 | Bad blocks | Factory-bad blocks read 0x00 in every page; the mark is judged from the data whatever the ECC status says | DS |
 | Stock bad-block skip | The stock firmware builds a bad-block list at boot and, for some address ranges, skips bad blocks when it maps an address to a page. Which ranges, and whether that ever moves block 20, isn't decoded | BIN |
@@ -726,10 +755,10 @@ Bring-up state (the port has run on a radio):
 | Part | State |
 |---|---|
 | Platform | `platform/hrc7000`, image at 0x0300C000 behind the IAP loader; the host port on UART1 |
-| RF | `drivers/rf/bk4819`: main and LO on one 3-wire bus. FM receive by the main chip at the IF with the LO at f + 51.55 MHz |
+| RF | `drivers/rf/bk4819`: main and LO on one 3-wire bus. FM receive by the main chip at the IF with the LO at f + 51.55 MHz. RX sub-audio: CTCSS and DCS from the chip's detector (4.7) |
 | Calibration | Both copies are read at boot, the higher save counter wins (6.1, 6.4); DAC A and DAC C are set from it for receive. The diagnostics page shows the copy used, its save counter and the PA values at 446 and 146 MHz, and a line with the PA drive for the tuned frequency |
 | NAND | `drivers/flash/spi_nand` on SPI0 (6.5). Programs and erases only inside ODR's range (6.6). The diagnostics page shows its ID and the page reads ECC had to correct |
-| TX | Analog FM (4.4, the stock sequence from the 2026-10-16 trace) and DMR (4.5), both measured on the SDR bench with the frequency trim of 4.6. Refused without a valid calibration page, outside the bands, or for a DCS tone. The diagnostics page shows the PA drive for the tuned frequency, low / high |
+| TX | Analog FM (4.4, the stock sequence from the 2026-10-16 trace) and DMR (4.5), both measured on the SDR bench with the frequency trim of 4.6. Refused without a valid calibration page or outside the bands. The diagnostics page shows the PA drive for the tuned frequency, low / high |
 | Display | `st7735` on a 4-wire serial bus: SPI2 or bit-banged, chosen by the ADC 2 strap as the stock firmware |
 | Power | No battery (`CAP_NO_BATTERY`): a mobile on a fixed 13.8 V supply with no supply reading (3.3). The core shows no battery icon, percentage, Tools > Battery page, Battery saver or Low battery warning setting, and has no battery monitor, so it never warns or refuses to transmit for the battery. `hal_power_t` has no `battery_mv` or `battery_pct`. The diagnostics page shows the raw ADC channels |
 | Keys | Matrix and encoder positions checked on the radio. VOL/SQL is `ACT_VOLUME`: the volume screen, then the encoder (`radio-features.md` 4.2) |

@@ -736,8 +736,8 @@ run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000Dm
 # The DB25-D PRO's BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
 TESTS   += bk4819Test
 
-bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c
+bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(SUBAUDIO)
 
 # Its factory calibration page (hardware-db25d.md 6)
 TESTS   += db25dCalTest

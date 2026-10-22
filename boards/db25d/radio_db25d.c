@@ -79,7 +79,7 @@ static uint32_t tx_hz;
 static void dmr_disarm(void);
 #endif
 static radio_mode_t mode = RADIO_MODE_FM;	// DMR only with CONFIG_DMR (transmit with DB25D_DMR_TX, dmr_db25d.c)
-static uint16_t last_rssi_raw, last_noise_raw;
+static uint16_t last_rssi_raw, last_noise_raw, last_css_raw;
 
 // ---- 3-wire bus: clock and data shared, one enable per chip ----
 
@@ -154,6 +154,16 @@ static void apc_ramp(uint16_t target, bool up)
 	}
 }
 
+static bk4819_tone_t bk_tone(uint8_t type)
+{
+	switch (type) {
+	case TONE_CTCSS: return BK4819_TONE_CTCSS;
+	case TONE_DCS: return BK4819_TONE_DCS;
+	case TONE_DCS_INV: return BK4819_TONE_DCS_INV;
+	default: return BK4819_TONE_NONE;
+	}
+}
+
 static bool in_band(uint32_t hz)
 {
 	for (uint8_t i = 0; i < board.band_count; i++) {
@@ -195,6 +205,7 @@ static void init(void)
 
 	bk4819_attach(&rf_main, &bus_main);
 	bk4819_attach(&rf_lo, &bus_lo);
+	rf_main.rx_inverted = true;	// the LO is above the signal (f + 51.55 MHz): DCS arrives inverted (4.7)
 	main_id = bk4819_read(&rf_main, BK4819_REG_ID);
 	lo_id = bk4819_read(&rf_lo, BK4819_REG_ID);
 	supported = main_id == BK4819_ID && lo_id == BK4819_ID;
@@ -299,7 +310,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	bk4819_set_freq(&rf_main, IF_HZ);
 	if (mode != RADIO_MODE_DMR) {	// DMR: the bandwidth and sub-audio are the digital set's (4.5)
 		bk4819_set_bandwidth(&rf_main, bw == RADIO_BW_25K ? BK4819_BW_25K : BK4819_BW_12K5);
-		bk4819_set_rx_ctcss(&rf_main, rx_tone.type == TONE_CTCSS ? rx_tone.value : 0);
+		bk4819_set_rx_tone(&rf_main, bk_tone(rx_tone.type), rx_tone.value);
 	}
 	DAC_DATA_A = db25d_cal_rx_tune(hz);	// 0 without a page, as before
 	DAC_DATA_C = DAC_C_RX;
@@ -406,14 +417,12 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 #endif
 	}
 	(void)bw;	// the deviation isn't switched by bandwidth yet: the chip's init value is used (spec 4.4)
-	uint16_t ctcss = 0;
-	if (tx_tone != NULL && tx_tone->type == TONE_CTCSS) {
-		if (tx_tone->value < CTCSS_MIN_X10 || tx_tone->value > CTCSS_MAX_X10) {
-			return false;
-		}
-		ctcss = tx_tone->value;
-	} else if (tx_tone != NULL && tx_tone->type != TONE_NONE) {
-		return false;	// no DCS transmit yet
+	subtone_t tone = tx_tone != NULL ? *tx_tone : (subtone_t){ TONE_NONE, 0 };
+	if (tone.type == TONE_CTCSS && (tone.value < CTCSS_MIN_X10 || tone.value > CTCSS_MAX_X10)) {
+		return false;
+	}
+	if ((tone.type == TONE_DCS || tone.type == TONE_DCS_INV) && tone.value > 0777u) {
+		return false;
 	}
 	db25d_tx_plan_t plan;
 	// Power index 1 ("H") is the stock's level 1, table 0x045; "L" the other table
@@ -425,7 +434,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	tx_pa = plan.pa;
 	tx_off_us = plan.off_us;
 	// Deviation and sub-audio words go in while the chip is still receiving, as the stock firmware does
-	bk4819_tx_prepare(&rf_main, ctcss);
+	bk4819_tx_prepare(&rf_main, bk_tone(tone.type), tone.value);
 
 	// Receive audio muted at the chip before any audio pin moves, then the stock "audio off" pin state (3.3): with
 	// PTB14 raised here instead, the speaker popped at every key-up. That the microphone still reaches the chip is unchecked
@@ -530,7 +539,9 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = bk4819_rssi_dbm(r67);
 	st->noise = (uint8_t)(r65 & 0x7Fu);
 	st->carrier = false;
-	st->tone_ok = rx_tone.type != TONE_CTCSS || bk4819_ctcss_found(&rf_main);
+	// 0x0C on every poll, tone or not: the diagnostics page shows it (which sub-audio the chip hears)
+	last_css_raw = bk4819_read(&rf_main, BK4819_REG_CSS_STATUS);
+	st->tone_ok = bk4819_heard(&rf_main, last_css_raw, bk_tone(rx_tone.type));
 }
 
 // The stock audio-on and audio-off steps (hardware-db25d.md 3.3) with the body speaker only. The mic speaker stays off:
@@ -582,6 +593,7 @@ void db25d_radio_diag(db25d_radio_diag_t *d)
 	d->lo_id = lo_id;
 	d->rssi_raw = last_rssi_raw;
 	d->noise_raw = last_noise_raw;
+	d->css_raw = last_css_raw;
 	d->rf_writes = rf_main.writes + rf_lo.writes;
 	d->hz = rx_hz;
 	d->transmitting = transmitting || dmr_armed;

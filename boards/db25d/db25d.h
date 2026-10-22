@@ -29,6 +29,7 @@ enum {
 typedef struct {
 	uint16_t main_id, lo_id;	// register 0 of each RF chip (0x4819 on the PRO)
 	uint16_t rssi_raw, noise_raw;	// main chip 0x67 / 0x65 from the last status poll
+	uint16_t css_raw;		// and its sub-audio status, 0x0C
 	uint32_t rf_writes;
 	uint32_t hz;			// the tuned frequency
 	uint16_t pa_low, pa_high;	// the PA drive a transmission there would use, after the drive scale (0: TX refused)
