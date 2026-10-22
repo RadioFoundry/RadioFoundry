@@ -12,13 +12,16 @@ import time
 
 import pytest
 
+from odr_hil import skip
 
+
+@pytest.mark.feature("fm", "vfo_fm")
 def test_noaa_receive(radio, pytestconfig):
     if "VFO_FM" not in radio.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     hz = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
     floor = pytestconfig.getoption("--rssi-floor")
     with radio.vfo_session():
@@ -34,12 +37,13 @@ def test_noaa_receive(radio, pytestconfig):
                                         f"(floor {floor}); squelch {radio.core()['squelch']}")
 
 
+@pytest.mark.feature("subtone")
 def test_rx_tone_squelch(radio, pytestconfig):
     if "VFO_FM" not in radio.features() or "SUBTONE" not in radio.features():
-        pytest.skip("built without the FM VFO or CTCSS / DCS")
+        skip("not_built", "built without the FM VFO or CTCSS / DCS")
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     hz = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
     L = radio.link
     with radio.vfo_session():
@@ -56,7 +60,8 @@ def test_rx_tone_squelch(radio, pytestconfig):
                     break
                 except AssertionError:
                     if int(radio.core()["squelch"]) <= 1:
-                        pytest.skip(f"NOAA on {hz / 1e6:.3f} MHz doesn't open the squelch at level 1: nothing to mute")
+                        skip("bench", f"NOAA on {hz / 1e6:.3f} MHz doesn't open the squelch at level 1: "
+                                      "nothing to mute")
                     L.squelch_step(-1)
             print(f"NOAA opens the squelch at level {radio.core()['squelch']}")
             for kind, value, name in (("ctcss", 1000, "CTCSS 100.0"), ("dcs", 0o23, "DCS D023N")):

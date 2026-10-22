@@ -23,10 +23,17 @@ CONFIG_HOTSPOT_SPLIT ?= n
 # the plain way
 LTO ?= 1
 LTO_3P ?= 1
-# Not written for this radio (above), or no use on it (FONT_XL is for 240 px and wider panels, this one is 160 px; no
-# air band receiver or broadcast receiver, docs/spec/airband-and-broadcast.md): tools/ci.sh's maximal configuration
-# leaves these off
-BOARD_UNSUPPORTED := FM_TX_TONES APRS_RX APRS_IGATE SFR HOTSPOT_SPLIT FONT_XL AM_RX BCAST_FM FAULT_TRACE
+# What the board lacks or can't do yet, one switch per line with the reason (tools/boards.py checks there is
+# one): ci's maximal configuration leaves these off
+BOARD_UNSUPPORTED += FM_TX_TONES	# needs a TX tone path (the HR_C5000 or the PC7 PWM): not written (above)
+BOARD_UNSUPPORTED += APRS_RX	# APRS AFSK needs the TX tone path, which isn't written (above)
+BOARD_UNSUPPORTED += APRS_IGATE	# needs APRS receive, which isn't written for this radio
+BOARD_UNSUPPORTED += SFR	# the glue is HR_C6000 only: the HR_C5000 lacks CRC_MCU_Control (docs/spec/sfr.md)
+BOARD_UNSUPPORTED += HOTSPOT_SPLIT	# the split duplex glue is HR_C6000 only (above)
+BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
+BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
+BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-broadcast.md)
+BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, the one UART the G models' GPS line
 # Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
 # radios (docs/spec/ppp.md), and this one has the adapter. NAND storage isn't used on this radio
 MAXIMAL_SKIP := NET_PPP NAND_STORAGE
