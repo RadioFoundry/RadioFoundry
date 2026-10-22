@@ -96,7 +96,7 @@ const board_t board = {
 	// CAP_GPS: the G models; gps_present says whether this one has the module (hardware-md380.md 13). No
 	// CAP_VOLUME_POT: the knob sets the volume in the analog path, the MCU only sees its position. CAP_ENCODER: the
 	// channel knob is a 16-position switch, reported to the core as steps (input_md380.c)
-	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -135,7 +135,9 @@ const board_t board = {
 #if CONFIG_CPS_OPENFW
 	.cps = &cps,
 #endif
+#if CONFIG_GPS
 	.gps_present = stm32_gps_present,
+#endif
 };
 
 // hardware-md380.md 1.2: 8 MHz HSE, 72 MHz system clock, APB1 36 MHz, APB2 72 MHz, USB 48 MHz from PLL Q
@@ -252,5 +254,7 @@ void board_init(void)
 #if CONFIG_NET_PPP && CONFIG_USB_NETWORK
 	hostlink_ppp_set_usb(&usb_ncm_netif);
 #endif
+#if CONFIG_GPS
 	md380_gps_init();
+#endif
 }

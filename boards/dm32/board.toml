@@ -27,7 +27,7 @@ bands = "136-174 / 400-480 MHz"
 power = "1 / 5 W"
 display = "color, 240 × 320"
 gallery = "240x320i10x5"
-unconfirmed = { VIBRATE = "no vibration motor has been found, but none of the sources rules one out" }
+unconfirmed = { VIBRATE = "reported online to have a vibration motor; the part and its drive pin are not confirmed (docs/spec/hardware-dm32.md)" }
 
 [status]
 level = "supported"

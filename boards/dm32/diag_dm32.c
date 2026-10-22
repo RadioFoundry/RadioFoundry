@@ -129,6 +129,7 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, bf_cal_power_level(435000000u, 8));
 		break;
 	case 8: {	// GPS (platform/hrc7000/gps_hrc.c): module heard, valid / bad sentences, bytes received
+#if CONFIG_GPS
 		uint32_t good, bad, n;
 		hrc_gps_counts(&good, &bad, &n);
 		put(&o, hrc_gps_present() ? "gps yes " : "gps no ");
@@ -138,6 +139,9 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, " b");
 		put_u(&o, n);
 		put(&o, hrc_gps_running() ? " on" : " off");
+#else
+		put(&o, "gps not built");
+#endif
 		break;
 	}
 	case 9:	// key scans with the PTT pin low taken for host serial data (hardware-dm32.md 6.2)

@@ -21,3 +21,5 @@ BOARD_UNSUPPORTED += AUDIO_PROBE	# a bench diagnostic for an audio path this rad
 BOARD_UNSUPPORTED += FONT_XL	# the 128x64 panel is too small for the large font
 BOARD_UNSUPPORTED += UI_COLOR	# the 128x64 panel is monochrome: no colors to set
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR: 4 KB erase (docs/spec/hardware-dm1801pro.md 6.1)
+CONFIG_GPS ?= n
+BOARD_UNSUPPORTED += GPS	# no GPS receiver, and no room inside for one (owner, 2026-10-22)

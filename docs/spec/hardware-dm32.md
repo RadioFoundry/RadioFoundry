@@ -584,6 +584,14 @@ Two LEDs, red and green, active high on GPIO 0x20/0x21 (which is which: see the 
 Power knob: the firmware holds GPIO 0x11 high to stay on; GPIO 0x10 reads 1 when the knob is turned off, and the
 firmware then saves state and drops 0x11 (KP).
 
+### 6.6 Vibration motor (open)
+
+Online sources say the DM-32UV has a vibration motor (COM). A round two-wire part was seen on a board, but it may be
+the microphone, and no drive pin is known. ODR has no vibration support for the radio until both are confirmed
+(`boards/dm32/board.toml`, `[hardware] unconfirmed`).
+
+Open item: identify the part and the GPIO that drives it, then add `hal_power_t.vibrate` and `CONFIG_VIBRATE ?= y`.
+
 ---
 
 ## 7. LCD panel
