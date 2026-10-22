@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# The GD-88's SoC B (tools/boards.py): the radio's second receiver, a firmware of its own that the GD-88 (boards/gd88)
+# flashes through SoC A's bridge. It is part of that radio, not a radio of its own: the site and the generated
+# tables list only the GD-88. Build facts stay in board.mk and config.mk, the memory layout in boards/gd88b/memory.ld.
+
+id = "gd88b"
+name = "Radioddity GD-88 (second receiver)"
+maker = "Radioddity"
+model = "GD-88 receiver B"
+also = []
+kind = "handheld"
+order = 7
+part_of = "gd88"
+
+[docs]
+hardware = "docs/spec/hardware-gd88.md"
+bringup = "docs/testing/gd88-bringup.md"
+
+[hardware]
+cpu = "HR_C7000"
+bands = "136-174 / 400-480 MHz"
+power = "receive only"
+display = "none (SoC A's)"
+gallery = "320x240"
+clock = { rtc = "none", note = "SoC B keeps no time: the clock is SoC A's (docs/spec/hardware-gd88.md 10)" }
+
+[status]
+level = "bring-up"
+summary = "Written from the hardware notes: analog FM and DMR receive for SoC A's dual watch. Open: a first run on the radio."
+release = "testing"
+
+[flash]
+family = "serial-iap"
+keep_codec = false
+stock_versions = []
+backup = { stock = "full", odr = "full", spi_size = 0 }
+
+[flash.bootloader]
+steps = [
+	"Turn the radio off and connect the programming cable.",
+	"Hold P2 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release P2. It can take more than one try.",
+	"If the top line shows IAP_A, hold P2 until it shows IAP_B.",
+]
+
+# The universal stub's board profile: no power latch (A holds the power), its status LEDs (pins.h PIN_LED1, PIN_LED2),
+# UART 0x14090000 before CONFIG (the link to A), reached through A's bridge. B has its own SPI NAND
+# (hardware-gd88.md 7), which its build doesn't use
+[flash.stub]
+id = 5
+hold_power = false
+progmem = 0x200000
+tested = false
+leds = ["PIN_LED1", "PIN_LED2"]
+uart = 0x14090000
+bridge = true
+nand = true
+
+# The codec slot and windows come from boards/gd88b/memory.ld
+[codec]
+tool = "hrc7000_codec"
+profile = "gd88b-2501"
+stock_version = "B49C.D64.EHRNAB.012 (2025-01-17)"
+sources = ["GD-88 B B49C.D64.EHRNAB.005 to .012 update files", "a program flash read of SoC B"]
+
+[frame]
+shape = "handheld"
+body = "#17181a"
+accent = "#e8761e"
+lens = [20, 20]

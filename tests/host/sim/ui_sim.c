@@ -243,7 +243,7 @@ const sim_geom_t sim_geoms[] = {
 	// DM-32UV: 16 colors, the bezel hides 10 px left and right, 5 top and bottom; FONT_BIG
 	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true },
 	{ "240x320", 240, 320, 16, 0, 0, true, false },	// 240x320 class at full resolution, standard text size
-	{ "320x240", 320, 240, 16, 0, 0, true, true },	// GD-88: landscape, the larger text as its build
+	{ "320x240", 320, 240, 4, 0, 0, true, true },	// GD-88: landscape, 16 colors, the larger text as its build
 };
 const int sim_geom_count = sizeof sim_geoms / sizeof sim_geoms[0];
 

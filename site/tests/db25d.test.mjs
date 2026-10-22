@@ -38,7 +38,10 @@ test("the DB25-D's data in the flasher tables", () => {
 	assert.deepEqual(FS, { size: 0x1000, head: "2c1101c0" });
 	assert.equal(radio.flash.read_rate, 46000);
 	// every build the console route knows is a stock version of the board, by which the page names it
-	for (const [build] of BUILDS) assert.equal(stockName(radio.flash, build), `909E.DBB.EARSAB.${build}`);
+	for (const v of radio.flash.stock_versions) {
+		assert.ok(BUILDS.some(([b]) => b === v), `the console knows ${v}`);
+		assert.equal(stockName(radio.flash, v.slice(-3)), v);
+	}
 	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true });
 	assert.deepEqual(b.slot, [0xE8000, 0x100000]);
 	const ps = C.profiles.filter((p) => p.board === "db25d");
@@ -241,18 +244,20 @@ test("USMART: the build comes from the version string; an unknown build is repor
 test("GD-88: its main SoC's console build 021 is found by its own version string, and takes the stub as the DB25-D's", { timeout: 120000 }, async (t) => {
 	const { FakeC7000, c7000Simulation } = await import("../static/js/flasher/fakec7000.js");
 	const { Stub, patchUniv, boardLed } = await import("../static/js/flasher/stub.js");
-	const sim = await c7000Simulation(C, "gd88");
-	assert.equal(stockVersion(sim.progmem, "gd88"), "B49E.D64.EOPSAB.021");
-	assert.equal(stockVersion(sim.progmem), null, "not a DB25-D version");
+	const gd88 = json("radios.json").radios.find((x) => x.id === "gd88");
+	const sim = await c7000Simulation(C, "gd88", 7000, gd88);
+	assert.equal(stockVersion(sim.progmem, gd88.flash.stock_versions), "B49E.D64.EOPSAB.021");
+	assert.equal(stockVersion(sim.progmem, radio.flash.stock_versions), null, "not a DB25-D version");
 	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 50, bootTime: 50, board: "GD-88",
 		usmart: "021" });
 	t.after(() => r.stop());
 	r.powerOn();
 	await new Promise((ok) => setTimeout(ok, 300));
-	assert.equal(await new Usmart(r.stream, { board: "gd88" }).build(), "021");
-	assert.equal(await new Usmart(r.stream).build(), null, "the DB25-D's builds are not looked for on a GD-88");
+	assert.equal(await new Usmart(r.stream, { versions: gd88.flash.stock_versions }).build(), "021");
+	assert.equal(await new Usmart(r.stream, { versions: radio.flash.stock_versions }).build(), null,
+		"the DB25-D's builds are not looked for on a GD-88");
 	const image = patchUniv(stubImages(json("c7000-stub.json")).image, C.boards.gd88.stub_board);
-	await new Usmart(r.stream, { quiet: 2, board: "gd88" }).loadStub(image);
+	await new Usmart(r.stream, { quiet: 2 }).loadStub(image);
 	assert.equal(r.state, "stub");
 	assert.ok(equal(r.loaded.subarray(0, image.length), image), "the patched image");
 	const s = new Stub(r.stream, { log: () => {} });

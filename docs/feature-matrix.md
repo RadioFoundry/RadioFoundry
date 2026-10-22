@@ -56,82 +56,82 @@ switches. Voltage reading: what the radio measures, its battery, its DC input (S
 clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](spec/radio-features.md) 5.6).
 
 <!-- generated: tools/boards.py docs feature-defaults; edit config/features.mk and boards/*/config.mk -->
-| Feature switch | DM-1701 | DM-1801 Pro | DM-32UV | DB25-D PRO | MD-380 |
-|---|:-:||---|:-:||---|:-:||---|:-:||---|:-:|
-| `FM` | ● | ● | ● | ● | ● |
-| `SUBTONE` | ● | ● | ● | ● | ● |
-| `DMR` | ● | ● | ● | ● | ● |
-| `DMR_PRIVACY` | ● | ● | ● | ● | ● |
-| `DMR_TALKER_ALIAS` | ● | ● | ● | ● | ● |
-| `DMR_GPS` | ● | ● | ● | ● | ● |
-| `DMR_SMS` | ● | ● | ● | ● | ● |
-| `DMR_TMS` | ● | ● | ● | ● | ● |
-| `DMR_ARS` | ● | ● | ● | ● | ● |
-| `DMR_LRRP` | ● | ● | ● | ● | ● |
-| `DMR_SIGNALING` | ● | ● | ● | ● | ● |
-| `DMR_EMERGENCY` | ● | ● | ● | ● | ● |
-| `DMR_ROAMING` | ● | ● | ● | ● | ● |
-| `DMR_IP_GATEWAY` | ● | ● | ● | ● | ● |
-| `DMR_UDP_COMPRESS` | ● | ● | ● | ● | ● |
-| `DMR_CONFIRMED` | ● | ● | ● | ● | ● |
-| `NET_TCP` | ● | ● | ● | ● | ● |
-| `NET_KISS` | ● | ● | ● | ● | ● |
-| `NET_HTTP` | ● | ● | ● | ● | ● |
-| `NET_HTTP_GZIP` | ● | ● | ● | ● | ● |
-| `NET_RIGCTL` | ● | ● | ● | ● | ● |
-| `NET_APRSIS` | ● | ● | ● | ● | ● |
-| `NET_USRP` | ● | ● | ● | ✕ | ● |
-| `MDNS` | ● | ● | ● | ● | ● |
-| `TFTP` | ● | ● | ● | ● | ● |
-| `TFTP_IDDB` | ● | ● | ● | ● | ● |
-| `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● |
-| `SNMP` | ● | ● | ● | ● | ● |
-| `SFR` | ● | ● | ● | ✕ | ✕ |
-| `TASK_STACKS` | ● | ● | ● | ● | ● |
-| `USB` | ● | ✕ | ✕ | ✕ | ● |
-| `HOSTLINK` | ● | ● | ● | ● | ● |
-| `USB_NETWORK` | ● | ✕ | ✕ | ✕ | ● |
-| `NET_PPP` | ○ | ● | ● | ● | ○ |
-| `HOTSPOT` | ● | ● | ● | ● | ● |
-| `HOTSPOT_SPLIT` | ● | ● | ● | ✕ | ✕ |
-| `DEBUGLINK` | ● | ● | ● | ● | ● |
-| `CPS_OPENFW` | ● | ● | ● | ● | ● |
-| `CPS_FAST` | ● | ● | ● | ● | ● |
-| `VFO` | ● | ● | ● | ● | ● |
-| `VFO_FM` | ● | ● | ● | ● | ● |
-| `VFO_DMR` | ● | ● | ● | ● | ● |
-| `DIAG` | ● | ● | ● | ● | ● |
-| `FONT_XL` | ✕ | ✕ | ● | ✕ | ✕ |
-| `FONT_AA` | ○ | ○ | ● | ○ | ○ |
-| `FONT_BIG` | ○ | ○ | ● | ○ | ○ |
-| `UI_COLOR` | ● | ✕ | ● | ● | ● |
-| `UI_SETTINGS` | ● | ● | ● | ● | ● |
-| `SCAN` | ● | ● | ● | ● | ● |
-| `DUAL_WATCH` | ● | ● | ● | ● | ● |
-| `BEEP` | ● | ● | ● | ● | ● |
-| `FM_TX_TONES` | ● | ● | ● | ● | ✕ |
-| `VOX` | ● | ● | ● | ● | ● |
-| `BATTERY_SAVE` | ● | ● | ● | ● | ● |
-| `VIBRATE` | ✕ | ● | ? | ✕ | ✕ |
-| `GPS` | ✕ | ✕ | ● | ● | ● |
-| `AUDIO_PROBE` | ○ | ✕ | ○ | ✕ | ○ |
-| `STUB_ENTRY` | ● | ● | ● | ● | ● |
-| `NAND_STORAGE` | ✕ | ✕ | ✕ | ● | ✕ |
-| `CRASH_LOG` | ● | ● | ● | ● | ● |
-| `CRASH_SCREEN` | ● | ● | ● | ● | ● |
-| `CRASH_REPORT` | ● | ● | ● | ● | ● |
-| `WATCHDOG` | ● | ● | ● | ● | ● |
-| `FAULT_TRACE` | ✕ | ● | ● | ● | ✕ |
-| `AM_RX` | ✕ | ✕ | ● | ✕ | ✕ |
-| `BCAST_FM` | ✕ | ● | ● | ✕ | ✕ |
-| `APRS` | ● | ● | ● | ● | ● |
-| `APRS_RX` | ● | ● | ● | ✕ | ✕ |
-| `APRS_IGATE` | ○ | ● | ● | ✕ | ✕ |
-| `KEY_ASSIGN` | ● | ● | ● | ● | ● |
-| `CHANNEL_LIST` | ● | ● | ● | ● | ● |
-| `CHANNEL_EDIT` | ● | ● | ● | ● | ● |
-| Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery |
-| Clock kept through power-off (board, no switch) | ? | Yes | Yes | ? | ? |
+| Feature switch | DM-1701 | DM-1801 Pro | DM-32UV | DB25-D PRO | MD-380 | GD-88 |
+|---|:-:||---|:-:||---|:-:||---|:-:||---|:-:||---|:-:|
+| `FM` | ● | ● | ● | ● | ● | ● |
+| `SUBTONE` | ● | ● | ● | ● | ● | ● |
+| `DMR` | ● | ● | ● | ● | ● | ● |
+| `DMR_PRIVACY` | ● | ● | ● | ● | ● | ● |
+| `DMR_TALKER_ALIAS` | ● | ● | ● | ● | ● | ● |
+| `DMR_GPS` | ● | ● | ● | ● | ● | ● |
+| `DMR_SMS` | ● | ● | ● | ● | ● | ● |
+| `DMR_TMS` | ● | ● | ● | ● | ● | ● |
+| `DMR_ARS` | ● | ● | ● | ● | ● | ● |
+| `DMR_LRRP` | ● | ● | ● | ● | ● | ● |
+| `DMR_SIGNALING` | ● | ● | ● | ● | ● | ● |
+| `DMR_EMERGENCY` | ● | ● | ● | ● | ● | ● |
+| `DMR_ROAMING` | ● | ● | ● | ● | ● | ● |
+| `DMR_IP_GATEWAY` | ● | ● | ● | ● | ● | ● |
+| `DMR_UDP_COMPRESS` | ● | ● | ● | ● | ● | ● |
+| `DMR_CONFIRMED` | ● | ● | ● | ● | ● | ● |
+| `NET_TCP` | ● | ● | ● | ● | ● | ● |
+| `NET_KISS` | ● | ● | ● | ● | ● | ● |
+| `NET_HTTP` | ● | ● | ● | ● | ● | ● |
+| `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● |
+| `NET_RIGCTL` | ● | ● | ● | ● | ● | ● |
+| `NET_APRSIS` | ● | ● | ● | ● | ● | ● |
+| `NET_USRP` | ● | ● | ● | ✕ | ● | ✕ |
+| `MDNS` | ● | ● | ● | ● | ● | ● |
+| `TFTP` | ● | ● | ● | ● | ● | ● |
+| `TFTP_IDDB` | ● | ● | ● | ● | ● | ● |
+| `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● | ● |
+| `SNMP` | ● | ● | ● | ● | ● | ● |
+| `SFR` | ● | ● | ● | ✕ | ✕ | ✕ |
+| `TASK_STACKS` | ● | ● | ● | ● | ● | ● |
+| `USB` | ● | ✕ | ✕ | ✕ | ● | ✕ |
+| `HOSTLINK` | ● | ● | ● | ● | ● | ● |
+| `USB_NETWORK` | ● | ✕ | ✕ | ✕ | ● | ✕ |
+| `NET_PPP` | ○ | ● | ● | ● | ○ | ● |
+| `HOTSPOT` | ● | ● | ● | ● | ● | ● |
+| `HOTSPOT_SPLIT` | ● | ● | ● | ✕ | ✕ | ✕ |
+| `DEBUGLINK` | ● | ● | ● | ● | ● | ● |
+| `CPS_OPENFW` | ● | ● | ● | ● | ● | ● |
+| `CPS_FAST` | ● | ● | ● | ● | ● | ● |
+| `VFO` | ● | ● | ● | ● | ● | ● |
+| `VFO_FM` | ● | ● | ● | ● | ● | ● |
+| `VFO_DMR` | ● | ● | ● | ● | ● | ● |
+| `DIAG` | ● | ● | ● | ● | ● | ● |
+| `FONT_XL` | ✕ | ✕ | ● | ✕ | ✕ | ● |
+| `FONT_AA` | ○ | ○ | ● | ○ | ○ | ● |
+| `FONT_BIG` | ○ | ○ | ● | ○ | ○ | ● |
+| `UI_COLOR` | ● | ✕ | ● | ● | ● | ● |
+| `UI_SETTINGS` | ● | ● | ● | ● | ● | ● |
+| `SCAN` | ● | ● | ● | ● | ● | ● |
+| `DUAL_WATCH` | ● | ● | ● | ● | ● | ● |
+| `BEEP` | ● | ● | ● | ● | ● | ● |
+| `FM_TX_TONES` | ● | ● | ● | ● | ✕ | ● |
+| `VOX` | ● | ● | ● | ● | ● | ● |
+| `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● |
+| `VIBRATE` | ✕ | ● | ? | ✕ | ✕ | ? |
+| `GPS` | ✕ | ✕ | ● | ● | ● | ● |
+| `AUDIO_PROBE` | ○ | ✕ | ○ | ✕ | ○ | ✕ |
+| `STUB_ENTRY` | ● | ● | ● | ● | ● | ● |
+| `NAND_STORAGE` | ✕ | ✕ | ✕ | ● | ✕ | ● |
+| `CRASH_LOG` | ● | ● | ● | ● | ● | ● |
+| `CRASH_SCREEN` | ● | ● | ● | ● | ● | ● |
+| `CRASH_REPORT` | ● | ● | ● | ● | ● | ● |
+| `WATCHDOG` | ● | ● | ● | ● | ● | ● |
+| `FAULT_TRACE` | ✕ | ● | ● | ● | ✕ | ● |
+| `AM_RX` | ✕ | ✕ | ● | ✕ | ✕ | ✕ |
+| `BCAST_FM` | ✕ | ● | ● | ✕ | ✕ | ● |
+| `APRS` | ● | ● | ● | ● | ● | ● |
+| `APRS_RX` | ● | ● | ● | ✕ | ✕ | ✕ |
+| `APRS_IGATE` | ○ | ● | ● | ✕ | ✕ | ✕ |
+| `KEY_ASSIGN` | ● | ● | ● | ● | ● | ● |
+| `CHANNEL_LIST` | ● | ● | ● | ● | ● | ● |
+| `CHANNEL_EDIT` | ● | ● | ● | ● | ● | ● |
+| Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery | Battery |
+| Clock kept through power-off (board, no switch) | ? | Yes | Yes | ? | ? | ? |
 <!-- end generated -->
 
 ## Radio and voice

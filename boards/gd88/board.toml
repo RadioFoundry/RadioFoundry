@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# The GD-88's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. It has two HR_C7000 SoCs: this board is SoC A, the main one; SoC B, the second
+# receiver, is boards/gd88b (part_of this board). Build facts stay in board.mk and config.mk, the memory layout in
+# boards/gd88/memory.ld and boards/gd88/fm_only.ld.
+
+id = "gd88"
+name = "Radioddity GD-88"
+maker = "Radioddity"
+model = "GD-88"
+also = ["Kydera DR-880UV"]
+kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 6
+
+[docs]
+hardware = "docs/spec/hardware-gd88.md"
+bringup = "docs/testing/gd88-bringup.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+cpu = "2 × HR_C7000"
+bands = "136-174 / 400-480 MHz"
+power = "2.5 / 7 W"
+display = "color, 320 × 240"
+gallery = "320x240"
+clock = { rtc = "unknown", note = "an RTC on SoC A's internal I2C2 (0x70); whether a backup supply keeps it through power-off is not known (docs/spec/hardware-gd88.md 9)" }
+# hardware switches whose part no source confirms or rules out yet
+unconfirmed = { VIBRATE = "no source names a vibration motor or a pin for one (docs/spec/hardware-gd88.md 9)" }
+
+[status]
+level = "bring-up"
+summary = """\
+Written from the hardware notes: analog FM and DMR receive, dual watch on the second SoC, settings on the SPI NAND and \
+the host link build. Open: a first run on the radio, and transmit."""
+release = "testing"
+
+# The vendor IAP loader (0x03000000..0x0300BFFF) is never written. ODR's first stage fills the sector at 0x0300C000
+# (board.mk BOOT_*), the application follows it, the codec slot is the DM-32UV's (boards/gd88/memory.ld). The web
+# flasher (IAP loader, or the stub from ODR) and stub/stubtool.py flash it, then SoC B through A's bridge
+[flash]
+family = "serial-iap"
+keep_codec = false
+stock_versions = ["B49E.D64.EOPSAB.021"]
+backup = { stock = "full", odr = "full", spi_size = 0 }
+
+[flash.bootloader]
+steps = [
+	"Turn the radio off and connect the programming cable.",
+	"Hold P2 and turn the radio on with the volume knob. When the LED lights red and the top line shows IAP_A or IAP_B, release P2. It can take more than one try.",
+	"If the top line shows IAP_B, hold P2 until it shows IAP_A.",
+]
+
+# The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the stub holds the power latch (pins.h:
+# PTB13 latch, PTB12 power key, hardware-gd88.md 9.1); 2 MB of program flash. No LEDs: the default LED pins (PTB0,
+# PTB1) are the serial chain's clock and data on this radio, and its status LEDs are on SoC B.
+# stock_console: the stock firmware answers the debug console (USMART) the web flasher loads the stub through before
+# ODR is installed (stock_versions: the builds it knows)
+[flash.stub]
+id = 4
+hold_power = true
+progmem = 0x200000
+tested = false
+stock_console = "usmart"
+leds = []
+
+# The codec slot and windows come from boards/gd88/memory.ld (__codec_*, the script CONFIG_DMR selects)
+[codec]
+tool = "hrc7000_codec"
+profile = "gd88-2501"
+stock_version = "B49E.D64.EOPSAB.021 (2025-01-19)"
+sources = ["GD-88 A B49E.D64.EOPSAB.013 to .021 update files", "a program flash read of SoC A"]
+
+# How the site draws the radio
+[frame]
+shape = "handheld"
+body = "#17181a"
+accent = "#e8761e"
+lens = [20, 20]
+
+# What the health checks expect (tests/hil/test_health.py). No USB: the debug link runs on the programming cable
+[hil]
+display = "320x240x4"
+features = ["HOSTLINK", "DEBUGLINK", "FM", "DIAG"]
+no_features = ["USB"]
+battery_mv = [5500, 8800]
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them (6, the shim's default)
+[cps]
+radio_types = [6]

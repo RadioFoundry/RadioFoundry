@@ -107,6 +107,20 @@ test("#sim=<board>: every C7 stub radio's fake comes from its data", async () =>
 	}
 });
 
+test("a second receiver (a board part_of another) is its radio's flash.second, reached through the radio", () => {
+	const radios = json("radios.json").radios;
+	const FB = json("flash-boards.json");
+	const withSecond = radios.filter((r) => r.flash.second);
+	assert.ok(withSecond.length > 0);
+	for (const r of withSecond) {
+		const s = r.flash.second;
+		assert.ok(!radios.some((x) => x.id === s.board), `${s.board} is not listed as a radio`);
+		assert.ok(FB.boards[s.board], `${s.board}: its own image and codec data`);
+		assert.equal(C.boards[s.board].stub_board.bridge, true, `${s.board}: the stub goes through the radio`);
+		assert.ok(s.bootloader.length > 0 && s.bootloader.join() !== r.flash.bootloader.join(), `${s.board}: its own update-mode steps`);
+	}
+});
+
 async function radio(firmware = "stock", opts = {}) {
 	const sim = await c7000Simulation(C, "dm1801pro");
 	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 400, bootTime: 200, ...opts });

@@ -396,6 +396,200 @@
    },
    "build_options": []
   },
+  "gd88": {
+   "id": "gd88",
+   "name": "Radioddity GD-88",
+   "model": "GD-88",
+   "part_of": null,
+   "platform": "hrc7000",
+   "platform_stubs": [],
+   "family": "serial-iap",
+   "link": "serial-cable",
+   "release": "testing",
+   "debuglink_names": [
+    "GD-88",
+    "gd88"
+   ],
+   "app_base": 50380800,
+   "flash_end": 51380224,
+   "app_region": [
+    50384896,
+    51281920
+   ],
+   "sectors": [
+    [
+     0,
+     50380800,
+     901120
+    ],
+    [
+     1,
+     51281920,
+     98304
+    ]
+   ],
+   "protected": [
+    [
+     50331648,
+     50380800
+    ]
+   ],
+   "keep_codec_supported": false,
+   "first_stage": [
+    4096,
+    "2c1101c0"
+   ],
+   "codec_tool": "hrc7000_codec",
+   "codec_stock": [],
+   "codec": {
+    "id": "gd88-2501",
+    "windows": [
+     [
+      51281920,
+      98304
+     ]
+    ],
+    "installed": [],
+    "sources": [
+     "GD-88 A B49E.D64.EOPSAB.013 to .021 update files",
+     "a program flash read of SoC A"
+    ]
+   },
+   "codec_code": 51281920,
+   "codec_slot": [
+    51281920,
+    51380224
+   ],
+   "codec_run": [
+    282112,
+    360448
+   ],
+   "codec_tables": [
+    402657796,
+    402670372
+   ],
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "key_sha256": null,
+   "key_prefix": null,
+   "dfu_ids": null,
+   "dfu_string1": null,
+   "dfu_product": null,
+   "stub": {
+    "tool": "stubtool",
+    "id": 4,
+    "tested": false,
+    "latch": 45,
+    "key": 44,
+    "nand": true,
+    "progmem": 2097152,
+    "stock_console": "usmart",
+    "leds": [
+     255,
+     255
+    ]
+   },
+   "build_options": []
+  },
+  "gd88b": {
+   "id": "gd88b",
+   "name": "Radioddity GD-88 (second receiver)",
+   "model": "GD-88 receiver B",
+   "part_of": "gd88",
+   "platform": "hrc7000",
+   "platform_stubs": [],
+   "family": "serial-iap",
+   "link": "serial-cable",
+   "release": "testing",
+   "debuglink_names": [
+    "GD-88 B",
+    "gd88b"
+   ],
+   "app_base": 50380800,
+   "flash_end": 51380224,
+   "app_region": [
+    50384896,
+    51281920
+   ],
+   "sectors": [
+    [
+     0,
+     50380800,
+     901120
+    ],
+    [
+     1,
+     51281920,
+     98304
+    ]
+   ],
+   "protected": [
+    [
+     50331648,
+     50380800
+    ]
+   ],
+   "keep_codec_supported": false,
+   "first_stage": [
+    4096,
+    "2c1101c0"
+   ],
+   "codec_tool": "hrc7000_codec",
+   "codec_stock": [],
+   "codec": {
+    "id": "gd88b-2501",
+    "windows": [
+     [
+      51281920,
+      98304
+     ]
+    ],
+    "installed": [],
+    "sources": [
+     "GD-88 B B49C.D64.EHRNAB.005 to .012 update files",
+     "a program flash read of SoC B"
+    ]
+   },
+   "codec_code": 51281920,
+   "codec_slot": [
+    51281920,
+    51380224
+   ],
+   "codec_run": [
+    282112,
+    360448
+   ],
+   "codec_tables": [
+    402656064,
+    402668304
+   ],
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "key_sha256": null,
+   "key_prefix": null,
+   "dfu_ids": null,
+   "dfu_string1": null,
+   "dfu_product": null,
+   "stub": {
+    "tool": "stubtool",
+    "id": 5,
+    "tested": false,
+    "latch": 255,
+    "key": 255,
+    "nand": true,
+    "progmem": 2097152,
+    "stock_console": null,
+    "leds": [
+     16,
+     49
+    ],
+    "uart": 336134144,
+    "bridge": true
+   },
+   "build_options": []
+  },
   "md380": {
    "id": "md380",
    "name": "TYT MD-380",

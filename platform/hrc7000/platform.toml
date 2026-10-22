@@ -12,8 +12,9 @@ cpu = "HR_C7000"
 ci = { group = "C-SKY", container = true }
 stubs = []
 # Its boards may carry a [flash.stub] profile of the universal HR_C7000 stub (stub/stubtool.py): whether the stub holds
-# the power latch and the program flash size; a stock debug console and the read rate if known
-board_stub = { tool = "stubtool", keys = ["hold_power", "progmem"], optional = ["stock_console", "read_rate"] }
+# the power latch and the program flash size; a stock debug console, the read rate, the LED pins, the UART, the
+# bridge to a second receiver and an SPI NAND the build doesn't use, if known or needed
+board_stub = { tool = "stubtool", keys = ["hold_power", "progmem"], optional = ["stock_console", "read_rate", "leds", "uart", "bridge", "nand"] }
 # Linker symbols every board's scripts must define: the codec slot in program flash, the codec's RAM window and the
 # modem table window (platform/hrc7000/vocoder.c, tools/hrc7000_codec.py)
 codec_symbols = ["__codec_slot", "__codec_slot_end", "__codec_run_lo", "__codec_run_hi", "__codec_tab_lo", "__codec_tab_hi"]
