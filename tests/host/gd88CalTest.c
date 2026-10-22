@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-88 factory calibration (boards/gd88/common/calibration_gd88.c, the DB25-D layout) on synthetic "TUNE" pages:
 // the choice between the two copies, band halves, interpolation and its edges, the PA and delay limits, squelch segments
-// (docs/spec/hardware-gd88.md 6)
+// (docs/spec/hardware-gd88.md 7)
 #include <stdio.h>
 #include <string.h>
 #include "gd88_cal.h"

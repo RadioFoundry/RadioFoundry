@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Radioddity GD-88, SoC A: board descriptor, IO mux and reset-time pin levels, key map (docs/spec/hardware-gd88.md 6).
+// Radioddity GD-88, SoC A: board descriptor, IO mux and reset-time pin levels, key map (docs/spec/hardware-gd88.md 9).
 // A runs the display, keys, GPS, the PC link on UART1 and its own transceiver; SoC B is the second receiver
 // (board.rx2, rx2_gd88.c, boards/gd88b).
 #include "board.h"

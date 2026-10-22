@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// GD-88 factory calibration, the "TUNE" page (docs/spec/hardware-gd88.md 6): PA drive, RX front-end tuning, TX center
+// GD-88 factory calibration, the "TUNE" page (docs/spec/hardware-gd88.md 7): PA drive, RX front-end tuning, TX center
 // and modulation, TX switching delays, squelch thresholds. Each SoC has its own page, in the DB25-D's layout.
 //
 // Two copies exist, one in NAND and one in program flash. The higher save counter wins, and nothing is ever written

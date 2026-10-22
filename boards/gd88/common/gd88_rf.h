@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// What both GD-88 SoCs share (docs/spec/hardware-gd88.md 4): each has its own BK4819 pair (receiver / transmitter and
+// What both GD-88 SoCs share (docs/spec/hardware-gd88.md 11): each has its own BK4819 pair (receiver / transmitter and
 // the superhet LO) on the same pins, its own HR_C7000 modem and its own NAND. The radio, DMR and NAND code in
 // boards/gd88/common runs on both. What differs is how the RF and audio switches are reached: the TX / RX line PTB2,
 // the LO chip's GPIOs and the serial chain's audio routing on A (paths_gd88.c), direct GPIO pairs on B (paths_gd88b.c).

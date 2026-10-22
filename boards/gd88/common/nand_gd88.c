@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// GD-88 SPI NAND: a TC58-family chip on SPI0 of each SoC, chip select PTA18 by GPIO (docs/spec/hardware-gd88.md 6).
+// GD-88 SPI NAND: a TC58-family chip on SPI0 of each SoC, chip select PTA18 by GPIO (docs/spec/hardware-gd88.md 7).
 // The factory calibration copy is read at boot; with CONFIG_NAND_STORAGE the core's storage lives in ODR's own block
 // range (GD88_NAND_ODR_FIRST), the only blocks the driver will program or erase. One recursive mutex serializes every
 // NAND transaction once the scheduler runs: the storage layer holds it across a whole read-modify-program sequence.

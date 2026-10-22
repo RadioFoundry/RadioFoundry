@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// GD-88 SoC A keypad, side keys, PTT and encoder (docs/spec/hardware-gd88.md 6.2).
+// GD-88 SoC A keypad, side keys, PTT and encoder (docs/spec/hardware-gd88.md 9.2).
 //
 // Six row lines (PTB18-PTB23, idle low) and three sense lines (PTB9-PTB11, low = closed). A scan takes every row
 // high, reads the senses (a key wired from a sense to ground shows up there: the direct positions), then drives one

@@ -758,7 +758,7 @@ DB25D   := $(ROOT)/boards/db25d
 db25dCalTest: db25dCalTest.c $(DB25D)/calibration_db25d.c $(DB25D)/db25d.h $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DB25D) -Wshadow -o $@ db25dCalTest.c $(DB25D)/calibration_db25d.c
 
-# The GD-88's factory calibration page, the DB25-D layout on each SoC (hardware-gd88.md 6), and its display driver's
+# The GD-88's factory calibration page, the DB25-D layout on each SoC (hardware-gd88.md 7), and its display driver's
 # init streams and windows (drivers/display/ili9341)
 TESTS   += gd88CalTest ili9341Test
 GD88C   := $(ROOT)/boards/gd88/common

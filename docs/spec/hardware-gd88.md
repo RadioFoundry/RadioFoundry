@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Radioddity GD-88 (Kydera DR-880UV) hardware
 
-Status: research, 2026-10-11, facts only. ODR has no GD-88 board and no GD-88 radio. This page records whether the
-GD-88 programs and updates over native USB or over a USB-serial cable. It also records what is known about the two
-SoCs and the update path. The survey entry is in [radios.md](radios.md); the HR_C7000 facts it builds
+Status: bring-up, 2026-10-21. ODR builds for both SoCs (`boards/gd88`, `boards/gd88b`; section 13) but has not run
+on a GD-88 yet. Sections 1-5 record how the GD-88 programs and updates (a USB-serial cable, not native USB). Sections
+6-12 are the hardware facts the port is written from. The survey entry is in [radios.md](radios.md); the HR_C7000 facts it builds
 on (UART registers, USB core, clock gates) are in [hardware-dm32.md](hardware-dm32.md).
 
 **Answer: a USB-serial cable.** The radio body has no USB connector. The PC link is a K1 (2.5 mm + 3.5 mm) jack,
@@ -20,8 +20,8 @@ manual, the vendor's PC tools and the disassembly agree.
 | **COM** | Vendor or community public material: Radioddity manuals, release notes, product page, and the vendor's PC installers (inspected as data, never run) |
 | **INF** | Inferred by us from the above; not seen directly |
 
-Images examined (BIN): A `B49E.D6x.EOPSAB.021` (2025-01-19) and B `B49C.D6x.EHRNAB.012` (2025-01-17), plus
-A `B49E.D66.EOPSAB.013` and B `B49C.D66.EHRNAB.008` (2023-03) as a cross-check, and a raw byte scan of the
+Images examined (BIN): A `B49E.D64.EOPSAB.021` (2025-01-19) and B `B49C.D64.EHRNAB.012` (2025-01-17), plus
+A `B49E.D64.EOPSAB.013` and B `B49C.D64.EHRNAB.008` (2023-03) as a cross-check, and a raw byte scan of the
 2022-10 A/B pair. All are plain, headerless images that load at 0x0300C000, the same application base as the
 DM-32UV (BIN). Each image copies a RAM-code block to 0x10000 at start-up. In image A it comes from flash 0x030B404C
 and fills 0x10000–0x34763 (BIN).
@@ -50,7 +50,7 @@ USB 21 / 53 (DS).
 | Radio connector | K1 jack on the right side of the GD-88. Radio RXD (data to radio) shares the 3.5 mm sleeve with PTT. Radio TXD (data from radio) is on the 2.5 mm ring. GND is on the 2.5 mm sleeve. The 3.5 mm tip carries +5 V through 100 Ω (not a supply) | COM (extended manual v3.4, 11.1 and 17.5) |
 | Other connectors | SMA antenna socket and a 2-pin spring battery contact. The radio charges in a desktop charging base. Neither the product page nor the manual mentions a USB or Type-C port on the radio or the battery | COM |
 | Cable | Radioddity: "a small chip that converts signals to and from the USB-side into serial signals to and from the K1 / RJ45 style connector". It appears on the PC as a virtual COM port, and a driver download is offered if Windows does not load one. The DB40-D box lists the cable as "FTDI-based"; the GD-88 box list says only "Programming Cable". Firmware and CPS release notes since 2022-10 add "support for programming cable based on FTDI-chip" | COM |
-| Which SoC | A, UART1 (0x14040000), interrupt vector 42, set to 115200 by the start-up task. The A routines that read and write UART1 serve the PC protocol: model handshake strings "+DRS-880plus" and "+136-480MHZ+", 2 MB read/write blocks, record read, factory data, the B reset, and the command that hands over to the bootloader ("BLL_IAP_Flash"). The same UART also sends GPS NMEA out to the PC | BIN |
+| Which SoC | A, UART1 (0x14040000), interrupt vector 42, set to 115200 by the start-up task. The A routines that read and write UART1 serve the PC protocol: model handshake strings "+DRS-880plus" and "+136-480MHZ+", 2 MB read/write blocks, record read, factory data, the B reset, and a command-word table shared with the DB25-D family (section 6). The same UART also sends GPS NMEA out to the PC | BIN |
 | Baud | 115200 8N1 in the application (BIN). The vendor's IAP updater offers "115200,n,8,1" and "38400,n,8,1" | BIN, COM |
 | Electrical level | Not stated for the K1 jack. The DB40-D's RJ-45 programming port, on the same platform, is documented as 3.3 V, 115.2 kbaud | COM; INF for the GD-88 level |
 | B's own UART1 | Set to 115200 with a receive handler, but it carries only factory tuning / flash-copy commands. Whether it is wired to the K1 jack (directly or through a switch), to test pads, or to nothing is unknown | BIN, INF |
@@ -95,7 +95,7 @@ not available for USB.
 | Entry | Radio off, cable connected, CPS closed. Hold the upper side key P2 and turn the radio on with the volume knob. The status LED lights red and a special screen shows "IAP_A" or "IAP_B" on the top line. Then release P2. It can take more than one try | COM (update guide v2.2, release notes 2024-06) |
 | A or B target | In IAP mode, long-press P2 to switch between IAP_A and IAP_B. The A file goes to IAP_A and the B file to IAP_B. Write the codeplug after updating both | COM |
 | Bootloader code | Not in the update files: they start at the 0x0300C000 application base, so the bootloader sits below it, as on the DM-32UV. No dump is available, so how IAP_B reaches SoC B (A relaying over the UART3 link, or a switch moving the cable to B's UART) is not known | BIN, INF |
-| Software entry | The A application has a PC command that closes UART1 and hands over to the bootloader ("BLL_IAP_Flash") | BIN |
+| Software entry | The string "BLL_IAP_Flash" is a function-name tag in a log call (line constant 1445). That the routine hands over to the bootloader is not shown | BIN, INF |
 | ROM serial boot | The HR_C7000 boot ROM offers serial (UART0) boot or SPI-flash boot, no USB boot (DS). The datasheet names UART0 as the debug and boot-upgrade port. Where A's and B's UART0 balls go on the GD-88 board is unknown | DS, INF |
 
 ## 5. Open questions
@@ -108,6 +108,185 @@ not available for USB.
 4. Where the UART0 balls of A and B go (test pads?), for ROM serial-boot recovery.
 5. Is there any USB data path at all, for example test pads on the F1/F2 nets? Nothing public suggests one. The
    FCC filing 2AN62-GD88 internal photos were not reachable this time.
+
+## 6. Start-up, clocks and the PC command layer
+
+All facts from the same A and B images (BIN). Detail and addresses are kept outside the repository.
+
+| Item | Finding |
+|---|---|
+| Start-up | PSR 0x80000100, stack 0x00050000, VBR 0x00010000 (vector table in SRAM, copied from flash). Cache controller 0xE000F000 set as on the DM-32UV (cacheable 0x03000000, size code 0x2D). Start-up copies a fast block to 0x18000800, a code and table block to 0x10000, then clears bss |
+| Clock modes | A has three: 24 MHz oscillator, 168 MHz (PLL 24 MHz / 1 x 28 / 2 / 2) and 192 MHz (24 MHz / 2 x 64 / 2 / 2). The XIP flash divider is 2 at 168 MHz and 4 at 192 MHz. B has the same register pattern |
+| PC command words | `Erase`, `Flash Write`, `Flash Read `, `Record Read` (first 11 bytes), the same words as the DB25-D. `Record Read` returns an identification block: firmware version string, build date, build time, `+DRS-880plus`, `+136-480MHZ+` and two 6-byte fields |
+| USMART console | Only the 2025 A build (`.021`) carries the USMART V3.1 debug console: the banner `USMART V3.1`, the `USMART_ENTIMX_SCAN` runtime message and an `@AT` string. The older A builds and the B images do not. The DB25-D's vendor firmware has the same console, and ODR loads its RAM stub through it without the bootloader ([hardware-db25d.md](hardware-db25d.md)). The GD-88 route is not traced yet: UART, frame format and hook address are unchecked |
+| Other models | The A image carries the handshake strings of sibling models (`+DR-850`, `+DR-320`, `+DR-330`, `+DR-350`, `+DR-360`, `+DR-500Plus`, `+DR-F24`) |
+
+## 7. Storage
+
+| Item | Finding |
+|---|---|
+| NAND | SPI NAND on SPI0, chip select PTA18, standard SPI-NAND opcodes; geometry is read from the chip at run time. Each SoC has its own |
+| Partition table | Names and NAND byte bases: font 0x040000, debug 0x100000, userop 0x280000, LinkMan 0x2C0000, xiepin1 0x380000, xiepin2 0x3C0000, App 0x400000 |
+| Calibration | Primary copy is one 2 KB NAND page at 0x280000 starting with `TUNE` and a 32-bit counter (higher = newer). A backup copy sits in program flash at 0x031FE000 (4 KB). The firmware compares the two at boot and copies the newer over the older. Same layout and rule as the DB25-D: ODR reads both and never writes them |
+
+## 8. Memory map and the codec
+
+| Item | Finding |
+|---|---|
+| Program flash | 2 MB at 0x03000000 on each SoC. The IAP loader is below 0x0300C000. ODR's first stage takes 0x0300C000-0x0300D000 and the application starts at 0x0300D000 ([boot/README.md](../../boot/README.md)) |
+| Data in program flash | The display record at 0x031FD000 (`lcd` and a type byte) and the calibration copy at 0x031FE000 (section 7) |
+| Codec slot | 0x030E8000-0x03100000 on each SoC. The codec is merged there on the user's machine from that SoC's own vendor image (`tools/hrc7000_codec.py`, boards `gd88` and `gd88b`) |
+| Codec RAM | The code runs at 0x44E00-0x58000. Its tables go to modem SRAM: A 0x18001204-0x18004324, B 0x18000B40-0x18003B10. Both SoCs link with one script (`boards/gd88/gd88_dmr.ld`), which keeps the union free |
+| SRAM | 288 KB at 0x10000 |
+
+## 9. SoC A pins and chips
+
+Pin index 0-31 = PTA, 32-63 = PTB, 64-95 = PTC.
+
+| Function | Pin / bus |
+|---|---|
+| Key matrix | 6 rows PTB18-23 (outputs, idle low) by 3 sense lines PTB9-11 (inputs). Plus three keys read directly on the sense lines (9.2); 20-tick debounce |
+| Power key / latch | PTB12 in (high = pressed); PTB13 out, high keeps power on (9.1) |
+| Rotary encoder | PTB5, PTB8, both edges: one event +1 or -1 |
+| TX / RX line | PTB2, high = transmit. The modem's RF TX and RX interrupts also switch it |
+| Speaker amplifier | PTC18 high, together with the serial chain's amplifier bit (9.3) |
+| PTC20 | Low cuts the modem's audio line while a beep plays (INF). Low at start-up |
+| PTT / K1 data | PTA9, shared with UART1 RXD; low = PTT |
+| UARTs | UART1 PTA9/10 PC cable (115200); UART2 PTA11/12 GPS (9600); UART3 PTA13/14 link to B (115200) |
+| GPS power | PTB17, high = on. On start-up the receiver gets `$CFGPRT,,0,9600,3,3` |
+| LCD | 320x240 on the i8080 controller (0x12000000), reset PTC2 (low 10 ms, high 130 ms, twice). Four init variants (9.4) |
+| Backlight | PWM channel 0 on PTA15, 1 kHz. The key light is PWM channel 1 on PTA16 |
+| NAND | SPI0, CS PTA18 |
+| RTC | internal I2C2, 7-bit 0x70 |
+| IMU | bit-banged I2C PTA7 (SCL) / PTA8 (SDA), 7-bit 0x68, MPU-6050 class |
+| FM receiver | RDA5807 class on the same bit-banged pair, 7-bit 0x11 |
+| RF chips | bit-banged 3-wire: SCLK PTB16, SDIO PTB24, main chip select PTB25, second chip select PTA19; status lines PTB26/27 |
+| Output expander | 64-bit serial chain: clock PTB0, data PTB1, latch PTB3 (rising edge). Carries the audio routing only (9.3). PTB0 / PTB1 are not LEDs |
+| Band path | The LO BK4819's GPIO4 / GPIO5 (register 0x33): VHF = GPIO5 high, GPIO4 low; UHF the reverse. A has no band, PA or TX supply GPIO |
+| PA drive | No DAC: DAC A is written 0 by the PA ramp. The output power comes from the main BK4819 (register 0x36) and the page |
+| ADC | Channel 0 microphone, 1 volume knob, 2 battery |
+| Status LEDs | On SoC B (section 10). A switches them over the link |
+
+### 9.1 Power and battery
+
+| Item | Finding |
+|---|---|
+| Power key | PTB12 reads high while pressed. The radio is switched on with the volume knob, so PTB12 is most likely the knob's switch contact (INF). The vendor code latches on when it reads high, and switches off when the key is pressed again or the battery reading drops |
+| Battery | ADC channel 2, 2S Li-ion. V x 10 = (raw + 5.7818) / 7.8551. Below 6.0 V critical, 6.0-6.9 V warnings, 7.0 V and up normal. A raw reading below 50 means the supply is going: switch off |
+| Volume | ADC channel 1, 21 levels with hysteresis. The table values are not known |
+
+### 9.2 Keys
+
+The matrix code is the vendor's key number.
+
+| Code | Key | Where |
+|---|---|---|
+| 8-17 | digits 0-9 (8 = 0) | matrix |
+| 18, 19 | `*`, `#` | matrix |
+| 1, 2, 5, 6 | navigation keys | matrix |
+| 4 | mode key | matrix |
+| 3 | P4 | matrix, PTB9 x PTB22 |
+| 22 | P2, the IAP key | PTB9 direct |
+| 23 | P1 | PTB10 direct |
+| 24 | P3 | PTB11 direct |
+| - | PTT | PTA9, low = pressed |
+
+### 9.3 Audio routing in the serial chain
+
+The chain is eight bytes. Byte 0 bit 0 is shifted first; a rising edge on PTB3 latches it. There are no RF bits.
+
+| Bytes | Bit | Meaning |
+|---|---|---|
+| 0 (speaker), 1 (headset) | 0-3 | the source: bit 2 x (class - 1) + vfo. Class 1 is analog FM, class 2 DMR (INF). Vfo 0 is A's receiver, 1 is B's |
+| 0, 1 | 5 | amplifier enable |
+| 0, 1 | 6 | another source |
+| 2-5 | 4 | the receive path in use, one-hot: byte 2 DMR A, 3 DMR B, 4 FM A, 5 FM B |
+| 2-5 | 7 | the other VFO during TX |
+| 6, 7 | 0-3 | the transmit route, the source bit of the transmitting class and vfo (byte 6 at volume 6 or less, else byte 7) |
+
+B's audio reaches the speaker through these bits with vfo 1.
+
+### 9.4 Display
+
+The panel record at 0x031FD000 holds `lcd` and a type byte. A panel that answers ID 0xC505 to command 0xD3 is
+variant 1. Without a record the vendor code uses variant 3.
+
+## 10. SoC B pins
+
+B has no display, keys, power latch or GPS. Pin index as in section 9.
+
+| Function | Pins |
+|---|---|
+| RX band | UHF: PTB8 high, PTB7 low. VHF: the reverse |
+| RX front end | UHF PTB15, VHF PTB14, high = on |
+| RX path pairs | mode 0: PTB1 + PTB13; mode 1: PTB0 + PTB5. Both off while transmitting. Which mode is FM is not known |
+| Audio source to A | mode 0: PTC18 high, PTB4 low; mode 1: the reverse |
+| Audio band | VHF: PTB18 high, PTB22 low; UHF: the reverse |
+| TX path | UHF PTA17, VHF PTB10 |
+| PA select, then supply | UHF PTB6, 200 us, then PTB20. VHF PTB3, then PTB21. TX off clears the supplies first |
+| Start-up levels | Low: PTB20, PTB21, PTB6, PTB3, PTB1, PTB0, PTB15, PTB14, PTB13, PTB5, PTB12, PTB11, PTB8, PTB7, PTA17, PTB10, PTC18, PTB4. High: PTB22, PTB18 |
+| Status LEDs | PTA16 (lit while A transmits) and PTB17 (receive), high = on. Colors not known |
+| ADC | Channel 4 is a carrier level |
+| RF chips | The same 3-wire bus pins as A (section 9) |
+
+## 11. RF side (both SoCs)
+
+| Item | Finding |
+|---|---|
+| Driver | A and B run the same RF driver code over the same 3-wire bus |
+| Main chip ID (register 0) | 0x6818 (FD6818), 0x7813, 0x1846 (RDA1846/AT1846S, init is an empty stub), 0x4819 (BK4819) |
+| Second chip ID | 0x6818, 0x7813, 0x1100 (AT1141), 0x4819 |
+| Fitted parts | Not visible in the image; a BK4819 pair as in the DB25-D PRO is the likely case. The firmware prints `RF_LO_IC_CHIPID` on its debug UART |
+| BK4819 scheme | IF 51.550 MHz: the main chip receives at the IF and transmits at f; the second chip is the high-side LO at f + 51.55 MHz. DAC C = 1780 at RX set-up; DAC B drives the PA with a 180-step ramp |
+| Baseband | Both images link the same HR_C7000 and vocoder library versions as the DB25-D. Each SoC has its own modem, RF pair and NAND |
+
+## 12. The vendor's A to B link (UART3, 115200 8N1)
+
+ODR does not use this protocol. It runs its own on the same UART ([rx2-link.md](rx2-link.md)).
+
+
+| Byte | Meaning |
+|---|---|
+| 0 | 0x0A command or data, 0xAB acknowledge |
+| 1-2 | command id, big endian |
+| 3-4 | total frame length including header (7 = no payload), big endian |
+| 5-6 | 16-bit sum of bytes 0-4 plus the payload, big endian |
+| 7... | payload |
+
+Header bytes time out after 100 ms and the payload after 1 s. Replies normally echo the id with no payload. Ids are
+grouped by range (0x0000-0x9006 A to B, 0xB000-0xDB03 B to A). Most meanings are not decoded.
+
+## 13. The ODR port
+
+Two boards, one per SoC. Both use `boards/gd88/common`: the BK4819 pair, the calibration page, DMR on the modem and
+the SPI NAND. Neither has run on a radio yet.
+
+| | A (`boards/gd88`) | B (`boards/gd88b`) |
+|---|---|---|
+| Runs | the radio core: UI, codeplug, scan, dual watch, host link on UART1, DMR, GPS | no core: a receiver task under `app_start` |
+| Receive | FM and DMR on its own BK4819 pair | FM and DMR, on what A asks for |
+| Transmit | Off by default. `GD88_TX=1` builds it, but A's power control is not worked out | Never: the TX pins stay low |
+| Second receiver | B over UART3 (`board.rx2`, [rx2-link.md](rx2-link.md)). The core keeps B on the dual watch channel that is not selected | - |
+| Audio | the chain's source bits (9.3) and PTC18. B's audio gets vfo 1 while A gives it the speaker | the source pair to A, muted until A sends `AUDIO` on |
+| LEDs | sent to B (`RX2_LED`) | PTA16, PTB17 |
+| Storage | settings on the SPI NAND, blocks 1920-1951 | none |
+| Calibration | both copies read, never written | the program-flash copy |
+| Update | the cable, through ODR's first stage | through A's bridge (rx2-link.md 4) |
+
+Not supported yet: the FM broadcast receiver, the IMU, the headset path on its own, the RTC.
+
+## 14. Remaining unknowns for bring-up
+
+The code marks each with `TODO(gd88)`.
+
+1. Which RF chips are fitted (read the debug UART chip-ID line or photograph the board).
+2. A's output power control, and so transmit.
+3. FM against DMR for the chain's classes, B's RX path pairs and B's audio source pair.
+4. The front panel's navigation keys, the encoder's direction, whether PTB12 is the knob's contact.
+5. The volume knob's level table, the LCD controller's timing word, DAC C on each SoC.
+6. The NAND's size and B's NAND chip select.
+7. Meaning of the link command ids and calibration items 0x602-0x60B.
+8. Bootloader contents and the IAP packet format on this radio (not captured).
 
 ## Sources
 

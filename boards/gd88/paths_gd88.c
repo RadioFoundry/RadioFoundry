@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-88 SoC A RF and audio paths (common/gd88_rf.h): the TX / RX line PTB2, the audio routing in the serial output
-// chain (chain_gd88.c) and the speaker amplifier on PTC18 (docs/spec/hardware-gd88.md 6.3). A's band switch is its LO
+// chain (chain_gd88.c) and the speaker amplifier on PTC18 (docs/spec/hardware-gd88.md 9.3). A's band switch is its LO
 // chip's GPIO4 / GPIO5 (radio_gd88.c); A has no other band, PA or supply switch.
 //
 // The chain is eight bytes; chain bit 8 * byte + bit:

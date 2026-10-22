@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-88 radio, either SoC: two BK4819 on one bit-banged 3-wire bus, the superhet's RX paths and analog FM
-// (docs/spec/hardware-gd88.md 4). The same scheme and chip set-up as the DB25-D PRO.
+// (docs/spec/hardware-gd88.md 11). The same scheme and chip set-up as the DB25-D PRO.
 //
 // Receive on f: the LO chip synthesizes f + 51.55 MHz, the main chip receives and demodulates at the 51.55 MHz IF. On
 // A the LO chip's GPIO4 / GPIO5 also select the band's path (GD88_BAND_LO_GPIO). DAC A isn't used.
@@ -18,6 +18,7 @@
 #include "rf/bk4819/bk4819.h"
 #include "modem/hrc7000/hrc7000.h"
 
+// TODO(gd88): unknown, needs a radio: DAC C's role on each SoC. These are the DB25-D's levels
 #define DAC_C_INIT		1762u			// at init, and 1780 once receive is set up
 #define DAC_C_RX		1780u
 

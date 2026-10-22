@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The OpenDigitalRadio Authors */
 /* Radioddity GD-88 SoC A, HR_C7000 (CK803S), application behind the IAP loader and ODR's first stage
- * (docs/spec/hardware-gd88.md 2, 7). Without DMR.
+ * (docs/spec/hardware-gd88.md 2, 8). Without DMR.
  *
  * Program flash (XIP at 0x03000000): the loader below 0x0300C000 (never written), ODR's first stage
  * 0x0300C000..0x0300D000 (boot/gd88), the application from 0x0300D000 up to 0x0310C000, where the data area

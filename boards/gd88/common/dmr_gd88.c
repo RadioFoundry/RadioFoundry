@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-88 DMR, either SoC: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the main BK4819
-// as the RF front end (docs/spec/hardware-gd88.md 4), the DB25-D PRO's scheme.
+// as the RF front end (docs/spec/hardware-gd88.md 11), the DB25-D PRO's scheme.
 //
 // Transmit only with GD88_TX=1 (gd88_rf.h); without it tx() refuses in DMR mode and the glue's RF hooks do nothing.
 // With it the modem's 4FSK goes on the reference oscillator, and every burst runs the whole TX sequence of the analog

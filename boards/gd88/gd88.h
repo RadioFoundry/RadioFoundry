@@ -15,7 +15,7 @@ extern const hal_display_t gd88_display;
 extern const hal_input_t gd88_input;
 extern const hal_power_t gd88_power;
 
-// Physical key bits returned by gd88_input.scan(), by the matrix codes of docs/spec/hardware-gd88.md 6.2: P1-P3 the
+// Physical key bits returned by gd88_input.scan(), by the matrix codes of docs/spec/hardware-gd88.md 9.2: P1-P3 the
 // side keys (P2 the IAP key), P4 a front key, four navigation keys (codes 1, 2, 5, 6) and a mode key (code 4)
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_STAR, KEY_HASH,

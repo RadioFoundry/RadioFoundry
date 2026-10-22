@@ -2,7 +2,7 @@
 /* Copyright (c) 2026 The OpenDigitalRadio Authors */
 /* Radioddity GD-88 with DMR (CONFIG_DMR=y, boards/gd88/config.mk selects this script), SoC A or B (boards/gd88b
  * uses it too), HR_C7000 (CK803S), application behind the IAP loader and ODR's first stage (gd88.ld;
- * docs/spec/hardware-gd88.md 2, 7, 8).
+ * docs/spec/hardware-gd88.md 2, 8).
  *
  * Program flash (XIP, 2 MB at 0x03000000): the loader below 0x0300C000 (never written), ODR's first stage
  * 0x0300C000..0x0300D000, the application from 0x0300D000, the codec slot 0x030E8000..0x03100000 (hardware-gd88.md 8:

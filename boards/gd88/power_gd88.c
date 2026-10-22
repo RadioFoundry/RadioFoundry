@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// GD-88 SoC A power key and latch, battery and volume knob on the ADC, status LEDs (docs/spec/hardware-gd88.md 6.1).
+// GD-88 SoC A power key and latch, battery and volume knob on the ADC, status LEDs (docs/spec/hardware-gd88.md 9.1).
 //
 // PTB12 reads high while the power key is pressed; the latch (PTB13) keeps the radio on. The radio is switched on with
 // the volume knob, so PTB12 is most likely the knob's switch contact; it is handled as a key all the same: once seen
