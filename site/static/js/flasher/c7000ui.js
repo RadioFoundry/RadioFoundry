@@ -26,7 +26,7 @@ import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 import { register } from "./backends.js";
 import { makeDb25d } from "./db25dui.js";
-import { Usmart, checkInstallImage, stockVersion } from "./db25d.js";
+import { CONSOLES, Usmart, checkInstallImage, stockVersion } from "./db25d.js";
 
 // USB-serial chips found in programming cables (tools/dm32_flash.py USB_SERIAL), for the port chooser
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
@@ -216,7 +216,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		onUpdateMode();
 	});
 	const stockOrNothing = async () => {
-		if (await new Usmart(c.stream, { log: (l) => c.log.add(l) }).probe()) {
+		if (await new Usmart(c.stream, { log: (l) => c.log.add(l), board: boardId() }).probe()) {
 			return db25d.stockFound({ show, act, onLoaded: fromStock, onAgain: () => find(), onUpdateMode: toIap });
 		}
 		db25d.nothing({ show, act, onAgain: () => find(), onPowerOn: () => powerCycle(), onUpdateMode: toIap });
@@ -543,14 +543,15 @@ export function checkView() {
 		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }));
 	}
 
-	// Why no codec was found, and what to select instead. A stock DB25-D whose codec is a build without a recipe (020)
-	// is named, so the message says that the backup is fine and only the codec needs a file
+	// Why no codec was found, and what to select instead. A DB25-D or GD-88 whose codec is a build without a recipe
+	// (the DB25-D's 020) is named, so the message says that the backup is fine and only the codec needs a file
 	function codecActionText() {
 		if (!stockRadio()) return t("flash.c7.codec.action_text");
-		if (!c.analysis?.otherCodec) return t("flash.db25d.codec.action_text");
+		const k = CONSOLES[boardId()] || CONSOLES.db25d;
+		if (!c.analysis?.otherCodec) return t(`flash.${k.texts}.codec.action_text`);
 		// named as the update-mode step names it (db25dui.js); the image's own string carries another batch code
-		const v = c.progmem && stockVersion(c.progmem);
-		return t("flash.db25d.codec.action_other", { version: v ? `909E.DBB.EARSAB.${v.slice(-3)}` : t("flash.db25d.codec.version_unknown") });
+		const v = c.progmem && stockVersion(c.progmem, boardId());
+		return t(`flash.${k.texts}.codec.action_other`, { version: v ? `${k.prefix}${v.slice(-3)}` : t("flash.db25d.codec.version_unknown") });
 	}
 
 	// Coming back to this step: what was read is still here

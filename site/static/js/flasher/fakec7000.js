@@ -49,7 +49,8 @@ export async function c7000Simulation(cReal, boardId, seed = 7000) {
 	progmem.set(tables, tabAt);
 	if (c.boards[boardId].stock_console) {	// the entry the vendor loader checks, and the version string the page reads
 		progmem.set([0x2C, 0x11, 0x01, 0xC0], c.app_start);
-		progmem.set(new TextEncoder().encode("909E.DBB.EARSAB.018.Jan 21 2025"), 0x79F3D - 9);
+		if (boardId === "gd88") progmem.set(new TextEncoder().encode("B49E.D64.EOPSAB.021"), 0x7E668);
+		else progmem.set(new TextEncoder().encode("909E.DBB.EARSAB.018.Jan 21 2025"), 0x79F3D - 9);
 	}
 	c.profiles = c.profiles.filter((p) => p.board !== boardId);
 	c.profiles.push({ ...real, name: `simulated ${real.name}`, code_sha256: await sha256(code), tables_sha256: await sha256(tables),
@@ -67,7 +68,7 @@ export class FakeC7000 {
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
 		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, rx2 = false } = {}) {
 		this.rx2 = rx2;
-		this.usmart = usmart;			// a DB25-D's original firmware build ("018"): it has the debug console
+		this.usmart = usmart;			// a DB25-D's original firmware build ("018"), a GD-88's ("021"): it has the debug console
 		this.ram = new Map();			// the console's view of RAM: words written since power-on
 		this.frames = [];			// every console frame received, as text
 		this.stubSpan = stubSpan;		// the RAM span ODR offers in STUB INFO (the DB25-D's DMR builds: 0x1D000, 0x12000)

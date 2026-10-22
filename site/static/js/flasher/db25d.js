@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The Radioddity DB25-D PRO's two stock-side protocols, for a radio that does not run ODR yet (docs/spec/hardware-db25d.md
-// 7). Both run on the K1 programming cable (UART1, 115200 8N1):
+// 7). The GD-88's main SoC has the same two (docs/spec/hardware-gd88.md), with its own builds (CONSOLES). Both run on
+// the programming cable (UART1, 115200 8N1):
 //
 //   USMART   the debug console the stock application carries. It reads and writes single words of memory, which is
 //            enough to put the universal stub (stub.js) into a free stretch of RAM and start it. The stub then reads and
@@ -25,22 +26,32 @@ export const FLASH_BASE = 0x03000000, FLASH_SIZE = 0x200000;
 //   write_addr(0x00054000,0x1)   -> "write_addr(0X54000,0X1);" (the function returns nothing; the echo is the reply)
 // The stock application's own log text follows on the same line, so a reply is matched by its address.
 //
-// The stub goes into 0x54000-0x58000, free RAM above the heap in both known builds (018, 020). The console's command
-// table lives in RAM at 0x18000840; its cmd_rec entry (+8) is called through the table for every ordinary frame, so
-// pointing it at the stub makes the next frame start the stub.
+// The stub goes into 0x54000-0x58000, free RAM above the heap in every build in CONSOLES. The console's command table
+// lives in RAM at 0x18000840 in all of them; its cmd_rec entry (+8) is called through the table for every ordinary
+// frame, so pointing it at the stub makes the next frame start the stub.
 
 const FRAME = "@AT ";
 export const STUB_WINDOW = [0x54000, 0x4000];		// [load address, size]
 export const HIJACK = 0x18000848;
 export const APP_SIG = [0x0300C000, 0xC001112C];		// the application's first word: 2C 11 01 C0
-// The version string "EARSAB.0NN" of each known build, and a word just below it: four words cover it
-export const BUILDS = [["018", 0x03079F3C], ["020", 0x0307DCCC]];
+// Per radio: the form of the application's version string, the name the page shows for it ("<prefix><build>"), the
+// builds whose console the page drives (each with an address four words from which cover "<tag><build>"), and the
+// set of page texts that name the radio's versions (flash.<texts>.*)
+export const CONSOLES = {
+	db25d: { re: /909E\.[0-9A-Za-z]{2,4}\.EARSAB\.\d{3}/, prefix: "909E.DBB.EARSAB.", tag: "EARSAB.",
+		builds: [["018", 0x03079F3C], ["020", 0x0307DCCC]], texts: "db25d" },
+	// the main SoC: only build 021 (2025-01-19) has the console; the older ones need the manufacturer's update first
+	gd88: { re: /B49E\.D64\.E[A-Z]{3}AB\.\d{3}/, prefix: "B49E.D64.EOPSAB.", tag: "EOPSAB.",
+		builds: [["021", 0x0307E66C]], texts: "gd88" },
+};
+export const BUILDS = CONSOLES.db25d.builds;
+const consoleOf = (board) => CONSOLES[board] || CONSOLES.db25d;
 
-// The stock application's version string ("909E.D6x.EARSAB.020") in a read of the program flash, wherever the build
-// put it, or null. Only for messages: what a read holds is decided by its contents (c7000.js analyze)
-export function stockVersion(progmem) {
+// The application's version string ("909E.D6x.EARSAB.020") in a read of the program flash, wherever the build put
+// it, or null. Only for messages: what a read holds is decided by its contents (c7000.js analyze)
+export function stockVersion(progmem, board = "db25d") {
 	const app = progmem.subarray(APP_SIG[0] - FLASH_BASE, Math.min(progmem.length, APP_MAX + APP_SIG[0] - FLASH_BASE));
-	const m = /909E\.[0-9A-Za-z]{2,4}\.EARSAB\.\d{3}/.exec(latin(app));
+	const m = consoleOf(board).re.exec(latin(app));
 	return m ? m[0] : null;
 }
 
@@ -63,8 +74,9 @@ export const hex8 = (n) => (n >>> 0).toString(16).padStart(8, "0");
 const writable = (a) => a === HIJACK || (a >= STUB_WINDOW[0] && a + 4 <= STUB_WINDOW[0] + STUB_WINDOW[1]);
 
 export class Usmart {
-	constructor(stream, { log = () => {}, quiet = 80 } = {}) {
+	constructor(stream, { log = () => {}, quiet = 80, board = "db25d" } = {}) {
 		this.s = stream;
+		this.k = consoleOf(board);
 		this.log = log;
 		this.quiet = quiet;	// after a write's echo, how long the line must stay quiet before the next frame
 	}
@@ -141,15 +153,15 @@ export class Usmart {
 		return (await this.readWord(APP_SIG[0], timeout)) !== null;
 	}
 
-	// Which stock build runs: "018", "020", or null for one this page does not know (its RAM may differ)
+	// Which build runs ("018", "020" on a DB25-D), or null for one this page does not know (its RAM may differ)
 	async build(signal) {
-		for (const [name, addr] of BUILDS) {
+		for (const [name, addr] of this.k.builds) {
 			const words = [];
 			for (let i = 0; i < 4; i++) words.push(await this.readWordRetry(addr + 4 * i, 6, signal));
 			const bytes = new Uint8Array(16);
 			words.forEach((w, i) => new DataView(bytes.buffer).setUint32(4 * i, w, true));
 			const text = latin(bytes);
-			if (text.includes(`EARSAB.${name}`)) return name;
+			if (text.includes(`${this.k.tag}${name}`)) return name;
 		}
 		return null;
 	}
@@ -219,7 +231,7 @@ export const erasePacket = (n) => concat(new TextEncoder().encode("Erase      ")
 export function checkInstallImage(image) {
 	if (image.length <= 0x1000) throw new DB25DError("this file holds only the first stage; the install image is the first stage and the application");
 	const head = [0x2C, 0x11, 0x01, 0xC0];
-	if (!head.every((b, i) => image[i] === b)) throw new DB25DError("this is not a DB25-D install image (it does not start with the first stage's 2C 11 01 C0)");
+	if (!head.every((b, i) => image[i] === b)) throw new DB25DError("this is not an install image (it does not start with the first stage's 2C 11 01 C0)");
 	const app = [0x80, 0xC0, 0x20, 0x70];
 	if (!app.every((b, i) => image[0x1000 + i] === b)) throw new DB25DError("the application after the first stage does not start with ODR's reset handler");
 }

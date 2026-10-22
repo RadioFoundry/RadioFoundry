@@ -15,7 +15,7 @@
 import { h, t, notice, button, panel, progressBar } from "./dom.js";
 import { sleep } from "./bytes.js";
 import * as c7 from "./c7000.js";
-import { Usmart, Iap, trimTail, DB25DError } from "./db25d.js";
+import { CONSOLES, Usmart, Iap, trimTail, DB25DError } from "./db25d.js";
 
 const LISTEN_MS = 180000;	// how long the page waits for update mode
 const WORD_RATE = 14;		// console frames per second, written or read back (radio, 2026-10-18: 3,470 in 242 s)
@@ -31,7 +31,8 @@ export function makeDb25d(host) {
 	async function stockFound({ show, act, onLoaded, onUpdateMode, onAgain }) {
 		const c = session();
 		// the simulated radio answers at once: no need to wait for the original firmware's log lines
-		const con = new Usmart(c.stream, { log: (l) => c.log.add(l), quiet: S().fakeC7 ? 2 : 80 });
+		const con = new Usmart(c.stream, { log: (l) => c.log.add(l), quiet: S().fakeC7 ? 2 : 80, board: boardId() });
+		const k = CONSOLES[boardId()] || CONSOLES.db25d;
 		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.db25d.stock.found"))),
 			h("p", { class: "muted" }, t("flash.db25d.stock.checking")));
 		const other = button(t("flash.db25d.none.update_mode"), onUpdateMode, { quiet: true });
@@ -43,7 +44,7 @@ export function makeDb25d(host) {
 			return act(button(t("flash.db25d.none.again"), onAgain, { primary: true }), other);
 		}
 		if (!build) {
-			show({ led: "off", screen: "on" }, notice(t("flash.db25d.stock.unknown_build"), "bad"), h("p", {}, t("flash.db25d.stock.unknown_how")));
+			show({ led: "off", screen: "on" }, notice(t("flash.db25d.stock.unknown_build"), "bad"), h("p", {}, t(`flash.${k.texts}.stock.unknown_how`)));
 			return act(button(t("flash.db25d.none.again"), onAgain, { primary: true }), other);
 		}
 		const image = await stubImage();
@@ -53,7 +54,7 @@ export function makeDb25d(host) {
 		prog.el.hidden = true;
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.db25d.stock.found"))),
-			h("dl", { class: "kv-list" }, h("dt", {}, t("flash.db25d.stock.version")), h("dd", {}, `909E.DBB.EARSAB.${build}`)),
+			h("dl", { class: "kv-list" }, h("dt", {}, t("flash.db25d.stock.version")), h("dd", {}, `${k.prefix}${build}`)),
 			h("p", {}, t("flash.db25d.stock.lead", { min: Math.ceil((2 * words) / WORD_RATE / 60) })),
 			h("p", { class: "small muted" }, t("flash.db25d.stock.note")), prog.el, status);
 		const ac = new AbortController();

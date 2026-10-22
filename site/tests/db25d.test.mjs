@@ -223,6 +223,29 @@ test("USMART: the build comes from the version string; an unknown build is repor
 	assert.equal(await new Usmart(r.stream).build(), null);
 });
 
+test("GD-88: its main SoC's console build 021 is found by its own version string, and takes the stub as the DB25-D's", { timeout: 120000 }, async (t) => {
+	const { FakeC7000, c7000Simulation } = await import("../static/js/flasher/fakec7000.js");
+	const { Stub, patchUniv, boardLed } = await import("../static/js/flasher/stub.js");
+	const sim = await c7000Simulation(C, "gd88");
+	assert.equal(stockVersion(sim.progmem, "gd88"), "B49E.D64.EOPSAB.021");
+	assert.equal(stockVersion(sim.progmem), null, "not a DB25-D version");
+	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 50, bootTime: 50, board: "GD-88",
+		usmart: "021" });
+	t.after(() => r.stop());
+	r.powerOn();
+	await new Promise((ok) => setTimeout(ok, 300));
+	assert.equal(await new Usmart(r.stream, { board: "gd88" }).build(), "021");
+	assert.equal(await new Usmart(r.stream).build(), null, "the DB25-D's builds are not looked for on a GD-88");
+	const image = patchUniv(stubImages(json("c7000-stub.json")).image, C.boards.gd88.stub_board);
+	await new Usmart(r.stream, { quiet: 2, board: "gd88" }).loadStub(image);
+	assert.equal(r.state, "stub");
+	assert.ok(equal(r.loaded.subarray(0, image.length), image), "the patched image");
+	const s = new Stub(r.stream, { log: () => {} });
+	await s.helloWithin(3000, "no stub");
+	await s.configure(C.boards.gd88.stub_board, boardLed(C, "gd88"));
+	assert.equal(r.stubCfg.board, 4);
+});
+
 test("USMART: the stub goes into 0x54000, is read back, and the hijack word starts it; then it reads and writes the flash", { timeout: 120000 }, async (t) => {
 	const { r, sim } = await stockDb25d(t);
 	const { Stub } = await import("../static/js/flasher/stub.js");
