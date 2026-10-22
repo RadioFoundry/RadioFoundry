@@ -8,40 +8,18 @@
 // descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h). The code reaches its tables through absolute
 // addresses, which don't change. The merge rewrites what does: one pointer into the code and the 12 calls from the code
 // that stock keeps in the table window back into the code (the codec map). None of it is part of this repository or a
-// release. Without a valid descriptor and codec, present() is false and the radio is FM only.
-//
-// Not reentrant: one task (the audio task, through the audio block callback) makes all calls. The codec needs about
-// 4 KB of the caller's stack (3.8 KB measured).
+// release. The calls and the checks are the shared ones (platform/stm32f4/hrc/vocoder.c); this file says which build and
+// where. Without a valid descriptor and codec, present() is false and the radio is FM only.
 #include "dm1701.h"
 #include "config.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
 #include "codec_call.h"
+#include "vocoder/ambe2_flags.h"
 #include "codec_desc.h"
 
-#include <string.h>
-
-#define CODEC_SIGNATURE		0x4FF0E92Du	// push.w {r4-r11, lr}
 #define CODEC_TAG		0x0206u		// the descriptor's tag for stock V02.06 CSV
-#define CODEC_FLASH_LO		0x080C0000u	// sectors 10 and 11: the flash dm1701.ld leaves to the codec
-#define CODEC_FLASH_HI		CODEC_DESC_ADDR
-
-// Entry points (offsets from the code start)
-#define CODEC_ENCODE		(base + 0x130u)
-#define CODEC_DECODE		(base + 0x5D8u)
-#define CODEC_ENC_INIT		(base + 0x284u)	// (E, 1, 1)
-#define CODEC_FEC_INIT		(base + 0x4CCu)	// (F, 1): state of the codec's own FEC routines
-#define CODEC_DEC_INIT		(base + 0x6D0u)	// (D, 1)
-#define CODEC_ENC_PARAMS	(base + 0x848u)	// (E, 10 parameters)
-#define CODEC_ENC_SET		(base + 0x1C0u)	// (E, a, b)
-#define CODEC_DEC_SET		(base + 0x688u)	// (D, a, b)
-// Not used: encode ECC +0x4E8 and FEC decode +0xB54. The air frame FEC is ours (core/dmr/ambe) and matches stock's.
-
-// State sizes found by running the stock code with each block ending at a fault boundary: the codec touches
-// D[0, 0x7EC), E[0, 0x16E0), its tables, its arguments and the stack, nothing else
-#define DEC_STATE_BYTES		0x7ECu
-#define ENC_STATE_BYTES		0x16E0u
-#define FEC_STATE_BYTES		0x44u
+#define CODEC_FLASH_LO		0x080C0000u	// sectors 10 and 11: the flash boards/dm1701/memory.ld leaves to the codec
 
 // The V02.06 CSV codec as the merge places it (tools/odrflash/odrflash/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of
 // the code and tables after the rewrites. The descriptor must carry exactly these
@@ -64,7 +42,7 @@ static int16_t pcmbuf[VOCODER_FRAME_SAMPLES] __attribute__((section(".ccmram"), 
 static int8_t presence = -1;	// -1 not checked yet
 static uint32_t base;		// the code's start, from the descriptor
 static bool ready;		// states initialized
-static bool enc_first;		// next encode is the first of a transmission
+static uint32_t enc_flags = AMBE2_ENC_DEFAULT;	// set_options (VOCODER_OPT_DEFAULT until then)
 
 static uint32_t call(uint32_t fn, uint32_t nargs, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t s0,
 		     uint32_t s1, uint32_t s2, uint32_t s3)
@@ -117,13 +95,12 @@ static void reset(void)
 	call(CODEC_DEC_SET, 3, D, 128, (uint32_t)-20, 0, 0, 0, 0, 0);
 	// Last, as stock: one decode of an all-zero frame with flags 8
 	call(CODEC_DECODE, 7, (uint32_t)pcmbuf, HALF, (uint32_t)bitbuf, 0, 8, 0, D, 0);
-	enc_first = true;
 	ready = true;
 }
 
-// Two calls per 20 ms frame, 80 samples each, half index 0 then 1. Flags 0x1840 on the first call after reset (stock
-// uses its init value 0x1840 for the first call of a transmission), 0x800 after that. r1 = 0 and the 0x2000 argument
-// are what stock passes from its wrapper variables. The 49 parameter bits come back one per halfword.
+// Two calls per 20 ms frame, 80 samples each, half index 0 then 1. Both calls pass the same flags word, read once
+// per frame (set_options; 0x1840 by default). r1 = 0 and the 0x2000 argument are what stock passes from its wrapper
+// variables. The 49 parameter bits come back one per halfword.
 static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
 {
 	if (!present()) {
@@ -134,10 +111,10 @@ static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODE
 		reset();
 	}
 	memcpy(pcmbuf, pcm, sizeof pcmbuf);
+	const uint32_t flags = enc_flags;
 	for (uint32_t h = 0; h < 2; h++) {
-		call(CODEC_ENCODE, 8, (uint32_t)bitbuf, 0, (uint32_t)&pcmbuf[h * HALF], HALF, enc_first ? 0x1840u : 0x800u,
+		call(CODEC_ENCODE, 8, (uint32_t)bitbuf, 0, (uint32_t)&pcmbuf[h * HALF], HALF, flags,
 		     h, 0x2000, (uint32_t)enc_state);
-		enc_first = false;
 	}
 	for (int i = 0; i < VOCODER_BITS; i++) {
 		bits[i] = (uint8_t)(bitbuf[i] & 1);
@@ -174,8 +151,28 @@ static const char *profile(void)
 	return present() ? "dm1701-v0206-csv-s11" : NULL;
 }
 
+// Encode options (hal_vocoder_t): one flags word for every encode call, kept across reset()
+static uint32_t options(void)
+{
+	return AMBE2_OPTIONS;
+}
+
+static void set_options(uint32_t opts)
+{
+	enc_flags = ambe2_enc_flags(opts);
+}
+
+static uint32_t encode_flags(void)
+{
+	return enc_flags;
+}
+
 const hal_vocoder_t dm1701_vocoder = {
 	.present = present, .reset = reset, .encode = encode, .decode = decode, .profile = profile,
+	.options = options, .set_options = set_options, .encode_flags = encode_flags,
 };
+
+static const stm32_codec_profile_t *const profiles[] = { &v0206 };
+const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 1 };
 
 #endif	// CONFIG_DMR

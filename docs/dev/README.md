@@ -14,6 +14,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | [Stack check](stack-check.md) | The static worst-case stack depth of every task, how pointer calls are resolved, the table of hand-kept targets |
 | [CI](ci.md) | The workflows per push, nightly and on the radio; running each piece locally; coverage figures; the runners; the csky-elf image |
 | [Adding a radio](adding-a-radio.md) | The files a new board needs, `board_t`, the key map, the order to bring it up in |
+| [The board registry](board-registry.md) | `board.toml` and `platform.toml` field by field, what is derived, `tools/boards.py`, the build view for tools that build from a checkout |
 | [Debug link](debug-link.md) | The host-port debug protocol and `tools/odr_debug.py` |
 | [CPS, codeplug and settings](cps-and-codeplug.md) | The open-firmware CPS shim qdmr uses, the codeplug layout, the settings store |
 | [The codec](codec.md) | How each radio's stock AMBE+2 codec is extracted, merged and hosted |
@@ -33,7 +34,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | Change the UI | [docs/ux](../ux/), [ui.md](../spec/ui.md), then `make -C tests/host ui-gallery` ([Testing](testing.md#the-ui-simulator-and-the-gallery)) |
 | Add a radio | [Adding a radio](adding-a-radio.md), its bring-up checklist ([DM-32UV](../testing/dm32-bringup.md), [MD-380](../testing/md380-bringup.md) as models) |
 | Move an MD-380 from stock firmware | `tools/md380_migrate.py` ([md380-migration.md](../spec/md380-migration.md); users: [the manual](../user/18-moving-from-stock-md380.md)) |
-| Flash a DM-32UV, or move it from stock firmware | `tools/dm32_flash.py`, `tools/dm32_migrate.py` ([dm32-migration.md](../spec/dm32-migration.md); users: [the manual](../user/19-moving-from-stock-dm32.md)) |
+| Flash a DM-32UV, or move it from stock firmware | `tools/serial_loader.py`, `tools/dm32_migrate.py` ([dm32-migration.md](../spec/dm32-migration.md); users: [the manual](../user/19-moving-from-stock-dm32.md)) |
 | Cut a release | [Releases, "Checklist"](release.md#checklist) |
 | Build or preview the web site | `python3 site/build.py --serve` ([Web site](website.md)) |
 

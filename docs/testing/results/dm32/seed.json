@@ -1,0 +1,42 @@
+{
+ "format": 1,
+ "kind": "seed",
+ "board": "dm32",
+ "source": "docs/testing/dm32-bringup.md",
+ "date": "2026-10-22",
+ "note": "From the docs' evidence before the first recorded run: docs/testing/dm32-bringup.md and its row in docs/feature-matrix.md",
+ "features": {
+  "fm": {
+   "result": "pass"
+  },
+  "subtone": {
+   "result": "pass",
+   "note": "CTCSS and DCS"
+  },
+  "dmr_voice": {
+   "result": "pass",
+   "note": "receive (simplex) and transmit"
+  },
+  "aprs": {
+   "result": "pass"
+  },
+  "aprs_rx": {
+   "result": "pass"
+  },
+  "debuglink": {
+   "result": "pass",
+   "note": "on the cable"
+  },
+  "hotspot": {
+   "result": "pass",
+   "note": "on the cable"
+  },
+  "battery_save": {
+   "result": "pass"
+  },
+  "split_duplex": {
+   "result": "pass",
+   "note": "each half alone (one radio), and the receive half of a pair"
+  }
+ }
+}

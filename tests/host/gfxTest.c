@@ -397,6 +397,25 @@ static void test_aa_text(void)
 	gfx_init(&disp);
 }
 
+// The UI task's pacing while a capture holds redraws: it waits a frame each pass rather than spinning with a wait of 0,
+// which kept the idle task from feeding the watchdog during a 40-chunk color screenshot (the radio restarted)
+static void test_pass_wait(void)
+{
+	CHECK(gfx_pass_wait_ms(false, false, 0, 50, 100) == 100);	// nothing to draw
+	CHECK(gfx_pass_wait_ms(false, true, 500, 50, 100) == 100);
+	CHECK(gfx_pass_wait_ms(true, false, 20, 50, 100) == 30);	// dirty: until the next frame
+	CHECK(gfx_pass_wait_ms(true, false, 50, 50, 100) == 0);	// due now
+	CHECK(gfx_pass_wait_ms(true, false, 4000, 50, 100) == 0);
+	CHECK(gfx_pass_wait_ms(true, true, 4000, 50, 100) == 50);	// due, but held: a frame, never 0
+	CHECK(gfx_pass_wait_ms(true, true, 20, 50, 100) == 50);
+	// With a hold running the UI loop's pass sees held; once it ends, the redraw is due again at once
+	gfx_hold(1000);
+	CHECK(gfx_pass_wait_ms(true, gfx_held(999), 4000, 50, 100) == 50);
+	CHECK(gfx_pass_wait_ms(true, gfx_held(1000), 4000, 50, 100) == 0);
+	gfx_hold(0);
+	CHECK(!gfx_held(5));
+}
+
 int main(void)
 {
 	mkdir("out", 0755);
@@ -508,6 +527,7 @@ int main(void)
 
 	test_indexed();
 	test_aa_text();
+	test_pass_wait();
 	test_idle_pill_contrast();
 	test_big_text();
 	test_hc_strip_white();

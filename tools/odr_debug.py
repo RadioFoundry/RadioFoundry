@@ -164,10 +164,11 @@ OP_VIBRATE = 29
 OP_VOLUME = 30
 OP_DMR_FIELDS = 31
 OP_VFO_COPY = 32
+OP_VOICE_TEST = 33
 VOLUME_KNOB = 0xFF
 OP_PPP = 28
 ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
-SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6}
+SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6, "select": 7}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
          "battery_crit": 8, "scan_hold": 9}
 VIBES = {"message": 1, "call": 2, "emergency": 3}
@@ -176,7 +177,7 @@ SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit"
             "key_beep": 12, "vox": 13, "vox_level": 14, "vox_tail_ms": 15, "rx_save": 16, "rx_save_idle_s": 17,
             "battery_off_s": 18, "scan_beep": 19, "reply_s": 20, "roam_rssi_dbm": 21, "roam_hyst_db": 22,
             "roam_probe": 23, "roam_check_s": 24, "roam_beacon_s": 25, "roam_beacon_len_s": 26, "roam_survey": 27,
-            "rpt_beacon": 28, "mic_gain": 29}
+            "rpt_beacon": 28, "mic_gain": 29, "dual_delay_ms": 30, "enc_options": 31}
 
 
 class DebugLinkError(Exception):
@@ -762,9 +763,15 @@ class DebugLink:
         self.radio(OP_USB_NET_SETTINGS, struct.pack("<BI", flags, ip))
 
     def scan(self, cmd, pos=None):
-        """Scan: stop | zone | vfo | dual (pos = the second channel) | cancel | nuisance | toggle."""
+        """Scan: stop | zone | vfo | dual (pos = the second channel) | cancel | nuisance | toggle | select (pos = 0 A,
+        1 B: the dual watch channel that position, zone and VFO requests then change)."""
         c = SCAN_CMDS[cmd] if isinstance(cmd, str) else cmd
-        self.radio(OP_SCAN, bytes([c]) + (struct.pack("<H", pos) if c == SCAN_CMDS["dual"] else b""))
+        if c == SCAN_CMDS["dual"]:
+            self.radio(OP_SCAN, bytes([c]) + struct.pack("<H", pos))
+        elif c == SCAN_CMDS["select"]:
+            self.radio(OP_SCAN, bytes([c, pos]))
+        else:
+            self.radio(OP_SCAN, bytes([c]))
 
     def scan_vfo(self, lo_hz, hi_hz):
         """Band scan of the VFO from lo to hi in its step."""
@@ -793,6 +800,11 @@ class DebugLink:
         the VFO can't hold (a mode this build lacks, a frequency outside the bands) and "unavailable" without a VFO or
         in the VFO already."""
         self.radio(OP_VFO_COPY)
+
+    def voice_test(self, on):
+        """The DMR voice test signal (RADIO op 33, RAM only): on, the encoder gets a generated tone that changes pitch
+        every 20 ms in place of the mic, so an over carries known, varying audio (the dmr view key voice.tx_test)."""
+        self.radio(OP_VOICE_TEST, bytes([1 if on else 0]))
 
     def tone_burst(self, on):
         """The 1750 Hz burst (FM): keys up and sends the tone while on."""
@@ -1000,9 +1012,11 @@ def parse_counters(lines):
         words = line.split()
         if not words:
             continue
-        if words[0] == "bs":            # "bs slN bN uN kN cN rfN stN": the split duplex TX half's BS outbound
+        if words[0] == "bs":            # "bs slN bN uN kN cN rfN stN" (and the HR_C7000's "bs tiN ttN ..."): the split
+                                        # duplex TX half's BS outbound
             names = {"sl": "slots", "b": "bursts", "u": "underruns", "k": "keyups", "c": "cach", "rf": "rf_fail",
-                     "st": "stalls"}
+                     "st": "stalls", "ti": "ts_ints", "tt": "ts_ticks", "ph": "phy_ints", "ri": "rftx_ints",
+                     "lt": "late", "mg": "max_gap_us"}
             for w in words[1:]:
                 m = re.fullmatch(r"([a-z]+)(\d+)", w)
                 if m and m.group(1) in names:
@@ -1153,8 +1167,13 @@ def cmd_radio(link, a):
         link.dmr_target_clear()
     elif op == "privacy":             # privacy off | moto KEY | anytone KEY
         link.dmr_privacy(args[0], int(args[1], 0) if len(args) > 1 else 0)
-    elif op == "scan":                # scan stop|zone|vfo|dual POS|cancel|nuisance|toggle
-        link.scan(args[0] if args else "toggle", num(1) if args[:1] == ["dual"] else None)
+    elif op == "scan":                # scan stop|zone|vfo|dual POS|cancel|nuisance|toggle|select a|b
+        if args[:1] == ["select"]:
+            if len(args) < 2 or args[1].lower() not in ("a", "b"):
+                raise SystemExit("scan select a|b")
+            link.scan("select", "ab".index(args[1].lower()))
+        else:
+            link.scan(args[0] if args else "toggle", num(1) if args[:1] == ["dual"] else None)
     elif op == "scan-vfo":            # scan-vfo LO_MHZ HI_MHZ
         link.scan_vfo(round(num(0, float) * 1e6), round(num(1, float) * 1e6))
     elif op == "beep":                # beep key|error|tx_permit|...
@@ -1171,6 +1190,8 @@ def cmd_radio(link, a):
         link.dmr_fields(ts=num(0))
     elif op == "burst":               # burst on|off
         link.tone_burst(args[:1] != ["off"])
+    elif op == "voice-test":          # voice-test on|off (the DMR encoder's test signal, RAM only)
+        link.voice_test(args[:1] != ["off"])
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
@@ -1305,9 +1326,13 @@ def cmd_data(link, a):
     return 0
 
 
+CHIP_STM32F4, CHIP_HRC7000 = 0, 1   # INFO_CHIP's family byte (debuglink.md 3.9)
+
+
 def decode_chip(r):
     idcode, flash_kb, u0, u1, u2, optcr, rdp, rdp_byte, wrp, bor, user = struct.unpack_from("<IH3IIBBHBB", r)
-    return {"idcode": idcode, "dev_id": idcode & 0xFFF, "rev_id": idcode >> 16, "flash_kb": flash_kb,
+    family = r[28] if len(r) > 28 else CHIP_STM32F4    # older firmware: the STM32F4 was the only one answering
+    return {"family": family, "idcode": idcode, "dev_id": idcode & 0xFFF, "rev_id": idcode >> 16, "flash_kb": flash_kb,
             "uid": (u0, u1, u2), "token": u0, "optcr": optcr, "rdp": rdp, "rdp_byte": rdp_byte, "wrp": wrp,
             "wrp_sectors": [i for i in range(12) if wrp & (1 << i)], "bor": bor, "user": user}
 
@@ -1338,6 +1363,11 @@ def dump_path_ok(path):
 
 
 def print_chip(c):
+    if c["family"] != CHIP_STM32F4:
+        name = {CHIP_HRC7000: "HR_C7000"}.get(c["family"], f"family {c['family']}")
+        print(f"chip     {name} (no ID or option byte registers)")
+        print(f"uid      {c['uid'][2]:08X}{c['uid'][1]:08X}{c['uid'][0]:08X} (token 0x{c['token']:08X}; the data flash's unique ID)")
+        return
     rdp_names = {0: "level 0 (0xAA, no protection)", 1: f"LEVEL 1 (0x{c['rdp_byte']:02X}: read protection)",
                  2: "LEVEL 2 (0xCC: permanent, ROM bootloader and debug disabled)"}
     idc = f"0x{c['idcode']:08X}"
@@ -1608,8 +1638,8 @@ def cmd_reboot(link, a):
     c = link.chip()
     print_chip(c)
     mode = REBOOT_ROM_DFU if a.rom_dfu else REBOOT_NORMAL
-    if mode == REBOOT_ROM_DFU and c["rdp"] != 0:
-        print("odr_debug: refusing ROM DFU: RDP is not level 0", file=sys.stderr)
+    if mode == REBOOT_ROM_DFU and (c["family"] != CHIP_STM32F4 or c["rdp"] != 0):
+        print("odr_debug: refusing ROM DFU: not an STM32F4 at RDP level 0", file=sys.stderr)
         return 1
     try:
         link.reboot(mode, c["token"])
@@ -1675,7 +1705,7 @@ def main(argv=None):
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
-                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo"])
+                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",

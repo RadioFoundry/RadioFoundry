@@ -236,7 +236,7 @@ static void test_engine(void)
 // press (docs/ux/information-architecture.md 2). Read from the boards' sources: they don't build on the host
 static void test_board_defaults(void)
 {
-	static const char *const boards[] = { "db25d", "dm1701", "dm1801pro", "dm32", "md380" };
+	static const char *const boards[] = { BOARD_IDS };	// the Makefile lists boards/*/board.c
 	int toggles = 0;
 	for (unsigned b = 0; b < sizeof boards / sizeof boards[0]; b++) {
 		char path[64];

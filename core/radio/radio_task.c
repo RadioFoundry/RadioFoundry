@@ -41,8 +41,8 @@ static radio_settings_t pending_settings;	// radio_set_settings -> the radio tas
 static radio_settings_t shared_settings;	// the published copy, under view_lock
 static radio_view_t shared_view;	// the published copy, under view_lock
 #if CONFIG_DUAL_WATCH
-static channel_t shared_vfo;		// the VFO's settings (radio_get_vfo), under view_lock
-static bool shared_vfo_ok;
+static channel_t shared_vfo[2];		// the VFOs' settings (radio_get_vfo), under view_lock
+static bool shared_vfo_ok[2];
 #endif
 #if CONFIG_SCAN
 static radio_dual_ref_t shared_dual[2];	// dual watch (radio_get_dual), under view_lock
@@ -83,8 +83,10 @@ static void publish(void)
 	shared_serial = sm.serial;
 	shared_settings = sm.set;
 #if CONFIG_DUAL_WATCH
-	shared_vfo = sm.vfo_ch;
-	shared_vfo_ok = sm.vfo_seeded;
+	shared_vfo[sm.vfo_idx & 1u] = sm.vfo_ch;
+	shared_vfo_ok[sm.vfo_idx & 1u] = sm.vfo_seeded;
+	shared_vfo[!sm.vfo_idx] = sm.vfo_other.ch;
+	shared_vfo_ok[!sm.vfo_idx] = sm.vfo_other.seeded;
 #endif
 #if CONFIG_SCAN
 	shared_dual_on = sm.scan.kind == SCAN_DUAL;
@@ -203,6 +205,17 @@ void radio_get_view(radio_view_t *v)
 	xSemaphoreGive(view_lock);
 }
 
+radio_state_t radio_get_state(void)
+{
+	if (view_lock == NULL) {
+		return RS_IDLE;		// as radio_get_view's zeroed view
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	radio_state_t st = shared_view.state;
+	xSemaphoreGive(view_lock);
+	return st;
+}
+
 uint32_t radio_view_serial(void)
 {
 	return shared_serial;
@@ -305,18 +318,19 @@ void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel)
 	post_pair(RREQ_DUAL, (int32_t)radio_dual_arg(&ref[0], sel == 0), radio_dual_arg(&ref[1], sel != 0));
 }
 
-bool radio_get_vfo(channel_t *out)
+bool radio_get_vfo(uint8_t index, channel_t *out)
 {
 #if CONFIG_DUAL_WATCH
 	if (view_lock == NULL) {
 		return false;
 	}
 	xSemaphoreTake(view_lock, portMAX_DELAY);
-	*out = shared_vfo;
-	bool ok = shared_vfo_ok;
+	*out = shared_vfo[index & 1u];
+	bool ok = shared_vfo_ok[index & 1u];
 	xSemaphoreGive(view_lock);
 	return ok;
 #else
+	(void)index;
 	(void)out;
 	return false;
 #endif

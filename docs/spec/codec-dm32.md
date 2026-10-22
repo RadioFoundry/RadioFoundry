@@ -85,9 +85,14 @@ The stock wrapper passes values it keeps in the state blocks where the aftermark
 The aftermarket firmware instead uses r3 = 0, encode sp+0 = 0x1840 and then 0x800, and sp+8 = 0x2000. Stock sets
 E[0x172C] = 0x1840 at init. Checked on the DM-1801 Pro build of the same wrapper code
 ([codec-dm1801pro.md](codec-dm1801pro.md) sections 3 and 5): the sequence 0x1840 once, then 0x800, matches none of the
-wrapper's calls, because each call pattern passes a single value on every call. `boards/dm32/vocoder_dm32.c` follows the aftermarket
-sequence, and since the first call has no measurable effect it behaves as the 0x800 pattern. Which pattern DMR voice
-uses is open.
+wrapper's calls, because each call pattern passes a single value on every call. Which pattern DMR voice uses is open.
+
+The encode flags word is a set of feature bits, one value on every call of a transmission (0x800, or 0x1840 =
+0x1000 | 0x800 | 0x40); this build was measured as the DM-1801 Pro's ([codec-md380.md](codec-md380.md), "Encode
+flags"). "0x1840 on the first call, then 0x800" behaves as 0x800: no noise suppression and no tone frames.
+`platform/hrc7000/vocoder.c` (the DM-32UV and the DM-1801 Pro) passes one word on every call from
+`drivers/vocoder/ambe2_flags.h`: 0x800, plus 0x40 for noise reduction, 0x1000 for tone frames and 0x2000 for AGC
+(0x1840 by default).
 
 ## Stock versions
 
@@ -189,7 +194,7 @@ How ODR runs it ([codec-placement.md](codec-placement.md), "HR_C7000 radios"):
 2. **At boot**, `platform/hrc7000/vocoder.c` copies the code to the board's codec window at the top of SRAM
    (0x43A00..0x58000), adds (window start - stock run address) to each listed word, checks the first two words, and
    copies the tables to their stock modem RAM address (049: 0x18000EA8).
-3. **Memory map** (`boards/dm32/dm32.ld`): one RAM region for ODR from 0x10000 to the codec window. The modem RAM
+3. **Memory map** (`boards/dm32/memory.ld`): one RAM region for ODR from 0x10000 to the codec window. The modem RAM
    window 0x18000E48..0x18003E28 (the union of the builds' tables) is reserved.
 4. **Versions**: every DM-32UV build with a codec map (12 stock files, six code windows) runs in the same window,
    since only the 3 words depend on the run address.

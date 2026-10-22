@@ -29,6 +29,7 @@ link's SETTING op goes through `radio_set_settings()` too, so its changes are sa
 | `scan_dwell_ms` | 150 | listen time per channel with nothing heard (at least 50) |
 | `scan_priority` | off | zone scan: the start channel again after every 2 others |
 | `scan_beep` | off | a short beep when the scan stops on a signal |
+| `dual_delay_ms` | 1000 | dual watch on one receiver: its wait after a signal ends, in place of `scan_delay_ms` (0-10000; section 2.1) |
 | `beep_level` | 50 | 0 (silent) to 100, relative to the volume knob |
 | `key_beep` | on | `radio_req_beep(BEEP_KEY)` sounds |
 | `talk_permit` | on | DMR: the talk permit tone when the voice goes on air (stored as `SETTINGS_RS_NO_TALK_PERMIT` in `rs_flags`, 0 = on) |
@@ -56,7 +57,8 @@ tuned channel or frequency is the core view's as usual.
 - **VFO scan** steps the VFO frequency by its step from `lo` to `hi` and wraps. Without a range it sweeps the board
   band the VFO frequency is in. Both ends must be in one band, at least one step apart.
 - **Dual watch** alternates between two channels, skip flags ignored (2.1). `radio_req_scan_dual(pos)` (the debug
-  link's) watches the current channel and position `pos` of the current zone.
+  link's) watches the current channel and position `pos` of the current zone. The UI on top of it (A and B, the
+  screens, the keys) is in [dual-watch.md](../ux/dual-watch.md).
 - **Priority** (zone scan): the start channel again after every 2 others.
 
 Each stop: 50 ms settle (readings from the previous frequency are ignored), then `scan_dwell_ms` listening. A signal
@@ -82,24 +84,37 @@ only when there is another channel to go to; it does not run in hotspot mode or 
 
 On a radio with one receiver, dual watch alternates it between two channels with the scan's timing (a pseudo dual
 watch). A radio with a second receiver (2.2) hears both at once. `radio_req_dual(ref, sel)` names the two, A and B: each a
-channel (zone index and position, any zone) or the VFO with its own settings. `ref[sel]` is the selected channel.
+channel (zone index and position, any zone) or a VFO with its own settings. `ref[sel]` is the selected channel.
 `NULL` stops the watch on the selected channel. The view shows `scan=dual`, and the tuned channel as usual: its
-`zone_index`, `zone_pos` and zone name, or `vfo=1`, so the screens can tell which of the two the receiver is on.
+`zone_index`, `zone_pos` and zone name, or `vfo=1` and `vfo_index`, so the screens can tell which of the two the
+receiver is on.
+
+There are two VFOs, so each channel can have its own: a VFO ref's `pos` says which (0 or 1). The radio core keeps
+the one in use in `vfo_ch` and the other in `vfo_other`; a hop to a VFO pane swaps them first. Both are saved, with
+the one in use (`settings-store.md` 3, second VFO). Outside dual watch the VFO key opens the one last used. Copy to
+VFO during the watch copies into a VFO the other channel isn't on: the one last used, else the other.
 
 | Event | What happens |
 |---|---|
 | Start | Refused when both name the same channel, or one can't be read (an empty position, no such zone, a build without a VFO). The receiver listens where it is when that is one of the two, else it tunes the selected one |
 | The same pair again | Only the selection changes: no retune, the stop goes on (cheap; the UI asks again on every change) |
 | A new pair | The receiver stays where it is when that channel is still one of the two (a call it holds too), else it tunes the selected one |
-| A signal | Holds the receiver as in a scan, then the resume delay. Resume mode stop counts as carrier: a signal never ends the watch |
+| A signal | Holds the receiver as in a scan, then the wait (`dual_delay_ms`, below). Resume mode stop counts as carrier: a signal never ends the watch |
+| The wait after a signal | The receiver stays on that channel for the reply, and after each dwell there looks at the other channel for one dwell (squelch shut). A signal found there sets its bit in the view's `dual_busy` (the pane shows Busy) and is not played or held: the receiver goes back and the wait goes on. A look starts only if a look and a dwell back fit in what is left of the wait. When the wait ends the watch alternates again, so a busy channel is held then. A look that hears nothing clears the bit, as does the watch's own hop to that channel and a stop. A hold (a signal, the DMR reply window) has no looks |
 | DMR reply window | Holds the selected channel while it runs (PTT talks there). On the other channel it doesn't |
-| PTT | Tunes the selected channel first if the receiver is on the other, and transmits there. The watch goes on: after the transmission (DMR: after its tail) the selected channel waits the resume delay, and a reply holds it |
-| A channel, zone, VFO, tone, bandwidth, mode, timeslot or color code change | Ends the watch on the selected channel, then applies the change there |
-| Hotspot mode, `radio_req_scan` stop | Ends it where the receiver is. Cancel ends it on the selected channel |
+| PTT | Tunes the selected channel first if the receiver is on the other, and transmits there. The watch goes on: after the transmission (DMR: after its tail) the selected channel waits (`dual_delay_ms`, with looks at the other), and a reply holds it |
+| Monitor down | Tunes the selected channel first if the receiver is on the other, then acts as without the watch (FM: squelch open; DMR: digital monitor on the release). The watch pauses there while the key is held |
+| Power, squelch, Clear changes, a talk target or hear all (`RREQ_POWER`, `_SQUELCH`, `_CLEAR_TEMP`, `_DMR_TARGET`, `_DMR_CONTACT`, `_DMR_CALL_BACK`, `_DMR_TARGET_CLEAR`, `_DMR_HEAR_ALL`) | Tunes the selected channel first if the receiver is on the other, then applies the change there. The watch goes on |
+| Each hop | The channel the receiver leaves keeps its changes for now (power, squelch, bandwidth, mode, color code, timeslot, tones, the manual talk target, hear all; `dual_keep[]`), and the channel it tunes gets its own back. A pair with a new channel drops that channel's; a stop drops both |
+| A channel, zone, VFO, tone, bandwidth, mode, timeslot or color code change | Ends the watch on the selected channel, then applies the change there. The UI then asks for the watch again with the new channel (dual-watch.md 5) |
+| Hotspot mode | Ends it where the receiver is |
+| `radio_req_scan` stop, cancel or toggle (the debug link) | Ends it on the selected channel and counts it in the view's `dual_stops`: the UI takes it as the user's stop and doesn't start the watch again |
+| `radio_req_dual` with the same pair and the other selected (the debug link's select) | The view's `dual_sel` changes; the UI follows a change it didn't ask for, so the next channel, zone or VFO request changes that channel |
+| A VFO request, a frequency or Copy to VFO with a channel selected | The selected channel goes into a VFO the other channel isn't on: the one last used, else the other one |
 | Power off | The saved position is the selected channel's, wherever the receiver is: the radio powers up there |
 
 `radio_get_dual()` returns the pair, the selected one and the one the receiver is on (the debug link's `dual.a dual.b
-dual.sel dual.at`, [debuglink.md 3.7](debuglink.md#37-get_view)). `radio_get_vfo()` returns the VFO's settings while a channel is tuned (a VFO pane). Built without `CONFIG_DUAL_WATCH`
+dual.sel dual.at`, [debuglink.md 3.7](debuglink.md#37-get_view)); the view's `dual_busy` is `dual.busy`. `radio_get_vfo(index)` returns a VFO's settings while something else is tuned (a VFO pane). Built without `CONFIG_DUAL_WATCH`
 only the debug link's dual watch is left: two channels of the current zone, and PTT ends it as it ends any scan.
 
 ### 2.2 A second receiver
@@ -145,6 +160,30 @@ keys up if needed and sends 1750 Hz until `false` (repeater access); `tone_burst
 The board restores the microphone path on `tx_tone(0)` and on every return to receive. How the DM-1701 makes the
 tone: `hardware-dm1701.md` 5.8. Verified on air on the DM-1701 (HIL 2026-10-10): the burst, the roger beep and APRS
 AFSK (`docs/testing/on-air-coverage.md`).
+
+### 3.3a DCS turn-off tail (CONFIG_SUBTONE)
+
+A DCS transmission ends with the turn-off code: 134.4 Hz (the DCS bit rate) as a steady tone in place of the code.
+Receivers set to the code close their squelch on it while the carrier is still up, so they don't play the noise burst
+of the carrier dropping.
+
+| Step | Behavior |
+|---|---|
+| PTT release (after the roger beep, if on) | the core calls the board's `tx_tail(true)`. True: the radio stays keyed `RADIO_SUBTONE_TAIL_MS` (300 ms), then `tx_tail(false)` and unkeys. False (no DCS, or no tail on the radio): unkeys at once |
+| PTT again during the tail | `tx_tail(false)`: the code again, the transmission goes on |
+| Time-out during the tail | the tail ends with the transmission |
+
+The board maps the hook to its chip; the core owns the timing.
+
+| Radio | Chip | Tail | Measured (SDR bench, D023N, 12.5 kHz) |
+|---|---|---|---|
+| DB25-D | BK4819 | 0x52 bit 15 (`hardware-db25d.md` 4.7) | 134.4 Hz for 0.30 s |
+| DM-32UV, DM-1801 Pro | HR_C7000 | FM_PTT off with FM_MOD b9 (`modem-hrc7000.md` 8.2) | DM-32UV: 134.4 Hz for 0.20 s, then 0.10 s of carrier without modulation |
+| DM-1701 | AT1846S | TX select from CDCSS to CTCSS, 0x4A already 134.4 Hz (`hardware-dm1701.md` 5.7) | not yet measured |
+| MD-380 | software (PWM) | the generator's 134.4 Hz sine (`subaudio_tx_tail`, `hardware-md380.md` 6.4) | not yet measured |
+
+`tools/sdr_fm_check.py` reports the tail on every DCS segment ("sub-audio tail: 134.4 Hz for 0.30 s, ...");
+`test_fm_tx_dcs` requires at least 0.15 s.
 
 ### 3.4 VOX (CONFIG_VOX; the `vox` setting is off by default)
 
@@ -291,6 +330,14 @@ warning setting. The debug link reports `battery=none` (with `battery_pct=0` and
 `battery_pct` and `battery_mv` out, and SNMP reports odrBatteryVoltage 0, odrBatteryPercent 0 and odrBatteryState
 ok(1) without ever sending odrLowBattery.
 
+Such a board may measure its DC input instead: it sets `hal_power_t.supply_mv`, and `board_volts()` (`hal/board.h`)
+says `BOARD_VOLTS_SUPPLY`. The radio core reads it once a second, outside transmissions like the battery, into the
+view's `supply_mv`. Nothing acts on it: no level, percentage, warning, TX refusal or power off, since no supply
+thresholds are defined yet. The UI's last tool is then Supply, showing the reading in volts (13.8 V), with no battery
+settings. The debug link has `supply_mv` in place of `battery_pct` and `battery_mv`, `/status` has `supply_mv`, and
+SNMP reports as for no battery. The feature matrix and the web site show each radio's reading: Battery, Supply or
+None.
+
 ### 5.2 Low and critical
 
 Low: the battery low beep, again every 2 minutes; the backlight is capped at 30 % (5.3). Critical: the critical beep
@@ -322,6 +369,20 @@ doesn't. The boards ignore it for the first 1.5 s after power-up while the readi
 `switch_on()` and powers off (settings saved, latch released). 5.5 V sits well under a flat 2S pack (critical
 6.0 V), so a weak battery never reads as the switch.
 
+### 5.6 Time of day
+
+ODR keeps no wall clock. `hal_time.h` gives only time since start-up, and that is what every record uses: the crash
+log's `uptime_ms`, messages (`ui_msg_t.age_ms`), call history and the APRS station list ("14m ago"). Nothing on the screen shows a time of day, so a
+radio never shows a made-up one after power-on.
+
+The only time of day is the UTC time a GPS or host NMEA fix carries. It travels with that position into DMR GPS and
+LRRP reports. A fixed position carries none, and the reports leave the time out (`utc_hms` 0xFFFFFFFF, date 0).
+
+Some radios have a real-time clock, and some keep it running through power-off. `board.toml` `[hardware] clock`
+records which, with its source (`backed`, `unbacked`, `none`, or `unknown`), and the feature matrix and the site show
+it. A clock driver arrives behind a hardware switch (`CONFIG_RTC`, `hardware` in `tests/hil/features.toml`). Until GPS,
+the network or the user sets it, the radio shows "no time", and records keep using uptime or mark the time unknown.
+
 ## 6. TX power, calibration, band limits
 
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,
@@ -330,8 +391,8 @@ a low fixed value (the DM-1701, `hardware-dm1701.md` 7) or refuses to transmit (
 
 ## 7. Verification status
 
-Host-tested (`radioFeaturesTest`, 446 checks): scan engine and glue (zone, skip flags, nuisance, resume modes,
-priority, dual watch, VFO band scan, mixed FM / DMR, a DMR call already in progress with a direct mode carrier and a
+Host-tested (`radioFeaturesTest`, 783 checks): scan engine and glue (zone, skip flags, nuisance, resume modes,
+priority, dual watch with its wait and looks and the debug link's requests during it, VFO band scan, mixed FM / DMR, a DMR call already in progress with a direct mode carrier and a
 late entry at every superframe phase, PTT and retune behavior), battery levels and power off, beep
 patterns and mixing, vibration patterns and their timing through the radio core, TOT warning, BCL, inhibit, roger beep, burst, VOX, battery save, DMR permit / call-end beeps.
 On the radio (`docs/testing/on-air-coverage.md`, HIL 2026-10-10): zone scan stopping for DMR calls, VFO scan, dual

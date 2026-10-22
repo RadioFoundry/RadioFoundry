@@ -28,8 +28,8 @@ For source builds, drop the stock file into `codecs/` and `make` runs the board'
 | Part | Where |
 |---|---|
 | The interface the core calls | `hal/hal_vocoder.h` (`board.vocoder`) |
-| DM-1701 hosting: state init, per-frame calls | `boards/dm1701/vocoder_dm1701.c` |
-| MD-380 hosting: the same, other addresses and window checks | `boards/md380/vocoder_md380.c` |
+| STM32 radios' hosting: state init, per-frame calls, the descriptor checks | `platform/stm32f4/hrc/vocoder.c` |
+| Which stock builds a radio accepts: entry offsets, placement, CRCs | `boards/<b>/vocoder_<b>.c` |
 | HR_C7000 radios (DM-32UV, DB25-D PRO) hosting: the slot header, the copy to RAM | `platform/hrc7000/vocoder.c`; the slot and windows in the board's linker script, the profile prefix in its `board.mk` |
 | The window kept free in flash | the board's linker script |
 | AMBE frame FEC and the voice path around the codec | `core/dmr/ambe` |
@@ -49,6 +49,10 @@ A merge tool must:
 - never write the codec or the stock file into the repository;
 - write the merged image outside tracked files (default `build/`);
 - leave the flashing to the radio's flash tool.
+
+The board's `board.toml` `[codec]` table names the tool and the route: `stock`, the SHA-256 of each stock file the
+codec is merged from, or `profile` for a codec in a linker slot ([The board registry](board-registry.md#codec)).
+`codecs/` and `tools/codec_auto.py` find the tool there.
 
 Host tests of the voice path (`tests/host/ambeVoiceTest.c`) use vectors recorded from the stock codec's FEC, not the
 codec itself.

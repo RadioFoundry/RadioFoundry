@@ -72,6 +72,8 @@
 #define C7_LAYER2_SEND_TYPE	0x418u
 #define C7_LAYER2_STATUS	0x41Cu
 #define C7_LAYER2_SLOT_PRE	0x424u
+#define C7_LAYER2_BS_MODE	0x428u	// reset type H: a chip reset leaves it as it was (2.9)
+#define C7_BS_CACH		0x438u
 #define C7_FM_BANDWIDTH		0x500u
 #define C7_FM_DEV_COEF		0x504u
 #define C7_FM_SQL		0x508u
@@ -119,6 +121,8 @@
 // WORK_MODE values: the only two the working firmware writes (2.1)
 #define C7_WORK_MODE_FM		0x80u
 #define C7_WORK_MODE_DMR	0x6Eu
+#define C7_WORK_MODE_PHY	0x22u	// the physical layer in timeslot mode (DS 9.5.3): the CPU's 288 bits per slot, sent as is
+#define C7_BS_MODE_RESET	0x900u	// LAYER2_BS_MODE's reset value: bs_idle_type 9, BS TX / RX off (2.9)
 
 // AUDIO_CONTROL bits (8.1)
 #define C7_AUDIO_RING_FULL	(1u << 31)
@@ -248,6 +252,10 @@ typedef enum { HRC7000_TONE_NONE, HRC7000_TONE_CTCSS, HRC7000_TONE_DCS, HRC7000_
 // TX and RX sub-audio; value = Hz x 10 for CTCSS, the 9-bit code for DCS (octal digits as written: 023 -> 19). Set the
 // TX tone before hrc7000_fm_tx(): the modem takes the DCS code when FM_PTT goes on
 void hrc7000_set_subtone(hrc7000_t *d, bool tx, hrc7000_tone_t type, uint16_t value);
+// The DCS turn-off tail (8.2), while transmitting DCS with the RF still keyed: on drops FM_PTT, and the modem sends the
+// 134.4 Hz turn-off tone (FM_MOD b9) before its modulation stops; off raises FM_PTT again, back to the code. False
+// without DCS (nothing written)
+bool hrc7000_tx_tail(hrc7000_t *d, bool on);
 // The received tone or code matches (FM_DECODE_FLAG2 b0 CTCSS / b1 CDCSS); true when no RX tone is set
 bool hrc7000_subtone_ok(hrc7000_t *d);
 // A single FM TX tone instead of the microphone (8.3): DTMF digit "1" with both of its tones at hz, at the DTMF

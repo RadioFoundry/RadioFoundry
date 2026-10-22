@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# This board's host tests, included by tests/host/Makefile and run from there. HERE is this directory, read while the
+# file is included; recipes use $< (the test, first) and $^ instead, which keep the paths they were given
+HERE := $(dir $(lastword $(MAKEFILE_LIST)))
+
+# The bit-banged RF bus (rfbus_md380.c, with the real pins.h) against fake chips on the documented wiring; stub/ holds
+# the stand-in platform.h and FreeRTOS.h the board code includes
+TESTS   += md380RfbusTest
+md380RfbusTest: $(HERE)md380RfbusTest.c $(HERE)../rfbus_md380.c $(ROOT)/drivers/modem/hrc5000/hrc5000.c \
+                $(ROOT)/drivers/modem/hrc_common/hrc.c $(ROOT)/core/dmr/ambe/ambeFec.c \
+                $(HERE)../rfbus_md380.h $(HERE)../pins.h $(wildcard $(HERE)stub/*.h) $(ROOT)/hal/hal_dmr_modem.h \
+                $(wildcard $(ROOT)/drivers/modem/hrc5000/*.h $(ROOT)/drivers/modem/hrc_common/*.h)
+	$(CC) $(CFLAGS) -I$(dir $<)stub -I$(dir $<).. -I$(ROOT)/hal -Wshadow -o $@ $(filter %.c,$^)
+
+run-boards:: md380RfbusTest
+	./md380RfbusTest

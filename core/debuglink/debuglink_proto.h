@@ -1,33 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The debug link's wire format (docs/spec/debuglink.md): framing, CRC and command dispatch, without the RTOS or the
-// board, so the host tests run it. debuglink.c supplies the command handler and the port writer.
-//
-//   A5 5A cmd seq len_lo len_hi payload[len] crc_lo crc_hi
-//
-// CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflection, no final XOR) over cmd .. the end of the payload.
-// A reply carries cmd | 0x80 and the request's seq; its payload starts with a status byte (DL_ST_*).
+// The debug link's commands and their operations (docs/spec/debuglink.md 3). The framing, the reply status and the
+// commands the stub entry shares (PING, VERSION, STUB) are in dl_frame.h.
 #ifndef DEBUGLINK_PROTO_H
 #define DEBUGLINK_PROTO_H
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
-#define DL_SOF1			0xA5u	// never an MMDVM frame (0xE0) nor an open-firmware CPS request (ASCII letters)
-#define DL_SOF2			0x5Au
-#define DL_PROTO_VERSION	1u
-#define DL_HDR			6u	// SOF1 SOF2 cmd seq len(2)
-#define DL_REQ_MAX		64u	// request payload bytes
-#define DL_REPLY_MAX		1024u	// reply payload bytes, status included
-#define DL_FRAME_TIMEOUT_MS	200u	// a frame left incomplete this long is dropped
-#define DL_REPLY_FLAG		0x80u
-#define DL_CMD_ERROR		0xFFu	// reply to a request that could not be decoded (bad CRC, too long)
+#include "debuglink/dl_frame.h"
 
 // Commands
 enum {
-	DL_CMD_PING		= 0x01,
-	DL_CMD_VERSION		= 0x02,
+	// 0x01 PING, 0x02 VERSION: dl_frame.h (the stub entry answers them without the debug link)
 	DL_CMD_GET_DIAG		= 0x03,
 	DL_CMD_RESET_COUNTERS	= 0x04,
 	DL_CMD_SCREENSHOT	= 0x05,
@@ -45,7 +27,7 @@ enum {
 	DL_CMD_SPLIT		= 0x15,	// split duplex (CONFIG_HOTSPOT_SPLIT only; docs/spec/debuglink.md 3.15)
 	DL_CMD_APRS		= 0x11,	// APRS: send now, status, message, test call, settings, NMEA (debuglink_aprs.c, 3.16)
 	DL_CMD_SNMP		= 0x19,	// the SNMP agent: settings, communities, notification port, test (debuglink_snmp.c, 3.17)
-	DL_CMD_STUB		= 0x1A,	// load and enter the RAM-monitor stub (CONFIG_STUB_ENTRY; debuglink_stub.c, 3.18)
+	// 0x1A STUB: dl_frame.h (core/stubentry, CONFIG_STUB_ENTRY, 3.18)
 	DL_CMD_CRASH		= 0x1B,	// the crash log: clear, crash on purpose (CONFIG_CRASH_LOG; debuglink_crash.c, 3.19)
 	DL_CMD_CODEPLUG		= 0x1C,	// the fast codeplug protocol (CONFIG_CPS_FAST; core/cps/cps_fast.c, 3.20, cps-fast.md)
 	DL_CMD_WATCHDOG		= 0x1D,	// the hardware watchdog's bench tests (CONFIG_WATCHDOG; debuglink_watchdog.c, 3.21)
@@ -89,22 +71,6 @@ enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2 };
 // The test's guard, little endian in the payload: bytes 'C' 'R' 'S' 'H' (as CRASH_MAGIC), so a stray frame can't crash
 // the radio
 #define DL_CRASH_TOKEN		0x48535243u
-
-// DL_CMD_STUB operations (first payload byte; docs/spec/debuglink.md 3.18). A guarded way to hand the SoC to the host's
-// RAM monitor at run time, no power cycle: INFO, then BEGIN, DATA chunks, ENTER. All u32 are little endian
-enum {
-	DL_STUB_OP_INFO = 0,	// -> magic u32, load_addr u32, region_size u32, max_chunk u16, armed u8, received u32
-	DL_STUB_OP_BEGIN,	// magic u32, total_len u32, total_crc32 u32, entry u32 -> received u32 (0): arm a transfer
-	DL_STUB_OP_DATA,	// offset u32, bytes -> received u32: write a chunk (frame CRC-16 guards it)
-	DL_STUB_OP_ENTER,	// magic u32 -> status: verify total_len and CRC-32, then quiesce and jump (no reply after)
-};
-// The guard key, little endian in the payload: bytes 'C' '7' 'S' 'B'. Required on BEGIN and ENTER so a stray frame
-// can never arm or launch the monitor; entry also needs the exact length and a matching CRC-32 of the whole image
-#define DL_STUB_MAGIC		0x42533743u
-// ENTER refused (DL_ST_REFUSED) with a reason byte after the status: the platform's watchdog runs and can't be stopped
-// (the STM32 IWDG), and the image header doesn't say the stub feeds it (docs/spec/stub-stm32f4.md 3.1). A bad
-// magic is refused with no reason byte
-#define DL_STUB_REFUSE_WATCHDOG	1u
 
 // DL_CMD_DMR_DATA operations (first payload byte; docs/spec/debuglink.md 3.12). IDs are u32 little endian
 enum {
@@ -188,51 +154,5 @@ enum {
 	DL_SNMP_F_RF_GAP_S,		// seconds between RF notifications, 0 = 60, else 10-3600
 	DL_SNMP_F_TRAP_PORT,		// the host's notification port, 0 = 162 (RAM only)
 };
-
-// Reply status (the first payload byte)
-enum {
-	DL_ST_OK		= 0,
-	DL_ST_UNKNOWN_CMD	= 1,
-	DL_ST_BAD_ARG		= 2,	// wrong length or a value out of range
-	DL_ST_BUSY		= 3,	// try again shortly (an injected key still held, rate limit)
-	DL_ST_UNAVAILABLE	= 4,	// not built in, or nothing to act on (no display, no such key)
-	DL_ST_BAD_CRC		= 5,	// DL_CMD_ERROR only
-	DL_ST_TOO_LONG		= 6,	// DL_CMD_ERROR only: request payload over DL_REQ_MAX
-	DL_ST_REFUSED		= 7,	// a safety check said no (READ_MEM outside the whitelist, REBOOT gate)
-};
-
-uint16_t dl_crc16(uint16_t crc, const uint8_t *p, size_t n);
-#define DL_CRC_INIT		0xFFFFu
-
-// One command: the request payload in, the reply payload out (out[0] = status), at most cap bytes. Returns the reply
-// payload length (>= 1)
-typedef size_t (*dl_handler_fn)(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
-// Bytes to the host
-typedef void (*dl_write_fn)(const uint8_t *buf, size_t len);
-
-typedef struct {
-	uint8_t state;
-	uint8_t cmd, seq;
-	uint16_t len, got;
-	uint16_t crc;
-	uint32_t last_ms;
-	uint8_t req[DL_REQ_MAX];
-	// counters
-	uint32_t frames, bad_crc, too_long, timeouts;
-} dl_parser_t;
-
-void dl_parser_init(dl_parser_t *p);
-// In the middle of a frame (the next bytes belong to it). A frame idle past DL_FRAME_TIMEOUT_MS is dropped here
-bool dl_parser_in_frame(dl_parser_t *p, uint32_t now_ms);
-// Feed bytes that start a frame (buf[0] == DL_SOF1) or continue one. Takes bytes up to the end of one frame and
-// answers it (handler, then write with the reply framed in reply_buf, which must hold DL_HDR + DL_REPLY_MAX + 2).
-// Returns the bytes taken; a byte after SOF1 that isn't SOF2 is not taken (it may start something else), so the
-// return is 1 then (0 when SOF1 came in the previous chunk). 0 also when len is 0 or buf[0] is not SOF1 outside
-// a frame: the caller gives those bytes to someone else
-size_t dl_parser_feed(dl_parser_t *p, const uint8_t *buf, size_t len, uint32_t now_ms, dl_handler_fn handler,
-		      dl_write_fn write, uint8_t *reply_buf);
-
-// Frame a payload already placed at buf + DL_HDR: header and CRC around it. Returns the frame length
-size_t dl_frame(uint8_t *buf, uint8_t cmd, uint8_t seq, uint16_t len);
 
 #endif

@@ -15,11 +15,12 @@ reaches it at run time through the board descriptor, `board_t` in [hal/board.h](
  hal/         interfaces: board_t, radio, DMR modem, audio, vocoder, display, input, flash, power, stream, netif,
               system, AFSK, broadcast receiver
    |  implemented by
- boards/<b>/  the radio: board_t, pins, key map, feature defaults, linker script, codec hosting, chip glue
+ boards/<b>/  the radio: board_t, pins, key map, how its build differs from the platform's, codec hosting, chip glue
    |  uses
  drivers/     chips shared by several radios: AT1846S, BK4819, FD6818, SKY72310, HR_C6000, HR_C7000, ST7735, ST7789,
               RDA5807M, SPI NOR, key matrix, encoder, NMEA GPS, USB
- platform/<p>/ the SoC: start-up, clocks, interrupts, time base, FreeRTOS port glue (stm32f4, hrc7000)
+ platform/<p>/ the SoC: start-up, clocks, interrupts, time base, FreeRTOS port glue, and the build defaults its
+              boards share (stm32f4, hrc7000)
  third_party/ FreeRTOS, TinyUSB, ST HAL and CMSIS (submodules, permissive licenses)
 ```
 
@@ -29,7 +30,7 @@ reaches it at run time through the board descriptor, `board_t` in [hal/board.h](
 | `hal/` | Headers only: structs of function pointers and the data types between core and board |
 | `drivers/` | One chip each, no knowledge of the radio it sits in beyond what its init call is given |
 | `boards/` | The only place that knows the radio. Fills in `board_t`; maps physical keys to logical actions |
-| `platform/` | The SoC, shared by every radio on it (the STM32F405 radios share `platform/stm32f4`) |
+| `platform/` | The SoC, shared by every radio on it (the STM32F405 radios share `platform/stm32f4`), and in subdirectories the glue for a chip on that SoC that several radios share (`platform/stm32f4/hrc`, `gps_uart`, `spi_flash`), built for the boards that list it in `BOARD_DIRS`. Also the build defaults: `platform.mk` (compiler, part defines, HAL modules), `config.mk` (feature defaults), `common.ld` (the memory layout), `FreeRTOSConfig.h`. A board's files list only how it differs |
 
 Besides `board_t`, every board provides three functions (`hal/board.h`): `board_early_init` (pins and clocks before
 the RTOS), `board_init` (from the first task) and `board_rf_safe` (transmitter off with register writes only). The

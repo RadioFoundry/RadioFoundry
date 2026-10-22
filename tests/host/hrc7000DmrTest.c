@@ -187,10 +187,12 @@ static void test_rx(void)
 	deframe(rti(1, 0, 3, 0, 1, 0));
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1);
 	CHECK(b.kind == DMR_BURST_VOICE && b.voice_index == 0 && b.len == 27 && b.payload[26] == 26);
-	REG(C7_LAYER2_STATUS) = 0;		// slot 0 now: the coming one is slot 1 (HRC7000_RX_NEXT_SLOT_XOR)
+	// The flag goes on the slot LAYER2_STATUS b30 shows at the interrupt (HRC7000_RX_NEXT_SLOT_XOR 0, every HR_C7000
+	// radio measured). The old default 1 put it on the other slot: the DM-1801 Pro played silence (2026-10-22)
+	REG(C7_LAYER2_STATUS) = 1u << 30;
 	tick(false);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x8040);
-	REG(C7_LAYER2_STATUS) = 1u << 30;
+	REG(C7_LAYER2_STATUS) = 0;
 	tick(false);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);
 	count_kind(DMR_EV_SLOT_TICK, NULL);
@@ -675,8 +677,23 @@ static void test_subtone(void)
 	CHECK(REG(C7_CDCSS_ADDR) == ((0754u << 16) | 0023u));
 	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS_INV, 0023);
 	CHECK(REG(C7_FM_MOD) & (1u << 11));
+	// The turn-off tail: b9 on with DCS; FM_PTT off for the tail, on again for PTT again. None without DCS
+	CHECK(REG(C7_FM_MOD) & (1u << 9));
+	REG(C7_FM_PTT) = 1;
+	CHECK(hrc7000_tx_tail(&dev, true) && REG(C7_FM_PTT) == 0);
+	CHECK(hrc7000_tx_tail(&dev, false) && REG(C7_FM_PTT) == 1);
+	hrc7000_set_subtone(&dev, true, HRC7000_TONE_CTCSS, 1000);
+	CHECK(!hrc7000_tx_tail(&dev, true) && REG(C7_FM_PTT) == 1);
+	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS_INV, 0023);
+	// DCS gets three times the CTCSS value (the field sends it at a third of the deviation, 100 Hz at 0x28), up to
+	// 0x7F: DCS reads the field as signed, and 0xF0 sent the code inverted
 	dev.subaudio_dev = 0x28;
 	REG(C7_SUBVOICE_COEF) = 0x07D02810u;
+	hrc7000_fm_tx(&dev, true);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D07F10u);
+	hrc7000_fm_tx(&dev, false);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D07810u);
+	hrc7000_set_subtone(&dev, true, HRC7000_TONE_CTCSS, 1000);
 	hrc7000_fm_tx(&dev, true);
 	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D05010u);
 	hrc7000_fm_tx(&dev, false);
@@ -980,10 +997,92 @@ static void test_tx_empty_and_fill(void)
 	count_kind(0xFF, NULL);
 }
 
+// A received burst's arg is the tick of the slot after its own (hrc7000_dmr.h): a deframe late in a slot belongs to
+// that slot, one early in a slot to the one before. The split duplex RX half times its labels from it; the slot clock
+// gives the last boundary
+static void test_rx_slot_arg(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	uint32_t c, t;
+	int8_t ts;
+	CHECK(!hrc7000_dmr_slot_clock(&eng, &c, &t, &ts));	// no slot clock before the first tick
+	tick(false);
+	tick(false);
+	CHECK(hrc7000_dmr_slot_clock(&eng, &c, &t, &ts) && c == 2 && t == now && ts == 0);
+	count_kind(DMR_EV_SLOT_TICK, NULL);
+	dmr_event_t evs[4];
+	dmr_burst_t bs[4];
+	now += 3000;			// 3 ms into slot 2: the burst of slot 1
+	deframe(rti(1, 0, 1, 0, 0, 0));
+	int n = drain(evs, bs, 4);
+	CHECK(n == 1 && evs[0].kind == DMR_EV_BURST_RX && evs[0].arg == 2);
+	now += 24000;			// 27 ms into slot 2: its own burst
+	deframe(rti(2, 0, 1, 0, 0, 0));
+	n = drain(evs, bs, 4);
+	CHECK(n == 1 && evs[0].arg == 3);
+}
+
+// A whole call through a chip model: the chip writes a burst's voice into the voice RAM only when the voice-access flag
+// (LAYER2_TXRX_CTRL b15) was set at the timeslot interrupt that decided that burst's slot, the one LAYER2_STATUS b30
+// shows then. Every burst's payload must be the voice the chip wrote for it. With the flag on the other slot
+// (HRC7000_RX_NEXT_SLOT_XOR 1, the DM-1801 Pro until 2026-10-22) the RAM keeps the bytes it had and every burst of
+// the call reads them again: silence with every counter clean
+static void test_rx_voice_ram_call(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 3, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc7000_dmr_configure(&eng, &cfg);
+	memset(buf + C7_VOICE_RAM, 0xA5, 27);		// burst A's voice: the chip takes it with the sync, no flag needed
+	tick(false);
+	deframe(rti(1, 0, 3, 0, 1, 0));			// voice A on chip slot 1 opens the call
+	dmr_burst_t b;
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.payload[0] == 0xA5);
+	int fresh = 0, bursts = 0;
+	for (int k = 1; k < 12; k++) {			// B-F, then a whole superframe more
+		REG(C7_LAYER2_STATUS) = 1u << 30;	// chip slot 1 starts: the decision for it
+		tick(false);
+		bool flag = (REG(C7_LAYER2_TXRX_CTRL) & 0x8000u) != 0;
+		if (flag) {
+			memset(buf + C7_VOICE_RAM, k, 27);	// the chip writes this burst's voice
+		}
+		deframe(rti((uint8_t)(k % 6 + 1), 0, 3, 0, 1, 0));
+		if (count_kind(DMR_EV_BURST_RX, &b) == 1) {
+			bursts++;
+			fresh += b.len == 27 && b.payload[0] == k && b.payload[26] == k;
+		}
+		REG(C7_LAYER2_STATUS) = 0;		// chip slot 0 starts: nothing for us there
+		tick(false);
+		CHECK((REG(C7_LAYER2_TXRX_CTRL) & 0x8000u) == 0);
+		count_kind(DMR_EV_SLOT_TICK, NULL);
+	}
+	CHECK(bursts == 11);
+	CHECK(fresh == 11);	// every burst's own voice, never the RAM's old bytes
+	if (fresh != 11) {
+		printf("  voice RAM call: %d of %d bursts carried their own voice (the flag on the wrong slot?)\n", fresh,
+		       bursts);
+	}
+}
+
+// LAYER2_BS_MODE survives a chip reset (modem-hrc7000.md 2.9): the power-on set-up writes it back to its reset value
+static void test_bs_mode_cleared(void)
+{
+	setup();
+	REG(C7_LAYER2_BS_MODE) = 0x904;	// BS TX left on by an earlier build
+	REG(C7_BS_CACH) = 3;
+	hrc7000_power_on_init(&dev, 128, 0);
+	CHECK(REG(C7_LAYER2_BS_MODE) == C7_BS_MODE_RESET);
+	CHECK(REG(C7_BS_CACH) == 0);
+}
+
 int main(void)
 {
 	test_pure();
 	test_rx();
+	test_rx_slot_arg();
+	test_rx_voice_ram_call();
+	test_bs_mode_cleared();
 	test_rx_resync();
 	test_cc_scan();
 	test_tx();

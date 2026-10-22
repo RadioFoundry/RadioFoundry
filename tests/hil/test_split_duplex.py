@@ -3,12 +3,15 @@
 """The split duplex extension on one radio (a CONFIG_HOTSPOT_SPLIT=y build; docs/spec/split-duplex.md 10). Every
 test skips on a build without it.
 
+- test_split_capability (no RF): the capability gate. The build has the extension and INFO offers both halves; it
+  skips (no_hw) on a radio whose modem glue offers neither or one, and a bring-up run counts that skip as a failure.
 - test_split_protocol (no RF): GET_VERSION announces " SPLIT1"; INFO offers the TX and RX halves; SET_ROLE 2 (the RX
   half never transmits) and back to 0; STATUS; an unknown 0xD6 sub-command answers result 1; an unknown command is
   still NAKed 1; the debug link's SPLIT view answers.
 - test_split_tx_half_off_air (radio_tx, bench_service: --allow-rf --allow-service-stop): the radio as the TX half on
   --dmr-freq at its lowest power for 10 s, idle bursts with a short LC, SET_AT toggled every 2 s, the framing variant
-  from $ODR_SPLIT_VARIANT (default 0, ours; 1 the chip's, whose CACH is empty). The SDR bench captures and decodes it
+  from $ODR_SPLIT_VARIANT (default 0, ours; on the DM-1701 1 is the chip's, whose CACH is empty; on the HR_C7000
+  radios a bit field of physical layer options, modem-hrc7000.md 2.10). The SDR bench captures and decodes it
   (sdrmon.py analyze --cach). Asserted: BS sync only, one burst every 30 ms on both slots (same-slot spacing 60 ms),
   one key-up edge for the whole outbound, the channel's color code, no driver underruns in STATUS; with our framing
   also the CACH: TC alternating, AT following SET_AT, the short LC decoding.
@@ -26,6 +29,8 @@ import time
 
 import pytest
 
+from odr_hil import skip
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 TX_SECONDS = 10.0
@@ -34,15 +39,15 @@ TX_SECONDS = 10.0
 def need_split(radio):
     feats = radio.features()
     if "HOTSPOT_SPLIT" not in feats:
-        pytest.skip("built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
+        skip("not_built", "built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
 
 
 def need_role(r, sdh, role):
     """Skip unless the radio offers the split duplex role (INFO "offered": bit 0 TX half, bit 1 RX half)"""
     _, info = sdh.require_split(r)
     if not info["offered"] & (1 << (role - 1)):
-        pytest.skip(f"the radio doesn't offer split duplex role {role} (offered {info['offered']}: its modem glue has "
-                    f"no slot clock or base-station hooks)")
+        skip("no_hw", f"the radio doesn't offer split duplex role {role} (offered {info['offered']}: its modem glue "
+                      f"has no slot clock or base-station hooks)")
 
 
 def leave_hotspot(radio):
@@ -50,6 +55,24 @@ def leave_hotspot(radio):
     radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot",), what="hotspot left")
 
 
+@pytest.mark.feature("split_duplex", gate=True)
+def test_split_capability(radio):
+    need_split(radio)
+    import split_duplex_host as sdh
+    with radio.released() as port:
+        r = sdh.Radio(port, "radio", dtr=False)
+        try:
+            _, info = sdh.require_split(r)
+        finally:
+            r.close()
+    leave_hotspot(radio)
+    print(f"INFO {info}")
+    if info["offered"] & 3 != 3:
+        skip("no_hw", f"the radio offers split duplex roles {info['offered']}, not both halves (3): its modem glue "
+                      f"has no slot clock or base-station hooks")
+
+
+@pytest.mark.feature("split_duplex")
 def test_split_protocol(radio):
     need_split(radio)
     import split_duplex_host as sdh
@@ -60,7 +83,7 @@ def test_split_protocol(radio):
             ver, info = sdh.require_split(r)
             assert ver == 1
             if info["offered"] == 0:
-                pytest.skip("the radio doesn't offer split duplex (its modem glue has no slot clock)")
+                skip("no_hw", "the radio doesn't offer split duplex (its modem glue has no slot clock)")
             assert info["offered"] & 3 == 3, info
             assert info["role"] == sdh.ROLE_NORMAL
             print(f"INFO {info} (cach method {sdh.CACH_METHODS.get(info['cach'])})")
@@ -102,6 +125,7 @@ def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
     sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "dmr_cach.py"))
     rdir = sdr_bench.run_dir("hil_split_tx")
     call = list(call)
+    # Raw I/Q on purpose: sdrmon analyze --cach decodes the CACH from the waveform, which the burst records lack
     with sdr_bench.lease():
         cap = sdr_bench.capture_start(rdir, freq, seconds=TX_SECONDS + 6)
         with radio.released() as port:
@@ -154,8 +178,10 @@ def tx_half_cach(bs):
     return cach, ok, alt, {c["at"] for c in ok}, good, len(slcs) - good
 
 
+@pytest.mark.feature("split_duplex")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     need_split(radio)
     import split_duplex_host as sdh
@@ -194,14 +220,19 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
           f"{max(len(ok) - 1, 0)}, AT values {sorted(at_seen)}, short LC {slc_good} ok / {slc_bad} "
           f"bad; radio {bs_cnt}")
     assert bs_cnt.get("bs.cach", 0) > 0.9 * TX_SECONDS / 0.03, bs_cnt
-    if variant != 1:    # our framing (modem-hrc6000.md 9.1): the CACH on air is the core's
+    # Our framing (the core's CACH on air) except the HR_C6000's variant 1, its chip's layer 2 framing (split-duplex.md
+    # 10.1); every HR_C7000 variant is a physical layer option of ours (modem-hrc7000.md 2.10)
+    chip_framing = variant == 1 and radio.version().get("board", "").startswith("DM-1701")
+    if not chip_framing:
         assert len(ok) >= 0.98 * len(cach) and alt >= 0.98 * (len(ok) - 1), "TC must alternate"
         assert at_seen == {0, 1}, f"AT must follow SET_AT: {sorted(at_seen)}"
         assert slc_good >= 10 and slc_bad == 0, f"short LC {slc_good} ok, {slc_bad} bad"
 
 
+@pytest.mark.feature("split_duplex")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_split_tx_half_voice(radio, sdr_bench, pytestconfig):
     """A group call from the host on TS2 of the outbound, our framing: headers, three superframes with the embedded
     LC, the terminator, decoded off air; the CACH stays right around it"""
@@ -309,8 +340,10 @@ def check_rx_labels(first, marks, ups, results):
     assert all(abs(st["residual_us"]) < 5000 for _, st in results), results
 
 
+@pytest.mark.feature("split_duplex")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_split_rx_half_labels(radio, sdr_bench, pytestconfig):
     need_split(radio)
     freq, cc, tg = (pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc"),

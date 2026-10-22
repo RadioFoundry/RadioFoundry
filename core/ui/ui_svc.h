@@ -81,9 +81,11 @@ bool ui_svc_scan_skip(void);			// nuisance delete of the channel that stopped th
 // watch on the selected one. False: the radio can't watch this pair (today's radio core: two channels of one zone)
 typedef struct {
 	bool vfo;
-	uint16_t zone, pos;	// a channel: zone index and position in it
+	uint16_t zone, pos;	// a channel: zone index and position in it; a VFO: pos is which, 0 or 1
 } ui_dual_ref_t;
 bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel);
+// The radio's dual watch now: the pair and the selected one. False: it isn't watching
+bool ui_svc_dual_get(ui_dual_ref_t ref[2], uint8_t *sel);
 // How many channels the radio hears at once: 1 = dual watch alternates between them (no radio in the tree has more)
 uint8_t ui_svc_receivers(void);
 // On a radio with a receiver per dual watch channel (ui_svc_receivers() > 1): what pane's receiver hears. Both can
@@ -98,8 +100,8 @@ typedef struct {
 	char src_name[24];
 } ui_dual_rx_t;
 bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out);
-// The VFO's settings while a channel is on view (a dual watch pane). False: not known
-bool ui_svc_vfo_get(channel_t *out);
+// VFO `index`'s settings (0 or 1) while something else is on view (a dual watch pane). False: not known
+bool ui_svc_vfo_get(uint8_t index, channel_t *out);
 
 // --- DMR repeater roaming (the radio core, docs/spec/dmr-roaming.md). Its state is radio_view_t.roam ---
 bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, lock / unlock
@@ -185,8 +187,14 @@ bool ui_svc_crash_send(void);
 // UI_CRASH_TX_*: the last report's progress; OK also marks the record sent
 uint8_t ui_svc_crash_tx_state(void);
 
-// UI_SET_DUAL_B: 0 none, a codeplug channel number 1..CODEPLUG_CHANNELS_MAX, or the VFO
+// UI_SET_DUAL_B: 0 none, a codeplug channel number 1..CODEPLUG_CHANNELS_MAX, or a VFO (UI_DUAL_B_VFO + 0 or 1); with
+// UI_DUAL_ON when the watch runs (it comes back at power on), and UI_DUAL_B_SEL when B is selected: the code is then
+// A's, the channel the radio isn't on at power on (settings_t.dual_b, dual_state)
 #define UI_DUAL_B_VFO	(CODEPLUG_CHANNELS_MAX + 1)
+#define UI_DUAL_B_VFO2	(UI_DUAL_B_VFO + 1)
+#define UI_DUAL_CODE	0xFFFF
+#define UI_DUAL_ON	0x10000
+#define UI_DUAL_B_SEL	0x20000
 
 // --- Settings persistence (storage-cps). The stub keeps them in RAM (lost at power off) ---
 typedef enum {
@@ -223,6 +231,13 @@ typedef enum {
 	// Dual watch (CONFIG_DUAL_WATCH, docs/ux/dual-watch.md): after a call on the other channel, PTT talks there for a
 	// while (settings_t.ui_flags); the last B, UI_DUAL_B_* (settings_dual_b)
 	UI_SET_DUAL_TALK_BACK, UI_SET_DUAL_B,
+	// The VFO's step (Settings > Talk, CONFIG_VFO; settings_t.vfo_step_hz) in 10 Hz units, 833 the 8.33 kHz air band
+	// grid; 0 auto: the width's, 12.5 or 25 kHz
+	UI_SET_VFO_STEP,
+	// Dual watch on one receiver: the wait after a signal, ms (Settings > Talk; radio_settings_t.dual_delay_ms)
+	UI_SET_DUAL_DELAY_MS,
+	UI_SET_NOISE_REDUCTION,	// the vocoder's mic noise reduction on DMR TX (Settings > Talk & listen; accent bits 6-7)
+	UI_SET_MIC_AGC,		// the vocoder's mic AGC on DMR TX (accent bits 6-7); while on, mic gain is step 5 and dimmed
 	UI_SET_COUNT
 } ui_setting_t;
 

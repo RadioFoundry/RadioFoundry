@@ -38,7 +38,7 @@ The MD-380 isn't in the releases yet. Build the image from the source ([building
 
 ```
 make BOARD=md380                                         # UHF: build/md380/odr_md380.bin
-make BOARD=md380 MD380_BAND=vhf BUILD=build/md380-vhf    # VHF
+make BOARD=md380 BAND=vhf                                # VHF: build/md380-vhf/odr_md380.bin
 ```
 
 With TYT's `MD-380-D2.32(AD).bin` in `codecs/`, the build also writes `odr_md380_codec.bin` with the codec merged in.

@@ -4,17 +4,8 @@
 # the UI, keys, data flash, battery, analog FM, DMR (voice with the radio's own codec merged into the slot,
 # docs/spec/codec-dm1801pro.md) and the broadcast tuner. Transmit needs the calibration to be found, so it is refused
 # without it
-# No USB data port: the host link (CPS, hotspot, debug link) runs on the programming cable's UART0
-CONFIG_USB ?= n
-CONFIG_HOSTLINK ?= y
-# The IP link is PPP on the host port, as on the DM-32UV, and the IP gateway with every service that rides it
-ifeq ($(origin CONFIG_DMR_IP_GATEWAY)$(CONFIG_DMR_IP_GATEWAY),command linen)
-CONFIG_NET_PPP ?= n
-endif
-CONFIG_NET_PPP ?= $(if $(and $(filter y,$(CONFIG_HOSTLINK)),$(filter y,$(CONFIG_DMR))),y,n)
-# TCP connections: about 1.5 KB of RAM each across TCP, HTTP and rigctld
-TCP_CONNS ?= 3
-MCU_DEFS += -DTCP_CONNS=$(TCP_CONNS)
+# The host link runs on the programming cable's UART0; USB, PPP and TCP_CONNS follow the platform
+# (platform/hrc7000/config.mk)
 # The RDA5807-class broadcast tuner (CAP_BCAST_FM); the air band isn't wired yet
 CONFIG_BCAST_FM ?= y
 CONFIG_AM_RX ?= n
@@ -23,5 +14,12 @@ CONFIG_VIBRATE ?= y
 # 128x64 monochrome: no room for the large font, and no colors to set
 CONFIG_FONT_XL ?= n
 CONFIG_UI_COLOR ?= n
-# What the board can't do yet or lacks: ci's maximal configuration leaves these off
-BOARD_UNSUPPORTED := USB USB_NETWORK AM_RX AUDIO_PROBE FONT_XL UI_COLOR
+# What the board lacks or can't do yet, one switch per line with the reason (tools/boards.py checks there is
+# one): ci's maximal configuration leaves these off. USB and USB_NETWORK are the platform's
+BOARD_UNSUPPORTED += AM_RX	# the broadcast tuner's air band isn't wired yet
+BOARD_UNSUPPORTED += AUDIO_PROBE	# a bench diagnostic for an audio path this radio doesn't have
+BOARD_UNSUPPORTED += FONT_XL	# the 128x64 panel is too small for the large font
+BOARD_UNSUPPORTED += UI_COLOR	# the 128x64 panel is monochrome: no colors to set
+BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR: 4 KB erase (docs/spec/hardware-dm1801pro.md 6.1)
+CONFIG_GPS ?= n
+BOARD_UNSUPPORTED += GPS	# no GPS receiver, and no room inside for one (owner, 2026-10-22)

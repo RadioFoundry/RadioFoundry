@@ -115,6 +115,10 @@ Large-text mode (accessibility, or chosen by the user) shows only the status str
 | 6 | **Tools** | Scan, Position (GPS), Hotspot, USB network, Single frequency repeater, ID lookup, Signal meter, DTMF, APRS, Registration (ARS), Battery |
 | 7 | **Settings** | Grouped by intent (below), with search |
 
+Each Tools item keeps its number on every radio and build, so a key path such as `SELECT`, `6`, `7` (Diagnostics) is
+the same everywhere. An item a radio may not have goes last (Battery, 9, on a mobile), so commonly used items have no
+gaps.
+
 Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools the "radio" side, Settings the preferences. Nothing operational lives only in Settings (P1).
 
 ---
@@ -154,7 +158,7 @@ Settings has a search field on top (T9). Groups, in this order:
 |---|---|
 | **Sound** | Key tones, tone volume, talk permit tone, voice prompts (on/off, speed, verbosity), message tone, call alert tone, vibrate (radios with a motor) |
 | **Display** | Brightness, backlight timeout, theme (light/dark/high contrast), highlight color, filled status bar, large text, orientation (240x320 boards), hint row, Home secondary fields |
-| **Talk & listen** | Reply window, TX timeout, default squelch, VOX sensitivity and delay, mic gain, hear all default, talker alias show/send, name source (contacts, ID database, alias) |
+| **Talk & listen** | Reply window, TX timeout, default squelch, VOX sensitivity and delay, mic gain, mic AGC, mic noise reduction, hear all default, talker alias show/send, name source (contacts, ID database, alias) |
 | **Privacy** | Basic Privacy keys (per channel and per contact), lock behavior (auto-lock, what stays active when locked: PTT, side keys), PIN for settings |
 | **Location** | GPS on/off, position format, send position (UDT, LRRP, APRS) and interval, reply to position requests |
 | **Connections** | Hotspot defaults, USB network (at power-on, control station: PC answers data, link address; TFTP codeplug write), single frequency repeater role, ARS registration, radio check auto-reply, call alert answer, message format |
@@ -183,7 +187,7 @@ Notation: `short / long`. "-" means none. All maps also follow the text-field ru
 | 0-9 | digits / speed dial |
 | Channel encoder detent | `ENC_STEP` (Home: channel; editors: value; lists: focus, forward = down) |
 | Upper side key (row 2 D5) and middle side key (row 2 D7): see [hardware-dm1701.md](../spec/hardware-dm1701.md) 10 and 20 | `MONITOR` (while held) on the middle key |
-| SK2 (lower side) | `TALK_TARGET` / Dual watch on/off |
+| SK2 (lower side) | `AB` (dual watch A / B; `TALK_TARGET` in a build without dual watch) / Dual watch on/off |
 | Top (orange) key | Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built (hold again to cancel), else speak status |
 | PTT | `PTT` |
 

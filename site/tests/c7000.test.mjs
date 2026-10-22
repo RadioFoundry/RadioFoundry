@@ -14,7 +14,8 @@ import { decodeBlock, encodeBlock } from "../static/js/flasher/lz4.js";
 import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout, patchUniv, boardLed, RX2_F } from "../static/js/flasher/stub.js";
 import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
-import { FakeC7000, c7000Simulation } from "../static/js/flasher/fakec7000.js";
+import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
+import { stockVersion } from "../static/js/flasher/usmart.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
@@ -84,6 +85,26 @@ test("codec located wherever the stock firmware put it, slot as hrc7000_codec bu
 	assert.equal(await c7.parseSlot(c, "dm1801pro", broken), null);
 	assert.equal(await c7.parseSlot(c, "dm32", slot), null, "another radio's RAM windows");
 	assert.throws(() => c7.target(c, "dm1801pro", new Uint8Array(0xE0000).fill(1)), c7.CodecError);
+});
+
+test("#sim=<board>: every C7 stub radio's fake comes from its data", async () => {
+	const FB = json("flash-boards.json");
+	const radios = json("radios.json").radios.filter((r) => r.flash.backend === "c7000-stub");
+	assert.ok(radios.length > 0);
+	for (const r of radios) {
+		const o = fakeC7000Options(r, FB);
+		assert.ok(FB.boards[r.id].debuglink_names.includes(o.board), r.id);
+		assert.equal(o.codecId, FB.boards[r.id].codec.id, r.id);
+		const sim = await c7000Simulation(C, r.id, 7000, r);
+		const fs = r.flash.first_stage;
+		const head = [...sim.progmem.subarray(C.app_start, C.app_start + 4)].map((x) => x.toString(16).padStart(2, "0")).join("");
+		if (fs) assert.equal(head, fs.head, `${r.id}: the stock application starts as the vendor loader checks`);
+		// a stock console's version string is where the console's build check reads it
+		if (r.flash.stock_console) {
+			assert.equal(o.usmart, r.flash.stock_versions[0].slice(-3), r.id);
+			assert.equal(stockVersion(sim.progmem), r.flash.stock_versions[0], r.id);
+		} else assert.equal(o.usmart, null, r.id);
+	}
 });
 
 async function radio(firmware = "stock", opts = {}) {

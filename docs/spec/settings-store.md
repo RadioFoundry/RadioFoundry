@@ -51,27 +51,43 @@ record (little endian):
 |---|---|---|
 | 0 | 4 | magic `0x5445534F` ("OSET") |
 | 4 | 4 | sequence number, +1 per record (compared modulo 2^32) |
-| 8 | 2 | layout (`SETTINGS_LAYOUT`, now 1) |
-| 10 | 2 | payload length n (`sizeof(settings_t)`, at most 236) |
-| 12 | n | payload: `settings_t` as it is in RAM (fixed-width fields, no padding) |
+| 8 | 2 | bits 0-11: layout (`SETTINGS_LAYOUT`, now 1); bits 12-15: the page (2.1) |
+| 10 | 2 | payload length n (at most 236) |
+| 12 | n | payload: the page's bytes of `settings_t` as it is in RAM (fixed-width fields, no padding) |
 | 12 + n | 4 | CRC-32 (IEEE 802.3) of bytes 0 to 11 + n |
 | 252 | 4 | commit word: programmed to 0 last |
 
 **Load** (`settings_init`, once at boot, after `storage_init`): every slot is read. A slot is free when all its
 bytes are 0xFF. It is valid when the magic, the length and the CRC match and the commit word is 0. Anything else
-(a torn write) is counted in `settings.skipped` and ignored. The valid record with the highest sequence number is
-the one in force. When its layout is not `SETTINGS_LAYOUT`, or no record is valid, the radio starts from the
-defaults (`settings.load=defaults`). A shorter or longer payload of the same layout fills the fields both firmwares
-know, and the rest keep their defaults (`upgraded`).
+(a torn write) is counted in `settings.skipped` and ignored. The valid page 0 record with the highest sequence
+number is in force (2.1 has the other pages). When its layout is not `SETTINGS_LAYOUT`, or no page 0 record is
+valid, the radio starts from the defaults (`settings.load=defaults`). A shorter or longer payload of the same layout
+fills the fields both firmwares know, and the rest keep their defaults (`upgraded`).
 
-**Save**: the record goes to the next free slot after the newest one. When that sector is full, the next sector of
-the ring is erased first. It holds only older records, because the newest is in the sector before it. The record
-is programmed, then the commit word, then the slot is read back. A cut before the commit word leaves an unfinished
-slot that the next load skips, so the previous record stays in force. A slot that doesn't read back is skipped and
-the next one is tried, up to 4 slots. The walk past such slots never erases the sector holding the newest valid
-record (with a worn sector it could come round to it): that save fails instead, and the record stays in force.
-Erases go round the ring: 8 sectors (every board's ring today) take 128 saves per pass, so a sector is erased once
-every 128 saves.
+**Save**: the records go to the next free slots after the newest record. When a sector is full, the next sector of
+the ring is erased first. Each record is programmed, then its commit word, then the slot is read back. A cut before
+page 0's commit word leaves the previous set in force. A slot that doesn't read back is skipped and the next one is
+tried, up to 4 slots per record. No save erases a sector that holds a page of the set in force, or a page this save
+already wrote: the walk passes over such a sector to the next one. When every sector is protected that way the save
+fails, and the set in force stays. Erases go round the ring: 8 sectors (every board's ring today) hold 128 records,
+so with two pages a sector is erased once every 64 saves.
+
+### 2.1 Pages
+
+`settings_t` is longer than one slot's payload, so it is stored as pages: page k holds bytes `236 * k` on.
+`SETTINGS_PAGES` is the number its size needs (2 now, 264 bytes); the page field allows 16 (3776 bytes). Each page is
+a record with its own length, so `settings_t` grows by appending fields, and a short page fills the fields it has.
+
+| Rule | Why |
+|---|---|
+| A save writes every page, the last first and page 0 last, each with the next sequence number | Page 0's commit makes the set the one in force. A cut before it leaves the previous set |
+| Load: the newest page 0, then for each other page k the newest page k older than that page 0 | A page newer than page 0 belongs to a save that was cut |
+| `loaded` only when every page is exact (page 0's sequence minus k) and full length, else `upgraded` | A firmware with one page (before pages) writes page 0 alone: the other pages come from the set before it, or their defaults |
+| The next save numbers past the newest record of any page | Sequence numbers stay unique |
+| No save erases a sector holding a page of the set in force (up to 32 sectors are tracked) | A page that an older firmware left behind stays readable until the next full save |
+
+Firmware from before pages reads a page 1 record as an ordinary record of layout 0x1001, which it doesn't know, and
+never sees it as newest: page 0 is always written last.
 
 **When**: `settings_begin()` returns the live copy under a short RAM-only lock (`storage_quick_lock`) and
 `settings_end(now)` releases it. If anything changed, it notes the time. No flash operation happens inside, so the
@@ -103,7 +119,8 @@ codeplug's callsign.
 1. **Fields are only appended.** A new field goes at the end, before nothing. Its default comes from
    `settings_defaults()`, which a record written by an older firmware doesn't overwrite.
 2. **No padding.** Members are fixed width and ordered so the compiler adds none. `sizeof` is a multiple of 4, which
-   a static assert checks, and must stay at most 236 bytes (one slot).
+   a static assert checks. Page 1 starts at byte 236 (a field there must not straddle the page boundary; a static
+   assert checks the first page 1 field's offset).
 3. **Reserved bytes stay 0** in records we write. A later firmware may give them a meaning only if 0 means "as
    before".
 4. **`SETTINGS_LAYOUT` is bumped only when a field moves or changes meaning.** Old records are then ignored and the
@@ -113,8 +130,8 @@ codeplug's callsign.
 | Group | Fields |
 |---|---|
 | position | `vfo`, `squelch`, `zone_index`, `channel`, `zone_pos` (used when the channel number is gone after a codeplug write) |
-| VFO | `vfo_rx_hz` (0 = never set), `vfo_tx_hz`, `vfo_step_hz`, `vfo_mode` (bits 0-3: FM or DMR; a record from before the DMR VFO holds FM, and a build without the DMR VFO reads DMR as FM), `vfo_bw` (bits 0-3), `vfo_power`, `vfo_cc` (bits 0-3, the color code), `vfo_ts` (bits 0-1, the slot), tone types and values; the DMR VFO's talk target (a 24-bit ID and a private call flag) is packed into bytes that were reserved or hold a small number, so the record stays 236 bytes and an old record reads as no target (ID 0, talkgroup 9): ID bits 0-7 in `vfo_talk_lo` (the old `reserved1`'s second byte; `accent` has the first), bits 8-11 in `vfo_mode` bits 4-7, bits 12-15 in `vfo_bw` bits 4-7, bits 16-19 in `vfo_cc` bits 4-7, bits 20-23 in `vfo_ts` bits 2-5, private call in `vfo_ts` bit 7 (always through `settings_vfo_mode` / `_bw` / `_cc` / `_ts` / `_talk_id` / `_talk_private` and the setters in `settings.h`; appended for the DMR VFO); `net_flags` sits in the VFO block's spare byte (was `reserved0`; 0 = as before): bit 0 refuses TFTP codeplug writes (`tftp.md` 4, appended for mdnstftp), bit 1 control station passthrough, bit 2 the fixed link (`usb-network.md` 5.4, appended for dispatch) |
-| preferences | `brightness`, `backlight_s`, `beeps` (0 or 1 in bit 0; bits 1-7 hold the last B of dual watch, see the dual watch row), `hotspot_allowed`, `master_power`, `usb_mode` (the USB personality at power-on: 0 serial, 1 network; `usb-network.md` 1), `accent` (in the old `reserved1`'s first byte: bits 0-2 the highlight color, 0 the theme's own, 1 red, 2 orange, 3 yellow, 4 teal, 5 light blue, 6 purple, 7 pink; bit 3 set: the status strip not filled; 0 = the defaults, the theme's highlight and the strip filled with it; `ui.md` 8) |
+| VFO | `vfo_rx_hz` (0 = never set), `vfo_tx_hz`, `vfo_step_hz` (0 = auto: the width's step), `vfo_mode` (bits 0-3: FM or DMR; a record from before the DMR VFO holds FM, and a build without the DMR VFO reads DMR as FM), `vfo_bw` (bits 0-3), `vfo_power`, `vfo_cc` (bits 0-3, the color code), `vfo_ts` (bits 0-1, the slot), tone types and values; the DMR VFO's talk target (a 24-bit ID and a private call flag) is packed into bytes that were reserved or hold a small number, so the record stays 236 bytes and an old record reads as no target (ID 0, talkgroup 9): ID bits 0-7 in `vfo_talk_lo` (the old `reserved1`'s second byte; `accent` has the first), bits 8-11 in `vfo_mode` bits 4-7, bits 12-15 in `vfo_bw` bits 4-7, bits 16-19 in `vfo_cc` bits 4-7, bits 20-23 in `vfo_ts` bits 2-5, private call in `vfo_ts` bit 7 (always through `settings_vfo_mode` / `_bw` / `_cc` / `_ts` / `_talk_id` / `_talk_private` and the setters in `settings.h`; appended for the DMR VFO); `net_flags` sits in the VFO block's spare byte (was `reserved0`; 0 = as before): bit 0 refuses TFTP codeplug writes (`tftp.md` 4, appended for mdnstftp), bit 1 control station passthrough, bit 2 the fixed link (`usb-network.md` 5.4, appended for dispatch) |
+| preferences | `brightness`, `backlight_s`, `beeps` (0 or 1), `hotspot_allowed`, `master_power`, `usb_mode` (the USB personality at power-on: 0 serial, 1 network; `usb-network.md` 1), `accent` (in the old `reserved1`'s first byte: bits 0-2 the highlight color, 0 the theme's own, 1 red, 2 orange, 3 yellow, 4 teal, 5 light blue, 6 purple, 7 pink; bit 3 set: the status strip not filled; bits 4-5 the crash report mode; bits 6-7 the vocoder's mic options, bit 6 noise reduction off and bit 7 AGC on (`dmr-voice.md` 6), so a record from before them reads as noise reduction on and AGC off; 0 = the defaults, the theme's highlight and the strip filled with it; `ui.md` 8) |
 | identity | `dmr_id` (0 = the codeplug's), `radio_name[16]` ("" = the codeplug's callsign) |
 | privacy keys | `privacy_key[4]`, `privacy_type[4]`, `privacy_active` (appended for dmr-voice) |
 | radio core settings | `rs_tot_s rs_tot_warn_s rs_bcl rs_flags` (roger beep, TX inhibit, scan priority, scan beep, key beep, no talk permit tone: 0 = on, as before) `rs_scan_resume rs_scan_hold_s rs_beep_level rs_scan_delay_ms rs_scan_dwell_ms rs_vox rs_vox_level rs_vox_tail_ms rs_rx_save rs_stored rs_rx_save_idle_s rs_battery_off_s rs_backlight_dim_s rs_backlight_off_s` (appended for radio-features) |
@@ -130,15 +147,17 @@ codeplug's callsign.
 | APRS-IS client | `aprsis_ip` (the server's IPv4 address, 0 = off; appended for tcp), `aprsis_port` (0 = 14580; in the old `reserved5`), `aprsis_range_km` (the filter `m/<km>`, 0 = none; in the old `reserved3`) (`tcp-services.md` 7) |
 | control station | `net_link_ip` (the radio's fixed link address, 0 = 192.168.10.1; in force with `net_flags` bit 2), 0 = off, the link by DMR ID (appended for dispatch after `aprsis_ip`, `usb-network.md` 5.4) |
 | SNMP agent | `snmp_read_hash snmp_write_hash` (FNV-1a hashes of the communities, 0 = "public" / none; appended for snmp after `net_link_ip`), `snmp_rf_manager[3]` (the RF manager's DMR ID, little endian, 0 = none; in the old `reserved2[3]`), `snmp_flags` (in the old `reserved4`), `snmp_rf_gap_s` (0 = 60; in the APRS block's old `reserved7`); all zero = the defaults (`snmp.md` 6) |
-| dual watch | `ui_flags` bit 7 (0x80) is talk back (Settings > Talk > Dual watch talk back; off = the bit clear, as in a record from before). The last B is an 11-bit code, packed into spare bits so an older record reads as none: 0 none, 1..1024 a codeplug channel number, 1025 the VFO. Code bits 0-6 are in `beeps` bits 1-7 (`beeps` itself is 0 or 1 in bit 0), code bits 7-10 in `mic_gain` bits 4-7 (`mic_gain` is 0..10 in bits 0-3). Always read and write them through `settings_dual_b` / `settings_set_dual_b` / `settings_mic_gain` / `settings_set_mic_gain` (`settings.h`). Firmware from before reads a `mic_gain` with those bits set as out of range and uses the default, 5. The UI looks the channel number up again at power-on, in A's zone first, then in the first zone that holds it; if it is gone, the picker opens ([dual-watch.md](../ux/dual-watch.md) 5) |
+| dual watch | `ui_flags` bit 7 (0x80) is talk back (Settings > Talk > Dual watch talk back; off = the bit clear, as in a record from before). Page 1: `dual_b`, the last B: 0 none, 1..1024 a codeplug channel number, 1025 the first VFO, 1026 the second. The UI looks the channel number up again at power-on, in A's zone first, then in the first zone that holds it; if it is gone, the picker opens ([dual-watch.md](../ux/dual-watch.md) 5). `dual_state` bit 0 (`SETTINGS_DUAL_ON`) says the watch was on: the UI starts it again at power-on, with `dual_b` as the channel that wasn't selected and bit 1 (`SETTINGS_DUAL_B_SEL`) set when B was the selected one |
+| second VFO | Page 1: `vfo_index` (the VFO in use at power off, 0 or 1) and `vfo2_rx_hz` (0 = never set), `vfo2_tx_hz`, `vfo2_talk` (the DMR talk target: ID in bits 0-23, bit 31 private call), tone values and types, `vfo2_mode`, `vfo2_bw`, `vfo2_power` (`SETTINGS_UNSET8` = default), `vfo2_cc`, `vfo2_ts`: the first VFO's fields, unpacked. Dual watch gives each channel its own VFO ([radio-features.md](radio-features.md) 2.1). A record without page 1 reads as the first VFO in use and no second VFO frequency |
+| dual watch wait | Page 1: `rs_dual_delay`, `radio_settings_t.dual_delay_ms` as n - 1 steps of 100 ms (1 = no wait, 11 = 1 s); 0 (never set, or no page 1) = the default, 1 s. Settings > Talk > Dual watch delay |
 | crash report | packed into spare bits, so an older record reads as off with no target: the mode (0 off, 1 ask, 2 send at once) in `accent` bits 4-5; the target's codeplug contact number (0 none, else 1..1024, 11 bits) bits 0-5 in `theme` bits 2-7 and bits 6-10 in `updown_home` bits 2-6. `theme` and `updown_home` keep their value in bits 0-1; read and write them through `settings_theme` / `settings_updown_home` and `settings_crash_*` (`settings.h`). Firmware from before reads a `theme` or `updown_home` with these bits as out of range: the dark theme and Up/Down = channel ([crash-log.md](crash-log.md) 5.2) |
 
-All of these are still layout 1: they were appended before any firmware with the settings store shipped. The
-payload is 236 bytes now, the most a slot holds: the later fields went into reserved bytes where 0 already meant
+All of these are still layout 1: they were appended before any firmware with the settings store shipped. Page 0
+is full: its later fields went into reserved bytes where 0 already meant
 "as before" (`net_flags`, `snmp_rf_manager[3]`, `aprsis_range_km`, `snmp_flags`, `aprsis_port`, `snmp_rf_gap_s`, `aprs_power`, `aprs_cp_path`, `volume`, `vfo_talk_lo`), or the new defaults (`accent`: the filled status strip, a new look on purpose). No reserved byte is left. One-byte
-fields that hold small numbers (`hotspot_allowed`, `usb_mode`) still have free upper bits (`theme` and `updown_home` hold the crash report's target; `beeps` and `mic_gain` hold the last B of dual watch; `updown_home` bit 7 and `accent` bits 6-7 are free); `vfo_power` does not
-(its "not set" is 0xFF). The next setting either packs into spare bits like that or needs a new layout (rule 1: a bigger record no longer fits a slot, so layout 2 would
-have to drop or pack fields).
+fields that hold small numbers (`hotspot_allowed`, `usb_mode`) still have free upper bits (`theme` and `updown_home` hold the crash report's target; `updown_home` bit 7 is free;
+`accent` bits 6-7 are free); `vfo_power` does not (its "not set" is 0xFF). New settings are appended to page 1 as
+plain fields; a page 2 follows when page 1 is full (2.1).
 
 ### 3.0 Who writes, and storage jobs
 
@@ -292,7 +311,7 @@ send it:
 
 | Test | What |
 |---|---|
-| `tests/host/settingsTest.c` | load, save, debounce, ring wrap, layout change, older and newer payload sizes; a power cut at every flash operation of a save (the previous or the new record is in force, never neither) |
+| `tests/host/settingsTest.c` | load, save, debounce, ring wrap, layout change, older and newer payload sizes; pages (a page 0 alone from an older firmware, a page newer than page 0, a save that passes over a sector holding an old page); a power cut at every flash operation of a save (the previous or the new set is in force, never neither, and never pages of two saves) |
 | the journal part of `settingsTest.c` | a power cut at every one of the 701 flash operations of a sequence of sector rewrites, then a boot: every sector holds either its old or its new content, and the replayed ones the new |
 | `tests/host/sim/sim_flash.c` | the simulated NOR: program only clears bits (violations counted), erase per 4 KB, a power cut after N operations (a torn program or erase leaves random bits) |
 | `tests/host/radioCoreTest.c` `test_persist` | the radio core saves the zone, the channel and the VFO and comes back to them after a reboot |

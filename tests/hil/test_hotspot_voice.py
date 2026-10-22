@@ -23,7 +23,7 @@ import time
 
 import pytest
 
-from odr_hil import ROOT
+from odr_hil import ROOT, skip
 
 CASES = ("rf_voice8", "rf_data_unconf", "net_voice", "net_data")
 
@@ -34,18 +34,20 @@ def hotspot_cases():
     try:
         import hotspot_cases as H
     except ImportError as e:
-        pytest.skip(f"needs odr_sdrbench and numpy for burst building: {e}")
+        skip("bench", f"needs odr_sdrbench and numpy for burst building: {e}")
     return H
 
 
+@pytest.mark.feature("hotspot")
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 @pytest.mark.parametrize("case", CASES)
 def test_hotspot_on_air(radio, sdr_bench, pytestconfig, hotspot_cases, case):
     H = hotspot_cases
     if "HOTSPOT" not in radio.features():
-        pytest.skip("built without the hotspot")
+        skip("not_built", "built without the hotspot")
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     H.BENCH_HOST = sdr_bench.host
     args = type("Args", (), {"freq": freq, "cc": cc, "power": 12})()

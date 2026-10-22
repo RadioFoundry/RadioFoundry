@@ -50,6 +50,8 @@ typedef struct {
 	uint16_t scan_dwell_ms;	// listen time per channel with nothing heard
 	bool scan_priority;	// zone scan: revisit the start channel between the others
 	bool scan_beep;		// a short beep when the scan stops on a signal
+	uint16_t dual_delay_ms;	// dual watch on one receiver: after a signal ends, stay on its channel this long (the
+				// reply), looking at the other one in between
 	// Beeps (CONFIG_BEEP)
 	uint8_t beep_level;	// 0 = silent .. 100, relative to the volume knob
 	bool key_beep;		// radio_req_beep(BEEP_KEY) sounds
@@ -78,6 +80,10 @@ typedef struct {
 } radio_settings_t;
 
 #define RADIO_REPLY_CODEPLUG	0xFFu	// radio_settings_t.reply_s: the codeplug's hang times (else the stack's 10 s)
+// radio_settings_t.dual_delay_ms: the default and the most. In the wait the receiver looks at the other channel for a
+// scan dwell after each dwell back on the signal's
+#define RADIO_DUAL_DELAY_MS	1000u
+#define RADIO_DUAL_DELAY_MAX_MS	10000u
 
 typedef enum { RADIO_BATT_OK, RADIO_BATT_LOW, RADIO_BATT_CRITICAL } radio_batt_t;	// = batt_level_t
 
@@ -192,6 +198,7 @@ typedef struct {
 	radio_state_t state;
 	uint8_t tx_deny;	// tx_deny_t, while RS_TX_DENIED
 	bool vfo;		// tuning a frequency by hand rather than a channel
+	uint8_t vfo_index;	// which VFO: 0, or 1 the second (dual watch gives each channel its own)
 	uint16_t zone_index;
 	uint16_t zone_pos;	// position in the zone, 0-based
 	uint16_t zone_size;
@@ -209,7 +216,8 @@ typedef struct {
 	uint32_t tx_elapsed_ms;	// time in TX, while RS_TX
 	uint16_t tot_s;		// TX time-out, 0 = none
 	uint32_t last_rx_ms;	// hal_millis() at the end of the last reception, 0 = none yet
-	uint32_t vfo_step_hz;
+	uint32_t vfo_step_hz;	// the VFO's step in use: as set, or with vfo_step_auto the width's (12.5 or 25 kHz)
+	bool vfo_step_auto;
 	codeplug_source_t source;
 	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off
 	// Scan (CONFIG_SCAN; all 0 otherwise)
@@ -219,6 +227,11 @@ typedef struct {
 	uint16_t scan_probes;	// this scan: stops probed (a carrier at the end of the dwell)
 	uint16_t scan_synced;	// ... stops where sync was heard (DMR: bursts with the channel's color code)
 	bool rx2;		// dual watch hears both channels at once: the second receiver has the one not selected
+	uint8_t dual_busy;	// dual watch on one receiver: bit i, channel i had a signal when the receiver last looked
+				// at it during the wait after a call on the other (shown, not played)
+	uint8_t dual_sel;	// dual watch: the selected channel as last asked for (0 A, 1 B); the UI follows a change
+				// it didn't ask for (the debug link)
+	uint8_t dual_stops;	// counts dual watch stops by radio_req_scan (stop, cancel, toggle): the UI keeps it off
 	// FM extras
 	bool tot_warning;	// TX: the time-out is near (tot_warn_s)
 	bool tone_burst;	// TX: the 1750 Hz burst is on
@@ -230,6 +243,7 @@ typedef struct {
 	uint8_t battery;	// radio_batt_t
 	uint8_t battery_pct;	// board.power->battery_pct(), 0 if unknown
 	uint16_t battery_mv;
+	uint16_t supply_mv;	// board.power->supply_mv() where the radio measures its supply (board_volts), else 0
 	bool power_off;		// the radio core asks to be switched off (critical battery, battery_off_s)
 	int8_t volume;		// percent last passed to hal_radio_t.volume (the knob, the override or the step), -1 = none yet
 	uint8_t volume_src;	// radio_volume_src_t: where that level comes from
@@ -265,6 +279,8 @@ typedef struct {
 void radio_core_start(void);
 // A consistent copy of the current state
 void radio_get_view(radio_view_t *v);
+// Just the view's state, for a caller short of stack (the view is some 0.7 KB)
+radio_state_t radio_get_state(void);
 // Bumped on every visible change, so the UI can redraw only when needed
 uint32_t radio_view_serial(void);
 
@@ -293,7 +309,7 @@ radio_vfo_copy_t radio_vfo_copy_check(const channel_t *ch, bool in_vfo);
 // The check on the shared view, then the request when it passes (the debug link); returns the check's answer
 radio_vfo_copy_t radio_req_vfo_copy_checked(void);
 // The VFO's step (Up / Down, VFO scan), kept in the settings: 1 kHz .. 1 MHz; RADIO_AM_STEP_833 (8333) is the exact
-// 8.33 kHz air band grid (radio/radio_am.h)
+// 8.33 kHz air band grid (radio/radio_am.h); 0 = auto, the width's: 12.5 kHz, 25 kHz wide or in the air band
 void radio_req_vfo_step_size(uint32_t hz);
 void radio_req_ptt(bool down);
 // PTT for a host audio session (USRP, docs/spec/usb-audio.md): the host's samples go on air instead of the microphone
@@ -355,11 +371,12 @@ void radio_req_scan_dual(uint16_t pos);		// the current channel (selected) and z
 // selected channel
 typedef struct {
 	bool vfo;
-	uint16_t zone, pos;	// a channel: zone index and position in it
+	uint16_t zone, pos;	// a channel: zone index and position in it; a VFO: pos is which, 0 or 1
 } radio_dual_ref_t;
 void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel);
-// The VFO's own settings, whether or not the radio is in the VFO now (CONFIG_DUAL_WATCH). False: no VFO frequency yet
-bool radio_get_vfo(channel_t *out);
+// VFO `index`'s own settings (0 or 1), whether or not the radio is in it now (CONFIG_DUAL_WATCH). False: no frequency
+// yet
+bool radio_get_vfo(uint8_t index, channel_t *out);
 // Dual watch now (CONFIG_SCAN): the two channels, the selected one and the one the receiver is on. False while it is off
 bool radio_get_dual(radio_dual_ref_t ref[2], uint8_t *sel, uint8_t *at);
 // DMR repeater roaming (CONFIG_DMR_ROAMING; no-op otherwise; docs/spec/dmr-roaming.md 6.1): the current zone's

@@ -13,6 +13,7 @@
 #include "debuglink/dl_chip.h"
 #include "debuglink/dlog.h"
 #include "hostlink/hostlink.h"
+#include "stubentry/stub_entry.h"
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
@@ -693,12 +694,17 @@ static size_t cmd_info_chip(uint8_t *out)
 	put32(out + 11, c.uid[1]);
 	put32(out + 15, c.uid[2]);
 	put32(out + 19, c.optcr);
-	out[23] = dl_rdp_level(c.optcr);
-	out[24] = dl_rdp_byte(c.optcr);
-	put16(out + 25, dl_wrp_mask(c.optcr));
-	out[27] = dl_bor_level(c.optcr);
-	out[28] = dl_user_bits(c.optcr);
-	return 29;
+	if (c.family == HAL_CHIP_STM32F4) {
+		out[23] = dl_rdp_level(c.optcr);
+		out[24] = dl_rdp_byte(c.optcr);
+		put16(out + 25, dl_wrp_mask(c.optcr));
+		out[27] = dl_bor_level(c.optcr);
+		out[28] = dl_user_bits(c.optcr);
+	} else {
+		memset(out + 23, 0xFF, 6);	// no option bytes: nothing to decode
+	}
+	out[29] = c.family;
+	return 30;
 }
 
 static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -713,7 +719,8 @@ static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	if (n == 0 || n > DL_MEM_READ_MAX || 5u + n > cap) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
-	if (board.system == NULL || board.system->read == NULL || !read_chip(&c)) {
+	// The address windows are the STM32F4's
+	if (board.system == NULL || board.system->read == NULL || !read_chip(&c) || c.family != HAL_CHIP_STM32F4) {
 		return status_only(out, DL_ST_UNAVAILABLE);
 	}
 	if (!dl_mem_allowed(addr, n, c.flash_kb)) {
@@ -910,12 +917,7 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 	case DL_CMD_SNMP:
 		return debuglink_cmd_snmp(req, len, out, cap);
 	case DL_CMD_STUB:
-#if CONFIG_STUB_ENTRY
-		if (len >= 1 && req[0] == DL_STUB_OP_ENTER && transmitting()) {
-			return status_only(out, DL_ST_BUSY);	// never hand the SoC over with the transmitter keyed
-		}
-#endif
-		return debuglink_cmd_stub(req, len, out, cap);
+		return stub_entry_request(req, len, out, cap);	// core/stubentry; unavailable without CONFIG_STUB_ENTRY
 	case DL_CMD_CRASH:
 		return debuglink_cmd_crash(req, len, out, cap);
 	case DL_CMD_WATCHDOG:
@@ -944,7 +946,7 @@ static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 	if (reboot_pending) {
 		reboot_now();
 	}
-	debuglink_stub_service();	// enters the RAM monitor after a verified STUB ENTER (noreturn); else a no-op
+	stub_entry_service();		// enters the RAM monitor after a verified STUB ENTER (noreturn); else a no-op
 	debuglink_crash_service();	// a crash test asked for (noreturn); else a no-op
 	debuglink_watchdog_service();	// a watchdog test asked for (ends in a reset); else a no-op
 	debuglink_rx2_service();	// the second SoC's update bridge asked for (noreturn); else a no-op

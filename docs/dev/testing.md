@@ -45,8 +45,17 @@ compiler, so a test exercises the code that ships. Test vectors come from the st
 radios and the stock codec, never from other firmware.
 
 To add a test: write `tests/host/<area>Test.c`, add its rule and a `run-<area>` target to `tests/host/Makefile`, and
-hook it into `run` (`run: run-<area>`). Build without warnings; ci.sh fails on any. A parser of bytes from outside
-(USB, the air, the network) also gets a fuzz loop with `fuzz.h`.
+hook it into `run` (`run: run-<area>`). Groups are named by the area or directory they test, never by a radio or
+platform. `make -C tests/host check-run` (part of `run`) fails when a test in `TESTS` has no `./<test>` line in any
+group; a program a test script drives (a simulated peer) goes in `HELPERS` instead. Build without warnings; ci.sh
+fails on any. A parser of bytes from outside (USB, the air, the network) also gets a fuzz loop with `fuzz.h`.
+
+A test of one board's own code (its calibration reader, its pin tables, its first stage) lives with the board, in
+`boards/<b>/tests/`. Its `host.mk` adds the test to `TESTS` and to the `run-boards::` target. `tests/host` includes
+every `boards/*/tests/host.mk`; a fragment names its own files through `HERE := $(dir $(lastword $(MAKEFILE_LIST)))`
+in its prerequisites, and its recipes use `$<` and `$^`, since `HERE` changes with the next fragment. The binaries are built in `tests/host/` like the rest.
+The firmware build only compiles the `*.c` directly in a board's directory, so these never reach an image. A driver
+or platform test stays in `tests/host/`, named by what it tests, even when one radio needed it first.
 
 ## The UI simulator and the gallery
 
@@ -87,6 +96,10 @@ Opt-in flags allow what changes the radio or the air around it:
 
 The full list, the options and the rig assumptions are in [tests/hil/README.md](../../tests/hil/README.md);
 "Writing a test" there has the fixtures.
+
+A skip is not a pass. Every skip names its kind, and a bring-up run (`tools/bringup.py run --radio <id>`) runs a
+radio's feature checklist, fails a required test that skips for a reason its feature doesn't declare, and records the
+result in `docs/testing/results/` ([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)).
 
 ## The SDR bench
 

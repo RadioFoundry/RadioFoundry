@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""The serial route for the HR_C7000 radios (DM-1801 Pro, DM-32UV; boards.py family "bfuv32-serial"): flashing over
+"""The serial route for the HR_C7000 radios (DM-1801 Pro, DM-32UV; boards.py family "serial-loader"): flashing over
 the programming cable, through one of two existing tools that odrflash wraps instead of speaking their protocols again:
 
   stub        a radio that runs ODR built with CONFIG_STUB_ENTRY=y: stub/stubtool.py loads its RAM monitor over the
               debug link (--odr-enter), writes the 4 KB sectors that differ (--write-app) and restarts the radio
               (--boot reset). No keys to hold. Only the sectors the image covers are written, so the codec slot
               stays when the image has none.
-  bootloader  Baofeng's update mode (PTT and SK1 at power-on): tools/dm32_flash.py. The loader erases the whole
+  bootloader  Baofeng's update mode (PTT and SK1 at power-on): tools/serial_loader.py. The loader erases the whole
               application area, the codec slot included, so the codec must be in what is written.
 
 auto picks stub when the radio answers the debug link and offers stub entry, else the bootloader. The codec slot is
@@ -32,7 +32,7 @@ SLOT_MAGIC = 0x43524444		# "DDRC": the first word of a codec slot (platform/hrc7
 BAUD = 115200
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-_PLACES = {"dm32_flash": "tools", "hrc7000_codec": "tools", "stubtool": "stub"}
+_PLACES = {"serial_loader": "tools", "hrc7000_codec": "tools", "stubtool": "stub"}
 _loaded = {}
 
 
@@ -41,7 +41,7 @@ class SerialError(Exception):
 
 
 def tool(name):
-    """The module of an ODR tool script (dm32_flash, hrc7000_codec, stubtool)."""
+    """The module of an ODR tool script (serial_loader, hrc7000_codec, stubtool)."""
     if name in _loaded:
         return _loaded[name]
     path = os.path.join(_ROOT, _PLACES[name], name + ".py")
@@ -105,7 +105,7 @@ def slot_from_file(board, app, data):
 
 def find_cable(port=None):
     """The programming cable's serial port: --port, else the only known USB-serial cable."""
-    df = tool("dm32_flash")
+    df = tool("serial_loader")
     try:
         return df.find_port(port)
     except df.FlashError as e:
@@ -235,12 +235,12 @@ def flash_stub(dev, raw, log=print, progress=None, opener=None):
 
 
 def flash_bootloader(dev, raw, board, log=print, progress=None, wait_s=120, opener=None, name="odr.bin"):
-    """tools/dm32_flash.py --model BOARD IMAGE, as a library call. Waits up to wait_s for the loader to answer
+    """tools/serial_loader.py --model BOARD IMAGE, as a library call. Waits up to wait_s for the loader to answer
     (the user switches the radio on in update mode meanwhile)."""
-    df = tool("dm32_flash")
+    df = tool("serial_loader")
     model = df.MODELS.get(board.id)
     if model is None:
-        raise SerialError("tools/dm32_flash.py has no model %s" % board.id)
+        raise SerialError("tools/serial_loader.py has no model %s" % board.id)
     try:
         for line in df.check_image(raw, model):
             log("         " + line)
@@ -265,7 +265,7 @@ def flash_bootloader(dev, raw, board, log=print, progress=None, wait_s=120, open
 
 
 def update_mode_steps(board):
-    df = tool("dm32_flash")
+    df = tool("serial_loader")
     model = df.MODELS.get(board.id)
     keys = model.keys if model else "the update mode keys"
     return ["Put the radio in update mode now: switch it off, hold %s, and switch it on while holding them." % keys,

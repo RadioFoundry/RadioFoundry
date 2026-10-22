@@ -80,7 +80,7 @@ address 0x08074714 to 0x080E3A74..0x080F3C90, and the descriptor at 0x080FFF80.
 | 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0) |
 | 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E3A71), codec code (0x080E3A74..0x080F3C8F), descriptor (0x080FFF80..0x080FFFFF) |
 
-A flash sector can only be erased whole, so `boards/dm1701/dm1701.ld` gives the application sectors 3-9
+A flash sector can only be erased whole, so `boards/dm1701/memory.ld` gives the application sectors 3-9
 (0x0800C000..0x080BFFFF, 720 KB in one piece) and asserts that everything it loads into flash ends before 0x080C0000.
 The image is one `.bin` from 0x0800C000, and an update erases and writes only the sectors it covers. The bytes around
 the codec in sectors 10 and 11 are 0xFF after a merge and are never executed. The DM-1701's settings and codeplug live
@@ -568,8 +568,17 @@ Recipes (as values):
 
 DCS word: the 9-bit code (octal digits as 3-bit groups, e.g. 023 -> 0x013), with bit 11 set (the fixed "100" marker:
 word bits 11:9 = 100), and the 11 Golay(23,12) parity bits of the 12-bit value (marker + code) in bits 22:12. Generator
-polynomial x^11 + x^10 + x^6 + x^5 + x^4 + x^2 + 1 (0xC75). Datasheet check: code 023 -> 0x763813 -> 0x4B = 0x0076,
-0x4C = 0x3813. Compute it; no table is needed.
+polynomial x^11 + x^10 + x^6 + x^5 + x^4 + x^2 + 1 (0xC75). Compute it; no table is needed.
+
+The chip sends the word MSB first (bit 22 first) and compares received bits in the same order, while DCS sends code
+bit 0 first. So 0x4B/0x4C take the word **bit-reversed**: 023 -> 0x763813 -> reversed 0x640E37 -> 0x4B = 0x0064,
+0x4C = 0x0E37. The programming guide's own example (0x0076 / 0x3813, unreversed) went out as D023 read backwards on
+the SDR bench, and the radio accepted no other radio's DCS; with the reversed word it sends and receives D023N.
+
+DCS turn-off tail (`radio-features.md` 3.3a): 0x4E bits 10:9 from 10 (DCS) to 11 (CTCSS) for the tail. 0x4A already
+holds 13440, so the chip sends 134.4 Hz as a CTCSS tone; back to 10 (and the polarity in bits 8:6, kept) on PTT again.
+The chip's own tail elimination (0x30 bit 11, 0x4E bits 15:14 phase shift) is a CTCSS feature and stays off. Not yet
+measured on the SDR bench (INF).
 
 ### 5.8 Tones, voice channel and TX audio source
 
@@ -724,7 +733,8 @@ straight to the amp (unverified).
 
 APRS receive takes FM receive audio from the I2S stream (squelch gated, 8 kHz): no ADC pin sees the discriminator, but
 the HR_C6000 puts its FM receive audio on I2S (21). The audio tap says so (`AUDIO_TAP_FM_RX`), and the core reads it
-through the shared stream (`aprs.md` 5.3). The HR_C6000's RX RAM carries the same audio ungated, for a later receive
+through the shared stream (`aprs.md` 5.3). The stream is gated by the FM feed-through (4:0x36), so it stays on
+at volume zero (11.2). The HR_C6000's RX RAM carries the same audio ungated, for a later receive
 path of the board's own.
 
 Sources: firmware constants, HR_C6000 documentation, CubeMX.
@@ -1451,7 +1461,9 @@ Verified on one radio with the new firmware; they override the unverified notes 
 - **Calibration**: the working copy at 0x010000 carries the marker. The FM I gain rows (0x170 UHF, 0x179 VHF) are all
   0x00 on both bands while the other gain rows hold values: an all-zero gain row is valid data.
 - **Soft volume**: HR_C6000 4:0x37 (RX gain) scales FM feed-through audio as well as DMR audio; -31 dB is still
-  audible, so the bottom of the knob must also mute the speaker path.
+  audible, so the bottom of the knob must also mute the speaker path. It mutes the amp only: the feed-through (0x36)
+  and the gain (unity at the bottom) stay as for any FM receive, because the I2S copy of the FM audio that APRS receive
+  reads is gated and scaled by both. Before this, a knob at zero turned the feed-through off and APRS heard nothing.
 - **Volume override**: because the MCU reads the knob and sets this gain itself, the debug link can set the level
   instead (RADIO op 30, `radio-features.md` 4.2): a step 0..16 maps to the same 0..100 % scale as the knob, in force
   until it is cleared (RAM only). The knob has no analog path around the gain, so the override fully takes its place (HW,
@@ -1499,7 +1511,7 @@ datasheet; register table and appendix A in its Chinese section):
 
 The I2S link (SPI3 as I2S slave on PA15/PC10/PC11/PC12, the HR_C6000 driving the clocks): Philips, 16-bit data in
 32-bit frames, both channels, 8 kHz, circular DMA on DMA1 streams 0 and 5 in 20 ms halves
-(`boards/dm1701/audio_dm1701.c`, `hal/hal_audio.h`). This is the only audio data path between the MCU and the radio.
+(`platform/stm32f4/hrc/i2s_pcm.c`, `hal/hal_audio.h`). This is the only audio data path between the MCU and the radio.
 
 No other path exists on this board: ADC1's four inputs are the volume pot (PA0), battery (PA1), mic level (PA3) and
 the temperature sensor; DAC channel 1 (PA4) sets the PA power (APC); the DAC channel 2 pin (PA5) is the VHF receiver

@@ -3,13 +3,18 @@
 
 # MD-380 bring-up checklist
 
-The MD-380 port (`make BOARD=md380`, and `MD380_BAND=vhf` for VHF radios) builds, passes its host tests and has run
+The MD-380 port (`make BOARD=md380`, and `BAND=vhf` for VHF radios) builds, passes its host tests and has run
 on a radio. This is the order to try it in, what each stage proves, and what to change when it doesn't
 work. The stage numbers match the unknowns table in [hardware-md380.md](../spec/hardware-md380.md) section 17. Every
 row names the knob in the source that the likely failure points at.
 
 The radio is a TYT MD-380, MD-390 or Retevis RT3, with or without GPS. Stock firmware D002.032 or newer is assumed
 to be on it at the start.
+
+The feature checklist, with every feature's required HIL tests and the last recorded result, is
+`tools/bringup.py list --radio md380`. `tools/bringup.py run --radio md380` records a run
+([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)). This page keeps the hardware steps and what to
+change when one fails.
 
 ## Status (2026-10-18)
 
@@ -37,7 +42,7 @@ audio path to the speaker, issue 2, and the features the board leaves off. The d
 3. Build and flash (the key file is yours; the tool checks it by SHA-256, hardware-md380.md 14.2):
 
    ```
-   make BOARD=md380                          # UHF; MD380_BAND=vhf for a VHF radio
+   make BOARD=md380                          # UHF; BAND=vhf for a VHF radio
    tools/stm32_dfu.py --model md380 --key ~/keys/md380.key build/md380/odr_md380.bin
    ```
 
@@ -108,7 +113,7 @@ Open Diagnostics (Menu > Settings > Diagnostics, or `odr_debug.py diag`). The bo
 | Check | If not |
 |---|---|
 | "C5000 10=80" after boot in FM (`--` means the read returned FF, a dead bus) | configuration port timing or pins (`radio_md380.c` `bus_byte`; clock PC13, MISO PE3); PE6 power-down polarity. Unknown 14 |
-| "cal factory" and sane bytes on "ref / lo / hi / rx" | the security register read (`flash_md380.c`), the row layout in `calibration_md380.c` ("power order" etc. says which check failed). Unknown 9 |
+| "cal factory" and sane bytes on "ref / lo / hi / rx" | the security register read (`platform/stm32f4/spi_flash`), the row layout in `calibration_md380.c` ("power order" etc. says which check failed). Unknown 9 |
 | "pll lock NNNNNNk" on every channel across the band | the frequency plan (`MD380_TCXO_HZ`, `MD380_IF_HZ`, `MD380_RX_LO_ABOVE`, `MD380_VCO_MULT`), the SKY72310 word timing (clock PE4), lock detect polarity (PD10). Unknowns 10, 11 |
 | An SDR near the radio sees the receive LO where the plan puts it (UHF: f - 49.95 MHz; VHF: 2 x (f + 49.95 MHz) at the VCO) | same |
 

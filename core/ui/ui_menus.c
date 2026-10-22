@@ -1977,7 +1977,21 @@ static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "Ab
 // The USB personality can be switched here (the host link's network adapter, CONFIG_USB_NETWORK)
 #define USB_NET_UI	(CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
 
-static const char *info_title(void) { return info_titles[ui_frame()->arg]; }
+static const char *info_title(void)
+{
+	uint16_t a = ui_frame()->arg;
+	return a == INFO_BATTERY && board_volts() == BOARD_VOLTS_SUPPLY ? "Supply" : info_titles[a];
+}
+
+// mV as volts with one decimal: 13.8 V
+static void sb_volts(sbuf_t *b, uint16_t mv)
+{
+	uint32_t dv = (mv + 50u) / 100u;
+	sb_u32(b, dv / 10u, 1);
+	sb_chr(b, '.');
+	sb_u32(b, dv % 10u, 1);
+	sb_str(b, " V");
+}
 
 static void sb_deg(sbuf_t *b, int32_t e7, char pos, char neg)
 {
@@ -2023,6 +2037,10 @@ static const char *info_body(void)
 #endif
 		break;
 	case INFO_BATTERY:
+		if (board_volts() == BOARD_VOLTS_SUPPLY) {	// a reading only: no charge level or warning
+			sb_volts(&b, ui_view()->supply_mv);
+			break;
+		}
 		sb_u32(&b, ui_st.battery_pct, 1);
 		sb_str(&b, ui_st.battery_pct <= (ui_st.low_batt_pct ? ui_st.low_batt_pct : 15) ? "%: charge soon" : "%");
 		break;
@@ -2671,24 +2689,31 @@ void ui_crash_tick(uint32_t now_ms)
 
 // ======================= Tools =======================
 
-// Diagnostics keeps number 7 (tests/hil/test_ui.py); Roaming follows (8, or 7 without diagnostics), then APRS
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_BATTERY, T_DIAG, T_ROAM, T_APRS, T_COUNT };
+// Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
+// user guide) is the same everywhere. The one a radio may not have (Battery) is last, so no radio has a gap; a build
+// without diagnostics skips 7
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_COUNT };
 
-// A tool this build or radio doesn't have is left out of the list (a radio without a battery has no Battery page)
+// A tool this build or radio doesn't have is left out of the list (Battery, Supply on a radio that measures its DC
+// input instead, is left out where the radio measures neither)
 static bool tool_shown(uint16_t i)
 {
-	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_has_battery());
+	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_volts() != BOARD_VOLTS_NONE);
 }
 
-// The hint names the last number ("1-9 open"), which follows the tools this radio has
+// The hint names the last number ("1-9 open"): the highest tool this radio has
 static char tools_hint[] = "1-9 open  Back";
 
 static uint16_t tools_count(void)
 {
-	uint16_t n = 0;
-	for (uint16_t i = 0; i < T_COUNT; i++)
-		n += tool_shown(i);
-	tools_hint[2] = (char)('0' + (n < 9 ? n : 9));
+	uint16_t n = 0, last = 0;
+	for (uint16_t i = 0; i < T_COUNT; i++) {
+		if (tool_shown(i)) {
+			n++;
+			last = (uint16_t)(i + 1u);
+		}
+	}
+	tools_hint[2] = (char)('0' + (last < 9 ? last : 9));
 	return n;
 }
 
@@ -2705,12 +2730,12 @@ static uint16_t tools_row(uint16_t row)
 static void tools_item(uint16_t row, ui_item_t *it)
 {
 	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single-freq repeater",
-					     "Battery", "Diagnostics", "Roaming", "APRS" };
+					     "Roaming", "Diagnostics", "APRS", "Battery" };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
-	strcpy(it->label, names[i]);
-	item_num(it, (uint16_t)(row + 1u));
+	strcpy(it->label, i == T_BATTERY && board_volts() == BOARD_VOLTS_SUPPLY ? "Supply" : names[i]);
+	item_num(it, (uint16_t)(i + 1u));	// the tool's own number, not its row (see the enum)
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	switch (i) {
@@ -2748,6 +2773,10 @@ static void tools_item(uint16_t row, ui_item_t *it)
 			it->flags |= UI_ITEM_DIM;
 		break;
 	case T_BATTERY:
+		if (board_volts() == BOARD_VOLTS_SUPPLY) {
+			sb_volts(&b, ui_view()->supply_mv);
+			break;
+		}
 		sb_u32(&b, ui_st.battery_pct, 1);
 		sb_chr(&b, '%');
 		break;
@@ -2902,6 +2931,15 @@ static const char *const n_keyfn_hold[] = { "Default", "Nothing", "Talk target",
 #endif
 static const int16_t v_updown[] = { 0, 1, 2 };
 static const char *const n_updown[] = { "Channel", "Zone", "Talk target" };
+#if CONFIG_VFO
+static const int16_t v_step[] = { 0, 250, 500, 625, 833, 1000, 1250, 2000, 2500, 5000, 10000 };	// 10 Hz units
+static const char *const n_step[] = { "Auto", "2.5 kHz", "5 kHz", "6.25 kHz", "8.33 kHz", "10 kHz", "12.5 kHz",
+				      "20 kHz", "25 kHz", "50 kHz", "100 kHz" };
+#endif
+#if CONFIG_DUAL_WATCH
+static const int16_t v_dual_wait[] = { 500, 1000, 1500, 2000, 3000, 5000 };	// ms
+static const char *const n_dual_wait[] = { "0.5 s", "1 s", "1.5 s", "2 s", "3 s", "5 s" };
+#endif
 static const int16_t v_autooff[] = { 0, 30, 60, 120 };
 static const char *const n_autooff[] = { "Off", "30 min", "1 h", "2 h" };
 #if CONFIG_DMR_SMS
@@ -2950,11 +2988,17 @@ static const set_item_t s_talk[] = {
 	NUMBER("Reply window", NULL, UI_SET_REPLY_S, 0, 30, 1, " s"),
 	LIST("TX timeout", "TOT", UI_SET_TOT_S, v_tot, n_tot),
 	NUMBER("Default squelch", NULL, UI_SET_SQUELCH, 0, 9, 1, NULL),
+#if CONFIG_VFO
+	LIST("VFO step", "frequency tuning channel spacing", UI_SET_VFO_STEP, v_step, n_step),
+#endif
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
+	TOGGLE("Mic AGC", "automatic gain level", UI_SET_MIC_AGC),
+	TOGGLE("Mic noise reduction", "noise suppression background", UI_SET_NOISE_REDUCTION),
 	TOGGLE("Monitor by default", "digital monitor promiscuous hear all", UI_SET_HEAR_ALL_DEFAULT),
 	TOGGLE("Show talker alias", NULL, UI_SET_ALIAS_SHOW),
 #if CONFIG_DUAL_WATCH
 	TOGGLE("Dual watch talk back", "reply other channel A B", UI_SET_DUAL_TALK_BACK),
+	LIST("Dual watch delay", "resume wait reply A B", UI_SET_DUAL_DELAY_MS, v_dual_wait, n_dual_wait),
 #endif
 };
 static const set_item_t s_privacy[] = {
@@ -3137,6 +3181,18 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 static uint16_t group_count(void) { return ui_set_item_count((uint8_t)ui_frame()->arg); }
 
 
+// The board's vocoder takes this encode option (hal_vocoder_t.options)
+static bool vocoder_has(uint32_t opt)
+{
+	return board.vocoder != NULL && board.vocoder->options != NULL && (board.vocoder->options() & opt) != 0;
+}
+
+// Mic AGC is on and in force: Mic gain doesn't apply (shown as "AGC", dimmed)
+static bool mic_agc_on(void)
+{
+	return vocoder_has(VOCODER_OPT_AGC) && ui_svc_setting_get(UI_SET_MIC_AGC) != 0;
+}
+
 // Why a setting can't be used on this radio or in this build (the row is dimmed and OK says it), NULL if it can
 static const char *set_why_not(const set_item_t *s)
 {
@@ -3167,7 +3223,17 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_STRIP:
 		return board.display != NULL && board.display->bpp == 1 ? "Colors are for color screens" : NULL;
 	case UI_SET_MIC_GAIN:
-		return mic_gain_available() ? NULL : "Mic gain: not in this build";
+		if (!mic_gain_available())
+			return "Mic gain: not in this build";
+		return mic_agc_on() ? "Mic AGC sets the level" : NULL;
+	case UI_SET_NOISE_REDUCTION:
+		if (!CONFIG_DMR)
+			return "Noise reduction: not in this build";
+		return vocoder_has(VOCODER_OPT_NOISE_REDUCTION) ? NULL : "Not on this radio";
+	case UI_SET_MIC_AGC:
+		if (!CONFIG_DMR)
+			return "Mic AGC: not in this build";
+		return vocoder_has(VOCODER_OPT_AGC) ? NULL : "Not on this radio";
 	case UI_SET_HEAR_ALL_DEFAULT:
 		return feats() & UI_FEAT_HEAR_ALL ? NULL : "Digital monitor: not in this build";
 	case UI_SET_ALIAS_SHOW:
@@ -3210,6 +3276,8 @@ static void group_item(uint16_t i, ui_item_t *it)
 		set_value_text(s, edit ? set_value : ui_svc_setting_get(s->id), it->value, sizeof it->value);
 	if (s->id == UI_SET_PRIVACY_KEY && s->type == ST_NUMBER && !edit && ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 0)
 		strcpy(it->value, "-");
+	if (s->id == UI_SET_MIC_GAIN && !edit && mic_agc_on())
+		strcpy(it->value, "AGC");
 	if (edit)
 		it->flags |= UI_ITEM_EDIT;
 	if (set_why_not(s) != NULL)

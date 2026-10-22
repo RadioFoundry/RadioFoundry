@@ -76,10 +76,13 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_x(&o, d.lo_id, 4);
 		break;
 	case 1:
+		// 0x67's 9 bits, 0x65's 7 and the sub-audio status 0x0C (b10 CTCSS, b14 DCS, b15 inverted DCS)
 		put(&o, "rssi ");
-		put_x(&o, d.rssi_raw, 4);
+		put_x(&o, d.rssi_raw & 0x1FFu, 3);
 		put(&o, " n ");
-		put_x(&o, d.noise_raw, 4);
+		put_x(&o, d.noise_raw & 0x7Fu, 2);
+		put(&o, " c ");
+		put_x(&o, d.css_raw, 4);
 		break;
 	case 2:
 		put(&o, "keys ");
@@ -245,6 +248,7 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		if (i == DIAG_GPS_LINE) {
 			// The GPS module on UART2 (platform/hrc7000/gps_hrc.c): heard, valid / bad sentences, bytes received. "b0"
 			// with the module powered: the RXD pad's mux or the power pin's level (GPS_POWER_ON_LEVEL)
+#if CONFIG_GPS
 			uint32_t good, bad, n;
 			hrc_gps_counts(&good, &bad, &n);
 			put(&o, hrc_gps_present() ? "gps yes " : "gps no ");
@@ -254,6 +258,9 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 			put(&o, " b");
 			put_u(&o, n);
 			put(&o, hrc_gps_running() ? " on" : " off");
+#else
+			put(&o, "gps not built");
+#endif
 			break;
 		}
 #if CONFIG_DMR

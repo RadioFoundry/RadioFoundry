@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Radio access backends: how the page reaches one family of radios. radio.json flash.backend names the backend; app.js
+// Radio access backends: how the page reaches one family of radios. radios.json flash.backend names the backend; app.js
 // runs the tasks (install, backup, restore, help) and asks the radio's backend which steps each task takes and which
 // views draw the steps it owns. The steps every radio shares (radio, build, bundle, symptom, recover) stay in app.js.
 // A new way to install or back up a radio (another bootloader protocol, a stock read-back protocol) is a new module
 // that calls register(); the task flow doesn't change. docs/dev/website.md "Radio access backends" has the contract.
 //
-//   id                      radio.json flash.backend
+//   id                      radios.json flash.backend
 //   available(radio, fb, task)  the page can run task ("install" | "backup") on this radio
 //   steps(task, ctx)        the step ids of a task, or null for the shared ones (STEPS in app.js). ctx: {recovering}
 //   views                   {step id: () => element} for the steps the backend owns
@@ -40,7 +40,7 @@ export function register(b) {
 	return b;
 }
 
-// The backend of a radio (radio.json entry); a radio without one gets NONE, which offers nothing
+// The backend of a radio (radios.json entry); a radio without one gets NONE, which offers nothing
 export const backendOf = (radio) => BACKENDS.get(radio?.flash?.backend) || NONE;
 
 // The backend that restores a bundle with a view of its own, else null (the radio's backend decides)

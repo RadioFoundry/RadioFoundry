@@ -3,7 +3,9 @@
 # Build configuration
 
 Features that cost flash, and values that differ per radio, are chosen at build time. Defaults live in
-`config/features.mk`, a board overrides them in `boards/<board>/config.mk`, and the make command line overrides both:
+`config/features.mk`. A platform changes them for every radio on it in `platform/<p>/config.mk`, a board changes them
+in `boards/<board>/config.mk`, and the make command line overrides all of them. The Makefile reads the board's file
+before the platform's: both use `?=`, which keeps the first value set, so the board wins over its platform:
 
 ```
 make BOARD=dm1701                        # the board's defaults
@@ -12,7 +14,7 @@ make BOARD=dm1701 CONFIG_VFO=n           # programmed channels only
 make BOARD=dm1701 CONFIG_DISPLAY_INSET=3 # smaller screen margins
 make BOARD=dm32                          # DM-32UV (csky-elf toolchain: tools/build-csky-toolchain.sh)
 make BOARD=md380                         # MD-380 / MD-390 / RT3, UHF
-make BOARD=md380 MD380_BAND=vhf          # the VHF radios (one band per radio, one image per band)
+make BOARD=md380 BAND=vhf                # the VHF radios (one band per radio, one image per band): build/md380-vhf
 ```
 
 Each switch reaches C as `CONFIG_<NAME>` = 0 or 1, always defined: test it with `#if CONFIG_X`, never `#ifdef`.
@@ -25,6 +27,14 @@ starts). `make BOARD=<b> print-config` lists the resolved switches.
 Every feature is on by default wherever the radio has what it needs. A board turns a feature off only for hardware
 it lacks (or board code not written yet) or when the image doesn't fit, and then the most obscure
 large features go first. Bench diagnostics such as `CONFIG_AUDIO_PROBE` stay off.
+
+A feature that needs a part only some radios have (a vibration motor, a GPS receiver, SPI NAND) is a hardware switch:
+`hardware = "..."` on its entry in `tests/hil/features.toml`. Each board then builds it, lists it in
+`BOARD_UNSUPPORTED`, or names it in `board.toml` `[hardware] unconfirmed`, and `tools/boards.py check` enforces that.
+The accelerometer is the next one: today its driver (`drivers/sensor/lis3dh`) only feeds a board's
+diagnostics page under `CONFIG_DIAG`, so it has no switch. The first feature that uses motion brings a hardware
+switch with it. A real-time clock driver is the same: none exists yet, and it arrives as `CONFIG_RTC`, a hardware
+switch ([radio-features.md](spec/radio-features.md) 5.6).
 
 ## Variants
 
@@ -63,6 +73,7 @@ below are for the DM-1701.
 | `CONFIG_VOX` | = FM | voice-operated transmit on FM, from the microphone level (`docs/spec/radio-features.md` 3.4) |
 | `CONFIG_BATTERY_SAVE` | = FM | receiver duty cycling on an idle FM channel (`docs/spec/radio-features.md` 5.4) |
 | `CONFIG_VIBRATE` | n (radios with a vibration motor: y) | vibration alerts on the board's motor (`hal_power_t.vibrate`) for messages, call alerts, private calls and emergencies, and Settings > Sound > Vibrate (`docs/spec/radio-features.md` 4.1). No radio on main has a motor yet; a board without one shows the row dimmed |
+| `CONFIG_GPS` | y (radios without a GPS receiver: n) | the GPS receiver: the board's module driver and its NMEA input (`drivers/gps`, `platform/*/gps*`, `CAP_GPS`). Off, the radio has no GPS; DMR GPS, LRRP and APRS keep the fixed position and report no fix |
 | `CONFIG_APRS` | = FM | APRS (`core/aprs`, `docs/spec/aprs.md`): position, status and message packets as AX.25 / Bell 202 AFSK on FM through `board.afsk`, positions over DMR (LRRP / UDT), beacon triggers, a KISS TNC on the host port. Transmit stays off until the user turns it on. About 2.8 KB RAM on the DM-1701 |
 | `CONFIG_APRS_RX` | = APRS (MD-380: n) | APRS receive: the AFSK demodulator on the board's received audio, station list, messages to us with acks, the digipeater. Useful only where the board can sample received audio: its own AFSK receive path, or FM receive audio on the PCM stream (the DM-1701, `docs/spec/aprs.md` 5.3). About 6 KB RAM more |
 | `CONFIG_APRS_IGATE` | = APRS_RX and HOSTLINK (DM-1701: n, flash) | the iGate rules, RF to APRS-IS and messages back, with the host helper `tools/aprs_gate.py` holding the APRS-IS connection |
@@ -102,6 +113,7 @@ below are for the DM-1701.
 | `CONFIG_HOTSPOT` | = DMR and HOSTLINK | MMDVM modem / hotspot over the host port |
 | `CONFIG_HOTSPOT_SPLIT` | = HOTSPOT (MD-380: n) | split duplex repeater: two radios, each an MMDVM modem, as one duplex repeater (the TX half sends the continuous BS outbound with the CACH, the RX half labels both inbound slots from the TX half's slot clock); the vendor command 0xD6 and the version suffix " SPLIT1", roles only after SET_ROLE, the HR_C6000 BS outbound engine, the debug link's SPLIT command (`docs/spec/split-duplex.md`). Needs `CONFIG_HOTSPOT`. Off, the image is unchanged. About 2.1 KB RAM on the DM-1701 |
 | `CONFIG_DEBUGLINK` | = HOSTLINK | debug link for bench automation on the host port: diagnostics, screenshots, key / PTT injection, log ring (`docs/spec/debuglink.md`) |
+| `CONFIG_STUB_ENTRY` | = HOSTLINK | the stub entry: the flashing tools load their flash-access RAM monitor through the host link (command 0x1A) and the radio jumps to it, so updates need no key held at power-on (`docs/spec/stub-entry.md`). Its own feature: with `CONFIG_DEBUGLINK=n` it brings its own listener (PING, VERSION, STUB). Needs `CONFIG_HOSTLINK`. On the STM32 radios 8 KB of RAM (the staging buffer); with the debug link on, under 0.1 KB flash more than the debug link alone |
 | `CONFIG_TASK_STACKS` | = DEBUGLINK | every task's least free stack in the debug link's `tasks` view section (`docs/spec/debuglink.md` 3.7): the kernel's task create / delete trace hooks keep a table of the tasks (`core/app/task_stack.c`). About 0.5 KB flash (0.7 KB on the HR_C7000 radios) and 72 bytes RAM |
 | `CONFIG_CPS_OPENFW` | = HOSTLINK | open-firmware CPS protocol on the host port (USB serial, or the programming cable UART of the DM-32 and the DB25-D; qdmr, the open-firmware CPS, `tools/cps_client.py`): codeplug read / write, radio info (`docs/spec/cps-protocol.md` 2). The settings store and the sector journal (`docs/spec/settings-store.md`) are always built |
 | `CONFIG_CPS_FAST` | = CPS_OPENFW and DEBUGLINK | the fast codeplug protocol, debug link command 0x1C (`docs/spec/cps-fast.md`): the same codeplug image in 4 KB blocks, blank blocks reported and not sent, CRC-32 sums so a host moves only the blocks that changed, LZ4 both ways, writes staged and committed under a power-cut safe record where the board has a staging area (through the sector journal otherwise), the codeplug re-read at the end. Needs `CONFIG_CPS_OPENFW` and `CONFIG_DEBUGLINK`. No buffer of its own (it streams through the storage sector buffer and the debug link's reply). About 3.9 KB flash and 0.2 KB RAM on the DM-1701 |
@@ -143,13 +155,13 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 
 | Variable | Board | Meaning |
 |---|---|---|
-| `MD380_BAND` | md380 | `uhf` (default, 400-480 MHz) or `vhf` (136-174 MHz): the band table, the frequency plan and the board name ("MD-380 VHF") |
+| `BAND` | md380 | A build option (`board.toml` `[[build_options]]`, `board.mk` `BUILD_OPTIONS`): `uhf` (default, 400-480 MHz) or `vhf` (136-174 MHz), the band table, the frequency plan and the board name ("MD-380 VHF"). Given on the command line, it adds its value to the build directory (`build/md380-vhf`) |
 | `MD380_DEFS` | md380 | extra defines for the bench (`docs/testing/md380-bringup.md`): `-DMD380_PANEL_TYPE=n` and `-DMD380_PANEL_MADCTL_XOR=0xNN` (display controller and orientation), `-DMD380_CH_ACTIVE_HIGH=1` (channel switch polarity), `-DMD380_BATT_COUNTS_X10=n` (battery divider), `-DMD380_KEEP_SWD` (leave PA13 / PA14 to the debugger; the microphone is then unpowered) |
 | `LTO` | 0 (MD-380, DM-1701: 1) | link time optimization (`-flto=auto` at compile and link): about 17 KB smaller on the DM-1701 (20 KB with `LTO_3P=1`). The DM-1701 and MD-380 defaults needed it while their application areas were 336 KB and 275 KB; since the codec moved ([codec-placement.md](spec/codec-placement.md)) they have 720 KB and 464 KB, and it stays on for the smaller image. The DM-32 (csky) doesn't use it |
 | `LTO_3P` | 0 (MD-380: 1) | with `LTO=1`, the third-party code too (HAL, CMSIS, FreeRTOS, TinyUSB): about 3 KB more. FreeRTOS marks what its port's assembly reaches `portDONT_DISCARD`; the vectors are referenced from the assembly start-up. `LTO_EXCLUDE` lists files kept out (file-scope assembly: `platform/stm32f4/codec_call.c`) |
 | `TCP_CONNS` | dm32 | TCP connections in all states (`core/net/tcp.h`, 4 elsewhere): 3 by default on the DM-32UV, about 1.5 KB RAM each across TCP, HTTP and rigctld |
 | `MAXIMAL_VARS` | DM-1701: `LTO=1` | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
-| `BOARD_UNSUPPORTED` | DM-1701: `FONT_XL`; MD-380, DM-32: see "Board defaults" | set in a board's `config.mk`: switches the radio's hardware code doesn't cover; the maximal build leaves them off (`make print-unsupported`) |
+| `BOARD_UNSUPPORTED` | DM-1701: `FONT_XL`; MD-380, DM-32: see "Board defaults" | set in a board's `config.mk`, one switch a line with the reason in its comment: switches the radio's hardware code doesn't cover; the maximal build leaves them off (`make print-unsupported`) |
 | `BOARD_REQUIRED` | DB25-D: `FM` | set in a board's `config.mk`: switches the board can't build without; ci.sh builds no `no-` configuration for them (`make print-required`) |
 | `MAXIMAL_SKIP` | DM-1701: `NET_PPP APRS_IGATE`; MD-380: `NET_PPP NAND_STORAGE` | set in a board's `config.mk`: switches that work on the radio but that it doesn't need, which the maximal build leaves off too (`make print-maximal-skip`). `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); the DM-1701's `audio-probe` build covers it |
 

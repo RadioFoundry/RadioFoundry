@@ -152,7 +152,7 @@ static struct {
 //   what:  p played, d repeat dropped, e not played (privacy, no key), x other CC, s other slot, o call not played
 //          (filters), n no call yet (late entry waiting), t ignored while transmitting, h call (re)started from it,
 //          k ended the call, - nothing to do
-// The driver side logs the same entries ("drx", boards/dm1701/dmr_dm1701.c), so the two can be diffed.
+// The driver side logs the same entries ("drx", platform/stm32f4/hrc/dmr_glue.c), so the two can be diffed.
 
 #if DMR_RX_TRACE
 #define TRACE_PER_LINE	10

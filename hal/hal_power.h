@@ -27,6 +27,10 @@ typedef struct {
 	// Optional: run the vibration motor for ms milliseconds and return at once (a call while it runs restarts the time);
 	// NULL when the radio has no motor. The core's vibration alerts use it (core/radio/vibe.c, CONFIG_VIBRATE)
 	void (*vibrate)(uint16_t ms);
+	// Optional: the DC input in mV on a radio without a battery (CAP_NO_BATTERY) that measures its
+	// supply, such as a mobile; NULL otherwise. Shown only: the battery warnings, charge level and
+	// power-off never act on it (board_volts)
+	uint16_t (*supply_mv)(void);
 } hal_power_t;
 
 #endif

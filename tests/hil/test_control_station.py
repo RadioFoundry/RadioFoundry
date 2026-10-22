@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, find_ports
+from odr_hil import DebugLink, DebugLinkError, find_ports, skip
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FIXED_RADIO = "192.168.10.1"     # IPGW_FIXED_LINK_DEFAULT
@@ -26,9 +26,9 @@ BENCH_SRC = 9990301
 
 def _need(radio):
     if "DMR_IP_GATEWAY" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_IP_GATEWAY")
+        skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
     if "net.passthrough" not in radio.view(["hotspot"]):
-        pytest.skip("firmware without control station mode (no net.passthrough view key)")
+        skip("not_built", "firmware without control station mode (no net.passthrough view key)")
 
 
 def _udp_link(ip, timeout):
@@ -86,12 +86,13 @@ def _addresses(radio):
     return own, str(host), str(ipaddress.IPv4Address(int(host) ^ 1))
 
 
+@pytest.mark.feature("dmr_control_station")
 def test_usb_settings_stored(radio):
     """Radio only: op 27 stores each setting, the view keys follow; nothing re-enumerates (the power-on setting acts
     at the next boot only)."""
     _need(radio)
     if "USB" not in radio.features():
-        pytest.skip("no USB on this radio: no USB network settings")
+        skip("no_hw", "no USB on this radio: no USB network settings")
     try:
         radio.link.usb_net_settings(boot_network=True)
         v = radio.view(["hotspot"])
@@ -112,6 +113,7 @@ def test_usb_settings_stored(radio):
     assert v["usb.boot_network"] == "0" and v["net.passthrough"] == "0" and v["net.fixed_link"] == "0", v
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 def test_fixed_link(radio):
     """The fixed link: the host gets 192.168.10.2 by DHCP, pings 192.168.10.1, the debug link answers there."""
@@ -140,6 +142,7 @@ def test_fixed_link(radio):
     assert radio.view(["hotspot"]).get("usb.network") == "0"
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 @pytest.mark.reboot
 def test_boot_network(radio):
@@ -212,9 +215,11 @@ def _received(sock, seconds):
     return got
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_passthrough_text(radio, sdr_bench, pytestconfig):
     """Passthrough: an ETSI IP text and a TMS with an ACK request from the bench to the radio's ID reach the PC's
     sockets (UDP 5016, 4007) and only them: the inbox count stays, no TMS ACK goes out, data.pt_yielded counts both."""
@@ -249,9 +254,11 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
         _back_to_serial(radio, [radio_ip])
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_passthrough_reply(radio, sdr_bench, pytestconfig):
     """The PC's datagram to the bench's ID goes over the air from the radio's own DMR ID; a confirmed packet from the
     bench still gets the radio's ETSI response in passthrough."""

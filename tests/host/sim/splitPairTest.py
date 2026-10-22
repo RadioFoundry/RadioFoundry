@@ -159,6 +159,7 @@ class Host:
         self.rx_busy = 0
         self.epochs = []                # (h, epoch dict) from TX
         self.epoch_sent = 0
+        self.relay = sdh.EpochRelay()
         self.silent = False
         self.tx_keyed = False
         self.status = {"tx": None, "rx": None}
@@ -182,8 +183,10 @@ class Host:
             self.epochs.append((h, ep))
             if self.sync["tx"].ready() and self.sync["rx"].ready():
                 t_rx, period = sdh.epoch_for_rx(self.sync["tx"], self.sync["rx"], ep, h)
-                self.w.send(self.w.rx, sdh.split_frame(sdh.SUB_SET_EPOCH, sdh.epoch_payload(t_rx, period)))
-                self.epoch_sent += 1
+                bound = self.sync["tx"].bound_us() + self.sync["rx"].bound_us()
+                if self.relay.decide(t_rx, period, bound):
+                    self.w.send(self.w.rx, sdh.split_frame(sdh.SUB_SET_EPOCH, sdh.epoch_payload(t_rx, period)))
+                    self.epoch_sent += 1
             return
         if cmd == sdh.ODR_SPLIT and f[3] == sdh.SUB_STATUS and f[4] == 0:
             st = sdh.parse_status(f[5:])
@@ -305,6 +308,7 @@ def scenario(exe, seed, ppm_tx, ppm_rx, off_tx, off_rx, spike_ms, label):
             # 34 s of 1-3 ms USB asymmetry pins the rate to about 20 ppm (it only scales period_ns: 0.2 ms per 10 s)
             check(abs(rate_err) < 30.0, f"{label} {name}: rate estimate error {rate_err:.2f} ppm")
         check(host.epoch_sent >= 10, f"{label}: epochs relayed ({host.epoch_sent})")
+        check(host.relay.rejected == 0, f"{label}: no epoch held back ({host.relay.log[-3:]})")
         mark_up = len(host.uplink)
         mark_air = len(w.tx.air)
         want, h_first = schedule_calls(w, host, w.h + 200_000)
@@ -368,7 +372,43 @@ def scenario(exe, seed, ppm_tx, ppm_rx, off_tx, off_rx, spike_ms, label):
         w.close()
 
 
+def relay_rules():
+    """EpochRelay and ClockSync.bound_us on their own: what a bad clock sync can and can't get through"""
+    P = sdh.SLOT_NS
+    r = sdh.EpochRelay()
+    check(not r.decide(1_000_000, P, 12_000) and r.log[-1]["action"] == "skip", "relay: bound over the limit skipped")
+    check(r.decide(1_000_000, P, 4_000), "relay: the first good epoch sent")
+    check(r.decide(1_000_000 + 50 * 60_000 + 2_000, P, 4_000), "relay: 50 frames on, 2 ms off: sent")
+    t_sent = 1_000_000 + 50 * 60_000 + 2_000
+    # One slot off (a whole-slot clock error): held, the epoch sent stays
+    check(not r.decide(t_sent + 30_000 + 200 * 60_000, P, 4_000) and r.log[-1]["action"] == "hold",
+          "relay: one slot off held")
+    check(abs(r.log[-1]["rem_us"]) > 29_000, f"relay: the hold's remainder ({r.log[-1]['rem_us']})")
+    check(r.decide(t_sent + 300 * 60_000 - 1_000, P, 4_000) and r.held == [], "relay: an agreeing epoch clears the hold")
+    # Three in a row that agree with each other but not with the one sent: the one sent was wrong
+    base = t_sent + 30_000
+    acts = [r.decide((base + k * 600_000 + (k * 500)) % sdh.WRAP, P, 4_000) for k in range(1, 4)]
+    check(acts == [False, False, True] and r.log[-1]["action"] == "replace", f"relay: replaced after 3 ({acts})")
+    check(r.decide(base + 10 * 600_000 + 1_000, P, 4_000), "relay: the replacement is the reference now")
+    # Across the clock wrap
+    r2 = sdh.EpochRelay()
+    r2.decide(sdh.WRAP - 10_000, P, 1_000)
+    check(r2.decide((sdh.WRAP - 10_000 + 7 * 60_000 + 500) % sdh.WRAP, P, 1_000), "relay: agreement across the wrap")
+    check(not r2.decide((sdh.WRAP - 10_000 + 7 * 60_000 + 30_500) % sdh.WRAP, P, 1_000), "relay: a slot off across the wrap")
+    # bound_us: half the worst round trip the estimate rests on
+    c = sdh.ClockSync()
+    check(c.bound_us() == float("inf"), "bound: no samples, no bound")
+    for i, rtt in enumerate((9_000, 3_000, 5_000)):
+        c.add(i * 20_000, i * 20_000 + rtt, 500_000 + i * 20_000, 500_000 + i * 20_000)
+    check(c.bound_us() == 1_500, f"bound: early, the best sample ({c.bound_us()})")
+    for i in range(3, 40):
+        h = i * 1_000_000
+        c.add(h, h + (2_000 if i != 21 else 30_000), 500_000 + h, 500_000 + h)
+    check(c.bound_us() == 1_000, f"bound: fit points only (a 30 ms spike filtered out) ({c.bound_us()})")
+
+
 def main(argv):
+    relay_rules()
     exe = argv[1] if len(argv) > 1 else os.path.join(HERE, "..", "splitSim")
     # The TX half's clock wraps through 2^32 about 20 s into the run
     scenario(exe, 1, +18.0, -22.0, WRAP - 20_000_000, 123_456_789, 8, "drift")

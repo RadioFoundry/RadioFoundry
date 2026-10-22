@@ -225,8 +225,11 @@ inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h
 
 # Side key assignment (core/input/keyassign.c) and its key map in the gesture engine
 TESTS   += keyassignTest
-keyassignTest: keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign.h $(CORE)/input/input_engine.c
-	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/input_engine.c
+# It reads every board's board.c key map: BOARD_IDS lists them, from boards/ (a new board is checked with no edit here)
+KEYASSIGN_BOARDS := $(wildcard $(ROOT)/boards/*/board.c)
+keyassignTest: keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign.h $(CORE)/input/input_engine.c $(KEYASSIGN_BOARDS)
+	$(CC) $(CFLAGS) $(CORE_HAL) '-DBOARD_IDS=$(foreach f,$(KEYASSIGN_BOARDS),"$(notdir $(patsubst %/,%,$(dir $(f))))",)' \
+		-o $@ keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/input_engine.c
 
 # The rotary encoder's quadrature decoder (drivers/input/quadrature), shared by the boards
 quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $(ROOT)/drivers/input/quadrature/quadrature.h
@@ -262,15 +265,12 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./rx2LinkTest
 .PHONY: run-core
 
-# The read-only codeplug (open-firmware layout and built-in channels) and the DM-1701 calibration reader, on fake flash images
+# The read-only codeplug (open-firmware layout and built-in channels), on fake flash images
 FLASH_HAL := -I$(ROOT)/hal -Wshadow
-TESTS   += codeplugTest calibrationTest
+TESTS   += codeplugTest
 
 codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
 	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
-
-calibrationTest: calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c $(ROOT)/boards/dm1701/dm1701.h $(CORE)/radio/cal_curve.h
-	$(CC) $(CFLAGS) $(FLASH_HAL) -I$(ROOT)/boards/dm1701 -o $@ calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c
 
 # The power byte on 2-, 3- and 9-level radios
 TESTS   += codeplugPower2Test codeplugPower3Test codeplugPower9Test
@@ -285,12 +285,11 @@ calCurveTest: calCurveTest.c $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ calCurveTest.c
 
 run: run-flash
-run-flash: codeplugTest calibrationTest calCurveTest codeplugPower2Test codeplugPower3Test codeplugPower9Test
+run-flash: codeplugTest calCurveTest codeplugPower2Test codeplugPower3Test codeplugPower9Test
 	./codeplugPower2Test
 	./codeplugPower3Test
 	./codeplugPower9Test
 	./codeplugTest
-	./calibrationTest
 	./calCurveTest
 .PHONY: run-flash
 
@@ -312,10 +311,9 @@ run-rf: at1846sTest subaudioTest
 	./subaudioTest
 .PHONY: run-rf
 
-# The MD-380's chips (docs/spec/hardware-md380.md): the SKY72310 synthesizer's divider words against the data sheet
-# and a register model, the HR_C5000 variant of the HR_C6000 driver, and the GPS NMEA line framing and receive ring the
-# MD-380, DM-32UV and DB25-D GPS drivers share
-TESTS   += sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest
+# The SKY72310 synthesizer's divider words against the data sheet and a register model, the HR_C5000 variant of the
+# HR_C6000 driver, and the GPS NMEA line framing and receive ring the GPS drivers share
+TESTS   += sky72310Test hrc5000Test nmeaLineTest gpsRxTest
 
 sky72310Test: sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c $(ROOT)/drivers/rf/sky72310/sky72310.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c
@@ -334,14 +332,12 @@ gpsRxTest: gpsRxTest.c $(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/g
 	$(CC) $(CFLAGS) -Wshadow -o $@ gpsRxTest.c $(ROOT)/drivers/gps/gps_rx/gps_rx.c \
 		$(ROOT)/drivers/gps/nmea_line/nmea_line.c
 
-# The MD-380's bit-banged RF bus (boards/md380/rfbus_md380.c, with the real pins.h) against fake chips on the documented
-# wiring; md380_stub/ holds the stand-in platform.h and FreeRTOS.h the board code includes
-md380RfbusTest: md380RfbusTest.c $(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/boards/md380/rfbus_md380.h \
-                $(ROOT)/boards/md380/pins.h $(wildcard md380_stub/*.h) $(ROOT)/drivers/modem/hrc5000/hrc5000.c $(ROOT)/drivers/modem/hrc_common/hrc.c \
-                $(wildcard $(ROOT)/drivers/modem/hrc5000/*.h $(ROOT)/drivers/modem/hrc_common/*.h) $(ROOT)/hal/hal_dmr_modem.h
-	$(CC) $(CFLAGS) -Imd380_stub -I$(ROOT)/boards/md380 -I$(ROOT)/hal -Wshadow -o $@ md380RfbusTest.c \
-		$(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/drivers/modem/hrc5000/hrc5000.c $(ROOT)/drivers/modem/hrc_common/hrc.c \
-		$(ROOT)/core/dmr/ambe/ambeFec.c
+# The GPS rate hunt (drivers/gps/gps_rx/gps_baud.c) with canned NMEA
+TESTS   += gpsBaudTest
+gpsBaudTest: gpsBaudTest.c $(ROOT)/drivers/gps/gps_rx/gps_baud.c $(ROOT)/drivers/gps/gps_rx/gps_baud.h \
+             $(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/gps_rx/gps_rx.h $(ROOT)/drivers/gps/nmea_line/nmea_line.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ gpsBaudTest.c $(ROOT)/drivers/gps/gps_rx/gps_baud.c \
+		$(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c
 
 # The STM32 codec descriptor (platform/stm32f4/codec_desc.h): its checks, and codec sectors 10 and 11 as
 # tools/codec_extract.py merges them (docs/spec/codec-placement.md)
@@ -350,17 +346,17 @@ TESTS   += codecDescTest
 codecDescTest: codecDescTest.c $(ROOT)/platform/stm32f4/codec_desc.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ codecDescTest.c
 
-run: run-md380
-run-md380: sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest codecDescTest
+run: run-chips
+run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest codecDescTest
 	./sky72310Test
 	./hrc5000Test
 	./nmeaLineTest
 	./gpsRxTest
-	./md380RfbusTest
-	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin
+	./gpsBaudTest
+	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin --board dm1701
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380
 	./codecDescTest codec_desc_test.bin codec_desc_md380.bin
-.PHONY: run-md380
+.PHONY: run-chips
 
 # Sub-audio: the DCS Golay word, and the software CTCSS / DCS detector and tone generators the MD-380 uses
 # (docs/spec/hardware-md380.md 6.4), on synthetic signals
@@ -437,7 +433,8 @@ TESTS   += ambeFecTest ambeVoiceTest
 ambeFecTest: ambeFecTest.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/dmr/ambe/ambeFec.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ ambeFecTest.c $(CORE)/dmr/ambe/ambeFec.c
 
-ambeVoiceTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeVoice.h $(CORE)/dmr/ambe/ambeFec.c
+ambeVoiceTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeVoice.h $(CORE)/dmr/ambe/ambeFec.c \
+	       $(ROOT)/drivers/vocoder/ambe2_flags.h $(ROOT)/hal/hal_vocoder.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c
 
 # The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
@@ -497,10 +494,10 @@ HRC6K   := $(ROOT)/drivers/modem/hrc6000
 hrc6000DmrTest: hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 
-run: run-hrcdmr
-run-hrcdmr: hrc6000DmrTest
+run: run-modem
+run-modem: hrc6000DmrTest
 	./hrc6000DmrTest
-.PHONY: run-hrcdmr
+.PHONY: run-modem
 
 # The DMR receive chain: a model of the HR_C6000's reports through the slot engine, a batching board task and the call
 # stack to the voice sink (every burst on air out once, in order, nothing concealed)
@@ -607,7 +604,7 @@ run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6
 .PHONY: run-split
 
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring (core/debuglink)
-DLINK   := debuglinkTest.c $(CORE)/debuglink/debuglink_proto.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
+DLINK   := debuglinkTest.c $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
 	$(CORE)/debuglink/dl_chip.c
 TESTS   += debuglinkTest
 
@@ -619,16 +616,28 @@ run-debuglink: debuglinkTest
 	./debuglinkTest
 .PHONY: run-debuglink
 
-# The runtime RAM-monitor loader's portable state machine (core/debuglink/dl_stub.c, CONFIG_STUB_ENTRY)
+# The runtime RAM-monitor loader's portable state machine (core/stubentry/stub_load.c, CONFIG_STUB_ENTRY)
 TESTS   += stubEntryTest
-stubEntryTest: stubEntryTest.c $(CORE)/debuglink/dl_stub.c $(CORE)/debuglink/dl_stub.h $(CORE)/debuglink/debuglink_proto.h \
+stubEntryTest: stubEntryTest.c $(CORE)/stubentry/stub_load.c $(CORE)/stubentry/stub_load.h $(CORE)/debuglink/dl_frame.h \
 		$(ROOT)/stub/stm32f4/f4stub_header.h
-	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ stubEntryTest.c $(CORE)/debuglink/dl_stub.c
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ stubEntryTest.c $(CORE)/stubentry/stub_load.c
 
 run: run-stubEntry
 run-stubEntry: stubEntryTest
 	./stubEntryTest
 .PHONY: run-stubEntry
+
+# The stub entry on the wire: golden replies through the debug link's dispatch and the stub entry's own listener
+# (core/stubentry/stub_link.c, the build without the debug link), framing from core/debuglink/dl_frame.c
+SLINK   := stubLinkTest.c $(CORE)/stubentry/stub_load.c $(CORE)/stubentry/stub_link.c $(CORE)/debuglink/dl_frame.c
+TESTS   += stubLinkTest
+stubLinkTest: $(SLINK) $(wildcard $(CORE)/stubentry/*.h) $(CORE)/debuglink/dl_frame.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ $(SLINK)
+
+run: run-stubLink
+run-stubLink: stubLinkTest
+	./stubLinkTest
+.PHONY: run-stubLink
 
 # The debug link's tasks view section: each task's least free stack (core/debuglink/debuglink_view_tasks.c; the
 # kernel's task table is faked)
@@ -670,12 +679,12 @@ run-debuglinkRx2: debuglinkRx2Test
 
 # The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
 TESTS   += f4stubTest
-f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h $(ROOT)/stub/stm32f4/f4stub_header.h
-	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c
+f4stubTest: f4stubTest.c $(F4STUB_SRC) $(F4STUB_H)
+	$(CC) $(CFLAGS) -Wshadow $(F4STUB_INC) -o $@ f4stubTest.c $(F4STUB_SRC)
 
 TESTS   += f4stubSim
-f4stubSim: f4stubSim.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
-	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubSim.c $(ROOT)/stub/stm32f4/f4stub_proto.c
+f4stubSim: f4stubSim.c $(F4STUB_SRC) $(F4STUB_H)
+	$(CC) $(CFLAGS) -Wshadow $(F4STUB_INC) -o $@ f4stubSim.c $(F4STUB_SRC)
 
 run: run-f4stub
 run-f4stub: f4stubTest f4stubSim
@@ -683,15 +692,14 @@ run-f4stub: f4stubTest f4stubSim
 	python3 f4stub_wire_check.py ./f4stubSim
 .PHONY: run-f4stub
 
-# DM-32UV drivers and board logic: FD6818 frames on a fake three-wire chip, ST7789 init stream and 2x scaling, key
-# matrix decode with the column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the factory
-# calibration decoder (docs/spec/hardware-dm32.md, modem-hrc7000.md)
-DM32    := $(ROOT)/boards/dm32
+# FD6818 frames on a fake three-wire chip, ST7567 and ST7789 init streams and 2x scaling, key matrix decode with the
+# column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the Baofeng factory calibration decoder
+# (modem-hrc7000.md)
 HRC7    := $(ROOT)/drivers/modem/hrc7000
-TESTS   += fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest
+TESTS   += fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest
 
-fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
-	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c $(SUBAUDIO)
+fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(SUBAUDIO)
 
 st7567Test: st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c $(ROOT)/drivers/display/st7567/st7567.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c
@@ -707,6 +715,16 @@ keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROO
 hrc7000DmrTest: hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c
 
+# The HR_C7000 BS outbound (drivers/modem/hrc7000/hrc7000_bs.c, split duplex TX half), and the slot engine's suite again
+# with its hooks built in
+HRC7BS  := $(HRC7)/hrc7000_bs.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c
+TESTS   += hrc7000BsTest hrc7000DmrTestSplit
+hrc7000BsTest: hrc7000BsTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_HOTSPOT_SPLIT=1 -o $@ hrc7000BsTest.c $(HRC7BS)
+
+hrc7000DmrTestSplit: hrc7000DmrTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_HOTSPOT_SPLIT=1 -o $@ hrc7000DmrTest.c $(HRC7BS)
+
 # The RDA5807M broadcast receiver driver and the bit-banged I2C master, on a simulated chip (airband-and-broadcast.md 4)
 TESTS   += rda5807mTest
 RDA     := $(ROOT)/drivers/bcast/rda5807m
@@ -721,18 +739,14 @@ TESTS   += lis3dhTest
 lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c
 
-dm32CalTest: dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dm32CalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
+baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
-# The DM-1801 Pro's start-up pin levels (hardware-dm1801pro.md 3.1)
-TESTS   += dm1801proPinsTest
-dm1801proPinsTest: dm1801proPinsTest.c $(ROOT)/boards/dm1801pro/boot_pins.h $(ROOT)/boards/dm1801pro/pins.h
-	$(CC) $(CFLAGS) -I$(ROOT)/boards/dm1801pro -Wshadow -o $@ dm1801proPinsTest.c
-
-run: run-dm32
-run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest \
-          dm1801proPinsTest
-	./dm1801proPinsTest
+run: run-drivers
+run-drivers: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
+             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
+	./hrc7000BsTest
+	./hrc7000DmrTestSplit
 	./lis3dhTest
 	./rda5807mTest
 	./fd6818Test
@@ -741,51 +755,27 @@ run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000Dm
 	./keymatrixTest
 	./sharedPttTest
 	./hrc7000DmrTest
-	./dm32CalTest
+	./baofengCalTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --self-test
-.PHONY: run-dm32
+.PHONY: run-drivers
 
-# The DB25-D PRO's BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
+# The BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
 TESTS   += bk4819Test
 
-bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c
+bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(SUBAUDIO)
 
-# Its factory calibration page (hardware-db25d.md 6)
-TESTS   += db25dCalTest
-DB25D   := $(ROOT)/boards/db25d
-
-db25dCalTest: db25dCalTest.c $(DB25D)/calibration_db25d.c $(DB25D)/db25d.h $(CORE)/radio/cal_curve.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(DB25D) -Wshadow -o $@ db25dCalTest.c $(DB25D)/calibration_db25d.c
-
-# The GD-88's factory calibration page, the DB25-D layout on each SoC (hardware-gd88.md 7), and its display driver's
-# init streams and windows (drivers/display/ili9341)
-TESTS   += gd88CalTest ili9341Test
-GD88C   := $(ROOT)/boards/gd88/common
-
-gd88CalTest: gd88CalTest.c $(GD88C)/calibration_gd88.c $(GD88C)/gd88_cal.h $(CORE)/radio/cal_curve.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(GD88C) -Wshadow -o $@ gd88CalTest.c $(GD88C)/calibration_gd88.c
-
-ili9341Test: ili9341Test.c $(ROOT)/drivers/display/ili9341/ili9341.c $(ROOT)/drivers/display/ili9341/ili9341.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ ili9341Test.c $(ROOT)/drivers/display/ili9341/ili9341.c
-
-# Its first stage in front of the application (boot/db25d): the stub load, dropped frames, the window, a cold UART
-TESTS   += bootDb25dTest
-
-bootDb25dTest: bootDb25dTest.c $(ROOT)/boot/db25d/boot.c $(ROOT)/boot/hrc7000/stage.c
-	$(CC) $(CFLAGS) -Wshadow -o $@ bootDb25dTest.c
-# The GD-88's two first stages (boot/gd88, boot/gd88b): the RF chain and UART1 on A, UART3 and the long window on B
-TESTS   += bootGd88Test bootGd88bTest
-bootGd88Test: bootGd88Test.c $(ROOT)/boot/gd88/boot.c $(ROOT)/boot/hrc7000/stage.c
-	$(CC) $(CFLAGS) -Wshadow -DSOC_B=0 -o $@ bootGd88Test.c
-bootGd88bTest: bootGd88Test.c $(ROOT)/boot/gd88b/boot.c $(ROOT)/boot/hrc7000/stage.c
-	$(CC) $(CFLAGS) -Wshadow -DSOC_B=1 -o $@ bootGd88Test.c
-
-# Its clock arithmetic (platform/hrc7000/clock_math.h): the PLL words, UART divisor, bit-bang phase length
+# The HR_C7000 clock arithmetic (platform/hrc7000/clock_math.h): the PLL words, UART divisor, bit-bang phase length
 TESTS   += hrc7000ClockTest
 
 hrc7000ClockTest: hrc7000ClockTest.c $(ROOT)/platform/hrc7000/clock_math.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000ClockTest.c
+
+# Its UART set-up (platform/hrc7000/uart_format.h) on a model UART that drops writes while busy (gotchas.md 2.8)
+TESTS   += hrc7000UartFormatTest
+
+hrc7000UartFormatTest: hrc7000UartFormatTest.c $(ROOT)/platform/hrc7000/uart_format.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000UartFormatTest.c
 
 # The HR_C7000 codec slot (platform/hrc7000/codec_slot.h): versions 1 and 2, the move, the refusals, and the slot
 # tools/hrc7000_codec.py writes (docs/spec/codec-placement.md)
@@ -794,19 +784,14 @@ TESTS   += hrc7000CodecSlotTest
 hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
 
-run: run-db25d
-run-db25d: bk4819Test db25dCalTest gd88CalTest ili9341Test bootDb25dTest bootGd88Test bootGd88bTest hrc7000ClockTest hrc7000CodecSlotTest
+run: run-platform
+run-platform: bk4819Test hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest
 	./bk4819Test
-	./db25dCalTest
-	./gd88CalTest
-	./ili9341Test
-	./bootDb25dTest
-	./bootGd88Test
-	./bootGd88bTest
 	./hrc7000ClockTest
+	./hrc7000UartFormatTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
-.PHONY: run-db25d
+.PHONY: run-platform
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
 # radio's own services are mdnsTest's and tftpTest's)
@@ -834,7 +819,7 @@ TESTS   += pppTest
 pppTest: pppTest.c fuzz.h $(PPPT) $(CORE)/net/ppp.h $(CORE)/hostlink/hostlink_ppp.h $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_NET_PPP=1 -o $@ pppTest.c $(PPPT)
 
-PPPPEER := pppPeer.c $(PPPT) $(CORE)/net/tcp.c $(CORE)/debuglink/debuglink_proto.c $(CORE)/snmp/snmp.c \
+PPPPEER := pppPeer.c $(PPPT) $(CORE)/net/tcp.c $(CORE)/debuglink/dl_frame.c $(CORE)/snmp/snmp.c \
            $(CORE)/snmp/snmpBer.c $(CORE)/snmp/snmpMib.c
 TESTS   += pppPeer
 
@@ -961,7 +946,7 @@ run-cpsfast: cpsFastTest
 # debug link's VERSION and CODEPLUG, for tools/cps_fast.py (cpsFastClientTest.py)
 PYTHON  ?= $(shell command -v python3)
 TESTS   += cpsSim
-SIMDL   := $(CPSF) $(CORE)/debuglink/debuglink_proto.c
+SIMDL   := $(CPSF) $(CORE)/debuglink/dl_frame.c
 
 cpsSim: cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP=0 -o $@ cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c
@@ -1099,3 +1084,21 @@ run-httpassets: httpAssetsTest httpAssetsTestPlain
 	./httpAssetsTestPlain out/http_plain
 	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_plain $(HTTP_ASSETS)
 .PHONY: run-httpassets
+
+# Each board's own host tests (boards/<id>/tests/host.mk): a fragment adds its tests to TESTS and a run-boards:: rule
+# that builds and runs them. Sources stay in the board directory; the binaries are built here like the rest
+run: run-boards
+run-boards::
+.PHONY: run-boards
+-include $(wildcard $(ROOT)/boards/*/tests/host.mk)
+
+# Every test in TESTS must be run by a group: run: $(TESTS) above expands before the later TESTS += lines, so a test
+# missing from its group's run lines is built by no rule and run by none (two were, unnoticed). HELPERS are programs
+# a test script drives, not tests of their own
+HELPERS := pppPeer cpsSim snmpPeer
+run: check-run
+check-run:
+	@for t in $(filter-out $(HELPERS),$(TESTS)); do \
+		grep -qE "(^|[[:space:];&|(])\./$$t([[:space:];>|)]|$$)" $(MAKEFILE_LIST) || \
+			{ echo "tests/host: no run group runs $$t (add it to one, or to HELPERS)"; exit 1; }; done
+.PHONY: check-run

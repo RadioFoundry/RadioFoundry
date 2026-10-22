@@ -42,7 +42,7 @@ watch_space & WATCH=$!
 trap 'kill $WATCH 2>/dev/null || true' EXIT
 
 docker build -t odr/csky-builder -f "$HERE/Dockerfile.build" "$HERE"
-docker run --rm --name "$NAME" --user "$(id -u):$(id -g)" -v "$WORK:/work" \
+docker run --rm --name "$NAME" --user "$(id -u):$(id -g)" -v "$WORK:/work" -e GV="$("$ROOT/tools/platform_toolchain.sh" hrc7000 version)" \
 	-v "$ROOT/tools/build-csky-toolchain.sh:/build.sh:ro" odr/csky-builder
 
 docker build -t "$TAG" -f "$HERE/Dockerfile" "$WORK"

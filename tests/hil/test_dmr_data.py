@@ -24,6 +24,8 @@ import warnings
 
 import pytest
 
+from odr_hil import skip
+
 BENCH_SRC = 9990301
 CSBK_CALL_ALERT, CSBK_CALL_ALERT_ACK, CSBK_RADIO_CHECK = 0x1F, 0x20, 0x24
 FID_MOTOROLA = 0x10
@@ -33,9 +35,9 @@ DT_CSBK, DT_DATA_HEADER = 3, 6
 def _setup(radio, pytestconfig, tx=False):
     feats = radio.features()
     if "DMR" not in feats:
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     if radio.data_view().get("data.built") != 1:
-        pytest.skip("built without the DMR data features")
+        skip("not_built", "built without the DMR data features")
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
@@ -43,14 +45,14 @@ def _setup(radio, pytestconfig, tx=False):
         radio.lowest_power()
     own = int(radio.view(["dmr"])["dmr.own_id"])
     if own == 0:
-        pytest.skip("the radio has no DMR ID (dmr.own_id=0)")
+        skip("state", "the radio has no DMR ID (dmr.own_id=0)")
     time.sleep(1.0)
     return freq, cc, own, feats
 
 
 def _need(feats, name):
     if name not in feats:
-        pytest.skip(f"built without CONFIG_{name}")
+        skip("not_built", f"built without CONFIG_{name}")
 
 
 def _deltas(before, after, keys):
@@ -153,6 +155,7 @@ def data_settings(radio):
                                  sms_format=x.get("data.sms_format", "etsi_ip"))
 
 
+@pytest.mark.feature("dmr_data_rx")
 def test_data_view_and_settings(radio, pytestconfig, data_settings):
     """Radio only: the dmr_data section is there, and the settings request changes what it shows."""
     _setup(radio, pytestconfig)
@@ -166,8 +169,10 @@ def test_data_view_and_settings(radio, pytestconfig, data_settings):
     assert v["data.lrrp_reply"] == 0 and v["data.ars_server"] == 0 and v["data.ars_state"] == "off", v
 
 
+@pytest.mark.feature("dmr_data_rx")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_unconfirmed_data_rx(radio, sdr_bench, pytestconfig):
     """40 octets of unconfirmed data to our ID: one header, the blocks, one packet for us, no CRC errors."""
     freq, cc, own, _ = _setup(radio, pytestconfig)
@@ -183,8 +188,10 @@ def test_unconfirmed_data_rx(radio, sdr_bench, pytestconfig):
     assert d["data.rx_blocks"] >= 4 and d["data.rx_crc_errors"] == 0 and d["data.rx_blocks_stale"] == 0, d
 
 
+@pytest.mark.feature("dmr_confirmed")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_confirmed_data_response(radio, sdr_bench, pytestconfig):
     """Confirmed data to our ID: an ETSI response (ACK) goes back to the sender."""
     freq, cc, own, _ = _setup(radio, pytestconfig)
@@ -204,8 +211,10 @@ def test_confirmed_data_response(radio, sdr_bench, pytestconfig):
     _soft((src, own) in _heard_headers(heard), "the response header to the bench")
 
 
+@pytest.mark.feature("dmr_tms")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_sms_rx(radio, sdr_bench, pytestconfig):
     """A TMS text message to our ID with an ACK requested: kept in the inbox (unread, the bench as sender) and the
     TMS ACK sent back."""
@@ -228,8 +237,10 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     _soft((BENCH_SRC, own) in _heard_headers(heard), "the TMS ACK packet's header to the bench")
 
 
+@pytest.mark.feature("dmr_signaling")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
     """A call alert CSBK to our ID: the user is alerted (event call_alert from the bench) and, with the ack setting
     on, a call alert ack (opcode 0x20, octets 4-6 the caller, 7-9 us) goes back."""
@@ -249,8 +260,10 @@ def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
           "the call alert ack")
 
 
+@pytest.mark.feature("dmr_signaling")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_radio_check_rx(radio, sdr_bench, pytestconfig, data_settings):
     """A radio check request (opcode 0x24, Motorola FID, octet 3 0x80) to our ID: answered when the setting allows
     (the request echoed with octet 3 cleared), counted but not answered when it doesn't (the default)."""
@@ -292,8 +305,10 @@ def _radio_sends(radio, sdr_bench, freq, cc, send, seconds, done):
     return heard, v
 
 
+@pytest.mark.feature("dmr_signaling")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_call_alert_tx(radio, sdr_bench, pytestconfig):
     """Our call alert to the bench (which doesn't answer): three tries on air (opcode 0x1F, octets 4-6 the bench,
     7-9 us), then failed."""
@@ -312,8 +327,10 @@ def test_call_alert_tx(radio, sdr_bench, pytestconfig):
                 lambda x: x[1] == 0 and x[3] == BENCH_SRC and x[4] == own, "call alert")
 
 
+@pytest.mark.feature("dmr_signaling")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_radio_check_tx(radio, sdr_bench, pytestconfig):
     """Our radio check of the bench: the request on air (opcode 0x24, Motorola FID, octet 3 0x80), three tries
     without an answer, then failed."""
@@ -331,8 +348,10 @@ def test_radio_check_tx(radio, sdr_bench, pytestconfig):
                 lambda x: x[1] == FID_MOTOROLA and x[2] == 0x80 and x[3] == BENCH_SRC and x[4] == own, "radio check")
 
 
+@pytest.mark.feature("dmr_tms")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_sms_tx(radio, sdr_bench, pytestconfig):
     """Our text message to the bench, no ACK asked: one packet on air (preambles, a data header to the bench from us,
     the blocks), then sent."""
@@ -361,8 +380,10 @@ def _ext(radio):
     return out
 
 
+@pytest.mark.feature("dmr_sms")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_etsi_sms_rx(radio, sdr_bench, pytestconfig):
     """An ETSI text message (defined short data, ISO 8859-1) to our ID with a response requested: kept in the inbox
     as ETSI, the ETSI response (ACK, SAP 10) goes back."""
@@ -385,8 +406,10 @@ def test_etsi_sms_rx(radio, sdr_bench, pytestconfig):
     _soft((BENCH_SRC, own) in _heard_headers(heard), "the ETSI response header to the bench")
 
 
+@pytest.mark.feature("dmr_sms")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_etsi_sms_tx(radio, sdr_bench, pytestconfig):
     """Our ETSI text message to the bench, no response asked: a defined short data header (DPF 13, SAP 10) to the
     bench from us, then sent."""
@@ -407,8 +430,10 @@ def test_etsi_sms_tx(radio, sdr_bench, pytestconfig):
                      int.from_bytes(b[2:5], "big") == BENCH_SRC, "ETSI text message")
 
 
+@pytest.mark.feature("dmr_signaling")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_radio_check_tx_etsi(radio, sdr_bench, pytestconfig, data_settings):
     """Our radio check in the ETSI form: opcode 0x24 with FID 0x00 on air, three tries, then failed."""
     freq, cc, own, feats = _setup(radio, pytestconfig, tx=True)

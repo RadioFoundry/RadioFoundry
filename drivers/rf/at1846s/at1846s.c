@@ -338,9 +338,15 @@ bool at1846s_set_state(at1846s_t *dev, at1846s_state_t state)
 	return ok;
 }
 
+// The chip sends the word from its MSB (bit 22) and compares received bits the same way, while DCS puts code bit 0
+// first on air: the register takes the word bit-reversed. The programming guide's own example (023 as 0x0076 / 0x3813)
+// goes out as D023 read backwards, which no other radio accepts (hardware-dm1701.md 5.7)
 static bool dcs_code_regs(at1846s_t *dev, uint16_t code)
 {
-	uint32_t word = subaudio_dcs_word(code);
+	uint32_t golay = subaudio_dcs_word(code), word = 0;
+	for (uint8_t i = 0; i < 23u; i++) {
+		word |= ((golay >> i) & 1u) << (22u - i);
+	}
 	bool ok = at1846s_write(dev, 0, 0x4B, (uint16_t)(word >> 16));
 	ok &= at1846s_write(dev, 0, 0x4C, (uint16_t)(word & 0xFFFFu));
 	return ok;
@@ -349,6 +355,7 @@ static bool dcs_code_regs(at1846s_t *dev, uint16_t code)
 bool at1846s_set_tx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value)
 {
 	bool ok;
+	dev->tx_tone = (uint8_t)type;
 	switch (type) {
 	case AT1846S_TONE_CTCSS:
 		ok = at1846s_write(dev, 0, 0x4A, at1846s_ctcss_reg(value));
@@ -370,6 +377,17 @@ bool at1846s_set_tx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value)
 		ok &= at1846s_modify(dev, 0, 0x4E, TX_SEL_KEEP, 0);
 		return ok;
 	}
+}
+
+bool at1846s_tx_tail(at1846s_t *dev, bool on)
+{
+	if (dev->tx_tone != AT1846S_TONE_DCS && dev->tx_tone != AT1846S_TONE_DCS_INV) {
+		return false;
+	}
+	if (on) {
+		return at1846s_modify(dev, 0, 0x4E, TX_SEL_KEEP, 0x0600);
+	}
+	return at1846s_modify(dev, 0, 0x4E, TX_DCS_KEEP, dev->tx_tone == AT1846S_TONE_DCS_INV ? TX_DCS_INV : TX_DCS_NORMAL);
 }
 
 bool at1846s_set_rx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value)

@@ -781,6 +781,10 @@ static void zone_go(uint16_t zi, bool home)
 
 static void zone_step(int dir)
 {
+#if CONFIG_DUAL_WATCH
+	if (ui_dual_zone_step(dir))	// dual watch: the selected channel's zone, and the watch goes on
+		return;
+#endif
 	uint16_t n = codeplug_zone_count();
 	if (n < 2) {
 		ui_toast("Only one zone");
@@ -820,6 +824,10 @@ static void vfo_key(void)
 		ui_toast("VFO: not in this build");
 		return;
 	}
+#if CONFIG_DUAL_WATCH
+	if (ui_dual_vfo_key())
+		return;
+#endif
 	bool was = view->vfo;	// the view may change at once (the host simulator)
 	radio_req_vfo(!was);
 	ui_toast(was ? "Back to channels" : "VFO");
@@ -986,6 +994,10 @@ bool ui_home_key(const input_event_t *ev)
 			if (ui_st.privacy && ui_svc_privacy(false))
 				ui_st.privacy = false;
 			ui_toast("Changes undone");
+#if CONFIG_DUAL_WATCH
+		} else if (ui_st.dual.on) {
+			ui_dual_back();
+#endif
 		}
 		dirty = true;
 		return true;
@@ -1075,7 +1087,6 @@ static void quick_unavailable(uint8_t kind)
 	case QT_SCAN: ui_toast("Scan: not in this build"); break;
 	case QT_MODE: ui_toast("VFO: one mode in this build"); break;
 	case QT_TO_VFO: ui_toast("VFO: not in this build"); break;
-	case QT_STEP: ui_toast("Step: set it in qdmr"); break;
 	case QT_VOX: ui_toast("VOX: not on this radio yet"); break;
 	default: ui_toast("Not in this build"); break;
 	}
@@ -1776,6 +1787,10 @@ void ui_app_key(const input_event_t *ev)
 			return;
 		case ACT_HOME_ZONE:
 			// The codeplug's first zone: the CPS's zone order picks it (no setting; the settings record is full)
+#if CONFIG_DUAL_WATCH
+			if (ui_dual_zone_home())
+				return;
+#endif
 			zone_go(0, true);
 			return;
 		default:
@@ -1913,7 +1928,11 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 {
 	static uint32_t serial_seen;
 	static uint8_t battery_seen;
+#if CONFIG_DUAL_WATCH
+	view = ui_dual_view(v);	// in dual watch, the selected channel's settings wherever the receiver is
+#else
 	view = v;
+#endif
 	now = now_ms;
 	ui_st.now_ms = now_ms;
 	ui_svc_poll();
@@ -1963,7 +1982,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.banner.kind = UI_BANNER_NONE;
 		dirty = true;
 	}
-	if (ui_st.entry && (now - entry_last >= ENTRY_TIMEOUT_MS || !v->vfo))
+	if (ui_st.entry && (now - entry_last >= ENTRY_TIMEOUT_MS || !view->vfo))
 		entry_cancel();
 	uint16_t unread = ui_svc_msg_unread();
 	if (unread != ui_st.unread) {
@@ -1994,8 +2013,8 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #endif
 #if CONFIG_DMR
 	// The latches the radio keeps (it may drop them itself: hear all ends with the channel)
-	if ((ui_svc_features() & UI_FEAT_HEAR_ALL) && v->dmr.hear_all_latch != ui_st.hear_all) {
-		ui_st.hear_all = v->dmr.hear_all_latch;
+	if ((ui_svc_features() & UI_FEAT_HEAR_ALL) && view->dmr.hear_all_latch != ui_st.hear_all) {
+		ui_st.hear_all = view->dmr.hear_all_latch;
 		dirty = true;
 	}
 	if ((ui_svc_features() & UI_FEAT_PRIVACY) && v->dmr.privacy != ui_st.privacy) {

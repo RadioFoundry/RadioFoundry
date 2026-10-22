@@ -1635,7 +1635,7 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	sbuf_t b;
 
 	// The tag: the pane's letter in a box as tall as the pane's text. Filled for the selected pane (red while it
-	// transmits), green while a call comes in on it, an outline otherwise
+	// transmits), green while a call comes in on it, an outline otherwise (green while it is busy: p->busy)
 	int ty = y + pad, th = h - 2 * pad;
 	int tw = dual_tag_w(nf);
 	const char *letter = i ? "B" : "A";
@@ -1650,10 +1650,11 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 		tbg = ui_col.fg;
 		tfg = ui_col.bg;
 	}
+	bool busy = p->busy && !rx && !tx;
 	if (tbg != ui_col.bg)
 		gfx_round_fill(0, ty, tw, th, tbg);
 	else
-		gfx_rect(0, ty, tw, th, ui_col.line);
+		gfx_rect(0, ty, tw, th, busy ? ui_col.rx : ui_col.line);
 	// The letter, and under it on the selected pane an arrow pointing at its channel (none on the other). Both
 	// letters sit at the same height; a font smaller where the tag is too short for the letter and the arrow
 	int ah = nf->h / 3 < 5 ? 5 : nf->h / 3 | 1;		// the arrow's height, odd
@@ -1676,10 +1677,31 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	int rx_end = w;
 
 	// Row 1, right: PTT on the selected pane, always (TX while transmitting), so where PTT goes stays plain with
-	// calls on both; RX is on row 2
+	// calls on both; RX is on row 2. A name that doesn't fit whole beside it keeps the row: the pill goes to the
+	// right of row 3, where there is one
 	int y1 = ty, pill_h = sm->h;
-	if (tx || sel) {
-		const char *word = tx ? "TX" : "PTT";
+	const font_t *f = dual_nf != NULL ? dual_nf : nf;
+	const char *word = tx ? "TX" : "PTT";
+	bool pill3 = false;
+	if ((tx || sel) && ft->detail != NULL) {
+		dual_name(p, buf, sizeof buf);
+		int need = gfx_text_width(f, buf);
+		if (!p->vfo) {
+			sb_init(&b, fit, sizeof fit);
+			sb_u32(&b, p->number, 1);
+			need += gfx_text_width(dual_num_font(f), fit) + dual_num_font(f)->w / 2;
+		}
+		// Row 3 has room for it after the frequency and chips
+		sb_init(&b, fit, sizeof fit);
+		if (p->mode == RADIO_MODE_DMR && !p->vfo) {
+			sb_freq(&b, p->rx_hz);
+			sb_str(&b, " MHz  ");
+		}
+		sb_str(&b, p->detail);
+		int room3 = w - x0 - gfx_text_width(ft->detail, fit) - 2 * ft->detail->w;
+		pill3 = x0 + need > w - dual_pill_w(word) - sm->w / 2 - 1 && room3 >= dual_pill_w(word);
+	}
+	if ((tx || sel) && !pill3) {
 		rx_end -= dual_pill_w(word);
 		gfx_pill(sm, rx_end, y1 + (nf->h - pill_h + 1) / 2, pill_h, word, tx ? ui_col.pill_fg : ui_col.bg,
 			 tx ? ui_col.tx : ui_col.fg);
@@ -1690,7 +1712,6 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	// frequency
 	int base = y1 + nf->ascent;
 	int x = x0;
-	const font_t *f = dual_nf != NULL ? dual_nf : nf;
 	if (!p->vfo) {
 		char num[8];
 		sbuf_t nb;
@@ -1707,20 +1728,23 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 		gfx_text(sm, x + sm->w / 2, base - sm->ascent, "MHz", ui_col.dim);
 		x += sm->w / 2 + gfx_text_width(sm, "MHz");
 	}
-	// Then how long ago the last call came in on this pane, where it fits whole
+	// Then how long ago a call last came in on this pane, where it fits whole: both panes, the newest call's in amber
 	bool aged = false;
-	if (d->last == i && !rx && !tx) {
+	uint32_t ago = s->now_ms - d->ended_ms[i];
+	color_t agec = d->last == i ? ui_col.warn : ui_col.dim;
+	if (d->ended[i] && !rx && !tx && !busy) {
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, TEXT_ALT_OPEN "Heard ");
-		sb_age_long(&b, s->now_ms - d->last_ms);
+		sb_age_long(&b, ago);
 		sb_str(&b, TEXT_ALT_NEXT);
-		sb_age_long(&b, s->now_ms - d->last_ms);
+		sb_age_long(&b, ago);
 		sb_str(&b, TEXT_ALT_CLOSE);
-		aged = dual_right(sm, rx_end, y1, nf->h, x + sm->w, buf, ui_col.warn) < rx_end;
+		aged = dual_right(sm, rx_end, y1, nf->h, x + sm->w, buf, agec) < rx_end;
 	}
 
 	// Row 2: the caller while a call comes in here; else what PTT talks to (DMR) or the frequency (FM). Right: the
-	// frequency (DMR) or the chips (FM) when there is no third row, the signal while receiving
+	// frequency (DMR) or the chips (FM) when there is no third row, the signal while receiving, Busy while the watch
+	// waits for a reply on the other pane and a look found a signal here
 	const font_t *tf = ft->target;
 	int y2 = y1 + nf->h;
 	char right[32];
@@ -1752,11 +1776,16 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 	if (ft->act == 0 && d->last == i && !rx && !tx && !aged) {
 		sb_init(&rb, right, sizeof right);
 		sb_str(&rb, TEXT_ALT_OPEN "Heard ");
-		sb_age_long(&rb, s->now_ms - d->last_ms);
+		sb_age_long(&rb, ago);
 		sb_str(&rb, TEXT_ALT_NEXT);
-		sb_age_long(&rb, s->now_ms - d->last_ms);
+		sb_age_long(&rb, ago);
 		sb_str(&rb, TEXT_ALT_CLOSE);
 		rc = ui_col.warn;
+	}
+	if (busy) {
+		sb_init(&rb, right, sizeof right);
+		sb_str(&rb, "Busy");
+		rc = ui_col.rx;
 	}
 	int r2 = w;
 	if (rx) {	// the RX pill at the right of the caller
@@ -1783,10 +1812,17 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 		}
 		sb_str(&b, p->detail);
 		int lx = gfx_text(df, x0, y3, buf, ui_col.dim);
+		int r3 = w;
+		if (pill3) {
+			r3 -= dual_pill_w(word);
+			gfx_pill(sm, r3, y3 + (df->h - pill_h + 1) / 2, pill_h, word, tx ? ui_col.pill_fg : ui_col.bg,
+				 tx ? ui_col.tx : ui_col.fg);
+			r3 -= sm->w / 2 + 1;
+		}
 		if (ft->zone)
 			gfx_text(df, x0, y3 + df->h, p->zone, ui_col.dim);
 		else
-			dual_right(df, w, y3, df->h, lx + 2 * df->w, p->zone, ui_col.dim);
+			dual_right(df, r3, y3, df->h, lx + 2 * df->w, p->zone, ui_col.dim);
 	}
 }
 
@@ -2459,11 +2495,7 @@ uint8_t ui_quick_kind(int pos, const radio_view_t *v)
 		return QT_POWER;
 	if (!v->vfo && pos == 3)
 		return QT_TO_VFO;	// a channel's tile 4 copies it to the VFO; the VFO's stays Mode
-	if (v->ch.mode == RADIO_MODE_DMR)
-		return dmr[pos];
-	if (v->vfo && pos == 7)
-		return QT_STEP;		// the VFO's step replaces bandwidth (task-flows.md 12)
-	return fm[pos];
+	return v->ch.mode == RADIO_MODE_DMR ? dmr[pos] : fm[pos];
 }
 
 static bool feat(uint32_t f)
@@ -2487,7 +2519,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		[QT_MONITOR] = QT_NAME("Monitor", "MON"), [QT_VOX] = "VOX", [QT_SCAN] = QT_SCAN_NAME, [QT_BANDWIDTH] = "Width",
 		[QT_BRIGHTNESS] = "Bright", [QT_TIMESLOT] = QT_NAME("Timeslot", "Slot"), [QT_CC] = "Color",
 		[QT_HEAR_ALL] = QT_NAME("Digital monitor", "DMon"), [QT_PRIVACY] = QT_NAME("Privacy", "Priv"),
-		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_STEP] = "Step", [QT_TO_VFO] = QT_NAME("Copy to VFO", "To VFO"),
+		[QT_TALK_TO] = QT_NAME("Talk to", "Talk"), [QT_TO_VFO] = QT_NAME("Copy to VFO", "To VFO"),
 	};
 #undef QT_NAME
 	uint8_t kind = ui_quick_kind(tile, v);
@@ -2537,7 +2569,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		return v->ch.mode == RADIO_MODE_FM;
 	}
 	case QT_MODE:
-		sb_str(&b, v->ch.mode == RADIO_MODE_DMR ? GLYPH_ARROW "FM" : GLYPH_ARROW "DMR");
+		sb_str(&b, v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM");	// what it is, as every other tile
 		// Only in the VFO (a channel's tile 4 is QT_TO_VFO), in a build with both VFO kinds; it keeps the mode like
 		// its other settings
 		return feat(UI_FEAT_MODE) && v->vfo && CONFIG_VFO_FM && CONFIG_VFO_DMR;
@@ -2562,18 +2594,6 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 			sb_str(&b, GLYPH_DOT);
 		sb_str(&b, v->ch.bw == RADIO_BW_25K ? "25k" : "12.5k");
 		return v->ch.mode == RADIO_MODE_FM;
-	case QT_STEP: {
-		uint32_t st = v->vfo_step_hz;
-		sb_u32(&b, st / 1000u, 1);
-		if (st % 1000u) {
-			sb_chr(&b, '.');
-			sb_u32(&b, (st % 1000u) / 100u, 1);
-			if ((st % 100u) != 0)
-				sb_u32(&b, (st % 100u) / 10u, 1);
-		}
-		sb_chr(&b, 'k');
-		return false;	// the radio core has no step request yet
-	}
 	case QT_BRIGHTNESS:
 		sb_u32(&b, s->brightness, 1);
 		sb_chr(&b, '%');

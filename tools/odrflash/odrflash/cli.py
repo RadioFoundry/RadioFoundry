@@ -105,6 +105,98 @@ def ask_yes(question, default=False):
     return default if not a else a in ("y", "yes")
 
 
+def pick_board(board_id, what, candidates=None):
+    """The board for a command when nothing it was given names one: --board, else the only candidate, else ask on a
+    terminal. There is no default radio: flashing the wrong model's image is the one mistake odrflash must not make."""
+    if board_id:
+        return boards.get(board_id)
+    cands = boards.by() if candidates is None else candidates
+    if len(cands) == 1:
+        return cands[0]
+    ids = ", ".join(b.id for b in cands)
+    if not sys.stdin.isatty():
+        raise UsageError("%s: which radio? Give --board (%s)" % (what, ids))
+    for i, b in enumerate(cands, 1):
+        say("  %d  %s (%s)" % (i, b.name, b.id))
+    try:
+        a = input("%s: which radio? [1-%d] " % (what, len(cands))).strip()
+    except EOFError:
+        a = ""
+    if a.isdigit() and 1 <= int(a) <= len(cands):
+        return cands[int(a) - 1]
+    try:
+        return boards.get(a)
+    except KeyError:
+        raise UsageError("%s: no radio chosen. Give --board (%s)" % (what, ids))
+
+
+def parse_options(board, given):
+    """--option NAME=VALUE values, checked against the board's build options."""
+    out = {}
+    for opt in given or []:
+        name, _, value = opt.partition("=")
+        if board.build_option(name, value) is None:
+            raise UsageError("%s has no build option %s=%s (its options: %s)" % (board.name, name, value, ", ".join(
+                "%s=%s" % (o["name"], "|".join(v["id"] for v in o["values"])) for o in board.build_options) or "none"))
+        out[name] = value
+    return out
+
+
+def resolve_options(args, board, probe, need_all=False):
+    """The hardware build options for this radio (the MD-380's band): --option, and the board name a running radio
+    reports, which must agree. need_all (choosing a release image): every option must be known, from those two or
+    asked on a terminal; a wrong band's image would refuse the radio's own frequencies."""
+    opts = parse_options(board, getattr(args, "option", None))
+    named = board.options_for_name((probe or {}).get("board") or "") or {}
+    for k, v in named.items():
+        if opts.get(k, v) != v:
+            raise UsageError("the radio reports %s (%s=%s), but --option says %s=%s: refusing"
+                             % (probe.get("board"), k, v, k, opts[k]))
+        opts[k] = v
+    if need_all:
+        for o in board.build_options:
+            if o["name"] in opts:
+                continue
+            ids = [v["id"] for v in o["values"]]
+            if not sys.stdin.isatty():
+                raise UsageError("which %s %s? Give --option %s=%s (%s)" % (board.name, o["title"].lower(), o["name"],
+                                                                           "|".join(ids), o["help"]))
+            say("%s: %s" % (o["title"], o["help"]))
+            for i, v in enumerate(o["values"], 1):
+                say("  %d  %s (%s)" % (i, v["title"], v["text"]))
+            try:
+                a = input("which one? [1-%d] " % len(ids)).strip()
+            except EOFError:
+                a = ""
+            if not (a.isdigit() and 1 <= int(a) <= len(ids)):
+                raise UsageError("no %s chosen: give --option %s=%s" % (o["title"].lower(), o["name"], "|".join(ids)))
+            opts[o["name"]] = ids[int(a) - 1]
+    return opts
+
+
+def check_options(board, man, opts):
+    """Refuse an image built for other hardware than the radio's (its manifest's build_options against opts)."""
+    if not board.build_options or not opts:
+        return
+    have = board.full_options((man or {}).get("build_options"))
+    for k, v in opts.items():
+        if have.get(k) != v:
+            raise UsageError("the image is the %s=%s build, the radio needs %s=%s: refusing" % (k, have.get(k), k, v))
+
+
+def stock_board(stock, board_id):
+    """The board a stock file is for (its codec profile), checked against --board when both are given."""
+    try:
+        prof = stockfw.find_profile(stock)
+    except stockfw.StockError:
+        return pick_board(board_id, "an unknown stock file")
+    board = boards.get(prof["board"])
+    if board_id and boards.get(board_id).id != board.id:
+        raise UsageError("the stock file is %s firmware, but --board says %s: refusing"
+                         % (board.name, boards.get(board_id).name))
+    return board
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # inputs: image + manifest, key, stock file
 
@@ -114,8 +206,10 @@ def load_image(args, board_hint):
     if args.release:
         if args.image:
             raise UsageError("give an image file or --release, not both")
-        board = boards.get(board_hint or "dm1701")
-        img_path, man_path = relmod.fetch(board.id, args.release, args.repo, log=say)
+        board = pick_board(board_hint, "--release")
+        probe = get_probe(args, log=lambda *a: None) if board.build_options else None
+        opts = resolve_options(args, board, probe, need_all=True)
+        img_path, man_path = relmod.fetch(board.image_id(opts), args.release, args.repo, log=say)
     elif args.image:
         img_path = args.image
         man_path = args.manifest or os.path.splitext(img_path)[0] + ".json"
@@ -135,7 +229,7 @@ def load_image(args, board_hint):
                os.path.basename(man_path)))
         return board, m, image, None
     hint = boards.get(board_hint) if board_hint else None
-    if hint is not None and hint.family == "bfuv32-serial":
+    if hint is not None and hint.family == "serial-loader":
         # a local HR_C7000 build: odr_<board>.bin, or the build's _codec.bin with the codec slot merged in
         app, slot = serialflash.split_slot(hint, image)
         m = mf.for_dev_build(hint, app)
@@ -161,7 +255,7 @@ def load_image(args, board_hint):
         return board, m, app, (prof, codec)
     if not board_hint:
         raise UsageError("no manifest %s next to the image. Release images come with one; for a local build say "
-                         "which radio it is for with --board (dm1701, dm1801pro, ...)" % man_path)
+                         "which radio it is for with --board (%s)" % (man_path, ", ".join(sorted(boards.BOARDS))))
     board = boards.get(board_hint)
     m = mf.for_dev_build(board, image)
     mf.verify(m, image, board.id)
@@ -381,9 +475,9 @@ def cmd_flash(args):
         from . import fakedfu
         sim_key = fakedfu.synthetic_key()
     board, man, image, merged = load_image(args, args.board)
-    if board.family == "bfuv32-serial":
+    if board.family == "serial-loader":
         return cmd_flash_serial(args, board, man, image, merged)
-    if board.family == "hrc7000-iap":
+    if board.family == "serial-iap":
         raise UsageError("%s is installed with the web flasher or stub/stubtool.py, not with odrflash" % board.name)
     if args.route != serialflash.AUTO:
         raise UsageError("--route is for the radios flashed over a programming cable (DM-1801 Pro, DM-32UV)")
@@ -404,6 +498,7 @@ def cmd_flash(args):
         pb = boards.from_debuglink_name(probe.get("board") or "")
         if pb and pb.id != board.id:
             raise UsageError("the radio is a %s, the image is for the %s: refusing" % (pb.name, board.name))
+    check_options(board, man, resolve_options(args, board, probe))
     interactive = None if (args.yes or args.dry_run) else ask_yes
     saved = None
     if not merged and not sim:
@@ -419,11 +514,12 @@ def cmd_flash(args):
         warn(d.risk)
 
     codec_segs = []
+    codec_prof = None	# the stock profile whose layout the merge writes
     key = None
     if d.mode == planmod.MERGE and merged:
-        codec_segs = merged[1]
+        codec_prof, codec_segs = merged
     elif d.mode == planmod.MERGE and d.source == "saved":
-        codec_segs = codecsave.segments(*saved)
+        codec_prof, codec_segs = saved[0], codecsave.segments(*saved)
     elif d.mode == planmod.MERGE:
         if stock == "synthetic":
             stock_bytes, profiles, _, _ = stockfw.build_synthetic_stock(sim_key, random.Random(7),
@@ -439,9 +535,10 @@ def cmd_flash(args):
                 raise UsageError("the stock file holds codec %s, the image expects %s"
                                  % (prof["codec_profile"], board.codec.id))
             say("stock    %s verified (SHA-256), codec windows decrypted and checked" % prof["name"])
-        codec_segs = stockfw.codec_segments(prof, csegs)
+        codec_prof, codec_segs = prof, stockfw.codec_segments(prof, csegs)
 
-    p = planmod.make_plan(board, mf.segments(man, image), d.mode, codec_segs)
+    p = planmod.make_plan(board, mf.segments(man, image), d.mode, codec_segs,
+                          board.merge_windows(codec_prof) if codec_segs else None)
     say("")
     say("plan:")
     for line in p.describe():
@@ -453,7 +550,7 @@ def cmd_flash(args):
 
     if key is None:
         key = get_key(args, board, stock if isinstance(stock, bytes) else None, sim_key)
-    if board.family != "anyroad-dfu":
+    if board.family != "usb-dfu":
         raise UsageError("flashing the %s isn't supported by odrflash yet" % board.name)
 
     if sim:
@@ -712,12 +809,17 @@ def cmd_detect(args):
     else:
         say("ODR      no radio running ODR on USB")
     usb = dfumod.import_usb()
-    board = boards.get(args.board or "dm1701")
-    devs = dfumod.find(usb, board)
+    # every USB DFU bootloader the registry knows, each USB id once (radios of one vendor share theirs)
+    cands = [boards.get(args.board)] if args.board else boards.by(family="usb-dfu")
+    devs, ids = [], []
+    for b in cands:
+        if b.dfu_ids not in ids:
+            ids.append(b.dfu_ids)
+            devs += [(b, d) for d in dfumod.find(usb, b)]
     if not devs:
-        say("DFU      no bootloader (%04X:%04X) found" % board.dfu_ids)
+        say("DFU      no bootloader (%s) found" % ", ".join("%04X:%04X" % i for i in ids))
         return 0 if p else 1
-    for dev in devs:
+    for board, dev in devs:
         fp = dfumod.fingerprint(usb, dev)
         say("DFU      %04X:%04X string 1 %r, manufacturer %r, product %r, serial %r"
             % (board.dfu_ids + (fp["string1"], fp["manufacturer"], fp["product"], fp["serial"])))
@@ -732,8 +834,9 @@ def cmd_detect(args):
 
 
 def cmd_key(args):
-    board = boards.get(args.board or "dm1701")
     if not args.stock:
+        p = None if args.board else debuglink.probe(args.port, log=say)
+        board = (p and boards.from_debuglink_name(p.get("board") or "")) or pick_board(args.board, "key")
         key = bootkey.from_radio(board, args.port, log=say)
         if not key:
             raise UsageError("no radio running ODR gave the %s bootloader key: connect it, or use --stock FILE"
@@ -745,6 +848,7 @@ def cmd_key(args):
             stock = f.read()
         what = stockfw.identify(stock)
         say("stock    %s" % (what or "unknown file (trying anyway)"))
+        board = stock_board(stock, args.board)
         try:
             key = dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board)
         except stockfw.StockError as e:
@@ -762,12 +866,13 @@ def cmd_key(args):
 
 
 def cmd_merge(args):
-    board = boards.get(args.board or "dm1701")
     with open(os.path.expanduser(args.image), "rb") as f:
         image = f.read()
     with open(os.path.expanduser(args.stock), "rb") as f:
         stock = f.read()
-    key = dfumod.load_key(args.key, board) if args.key else dfumod.check_key(stockfw.derive_key(stock), board)
+    board = stock_board(stock, args.board)
+    key = (dfumod.load_key(args.key, board) if args.key
+           else dfumod.check_key(stockfw.derive_key(stock, board.key_sha256), board))
     # a release image comes with its manifest: check the two belong together
     man_path = os.path.splitext(os.path.expanduser(args.image))[0] + ".json"
     if os.path.exists(man_path):
@@ -784,8 +889,9 @@ def cmd_merge(args):
 
 
 def cmd_download(args):
-    board = boards.get(args.board or "dm1701")
-    img, man = relmod.fetch(board.id, args.release, args.repo, dest=args.output, log=say)
+    board = pick_board(args.board, "download")
+    opts = resolve_options(args, board, None, need_all=True)
+    img, man = relmod.fetch(board.image_id(opts), args.release, args.repo, dest=args.output, log=say)
     with open(img, "rb") as f:
         mf.verify(mf.load(man), f.read(), board.id)
     say("ok       %s\n         %s" % (img, man))
@@ -800,10 +906,12 @@ def build_parser():
     sub = ap.add_subparsers(dest="cmd")
 
     def common(p):
-        p.add_argument("--board", help="radio model (dm1701, dm1801pro, ...); normally taken from the manifest and the radio")
+        p.add_argument("--board", help="radio model (%s); normally taken from the manifest and the radio" % ", ".join(sorted(boards.BOARDS)))
         p.add_argument("--port", help="the radio's serial port when it runs ODR (found by USB ID otherwise); DM-1801 "
                        "Pro, DM-32UV: the programming cable's port (found when it is the only USB-serial cable)")
         p.add_argument("--no-probe", action="store_true", help="don't ask a running ODR radio over its debug link")
+        p.add_argument("--option", action="append", metavar="NAME=VALUE", help="a hardware build option, such as "
+                       "BAND=vhf on the MD-380 (normally taken from the board name the radio reports)")
 
     f = sub.add_parser("flash", help="flash a release image", formatter_class=argparse.RawDescriptionHelpFormatter)
     f.add_argument("image", nargs="?", help="image file (.bin, with its .json manifest next to it, or with the codec merged in)")
@@ -862,6 +970,7 @@ def build_parser():
     g.add_argument("--repo", default=relmod.DEFAULT_REPO)
     g.add_argument("-o", "--output", help="directory (default: odrflash's cache)")
     g.add_argument("--board")
+    g.add_argument("--option", action="append", metavar="NAME=VALUE", help="a hardware build option (BAND=vhf)")
     g.set_defaults(fn=cmd_download)
     return ap
 

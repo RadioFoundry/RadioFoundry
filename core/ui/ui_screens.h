@@ -56,6 +56,8 @@ typedef struct {
 	char detail[24];	// the rest, short: "TS1 CC1" (DMR), "T100.0 25k" (FM)
 	bool rx;		// a call or signal coming in on it now (on two receivers, both can)
 	bool heard;		// its audio is playing (with two calls at once, one of them)
+	bool busy;		// one receiver: a look in the wait after a call on the other pane found a signal here (not
+				// played; the watch comes here when the wait ends)
 	int16_t rssi_dbm;
 	char caller[48];	// the call coming in: "Joe Smith TG 91" (with a shorter alternate, font.h)
 } ui_dual_pane_t;
@@ -67,6 +69,8 @@ typedef struct {
 	uint8_t rx;		// the pane whose call is heard now, UI_DUAL_NONE (pane[].rx: every pane receiving)
 	uint8_t last;		// the pane the last call came in on, UI_DUAL_NONE
 	uint32_t last_ms;	// when that call ended
+	bool ended[2];		// a call has ended on pane i since the watch started (or its channel last changed)
+	uint32_t ended_ms[2];	// ... when the last one there ended: each pane says how long ago
 	char caller[48];	// the current or last caller: "Joe Smith TG 91", "FM signal"
 	uint8_t calls;		// calls in hist[]
 	struct {
@@ -126,7 +130,7 @@ typedef struct {
 // Quick settings tiles. The position of each depends on the mode (information-architecture.md 5): ui_quick_kind()
 enum {
 	QT_POWER, QT_SQUELCH, QT_TONE, QT_MODE, QT_MONITOR, QT_VOX, QT_SCAN, QT_BANDWIDTH, QT_BRIGHTNESS,
-	QT_TIMESLOT, QT_CC, QT_HEAR_ALL, QT_PRIVACY, QT_TALK_TO, QT_STEP,
+	QT_TIMESLOT, QT_CC, QT_HEAR_ALL, QT_PRIVACY, QT_TALK_TO,
 	QT_TO_VFO,		// on a channel, in place of QT_MODE: copy the channel to the VFO
 
 };

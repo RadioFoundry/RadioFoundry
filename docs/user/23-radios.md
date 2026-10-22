@@ -6,14 +6,15 @@ The rest of this manual describes what ODR does on every radio. This chapter lis
 which physical key does each job, the power levels, the battery, the power switch, the display, what a radio lacks,
 and what has been checked on it.
 
-| Radio | Also sold as | ODR status |
+<!-- generated: tools/boards.py docs radios; edit boards/*/board.toml [status] -->
+| Radio | Also sold as | What works |
 |---|---|---|
-| [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | Supported and in the releases |
-| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | Fully operational on a UHF radio (check your TX frequency, below). Not in the releases |
-| [Baofeng DM-32UV](#baofeng-dm-32uv) | | In bring-up on a radio: FM and DMR receive and transmit work. Not in the releases |
-| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Bring-up on a radio: FM and DMR voice receive and transmit, the hotspot and the network services, settings storage, cable programming and volume work. Not for general use |
-| [Radioddity GD-88](#radioddity-gd-88) | Kydera DR-880UV | In development: ODR doesn't run on this radio yet. Not for use |
-| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data, hotspot and SFR modes; VHF transmit and VOX are unchecked. No release |
+| [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | FM, DMR voice and data, text messages, alerts, emergency, scan, the hotspot, single frequency repeating, each split duplex half and the USB network services work on air. Open: standalone SFR and a two-radio split duplex pair. |
+| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | Baofeng DM-1801 | FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX. |
+| [Baofeng DM-32UV](#baofeng-dm-32uv) |  | FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and each split duplex half work on air. Open: FM deviation at 12.5 kHz and an outdoor GPS fix. |
+| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. Open: the older FD6818 batches and the Retevis RT73. |
+| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
+<!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
 
@@ -30,7 +31,8 @@ The manual names keys by the job they do. Each radio puts those jobs on its own 
 | **#** | Actions / Recent | **#** | **#** | **#** | P2 | **#** |
 | **0** to **9** | Number keys | Number keys | Number keys | Number keys | None | Number keys |
 | **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | P3 | SK1 |
-| **Talk target** | Talk target picker / dual watch on or off | SK2 | SK2 | SK2 | TONE/T.SEL | SK2 |
+| **Talk target** | Talk target picker / dual watch on or off | Hold **#** for the picker, hold SK2 for dual watch | SK2 | SK2 | TONE/T.SEL | SK2 |
+| **A/B** | Dual watch: the other channel / dual watch on or off | SK2 | None | None | None | A/B key |
 | **Power level** | Next power level / emergency (held 1.5 s) | Top side key | None | None | None | None |
 | **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | Hold Left, hold Right | None | Hold Left, hold Right |
 | **VFO** | Between the channel and the VFO / copy the channel to the VFO | None | None | None | None | VFO/MR key |
@@ -60,15 +62,15 @@ yet, and the core doesn't use them.
 
 | Radio | Dual watch | Start | Switch A / B |
 |---|---|---|---|
-| DM-1701 | Pseudo, one receiver. The core's alternation between two channels of one zone is checked on air; the new dual watch (any zone, the VFO, the screens) is not yet | **\***, **7**, or hold **SK2** | **#**, **1**, or a side key set to **A/B** |
+| DM-1701 | Pseudo, one receiver. The core's alternation between two channels of one zone is checked on air; the new dual watch (any zone, the VFO, the screens) is not yet | **\***, **7**, or hold **SK2** | **SK2** (a press), **#**, **1** |
 | MD-380 | Pseudo, one receiver. Not checked on air | **\***, **7**, or hold **SK2** | **#**, **1**, or a side key set to **A/B** |
 | DM-32UV | Pseudo, one receiver. Not checked on air (scan isn't checked on this radio yet) | **\***, **7**, or hold **SK2** | **Left** / **Right**, or a side key set to **A/B** |
 | DB25-D PRO | Pseudo, one receiver. Not checked on air. Its second BK4819 chip is a local oscillator for the receive chain, not a second receiver | Hold the **TONE/T.SEL** key, or a side key set to **Dual watch** | A side key set to **A/B** |
 | DM-1801 Pro | Pseudo, one receiver. Not checked on air | Hold the **A/B** key, **\***, **7**, or hold **SK2** | The **A/B** key (a press), **Left** / **Right** |
 
-Holding **SK2** is dual watch on every radio that has an SK2, and on the DB25-D PRO holding the tone key is. The
-DM-1701, MD-380 and DM-32UV have no key for switching A / B until you set one in **Settings > Keys** (**A/B** or
-**Dual watch**, press or hold). The DM-1801 Pro's A/B key does both: a press switches A / B, a hold starts and stops
+Holding **SK2** is dual watch on every radio that has an SK2, and on the DB25-D PRO holding the tone key is. On the
+DM-1701 a press of **SK2** switches A / B. The MD-380 and DM-32UV have no key for switching A / B until you set one in
+**Settings > Keys** (**A/B** or **Dual watch**, press or hold). The DM-1801 Pro's A/B key does both: a press switches A / B, a hold starts and stops
 dual watch. On it the zones are on hold **Left** / **Right**, or in the Zones menu.
 
 A and B can be any channel of any zone, or the VFO ([how the core does it](../spec/radio-features.md#21-dual-watch)).
@@ -118,7 +120,7 @@ Follow [Installing](02-installing.md) with these values:
 | P1, P2 | The two front function keys | **Previous zone**, **Next zone** |
 | Top side key | The uppermost of the three side keys | **Power level**. Press: the next power level. Hold 1.5 s: emergency. A build without emergency says "Voice prompts: not in this build" on a hold |
 | SK1 | The middle side key | **Monitor**. Held with **PTT** at power-on, it starts the bootloader |
-| SK2 | The lowest side key | **Talk target**: press for the picker, hold for dual watch on or off |
+| SK2 | The lowest side key | **A/B**: press to switch A / B in dual watch, hold for dual watch on or off. The talk target picker is on hold **#** |
 | **PTT** | | **PTT** |
 | Channel knob | | Channel knob |
 
@@ -263,8 +265,8 @@ The radio reports radio type 7. Moving from the stock firmware with the codeplug
 ## Baofeng DM-32UV
 
 A handheld for 136-174 and 400-480 MHz with a keypad, left and right arrow keys, a channel knob and a color screen.
-**In bring-up, not in the releases.** FM and DMR receive and transmit, CTCSS and DCS, and the battery saver work on a
-test radio. Installing: [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md).
+FM and DMR voice both ways, CTCSS and DCS, APRS, GPS data, the hotspot and the battery saver work on the radio.
+Installing: [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md).
 
 ### DM-32UV keys
 
@@ -304,9 +306,10 @@ A 240 x 320 color screen. ODR uses its full resolution, with smooth (anti-aliase
 
 ### What the DM-32UV lacks
 
-- No split duplex repeater. The extension is in the build, but the radio offers neither the transmit nor the receive
-  half yet: the HR_C7000 base station transmit mode and the slot clock aren't driven. A host that asks for a role is
-  refused.
+- Split duplex repeater: each half passes on air with one radio (the transmit half's outbound with its CACH, a
+  host-fed voice call, 5 minutes keyed within 60 Hz; the receive half's slot labels). As the receive half of a pair
+  with a DM-1801 Pro transmitting, it labeled a subscriber's calls with the right slot in 29 of 31 sessions; the other
+  two aren't explained yet. Not tried as the transmit half of a pair.
 - Not checked on this radio yet: emergency, basic privacy, talker alias, text and data messages, roaming, scan,
   MMDVM SFR, the network services over PPP and control station mode. They are built in and host tested.
 - No USB. The serial port is on the programming cable: hotspot mode, the debug link and the network (PPP,
@@ -333,15 +336,14 @@ firmware](19-moving-from-stock-dm32.md)), which adds the offset. The radio repor
 
 ## Radioddity DB25-D PRO
 
-A mobile radio for 136-174 and 400-480 MHz with a front knob, a few front keys and a hand microphone. **Early
-bring-up, not for general use:** ODR builds for it, and FM and DMR voice receive and transmit work on a radio, with the
-hotspot and the network services. It is installed with the
+A mobile radio for 136-174 and 400-480 MHz with a front knob, a few front keys and a hand microphone. FM and DMR
+voice both ways, the hotspot, the DMR VFO and the network services work on the radio. It is installed with the
 [radio programming utility](#installing-the-db25-d-pro) only.
 
 ### Installing the DB25-D PRO
 
 The radio programming utility on the web site installs and updates this radio over the programming cable (K1 jack).
-It is not in the releases, so there is no odrflash route. It marks the radio as bring-up.
+There is no odrflash route.
 
 | The radio runs | What the radio programming utility does |
 |---|---|
@@ -442,12 +444,11 @@ earlier batches.
 
 ## Baofeng DM-1801 Pro
 
-A handheld for 136-174 and 400-470 MHz with a keypad, direction keys and a 128 x 64 monochrome screen. **Bring-up, not
-for everyday use:** FM and DMR work on air on the test bench: voice calls both ways, CTCSS and DCS, text messages and
-the other DMR data, and hotspot mode. There is no release to install yet.
+A handheld for 136-174 and 400-470 MHz with a keypad, direction keys and a 128 x 64 monochrome screen. FM and DMR
+work on air: voice calls both ways, CTCSS and DCS, text messages and the other DMR data, and hotspot mode.
 
-Bring-up builds go in through the radio's own update mode, so the stock loader stays and the stock firmware can go back
-the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/dm32_flash.py --model dm1801pro IMAGE` over
+Builds go in through the radio's own update mode, so the stock loader stays and the stock firmware can go back
+the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/serial_loader.py --model dm1801pro IMAGE` over
 the programming cable. The cable's plug switches the internal speaker and the microphone off; unplug it to hear the
 radio or to talk.
 
@@ -461,7 +462,7 @@ Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on 
 | Anything else | Asks you to put the radio in update mode (PTT and SK1 at power-on). Update mode erases the codec, so the image must carry it (the build's `odr_dm1801pro_codec.bin`), or give `--stock` with a program flash read of this radio (`stub/stubtool.py PORT --progmem FILE`) |
 
 `--route stub` or `--route bootloader` chooses by hand, and `--dry-run` shows the plan without writing. Neither route of
-odrflash has flashed a radio yet; `tools/dm32_flash.py` and `stub/stubtool.py` have.
+odrflash has flashed a radio yet; `tools/serial_loader.py` and `stub/stubtool.py` have.
 
 ### DM-1801 Pro keys
 
@@ -489,7 +490,8 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 
 ### What the DM-1801 Pro lacks today
 
-- No split duplex repeater: the build offers neither half until the HR_C7000 base station transmit mode is driven.
+- Split duplex repeater: each half passes on air with one radio (the transmit half's outbound with its CACH and a
+  host-fed voice call, the receive half's slot labels). A real pair of radios hasn't been tested.
 - APRS receive is unchecked. APRS sending works on FM and over DMR.
 - VHF transmit is unchecked on air. UHF transmit and receive on both bands work.
 - VOX is unchecked. ODR now reads the microphone level from the microphone's digital audio, but that hasn't been
@@ -514,12 +516,15 @@ switch between them: `IAP_A` updates the first chip, `IAP_B` the second.
 
 ## Planned radios
 
-These radios aren't built yet. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
+These radios aren't built in a release yet. An in-progress port is on its own branch. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
 models it covers.
 
-| Radio | Note |
+<!-- generated: tools/boards.py docs planned; edit the Port cells of docs/spec/radios.md -->
+| Radio | Status |
 |---|---|
-| TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned as a variant of the DM-1701 board |
-| TYT MD-9600, Retevis RT90 | Mobile. Planned |
-| Radioddity GD-77 family | Planned. Needs a new processor platform |
-| Radioddity DB40-D | Mobile. Planned. Hardware needed |
+| TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port ([hardware-mduv380.md](../spec/hardware-mduv380.md)). |
+| TYT MD-9600, Retevis RT90 (mobile) | In progress ([#112](https://github.com/sfowlr/OpenDigitalRadio/pull/112)). Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD. |
+| Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/sfowlr/OpenDigitalRadio/pull/111)). Hardware needed. A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
+| Radioddity GD-88 | In progress ([#132](https://github.com/sfowlr/OpenDigitalRadio/pull/132)). Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
+| Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
+<!-- end generated -->

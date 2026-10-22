@@ -20,6 +20,9 @@
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
+#if CONFIG_DMR
+#include "dmr/ambe/ambeVoice.h"
+#endif
 
 uint32_t ui_svc_feat_voice(void)
 {
@@ -241,7 +244,8 @@ bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
 	static channel_t ch;
 	radio_dual_ref_t r[2];
 	for (uint8_t i = 0; i < 2; i++) {
-		r[i] = (radio_dual_ref_t){ ref[i].vfo, ref[i].vfo ? 0 : ref[i].zone, ref[i].vfo ? 0 : ref[i].pos };
+		r[i] = (radio_dual_ref_t){ ref[i].vfo, ref[i].vfo ? 0 : ref[i].zone,
+					   ref[i].vfo ? (uint16_t)(ref[i].pos & 1u) : ref[i].pos };	// a VFO: which
 		if (r[i].vfo) {
 			if (!(CONFIG_VFO_FM || CONFIG_VFO_DMR))
 				return false;
@@ -253,6 +257,17 @@ bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
 	if (sel > 1 || (r[0].vfo == r[1].vfo && r[0].zone == r[1].zone && r[0].pos == r[1].pos))
 		return false;
 	radio_req_dual(r, sel);
+	return true;
+}
+
+bool ui_svc_dual_get(ui_dual_ref_t ref[2], uint8_t *sel)
+{
+	radio_dual_ref_t r[2];
+	uint8_t at;
+	if (!radio_get_dual(r, sel, &at))
+		return false;
+	for (uint8_t i = 0; i < 2; i++)
+		ref[i] = (ui_dual_ref_t){ r[i].vfo, r[i].zone, r[i].pos };
 	return true;
 }
 
@@ -305,9 +320,9 @@ bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out)
 	return true;
 }
 
-bool ui_svc_vfo_get(channel_t *out)
+bool ui_svc_vfo_get(uint8_t index, channel_t *out)
 {
-	return radio_get_vfo(out);
+	return radio_get_vfo(index, out);
 }
 #endif
 
@@ -356,6 +371,18 @@ int32_t ui_svc_reply_shown(const radio_settings_t *s)
 	return 10;
 }
 
+// Mic gain: the step, or step 5 (the board's levels, FM included) while the vocoder's AGC sets the level (Mic gain
+// dimmed)
+static void apply_mic_gain(int32_t step, bool agc)
+{
+	if (CONFIG_DMR && agc) {
+		step = (int32_t)MIC_GAIN_UNITY;
+	} else if (step < 0) {
+		step = 0;
+	}
+	radio_set_mic_gain((uint8_t)(step > (int32_t)MIC_GAIN_STEPS ? (int32_t)MIC_GAIN_STEPS : step));
+}
+
 // The UI's settings that live in radio_settings_t. The radio core saves them (settings store) and restores them at
 // start-up, so ui_svc_setting_get reads them back from it (ui_svc_storage.c) and a value it already has is not sent
 // again. A local copy, so a run of changes doesn't read back one the radio task hasn't taken in yet
@@ -370,15 +397,36 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	case UI_SET_TALK_PERMIT:
 		rs.talk_permit = value != 0;
 		break;
-	case UI_SET_MIC_GAIN:		// the board's gain (FM and DMR) or DMR's sample scaling (radio/mic_gain.h)
-		radio_set_mic_gain((uint8_t)(v16 > MIC_GAIN_STEPS ? MIC_GAIN_STEPS : v16));
+	case UI_SET_VFO_STEP:		// 10 Hz units; 833 is the exact 8.33 kHz grid
+		radio_req_vfo_step_size(value == 833 ? 8333u : value > 0 && value <= 100000 ? (uint32_t)value * 10u : 0u);
 		return;
+	case UI_SET_MIC_GAIN:		// the board's gain (FM and DMR) or DMR's sample scaling (radio/mic_gain.h)
+		apply_mic_gain(value, ui_svc_setting_get(UI_SET_MIC_AGC) != 0);
+		return;
+#if CONFIG_DMR
+	case UI_SET_MIC_AGC:
+	case UI_SET_NOISE_REDUCTION: {	// tone frames stay on (no setting)
+		bool nr = (id == UI_SET_NOISE_REDUCTION ? value : ui_svc_setting_get(UI_SET_NOISE_REDUCTION)) != 0;
+		bool agc = (id == UI_SET_MIC_AGC ? value : ui_svc_setting_get(UI_SET_MIC_AGC)) != 0;
+		ambeVoiceSetEncodeOptions(VOCODER_OPT_TONE_FRAMES | (nr ? VOCODER_OPT_NOISE_REDUCTION : 0u) |
+					  (agc ? VOCODER_OPT_AGC : 0u));
+		if (id == UI_SET_MIC_AGC) {
+			apply_mic_gain(ui_svc_setting_get(UI_SET_MIC_GAIN), agc);
+		}
+		return;
+	}
+#endif
 	case UI_SET_TONE_VOLUME:		// 0..10
 		rs.beep_level = (uint8_t)(v16 > 10 ? 100 : v16 * 10u);
 		break;
 	case UI_SET_TOT_S:
 		rs.tot_s = v16;
 		break;
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_DELAY_MS:	// the radio core clamps
+		rs.dual_delay_ms = v16;
+		break;
+#endif
 	case UI_SET_BACKLIGHT_S:		// dims after this, goes off after four times as long (0 = always on)
 		rs.backlight_dim_s = v16;
 		rs.backlight_off_s = (uint16_t)(v16 > 0x3FFF ? 0xFFFF : v16 * 4u);

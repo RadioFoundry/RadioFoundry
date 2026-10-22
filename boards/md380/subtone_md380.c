@@ -127,6 +127,19 @@ void md380_subtone_tx_stop(void)
 	stm32_pin_out(PIN_PORT(PIN_CTCSS_PWM), PIN_MASK(PIN_CTCSS_PWM), false, false);	// back to the idle level
 }
 
+bool md380_subtone_tx_tail(bool on)
+{
+	if (!pwm_ready) {
+		return false;
+	}
+	HAL_NVIC_DisableIRQ(TIM3_IRQn);		// the generator runs in its interrupt
+	bool ok = subaudio_tx_tail(&tx, on);
+	if ((TIM3->CR1 & TIM_CR1_CEN) != 0) {
+		HAL_NVIC_EnableIRQ(TIM3_IRQn);
+	}
+	return ok && (TIM3->CR1 & TIM_CR1_CEN) != 0;
+}
+
 void md380_subtone_tx_start(const subtone_t *tone)
 {
 	md380_subtone_tx_stop();

@@ -104,10 +104,15 @@ void ui_dual_reset(void);			// at ui_app_init
 bool ui_dual_start(const ui_dual_ref_t *b);	// A = the channel on view, B = b; false with a toast when it can't
 void ui_dual_stop(void);			// off, staying on the selected channel
 void ui_dual_select(uint8_t pane);		// PTT and the keys on pane 0 (A) or 1 (B)
-void ui_dual_ab_key(void);			// the A/B key: the other channel (starts dual watch when off)
+void ui_dual_ab_key(void);			// the A/B key: the other channel (a toast when the watch is off)
+bool ui_dual_zone_step(int dir);		// the zone keys: the selected channel's zone (false: the watch is off)
+bool ui_dual_zone_home(void);			// the Home zone key: the selected channel to the first zone (same)
 void ui_dual_key(void);				// the Dual watch key: on (the last B, or the picker) / off
 bool ui_dual_home_key(const input_event_t *ev);	// Home's keys while it runs (true: used)
 bool ui_dual_tick(const radio_view_t *v, uint32_t now);	// true: redraw
+const radio_view_t *ui_dual_view(const radio_view_t *v);	// the view with the selected channel's settings
+void ui_dual_back(void);			// Back on Home with nothing to clear: twice stops the watch
+bool ui_dual_vfo_key(void);			// the VFO key: the selected channel to / from the VFO (false: off)
 #endif
 
 // Filtered lists: row i -> raw index; the filter text

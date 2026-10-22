@@ -147,13 +147,25 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_REPLY_S:
 		radio_get_settings(&rs);
 		return ui_svc_reply_shown(&rs);
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_DELAY_MS:
+		radio_get_settings(&rs);
+		return rs.dual_delay_ms;
+#endif
 	case UI_SET_MIC_GAIN:
 		settings_read(&st);
-		return settings_mic_gain(&st) <= 10 ? settings_mic_gain(&st) : 5;
-#if CONFIG_DUAL_WATCH
-	case UI_SET_DUAL_B:
+		return st.mic_gain <= 10 ? st.mic_gain : 5;
+	case UI_SET_VFO_STEP:
 		settings_read(&st);
-		return settings_dual_b(&st) <= UI_DUAL_B_VFO ? settings_dual_b(&st) : 0;
+		return st.vfo_step_hz >= 1000u && st.vfo_step_hz <= 1000000u ? (int32_t)(st.vfo_step_hz / 10u) : 0;
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_B: {
+		settings_read(&st);
+		if (st.dual_b > UI_DUAL_B_VFO2)
+			return 0;
+		return st.dual_b | ((st.dual_state & SETTINGS_DUAL_ON) ? UI_DUAL_ON : 0) |
+		       ((st.dual_state & SETTINGS_DUAL_B_SEL) ? UI_DUAL_B_SEL : 0);
+	}
 #endif
 	case UI_SET_AUTO_LOCK_S:
 		settings_read(&st);
@@ -211,6 +223,12 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_TFTP_WRITE:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
+	case UI_SET_NOISE_REDUCTION:
+		settings_read(&st);
+		return (st.accent & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0;
+	case UI_SET_MIC_AGC:
+		settings_read(&st);
+		return (st.accent & SETTINGS_AUDIO_AGC) != 0;
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
 	case UI_SET_ROAM_BEACON_S:
@@ -285,6 +303,9 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_BATTERY_SAVER:
 	case UI_SET_REPLY_S:
 	case UI_SET_TALK_PERMIT:
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_DELAY_MS:
+#endif
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
 	case UI_SET_ROAM_BEACON_S:
@@ -413,6 +434,16 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		tftp_codeplug_allow_write(value != 0);
 #endif
 		return true;
+	case UI_SET_NOISE_REDUCTION:	// ui_svc_apply hands them to the vocoder
+	case UI_SET_MIC_AGC: {
+		// The stored bit is set for "on" with AGC, for "off" with noise reduction (0 = the defaults)
+		uint8_t bit = id == UI_SET_MIC_AGC ? SETTINGS_AUDIO_AGC : SETTINGS_AUDIO_NO_NOISE_REDUCTION;
+		bool set = (value != 0) == (id == UI_SET_MIC_AGC);
+		st = settings_begin();
+		st->accent = (uint8_t)(set ? (st->accent | bit) : (st->accent & ~bit));
+		settings_end(hal_millis());
+		return true;
+	}
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
 	case UI_SET_ALERT_ANSWER:
@@ -452,6 +483,17 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		}
 		settings_end(hal_millis());
 		hostlink_settings_changed();
+		return true;
+#endif
+	case UI_SET_VFO_STEP:
+		return true;	// ui_svc_apply hands it to the radio core, which saves it
+#if CONFIG_DUAL_WATCH
+	case UI_SET_DUAL_B:
+		st = settings_begin();
+		st->dual_b = (uint16_t)clamp16(value & UI_DUAL_CODE, 0, UI_DUAL_B_VFO2);
+		st->dual_state = (uint8_t)(((value & UI_DUAL_ON) ? SETTINGS_DUAL_ON : 0) |
+					   ((value & UI_DUAL_B_SEL) ? SETTINGS_DUAL_B_SEL : 0));
+		settings_end(hal_millis());
 		return true;
 #endif
 	default:

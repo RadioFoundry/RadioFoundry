@@ -11,19 +11,34 @@ import { join } from "node:path";
 import { equal, sha256, be32, concat } from "../static/js/flasher/bytes.js";
 import { stubImages, univFits, StubError } from "../static/js/flasher/stub.js";
 import * as c7 from "../static/js/flasher/c7000.js";
-import { Usmart, HIJACK, Iap, iapPlan, readPacket, checkInstallImage, checkRestoreImage, trimTail, erasePacket, DB25DError, stockVersion, iapSuffix } from "../static/js/flasher/db25d.js";
+import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS } from "../static/js/flasher/usmart.js";
+import {
+	Iap, iapPlan, readPacket, checkInstallImage as checkInstall, checkRestoreImage as checkRestore, trimTail, erasePacket,
+	IapError,
+} from "../static/js/flasher/iap.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
 const bin = (n) => new Uint8Array(readFileSync(join(DIR, n)));
 const C = json("flash-boards.json").c7000;
 const fx = json("db25d.json");
+const radio = json("radios.json").radios.find((r) => r.id === "db25d");
+const FS = radio.flash.first_stage;
+const checkInstallImage = (image) => checkInstall(image, FS);
+const checkRestoreImage = (image) => checkRestore(image, FS);
+const iapOn = (stream) => new Iap(stream, { firstStage: FS });
 
 test("the DB25-D's data in the flasher tables", () => {
 	const b = C.boards.db25d;
 	assert.equal(b.progmem_size, 0x200000);
 	assert.equal(b.data_flash, false);
-	assert.equal(b.stock_console, true);
+	// the stock-side routes the page takes, from board.toml and board.mk
+	assert.equal(radio.flash.stock_console, "usmart");
+	assert.equal(radio.flash.update_mode, "iap");
+	assert.deepEqual(FS, { size: 0x1000, head: "2c1101c0" });
+	assert.equal(radio.flash.read_rate, 46000);
+	// every build the console route knows is a stock version of the board, by which the page names it
+	for (const [build] of BUILDS) assert.equal(stockName(radio.flash, build), `909E.DBB.EARSAB.${build}`);
 	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true });
 	assert.deepEqual(b.slot, [0xE8000, 0x100000]);
 	const ps = C.profiles.filter((p) => p.board === "db25d");
@@ -174,7 +189,7 @@ const randomFlash = (size) => {
 // A DB25-D on its original firmware, build 018, with the stock console (fakec7000.js), fast
 async function stockDb25d(t, opts = {}) {
 	const { FakeC7000, c7000Simulation } = await import("../static/js/flasher/fakec7000.js");
-	const sim = await c7000Simulation(C, "db25d");
+	const sim = await c7000Simulation(C, "db25d", 7000, radio);
 	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 50, bootTime: 50, board: "DB25-D",
 		usmart: "018", ...opts });
 	t.after(() => r.stop());
@@ -194,7 +209,7 @@ test("USMART: every command is one framed write; nothing unframed and no write o
 	assert.deepEqual(sent, ["@AT read_addr(0x0300c000)\r\n"]);
 	for (const bad of ["write_addr(0x0300c000,0x00000000)", "write_addr(0x00053ffc,0x00000000)", "write_addr(0x00058000,0x00000000)",
 		"write_addr(0x18000844,0x00054000)", "DMRCALL", "01", "TC58_INTF_BlocksErase(0)", "read_addr(0x0300c000);printk"])
-		await assert.rejects(u.send(bad), DB25DError, bad);
+		await assert.rejects(u.send(bad), UsmartError, bad);
 	await u.send("write_addr(0x00057ffc,0x00000001)");
 	await u.send(`write_addr(0x${HIJACK.toString(16)},0x00054000)`);
 	assert.equal(await new Usmart(new Pipe(() => {})).probe(200), false, "nothing answers");
@@ -340,17 +355,17 @@ test("IAP: the Erase packet and the pages as the vendor tool makes them", () => 
 	let sum = 0;
 	for (const pg of p.pages) for (const b of pg) sum += b;
 	assert.equal(p.sum, sum >>> 0);
-	assert.throws(() => checkInstallImage(img.subarray(0, 4096)), DB25DError);
-	assert.throws(() => checkInstallImage(Uint8Array.of(...img.subarray(0, 4096), 0, 0, 0, 0, 1)), DB25DError);
+	assert.throws(() => checkInstallImage(img.subarray(0, 4096)), IapError);
+	assert.throws(() => checkInstallImage(Uint8Array.of(...img.subarray(0, 4096), 0, 0, 0, 0, 1)), IapError);
 	const bad = img.slice(); bad[0] = 0;
-	assert.throws(() => checkInstallImage(bad), DB25DError);
+	assert.throws(() => checkInstallImage(bad), IapError);
 	assert.equal(trimTail(concat(img, new Uint8Array(5000).fill(0xFF))).length, (img.length + 3) & ~3);
 });
 
 test("IAP: banner, erase, every page acknowledged, checksum compared", async () => {
 	const img = installImage();
 	const { pipe, got } = iapRadio();
-	const iap = new Iap(pipe);
+	const iap = iapOn(pipe);
 	setTimeout(() => pipe.push("FLASH_TC58 ok\r\nIAPReady"), 30);
 	await iap.waitBanner(2000);
 	const seen = [];
@@ -358,12 +373,12 @@ test("IAP: banner, erase, every page acknowledged, checksum compared", async () 
 	assert.equal(got.pages.length, Math.floor(img.length / 2048) + 1);
 	assert.equal(seen.at(-1), 1);
 	assert.ok(equal(Uint8Array.from(got.pages.flatMap((p) => [...p]).slice(0, img.length)), img));
-	await assert.rejects(new Iap(new Pipe(() => {})).waitBanner(150), DB25DError);
+	await assert.rejects(iapOn(new Pipe(() => {})).waitBanner(150), IapError);
 });
 
 test("IAP: a radio stuck in update mode at power-on answers the read-only probe, and the install then needs no banner", async () => {
 	const { pipe, got } = iapRadio();
-	const iap = new Iap(pipe);
+	const iap = iapOn(pipe);
 	assert.equal(Buffer.from(readPacket(0, 1)).toString("hex"), Buffer.from("Flash Read ").toString("hex") + "00000000" + "00000001");
 	// the banner went by before the page asked: the radio only answers the request
 	const um = await iap.probe(1500);
@@ -376,31 +391,31 @@ test("IAP: a radio stuck in update mode at power-on answers the read-only probe,
 	await iap.write(img);
 	assert.equal(got.pages.length, Math.floor(img.length / 2048) + 1);
 	// a radio that is off, or runs something else, does not answer
-	assert.equal(await new Iap(new Pipe(() => {})).probe(200), null);
+	assert.equal(await iapOn(new Pipe(() => {})).probe(200), null);
 });
 
 test("IAP: a checksum that differs is reported, and silence after the erase stops before any data", async () => {
 	const img = installImage();
 	const { pipe } = iapRadio({ corrupt: true });
-	await assert.rejects(new Iap(pipe).write(img), /checksum/);
+	await assert.rejects(iapOn(pipe).write(img), /checksum/);
 	const quiet = new Pipe(() => {});
-	await assert.rejects(new Iap(quiet).write(img, { eraseTimeout: 200 }), /erase/);
+	await assert.rejects(iapOn(quiet).write(img, { eraseTimeout: 200 }), /erase/);
 });
 
 test("IAP: a backup's application area goes back through update mode; one without an application entry is refused", async () => {
 	const pm = randomFlash(0x200000);
 	pm.set([0x2C, 0x11, 0x01, 0xC0], 0xC000);
 	const [, area] = c7.restoreTarget(C, pm);
-	assert.throws(() => checkInstallImage(area), DB25DError, "a stock application is not an install image");
+	assert.throws(() => checkInstallImage(area), IapError, "a stock application is not an install image");
 	checkRestoreImage(area);
 	const head = area.subarray(0, 0x8000);	// the whole area is 500 pages: its head shows the same
 	const { pipe, got } = iapRadio();
-	await new Iap(pipe).write(head, { restore: true });
+	await iapOn(pipe).write(head, { restore: true });
 	assert.ok(equal(Uint8Array.from(got.pages.flatMap((p) => [...p]).slice(0, head.length)), head));
 	const bad = area.slice();
 	bad[0] = 0xFF;
-	assert.throws(() => checkRestoreImage(bad), DB25DError);
-	await assert.rejects(new Iap(iapRadio().pipe).write(bad.subarray(0, 0x8000), { restore: true }), DB25DError);
+	assert.throws(() => checkRestoreImage(bad), IapError);
+	await assert.rejects(iapOn(iapRadio().pipe).write(bad.subarray(0, 0x8000), { restore: true }), IapError);
 });
 
 // ---- one stub for every RAM span
@@ -445,16 +460,8 @@ test("the stub reads the DB25-D's whole 2 MB program flash only once told its si
 	assert.ok(equal(await s.dump("progmem", 0x1F0000, 0x1F2000), progmem.subarray(0x1F0000, 0x1F2000)));
 });
 
-test("update-mode texts: the DB25-D's are the base, the GD-88 (A, and B through it) gets its own", () => {
-	assert.equal(iapSuffix("db25d"), "");
-	assert.equal(iapSuffix("gd88"), "_gd88");
-	assert.equal(iapSuffix("dm1801pro"), "");
-	const en = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url)));
-	for (const k of ["flash.help.s.iap", "flash.help.s.iap_text", "flash.help.fix.iap_text", "flash.db25d.none.stock", "flash.db25d.um.text",
-		"flash.db25d.iap.careful_text"]) {
-		const g = k === "flash.help.s.iap_text" ? "flash.help.s.iap_gd88_text" : `${k}_gd88`;
-		assert.ok(en[g], g);
-		assert.ok(!/red LED|white screen/i.test(en[g]) || /IAP_/.test(en[g]), g);
-	}
-	assert.ok(/IAP_B/.test(JSON.parse(readFileSync(new URL("../../boards/gd88/radio.json", import.meta.url))).flash.second_bootloader.join(" ")));
+test("IAP: a loader without the board's first stage writes nothing", async () => {
+	let sent = 0;
+	await assert.rejects(new Iap(new Pipe(() => { sent++; })).write(new Uint8Array(0x2000)), /no first stage/);
+	assert.equal(sent, 0);
 });

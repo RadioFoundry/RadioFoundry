@@ -22,54 +22,47 @@ import struct
 import sys
 import time
 
-APP_BASE = 0x0800C000
-FLASH_END = 0x08100000
+# the board registry (tools/boards.py generates it): the ODR boards on this bootloader, their sectors, keys and codecs
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "odrflash"))
+from odrflash import boards  # noqa: E402
+
+ODR_BOARDS = [b for b in boards.BOARDS.values() if b.key_sha256]
 BLOCK = 1024
 FIRST_BLOCK = 2
 KEY_LEN = 1024
 
-DFU_VID = 0x0483
-DFU_PID = 0xDF11
+DFU_VID, DFU_PID = ODR_BOARDS[0].dfu_ids
 
-# (sector address, size) in the order the bootloader expects them (15.2 step 4/5). The loader also lists
-# 0x08100000, which is past the end of the 1 MB flash; it is never erased or written here.
-REGIONS = [
-    (0x0800C000, 0x04000),
-    (0x08010000, 0x10000),
-    (0x08020000, 0x20000),
-    (0x08040000, 0x20000),
-    (0x08060000, 0x20000),
-    (0x08080000, 0x20000),
-    (0x080A0000, 0x20000),
-    (0x080C0000, 0x20000),
-    (0x080E0000, 0x20000),
-]
+# (sector address, size) in the order the bootloader expects them (15.2 step 4/5), the same on every radio it runs
+# on. The loader also lists 0x08100000, which is past the end of the 1 MB flash; it is never erased or written here.
+REGIONS = [(s.addr, s.size) for s in ODR_BOARDS[0].sectors]
+APP_BASE = ODR_BOARDS[0].app_base
+FLASH_END = ODR_BOARDS[0].flash_end
+assert all([(s.addr, s.size) for s in b.sectors] == REGIONS and (b.app_base, b.flash_end) == (APP_BASE, FLASH_END)
+           and b.dfu_ids == (DFU_VID, DFU_PID) for b in ODR_BOARDS), "the registry's DFU boards disagree on the flash map"
 
-# Per-model key identity (15.3). The key bytes are not reproduced; only their hash and first four bytes.
-KEYS = {
-    "dm1701": ("d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb3deff", bytes.fromhex("3A0474AD")),
+# Per-model key identity (15.3). The key bytes are not reproduced; only their hash and first four bytes. The ODR
+# boards' come from the registry ([flash.dfu]); STOCK_ONLY are radios with this bootloader and no ODR board yet
+# (planned, docs/spec/radios.md), for flashing their stock firmware back.
+STOCK_ONLY = {
     "mduv380": ("739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991", bytes.fromhex("00AA8989")),
-    "md380": ("5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd", bytes.fromhex("2EDF40B5")),
     "md9600": ("c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae", bytes.fromhex("A2FABB4B")),
 }
-ALIASES = {
-    "dm1701": "dm1701",
+KEYS = dict({b.id: (b.key_sha256, b.key_prefix) for b in ODR_BOARDS}, **STOCK_ONLY)
+ALIASES = dict({b.id: b.id for b in ODR_BOARDS}, **{
     "rt84": "dm1701",      # spec: same key as the DM-1701, unverified
     "mduv380": "mduv380",
     "mduv390": "mduv380",
     "md2017": "mduv380",
-    "md380": "md380",
     "md9600": "md9600",
-}
+})
 
 # Where a merged image holds the codec (docs/spec/codec-placement.md: the tables at their stock address, the code moved
-# into sector 11: the DM-1701 V02.06's right after its tables, the MD-380 D002.032's at the start of the sector), and
-# where its code starts. An image that reaches into them must carry the merged codec, recognized by its first word.
-CODEC_WINDOWS = {
-    "dm1701": [(0x080D19F0, 0x080E3A72), (0x080E3A74, 0x080F3C90)],
-    "md380": [(0x0808FC64, 0x0809AC5C), (0x080E0000, 0x080F0884)],
-}
-CODEC_SIG_ADDR = {"dm1701": 0x080E3A74, "md380": 0x080E0000}
+# into the top sector), and where its code starts: the board's codec windows (the union over its stock files) and the
+# code address of each stock file's placement. An image that reaches into a window must carry a merged codec,
+# recognized by its first word at one of those addresses.
+CODEC_WINDOWS = {b.id: sorted((a, a + n) for a, n in b.codec.windows) for b in ODR_BOARDS}
+CODEC_SIG_ADDRS = {b.id: b.codec_codes for b in ODR_BOARDS}
 CODEC_SIG = 0x4FF0E92D
 
 STOCK_MAGIC = b"OutSecurityBin"
@@ -162,15 +155,17 @@ def check_image(data, model):
     windows = CODEC_WINDOWS.get(model, [])
     hit = [(a, b) for a, b in windows if end > a]
     if hit:
-        sig_addr = CODEC_SIG_ADDR[model]
-        off = sig_addr - APP_BASE
-        word = struct.unpack_from("<I", data, off)[0] if off + 4 <= len(data) else None
-        if word != CODEC_SIG:
+        words = {}
+        for sig_addr in CODEC_SIG_ADDRS[model]:
+            off = sig_addr - APP_BASE
+            words[sig_addr] = struct.unpack_from("<I", data, off)[0] if off + 4 <= len(data) else None
+        if CODEC_SIG not in words.values():
             spans = ", ".join("0x%08X..0x%08X" % w for w in hit)
-            warnings.append("image extends to 0x%08X, into the codec window(s) %s, but the word at 0x%08X is %s, "
-                            "not the codec signature 0x%08X: the application overlaps the codec window "
+            found = ", ".join("0x%08X is %s" % (a, "missing" if w is None else "0x%08X" % w) for a, w in words.items())
+            warnings.append("image extends to 0x%08X, into the codec window(s) %s, but the word at %s, not the "
+                            "codec signature 0x%08X: the application overlaps the codec window "
                             "(DMR voice will not work and the app may be corrupt if a codec is merged later)"
-                            % (end, spans, sig_addr, "missing" if word is None else "0x%08X" % word, CODEC_SIG))
+                            % (end, spans, found, CODEC_SIG))
     return warnings
 
 

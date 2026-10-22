@@ -15,7 +15,7 @@ radio until a power cycle, as before.
 | Fault | 1 | a CPU exception: the platform's fault entry (2) | the exception number (CM4: 3 HardFault; CK803: the vector, 1 misaligned access, 2 access error, 3 divide by zero, 4 illegal instruction, 7 breakpoint, 8 unrecoverable error) | the faulting instruction |
 | Stack overflow | 2 | FreeRTOS's stack check (`configCHECK_FOR_STACK_OVERFLOW` 2), at a context switch | 0 | in the kernel; `task` names the task |
 | Out of heap | 3 | FreeRTOS's malloc-failed hook | 0 | in the kernel |
-| Assert | 4 | `configASSERT` (the boards' `FreeRTOSConfig.h`) | the line | the caller of the assertion |
+| Assert | 4 | `configASSERT` (the platforms' `FreeRTOSConfig.h`) | the line | the caller of the assertion |
 
 The capture runs with interrupts off, on a stack of its own (1 KB), and calls nothing that waits. It turns the
 transmitter off first (8), with or without the crash log. It adds the running
@@ -200,7 +200,7 @@ the screen, seen, clear, the report to a private or group contact, its progress 
 `debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals and the deferred test).
 `tests/host/crashCaptureTest.c`: `crash_capture.c` on a stand-in RTOS; every way in (a fault record, a stack
 overflow, out of heap, an assertion inside the capture) calls `board_rf_safe` first, with interrupts off, before the
-store and the restart. `tests/host/bootDb25dTest.c` (`test_tx_off`): the DB25-D first stage drives the transmitter
+store and the restart. `boards/db25d/tests/bootDb25dTest.c` (`test_tx_off`): the DB25-D first stage drives the transmitter
 pins off.
 `tests/host/dmrDataServiceTest.c` (`testUdpSend`): the UDP mailbox. `tests/host/radioCoreTest.c`
 (`test_ui_settings`): the two settings through the UI service, their clamps, and that they leave the theme, Up/Down

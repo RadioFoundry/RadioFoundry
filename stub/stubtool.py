@@ -24,9 +24,14 @@ needs only Python 3 and pyserial.
 import argparse
 import base64
 import hashlib
+import os
 import sys
 import time
 import zlib
+
+# the board registry (tools/boards.py generates it): the boards with a stub profile, their pins and memories
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "odrflash"))
+from odrflash import boards as odrboards  # noqa: E402
 
 # --- STUB begin (stub/embed.py rewrites everything up to the end marker)
 STUB_SHA256 = "053a6b645d122dc85443616ed622c3a91229d8f949fc5e07aec68d14a8e4cbe1"
@@ -509,27 +514,13 @@ def check_univ_load(image, load, window=None):
     return run, end
 
 
-# Board profiles for the universal stub (CONFIG, op 0x0D): board id echoed by HELLO, power latch / power key pins (255 =
-# none), whether the data memory is the SPI NAND, the program flash size. VERSION's board= names them on the ODR route;
-# --board at power-on. Unknown radio: GENERIC (no pins, nothing echoed but 0).
-C7_BOARDS = {
-    "dm32": {"id": 1, "name": "DM-32UV", "names": ("DM-32UV", "dm32", "dm32uv"), "latch": 255, "key": 255, "nand": False,
-             "progmem": 0x100000},
-    "dm1801pro": {"id": 2, "name": "DM-1801 Pro", "names": ("DM-1801 Pro", "dm1801pro"), "latch": 255, "key": 255,
-                  "nand": False, "progmem": 0x100000},
-    # PTB13 latch, PTB12 power key (hardware-db25d.md 3.3); the same pins under ODR, its first stage and the stock firmware
-    "db25d": {"id": 3, "name": "DB25-D", "names": ("DB25-D", "db25d"), "latch": 45, "key": 44, "nand": True,
-              "progmem": 0x200000},
-    # GD-88 SoC A: the DB25-D's latch and key pins (hardware-gd88.md). No LED pins: PTB0 / PTB1, the default LEDs, clock
-    # and feed the RF switch chain here, so the image is patched to drive no LED before it is sent
-    "gd88": {"id": 4, "name": "GD-88", "names": ("GD-88", "gd88"), "latch": 45, "key": 44, "nand": True,
-             "progmem": 0x200000, "leds": (255, 255)},
-    # GD-88 SoC B, the second receiver: no cable, reached through A's bridge on its UART3 (docs/spec/rx2-link.md 4); no
-    # latch or key (PTB13 is an RF pin on B), the radio's two status LEDs on PTA16 and PTB17 (high = on), the stub
-    # pinned to UART3
-    "gd88b": {"id": 5, "name": "GD-88 receiver B", "names": ("GD-88 B", "gd88b"), "latch": 255, "key": 255,
-              "nand": True, "progmem": 0x200000, "leds": (16, 49), "uart": 0x14090000, "bridge": True},
-}
+# Board profiles for the universal stub (CONFIG, op 0x0D), from each board's [flash.stub] (boards/<id>/board.toml):
+# board id echoed by HELLO, power latch / power key pins (255 = none), whether the data memory is the SPI NAND, the
+# program flash size. VERSION's board= names them on the ODR route; --board at power-on. Unknown radio: GENERIC (no
+# pins, nothing echoed but 0).
+C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
+                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"]}
+             for b in odrboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
 
@@ -856,7 +847,8 @@ class Radio:
     def mem_flags(self, mem):
         base, ser, cs, _, _ = MEM[mem]
         if mem == "nand" and not (self.v6 and self.v6["flags"] & 1):
-            raise DumpError("the NAND is read through the universal stub on a radio configured with one (--board db25d)")
+            raise DumpError("the NAND is read through the universal stub on a radio configured with one (--board %s)"
+                           % " or ".join(sorted(b for b, p in C7_BOARDS.items() if p["nand"])))
         return (1 if ser else 0) | (2 if cs is not None else 0) | (NAND_FLAG if mem == "nand" else 0)
 
     # ---- entering the stub from a running ODR (debug link frames: A5 5A cmd seq len(2 LE) payload crc16(2 LE))
@@ -2006,7 +1998,8 @@ def self_test():
     # power-on with the universal stub, CONFIG, the HELLO echo, writes gated on it, the NAND path
     nand = bytearray(images["q128"][:16 * SECTOR])
     nand[SECTOR:2 * SECTOR] = b"\xff" * SECTOR
-    for board in ("db25d", "dm1801pro", "gd88", None):
+    for board in sorted(C7_BOARDS) + [None]:
+        b = odrboards.get(board) if board else None
         imgs = dict(images, nand=bytes(nand))
         radio = FakeRadio(imgs, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
         radio.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
@@ -2033,7 +2026,7 @@ def self_test():
         check(r.configured is prof, "the %s profile is confirmed by the HELLO echo" % prof["name"])
         nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
         check(nw == 0 and nk == 4, "writing the same image after CONFIG changes nothing")
-        if board == "db25d":		# a first stage in the radio: only an image that starts with one goes over it
+        if b and b.first_stage:		# a first stage in the radio: only an image that starts with one goes over it
             pm = bytearray(radio.images["progmem"])
             pm[APP_START:APP_START + 4] = STAGE_MAGIC
             radio.images["progmem"] = bytes(pm)
@@ -2048,11 +2041,11 @@ def self_test():
             radio.images["progmem"] = bytes(pm)
             nw, nk = r.write_image(bytes(pm[APP_START:APP_START + 4 * SECTOR]))
             check(nk == 4, "an install image over a first stage is written")
-        if board == "db25d":
+        check(r.mem_size("progmem") == prof["progmem"], "the %s's program flash is %d KB" % (prof["name"], prof["progmem"] >> 10))
+        if prof["nand"]:
             out = io.BytesIO()
             r.dump(out, "nand", 0, 16 * SECTOR)
             check(out.getvalue() == bytes(nand), "NAND read through the stub's NAND path")
-            check(r.mem_size("progmem") == 0x200000, "the %s's program flash is 2 MB" % prof["name"])
         else:
             try:
                 r.dump(io.BytesIO(), "nand", 0, SECTOR)
@@ -2087,7 +2080,7 @@ def self_test():
     r = Radio(radio, log=quiet)
     r.start(wait=2)
     try:
-        r.configure("db25d")
+        r.configure(sorted(C7_BOARDS)[0])
         check(False, "a stub that ignores CONFIG is caught by the HELLO echo")
     except DumpError:
         try:
@@ -2099,7 +2092,7 @@ def self_test():
     radio = FakeRadio(images, stub_len=len(stub))
     r = Radio(radio, log=quiet)
     r.start(wait=2, stub=stub)
-    r.configure("db25d")
+    r.configure(sorted(C7_BOARDS)[0])
     check(r.v6 is None and not radio.configs, "an old stub gets no CONFIG")
     r.write_image(images["progmem"][APP_START:APP_START + SECTOR])
     print("stubtool self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
@@ -2239,11 +2232,12 @@ def main(argv=None):
                     help="power-on load: write and start the stub at ADDR (default 0x%X). The universal stub runs from any "
                          "base that doesn't overlap its run area; a legacy stub must be linked for it (the DB25-D's first stage "
                          "took the legacy 0x30000 stub at 0x30000)" % LOAD_ADDR)
-    ap.add_argument("--board", choices=("dm1701", "md380") + tuple(C7_BOARDS),
-                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (dm32, dm1801pro, db25d, gd88: the "
-                         "board profile the universal stub gets; gd88b is the GD-88's second SoC, reached through ODR on "
-                         "the first, which must be running, docs/spec/rx2-link.md 4). Found from the radio's VERSION reply with --odr-enter; give it at "
-                         "power-on and with --attach (without it the stub gets a profile that drives no board pins)")
+    ap.add_argument("--board", choices=sorted(b.id for b in odrboards.BOARDS.values()
+                                              if b.stub or "stub/stm32f4" in b.platform_stubs),
+                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (%s: the board profile the "
+                         "universal stub gets). Found from the radio's VERSION reply with --odr-enter; give it at "
+                         "power-on and with --attach (without it the stub gets a profile that drives no board pins)"
+                         % ", ".join(sorted(C7_BOARDS)))
     ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
                     "is saved before it is erased (default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")

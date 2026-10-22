@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""Everything the site shows, read from the repository: radios, feature switches, variants, the UI gallery, the
-flash layouts odrflash uses. Nothing here is hand-copied into the site; when a source changes, the next build shows
-it (docs/dev/website.md "Sources").
+"""Everything the site shows, read from the repository: radios (the board registry, tools/boards.py), feature
+switches, variants, the UI gallery, the flash layouts odrflash uses. Nothing here is hand-copied into the site; when
+a source changes, the next build shows it (docs/dev/website.md "Sources").
 """
 import glob
 import json
@@ -199,65 +199,38 @@ def variants():
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# radios: boards/*/radio.json and the README status table
+# radios: the board registry (tools/boards.py json --for site) and the radio survey's rows without a board
 
-STATUS_MARKS = {"●": "yes", "◐": "partly", "○": "no"}
-
-
-def readme_status():
-	"""The README's "Radios and status" table: every radio, built or planned, in its order."""
-	for heading, head, rows in md_tables(read("README.md")):
-		if heading == "Radios and status":
-			out = []
-			for r in rows:
-				row = dict(zip(head, r))
-				out.append({"radio": strip_md(row["Radio"]), "builds": STATUS_MARKS.get(row["Builds"], "no"),
-					    "host_tests": STATUS_MARKS.get(row["Host tests"], "no"),
-					    "on_radio": STATUS_MARKS.get(row["On the radio"], "no"), "support": row["Support"]})
-			return out
-	raise SourceError("README.md: no table under '## Radios and status'")
+def registry(view="site"):
+	"""tools/boards.py's view for the site. boards.py needs Python 3.11 or later: tools/odr_python.sh finds one
+	($ODR_PYTHON first)."""
+	py = subprocess.run(["sh", path("tools", "odr_python.sh")], cwd=ROOT, capture_output=True, text=True)
+	if py.returncode:
+		raise SourceError(py.stderr.strip())
+	r = subprocess.run([py.stdout.strip(), path("tools", "boards.py"), "json", "--for", view], cwd=ROOT,
+			   capture_output=True, text=True)
+	if r.returncode:
+		raise SourceError("tools/boards.py json --for %s failed: %s" % (view, r.stderr.strip()[-400:]))
+	return json.loads(r.stdout)
 
 
-BOARD_STATUSES = ("supported", "testing", "planned")
-
-
-def radio_status(readme_row, radio):
-	"""One word for a radio: supported (on the radio), testing (builds, not on a radio yet), or planned."""
-	if readme_row is None:
-		return "planned"
-	if readme_row["on_radio"] in ("yes", "partly"):
-		return "supported"
-	if readme_row["builds"] == "yes":
-		return "testing"
-	return "planned"
-
-
+BOARD_STATUSES = ("supported", "testing", "in_progress", "planned")
+# a board's [status] level as the site's badge: a radio still being brought up reads "in development"
+LEVEL_STATUS = {"supported": "supported", "testing": "testing", "bring-up": "testing"}
 def boards(feature_names, variant_ids):
-	"""Each boards/<id>/radio.json, with its README status and the resolved switches per variant."""
-	status_rows = readme_status()
-	out = []
-	for p in sorted(glob.glob(path("boards", "*", "radio.json"))):
-		with open(p, encoding="utf-8") as f:
-			r = json.load(f)
-		r.pop("_about", None)
+	"""The registry's boards with their status badge and the resolved switches per variant, and the survey's radios
+	without a board."""
+	out, reg = [], registry("site")
+	for r in reg["boards"]:
 		bid = r["id"]
-		if os.path.basename(os.path.dirname(p)) != bid:
-			raise SourceError("%s: id %r doesn't match its directory" % (p, bid))
-		row = next((s for s in status_rows if s["radio"].startswith(r["readme"])), None)
-		if row is None:
-			raise SourceError("%s: readme %r matches no row of the README radio table" % (p, r["readme"]))
-		row["board"] = bid
-		# radio.json "status" overrides the README's columns: a port that runs on a radio but isn't for use yet stays
-		# "testing" on the site
-		if r.get("status") not in (None, *BOARD_STATUSES):
-			raise SourceError("%s: status %r isn't one of %s" % (p, r["status"], ", ".join(BOARD_STATUSES)))
-		r["status"] = r.get("status") or radio_status(row, r)
-		r["status_detail"] = row
+		r["status"] = LEVEL_STATUS[r["level"]]
+		if r["codeplug"] is None:
+			raise SourceError("boards/%s: no flash map with openfw_eeprom and openfw_end (tools/boards.py check)" % bid)
 		gal = path("docs", "ux", "screens", r["gallery"])
 		if not os.path.isdir(gal):
-			raise SourceError("%s: gallery %s isn't in docs/ux/screens" % (p, r["gallery"]))
-		r["codeplug"] = codeplug_map(bid)
-		r["unsupported"] = make(bid, "print-unsupported").split()
+			raise SourceError("boards/%s/board.toml: gallery %s isn't in docs/ux/screens" % (bid, r["gallery"]))
+		r["unsupported_reasons"] = r["unsupported"]
+		r["unsupported"] = list(r["unsupported"])
 		r["required"] = make(bid, "print-required").split()
 		r["config"] = {}
 		for v in variant_ids:
@@ -267,35 +240,8 @@ def boards(feature_names, variant_ids):
 				raise SourceError("make print-config for %s lists unknown switches %s" % (bid, sorted(unknown)))
 			r["config"][v] = sorted(k for k, val in cfg.items() if val == "y")
 		out.append(r)
-	planned = [s for s in status_rows if "board" not in s]
-	return out, planned
-
-
-def codeplug_map(bid):
-	"""Where a radio keeps its codeplug, from its flash map (hal_flash_map_t in boards/<id>/*.c): the data flash address
-	of the open-firmware image (the codeplug editor adds it on the wire), the end of the room for it and the DMR ID
-	database, whether the radio takes a codeplug over TFTP (a staging area), and the names the radio reports as
-	"board=" on the debug link (board_t .name, and an option's board_name)."""
-	fields = {}
-	names = []
-	for c in sorted(glob.glob(path("boards", bid, "*.c"))):
-		with open(c, encoding="utf-8") as f:
-			text = f.read()
-		for key in ("openfw_eeprom", "openfw_flash", "openfw_end", "staging_addr"):
-			m = re.search(r"\.%s\s*=\s*(0x[0-9A-Fa-f]+)u?" % key, text)
-			if m:
-				fields[key] = int(m.group(1), 16)
-		names += re.findall(r'^\t\.name\s*=\s*"([^"]+)"', text, re.M)
-	if "openfw_eeprom" not in fields or "openfw_end" not in fields:
-		raise SourceError("boards/%s: no flash map with openfw_eeprom and openfw_end" % bid)
-	if fields.get("openfw_flash", fields["openfw_eeprom"] + 0x20000) != fields["openfw_eeprom"] + 0x20000:
-		raise SourceError("boards/%s: the open-firmware flash image isn't at +0x20000 (the editor assumes it)" % bid)
-	with open(path("boards", bid, "radio.json"), encoding="utf-8") as f:
-		r = json.load(f)
-		for opt in r.get("build_options", []) + r.get("flash", {}).get("build_options", []):
-			names += [v["board_name"] for v in opt.get("values", []) if v.get("board_name")]
-	return {"base": fields["openfw_eeprom"], "end": fields["openfw_end"], "tftp": "staging_addr" in fields,
-		"names": sorted(set(names + [bid]))}
+	# the radio survey's radios without a board (docs/spec/radios.md Port cells, read by the registry)
+	return out, [dict(p, support=p["note"]) for p in reg["planned"]]
 
 
 def screens(gallery):
@@ -355,21 +301,18 @@ def c7000_flash():
 	"""What the web flasher needs for the HR_C7000 radios it flashes through the stub (stub/stubtool.py): the program
 	flash layout and LED pins from stubtool, the codec slot and the codec profiles from tools/hrc7000_codec.py. The stub
 	images themselves go to c7000-stub.json (c7000_stub()), loaded only when a C7000 radio is flashed."""
-	st, dc, fl = _tool("stub", "stubtool.py"), _tool("tools", "hrc7000_codec.py"), _tool("tools", "dm32_flash.py")
+	st, dc, fl = _tool("stub", "stubtool.py"), _tool("tools", "hrc7000_codec.py"), _tool("tools", "serial_loader.py")
 	boards = {}
 	for bid, lay in dc.BOARDS.items():
-		# the bootloader's ID string (dm32_flash.MODELS): in the first 48 KB of the program flash, it tells the radios apart
+		# the bootloader's ID string (serial_loader.MODELS): in the first 48 KB of the program flash, it tells the radios apart
 		boards[bid] = {"slot": [lay["slot"][0] - dc.PROGMEM_BASE, lay["slot"][1] - dc.PROGMEM_BASE],
 			       "run": list(lay["run"]), "tables": list(lay["tables"]),
 			       "bootloader_id": fl.MODELS[bid].tag if bid in fl.MODELS else None,
 			       # the whole program flash (a backup reads it all; writes stay in the application area), whether
-			       # the radio has the SPI data flash the stub reads, whether its stock firmware answers a debug
-			       # console the page reads (the DB25-D), and the board profile the universal stub gets (CONFIG)
+			       # the radio has the SPI data flash the stub reads, and the board profile the universal stub gets
+			       # (CONFIG). A stock console, the update mode and the read rate are in radios.json flash
 			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
-			       "stock_console": lay.get("stock_console", False),
-			       # (with its LED pins and pinned UART where they differ from the defaults: the GD-88)
-			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand", "leds", "uart", "bridge")
-					      if k in st.C7_BOARDS[bid]} if bid in st.C7_BOARDS
+			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand")} if bid in st.C7_BOARDS
 			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")}}
 	profiles = []
 	for p in dc.PROFILES.values():
@@ -409,19 +352,25 @@ def c7000_stub():
 
 
 def f4_flash():
-	"""The flash each STM32F4 radio's firmware owns (stub/f4stub.py BOARDS), for the web flasher's loader route on a
-	radio that already runs ODR. The stub image goes to f4-stub.json (f4_stub()), loaded only when it is used."""
+	"""What the web flasher's loader route needs per STM32F4 radio (stub/f4stub.py BOARDS), on a radio that already
+	runs ODR: the flash its firmware owns, and the board record the stub takes in CONFIG (config_record(), as hex), so
+	the page and f4stub.py send the same bytes. v2_wiring: the radio has the wiring a protocol 2 stub had built in
+	(f4stub.V2_WIRING), so an older stub left running can still serve it. The stub image goes to f4-stub.json (f4_stub()),
+	loaded only when it is used."""
 	f4 = _tool("stub", "f4stub.py")
-	return {"app_base": f4.APP_BASE, "boards": {bid: {"owned": [list(r) for r in b["owned"]],
-							   "codec": list(b["codec"]) if b["codec"] else None}
-						      for bid, b in f4.BOARDS.items()}}
+	v2 = f4.V2_WIRING
+	return {"app_base": f4.APP_BASE, "protocol": f4.VERSION, "record_len": f4.REC_LEN,
+		"boards": {bid: {"owned": [list(r) for r in b["owned"]], "codec": list(b["codec"]) if b["codec"] else None,
+				 "name": b["name"], "stub_id": b["id"], "record": f4.config_record(bid).hex(),
+				 "v2_wiring": f4.config_record(bid)[1:] == v2}
+			   for bid, b in f4.BOARDS.items()}}
 
 
 def f4_stub():
 	"""The STM32F4 stub f4stub.py embeds, checked against its SHA-256 by f4stub itself, as base64 for the page."""
 	import base64
 	f4 = _tool("stub", "f4stub.py")
-	return {"format": "odr-f4-stub/1", "sha256": f4.F4STUB_SHA256, "run": 0x20000000,
+	return {"format": "odr-f4-stub/1", "sha256": f4.F4STUB_SHA256, "run": f4.RUN_ADDR, "protocol": f4.VERSION,
 		"data": base64.b64encode(f4.stub_image()).decode()}
 
 

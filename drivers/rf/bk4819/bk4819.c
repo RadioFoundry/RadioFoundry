@@ -3,6 +3,7 @@
 // BK4819 transceiver driver (docs/spec/hardware-db25d.md 4)
 #include <stddef.h>
 #include "bk4819.h"
+#include "rf/subaudio/subaudio.h"
 
 #define READ_BIT	0x80u
 #define BIT_US		1u	// clock low and high time
@@ -91,6 +92,7 @@ void bk4819_attach(bk4819_t *dev, const bk4819_bus_t *bus)
 	dev->tone_hz = 0;
 	dev->tone_gain = 0;
 	dev->idle = BK4819_STATE_IDLE;
+	dev->rx_inverted = false;
 }
 
 static uint32_t enter(const bk4819_bus_t *b)
@@ -303,42 +305,87 @@ void bk4819_lo_off(bk4819_t *dev)
 	bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
 }
 
-void bk4819_set_rx_ctcss(bk4819_t *dev, uint16_t hz_x10)
+// The DCS word in 0x08: the low 12 bits, then the high 12 bits marked by bit 15
+static void dcs_code(bk4819_t *dev, uint16_t code)
 {
-	if (hz_x10 == 0) {
+	uint32_t word = subaudio_dcs_word(code);
+	bk4819_write(dev, BK4819_REG_DCS_CODE, (uint16_t)(word & 0xFFFu));
+	bk4819_write(dev, BK4819_REG_DCS_CODE, (uint16_t)(BK4819_DCS_HIGH_HALF | ((word >> 12) & 0xFFFu)));
+}
+
+static uint16_t dcs_subaudio(bk4819_tone_t type)
+{
+	return (uint16_t)(BK4819_SUBAUDIO_DCS | (type == BK4819_TONE_DCS_INV ? BK4819_SUBAUDIO_DCS_INV : 0u));
+}
+
+void bk4819_set_rx_tone(bk4819_t *dev, bk4819_tone_t type, uint16_t value)
+{
+	switch (type) {
+	case BK4819_TONE_CTCSS:
+		bk4819_write(dev, BK4819_REG_CTCSS_FREQ, bk4819_ctcss_word(value));
+		bk4819_write(dev, 0x52, 0x028F);			// detect thresholds (the FD6818's)
+		bk4819_write(dev, BK4819_REG_SUBAUDIO, 0x1000);
+		break;
+	case BK4819_TONE_DCS:
+	case BK4819_TONE_DCS_INV:
+		// The stock order: the rate, 0x51, the code, the rate again with bit 14
+		bk4819_write(dev, BK4819_REG_CTCSS_FREQ, BK4819_DCS_RATE);
+		bk4819_write(dev, BK4819_REG_SUBAUDIO, dcs_subaudio(type));
+		dcs_code(dev, value);
+		bk4819_write(dev, BK4819_REG_CTCSS_FREQ, BK4819_DCS_RATE_RX);
+		break;
+	default:
 		bk4819_write(dev, BK4819_REG_SUBAUDIO, 0x0000);
-		return;
+		break;
 	}
-	bk4819_write(dev, BK4819_REG_CTCSS_FREQ, bk4819_ctcss_word(hz_x10));
-	bk4819_write(dev, 0x52, 0x028F);			// detect thresholds (the FD6818's)
-	bk4819_write(dev, BK4819_REG_SUBAUDIO, 0x1000);
 }
 
-bool bk4819_ctcss_found(bk4819_t *dev)
+bool bk4819_tone_found(uint16_t r0c, bk4819_tone_t type)
 {
-	return (bk4819_read(dev, BK4819_REG_CSS_STATUS) & 0x0400u) != 0;
-}
-
-void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool level)
-{
-	if (pin > 6) {
-		return;
+	switch (type) {
+	case BK4819_TONE_CTCSS: return (r0c & (1u << 10)) != 0;
+	case BK4819_TONE_DCS: return (r0c & (1u << 14)) != 0;
+	case BK4819_TONE_DCS_INV: return (r0c & (1u << 15)) != 0;
+	default: return true;
 	}
-	uint16_t data = (uint16_t)(0x40u >> pin);
-	uint16_t v = bk4819_read(dev, BK4819_REG_GPIO) & (uint16_t)~(data << 8);	// output enabled
-	v = level ? (uint16_t)(v | data) : (uint16_t)(v & ~data);
-	bk4819_write(dev, BK4819_REG_GPIO, v);
 }
 
-void bk4819_tx_prepare(bk4819_t *dev, uint16_t ctcss_hz_x10)
+bool bk4819_heard(const bk4819_t *dev, uint16_t r0c, bk4819_tone_t type)
 {
-	if (ctcss_hz_x10 != 0) {
+	if (dev->rx_inverted && type == BK4819_TONE_DCS) {
+		type = BK4819_TONE_DCS_INV;
+	} else if (dev->rx_inverted && type == BK4819_TONE_DCS_INV) {
+		type = BK4819_TONE_DCS;
+	}
+	return bk4819_tone_found(r0c, type);
+}
+
+bool bk4819_rx_tone_ok(bk4819_t *dev, bk4819_tone_t type)
+{
+	return type == BK4819_TONE_NONE || bk4819_heard(dev, bk4819_read(dev, BK4819_REG_CSS_STATUS), type);
+}
+
+void bk4819_tx_prepare(bk4819_t *dev, bk4819_tone_t type, uint16_t value)
+{
+	dev->tx_dcs = type == BK4819_TONE_DCS || type == BK4819_TONE_DCS_INV;
+	switch (type) {
+	case BK4819_TONE_CTCSS:
 		bk4819_write(dev, 0x40, BK4819_TX_DEV_CTCSS);
 		bk4819_write(dev, BK4819_REG_SUBAUDIO, BK4819_SUBAUDIO_TX_CTCSS);
-		bk4819_write(dev, BK4819_REG_CTCSS_FREQ, bk4819_ctcss_word_tx(ctcss_hz_x10));
-	} else {
+		bk4819_write(dev, BK4819_REG_CTCSS_FREQ, bk4819_ctcss_word_tx(value));
+		break;
+	case BK4819_TONE_DCS:
+	case BK4819_TONE_DCS_INV:
+		// The stock order: deviation, rate, 0x51, then the code
+		bk4819_write(dev, 0x40, BK4819_TX_DEV_CTCSS);
+		bk4819_write(dev, BK4819_REG_CTCSS_FREQ, BK4819_DCS_RATE);
+		bk4819_write(dev, BK4819_REG_SUBAUDIO, dcs_subaudio(type));
+		dcs_code(dev, value);
+		break;
+	default:
 		bk4819_write(dev, 0x40, BK4819_TX_DEV_PLAIN);
 		bk4819_write(dev, BK4819_REG_SUBAUDIO, BK4819_SUBAUDIO_TX_NONE);
+		break;
 	}
 }
 
@@ -401,9 +448,16 @@ void bk4819_tone_stop(bk4819_t *dev)
 	dev->tone_hz = 0;
 }
 
+#define CSS_DETECT_DEF	0x028Fu		// the thresholds every channel set writes
+#define CSS_TAIL	0x8000u
+
 // The stock tone-stop at the end of a transmission with the TX flag already clear: it ends in the RX state
 void bk4819_tx_end(bk4819_t *dev)
 {
+	if (dev->tail_on) {
+		bk4819_tx_tail_end(dev);
+	}
+	dev->tx_dcs = false;
 	bk4819_write(dev, BK4819_REG_AF, BK4819_AF_MUTE);
 	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
 	bk4819_write(dev, BK4819_REG_TONE_CTRL, 0x0000);
@@ -413,10 +467,27 @@ void bk4819_tx_end(bk4819_t *dev)
 	dev->tone_hz = 0;
 }
 
+bool bk4819_tx_tail_start(bk4819_t *dev)
+{
+	if (!dev->tx_dcs) {
+		return false;
+	}
+	bk4819_write(dev, BK4819_REG_CSS_DETECT, CSS_TAIL | CSS_DETECT_DEF);
+	dev->tail_on = true;
+	return true;
+}
+
+void bk4819_tx_tail_end(bk4819_t *dev)
+{
+	bk4819_write(dev, BK4819_REG_CSS_DETECT, CSS_DETECT_DEF);
+	dev->tail_on = false;
+}
+
 // 4.5 DMR transmit: the stock digital mode set's TX words. The main chip's microphone path stays on (0xC3FE), but with
 // the deviation off nothing of it reaches the carrier
 void bk4819_dmr_tx_prepare(bk4819_t *dev)
 {
+	dev->tx_dcs = false;
 	bk4819_write(dev, 0x40, BK4819_TX_DEV_OFF);
 	bk4819_write(dev, BK4819_REG_SUBAUDIO, BK4819_SUBAUDIO_OFF);
 }

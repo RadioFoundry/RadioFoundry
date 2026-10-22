@@ -222,7 +222,7 @@ jobs:
               python3-numpy python3-pytest python3-serial
           fi
       - name: Python checks, license checks
-        run: tools/ci.sh --steps python,licenses
+        run: tools/ci.sh --steps registry,python,licenses
       - name: Install pandoc and typst
         if: needs.changes.outputs.docs == 'true'
         run: |

@@ -2,7 +2,7 @@
 
 # DM-32UV flashing and migration from stock firmware
 
-How `tools/dm32_flash.py` writes firmware through the Baofeng bootloader, and how `tools/dm32_migrate.py` moves a
+How `tools/serial_loader.py` writes firmware through the Baofeng bootloader, and how `tools/dm32_migrate.py` moves a
 DM-32UV from its stock firmware to ODR and keeps the codeplug. The user guide is
 [Moving from stock DM-32UV firmware](../user/19-moving-from-stock-dm32.md). The MD-380 counterpart, whose structure
 and safety rules this follows, is [md380-migration.md](md380-migration.md).
@@ -11,7 +11,7 @@ and safety rules this follows, is [md380-migration.md](md380-migration.md).
 0.15.1 on files, or against the simulators in the self-tests. qdmr is GPL: ODR runs `dmrconf` as an external
 program and contains none of its code.
 
-## 1. The flasher (`dm32_flash.py`)
+## 1. The flasher (`serial_loader.py`)
 
 Implements [hardware-dm32.md](hardware-dm32.md) 13.2 on any pyserial port, 115200 8N1. `--model dm1801pro` runs the same
 steps against the DM-1801 Pro's loader: only the ID string (`BF1801-V1`), the key combination and the missing codec slot
@@ -77,7 +77,7 @@ So the tool uses dmrconf only offline (encode, decode) and writes with `tools/cp
    `backup-stock.yaml` (or `--from FILE`). Then offline: `encode --radio openuv380` to `odr-codeplug.dfu` (the exact
    bytes restore writes), `decode` to `odr-codeplug.yaml`, and the conversion report (below). Over a limit: asks
    (`--accept-trim`). A users CSV becomes `users.json`, checked with `encode-db` (md380_migrate's code).
-2. Flash: announce update mode, ask, `dm32_flash.Flasher` over the cable.
+2. Flash: announce update mode, ask, `serial_loader.Flasher` over the cable.
 3. Wait for ODR (`odr_debug.py --port PORT ping`), `version` must say DM-32. `storage info`: `none` stops,
    `foreign` is claimed after a prompt (`storage claim --out` dumps it into the work directory first), `ours` goes on.
 3b. Data flash backup through ODR's CPS reads (area 1, physical, 512 bytes a request): 0x000000..0x0C9000 by default
@@ -111,7 +111,7 @@ Never carried over: stock menu, key and display settings, encryption keys, the s
 
 ## 6. Package
 
-`dm32_migrate.py package OUTDIR --image odr_dm32_codec.bin` copies `dm32_migrate.py`, `dm32_flash.py`,
+`dm32_migrate.py package OUTDIR --image odr_dm32_codec.bin` copies `dm32_migrate.py`, `serial_loader.py`,
 `cps_client.py`, `odr_debug.py`, `md380_migrate.py` (shared YAML, users-file and session code), `hrc7000_codec.py`,
 `docs/testing/dm32-bringup.md`, the image(s) and `--include` files into a flat directory, and writes `README.txt`,
 `requirements.txt` (pyserial) and `SHA256SUMS`. Every helper is loaded from the script's own directory, so the

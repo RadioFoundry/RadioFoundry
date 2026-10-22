@@ -65,7 +65,7 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 | 41 | PTB9 | power knob switch; its level at start-up means "on" | in | R |
 | 42 | PTB10 | input with interrupt, role unknown | in | ? |
 | 43 / 44 | PTB11 / PTB12 | PTT / SOS (top key), low = pressed. PTB11 is also the cable's host-to-radio serial line (9.1) | in | R |
-| 46 / 47 | PTB14 / PTB15 | audio path switches, as on the DM-32UV. PTB14 high = the microphone to the HR_C7000's FM input (set for each FM transmission; low there cut speech from 140 to 43 Hz rms, section 12). PTB15 high = the FD6818's audio to the amplifier, low = the HR_C7000 codec. In receive ODR drives PTB14 as PTB15's complement; it doesn't change the speaker | low | R |
+| 46 / 47 | PTB14 / PTB15 | audio path switches, as on the DM-32UV. PTB14 high = the microphone to the HR_C7000's codec ADC, for FM and DMR alike (set for each transmission; low cut FM speech from 140 to 43 Hz rms, section 12, and left DMR's vocoder the ADC's digital floor: 2 LSB rms, white, where high gives the mic's hum and a tone injected on the programming cable's line, 2026-10-22). Unlike the DM-32UV, whose DMR level is low. PTB15 high = the FD6818's audio to the amplifier, low = the HR_C7000 codec. ODR drives PTB14 as PTB15's complement in every state (`boards/dm1801pro/audio_route.h`), as the stock firmware writes the pair; it doesn't change the speaker | low | R |
 | 50-54 | PTB18-PTB22 | keypad strobes, low one at a time | | K |
 | 48 | PTB16 | output, role unknown; not the amplifier. The radio's start-up drives it low, between the LEDs and the audio switches, and no other code reads or writes it (K). The boot loader leaves it an input; ODR drives it low at start-up too (`boards/dm1801pro/boot_pins.h`) | low | K, R not the amplifier |
 | 56 | PTB24 | vibration motor, high = on | low | R |
@@ -364,9 +364,9 @@ flash 0x0300C000, whose first words match this radio's (K for the DM-32UV files)
 | 0x0FD | ASCII `END` |
 | 0x100 | the raw application, linked for 0x0300C000, at most 0xF4000 bytes. No checksum, no length field |
 
-Such a file can be made from an ODR image the way `tools/dm32_pack.py` makes a DM-32UV one, and `tools/dm32_flash.py
+Such a file can be made from an ODR image with `tools/serial_loader.py --model dm1801pro IMAGE --wrap FILE`, and `tools/serial_loader.py
 --model dm1801pro` takes it and strips the header. Whether the stock updater checks anything more is not known (?).
-`tools/dm32_flash.py --model dm1801pro` writes a raw image through this protocol: about ten flashes on 2026-10-15, no
+`tools/serial_loader.py --model dm1801pro` writes a raw image through this protocol: about ten flashes on 2026-10-15, no
 refused block, erase about 12.6 s (R). The loader at 0x1000 is never written. The stock application is 0xB3780 bytes
 (flash 0x0C000-0xBF77F).
 

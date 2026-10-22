@@ -10,15 +10,16 @@
 #include "FreeRTOS.h"
 #include "semphr.h"
 
+#define UART_FMT_RD(base, off)		REG32((base) + (off))
+#define UART_FMT_WR(base, off, v)	(REG32((base) + (off)) = (v))
+#include "uart_format.h"
+
 #define UART_RBR	0x00u	// RBR / THR / DLL
 #define UART_IER	0x04u	// IER / DLH
 #define UART_FCR	0x08u	// IIR (read) / FCR (write)
-#define UART_LCR	0x0Cu
 #define UART_LSR	0x14u
 #define UART_USR	0x7Cu
 
-#define LCR_DLAB	0x80u
-#define LCR_8N1		0x03u
 #define LSR_DR		0x01u
 #define LSR_ERRORS	0x1Eu	// overrun, parity, framing, break
 #define USR_TFNF	0x02u	// TX FIFO not full
@@ -66,13 +67,8 @@ __attribute__((weak)) void hrc_host_uart_rx_tap(uint8_t b, bool error)
 
 void hrc_uart_setup(uint32_t base, uint32_t baud)
 {
-	uint32_t div = hrc_uart_div(HRC_APB_HZ, baud);	// 84 MHz, 115200: 46 (45.6), 0.9 % slow; 9600: 547, 0.02 %
-	UB(base, UART_IER) = 0;
-	UB(base, UART_LCR) = LCR_DLAB;
-	UB(base, UART_RBR) = div & 0xFFu;
-	UB(base, UART_IER) = (div >> 8) & 0xFFu;
-	UB(base, UART_LCR) = LCR_8N1;
-	UB(base, UART_FCR) = 0x67;	// FIFOs on and reset, RX trigger 1 character
+	// 84 MHz, 115200: 46 (45.6), 0.9 % slow; 9600: 547, 0.02 %
+	(void)hrc_uart_format(base, hrc_uart_div(HRC_APB_HZ, baud));
 }
 
 void hrc_uart_rx_irq(uint32_t base, bool on)
@@ -152,15 +148,11 @@ static void uart_isr(void)
 	portYIELD_FROM_ISR(woken);
 }
 
-// Divisor latch and 8N1, FIFOs reset, receive interrupt off (the caller enables it). RAM code: the stub hand-over uses it
+// Divisor latch and 8N1, FIFOs reset, receive interrupt off (the caller enables it), retried while the host's bytes
+// keep the UART busy. RAM code: the stub hand-over uses it
 static HRC_RAMFUNC void set_div(uint32_t div)
 {
-	U(UART_IER) = 0;
-	U(UART_LCR) = LCR_DLAB;
-	U(UART_RBR) = div & 0xFFu;
-	U(UART_IER) = (div >> 8) & 0xFFu;
-	U(UART_LCR) = LCR_8N1;
-	U(UART_FCR) = 0x67;	// FIFOs on and reset, RX trigger 1 character
+	(void)hrc_uart_format(HOST_BASE, div);
 }
 
 void hrc_host_uart_init(void)

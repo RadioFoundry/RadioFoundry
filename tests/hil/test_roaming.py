@@ -52,6 +52,7 @@ import time
 
 import pytest
 
+from odr_hil import skip
 from odr_debug import as_int
 
 ROAM_KEYS = ("roam.built", "roam.zone_on", "roam.state", "roam.why", "roam.pending", "roam.blocked", "roam.sites",
@@ -76,7 +77,7 @@ def wait_roam(radio, pred, timeout=3.0, what="roam"):
 def roaming(radio):
     """The radio with roaming built in; the zone flag, the probe mode and the radio's DMR channel put back after."""
     if "DMR_ROAMING" not in radio.features():
-        pytest.skip("built without roaming (CONFIG_DMR_ROAMING=n)")
+        skip("not_built", "built without roaming (CONFIG_DMR_ROAMING=n)")
     v = roam(radio)
     zone = radio.core().get("zone_index")
     was_on = v.get("roam.zone_on") == "1"
@@ -101,6 +102,7 @@ def zone_on(radio):
     return wait_roam(radio, lambda v: v.get("roam.zone_on") == "1", 1.0, "roaming on for the zone")
 
 
+@pytest.mark.feature("dmr_roaming")
 def test_roam_section(roaming):
     v = roam(roaming)
     missing = [k for k in ROAM_KEYS if k not in v]
@@ -120,6 +122,7 @@ def test_roam_section(roaming):
           f"threshold={v['set.roam_rssi_dbm']} dBm hysteresis={v['set.roam_hyst_db']} dB")
 
 
+@pytest.mark.feature("dmr_roaming")
 def test_roam_settings_round_trip(roaming):
     L = roaming.link
     v = roam(roaming)
@@ -138,9 +141,10 @@ def test_roam_settings_round_trip(roaming):
               as_int(x.get("set.roam_hyst_db", "0")) == old_h, 1.0, "roaming settings back")
 
 
+@pytest.mark.feature("dmr_roaming")
 def test_roam_zone_toggle(roaming):
     if roaming.core().get("vfo") == "1":
-        pytest.skip("the radio is in the VFO: roaming works on channels")
+        skip("state", "the radio is in the VFO: roaming works on channels")
     L = roaming.link
     before = roam(roaming).get("roam.zone_on")
     L.roam("zone_toggle")
@@ -157,14 +161,15 @@ def test_roam_zone_toggle(roaming):
     wait_roam(roaming, lambda x: x.get("roam.zone_on") == before, 1.0, "zone flag back")
 
 
+@pytest.mark.feature("dmr_roaming")
 def test_roam_now_passive(roaming):
     if roaming.core().get("vfo") == "1":
-        pytest.skip("the radio is in the VFO: roaming works on channels")
+        skip("state", "the radio is in the VFO: roaming works on channels")
     L = roaming.link
     L.setting("roam_probe", 0)
     v = zone_on(roaming)
     if v["roam.state"] == "off":
-        pytest.skip("the current channel is not a repeater site with a second site (same talkgroup) in its zone")
+        skip("state", "the current channel is not a repeater site with a second site (same talkgroup) in its zone")
     sites = as_int(v["roam.sites"])
     numbers = {roam(roaming)[f"site.{i}"].split(":")[0] for i in range(sites)}
     s0, p0, a0 = as_int(v["roam.searches"]), as_int(v["roam.probes"]), as_int(v["roam.aborts"])
@@ -184,20 +189,22 @@ def test_roam_now_passive(roaming):
     wait_roam(roaming, lambda x: x.get("roam.state") in ("watch", "search", "survey"), 1.0, "roam now ends the lock")
 
 
+@pytest.mark.feature("dmr_roaming")
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_roam_to_bench_repeater(roaming, sdr_bench, pytestconfig):
     rx, tx = pytestconfig.getoption("--roam-rx"), pytestconfig.getoption("--roam-tx")
     if not rx or not tx:
-        pytest.skip("give the bench repeater's pair as the radio sees it: --roam-rx MHz (radio receives, bench "
-                    "transmits) --roam-tx MHz (radio transmits, bench receives); a pair you are licensed for")
+        skip("opt_in", "give the bench repeater's pair as the radio sees it: --roam-rx MHz (radio receives, bench "
+                       "transmits) --roam-tx MHz (radio transmits, bench receives); a pair you are licensed for")
     cc = pytestconfig.getoption("--dmr-cc")
     L = roaming.link
     pos_b = roaming.find_channel(round(rx * 1e6), "dmr")
     v = zone_on(roaming)
     if v["roam.state"] == "off":
-        pytest.skip("the bench repeater's channel is not a site with a second site in its zone")
+        skip("state", "the bench repeater's channel is not a site with a second site in its zone")
     bench_ch = v["channel_number"]
     others = [roam(roaming)[f"site.{i}"].split(":")[0] for i in range(as_int(v["roam.sites"]))]
     others = [n for n in others if n != bench_ch]
@@ -211,7 +218,7 @@ def test_roam_to_bench_repeater(roaming, sdr_bench, pytestconfig):
         if c.get("channel_number") in others and roam(roaming).get("roam.state") == "watch":
             break
     else:
-        pytest.skip("no other site to start from")
+        skip("state", "no other site to start from")
     roaming.lowest_power()
     L.setting("roam_probe", 1)
     v = roam(roaming)
@@ -237,6 +244,7 @@ def test_roam_to_bench_repeater(roaming, sdr_bench, pytestconfig):
         f"bench_repeater.py saw no wakeup: {out[-800:] if out else ''}"
 
 
+@pytest.mark.feature("dmr_roaming")
 def test_roam_survey_settings_round_trip(roaming):
     L = roaming.link
     L.setting("roam_beacon_s", 30)
@@ -255,14 +263,14 @@ def surv(v, i):
 def beacon_setup(roaming, pytestconfig):
     rx, tx = pytestconfig.getoption("--roam-rx"), pytestconfig.getoption("--roam-tx")
     if not rx or not tx:
-        pytest.skip("give the bench repeater's pair as the radio sees it: --roam-rx MHz --roam-tx MHz (a pair you "
-                    "are licensed for), in a zone with a second repeater channel on the same talkgroup")
+        skip("opt_in", "give the bench repeater's pair as the radio sees it: --roam-rx MHz --roam-tx MHz (a pair you "
+                       "are licensed for), in a zone with a second repeater channel on the same talkgroup")
     every, length = pytestconfig.getoption("--roam-beacon"), pytestconfig.getoption("--roam-beacon-len")
     L = roaming.link
     pos_b = roaming.find_channel(round(rx * 1e6), "dmr")
     v = zone_on(roaming)
     if v["roam.state"] == "off":
-        pytest.skip("the bench repeater's channel is not a site with a second site (same talkgroup) in its zone")
+        skip("state", "the bench repeater's channel is not a site with a second site (same talkgroup) in its zone")
     L.setting("roam_probe", 0)
     L.setting("roam_survey", 1)
     L.setting("roam_beacon_s", int(every))
@@ -291,8 +299,10 @@ def bench_events(p):
     return events, out
 
 
+@pytest.mark.feature("dmr_roaming")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_roam_beacon_home(roaming, sdr_bench, pytestconfig):
     rx, tx, every, length, pos_b, bench_ch = beacon_setup(roaming, pytestconfig)
     v0 = roam(roaming)
@@ -327,8 +337,10 @@ def test_roam_beacon_home(roaming, sdr_bench, pytestconfig):
                                       "roam.cuts", "roam.beacons")))
 
 
+@pytest.mark.feature("dmr_roaming")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_roam_beacon_other_site(roaming, sdr_bench, pytestconfig):
     rx, tx, every, length, pos_b, bench_ch = beacon_setup(roaming, pytestconfig)
     L = roaming.link
@@ -345,7 +357,7 @@ def test_roam_beacon_other_site(roaming, sdr_bench, pytestconfig):
         if c.get("channel_number") in numbers and roam(roaming).get("roam.state") == "watch":
             break
     else:
-        pytest.skip("no other site to start from")
+        skip("state", "no other site to start from")
     own_ch = roaming.core().get("channel_number")
     p0 = as_int(roam(roaming)["roam.probes"])
     budget = 2 * every + length + 1 + every + length + 5 + 9 * (every + length + 2) + 2 * every

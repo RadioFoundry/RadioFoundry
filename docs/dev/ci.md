@@ -41,7 +41,7 @@ push runs only the manual workflow. A newer push cancels the run in progress (`c
 | Job | Command | Time on the Gitea runner |
 |---|---|---|
 | `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests, 64 suites with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the UI screen gallery (`uiSim --gallery`) | about 3 min on the self-hosted runner: the unit tests 2.8 min on 4 CPUs, gallery 2 s |
-| `checks` | `tools/ci.sh --steps python,licenses` (doc links among the Python checks) | about 1.5 min |
+| `checks` | `tools/ci.sh --steps registry,python,licenses` (doc links among the Python checks) | about 1.5 min |
 | `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --board dm1701,md380`: every Arm radio in one job | about 1 min with the checkout; the toolchain 50 s on a cache miss |
 | `firmware (C-SKY)` | `tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) | about 1 min with the checkout; skipped where the image isn't available |
 
@@ -171,7 +171,7 @@ always builds.
 tools/ci.sh                                   # everything (the release gate), about 10 minutes on an 8-core Mac
 tools/ci.sh --quick                           # what CI runs, without coverage and sanitizers
 SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run
-tools/ci.sh --steps python,licenses           # the checks job
+tools/ci.sh --steps registry,python,licenses  # the checks job
 tools/ci.sh --quick --steps firmware --board md380
 make BOARD=db25d stack-check                  # the stack check alone, after a build (stack-check.md)
 ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --board dm1701    # a nightly matrix job
@@ -179,8 +179,20 @@ tools/coverage.sh                             # build/coverage/index.html
 tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm1801pro   # on a host with the image
 ```
 
-`--steps` takes any of `host`, `python`, `firmware`, `licenses`, `similarity` (comma separated); `--quick` and
-`--matrix` choose the firmware configurations. `tools/install-arm-toolchain.sh` installs the pinned Arm toolchain
+`--steps` takes any of these, comma separated (default all):
+
+| Step | What it checks |
+|---|---|
+| `registry` | Every `board.toml` and `platform.toml` is well formed and agrees with `board.mk`, the linker scripts and `board_t`; `tools/odrflash/odrflash/registry.json` is current; the loader's self-test (`tools/boards.py`) |
+| `host` | `make -C tests/host`, with each board's own tests (`boards/<b>/tests/host.mk`) |
+| `python` | Every Python file parses, the HIL test collection, odrflash's tests, every tool's `--self-test` (found by searching `tools/` and `stub/`, so a new tool needs no ci.sh change), doc links, the glossary, the web site build and the flasher's tests |
+| `firmware` | Every board whose compiler is installed: the default build, each build option value (`board.toml` `[[build_options]]`, such as a band), each `[ci] extra` configuration, the feature matrix, and the flash stubs of each built platform (`platform.toml` `stubs`) |
+| `licenses` | `tools/license_grep.sh` and `reuse lint` |
+| `similarity` | `tools/similarity_scan.py`, only with `ODR_SIMILARITY_REFS` set |
+
+Every step but `host` needs Python 3.11 or later for the registry's TOML. `tools/odr_python.sh` finds it:
+`$ODR_PYTHON`, else the newest `python3.N` on `PATH`. A board whose compiler is missing is skipped with the command
+that installs it (its platform's `toolchain.build`). `--quick` and `--matrix` choose the firmware configurations. `tools/install-arm-toolchain.sh` installs the pinned Arm toolchain
 on Linux x86_64 the way CI does, trimmed to the Cortex-M4 multilib (215 MB instead of 1 GB; `FULL=1` for all of it).
 
 ## Coverage
@@ -306,7 +318,8 @@ On a private repository the hosted runners use the account's Actions minutes: a 
 
 ## The csky-elf image
 
-The C-SKY jobs use the image named by the repository variable `ODR_CSKY_IMAGE`, default `odr/csky-gcc14:latest`:
+The C-SKY jobs use the image named by the repository variable `ODR_CSKY_IMAGE`, default `odr/csky-gcc14:latest`
+(`platform/hrc7000/platform.toml` `[toolchain] image`, which `run.sh` and `push.sh` read):
 the tag `tools/docker/csky-toolchain/build.sh` gives its image on the Gitea runner (`odr/csky-gcc14:20261011b`,
 549 MB). `run.sh` uses an image already on the Docker host, and pulls one only when the name starts with a
 registry host (`ghcr.io/...`, `docker.io/...`), never a bare name from Docker Hub. When the image can't be had the
@@ -325,7 +338,7 @@ ssh <runner-vm> 'docker logout ghcr.io'
 gh auth refresh -h github.com -r write:packages          # optional: drop the scope again
 ```
 
-`push.sh REPO [TAG...]` tags the local image (`SRC`, default `odr/csky-gcc14:latest`) as `REPO:<its dated tag>`
+`push.sh REPO [TAG...]` tags the local image (`SRC`, default the platform's `image`) as `REPO:<its dated tag>`
 and `REPO:latest`, pushes both and prints the digest. It never handles a credential: log in before and out after.
 The same script pushes to Docker Hub (`push.sh docker.io/<user>/odr-csky-gcc14` after `docker login`).
 
@@ -365,7 +378,7 @@ The runner's environment (the LaunchAgent's, or a `.env` file next to `gitea-run
 | `ODR_SDR_BENCH_HOST` | the SDR bench's SSH host or alias (default `sdr-bench`); passwordless SSH from the runner's user |
 | `ODR_PORT` | the radio's serial port when several are present |
 | `ODR_HIL_AMBE` | the speech recording for `test_dmr_voice` (outside the repository) |
-| `ODR_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.odr-radio.lock`); the job holds it with `lockf` for the whole run |
+| `ODR_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.odr-radio.lock`); the job holds it with `lockf` for the whole run. `tools/bringup.py run` takes the same file, with `{port}` in it replaced by the radio's port; without the variable it locks `~/.odr-radio-<port>.lock`, so a bench with two radios runs a bring-up on each |
 
 Run it from Actions, HIL, Run workflow, with the inputs that map to the pytest flags: `rf` (`--allow-rf
 --allow-service-stop`), `usb_switch`, `codeplug_write`, `reboot`, a `-k` selection and extra options. Without any

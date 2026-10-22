@@ -243,7 +243,7 @@ TX on f (the stock order, BIN; ODR differs where noted):
 
 | Step | Action |
 |---|---|
-| 0 | Still receiving: main chip 0x40 = 0x34D0 and 0x51 = 0x1050 with no sub-audio; with CTCSS 0x40 = 0x34A8, 0x51 = 0x9045 and 0x07 = Hz x 20.64888 truncated (100.0 Hz = 2064). DCS is refused |
+| 0 | Still receiving: main chip 0x40 = 0x34D0 and 0x51 = 0x1050 with no sub-audio; with CTCSS 0x40 = 0x34A8, 0x51 = 0x9045 and 0x07 = Hz x 20.64888 truncated (100.0 Hz = 2064); with DCS 0x40 = 0x34A8, 0x07 = 0x0AD7, 0x51 and the code (4.7) |
 | 1 | ODR only: main chip AF muted, then the stock "audio off" pins: PTB14 low, PTB15 high, PTA24 high (3.3). The first ODR build raised PTB14 here and the speaker popped at key-up (RADIO); whether this order removes the pop and still passes the microphone is not yet checked |
 | 2 | RX front end (PTC19), UHF RX (PTA25) and VHF RX (PTB4) off |
 | 3 | 50 us |
@@ -334,7 +334,7 @@ ODR (`bk4819_dmr_rx_enter`, `db25d_dmr_enter`, tests/host/bk4819Test.c):
 | RF_MODE | `DB25D_DMR_RF_MODE` (default 0x034C9860), written after the DMR entry |
 | PTC18 | Low in DMR, high in FM; `DB25D_DMR_SPK_SWITCH=1` keeps it high |
 | Speaker in DMR | The PCM stream (`db25d_speaker_pcm`, from the modem's playback callback) turns the amplifier on and PTC18 low, as `audio()` does for an open squelch. The radio core never opens the squelch path for DMR voice, so before this every call played into a muted amplifier; beeps went silent the same way |
-| Voice-access slot | `HRC7000_RX_NEXT_SLOT_XOR=0` (the driver's default is 1): the flag (modem-hrc7000.md 5.3) belongs on the slot LAYER2_STATUS b30 shows at this board's RX timeslot interrupt. With 1 the chip never wrote received voice to its voice RAM: every frame was the same stale bytes, decoded to silence (peak 6 of 32767) with every counter clean. With 0, bench speech decodes with peaks near 16,000 (RADIO, 2026-10-17) |
+| Voice-access slot | `HRC7000_RX_NEXT_SLOT_XOR=0` (the driver's default since 2026-10-22; it was 1): the flag (modem-hrc7000.md 5.3) belongs on the slot LAYER2_STATUS b30 shows at this board's RX timeslot interrupt. With 1 the chip never wrote received voice to its voice RAM: every frame was the same stale bytes, decoded to silence (peak 6 of 32767) with every counter clean. With 0, bench speech decodes with peaks near 16,000 (RADIO, 2026-10-17) |
 
 Radio results before the stock set (bench MS voice, 461.4625 MHz, CC 2): RF_MODE 0x03269860 gave no sync; 0x03261860 (b15 clear) gave
 sync, the right color code and slot, but no usable burst; a larger AF gain held sync on noise. The PHASE_OUT range read exactly 32 times
@@ -368,7 +368,7 @@ bits corrected); the diagnostics line showed 57 bursts keyed and ended, each end
 | Mic and vocoder | The microphone reaches the modem's codec ADC with no pin to switch: PTB14 / PTB15 appear only in the audio on / off routines (3.3), never in a TX path. Mic gain (GCR_ADCL) on a digital channel comes from a setting (0 dB when unset); an analog channel sets +12 dB. WORK_MODE bit 7 cleared (DMR modulator) | BIN |
 | Analog PTT routine | Not used for a digital channel: the RF follows the bursts only (INF from the task's channel-type test) | INF |
 
-ODR (`boards/db25d/dmr_db25d.c`, `radio_db25d.c`; tests in `tests/host/bk4819Test.c` and `db25dCalTest.c`):
+ODR (`boards/db25d/dmr_db25d.c`, `radio_db25d.c`; tests in `tests/host/bk4819Test.c` and `boards/db25d/tests/db25dCalTest.c`):
 
 | Step | ODR |
 |---|---|
@@ -403,6 +403,37 @@ nothing else on the page trims the frequency (BIN). Before this was written only
 | 106 (owner's radio) | 489 (0x1E9) | 0x6A6AE9E9 | 0x01E90021 |
 
 `make BOARD=db25d DB25D_TX_CENTER=N` replaces c, to sweep it on the radio: a few ppm per step is expected.
+
+### 4.7 DCS
+
+The main chip sends and detects DCS itself, with the code as the 23-bit Golay word (code bits first,
+`subaudio_dcs_word`) in two writes to 0x08 (BIN):
+
+| Register | Value |
+|---|---|
+| 0x07 | 0x0AD7 (the 134.4 bit/s rate) while the code is set; 0x4AD7 after it on receive |
+| 0x08 | word bits 11:0, then bits 22:12 with bit 15 set (D023: 0x0813, 0x8763; D754: 0x09EC, 0x820F) |
+| 0x51 | 0x8030 normal, 0xA030 inverted (bit 15 on, bit 13 invert, bit 12 = 0 selects DCS, the rest the gain) |
+| 0x40 | 0x34A8 on transmit, as with CTCSS |
+| 0x0C | received: bit 14 the code as set, bit 15 its inverse (bit 10 CTCSS) |
+
+| Order | Steps |
+|---|---|
+| TX (4.4 step 0) | 0x40, 0x07 = 0x0AD7, 0x51, 0x08 twice (BIN) |
+| RX | 0x07 = 0x0AD7, 0x51, 0x08 twice, 0x07 = 0x4AD7 (BIN) |
+
+The receive chain inverts the audio: the LO sits above the signal (f + 51.55 MHz, 4.1), so the IF spectrum is turned
+over and the deviation's sign flips. A normal code arrives as its inverse. ODR sets 0x51 for the code as sent and
+reads 0x0C's other bit: a normal code sets bit 15, an inverted one bit 14 (`bk4819_t.rx_inverted`). The stock
+firmware instead inverts its software decoder's polarity, on PB26 / PB27 (BIN). On the SDR bench another radio's
+D023N and D023I opened the matching setting only, and D754 and CTCSS settings stayed shut; the radio's D023N went out
+as D023N (RADIO). The diagnostics page's `rssi` line shows 0x0C as `c` (hex), polled with the RSSI.
+
+At the end of a DCS transmission the stock firmware writes 0x52 = 0x828F, waits 300 ms and writes 0x028F (BIN).
+0x52 bit 15 is the sub-audio tail generator (as on the FD6818, DS): the chip sends 134.4 Hz in place of the code, the
+DCS turn-off. ODR does the same through the core's tail (`radio-features.md` 3.3a; `bk4819_tx_tail_start` / `_end`;
+the end of the transmission writes 0x028F back if a tail is still on). On the SDR bench: D023N, then 134.4 Hz for
+0.30 s up to the carrier's end (RADIO).
 
 ## 5. Display
 
@@ -516,7 +547,8 @@ data sheet adds:
 | Status (0xC0) | Bit 0 busy, 1 write enabled, 2 erase failed, 3 program failed. Bits 4–5 ECC: 0 clean, 1 corrected, 2 uncorrectable, 3 corrected at or above the bit-flip threshold (feature 0x10) | BIN, DS |
 | ECC | On by default (feature 0xB0 bit 4): 8 bits corrected per 512 + 16 bytes. Spare bytes 2048–2111 are readable, the parity at 2112–2175 isn't | DS |
 | Block lock | Every block locked at power-up (feature 0xA0); reads don't need it cleared, program and erase do | DS |
-| Parameter page | Feature 0xB0 bit 6 set, then a page read of page 0. The stock firmware reads 256 bytes of it at boot | BIN, DS |
+| ID pages | Feature 0xB0 bit 6 (IDR_E) set, then a page read: page 0 is the unique ID, page 1 the parameter page (data sheet 4.12, 4.14); clear the bit after. The stock firmware reads 256 bytes of page 0 at boot, so the unique ID, not the parameter page as an earlier version of this table said | BIN, DS |
+| Unique ID | Page 0 with IDR_E: 16 copies of 32 bytes, each the 16-byte ID followed by its complement. ODR reads it at boot (`spi_nand_read_uid`, the first copy whose complement matches) as the radio's UID for the debug link's INFO_CHIP ([debuglink.md](debuglink.md) 3.9) | DS |
 | Spare bytes | The stock firmware keeps its own block marks at spare offset 4 (column 2052) | BIN |
 | Bad blocks | Factory-bad blocks read 0x00 in every page; the mark is judged from the data whatever the ECC status says | DS |
 | Stock bad-block skip | The stock firmware builds a bad-block list at boot and, for some address ranges, skips bad blocks when it maps an address to a page. Which ranges, and whether that ever moves block 20, isn't decoded | BIN |
@@ -616,15 +648,15 @@ The diagnostics page (`CONFIG_DIAG`) shows the storage on lines 12-15, after the
 | IAP protocol | UART1, 115200. The loader prints its NAND state and "IAPReady". Host: `Erase      ` (Erase + 6 spaces) + u32 BE address 0 + u32 BE N = length / 2048; the loader answers its version string, then "Erase ok" about 1.5 s later. Then N + 1 raw 2048-byte pages, the last padded with 0xFF, each answered "kyd". About 1.4 s after the last page: `ChecksumI` + u32 BE additive sum of every byte sent, and the loader starts the application at once. It erases only as far as the image reaches | RADIO |
 | Stuck in update mode | White (blank, backlit) screen and a solid red LED at every power-on without P1 held: the application at 0x0300C000 no longer starts with 2C 11 01 C0 (ODR's first stage was overwritten, or a write was interrupted), so the loader stays in update mode. Nothing answers the debug link, USMART or the first stage's window. The loader still answers the IAP protocol: `Flash Read ` + address 0 + count 1 gives its version string ("Read_2M_V1.08B..."), a page, `ChecksumR` and "IAPReady", and changes nothing. The web flasher uses that as a read-only probe (never Erase). Fix: write the install image (`odr_db25d_install.bin`, stage and application, starts 2C 11 01 C0) through the IAP route; the checksum matches and the radio starts ODR. No P1 is needed in this state; holding P1 at power-on also reaches it | RADIO |
 | Loader reads | `Flash Read ` + u32 BE address + u32 BE page count, then one `Read` per 2048-byte page and one more for `ChecksumR` + u32 BE: reads the **NAND**, not the program flash | RADIO |
-| Same as the DM-32's loader? | No. The DM-32UV and the DM-1801 Pro share an update-loader protocol keyed by a model string ([hardware-dm32.md](hardware-dm32.md) 13.2; `tools/dm32_flash.py --probe` checks for it without writing); the DB25-D's loader speaks the IAP protocol above instead | RADIO |
+| Same as the DM-32's loader? | No. The DM-32UV and the DM-1801 Pro share an update-loader protocol keyed by a model string ([hardware-dm32.md](hardware-dm32.md) 13.2; `tools/serial_loader.py --probe` checks for it without writing); the DB25-D's loader speaks the IAP protocol above instead | RADIO |
 | Loader rewrite | The stock application accepts writes to program flash at 0x03000000 / 0x03001000 (the vendor ".flash" loader update). A bad transfer there can erase the loader | BIN |
 | JTAG | The application never changes the IO mux of PTA0-PTA4, the SoC's JTAG pins. Pads: ? | BIN, DM32, INF |
 | ROM serial boot | The HR_C7000 boot ROM offers a download on UART0 at reset. Where UART0 goes on this board: not found (no pads traced) | DM32 |
 | Open-firmware CPS | The same UART1 link speaks the open-firmware CPS protocol ([open-firmware-cps.md](open-firmware-cps.md), `core/cps`) next to the debug link; the host link sorts them by the first byte (`docs/dev/cps-and-codeplug.md`). Section 9 | RADIO |
-| Web flasher | `site/static/js/flasher/db25d.js` and `db25dui.js` load the universal stub through a stock radio's USMART console (Stub from stock, below), then back up and install through the stub as on a radio that runs ODR. The IAP loader above is the recovery route: a reinstall, or a backup put back, when nothing answers on the cable. The stock firmware has no boot ROM window (that exists only once ODR's first stage is installed) | RADIO |
+| Web flasher | `site/static/js/flasher/usmart.js`, `iap.js` and `iapui.js` load the universal stub through a stock radio's USMART console (Stub from stock, below), then back up and install through the stub as on a radio that runs ODR. The IAP loader above is the recovery route: a reinstall, or a backup put back, when nothing answers on the cable. The stock firmware has no boot ROM window (that exists only once ODR's first stage is installed) | RADIO |
 | USMART console | UART1, the same port. A command is one frame in one write: `@AT`, one filler byte (not CR or LF), the text, CR LF; each byte must follow within 20 ms, and an unframed line is ignored. `read_addr(0xADDR)` answers `read_addr(0XADDR)=0XVALUE;`, `write_addr(0xADDR,0xVALUE)` echoes `write_addr(0XADDR,0XVALUE);`; the application's own log lines follow on the same port. The console's command table is copied to RAM 0x18000840 at boot; its `cmd_rec` entry (+8, 0x18000848) is called through the table for every frame except `01` and `DMRCALL`. The version string `EARSAB.0NN` is at 0x03079F3D (018) and 0x0307DCCD (020) | RADIO (018), BIN (020) |
 | Stub at power-on | ODR's first stage offers the boot ROM's handshake on UART1 for about 0.5 s at every power-on and takes blocks below 0x4E000. The universal stub loads at 0x10000 there as on the other radios: `stubtool PORT --wait 120 --board db25d --write-app IMAGE`, then a power cycle (older stubs: add `--legacy-stub --load-base 0x30000`). The radio programming utility's Recover at Power-On does the same (boot/README.md) | RADIO |
-| Stub from a running ODR | CONFIG_STUB_ENTRY is on: `stubtool --odr-enter` asks the firmware for its stub span (debug link STUB INFO) and loads the universal stub there (ODR restores the loader's clocks before the jump, section 2.1). The span is 0x30000-0x4FFFF in a build without DMR (`HRC_STUB_BASE` in `config.mk`; db25d.ld keeps ODR's RAM below it), 0x1D000-0x2EFFF with `CONFIG_DMR=y` (8). The stub copies itself from the load address to 0x30000 and runs there (in a DMR build from 0x1D000; in a build without DMR it is already there), so one command (`stub/db25d_update.sh IMAGE PORT`) installs a DMR or a non-DMR image from either kind of build. The tool reads `board=` from VERSION and sends the DB25-D profile in CONFIG (power latch PTB13, power key PTB12, UART1 only, NAND), and checks the echo before writing. `--legacy-stub` and `--odr-stub FILE` load a position-dependent stub instead, refused if linked for another span; the power-on stage catch recovers a hang. `--boot reset` restarts into ODR: the soft reset leaves the power latch on, and the loader goes through the stage again. No keys or power cycle for an update | RADIO |
+| Stub from a running ODR | CONFIG_STUB_ENTRY is on: `stubtool --odr-enter` asks the firmware for its stub span (debug link STUB INFO) and loads the universal stub there (ODR restores the loader's clocks before the jump, section 2.1). The span is 0x30000-0x4FFFF in a build without DMR (`HRC_STUB_BASE` in `config.mk`; boards/db25d/fm_only.ld keeps ODR's RAM below it), 0x1D000-0x2EFFF with `CONFIG_DMR=y` (8). The stub copies itself from the load address to 0x30000 and runs there (in a DMR build from 0x1D000; in a build without DMR it is already there), so one command (`stub/db25d_update.sh IMAGE PORT`) installs a DMR or a non-DMR image from either kind of build. The tool reads `board=` from VERSION and sends the DB25-D profile in CONFIG (power latch PTB13, power key PTB12, UART1 only, NAND), and checks the echo before writing. `--legacy-stub` and `--odr-stub FILE` load a position-dependent stub instead, refused if linked for another span; the power-on stage catch recovers a hang. `--boot reset` restarts into ODR: the soft reset leaves the power latch on, and the loader goes through the stage again. No keys or power cycle for an update | RADIO |
 | Stub RAM | The universal stub runs at 0x30000-0x37978 on every route (image 7,004 B, `.bss` to 0x36974, 4 KB stack; `stub/README.md`, RAM placement). Deepest stack use measured on this radio: 252 B, NAND reads included. Its SPI NAND reads are read only: `stubtool --nand F --nand-range A:B`, `--verify-nand F` | RADIO |
 | Stub from stock (018, 020) | Run on a radio with 018 (2026-10-18): stub loaded and started, 2 MB program flash read in 68 s, the stock image in it byte for byte; 020 not yet. Stock RAM at the hand-over: 018 code and data 0x10000-0x345C4, `.bss` to 0x525E0, interrupt stack to 0x535E0, heap to 0x53DE0; 020 `.bss` to 0x4F150, interrupt stack to 0x50150, heap to 0x50950. Both: VBR 0x10000, start-up stack top 0x50000, modem tables and the console's state in the modem SRAM at 0x18000800 and up. The free window both share is 0x54000-0x58000. The console writes the universal stub there word by word (`write_addr`, little endian, unpatched), checks it with `read_addr`, and starts it by writing 0x00054000 to `cmd_rec` (0x18000848) and sending one more frame; that word is never read back, since the read would start it too. The stub masks interrupts, hands the program flash back from execute-in-place, and copies itself to 0x30000 (stock `.bss`, dead once interrupts are off; the 7,004-byte source at 0x54000 doesn't overlap). Then `stubtool PORT --attach --board db25d`. Stock leaves the loader's clocks and uses UART1 as ODR does, so the same profile applies; the host measures the clock. An address inside the interrupt stack (020: 0x4F150-0x50150) is not safe for the load | BIN |
 
@@ -717,7 +749,7 @@ addresses (as the DM-32UV's). The build reserves them.
 | Slot | 0x030E8000..0x03100000 (96 KB; 88,316 bytes used for 018, 89,912 for 020): the version 2 header of `platform/hrc7000/codec_slot.h`, the code and tables as stock has them, and the relocation list. `tools/hrc7000_codec.py --board db25d --stock FILE` writes it from a stock file or a program flash read |
 | Flash | The merged image goes where `_install.bin` goes (the loader's update mode or `stubtool --write-app`, 7): it is the stage, the application and the slot in one file. The loader writes as far as the image reaches, about 1 MB, so the first flash takes a while; `stubtool --write-app` writes only the sectors that changed |
 | Check | The debug link's VERSION reports `codec=db25d-2501` (or `-2409`, `-2405`, `-020`) when the slot is valid, `absent` when it's built with `CONFIG_DMR=y` and the slot is missing, damaged or version 1 |
-| RAM | `CONFIG_DMR=y` links `db25d_dmr.ld`: one region for ODR, 0x10000..0x44E00 (216,576 B: the vectors, the slot engine, the core's CPU state, data, bss with the RTOS heap, the start-up stack), and the codec window 0x44E00..0x58000 (78,336 B) at the top. The tables go to modem SRAM 0x180014AC..0x18004360, which the script leaves out. The runtime stub window is 0x45000..0x58000 (inside the codec window, after the codec is parked; `HRC_STUB_BASE` in `config.mk`). The universal stub loads there and copies itself to 0x30000, which is ODR's RAM and dead after the jump (7). Without DMR the span is 0x30000 (`db25d.ld`) |
+| RAM | `CONFIG_DMR=y` links `boards/db25d/memory.ld`: one region for ODR, 0x10000..0x44E00 (216,576 B: the vectors, the slot engine, the core's CPU state, data, bss with the RTOS heap, the start-up stack), and the codec window 0x44E00..0x58000 (78,336 B) at the top. The tables go to modem SRAM 0x180014AC..0x18004360, which the script leaves out. The runtime stub window is 0x45000..0x58000 (inside the codec window, after the codec is parked; `HRC_STUB_BASE` in `config.mk`). The universal stub loads there and copies itself to 0x30000, which is ODR's RAM and dead after the jump (7). Without DMR the span is 0x30000 (`boards/db25d/fm_only.ld`) |
 
 ## 9. How ODR uses it (`make BOARD=db25d`)
 
@@ -726,10 +758,10 @@ Bring-up state (the port has run on a radio):
 | Part | State |
 |---|---|
 | Platform | `platform/hrc7000`, image at 0x0300C000 behind the IAP loader; the host port on UART1 |
-| RF | `drivers/rf/bk4819`: main and LO on one 3-wire bus. FM receive by the main chip at the IF with the LO at f + 51.55 MHz |
+| RF | `drivers/rf/bk4819`: main and LO on one 3-wire bus. FM receive by the main chip at the IF with the LO at f + 51.55 MHz. RX sub-audio: CTCSS and DCS from the chip's detector (4.7) |
 | Calibration | Both copies are read at boot, the higher save counter wins (6.1, 6.4); DAC A and DAC C are set from it for receive. The diagnostics page shows the copy used, its save counter and the PA values at 446 and 146 MHz, and a line with the PA drive for the tuned frequency |
 | NAND | `drivers/flash/spi_nand` on SPI0 (6.5). Programs and erases only inside ODR's range (6.6). The diagnostics page shows its ID and the page reads ECC had to correct |
-| TX | Analog FM (4.4, the stock sequence from the 2026-10-16 trace) and DMR (4.5), both measured on the SDR bench with the frequency trim of 4.6. Refused without a valid calibration page, outside the bands, or for a DCS tone. The diagnostics page shows the PA drive for the tuned frequency, low / high |
+| TX | Analog FM (4.4, the stock sequence from the 2026-10-16 trace) and DMR (4.5), both measured on the SDR bench with the frequency trim of 4.6. Refused without a valid calibration page or outside the bands. The diagnostics page shows the PA drive for the tuned frequency, low / high |
 | Display | `st7735` on a 4-wire serial bus: SPI2 or bit-banged, chosen by the ADC 2 strap as the stock firmware |
 | Power | No battery (`CAP_NO_BATTERY`): a mobile on a fixed 13.8 V supply with no supply reading (3.3). The core shows no battery icon, percentage, Tools > Battery page, Battery saver or Low battery warning setting, and has no battery monitor, so it never warns or refuses to transmit for the battery. `hal_power_t` has no `battery_mv` or `battery_pct`. The diagnostics page shows the raw ADC channels |
 | Keys | Matrix and encoder positions checked on the radio. VOL/SQL is `ACT_VOLUME`: the volume screen, then the encoder (`radio-features.md` 4.2) |

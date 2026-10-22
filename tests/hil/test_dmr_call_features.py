@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from odr_hil import counter_deltas
+from odr_hil import counter_deltas, skip
 
 BENCH_SRC = 9990301
 STATS = ["call.rx_calls", "call.rx_calls_played", "call.rx_late_entries", "call.rx_voice_bursts",
@@ -20,7 +20,7 @@ STATS = ["call.rx_calls", "call.rx_calls_played", "call.rx_late_entries", "call.
 
 def _on_dmr_channel(radio, pytestconfig):
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     freq = pytestconfig.getoption("--dmr-freq")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
@@ -60,14 +60,16 @@ def _print_lc_trace(radio):
             print("  " + line)
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_private_call_to_us(radio, sdr_bench, pytestconfig):
     """A private call to our ID: played, shown as to us, and the reply window points back at the caller."""
     _on_dmr_channel(radio, pytestconfig)
     own = int(radio.view(["dmr"])["dmr.own_id"])
     if own == 0:
-        pytest.skip("no DMR ID in the codeplug")
+        skip("state", "no DMR ID in the codeplug")
     d, v = _bench_call(radio, sdr_bench, pytestconfig, dst=own, private=True)
     assert d["call.rx_calls"] == 1 and d["call.rx_private_calls"] == 1 and d["call.rx_calls_played"] == 1, d
     assert v["last.src"] == str(BENCH_SRC) and v["last.to_us"] == "1" and v["last.group"] == "0", v
@@ -76,8 +78,10 @@ def test_private_call_to_us(radio, sdr_bench, pytestconfig):
         assert v["dmr.target_id"] == str(BENCH_SRC) and v["dmr.target_private"] == "1", v
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_private_call_to_other(radio, sdr_bench, pytestconfig):
     """A private call between two other radios: counted (and shown while it lasts) but never played."""
     _on_dmr_channel(radio, pytestconfig)
@@ -86,8 +90,10 @@ def test_private_call_to_other(radio, sdr_bench, pytestconfig):
     assert d["call.rx_voice_bursts"] == 0, d
 
 
+@pytest.mark.feature("dmr_emergency")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_emergency_call(radio, sdr_bench, pytestconfig):
     """The emergency service option is flagged on the call and counted."""
     _on_dmr_channel(radio, pytestconfig)
@@ -99,27 +105,31 @@ def test_emergency_call(radio, sdr_bench, pytestconfig):
     assert v["last.emergency"] == "1", v
 
 
+@pytest.mark.feature("dmr_talker_alias")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_talker_alias(radio, sdr_bench, pytestconfig):
     """A talker alias in the odd superframes (ISO 8-bit) is assembled and shown."""
     _on_dmr_channel(radio, pytestconfig)
     if "DMR_TALKER_ALIAS" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_TALKER_ALIAS")
+        skip("not_built", "built without CONFIG_DMR_TALKER_ALIAS")
     alias = "ODR HIL N0CALL"
     d, v = _bench_call(radio, sdr_bench, pytestconfig, talker_alias=alias, superframes=10)
     assert d["call.rx_calls"] == 1 and d["call.rx_alias_complete"] == 1, d
     assert v["call.alias"] == alias and v["call.alias_complete"] == "1", v
 
 
+@pytest.mark.feature("dmr_gps")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_gps_info(radio, sdr_bench, pytestconfig):
     """An ETSI GPS Info LC (FLCO 8) after a talker alias in the odd superframes: the caller's position on the call
     (call.gps_*), kept with the last heard; one step of the fields is 1.1e-5 degree."""
     _on_dmr_channel(radio, pytestconfig)
     if "DMR_GPS" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_GPS")
+        skip("not_built", "built without CONFIG_DMR_GPS")
     lat, lon = 33.7490, -84.3880
     d, v = _bench_call(radio, sdr_bench, pytestconfig, talker_alias="ODR GPS", gps=(lat, lon, 1), superframes=10)
     assert d["call.rx_calls"] == 1 and d["call.rx_gps"] >= 1, d
@@ -127,8 +137,10 @@ def test_gps_info(radio, sdr_bench, pytestconfig):
     assert abs(float(v["last.gps_lat"]) - lat) < 2e-5 and abs(float(v["last.gps_lon"]) - lon) < 2e-5, v
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_late_entry(radio, sdr_bench, pytestconfig):
     """No header and the first 8 of 36 bursts left out: the call is taken from the embedded LC (one call, marked late).
     The radio hears from burst C of the second superframe, but takes voice only from a burst A on, so the first
@@ -155,15 +167,17 @@ def test_late_entry(radio, sdr_bench, pytestconfig):
     assert v["last.src"] == str(BENCH_SRC), v
 
 
+@pytest.mark.feature("dmr_privacy")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_privacy_service_option(radio, sdr_bench, pytestconfig):
     """A call with the privacy service option: without a key every burst is dropped (never played); with a basic
     privacy key loaded the bursts go through the privacy hook to the vocoder. The bench doesn't scramble, so the
     audio itself is noise either way: this checks the path, not the cipher (dmrCallTest does that)."""
     _on_dmr_channel(radio, pytestconfig)
     if "DMR_PRIVACY" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_PRIVACY")
+        skip("not_built", "built without CONFIG_DMR_PRIVACY")
     radio.link.dmr_privacy("off")
     d, v = _bench_call(radio, sdr_bench, pytestconfig, service_options=0x40)
     assert d["call.rx_calls"] == 1 and d["call.rx_encrypted_calls"] == 1, d
@@ -178,8 +192,10 @@ def test_privacy_service_option(radio, sdr_bench, pytestconfig):
         radio.link.dmr_privacy("off")
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_pi_bit(radio, sdr_bench, pytestconfig):
     """The EMB PI bit on B-F. The HR_C6000 reports PI unreliably for voice, so its driver clears it (gotcha 6.4):
     on the DM-1701 the call plays as clear. Recorded, not asserted beyond one call heard."""
@@ -188,6 +204,7 @@ def test_pi_bit(radio, sdr_bench, pytestconfig):
     assert d["call.rx_calls"] == 1, d
 
 
+@pytest.mark.feature("dmr_voice")
 def test_talk_target_requests(radio, pytestconfig):
     """Radio only (nothing transmits): a typed private ID, a contact and back to the channel's talk target; the
     privacy key request. Every change shows in the dmr view."""

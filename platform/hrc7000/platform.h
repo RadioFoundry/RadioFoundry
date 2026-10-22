@@ -13,20 +13,8 @@
 
 #define REG32(a)		(*(volatile uint32_t *)(uintptr_t)(a))
 
-// --- Clocks: APB peripherals run from sys / 2 (hardware-dm32.md 1.1) ---
-// HRC_CPU_HZ is the clock the application runs at: 168 MHz unless the board sets it in board.mk. The loader in front of
-// it may leave the PLL at another rate: HRC_LOADER_CPU_HZ (default the same). The Baofeng bootloader leaves 168 MHz,
-// the DB25-D's IAP loader 72 MHz. When the two differ, clock.c reprograms the PLL at start-up and
-// hrc_clock_restore_loader() puts the loader's clocks back before a hand-over to RAM code built for them (the runtime
-// stub) or a soft reset
-#ifndef HRC_CPU_HZ
-#define HRC_CPU_HZ		168000000u
-#endif
-#ifndef HRC_LOADER_CPU_HZ
-#define HRC_LOADER_CPU_HZ	HRC_CPU_HZ
-#endif
-#define HRC_APB_HZ		(HRC_CPU_HZ / 2u)
-#define HRC_LOADER_APB_HZ	(HRC_LOADER_CPU_HZ / 2u)
+// --- Clocks: HRC_CPU_HZ and the APB clocks (clock_hz.h, which FreeRTOSConfig.h reads too) ---
+#include "clock_hz.h"
 #define HRC_XTAL_HZ		24000000u
 #include "clock_math.h"
 
@@ -219,6 +207,9 @@ typedef struct {
 extern hal_flash_t hrc_flash_spi0;
 void hrc_flash_spi0_configure(const hrc_flash_cfg_t *cfg);	// before hrc_flash_spi0.init
 uint32_t hrc_flash_spi0_jedec(void);
+// The chip UID that INFO_CHIP and REBOOT's token use (system.c): the board's data flash unique ID, read once at its init
+// (flash_spi0.c does it for the SPI NOR). An ID of one repeated byte is ignored
+void hrc_chip_set_uid(const uint8_t *id, uint32_t len);
 // The task holding the data flash lock and for how long (ms), "-" when free: a stuck flash user shows here
 const char *hrc_flash_spi0_holder(uint32_t *held_ms);
 
@@ -278,7 +269,7 @@ void hrc_soft_reset(void) __attribute__((noreturn));
 
 // Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2). The host loads the stub here
 // and ODR jumps to it without a power cycle. The span is the codec window at the top of SRAM, which ODR never links
-// anything into (dm32.ld: 0x43A00..0x58000); the codec is parked before the load, so the whole window is free. Base is
+// anything into (boards/dm32/memory.ld: 0x43A00..0x58000); the codec is parked before the load, so the whole window is free. Base is
 // 4 KB aligned inside it. The universal stub copies itself to 0x30000 (ODR's RAM, dead by then), clear of this span. A
 // board with another layout sets its own span in board.mk or config.mk (the DB25-D)
 #ifndef HRC_STUB_BASE

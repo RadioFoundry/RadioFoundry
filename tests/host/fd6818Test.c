@@ -6,6 +6,9 @@
 #include <string.h>
 #include "rf/fd6818/fd6818.h"
 
+// A board's own set, the one other than the driver's default (boards/dm1801pro/rf_tables_dm1801pro.c)
+extern const fd6818_variant_t fd6818_variant_dm1801pro;
+
 static int failures;
 
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)

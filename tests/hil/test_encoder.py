@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from odr_hil import as_int
+from odr_hil import as_int, skip
 from odr_debug import DOWN
 
 
@@ -22,20 +22,21 @@ def link(r):
 def home(radio):
     radio.ensure_awake()
     if link(radio).get("ui.locked") == "1":
-        pytest.skip("the keys are locked")
+        skip("state", "the keys are locked")
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     radio.long_press("back")
     radio.wait_for(lambda v: v.get("ui.screen") == "home", sections=("link",), what="Home")
     yield radio
     radio.long_press("back")
 
 
+@pytest.mark.feature("channel_knob")
 def test_knob_direction(home):
     r = home
     v = r.core()
     if v.get("vfo") == "1" or as_int(v.get("zone_size"), 0) < 3:
-        pytest.skip("needs a zone of 3 or more channels, not the VFO")
+        skip("state", "needs a zone of 3 or more channels, not the VFO")
     pos = as_int(v["zone_pos"])
     # Home: forward = the next channel
     r.press("enc", DOWN, 1)
@@ -56,7 +57,7 @@ def test_knob_direction(home):
 def _counts(r):
     v = link(r)
     if "input.enc_detents" not in v:
-        pytest.skip("firmware without the encoder counters (input.enc_*)")
+        skip("not_built", "firmware without the encoder counters (input.enc_*)")
     return {k: as_int(v[k]) for k in ("input.enc_detents", "input.enc_transitions", "input.enc_illegal",
                                       "input.enc_reversals", "input.enc_steps", "input.encoder_total",
                                       "input.enc_deferred")}
@@ -82,6 +83,7 @@ def _turn(r, clicks, prompt, timeout=30.0):
     return {k: now[k] - before[k] for k in now}, now
 
 
+@pytest.mark.feature("channel_knob", optional=True, owner="turn the channel knob by the clicks the test asks for")
 @pytest.mark.manual
 def test_knob_counts_detents(home):
     r = home

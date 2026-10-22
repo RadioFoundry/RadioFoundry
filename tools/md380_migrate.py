@@ -779,7 +779,7 @@ TYT updater and your stock firmware file at hand to go back.
 
 Not for redistribution: the merged firmware image contains the codec from TYT's firmware.
 The image is built for one band: odr_md380_codec.bin from a UHF build for a UHF radio, from a VHF build
-(MD380_BAND=vhf) for a VHF radio. The band is on the label under the battery.
+(BAND=vhf) for a VHF radio. The band is on the label under the battery.
 
 Install once
   - Python 3.8 or newer.

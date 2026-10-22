@@ -8,7 +8,11 @@
 // IO_DIPLEX0 bits 9 / 10: 1 = PTA9 / PTA10 are GPIO, 0 = UART1 RXD / TXD
 #define STAGE_UART_PINS()	wr(IO_DIPLEX0, rd(IO_DIPLEX0) & ~0x600u)
 
-#include "../hrc7000/stage.c"
+#ifndef BOOT_HOST_TEST	// boards/db25d/tests/bootDb25dTest.c supplies these
+static inline uint32_t rd(uint32_t a)
+{
+	return *(volatile uint32_t *)(uintptr_t)a;
+}
 
 #define LATCH		(1u << 13)	// PTB13 keeps the radio on once the power key is let go
 // The transmitter's pins (hardware-db25d.md 3.2, boards/db25d/pins.h): PTA26 UHF PA select, PTA27 TX supply A, PTB2 TX

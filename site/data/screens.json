@@ -352,7 +352,19 @@
     "DUAL_WATCH"
    ]
   },
+  "home_dual_busy": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
   "home_dual_on_b": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_pill_row3": {
    "group": "home",
    "needs": [
     "DUAL_WATCH"
