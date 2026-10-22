@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 from odrflash import boards, bootkey, cli, codecmap, codecsave, debuglink, fakedfu, manifest as mf, plan, state, stockfw  # noqa: E402
 from odrflash import dfu as dfumod  # noqa: E402
 
-DM1701 = boards.DM1701
+DM1701 = boards.get("dm1701")
 KEY = fakedfu.synthetic_key()
 
 
@@ -95,10 +95,10 @@ class SectorMap(unittest.TestCase):
 
     def test_dm1801pro_matches_its_linker_script(self):
         b = boards.get("dm1801pro")
-        self.assertEqual((b.app_base, b.flash_end, b.family), (0x0300C000, 0x03100000, boards.DM32.family))
+        self.assertEqual((b.app_base, b.flash_end, b.family), (0x0300C000, 0x03100000, boards.get("dm32").family))
         self.assertEqual([(s.addr, s.size) for s in b.codec_sectors()], [(0x030E8000, 0x18000)])
-        self.assertEqual(b.codec.windows, boards.DM32.codec.windows)
-        self.assertEqual(b.protected, boards.DM32.protected)
+        self.assertEqual(b.codec.windows, boards.get("dm32").codec.windows)
+        self.assertEqual(b.protected, boards.get("dm32").protected)
         ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1801pro", "dm1801pro.ld")).read()
         self.assertIn("ORIGIN = 0x0300C000, LENGTH = 0x030E8000 - 0x0300C000", ld)
         self.assertIn("__codec_slot = 0x030E8000;", ld)
@@ -142,8 +142,8 @@ class Planning(unittest.TestCase):
                 with self.assertRaises(plan.PlanError, msg="%s %s" % (hex(addr), mode)):
                     plan.make_plan(DM1701, [(DM1701.app_base, img), (addr, b"d" * 100)], mode, csegs)
         with self.assertRaises(plan.PlanError):
-            plan.make_plan(boards.MD380, [(boards.MD380.app_base, img), (0x080A0000, b"d" * 100)], plan.MERGE,
-                           [(a, b"\0" * n) for a, n in boards.MD380.codec.windows])
+            plan.make_plan(boards.get("md380"), [(boards.get("md380").app_base, img), (0x080A0000, b"d" * 100)], plan.MERGE,
+                           [(a, b"\0" * n) for a, n in boards.get("md380").codec.windows])
 
     def test_image_into_codec_sector_refused(self):
         img = app_image(0x080C0000 - 0x0800C000 + 1)
@@ -259,6 +259,33 @@ class Manifests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     release.main(["--board", "dm1701", "--version", "v9", "--bin", bp, "--out", out, "--git", "d" * 40,
                                   "--features", "", "--toolchain", ""])
+
+    def test_release_build_option(self):
+        """--build-option: a non-default value of a board's [[build_options]] gets its own names and manifest field;
+        an unknown option or value is refused."""
+        sys.path.insert(0, os.path.join(HERE, "..", ".."))
+        import release
+        b = next(b for b in boards.BOARDS.values() if b.build_options)
+        opt = b.build_options[0]
+        value = opt["values"][1]["id"]
+        self.assertIsNotNone(b.build_option(opt["name"], value))
+        self.assertIsNone(b.build_option(opt["name"], "no-such-value"))
+        img = app_image(4096)
+        with tempfile.TemporaryDirectory() as d:
+            bp = os.path.join(d, "in.bin")
+            open(bp, "wb").write(img)
+            out = os.path.join(d, "dist")
+            common = ["--board", b.id, "--version", "v9.9.9", "--bin", bp, "--out", out, "--git", "d" * 40,
+                      "--features", "FM", "--toolchain", "test"]
+            with contextlib.redirect_stdout(io.StringIO()):
+                release.main(common + ["--build-option", "%s=%s" % (opt["name"], value)])
+            m = mf.load(os.path.join(out, "odr-%s-%s-v9.9.9.json" % (b.id, value)))
+            self.assertEqual(m["build_options"], {opt["name"]: value})
+            for bad in ("%s=no-such-value" % opt["name"], "NO_SUCH_OPTION=%s" % value):
+                with self.assertRaises(SystemExit):
+                    release.main(common + ["--build-option", bad])
+            with self.assertRaises(SystemExit):
+                release.main(common[:1] + ["no-such-board"] + common[2:])
 
     def test_release_needs_the_first_stage(self):
         """The DB25-D's image goes to 0x0300C000, its first stage's sector: the application alone is refused, the
@@ -646,13 +673,13 @@ class CodecDecision(unittest.TestCase):
 
     def test_dm32_always_merges(self):
         man = {"codec": {"profile": "dm32-049"}}
-        self.assertEqual(cli.decide_codec(boards.DM32, man, "auto", True, None, None, None).mode, plan.MERGE)
+        self.assertEqual(cli.decide_codec(boards.get("dm32"), man, "auto", True, None, None, None).mode, plan.MERGE)
         with self.assertRaises(cli.UsageError):
-            cli.decide_codec(boards.DM32, man, "auto", False, None, None, None)
+            cli.decide_codec(boards.get("dm32"), man, "auto", False, None, None, None)
 
     def test_dm1801pro_always_merges(self):
         man = {"codec": {"profile": "dm1801pro-049"}}
-        self.assertEqual(cli.decide_codec(boards.DM1801PRO, man, "auto", True, None, None, None).mode, plan.MERGE)
+        self.assertEqual(cli.decide_codec(boards.get("dm1801pro"), man, "auto", True, None, None, None).mode, plan.MERGE)
 
 
 class StateFile(unittest.TestCase):
