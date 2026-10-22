@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The runtime RAM-monitor loader's portable core (see dl_stub.h).
+// The runtime RAM-monitor loader's portable core (see stub_load.h).
 #include <string.h>
-#include "debuglink/dl_stub.h"
-#include "debuglink/debuglink_proto.h"
+#include "stubentry/stub_load.h"
 
 // The standard CRC-32 (core/storage/storage.c), always built into the firmware; the host test defines its own
 uint32_t storage_crc32(uint32_t crc, const void *buf, uint32_t len);
@@ -31,7 +30,7 @@ static size_t status_only(uint8_t *out, uint8_t st)
 	return 1;
 }
 
-void dl_stub_init(dl_stub_t *s, uint8_t *region, uint32_t region_size, uint32_t load_addr)
+void stub_load_init(stub_load_t *s, uint8_t *region, uint32_t region_size, uint32_t load_addr)
 {
 	memset(s, 0, sizeof(*s));
 	s->region = region;
@@ -39,24 +38,24 @@ void dl_stub_init(dl_stub_t *s, uint8_t *region, uint32_t region_size, uint32_t 
 	s->load_addr = load_addr;
 }
 
-static size_t op_info(const dl_stub_t *s, uint8_t *out)
+static size_t op_info(const stub_load_t *s, uint8_t *out)
 {
 	out[0] = DL_ST_OK;
-	put32(out + 1, DL_STUB_MAGIC);
+	put32(out + 1, STUB_MAGIC);
 	put32(out + 5, s->load_addr);
 	put32(out + 9, s->region_size);
-	put16(out + 13, DL_STUB_CHUNK_MAX);
+	put16(out + 13, STUB_CHUNK_MAX);
 	out[15] = s->armed ? 1u : 0u;
 	put32(out + 16, s->received);
 	return 20;
 }
 
-static size_t op_begin(dl_stub_t *s, const uint8_t *req, uint16_t len, uint8_t *out)
+static size_t op_begin(stub_load_t *s, const uint8_t *req, uint16_t len, uint8_t *out)
 {
 	if (len != 1u + 16u) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
-	if (get32(req + 1) != DL_STUB_MAGIC) {
+	if (get32(req + 1) != STUB_MAGIC) {
 		return status_only(out, DL_ST_REFUSED);
 	}
 	uint32_t total = get32(req + 5);
@@ -79,14 +78,14 @@ static size_t op_begin(dl_stub_t *s, const uint8_t *req, uint16_t len, uint8_t *
 	return 5;
 }
 
-static size_t op_data(dl_stub_t *s, const uint8_t *req, uint16_t len, uint8_t *out)
+static size_t op_data(stub_load_t *s, const uint8_t *req, uint16_t len, uint8_t *out)
 {
 	if (!s->armed || len < 1u + 4u) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
 	uint32_t offset = get32(req + 1);
 	uint32_t n = (uint32_t)(len - 5u);
-	if (n == 0 || n > DL_STUB_CHUNK_MAX || offset > s->total_len || n > s->total_len - offset) {
+	if (n == 0 || n > STUB_CHUNK_MAX || offset > s->total_len || n > s->total_len - offset) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
 	memcpy(s->region + offset, req + 5, n);
@@ -98,12 +97,12 @@ static size_t op_data(dl_stub_t *s, const uint8_t *req, uint16_t len, uint8_t *o
 	return 5;
 }
 
-static size_t op_enter(dl_stub_t *s, const uint8_t *req, uint16_t len, uint8_t *out, bool *enter, uint32_t *entry)
+static size_t op_enter(stub_load_t *s, const uint8_t *req, uint16_t len, uint8_t *out, bool *enter, uint32_t *entry)
 {
 	if (len != 1u + 4u) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
-	if (get32(req + 1) != DL_STUB_MAGIC) {
+	if (get32(req + 1) != STUB_MAGIC) {
 		return status_only(out, DL_ST_REFUSED);
 	}
 	if (!s->armed || s->received != s->total_len) {
@@ -117,7 +116,7 @@ static size_t op_enter(dl_stub_t *s, const uint8_t *req, uint16_t len, uint8_t *
 	}
 	if (s->image_ok != NULL && !s->image_ok(s->region, s->total_len)) {
 		out[0] = DL_ST_REFUSED;		// a stub that would be reset part way through its work: never start it
-		out[1] = DL_STUB_REFUSE_WATCHDOG;
+		out[1] = STUB_REFUSE_WATCHDOG;
 		return 2;
 	}
 	*enter = true;
@@ -125,21 +124,23 @@ static size_t op_enter(dl_stub_t *s, const uint8_t *req, uint16_t len, uint8_t *
 	return status_only(out, DL_ST_OK);
 }
 
-size_t dl_stub_request(dl_stub_t *s, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap, bool *enter,
-		       uint32_t *entry)
+size_t stub_load_request(stub_load_t *s, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap, bool *enter,
+			 uint32_t *entry)
 {
-	(void)cap;
+	if (cap < STUB_REPLY_MAX) {
+		return status_only(out, DL_ST_UNAVAILABLE);	// a caller's buffer too short for INFO: never written past
+	}
 	if (len < 1) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
 	switch (req[0]) {
-	case DL_STUB_OP_INFO:
+	case STUB_OP_INFO:
 		return op_info(s, out);
-	case DL_STUB_OP_BEGIN:
+	case STUB_OP_BEGIN:
 		return op_begin(s, req, len, out);
-	case DL_STUB_OP_DATA:
+	case STUB_OP_DATA:
 		return op_data(s, req, len, out);
-	case DL_STUB_OP_ENTER:
+	case STUB_OP_ENTER:
 		return op_enter(s, req, len, out, enter, entry);
 	default:
 		return status_only(out, DL_ST_BAD_ARG);

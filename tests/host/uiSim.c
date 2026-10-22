@@ -102,7 +102,30 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "crash_send_to", "crash:on ok 7 0 down down down down ok 2" },
 	{ "talk_target_picker", "call:3101234,91,g tt" },
 	{ "talk_target_picker_vfo", "ok 4 up ok quick 4 tt" },
-	{ "scan_actions", "quick 7 back ctx" },
+	{ "scan_actions", "ok 6 1 ctx" },
+#if CONFIG_DUAL_WATCH
+	// Dual watch (docs/ux/dual-watch.md): A = channel 3, B = channel 5 of the zone unless the script picks another
+	{ "dual_pick", "quick 7 ctx 3" },
+	{ "dual_zones", "quick 7 ctx 3 up up up up ok" },
+	{ "home_dual", "quick 7 ctx 3 5 ok wait:3000" },
+	{ "home_dual_rx_b", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 tune:b rx:3101234,91,g wait:2500" },
+	{ "home_dual_heard", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000" },
+	// The wait after a call on B: a look at A found a signal there
+	{ "home_dual_busy", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g busy:a" },
+	{ "home_dual_on_b", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 ctx 1 wait:3000" },
+	{ "home_dual_tx", "quick 7 ctx 3 5 ok wait:3000 pttdown" },
+	{ "home_dual_vfo", "quick 7 ctx 1 vfokey ctx 1 wait:3000" },
+	// A name that needs row 1 whole beside the PTT pill: the pill moves to row 3 where there is one
+	{ "home_dual_pill_row3", "quick 7 ctx 1 wait:3000" },
+	{ "home_dual_other_zone", "quick 7 ctx 1 zone+ ctx 1 wait:3000 tune:b fmrx" },
+	{ "home_dual_fm", "quick 7 ctx 3 2 ok wait:3000" },
+	{ "home_dual_large_text", "ok 7 2 down down down down down ok long:back quick 7 ctx 3 5 ok wait:3000 tune:b rx:3101234,91,g" },
+	// A radio with a receiver per channel: calls on both at once, the second one muted
+	{ "home_dual_two_rx", "receivers:2 quick 7 ctx 3 5 ok wait:3000 rxa:3101234,3100,g rxb:3107777,91,g wait:1000" },
+	{ "home_dual_two_rx_large_text", "ok 7 2 down down down down down ok long:back receivers:2 quick 7 ctx 3 5 ok wait:3000 rxa:3101234,3100,g rxb:3107777,91,g wait:1000" },
+	{ "home_dual_talk_back", "ok 7 3 down down down down down down ok long:back quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g wait:4000" },
+	{ "dual_actions", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 ctx" },
+#endif
 	{ "emergency", "emergency:3101234" },
 	{ "volume", "softvol volkey up up" },
 	{ "volume_muted", "softvol volkey down down down down down down down down" },
@@ -147,7 +170,7 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_reply", "call:3109999,16776415,g" },
 	{ "w_lastheard", "call:3109999,16776415,g wait:11000" },
 	{ "w_lastheard_unknown", "call:3101999,16776414,g wait:11000" },
-	{ "w_status_marks", "msg:3109999," LONG_MSG " msg:3108765,OK wait:9000 quick 5 6 back quick 7 back power:3 "
+	{ "w_status_marks", "msg:3109999," LONG_MSG " msg:3108765,OK wait:9000 quick 5 6 back ok 6 1 power:3 "
 		"battery:5 long:quick" },
 	{ "w_fm_marks", "down quick 5 7 1 back battery:100" },
 	{ "w_tx", "power:3 pttdown" },
@@ -177,13 +200,13 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_vfo", "ok 4 up ok 4 4 6 0 0 6 2 5 ok" },
 	{ "w_vfo_entry", "ok 4 up ok 4 4 6 0 0 6 2" },
 	{ "w_temporary", "quick 1 2 3 1 5 ok back" },
-	{ "w_scan", "quick 7 back" },
+	{ "w_scan", "ok 6 1" },
 	{ "w_lock_toast", "long:quick 5" },
 	{ "w_large", "ok 7 2 down down down down down ok long:back" },
 	{ "w_large_fm", "ok 7 2 down down down down down ok long:back down" },
 	{ "w_off_banner", "offfailed" },
 	{ "w_low_battery", "battery:5" },
-	{ "w_hub_unread", "msg:3109999,OK msg:3108765,OK wait:9000 quick 7 back ok" },
+	{ "w_hub_unread", "msg:3109999,OK msg:3108765,OK wait:9000 ok 6 1 ok" },
 	{ "w_roaming", "ok 6 6 1 wait:4000" },
 	{ "w_aprs", "ok 6 8" },
 	{ "w_aprs_nocall", "aprs:nocall ok 6 8" },
@@ -384,6 +407,10 @@ static const struct { const char *name; unsigned flags; } gallery_color[] = {
 	{ "home_plain", G_COLOR | G_THEMES },	// the plain strip's state pills
 	{ "rx_group", G_THEMES },
 	{ "tx", G_THEMES },
+#if CONFIG_DUAL_WATCH
+	{ "home_dual_rx_b", G_THEMES },
+	{ "home_dual_two_rx", G_THEMES },
+#endif
 	{ "channels", G_COLORS | G_THEMES },	// the focus row in the color
 	{ "settings_display", G_THEMES },
 };
