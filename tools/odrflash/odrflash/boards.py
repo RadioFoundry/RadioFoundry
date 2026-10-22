@@ -9,6 +9,8 @@ on any Python 3 and inside the odrflash executable, where there is no repository
 import json
 import os
 
+from . import names
+
 REGISTRY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "registry.json")
 
 
@@ -134,14 +136,25 @@ class Board:
                 out[o["name"]] = v["id"]
         return out
 
+    def option_values(self):
+        """[(name, [value, ...])], each option's default first: what names.py takes."""
+        return [(o["name"], [v["id"] for v in o["values"]]) for o in self.build_options]
+
     def full_options(self, given):
         """Every build option's value: the given ones, the defaults (each option's first value) for the rest."""
-        return {o["name"]: (given or {}).get(o["name"], o["values"][0]["id"]) for o in self.build_options}
+        return names.full(self.option_values(), given)
 
     def image_id(self, options):
         """The board id with each non-default option value, as the Makefile and the release name images: md380-vhf."""
-        full = self.full_options(options)
-        return self.id + "".join("-" + full[o["name"]] for o in self.build_options if full[o["name"]] != o["values"][0]["id"])
+        return names.image_id(self.id, self.option_values(), options)
+
+    def build_image(self, options, variant=None):
+        """The image make writes for these option values, from the source tree (names.build_image)."""
+        return names.build_image(self.id, self.option_values(), options, variant, bool(self.first_stage))
+
+    def release_id(self, options, variant=None):
+        """The name id of the release files for these option values (names.release_id)."""
+        return names.release_id(self.id, self.option_values(), options, variant)
 
 
 FORMAT = "odr-board-registry/2"

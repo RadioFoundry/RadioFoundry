@@ -4,10 +4,13 @@
 
 ## Toolchains
 
-| Radio | Compiler | Where it comes from |
+A board's platform is `PLATFORM` in its `board.mk`; `tools/boards.py list --platform <p>` lists the boards on one. The
+pinned version of each toolchain is in `platform/<p>/platform.toml` `[toolchain]` ([The board registry](board-registry.md#platformtoml)).
+
+| Platform | Compiler | Where it comes from |
 |---|---|---|
-| STM32F405 radios: DM-1701 (`BOARD=dm1701`), MD-380 (`BOARD=md380`) | `arm-none-eabi-gcc` | Arm GNU Toolchain (CI pins 13.3.rel1; `tools/install-arm-toolchain.sh` installs it on Linux x86_64). The Makefile looks in `~/opt/arm-gnu-toolchain-*-arm-none-eabi/bin/` first, then `/usr/bin/`; `CROSS=` overrides |
-| HR_C7000 radios: DM-32UV (`BOARD=dm32`), DB25-D (`BOARD=db25d`) | `csky-elf-gcc` (GCC 14) | Build it once with `tools/build-csky-toolchain.sh` (into `~/toolchains/csky-elf`, about 45 minutes), or use the Docker image: `tools/docker/csky-toolchain/run.sh make BOARD=dm32` ([CI](ci.md#the-csky-elf-image)). The Makefile looks in `~/toolchains/csky-elf/bin/`, then `PATH` |
+| `stm32f4` | `arm-none-eabi-gcc` | Arm GNU Toolchain; `tools/install-arm-toolchain.sh` installs the pinned release on Linux x86_64. The Makefile looks in `~/opt/arm-gnu-toolchain-*-arm-none-eabi/bin/` first, then `/usr/bin/`; `CROSS=` overrides |
+| `hrc7000` | `csky-elf-gcc` | Build it once with `tools/build-csky-toolchain.sh` (into `~/toolchains/csky-elf`, about 45 minutes), or use the Docker image: `tools/docker/csky-toolchain/run.sh make BOARD=<board>` ([CI](ci.md#the-csky-elf-image)). The Makefile looks in `~/toolchains/csky-elf/bin/`, then `PATH` |
 | Host tests | the host's `cc` and zlib | Xcode command line tools or the distribution's compiler |
 
 You also need make, git and Python 3. Clone with submodules: `git submodule update --init` fetches FreeRTOS, TinyUSB

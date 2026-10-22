@@ -14,6 +14,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | [Stack check](stack-check.md) | The static worst-case stack depth of every task, how pointer calls are resolved, the table of hand-kept targets |
 | [CI](ci.md) | The workflows per push, nightly and on the radio; running each piece locally; coverage figures; the runners; the csky-elf image |
 | [Adding a radio](adding-a-radio.md) | The files a new board needs, `board_t`, the key map, the order to bring it up in |
+| [The board registry](board-registry.md) | `board.toml` and `platform.toml` field by field, what is derived, `tools/boards.py`, the build view for tools that build from a checkout |
 | [Debug link](debug-link.md) | The host-port debug protocol and `tools/odr_debug.py` |
 | [CPS, codeplug and settings](cps-and-codeplug.md) | The open-firmware CPS shim qdmr uses, the codeplug layout, the settings store |
 | [The codec](codec.md) | How each radio's stock AMBE+2 codec is extracted, merged and hosted |

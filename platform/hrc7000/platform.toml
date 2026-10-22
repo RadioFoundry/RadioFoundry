@@ -6,8 +6,8 @@
 id = "hrc7000"
 isa = "csky"
 cpu = "HR_C7000"
-# The compiler print-cc names, and what builds it when it's missing (ci.sh's skip message)
-toolchain = { cc = "csky-elf-gcc", build = "tools/build-csky-toolchain.sh" }
+# The compiler print-cc names and what builds it when it's missing (ci.sh's skip message), in its own table at the
+# end of this file
 # One CI job per group; this group runs inside the csky-elf image
 ci = { group = "C-SKY", container = true }
 stubs = []
@@ -23,3 +23,12 @@ flash_base = 0x03000000
 # application and the codec slot
 default_sectors = "app+slot"
 [sectors]
+
+# The toolchain CI and releases build with. version is the GCC release tools/build-csky-toolchain.sh builds (it keeps
+# the binutils and newlib releases beside their checksums). image is the container that holds it:
+# tools/docker/csky-toolchain/build.sh makes it, run.sh runs a command in it, ODR_CSKY_IMAGE overrides it
+[toolchain]
+cc = "csky-elf-gcc"
+build = "tools/build-csky-toolchain.sh"
+version = "14.2.0"
+image = "odr/csky-gcc14:latest"
