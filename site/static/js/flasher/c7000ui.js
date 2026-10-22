@@ -202,7 +202,10 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	const secondState = async (link) => {
 		const flags = await Stub.secondState(link);
 		if (flags === null || !(flags & RX2_F.present) || (flags & RX2_F.up) || !toIap) return throughFirst(link);
-		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.odr_found", { git: c.odr.git }))),
+		// what answered is the first chip, not the one being installed (as throughFirst)
+		c.via = c.odr;
+		c.odr = null;
+		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.odr_found", { git: c.via.git }))),
 			notice(t("flash.gd88.bridge.second_down"), "info"), h("p", {}, t("flash.gd88.bridge.second_down_iap")));
 		act(button(t("flash.db25d.none.update_mode"), toIap, { primary: true }),
 			button(t("flash.gd88.bridge.try_anyway"), () => throughFirst(link), { quiet: true }));
@@ -218,13 +221,15 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	// The second SoC: ODR on the first hands the cable over, then the second's first stage takes the stub as the boot
 	// ROM would. No power cycle: the first SoC stays on and restarts by itself afterwards
 	const throughFirst = async (link) => {
-		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.odr_found", { git: c.odr.git }))),
+		// what answered is the first chip; what the second one runs is only known from its own flash, so it is read and
+		// backed up as on a first install (secondState may have moved it already)
+		if (c.odr) {
+			c.via = c.odr;
+			c.odr = null;
+		}
+		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.odr_found", { git: c.via.git }))),
 			h("p", {}, t("flash.gd88.bridge.asking")));
 		const stub = mkStub();
-		// what answered is the first chip; what the second one runs is only known from its own flash, so it is read and
-		// backed up as on a first install
-		c.via = c.odr;
-		c.odr = null;
 		try {
 			await Stub.bridgeFromOdr(link);
 			await stub.waitForRom(S().fakeC7 ? 3000 : BRIDGE_ROM_WAIT);
@@ -460,7 +465,9 @@ export function checkView() {
 	const c = session();
 	const out = h("div", { class: "flasher" });
 	const forward = S().forward;
-	const top = radioTop(S().radio, { led: "wait", screen: screenNow() }, { hasLed: hasLed() });
+	// through update mode nothing is connected yet: the radio enters it at the write step
+	const top = radioTop(S().radio, viaIap() ? { led: "off", screen: "any", note: t("flash.db25d.check.top_iap") }
+		: { led: "wait", screen: screenNow() }, { hasLed: hasLed() });
 	const firstInstall = !c.odr;
 	// a first install reads everything; an ODR update only what it needs (the codec slot), unless asked
 	const want = (S().c7want ||= { progmem: firstInstall, cal: hasData(), q128: firstInstall && hasData() });

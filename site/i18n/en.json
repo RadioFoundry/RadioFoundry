@@ -819,6 +819,7 @@
  "flash.db25d.check.opt_progmem": "Program Memory (2 MB)",
  "flash.db25d.check.opt_progmem_text": "The firmware, the codec and the factory calibration copy. Required before the first installation.",
  "flash.db25d.check.lead_iap": "The radio is reached through the factory update mode, so it was not read and no backup of its current firmware is taken. If you have a backup from an earlier installation, keep it.",
+ "flash.db25d.check.top_iap": "The radio enters the factory update mode at the installation step.",
  "flash.db25d.check.is_update_mode": "not read (factory update mode)",
  "flash.db25d.check.is_stock_other": "the original firmware, a version without a codec recipe (included in your backup)",
  "flash.db25d.codec.action_text": "The radio programming utility has no codec for this radio yet. Select a DB25-D PRO stock firmware file of version 018 (2024-05-09 or later) from the manufacturer. The codec in it works on this radio whatever firmware version the radio runs.",
