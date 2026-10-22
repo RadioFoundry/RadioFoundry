@@ -430,6 +430,7 @@ class SdrBench:
         self.dmr_bench = dmr_bench
         self.host = dmr_bench.BENCH_HOST
         self.dir = dmr_bench.DIR
+        self._run_dirs = []
         self.py = dmr_bench.PY
         self.allow_rf = allow_rf
         self.allow_service_stop = allow_service_stop
@@ -516,7 +517,20 @@ class SdrBench:
     def run_dir(self, tag):
         d = f"runs/{time.strftime('%Y%m%d-%H%M%S')}_{tag}"
         self.ssh(f"mkdir -p ~/{self.dir}/{d}")
+        self._run_dirs.append(d)
         return d
+
+    def remove_run_dirs(self):
+        """Delete the run directories this session made on the bench (captures are ~50 MB each and filled the bench's
+        disk). Only names run_dir() returned; ODR_HIL_KEEP_RUNS=1 keeps them for a look."""
+        if os.environ.get("ODR_HIL_KEEP_RUNS") or not self._run_dirs:
+            return
+        dirs = [d for d in self._run_dirs if d.startswith("runs/") and ".." not in d]
+        self._run_dirs = []
+        try:
+            self.ssh("rm -rf " + " ".join(f"~/{self.dir}/{shlex.quote(d)}" for d in dirs), timeout=120)
+        except Exception:
+            pass        # a leftover directory is not a test failure
 
     # ── a shared bench's daemon: what it offers, and its stations (ODR radios on the bench host) ──
     def info(self):
@@ -525,6 +539,24 @@ class SdrBench:
         if not self.bench.uses_daemon():
             return {}
         return json.loads(self.ssh(f"{self.bench.ctl} info --json", timeout=30))
+
+    def lacks(self, sdr=False, modem=False, either=False):
+        """Why this bench can't serve a test that needs the SDR (sdr), the bench modem (modem) or either of them
+        (either): None when it can. Judged from the daemon's info(); a bench without the daemon has both, as far as
+        a test can tell before it takes the lease."""
+        info = self.info()
+        if not info:
+            return None
+        has_sdr = bool(info.get("window", {}).get("enabled", True)) and str(info.get("sdr", "shared")).startswith(("shared", "exclusive", "starting"))
+        # the modem is a station of kind mmdvm (whose "present" flag a modem on a serial port doesn't set); an ODR
+        # radio on the bench host counts once it is present and may transmit
+        has_modem = any(s.get("tx") and (s.get("kind") == "mmdvm" or s.get("present"))
+                        for s in info.get("stations", []))
+        missing = [n for n, need, have in (("an SDR receiver", sdr, has_sdr), ("a bench modem or station", modem,
+                                                                               has_modem)) if need and not have]
+        if either and not (has_sdr or has_modem):
+            missing.append("an SDR receiver or a bench modem")
+        return f"the SDR bench lacks {' and '.join(missing)} (odr-bench info)" if missing else None
 
     def free_channels(self, caps=("rx",), in_window=True):
         """MHz of the bench's listed frequencies with all of caps that no session holds now (in_window: the
@@ -838,15 +870,112 @@ class SdrBench:
         except (RuntimeError, ValueError):
             return {}
 
+    # ── DMR bursts decoded on the bench (odr-bench dmr-bursts): no raw I/Q pulled, only one JSON line per burst ──
+    def can_watch(self, freq, bw_hz=12500.0):
+        """True when dmr_watch_start() can decode bursts on the bench: it runs the shared bench daemon, its client has
+        `dmr-bursts` and freq (with bw_hz around it) is inside the shared receiver's window (the tool never retunes
+        the SDR). Otherwise a test takes a raw capture and analyzes that (dmr_watch_start does this itself)."""
+        if not self.bench.uses_daemon() or os.environ.get("ODR_HIL_RAW_IQ") == "1":     # =1: force raw captures
+            return False
+        if getattr(self, "_watch_cli", None) is None:
+            r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.host,
+                                f"{self.bench.ctl} dmr-bursts --help"], capture_output=True, text=True, timeout=30)
+            self._watch_cli = r.returncode == 0
+            self._window = self.info().get("window", {}) if self._watch_cli else {}
+        w = self._window
+        if not self._watch_cli or not w.get("enabled", True):
+            return False
+        off_khz = abs(freq - w["center"]) * 1e3
+        return off_khz >= w["dc_guard_khz"] and off_khz + bw_hz / 2e3 <= (w["hi"] - w["lo"]) * 1e3 / 2
+
+    def bursts_start(self, freq, seconds, cc=None, bursts=None, until_end=False):
+        """odr-bench dmr-bursts in the background (the shared receiver's window; receive only); returns once it is
+        watching (its READY line). bursts_result() collects the records. The daemon's own `bursts` op does the work
+        when it has it, else the client decodes short captures (the tool decides, same records either way)."""
+        self._need_lease()
+        self._claim(freq)
+        cmd = (f"{self.bench.ctl} dmr-bursts --session {self.bench.session} --freq {freq} --seconds {seconds}"
+               + (f" --cc {cc}" if cc is not None else "") + (f" --bursts {bursts}" if bursts else "")
+               + (" --until-end" if until_end else "") + f" --wait-max {self.dmr_bench.WAIT_MAX:g}")
+        p = subprocess.Popen(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.host,
+                              f"cd ~/{self.dir} && {cmd}"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.bg.append(p)
+        p.out, p.err, p.ready = [], [], threading.Event()
+
+        def pump_out():
+            p.out.extend(p.stdout)
+
+        def pump_err():
+            for line in p.stderr:
+                p.err.append(line)
+                if line.startswith("odr-bench:"):
+                    print(line.rstrip(), file=sys.stderr, flush=True)
+                if line.startswith("READY"):
+                    p.ready.set()
+            p.ready.set()
+        p.threads = [threading.Thread(target=f, daemon=True) for f in (pump_out, pump_err)]
+        for t in p.threads:
+            t.start()
+        p.ready.wait(self.dmr_bench.WAIT_MAX + 60)         # it may queue behind another session's capture
+        if p.poll() is not None and p.returncode == self.dmr_bench.EX_TEMPFAIL:
+            self._busy("".join(p.err).strip().splitlines()[-1])
+        return p
+
+    def bursts_result(self, p, timeout=120):
+        """(burst records, summary) of a bursts_start(): waits for the watch to end. No bursts is an empty list."""
+        try:
+            p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()
+        for t in p.threads:
+            t.join(5)
+        if p.returncode not in (0, 3):
+            raise RuntimeError(f"dmr-bursts failed ({p.returncode}): {''.join(p.err)[-1500:]}")
+        rows = [json.loads(x) for x in p.out if x.startswith("{")]
+        summary = next((r["summary"] for r in reversed(rows) if "summary" in r), {})
+        return [r for r in rows if "summary" not in r], summary
+
+    @staticmethod
+    def analysis_from_bursts(records, summary):
+        """The records as analyze_dmr()'s dict, for the parts of it a bursts watch can fill: bursts (t_ms, slot,
+        family, voice, kind, cc, lc, foff_hz, cach_ts; `slot` is the A/B position on the 30 ms grid) and meta. No
+        edges and no power / overlap summary: those come from the raw waveform (use a raw capture for them)."""
+        bursts = []
+        for r in records:
+            fam = r["sync"].split("_")[0].lower()
+            bursts.append({"t_ms": r["t_rel_ms"], "slot": r.get("slot_ab"), "family": fam, "voice": r["voice"],
+                           "kind": r["kind"], "cc": r["cc"], "lc": r["lc"], "foff_hz": round(r["cfo_hz"]),
+                           "cach_ts": r["slot"] if fam == "bs" else None, "level_dbfs": r["level_dbfs"],
+                           "dev_hz": r["dev_hz"], "fec_ok": r["fec"]["fec_ok"]})
+        return {"bursts": bursts, "edges": [], "summary": {}, "meta": {"clip_pct": summary.get("clip_pct", 0)},
+                "source": "bursts", "bursts_summary": summary}
+
+    def dmr_watch_start(self, rdir, freq, seconds, cc=None, name="cap0"):
+        """Watch freq for DMR bursts for `seconds`, started before the transmitter keys up: bursts decoded on the
+        bench when can_watch() (nothing but JSON comes back), else a raw capture. Finish with dmr_watch_result()."""
+        if self.can_watch(freq):
+            return {"p": self.bursts_start(freq, seconds, cc=cc), "freq": freq, "cc": cc}
+        return {"cap": self.capture_start(rdir, freq, seconds=seconds, name=name), "freq": freq, "cc": cc}
+
+    def dmr_watch_result(self, w, timeout=120):
+        """analyze_dmr()'s dict for a dmr_watch_start(): from the burst records (analysis_from_bursts) or from the
+        raw capture."""
+        if "p" in w:
+            return self.analysis_from_bursts(*self.bursts_result(w["p"], timeout))
+        self.capture_wait()
+        return self.analyze_dmr(w["cap"], w["freq"], w["cc"])
+
     def analyze_dmr(self, capture, freq, cc):
-        """sdrmon.py analyze: every burst with its sync, CC, LC, timing, frequency offset, edges (a dict)."""
+        """sdrmon.py analyze: every burst with its sync, CC, LC, timing, frequency offset, edges (a dict). From raw
+        I/Q: use it only for what the burst records (dmr_watch_start) lack: the waveform (keying edges, ramps, power
+        steps, overlaps, CACH decode)."""
         txt = self.ssh(f"cd ~/{self.dir} && {self.py} sdrmon.py analyze {capture} --freq {freq} --cc {cc} "
                        f"--json {capture}.json > {capture}.txt 2>&1; cat {capture}.json", timeout=600)
         return json.loads(txt)
 
     def analyze_aprs(self, capture, bw_khz=25.0):
         """tools/aprs_afsk_check.py on the bench (Bell 202 AFSK / AX.25 decode and the tone measurements); returns
-        its JSON result (frames with a valid FCS, segments)."""
+        its JSON result (frames with a valid FCS, segments). Raw I/Q on purpose: AFSK is audio on an FM carrier."""
         self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))     # its filters
         tool = self.sync_tool(os.path.join(ROOT, "tools", "aprs_afsk_check.py"))
         out = self.ssh(f"cd ~/{self.dir} && {self.py} {tool} {capture} --offset {self._offset_khz(capture) * 1000:.0f} "
@@ -859,7 +988,8 @@ class SdrBench:
     def analyze_fm(self, capture, bw_khz=12.5, ctcss=None, dcs=None, ppm=None, freq=None, tones=False, track=False,
                    levels=False, tone_snr=None):
         """tools/sdr_fm_check.py on the bench; returns (exit status, text). tones: also report the audio tones;
-        track: the carrier every 50 ms; levels: the voice band rms every 50 ms."""
+        track: the carrier every 50 ms; levels: the voice band rms every 50 ms. Raw I/Q on purpose: FM audio, tone,
+        deviation and carrier-offset measurements need the demodulated waveform, not decoded DMR bursts."""
         tool = self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))
         off = self._offset_khz(capture)
         a = f"--offset {off * 1000:.0f} --bw {bw_khz}" + (" --tones" if tones else "") + \

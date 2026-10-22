@@ -125,6 +125,7 @@ def tx_half_run(radio, sdr_bench, pytestconfig, variant, regs=(), call=()):
     sdr_bench.sync_tool(os.path.join(ROOT, "tools", "bench", "dmr_cach.py"))
     rdir = sdr_bench.run_dir("hil_split_tx")
     call = list(call)
+    # Raw I/Q on purpose: sdrmon analyze --cach decodes the CACH from the waveform, which the burst records lack
     with sdr_bench.lease():
         cap = sdr_bench.capture_start(rdir, freq, seconds=TX_SECONDS + 6)
         with radio.released() as port:
@@ -180,6 +181,7 @@ def tx_half_cach(bs):
 @pytest.mark.feature("split_duplex")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     need_split(radio)
     import split_duplex_host as sdh
@@ -230,6 +232,7 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
 @pytest.mark.feature("split_duplex")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_split_tx_half_voice(radio, sdr_bench, pytestconfig):
     """A group call from the host on TS2 of the outbound, our framing: headers, three superframes with the embedded
     LC, the terminator, decoded off air; the CACH stays right around it"""
@@ -340,6 +343,7 @@ def check_rx_labels(first, marks, ups, results):
 @pytest.mark.feature("split_duplex")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_split_rx_half_labels(radio, sdr_bench, pytestconfig):
     need_split(radio)
     freq, cc, tg = (pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc"),

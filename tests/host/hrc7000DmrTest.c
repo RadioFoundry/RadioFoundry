@@ -1023,6 +1023,48 @@ static void test_rx_slot_arg(void)
 	CHECK(n == 1 && evs[0].arg == 3);
 }
 
+// A whole call through a chip model: the chip writes a burst's voice into the voice RAM only when the voice-access flag
+// (LAYER2_TXRX_CTRL b15) was set at the timeslot interrupt that decided that burst's slot, the one LAYER2_STATUS b30
+// shows then. Every burst's payload must be the voice the chip wrote for it. With the flag on the other slot
+// (HRC7000_RX_NEXT_SLOT_XOR 1, the DM-1801 Pro until 2026-10-22) the RAM keeps the bytes it had and every burst of
+// the call reads them again: silence with every counter clean
+static void test_rx_voice_ram_call(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 3, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc7000_dmr_configure(&eng, &cfg);
+	memset(buf + C7_VOICE_RAM, 0xA5, 27);		// burst A's voice: the chip takes it with the sync, no flag needed
+	tick(false);
+	deframe(rti(1, 0, 3, 0, 1, 0));			// voice A on chip slot 1 opens the call
+	dmr_burst_t b;
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.payload[0] == 0xA5);
+	int fresh = 0, bursts = 0;
+	for (int k = 1; k < 12; k++) {			// B-F, then a whole superframe more
+		REG(C7_LAYER2_STATUS) = 1u << 30;	// chip slot 1 starts: the decision for it
+		tick(false);
+		bool flag = (REG(C7_LAYER2_TXRX_CTRL) & 0x8000u) != 0;
+		if (flag) {
+			memset(buf + C7_VOICE_RAM, k, 27);	// the chip writes this burst's voice
+		}
+		deframe(rti((uint8_t)(k % 6 + 1), 0, 3, 0, 1, 0));
+		if (count_kind(DMR_EV_BURST_RX, &b) == 1) {
+			bursts++;
+			fresh += b.len == 27 && b.payload[0] == k && b.payload[26] == k;
+		}
+		REG(C7_LAYER2_STATUS) = 0;		// chip slot 0 starts: nothing for us there
+		tick(false);
+		CHECK((REG(C7_LAYER2_TXRX_CTRL) & 0x8000u) == 0);
+		count_kind(DMR_EV_SLOT_TICK, NULL);
+	}
+	CHECK(bursts == 11);
+	CHECK(fresh == 11);	// every burst's own voice, never the RAM's old bytes
+	if (fresh != 11) {
+		printf("  voice RAM call: %d of %d bursts carried their own voice (the flag on the wrong slot?)\n", fresh,
+		       bursts);
+	}
+}
+
 // LAYER2_BS_MODE survives a chip reset (modem-hrc7000.md 2.9): the power-on set-up writes it back to its reset value
 static void test_bs_mode_cleared(void)
 {
@@ -1039,6 +1081,7 @@ int main(void)
 	test_pure();
 	test_rx();
 	test_rx_slot_arg();
+	test_rx_voice_ram_call();
 	test_bs_mode_cleared();
 	test_rx_resync();
 	test_cc_scan();

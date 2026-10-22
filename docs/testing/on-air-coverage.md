@@ -20,6 +20,7 @@ run; **none** = no automated test. Last run:
 | Feature | Test | Status | Notes |
 |---|---|---|---|
 | DMR group call receive, voice to the speaker | `test_dmr_rx`, `test_dmr_voice` | on air | every burst and frame counted |
+| DMR audio both ways (decoded level, frames not repeated, the radio's own over decoded) | `test_dmr_audio_smoke` | not run | added 2026-10-22 after the DM-1801 Pro played every call silent with every counter clean |
 | DMR late entry | `test_dmr_call_features::test_late_entry` | on air | |
 | DMR private calls in | `test_dmr_call_features` | on air | to us played, to another ID not |
 | DMR transmit (voice call) | `test_dmr_tx::test_dmr_tx_off_air` | on air | content strict; waveform checks not judged while the SDR clips (8 % at gain 0) |

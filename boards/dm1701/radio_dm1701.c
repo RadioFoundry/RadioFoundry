@@ -521,8 +521,10 @@ static void speaker_apply(void)
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
 	bool on = (fm || pcm) && !volume_zero;
+	// The FM feed-through also gates the FM audio on the I2S stream that APRS receive reads (hardware-dm1701.md
+	// 21.3.1), so it follows the core's request, not the knob: at volume zero only the amp is off
+	count(hrc6000_fm_audio(&r.modem, fm));	// FM feed-through only for FM; PCM comes from the codec DAC
 	if (on) {
-		count(hrc6000_fm_audio(&r.modem, fm));	// FM feed-through only for FM; PCM comes from the codec DAC
 		if (pcm) {
 			pcm_codec_on();
 		}
@@ -532,7 +534,6 @@ static void speaker_apply(void)
 	} else {
 		PIN_WRITE(PIN_SPK_MUTE, true);
 		PIN_WRITE(PIN_AMP_EN, false);
-		count(hrc6000_fm_audio(&r.modem, false));
 	}
 	if (locked) {
 		xSemaphoreGive(speaker_lock);
@@ -836,7 +837,9 @@ static void status(radio_status_t *st)
 // Soft volume (hardware-dm1701.md 11.2, 17): the knob's 0..100 % maps linearly to -31..+31 dB of HR_C6000 RX gain
 static void volume(uint8_t percent)
 {
-	int db = (int)percent * 62 / 100 - 31;
+	// At the bottom the amp is off (speaker_apply), so the gain stays at unity: the I2S copy of the FM audio that
+	// APRS receive reads is scaled by it too
+	int db = percent == 0 ? 0 : (int)percent * 62 / 100 - 31;
 	count(hrc6000_set_rx_gain(&r.modem, (int8_t)db));
 	if ((percent == 0) != volume_zero) {
 		volume_zero = percent == 0;

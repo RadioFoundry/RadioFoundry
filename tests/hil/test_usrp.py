@@ -103,6 +103,7 @@ def test_usrp_fm_rx(radio, pytestconfig):
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_usrp_dmr_rx(radio, sdr_bench, pytestconfig):
     if not pytestconfig.getoption("--allow-usb-switch"):
         skip("opt_in", "needs --allow-usb-switch")
@@ -136,6 +137,7 @@ def test_usrp_dmr_rx(radio, sdr_bench, pytestconfig):
 @pytest.mark.usb_switch
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_usrp_fm_tx(radio, sdr_bench, pytestconfig):
     if not pytestconfig.getoption("--allow-usb-switch"):
         skip("opt_in", "needs --allow-usb-switch")

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Debug link framing and dispatch (see debuglink_proto.h)
-#include "debuglink/debuglink_proto.h"
+// The host link's framing and dispatch (see dl_frame.h)
+#include "debuglink/dl_frame.h"
 
 enum { S_SOF1, S_SOF2, S_CMD, S_SEQ, S_LEN0, S_LEN1, S_DATA, S_CRC0, S_CRC1 };
 
@@ -21,6 +21,7 @@ void dl_parser_init(dl_parser_t *p)
 	p->state = S_SOF1;
 	p->len = p->got = 0;
 	p->frames = p->bad_crc = p->too_long = p->timeouts = 0;
+	p->reply_cap = DL_REPLY_MAX;
 }
 
 static void reset(dl_parser_t *p)
@@ -131,13 +132,13 @@ size_t dl_parser_feed(dl_parser_t *p, const uint8_t *buf, size_t len, uint32_t n
 				send_error(p, DL_ST_BAD_CRC, write, reply_buf);
 			} else {
 				p->frames++;
-				size_t n = handler(p->cmd, p->req, p->len, reply_buf + DL_HDR, DL_REPLY_MAX);
+				size_t n = handler(p->cmd, p->req, p->len, reply_buf + DL_HDR, p->reply_cap);
 				if (n == 0) {
 					reply_buf[DL_HDR] = DL_ST_UNKNOWN_CMD;
 					n = 1;
 				}
-				if (n > DL_REPLY_MAX) {
-					n = DL_REPLY_MAX;
+				if (n > p->reply_cap) {
+					n = p->reply_cap;
 				}
 				write(reply_buf, dl_frame(reply_buf, (uint8_t)(p->cmd | DL_REPLY_FLAG), p->seq, (uint16_t)n));
 			}

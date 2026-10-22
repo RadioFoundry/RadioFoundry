@@ -26,7 +26,7 @@ lib stm32_codec_call 4104
 extern hrc_codec 4096
 file platform/hrc7000/vocoder.c @hrc_codec
 
-# The debug link's STUB command jumps into the flash stub with interrupts off; ODR never resumes, so what the stub does
+# The stub entry (core/stubentry) jumps into the flash stub with interrupts off; ODR never resumes, so what the stub does
 # with the stack doesn't matter
 extern flash_stub 0
 call enter_stub @flash_stub
