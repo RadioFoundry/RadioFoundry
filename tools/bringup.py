@@ -16,9 +16,9 @@ A radio's state for a feature is resolved, never typed:
   off          the board's default build leaves the switch off: nothing to check
   required     anything else: the feature's tests must pass on the radio
 A required feature's status never understates it. The newest run record that ran it decides: pass, fail, partial
-(excused skips) or "needs re-run" (its spec or source paths differ in the tree from the hashes the record keeps). Without one,
-the board's seed record (<board>/seed.json, the evidence from before its first run) decides, marked as a seed. With
-neither the feature is "built, not yet recorded". Only a failing record shows a failure.
+(excused skips) or "needs re-run" (its spec or source paths differ in the tree from the hashes the record keeps).
+Without one, the board's seed record (<board>/seed.json, the evidence from before its first run) decides, marked as a
+seed. With neither the feature is "built, not yet recorded". Only a failing record shows a failure.
 
 Python 3.11 or later (tomllib). pytest runs on whatever Python has it (--pytest-python, default this one when it has
 pytest, else python3): the bring-up plugin (tests/hil/bringup_plugin.py) reads the JSON plan this tool writes."""

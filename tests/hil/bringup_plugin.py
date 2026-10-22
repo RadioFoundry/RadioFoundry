@@ -240,7 +240,7 @@ class Plugin:
     @pytest.hookimpl(wrapper=True, tryfirst=True)
     def pytest_runtest_makereport(self, item, call):
         """In bring-up mode, a required test's skip that its features don't excuse becomes a failure. tryfirst: it
-        wraps conftest's wrapper, which has put the kind on the report by then."""
+        wraps hil_plugin's wrapper, which has put the kind on the report by then."""
         report = yield
         bu = getattr(item.config, "_odr_bringup", None)
         nid = getattr(item, "_odr_bringup_id", None)
