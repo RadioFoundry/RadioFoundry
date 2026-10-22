@@ -52,7 +52,7 @@ APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one fo
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
-MAKE_VARS = ("PLATFORM", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS")
+MAKE_VARS = ("PLATFORM", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS", "BOARD_UNSUPPORTED")
 
 
 class RegistryError(Exception):
@@ -116,12 +116,12 @@ BOARD_SCHEMA = {
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(str), "profile": _opt(str), "sources": _opt(STR_LIST),
                    "installed": _opt(STR_LIST)}),
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
-    # tests/hil: what the health checks expect (test_health.py) and why a feature is n/a or unsupported here
-    # (tools/bringup.py, which checks the feature ids)
+    # tests/hil: what the health checks expect (test_health.py), and the features planned here but not working yet
+    # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED)
     "hil": _opt({"display": _opt(str), "features": _opt(STR_LIST), "no_features": _opt(STR_LIST),
                  "flash_jedec": _opt(STR_LIST), "calibration": _opt(bool), "battery_mv": _opt(RANGE),
                  "codec": _opt(STR_LIST)}),
-    "features": _opt(("map", {"state": _req(("n/a", "unsupported", "required")), "reason": _req(str)})),
+    "features": _opt(("map", {"state": _req(("unsupported",)), "reason": _req(str)})),
     # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
     "cps": _opt({"radio_types": _req(("list", int))}),
 }
@@ -244,6 +244,26 @@ def board_t_names(board_dir):
     return out
 
 
+UNSUPPORTED_RE = re.compile(r"^\s*BOARD_UNSUPPORTED\s*[:+]?=([^#]*)(?:#(.*))?$")
+
+
+def unsupported_reasons(config_mk):
+    """{switch: reason} from config.mk's BOARD_UNSUPPORTED lines, one switch a line with its reason in the comment
+    (BOARD_UNSUPPORTED += AM_RX\t# no air band receiver). A line with several switches gives each the reason ""."""
+    out = {}
+    try:
+        lines = open(config_mk, encoding="utf-8").read().splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        m = UNSUPPORTED_RE.match(line)
+        if m:
+            sws = m.group(1).split()
+            for s in sws:
+                out[s] = (m.group(2) or "").strip() if len(sws) == 1 else ""
+    return out
+
+
 def pin_defines(path):
     """{NAME: value} of the integer #defines in a pins.h."""
     if not os.path.isfile(path):
@@ -266,7 +286,7 @@ class Platform:
 class Board:
     """A board's TOML fields (data) and what is derived from its build files."""
 
-    def __init__(self, data, platform, mk, layout, names, pins):
+    def __init__(self, data, platform, mk, layout, names, pins, unsupported=None):
         self.data = data
         self.id = data["id"]
         self.platform = platform
@@ -275,6 +295,9 @@ class Board:
         self.app_region = layout["flash"]	# (start, end) of MEMORY FLASH in the build's LDSCRIPT
         self.source_names = names		# board_t .name: [(literal, macro)]
         self.pins = pins			# pins.h integer defines
+        # config.mk BOARD_UNSUPPORTED: {switch: reason}, in the build's order (make's value decides the set)
+        reasons = unsupported or {}
+        self.unsupported = {s: reasons.get(s, "") for s in mk.get("BOARD_UNSUPPORTED", "").split()}
         boot = mk.get("BOOT_STAGE")
         self.first_stage = None
         if boot:
@@ -468,7 +491,8 @@ def load(root=ROOT, only=None):
         if plat is None:
             raise RegistryError("boards/%s: PLATFORM %r has no platform/<p>/platform.toml" % (bid, mk.get("PLATFORM")))
         out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(bdir),
-                         pin_defines(os.path.join(bdir, "pins.h")))
+                         pin_defines(os.path.join(bdir, "pins.h")),
+                         unsupported_reasons(os.path.join(bdir, "config.mk")))
     return out
 
 
@@ -504,6 +528,10 @@ def check(root=ROOT):
 
         def bad(msg):
             problems.append("%s: %s" % (where, msg))
+        for s, why in b.unsupported.items():
+            if not why:
+                problems.append("boards/%s/config.mk: BOARD_UNSUPPORTED %s has no reason: one switch a line, "
+                                "BOARD_UNSUPPORTED += %s  # <reason>" % (bid, s, s))
         for k, p in d["docs"].items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
@@ -714,10 +742,17 @@ def self_test():
         except RegistryError:
             ok(True, "validate refuses: " + what)
     ok(lookup({"v": [{"id": "a"}, {"id": "b"}]}, "v.id") == ["a", "b"], "lookup maps over lists")
+    tmpm = tempfile.mkdtemp(prefix="odr-boards-mk-")
+    with open(os.path.join(tmpm, "config.mk"), "w", encoding="utf-8") as f:
+        f.write("# BOARD_UNSUPPORTED += NO\nBOARD_UNSUPPORTED += USB\t# no USB port\nBOARD_UNSUPPORTED += AM_RX\n"
+                "BOARD_UNSUPPORTED += X Y\t# two on a line\n")
+    ok(unsupported_reasons(os.path.join(tmpm, "config.mk")) == {"USB": "no USB port", "AM_RX": "", "X": "", "Y": ""},
+       "unsupported_reasons: one switch a line with its comment, none for a bare or shared line")
+    shutil.rmtree(tmpm)
     for bad, what in (({"hil": {"battery_mv": "5V"}}, "a [hil] value of the wrong type"),
                       ({"hil": {"no_such": 1}}, "an unknown [hil] key"),
                       ({"features": {"usb": {"state": "maybe", "reason": "x"}}}, "a [features] state"),
-                      ({"features": {"usb": {"state": "n/a"}}}, "a [features] entry without a reason"),
+                      ({"features": {"usb": {"state": "unsupported"}}}, "a [features] entry without a reason"),
                       ({"cps": {"radio_types": ["8"]}}, "a [cps] radio type that isn't a number")):
         try:
             validate(bad, {k: BOARD_SCHEMA[k] for k in ("hil", "features", "cps")}, "t")
@@ -765,6 +800,13 @@ def self_test():
         broken(re.sub(r'(?m)^gallery = ".*"$', 'gallery = "200x100"', good), "a display class the gallery lacks",
                "sim_geoms")
         broken(re.sub(r"(?m)^hold_power = .*$", "", good), "a missing stub key", "missing key")
+        mkp = os.path.join(tmp, "boards", one, "config.mk")
+        mk_good = open(mkp, encoding="utf-8").read()
+        with open(mkp, "w", encoding="utf-8") as f:
+            f.write(mk_good + "BOARD_UNSUPPORTED += SCAN\n")
+        ok(any("SCAN has no reason" in p for p in check(tmp)), "check finds a BOARD_UNSUPPORTED switch without a reason")
+        with open(mkp, "w", encoding="utf-8") as f:
+            f.write(mk_good)
         pins = os.path.join(tmp, "boards", one, "pins.h")
         if os.path.isfile(pins):
             os.remove(pins)

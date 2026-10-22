@@ -72,18 +72,3 @@ lens = [20, 20]
 # reports them (6, the shim's default)
 [cps]
 radio_types = [6]
-
-# Why each switch in config.mk's BOARD_UNSUPPORTED is n/a on this radio, by feature (tests/hil/features.toml):
-# tools/bringup.py shows the reason. "unsupported" instead marks a feature planned but not working yet
-[features]
-usb = { state = "n/a", reason = "No USB data port: the host link runs on the programming cable's UART" }
-usb_network = { state = "n/a", reason = "No USB data port for the network adapter: PPP on the host UART stands in" }
-net_usrp = { state = "n/a", reason = "USRP's 8 kHz PCM both ways needs more than the 115200 baud host port carries" }
-split_duplex = { state = "n/a", reason = "The split-duplex roles need a continuous base-station outbound that the per-burst TX path lacks" }
-sfr = { state = "n/a", reason = "Switches RX and TX every slot, which the per-burst retune hasn't been timed for" }
-aprs_rx = { state = "n/a", reason = "The radio doesn't give the core its FM receive audio as PCM (the PCM path is the DMR modem's)" }
-aprs_igate = { state = "n/a", reason = "Needs APRS receive, which needs the FM receive audio as PCM" }
-bcast_fm = { state = "n/a", reason = "The RDA5802N broadcast receiver isn't wired yet" }
-am_rx = { state = "n/a", reason = "The air band isn't wired yet" }
-audio_probe = { state = "n/a", reason = "A bench diagnostic the radio's audio path doesn't have" }
-font_xl = { state = "n/a", reason = "The 160x128 panel is too small for the large font (it is for 240 px and wider)" }

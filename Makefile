@@ -288,10 +288,10 @@ print-config:
 	@$(foreach f,$(FEATURES),echo '$(f)=$(CONFIG_$(f))';)
 print-cc:
 	@echo '$(CC)'
-# Switches the board's hardware support doesn't cover (boards/<board>/config.mk BOARD_UNSUPPORTED): ci's maximal
-# configuration leaves them off
+# Switches the board's hardware support doesn't cover (boards/<board>/config.mk BOARD_UNSUPPORTED, one a line with
+# its reason; strip drops the spaces before each comment): ci's maximal configuration leaves them off
 print-unsupported:
-	@echo '$(BOARD_UNSUPPORTED)'
+	@echo '$(strip $(BOARD_UNSUPPORTED))'
 # Switches the board can't build without (boards/<board>/config.mk BOARD_REQUIRED): ci builds no "no-" configuration
 # for them
 print-required:
