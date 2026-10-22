@@ -66,10 +66,11 @@ key_prefix = "2EDF40B5"
 # The codec where the merge puts it (docs/spec/codec-placement.md): the main table window at its stock address in
 # sector 8, the small ones in sectors 10 and 11, the code moved to the start of sector 11 and the descriptor. The
 # application has sectors 3-7, so an update leaves the codec sectors alone. Stock firmware keeps the code in sectors 6
-# and 7, so no stock version leaves it in place and odrflash merges it from the stock file
+# and 7, so no stock version leaves it in place and odrflash merges it from the stock file. stock lists the SHA-256
+# of each stock file odrflash merges the codec from (tools/odrflash/odrflash/stockfw.py PROFILES)
 [codec]
 tool = "codec_extract"
-stock = "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
+stock = ["e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"]
 
 # How the site draws the radio
 [frame]

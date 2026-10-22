@@ -62,18 +62,39 @@ class Board:
         # odr_<board>_install.bin); None: the application starts at app_base
         self.first_stage = (fs[0], bytes.fromhex(fs[1])) if fs else None
         c = dict(e["codec"])
+        self.codec_layouts = {}
+        self.codec_codes = [self.codec_code] if self.codec_code is not None else []
         if c["id"] is None:
-            # a stock-file placement (STM32): the windows are where the merge puts the stock file's codec
+            # a stock-file placement (STM32): each listed stock file puts its codec where its own layout says. The board's
+            # windows are the union of them all: what the image must stay out of and what keeping the codec protects. A
+            # merge plans against the layout of the file it merges (merge_windows)
             from . import stockfw
-            prof = stockfw.PROFILES[e["codec_stock"]]
-            lay = stockfw.layout(prof)
-            c.update(id=prof["codec_profile"], windows=[(a, n) for a, n, _ in lay], sources=c["sources"] or [prof["name"]])
-            self.codec_code = lay[0][0]
+            profs = [stockfw.PROFILES[h] for h in self.codec_stock]
+            ids = {p["codec_profile"] for p in profs}
+            if len(ids) != 1:
+                raise ValueError("%s: the stock files hold different codecs %s" % (self.id, sorted(ids)))
+            wins = []
+            for h, prof in zip(self.codec_stock, profs):
+                lay = [(a, n) for a, n, _ in stockfw.layout(prof)]
+                self.codec_layouts[h] = lay
+                wins += [w for w in lay if w not in wins]
+            c.update(id=profs[0]["codec_profile"], windows=wins, sources=c["sources"] or [p["name"] for p in profs])
+            # where each file's codec code starts (its first word is the codec signature), first file first
+            self.codec_codes = [self.codec_layouts[h][0][0] for h in self.codec_stock]
+            self.codec_code = self.codec_codes[0]
         self.codec = CodecProfile(c["id"], [tuple(w) for w in c["windows"]], c["installed"], c["sources"] or [])
 
     @property
     def releasable(self):
         return self.release == "stable"
+
+    def merge_windows(self, prof=None):
+        """The windows a merge of this stock profile writes, [(addr, length)]: its own layout, never the union of every
+        stock file's. Without a profile (a codec in ODR's slot), the board's windows."""
+        if prof is None or not self.codec_layouts:
+            return list(self.codec.windows)
+        from . import stockfw
+        return [(a, n) for a, n, _ in stockfw.layout(prof)]
 
     def sector_at(self, addr):
         for s in self.sectors:

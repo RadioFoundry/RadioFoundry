@@ -514,11 +514,12 @@ def cmd_flash(args):
         warn(d.risk)
 
     codec_segs = []
+    codec_prof = None	# the stock profile whose layout the merge writes
     key = None
     if d.mode == planmod.MERGE and merged:
-        codec_segs = merged[1]
+        codec_prof, codec_segs = merged
     elif d.mode == planmod.MERGE and d.source == "saved":
-        codec_segs = codecsave.segments(*saved)
+        codec_prof, codec_segs = saved[0], codecsave.segments(*saved)
     elif d.mode == planmod.MERGE:
         if stock == "synthetic":
             stock_bytes, profiles, _, _ = stockfw.build_synthetic_stock(sim_key, random.Random(7),
@@ -534,9 +535,10 @@ def cmd_flash(args):
                 raise UsageError("the stock file holds codec %s, the image expects %s"
                                  % (prof["codec_profile"], board.codec.id))
             say("stock    %s verified (SHA-256), codec windows decrypted and checked" % prof["name"])
-        codec_segs = stockfw.codec_segments(prof, csegs)
+        codec_prof, codec_segs = prof, stockfw.codec_segments(prof, csegs)
 
-    p = planmod.make_plan(board, mf.segments(man, image), d.mode, codec_segs)
+    p = planmod.make_plan(board, mf.segments(man, image), d.mode, codec_segs,
+                          board.merge_windows(codec_prof) if codec_segs else None)
     say("")
     say("plan:")
     for line in p.describe():

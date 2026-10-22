@@ -106,8 +106,11 @@ def _check_segments(board, segments):
         raise PlanError("the image must start at the application base 0x%08X (the vector table)" % board.app_base)
 
 
-def make_plan(board, segments, mode, codec_segments=()):
-    """segments: the firmware image as [(addr, bytes)]; codec_segments: the codec as [(addr, bytes)] (merge mode)."""
+def make_plan(board, segments, mode, codec_segments=(), codec_windows=None):
+    """segments: the firmware image as [(addr, bytes)]; codec_segments: the codec as [(addr, bytes)] (merge mode);
+    codec_windows: the windows that codec fills, [(addr, length)] (board.merge_windows(profile)). A board with several
+    stock files has several layouts, so the board's own windows (their union) are what the image must avoid, and the
+    merged file's are what the codec must cover. Default: the board's windows."""
     if mode not in MODES:
         raise PlanError("unknown codec mode %r" % mode)
     codec_secs = board.codec_sectors()
@@ -133,7 +136,7 @@ def make_plan(board, segments, mode, codec_segments=()):
     if mode == KEEP and codec_segments:
         raise PlanError("codec data given in keep mode")
     if mode == MERGE:
-        for wlo, wlen in board.codec.windows:
+        for wlo, wlen in (board.codec.windows if codec_windows is None else codec_windows):
             covered = any(a <= wlo and wlo + wlen <= a + len(d) for a, d in codec_segments)
             if not covered:
                 raise PlanError("merge mode needs the whole codec window 0x%08X+0x%X" % (wlo, wlen))
