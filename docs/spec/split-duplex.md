@@ -441,6 +441,9 @@ bit, the TX RAM halves); 0 is the default there too.
 `tests/hil/test_split_duplex.py` (one radio flashed with `CONFIG_HOTSPOT_SPLIT=y`; the TX and RX tests opt-in with
 `--allow-rf --allow-service-stop`):
 
+- `test_split_capability` (no RF): the capability gate, first in the feature's checklist entry
+  (`tests/hil/features.toml`). The build has the extension and INFO offers both halves (offered bits 0 and 1). On a
+  radio that offers fewer it skips `no_hw`, which a bring-up run counts as a failure.
 - `test_split_protocol` (no RF): the suffix, INFO, SET_ROLE 2 and 0, STATUS, unknown sub-command (result 1) and
   unknown command (NAK 1), the debug link's SPLIT view.
 - `test_split_tx_half_off_air` (marker `radio_tx`): the TX half keyed 10 s at the lowest power with idle bursts, a

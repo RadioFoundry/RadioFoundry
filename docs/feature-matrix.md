@@ -29,8 +29,9 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 Taken from the test records and bring-up pages named in the last column, as of 2026-10-20. "Checked" means a person or
 a HIL test saw it work on a radio, on air where RF is involved. Anything not listed as checked has no recorded check on
 that radio: it is built in and host tested, and should be treated as unverified. The DM-1701 list is from the HIL run
-of 2026-10-10 and later notes, so it can be out of date for newer features. Per radio checklists with a required test
-for every feature are planned (issue 106).
+of 2026-10-10 and later notes, so it can be out of date for newer features. Each radio's checklist, with the required
+tests for every feature, is `tools/bringup.py list --radio <id>`; recorded runs are in
+[testing/results/](testing/results/README.md). This table moves to those records (issue 106).
 
 | Radio | Checked on the radio | Built, not checked, or known not to work | Source |
 |---|---|---|---|
