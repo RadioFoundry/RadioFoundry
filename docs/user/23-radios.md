@@ -29,9 +29,10 @@ The manual names keys by the job they do. Each radio puts those jobs on its own 
 | **#** | Actions / Recent | **#** | **#** | **#** | P2 | **#** |
 | **0** to **9** | Number keys | Number keys | Number keys | Number keys | None | Number keys |
 | **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | P3 | SK1 |
-| **Talk target** | Talk target picker / scan on or off | SK2 | SK2 | SK2 | TONE/T.SEL | SK2 |
+| **Talk target** | Talk target picker / dual watch on or off | Hold **#** for the picker, hold SK2 for dual watch | SK2 | SK2 | TONE/T.SEL | SK2 |
+| **A/B** | Dual watch: the other channel / dual watch on or off | SK2 | None | None | None | A/B key |
 | **Power level** | Next power level / emergency (held 1.5 s) | Top side key | None | None | None | None |
-| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | Hold Left, hold Right | None | A/B key: next zone |
+| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | Hold Left, hold Right | None | Hold Left, hold Right |
 | **VFO** | Between the channel and the VFO / copy the channel to the VFO | None | None | None | None | VFO/MR key |
 | **Volume** | Open the volume editor. Radios without a volume knob only | None: the knob | None: the knob | None: the knob | VOL/SQL | None: the knob |
 | **PTT** | Transmit | PTT | PTT | PTT | PTT on the microphone | PTT |
@@ -49,6 +50,32 @@ On a radio without a key for a job, the menus reach it:
 | Talk target | **\***, **8** |
 | Monitor | **\***, **5** latches it |
 | Emergency | No other way on the radio yet |
+
+## Dual watch on each radio
+
+[Dual watch](11-scan.md#dual-watch) listens on two channels, A and B. Every radio built today has one receiver, so
+on every radio it is pseudo dual watch: the radio alternates between A and B. A call on one channel can be missed
+while the radio is on the other. A radio with two receivers would hear both and show a call on each at once. The UI is ready for that (`ui_svc_receivers()` above 1), but no radio reports two receivers
+yet, and the core doesn't use them.
+
+| Radio | Dual watch | Start | Switch A / B |
+|---|---|---|---|
+| DM-1701 | Pseudo, one receiver. The core's alternation between two channels of one zone is checked on air; the new dual watch (any zone, the VFO, the screens) is not yet | **\***, **7**, or hold **SK2** | **SK2** (a press), **#**, **1** |
+| MD-380 | Pseudo, one receiver. Not checked on air | **\***, **7**, or hold **SK2** | **#**, **1**, or a side key set to **A/B** |
+| DM-32UV | Pseudo, one receiver. Not checked on air (scan isn't checked on this radio yet) | **\***, **7**, or hold **SK2** | **Left** / **Right**, or a side key set to **A/B** |
+| DB25-D PRO | Pseudo, one receiver. Not checked on air. Its second BK4819 chip is a local oscillator for the receive chain, not a second receiver | Hold the **TONE/T.SEL** key, or a side key set to **Dual watch** | A side key set to **A/B** |
+| DM-1801 Pro | Pseudo, one receiver. Not checked on air | Hold the **A/B** key, **\***, **7**, or hold **SK2** | The **A/B** key (a press), **Left** / **Right** |
+
+Holding **SK2** is dual watch on every radio that has an SK2, and on the DB25-D PRO holding the tone key is. On the
+DM-1701 a press of **SK2** switches A / B. The MD-380 and DM-32UV have no key for switching A / B until you set one in
+**Settings > Keys** (**A/B** or **Dual watch**, press or hold). The DM-1801 Pro's A/B key does both: a press switches A / B, a hold starts and stops
+dual watch. On it the zones are on hold **Left** / **Right**, or in the Zones menu.
+
+A and B can be any channel of any zone, or the VFO ([how the core does it](../spec/radio-features.md#21-dual-watch)).
+Nothing about this dual watch has been checked on the air on any radio.
+
+The Anytone AT-D578UV is the radio the two-receiver case is for: its hardware has two receiver chips
+([Anytone hardware notes](../spec/hardware-anytone.md)). ODR has no board for it, so there is no support.
 
 ## Setting the volume from a PC
 
@@ -91,7 +118,7 @@ Follow [Installing](02-installing.md) with these values:
 | P1, P2 | The two front function keys | **Previous zone**, **Next zone** |
 | Top side key | The uppermost of the three side keys | **Power level**. Press: the next power level. Hold 1.5 s: emergency. A build without emergency says "Voice prompts: not in this build" on a hold |
 | SK1 | The middle side key | **Monitor**. Held with **PTT** at power-on, it starts the bootloader |
-| SK2 | The lowest side key | **Talk target**: press for the picker, hold for scan |
+| SK2 | The lowest side key | **A/B**: press to switch A / B in dual watch, hold for dual watch on or off. The talk target picker is on hold **#** |
 | **PTT** | | **PTT** |
 | Channel knob | | Channel knob |
 
@@ -150,7 +177,7 @@ Tested on one DM-1701, on air against the SDR bench where RF is involved:
 | FM | Receive and transmit at 12.5 and 25 kHz, CTCSS and DCS tones, 1750 Hz burst, roger beep |
 | DMR voice | Group and private calls both ways, late entry, talker alias, positions in calls, the basic privacy signaling (the scrambling itself hasn't been checked against another radio) |
 | DMR data | Text messages, call alert, radio check, emergency, all both ways |
-| Scan | Zone scan (including stopping for DMR calls), VFO band scan, dual watch |
+| Scan | Zone scan (including stopping for DMR calls), VFO band scan, dual watch (the core alternating two channels of one zone; [dual watch](11-scan.md#dual-watch) with any zone and the VFO is not yet) |
 | Hotspot | Voice and data calls both ways. MMDVM SFR repeats a whole call, about 210 ms after the original instead of the intended 90 ms |
 | APRS | Packets sent on FM and over DMR decode off air |
 | Power | Battery saver: it cycles when idle, and monitor and an incoming call wake it |
@@ -444,9 +471,9 @@ odrflash has flashed a radio yet; `tools/dm32_flash.py` and `stub/stubtool.py` h
 | Menu | **OK** |
 | Back | **Back** |
 | Up, Down | **Up**, **Down** |
-| Left, Right | Left and right in editors; hold for the user functions |
+| Left, Right | Left and right in editors; hold: **Previous zone**, **Next zone** |
 | VFO/MR | Channel or VFO; hold: copy the channel to the VFO |
-| A/B | Next zone |
+| A/B | Press: A / B (dual watch). Hold: dual watch on or off |
 | **\*** | **\*** |
 | **#** | **#** |
 | SK1 | **Monitor** |

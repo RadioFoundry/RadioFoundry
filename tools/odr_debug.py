@@ -86,6 +86,10 @@ WDT_OP_CLEAR_GAP, WDT_OP_TEST, WDT_OP_LOAD = range(3)
 WDT_TESTS = {"starve": 1, "spin": 2, "irq-off": 3}
 WDT_TOKEN = 0x474F4457              # 'WDOG'
 WDT_LEAVE = 0xFFFFFFFF              # load: keep RST_LOAD
+RX2 = 0x1E                          # the second receiver's SoC: info, update bridge, restart (docs/spec/debuglink.md 3.22)
+RX2_OP_INFO, RX2_OP_BRIDGE, RX2_OP_RESTART = range(3)
+RX2_TOKEN = 0x47445242              # 'BRDG'
+RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart"}
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
 SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
@@ -164,7 +168,7 @@ OP_VOICE_TEST = 33
 VOLUME_KNOB = 0xFF
 OP_PPP = 28
 ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
-SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6}
+SCAN_CMDS = {"stop": 0, "zone": 1, "vfo": 2, "dual": 3, "cancel": 4, "nuisance": 5, "toggle": 6, "select": 7}
 BEEPS = {"key": 1, "error": 2, "tx_permit": 3, "tx_deny": 4, "call_end": 5, "tot_warn": 6, "battery_low": 7,
          "battery_crit": 8, "scan_hold": 9}
 VIBES = {"message": 1, "call": 2, "emergency": 3}
@@ -173,7 +177,7 @@ SETTINGS = {"tot_s": 1, "tot_warn_s": 2, "bcl": 3, "roger_beep": 4, "tx_inhibit"
             "key_beep": 12, "vox": 13, "vox_level": 14, "vox_tail_ms": 15, "rx_save": 16, "rx_save_idle_s": 17,
             "battery_off_s": 18, "scan_beep": 19, "reply_s": 20, "roam_rssi_dbm": 21, "roam_hyst_db": 22,
             "roam_probe": 23, "roam_check_s": 24, "roam_beacon_s": 25, "roam_beacon_len_s": 26, "roam_survey": 27,
-            "rpt_beacon": 28, "mic_gain": 29, "enc_options": 31}
+            "rpt_beacon": 28, "mic_gain": 29, "dual_delay_ms": 30, "enc_options": 31}
 
 
 class DebugLinkError(Exception):
@@ -540,6 +544,19 @@ class DebugLink:
         """HR_C7000: re-arm the watchdog with raw loads, then starve it (the bench measurement of its clock)."""
         self.request(WATCHDOG, struct.pack("<BIIII", WDT_OP_LOAD, hi, lo, rst, WDT_TOKEN))
 
+    def rx2_info(self):
+        """The second receiver's SoC: a set of RX2_FLAGS names (empty on a radio with one SoC)."""
+        flags = self.request(RX2, bytes([RX2_OP_INFO]))[1][0]
+        return {name for bit, name in RX2_FLAGS.items() if flags & bit}
+
+    def rx2_bridge(self):
+        """Hand the cable to the second SoC: about 100 ms after the reply, the port carries its first stage's handshake
+        (stub/stubtool.py --board gd88b). The radio restarts once the host has been quiet for a while."""
+        self.request(RX2, struct.pack("<BI", RX2_OP_BRIDGE, RX2_TOKEN))
+
+    def rx2_restart(self):
+        self.request(RX2, struct.pack("<BI", RX2_OP_RESTART, RX2_TOKEN))
+
     def version(self):
         return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
 
@@ -746,9 +763,15 @@ class DebugLink:
         self.radio(OP_USB_NET_SETTINGS, struct.pack("<BI", flags, ip))
 
     def scan(self, cmd, pos=None):
-        """Scan: stop | zone | vfo | dual (pos = the second channel) | cancel | nuisance | toggle."""
+        """Scan: stop | zone | vfo | dual (pos = the second channel) | cancel | nuisance | toggle | select (pos = 0 A,
+        1 B: the dual watch channel that position, zone and VFO requests then change)."""
         c = SCAN_CMDS[cmd] if isinstance(cmd, str) else cmd
-        self.radio(OP_SCAN, bytes([c]) + (struct.pack("<H", pos) if c == SCAN_CMDS["dual"] else b""))
+        if c == SCAN_CMDS["dual"]:
+            self.radio(OP_SCAN, bytes([c]) + struct.pack("<H", pos))
+        elif c == SCAN_CMDS["select"]:
+            self.radio(OP_SCAN, bytes([c, pos]))
+        else:
+            self.radio(OP_SCAN, bytes([c]))
 
     def scan_vfo(self, lo_hz, hi_hz):
         """Band scan of the VFO from lo to hi in its step."""
@@ -1144,8 +1167,13 @@ def cmd_radio(link, a):
         link.dmr_target_clear()
     elif op == "privacy":             # privacy off | moto KEY | anytone KEY
         link.dmr_privacy(args[0], int(args[1], 0) if len(args) > 1 else 0)
-    elif op == "scan":                # scan stop|zone|vfo|dual POS|cancel|nuisance|toggle
-        link.scan(args[0] if args else "toggle", num(1) if args[:1] == ["dual"] else None)
+    elif op == "scan":                # scan stop|zone|vfo|dual POS|cancel|nuisance|toggle|select a|b
+        if args[:1] == ["select"]:
+            if len(args) < 2 or args[1].lower() not in ("a", "b"):
+                raise SystemExit("scan select a|b")
+            link.scan("select", "ab".index(args[1].lower()))
+        else:
+            link.scan(args[0] if args else "toggle", num(1) if args[:1] == ["dual"] else None)
     elif op == "scan-vfo":            # scan-vfo LO_MHZ HI_MHZ
         link.scan_vfo(round(num(0, float) * 1e6), round(num(1, float) * 1e6))
     elif op == "beep":                # beep key|error|tx_permit|...
@@ -1706,6 +1734,9 @@ def main(argv=None):
                        "(docs/spec/watchdog.md)")
     p.add_argument("op", nargs="?", default="show", choices=["show", "clear-gap", "test", "load"])
     p.add_argument("args", nargs="*")
+    p = sub.add_parser("rx2", help="the second receiver's SoC: info, restart (the update bridge is stubtool's, "
+                       "docs/spec/debuglink.md 3.22)")
+    p.add_argument("op", nargs="?", default="info", choices=["info", "restart"])
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
@@ -1766,6 +1797,13 @@ def main(argv=None):
                 return cmd_watchdog(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
+            elif a.cmd == "rx2":
+                if a.op == "restart":
+                    link.rx2_restart()
+                    print("second receiver restarting")
+                else:
+                    flags = link.rx2_info()
+                    print("rx2: " + (", ".join(n for n in RX2_FLAGS.values() if n in flags) or "none"))
             elif a.cmd == "aprobe":
                 return cmd_aprobe(link, a)
             elif a.cmd == "split":

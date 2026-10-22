@@ -174,6 +174,12 @@ radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -o $@ $(RFTEST) -lm
 
+# The same without CONFIG_DUAL_WATCH: only the debug link's dual watch, two channels of one zone, ended by PTT
+TESTS   += radioFeaturesTestNoDual
+radioFeaturesTestNoDual: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(wildcard $(CORE)/usbaudio/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
+		-DCONFIG_NET_USRP=1 -DCONFIG_DUAL_WATCH=0 -o $@ $(RFTEST) -lm
+
 # The volume knob power switch read from the battery sense line (DM-1701, MD-380)
 TESTS   += powerSwitchTest
 
@@ -231,16 +237,21 @@ serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROO
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c
 
 # The VOX mic level (drivers/audio/miclevel): the boards' analog-tap scale and the level from PCM blocks
+# The second receiver's link (core/rx2): frames and both ends back to back
+TESTS   += rx2LinkTest
+rx2LinkTest: rx2LinkTest.c $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h $(ROOT)/hal/hal_rx2.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ rx2LinkTest.c $(CORE)/rx2/rx2_link.c
 TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest rx2LinkTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
 	./radioFeaturesTest
+	./radioFeaturesTestNoDual
 	./roamTest
 	./radioAmTest
 	./bcastTest
@@ -248,6 +259,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest roamTest radioAm
 	./quadratureTest
 	./serialmicTest
 	./miclevelTest
+	./rx2LinkTest
 .PHONY: run-core
 
 # The read-only codeplug (open-firmware layout and built-in channels) and the DM-1701 calibration reader, on fake flash images
@@ -377,7 +389,7 @@ gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 # the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
-UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/radio/tones.c \
+UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c \
            sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
@@ -656,6 +668,18 @@ run: run-watchdog
 run-watchdog: watchdogTest
 	./watchdogTest
 .PHONY: run-watchdog
+
+# DL_CMD_RX2, the second receiver's SoC on the debug link (core/debuglink/debuglink_rx2.c): the board, clock, radio
+# view and log are faked; watchdog_stub/ holds the stand-in FreeRTOS headers
+RX2DL   := debuglinkRx2Test.c $(CORE)/debuglink/debuglink_rx2.c
+TESTS   += debuglinkRx2Test
+debuglinkRx2Test: $(RX2DL) $(ROOT)/hal/hal_rx2.h $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -o $@ $(RX2DL)
+
+run: run-debuglinkRx2
+run-debuglinkRx2: debuglinkRx2Test
+	./debuglinkRx2Test
+.PHONY: run-debuglinkRx2
 
 # The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
 TESTS   += f4stubTest

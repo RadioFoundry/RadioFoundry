@@ -30,8 +30,12 @@ Pass criteria:
   scan_skipped=0.
 - test_vfo_scan: (FM VFO) SCAN_VFO over the VFO frequency + 0..10 steps: rx_hz takes 3+ values, all inside the range,
   within 4 s; CANCEL: the starting frequency again.
-- test_dual_watch: (zone of 2+ channels) dual watch with the next position: zone_pos alternates between exactly the
-  two positions; CANCEL: back to the start.
+- test_dual_watch: (zone of 2+ channels) dual watch with the next position: dual.a / dual.b are the two, dual.sel=a;
+  zone_pos alternates between exactly the two positions and dual.at between a and b; CANCEL: back to the start.
+- test_dual_watch_debug_link: (zone of 3+ channels, a build with dual.stops) dual watch with the next position; SCAN
+  select b: dual.sel=b within 1 s; ZONE_POS +2: the watch again within 3 s with dual.b the new position, dual.a
+  unchanged, dual.sel=b; SCAN stop: scan=off within 1 s, still off 2 s later (the UI didn't start it again), and
+  zone_pos the new B.
 - test_tx_inhibit (radio_tx): set.tx_inhibit=1, PTT: tx_deny=inhibit, the state never shows tx; input.ptt_downs
   counts the press and the debug log has "input: PTT down (host".
 - test_tot_warning (radio_tx): tot_s 6, tot_warn_s 3: tot_warning=1 between 2.5 and 4.5 s after key-up, then
@@ -296,19 +300,58 @@ def test_vfo_scan(radio):
 def test_dual_watch(radio):
     need_scan(radio)
     size = on_channel(radio, 2)
-    a = as_int(radio.core()["zone_pos"], 0)
+    core = radio.core()
+    a = as_int(core["zone_pos"], 0)
     b = (a + 1) % size
+    zone = core.get("zone_index")
     radio.link.scan("dual", b)
     try:
-        wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+        f = wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+        if "dual.a" in f:       # the debug link's dual watch fields: the pair and the selected one (A)
+            assert (f["dual.a"], f["dual.b"], f["dual.sel"]) == (f"{zone}:{a}", f"{zone}:{b}", "a"), f
         seen, f = collect(radio, "zone_pos", 3.0)
         print("positions:", seen, "phase:", f.get("scan_phase"))
         assert set(seen) <= {str(a), str(b)}, seen
         assert len(set(seen)) == 2 or f.get("scan_phase") in ("probe", "hold", "resume"), (seen, f)
+        if "dual.at" in f:      # where the receiver is: A or B, never neither
+            ats, _ = collect(radio, "dual.at", 2.0, sections=("features",))
+            print("receiver on:", ats)
+            assert set(ats) <= {"a", "b"}, ats
     finally:
         scan_off(radio)
     radio.wait_for(lambda v: v.get("zone_pos") == str(a), 1.0, what="back on the first channel")
 
+
+
+def test_dual_watch_debug_link(radio):
+    """The debug link during dual watch: select B, a position then changes B, and a scan stop is the user's (the UI
+    doesn't start the watch again)."""
+    need_scan(radio)
+    size = on_channel(radio, 3)
+    if "dual.stops" not in features(radio) or features(radio).get("dual.built") != "1":
+        pytest.skip("built without CONFIG_DUAL_WATCH, or a build before dual.stops")
+    zone = radio.core().get("zone_index")
+    a = as_int(radio.core()["zone_pos"], 0)
+    b, c = (a + 1) % size, (a + 2) % size
+    radio.link.scan("dual", b)
+    try:
+        wait_features(radio, lambda v: v.get("scan") == "dual", 1.0, "scan=dual")
+        radio.link.scan("select", 1)
+        wait_features(radio, lambda v: v.get("dual.sel") == "b", 1.0, "B selected")
+        radio.link.zone_pos(c)
+        f = wait_features(radio, lambda v: v.get("scan") == "dual" and v.get("dual.b") == f"{zone}:{c}", 3.0,
+                          "the watch again with the new B")
+        assert (f["dual.a"], f["dual.sel"]) == (f"{zone}:{a}", "b"), f
+        radio.link.scan("stop")
+        wait_features(radio, lambda v: v.get("scan") == "off", 1.0, "scan off")
+        time.sleep(2.0)     # the UI would have started it again by now
+        f = features(radio)
+        assert f.get("scan") == "off", f
+        assert radio.core().get("zone_pos") == str(c), "the stop stays on the selected channel"
+    finally:
+        if features(radio).get("scan") != "off":
+            scan_off(radio)
+    radio.link.zone_pos(a)
 
 # ── the radio transmits (FM VFO, lowest power) ─────────────────────────────
 

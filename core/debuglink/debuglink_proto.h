@@ -31,7 +31,20 @@ enum {
 	DL_CMD_CRASH		= 0x1B,	// the crash log: clear, crash on purpose (CONFIG_CRASH_LOG; debuglink_crash.c, 3.19)
 	DL_CMD_CODEPLUG		= 0x1C,	// the fast codeplug protocol (CONFIG_CPS_FAST; core/cps/cps_fast.c, 3.20, cps-fast.md)
 	DL_CMD_WATCHDOG		= 0x1D,	// the hardware watchdog's bench tests (CONFIG_WATCHDOG; debuglink_watchdog.c, 3.21)
+	DL_CMD_RX2		= 0x1E,	// the second receiver's SoC: state, the update bridge, restart (debuglink_rx2.c, 3.22)
 };
+
+// DL_CMD_RX2 operations (first payload byte; docs/spec/debuglink.md 3.22). The token is u32 little endian
+enum {
+	DL_RX2_OP_INFO = 0,	// -> status, flags u8 (DL_RX2_F_*)
+	DL_RX2_OP_BRIDGE = 1,	// token u32 -> status; after the reply the radio bridges the cable to the second SoC
+	DL_RX2_OP_RESTART = 2,	// token u32 -> status: restart the second SoC
+};
+#define DL_RX2_F_PRESENT	0x01u	// the board has a second receiver
+#define DL_RX2_F_UP		0x02u	// it answers
+#define DL_RX2_F_BRIDGE		0x04u	// the update bridge is there
+#define DL_RX2_F_RESTART	0x08u	// so is the restart
+#define DL_RX2_TOKEN		0x47445242u	// 'BRDG
 
 // DL_CMD_WATCHDOG operations (first payload byte; docs/spec/debuglink.md 3.21). u32 little endian. Every test ends in
 // a watchdog reset, and the reset is what it checks

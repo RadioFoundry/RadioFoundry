@@ -10,6 +10,7 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | Spec | Covers |
 |---|---|
 | [radio-features.md](radio-features.md) | Scan, the FM transmit extras (tones, burst, roger beep), beeps, battery and power management |
+| [rx2-link.md](rx2-link.md) | The link to a second receiver on another SoC (GD-88): frames, messages, timing |
 | [ui.md](ui.md) | The user interface as built: screens, keys, the drawing layer ([docs/ux](../ux/) has the design) |
 | [dmr-voice.md](dmr-voice.md) | DMR voice calls |
 | [dmr-data.md](dmr-data.md) | DMR data services: text messages, ARS, LRRP, call alert, radio check |
