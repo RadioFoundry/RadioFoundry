@@ -47,6 +47,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEVELS = ("bring-up", "testing", "supported")
 RELEASES = ("stable", "testing")
 KINDS = ("handheld", "mobile")
+# [hardware] clock rtc: a real-time clock that keeps time through power-off (a backup supply), one that keeps it only
+# while the radio has power, none, or not known yet
+CLOCKS = ("backed", "unbacked", "none", "unknown")
 # The flashing routes, named by protocol (odrflash cli.py, site/static/js/flasher): the cable they need, and the
 # board.toml keys a board on the route must have
 # web: the web flasher's backend for the family (site/static/js/flasher/backends.js); update_mode: the vendor loader's
@@ -122,7 +125,9 @@ BOARD_SCHEMA = {
     # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
     # BOARD_UNSUPPORTED because no source says yet whether the radio has the part: switch -> what is missing
     "hardware": _req({"cpu": _opt(str), "bands": _req(str), "power": _req(str), "display": _req(str),
-                      "gallery": _req(str), "unconfirmed": _opt(("map", str))}),
+                      "gallery": _req(str), "unconfirmed": _opt(("map", str)),
+                      # the real-time clock (CLOCKS) and the source of that fact; no driver uses it yet
+                      "clock": _req({"rtc": _req(CLOCKS), "note": _req(str)})}),
     # summary: what works, then at most one short clause of what is open; plain text, no links (the README, the
     # user manual's radio table and the site show it)
     "status": _req({"level": _req(LEVELS), "summary": _req(str), "release": _req(RELEASES)}),
@@ -985,7 +990,7 @@ def site_view(boards, root=ROOT):
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
-            "unsupported": dict(b.unsupported), "volts": b.volts})
+            "unsupported": dict(b.unsupported), "volts": b.volts, "clock": hw["clock"]["rtc"]})
     # the survey's radios without a board, planned or in progress (docs/spec/radios.md Port cells)
     rows, problems = registry_docs.survey(root, boards)
     if problems:
@@ -1122,6 +1127,15 @@ def self_test():
            "volts: a comment doesn't count")
     finally:
         shutil.rmtree(tmpv)
+
+    # [hardware] clock: an rtc outside CLOCKS fails the schema
+    clock = BOARD_SCHEMA["hardware"][0]["clock"][0]
+    try:
+        validate({"rtc": "maybe", "note": "x"}, clock, "hardware.clock")
+        ok(False, "clock: an rtc outside CLOCKS fails")
+    except RegistryError as e:
+        ok("rtc" in str(e), "clock: an rtc outside CLOCKS fails")
+    validate({"rtc": "backed", "note": "x"}, clock, "hardware.clock")
 
     # hardware switches: built, unsupported or unconfirmed, never off by default
     hw = {"VIBRATE": "a vibration motor", "NAND_STORAGE": "SPI NAND data flash"}

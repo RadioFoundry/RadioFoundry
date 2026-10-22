@@ -77,6 +77,7 @@ One-line summaries for the site and the generated tables; the facts stay in `doc
 | `bands`, `power`, `display` | Short text |
 | `gallery` | The display class (`160x128`); `check` requires the UI gallery to have it |
 | `unconfirmed` | Optional: hardware switches (`hardware` in `tests/hil/features.toml`) the board neither builds nor lists in `BOARD_UNSUPPORTED`, because no source says yet whether the radio has the part: switch to what is unknown. `check` fails on any other hardware switch that is off by default, and on an entry for a switch the board builds or lists. The feature matrix shows it as ? |
+| `clock` | `{ rtc, note }`: the real-time clock. `rtc` is `backed` (keeps time through power-off), `unbacked` (only while on), `none` or `unknown`; `note` gives the source. The feature matrix and the site show it |
 
 ### [status]
 
