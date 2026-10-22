@@ -2663,8 +2663,10 @@ void ui_crash_tick(uint32_t now_ms)
 
 // ======================= Tools =======================
 
-// Diagnostics keeps number 7 (tests/hil/test_ui.py); Roaming follows (8, or 7 without diagnostics), then APRS
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_BATTERY, T_DIAG, T_ROAM, T_APRS, T_COUNT };
+// Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
+// user guide) is the same everywhere. The one a radio may not have (Battery) is last, so no radio has a gap; a build
+// without diagnostics skips 7
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_COUNT };
 
 // A tool this build or radio doesn't have is left out of the list (a radio without a battery has no Battery page)
 static bool tool_shown(uint16_t i)
@@ -2672,15 +2674,19 @@ static bool tool_shown(uint16_t i)
 	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_has_battery());
 }
 
-// The hint names the last number ("1-9 open"), which follows the tools this radio has
+// The hint names the last number ("1-9 open"): the highest tool this radio has
 static char tools_hint[] = "1-9 open  Back";
 
 static uint16_t tools_count(void)
 {
-	uint16_t n = 0;
-	for (uint16_t i = 0; i < T_COUNT; i++)
-		n += tool_shown(i);
-	tools_hint[2] = (char)('0' + (n < 9 ? n : 9));
+	uint16_t n = 0, last = 0;
+	for (uint16_t i = 0; i < T_COUNT; i++) {
+		if (tool_shown(i)) {
+			n++;
+			last = (uint16_t)(i + 1u);
+		}
+	}
+	tools_hint[2] = (char)('0' + (last < 9 ? last : 9));
 	return n;
 }
 
@@ -2697,12 +2703,12 @@ static uint16_t tools_row(uint16_t row)
 static void tools_item(uint16_t row, ui_item_t *it)
 {
 	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single-freq repeater",
-					     "Battery", "Diagnostics", "Roaming", "APRS" };
+					     "Roaming", "Diagnostics", "APRS", "Battery" };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
 	strcpy(it->label, names[i]);
-	item_num(it, (uint16_t)(row + 1u));
+	item_num(it, (uint16_t)(i + 1u));	// the tool's own number, not its row (see the enum)
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	switch (i) {

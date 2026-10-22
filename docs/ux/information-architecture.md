@@ -115,6 +115,10 @@ Large-text mode (accessibility, or chosen by the user) shows only the status str
 | 6 | **Tools** | Scan, Position (GPS), Hotspot, USB network, Single frequency repeater, ID lookup, Signal meter, DTMF, APRS, Registration (ARS), Battery |
 | 7 | **Settings** | Grouped by intent (below), with search |
 
+Each Tools item keeps its number on every radio and build, so a key path such as `SELECT`, `6`, `7` (Diagnostics) is
+the same everywhere. An item a radio may not have goes last (Battery, 9, on a mobile), so commonly used items have no
+gaps.
+
 Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools the "radio" side, Settings the preferences. Nothing operational lives only in Settings (P1).
 
 ---
