@@ -14,7 +14,7 @@ offers a serial download, isn't reachable, so without the stage there would be n
 | Address | Content |
 |---|---|
 | 0x0300C000 | The stage, one 4 KB sector |
-| 0x0300D000 | The application (`boards/db25d/db25d.ld`) |
+| 0x0300D000 | The application (`boards/db25d/fm_only.ld`) |
 
 What the stage does at every power-on:
 

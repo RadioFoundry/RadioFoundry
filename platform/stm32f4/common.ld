@@ -1,31 +1,19 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The OpenDigitalRadio Authors */
-/* TYT MD-380 / MD-390 / RT3, STM32F405VGT6, application behind the 48 KB Tytera bootloader (docs/spec/hardware-md380.md
- * 1.3, 13). The bootloader starts the application at 0x0800C000 like the DM-1701's, so the vector table, stack rule and
- * start-up are the same.
+/* STM32F4 application layout, INCLUDEd by each board's memory.ld after its MEMORY (FLASH, RAM, CCMRAM). The image
+ * starts with the vector table at ORIGIN(FLASH) (board.mk APP_BASE, where the bootloader starts the application).
  *
- * Codec (docs/spec/codec-placement.md, "STM32 radios"): the merge on the user's machine puts the stock D002.032
- * codec's main table window at its stock address 0x0808FC64..0x0809AC5B (sector 8), its four small table windows at
- * theirs (sectors 10 and 11), its code at 0x080E0000 (sector 11), and the descriptor that says where at 0x080FFF80.
- * The code runs in place.
- *
- * Whole flash sectors are kept free of our code, so the flashing tool can update the firmware without erasing the
- * codec: the application gets sectors 3-7 (0x0800C000..0x0807FFFF, 464 KB in one piece) and never links into sectors
- * 8-11 (sector 9 holds nothing yet). The flashing tools read the application region from this
- * script (tools/boards.py); it and the profile in tools/odrflash/odrflash/stockfw.py change together. */
+ * The board's FLASH region ends where the codec's first flash sector starts (docs/spec/codec-placement.md, "STM32
+ * radios"): whole sectors stay free of our code, so the flashing tool can update the firmware without erasing the
+ * codec. The flashing tools read the region from memory.ld (tools/boards.py). */
 
 ENTRY(Reset_Handler)
 
-_estack = 0x2001FFFC;		/* hardware-dm1701.md 18 (1): the AnyRoad loader rejects SP = top of RAM; kept here (?) */
+/* The initial stack pointer: the top of the board's RAM region. The DM-1701's bootloader rejects SP = top of RAM
+ * (hardware-dm1701.md 18 (1)), so the regions end 4 bytes short */
+_estack = ORIGIN(RAM) + LENGTH(RAM);
 _Min_Heap_Size = 0x1000;
 _Min_Stack_Size = 0x800;	/* main stack: start-up and interrupts */
-
-MEMORY
-{
-	FLASH   (rx)  : ORIGIN = 0x0800C000, LENGTH = 0x08080000 - 0x0800C000	/* sectors 3-7 */
-	RAM     (xrw) : ORIGIN = 0x20000000, LENGTH = 128K - 4
-	CCMRAM  (rw)  : ORIGIN = 0x10000000, LENGTH = 64K
-}
 
 SECTIONS
 {
@@ -71,7 +59,8 @@ SECTIONS
 	} >RAM
 
 	/* CCM: CPU only (no DMA can reach it). .ccmbss (ODR_CPU_RAM) is zeroed before main by board.c's .preinit_array
-	 * entry, like .bss; .ccmram (ODR_CPU_RAM_NOINIT: the RTOS heap with every task stack) is left as it is */
+	 * entry, like .bss; .ccmram (ODR_CPU_RAM_NOINIT: the RTOS heap with every task stack, the codec state) is left
+	 * as it is and must be written before it's read */
 	.ccmbss (NOLOAD) : { . = ALIGN(4); _sccmbss = .; *(.ccmbss) *(.ccmbss*) . = ALIGN(4); _eccmbss = .; } >CCMRAM
 	.ccmram (NOLOAD) : { . = ALIGN(8); *(.ccmram) *(.ccmram*) . = ALIGN(4); } >CCMRAM
 
@@ -88,6 +77,6 @@ SECTIONS
 	/DISCARD/ : { libc.a(*) libm.a(*) libgcc.a(*) }
 	.ARM.attributes 0 : { *(.ARM.attributes) }
 
-	/* Belt and braces for the sector rule above: everything loaded into flash ends before codec sector 8 */
-	ASSERT(_sidata + SIZEOF(.data) <= 0x08080000, "the image reaches into codec sector 8 (0x08080000)")
+	/* Belt and braces for the sector rule above: everything loaded into flash ends before the codec's first sector */
+	ASSERT(_sidata + SIZEOF(.data) <= ORIGIN(FLASH) + LENGTH(FLASH), "the image reaches into the codec's flash sectors")
 }

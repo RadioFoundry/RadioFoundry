@@ -4,7 +4,7 @@
 
 The registry holds every fact about a radio that the build itself doesn't need: its identity, status, build options,
 flashing route, codec route and the web site's data. The tools, CI, the docs and the site read it. The build reads no
-TOML: make keeps its own facts in `board.mk`, `config.mk` and the linker script, and the registry reads those through
+TOML: make keeps its own facts in `board.mk`, `config.mk` and `memory.ld`, and the registry reads those through
 make.
 
 `tools/boards.py` loads and checks the registry. It needs Python 3.11 or later (`tomllib`); scripts find one with
@@ -18,8 +18,8 @@ Each fact is in one file. A value another file already holds is derived from it,
 |---|---|
 | `boards/<id>/board.toml` | Identity, status, build option text, CI extras, flashing family, bootloader and stub data, codec route, the site's data |
 | `platform/<p>/platform.toml` | ISA, CPU, toolchain, CI group, platform stubs, flash base, sector geometries, codec symbols |
-| `boards/<id>/board.mk` | `PLATFORM`, `LDSCRIPT`, `BOOT_*`, `BOARD_DIRS`, `BUILD_OPTIONS` and each option's `<NAME>_VALUES`, read with `make print-vars` so `config.mk` and its conditionals count |
-| `boards/<id>/*.ld` | The application region (`MEMORY FLASH`) and the codec symbols (`__codec_*`) |
+| `boards/<id>/board.mk` | `PLATFORM`, `APP_BASE` (the image address), `BOOT_*`, `BOARD_DIRS`, `BUILD_OPTIONS` and each option's `<NAME>_VALUES`, read with `make print-vars` so the board's and the platform's `config.mk` and their conditionals count. `LDSCRIPT` defaults to `memory.ld` |
+| `boards/<id>/memory.ld` | The application region (`MEMORY FLASH`, from `__app_start`) and the codec symbols (`__codec_*`). Every `*.ld` in the board directory is read for the codec symbols |
 | `boards/<id>/*.c` | The `board_t` `.name` values: the names the debug link reports |
 | `boards/<id>/pins.h` | The power latch and key pins the stub holds |
 
