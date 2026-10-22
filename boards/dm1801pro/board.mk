@@ -11,3 +11,10 @@ MCU_DEFS   := -DCODEPLUG_OPENFW_EEPROM_BASE=0x700000u -DCODEPLUG_OPENFW_FLASH_BA
 BOARD_DIRS := boards/dm1801pro drivers/rf/fd6818 drivers/rf/subaudio drivers/modem/hrc7000 drivers/display/st7567 drivers/flash/spi_nor \
 	drivers/input/keymatrix drivers/input/sharedptt drivers/cal/baofeng \
 	drivers/bcast/rda5807m drivers/bus/i2c_gpio drivers/sensor/lis3dh
+# State the core marks ODR_CPU_RAM goes to the low SRAM below the codec window (dm1801pro.ld RAM_LO; zeroed by crt0)
+MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ram_lo"'
+# The stock codec host (platform/hrc7000/vocoder.c): its profile id is dm1801pro-049
+MCU_DEFS   += -DHRC_CODEC_BOARD='"dm1801pro"'
+# The 128x64 panel is 1 bit per pixel (display_dm1801pro.c): 1 KB of frame buffer and 64 rows, not the 40 KB / 160 row
+# default
+MCU_DEFS   += -DGFX_FB_BYTES=1024u -DGFX_MAX_ROWS=64u

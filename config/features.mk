@@ -130,7 +130,9 @@ CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
 CONFIG_FONT_XL ?= n
 # anti-aliased fonts from 6x12 up (JetBrains Mono Bold, 2 bits a pixel) instead of the bitmap ones: smooth text on color
-# panels. About 5 KB more flash, 12 KB more with FONT_XL; a mono panel draws them as plain ink and gains nothing
+# panels. About 5 KB more flash, 12 KB more with FONT_XL; a mono panel draws them as plain ink and gains nothing.
+# On a 4 bpp color panel the edge grays share the 16 palette entries with the screen's colors: some font sizes or colors
+# can be slightly harder to read (docs/spec/ui.md 5)
 CONFIG_FONT_AA ?= n
 # larger text on 240 px and wider color panels: lists, labels and the status strip in a 9x18 font instead of 8x16
 # (12% larger, 24 characters a line on the DM-32 instead of 27). About 3 KB more flash (needs FONT_AA)
