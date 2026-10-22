@@ -98,6 +98,8 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
   board without its compiler is skipped with a notice.
 - Add the radio to the status table in the top-level README, to [feature-matrix.md](../feature-matrix.md) and to
   [the user manual's introduction](../user/01-introduction.md).
+- The web site lists the radio from `board.toml`: `order` places it, `[status] level` and `note` give its badge and
+  its line for visitors. If [radios.md](../spec/radios.md) has a survey row for it, the site drops that row by model.
 - Before it can be released: its `board.toml` `[flash]` and `[codec]` tables, `[status] release`, the regenerated
   `tools/odrflash/odrflash/registry.json` (`tools/boards.py json --for odrflash --out ...`) and a job in
   `release.yml` ([release.md](release.md)).

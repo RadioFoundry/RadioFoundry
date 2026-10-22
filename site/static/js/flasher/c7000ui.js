@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The flasher's steps for the HR_C7000 radios (DM-32UV, DM-1801 Pro), which install through the C7 stub over the
+// The flasher's steps for the HR_C7000 radios, which install through the C7 stub over the
 // programming cable instead of a bootloader (stub.js, c7000.js):
 //
 //   connect   choose the cable; the page finds what answers: a stub left running, ODR (which hands over to the stub, no
@@ -25,8 +25,9 @@ import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
 import { makeBundle, describeFirmware, bundleName } from "./backup.js";
 import { register } from "./backends.js";
-import { makeDb25d } from "./db25dui.js";
-import { Usmart, Iap, checkInstallImage, stockVersion } from "./db25d.js";
+import { makeStockRoutes } from "./iapui.js";
+import { Usmart, stockVersion, stockName } from "./usmart.js";
+import { Iap, checkInstallImage } from "./iap.js";
 
 // USB-serial chips found in programming cables (tools/serial_loader.py USB_SERIAL), for the port chooser
 const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
@@ -40,11 +41,16 @@ const C = () => ctx.fb().c7000;
 const boardId = () => S().radio.flash.board;
 const store = (what) => `c7000-${what}-${boardId()}`;
 
-// What the DB25-D adds (db25dui.js): the stub started through the original firmware's debug console, and the vendor
-// update mode as the way back when nothing else answers
-let db25d = null;
-const hasData = () => C().boards[boardId()].data_flash !== false;	// the SPI data flash the stub reads (the DB25-D has none)
-const stockRadio = () => !!C().boards[boardId()].stock_console;
+// What a board's radios.json flash data adds (iapui.js): stock_console, the stub started through the stock firmware's
+// debug console (usmart.js); update_mode, the vendor loader's update mode as the way back when nothing else answers
+// (iap.js)
+let routes = null;
+const flash = () => S().radio.flash;
+const hasData = () => C().boards[boardId()].data_flash !== false;	// the SPI data flash the stub reads
+const CONSOLES = { usmart: Usmart };	// flash.stock_console: the console's protocol
+const stockRadio = () => !!CONSOLES[flash().stock_console];
+const updateMode = () => flash().update_mode === "iap";
+const iap = (c) => new Iap(c.stream, { log: (l) => c.log.add(l), firstStage: flash().first_stage });
 const progSize = () => c7.totalSize(C(), boardId());
 const viaIap = () => session().how === "iap";
 // What the radio's screen shows while the stub runs: ODR's loader screen, whatever the original firmware last drew, or
@@ -53,7 +59,7 @@ const screenNow = () => ({ odr: "loader", usmart: "any" })[session().how] || "of
 
 export function init(context) {
 	ctx = context;
-	db25d = makeDb25d({ S, ctx, C, boardId, session, busy, fill: (el, ...p) => fill(el, ...p), stubImage: async () => (await stubs()).image });
+	routes = makeStockRoutes({ S, ctx, C, boardId, session, busy, iap, fill: (el, ...p) => fill(el, ...p), stubImage: async () => (await stubs()).image });
 }
 
 // Radios the page flashes this way
@@ -117,7 +123,7 @@ const mkStub = () => {
 // ---------------------------------------------------------------------------------------------------------------
 // connect: the cable, then whatever answers; ends with the stub running and the radio identified
 
-// onUpdateMode: what the task does with a DB25-D reached through the vendor update mode (null: the task can't use it)
+// onUpdateMode: what the task does with a radio reached through the vendor update mode (null: the task can't use it)
 function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	const c = session();
 	const radio = S().radio;
@@ -159,7 +165,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		if (c.forceIap && toIap) {
 			c.forceIap = false;
 			// a radio already in update mode printed its banner at power-on: remember that, so the install doesn't wait for it
-			c.iapReady = !!(await new Iap(c.stream, { log: (l) => c.log.add(l) }).probe());
+			c.iapReady = !!(await iap(c).probe());
 			return toIap();
 		}
 		await find();
@@ -183,28 +189,30 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			if (offer) return fromOdr(offer);
 			return restartOdr();
 		}
-		if (stockRadio()) return stockOrNothing();
+		if (stockRadio() || updateMode()) return stockOrNothing();
 		return powerCycle();
 	};
 
-	// A DB25-D on the cable that is not ODR: the original firmware answers its debug console (the stub goes in through
-	// it), or nothing answers (update mode, or the first stage's power-on window for an ODR that does not answer)
-	const toIap = onUpdateMode && (() => {
+	// A radio with a stock console or an update mode that is not ODR: the original firmware answers its debug console
+	// (the stub goes in through it), or nothing answers (update mode, or the first stage's power-on window for an ODR
+	// that does not answer)
+	const toIap = onUpdateMode && updateMode() && (() => {
 		c.how = "iap";
 		onUpdateMode();
 	});
 	const stockOrNothing = async () => {
-		if (await new Usmart(c.stream, { log: (l) => c.log.add(l) }).probe()) {
-			return db25d.stockFound({ show, act, onLoaded: fromStock, onAgain: () => find(), onUpdateMode: toIap });
+		const Console = CONSOLES[flash().stock_console];
+		if (Console && await new Console(c.stream, { log: (l) => c.log.add(l) }).probe()) {
+			return routes.stockFound({ show, act, onLoaded: fromStock, onAgain: () => find(), onUpdateMode: toIap });
 		}
 		// the loader's update mode answers a read-only probe: a radio whose application won't start stays in it
 		c.iapReady = false;
-		const um = await new Iap(c.stream, { log: (l) => c.log.add(l) }).probe();
+		const um = updateMode() && await iap(c).probe();
 		if (um) {
 			c.iapReady = true;
-			return db25d.alreadyUpdateMode({ show, act, onUpdateMode: toIap, onAgain: () => find() }, um.version);
+			return routes.alreadyUpdateMode({ show, act, onUpdateMode: toIap, onAgain: () => find() }, um.version);
 		}
-		db25d.nothing({ show, act, onAgain: () => find(), onPowerOn: () => powerCycle(), onUpdateMode: toIap });
+		routes.nothing({ show, act, onAgain: () => find(), onPowerOn: () => powerCycle(), onUpdateMode: toIap });
 	};
 
 	// The console started the stub: meet it as ODR's hand-over does
@@ -213,12 +221,12 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		try {
 			await sleep(300);
 			await stub.drain(300);
-			await stub.helloWithin(3000, t("flash.db25d.stock.no_answer"));
+			await stub.helloWithin(3000, t("flash.usmart.no_answer"));
 		} catch (e) {
-			return db25d.stubSilent({ show, act, onAgain: () => find(), onUpdateMode: toIap }, ctx.errorText(e));
+			return routes.stubSilent({ show, act, onAgain: () => find(), onUpdateMode: toIap }, ctx.errorText(e));
 		}
 		c.how = "usmart";
-		await ready(t("flash.db25d.stock.found_stub"));
+		await ready(t("flash.usmart.found_stub"));
 	};
 
 	const fromOdr = async (offer) => {
@@ -299,7 +307,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		const prog = progressBar();
 		show({ led: "off", screen: "off" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.rom_found"))), prog.el);
 		try {
-			// one image for every radio, at the boot ROM's address (the DB25-D's first stage takes it there too)
+			// one image for every radio, at the boot ROM's address (a first stage takes it there too)
 			const st = await stubs();
 			await stub.loadThroughRom(st.image, st.load, (d, n) => prog.set(d, n, t("flash.c7.connect.loader")));
 			c.how = "rom";
@@ -321,7 +329,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			await st.setupLed(led.red, led.green);
 			c.jedec = { progmem: await st.checkId("progmem"), q128: hasData() ? await st.checkId("q128") : null };
 			// ODR named the radio already; otherwise the bootloader's ID string does (48 KB, a few seconds). A radio
-			// whose loader has no ID string (the DB25-D) is the one the page was told
+			// whose loader has no ID string is the one the page was told
 			c.model = c.odr || !C().boards[boardId()].bootloader_id ? boardId()
 				: c7.bootloaderModel(C(), c.progmem || (await st.dump("progmem", 0, C().app_start)));
 			if (c.model && c.model !== boardId()) {
@@ -332,7 +340,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			show({ led: "wait", screen }, h("p", { class: "c7-big" }, h("b", {}, how)),
 				h("dl", { class: "kv-list" },
 					h("dt", {}, t("flash.c7.radio")), h("dd", {}, c.model ? S().radio.name : t("flash.c7.radio_unconfirmed"))),
-				h("p", {}, t({ odr: "flash.c7.connect.led_odr", usmart: "flash.db25d.stock.led" }[c.how] || "flash.c7.connect.led_rom")));
+				h("p", {}, t({ odr: "flash.c7.connect.led_odr", usmart: "flash.usmart.led" }[c.how] || "flash.c7.connect.led_rom")));
 			await sleep(S().fakeC7 ? 400 : 1500);
 			onReady();
 		} catch (e) {
@@ -385,7 +393,8 @@ function backupOptions(want, { firstInstall = false, text = (k) => t(`flash.c7.b
 		} }),
 		h("span", {}, h("b", {}, title), h("span", { class: "why" }, why)), h("span"));
 	if (!hasData()) {
-		return h("div", {}, opt("progmem", t("flash.db25d.check.opt_progmem"), [t("flash.db25d.check.opt_progmem_text"), " ", estimate(0x200000, DB25D_READ_RATE)], firstInstall));
+		return h("div", {}, opt("progmem", t("flash.c7.check.opt_progmem_whole", { size: `${progSize() / 0x100000} MB` }),
+			[t("flash.c7.check.opt_progmem_whole_text"), " ", estimate(progSize(), flash().read_rate || undefined)], firstInstall));
 	}
 	const el = h("div", {},
 		opt("progmem", t("flash.c7.check.opt_progmem"), [text("progmem"), " ", estimate(0xA0000)], firstInstall),
@@ -394,10 +403,6 @@ function backupOptions(want, { firstInstall = false, text = (k) => t(`flash.c7.b
 	box.cal.checked = want.cal || want.q128;
 	return el;
 }
-
-// The DB25-D's 2 MB program memory, read from a radio that runs ODR: about 45 s (radio, 2026-10-17). Blank sectors and
-// LZ4 make the memory read faster than the wire's 9 KB/s
-const DB25D_READ_RATE = 46000;
 
 function estimate(bytes, fallback = 9000) {
 	const rate = session().rate || fallback;	// bytes on the wire per second at 115200 baud, after LZ4 and blank sectors
@@ -428,7 +433,7 @@ export function checkView() {
 		text: (k) => t(k === "q128" ? "flash.c7.check.opt_q128_text" : firstInstall ? "flash.c7.check.opt_progmem_first" : "flash.c7.check.opt_progmem_text") });
 	const run = button(t("flash.c7.check.run"), () => go(), { primary: true });
 	out.append(panel(t("flash.c7.check.title"), h("div", { class: "c7-grid" },
-		h("div", {}, h("p", {}, t(viaIap() ? "flash.db25d.check.lead_iap" : firstInstall ? "flash.c7.check.lead_first" : "flash.c7.check.lead_update")),
+		h("div", {}, h("p", {}, t(viaIap() ? "flash.iap.check_lead" : firstInstall ? "flash.c7.check.lead_first" : "flash.c7.check.lead_update")),
 			firstInstall && !viaIap() && !S().radio.flash.stock_download ? h("div", { class: "notice action" }, h("p", {}, h("b", {}, t("flash.c7.check.only_copy"))), h("p", {}, t("flash.c7.check.only_copy_text"))) : null,
 			options,
 			checks, prog.el, status), top.el)));
@@ -528,14 +533,15 @@ export function checkView() {
 		forward(button(t("flash.nav.to_write"), () => ctx.next(), { primary: true, disabled: !d }));
 	}
 
-	// Why no codec was found, and what to select instead. A stock DB25-D whose codec is a build without a recipe (020)
-	// is named, so the message says that the backup is fine and only the codec needs a file
+	// Why no codec was found, and what to select instead. A stock radio whose codec is a build without a recipe is
+	// named, so the message says that the backup is fine and only the codec needs a file
 	function codecActionText() {
 		if (!stockRadio()) return t("flash.c7.codec.action_text");
-		if (!c.analysis?.otherCodec) return t("flash.db25d.codec.action_text");
-		// named as the update-mode step names it (db25dui.js); the image's own string carries another batch code
+		const file = { model: S().radio.model, codec_version: flash().codec_version || "" };
+		if (!c.analysis?.otherCodec) return t("flash.usmart.codec.action_text", file);
+		// named as flash.stock_versions name it (iapui.js too); the image's own string carries another batch code
 		const v = c.progmem && stockVersion(c.progmem);
-		return t("flash.db25d.codec.action_other", { version: v ? `909E.DBB.EARSAB.${v.slice(-3)}` : t("flash.db25d.codec.version_unknown") });
+		return t("flash.usmart.codec.action_other", { ...file, version: v ? stockName(flash(), v.slice(-3)) : t("flash.usmart.codec.version_unknown") });
 	}
 
 	// Coming back to this step: what was read is still here
@@ -565,18 +571,18 @@ async function saveBundle() {
 	const fwNow = c.odr ? { kind: "odr", git: c.odr.git, codec: c.odr.codec, features: c.odr.features } : { kind: c.analysis?.firmware === "stock" ? "stock" : "unknown",
 		version: c.analysis?.codec ? `with the ${String(c.analysis.codec.profile.tag).padStart(3, "0")} codec` : null };
 	const meta = { radio: { board: S().radio.id, name: S().radio.name, model: S().radio.model, chip: null, jedec: c.jedec }, firmware_now: fwNow, contents: parts.map((p) => p.what).join("+"),
-		notes: [t(hasData() ? "flash.c7.bundle_note" : "flash.db25d.bundle_note")] };
+		notes: [t(hasData() ? "flash.c7.bundle_note" : "flash.c7.bundle_note_progmem")] };
 	const bytes = await makeBundle(meta, parts, { git: S().data.site.git, url: location.origin });
 	c.backupName = bundleName(meta);
 	download(c.backupName, bytes, "application/zip");
 	c.backupSaved = true;
 }
 
-// What the check step calls the firmware found. A DB25-D read through its debug console may run a stock version this
+// What the check step calls the firmware found. A radio read through its debug console may run a stock version this
 // page has no codec recipe for, and one reached only through update mode was not read at all.
 function fwName(c) {
-	if (c.how === "iap" && !c.progmem) return t("flash.db25d.check.is_update_mode");
-	if (stockRadio() && c.analysis.firmware === "unknown") return t("flash.db25d.check.is_stock_other");
+	if (c.how === "iap" && !c.progmem) return t("flash.iap.check_is");
+	if (stockRadio() && c.analysis.firmware === "unknown") return t("flash.usmart.check_is_other");
 	return t(`flash.c7.check.is_${c.analysis.firmware}`);
 }
 
@@ -605,7 +611,7 @@ function sectorMap(c) {
 }
 
 export function writeView() {
-	if (viaIap()) return db25d.iapWriteView();
+	if (viaIap()) return routes.iapWriteView();
 	const c = session();
 	const fw = S().firmware;
 	const d = c.decision;
@@ -615,8 +621,8 @@ export function writeView() {
 	const status = h("div");
 	let start, data;
 	try {
-		// the DB25-D's image starts with its first stage at 0xC000; the application alone would be written over it
-		if (stockRadio()) checkInstallImage(fw.image);
+		// an image that starts with a first stage: the application alone would be written over it
+		if (flash().first_stage) checkInstallImage(fw.image, flash().first_stage);
 		[start, data] = c7.target(C(), boardId(), fw.image, d.mode === "write" ? d.slot : null);
 	} catch (e) {
 		return panel(t("flash.write.title"), notice(ctx.errorText(e), "bad"));
@@ -801,13 +807,13 @@ export function restoreView() {
 		h("dt", {}, t("flash.restore.fw_now")), h("dd", {}, describeFirmware(meta.firmware_now)),
 		h("dt", {}, t("flash.restore.parts")), h("dd", {}, partNames(S().bundle.parts)))));
 	const pm = S().bundle.parts.get("c7000-progmem").data;
-	// a DB25-D that answers nothing else gets the backup through the vendor update mode
+	// a radio that answers nothing else gets the backup through the vendor update mode
 	if (c.how === "iap" && c.stream) {
 		const after = h("div");
-		out.append(db25d.iapRestoreView(pm, async () => {
+		out.append(routes.iapRestoreView(pm, async () => {
 			await dropC7();
 			c.how = null;
-			fill(after, notice(t("flash.db25d.iap.restored_text"), "ok"));
+			fill(after, notice(t("flash.iap.restored_text"), "ok"));
 			S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
 		}), after);
 		return out;
@@ -881,8 +887,8 @@ register({
 	stepLabel: (step, task) => (task === "install" && step === "done" ? "c7_done" : step),
 	views: { connect: connectView, check: checkView, write: writeView, done: doneView, backup: backupView, restore: restoreView },
 	recovery: { first: "fix", stock: "restore", reach: "flash.help.c7_reach", stockText: "flash.help.fix.stock_c7",
-		// the DB25-D's vendor update mode: a reinstall that needs nothing to answer on the cable
-		extra: (radio, fbd) => (fbd.c7000?.boards[radio.flash.board]?.stock_console
+		// a vendor update mode: a reinstall that needs nothing to answer on the cable
+		extra: (radio) => (radio.flash.update_mode === "iap"
 			? [{ id: "updatemode", title: "flash.help.fix.iap", text: "flash.help.fix.iap_text", prepare: () => { session().forceIap = true; } }] : []) },
 	ownsBundle: hasC7Backup,
 	ownImage: async (fb, board, data) => {
