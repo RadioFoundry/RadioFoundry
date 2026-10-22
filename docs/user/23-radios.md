@@ -421,7 +421,7 @@ for everyday use:** FM and DMR work on air on the test bench: voice calls both w
 the other DMR data, and hotspot mode. There is no release to install yet.
 
 Bring-up builds go in through the radio's own update mode, so the stock loader stays and the stock firmware can go back
-the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/dm32_flash.py --model dm1801pro IMAGE` over
+the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/serial_loader.py --model dm1801pro IMAGE` over
 the programming cable. The cable's plug switches the internal speaker and the microphone off; unplug it to hear the
 radio or to talk.
 
@@ -435,7 +435,7 @@ Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on 
 | Anything else | Asks you to put the radio in update mode (PTT and SK1 at power-on). Update mode erases the codec, so the image must carry it (the build's `odr_dm1801pro_codec.bin`), or give `--stock` with a program flash read of this radio (`stub/stubtool.py PORT --progmem FILE`) |
 
 `--route stub` or `--route bootloader` chooses by hand, and `--dry-run` shows the plan without writing. Neither route of
-odrflash has flashed a radio yet; `tools/dm32_flash.py` and `stub/stubtool.py` have.
+odrflash has flashed a radio yet; `tools/serial_loader.py` and `stub/stubtool.py` have.
 
 ### DM-1801 Pro keys
 

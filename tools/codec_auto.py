@@ -16,10 +16,12 @@ import sys
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
+sys.path.insert(0, os.path.join(TOOLS, "odrflash"))
+from odrflash import boards  # noqa: E402  (the board registry)
 
-# Board -> codec tool (each takes --stock, --image, -o and keeps its supported stock files in PROFILES)
-CODEC_TOOLS = {"dm1701": "codec_extract", "md380": "codec_extract", "dm32": "hrc7000_codec",
-               "dm1801pro": "hrc7000_codec", "db25d": "hrc7000_codec"}
+# Board -> codec tool, the registry's [codec] tool (each takes --stock, --image, -o and keeps its supported stock files
+# in PROFILES)
+CODEC_TOOLS = {b.id: b.codec_tool for b in boards.BOARDS.values()}
 SKIP = ("README.md", ".gitignore")
 
 
@@ -42,11 +44,10 @@ def candidates(folder):
 
 def find_key(folder, board):
     """The board's key file in the folder (optional: the codec tool derives the key from the stock file without one;
-    DM-1701 and MD-380, the boards with an encrypted stock container)."""
-    if board not in ("dm1701", "md380"):
+    the boards with an encrypted stock container, whose registry entry has the key's hash)."""
+    want = boards.BOARDS[board].key_sha256 if board in boards.BOARDS else None
+    if want is None:
         return None
-    import stm32_dfu
-    want = stm32_dfu.KEYS.get(board, (None,))[0]
     for path in candidates(folder):
         if os.path.getsize(path) == 1024 and sha256_file(path) == want:
             return path
@@ -64,7 +65,7 @@ def main():
     tool = CODEC_TOOLS.get(args.board)
     if tool is None or not os.path.isdir(args.dir):
         return 0
-    # one tool may serve several boards (codec_extract: DM-1701 and MD-380): only this board's stock files count
+    # one tool may serve several boards: only this board's stock files count
     mod = __import__(tool)
     profiles = {h: p for h, p in mod.PROFILES.items() if p.get("board", args.board) == args.board}
     if hasattr(mod, "identify"):	# a tool that knows a file by more than its SHA-256 (a program flash dump)
