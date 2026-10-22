@@ -141,7 +141,7 @@ photos (the photos stay outside the repository: product photos are not ours to p
 - viewBox `0 0 W H`, transparent background, no external references or embedded images;
 - exactly one `<rect id="screen" x y width height/>`, black, transform-free and not covered by anything, on the
   display's visible area, with the aspect ratio of the radio's gallery (5:4 for 160x128 and 160x120i5, 22:31 for
-  240x320i10x5).
+  240x320i10x5, 4:3 for 320x240).
 
 The build writes `static/img/radios/<radio>-frame.svg` (screen black), `<radio>.svg` (with the boot screen) and the
 screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages), so any screenshot can be

@@ -815,6 +815,7 @@ int main(void)
 		{ SIM_MAP_M, "M GD-77", "128x64" },
 		{ SIM_MAP_V, "V MD-9600", "160x128" },
 		{ SIM_MAP_K, "K 240x320", "240x320" },
+		{ SIM_MAP_K, "K 320x240", "320x240" },
 	};
 	for (size_t r = 0; r < sizeof runs / sizeof runs[0]; r++) {
 		const sim_geom_t *g = sim_geom_find(runs[r].geom);
