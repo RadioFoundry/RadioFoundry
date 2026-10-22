@@ -84,12 +84,13 @@
    "dfu_string1": null,
    "dfu_product": null,
    "stub": {
+    "tool": "stubtool",
     "id": 3,
+    "tested": false,
     "latch": 45,
     "key": 44,
     "nand": true,
     "progmem": 2097152,
-    "tested": false,
     "stock_console": "usmart"
    },
    "build_options": []
@@ -196,7 +197,24 @@
    ],
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
-   "stub": null,
+   "stub": {
+    "tool": "f4stub",
+    "id": 1,
+    "tested": false,
+    "hse": 8000000,
+    "boot_end": 134266880,
+    "spi": {
+     "bus": 1,
+     "mode": 0,
+     "hz": 4500000,
+     "af": 5,
+     "sck": "PB3",
+     "miso": "PB4",
+     "mosi": "PB5",
+     "cs": "PD7",
+     "idle": []
+    }
+   },
    "build_options": []
   },
   "dm1801pro": {
@@ -277,12 +295,13 @@
    "dfu_string1": null,
    "dfu_product": null,
    "stub": {
+    "tool": "stubtool",
     "id": 2,
+    "tested": true,
     "latch": 255,
     "key": 255,
     "nand": false,
     "progmem": 1048576,
-    "tested": true,
     "stock_console": null
    },
    "build_options": []
@@ -366,12 +385,13 @@
    "dfu_string1": null,
    "dfu_product": null,
    "stub": {
+    "tool": "stubtool",
     "id": 1,
+    "tested": true,
     "latch": 255,
     "key": 255,
     "nand": false,
     "progmem": 1048576,
-    "tested": true,
     "stock_console": null
    },
    "build_options": []
@@ -479,7 +499,24 @@
    ],
    "dfu_string1": "AnyRoad Technology",
    "dfu_product": "Digital Radio in USB mode",
-   "stub": null,
+   "stub": {
+    "tool": "f4stub",
+    "id": 2,
+    "tested": false,
+    "hse": 8000000,
+    "boot_end": 134266880,
+    "spi": {
+     "bus": 1,
+     "mode": 0,
+     "hz": 4500000,
+     "af": 5,
+     "sck": null,
+     "miso": null,
+     "mosi": null,
+     "cs": "PD7",
+     "idle": []
+    }
+   },
    "build_options": [
     {
      "name": "BAND",
