@@ -16,7 +16,10 @@ bootloader and image format, calibration, codec location. Start from the radio's
 
 A board's files list only how it differs from its platform. The platform's defaults are in `platform/<p>/`:
 `platform.mk` (compiler, part defines, HAL modules), `config.mk` (feature defaults), `common.ld` (the sections) and
-`FreeRTOSConfig.h`.
+`FreeRTOSConfig.h`. Chip glue that every radio with the same chip on that SoC shares is in a subdirectory the board
+lists in `BOARD_DIRS`: `platform/stm32f4/hrc` (an HR_C6000 or HR_C5000: DMR glue, I2S audio, the chip's ports, the
+stock codec host) and `platform/stm32f4/gps_uart` (a GPS module on a USART). The board then keeps only its wiring and
+what its chips leave to it.
 
 | File | Contents |
 |---|---|
@@ -26,7 +29,7 @@ A board's files list only how it differs from its platform. The platform's defau
 | `boards/<b>/memory.ld` | The memory map: the codec symbols, then `MEMORY` (the application's `FLASH` region from `__app_start`, which the Makefile defines from `APP_BASE`, and the RAM regions), then `INCLUDE common.ld`, the platform's sections. Keep the region's end below the codec. Keep the application out of every flash sector the codec touches (not only the codec bytes), so odrflash can update the firmware without erasing the codec. The flashing tools read the region and the codec symbols from it, and derive the erasable sectors and the protected range ([release.md](release.md#sector-maps)) |
 | `boards/<b>/freertos_board.h` | Optional: RTOS settings that differ from `platform/<p>/FreeRTOSConfig.h` (the heap size, for example), read before its defaults |
 | `boards/<b>/board.c` | The `board_t` descriptor, the key map, bands, power level names |
-| `boards/<b>/pins.h`, `<b>.h` | Pin assignments and the board's private declarations |
+| `boards/<b>/pins.h`, `<b>.h` | Pin assignments and the board's private declarations. The registry reads the pins the flash stub uses from `pins.h` (`[flash.stub]` in [The board registry](board-registry.md#boardtoml)) |
 | `boards/<b>/*_<b>.c` | One file per interface: radio, DMR, audio, vocoder, display, input, flash, power, calibration, diagnostics, USB |
 
 Look at `boards/dm1701/` (STM32F405, HR_C6000, AT1846S, USB), `boards/md380/` (the same platform with an HR_C5000,

@@ -11,7 +11,6 @@
 
 #define EXPECTED_DEVICE		0x4018u		// W25Q128: memory type 0x40, capacity 0x18
 #define SECURITY_REG_SIZE	256u
-#define XFER_SPINS		100000u		// per byte; a byte takes 1.8 us at 4.5 MHz
 
 static SPI_HandleTypeDef spi;
 static SemaphoreHandle_t lock;
@@ -22,36 +21,10 @@ static void chip_select(bool active)
 	PIN_WRITE(PIN_FLASH_CS, !active);
 }
 
-// Byte at a time on the registers: no HAL time base or DMA needed, and tx / rx may be NULL
+// Byte at a time on the registers (platform/stm32f4/spi.c)
 static bool xfer(const uint8_t *tx, uint8_t *rx, uint32_t len)
 {
-	SPI_TypeDef *r = SPI1;
-	for (uint32_t i = 0; i < len; i++) {
-		uint32_t spins = XFER_SPINS;
-		while ((r->SR & SPI_SR_TXE) == 0) {
-			if (--spins == 0) {
-				return false;
-			}
-		}
-		*(volatile uint8_t *)&r->DR = tx != NULL ? tx[i] : 0xFF;
-		spins = XFER_SPINS;
-		while ((r->SR & SPI_SR_RXNE) == 0) {
-			if (--spins == 0) {
-				return false;
-			}
-		}
-		uint8_t b = *(volatile uint8_t *)&r->DR;
-		if (rx != NULL) {
-			rx[i] = b;
-		}
-	}
-	uint32_t spins = XFER_SPINS;
-	while ((r->SR & SPI_SR_BSY) != 0) {
-		if (--spins == 0) {
-			return false;
-		}
-	}
-	return true;
+	return stm32_spi_xfer(SPI1, tx, rx, len);
 }
 
 static const spi_bus_t bus = { .select = chip_select, .xfer = xfer };
@@ -74,7 +47,9 @@ static void give(void)
 static void spi_init(void)
 {
 	stm32_pin_out(PIN_PORT(PIN_FLASH_CS), PIN_MASK(PIN_FLASH_CS), true, false);
-	stm32_pin_af(GPIOB, GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5, GPIO_AF5_SPI1, false, GPIO_NOPULL);
+	// SCK, MISO and MOSI are on one port (pins.h)
+	stm32_pin_af(PIN_PORT(PIN_FLASH_SCK), PIN_MASK(PIN_FLASH_SCK) | PIN_MASK(PIN_FLASH_MISO) | PIN_MASK(PIN_FLASH_MOSI),
+		     GPIO_AF5_SPI1, false, GPIO_NOPULL);
 	__HAL_RCC_SPI1_CLK_ENABLE();
 	spi.Instance = SPI1;
 	spi.Init.Mode = SPI_MODE_MASTER;

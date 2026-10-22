@@ -28,9 +28,7 @@ extern const hal_input_t md380_input;
 extern const hal_radio_t md380_radio;
 extern const hal_power_t md380_power;
 extern hal_flash_t md380_flash;
-extern const hal_dmr_modem_t md380_dmr;
 extern const hal_audio_t md380_audio;
-extern const hal_vocoder_t md380_vocoder;
 
 // ADC readings (power_md380.c): raw 12-bit averages
 enum { MD380_ADC_VOLUME, MD380_ADC_BATTERY, MD380_ADC_MIC, MD380_ADC_RSSI, MD380_ADC_BUSY, MD380_ADC_TEMP,
@@ -59,14 +57,6 @@ uint32_t md380_subtone_samples(void);
 #endif
 int16_t md380_temperature_c10(void);
 
-// DMR PCM audio counters (audio_md380.c, CONFIG_DMR)
-typedef struct {
-	uint32_t blocks;
-	uint32_t overruns;
-	uint32_t dropped;
-} md380_audio_stats_t;
-void md380_audio_stats(md380_audio_stats_t *out);
-void md380_audio_reset_stats(void);
 
 // Physical key bits returned by md380_input.scan() (matrix positions in docs/spec/hardware-md380.md 9.1)
 enum {
@@ -100,10 +90,8 @@ const char *md380_cal_source(void);	// "factory" or "none"
 const char *md380_cal_why(void);	// why the table was refused, for the diagnostics page
 uint8_t md380_cal_byte(uint16_t offset);
 
-// GPS (gps_md380.c): the module is listened for at start-up and powered by the user's setting once heard
+// GPS (gps_md380.c): the module is listened for at start-up (platform/stm32f4/gps_uart/gps_uart.h has the rest)
 void md380_gps_init(void);
-bool md380_gps_present(void);
-void md380_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes);
 
 // Radio diagnostics (radio_md380.c; cached values, no bus traffic)
 typedef struct {
