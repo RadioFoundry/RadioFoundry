@@ -61,11 +61,13 @@ key_prefix = "A2FABB4B"
 # The codec where the merge puts it (docs/spec/codec-md9600.md "Hosting"): the tables stay in sector 9 at the stock
 # build's address, the code moves to the start of sector 11 and the descriptor to its end. The application has sectors
 # 3-7, so an update leaves the codec sectors alone. The 06.09 and 16.45 builds keep their tables at different addresses
-# and report the one codec id; odrflash takes either file, and the windows here are the 06.09 file's
+# and report the one codec id: a merge uses the windows of the file it merges, and the board's windows are both files'
 [codec]
 tool = "codec_extract"
-stock = "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09"
-sources = ["MD9600-CSV-V06.09.bin", "MD9600-CSV(V4)-V16.45.bin"]
+stock = [
+	"79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09",	# MD9600-CSV-V06.09.bin
+	"de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532",	# MD9600-CSV(V4)-V16.45.bin
+]
 
 # How the site draws the radio
 [frame]

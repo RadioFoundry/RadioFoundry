@@ -437,6 +437,11 @@ class OldRouteGuard(unittest.TestCase):
             self.assertEqual(rc, 0, err.getvalue())					# one range: as before
 
 
+# The MD-9600's two stock builds (board.toml [codec] stock): 06.09 CSV and 16.45 CSV, their tables at different addresses
+MD9600_STOCK = ("79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09",
+                "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532")
+
+
 class StockLibrary(unittest.TestCase):
     def test_extract_and_merge(self):
         stock, profiles, code, tables = synthetic_stock()
@@ -595,9 +600,13 @@ class StockLibrary(unittest.TestCase):
         with open(os.path.join(HERE, "..", "..", "..", "boards", "md9600", "md9600.ld")) as f:
             ld = f.read()
         self.assertIn("ORIGIN = 0x0800C000, LENGTH = 0x08080000 - 0x0800C000", ld)
-        self.assertEqual(b.codec.windows[0], (0x080E0000, 0xF214))
-        self.assertEqual(b.codec.windows[1], (0x080AC2BC, 0x080BC122 - 0x080AC2BC))	# what both builds' tables cover
-        self.assertEqual(b.codec.windows[-1], (stockfw.DESC_ADDR, stockfw.DESC_LEN))
+        # The board's windows are the union of both stock builds' (a radio may hold either): every window of each
+        # file's layout lies inside one of them, and an image reaching either table range is refused
+        for sha in MD9600_STOCK:
+            for a, n, _ in stockfw.layout(stockfw.PROFILES[sha]):
+                self.assertTrue(any(lo <= a and a + n <= lo + ln for lo, ln in b.codec.windows),
+                                "0x%08X+0x%X of %s outside the board's codec windows" % (a, n, sha[:8]))
+        self.assertEqual(sorted(b.codec.sources), sorted(stockfw.PROFILES[h]["name"] for h in MD9600_STOCK))
         self.assertIs(boards.from_debuglink_name("MD-9600"), b)
         self.assertEqual(b.key_sha256, stockfw.MD9600_KEY_SHA256)
 
@@ -622,10 +631,10 @@ class StockLibrary(unittest.TestCase):
 
     def test_md9600_extract_merge_and_plan(self):
         """A synthetic file with each MD-9600 layout: the code moved to sector 11, the tables at the build's stock
-        address in sector 9, the descriptor; the merge plan writes sectors 3-7, 9 and 11, a keep plan only 3-7."""
+        address in sector 9, the descriptor; the merge plan, against that file's own windows, writes sectors 3-7, 9 and 11,
+        a keep plan only 3-7."""
         b = boards.get("md9600")
-        for sha, tab_at in (("79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09", 0x080AB13C),
-                            ("de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532", 0x080AC2BC)):
+        for sha, tab_at in zip(MD9600_STOCK, (0x080AB13C, 0x080AC2BC)):
             stock, profiles, code, tables = stockfw.build_synthetic_stock(KEY, random.Random(9600), sha)
             prof, segs = stockfw.extract(stock, KEY, profiles)
             self.assertEqual([a for a, _ in segs], [0x080E0000, tab_at, stockfw.DESC_ADDR])
