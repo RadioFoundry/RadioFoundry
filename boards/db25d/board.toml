@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# The DB25-D PRO's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and
+# the web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in db25d.ld and
+# db25d_dmr.ld.
+
+id = "db25d"
+name = "Radioddity DB25-D PRO"
+maker = "Radioddity"
+model = "DB25-D PRO"
+also = ["Kydera CDR-300UV"]
+kind = "mobile"
+# The VERSION board= values that mean this radio (debug link); board_t .name must be one of them
+debuglink_names = ["DB25-D", "DB25-D PRO", "db25d"]
+
+[docs]
+hardware = "docs/spec/hardware-db25d.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+cpu = "HR_C7000"
+bands = "136-174 / 400-480 MHz"
+power = "up to 25 W"
+display = "1.77\" color, 160 × 128"
+gallery = "160x128"
+
+[status]
+level = "bring-up"
+summary = "Bring-up on a radio: FM receive and transmit, display, keys, host link, settings storage, the open-firmware CPS and volume work. DMR voice receive and transmit checked on the SDR bench; the hotspot, the DMR VFO and the PPP network services work on the radio ([hardware-db25d](docs/spec/hardware-db25d.md) 9). The older DB25-D batches (FD6818) and the Retevis RT73 aren't covered yet"
+release = "testing"
+
+# The vendor IAP loader (0x03000000..0x0300BFFF) is never written. ODR's first stage fills the sector at 0x0300C000
+# (board.mk BOOT_*), the application follows it, the codec slot is the DM-32UV's (db25d_dmr.ld). The web flasher (IAP
+# loader, or the stub from ODR) and stub/stubtool.py flash it
+[flash]
+backend = "c7000-stub"
+family = "hrc7000-iap"
+link = "serial-cable"
+keep_codec = false
+sectors = "app+slot"
+protected = [[0x03000000, 0x0300C000]]
+stock_versions = []
+backup = { stock = "full", odr = "full", spi_size = 0 }
+
+[flash.bootloader]
+steps = [
+	"Turn the radio off and connect the programming cable.",
+	"Hold P1 and press power. The red LED lights and the display stays blank.",
+]
+
+# The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): PTB13 latch, PTB12 power key
+# (hardware-db25d.md 3.3), the same pins under ODR, its first stage and the stock firmware; the data memory is the SPI
+# NAND on the chip select the other radios' data flash uses; 2 MB of program flash (Boya, JEDEC 68 40 15).
+# stock_console: the stock firmware answers a debug console the web flasher reads before ODR is installed
+[flash.stub]
+id = 3
+latch = 45
+key = 44
+nand = true
+progmem = 0x200000
+tested = false
+stock_console = true
+
+# The codec slot and windows come from db25d_dmr.ld (__codec_*, the script CONFIG_DMR selects)
+[codec]
+tool = "hrc7000_codec"
+profile = "db25d-018"
+sources = ["DB25-D PRO 909E.Dx.EARSAB.018 stock files", "a program flash read of the radio"]
+
+# How the site draws the radio
+[frame]
+shape = "mobile"
+body = "#202226"
+accent = "#c8372d"
+lens = [20, 20]

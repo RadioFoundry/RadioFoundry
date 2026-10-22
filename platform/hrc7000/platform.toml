@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# The HR_C7000 platform's registry entry (tools/boards.py): what the tools and CI need to know about every board on it.
+# The build itself reads platform.mk, never this file.
+
+id = "hrc7000"
+isa = "csky"
+# The compiler print-cc names, and what builds it when it's missing (ci.sh's skip message)
+toolchain = { cc = "csky-elf-gcc", build = "tools/build-csky-toolchain.sh" }
+# One CI job per group; this group runs inside the csky-elf image
+ci = { group = "C-SKY", container = true }
+stubs = []
+# No sector geometry: the boards' serial loaders erase the application area whole ([flash] sectors = "app+slot")
+[sectors]

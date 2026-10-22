@@ -19,7 +19,8 @@
 #
 # Steps, each reported as ok / FAIL / skip:
 #   1. host tests (make -C tests/host), and with ODR_CI_SANITIZE=1 again under ASan and UBSan
-#   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); the flashing tools'
+#   2. Python: every tool and HIL test parses; the board registry checks (tools/boards.py check and self-test, with a
+#      Python 3.11 or later from tools/odr_python.sh); pytest collects tests/hil (when pytest is installed); the flashing tools'
 #      tests (tools/odrflash/tests, codec_extract, stm32_dfu, codeplug_port, md380_migrate, dm32_flash, dm32_migrate
 #      and hrc7000_codec self-tests) and the UI gallery comparison's (ui_gallery_compare); the stack check's self-test
 #      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
@@ -124,6 +125,20 @@ for f in sys.argv[1:]:
 		ok "python: $(echo "$PY_FILES" | wc -w | tr -d ' ') files parse"
 	else
 		bad "python: syntax errors"
+	fi
+	# the board registry (tools/boards.py, docs/dev/adding-a-radio.md): every board.toml and platform.toml well formed
+	# and consistent with board.mk, the linker scripts and board_t; the loader's self-test; the tools' tables agree
+	if REG_PY=$(tools/odr_python.sh 2> "$OUT/registry.log"); then
+		if $REG_PY tools/boards.py check > "$OUT/registry.log" 2>&1 &&
+		   $REG_PY tools/boards.py self-test >> "$OUT/registry.log" 2>&1 &&
+		   $REG_PY tools/test_registry_parity.py >> "$OUT/registry.log" 2>&1; then
+			ok "board registry: $(grep '^boards: ' "$OUT/registry.log" | sed 's/^boards: //'), self-test and parity"
+		else
+			tail -20 "$OUT/registry.log"
+			bad "board registry (see $OUT/registry.log)"
+		fi
+	else
+		skip "board registry: $(cat "$OUT/registry.log")"
 	fi
 	if python3 -c 'import pytest' 2>/dev/null; then
 		if python3 -m pytest tests/hil --collect-only -q -p no:cacheprovider > "$OUT/hil-collect.log" 2>&1; then
