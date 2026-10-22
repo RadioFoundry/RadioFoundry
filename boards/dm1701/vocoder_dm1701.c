@@ -8,10 +8,8 @@
 // descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h). The code reaches its tables through absolute
 // addresses, which don't change. The merge rewrites what does: one pointer into the code and the 12 calls from the code
 // that stock keeps in the table window back into the code (the codec map). None of it is part of this repository or a
-// release. Without a valid descriptor and codec, present() is false and the radio is FM only.
-//
-// Not reentrant: one task (the audio task, through the audio block callback) makes all calls. The codec needs about
-// 4 KB of the caller's stack (3.8 KB measured).
+// release. The calls and the checks are the shared ones (platform/stm32f4/hrc/vocoder.c); this file says which build and
+// where. Without a valid descriptor and codec, present() is false and the radio is FM only.
 #include "dm1701.h"
 #include "config.h"
 
@@ -20,29 +18,8 @@
 #include "vocoder/ambe2_flags.h"
 #include "codec_desc.h"
 
-#include <string.h>
-
-#define CODEC_SIGNATURE		0x4FF0E92Du	// push.w {r4-r11, lr}
 #define CODEC_TAG		0x0206u		// the descriptor's tag for stock V02.06 CSV
 #define CODEC_FLASH_LO		0x080C0000u	// sectors 10 and 11: the flash boards/dm1701/memory.ld leaves to the codec
-#define CODEC_FLASH_HI		CODEC_DESC_ADDR
-
-// Entry points (offsets from the code start)
-#define CODEC_ENCODE		(base + 0x130u)
-#define CODEC_DECODE		(base + 0x5D8u)
-#define CODEC_ENC_INIT		(base + 0x284u)	// (E, 1, 1)
-#define CODEC_FEC_INIT		(base + 0x4CCu)	// (F, 1): state of the codec's own FEC routines
-#define CODEC_DEC_INIT		(base + 0x6D0u)	// (D, 1)
-#define CODEC_ENC_PARAMS	(base + 0x848u)	// (E, 10 parameters)
-#define CODEC_ENC_SET		(base + 0x1C0u)	// (E, a, b)
-#define CODEC_DEC_SET		(base + 0x688u)	// (D, a, b)
-// Not used: encode ECC +0x4E8 and FEC decode +0xB54. The air frame FEC is ours (core/dmr/ambe) and matches stock's.
-
-// State sizes found by running the stock code with each block ending at a fault boundary: the codec touches
-// D[0, 0x7EC), E[0, 0x16E0), its tables, its arguments and the stack, nothing else
-#define DEC_STATE_BYTES		0x7ECu
-#define ENC_STATE_BYTES		0x16E0u
-#define FEC_STATE_BYTES		0x44u
 
 // The V02.06 CSV codec as the merge places it (tools/odrflash/odrflash/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of
 // the code and tables after the rewrites. The descriptor must carry exactly these
@@ -194,5 +171,8 @@ const hal_vocoder_t dm1701_vocoder = {
 	.present = present, .reset = reset, .encode = encode, .decode = decode, .profile = profile,
 	.options = options, .set_options = set_options, .encode_flags = encode_flags,
 };
+
+static const stm32_codec_profile_t *const profiles[] = { &v0206 };
+const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 1 };
 
 #endif	// CONFIG_DMR

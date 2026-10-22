@@ -1511,7 +1511,7 @@ datasheet; register table and appendix A in its Chinese section):
 
 The I2S link (SPI3 as I2S slave on PA15/PC10/PC11/PC12, the HR_C6000 driving the clocks): Philips, 16-bit data in
 32-bit frames, both channels, 8 kHz, circular DMA on DMA1 streams 0 and 5 in 20 ms halves
-(`boards/dm1701/audio_dm1701.c`, `hal/hal_audio.h`). This is the only audio data path between the MCU and the radio.
+(`platform/stm32f4/hrc/i2s_pcm.c`, `hal/hal_audio.h`). This is the only audio data path between the MCU and the radio.
 
 No other path exists on this board: ADC1's four inputs are the volume pot (PA0), battery (PA1), mic level (PA3) and
 the temperature sensor; DAC channel 1 (PA4) sets the PA power (APC); the DAC channel 2 pin (PA5) is the VHF receiver
