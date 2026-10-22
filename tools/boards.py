@@ -407,6 +407,17 @@ def load(root=ROOT):
 # consistency
 
 GALLERY_RE = re.compile(r"^\d+x\d+(i\d+(x\d+)?|m)?$")	# a display class tests/host/sim/ui_sim.c sim_geom_find() takes
+UI_SIM = "tests/host/sim/ui_sim.c"
+
+
+def gallery_classes(root=ROOT):
+    """The display classes `make ui-gallery` renders (the names in ui_sim.c's sim_geoms table), or None without it."""
+    path = os.path.join(root, UI_SIM)
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        m = re.search(r"sim_geoms\[\]\s*=\s*\{(.*?)\n\};", f.read(), re.S)
+    return set(re.findall(r'\{\s*"([^"]+)"', m.group(1))) if m else set()
 
 
 def check(root=ROOT):
@@ -417,6 +428,7 @@ def check(root=ROOT):
     except RegistryError as e:
         return [str(e)]
     stub_ids = {}
+    classes = gallery_classes(root)
     for bid, b in boards.items():
         d = b.data
         where = "boards/%s/board.toml" % bid
@@ -434,6 +446,10 @@ def check(root=ROOT):
             bad("debuglink_names must hold the id %r (VERSION board= of older builds)" % bid)
         if not GALLERY_RE.match(d["hardware"]["gallery"]):
             bad("hardware.gallery %r is not a display class (WxH, WxHiN, WxHiNxM, WxHm)" % d["hardware"]["gallery"])
+        elif classes is not None and d["hardware"]["gallery"] not in classes:
+            # the site links docs/ux/screens/<class>/, which only the classes in sim_geoms get
+            bad("hardware.gallery %r is not in %s sim_geoms (make ui-gallery renders only those)"
+                % (d["hardware"]["gallery"], UI_SIM))
         fl = d["flash"]
         try:
             secs = b.sectors()
@@ -458,6 +474,9 @@ def check(root=ROOT):
             bad("the application region ends past the codec sectors")
         if not os.path.isfile(os.path.join(root, "tools", d["codec"]["tool"] + ".py")):
             bad("codec.tool tools/%s.py doesn't exist" % d["codec"]["tool"])
+        if b.codec_slot and not codec["profile"].startswith(bid + "-"):
+            bad("codec.profile %r must start with %r: the firmware reports <id>-<stock tag> (ODR_BOARD_ID)"
+                % (codec["profile"], bid + "-"))
         if b.platform.id == "hrc7000":
             for lo, hi in (("__codec_run_lo", "__codec_run_hi"), ("__codec_tab_lo", "__codec_tab_hi")):
                 if b.window(lo, hi) is None:
@@ -622,6 +641,8 @@ def self_test():
         shutil.copytree(os.path.join(ROOT, "tools", "odrflash", "odrflash"), os.path.join(tmp, "tools", "odrflash", "odrflash"))
         for t in CODEC_TOOLS:
             open(os.path.join(tmp, "tools", t + ".py"), "w").close()
+        os.makedirs(os.path.dirname(os.path.join(tmp, UI_SIM)))
+        shutil.copy(os.path.join(ROOT, UI_SIM), os.path.join(tmp, UI_SIM))
         for b in board_dirs(ROOT):
             for p in _tomllib().load(open(os.path.join(ROOT, "boards", b, "board.toml"), "rb"))["docs"].values():
                 os.makedirs(os.path.dirname(os.path.join(tmp, p)), exist_ok=True)
@@ -643,6 +664,8 @@ def self_test():
         broken(re.sub(r'(?m)^debuglink_names = \[.*\]$', 'debuglink_names = ["%s"]' % one, good),
                "a board_t name missing from debuglink_names", "is not in debuglink_names")
         broken(good.replace('hardware = "', 'hardware = "missing/', 1), "a missing docs page", "doesn't exist")
+        broken(re.sub(r'(?m)^gallery = ".*"$', 'gallery = "200x100"', good), "a display class the gallery lacks",
+               "sim_geoms")
         broken(re.sub(r"(?m)^protected = .*$", "protected = [[0, 1]]", good), "protected not ending at the image",
                "flash.protected")
         with open(path, "w", encoding="utf-8") as f:
@@ -668,6 +691,9 @@ def main(argv=None):
     p.add_argument("--comma", action="store_true", help="one line, comma separated")
     p = sub.add_parser("get", help="one value of one board (a list: one item per line)")
     p.add_argument("board")
+    p.add_argument("path", nargs="?", default="")
+    p = sub.add_parser("platform", help="one value of one platform's platform.toml (no id: the platform ids)")
+    p.add_argument("id", nargs="?")
     p.add_argument("path", nargs="?", default="")
     p = sub.add_parser("builds", help="a board's images besides the default ('name make-args', one per line)")
     p.add_argument("board")
@@ -695,14 +721,23 @@ def main(argv=None):
             ids = [b for b, x in boards.items() if (not a.platform or x.platform.id == a.platform)
                    and (not a.release or x.data["status"]["release"] == a.release)]
             print(",".join(ids) if a.comma else "\n".join(ids))
-        elif a.cmd == "get":
-            if a.board not in boards:
-                raise RegistryError("unknown board %r (known: %s)" % (a.board, ", ".join(boards)))
-            v = full_view({a.board: boards[a.board]})["boards"][a.board]
+        elif a.cmd in ("get", "platform"):
+            if a.cmd == "platform":
+                platforms = load_platforms()
+                if a.id is None:
+                    print("\n".join(platforms))
+                    return 0
+                if a.id not in platforms:
+                    raise RegistryError("unknown platform %r (known: %s)" % (a.id, ", ".join(platforms)))
+                what, v = a.id, platforms[a.id].data
+            else:
+                if a.board not in boards:
+                    raise RegistryError("unknown board %r (known: %s)" % (a.board, ", ".join(boards)))
+                what, v = a.board, full_view({a.board: boards[a.board]})["boards"][a.board]
             try:
                 v = lookup(v, a.path)
             except KeyError:
-                raise RegistryError("%s has no %s" % (a.board, a.path))
+                raise RegistryError("%s has no %s" % (what, a.path))
             if isinstance(v, dict):
                 print(json.dumps(v, indent=1, ensure_ascii=False))
             else:
