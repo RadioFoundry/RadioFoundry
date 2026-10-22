@@ -23,7 +23,9 @@ from . import device, docs as docsmod, i18n, repo, tmpl
 
 # feature-matrix.md groups of developer tools that never ship in a release: not on the visitor pages
 BENCH_ONLY = {"Bench"}
-BOARD_ORDER = {"supported": 0, "testing": 1, "planned": 2}
+BOARD_ORDER = {"supported": 0, "testing": 1, "in_progress": 2, "planned": 3}
+# a radio page's documentation links (board.toml [docs]), in this order
+DOC_ORDER = ("hardware", "install", "codec", "bringup")
 
 
 class Site:
@@ -35,7 +37,6 @@ class Site:
 		self.strict = strict
 		self.log = log
 		self.warnings = []
-		self.noted = set()
 		self.i18n = i18n.load()
 		self.tpl = tmpl.Templates(repo.path("site", "templates"), self.i18n.t)
 		self.git = repo.git("rev-parse", "--short=8", "HEAD", default="unknown")
@@ -76,7 +77,8 @@ class Site:
 		self.variants = repo.variants()
 		vids = [v["id"] for v in self.variants]
 		self.boards, self.planned = repo.boards(list(self.fmap), vids)
-		self.boards.sort(key=lambda b: (BOARD_ORDER[b["status"]], b["name"]))
+		# board.toml order: the first is the home page's radio
+		self.boards.sort(key=lambda b: (BOARD_ORDER[b["status"]], b["order"]))
 		self.flash = repo.flash_boards()
 		with open(repo.path("site", "data", "screens.json"), encoding="utf-8") as f:
 			self.screens = json.load(f)
@@ -95,7 +97,7 @@ class Site:
 				self.warn("screens not in site/data/screens.json: %s" % ", ".join(unknown))
 			b["screens"] = [n for n in names if self.screen(n) is not None]
 			if b["flash"].get("board") and b["flash"]["board"] not in self.flash["boards"]:
-				raise repo.SourceError("boards/%s/radio.json: flash board %s isn't in odrflash" % (b["id"],
+				raise repo.SourceError("boards/%s/board.toml: flash board %s isn't in odrflash" % (b["id"],
 															 b["flash"]["board"]))
 		self.groups = []
 		for f in self.features:
@@ -114,16 +116,17 @@ class Site:
 	def json_data(self):
 		radios = []
 		for b in self.boards:
-			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "status", "bands", "power",
-					       "gallery", "cpu", "display", "docs", "flash", "backup", "unsupported", "required", "config",
-					       "screens", "codeplug")}
-			r["support"] = docsmod.plain(b["status_detail"]["support"])
+			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "order", "status", "bands",
+					       "power", "gallery", "cpu", "display", "docs", "flash", "backup", "unsupported",
+					       "unsupported_reasons", "required", "config", "screens", "codeplug", "volts",
+					       "clock")}
+			r["support"] = docsmod.plain(b["summary"])
 			r["image"] = "static/img/radios/%s.svg" % b["id"]
 			r["frame_image"] = "static/img/radios/%s-frame.svg" % b["id"]
 			r["frame_geometry"] = b["frame_geometry"]
 			radios.append(r)
-		planned = [{"radio": p["radio"], "support": docsmod.plain(p["support"]),
-			    "status": repo.radio_status(p, None)} for p in self.planned]
+		planned = [{"radio": p["radio"], "support": p["support"], "status": p["status"], "pr": p["pr"],
+			    "hardware_needed": p["hardware_needed"]} for p in self.planned]
 		features = [{k: f.get(k) for k in ("name", "title", "group", "help", "needs", "bytes", "notes")}
 			    for f in self.features]
 		return {
@@ -219,15 +222,14 @@ class Site:
 	def badge(self, lang, status):
 		return '<span class="badge badge-%s">%s</span>' % (status, html.escape(self.t(lang, "status." + status)))
 
+	def board_note(self, lang, b):
+		"""A board's line for visitors: board.toml [status] summary. A catalog may translate it (radio.note.<id>)."""
+		return html.escape(self.i18n.opt(lang, "radio.note." + b["id"], docsmod.plain(b["summary"])))
+
 	def note(self, lang, key, src):
-		"""A radio's one-line note for visitors (radio.note.<id>, planned.note.<slug>); the README's support notes are
-		written for developers."""
-		if not self.i18n.has(self.i18n.default, key):
-			if key not in self.noted:
-				self.warn("no %s in the %s catalog (a visitor's note on %s)" % (key, self.i18n.default, src))
-				self.noted.add(key)
-			return ""
-		return html.escape(self.t(lang, key))
+		"""A survey radio's note for visitors: the survey's Port cell note (src), which a catalog may translate
+		(planned.note.<slug>)."""
+		return html.escape(self.i18n.opt(lang, key, src))
 
 	def md_inline(self, text, src="README.md"):
 		"""A Markdown table cell from the repository as HTML (links rewritten like the docs)."""
@@ -359,12 +361,16 @@ class Site:
 		entries = [(BOARD_ORDER[b["status"]], 0, b["name"], self.tpl.partial("radio_row", {
 			"name": '<a href="%s.html">%s</a>' % (b["id"], html.escape(b["name"])), "also": ", ".join(b["also"]),
 			"badge": self.badge(lang, b["status"]), "cpu": b["cpu"], "display": b["display"],
-			"support": self.note(lang, "radio.note." + b["id"], b["name"])}, lang)) for b in self.boards]
+			"support": self.board_note(lang, b)}, lang)) for b in self.boards]
 		for n, p in enumerate(self.planned):
-			st = repo.radio_status(p, None)
+			st = p["status"]
+			note = self.note(lang, "planned.note." + docsmod.slug(p["radio"]), p["note"])
+			if p["pr"]:	# a port on an open branch: its pull request
+				note = ('<a href="%s/pull/%d">#%d</a>' % (html.escape(self.repo_url), p["pr"], p["pr"])
+					+ (" " + note if note else ""))
 			entries.append((BOARD_ORDER[st], 1 + n, p["radio"], self.tpl.partial("radio_row", {
 				"name": html.escape(p["radio"]), "also": "", "badge": self.badge(lang, st), "cpu": "—", "display": "—",
-				"support": self.note(lang, "planned.note." + docsmod.slug(p["radio"]), p["radio"])}, lang)))
+				"support": note}, lang)))
 		ctx = {"cards": "".join(self.radio_card(lang, b) for b in self.boards),
 		       "rows": "".join(e[3] for e in sorted(entries, key=lambda e: e[:2]))}
 		self.page(lang, "radios/index.html", self.t(lang, "radios.title"),
@@ -408,7 +414,7 @@ class Site:
 					     % (html.escape(self.t(lang, "screens.group." + g)), "".join(items)))
 		docs_links = "".join('<li><a href="{{home}}%s">%s</a></li>'
 				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
-				     for k, p in b["docs"].items())
+				     for k, p in sorted(b["docs"].items(), key=lambda kv: DOC_ORDER.index(kv[0])))
 		fl = b["flash"]
 		can_flash = ((fl["backend"] == "anyroad-dfu" and bool(self.flash["boards"].get(fl["board"], {}).get("key_sha256")))
 			     or (fl["backend"] == "c7000-stub" and fl["board"] in self.flash["c7000"]["boards"])
@@ -418,9 +424,11 @@ class Site:
 		ctx = {"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]) or "—",
 		       "frame_aspect": "%g" % g["aspect"],
 		       "screen_style": "left:%g%%;top:%g%%;width:%g%%;height:%g%%" % (pct["left"], pct["top"], pct["width"], pct["height"]),
-		       "badge": self.badge(lang, b["status"]), "support": self.note(lang, "radio.note." + b["id"], b["name"]),
+		       "badge": self.badge(lang, b["status"]), "support": self.board_note(lang, b),
 		       "bands": b["bands"], "power": b["power"], "kind": self.t(lang, "radio.kind." + b["kind"]),
-		       "cpu": b["cpu"], "display": b["display"], "variant_head": vhead, "feature_groups": "".join(groups),
+		       "cpu": b["cpu"], "display": b["display"], "volts": self.t(lang, "radio.volts." + b["volts"]),
+		       "clock": self.t(lang, "radio.clock." + b["clock"]),
+		       "variant_head": vhead, "feature_groups": "".join(groups),
 		       "na_list": ", ".join(html.escape(self.ftitle(lang, f)) for f in na) or "—",
 		       "shots": "".join(shots), "docs_links": docs_links, "gallery": b["gallery"],
 		       "flash_cta": self.tpl.partial("flash_cta" if can_flash else "flash_soon",

@@ -56,7 +56,7 @@ Screens consume only these. Each board maps physical inputs to them (`boards/<ra
 | `ENC_STEP(+/-)` | Encoder detent. Forward (+, clockwise): next channel on Home (as `NAV_UP`), value up in editors, focus **down** in lists and quick tiles (the next row, like a scroll wheel). Back (-): the opposite | from encoder |
 | `USER_1` to `USER_4` | Side and top keys; each has a short and a long function from the assignable list | optional |
 
-Assignable functions for `USER_n` keys (short and long, chosen in Settings > Keys or in qdmr): Monitor, Talk target, Quick, Context, Recent, Power cycle, Scan on/off, Hear all on/off, Privacy on/off, Zone picker, Speak status, Backlight, Mode FM/DMR (in the VFO), Copy to VFO, Lock, Reply, Radio check last caller, Silent (mute tones and prompts), None.
+Assignable functions for `USER_n` keys (short and long, chosen in Settings > Keys or in qdmr): Monitor, Talk target, Quick, Context, Recent, Power cycle, Scan on/off, Hear all on/off, Privacy on/off, Zone picker, Speak status, Backlight, Mode FM/DMR (in the VFO), Copy to VFO, Lock, Reply, Radio check last caller, Silent (mute tones and prompts), A/B and Dual watch ([dual-watch.md](dual-watch.md)), None.
 
 Rules for key maps (P3, P10):
 
@@ -135,7 +135,7 @@ Contacts, Recent and Messages are the "people" side, Zones, Channels and Tools t
 | 4 | To VFO (copy the channel to the VFO and open it) | To VFO |
 | 5 | Hear all (promiscuous) on/off | Monitor latch on/off |
 | 6 | Privacy on/off | VOX on/off |
-| 7 | Scan on/off | Scan on/off |
+| 7 | Dual watch (On / Off; a zone scan is in Tools > Scan) | Dual watch (On / Off; a zone scan is in Tools > Scan) |
 | 8 | Talk target | Bandwidth 12.5/25 kHz |
 | 9 | Brightness | Brightness |
 | 0 | All settings | All settings |
@@ -187,7 +187,7 @@ Notation: `short / long`. "-" means none. All maps also follow the text-field ru
 | 0-9 | digits / speed dial |
 | Channel encoder detent | `ENC_STEP` (Home: channel; editors: value; lists: focus, forward = down) |
 | Upper side key (row 2 D5) and middle side key (row 2 D7): see [hardware-dm1701.md](../spec/hardware-dm1701.md) 10 and 20 | `MONITOR` (while held) on the middle key |
-| SK2 (lower side) | `TALK_TARGET` / Scan on/off |
+| SK2 (lower side) | `AB` (dual watch A / B; `TALK_TARGET` in a build without dual watch) / Dual watch on/off |
 | Top (orange) key | Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built (hold again to cancel), else speak status |
 | PTT | `PTT` |
 
@@ -207,7 +207,7 @@ zones of any size step through it. No `NAV_LEFT`/`NAV_RIGHT`.
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | SK1 | `MONITOR` |
-| SK2 | `TALK_TARGET` / Scan |
+| SK2 | `TALK_TARGET` / Dual watch |
 | Top / alarm key (if present) | `EMERGENCY` or assignable |
 | PTT | `PTT` |
 
@@ -227,8 +227,8 @@ scroll wheel does; Home and editors follow the number. (Until 2026-10-10 the kno
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | SK1 | `MONITOR` |
-| SK2 | `TALK_TARGET` / Scan |
-| Top orange key (if present) | assignable. Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built, else speak status |
+| SK2 | `TALK_TARGET` / Dual watch |
+| Top orange key (if present) | assignable (default Power cycle / Speak status) |
 | PTT | `PTT` |
 
 128x64 has no room for a 3x3 grid; quick settings are a numbered list with the same numbers. Home uses two text sizes only.

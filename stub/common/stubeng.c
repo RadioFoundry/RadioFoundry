@@ -201,22 +201,9 @@ static void op_config(stubeng_t *s, const uint8_t *p, uint16_t len)
 		status(s, STUB_ST_BADARG);
 		return;
 	}
-	// The application base: a sector start inside the flash, not below the target's floor, never sector 0. Its end: a
-	// sector start above it, or the flash's end
+	// The application base: a sector start inside the flash, not below the target's floor, never sector 0
 	int sec = stubeng_sector_of(geo(s), c.app_base);
 	if (sec <= 0 || stubeng_sector_addr(geo(s), (unsigned)sec) != c.app_base || c.app_base < geo(s)->min_app_base) {
-		status(s, STUB_ST_BADARG);
-		return;
-	}
-	if (c.app_end == 0) {
-		c.app_end = flash_end(s);
-	}
-	int end = stubeng_sector_of(geo(s), c.app_end);
-	if (c.app_end != flash_end(s) && (end < 0 || stubeng_sector_addr(geo(s), (unsigned)end) != c.app_end)) {
-		status(s, STUB_ST_BADARG);
-		return;
-	}
-	if (c.app_end <= c.app_base) {
 		status(s, STUB_ST_BADARG);
 		return;
 	}
@@ -283,11 +270,19 @@ static bool mem_read(stubeng_t *s, int mem, uint32_t addr, void *dst, uint32_t n
 	return true;
 }
 
+static void feed(stubeng_t *s)
+{
+	if (s->port->feed != NULL) {
+		s->port->feed(s->port->ctx);
+	}
+}
+
 // CRC-32 of one 4 KB block, read through the word buffer in 1 KB pieces; *blank when every byte is 0xFF. False when
 // the SPI flash didn't answer
 static bool block_crc(stubeng_t *s, int mem, uint32_t addr, uint32_t *crc, bool *blank)
 {
 	uint8_t *buf = (uint8_t *)s->words;
+	feed(s);
 	*crc = 0;
 	*blank = true;
 	for (uint32_t off = 0; off < STUBENG_BLOCK; off += 1024u) {
@@ -347,6 +342,7 @@ static void op_read(stubeng_t *s, const uint8_t *p, uint16_t len)
 	uint8_t *o = s->out + STUBENG_FRAME_HDR;
 	for (uint8_t i = 0; i < count; i++) {
 		uint32_t a = addr + (uint32_t)i * STUBENG_BLOCK;
+		feed(s);
 		if (!mem_read(s, mem, a, o + READ_REC_HDR, STUBENG_BLOCK)) {
 			status(s, STUB_ST_FLASHERR);
 			return;
@@ -378,10 +374,7 @@ static void op_xerase(stubeng_t *s, const uint8_t *p, uint16_t len)
 		status(s, STUB_ST_BADARG);
 		return;
 	}
-	if (addr < s->cfg.xfloor) {
-		status(s, STUB_ST_REFUSED);	// the radio's own data
-		return;
-	}
+	feed(s);
 	status(s, s->port->xerase(s->port->ctx, addr) ? STUB_ST_OK : STUB_ST_FLASHERR);
 }
 
@@ -398,10 +391,6 @@ static void op_xprogram(stubeng_t *s, const uint8_t *p, uint16_t len)
 		status(s, STUB_ST_BADARG);
 		return;
 	}
-	if (addr < s->cfg.xfloor) {
-		status(s, STUB_ST_REFUSED);	// the radio's own data
-		return;
-	}
 	uint8_t *buf = (uint8_t *)s->words;
 	if (!s->port->xread(s->port->ctx, addr, buf, n)) {
 		status(s, STUB_ST_FLASHERR);
@@ -413,6 +402,7 @@ static void op_xprogram(stubeng_t *s, const uint8_t *p, uint16_t len)
 			return;
 		}
 	}
+	feed(s);
 	if (!s->port->xprogram(s->port->ctx, addr, p + 4, n) || !s->port->xread(s->port->ctx, addr, buf, n) ||
 	    memcmp(buf, p + 4, n) != 0) {
 		status(s, STUB_ST_FLASHERR);
@@ -436,14 +426,15 @@ static void op_erase(stubeng_t *s, const uint8_t *p, uint16_t len)
 		status(s, STUB_ST_BADARG);
 		return;
 	}
-	if (stubeng_sector_addr(geo(s), sector) < s->cfg.app_base || stubeng_sector_addr(geo(s), sector) >= s->cfg.app_end) {
-		status(s, STUB_ST_REFUSED);	// the bootloader, or the radio's data above the application
+	if (stubeng_sector_addr(geo(s), sector) < s->cfg.app_base) {
+		status(s, STUB_ST_REFUSED);	// the bootloader
 		return;
 	}
 	if ((int)sector != stubeng_sector_of(geo(s), s->cfg.app_base) && app_committed(s)) {
 		status(s, STUB_ST_REFUSED);	// the interlock: erase the commit sector first
 		return;
 	}
+	feed(s);	// a 128 KB sector takes up to 2 s: the target's wait loop feeds as well (f4stub_flash.c)
 	status(s, s->port->erase(s->port->ctx, sector) ? STUB_ST_OK : STUB_ST_FLASHERR);
 }
 
@@ -460,8 +451,8 @@ static void op_program(stubeng_t *s, const uint8_t *p, uint16_t len)
 		status(s, STUB_ST_BADARG);
 		return;
 	}
-	if (addr < s->cfg.app_base || addr >= s->cfg.app_end || n * 4u > s->cfg.app_end - addr) {
-		status(s, STUB_ST_REFUSED);	// the bootloader, or the radio's data above the application
+	if (addr < s->cfg.app_base) {
+		status(s, STUB_ST_REFUSED);	// the bootloader
 		return;
 	}
 	unsigned commit = (unsigned)stubeng_sector_of(geo(s), s->cfg.app_base);
@@ -477,6 +468,7 @@ static void op_program(stubeng_t *s, const uint8_t *p, uint16_t len)
 		}
 		memcpy(&s->words[i], p + 4u + i * 4u, 4);
 	}
+	feed(s);
 	if (!s->port->program(s->port->ctx, addr, s->words, n)) {
 		status(s, STUB_ST_FLASHERR);
 		return;
@@ -493,6 +485,7 @@ static void op_program(stubeng_t *s, const uint8_t *p, uint16_t len)
 static void dispatch(stubeng_t *s, uint8_t op, const uint8_t *p, uint16_t len)
 {
 	s->requests++;
+	feed(s);
 	bool write = op == STUB_OP_ERASE || op == STUB_OP_PROGRAM || op == STUB_OP_XERASE || op == STUB_OP_XPROGRAM;
 	if (write && !s->configured) {
 		status(s, STUB_ST_NOCONFIG);

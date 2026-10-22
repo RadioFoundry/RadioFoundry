@@ -16,7 +16,7 @@
 // application drives them to itself.
 #include <stdint.h>
 
-#ifndef BOOT_HOST_TEST	// tests/host/bootDb25dTest.c supplies these
+#ifndef BOOT_HOST_TEST	// boards/db25d/tests/bootDb25dTest.c supplies these
 static inline uint32_t rd(uint32_t a)
 {
 	return *(volatile uint32_t *)(uintptr_t)a;

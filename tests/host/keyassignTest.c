@@ -117,12 +117,12 @@ static void test_toggles(void)
 {
 	static const struct { uint8_t fn; uint8_t value; uint8_t action; } t[] = {
 		{ KEYFN_KEY_LOCK, 11, ACT_LOCK }, { KEYFN_CALL_BACK, 12, ACT_CALL_BACK }, { KEYFN_HOME_ZONE, 13, ACT_HOME_ZONE },
-		{ KEYFN_COPY_VFO, 14, ACT_COPY_VFO },
+		{ KEYFN_COPY_VFO, 14, ACT_COPY_VFO }, { KEYFN_DUAL_WATCH, 15, ACT_DUAL_WATCH }, { KEYFN_AB, 16, ACT_AB },
 	};
 	// Stored in the codeplug's slots: append only, so every value that shipped keeps its number
 	CHECK(KEYFN_DEFAULT == 0 && KEYFN_NONE == 1 && KEYFN_MONITOR == 2 && KEYFN_TALK_TARGET == 3 &&
 	      KEYFN_POWER == 4 && KEYFN_ZONE_UP == 5 && KEYFN_ZONE_DOWN == 6 && KEYFN_SCAN == 7 && KEYFN_EMERGENCY == 8);
-	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 15);
+	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 17);
 	for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
 		uint16_t s[KEYASSIGN_SLOTS] = { 0 };
 		CHECK(t[i].fn == t[i].value);
@@ -236,7 +236,7 @@ static void test_engine(void)
 // press (docs/ux/information-architecture.md 2). Read from the boards' sources: they don't build on the host
 static void test_board_defaults(void)
 {
-	static const char *const boards[] = { "db25d", "dm1701", "dm1801pro", "dm32", "md380" };
+	static const char *const boards[] = { BOARD_IDS };	// the Makefile lists boards/*/board.c
 	int toggles = 0;
 	for (unsigned b = 0; b < sizeof boards / sizeof boards[0]; b++) {
 		char path[64];

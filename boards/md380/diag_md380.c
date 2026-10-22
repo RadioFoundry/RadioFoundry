@@ -6,7 +6,9 @@
 #include "config.h"
 #if CONFIG_DMR
 #include "dmr_md380.h"
+#include "hrc/i2s_pcm.h"
 #endif
+#include "gps_uart/gps_uart.h"
 
 #if CONFIG_DIAG
 
@@ -57,10 +59,10 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 #if CONFIG_DMR
 	// The DMR modem counters first (bring-up), then the board readings
-	if (i < MD380_DMR_DIAG_LINES) {
-		return md380_dmr_stats_line(i, buf, len);
+	if (i < STM32_HRC_DMR_DIAG_LINES) {
+		return stm32_hrc_dmr_stats_line(i, buf, len);
 	}
-	i -= MD380_DMR_DIAG_LINES;
+	i -= STM32_HRC_DMR_DIAG_LINES;
 #endif
 	out_t o = { buf, buf + len - 1 };
 	md380_radio_diag_t d;
@@ -135,27 +137,31 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	}
 	case 8: {
+#if CONFIG_GPS
 		uint32_t good, bad, n;
-		md380_gps_counts(&good, &bad, &n);
-		put(&o, md380_gps_present() ? "gps yes " : "gps no ");
+		stm32_gps_counts(&good, &bad, &n);
+		put(&o, stm32_gps_present() ? "gps yes " : "gps no ");
 		put_u(&o, good);
 		put(&o, "/");
 		put_u(&o, bad);
 		put(&o, " b");
 		put_u(&o, n);
+#else
+		put(&o, "gps not built");
+#endif
 		break;
 	}
 	case 9:
 		put(&o, "flash ");
-		put_x(&o, md380_flash_device(), 4);
+		put_x(&o, stm32_spi_flash_device(), 4);
 		put(&o, " ");
 		put_u(&o, board.flash->size >> 10);
 		put(&o, "K");
 		break;
 #if CONFIG_DMR
 	case 10: {	// DMR PCM audio: blocks, overruns, blocks dropped
-		md380_audio_stats_t a;
-		md380_audio_stats(&a);
+		stm32_i2s_pcm_stats_t a;
+		stm32_i2s_pcm_stats(&a);
 		put(&o, "aud blk ");
 		put_u(&o, a.blocks);
 		put(&o, " ov ");
@@ -175,8 +181,8 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len)
 void md380_diag_reset(void)
 {
 #if CONFIG_DMR
-	md380_dmr_stats_reset();
-	md380_audio_reset_stats();
+	stm32_hrc_dmr_stats_reset();
+	stm32_i2s_pcm_reset_stats();
 #endif
 }
 

@@ -86,7 +86,7 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
 | Unsaved changes | `discard` | BACK in the channel editor with unsaved changes (2.1) |
 | List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
-| Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (SK2), Quick 8 |
+| Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
 | About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
@@ -280,17 +280,23 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | `CONFIG_UI_SETTINGS` | y | the Settings menu is left out (about 5.3 KB, `docs/feature-matrix.md`); settings keep their stored values and are set with qdmr; Settings shows one row saying so, Find finds no settings |
 | `CONFIG_DIAG` | y | no diagnostics page (Tools has no Diagnostics row; Roaming moves up to 7) |
 | `CONFIG_FONT_XL` | n | the 16x32 font for 240 px and wider displays |
-| `CONFIG_FONT_AA` | n | the bitmap fonts (Spleen) on color panels; on, the sizes from 6x12 up are anti-aliased (JetBrains Mono Bold, coverage 0..3 a pixel, blended with what is under them; `gfx.c`). Mono radios leave it off |
+| `CONFIG_FONT_AA` | n | the bitmap fonts (Spleen) on color panels; on, the sizes from 6x12 up are anti-aliased (JetBrains Mono Bold, coverage 0..3 a pixel, blended with what is under them; `gfx.c`). Mono radios leave it off. On a 4 bpp panel (every color board) the edge grays share the 16 palette entries with the screen's own colors; a screen that already uses many colors loses some of them, and some font sizes or colors can then be slightly harder to read |
 | `CONFIG_FONT_BIG` | n | on (needs `FONT_AA`), the 240 px class draws lists, labels, the status strip and hints in a 9x18 font instead of 8x16, and its small print in 8x16 instead of 6x12 |
 | `CONFIG_UI_COLOR` | y (DM-1801 Pro: n) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_VFO_DMR`, `CONFIG_SCAN`, data features) are
 left out or dimmed with the feature. Some radios' default images have only a few KB free (`docs/feature-matrix.md`); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB by default) bounds the display: 240x320 at
-16 bpp renders only in the simulator, which overrides `GFX_FB_BYTES` and `GFX_MAX_ROWS`. A board with a 240x320 color
-panel builds the 16-color frame buffer instead (`GFX_INDEXED`, bpp 4, 37.5 KB): drawing still takes RGB565 colors, and
-`gfx.c` keeps a 16-entry palette of the ones on the screen (a screen uses about a dozen). An entry gets a new color
+16 bpp renders only in the simulator, which overrides `GFX_FB_BYTES` and `GFX_MAX_ROWS`. Every color board builds the 16-color frame buffer instead
+(`GFX_INDEXED`, bpp 4): 37.5 KB at 240x320, 9.6 KB at 160x120 and 10 KB at 160x128, against 150, 37.5 and 40 KB at
+16 bpp. A mono board sizes the buffer to its panel (128x64 at 1 bpp is 1 KB). Drawing still takes RGB565 colors, and
+`gfx.c` keeps a 16-entry palette of the ones on the screen. An entry gets a new color
 only once nothing drawn since the last clear uses it; anti-aliased edges never take the last 4 free entries and
 otherwise get the nearest color already there. Screen captures (debug link, `/api/screen.bmp`) read it as RGB565.
+
+Without `CONFIG_FONT_AA` a screen uses at most 9 colors (the gallery, all 93 screens), so 4 bpp renders it exactly as
+16 bpp does. With `CONFIG_FONT_AA` the edge grays add up to 20 colors on the busiest screen (Messages); on 14 of the
+93 screens some edge grays and colors are replaced by the nearest palette entry, and some font sizes or colors can be
+slightly harder to read. The 160 px boards leave `FONT_AA` off for that reason.
 
 ## 6. Debug link
 
@@ -319,7 +325,7 @@ status bar), RX, TX, the Channels list and Settings > Display are also drawn in 
 `<screen>__light.png` and `<screen>__high_contrast.png` (color displays).
 
 
-Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `160x128` (MD-380 class),
+Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `160x128` (MD-380 class; both 160 px classes render through the 4 bpp frame buffer, as the boards do),
 `240x320i10x5` (DM-32: 16 colors, insets 10 px left and right, 5 px top and bottom), `128x64` (mono), `240x320`, or any
 `WxH`, `WxHiN` (inset N all round), `WxHiNxM` (N left and right, M top and bottom), `WxHm` (mono). The 240 px classes
 draw the anti-aliased fonts (`CONFIG_FONT_AA`, as the DM-32 is built), and `240x320i10x5` the larger text too

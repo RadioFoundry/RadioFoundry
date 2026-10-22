@@ -7,9 +7,12 @@
     tools/release.py --board dm1701 --variant amateur --version v0.1.0     a release variant (make VARIANT=amateur)
     tools/release.py --board dm1801pro --version v0.1.0     an HR_C7000 radio: build/dm1801pro/odr_dm1801pro.bin, the
                                                             image without the codec slot (never the _codec.bin)
+    tools/release.py --board md380 --build-option BAND=vhf --version v0.1.0   a build option's image (board.toml
+                                                            [[build_options]]): build/md380-vhf/odr_md380-vhf.bin, odr-md380-vhf-<version>
 
 Writes, into --out:
-  odr-<board>-<version>.bin    the codec-less image, as built (a variant: odr-<board>-<variant>-<version>.bin)
+  odr-<board>-<version>.bin    the codec-less image, as built (a variant or a build option value:
+                               odr-<board>-<variant>-<value>-<version>.bin)
   odr-<board>-<version>.json   its manifest (board, variant, version, git hash, image ranges, codec profile, sectors)
   SHA256SUMS                   one line per file (appended; one file for the whole release)
 
@@ -32,8 +35,9 @@ def git(*a):
     return subprocess.run(["git", "-C", ROOT] + list(a), capture_output=True, text=True, check=True).stdout.strip()
 
 
-def features(board_id, variant=None):
-    cmd = ["make", "-s", "-C", ROOT, "BOARD=" + board_id, "print-config"] + (["VARIANT=" + variant] if variant else [])
+def features(board_id, variant=None, options=()):
+    cmd = (["make", "-s", "-C", ROOT, "BOARD=" + board_id, "print-config"] + (["VARIANT=" + variant] if variant else [])
+           + ["%s=%s" % o for o in sorted(dict(options).items())])
     r = subprocess.run(cmd, capture_output=True, text=True)
     return ",".join(kv.split("=")[0] for kv in r.stdout.split() if kv.endswith("=y"))
 
@@ -54,11 +58,11 @@ def check_no_codec(board, image):
     the stock address, where merges from before the codec moved put it), an HR_C7000 radio's codec slot (the build's
     _codec.bin)."""
     off = board.codec.windows[0][0] - board.app_base
-    if board.family == "anyroad-dfu":
+    if board.codec_slot is None:	# a codec merged from a stock file at the stock placement
         offs = {off} | {p["code"][0] - board.app_base for p in stockfw.PROFILES.values() if p["board"] == board.id}
         if any(o + 4 <= len(image) and struct.unpack_from("<I", image, o)[0] == stockfw.CODEC_SIG for o in offs):
             raise SystemExit("release: %s carries the codec signature: never release a merged image" % board.id)
-    elif board.family in ("bfuv32-serial", "hrc7000-iap"):
+    else:				# a codec in ODR's own slot
         if off + 4 <= len(image) and struct.unpack_from("<I", image, off)[0] == serialflash.SLOT_MAGIC:
             raise SystemExit("release: the %s image carries the codec slot (a _codec.bin): release odr_%s.bin, never "
                              "a merged image" % (board.name, board.id))
@@ -69,6 +73,9 @@ def main(argv=None):
     ap.add_argument("--board", required=True)
     ap.add_argument("--version", required=True, help="the release tag, e.g. v0.1.0")
     ap.add_argument("--variant", help="a release variant (config/variants/<name>.mk); default: the full build")
+    ap.add_argument("--build-option", action="append", default=[], metavar="NAME=VALUE",
+                    help="a board build option's value other than its default (boards/<board>/board.toml "
+                         "[[build_options]]): its own image, build directory and file names")
     ap.add_argument("--bin", help="the built image (default build/<board>[-<variant>]/odr_<board>.bin, or "
                     "odr_<board>_install.bin for a board with a first stage)")
     ap.add_argument("--out", default=os.path.join(ROOT, "dist"))
@@ -77,12 +84,24 @@ def main(argv=None):
     ap.add_argument("--toolchain", help="compiler version line (default: the board's compiler --version)")
     args = ap.parse_args(argv)
 
-    board = boards.get(args.board)
+    try:
+        board = boards.get(args.board)
+    except KeyError as e:
+        raise SystemExit("release: %s" % e.args[0])
     variant = None if args.variant in (None, "", "full") else args.variant
     if variant and not os.path.isfile(os.path.join(ROOT, "config", "variants", variant + ".mk")):
         raise SystemExit("release: unknown variant %s (config/variants/)" % variant)
-    build_dir = board.id + ("-" + variant if variant else "")
-    path = args.bin or os.path.join(ROOT, "build", build_dir, "odr_%s%s.bin" % (board.id, "_install" if board.first_stage else ""))
+    options = {}
+    for opt in args.build_option:
+        name, _, value = opt.partition("=")
+        if board.build_option(name, value) is None:
+            raise SystemExit("release: %s has no build option %s=%s (its options: %s)"
+                             % (board.id, name, value, ", ".join("%s=%s" % (o["name"], "|".join(v["id"] for v in o["values"]))
+                                                                for o in board.build_options) or "none"))
+        options[name] = value
+    # the Makefile's names (odrflash/names.py): a non-default value is in the build directory and the image
+    # (build/md380-vhf/odr_md380-vhf.bin)
+    path = args.bin or os.path.join(ROOT, board.build_image(options, variant))
     with open(path, "rb") as f:
         image = f.read()
     check_no_codec(board, image)
@@ -93,10 +112,11 @@ def main(argv=None):
             raise SystemExit("release: the %s image must start with its first stage: release odr_%s_install.bin, not the "
                              "application alone" % (board.name, board.id))
     commit = args.git or git("rev-parse", "HEAD")
-    feats = args.features if args.features is not None else features(board.id, variant)
+    feats = args.features if args.features is not None else features(board.id, variant, options)
     tc = args.toolchain if args.toolchain is not None else toolchain(board.id)
-    # variant images carry the variant in their names; the full build keeps the plain names odrflash fetches
-    name_id = board.id + ("-" + variant if variant else "")
+    # variant and build option images carry them in their names; the full default build keeps the plain names odrflash
+    # fetches
+    name_id = board.release_id(options, variant)
     bin_name = mf.image_name(name_id, args.version)
     json_name = mf.image_name(name_id, args.version, "json")
     try:
@@ -104,6 +124,8 @@ def main(argv=None):
     except mf.ManifestError as e:
         raise SystemExit("release: %s" % e)
     man["variant"] = variant or "full"
+    if options:
+        man["build_options"] = dict(options)
     whole = image
     mf.verify(man, whole, board.id)
 

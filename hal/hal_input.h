@@ -22,6 +22,8 @@ typedef enum {
 	ACT_LOCK, ACT_CALL_BACK, ACT_HOME_ZONE, ACT_COPY_VFO,
 	ACT_VOLUME,		// radios without a volume knob (hal_power_t.volume() = -1): opens the volume editor
 	ACT_VFO_TOGGLE,		// the VFO/MR key: between the channel and the VFO (a key map entry, not a side key function)
+	ACT_DUAL_WATCH,		// dual watch on / off (docs/ux/dual-watch.md)
+	ACT_AB,			// dual watch: the other channel (A / B); starts dual watch when it is off
 	ACT_COUNT
 } input_action_t;
 

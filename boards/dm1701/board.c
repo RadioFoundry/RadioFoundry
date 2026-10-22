@@ -4,6 +4,8 @@
 #include "board.h"
 #include "config.h"
 #include "dm1701.h"
+#include "hrc/dmr_glue.h"
+#include "hrc/vocoder.h"
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -46,6 +48,14 @@ static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1
 #define TOP_LONG	ACT_USER_3
 #endif
 
+// SK2 (the lowest side key): A/B on a press and Dual watch held (docs/ux/dual-watch.md), the pair on one key. Without
+// dual watch a press is the talk target picker (also long #)
+#if CONFIG_DUAL_WATCH
+#define SK2_SHORT	ACT_AB
+#else
+#define SK2_SHORT	ACT_TALK_TARGET
+#endif
+
 // docs/ux/information-architecture.md 7.1
 static const keymap_entry_t keymap[] = {
 	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false },
@@ -65,7 +75,7 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false },
 	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
 	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ KEY_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
+	{ KEY_SK2, SK2_SHORT, ACT_USER_2, false, false },
 	{ KEY_TOP, ACT_USER_3, TOP_LONG, false, false },
 	{ KEY_FN_LEFT, ACT_USER_1, ACT_USER_1, false, false },
 	{ KEY_FN_RIGHT, ACT_USER_4, ACT_USER_4, false, false },
@@ -82,7 +92,7 @@ static uint32_t cps_radio_type(void)
 {
 	uint8_t type = 0;
 
-	if (dm1701_flash_read_security(3, 0x1D, &type, 1) && (type & 3u) == 2u) {
+	if (stm32_spi_flash_read_security(3, 0x1D, &type, 1) && (type & 3u) == 2u) {
 		return 10;
 	}
 	return 8;
@@ -92,7 +102,7 @@ static const hal_cps_t cps = {
 	.radio_type = cps_radio_type,
 	.rom_base = 0x08000000u,
 	.rom_size = 1024u * 1024u,
-	.security_read = dm1701_cps_security_read,
+	.security_read = stm32_spi_flash_cps_security_read,
 };
 #endif
 
@@ -112,15 +122,15 @@ const board_t board = {
 	.side_key_count = sizeof(side_keys),
 	.radio = &dm1701_radio,
 	.power = &dm1701_power,
-	.flash = &dm1701_flash,
+	.flash = &stm32_spi_flash,
 #if CONFIG_DIAG
 	.diag_line = dm1701_diag_line,
 	.diag_reset = dm1701_diag_reset,
 #endif
 #if CONFIG_DMR
-	.dmr = &dm1701_dmr,
+	.dmr = &stm32_hrc_dmr,
 	.audio = &dm1701_audio,
-	.vocoder = &dm1701_vocoder,
+	.vocoder = &stm32_vocoder,
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
 	.audio_tap = &dm1701_audio_tap,
 #endif
@@ -244,7 +254,7 @@ void board_init(void)
 {
 	lcdbus = xSemaphoreCreateRecursiveMutex();
 	dm1701_power.init();
-	dm1701_flash.init();
+	dm1701_flash_init();
 	dm1701_cal_load();
 #if CONFIG_NET_PPP && CONFIG_USB_NETWORK
 	hostlink_ppp_set_usb(&usb_ncm_netif);

@@ -55,8 +55,8 @@ void dm1701_lcd_pins_fsmc(void)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();	// the port registers are shared with other pins on PD and PE
-	set_af12(GPIOD, KEY_COLS_PORTD);
-	set_af12(GPIOE, KEY_COLS_PORTE);
+	set_af12(GPIOD, STM32_FSMC_D0_D3);
+	set_af12(GPIOE, STM32_FSMC_D4_D7);
 	__set_PRIMASK(primask);
 }
 
@@ -224,7 +224,7 @@ static void init(void)
 	fsmc_init();
 	bl_init();
 
-	if (!dm1701_flash_read_security(3, 0x1D, &type, 1)) {
+	if (!stm32_spi_flash_read_security(3, 0x1D, &type, 1)) {
 		type = 0;
 	}
 	panel.type = type & 3;
@@ -238,12 +238,12 @@ static void init(void)
 	ready = true;
 }
 
-static void flush(const void *fb, uint16_t y0, uint16_t y1)
+static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t y1)
 {
 	if (!ready || fb == NULL) {
 		return;
 	}
-	st7735_write_rows(&panel, (const uint16_t *)fb, y0, y1);
+	st7735_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 }
 
 const hal_display_t dm1701_display = {
@@ -252,9 +252,9 @@ const hal_display_t dm1701_display = {
 	.inset_left = CONFIG_DISPLAY_INSET_LEFT, .inset_right = CONFIG_DISPLAY_INSET_RIGHT,
 	.width = VISIBLE_W,
 	.height = VISIBLE_H,
-	.bpp = 16,
+	.bpp = 4,
 	.init = init,
-	.flush = flush,
+	.flush_indexed = flush,
 	.set_backlight = set_backlight,
 };
 

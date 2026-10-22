@@ -530,7 +530,7 @@
    "aliases": [],
    "category": "RF and hardware",
    "scope": "user",
-   "definition": "Alternating between two channels to hear both.",
+   "definition": "Listening on two channels, A and B, and talking on the selected one. With one receiver the radio alternates between them.",
    "link": "",
    "preview": true
   },

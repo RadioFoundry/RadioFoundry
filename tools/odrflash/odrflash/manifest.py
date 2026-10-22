@@ -27,7 +27,7 @@ the codec moved, "dm1701-v0206-csv", so verify() refuses them: docs/spec/codec-p
 import hashlib
 import json
 
-from . import boards
+from . import boards, names
 
 FORMAT = "odr-release/1"
 
@@ -45,7 +45,7 @@ def _int(v):
 
 
 def image_name(board_id, version, ext="bin"):
-    return "odr-%s-%s.%s" % (board_id, version, ext)
+    return names.release_name(board_id, version, ext)
 
 
 def codec_conflicts(board, lo, hi):

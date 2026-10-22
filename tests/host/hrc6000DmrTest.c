@@ -898,7 +898,7 @@ static void test_idle_restart_once(void)
 // Bench 2026-10-10, as the radio saw it: one MS sync call (8 headers, 16 superframes, 3 terminators), a report at
 // every tick, class 2 only for headers / terminators, class 1 for voice A, class 0 for B-F with the number's bit 7
 // set or clear, the empty slot repeating the last number (bit 7 clear), and the last status (0x60) repeated after the
-// call. Before the fix this gave C39 D59 and voice lost
+// call. Before the fix this gave C39 D59 and voice lost. Every voice burst carries the voice read at its own report
 static void test_rx_bench_call(void)
 {
 	fresh_engine();
@@ -928,6 +928,7 @@ static void test_rx_bench_call(void)
 	memcpy(&rd[2][0], (const uint8_t[]){ 0, 0, 0, 0, 0, 201, 0, 0, 7 }, 9);
 	for (int i = 0; i < n; i++) {
 		ts_at(t);	// the burst's slot ended: its report (burst A: no CC on air, 0x52 holds junk)
+		memset(voice_rx, i, sizeof(voice_rx));	// this burst's own voice; the empty slot reads it again (stale)
 		report_at(t + 3500, seq[i], (seq[i] & 3u) == 1u ? 0x50 : 0x20, 0xF0);
 		last51 = seq[i];
 		burst_no++;
@@ -951,11 +952,14 @@ static void test_rx_bench_call(void)
 		t += 30000;
 		drain();
 	}
-	int voices = 0, expect = 0;
+	int voices = 0, expect = 0, own_voice = 0;
 	bool in_order = true;
 	uint32_t last_arg = 0;
 	for (int i = 0; i < nev; i++) {
 		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].kind == DMR_BURST_VOICE) {
+			// The voice read for this burst's report, not a later or stale one: burst A, held back until its B, too.
+			// The voice bursts are seq[8..103]
+			own_voice += bursts[i].len == 27 && bursts[i].payload[0] == 8 + voices && bursts[i].payload[26] == 8 + voices;
 			if (bursts[i].voice_index != expect || bursts[i].cc != 2) {
 				in_order = false;
 			}
@@ -972,6 +976,7 @@ static void test_rx_bench_call(void)
 		       eng.st.rx_stale, eng.st.rx_dup, eng.st.rx_seq_fill, eng.st.rx_seq_jump);
 	}
 	CHECK(voices == 96 && in_order);
+	CHECK(own_voice == 96);		// a modem that hands over stale voice plays silence with every counter clean
 	CHECK(eng.st.rx_voice == 96);
 	CHECK(eng.st.rx_lc_header == 8 && eng.st.rx_terminator == 3);
 	CHECK(eng.st.rx_csbk == 0 && eng.st.rx_data == 0 && eng.st.rx_idle == 0);

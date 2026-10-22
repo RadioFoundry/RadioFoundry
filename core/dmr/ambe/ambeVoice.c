@@ -39,6 +39,8 @@ static uint8_t tx_head, tx_tail;
 // Call boundaries, written by the call task only: begin bumps the sequence, end copies it
 static uint8_t rx_seq, rx_end_seq;
 static uint8_t rx_place;	// the next frame's place in its burst (0-2); a call starts at a burst's first
+static uint8_t rx_prev[VOCODER_BITS];	// the call's previous good frame (rx_repeats)
+static bool rx_have_prev;
 static uint8_t tx_seq, tx_end_seq;	// equal: no call (also at start-up)
 
 // Audio callback state
@@ -54,6 +56,11 @@ static ambe_voice_stats_t stats;
 static ambe_voice_mixer_t mixer;
 static bool cb_mixing;
 static uint16_t mic_gain_q8 = 256;	// ambeVoiceSetMicGain: the mic samples times this / 256 before encoding
+static bool test_signal;		// ambeVoiceSetTestSignal
+static uint16_t test_phase;		// the test signal's phase (a full cycle is 65536) and its pitch step
+static uint8_t test_blocks;
+static uint8_t tx_prev[VOCODER_BITS];	// the transmission's previous frame (tx_repeats)
+static bool tx_have_prev;
 static uint32_t enc_opts = VOCODER_OPT_DEFAULT;	// ambeVoiceSetEncodeOptions: any task
 static uint32_t cb_enc_opts;		// what the vocoder was last given (audio callback)
 static bool cb_enc_opts_set;		// cb_enc_opts is valid
@@ -91,6 +98,7 @@ static void sink_begin(const dmr_caller_t *caller, void *ctx)
 	(void)caller;
 	(void)ctx;
 	rx_place = 0;
+	rx_have_prev = false;
 	STORE(rx_seq, (uint8_t)(rx_seq + 1));
 	ensure_streaming();
 }
@@ -110,6 +118,11 @@ static void sink_frame(const uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx)
 		stats.rx_bad_at[rx_place]++;
 	} else {
 		stats.rx_bit_errors += r.errors;
+		if (rx_have_prev && memcmp(bits, rx_prev, VOCODER_BITS) == 0) {
+			stats.rx_repeats++;
+		}
+		memcpy(rx_prev, bits, VOCODER_BITS);
+		rx_have_prev = true;
 	}
 	rx_push(bits, r.c0_failed ? 1 : 0);
 	rx_place = (uint8_t)((rx_place + 1u) % 3u);
@@ -181,6 +194,22 @@ static void speaker(bool on)
 static bool voc_ok(void)
 {
 	return voc != NULL && voc->present();
+}
+
+// The test signal: a triangle wave at about -12 dBFS whose pitch moves to the next of five values every block (one
+// vocoder frame, 20 ms). Consecutive frames then differ, so a stuck encoder, or a modem that sends one frame again,
+// shows as repeats
+static void test_block(int16_t *out)
+{
+	// 300, 500, 700, 1100 and 1500 Hz at 8 kHz, a cycle being 65536
+	static const uint16_t step[5] = { 2458, 4096, 5734, 9011, 12288 };
+	uint16_t inc = step[test_blocks];
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		int32_t tri = test_phase < 32768u ? (int32_t)test_phase - 16384 : 49151 - (int32_t)test_phase;
+		out[i] = (int16_t)(tri / 2);	// +-8192
+		test_phase = (uint16_t)(test_phase + inc);
+	}
+	test_blocks = (uint8_t)((test_blocks + 1u) % 5u);
 }
 
 static void conceal(int16_t *spk)
@@ -281,6 +310,72 @@ static void rx_block(int16_t *spk)
 	}
 }
 
+// The mic statistics (ambe_voice_stats_t.tx_mic_*): histograms of the blocks' levels and zero crossings, the audio
+// callback only
+#define MIC_LEVEL_BINS	32u	// floor(log2(mean square)): 3 dB a bin
+#define MIC_ZC_BINS	21u	// zero crossings / 8
+static uint16_t mic_level_hist[MIC_LEVEL_BINS];
+static uint16_t mic_zc_hist[MIC_ZC_BINS];
+static int16_t mic_prev;		// the last sample of the previous block
+
+// The bin holding the given fraction (per 1000) of the counts
+static uint32_t hist_at(const uint16_t *h, uint32_t bins, uint32_t total, uint32_t permille)
+{
+	uint32_t want = (total * permille + 999u) / 1000u, sum = 0;
+	for (uint32_t i = 0; i < bins; i++) {
+		sum += h[i];
+		if (sum >= want && sum > 0) {
+			return i;
+		}
+	}
+	return bins - 1u;
+}
+
+static void mic_stats(const int16_t *mic)
+{
+	int32_t mean = 0;
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		mean += mic[i];
+	}
+	mean /= AUDIO_BLOCK_SAMPLES;
+	if (stats.tx_mic_blocks == 0) {
+		mic_prev = mic[0];
+	}
+	// The level from the sample-to-sample difference: a first-order high pass (gain 2 sin(pi f / 8 kHz)) that leaves
+	// mains hum and rumble 30 dB down and the voice band within about 6 dB of flat
+	uint64_t e = 0;
+	uint32_t zc = 0;
+	bool neg = mic[0] < mean;
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		int32_t v = mic[i] - mean, d = (int32_t)mic[i] - mic_prev;
+		mic_prev = mic[i];
+		e += (uint64_t)((int64_t)d * d);
+		if ((v < 0) != neg) {
+			neg = v < 0;
+			zc++;
+		}
+	}
+	uint32_t ms = (uint32_t)(e / AUDIO_BLOCK_SAMPLES), bin = 0;
+	while (ms > 1u && bin < MIC_LEVEL_BINS - 1u) {
+		ms >>= 1;
+		bin++;
+	}
+	if (stats.tx_mic_blocks == 0) {	// a new transmission, or ambeVoiceResetStats
+		memset(mic_level_hist, 0, sizeof mic_level_hist);
+		memset(mic_zc_hist, 0, sizeof mic_zc_hist);
+	}
+	if (stats.tx_mic_blocks >= 0xFFFFu) {
+		return;	// 21 minutes: the counters would wrap
+	}
+	mic_level_hist[bin]++;
+	mic_zc_hist[zc / 8u < MIC_ZC_BINS ? zc / 8u : MIC_ZC_BINS - 1u]++;
+	uint32_t n = ++stats.tx_mic_blocks;
+	uint32_t loud = hist_at(mic_level_hist, MIC_LEVEL_BINS, n, 900u);
+	stats.tx_mic_level_db = 3u * loud;
+	stats.tx_mic_spread_db = 3u * (loud - hist_at(mic_level_hist, MIC_LEVEL_BINS, n, 100u));
+	stats.tx_mic_zc = 8u * hist_at(mic_zc_hist, MIC_ZC_BINS, n, 500u) + 4u;
+}
+
 static void tx_block(const int16_t *mic)
 {
 	uint8_t seq = LOAD(tx_seq);
@@ -289,10 +384,15 @@ static void tx_block(const int16_t *mic)
 	}
 	if (seq != cb_tx_seq) {
 		cb_tx_seq = seq;
+		stats.tx_mic_level_db = stats.tx_mic_spread_db = stats.tx_mic_zc = stats.tx_mic_blocks = 0;
 		if (voc_ok()) {
 			voc->reset();	// fresh encoder: the first frame of a transmission
 		}
+		stats.tx_mic_peak = 0;
+		tx_have_prev = false;
+		test_blocks = 0;
 	}
+	mic_stats(mic);	// the board's samples, before the gain scaling
 	// Options change only between frames, in this task, so both halves of a frame see the same ones
 	uint32_t opts = LOAD(enc_opts);
 	if (voc_ok() && voc->set_options != NULL && (!cb_enc_opts_set || opts != cb_enc_opts)) {
@@ -300,8 +400,18 @@ static void tx_block(const int16_t *mic)
 		cb_enc_opts = opts;
 		cb_enc_opts_set = true;
 	}
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		uint32_t a = (uint32_t)(mic[i] < 0 ? -mic[i] : mic[i]);
+		if (a > stats.tx_mic_peak) {
+			stats.tx_mic_peak = a;
+		}
+	}
 	uint8_t bits[VOCODER_BITS];
 	static int16_t scaled[AUDIO_BLOCK_SAMPLES];	// the audio callback only (off its stack)
+	if (LOAD(test_signal)) {
+		test_block(scaled);
+		mic = scaled;
+	}
 	uint16_t g = LOAD(mic_gain_q8);
 	if (g != 256) {
 		for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
@@ -315,6 +425,11 @@ static void tx_block(const int16_t *mic)
 	} else {
 		memset(bits, 0, sizeof bits);
 	}
+	if (tx_have_prev && memcmp(bits, tx_prev, VOCODER_BITS) == 0) {
+		stats.tx_repeats++;
+	}
+	memcpy(tx_prev, bits, VOCODER_BITS);
+	tx_have_prev = true;
 	uint8_t h = tx_head;
 	if ((uint8_t)(h - LOAD(tx_tail)) >= AMBE_VOICE_QUEUE) {
 		stats.tx_overflows++;
@@ -414,6 +529,16 @@ bool ambeVoiceStreaming(void)
 void ambeVoiceSetMixer(ambe_voice_mixer_t m)
 {
 	STORE(mixer, m);
+}
+
+void ambeVoiceSetTestSignal(bool on)
+{
+	STORE(test_signal, on);
+}
+
+bool ambeVoiceTestSignal(void)
+{
+	return LOAD(test_signal);
 }
 
 void ambeVoiceResetStats(void)

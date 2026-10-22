@@ -169,10 +169,10 @@ On a DMR channel, **\*** opens these tiles:
 | **1** | Power | Steps through the radio's lowest level, its default and its highest ([power levels](16-battery-and-power.md#transmit-power)) |
 | **2** | Slot | Switches between timeslot 1 and 2, for now |
 | **3** | Color | Opens the color code editor |
-| **4** | Mode | Listen and talk in FM on the same frequencies, for now |
+| **4** | Mode | Shows DMR. Press it to listen and talk in FM on the same frequencies, for now |
 | **5** | DMon | Digital monitor on or off |
 | **6** | Privacy | Privacy on or off |
-| **7** | Scan | Scan on or off |
+| **7** | Dual | Dual watch on or off |
 | **8** | Talk to | Opens the talk target picker |
 | **9** | Bright | Opens the brightness editor |
 | **0** | | Opens Settings |

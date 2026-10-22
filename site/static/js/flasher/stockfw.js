@@ -69,6 +69,14 @@ export function placedWindows(prof) {
 	return [[pl.code, prof.windows[0][1], pd.code[1]], [tab[0], pl.tables_len ?? tab[1], pd.tables[1]], ...prof.windows.slice(2)];
 }
 
+// The windows a merge of this profile writes, [[addr, length]] (stockfw.layout): the placed windows and the descriptor
+// for a profile that moves the code, else its stock windows. A board with several stock files plans each merge
+// against its own file's layout, not the board's windows (their union)
+export function layoutWindows(prof, fb) {
+	const wins = placedWindows(prof).map(([a, n]) => [a, n]);
+	return prof.placement ? [...wins, [fb.descriptor.addr, fb.descriptor.len]] : wins;
+}
+
 // The 128-byte descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h, stockfw.descriptor)
 export function descriptor(prof, fb) {
 	const wins = placedWindows(prof);

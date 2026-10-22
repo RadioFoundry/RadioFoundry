@@ -57,7 +57,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLinkError
+from odr_hil import DebugLinkError, skip
 
 POS = (33.7490, -84.3880)
 APRS_HZ = {144390000, 144800000, 145175000, 144575000, 144660000, 144640000}
@@ -75,7 +75,7 @@ CAPTURE_S = 14       # a message waits for the engine's next service pass: it we
 
 def _need_aprs(radio):
     if "APRS" not in radio.features():
-        pytest.skip("built without CONFIG_APRS")
+        skip("not_built", "built without CONFIG_APRS")
 
 
 def _aprs(radio):
@@ -88,6 +88,7 @@ def _n(v, k):
     return int(v.get(k, 0))
 
 
+@pytest.mark.feature("aprs")
 def test_aprs_view_and_settings(radio):
     """The view sections answer, a setting round-trips through the debug link (and is put back)."""
     _need_aprs(radio)
@@ -103,6 +104,7 @@ def test_aprs_view_and_settings(radio):
         radio.link.aprs_set("ssid", old)
 
 
+@pytest.mark.feature("aprs")
 def test_aprs_test_call_and_nmea(radio):
     """A RAM test callsign clears the "no callsign" block; host NMEA becomes the position (source "host")."""
     _need_aprs(radio)
@@ -273,20 +275,20 @@ def aprs_air(radio, pytestconfig, request):
     _need_aprs(radio)
     call = pytestconfig.getoption("--aprs-call")
     if not call:
-        pytest.skip("give --aprs-call (or $ODR_APRS_CALL): a licensed operator's callsign (amateur transmission)")
+        skip("opt_in", "give --aprs-call (or $ODR_APRS_CALL): a licensed operator's callsign (amateur transmission)")
     if "FM" not in radio.features():
-        pytest.skip("built without FM")
+        skip("not_built", "built without FM")
     hz = round(pytestconfig.getoption("--aprs-test-mhz") * 1e6)
     if not allowed_test_hz(hz):
         pytest.fail(f"--aprs-test-mhz {hz / 1e6:.3f}: must be a 2 m or 70 cm amateur frequency that is not an APRS "
                     "frequency")
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     with contextlib.ExitStack() as stack:
         if start == "fm_vfo":
             if "VFO_FM" not in radio.features():
-                pytest.skip("built without the FM VFO")
+                skip("not_built", "built without the FM VFO")
             stack.enter_context(radio.vfo_session())
             fm_hz = round(pytestconfig.getoption("--fm-mhz") * 1e6)
             radio.link.vfo_set(fm_hz)
@@ -298,8 +300,8 @@ def _aprs_air(radio, pytestconfig, call, hz):
     radio.lowest_power()
     v = radio.view(["aprs"])
     if "aprs.tx_power" not in v:
-        pytest.skip("this firmware keys APRS at the settings' default power (1 W on the DM-1701), not the radio's "
-                    "lowest: needs the aprs.tx_power fix")
+        skip("not_built", "this firmware keys APRS at the settings' default power (1 W on the DM-1701), not the "
+                          "radio's lowest: needs the aprs.tx_power fix")
     assert v["aprs.tx_power"] == "0" == radio.core()["power"], f"not at the lowest power: {v}"
     ssid = pytestconfig.getoption("--aprs-ssid")
     with aprs_session(radio) as s:
@@ -367,8 +369,10 @@ def check_tones(f):
                                    f"{f['space_dev_hz']:.0f} Hz)"
 
 
+@pytest.mark.feature("aprs")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 @pytest.mark.parametrize("aprs_air", ["channel", "fm_vfo"], indirect=True)
 def test_aprs_on_air_position(radio, sdr_bench, aprs_air):
     """One position at 50 mW on the test frequency, decoded off air; deviation, twist, phase, TX delay printed."""
@@ -379,8 +383,10 @@ def test_aprs_on_air_position(radio, sdr_bench, aprs_air):
     check_tones(f)
 
 
+@pytest.mark.feature("aprs")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_aprs_on_air_status(radio, sdr_bench, aprs_air):
     text = "ODR HIL status test"
     f = send_and_capture(radio, sdr_bench, aprs_air, "hil_aprs_status", lambda: radio.link.aprs_status(text))
@@ -388,8 +394,10 @@ def test_aprs_on_air_status(radio, sdr_bench, aprs_air):
     check_tones(f)
 
 
+@pytest.mark.feature("aprs")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_aprs_on_air_message(radio, sdr_bench, aprs_air):
     """A message with a message number; then its two retries (no ack can come back to the DM-1701)."""
     to, text = f"{aprs_air.call}-1", "ODR HIL message test"
@@ -407,6 +415,7 @@ def test_aprs_on_air_message(radio, sdr_bench, aprs_air):
     print(f"message {m.group(3)}: tries {v['aprs.msg_tries']}, acked {v['aprs.msg_acked']}")
 
 
+@pytest.mark.feature("aprs")
 @pytest.mark.radio_tx
 @pytest.mark.parametrize("over", ["serial", pytest.param("network", marks=pytest.mark.usb_switch),
                                   pytest.param("kiss_tcp", marks=pytest.mark.usb_switch)])
@@ -416,7 +425,7 @@ def test_aprs_tx_link_answers(radio, aprs_air, over, pytestconfig):
     with contextlib.ExitStack() as stack:
         if over != "serial":
             if not pytestconfig.getoption("--allow-usb-switch"):
-                pytest.skip("needs --allow-usb-switch")
+                skip("opt_in", "needs --allow-usb-switch")
             from test_net_services import network_mode
             serial = radio.link
             udp, ip, _ = stack.enter_context(network_mode(radio))
@@ -426,7 +435,7 @@ def test_aprs_tx_link_answers(radio, aprs_air, over, pytestconfig):
         if over == "kiss_tcp":
             # The same frame from a KISS client on TCP 8001 (CONFIG_NET_KISS), sourced from our own callsign
             if "NET_KISS" not in radio.features():
-                pytest.skip("built without CONFIG_NET_KISS")
+                skip("not_built", "built without CONFIG_NET_KISS")
             import socket
             from test_tcp_services import _kiss, _ui_frame
             if radio.view(["aprs_set"]).get("set.aprs_kiss", "0") != "1":
@@ -539,27 +548,30 @@ def udt_position(block):
     return valid, (lat if north else -lat), (lon if east else -lon)
 
 
+@pytest.mark.feature("dmr_lrrp")
+@pytest.mark.feature("aprs", optional=True)
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 @pytest.mark.parametrize("form", ["lrrp", "udt"])
 def test_aprs_dmr_position(radio, sdr_bench, pytestconfig, form):
     """The position as an LRRP report or a UDT location over DMR at the lowest power, decoded from the bench modem."""
     _need_aprs(radio)
     feats = radio.features()
     if "DMR" not in feats or "DMR_DATA_CORE" not in feats:
-        pytest.skip("built without DMR data")
+        skip("not_built", "built without DMR data")
     if form == "lrrp" and "DMR_LRRP" not in feats:
-        pytest.skip("built without CONFIG_DMR_LRRP")
+        skip("not_built", "built without CONFIG_DMR_LRRP")
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     dst = pytestconfig.getoption("--aprs-dmr-dst")
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     radio.find_channel(round(freq * 1e6), "dmr")
     radio.lowest_power()
     own = int(radio.view(["dmr"])["dmr.own_id"])
     if own == 0:
-        pytest.skip("the radio has no DMR ID")
+        skip("state", "the radio has no DMR ID")
     time.sleep(1.0)
     with aprs_session(radio) as s:
         s.set("via", VIAS["dmr"])

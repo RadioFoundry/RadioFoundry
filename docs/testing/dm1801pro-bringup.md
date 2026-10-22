@@ -6,15 +6,20 @@ The order to bring the DM-1801 Pro port (`make BOARD=dm1801pro`) up on a radio, 
 change when it doesn't work. Steps 0 to 3, 7 and 8 passed on 2026-10-15 (hardware-dm1801pro.md 12). Hardware facts:
 [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md).
 
+The feature checklist, with every feature's required HIL tests and the last recorded result, is
+`tools/bringup.py list --radio dm1801pro`. `tools/bringup.py run --radio dm1801pro` records a run
+([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)). This page keeps the hardware steps and what to
+change when one fails.
+
 ## 0. Before anything
 
 1. **Back up both flashes** (1 MB program flash, 16 MB data flash). The port never writes the data flash below
    0x700000 and never touches the boot loader, but a backup is the only way back from a mistake.
 2. Confirm update mode before the first flash: it is the recovery path for every step below. The loader stays in it while
    PTT and SK1 are held at power-on ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2). Push the cable fully
-   into the jack, or the loader doesn't answer. `python3 tools/dm32_flash.py --model dm1801pro --dry-run IMAGE`
+   into the jack, or the loader doesn't answer. `python3 tools/serial_loader.py --model dm1801pro --dry-run IMAGE`
    checks the image and the cable first.
-3. Flash: `python3 tools/dm32_flash.py --model dm1801pro build/dm1801pro/odr_dm1801pro.bin` over the programming cable.
+3. Flash: `python3 tools/serial_loader.py --model dm1801pro build/dm1801pro/odr_dm1801pro.bin` over the programming cable.
    The erase takes about 13 s. `odrflash flash IMAGE --board dm1801pro` wraps the same tool, and the stub for a radio
    that runs ODR with `CONFIG_STUB_ENTRY=y` ([tools/odrflash/README.md](../../tools/odrflash/README.md#the-dm-1801-pro));
    neither odrflash route has flashed a radio yet.
@@ -133,10 +138,11 @@ DMR counters.
 
 | Step | Expect | If not |
 |---|---|---|
-| Select a DMR channel on a local repeater or hotspot | `tk` (ticks) climbs by about 33 a second, `ts` interrupts count up | No ticks: the modem never got timing; check the DMR mode register set (`dmr_table` in `fd6818_dm1801pro.c`) and the RX path |
+| Select a DMR channel on a local repeater or hotspot | `tk` (ticks) climbs by about 33 a second, `ts` interrupts count up | No ticks: the modem never got timing; check the DMR mode register set (`dmr_table` in `boards/dm1801pro/rf_tables_dm1801pro.c`) and the RX path |
 | Receive a transmission | `H` (headers) and `V` / `T` counters rise, `crc` stays low | Many `crc` or `u` (unusable): the bandwidth word 0x3048 or the DMR register set |
 | Hear a call | Silence: the codec is located but not hosted yet | |
 | Transmit on a dummy load (data call or a short key-up) | A burst per slot on a meter or SDR, `tx`, `rf` and `ok` rise | `un` (underrun) or `rj`: the per-burst switch takes too long (`dmr_rf_switch`, `RF_BIT_SCALE_US`); no carrier: `dmr_pa_on`, the 28 ms PA delay |
+| The mic on DMR transmit, no person: `pytest tests/hil -k mic_uart_inject --allow-rf --mic-inject` on the host the cable is plugged into (its device path, not a network bridge) | The tone bursts sent on the cable's line show at the vocoder: `voice.tx_mic_spread_db` 12 or more, `tx_mic_level_db` 9 dB over a quiet over | Both overs at the ADC's floor (level about 6, no spread): the mic doesn't reach the codec ADC on DMR. PTB14 must be high, as for FM ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 3.1) |
 
 ## 10. VOX and the microphone level
 

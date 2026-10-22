@@ -26,7 +26,7 @@ static int failures, checks;
 	} while (0)
 
 #define FLASH_SIZE	0x100000u
-#define APP_BASE	0x0800C000u	// the DM-1701 / MD-380 / MD-9600 bootloader end
+#define APP_BASE	0x0800C000u	// the AnyRoad / TYT bootloader end
 #define SRAM_SIZE	0x20000u
 
 static uint8_t flash[FLASH_SIZE];
@@ -82,7 +82,7 @@ static bool sim_erase(void *ctx, unsigned sector)
 	}
 	erases[sector]++;
 	feeds_at_erase = feeds;
-	memset(flash + (f4_sector_addr(sector) - F4_FLASH_BASE), 0xFF, f4_sector_size(sector));
+	memset(flash + (stubeng_sector_addr(&port.flash, sector) - F4_FLASH_BASE), 0xFF, stubeng_sector_size(&port.flash, sector));
 	return true;
 }
 
@@ -178,8 +178,6 @@ static stubeng_port_t port = {
 	.xerase = sim_xerase,
 	.xprogram = sim_xprogram,
 	.feed = sim_feed,
-	.xsize = SPI_SIZE,
-	.xid = { 0xEF, 0x40, 0x14 },
 };
 static stubeng_t eng;
 
@@ -304,7 +302,7 @@ static void test_crc_and_geometry(void)
 	CHECK(stubeng_sector_of(&kg, 0x4001u) == 8 && stubeng_sector_size(&kg, 8) == 0x800u, "uniform: sector of");
 }
 
-// ---- board records (f4stub.h): the DM-1701 / MD-380 wiring and the MD-9600's
+// ---- board records (f4stub.h): the SPI1 wiring of the DM-1701 and MD-380, and SPI2 with a second chip select
 #define PIN(port, n)	((uint8_t)(((port) - 'A') << 4 | (n)))
 
 static void record(uint8_t *r, uint8_t board, uint8_t bus, uint8_t mode, uint32_t app_base)
@@ -334,7 +332,7 @@ static void record(uint8_t *r, uint8_t board, uint8_t bus, uint8_t mode, uint32_
 	}
 }
 
-static uint8_t dm1701_rec[F4_REC_LEN], md9600_rec[F4_REC_LEN];
+static uint8_t dm1701_rec[F4_REC_LEN], spi2_rec[F4_REC_LEN];
 
 static uint8_t configure(const uint8_t *r, uint32_t n)
 {
@@ -350,7 +348,7 @@ static void test_config(void)
 	uint32_t n;
 	uint8_t r[F4_REC_LEN + 1];
 	record(dm1701_rec, 1, 1, 0, APP_BASE);
-	record(md9600_rec, 3, 2, 3, APP_BASE);
+	record(spi2_rec, 3, 2, 3, APP_BASE);
 	reset_flash();
 
 	CHECK(request(STUB_OP_HELLO, NULL, 0, &b, &n) == STUB_ST_OK && n == STUBENG_HELLO_LEN, "unconfigured hello");
@@ -411,17 +409,17 @@ static void test_config(void)
 	}
 	CHECK(erase(5, F4STUB_MAGIC) == STUB_ST_NOCONFIG, "still unconfigured after the refusals");
 
-	// The MD-9600's record: SPI2, mode 3, its chip select and the LCD's held high
-	CHECK(configure(md9600_rec, F4_REC_LEN) == STUB_ST_OK, "MD-9600 record accepted");
+	// The SPI2 record: mode 3, its chip select and a second one on the bus held high
+	CHECK(configure(spi2_rec, F4_REC_LEN) == STUB_ST_OK, "SPI2 record accepted");
 	CHECK(last_board.spi_bus == 2 && last_board.spi_mode == 3 && last_board.cs == PIN('B', 12) &&
 	      last_board.idle[0] == PIN('D', 14) && last_board.idle[1] == F4_PIN_NONE && last_board.sck == PIN('B', 13) &&
-	      last_board.hse_hz == 8000000u && last_board.spi_hz == 4500000u, "MD-9600 record decoded");
+	      last_board.hse_hz == 8000000u && last_board.spi_hz == 4500000u, "SPI2 record decoded");
 	CHECK(request(STUB_OP_HELLO, NULL, 0, &b, &n) == STUB_ST_OK && n == HELLO_N, "configured hello (%u)", (unsigned)n);
 	CHECK(b[12] == (F4_HELLO_USB_ADOPTED | STUB_HELLO_CONFIGURED) && get32(b + 13) == APP_BASE && b[24] == 3 &&
-	      b[25] == F4_REC_LEN && memcmp(b + STUBENG_HELLO_LEN, md9600_rec, F4_REC_LEN) == 0, "the echo");
+	      b[25] == F4_REC_LEN && memcmp(b + STUBENG_HELLO_LEN, spi2_rec, F4_REC_LEN) == 0, "the echo");
 
 	// A refused record after a good one: unconfigured again, nothing stays from the old one
-	memcpy(r, md9600_rec, F4_REC_LEN);
+	memcpy(r, spi2_rec, F4_REC_LEN);
 	r[F4_REC_SPI_BUS] = 9;
 	CHECK(configure(r, F4_REC_LEN) == STUB_ST_BADARG, "a bad record after a good one");
 	CHECK(request(STUB_OP_HELLO, NULL, 0, &b, &n) == STUB_ST_OK && n == STUBENG_HELLO_LEN && b[24] == 0 &&
@@ -601,30 +599,30 @@ static void test_feeds(void)
 	p[4] = 0x01;
 	p[5] = 0x00;
 	int f0 = feeds;
-	CHECK(simple(F4OP_SUMS, p, 6) == F4ST_OK, "sums of 256 blocks");
+	CHECK(simple(STUB_OP_SUMS, p, 6) == STUB_ST_OK, "sums of 256 blocks");
 	CHECK(feeds - f0 >= 256 + 1, "sums: a feed per block (%d)", feeds - f0);
 
 	put32(p, 0x0805C000u);		// READ of 4 blocks
 	p[4] = 4;
 	p[5] = 0;
 	f0 = feeds;
-	CHECK(simple(F4OP_READ, p, 6) == F4ST_OK, "read of 4 blocks");
+	CHECK(simple(STUB_OP_READ, p, 6) == STUB_ST_OK, "read of 4 blocks");
 	CHECK(feeds - f0 >= 4 + 1, "read: a feed per block (%d)", feeds - f0);
 
 	f0 = feeds;
-	CHECK(erase(3, F4STUB_MAGIC) == F4ST_OK, "erase sector 3");
+	CHECK(erase(3, F4STUB_MAGIC) == STUB_ST_OK, "erase sector 3");
 	CHECK(feeds_at_erase > f0, "the erase starts on a fresh feed");
 	uint8_t w[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
 	f0 = feeds;
-	CHECK(program(0x0800C100u, w, 8) == F4ST_OK, "program 2 words");
+	CHECK(program(0x0800C100u, w, 8) == STUB_ST_OK, "program 2 words");
 	CHECK(feeds_at_program > f0, "the program starts on a fresh feed");
 
 	f0 = feeds;
-	CHECK(simple(F4OP_HELLO, NULL, 0) == F4ST_OK, "hello");
+	CHECK(simple(STUB_OP_HELLO, NULL, 0) == STUB_ST_OK, "hello");
 	CHECK(feeds - f0 >= 1, "every request feeds");
 
 	port.feed = NULL;		// a port without one: nothing changes
-	CHECK(simple(F4OP_HELLO, NULL, 0) == F4ST_OK, "hello without a feed hook");
+	CHECK(simple(STUB_OP_HELLO, NULL, 0) == STUB_ST_OK, "hello without a feed hook");
 	port.feed = sim_feed;
 }
 

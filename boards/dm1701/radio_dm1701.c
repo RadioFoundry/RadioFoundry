@@ -3,7 +3,7 @@
 // DM-1701 radio: AT1846S (I2C3) + HR_C6000 (bit-banged config SPI, voice SPI2) + RF path GPIOs + APC DAC +
 // calibration. FM receive and transmit (docs/spec/hardware-dm1701.md 4-8, 12; docs/spec/modem-hrc6000.md 3, 8), and the
 // RF side of DMR (modem-hrc6000.md 3.1, 4.3; hardware-dm1701.md 5.3, 6): set_mode(DMR) puts both chips in DMR and starts
-// the slot engine (dmr_dm1701.c); tx() in DMR only arms the per-burst keying (TX frequency and PA drive) and the PA
+// the slot engine (platform/stm32f4/hrc/dmr_glue.c); tx() in DMR only arms the per-burst keying (TX frequency and PA drive) and the PA
 // then follows the bursts from the modem interrupts through dm1701_rf_dmr_switch(), which writes AT1846S reg 0x30
 // directly over I2C3 (never through the task-level driver and its cache, which is resynced when DMR TX ends).
 // tx_off() in DMR belongs after DMR_EV_TX_DONE; called while a transmission runs it drops it.
@@ -20,6 +20,7 @@
 #include "rf/at1846s/at1846s.h"
 #include "modem/hrc6000/hrc6000.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
+#include "hrc/hrc_bus.h"
 #include "dmr_dm1701.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -43,7 +44,6 @@
 
 // Voice SPI2 (hardware-dm1701.md 4.3): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C6000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
-#define VOICE_SPI_TIMEOUT_MS	2
 
 // DM-1701 power interpolation fractions (hardware-dm1701.md 7), per mille: f0 f1 f2 f3
 static const uint16_t frac_vhf[4] = { 450, 750, 250, 530 };
@@ -83,7 +83,6 @@ static struct {
 
 static I2C_HandleTypeDef i2c3;
 static DAC_HandleTypeDef dac;
-static SPI_HandleTypeDef spi2;
 
 static bool in_isr(void)
 {
@@ -183,92 +182,22 @@ static const at1846s_bus_t rf_bus = { .write = rf_write, .read = rf_read, .delay
 
 // --- HR_C6000 bus: bit-banged config SPI on PE2-PE5 (hardware-dm1701.md 4.2) ---
 
-// About 110 ns at 72 MHz on top of the GPIO writes, keeping the clock near the 1-2 MHz the chip is known to take
-static inline void spi_delay(void)
-{
-	__NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-}
+// The configuration port on PE2-PE5 and the voice port on SPI2 (PB13-PB15, AF5, chip select PIN_C6000_VCS): mode 2,
+// PCLK1 / 8 = 4.5 MHz. The shared transfers (platform/stm32f4/hrc/hrc_bus.c) mask the modem interrupts around each
+static const stm32_hrc_bus_cfg_t modem_cfg = {
+	.port = GPIOE,
+	.cs = PIN_MASK(PIN_C6000_CS), .clk = PIN_MASK(PIN_C6000_CLK), .mosi = PIN_MASK(PIN_C6000_MOSI),
+	.miso = PIN_MASK(PIN_C6000_MISO),
+	.voice_spi = SPI2, .voice_br = 2,
+	.voice_cs_port = PIN_PORT(PIN_C6000_VCS), .voice_cs = PIN_MASK(PIN_C6000_VCS),
+};
+static hrc_bus_t modem_bus;
 
-// Clock idles high; MOSI set, clock low, sample MISO, clock high (the chip latches on the rising edge)
-static uint8_t spi_byte(uint8_t out)
-{
-	uint8_t in = 0;
-	for (int i = 0; i < 8; i++) {
-		PIN_WRITE(PIN_C6000_MOSI, (out & 0x80u) != 0);
-		out = (uint8_t)(out << 1);
-		PIN_WRITE(PIN_C6000_CLK, false);
-		spi_delay();
-		in = (uint8_t)((in << 1) | (PIN_READ(PIN_C6000_MISO) ? 1u : 0u));
-		PIN_WRITE(PIN_C6000_CLK, true);
-		spi_delay();
-	}
-	return in;
-}
-
-// One transaction with interrupts up to the RTOS syscall priority masked (the HR_C6000 interrupts run at that level),
-// so a modem ISR never lands inside it. Safe from tasks and from those ISRs; never blocks
-static bool modem_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
-{
-	UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
-	PIN_WRITE(PIN_C6000_CLK, true);
-	PIN_WRITE(PIN_C6000_CS, false);
-	spi_delay();
-	for (uint8_t i = 0; i < hdr_len; i++) {
-		spi_byte(hdr[i]);
-	}
-	for (uint16_t i = 0; i < len; i++) {
-		uint8_t in = spi_byte(tx != NULL ? tx[i] : 0xFF);
-		if (rx != NULL) {
-			rx[i] = in;
-		}
-	}
-	spi_delay();
-	PIN_WRITE(PIN_C6000_CS, true);
-	portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
-	return true;
-}
-
-// Voice port: STM32 SPI2 master, mode 2, prescaler 8 (4.5 MHz)
 static void voice_spi_setup(void)
 {
-	__HAL_RCC_SPI2_CLK_ENABLE();
 	stm32_pin_af(GPIOB, VOICE_SPI_PINS, GPIO_AF5_SPI2, false, GPIO_NOPULL);
-	PIN_WRITE(PIN_C6000_VCS, true);
-	spi2.Instance = SPI2;
-	spi2.Init.Mode = SPI_MODE_MASTER;
-	spi2.Init.Direction = SPI_DIRECTION_2LINES;
-	spi2.Init.DataSize = SPI_DATASIZE_8BIT;
-	spi2.Init.CLKPolarity = SPI_POLARITY_HIGH;
-	spi2.Init.CLKPhase = SPI_PHASE_1EDGE;
-	spi2.Init.NSS = SPI_NSS_SOFT;
-	spi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
-	spi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
-	spi2.Init.TIMode = SPI_TIMODE_DISABLE;
-	spi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-	spi2.Init.CRCPolynomial = 7;
-	HAL_SPI_Init(&spi2);
+	stm32_hrc_bus_init(&modem_cfg, &modem_bus);
 }
-
-// One page 3 frame on the voice port: 0x03 / 0x83, 0x00, then the data. Atomic with respect to the modem ISRs
-static bool voice_xfer(void *ctx, bool write, uint8_t *buf, uint8_t len)
-{
-	uint8_t hdr[2] = { write ? 0x03 : 0x83, 0x00 };
-	UBaseType_t mask = portSET_INTERRUPT_MASK_FROM_ISR();
-	PIN_WRITE(PIN_C6000_VCS, false);
-	bool ok = HAL_SPI_Transmit(&spi2, hdr, 2, VOICE_SPI_TIMEOUT_MS) == HAL_OK;
-	if (ok) {
-		ok = write ? HAL_SPI_Transmit(&spi2, buf, len, VOICE_SPI_TIMEOUT_MS) == HAL_OK
-			   : HAL_SPI_Receive(&spi2, buf, len, VOICE_SPI_TIMEOUT_MS) == HAL_OK;
-	}
-	PIN_WRITE(PIN_C6000_VCS, true);
-	portCLEAR_INTERRUPT_MASK_FROM_ISR(mask);
-	return ok;
-}
-
-static const hrc_bus_t modem_bus = {
-	.transfer = modem_transfer, .delay_ms = hal_delay_ms, .delay_us = hal_delay_us, .ctx = NULL,
-	.voice = voice_xfer,
-};
 
 // --- APC DAC and RF path GPIOs (hardware-dm1701.md 6, 7) ---
 
@@ -449,12 +378,20 @@ void dm1701_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_r
 	*rx_retries = r.rf_rx_retries;
 }
 
+// The shared DMR glue's view of this board: the modem's interrupt lines are PC0-PC2
+static const stm32_hrc_dmr_board_t dmr_board = {
+	.int_port = GPIOC,
+	.rf_switch = dm1701_rf_dmr_switch,
+	.ts_service = dm1701_rf_dmr_service,
+	.rf_counters = dm1701_rf_dmr_counters,
+};
+
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
 static void dmr_disarm(void)
 {
 	r.dmr_armed = false;
-	if (dm1701_dmr_tx_active()) {
-		dm1701_dmr_tx_drop();
+	if (stm32_hrc_dmr_tx_active()) {
+		stm32_hrc_dmr_tx_drop();
 	}
 	pa_off();
 }
@@ -482,7 +419,7 @@ static void dmr_enter(void)
 #if CONFIG_DMR
 	count(hrc6000_dmr_enter(&r.modem, cal.dmr_i, cal.dmr_q, DMR_MIC_GAIN));
 #endif
-	dm1701_dmr_enter();
+	stm32_hrc_dmr_enter();
 }
 
 // --- hal_radio_t ---
@@ -521,8 +458,10 @@ static void speaker_apply(void)
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
 	bool on = (fm || pcm) && !volume_zero;
+	// The FM feed-through also gates the FM audio on the I2S stream that APRS receive reads (hardware-dm1701.md
+	// 21.3.1), so it follows the core's request, not the knob: at volume zero only the amp is off
+	count(hrc6000_fm_audio(&r.modem, fm));	// FM feed-through only for FM; PCM comes from the codec DAC
 	if (on) {
-		count(hrc6000_fm_audio(&r.modem, fm));	// FM feed-through only for FM; PCM comes from the codec DAC
 		if (pcm) {
 			pcm_codec_on();
 		}
@@ -532,7 +471,6 @@ static void speaker_apply(void)
 	} else {
 		PIN_WRITE(PIN_SPK_MUTE, true);
 		PIN_WRITE(PIN_AMP_EN, false);
-		count(hrc6000_fm_audio(&r.modem, false));
 	}
 	if (locked) {
 		xSemaphoreGive(speaker_lock);
@@ -562,9 +500,6 @@ static void init(void)
 	if (speaker_lock == NULL) {
 		speaker_lock = xSemaphoreCreateMutex();
 	}
-	stm32_pin_in(PIN_PORT(PIN_C6000_MISO), PIN_MASK(PIN_C6000_MISO), GPIO_PULLUP);
-	PIN_WRITE(PIN_C6000_CS, true);
-	PIN_WRITE(PIN_C6000_CLK, true);		// clock idles high
 	PIN_WRITE(PIN_MIC_POWER, true);		// kept on in RX and TX (4.5: some speaker-mics see false PTT without bias)
 	rx_supply(false, false);
 	dac_setup();
@@ -590,7 +525,7 @@ static void init(void)
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	audio(false);
 	r.diag.c6000_ok = hrc_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
-	dm1701_dmr_board_init(&r.modem);
+	stm32_hrc_dmr_init(&r.modem, &dmr_board);
 }
 
 static void set_mode(radio_mode_t mode)
@@ -605,7 +540,7 @@ static void set_mode(radio_mode_t mode)
 	} else {
 		if (prev == RADIO_MODE_DMR) {
 			dmr_disarm();
-			dm1701_dmr_leave();
+			stm32_hrc_dmr_leave();
 			rf_resync();
 			r.tx_on = false;
 		}
@@ -717,7 +652,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 		// New channel: the DMR modulation pair for it, and the receiver searches again (5.1). Back from our own
 		// transmission on the same channel the engine has already restarted it, or kept a repeater's timing
 		count(hrc_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
-		dm1701_dmr_rx_restart();
+		stm32_hrc_dmr_rx_restart();
 	}
 	r.tx_on = false;
 	return true;
@@ -808,7 +743,7 @@ static void tx_off(void)
 
 static void status(radio_status_t *st)
 {
-	if (dm1701_dmr_tx_active() || r.afsk) {
+	if (stm32_hrc_dmr_tx_active() || r.afsk) {
 		*st = r.last_status;	// keep I2C3 free for the per-burst switching / the AFSK tone switching
 		return;
 	}
@@ -836,7 +771,9 @@ static void status(radio_status_t *st)
 // Soft volume (hardware-dm1701.md 11.2, 17): the knob's 0..100 % maps linearly to -31..+31 dB of HR_C6000 RX gain
 static void volume(uint8_t percent)
 {
-	int db = (int)percent * 62 / 100 - 31;
+	// At the bottom the amp is off (speaker_apply), so the gain stays at unity: the I2S copy of the FM audio that
+	// APRS receive reads is scaled by it too
+	int db = percent == 0 ? 0 : (int)percent * 62 / 100 - 31;
 	count(hrc6000_set_rx_gain(&r.modem, (int8_t)db));
 	if ((percent == 0) != volume_zero) {
 		volume_zero = percent == 0;

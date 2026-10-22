@@ -38,6 +38,26 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "scan=%s\nscan_phase=%s\nscan_skipped=%u\n", word(v->scan, kinds, 4), word(v->scan_phase, phases, 5),
 		v->scan_skipped);
 	dl_text(t, "scan_probes=%u\nscan_synced=%u\n", v->scan_probes, v->scan_synced);
+	// Dual watch: the two channels ("vfo", or zone index:position), the selected one and the one the receiver is on
+	// now; "-" while it is off
+	radio_dual_ref_t dual[2];
+	uint8_t sel, at;
+	bool on = radio_get_dual(dual, &sel, &at);
+	for (uint8_t i = 0; i < 2; i++) {
+		if (!on) {
+			dl_text(t, "dual.%c=-\n", 'a' + i);
+		} else if (dual[i].vfo) {
+			dl_text(t, dual[i].pos ? "dual.%c=vfo2\n" : "dual.%c=vfo\n", 'a' + i);
+		} else {
+			dl_text(t, "dual.%c=%u:%u\n", 'a' + i, dual[i].zone, dual[i].pos);
+		}
+	}
+	// receivers: what the radio has; both: the second receiver has the channel not selected now (dual.at is then the
+	// main receiver's, always the selected one)
+	dl_text(t, "dual.built=%u\ndual.sel=%c\ndual.at=%c\ndual.receivers=%u\ndual.both=%u\n", CONFIG_DUAL_WATCH,
+		on ? 'a' + sel : '-', on ? 'a' + at : '-', board.rx2 != NULL ? 2u : 1u, on && v->rx2);
+	// busy: the channels a look in the wait after a call found a signal on (bit 0 A, bit 1 B)
+	dl_text(t, "dual.busy=%u\ndual.stops=%u\n", v->dual_busy, v->dual_stops);
 	dl_text(t, "tot_warning=%u\ntone_burst=%u\nroger=%u\nvox_keyed=%u\nrx_sleeping=%u\n", v->tot_warning,
 		v->tone_burst, v->roger, v->vox_keyed, v->rx_sleeping);
 	bool mic = board.power != NULL && board.power->mic_level != NULL;
@@ -48,8 +68,13 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "vox_on=%u\nvox.mic=%u\nvox.level=%u\n", v->vox_on, mic, listen ? board.power->mic_level() : 0u);
 	// whether battery save can switch the receiver off on this radio (a radio driver without rx_sleep never sleeps)
 	dl_text(t, "rx_save.hw=%u\n", board.radio != NULL && board.radio->rx_sleep != NULL);
-	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", board_has_battery() ? word(v->battery, batt, 3) : "none",
-		v->battery_pct, v->battery_mv, v->power_off);
+	// a radio that measures its DC input has supply_mv in place of the battery's percentage and
+	// reading (the section is near a reply's size)
+	if (board_volts() == BOARD_VOLTS_SUPPLY)
+		dl_text(t, "battery=none\nsupply_mv=%u\npower_off=%u\n", v->supply_mv, v->power_off);
+	else
+		dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n",
+			board_has_battery() ? word(v->battery, batt, 3) : "none", v->battery_pct, v->battery_mv, v->power_off);
 	static const char *const vsrc[] = { "none", "knob", "soft", "override" };
 	dl_text(t, "volume.soft=%u\nvolume.sent=%d\nvolume.src=%s\nvolume.max=%u\nvolume.step=%u\nvolume.override=%d\n",
 		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 4), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
@@ -72,8 +97,8 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 		s.tot_warn_s, word(s.bcl, bcls, 3), s.roger_beep, s.tx_inhibit);
 	dl_text(t, "set.scan_resume=%s\nset.scan_hold_s=%u\nset.scan_delay_ms=%u\nset.scan_dwell_ms=%u\n",
 		word(s.scan_resume, resumes, 3), s.scan_hold_s, s.scan_delay_ms, s.scan_dwell_ms);
-	dl_text(t, "set.scan_priority=%u\nset.beep_level=%u\nset.key_beep=%u\n", s.scan_priority, s.beep_level,
-		s.key_beep);
+	dl_text(t, "set.scan_priority=%u\nset.beep_level=%u\nset.key_beep=%u\nset.dual_delay_ms=%u\n", s.scan_priority,
+		s.beep_level, s.key_beep, s.dual_delay_ms);
 	dl_text(t, "set.vox=%s\nset.vox_level=%u\nset.vox_tail_ms=%u\n", word(s.vox, voxes, 3), s.vox_level,
 		s.vox_tail_ms);
 	dl_text(t, "set.rx_save=%u\nset.rx_save_idle_s=%u\nset.battery_off_s=%u\n", s.rx_save, s.rx_save_idle_s,
@@ -119,15 +144,32 @@ static bool set_one(radio_settings_t *s, uint8_t id, uint16_t v)
 	case 26: if (v < 1 || v > 10) return false; s->roam_beacon_len_s = (uint8_t)v; break;
 	case 27: if (v > 2) return false; s->roam_survey = (uint8_t)v; break;
 	case 28: s->rpt_beacon = v != 0; break;
+	case 30: if (v > RADIO_DUAL_DELAY_MAX_MS) return false; s->dual_delay_ms = v; break;
 	default: return false;
 	}
 	return true;
 }
 
+// SCAN's own command after the radio_scan_cmd_t ones: dual watch selects A (0) or B (1), the pair kept. The UI follows
+// (view.dual_sel), and the channel, zone and VFO requests then act on that one
+#define DL_SCAN_DUAL_SELECT	7u
+
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 {
 	switch (op) {
 	case DL_OP_SCAN:
+		if (len >= 1 && a[0] == DL_SCAN_DUAL_SELECT) {
+			radio_dual_ref_t ref[2];
+			uint8_t sel, at;
+			if (len < 2 || a[1] > 1) {
+				return DL_ST_BAD_ARG;
+			}
+			if (!CONFIG_DUAL_WATCH || !radio_get_dual(ref, &sel, &at)) {
+				return DL_ST_UNAVAILABLE;	// not built, or the watch is off
+			}
+			radio_req_dual(ref, a[1]);
+			return DL_ST_OK;
+		}
 		if (len < 1 || a[0] > RSCAN_TOGGLE) {
 			return DL_ST_BAD_ARG;
 		}
@@ -189,6 +231,17 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			radio_req_volume_override(a[0] == RADIO_VOLUME_KNOB ? -1 : (int8_t)a[0]);
 		}
 		return DL_ST_OK;
+	case DL_OP_VOICE_TEST:
+		// u8: 1 the DMR encoder gets the voice layer's test signal in place of the mic, 0 the mic again (RAM only)
+		if (len < 1 || a[0] > 1) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_DMR
+		ambeVoiceSetTestSignal(a[0] != 0);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
 	case DL_OP_DMR_FIELDS:
 		// mode (0xFF = keep, else radio_mode_t), color code (0xFF = keep), timeslot (0 = keep): on a channel they are
 		// temporary changes, in the VFO the VFO's own settings. The radio core refuses what it can't do

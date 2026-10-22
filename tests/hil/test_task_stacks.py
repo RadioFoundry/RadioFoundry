@@ -14,7 +14,7 @@ import os
 
 import pytest
 
-from odr_hil import as_int
+from odr_hil import as_int, skip
 
 MIN_FREE = int(os.environ.get("ODR_HIL_STACK_MIN_FREE", "64"))
 # Created on every radio: the kernel's own two, the core's five (the board's audio, dmr, usb, gps vary)
@@ -32,14 +32,15 @@ def tasks_section(radio):
     return None
 
 
+@pytest.mark.feature("task_stacks")
 def test_every_task_has_stack_left(radio):
     radio.view()    # every section: the host task's deepest replies
     radio.screenshot()
     kv = tasks_section(radio)
     if kv is None:
-        pytest.skip("firmware without the tasks view section")
+        skip("not_built", "firmware without the tasks view section")
     if kv.get("tasks.built") == "0":
-        pytest.skip("firmware built with CONFIG_TASK_STACKS=n")
+        skip("not_built", "firmware built with CONFIG_TASK_STACKS=n")
     free = {k[len("tasks.free."):]: as_int(v) for k, v in kv.items() if k.startswith("tasks.free.")}
     print("least free stack (bytes):", ", ".join(f"{n} {b}" for n, b in sorted(free.items(), key=lambda x: x[1])))
     assert as_int(kv["tasks.count"]) == len(free), kv

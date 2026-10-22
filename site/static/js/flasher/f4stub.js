@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The STM32F4 stub over WebSerial: updating a DM-1701 or MD-380 that already runs ODR without its bootloader, ported
-// from stub/f4stub.py (its protocol, its write order, its checks; docs/spec/stub-stm32f4.md). A running ODR built
-// with CONFIG_STUB_ENTRY=y takes the stub over its debug link and jumps to it; the stub then reads and writes the
-// internal flash from the application base (0x0800C000) up and the SPI flash. The bootloader's sectors 0 to 2 are
-// never written, so the bootloader route (dfu.js) always works afterwards, and a stock radio still needs it first.
+// The STM32F4 stub over WebSerial: updating an STM32F4 radio that already runs ODR without its
+// bootloader, ported from stub/f4stub.py (its protocol, its write order, its checks; docs/spec/stub-stm32f4.md). A
+// running ODR built with CONFIG_STUB_ENTRY=y takes the stub over its debug link and jumps to it; the stub then reads
+// and writes the internal flash from the application base (0x0800C000) up and the SPI flash. The bootloader's sectors
+// 0 to 2 are never written, so the bootloader route (dfu.js) always works afterwards, and a stock radio still needs it
+// first.
+//
+// One stub image serves every radio (protocol 4). The radio's wiring (SPI flash bus, pins, chip select, crystal, the
+// bootloader's end) goes to it as a 24-byte board record (CONFIG) made by stub/f4stub.py config_record() and carried in
+// data/flash-boards.json (f4stub.boards.<id>.record), so the page and the Python tool send the same bytes. The stub
+// writes nothing until it has accepted a record (status 0x11), and the page checks the echo in the next HELLO first.
 //
 // An install erases sector 3 first: from then until its first word is written at the very end, the bootloader stays
 // in DFU at power-on, so an update cut short leaves a radio the bootloader route finishes.
@@ -14,7 +20,7 @@
 // the protocol, the install order and the checks are the same for every target. A protocol 3 stub writes nothing until
 // it has accepted a board record (CONFIG); configure() sends the radio's record and checks the echo in the next HELLO.
 
-import { be32, concat, crc32, equal, fromHex, sleep, toHex, u32le } from "./bytes.js";
+import { be32, concat, crc32, equal, fromHex, sleep, toHex } from "./bytes.js";
 import { FrameError, OK, Stub, StubError, unpack } from "./stub.js";
 
 export const BLOCK = 4096, FLASH_BASE = 0x08000000, APP_BASE = 0x0800C000, STUB_RUN = 0x20000000;
@@ -22,8 +28,9 @@ export const F4_MAGIC = 0x46345342;	// 'F4SB': ERASE, XERASE and RESET carry it
 export const MEM_INTERNAL = 0, MEM_SPI = 1;
 export const OP = { HELLO: 0x01, PEEK: 0x02, SUMS: 0x07, READ: 0x09, RESET: 0x0D, ERASE: 0x10, PROGRAM: 0x11, XERASE: 0x12, XPROGRAM: 0x13, CONFIG: 0x14 };
 export const BADARG = 0x0D, REFUSED = 0x0F, NOCONFIG = 0x11;
-export const HELLO_CONFIGURED = 0x80, HELLO_LEN = 26;	// HELLO v3: flags bit 7, and its length without the record echo
-const SUM_MAX = 800, READ_PACK = 16, SUM_RUN = 256;
+export const HELLO_CONFIGURED = 0x80, HELLO_LEN = 26, REC_LEN = 24;	// HELLO v4 without the record echo; the board record
+export const CONFIG_VERSION = 4;	// the first protocol with CONFIG (3 added the image header and the watchdog feed)
+const SUM_MAX = 800, READ_PACK = 16, ERASE_TIMEOUT = 6000;
 const be16 = (n) => new Uint8Array([(n >> 8) & 0xFF, n & 0xFF]);
 const u16be = (b, o) => (b[o] << 8) | b[o + 1];
 const u32be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
@@ -79,15 +86,13 @@ function joined(ranges) {
 
 export class F4Stub extends Stub {
 	// reopen: async () => a new stream, for a stub that enumerated again (the old port is gone), or null.
-	// chip: the target (F4, or k22stub.js's). board: the radio's profile with its board record ({name, stub_id, record}
-	// and, for spiWrite, spi_floor), what configure() sends; without one a protocol 3 stub stays unconfigured and only
-	// reads the internal flash
-	constructor(stream, { log = () => {}, retries = 3, reopen = null, chip = F4, board = null } = {}) {
+	// board: the radio's entry of data/flash-boards.json f4stub.boards ({name, stub_id, record, v2_wiring, owned, codec}),
+	// what configure() sends; without one the stub stays unconfigured and only the internal flash can be read
+	constructor(stream, { log = () => {}, retries = 3, reopen = null, board = null } = {}) {
 		super(stream, { log, retries });
 		this.reopen = reopen;
-		this.chip = chip;
 		this.board = board;
-		this.configured = false;	// the stub echoes this.board's record (protocol 3)
+		this.configured = false;	// the stub confirmed this.board's record (or, protocol 2, has its wiring built in)
 	}
 
 	async enterFromOdr(image, progress = () => {}, opts = {}) {
@@ -96,49 +101,62 @@ export class F4Stub extends Stub {
 		return super.enterFromOdr(image, progress, opts);
 	}
 
-	async hello() {
-		const r = await this.request(OP.HELLO, new Uint8Array(0), { retries: 0, timeout: 500 });
+	// Status 0x11 is the stub's own refusal of a write before a board record; the rest stay the generic error
+	async request(op, payload, opts) {
+		try {
+			return await super.request(op, payload, opts);
+		} catch (e) {
+			if (e.status === NOCONFIG) {
+				this.configured = false;
+				throw Object.assign(new StubError("the loader has no board configuration (status 0x11): nothing was written"), { status: NOCONFIG });
+			}
+			throw e;
+		}
+	}
+
+	async hello({ retries = 0 } = {}) {
+		const r = await this.request(OP.HELLO, new Uint8Array(0), { retries, timeout: 500 });
 		if (String.fromCharCode(...r.subarray(0, 6)) !== "F4STUB" || r.length < 17) throw new StubError("unexpected hello: not the STM32F4 stub");
-		this.info = {
+		const i = {
 			version: r[6], maxPayload: u16be(r, 7), flashKb: u16be(r, 9), rdp: r[11], adopted: !!(r[12] & 1), appBase: u32be(r, 13),
 			spiSize: r.length >= 24 ? u32be(r, 17) : 0, spiId: r.length >= 24 ? toHex(r.subarray(21, 24)) : "",
 			boardId: 0, record: new Uint8Array(0),
 		};
-		if (i.version >= 3) {
-			// version 3: board id, record length and the record echo after the JEDEC ID; the application base 0 before a record
+		if (i.version >= CONFIG_VERSION) {
+			// version 4: board id, record length and the record echo after the JEDEC ID; app base 0 before a record
 			if (r.length < HELLO_LEN || r.length !== HELLO_LEN + r[25]) throw new StubError(`HELLO v${i.version} is ${r.length} bytes: malformed`);
 			i.boardId = r[12] & HELLO_CONFIGURED ? r[24] : 0;
 			i.record = r.slice(HELLO_LEN);
-		} else if (i.version < c.minVersion) {
-			throw new StubError(`${c.title} stub protocol ${i.version}: too old for this page`);
-		} else if (i.appBase !== c.appBase) {
-			throw new StubError(`the stub reports the application at ${hex8(i.appBase)}, this page knows ${hex8(c.appBase)}`);
+		} else if (i.appBase !== APP_BASE) {
+			throw new StubError(`the stub reports the application at ${hex8(i.appBase)}, this page knows ${hex8(APP_BASE)}`);
 		}
 		this.info = i;
 		// a stub left configured by an earlier run keeps its record: the echo alone tells whether it is this radio's
-		if (i.version >= 3) this.configured = this.echoes();
+		this.configured = i.version >= CONFIG_VERSION ? this.echoes() : this.configured;
 		return i;
 	}
 
 	// The last HELLO echoes exactly this radio's record, with the application base the page writes from
 	echoes() {
 		const b = this.board, i = this.info;
-		return !!(b && i && i.version >= 3 && i.boardId === b.stub_id && i.appBase === this.chip.appBase && equal(i.record, fromHex(b.record)));
+		return !!(b && i && i.version >= CONFIG_VERSION && i.boardId === b.stub_id && i.appBase === APP_BASE && equal(i.record, fromHex(b.record)));
 	}
 
 	// Send the radio's board record (CONFIG) and check the echo in the next HELLO; the stub writes nothing before. A stub
-	// already configured with exactly this record is left as it is. A protocol 2 stub has no CONFIG: its wiring is the
+	// already configured with exactly this record is left as it is. A stub before protocol 4 has no CONFIG: its wiring is the
 	// DM-1701's and MD-380's, built in, so it serves only a radio with that wiring (v2_wiring).
 	async configure() {
 		const b = this.board;
 		if (!b) throw new StubError("no board profile for this radio: the loader stays unconfigured and nothing is written");
-		if (this.info.version < 3) {
-			if (!b.v2_wiring) throw new StubError(`this loader (protocol ${this.info.version}) can't serve the ${b.name}: switch the radio off and on, then start again`);
+		if (this.info.version < CONFIG_VERSION) {
+			if (!b.v2_wiring) throw new StubError(`this loader (protocol ${this.info.version}) has its SPI flash wiring built in and can't serve the ${b.name}: switch the radio off and on, then start again`);
+			this.configured = true;
 			return;
 		}
 		if (this.configured) return;
+		const rec = fromHex(b.record);
 		try {
-			await this.request(OP.CONFIG, fromHex(b.record), { retries: 0 });
+			await this.request(OP.CONFIG, rec, { retries: 0 });
 		} catch (e) {
 			this.configured = false;
 			if (e.status === BADARG) throw new StubError(`the loader refused the ${b.name}'s board record: nothing was written`);
@@ -152,9 +170,8 @@ export class F4Stub extends Stub {
 		this.log(`loader configured for the ${b.name}: ${i.spiSize ? `SPI flash ${i.spiSize / 1024} KB (JEDEC ${i.spiId})` : "no SPI flash answered"}`);
 	}
 
-	// Writes to a protocol 3 stub wait for its board record (the stub refuses them too, with status 0x11)
 	needConfigured() {
-		if (this.info?.version >= 3 && !this.configured) throw new StubError(`the loader is not configured for ${this.board ? `the ${this.board.name}` : "this radio"}: nothing was written`);
+		if (!this.configured) throw new StubError(`the loader is not configured for ${this.board ? `the ${this.board.name}` : "this radio"}: nothing was written`);
 	}
 
 	// After the jump the stub either adopted ODR's USB device (the same port answers at once) or enumerated again (the
@@ -188,13 +205,13 @@ export class F4Stub extends Stub {
 
 	attached() {
 		const i = this.info;
-		const spi = i.spiSize ? `SPI flash ${i.spiSize / 1024} KB (JEDEC ${i.spiId})` : i.version >= 3 && !this.configured ? "not configured yet" : "no SPI flash";
-		this.log(`${this.chip.title} stub v${i.version}: ${i.flashKb} KB flash, ${spi}, USB ${i.adopted ? "adopted from ODR" : "enumerated again"}`);
+		const spi = i.spiSize ? `SPI flash ${i.spiSize / 1024} KB (JEDEC ${i.spiId})` : i.version >= CONFIG_VERSION && !this.configured ? "not configured yet" : "no SPI flash";
+		this.log(`STM32F4 stub v${i.version}: ${i.flashKb} KB flash, ${spi}, USB ${i.adopted ? "adopted from ODR" : "enumerated again"}`);
 		return i;
 	}
 
 	needSpi() {
-		this.needConfigured();
+		if (this.info?.version >= CONFIG_VERSION) this.needConfigured();
 		if (!this.info?.spiSize) throw new StubError(`the loader found no SPI flash (stub version ${this.info?.version})`);
 	}
 
@@ -259,10 +276,9 @@ export class F4Stub extends Stub {
 		return out;
 	}
 
-	// n bytes of internal flash from addr, through the whole 4 KB blocks around them (a 2 KB sector)
-	async readRange(addr, n) {
-		const lo = addr - (addr % BLOCK), hi = Math.ceil((addr + n) / BLOCK) * BLOCK;
-		return (await this.readFlash(lo, hi - lo)).slice(addr - lo, addr - lo + n);
+	erase(sector) {
+		this.needConfigured();
+		return this.request(OP.ERASE, concat(new Uint8Array([sector]), be32(F4_MAGIC)), { retries: 0, timeout: ERASE_TIMEOUT });
 	}
 
 	async erase(sector) {
@@ -274,8 +290,7 @@ export class F4Stub extends Stub {
 	// pieces skipped (erased already)
 	async program(addr, data) {
 		this.needConfigured();
-		const unit = this.chip.progUnit;
-		if (addr % unit || data.length % unit) throw new StubError(`program ${hex8(addr)}+${data.length}: whole ${unit}-byte units only`);
+		if (addr % 4 || data.length % 4) throw new StubError(`program ${hex8(addr)}+${data.length}: words only`);
 		for (let off = 0; off < data.length; off += BLOCK) {
 			const piece = data.subarray(off, off + BLOCK);
 			if (!isBlank(piece)) await this.request(OP.PROGRAM, concat(be32(addr + off), piece), { retries: 0, timeout: 2000 });
@@ -289,50 +304,7 @@ export class F4Stub extends Stub {
 	}
 
 	checkChip() {
-		const c = this.chip;
-		if (this.info.flashKb !== c.flashKb) throw new StubError(`the chip reports ${this.info.flashKb} KB of flash; the ${c.title} radios here have ${c.flashKb}`);
-	}
-
-	// The sector indexes of want (Map index => {index, addr, size, data}: a sector's whole new content) whose flash
-	// differs. By CRC per 4 KB block where the sectors in want cover the block, one request per run of such blocks; a
-	// block that also holds a sector not in want (2 KB sectors) is read and compared byte for byte.
-	async mismatched(want) {
-		const blocks = new Map();
-		for (const s of want.values()) {
-			for (let b = s.addr - (s.addr % BLOCK); b < s.addr + s.size; b += BLOCK) {
-				if (!blocks.has(b)) blocks.set(b, []);
-				blocks.get(b).push(s);
-			}
-		}
-		const bad = new Set(), whole = [];
-		for (const b of [...blocks.keys()].sort((x, y) => x - y)) {
-			const secs = blocks.get(b).sort((x, y) => x.addr - y.addr);
-			const expect = new Uint8Array(BLOCK);
-			let at = b;
-			for (const s of secs) {
-				const lo = Math.max(s.addr, b), hi = Math.min(s.addr + s.size, b + BLOCK);
-				if (lo !== at) break;
-				expect.set(s.data.subarray(lo - s.addr, hi - s.addr), lo - b);
-				at = hi;
-			}
-			if (at === b + BLOCK) {
-				whole.push({ b, expect, secs });
-				continue;
-			}
-			const cur = await this.readFlash(b, BLOCK);
-			for (const s of secs) {
-				const lo = Math.max(s.addr, b), hi = Math.min(s.addr + s.size, b + BLOCK);
-				if (!equal(cur.subarray(lo - b, hi - b), s.data.subarray(lo - s.addr, hi - s.addr))) bad.add(s.index);
-			}
-		}
-		for (let k = 0; k < whole.length;) {
-			let j = k;
-			while (j + 1 < whole.length && whole[j + 1].b === whole[j].b + BLOCK && j + 1 - k < SUM_RUN) j++;
-			const sums = await this.blockSums(whole[k].b, j - k + 1);
-			for (let n = k; n <= j; n++) if (crc32(whole[n].expect) !== sums[n - k].crc) for (const s of whole[n].secs) bad.add(s.index);
-			k = j + 1;
-		}
-		return [...bad].sort((x, y) => x - y);
+		if (this.info.flashKb !== 1024) throw new StubError(`the chip reports ${this.info.flashKb} KB of flash; the STM32F405 radios have 1024`);
 	}
 
 	// {sectors: [{index, addr, size, data, kept}], changed: [index]} for every sector holding firmware-owned flash.
@@ -375,7 +347,6 @@ export class F4Stub extends Stub {
 	async writeImage(owned, segs, { onKept = async () => {}, progress = () => {}, plan = null } = {}) {
 		this.checkChip();
 		this.needConfigured();
-		const c = this.chip, unit = c.progUnit;
 		const p = plan || await this.plan(owned, segs);
 		if (!p.changed.length) return { written: 0, same: p.sectors.length };
 		const by = new Map(p.sectors.map((s) => [s.index, s]));

@@ -36,7 +36,8 @@ takes a *lease*: one detached process on the SDR bench stops the service, waits 
 finally block and then checks that the service is active again. Cases that only need the gateway's own decode (T0) don't
 stop anything.
 
-The script never deletes captures; they collect in ~/odr-bench/runs/ on the SDR bench (about 50 MB per 16 s capture)
+The script never deletes captures; they collect in ~/odr-bench/runs/ on the SDR bench (about 50 MB per 16 s capture; the HIL
+fixtures delete the run directories they made, unless ODR_HIL_KEEP_RUNS=1)
 and the analysis JSON comes back to --out (default ./bench-results/). Clean up by hand when asked to.
 
 Needs: ssh access to the SDR bench (passwordless sudo for systemctl there); the bench-side tools from `sync`; python3

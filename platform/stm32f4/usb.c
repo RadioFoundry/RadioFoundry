@@ -41,6 +41,19 @@ void OTG_FS_IRQHandler(void)
 	tud_int_handler(0);
 }
 
+void stm32_usb_serial_number(char *buf, uint8_t len)
+{
+	static const char hex[] = "0123456789ABCDEF";
+	const uint8_t *uid = (const uint8_t *)UID_BASE;	// 96-bit unique device ID
+	uint8_t n = 0;
+
+	for (uint8_t i = 0; (i < 12) && (n + 2 < len); i++) {
+		buf[n++] = hex[uid[i] >> 4];
+		buf[n++] = hex[uid[i] & 0x0F];
+	}
+	buf[n] = '\0';
+}
+
 #endif
 
 #endif	// CONFIG_USB

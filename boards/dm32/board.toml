@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# The DM-32UV's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/dm32/memory.ld.
+
+id = "dm32"
+name = "Baofeng DM-32UV"
+maker = "Baofeng"
+model = "DM-32UV"
+also = []
+kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 3
+# Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
+# build option value's board_name), and the id always counts
+debuglink_aliases = ["DM-32"]
+
+[docs]
+hardware = "docs/spec/hardware-dm32.md"
+codec = "docs/spec/codec-dm32.md"
+install = "docs/user/19-moving-from-stock-dm32.md"
+bringup = "docs/testing/dm32-bringup.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "136-174 / 400-480 MHz"
+power = "1 / 5 W"
+display = "color, 240 × 320"
+gallery = "240x320i10x5"
+clock = { rtc = "backed", note = "the SoC RTC on a 32.768 kHz crystal with a coin cell (docs/spec/hardware-dm32.md 1, 3.3)" }
+unconfirmed = { VIBRATE = "reported online to have a vibration motor; the part and its drive pin are not confirmed (docs/spec/hardware-dm32.md)" }
+
+[status]
+level = "supported"
+summary = """\
+FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and each split duplex half work on air. \
+Open: FM deviation at 12.5 kHz and an outdoor GPS fix."""
+release = "stable"
+
+# The Baofeng serial updater erases the whole application area before it writes (hardware-dm32.md 13.2 step 7), so
+# the codec can't be kept across an update: every flash merges it again. The platform's two "sectors", the application
+# and the codec slot (boards/dm32/memory.ld), let manifests say where the codec goes
+[flash]
+family = "serial-loader"
+keep_codec = false
+stock_versions = ["DM32.01.01.049", "DM32.00.01.046"]
+backup = { stock = "full", odr = "full", spi_size = 0x1000000 }
+
+# Baofeng's update mode: keys is the short form tools print, steps the web flasher's and the manual's, id the string
+# the loader answers (also the magic of its firmware files), sign what the radio shows in update mode
+[flash.bootloader]
+keys = "PTT and SK1 (the side key just below PTT)"
+steps = [
+	"Turn the radio off and connect the programming cable.",
+	"Hold PTT and SK1.",
+	"Turn the radio on while you hold both keys. The green LED lights.",
+	"Release the keys.",
+]
+id = "BFUV32-V2"
+sign = "The green LED lights"
+
+# The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the board id HELLO echoes; hold_power: the stub
+# drives the power latch (pins.h PIN_POWER_LATCH, PIN_POWER_KEY) because the radio has a soft power key, not a knob;
+# the program flash size; tested: flashed through the stub on a radio. Whether the data memory is SPI NAND comes from
+# board.mk's drivers
+[flash.stub]
+id = 1
+hold_power = false
+progmem = 0x100000
+tested = true
+
+# The codec slot and windows come from boards/dm32/memory.ld (__codec_*); profile is the id odrflash gives a merged codec
+[codec]
+tool = "hrc7000_codec"
+profile = "dm32-049"
+sources = ["DM32.01.01.049.bin", "DM32.00.01.046HRVocoder.bin"]
+
+# How the site draws the radio
+[frame]
+shape = "handheld-tall"
+body = "#22252a"
+accent = "#e0a526"
+lens = [24, 34]
+
+
+# What the HIL health checks expect of this radio (tests/hil/test_health.py; a key left out skips its check):
+# display (VERSION display=), features (VERSION features the build must have), no_features (ones it must not),
+# flash_jedec (accepted data flash JEDEC ids), calibration (the diagnostics show the factory calibration), battery_mv
+# ([low, high] a sane reading lies in), codec (accepted stock codec versions)
+[hil]
+display = "240x320x4"
+features = ["HOSTLINK", "DEBUGLINK"]
+no_features = ["USB"]
+flash_jedec = ["C84018", "852018"]
+calibration = true
+battery_mv = [5500, 8800]
+codec = ["049", "046"]

@@ -50,13 +50,13 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (?).
 | Sectors | Addresses | Use |
 |---|---|---|
 | 0-2 (3 x 16 KB) | 0x08000000-0x0800BFFF | TYT bootloader, never written (unverified) |
-| 3-7 | 0x0800C000-0x0807FFFF | ODR application, 464 KB in one piece (`boards/md380/md380.ld`) |
+| 3-7 | 0x0800C000-0x0807FFFF | ODR application, 464 KB in one piece (`boards/md380/memory.ld`) |
 | 8, 10, 11 | see [codec-md380.md](codec-md380.md) | The stock D002.032 codec as the merge places it: the table windows at their stock addresses (sectors 8, 10, 11), the code moved to 0x080E0000 (sector 11), the descriptor at 0x080FFF80 |
 | 9 | 0x080A0000-0x080BFFFF | Holds nothing |
 
 The application starts at 0x0800C000 with its vector table there (VECT_TAB_OFFSET 0xC000) (unverified).
 
-`md380.ld` asserts that the image ends before 0x08080000. The default UHF image takes 320,236 bytes with link time
+`boards/md380/memory.ld` asserts that the image ends before 0x08080000. The default UHF image takes 320,236 bytes with link time
 optimization, on by default here: [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380). Stock firmware keeps
 the codec code at 0x08050C44 (sectors 6 and 7), so the merge moves it.
 
@@ -198,7 +198,7 @@ Our allocation, following the DM-1701 (`boards/dm1701`), since the same MCU pins
 | TIM3 | sub-audio tone PWM, CH2 on PC7, only with `CONFIG_SUBTONE` and only while a tone is sent (section 6.4) | 6 |
 | OTG_FS | USB (platform) | platform |
 
-Priority 5 is FreeRTOS's `configMAX_SYSCALL_INTERRUPT_PRIORITY` (`boards/md380/FreeRTOSConfig.h`): the modem ISRs
+Priority 5 is FreeRTOS's `configMAX_SYSCALL_INTERRUPT_PRIORITY` (`platform/stm32f4/FreeRTOSConfig.h`): the modem ISRs
 notify the DMR task, and a masked section at that level makes every configuration-port and synthesizer transaction
 atomic.
 
@@ -434,7 +434,7 @@ a call or after our own transmit, the key beep in DMR and FM, and FM receive.
 ### 5.1 Bands and power
 
 One band per radio: UHF 400-480 MHz or VHF 136-174 MHz, 1 W and 5 W (unverified). ODR builds one image per band
-(`make BOARD=md380 MD380_BAND=uhf|vhf`, default UHF); the image's band table refuses the other band. Which band a
+(`make BOARD=md380 BAND=uhf|vhf`, default UHF); the image's band table refuses the other band. Which band a
 radio is can't be read from the hardware by any method we know (?: the calibration's frequency list, 11.2, is a
 candidate for a run-time check).
 
@@ -808,7 +808,7 @@ fixes them ([codec-md380.md](codec-md380.md), "Key recovery"; `odrflash/stockfw.
 Entered by holding PTT and the upper side key while switching on (unverified). USB DFU 0483:DF11 with TYT's
 non-standard commands; the same erase-by-sector and block-write protocol as the DM-1701's loader (unverified). Flash an ODR
 image with `tools/stm32_dfu.py --model md380 --key KEY odr_md380.bin`. The image is plain, starts at 0x0800C000, and the
-tool encrypts it for the loader. odrflash knows the board (`boards.py` MD380: not releasable, an update writes
+tool encrypts it for the loader. odrflash knows the board (`boards/md380/board.toml`: release `testing`, an update writes
 sectors 3-7 and keeps the codec).
 
 ### 14.4 The codec
@@ -819,7 +819,7 @@ four small table windows in sectors 10 and 11. The merge moves the code to 0x080
 their stock addresses and writes a descriptor at 0x080FFF80; the codec runs in place from there. Entry points,
 calling convention, state sizes, the placement and the extraction recipe are in [codec-md380.md](codec-md380.md).
 `stockfw.PROFILES` has the profile, the codec map (`odrflash/codec_maps/md380/md380-d2032.json`) the rewrites,
-`md380.ld` keeps the application out of sectors 8-11, `vocoder_md380.c` checks and hosts the codec, and
+`boards/md380/memory.ld` keeps the application out of sectors 8-11, `vocoder_md380.c` checks and hosts the codec, and
 `make BOARD=md380` merges it when the stock file is in `codecs/`. The debug link reports the codec as
 `md380-d2032-s11`; a build from before the move reports `md380-d2032`. Without the codec merged the radio is FM only.
 
@@ -827,8 +827,8 @@ calling convention, state sizes, the placement and the extraction recipe are in 
 
 ## 15. USB
 
-OTG_FS device on PA11 / PA12 (unverified). ODR enumerates with the DM-1701's IDs and the product name "MD-380"
-(`usb_md380.c`); the bootloader's DFU device is separate (14.3).
+OTG_FS device on PA11 / PA12 (unverified). ODR enumerates with the STM32F4 radios' IDs (`platform/stm32f4/platform.h`) and the product
+name "MD-380" (`usb_md380.c`); the bootloader's DFU device is separate (14.3).
 
 The open-firmware CPS shim reports radio type 7 and serves the MCU ROM from 0x08000000, 1 MB (`boards/md380/board.c`,
 `cps-protocol.md` 2.2).

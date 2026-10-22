@@ -32,7 +32,8 @@ typedef struct {
 } fd6818_regval_t;
 
 // What differs between the boards' chip set-ups: the register tables, the 0x30 sequences and the band words. The
-// DM-32UV's set is fd6818_variant_dm32 (the default), the DM-1801 Pro's fd6818_variant_dm1801pro
+// DM-32UV's set is fd6818_variant_dm32 (the default); a board with other tables defines its own and passes it to
+// fd6818_attach_variant
 typedef struct {
 	const fd6818_regval_t *init;		// power-on table, the soft reset first
 	uint16_t init_n;
@@ -61,7 +62,6 @@ typedef struct {
 } fd6818_variant_t;
 
 extern const fd6818_variant_t fd6818_variant_dm32;
-extern const fd6818_variant_t fd6818_variant_dm1801pro;
 
 typedef struct {
 	const fd6818_bus_t *bus;

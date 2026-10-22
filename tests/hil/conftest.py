@@ -1,13 +1,16 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""pytest set-up for the hardware-in-the-loop tests (README.md): finds the radio by its USB ID, skips cleanly when
-it isn't there, restores the radio's state after every test, and keeps transmitting and stopping the SDR bench's
-gateway service behind opt-in flags."""
+"""pytest set-up for the hardware-in-the-loop tests (README.md): the options, the markers, and the boards' own
+tests (boards/<id>/hil) added to a run of this directory. The hooks and fixtures (the radio, the SDR bench, the
+restore after every test, the opt-in skips) are in hil_plugin.py."""
+import glob
 import os
 
-import pytest
+import bringup_plugin
+import hil_plugin
 
-from odr_hil import DebugLinkError, Radio, SdrBench, find_ports
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
 
 def pytest_addoption(parser):
@@ -55,6 +58,11 @@ def pytest_addoption(parser):
                      "directory, which pytest prunes after a few runs); outside the repository")
     g.addoption("--manual", action="store_true",
                 help="a person is at the radio: run the tests that ask for something done by hand (marker manual)")
+    g.addoption("--mic-inject", action="store_true",
+                help="test_mic_uart_inject may send test tones on the radio's serial line at a low baud rate (its "
+                     "programming cable's line reaches the mic input on some radios); with --allow-rf")
+    g.addoption("--mic-inject-any", action="store_true",
+                help="test_mic_uart_inject on a board without a measured cable-to-mic path")
     g.addoption("--allow-reboot", action="store_true",
                 help="tests may restart the radio (marker reboot: the settings persistence check)")
     g.addoption("--roam-rx", type=float, default=None,
@@ -95,25 +103,47 @@ def pytest_addoption(parser):
                      "bandwidth, one over per step")
     g.addoption("--mic-gain-window", type=float, default=30.0,
                 help="test_mic_gain: seconds the SDR bench records per over (unplug, key, talk, release in it)")
+    bringup_plugin.add_options(parser)
 
 
 def pytest_configure(config):
+    # The hooks and fixtures are a plugin, not this conftest, so they also reach the boards' own tests
+    # (boards/<id>/hil), which lie outside this directory
+    config.pluginmanager.register(hil_plugin, "odr-hil")
+    config.pluginmanager.register(bringup_plugin.Plugin(config), "odr-bringup")
+    # A run of this whole directory also runs every board's own HIL tests; each skips other_board on other radios
+    if any(os.path.abspath(str(a).split("::")[0]) == HERE for a in config.args):
+        config.args += sorted(d for d in glob.glob(os.path.join(ROOT, "boards", "*", "hil"))
+                              if glob.glob(os.path.join(d, "test_*.py")))
     config.addinivalue_line("markers", "rf: transmits (needs --allow-rf)")
     config.addinivalue_line("markers", "bench_service: uses the SDR bench's transmitter / receiver through the "
                             "lease (a bench without a shared bench daemon stops its gateway service for it: "
                             "needs --allow-service-stop, else the test skips when it takes the lease)")
+    config.addinivalue_line("markers", "sdr_rx: needs the SDR bench's receiver (the RTL-SDR) and no bench modem; a "
+                            "bench without one skips it. With bench_modem on the same test: needs both")
+    config.addinivalue_line("markers", "bench_modem: needs the SDR bench's modem or a bench station (the MMDVM "
+                            "board that transmits to the radio, listens to it or acts as a repeater) and no SDR; "
+                            "skips without one. With sdr_rx on the same test: needs both")
+    config.addinivalue_line("markers", "sdr_or_modem: needs the SDR or the bench modem, either will do (the test "
+                            "accepts what one of them heard); skips only when the bench has neither")
     config.addinivalue_line("markers", "radio_tx: the radio under test transmits (needs --allow-rf)")
     config.addinivalue_line("markers", "codeplug_write: writes the radio's codeplug over CPS, backed up and restored "
                             "(needs --allow-codeplug-write)")
     config.addinivalue_line("markers", "reboot: restarts the radio (needs --allow-reboot)")
     config.addinivalue_line("markers", "usb_switch: switches the USB personality (needs --allow-usb-switch)")
     config.addinivalue_line("markers", "manual: asks a person at the radio to do something (needs --manual and -s)")
+    config.addinivalue_line("markers", "audio_smoke: the DMR audio smoke tests (test_dmr_audio_smoke.py), part of every "
+                            "bench pass")
 
 
 def pytest_collection_modifyitems(config, items):
     for item in items:
         if ("rf" in item.keywords or "radio_tx" in item.keywords) and not config.getoption("--allow-rf"):
-            item.add_marker(pytest.mark.skip(reason="transmits: run with --allow-rf"))
+            if "audio_smoke" in item.keywords:
+                item.add_marker(pytest.mark.skip(reason="DMR AUDIO NOT CHECKED: transmits; run the bench pass with "
+                                                        "--allow-rf --ambe FILE (README.md, Default bench pass)"))
+            else:
+                item.add_marker(pytest.mark.skip(reason="transmits: run with --allow-rf"))
         elif "usb_switch" in item.keywords and not config.getoption("--allow-usb-switch"):
             item.add_marker(pytest.mark.skip(reason="re-enumerates the radio as a network adapter: run with "
                                                     "--allow-usb-switch"))
@@ -129,7 +159,7 @@ def pytest_collection_modifyitems(config, items):
 def radio(pytestconfig):
     port = pytestconfig.getoption("--radio-port")
     if not port and not find_ports():
-        pytest.skip("no radio on USB (1FC9:0094): plug it in or give --radio-port")
+        pytest.skip("no radio on USB (1FC9:0094): plug it in or give --radio-port (DMR audio not checked either)")
     try:
         r = Radio(port)
     except DebugLinkError as e:
@@ -171,8 +201,27 @@ def sdr_bench(pytestconfig):
                  wait_max=pytestconfig.getoption("--bench-wait-max"))
     if not b.reachable():
         pytest.skip(f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
-                    "sync)")
-    return b
+                    "sync): no bench test runs, the DMR audio smoke neither")
+    yield b
+    b.remove_run_dirs()
+
+
+@pytest.fixture(autouse=True)
+def bench_hardware(request):
+    """Skips a test marked sdr_rx / bench_modem / sdr_or_modem when the SDR bench lacks that piece (SdrBench.lacks).
+    Unmarked tests need neither and don't touch the bench here."""
+    kw = request.node.keywords
+    sdr, modem, either = "sdr_rx" in kw, "bench_modem" in kw, "sdr_or_modem" in kw
+    if not (sdr or modem or either):
+        yield
+        return
+    if "radio" in request.fixturenames:
+        request.getfixturevalue("radio")        # no radio: skip for that first, without asking the bench
+    bench = request.getfixturevalue("sdr_bench")
+    why = bench.lacks(sdr=sdr, modem=modem, either=either)
+    if why:
+        pytest.skip(why)
+    yield
 
 
 @pytest.fixture(scope="session")

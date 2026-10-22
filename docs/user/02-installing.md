@@ -82,6 +82,10 @@ odrflash key --stock STOCK.bin --save
 odrflash flash --release latest --stock STOCK.bin
 ```
 
+Radios that come in hardware versions one image can't cover (the MD-380's UHF and VHF boards) have one image per
+version. odrflash picks it from what a radio already running ODR reports; otherwise it asks, or takes
+`--option BAND=vhf`. Your radio's section names its versions.
+
 odrflash downloads the newest release, checks it, decides about the codec (below) and prints a plan: which flash
 sectors it will erase and write, and which it leaves alone. Add `--dry-run` to see the plan without touching the radio.
 Then it asks you to put the radio in its bootloader:

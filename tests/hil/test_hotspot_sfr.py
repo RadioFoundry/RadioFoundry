@@ -32,6 +32,8 @@ import time
 
 import pytest
 
+from odr_hil import skip
+
 GET_VERSION, GET_STATUS, SET_CONFIG, SET_FREQ = 0x00, 0x01, 0x02, 0x04
 SFR_DEBUG = 0xD5
 
@@ -44,11 +46,12 @@ def freq(rx, tx):
     return bytes([0]) + struct.pack("<II", rx, tx) + bytes([0]) + struct.pack("<I", tx)
 
 
+@pytest.mark.feature("sfr")
 @pytest.mark.radio_tx
 def test_hotspot_sfr_mode(radio):
     feats = radio.features()
     if "SFR" not in feats or "HOTSPOT" not in feats:
-        pytest.skip("built without the SFR (make CONFIG_SFR=y)")
+        skip("not_built", "built without the SFR (make CONFIG_SFR=y)")
     import mmdvm_probe
     hz = int(radio.core()["rx_hz"])
     tx0 = None
@@ -95,13 +98,16 @@ def test_hotspot_sfr_mode(radio):
     radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot", "sfr"), what="hotspot left")
 
 
+@pytest.mark.feature("sfr")
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.sdr_rx
 def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     feats = radio.features()
     if "SFR" not in feats or "HOTSPOT" not in feats:
-        pytest.skip("built without the SFR (make CONFIG_SFR=y)")
+        skip("not_built", "built without the SFR (make CONFIG_SFR=y)")
     import mmdvm_hotspot as M
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     src = 9990301
@@ -114,7 +120,7 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     v0 = radio.view(["hotspot", "sfr"])
     rdir = sdr_bench.run_dir("hil_sfr_repeat")
     with sdr_bench.lease():
-        cap = sdr_bench.capture_start(rdir, freq, seconds=12)
+        watch = sdr_bench.dmr_watch_start(rdir, freq, 12, cc)     # bursts decoded on the bench when it can
         with radio.released() as port:
             t = M.Transport(port)
             hs = M.MmdvmLink(t, hz, cc, 12, simplex=False)
@@ -127,10 +133,9 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
                 hs.stop = True
                 time.sleep(0.3)
                 t.close()
-        sdr_bench.capture_wait()
+        sdr = sdr_bench.dmr_watch_result(watch)
     v1 = radio.view(["hotspot", "sfr"])
     diag = [x for x in radio.link.diag()[1] if x.startswith(("txb ", "txh "))]
-    sdr = sdr_bench.analyze_dmr(cap, freq, cc)
     up = [d for _, cmd, d in frames if cmd == M.DMR_DATA1]
     ctl = [d[3] for d in up if len(d) > 3]
     voice = [c for c in ctl if not c & 0x40]
@@ -147,7 +152,7 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     print(f"uplink: {len(up)} DMR_DATA1 (controls {sorted(set(ctl))}), NAKs {naks}; SDR families {fams}; "
           f"TS2 LCs {ts2_lc[:3]}; sfr.repeated {v0.get('sfr.repeated')} -> {v1.get('sfr.repeated')}, "
           f"sfr.tx_starts {v0.get('sfr.tx_starts')} -> {v1.get('sfr.tx_starts')}")
-    print(f"capture on the bench: ~/{sdr_bench.dir}/{rdir}/")
+    print(f"capture on the bench: ~/{sdr_bench.dir}/{rdir}/" if "cap" in watch else "bursts decoded on the bench")
     # The repeat's slot timing: each TS2 burst against the last inbound TS1 one before it (30 ms on the grid)
     t_in = sorted(b["t_ms"] for b in bursts if b.get("family") == "ts1")
     offs = []

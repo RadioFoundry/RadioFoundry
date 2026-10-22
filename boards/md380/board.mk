@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # TYT MD-380 / MD-390, Retevis RT3 (with or without GPS): STM32F405VG + HR_C5000 + SKY72310 synthesizer + GT3136 FM
-# receiver, one band per radio (docs/spec/hardware-md380.md). The band is a build choice: MD380_BAND=uhf (default,
-# 400-480 MHz) or MD380_BAND=vhf (136-174 MHz)
+# receiver, one band per radio (docs/spec/hardware-md380.md). The band is a build option: BAND=uhf (default,
+# 400-480 MHz) or BAND=vhf (136-174 MHz); C sees ODR_BAND_UHF / ODR_BAND_VHF (the Makefile, "Hardware build options")
 PLATFORM   := stm32f4
-MD380_BAND ?= uhf
-MCU_DEFS   := -DSTM32F405xx -DHSE_VALUE=8000000U -DUSER_VECT_TAB_ADDRESS -DVECT_TAB_OFFSET=0xC000U
-MCU_DEFS   += -DMD380_VHF=$(if $(filter vhf,$(MD380_BAND)),1,0)
+BUILD_OPTIONS := BAND
+BAND_VALUES   := uhf vhf
+MCU        := stm32f405
+# The 8 MHz crystal; the image starts at sector 3, where the Tytera bootloader starts it (hardware-md380.md 1.3)
+HSE_VALUE  := 8000000U
+APP_BASE   := 0x0800C000
 # Bench knobs (docs/testing/md380-bringup.md), e.g. MD380_DEFS="-DMD380_PANEL_TYPE=1 -DMD380_KEEP_SWD"
 MD380_DEFS ?=
 MCU_DEFS   += $(MD380_DEFS)
@@ -19,3 +22,6 @@ BOARD_DIRS := boards/md380 drivers/rf/sky72310 drivers/rf/subaudio drivers/modem
 BOARD_USB_DIRS := drivers/usb
 HAL_MODULES := hal hal_cortex hal_rcc hal_rcc_ex hal_gpio hal_pwr hal_pwr_ex hal_flash hal_flash_ex hal_dma \
 	hal_spi hal_tim hal_tim_ex hal_adc hal_adc_ex hal_dac hal_dac_ex hal_sram ll_fsmc
+# The 160x128 panel in 16 colors (display_md380.c): the 4 bpp frame buffer is 10240 B and 128 rows, not the 40 KB / 160 row
+# RGB565 default. A screen has at most 16 colors (core/ui/gfx.h); with CONFIG_FONT_AA the edge grays compete for them
+MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=10240u -DGFX_MAX_ROWS=128u

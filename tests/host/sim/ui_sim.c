@@ -6,11 +6,23 @@
 //
 // Script tokens (separated by spaces):
 //   up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-   a short press (counted);
-//   powerkey zone+ zone- scankey lockkey cbkey homekey: what a reassigned side key sends
+//   powerkey zone+ zone- scankey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   wait:<ms>           time passes
+//   reboot              power off and on: the screens start over, the settings stay
+//   receivers:2         a receiver per dual watch channel; rxa:/rxb:<src>,<dst>,g|p a call on A's / B's own,
+//                       rxaend / rxbend its end
+//   tune:a|b            dual watch: the receiver moves to channel A or B (a call there holds it)
+//   busy:a|b|none       dual watch: the radio's mark for a signal found on A / B in the wait after a call
+//   dlpos:<n>           another task (the debug link) asks the radio for position n of the zone
+//   dldual:<n>          the debug link's scan dual: the radio watches the channel it is on (A) and position n
+//   dlstop              the debug link's scan stop (dual watch: ends on the selected channel, view.dual_stops)
+//   dlsel:a|b           the debug link selects A or B of the dual watch (view.dual_sel); no UI tick after it
+//   cpwrite, cpdel:<n>, zonesize:<z>,<n>   the codeplug is written: channel 40 first in zone 0, channel n deleted,
+//                       zone z cut to n channels
+//   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
@@ -18,6 +30,7 @@
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
+//   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
 //   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
@@ -224,8 +237,8 @@ void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int
 }
 
 const sim_geom_t sim_geoms[] = {
-	{ "160x120i5", 160, 120, 16, 5, 0, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
-	{ "160x128", 160, 128, 16, 0, 0, false, false },	// MD-380 / MD-UV380 / MD-9600 class
+	{ "160x120i5", 160, 120, 4, 5, 0, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
+	{ "160x128", 160, 128, 4, 0, 0, false, false },	// MD-380 / MD-UV380 / MD-9600 class
 	{ "128x64", 128, 64, 1, 0, 0, false, false },	// GD-77 class, mono
 	// DM-32UV: 16 colors, the bezel hides 10 px left and right, 5 top and bottom; FONT_BIG
 	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true },
@@ -259,6 +272,11 @@ const sim_geom_t *sim_geom_find(const char *name)
 enum { K_GREEN, K_RED, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_STAR, K_HASH, K_0, K_9 = K_0 + 9, K_SK1, K_SK2, K_TOP,
        K_FN1, K_FN2, K_PTT, K_P1, K_P2 };
 
+#if CONFIG_DUAL_WATCH
+#define SIM_SK2_SHORT	ACT_AB		// the DM-1701's SK2: A/B on a press, Dual watch held (boards/dm1701/board.c)
+#else
+#define SIM_SK2_SHORT	ACT_TALK_TARGET
+#endif
 static const keymap_entry_t map_k[] = {	// DM-1701 (7.1)
 	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false }, { K_RED, ACT_BACK, ACT_BACK, false, false },
 	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
@@ -268,7 +286,7 @@ static const keymap_entry_t map_k[] = {	// DM-1701 (7.1)
 	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false },
 	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
 	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false }, { K_SK2, SIM_SK2_SHORT, ACT_USER_2, false, false },
 	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false }, { K_FN1, ACT_USER_1, ACT_USER_1, false, false },
 	{ K_FN2, ACT_USER_4, ACT_USER_4, false, false }, { K_PTT, ACT_PTT, ACT_PTT, true, false },
 };
@@ -329,6 +347,7 @@ static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_
 			      .set_backlight = d_backlight };
 static uint8_t battery = 84;
 static uint8_t p_battery(void) { return battery; }
+static uint16_t p_supply(void) { return 13800; }	// the sim's view carries the reading (supply:<mv>)
 static hal_power_t power = { .battery_pct = p_battery };
 
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
@@ -591,6 +610,13 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 
 uint16_t codeplug_zone_count(void) { return 3; }
 
+// A codeplug written while the radio runs (cpwrite, cpdel:N, zonesize:Z,N): codeplug_serial() moves on
+static uint32_t sim_cp_serial;
+static bool sim_cp_insert;		// cpwrite: zone 0 starts with channel 40, its other channels one position down
+static uint16_t sim_cp_deleted;		// cpdel:N: channel N is in no zone
+static uint8_t sim_zone_size[3];	// zonesize:Z,N: zone Z has its first N channels only (0: all)
+uint32_t codeplug_serial(void) { return sim_cp_serial; }
+
 bool codeplug_zone(uint16_t index, zone_t *out)
 {
 	if (index >= 3)
@@ -604,9 +630,13 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 		return true;
 	}
 	strncpy(out->name, zones[index].name, CODEPLUG_NAME_LEN);
-	out->count = zones[index].count;
-	for (uint16_t i = 0; i < out->count; i++)
-		out->channels[i] = (uint16_t)(zones[index].first + i);
+	uint16_t n = sim_zone_size[index] ? sim_zone_size[index] : zones[index].count;
+	out->count = 0;
+	if (index == 0 && sim_cp_insert)
+		out->channels[out->count++] = 40;
+	for (uint16_t i = 0; i < n; i++)
+		if (zones[index].first + i != sim_cp_deleted)
+			out->channels[out->count++] = (uint16_t)(zones[index].first + i);
 	return true;
 }
 
@@ -673,6 +703,49 @@ static uint32_t vfo_rx_hz = 146520000, vfo_tx_hz = 146520000;
 static subtone_t vfo_rx_tone, vfo_tx_tone;
 static uint32_t vfo_talk;
 static bool vfo_talk_private;
+// The other VFO (dual watch gives each channel its own), swapped with the ones above by sim_vfo_use
+typedef struct {
+	uint8_t mode, cc, ts, bw;
+	uint32_t rx_hz, tx_hz, talk;
+	subtone_t rx_tone, tx_tone;
+	bool talk_private;
+} sim_vfo_t;
+static sim_vfo_t vfo_other;
+static void sim_vfo_get(sim_vfo_t *o)
+{
+	*o = (sim_vfo_t){ vfo_mode, vfo_cc, vfo_ts, vfo_bw, vfo_rx_hz, vfo_tx_hz, vfo_talk, vfo_rx_tone, vfo_tx_tone,
+			  vfo_talk_private };
+}
+static void sim_vfo_use(uint8_t idx)
+{
+	if (idx == view.vfo_index)
+		return;
+	if (view.vfo) {		// the changes made in it (bandwidth, tones) are its own
+		vfo_rx_hz = view.ch.rx_hz;
+		vfo_tx_hz = view.ch.tx_hz;
+		vfo_rx_tone = view.ch.rx_tone;
+		vfo_tx_tone = view.ch.tx_tone;
+		vfo_bw = view.ch.bw;
+		vfo_mode = view.ch.mode;
+		vfo_cc = view.ch.color_code;
+		vfo_ts = view.ch.timeslot;
+	}
+	sim_vfo_t t = vfo_other;
+	sim_vfo_get(&vfo_other);
+	vfo_mode = t.mode;
+	vfo_cc = t.cc;
+	vfo_ts = t.ts;
+	vfo_bw = t.bw;
+	vfo_rx_hz = t.rx_hz;
+	vfo_tx_hz = t.tx_hz;
+	vfo_talk = t.talk;
+	vfo_rx_tone = t.rx_tone;
+	vfo_tx_tone = t.tx_tone;
+	vfo_talk_private = t.talk_private;
+	view.vfo_index = idx;
+}
+static ui_dual_ref_t sim_dual[2];
+static uint8_t sim_sel;
 static uint32_t reply_until;
 static uint32_t ptt_up_at;
 static bool rx_on;
@@ -681,7 +754,14 @@ static uint32_t check_due, check_id;
 const radio_view_t *sim_view(void) { return &view; }
 void radio_get_view(radio_view_t *v) { *v = view; }
 uint32_t radio_view_serial(void) { return serial; }
-static void changed(void) { serial++; }
+static int32_t sim_step;	// UI_SET_VFO_STEP: 0 auto (the width's), else 10 Hz units
+static void changed(void)
+{
+	view.vfo_step_hz = sim_step == 833 ? 8333u : sim_step > 0 ? (uint32_t)sim_step * 10u :
+			   view.ch.bw == RADIO_BW_25K ? 25000u : 12500u;
+	view.vfo_step_auto = sim_step == 0;
+	serial++;
+}
 
 static void default_target(void)
 {
@@ -746,15 +826,20 @@ static void set_temp(uint8_t bit)
 	changed();
 }
 
+static void retune(void);
+static void to_selected(void);
 void radio_req_channel_step(int8_t dir)
 {
+	retune();
 	view.vfo = false;
 	view.zone_pos = (uint16_t)((view.zone_pos + view.zone_size + dir) % view.zone_size);
 	load_channel();
 }
-void radio_req_zone_pos(uint16_t pos) { view.vfo = false; view.zone_pos = pos; load_channel(); }
-void radio_req_zone(uint16_t index) { view.zone_index = index; view.zone_pos = 0; load_channel(); }
-void radio_req_vfo(bool on)
+void radio_req_zone_pos(uint16_t pos) { retune(); view.vfo = false; view.zone_pos = pos; load_channel(); }
+void radio_req_zone(uint16_t index) { retune(); view.zone_index = index; view.zone_pos = 0; load_channel(); }
+static void sim_vfo(bool on);
+void radio_req_vfo(bool on) { retune(); sim_vfo(on); }
+static void sim_vfo(bool on)
 {
 	view.vfo = on;
 	if (on) {
@@ -784,10 +869,11 @@ void radio_req_vfo(bool on)
 }
 void radio_req_vfo_step(int8_t dir)
 {
+	retune();
 	view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = view.ch.rx_hz + dir * view.vfo_step_hz;
 	changed();
 }
-void radio_req_vfo_set(uint32_t hz) { view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = hz; changed(); }
+void radio_req_vfo_set(uint32_t hz) { retune(); view.ch.rx_hz = view.ch.tx_hz = vfo_rx_hz = vfo_tx_hz = hz; changed(); }
 // Copy to VFO as the radio core does (core/radio/radio_sm.c vfo_copy): what is in effect now is the VFO's own
 uint8_t ui_svc_vfo_copy(const radio_view_t *v)
 {
@@ -797,6 +883,12 @@ uint8_t ui_svc_vfo_copy(const radio_view_t *v)
 		return VFO_COPY_NO_MODE;
 	if (v->ch.rx_hz < 136000000 || v->ch.rx_hz > 480000000 || (v->ch.rx_hz > 174000000 && v->ch.rx_hz < 400000000))
 		return VFO_COPY_OUT_OF_BAND;
+	if (view.scan == 3) {	// dual watch: a VFO the other channel isn't on
+		const ui_dual_ref_t *o = &sim_dual[!sim_sel];
+		uint8_t idx = view.vfo_index;
+		sim_vfo_use(o->vfo && o->pos == idx ? (uint8_t)!idx : idx);
+	}
+	retune();
 	vfo_rx_hz = v->ch.rx_hz;
 	vfo_tx_hz = v->ch.tx_hz ? v->ch.tx_hz : v->ch.rx_hz;
 	vfo_bw = v->ch.bw;
@@ -810,11 +902,13 @@ uint8_t ui_svc_vfo_copy(const radio_view_t *v)
 		vfo_rx_tone = v->ch.rx_tone;
 		vfo_tx_tone = v->ch.tx_tone;
 	}
-	radio_req_vfo(true);
+	sim_vfo(true);
 	return VFO_COPY_OK;
 }
 void radio_req_monitor(bool down)
 {
+	if (down)
+		to_selected();
 	// As the radio core (#19): on DMR a short press toggles digital monitor on its release; FM holds it open
 	if (view.ch.mode == RADIO_MODE_DMR && !view.monitor) {
 		if (!down) {
@@ -828,6 +922,7 @@ void radio_req_monitor(bool down)
 }
 void radio_req_power(int8_t dir)
 {
+	to_selected();
 	view.power = (uint8_t)((view.power + board.power_count + dir) % board.power_count);
 	if (!view.vfo)
 		set_temp(RADIO_TEMP_POWER);
@@ -835,6 +930,7 @@ void radio_req_power(int8_t dir)
 }
 void radio_req_squelch(int8_t dir)
 {
+	to_selected();
 	int s = view.squelch + dir;
 	view.squelch = (uint8_t)(s < 0 ? 0 : s > 9 ? 9 : s);
 	if (!view.vfo)
@@ -843,6 +939,7 @@ void radio_req_squelch(int8_t dir)
 }
 void radio_req_clear_temporary(void)
 {
+	to_selected();
 	if (view.vfo)
 		return;
 	view.ch = ch_saved;
@@ -857,9 +954,20 @@ void radio_req_clear_temporary(void)
 	default_target();
 	changed();
 }
-void radio_req_bandwidth(radio_bw_t bw) { view.ch.bw = bw; if (!view.vfo) set_temp(RADIO_TEMP_BW); changed(); }
+// A setting that retunes ends dual watch on the selected channel, as the radio core does (radio-features.md 2.1): the
+// change is made there, and the UI starts the watch again
+static void sim_tune(int pane);
+static void retune(void)
+{
+	if (view.scan == 3) {
+		sim_tune(sim_sel);
+		view.scan = 0;
+	}
+}
+void radio_req_bandwidth(radio_bw_t bw) { retune(); view.ch.bw = bw; if (!view.vfo) set_temp(RADIO_TEMP_BW); changed(); }
 void radio_req_tone(uint8_t which, subtone_t tone)
 {
+	retune();
 	if (which & RADIO_TONE_TX) view.ch.tx_tone = tone;
 	if (which & RADIO_TONE_RX) view.ch.rx_tone = tone;
 	if (!view.vfo)
@@ -871,6 +979,7 @@ void radio_req_reply_cancel(void) { view.dmr.reply_active = false; reply_until =
 static void ptt(bool down)
 {
 	if (down) {
+		to_selected();	// the radio core transmits on the selected channel
 		if (view.ch.rx_only) {
 			view.state = RS_TX_DENIED;
 			view.tx_deny = TXDENY_RX_ONLY;
@@ -879,6 +988,8 @@ static void ptt(bool down)
 		}
 		view.state = RS_TX;
 		view.tx_elapsed_ms = 0;
+		if (view.scan != 3)
+			view.scan = 0;	// as the radio core does: PTT ends a scan; dual watch goes on (SCAN_DUAL)
 		if (view.dmr.active) {
 			if (focus_id) {
 				// one-shot: the focused row's target, kept for the reply window
@@ -969,6 +1080,7 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 }
 bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 {
+	to_selected();
 	if (view.vfo && life != UI_TALK_DEFAULT) {
 		vfo_talk = id;		// the VFO's own target, kept with it: nothing to write
 		vfo_talk_private = private_call;
@@ -1011,6 +1123,7 @@ void ui_svc_focus_target(uint32_t id, bool private_call)
 }
 bool ui_svc_dmr_timeslot(uint8_t ts)
 {
+	retune();
 	view.dmr.ts = view.ch.timeslot = ts;
 	if (view.vfo) {
 		vfo_ts = ts;
@@ -1022,6 +1135,7 @@ bool ui_svc_dmr_timeslot(uint8_t ts)
 }
 bool ui_svc_dmr_color_code(uint8_t cc)
 {
+	retune();
 	view.dmr.cc = view.ch.color_code = cc;
 	if (view.vfo) {
 		vfo_cc = cc;
@@ -1033,6 +1147,7 @@ bool ui_svc_dmr_color_code(uint8_t cc)
 }
 bool ui_svc_mode(uint8_t mode)
 {
+	retune();
 	view.ch.mode = mode;
 	view.dmr.active = mode == RADIO_MODE_DMR;
 	if (view.vfo) {
@@ -1046,6 +1161,7 @@ bool ui_svc_mode(uint8_t mode)
 }
 bool ui_svc_hear_all(bool on)
 {
+	to_selected();
 	view.dmr.hear_all_latch = on;
 	view.dmr.hear_all = on || view.monitor;
 	changed();
@@ -1125,8 +1241,137 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		sim_rec.tot_s = (uint32_t)value;
 	else if (id == UI_SET_BACKLIGHT_S)
 		sim_rec.backlight_s = (uint32_t)value;
+	else if (id == UI_SET_VFO_STEP) {
+		sim_step = value;
+		changed();
+	}
 }
 bool ui_svc_scan_skip(void) { radio_req_channel_step(1); return true; }
+// Dual watch as the radio core does it with a receiver per channel: the view stays on the selected channel (the
+// keys act on it); `tune:a` / `tune:b` move it to a channel, as the alternating receiver does when a call holds it
+// Each channel keeps its changes for now while the receiver is on the other (as radio_sm.c's dual_keep)
+static uint8_t sim_at = 0xFF;		// the pane the receiver is on
+static radio_view_t sim_keep[2];
+static uint32_t sim_keep_target[2];
+static bool sim_keep_ok[2];
+static bool sim_same(const ui_dual_ref_t *a, const ui_dual_ref_t *b)
+{
+	return a->vfo == b->vfo && a->pos == b->pos && (a->vfo || a->zone == b->zone);
+}
+bool ui_svc_dual_get(ui_dual_ref_t ref[2], uint8_t *sel)
+{
+	if (view.scan != 3)
+		return false;
+	ref[0] = sim_dual[0];
+	ref[1] = sim_dual[1];
+	*sel = sim_sel;
+	return true;
+}
+bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
+{
+	if (ref == NULL) {
+		if (view.scan == 3)
+			sim_tune(sim_sel);	// the radio stops on the selected channel
+		view.scan = 0;
+		sim_keep_ok[0] = sim_keep_ok[1] = false;
+		changed();
+		return true;
+	}
+	for (int i = 0; i < 2; i++) {
+		if (!ref[i].vfo) {
+			zone_t z;
+			if (!codeplug_zone(ref[i].zone, &z) || ref[i].pos >= z.count)
+				return false;
+		}
+		if (!sim_same(&sim_dual[i], &ref[i]))
+			sim_keep_ok[i] = false;
+	}
+	sim_dual[0] = ref[0];
+	sim_dual[1] = ref[1];
+	sim_sel = sel;
+	view.dual_sel = sel;
+	// As the radio core: the receiver stays where it is when that is one of the two (a new selection alone never
+	// retunes), else it tunes the selected one
+	ui_dual_ref_t here = { view.vfo, view.zone_index, view.vfo ? view.vfo_index : view.zone_pos };
+	if (sim_same(&here, &ref[sel]))
+		sim_at = sel;
+	else if (sim_same(&here, &ref[!sel]))
+		sim_at = (uint8_t)!sel;
+	else
+		sim_tune(sel);
+	view.scan = 3;	// SCAN_DUAL
+	changed();
+	return true;
+}
+// The selected channel for a request that acts on it (power, squelch, the monitor, a talk target), as the radio core
+static void to_selected(void)
+{
+	if (view.scan == 3 && sim_at != sim_sel)
+		sim_tune(sim_sel);
+}
+static void sim_tune(int pane)
+{
+	const ui_dual_ref_t *r = &sim_dual[pane];
+	if (sim_at < 2 && view.scan == 3) {
+		sim_keep[sim_at] = view;
+		sim_keep_target[sim_at] = temp_target;
+		sim_keep_ok[sim_at] = true;
+	}
+	sim_at = (uint8_t)pane;
+	if (r->vfo) {
+		sim_vfo_use((uint8_t)r->pos);
+		sim_vfo(true);
+	} else {
+		view.vfo = false;
+		view.zone_index = r->zone;
+		view.zone_pos = r->pos;
+		load_channel();
+	}
+	if (sim_keep_ok[pane]) {
+		const radio_view_t *k = &sim_keep[pane];
+		view.ch = k->ch;
+		view.power = k->power;
+		view.squelch = k->squelch;
+		view.temp = k->temp;
+		view.temporary = k->temporary;
+		view.dmr.hear_all_latch = k->dmr.hear_all_latch;
+		temp_target = sim_keep_target[pane];
+		default_target();
+		changed();
+	}
+}
+// receivers:2 makes the radio one with a receiver per dual watch channel; rxa: / rxb: then start a call on A's or
+// B's own receiver (the first call is the one heard), rxaend / rxbend end it
+static uint8_t sim_receivers = 1;
+static ui_dual_rx_t sim_drx[2];
+uint8_t ui_svc_receivers(void) { return sim_receivers; }
+bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out)
+{
+	if (sim_receivers < 2 || pane > 1)
+		return false;
+	*out = sim_drx[pane];
+	return true;
+}
+bool ui_svc_vfo_get(uint8_t index, channel_t *out)
+{
+	sim_vfo_t o;
+	if (index != view.vfo_index) {
+		o = vfo_other;
+	} else {
+		sim_vfo_get(&o);
+	}
+	memset(out, 0, sizeof *out);
+	strcpy(out->name, "VFO");
+	out->rx_hz = o.rx_hz;
+	out->tx_hz = o.tx_hz;
+	out->rx_tone = o.rx_tone;
+	out->tx_tone = o.tx_tone;
+	out->bw = o.bw;
+	out->mode = o.mode;
+	out->color_code = o.cc;
+	out->timeslot = o.ts;
+	return true;
+}
 uint16_t ui_svc_msg_count(void) { return n_inbox; }
 uint16_t ui_svc_msg_unread(void)
 {
@@ -1312,6 +1557,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.side_keys = maps[map].side;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
+	power.supply_mv = NULL;
 	cur_map = map;
 	gfx_init(&disp);
 	gfx_invalidate();
@@ -1322,9 +1568,13 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	vfo_cc = vfo_ts = 1;
 	vfo_bw = RADIO_BW_25K;
 	vfo_rx_hz = vfo_tx_hz = 146520000;
+	sim_receivers = 1;
+	memset(sim_drx, 0, sizeof sim_drx);
 	vfo_rx_tone = vfo_tx_tone = (subtone_t){ TONE_NONE, 0 };
 	vfo_talk = 0;
 	vfo_talk_private = false;
+	vfo_other = (sim_vfo_t){ RADIO_MODE_FM, 1, 1, RADIO_BW_25K, 146520000, 146520000, 0, { TONE_NONE, 0 },
+				 { TONE_NONE, 0 }, false };
 	view.vfo_step_hz = 12500;
 	view.tot_s = 180;
 	view.rssi_dbm = -95;
@@ -1337,6 +1587,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.netif = &sim_netif;
 	aprs_sim_reset();
 	n_edits = 0;
+	sim_cp_serial = 0;
+	sim_cp_insert = false;
+	sim_cp_deleted = 0;
+	memset(sim_zone_size, 0, sizeof sim_zone_size);
 	focus_id = 0;
 	check_due = 0;
 	ptt_up_at = 0;
@@ -1357,6 +1611,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_NOISE_REDUCTION, 1);
 	ui_svc_setting_set(UI_SET_MIC_AGC, 0);
 	ui_svc_setting_set(UI_SET_UPDOWN_HOME, 0);
+	ui_svc_setting_set(UI_SET_VFO_STEP, 0);
+	sim_step = 0;
 	for (uint8_t k = UI_SET_KEY_SIDE1; k <= UI_SET_KEY_TOP_HOLD; k++)
 		ui_svc_setting_set(k, 0);	// the side keys as the board has them
 	ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 0);
@@ -1375,6 +1631,13 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ROAM_PROBE, 0);
 	ui_svc_setting_set(UI_SET_CRASH_MODE, UI_CRASH_SEND_OFF);
 	ui_svc_setting_set(UI_SET_CRASH_CONTACT, 0);
+#if CONFIG_DUAL_WATCH
+	ui_svc_setting_set(UI_SET_DUAL_TALK_BACK, 0);
+	ui_svc_setting_set(UI_SET_DUAL_B, 0);
+	memset(sim_dual, 0, sizeof sim_dual);
+	sim_at = 0xFF;
+	sim_keep_ok[0] = sim_keep_ok[1] = false;
+#endif
 	memset(&crash_sim, 0, sizeof crash_sim);
 	ptt_blocked = false;
 	ui_app_init();
@@ -1391,6 +1654,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "powerkey", ACT_POWER }, { "zone+", ACT_ZONE_UP }, { "zone-", ACT_ZONE_DOWN }, { "scankey", ACT_SCAN },
 	{ "lockkey", ACT_LOCK }, { "cbkey", ACT_CALL_BACK },
 	{ "homekey", ACT_HOME_ZONE }, { "copykey", ACT_COPY_VFO },
+	{ "dualkey", ACT_DUAL_WATCH }, { "abkey", ACT_AB },	// dual watch's side key functions
 	{ "vfokey", ACT_VFO_TOGGLE },		// the VFO/MR key: a key map entry of the board (DM-1801 Pro), not a side key function
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
@@ -1399,7 +1663,8 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 
 static bool on_map(uint8_t action, bool lng)
 {
-	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || (lng && action == ACT_TALK_TARGET))
+	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
+	    action == ACT_AB || action == ACT_TALK_TARGET)
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
@@ -1424,6 +1689,23 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 		ui_app_key(&ev);
 		advance(PRESS_MS);
 		return true;
+	}
+	// "sk2": the key itself, whatever the key map gives it (keys[] are actions, which any side key can send)
+	if (strcmp(name, "sk2") == 0) {
+		for (int i = 0; i < board.keymap_len; i++) {
+			const keymap_entry_t *k = &board.keymap[i];
+			if (k->bit != K_SK2)
+				continue;
+			input_event_t ev = { lng ? k->long_action : k->short_action,
+					     (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0 };
+			presses++;
+			advance(lng ? LONG_MS : PRESS_MS / 2);
+			ui_app_key(&ev);
+			advance(PRESS_MS / 2);
+			return true;
+		}
+		snprintf(err, len, "no SK2 on this key map");
+		return false;
 	}
 	for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) {
 		if (strcmp(name, keys[i].name) != 0)
@@ -1503,7 +1785,24 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "checks") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.radio_checks);
 	else if (strcmp(key, "sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.messages_sent);
 	else if (strcmp(key, "text") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_text);
-	else if (strcmp(key, "scanning") == 0) snprintf(got, sizeof got, "%u", view.scan != 0);
+	else if (strcmp(key, "scanning") == 0) snprintf(got, sizeof got, "%u", view.scan != 0 && view.scan != 3);
+#if CONFIG_DUAL_WATCH
+	else if (strcmp(key, "dual") == 0) snprintf(got, sizeof got, "%u", ui_st.dual.on && view.scan == 3);
+	else if (strcmp(key, "azone") == 0) snprintf(got, sizeof got, "%u", sim_dual[0].zone);
+	else if (strcmp(key, "apos") == 0) snprintf(got, sizeof got, "%u", sim_dual[0].pos + 1u);
+	else if (strcmp(key, "bzone") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].zone);
+	else if (strcmp(key, "bvfo") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].vfo);
+	else if (strcmp(key, "bpos") == 0) snprintf(got, sizeof got, "%u", sim_dual[1].pos + 1u);
+	else if (strcmp(key, "avfo") == 0) snprintf(got, sizeof got, "%u", sim_dual[0].vfo);
+	// What the UI works from (ui_view): in dual watch, the selected channel wherever the receiver is
+	else if (strcmp(key, "uipos") == 0) snprintf(got, sizeof got, "%u", ui_view()->zone_pos + 1u);
+	else if (strcmp(key, "uitemp") == 0) snprintf(got, sizeof got, "%u", ui_view()->temporary);
+	else if (strcmp(key, "entry") == 0) snprintf(got, sizeof got, "%s", ui_st.entry ? ui_st.entry_digits : "none");
+	else if (strcmp(key, "sel") == 0) snprintf(got, sizeof got, "%c", ui_st.dual.sel ? 'B' : 'A');
+	else if (strcmp(key, "rx") == 0) snprintf(got, sizeof got, "%c", "AB-"[ui_st.dual.rx > 1 ? 2 : ui_st.dual.rx]);
+	else if (strcmp(key, "last") == 0) snprintf(got, sizeof got, "%c", "AB-"[ui_st.dual.last > 1 ? 2 : ui_st.dual.last]);
+	else if (strcmp(key, "calls") == 0) snprintf(got, sizeof got, "%u", ui_st.dual.calls);
+#endif
 	else if (strcmp(key, "privacy") == 0) snprintf(got, sizeof got, "%u", view.dmr.privacy);
 	else if (strcmp(key, "hearall") == 0) snprintf(got, sizeof got, "%u", view.dmr.hear_all_latch);
 	else if (strcmp(key, "vox") == 0) snprintf(got, sizeof got, "%u", view.vox_on);
@@ -1671,6 +1970,113 @@ static bool run_token(char *t, char *err, size_t len)
 		}
 		return true;
 	}
+	if (strcmp(t, "receivers") == 0 && arg != NULL) {
+		sim_receivers = (uint8_t)atoi(arg);
+		return true;
+	}
+	if ((strcmp(t, "rxa") == 0 || strcmp(t, "rxb") == 0) && arg != NULL) {
+		unsigned src = 0, dst = 0;
+		char kind = 'g';
+		if (sscanf(arg, "%u,%u,%c", &src, &dst, &kind) < 2) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		ui_dual_rx_t *x = &sim_drx[t[2] == 'b'];
+		memset(x, 0, sizeof *x);
+		x->active = x->dmr = true;
+		x->heard = !sim_drx[t[2] != 'b'].active;
+		x->group = kind != 'p';
+		x->src = src;
+		x->dst = dst;
+		x->rssi_dbm = t[2] == 'b' ? -92 : -71;
+		strncpy(x->src_name, contact_name(src, false), sizeof x->src_name - 1);
+		changed();
+		advance(300);
+		return true;
+	}
+	if (strcmp(t, "rxaend") == 0 || strcmp(t, "rxbend") == 0) {
+		ui_dual_rx_t *x = &sim_drx[t[2] == 'b'], *o = &sim_drx[t[2] != 'b'];
+		x->active = x->heard = false;
+		o->heard = o->active;	// the other call's audio now
+		changed();
+		advance(300);
+		return true;
+	}
+	if (strcmp(t, "cpwrite") == 0 || (strcmp(t, "cpdel") == 0 && arg != NULL) ||
+			(strcmp(t, "zonesize") == 0 && arg != NULL)) {	// the codeplug changes under the radio
+		if (t[2] == 'w') {
+			sim_cp_insert = true;
+		} else if (t[2] == 'd') {
+			sim_cp_deleted = (uint16_t)atoi(arg);
+		} else {
+			unsigned zi = 0, n = 0;
+			if (sscanf(arg, "%u,%u", &zi, &n) == 2 && zi < 3)
+				sim_zone_size[zi] = (uint8_t)n;
+		}
+		sim_cp_serial++;
+		if (view.scan != 3 && !view.vfo)
+			load_channel();
+		advance(300);
+		return true;
+	}
+	if (strcmp(t, "dlpos") == 0 && arg != NULL) {	// the debug link (or any other task) asks for channel position N
+		radio_req_zone_pos((uint16_t)(atoi(arg) - 1));
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "dldual") == 0 && arg != NULL && view.scan == 0) {	// the debug link's scan dual: the channel
+		sim_dual[0] = (ui_dual_ref_t){ view.vfo, view.zone_index,	// here (A, selected) and position N
+					       view.vfo ? view.vfo_index : view.zone_pos };
+		sim_dual[1] = (ui_dual_ref_t){ false, view.zone_index, (uint16_t)(atoi(arg) - 1) };
+		sim_sel = 0;
+		sim_at = 0;
+		view.dual_sel = 0;
+		view.scan = 3;
+		changed();
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "dlstop") == 0) {	// the debug link's scan stop: dual watch ends on the selected channel, counted
+		if (view.scan == 3) {
+			sim_tune(sim_sel);
+			view.scan = 0;
+			view.dual_stops++;
+			changed();
+		}
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "dlsel") == 0 && arg != NULL && view.scan == 3) {	// the debug link selects A or B
+		sim_sel = arg[0] == 'b';
+		view.dual_sel = sim_sel;
+		changed();	// no UI tick here: a request right after it races the UI, as on the radio
+		return true;
+	}
+	if (strcmp(t, "tune") == 0 && arg != NULL && (arg[0] == 'a' || arg[0] == 'b')) {	// dual watch: the receiver
+		sim_tune(arg[0] == 'b');							// on A or B
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "busy") == 0 && arg != NULL) {	// dual watch: the looks in the wait found a signal there
+		view.dual_busy = arg[0] == 'a' ? 1 : arg[0] == 'b' ? 2 : 0;
+		changed();
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "fmrx") == 0) {		// an FM signal opens the squelch; fmrxend closes it
+		view.state = RS_RX;
+		view.rssi_dbm = -84;
+		changed();
+		advance(300);
+		return true;
+	}
+	if (strcmp(t, "fmrxend") == 0) {
+		view.state = RS_IDLE;
+		view.last_rx_ms = now_ms;
+		changed();
+		advance(200);
+		return true;
+	}
 	if (strcmp(t, "rxend") == 0) {
 		rx_end();
 		advance(200);
@@ -1730,7 +2136,16 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "hotspot") == 0 && arg != NULL) {
 		hotspot_on = strcmp(arg, "on") == 0;
+		if (hotspot_on && view.scan != 0)
+			view.scan = 0;	// as the radio core: hotspot mode ends any scan, dual watch too
 		advance(300);
+		return true;
+	}
+	if (strcmp(t, "reboot") == 0) {		// power off and on: the screens start over, the settings stay
+		to_selected();	// the saved position is the selected channel's (radio-features.md 2.1)
+		view.scan = 0;
+		ui_app_init();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "splash") == 0) {		// the boot screen (last in a script: nothing redraws over it)
@@ -1749,6 +2164,13 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "nobattery") == 0) {
 		board.caps |= CAP_NO_BATTERY;
+		advance(1100);
+		return true;
+	}
+	if (strcmp(t, "supply") == 0 && arg != NULL) {
+		board.caps |= CAP_NO_BATTERY;
+		power.supply_mv = p_supply;
+		view.supply_mv = (uint16_t)atoi(arg);
 		advance(1100);
 		return true;
 	}

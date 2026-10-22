@@ -4,11 +4,11 @@
 // the STM32F405 flash (a port of tools/odrflash/odrflash/fakedfu.py: erase sets a sector to 0xFF, programming only
 // clears bits), and ODR's USB serial port answering the debug link and the CPS reads from the same flash and an SPI
 // flash. A synthetic stock firmware file and key stand in for the real ones, which are never part of ODR. A radio
-// running ODR also hands over to the STM32F4 stub (debug link STUB, then the stub's protocol and interlock as
-// stub/f4stub.py's FakeF4 has them).
+// running ODR also hands over to the STM32F4 stub (debug link STUB, then the stub's protocol, its board record
+// (CONFIG) and its interlock as stub/f4stub.py's FakeF4 and docs/spec/stub-stm32f4.md 5.2 have them).
 
 import { BLOCK, FIRST_BLOCK } from "./plan.js";
-import { concat, crc32, le32, sha256, u16be, u32le } from "./bytes.js";
+import { concat, crc32, equal, fromHex, le32, sha256, u16be, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
 import { STUB_MAGIC } from "./stub.js";
 import { APP_BASE, F4_MAGIC, f405Sectors } from "./f4stub.js";
@@ -42,7 +42,7 @@ export function randomBytes(r, n) {
 // the stock firmware keeps it. Where the profile moves the code, the synthetic codec gets what stockfw.py's
 // build_synthetic_stock plants (a self reference, an island's call into the code) and a codec map for them.
 const SYN_SELF_REF = 0x40, SYN_BL = 0x110;
-export async function simulation(fbReal, boardId = "dm1701", seed = 1701) {
+export async function simulation(fbReal, boardId, seed = 1701) {
 	const fb = structuredClone(fbReal);
 	const board = fb.boards[boardId];
 	const r = rng(seed);
@@ -96,8 +96,11 @@ export async function simulation(fbReal, boardId = "dm1701", seed = 1701) {
 export class FakeRadio {
 	// state: "stock" (stock firmware: codec in place, no serial port), "odr", "odr-nocodec", "bootloader".
 	// stubEntry: ODR built with CONFIG_STUB_ENTRY; adopt: the stub keeps ODR's USB device (else the port goes away
-	// and serialStream() gives the new one); cutAfter: stub programs before the "cable" is pulled
-	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null } = {}) {
+	// and serialStream() gives the new one); cutAfter: stub programs before the "cable" is pulled. stubVersion: the
+	// STM32F4 stub's protocol (4: CONFIG and the record echo; 2 and 3: the DM-1701's wiring built in); stubConfig: what the
+	// stub does with a record it would accept ("ok", "refuse": answers bad argument, "garble": accepts it but HELLO
+	// echoes different bytes)
+	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 4, stubConfig = "ok" } = {}) {
 		this.sim = sim;
 		this.board = sim.board;
 		this.key = sim.key;
@@ -118,6 +121,10 @@ export class FakeRadio {
 		this.stubEntry = stubEntry;
 		this.adopt = adopt;
 		this.cutAfter = cutAfter;
+		this.stubVersion = stubVersion;
+		this.stubConfig = stubConfig;
+		this.stubRecord = null;		// the board record in force; a fresh stub has none
+		this.configs = 0;
 		this.programs = 0;
 		this.events = [];
 		this.port = 0;
@@ -259,13 +266,59 @@ export class FakeRadio {
 		return inb;
 	}
 
+	// The board record the stub would accept (stub-stm32f4.md 5.2 "Checked by the stub"): null if it refuses it
+	static recordOk(p) {
+		const port = (b) => b >> 4 <= 8;
+		const base = u32be(p, 8), hse = u32be(p, 4);
+		const pins = [p[16], p[17], p[18]];
+		return p.length === 24 && p[0] !== 0 && p[1] === 1 && p[2] <= 3 && p[3] <= 3 && hse >= 4e6 && hse <= 26e6
+			&& base >= 0x0800C000 && f405Sectors().some((sec) => sec.index > 0 && sec.addr === base) && u32be(p, 12) >= 100000
+			&& pins.every(port) && p[19] <= 15 && port(p[20]) && !pins.includes(p[20])
+			&& [p[21], p[22]].every((x) => x === 0xFF || port(x)) && p[23] === 0;
+	}
+
+	// This radio's own wiring (its profile's record): a record with other pins finds no SPI flash chip
+	ownRecord() {
+		const r = this.sim.fb.f4stub?.boards[this.board.id]?.record;
+		return r ? fromHex(r) : null;
+	}
+
+	stubSpiSize() {
+		const own = this.ownRecord(), rec = this.stubRecord;
+		if (!rec || !own) return 0;
+		return equal(rec.subarray(2, 23), own.subarray(2, 23)) ? this.spi.length : 0;
+	}
+
 	stubOp(op, p, reply) {
-		const OK = 0x05, REFUSED = 0x0F;
-		const mem = (baseLen, addr) => (p.length > baseLen && p[baseLen] === 1 ? [this.spi, addr] : [this.flash, addr - FLASH_BASE]);
+		const OK = 0x05, BADARG = 0x0D, REFUSED = 0x0F, NOCONFIG = 0x11;
+		const cfg = this.stubVersion >= 4;	// CONFIG (protocol 4)
+		if (!cfg && !this.stubRecord) this.stubRecord = this.ownRecord();	// before protocol 4: the wiring built in
+		const rec = this.stubRecord;
+		const appBase = rec ? u32be(rec, 8) : 0;
+		const spiSize = this.stubSpiSize();
+		const isSpi = (baseLen) => p.length > baseLen && p[baseLen] === 1;
+		const mem = (baseLen, addr) => (isSpi(baseLen) ? [this.spi, addr] : [this.flash, addr - FLASH_BASE]);
 		const appBlank = () => this.word(APP_BASE) === 0xFFFFFFFF;
+		if ([0x10, 0x11, 0x12, 0x13].includes(op) && !rec) return reply(NOCONFIG);
+		if (((op === 0x07 || op === 0x09) && isSpi(6)) || op === 0x12 || op === 0x13) {
+			if (!spiSize) return reply(BADARG);	// no chip answered, or not configured
+		}
 		if (op === 0x01) {
-			reply(OK, concat(new TextEncoder().encode("F4STUB"), new Uint8Array([2, 0x10, 0x08, 0x04, 0x00, 0x55, this.adopt ? 1 : 0]), be32(APP_BASE),
-				be32(this.spi.length), new Uint8Array([0xEF, 0x40, 0x18])));
+			let body = concat(new TextEncoder().encode("F4STUB"), new Uint8Array([this.stubVersion, 0x10, 0x08, 0x04, 0x00, 0x55,
+				(this.adopt ? 1 : 0) | (cfg && rec ? 0x80 : 0)]), be32(cfg ? appBase : APP_BASE), be32(spiSize),
+				new Uint8Array([0xEF, 0x40, 0x18]));
+			if (cfg) {
+				let echo = rec || new Uint8Array(0);
+				if (rec && this.stubConfig === "garble") { echo = echo.slice(); echo[20] ^= 0x01; }
+				body = concat(body, new Uint8Array([rec ? rec[0] : 0, echo.length]), echo);
+			}
+			reply(OK, body);
+		} else if (op === 0x14 && cfg) {
+			this.configs++;
+			this.stubRecord = null;		// a refused record leaves the stub unconfigured
+			if (!FakeRadio.recordOk(p) || this.stubConfig === "refuse") return reply(BADARG);
+			this.stubRecord = p.slice();
+			reply(OK);
 		} else if (op === 0x07) {
 			const a = u32be(p, 0), k = (p[4] << 8) | p[5];
 			const [m, o] = mem(6, a);
@@ -287,20 +340,20 @@ export class FakeRadio {
 			}
 		} else if (op === 0x10) {
 			const sec = f405Sectors()[p[0]];
-			if (u32be(p, 1) !== F4_MAGIC || p[0] < 3 || !sec || (p[0] !== 3 && !appBlank())) return reply(REFUSED);
+			if (u32be(p, 1) !== F4_MAGIC || !sec || sec.addr < appBase || (sec.addr !== appBase && !appBlank())) return reply(REFUSED);
 			this.flash.fill(0xFF, sec.addr - FLASH_BASE, sec.addr - FLASH_BASE + sec.size);
 			this.events.push(`erase ${p[0]}`);
 			reply(OK);
 		} else if (op === 0x11) {
 			const a = u32be(p, 0), data = p.subarray(4), o = a - FLASH_BASE;
-			if (a < APP_BASE || (a + data.length > 0x08010000 && !appBlank())) return reply(REFUSED);
+			if (a < appBase || (a + data.length > 0x08010000 && !appBlank())) return reply(REFUSED);
 			if (!this.flash.subarray(o, o + data.length).every((x) => x === 0xFF)) return reply(REFUSED);
 			this.flash.set(data, o);
 			this.programs++;
 			reply(OK);
 		} else if (op === 0x12) {
 			const a = u32be(p, 0);
-			if (u32be(p, 4) !== F4_MAGIC || a % 4096 || a >= this.spi.length) return reply(REFUSED);
+			if (u32be(p, 4) !== F4_MAGIC || a % 4096 || a >= spiSize) return reply(REFUSED);
 			this.spi.fill(0xFF, a, a + 4096);
 			reply(OK);
 		} else if (op === 0x13) {
@@ -345,6 +398,7 @@ export class FakeRadio {
 				if (op === 3) {
 					if (!this.loaded || crc32(this.loaded) !== this.stubCrc || this.stubEntryAt !== 0x20000000) return frame(f.cmd | 0x80, f.seq, new Uint8Array([4]));
 					this.mode = "stub";
+					this.stubRecord = null;		// a fresh stub: no board record yet
 					this.events.push("stub (from ODR)");
 					if (!this.adopt) this.port++;	// the old port is gone; serialStream() is the new one
 					return ok(new Uint8Array(0));

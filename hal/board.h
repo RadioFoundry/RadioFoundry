@@ -22,6 +22,7 @@
 #include "hal_netif.h"
 #include "hal_bcast.h"
 #include "hal_afsk.h"
+#include "hal_rx2.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -96,10 +97,8 @@ typedef struct {
 	// with the stored value at start-up and on each change; the module is still probed at start-up whatever the
 	// setting says, so board_has_gps() is known. NULL = the module is always on
 	void (*gps_enable)(bool on);
-	// Optional: line i of the debug link's board view section as "key=value" (the core prefixes "board."), for
-	// bring-up and HIL checks of the board's own hardware: pins, clocks, chip answers. False past the last line.
-	// Read only: it may not change a pin or start a bus transaction that changes a chip's state
-	bool (*view_line)(uint8_t i, char *buf, uint8_t len);
+	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
+	const hal_rx2_t *rx2;
 } board_t;
 
 extern const board_t board;
@@ -108,6 +107,16 @@ extern const board_t board;
 static inline bool board_has_battery(void)
 {
 	return (board.caps & CAP_NO_BATTERY) == 0;
+}
+
+// The voltage the radio measures: its battery, its DC input (no battery, hal_power_t.supply_mv set), or neither
+typedef enum { BOARD_VOLTS_NONE, BOARD_VOLTS_BATTERY, BOARD_VOLTS_SUPPLY } board_volts_t;
+
+static inline board_volts_t board_volts(void)
+{
+	if (board_has_battery())
+		return BOARD_VOLTS_BATTERY;
+	return board.power != NULL && board.power->supply_mv != NULL ? BOARD_VOLTS_SUPPLY : BOARD_VOLTS_NONE;
 }
 
 // Settings > Location > GPS took effect (a board without the hook has nothing to switch)

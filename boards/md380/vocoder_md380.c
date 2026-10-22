@@ -9,11 +9,8 @@
 // (platform/stm32f4/codec_desc.h). The code reaches its tables through absolute addresses, which don't change. The
 // merge rewrites what does: two address pairs in the code that point into the code, and the 12 calls from the code
 // that stock keeps in the table window back into the code (the codec map). None of it is part of this repository or a
-// release. Without a valid descriptor and codec, present() is false and the radio is FM only.
-//
-// It is the same AMBE+2 library as the DM-1701's, linked at other addresses: the init sequence, the arguments and the
-// state sizes are the same, only the entry addresses differ. Not reentrant: one task (the audio task, through the
-// audio block callback) makes all calls. The codec needs about 4 KB of the caller's stack (4046 bytes measured).
+// release. The calls and the checks are the shared ones (platform/stm32f4/hrc/vocoder.c); this file says which build and
+// where. Without a valid descriptor and codec, present() is false and the radio is FM only.
 #include "md380.h"
 #include "config.h"
 
@@ -22,28 +19,8 @@
 #include "vocoder/ambe2_flags.h"
 #include "codec_desc.h"
 
-#include <string.h>
-
-#define CODEC_SIGNATURE		0x4FF0E92Du	// push.w {r4-r11, lr}
 #define CODEC_TAG		0x2032u		// the descriptor's tag for stock D002.032
-#define CODEC_FLASH_LO		0x08080000u	// sectors 8-11: the flash md380.ld leaves to the codec
-#define CODEC_FLASH_HI		CODEC_DESC_ADDR
-
-// Entry points (offsets from the code start)
-#define CODEC_ENCODE		(base + 0x14Cu)
-#define CODEC_DECODE		(base + 0x604u)
-#define CODEC_ENC_INIT		(base + 0x294u)	// (E, 1, 1)
-#define CODEC_FEC_INIT		(base + 0x4FCu)	// (F, 1): state of the codec's own FEC routines
-#define CODEC_DEC_INIT		(base + 0x6F0u)	// (D, 1)
-#define CODEC_ENC_PARAMS	(base + 0x854u)	// (E, 10 parameters)
-#define CODEC_ENC_SET		(base + 0x1E0u)	// (E, a, b)
-#define CODEC_DEC_SET		(base + 0x6ACu)	// (D, a, b)
-// Not used: encode ECC +0x514 and FEC decode +0xAC8. The air frame FEC is ours (core/dmr/ambe) and matches stock's.
-
-// State sizes found by running the stock code with each block ending at a fault boundary (the same as the DM-1701's)
-#define DEC_STATE_BYTES		0x7ECu
-#define ENC_STATE_BYTES		0x16E0u
-#define FEC_STATE_BYTES		0x44u
+#define CODEC_FLASH_LO		0x08080000u	// sectors 8-11: the flash boards/md380/memory.ld leaves to the codec
 
 // The D002.032 codec as the merge places it (tools/odrflash/odrflash/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of
 // the code and the main table window after the rewrites, and of the small windows (unchanged). The descriptor must
@@ -198,5 +175,8 @@ const hal_vocoder_t md380_vocoder = {
 	.present = present, .reset = reset, .encode = encode, .decode = decode, .profile = profile,
 	.options = options, .set_options = set_options, .encode_flags = encode_flags,
 };
+
+static const stm32_codec_profile_t *const profiles[] = { &d2032 };
+const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 1 };
 
 #endif	// CONFIG_DMR

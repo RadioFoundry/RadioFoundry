@@ -12,9 +12,9 @@
 // How a radio is reached (which steps a task takes on it) is its backend's business: backends.js.
 //
 // Everything runs in the page: release images come from this site, custom images from the build API, stock files
-// and backups from the user's disk, which never leave it. Add #sim to the address for a simulated radio (no hardware;
-// for trying the flow), #sim=odr for one that already runs ODR, #sim=gd77 / #sim=odr-gd77 for a GD-77 in update mode
-// or running ODR.
+// and backups from the user's disk, which never leave it. Add #sim=<board>-stock to the address for a simulated radio
+// on its stock firmware (no hardware; for trying the flow), #sim=<board> for one that already runs ODR, #sim for the
+// first radio on stock firmware. The fake is built from the board's data.
 
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import * as stockfw from "./stockfw.js";
@@ -31,9 +31,8 @@ import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
-import * as gd77ui from "./gd77ui.js";
-import { gd77Simulation, FakeGd77Odr } from "./fakegd77.js";
-import { FakeC7000, c7000Simulation } from "./fakec7000.js";
+import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
+import { APP_ENTRY } from "./iap.js";
 import { slotBytes, locateCodec } from "./c7000.js";
 import { Stub } from "./stub.js";
 import { F4Stub, f4Image } from "./f4stub.js";
@@ -195,7 +194,7 @@ const fb = () => (S.sim ? S.sim.fb : S.data.fb);
 // Every image comes from the build service, so a radio needs only a backend the page has for it (backends.js)
 const available = (r, task) => backendOf(r).available(r, fb(), task);
 
-// The STM32 radios (DM-1701, MD-380): stock firmware is reached through the AnyRoad bootloader (dfu.js), which takes
+// The STM32 radios: stock firmware is reached through the AnyRoad bootloader (dfu.js), which takes
 // the key from the stock file; a radio running ODR with stub entry also updates and backs up through the STM32F4
 // loader (f4stub.js), and backs up over the debug link without it (backup.js). Stock firmware isn't backed up here.
 register({
@@ -214,8 +213,8 @@ const stubRoute = () => !!(S.task === "install" && f4Board() && S.now?.kind === 
 let f4Json = null;
 const f4StubJson = async () => (f4Json ||= await (await fetch(`${ROOT}data/f4-stub.json`)).json());
 
-// Build options (radio.json flash.build_options, such as the MD-380's band): all chosen, and the value a radio running ODR
-// reports by its debug link name
+// Build options (radios.json flash.build_options, such as the MD-380's band): all chosen, and the value a radio
+// running ODR reports by its debug link name
 const buildOptions = () => S.radio?.flash.build_options || [];
 const optionsChosen = () => buildOptions().every((o) => S.buildOptions?.[o.name]);
 function optionsFromProbe(p) {
@@ -496,11 +495,15 @@ function startView() {
 			h("div", { class: "choice-grid" }, choice("install", "⤓"), choice("backup", "⎘"), choice("restore", "↺"), choice("help", "?"))),
 		h("details", { class: "small" }, h("summary", {}, t("flash.start.privacy_title")), h("p", {}, t("flash.start.privacy"))),
 		h("p", { class: "small muted" }, S.sim ? h("a", { href: "#", onclick: (e) => { e.preventDefault(); location.hash = ""; location.reload(); } }, t("flash.sim.leave"))
-			: [h("a", { href: "#sim", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try")), " · ",
-				h("a", { href: "#sim=c7000", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_c7000")), " · ",
-				h("a", { href: "#sim=c7000-odr", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_c7000_odr")), " · ",
-				h("a", { href: "#sim=gd77", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_gd77")), " ",
-				h("a", { href: "#sim=odr-gd77", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_gd77_odr"))]));
+			: simLinks()));
+}
+
+// The practice links: the first radio, and the first one flashed through the C7 stub on stock firmware and on ODR
+function simLinks() {
+	const link = (hash, text) => h("a", { href: hash, onclick: () => setTimeout(() => location.reload(), 0) }, text);
+	const c7 = S.data.radios.find((r) => r.flash.backend === "c7000-stub");
+	return [link("#sim", t("flash.sim.try")), ...(c7 ? [" · ", link(`#sim=${c7.id}-stock`, t("flash.sim.try_c7000", { name: c7.model })),
+		" · ", link(`#sim=${c7.id}`, t("flash.sim.try_c7000_odr"))] : [])];
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -797,10 +800,11 @@ async function ensureFirmware() {
 		const img = randomBytes(rng(99), 200 * 1024);
 		img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);	// what a C7000 read recognizes ODR by
 		img.set([0xFC, 0xFF, 0x01, 0x20], 0);	// a RAM stack pointer, as the STM32 loader checks
-		if (S.radio?.flash.board === "db25d") {	// the DB25-D's install image: first stage, then ODR's reset handler
-			img.set([0x2C, 0x11, 0x01, 0xC0], 0);
-			img.set([0x80, 0xC0, 0x20, 0x70], 0x1000);
-			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1100);
+		const fs = S.radio?.flash.first_stage;
+		if (fs) {	// an install image with a first stage: its signature, then ODR's reset handler after it
+			img.set(fromHex(fs.head), 0);
+			img.set(APP_ENTRY, fs.size);
+			img.set(new TextEncoder().encode("OpenDigitalRadio"), fs.size + 0x100);
 		}
 		if (S.radio?.flash.board === "gd77") img.set([0xF0, 0xFE, 0x00, 0x20], 0);	// the K22F's RAM ends at 0x20010000
 		return (S.firmware = { manifest: await forDevBuild(S.board, img), image: img, source: t("flash.sim.image_name") });
@@ -910,7 +914,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			// the backup task is a use of its own; the backups around an install belong to the install
 			if (S.task === "backup") started = flashStarted({ task: "backup", source: pick, radio: S.board.id, firmware: p.git || "", features: p.features || "" });
 			const t0 = performance.now();
-			bulk = viaLoader() ? f4LoaderReader(link, { stubJson: f4StubJson, reopen: reopenOdrPort, onHandOver: () => { S.link = null; } }) : null;
+			bulk = viaLoader() ? f4LoaderReader(link, { stubJson: f4StubJson, reopen: reopenOdrPort, board: f4Board(), onHandOver: () => { S.link = null; } }) : null;
 			S.backupParts = await readRadio(link, S.board, S.radio, {
 				what: choices[pick].what, readers: bulk ? [bulk] : [], progress: (part, d, total) => prog.set(d, total, t(`flash.backup.part.${part}`)) });
 			if (!bulk?.used) S.readRate = choices[pick].bytes / Math.max(0.5, (performance.now() - t0) / 1000);
@@ -1197,10 +1201,13 @@ function writeView() {
 	const dfu = (opts) => bootloaderPanel(t("flash.write.title"), async () => {
 		// from the cable route the codec step was skipped: decide now, from what the radio reported
 		S.decision ||= decideCodec(S.board, fw.manifest, { haveStock: false, haveSaved: !!S.savedCodec, probe: S.now?.probe || null });
-		let codec = [];
-		if (S.decision.mode === MERGE) codec = S.decision.source === "saved" ? await codecSegments(S.savedCodec.profile, S.savedCodec.segments, fb())
-			: (await stockfw.extract(S.stock.data, S.key, fb())).segments;
-		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec);
+		let codec = [], prof = null;
+		if (S.decision.mode === MERGE && S.decision.source === "saved") {
+			prof = S.savedCodec.profile;
+			codec = await codecSegments(prof, S.savedCodec.segments, fb());
+		} else if (S.decision.mode === MERGE) ({ profile: prof, segments: codec } = await stockfw.extract(S.stock.data, S.key, fb()));
+		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec,
+			prof ? stockfw.layoutWindows(prof, fb()) : S.board.codec.windows);
 	}, next, what, opts);
 	if (!stubRoute()) return dfu();
 	// the bootloader route stays one click away: it finishes an install the loader couldn't
@@ -1223,6 +1230,7 @@ function stubPanel(fallback, onDone, what) {
 		let started = null;
 		try {
 			started = flashStarted(what);
+			await stub.configure();	// the radio's board record, its echo checked before any write
 			prog.set(0, 1, t("flash.f4.reading"));
 			const r = await stub.writeImage(f4Board().owned, segments(fw.manifest, fw.image), {
 				// bytes in a rewritten sector that aren't the firmware's (no radio has them since the codec moved): a copy first
@@ -1280,7 +1288,7 @@ function stubPanel(fallback, onDone, what) {
 		try {
 			const link = await connectSerial();
 			const json = await f4StubJson();
-			stub = new F4Stub(link.s, { log: log.add, reopen: reopenOdrPort });
+			stub = new F4Stub(link.s, { log: log.add, reopen: reopenOdrPort, board: f4Board() });
 			S.link = null;		// the port belongs to the loader from here
 			await stub.enterFromOdr(f4Image(json), (d, n) => prog.set(d, n, t("flash.f4.sending")), { entry: json.run });
 		} catch (e) {
@@ -1656,34 +1664,29 @@ async function main() {
 	}
 	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	gd77ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText });
-	if (/sim=(odr-)?gd77/.test(location.hash)) {
-		// a GD-77 in update mode, with a made-up stock update file whose codec the page knows (fakegd77.js); with
-		// #sim=odr-gd77 it also runs ODR with stub entry, for the cable route
-		const sim = await gd77Simulation(S.data.fb.gd77);
-		S.sim = { fb: { ...S.data.fb, gd77: sim.gd77 }, gd77Donor: sim.donor,
-			gd77Odr: location.hash.includes("odr-gd77") ? new FakeGd77Odr(sim.gd77.stub) : null };
-	} else if (location.hash.includes("sim=c7000")) {
-		// a DM-1801 Pro on its cable: running stock firmware, or (#sim=c7000-odr) ODR with the stub hand-over;
-		// #sim=c7000-db25d: a DB25-D PRO running its original firmware 018, reached through its debug console
-		const db25 = location.hash.includes("c7000-db25d");
-		const board = db25 ? "db25d" : "dm1801pro";
-		const sim = await c7000Simulation(S.data.fb.c7000, board);
+	// #sim=<board>[-stock]: that board, running ODR or its stock firmware; #sim: the first radio on stock firmware
+	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock)?)?(?:&|$)/);
+	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
+	const simStock = !!simAsk && (!simAsk[1] || !!simAsk[2]);
+	if (simRadio && c7ui.isC7000(simRadio, S.data.fb)) {
+		// on its cable: stock firmware (a stock console answers if the board has one), or ODR with the stub hand-over
+		const board = simRadio.id;
+		const sim = await c7000Simulation(S.data.fb.c7000, board, 7000, simRadio);
 		S.sim = { fb: { ...S.data.fb, c7000: sim.c } };
 		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600, faults: { silentAfterReset: true },
-			...(db25 ? { board: "DB25-D", codecId: "db25d-018", dataSize: 0x200000, usmart: "018", stubSpan: [0x1D000, 0x12000] } : {}) });
-		if (location.hash.includes("c7000-odr")) {
+			...fakeC7000Options(simRadio, S.data.fb) });
+		if (!simStock) {
 			const img = randomBytes(rng(98), 180 * 1024);
 			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);
 			S.fakeC7.progmem.set(img, sim.c.app_start);
 			S.fakeC7.progmem.set(slotBytes(sim.c, board, await locateCodec(sim.progmem, sim.c, board)), sim.c.boards[board].slot[0]);
 		}
 		S.fakeC7.powerOn();
-	} else if (location.hash.includes("sim")) {
-		S.sim = await simulation(S.data.fb, "dm1701");
-		S.fakeRadio = new FakeRadio(S.sim, { state: location.hash.includes("sim=odr") ? "odr" : "stock", spiSize: 0x400000 });
+	} else if (simRadio) {
+		S.sim = await simulation(S.data.fb, simRadio.id);
+		S.fakeRadio = new FakeRadio(S.sim, { state: simStock ? "stock" : "odr", spiSize: 0x400000 });
 		// a smaller SPI flash keeps the simulated backup quick
-		for (const r of S.data.radios) if (r.id === "dm1701") r.backup = { ...r.backup, spi_size: 0x400000 };
+		simRadio.backup = { ...simRadio.backup, spi_size: 0x400000 };
 	}
 	S.backupParts = [];
 	const m = location.hash.match(/radio=(\w+)/);

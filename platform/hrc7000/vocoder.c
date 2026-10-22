@@ -11,7 +11,7 @@
 // tables are copied to their stock modem SRAM address. Without a valid slot, present() is false: FM only.
 //
 // The board's linker script gives the slot (__codec_slot..__codec_slot_end) and the windows a slot may name
-// (__codec_run_lo/hi, __codec_tab_lo/hi); its board.mk names the profile prefix (HRC_CODEC_BOARD, e.g. "dm32").
+// (__codec_run_lo/hi, __codec_tab_lo/hi); the profile prefix is the board's id (ODR_BOARD_ID, from the Makefile; board.toml [codec] profile starts with it).
 //
 // Not reentrant: one task (the audio task, through the audio block callback) makes all calls. The codec runs on the
 // caller's stack.
@@ -26,8 +26,8 @@
 #include "task.h"
 #include "vocoder/ambe2_flags.h"
 
-#ifndef HRC_CODEC_BOARD
-#error "the board's board.mk must define HRC_CODEC_BOARD (the codec profile prefix)"
+#ifndef ODR_BOARD_ID
+#error "the Makefile defines ODR_BOARD_ID (the board's id, the codec profile prefix)"
 #endif
 
 #define CODEC_SIG0		0x152514D8u	// first two words of the codec code (every build)
@@ -226,14 +226,14 @@ void hrc_vocoder_park(void)
 // the tag in at least three digits (dm32-049, db25d-2501)
 static const char *profile(void)
 {
-	static char id[sizeof HRC_CODEC_BOARD + 8];
+	static char id[sizeof ODR_BOARD_ID + 8];
 	(void)present();
 	if (presence != 1) {
 		return NULL;
 	}
 	uint32_t tag = slot->stock_tag;
 	if (tag == 0 || tag > 99999u) {
-		return HRC_CODEC_BOARD "-unknown";
+		return ODR_BOARD_ID "-unknown";
 	}
 	char digits[6];
 	uint32_t n = 0;
@@ -241,7 +241,7 @@ static const char *profile(void)
 		digits[n++] = (char)('0' + v % 10);
 	}
 	uint32_t o = 0;
-	for (const char *b = HRC_CODEC_BOARD; *b != '\0'; b++) {
+	for (const char *b = ODR_BOARD_ID; *b != '\0'; b++) {
 		id[o++] = *b;
 	}
 	id[o++] = '-';

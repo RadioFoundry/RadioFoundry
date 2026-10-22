@@ -36,7 +36,7 @@ Terms the user guide uses. In the web version, hover over, focus or tap a dotted
 | <a id="t-dcs"></a>DCS | Digital coded squelch: a sub-audible digital code on FM that opens the squelch only for the right signal. |
 | <a id="t-dfu"></a>DFU | Device Firmware Upgrade: the USB protocol of the radio's bootloader. |
 | <a id="t-dtmf"></a>DTMF | Dual tone multi frequency: the touch tones a keypad sends, in the audio. |
-| <a id="t-dual-watch"></a>Dual watch | Alternating between two channels to hear both. |
+| <a id="t-dual-watch"></a>Dual watch | Listening on two channels, A and B, and talking on the selected one. With one receiver the radio alternates between them. |
 | <a id="t-fm"></a>FM | Frequency modulation: the analog voice mode. Speech moves the carrier's frequency. |
 | <a id="t-gps"></a>GPS | Global positioning system: the satellite receiver that gives the radio its position. |
 | <a id="t-lcd"></a>LCD | Liquid crystal display: the radio's screen. |
