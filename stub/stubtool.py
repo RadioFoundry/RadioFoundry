@@ -517,9 +517,36 @@ C7_BOARDS = {
     # PTB13 latch, PTB12 power key (hardware-db25d.md 3.3); the same pins under ODR, its first stage and the stock firmware
     "db25d": {"id": 3, "name": "DB25-D", "names": ("DB25-D", "db25d"), "latch": 45, "key": 44, "nand": True,
               "progmem": 0x200000},
+    # GD-88 SoC A: the DB25-D's latch and key pins (hardware-gd88.md). No LED pins: PTB0 / PTB1, the default LEDs, clock
+    # and feed the RF switch chain here, so the image is patched to drive no LED before it is sent
+    "gd88": {"id": 4, "name": "GD-88", "names": ("GD-88", "gd88"), "latch": 45, "key": 44, "nand": True,
+             "progmem": 0x200000, "leds": (255, 255)},
+    # GD-88 SoC B, the second receiver: no cable, reached through A's bridge on its UART3 (docs/spec/rx2-link.md 4); no
+    # latch or key (PTB13 is an RF pin on B), no LEDs, the stub pinned to UART3
+    "gd88b": {"id": 5, "name": "GD-88 receiver B", "names": ("GD-88 B", "gd88b"), "latch": 255, "key": 255,
+              "nand": True, "progmem": 0x200000, "leds": (255, 255), "uart": 0x14090000, "bridge": True},
 }
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
+
+
+def board_leds(prof):
+    """(red, green) LED pins of a board profile; 255 = none."""
+    return prof.get("leds", (LED_RED, LED_GREEN))
+
+
+def patch_univ(image, prof):
+    """The universal stub image with the board's pins in its parameter block, for the part of the run before CONFIG:
+    the UART it listens on, the power latch and key, and the LED pins (a GD-88 must never see the default LEDs, which
+    are its RF chain's clock and data). Only boards that need it (an LED or UART entry in the profile) get a patched
+    image; a position-dependent image is returned as it is."""
+    if prof is None or not ("leds" in prof or "uart" in prof) or not univ_layout(image):
+        return image
+    b = bytearray(image)
+    for off, v in ((0x8C, prof.get("uart", 0)), (0x9C, prof["latch"]), (0xA0, prof["key"]),
+                   (0xA8, board_leds(prof)[0]), (0xAC, board_leds(prof)[1])):
+        b[off:off + 4] = v.to_bytes(4, "little")
+    return bytes(b)
 
 
 def c7_board(name):
@@ -540,6 +567,8 @@ def crc16_ccitt(data, crc=0xFFFF):
 
 STUB_MAGIC = 0x42533743                 # 'C7SB': the guard word of ODR's STUB command (docs/spec/debuglink.md 3.18)
 DL_STUB = 0x1A
+DL_RX2 = 0x1E                           # the second receiver's SoC (docs/spec/debuglink.md 3.22)
+RX2_TOKEN = 0x47445242                  # 'BRDG'
 
 
 def lz4_block(src, size):
@@ -685,11 +714,12 @@ class Radio:
         self.log("attached to stub v%d (max payload %d, SSI burst %d / %d bytes)"
                  % (info[0], info[1], self.info >> 8 & 0xFF, self.info & 0xFF))
 
-    def start(self, wait=120, stub=None, load=LOAD_ADDR):
+    def start(self, wait=120, stub=None, load=LOAD_ADDR, board=None):
         """Boot a stub through the serial boot ROM at power-on, written to and started at load (the DB25-D's first
         stage answers the same way). Default: the universal stub at 0x10000, which copies itself to its run address;
         a position-dependent stub (--legacy-stub, --stub FILE) must be linked for `load` (--load-base)."""
         stub = stub_univ_image() if stub is None else stub
+        stub = patch_univ(stub, C7_BOARDS.get(board))
         if univ_layout(stub):
             check_univ_load(stub, load)
             self.stub_head = stub[:0x80]            # the entry code: the same at the load address and the run address
@@ -797,7 +827,8 @@ class Radio:
             raise DumpError("the stub's timer runs at %.0f Hz, which can't be right: not configuring it" % hz)
         hz = int(round(hz / 1e5) * 1e5)
         payload = (hz.to_bytes(4, "big") + hz.to_bytes(4, "big")
-                   + bytes([prof["latch"], prof["key"], LED_RED, LED_GREEN, prof["id"], 1 if prof["nand"] else 0, CFG_UART_THIS, 0]))
+                   + bytes([prof["latch"], prof["key"]]) + bytes(board_leds(prof))
+                   + bytes([prof["id"], 1 if prof["nand"] else 0, CFG_UART_THIS, 0]))
         self.request(0x0D, payload)
         self.hello(self.retries)                # a damaged reply here is asked for again
         want = (prof["id"], 1 if prof["nand"] else 0)
@@ -885,6 +916,7 @@ class Radio:
             image = known[load][1]
         elif image is None:
             image = stub_univ_image()
+        image = patch_univ(image, C7_BOARDS.get(board))
         self.check_stub(image, load, size)
         if len(image) > size:
             raise DumpError("stub image (%d bytes) does not fit ODR's free RAM (%d bytes)" % (len(image), size))
@@ -910,6 +942,26 @@ class Radio:
         time.sleep(0.3)
         self.attach()
         self.configure(board)
+
+    def rx2_bridge(self):
+        """GD-88 SoC B: ask ODR on A (on this port) to hand the cable to B (DL_CMD_RX2 BRIDGE). A sends B to its first
+        stage, which then offers the boot ROM's handshake through A for up to a minute: start() takes it from there. A
+        restarts 10 s after the last byte from here."""
+        r = self.dl_request(DL_RX2, b"\x00")
+        if r[0] != 0 or len(r) < 2:
+            raise DumpError("ODR's RX2 info refused (%s): not a radio with a second receiver, or older firmware" % r.hex())
+        if not r[1] & 0x01:
+            raise DumpError("this radio has no second receiver")
+        if not r[1] & 0x04:
+            raise DumpError("this firmware has no bridge to the second receiver")
+        if not r[1] & 0x02:
+            self.log("the second receiver does not answer A: trying anyway (its first stage may still start)")
+        r = self.dl_request(DL_RX2, b"\x01" + RX2_TOKEN.to_bytes(4, "little"))
+        if r[0] == 7:
+            raise DumpError("ODR refused the bridge: the radio is transmitting. Release PTT and run again")
+        if r[0] != 0:
+            raise DumpError("ODR refused the bridge (status %d)" % r[0])
+        self.log("A is bridging the cable to the second receiver")
 
     def send_noreply(self, op, payload=b""):
         """A request the radio will not answer because it is about to reset or jump away."""
@@ -1654,6 +1706,36 @@ class FakeODR:
         self.out = b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
 
 
+class FakeBridged(FakeRadio):
+    """GD-88 SoC B behind A's bridge for the self-tests: ODR on A answers DL_CMD_RX2 (flags), and once BRIDGE has been
+    answered the port carries B's first stage, as FakeRadio's boot ROM."""
+
+    def __init__(self, images, flags=0x07, **kw):
+        super().__init__(images, **kw)
+        self.out = bytearray()
+        self.flags, self.bridged, self.armed = flags, False, False
+
+    def read(self, n):
+        if self.armed and not self.out:
+            self.armed, self.bridged = False, True
+            self.out += b"\x02\x24\x00\x03"
+        return super().read(n)
+
+    def write(self, b):
+        if self.bridged:
+            return super().write(b)
+        assert b[:2] == b"\xA5\x5A" and crc16_ccitt(b[2:-2]) == int.from_bytes(b[-2:], "little")
+        cmd, seq, p = b[2], b[3], b[6:-2]
+        assert cmd == DL_RX2
+        if p[0] == 0:
+            st, body = 0, bytes([self.flags])
+        else:
+            st, body = (0, b"") if p[1:5] == RX2_TOKEN.to_bytes(4, "little") else (7, b"")
+            self.armed = st == 0
+        rep = bytes([cmd | 0x80, seq]) + (1 + len(body)).to_bytes(2, "little") + bytes([st]) + body
+        self.out += b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
+
+
 def rxn_big(payload):
     return int.from_bytes(payload[8:10], "big") >= 256
 
@@ -1915,14 +1997,16 @@ def self_test():
     # power-on with the universal stub, CONFIG, the HELLO echo, writes gated on it, the NAND path
     nand = bytearray(images["q128"][:16 * SECTOR])
     nand[SECTOR:2 * SECTOR] = b"\xff" * SECTOR
-    for board in ("db25d", "dm1801pro", None):
+    for board in ("db25d", "dm1801pro", "gd88", None):
         imgs = dict(images, nand=bytes(nand))
         radio = FakeRadio(imgs, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
         radio.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
         r = Radio(radio, log=quiet)
-        r.start(wait=2)
-        check(radio.running and not radio.errors and bytes(radio.loaded[:len(univ)]) == univ,
+        r.start(wait=2, board=board)
+        want = patch_univ(univ, C7_BOARDS.get(board))
+        check(radio.running and not radio.errors and bytes(radio.loaded[:len(univ)]) == want,
               "the universal stub is the default power-on image, at 0x10000 (%s)" % radio.errors)
+        check((want == univ) == (board != "gd88"), "only the GD-88's image is patched (%s)" % board)
         check(r.v6 is not None and r.v6["run"] == 0x30000 and r.v6["load"] == 0x10000, "HELLO v6 parsed")
         try:
             r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
@@ -1935,20 +2019,45 @@ def self_test():
         check(cfg[8:10] == bytes([prof["latch"], prof["key"]]) and cfg[12] == prof["id"] and cfg[14] == CFG_UART_THIS,
               "CONFIG carries the %s profile" % prof["name"])
         check(23e6 < int.from_bytes(cfg[:4], "big") < 25e6, "CONFIG carries the measured clock")
+        check(cfg[10:12] == (b"\xff\xff" if board == "gd88" else bytes([LED_RED, LED_GREEN])),
+              "CONFIG's LED pins for %s" % prof["name"])
         check(r.configured is prof, "the %s profile is confirmed by the HELLO echo" % prof["name"])
         nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
         check(nw == 0 and nk == 4, "writing the same image after CONFIG changes nothing")
-        if board == "db25d":
+        if board in ("db25d", "gd88"):
             out = io.BytesIO()
             r.dump(out, "nand", 0, 16 * SECTOR)
             check(out.getvalue() == bytes(nand), "NAND read through the stub's NAND path")
-            check(r.mem_size("progmem") == 0x200000, "the DB25-D's program flash is 2 MB")
+            check(r.mem_size("progmem") == 0x200000, "the %s's program flash is 2 MB" % prof["name"])
         else:
             try:
                 r.dump(io.BytesIO(), "nand", 0, SECTOR)
                 check(False, "NAND refused on a radio without one")
             except DumpError:
                 pass
+    # GD-88 B: the image pinned to UART3 with no latch, key or LEDs; through A's bridge; refusals
+    pb = patch_univ(univ, C7_BOARDS["gd88b"])
+    words = [int.from_bytes(pb[o:o + 4], "little") for o in (0x8C, 0x9C, 0xA0, 0xA8, 0xAC)]
+    check(words == [0x14090000, 255, 255, 255, 255], "gd88b image: UART3, no latch, key or LEDs (%s)" % words)
+    pa = patch_univ(univ, C7_BOARDS["gd88"])
+    words = [int.from_bytes(pa[o:o + 4], "little") for o in (0x8C, 0x9C, 0xA0, 0xA8, 0xAC)]
+    check(words == [0, 45, 44, 255, 255], "gd88 image: both UARTs, latch and key, no LEDs (%s)" % words)
+    check(univ_layout(pb) == univ_layout(univ) and pb[:0x80] == univ[:0x80] and pb[0xC0:] == univ[0xC0:],
+          "the patch touches the parameter block only")
+    bridge = FakeBridged(images, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
+    bridge.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+    r = Radio(bridge, log=quiet)
+    r.rx2_bridge()
+    r.start(wait=2, board="gd88b")
+    r.configure("gd88b")
+    check(bridge.bridged and bridge.running and bytes(bridge.loaded[:len(pb)]) == pb, "gd88b stub loaded through the bridge")
+    check(r.configured is C7_BOARDS["gd88b"] and bridge.configs[-1][10:12] == b"\xff\xff", "gd88b configured, no LEDs")
+    for flags, what in ((0x00, "no second receiver"), (0x03, "no bridge")):
+        try:
+            Radio(FakeBridged(images, flags=flags), log=quiet).rx2_bridge()
+            check(False, "a radio with %s is refused" % what)
+        except DumpError as e:
+            check(what in str(e), "refused: %s" % e)
     radio = FakeRadio(images, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
     radio.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": False}
     r = Radio(radio, log=quiet)
@@ -2104,8 +2213,9 @@ def main(argv=None):
                          "base that doesn't overlap its run area; a legacy stub must be linked for it (the DB25-D's first stage "
                          "took the legacy 0x30000 stub at 0x30000)" % LOAD_ADDR)
     ap.add_argument("--board", choices=("dm1701", "md380") + tuple(C7_BOARDS),
-                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (dm32, dm1801pro, db25d: the board "
-                         "profile the universal stub gets). Found from the radio's VERSION reply with --odr-enter; give it at "
+                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (dm32, dm1801pro, db25d, gd88: the "
+                         "board profile the universal stub gets; gd88b is the GD-88's second SoC, reached through ODR on "
+                         "the first, which must be running, docs/spec/rx2-link.md 4). Found from the radio's VERSION reply with --odr-enter; give it at "
                          "power-on and with --attach (without it the stub gets a profile that drives no board pins)")
     ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
                     "is saved before it is erased (default the home directory, never a git tree)")
@@ -2156,7 +2266,16 @@ def main(argv=None):
             return f4stub.run(a, port, reopen)
         if a.write_q128:
             raise DumpError("--write-q128 is for the STM32 radios (DM-1701, MD-380)")
-        if a.odr_enter:
+        bridged = C7_BOARDS.get(a.board, {}).get("bridge", False)
+        if bridged and (a.odr_enter or a.baud):
+            raise DumpError("--board %s goes through the bridge on the other SoC: no --odr-enter, no --baud (the bridge "
+                            "runs at 115200)" % a.board)
+        if bridged and not a.attach:
+            radio.rx2_bridge()
+            load = LOAD_ADDR if a.load_base is None else a.load_base
+            radio.start(min(a.wait, 70), stub, load, a.board)
+            radio.configure(a.board)
+        elif a.odr_enter:
             radio.odr_enter(open(a.odr_stub, "rb").read() if a.odr_stub else ("legacy" if a.legacy_stub else None), board=a.board)
         elif a.attach:
             radio.attach()
@@ -2171,13 +2290,15 @@ def main(argv=None):
                 else:
                     raise DumpError("no legacy stub is linked for 0x%X: give --stub" % load)
             print("radio OFF? switch it on now (waiting up to %d s)" % a.wait)
-            radio.start(a.wait, stub, load)
+            radio.start(a.wait, stub, load, a.board)
             radio.configure(a.board)
         jobs = [(mem, f) + parse_range(rng, radio.mem_size(mem)) for mem, f, rng in jobs]
         if a.baud:
             for b in ([921600, 460800, 230400, 750000, 500000, 375000, 250000] if a.baud == "auto" else [int(a.baud)]):
                 if radio.set_baud(b):
                     break
+        if radio.profile is not None and "leds" in radio.profile:     # a board with no LED pins: never the defaults
+            a.led_red, a.led_green = board_leds(radio.profile)
         radio.setup_led(a.led_red, a.led_green, a.led_status)
         if a.led_test:
             for what, steps in (("red only", [(255, 0, 1500)]), ("green only", [(0, 255, 1500)]),

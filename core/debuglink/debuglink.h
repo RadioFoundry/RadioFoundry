@@ -134,6 +134,12 @@ void debuglink_view_crash(dl_text_t *t);
 size_t debuglink_cmd_crash(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_crash_service(void);
 
+// The second receiver's SoC (debuglink_rx2.c, docs/spec/debuglink.md 3.22): DL_CMD_RX2, and the service hook that starts
+// the update bridge after the reply has gone out. A board without board.rx2 answers INFO with no flags, the rest
+// unavailable
+size_t debuglink_cmd_rx2(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+void debuglink_rx2_service(void);
+
 // The hardware watchdog (debuglink_watchdog.c, docs/spec/debuglink.md 3.21): the watchdog section, DL_CMD_WATCHDOG's
 // bench tests and the service hook that starts them after the reply. Without CONFIG_WATCHDOG: "watchdog.built=0",
 // unavailable, empty

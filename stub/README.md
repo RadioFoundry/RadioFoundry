@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-# stub: flash access for the HR_C7000 radios (DM-32UV, DM-1801 Pro, DB25-D)
+# stub: flash access for the HR_C7000 radios (DM-32UV, DM-1801 Pro, DB25-D, GD-88)
 
 A small RAM monitor and the host tool that drives it. The tool loads the monitor into the radio's RAM through the chip's
 serial boot ROM (radio switched on with the cable in), through the DB25-D's first stage, or, with `CONFIG_STUB_ENTRY=y`,
@@ -62,6 +62,7 @@ rule, and that the load lies in IRAM, before it sends the image (`check_univ_loa
 |---|---|---|---|
 | Boot ROM, power-on (all three radios) | 0x10000 (28 blocks of 256 B) | Nothing: the ROM uses no RAM (registers only) | All IRAM is free |
 | DB25-D first stage, power-on | 0x10000 | The first stage (accepts blocks below 0x4E000) | It is never returned to |
+| GD-88 A or B first stage | 0x10000 | As the DB25-D's | As the DB25-D's |
 | Running ODR, DM-32UV, DM-1801 Pro | 0x17000 (span 96 KB) | ODR, about to be dropped | ODR is not returned to; the reset restarts it |
 | Running ODR, DB25-D without DMR | 0x30000 (span 128 KB) | ODR | Loaded at the run address, no copy |
 | Running ODR, DB25-D with DMR | 0x1D000 (span 72 KB, codec window) | ODR | The copy goes up to 0x30000, which does not overlap the source |
@@ -77,6 +78,22 @@ the run address and not after the load address means no route has to assume free
 On the stock routes the stub hands the program flash back from execute-in-place to the SSI and masks the interrupt
 controller before it touches the flash. The clocks are left as stock set them; the host measures timer 2 and sends the
 rates in CONFIG, so the same `db25d` profile serves stock and ODR (both use UART1 on the K1 jack).
+
+### GD-88
+
+The GD-88 has two HR_C7000 SoCs, each with its own program flash. `--board gd88` is A, the one on the cable: the DB25-D's
+routes and pins (latch PTB13, key PTB12, the NAND). `--board gd88b` is B, the second receiver. B has no cable, so the
+tool reaches it through ODR on A ([rx2-link.md](../docs/spec/rx2-link.md) 4): it asks A for the bridge
+(`DL_CMD_RX2`), then loads the stub into B's first stage through it. That route takes no `--odr-enter` and no `--baud`.
+
+Neither SoC has LEDs on GPIO, and on A the default LED pins (PTB0 / PTB1) clock and feed the RF switch chain. So the
+tool patches the image's parameter block before it sends it: no LEDs on both, the latch and key on A, and UART3 only
+on B. The DB25-D, DM-32UV and DM-1801 Pro get the image unchanged.
+
+```sh
+stubtool.py PORT --board gd88 --write-app build/gd88/odr_gd88_install.bin --boot reset     # A at power-on
+stubtool.py PORT --board gd88b --write-app build/gd88b/odr_gd88b_install.bin --boot reset  # B, A running ODR
+```
 
 ### Older stubs
 

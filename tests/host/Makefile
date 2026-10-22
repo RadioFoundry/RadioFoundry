@@ -656,6 +656,18 @@ run-watchdog: watchdogTest
 	./watchdogTest
 .PHONY: run-watchdog
 
+# DL_CMD_RX2, the second receiver's SoC on the debug link (core/debuglink/debuglink_rx2.c): the board, clock, radio
+# view and log are faked; watchdog_stub/ holds the stand-in FreeRTOS headers
+RX2DL   := debuglinkRx2Test.c $(CORE)/debuglink/debuglink_rx2.c
+TESTS   += debuglinkRx2Test
+debuglinkRx2Test: $(RX2DL) $(ROOT)/hal/hal_rx2.h $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -o $@ $(RX2DL)
+
+run: run-debuglinkRx2
+run-debuglinkRx2: debuglinkRx2Test
+	./debuglinkRx2Test
+.PHONY: run-debuglinkRx2
+
 # The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
 TESTS   += f4stubTest
 f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h $(ROOT)/stub/stm32f4/f4stub_header.h

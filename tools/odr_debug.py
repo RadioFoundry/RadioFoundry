@@ -86,6 +86,10 @@ WDT_OP_CLEAR_GAP, WDT_OP_TEST, WDT_OP_LOAD = range(3)
 WDT_TESTS = {"starve": 1, "spin": 2, "irq-off": 3}
 WDT_TOKEN = 0x474F4457              # 'WDOG'
 WDT_LEAVE = 0xFFFFFFFF              # load: keep RST_LOAD
+RX2 = 0x1E                          # the second receiver's SoC: info, update bridge, restart (docs/spec/debuglink.md 3.22)
+RX2_OP_INFO, RX2_OP_BRIDGE, RX2_OP_RESTART = range(3)
+RX2_TOKEN = 0x47445242              # 'BRDG'
+RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart"}
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
 SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
@@ -538,6 +542,19 @@ class DebugLink:
     def watchdog_load(self, hi, lo, rst=WDT_LEAVE):
         """HR_C7000: re-arm the watchdog with raw loads, then starve it (the bench measurement of its clock)."""
         self.request(WATCHDOG, struct.pack("<BIIII", WDT_OP_LOAD, hi, lo, rst, WDT_TOKEN))
+
+    def rx2_info(self):
+        """The second receiver's SoC: a set of RX2_FLAGS names (empty on a radio with one SoC)."""
+        flags = self.request(RX2, bytes([RX2_OP_INFO]))[1][0]
+        return {name for bit, name in RX2_FLAGS.items() if flags & bit}
+
+    def rx2_bridge(self):
+        """Hand the cable to the second SoC: about 100 ms after the reply, the port carries its first stage's handshake
+        (stub/stubtool.py --board gd88b). The radio restarts once the host has been quiet for a while."""
+        self.request(RX2, struct.pack("<BI", RX2_OP_BRIDGE, RX2_TOKEN))
+
+    def rx2_restart(self):
+        self.request(RX2, struct.pack("<BI", RX2_OP_RESTART, RX2_TOKEN))
 
     def version(self):
         return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
@@ -1687,6 +1704,9 @@ def main(argv=None):
                        "(docs/spec/watchdog.md)")
     p.add_argument("op", nargs="?", default="show", choices=["show", "clear-gap", "test", "load"])
     p.add_argument("args", nargs="*")
+    p = sub.add_parser("rx2", help="the second receiver's SoC: info, restart (the update bridge is stubtool's, "
+                       "docs/spec/debuglink.md 3.22)")
+    p.add_argument("op", nargs="?", default="info", choices=["info", "restart"])
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
@@ -1747,6 +1767,13 @@ def main(argv=None):
                 return cmd_watchdog(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
+            elif a.cmd == "rx2":
+                if a.op == "restart":
+                    link.rx2_restart()
+                    print("second receiver restarting")
+                else:
+                    flags = link.rx2_info()
+                    print("rx2: " + (", ".join(n for n in RX2_FLAGS.values() if n in flags) or "none"))
             elif a.cmd == "aprobe":
                 return cmd_aprobe(link, a)
             elif a.cmd == "split":
