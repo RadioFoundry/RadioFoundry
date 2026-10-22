@@ -2,10 +2,10 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
 # Nightly CI (docs/dev/ci.md): the long builds the per-push workflow leaves out, on the default branch.
-#   matrix       DM-1701 and MD-380: a build per feature switch turned off alone, fm-minimal and maximal (LTO), each
-#                with zero warnings and its size (tools/ci.sh --matrix; about 4-5 minutes per board on the runner)
-#   csky-matrix  the same for the DM-32UV, DM-1801 Pro and DB25-D in the csky-elf image (skipped where the image
-#                isn't available)
+#   matrix       one job per platform (stm32f4, hrc7000), every board on it from the registry: a build per feature
+#                switch turned off alone, fm-minimal and maximal, each with zero warnings and its size (tools/ci.sh
+#                --matrix --platform; about 4-5 minutes per board on the runner). C-SKY in the csky-elf image unless the
+#                runner has csky-elf GCC (skipped where the image isn't available)
 #   reuse        `reuse lint`, reported as a warning until the tree passes it
 # A scheduled run does nothing when the commit it would test already passed a nightly run: a successful run saves
 # an empty cache entry named after the commit (nightly-ok-<sha>), and the next scheduled run looks that name up
@@ -24,10 +24,6 @@ permissions:
 concurrency:
   group: nightly-${{ github.ref }}
   cancel-in-progress: false
-
-env:
-  ARM_GCC_VERSION: "13.3.rel1"
-  ARM_GCC_SHA256: "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4"
 
 jobs:
   changes:
@@ -55,98 +51,57 @@ jobs:
           fi
 
   matrix:
+    # one job per platform: every board on it in turn (tools/ci.sh --platform, from the registry), so the checkout,
+    # submodules and toolchain are set up once per platform, not once per radio
+    name: matrix (${{ matrix.platform }})
     needs: changes
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
     runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        board: [dm1701, md380]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
-      - name: third_party submodules
-        run: tools/checkout-submodules.sh
-      - uses: actions/cache@v4
-        if: runner.environment != 'self-hosted'   # the self-hosted image has the toolchain
-        with:
-          path: ~/opt/arm-gnu-toolchain-${{ env.ARM_GCC_VERSION }}-x86_64-arm-none-eabi
-          key: arm-gnu-${{ env.ARM_GCC_VERSION }}-${{ hashFiles('tools/install-arm-toolchain.sh') }}
-      - name: Arm GNU Toolchain (pinned, trimmed to the Cortex-M4 multilib)
-        run: tools/install-arm-toolchain.sh
-      - name: Feature matrix
-        env:
-          ODR_CI_PRUNE: "1"   # keep the logs and images, not the build trees (about 65 MB each)
-        run: |
-          set -u
-          rc=0
-          tools/ci.sh --matrix --steps firmware --board ${{ matrix.board }} || rc=$?
-          cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
-          exit "$rc"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: matrix-${{ matrix.board }}
-          path: |
-            build/ci/size-report.md
-            build/ci/*.log
-          if-no-files-found: ignore
-
-  csky-matrix:
-    needs: changes
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        board: [dm32, dm1801pro, db25d, gd88, gd88b]
+        # platform/*/platform.toml; a new platform also gets its set-up in .github/actions/toolchain
+        platform: [stm32f4, hrc7000]
     permissions:
       contents: read
-      packages: read   # pulling a private ghcr.io image with the job token
-    env:
-      ODR_CSKY_IMAGE: ${{ vars.ODR_CSKY_IMAGE || 'odr/csky-gcc14:latest' }}
-      ODR_CI_PRUNE: "1"
+      packages: read   # pulling a private ghcr.io csky-elf image with the job token
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       - name: third_party submodules
         run: tools/checkout-submodules.sh
-      - name: Log in to the image's registry
-        if: vars.ODR_CSKY_REGISTRY != ''
-        env:
+      - name: Toolchain (platform.toml [toolchain])
+        id: tc
+        uses: ./.github/actions/toolchain
+        with:
+          platform: ${{ matrix.platform }}
+          image: ${{ vars.ODR_CSKY_IMAGE }}
+          registry: ${{ vars.ODR_CSKY_REGISTRY }}
           # a read-only registry token (secret); on GitHub a ghcr.io package linked to this repository takes the job's
           # own token (packages: read)
-          REGISTRY_TOKEN: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
-          REGISTRY_USER: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
-        run: |
-          command -v csky-elf-gcc > /dev/null && exit 0   # the self-hosted image: no Docker, no image to pull
-          echo "$REGISTRY_TOKEN" | docker login "${{ vars.ODR_CSKY_REGISTRY }}" -u "$REGISTRY_USER" --password-stdin
-      - name: ${{ matrix.board }} feature matrix in the csky-elf image
+          registry-user: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
+          registry-token: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
+      - name: Feature matrix of every board on the platform
+        env:
+          ODR_CI_PRUNE: "1"   # keep the logs and images, not the build trees (about 65 MB each)
+          RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
+          PLATFORM: ${{ matrix.platform }}
         run: |
           set -u
           rc=0
-          if command -v csky-elf-gcc > /dev/null; then   # the self-hosted image has the toolchain
-            tools/ci.sh --matrix --steps firmware --board ${{ matrix.board }} || rc=$?
-          else
-            tools/docker/csky-toolchain/run.sh tools/ci.sh --matrix --steps firmware --board ${{ matrix.board }} || rc=$?
-          fi
+          $RUN tools/ci.sh --matrix --steps firmware --platform "$PLATFORM" || rc=$?
           if [ "$rc" = 3 ]; then
-            echo "::notice::${{ matrix.board }} matrix skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::$PLATFORM matrix skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
-      - name: Log out of the registry
-        if: always() && vars.ODR_CSKY_REGISTRY != ''
-        run: command -v csky-elf-gcc > /dev/null || docker logout "${{ vars.ODR_CSKY_REGISTRY }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: matrix-${{ matrix.board }}
+          name: matrix-${{ matrix.platform }}
           path: |
             build/ci/size-report.md
             build/ci/*.log
@@ -171,7 +126,7 @@ jobs:
           fi
 
   mark:
-    needs: [matrix, csky-matrix]
+    needs: [matrix]
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
     runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5

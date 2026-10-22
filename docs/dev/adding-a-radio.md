@@ -136,6 +136,8 @@ What the docs claim for a radio comes from its records, so each step above ends 
   check`. Add the radio to [the user manual's introduction](../user/01-introduction.md).
 - The web site lists the radio from `board.toml`: `order` places it, `[status] level` and `summary` give its badge and
   its line for visitors. A survey row that names a board is the board's row, so the site doesn't list it as planned.
-- Before it can be released: its `board.toml` `[flash]` and `[codec]` tables, `[status] release`, the regenerated
-  `tools/odrflash/odrflash/registry.json` (`tools/boards.py json --for odrflash --out ...`) and a job in
-  `release.yml` ([release.md](release.md)).
+- Before it can be released: its `board.toml` `[flash]` and `[codec]` tables, `[status] release = "stable"` and the
+  regenerated `tools/odrflash/odrflash/registry.json` (`tools/boards.py json --for odrflash --out ...`). The release
+  workflow's job for its platform then builds and packages it, with each build option value
+  ([release.md](release.md#the-release-workflow)); CI and the nightly pick it up from the registry too
+  ([ci.md](ci.md)). No workflow edit, unless the radio brings a new platform.
