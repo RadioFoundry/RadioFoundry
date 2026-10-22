@@ -28,6 +28,13 @@ Every feature is on by default wherever the radio has what it needs. A board tur
 it lacks (or board code not written yet) or when the image doesn't fit, and then the most obscure
 large features go first. Bench diagnostics such as `CONFIG_AUDIO_PROBE` stay off.
 
+A feature that needs a part only some radios have (a vibration motor, a GPS receiver, SPI NAND) is a hardware switch:
+`hardware = "..."` on its entry in `tests/hil/features.toml`. Each board then builds it, lists it in
+`BOARD_UNSUPPORTED`, or names it in `board.toml` `[hardware] unconfirmed`, and `tools/boards.py check` enforces that.
+The accelerometer is the next one: today its driver (`drivers/sensor/lis3dh`) only feeds a board's
+diagnostics page under `CONFIG_DIAG`, so it has no switch. The first feature that uses motion brings a hardware
+switch with it.
+
 ## Variants
 
 A variant is a named preset of switches for the prebuilt release images and the web flasher's build picker
