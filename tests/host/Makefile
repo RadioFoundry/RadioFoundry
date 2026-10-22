@@ -700,6 +700,16 @@ keymatrixTest: keymatrixTest.c $(ROOT)/drivers/input/keymatrix/keymatrix.c $(ROO
 hrc7000DmrTest: hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc7000DmrTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c
 
+# The HR_C7000 BS outbound (drivers/modem/hrc7000/hrc7000_bs.c, split duplex TX half), and the slot engine's suite again
+# with its hooks built in
+HRC7BS  := $(HRC7)/hrc7000_bs.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000.c
+TESTS   += hrc7000BsTest hrc7000DmrTestSplit
+hrc7000BsTest: hrc7000BsTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_HOTSPOT_SPLIT=1 -o $@ hrc7000BsTest.c $(HRC7BS)
+
+hrc7000DmrTestSplit: hrc7000DmrTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_HOTSPOT_SPLIT=1 -o $@ hrc7000DmrTest.c $(HRC7BS)
+
 # The RDA5807M broadcast receiver driver and the bit-banged I2C master, on a simulated chip (airband-and-broadcast.md 4)
 TESTS   += rda5807mTest
 RDA     := $(ROOT)/drivers/bcast/rda5807m
@@ -724,7 +734,9 @@ dm1801proPinsTest: dm1801proPinsTest.c $(ROOT)/boards/dm1801pro/boot_pins.h $(RO
 
 run: run-dm32
 run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest \
-          dm1801proPinsTest
+          dm1801proPinsTest hrc7000BsTest hrc7000DmrTestSplit
+	./hrc7000BsTest
+	./hrc7000DmrTestSplit
 	./dm1801proPinsTest
 	./lis3dhTest
 	./rda5807mTest
@@ -741,8 +753,8 @@ run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000Dm
 # The DB25-D PRO's BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
 TESTS   += bk4819Test
 
-bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c
+bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4819.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(SUBAUDIO)
 
 # Its factory calibration page (hardware-db25d.md 6)
 TESTS   += db25dCalTest
@@ -762,6 +774,12 @@ TESTS   += hrc7000ClockTest
 
 hrc7000ClockTest: hrc7000ClockTest.c $(ROOT)/platform/hrc7000/clock_math.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000ClockTest.c
+
+# Its UART set-up (platform/hrc7000/uart_format.h) on a model UART that drops writes while busy (gotchas.md 2.8)
+TESTS   += hrc7000UartFormatTest
+
+hrc7000UartFormatTest: hrc7000UartFormatTest.c $(ROOT)/platform/hrc7000/uart_format.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000UartFormatTest.c
 
 # The HR_C7000 codec slot (platform/hrc7000/codec_slot.h): versions 1 and 2, the move, the refusals, and the slot
 # tools/hrc7000_codec.py writes (docs/spec/codec-placement.md)

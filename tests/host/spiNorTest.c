@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // drivers/flash/spi_nor against a model of a W25Q / GD25Q class chip at the SPI bus (the command set of the Winbond
-// W25Q128JV and GigaDevice GD25Q128 data sheets: 03 read, 0B fast read, 02 page program, 20 sector erase, D8 64 KB
-// block erase, C7 chip erase, 06 write enable, 05 / 35 / 15 status, 9F JEDEC ID, 48 security register read). The model keeps what the driver must get right:
+// W25Q128JV and GigaDevice GD25Q128 data sheets: 03 read, 02 page program, 20 sector erase, 06 write enable,
+// 05 / 35 / 15 status, 9F JEDEC ID, 48 security register read, 4B unique ID). The model keeps what the driver must get right:
 // erase sets a 4 KB sector to 0xFF, programming only clears bits, a page program that runs past the end of its
 // 256-byte page wraps to the start of the same page, program and erase need the write enable latch (and clear it),
 // the chip stays busy for a while after each, addresses wrap at the chip's size (3-byte addresses reach 16 MB). It
@@ -37,6 +37,7 @@ static struct {
 	uint32_t size;		// the array (power of two); addresses wrap at it
 	uint8_t id[3];
 	uint8_t security[3][256];
+	uint8_t uid[16];
 	bool wel;		// write enable latch
 	uint32_t busy;		// status polls left that still read busy
 	uint32_t busy_polls;	// busy polls after a program / erase (UINT32_MAX: stuck)
@@ -193,6 +194,8 @@ static uint8_t chip_byte(uint8_t in)
 	}
 	case 0x9F:
 		return p <= 3 ? chip.id[p - 1] : 0xFF;
+	case 0x4B:
+		return p >= 5 && p < 5 + sizeof(chip.uid) ? chip.uid[p - 5] : 0xFF;	// four dummy bytes, then the ID
 	case 0x03:
 	case 0x0B:
 	case 0x02:
@@ -410,6 +413,13 @@ static void test_read_program_erase(void)
 	CHECK(spi_nor_read_security(&nor, (2u << 12) | 0x10, r, 4));
 	CHECK(r[0] == 0x50 && r[1] == 0x51 && r[3] == 0x53);
 	CHECK(spi_nor_read_security(&nor, (3u << 12) | 0xFE, r, 2) && r[0] == 0x7E && r[1] == 0x7F);
+
+	// Unique ID (0x4B, four dummy bytes, 16 bytes)
+	uint8_t id[SPI_NOR_UID_LEN];
+	for (unsigned i = 0; i < sizeof(chip.uid); i++) {
+		chip.uid[i] = (uint8_t)(0xA0 + i);
+	}
+	CHECK(spi_nor_read_uid(&nor, id) && id[0] == 0xA0 && id[15] == 0xAF);
 	CHECK(chip.violations == 0 && chip.page_overruns == 0);
 }
 

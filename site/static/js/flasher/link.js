@@ -169,8 +169,9 @@ export class Link {
 	async chip() {
 		const r = await this.request(CMD.INFO_CHIP);
 		if (r.length < 28) return null;
+		// family: 0 STM32F4, 1 HR_C7000 (no option bytes: rdp to user read 0xFF); firmware before the byte was STM32F4 only
 		return { idcode: u32le(r, 0), flashKb: u16le(r, 4), uid: toHex(r.subarray(6, 18)), token: u32le(r, 6), optcr: u32le(r, 18),
-			rdp: r[22], wrp: u16le(r, 24), bor: r[26], user: r[27] };
+			rdp: r[22], wrp: u16le(r, 24), bor: r[26], user: r[27], family: r.length > 28 ? r[28] : 0 };
 	}
 
 	// STORAGE INFO (debuglink.md 3.13): whether the settings and journal region is ours, or still holds another

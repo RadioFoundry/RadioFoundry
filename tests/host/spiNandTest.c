@@ -35,6 +35,7 @@ static struct {
 	bool stuck_busy, bus_fail, floating;
 	uint8_t id[2];
 	uint8_t lock, config;		// features 0xA0, 0xB0
+	uint8_t id_page[PAGE];		// what page 0 reads with IDR_E (0xB0 bit 6) set
 	uint16_t next[BLOCKS];		// the next page that may be programmed in each block
 	bool worn[BLOCKS];		// programs and erases there report failure
 	uint32_t violations;		// programs twice or out of order
@@ -103,7 +104,13 @@ static void bus_select(bool active)
 			CHECK(page < PAGES);
 			CHECK((chip.status & SPI_NAND_STATUS_OIP) == 0);
 			chip.page_reads++;
-			memcpy(chip.cache, chip.array[page % PAGES], sizeof(chip.cache));
+			if (chip.config & 0x40u) {
+				CHECK(page == 0);	// the ID page; 1 would be the parameter page
+				memset(chip.cache, 0xFF, sizeof(chip.cache));
+				memcpy(chip.cache, chip.id_page, sizeof(chip.id_page));
+			} else {
+				memcpy(chip.cache, chip.array[page % PAGES], sizeof(chip.cache));
+			}
 			chip.status = (uint8_t)(chip.ecc[page % PAGES] << SPI_NAND_STATUS_ECC_SHIFT);
 			start_busy();
 		}
@@ -434,6 +441,35 @@ static void test_program(void)
 	CHECK(chip.violations == 0);
 }
 
+// The unique ID page (Kioxia 4.14): 16 copies of the ID and its complement. A copy that doesn't check out is skipped;
+// feature 0xB0 is put back and the cache no longer counts as holding a data page
+static void test_uid(void)
+{
+	spi_nand_t nand = fresh();
+	uint8_t id[SPI_NAND_UID_LEN], page0[8], buf[8];
+	chip_reset();
+	CHECK(spi_nand_probe(&nand));
+	chip.config = 0x10;
+	for (unsigned c = 0; c < PAGE / 32; c++) {	// as many copies as the model's page holds
+		for (unsigned i = 0; i < 16; i++) {
+			chip.id_page[c * 32 + i] = (uint8_t)(0x30 + i);
+			chip.id_page[c * 32 + 16 + i] = (uint8_t)~(0x30 + i);
+		}
+	}
+	chip.id_page[0] ^= 0x01;	// the first copy is damaged
+	memset(chip.array[0], 0x5A, 16);
+	CHECK(spi_nand_read_page(&nand, 0, 0, page0, sizeof(page0)) && page0[0] == 0x5A);
+	CHECK(spi_nand_read_uid(&nand, id) && id[0] == 0x30 && id[15] == 0x3F);
+	CHECK(chip.config == 0x10);
+	CHECK(spi_nand_read_page(&nand, 0, 0, buf, sizeof(buf)) && buf[0] == 0x5A);	// read again, not the ID page
+
+	// No copy checks out (a chip without an ID page): false, config back all the same
+	memset(chip.id_page, 0xFF, sizeof(chip.id_page));
+	CHECK(!spi_nand_read_uid(&nand, id));
+	CHECK(chip.config == 0x10);
+	CHECK(chip.violations == 0);
+}
+
 int main(void)
 {
 	test_probe();
@@ -441,6 +477,7 @@ int main(void)
 	test_ecc();
 	test_bad_blocks();
 	test_program();
+	test_uid();
 	if (failures) {
 		printf("spiNandTest: %d failure(s)\n", failures);
 		return 1;

@@ -97,11 +97,7 @@ static void ui_task(void *arg)
 	radio_active_ms = hal_millis();
 	for (;;) {
 		uint32_t now = hal_millis();
-		uint32_t wait = 100;
-		if (dirty) {
-			uint32_t since = now - last_draw;
-			wait = since >= FRAME_MIN_MS ? 0 : FRAME_MIN_MS - since;
-		}
+		uint32_t wait = gfx_pass_wait_ms(dirty, gfx_held(now), now - last_draw, FRAME_MIN_MS, 100);
 		if (input_next(&ev, wait)) {
 			bool was_off = backlight_now == 0;
 			set_backlight(ui_app_brightness());

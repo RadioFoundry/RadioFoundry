@@ -36,6 +36,10 @@ bool spi_nor_erase_block(const spi_nor_t *nor, uint32_t addr);
 bool spi_nor_erase_chip(const spi_nor_t *nor);
 // Read security register bytes (0x48). addr is the register address as the chip defines it (W25Q: reg << 12 | offset)
 bool spi_nor_read_security(const spi_nor_t *nor, uint32_t addr, void *buf, uint32_t len);
+// The chip's unique ID (0x4B, four dummy bytes): 128 bits on the GD25Q and Puya PY25Q parts; a part with a 64-bit ID
+// (W25Q) sends it in the first 8 bytes
+#define SPI_NOR_UID_LEN		16u
+bool spi_nor_read_uid(const spi_nor_t *nor, uint8_t id[SPI_NOR_UID_LEN]);
 // Status register 1..3 (0x05 / 0x35 / 0x15)
 bool spi_nor_status(const spi_nor_t *nor, uint8_t which, uint8_t *out);
 

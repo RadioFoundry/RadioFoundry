@@ -295,12 +295,22 @@ static void test_sequences(void)
 	// TX preparation in RX: the plain words, then with CTCSS (100.0 Hz, truncated word), as the stock
 	c = &chips[0];
 	chips[0].n = 0;
-	bk4819_tx_prepare(&m, 0);
+	bk4819_tx_prepare(&m, BK4819_TONE_NONE, 0);
 	CHECK(c->n == 2 && c->log[0].reg == 0x40 && c->log[0].val == 0x34D0 && c->log[1].reg == 0x51 && c->log[1].val == 0x1050);
 	chips[0].n = 0;
-	bk4819_tx_prepare(&m, 1000);
+	bk4819_tx_prepare(&m, BK4819_TONE_CTCSS, 1000);
 	CHECK(c->n == 3 && c->log[0].reg == 0x40 && c->log[0].val == 0x34A8 && c->log[1].reg == 0x51 && c->log[1].val == 0x9045);
 	CHECK(c->log[2].reg == 0x07 && c->log[2].val == 2064);
+	// DCS 023 (the stock order: 0x40, the rate in 0x07, 0x51, then the Golay word 0x763813 in two halves); inverted
+	// sets 0x51 bit 13
+	chips[0].n = 0;
+	bk4819_tx_prepare(&m, BK4819_TONE_DCS, 023);
+	CHECK(c->n == 5 && c->log[0].reg == 0x40 && c->log[0].val == 0x34A8 && c->log[1].reg == 0x07 && c->log[1].val == 0x0AD7);
+	CHECK(c->log[2].reg == 0x51 && c->log[2].val == 0x8030);
+	CHECK(c->log[3].reg == 0x08 && c->log[3].val == 0x0813 && c->log[4].reg == 0x08 && c->log[4].val == 0x8763);
+	chips[0].n = 0;
+	bk4819_tx_prepare(&m, BK4819_TONE_DCS_INV, 023);
+	CHECK(c->n == 5 && c->log[2].reg == 0x51 && c->log[2].val == 0xA030);
 
 	// TX on 461.4625 MHz: idle (0x0200), frequency, 0x37, then 0xC3FE. 0x36 is not touched
 	chips[0].n = 0;
@@ -386,13 +396,40 @@ static void test_sequences(void)
 	CHECK(chips[0].log[4].reg == 0x43 && chips[0].log[4].val == 0x4048 && chips[0].log[5].reg == 0x4F && chips[0].log[5].val == 0x3D3C);
 
 	chips[0].n = 0;
-	bk4819_set_rx_ctcss(&m, 885);
+	bk4819_set_rx_tone(&m, BK4819_TONE_CTCSS, 885);
 	CHECK(chips[0].n == 3 && chips[0].log[0].reg == 0x07 && chips[0].log[0].val == 1827);
 	CHECK(chips[0].log[2].reg == 0x51 && chips[0].log[2].val == 0x1000);
 	chips[0].regs[0x0C] = 0x0400;
-	CHECK(bk4819_ctcss_found(&m));
+	CHECK(bk4819_rx_tone_ok(&m, BK4819_TONE_CTCSS));
 	chips[0].regs[0x0C] = 0x0000;
-	CHECK(!bk4819_ctcss_found(&m));
+	CHECK(!bk4819_rx_tone_ok(&m, BK4819_TONE_CTCSS));
+	// DCS receive, the stock order: the rate, 0x51, the code's two halves, the rate with bit 14. D754 inverted: the
+	// stock table's words 0x09EC / 0x820F
+	chips[0].n = 0;
+	bk4819_set_rx_tone(&m, BK4819_TONE_DCS, 023);
+	CHECK(chips[0].n == 5 && chips[0].log[0].reg == 0x07 && chips[0].log[0].val == 0x0AD7);
+	CHECK(chips[0].log[1].reg == 0x51 && chips[0].log[1].val == 0x8030);
+	CHECK(chips[0].log[2].reg == 0x08 && chips[0].log[2].val == 0x0813 && chips[0].log[3].reg == 0x08 && chips[0].log[3].val == 0x8763);
+	CHECK(chips[0].log[4].reg == 0x07 && chips[0].log[4].val == 0x4AD7);
+	chips[0].n = 0;
+	bk4819_set_rx_tone(&m, BK4819_TONE_DCS_INV, 0754);
+	CHECK(chips[0].n == 5 && chips[0].log[1].val == 0xA030 && chips[0].log[2].val == 0x09EC && chips[0].log[3].val == 0x820F);
+	// 0x0C: b14 the code, b15 the inverted code; none always passes
+	CHECK(bk4819_tone_found(0x4000, BK4819_TONE_DCS) && !bk4819_tone_found(0x8000, BK4819_TONE_DCS));
+	CHECK(bk4819_tone_found(0x8000, BK4819_TONE_DCS_INV) && !bk4819_tone_found(0x4400, BK4819_TONE_DCS_INV));
+	CHECK(!bk4819_tone_found(0xC000, BK4819_TONE_CTCSS) && bk4819_tone_found(0, BK4819_TONE_NONE));
+	// Behind an inverting receiver (the DB25-D's high-side LO) a normal code shows in b15 and an inverted one in b14
+	CHECK(bk4819_heard(&m, 0x4000, BK4819_TONE_DCS) && !bk4819_heard(&m, 0x8000, BK4819_TONE_DCS));
+	m.rx_inverted = true;
+	CHECK(bk4819_heard(&m, 0x8000, BK4819_TONE_DCS) && !bk4819_heard(&m, 0x4000, BK4819_TONE_DCS));
+	CHECK(bk4819_heard(&m, 0x4000, BK4819_TONE_DCS_INV) && !bk4819_heard(&m, 0x8000, BK4819_TONE_DCS_INV));
+	CHECK(bk4819_heard(&m, 0x0400, BK4819_TONE_CTCSS));
+	chips[0].regs[0x0C] = 0x8000;
+	CHECK(bk4819_rx_tone_ok(&m, BK4819_TONE_DCS) && !bk4819_rx_tone_ok(&m, BK4819_TONE_DCS_INV));
+	m.rx_inverted = false;
+	chips[0].n = 0;
+	bk4819_set_rx_tone(&m, BK4819_TONE_NONE, 0);
+	CHECK(chips[0].n == 1 && chips[0].log[0].reg == 0x51 && chips[0].log[0].val == 0);
 	CHECK(chips[0].protocol_errors == 0 && chips[1].protocol_errors == 0);
 }
 

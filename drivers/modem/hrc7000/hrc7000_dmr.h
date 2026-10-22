@@ -19,6 +19,10 @@
 // their status in RX_TYPE_INFO, which carries the slot (current_rx_slot), the CACH TC bit and the sync family. Slot
 // numbers: through a repeater from TC; TDMA direct mode from the sync family; simplex as a label from the chip's slot
 // number (1 or 2, stable while the timing holds).
+//
+// A received burst's event arg is the tick of the slot after the one it was in, as on the HR_C6000 (hrc6000_dmr.h): the
+// deframe comes near the end of the burst's slot, either side of the next timeslot interrupt, so one that comes in the
+// first half of a slot is counted to the slot before. The split duplex RX half times bursts from it (split-duplex.md 7).
 #ifndef HRC7000_DMR_H
 #define HRC7000_DMR_H
 
@@ -175,6 +179,10 @@ typedef struct {
 	bool rf_tx;
 	uint32_t t_rf_tx;
 
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	struct hrc7000_bs *bs;	// split duplex BS outbound in charge of the chip (hrc7000_bs.c), NULL otherwise
+#endif
+
 	hrc7000_dmr_evslot_t evq[HRC7000_DMR_EVQ_DEPTH];
 	volatile uint8_t evq_head, evq_tail;
 
@@ -213,5 +221,8 @@ void hrc7000_dmr_tx_abort(hrc7000_dmr_t *e);
 void hrc7000_dmr_set_embedded_lc(hrc7000_dmr_t *e, const uint8_t lc[9]);
 void hrc7000_dmr_set_cc_filter(hrc7000_dmr_t *e, int8_t cc);
 bool hrc7000_dmr_is_transmitting(const hrc7000_dmr_t *e);
+// The latest slot boundary (hal_dmr_modem_t.slot_clock): its tick and time; ts the outbound slot that started there
+// while the BS outbound runs, else 0. False while no slot clock runs
+bool hrc7000_dmr_slot_clock(const hrc7000_dmr_t *e, uint32_t *counter, uint32_t *t_us, int8_t *ts);
 
 #endif

@@ -76,10 +76,13 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_x(&o, d.lo_id, 4);
 		break;
 	case 1:
+		// 0x67's 9 bits, 0x65's 7 and the sub-audio status 0x0C (b10 CTCSS, b14 DCS, b15 inverted DCS)
 		put(&o, "rssi ");
-		put_x(&o, d.rssi_raw, 4);
+		put_x(&o, d.rssi_raw & 0x1FFu, 3);
 		put(&o, " n ");
-		put_x(&o, d.noise_raw, 4);
+		put_x(&o, d.noise_raw & 0x7Fu, 2);
+		put(&o, " c ");
+		put_x(&o, d.css_raw, 4);
 		break;
 	case 2:
 		put(&o, "keys ");

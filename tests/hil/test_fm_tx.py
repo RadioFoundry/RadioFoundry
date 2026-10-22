@@ -135,6 +135,8 @@ def test_fm_tx_dcs(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "dcs", 0o23)
     rc, r = key_and_check(fm_vfo, sdr_bench, pytestconfig, "hil_fm_dcs", 12.5, dcs="023N")
     assert r["expect"] and r["expect"][0] == "PASS", f"DCS D023N not decoded (or inverted): {r}"
+    # The radios send 210-350 Hz; a weak DCS (the HR_C7000's sub-audio field once sent 100 Hz) still decodes on the SDR
+    assert 150 <= r["dcs_dev_hz"] <= 900, f"DCS deviation +-{r['dcs_dev_hz']} Hz at 12.5 kHz: {r}"
 
 
 @pytest.mark.radio_tx
