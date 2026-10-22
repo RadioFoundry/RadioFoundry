@@ -174,10 +174,10 @@ its stock address ([codec-placement.md](codec-placement.md), "STM32 radios").
   debug link (READ_MEM), in the stock or the placed layout, check it against the profile hashes and save it on the
   computer (odrflash's config directory, the browser's IndexedDB; `odrflash/codecsave.py`,
   `site/static/js/flasher/codecsave.js`).
-* **Boot check (`boards/md380/vocoder_md380.c`).** Once, before the first call: the descriptor (its own CRC, tag
-  0x2032, the code and every table window at the addresses and with the CRCs above), then the signature word
-  0x4FF0E92D at 0x080E0000, then the CRC-32 of every window (about 112 KB). Otherwise the vocoder reports no codec and
-  the radio is FM only. Entry points are offsets from the code start (encode +0x14C, decode +0x604, the rest in
+* **Boot check (`platform/stm32f4/hrc/vocoder.c`, this build's profile in `boards/md380/vocoder_md380.c`).** Once,
+  before the first call: the descriptor (its own CRC, tag 0x2032, the code and every table window at the addresses
+  and with the CRCs above), then the signature word 0x4FF0E92D at 0x080E0000, then the CRC-32 of every window (about
+  112 KB). Otherwise the vocoder reports no codec and the radio is FM only. Entry points are offsets from the code start (encode +0x14C, decode +0x604, the rest in
   `vocoder_md380.c`), the same offsets as in the stock layout.
 * **Profile id.** `md380-d2032-s11` (debug link VERSION `codec=`). A build from before the move reports
   `md380-d2032`, so the tools know the codec isn't where the new layout keeps it and ask for the stock file.

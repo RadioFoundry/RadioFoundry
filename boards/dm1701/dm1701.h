@@ -28,18 +28,8 @@ extern const hal_input_t dm1701_input;
 extern const hal_radio_t dm1701_radio;
 extern const hal_power_t dm1701_power;
 extern hal_flash_t dm1701_flash;
-extern const hal_dmr_modem_t dm1701_dmr;
 extern const hal_audio_t dm1701_audio;
-extern const hal_vocoder_t dm1701_vocoder;
 
-// DMR PCM audio counters (audio_dm1701.c, CONFIG_DMR): the debug link's GET_DIAG / RESET_COUNTERS
-typedef struct {
-	uint32_t blocks;	// 20 ms blocks processed
-	uint32_t overruns;	// a DMA half completed before the task took the previous one
-	uint32_t dropped;	// blocks skipped because the task was a whole block late
-} dm1701_audio_stats_t;
-void dm1701_audio_stats(dm1701_audio_stats_t *out);
-void dm1701_audio_reset_stats(void);
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
 // The audio tap: FM receive audio on the PCM stream for APRS (CONFIG_APRS_RX) and USRP, FM transmit audio for USRP
 // (CONFIG_NET_USRP), the probe (CONFIG_AUDIO_PROBE, docs/spec/hardware-dm1701.md

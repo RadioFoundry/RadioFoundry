@@ -348,7 +348,7 @@ bool md380_rf_dmr_switch(bool tx)
 // transmitter supply up. Done from the RF TX interrupt instead, the first burst of every transmission went out unlocked
 // and with a cold transmitter: a single-burst CSBK (repeater wake-up, radio check) reached no receiver, so a repeater
 // or duplex hotspot never woke (issue 108). The supply alone doesn't radiate: APC_EN keys the PA at the burst
-void md380_rf_dmr_prepare(void)
+static void rf_dmr_prepare(void)
 {
 	if (!r.dmr_armed || r.dmr_tx_tuned) {
 		return;
@@ -361,8 +361,8 @@ void md380_rf_dmr_prepare(void)
 	}
 }
 
-// After md380_rf_dmr_prepare, outside the lock: lock detect, as tx() waits for it in FM
-void md380_rf_dmr_wait_lock(void)
+// After rf_dmr_prepare, outside the lock: lock detect, as tx() waits for it in FM
+static void rf_dmr_wait_lock(void)
 {
 	if (r.dmr_tx_tuned && !sky72310_wait_lock(&r.pll, PLL_LOCK_US)) {
 		r.diag.pll_fails++;
@@ -374,7 +374,7 @@ void md380_rf_dmr_wait_lock(void)
 // split channel (repeater, duplex hotspot) the receiver back on the RX frequency, so the radio hears the repeater's
 // answer to its wake-up. Left on the TX side, every key-up there ended in no_repeater (issue 108). Not per burst: the
 // switch there caught the burst on air. Simplex stays on TX until tx_off() (RX = TX)
-void md380_rf_dmr_tx_done(void)
+static void rf_dmr_tx_done(void)
 {
 	if (!r.dmr_armed || !r.dmr_tx_tuned || !r.rx_valid || r.dmr_tx_hz == r.rx_hz) {
 		return;
@@ -389,19 +389,29 @@ void md380_rf_dmr_tx_done(void)
 	r.rf_rx_back++;
 }
 
-void md380_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_back)
+static void rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_back)
 {
 	*skipped = r.rf_skipped;
 	*unarmed = r.rf_unarmed;
 	*rx_back = r.rf_rx_back;
 }
 
+// The shared DMR glue's view of this board: the modem's interrupt lines are PC0-PC2
+static const stm32_hrc_dmr_board_t dmr_board = {
+	.int_port = GPIOC,
+	.rf_switch = md380_rf_dmr_switch,
+	.rf_counters = rf_dmr_counters,
+	.tx_prepare = rf_dmr_prepare,
+	.tx_wait_lock = rf_dmr_wait_lock,
+	.tx_done = rf_dmr_tx_done,
+};
+
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
 static void dmr_disarm(void)
 {
 	r.dmr_armed = false;
-	if (md380_dmr_tx_active()) {
-		md380_dmr_tx_drop();
+	if (stm32_hrc_dmr_tx_active()) {
+		stm32_hrc_dmr_tx_drop();
 	}
 	pa_timer_stop();
 	pa_off();
@@ -414,7 +424,7 @@ static void dmr_enter(void)
 #if CONFIG_DMR
 	count(hrc6000_dmr_enter(hrc5000_hrc(&r.modem), cal.dmr_i, cal.dmr_q, C5000_MIC_GAIN));
 #endif
-	md380_dmr_enter();
+	stm32_hrc_dmr_enter();
 }
 
 // --- Speaker (hardware-md380.md 6) ---
@@ -453,6 +463,7 @@ static void speaker_apply(void)
 // registers while the pins stay on I2S, 20000 samples once a second, logged with the audio block count and the mode
 #include <string.h>
 #include "debuglink/dlog.h"
+#include "hrc/i2s_pcm.h"
 static void i2s_probe_task(void *arg)
 {
 	(void)arg;
@@ -467,8 +478,8 @@ static void i2s_probe_task(void *arg)
 			lck = c;
 			lws = w;
 		}
-		md380_audio_stats_t a;
-		md380_audio_stats(&a);
+		stm32_i2s_pcm_stats_t a;
+		stm32_i2s_pcm_stats(&a);
 		dlog("i2s ck %u ws %u blk %u %s%s", (unsigned)ck, (unsigned)ws, (unsigned)a.blocks,
 			r.mode == RADIO_MODE_DMR ? "dmr" : "fm", r.tx_on ? " tx" : "");
 #ifdef HRC5000_I2S_CYCLE
@@ -540,7 +551,7 @@ static void audio(bool on)
 	speaker_apply();
 }
 
-// The HR_C5000's I2S clocks run for the length of a PCM stream (audio_md380.c). Its set-ups leave them off, and the
+// The HR_C5000's I2S clocks run for the length of a PCM stream (audio_md380.c, the stream's clock hook). Its set-ups leave them off, and the
 // STM32 is only the slave (hardware-md380.md 6.2)
 void md380_i2s_clock(bool on)
 {
@@ -607,7 +618,7 @@ static void init(void)
 	audio(false);
 	// 0xFF is a floating data line, never a register value here (FM receive leaves 0x10 = 0x80)
 	r.diag.c5000_ok = hrc_read(hrc5000_hrc(&r.modem), HRC_PAGE_SYS, 0x10, &r.diag.c5000_r10) && r.diag.c5000_r10 != 0xFF;
-	md380_dmr_board_init(hrc5000_hrc(&r.modem));
+	stm32_hrc_dmr_init(hrc5000_hrc(&r.modem), &dmr_board);
 }
 
 static void set_mode(radio_mode_t mode)
@@ -620,7 +631,7 @@ static void set_mode(radio_mode_t mode)
 		}
 	} else if (prev == RADIO_MODE_DMR) {
 		dmr_disarm();
-		md380_dmr_leave();
+		stm32_hrc_dmr_leave();
 		r.dmr_tx_tuned = false;
 		r.tx_on = false;
 		count(hrc5000_set_mode_fm_rx(&r.modem));
@@ -677,7 +688,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 		}
 		if (!same) {
 			count(hrc_set_mod_gain(hrc5000_hrc(&r.modem), cal.dmr_i, cal.dmr_q));
-			md380_dmr_rx_restart();
+			stm32_hrc_dmr_rx_restart();
 		}
 	}
 	r.tx_on = false;
@@ -713,7 +724,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
-		md380_dmr_tx_prepare();	// a transmission the stack has already begun gets its first burst too
+		stm32_hrc_dmr_tx_prepare();	// a transmission the stack has already begun gets its first burst too
 		return true;
 	}
 

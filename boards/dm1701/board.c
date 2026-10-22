@@ -4,6 +4,8 @@
 #include "board.h"
 #include "config.h"
 #include "dm1701.h"
+#include "hrc/dmr_glue.h"
+#include "hrc/vocoder.h"
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -118,9 +120,9 @@ const board_t board = {
 	.diag_reset = dm1701_diag_reset,
 #endif
 #if CONFIG_DMR
-	.dmr = &dm1701_dmr,
+	.dmr = &stm32_hrc_dmr,
 	.audio = &dm1701_audio,
-	.vocoder = &dm1701_vocoder,
+	.vocoder = &stm32_vocoder,
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
 	.audio_tap = &dm1701_audio_tap,
 #endif
