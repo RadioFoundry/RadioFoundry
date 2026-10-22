@@ -217,9 +217,16 @@ def test_bringup_run_records_and_status(tmp_path):
 
     # before any run: nothing reads as unsupported, and a seed row stands on its own
     (results / board).mkdir(parents=True)
-    (results / board / "seed.json").write_text(json.dumps(seed(board, {"fake_split": {"result": "pass"},
-                                                                         "fake_seeded": {"result": "pass"}})))
-    assert statuses(common, board, t) == {"fake_split": ("pass", "seed"), "fake_ok": ("built, not yet recorded", None),
+    # fake_split's row was made on the first commit, whose files differ from today's: it needs a re-run
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    root = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"], cwd=ROOT, capture_output=True,
+                          text=True).stdout.split()[0]
+    (results / board / "seed.json").write_text(json.dumps(seed(board, {"fake_split": {"result": "pass",
+                                                                                        "commit": root},
+                                                                         "fake_seeded": {"result": "pass",
+                                                                                         "commit": head}})))
+    assert statuses(common, board, t) == {"fake_split": ("needs re-run", "seed"),
+                                       "fake_ok": ("built, not yet recorded", None),
                                        "fake_new": ("built, not yet recorded", None),
                                        "fake_seeded": ("pass", "seed")}
     assert "rests on a seed record" in bringup(*common, "status", "--radio", board).stdout
@@ -234,7 +241,8 @@ def test_bringup_run_records_and_status(tmp_path):
     assert rec["date"].endswith("Z")
     assert {x["id"].split("::")[-1]: x["outcome"] for x in rec["tests"]} == {
         "test_gate": "failed", "test_passes": "passed", "test_extra": "skipped"}
-    assert rec["features"] == ["fake_split", "fake_ok"]
+    assert rec["features"] == ["fake_split", "fake_ok"] and set(rec["sources"]) == {"fake_split", "fake_ok"}
+    assert all(re.fullmatch(r"[0-9a-f]{40}", h) for h in rec["sources"]["fake_ok"].values()), rec["sources"]
     assert rec["tools"]["pytest"] and "/nonexistent" not in json.dumps(rec)
 
     # the run's rows replace the seed's: fake_split failed on the radio, and the seed still vouches for fake_seeded
@@ -242,8 +250,14 @@ def test_bringup_run_records_and_status(tmp_path):
                                        "fake_new": ("built, not yet recorded", None),
                                        "fake_seeded": ("pass", "seed")}
 
-    # a record whose commit this repository doesn't have needs a re-run: no downgrade, and a failure stays one
+    # staleness is by content: a commit squash-merged away changes nothing while the files are the same
     rec["commit"] = "0" * 40
+    with open(recs[0], "w") as f:
+        json.dump(rec, f)
+    assert statuses(common, board, t)["fake_ok"] == ("pass", "run")
+    # files that differ from the record's hashes: a re-run, no downgrade, and a failure stays one
+    for fid in rec["sources"]:
+        rec["sources"][fid] = {p: "0" * 40 for p in rec["sources"][fid]}
     with open(recs[0], "w") as f:
         json.dump(rec, f)
     st = statuses(common, board, t)

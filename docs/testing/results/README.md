@@ -19,8 +19,9 @@ feature (`--feature F`) adds `-<feature>`.
 | `format` | The record format, 1 |
 | `kind` | `run` (a record without `kind` is a run) |
 | `board` | The board id, the same as the directory |
-| `commit` | The full commit hash the firmware and the tests were run from |
+| `commit` | The full commit hash the firmware and the tests were run from. Main is squash-merged, so a branch's commit may later be gone from history; the record still holds |
 | `dirty` | `true` when the tree had uncommitted changes |
+| `sources` | Feature id to `{path: object id}`: the git blob or tree id of each of the feature's `spec` and `source` paths as run (`null` for a path that wasn't there). With uncommitted changes, the ids are of the working tree's tracked files |
 | `date` | The end of the run, ISO 8601 in UTC (`2026-10-22T19:01:33Z`) |
 | `features` | The checklist ids the run covered |
 | `granted` | The needs the run allowed (`radio`, `rf`, `bench` and so on) |
@@ -31,7 +32,8 @@ feature (`--feature F`) adds `-<feature>`.
 
 A record holds no serial port, host name or serial number: the reasons are scrubbed before they are written, and
 `tools/bringup.py check` (in `tools/ci.sh`) fails on a record that names one. It also fails on a record that doesn't
-parse, sits in the wrong board's directory or names a commit the repository doesn't have.
+parse, lacks a key or sits in the wrong board's directory. A missing or stale record never fails CI: it shows in
+`status` as "built, not yet recorded" or "needs re-run".
 
 ## Seed record
 
@@ -50,7 +52,8 @@ written by hand.
 | `features` | Feature id to row: `result` (`pass` or `fail`), and optionally `commit` (the commit the check ran on, where known), `source` (a doc for this row, when it isn't the record's) and `note` |
 
 `tools/bringup.py check` fails on a seed that isn't named `seed.json`, names a feature the checklist doesn't have, has
-a row without a `pass` or `fail` result, or names a commit or doc the repository doesn't have.
+a row without a `pass` or `fail` result, or names a doc the repository doesn't have. A row's `commit` may be one
+the repository no longer has.
 
 ## Status
 
@@ -60,11 +63,12 @@ A feature's status never understates the board. For a feature the board builds:
 |---|---|
 | `pass`, `fail` | The newest run record that ran the feature passed or failed it |
 | `partial` | That run had excused skips, and no seed row covers the feature |
-| `needs re-run` | Files under the feature's `spec` or `source` (`tests/hil/features.toml`) changed after the record's commit. The mark isn't downgraded; the feature needs a run |
+| `needs re-run` | The feature's `spec` or `source` paths (`tests/hil/features.toml`) differ from the record's `sources` ids: staleness is by content, not by commit ancestry. The mark isn't downgraded; the feature needs a run |
 | `pass (seed)`, `fail (seed)` | No run passed or failed the feature, and the seed record has a row for it |
 | `built, not yet recorded` | No record covers the feature yet, or it has no HIL test |
 
-A run's row replaces the seed's row for each feature the run passed or failed. A seed row with a `commit` needs a
-re-run when the feature's files changed after it; a row without one stands until a run replaces it. Only a failing
+A run's row replaces the seed's row for each feature the run passed or failed. A seed row whose `commit` the
+repository has needs a re-run when the feature's paths differ from that commit's; a row without a commit, or with
+one that is gone, stands until a run replaces it. Only a failing
 record shows a failure. `tools/bringup.py list --radio <board>` shows one board with details; `tools/bringup.py status`
 shows every board and feature and marks with `*` each status that rests on a seed record.
