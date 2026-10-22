@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// FreeRTOS for the STM32F405 radios (docs/spec/hardware-dm1701.md 3.1: kernel at the lowest priority, max syscall 5;
-// the MD-380 uses the same priorities, docs/spec/hardware-md380.md 3)
+// FreeRTOS for the STM32F4 radios (docs/spec/hardware-dm1701.md 3.1, hardware-md380.md 3: kernel at the lowest
+// priority, max syscall 5)
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H
+
+// A board changes a setting in boards/<id>/freertos_board.h, read first; every setting below it is a default
+#if __has_include("freertos_board.h")
+#include "freertos_board.h"
+#endif
 
 #include <stdint.h>
 extern uint32_t SystemCoreClock;
@@ -19,7 +24,9 @@ extern uint32_t SystemCoreClock;
 #define configMINIMAL_STACK_SIZE		128
 #endif
 #define configAPPLICATION_ALLOCATED_HEAP	1		// ucHeap in the CCM (board.c): every task stack is there
+#ifndef configTOTAL_HEAP_SIZE
 #define configTOTAL_HEAP_SIZE			(28 * 1024)	// task stacks (about 20 KB with DMR: audio 5 KB, radio 3 KB), queues
+#endif
 #define configMAX_TASK_NAME_LEN			12
 #define configUSE_16_BIT_TICKS			0
 #define configIDLE_SHOULD_YIELD			1

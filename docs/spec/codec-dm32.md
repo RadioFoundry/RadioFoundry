@@ -189,7 +189,7 @@ How ODR runs it ([codec-placement.md](codec-placement.md), "HR_C7000 radios"):
 2. **At boot**, `platform/hrc7000/vocoder.c` copies the code to the board's codec window at the top of SRAM
    (0x43A00..0x58000), adds (window start - stock run address) to each listed word, checks the first two words, and
    copies the tables to their stock modem RAM address (049: 0x18000EA8).
-3. **Memory map** (`boards/dm32/dm32.ld`): one RAM region for ODR from 0x10000 to the codec window. The modem RAM
+3. **Memory map** (`boards/dm32/memory.ld`): one RAM region for ODR from 0x10000 to the codec window. The modem RAM
    window 0x18000E48..0x18003E28 (the union of the builds' tables) is reserved.
 4. **Versions**: every DM-32UV build with a codec map (12 stock files, six code windows) runs in the same window,
    since only the 3 words depend on the run address.

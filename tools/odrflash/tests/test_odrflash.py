@@ -222,7 +222,7 @@ class SectorMap(unittest.TestCase):
 
     def test_codec_sectors(self):
         self.assertEqual([x.index for x in DM1701.codec_sectors()], [10, 11])
-        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1701", "dm1701.ld")).read()
+        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1701", "memory.ld")).read()
         self.assertNotIn("FLASH2", ld)			# one region: no second image any more
 
     def test_every_sector_key_aligned(self):
@@ -230,8 +230,10 @@ class SectorMap(unittest.TestCase):
             self.assertEqual((s.addr - DM1701.app_base) % 1024, 0)
 
     def test_linker_keeps_app_out_of_codec_sectors(self):
-        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1701", "dm1701.ld")).read()
-        self.assertIn("ORIGIN = 0x0800C000, LENGTH = 0x080C0000 - 0x0800C000", ld)
+        # the region starts at board.mk APP_BASE (__app_start) and ends below the codec sectors
+        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1701", "memory.ld")).read()
+        self.assertIn("ORIGIN = __app_start, LENGTH = 0x080C0000 - __app_start", ld)
+        self.assertEqual(DM1701.app_region, (0x0800C000, 0x080C0000))
         first_codec = min(s.addr for s in DM1701.codec_sectors())
         self.assertEqual(first_codec, 0x080C0000)
         # the firmware looks for the codec where the merge puts it
@@ -253,8 +255,8 @@ class SectorMap(unittest.TestCase):
         self.assertEqual([(s.addr, s.size) for s in b.codec_sectors()], [(0x030E8000, 0x18000)])
         self.assertEqual(b.codec.windows, boards.get("dm32").codec.windows)
         self.assertEqual(b.protected, boards.get("dm32").protected)
-        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1801pro", "dm1801pro.ld")).read()
-        self.assertIn("ORIGIN = 0x0300C000, LENGTH = 0x030E8000 - 0x0300C000", ld)
+        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "dm1801pro", "memory.ld")).read()
+        self.assertIn("ORIGIN = __app_start, LENGTH = __codec_slot - __app_start", ld)
         self.assertIn("__codec_slot = 0x030E8000;", ld)
         self.assertIs(boards.from_debuglink_name("DM-1801 Pro"), b)
 
@@ -681,8 +683,9 @@ class StockLibrary(unittest.TestCase):
         self.assertTrue(b.keep_codec_supported)	# the application has sectors 3-7, the codec 8, 10 and 11
         self.assertEqual(b.codec.id, "md380-d2032-s11")
         self.assertEqual([s.index for s in b.codec_sectors()], [8, 10, 11])
-        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "md380", "md380.ld")).read()
-        self.assertIn("ORIGIN = 0x0800C000, LENGTH = 0x08080000 - 0x0800C000", ld)
+        ld = open(os.path.join(HERE, "..", "..", "..", "boards", "md380", "memory.ld")).read()
+        self.assertIn("ORIGIN = __app_start, LENGTH = 0x08080000 - __app_start", ld)
+        self.assertEqual(b.app_region, (0x0800C000, 0x08080000))
         self.assertEqual(b.codec.windows[0][0], 0x080E0000)
         self.assertEqual(b.codec.windows[-1], (stockfw.DESC_ADDR, stockfw.DESC_LEN))
         self.assertIs(boards.from_debuglink_name("MD-380 VHF"), b)

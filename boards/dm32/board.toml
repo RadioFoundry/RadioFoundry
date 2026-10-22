@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # The DM-32UV's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
-# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in dm32.ld.
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/dm32/memory.ld.
 
 id = "dm32"
 name = "Baofeng DM-32UV"
@@ -37,7 +37,7 @@ release = "stable"
 
 # The Baofeng serial updater erases the whole application area before it writes (hardware-dm32.md 13.2 step 7), so
 # the codec can't be kept across an update: every flash merges it again. The platform's two "sectors", the application
-# and the codec slot (dm32.ld), let manifests say where the codec goes
+# and the codec slot (boards/dm32/memory.ld), let manifests say where the codec goes
 [flash]
 family = "serial-loader"
 keep_codec = false
@@ -67,7 +67,7 @@ hold_power = false
 progmem = 0x100000
 tested = true
 
-# The codec slot and windows come from dm32.ld (__codec_*); profile is the id odrflash gives a merged codec
+# The codec slot and windows come from boards/dm32/memory.ld (__codec_*); profile is the id odrflash gives a merged codec
 [codec]
 tool = "hrc7000_codec"
 profile = "dm32-049"
