@@ -21,6 +21,7 @@ import warnings
 
 import pytest
 
+from odr_hil import skip
 import dmr_packet
 
 BENCH_ID = 9990301
@@ -42,9 +43,9 @@ def _ip_view(radio):
 def _setup(radio, pytestconfig, tx=True):
     feats = radio.features()
     if "DMR_IP_GATEWAY" not in feats:
-        pytest.skip("built without CONFIG_DMR_IP_GATEWAY")
+        skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
     if _ip_view(radio).get("ip.built") != 1:
-        pytest.skip("firmware without the dmr_ip view section (before SAP 3 transmit)")
+        skip("not_built", "firmware without the dmr_ip view section (before SAP 3 transmit)")
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
@@ -52,7 +53,7 @@ def _setup(radio, pytestconfig, tx=True):
         radio.lowest_power()
     own = int(radio.view(["dmr"])["dmr.own_id"])
     if own == 0:
-        pytest.skip("the radio has no DMR ID (dmr.own_id=0)")
+        skip("state", "the radio has no DMR ID (dmr.own_id=0)")
     time.sleep(1.0)
     return freq, cc, own, feats
 
@@ -110,10 +111,10 @@ def test_gateway_has_netif(radio):
     """Radio only: a build with the IP gateway has a host netif for its answers. Without one, PPP still negotiates
     (LCP and IPCP open) but nothing the gateway sends reaches the host, as on the DM-1801 Pro before its board set it."""
     if "DMR_IP_GATEWAY" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_IP_GATEWAY")
+        skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
     v = radio.view(["hotspot"])
     if "net.netif" not in v:
-        pytest.skip("firmware without the net.netif view key")
+        skip("not_built", "firmware without the net.netif view key")
     assert v["net.netif"] == "1", "the board sets no netif: the gateway can't answer the host"
 
 

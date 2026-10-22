@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, find_ports
+from odr_hil import DebugLink, DebugLinkError, find_ports, skip
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import odr_snmp  # noqa: E402
@@ -58,7 +58,7 @@ def _value(vbs, name):
 @pytest.mark.usb_switch
 def test_snmp_usb(radio, pytestconfig):
     if "SNMP" not in radio.features():
-        pytest.skip("built without CONFIG_SNMP")
+        skip("not_built", "built without CONFIG_SNMP")
     # On a DMR channel: the DMR objects (talk group, target type) are only in the walk then
     radio.go_home()
     radio.find_channel(round(pytestconfig.getoption("--dmr-freq") * 1e6), "dmr")
@@ -67,7 +67,7 @@ def test_snmp_usb(radio, pytestconfig):
     before = radio.view(["snmp"])
     assert before.get("snmp.built") == "1", before
     if int(before.get("snmp.flags", "0"), 16) & 0x01:
-        pytest.skip("the agent is switched off in this radio's settings (snmp.flags)")
+        skip("state", "the agent is switched off in this radio's settings (snmp.flags)")
     had_write = before.get("snmp.write_set") == "1"
     if not had_write:
         radio.link.snmp_community(True, TEST_COMMUNITY)

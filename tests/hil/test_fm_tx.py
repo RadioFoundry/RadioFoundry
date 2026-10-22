@@ -32,6 +32,8 @@ import time
 
 import pytest
 
+from odr_hil import skip
+
 PTT_S = 3.0
 
 
@@ -64,13 +66,13 @@ def parse_fm(text):
 def fm_vfo(radio, pytestconfig):
     """The radio's FM VFO on --fm-mhz, lowest power; the VFO's bandwidth and TX tone restored afterwards."""
     if "VFO_FM" not in radio.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     if "SUBTONE" not in radio.features():
-        pytest.skip("built without CTCSS / DCS")
+        skip("not_built", "built without CTCSS / DCS")
     hz = round(pytestconfig.getoption("--fm-mhz") * 1e6)
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     with radio.vfo_session():
         L = radio.link
         ch = radio.view(["channel"])
@@ -161,7 +163,7 @@ def test_fm_tx_bandwidth(fm_vfo, sdr_bench, pytestconfig):
 @pytest.mark.bench_service
 def test_fm_tx_tone_burst(fm_vfo, sdr_bench, pytestconfig):
     if "FM_TX_TONES" not in fm_vfo.features():
-        pytest.skip("built without CONFIG_FM_TX_TONES")
+        skip("not_built", "built without CONFIG_FM_TX_TONES")
     set_fm(fm_vfo, False, "none", 0)
 
     def burst():
@@ -185,7 +187,7 @@ def test_fm_tx_tone_burst(fm_vfo, sdr_bench, pytestconfig):
 @pytest.mark.bench_service
 def test_fm_tx_roger_beep(fm_vfo, sdr_bench, pytestconfig):
     if "FM_TX_TONES" not in fm_vfo.features():
-        pytest.skip("built without CONFIG_FM_TX_TONES")
+        skip("not_built", "built without CONFIG_FM_TX_TONES")
     from test_radio_features import settings
     set_fm(fm_vfo, False, "none", 0)
 
@@ -246,8 +248,8 @@ def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
     if clipped:
         # Not a radio failure: the receiver is saturated, so every level reads the same. The bench needs an
         # attenuator (or more distance) between the radio and the RTL-SDR for this test.
-        pytest.skip(f"the SDR's ADC clips even at gain 0 ({clipped[0][3]} % of samples at 50 mW): power levels "
-                    f"can't be compared on this bench without an attenuator; levels {levels}")
+        skip("bench", f"the SDR's ADC clips even at gain 0 ({clipped[0][3]} % of samples at 50 mW): power levels "
+                      f"can't be compared on this bench without an attenuator; levels {levels}")
     d = [levels[i + 1][2] - levels[i][2] for i in range(2)]
     assert all(x >= 1.0 for x in d), f"a higher power level is not stronger on air: steps {d} dB ({levels})"
     assert 5.0 <= levels[2][2] - levels[0][2] <= 15.0, \

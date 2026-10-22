@@ -16,6 +16,7 @@ import time
 
 import pytest
 
+from odr_hil import skip
 from test_fm_tx import parse_fm
 
 GET_VERSION, GET_STATUS, SET_CONFIG, SET_MODE, SET_FREQ, SEND_CWID = 0x00, 0x01, 0x02, 0x03, 0x04, 0x0A
@@ -42,9 +43,9 @@ def freq(rx, tx):
 def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
     feats = radio.features()
     if "HOTSPOT" not in feats:
-        pytest.skip("built without the hotspot")
+        skip("not_built", "built without the hotspot")
     if radio.view(["dmr_ext"]).get("hs.cw_requests") is None:
-        pytest.skip("firmware without the CW ID keyer")
+        skip("not_built", "firmware without the CW ID keyer")
     import mmdvm_probe
     assert morse_units(CALL) == UNITS
     mhz = pytestconfig.getoption("--dmr-freq")

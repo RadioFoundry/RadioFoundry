@@ -7,7 +7,7 @@ import os
 
 import pytest
 
-from odr_hil import DebugLinkError, Radio, SdrBench, find_ports
+from odr_hil import DebugLinkError, Radio, SdrBench, find_ports, skip, skip_kind, skip_mark
 
 
 def pytest_addoption(parser):
@@ -113,32 +113,44 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     for item in items:
         if ("rf" in item.keywords or "radio_tx" in item.keywords) and not config.getoption("--allow-rf"):
-            item.add_marker(pytest.mark.skip(reason="transmits: run with --allow-rf"))
+            item.add_marker(skip_mark("opt_in", "transmits: run with --allow-rf"))
         elif "usb_switch" in item.keywords and not config.getoption("--allow-usb-switch"):
-            item.add_marker(pytest.mark.skip(reason="re-enumerates the radio as a network adapter: run with "
-                                                    "--allow-usb-switch"))
+            item.add_marker(skip_mark("opt_in", "re-enumerates the radio as a network adapter: run with "
+                                                "--allow-usb-switch"))
         elif "codeplug_write" in item.keywords and not config.getoption("--allow-codeplug-write"):
-            item.add_marker(pytest.mark.skip(reason="writes the codeplug: run with --allow-codeplug-write"))
+            item.add_marker(skip_mark("opt_in", "writes the codeplug: run with --allow-codeplug-write"))
         elif "reboot" in item.keywords and not config.getoption("--allow-reboot"):
-            item.add_marker(pytest.mark.skip(reason="restarts the radio: run with --allow-reboot"))
+            item.add_marker(skip_mark("opt_in", "restarts the radio: run with --allow-reboot"))
         elif "manual" in item.keywords and not config.getoption("--manual"):
-            item.add_marker(pytest.mark.skip(reason="needs a person at the radio: run with --manual -s"))
+            item.add_marker(skip_mark("opt_in", "needs a person at the radio: run with --manual -s"))
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    """A skip's kind (odr_hil.skip) on its report (report.skip_kind) and in the test's user properties, which the
+    JUnit XML writes: what a bring-up run and its result records read."""
+    report = yield
+    if report.skipped and not hasattr(report, "wasxfail"):
+        report.skip_kind = skip_kind(call.excinfo.value if call.excinfo else report)
+        if report.skip_kind and ("skip_kind", report.skip_kind) not in item.user_properties:
+            item.user_properties.append(("skip_kind", report.skip_kind))
+    return report
 
 
 @pytest.fixture(scope="session")
 def radio(pytestconfig):
     port = pytestconfig.getoption("--radio-port")
     if not port and not find_ports():
-        pytest.skip("no radio on USB (1FC9:0094): plug it in or give --radio-port")
+        skip("bench", "no radio on USB (1FC9:0094): plug it in or give --radio-port")
     try:
         r = Radio(port)
     except DebugLinkError as e:
-        pytest.skip(f"radio not reachable: {e}")
+        skip("bench", f"radio not reachable: {e}")
     try:
         r.ping()
     except DebugLinkError as e:
         r.close()
-        pytest.skip(f"the radio doesn't answer the debug link (firmware without CONFIG_DEBUGLINK?): {e}")
+        skip("bench", f"the radio doesn't answer the debug link (firmware without CONFIG_DEBUGLINK?): {e}")
     yield r
     r.close()
 
@@ -170,8 +182,8 @@ def sdr_bench(pytestconfig):
                  tx_power=pytestconfig.getoption("--tx-power"), gain=pytestconfig.getoption("--sdr-gain"),
                  wait_max=pytestconfig.getoption("--bench-wait-max"))
     if not b.reachable():
-        pytest.skip(f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
-                    "sync)")
+        skip("bench", f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
+                      "sync)")
     return b
 
 
@@ -180,10 +192,10 @@ def bench_station(pytestconfig, sdr_bench):
     """The name of the bench station to use as the second radio (--bench-station); skips without one."""
     name = pytestconfig.getoption("--bench-station")
     if not name:
-        pytest.skip("no bench station: give --bench-station NAME (odr-bench info on the bench lists them)")
+        skip("opt_in", "no bench station: give --bench-station NAME (odr-bench info on the bench lists them)")
     st = next((s for s in sdr_bench.info().get("stations", []) if s["name"] == name), None)
     if st is None or not st.get("present"):
-        pytest.skip(f"bench station {name} is not on the bench (or the bench has no benchd)")
+        skip("bench", f"bench station {name} is not on the bench (or the bench has no benchd)")
     return name
 
 
