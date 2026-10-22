@@ -61,8 +61,10 @@ static void b_do_status(rx2_status_t *st)
 }
 static void b_do_stub(void) { b_stubs++; }
 static void b_do_reset(void) { b_resets++; }
+static uint8_t b_leds = 0xFF;
+static void b_do_led(uint8_t leds) { b_leds = leds; }
 
-static const rx2_ops_t b_ops = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset };
+static const rx2_ops_t b_ops = { b_do_tune, b_do_stop, b_do_audio, b_do_status, b_do_stub, b_do_reset, b_do_led };
 
 static void pump(uint32_t now_ms)
 {
@@ -262,11 +264,16 @@ static void test_link(void)
 	// It comes back (restarted: stopped, muted): HELLO, and the main side sends its settings again
 	int tunes = b_tunes;
 	rx2_main_audio(&m, true, 70);
+	rx2_main_led(&m, 2);	// while it is down: kept, sent when it is back
 	rx2_recv_init(&r, send_recv, &b_ops, RX2_HELLO_DMR, "odr-gd88b 1.3");
 	b_audio = false;
 	now = run(now, RX2_HELLO_EVERY_MS + 200u, true);
 	rx2_main_status(&m, &st);
 	CHECK(st.up && st.tuned && b_tunes == tunes + 1 && b_audio && b_volume == 70 && strcmp(m.fw, "odr-gd88b 1.3") == 0);
+	CHECK(b_leds == 2);
+	rx2_main_led(&m, 3);
+	now = run(now, 40, true);
+	CHECK(b_leds == 3);
 
 	// Stop
 	int stops = b_stops;
@@ -292,7 +299,7 @@ static void test_link(void)
 	stops = b_stops;
 	rx2_main_init(&m, send_main);
 	now = run(now, 100, true);
-	CHECK(b_stops == stops + 1 && !b_audio && m.up);
+	CHECK(b_stops == stops + 1 && !b_audio && m.up && b_leds == 0);
 	(void)now;
 }
 

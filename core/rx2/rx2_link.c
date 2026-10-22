@@ -212,6 +212,11 @@ static void main_send_audio(rx2_main_t *m)
 	main_send(m, RX2_AUDIO, p, 2);
 }
 
+static void main_send_led(rx2_main_t *m)
+{
+	main_send(m, RX2_LED, &m->leds, 1);
+}
+
 void rx2_main_init(rx2_main_t *m, rx2_send_fn send)
 {
 	memset(m, 0, sizeof(*m));
@@ -246,6 +251,9 @@ void rx2_main_rx(rx2_main_t *m, uint8_t b, uint32_t now_ms)
 					main_send_tune(m, now_ms);
 				}
 				main_send_audio(m);
+				if (m->leds != 0) {
+					main_send_led(m);
+				}
 			}
 		}
 		break;
@@ -331,6 +339,17 @@ void rx2_main_audio(rx2_main_t *m, bool on, uint8_t volume)
 	}
 }
 
+void rx2_main_led(rx2_main_t *m, uint8_t leds)
+{
+	if (leds == m->leds) {
+		return;
+	}
+	m->leds = leds;
+	if (m->up) {
+		main_send_led(m);
+	}
+}
+
 void rx2_main_command(rx2_main_t *m, uint8_t type)
 {
 	uint8_t p[4];
@@ -413,6 +432,9 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 			r->ops->audio(false, 0);
 			r->audio = false;
 		}
+		if (r->ops->led != NULL) {
+			r->ops->led(0);
+		}
 		recv_hello(r);
 		break;
 	case RX2_TUNE: {
@@ -437,6 +459,11 @@ void rx2_recv_rx(rx2_recv_t *r, uint8_t b, uint32_t now_ms)
 		if (p->len >= 2) {
 			r->audio = p->buf[0] != 0;
 			r->ops->audio(r->audio, p->buf[1]);
+		}
+		break;
+	case RX2_LED:
+		if (p->len >= 1 && r->ops->led != NULL) {
+			r->ops->led(p->buf[0]);
 		}
 		break;
 	case RX2_STUB:
