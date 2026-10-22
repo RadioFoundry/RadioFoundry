@@ -217,6 +217,9 @@ typedef struct {
 extern hal_flash_t hrc_flash_spi0;
 void hrc_flash_spi0_configure(const hrc_flash_cfg_t *cfg);	// before hrc_flash_spi0.init
 uint32_t hrc_flash_spi0_jedec(void);
+// The chip UID that INFO_CHIP and REBOOT's token use (system.c): the board's data flash unique ID, read once at its init
+// (flash_spi0.c does it for the SPI NOR). An ID of one repeated byte is ignored
+void hrc_chip_set_uid(const uint8_t *id, uint32_t len);
 // The task holding the data flash lock and for how long (ms), "-" when free: a stuck flash user shows here
 const char *hrc_flash_spi0_holder(uint32_t *held_ms);
 

@@ -985,9 +985,11 @@ def parse_counters(lines):
         words = line.split()
         if not words:
             continue
-        if words[0] == "bs":            # "bs slN bN uN kN cN rfN stN": the split duplex TX half's BS outbound
+        if words[0] == "bs":            # "bs slN bN uN kN cN rfN stN" (and the HR_C7000's "bs tiN ttN ..."): the split
+                                        # duplex TX half's BS outbound
             names = {"sl": "slots", "b": "bursts", "u": "underruns", "k": "keyups", "c": "cach", "rf": "rf_fail",
-                     "st": "stalls"}
+                     "st": "stalls", "ti": "ts_ints", "tt": "ts_ticks", "ph": "phy_ints", "ri": "rftx_ints",
+                     "lt": "late", "mg": "max_gap_us"}
             for w in words[1:]:
                 m = re.fullmatch(r"([a-z]+)(\d+)", w)
                 if m and m.group(1) in names:
@@ -1290,9 +1292,13 @@ def cmd_data(link, a):
     return 0
 
 
+CHIP_STM32F4, CHIP_HRC7000 = 0, 1   # INFO_CHIP's family byte (debuglink.md 3.9)
+
+
 def decode_chip(r):
     idcode, flash_kb, u0, u1, u2, optcr, rdp, rdp_byte, wrp, bor, user = struct.unpack_from("<IH3IIBBHBB", r)
-    return {"idcode": idcode, "dev_id": idcode & 0xFFF, "rev_id": idcode >> 16, "flash_kb": flash_kb,
+    family = r[28] if len(r) > 28 else CHIP_STM32F4    # older firmware: the STM32F4 was the only one answering
+    return {"family": family, "idcode": idcode, "dev_id": idcode & 0xFFF, "rev_id": idcode >> 16, "flash_kb": flash_kb,
             "uid": (u0, u1, u2), "token": u0, "optcr": optcr, "rdp": rdp, "rdp_byte": rdp_byte, "wrp": wrp,
             "wrp_sectors": [i for i in range(12) if wrp & (1 << i)], "bor": bor, "user": user}
 
@@ -1323,6 +1329,11 @@ def dump_path_ok(path):
 
 
 def print_chip(c):
+    if c["family"] != CHIP_STM32F4:
+        name = {CHIP_HRC7000: "HR_C7000"}.get(c["family"], f"family {c['family']}")
+        print(f"chip     {name} (no ID or option byte registers)")
+        print(f"uid      {c['uid'][2]:08X}{c['uid'][1]:08X}{c['uid'][0]:08X} (token 0x{c['token']:08X}; the data flash's unique ID)")
+        return
     rdp_names = {0: "level 0 (0xAA, no protection)", 1: f"LEVEL 1 (0x{c['rdp_byte']:02X}: read protection)",
                  2: "LEVEL 2 (0xCC: permanent, ROM bootloader and debug disabled)"}
     idc = f"0x{c['idcode']:08X}"
@@ -1593,8 +1604,8 @@ def cmd_reboot(link, a):
     c = link.chip()
     print_chip(c)
     mode = REBOOT_ROM_DFU if a.rom_dfu else REBOOT_NORMAL
-    if mode == REBOOT_ROM_DFU and c["rdp"] != 0:
-        print("odr_debug: refusing ROM DFU: RDP is not level 0", file=sys.stderr)
+    if mode == REBOOT_ROM_DFU and (c["family"] != CHIP_STM32F4 or c["rdp"] != 0):
+        print("odr_debug: refusing ROM DFU: not an STM32F4 at RDP level 0", file=sys.stderr)
         return 1
     try:
         link.reboot(mode, c["token"])

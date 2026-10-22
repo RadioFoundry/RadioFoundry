@@ -48,7 +48,7 @@ bool dl_mem_allowed(uint32_t addr, uint32_t len, uint16_t flash_kb);
 enum {
 	DL_REBOOT_OK		= 0,
 	DL_REBOOT_BAD_TOKEN	= 1,	// the token isn't the chip UID's low word
-	DL_REBOOT_RDP		= 2,	// ROM DFU asked with RDP not level 0
+	DL_REBOOT_RDP		= 2,	// ROM DFU asked with RDP not level 0, or on a chip without it
 	DL_REBOOT_TX		= 3,	// transmitting (radio or hotspot)
 	DL_REBOOT_NO_CHIP	= 4,	// the chip info could not be read
 	DL_REBOOT_ARM_FAILED	= 5,	// the ROM DFU flag could not be stored

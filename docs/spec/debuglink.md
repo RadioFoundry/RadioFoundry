@@ -206,7 +206,10 @@ Actions (`hal_input.h`): 1 up, 2 down, 3 left, 4 right, 5 select, 6 back, 7 quic
 2 REPEAT, 3 DOWN, 4 UP.
 
 Rate limit: one injected key at a time. While one is held, and for 40 ms after its release (two scans for the
-debounce to see it released), KEY answers busy (3). Every hold is capped at 10 s.
+debounce to see it released), KEY answers busy (3). Every hold is capped at 10 s. Both also count key scans: a hold
+ends only after three scans have seen the key, and the next starts only after three scans have seen it released. A
+scan can run late (the DM-32UV's key rows are LCD data lines, busy for a whole redraw), and a hold measured in ms
+alone ended before the debounce saw it: the press was lost.
 
 ### 3.5 PTT
 
@@ -309,11 +312,14 @@ Ops 15-18 last until the channel changes (`dmr.target_manual`); in the DMR VFO o
 ### 3.9 INFO_CHIP
 
 INFO_CHIP, READ_MEM (3.10) and REBOOT (3.11) go through `board.system` (`hal/hal_system.h`). The fields, ranges and
-modes below are the STM32F4 platform's (`platform/stm32f4/sysboot.c`), the only one whose `chip()` reports anything
-today. On the HR_C7000 platform (DM-32UV, DB25-D) `chip()` reports nothing, so INFO_CHIP and READ_MEM answer
-UNAVAILABLE and REBOOT is refused with reason 4.
+modes below are the STM32F4 platform's (`platform/stm32f4/sysboot.c`) unless the family byte says otherwise.
 
-Read-only. Reply after the status (29 bytes in all):
+| Family (offset 29) | Platform | What INFO_CHIP reports |
+|---|---|---|
+| 0 | STM32F4 (`platform/stm32f4/sysboot.c`) | every field below |
+| 1 | HR_C7000 (`platform/hrc7000/system.c`: DM-32UV, DM-1801 Pro, DB25-D) | the UID only. idcode, flash size and `FLASH_OPTCR` are 0, offsets 23-28 are `0xFF`. The SoC has no readable ID register (its eFuse is not mapped out), so the UID is the data flash's 128-bit unique ID, read once at boot: the SPI NOR's (0x4B, four dummy bytes) on the DM-32UV and DM-1801 Pro, the SPI NAND's ID page on the DB25-D (`hardware-db25d.md` 6.5). Words 0-2 of it, with word 3 XORed into word 0. Until the flash has answered, INFO_CHIP answers UNAVAILABLE |
+
+Read-only. Reply after the status (30 bytes in all; firmware before the family byte sent 29, and was STM32F4 only):
 
 | Offset | Size | Field |
 |---|---|---|
@@ -326,8 +332,9 @@ Read-only. Reply after the status (29 bytes in all):
 | 25 | 2 | write-protected sectors, bit n = sector n (from nWRP bits 27:16, where 0 means protected) |
 | 27 | 1 | BOR level field (bits 3:2): 0 = level 3 (2.7 V), 1 = level 2, 2 = level 1, 3 = off |
 | 28 | 1 | user bits: bit 0 WDG_SW, bit 1 nRST_STOP, bit 2 nRST_STDBY |
+| 29 | 1 | chip family (table above) |
 
-`odr_debug.py chip` prints all of this, and prints a loud warning when RDP is not level 0 or when any application
+`odr_debug.py chip` prints all of this (only the family and the UID for a family other than 0), and prints a loud warning when RDP is not level 0 or when any application
 sector (3..11) is write protected.
 
 Example (the bench DM-1701, 2026-10-10): idcode `0x0009A413`, 1024 KB, `FLASH_OPTCR` `0x0FFF55ED`: **RDP level 1**
@@ -335,8 +342,9 @@ Example (the bench DM-1701, 2026-10-10): idcode `0x0009A413`, 1024 KB, `FLASH_OP
 
 ### 3.10 READ_MEM
 
-Request: address u32, length u16 (1 to 1000). Reply after the status: the address u32, then the bytes. The whole range
-must lie inside one of these, otherwise the answer is refused (7):
+Request: address u32, length u16 (1 to 1000). Reply after the status: the address u32, then the bytes. STM32F4 only
+(INFO_CHIP family 0): any other chip answers UNAVAILABLE. The whole range must lie inside one of these, otherwise the
+answer is refused (7):
 
 | Range | Contents |
 |---|---|
@@ -369,7 +377,7 @@ Request: mode u8, token u32. Reply: the status and a reason byte.
 
 | Mode | Effect |
 |---|---|
-| 0 | normal reset (`NVIC_SystemReset`): the stock bootloader runs, then the application |
+| 0 | normal reset (`NVIC_SystemReset`; on the HR_C7000 the soft reset, transmitter off first): the stock bootloader runs, then the application |
 | 1 | ROM DFU: reset, then straight into ST's system-memory bootloader (USB DfuSe, `0483:DF11`). Only at RDP level 0 |
 
 The token must be the low 32 bits of the chip UID (INFO_CHIP offset 7), so a stray frame can't reboot the radio.
@@ -378,7 +386,7 @@ The checks, at the request and again just before the reset:
 | Reason | Refused when |
 |---|---|
 | 1 | the token is not the UID's low word (both modes) |
-| 2 | mode 1 and RDP is not level 0. At level 1 the ROM bootloader refuses flash access, and its read-unprotect command mass-erases all of flash, the stock bootloader included, which would leave the radio unable to load firmware without SWD. Level 2 disables the ROM bootloader |
+| 2 | mode 1 on a chip other than the STM32F4 (INFO_CHIP family), or mode 1 and RDP is not level 0. At level 1 the ROM bootloader refuses flash access, and its read-unprotect command mass-erases all of flash, the stock bootloader included, which would leave the radio unable to load firmware without SWD. Level 2 disables the ROM bootloader |
 | 3 | transmitting: radio state TX, or the hotspot sending (both modes) |
 | 4 | the chip info could not be read |
 | 5 | (logged only) the ROM DFU flag could not be stored in the backup register |
