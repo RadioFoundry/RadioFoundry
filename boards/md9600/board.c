@@ -72,7 +72,7 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_MIC_B, ACT_USER_4, ACT_USER_4, false, false },
 	{ KEY_MIC_C, ACT_MONITOR, ACT_MONITOR, true, false },
 	{ KEY_MIC_D, ACT_TALK_TARGET, ACT_TALK_TARGET, false, false },
-	{ KEY_MIC_AB, ACT_VFO_TOGGLE, ACT_VFO_TOGGLE, false, false },
+	{ KEY_MIC_AB, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false },
 };
 
 // Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): P3, P4, the orange key
