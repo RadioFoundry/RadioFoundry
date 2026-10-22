@@ -73,6 +73,88 @@ SDR bench names come from the environment (`docs/testing/dmr-bench.md` 1): `$ODR
 default `sdr-bench`), `$ODR_SDR_BENCH_SERVICE`, `$ODR_SDR_BENCH_DIR`, `$ODR_SDR_BENCH_PY`, `$ODR_SDR_BENCH_ENV_FILE`;
 `$ODR_SDRBENCH` names an odr_sdrbench checkout when the package isn't installed on the test host.
 
+### Skip kinds
+
+Every skip names its kind. The reason starts with it (`-rs` shows `[opt_in] transmits: run with --allow-rf`), the
+report carries it as `report.skip_kind`, and the JUnit XML (`--junitxml`) as the test's `skip_kind` property. A
+bring-up run counts a skip as a failure unless its kind is one the feature and the run allow.
+
+| Kind | Meaning | Example |
+|---|---|---|
+| `not_built` | The firmware was built without it: a switch off, or firmware older than the feature | built without CONFIG_APRS |
+| `no_hw` | The radio lacks the capability | the board has no PWM audio output |
+| `state` | A precondition the test could set up itself: a mode, a setting, the codeplug, the channel | the radio is in hotspot mode |
+| `opt_in` | An opt-in option was not given: an `--allow-*` flag, a frequency, a file, a second radio | run with --allow-rf |
+| `bench` | The radio, the SDR bench or a host tool is missing, unreachable or busy | the shared SDR bench stayed busy |
+| `other_board` | A board-specific test on another board | a wiring check run on a board it doesn't cover |
+
+### Bring-up mode
+
+`features.toml` is the feature checklist: one `[feature.<id>]` table per feature (every switch of
+`config/features.mk`, and the features without one) with its switch, spec, optional `source` paths, planned tests
+and the manual steps no single test asks for. It has no radio columns and lists no tests: each test names the
+feature it checks.
+
+```
+@pytest.mark.feature("fm")                                  # required: gates the feature
+@pytest.mark.feature("aprs", optional=True)                 # run and recorded, doesn't gate
+@pytest.mark.feature("channel_knob", owner="turn the knob by the clicks the test asks for")
+@pytest.mark.feature("split_duplex", gate=True)             # the capability gate: runs first
+```
+
+A test may carry several feature markers. What a test needs comes from its markers and fixtures: `rf` and `radio_tx`
+need `--allow-rf`, `bench_service` and the `sdr_bench` fixture the SDR bench, `manual` a person (`--manual`, and the
+marker's `owner=` says what they do), `second_radio` and the `bench_station` fixture a second radio, `usb_switch`,
+`codeplug_write` and `reboot` their `--allow-*` flags. `tools/bringup.py` (Python 3.11 or later) resolves each
+radio's state for each feature from the board registry (`tools/boards.py`) and the board's build data:
+
+| State | When |
+|---|---|
+| `n/a` | The switch is in the board's `BOARD_UNSUPPORTED` (`config.mk`, one switch a line with the reason in its comment: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`). `tools/boards.py check` fails on one without a reason |
+| `unsupported` | `board.toml` `[features] <id> = { state = "unsupported", reason = "..." }`: planned, the hardware could, not working yet |
+| `off` | The board's default build leaves the switch off |
+| `required` | Anything else: the feature's tests must pass on the radio |
+
+```
+tools/bringup.py list --radio ID                  # the radio's checklist and the last result per feature
+tools/bringup.py run --radio ID [--feature F] -- --allow-rf --dmr-freq ...   # under the radio lock, recorded
+tools/bringup.py status                           # every radio and feature
+tools/bringup.py check                            # host-side consistency (tools/ci.sh)
+```
+
+`run` takes the lock of the radio it runs on (`$ODR_RADIO_LOCK`, the file the HIL workflow locks, with `{port}` in it
+replaced by the radio's port; without it `~/.odr-radio-<port>.lock`, the port from `--radio-port`, `$ODR_PORT` or
+`usb`), so a bench with two radios runs a bring-up on each. It fails at once when another run holds it (`--lock-wait S`
+waits). It prints the owner actions of the run first; they run with `--manual`. pytest runs with `--bringup FEATURES`,
+which runs only the tests marked for those features and makes a required test's skip a failure unless the test's needs
+excuse it:
+
+- `other_board`: always excused.
+- `bench`: excused when the test needs the SDR bench. A run that finds no radio fails.
+- `opt_in`: excused when the test needs something the run didn't allow (`--allow-rf` for `rf`, `--manual` for a
+  `manual` test and so on). With every need allowed, a missing option such as `--ambe` fails.
+- `not_built`, `no_hw`, `state`: never excused.
+
+An excused skip is recorded but doesn't verify the feature, and an optional test never fails the run. A feature that
+depends on hardware glue has a capability gate, its one test marked `gate=True` (`test_split_capability`): it checks
+the radio offers the feature and skips `no_hw` when it doesn't. Bring-up runs each feature's gate first. When the gate
+fails or skips, the feature's other required tests fail with "capability gate failed" without running.
+`tools/bringup.py check` fails on a feature with more than one gate.
+
+### Results
+
+Each `run` writes `docs/testing/results/<board>/<date>-<commit>.json`: the commit and whether the tree had changes, the
+git object ids of each feature's spec and source paths, the date, the features, every test's id, the features it counts
+for, outcome, skip kind and reason, the firmware's VERSION keys (git, board, features, codec), the allowed options and
+the Python and pytest versions. Ports, host names and serial numbers are left out. Commit the record with the change it
+checks. A feature's status never understates the radio. The newest record that ran it decides: `pass`, `partial`
+(excused skips), `fail`, or `needs re-run` when its `spec` or `source` paths differ from the content the record hashed
+(`sources`; by content, so a squash merge changes nothing). Before a run, the board's seed record decides (the evidence
+the docs held before bring-up records existed), marked as a seed. With neither, the feature is `built, not yet
+recorded`. Only a failing record shows a failure
+([docs/testing/results/README.md](../../docs/testing/results/README.md#status)). The steps for a new radio, from its
+first record to `supported`, are in [Adding a radio](../../docs/dev/adding-a-radio.md#bring-up-records).
+
 ### Bench hardware markers
 
 Every test that uses the SDR bench carries `bench_service` (it takes the lease) and says which piece of the bench it
