@@ -28,11 +28,10 @@ gallery = "160x128"
 
 [status]
 level = "supported"
-summary = "Bring-up on a radio: FM receive and transmit, display, keys, host link, settings storage, the open-firmware CPS and volume work. DMR voice receive and transmit checked on the SDR bench; the hotspot, the DMR VFO and the PPP network services work on the radio ([hardware-db25d](docs/spec/hardware-db25d.md) 9). The older DB25-D batches (FD6818) and the Retevis RT73 aren't covered yet"
-note = """\
-FM and DMR voice work, and the hotspot and the network services run on the radio. Installing backs up the original \
-firmware first when the radio allows it."""
-release = "testing"
+summary = """\
+FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings \
+storage work on the radio. Open: the older FD6818 batches and the Retevis RT73."""
+release = "stable"
 
 # The vendor IAP loader (0x03000000..0x0300BFFF) is never written. ODR's first stage fills the sector at 0x0300C000
 # (board.mk BOOT_*), the application follows it, the codec slot is the DM-32UV's (db25d_dmr.ld). The web flasher (IAP

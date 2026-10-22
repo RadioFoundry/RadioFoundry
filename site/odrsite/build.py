@@ -117,7 +117,7 @@ class Site:
 	def json_data(self):
 		radios = []
 		for b in self.boards:
-			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "order", "status", "note", "bands",
+			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "order", "status", "bands",
 					       "power", "gallery", "cpu", "display", "docs", "flash", "backup", "unsupported",
 					       "unsupported_reasons", "required", "config", "screens", "codeplug")}
 			r["support"] = docsmod.plain(b["summary"])
@@ -222,9 +222,8 @@ class Site:
 		return '<span class="badge badge-%s">%s</span>' % (status, html.escape(self.t(lang, "status." + status)))
 
 	def board_note(self, lang, b):
-		"""A board's one-line note for visitors: board.toml [status] note ([status] summary is for developers). A
-		catalog may translate it (radio.note.<id>)."""
-		return html.escape(self.i18n.opt(lang, "radio.note." + b["id"], b["note"]))
+		"""A board's line for visitors: board.toml [status] summary. A catalog may translate it (radio.note.<id>)."""
+		return html.escape(self.i18n.opt(lang, "radio.note." + b["id"], docsmod.plain(b["summary"])))
 
 	def note(self, lang, key, src):
 		"""A survey radio's one-line note for visitors (planned.note.<slug>): the survey's notes are written for

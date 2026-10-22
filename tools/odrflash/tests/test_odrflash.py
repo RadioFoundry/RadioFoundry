@@ -539,7 +539,7 @@ class StockLibrary(unittest.TestCase):
 
     def test_md380_board(self):
         b = boards.get("md380")
-        self.assertFalse(b.releasable)
+        self.assertTrue(b.releasable)
         self.assertTrue(b.keep_codec_supported)	# the application has sectors 3-7, the codec 8, 10 and 11
         self.assertEqual(b.codec.id, "md380-d2032-s11")
         self.assertEqual([s.index for s in b.codec_sectors()], [8, 10, 11])

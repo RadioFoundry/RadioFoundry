@@ -6,13 +6,13 @@ The rest of this manual describes what ODR does on every radio. This chapter lis
 which physical key does each job, the power levels, the battery, the power switch, the display, what a radio lacks,
 and what has been checked on it.
 
-| Radio | Also sold as | ODR status |
+| Radio | Also sold as | What works |
 |---|---|---|
-| [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | Supported and in the releases |
-| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | Fully operational on a UHF radio (check your TX frequency, below). Not in the releases |
-| [Baofeng DM-32UV](#baofeng-dm-32uv) | | In bring-up on a radio: FM and DMR receive and transmit work. Not in the releases |
-| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | Bring-up on a radio: FM and DMR voice receive and transmit, the hotspot and the network services, settings storage, cable programming and volume work. Not for general use |
-| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | Bring-up: FM and DMR work on air, including voice, data, hotspot and SFR modes; VHF transmit and VOX are unchecked. No release |
+| [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | FM, DMR voice and data, text messages, alerts, emergency, scan, the hotspot, single frequency repeating, each split duplex half and the USB network services work on air. Open: standalone SFR and a two-radio split duplex pair. |
+| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the VHF image. Check your TX frequency (below). |
+| [Baofeng DM-32UV](#baofeng-dm-32uv) | | FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and each split duplex half work on air. Open: FM deviation at 12.5 kHz and an outdoor GPS fix. |
+| [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. Open: the older FD6818 batches and the Retevis RT73. |
+| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX. |
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
 
@@ -236,8 +236,8 @@ The radio reports radio type 7. Moving from the stock firmware with the codeplug
 ## Baofeng DM-32UV
 
 A handheld for 136-174 and 400-480 MHz with a keypad, left and right arrow keys, a channel knob and a color screen.
-**In bring-up, not in the releases.** FM and DMR receive and transmit, CTCSS and DCS, and the battery saver work on a
-test radio. Installing: [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md).
+FM and DMR voice both ways, CTCSS and DCS, APRS, GPS data, the hotspot and the battery saver work on the radio.
+Installing: [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md).
 
 ### DM-32UV keys
 
@@ -307,15 +307,14 @@ firmware](19-moving-from-stock-dm32.md)), which adds the offset. The radio repor
 
 ## Radioddity DB25-D PRO
 
-A mobile radio for 136-174 and 400-480 MHz with a front knob, a few front keys and a hand microphone. **Early
-bring-up, not for general use:** ODR builds for it, and FM and DMR voice receive and transmit work on a radio, with the
-hotspot and the network services. It is installed with the
+A mobile radio for 136-174 and 400-480 MHz with a front knob, a few front keys and a hand microphone. FM and DMR
+voice both ways, the hotspot, the DMR VFO and the network services work on the radio. It is installed with the
 [radio programming utility](#installing-the-db25-d-pro) only.
 
 ### Installing the DB25-D PRO
 
 The radio programming utility on the web site installs and updates this radio over the programming cable (K1 jack).
-It is not in the releases, so there is no odrflash route. It marks the radio as bring-up.
+There is no odrflash route.
 
 | The radio runs | What the radio programming utility does |
 |---|---|
@@ -416,11 +415,10 @@ earlier batches.
 
 ## Baofeng DM-1801 Pro
 
-A handheld for 136-174 and 400-470 MHz with a keypad, direction keys and a 128 x 64 monochrome screen. **Bring-up, not
-for everyday use:** FM and DMR work on air on the test bench: voice calls both ways, CTCSS and DCS, text messages and
-the other DMR data, and hotspot mode. There is no release to install yet.
+A handheld for 136-174 and 400-470 MHz with a keypad, direction keys and a 128 x 64 monochrome screen. FM and DMR
+work on air: voice calls both ways, CTCSS and DCS, text messages and the other DMR data, and hotspot mode.
 
-Bring-up builds go in through the radio's own update mode, so the stock loader stays and the stock firmware can go back
+Builds go in through the radio's own update mode, so the stock loader stays and the stock firmware can go back
 the same way: switch off, hold **PTT** and **SK1**, switch on, then `tools/serial_loader.py --model dm1801pro IMAGE` over
 the programming cable. The cable's plug switches the internal speaker and the microphone off; unplug it to hear the
 radio or to talk.

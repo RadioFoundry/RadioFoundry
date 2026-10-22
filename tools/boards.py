@@ -110,8 +110,9 @@ BOARD_SCHEMA = {
     "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
     "hardware": _req({"cpu": _opt(str), "bands": _req(str), "power": _req(str), "display": _req(str),
                       "gallery": _req(str)}),
-    # summary: for developers (README, docs); note: one line for the site's visitors
-    "status": _req({"level": _req(LEVELS), "summary": _req(str), "note": _req(str), "release": _req(RELEASES)}),
+    # summary: what works, then at most one short clause of what is open; plain text, no links (the README, the
+    # user manual's radio table and the site show it)
+    "status": _req({"level": _req(LEVELS), "summary": _req(str), "release": _req(RELEASES)}),
     "build_options": _opt(("list", {"name": _req(str), "title": _req(str), "help": _req(str),
                                     "values": _req(("list", {"id": _req(str), "title": _req(str), "text": _req(str),
                                                              "board_name": _req(str)}))})),
@@ -745,7 +746,7 @@ def site_view(boards):
         out.append({
             "id": bid, "name": d["name"], "maker": d["maker"], "model": d["model"], "also": list(d["also"]),
             "kind": d["kind"], "order": d["order"], "level": d["status"]["level"], "release": d["status"]["release"],
-            "summary": d["status"]["summary"], "note": d["status"]["note"], "bands": hw["bands"], "power": hw["power"],
+            "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "unsupported": dict(b.unsupported)})

@@ -29,11 +29,10 @@ gallery = "128x64"
 
 [status]
 level = "supported"
-summary = "Runs on a radio. FM receive and transmit with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and SMS, the MMDVM hotspot and single frequency repeating checked on the SDR bench. Each split duplex half passes on air alone. Still open: VHF transmit and VOX ([hardware-dm1801pro](docs/spec/hardware-dm1801pro.md) 12). Not the GD-77 family despite the name ([radios](docs/spec/radios.md))"
-note = """\
-FM with CTCSS/DCS, DMR voice and data, text messages, the hotspot and single frequency repeating work on a radio. \
-VHF transmit and VOX are still being checked."""
-release = "testing"
+summary = """\
+FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, \
+the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX."""
+release = "stable"
 
 # The same Baofeng serial updater as the DM-32UV, with its own ID string; the same flash map, the same codec slot and
 # the same erase of the whole application area
