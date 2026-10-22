@@ -16,8 +16,8 @@ A radio's state for a feature is resolved, never typed:
   off          the board's default build leaves the switch off: nothing to check
   required     anything else: the feature's tests must pass on the radio
 A required feature's status never understates it. The newest run record that ran it decides: pass, fail, partial
-(excused skips or tests not run) or "needs re-run" (spec or source files changed since its commit). Without one, the
-board's seed record (<board>/seed.json, the evidence from before its first run) decides, marked as a seed. With
+(excused skips) or "needs re-run" (its spec or source paths differ from the hashes the record keeps). Without one,
+the board's seed record (<board>/seed.json, the evidence from before its first run) decides, marked as a seed. With
 neither the feature is "built, not yet recorded". Only a failing record shows a failure.
 
 Python 3.11 or later (tomllib). pytest runs on whatever Python has it (--pytest-python, default this one when it has
@@ -275,12 +275,31 @@ def load_records(results=RESULTS):
     return out
 
 
-def stale(commit, e):
-    """Files under the feature's spec or source changed since the commit (empty: not stale)."""
-    if not commit or git("cat-file", "-e", f"{commit}^{{commit}}", check=False).returncode != 0:
-        return ["(the record's commit is not in this repository)"]
-    r = git("diff", "--name-only", commit, "HEAD", "--", *feature_paths(e), check=False)
-    return r.stdout.split()
+_HASHES = {}
+
+
+def source_hashes(e, rev="HEAD"):
+    """path -> git object id of the feature's spec and source paths at rev (a blob or a tree; None: not there). By
+    content, not ancestry: main is squash-merged, so the commit a record was made on may be gone from history while
+    the files it checked are unchanged."""
+    paths = [p.rstrip("/") for p in feature_paths(e)]
+    key = (rev, tuple(paths))
+    if key not in _HASHES:
+        out = dict.fromkeys(paths)
+        for line in git("ls-tree", rev, "--", *paths, check=False).stdout.splitlines():
+            meta, _, path = line.partition("\t")
+            if path in out:
+                out[path] = meta.split()[2]
+        _HASHES[key] = out
+    return _HASHES[key]
+
+
+def stale(hashes, e):
+    """The feature's paths whose content differs from the recorded hashes (empty: not stale)."""
+    if not hashes:
+        return ["(no source hashes recorded)"]
+    now = source_hashes(e)
+    return sorted(p for p in set(now) | set(hashes) if now.get(p) != hashes.get(p))
 
 
 NOT_RECORDED = "built, not yet recorded"
@@ -297,8 +316,9 @@ def run_status(rec, fid):
 
 
 def feature_status(board, e, records, tests=None):
-    """(status, basis, detail) of a required feature on a board (tests: its collected tests, None when unknown). Never understates: no record is "built, not yet
-    recorded", only a failing record is a failure, and a stale one "needs re-run". basis is "run", "seed" or None.
+    """(status, basis, detail) of a required feature on a board (tests: its collected tests, None when unknown).
+    Never understates: no record is "built, not yet recorded", only a failing record is a failure, and a stale one
+    "needs re-run". basis is "run", "seed" or None.
     The newest run that covers the feature decides; a seed row stands until a run passes or fails it."""
     recs = records.get(board, {"runs": [], "seed": None})
     run = next((r for r in recs["runs"] if e["id"] in r.get("features", [])), None)
@@ -307,7 +327,7 @@ def feature_status(board, e, records, tests=None):
     status = run_status(run, e["id"]) if run else None
     if status in ("pass", "fail") or (status == "partial" and not row):
         at = f"{run.get('commit', '')[:8]} {run.get('date', '')[:10]}"
-        changed = stale(run.get("commit"), e) if status != "fail" else []
+        changed = stale(run.get("sources", {}).get(e["id"]), e) if status != "fail" else []
         if changed:
             return "needs re-run", "run", f"{status} at {at}; changed since: {', '.join(changed[:3])}"
         return status, "run", at + planned
@@ -316,7 +336,9 @@ def feature_status(board, e, records, tests=None):
         detail = f"seed: {row.get('source') or recs['seed'].get('source', '')}{later}"
         if row.get("result") == "fail":
             return "fail", "seed", detail
-        changed = stale(row["commit"], e) if row.get("commit") else []
+        # a row's commit the repository still has gives the content it vouched for; without one the row stands
+        known = row.get("commit") and has_commit(row["commit"])
+        changed = stale(source_hashes(e, row["commit"]), e) if known else []
         if changed:
             return "needs re-run", "seed", f"{detail}; changed since: {', '.join(changed[:3])}"
         return "pass", "seed", detail + planned
@@ -474,9 +496,13 @@ def cmd_run(args):
         return rc
     head = git("rev-parse", "HEAD").stdout.strip()
     dirty = git("diff", "--quiet", "--ignore-submodules=all", "HEAD", "--", ".", check=False).returncode != 0
+    # what the run tested: HEAD, or with uncommitted changes the working tree's tracked files (a stash commit object;
+    # nothing in the tree, the index or the refs changes)
+    tree = (git("stash", "create", check=False).stdout.strip() or "HEAD") if dirty else "HEAD"
     now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
     record = {"format": RECORD_FORMAT, "kind": "run", "board": args.radio, "commit": head, "dirty": dirty,
               "date": now.isoformat().replace("+00:00", "Z"), "features": names,
+              "sources": {n: source_hashes(by_id[n], tree) for n in names},
               **{k: out[k] for k in ("granted", "tests", "firmware", "options", "tools")}}
     d = os.path.join(args.results, args.radio)
     os.makedirs(d, exist_ok=True)
@@ -557,7 +583,7 @@ def check(feats, boards, records, found, all_switches):
             where = r["_file"]
             if r.get("kind", "run") != "run":
                 errs.append(f"{where}: kind {r.get('kind')!r} (a run record is \"run\", a seed record is seed.json)")
-            for k in ("format", "board", "commit", "date", "features", "tests", "tools"):
+            for k in ("format", "board", "commit", "date", "features", "sources", "tests", "tools"):
                 if k not in r:
                     errs.append(f"{where}: no {k}")
             if r.get("board") != b:
