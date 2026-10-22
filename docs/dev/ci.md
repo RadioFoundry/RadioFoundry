@@ -379,7 +379,7 @@ The runner's environment (the LaunchAgent's, or a `.env` file next to `gitea-run
 | `ODR_SDR_BENCH_HOST` | the SDR bench's SSH host or alias (default `sdr-bench`); passwordless SSH from the runner's user |
 | `ODR_PORT` | the radio's serial port when several are present |
 | `ODR_HIL_AMBE` | the speech recording for `test_dmr_voice` (outside the repository) |
-| `ODR_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.odr-radio.lock`); the job holds it with `lockf` for the whole run |
+| `ODR_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.odr-radio.lock`); the job holds it with `lockf` for the whole run. `tools/bringup.py run` takes the same file, with `{port}` in it replaced by the radio's port; without the variable it locks `~/.odr-radio-<port>.lock`, so a bench with two radios runs a bring-up on each |
 
 Run it from Actions, HIL, Run workflow, with the inputs that map to the pytest flags: `rf` (`--allow-rf
 --allow-service-stop`), `usb_switch`, `codeplug_write`, `reboot`, a `-k` selection and extra options. Without any
