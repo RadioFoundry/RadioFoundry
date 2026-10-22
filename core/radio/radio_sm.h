@@ -63,6 +63,11 @@
 					// LC from the second complete superframe at worst: about 1.1 s from the retune)
 #define RADIO_SCAN_DMR_CARRIER_MS 150	// DMR: a carrier this recent still counts (direct mode: 30 ms on air in 60)
 #define RADIO_SCAN_DMR_SYNC_AGE_MS 400	// DMR: bursts this recent are sync (a superframe and a slot)
+// Dual watch with a second receiver (board.rx2): how often its settings go again (the link drops repeats), how long
+// it may take to say it is on them, and how long after a failure to try it again (meanwhile the main receiver alternates)
+#define RADIO_RX2_REFRESH_MS	2000
+#define RADIO_RX2_TUNE_MS	1500
+#define RADIO_RX2_RETRY_MS	10000
 #define RADIO_SCAN_HOLD_S	5
 #define RADIO_SCAN_DELAY_MS	2000
 
@@ -220,6 +225,12 @@ typedef struct {
 	radio_dual_ref_t dual[2];	// SCAN_DUAL: the two channels
 	uint8_t dual_sel;		// ... the selected one (PTT)
 	uint8_t dual_at;		// ... the one the receiver is on
+#if CONFIG_DUAL_WATCH
+	bool rx2_on;			// the second receiver (board.rx2) holds the other channel; the main one stays on dual_sel
+	uint32_t rx2_try_ms;		// last time it was given the other channel, or found down
+	uint32_t rx2_refresh_ms;	// last time its settings went again
+	int8_t rx2_audio_out;		// last board.rx2->audio(), -1 = none yet
+#endif
 #endif
 	batt_t batt;
 	uint32_t batt_ms;		// last battery reading

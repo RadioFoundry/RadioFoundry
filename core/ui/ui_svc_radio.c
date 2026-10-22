@@ -256,11 +256,53 @@ bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel)
 	return true;
 }
 
-// One receiver on every radio in the tree: dual watch alternates. A board with more would report them here once the
-// radio core drives them (#96); saying so before would have the screens claim both are heard
+// Two with a second receiver (board.rx2: the radio core gives it the channel not selected), else one: dual watch
+// alternates
 uint8_t ui_svc_receivers(void)
 {
-	return 1;
+	return board.rx2 != NULL ? 2 : 1;
+}
+
+// Each pane's own receiver: the main one on the selected pane, the second on the other. False while the second
+// receiver doesn't have its channel (down, or not yet): the screens then show the main receiver alone
+bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out)
+{
+	static radio_view_t v;	// the UI task's only; too big for its stack
+	radio_dual_ref_t ref[2];
+	uint8_t sel, at;
+	memset(out, 0, sizeof(*out));
+	if (board.rx2 == NULL || pane > 1 || !radio_get_dual(ref, &sel, &at)) {
+		return false;
+	}
+	radio_get_view(&v);
+	if (!v.rx2) {
+		return false;
+	}
+	if (pane == sel) {
+		out->active = out->heard = v.state == RS_RX;
+		out->rssi_dbm = v.rssi_dbm;
+		out->dmr = v.ch.mode == RADIO_MODE_DMR;
+#if CONFIG_DMR
+		if (out->dmr) {
+			out->active = out->heard = v.state == RS_RX && v.dmr.state == RDMR_RX;
+			out->src = v.dmr.call.src;
+			out->dst = v.dmr.call.dst;
+			out->group = v.dmr.call.group;
+			strncpy(out->src_name, v.dmr.call.src_name, sizeof out->src_name - 1);
+		}
+#endif
+		return true;
+	}
+	rx2_status_t st;
+	board.rx2->status(&st);
+	out->active = st.tuned && st.active;
+	out->heard = out->active && st.heard;
+	out->dmr = st.dmr;
+	out->group = st.group;
+	out->rssi_dbm = st.rssi_dbm;
+	out->src = st.src;
+	out->dst = st.dst;
+	return true;
 }
 
 bool ui_svc_vfo_get(channel_t *out)

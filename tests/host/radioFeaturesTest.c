@@ -1448,6 +1448,143 @@ static void test_dual_watch(void)
 	CHECK(wait_on(home, 2500));
 	dual_stop();
 }
+
+// A second receiver (board.rx2): the main one stays on the selected channel, the second has the other; it falls back to
+// alternating while the second one is down or won't take its channel
+static struct {
+	bool up, refuse, deaf, on, audio;	// deaf: takes settings but never says it's on them
+	bool active;
+	rx2_tune_t t;
+	int tunes, stops;
+} r2;
+static bool r2_tune(const rx2_tune_t *t)
+{
+	if (!r2.up || r2.refuse) {
+		return false;
+	}
+	if (!r2.on || memcmp(&r2.t, t, sizeof(*t)) != 0) {
+		r2.tunes++;
+	}
+	r2.t = *t;
+	r2.on = true;
+	return true;
+}
+static void r2_stop(void) { r2.on = false; r2.audio = false; r2.stops++; }
+static void r2_status(rx2_status_t *st)
+{
+	memset(st, 0, sizeof(*st));
+	st->up = r2.up;
+	st->tuned = r2.up && r2.on && !r2.deaf;
+	st->active = st->tuned && r2.active;
+	st->heard = st->active && r2.audio;
+	st->rssi_dbm = -80;
+}
+static void r2_audio(bool on) { r2.audio = on; }
+static const hal_rx2_t fake_rx2 = { r2_tune, r2_stop, r2_status, r2_audio };
+
+static void test_dual_rx2(void)
+{
+	start();
+	memset(&r2, 0, sizeof(r2));
+	r2.up = true;
+	board.rx2 = &fake_rx2;
+	const radio_dual_ref_t home = { false, 0, 0 }, tone = { false, 0, 1 }, other = { false, 0, 4 };
+	const radio_dual_ref_t dmr = { false, 0, 5 };
+
+	// Start: the main receiver on the selected channel, the second on the other, and they stay there
+	dual(home, tone, 0);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.view.rx2 && on_ref(home) && r2.on && r2.tunes == 1);
+	CHECK(r2.t.rx_hz == 146940000 && r2.t.mode == RADIO_MODE_FM && r2.t.rx_tone.type == TONE_CTCSS &&
+	      r2.t.rx_tone.value == 1000 && r2.t.squelch == sm.view.squelch);
+	int rx = hw.rx_calls;
+	bool moved = false;
+	for (int i = 0; i < 200; i++) {
+		run(25);
+		moved |= !on_ref(home);
+	}
+	CHECK(!moved && hw.rx_calls == rx && sm.view.scan == SCAN_DUAL);
+	CHECK(r2.tunes == 1);		// sent again every 2 s, but nothing changed
+
+	// Audio: the second receiver has the speaker while the selected channel is quiet; a signal there takes it
+	r2.active = true;
+	run(50);
+	CHECK(r2.audio);
+	signal_on(0, 146520000, 30, no_tone);
+	run(200);
+	CHECK(sm.view.state == RS_RX && hw.audio && !r2.audio && on_ref(home));
+	hw.sig[0].hz = 0;
+	run(300);
+	CHECK(r2.audio && !hw.audio);
+	// ... and PTT mutes it; the transmission is on the selected channel, with no retune
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 146520000 && !r2.audio && sm.view.scan == SCAN_DUAL && r2.on);
+	req(RREQ_PTT, 0);
+	run(100);
+	CHECK(r2.audio && on_ref(home) && sm.view.rx2);
+	r2.active = false;
+
+	// A new selection swaps the receivers' channels
+	dual(home, tone, 1);
+	CHECK(on_ref(tone) && r2.t.rx_hz == 146520000 && sm.view.rx2 && sm.dual_at == 1);
+	// A new pair
+	dual(other, tone, 1);
+	CHECK(on_ref(tone) && r2.t.rx_hz == 145500000);
+
+	// DMR on the second receiver: color code, timeslot, our ID, the talk group
+	dual(dmr, home, 1);
+	CHECK(on_ref(home) && r2.t.mode == RADIO_MODE_DMR && r2.t.rx_hz == 438500000 && r2.t.color_code == 1 &&
+	      r2.t.timeslot == 1 && r2.t.own_id == 3101276 && r2.t.talk_group == 9);
+
+	// It goes down: the main receiver alternates; back up, it is given the channel again within the retry time
+	dual(home, tone, 0);
+	r2.up = false;
+	r2.on = false;
+	run(100);
+	CHECK(!sm.view.rx2 && sm.view.scan == SCAN_DUAL);
+	CHECK(wait_on(tone, 1000) && wait_on(home, 1000));
+	r2.up = true;
+	int tunes = r2.tunes;
+	run(RADIO_RX2_RETRY_MS + 200);
+	CHECK(sm.view.rx2 && r2.on && r2.tunes == tunes + 1 && on_ref(home));
+
+	// It refuses the channel: alternating at once
+	r2.refuse = true;
+	dual(home, other, 0);
+	CHECK(!sm.view.rx2 && sm.view.scan == SCAN_DUAL);
+	CHECK(wait_on(other, 1000));
+	r2.refuse = false;
+	run(RADIO_RX2_RETRY_MS + 200);
+	CHECK(sm.view.rx2 && on_ref(home));
+
+	// It takes the settings but never says it's on them: alternating after RADIO_RX2_TUNE_MS
+	r2.deaf = true;
+	dual(home, tone, 0);
+	CHECK(sm.view.rx2);
+	run(RADIO_RX2_TUNE_MS - 200);
+	CHECK(sm.view.rx2 && on_ref(home));
+	run(400);
+	CHECK(!sm.view.rx2 && sm.view.scan == SCAN_DUAL);
+	CHECK(wait_on(tone, 1000));
+	r2.deaf = false;
+
+	// The watch ends: the second receiver stops, audio off
+	int stops = r2.stops;
+	run(RADIO_RX2_RETRY_MS + 200);
+	CHECK(sm.view.rx2);
+	r2.active = true;
+	run(100);
+	CHECK(r2.audio);
+	dual_stop();
+	CHECK(sm.view.scan == SCAN_OFF && !sm.view.rx2 && r2.stops == stops + 1 && !r2.on && !r2.audio);
+
+	// A user channel change ends it too
+	dual(home, tone, 0);
+	CHECK(sm.view.rx2);
+	req(RREQ_CH_STEP, 1);
+	CHECK(sm.view.scan == SCAN_OFF && !sm.view.rx2 && !r2.on);
+	r2.active = false;
+	board.rx2 = NULL;
+}
 #else
 // Without it: the debug link's dual watch in the current zone, which PTT ends as any scan; radio_req_dual does nothing
 static void test_dual_watch(void)
@@ -1980,6 +2117,9 @@ int main(void)
 	test_mixed_scan();
 	test_scan_dmr_mid_call();
 	test_dual_watch();
+#if CONFIG_DUAL_WATCH
+	test_dual_rx2();
+#endif
 	test_tot_and_beeps();
 	test_bcl_inhibit();
 	test_roger_burst();

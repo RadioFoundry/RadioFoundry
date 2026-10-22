@@ -218,6 +218,7 @@ typedef struct {
 	uint8_t scan_skipped;	// nuisance-deleted stops
 	uint16_t scan_probes;	// this scan: stops probed (a carrier at the end of the dwell)
 	uint16_t scan_synced;	// ... stops where sync was heard (DMR: bursts with the channel's color code)
+	bool rx2;		// dual watch hears both channels at once: the second receiver has the one not selected
 	// FM extras
 	bool tot_warning;	// TX: the time-out is near (tot_warn_s)
 	bool tone_burst;	// TX: the 1750 Hz burst is on

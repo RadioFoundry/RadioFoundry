@@ -80,8 +80,8 @@ only when there is another channel to go to; it does not run in hotspot mode or 
 
 ### 2.1 Dual watch
 
-The radio has one receiver, so dual watch alternates it between two channels with the scan's timing (a pseudo dual
-watch; a receive set with a receiver per channel is #96). `radio_req_dual(ref, sel)` names the two, A and B: each a
+On a radio with one receiver, dual watch alternates it between two channels with the scan's timing (a pseudo dual
+watch). A radio with a second receiver (2.2) hears both at once. `radio_req_dual(ref, sel)` names the two, A and B: each a
 channel (zone index and position, any zone) or the VFO with its own settings. `ref[sel]` is the selected channel.
 `NULL` stops the watch on the selected channel. The view shows `scan=dual`, and the tuned channel as usual: its
 `zone_index`, `zone_pos` and zone name, or `vfo=1`, so the screens can tell which of the two the receiver is on.
@@ -101,6 +101,25 @@ channel (zone index and position, any zone) or the VFO with its own settings. `r
 `radio_get_dual()` returns the pair, the selected one and the one the receiver is on (the debug link's `dual.a dual.b
 dual.sel dual.at`, [debuglink.md 3.7](debuglink.md#37-get_view)). `radio_get_vfo()` returns the VFO's settings while a channel is tuned (a VFO pane). Built without `CONFIG_DUAL_WATCH`
 only the debug link's dual watch is left: two channels of the current zone, and PTT ends it as it ends any scan.
+
+### 2.2 A second receiver
+
+A board with a second receiver sets `board.rx2` (`hal/hal_rx2.h`; the GD-88's second SoC, over the link in
+[rx2-link.md](rx2-link.md)). In dual watch the main receiver then stays on the selected channel and the second one gets
+the other. Nothing alternates, and the scan's hold and resume timing aren't used. The view's `rx2` is 1 while this is
+so (the debug link's `dual.both`).
+
+| Event | What happens |
+|---|---|
+| Start, a new pair, a new selection | The second receiver gets the channel not selected: its frequency, mode, bandwidth, RX tone and the squelch level; DMR: color code, timeslot, our ID, the talk group and the RX group list's groups (up to 16). The main receiver tunes the selected one |
+| Its settings change (a codeplug edit, the squelch) | Sent again every 2 s; the link drops repeats |
+| Audio | The selected channel's always wins. The second receiver has the speaker only while the main one plays nothing (FM squelch closed, no DMR call) and the radio isn't transmitting |
+| PTT | On the selected channel, where the main receiver already is. The second receiver keeps listening; its audio is muted while the radio transmits |
+| It doesn't answer, or isn't on its settings 1.5 s after them | The core falls back to alternating the main receiver (2.1) and tries the second receiver again every 10 s |
+| The watch ends | The second receiver stops and its audio goes off |
+
+`ui_svc_receivers()` is 2 on such a radio, and `ui_svc_dual_rx(pane)` reports each pane's own receiver while the
+second one has its channel: the dual watch screens then show a call on each pane at once.
 
 ## 3. FM transmit extras
 
