@@ -286,3 +286,26 @@ def test_check_rejects_a_bad_seed_and_an_unknown_feature(tmp_path):
                  "source docs/no-such-doc.md does not exist",
                  "test_fake.py::test_keyed: marks feature fake_tx, which tests/hil/features.toml doesn't have"):
         assert want in text, text
+
+
+def test_the_lock_follows_the_port(tmp_path):
+    t = fake_tree(tmp_path)
+    (t / "features.toml").write_text(FAKE_TOML)
+    common = ["--features", str(t / "features.toml"), "--results", str(t / "results")]
+
+    def lock(*pytest_args, **env_over):
+        e = {k: v for k, v in env().items() if k not in ("ODR_RADIO_LOCK", "ODR_PORT")}
+        e.update(HOME=str(t), **env_over)
+        r = subprocess.run([python311(), BRINGUP, *common, "run", "--radio", a_board(), "--dry-run", "--feature",
+                            "fake_ok", *collect_args(t), "--", *pytest_args], cwd=ROOT, env=e, capture_output=True,
+                           text=True, timeout=300)
+        assert r.returncode == 0, r.stdout + r.stderr
+        return next(x for x in r.stdout.splitlines() if x.startswith("lock: "))[len("lock: "):]
+
+    assert lock() == str(t / ".odr-radio-usb.lock")
+    assert lock("--radio-port", "/dev/cu.one") == str(t / ".odr-radio-dev_cu.one.lock")
+    assert lock("--radio-port=/dev/cu.two") == str(t / ".odr-radio-dev_cu.two.lock")
+    assert lock(ODR_PORT="/dev/ttyS3") == str(t / ".odr-radio-dev_ttyS3.lock")
+    assert lock("--radio-port", "/dev/cu.one", ODR_RADIO_LOCK=str(t / "bench-{port}.lock")) == str(
+        t / "bench-dev_cu.one.lock")
+
