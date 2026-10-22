@@ -60,12 +60,10 @@
 #define LCD_CMD_ADDR		((volatile uint8_t *)0x60000000)
 #define LCD_DATA_ADDR		((volatile uint8_t *)0x60040000)
 
-// Keypad rows (driven high one at a time) and columns (the LCD data lines D0..D7)
+// Keypad rows (driven high one at a time); the columns are the LCD data lines D0..D7 (platform.h STM32_FSMC_*)
 #define PIN_KEY_ROW0		GPIOA, GPIO_PIN_6
 #define PIN_KEY_ROW1		GPIOD, GPIO_PIN_2
 #define PIN_KEY_ROW2		GPIOD, GPIO_PIN_3
-#define KEY_COLS_PORTD		(GPIO_PIN_14 | GPIO_PIN_15 | GPIO_PIN_0 | GPIO_PIN_1)	// D0 D1 D2 D3
-#define KEY_COLS_PORTE		(GPIO_PIN_7 | GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10)	// D4 D5 D6 D7
 
 // PTT and encoder
 #define PIN_PTT			GPIOE, GPIO_PIN_11	// active low
