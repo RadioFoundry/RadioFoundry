@@ -13,5 +13,5 @@ APP_BASE   := 0x0800C000
 # Bench knobs (docs/testing/md380-bringup.md), e.g. MD380_DEFS="-DMD380_PANEL_TYPE=1 -DMD380_KEEP_SWD"
 MD380_DEFS ?=
 MCU_DEFS   += $(MD380_DEFS)
-BOARD_DIRS := boards/md380 platform/stm32f4/hrc drivers/rf/sky72310 drivers/rf/subaudio drivers/modem/hrc5000 drivers/modem/hrc_common drivers/display/st7735 drivers/flash/spi_nor \
+BOARD_DIRS := boards/md380 platform/stm32f4/hrc platform/stm32f4/spi_flash drivers/rf/sky72310 drivers/rf/subaudio drivers/modem/hrc5000 drivers/modem/hrc_common drivers/display/st7735 drivers/flash/spi_nor \
 	drivers/gps/nmea_line drivers/gps/gps_rx platform/stm32f4/gps_uart

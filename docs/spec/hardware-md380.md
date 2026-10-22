@@ -827,8 +827,8 @@ calling convention, state sizes, the placement and the extraction recipe are in 
 
 ## 15. USB
 
-OTG_FS device on PA11 / PA12 (unverified). ODR enumerates with the DM-1701's IDs and the product name "MD-380"
-(`usb_md380.c`); the bootloader's DFU device is separate (14.3).
+OTG_FS device on PA11 / PA12 (unverified). ODR enumerates with the STM32F4 radios' IDs (`platform/stm32f4/platform.h`) and the product
+name "MD-380" (`usb_md380.c`); the bootloader's DFU device is separate (14.3).
 
 The open-firmware CPS shim reports radio type 7 and serves the MCU ROM from 0x08000000, 1 MB (`boards/md380/board.c`,
 `cps-protocol.md` 2.2).

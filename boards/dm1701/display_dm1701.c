@@ -224,7 +224,7 @@ static void init(void)
 	fsmc_init();
 	bl_init();
 
-	if (!dm1701_flash_read_security(3, 0x1D, &type, 1)) {
+	if (!stm32_spi_flash_read_security(3, 0x1D, &type, 1)) {
 		type = 0;
 	}
 	panel.type = type & 3;
