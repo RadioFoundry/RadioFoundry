@@ -58,7 +58,7 @@ jobs:
           git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/files"
           src=false; docs=false
           # ci.yml's paths
-          grep -qE '^(Makefile|AUTHORS|\.gitmodules|REUSE\.toml|\.github/actions/|(boards|config|core|drivers|hal|platform|tests|third_party|tools|LICENSES)/)' \
+          grep -qE '^(Makefile|AUTHORS|\.gitmodules|REUSE\.toml|\.github/actions/|(boards|boot|config|core|drivers|hal|platform|tests|third_party|tools|LICENSES)/)' \
             "$RUNNER_TEMP/files" && src=true
           # manual.yml's paths
           grep -qE '^(docs/|README\.md$|tools/build_manual\.sh$|tools/manual/|tools/check_doc_links\.py$)' \

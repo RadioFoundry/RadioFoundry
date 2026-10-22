@@ -11,7 +11,7 @@ so one set serves the self-hosted Gitea runner and GitHub.
 |---|---|---|---|
 | `ci.yml` | `ubuntu-24.04` | every push to `main` that changes source (below); by hand on any branch | the unit tests (once, with coverage and sanitizers), Python and license checks, every board's default build |
 | `pr-tests.yml` | `ubuntu-24.04` | every pull request, from `main`'s copy of the workflow | `ci.yml`'s jobs and the manual check, for the files the pull request changes; `PR checks` gates the merge. A branch's only CI |
-| `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when the default branch has an untested commit; by hand | the feature matrix of every board, `reuse lint` |
+| `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when a file the firmware builds read changed since the last pass; by hand | the feature matrix of every board, `reuse lint` |
 | `site.yml` | `ubuntu-24.04` | 07:17 UTC daily when the site's inputs changed or a release came out; by hand | builds and deploys the web site ([website.md](website.md)); pull requests build it in the unit tests job instead |
 | `hil.yml` | `odr-hil` (the bench Mac) | by hand; nightly only when `ODR_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
@@ -167,12 +167,20 @@ one board's builds anyway. Nobody waits on the nightly, so the fewer jobs win.
 once its size is recorded (the logs and images stay), which keeps the runner's disk from filling with about 65 MB
 per configuration.
 
-**Only when something changed.** A scheduled run first looks up a cache entry named `nightly-ok-<commit>`; when it
-exists the run stops there with a notice. The last job of a successful run saves that entry. This works the same
-on Gitea and GitHub without an API token or comparing commit times against the schedule, catches up after nights
-the runner was off, and keeps a failing commit failing every night until it is fixed. If the cache evicts an entry
-the cost is one repeated run. A manual run (Actions, Nightly, Run workflow, or `gh workflow run nightly.yml`)
-always builds.
+**Only when something changed.** A successful run saves a cache entry named `nightly-ok-<commit>` that holds its
+commit. A scheduled run restores the newest such entry and diffs the default branch against that commit:
+
+| Changed since the last pass | Matrix | `reuse lint` |
+|---|---|---|
+| Nothing (or this commit already passed) | skipped | skipped |
+| Only files the builds don't read (docs, site, tests) | skipped; this commit is saved as passed | runs |
+| A file the builds read: `Makefile`, `.gitmodules`, `boards/`, `boot/`, `config/`, `core/`, `drivers/`, `hal/`, `platform/`, `third_party/`, `tools/`, `.github/actions/`, `nightly.yml` | runs | runs |
+
+The check costs one short job. It works the same on Gitea and GitHub without an API token or comparing commit
+times against the schedule, and catches up after nights the runner was off. A failing commit is never saved, so
+the next night still diffs against the last pass and builds again until the failure is fixed. If the cache evicts
+an entry, or holds only entries from before this scheme, the cost is one repeated run. A manual run (Actions,
+Nightly, Run workflow, or `gh workflow run nightly.yml`) always builds.
 
 ## Running the pieces locally
 
