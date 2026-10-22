@@ -34,7 +34,7 @@ const CH340 = 0x1A86;
 const ROM_WAIT = 180000;		// how long the page listens for the boot ROM per try
 const BOOT_MS = 9000;			// a soft reset to ODR answering its debug link (bench 2026-10-15: 8-9 s)
 
-let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, errorText, stubJson}
+let ctx = null;				// from app.js: {S, next, render, fb, flashStarted, flashFinished, errorText, stubJson, installSecond}
 const S = () => ctx.S;
 const C = () => ctx.fb().c7000;
 const boardId = () => S().radio.flash.board;
@@ -45,6 +45,8 @@ const store = (what) => `c7000-${what}-${boardId()}`;
 let db25d = null;
 const hasData = () => C().boards[boardId()].data_flash !== false;	// the SPI data flash the stub reads (the DB25-D has none)
 const stockRadio = () => !!C().boards[boardId()].stock_console;
+// whether the chip the cable reaches has a status LED the stub drives (255, 255: none, the GD-88's main SoC)
+const hasLed = () => (C().boards[boardId()].stub_board?.leds || [0]).some((p) => p !== 255);
 // A second SoC with no cable of its own (the GD-88's receiver B): reached through ODR on the first, whose board the
 // radio entry names (flash.via)
 const bridged = () => !!C().boards[boardId()].stub_board?.bridge;
@@ -127,7 +129,7 @@ const mkStub = () => {
 function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	const c = session();
 	const radio = S().radio;
-	const top = radioTop(radio, { led: "off", screen: "any" });
+	const top = radioTop(radio, { led: "off", screen: "any" }, { hasLed: hasLed() });
 	const body = h("div");
 	const box = panel(t("flash.c7.connect.title", { name: radio.name }), h("div", { class: "c7-grid" }, body, top.el));
 	let abort = null;
@@ -143,7 +145,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 	};
 
 	const cableStep = (err = null) => {
-		show({ led: "off", screen: "any", note: t("flash.c7.visual.cable") },
+		show({ led: "off", screen: "any", note: t(bridged() ? "flash.gd88.bridge.cable" : "flash.c7.visual.cable") },
 			h("ol", { class: "steps c7-big" },
 				h("li", {}, t("flash.c7.connect.step_cable")),
 				h("li", {}, t("flash.c7.connect.step_choose"))),
@@ -171,7 +173,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 
 	// a stub from an earlier run, then ODR, then the boot ROM
 	const find = async () => {
-		show({ led: "off", screen: "any", note: t("flash.c7.visual.cable") }, h("p", { class: "muted c7-big" }, t("flash.c7.connect.looking")));
+		show({ led: "off", screen: "any", note: t(bridged() ? "flash.gd88.bridge.cable" : "flash.c7.visual.cable") }, h("p", { class: "muted c7-big" }, t("flash.c7.connect.looking")));
 		const stub = mkStub();
 		if (await stub.attach()) {
 			c.how = "attach";
@@ -199,6 +201,10 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.odr_found", { git: c.odr.git }))),
 			h("p", {}, t("flash.gd88.bridge.asking")));
 		const stub = mkStub();
+		// what answered is the first chip; what the second one runs is only known from its own flash, so it is read and
+		// backed up as on a first install
+		c.via = c.odr;
+		c.odr = null;
 		try {
 			await Stub.bridgeFromOdr(link);
 			await stub.waitForRom(S().fakeC7 ? 3000 : BRIDGE_ROM_WAIT);
@@ -288,7 +294,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			h("ol", { class: "steps c7-big" },
 				h("li", {}, t("flash.c7.connect.step_off")),
 				h("li", {}, t("flash.c7.connect.step_on"))),
-			h("p", {}, t("flash.c7.connect.no_keys")), sim, h("p", { class: "small" }, clock), hints);
+			h("p", {}, t(hasLed() ? "flash.c7.connect.no_keys" : "flash.c7.connect.no_keys_noled")), sim, h("p", { class: "small" }, clock), hints);
 		act(button(t("flash.c7.connect.cancel"), () => { ac.abort(); clearInterval(tick); cableStep(); }, { quiet: true }));
 		const stub = mkStub();
 		try {
@@ -347,7 +353,8 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			show({ led: "wait", screen }, h("p", { class: "c7-big" }, h("b", {}, how)),
 				h("dl", { class: "kv-list" },
 					h("dt", {}, t("flash.c7.radio")), h("dd", {}, c.model ? S().radio.name : t("flash.c7.radio_unconfirmed"))),
-				h("p", {}, t({ odr: "flash.c7.connect.led_odr", usmart: "flash.db25d.stock.led" }[c.how] || "flash.c7.connect.led_rom")));
+				h("p", {}, t(c.how === "usmart" ? "flash.db25d.stock.led"
+					: `flash.c7.connect.led_${{ odr: "odr", bridge: "bridge" }[c.how] || "rom"}${hasLed() ? "" : "_noled"}`)));
 			await sleep(S().fakeC7 ? 400 : 1500);
 			onReady();
 		} catch (e) {
@@ -424,7 +431,7 @@ export function checkView() {
 	const c = session();
 	const out = h("div", { class: "flasher" });
 	const forward = S().forward;
-	const top = radioTop(S().radio, { led: "wait", screen: screenNow() });
+	const top = radioTop(S().radio, { led: "wait", screen: screenNow() }, { hasLed: hasLed() });
 	const firstInstall = !c.odr;
 	// a first install reads everything; an ODR update only what it needs (the codec slot), unless asked
 	const want = (S().c7want ||= { progmem: firstInstall, cal: hasData(), q128: firstInstall && hasData() });
@@ -492,7 +499,7 @@ export function checkView() {
 			const slotInfo = await c7.parseSlot(C(), boardId(), c.slot);
 			c.analysis = c.progmem ? await c7.analyze(c.progmem, C(), boardId()) : { firmware: "odr", slot: slotInfo, codec: null };
 			const fw = c.analysis.firmware;
-			say("what", fw === "unknown" ? "bad" : "ok", c.odr ? t("flash.c7.check.is_odr", { git: c.odr.git }) : t(`flash.c7.check.is_${fw}`));
+			say("what", fw === "unknown" ? "bad" : "ok", c.odr ? t("flash.c7.check.is_odr", { git: c.odr.git }) : fw === "odr" ? t("flash.c7.check.is_odr_read") : t(`flash.c7.check.is_${fw}`));
 			if (slotInfo) {
 				c.slotBytes = c.slot.slice(0, slotInfo.length);
 				await putBlob(store("slot"), c.slotBytes);
@@ -593,6 +600,8 @@ async function saveBundle() {
 function fwName(c) {
 	if (c.how === "iap" && !c.progmem) return t("flash.db25d.check.is_update_mode");
 	if (stockRadio() && c.analysis.firmware === "unknown") return t("flash.db25d.check.is_stock_other");
+	// ODR found in the flash read, with no answer from it to name the build (a radio reached in update mode)
+	if (c.analysis.firmware === "odr") return t("flash.c7.check.is_odr_read");
 	return t(`flash.c7.check.is_${c.analysis.firmware}`);
 }
 
@@ -625,7 +634,7 @@ export function writeView() {
 	const c = session();
 	const fw = S().firmware;
 	const d = c.decision;
-	const top = radioTop(S().radio, { led: "wait", screen: screenNow() });
+	const top = radioTop(S().radio, { led: "wait", screen: screenNow() }, { hasLed: hasLed() });
 	const map = sectorMap(C());
 	const prog = progressBar();
 	const status = h("div");
@@ -644,7 +653,7 @@ export function writeView() {
 			h("dl", { class: "kv-list" },
 				h("dt", {}, t("flash.c7.write.firmware")), h("dd", {}, `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`),
 				h("dt", {}, t("flash.c7.write.codec")), h("dd", {}, what)),
-			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t("flash.c7.write.careful_text"))),
+			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(hasLed() ? "flash.c7.write.careful_text" : "flash.c7.write.careful_text_noled"))),
 			prog.el, status),
 		top.el), map.el, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 	S().forward(go);
@@ -703,7 +712,7 @@ export function writeView() {
 
 export function doneView() {
 	const c = session();
-	const top = radioTop(S().radio, { led: "off", screen: "off" });
+	const top = radioTop(S().radio, { led: "off", screen: "off" }, { hasLed: hasLed() });
 	const status = h("div", {}, h("p", { class: "muted c7-big" }, t("flash.c7.done.restarting")));
 	const box = panel(t("flash.done.title"), h("div", { class: "c7-grid" }, h("div", {}, h("p", {}, t("flash.c7.done.lead")), status), top.el));
 	let tries = 0;
@@ -740,8 +749,13 @@ export function doneView() {
 			// a backup taken from a radio that ran ODR holds that ODR build, not the original firmware
 			c.backupSaved ? h("p", { class: "small muted" }, t(c.odr ? "flash.c7.done.backup_kept_odr" : "flash.c7.done.backup_kept")) : null,
 			// not asked of the radio: any STUB command parks ODR's codec until the next restart (debuglink_stub.c)
-			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")));
-		S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
+			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")),
+			// a radio with a second chip: that one's image goes next, through this one
+			S().radio.flash.second_receiver ? notice(t("flash.second.next"), "info") : null);
+		S().forward(S().radio.flash.second_receiver
+			? [button(t("flash.nav.finish"), () => ctx.reset(), { quiet: true }),
+				button(t("flash.second.go"), async () => { await dropC7(); ctx.installSecond(); }, { primary: true })]
+			: button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
 		await dropC7();
 	};
 	// The second SoC: ODR on the first says whether it answers on the link again
@@ -779,7 +793,7 @@ export function backupView() {
 		out.append(connectPanel(() => ctx.render()));
 		return out;
 	}
-	const top = radioTop(S().radio, { led: "wait", screen: screenNow() });
+	const top = radioTop(S().radio, { led: "wait", screen: screenNow() }, { hasLed: hasLed() });
 	const prog = progressBar();
 	const status = h("div");
 	const want = { progmem: true, cal: hasData(), q128: hasData() };
@@ -848,7 +862,7 @@ export function restoreView() {
 		out.append(connectPanel(() => ctx.render(), { onUpdateMode: () => ctx.render() }));
 		return out;
 	}
-	const top = radioTop(S().radio, { led: "wait", screen: screenNow() });
+	const top = radioTop(S().radio, { led: "wait", screen: screenNow() }, { hasLed: hasLed() });
 	const map = sectorMap(C());
 	const prog = progressBar();
 	const status = h("div");

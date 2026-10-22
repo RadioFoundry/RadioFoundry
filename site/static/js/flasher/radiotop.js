@@ -12,7 +12,9 @@ import { h, svg, t } from "./dom.js";
 // screen: off | loader ("PC Loader Connected") | on | any (the state doesn't matter yet: no screen line in the caption)
 // knob: null | "cycle" (off, then on) | "on"
 // note: a line for the caption in place of the LED's, while the LED says nothing
-export function radioTop(radio, initial = {}) {
+// hasLed false: the chip the cable reaches drives no LED (the GD-88's main SoC): none is drawn and the caption names
+// no blink
+export function radioTop(radio, initial = {}, { hasLed = true } = {}) {
 	const body = radio?.frame?.body || "#22252a", accent = radio?.frame?.accent || "#e0a526";
 	const dark = "#15171b", trim = "#2b2f35";
 	// LED on the top face, between the antenna and the channel knob; the callout rises from it to the label
@@ -53,7 +55,7 @@ export function radioTop(radio, initial = {}) {
 		svg("rect", { x: 66, y: 108, width: 100, height: 50, rx: 8, fill: "rgb(0 0 0 / 22%)" }),
 		[116, 124, 132, 140, 148].map((y) => svg("rect", { x: 74, y, width: 84, height: 3, rx: 1.5, fill: "rgb(0 0 0 / 45%)" })),
 		knobTurn,
-		glow, led, callout,
+		hasLed ? [glow, led, callout] : null,
 		screen, screenText, screenText2,
 		keys);
 	const caption = h("p", { class: "rt-caption" });
@@ -62,11 +64,11 @@ export function radioTop(radio, initial = {}) {
 		el.dataset.led = l;
 		el.dataset.screen = sc;
 		el.dataset.knob = knob || "";
-		label.textContent = l === "off" ? "" : t(`flash.c7.visual.tag_${l}`);
+		label.textContent = l === "off" || !hasLed ? "" : t(`flash.c7.visual.tag_${l}`);
 		screenText.textContent = sc === "loader" ? "PC Loader" : sc === "on" ? "ODR" : "";
 		screenText2.textContent = sc === "loader" ? "Connected" : "";
 		const words = [knob === "cycle" ? t("flash.c7.visual.cycle") : knob === "on" ? t("flash.c7.visual.on") : null,
-			note || t(`flash.c7.visual.led_${l}`), sc === "any" ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
+			note || (hasLed ? t(`flash.c7.visual.led_${l}`) : null), sc === "any" ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
 		caption.replaceChildren(...words.map((w) => h("span", {}, w)));
 		pic.setAttribute("aria-label", words.join(" "));
 		// restart the animation on every change, so "done" plays its three flashes from the start

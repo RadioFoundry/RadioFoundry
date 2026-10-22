@@ -535,6 +535,23 @@ function radioView() {
 		S.task === "help" ? null : h("p", { class: "small muted detect" }, t("flash.radio.detect_hint"), " ", detect), status);
 }
 
+// A radio's second chip (the GD-88's receiver B, radio.json flash.second_receiver): its own image and board, reached
+// through ODR on the first chip (c7000ui.js), so it is installed as a radio of its own with the first one's other data
+function secondRadio(r) {
+	const b = r?.flash.second_receiver;
+	return b ? { ...r, id: b, name: t("flash.second.name", { name: r.name }), second_of: r.id,
+		flash: { ...r.flash, board: b, via: r.flash.board, second_receiver: null, bootloader: [] } } : null;
+}
+
+async function installSecond() {
+	const r = secondRadio(S.radio);
+	if (!r) return;
+	selectRadio(r);
+	S.task = "install";
+	S.step = 1;
+	render();
+}
+
 function selectRadio(r) {
 	if (S.radio && S.radio.id !== r.id) Promise.resolve(backend().release?.()).then(() => { S.c7 = null; });
 	S.radio = r;
@@ -792,7 +809,7 @@ async function ensureFirmware() {
 		const img = randomBytes(rng(99), 200 * 1024);
 		img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);	// what a C7000 read recognizes ODR by
 		img.set([0xFC, 0xFF, 0x01, 0x20], 0);	// a RAM stack pointer, as the STM32 loader checks
-		if (S.radio?.flash.board === "db25d") {	// the DB25-D's install image: first stage, then ODR's reset handler
+		if (/^(db25d|gd88b?)$/.test(S.radio?.flash.board)) {	// an install image: first stage, then ODR's reset handler
 			img.set([0x2C, 0x11, 0x01, 0xC0], 0);
 			img.set([0x80, 0xC0, 0x20, 0x70], 0x1000);
 			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1100);
@@ -1634,17 +1651,22 @@ async function main() {
 		app.replaceChildren(notice(t("flash.err.load"), "bad"), reportLine());
 		return;
 	}
-	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText,
+	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText, installSecond,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
 	if (location.hash.includes("sim=c7000")) {
 		// a DM-1801 Pro on its cable: running stock firmware, or (#sim=c7000-odr) ODR with the stub hand-over;
-		// #sim=c7000-db25d: a DB25-D PRO running its original firmware 018, reached through its debug console
+		// #sim=c7000-db25d: a DB25-D PRO running its original firmware 018, reached through its debug console;
+		// #sim=c7000-gd88: a GD-88 running its original firmware 021 (the same console), with receiver B behind it
+		const gd88 = location.hash.includes("c7000-gd88");
 		const db25 = location.hash.includes("c7000-db25d");
-		const board = db25 ? "db25d" : "dm1801pro";
+		const board = gd88 ? "gd88" : db25 ? "db25d" : "dm1801pro";
 		const sim = await c7000Simulation(S.data.fb.c7000, board);
-		S.sim = { fb: { ...S.data.fb, c7000: sim.c } };
+		// the GD-88's receiver B: its own flash, with its own codec build
+		const simB = gd88 ? await c7000Simulation(sim.c, "gd88b", 7001) : null;
+		S.sim = { fb: { ...S.data.fb, c7000: (simB || sim).c } };
 		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600, faults: { silentAfterReset: true },
-			...(db25 ? { board: "DB25-D", codecId: "db25d-018", dataSize: 0x200000, usmart: "018", stubSpan: [0x1D000, 0x12000] } : {}) });
+			...(db25 ? { board: "DB25-D", codecId: "db25d-018", dataSize: 0x200000, usmart: "018", stubSpan: [0x1D000, 0x12000] } : {}),
+			...(gd88 ? { board: "GD-88", codecId: "gd88-2501", dataSize: 0x200000, usmart: "021", stubSpan: [0x45000, 0x13000], rx2: { progmem: simB.progmem } } : {}) });
 		if (location.hash.includes("c7000-odr")) {
 			const img = randomBytes(rng(98), 180 * 1024);
 			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);

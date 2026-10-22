@@ -7,8 +7,8 @@
 // FakeRadio. Bytes reach the host no faster than a 115200 baud cable would carry them (times `speed`).
 //
 // rx2: the radio has a second SoC behind ODR (the GD-88): DL_CMD_RX2 answers, and its BRIDGE hands the cable to the
-// second SoC's first stage, which this model plays with the same flash and stub (the first SoC's ODR answers again
-// after the stub's reset).
+// second SoC's first stage, which this model plays with the same stub. rx2: {progmem} gives the second SoC its own
+// program flash, in place while the bridge is up; the first SoC's ODR answers again after the stub's reset.
 //
 // A DB25-D's original firmware (usmart: its build) also answers the debug console the page loads the stub through
 // (db25d.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was written.
@@ -159,7 +159,16 @@ export class FakeC7000 {
 		this.events.push("off");
 	}
 
+	// the second SoC's flash in place of the first's (on), or back (off)
+	swapSecond(on) {
+		if (!this.rx2?.progmem || !!this.onSecond === on) return;
+		[this.progmem, this.rx2.progmem] = [this.rx2.progmem, this.progmem];
+		this.onSecond = on;
+		this.fwKind = null;
+	}
+
 	boot() {
+		this.swapSecond(false);
 		this.state = "rom";
 		this.ram = new Map();
 		this.fwKind = null;
@@ -261,6 +270,7 @@ export class FakeC7000 {
 			if (p.length !== 5 || u32le(p, 1) !== 0x47445242) return reply(7), 1;
 			reply(0);
 			if (p[0] === 1) setTimeout(() => {				// the second SoC's first stage, through the bridge
+				this.swapSecond(true);
 				this.state = "rom";
 				this.inb = new Uint8Array(0);
 				this.loaded = new Uint8Array(0);

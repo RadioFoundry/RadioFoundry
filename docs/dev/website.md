@@ -298,11 +298,13 @@ its own steps:
 | Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector |
 | Check | The stub resets the chip; the page asks ODR's VERSION for the build and the codec |
 
-A radio with a second receiver on another chip (the GD-88: SoC B) says so in `radio.json` `flash.second_receiver`
-(`"via-radio"`). The page doesn't reach that chip over the cable. Once ODR runs on the first chip, the first chip
-updates the second one over the link between them ([rx2-link.md](../spec/rx2-link.md)), and the page only sends the
-second chip's image to ODR on the first. `data/radios.json` carries the field in `flash`. Nothing in the page reads it
-yet. The GD-88 is listed as `stub_tested: false` until the stub has run on a radio.
+A radio with a second receiver on another chip (the GD-88: SoC B) names that chip's board in `radio.json`
+`flash.second_receiver` (`"gd88b"`). The cable doesn't reach that chip. Once ODR runs on the first chip, the page's
+done step offers to install the second one: the same steps, as a radio with the second board's id (its releases and
+builds), reached through the first chip. ODR on the first chip hands the cable over to the second chip's first stage
+(`DL_CMD_RX2` BRIDGE, [rx2-link.md](../spec/rx2-link.md) 4), the stub loads and writes as usual, and the first chip
+restarts by itself afterwards; the done step asks it whether the second chip answers. The GD-88 is listed as
+`stub_tested: false` until the stub has run on a radio.
 
 #### DB25-D PRO
 
