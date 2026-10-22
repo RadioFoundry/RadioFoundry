@@ -355,10 +355,10 @@ def c7000_flash():
 	"""What the web flasher needs for the HR_C7000 radios it flashes through the stub (stub/stubtool.py): the program
 	flash layout and LED pins from stubtool, the codec slot and the codec profiles from tools/hrc7000_codec.py. The stub
 	images themselves go to c7000-stub.json (c7000_stub()), loaded only when a C7000 radio is flashed."""
-	st, dc, fl = _tool("stub", "stubtool.py"), _tool("tools", "hrc7000_codec.py"), _tool("tools", "dm32_flash.py")
+	st, dc, fl = _tool("stub", "stubtool.py"), _tool("tools", "hrc7000_codec.py"), _tool("tools", "serial_loader.py")
 	boards = {}
 	for bid, lay in dc.BOARDS.items():
-		# the bootloader's ID string (dm32_flash.MODELS): in the first 48 KB of the program flash, it tells the radios apart
+		# the bootloader's ID string (serial_loader.MODELS): in the first 48 KB of the program flash, it tells the radios apart
 		boards[bid] = {"slot": [lay["slot"][0] - dc.PROGMEM_BASE, lay["slot"][1] - dc.PROGMEM_BASE],
 			       "run": list(lay["run"]), "tables": list(lay["tables"]),
 			       "bootloader_id": fl.MODELS[bid].tag if bid in fl.MODELS else None,

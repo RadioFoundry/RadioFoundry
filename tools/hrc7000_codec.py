@@ -28,7 +28,7 @@ import sys
 import zlib
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "odrflash"))
-from odrflash import codecmap  # noqa: E402  (the codec maps: which words of each build hold addresses)
+from odrflash import boards, codecmap  # noqa: E402  (the board registry; the codec maps: which words of each build hold addresses)
 
 APP_BASE = 0x0300C000
 STOCK_HEADER = 0x100
@@ -39,22 +39,17 @@ REL_MAX = 64
 HEADER_LEN = 128
 CODEC_SIG = (0x152514D8, 0x74C776CD)
 
-# Per radio: the codec slot in program flash, the codec window at the top of SRAM (the slot's code runs at its
-# start; sized for the largest code among the board's maps) and the modem SRAM table window (the __codec_* symbols of
-# boards/<radio>/<radio>.ld; keep the two in step; docs/spec/codec-placement.md)
-BOARDS = {
-    "dm32": {"slot": (0x030E8000, 0x03100000), "run": (0x00043A00, 0x00058000), "tables": (0x18000E48, 0x18003E28)},
-    "dm1801pro": {"slot": (0x030E8000, 0x03100000), "run": (0x00043A00, 0x00058000),
-                  "tables": (0x18000EF0, 0x18003E68)},
-    # The window fits the 020 code, the longest; the three 018 builds put the same tables 4 bytes apart (0x180014AC / B0 /
-    # B4) and 020 at 0x18001610, so the table window is the union
-    "db25d": {"slot": (0x030E8000, 0x03100000), "run": (0x00044E00, 0x00058000), "tables": (0x180014AC, 0x18004360),
-              # What the web flasher needs beyond the codec (site/odrsite/repo.py c7000_flash): the program flash is 2 MB
-              # (Boya, JEDEC 68 40 15) and there is no data flash on the SPI0 chip select the other radios use (the
-              # DB25-D has a SPI NAND there, which the page does not read). Its stock firmware answers a debug console
-              # the page reads before ODR is installed (stock_console)
-              "progmem_size": 0x200000, "data_flash": False, "stock_console": True},
-}
+# Per radio, from the board registry (the __codec_* symbols of the board's linker script, its [flash.stub]): the codec
+# slot in program flash, the codec window at the top of SRAM (the slot's code runs at its start; sized for the largest
+# code among the board's maps), the modem SRAM table window (docs/spec/codec-placement.md), and what the web flasher
+# needs beyond the codec (site/odrsite/repo.py c7000_flash): the program flash size, whether the SPI0 chip select the
+# data flash sits on has one (not on a radio with the SPI NAND there), and whether the stock firmware answers a debug
+# console the page reads before ODR is installed (stock_console). The image starts at app_base.
+BOARDS = {b.id: {"slot": b.codec_slot, "run": b.codec_run, "tables": b.codec_tables, "app_base": b.app_base,
+                 "progmem_size": b.stub["progmem"] if b.stub else 0x100000,
+                 "data_flash": not (b.stub and b.stub["nand"]),
+                 "stock_console": bool(b.stub and b.stub["stock_console"])}
+          for b in boards.BOARDS.values() if b.codec_tool == "hrc7000_codec"}
 PROGMEM_BASE = 0x03000000   # a program flash dump starts here
 
 # Entry points, offsets from the codec start (codec-dm32.md "Entry points"); fec_init differs per version
@@ -268,13 +263,13 @@ def carve(stock, prof):
     return windows
 
 
-def locate(dump, profiles=None, board="dm32"):
+def locate(dump, profiles=None, board=None):
     """A known codec anywhere in a program flash dump (1 MB from 0x03000000). Each stock version links the codec to its
     own flash addresses (DM-32 047 and 049 hold the same code, 0x3C bytes apart), so it is found by content: the code
     starts with the signature words and the tables by TABLES_HEAD_CRC, both 4-byte aligned, and each window must match
     a profile's SHA-256. Returns the profile with the addresses found (kind "progmem"), else None."""
     profiles = PROFILES if profiles is None else profiles
-    profiles = [p for p in profiles.values() if p["board"] == board and "code_sha256" in p]
+    profiles = [p for p in profiles.values() if board in (None, p["board"]) and "code_sha256" in p]
     if len(dump) != PROGMEM_SIZE or not profiles:
         return None
     sig = struct.pack("<2I", *CODEC_SIG)
@@ -299,10 +294,10 @@ def locate(dump, profiles=None, board="dm32"):
     return None
 
 
-def identify(stock, profiles=None, board="dm32"):
+def identify(stock, profiles=None, board=None):
     """The profile a stock file matches (whole-file SHA-256, or a program flash dump by its windows), else None."""
     profiles = PROFILES if profiles is None else profiles
-    mine = {h: p for h, p in profiles.items() if p["board"] == board}
+    mine = {h: p for h, p in profiles.items() if board in (None, p["board"])}
     prof = mine.get(sha256(stock))
     if prof is not None and prof.get("kind") != "progmem":
         return prof
@@ -335,10 +330,10 @@ def parse_slot(slot):
             "relocations": rels, "code_sha256": sha256(code), "tables_sha256": sha256(tables)}
 
 
-def extract(stock, profiles=None, board="dm32"):
+def extract(stock, profiles=None, board=None):
     """Check the stock file and return (profile, code bytes, table bytes)."""
     profiles = PROFILES if profiles is None else profiles
-    profiles = {h: p for h, p in profiles.items() if p["board"] == board}
+    profiles = {h: p for h, p in profiles.items() if board in (None, p["board"])}
     digest = sha256(stock)
     prof = identify(stock, profiles, board)
     if prof is None:
@@ -396,7 +391,8 @@ def slot_bytes(prof, code, tables, maps=None):
 
 
 def merge(image, prof, code, tables, maps=None):
-    slot_off = BOARDS[prof["board"]]["slot"][0] - APP_BASE
+    lay = BOARDS[prof["board"]]
+    slot_off = lay["slot"][0] - lay["app_base"]
     if len(image) > slot_off:
         raise ExtractError("the application image (%d bytes) runs into the codec slot at +0x%X" % (len(image), slot_off))
     return image + b"\xff" * (slot_off - len(image)) + slot_bytes(prof, code, tables, maps)
@@ -618,7 +614,7 @@ def test_slot():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0], epilog=EPILOG,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--board", default="dm32", choices=sorted(BOARDS), help="the radio (default: dm32)")
+    ap.add_argument("--board", choices=sorted(BOARDS), help="the radio (default: the one the stock file is for)")
     ap.add_argument("--stock", help="your radio's stock firmware file (DM-32UV: 049 or 046; DM-1801 Pro: a program "
                     "flash dump, stub/stubtool.py --progmem; DB25-D PRO: 018, 2024-05-09 or later, or a program flash read of a "
                     "radio with 020)")
@@ -637,11 +633,17 @@ def main():
         return
     if not args.stock:
         ap.error("--stock is required")
-    args.image = args.image or os.path.join(repo_root(), "build", args.board, "odr_%s.bin" % args.board)
-    out = args.output or os.path.splitext(args.image)[0] + "_codec.bin"
     try:
+        stock = open(args.stock, "rb").read()
+        prof = identify(stock, board=args.board)
+        board = args.board or (prof["board"] if prof else None)
+        if board is None:
+            raise ExtractError("unsupported stock file (sha256 %s): give --board to see what that radio takes"
+                               % sha256(stock))
+        args.image = args.image or os.path.join(repo_root(), "build", board, "odr_%s.bin" % board)
+        out = args.output or os.path.splitext(args.image)[0] + "_codec.bin"
         check_output_path(out)
-        prof, code, tables = extract(open(args.stock, "rb").read(), board=args.board)
+        prof, code, tables = extract(stock, board=board)
         merged = merge(open(args.image, "rb").read(), prof, code, tables)
     except (ExtractError, OSError) as e:
         sys.exit("hrc7000_codec: %s" % e)

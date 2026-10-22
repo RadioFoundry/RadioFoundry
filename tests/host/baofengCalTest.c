@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-32UV factory calibration (boards/dm32/calibration_dm32.c) on a synthetic factory page in a fake data flash:
+// The Baofeng factory calibration decoder (drivers/cal/baofeng) on a synthetic factory page in a fake data flash:
 // page search, the three pieces, BCD frequency tables, K values, modulation balance, PA drive interpolation and
 // power levels, the L / M / H diagnostics text, and the fallbacks (docs/spec/hardware-dm32.md 11); the DM-1801 Pro's
 // own row lookup at its TX points (hardware-dm1801pro.md 6.4)
@@ -215,9 +215,9 @@ int main(void)
 	test_tx_byte();
 
 	if (failures) {
-		printf("dm32CalTest: %d failures\n", failures);
+		printf("baofengCalTest: %d failures\n", failures);
 		return 1;
 	}
-	printf("dm32CalTest: all passed\n");
+	printf("baofengCalTest: all passed\n");
 	return 0;
 }

@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# The DM-1801 Pro's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and
+# the web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in dm1801pro.ld.
+
+id = "dm1801pro"
+name = "Baofeng DM-1801 Pro"
+maker = "Baofeng"
+model = "DM-1801 Pro"
+also = ["Baofeng DM-1801"]
+kind = "handheld"
+# Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
+# build option value's board_name), and the id always counts
+debuglink_aliases = ["DM-1801Pro"]
+
+[docs]
+hardware = "docs/spec/hardware-dm1801pro.md"
+codec = "docs/spec/codec-dm1801pro.md"
+bringup = "docs/testing/dm1801pro-bringup.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "136-174 / 400-470 MHz"
+power = "L / M / H"
+display = "monochrome, 128 × 64"
+gallery = "128x64"
+
+[status]
+level = "bring-up"
+summary = "Runs on a radio. FM receive and transmit with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and SMS, the MMDVM hotspot and single frequency repeating checked on the SDR bench. Each split duplex half passes on air alone. Still open: VHF transmit and VOX ([hardware-dm1801pro](docs/spec/hardware-dm1801pro.md) 12). Not the GD-77 family despite the name ([radios](docs/spec/radios.md))"
+release = "testing"
+
+# The same Baofeng serial updater as the DM-32UV, with its own ID string; the same flash map, the same codec slot and
+# the same erase of the whole application area
+[flash]
+family = "serial-loader"
+keep_codec = false
+stock_versions = []
+backup = { stock = "full", odr = "full", spi_size = 0x1000000 }
+
+# The loader stays in update mode while PTB11 (PTT) and PTB26 both read low; which key PTB26 is isn't known. The web
+# flasher has no steps for it yet
+[flash.bootloader]
+keys = "PTT and the key on PTB26 (probably SK1)"
+steps = []
+id = "BF1801-V1"
+
+# The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py)
+[flash.stub]
+id = 2
+hold_power = false
+progmem = 0x100000
+tested = true
+
+# The codec slot and windows come from dm1801pro.ld (__codec_*). The codec comes from the radio's own program flash
+# (read with stub/stubtool.py), not from a stock file (docs/spec/codec-dm1801pro.md)
+[codec]
+tool = "hrc7000_codec"
+profile = "dm1801pro-049"
+sources = ["a program flash read of the radio"]
+
+# How the site draws the radio
+[frame]
+shape = "handheld-tall"
+body = "#22252a"
+accent = "#e0a526"
+lens = [24, 34]

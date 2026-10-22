@@ -35,7 +35,7 @@ change when one fails.
    tools/dm32_pack.py build/dm32/odr_dm32_codec.bin build/dm32/odr_dm32_codec_BFUV32.bin
    ```
 
-4. Load the image in update mode: `tools/dm32_flash.py build/dm32/odr_dm32_codec.bin` (a raw image or the
+4. Load the image in update mode: `tools/serial_loader.py build/dm32/odr_dm32_codec.bin` (a raw image or the
    `_BFUV32.bin` file, over the programming cable; `--stock DM32.01.01.049.bin` goes back), or the Baofeng updater
    with the `_BFUV32.bin` file. To keep the stock codeplug and get it onto ODR, run `tools/dm32_migrate.py all
    --image build/dm32/odr_dm32_codec.bin` instead: it backs the codeplug up with qdmr, flashes, and writes it back

@@ -17,8 +17,9 @@ bootloader and image format, calibration, codec location. Start from the radio's
 | File | Contents |
 |---|---|
 | `boards/<b>/board.mk` | `PLATFORM`, `MCU_DEFS`, `LDSCRIPT`, `BOARD_DIRS` (the board directory and each driver it uses), optional `BOARD_USB_DIRS` (built only with `CONFIG_USB`) and `HAL_MODULES` (STM32) |
+| `boards/<b>/board.toml` | The board registry entry: identity, status, flashing, codec route, the site's data. `tools/boards.py check` validates it against `board.mk`, the linker script and `board_t`, and its schema lists every key. Copy a neighbor on the same platform |
 | `boards/<b>/config.mk` | Feature defaults for this radio, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`), each with the reason. Also `BOARD_UNSUPPORTED` (switches its hardware support lacks; ci.sh's maximal build leaves them off), `BOARD_REQUIRED` (switches it can't build without; ci.sh skips their `no-` build) and `MAXIMAL_VARS` (make variables for that build, e.g. `LTO=1`) |
-| `boards/<b>/<b>.ld` | Linker script: the application's start, the end of its region, and the codec window kept free. Keep the application out of every flash sector the codec touches (not only the codec bytes), so odrflash can update the firmware without erasing the codec; list the sectors in `tools/odrflash/odrflash/boards.py` ([release.md](release.md)) |
+| `boards/<b>/<b>.ld` | Linker script: the application's start, the end of its region, and the codec window kept free. Keep the application out of every flash sector the codec touches (not only the codec bytes), so odrflash can update the firmware without erasing the codec. The flashing tools read the region and the codec symbols from it, and derive the erasable sectors and the protected range ([release.md](release.md#sector-maps)) |
 | `boards/<b>/FreeRTOSConfig.h` | The RTOS settings: tick, heap, priorities |
 | `boards/<b>/board.c` | The `board_t` descriptor, the key map, bands, power level names |
 | `boards/<b>/pins.h`, `<b>.h` | Pin assignments and the board's private declarations |
@@ -90,9 +91,11 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
 ## Tests and CI
 
 - Add host tests for each new driver against a simulated chip (`tests/host/*Test.c`; see the existing driver tests).
+  Tests of the board's own code go in `boards/<b>/tests/` with a `host.mk` ([Testing](testing.md#host-tests)).
 - `tools/ci.sh` finds the board by its `board.mk` and builds its feature matrix when the compiler is installed. A
   board without its compiler is skipped with a notice.
 - Add the radio to the status table in the top-level README, to [feature-matrix.md](../feature-matrix.md) and to
   [the user manual's introduction](../user/01-introduction.md).
-- Before it can be released: a board entry in `tools/odrflash/odrflash/boards.py` (sectors, codec profile,
-  `releasable`) and a job in `release.yml` ([release.md](release.md)).
+- Before it can be released: its `board.toml` `[flash]` and `[codec]` tables, `[status] release`, the regenerated
+  `tools/odrflash/odrflash/registry.json` (`tools/boards.py json --for odrflash --out ...`) and a job in
+  `release.yml` ([release.md](release.md)).

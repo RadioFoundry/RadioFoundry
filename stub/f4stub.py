@@ -38,6 +38,7 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stubtool  # noqa: E402  (the shared framing, LZ4 decoder and debug link loader)
+from stubtool import odrboards  # noqa: E402  (the board registry, tools/odrflash/odrflash/registry.json)
 
 # --- F4STUB begin (f4stub.py --embed rewrites everything up to the end marker)
 F4STUB_SHA256 = "d861afb6459bc2eb076dca6d82061c25b2c2467594f41e9c742d241785c514d7"
@@ -132,17 +133,15 @@ ERASE_TIMEOUT = 6.0                    # 128 KB: 2 s worst case in the data shee
 RUN_ADDR = 0x20000000                  # the stub's link address, which ODR reports as STUB INFO's load_addr
 SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the stack use all of it after the jump
 
-# Flash the firmware owns on each radio (docs/spec/hardware-dm1701.md 1.4, hardware-md380.md 1.3). Everything else in
-# a sector that is rewritten is read back from the radio and written again unchanged (no radio shares a sector with
-# the codec any more, since it moved; the rule stays for one that does). Sectors with no owned byte are never erased,
-# except "codec": the codec's own sectors (the DM-1701's 10 and 11, the MD-380's 8 to 11), written only from an image
-# merged with the codec (docs/spec/codec-placement.md), which carries all of them.
-BOARDS = {
-    "dm1701": {"name": "Baofeng DM-1701", "names": ("DM-1701", "dm1701"),
-               "owned": [(0x0800C000, 0x080C0000)], "codec": (0x080C0000, 0x08100000)},
-    "md380": {"name": "TYT MD-380", "names": ("MD-380", "MD-380 VHF", "md380"),
-              "owned": [(0x0800C000, 0x08080000)], "codec": (0x08080000, 0x08100000)},
-}
+# Flash the firmware owns on each radio: the application region of its linker script (the board registry,
+# tools/boards.py). Everything else in a sector that is rewritten is read back from the radio and written again
+# unchanged (no radio shares a sector with the codec any more, since it moved; the rule stays for one that does).
+# Sectors with no owned byte are never erased, except "codec": the flash from the application's end to the end of
+# flash, the codec's own sectors, written only from an image merged with the codec (docs/spec/codec-placement.md),
+# which carries all of them. The radios: every board whose platform builds this stub.
+BOARDS = {b.id: {"name": b.name, "names": tuple(b.debuglink_names), "owned": [b.app_region],
+                 "codec": (b.app_region[1], b.flash_end)}
+          for b in odrboards.BOARDS.values() if "stub/stm32f4" in b.platform_stubs}
 
 
 class F4Error(stubtool.DumpError):
@@ -654,7 +653,7 @@ def run(a, port, reopen, log=print):
     radio.check_board()
     if a.write_app:
         if board is None:
-            raise F4Error("which radio? pass --board dm1701 or --board md380")
+            raise F4Error("which radio? pass --board (%s)" % ", ".join(sorted(BOARDS)))
         segs = load_segments(a.write_app, board)
         t0 = time.monotonic()
         nw, nk = radio.write_image(board, segs, backup_dir=a.backup_dir or os.path.expanduser("~"),

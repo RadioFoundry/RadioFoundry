@@ -200,7 +200,7 @@ the screen, seen, clear, the report to a private or group contact, its progress 
 `debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals and the deferred test).
 `tests/host/crashCaptureTest.c`: `crash_capture.c` on a stand-in RTOS; every way in (a fault record, a stack
 overflow, out of heap, an assertion inside the capture) calls `board_rf_safe` first, with interrupts off, before the
-store and the restart. `tests/host/bootDb25dTest.c` (`test_tx_off`): the DB25-D first stage drives the transmitter
+store and the restart. `boards/db25d/tests/bootDb25dTest.c` (`test_tx_off`): the DB25-D first stage drives the transmitter
 pins off.
 `tests/host/dmrDataServiceTest.c` (`testUdpSend`): the UDP mailbox. `tests/host/radioCoreTest.c`
 (`test_ui_settings`): the two settings through the UI service, their clamps, and that they leave the theme, Up/Down

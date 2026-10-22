@@ -22,8 +22,11 @@ on:
     paths:
       - "tools/odrflash/**"
       - "tools/release.py"
-      - "tools/dm32_flash.py"
+      - "tools/serial_loader.py"
       - "tools/hrc7000_codec.py"
+      - "tools/boards.py"
+      - "boards/*/board.toml"
+      - "platform/*/platform.toml"
       - "stub/stubtool.py"
       - ".github/workflows/release.yml"
   workflow_dispatch:
@@ -224,9 +227,10 @@ jobs:
           out="odrflash-${{ needs.version.outputs.version }}-${{ matrix.name }}"
           # the serial route (odrflash/serialflash.py) imports these tools from the checkout; bundle them
           pyinstaller --onefile --clean --name "$out" --paths tools/odrflash --paths tools --paths stub \
-            --hidden-import dm32_flash --hidden-import hrc7000_codec --hidden-import stubtool \
+            --hidden-import serial_loader --hidden-import hrc7000_codec --hidden-import stubtool \
             --collect-binaries libusb_package --collect-data certifi --hidden-import usb.backend.libusb1 \
             --add-data "tools/odrflash/odrflash/codec_maps:odrflash/codec_maps" \
+            --add-data "tools/odrflash/odrflash/registry.json:odrflash" \
             tools/odrflash/odrflash/__main__.py
           "./dist/$out${{ matrix.ext }}" --version
           "./dist/$out${{ matrix.ext }}" --help > /dev/null

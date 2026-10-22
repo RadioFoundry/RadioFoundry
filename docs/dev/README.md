@@ -33,7 +33,7 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | Change the UI | [docs/ux](../ux/), [ui.md](../spec/ui.md), then `make -C tests/host ui-gallery` ([Testing](testing.md#the-ui-simulator-and-the-gallery)) |
 | Add a radio | [Adding a radio](adding-a-radio.md), its bring-up checklist ([DM-32UV](../testing/dm32-bringup.md), [MD-380](../testing/md380-bringup.md) as models) |
 | Move an MD-380 from stock firmware | `tools/md380_migrate.py` ([md380-migration.md](../spec/md380-migration.md); users: [the manual](../user/18-moving-from-stock-md380.md)) |
-| Flash a DM-32UV, or move it from stock firmware | `tools/dm32_flash.py`, `tools/dm32_migrate.py` ([dm32-migration.md](../spec/dm32-migration.md); users: [the manual](../user/19-moving-from-stock-dm32.md)) |
+| Flash a DM-32UV, or move it from stock firmware | `tools/serial_loader.py`, `tools/dm32_migrate.py` ([dm32-migration.md](../spec/dm32-migration.md); users: [the manual](../user/19-moving-from-stock-dm32.md)) |
 | Cut a release | [Releases, "Checklist"](release.md#checklist) |
 | Build or preview the web site | `python3 site/build.py --serve` ([Web site](website.md)) |
 

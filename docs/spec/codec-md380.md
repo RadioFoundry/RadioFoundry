@@ -168,7 +168,7 @@ its stock address ([codec-placement.md](codec-placement.md), "STM32 radios").
   9 (0x080A0000..0x080BFFFF) holds nothing. The stock file keeps the code at 0x08050C44, inside sectors 6 and 7, so
   the stock layout leaves the application only 275 KB.
 * **Updates.** No codec byte shares a sector with the application, so an update writes sectors 3-7 only and keeps the
-  codec (`boards.py` MD380: `keep_codec_supported=True`; the STM32 stub `stub/f4stub.py` owns sectors 3-7). The codec
+  codec (`boards/md380/board.toml`: `keep_codec = true`; the STM32 stub `stub/f4stub.py` owns sectors 3-7). The codec
   is merged on a first install from stock, or when it can't be kept or checked. It comes from the stock file, or from
   the copy the flashing tools keep: odrflash and the web flasher read the codec from a radio running ODR over the
   debug link (READ_MEM), in the stock or the placed layout, check it against the profile hashes and save it on the
