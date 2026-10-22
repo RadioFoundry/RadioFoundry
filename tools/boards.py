@@ -10,7 +10,8 @@ Sources, each fact in one of them:
   boards/<id>/board.mk          PLATFORM, LDSCRIPT, BOOT_*, BOARD_DIRS, read through make (print-vars), so the
                                 board's config.mk and its conditionals count; the build reads no TOML
   boards/<id>/*.ld              the application region (MEMORY FLASH) and the codec symbols (__codec_*)
-  boards/<id>/*.c               the board_t .name values: the names the debug link reports
+  boards/<id>/*.c               the board_t .name values (the names the debug link reports) and hal_flash_map_t
+                                (where the codeplug lives in data flash)
   boards/<id>/pins.h            the power latch and key pins the stub holds
 
 Derived rather than typed: the flashing link from the family, the CPU from the platform, the protected range (flash
@@ -20,8 +21,7 @@ base to the application), the erasable sectors (the platform geometry from the a
     tools/boards.py list [--platform P] [--release stable|testing] [--comma]   board ids
     tools/boards.py platform P [key.path]        one platform value
     tools/boards.py get dm32 [key.path]          one value (a list: one item per line), for shell scripts
-    tools/boards.py json [--for odrflash|build] [--out FILE | --check FILE]   the merged, derived view; --for build
-                                                  is the stable view for tools that build from a checkout
+    tools/boards.py json [--for odrflash|site] [--out FILE | --check FILE]   the merged, derived view
     tools/boards.py check                         registry consistency
     tools/boards.py self-test                     the loader's own tests, on fixtures
 
@@ -41,19 +41,32 @@ RELEASES = ("stable", "testing")
 KINDS = ("handheld", "mobile")
 # The flashing routes, named by protocol (odrflash cli.py, site/static/js/flasher): the cable they need, and the
 # board.toml keys a board on the route must have
+# web: the web flasher's backend for the family (site/static/js/flasher/backends.js); update_mode: the vendor loader's
+# update mode the page can write through when nothing else answers (iap.js), or None
 FAMILIES = {
-    "usb-dfu": {"link": "usb", "needs": ("flash.dfu",)},		# a USB DFU bootloader with a per-model XOR key
-    "serial-loader": {"link": "serial-cable", "needs": ("flash.bootloader.id", "flash.bootloader.keys")},	# a serial
-    # bootloader started by a key combination, speaking its own file format (tools/serial_loader.py)
-    "serial-iap": {"link": "serial-cable", "needs": ()},	# a vendor IAP loader on the cable, through the RAM stub
+    "usb-dfu": {"link": "usb", "needs": ("flash.dfu",), "web": "anyroad-dfu", "update_mode": None},	# a USB DFU
+    # bootloader with a per-model XOR key
+    "serial-loader": {"link": "serial-cable", "needs": ("flash.bootloader.id", "flash.bootloader.keys"),
+                      "web": "c7000-stub", "update_mode": None},	# a serial bootloader started by a key
+    # combination, speaking its own file format (tools/serial_loader.py)
+    "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
+    # loader on the cable, through the RAM stub
 }
+# [flash.stub] stock_console: the debug console a stock firmware answers on the cable, by protocol (the web flasher
+# loads the stub through it before ODR is installed: site/static/js/flasher/usmart.js)
+STOCK_CONSOLES = ("usmart",)
 CODEC_TOOLS = ("codec_extract", "hrc7000_codec")
 ODRFLASH_JSON = "tools/odrflash/odrflash/registry.json"	# the flashing tools' view, generated and committed
+# hal_flash_map_t fields the site reads (the codeplug editor): the open-firmware image's data flash address, the end of
+# the room for it and the DMR ID database, the TFTP staging area. The open-firmware flash image follows the EEPROM image
+# at a fixed offset (docs/spec/cps-fast.md)
+FLASH_MAP_FIELDS = ("openfw_eeprom", "openfw_flash", "openfw_end", "staging_addr")
+OPENFW_FLASH_OFFSET = 0x20000
 APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one for the codec slot (no geometry)
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
-MAKE_VARS = ("PLATFORM", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS", "BUILD_OPTIONS")
+MAKE_VARS = ("PLATFORM", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS", "BOARD_UNSUPPORTED")
 
 
 class RegistryError(Exception):
@@ -91,11 +104,14 @@ BOARD_SCHEMA = {
     "model": _req(str),
     "also": _req(STR_LIST),
     "kind": _req(KINDS),
+    "order": _req(int),		# where the radio appears in the site's lists; the lowest is the home page's radio
     "part_of": _opt(str),
     "debuglink_aliases": _opt(STR_LIST),
     "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
     "hardware": _req({"cpu": _opt(str), "bands": _req(str), "power": _req(str), "display": _req(str),
                       "gallery": _req(str)}),
+    # summary: what works, then at most one short clause of what is open; plain text, no links (the README, the
+    # user manual's radio table and the site show it)
     "status": _req({"level": _req(LEVELS), "summary": _req(str), "release": _req(RELEASES)}),
     "build_options": _opt(("list", {"name": _req(str), "title": _req(str), "help": _req(str),
                                     "values": _req(("list", {"id": _req(str), "title": _req(str), "text": _req(str),
@@ -112,11 +128,20 @@ BOARD_SCHEMA = {
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str)}),
         "stub": _opt({"id": _req(int), "hold_power": _req(bool), "progmem": _req(int), "tested": _req(bool),
-                      "stock_console": _opt(bool)}),
+                      "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int)}),
     }),
-    "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(STR_LIST), "profile": _opt(str), "sources": _opt(STR_LIST),
-                   "installed": _opt(STR_LIST)}),
+    # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file
+    "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(str), "profile": _opt(str), "sources": _opt(STR_LIST),
+                   "installed": _opt(STR_LIST), "stock_version": _opt(str)}),
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
+    # tests/hil: what the health checks expect (test_health.py), and the features planned here but not working yet
+    # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED)
+    "hil": _opt({"display": _opt(str), "features": _opt(STR_LIST), "no_features": _opt(STR_LIST),
+                 "flash_jedec": _opt(STR_LIST), "calibration": _opt(bool), "battery_mv": _opt(RANGE),
+                 "codec": _opt(STR_LIST)}),
+    "features": _opt(("map", {"state": _req(("unsupported",)), "reason": _req(str)})),
+    # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
+    "cps": _opt({"radio_types": _req(("list", int))}),
 }
 
 PLATFORM_SCHEMA = {
@@ -216,25 +241,68 @@ def _strip_c_comments(text):
     return re.sub(r"//[^\n]*|/\*.*?\*/", "", text, flags=re.S)
 
 
+def _braced(text, start):
+    """The text from start (just after an opening brace) to its closing brace."""
+    depth, i = 1, start
+    while depth and i < len(text):
+        depth += {"{": 1, "}": -1}.get(text[i], 0)
+        i += 1
+    return text[start:i]
+
+
+def _c_sources(board_dir):
+    for f in sorted(os.listdir(board_dir)):
+        if f.endswith(".c"):
+            with open(os.path.join(board_dir, f), encoding="utf-8") as fh:
+                yield f, _strip_c_comments(fh.read())
+
+
 def board_t_names(board_dir):
     """What board_t .name is set to in a board's sources: [(literal or None, macro or None)], one per board_t
     definition. The one parser of it (bringup.py uses it too): any whitespace, comments ignored; a macro is returned by
     name (such a board names its values in [[build_options]] board_name)."""
     out = []
-    for f in sorted(os.listdir(board_dir)):
-        if not f.endswith(".c"):
-            continue
-        with open(os.path.join(board_dir, f), encoding="utf-8") as fh:
-            text = _strip_c_comments(fh.read())
+    for _, text in _c_sources(board_dir):
         for m in re.finditer(r"\bboard_t\s+\w+\s*=\s*\{", text):
-            depth, i = 1, m.end()
-            while depth and i < len(text):
-                depth += {"{": 1, "}": -1}.get(text[i], 0)
-                i += 1
-            body = text[m.end():i]
+            body = _braced(text, m.end())
             n = re.search(r'\.name\s*=\s*(?:"([^"]*)"|([A-Za-z_]\w*))', body)
             if n:
                 out.append((n.group(1), n.group(2)))
+    return out
+
+
+def flash_map(board_dir):
+    """The FLASH_MAP_FIELDS of the board's hal_flash_map_t definition, {field: address}. A board has one; a second one
+    that disagrees is an error."""
+    out, where = {}, None
+    for f, text in _c_sources(board_dir):
+        for m in re.finditer(r"\bhal_flash_map_t\s+\w+\s*=\s*\{", text):
+            found = {k: int(v, 0) for k, v in re.findall(r"\.(\w+)\s*=\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*",
+                                                        _braced(text, m.end())) if k in FLASH_MAP_FIELDS}
+            if where is not None and found != out:
+                raise RegistryError("%s: hal_flash_map_t in %s and %s differ" % (os.path.relpath(board_dir, ROOT),
+                                                                                 where, f))
+            out, where = found, f
+    return out
+
+
+UNSUPPORTED_RE = re.compile(r"^\s*BOARD_UNSUPPORTED\s*[:+]?=([^#]*)(?:#(.*))?$")
+
+
+def unsupported_reasons(config_mk):
+    """{switch: reason} from config.mk's BOARD_UNSUPPORTED lines, one switch a line with its reason in the comment
+    (BOARD_UNSUPPORTED += AM_RX\t# no air band receiver). A line with several switches gives each the reason ""."""
+    out = {}
+    try:
+        lines = open(config_mk, encoding="utf-8").read().splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        m = UNSUPPORTED_RE.match(line)
+        if m:
+            sws = m.group(1).split()
+            for s in sws:
+                out[s] = (m.group(2) or "").strip() if len(sws) == 1 else ""
     return out
 
 
@@ -260,7 +328,7 @@ class Platform:
 class Board:
     """A board's TOML fields (data) and what is derived from its build files."""
 
-    def __init__(self, data, platform, mk, layout, names, pins):
+    def __init__(self, data, platform, mk, layout, names, pins, unsupported=None, fmap=None):
         self.data = data
         self.id = data["id"]
         self.platform = platform
@@ -269,6 +337,10 @@ class Board:
         self.app_region = layout["flash"]	# (start, end) of MEMORY FLASH in the build's LDSCRIPT
         self.source_names = names		# board_t .name: [(literal, macro)]
         self.pins = pins			# pins.h integer defines
+        self.flash_map = fmap or {}		# hal_flash_map_t: FLASH_MAP_FIELDS
+        # config.mk BOARD_UNSUPPORTED: {switch: reason}, in the build's order (make's value decides the set)
+        reasons = unsupported or {}
+        self.unsupported = {s: reasons.get(s, "") for s in mk.get("BOARD_UNSUPPORTED", "").split()}
         boot = mk.get("BOOT_STAGE")
         self.first_stage = None
         if boot:
@@ -323,7 +395,18 @@ class Board:
         hold = s["hold_power"]
         return {"id": s["id"], "latch": self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
                 "key": self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, "nand": self.nand,
-                "progmem": s["progmem"], "tested": s["tested"], "stock_console": s.get("stock_console", False)}
+                "progmem": s["progmem"], "tested": s["tested"], "stock_console": s.get("stock_console")}
+
+    def codeplug(self):
+        """Where the codeplug lives, for the codeplug editor: the data flash address of the open-firmware image (the
+        editor adds it on the wire), the end of the room for it and the DMR ID database, whether the radio takes a
+        codeplug over TFTP (a staging area), and the names the radio reports on the debug link. None without a flash
+        map."""
+        m = self.flash_map
+        if "openfw_eeprom" not in m or "openfw_end" not in m:
+            return None
+        return {"base": m["openfw_eeprom"], "end": m["openfw_end"], "tftp": "staging_addr" in m,
+                "names": sorted(set(self.debuglink_names()))}
 
     @property
     def codec_slot(self):
@@ -463,7 +546,8 @@ def load(root=ROOT, only=None):
         if plat is None:
             raise RegistryError("boards/%s: PLATFORM %r has no platform/<p>/platform.toml" % (bid, mk.get("PLATFORM")))
         out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(bdir),
-                         pin_defines(os.path.join(bdir, "pins.h")))
+                         pin_defines(os.path.join(bdir, "pins.h")),
+                         unsupported_reasons(os.path.join(bdir, "config.mk")), flash_map(bdir))
     return out
 
 
@@ -491,7 +575,7 @@ def check(root=ROOT):
         boards = load(root)
     except RegistryError as e:
         return [str(e)]
-    stub_ids = {}
+    stub_ids, orders = {}, {}
     classes = gallery_classes(root)
     for bid, b in boards.items():
         d = b.data
@@ -499,6 +583,10 @@ def check(root=ROOT):
 
         def bad(msg):
             problems.append("%s: %s" % (where, msg))
+        for s, why in b.unsupported.items():
+            if not why:
+                problems.append("boards/%s/config.mk: BOARD_UNSUPPORTED %s has no reason: one switch a line, "
+                                "BOARD_UNSUPPORTED += %s  # <reason>" % (bid, s, s))
         for k, p in d["docs"].items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
@@ -506,6 +594,16 @@ def check(root=ROOT):
             bad("part_of %r is not a board" % d["part_of"])
         if not b.source_names:
             bad("no board_t definition with .name in boards/%s/*.c" % bid)
+        if d["order"] in orders:
+            bad("order %d is also the %s's" % (d["order"], orders[d["order"]]))
+        orders.setdefault(d["order"], bid)
+        fm = b.flash_map
+        if b.codeplug() is None:
+            bad("no hal_flash_map_t with openfw_eeprom and openfw_end in boards/%s/*.c" % bid)
+        elif fm.get("openfw_flash", fm["openfw_eeprom"] + OPENFW_FLASH_OFFSET) - fm["openfw_eeprom"] \
+                != OPENFW_FLASH_OFFSET:
+            bad("hal_flash_map_t openfw_flash isn't openfw_eeprom + 0x%X (the codeplug editor assumes it)"
+                % OPENFW_FLASH_OFFSET)
         for lit, macro in b.source_names:
             if macro and not d.get("build_options"):
                 bad("board_t .name is the macro %s: name its values in [[build_options]] board_name" % macro)
@@ -660,66 +758,32 @@ def odrflash_view(boards):
             "boards": out}
 
 
-BUILD_FORMAT = "odr-build-matrix/1"
-
-
-def _names():
-    """odrflash/names.py, the one naming rule for build directories, images and release files. It imports nothing, so
-    loading it doesn't load the generated registry."""
-    sys.path.insert(0, os.path.join(ROOT, "tools", "odrflash"))
-    try:
-        from odrflash import names
-    finally:
-        sys.path.pop(0)
-    return names
-
-
-def build_view(boards, root=ROOT):
-    """What a tool that builds from a checkout needs (docs/dev/board-registry.md "The build view"): every board with its
-    platform, build options and release state, each build's make arguments and file names, and each platform's
-    toolchain. A stable interface: a change that breaks a reader bumps BUILD_FORMAT."""
-    names = _names()
-    vdir = os.path.join(root, "config", "variants")
-    variants = sorted(f[:-3] for f in os.listdir(vdir) if f.endswith(".mk")) if os.path.isdir(vdir) else []
-    plats = {}
-    for pid, pl in sorted(load_platforms(root).items()):
-        tc = pl.data["toolchain"]
-        plats[pid] = {"isa": pl.data["isa"], "cpu": pl.data["cpu"], "cc": tc["cc"], "version": tc["version"],
-                      "image": tc.get("image"), "install": tc["build"], "sha256": tc.get("sha256")}
-    out = {}
-    for bid, b in sorted(boards.items()):
-        d = b.data
-        opts = [(o["name"], [v["id"] for v in o["values"]]) for o in d.get("build_options", [])]
-        builds = []
-        for combo in _product(opts):
-            chosen = dict(combo)
-            builds.append({
-                "options": chosen,
-                "make": ["BOARD=" + bid] + ["%s=%s" % kv for kv in combo],
-                "release": ["--board", bid] + [x for n, v in combo if v != dict(opts)[n][0]
-                                               for x in ("--build-option", "%s=%s" % (n, v))],
-                "image_id": names.image_id(bid, opts, chosen),
-                "build_dir": names.build_dir(bid, opts, chosen, names.VARIANT),
-                "image": names.build_image(bid, opts, chosen, names.VARIANT, bool(b.first_stage)),
-                "release_image": names.release_name(names.release_id(bid, opts, chosen, names.VARIANT), "{version}"),
-                "release_manifest": names.release_name(names.release_id(bid, opts, chosen, names.VARIANT), "{version}",
-                                                       "json"),
-            })
-        out[bid] = {
-            "name": d["name"], "platform": b.platform.id, "release": d["status"]["release"],
-            "released": d["status"]["release"] == "stable", "first_stage": bool(b.first_stage),
-            "build_options": [{"name": n, "default": vals[0], "values": vals} for n, vals in opts],
-            "builds": builds,
-        }
-    return {"format": BUILD_FORMAT, "variants": ["full"] + variants, "platforms": plats, "boards": out}
-
-
-def _product(opts):
-    """Every combination of option values, [(name, value), ...] each, the all-default one first."""
-    combos = [[]]
-    for n, vals in opts:
-        combos = [c + [(n, v)] for c in combos for v in vals]
-    return combos
+def site_view(boards):
+    """What the web site and the web flasher read (site/odrsite/repo.py), in the boards' order. The radio entries keep
+    the keys the pages' scripts use (site/data/radios.json)."""
+    out = []
+    for bid, b in sorted(boards.items(), key=lambda kv: kv[1].data["order"]):
+        d, fl, hw = b.data, b.data["flash"], b.data["hardware"]
+        stub = fl.get("stub") or {}
+        flash = {"backend": b.family["web"], "board": bid, "family": fl["family"], "link": b.link,
+                 "bootloader": list(fl["bootloader"]["steps"]), "stock_versions": list(fl["stock_versions"]),
+                 # the image starts with a first stage of this size, its first word this signature (board.mk BOOT_*)
+                 "first_stage": {"size": b.first_stage[0], "head": b.first_stage[1].hex()} if b.first_stage else None,
+                 "stock_console": stub.get("stock_console"), "update_mode": b.family["update_mode"],
+                 "read_rate": stub.get("read_rate"), "codec_version": d["codec"].get("stock_version"),
+                 "build_options": json.loads(json.dumps(d.get("build_options", [])))}
+        if "stock_download" in fl:
+            flash["stock_download"] = fl["stock_download"]
+        if stub:
+            flash["stub_tested"] = stub["tested"]
+        out.append({
+            "id": bid, "name": d["name"], "maker": d["maker"], "model": d["model"], "also": list(d["also"]),
+            "kind": d["kind"], "order": d["order"], "level": d["status"]["level"], "release": d["status"]["release"],
+            "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
+            "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
+            "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
+            "unsupported": dict(b.unsupported)})
+    return {"format": "odr-site-boards/1", "boards": out}
 
 
 def full_view(boards, root=ROOT):
@@ -781,6 +845,19 @@ def self_test():
     ok(board_t_names(tmpc) == [("Radio X", None), (None, "BOARD_NAME")],
        "board_t_names: only board_t, any whitespace, comments skipped, a macro %r" % board_t_names(tmpc))
     ok(pin_defines(os.path.join(tmpc, "pins.h")) == {"PIN_A": 0x2D, "PIN_B": 12}, "pin_defines: integer defines only")
+    with open(os.path.join(tmpc, "flash.c"), "w", encoding="utf-8") as f:
+        f.write("// hal_flash_map_t old = { .openfw_eeprom = 1 };\n"
+                "static const hal_flash_map_t fmap = {\n\t.openfw_eeprom = 0x00700000u,\t/* { */\n"
+                "\t.openfw_end = 0x00800000UL, .other = 5, .regions = { 1, 2 },\n\t.staging_addr = 0,\n};\n")
+    ok(flash_map(tmpc) == {"openfw_eeprom": 0x700000, "openfw_end": 0x800000, "staging_addr": 0},
+       "flash_map: the fields the site reads, suffixes and comments skipped %r" % flash_map(tmpc))
+    with open(os.path.join(tmpc, "flash2.c"), "w", encoding="utf-8") as f:
+        f.write("const hal_flash_map_t m2 = { .openfw_eeprom = 0x600000 };\n")
+    try:
+        flash_map(tmpc)
+        ok(False, "flash_map refuses two maps that differ")
+    except RegistryError:
+        ok(True, "flash_map refuses two maps that differ")
     shutil.rmtree(tmpc)
     ok(ld_expr("0x030E8000 - 0x0300C000") == 0xDC000 and ld_expr("128K - 4") == 131068 and ld_expr("1M") == 1 << 20,
        "ld_expr: hex, K and M")
@@ -802,6 +879,23 @@ def self_test():
         except RegistryError:
             ok(True, "validate refuses: " + what)
     ok(lookup({"v": [{"id": "a"}, {"id": "b"}]}, "v.id") == ["a", "b"], "lookup maps over lists")
+    tmpm = tempfile.mkdtemp(prefix="odr-boards-mk-")
+    with open(os.path.join(tmpm, "config.mk"), "w", encoding="utf-8") as f:
+        f.write("# BOARD_UNSUPPORTED += NO\nBOARD_UNSUPPORTED += USB\t# no USB port\nBOARD_UNSUPPORTED += AM_RX\n"
+                "BOARD_UNSUPPORTED += X Y\t# two on a line\n")
+    ok(unsupported_reasons(os.path.join(tmpm, "config.mk")) == {"USB": "no USB port", "AM_RX": "", "X": "", "Y": ""},
+       "unsupported_reasons: one switch a line with its comment, none for a bare or shared line")
+    shutil.rmtree(tmpm)
+    for bad, what in (({"hil": {"battery_mv": "5V"}}, "a [hil] value of the wrong type"),
+                      ({"hil": {"no_such": 1}}, "an unknown [hil] key"),
+                      ({"features": {"usb": {"state": "maybe", "reason": "x"}}}, "a [features] state"),
+                      ({"features": {"usb": {"state": "unsupported"}}}, "a [features] entry without a reason"),
+                      ({"cps": {"radio_types": ["8"]}}, "a [cps] radio type that isn't a number")):
+        try:
+            validate(bad, {k: BOARD_SCHEMA[k] for k in ("hil", "features", "cps")}, "t")
+            ok(False, "validate refuses " + what)
+        except RegistryError:
+            ok(True, "validate refuses " + what)
 
     # a fixture tree: the real registry copied, then broken one way at a time
     tmp = tempfile.mkdtemp(prefix="odr-boards-")
@@ -836,13 +930,31 @@ def self_test():
             ok(any(want in p for p in got), "check finds %s (%s)" % (what, got[:2]))
             with open(path, "w", encoding="utf-8") as f:
                 f.write(good)
-        broken(good + "\nnew_key = 1\n", "an unknown key", "unknown key")
+        broken("new_key = 1\n" + good, "an unknown key", "unknown key")	# first: the file may end in a table
         broken(good.replace('id = "%s"' % one, 'id = "other"', 1), "an id that isn't the directory", "directory name")
         broken(re.sub(r'(?m)^family = ".*"$', 'family = "usb-dfu"', good), "a family's missing table", "needs flash.dfu")
         broken(good.replace('hardware = "', 'hardware = "missing/', 1), "a missing docs page", "doesn't exist")
         broken(re.sub(r'(?m)^gallery = ".*"$', 'gallery = "200x100"', good), "a display class the gallery lacks",
                "sim_geoms")
         broken(re.sub(r"(?m)^hold_power = .*$", "", good), "a missing stub key", "missing key")
+        two = board_dirs(tmp)[1]
+        other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
+        broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")
+        fm_c = [os.path.join(tmp, "boards", one, f) for f, text in _c_sources(os.path.join(tmp, "boards", one))
+                if "hal_flash_map_t" in text]
+        fm_good = open(fm_c[0], encoding="utf-8").read()
+        with open(fm_c[0], "w", encoding="utf-8") as f:
+            f.write(fm_good.replace("hal_flash_map_t", "hal_other_t"))
+        ok(any("no hal_flash_map_t" in p for p in check(tmp)), "check finds a board without a flash map")
+        with open(fm_c[0], "w", encoding="utf-8") as f:
+            f.write(fm_good)
+        mkp = os.path.join(tmp, "boards", one, "config.mk")
+        mk_good = open(mkp, encoding="utf-8").read()
+        with open(mkp, "w", encoding="utf-8") as f:
+            f.write(mk_good + "BOARD_UNSUPPORTED += SCAN\n")
+        ok(any("SCAN has no reason" in p for p in check(tmp)), "check finds a BOARD_UNSUPPORTED switch without a reason")
+        with open(mkp, "w", encoding="utf-8") as f:
+            f.write(mk_good)
         pins = os.path.join(tmp, "boards", one, "pins.h")
         if os.path.isfile(pins):
             os.remove(pins)
@@ -919,8 +1031,7 @@ def main(argv=None):
     p.add_argument("board")
     p.add_argument("--extra", action="store_true", help="the [ci] extra configurations instead")
     p = sub.add_parser("json", help="the merged view")
-    p.add_argument("--for", dest="view", choices=("all", "odrflash", "build"), default="all",
-                   help="all: every field; odrflash: the flashing tools' registry.json; build: the build view")
+    p.add_argument("--for", dest="view", choices=("all", "odrflash", "site"), default="all")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--out", metavar="FILE")
     g.add_argument("--check", metavar="FILE", help="fail if FILE differs from what would be written")
@@ -972,7 +1083,7 @@ def main(argv=None):
             for name, args in (b.ci_extra() if a.extra else b.builds()):
                 print(" ".join([name] + args))
         elif a.cmd == "json":
-            text = dumps({"odrflash": odrflash_view, "build": build_view, "all": full_view}[a.view](boards))
+            text = dumps({"odrflash": odrflash_view, "site": site_view}.get(a.view, full_view)(boards))
             if a.check:
                 try:
                     with open(a.check, encoding="utf-8") as f:

@@ -9,6 +9,8 @@ maker = "Baofeng"
 model = "DM-1701"
 also = ["Retevis RT84"]
 kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 1
 
 [docs]
 hardware = "docs/spec/hardware-dm1701.md"
@@ -24,7 +26,9 @@ gallery = "160x120i5"
 
 [status]
 level = "supported"
-summary = "First target. FM, DMR voice and data, text, alerts, emergency, hotspot, MMDVM SFR, split duplex (each half), scan and the network services pass on-air tests. Open: Standalone SFR and a two-radio split duplex pair (below)"
+summary = """\
+FM, DMR voice and data, text messages, alerts, emergency, scan, the hotspot, single frequency repeating, each split \
+duplex half and the USB network services work on air. Open: standalone SFR and a two-radio split duplex pair."""
 release = "stable"
 
 # The audio tap's probe build: without LTO it no longer fits, so ci keeps it building with LTO=1
@@ -72,3 +76,8 @@ shape = "handheld"
 body = "#25272b"
 accent = "#d24b2a"
 lens = [36, 30]
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them: 8, or 10 when the factory panel type is RGB
+[cps]
+radio_types = [8, 10]

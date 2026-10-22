@@ -23,5 +23,11 @@ CONFIG_VIBRATE ?= y
 # 128x64 monochrome: no room for the large font, and no colors to set
 CONFIG_FONT_XL ?= n
 CONFIG_UI_COLOR ?= n
-# What the board can't do yet or lacks: ci's maximal configuration leaves these off
-BOARD_UNSUPPORTED := USB USB_NETWORK AM_RX AUDIO_PROBE FONT_XL UI_COLOR
+# What the board lacks or can't do yet, one switch per line with the reason (tools/boards.py checks there is
+# one): ci's maximal configuration leaves these off
+BOARD_UNSUPPORTED += USB	# no USB data port: the host link runs on the programming cable's UART
+BOARD_UNSUPPORTED += USB_NETWORK	# no USB data port for the network adapter: PPP on the host UART stands in
+BOARD_UNSUPPORTED += AM_RX	# the broadcast tuner's air band isn't wired yet
+BOARD_UNSUPPORTED += AUDIO_PROBE	# a bench diagnostic for an audio path this radio doesn't have
+BOARD_UNSUPPORTED += FONT_XL	# the 128x64 panel is too small for the large font
+BOARD_UNSUPPORTED += UI_COLOR	# the 128x64 panel is monochrome: no colors to set

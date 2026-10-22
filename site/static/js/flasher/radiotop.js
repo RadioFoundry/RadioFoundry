@@ -4,7 +4,7 @@
 // screen and keypad. The LED blinks the way the real one does in each state (the stub's status blink: half-second
 // phases while waiting, an eighth of a second while data moves, three green flashes when done), a callout names the
 // blink, and a caption says the same in words, so nobody has to read the animation. Colors follow the radio's frame
-// in radio.json.
+// in radios.json.
 
 import { h, svg, t } from "./dom.js";
 

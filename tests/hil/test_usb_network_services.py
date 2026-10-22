@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from odr_hil import DebugLink
+from odr_hil import DebugLink, skip
 from test_split_duplex import check_rx_labels, rx_half_labels
 from test_usb_network import INDIVIDUAL_NET, _serial_back, _udp_link
 
@@ -64,7 +64,7 @@ def net(radio):
         feats = set(serial_link.version().get("features", "").split(","))
         if "DMR_IP_GATEWAY" not in feats:
             serial_link.close()
-            pytest.skip("built without CONFIG_DMR_IP_GATEWAY")
+            skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
         own_id = int(serial_link.view(["dmr"]).get("dmr.own_id", "0"))
         host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own_id)
         radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
@@ -85,10 +85,11 @@ def net(radio):
             time.sleep(2.0)
 
 
+@pytest.mark.feature("split_duplex", optional=True)
 @pytest.mark.usb_switch
 def test_net_split_protocol(net, pytestconfig):
     if "HOTSPOT_SPLIT" not in net.features:
-        pytest.skip("built without the split duplex extension")
+        skip("not_built", "built without the split duplex extension")
     import split_duplex_host as sdh
     hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
     net.close()
@@ -107,12 +108,13 @@ def test_net_split_protocol(net, pytestconfig):
     net.leave_hotspot()
 
 
+@pytest.mark.feature("split_duplex", optional=True)
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
 def test_net_split_rx_half_labels(net, sdr_bench, pytestconfig):
     if "HOTSPOT_SPLIT" not in net.features:
-        pytest.skip("built without the split duplex extension")
+        skip("not_built", "built without the split duplex extension")
     freq, cc, tg = (pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc"),
                     pytestconfig.getoption("--dmr-tg"))
     net.close()
@@ -134,14 +136,15 @@ def _kiss(cmd, payload=b""):
     return b"\xc0" + bytes([cmd]) + esc + b"\xc0"
 
 
+@pytest.mark.feature("aprs")
 @pytest.mark.usb_switch
 def test_net_kiss(net):
     if "APRS" not in net.features:
-        pytest.skip("built without CONFIG_APRS")
+        skip("not_built", "built without CONFIG_APRS")
     link = net.open()
     s = link.view(["aprs_set"])
     if s.get("set.aprs_tx", "0") != "0":
-        pytest.skip("APRS TX is on: not feeding it a position (it would beacon)")
+        skip("state", "APRS TX is on: not feeding it a position (it would beacon)")
     old_kiss, old_src = int(s.get("set.aprs_kiss", "0")), int(s.get("set.aprs_pos_src", "0"))
     from odr_debug import APRS_POS_SRCS
     link.aprs_set("kiss", 1)
