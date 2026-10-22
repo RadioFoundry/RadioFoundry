@@ -16,7 +16,7 @@ A radio's state for a feature is resolved, never typed:
   off          the board's default build leaves the switch off: nothing to check
   required     anything else: the feature's tests must pass on the radio
 A required feature's status never understates it. The newest run record that ran it decides: pass, fail, partial
-(excused skips) or "needs re-run" (its spec or source paths differ from the hashes the record keeps). Without one,
+(excused skips) or "needs re-run" (its spec or source paths differ in the tree from the hashes the record keeps). Without one,
 the board's seed record (<board>/seed.json, the evidence from before its first run) decides, marked as a seed. With
 neither the feature is "built, not yet recorded". Only a failing record shows a failure.
 
@@ -276,12 +276,24 @@ def load_records(results=RESULTS):
 
 
 _HASHES = {}
+_TREE_REV = None
 
 
-def source_hashes(e, rev="HEAD"):
+def tree_rev():
+    """The tree as it is: HEAD, or with uncommitted changes a commit object of the tracked files (git stash create;
+    nothing in the tree, the index or the refs changes)."""
+    global _TREE_REV
+    if _TREE_REV is None:
+        dirty = git("diff", "--quiet", "--ignore-submodules=all", "HEAD", "--", ".", check=False).returncode != 0
+        _TREE_REV = (git("stash", "create", check=False).stdout.strip() or "HEAD") if dirty else "HEAD"
+    return _TREE_REV
+
+
+def source_hashes(e, rev=None):
     """path -> git object id of the feature's spec and source paths at rev (a blob or a tree; None: not there). By
     content, not ancestry: main is squash-merged, so the commit a record was made on may be gone from history while
     the files it checked are unchanged."""
+    rev = rev or tree_rev()
     paths = [p.rstrip("/") for p in feature_paths(e)]
     key = (rev, tuple(paths))
     if key not in _HASHES:
@@ -295,7 +307,7 @@ def source_hashes(e, rev="HEAD"):
 
 
 def stale(hashes, e):
-    """The feature's paths whose content differs from the recorded hashes (empty: not stale)."""
+    """The feature's paths whose content in the tree differs from the recorded hashes (empty: not stale)."""
     if not hashes:
         return ["(no source hashes recorded)"]
     now = source_hashes(e)
@@ -517,13 +529,10 @@ def cmd_run(args):
         return rc
     head = git("rev-parse", "HEAD").stdout.strip()
     dirty = git("diff", "--quiet", "--ignore-submodules=all", "HEAD", "--", ".", check=False).returncode != 0
-    # what the run tested: HEAD, or with uncommitted changes the working tree's tracked files (a stash commit object;
-    # nothing in the tree, the index or the refs changes)
-    tree = (git("stash", "create", check=False).stdout.strip() or "HEAD") if dirty else "HEAD"
     now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
     record = {"format": RECORD_FORMAT, "kind": "run", "board": args.radio, "commit": head, "dirty": dirty,
               "date": now.isoformat().replace("+00:00", "Z"), "features": names,
-              "sources": {n: source_hashes(by_id[n], tree) for n in names},
+              "sources": {n: source_hashes(by_id[n]) for n in names},
               **{k: out[k] for k in ("granted", "tests", "firmware", "options", "tools")}}
     d = os.path.join(args.results, args.radio)
     os.makedirs(d, exist_ok=True)
