@@ -239,7 +239,7 @@ no FPU instructions.
 
 ### Hosting in OpenDigitalRadio
 
-* `boards/dm1701/vocoder_dm1701.c`:
+* `platform/stm32f4/hrc/vocoder.c` with this build's profile in `boards/dm1701/vocoder_dm1701.c`:
 
   | function | does |
   |---|---|
