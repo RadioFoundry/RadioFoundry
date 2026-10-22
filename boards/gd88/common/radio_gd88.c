@@ -419,7 +419,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	apc_ramp(tx_pa, true);
 	return true;
 #else
-	// TODO(gd88): unknown, needs a radio: A's TX switches (serial chain bits) and B's role. No TX until they are known
+	// Without GD88_TX (gd88_rf.h): A's power control isn't known yet, and B is a receiver only
 	(void)hz;
 	(void)power;
 	(void)tx_tone;
