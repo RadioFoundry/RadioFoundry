@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """Health checks for any radio, radio only, never transmits: the display geometry and build features VERSION reports,
-the data flash and factory calibration, the battery reading, a receiver that answers, DMR timeslot interrupts, the
-merged stock codec and the GPS. The numbers each board must meet come from its HIL expectations (odr_hil.board_hil:
+the data flash and factory calibration, the battery or supply voltage reading, a receiver that answers, DMR timeslot
+interrupts, the merged stock codec and the GPS. The numbers each board must meet come from its HIL expectations (odr_hil.board_hil:
 board.toml [hil]). A check whose expectation the board doesn't have skips (other_board: nothing to compare against on
 this board, which a bring-up run excuses), and one that reads a diagnostics line the firmware doesn't print skips
 not_built."""
@@ -75,7 +75,17 @@ def test_calibration(board):
     assert all(0 < x < 4096 for x in pa) and pa != [1408] * 4, f"PA drive not from calibration: {pa}"
 
 
-def test_battery(board):
+def test_voltage(board):
+    """The voltage the radio measures: its battery (the diagnostics' bat line, [hil] battery_mv) or its DC input (the
+    features section's supply_mv, [hil] supply_mv). no_hw on a radio that measures neither (debuglink.md 3.7)."""
+    f = board.radio.link.view(["features"])
+    if "supply_mv" in f:
+        low, high = board.expect("supply_mv")
+        mv = int(f["supply_mv"])
+        assert low < mv < high, f"supply {mv} mV, not in {low}-{high}: ADC channel or scale wrong"
+        return
+    if f.get("battery") == "none":
+        skip("no_hw", f"{board.id or board.name} measures neither a battery nor its supply voltage")
     low, high = board.expect("battery_mv")
     raw, mv = numbers(board.line("bat "))[:2]
     assert low < mv < high, f"battery {mv} mV (raw {raw}), not in {low}-{high}: ADC channel or scale wrong"

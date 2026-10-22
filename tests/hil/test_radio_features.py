@@ -156,9 +156,13 @@ def collect(radio, key, seconds, sections=("core",)):
 @pytest.mark.feature("radio_controls")
 def test_features_section(radio):
     f = features(radio)
-    missing = [k for k in FEATURE_KEYS if k not in f]
+    # a radio that measures its supply has supply_mv in place of battery_pct and battery_mv (debuglink.md 3.7)
+    keys = [k for k in FEATURE_KEYS if "supply_mv" not in f or k not in ("battery_pct", "battery_mv")]
+    missing = [k for k in keys if k not in f]
     assert not missing, f"missing keys in the features section: {missing}"
-    if f["battery"] == "none":      # a board without a battery (a mobile): percent and millivolts 0 (debuglink.md)
+    if "supply_mv" in f:
+        assert f["battery"] == "none" and as_int(f["supply_mv"], -1) >= 0, f
+    elif f["battery"] == "none":    # a board without a battery (a mobile): percent and millivolts 0 (debuglink.md)
         assert f["battery_pct"] == "0" and f["battery_mv"] == "0", f
     else:
         assert f["battery"] in ("ok", "low", "critical"), f
@@ -166,7 +170,8 @@ def test_features_section(radio):
         mv = as_int(f["battery_mv"], -1)
         assert mv == 0 or 5000 <= mv <= 9000, f"battery_mv {mv}"
     assert f["power_off"] == "0", f
-    print({k: f[k] for k in ("battery", "battery_pct", "battery_mv", "beep.built", "scan.built")})
+    shown = ("battery", "battery_pct", "battery_mv", "supply_mv", "beep.built", "scan.built")
+    print({k: f[k] for k in shown if k in f})
 
 
 @pytest.mark.feature("settings_store")

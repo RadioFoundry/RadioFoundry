@@ -147,6 +147,7 @@ BOARD_SCHEMA = {
     # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED)
     "hil": _opt({"display": _opt(str), "features": _opt(STR_LIST), "no_features": _opt(STR_LIST),
                  "flash_jedec": _opt(STR_LIST), "calibration": _opt(bool), "battery_mv": _opt(RANGE),
+                 "supply_mv": _opt(RANGE),
                  "codec": _opt(STR_LIST)}),
     "features": _opt(("map", {"state": _req(("unsupported",)), "reason": _req(str)})),
     # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
@@ -276,6 +277,15 @@ def _c_sources(board_dir):
         if f.endswith(".c"):
             with open(os.path.join(board_dir, f), encoding="utf-8") as fh:
                 yield f, _strip_c_comments(fh.read())
+
+
+def source_volts(board_dir):
+    """The voltage a board measures, from its sources as hal/board.h board_volts() decides it: "battery" unless board_t
+    .caps has CAP_NO_BATTERY, then "supply" when a hal_power_t sets .supply_mv, else "none"."""
+    texts = [t for _, t in _c_sources(board_dir)]
+    if not any(re.search(r"\.caps\s*=[^;}]*\bCAP_NO_BATTERY\b", t) for t in texts):
+        return "battery"
+    return "supply" if any(re.search(r"\.supply_mv\s*=", t) for t in texts) else "none"
 
 
 def board_t_names(board_dir):
@@ -578,6 +588,7 @@ def load(root=ROOT, only=None):
                          # board's reason wins for a switch both list
                          {**unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
                           **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(bdir))
+        out[bid].volts = source_volts(bdir)
     return out
 
 
@@ -915,7 +926,7 @@ def site_view(boards, root=ROOT):
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
-            "unsupported": dict(b.unsupported)})
+            "unsupported": dict(b.unsupported), "volts": b.volts})
     # the survey's radios without a board, planned or in progress (docs/spec/radios.md Port cells)
     rows, problems = registry_docs.survey(root, boards)
     if problems:
@@ -1035,6 +1046,23 @@ def self_test():
             ok(False, "validate refuses " + what)
         except RegistryError:
             ok(True, "validate refuses " + what)
+
+    # the voltage a board measures, from its sources
+    tmpv = tempfile.mkdtemp(prefix="odr-boards-volts-")
+    try:
+        def volts_of(src):
+            with open(os.path.join(tmpv, "board.c"), "w", encoding="utf-8") as f:
+                f.write(src)
+            return source_volts(tmpv)
+        ok(volts_of("const board_t board = { .caps = CAP_KEYPAD | CAP_DMR };") == "battery", "volts: a battery")
+        ok(volts_of("const board_t board = { .caps = CAP_ENCODER | CAP_NO_BATTERY, };") == "none",
+           "volts: no battery, no supply reading")
+        ok(volts_of("const board_t board = { .caps = CAP_NO_BATTERY };\n"
+                    "static const hal_power_t p = { .supply_mv = rd };") == "supply", "volts: the supply")
+        ok(volts_of("// .caps = CAP_NO_BATTERY\nconst board_t board = { .caps = 0 };") == "battery",
+           "volts: a comment doesn't count")
+    finally:
+        shutil.rmtree(tmpv)
 
     # hardware switches: built, unsupported or unconfirmed, never off by default
     hw = {"VIBRATE": "a vibration motor", "NAND_STORAGE": "SPI NAND data flash"}
