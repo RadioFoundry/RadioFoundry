@@ -58,10 +58,11 @@ ALIASES = dict({b.id: b.id for b in ODR_BOARDS}, **{
 })
 
 # Where a merged image holds the codec (docs/spec/codec-placement.md: the tables at their stock address, the code moved
-# into the top sector), and where its code starts: the first two windows of the board's codec placement, code first.
-# An image that reaches into them must carry the merged codec, recognized by its first word.
-CODEC_WINDOWS = {b.id: sorted((a, a + n) for a, n in b.codec.windows[:2]) for b in ODR_BOARDS}
-CODEC_SIG_ADDR = {b.id: b.codec_code for b in ODR_BOARDS}
+# into the top sector), and where its code starts: the board's codec windows (the union over its stock files) and the
+# code address of each stock file's placement. An image that reaches into a window must carry a merged codec,
+# recognized by its first word at one of those addresses.
+CODEC_WINDOWS = {b.id: sorted((a, a + n) for a, n in b.codec.windows) for b in ODR_BOARDS}
+CODEC_SIG_ADDRS = {b.id: b.codec_codes for b in ODR_BOARDS}
 CODEC_SIG = 0x4FF0E92D
 
 STOCK_MAGIC = b"OutSecurityBin"
@@ -154,15 +155,17 @@ def check_image(data, model):
     windows = CODEC_WINDOWS.get(model, [])
     hit = [(a, b) for a, b in windows if end > a]
     if hit:
-        sig_addr = CODEC_SIG_ADDR[model]
-        off = sig_addr - APP_BASE
-        word = struct.unpack_from("<I", data, off)[0] if off + 4 <= len(data) else None
-        if word != CODEC_SIG:
+        words = {}
+        for sig_addr in CODEC_SIG_ADDRS[model]:
+            off = sig_addr - APP_BASE
+            words[sig_addr] = struct.unpack_from("<I", data, off)[0] if off + 4 <= len(data) else None
+        if CODEC_SIG not in words.values():
             spans = ", ".join("0x%08X..0x%08X" % w for w in hit)
-            warnings.append("image extends to 0x%08X, into the codec window(s) %s, but the word at 0x%08X is %s, "
-                            "not the codec signature 0x%08X: the application overlaps the codec window "
+            found = ", ".join("0x%08X is %s" % (a, "missing" if w is None else "0x%08X" % w) for a, w in words.items())
+            warnings.append("image extends to 0x%08X, into the codec window(s) %s, but the word at %s, not the "
+                            "codec signature 0x%08X: the application overlaps the codec window "
                             "(DMR voice will not work and the app may be corrupt if a codec is merged later)"
-                            % (end, spans, sig_addr, "missing" if word is None else "0x%08X" % word, CODEC_SIG))
+                            % (end, spans, found, CODEC_SIG))
     return warnings
 
 

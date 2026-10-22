@@ -113,7 +113,7 @@ BOARD_SCHEMA = {
         "stub": _opt({"id": _req(int), "hold_power": _req(bool), "progmem": _req(int), "tested": _req(bool),
                       "stock_console": _opt(bool)}),
     }),
-    "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(str), "profile": _opt(str), "sources": _opt(STR_LIST),
+    "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(STR_LIST), "profile": _opt(str), "sources": _opt(STR_LIST),
                    "installed": _opt(STR_LIST)}),
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
 }
@@ -359,7 +359,8 @@ class Board:
 
     def codec(self):
         """{"profile", "windows": [(addr, length)], "sources", "installed", "code"} for a codec in a linker slot, or
-        None for a stock-file placement ([codec] stock: odrflash reads the windows from its stock-file tables)."""
+        None for a stock-file placement ([codec] stock, the SHA-256 of each stock file the codec merges from: odrflash
+        reads each file's windows from its stock-file tables, and the board's are their union)."""
         c = self.data["codec"]
         if c.get("stock"):
             return None
@@ -532,6 +533,15 @@ def check(root=ROOT):
                 if a < b.app_region[1] or a + n > b.flash_end():
                     bad("codec window 0x%08X+0x%X is outside the flash the linker script keeps free (0x%08X..0x%08X)"
                         % (a, n, b.app_region[1], b.flash_end()))
+        cst = d["codec"].get("stock")
+        if cst is not None:
+            if not cst or len(set(cst)) != len(cst):
+                bad("codec.stock lists each stock file once, at least one")
+            if any(not re.fullmatch(r"[0-9a-f]{64}", h) for h in cst):
+                bad("codec.stock entries are SHA-256 digests (64 lowercase hex digits)")
+            for k in ("profile", "sources"):
+                if k in d["codec"]:
+                    bad("codec.%s comes from the stock files' profiles when codec.stock is set" % k)
         if not os.path.isfile(os.path.join(root, "tools", d["codec"]["tool"] + ".py")):
             bad("codec.tool tools/%s.py doesn't exist" % d["codec"]["tool"])
         if codec is not None and not codec["profile"].startswith(bid + "-"):
@@ -606,7 +616,7 @@ def odrflash_view(boards):
             "sectors": [list(s) for s in b.sectors()], "protected": [list(p) for p in b.protected],
             "keep_codec_supported": fl["keep_codec"],
             "first_stage": [b.first_stage[0], b.first_stage[1].hex()] if b.first_stage else None,
-            "codec_tool": d["codec"]["tool"], "codec_stock": d["codec"].get("stock"),
+            "codec_tool": d["codec"]["tool"], "codec_stock": list(d["codec"].get("stock", [])),
             # a stock-file placement has no id or windows here: odrflash reads them from its stock-file tables
             "codec": {"id": codec["profile"] if codec else None,
                       "windows": [list(w) for w in codec["windows"]] if codec else None,
@@ -768,6 +778,26 @@ def self_test():
             ok(any("_VALUES" in p for p in check(tmp)), "check finds build option values that differ from board.mk")
             with open(mk, "w", encoding="utf-8") as f:
                 f.write(mk_good)
+        # a stock-file codec: a list of SHA-256 digests, its profile and sources from them
+        st = next((b for b in board_dirs(tmp) if re.search(r"(?m)^stock = \[", open(os.path.join(tmp, "boards", b,
+                                                                                           "board.toml")).read())), None)
+        if st:
+            sp = os.path.join(tmp, "boards", st, "board.toml")
+            st_good = open(sp, encoding="utf-8").read()
+            for text, what, want in ((re.sub(r'(?m)^stock = \["(\w+)"\]', r'stock = "\1"', st_good),
+                                      "a codec.stock that isn't a list", "a list expected"),
+                                     (re.sub(r'(?m)^stock = \["(\w+)"\]', r'stock = ["\1", "\1"]', st_good),
+                                      "a stock file listed twice", "once"),
+                                     (re.sub(r'(?m)^stock = \[', 'stock = ["abc", ', st_good),
+                                      "a codec.stock entry that isn't a SHA-256", "SHA-256"),
+                                     (re.sub(r"(?m)^(stock = .*)$", r'\1\nsources = ["x"]', st_good),
+                                      "codec.sources beside codec.stock", "comes from the stock files")):
+                with open(sp, "w", encoding="utf-8") as f:
+                    f.write(text)
+                got = check(tmp)
+                ok(any(want in q for q in got), "check finds %s (%s)" % (what, got[:2]))
+            with open(sp, "w", encoding="utf-8") as f:
+                f.write(st_good)
         with open(path, "w", encoding="utf-8") as f:
             f.write(good.replace('name = "', 'name = "Renamed ', 1))
         ok(any("out of date" in p for p in check(tmp)), "check finds a stale %s" % ODRFLASH_JSON)
