@@ -243,10 +243,14 @@ def feature_defaults(root, boards):
         out.append("| `%s` | %s |" % (s, " | ".join(marks)))
     # not a switch: what the board measures (hal/board.h board_volts), for the battery or supply features
     out.append("| Voltage reading (board, no switch) | %s |" % " | ".join(VOLTS_WORD[b.volts] for b in bs))
+    # not a switch either: board.toml [hardware] clock, the real-time clock (no driver uses it yet)
+    out.append("| Clock kept through power-off (board, no switch) | %s |"
+               % " | ".join(CLOCK_WORD[b.data["hardware"]["clock"]["rtc"]] for b in bs))
     return out
 
 
 VOLTS_WORD = {"battery": "Battery", "supply": "Supply", "none": "None"}
+CLOCK_WORD = {"backed": "Yes", "unbacked": "No (only while on)", "none": "No clock", "unknown": "?"}
 
 
 # file, block, source the marker names, generator(root, boards, rows)
