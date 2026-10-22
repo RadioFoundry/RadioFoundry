@@ -28,6 +28,9 @@ test("the universal stub decodes to its SHA-256 and fits every way in", async ()
 	assert.equal(stubs.load, 0x10000);
 	assert.deepEqual(univLayout(stubs.image), [stubs.run, stubs.end]);
 	assert.equal(stubs.run, 0x30000);
+	// The stub feeds the watchdog in its wait and read loops; ODR leaves it running (docs/spec/watchdog.md 3.2): the
+	// feed value 0x55AADD22 is in the image
+	assert.ok(Buffer.from(stubs.image).includes(Buffer.from([0x22, 0xDD, 0xAA, 0x55])), "the stub feeds the watchdog");
 	// boot ROM / first stage, ODR on the DM-32UV and DM-1801 Pro, the DB25-D with and without DMR, a stock DB25-D's console
 	for (const [load, win] of [[0x10000, null], [0x17000, [0x17000, 0x18000]], [0x1D000, [0x1D000, 0x12000]], [0x30000, [0x30000, 0x20000]], [0x54000, null]])
 		univFits(stubs.image, load, win);
@@ -125,6 +128,8 @@ test("boot ROM path: load, read with damaged frames, write, reset into ODR", asy
 	assert.equal(states.get(0xC000), "written");
 	await s.ledSequence(DONE_LED);
 	await s.resetChip();
+	const ev = r.events.filter((e) => e === "wdt-off" || e === "reset");
+	assert.deepEqual(ev.slice(-2), ["wdt-off", "reset"], "the watchdog goes off before the soft reset");
 	await new Promise((ok) => setTimeout(ok, 1500));
 	assert.equal(r.state, "firmware");
 	const p = await probe(new Link(r.stream));
@@ -140,6 +145,8 @@ test("simulated radio: after the stub's reset the host link stays silent until a
 	await s.waitForRom(5000);
 	await s.loadThroughRom(stubs.image, stubs.load);
 	await s.resetChip();
+	const ev = r.events.filter((e) => e === "wdt-off" || e === "reset");
+	assert.deepEqual(ev.slice(-2), ["wdt-off", "reset"], "the watchdog goes off before the soft reset");
 	await new Promise((ok) => setTimeout(ok, 1500));
 	assert.equal(r.state, "firmware");
 	assert.equal(await probe(new Link(r.stream, { timeout: 500 })), null, "no answer after the soft reset");

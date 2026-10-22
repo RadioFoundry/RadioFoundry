@@ -60,4 +60,20 @@ void crash_summary(const crash_record_t *r, char *out, size_t len);
 // What kind of crash, in words ("Fault", "Stack overflow", "Out of memory", "Assert", "Crash")
 const char *crash_kind_name(uint8_t kind);
 
+// --- The fault trace (crash_trace.c, CONFIG_FAULT_TRACE, with or without CONFIG_CRASH_LOG) ---
+
+// A platform's fault handler prints CRASH_TRACE_LINES of these on the host port, one a second, before it restarts:
+// "\r\n#ODRFAULT1 n=01 v=<8 hex> pc= psr= lr= sp= r0= ... *<CRC-16/CCITT-FALSE, 4 hex>\r\n". The CRC covers the
+// bytes from '#' up to and including the space before '*'. Three seconds stays inside the watchdog's timeout
+#define CRASH_TRACE_SYNC	"#ODRFAULT1"
+#define CRASH_TRACE_LINES	3u
+typedef struct {
+	uint32_t vector, pc, psr, lr, sp;
+	const uint32_t *r;	// the general registers the entry saved, r0 up
+	uint8_t nr;		// how many (16 at most)
+} crash_trace_t;
+// One line through out, a polled writer that works with interrupts off
+void crash_trace_line(const crash_trace_t *t, uint8_t n, void (*out)(const char *s));
+uint16_t crash_trace_crc(const char *s);
+
 #endif

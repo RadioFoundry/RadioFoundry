@@ -21,6 +21,9 @@ typedef struct {
 	uint32_t received;	// highest offset + length written, for progress and the exact-fill check
 	bool transmitting;	// set by the caller before each request: ENTER answers BUSY while the radio is on air,
 				// since the monitor would leave the transmitter keyed for the whole session
+	// Optional (NULL: any image): the platform's last check of a verified image before ENTER fires. False refuses
+	// ENTER with reason DL_STUB_REFUSE_WATCHDOG: the image doesn't feed a watchdog that can't be stopped
+	bool (*image_ok)(const uint8_t *img, uint32_t len);
 } dl_stub_t;
 
 // The biggest DATA chunk that fits a DL_REQ_MAX request (op byte + offset u32 + bytes)

@@ -75,6 +75,7 @@ const hal_system_t stm32_system = {
 	.stub_region = stm32_stub_region,	// stub_entry.c
 	.enter_stub = stm32_enter_stub,
 	.stub_run_addr = 0x20000000u,		// the staging buffer is copied to the SRAM base at entry
+	.stub_image_ok = stm32_stub_image_ok,	// with the IWDG running: only a stub that feeds it
 #endif
 };
 

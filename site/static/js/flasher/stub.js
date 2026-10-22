@@ -24,6 +24,7 @@ export const SECTOR = 4096, PAGE = 256, WINDOW = 16, PACK = 16, CHUNK = 1024, RO
 export const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, TOOLONG = 0x0E;
 export const SSI_PROG = 0x04000000, SSI_DATA = 0x140A0000;
 export const QUAD_ENABLE = 0x1100005C, LCSFC_BAUDR = 0x11000030, SYS_SOFT_RSTN = 0x11000000, TIMER2_VALUE = 0x14000018;
+export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
 export const STUB_MAGIC = 0x42533743, DL_STUB = 0x1A;
 const ROM_HELLO = [0x02, 0x24, 0x00, 0x03], ROM_ACK = [0x02, 0x05, 0x00, 0x03];
 // memory: SSI base, the GPIO chip select (the data flash's is PTA18), size
@@ -184,7 +185,8 @@ export class Stub {
 			await dl(concat(new Uint8Array([2]), le32(off), image.subarray(off, off + offer.chunk)), `the chunk at ${off}`);
 			progress(Math.min(off + offer.chunk, image.length), image.length);
 		}
-		await dl(concat(new Uint8Array([3]), le32(STUB_MAGIC)), "to start the loader (image incomplete or CRC mismatch)");
+		// Refused (7) with reason 1: the radio's watchdog runs and this loader doesn't feed it (an older copy of the site)
+		await dl(concat(new Uint8Array([3]), le32(STUB_MAGIC)), "to start the loader (image incomplete or CRC mismatch; status 7: this firmware needs a newer loader, reload the page)");
 		this.log("ODR is jumping to the stub");
 		this.jumped = true;
 		await this.afterJump();
@@ -501,7 +503,12 @@ export class Stub {
 
 	// Soft-reset the SoC: XIP quad off and the reset divider (the soft reset keeps it, and the ROM can't read flash at
 	// ODR's), then SYS_SOFT_RSTN = 0. The boot ROM runs again and starts the firmware: a power cycle without the cycle.
+	// The watchdog goes off first: ODR leaves it running while the stub feeds it, a soft reset may keep it, and the
+	// bootloader never feeds it. ODR starts it again
 	async resetChip() {
+		await this.poke(WDT_LOCK, le32(WDT_KEY));
+		await this.poke(WDT_EN, le32(0));
+		await this.poke(WDT_LOCK, le32(0));
 		await this.poke(QUAD_ENABLE, le32(0));
 		await this.poke(LCSFC_BAUDR, le32(4));
 		await this.sendNoReply(0x03, concat(be32(SYS_SOFT_RSTN), le32(0)));

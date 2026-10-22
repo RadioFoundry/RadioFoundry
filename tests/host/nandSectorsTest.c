@@ -231,9 +231,19 @@ static void sim_mark_bad(void *ctx, uint16_t b)
 	nand.ecc_fail[b * nand.ppb] = true;
 }
 
+// The board feeds its watchdog here (nand_dev_t.busy)
+static unsigned busy_calls;
+
+static void sim_busy(void *ctx)
+{
+	(void)ctx;
+	busy_calls++;
+}
+
 static nand_dev_t dev = {
 	.ctx = NULL, .spare_size = SPARE,
 	.read = sim_read, .program = sim_program, .erase = sim_erase, .block_bad = sim_block_bad, .mark_bad = sim_mark_bad,
+	.busy = sim_busy,
 };
 
 // --- The layer instance and a model of what it should hold ---
@@ -383,6 +393,30 @@ static void test_basic(void)
 
 // Rewrites far beyond the region's size: garbage collection, wear spread over every block, the map right after
 // remounts at random points, a full device
+// The long loops call the busy hook (a board feeds its watchdog there, docs/spec/watchdog.md 4): the mount at least once
+// per block and once per sector in use, garbage collection on each pass. Without the hook nothing changes
+static void test_busy_hook(void)
+{
+	fresh(8, 16, 12);
+	for (uint32_t s = 0; s < 12; s++) {
+		CHECK(rewrite_both(s, s + 1));
+	}
+	busy_calls = 0;
+	CHECK(remount() && matches_model());
+	CHECK(busy_calls >= 8 + 12);
+	// Rewrites until garbage collection has had to run: the hook is called during the writes too
+	busy_calls = 0;
+	for (uint32_t i = 0; i < 200; i++) {
+		CHECK(rewrite_both(i % 12, 1000 + i));
+	}
+	nand_sectors_stats_t st;
+	nand_sectors_get_stats(&ns, &st);
+	CHECK(st.gc_blocks > 0 && busy_calls > 0);
+	dev.busy = NULL;
+	CHECK(remount() && matches_model());
+	dev.busy = sim_busy;
+}
+
 static void test_gc_and_wear(void)
 {
 	nand_sectors_stats_t st;
@@ -1293,6 +1327,7 @@ static void test_cps(void)
 int main(void)
 {
 	test_basic();
+	test_busy_hook();
 	test_gc_and_wear();
 	test_bad_blocks();
 	test_foreign();

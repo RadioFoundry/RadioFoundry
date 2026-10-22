@@ -24,6 +24,7 @@ bool usb_configured(void);
 
 // Time (f4stub_main.c): milliseconds since start, from the cycle counter
 uint32_t stub_ms(void);
+void stub_feed(void);		// feed the IWDG (stub_ms does too)
 void stub_delay_ms(uint32_t ms);
 
 #endif

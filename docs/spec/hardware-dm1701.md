@@ -1175,7 +1175,7 @@ behavior.
 | RTC | LSE 32.768 kHz, 24 h format; keeps time while the MCU has power (no separate backup battery confirmed, unverified) |
 | LEDs | PE0 green, PE1 red, active high |
 | Backup SRAM | unused |
-| Watchdog | not used by the aftermarket firmware on this platform (its watchdog hook is empty); a new design may enable the IWDG |
+| Watchdog | not used by the aftermarket firmware on this platform (its watchdog hook is empty). ODR starts the IWDG and feeds it from the idle task (`CONFIG_WATCHDOG`, [watchdog.md](watchdog.md)) |
 
 ---
 

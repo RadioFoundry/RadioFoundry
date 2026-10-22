@@ -23,12 +23,18 @@ server keeps running while the tool writes through it (`--write-app` took 111 s 
 
 ## The universal stub
 
-One image (6,940 bytes, protocol version 6) serves every HR_C7000 radio and every way in. It is linked to run at 0x30000
+One image (7,004 bytes, protocol version 6) serves every HR_C7000 radio and every way in. It is linked to run at 0x30000
 and copies itself there from wherever it was loaded, then zeroes its .bss and sets its own stack. Board details are not
 built in: after HELLO the host sends CONFIG (clock rates it measured, the UART to keep, the power latch and key pins,
 LEDs, board id, NAND flag), and checks the echo in the next HELLO before it writes anything. The profiles are in
 `stubtool.py` (`C7_BOARDS`) and come from the running ODR's VERSION `board=`, or from `--board` at power-on. A stub that
 was not configured refuses every write.
+
+The watchdog: ODR's `enter_stub` leaves it running with a 32 s timeout, and the stub feeds it with the knock sequence on
+every pass of its receive wait and before every SPI read burst, so a stub that hangs resets the radio. `--boot reset`
+turns it off just before the soft reset. No flashing or backup trips the watchdog unless the stub itself hangs (`docs/spec/watchdog.md` 3). The source of this image is kept outside the repository; a rebuild is
+embedded with `python3 stub/embed_stub.py stub/stubtool.py UNIV stub_univ.bin`, and the site serves the image from
+`stubtool.py`, never a copy.
 
 HELLO v6 also reports the RAM footprint (run address, image length, end of .bss, stack bounds) and the deepest stack use
 so far, measured from a painted stack. `stubtool` prints it as `stub RAM:`.
@@ -42,10 +48,10 @@ the modem writes only its own SRAM, so after the stub masks every interrupt noth
 | Region | Address | Size |
 |---|---|---|
 | Entry and copy loop (position independent, no stack) | load address | 0x80 |
-| Image (text, parameter block at +0x80, data) | 0x30000-0x31B1C after the copy | 6,940 B |
-| .bss (receive buffer, sector buffer) | to 0x36934 | 19,992 B |
-| Stack (4 KB, painted) | 0x36938-0x37938 | 4,096 B |
-| Whole footprint | 0x30000-0x37938 | 31,032 B (32 KB budget, checked by the linker) |
+| Image (text, parameter block at +0x80, data) | 0x30000-0x31B5C after the copy | 7,004 B |
+| .bss (receive buffer, sector buffer) | to 0x36974 | 19,992 B |
+| Stack (4 KB, painted) | 0x36978-0x37978 | 4,096 B |
+| Whole footprint | 0x30000-0x37978 | 31,096 B (32 KB budget, checked by the linker) |
 
 Measured stack use: 168 bytes on the DM-32UV and DM-1801 Pro, 252 bytes on the DB25-D (NAND reads included).
 
@@ -63,9 +69,9 @@ rule, and that the load lies in IRAM, before it sends the image (`check_univ_loa
 | Stock DB25-D 020, console | 0x54000 (same window) | Stock: data and .bss to 0x4F150, interrupt stack to 0x50150, heap to 0x50950 | As for 018 |
 
 Why 0x30000: it is the one address every route can reach without moving anything still in use. Running ODR spans start
-at 0x17000, 0x1D000 or 0x30000 and all cover 0x30000-0x37938. The ROM and the first stage leave all IRAM free. A stock
+at 0x17000, 0x1D000 or 0x30000 and all cover 0x30000-0x37978. The ROM and the first stage leave all IRAM free. A stock
 DB25-D keeps nothing the stub needs once interrupts are off, and the only part of the stub that must sit in free stock
-RAM while stock still runs is the 6,940-byte image, which fits the 16 KB above 018's heap. Placing .bss and stack at
+RAM while stock still runs is the 7,004-byte image, which fits the 16 KB above 018's heap. Placing .bss and stack at
 the run address and not after the load address means no route has to assume free RAM above where it loaded the stub.
 
 On the stock routes the stub hands the program flash back from execute-in-place to the SSI and masks the interrupt
@@ -92,9 +98,17 @@ The STM32F4 stub is linked for the SRAM base. ODR stages it in an 8 KB buffer an
 checks it differently from the HR_C7000 monitors: it must start with the STM32F4 stub's entry code, and the base ODR
 reports must be 0x20000000.
 
+The IWDG can't be stopped once ODR starts it (`CONFIG_WATCHDOG`), so the stub feeds it: at start-up, in every wait loop
+(through `stub_ms()`, including the flash erase busy wait), at every request and once per 4 KB block of a long read
+or checksum. Its image has a 16-byte header at offset 0x10 (magic, stub version 3, flags with bit 0 "feeds the
+IWDG"; `stm32f4/f4stub_header.h`, the one definition the stub and ODR share, layout in
+[stub-stm32f4.md](../docs/spec/stub-stm32f4.md) 3.1). A watchdog build of ODR refuses ENTER unless the header has the
+magic, a version of at least 3 and the flag, so an older `f4stub.py` or web page gets a refusal before anything is
+written, never a reset part way through. `--odr-enter` prints the version it read from the header. The web flasher serves the image embedded in `f4stub.py`, never a copy (`docs/spec/watchdog.md` 3.1).
+
 | File | What |
 |---|---|
-| `stm32f4/` | the stub's C source, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (about 5.3 KB) |
+| `stm32f4/` | the stub's C source, linker script and Makefile: `make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin` (about 6.9 KB) |
 | `f4stub.py` | its host side, with the stub build embedded (checked by SHA-256; `--embed` puts a new build in, and CI fails while a fresh build differs); `stubtool.py` hands the DM-1701 and MD-380 to it (`--odr-enter`, or `--attach --board dm1701`); `--self-test` runs without a radio |
 
 Status (2026-10-16): built and host tested (`tests/host`: the protocol engine, and the host tool against the real
