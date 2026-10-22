@@ -841,27 +841,6 @@ static void test_rx_call(void)
 	CHECK(V()->state == DMR_CALL_STATE_RX);
 	run_ms(60);
 	CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.ends == 1);
-
-	// rx_same_voice: 0 for bursts that differ; a modem reporting one stale voice buffer gives the same 27 bytes for
-	// every burst after the first (gotchas 14.15)
-	dmr_call_stats_t st;
-
-	setup(&c);
-	frame = 1;
-	rx_call(lc, 1, true, 0, 2, true, &frame);
-	dmr_call_get_stats(&st);
-	CHECK(st.rx_voice_bursts == 12 && st.rx_same_voice == 0);
-	setup(&c);
-	rx_header(lc, 1, 0, DMR_SYNC_MS, false);
-	run_ms(60);
-	for (int i = 0; i < 12; i++) {
-		unsigned stale = 1;
-
-		rx_voice((uint8_t)(i % 6), 1, 0, DMR_SYNC_MS, &stale, i % 6 == 5 ? lc : NULL, false);
-		run_ms(60);
-	}
-	dmr_call_get_stats(&st);
-	CHECK(st.rx_voice_bursts == 12 && st.rx_same_voice == 11);
 }
 
 // The modem reports bursts in batches: the call's last voice bursts can come after its terminator. They must not start

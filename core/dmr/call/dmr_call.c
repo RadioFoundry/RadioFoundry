@@ -79,8 +79,6 @@ static struct {
 	uint8_t next_index;
 	uint32_t last_voice_ms;	// last voice burst of the call played (arrival)
 	uint32_t last_voice_slot;	// ... its slot counter from the modem, 0 = none
-	uint8_t last_voice[DMR_VOICE_BYTES];	// ... its 27 bytes as received (stat rx_same_voice)
-	bool last_voice_valid;
 	uint32_t last_rx_ms;	// last burst of the call (played or not)
 	uint32_t last_activity_ms;	// last non-idle burst on our slot with our CC
 	bool activity_seen;
@@ -552,7 +550,6 @@ static void rx_lc(const uint8_t lc[DMR_LC_BYTES], const dmr_burst_t *b, bool lat
 #if CONFIG_SFR
 		sfrDedupReset(&s.sfr_dd);
 #endif
-		s.last_voice_valid = false;
 		stats.rx_calls++;
 		if (late)
 			stats.rx_late_entries++;
@@ -637,13 +634,6 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		sink_lost(DMR_AMBE_FRAMES_PER_BURST);	// no key: never play the scrambled voice
 		return;
 	}
-
-	// A voice burst exactly like the one before it: real speech never repeats 27 bytes, a modem reading a stale voice
-	// buffer does (gotchas 14.15). Silence and test patterns do too, so it is a count to judge, not a drop
-	if (s.last_voice_valid && memcmp(s.last_voice, b->payload, DMR_VOICE_BYTES) == 0)
-		stats.rx_same_voice++;
-	memcpy(s.last_voice, b->payload, DMR_VOICE_BYTES);
-	s.last_voice_valid = true;
 
 	uint8_t v[DMR_VOICE_BYTES];
 
