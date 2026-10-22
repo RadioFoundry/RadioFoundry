@@ -82,16 +82,3 @@ lens = [30, 30]
 # reports them
 [cps]
 radio_types = [7]
-
-# Why each switch in config.mk's BOARD_UNSUPPORTED is n/a on this radio, by feature (tests/hil/features.toml):
-# tools/bringup.py shows the reason. "unsupported" instead marks a feature planned but not working yet
-[features]
-fm_tx_tones = { state = "n/a", reason = "Needs a TX tone path through the HR_C5000 or the PC7 PWM: not written" }
-aprs_rx = { state = "n/a", reason = "APRS AFSK needs the TX tone path, which isn't written" }
-aprs_igate = { state = "n/a", reason = "Needs APRS receive, which isn't written for this radio" }
-sfr = { state = "n/a", reason = "The SFR glue is HR_C6000 only: the HR_C5000 lacks CRC_MCU_Control" }
-split_duplex = { state = "n/a", reason = "The split duplex glue is HR_C6000 only" }
-font_xl = { state = "n/a", reason = "The 160x128 panel is too small for the large font (it is for 240 px and wider)" }
-am_rx = { state = "n/a", reason = "No air band receiver" }
-bcast_fm = { state = "n/a", reason = "No broadcast receiver" }
-fault_trace = { state = "n/a", reason = "Needs a host UART: the host port is USB, and the one UART is the GPS receive line (G models)" }

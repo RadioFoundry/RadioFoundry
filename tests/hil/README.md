@@ -94,8 +94,8 @@ radio's state for each feature from the board registry (`tools/boards.py`) and t
 
 | State | When |
 |---|---|
-| `n/a` | The switch is in the board's `BOARD_UNSUPPORTED`. Needs a reason: `board.toml` `[features] <id> = { state = "n/a", reason = "..." }` |
-| `unsupported` | `board.toml` `[features.<id>] state = "unsupported"`: planned, not working yet. Needs a reason |
+| `n/a` | The switch is in the board's `BOARD_UNSUPPORTED` (`config.mk`, one switch a line with the reason in its comment: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`). `tools/boards.py check` fails on one without a reason |
+| `unsupported` | `board.toml` `[features] <id> = { state = "unsupported", reason = "..." }`: planned, the hardware could, not working yet |
 | `off` | The board's default build leaves the switch off |
 | `required` | Anything else: the feature's tests must pass on the radio |
 

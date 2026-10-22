@@ -11,7 +11,7 @@ checks it, and the records of those runs (docs/testing/results/<board>/). tests/
   tools/bringup.py check                        host-side consistency (tools/ci.sh)
 
 A radio's state for a feature is resolved, never typed:
-  n/a          the switch is in the board's BOARD_UNSUPPORTED (the reason: board.toml [features] <id>)
+  n/a          the switch is in the board's BOARD_UNSUPPORTED (config.mk, with the reason on its line)
   unsupported  board.toml [features] <id> state = "unsupported": planned, not working yet (a reason is required)
   off          the board's default build leaves the switch off: nothing to check
   required     anything else: the feature's tests must pass on the radio
@@ -42,7 +42,7 @@ FEATURES_TOML = os.path.join(ROOT, "tests", "hil", "features.toml")
 RESULTS = os.path.join(ROOT, "docs", "testing", "results")
 RECORD_FORMAT = 1
 FIELDS = {"switch", "spec", "source", "planned_tests", "manual"}
-OVERRIDE_STATES = ("n/a", "unsupported", "required")
+OVERRIDE_STATES = ("unsupported",)
 # How list shows a resolved state: "required" is the checklist's word, "built" what it means to a reader
 SHOWN = {"required": "built"}
 SEED_RESULTS = ("pass", "fail")
@@ -55,14 +55,14 @@ def die(msg):
 # ── board data ──
 #
 # Everything below reads boards only through _boards(), and _boards() only through the board registry
-# (tools/boards.py): the board list, the debug link names, board.toml [features] (each n/a switch's reason, the
-# unsupported marks) and the build's own values (BOARD_UNSUPPORTED and each switch's default, by make).
+# (tools/boards.py): the board list, the debug link names, config.mk's BOARD_UNSUPPORTED with each switch's reason,
+# board.toml [features] (the unsupported marks) and each switch's default (by make).
 
 _BOARDS = None
 
 
 def _boards():
-    """Every board: id -> {unsupported, config, overrides, debuglink_names}."""
+    """Every board: id -> {unsupported: {switch: reason}, config, overrides, debuglink_names}."""
     global _BOARDS
     if _BOARDS is not None:
         return _BOARDS
@@ -72,8 +72,8 @@ def _boards():
     out = {}
     try:
         for bid, b in registry.load(ROOT).items():
-            mk = registry.make_vars(ROOT, bid, ["BOARD_UNSUPPORTED"] + [f"CONFIG_{s}" for s in sws])
-            out[bid] = {"unsupported": set(mk.get("BOARD_UNSUPPORTED", "").split()),
+            mk = registry.make_vars(ROOT, bid, [f"CONFIG_{s}" for s in sws])
+            out[bid] = {"unsupported": b.unsupported,
                         "config": {s: mk.get(f"CONFIG_{s}", "") for s in sws},
                         "overrides": b.get("features", {}), "debuglink_names": b.debuglink_names()}
     except registry.RegistryError as e:
@@ -191,7 +191,7 @@ def resolve(board, e):
     if e["switch"] and e["switch"] in bd["unsupported"]:
         if ov and ov.get("state") == "unsupported":
             return "unsupported", ov.get("reason", "")
-        return "n/a", (ov or {}).get("reason", "")
+        return "n/a", bd["unsupported"][e["switch"]]
     if ov:
         return ov.get("state", "required"), ov.get("reason", "")
     if e["switch"] and bd["config"].get(e["switch"]) != "y":
@@ -565,14 +565,13 @@ def check(feats, boards, records, found, all_switches):
                             "supported mark comes from the records, never typed)")
             if not ov.get("reason"):
                 errs.append(f"{where}: no reason")
-            sw = by_id[fid]["switch"]
-            if ov.get("state") == "n/a" and sw and sw not in bd["unsupported"]:
-                errs.append(f"{where}: n/a, but {sw} is not in the board's BOARD_UNSUPPORTED")
         for e in feats:
             state, reason = resolve(b, e)
             if state in ("n/a", "unsupported") and not reason:
-                errs.append(f"{b}: {e['id']} is {state} without a reason (boards/{b}/board.toml [features] "
-                            f"{e['id']} = {{ state = \"{state}\", reason = \"...\" }})")
+                errs.append(f"{b}: {e['id']} is {state} without a reason (" + (
+                    f"boards/{b}/config.mk: BOARD_UNSUPPORTED += {e['switch']}  # <reason>" if state == "n/a" else
+                    f"boards/{b}/board.toml [features] {e['id']} = {{ state = \"unsupported\", reason = \"...\" }}")
+                    + ")")
     for b, recs in records.items():
         if b not in boards:
             errs.append(f"docs/testing/results/{b}: no such board")

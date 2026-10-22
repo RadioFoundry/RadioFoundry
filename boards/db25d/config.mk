@@ -72,8 +72,18 @@ CONFIG_BCAST_FM ?= n
 CONFIG_AM_RX ?= n
 # 160x128 like the DM-1701, which builds without the large font
 CONFIG_FONT_XL ?= n
-# What the board can't do yet or lacks: ci's maximal configuration leaves these off. No USB data port; no split duplex, SFR or USRP (above);
-# no FM receive PCM (APRS_RX, APRS_IGATE); the rest are not wired or are bench tools
-BOARD_UNSUPPORTED := USB USB_NETWORK NET_USRP HOTSPOT_SPLIT SFR APRS_RX APRS_IGATE BCAST_FM AM_RX AUDIO_PROBE FONT_XL
+# What the board lacks or can't do yet, one switch per line with the reason (tools/boards.py checks there is
+# one): ci's maximal configuration leaves these off
+BOARD_UNSUPPORTED += USB	# no USB data port: the host link runs on the programming cable's UART
+BOARD_UNSUPPORTED += USB_NETWORK	# no USB data port for the network adapter: PPP on the host UART stands in
+BOARD_UNSUPPORTED += NET_USRP	# 8 kHz PCM both ways is more than the 115200 baud host port carries (above)
+BOARD_UNSUPPORTED += HOTSPOT_SPLIT	# the per-burst TX path has no continuous base-station outbound (above)
+BOARD_UNSUPPORTED += SFR	# RX and TX switch every slot: the per-burst retune isn't timed for it (above)
+BOARD_UNSUPPORTED += APRS_RX	# no FM receive audio as PCM (the PCM path is the DMR modem's, above)
+BOARD_UNSUPPORTED += APRS_IGATE	# needs APRS receive, which needs the FM receive audio as PCM
+BOARD_UNSUPPORTED += BCAST_FM	# the RDA5802N broadcast receiver isn't wired yet
+BOARD_UNSUPPORTED += AM_RX	# the air band isn't wired yet
+BOARD_UNSUPPORTED += AUDIO_PROBE	# a bench diagnostic for an audio path this radio doesn't have
+BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
 BOARD_REQUIRED := FM
