@@ -38,6 +38,11 @@ void st7735_init(const st7735_t *p);
 // Send rows y0 .. y1-1 of a width x height RGB565 frame buffer (native uint16 order)
 void st7735_write_rows(const st7735_t *p, const uint16_t *fb, uint16_t y0, uint16_t y1);
 
+// The same from a 16-color frame buffer (4 bits a pixel, two to a byte, high nibble left, rows of (width + 1) / 2
+// bytes): palette holds the 16 RGB565 colors the indexes stand for. The rows are expanded a few pixels at a time, so
+// the driver needs no line buffer
+void st7735_write_rows_indexed(const st7735_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t y0, uint16_t y1);
+
 // Fill a rectangle of panel addresses (offsets not applied: for clearing hidden rows); x1, y1 exclusive
 void st7735_fill_raw(const st7735_t *p, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
 
