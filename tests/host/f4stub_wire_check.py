@@ -51,7 +51,14 @@ def run(sim, flash, job, want_spi=False):
         proc = subprocess.Popen([sim, fin, fout], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
         radio = f4stub.F4Radio(PipePort(proc), log=lambda *a: None)
-        radio.hello()
+        # The simulator may still be starting on a loaded machine, and hello() allows 0.5 s once
+        for attempt in range(20):
+            try:
+                radio.hello()
+                break
+            except stubtool.DumpError:
+                if attempt == 19:
+                    raise
         result = job(radio, d)
         proc.stdin.close()
         log = proc.stderr.read().decode()
