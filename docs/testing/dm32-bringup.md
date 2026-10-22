@@ -20,18 +20,18 @@ Hardware facts: `docs/spec/hardware-dm32.md`, `docs/spec/modem-hrc7000.md`, `doc
 
    ```
    make BOARD=dm32                                   # csky-elf GCC: tools/build-csky-toolchain.sh
-   tools/dm32_pack.py build/dm32/odr_dm32.bin build/dm32/odr_dm32_BFUV32.bin
+   tools/serial_loader.py --model dm32 build/dm32/odr_dm32.bin --wrap build/dm32/odr_dm32_BFUV32.bin
    ```
 
    For DMR voice, merge your own stock codec first (never commit or share the result):
 
    ```
    tools/hrc7000_codec.py --stock DM32.01.01.049.bin    # writes build/dm32/odr_dm32_codec.bin
-   tools/dm32_pack.py build/dm32/odr_dm32_codec.bin build/dm32/odr_dm32_codec_BFUV32.bin
+   tools/serial_loader.py --model dm32 build/dm32/odr_dm32_codec.bin --wrap build/dm32/odr_dm32_codec_BFUV32.bin
    ```
 
-4. Load the image in update mode: `tools/serial_loader.py build/dm32/odr_dm32_codec.bin` (a raw image or the
-   `_BFUV32.bin` file, over the programming cable; `--stock DM32.01.01.049.bin` goes back), or the Baofeng updater
+4. Load the image in update mode: `tools/serial_loader.py --model dm32 build/dm32/odr_dm32_codec.bin` (a raw
+   image, or the `_BFUV32.bin` file without `--model`, over the programming cable; `--stock DM32.01.01.049.bin` goes back), or the Baofeng updater
    with the `_BFUV32.bin` file. To keep the stock codeplug and get it onto ODR, run `tools/dm32_migrate.py all
    --image build/dm32/odr_dm32_codec.bin` instead: it backs the codeplug up with qdmr, flashes, and writes it back
    once ODR runs ([dm32-migration.md](../spec/dm32-migration.md), users:

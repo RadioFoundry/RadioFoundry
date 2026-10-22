@@ -19,11 +19,11 @@ and ST's HAL and CMSIS into `third_party/`.
 
 | Command | Does |
 |---|---|
-| `make BOARD=<b>` | Builds `build/<b>/odr_<b>.{elf,bin,map}`, plus `odr_<b>_codec.bin` when `codecs/` holds the radio's stock file and the board has a codec tool (below). `BOARD` defaults to `dm1701` |
-| `make BOARD=md380 MD380_BAND=vhf` | The MD-380 VHF image (default `uhf`; one image per band) |
+| `make BOARD=<b>` | Builds `build/<b>/odr_<b>.{elf,bin,map}`, plus `odr_<b>_codec.bin` when `codecs/` holds the radio's stock file and the board has a codec tool (below). There is no default board: `make` alone lists them |
+| `make BOARD=md380 BAND=vhf` | A build option (`board.toml` `[[build_options]]`): the MD-380 VHF image, in `build/md380-vhf` (default `uhf`; one image per band) |
 | `make BOARD=<b> size` | Section sizes and the space left before the codec |
 | `make BOARD=<b> stack-check` | Each task's worst-case stack depth against its stack ([stack-check.md](stack-check.md)) |
-| `make test` | The host tests (the same as `make -C tests/host`) |
+| `make test` | The host tests (the same as `make -C tests/host`); needs no `BOARD` |
 | `make BOARD=<b> print-config` | The feature switches this board builds with, as `NAME=y/n` |
 | `make BOARD=<b> print-cc` | The compiler the board uses (ci.sh checks it is installed) |
 | `make BOARD=<b> print-unsupported`, `print-maximal-vars` | `BOARD_UNSUPPORTED` and `MAXIMAL_VARS` from the board's `config.mk`, for ci.sh's maximal build |
@@ -54,6 +54,26 @@ In short:
 - A new feature that costs flash gets a switch: the steps are in [build-config.md, "Adding a feature"](../build-config.md#adding-a-feature).
   ci.sh then builds each board with it off alone (when on by default) and with every switch on.
 
+## Hardware build options
+
+Some radios come in hardware versions that one image can't serve, such as the MD-380's UHF and VHF boards. Each such
+choice is a build option:
+
+| Where | What it holds |
+|---|---|
+| `boards/<b>/board.mk` | `BUILD_OPTIONS` names the options; `<NAME>_VALUES` lists each one's values, the default first (`BAND_VALUES := uhf vhf`) |
+| `boards/<b>/board.toml` `[[build_options]]` | The words people read: a title and help for the option, a title, a text and the reported board name for each value. `tools/boards.py check` fails when its values differ from `board.mk` |
+| C | `ODR_<NAME>_<VALUE>` is 1 for the chosen value and 0 for the others (`#if ODR_BAND_VHF`) |
+
+`make BOARD=md380 BAND=vhf` builds the VHF image. A value the board doesn't list stops the build with the list. A
+non-default value is part of the build directory and the image name (`build/md380-vhf/odr_md380-vhf.bin`), and of the
+release file (`odr-md380-vhf-<version>.bin`). `tools/ci.sh` builds every value. The release manifest records the
+values (`build_options`). odrflash takes them from the board name a running radio reports (`MD-380 VHF`), or from
+`--option BAND=vhf`, and refuses an image built for other hardware than the radio's.
+
+Prefer one image that detects the hardware at run time when that is possible. Build options are separate from release
+variants (`VARIANT=`, [build-config.md](../build-config.md)), which choose features, not hardware.
+
 ## Image size
 
 Each board's code space and the codec sectors that end it are in [release.md, "Sector maps"](release.md#sector-maps).
@@ -70,7 +90,7 @@ The user manual covers it for users: [Installing](../user/02-installing.md). In 
 |---|---|
 | DM-1701 | `odrflash flash build/dm1701/odr_dm1701.bin --board dm1701 [--stock FILE]` ([tools/odrflash](../../tools/odrflash/README.md)): keeps the radio's codec or merges it from the stock file, erases only the sectors it needs. The older two-step route still works: `tools/codec_extract.py --stock FILE` (key derived from the file, or `--key`), then `tools/stm32_dfu.py IMAGE --model dm1701 --key dm1701.key`, which erases every application sector |
 | MD-380 | `tools/md380_migrate.py flash --image IMAGE --stock FILE` (merges the codec), or `tools/codec_extract.py` then `tools/stm32_dfu.py --model md380`. Moving a radio from stock with its codeplug: [md380-migration.md](../spec/md380-migration.md) |
-| DM-32UV | `tools/hrc7000_codec.py` merges the codec; `tools/serial_loader.py IMAGE` writes it through the Baofeng bootloader over the programming cable (or `tools/dm32_pack.py` wraps it for Baofeng's updater). Moving a radio from stock with its codeplug: [dm32-migration.md](../spec/dm32-migration.md) |
+| DM-32UV | `tools/hrc7000_codec.py` merges the codec; `tools/serial_loader.py IMAGE` writes it through the Baofeng bootloader over the programming cable (or `tools/serial_loader.py --wrap` makes the vendor file for Baofeng's updater). Moving a radio from stock with its codeplug: [dm32-migration.md](../spec/dm32-migration.md) |
 
 Without a codec the firmware runs, with FM only. See [The codec](codec.md).
 

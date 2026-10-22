@@ -30,7 +30,7 @@
 #define SAFE_REF	0x80u
 
 // Used when the frequency list is unreadable: the band split in eight equal steps
-#if MD380_VHF
+#if ODR_BAND_VHF
 #define GRID_FIRST	13600000u	// 10 Hz units
 #define GRID_STEP	475000u
 #else
@@ -76,7 +76,7 @@ static void load_frequencies(void)
 	freq_from_table = true;
 	for (uint32_t i = 0; i < POINTS; i++) {
 		uint32_t f = bcd32(&table[FREQ_LIST + i * 4u]);
-#if MD380_VHF
+#if ODR_BAND_VHF
 		bool in_band = f >= 13000000u && f <= 18000000u;
 #else
 		bool in_band = f >= 39000000u && f <= 49000000u;

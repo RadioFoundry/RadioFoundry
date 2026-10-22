@@ -240,7 +240,7 @@ miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 
 run: run-core
 run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
-          keyassignTest
+          keyassignTest powerSwitchTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
@@ -253,6 +253,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest roamTest radioAm
 	./serialmicTest
 	./miclevelTest
 	./keyassignTest
+	./powerSwitchTest
 .PHONY: run-core
 
 # The read-only codeplug (open-firmware layout and built-in channels), on fake flash images
@@ -335,7 +336,7 @@ run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest codecDescTest
 	./hrc5000Test
 	./nmeaLineTest
 	./gpsRxTest
-	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin
+	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin --board dm1701
 	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380
 	./codecDescTest codec_desc_test.bin codec_desc_md380.bin
 .PHONY: run-chips
@@ -475,10 +476,10 @@ HRC6K   := $(ROOT)/drivers/modem/hrc6000
 hrc6000DmrTest: hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 
-run: run-hrcdmr
-run-hrcdmr: hrc6000DmrTest
+run: run-modem
+run-modem: hrc6000DmrTest
 	./hrc6000DmrTest
-.PHONY: run-hrcdmr
+.PHONY: run-modem
 
 # The DMR receive chain: a model of the HR_C6000's reports through the slot engine, a batching board task and the call
 # stack to the voice sink (every burst on air out once, in order, nothing concealed)
@@ -655,8 +656,8 @@ run-f4stub: f4stubTest f4stubSim
 HRC7    := $(ROOT)/drivers/modem/hrc7000
 TESTS   += fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest
 
-fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
-	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/drivers/rf/fd6818/fd6818_dm1801pro.c $(SUBAUDIO)
+fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
+	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(SUBAUDIO)
 
 st7567Test: st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c $(ROOT)/drivers/display/st7567/st7567.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ st7567Test.c $(ROOT)/drivers/display/st7567/st7567.c
@@ -699,8 +700,8 @@ lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/
 baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
-run: run-hrc7000
-run-hrc7000: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
+run: run-drivers
+run-drivers: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
              lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
 	./hrc7000BsTest
 	./hrc7000DmrTestSplit
@@ -714,7 +715,7 @@ run-hrc7000: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc700
 	./hrc7000DmrTest
 	./baofengCalTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --self-test
-.PHONY: run-hrc7000
+.PHONY: run-drivers
 
 # The BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
 TESTS   += bk4819Test
@@ -741,13 +742,14 @@ TESTS   += hrc7000CodecSlotTest
 hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
 
-run: run-hrc7000soc
-run-hrc7000soc: bk4819Test hrc7000ClockTest hrc7000CodecSlotTest
+run: run-platform
+run-platform: bk4819Test hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest
 	./bk4819Test
 	./hrc7000ClockTest
+	./hrc7000UartFormatTest
 	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
-.PHONY: run-hrc7000soc
+.PHONY: run-platform
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
 # radio's own services are mdnsTest's and tftpTest's)
@@ -1047,3 +1049,14 @@ run: run-boards
 run-boards::
 .PHONY: run-boards
 -include $(wildcard $(ROOT)/boards/*/tests/host.mk)
+
+# Every test in TESTS must be run by a group: run: $(TESTS) above expands before the later TESTS += lines, so a test
+# missing from its group's run lines is built by no rule and run by none (two were, unnoticed). HELPERS are programs
+# a test script drives, not tests of their own
+HELPERS := pppPeer cpsSim snmpPeer
+run: check-run
+check-run:
+	@for t in $(filter-out $(HELPERS),$(TESTS)); do \
+		grep -qE "(^|[[:space:];&|(])\./$$t([[:space:];>|)]|$$)" $(MAKEFILE_LIST) || \
+			{ echo "tests/host: no run group runs $$t (add it to one, or to HELPERS)"; exit 1; }; done
+.PHONY: check-run

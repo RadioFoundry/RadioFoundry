@@ -185,7 +185,7 @@ tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board 
 |---|---|
 | `registry` | Every `board.toml` and `platform.toml` is well formed and agrees with `board.mk`, the linker scripts and `board_t`; `tools/odrflash/odrflash/registry.json` is current; the loader's self-test (`tools/boards.py`) |
 | `host` | `make -C tests/host`, with each board's own tests (`boards/<b>/tests/host.mk`) |
-| `python` | The Python tools, the HIL test collection, doc links, the glossary, the web site build and the flasher's tests |
+| `python` | Every Python file parses, the HIL test collection, odrflash's tests, every tool's `--self-test` (found by searching `tools/` and `stub/`, so a new tool needs no ci.sh change), doc links, the glossary, the web site build and the flasher's tests |
 | `firmware` | Every board whose compiler is installed: the default build, each build option value (`board.toml` `[[build_options]]`, such as a band), each `[ci] extra` configuration, the feature matrix, and the flash stubs of each built platform (`platform.toml` `stubs`) |
 | `licenses` | `tools/license_grep.sh` and `reuse lint` |
 | `similarity` | `tools/similarity_scan.py`, only with `ODR_SIMILARITY_REFS` set |

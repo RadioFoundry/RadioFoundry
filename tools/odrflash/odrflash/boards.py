@@ -101,6 +101,27 @@ class Board:
                 return next((v for v in o["values"] if v["id"] == value), None)
         return None
 
+    def options_for_name(self, name):
+        """The build option values a debug link board name stands for ({"BAND": "vhf"} for "MD-380 VHF"); {} for a
+        name of this board that says nothing about them, None for another board's name."""
+        if name not in self.debuglink_names:
+            return None
+        out = {}
+        for o in self.build_options:
+            v = next((v for v in o["values"] if v["board_name"] == name), None)
+            if v:
+                out[o["name"]] = v["id"]
+        return out
+
+    def full_options(self, given):
+        """Every build option's value: the given ones, the defaults (each option's first value) for the rest."""
+        return {o["name"]: (given or {}).get(o["name"], o["values"][0]["id"]) for o in self.build_options}
+
+    def image_id(self, options):
+        """The board id with each non-default option value, as the Makefile and the release name images: md380-vhf."""
+        full = self.full_options(options)
+        return self.id + "".join("-" + full[o["name"]] for o in self.build_options if full[o["name"]] != o["values"][0]["id"])
+
 
 FORMAT = "odr-board-registry/2"
 

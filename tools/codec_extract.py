@@ -255,13 +255,15 @@ def main():
     ap.add_argument("-o", "--output", help="merged image to write (default: <image>_codec.bin next to the image)")
     ap.add_argument("--self-test", action="store_true", help="check the tool's logic on a synthetic file and key")
     ap.add_argument("--test-desc", metavar="FILE", help="write the codec sectors for a synthetic codec, as merged "
-                    "(tests/host/codecDescTest.c; --board md380 for the MD-380's)")
+                    "(tests/host/codecDescTest.c), for --board")
     args = ap.parse_args()
 
     if args.self_test:
         return self_test()
     if args.test_desc:
-        return test_desc(args.test_desc, args.board or "dm1701")
+        if not args.board:
+            ap.error("--test-desc needs --board")
+        return test_desc(args.test_desc, args.board)
     if not args.stock:
         ap.error("--stock is required (or --self-test)")
     try:

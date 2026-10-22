@@ -36,7 +36,7 @@
     ],
     "build_options": [
       {
-        "name": "MD380_BAND",
+        "name": "BAND",
         "title": "Band",
         "help": "The MD-380 comes in a UHF and a VHF version; the label under the battery and the frequencies the radio covers tell which.",
         "values": [

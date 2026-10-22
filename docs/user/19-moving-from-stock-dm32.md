@@ -98,8 +98,8 @@ radio holds about 300,000 records. When the list is longer, the tool keeps the o
 `serial_loader.py` flashes any image without touching the codeplug:
 
 ```
-python3 serial_loader.py odr_dm32_codec.bin       # a raw image or a _BFUV32.bin file
-python3 serial_loader.py --list-ports             # the cables it sees
+python3 serial_loader.py --model dm32 odr_dm32_codec.bin   # a raw image (a _BFUV32.bin file needs no --model)
+python3 serial_loader.py --list-ports                       # the cables it sees
 ```
 
 ## Going back to stock
