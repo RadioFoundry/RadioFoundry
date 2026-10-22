@@ -115,7 +115,7 @@ when the fill drifts a block away from its target. At 100 ppm that's one sample 
 harmless to AFSK and the FSK modes (host test: 200 ppm either way for 10 minutes with 15 ms of jitter, no underrun,
 no overflow). The same buffer serves USRP and serial audio, whose senders run on the host's clock too.
 
-**IDs**: the radios use NXP's VID with the aftermarket firmware's PIDs today (`board_usb_ids`; `boards/dm1701/usb_dm1701.c` says a
+**IDs**: the radios use NXP's VID with the aftermarket firmware's PIDs today (`board_usb_ids`; `platform/stm32f4/platform.h` says a
 release should move to an ID of its own). A composite personality changes the interface set, so it needs its own PID (Windows caches the
 driver binding per VID/PID). pid.codes (VID 0x1209) gives open-source projects PIDs for free; the AIOC adapter, an
 MIT-licensed STM32 sound card + serial + CM108-style HID cable, does that (1209:7388).

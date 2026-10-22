@@ -225,9 +225,13 @@ def make_vars(root, board, names, args=()):
     """{name: value} of make variables as the build sees them for BOARD (board.mk, config.mk and their conditionals):
     the Makefile's print-vars target. args: more make arguments (BAND=vhf, VARIANT=amateur)."""
     import subprocess
+    # Without the calling make's variables: run from a build's registry rule, MAKEFLAGS would carry its BUILD and
+    # CONFIG_ overrides into this make, which then read another build's values and touched its build directory
+    env = {k: v for k, v in os.environ.items() if k not in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES")}
     try:
         r = subprocess.run(["make", "-s", "--no-print-directory", "-C", root, "BOARD=" + board, *args,
-                            "print-vars", "VARS=" + " ".join(names)], capture_output=True, text=True, timeout=60)
+                            "print-vars", "VARS=" + " ".join(names)], capture_output=True, text=True, timeout=60,
+                           env=env)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise RegistryError("make print-vars for %s: %s" % (board, e))
     if r.returncode != 0:

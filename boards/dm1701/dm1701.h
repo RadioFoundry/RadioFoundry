@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "board.h"
+#include "spi_flash/spi_flash.h"
 
 // The LCD data bus doubles as the keypad columns: the display and the keypad scan take turns
 void dm1701_lcdbus_lock(void);
@@ -22,12 +23,11 @@ void dm1701_speaker_pcm(bool on);
 uint16_t dm1701_mic_level_raw(void);
 int16_t dm1701_temperature_c10(void);
 
-// Ops each board file provides (display_dm1701.c, input_dm1701.c, radio_dm1701.c, power_dm1701.c, flash_dm1701.c)
+// Ops each board file provides (display_dm1701.c, input_dm1701.c, radio_dm1701.c, power_dm1701.c)
 extern const hal_display_t dm1701_display;
 extern const hal_input_t dm1701_input;
 extern const hal_radio_t dm1701_radio;
 extern const hal_power_t dm1701_power;
-extern hal_flash_t dm1701_flash;
 extern const hal_audio_t dm1701_audio;
 
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
@@ -54,9 +54,9 @@ enum {
 	KEY_COUNT
 };
 
-// SPI flash security registers (1..3, 256 bytes each): factory calibration in 1-2, panel type and model flags in 3
-bool dm1701_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t len);
-bool dm1701_cps_security_read(uint32_t addr, void *buf, uint32_t len);
+// SPI flash (flash_dm1701.c, then stm32_spi_flash): its security registers hold the factory calibration in 1-2 and
+// the panel type and model flags in 3
+bool dm1701_flash_init(void);
 
 // Diagnostics (diag_dm1701.c and the accessors it reads; all return cached values, no bus traffic)
 typedef struct {
