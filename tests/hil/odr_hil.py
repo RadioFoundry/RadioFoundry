@@ -299,6 +299,7 @@ class SdrBench:
         self.dmr_bench = dmr_bench
         self.host = dmr_bench.BENCH_HOST
         self.dir = dmr_bench.DIR
+        self._run_dirs = []
         self.py = dmr_bench.PY
         self.allow_rf = allow_rf
         self.allow_service_stop = allow_service_stop
@@ -387,7 +388,20 @@ class SdrBench:
     def run_dir(self, tag):
         d = f"runs/{time.strftime('%Y%m%d-%H%M%S')}_{tag}"
         self.ssh(f"mkdir -p ~/{self.dir}/{d}")
+        self._run_dirs.append(d)
         return d
+
+    def remove_run_dirs(self):
+        """Delete the run directories this session made on the bench (captures are ~50 MB each and filled the bench's
+        disk). Only names run_dir() returned; ODR_HIL_KEEP_RUNS=1 keeps them for a look."""
+        if os.environ.get("ODR_HIL_KEEP_RUNS") or not self._run_dirs:
+            return
+        dirs = [d for d in self._run_dirs if d.startswith("runs/") and ".." not in d]
+        self._run_dirs = []
+        try:
+            self.ssh("rm -rf " + " ".join(f"~/{self.dir}/{shlex.quote(d)}" for d in dirs), timeout=120)
+        except Exception:
+            pass        # a leftover directory is not a test failure
 
     # ── a shared bench's daemon: what it offers, and its stations (ODR radios on the bench host) ──
     def info(self):
