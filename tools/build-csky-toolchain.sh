@@ -12,7 +12,10 @@
 set -e
 PREFIX=${PREFIX:-$HOME/toolchains/csky-elf}
 SRC=${SRC:-$HOME/toolchains/src}
-BV=2.43.1; GV=14.2.0; NV=4.5.0.20241231; J=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+# GCC's release is platform/hrc7000/platform.toml [toolchain] version; docker/csky-toolchain/build.sh passes it in GV,
+# since only this script is in its container
+GV=${GV:-$("$(dirname "$0")/platform_toolchain.sh" hrc7000 version)}
+BV=2.43.1; NV=4.5.0.20241231; J=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 export PATH=$PREFIX/bin:$PATH
 mkdir -p $SRC && cd $SRC
 [ -f binutils-$BV.tar.xz ] || curl -fsSLO https://ftp.gnu.org/gnu/binutils/binutils-$BV.tar.xz

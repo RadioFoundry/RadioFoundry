@@ -7,8 +7,8 @@ id = "stm32f4"
 isa = "arm"
 # The SoC every board on the platform has (a board's [hardware] cpu overrides it for the site's table)
 cpu = "STM32F405"
-# The compiler print-cc names, and what installs it when it's missing (ci.sh's skip message)
-toolchain = { cc = "arm-none-eabi-gcc", build = "tools/install-arm-toolchain.sh" }
+# The compiler print-cc names and what installs it when it's missing (ci.sh's skip message), in its own table at the
+# end of this file
 # One CI job per group; the Arm group installs the pinned toolchain on the runner, no container
 ci = { group = "Arm", container = false }
 # Built by ci.sh with this platform's compiler when any of its boards is selected: the flash stub CONFIG_STUB_ENTRY loads
@@ -41,3 +41,12 @@ f405 = [
 	[10, 0x080C0000, 0x20000],
 	[11, 0x080E0000, 0x20000],
 ]
+
+# The toolchain CI and releases build with. version and sha256 are the pinned Arm GNU Toolchain release and the
+# SHA-256 of its Linux x86_64 archive: tools/install-arm-toolchain.sh installs that and nothing else. No container
+# image: the runner installs the toolchain
+[toolchain]
+cc = "arm-none-eabi-gcc"
+build = "tools/install-arm-toolchain.sh"
+version = "13.3.rel1"
+sha256 = "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4"

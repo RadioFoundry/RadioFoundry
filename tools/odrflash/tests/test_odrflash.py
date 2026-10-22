@@ -106,6 +106,19 @@ class BuildOptions(unittest.TestCase):
         self.assertEqual(self.b.image_id({self.o["name"]: self.default["id"]}), self.b.id)
         self.assertEqual(self.b.image_id({self.o["name"]: self.other["id"]}), self.b.id + "-" + self.other["id"])
 
+    def test_file_names(self):
+        """The Makefile's names (BUILD, TARGET) and release.py's, from odrflash/names.py"""
+        oth = {self.o["name"]: self.other["id"]}
+        sfx = "-" + self.other["id"]
+        self.assertEqual(self.b.build_image({}), "build/%s/odr_%s.bin" % (self.b.id, self.b.id))
+        self.assertEqual(self.b.build_image(oth, "amateur"), "build/%s-amateur%s/odr_%s%s.bin"
+                         % (self.b.id, sfx, self.b.id, sfx))
+        self.assertEqual(self.b.release_id(oth, "full"), self.b.id + sfx)
+        self.assertEqual(mf.image_name(self.b.release_id(oth, "amateur"), "v1"), "odr-%s-amateur%s-v1.bin" % (self.b.id, sfx))
+        db = next((b for b in boards.BOARDS.values() if b.first_stage), None)
+        if db:
+            self.assertEqual(db.build_image({}), "build/%s/odr_%s_install.bin" % (db.id, db.id))
+
     def test_the_board_name_gives_the_value(self):
         probe = {"board": self.other["board_name"]}
         self.assertEqual(cli.resolve_options(self.args(), self.b, probe), {self.o["name"]: self.other["id"]})

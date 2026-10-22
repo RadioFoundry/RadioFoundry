@@ -126,7 +126,7 @@ jobs:
         if: runner.environment != 'self-hosted'   # the self-hosted image has csky-elf GCC in /opt/csky-elf
         with:
           path: ~/toolchains/csky-elf
-          key: csky-elf-${{ runner.os }}-${{ hashFiles('tools/build-csky-toolchain.sh') }}
+          key: csky-elf-${{ runner.os }}-${{ hashFiles('tools/build-csky-toolchain.sh', 'platform/hrc7000/platform.toml') }}
       - name: Build the csky-elf toolchain (pinned versions in the script)
         if: runner.environment != 'self-hosted'
         run: |
@@ -166,7 +166,7 @@ jobs:
         if: runner.environment != 'self-hosted'   # the self-hosted image has csky-elf GCC in /opt/csky-elf
         with:
           path: ~/toolchains/csky-elf
-          key: csky-elf-${{ runner.os }}-${{ hashFiles('tools/build-csky-toolchain.sh') }}
+          key: csky-elf-${{ runner.os }}-${{ hashFiles('tools/build-csky-toolchain.sh', 'platform/hrc7000/platform.toml') }}
       - name: Build the csky-elf toolchain (pinned versions in the script)
         if: runner.environment != 'self-hosted'
         run: |

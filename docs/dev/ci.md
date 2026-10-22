@@ -318,7 +318,8 @@ On a private repository the hosted runners use the account's Actions minutes: a 
 
 ## The csky-elf image
 
-The C-SKY jobs use the image named by the repository variable `ODR_CSKY_IMAGE`, default `odr/csky-gcc14:latest`:
+The C-SKY jobs use the image named by the repository variable `ODR_CSKY_IMAGE`, default `odr/csky-gcc14:latest`
+(`platform/hrc7000/platform.toml` `[toolchain] image`, which `run.sh` and `push.sh` read):
 the tag `tools/docker/csky-toolchain/build.sh` gives its image on the Gitea runner (`odr/csky-gcc14:20261011b`,
 549 MB). `run.sh` uses an image already on the Docker host, and pulls one only when the name starts with a
 registry host (`ghcr.io/...`, `docker.io/...`), never a bare name from Docker Hub. When the image can't be had the
@@ -337,7 +338,7 @@ ssh <runner-vm> 'docker logout ghcr.io'
 gh auth refresh -h github.com -r write:packages          # optional: drop the scope again
 ```
 
-`push.sh REPO [TAG...]` tags the local image (`SRC`, default `odr/csky-gcc14:latest`) as `REPO:<its dated tag>`
+`push.sh REPO [TAG...]` tags the local image (`SRC`, default the platform's `image`) as `REPO:<its dated tag>`
 and `REPO:latest`, pushes both and prints the digest. It never handles a credential: log in before and out after.
 The same script pushes to Docker Hub (`push.sh docker.io/<user>/odr-csky-gcc14` after `docker login`).
 
