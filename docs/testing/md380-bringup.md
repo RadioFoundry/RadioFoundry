@@ -11,6 +11,11 @@ row names the knob in the source that the likely failure points at.
 The radio is a TYT MD-380, MD-390 or Retevis RT3, with or without GPS. Stock firmware D002.032 or newer is assumed
 to be on it at the start.
 
+The feature checklist, with every feature's required HIL tests and the last recorded result, is
+`tools/bringup.py list --radio md380`. `tools/bringup.py run --radio md380` records a run
+([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)). This page keeps the hardware steps and what to
+change when one fails.
+
 ## Status (2026-10-18)
 
 On-air results from a tester's radio (1 W, against an AnyTone 878, [issue 3](https://github.com/sfowlr/OpenDigitalRadio/issues/3)):

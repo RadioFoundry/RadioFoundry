@@ -88,6 +88,10 @@ Opt-in flags allow what changes the radio or the air around it:
 The full list, the options and the rig assumptions are in [tests/hil/README.md](../../tests/hil/README.md);
 "Writing a test" there has the fixtures.
 
+A skip is not a pass. Every skip names its kind, and a bring-up run (`tools/bringup.py run --radio <id>`) runs a
+radio's feature checklist, fails a required test that skips for a reason its feature doesn't declare, and records the
+result in `docs/testing/results/` ([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)).
+
 ## The SDR bench
 
 A second station for on-air tests: a DMR modem, an RTL-SDR and the bench scripts in `tools/bench/`. It sends calls,

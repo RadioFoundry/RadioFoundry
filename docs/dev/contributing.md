@@ -100,6 +100,27 @@ the project lead, never in public CI).
 - A UI change updates the gallery (`make -C tests/host ui-gallery`) and commits the PNGs it meant to change.
 - A parser of outside input gets a fuzz loop (`tests/host/fuzz.h`); run it under `SANITIZE=1` ([Testing](testing.md)).
 - A change that touches hardware gets a HIL test when it can be scripted ([Testing](testing.md)).
+- A HIL test skips with `odr_hil.skip(kind, reason)`, never `pytest.skip`. The kind says why (`not_built`, `no_hw`,
+  `state`, `opt_in`, `bench`, `other_board`; [tests/hil/README.md](../../tests/hil/README.md#skip-kinds)), and
+  `tools/check_hil_skips.py` fails on a skip without one.
+
+### The feature checklist
+
+`tests/hil/features.toml` has one entry per feature and no radio columns
+([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)). `tools/bringup.py check` (in `tools/ci.sh`) fails
+when an entry is missing or out of step with the tests.
+
+| Change | What to do |
+|---|---|
+| A new switch or feature | Add an entry: `id`, `switch`, `summary`, `spec`, the required `tests` in order (the capability gate first when the feature needs hardware glue), `needs` matching the tests' markers, `owner` for tests that ask a person for something. An entry may have no tests yet; `tools/bringup.py status` then shows "no HIL test" |
+| A new HIL test | List it in its feature's `tests`, or `optional_tests` when it shouldn't gate. A required test not written yet goes in `planned_tests` |
+| A radio lacks a feature | Put the switch in the board's `BOARD_UNSUPPORTED` with a reason (state `n/a`). Planned but not working yet: `[features.<id>] state = "unsupported"` and a `reason` in its `board.toml` |
+| A new radio | Nothing here: its states resolve from its build data |
+
+To record a bring-up run, the owner (or someone at the bench) runs `tools/bringup.py list --radio <id>` for the
+checklist and owner actions, then `tools/bringup.py run --radio <id> -- <HIL options>` with the radio on the debug
+link. The run takes the radio lock, counts unexcused skips as failures and writes a record to
+`docs/testing/results/<id>/`. Commit the record. Failures are allowed in a record: they are the to-do list.
 
 ## Documentation
 
