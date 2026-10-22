@@ -33,7 +33,8 @@ A feature that needs a part only some radios have (a vibration motor, a GPS rece
 `BOARD_UNSUPPORTED`, or names it in `board.toml` `[hardware] unconfirmed`, and `tools/boards.py check` enforces that.
 The accelerometer is the next one: today its driver (`drivers/sensor/lis3dh`) only feeds a board's
 diagnostics page under `CONFIG_DIAG`, so it has no switch. The first feature that uses motion brings a hardware
-switch with it.
+switch with it. A real-time clock driver is the same: none exists yet, and it arrives as `CONFIG_RTC`, a hardware
+switch ([radio-features.md](spec/radio-features.md) 5.6).
 
 ## Variants
 
