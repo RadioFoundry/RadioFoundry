@@ -98,6 +98,14 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.target_manual=%u\ndmr.privacy=%u\ndmr.alias_tx=%u\n", d->target_manual, d->privacy,
 			d->alias_tx);
 		dl_text(t, "dmr.underruns=%u\n", (unsigned)d->underruns);
+		// The mic content of the latest transmission: here, not in dmr_stats, which is near the reply size
+		{
+			ambe_voice_stats_t a;
+			ambeVoiceGetStats(&a);
+			dl_text(t, "voice.tx_mic_level_db=%u\nvoice.tx_mic_spread_db=%u\nvoice.tx_mic_zc=%u\n"
+				"voice.tx_mic_blocks=%u\n", (unsigned)a.tx_mic_level_db, (unsigned)a.tx_mic_spread_db,
+				(unsigned)a.tx_mic_zc, (unsigned)a.tx_mic_blocks);
+		}
 		break;
 	case 1:
 		call(t, "call", &d->call);

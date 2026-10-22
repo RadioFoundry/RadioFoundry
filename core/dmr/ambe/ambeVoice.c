@@ -310,6 +310,72 @@ static void rx_block(int16_t *spk)
 	}
 }
 
+// The mic statistics (ambe_voice_stats_t.tx_mic_*): histograms of the blocks' levels and zero crossings, the audio
+// callback only
+#define MIC_LEVEL_BINS	32u	// floor(log2(mean square)): 3 dB a bin
+#define MIC_ZC_BINS	21u	// zero crossings / 8
+static uint16_t mic_level_hist[MIC_LEVEL_BINS];
+static uint16_t mic_zc_hist[MIC_ZC_BINS];
+static int16_t mic_prev;		// the last sample of the previous block
+
+// The bin holding the given fraction (per 1000) of the counts
+static uint32_t hist_at(const uint16_t *h, uint32_t bins, uint32_t total, uint32_t permille)
+{
+	uint32_t want = (total * permille + 999u) / 1000u, sum = 0;
+	for (uint32_t i = 0; i < bins; i++) {
+		sum += h[i];
+		if (sum >= want && sum > 0) {
+			return i;
+		}
+	}
+	return bins - 1u;
+}
+
+static void mic_stats(const int16_t *mic)
+{
+	int32_t mean = 0;
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		mean += mic[i];
+	}
+	mean /= AUDIO_BLOCK_SAMPLES;
+	if (stats.tx_mic_blocks == 0) {
+		mic_prev = mic[0];
+	}
+	// The level from the sample-to-sample difference: a first-order high pass (gain 2 sin(pi f / 8 kHz)) that leaves
+	// mains hum and rumble 30 dB down and the voice band within about 6 dB of flat
+	uint64_t e = 0;
+	uint32_t zc = 0;
+	bool neg = mic[0] < mean;
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		int32_t v = mic[i] - mean, d = (int32_t)mic[i] - mic_prev;
+		mic_prev = mic[i];
+		e += (uint64_t)((int64_t)d * d);
+		if ((v < 0) != neg) {
+			neg = v < 0;
+			zc++;
+		}
+	}
+	uint32_t ms = (uint32_t)(e / AUDIO_BLOCK_SAMPLES), bin = 0;
+	while (ms > 1u && bin < MIC_LEVEL_BINS - 1u) {
+		ms >>= 1;
+		bin++;
+	}
+	if (stats.tx_mic_blocks == 0) {	// a new transmission, or ambeVoiceResetStats
+		memset(mic_level_hist, 0, sizeof mic_level_hist);
+		memset(mic_zc_hist, 0, sizeof mic_zc_hist);
+	}
+	if (stats.tx_mic_blocks >= 0xFFFFu) {
+		return;	// 21 minutes: the counters would wrap
+	}
+	mic_level_hist[bin]++;
+	mic_zc_hist[zc / 8u < MIC_ZC_BINS ? zc / 8u : MIC_ZC_BINS - 1u]++;
+	uint32_t n = ++stats.tx_mic_blocks;
+	uint32_t loud = hist_at(mic_level_hist, MIC_LEVEL_BINS, n, 900u);
+	stats.tx_mic_level_db = 3u * loud;
+	stats.tx_mic_spread_db = 3u * (loud - hist_at(mic_level_hist, MIC_LEVEL_BINS, n, 100u));
+	stats.tx_mic_zc = 8u * hist_at(mic_zc_hist, MIC_ZC_BINS, n, 500u) + 4u;
+}
+
 static void tx_block(const int16_t *mic)
 {
 	uint8_t seq = LOAD(tx_seq);
@@ -318,6 +384,7 @@ static void tx_block(const int16_t *mic)
 	}
 	if (seq != cb_tx_seq) {
 		cb_tx_seq = seq;
+		stats.tx_mic_level_db = stats.tx_mic_spread_db = stats.tx_mic_zc = stats.tx_mic_blocks = 0;
 		if (voc_ok()) {
 			voc->reset();	// fresh encoder: the first frame of a transmission
 		}
@@ -325,6 +392,7 @@ static void tx_block(const int16_t *mic)
 		tx_have_prev = false;
 		test_blocks = 0;
 	}
+	mic_stats(mic);	// the board's samples, before the gain scaling
 	// Options change only between frames, in this task, so both halves of a frame see the same ones
 	uint32_t opts = LOAD(enc_opts);
 	if (voc_ok() && voc->set_options != NULL && (!cb_enc_opts_set || opts != cb_enc_opts)) {

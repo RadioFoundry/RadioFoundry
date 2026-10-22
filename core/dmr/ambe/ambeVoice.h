@@ -54,6 +54,15 @@ typedef struct {
 	uint32_t tx_mic_peak;	// largest mic sample (absolute) the board delivered in the latest transmission: 0 = no mic
 	uint32_t tx_frames;	// frames encoded
 	uint32_t tx_overflows;	// encoded frames dropped, queue full (the stack didn't pull)
+	// What the mic delivered in the latest transmission, block by block (20 ms), to tell speech from a cut or
+	// disconnected mic: a peak can't (one click or a stray byte makes it large). A block's level is the mean square of
+	// its sample-to-sample differences (a high pass: hum and rumble don't count) in 3 dB steps (10 log10, rounded down):
+	// 0 silent, 6 = 2 LSB rms, about 84 a full-scale 1 kHz sine. Speech moves 20 dB and more between syllables and
+	// pauses; an analog floor, a hum and a digital zero stay within a few dB
+	uint32_t tx_mic_level_db;	// the 90th percentile block's level (the loud parts), dB re 1 LSB
+	uint32_t tx_mic_spread_db;	// that minus the 10th percentile block's level, dB
+	uint32_t tx_mic_zc;		// the median block's zero crossings (of 160): speech 5-40, white noise about 80
+	uint32_t tx_mic_blocks;		// blocks counted
 } ambe_voice_stats_t;
 
 // audio and vocoder from the board; vocoder->present() false: frames are still queued and counted, but play silence

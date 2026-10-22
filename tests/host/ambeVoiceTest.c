@@ -236,6 +236,80 @@ static void testTx(void)
 	src->end(src->ctx);
 }
 
+// One transmission of n blocks from gen(sample index), then its mic statistics
+static ambe_voice_stats_t micOver(int n, int16_t (*gen)(int))
+{
+	const dmr_voice_source_t *src = ambeVoiceSource();
+	uint8_t out[9];
+	src->begin(src->ctx);
+	for (int b = 0; b < n; b++) {
+		for (int i = 0; i < 160; i++)
+			mic[i] = gen(b * 160 + i);
+		block();
+		while (src->next(out, src->ctx))
+			;
+	}
+	ambe_voice_stats_t st;
+	ambeVoiceGetStats(&st);
+	src->end(src->ctx);
+	block();
+	return st;
+}
+
+static uint32_t lcg = 1;
+static int16_t genFloor(int i)	// a cut mic: the ADC's own floor, white, a couple of LSB
+{
+	(void)i;
+	lcg = lcg * 1103515245u + 12345u;
+	return (int16_t)((int)((lcg >> 16) % 5u) - 2);
+}
+static int16_t genTri(int i, int period, int amp)
+{
+	int p = i % period, h = period / 2;
+	return (int16_t)((p < h ? p * 4 * amp / period - amp : (period - p) * 4 * amp / period - amp));
+}
+static int16_t genHum(int i)	// a connected mic in a quiet room: mains hum, steady and loud next to the floor
+{
+	return genTri(i, 160, 60);
+}
+static int16_t genTone(int i)	// a tone burst every 200 ms (UART-injected test pattern) on top of the hum
+{
+	return (int16_t)(genHum(i) + ((i / 800) % 2 == 0 ? genTri(i, 7, 30) : 0));
+}
+static int16_t genSpeech(int i)	// syllables: 400 Hz, 150 ms loud, 100 ms quiet, a 600 ms pause each second
+{
+	int ms = (i / 8) % 1000;
+	int amp = ms >= 400 ? 3 : (ms % 250) < 150 ? 6000 : 300;
+	return genTri(i, 20, amp);
+}
+
+// The mic statistics tell speech from a cut mic and from a steady hum, which the peak can't (a click is a peak)
+static void testMicStats(void)
+{
+	ambeVoiceResetStats();
+	ambe_voice_stats_t st = micOver(200, genFloor);
+	CHECK(st.tx_mic_blocks == 200, "blocks %u", st.tx_mic_blocks);
+	CHECK(st.tx_mic_level_db <= 6 && st.tx_mic_spread_db <= 3 && st.tx_mic_zc >= 60,
+	      "cut mic: level %u spread %u zc %u (<= 6, <= 3, >= 60)", st.tx_mic_level_db, st.tx_mic_spread_db,
+	      st.tx_mic_zc);
+	st = micOver(200, genHum);
+	CHECK(st.tx_mic_blocks == 200, "a new transmission counts from 0: %u", st.tx_mic_blocks);
+	CHECK(st.tx_mic_level_db <= 6 && st.tx_mic_spread_db <= 3 && st.tx_mic_zc <= 8,
+	      "hum: level %u spread %u zc %u (<= 6: the high pass, <= 3, <= 8)", st.tx_mic_level_db, st.tx_mic_spread_db,
+	      st.tx_mic_zc);
+	st = micOver(200, genTone);
+	CHECK(st.tx_mic_level_db >= 21 && st.tx_mic_spread_db >= 18,
+	      "small tone bursts over a louder hum: level %u spread %u (>= 21, >= 18)", st.tx_mic_level_db,
+	      st.tx_mic_spread_db);
+	st = micOver(250, genSpeech);
+	CHECK(st.tx_mic_level_db >= 60 && st.tx_mic_spread_db >= 30 && st.tx_mic_zc >= 12 && st.tx_mic_zc <= 20,
+	      "speech: level %u spread %u zc %u (>= 60, >= 30, 12-20)", st.tx_mic_level_db, st.tx_mic_spread_db,
+	      st.tx_mic_zc);
+	ambeVoiceResetStats();
+	ambeVoiceGetStats(&st);
+	CHECK(st.tx_mic_blocks == 0 && st.tx_mic_spread_db == 0, "reset");
+}
+
 // The option -> flags word mapping of the AMBE+2 hosts (drivers/vocoder/ambe2_flags.h)
 static void testFlagsMap(void)
 {
@@ -410,6 +484,7 @@ int main(void)
 	ambeVoiceInit(&audio, &vocoder);
 	testRx();
 	testTx();
+	testMicStats();
 	testFlagsMap();
 	testEncodeOptions();
 	testRepeats();

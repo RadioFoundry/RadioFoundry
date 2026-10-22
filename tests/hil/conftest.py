@@ -55,6 +55,11 @@ def pytest_addoption(parser):
                      "directory, which pytest prunes after a few runs); outside the repository")
     g.addoption("--manual", action="store_true",
                 help="a person is at the radio: run the tests that ask for something done by hand (marker manual)")
+    g.addoption("--mic-inject", action="store_true",
+                help="test_mic_uart_inject may send test tones on the radio's serial line at a low baud rate (its "
+                     "programming cable's line reaches the mic input on some radios); with --allow-rf")
+    g.addoption("--mic-inject-any", action="store_true",
+                help="test_mic_uart_inject on a board without a measured cable-to-mic path")
     g.addoption("--allow-reboot", action="store_true",
                 help="tests may restart the radio (marker reboot: the settings persistence check)")
     g.addoption("--roam-rx", type=float, default=None,
