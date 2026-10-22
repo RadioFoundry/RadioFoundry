@@ -11,8 +11,8 @@
  *
  * Whole flash sectors are kept free of our code, so the flashing tool can update the firmware without erasing the
  * codec: the application gets sectors 3-7 (0x0800C000..0x0807FFFF, 464 KB in one piece) and never links into sectors
- * 8-11 (sector 9 holds nothing yet). This script, tools/odrflash/odrflash/boards.py and the profile in
- * tools/odrflash/odrflash/stockfw.py change together. */
+ * 8-11 (sector 9 holds nothing yet). The flashing tools read the application region from this
+ * script (tools/boards.py); it and the profile in tools/odrflash/odrflash/stockfw.py change together. */
 
 ENTRY(Reset_Handler)
 

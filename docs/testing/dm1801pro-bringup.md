@@ -17,9 +17,9 @@ change when one fails.
    0x700000 and never touches the boot loader, but a backup is the only way back from a mistake.
 2. Confirm update mode before the first flash: it is the recovery path for every step below. The loader stays in it while
    PTT and SK1 are held at power-on ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2). Push the cable fully
-   into the jack, or the loader doesn't answer. `python3 tools/dm32_flash.py --model dm1801pro --dry-run IMAGE`
+   into the jack, or the loader doesn't answer. `python3 tools/serial_loader.py --model dm1801pro --dry-run IMAGE`
    checks the image and the cable first.
-3. Flash: `python3 tools/dm32_flash.py --model dm1801pro build/dm1801pro/odr_dm1801pro.bin` over the programming cable.
+3. Flash: `python3 tools/serial_loader.py --model dm1801pro build/dm1801pro/odr_dm1801pro.bin` over the programming cable.
    The erase takes about 13 s. `odrflash flash IMAGE --board dm1801pro` wraps the same tool, and the stub for a radio
    that runs ODR with `CONFIG_STUB_ENTRY=y` ([tools/odrflash/README.md](../../tools/odrflash/README.md#the-dm-1801-pro));
    neither odrflash route has flashed a radio yet.

@@ -33,5 +33,5 @@ What the stage does at every power-on:
 Install: write `odr_db25d_install.bin` from 0x0300C000, through the loader's update mode (P1 and power) or with a
 running stub (`stubtool --write-app`). The loader erases only as far as the image reaches.
 
-The protocol is covered by `tests/host/bootDb25dTest.c`. The facts behind it are in
+The protocol is covered by `boards/db25d/tests/bootDb25dTest.c`. The facts behind it are in
 [hardware-db25d.md](../docs/spec/hardware-db25d.md) 2 and 7.

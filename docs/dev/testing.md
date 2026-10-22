@@ -48,6 +48,12 @@ To add a test: write `tests/host/<area>Test.c`, add its rule and a `run-<area>` 
 hook it into `run` (`run: run-<area>`). Build without warnings; ci.sh fails on any. A parser of bytes from outside
 (USB, the air, the network) also gets a fuzz loop with `fuzz.h`.
 
+A test of one board's own code (its calibration reader, its pin tables, its first stage) lives with the board, in
+`boards/<b>/tests/`. Its `host.mk` adds the test to `TESTS` and to the `run-boards::` target, with paths relative to
+`tests/host`, which includes every `boards/*/tests/host.mk`. The binaries are built in `tests/host/` like the rest.
+The firmware build only compiles the `*.c` directly in a board's directory, so these never reach an image. A driver
+or platform test stays in `tests/host/`, named by what it tests, even when one radio needed it first.
+
 ## The UI simulator and the gallery
 
 The UI runs unchanged on the host. Three tools use it:

@@ -122,7 +122,7 @@ jobs:
             else pipx install reuse && echo "$HOME/.local/bin" >> "$GITHUB_PATH"; fi
           fi
       - name: Python checks, license checks
-        run: tools/ci.sh --steps python,licenses
+        run: tools/ci.sh --steps registry,python,licenses
 
   firmware:
     name: firmware (Arm)   # every Arm radio in one job: one checkout, the Arm toolchain once

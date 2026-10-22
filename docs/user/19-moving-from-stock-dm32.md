@@ -95,11 +95,11 @@ radio holds about 300,000 records. When the list is longer, the tool keeps the o
 
 ## Flashing only
 
-`dm32_flash.py` flashes any image without touching the codeplug:
+`serial_loader.py` flashes any image without touching the codeplug:
 
 ```
-python3 dm32_flash.py odr_dm32_codec.bin          # a raw image or a _BFUV32.bin file
-python3 dm32_flash.py --list-ports                 # the cables it sees
+python3 serial_loader.py odr_dm32_codec.bin       # a raw image or a _BFUV32.bin file
+python3 serial_loader.py --list-ports             # the cables it sees
 ```
 
 ## Going back to stock
@@ -107,7 +107,7 @@ python3 dm32_flash.py --list-ports                 # the cables it sees
 Baofeng's firmware file goes through the same bootloader:
 
 ```
-python3 dm32_flash.py --stock DM32.01.01.049.bin
+python3 serial_loader.py --stock DM32.01.01.049.bin
 ```
 
 The stock codeplug was never overwritten, so the radio comes back with it. If it doesn't, write `backup-stock.dfu` with
