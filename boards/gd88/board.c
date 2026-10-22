@@ -70,7 +70,7 @@ static const hal_cps_t cps = {
 
 const board_t board = {
 	.name = "GD-88",
-	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
+	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -86,8 +86,10 @@ const board_t board = {
 	.power = &gd88_power,
 	.battery_low_mv = 7000,
 	.battery_critical_mv = 6000,
+#if CONFIG_GPS
 	.gps_enable = hrc_gps_enable,
 	.gps_present = hrc_gps_present,
+#endif
 	.rx2 = &gd88_rx2,
 #if CONFIG_DIAG
 	.diag_line = gd88_diag_line,
@@ -152,6 +154,7 @@ static void io_init(void)
 	hrc_pin_in(PIN_RF_STATUS1);
 }
 
+#if CONFIG_GPS
 // The GPS module on UART2. Its RXD pad is a GPIO until IO_DIPLEX0 bits 11 and 12 are cleared
 static const hrc_gps_cfg_t gps_cfg = {
 	.uart_base = UART2_BASE,
@@ -160,6 +163,7 @@ static const hrc_gps_cfg_t gps_cfg = {
 	.power_on_level = GPS_POWER_ON_LEVEL,
 	.rxd_mux_clear = (1u << 11) | (1u << 12),
 };
+#endif
 
 // Transmitter off from any context (board.h, docs/spec/crash-log.md 8): the TX / RX line PTB2 low, every chain output
 // to 0 (its power-on state: no audio or TX route), the PA drive (DAC B to 0, powered down) and PTC20 low. RAM code,
@@ -185,7 +189,9 @@ void board_early_init(void)
 void board_init(void)
 {
 	gd88_power.init();
+#if CONFIG_GPS
 	hrc_gps_init(&gps_cfg);
+#endif
 	// Both calibration copies, the higher save counter wins. Without the NAND, the flash copy
 	bool nand = gd88_nand_init();
 	gd88_cal_load((const uint8_t *)GD88_CAL_FLASH_ADDR, nand ? gd88_nand_read : NULL);

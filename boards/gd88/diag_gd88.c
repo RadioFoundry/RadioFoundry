@@ -269,6 +269,7 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		if (i == DIAG_GPS_LINE) {
 			// The GPS module on UART2 (platform/hrc7000/gps_hrc.c): heard, valid / bad sentences, bytes received. "b0"
 			// with the module powered: the RXD pad's mux or the power pin's level (GPS_POWER_ON_LEVEL)
+#if CONFIG_GPS
 			uint32_t good, bad, n;
 			hrc_gps_counts(&good, &bad, &n);
 			put(&o, hrc_gps_present() ? "gps yes " : "gps no ");
@@ -278,6 +279,9 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 			put(&o, " b");
 			put_u(&o, n);
 			put(&o, hrc_gps_running() ? " on" : " off");
+#else
+			put(&o, "gps not built");
+#endif
 			break;
 		}
 #if CONFIG_DMR

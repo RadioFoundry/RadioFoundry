@@ -6,8 +6,7 @@
 PLATFORM   := hrc7000
 # The IAP loader leaves the PLL at 72 MHz; ODR re-programs it to 168 MHz CPU / 84 MHz APB at start-up and puts the
 # loader's clocks back before it hands over to the runtime stub or resets (platform/hrc7000/clock.c), as on the DB25-D
-MCU_DEFS   := -DHRC_HOST_UART=1 -DHRC_LOADER_CPU_HZ=72000000u -DHRC_CPU_HZ=168000000u
-LDSCRIPT   := boards/gd88/gd88.ld
+MCU_DEFS   := -DHRC_HOST_UART=1 -DHRC_LOADER_CPU_HZ=72000000u
 BOARD_DIRS := boards/gd88 boards/gd88/common drivers/rf/bk4819 drivers/display/ili9341 drivers/input/keymatrix \
 	drivers/input/quadrature drivers/input/sharedptt drivers/flash/spi_nand drivers/modem/hrc7000 \
 	drivers/bcast/rda5807m drivers/bus/i2c_gpio
@@ -17,11 +16,13 @@ BOARD_CORE_DIRS := core/rx2
 BOARD_NAND_DIRS := drivers/flash/nand_sectors
 # The 320x240 panel at full resolution in 16 colors (display_gd88.c): the frame buffer is 37.5 KB with 240 rows
 MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=38400u -DGFX_MAX_ROWS=240u
-# The first stage at 0x0300C000 (boot/gd88): the stub window on the PC cable at power-on, then the application at
-# 0x0300D000 (gd88.ld). It starts with the entry word the IAP loader checks for
+# The image starts where the IAP loader jumps (hardware-gd88.md 2) with the first stage (boot/gd88): the stub window
+# on the PC cable at power-on, then the application right after it. It starts with the entry word the IAP loader
+# checks for
+APP_BASE   := 0x0300C000
 BOOT_STAGE := gd88
 BOOT_SIZE  := 0x1000
-BOOT_DEFS  := -DBOOT_WINDOW=10 -DAPP_RESUME=0x0300D000
+BOOT_DEFS  := -DBOOT_WINDOW=10
 BOOT_SIGNATURE := 2c1101c0
 # Headers next to the board's own: the shared code's
 BOARD_INC  := boards/gd88/common

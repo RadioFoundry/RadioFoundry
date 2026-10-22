@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The OpenDigitalRadio Authors */
-/* Radioddity GD-88 SoC A, HR_C7000 (CK803S), application behind the IAP loader and ODR's first stage
- * (docs/spec/hardware-gd88.md 2, 8). Without DMR.
+/* Radioddity GD-88 without DMR (CONFIG_DMR=n, config.mk selects this script; memory.ld is the DMR build's), SoC A or
+ * B (boards/gd88b uses it too), HR_C7000 (CK803S), application behind the IAP loader and ODR's first stage
+ * (docs/spec/hardware-gd88.md 2, 8).
  *
  * Program flash (XIP at 0x03000000): the loader below 0x0300C000 (never written), ODR's first stage
- * 0x0300C000..0x0300D000 (boot/gd88), the application from 0x0300D000 up to 0x0310C000, where the data area
- * starts; the calibration copy at 0x031FE000 and the display record at 0x031FD000 are above it.
+ * 0x0300C000..0x0300D000 (board.mk APP_BASE, BOOT_SIZE), the application from __app_start (0x0300D000) up to
+ * 0x0310C000, where the data area starts; the calibration copy at 0x031FE000 and the display record at 0x031FD000 are
+ * above it.
  *
  * SRAM (288 KB at 0x10000): the vector table first (VBR, 1 KB aligned), code that must not run from flash
  * (.ramfunc), data, bss (the RTOS heap is inside it), the interrupt stack and the start-up stack at the top. The
@@ -19,7 +21,7 @@ _Irq_Stack_Size = 0x800;
 
 MEMORY
 {
-	FLASH (rx)  : ORIGIN = 0x0300D000, LENGTH = 0x0310C000 - 0x0300D000
+	FLASH (rx)  : ORIGIN = __app_start, LENGTH = 0x0310C000 - __app_start
 	RAM   (rwx) : ORIGIN = 0x00010000, LENGTH = 0x00058000 - 0x00010000
 }
 

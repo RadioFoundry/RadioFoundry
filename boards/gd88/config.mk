@@ -3,21 +3,12 @@
 # GD-88 SoC A feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-gd88.md 13):
 # written from the hardware notes, not yet run on a radio. Analog FM and DMR receive on the BK4819 pair and the C7000
 # modem, the host link on UART1, settings on the SPI NAND, SoC B as the second receiver (dual watch). Transmit is off
-# (GD88_TX). The switches that are off are listed below
-CONFIG_USB ?= n
-CONFIG_HOSTLINK ?= y
+# (GD88_TX). The switches that are off are listed below; USB, PPP and TCP_CONNS follow the platform
+# (platform/hrc7000/config.mk)
 CONFIG_NAND_STORAGE ?= y
 CONFIG_DMR ?= y
-# The IP link: PPP on the host port (UART1), with the IP gateway; CONFIG_DMR_IP_GATEWAY=n on the command line takes it
-# along
-ifeq ($(origin CONFIG_DMR_IP_GATEWAY)$(CONFIG_DMR_IP_GATEWAY),command linen)
-CONFIG_NET_PPP ?= n
-endif
-CONFIG_NET_PPP ?= $(if $(and $(filter y,$(CONFIG_HOSTLINK)),$(filter y,$(CONFIG_DMR))),y,n)
 # USRP voice needs more than the 115200 baud host port carries (as the DB25-D)
 CONFIG_NET_USRP ?= n
-TCP_CONNS ?= 3
-MCU_DEFS += -DTCP_CONNS=$(TCP_CONNS)
 # The split-duplex roles and the single frequency repeater need a transmitter
 CONFIG_HOTSPOT_SPLIT ?= n
 CONFIG_SFR ?= n
@@ -25,12 +16,12 @@ CONFIG_SFR ?= n
 CONFIG_FONT_XL ?= y
 CONFIG_FONT_AA ?= y
 CONFIG_FONT_BIG ?= $(CONFIG_FONT_AA)
-# With DMR: the linker script with the codec window at the top of SRAM and the modem SRAM table window (gd88_dmr.ld),
-# its codec host (profile ids gd88-<version>), the core's CPU state in .ram_lo and the runtime stub's load span inside
-# the codec window (0x45000..0x58000). Bench knobs (dmr_gd88.c): GD88_DMR_RF_MODE, GD88_DMR_AF_GAIN
+# With DMR: the platform's linker script with the codec window at the top of SRAM and the modem SRAM table window
+# (memory.ld), its codec host (profile ids gd88-<version>), the core's CPU state in .ram_lo and the runtime stub's load
+# span inside the codec window (0x45000..0x58000). Without DMR: no codec window, the CPU state in .bss and the stub in
+# the 128 KB above it (fm_only.ld). Bench knobs (dmr_gd88.c): GD88_DMR_RF_MODE, GD88_DMR_AF_GAIN
 ifeq ($(CONFIG_DMR),y)
-LDSCRIPT := boards/gd88/gd88_dmr.ld
-MCU_DEFS += -DHRC_CODEC_BOARD='"gd88"' -DODR_CPU_RAM_SECTION='".ram_lo"' -DHRC_STUB_BASE=0x00045000u -DHRC_STUB_SIZE=0x00013000u
+MCU_DEFS += -DHRC_CODEC_BOARD='"gd88"' -DHRC_STUB_BASE=0x00045000u -DHRC_STUB_SIZE=0x00013000u
 ifneq ($(GD88_DMR_RF_MODE),)
 MCU_DEFS += -DGD88_DMR_RF_MODE=$(GD88_DMR_RF_MODE)
 endif
@@ -42,6 +33,8 @@ MCU_DEFS += -DHRC7000_RX_NEXT_SLOT_XOR=0u
 GD88_DMR_TX_INVERT ?= 0
 MCU_DEFS += -DGD88_DMR_TX_INVERT=$(GD88_DMR_TX_INVERT)
 else
+LDSCRIPT := boards/gd88/fm_only.ld
+CPU_RAM_SECTION :=
 MCU_DEFS += -DHRC_STUB_BASE=0x00030000u -DHRC_STUB_SIZE=0x00020000u
 endif
 # Transmit (common/gd88_rf.h): off until A's power control is known. ci's maximal configuration builds it
@@ -59,7 +52,14 @@ CONFIG_APRS_IGATE ?= n
 # The RDA5807-class broadcast tuner (CAP_BCAST_FM, I2C 0x11 on PTA7 / PTA8); the air band isn't wired yet
 CONFIG_BCAST_FM ?= y
 CONFIG_AM_RX ?= n
-# What the board can't do yet or lacks: ci's maximal configuration leaves these off
-BOARD_UNSUPPORTED := USB USB_NETWORK NET_USRP HOTSPOT_SPLIT SFR APRS_RX APRS_IGATE AM_RX AUDIO_PROBE
+# What the board lacks or can't do yet, one switch per line with the reason (tools/boards.py checks there is one): ci's
+# maximal configuration leaves these off. USB and USB_NETWORK are the platform's
+BOARD_UNSUPPORTED += NET_USRP	# 8 kHz PCM both ways is more than the 115200 baud host port carries
+BOARD_UNSUPPORTED += HOTSPOT_SPLIT	# needs a transmitter, and A's is off until its power control is known
+BOARD_UNSUPPORTED += SFR	# needs a transmitter, and A's is off until its power control is known
+BOARD_UNSUPPORTED += APRS_RX	# no FM receive audio as PCM (the PCM path is the DMR modem's)
+BOARD_UNSUPPORTED += APRS_IGATE	# needs APRS receive, which needs the FM receive audio as PCM
+BOARD_UNSUPPORTED += AM_RX	# the air band isn't wired yet
+BOARD_UNSUPPORTED += AUDIO_PROBE	# a bench diagnostic for an audio path this radio doesn't have
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
 BOARD_REQUIRED := FM
