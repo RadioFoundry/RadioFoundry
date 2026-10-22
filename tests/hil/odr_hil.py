@@ -89,67 +89,55 @@ def skip_kind(skipped):
 
 
 # ── boards and their HIL expectations ───────────────────────────────────────
-# The one place the HIL tests read board data. TODO(registry): at integration with the board registry both come
-# from it (the board's debug link names and its board.toml [hil] table), and _HIL_UNTIL_REGISTRY moves into the
-# boards' board.toml files and goes.
+# The one place the HIL tests read board data, all of it from the board registry: the debug link names from
+# tools/odrflash's registry.json (any Python 3), a board's own tables ([hil], [cps]) from tools/boards.py, which
+# needs Python 3.11 (tools/odr_python.sh finds one).
 
+# board.toml [hil] keys (tools/boards.py BOARD_SCHEMA; all optional, a check whose key a board lacks skips): display
+# (VERSION display=), features (VERSION features the build must have), no_features (ones it must not), flash_jedec
+# (accepted data flash JEDEC ids), calibration (true: the diagnostics show the factory calibration), battery_mv
+# ([low, high] a sane reading lies in), codec (accepted stock codec versions)
 HIL_KEYS = ("display", "features", "no_features", "flash_jedec", "calibration", "battery_mv", "codec")
-# Temporary: each board's [hil] table until boards/<id>/board.toml has it. Keys (all optional; a test whose key a
-# board lacks skips): display (VERSION display=), features (VERSION features the build must have), no_features
-# (ones it must not), flash_jedec (accepted data flash JEDEC ids), calibration (true: the diagnostics show the
-# factory calibration), battery_mv ([low, high] a sane reading lies in), codec (accepted stock codec versions).
-_HIL_UNTIL_REGISTRY = {
-    "dm32": {
-        "display": "240x320x4",
-        "features": ["HOSTLINK", "DEBUGLINK"],
-        "no_features": ["USB"],
-        "flash_jedec": ["C84018", "852018"],
-        "calibration": True,
-        "battery_mv": [5500, 8800],
-        "codec": ["049", "046"],
-    },
-}
-_BOARD_NAMES = None
+_ENTRIES = {}
+
+
+def _registry():
+    sys.path.insert(0, os.path.join(ROOT, "tools", "odrflash"))
+    from odrflash import boards
+    return boards
 
 
 def board_names():
-    """boards/<id> -> the board names VERSION can report (board_t .name and BOARD_NAME strings in its sources)."""
-    global _BOARD_NAMES
-    if _BOARD_NAMES is None:
-        import re
-        _BOARD_NAMES = {}
-        bdir = os.path.join(ROOT, "boards")
-        for b in sorted(os.listdir(bdir)):
-            d = os.path.join(bdir, b)
-            if not os.path.exists(os.path.join(d, "board.mk")):
-                continue
-            names = set()
-            for fn in sorted(os.listdir(d)):
-                if fn.endswith((".c", ".h", ".mk")):
-                    text = open(os.path.join(d, fn), errors="replace").read()
-                    names.update(re.findall(r'\.name\s*=\s*"([^"]+)"', text))
-                    names.update(re.findall(r'#\s*define\s+BOARD_NAME\s+"([^"]+)"', text))
-            _BOARD_NAMES[b] = names
-    return _BOARD_NAMES
+    """boards/<id> -> the board names VERSION can report (the registry's debug link names)."""
+    return {b.id: set(b.debuglink_names) for b in _registry().BOARDS.values()}
 
 
 def board_id(name):
-    """The boards/<id> whose sources name this VERSION board name, or None."""
-    return next((b for b, names in board_names().items() if name in names), None)
+    """The boards/<id> a VERSION board name means, or None."""
+    b = _registry().from_debuglink_name(name or "")
+    return b.id if b else None
+
+
+def board_entry(board):
+    """A board's registry entry (tools/boards.py get BOARD: board.toml and what is derived), {} for no board."""
+    if not board:
+        return {}
+    if board not in _ENTRIES:
+        import subprocess
+        py = subprocess.run(["sh", os.path.join(ROOT, "tools", "odr_python.sh")], capture_output=True, text=True)
+        if py.returncode != 0:
+            raise RuntimeError(py.stderr.strip())
+        r = subprocess.run([py.stdout.strip(), os.path.join(ROOT, "tools", "boards.py"), "get", board],
+                           capture_output=True, text=True, cwd=ROOT)
+        if r.returncode != 0:
+            raise RuntimeError(f"tools/boards.py get {board}: {r.stderr.strip()}")
+        _ENTRIES[board] = json.loads(r.stdout)
+    return _ENTRIES[board]
 
 
 def board_hil(board):
-    """A board's HIL expectations: board.toml [hil] (read with tomllib, Python 3.11+) over the temporary table."""
-    out = dict(_HIL_UNTIL_REGISTRY.get(board, {}))
-    path = os.path.join(ROOT, "boards", board or "", "board.toml")
-    if board and os.path.exists(path):
-        try:
-            import tomllib
-        except ImportError:
-            return out
-        with open(path, "rb") as f:
-            out.update(tomllib.load(f).get("hil", {}))
-    return out
+    """A board's HIL expectations (board.toml [hil]), {} for none."""
+    return dict(board_entry(board).get("hil", {}))
 
 
 # ── diagnostics ─────────────────────────────────────────────────────────────

@@ -114,7 +114,7 @@ feature with `@pytest.mark.feature("<id>")` ([tests/hil/README.md](../../tests/h
 |---|---|
 | A new switch or feature | Add a `[feature.<id>]` table: `switch`, `spec`, and `source` when the Makefile's files for the switch aren't the right ones. A feature may have no tests yet; `tools/bringup.py status` then shows "built, not yet recorded" |
 | A new HIL test | Mark it `@pytest.mark.feature("<id>")`, with `optional=True` when it shouldn't gate, `owner="..."` when it asks a person for something, and `gate=True` on the one test that checks the radio offers a feature that needs hardware glue (its capability gate). Its needs come from its markers and fixtures. A required test not written yet goes in the feature's `planned_tests` |
-| A radio lacks a feature | Put the switch in the board's `BOARD_UNSUPPORTED` with a reason (state `n/a`). Planned but not working yet: `[features.<id>] state = "unsupported"` and a `reason` in its `board.toml` |
+| A radio lacks a feature | Put the switch in the board's `BOARD_UNSUPPORTED`, and the reason in its `board.toml`: `[features] <id> = { state = "n/a", reason = "..." }`. Planned but not working yet: `state = "unsupported"` with a reason |
 | A new radio | Nothing here: its states resolve from its build data |
 
 To record a bring-up run, the owner (or someone at the bench) runs `tools/bringup.py list --radio <id>` for the
