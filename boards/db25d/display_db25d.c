@@ -145,10 +145,10 @@ static void init(void)
 	ready = true;
 }
 
-static void flush(const void *fb, uint16_t y0, uint16_t y1)
+static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t y1)
 {
 	if (ready) {
-		st7735_write_rows(&panel, (const uint16_t *)fb, y0, y1);
+		st7735_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 	}
 }
 
@@ -163,12 +163,12 @@ static void set_backlight(uint8_t percent)
 const hal_display_t db25d_display = {
 	.width = LCD_W,
 	.height = LCD_H,
-	.bpp = 16,
+	.bpp = 4,
 	.inset_top = CONFIG_DISPLAY_INSET_TOP,
 	.inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
 	.inset_left = CONFIG_DISPLAY_INSET_LEFT,
 	.inset_right = CONFIG_DISPLAY_INSET_RIGHT,
 	.init = init,
-	.flush = flush,
+	.flush_indexed = flush,
 	.set_backlight = set_backlight,
 };

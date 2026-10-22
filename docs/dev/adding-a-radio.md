@@ -16,10 +16,17 @@ bootloader and image format, calibration, codec location. Start from the radio's
 
 A board's files list only how it differs from its platform. The platform's defaults are in `platform/<p>/`:
 `platform.mk` (compiler, part defines, HAL modules), `config.mk` (feature defaults), `common.ld` (the sections) and
-`FreeRTOSConfig.h`. Chip glue that every radio with the same chip on that SoC shares is in a subdirectory the board
-lists in `BOARD_DIRS`: `platform/stm32f4/hrc` (an HR_C6000 or HR_C5000: DMR glue, I2S audio, the chip's ports, the
-stock codec host), `platform/stm32f4/spi_flash` (the data flash on SPI NOR) and `platform/stm32f4/gps_uart`
-(a GPS module on a USART). The board then keeps only its wiring and what its chips leave to it.
+`FreeRTOSConfig.h`. Glue that every radio with the same part on that SoC shares is in a subdirectory the board lists
+in `BOARD_DIRS`. The board then keeps only its wiring and what its chips leave to it.
+
+| Subdirectory | For |
+|---|---|
+| `platform/stm32f4/hrc` | an HR_C6000 or HR_C5000: DMR glue, I2S audio, the chip's ports, the stock codec host |
+| `platform/stm32f4/spi_flash` | the data flash on SPI NOR, with its security registers |
+| `platform/stm32f4/fsmc_keypad` | a key matrix on the LCD data lines |
+| `platform/stm32f4/gps_uart` | a GPS module on a USART |
+
+The board's own files:
 
 | File | Contents |
 |---|---|
