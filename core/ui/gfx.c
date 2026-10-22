@@ -80,6 +80,7 @@ static uint8_t pal_index(color_t c)
 	return i;
 }
 
+#if CONFIG_FONT_AA
 static uint8_t pal_index_blend(color_t c)
 {
 	int free_n = 16;
@@ -106,6 +107,7 @@ static uint8_t pal_index_blend(color_t c)
 	}
 	return best_i;
 }
+#endif
 #endif
 
 #if CONFIG_FONT_AA

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-# GD-88 SoC A feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-gd88.md 6):
+# GD-88 SoC A feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-gd88.md 13):
 # written from the hardware notes, not yet run on a radio. Analog FM and DMR receive on the BK4819 pair and the C7000
 # modem, the host link on UART1, settings on the SPI NAND, SoC B as the second receiver (dual watch). Transmit is off
 # (GD88_TX). The switches that are off are listed below
