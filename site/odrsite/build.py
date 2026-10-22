@@ -39,6 +39,8 @@ class Site:
 		self.i18n = i18n.load()
 		self.tpl = tmpl.Templates(repo.path("site", "templates"), self.i18n.t)
 		self.git = repo.git("rev-parse", "--short=8", "HEAD", default="unknown")
+		# where the web tools send error reports (report.js); unset: none are sent
+		self.sentry_dsn = os.environ.get("ODR_SENTRY_DSN", "")
 		self.git_dirty = bool(repo.git("status", "--porcelain", "--untracked-files=no"))
 		self.version = repo.git("describe", "--tags", "--always", "--dirty", default=self.git)
 		now = datetime.datetime.now(datetime.timezone.utc)
@@ -114,7 +116,7 @@ class Site:
 		for b in self.boards:
 			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "status", "bands", "power",
 					       "gallery", "cpu", "display", "docs", "flash", "backup", "unsupported", "required", "config",
-					       "screens")}
+					       "screens", "codeplug")}
 			r["support"] = docsmod.plain(b["status_detail"]["support"])
 			r["image"] = "static/img/radios/%s.svg" % b["id"]
 			r["frame_image"] = "static/img/radios/%s-frame.svg" % b["id"]
@@ -126,7 +128,8 @@ class Site:
 			    for f in self.features]
 		return {
 			"site.json": {"format": "odr-site/1", "git": self.git, "version": self.version, "built": self.built,
-				      "repo": self.repo_url, "languages": self.i18n.languages, "default_language": self.i18n.default},
+				      "repo": self.repo_url, "languages": self.i18n.languages, "default_language": self.i18n.default,
+				      "reports": {"sentry_dsn": self.sentry_dsn}},
 			"radios.json": {"radios": radios, "planned": planned},
 			"features.json": {"groups": self.groups, "features": features},
 			"variants.json": {"variants": self.variants},
@@ -179,7 +182,8 @@ class Site:
 
 	def nav(self, lang, home, current):
 		items = [("radios", "radios/index.html"), ("features", "features/index.html"),
-			 ("flash", "flash/index.html"), ("docs", "docs/index.html"), ("tools", "tools/index.html")]
+			 ("flash", "flash/index.html"), ("codeplug", "codeplug/index.html"), ("docs", "docs/index.html"),
+			 ("tools", "tools/index.html")]
 		return "".join('<a href="%s%s"%s>%s</a>' % (home, href, ' aria-current="page"' if key == current else "",
 							    html.escape(self.i18n.t(lang, "nav." + key)))
 			       for key, href in items)
@@ -259,6 +263,7 @@ class Site:
 			self.features_page(lang)
 			self.flash_page(lang)
 			self.tools_page(lang)
+			self.codeplug_page(lang)
 			self.docs_pages(lang)
 			self.not_found(lang)
 		self.write(".nojekyll", "")
@@ -302,7 +307,7 @@ class Site:
 					p = os.path.join(dirpath, f)
 					with open(p, encoding="utf-8") as fh:
 						text = fh.read()
-					text = re.sub(r'(from\s+"\.{1,2}/[^"?]+\.js)"', r'\1?v=%s"' % self.asset_version, text)
+					text = re.sub(r'((?:from|import)\s+"\.{1,2}/[^"?]+\.js)"', r'\1?v=%s"' % self.asset_version, text)
 					with open(p, "w", encoding="utf-8") as fh:
 						fh.write(text)
 
@@ -468,12 +473,12 @@ class Site:
 			  self.tpl.render("features", ctx, lang), "features", nav="features")
 
 	def flash_page(self, lang):
-		strings = json.dumps(self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.")),
+		strings = json.dumps(self.i18n.subset(lang, ("flash.", "state.", "status.", "variant.", "group.", "report.")),
 				     ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
 			   '<script type="module" src="{{root}}static/js/flasher/app.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "flash/index.html", self.t(lang, "flash.title"), self.tpl.render("flash", {}, lang),
-			  "flash", scripts=scripts, nav="flash", footer=self.tpl.partial("flash_log", {}, lang))
+			  "flash", scripts=scripts, nav="flash", footer=self.tpl.partial("flash_log", {}, lang) + self.reports_footer(lang))
 
 	def tools_page(self, lang):
 		strings = json.dumps(self.i18n.subset(lang, ("tools.", "flash.convert.")),
@@ -482,6 +487,17 @@ class Site:
 			   '<script type="module" src="{{root}}static/js/tools.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "tools/index.html", self.t(lang, "tools.title"), self.tpl.render("tools", {}, lang),
 			  "tools", scripts=scripts, nav="tools")
+
+	def codeplug_page(self, lang):
+		strings = json.dumps(self.i18n.subset(lang, ("editor.", "flash.part.", "report.")), ensure_ascii=False).replace("</", "<\\/")
+		scripts = ('<script type="application/json" id="i18n">%s</script>'
+			   '<script type="module" src="{{root}}static/js/editor/app.js?v=%s"></script>' % (strings, self.asset_version))
+		self.page(lang, "codeplug/index.html", self.t(lang, "editor.title"), self.tpl.render("codeplug", {}, lang),
+			  "codeplug", description=self.t(lang, "editor.lead"), scripts=scripts, nav="codeplug", footer=self.reports_footer(lang))
+
+	def reports_footer(self, lang):
+		"""The privacy note on automatic error reports, on the pages that send them: only when the build has an address."""
+		return self.tpl.partial("error_reports", {}, lang) if self.sentry_dsn else ""
 
 	def docs_pages(self, lang):
 		prefix = self.i18n.prefix(lang)

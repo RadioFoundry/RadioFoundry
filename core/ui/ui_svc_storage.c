@@ -38,6 +38,11 @@
 #include "input/keyassign.h"
 #endif
 
+// The crash report's target is a contact number in 11 spare bits (settings.h)
+#if CONFIG_CRASH_REPORT
+_Static_assert(CODEPLUG_CONTACTS_MAX <= 0x7FF, "the crash report's target doesn't fit settings_crash_contact");
+#endif
+
 uint32_t ui_svc_feat_storage(void)
 {
 	return UI_FEAT_SAVE_CHANNEL | UI_FEAT_FACTORY_RESET;
@@ -173,7 +178,7 @@ int32_t ui_svc_setting_get(uint8_t id)
 		return (st.ui_flags & SETTINGS_UI_NO_VIBRATE) == 0;
 	case UI_SET_THEME:
 		settings_read(&st);
-		return st.theme <= 2 ? st.theme : 0;
+		return settings_theme(&st);
 	case UI_SET_ACCENT:
 		settings_read(&st);
 		return st.accent & SETTINGS_ACCENT_COLOR;
@@ -182,7 +187,7 @@ int32_t ui_svc_setting_get(uint8_t id)
 		return (st.accent & SETTINGS_ACCENT_PLAIN) == 0;
 	case UI_SET_UPDOWN_HOME:
 		settings_read(&st);
-		return st.updown_home <= 2 ? st.updown_home : 0;
+		return settings_updown_home(&st);
 	case UI_SET_LOW_BATTERY:
 		settings_read(&st);
 		return st.low_batt_pct;
@@ -230,6 +235,14 @@ int32_t ui_svc_setting_get(uint8_t id)
 		return id == UI_SET_CHECK_REPLY ? ds.radioCheckReply : id == UI_SET_ALERT_ANSWER ? ds.callAlertAck :
 			ds.lrrpReply;
 	}
+#endif
+#if CONFIG_CRASH_REPORT
+	case UI_SET_CRASH_MODE:
+		settings_read(&st);
+		return settings_crash_mode(&st) <= UI_CRASH_SEND_AUTO ? settings_crash_mode(&st) : UI_CRASH_SEND_OFF;
+	case UI_SET_CRASH_CONTACT:
+		settings_read(&st);
+		return settings_crash_contact(&st);
 #endif
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
 	case UI_SET_USB_BOOT_NET:
@@ -298,14 +311,14 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_AUTO_OFF_MIN:
 		st = settings_begin();
 		if (id == UI_SET_THEME) {
-			st->theme = (uint8_t)clamp16(value, 0, 2);
+			st->theme = (uint8_t)((st->theme & ~SETTINGS_SMALL_MASK) | clamp16(value, 0, 2));
 		} else if (id == UI_SET_ACCENT) {
 			st->accent = (uint8_t)((st->accent & ~SETTINGS_ACCENT_COLOR) |
 					       clamp16(value, 0, SETTINGS_ACCENT_COLOR));
 		} else if (id == UI_SET_STRIP) {
 			st->accent = (uint8_t)(value ? st->accent & ~SETTINGS_ACCENT_PLAIN : st->accent | SETTINGS_ACCENT_PLAIN);
 		} else if (id == UI_SET_UPDOWN_HOME) {
-			st->updown_home = (uint8_t)clamp16(value, 0, 2);
+			st->updown_home = (uint8_t)((st->updown_home & ~SETTINGS_SMALL_MASK) | clamp16(value, 0, 2));
 		} else if (id == UI_SET_LOW_BATTERY) {
 			st->low_batt_pct = (uint8_t)clamp16(value, 0, 50);
 		} else {
@@ -320,6 +333,17 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		return true;
 	case UI_SET_PRIVACY_KEY:
 		privacy_store((uint8_t)ui_svc_setting_get(UI_SET_PRIVACY_TYPE), (uint32_t)clamp16(value, 0, 0xFFFF));
+		return true;
+#endif
+#if CONFIG_CRASH_REPORT
+	case UI_SET_CRASH_MODE:
+	case UI_SET_CRASH_CONTACT:
+		st = settings_begin();
+		if (id == UI_SET_CRASH_MODE)
+			settings_set_crash_mode(st, (uint8_t)clamp16(value, UI_CRASH_SEND_OFF, UI_CRASH_SEND_AUTO));
+		else
+			settings_set_crash_contact(st, clamp16(value, 0, CODEPLUG_CONTACTS_MAX));
+		settings_end(hal_millis());
 		return true;
 #endif
 	case UI_SET_MIC_GAIN:

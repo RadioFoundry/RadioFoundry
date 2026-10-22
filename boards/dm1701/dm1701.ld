@@ -1,16 +1,13 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The OpenDigitalRadio Authors */
 /* Baofeng DM-1701, STM32F405VG, application behind the stock bootloader (docs/spec/hardware-dm1701.md 1.4, 1.5).
- * Codec profile: stock DM-1701 V02.06 CSV runs in place (docs/spec/codec-dm1701.md "Recommended hosting"):
- * code window 0x08074714..0x08084930 and table window 0x080D19F0..0x080E4240.
+ * Codec (docs/spec/codec-placement.md, "STM32 radios"): the merge on the user's machine puts the stock V02.06 CSV
+ * codec's tables at their stock address 0x080D19F0..0x080E3A72 (sectors 10 and 11), its code right after them at
+ * 0x080E3A74, and the descriptor that says where at 0x080FFF80. The code runs in place.
  *
- * Whole flash sectors, not just the windows, are kept free of our code, so the flashing tool can update the firmware
- * without erasing the codec (docs/spec/hardware-dm1701.md 1.4): the code window spans sectors 7 and 8
- * (0x08060000..0x0809FFFF), the table window sectors 10 and 11 (0x080C0000..0x080FFFFF). The application gets
- * sectors 3-6 (0x0800C000..0x0805FFFF, 336 KB). Sector 9 (0x080A0000..0x080BFFFF, 128 KB) is FLASH2 and holds all
- * read-only data (.rodata2, below), which frees that much of the 336 KB for code. The build writes it as a second
- * image, odr_dm1701_rodata2.bin, and the release tools and odrflash write it together with the application
- * (docs/dev/release.md "Sector 9"). Never link into sectors 7, 8, 10 or 11. */
+ * Whole flash sectors are kept free of our code, so the flashing tool can update the firmware without erasing the
+ * codec: the application gets sectors 3-9 (0x0800C000..0x080BFFFF, 720 KB in one piece) and never links into sectors
+ * 10 and 11. */
 
 ENTRY(Reset_Handler)
 
@@ -20,8 +17,7 @@ _Min_Stack_Size = 0x800;	/* main stack: start-up and interrupts */
 
 MEMORY
 {
-	FLASH   (rx)  : ORIGIN = 0x0800C000, LENGTH = 0x08060000 - 0x0800C000	/* sectors 3-6 */
-	FLASH2  (r)   : ORIGIN = 0x080A0000, LENGTH = 0x080C0000 - 0x080A0000	/* sector 9 */
+	FLASH   (rx)  : ORIGIN = 0x0800C000, LENGTH = 0x080C0000 - 0x0800C000	/* sectors 3-9 */
 	RAM     (xrw) : ORIGIN = 0x20000000, LENGTH = 128K - 4
 	CCMRAM  (rw)  : ORIGIN = 0x10000000, LENGTH = 64K
 }
@@ -39,10 +35,7 @@ SECTIONS
 		_etext = .;
 	} >FLASH
 
-	/* All constant data (fonts, tables, string literals) lives in sector 9, between the codec sectors. Flash is memory
-	 * mapped, so a read from it costs the same as one from sectors 3-6 and nothing needs a copy. The firmware never
-	 * erases or programs internal flash, so nothing can write sector 9 while it is read */
-	.rodata2 : { . = ALIGN(4); *(.rodata2) *(.rodata2.*) *(.rodata) *(.rodata.*) . = ALIGN(4); } >FLASH2
+	.rodata : { . = ALIGN(4); *(.rodata) *(.rodata*) . = ALIGN(4); } >FLASH
 
 	.ARM.extab : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >FLASH
 	.ARM : { __exidx_start = .; *(.ARM.exidx*) __exidx_end = .; } >FLASH
@@ -91,8 +84,6 @@ SECTIONS
 	/DISCARD/ : { libc.a(*) libm.a(*) libgcc.a(*) }
 	.ARM.attributes 0 : { *(.ARM.attributes) }
 
-	/* The application .bin holds what is loaded into FLASH, the _rodata2.bin what is loaded into FLASH2 (Makefile) */
-	ASSERT(SIZEOF(.rodata2) <= LENGTH(FLASH2), "constant data does not fit sector 9")
-	/* Belt and braces for the sector rule above: everything loaded into flash ends before sector 7 */
-	ASSERT(_sidata + SIZEOF(.data) <= 0x08060000, "the image reaches into codec sector 7 (0x08060000)")
+	/* Belt and braces for the sector rule above: everything loaded into flash ends before codec sector 10 */
+	ASSERT(_sidata + SIZEOF(.data) <= 0x080C0000, "the image reaches into codec sector 10 (0x080C0000)")
 }

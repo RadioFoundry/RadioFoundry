@@ -9,14 +9,12 @@
 //
 // The channel knob is not a quadrature encoder but a 16-position switch with four code lines. Each scan reads the code,
 // turns it into a position and reports the change as encoder steps, so the core sees the same thing as on the other
-// radios (a step per detent). Code polarity and order are unconfirmed (MD380_CH_GRAY, MD380_CH_ACTIVE_HIGH).
+// radios (a step per detent). The code is a Gray code with its own line order, measured on the radio (hardware-md380.md
+// 9.2): one line changes per detent, so a contact that bounces flickers between two neighbors, never far away.
 #include "md380.h"
 #include "pins.h"
 #include "hal_time.h"
 
-#ifndef MD380_CH_GRAY
-#define MD380_CH_GRAY		0	// 1: the switch gives a Gray code, 0: plain binary
-#endif
 #ifndef MD380_CH_ACTIVE_HIGH
 #define MD380_CH_ACTIVE_HIGH	0	// 0: lines pulled up, a closed contact reads low
 #endif
@@ -149,22 +147,30 @@ static uint8_t read_channel_code(void)
 	return MD380_CH_ACTIVE_HIGH ? c : (uint8_t)(~c & 0xFu);
 }
 
-static int8_t code_to_position(uint8_t code)
-{
-	if (!MD380_CH_GRAY) {
-		return (int8_t)code;
-	}
-	uint8_t b = code;
-	for (uint8_t shift = 1; shift < 4; shift <<= 1) {
-		b ^= (uint8_t)(b >> shift);
-	}
-	return (int8_t)(b & 0xFu);
-}
+// Position by code, clockwise: the codes read one detent at a time were 0 8 A 2 3 B 9 1 5 D F 7 6 E C 4 (bench,
+// hardware-md380.md 9.2)
+static const int8_t code_position[16] = {
+	[0x0] = 0, [0x8] = 1, [0xA] = 2, [0x2] = 3, [0x3] = 4, [0xB] = 5, [0x9] = 6, [0x1] = 7,
+	[0x5] = 8, [0xD] = 9, [0xF] = 10, [0x7] = 11, [0x6] = 12, [0xE] = 13, [0xC] = 14, [0x4] = 15,
+};
+
+// A code counts once it reads the same CH_STABLE scans in a row (30 ms): the contacts bounce between detents
+#define CH_STABLE	3
 
 static void channel_poll(void)
 {
-	ch_code = read_channel_code();
-	int8_t pos = code_to_position(ch_code);
+	static uint8_t cand, same;
+	uint8_t code = read_channel_code();
+	if (code != cand) {
+		cand = code;
+		same = 1;
+		return;
+	}
+	if (same < CH_STABLE && ++same < CH_STABLE) {
+		return;
+	}
+	ch_code = code;
+	int8_t pos = code_position[code];
 	if (ch_pos >= 0 && pos != ch_pos) {
 		int d = pos - ch_pos;
 		if (d > 8) {		// the shorter way round, should the switch turn past its stop

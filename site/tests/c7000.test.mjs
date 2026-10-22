@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The HR_C7000 flasher modules: LZ4 and the codec slot against stubtool.py and dm32_codec.py (fixtures from
+// The HR_C7000 flasher modules: LZ4 and the codec slot against stubtool.py and hrc7000_codec.py (fixtures from
 // site/tests/fixtures.py), and the stub protocol end to end against the simulated radio (fakec7000.js): the boot-ROM
 // load, entry from ODR, reads with damaged frames, writes of changed sectors only, the reset back into the firmware.
 
@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { crc32, equal, sha256 } from "../static/js/flasher/bytes.js";
 import { decodeBlock, encodeBlock } from "../static/js/flasher/lz4.js";
-import { Stub, stubImages, StubError, DONE_LED } from "../static/js/flasher/stub.js";
+import { Stub, stubImages, StubError, DONE_LED, univFits, univLayout } from "../static/js/flasher/stub.js";
 import { Link, probe } from "../static/js/flasher/link.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation } from "../static/js/flasher/fakec7000.js";
@@ -23,10 +23,21 @@ const C = json("flash-boards.json").c7000;
 const stubs = stubImages(json("c7000-stub.json"));
 const quiet = () => {};
 
-test("the embedded stub images decode to their SHA-256", async () => {
-	assert.equal(await sha256(stubs.rom), stubs.romSha);
-	assert.equal(await sha256(stubs.odr), stubs.odrSha);
-	assert.equal(stubs.romLoad, 0x10000);
+test("the universal stub decodes to its SHA-256 and fits every way in", async () => {
+	assert.equal(await sha256(stubs.image), stubs.sha);
+	assert.equal(stubs.load, 0x10000);
+	assert.deepEqual(univLayout(stubs.image), [stubs.run, stubs.end]);
+	assert.equal(stubs.run, 0x30000);
+	// The stub feeds the watchdog in its wait and read loops; ODR leaves it running (docs/spec/watchdog.md 3.2): the
+	// feed value 0x55AADD22 is in the image
+	assert.ok(Buffer.from(stubs.image).includes(Buffer.from([0x22, 0xDD, 0xAA, 0x55])), "the stub feeds the watchdog");
+	// boot ROM / first stage, ODR on the DM-32UV and DM-1801 Pro, the DB25-D with and without DMR, a stock DB25-D's console
+	for (const [load, win] of [[0x10000, null], [0x17000, [0x17000, 0x18000]], [0x1D000, [0x1D000, 0x12000]], [0x30000, [0x30000, 0x20000]], [0x54000, null]])
+		univFits(stubs.image, load, win);
+	assert.throws(() => univFits(stubs.image, 0x30800), StubError);		// overlaps its run copy
+	assert.throws(() => univFits(stubs.image, 0x57000), StubError);		// past the end of SRAM
+	assert.throws(() => univFits(stubs.image, 0x1D000, [0x1D000, 0x1000]), StubError);
+	assert.throws(() => univFits(new Uint8Array(4096), 0x10000), StubError);
 });
 
 test("LZ4: stubtool's block decodes, and our encoder round-trips", () => {
@@ -36,7 +47,7 @@ test("LZ4: stubtool's block decodes, and our encoder round-trips", () => {
 	assert.throws(() => decodeBlock(bin("lz4_block.bin").subarray(0, 100), plain.length));
 });
 
-test("codec located wherever the stock firmware put it, slot as dm32_codec builds it", async () => {
+test("codec located wherever the stock firmware put it, slot as hrc7000_codec builds it", async () => {
 	const fx = json("c7000.json");
 	const c = { ...C, profiles: [fx.profile] };
 	const progmem = bin("c7000_progmem.bin");
@@ -47,7 +58,7 @@ test("codec located wherever the stock firmware put it, slot as dm32_codec build
 	const image = bin("c7000_image.bin"), merged = bin("c7000_merged.bin");
 	const [start, data] = c7.target(c, "dm1801pro", image, c7.slotBytes(c, "dm1801pro", found));
 	assert.equal(start, 0xC000);
-	assert.ok(equal(data.subarray(0, merged.length), merged), "image, padding and slot match dm32_codec.merge()");
+	assert.ok(equal(data.subarray(0, merged.length), merged), "image, padding and slot match hrc7000_codec.merge()");
 	assert.ok(data.subarray(merged.length).every((b) => b === 0xFF), "the slot's tail is erased");
 	const slot = merged.subarray(C.boards.dm1801pro.slot[0] - C.app_start);
 	const ps = await c7.parseSlot(c, "dm1801pro", slot);
@@ -79,7 +90,7 @@ test("a sector record that belongs to another sector is caught by the radio's ch
 	const s = new Stub(r.stream, { log: quiet });
 	setTimeout(() => r.powerOn(), 50);
 	await s.waitForRom(5000);
-	await s.loadThroughRom(stubs.rom, stubs.romLoad);
+	await s.loadThroughRom(stubs.image, stubs.load);
 	const got = await s.dump("progmem", 0x40000, 0xA0000);
 	assert.ok(equal(got, sim.progmem.subarray(0x40000, 0xA0000)), "the read matches the radio");
 	assert.equal(r.faults.misplace.length, 0, "both bad records were sent");
@@ -92,8 +103,10 @@ test("boot ROM path: load, read with damaged frames, write, reset into ODR", asy
 	const s = new Stub(r.stream, { log: quiet });
 	setTimeout(() => r.powerOn(), 50);
 	await s.waitForRom(5000);
-	await s.loadThroughRom(stubs.rom, stubs.romLoad);
+	await s.loadThroughRom(stubs.image, stubs.load);
 	assert.equal(r.state, "stub");
+	await s.configure(C.boards.dm1801pro.stub_board, C.led);
+	assert.equal(r.stubCfg.board, 2, "the DM-1801 Pro profile reached the stub");
 	await s.setupLed(C.led.red, C.led.green);
 	const progmem = await s.dump("progmem", 0, C.progmem_size);
 	assert.ok(equal(progmem, sim.progmem), "program memory read exactly despite damaged frames");
@@ -115,6 +128,8 @@ test("boot ROM path: load, read with damaged frames, write, reset into ODR", asy
 	assert.equal(states.get(0xC000), "written");
 	await s.ledSequence(DONE_LED);
 	await s.resetChip();
+	const ev = r.events.filter((e) => e === "wdt-off" || e === "reset");
+	assert.deepEqual(ev.slice(-2), ["wdt-off", "reset"], "the watchdog goes off before the soft reset");
 	await new Promise((ok) => setTimeout(ok, 1500));
 	assert.equal(r.state, "firmware");
 	const p = await probe(new Link(r.stream));
@@ -128,8 +143,10 @@ test("simulated radio: after the stub's reset the host link stays silent until a
 	const s = new Stub(r.stream, { log: quiet });
 	setTimeout(() => r.powerOn(), 50);
 	await s.waitForRom(5000);
-	await s.loadThroughRom(stubs.rom, stubs.romLoad);
+	await s.loadThroughRom(stubs.image, stubs.load);
 	await s.resetChip();
+	const ev = r.events.filter((e) => e === "wdt-off" || e === "reset");
+	assert.deepEqual(ev.slice(-2), ["wdt-off", "reset"], "the watchdog goes off before the soft reset");
 	await new Promise((ok) => setTimeout(ok, 1500));
 	assert.equal(r.state, "firmware");
 	assert.equal(await probe(new Link(r.stream, { timeout: 500 })), null, "no answer after the soft reset");
@@ -149,8 +166,13 @@ test("ODR path: no buttons, keep the codec, write only what changed", async (t) 
 	assert.equal((await probe(link)).codec, "dm1801pro-049");
 	assert.ok(await Stub.odrOffer(link));
 	const s = new Stub(r.stream, { log: quiet });
-	await s.enterFromOdr(stubs.odr);
+	await s.enterFromOdr(stubs.image);
 	assert.equal(r.state, "stub");
+	assert.ok(s.v6 && s.v6.run === 0x30000, "HELLO v6 reports the run address");
+	const image0 = r.progmem.slice(0xC000, 0xC000 + 0x40000);
+	const [st0, d0] = c7.target(sim.c, "dm1801pro", image0, null);
+	await assert.rejects(s.writeProgram(d0, st0, { appStart: C.app_start, appEnd: C.app_end }), /configuration/, "no write before CONFIG");
+	await s.configure(C.boards.dm1801pro.stub_board, C.led);
 	const slot = await s.dump("progmem", C.boards.dm1801pro.slot[0], C.boards.dm1801pro.slot[1]);
 	assert.ok(await c7.parseSlot(sim.c, "dm1801pro", slot), "the slot in flash checks");
 	const image = r.progmem.slice(0xC000, 0xC000 + 0x40000);
@@ -169,7 +191,7 @@ test("ODR without stub entry says so; the stub refuses writes outside the applic
 	await new Promise((ok) => setTimeout(ok, 800));
 	assert.equal(await Stub.odrOffer(new Link(r.stream)), null);
 	const s = new Stub(r.stream, { log: quiet });
-	await assert.rejects(s.enterFromOdr(stubs.odr), StubError);
+	await assert.rejects(s.enterFromOdr(stubs.image), StubError);
 	await assert.rejects(s.writeProgram(new Uint8Array(4096), 0x8000, { appStart: C.app_start, appEnd: C.app_end }), /outside the application/);
 });
 
@@ -208,4 +230,29 @@ test("factory calibration: the first page of the stock codeplug area whose ID by
 	assert.equal(c7.findCalibration(area), 0x7C000);
 	// the simulated radio carries one where the DM-1801 Pro examined had it
 	assert.equal(c7.findCalibration(new FakeC7000({ progmem: new Uint8Array(0x100000) }).q128), 0x7C000);
+});
+
+// Slots (docs/spec/codec-placement.md): the same bytes as hrc7000_codec.py, read back; a version 1 slot from before the
+// code moved, and a build without a codec map, are refused
+test("a codec with a map gets hrc7000_codec.py's slot; a version 1 slot or a build without a map is refused", async () => {
+	const fx = json("c7000.json").v2;
+	const want = bin("c7000_slot_v2.bin");
+	const c = { ...C, codec_maps: { [fx.map.profile]: fx.map }, boards: { ...C.boards, db25d: { ...C.boards.db25d, run: fx.run } } };
+	const r = await c7.parseSlot(c, "db25d", want);
+	assert.ok(r && r.version === 2 && r.length === want.length);
+	const w = (i) => want[4 * i] | (want[4 * i + 1] << 8) | (want[4 * i + 2] << 16) | (want[4 * i + 3] * 2 ** 24);
+	const code = want.slice(w(2), w(2) + w(3)), tables = want.slice(w(5), w(5) + w(6));
+	const profile = { name: "synthetic", run: w(4), tables_ram: w(7), entries: Array.from({ length: 7 }, (_, i) => w(8 + i)), tag: w(15) };
+	const got = { profile, code, tables, codeSha: await sha256(code) };
+	assert.ok(equal(c7.slotBytes(c, "db25d", got), want), "the same bytes as hrc7000_codec.py");
+	assert.equal(await c7.parseSlot({ ...c, boards: { ...c.boards, db25d: { ...c.boards.db25d, run: [fx.run[0], fx.run[0] + 0x1000] } } }, "db25d", want), null,
+		"a codec bigger than the window is refused");
+	const v1 = want.slice();
+	v1[4] = 1;
+	assert.equal(await c7.parseSlot(c, "db25d", v1), null, "a version 1 slot is refused");
+	assert.equal(await c7.decide(c, "db25d", { savedSlot: v1 }), null, "and isn't written from a saved copy");
+	assert.throws(() => c7.slotBytes({ ...c, codec_maps: {} }, "db25d", got), /no codec map/);
+	const bad = code.slice();
+	bad.fill(0, 0x40, 0x44);
+	assert.throws(() => c7.slotBytes(c, "db25d", { ...got, code: bad }), /doesn't hold/);
 });

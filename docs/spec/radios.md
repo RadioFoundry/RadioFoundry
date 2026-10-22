@@ -393,7 +393,7 @@ different architecture from anything in ODR. The Retevis C62 and Quansheng-style
 | `drivers/display/st7735` | yes | 160x128 color radios (HX8302A compatibility per radio ?) |
 | `drivers/display/st7789` | yes | DM-32UV |
 | `platform/mk22` | **new** | GD-77 family, HD1 |
-| `drivers/modem/hrc6000`, C5000 variant | yes (`hrc6000_attach_chip`) | MD-380 |
+| `drivers/modem/hrc5000` (with `hrc_common`) | yes (`hrc5000_attach`) | MD-380 |
 | `drivers/rf/sky72310` (+ receive chain) | yes (MD-380 board glue) | MD-380, MD-9600 (older boards), CS7000 |
 | UC1701 / ST7567 mono display driver | **new** | GD-77 family (UC1701), MD-9600 (ST7567). Both are 128x64-class page-addressed controllers, so one driver may cover both (?) |
 | I2C EEPROM | **new** | GD-77 family |

@@ -9,15 +9,19 @@ bool sky72310_ratio(uint32_t f_osc_hz, uint8_t ref_div, uint32_t f_vco_hz, sky72
 	if (f_osc_hz == 0 || ref_div < 1 || ref_div > 32 || f_osc_hz / ref_div > SKY72310_FPD_MAX_HZ) {
 		return false;
 	}
-	// N x 2^18 = f_vco x ref_div x 2^18 / f_osc, rounded to the nearest step
+	// N x 2^18 = f_vco x ref_div x 2^18 / f_osc, rounded to the nearest step, then split into the nearest whole N and
+	// a signed fraction of -0.5 .. +0.5 (signed mode). Sent unsigned, a fraction over one half put the MD-380's
+	// synthesizer one phase detector step (8.4 MHz) low, at about half of all channels (issue 108)
 	uint64_t num = ((uint64_t)f_vco_hz * ref_div) << SKY72310_FRAC_BITS;
 	uint64_t total = (num + f_osc_hz / 2u) / f_osc_hz;
-	uint32_t n = (uint32_t)(total >> SKY72310_FRAC_BITS);
+	uint64_t half = 1u << (SKY72310_FRAC_BITS - 1);
+	uint32_t n = (uint32_t)((total + half) >> SKY72310_FRAC_BITS);
 	if (n < SKY72310_N_MIN || n > SKY72310_N_MAX) {
 		return false;
 	}
+	int32_t frac = (int32_t)((int64_t)total - ((int64_t)n << SKY72310_FRAC_BITS));
 	out->n_reg = (uint16_t)(n - 32u);
-	out->dividend = (uint32_t)(total & ((1u << SKY72310_FRAC_BITS) - 1u));
+	out->dividend = (uint32_t)frac & ((1u << SKY72310_FRAC_BITS) - 1u);	// 18-bit two's complement
 	return true;
 }
 
@@ -26,7 +30,8 @@ uint32_t sky72310_vco_hz(uint32_t f_osc_hz, uint8_t ref_div, const sky72310_rati
 	if (ref_div == 0) {
 		return 0;
 	}
-	uint64_t total = ((uint64_t)(r->n_reg + 32u) << SKY72310_FRAC_BITS) + r->dividend;
+	int32_t frac = (int32_t)(r->dividend << (32 - SKY72310_FRAC_BITS)) >> (32 - SKY72310_FRAC_BITS);	// sign extend
+	uint64_t total = (uint64_t)(((int64_t)(r->n_reg + 32u) << SKY72310_FRAC_BITS) + frac);
 	return (uint32_t)((total * f_osc_hz / ref_div) >> SKY72310_FRAC_BITS);
 }
 
@@ -55,7 +60,7 @@ void sky72310_attach(sky72310_t *dev, const sky72310_bus_t *bus, uint32_t f_osc_
 bool sky72310_init(sky72310_t *dev)
 {
 	bool ok = wr(dev, SKY72310_REG_POWER_MUX, power_word(dev, false));	// powered, fractional, 18-bit
-	ok &= wr(dev, SKY72310_REG_DELTA_SIGMA, SKY72310_DS_BASE);		// unsigned dividend
+	ok &= wr(dev, SKY72310_REG_DELTA_SIGMA, SKY72310_DS_BASE | SKY72310_DS_SIGNED);	// signed dividend
 	ok &= wr(dev, SKY72310_REG_MOD_CTRL, 0);				// no modulation offset
 	ok &= wr(dev, SKY72310_REG_PD_GAIN, dev->pd_gain);
 	dev->ref_div = 0;

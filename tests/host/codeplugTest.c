@@ -431,6 +431,12 @@ static void test_iddb(void)
 	CHECK(dmr_iddb_lookup(3101234, text, sizeof(text)) && strcmp(text, "N0CALL Spencer") == 0);
 	CHECK(dmr_iddb_lookup(3200000, text, sizeof(text)) && strcmp(text, "W1AW") == 0);
 
+	// A database written by a CPS takes effect at the codeplug reload that ends the session, without a restart
+	put_iddb_header('-', 4 + 20, 1);
+	CHECK(dmr_iddb_count() == 2);	// no reload yet: the header read before is kept
+	codeplug_reload();
+	CHECK(dmr_iddb_count() == 1);
+
 	// The old "ID" tag is rejected
 	image[FL + 0x30001] = 'D';
 	CHECK(!dmr_iddb_init());

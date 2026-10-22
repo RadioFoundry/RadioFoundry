@@ -37,7 +37,7 @@ class CodecProfile:
 class Board:
     def __init__(self, id, name, family, app_base, flash_end, sectors, codec, debuglink_names, releasable,
                  keep_codec_supported, key_sha256=None, dfu_ids=None, dfu_string1=None, dfu_product=None, protected=(),
-                 data_regions=()):
+                 first_stage=None):
         self.id = id
         self.name = name
         self.family = family
@@ -53,8 +53,8 @@ class Board:
         self.dfu_string1 = dfu_string1
         self.dfu_product = dfu_product		# the bootloader's USB product name (what Zadig lists)
         self.protected = protected		# address ranges never written (bootloader)
-        self.data_regions = list(data_regions)	# [(addr, size)] flash outside the application the firmware image may
-        # also fill (the DM-1701's sector 9: read-only data, docs/dev/release.md "Sector 9"); never a codec sector
+        self.first_stage = first_stage		# (size, first bytes): the image at app_base starts with a first stage
+        # this long, then the application (make's odr_<board>_install.bin); None: the application starts at app_base
 
     def sector_at(self, addr):
         for s in self.sectors:
@@ -94,10 +94,13 @@ DM1701 = Board(
     app_base=0x0800C000,
     flash_end=0x08100000,
     sectors=_f405_sectors(),
+    # the codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after
+    # them and the descriptor, all in sectors 10 and 11. Stock firmware keeps its code in sectors 7 and 8, which are the
+    # application's now, so no stock version leaves it in place ("installed" is empty: from stock, odrflash merges)
     codec=CodecProfile(
         id=_V0206["codec_profile"],
-        windows=[(_V0206["code"][0], _V0206["code"][1]), (_V0206["tables"][0], _V0206["tables"][1])],
-        installed=["V02.06 CSV"],
+        windows=[(a, n) for a, n, _ in stockfw.layout(_V0206)],
+        installed=[],
         sources=[_V0206["name"]],
     ),
     debuglink_names=["DM-1701", "dm1701"],
@@ -108,11 +111,10 @@ DM1701 = Board(
     dfu_string1="AnyRoad Technology",
     dfu_product="Digital Radio in USB mode",
     protected=[(0x08000000, 0x0800C000)],
-    data_regions=_V0206["app_data"],
 )
 
 # Not released yet (docs/testing/dm32-bringup.md). Program flash 0x03000000..0x03100000; the Baofeng bootloader at
-# 0x03000000..0x0300C000; the codec slot 0x030E8000..0x03100000 (boards/dm32/dm32.ld, tools/dm32_codec.py). The
+# 0x03000000..0x0300C000; the codec slot 0x030E8000..0x03100000 (boards/dm32/dm32.ld, tools/hrc7000_codec.py). The
 # Baofeng serial updater erases the whole application area before it writes (hardware-dm32.md 13.2 step 7), so the
 # codec can't be kept across an update: every flash merges it again. Modeled as one "sector" for the app and one for
 # the slot so manifests can say where the codec goes.
@@ -134,7 +136,7 @@ DM32 = Board(
 # Not released yet (docs/testing/dm1801pro-bringup.md). The same Baofeng serial updater as the DM-32UV, with its own ID
 # string (BF1801-V1); the same flash map, the same codec slot and the same erase of the whole application area. The
 # codec comes from the radio's own program flash (read with stub/stubtool.py), not from a stock file
-# (docs/spec/codec-dm1801pro.md, tools/dm32_codec.py --board dm1801pro). tools/dm32_flash.py --model dm1801pro does
+# (docs/spec/codec-dm1801pro.md, tools/hrc7000_codec.py --board dm1801pro). tools/dm32_flash.py --model dm1801pro does
 # the writing.
 DM1801PRO = Board(
     id="dm1801pro",
@@ -152,10 +154,11 @@ DM1801PRO = Board(
 )
 
 # Not released yet (docs/testing/md380-bringup.md). The TYT bootloader takes the same DFU protocol and sector order as
-# the DM-1701's, with its own key (tools/stm32_dfu.py --model md380). The stock D002.032 codec runs in place at its
-# stock addresses (docs/spec/codec-md380.md): the code window starts at 0x08050C44, inside sector 6, so the application
-# ends there (boards/md380/md380.ld) and shares sector 6 with the codec. An update erases sector 6 and with it part of
-# the codec, so the codec can't be kept: every flash merges it from the stock file again.
+# the DM-1701's, with its own key (tools/stm32_dfu.py --model md380). The codec where the merge puts it
+# (docs/spec/codec-placement.md): the main table window at its stock address in sector 8, the small ones in sectors 10
+# and 11, the code moved to the start of sector 11 and the descriptor. The application has sectors 3-7
+# (boards/md380/md380.ld), so an update leaves the codec sectors alone. Stock firmware keeps the code in sectors 6
+# and 7, so no stock version leaves it in place ("installed" is empty: from stock, odrflash merges).
 _D2032 = stockfw.PROFILES["e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"]
 
 MD380 = Board(
@@ -165,11 +168,11 @@ MD380 = Board(
     app_base=0x0800C000,
     flash_end=0x08100000,
     sectors=_f405_sectors(),
-    codec=CodecProfile(id=_D2032["codec_profile"], windows=[(a, n) for a, n, _ in stockfw.windows(_D2032)],
+    codec=CodecProfile(id=_D2032["codec_profile"], windows=[(a, n) for a, n, _ in stockfw.layout(_D2032)],
                        installed=[], sources=[_D2032["name"]]),
     debuglink_names=["MD-380", "MD-380 VHF", "md380"],
     releasable=False,
-    keep_codec_supported=False,
+    keep_codec_supported=True,
     key_sha256=stockfw.MD380_KEY_SHA256,
     dfu_ids=(0x0483, 0xDF11),
     dfu_string1="AnyRoad Technology",
@@ -193,6 +196,7 @@ DB25D = Board(
     releasable=False,
     keep_codec_supported=False,
     protected=[(0x03000000, 0x0300C000)],
+    first_stage=(0x1000, bytes([0x2C, 0x11, 0x01, 0xC0])),
 )
 
 BOARDS = {b.id: b for b in (DM1701, DM32, DM1801PRO, MD380, DB25D)}

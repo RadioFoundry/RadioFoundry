@@ -9,9 +9,14 @@
 // (tftp_codeplug_resume), so a cut transfer or a cut commit never leaves half of each.
 #include <string.h>
 #include "net/tftp_codeplug.h"
+#include "net/tftp_iddb.h"
 #include "board.h"
 #include "storage/storage.h"
 #include "codeplug/codeplug.h"
+#include "config.h"
+#if CONFIG_CPS_FAST
+#include "cps/cps_fast.h"
+#endif
 
 #define SECTOR		STORAGE_SECTOR
 #define EE_IMAGE	0x10000u	// file offsets below this are the EEPROM image, from 0x20000 the flash image
@@ -45,6 +50,12 @@ static struct {
 	uint32_t staged;		// staged bytes so far
 	uint32_t sector;		// committing: the file offset of the next sector to copy
 	uint8_t *buf;			// committing: the shared sector buffer
+#if CONFIG_TFTP_IDDB
+	uint32_t tsize;			// the size announced, 0 if none
+	uint8_t iddb_h[TFTP_IDDB_HEADER];	// the ID database header at TFTP_IDDB_AREA1, as it comes in
+	uint8_t iddb_have;		// bytes of it so far
+	bool iddb;			// the file carries an ID database, written as it comes (tftp_iddb_image)
+#endif
 } w;
 
 static const hal_flash_map_t *map(void)
@@ -85,23 +96,10 @@ static uint32_t staging_data(void)
 	return map()->staging_addr + SECTOR;
 }
 
-static bool overlaps(uint32_t a, uint32_t alen, uint32_t b, uint32_t blen)
-{
-	return blen != 0 && a < b + blen && b < a + alen;
-}
-
 // The board has a staging area that holds the image and touches nothing else
 static bool staging_ok(void)
 {
-	const hal_flash_map_t *m = map();
-	if (m == NULL || board.flash == NULL || m->staging_size < SECTOR + staged_total() ||
-	    m->staging_addr % SECTOR != 0 || m->staging_addr + m->staging_size > board.flash->size) {
-		return false;
-	}
-	uint32_t a = m->staging_addr, n = m->staging_size;
-	return !overlaps(a, n, m->settings_addr, m->settings_size) && !overlaps(a, n, m->journal_addr, 2u * SECTOR) &&
-	       !overlaps(a, n, m->openfw_eeprom, EE_IMAGE) && !overlaps(a, n, m->openfw_flash, m->openfw_end - m->openfw_flash) &&
-	       !overlaps(a, n, m->native_addr, m->native_size) && !overlaps(a, n, m->calibration_addr, m->calibration_size);
+	return board.flash != NULL && storage_staging_size() >= SECTOR + staged_total();
 }
 
 static bool flash_read(uint32_t addr, void *buf, uint32_t len)
@@ -195,7 +193,57 @@ static void reset_write(void)
 	if (w.buf != NULL) {
 		storage_buffer_release();
 	}
+#if CONFIG_TFTP_IDDB
+	if (w.iddb) {
+		tftp_iddb_cancel();	// its header stays erased: no database
+	}
+#endif
 	memset(&w, 0, sizeof(w));
+}
+
+// The largest codeplug.bin: an image up to the end of the open-firmware space (ID database area 2 included)
+static uint32_t size_max(void)
+{
+	uint32_t end = map()->openfw_end - map()->openfw_flash + FL_IMAGE;
+	return end > TFTP_CODEPLUG_FULL ? end : TFTP_CODEPLUG_FULL;
+}
+
+static bool size_ok(uint32_t size)
+{
+	return size >= TFTP_CODEPLUG_SIZE && size <= size_max();
+}
+
+// The ID database part of a combined file (tftp.md 5.2). Taken only when its header is valid and the size the client
+// announced covers it: a file without one (0xFF there, as every codeplug.bin before had), or one cut short of it (a
+// cps_client image of a radio with a big database), leaves the radio's database as it is
+static int iddb_bytes(uint32_t off, const uint8_t *buf, uint16_t len, const char **msg)
+{
+#if !CONFIG_TFTP_IDDB
+	(void)off;
+	(void)buf;
+	(void)len;
+	(void)msg;
+	return TFTP_OK;	// the bytes are ignored, as every byte outside the regions
+#else
+	const uint32_t h = TFTP_IDDB_AREA1;
+	if (w.iddb_have < TFTP_IDDB_HEADER && off + len > h + w.iddb_have && off <= h + w.iddb_have) {
+		uint32_t from = h + w.iddb_have - off, n = len - from;
+		n = n < TFTP_IDDB_HEADER - w.iddb_have ? n : TFTP_IDDB_HEADER - w.iddb_have;
+		memcpy(w.iddb_h + w.iddb_have, buf + from, n);
+		w.iddb_have = (uint8_t)(w.iddb_have + n);
+		uint32_t end;
+		const char *why = NULL;
+		if (w.iddb_have == TFTP_IDDB_HEADER && w.tsize != 0 && tftp_iddb_header_ok(w.iddb_h, &end, &why) &&
+		    w.tsize >= end) {
+			int r = tftp_iddb_begin(w.iddb_h, msg);
+			if (r != TFTP_OK) {
+				return r;
+			}
+			w.iddb = true;
+		}
+	}
+	return w.iddb ? tftp_iddb_image(off, buf, len, msg) : TFTP_OK;
+#endif
 }
 
 static int open_write(uint32_t tsize, const char **msg)
@@ -212,11 +260,20 @@ static int open_write(uint32_t tsize, const char **msg)
 		*msg = "no staging area on this radio";
 		return TFTP_FAIL(TFTP_ERR_ACCESS);
 	}
-	if (tsize != 0 && tsize != TFTP_CODEPLUG_SIZE && tsize != TFTP_CODEPLUG_FULL) {
-		*msg = "codeplug.bin is 716384 bytes (or a 1179648 byte cps_client image)";
+#if CONFIG_CPS_FAST
+	if (cps_fast_staging_busy()) {
+		*msg = "the staging area is in use (a codeplug write over the debug link)";
+		return TFTP_FAIL(TFTP_ERR_ACCESS);
+	}
+#endif
+	if (tsize != 0 && !size_ok(tsize)) {
+		*msg = "codeplug.bin is at least 716384 bytes, and no bigger than the radio's codeplug space";
 		return TFTP_FAIL(TFTP_ERR_FULL);
 	}
 	reset_write();
+#if CONFIG_TFTP_IDDB
+	w.tsize = tsize;
+#endif
 	// A commit record left by a failed commit: that image is finished first (else it would be taken for this one's
 	// staged bytes at the next boot)
 	uint8_t h[4];
@@ -236,9 +293,13 @@ static int write_file(uint32_t off, const uint8_t *buf, uint16_t len, const char
 	if (!w.open) {
 		return TFTP_FAIL(TFTP_ERR_OTHER);
 	}
-	if (off + len > TFTP_CODEPLUG_FULL) {
-		*msg = "codeplug.bin is 716384 bytes";
+	if (off + len > size_max()) {
+		*msg = "codeplug.bin is bigger than the radio's codeplug space";
 		return TFTP_FAIL(TFTP_ERR_FULL);
+	}
+	int r = iddb_bytes(off, buf, len, msg);
+	if (r != TFTP_OK) {
+		return r;
 	}
 	for (unsigned i = 0; i < REGIONS; i++) {
 		uint32_t lo = off > regions[i].start ? off : regions[i].start;
@@ -345,11 +406,22 @@ static int commit(uint32_t size, const char **msg)
 	if (!w.committing) {
 		uint32_t crc;
 		const char *bad;
-		if (size != TFTP_CODEPLUG_SIZE && size != TFTP_CODEPLUG_FULL) {
+		if (!size_ok(size)) {
 			reset_write();
-			*msg = "codeplug.bin must be 716384 bytes (or a 1179648 byte cps_client image)";
+			*msg = "codeplug.bin must be at least 716384 bytes";
 			return TFTP_FAIL(TFTP_ERR_OTHER);
 		}
+#if CONFIG_TFTP_IDDB
+		// The ID database is complete and checked block by block: it is taken whatever becomes of the codeplug
+		if (w.iddb) {
+			w.iddb = false;
+			int r = tftp_iddb_finish(msg);
+			if (r != TFTP_OK) {
+				reset_write();
+				return r;
+			}
+		}
+#endif
 		if (w.staged != staged_total() || !staged_crc(&crc) || crc != w.crc) {
 			reset_write();
 			*msg = "staging verify failed";
@@ -410,6 +482,11 @@ const tftp_file_t tftp_codeplug_file = {
 	.abort = abort_write,
 };
 
+bool tftp_codeplug_writing(void)
+{
+	return w.open;
+}
+
 void tftp_codeplug_allow_write(bool allow)
 {
 	allowed = allow;
@@ -432,8 +509,8 @@ bool tftp_codeplug_resume(void)
 	for (unsigned i = 0; i < sizeof(h); i++) {
 		blank = blank && h[i] == 0xFF;
 	}
-	if (blank) {
-		return false;
+	if (blank || get32le(&h[0]) == STORAGE_STAGE_MAGIC_CPSF) {
+		return false;		// nothing, or the fast codeplug protocol's record (cps_fast_resume finishes it)
 	}
 	bool valid = get32le(&h[0]) == TFTP_STAGING_MAGIC && get32le(&h[4]) == VERSION &&
 		     get32le(&h[8]) == staged_total() && get32le(&h[16]) == storage_crc32(0, h, 16) &&

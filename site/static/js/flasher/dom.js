@@ -2,6 +2,8 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The flasher page's DOM helpers and strings, shared by app.js and the views beside it (c7000ui.js).
 
+import { note } from "../diag.js";
+
 const STRINGS = JSON.parse(globalThis.document?.getElementById("i18n")?.textContent || "{}");
 export const t = (key, fmt = {}) => (STRINGS[key] || key).replace(/\{(\w+)\}/g, (_, k) => (k in fmt ? fmt[k] : `{${k}}`));
 export const ROOT = globalThis.document?.body.dataset.root || "";
@@ -80,7 +82,7 @@ export function progressBar() {
 
 export function logBox() {
 	const el = h("pre", { class: "log", "aria-live": "off" });
-	return { el, add(line) { el.textContent += line + "\n"; el.scrollTop = el.scrollHeight; } };
+	return { el, add(line) { el.textContent += line + "\n"; el.scrollTop = el.scrollHeight; note(line); } };
 }
 
 export const notice = (text, kind = "") => h("p", { class: `notice ${kind}` }, text);

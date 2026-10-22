@@ -45,6 +45,9 @@ typedef struct {
 	nand_result_t (*erase)(void *ctx, uint16_t block);
 	bool (*block_bad)(void *ctx, uint16_t block, bool *bad);	// the factory (or a retired block's) mark
 	void (*mark_bad)(void *ctx, uint16_t block);			// retire a block for good
+	// Optional (NULL: none): called once per block or sector in the long loops (the mount, garbage collection), so
+	// the board can feed its watchdog while the layer keeps the CPU (docs/spec/watchdog.md 4)
+	void (*busy)(void *ctx);
 } nand_dev_t;
 
 // What the last mount came to

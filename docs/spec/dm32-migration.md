@@ -20,7 +20,7 @@ differ ([hardware-dm1801pro.md](hardware-dm1801pro.md) 6.2).
 | Item | Handling |
 |---|---|
 | Input | A raw application image (linked for 0x0300C000), or a `BFUV32-V2` file: the 256-byte header is checked (`BFUV32-V2` at 0, `END` at 0xFD) and stripped (13.1). ELF files and other `BFU` versions are refused |
-| Size | 1 to 0xF4000 bytes (0x0300C000..0x03100000). An image starting with 16 blank bytes is refused. The ODR codec slot ("DDRC" at 0x030E8000, `tools/dm32_codec.py`) is reported when present |
+| Size | 1 to 0xF4000 bytes (0x0300C000..0x03100000). An image starting with 16 blank bytes is refused. The ODR codec slot ("DDRC" at 0x030E8000, `tools/hrc7000_codec.py`) is reported when present |
 | Steps 1-6 | Fixed exchanges, 2 s each. Step 1 is sent up to three times. No answer: "is the radio in update mode? PTT + SK1 at power-on, green LED". A wrong answer names the step and both byte strings |
 | Step 7 | `00 FF`, the 128-byte block (file name, NUL, decimal size), CRC-16/XMODEM big endian. The answer `06 43` comes after the erase: the wait is 30 s (13.2 says up to about 15 s) |
 | Step 8 | Per 1 KB: `02`, wait `43`, then block number n (from 1, 0xFF wraps to 0x00), 0xFF - n, 1024 bytes (the last zero padded), CRC. `06` accepts. A `15` (NAK), another answer or a timeout resends the block from `02`, up to four times. Then the flash stops: the application area is erased, update mode is needed again |
@@ -72,7 +72,7 @@ So the tool uses dmrconf only offline (encode, decode) and writes with `tools/cp
 ## 4. Sequence (`all`)
 
 0. Preflight: dmrconf with both drivers, pyserial, the helper scripts, the cable, the image (and the codec slot:
-   without it the tool asks, or merges from `--codec-from DM32.01.01.049.bin` with `dm32_codec.py`).
+   without it the tool asks, or merges from `--codec-from DM32.01.01.049.bin` with `hrc7000_codec.py`).
 1. Backup (stock firmware, normal mode): `dmrconf detect`, `read --radio dm32uv` to `backup-stock.dfu`, `decode` to
    `backup-stock.yaml` (or `--from FILE`). Then offline: `encode --radio openuv380` to `odr-codeplug.dfu` (the exact
    bytes restore writes), `decode` to `odr-codeplug.yaml`, and the conversion report (below). Over a limit: asks
@@ -112,7 +112,7 @@ Never carried over: stock menu, key and display settings, encryption keys, the s
 ## 6. Package
 
 `dm32_migrate.py package OUTDIR --image odr_dm32_codec.bin` copies `dm32_migrate.py`, `dm32_flash.py`,
-`cps_client.py`, `odr_debug.py`, `md380_migrate.py` (shared YAML, users-file and session code), `dm32_codec.py`,
+`cps_client.py`, `odr_debug.py`, `md380_migrate.py` (shared YAML, users-file and session code), `hrc7000_codec.py`,
 `docs/testing/dm32-bringup.md`, the image(s) and `--include` files into a flat directory, and writes `README.txt`,
 `requirements.txt` (pyserial) and `SHA256SUMS`. Every helper is loaded from the script's own directory, so the
 kit runs as it is. The image is checked (size, header) and a missing codec slot is reported.

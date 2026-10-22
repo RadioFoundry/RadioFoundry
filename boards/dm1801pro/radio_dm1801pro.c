@@ -32,14 +32,17 @@
 #define MIC_GAIN_DMR_DB		11u
 #define MIC_GAIN_FM_12K5_DB	11u
 #define MIC_GAIN_FM_25K_DB	11u
-#define RF_BIT_SCALE_US		5u		// the radio clocks the FD6818 at about 5 us per half period (5.1)
+#define RF_BIT_SCALE_US		1u		// 1 us per half clock, still slower than the radio (5.1)
 #define PA_RAMP_STEPS		40u		// 5.4
 #define PA_RAMP_STEP_US		50u
 #define FD_REG_TX_AUX		0x50u		// 3B18 after the TX state, before the TX path comes on (5.4)
 #define FD_REG40_BASE		0x3480u		// FM transmit: 0x40 = this + the calibration byte (5.2, 6.4)
 // The DM-32UV's "DMR PA" default. The radio has no PA timer: its ramp starts about 2 ms after the RF TX interrupt
-// (5.4), and this delay puts the drive 2.1-3.2 ms after it (5.6)
+// (5.4). This delay puts the drive 1.0-2.1 ms after it (1.0 ms before the burst to 0.1 ms into it, 5.6)
 #define DMR_PA_DELAY_US		28000u
+// RF TX interrupt 2.0 ms before our burst, not the DM-32UV's 3.1 ms: earlier, the switch cut off the tail of the
+// inbound burst before ours, and in SFR mode a clipped header before voice lost the next superframe (5.6)
+#define RF_TX_LEAD		20u
 #define FM_TX_LIMIT_12K5	5u	// FM_DEV_COEF b23:16 (hrc7000_t.fm_tx_limit)
 #define FM_TX_LIMIT_25K		0x0Fu
 #define FD_REG_NOISE		0x65u
@@ -194,13 +197,13 @@ static void dmr_rf_switch(bool tx)
 {
 	if (tx) {
 		rx_path(rx_hz, false);
-		fd6818_dmr_burst(&fd, true, fd.variant->bw_dmr);
+		fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, tx_hz);
 		fd6818_write(&fd, FD_REG_TX_AUX, 0x3B18);
 		tx_path(tx_hz, true);
 	} else {
 		DAC_DATA_B = 0;
 		tx_path(tx_hz, false);
-		fd6818_dmr_burst(&fd, false, fd.variant->bw_dmr);
+		fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, rx_hz);
 		rx_path(rx_hz, true);
 	}
 }
@@ -238,6 +241,7 @@ static void init(void)
 	// reset value, peaked at 4.8 kHz; 5 at 12.5 kHz scales to about 2.4 kHz (limiter x coefficient, not measured)
 	modem.fm_tx_limit[0] = FM_TX_LIMIT_12K5;
 	modem.fm_tx_limit[1] = FM_TX_LIMIT_25K;
+	modem.rf_tx_lead = RF_TX_LEAD;
 	// modem-hrc7000.md 4 steps 1-3: ADC reset and idle, DAC B to its pin, DACs B and C on with the PA drive at 0
 	ADC_CTRL = ADC_CTRL_RESET;
 	hal_delay_us(2);
@@ -336,7 +340,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	rx_path(hz, false);
 	hal_delay_ms(1);
 	write_mod_bias(hz);
-	fd6818_set_freq(&fd, hz);
+	// DMR keeps listening on the RX frequency until a burst (dmr_rf_switch retunes per burst); on a split channel the
+	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
+	fd6818_set_freq(&fd, mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz);
 	fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the HR_C7000's
 	dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {

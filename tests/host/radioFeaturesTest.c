@@ -1625,6 +1625,46 @@ static void test_dmr_beeps(void)
 	chans[6].no_beep = false;
 }
 
+// A short PTT press through a repeater: the wake-up goes on after the release, and the user hears the talk permit when
+// the repeater answers (the call would have gone through) or the deny tone when none ever does
+static void test_dmr_short_press_wake(void)
+{
+	beep_stats_t b0, b1;
+
+	start();
+	chans[6].tx_hz = 443500000;	// split: through a repeater
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	CHECK(sm.view.dmr.rmo);
+	sim.wake_repeater_on_csbk = true;
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	run(10);
+	req(RREQ_PTT, 0);
+	run(2000);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);	// the talk permit
+	CHECK(sm.view.state == RS_IDLE && sm.view.dmr.state == RDMR_IDLE);
+
+	start();
+	chans[6].tx_hz = 443500000;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	sim.wake_repeater_on_csbk = false;
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	run(10);
+	req(RREQ_PTT, 0);
+	run(4000);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);	// the deny tone, once
+	CHECK(sm.view.state == RS_IDLE);
+
+	chans[6].tx_hz = 438500000;
+}
+
 // The TX time-out while a tone is on the air: a 1750 Hz burst held past it, a roger beep running into it. And
 // settings out of range (another firmware's record, a host tool) clamped when they arrive
 static void set_tot5_roger(radio_settings_t *s) { s->tot_s = 5; s->tot_warn_s = 0; s->roger_beep = true; }
@@ -1746,6 +1786,7 @@ int main(void)
 	test_no_battery();
 	test_battery_save();
 	test_dmr_beeps();
+	test_dmr_short_press_wake();
 	test_vibrate();
 	test_host_audio();
 	printf("# radioFeaturesTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

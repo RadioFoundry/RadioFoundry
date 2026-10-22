@@ -40,6 +40,8 @@ enum {
 	DL_VIEW_USRP,		// USRP voice over UDP and the shared PCM stream (core/usbaudio/usrp_net.c)
 	DL_VIEW_SFR,		// the MMDVM hotspot's SFR mode (was in DL_VIEW_HOTSPOT until view version 2)
 	DL_VIEW_TASKS,		// every task's least free stack (debuglink_view_tasks.c)
+	DL_VIEW_CRASH,		// the crash log's record from before this start (debuglink_crash.c)
+	DL_VIEW_WATCHDOG,	// the hardware watchdog: timeout, feeds, longest idle gap, raw registers (debuglink_watchdog.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		2	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -125,6 +127,19 @@ void debuglink_view_split(dl_text_t *t);
 // CONFIG_STUB_ENTRY (or on a board with no hal_system_t.enter_stub) the command answers unavailable and the hook is empty
 size_t debuglink_cmd_stub(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_stub_service(void);
+
+// The crash log (debuglink_crash.c, docs/spec/debuglink.md 3.19): the crash section, DL_CMD_CRASH and the service hook
+// that crashes on purpose after the reply has gone out. Without CONFIG_CRASH_LOG: "crash.built=0", unavailable, empty
+void debuglink_view_crash(dl_text_t *t);
+size_t debuglink_cmd_crash(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+void debuglink_crash_service(void);
+
+// The hardware watchdog (debuglink_watchdog.c, docs/spec/debuglink.md 3.21): the watchdog section, DL_CMD_WATCHDOG's
+// bench tests and the service hook that starts them after the reply. Without CONFIG_WATCHDOG: "watchdog.built=0",
+// unavailable, empty
+void debuglink_view_watchdog(dl_text_t *t);
+size_t debuglink_cmd_watchdog(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+void debuglink_watchdog_service(void);
 
 // The debug link's own counters: frames answered, bad CRC, too long, timed out (debuglink.c)
 #define DL_LINK_COUNTERS	4

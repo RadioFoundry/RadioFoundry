@@ -54,6 +54,8 @@ const board_t board = { .name = "test", .bands = bands, .band_count = 2, .power_
 // --- the host side ---
 static uint8_t out[8192];
 static size_t out_len;
+static size_t out_first;	// the bytes of a reply's first write
+static int out_writes;
 static int reboots, reboot_saved;
 static uint32_t now = 1000;
 
@@ -61,6 +63,9 @@ static void io_write(const uint8_t *buf, size_t len)
 {
 	if (out_len + len <= sizeof(out)) {
 		memcpy(out + out_len, buf, len);
+	}
+	if (out_writes++ == 0) {
+		out_first = len;
 	}
 	out_len += len;
 }
@@ -71,6 +76,8 @@ static const cps_io_t io = { .write = io_write, .reboot = io_reboot };
 static size_t request(const uint8_t *buf, size_t len, size_t chunk)
 {
 	out_len = 0;
+	out_writes = 0;
+	out_first = 0;
 	for (size_t off = 0; off < len;) {
 		size_t n = chunk == 0 || len - off < chunk ? len - off : chunk;
 		cps_feed(buf + off, n, now);
@@ -240,6 +247,36 @@ static void test_info(void)
 	a6[1] = 8;
 	request(a6, 8, 0);
 	CHECK(is_nak());
+}
+
+// qdmr (0.15): every C command is a 23-byte packet, the short command and zeros, and each gets one '-'. It reads a
+// reply as soon as some of it is in, so a read's header and its first data must leave in one write: a 32-byte block
+// sent as the header and then the data reached it as a short reply, and the late data was taken for the next reply
+static void test_qdmr_framing(void)
+{
+	static const uint8_t cmds[][4] = { { 0 }, { 1 }, { 2, 0, 0, 3 }, { 3 }, { 6, 3 }, { 6, 2 }, { 5 } };
+	cps_stats_t before, after;
+	uint8_t b[64];
+
+	cps_get_stats(&before);
+	for (unsigned i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++) {
+		uint8_t r[23] = { 'C' };
+		memcpy(r + 1, cmds[i], sizeof(cmds[i]));
+		if (cmds[i][0] == 2) {
+			memcpy(r + 7, "qDMR", 4);
+		}
+		request(r, sizeof(r), 0);
+		CHECK(is_nak());
+	}
+	cps_get_stats(&after);
+	CHECK(after.refused == before.refused);
+	CHECK(read_block(1, 0x80, 32, b) && out_writes == 1);
+	CHECK(read_block(1, 0xA0, 32, b) && out_writes == 1 && memcmp(b, sim_flash_data + 0xA0, 32) == 0);
+	CHECK(read_block(5, 100, 32, b) && out_writes == 1);
+	CHECK(read_block(10, 0x1000, 32, b) && out_writes == 1);
+	uint8_t lr[8] = { 'R', 1, 0, 0, 0x37, 0x80, 0x07, 0xFD };	// 2045: the header still goes with the first data
+	request(lr, sizeof(lr), 0);
+	CHECK(out_len == 3 + 2045 && out_first > 3);
 }
 
 static void test_read_session(void)
@@ -609,6 +646,7 @@ int main(void)
 	populate();
 	test_info();
 	test_read_session();
+	test_qdmr_framing();
 	test_write_session();
 	test_protected();
 	test_assembly();

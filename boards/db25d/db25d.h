@@ -126,6 +126,7 @@ uint32_t db25d_input_raw(void);		// the last key scan before debouncing
 // times each changed, to find out how the hand mic signals its keys
 uint8_t db25d_mic_lines(uint16_t *a9_changes, uint16_t *c11_changes);
 void db25d_mic_lines_reset(void);
+uint32_t db25d_input_ptt_ignored(void);	// key scans with PTA9 low that the shared-line gate took for serial data
 // The hand mic's key held now (its key number, 0xFF for none; mic_db25d.c)
 uint8_t db25d_mic_key(void);
 // The hand mic's frames as the host UART receives them (miccap_db25d.c, CONFIG_DIAG builds)

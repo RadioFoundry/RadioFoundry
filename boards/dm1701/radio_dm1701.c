@@ -19,7 +19,7 @@
 #include "hal_time.h"
 #include "rf/at1846s/at1846s.h"
 #include "modem/hrc6000/hrc6000.h"
-#include "modem/hrc6000/hrc6000_dmr.h"
+#include "modem/hrc_common/hrc6000_dmr.h"
 #include "dmr_dm1701.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -51,7 +51,7 @@ static const uint16_t frac_uhf[4] = { 460, 730, 140, 360 };
 
 static struct {
 	at1846s_t rf;
-	hrc6000_t modem;
+	hrc_t modem;
 	radio_mode_t mode;
 	bool tx_on;
 	bool rx_valid;
@@ -265,7 +265,7 @@ static bool voice_xfer(void *ctx, bool write, uint8_t *buf, uint8_t len)
 	return ok;
 }
 
-static const hrc6000_bus_t modem_bus = {
+static const hrc_bus_t modem_bus = {
 	.transfer = modem_transfer, .delay_ms = hal_delay_ms, .delay_us = hal_delay_us, .ctx = NULL,
 	.voice = voice_xfer,
 };
@@ -501,13 +501,13 @@ static SemaphoreHandle_t speaker_lock;
 static void pcm_codec_on(void)
 {
 	uint8_t v;
-	if (hrc6000_read(&r.modem, 4, 0xE2, &v) && (v & 0x02u) == 0) {
-		count(hrc6000_write(&r.modem, 4, 0xE2, (uint8_t)(v | 0x02u)));
+	if (hrc_read(&r.modem, 4, 0xE2, &v) && (v & 0x02u) == 0) {
+		count(hrc_write(&r.modem, 4, 0xE2, (uint8_t)(v | 0x02u)));
 	}
 	if (r.mode == RADIO_MODE_DMR) {
-		count(hrc6000_write(&r.modem, 4, 0xE0, 0xC9));
-		if (hrc6000_read(&r.modem, 4, 0x22, &v) && (v & 0x06u) != 0x06u) {
-			count(hrc6000_write(&r.modem, 4, 0x22, (uint8_t)(v | 0x06u)));
+		count(hrc_write(&r.modem, 4, 0xE0, 0xC9));
+		if (hrc_read(&r.modem, 4, 0x22, &v) && (v & 0x06u) != 0x06u) {
+			count(hrc_write(&r.modem, 4, 0x22, (uint8_t)(v | 0x06u)));
 		}
 	}
 }
@@ -589,7 +589,7 @@ static void init(void)
 	count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	audio(false);
-	r.diag.c6000_ok = hrc6000_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
+	r.diag.c6000_ok = hrc_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
 	dm1701_dmr_board_init(&r.modem);
 }
 
@@ -628,8 +628,8 @@ static void tone_restore(void)
 	count(at1846s_write(&r.rf, 0, 0x7A, r.saved_7a));
 	count(at1846s_write(&r.rf, 0, 0x59, r.saved_59));
 	count(at1846s_write(&r.rf, 0, 0x79, r.saved_79));
-	if (hrc6000_read(&r.modem, 4, 0xE0, &e0)) {
-		count(hrc6000_write(&r.modem, 4, 0xE0, (uint8_t)(e0 | 0x40u)));
+	if (hrc_read(&r.modem, 4, 0xE0, &e0)) {
+		count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)(e0 | 0x40u)));
 	}
 	r.tone_hz = 0;
 }
@@ -647,8 +647,8 @@ static void inject_stop(void)
 	r.inject = false;
 	dm1701_pwm_audio(NULL);
 	uint8_t e0;
-	if (hrc6000_read(&r.modem, 4, 0xE0, &e0)) {
-		count(hrc6000_write(&r.modem, 4, 0xE0, (uint8_t)((e0 | 0x40u) & ~0x06u)));	// the microphone again
+	if (hrc_read(&r.modem, 4, 0xE0, &e0)) {
+		count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)((e0 | 0x40u) & ~0x06u)));	// the microphone again
 	}
 }
 
@@ -662,12 +662,12 @@ bool dm1701_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode)
 		return false;	// flat (0x34's processing off) isn't offered: the PWM path stops at the codec's 3.5 kHz
 	}
 	uint8_t e0;
-	if (!hrc6000_read(&r.modem, 4, 0xE0, &e0)) {
+	if (!hrc_read(&r.modem, 4, 0xE0, &e0)) {
 		count(false);
 		return false;
 	}
 	dm1701_pwm_audio(pull);
-	count(hrc6000_write(&r.modem, 4, 0xE0, (uint8_t)((e0 & ~0x40u) | 0x06u)));
+	count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)((e0 & ~0x40u) | 0x06u)));
 	r.inject = true;
 	return true;
 }
@@ -716,7 +716,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	} else if (!same) {
 		// New channel: the DMR modulation pair for it, and the receiver searches again (5.1). Back from our own
 		// transmission on the same channel the engine has already restarted it, or kept a repeater's timing
-		count(hrc6000_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
+		count(hrc_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
 		dm1701_dmr_rx_restart();
 	}
 	r.tx_on = false;
@@ -744,7 +744,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		// Arm only: the receiver stays on the RX frequency (a repeater's slot timing is followed until our first
 		// burst); each burst is keyed from the modem's RF TX interrupt (dm1701_rf_dmr_switch)
 		int32_t dmr_offset = bw == RADIO_BW_25K ? DM1701_TX_OFFSET_HZ_25K : DM1701_TX_OFFSET_HZ_12K5;
-		count(hrc6000_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
+		count(hrc_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
 		r.dmr_tx_hz = (uint32_t)((int32_t)hz + dmr_offset);
 		r.dmr_drive = drive;
 		r.dmr_uhf = uhf;
@@ -859,7 +859,7 @@ static bool tx_tone(uint16_t hz)
 	}
 	if (hz != 0) {
 		uint8_t e0;
-		bool ok = hrc6000_read(&r.modem, 4, 0xE0, &e0);
+		bool ok = hrc_read(&r.modem, 4, 0xE0, &e0);
 		if (r.tone_hz == 0) {
 			uint16_t v;
 			r.saved_59 = at1846s_read(&r.rf, 0, 0x59, &v) ? v : 0;
@@ -868,7 +868,7 @@ static bool tx_tone(uint16_t hz)
 			r.saved_7a = at1846s_read(&r.rf, 0, 0x7A, &v) ? v : 0;
 		}
 		if (ok) {
-			count(hrc6000_write(&r.modem, 4, 0xE0, (uint8_t)(e0 & ~0x40u)));	// microphone muted
+			count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)(e0 & ~0x40u)));	// microphone muted
 		}
 		count(at1846s_write(&r.rf, 0, 0x35, (uint16_t)(hz * 10u)));		// tone1 = Hz x 10
 		count(at1846s_write(&r.rf, 0, 0x79, 0xC000));				// single tone
@@ -975,7 +975,7 @@ void dm1701_radio_diag(dm1701_radio_diag_t *d)
 // under the driver's feet, which is what the probe is for
 bool dm1701_modem_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write)
 {
-	return write ? hrc6000_write(&r.modem, page, reg, *val) : hrc6000_read(&r.modem, page, reg, val);
+	return write ? hrc_write(&r.modem, page, reg, *val) : hrc_read(&r.modem, page, reg, val);
 }
 
 // RAM access (hal_audio_tap_t.modem_ram), in 64-byte transactions so interrupts are masked for well under a
@@ -985,7 +985,7 @@ bool dm1701_modem_ram(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, b
 	bool ok = true;
 	while (ok && len > 0) {
 		uint16_t n = len > 64u ? 64u : len;
-		ok = hrc6000_ram(&r.modem, page, addr, buf, n, write);
+		ok = hrc_ram(&r.modem, page, addr, buf, n, write);
 		addr = (uint16_t)(addr + n);
 		buf += n;
 		len = (uint16_t)(len - n);
@@ -997,6 +997,6 @@ bool dm1701_modem_ram(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, b
 // not through the voice port as the vocoder's frames do
 bool dm1701_modem_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t len)
 {
-	return hrc6000_write_burst(&r.modem, page, reg, buf, len);
+	return hrc_write_burst(&r.modem, page, reg, buf, len);
 }
 #endif

@@ -16,6 +16,9 @@
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
+#if CONFIG_CPS_FAST
+#include "cps/cps_fast.h"
+#endif
 #include "input/input.h"
 #include "radio/radio.h"
 #include "storage/storage.h"
@@ -153,6 +156,9 @@ static const char features[] = "features="
 #if CONFIG_TFTP
 	"TFTP,"
 #endif
+#if CONFIG_TFTP_IDDB
+	"TFTP_IDDB,"
+#endif
 #if CONFIG_SNMP
 	"SNMP,"
 #endif
@@ -168,6 +174,9 @@ static const char features[] = "features="
 #if CONFIG_DIAG
 	"DIAG,"
 #endif
+#if CONFIG_CRASH_LOG
+	"CRASH_LOG,"
+#endif
 #if CONFIG_SCAN
 	"SCAN,"
 #endif
@@ -182,6 +191,9 @@ static const char features[] = "features="
 #endif
 #if CONFIG_BATTERY_SAVE
 	"BATTERY_SAVE,"
+#endif
+#if CONFIG_CPS_FAST
+	"CPS_FAST,"
 #endif
 #if CONFIG_USB
 	"USB,"
@@ -904,6 +916,16 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		}
 #endif
 		return debuglink_cmd_stub(req, len, out, cap);
+	case DL_CMD_CRASH:
+		return debuglink_cmd_crash(req, len, out, cap);
+	case DL_CMD_WATCHDOG:
+		return debuglink_cmd_watchdog(req, len, out, cap);
+	case DL_CMD_CODEPLUG:
+#if CONFIG_CPS_FAST
+		return cps_fast_cmd(req, len, out, cap, hal_millis());
+#else
+		return status_only(out, DL_ST_UNAVAILABLE);
+#endif
 	default:
 		return status_only(out, DL_ST_UNKNOWN_CMD);
 	}
@@ -921,6 +943,8 @@ static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 		reboot_now();
 	}
 	debuglink_stub_service();	// enters the RAM monitor after a verified STUB ENTER (noreturn); else a no-op
+	debuglink_crash_service();	// a crash test asked for (noreturn); else a no-op
+	debuglink_watchdog_service();	// a watchdog test asked for (ends in a reset); else a no-op
 	return took;
 }
 

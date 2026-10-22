@@ -38,6 +38,12 @@
 #if CONFIG_CPS_OPENFW
 #include "cps/cps_openfw.h"
 #endif
+#if CONFIG_CRASH_LOG
+#include "crash/crash.h"
+#endif
+#if CONFIG_CPS_FAST
+#include "cps/cps_fast.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -81,6 +87,9 @@ static void startup_task(void *arg)
 	board.display->set_backlight(100);
 	board.input->init();
 	storage_init();			// finishes a codeplug sector rewrite a power cut interrupted
+#if CONFIG_CPS_FAST
+	cps_fast_resume();		// and a fast codeplug protocol commit (docs/spec/cps-fast.md 7)
+#endif
 #if CONFIG_TFTP
 	tftp_codeplug_resume();		// and a TFTP codeplug write's commit (before the codeplug is read)
 #endif
@@ -117,5 +126,8 @@ static void startup_task(void *arg)
 
 void app_start(void)
 {
+#if CONFIG_CRASH_LOG
+	crash_init();			// the record of a crash before this start, before anything can crash again
+#endif
 	xTaskCreate(startup_task, "start", START_TASK_STACK, NULL, START_TASK_PRIORITY, NULL);
 }

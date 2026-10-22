@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// HR_C6000 split duplex BS outbound (drivers/modem/hrc6000/hrc6000_bs.c): the takeover of the slot engine, key-up on
+// HR_C6000 split duplex BS outbound (drivers/modem/hrc_common/hrc6000_bs.c): the takeover of the slot engine, key-up on
 // an outbound TS1 slot, per-slot queues in order with idle fill, the PA keyed once and dropped at unkey, the framing
 // experiment's register writes and their restore, the embedded LC rewrite, the stall watchdog and the way back to the
 // slot engine. Against a fake config port, voice port and RF switch with a fake microsecond clock
 #include <stdio.h>
 #include <string.h>
-#include "modem/hrc6000/hrc6000_bs.h"
+#include "modem/hrc_common/hrc6000_bs.h"
+#include "modem/hrc6000/hrc6000.h"
 
 static int failures, checks;
 
@@ -57,8 +58,8 @@ static bool fake_voice(void *ctx, bool write, uint8_t *buf, uint8_t len)
 
 static void no_delay(uint32_t v) { (void)v; }
 
-static const hrc6000_bus_t bus = { fake_transfer, no_delay, no_delay, NULL, fake_voice };
-static hrc6000_t dev;
+static const hrc_bus_t bus = { fake_transfer, no_delay, no_delay, NULL, fake_voice };
+static hrc_t dev;
 static uint32_t t_us;
 static int rf_on, rf_off, locks, unlocks;
 static bool rf_ok = true;
@@ -77,7 +78,7 @@ static void fake_lock(void *ctx) { locks++; }
 static void fake_unlock(void *ctx) { unlocks++; }
 static void fake_notify(void *ctx) { }
 
-static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, fake_lock, fake_unlock, fake_notify, NULL, NULL };
+static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, fake_lock, fake_unlock, fake_notify, NULL, NULL, NULL };
 static hrc6000_dmr_t eng;
 static hrc6000_bs_t bs;
 
@@ -162,10 +163,10 @@ static void test_start_stop(void)
 	CHECK(hrc6000_bs_start(&bs, &eng, &c, NULL));
 	CHECK(hrc6000_bs_active(&eng));
 	CHECK(!hrc6000_bs_start(&bs, &eng, &c, NULL));	// once
-	CHECK(last_write(HRC6000_PAGE_SYS, 0x40) == 0xE3);
-	CHECK(last_write(HRC6000_PAGE_SYS, 0x1F) == 0x30);
-	CHECK(last_write(HRC6000_PAGE_SYS, 0x41) == 0x00);
-	CHECK(last_write(HRC6000_PAGE_AUX, 0x04) >= 0);	// the BS sync pattern
+	CHECK(last_write(HRC_PAGE_SYS, 0x40) == 0xE3);
+	CHECK(last_write(HRC_PAGE_SYS, 0x1F) == 0x30);
+	CHECK(last_write(HRC_PAGE_SYS, 0x41) == 0x00);
+	CHECK(last_write(HRC_PAGE_AUX, 0x04) >= 0);	// the BS sync pattern
 	CHECK(locks == unlocks);
 	CHECK(!hrc6000_dmr_is_transmitting(&eng));	// started, not keyed
 	CHECK(hrc6000_bs_space(&eng, 1) == HRC6000_BS_Q && hrc6000_bs_space(&eng, 2) == HRC6000_BS_Q);
@@ -176,7 +177,7 @@ static void test_start_stop(void)
 		tick();
 	}
 	CHECK(bs.st.slots == 4 && bs.st.bursts == 0);
-	CHECK(count_writes(HRC6000_PAGE_SYS, 0x41, 0x80) == 0);
+	CHECK(count_writes(HRC_PAGE_SYS, 0x41, 0x80) == 0);
 	uint32_t cnt, t;
 	int8_t ts;
 
@@ -187,7 +188,7 @@ static void test_start_stop(void)
 	nx = 0;
 	hrc6000_bs_stop(&eng);
 	CHECK(!hrc6000_bs_active(&eng));
-	CHECK(count_writes(HRC6000_PAGE_SYS, 0x40, 0xC3) >= 1);
+	CHECK(count_writes(HRC_PAGE_SYS, 0x40, 0xC3) >= 1);
 	CHECK(eng.sync_cur == DMR_SYNC_MS);
 	CHECK(rf_off == 0);
 	CHECK(locks == unlocks);
@@ -215,9 +216,9 @@ static void test_keyup(void)
 	}
 	CHECK(bs.st.bursts == 1 && bs.on_air);
 	CHECK(bs.st.underruns == 1);
-	CHECK(last_write(HRC6000_PAGE_SYS, 0x41) == 0x80);
-	CHECK(last_write(HRC6000_PAGE_SYS, 0x50) == hrc6000_dmr_reg50(DMR_BURST_IDLE, 0));
-	CHECK(count_writes(HRC6000_PAGE_DATA, 0x18, -1) == 1);	// the idle message
+	CHECK(last_write(HRC_PAGE_SYS, 0x41) == 0x80);
+	CHECK(last_write(HRC_PAGE_SYS, 0x50) == hrc6000_dmr_reg50(DMR_BURST_IDLE, 0));
+	CHECK(count_writes(HRC_PAGE_DATA, 0x18, -1) == 1);	// the idle message
 	CHECK(bs.st.keyups == 1);
 
 	// PA: keyed once at the first RF TX interrupt, never again while on air
@@ -249,7 +250,7 @@ static void test_keyup(void)
 		nx = 0;
 		tick();
 		order[n] = (bs.ts_tick == 1) ? 2 : 1;
-		got50[n] = (uint8_t)last_write(HRC6000_PAGE_SYS, 0x50);
+		got50[n] = (uint8_t)last_write(HRC_PAGE_SYS, 0x50);
 		n++;
 	}
 	want50[0] = hrc6000_dmr_reg50(DMR_BURST_VOICE_LC_HEADER, 0);
@@ -273,7 +274,7 @@ static void test_keyup(void)
 	nx = 0;
 	tick();
 	CHECK(rf_off == 1 && !hrc6000_bs_keyed(&eng) && !eng.pa_on);
-	CHECK(last_write(HRC6000_PAGE_SYS, 0x41) == 0x00);
+	CHECK(last_write(HRC_PAGE_SYS, 0x41) == 0x00);
 	CHECK(!hrc6000_dmr_is_transmitting(&eng));
 	hrc6000_dmr_isr_rftx(&eng);
 	CHECK(rf_on == 1);	// unkeyed: no PA
@@ -307,7 +308,7 @@ static void test_embedded_lc(void)
 	int lc_writes = 0;
 
 	for (int i = 0; i < nx; i++) {
-		if (!xlog[i].read && xlog[i].page == HRC6000_PAGE_DATA && xlog[i].reg == 0x00 && xlog[i].n == 12 &&
+		if (!xlog[i].read && xlog[i].page == HRC_PAGE_DATA && xlog[i].reg == 0x00 && xlog[i].n == 12 &&
 		    memcmp(xlog[i].data, lc1, 9) == 0) {
 			lc_writes++;
 		}
@@ -349,17 +350,17 @@ static void test_variants(void)
 		do {
 			tick();
 		} while (!bs.on_air);
-		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == want[k].r10);
+		CHECK(last_write(HRC_PAGE_SYS, 0x10) == want[k].r10);
 		if (want[k].v == HRC6000_BS_VARIANT_RAW) {
-			CHECK(last_write(HRC6000_PAGE_SYS, 0x0D) == 0x5A);
-			CHECK(last_write(HRC6000_PAGE_SYS, 0x0E) == 0xA5);
+			CHECK(last_write(HRC_PAGE_SYS, 0x0D) == 0x5A);
+			CHECK(last_write(HRC_PAGE_SYS, 0x0E) == 0xA5);
 		}
 		hrc6000_bs_key(&eng, false);
 		nx = 0;
 		tick();
-		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == 0x6E);
+		CHECK(last_write(HRC_PAGE_SYS, 0x10) == 0x6E);
 		hrc6000_bs_stop(&eng);
-		CHECK(last_write(HRC6000_PAGE_SYS, 0x10) == 0x6E);
+		CHECK(last_write(HRC_PAGE_SYS, 0x10) == 0x6E);
 	}
 }
 
@@ -399,10 +400,10 @@ static void test_cach(void)
 			if (xlog[i].read) {
 				continue;
 			}
-			if (xlog[i].page == HRC6000_PAGE_SYS && xlog[i].reg == 0x52 && n52 < 8) {
+			if (xlog[i].page == HRC_PAGE_SYS && xlog[i].reg == 0x52 && n52 < 8) {
 				r52[n52++] = xlog[i].data[0];
 			}
-			if (xlog[i].page == HRC6000_PAGE_DATA && xlog[i].reg == 0x24 && slc_at < 0) {
+			if (xlog[i].page == HRC_PAGE_DATA && xlog[i].reg == 0x24 && slc_at < 0) {
 				slc_at = i;
 			}
 		}
@@ -442,13 +443,13 @@ static void test_raw_slot(void)
 	}
 	int half0 = 0, half1 = 0;
 	for (int i = 0; i < nx; i++) {
-		if (!xlog[i].read && xlog[i].page == HRC6000_PAGE_DATA && xlog[i].n == HRC6000_BS_RAW_BYTES) {
+		if (!xlog[i].read && xlog[i].page == HRC_PAGE_DATA && xlog[i].n == HRC6000_BS_RAW_BYTES) {
 			half0 += xlog[i].reg == 0x00;
 			half1 += xlog[i].reg == 0x24;
 		}
 	}
 	CHECK(half0 == raw_built && half1 == raw_built && raw_built >= 6 && bs.st.raw == (uint32_t)raw_built);
-	CHECK(count_writes(HRC6000_PAGE_SYS, 0x52, -1) == 0 && voice_writes == 0);
+	CHECK(count_writes(HRC_PAGE_SYS, 0x52, -1) == 0 && voice_writes == 0);
 	CHECK(bs.st.uncoded == 1 && bs.st.cach_written == 3);
 	CHECK(bs.lc_valid[1] && memcmp(bs.lc[1], lc, 9) == 0);	// TS2's superframe LC kept for B-E
 	hrc6000_bs_stop(&eng);
@@ -520,7 +521,7 @@ static void test_ring_wrap(void)
 		CHECK(hrc6000_bs_queue(&eng, bs.ts_tick, &c, NULL, NULL));	// the next tick sets up this slot again
 		nx = 0;
 		tick();
-		if (last_write(HRC6000_PAGE_SYS, 0x50) != hrc6000_dmr_reg50(DMR_BURST_CSBK, 0)) {
+		if (last_write(HRC_PAGE_SYS, 0x50) != hrc6000_dmr_reg50(DMR_BURST_CSBK, 0)) {
 			bad++;
 		}
 	}

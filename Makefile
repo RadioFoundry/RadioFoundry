@@ -56,6 +56,9 @@ endif
 ifeq ($(CONFIG_SNMP),y)
 CORE_DIRS += core/snmp
 endif
+ifeq ($(CONFIG_CRASH_LOG),y)
+CORE_DIRS += core/crash
+endif
 # The storage layer over SPI NAND, for the boards that list it (BOARD_NAND_DIRS in their board.mk)
 ifeq ($(CONFIG_NAND_STORAGE),y)
 BOARD_DIRS += $(BOARD_NAND_DIRS)
@@ -69,10 +72,19 @@ APP_SRC := $(filter-out core/debuglink/dl_stub.c,$(APP_SRC))
 ifeq ($(CONFIG_STUB_ENTRY),y)
 APP_SRC += core/debuglink/dl_stub.c
 endif
+# The fast codeplug protocol (core/cps is globbed with CPS_OPENFW): only with its own switch
+ifneq ($(CONFIG_CPS_FAST),y)
+APP_SRC := $(filter-out core/cps/cps_fast.c core/cps/cps_lz4.c,$(APP_SRC))
+endif
 # The task table behind the debug link's tasks view (core/app is always globbed): only with its switch, which also
 # turns on the kernel's trace hooks in the boards' FreeRTOSConfig.h
 ifneq ($(CONFIG_TASK_STACKS),y)
 APP_SRC := $(filter-out core/app/task_stack.c,$(APP_SRC))
+endif
+# The idle task's watchdog feed (core/app is always globbed): only with its switch, which also turns on the idle hook in
+# the boards' FreeRTOSConfig.h
+ifneq ($(CONFIG_WATCHDOG),y)
+APP_SRC := $(filter-out core/app/watchdog.c,$(APP_SRC))
 endif
 # Single files of core/dmr, whose other files belong to other features
 ifeq ($(CONFIG_DMR_PRIVACY),y)
@@ -96,6 +108,12 @@ endif
 ifeq ($(CONFIG_HOTSPOT_SPLIT),y)
 APP_SRC += core/dmr/bsOutbound.c core/dmr/slotEpoch.c
 endif
+# The fault trace line a fault handler prints before the restart (core/crash is globbed with CRASH_LOG): only with its
+# own switch, with or without the crash log
+APP_SRC := $(filter-out core/crash/crash_trace.c,$(APP_SRC))
+ifeq ($(CONFIG_FAULT_TRACE),y)
+APP_SRC += core/crash/crash_trace.c
+endif
 # The IP gateway (the data service above carries its packets: CONFIG_DMR_DATA_CORE follows it)
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
 APP_SRC += core/dmr/ipGateway.c
@@ -110,14 +128,16 @@ NET_SRC-$(CONFIG_NET_TCP) += core/net/net.c core/net/tcp.c core/net/http.c core/
 	core/net/aprsis.c
 NET_SRC-$(CONFIG_MDNS) += core/net/net.c core/net/net_services.c core/net/mdns.c
 NET_SRC-$(CONFIG_TFTP) += core/net/net.c core/net/net_services.c core/net/tftp.c core/net/tftp_codeplug.c
+NET_SRC-$(CONFIG_TFTP_IDDB) += core/net/tftp_iddb.c
 NET_SRC-$(CONFIG_NET_USRP) += core/net/net.c core/usbaudio/usrp_net.c core/usbaudio/usrp.c
 APP_SRC += $(sort $(NET_SRC-y))
 # The PCM stream shared between the radio's users, a host audio session (USRP) and APRS receive
 MUX_SRC-$(CONFIG_NET_USRP) += core/usbaudio/audio_mux.c core/usbaudio/pcm_slip.c
 MUX_SRC-$(CONFIG_APRS_RX) += core/usbaudio/audio_mux.c core/usbaudio/pcm_slip.c
 APP_SRC += $(sort $(MUX_SRC-y))
-# Their text formatting (key=value views, JSON, protocol lines) is the debug link's dl_fmt.c, built here without it
-ifneq ($(NET_SRC-y),)
+# Their text formatting (key=value views, JSON, protocol lines) is the debug link's dl_fmt.c, built here without it.
+# The crash log's summary line uses it too
+ifneq ($(NET_SRC-y)$(filter y,$(CONFIG_CRASH_LOG)),)
 ifneq ($(CONFIG_DEBUGLINK),y)
 APP_SRC += core/debuglink/dl_fmt.c
 endif
@@ -137,6 +157,11 @@ GITDIRTY := $(if $(shell git ls-files --others --exclude-standard -- $(APP_DIRS)
 endif
 endif
 ODR_VERSION := $(GITVERSION)$(GITDIRTY)
+# The same as the crash record's build number and dirty flag (core/crash/crash.c): the version's leading hex digits
+# (at most 8, then its end or "-") as a number, 0 when it isn't a commit. Worked out here, not in the image
+ODR_GIT_HEAD := $(firstword $(subst -, ,$(ODR_VERSION)))
+ODR_GIT_ID := $(if $(shell printf '%s' '$(ODR_GIT_HEAD)' | grep -Eqx '[0-9a-fA-F]{1,8}' && echo y),0x$(ODR_GIT_HEAD)u,0u)
+ODR_GIT_DIRTY := $(if $(findstring -dirty,$(ODR_VERSION)),1,0)
 DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DODR_BOARD_NAME=\"$(BOARD)\"
 
 OPT ?= -Os
@@ -167,10 +192,6 @@ endif
 endif
 # Sections copied into the .bin (one contiguous image from the start of the application)
 BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_array .fini_array .data
-# A board with a second flash region (the DM-1701's sector 9, boards/dm1701/dm1701.ld) lists its sections here: they go
-# to $(TARGET)_rodata2.bin, which starts at the region's first byte (docs/dev/release.md "Sector 9"). Empty: no second
-# image, and a stale one is removed
-BIN2_SECTIONS ?=
 
 APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o) $(APP_ASM:%.S=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
@@ -179,13 +200,13 @@ OBJ := $(APP_OBJ) $(TP_OBJ)
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
 .PHONY: all codec clean size stack-check test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars
-all: $(TARGET).bin $(if $(BIN2_SECTIONS),$(TARGET)_rodata2.bin) $(if $(BOOT_STAGE),$(TARGET)_install.bin) codec
+all: $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin) codec
 
 # The codec: merged into $(TARGET)_codec.bin when the radio's stock firmware is in codecs/ (codecs/README.md)
 # A board with a first stage (BOOT_STAGE) merges the codec into the install image, so the merged file starts with the stage
-codec: $(TARGET).bin $(if $(BIN2_SECTIONS),$(TARGET)_rodata2.bin) $(if $(BOOT_STAGE),$(TARGET)_install.bin)
+codec: $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin)
 	@python3 tools/codec_auto.py --board $(BOARD) --image $(if $(BOOT_STAGE),$(TARGET)_install.bin,$(TARGET).bin) \
-		$(if $(BOOT_STAGE),-o $(TARGET)_codec.bin) $(if $(BIN2_SECTIONS),--image2 $(TARGET)_rodata2.bin)
+		$(if $(BOOT_STAGE),-o $(TARGET)_codec.bin)
 
 # Rebuild everything when the compile flags change (feature switches and build values), and the objects that carry
 # the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects
@@ -212,7 +233,7 @@ endif
 endif
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
 $(VERSION_OBJ): $(BUILD)/version
-$(VERSION_OBJ): CFLAGS_APP += -DODR_GIT=\"$(ODR_VERSION)\"
+$(VERSION_OBJ): CFLAGS_APP += -DODR_GIT=\"$(ODR_VERSION)\" -DODR_GIT_ID=$(ODR_GIT_ID) -DODR_GIT_DIRTY=$(ODR_GIT_DIRTY)
 ifeq ($(LTO),1)
 $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto
 endif
@@ -223,11 +244,6 @@ $(TARGET).elf: $(OBJ) $(LDSCRIPT)
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $(addprefix -j ,$(BIN_SECTIONS)) $< $@
 	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes, version $(ODR_VERSION)"
-ifneq ($(BIN2_SECTIONS),)
-$(TARGET)_rodata2.bin: $(TARGET).elf
-	$(OBJCOPY) -O binary $(addprefix -j ,$(BIN2_SECTIONS)) $< $@
-	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes (sector 9, written with the application)"
-endif
 
 # A first stage in front of the application (boot/), for a board that sets BOOT_STAGE
 ifneq ($(BOOT_STAGE),)
@@ -249,7 +265,7 @@ $(BUILD)/%.o: %.S
 	$(CC) $(CPUFLAGS) $(DEFS) $(INCLUDES) -MMD -MP -c $< -o $@
 
 size: $(TARGET).elf
-	$(SIZE) -A $< | grep -E '^\.(isr_vector|text|rodata|rodata2|data|bss|ccmram)'
+	$(SIZE) -A $< | grep -E '^\.(isr_vector|text|rodata|data|bss|ccmram)'
 
 test:
 	$(MAKE) -C tests/host

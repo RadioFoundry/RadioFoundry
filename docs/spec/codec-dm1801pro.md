@@ -169,7 +169,7 @@ stops with an error code 1, 2 or 3 if one fails; that is task start-up, not the 
 
 | Part | What it does |
 |---|---|
-| Slot tool | `tools/dm32_codec.py --board dm1801pro` takes a 1 MB program flash read (offset 0 = 0x03000000), recognizes it by the sha256 of the code window (`8f7641b6…`), checks the tables' sha256 (`10684c33…`) and carves the two windows of section 1 into the slot at 0x030E8000, in the DM-32UV slot format. `tools/codec_auto.py` runs it on `make` when the read is in `codecs/` |
+| Slot tool | `tools/hrc7000_codec.py --board dm1801pro` takes a 1 MB program flash read (offset 0 = 0x03000000), recognizes it by the sha256 of the code window (`8f7641b6…`), checks the tables' sha256 (`10684c33…`) and carves the two windows of section 1 into the slot at 0x030E8000, in the DM-32UV slot format. `tools/codec_auto.py` runs it on `make` when the read is in `codecs/` |
 | Host | The shared `platform/hrc7000/vocoder.c`, the DM-32UV's. It takes its RAM windows from the linker (`__codec_run_lo/hi`, `__codec_tab_lo/hi`) and its profile prefix from `HRC_CODEC_BOARD`, so it reports `codec=dm1801pro-049` |
 | Linker | `boards/dm1801pro/dm1801pro.ld`: code RAM 0x16CDC..0x2B2DC and table RAM 0x18000EF0..0x18003E68 are left free; ODR's own RAM starts at 0x2B2DC; the low-RAM state (`ODR_CPU_RAM_SECTION`) goes below 0x16CDC |
 | Flashing | `tools/odrflash` profile `dm1801pro-049`. Through update mode the slot is merged on every flash, as on the DM-32UV (the updater erases the whole application area). Through the stub (`stub/stubtool.py --write-app`) only the sectors the image covers are written, so an image without the slot keeps the one in the radio |

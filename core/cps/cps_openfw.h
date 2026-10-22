@@ -49,4 +49,11 @@ bool cps_mid_request(void);
 // Firmware: set up the engine on the host link (cps_port.c)
 void cps_openfw_start(void);
 
+// The live VFO in the image (open-firmware-cps.md 2.2), shared with the fast codeplug protocol (cps_fast.c). Overlay:
+// the bytes of buf (flash addresses addr .. addr + len) inside the VFO A record become the live VFO, when one is set.
+// Written: a sector about to be written at addr (STORAGE_SECTOR bytes) whose VFO A record differs from the live VFO
+// gives the VFO its settings
+void cps_openfw_vfo_overlay(uint32_t addr, uint8_t *buf, uint32_t len);
+void cps_openfw_vfo_written(uint32_t addr, const uint8_t *data, uint32_t now_ms);
+
 #endif

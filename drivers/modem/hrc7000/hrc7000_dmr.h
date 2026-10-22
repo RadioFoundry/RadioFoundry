@@ -93,6 +93,20 @@ typedef struct {
 	int8_t last_ts;
 	uint8_t tx_state;
 	uint8_t last_pa_ms;	// RF TX interrupt to the PA off, last burst
+	// The last tx_begin's slot choice (diagnostics): timing used, our chip slot, and the reception it came from
+	uint8_t txb_timing, txb_chip_slot, txb_rx_chip_slot, txb_rx_age;
+	int8_t txb_ts, txb_last_ts;
+	uint32_t txb_rx_type_info;
+	// The last 8 bursts received, 4 bits each, newest in b3:0: b3 CACH TC, b2 chip slot (RX_TYPE_INFO b19), b1:0
+	// LAYER2_STATUS b31:30 read as the burst was taken
+	uint32_t rx_hist;
+	uint32_t txb_rx_hist;	// rx_hist at the last tx_begin
+	uint8_t txb_tc_agree;	// TC lock count when it armed
+	uint8_t txb_lock_wait;	// slot ticks it waited for the TC lock (0 none)
+	uint8_t rx_deframe_ms;	// last BS burst's deframe, ms after the timeslot interrupt before it
+	uint8_t txb_deframe_ms;	// rx_deframe_ms when it armed
+	uint16_t txa_rx_us;	// first TX tick of an aligned start: 0.1 ms after the last receive tick
+	uint8_t txa_est;	// ... its TC estimate (repeater) or LAYER2_STATUS b31 (SFR) in b0, the next slot ours in b1
 } hrc7000_dmr_stats_t;
 
 typedef struct {
@@ -114,6 +128,8 @@ typedef struct {
 
 	uint32_t tick;
 	uint32_t t_tick;
+	uint32_t t_rx_tick;	// time of the last receive-vector tick
+	bool tick_tx;		// the last tick came on the TX vector
 	bool timing;
 	// Receive
 	uint32_t rx_tick;	// tick of the last burst taken
@@ -123,17 +139,22 @@ typedef struct {
 	int8_t voice_chip_slot;	// chip slot of the voice call being received, -1 none
 	uint32_t voice_tick;
 	int8_t tc_slot[2];	// TS (1/2) of each chip slot, learned from BS-sync bursts (TC), 0 unknown
+	bool rx_bs;		// the last burst taken was BS-sourced (a repeater)
+	uint8_t tc_agree;	// BS bursts in a row, one per slot, with TC alternating (the lock: TC_LOCK)
+	uint8_t tc_prev;	// TC of the last BS burst, and its tick
+	uint32_t tc_tick;
+	uint8_t tc_est;		// TC estimate of the slot now starting (toggled every tick)
 	uint8_t cc_cur;		// LOCAL_CC now
 	uint32_t cc_tick;	// last CC change or burst heard (scan)
 	bool emb_pending;	// late entry: an embedded LC waits for the next voice burst
 	uint8_t emb_rx[9];
-	uint8_t rx_restart_ticks;	// tail of the restart after a transmission through a repeater (6.3)
 	// Transmit
 	uint8_t tx_state;
 	uint8_t tx_timing;
 	int8_t tx_ts;
 	uint8_t tx_access;
-	uint8_t tx_chip_slot;	// aligned timing: the chip slot we send in (LAYER2_STATUS b31)
+	uint8_t tx_chip_slot;	// aligned timing without CACH: the chip slot we send in (LAYER2_STATUS b31)
+	bool tx_bs;		// aligned timing through a repeater: our slot from the TC estimate
 	bool tx_our_next;	// the coming slot (the one being decided) is ours
 	bool tx_end_req, tx_abort_req;
 	uint8_t tx_wait;

@@ -67,48 +67,29 @@ back to the PLL.
 ### 1.4 Internal flash layout
 
 STM32F405, 1 MB: sectors 0-3 are 16 KB, sector 4 is 64 KB, sectors 5-11 are 128 KB. The stock V02.06 CSV codec runs
-in place at its stock addresses ([codec-dm1701.md](codec-dm1701.md)): code 0x08074714..0x08084930, tables
-0x080D19F0..0x080E4240.
+in place from sectors 10 and 11, where the merge puts it ([codec-placement.md](codec-placement.md), "STM32 radios";
+[codec-dm1701.md](codec-dm1701.md)): tables at their stock address 0x080D19F0..0x080E3A72, code moved from its stock
+address 0x08074714 to 0x080E3A74..0x080F3C90, and the descriptor at 0x080FFF80.
 
 | Sector | Address | Size | Holds |
 |---|---|---|---|
 | 0-2 | 0x08000000..0x0800BFFF | 48 KB | stock bootloader: never erased or written |
 | 3 | 0x0800C000..0x0800FFFF | 16 KB | ODR (vector table first) |
 | 4 | 0x08010000..0x0801FFFF | 64 KB | ODR |
-| 5 | 0x08020000..0x0803FFFF | 128 KB | ODR |
-| 6 | 0x08040000..0x0805FFFF | 128 KB | ODR |
-| 7 | 0x08060000..0x0807FFFF | 128 KB | codec code (from 0x08074714) |
-| 8 | 0x08080000..0x0809FFFF | 128 KB | codec code (to 0x0808492F) |
-| 9 | 0x080A0000..0x080BFFFF | 128 KB | ODR read-only data (the linker's FLASH2, `.rodata2`): fonts, tables, string literals. Written with the application, as a second range of the image |
+| 5-9 | 0x08020000..0x080BFFFF | 5 x 128 KB | ODR |
 | 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0) |
-| 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E423F) |
+| 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E3A71), codec code (0x080E3A74..0x080F3C8F), descriptor (0x080FFF80..0x080FFFFF) |
 
-A flash sector can only be erased whole. Before this layout the linker reserved only the codec bytes, so ODR could
-grow into sectors 7, 8 and 10, and updating it would have meant erasing the codec too. Now
-`boards/dm1701/dm1701.ld` gives the application code sectors 3-6 (336 KB) and asserts that what it loads there ends
-before 0x08060000. All read-only data (`.rodata`, about 49 KB: string literals, the fonts, tables) is linked into
-sector 9 as the output section `.rodata2` (FLASH2), which leaves the 336 KB for code. The bytes around the codec
-windows in sectors 7, 8, 10 and 11 are whatever was there (stock code, or 0xFF after a merge); they are never executed.
-The DM-1701's settings and codeplug live in the external SPI flash, so nothing else writes internal flash.
+A flash sector can only be erased whole, so `boards/dm1701/dm1701.ld` gives the application sectors 3-9
+(0x0800C000..0x080BFFFF, 720 KB in one piece) and asserts that everything it loads into flash ends before 0x080C0000.
+The image is one `.bin` from 0x0800C000, and an update erases and writes only the sectors it covers. The bytes around
+the codec in sectors 10 and 11 are 0xFF after a merge and are never executed. The DM-1701's settings and codeplug live
+in the external SPI flash, so nothing else writes internal flash.
 
-Sector 9 held only leftover stock code. The factory calibration is not there (it is in the external flash's security
-registers), and the stock codec reads nothing outside its two windows (`codec-dm1701.md`, the emulator run mapped only
-the windows). Reading it costs the same as reading sectors 3-6: internal flash is memory mapped, and the firmware
-never erases or programs internal flash, so nothing can write sector 9 while the CPU or a DMA stream reads it.
-
-**The image has two parts.** `make` writes `odr_dm1701.bin` (sectors 3-6, from 0x0800C000) and
-`odr_dm1701_rodata2.bin` (sector 9, from 0x080A0000). A single `.bin` from 0x0800C000 through sector 9 would carry
-256 KB of padding over the codec sectors, and the padding would overwrite the codec on every update, so the parts stay
-separate. A release packs them as one file with two ranges (`docs/dev/release.md`, "Sector 9"); the merged
-`odr_dm1701_codec.bin` has the codec windows and the data at their own addresses. An application written without its
-sector 9 part boots (the vector table and the code are intact) and then reads whatever sector 9 holds. The tools
-differ in how they guard against that:
-
-| tool | without the sector 9 part |
-| --- | --- |
-| `tools/release.py` | refuses to pack a DM-1701 release without it (`--no-rodata2` says it is intended) |
-| `tools/odrflash` | a release image carries both ranges and is verified against its manifest; a local build with no `_rodata2.bin` next to it flashes with a warning |
-| `tools/stm32_dfu.py` | refuses a release image whose manifest lists two ranges; warns when a `_rodata2.bin` sits next to the image, and flashes the application alone |
+Stock firmware, and ODR builds from before the codec moved, keep the codec code in sectors 7 and 8, which the
+application now covers. A release or manifest with two ranges (the application and a sector 9 data part) is from
+before the move and is refused. Moving a radio to this layout writes the codec once, from the stock file or from a
+copy the tools read from the radio earlier ([release.md](../dev/release.md), "Codec handling").
 
 odrflash's keep and merge modes follow from this map ([release.md](../dev/release.md), "Codec handling"). Old builds
 of the aftermarket firmware ran the MD-9600 V26.45 codec at 0x0807537C instead (`codec-dm1701.md`, comparison).
@@ -257,6 +238,10 @@ Set before configuring as outputs: C6000 CS and PWD high; C6000 CLK/MOSI low; LE
 keypad rows, power latch, mic power low; PA enables, PA band select and beep low; voice CS, speaker mute and amp enable
 high; backlight low; RX audio mux and flash CS high; CTCSS PWM high. The application drives the power latch high as its
 first action, otherwise the radio turns off when the user releases nothing more than the power switch transient.
+
+Transmitter safe state (`board_rf_safe`, [crash-log.md](crash-log.md) 8), at every fault, reset and stub entry and first
+in `main()`: PA_EN1 (PC5) and PA_EN2 (PC4) low, PA band select (PC6) low, the APC DAC (PA4, DAC1 channel 1) 0 when its
+clock is on. The AT1846S and HR_C6000 keep their state until the next start.
 
 Sources: CubeMX project (.ioc) and generated GPIO/MSP init; firmware constants for the 10 W pin swap and GPS power;
 HR_C6000 datasheet pin names.
@@ -1190,7 +1175,7 @@ behavior.
 | RTC | LSE 32.768 kHz, 24 h format; keeps time while the MCU has power (no separate backup battery confirmed, unverified) |
 | LEDs | PE0 green, PE1 red, active high |
 | Backup SRAM | unused |
-| Watchdog | not used by the aftermarket firmware on this platform (its watchdog hook is empty); a new design may enable the IWDG |
+| Watchdog | not used by the aftermarket firmware on this platform (its watchdog hook is empty). ODR starts the IWDG and feeds it from the idle task (`CONFIG_WATCHDOG`, [watchdog.md](watchdog.md)) |
 
 ---
 
@@ -1216,13 +1201,11 @@ usual DfuSe "@name/0xADDR/NN*SSKg,..." form.
 
 The image is written as one contiguous stream starting at 0x0800C000: byte n of the file goes to 0x0800C000 + n.
 
-The list names 0x080A0000 (sector 9) in both the erase and the write step, like every other sector, because a stock
-image fills it. The region form has no other rule for it: 128 KB, blocks 2..0x81, the key applied from the image
-start, which is block aligned there (0x080A0000 - 0x0800C000 = 0x94000, a multiple of 1024). odrflash writes a region
-only when it has data, so sectors 7, 8, 10 and 11 are left out of an update (as keep mode already does) and sector 9
-is written on its own, between sector 6 and the codec. Status: erasing and writing sector 9 as one of the listed
-regions is from the loader's behavior, and a radio has run it: an ODR image that writes only sectors 3-6 and 9 flashed
-through odrflash, booted and passed the radio-only HIL group (`docs/dev/release.md`, "Sector 9").
+Every listed region has the same rule: blocks 2..N, the key applied from the image start, which is block aligned at
+every sector start (for example 0x080A0000 - 0x0800C000 = 0x94000, a multiple of 1024). odrflash erases and writes a
+region only when it has data, so an update leaves sectors 10 and 11 (the codec) out. The loader accepts a sector
+written on its own, with sectors left out on both sides: an ODR image that wrote only sectors 3-6 and 9 flashed
+through odrflash, booted and passed the radio-only HIL group (2026-10-14).
 
 ### 15.3 Image encryption
 

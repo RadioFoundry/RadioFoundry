@@ -33,6 +33,9 @@ next bytes to a debug frame.
 and the board's reboot. Host tests drive the engine directly (`tests/host/cpsTest.c`), and `tests/host/cpsSim`
 serves it on stdin / stdout for `tools/cps_client.py`.
 
+Our own tools can move the same image faster with the debug link's CODEPLUG command: 4 KB blocks, CRC-32 sums so
+only changed blocks move, LZ4 both ways and a staged commit ([cps-fast.md](cps-fast.md), `CONFIG_CPS_FAST`).
+
 ### 2.1 Request assembly
 
 USB gives no request boundaries. A request is complete when its header says so:

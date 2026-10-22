@@ -1176,6 +1176,47 @@ bool ui_svc_emergency(bool on) { emergency_on = on; return true; }
 bool ui_svc_emergency_active(void) { return emergency_on; }
 bool ui_svc_factory_reset(void) { return true; }
 
+// The crash log (ui_svc.h): "crash:on" a record from before this start nobody has seen, "crash:ask" / "crash:auto"
+// the same with the report's mode and the first contact (USA, TG 3100) as its target. A report goes at once;
+// "crashtx:refuse" makes the next sends fail to start (one still going), "crashtx:fail" makes them end failed
+enum { CRASH_TX_SIM_OK, CRASH_TX_SIM_REFUSE, CRASH_TX_SIM_FAIL };
+static struct { bool have, seen, sent; uint8_t tx, tx_mode; unsigned sends; } crash_sim;
+bool ui_svc_crash_get(ui_crash_t *out)
+{
+	if (!crash_sim.have)
+		return false;
+	memset(out, 0, sizeof *out);
+	out->seen = crash_sim.seen;
+	out->sent = crash_sim.sent;
+	out->count = 2;
+	out->uptime_ms = 754000;
+	out->build = 0x34c825a6u;
+	strcpy(out->summary, "Fault 3 at 0802C4A9 in radio");
+	return true;
+}
+void ui_svc_crash_seen(void) { crash_sim.seen = true; }
+void ui_svc_crash_clear(void) { crash_sim.have = false; }
+bool ui_svc_crash_send(void)
+{
+	if (!crash_sim.have || ui_svc_setting_get(UI_SET_CRASH_CONTACT) <= 0 || crash_sim.tx_mode == CRASH_TX_SIM_REFUSE)
+		return false;
+	crash_sim.sends++;
+	crash_sim.tx = UI_CRASH_TX_QUEUED;
+	return true;
+}
+uint8_t ui_svc_crash_tx_state(void)
+{
+	if (crash_sim.tx == UI_CRASH_TX_QUEUED) {
+		if (crash_sim.tx_mode == CRASH_TX_SIM_FAIL) {
+			crash_sim.tx = UI_CRASH_TX_FAILED;
+		} else {
+			crash_sim.tx = UI_CRASH_TX_OK;
+			crash_sim.sent = crash_sim.seen = true;
+		}
+	}
+	return crash_sim.tx;
+}
+
 static void add_message(uint32_t src, const char *text)
 {
 	if (n_inbox == 8)
@@ -1332,6 +1373,9 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ROAM_BEACON_S, 60);
 	ui_svc_setting_set(UI_SET_ROAM_BEACON_LEN, 4);
 	ui_svc_setting_set(UI_SET_ROAM_PROBE, 0);
+	ui_svc_setting_set(UI_SET_CRASH_MODE, UI_CRASH_SEND_OFF);
+	ui_svc_setting_set(UI_SET_CRASH_CONTACT, 0);
+	memset(&crash_sim, 0, sizeof crash_sim);
 	ptt_blocked = false;
 	ui_app_init();
 	presses = 0;
@@ -1515,6 +1559,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);
 	else if (strcmp(key, "usbnet") == 0) snprintf(got, sizeof got, "%u", usb_net);
 	else if (strcmp(key, "aprs_sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)aprs_sim.sent);
+	else if (strcmp(key, "crash_sends") == 0) snprintf(got, sizeof got, "%u", crash_sim.sends);
+	else if (strcmp(key, "crash_seen") == 0) snprintf(got, sizeof got, "%u", crash_sim.seen);
+	else if (strcmp(key, "crash_have") == 0) snprintf(got, sizeof got, "%u", crash_sim.have);
 	else if (strcmp(key, "aprs_auto") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.tx_on);
 	else if (strcmp(key, "aprs_region") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.region);
 	else if (strcmp(key, "aprs_interval") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.interval_s);
@@ -1658,6 +1705,20 @@ static bool run_token(char *t, char *err, size_t len)
 		aprs_sim.no_call = strcmp(arg, "nocall") == 0;
 		if (strcmp(arg, "custom") == 0)
 			aprs_sim.cfg.freq_hz = 144930000;
+		return true;
+	}
+	if (strcmp(t, "crash") == 0 && arg != NULL) {	// crash:on, crash:ask, crash:auto (see crash_sim)
+		crash_sim.have = true;
+		crash_sim.seen = crash_sim.sent = false;
+		if (strcmp(arg, "on") != 0) {
+			ui_svc_setting_set(UI_SET_CRASH_MODE, strcmp(arg, "ask") == 0 ? UI_CRASH_SEND_ASK : UI_CRASH_SEND_AUTO);
+			ui_svc_setting_set(UI_SET_CRASH_CONTACT, 1);
+		}
+		return true;
+	}
+	if (strcmp(t, "crashtx") == 0 && arg != NULL) {	// crashtx:ok, crashtx:refuse, crashtx:fail (see crash_sim)
+		crash_sim.tx_mode = strcmp(arg, "refuse") == 0 ? CRASH_TX_SIM_REFUSE :
+				    strcmp(arg, "fail") == 0 ? CRASH_TX_SIM_FAIL : CRASH_TX_SIM_OK;
 		return true;
 	}
 	if (strcmp(t, "usbnet") == 0 && arg != NULL) {

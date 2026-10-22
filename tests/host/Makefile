@@ -122,7 +122,7 @@ ifneq ($(TSHARK),)
 endif
 
 clean:
-	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert
+	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert hrc7000_test_slot.bin codec_desc_test.bin codec_desc_md380.bin
 	rm -rf gen
 	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTest.expert
 	rm -rf *.dSYM out
@@ -260,6 +260,12 @@ codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codepl
 calibrationTest: calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c $(ROOT)/boards/dm1701/dm1701.h $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) $(FLASH_HAL) -I$(ROOT)/boards/dm1701 -o $@ calibrationTest.c $(ROOT)/boards/dm1701/calibration_dm1701.c
 
+# The power byte on 2-, 3- and 9-level radios
+TESTS   += codeplugPower2Test codeplugPower3Test codeplugPower9Test
+
+codeplugPower%Test: codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
+	$(CC) $(CFLAGS) $(FLASH_HAL) -DPOWER_COUNT=$* -o $@ codeplugPowerTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c
+
 # The calibration curve every board's reader shares
 TESTS   += calCurveTest
 
@@ -267,7 +273,10 @@ calCurveTest: calCurveTest.c $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ calCurveTest.c
 
 run: run-flash
-run-flash: codeplugTest calibrationTest calCurveTest
+run-flash: codeplugTest calibrationTest calCurveTest codeplugPower2Test codeplugPower3Test codeplugPower9Test
+	./codeplugPower2Test
+	./codeplugPower3Test
+	./codeplugPower9Test
 	./codeplugTest
 	./calibrationTest
 	./calCurveTest
@@ -299,10 +308,11 @@ TESTS   += sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest
 sky72310Test: sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c $(ROOT)/drivers/rf/sky72310/sky72310.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ sky72310Test.c $(ROOT)/drivers/rf/sky72310/sky72310.c
 
-hrc5000Test: hrc5000Test.c $(ROOT)/drivers/modem/hrc6000/hrc6000_dmr.c $(ROOT)/drivers/modem/hrc6000/hrc6000.c \
-             $(wildcard $(ROOT)/drivers/modem/hrc6000/*.h) $(ROOT)/hal/hal_dmr_modem.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc5000Test.c $(ROOT)/drivers/modem/hrc6000/hrc6000_dmr.c \
-		$(ROOT)/drivers/modem/hrc6000/hrc6000.c
+# The HR_C5000 driver with the shared code only: the HR_C6000 driver is not linked
+HRC5K := $(ROOT)/drivers/modem/hrc5000/hrc5000.c $(ROOT)/drivers/modem/hrc_common/hrc.c $(ROOT)/drivers/modem/hrc_common/hrc6000_dmr.c \
+         $(ROOT)/core/dmr/ambe/ambeFec.c
+hrc5000Test: hrc5000Test.c $(HRC5K) $(wildcard $(ROOT)/drivers/modem/hrc5000/*.h $(ROOT)/drivers/modem/hrc_common/*.h) $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc5000Test.c $(HRC5K)
 
 nmeaLineTest: nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c $(ROOT)/drivers/gps/nmea_line/nmea_line.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ nmeaLineTest.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c
@@ -315,19 +325,44 @@ gpsRxTest: gpsRxTest.c $(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/g
 # The MD-380's bit-banged RF bus (boards/md380/rfbus_md380.c, with the real pins.h) against fake chips on the documented
 # wiring; md380_stub/ holds the stand-in platform.h and FreeRTOS.h the board code includes
 md380RfbusTest: md380RfbusTest.c $(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/boards/md380/rfbus_md380.h \
-                $(ROOT)/boards/md380/pins.h $(wildcard md380_stub/*.h) $(ROOT)/drivers/modem/hrc6000/hrc6000.c \
-                $(wildcard $(ROOT)/drivers/modem/hrc6000/*.h) $(ROOT)/hal/hal_dmr_modem.h
+                $(ROOT)/boards/md380/pins.h $(wildcard md380_stub/*.h) $(ROOT)/drivers/modem/hrc5000/hrc5000.c $(ROOT)/drivers/modem/hrc_common/hrc.c \
+                $(wildcard $(ROOT)/drivers/modem/hrc5000/*.h $(ROOT)/drivers/modem/hrc_common/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -Imd380_stub -I$(ROOT)/boards/md380 -I$(ROOT)/hal -Wshadow -o $@ md380RfbusTest.c \
-		$(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/drivers/modem/hrc6000/hrc6000.c
+		$(ROOT)/boards/md380/rfbus_md380.c $(ROOT)/drivers/modem/hrc5000/hrc5000.c $(ROOT)/drivers/modem/hrc_common/hrc.c \
+		$(ROOT)/core/dmr/ambe/ambeFec.c
+
+# The STM32 codec descriptor (platform/stm32f4/codec_desc.h): its checks, and codec sectors 10 and 11 as
+# tools/codec_extract.py merges them (docs/spec/codec-placement.md)
+TESTS   += codecDescTest
+
+codecDescTest: codecDescTest.c $(ROOT)/platform/stm32f4/codec_desc.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ codecDescTest.c
 
 run: run-md380
-run-md380: sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest
+run-md380: sky72310Test hrc5000Test nmeaLineTest gpsRxTest md380RfbusTest codecDescTest
 	./sky72310Test
 	./hrc5000Test
 	./nmeaLineTest
 	./gpsRxTest
 	./md380RfbusTest
+	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin
+	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380
+	./codecDescTest codec_desc_test.bin codec_desc_md380.bin
 .PHONY: run-md380
+
+# Sub-audio: the DCS Golay word, and the software CTCSS / DCS detector and tone generators the MD-380 uses
+# (docs/spec/hardware-md380.md 6.4), on synthetic signals
+TESTS   += subaudioDspTest
+SUBAUDIO_ALL := $(wildcard $(ROOT)/drivers/rf/subaudio/*.c)
+
+subaudioDspTest: subaudioDspTest.c $(SUBAUDIO_ALL) $(wildcard $(ROOT)/drivers/rf/subaudio/*.h) $(CORE)/radio/tones.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ subaudioDspTest.c $(SUBAUDIO_ALL) $(CORE)/radio/tones.c -lm
+
+run: run-subaudio
+run-subaudio: subaudioTest subaudioDspTest
+	./subaudioTest
+	./subaudioDspTest
+.PHONY: run-subaudio
 
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
 UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/ui_screens.c $(CORE)/ui/ui_svc_stub.c
@@ -399,6 +434,30 @@ TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
+# The crash log's record, its start-up side on a fake store, the packed report (core/crash/crash.c), and the UI's side
+# of it with the report (core/ui/ui_svc_crash.c), the debug link's (core/debuglink/debuglink_crash.c)
+TESTS   += crashTest
+CRASHT  := crashTest.c $(CORE)/crash/crash.c $(CORE)/crash/crash_trace.c $(CORE)/ui/ui_svc_crash.c $(CORE)/debuglink/debuglink_crash.c \
+	   $(CORE)/debuglink/dl_fmt.c
+crashTest: $(CRASHT) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(CORE)/ui/ui_svc.h $(CORE)/debuglink/debuglink.h \
+	   $(CORE)/debuglink/debuglink_proto.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(CRASHT)
+
+# The crash capture (core/crash/crash_capture.c) on a stand-in RTOS (stubs/crash_rtos/): the transmitter off first, with
+# interrupts off, on every way in, before the store and the restart (docs/spec/crash-log.md 8)
+TESTS   += crashCaptureTest
+CRASHC  := crashCaptureTest.c $(CORE)/crash/crash_capture.c $(CORE)/crash/crash.c $(CORE)/debuglink/dl_fmt.c
+crashCaptureTest: $(CRASHC) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(ROOT)/hal/board.h $(wildcard stubs/crash_rtos/*.h)
+	$(CC) $(CFLAGS) -Istubs/crash_rtos -I$(ROOT)/hal -Wshadow -o $@ $(CRASHC)
+
+run: run-crash
+run-crash: crashTest crashCaptureTest
+	./crashTest
+	./crashCaptureTest
+	@if command -v python3 > /dev/null; then python3 $(ROOT)/tools/odr_fault_trace.py --selftest; \
+	else echo "# odr_fault_trace selftest: skipped (no python3)"; fi
+.PHONY: run-crash
+
 run: run-ambe
 run-ambe: ambeFecTest ambeVoiceTest micGainTest
 	./ambeFecTest
@@ -421,10 +480,11 @@ run-call: dmrCallTest
 
 # The HR_C6000 DMR modem: register sequences, burst status decode, RX de-duplication, TX queue and slot scheduling
 TESTS   += hrc6000DmrTest
-HRCDMR  := $(ROOT)/drivers/modem/hrc6000
+HRCDMR  := $(ROOT)/drivers/modem/hrc_common
+HRC6K   := $(ROOT)/drivers/modem/hrc6000
 
-hrc6000DmrTest: hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c
+hrc6000DmrTest: hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000DmrTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 
 run: run-hrcdmr
 run-hrcdmr: hrc6000DmrTest
@@ -434,15 +494,15 @@ run-hrcdmr: hrc6000DmrTest
 # The DMR receive chain: a model of the HR_C6000's reports through the slot engine, a batching board task and the call
 # stack to the voice sink (every burst on air out once, in order, nothing concealed)
 TESTS   += dmrRxChainTest
-RXCHAIN := dmrRxChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c $(CORE)/dmr/call/dmr_call.c \
+RXCHAIN := dmrRxChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c
 
-dmrRxChainTest: $(RXCHAIN) $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h $(wildcard $(CORE)/dmr/call/*.h)
+dmrRxChainTest: $(RXCHAIN) $(HRCDMR)/hrc6000_dmr.h $(HRCDMR)/hrc.h $(HRC6K)/hrc6000.h $(ROOT)/hal/hal_dmr_modem.h $(wildcard $(CORE)/dmr/call/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDMR_RX_TRACE=1 -o $@ $(RXCHAIN)
 
 # DMR data end to end: chip model -> slot engine -> call stack -> data service, and its answers back out the engine
 TESTS   += dmrDataChainTest
-DCHAIN  := dmrDataChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c $(CORE)/dmr/call/dmr_call.c \
+DCHAIN  := dmrDataChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(DATA) $(FRAME) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrLrrp.c \
            $(CORE)/dmr/dmr_emergency.c
 
@@ -515,8 +575,8 @@ TESTS   += splitSim
 splitSim: $(SPLITSIM) $(SPLITH)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Isim -Wshadow $(SPLITF) -o $@ $(SPLITSIM)
 
-# The HR_C6000 BS outbound (drivers/modem/hrc6000/hrc6000_bs.c), and the slot engine's suite again with its hooks built in
-HRCBS   := $(HRCDMR)/hrc6000_bs.c $(HRCDMR)/hrc6000_dmr.c $(HRCDMR)/hrc6000.c
+# The HR_C6000 BS outbound (drivers/modem/hrc_common/hrc6000_bs.c), and the slot engine's suite again with its hooks built in
+HRCBS   := $(HRCDMR)/hrc6000_bs.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 hrc6000BsTest: hrc6000BsTest.c $(HRCBS) $(wildcard $(HRCDMR)/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(SPLITF) -o $@ hrc6000BsTest.c $(HRCBS)
 
@@ -550,8 +610,9 @@ run-debuglink: debuglinkTest
 
 # The runtime RAM-monitor loader's portable state machine (core/debuglink/dl_stub.c, CONFIG_STUB_ENTRY)
 TESTS   += stubEntryTest
-stubEntryTest: stubEntryTest.c $(CORE)/debuglink/dl_stub.c $(CORE)/debuglink/dl_stub.h $(CORE)/debuglink/debuglink_proto.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ stubEntryTest.c $(CORE)/debuglink/dl_stub.c
+stubEntryTest: stubEntryTest.c $(CORE)/debuglink/dl_stub.c $(CORE)/debuglink/dl_stub.h $(CORE)/debuglink/debuglink_proto.h \
+		$(ROOT)/stub/stm32f4/f4stub_header.h
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ stubEntryTest.c $(CORE)/debuglink/dl_stub.c
 
 run: run-stubEntry
 run-stubEntry: stubEntryTest
@@ -570,9 +631,23 @@ run-taskStack: taskStackTest
 	./taskStackTest
 .PHONY: run-taskStack
 
+# The hardware watchdog's portable side: the idle task's feed, the longest idle gap, the bench starve (core/app/
+# watchdog.c), the debug link's watchdog section and DL_CMD_WATCHDOG (core/debuglink/debuglink_watchdog.c). The
+# platform, the clock, the radio's view and the log are faked; watchdog_stub/ holds the stand-in FreeRTOS headers
+WDOG    := watchdogTest.c $(CORE)/app/watchdog.c $(CORE)/debuglink/debuglink_watchdog.c $(CORE)/debuglink/dl_fmt.c
+TESTS   += watchdogTest
+watchdogTest: $(WDOG) $(CORE)/app/watchdog.h $(ROOT)/hal/hal_watchdog.h $(CORE)/debuglink/debuglink.h \
+              $(CORE)/debuglink/debuglink_proto.h $(wildcard watchdog_stub/*.h)
+	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -DCONFIG_WATCHDOG=1 -o $@ $(WDOG)
+
+run: run-watchdog
+run-watchdog: watchdogTest
+	./watchdogTest
+.PHONY: run-watchdog
+
 # The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
 TESTS   += f4stubTest
-f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h
+f4stubTest: f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c $(ROOT)/stub/stm32f4/f4stub.h $(ROOT)/stub/stm32f4/f4stub_header.h
 	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ f4stubTest.c $(ROOT)/stub/stm32f4/f4stub_proto.c
 
 TESTS   += f4stubSim
@@ -644,7 +719,7 @@ run-dm32: fd6818Test st7567Test st7789Test keymatrixTest sharedPttTest hrc7000Dm
 	./sharedPttTest
 	./hrc7000DmrTest
 	./dm32CalTest
-	python3 -I $(ROOT)/tools/dm32_codec.py --self-test
+	python3 -I $(ROOT)/tools/hrc7000_codec.py --self-test
 .PHONY: run-dm32
 
 # The DB25-D PRO's BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
@@ -672,12 +747,21 @@ TESTS   += hrc7000ClockTest
 hrc7000ClockTest: hrc7000ClockTest.c $(ROOT)/platform/hrc7000/clock_math.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000ClockTest.c
 
+# The HR_C7000 codec slot (platform/hrc7000/codec_slot.h): versions 1 and 2, the move, the refusals, and the slot
+# tools/hrc7000_codec.py writes (docs/spec/codec-placement.md)
+TESTS   += hrc7000CodecSlotTest
+
+hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
+
 run: run-db25d
-run-db25d: bk4819Test db25dCalTest bootDb25dTest hrc7000ClockTest
+run-db25d: bk4819Test db25dCalTest bootDb25dTest hrc7000ClockTest hrc7000CodecSlotTest
 	./bk4819Test
 	./db25dCalTest
 	./bootDb25dTest
 	./hrc7000ClockTest
+	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
+	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-db25d
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
@@ -721,15 +805,16 @@ run-ppp: pppTest pppPeer
 # The radio's own services on the USB network link, behind the real gateway (core/net): the mDNS responder, and the
 # TFTP server with codeplug.bin on a simulated flash. Their frames go to pcaps that tshark checks when it's there
 MDNST   := mdnsTest.c $(CORE)/net/mdns.c $(CORE)/dmr/ipGateway.c
-TFTPT   := tftpTest.c $(CORE)/net/tftp.c $(CORE)/net/tftp_codeplug.c $(CORE)/dmr/ipGateway.c $(CORE)/codeplug/codeplug.c \
-           $(CORE)/storage/storage.c sim/sim_flash.c
+TFTPT   := tftpTest.c $(CORE)/net/tftp.c $(CORE)/net/tftp_codeplug.c $(CORE)/net/tftp_iddb.c $(CORE)/dmr/ipGateway.c \
+           $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c sim/sim_flash.c
 TESTS   += mdnsTest tftpTest
 
 mdnsTest: $(MDNST) $(CORE)/net/mdns.h $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ $(MDNST)
 
-tftpTest: $(TFTPT) $(CORE)/net/tftp.h $(CORE)/net/tftp_codeplug.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_flash.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ $(TFTPT)
+# (the fast codeplug protocol's share of the staging area is cpsFastTest's)
+tftpTest: $(TFTPT) $(CORE)/net/tftp.h $(CORE)/net/tftp_codeplug.h $(CORE)/net/tftp_iddb.h $(CORE)/codeplug/dmr_iddb.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_flash.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_CPS_FAST=0 -o $@ $(TFTPT)
 
 run: run-net
 run-net: mdnsTest tftpTest
@@ -815,19 +900,35 @@ run-cps: cpsTest
 	./cpsTest
 .PHONY: run-cps
 
-# tools/cps_client.py against the shim on stdin / stdout (cpsSim), when python3 is there
+# The fast codeplug protocol (core/cps/cps_fast.c, docs/spec/cps-fast.md): LZ4 both ways, blank blocks, CRC compare,
+# range refusals, direct and staged writes, power cuts all through a commit, the staging area shared with TFTP
+CPSF    := $(CORE)/cps/cps_fast.c $(CORE)/cps/cps_lz4.c
+TESTS   += cpsFastTest
+
+cpsFastTest: cpsFastTest.c $(CPS) $(CPSF) $(CORE)/net/tftp_codeplug.c $(wildcard $(CORE)/cps/*.h $(CORE)/net/tftp*.h $(CORE)/storage/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP_IDDB=0 -o $@ cpsFastTest.c $(CPS) $(CPSF) $(CORE)/net/tftp_codeplug.c
+
+run: run-cpsfast
+run-cpsfast: cpsFastTest
+	./cpsFastTest
+.PHONY: run-cpsfast
+
+# tools/cps_client.py against the shim on stdin / stdout (cpsSim), when python3 is there; the sim also answers the
+# debug link's VERSION and CODEPLUG, for tools/cps_fast.py (cpsFastClientTest.py)
 PYTHON  ?= $(shell command -v python3)
 TESTS   += cpsSim
+SIMDL   := $(CPSF) $(CORE)/debuglink/debuglink_proto.c
 
-cpsSim: cpsSim.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ cpsSim.c $(CPS)
+cpsSim: cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP=0 -o $@ cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c
 
 run: run-cpsclient
 run-cpsclient: cpsSim
 ifneq ($(PYTHON),)
 	$(PYTHON) -B cpsClientTest.py
+	$(PYTHON) -B cpsFastClientTest.py
 else
-	@echo "# cpsClientTest skipped (no python3)"
+	@echo "# cpsClientTest, cpsFastClientTest skipped (no python3)"
 endif
 .PHONY: run-cpsclient
 

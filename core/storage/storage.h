@@ -77,6 +77,15 @@ void storage_buffer_release(void);
 // The flash map, NULL without one
 const hal_flash_map_t *storage_map(void);
 
+// The staging area (hal_flash_map_t.staging_*) is shared by the TFTP codeplug write (docs/spec/tftp.md 4) and the fast
+// codeplug protocol (docs/spec/cps-fast.md 7). The first word of its first sector says whose commit record is there;
+// each one's boot resume leaves the other's record alone, and neither starts while the other holds the area
+#define STORAGE_STAGE_MAGIC_TFTP	0x5452444Fu	// "ODRT" in memory order
+#define STORAGE_STAGE_MAGIC_CPSF	0x4652444Fu	// "ODRF"
+// The staging area's size in whole sectors when the board has a usable one (on the flash, clear of the settings, the
+// journal, both open-firmware images, the native area and the calibration window), else 0
+uint32_t storage_staging_size(void);
+
 // --- The native codeplug area (docs/spec/codeplug-native.md 4) ---
 // Its header sector starts with this magic ("ODRN", little endian). Nothing writes the area yet; the magic is what
 // tells our data from another firmware's there

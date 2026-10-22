@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The STM32F4 stub route (f4stub.js) against the simulated radio (fake.js): the hand-over from ODR, an install in the
-// interlock's order, the MD-380's shared sector 6, a cable pulled halfway, SPI flash writes, and backups through the
+// interlock's order, the MD-380's sectors, a shared sector, a cable pulled halfway, SPI flash writes, and backups through the
 // loader (readers.js). Run with
 // site/tests/run.sh, or: node --test site/tests/
 
@@ -12,7 +12,7 @@ import { join } from "node:path";
 
 import { crc32, equal } from "../static/js/flasher/bytes.js";
 import { FakeRadio, simulation, randomBytes, rng } from "../static/js/flasher/fake.js";
-import { F4Stub, f4Image, APP_BASE, MEM_SPI } from "../static/js/flasher/f4stub.js";
+import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI } from "../static/js/flasher/f4stub.js";
 import { StubError } from "../static/js/flasher/stub.js";
 import { Link } from "../static/js/flasher/link.js";
 import { readRadio } from "../static/js/flasher/backup.js";
@@ -50,6 +50,20 @@ test("the embedded stub matches its checksum", async () => {
 	const { createHash } = await import("node:crypto");
 	assert.equal(createHash("sha256").update(image).digest("hex"), stubJson.sha256);
 	assert.ok(image.length < 8192, "fits ODR's staging buffer");
+	// The page serves stub/f4stub.py's image (site/odrsite/repo.py), never a copy of its own: one whose header says it
+	// feeds the IWDG, which a watchdog build of ODR insists on (docs/spec/watchdog.md 3.1)
+	const h = f4StubHeader(image);
+	assert.ok(h, "the stub has its image header");
+	assert.ok(h.version >= HDR.VERSION_FEEDS_IWDG && (h.flags & HDR.FLAG_FEEDS_IWDG) && h.feedsIwdg, "the header says it feeds the IWDG");
+	const old = image.slice();
+	old.fill(0, HDR.OFFSET, HDR.OFFSET + 4);
+	assert.equal(f4StubHeader(old), null, "no magic: no header");
+	// The page's numbers are f4stub_header.h's (the one definition the stub and ODR share)
+	const src = readFileSync("stub/stm32f4/f4stub_header.h", "utf8");
+	const def = (n) => Number(new RegExp(`#define\\s+F4STUB_${n}\\s+(0x[0-9A-Fa-f]+|\\d+)u`).exec(src)[1]);
+	for (const [k, n] of [["OFFSET", "HDR_OFFSET"], ["MAGIC", "HDR_MAGIC"], ["LAYOUT", "HDR_LAYOUT"], ["SIZE", "HDR_SIZE"],
+		["VERSION_FEEDS_IWDG", "VERSION_FEEDS_IWDG"], ["FLAG_FEEDS_IWDG", "FLAG_FEEDS_IWDG"]])
+		assert.equal(HDR[k], def(n), `HDR.${k} matches F4STUB_${n}`);
 });
 
 test("hand-over: the stub adopts ODR's port, or comes back on a new one", async () => {
@@ -74,13 +88,12 @@ test("DM-1701 install: sector 3 erased first and committed last, codec sectors u
 	const owned = fb.f4stub.boards.dm1701.owned;
 	const codecBefore = sim.codecSegments.map(([a, d]) => crc32(at(radio, a, d.length)));
 	const s = await enter(radio);
-	const segs = [[APP_BASE, app(2, 0x48000)], [0x080A0000, app(3, 0x6000)]];
+	const segs = [[APP_BASE, app(2, 0x48000)]];
 	const r = await s.writeImage(owned, segs);
 	assert.equal(radio.events[1], "erase 3", "sector 3 first");
-	assert.ok(!radio.events.some((e) => /^erase (0|1|2|7|8|10|11)$/.test(e)), "bootloader and codec sectors never erased");
+	assert.ok(!radio.events.some((e) => /^erase (0|1|2|10|11)$/.test(e)), "bootloader and codec sectors never erased");
 	assert.ok(r.written >= 3);
 	assert.ok(equal(at(radio, APP_BASE, 0x48000), segs[0][1]));
-	assert.ok(equal(at(radio, 0x080A0000, 0x6000), segs[1][1]));
 	assert.ok(at(radio, APP_BASE + 0x48000, 0x1000).every((b) => b === 0xFF), "the old image's tail is gone");
 	assert.deepEqual(sim.codecSegments.map(([a, d]) => crc32(at(radio, a, d.length))), codecBefore);
 	await s.resetChip();
@@ -91,9 +104,24 @@ test("DM-1701 install: sector 3 erased first and committed last, codec sectors u
 	assert.deepEqual(await s2.writeImage(owned, segs), { written: 0, same: r.written + r.same });
 });
 
-test("MD-380: sector 6 is shared with the codec, a copy is handed out first and the codec bytes stay", async () => {
+test("MD-380: sectors 3-7 are the application's, the codec sectors stay as they are", async () => {
 	const { sim, radio } = await running("md380");
 	const owned = fb.f4stub.boards.md380.owned;
+	assert.deepEqual(owned, [[APP_BASE, 0x08080000]]);
+	const s = await enter(radio);
+	const codec = at(radio, 0x08080000, 0x80000).slice();
+	const kept = [];
+	await s.writeImage(owned, [[APP_BASE, app(4, 0x74000)]], { onKept: async (sec) => kept.push(sec) });
+	assert.equal(kept.length, 0, "no sector shared with the codec");
+	assert.ok(equal(at(radio, APP_BASE, 0x74000), app(4, 0x74000)));
+	assert.ok(equal(at(radio, 0x08080000, 0x80000), codec), "sectors 8-11 unchanged");
+	for (const [a, d] of sim.codecSegments) assert.ok(equal(at(radio, a, d.length), d));
+});
+
+test("a sector shared with other data: a copy is handed out first and the other bytes stay", async () => {
+	// No radio has one since the codec moved; the rule stays for one that does
+	const { radio } = await running("md380");
+	const owned = [[APP_BASE, 0x08050C44]];
 	const s = await enter(radio);
 	const sec6 = at(radio, 0x08040000, 0x20000).slice();
 	const kept = [];
@@ -101,15 +129,15 @@ test("MD-380: sector 6 is shared with the codec, a copy is handed out first and 
 	assert.equal(kept.length, 1);
 	assert.equal(kept[0].index, 6);
 	assert.ok(equal(kept[0].kept, sec6), "the copy is sector 6 as it was");
-	assert.ok(equal(at(radio, 0x08050C44, 0x08060000 - 0x08050C44), sec6.subarray(0x10C44)), "the codec part of sector 6 is unchanged");
-	for (const [a, d] of sim.codecSegments) assert.ok(equal(at(radio, a, d.length), d));
+	assert.ok(equal(at(radio, 0x08050C44, 0x08060000 - 0x08050C44), sec6.subarray(0x10C44)), "the rest of sector 6 is unchanged");
 });
 
 test("images outside the owned flash, or without a stack pointer, are refused before anything is erased", async () => {
 	const { radio } = await running();
 	const s = await enter(radio);
 	const owned = fb.f4stub.boards.dm1701.owned;
-	await assert.rejects(s.writeImage(owned, [[APP_BASE, app(5, 0x60000)]]), /outside the flash the firmware owns/);
+	await assert.rejects(s.writeImage(owned, [[APP_BASE, app(5, 0xB8000)]]), /outside the flash the firmware owns/);
+	await assert.rejects(s.writeImage(owned, [[APP_BASE, app(5, 0x1000)], [0x080C0000, app(5, 0x1000)]]), /outside the flash the firmware owns/);
 	await assert.rejects(s.writeImage(owned, [[APP_BASE, new Uint8Array(0x1000)]]), /stack pointer/);
 	assert.ok(!radio.events.some((e) => e.startsWith("erase")));
 });
@@ -117,7 +145,7 @@ test("images outside the owned flash, or without a stack pointer, are refused be
 test("a cable pulled halfway leaves the radio in its bootloader, and a second run finishes the job", async () => {
 	const { radio } = await running("dm1701", { cutAfter: 30 });
 	const owned = fb.f4stub.boards.dm1701.owned;
-	const segs = [[APP_BASE, app(6, 0x48000)], [0x080A0000, app(7, 0x6000)]];
+	const segs = [[APP_BASE, app(6, 0x48000)]];
 	const s = await enter(radio);
 	await assert.rejects(s.writeImage(owned, segs));
 	radio.cutAfter = null;

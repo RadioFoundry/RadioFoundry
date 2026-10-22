@@ -7,6 +7,9 @@ run showed. Features come from the README's "What it does" and area table, the m
 (`docs/user/01-introduction.md`) and the build switches (`docs/build-config.md`). APRS has its own coverage notes
 (`docs/spec/aprs.md` 13).
 
+This page covers the DM-1701 only. The other radios' checks are in their bring-up pages and in the
+[feature matrix](../feature-matrix.md#checked-on-each-radio).
+
 Status: **on air** = a test checks it over the air and passed; **radio** = a test checks it on the radio without
 RF (or only the radio's side of an RF exchange); **partial** = only part of the feature can be checked on this
 bench (why in the notes); **xfail** = the test runs and fails for a known, documented gap; **fails** = the test

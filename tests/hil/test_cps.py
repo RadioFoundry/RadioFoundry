@@ -162,7 +162,14 @@ def codeplug_edited(radio, backup_dir, edit, tag):
             now = cps_session(radio, lambda c: c.read_image(QDMR))
         except Exception:                       # write every sector of the edit's plan if the read fails
             now = edited
-        cps_session(radio, lambda c: c.write_image(backup, QDMR, reboot=False, base=now))
+        for attempt in range(3):                # a radio busy just after a test can miss the session's first command
+            try:
+                cps_session(radio, lambda c: c.write_image(backup, QDMR, reboot=False, base=now))
+                break
+            except cps_client.CpsError:
+                if attempt == 2:
+                    raise
+                time.sleep(3)
         restored = cps_session(radio, lambda c: c.read_image(QDMR))
         d = cps_client.compare(backup, restored, QDMR)
         assert not d, f"RESTORE FAILED at {len(d)} bytes: write {path} back with tools/cps_client.py"

@@ -60,6 +60,12 @@ WEAK void ui_svc_emergency_dismiss(void) { }
 WEAK bool ui_svc_emergency_active(void) { return false; }
 WEAK bool ui_svc_factory_reset(void) { return false; }
 
+WEAK bool ui_svc_crash_get(ui_crash_t *out) { (void)out; return false; }
+WEAK void ui_svc_crash_seen(void) { }
+WEAK void ui_svc_crash_clear(void) { }
+WEAK bool ui_svc_crash_send(void) { return false; }
+WEAK uint8_t ui_svc_crash_tx_state(void) { return UI_CRASH_TX_IDLE; }
+
 // Safe defaults (P7): no auto-transmit feature on, tones on, hints on
 static int32_t settings[UI_SET_COUNT] = {
 	[UI_SET_KEY_TONES] = 1, [UI_SET_TONE_VOLUME] = 5, [UI_SET_TALK_PERMIT] = 1, [UI_SET_MESSAGE_TONE] = 1,

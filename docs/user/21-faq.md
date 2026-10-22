@@ -23,6 +23,21 @@ amateur use.
 
 Open an issue or pull request, or donate a new radio model for testing.
 
+**The web flasher or the Codeplug Editor failed. How do I report it?**
+
+Click **Report a Problem** under the error message, describe what you were doing, and download the report. It's a zip
+file with the steps the page took, the errors and your browser's details. Email it to the developers or attach it to a
+GitHub issue. If the problem is reading or writing a codeplug, tick the box that includes it: a codeplug holds your
+callsign, DMR ID and contacts, so it's left out unless you add it. Developers can also open the browser's console
+(F12): every error is printed there with its details.
+
+**Writing a codeplug fails with "The radio refused to write the codeplug". What now?**
+
+If the radio came straight from its original firmware, choose **Write to Radio** again: the editor offers **Prepare
+Radio**, which erases the original firmware's data from the area ODR keeps its settings in. Without that, the radio
+refuses every write and forgets its settings when it's turned off. If the error comes back after that, use **Report a
+Problem**.
+
 **Why doesn't the release include the codec?**
 
 The AMBE+2 codec DMR voice needs is DVSI's, and ODR can't distribute it. Your radio already has it, in its stock
@@ -43,8 +58,14 @@ Test it before you depend on it, and transmit only where you are licensed to.
 **Does qdmr work with ODR?**
 
 Yes, through a compatibility layer. qdmr's open-firmware driver reads and writes the codeplug
-([Programming with qdmr](15-programming-qdmr.md)). On the DM-32UV qdmr can't write the codeplug directly
+([Programming the radio](15-programming-qdmr.md)). On the DM-32UV qdmr can't write the codeplug directly
 ([DM-32UV with qdmr](23-radios.md#dm-32uv-with-qdmr)).
+
+**Can I program the radio without installing anything?**
+
+Yes. The Codeplug Editor on the project's web site reads and writes the radio from a Chromium-based browser (Chrome,
+Edge, Opera) and builds the DMR ID database from RadioID.net
+([The Codeplug Editor](15-programming-qdmr.md#the-codeplug-editor)).
 
 **Is basic privacy secure?**
 

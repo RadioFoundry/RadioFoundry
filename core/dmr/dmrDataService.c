@@ -83,7 +83,7 @@ static void unlock(void)
 // --- The burst list being sent ---
 
 // What the list on air is for, so that its end reaches the right owner
-enum { TXK_OTHER, TXK_SMS, TXK_SIGNAL, TXK_ARS, TXK_REPLY, TXK_EMERGENCY, TXK_IP };
+enum { TXK_OTHER, TXK_SMS, TXK_SIGNAL, TXK_ARS, TXK_REPLY, TXK_EMERGENCY, TXK_IP, TXK_UDP };
 
 DMR_DATA_BUFFER static dmrBurst_t txBursts[DMR_DATA_MAX_BURSTS];
 static int txBurstCount = 0;
@@ -264,7 +264,8 @@ static void queueReply(int count)
 	}
 }
 
-static bool sendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length, uint8_t blockType)
+static bool sendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length, uint8_t blockType,
+					uint8_t kind)
 {
 	if (dmrDataServiceIsBusy() || !canTransmit())
 	{
@@ -272,13 +273,61 @@ static bool sendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort
 	}
 
 	return queueTx(dmrDataBuildUDP(group, dst, channel.ownId, srcPort, dstPort, payload, length, blockType, DMR_DATA_SMS_PREAMBLES,
-									txBursts, DMR_DATA_MAX_BURSTS), TXK_OTHER);
+									txBursts, DMR_DATA_MAX_BURSTS), kind);
 }
 
 bool dmrDataServiceSendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length)
 {
-	return sendUDP(group, dst, srcPort, dstPort, payload, length, DT_RATE_12_DATA);
+	return sendUDP(group, dst, srcPort, dstPort, payload, length, DT_RATE_12_DATA, TXK_OTHER);
 }
+
+#if DMR_DATA_UDP_API
+// --- One UDP datagram from another task (dmr_data_send_udp): sent once the channel lets us, given up after
+// UDP_WAIT_MS ---
+
+static struct
+{
+	volatile uint8_t state;				// dmr_req_state_t
+	bool stamped;						// since holds the first tick that saw it queued
+	bool group;
+	uint8_t length;
+	uint16_t srcPort;
+	uint16_t dstPort;
+	uint32_t dst;
+	uint32_t since;
+	uint8_t data[DMR_DATA_UDP_MAX];
+} udpReq;
+
+static void udpTick(void)
+{
+	if (udpReq.state != DMR_REQ_QUEUED)
+	{
+		return;
+	}
+	__atomic_signal_fence(__ATOMIC_ACQUIRE);// the fields after the state, as dmr_data_send_udp wrote them before it
+	if (!udpReq.stamped)
+	{
+		udpReq.stamped = true;
+		udpReq.since = now;
+	}
+	if (sendUDP(udpReq.group, udpReq.dst, udpReq.srcPort, udpReq.dstPort, udpReq.data, udpReq.length, DT_RATE_12_DATA, TXK_UDP))
+	{
+		udpReq.state = DMR_REQ_SENDING;
+	}
+	else if ((now - udpReq.since) >= UDP_WAIT_MS)
+	{
+		udpReq.state = DMR_REQ_FAILED;// no DMR channel we may transmit on, or always busy
+	}
+}
+
+static void udpTxDone(bool ok)
+{
+	if (udpReq.state == DMR_REQ_SENDING)
+	{
+		udpReq.state = ok ? DMR_REQ_OK : DMR_REQ_FAILED;
+	}
+}
+#endif
 
 bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count)
 {
@@ -1660,6 +1709,11 @@ static void txGiveUp(void)
 		case TXK_IP:
 			ipTxDone(false);
 			break;
+#if DMR_DATA_UDP_API
+		case TXK_UDP:
+			udpTxDone(false);
+			break;
+#endif
 		default:
 			break;
 	}
@@ -1724,6 +1778,9 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 	signalTick();
 	smsTick();
 	ipTick();
+#if DMR_DATA_UDP_API
+	udpTick();// after the replies and the user's own requests: nothing about it is urgent
+#endif
 	arsTick();
 	lrrpTick();
 #if CONFIG_DMR_CONFIRMED
@@ -1782,6 +1839,11 @@ void dmrDataServiceTxDone(uint8_t err)
 		case TXK_IP:
 			ipTxDone(err == 0);
 			break;
+#if DMR_DATA_UDP_API
+		case TXK_UDP:
+			udpTxDone(err == 0);
+			break;
+#endif
 		default:
 			break;
 	}
@@ -2433,6 +2495,41 @@ dmr_req_state_t sms_send_state(void)
 {
 	return mailbox.smsPending ? DMR_REQ_QUEUED : (dmr_req_state_t)sms.state;
 }
+
+#if DMR_DATA_UDP_API
+bool dmr_data_send_udp(uint32_t dst, bool group, uint16_t src_port, uint16_t dst_port, const uint8_t *payload, size_t len)
+{
+	bool ok = false;
+
+	if ((dst == 0) || (dst > 0xFFFFFFu) || (payload == NULL) || (len == 0) || (len > DMR_DATA_UDP_MAX))
+	{
+		return false;
+	}
+	lock();
+	if ((udpReq.state != DMR_REQ_QUEUED) && (udpReq.state != DMR_REQ_SENDING))
+	{
+		udpReq.dst = dst;
+		udpReq.group = group;
+		udpReq.srcPort = src_port;
+		udpReq.dstPort = dst_port;
+		udpReq.length = (uint8_t)len;
+		memcpy(udpReq.data, payload, len);
+		udpReq.stamped = false;
+		// udpTick reads the fields without the lock once it sees QUEUED: the compiler must not move these stores
+		// after the volatile one
+		__atomic_signal_fence(__ATOMIC_RELEASE);
+		udpReq.state = DMR_REQ_QUEUED;// last: the radio task takes it from here
+		ok = true;
+	}
+	unlock();
+	return ok;
+}
+
+dmr_req_state_t dmr_data_udp_state(void)
+{
+	return (dmr_req_state_t)udpReq.state;
+}
+#endif
 
 static bool signalRequest(uint8_t kind, uint32_t dst)
 {

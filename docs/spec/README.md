@@ -20,6 +20,8 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | [aprs.md](aprs.md) | APRS on FM and over DMR |
 | [airband-and-broadcast.md](airband-and-broadcast.md) | Air band AM receive and broadcast FM receive (parked) |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
+| [crash-log.md](crash-log.md) | The crash log: fault capture on each platform, the record kept across the restart, the fault trace, the packed report |
+| [watchdog.md](watchdog.md) | The hardware watchdog: the idle task's feed, timeouts, long operations, leaving the application, bench tests |
 | [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |
 | [codeplug-native.md](codeplug-native.md) | Native codeplug (draft) |
 
@@ -28,7 +30,10 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | Spec | Covers |
 |---|---|
 | [cps-protocol.md](cps-protocol.md) | The host port's protocols and how they share it; the CPS protocol |
+| [cps-fast.md](cps-fast.md) | The fast codeplug protocol: block sums, LZ4, staged commit |
 | [open-firmware-cps.md](open-firmware-cps.md) | The open-firmware codeplug format qdmr writes |
+| [qdmr-yaml.md](qdmr-yaml.md) | qdmr's YAML codeplug file and how the Codeplug Editor maps it |
+| [codeplug-stock-tyt.md](codeplug-stock-tyt.md) | Stock TYT-family codeplugs (DM-1701, MD-UV380, MD-380) in SPI flash: detection and conversion |
 | [codeplug-port.md](codeplug-port.md) | Stock codeplug to ODR: the clean-up, contacts, CPS write shared by the migration tools |
 | [debuglink.md](debuglink.md) | The debug link: commands, the view, key injection |
 | [stub-stm32f4.md](stub-stm32f4.md) | The STM32F4 flash stub: entry from ODR, USB, protocol, safety rules, update order |
@@ -53,7 +58,8 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 ## Radios
 
 [radios.md](radios.md) surveys the radios, their chips and the port order; [capabilities.md](capabilities.md) shows
-what the aftermarket firmware does on each (ODR's own state: [feature matrix](../feature-matrix.md)). Per radio:
+what the aftermarket firmware does on each (ODR's own state: [feature matrix](../feature-matrix.md)). Where ODR places each radio's
+stock codec: [codec-placement.md](codec-placement.md). Per radio:
 
 | Radio | Hardware | Codec | Moving from stock |
 |---|---|---|---|

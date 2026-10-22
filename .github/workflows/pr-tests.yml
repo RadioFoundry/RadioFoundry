@@ -275,6 +275,6 @@ jobs:
           else
             state=failure; text="a job failed or was canceled"
           fi
+          # The status carries the failure (merge stays blocked); this job exits 0 so the failed job is the only red check
           gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" -f state="$state" -f context="PR checks" \
             -f description="$text" -f target_url="$RUN_URL" > /dev/null
-          [ "$state" = success ]

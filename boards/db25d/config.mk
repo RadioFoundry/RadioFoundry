@@ -3,13 +3,10 @@
 # DB25-D feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-db25d.md 9): analog FM
 # on the BK4819s and the host link on UART1, settings stored on the SPI NAND, DMR receive and transmit on the shared
 # modem glue with the codec recipe. The open-firmware CPS (qdmr, tools/cps_client.py) runs on the host link over the
-# stored codeplug (hardware-db25d.md 6.6, 9). RAM is the limit, as on the DM-32UV: the default image keeps about 15 KB of
-# main RAM free (above the codec window, 165,424 B) and about 24 KB of RAM_LO (52,912 B; db25d_dmr.ld). The switches
-# that are off are listed below
+# stored codeplug (hardware-db25d.md 6.6, 9). RAM is the limit, as on the DM-32UV: ODR has 216,576 B below the codec
+# window (db25d_dmr.ld). The switches that are off are listed below
 CONFIG_USB ?= n
 CONFIG_HOSTLINK ?= y
-# The stub without a power cycle (debug link STUB, then stubtool --odr-enter): updates over the cable with no keys
-CONFIG_STUB_ENTRY ?= $(CONFIG_DEBUGLINK)
 # The core's storage over ODR's NAND block range (hardware-db25d.md 6.6)
 CONFIG_NAND_STORAGE ?= y
 # DMR (hardware-db25d.md 4.5, 9): receive and transmit checked on the SDR bench. Voice needs the codec merged (8). With
@@ -33,14 +30,14 @@ MCU_DEFS += -DTCP_CONNS=$(TCP_CONNS)
 CONFIG_HOTSPOT_SPLIT ?= n
 # The single frequency repeater: switches RX and TX every slot, which this radio's per-burst retune hasn't been timed for
 CONFIG_SFR ?= n
-# With DMR: the linker script that reserves the stock codec's RAM and modem SRAM windows (db25d_dmr.ld), its codec host
-# (the profile ids are db25d-2501, db25d-2409, db25d-2405; hardware-db25d.md 8), the core's CPU state in the low RAM
-# below the codec and the runtime stub moved into the codec window (0x1D000..0x2F000; the stub image has to be linked
-# for that base). Bench knobs (dmr_db25d.c, radio_db25d.c): DB25D_DMR_RF_MODE (the modem's RF_MODE word), DB25D_DMR_AF_GAIN
+# With DMR: the linker script with the codec window at the top of SRAM and the modem SRAM table window (db25d_dmr.ld),
+# its codec host (the profile ids are db25d-2501, db25d-2409, db25d-2405, db25d-020; hardware-db25d.md 8), the core's
+# CPU state in .ram_lo and the runtime stub's load span inside the codec window (0x45000..0x58000; the universal stub
+# copies itself to its run address). Bench knobs (dmr_db25d.c, radio_db25d.c): DB25D_DMR_RF_MODE (the modem's RF_MODE word), DB25D_DMR_AF_GAIN
 # (the main chip's AF DAC gain in DMR, 0-15), DB25D_DMR_SPK_SWITCH=1 (PTC18 stays high in DMR, as before)
 ifeq ($(CONFIG_DMR),y)
 LDSCRIPT := boards/db25d/db25d_dmr.ld
-MCU_DEFS += -DHRC_CODEC_BOARD='"db25d"' -DODR_CPU_RAM_SECTION='".ram_lo"' -DHRC_STUB_BASE=0x0001D000u -DHRC_STUB_SIZE=0x00012000u
+MCU_DEFS += -DHRC_CODEC_BOARD='"db25d"' -DODR_CPU_RAM_SECTION='".ram_lo"' -DHRC_STUB_BASE=0x00045000u -DHRC_STUB_SIZE=0x00013000u
 ifneq ($(DB25D_DMR_RF_MODE),)
 MCU_DEFS += -DDB25D_DMR_RF_MODE=$(DB25D_DMR_RF_MODE)
 endif

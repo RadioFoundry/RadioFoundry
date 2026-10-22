@@ -387,8 +387,46 @@ static void test_burst_tables(void)
 	CHECK(chip.n >= 2 && chip.log[0].reg == 0x30 && chip.log[0].val == 0);
 }
 
+// A split DMR channel (RX 443.700 / TX 448.700): the burst switch moves the synthesizer to the TX frequency for a
+// burst and back to the RX frequency after it. Simplex: no frequency frames (issue 72: the radio stayed on the TX
+// frequency between bursts and never heard the hotspot's downlink)
+static void test_burst_split(void)
+{
+	const fd6818_variant_t *vars[] = { &fd6818_variant_dm32, &fd6818_variant_dm1801pro };
+	for (unsigned i = 0; i < 2; i++) {
+		fd6818_t dev;
+		reset_chip();
+		fd6818_attach_variant(&dev, &bus, vars[i]);
+		fd6818_set_freq(&dev, 443700000u);
+		chip.n = 0;
+		fd6818_dmr_burst_at(&dev, true, FD6818_BW_DMR, 448700000u);
+		CHECK(chip.regs[0x38] == (uint16_t)(44870000u & 0xFFFFu) && chip.regs[0x39] == (44870000u >> 16));
+		CHECK(chip.log[0].reg == 0x30 && chip.log[0].val == 0);	// idle first, then the frequency
+		CHECK(chip.log[chip.n - 1].reg == 0x30 || chip.log[chip.n - 1].reg == 0x52);
+		chip.n = 0;
+		fd6818_dmr_burst_at(&dev, false, FD6818_BW_DMR, 443700000u);
+		CHECK(chip.regs[0x38] == (uint16_t)(44370000u & 0xFFFFu) && chip.regs[0x39] == (44370000u >> 16));
+		// Already on that frequency (simplex, or the second burst of a pair on one frequency): only the switch
+		int n_switch = chip.n;
+		chip.n = 0;
+		fd6818_dmr_burst_at(&dev, false, FD6818_BW_DMR, 443700000u);
+		CHECK(chip.n > 0 && chip.n < n_switch);
+		for (int k = 0; k < chip.n; k++) {
+			CHECK(chip.log[k].reg != 0x38 && chip.log[k].reg != 0x39);
+		}
+		// hz 0: never retunes
+		chip.n = 0;
+		fd6818_dmr_burst_at(&dev, true, FD6818_BW_DMR, 0);
+		for (int k = 0; k < chip.n; k++) {
+			CHECK(chip.log[k].reg != 0x38 && chip.log[k].reg != 0x39);
+		}
+		CHECK(chip.protocol_errors == 0);
+	}
+}
+
 int main(void)
 {
+	test_burst_split();
 	test_dm1801pro();
 	test_burst_tables();
 	test_helpers();

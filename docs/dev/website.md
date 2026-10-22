@@ -3,15 +3,15 @@
 # The web site and the web flasher
 
 The site is generated from the repository, like the PDF manual. It lists the radios, their screens
-and features, holds the documentation, and carries the web flasher: back up, install and restore in the browser,
-with nothing sent to a server.
+and features, holds the documentation, and carries two tools that run in the browser with nothing sent to a server:
+the web flasher (back up, install, restore) and the Codeplug Editor.
 
 ```
 python3 site/build.py                       # build/site/
 python3 site/build.py --serve               # build, then http://localhost:8000 (WebUSB needs localhost or https)
 python3 site/build.py --firmware build/dist # with release images for the flasher (tools/release.py --out)
 python3 site/build.py --strict              # any warning fails (CI)
-site/tests/run.sh                           # the flasher's tests, against odrflash (Node 20+)
+site/tests/run.sh                           # the flasher's and the editor's tests (Node 20+)
 ```
 
 The generator needs one Python package, markdown-it-py (`pip install -r site/requirements.txt`, or prefix the
@@ -68,9 +68,12 @@ file the build didn't write.
 | `site/static/css/tokens.css`, `site.css` | Design tokens, then layout and components |
 | `site/static/js/site.js` | Theme toggle, menu, features filter, screen overlay on radio pages |
 | `site/static/js/flasher/` | The web flasher (below) |
+| `site/static/js/codeplug/` | Codeplug decoding and encoding, CSV, the radio transport, contacts sources ([below](#the-codeplug-editor)) |
+| `site/static/js/editor/` | The Codeplug Editor page |
+| `site/odrsite/radioid_regions.py` | Writes `codeplug/sources/regions.js` from a RadioID.net `user.csv` (country and state names only) |
 | `site/static/js/tools.js` | The Tools page (codeplug conversion) |
 | `site/static/img/radios/src/<radio>.svg` | Radio illustrations (below) |
-| `site/tests/` | Flasher tests: `fixtures.py` makes inputs with odrflash and the HR_C7000 tools, `flasher.test.mjs` and `c7000.test.mjs` check the JavaScript |
+| `site/tests/` | Flasher and editor tests: `fixtures.py` makes inputs with odrflash, the HR_C7000 tools and `tests/host/cpsSim`; the `*.test.mjs` files check the JavaScript |
 
 ## Templates and design
 
@@ -86,6 +89,36 @@ All visual decisions are variables in `tokens.css`: colors for light and dark, t
 `site.css` only uses them. A redesign replaces `tokens.css`, then `site.css` and the templates; the generator doesn't
 change. Readability comes first ([principles](../ux/principles.md)): 18 px base type, high contrast, nothing
 squeezed.
+
+## Glossary
+
+`docs/glossary.json` is the one source. `python3 tools/glossary.py --write` generates the two glossary pages from it:
+[user/22-glossary.md](../user/22-glossary.md) (entries with scope `user`) and [glossary.md](glossary.md) (scope `dev`).
+Never edit those pages by hand. `tools/ci.sh` fails when they are stale.
+
+| Field | Meaning |
+|---|---|
+| `term` | The name as the page shows it. A plain word (lowercase, or one capital) also matches in any case and with a plural `s`. An acronym or mixed-case name matches exactly. |
+| `aliases` | Other spellings and plurals. Each follows the same matching rule. |
+| `category` | One of `categories` in the file. It is the page's section. |
+| `scope` | `user`: listed in the user glossary, previewed in the whole site. `dev`: listed in the developer glossary, previewed outside the user guide. |
+| `definition` | One or two short sentences. Say what the standard calls it when a vendor uses another name. |
+| `link` | Optional path under `docs/` of the section that explains it. The preview's "More" link goes there, else to the glossary row. |
+| `preview` | `false` keeps a common word (Monitor, Zone) in the glossary but never marks it in the text. |
+
+The site build (`docs.py`) wraps a term in `<abbr class="gl" title="...">` at build time. The Markdown stays unmarked, so GitHub
+shows plain text. Rules:
+
+- Whole words only. Not inside code, headings, link text, a table's first column, hyphenated words or paths.
+- The first use in each section (a section ends at the next `#` or `##` heading).
+- `<!-- glossary: off -->` in a page turns marking off for that page. `<!-- glossary: off TG, SFR -->` turns off those terms.
+
+`site.js` turns each `<abbr>` into a popover on hover, keyboard focus and tap, with a "More" link (Enter follows it from the
+keyboard). Without JavaScript the `title` shows the definition. `site/tests/glossary_test.py` tests the rules.
+
+To add a term, add an entry to the file, run `python3 tools/glossary.py --write` and `python3 tools/glossary.py --check`.
+`python3 tools/glossary.py --unexplained` lists all-capital words the docs use that have no entry (pin names and
+identifiers with digits or underscores are skipped). Add an entry for each one that matters to a reader, or its name to `excluded`.
 
 ## Translating
 
@@ -115,6 +148,35 @@ screen's position in `data/radios.json` (`frame_geometry`: viewBox units and per
 laid over the frame; the radio pages do that when a screenshot is clicked. A radio without an illustration gets a
 generic drawing from `radio.json` `frame`.
 
+## Error logging and bug reports
+
+The flasher and the Codeplug Editor log what they do in memory (`static/js/diag.js`). Neither keeps the log after
+the page closes.
+
+| Entry | Holds |
+|---|---|
+| Note | A step: the radio found and its firmware, a write plan's size, a flasher step, each line of the flasher's log box |
+| Wire | One line per debug link or CPS frame (`link.js`): command, address, length, result. Never the data |
+| Error | Every error shown to the user, once, with the stage it happened in, its code and params, stack and causes |
+
+Every error also goes to the browser console (`[odr] <stage> failed:`). Failure messages carry **Report a Problem**
+(`static/js/report.js`). It downloads a zip with `report.json` (the log, the browser, the tool's state) and, if the
+user ticks them, the edited codeplug and the one last read from the radio.
+
+Automatic error reports go to Sentry when the build has `ODR_SENTRY_DSN` set (`site.yml` takes it from the
+repository variable of the same name; `site.json` `reports.sentry_dsn`). Without it nothing is sent and the privacy
+note is left off the pages. With it:
+
+| Sent | When |
+|---|---|
+| The error, its stage and code, the tool's state (radio model, firmware version, task; no codeplug contents) | Every error except ones the user caused (port chooser closed, Stop) |
+| The whole report and any codeplug the user ticked | Only when the user clicks Send Report |
+
+Automatic reports go through `diag.scrub()`, which removes callsigns, DMR IDs and email addresses. The Sentry bundle
+is pinned with an SRI hash in `report.js`. It loads without breadcrumbs or other default integrations, so it sends only
+what `diag.error` hands it. `?reporting=0` turns sending off, as it does for the flash log. Ad blockers often block
+Sentry; the page then works the same and offers the download only.
+
 ## The web flasher
 
 `site/static/js/flasher/`, plain ES modules. The logic ports odrflash, and the tests check the two agree:
@@ -126,7 +188,7 @@ generic drawing from `radio.json` `frame`.
 | `manifest.js` | Release manifest checks | `odrflash/manifest.py` |
 | `decide.js` | Keep or merge the codec | `odrflash/cli.py` `decide_codec` |
 | `dfu.js` | The AnyRoad DFU bootloader over WebUSB | `odrflash/dfu.py` |
-| `codecsave.js` | Where an update erases the codec (the MD-380): the codec read back from a radio that runs ODR, checked against the profile's hashes, and a copy kept in IndexedDB until the next update | `odrflash/codecsave.py` |
+| `codecsave.js` | The codec read back from a radio that runs ODR (where stock keeps it, or where the merge placed it), checked against the profile's hashes, and a copy kept in IndexedDB: on the MD-380 before every update erases it, elsewhere once, so an install that can't keep or check the codec (a radio back on stock firmware, in its bootloader, or after an interrupted install) needs no stock file | `odrflash/codecsave.py` |
 | `bootkey.js` | The bootloader key from a radio that runs ODR: the bootloader read over READ_MEM, the block with the key's SHA-256 | `odrflash/bootkey.py` |
 | `link.js` | The debug link and open-firmware CPS reads and writes over Web Serial | `odrflash/debuglink.py`, [open-firmware-cps.md](../spec/open-firmware-cps.md) |
 | `backends.js` | The radio access backend registry: which steps and views a radio's family uses (below) | |
@@ -138,9 +200,9 @@ generic drawing from `radio.json` `frame`.
 | `fake.js` | A simulated radio: bootloader with a flash model, ODR's serial port, a synthetic stock file | `odrflash/fakedfu.py` |
 | `stub.js`, `lz4.js` | The HR_C7000 boot stub: loaded through the boot ROM or handed over by ODR, then reads, sector writes and the LED | `stub/stubtool.py` |
 | `f4stub.js` | The STM32F4 loader (DM-1701, MD-380): handed over by ODR, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
-| `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/dm32_codec.py` |
+| `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/hrc7000_codec.py` |
 | `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, ODR's debug link (VERSION, 0x1A), the stub and both flash chips | |
-| `db25d.js`, `db25dui.js` | DB25-D: the stock debug console read (USMART), the vendor update mode write (IAP) and their steps | `docs/spec/hardware-db25d.md` 7 |
+| `db25d.js`, `db25dui.js` | DB25-D: the stub loaded through the stock debug console (USMART), the vendor update mode write (IAP) and their steps | `docs/spec/hardware-db25d.md` 7 |
 | `c7000ui.js`, `radiotop.js` | The HR_C7000 backend: its steps (connect, back up and check, write, check) and the radio picture with its LED | |
 | `dom.js` | DOM helpers and strings shared by `app.js` and `c7000ui.js` | |
 | `app.js` | The page: the tasks, the shared steps and the `anyroad-dfu` backend | |
@@ -163,7 +225,7 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 | `steps(task, {recovering})` | The task's step ids, or null for the shared default |
 | `views` | A view function per step the backend owns |
 | `stepLabel(step, task)` | Optional: the `flash.step.*` key of a step's name |
-| `recovery` | The help task: `first` (`updatemode` checks the bootloader first, `fix` goes to the choices), `stock` (`file`: stock firmware from the user's stock file; `restore`: from a backup), `reach` and `stockText` (string keys) |
+| `recovery` | The help task: `first` (`updatemode` checks the bootloader first, `fix` goes to the choices), `stock` (`file`: stock firmware from the user's stock file; `restore`: from a backup), `reach` and `stockText` (string keys), and optionally `extra(radio, fb)`: more reinstall choices, each `{id, title, text, prepare()}` (string keys; `prepare` runs once the install task is set up) |
 | `ownsBundle(bundle)` | Optional: a backup bundle this backend restores with its own view |
 | `ownImage(fb, board, data)` | Optional: a user's own image file, split into the image and anything the backend keeps (a merged codec slot) |
 | `release()` | Optional: let go of a port or loader still held (Start Over, another radio) |
@@ -231,7 +293,7 @@ its own steps:
 
 | Step | What happens |
 |---|---|
-| Connect | The page looks for a stub that still runs, then for ODR. ODR with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); ODR without it is restarted with its CPS reboot, which passes the boot ROM's serial window (not yet tried on a radio). Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The radio model is then checked by the bootloader's ID string |
+| Connect | The page looks for a stub that still runs, then for ODR. ODR with `CONFIG_STUB_ENTRY` hands over to the stub (command 0x1A); ODR without it is restarted with its CPS reboot, which passes the boot ROM's serial window (not yet tried on a radio). Otherwise the page asks the user to switch the radio off and on and catches the boot ROM. The radio model is then checked by the bootloader's ID string, and the page sends the stub the board's profile (CONFIG: clocks, UART, pins, board id) and checks the echo; the stub refuses writes until then |
 | Back up and check | A first install reads the whole program memory (required) and, if asked, the data memory, keeps the program memory in IndexedDB and downloads a backup bundle. An update reads only the codec slot. The page then decides the codec |
 | Write | Only sectors whose CRC differs are written. The first application sector goes last, each sector is read back right away (three tries), and a final pass checks every sector |
 | Check | The stub resets the chip; the page asks ODR's VERSION for the build and the codec |
@@ -239,20 +301,20 @@ its own steps:
 #### DB25-D PRO
 
 The DB25-D has no boot ROM window on its cable until ODR's first stage is installed, and no SPI data flash (its NAND is
-not read). The board's table entry in `data/flash-boards.json` (`c7000.boards.db25d`, from `tools/dm32_codec.py`
-BOARDS) carries the 2 MB program flash size, `data_flash: false` and the stub the power-on route loads. The steps are
+not read). The board's table entry in `data/flash-boards.json` (`c7000.boards.db25d`, from `tools/hrc7000_codec.py`
+BOARDS) carries the 2 MB program flash size, `data_flash: false`, `stock_console: true` and `stub_board`, the profile the page sends in CONFIG (`stub/stubtool.py` `C7_BOARDS`). The steps are
 the ones above, with these changes:
 
 | Situation | What the page does |
 |---|---|
-| ODR runs (debug link answers) | The stub is chosen by the RAM span the firmware reports in STUB INFO (`forBase()` in `stub.js`: 0x30000 for a build without DMR, 0x1D000 with it) and refused if linked for another span (`stubFits()`, as `stubtool.py` does). The backup is the 2 MB program memory |
-| ODR runs but does not answer | "Recover at Power-On": the first stage offers the boot ROM handshake for about half a second at power-on. The page answers it and loads the 0x30000 stub (the first stage takes blocks below 0x4E000) |
-| The stock firmware runs | `db25d.js` `Usmart`: the stock firmware's debug console returns one 32-bit word per `read_addr` call (`@read_addr(0x...)`, the only line the page can send). The application's first 4 KB are read twice, then the rest. The partial image is kept in IndexedDB every 16 KB, so a stopped read resumes. The read is the backup and the codec source (the 018 versions; a version without a recipe, such as 020, gets a message and the stock file picker) |
-| Install over the stock loader | `db25d.js` `Iap`: the loader's update mode (P1 and power) takes `Erase` and 2 KB pages with additive checksums (`docs/spec/hardware-db25d.md` 7). The image is the first stage, ODR and the codec slot (`odr_db25d_install.bin` with the slot merged in, or the build service's equivalent); it must start with the first stage's `2C 11 01 C0` |
+| ODR runs (debug link answers) | The universal stub (`data/c7000-stub.json`, `stubImages()` in `stub.js`) goes into the RAM span the firmware reports in STUB INFO (0x30000 for a build without DMR, 0x1D000 with it) and copies itself to 0x30000. `univFits()` refuses a span whose copy would overlap or leave SRAM, as `stubtool.py` does. After HELLO the page sends CONFIG with the board's profile and checks the echo before any write. The backup is the 2 MB program memory |
+| ODR runs but does not answer | "Recover at Power-On": the first stage offers the boot ROM handshake for about half a second at power-on. The page answers it and loads the universal stub at 0x10000, as the boot ROM route does (the first stage takes blocks below 0x4E000) |
+| The stock firmware runs | `db25d.js` `Usmart`: the stock firmware's debug console takes one framed command per write (`@AT` + a filler byte + the text + CR LF) and answers `read_addr` and `write_addr`. The page reads the build from its version string (018 or 020; another build is refused), writes the universal stub word by word into 0x54000-0x58000, reads every word back, then points the console's `cmd_rec` entry (0x18000848) at it and sends one more frame, which starts it. Only those addresses can be written, never flash. The stub then copies itself to 0x30000 and the radio continues as from ODR (`c.how = "usmart"`): the 2 MB backup, the codec, the install and a restore all go through the stub. About 4 minutes for the load at 115200 baud |
+| Factory update mode (recovery) | `db25d.js` `Iap`: the loader's update mode (P1 and power) takes `Erase` and 2 KB pages with additive checksums (`docs/spec/hardware-db25d.md` 7). Install: the first stage, ODR and the codec slot (`odr_db25d_install.bin` with the slot merged in, or the build service's equivalent); it must start with the first stage's `2C 11 01 C0`. Restore: a backup's application area and slot (`restoreTarget()`), which must start with the same entry. Offered when nothing answers on the cable, for a stock build the page doesn't know, and in Troubleshooting (`recovery.extra`, "Reinstall in Factory Update Mode", which skips the search). `Iap.probe()` sends a one-page `Flash Read ` (never Erase) when the console is silent, and again when Troubleshooting forces update mode: a loader that answers (a radio with no valid application, white screen and red LED at power-on) is reported as already in update mode and the install starts without waiting for a banner (`c.iapReady`). Troubleshooting lists the symptom "White screen and a red LED at every power-on" for radios with a `recovery.extra` route; it leads to the reinstall or Restore from Backup |
 
-The first stage is the only way into the stub from a radio that runs ODR without answering, and update mode is the
-only way to write a radio that runs the stock firmware. `site/tests/db25d.test.mjs` runs the USMART read and the IAP
-write against simulated radios and compares the codec carve with `tools/dm32_codec.py` (`ODR_DB25D_STOCK=<a real 018
+The first stage is the only way into the stub from a radio that runs ODR without answering. `site/tests/db25d.test.mjs`
+runs the console stub load and the IAP write against simulated radios (`fakec7000.js` with `usmart: "018"` models the
+console; `#sim=c7000-db25d` runs it in the page) and compares the codec carve with `tools/hrc7000_codec.py` (`ODR_DB25D_STOCK=<a real 018
 file> python3 site/tests/fixtures.py` adds the real file to the comparison).
 
 The codec decision (`decide()` in `c7000.js`), first match wins:
@@ -262,14 +324,14 @@ The codec decision (`decide()` in `c7000.js`), first match wins:
 | Keep | The codec slot in flash checks out (magic, CRC, signature, the board's RAM windows). Only the image is written |
 | The radio | The stock firmware in the read holds a known codec (found by its signature and SHA-256, wherever that stock version put it). It is copied into the slot |
 | This browser | A slot an earlier run kept in IndexedDB |
-| A file | A program memory backup, a known stock firmware file, or an image merged by `tools/dm32_codec.py` |
+| A file | A program memory backup, a known stock firmware file, or an image merged by `tools/hrc7000_codec.py` |
 | None | Only when the user asks for it: FM works, DMR voice stays off |
 
 The page never sends a STUB command to ODR except right before it enters the stub: any STUB command parks ODR's codec
 until the next restart.
 
 The build writes the layout and the codec profiles to `data/flash-boards.json` (`c7000`, from `stub/stubtool.py`,
-`tools/dm32_codec.py` and `tools/dm32_flash.py`) and the two stub images to `data/c7000-stub.json`. Bundle parts:
+`tools/hrc7000_codec.py` and `tools/dm32_flash.py`) and the universal stub image (with its load address, run address and RAM end) to `data/c7000-stub.json`. Bundle parts:
 
 | File | Part | Content |
 |---|---|---|
@@ -371,3 +433,67 @@ the WinUSB driver for the bootloader (Zadig, once), as odrflash does. On Windows
 steps ([installing](../user/02-installing.md#windows-the-bootloader-driver)), open until this computer has reached a
 bootloader once, and again with any failed connect: without the driver Chrome either doesn't list the bootloader or
 can't open it. The device name comes from `dfu_product` in `boards.py`.
+
+## The Codeplug Editor
+
+`site/templates/codeplug.html` and `site/static/js/editor/` make the page (`codeplug/index.html`).
+`site/static/js/codeplug/` holds what doesn't depend on the page, so the Tools page, the flasher and the tests can
+use it too. Both are plain ES modules that also run in Node. The user's view is in
+[Programming the radio](../user/15-programming-qdmr.md#the-codeplug-editor).
+
+| Module | Does |
+|---|---|
+| `codeplug/image.js` | The codeplug as one flat image, file offset = the STM32 wire address ([open-firmware-cps.md](../spec/open-firmware-cps.md) 7.1), as `tools/cps_client.py` and backups store it. Keeps every byte the editor doesn't decode |
+| `codeplug/fields.js` | Field encodings: BCD frequencies, IDs and tones, 0xFF-padded names, 24-bit locations |
+| `codeplug/records.js` | Each record decoded into a plain object and encoded back. An encoder writes only the fields it owns, so vendor bytes survive an edit |
+| `codeplug/model.js` | The editing model. References are the records themselves, so a delete or renumber can't leave one pointing at the wrong record. `encode()` rewrites only changed records: an unedited codeplug round-trips byte for byte. `validate()` returns the Problems list |
+| `codeplug/iddb.js` | The DMR ID database, format N (7.5): area 1, then area 2 up to the radio's end |
+| `codeplug/csv.js` | Tables as CSV (RFC 4180): fixed English headers, references by name, import matched by number then name |
+| `codeplug/yaml.js` | The YAML subset qdmr writes: block and flow maps and lists, quoted values, `!default` tags, comments. Anchors are refused |
+| `codeplug/qdmr.js` | qdmr YAML to the model and back ([qdmr-yaml.md](../spec/qdmr-yaml.md)), with notes on what each side can't hold |
+| `codeplug/transport.js` | How the page reaches a radio (below) |
+| `codeplug/fakecps.js` | A simulated ODR radio: VERSION, CPS reads, sector writes and `C 5`, writes refused outside the codeplug as the radio refuses them |
+| `codeplug/sources/` | Contacts sources: `radioid.js` (RadioID.net's `user.csv` and API), `regions.js` (generated region names), `output.js` (users to the ID database or contacts) |
+| `editor/app.js` | The page: tabs, the file menu, radio read and write, the draft |
+| `editor/grid.js`, `views.js` | The table (in-place edit, sort, filter, selection, keyboard) and each record kind's columns, form and membership editor |
+| `editor/undo.js` | Snapshots of every table's order and every record's fields |
+| `editor/files.js` | What an opened file holds (codeplug image, backup bundle, `codeplug.bin`), and the draft in IndexedDB |
+| `editor/extensions.js`, `parts.js` | Optional parts register their Save items, table actions, text file openers and DMR ID Database views. `parts.js` lists them, so a part is added without touching `app.js` |
+| `editor/csvpart.js`, `qdmrpart.js`, `contactspart.js` | The CSV, qdmr YAML and RadioID parts |
+
+Add `#sim` to the page's address to read and write a simulated DM-1701 (`fakecps.js`).
+
+### Transports
+
+A transport has `identify(radios)`, `read({iddb, progress, signal})`, `write(image, current, {progress, signal})` and
+`close()`. Addresses are image addresses; the transport adds the radio's base on the wire. `cps-serial` is the only
+one today: the open-firmware CPS ([cps-protocol.md](../spec/cps-protocol.md) 2) over the radio's USB serial port or
+the programming cable (Web Serial). It identifies the radio by the board name the debug link reports, matched against
+`codeplug.names` in `data/radios.json`. `repo.py` `codeplug_map` fills that entry from the board's flash map: the
+base (0x700000 on the DM-32UV), the end of the room for the codeplug and ID database, and whether the radio has a
+TFTP staging area. A read takes the codeplug's regions and the ID database. A write compares with the radio and sends
+only the changed bytes inside the codeplug's regions, never whole sectors, since a sector can hold the radio's own
+settings (0x6000). It verifies, then ends with `C 5` so the radio reloads the codeplug without a restart.
+
+A browser can't reach the radio's UDP port or its http server (see USB network mode above), so for a radio in USB
+network mode the editor saves `codeplug.bin` for `tftp put` instead. A faster transport (the loader's CRC-compared
+sector writes) can register beside `cps-serial` later.
+
+### RadioID.net
+
+RadioID.net's API sends no CORS headers. `radioid.js` tries a request directly, then through a public CORS proxy
+(`PROXIES`), until RadioID allows the site's origin. The user's own API key (optional) is sent only on direct requests
+(`X-API-Token`), never through a proxy, and is kept in the browser's `localStorage` with the user's choices. Pages
+come 200 users at a time, one request after another. Larger selections use a `user.csv` the user downloads. No user
+data is in the repository or on the site: `regions.js` holds only country and state names
+(`site/odrsite/radioid_regions.py`).
+
+### Tests
+
+`site/tests/codeplug.test.mjs` checks the decoder and encoder against the radio's own codeplug code: `fixtures.py`
+builds `tests/host/cpsSim`, stores a populated codeplug, and records what the radio reads back (`--detail`). The JS
+decode must match it, and the encode must store what the radio then reads. `csv.test.mjs` covers the CSV round trips
+and import problems; `sources.test.mjs` covers the RadioID parser, the API client against a fake `fetch` (the key
+never sent through the proxy), templates and outputs. `qdmr.test.mjs` covers the YAML parser, the mapping, round
+trips and the converters; when `dmrconf` (qdmr's command line tool) is installed it also encodes an exported file.
+Nothing reaches the network.

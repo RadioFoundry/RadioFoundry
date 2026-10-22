@@ -22,10 +22,10 @@ It's early. Read the status section before you flash anything.
 
 | Radio | Builds | Host tests | On the radio | Support |
 |---|:---:|:---:|:---:|---|
-| Baofeng DM-1701 | ● | ● | ◐ | First target. Most features pass on-air tests: FM, DMR voice and data, text, alerts, emergency, hotspot, MMDVM SFR, split duplex (one radio), scan, and the network services. Still open: Standalone SFR and a two-radio split duplex pair (below) |
-| Baofeng DM-32UV | ● | ● | ◐ | Runs on a radio. FM and DMR voice receive and transmit, CTCSS/DCS, APRS receive and transmit and GPS data checked, most of it on the SDR bench. Still open: FM transmit deviation at 12.5 kHz, an outdoor GPS fix, and the host link after a warm restart from the boot stub ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core but not wired up on this radio yet ([airband-and-broadcast](docs/spec/airband-and-broadcast.md)) |
-| Baofeng DM-1801 Pro, DM-1801 (current) | ● | ● | ◐ | Runs on a radio. FM receive and transmit with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and SMS, the MMDVM hotspot and single frequency repeating checked on the SDR bench. Still open: VHF transmit and VOX ([hardware-dm1801pro](docs/spec/hardware-dm1801pro.md) 12). Not the GD-77 family despite the name ([radios](docs/spec/radios.md)) |
-| TYT MD-380 / MD-390, Retevis RT3 (and the GPS models) | ● | ● | ◐ | Builds (UHF and VHF images), passes its host tests and has run on a radio; the on-radio checks are not all recorded yet ([bring-up checklist](docs/testing/md380-bringup.md)). DMR voice with the codec from the stock D2.32 file, merged at build time ([codec-md380](docs/spec/codec-md380.md)). No CTCSS / DCS or FM TX tones yet, and the default image leaves out the hotspot to fit |
+| Baofeng DM-1701 | ● | ● | ◐ | First target. Most features pass on-air tests: FM, DMR voice and data, text, alerts, emergency, hotspot, MMDVM SFR, split duplex (each half alone), scan, and the network services. Still open: Standalone SFR and a two-radio split duplex pair (below) |
+| Baofeng DM-32UV | ● | ● | ◐ | Runs on a radio. FM and DMR voice receive and transmit, CTCSS/DCS, APRS receive and transmit and GPS data checked, most of it on the SDR bench. No split duplex role yet. Still open: FM transmit deviation at 12.5 kHz, an outdoor GPS fix, and the host link after a warm restart from the boot stub ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core but not wired up on this radio yet ([airband-and-broadcast](docs/spec/airband-and-broadcast.md)) |
+| Baofeng DM-1801 Pro, DM-1801 (current) | ● | ● | ◐ | Runs on a radio. FM receive and transmit with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and SMS, the MMDVM hotspot and single frequency repeating checked on the SDR bench. No split duplex role yet. Still open: VHF transmit and VOX ([hardware-dm1801pro](docs/spec/hardware-dm1801pro.md) 12). Not the GD-77 family despite the name ([radios](docs/spec/radios.md)) |
+| TYT MD-380 / MD-390, Retevis RT3 (and the GPS models) | ● | ● | ● | Fully operational on a UHF radio¹. FM with CTCSS both ways; DMR voice and SMS in simplex and through a repeater or duplex hotspot, on either slot; codeplug and ID database programming (CPS, web editor). The codec comes from the stock D2.32 file ([codec-md380](docs/spec/codec-md380.md)), kept in flash sectors the application never uses, so an update keeps it. Still open: DCS and the tone deviation, the VHF image (untested), FM TX tones and APRS receive ([bring-up checklist](docs/testing/md380-bringup.md)) |
 | Radioddity DB25-D PRO (mobile) | ● | ● | ◐ | Bring-up on a radio: FM receive and transmit, display, keys, host link, settings storage, the open-firmware CPS and volume work. DMR voice receive and transmit checked on the SDR bench; the hotspot, the DMR VFO and the PPP network services work on the radio ([hardware-db25d](docs/spec/hardware-db25d.md) 9). The older DB25-D batches (FD6818) and the Retevis RT73 aren't covered yet |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | ○ | ○ | ○ | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port |
 | TYT MD-9600, Retevis RT90 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
@@ -35,12 +35,15 @@ It's early. Read the status section before you flash anything.
 
 ● done&nbsp;&nbsp; ◐ partly&nbsp;&nbsp; ○ not yet
 
+¹ TX frequency accuracy depends on each radio's factory calibration: confirm it against an external reference (frequency counter, service monitor, or a hotspot's MMDVMCal BER test) before relying on it. One MD-380 measured +1.9 kHz high, too far for an MMDVM hotspot's narrow decode window ([#108](https://github.com/sfowlr/OpenDigitalRadio/issues/108)).
+
 The chips in each radio, their sources and the planned port order: [docs/spec/radios.md](docs/spec/radios.md).
 
 On the DM-1701, the automated tests against the SDR bench pass on air for FM, DMR calls, data, emergency, the hotspot,
 MMDVM SFR, scan and each half of the split duplex repeater. qdmr, the USB network adapter and its services are checked
 on the radio. Still open: Standalone SFR, the MMDVM SFR repeat delay and a split duplex test with two radios. Results
-per feature: [on-air coverage](docs/testing/on-air-coverage.md).
+per feature: [on-air coverage](docs/testing/on-air-coverage.md). What is checked on each radio, and what is only built in:
+[feature matrix](docs/feature-matrix.md#checked-on-each-radio).
 "Host-tested" means it works against simulated chips, not that anyone has heard it on air yet.
 
 Releases carry the DM-1701 firmware (everything except the codec), `odrflash` to flash it on Windows, macOS and
@@ -65,8 +68,8 @@ Linux, and the user manual as a PDF. You don't build anything; see [Installing](
   ([dmr-roaming](docs/spec/dmr-roaming.md))
 - **APRS:** position, status and messages on FM (1200 baud AFSK), positions over DMR to an APRS gateway, KISS TNC;
   transmit only on the DM-1701, DMR positions only on the MD-380 ([aprs](docs/spec/aprs.md))
-- **Split duplex repeater (experimental):** two radios on one MMDVM host as a full duplex repeater, idle until the host assigns roles;
-  each half passes on air, a two-radio pair hasn't been tested yet
+- **Split duplex repeater (experimental, DM-1701 only):** two radios on one MMDVM host as a full duplex repeater, idle until the host assigns roles;
+  each half passes on air, a two-radio pair hasn't been tested yet. The DM-32UV, DM-1801 Pro and DB25-D offer no role yet
   ([split-duplex](docs/spec/split-duplex.md))
 - **FM:** CTCSS/DCS, roger beep, 1750 Hz burst, dual watch ([radio-features](docs/spec/radio-features.md))
 - **VFO:** tune any frequency by hand, in FM or DMR (the DMR VFO has its own color code, timeslot and talk target)
@@ -100,7 +103,7 @@ people already have. We support the formats other radios use, not just our favor
 | Location | Motorola LRRP location answers and ARS registration; ETSI GPS Info in voice calls (the caller's position shown with distance and bearing, ours sent from the APRS position); APRS position, status and messages on FM (Bell 202 AFSK) and positions over DMR to an APRS gateway ID; KISS TNC on USB | NMEA from the radio's GPS receiver, ETSI UDT location reports, APRS receive and iGate on radios that can sample received audio |
 | Signaling | call alert, radio check and emergency, each in the Motorola and ETSI forms; talker alias in all four ETSI formats | DTMF and 5-tone on FM |
 | Privacy and encryption | Motorola Basic Privacy, Anytone 16-bit Basic Privacy | ARC4 and AES-256 per the DMR Association interoperability profiles |
-| Programming | qdmr, over the GD-77-style CPS protocol | an open, published native codeplug format with its own qdmr driver; qdmr YAML and CSV import/export; RadioID user database |
+| Programming | qdmr, over the GD-77-style CPS protocol. The Codeplug Editor on the web site: every ODR radio over USB or the programming cable, CSV and qdmr YAML import and export, DMR ID database and contacts from RadioID.net | an open, published native codeplug format with its own qdmr driver |
 | Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter (confirmed data, SAP 3 compressed UDP headers, control station mode for dispatch software); HTTP status, Hamlib rigctld, KISS over TCP, APRS-IS, mDNS, TFTP and SNMPv2c on the USB link; two radios as one full duplex repeater (experimental, build switch; each half passes on air, a two-radio pair is untested) | the split duplex host side (`tools/split_duplex_host.py` is a test host) |
 | Audio to a computer | | USRP over UDP (AllStarLink, DVSwitch), USB sound card with serial-line PTT ([usb-audio](docs/spec/usb-audio.md)) |
 

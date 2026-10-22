@@ -12,7 +12,11 @@ extern uint32_t SystemCoreClock;
 #define configCPU_CLOCK_HZ			(SystemCoreClock)
 #define configTICK_RATE_HZ			1000
 #define configMAX_PRIORITIES			7
+#if CONFIG_CRASH_LOG
+#define configMINIMAL_STACK_SIZE		144	// the idle task: a configASSERT in the kernel captures on it (make stack-check)
+#else
 #define configMINIMAL_STACK_SIZE		128
+#endif
 #define configAPPLICATION_ALLOCATED_HEAP	1		// ucHeap in the CCM (board.c): every task stack is there
 #define configTOTAL_HEAP_SIZE			(28 * 1024)	// task stacks (about 20 KB with DMR: audio 5 KB, radio 3 KB), queues
 #define configMAX_TASK_NAME_LEN			12
@@ -25,7 +29,7 @@ extern uint32_t SystemCoreClock;
 #define configUSE_TASK_NOTIFICATIONS		1
 #define configSUPPORT_STATIC_ALLOCATION		0
 #define configSUPPORT_DYNAMIC_ALLOCATION	1
-#define configUSE_IDLE_HOOK			0
+#define configUSE_IDLE_HOOK			CONFIG_WATCHDOG	// the watchdog feed (core/app/watchdog.c)
 #define configUSE_TICK_HOOK			1
 #define configCHECK_FOR_STACK_OVERFLOW		2
 #define configUSE_MALLOC_FAILED_HOOK		1
@@ -59,7 +63,13 @@ extern uint32_t SystemCoreClock;
 #define configKERNEL_INTERRUPT_PRIORITY		(configLIBRARY_LOWEST_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY	(configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))
 
+// A failed assertion: with the crash log, kept (the line, the caller) and the radio restarts (core/crash/crash.h)
+#if CONFIG_CRASH_LOG && !defined(__ASSEMBLER__)
+void crash_assert(unsigned line) __attribute__((noreturn));
+#define configASSERT(x)				do { if (!(x)) { crash_assert(__LINE__); } } while (0)
+#else
 #define configASSERT(x)				do { if (!(x)) { __asm volatile ("cpsid i"); for (;;) {} } } while (0)
+#endif
 
 #define vPortSVCHandler				SVC_Handler
 #define xPortPendSVHandler			PendSV_Handler

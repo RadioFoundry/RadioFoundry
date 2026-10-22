@@ -10,3 +10,4 @@
 !/stubs/
 !/*.sh
 !/md380_stub/
+!/watchdog_stub/

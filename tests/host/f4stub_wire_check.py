@@ -76,23 +76,27 @@ def main():
     flash[0xC000:0xC004] = (0x2001FFFC).to_bytes(4, "little")
     app = bytearray((i * 3 + (i >> 9)) & 0xFF for i in range(250000))
     app[:4] = (0x2001FFFC).to_bytes(4, "little")
-    ro = bytes((i * 11) & 0xFF for i in range(40000))
+    codec = bytes((i * 11) & 0xFF for i in range(0x40000))
 
-    out, res, log = run(sim, bytes(flash),
-                        lambda r, d: r.write_image("dm1701", [(0x0800C000, bytes(app)), (0x080A0000, ro)], backup_dir=d))
+    out, res, log = run(sim, bytes(flash), lambda r, d: r.write_image("dm1701", [(0x0800C000, bytes(app))], backup_dir=d))
     erases = [int(x.split()[1]) for x in log.splitlines() if x.startswith("erase")]
-    check(res == (5, 0), "dm1701 install through the real engine %s" % (res,))
-    check(erases[0] == 3 and sorted(erases) == [3, 4, 5, 6, 9], "dm1701 erases %s" % erases)
+    check(res == (7, 0), "dm1701 install through the real engine %s" % (res,))
+    check(erases[0] == 3 and sorted(erases) == [3, 4, 5, 6, 7, 8, 9], "dm1701 erases %s" % erases)
     check(out[:0xC000] == boot, "dm1701 bootloader untouched")
-    check(out[0x60000:0xA0000] == bytes(flash[0x60000:0xA0000]) and out[0xC0000:] == bytes(flash[0xC0000:]),
-          "dm1701 codec sectors untouched")
-    check(out[0xC000:0xC000 + len(app)] == bytes(app) and out[0xA0000:0xA0000 + len(ro)] == ro, "dm1701 image in place")
+    check(out[0xC0000:] == bytes(flash[0xC0000:]), "dm1701 codec sectors untouched")
+    check(out[0xC000:0xC000 + len(app)] == bytes(app) and out[0xC000 + len(app):0xC0000].count(0xFF) == 0xC0000 - 0xC000 - len(app),
+          "dm1701 image in place, the rest of sectors 3-9 erased")
+    # a build merged with the codec: sectors 10 and 11 written too
+    out, res, log = run(sim, bytes(flash), lambda r, d: r.write_image("dm1701", [(0x0800C000, bytes(app)),
+                                                                                 (0x080C0000, codec)], backup_dir=d))
+    erases = [int(x.split()[1]) for x in log.splitlines() if x.startswith("erase")]
+    check(sorted(erases) == [3, 4, 5, 6, 7, 8, 9, 10, 11] and out[0xC0000:] == codec, "dm1701 merged image %s" % erases)
 
-    md_app = bytearray((i * 13 + 1) & 0xFF for i in range(0x08050C44 - 0x0800C000 - 4))
+    md_app = bytearray((i * 13 + 1) & 0xFF for i in range(0x08080000 - 0x0800C000 - 4))
     md_app[:4] = (0x2001FFFC).to_bytes(4, "little")
     out, res, log = run(sim, bytes(flash), lambda r, d: r.write_image("md380", [(0x0800C000, bytes(md_app))], backup_dir=d))
-    check(res[0] == 4, "md380 install %s" % (res,))
-    check(out[0x50C44:] == bytes(flash[0x50C44:]), "md380 codec bytes kept in sector 6 and after")
+    check(res[0] == 5, "md380 install: sectors 3-7 %s" % (res,))
+    check(out[0x80000:] == bytes(flash[0x80000:]), "md380 codec sectors 8-11 untouched")
     check(out[0xC000:0xC000 + len(md_app)] == bytes(md_app), "md380 image in place")
 
     def reads(r, d):

@@ -29,6 +29,9 @@ adapter (`pid_network`), with the descriptors of `hardware-dm1701.md` 16. Switch
   apply (there is no DTR); the 20 s idle timeout does.
 - Windows 10 binds NCM through Microsoft OS 1.0 descriptors (string 0xEE "MSFT100", vendor code 0x47, extended compat
   ID "WINNCM" for interface 0); Windows 11, Linux and macOS bind it by class.
+- The link is up while the host has the adapter configured and the bus isn't suspended (`hal_netif_t.up`, view key
+  `usb.net_up`). The STM32 radios run without VBUS sensing, so a pulled cable reads only as the bus going idle
+  (suspend): the link goes down at once, and comes back with the configuration after the cable is plugged in again.
 - macOS sometimes never activates the link after a cold boot in network mode: with the device configured and no frame
   from the host within 5 s, the radio re-enumerates once.
 - A host that never configures the network personality at all (seen on macOS 26, Apple Silicon, 2026-10-10: the
@@ -115,7 +118,7 @@ not built yet.
   on 4a9c002. One protocol at a time: the radio answers the sender of the last frame, so a tool closes its socket
   before another protocol's tool opens one. `tests/hil/test_dmr_ip.py` (on air, the bench modem decoding; its last
   test sends from the host over the USB network). The radio's own services: `tests/hil/test_tcp_services.py`,
-  `tests/hil/test_net_services.py` (`mdns.md` 5, `tftp.md` 5).
+  `tests/hil/test_net_services.py` (`mdns.md` 5, `tftp.md` 6).
 
 ## 5. Control station mode
 

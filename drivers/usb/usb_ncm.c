@@ -65,9 +65,11 @@ void usbNcmMacs(uint8_t host[6], uint8_t radio[6])
 	make_macs(host, radio);
 }
 
+// A suspended bus is a link that is down: with VBUS sensing off, a pulled cable reads only as the bus going idle, and
+// tud_mounted() stays true until the next bus reset (the status strip kept showing the link up, frames kept queuing)
 bool usbNcmIsUp(void)
 {
-	return (usb_device_mode() == USB_MODE_NETWORK) && usb_device_configured();
+	return (usb_device_mode() == USB_MODE_NETWORK) && usb_device_configured() && !tud_suspended();
 }
 
 // ---- TinyUSB's callbacks (USB task) ----
@@ -182,6 +184,7 @@ void usbNcmTick(uint32_t now_ms)
 	}
 	if (!usbNcmIsUp()) {
 		mounted_ms = 0;
+		tx_since = 0;	// a stall timer left from before an unplug would fire the moment the cable is back
 		return;
 	}
 	if (!tx_pending) {

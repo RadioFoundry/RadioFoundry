@@ -130,11 +130,12 @@ codeplug's callsign.
 | APRS-IS client | `aprsis_ip` (the server's IPv4 address, 0 = off; appended for tcp), `aprsis_port` (0 = 14580; in the old `reserved5`), `aprsis_range_km` (the filter `m/<km>`, 0 = none; in the old `reserved3`) (`tcp-services.md` 7) |
 | control station | `net_link_ip` (the radio's fixed link address, 0 = 192.168.10.1; in force with `net_flags` bit 2), 0 = off, the link by DMR ID (appended for dispatch after `aprsis_ip`, `usb-network.md` 5.4) |
 | SNMP agent | `snmp_read_hash snmp_write_hash` (FNV-1a hashes of the communities, 0 = "public" / none; appended for snmp after `net_link_ip`), `snmp_rf_manager[3]` (the RF manager's DMR ID, little endian, 0 = none; in the old `reserved2[3]`), `snmp_flags` (in the old `reserved4`), `snmp_rf_gap_s` (0 = 60; in the APRS block's old `reserved7`); all zero = the defaults (`snmp.md` 6) |
+| crash report | packed into spare bits, so an older record reads as off with no target: the mode (0 off, 1 ask, 2 send at once) in `accent` bits 4-5; the target's codeplug contact number (0 none, else 1..1024, 11 bits) bits 0-5 in `theme` bits 2-7 and bits 6-10 in `updown_home` bits 2-6. `theme` and `updown_home` keep their value in bits 0-1; read and write them through `settings_theme` / `settings_updown_home` and `settings_crash_*` (`settings.h`). Firmware from before reads a `theme` or `updown_home` with these bits as out of range: the dark theme and Up/Down = channel ([crash-log.md](crash-log.md) 5.2) |
 
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. The
 payload is 236 bytes now, the most a slot holds: the later fields went into reserved bytes where 0 already meant
 "as before" (`net_flags`, `snmp_rf_manager[3]`, `aprsis_range_km`, `snmp_flags`, `aprsis_port`, `snmp_rf_gap_s`, `aprs_power`, `aprs_cp_path`, `volume`, `vfo_talk_lo`), or the new defaults (`accent`: the filled status strip, a new look on purpose). No reserved byte is left. One-byte
-fields that hold small numbers (`hotspot_allowed`, `usb_mode`, `theme`, `updown_home`) still have free upper bits; `vfo_power` does not
+fields that hold small numbers (`hotspot_allowed`, `usb_mode`) still have free upper bits (`theme` and `updown_home` hold the crash report's target; `updown_home` bit 7 and `accent` bits 6-7 are free); `vfo_power` does not
 (its "not set" is 0xFF). The next setting either packs into spare bits like that or needs a new layout (rule 1: a bigger record no longer fits a slot, so layout 2 would
 have to drop or pack fields).
 
@@ -266,7 +267,15 @@ defaults past it (no settings layout is 0) and the first real save gets sequence
 always exists, because saves never erase the sector with the newest record, so a power cut inside a journal
 rewrite (J0 erased, J1 full) can't make the region look foreign at the next boot.
 
-**Claim.** Only through the debug link, behind the chip UID token like REBOOT (`debuglink.md` 3.13):
+**Claim.** Only through the debug link, behind the chip UID token like REBOOT (`debuglink.md` 3.13). Two clients
+send it:
+
+- The web radio programming utility, right after a full backup (the backup holds the whole SPI flash, the region
+  included), when `STORAGE INFO` reports the region foreign. The Codeplug Editor checks before every write and, on a
+  foreign region, explains and claims only when the user confirms. Both poll INFO until the region is ours (20 s
+  limit).
+- `odr_debug.py storage claim`:
+
 
 1. `odr_debug.py storage claim` reads the settings ring, the journal and the calibration copy through the debug
    link's read-only SPI flash window (twice, compared) into `the external reference folder` (refused inside any git

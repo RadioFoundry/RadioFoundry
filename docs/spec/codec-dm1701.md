@@ -2,7 +2,8 @@
 # DM-1701: hosting the stock AMBE+2 codec
 
 Status: research, 2026-10-09. Static analysis only: decryption, Thumb disassembly with arm-none-eabi-objdump,
-function matching against the codec the old builds used, and literal cross references. Nothing has run on a radio.
+function matching against the codec the old builds used, and literal cross references. The codec has since run on a
+radio at the address the merge places it (2026-10-19, "Open items").
 
 Rule: the radio runs the codec that its own Baofeng stock firmware shipped. The user's machine extracts it from
 a stock file the user supplies. No codec bytes go in this repository or in released binaries. The old builds took
@@ -57,6 +58,9 @@ file offset = A - 0x0800C000 + 0x5D500, and the cipher index = (file offset - 0x
 
 ## Codec in the stock image (V02.06 CSV)
 
+All addresses in this section are where the stock file holds the codec. The merge moves the code
+([codec-placement.md](codec-placement.md), "STM32 radios"; "Hosting" below).
+
 | item | value |
 |---|---|
 | code window | flash 0x08074714..0x08084930, file offset 0xC5C14, length 0x1021C, cipher phase 0x314 |
@@ -66,7 +70,8 @@ file offset = A - 0x0800C000 + 0x5D500, and the cipher index = (file offset - 0x
 | encode ECC | 0x08074BFC (+0x4E8) |
 | decode | 0x08074CEC (+0x5D8) |
 | tables referenced | 0x080D19F0..0x080E3A6B (46 distinct literal targets) |
-| table window (estimate) | flash 0x080D19F0..0x080E4240, file offset 0x122EF0, length 0x12850, cipher phase 0x1F0, sha256 `b99f14e72bf72555946c1f04e8a1636652e6f62843baaf7a135787879e028894` |
+| table window (as carved) | flash 0x080D19F0..0x080E4240, file offset 0x122EF0, length 0x12850, cipher phase 0x1F0, sha256 `b99f14e72bf72555946c1f04e8a1636652e6f62843baaf7a135787879e028894` |
+| table window (codec data only) | flash 0x080D19F0..0x080E3A72, length 0x12082: the codec map's minimal window, from the first data object to the end of the last |
 
 The V02.01, V02.02 and V02.03 CSV values are the same, minus 0x40. Their code window is 0x080746D4
 (file 0xC5BD4, sha256 `2ff7b7a8...a86a4cc9`) and their table window is 0x080D19B0 (file 0x122EB0, sha256
@@ -110,36 +115,42 @@ sequence, the state sizes and the call arguments are in "Codec state init and ca
 2. Decrypt file[0xC5C14 .. +0x1021C] with cipher index (offset - 0x100) % 1024. Expect the first word to be
    0x4FF0E92D and the sha256 to be `1d8d0460...`.
 3. Decrypt the table window file[0x122EF0 .. +0x12850] the same way. Expect sha256 `b99f14e7...`.
-4. Write both, unmodified, to flash 0x08074714 and 0x080D19F0 in the image (no relocation). The merge happens on
-   the user's machine (loader or `make codec`), never in a release.
+4. Place them as [codec-placement.md](codec-placement.md) "STM32 radios" says: the tables, cut to 0x12082 bytes,
+   stay at 0x080D19F0; the code moves to 0x080E3A74. Rewrite the one literal in the code that points into the code
+   and the 12 calls (BL) from the islands in the table window back into the code (the codec map
+   `tools/odrflash/odrflash/codec_maps/dm1701/dm1701-v0206-csv.json`, `self_refs` and `branches`).
+5. Write the descriptor at 0x080FFF80 (`platform/stm32f4/codec_desc.h`): code and table window with their CRC-32s.
+   The merge happens on the user's machine (odrflash, `tools/codec_extract.py`, the web flasher, or `make` with the
+   stock file in `codecs/`), never in a release.
 
-## Recommended hosting
+## Hosting
 
-Run in place from flash at the stock addresses, as stock does. The STM32 executes from internal flash, so there is
-no copy and no patching.
+The code runs in place from internal flash, at the address the merge moves it to. The tables stay at their stock
+address, so the code's 63 table literals stay as they are.
 
-* The linker script for the V02.06 CSV build keeps the application out of every flash sector the windows touch.
+* `boards/dm1701/dm1701.ld` keeps the application out of every flash sector the codec uses:
 
   | region | sectors | range |
   |---|---|---|
-  | code window | 7, 8 | 0x08060000..0x0809FFFF |
-  | table window | 10, 11 | 0x080C0000..0x080FFFFF |
-  | application | 3-6 | 0x0800C000..0x0805FFFF (336 KB) |
-  | ODR read-only data | 9 | 0x080A0000..0x080BFFFF (128 KB) |
+  | application | 3-9 | 0x0800C000..0x080BFFFF (720 KB) |
+  | table window | 10, 11 | 0x080D19F0..0x080E3A72 |
+  | code window | 11 | 0x080E3A74..0x080F3C90 |
+  | descriptor | 11 | 0x080FFF80, 128 bytes |
 
-  A firmware update then erases and writes only sectors 3-6 and leaves the
-  codec in place (hardware-dm1701.md 1.4, docs/dev/release.md "Codec handling"). Reserving only the windows would leave
-  about 426 KB below the code window, but every update would have to erase and rewrite the codec.
-* Call the entries with `BL`/`BLX` to the stock addresses above.
+  A firmware update then erases and writes only sectors 3-9 and leaves the codec in place (hardware-dm1701.md 1.4,
+  docs/dev/release.md "Codec handling").
+* The firmware takes the code's address from the descriptor and calls the entries at their offsets from it.
 * Support one version per build, keyed by sha256. The noCSV variants and older versions sit at other addresses and
-  would need their own windows. Patching the 63 literals is the fallback if a single layout is required.
+  would need their own windows and codec map.
 
 ## Open items
 
-* Exact end of the last table. The window end 0x080E4240 is a conservative estimate. Both windows also include
-  some stock non-codec bytes, which are never executed.
+* ~~Exact end of the last table~~: done. The codec map's minimal window ends at 0x080E3A72, and the merge writes only
+  that much. The code window still includes some stock non-codec bytes, which are never executed.
 * ~~Locating the stock codec init functions and their parameters~~: done, see below.
-* A hardware test: TX/RX audio with the stock V02.06 codec at its stock addresses.
+* ~~A hardware test of TX/RX audio~~: done 2026-10-19 with the code moved to 0x080E3A74. The debug link reported
+  `dm1701-v0206-csv-s11`, on-air speech RX decoded 234 of 234 frames, and the SDR bench modem decoded the radio's
+  voice TX.
 
 ## Codec state init and calls (stock V02.06)
 
@@ -148,7 +159,7 @@ Status: 2026-10-09. Static analysis of the stock V02.06 CSV image (decrypted app
 emulator (Unicorn, Thumb / M-profile). Only the two codec windows, the state blocks, the I/O buffers and a stack
 were mapped, so any other access faults. Our own `boards/dm1701/vocoder_dm1701.c` and `platform/stm32f4/codec_call.c`,
 cross-compiled with the firmware flags, were run the same way against the stock windows and give bit-identical
-results to the reference run. Nothing here has run on a radio yet.
+results to the reference run. It has since run on a radio ("Open items").
 
 ### Stock call sites
 
@@ -160,7 +171,7 @@ encode 10, encode ECC 4. The stock wrapper keeps an encoder block E at RAM 0x200
 
 1. Wrapper fields: E+0x1730 = 0x1840 (first encode flags), E+0x173E = 0x2000, E+0x1744.. = -22, 20, -10, -40, 0x4000,
    3276, 3276, 1310, 10, 20, E+0x1740 = 128, E+0x1742 = -20, D+0x97A = 0, D+0x992 = 128, D+0x994 = -20.
-2. Calls (offsets from the codec start 0x08074714):
+2. Calls (offsets from the codec start, stock address 0x08074714):
 
    | call | stock call | arguments |
    |---|---|---|
@@ -235,7 +246,7 @@ no FPU instructions.
 
   | function | does |
   |---|---|
-  | `present()` | checks the first word 0x4FF0E92D and the CRC-32 of both windows (code 0x42CF501D, tables 0x673D0006, computed once) |
+  | `present()` | checks the descriptor, that the code is at 0x080E3A74 and the tables at 0x080D19F0 with the placed CRC-32s (code 0x485BFC13, tables 0xC1EEFA8B), the first word 0x4FF0E92D and the CRC of both windows (computed once) |
   | `reset()` | runs the init sequence above on zeroed CCM blocks |
   | `encode()` / `decode()` | make the two calls per frame |
 
@@ -246,7 +257,7 @@ no FPU instructions.
   is an ordinary external call, which orders memory around it (gotcha 4.4). It was verified in the emulator with a
   misaligned caller stack.
 * `tools/codec_extract.py` builds the merged image (recipe above) on the user's machine. A run with the real stock
-  file and a key file matching hardware-dm1701.md 15.3 reproduces both window hashes and the CRCs above.
+  file and a key file matching hardware-dm1701.md 15.3 reproduces both stock window hashes and the placed CRCs above.
 
 ### Still open
 

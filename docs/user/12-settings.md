@@ -134,6 +134,7 @@ written to the codeplug. Rows for keys your radio doesn't have are dimmed.
 | Codeplug | Where the channels come from (built-in or from the CPS), the number of zones and channels |
 | Diagnostics | The diagnostics page (also **OK**, **6**, **7**) |
 | Factory reset | Puts every setting back to its default ([below](#factory-reset)) |
+| Crash log | What the last crash left, and sending it to the developers ([below](#crash-log)) |
 
 <img src="../ux/screens/160x120i5/about.png" width="200" alt="Settings > Advanced > About">
 
@@ -148,6 +149,32 @@ undone." The focus starts on "No, keep settings". Focus "Yes, reset" and press *
 
 The reset puts every setting back to its default (brightness, radio settings, the privacy key, the channel
 position), erases ODR's own data area, and restarts the radio. The codeplug and the calibration stay.
+
+## Crash log
+
+When the firmware crashes, the radio keeps a short record of where and why, and restarts. **Settings > Advanced >
+Crash log** shows the record: what happened, how many crashes in a row, how long the radio ran and the firmware
+build. Without a record it says "No crash recorded." Switching the radio off may lose the record: look before you
+turn it off.
+
+<img src="../ux/screens/160x120i5/crash_log.png" width="200" alt="Settings > Advanced > Crash log">
+
+| Item | What it does |
+|---|---|
+| Send report | Sends the record over DMR to the Send to contact, on the current channel. Takes a few seconds on the air; "Crash report sent" or "Crash report not sent" follows |
+| Send to | The contact the report goes to, private or group: pick it from your contacts (type to find) |
+| After a crash | Off: nothing happens at the restart. Ask: the radio asks whether to send the report. Auto: it sends the report without asking. Off is the default |
+| Clear | Forgets the record |
+
+<img src="../ux/screens/160x120i5/crash_send_to.png" width="200" alt="Crash log, Send to">
+
+With **After a crash** at Ask, the radio asks once after the restart:
+
+<img src="../ux/screens/160x120i5/crash_prompt.png" width="200" alt="The question after a crash">
+
+Ask and Auto need a Send to contact and a DMR channel the radio may transmit on. The report is at most about 150 bytes and
+holds no audio, messages or location: only the crash record and the firmware build. Nothing on the air confirms
+that it arrived.
 
 ## Settings without a menu
 

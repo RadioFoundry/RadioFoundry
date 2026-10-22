@@ -192,6 +192,13 @@ every TX state ends on its own when the modem stops. Voice now aborts after `DMR
 burst taken (`dmr-voice.md` 2). Radios: all; seen on the MD-380. Tests: `test_tx_modem_stalled` (dmrCallTest),
 `test_dmr_stalled` (radioCoreTest).
 
+**3.13 A crash or a reset must not leave the PA keyed.** A DB25-D faulted while transmitting; the crash capture
+soft-reset the chip, the radio came back stopped before the display was lit and drew about 15 W with the PA keyed
+until a power cycle (2026-10-21). Neither the fault path nor the reset turned the transmitter off, and the boards'
+pin set-up ran after the clock set-up. Rule: every fault handler, crash hook, software reset and stub jump calls
+`board_rf_safe()` first, and so does `main()` before the clocks ([crash-log.md](crash-log.md) 8). A new board must
+provide it, and a new reset or jump path must call it.
+
 ## 4. AMBE codec calling
 
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the
@@ -590,8 +597,10 @@ Symptom: on the DM-32UV a debug link host polling the radio started DMR transmis
 Cause: the two-pin K-type programming jack carries the host's serial data on the same line as PTT, so every 0 bit
 pulls the PTT pin low, and two low key scans pass the debounce. Rule: on a radio whose PTT shares the host's RX line,
 count the pin low as PTT only after a quiet time with no good UART byte (`drivers/input/sharedptt`, hardware-dm32.md
-6.2). A real press holds the line low, which the UART reads as a break, never a good byte. Radios: DM-32UV confirmed.
-Many handhelds wire the K-type jack this way, so check every new radio (adding-a-radio.md, bring-up order).
+6.2). A real press holds the line low, which the UART reads as a break, never a good byte. Radios: DM-32UV, DM-1801 Pro
+and DB25-D confirmed. On the DB25-D a filter of three low scans in a row still let debug link polling key the radio:
+hundreds of PTT presses, each with a key beep, in one SFR test session (2026-10-19). Many handhelds wire the K-type
+jack this way, so check every new radio (adding-a-radio.md, bring-up order).
 
 ## 17. Scan
 

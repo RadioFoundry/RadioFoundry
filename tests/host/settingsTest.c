@@ -557,6 +557,37 @@ static void put_record(const hal_flash_map_t *m, unsigned sector, unsigned slot,
 	memcpy(&sim_flash_data[m->settings_addr + sector * STORAGE_SECTOR + slot * 256u], r, sizeof(r));
 }
 
+// The crash report's mode and target live in spare bits of accent, theme and updown_home (settings.h): each field
+// keeps its own bits whatever the other one does
+static void test_crash_bits(void)
+{
+	settings_t s;
+	memset(&s, 0, sizeof s);
+	CHECK(settings_crash_mode(&s) == 0 && settings_crash_contact(&s) == 0);	// an older record: off, no target
+	s.accent = 5 | SETTINGS_ACCENT_PLAIN;
+	s.theme = 2;
+	s.updown_home = 1;
+	settings_set_crash_mode(&s, 2);
+	settings_set_crash_contact(&s, 1024);
+	CHECK(settings_crash_mode(&s) == 2 && settings_crash_contact(&s) == 1024);
+	CHECK((s.accent & (SETTINGS_ACCENT_COLOR | SETTINGS_ACCENT_PLAIN)) == (5 | SETTINGS_ACCENT_PLAIN));
+	CHECK(settings_theme(&s) == 2 && settings_updown_home(&s) == 1);
+	for (uint16_t n = 0; n <= 2047; n++) {
+		settings_set_crash_contact(&s, n);
+		if (settings_crash_contact(&s) != n || settings_theme(&s) != 2 || settings_updown_home(&s) != 1) {
+			printf("FAIL crash contact %u: read %u, theme %u, updown %u\n", n, settings_crash_contact(&s),
+			       settings_theme(&s), settings_updown_home(&s));
+			failures++;
+			break;
+		}
+	}
+	settings_set_crash_mode(&s, 1);
+	CHECK(settings_crash_mode(&s) == 1 && (s.accent & 0x0F) == (5 | SETTINGS_ACCENT_PLAIN) && !(s.accent & 0xC0));
+	CHECK(!(s.updown_home & 0x80));		// bit 7 stays free
+	s.theme = 3;				// out of range in bits 0-1: the default
+	CHECK(settings_theme(&s) == 0);
+}
+
 // The payload is settings_t as in RAM, and layout 1 is frozen: fields are only appended (settings-store.md 3). A
 // field that moved would make every stored record load into the wrong fields
 static void test_settings_layout(void)
@@ -910,6 +941,7 @@ int main(void)
 	test_foreign();
 	test_native_and_jobs();
 	test_settings_layout();
+	test_crash_bits();
 	test_settings_bad_records();
 	test_settings_worn_sector();
 	test_write_across_sectors();

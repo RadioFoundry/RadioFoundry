@@ -256,6 +256,7 @@ def boards(feature_names, variant_ids):
 		gal = path("docs", "ux", "screens", r["gallery"])
 		if not os.path.isdir(gal):
 			raise SourceError("%s: gallery %s isn't in docs/ux/screens" % (p, r["gallery"]))
+		r["codeplug"] = codeplug_map(bid)
 		r["unsupported"] = make(bid, "print-unsupported").split()
 		r["required"] = make(bid, "print-required").split()
 		r["config"] = {}
@@ -270,6 +271,33 @@ def boards(feature_names, variant_ids):
 	return out, planned
 
 
+def codeplug_map(bid):
+	"""Where a radio keeps its codeplug, from its flash map (hal_flash_map_t in boards/<id>/*.c): the data flash address
+	of the open-firmware image (the codeplug editor adds it on the wire), the end of the room for it and the DMR ID
+	database, whether the radio takes a codeplug over TFTP (a staging area), and the names the radio reports as
+	"board=" on the debug link (board_t .name, and an option's board_name)."""
+	fields = {}
+	names = []
+	for c in sorted(glob.glob(path("boards", bid, "*.c"))):
+		with open(c, encoding="utf-8") as f:
+			text = f.read()
+		for key in ("openfw_eeprom", "openfw_flash", "openfw_end", "staging_addr"):
+			m = re.search(r"\.%s\s*=\s*(0x[0-9A-Fa-f]+)u?" % key, text)
+			if m:
+				fields[key] = int(m.group(1), 16)
+		names += re.findall(r'^\t\.name\s*=\s*"([^"]+)"', text, re.M)
+	if "openfw_eeprom" not in fields or "openfw_end" not in fields:
+		raise SourceError("boards/%s: no flash map with openfw_eeprom and openfw_end" % bid)
+	if fields.get("openfw_flash", fields["openfw_eeprom"] + 0x20000) != fields["openfw_eeprom"] + 0x20000:
+		raise SourceError("boards/%s: the open-firmware flash image isn't at +0x20000 (the editor assumes it)" % bid)
+	with open(path("boards", bid, "radio.json"), encoding="utf-8") as f:
+		r = json.load(f)
+		for opt in r.get("build_options", []) + r.get("flash", {}).get("build_options", []):
+			names += [v["board_name"] for v in opt.get("values", []) if v.get("board_name")]
+	return {"base": fields["openfw_eeprom"], "end": fields["openfw_end"], "tftp": "staging_addr" in fields,
+		"names": sorted(set(names + [bid]))}
+
+
 def screens(gallery):
 	return sorted(os.path.basename(p)[:-4] for p in glob.glob(path("docs", "ux", "screens", gallery, "*.png")))
 
@@ -281,12 +309,14 @@ def flash_boards():
 	"""odrflash's boards.py and stockfw.py as JSON, so the web flasher and odrflash can't disagree."""
 	sys.path.insert(0, path("tools", "odrflash"))
 	try:
-		from odrflash import boards as ob, stockfw, manifest
+		from odrflash import boards as ob, codecmap, stockfw, manifest
 	finally:
 		sys.path.pop(0)
 	out = {"format": "odr-flash-boards/1", "manifest_format": manifest.FORMAT, "boards": {}, "profiles": {},
 	       "known_files": dict(stockfw.KNOWN_FILES), "magic": stockfw.MAGIC.decode(), "header_len": stockfw.HEADER_LEN,
-	       "key_len": stockfw.KEY_LEN, "codec_sig": stockfw.CODEC_SIG, "single_segment": stockfw.SINGLE_SEGMENT}
+	       "key_len": stockfw.KEY_LEN, "codec_sig": stockfw.CODEC_SIG, "single_segment": stockfw.SINGLE_SEGMENT,
+	       "descriptor": {"addr": stockfw.DESC_ADDR, "len": stockfw.DESC_LEN, "magic": stockfw.DESC_MAGIC,
+			      "version": stockfw.DESC_VERSION, "windows": stockfw.DESC_WINDOWS}}
 	for b in ob.BOARDS.values():
 		out["boards"][b.id] = {
 			"id": b.id, "name": b.name, "family": b.family, "app_base": b.app_base, "flash_end": b.flash_end,
@@ -297,8 +327,7 @@ def flash_boards():
 			"keep_codec_supported": b.keep_codec_supported, "key_sha256": b.key_sha256,
 			"dfu_ids": list(b.dfu_ids) if b.dfu_ids else None, "dfu_string1": b.dfu_string1,
 			"dfu_product": b.dfu_product,
-			"protected": [list(p) for p in b.protected],
-			"data_regions": [list(r) for r in b.data_regions]}
+			"protected": [list(p) for p in b.protected]}
 	for sha, p in stockfw.PROFILES.items():
 		q = dict(p)
 		q["segments"] = [list(s) for s in p["segments"]]
@@ -306,13 +335,15 @@ def flash_boards():
 		for k in ("code", "tables", "extra"):
 			q.pop(k, None)
 		out["profiles"][sha] = q
+	# the codec maps, normalized (every address a number), for codecmap.js
+	out["codec_maps"] = codecmap.load_maps()
 	out["c7000"] = c7000_flash()
 	out["f4stub"] = f4_flash()
 	return out
 
 
 def _tool(*parts):
-	"""Import a repository script (tools/dm32_codec.py, stub/stubtool.py) as a module."""
+	"""Import a repository script (tools/hrc7000_codec.py, stub/stubtool.py) as a module."""
 	import importlib.util
 	spec = importlib.util.spec_from_file_location(parts[-1][:-3], path(*parts))
 	mod = importlib.util.module_from_spec(spec)
@@ -322,9 +353,9 @@ def _tool(*parts):
 
 def c7000_flash():
 	"""What the web flasher needs for the HR_C7000 radios it flashes through the stub (stub/stubtool.py): the program
-	flash layout and LED pins from stubtool, the codec slot and the codec profiles from tools/dm32_codec.py. The stub
+	flash layout and LED pins from stubtool, the codec slot and the codec profiles from tools/hrc7000_codec.py. The stub
 	images themselves go to c7000-stub.json (c7000_stub()), loaded only when a C7000 radio is flashed."""
-	st, dc, fl = _tool("stub", "stubtool.py"), _tool("tools", "dm32_codec.py"), _tool("tools", "dm32_flash.py")
+	st, dc, fl = _tool("stub", "stubtool.py"), _tool("tools", "hrc7000_codec.py"), _tool("tools", "dm32_flash.py")
 	boards = {}
 	for bid, lay in dc.BOARDS.items():
 		# the bootloader's ID string (dm32_flash.MODELS): in the first 48 KB of the program flash, it tells the radios apart
@@ -332,9 +363,12 @@ def c7000_flash():
 			       "run": list(lay["run"]), "tables": list(lay["tables"]),
 			       "bootloader_id": fl.MODELS[bid].tag if bid in fl.MODELS else None,
 			       # the whole program flash (a backup reads it all; writes stay in the application area), whether
-			       # the radio has the SPI data flash the stub reads, and the stub the power-on route loads
+			       # the radio has the SPI data flash the stub reads, whether its stock firmware answers a debug
+			       # console the page reads (the DB25-D), and the board profile the universal stub gets (CONFIG)
 			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
-			       "power_on_stub": lay.get("power_on_stub")}
+			       "stock_console": lay.get("stock_console", False),
+			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand")} if bid in st.C7_BOARDS
+			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")}}
 	profiles = []
 	for p in dc.PROFILES.values():
 		# a stock file known only by its whole-file hash (the DB25-D 2024-05-09 build) has no codec hashes: it can be
@@ -353,33 +387,31 @@ def c7000_flash():
 		"app_start": st.APP_START, "app_end": st.APP_END, "sector": st.SECTOR,
 		"app_base": dc.APP_BASE, "stock_header": dc.STOCK_HEADER, "stock_magic": dc.MAGIC.decode(),
 		"led": {"red": st.LED_RED, "green": st.LED_GREEN},
-		"slot_magic": dc.SLOT_MAGIC, "slot_version": dc.SLOT_VERSION, "slot_header": dc.HEADER_LEN,
-		"codec_sig": list(dc.CODEC_SIG), "boards": boards, "profiles": profiles}
+		"slot_magic": dc.SLOT_MAGIC, "slot_version": dc.SLOT_VERSION,
+		"slot_header": dc.HEADER_LEN, "slot_rel_max": dc.REL_MAX,
+		"codec_sig": list(dc.CODEC_SIG), "boards": boards, "profiles": profiles,
+		# the C-SKY builds' codec maps (docs/spec/codec-placement.md): which words a slot lists
+		"codec_maps": {pid: m for pid, m in dc.codecmap.load_maps().items() if m["isa"] == "csky"}}
 
 
 def c7000_stub():
-	"""The two stub images stubtool embeds (the boot-ROM build and the build ODR jumps to), checked against their
-	SHA-256 by stubtool itself, as base64 for the page."""
+	"""The universal stub stubtool embeds (one image for every HR_C7000 radio and every way in), checked against its
+	SHA-256 by stubtool itself, as base64 for the page, with its power-on load address and the RAM it runs in."""
 	import base64
-	import hashlib
 	st = _tool("stub", "stubtool.py")
-	rom, odr = st.stub_image(), st.stub_odr_image()
-	others = {}
-	for base, (name, image) in st.odr_stubs().items():
-		if base != 0x17000:
-			others[str(base)] = {"name": name, "sha256": hashlib.sha256(image).hexdigest(), "data": base64.b64encode(image).decode()}
-	return {"format": "odr-c7000-stub/1",
-		"rom": {"load": st.LOAD_ADDR, "sha256": st.STUB_SHA256, "data": base64.b64encode(rom).decode()},
-		"odr": {"sha256": st.STUB_ODR_SHA256, "data": base64.b64encode(odr).decode()},
-		# the stubs linked for other RAM spans (the DB25-D's), by the base the running ODR reports in STUB INFO
-		"odr_by_base": others}
+	image = st.stub_univ_image()
+	run, end = st.univ_layout(image)
+	return {"format": "odr-c7000-stub/2",
+		"univ": {"load": st.LOAD_ADDR, "run": run, "end": end, "sha256": st.STUB_UNIV_SHA256,
+			 "data": base64.b64encode(image).decode()}}
 
 
 def f4_flash():
 	"""The flash each STM32F4 radio's firmware owns (stub/f4stub.py BOARDS), for the web flasher's loader route on a
 	radio that already runs ODR. The stub image goes to f4-stub.json (f4_stub()), loaded only when it is used."""
 	f4 = _tool("stub", "f4stub.py")
-	return {"app_base": f4.APP_BASE, "boards": {bid: {"owned": [list(r) for r in b["owned"]], "rodata2": b["rodata2"]}
+	return {"app_base": f4.APP_BASE, "boards": {bid: {"owned": [list(r) for r in b["owned"]],
+							   "codec": list(b["codec"]) if b["codec"] else None}
 						      for bid, b in f4.BOARDS.items()}}
 
 

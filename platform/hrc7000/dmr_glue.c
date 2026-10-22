@@ -366,6 +366,29 @@ bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " L", m.rx_in_tx[0]);
 		put_kv(&o, "/", m.rx_in_tx[1]);
 		break;
+	case 9:		// the last TX start's slot: timing (0 own, 1 aligned, 2 ASAP), TS asked, our chip slot; the reception
+			// it came from: chip slot, TS, slot ticks since (255 none)
+		put_kv(&o, "txb m", m.txb_timing);
+		put_kv(&o, " ts", (uint32_t)(m.txb_ts < 0 ? 0 : m.txb_ts));
+		put_kv(&o, " c", m.txb_chip_slot);
+		put_kv(&o, " r", m.txb_rx_chip_slot);
+		put_kv(&o, "/", (uint32_t)(m.txb_last_ts < 0 ? 0 : m.txb_last_ts));
+		put_kv(&o, " a", m.txb_rx_age);
+		break;
+	case 10:	// its reception's raw RX_TYPE_INFO (b22 CACH TC, b19 chip slot); deframe ms into the slot at arming
+		put(&o, "txb ");
+		put_x(&o, m.txb_rx_type_info, 8);
+		put_kv(&o, " d", m.txb_deframe_ms);
+		break;
+	case 11:	// through a repeater: TC lock count, ticks waited for it; an aligned start's first TX tick: the TC
+			// estimate (repeater) or LAYER2_STATUS b31 (SFR) in b0, the next slot ours in b1, and its 0.1 ms after
+			// the last receive tick (a multiple of 300 is on the received slot grid: 300 through a repeater, 600
+			// for an SFR, whose first TX-vector interrupt skips a slot)
+		put_kv(&o, "txh k", m.txb_tc_agree);
+		put_kv(&o, " w", m.txb_lock_wait);
+		put_kv(&o, " e", m.txa_est);
+		put_kv(&o, " u", m.txa_rx_us);
+		break;
 	default:
 		return false;
 	}

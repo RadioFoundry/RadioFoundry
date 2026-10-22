@@ -146,6 +146,8 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		put_u(&o, (lv >> 1) & 1u);
 		put(&o, "/");
 		put_u(&o, c11);
+		put(&o, " ign ");
+		put_u(&o, db25d_input_ptt_ignored());
 		break;
 	}
 	case 10: {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DM-1701 DMR modem: the HR_C6000 slot engine (drivers/modem/hrc6000/hrc6000_dmr.c) on the board's three modem
+// DM-1701 DMR modem: the HR_C6000 slot engine (drivers/modem/hrc_common/hrc6000_dmr.c) on the board's three modem
 // interrupt lines, with the deferred event task that calls the DMR stack (docs/spec/dmr-modem.md 6,
 // docs/spec/hardware-dm1701.md 3.1, 4, 6).
 //
@@ -26,7 +26,7 @@
 #include "task.h"
 #include "debuglink/dlog.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
-#include "modem/hrc6000/hrc6000_bs.h"
+#include "modem/hrc_common/hrc6000_bs.h"
 #include "dmr/bsOutbound.h"
 #endif
 
@@ -357,7 +357,7 @@ static void dmr_task(void *arg)
 
 // --- radio_dm1701.c interface ---
 
-void dm1701_dmr_board_init(hrc6000_t *modem)
+void dm1701_dmr_board_init(hrc_t *modem)
 {
 	hrc6000_dmr_init(&eng, modem, &ops);
 	exti_setup();

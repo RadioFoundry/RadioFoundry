@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The DB25-D first stage (boot/db25d/boot.c) against a simulated UART1: the stub load stubtool performs, frames that must
-// be dropped, the window running out to the application, a dead UART, and the UART set-up on a cold start.
+// be dropped, the window running out to the application, a dead UART, the UART set-up on a cold start, and the
+// transmitter pins driven off before anything else.
 #include <setjmp.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -16,7 +17,7 @@ static uint8_t rxq[8192];
 static size_t rx_len, rx_pos;
 static uint8_t txq[4096];
 static size_t tx_len;
-static uint32_t lcr, dll, diplex0, gates, gpiob_dr, gpiob_ddr, wdt_en = 1;
+static uint32_t lcr, dll, diplex0, gates, gpioa_dr, gpioa_ddr, gpiob_dr, gpiob_ddr, wdt_en = 1;
 static int uart_dead;
 static jmp_buf done;
 static uint32_t jumped_to;
@@ -37,6 +38,10 @@ static uint32_t rd(uint32_t a)
 		return uart_dead ? 0 : 2u;
 	case 0x11000034u:
 		return diplex0;
+	case 0x14020000u:
+		return gpioa_dr;
+	case 0x14020004u:
+		return gpioa_ddr;
 	case 0x14100000u:
 		return gpiob_dr;
 	case 0x14100004u:
@@ -67,6 +72,12 @@ static void wr(uint32_t a, uint32_t v)
 		break;
 	case 0x11000034u:
 		diplex0 = v;
+		break;
+	case 0x14020000u:
+		gpioa_dr = v;
+		break;
+	case 0x14020004u:
+		gpioa_ddr = v;
 		break;
 	case 0x14100000u:
 		gpiob_dr = v;
@@ -114,7 +125,7 @@ static void reset(uint32_t lcr0)
 	memset(ram, 0, sizeof ram);
 	rx_len = rx_pos = tx_len = 0;
 	lcr = lcr0;
-	dll = diplex0 = gates = gpiob_dr = gpiob_ddr = 0;
+	dll = diplex0 = gates = gpioa_dr = gpioa_ddr = gpiob_dr = gpiob_ddr = 0;
 	diplex0 = 0x600u;
 	wdt_en = 1;
 	uart_dead = 0;
@@ -243,6 +254,29 @@ static void test_cold_setup(void)
 	CHECK(gates == 0xFFFFFFFFu, "clocks not enabled");
 }
 
+// Left keyed by a soft reset mid-transmission (DB25-D, 2026-10-21): the TX supplies and PA selects come out low and
+// driven, the receive supply high, and nothing else in the banks changes. The stage then waits for a host, so this must
+// not depend on the window running out
+static void test_tx_off(void)
+{
+	reset(3);
+	const uint32_t tx_a = (1u << 26) | (1u << 27), rx_a = 1u << 23, tx_b = (1u << 2) | (1u << 3);
+	gpioa_dr = tx_a | 0x5u;		// keyed, receive supply low, two unrelated pins high
+	gpioa_ddr = tx_a | rx_a | 0x5u;
+	gpiob_dr = tx_b | 0x10u;
+	gpiob_ddr = tx_b | 0x10u;
+	push("\x02\x14\x00\x03", 4);
+	push_start(0x10000);
+	run();
+	CHECK(jumped_to == 0x10000, "jumped to 0x%X", (unsigned)jumped_to);
+	CHECK((gpioa_dr & tx_a) == 0 && (gpiob_dr & tx_b) == 0, "transmitter pins left high: A 0x%08X B 0x%08X",
+	      (unsigned)gpioa_dr, (unsigned)gpiob_dr);
+	CHECK((gpioa_ddr & (tx_a | rx_a)) == (tx_a | rx_a) && (gpiob_ddr & tx_b) == tx_b, "transmitter pins not outputs");
+	CHECK(gpioa_dr & rx_a, "receive supply not high");
+	CHECK((gpioa_dr & 0x5u) == 0x5u && (gpiob_dr & 0x10u), "unrelated pins changed");
+	CHECK(gpiob_dr & (1u << 13), "power latch not driven high");
+}
+
 // A false start of the answer, then the real one
 static void test_handshake_resync(void)
 {
@@ -261,6 +295,7 @@ int main(void)
 	test_dead_uart();
 	test_cold_setup();
 	test_handshake_resync();
+	test_tx_off();
 	printf("bootDb25dTest: %s\n", fails ? "FAILED" : "all passed");
 	return fails != 0;
 }

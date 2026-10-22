@@ -6,6 +6,7 @@
 // codeplug writes restore uses (X 1-3), which the radio limits to the codeplug areas.
 
 import { be32, concat, le32, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
+import { wire, note } from "../diag.js";
 
 export const ODR_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
@@ -97,6 +98,7 @@ export class SerialStream {
 					this.buf = concat(this.buf, value);
 				}
 			} catch (e) {
+				if (!this.closed) note("serial read stopped", String(e?.message || e));
 				break;
 			} finally {
 				this.reader.releaseLock();
@@ -149,8 +151,12 @@ export class Link {
 		this.s.clear();
 		await this.s.write(frame(cmd, seq, payload));
 		const reply = await this.waitFor((buf) => parseFrames(buf).find((f) => f.seq === seq && (f.cmd === (cmd | 0x80) || f.cmd === 0xFF)));
-		if (!reply) throw new LinkError(`no answer to command 0x${cmd.toString(16)}`);
+		if (!reply) {
+			wire(`cmd 0x${cmd.toString(16)} seq ${seq} len ${payload.length}: no answer`);
+			throw new LinkError(`no answer to command 0x${cmd.toString(16)}`);
+		}
 		this.s.take(reply.end);
+		wire(`cmd 0x${cmd.toString(16)} seq ${seq} len ${payload.length}: status ${reply.payload[0]} len ${reply.payload.length}`);
 		if (!reply.payload.length || reply.payload[0] !== 0) throw new LinkError(`command 0x${cmd.toString(16)}: status ${reply.payload[0]}`);
 		return reply.payload.subarray(1);
 	}
@@ -163,8 +169,41 @@ export class Link {
 	async chip() {
 		const r = await this.request(CMD.INFO_CHIP);
 		if (r.length < 28) return null;
-		return { idcode: u32le(r, 0), flashKb: u16le(r, 4), uid: toHex(r.subarray(6, 18)), optcr: u32le(r, 18),
+		return { idcode: u32le(r, 0), flashKb: u16le(r, 4), uid: toHex(r.subarray(6, 18)), token: u32le(r, 6), optcr: u32le(r, 18),
 			rdp: r[22], wrp: u16le(r, 24), bor: r[26], user: r[27] };
+	}
+
+	// STORAGE INFO (debuglink.md 3.13): whether the settings and journal region is ours, or still holds another
+	// firmware's data ("foreign": the radio then refuses every settings save and codeplug write). null from a build
+	// without the command
+	async storageInfo() {
+		let r;
+		try {
+			r = await this.request(CMD.STORAGE, new Uint8Array([0]));
+		} catch (e) {
+			if (e instanceof LinkError && !/no answer/.test(e.message)) return null;
+			throw e;
+		}
+		if (r.length < 2) return null;
+		const region = ["none", "ours", "foreign"][r[0]] || String(r[0]);
+		const range = (o) => (r.length >= o + 8 ? { addr: u32le(r, o), size: u32le(r, o + 4) } : null);
+		return { region, pending: !!r[1], settings: range(2), journal: range(10), calibration: range(18) };
+	}
+
+	// STORAGE CLAIM: the radio erases a foreign region and takes it (some 10 sector erases), then the poll sees it
+	// ours. The token is the chip UID's low word, so only a client that read INFO_CHIP can ask. True once it is ours
+	async storageClaim({ timeout = 20000 } = {}) {
+		const chip = await this.chip();
+		if (!chip) throw new LinkError("no chip info");
+		await this.request(CMD.STORAGE, concat(new Uint8Array([2]), le32(chip.token)));
+		note("storage claim sent");
+		const until = Date.now() + timeout;
+		while (Date.now() < until) {
+			await sleep(500);
+			const i = await this.storageInfo().catch(() => null);
+			if (i?.region === "ours") return true;
+		}
+		return false;
 	}
 
 	// READ_MEM (debuglink.md 3.10) in 1000-byte pieces: internal flash, the stock bootloader included
@@ -195,6 +234,7 @@ export class Link {
 				return undefined;
 			});
 			this.s.clear();
+			wire(`R ${area} 0x${addr.toString(16)} ${len}: ${got === undefined ? "no answer" : got === null ? "refused" : `${got.length} bytes`}`);
 			if (got !== undefined) return got;	// null: refused (out of range, not offered)
 		}
 		throw new LinkError(`no answer to a codeplug read at 0x${addr.toString(16)}`);
@@ -219,20 +259,33 @@ export class Link {
 
 	// X 1 (prepare sector), X 2 (merge data), X 3 (commit): one 4 KB sector of the SPI flash
 	async cpsWriteSector(addr, data) {
+		return this.cpsWriteParts(addr, [[addr, data]]);
+	}
+
+	// One sector, changing only the given [addr, bytes] parts (each inside the sector at addr): the radio keeps the
+	// sector's other bytes, so a part of a sector the codeplug shares with other data can be written safely. False
+	// when a step fails; writeFailure then says which and how ("refused": '-', "no answer")
+	async cpsWriteParts(addr, parts) {
 		const sector = addr >>> 12;
-		const ok = async (req) => {
+		const ok = async (req, what) => {
 			this.s.clear();
 			await this.s.write(req);
-			const r = await this.waitFor((buf) => (buf.length >= 1 && buf[0] === 0x2D ? false : buf.length >= 2 ? true : undefined), 3000);
+			const r = await this.waitFor((buf) => (buf.length >= 1 && buf[0] === 0x2D ? false : buf.length >= 2 ? true : undefined), Math.max(3000, this.timeout));
 			this.s.clear();
+			const result = r === true ? "ok" : r === false ? "refused" : "no answer";
+			wire(`${what}: ${result}`);
+			if (r !== true) this.writeFailure = { what, result };
 			return r === true;
 		};
-		if (!await ok(new Uint8Array([0x58, 1, sector >> 16, (sector >> 8) & 0xFF, sector & 0xFF]))) return false;
-		for (let o = 0; o < data.length; o += 1024) {
-			const part = data.subarray(o, o + 1024);
-			if (!await ok(concat(new Uint8Array([0x58, 2]), be32(addr + o), new Uint8Array([part.length >> 8, part.length & 0xFF]), part))) return false;
+		this.writeFailure = null;
+		if (!await ok(new Uint8Array([0x58, 1, sector >> 16, (sector >> 8) & 0xFF, sector & 0xFF]), `X 1 sector 0x${addr.toString(16)}`)) return false;
+		for (const [a, data] of parts) {
+			for (let o = 0; o < data.length; o += 1024) {
+				const part = data.subarray(o, o + 1024);
+				if (!await ok(concat(new Uint8Array([0x58, 2]), be32(a + o), new Uint8Array([part.length >> 8, part.length & 0xFF]), part), `X 2 0x${(a + o).toString(16)} ${part.length}`)) return false;
+			}
 		}
-		return ok(new Uint8Array([0x58, 3]));
+		return ok(new Uint8Array([0x58, 3]), "X 3 commit");
 	}
 
 	async cpsClose() {

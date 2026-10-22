@@ -14,6 +14,7 @@
 import { RESTORE, makePlan } from "./plan.js";
 import { stockApplication } from "./stockfw.js";
 import { CODEPLUG_SPAN } from "./backup.js";
+import { classify } from "../codeplug/detect.js";
 
 export class RestoreError extends Error {}
 
@@ -22,9 +23,17 @@ export function targets(bundle) {
 	const internal = bundle.parts.get("internal-flash");
 	const spi = bundle.parts.get("spi-flash");
 	if (bundle.meta.firmware_now?.kind === "odr" && internal?.complete) out.push("odr");
-	if (bundle.meta.firmware_now?.kind === "odr" && spi && spi.data.length >= CODEPLUG_SPAN) out.push("codeplug");
+	if (bundle.meta.firmware_now?.kind === "odr" && spi && spi.data.length >= CODEPLUG_SPAN && codeplugLayout(bundle) === "openfw") out.push("codeplug");
 	if (bundle.parts.has("stock-firmware") || bundle.meta.firmware_before?.kind === "stock") out.push("stock");
 	return out;
+}
+
+// What the backup's codeplug areas hold (codeplug/detect.js): "openfw" for an ODR codeplug. A backup taken right after
+// a first install still holds the original firmware's codeplug: written back as it is, it would be garbage to ODR, so
+// only the Codeplug Editor (which converts it) takes it
+export function codeplugLayout(bundle) {
+	const spi = bundle.parts.get("spi-flash");
+	return spi ? classify(spi.data).layout : null;
 }
 
 export function planInternal(bundle, board) {

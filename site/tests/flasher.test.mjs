@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { fromHex, toHex, sha256, crc32 } from "../static/js/flasher/bytes.js";
+import { fromHex, toHex, sha256, crc32, u32le } from "../static/js/flasher/bytes.js";
 import * as stockfw from "../static/js/flasher/stockfw.js";
 import { makePlan, KEEP, MERGE, RESTORE, PlanError } from "../static/js/flasher/plan.js";
 import { verify, segments, ManifestError } from "../static/js/flasher/manifest.js";
@@ -21,7 +21,7 @@ import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from
 import { Selection } from "../static/js/flasher/select.js";
 import { decideCodec, DecisionError } from "../static/js/flasher/decide.js";
 import { findKey, readBootKey } from "../static/js/flasher/bootkey.js";
-import { readCodec } from "../static/js/flasher/codecsave.js";
+import { codecSegments, readCodec } from "../static/js/flasher/codecsave.js";
 import { detect, convertersFor } from "../static/js/flasher/codeplug.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
@@ -53,9 +53,43 @@ test("key derivation matches odrflash", async () => {
 	assert.equal(toHex(key), fx.derived_key);
 });
 
+// The MD-380 image is far less zero-dominated: the column vote misses hundreds of columns and only the byte-pair
+// refinement finds the key (issue 119). Synthetic file from fixtures.py, the same key as odrflash gives
+test("key derivation refines a bad vote (MD-380-like file)", async () => {
+	const m = fx.md380like;
+	assert.ok(m.vote_wrong > 200, `the vote alone should be far off (${m.vote_wrong} columns)`);
+	const key = await stockfw.deriveKey(bin("stock-md380like.bin"), await sha256(fromHex(m.key)), fb);
+	assert.equal(toHex(key), m.key);
+	assert.equal(toHex(key), m.derived_key);
+});
+
+// Opt-in: a real TYT updater file (never in the repository), e.g. ODR_MD380_STOCK="MD-380-D2.32(AD).bin" site/tests/run.sh
+test("key derivation from a real MD-380 updater file", { skip: !process.env.ODR_MD380_STOCK && "set ODR_MD380_STOCK" }, async () => {
+	const st = await stockfw.stockFile("stock", new Uint8Array(readFileSync(process.env.ODR_MD380_STOCK)), fb);
+	const key = await stockfw.deriveKey(st.data, fb.boards.md380.key_sha256, fb);
+	assert.equal(await sha256(key), fb.boards.md380.key_sha256);
+});
+
+test("stock file from a vendor zip: the one .bin with the container header", async () => {
+	const plain = await stockfw.stockFile("x.bin", stock, fb);
+	assert.equal(plain.data, stock);	// a .bin passes through
+	const z = await zip([
+		{ name: "Firmware 2.32/Upgrade.exe", data: "MZ" },
+		{ name: "Firmware 2.32/MD-380-D2.32(AD).bin", data: stock },
+		{ name: "__MACOSX/Firmware 2.32/._MD-380-D2.32(AD).bin", data: new Uint8Array(212) },
+	]);
+	const got = await stockfw.stockFile("TYT-Tytera-MD-380-FW-v232.zip", z, fb);
+	assert.equal(got.name, "MD-380-D2.32(AD).bin");
+	assert.deepEqual([...got.data.subarray(0, 64)], [...stock.subarray(0, 64)]);
+	assert.equal(got.data.length, stock.length);
+	await assert.rejects(stockfw.stockFile("none.zip", await zip([{ name: "readme.txt", data: "hi" }]), fb), stockfw.StockError);
+	await assert.rejects(stockfw.stockFile("two.zip", await zip([{ name: "a.bin", data: stock }, { name: "b.bin", data: stock }]), fb),
+		stockfw.StockError);
+});
+
 test("codec extraction checks every window", async () => {
 	const { segments: segs } = await stockfw.extract(stock, fromHex(fx.key), fb, profiles);
-	assert.equal(segs.length, 2);
+	assert.equal(segs.length, 3);	// code (moved), tables, descriptor
 	const bad = fromHex(fx.key);
 	bad[5] ^= 1;
 	await assert.rejects(stockfw.extract(stock, bad, fb, profiles), stockfw.StockError);
@@ -69,20 +103,23 @@ test("keep and merge plans match plan.py", async () => {
 	assert.throws(() => makePlan(board, [[0x08074000, image]], KEEP), PlanError);
 });
 
-test("sector 9 data: the two-range manifest verifies and the keep plan matches plan.py", async () => {
-	const whole = new Uint8Array(readFileSync(join(DIR, "image9.bin")));
-	assert.deepEqual(fx.manifest9.sectors, [3, 4, 5, 9]);
-	assert.equal((await verify(fx.manifest9, whole, fb)).id, "dm1701");
-	const segs = segments(fx.manifest9, whole);
-	assert.deepEqual(makePlan(board, segs, KEEP).describe(), fx.keep9);
-	for (const addr of ["0x08060000", "0x08090000", "0x080C0000", "0x0800F000"]) {
-		const bad = JSON.parse(JSON.stringify(fx.manifest9));
-		bad.ranges[1].addr = addr;
-		await assert.rejects(verify(bad, whole, fb), ManifestError, addr);
-	}
-	for (const addr of [0x08060000, 0x08090000, 0x080C0000, 0x0800F000]) {
-		assert.throws(() => makePlan(board, [segs[0], [addr, segs[1][1]]], KEEP), PlanError, String(addr));
-	}
+test("the codec is placed as stockfw.py places it: code moved, tables cut, descriptor", async () => {
+	const { segments: codec } = await stockfw.extract(stock, fromHex(fx.key), fb, profiles);
+	assert.deepEqual(await Promise.all(codec.map(async ([a, d]) => [a, await sha256(d), d.length])), fx.placed);
+	const [, , [da, desc]] = codec;
+	assert.equal(da, 0x080FFF80);
+	assert.equal(u32le(desc, 0), 0x43534544);
+	assert.equal(u32le(desc, 124), crc32(desc.subarray(0, 124)));
+	const prof = Object.values(profiles)[0];
+	const noMap = { ...prof, map: null, windows: [[prof.windows[0][0], prof.windows[0][1], "0".repeat(64)], ...prof.windows.slice(1)] };
+	await assert.rejects(stockfw.place(noMap, [[0, new Uint8Array(4)], [0, new Uint8Array(4)]], fb), stockfw.StockError);
+});
+
+test("a manifest with a second range (an image from before the codec moved) is refused", async () => {
+	const two = JSON.parse(JSON.stringify(fx.manifest));
+	two.ranges.push({ addr: "0x080A0000", size: 16 });
+	await assert.rejects(verify(two, image, fb), ManifestError);
+	assert.throws(() => makePlan(board, [[board.app_base, image], [0x080A0000, new Uint8Array(16)]], KEEP), PlanError);
 });
 
 test("manifest from odrflash verifies; tampering is refused", async () => {
@@ -107,8 +144,13 @@ test("codec decision follows odrflash's rules", () => {
 	assert.equal(decideCodec(board, m, { probe: { board: "DM-1701", codec: board.codec.id } }).mode, KEEP);
 	assert.equal(decideCodec(board, m, { probe: { board: "DM-1701", codec: "absent" }, haveStock: true }).mode, MERGE);
 	assert.throws(() => decideCodec(board, m, { probe: { board: "DM-1701", codec: "absent" } }), DecisionError);
-	assert.equal(decideCodec(board, m, { stockInstalled: "V02.06 CSV" }).mode, KEEP);
+	// no stock firmware keeps the codec where ODR does: the stock file is needed
+	assert.throws(() => decideCodec(board, m, { stockInstalled: "V02.06 CSV" }), DecisionError);
+	assert.equal(decideCodec(board, m, { stockInstalled: "V02.06 CSV", haveStock: true }).mode, MERGE);
 	assert.equal(decideCodec(board, m, { stockInstalled: "V02.03 CSV", haveStock: true }).mode, MERGE);
+	// ODR from before the codec moved reports the old id: its codec is in flash this firmware overwrites
+	assert.throws(() => decideCodec(board, m, { probe: { board: "DM-1701", codec: "dm1701-v0206-csv" } }), DecisionError);
+	assert.equal(decideCodec(board, m, { probe: { board: "DM-1701", codec: "dm1701-v0206-csv" }, haveStock: true }).mode, MERGE);
 	assert.throws(() => decideCodec(board, m, {}), DecisionError);
 	assert.throws(() => decideCodec(fb.boards.md380, m, {}), DecisionError);
 });
@@ -134,7 +176,8 @@ test("a la carte selection keeps dependencies and finds prebuilt variants", () =
 test("codeplug formats", () => {
 	assert.equal(detect(stock).id, "stock-firmware");
 	assert.equal(detect(new Uint8Array(262709)).id, "tyt-rdt");
-	assert.equal(convertersFor("tyt-rdt")[0].status, "planned");
+	assert.equal(convertersFor("tyt-rdt")[0].status, "ready");
+	assert.equal(convertersFor("dfuse")[0].status, "planned");
 });
 
 // ---- end to end against the simulated radio
@@ -144,17 +187,18 @@ async function simulated(state) {
 	return { sim, radio: new FakeRadio(sim, { state, spiSize: 0x200000 }) };
 }
 
-test("first install on stock: keep the codec, then back up through ODR", async () => {
+test("first install on stock: the codec merged from the stock file, then back up through ODR", async () => {
 	const { sim, radio } = await simulated("stock");
 	const m = { ...fx.manifest };
-	const d = decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV" });
-	const plan = makePlan(sim.board, segments(m, image), d.mode);
-	const codecBefore = radio.flash.slice(0x74714, 0x74714 + 64);
+	assert.throws(() => decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV" }), DecisionError);
+	const d = decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV", haveStock: true });
+	const { segments: codec } = await stockfw.extract(sim.stock, sim.key, sim.fb);
+	const plan = makePlan(sim.board, segments(m, image), d.mode, codec);
 	radio.enterBootloader();
 	await new Dfu(radio.dfuTransport(), noWait).run(plan, sim.key);
 	assert.deepEqual(radio.violations, []);
 	assert.deepEqual(radio.flash.subarray(0xC000, 0xC000 + image.length), image);
-	assert.deepEqual(radio.flash.subarray(0x74714, 0x74714 + 64), codecBefore, "codec sectors untouched");
+	for (const [a, data] of sim.codecSegments) assert.deepEqual(radio.flash.subarray(a - 0x08000000, a - 0x08000000 + data.length), data);
 	const link = new Link(radio.serialStream());
 	const p = await probe(link);
 	assert.equal(p.codec, sim.board.codec.id);
@@ -167,8 +211,25 @@ test("first install on stock: keep the codec, then back up through ODR", async (
 	const meta = { radio: { board: "dm1701", name: sim.board.name, chip: p.chip }, firmware_now: { kind: "odr", git: p.git, codec: p.codec },
 		firmware_before: { kind: "stock", version: "V02.06 CSV" } };
 	const bundle = await openBundle(await makeBundle(meta, parts));
-	assert.deepEqual(targets(bundle), ["odr", "codeplug", "stock"]);
+	// the memory chip still holds the stock codeplug: written back to ODR it would be garbage, so it isn't offered
+	assert.deepEqual(targets(bundle), ["odr", "stock"]);
 	assert.deepEqual(bundle.parts.get("internal-flash").data, radio.flash.subarray(0xC000));
+});
+
+test("after the backup, the stock data in ODR's settings area is claimed; a wrong token changes nothing", async () => {
+	const { radio } = await simulated("odr");
+	const link = new Link(radio.serialStream());
+	const before = await link.storageInfo();
+	assert.equal(before.region, "foreign");
+	assert.deepEqual(before.journal, { addr: 0x19000, size: 0x2000 });
+	const good = link.chip.bind(link);
+	link.chip = async () => ({ ...(await good()), token: 0x12345678 });
+	await assert.rejects(link.storageClaim({ timeout: 600 }), /status 7/);
+	assert.equal((await link.storageInfo()).region, "foreign");
+	link.chip = good;
+	assert.equal(await link.storageClaim(), true);
+	assert.ok(radio.spi.subarray(0x11000, 0x1B000).every((x) => x === 0xFF));
+	assert.ok(radio.events.includes("storage claimed"));
 });
 
 test("a read whose reply lost its tail is asked again", async () => {
@@ -269,7 +330,8 @@ test("restore an ODR backup exactly, codeplug included", async () => {
 });
 
 test("where an update erases the codec, it is read back from the radio and checked window by window", async () => {
-	const board = fb.boards.md380;
+	// No STM32 radio's update erases the codec since it moved; a board that can't keep it, with the MD-380's windows
+	const board = { ...fb.boards.md380, keep_codec_supported: false };
 	const flash = new Uint8Array(0x100000);
 	for (let i = 0; i < flash.length; i++) flash[i] = (i * 131 + 7) & 0xFF;
 	const windows = [];
@@ -291,6 +353,37 @@ test("where an update erases the codec, it is read back from the radio and check
 	assert.equal(decideCodec(board, m, { haveSaved: true }).source, "saved");
 	assert.equal(decideCodec(board, m, { haveStock: true }).source, "stock");
 	assert.throws(() => decideCodec(board, m, {}), DecisionError);
+});
+
+test("a radio that keeps its codec hands over a copy too, from where the merge placed it or where stock keeps it", async () => {
+	const key = fromHex(fx.key);
+	const { segments: placed } = await stockfw.extract(stock, key, fb, profiles);
+	const prof = Object.values(profiles)[0];
+	const fbx = { ...fb, profiles };
+	const link = (mem) => ({ async readMem(addr, n) { return mem.slice(addr - 0x08000000, addr - 0x08000000 + n); } });
+	// a radio on the new layout: the code in sector 11 after the tables
+	const now = new Uint8Array(0x100000).fill(0xFF);
+	for (const [a, d] of placed) now.set(d, a - 0x08000000);
+	const got = await readCodec(link(now), board, fbx);
+	assert.deepEqual(got.segments.map(([a, d]) => [a, d.length]), stockfw.placedWindows(prof).map(([a, n]) => [a, n]));
+	assert.deepEqual(await codecSegments(got.profile, got.segments, fbx), placed, "written as the stock file's merge writes it");
+	// the stock layout (the windows where stock firmware keeps them): placed the same way
+	const cont = stockfw.parseContainer(stock, fb);
+	const old = new Uint8Array(0x100000).fill(0xFF);
+	for (const [a, n] of prof.windows) old.set(stockfw.decrypt(stock, stockfw.appFileOffset(cont, a, fb), n, key, fb), a - 0x08000000);
+	const fromOld = await readCodec(link(old), board, fbx);
+	assert.equal(fromOld.segments[0][0], prof.windows[0][0]);
+	assert.deepEqual(await codecSegments(fromOld.profile, fromOld.segments, fbx), placed);
+	now[placed[0][0] - 0x08000000 + 9] ^= 1;
+	assert.equal(await readCodec(link(now), board, fbx), null, "a changed byte: no copy");
+	// with a copy, a radio whose codec can't be kept or checked needs no stock file
+	const m = { codec: { profile: board.codec.id } };
+	const odr = (codec) => ({ board: "DM-1701", codec });
+	assert.equal(decideCodec(board, m, { probe: odr(board.codec.id), haveSaved: true }).mode, KEEP, "a radio with its codec keeps it");
+	assert.equal(decideCodec(board, m, { haveSaved: true }).source, "saved", "no radio answers");
+	assert.equal(decideCodec(board, m, { stockInstalled: "V02.06 CSV", haveSaved: true }).source, "saved", "back on stock firmware");
+	assert.equal(decideCodec(board, m, { probe: odr("absent"), haveSaved: true }).source, "saved", "ODR without its codec");
+	assert.equal(decideCodec(board, m, { haveSaved: true, requested: KEEP }).mode, KEEP, "keep, as asked");
 });
 
 test("backup file names: the model and the local date, letters and digits only, always .zip", () => {

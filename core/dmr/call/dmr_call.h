@@ -178,6 +178,7 @@ typedef struct {
 	uint32_t last_heard_ms;		// poll time of its last burst, 0 = none
 	uint32_t evq_overflows;		// diagnostics
 	uint32_t tx_underruns;		// voice frames replaced with silence
+	uint8_t wake_admits;		// counts repeater wake-ups answered after PTT was let go: the call would have been admitted
 } dmr_call_view_t;
 
 void dmr_call_config_default(dmr_call_config_t *cfg);

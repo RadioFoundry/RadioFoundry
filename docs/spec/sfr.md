@@ -64,7 +64,9 @@ level SFR did (raw RX RAM reads, RF switching per burst) and holds the extra sta
   measure the site (`sfrRunnerSetBeacon`, `hotspot_sfr_set_beacon`; `dmr-roaming.md` 7). Traffic has priority. The
   phase is the runner's own (no network time).
 - **Debug link** (section `sfr`): `sfr.on sfr.keyed sfr.busy sfr.slots sfr.rx sfr.repeated sfr.ignored
-  sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons sfr.tx_gaps`.
+  sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons sfr.tx_gaps
+  sfr.ignored_slot sfr.ignored_cc sfr.last_ignored` (why bursts were ignored: reported on the outbound slot, another
+  color code; the last one's color code and data type or voice index in hex).
 
 ## 3. What the modem driver must do
 

@@ -212,9 +212,37 @@ static inline void settings_set_vfo_talk(settings_t *s, uint32_t id, bool privat
 
 // settings_t.accent: bits 0-2 the highlight color (0 the theme's own, 1 red, 2 orange, 3 yellow, 4 teal, 5 light blue,
 // 6 purple, 7 pink), bit 3 set: the status strip on the screen's background, not filled (0, the default: filled),
-// bits 4-5 zero, bits 6-7 the vocoder's mic options (SETTINGS_AUDIO_* below)
+// bits 4-5 the crash report's mode (below), bits 6-7 the vocoder's mic options (SETTINGS_AUDIO_* below)
 #define SETTINGS_ACCENT_COLOR	0x07u
 #define SETTINGS_ACCENT_PLAIN	0x08u
+
+// theme and updown_home hold 0..2 in bits 0-1; their upper bits hold the crash report's target (below)
+#define SETTINGS_SMALL_MASK	0x03u
+static inline uint8_t settings_theme(const settings_t *s) { return (s->theme & 3u) <= 2u ? s->theme & 3u : 0; }
+static inline uint8_t settings_updown_home(const settings_t *s)
+{
+	return (s->updown_home & 3u) <= 2u ? s->updown_home & 3u : 0;
+}
+
+// The crash report (docs/spec/crash-log.md 5.2), packed into spare bits so the record stays 236 bytes and an older
+// record reads as off with no target: the mode (0 off, 1 ask, 2 send at once) in accent bits 4-5; the target's
+// codeplug contact number (0 none, else 1..CODEPLUG_CONTACTS_MAX, 11 bits) bits 0-5 in theme bits 2-7 and bits 6-10
+// in updown_home bits 2-6. Firmware from before reads theme and updown_home with these bits as out of range: dark
+// and Up/Down = channel
+static inline uint8_t settings_crash_mode(const settings_t *s) { return (s->accent >> 4) & 3u; }
+static inline uint16_t settings_crash_contact(const settings_t *s)
+{
+	return (uint16_t)((s->theme >> 2) | (((s->updown_home >> 2) & 0x1Fu) << 6));
+}
+static inline void settings_set_crash_mode(settings_t *s, uint8_t mode)
+{
+	s->accent = (uint8_t)((s->accent & 0xCFu) | ((mode & 3u) << 4));
+}
+static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
+{
+	s->theme = (uint8_t)((s->theme & 3u) | ((num & 0x3Fu) << 2));
+	s->updown_home = (uint8_t)((s->updown_home & 0x83u) | (((num >> 6) & 0x1Fu) << 2));
+}
 
 // settings_t.ui_flags (defaults: hints, message tone, talker alias, PTT when locked and vibrate on)
 #define SETTINGS_UI_LARGE_TEXT		0x01u

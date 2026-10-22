@@ -9,11 +9,11 @@ stub does for the DM-32UV and the DM-1801 Pro ([hardware-dm32.md](hardware-dm32.
 
 | Part | Where |
 |---|---|
-| ODR side: staging buffer, quiesce, copy, jump | `platform/stm32f4/stub_entry.c`, `hal_system_t.stub_region / enter_stub / stub_run_addr`, `board_stub_prepare` in `boards/dm1701/board.c` and `boards/md380/board.c` |
+| ODR side: staging buffer, quiesce, copy, jump | `platform/stm32f4/stub_entry.c`, `hal_system_t.stub_region / enter_stub / stub_run_addr`, `board_rf_safe` in `boards/dm1701/board.c` and `boards/md380/board.c` |
 | The stub | `stub/stm32f4/` (`make -C stub/stm32f4` writes `build/stub-stm32f4/f4stub.bin`) |
 | Its protocol engine (portable, host tested) | `stub/stm32f4/f4stub_proto.c`, `tests/host/f4stubTest.c` |
 | Host tool | `stub/f4stub.py`, called by `stub/stubtool.py`; `tests/host/f4stub_wire_check.py` runs it against the real engine |
-| Switch | `CONFIG_STUB_ENTRY` (default off), as for the HR_C7000 |
+| Switch | `CONFIG_STUB_ENTRY`, on by default with the debug link; off on the DM-1701 (RAM, its `config.mk`) |
 
 Status (2026-10-16): built, host tested and run on the DM-1701: section 11 has the hardware test and its results.
 
@@ -27,10 +27,6 @@ The bootloader route ([hardware-dm1701.md](hardware-dm1701.md) 15) costs three t
 | The image goes XOR-keyed (the key comes from the bootloader sectors or the stock file) | not needed: the stub writes plain bytes |
 | The bootloader reads no flash, so a host can't back up or verify | the stub reads all of internal flash, CRC-checks it and compares it with a file |
 
-On the MD-380 there is a fourth: the codec shares sector 6 with the application, so every bootloader update needs the
-stock file to merge the codec again ([release.md](../dev/release.md), "Codec handling"). The stub reads sector 6 back and
-keeps the codec bytes (section 8).
-
 ## 2. Feasibility
 
 | Question | Answer |
@@ -38,7 +34,7 @@ keeps the codec bytes (section 8).
 | Can code in SRAM erase and program the internal flash? | Yes. The flash interface takes sector erase and word program from any bus master once unlocked (the FLASH_KEYR key pair). Code fetched from SRAM keeps running while the flash is busy; only a flash access stalls. The stub runs entirely from SRAM, so it services USB during a 2 s erase |
 | Does read protection level 1 stop it? | No. Level 1 locks flash out only while a debugger is connected, or when the chip booted from SRAM or system memory (the BOOT pins). After a normal boot from user flash, reads, erases and programs from user code are allowed, wherever that code runs. ODR enters the stub from a normal boot. Bench check: section 11, step 3 |
 | Sector size | 16 KB (0-3), 64 KB (4), 128 KB (5-11). Erase is per sector, so an update rewrites whole sectors. The stub CRCs 4 KB blocks so the host can tell which sectors changed |
-| Erase and program time | 128 KB: about 1 s, at most 2 s; 16 KB: at most 0.5 s; one word: 16 us, at most 100 us (data sheet, x32 parallelism, 2.7 to 3.6 V). A whole DM-1701 install (sectors 3-6 and 9) is about 6 s of erase and 2 s of programming |
+| Erase and program time | 128 KB: about 1 s, at most 2 s; 16 KB: at most 0.5 s; one word: 16 us, at most 100 us (data sheet, x32 parallelism, 2.7 to 3.6 V). An update erases only the sectors the image covers (DM-1701: at most 3-9), about 1 s per 128 KB sector |
 | USB | The stub carries its own polled CDC-ACM device on the OTG_FS core (section 4). It adopts the device ODR already enumerated when it can |
 | RAM | ODR's 128 KB SRAM and 64 KB CCM are nearly full (DM-1701: 86 % and 97 %). ODR keeps an 8 KB staging buffer for the image (switch on only). After the jump the stub owns all of SRAM |
 
@@ -48,7 +44,7 @@ keeps the codec bytes (section 8).
 |---|---|---|---|
 | A. A separate stub with its own minimal USB device | Independent of ODR's state once entered; reads and writes every application sector, sector 3 included; the same model as the HR_C7000 stub, so the host tools share framing and flow | Needs its own USB code (about 2 KB); entry reaches the stub only while ODR runs | **Chosen** |
 | B. The stub keeps using ODR's USB stack (TinyUSB) | No USB code in the stub | TinyUSB runs from flash, and the stub erases flash. Its state lives in SRAM the stub overwrites | Not possible as such. Option A takes the useful part: it adopts the configured device (address and endpoints) without re-enumerating |
-| C. ODR writes flash itself (in-app updater, RAM-resident routine) | No second program to load | ODR runs from sectors 3-6 and reads constants from sector 9 (DM-1701), so it can't erase them while it runs. It would have to stage the image elsewhere (the external SPI flash has room: `hardware-dm1701.md` 13.2) and copy it with a RAM routine that has no USB. That copier is the stub without the host link, with less checking (no verify after the copy) | Rejected. A later "stage over the network, copy at reboot" path could reuse the stub's engine |
+| C. ODR writes flash itself (in-app updater, RAM-resident routine) | No second program to load | ODR runs from the sectors an update rewrites (DM-1701: 3-9), so it can't erase them while it runs. It would have to stage the image elsewhere (the external SPI flash has room: `hardware-dm1701.md` 13.2) and copy it with a RAM routine that has no USB. That copier is the stub without the host link, with less checking (no verify after the copy) | Rejected. A later "stage over the network, copy at reboot" path could reuse the stub's engine |
 
 ## 3. Entry
 
@@ -62,21 +58,49 @@ keeps the codec bytes (section 8).
 | Step | Why |
 |---|---|
 | Note whether USB is in serial mode (`usb_device_mode`) | the handoff flag; in network mode the host bound CDC-NCM to the same endpoint numbers |
-| `board_stub_prepare`: PA enables off (DM-1701 PA_EN1, PA_EN2; MD-380 APC_EN, TX_5V) | nothing transmits while the stub runs. The backlight (already at full for the banner), power latch and USB pins stay |
+| `board_rf_safe` ([crash-log.md](crash-log.md) 8): transmitter off (DM-1701 PA_EN1, PA_EN2, PA_BAND, APC DAC; MD-380 APC_EN, TX_5V, VCO_SEL, APC DAC) | nothing transmits while the stub runs. The backlight (already at full for the banner), power latch and USB pins stay |
+| `stm32_stub_image_ok` (`CONFIG_WATCHDOG`, also checked at ENTER): with the IWDG running, the image header (3.1) must say the stub feeds the IWDG, or ODR refuses it | a stub that doesn't feed the IWDG would be reset part way through a write |
+| `stm32_watchdog_stretch` (`CONFIG_WATCHDOG`): the IWDG to its longest timeout (prescaler 256, reload 4095: about 32 s, at least 22 s), then a feed | the IWDG can't be stopped; the stub feeds it from here on ([watchdog.md](watchdog.md) 3.1) |
 | Interrupts masked, SysTick off, every NVIC enable and pending bit cleared | the stub polls; ODR's handlers live in flash it may erase |
 | DMA1 and DMA2 reset | circular I2S, SPI and ADC streams write into SRAM, where the stub is about to run |
 | Copy the staging buffer to 0x20000000 (8 KB, a forward word copy) | the stub is linked there. The copy runs from flash and its stack is the task stack in CCM, so it overwrites nothing it uses. The buffer lies at or above the target, so a forward copy is safe even if they overlap |
 | CONTROL = 0, r0 = flags, branch to the entry | thread mode on the main stack. The stub sets SP to the top of SRAM first |
 
 Clocks stay as ODR set them (72 MHz, USB 48 MHz; the reduced clock is never active while USB is configured,
-[hardware-dm1701.md](hardware-dm1701.md) 1.3). GPIO levels stay, so the power latch holds. No watchdog runs (the option
-bytes select the software watchdog and ODR does not start it).
+[hardware-dm1701.md](hardware-dm1701.md) 1.3). GPIO levels stay, so the power latch holds. The option bytes select the software
+watchdog, so the IWDG runs only when ODR started it (`CONFIG_WATCHDOG`). Once started only a reset stops it, so the
+stub feeds it: first thing in `stub_main`, in `stub_ms()`, which every wait loop reads (the main loop, the flash and
+SPI busy waits, the USB waits, the delays), and from the protocol engine at every request, before each erase or
+program and once per 4 KB block of SUMS and READ (`f4stub_port_t.feed`). A feed does nothing while the IWDG isn't
+running. The image header (3.1) says so; ODR with its IWDG running refuses a stub whose header doesn't
+([watchdog.md](watchdog.md) 3.1).
 
 Handoff flags in r0:
 
 | Bit | Meaning |
 |---|---|
 | 0 | USB is ODR's configured CDC-ACM serial port: adopt it |
+
+### 3.1 Image header
+
+16 bytes at offset 0x10 of the image (0x20000010 once copied), right after the 12-byte entry code; the linker script
+puts section `.stub_header` there and fails the build if the entry code grows past it. Little endian. One definition,
+`stub/stm32f4/f4stub_header.h`, shared by the stub and ODR (`platform/stm32f4/stub_entry.c`); `f4stub.py` and the web
+flasher (`f4stub.js`) read the same layout, and their self-tests check their numbers against that file.
+
+| Offset | Size | Field | Value |
+|---|---|---|---|
+| 0x10 | 4 | magic | `0x48533446` (bytes `F4SH`) |
+| 0x14 | 2 | layout | 1; a later layout only appends fields |
+| 0x16 | 2 | size | 16 |
+| 0x18 | 4 | stub version | 3 (`F4STUB_VERSION`, also in HELLO) |
+| 0x1C | 4 | flags | bit 0: feeds the IWDG (`F4STUB_FLAG_FEEDS_IWDG`) |
+
+Versions: 1 the first stub, 2 the SPI flash, 3 the header and the IWDG feeds (`F4STUB_VERSION_FEEDS_IWDG`). Stubs
+before version 3 have no header: those bytes are code. While its IWDG runs, ODR enters a stub only when all three hold:
+the magic, a version of at least 3 and the feed flag (`f4stub_image_ok`). Otherwise ENTER is refused with reason 1
+([debuglink.md](debuglink.md) 3.18). With the IWDG not running any stub is entered. `stubtool.py --odr-enter` and the
+web flasher print the version from the header before they send the image.
 
 ## 4. USB in the stub
 
@@ -117,7 +141,7 @@ arriving for 200 ms is dropped. The largest payload is 4104 bytes (`F4STUB_MAX_P
 
 | Op | Name | Request | Reply |
 |---|---|---|---|
-| `01` | HELLO | none | `F4STUB`, version u8 (2), max payload u16, flash KB u16, RDP byte u8, flags u8 (bit 0: USB adopted), application base u32 (0x0800C000), SPI flash size u32 (0: no chip answered), its JEDEC ID (3 bytes). Version 1 stopped after the application base |
+| `01` | HELLO | none | `F4STUB`, version u8 (3), max payload u16, flash KB u16, RDP byte u8, flags u8 (bit 0: USB adopted), application base u32 (0x0800C000), SPI flash size u32 (0: no chip answered), its JEDEC ID (3 bytes). Version 1 stopped after the application base |
 | `02` | PEEK | addr u32, n u16 (1 to max) | n bytes. Allowed: flash, 0x1FFF0000-0x1FFF7A2F (system memory, OTP, UID, flash size), option bytes 0x1FFFC000-0x1FFFC00F, SRAM, CCM. Peripherals are refused |
 | `07` | SUMS | addr u32 (4 KB aligned), count u16 (1 to 820), memory u8 (optional: 0 internal flash, the default; 1 SPI flash, addresses from 0) | count x (CRC-32 u32, blank u8) |
 | `09` | READ | addr u32 (4 KB aligned), count u8 (1 to 255), compress u8, memory u8 (optional, as SUMS) | count frames, one per 4 KB block: CRC-32 u32, method u8 (0 raw, 2 blank), length u16, data. Compression is not offered; a compress request is answered raw |
@@ -218,16 +242,19 @@ The host knows which flash the firmware owns (`f4stub.BOARDS`, from `tools/odrfl
 
 | Radio | Owned | Sectors touched by an update | Codec |
 |---|---|---|---|
-| DM-1701 | 0x0800C000-0x0805FFFF (sectors 3-6), 0x080A0000-0x080BFFFF (sector 9) | 3, 4, 5, 6, 9 | sectors 7, 8, 10, 11: never erased, so the installed codec stays (odrflash's keep mode) |
-| MD-380 | 0x0800C000-0x08050C43 | 3, 4, 5, 6 | the code window starts at 0x08050C44 in sector 6: the stub path reads sector 6 back, rewrites it with the new application below 0x08050C44 and the old bytes above; sectors 7-11 are never erased |
+| DM-1701 | 0x0800C000-0x080BFFFF (sectors 3-9) | those of 3-9 the image covers | sectors 10 and 11: written only from an image merged with the codec, otherwise never erased, so the installed codec stays (odrflash's keep mode) |
+| MD-380 | 0x0800C000-0x0807FFFF (sectors 3-7) | those of 3-7 the image covers | sectors 8-11: written only from an image merged with the codec, otherwise never erased |
 
 Inside an owned range, bytes past the image end become 0xFF, so an older, longer build leaves nothing behind. An image
-that reaches outside the owned ranges (a codec-merged `_codec.bin`, the wrong board) is refused before anything is
-erased. The DM-1701 application needs its sector 9 part (`odr_<board>_rodata2.bin` next to the `.bin`); without it the
-tool refuses unless told `--no-rodata2`.
+merged with the codec (`odr_<board>_codec.bin`) runs to the end of flash; the tool splits it into the application and
+the codec sectors and writes both whole ([codec-placement.md](codec-placement.md), "STM32 radios"). Any other image
+that reaches outside the owned range (the wrong board) is refused before anything is erased.
 
-A first install on a radio whose codec sectors hold nothing (or a different stock version) still needs odrflash's
-merge mode through the bootloader: the stub never writes codec bytes it didn't read from the radio.
+No radio shares a sector between the firmware and the codec. The rule for one that would stays in the code: a sector
+that is rewritten and holds bytes the firmware doesn't own is read back and written again with those bytes unchanged.
+
+The stub only runs on a radio that already runs ODR. A first install, on a radio still on stock firmware, goes through
+the bootloader with odrflash's merge mode.
 
 ## 9. Backups and read protection
 
@@ -247,8 +274,8 @@ never committed.
 |---|---|
 | Stub image | 6,764 bytes (limit 8 KB, asserted by `f4stub.ld`) |
 | Stub RAM after the jump | about 26 KB of SRAM (image, buffers, 8 KB receive ring) plus the stack |
-| ODR with `CONFIG_STUB_ENTRY=y`, DM-1701 | +768 bytes in sectors 3-6 (the STUB state machine, the entry) and +112 in sector 9 (the banner text); +8 KB of SRAM (the staging buffer): RAM 92.7 % used |
-| ODR with `CONFIG_STUB_ENTRY=y`, MD-380 | the same code: 275,640 of 281,668 bytes (2026-10-16), RAM 78.8 %. The default image has about 6 KB left, so the switch fits with no other switch off |
+| ODR with `CONFIG_STUB_ENTRY=y`, DM-1701 | the STUB state machine, the entry and the banner text, all in sectors 3-9 (720 KB); +8 KB of SRAM (the staging buffer): RAM 92.7 % used |
+| ODR with `CONFIG_STUB_ENTRY=y`, MD-380 | the same code, in an application area of 464 KB (the default image is 320,236 bytes), RAM 78.8 %. The switch fits with no other switch off |
 | ODR with the switch off | no change: the same image, byte for byte in size |
 
 The switch stays off by default: the command hands the whole SoC to whatever image the host sends, guarded by the
@@ -275,7 +302,7 @@ Then, with ODR running (PORT is its USB serial port, `/dev/cu.usbmodem…` on ma
 | 3 | the same output | the bytes are the bootloader's vector table (not all 00 or FF): CPU reads from SRAM work at RDP 1 |
 | 4 | `python3 stub/stubtool.py PORT --attach --board dm1701 --progmem ~/dm1701_flash.bin` | 1 MB, sha256 printed |
 | 5 | `python3 stub/stubtool.py PORT --attach --board dm1701 --verify-progmem ~/dm1701_flash.bin` | identical |
-| 6 | `python3 stub/stubtool.py PORT --attach --board dm1701 --write-app build/dm1701/odr_dm1701.bin` | "0 sector(s) written, 5 unchanged" (the build already in the radio) |
+| 6 | `python3 stub/stubtool.py PORT --attach --board dm1701 --write-app build/dm1701/odr_dm1701.bin` | "0 sector(s) written", every sector unchanged (the build already in the radio) |
 | 7 | rebuild with a visible change (another `ODR_VERSION=`), then step 6 again | sectors 3 and the changed ones written, verified |
 | 8 | `python3 stub/stubtool.py PORT --attach --board dm1701 --boot reset` | ODR starts; `odr_debug.py version` shows the new `git=` |
 | 9 | `python3 stub/stubtool.py PORT --odr-enter --write-app ...` with yet another build, USB unplugged during the write, then a power cycle | the radio comes up in the bootloader with no keys held; odrflash restores it |

@@ -3,7 +3,8 @@
 
 Status: research, 2026-10-10. Static analysis of the decrypted stock image (byte matching against the DM-1701 codec,
 literal cross references, targeted Thumb disassembly of the codec region and the stock voice wrapper), then
-**verified by execution** in an instruction set emulator. Nothing has run on a radio.
+**verified by execution** in an instruction set emulator. 2026-10-19: the merge moves the code to sector 11
+(Hosting), also verified in the emulator. Nothing has run on a radio.
 
 Rule: the radio runs exactly the codec its own TYT stock firmware shipped. The user's machine extracts it from a stock
 file the user supplies. No codec bytes go in this repository or in released binaries.
@@ -173,29 +174,42 @@ which no codec function calls.)
   window (BL from 0x08092E18 and others to 0x08056xxx), and the encoder reaches 0x08092A4C through an absolute code
   pointer. The code also reaches its tables through 49 distinct absolute literals at 70 sites, into the table window
   and all four small windows.
-* So the codec must sit at its stock addresses. Moving it means moving the code window and the table window by the
-  same distance and patching every literal into either, plus the code pointer; the small windows could stay. That is
-  possible but not needed for running in place, and it is not done.
+* The literals and the code pointer point into the table windows, so they stay valid while the tables stay at their
+  stock addresses. Moving the code alone needs two kinds of rewrite: the two movw/movt pairs in the code that point
+  into the code, and the 12 calls (BL) from the islands back into the code. The codec map
+  (`tools/odrflash/odrflash/codec_maps/md380/md380-d2032.json`) lists both, and the merge applies them
+  ([codec-placement.md](codec-placement.md), "STM32 radios").
 
 ## Hosting
 
-Run in place from flash at the stock addresses, as stock does: no copy, no patching.
+Run in place from flash, no copy. The merge moves the code to the start of sector 11 and leaves every table window at
+its stock address ([codec-placement.md](codec-placement.md), "STM32 radios").
 
-* **Flash map.** The code window starts at 0x08050C44, inside sector 6 (0x08040000..0x0805FFFF). The application
-  therefore gets 0x0800C000..0x08050C43, 275 KB (281668 bytes), and `boards/md380/md380.ld` stops it there. The windows
-  touch sectors 6, 7, 8, 10 and 11; sector 9 (0x080A0000..0x080BFFFF) is free. The earlier reservation of sectors 7-11
-  was wrong: the codec starts 61 KB below sector 7.
-* **Updates.** Sector 6 holds both the end of the application and the start of the codec, and the bootloader erases
-  whole sectors. So the codec can't be kept across an update: every flash writes it again (`boards.py` MD380:
-  `keep_codec_supported=False`; odrflash writes sector 6 as "app+codec"). It comes from the stock file, or, on a radio
-  that runs ODR with this codec, from the radio itself: odrflash and the web flasher read every window back over the
-  debug link (READ_MEM), check each against the hashes above, and save a copy on the computer (odrflash's config
-  directory, the browser's IndexedDB) before anything is erased, so an update that stops halfway can still be
-  finished (`odrflash/codecsave.py`, `site/static/js/flasher/codecsave.js`). An application of at most 208 KB
-  (sectors 3-5) would make "keep" possible again.
-* **Boot check (`boards/md380/vocoder_md380.c`).** The first word at 0x08050C44 must be 0x4FF0E92D, then the CRC-32
-  of every window must match the table above (computed once, about 112 KB). Otherwise the vocoder reports no codec and
-  the radio is FM only. Codec profile id: `md380-d2032`.
+| window | placed at | length | CRC-32 as placed |
+|---|---|---|---|
+| code | 0x080E0000 (sector 11) | 0x10884 | 0x067E6A77 (self references rewritten) |
+| tables | 0x0808FC64 (sector 8, stock address) | 0xAFF8 | 0x2A5C9EE1 (the 12 island calls re-encoded) |
+| small tables 1-4 | stock addresses (sectors 10 and 11) | as above | unchanged (0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF) |
+| descriptor | 0x080FFF80 (end of sector 11) | 128 | its own (`platform/stm32f4/codec_desc.h`), tag 0x2032 |
+
+* **Flash map.** The application gets sectors 3-7, 0x0800C000..0x0807FFFF, 464 KB in one piece, and
+  `boards/md380/md380.ld` asserts that the image ends before 0x08080000. The codec uses sectors 8, 10 and 11. Sector
+  9 (0x080A0000..0x080BFFFF) holds nothing. The stock file keeps the code at 0x08050C44, inside sectors 6 and 7, so
+  the stock layout leaves the application only 275 KB.
+* **Updates.** No codec byte shares a sector with the application, so an update writes sectors 3-7 only and keeps the
+  codec (`boards.py` MD380: `keep_codec_supported=True`; the STM32 stub `stub/f4stub.py` owns sectors 3-7). The codec
+  is merged on a first install from stock, or when it can't be kept or checked. It comes from the stock file, or from
+  the copy the flashing tools keep: odrflash and the web flasher read the codec from a radio running ODR over the
+  debug link (READ_MEM), in the stock or the placed layout, check it against the profile hashes and save it on the
+  computer (odrflash's config directory, the browser's IndexedDB; `odrflash/codecsave.py`,
+  `site/static/js/flasher/codecsave.js`).
+* **Boot check (`boards/md380/vocoder_md380.c`).** Once, before the first call: the descriptor (its own CRC, tag
+  0x2032, the code and every table window at the addresses and with the CRCs above), then the signature word
+  0x4FF0E92D at 0x080E0000, then the CRC-32 of every window (about 112 KB). Otherwise the vocoder reports no codec and
+  the radio is FM only. Entry points are offsets from the code start (encode +0x14C, decode +0x604, the rest in
+  `vocoder_md380.c`), the same offsets as in the stock layout.
+* **Profile id.** `md380-d2032-s11` (debug link VERSION `codec=`). A build from before the move reports
+  `md380-d2032`, so the tools know the codec isn't where the new layout keeps it and ask for the stock file.
 * **Calls.** Through the generic veneer `platform/stm32f4/codec_call.c`, as on the DM-1701, with the init sequence and
   per-frame calls above. The state blocks live in CCM.
 
@@ -205,8 +219,11 @@ Run in place from flash at the stock addresses, as stock does: no copy, no patch
 2. Get the key: a key file checked by SHA-256 (`5254139c...`), or derive it from the file (above).
 3. Decrypt each of the six windows: file offset = A - 0x0800C000 + 0x100, key index (A - 0x0800C000) % 1024. Check
    each window's SHA-256 and the code's first word 0x4FF0E92D.
-4. Write them unmodified at their stock addresses after the application image (0xFF between). The merge happens on the
-   user's machine (`make` with the stock file in `codecs/`, `tools/codec_extract.py` or odrflash), never in a release.
+4. Write the table windows at their stock addresses, with the 12 island calls in the main window re-encoded for the
+   moved code. Write the code at 0x080E0000 with its two movw/movt self references rewritten, and the descriptor at
+   0x080FFF80. Check the placed CRC-32s (Hosting). 0xFF fills the rest after the application image. The codec map
+   drives the rewrites. The merge happens on the user's machine (`make` with the stock file in `codecs/`,
+   `tools/codec_extract.py`, odrflash or the web flasher), never in a release.
 
 ## Verification by execution
 
@@ -221,6 +238,9 @@ blocks, so the runs use block hooks only and check flash use by what is mapped.
   linked into a small harness and run against the windows of the merged image that `make BOARD=md380` writes, with a
   deliberately misaligned caller stack. `present()` passes, and the encoded bits and decoded PCM over 30 frames are
   bit-identical to the direct stock calls.
+* The placed codec (code at 0x080E0000, rewrites applied), run with only its placed windows mapped, gives the same air
+  bits and PCM as the stock code at its stock address over 60 frames, plain and stressed, with the same FEC results
+  and a stack peak of 4046 bytes.
 
 Scripts and notes: kept outside the repository.
 
@@ -229,8 +249,9 @@ Scripts and notes: kept outside the repository.
 * Audio: TX and RX voice quality and levels through the MD-380's own audio path (the I2S format, gain staging).
 * Timing: encode and decode within 20 ms at the MD-380's clock, and the audio task's stack (5 KB) under the codec's
   4.2 KB plus the audio callback.
-* That D002.032's bootloader accepts an image that writes sectors 6-8, 10 and 11 in one session, and that nothing
+* That D002.032's bootloader accepts an image that writes sectors 3-8, 10 and 11 in one session, and that nothing
   else in flash (for example the bootloader's own checks) cares about the codec sectors.
+* Voice TX and RX with the moved code, and an update in keep mode that leaves the codec working.
 * Calls against the HR_C5000 path with real frames, including the FEC decode results on air.
 
 ## Open items
@@ -240,7 +261,5 @@ Scripts and notes: kept outside the repository.
   loud talker, levels and pumping between words; whether the parameter block's values after init are usable.
 
 * Other stock versions (D13.20 and similar) need their own profile; only D002.032 is supported.
-* 275 KB for the application is tight: the default build fits only with link time optimization and the hotspot off
-  (`docs/feature-matrix.md`, "Whole images"). If the application outgrows it, the choices are
-  relocating the codec (moving both windows and patching 70 literal sites and one code pointer) or a smaller
-  application.
+* Moving the table windows too (rewriting the `table_refs`) would free sector 8 and pack the codec into sector 11
+  ([codec-placement.md](codec-placement.md)). The application has 464 KB and doesn't need it yet.

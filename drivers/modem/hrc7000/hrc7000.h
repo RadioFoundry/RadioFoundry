@@ -157,7 +157,12 @@ typedef struct {
 	// FM transmit limiter, FM_DEV_COEF b23:16, at 12.5 and 25 kHz: the peak deviation of audio through the codec ADC
 	// (the microphone, the codec mixer). The board sets it; 0 = HRC7000_FM_TX_LIMIT_DEF (8.1)
 	uint8_t fm_tx_limit[2];
+	// The RF TX interrupt's lead on each TX burst, RF_CONTROL b13:8 in 100 us steps: the board's time to switch its RF
+	// chip to TX. The board sets it before power_on_init; 0 = HRC7000_RF_TX_LEAD_DEF (3.1 ms)
+	uint8_t rf_tx_lead;
 } hrc7000_t;
+
+#define HRC7000_RF_TX_LEAD_DEF	31u	// 3.1 ms (gotchas 2.4)
 
 static inline void hrc7000_wr(hrc7000_t *d, uint32_t off, uint32_t v) { d->regs[off / 4u] = v; }
 static inline uint32_t hrc7000_rd(hrc7000_t *d, uint32_t off) { return d->regs[off / 4u]; }

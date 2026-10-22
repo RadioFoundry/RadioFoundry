@@ -10,10 +10,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "net/tftp.h"
+#include "storage/storage.h"
 
 #define TFTP_CODEPLUG_SIZE	0xAEE60u	// up to the end of the flash codeplug region
 #define TFTP_CODEPLUG_FULL	0x120000u	// a whole cps_client.py image is taken too (the rest is ignored)
-#define TFTP_STAGING_MAGIC	0x5452444Fu	// "ODRT" in memory order: the staging header's first word
+#define TFTP_STAGING_MAGIC	STORAGE_STAGE_MAGIC_TFTP	// the staging header's first word
 
 extern const tftp_file_t tftp_codeplug_file;
 
@@ -22,7 +23,9 @@ void tftp_codeplug_allow_write(bool allow);
 bool tftp_codeplug_write_allowed(void);
 
 // At boot, after storage_init and before codeplug_init: a commit that a power cut interrupted is finished. True if
-// one was
+// one was. A record of the fast codeplug protocol (STORAGE_STAGE_MAGIC_CPSF) is left alone
 bool tftp_codeplug_resume(void);
+// A write is open: the staging area is this server's until it ends (the fast codeplug protocol waits)
+bool tftp_codeplug_writing(void);
 
 #endif

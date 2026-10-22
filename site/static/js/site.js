@@ -40,3 +40,66 @@ for (const b of document.querySelectorAll(".shot-show")) {
 		screen.closest(".radio-device").scrollIntoView({ behavior: "smooth", block: "nearest" });
 	});
 }
+
+// glossary terms in the docs: <abbr class="gl" title="..."> becomes a popover on hover, focus and tap.
+// Without this script the browser's own title tooltip still shows the definition.
+const terms = document.querySelectorAll("abbr.gl");
+if (terms.length) {
+	const pop = document.createElement("div");
+	pop.id = "gl-pop";
+	pop.className = "gl-pop";
+	pop.setAttribute("role", "tooltip");
+	pop.hidden = true;
+	const text = document.createElement("span");
+	const more = document.createElement("a");
+	more.textContent = "More";
+	pop.append(text, " ", more);
+	document.body.append(pop);
+
+	let current = null;
+	let timer = 0;
+	const hide = () => {
+		clearTimeout(timer);
+		pop.hidden = true;
+		current?.removeAttribute("aria-describedby");
+		current = null;
+	};
+	const later = () => { clearTimeout(timer); timer = setTimeout(hide, 200); };
+	const show = (el) => {
+		clearTimeout(timer);
+		if (current === el && !pop.hidden) return;
+		current?.removeAttribute("aria-describedby");
+		current = el;
+		text.textContent = el.dataset.def;
+		more.href = el.dataset.more;
+		el.setAttribute("aria-describedby", pop.id);
+		pop.hidden = false;
+		const r = el.getBoundingClientRect();
+		const w = Math.min(pop.offsetWidth, innerWidth - 16);
+		const left = Math.max(8, Math.min(r.left + scrollX, scrollX + innerWidth - w - 8));
+		const below = r.bottom + pop.offsetHeight + 8 < innerHeight || r.top < pop.offsetHeight + 8;
+		pop.style.left = left + "px";
+		pop.style.top = (below ? r.bottom + scrollY + 6 : r.top + scrollY - pop.offsetHeight - 6) + "px";
+	};
+	for (const el of terms) {
+		el.dataset.def = el.title;
+		el.removeAttribute("title");		// the popover replaces the native tooltip
+		el.addEventListener("mouseenter", () => show(el));
+		el.addEventListener("mouseleave", later);
+		el.addEventListener("focus", () => show(el));
+		el.addEventListener("blur", later);
+		el.addEventListener("click", (ev) => {
+			ev.preventDefault();
+			if (current === el && !pop.hidden) hide(); else show(el);
+		});
+		el.addEventListener("keydown", (ev) => {
+			if (ev.key === "Enter") location.href = el.dataset.more;	// keyboard: the definition is already shown
+		});
+	}
+	pop.addEventListener("mouseenter", () => clearTimeout(timer));
+	pop.addEventListener("mouseleave", later);
+	pop.addEventListener("focusin", () => clearTimeout(timer));
+	pop.addEventListener("focusout", later);
+	document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") hide(); });
+	document.addEventListener("click", (ev) => { if (!ev.target.closest("abbr.gl, #gl-pop")) hide(); });
+}

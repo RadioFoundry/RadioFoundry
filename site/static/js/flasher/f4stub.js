@@ -28,6 +28,18 @@ export function f4Image(json) {
 	return Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
 }
 
+// The image header (stub/stm32f4/f4stub_header.h): 16 bytes at 0x10, little endian. A watchdog build of ODR enters
+// only a stub whose header has the magic, a version of at least 3 and the feed flag. null: no header (before version 3)
+export const HDR = { OFFSET: 0x10, MAGIC: 0x48533446, LAYOUT: 1, SIZE: 16, VERSION_FEEDS_IWDG: 3, FLAG_FEEDS_IWDG: 0x1 };
+export function f4StubHeader(image) {
+	if (image.length < HDR.OFFSET + HDR.SIZE) return null;
+	const v = new DataView(image.buffer, image.byteOffset + HDR.OFFSET, HDR.SIZE);
+	const magic = v.getUint32(0, true), layout = v.getUint16(4, true), size = v.getUint16(6, true);
+	if (magic !== HDR.MAGIC || layout < HDR.LAYOUT || size < HDR.SIZE) return null;
+	const version = v.getUint32(8, true), flags = v.getUint32(12, true);
+	return { layout, size, version, flags, feedsIwdg: version >= HDR.VERSION_FEEDS_IWDG && (flags & HDR.FLAG_FEEDS_IWDG) !== 0 };
+}
+
 // [{index, addr, size}] of a single-bank STM32F4: 4 x 16 KB, 64 KB, then 128 KB each
 export function f405Sectors(flashKb = 1024) {
 	const out = [];
@@ -44,6 +56,12 @@ export class F4Stub extends Stub {
 	constructor(stream, { log = () => {}, retries = 3, reopen = null } = {}) {
 		super(stream, { log, retries });
 		this.reopen = reopen;
+	}
+
+	async enterFromOdr(image, progress = () => {}, opts = {}) {
+		const h = f4StubHeader(image);
+		this.log(h ? `STM32F4 stub image v${h.version}${h.feedsIwdg ? ", feeds the watchdog" : ""}` : "STM32F4 stub image without a header (older than version 3)");
+		return super.enterFromOdr(image, progress, opts);
 	}
 
 	async hello() {
@@ -181,7 +199,7 @@ export class F4Stub extends Stub {
 
 	// {sectors: [{index, addr, size, data, kept}], changed: [index]} for every sector holding firmware-owned flash.
 	// Owned bytes come from the segments (0xFF where they have none); the rest of a sector is read back from the radio
-	// and written again unchanged (kept: the MD-380's codec in sector 6). owned: [[lo, hi)] (data/f4-stub.json)
+	// and written again unchanged (kept; no radio shares a sector since the codec moved). owned: [[lo, hi)] (data/f4-stub.json)
 	async plan(owned, segs) {
 		for (const [addr, data] of segs) {
 			if (!owned.some(([lo, hi]) => lo <= addr && addr + data.length <= hi))

@@ -99,8 +99,10 @@ checks what the radio reports: the version it just wrote, and "DMR voice is read
 | The radio runs | odrflash |
 |---|---|
 | ODR, and DMR voice works | Keeps the codec: it writes only ODR's own sectors. It asks the running radio over USB before you switch it to the bootloader (or run `odrflash probe` first) |
-| The stock firmware version odrflash recognizes | Can keep the codec too: say so with `--stock-installed "<version>"`, or answer yes when it asks |
-| anything else, or you're not sure | Writes the codec from the stock file (`--stock`) |
+| Anything else, or you're not sure | Writes the codec: from the copy it saved from this radio the last time it ran ODR, otherwise from the stock file (`--stock`) |
+
+The stock firmware keeps the codec where ODR's own firmware goes, so a radio fresh from stock always needs the stock
+file once. After that, odrflash keeps a copy of the codec on your computer.
 
 If odrflash keeps a codec that isn't actually in the radio, nothing breaks: ODR checks the codec before it uses it.
 FM works, and DMR calls show "No codec: voice off". Flash again with `--stock` to fix it.

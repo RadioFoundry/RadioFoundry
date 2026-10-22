@@ -35,7 +35,7 @@ input?.addEventListener("change", async () => {
 			b.type = "button";
 			b.addEventListener("click", async () => {
 				try {
-					const r = await c.convert(data);
+					const r = await c.convert(data, f.name);
 					const url = URL.createObjectURL(new Blob([r.data]));
 					const a = Object.assign(document.createElement("a"), { href: url, download: r.name });
 					a.click();

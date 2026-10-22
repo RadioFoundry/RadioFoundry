@@ -12,6 +12,7 @@
 
 #if CONFIG_DMR
 #define DMR_IDDB_TEXT_MAX	48	// longest record text kept ("callsign name ..."), characters
+#define DMR_IDDB_RECORD_MAX	(4u + 3u * DMR_IDDB_TEXT_MAX / 4u + 8u)	// longest record read (others: no database)
 
 // Read (or re-read, after an upload) the database header. False if there is no database
 bool dmr_iddb_init(void);

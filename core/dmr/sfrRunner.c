@@ -469,6 +469,10 @@ static void rx_burst(sfrRunner_t *r, const dmr_burst_t *b, uint32_t now_ms)
 		break;
 	case SFR_RX_IGNORED:
 		r->stats.rx_ignored++;
+		if ((b->cc & 0x0F) != r->eng.cfg.inboundCC) {
+			r->stats.rx_ignored_cc++;
+		}
+		r->stats.last_ignored = (uint8_t)(((b->cc & 0x0F) << 4) | (s.type & 0x0F));
 		return;
 	case SFR_RX_DUPLICATE:
 		r->stats.rx_duplicate++;

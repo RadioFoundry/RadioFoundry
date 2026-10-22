@@ -101,7 +101,7 @@ class Transport:
             self.ser = None
         else:
             import serial
-            self.ser = serial.Serial(port, 115200, timeout=0.05)
+            self.ser = serial.serial_for_url(port, 115200, timeout=0.05)    # a device or a URL (rfc2217://)
             self.s = None
 
     def send(self, b: bytes) -> None:

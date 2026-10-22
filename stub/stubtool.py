@@ -284,6 +284,85 @@ STUB_DB25D_DMR_B64 = (
     "vkP+KCBjbJ53Z1D/D0CrRrU="
 )
 # --- STUB DB25D_DMR end
+# --- STUB UNIV begin (stub/embed_stub.py rewrites everything up to the end marker)
+STUB_UNIV_SHA256 = "59f99651682125d04508211a8687ce4d244cd68ab18e7166d98adccfdb3eca20"
+STUB_UNIV_B64 = (
+    "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"
+)
+# --- STUB UNIV end
 
 BLOCK = 256
 CHUNK = 1024                        # bytes per read request
@@ -299,13 +378,20 @@ IO_DIPLEX1 = 0x11000038
 SYS_SOFT_RSTN = 0x11000000
 QUAD_ENABLE = 0x1100005C
 LCSFC_BAUDR = 0x11000030            # XIP flash SCLK divider; a soft reset keeps it
+WDT_LOCK = 0x14010000               # watchdog: unlock key, then EN = 0, then lock (hardware-dm32.md 3.5)
+WDT_EN = 0x14010010
+WDT_KEY = 0x5ADA7200
 TIMER2_VALUE = 0x14000018           # timer 2 current value (counts down; the stub runs it free)
 LED_RED, LED_GREEN = 33, 32         # PTB1 = red, PTB0 = green on the DM-1801 Pro and the DM-32UV (both checked on the radio)
 OK, BADSUM, BADOP, SPITIMEOUT, TOOLONG = 0x05, 0x0A, 0x0B, 0x0C, 0x0E
 # memory: (SSI base, SER, GPIO chip-select pin or None, size, name). The data flash's chip select is the GPIO PTA18
 # (hardware-dm32.md 10; dm1801pro-hardware.md 6.1); the SSI's own select is not wired to the flash on its own.
 MEM = {"progmem": (SSI_PROG, True, None, 0x100000, "program flash"),
-       "q128": (SSI_DATA, True, 18, 0x1000000, "data flash")}
+       "q128": (SSI_DATA, True, 18, 0x1000000, "data flash"),
+       # the DB25-D's SPI NAND on the same bus and chip select (hardware-db25d.md 6.5): 2 KB pages without the spare
+       # bytes, read by the universal stub's NAND path (flags bit 2), two pages per 4 KB sector; never written here
+       "nand": (SSI_DATA, True, 18, 0x10000000, "NAND")}
+NAND_FLAG = 4
 
 
 # Writes are only allowed here (chosen 2026-10-15 from the dumps: blank in every dump, away from ODR)
@@ -314,6 +400,9 @@ PAGE = 256
 # The application area of the program flash: an ODR image is linked for 0x0300C000, which is flash offset 0xC000. The
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
 APP_START, APP_END = 0xC000, 0x100000
+# The first word of ODR's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D). Its
+# application is linked for 0x0300D000, so the image written at APP_START is the install image, which starts with it
+STAGE_MAGIC = bytes.fromhex("2c1101c0")
 
 
 class DumpError(Exception):
@@ -375,6 +464,73 @@ def check_stub_fits(image, load, size):
         raise DumpError("this stub image is linked for a different RAM span (its data and stack are at 0x%X-0x%X) than the "
                         "0x%X-0x%X ODR offers. Use the image built for that base (see stub/README.md)"
                         % (bss0, top, load, load + size))
+
+
+SRAM = (0x10000, 0x58000)               # the HR_C7000's main SRAM, 288 KB (hardware-dm32.md 2; the same on the DB25-D)
+
+
+def stub_univ_image():
+    """The universal stub: one image for every HR_C7000 radio and every way in (boot ROM, the DB25-D's first stage, a
+    running ODR, a stock DB25-D through its console). It copies itself to its run address and asks the host for the
+    board's values (CONFIG) after HELLO. stub/README.md has the RAM table."""
+    return _unpack(STUB_UNIV_B64, STUB_UNIV_SHA256, "universal")
+
+
+def univ_layout(image):
+    """(run address, end of its RAM) of a universal stub image, read from its parameter block ('UCFG' at offset 0x80,
+    layout 2 or later), or None for a position-dependent stub. The stub uses exactly [run, end): image, .bss, stack."""
+    if len(image) < 0xC0 or image[0x80:0x84] != b"UCFG":
+        return None
+    ver, size = int.from_bytes(image[0x84:0x86], "little"), int.from_bytes(image[0x86:0x88], "little")
+    if ver < 2 or size < 0x40:
+        return None
+    return int.from_bytes(image[0xB8:0xBC], "little"), int.from_bytes(image[0xBC:0xC0], "little")
+
+
+def check_univ_load(image, load, window=None):
+    """Refuse a load of the universal stub that could go wrong, before anything is sent: its run area [run, end) must be
+    inside SRAM; the image must land 4-byte aligned inside SRAM (and inside `window` = (base, size) when the firmware
+    offers one); and unless it is loaded at its run address, the loaded copy must not overlap the copy the entry code
+    makes (the stub would stop at its entry rather than copy over itself)."""
+    lay = univ_layout(image)
+    if lay is None:
+        raise DumpError("this is not a universal stub image (no parameter block at offset 0x80)")
+    run, end = lay
+    n = len(image)
+    if not (SRAM[0] <= run and run + n <= end <= SRAM[1]):
+        raise DumpError("the stub's RAM 0x%X-0x%X is not inside SRAM 0x%X-0x%X" % (run, end, SRAM[0], SRAM[1]))
+    if load % 4 or not (SRAM[0] <= load and load + n <= SRAM[1]):
+        raise DumpError("load address 0x%X: the %d-byte stub must land 4-byte aligned inside SRAM" % (load, n))
+    if window and not (window[0] <= load and load + n <= window[0] + window[1]):
+        raise DumpError("the %d-byte stub does not fit the 0x%X-0x%X the firmware offers" % (n, window[0], window[0] + window[1]))
+    if load != run and load < run + n and run < load + n:
+        raise DumpError("load address 0x%X overlaps the stub's run address 0x%X: load it at 0x%X or at least %d bytes away"
+                        % (load, run, run, n))
+    return run, end
+
+
+# Board profiles for the universal stub (CONFIG, op 0x0D): board id echoed by HELLO, power latch / power key pins (255 =
+# none), whether the data memory is the SPI NAND, the program flash size. VERSION's board= names them on the ODR route;
+# --board at power-on. Unknown radio: GENERIC (no pins, nothing echoed but 0).
+C7_BOARDS = {
+    "dm32": {"id": 1, "name": "DM-32UV", "names": ("DM-32UV", "dm32", "dm32uv"), "latch": 255, "key": 255, "nand": False,
+             "progmem": 0x100000},
+    "dm1801pro": {"id": 2, "name": "DM-1801 Pro", "names": ("DM-1801 Pro", "dm1801pro"), "latch": 255, "key": 255,
+                  "nand": False, "progmem": 0x100000},
+    # PTB13 latch, PTB12 power key (hardware-db25d.md 3.3); the same pins under ODR, its first stage and the stock firmware
+    "db25d": {"id": 3, "name": "DB25-D", "names": ("DB25-D", "db25d"), "latch": 45, "key": 44, "nand": True,
+              "progmem": 0x200000},
+}
+GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000}
+CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
+
+
+def c7_board(name):
+    """The C7_BOARDS key for a board id or a VERSION board= name, or None."""
+    for bid, b in C7_BOARDS.items():
+        if name == bid or name in b["names"]:
+            return bid
+    return None
 
 
 def crc16_ccitt(data, crc=0xFFFF):
@@ -472,6 +628,9 @@ class Radio:
         self.retried = 0
         self.stub_head = b""
         self.stub_base = LOAD_ADDR
+        self.v6 = None                  # the universal stub's HELLO fields (protocol 6), None for an older stub
+        self.configured = None          # the board profile the stub confirmed after CONFIG
+        self.profile = GENERIC
 
     def set_timeout(self, t):
         """Only when it changes: on macOS pyserial re-applies the terminal settings on every timeout assignment, which
@@ -531,10 +690,15 @@ class Radio:
 
     def start(self, wait=120, stub=None, load=LOAD_ADDR):
         """Boot a stub through the serial boot ROM at power-on, written to and started at load (the DB25-D's first
-        stage answers the same way and takes the stub linked for its RAM span: --load-base)."""
-        stub = stub_image() if stub is None else stub
+        stage answers the same way). Default: the universal stub at 0x10000, which copies itself to its run address;
+        a position-dependent stub (--legacy-stub, --stub FILE) must be linked for `load` (--load-base)."""
+        stub = stub_univ_image() if stub is None else stub
+        if univ_layout(stub):
+            check_univ_load(stub, load)
+            self.stub_head = stub[:0x80]            # the entry code: the same at the load address and the run address
+        else:
+            self.stub_head = stub[:CHUNK]
         stub += b"\xFF" * (-len(stub) % BLOCK)
-        self.stub_head = stub[:CHUNK]
         self.stub_base = load
         self.wait_for_radio(wait)
         self.port.write(b"\x02\x14\x00\x03")
@@ -596,14 +760,84 @@ class Radio:
                 time.sleep(0.02)
         raise DumpError("op 0x%02X: no clean reply after %d tries (%s)" % (op, retries + 1, why))
 
-    def hello(self):
-        r = self.request(0x01, retries=0)
+    def hello(self, retries=0):
+        r = self.request(0x01, retries=retries)
         if r[:6] != b"C7STUB":
             raise DumpError("unexpected hello %r" % r)
         self.info = int.from_bytes(r[13:17], "big") if len(r) >= 17 else 0      # the port's facts (HR_C7000: SSI bursts)
+        if len(r) >= 43 and r[6] >= 6:          # the universal stub: board, flags and its RAM footprint
+            g = lambda o: int.from_bytes(r[o:o + 4], "big")
+            self.v6 = {"load": g(9), "board": r[17], "flags": r[18], "run": g(19), "image": g(23), "bss_end": g(27),
+                       "stack_lo": g(31), "stack_top": g(35), "stack_used": g(39)}
+            self.stub_base = self.v6["run"]     # set_baud's read-back: the running copy
+        else:
+            self.v6 = None                      # an older stub (HELLO shorter than 19 bytes): no CONFIG
         return r[6], (r[7] << 8) | r[8]
 
+    def footprint(self):
+        """One line on the universal stub's RAM use, from HELLO."""
+        v = self.v6
+        return ("loaded at 0x%X, runs at 0x%X-0x%X: image %d B, .bss to 0x%X, stack %d B with %d B used at most"
+                % (v["load"], v["run"], v["stack_top"], v["image"], v["bss_end"], v["stack_top"] - v["stack_lo"], v["stack_used"]))
+
+    def configure(self, board=None):
+        """Send the board's profile to the universal stub (CONFIG, op 0x0D) and check the echo in the next HELLO; writes
+        are refused until this has succeeded. The timer and UART clock is the APB clock, measured here (24 MHz under the
+        boot ROM, 36 MHz under the DB25-D's loader, its stock firmware and ODR's hand-over there, 84 MHz under ODR on the
+        DM-32UV / DM-1801 Pro). An older stub has no CONFIG: nothing is sent."""
+        if self.v6 is None:
+            self.log("stub protocol before 6: no board configuration")
+            return
+        if board is None and self.v6["board"]:     # attached to a stub configured earlier: keep its profile
+            prof = next((b for b in C7_BOARDS.values() if b["id"] == self.v6["board"]), None)
+            if prof is not None and self.v6["flags"] == (1 if prof["nand"] else 0):
+                self.configured = self.profile = prof
+                self.log("stub already configured for the %s; %s" % (prof["name"], self.footprint()))
+                return
+        prof = C7_BOARDS[board] if board else GENERIC
+        hz = self.timer_hz(0.3)
+        if not 1e6 < hz < 4e8:
+            raise DumpError("the stub's timer runs at %.0f Hz, which can't be right: not configuring it" % hz)
+        hz = int(round(hz / 1e5) * 1e5)
+        payload = (hz.to_bytes(4, "big") + hz.to_bytes(4, "big")
+                   + bytes([prof["latch"], prof["key"], LED_RED, LED_GREEN, prof["id"], 1 if prof["nand"] else 0, CFG_UART_THIS, 0]))
+        self.request(0x0D, payload)
+        self.hello(self.retries)                # a damaged reply here is asked for again
+        want = (prof["id"], 1 if prof["nand"] else 0)
+        if self.v6 is None or (self.v6["board"], self.v6["flags"]) != want:
+            raise DumpError("the stub did not take the %s configuration (HELLO says board %s, flags %s): nothing written"
+                            % (prof["name"], self.v6 and self.v6["board"], self.v6 and self.v6["flags"]))
+        self.configured = prof
+        self.profile = prof
+        self.log("stub configured for the %s (clock %.1f MHz); %s" % (prof["name"], hz / 1e6, self.footprint()))
+
+    def check_writable(self):
+        """The universal stub writes nothing before its board configuration is confirmed (HELLO echo after CONFIG)."""
+        if self.v6 is not None and self.configured is None:
+            raise DumpError("the stub's board configuration is not confirmed: refusing to write")
+
+    def mem_size(self, mem):
+        if mem == "progmem":
+            return self.profile["progmem"] if self.v6 is not None else MEM[mem][3]
+        return MEM[mem][3]
+
+    def mem_flags(self, mem):
+        base, ser, cs, _, _ = MEM[mem]
+        if mem == "nand" and not (self.v6 and self.v6["flags"] & 1):
+            raise DumpError("the NAND is read through the universal stub on a radio configured with one (--board db25d)")
+        return (1 if ser else 0) | (2 if cs is not None else 0) | (NAND_FLAG if mem == "nand" else 0)
+
     # ---- entering the stub from a running ODR (debug link frames: A5 5A cmd seq len(2 LE) payload crc16(2 LE))
+    def check_stub(self, image, load, size):
+        """Refuse an image that is not this SoC's stub or is linked for another span. A method so that the STM32 radios
+        (f4stub.F4Radio), whose stub has another entry code and runs at the SRAM base, check their own image."""
+        if univ_layout(image):
+            run, end = check_univ_load(image, load, (load, size))
+            self.log("universal stub: loaded at 0x%X, runs at 0x%X-0x%X" % (load, run, end))
+            self.stub_head = image[:0x80]
+        else:
+            check_stub_fits(image, load, size)
+
     def dl_request(self, cmd, payload, timeout=1.0, retries=3):
         self.dl_seq = (getattr(self, "dl_seq", 0) + 1) & 0xFF
         for attempt in range(retries + 1):
@@ -632,24 +866,29 @@ class Radio:
         raise DumpError("no answer from ODR's debug link to command 0x%02X (is ODR running with CONFIG_STUB_ENTRY=y and "
                         "the programming cable on UART0 at 115200?)" % cmd)
 
-    def odr_enter(self, image=None, entry=None):
+    def odr_enter(self, image=None, entry=None, board=None):
         """Load the stub into a running ODR's free RAM over its debug link and jump to it (radio ON, ODR running). Without
         `image` the embedded stub whose base is the span ODR reports in STUB INFO is used; a given image must be linked
         for that span (checked). Afterwards the stub answers on the same port. Recover the radio with a power cycle
         (or --boot reset)."""
+        if board is None:                       # the profile the stub gets: from VERSION's board= (a library caller)
+            name = version_board(self)
+            board = c7_board(name) if name else None
         r = self.dl_request(DL_STUB, b"\x00")
         if r[0] != 0 or len(r) < 19 or int.from_bytes(r[1:5], "little") != STUB_MAGIC:
             raise DumpError("ODR's STUB info refused or malformed (%s): firmware built without CONFIG_STUB_ENTRY?" % r.hex())
         load, size = int.from_bytes(r[5:9], "little"), int.from_bytes(r[9:13], "little")
         chunk = min(int.from_bytes(r[13:15], "little"), 59)
-        if image is None:
+        if image == "legacy":                   # the position-dependent stubs, one per span (the fallback)
             known = odr_stubs()
             if load not in known:
-                raise DumpError("ODR offers RAM at 0x%X and no embedded stub is linked for that base (have %s): give the "
+                raise DumpError("ODR offers RAM at 0x%X and no legacy stub is linked for that base (have %s): give the "
                                 "matching image with --odr-stub" % (load, ", ".join("0x%X %s" % (k, v[0]) for k, v in sorted(known.items()))))
-            self.log("the firmware's stub span 0x%X: using the embedded stub for %s" % (load, known[load][0]))
+            self.log("the firmware's stub span 0x%X: using the legacy stub for %s" % (load, known[load][0]))
             image = known[load][1]
-        check_stub_fits(image, load, size)
+        elif image is None:
+            image = stub_univ_image()
+        self.check_stub(image, load, size)
         if len(image) > size:
             raise DumpError("stub image (%d bytes) does not fit ODR's free RAM (%d bytes)" % (len(image), size))
         entry = load if entry is None else entry
@@ -665,11 +904,15 @@ class Radio:
         r = self.dl_request(DL_STUB, b"\x03" + STUB_MAGIC.to_bytes(4, "little"))
         if r[0] == 3:
             raise DumpError("ODR refused to enter the stub: the radio is transmitting. Release PTT and run again")
+        if r[0] == 7 and len(r) > 1 and r[1] == 1:
+            raise DumpError("ODR refused to enter this stub: its watchdog runs and the stub doesn't feed it, so the radio "
+                            "would reset part way through. Use the stub from a current stubtool.py / f4stub.py")
         if r[0] != 0:
             raise DumpError("ODR refused to enter the stub (status %d): image incomplete or CRC mismatch" % r[0])
         self.log("ODR is jumping to the stub")
         time.sleep(0.3)
         self.attach()
+        self.configure(board)
 
     def send_noreply(self, op, payload=b""):
         """A request the radio will not answer because it is about to reset or jump away."""
@@ -679,7 +922,12 @@ class Radio:
     def reset_chip(self):
         """Soft-reset the SoC (hardware-dm32.md 1.1: XIP quad off and the reset divider, then SYS_SOFT_RSTN = 0). The boot
         ROM runs again, offers its serial window briefly, then starts the firmware from flash: the same as a power cycle
-        without the cycle. The soft reset keeps the divider, and the ROM can't read flash at ODR's divider 2."""
+        without the cycle. The soft reset keeps the divider, and the ROM can't read flash at ODR's divider 2. The watchdog
+        goes off first: ODR leaves it running while the stub feeds it, a soft reset may keep it, and the bootloader never
+        feeds it (its update mode waits for the PC). ODR starts it again."""
+        self.poke(WDT_LOCK, WDT_KEY.to_bytes(4, "little"))
+        self.poke(WDT_EN, (0).to_bytes(4, "little"))
+        self.poke(WDT_LOCK, (0).to_bytes(4, "little"))
         self.poke(QUAD_ENABLE, (0).to_bytes(4, "little"))
         self.poke(LCSFC_BAUDR, (4).to_bytes(4, "little"))
         self.send_noreply(0x03, SYS_SOFT_RSTN.to_bytes(4, "big") + (0).to_bytes(4, "little"))
@@ -706,6 +954,8 @@ class Radio:
     # ---- flash
     def jedec(self, mem):
         base, ser, cs, _, _ = MEM[mem]
+        if mem == "nand":                       # 0x9F, a dummy byte, then maker and device (hardware-db25d.md 6.5)
+            return self.spi(base, b"\x9F\x00", 2, ser, cs)
         return self.spi(base, b"\x9F", 3, ser, cs)
 
     def read_flash(self, mem, addr, n):
@@ -737,18 +987,21 @@ class Radio:
     def check_write_range(self, mem, start, end, app=False):
         if start % SECTOR or end % SECTOR or start >= end:
             raise DumpError("writes are whole 4 KB sectors")
+        if mem == "nand":
+            raise DumpError("the NAND is read only here")
         ok = WRITE_OK.get(mem, []) + ([(APP_START, APP_END)] if app and mem == "progmem" else [])
         if not any(a <= start and end <= b for a, b in ok):
             raise DumpError("%s 0x%X-0x%X is outside the allowed write regions %s" %
                             (MEM[mem][4], start, end, ", ".join("0x%X-0x%X" % r for r in WRITE_OK.get(mem, []))))
 
     def erase_sectors(self, mem, start, end):
+        self.check_writable()
         self.check_write_range(mem, start, end)
         self.check_id(mem)
         for a in range(start, end, SECTOR):
             self._write_cmd(mem, bytes([0x20, a >> 16 & 0xFF, a >> 8 & 0xFF, a & 0xFF]), "erase 0x%X" % a, 3.0)
 
-    def write_image(self, image, progress=None):
+    def write_image(self, image, progress=None, replace_stage=False):
         """Program an ODR application image into the program flash at 0xC000 (where it is linked to run): only the 4 KB
         sectors whose CRC differs from the flash are erased and written, then everything is verified by CRC. The
         bootloader below 0xC000 is never touched. Returns (sectors written, sectors left alone)."""
@@ -760,8 +1013,14 @@ class Radio:
         if image[:4] == b"\x00" * 4 or len(set(image[:64])) < 2:
             raise DumpError("this does not look like an application image (starts with %s)" % image[:8].hex())
         padded = image + b"\xff" * (end - APP_START - len(image))
+        self.check_writable()
         self.check_write_range(mem, APP_START, end, app=True)
         self.check_id(mem)
+        # The application alone over a first stage leaves the radio in its update loader (white screen, red LED)
+        if not replace_stage and self.read_flash(mem, APP_START, 4) == STAGE_MAGIC and image[:4] != STAGE_MAGIC:
+            raise DumpError("this radio has ODR's first stage at 0x%X and the image does not start with it: write the "
+                            "install image (odr_<board>_install.bin), not the application alone (--replace-stage "
+                            "writes it anyway)" % APP_START)
         todo = self.verify(mem, padded, APP_START)
         for n, a in enumerate(todo):
             if progress:
@@ -780,6 +1039,7 @@ class Radio:
     def write_flash(self, mem, start, data):
         """Erase and program whole sectors at `start`, then check by CRC against the radio's own read of them."""
         end = start + len(data)
+        self.check_writable()
         self.check_write_range(mem, start, end)
         self.erase_sectors(mem, start, end)
         for a in range(start, end, PAGE):
@@ -793,7 +1053,7 @@ class Radio:
     def sums(self, mem, addr, count):
         """[(crc32, blank)] for `count` sectors from addr, computed by the radio."""
         base, ser, cs, _, _ = MEM[mem]
-        flags = (1 if ser else 0) | (2 if cs is not None else 0)
+        flags = self.mem_flags(mem)
         payload = (base.to_bytes(4, "big") + bytes([flags, cs or 0]) + addr.to_bytes(4, "big")
                    + count.to_bytes(2, "big"))
         r = self.request(0x07, payload, timeout=1.0 + count * 0.15)
@@ -907,7 +1167,7 @@ class Radio:
         next sector while the previous one is on the wire. A frame error raises FrameError; the rest of the stream
         must then be drained."""
         base, ser, cs, _, _ = MEM[mem]
-        flags = (1 if ser else 0) | (2 if cs is not None else 0)
+        flags = self.mem_flags(mem)
         payload = (base.to_bytes(4, "big") + bytes([flags, cs or 0]) + addr.to_bytes(4, "big")
                    + bytes([count, 1 if compress else 0]))
         self.port.reset_input_buffer()
@@ -938,12 +1198,12 @@ class Radio:
     def check_id(self, mem):
         id_ = self.jedec(mem)
         self.log("%s JEDEC ID %s" % (MEM[mem][4], id_.hex()))
-        if id_ in (b"\xff\xff\xff", b"\x00\x00\x00"):
+        if id_ in (b"\xff" * len(id_), b"\x00" * len(id_)):
             raise DumpError("%s does not answer the ID command (%s): chip select or pin mux wrong, nothing was dumped"
                             % (MEM[mem][4], id_.hex()))
 
     def windows(self, mem, start, end):
-        size = MEM[mem][3]
+        size = self.mem_size(mem)
         if not 0 <= start < end <= size:
             raise DumpError("%s range must lie within 0..0x%X" % (mem, size))
         for w in range(start // SECTOR * SECTOR, end, WINDOW * SECTOR):
@@ -955,7 +1215,7 @@ class Radio:
         carries no address, so one left over from a stream cut short could pass for another sector: at the end every
         sector is checked against the radio's sector CRCs (op 07) and read again until it matches."""
         self.check_id(mem)
-        size = MEM[mem][3]
+        size = self.mem_size(mem)
         if not 0 <= start < end <= size:
             raise DumpError("%s range must lie within 0..0x%X" % (mem, size))
         out.seek(0)
@@ -1118,6 +1378,8 @@ class FakeRadio:
         self.switch_to = None
         self.wel = False
         self.writes = []
+        self.univ = None                    # a universal stub: {"run", "end", "board", "flags", "honor"} (protocol 6)
+        self.configs = []
 
     def revert_check(self):
         if self.pending and time.monotonic() >= self.pending[1]:
@@ -1206,13 +1468,27 @@ class FakeRadio:
         status, body = OK, b""
         if op == 0x01:
             body = b"C7STUB" + bytes([1, 1032 >> 8, 1032 & 255]) + LOAD_ADDR.to_bytes(4, "big")
+            u = self.univ
+            if u:
+                body = (b"C7STUB" + bytes([6, 1032 >> 8, 1032 & 255]) + self.load.to_bytes(4, "big") + (0x0808).to_bytes(4, "big")
+                        + bytes([u["board"], u["flags"]]) + u["run"].to_bytes(4, "big") + len(self.loaded).to_bytes(4, "big")
+                        + (u["end"] - 0x1004).to_bytes(4, "big") + (u["end"] - 0x1000).to_bytes(4, "big")
+                        + u["end"].to_bytes(4, "big") + (600).to_bytes(4, "big"))
+        elif op == 0x0D and self.univ:
+            if len(payload) != 16 or payload[14] > 3:
+                status = BADOP
+            else:
+                self.configs.append(bytes(payload))
+                if self.univ["honor"]:
+                    self.univ["board"], self.univ["flags"] = payload[12], payload[13]
         elif op == 0x02:
             a = int.from_bytes(payload[:4], "big")
             c = int.from_bytes(payload[4:6], "big")
             if a == TIMER2_VALUE:
                 self.mem[a] = (-int(time.monotonic() * self.t_hz)) & 0xFFFFFFFF
-            if LOAD_ADDR <= a < LOAD_ADDR + len(self.loaded):
-                body = bytes(self.loaded[a - LOAD_ADDR:a - LOAD_ADDR + c])
+            run = self.univ["run"] if self.univ else LOAD_ADDR
+            if run <= a < run + len(self.loaded):
+                body = bytes(self.loaded[a - run:a - run + c])
             else:
                 body = b"".join(self.mem.get(a + i, 0).to_bytes(4, "little") for i in range(0, c, 4))[:c]
         elif op == 0x0B:
@@ -1231,7 +1507,7 @@ class FakeRadio:
             base = int.from_bytes(payload[:4], "big")
             flags, cs = payload[4], payload[5]
             addr, cnt = int.from_bytes(payload[6:10], "big"), int.from_bytes(payload[10:12], "big")
-            mem = "progmem" if base == SSI_PROG else "q128"
+            mem = "progmem" if base == SSI_PROG else "nand" if flags & NAND_FLAG else "q128"
             sel = bool(flags & 1) and (mem == "progmem" or (flags & 2 and cs == 18))
             for i in range(cnt):
                 sec = self.images[mem][addr + i * SECTOR:addr + (i + 1) * SECTOR] if sel else b"\xff" * SECTOR
@@ -1256,7 +1532,7 @@ class FakeRadio:
             base = int.from_bytes(payload[:4], "big")
             flags, cs = payload[4], payload[5]
             addr, cnt, mode = int.from_bytes(payload[6:10], "big"), payload[10], payload[11]
-            mem = "progmem" if base == SSI_PROG else "q128"
+            mem = "progmem" if base == SSI_PROG else "nand" if flags & NAND_FLAG else "q128"
             sel = bool(flags & 1) and (mem == "progmem" or (flags & 2 and cs == 18))
             frames = bytearray()
             for i in range(cnt):
@@ -1341,8 +1617,58 @@ class FakeRadio:
         return True
 
 
+class FakeODR:
+    """A running ODR's debug link STUB command (docs/spec/debuglink.md 3.18) for the self-tests: offers `span`,
+    takes the image, enters if its CRC matches. Also used by f4stub.py's self-test."""
+
+    def __init__(self, span=(0x17000, 0x18000)):
+        self.span = span                            # (base, size) the "firmware" offers in STUB INFO
+        self.timeout = 0.02
+        self.out = b""
+        self.mem = bytearray(span[1])
+        self.total = self.crc = None
+        self.entered = False
+
+    def reset_input_buffer(self):
+        self.out = b""
+
+    def read(self, n):
+        r, self.out = self.out[:n], self.out[n:]
+        return r
+
+    def write(self, b):
+        assert b[:2] == b"\xA5\x5A" and crc16_ccitt(b[2:-2]) == int.from_bytes(b[-2:], "little")
+        cmd, seq, n = b[2], b[3], b[4] | b[5] << 8
+        p = b[6:6 + n]
+        if cmd == 0x02:                             # VERSION: the board odr_enter picks the stub profile by
+            rep = bytes([cmd | 0x80, seq]) + (14).to_bytes(2, "little") + b"\0board=DB25-D\n"
+            self.out = b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
+            return
+        assert cmd == DL_STUB
+        op, st, body = p[0], 0, b""
+        if op == 0:
+            body = (STUB_MAGIC.to_bytes(4, "little") + self.span[0].to_bytes(4, "little") + self.span[1].to_bytes(4, "little")
+                    + (59).to_bytes(2, "little") + b"\0" + (0).to_bytes(4, "little"))
+        elif op == 1:
+            self.total, self.crc = int.from_bytes(p[5:9], "little"), int.from_bytes(p[9:13], "little")
+            self.mem = bytearray(self.span[1])
+        elif op == 2:
+            off = int.from_bytes(p[1:5], "little")
+            self.mem[off:off + len(p) - 5] = p[5:]
+        elif op == 3:
+            st = 0 if zlib.crc32(bytes(self.mem[:self.total])) == self.crc else 4
+            self.entered = st == 0
+        rep = bytes([cmd | 0x80, seq]) + (1 + len(body)).to_bytes(2, "little") + bytes([st]) + body
+        self.out = b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
+
+
 def rxn_big(payload):
     return int.from_bytes(payload[8:10], "big") >= 256
+
+
+def open_port(serial, path):
+    """A device or a pyserial URL: rfc2217://HOST:PORT reaches a radio on a networked serial server."""
+    return serial.serial_for_url(path, 115200, timeout=0.1)
 
 
 def self_test():
@@ -1355,6 +1681,15 @@ def self_test():
             print("FAIL: " + what)
 
     quiet = lambda *a: None
+    try:
+        import serial
+    except ImportError:
+        serial = None
+    if serial is not None:	# the port argument takes pyserial URLs (rfc2217:// through a serial server)
+        p = open_port(serial, "loop://")
+        p.write(b"\x5a")
+        check(p.read(1) == b"\x5a", "a pyserial URL opens as the port")
+        p.close()
     def image(seed, blank_from):
         d = bytearray(bytes((i * seed + (i >> 8) * 13 + 1) & 0xFF for i in range(64 * SECTOR)))
         d[blank_from * SECTOR:] = b"\xff" * (len(d) - blank_from * SECTOR)          # erased tail
@@ -1491,44 +1826,11 @@ def self_test():
         check(False, "range beyond the chip refused")
     except DumpError:
         pass
-    # entering the stub from ODR: a small debug-link responder following docs/spec/debuglink.md 3.18
+    # entering the stub from ODR (FakeODR: the debug link STUB command)
     def fake_stub(base, length):                       # an image with the entry code's literal pool, linked at `base`
         return (b"\x80\xc0\x20\x70" + bytes(0x24) + (base + length).to_bytes(4, "little") + (base + 0x34 + 1024).to_bytes(4, "little")
                 + (base + 0x632C).to_bytes(4, "little") + bytes(range(256)) * 4)
 
-    class FakeODR:
-        def __init__(self, span=(0x17000, 0x18000)):
-            self.span = span                            # (base, size) the "firmware" offers in STUB INFO
-            self.timeout = 0.02
-            self.out = b""
-            self.mem = bytearray(span[1])
-            self.total = self.crc = None
-            self.entered = False
-        def reset_input_buffer(self):
-            self.out = b""
-        def read(self, n):
-            r, self.out = self.out[:n], self.out[n:]
-            return r
-        def write(self, b):
-            assert b[:2] == b"\xA5\x5A" and crc16_ccitt(b[2:-2]) == int.from_bytes(b[-2:], "little")
-            cmd, seq, n = b[2], b[3], b[4] | b[5] << 8
-            p = b[6:6 + n]
-            assert cmd == DL_STUB
-            op, st, body = p[0], 0, b""
-            if op == 0:
-                body = (STUB_MAGIC.to_bytes(4, "little") + self.span[0].to_bytes(4, "little") + self.span[1].to_bytes(4, "little")
-                        + (59).to_bytes(2, "little") + b"\0" + (0).to_bytes(4, "little"))
-            elif op == 1:
-                self.total, self.crc = int.from_bytes(p[5:9], "little"), int.from_bytes(p[9:13], "little")
-                self.mem = bytearray(self.span[1])
-            elif op == 2:
-                off = int.from_bytes(p[1:5], "little")
-                self.mem[off:off + len(p) - 5] = p[5:]
-            elif op == 3:
-                st = 0 if zlib.crc32(bytes(self.mem[:self.total])) == self.crc else 4
-                self.entered = st == 0
-            rep = bytes([cmd | 0x80, seq]) + (1 + len(body)).to_bytes(2, "little") + bytes([st]) + body
-            self.out = b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
     spans = {0x17000: (0x18000, "DM-32UV"), 0x30000: (0x20000, "DB25-D"), 0x1D000: (0x12000, "DB25-D with DMR")}
     known = odr_stubs()
     check(set(known) == set(spans), "embedded ODR stubs cover %s" % sorted(hex(k) for k in spans))
@@ -1539,9 +1841,15 @@ def self_test():
         odr = FakeODR((base, size))                    # no image given: chosen by the span the firmware reports
         ro = Radio(odr, log=quiet)
         ro.attach = lambda: None
-        ro.odr_enter()
+        ro.odr_enter("legacy")
         check(odr.entered and bytes(odr.mem[:len(known[base][1])]) == known[base][1],
-              "odr_enter picks the embedded stub for the %s span 0x%X" % (name, base))
+              "odr_enter picks the legacy stub for the %s span 0x%X" % (name, base))
+        odr = FakeODR((base, size))                    # default: the universal stub, at the span's base
+        ro = Radio(odr, log=quiet)
+        ro.attach = lambda: None
+        ro.odr_enter()
+        univ = stub_univ_image()
+        check(odr.entered and bytes(odr.mem[:len(univ)]) == univ, "odr_enter loads the universal stub into the %s span 0x%X" % (name, base))
         for other, (_, img) in known.items():           # every stub linked for another base is refused, nothing is sent
             if other == base:
                 continue
@@ -1555,8 +1863,8 @@ def self_test():
                 check(not odr.entered and odr.total is None, "stub for 0x%X refused before BEGIN on the 0x%X span" % (other, base))
     odr = FakeODR((0x40000, 0x10000))
     try:
-        Radio(odr, log=quiet).odr_enter()
-        check(False, "an unknown span with no image given is refused")
+        Radio(odr, log=quiet).odr_enter("legacy")
+        check(False, "an unknown span with no legacy image is refused")
     except DumpError as e:
         check("--odr-stub" in str(e), "unknown span message names --odr-stub")
     odr = FakeODR((0x17000, 0x18000))
@@ -1584,6 +1892,106 @@ def self_test():
         check(len(stub_image()) > 0, "embedded stub decodes")
     except DumpError as e:
         check(False, "embedded stub: %s" % e)
+    # ---- the universal stub (stub/README.md: RAM placement)
+    univ = stub_univ_image()
+    lay = univ_layout(univ)
+    check(lay is not None and lay[0] == 0x30000 and lay[0] + len(univ) <= lay[1] <= 0x40000,
+          "universal stub runs at 0x30000 and stays below 0x40000 (%s)" % (lay and [hex(x) for x in lay]))
+    check(univ_layout(stub_image()) is None and all(univ_layout(v[1]) is None for v in odr_stubs().values()),
+          "legacy stubs are told apart from the universal one")
+    # every way in: ROM / first stage at 0x10000, ODR's spans, run address itself, a stock DB25-D's console window
+    for load, win in ((0x10000, None), (0x17000, (0x17000, 0x18000)), (0x1D000, (0x1D000, 0x12000)), (0x30000, (0x30000, 0x20000)),
+                      (0x54000, (0x54000, 0x4000))):
+        try:
+            check_univ_load(univ, load, win)
+        except DumpError as e:
+            check(False, "universal stub loads at 0x%X: %s" % (load, e))
+    for load, win, why in ((0x30800, None, "overlapping its run copy"), (0x2F000, None, "overlapping from below"),
+                           (0x17002, None, "unaligned"), (0x57000, None, "past the end of SRAM"), (0x8000, None, "below SRAM"),
+                           (0x1D000, (0x1D000, 0x1000), "a window smaller than the image")):
+        try:
+            check_univ_load(univ, load, win)
+            check(False, "universal stub refused %s (0x%X)" % (why, load))
+        except DumpError:
+            pass
+    odr = FakeODR((0x2F000, 0x4000))                    # a span that would overlap the run copy: refused before BEGIN
+    try:
+        Radio(odr, log=quiet).odr_enter()
+        check(False, "odr_enter refuses a span overlapping the universal stub's run address")
+    except DumpError:
+        check(odr.total is None, "overlapping span refused before BEGIN")
+    # power-on with the universal stub, CONFIG, the HELLO echo, writes gated on it, the NAND path
+    nand = bytearray(images["q128"][:16 * SECTOR])
+    nand[SECTOR:2 * SECTOR] = b"\xff" * SECTOR
+    for board in ("db25d", "dm1801pro", None):
+        imgs = dict(images, nand=bytes(nand))
+        radio = FakeRadio(imgs, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
+        radio.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+        r = Radio(radio, log=quiet)
+        r.start(wait=2)
+        check(radio.running and not radio.errors and bytes(radio.loaded[:len(univ)]) == univ,
+              "the universal stub is the default power-on image, at 0x10000 (%s)" % radio.errors)
+        check(r.v6 is not None and r.v6["run"] == 0x30000 and r.v6["load"] == 0x10000, "HELLO v6 parsed")
+        try:
+            r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
+            check(False, "a write before CONFIG is refused")
+        except DumpError as e:
+            check("configuration" in str(e), "write before CONFIG refused: %s" % e)
+        r.configure(board)
+        prof = C7_BOARDS[board] if board else GENERIC
+        cfg = radio.configs[-1]
+        check(cfg[8:10] == bytes([prof["latch"], prof["key"]]) and cfg[12] == prof["id"] and cfg[14] == CFG_UART_THIS,
+              "CONFIG carries the %s profile" % prof["name"])
+        check(23e6 < int.from_bytes(cfg[:4], "big") < 25e6, "CONFIG carries the measured clock")
+        check(r.configured is prof, "the %s profile is confirmed by the HELLO echo" % prof["name"])
+        nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
+        check(nw == 0 and nk == 4, "writing the same image after CONFIG changes nothing")
+        if board == "db25d":		# a first stage in the radio: only an image that starts with one goes over it
+            pm = bytearray(radio.images["progmem"])
+            pm[APP_START:APP_START + 4] = STAGE_MAGIC
+            radio.images["progmem"] = bytes(pm)
+            try:
+                r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
+                check(False, "the application alone over a first stage is refused")
+            except DumpError as e:
+                check("install image" in str(e), "application over a first stage refused: %s" % e)
+            app = images["progmem"][APP_START:APP_START + 4 * SECTOR]
+            nw, nk = r.write_image(app, replace_stage=True)
+            check(nw >= 1, "--replace-stage writes the application over the first stage")
+            radio.images["progmem"] = bytes(pm)
+            nw, nk = r.write_image(bytes(pm[APP_START:APP_START + 4 * SECTOR]))
+            check(nk == 4, "an install image over a first stage is written")
+        if board == "db25d":
+            out = io.BytesIO()
+            r.dump(out, "nand", 0, 16 * SECTOR)
+            check(out.getvalue() == bytes(nand), "NAND read through the stub's NAND path")
+            check(r.mem_size("progmem") == 0x200000, "the DB25-D's program flash is 2 MB")
+        else:
+            try:
+                r.dump(io.BytesIO(), "nand", 0, SECTOR)
+                check(False, "NAND refused on a radio without one")
+            except DumpError:
+                pass
+    radio = FakeRadio(images, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
+    radio.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": False}
+    r = Radio(radio, log=quiet)
+    r.start(wait=2)
+    try:
+        r.configure("db25d")
+        check(False, "a stub that ignores CONFIG is caught by the HELLO echo")
+    except DumpError:
+        try:
+            r.write_image(images["progmem"][APP_START:APP_START + SECTOR])
+            check(False, "no write after a failed CONFIG")
+        except DumpError:
+            pass
+    # an old stub (HELLO without the v6 fields): no CONFIG, writes allowed as before
+    radio = FakeRadio(images, stub_len=len(stub))
+    r = Radio(radio, log=quiet)
+    r.start(wait=2, stub=stub)
+    r.configure("db25d")
+    check(r.v6 is None and not radio.configs, "an old stub gets no CONFIG")
+    r.write_image(images["progmem"][APP_START:APP_START + SECTOR])
     print("stubtool self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                     "" if len(fails) == 1 else "s"))
     return 0 if not fails else 1
@@ -1639,6 +2047,20 @@ class UdpPort:
         self.sock.close()
 
 
+def version_board(radio):
+    """The board= name from a running ODR's debug link VERSION reply, or None."""
+    try:
+        r = radio.dl_request(0x02, b"")
+    except DumpError:
+        return None
+    if not r or r[0] != 0:
+        return None
+    for line in r[1:].decode("ascii", "replace").splitlines():
+        if line.startswith("board="):
+            return line[6:].strip()
+    return None
+
+
 def find_odr_port():
     """The one serial port with ODR's USB identity (1FC9:0094), which the STM32 stub also uses"""
     from serial.tools import list_ports
@@ -1650,7 +2072,8 @@ def find_odr_port():
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    ap.add_argument("port", nargs="?", help="serial port, or udp:ADDR[:PORT] for an STM32 radio in USB network mode")
+    ap.add_argument("port", nargs="?", help="serial port or pyserial URL (rfc2217://HOST:PORT), or udp:ADDR[:PORT] for an "
+                    "STM32 radio in USB network mode")
     ap.add_argument("--stub-port", metavar="PORT", help="with a udp: port: the serial port the stub comes up on "
                     "(default: the one USB device 1FC9:0094)")
     ap.add_argument("out", nargs="?", help="old form: output file for the memory chosen with --mem")
@@ -1659,6 +2082,10 @@ def main(argv=None):
     ap.add_argument("--q128", metavar="FILE", help="read the 16 MB data flash into FILE")
     ap.add_argument("--progmem-range", metavar="START:END", help="byte range, any alignment (default all)")
     ap.add_argument("--q128-range", metavar="START:END")
+    ap.add_argument("--nand", metavar="FILE", help="DB25-D (--board db25d or found from ODR): read the SPI NAND into FILE "
+                    "(2 KB pages without the spare bytes; give --nand-range, the chip is 256 MB)")
+    ap.add_argument("--nand-range", metavar="START:END")
+    ap.add_argument("--verify-nand", metavar="FILE", help="compare the NAND from --nand-range's start (default 0) with FILE by CRC")
     ap.add_argument("--start", type=lambda s: int(s, 0), help="old form: first byte")
     ap.add_argument("--end", type=lambda s: int(s, 0), help="old form: end (exclusive)")
     ap.add_argument("--verify-progmem", metavar="FILE", help="compare the program flash with FILE by CRC (no data transfer)")
@@ -1689,18 +2116,25 @@ def main(argv=None):
                     "firmware reports); refused unless it is linked for that span")
     ap.add_argument("--write-app", metavar="IMAGE", help="program an ODR application image (raw .bin linked for 0x0300C000) into the "
                     "program flash at 0xC000: only changed 4 KB sectors are written, then verified; the bootloader is never touched. "
-                    "Use with --odr-enter (radio running ODR) or the boot-ROM load; finish with --boot reset")
+                    "Use with --odr-enter (radio running ODR) or the boot-ROM load; finish with --boot reset. On a radio with "
+                    "ODR's first stage at 0xC000 (DB25-D) give the _install.bin, which starts with it")
+    ap.add_argument("--replace-stage", action="store_true", help="let --write-app put an image that does not start with "
+                    "ODR's first stage over one (the radio then starts only what the image holds at 0xC000)")
     ap.add_argument("--attach", action="store_true", help="the stub from an earlier run is still up: skip the boot")
-    ap.add_argument("--stub", metavar="FILE", help="load this stub image instead of the embedded one")
+    ap.add_argument("--stub", metavar="FILE", help="load this stub image instead of the embedded universal one (a universal "
+                    "image, or a position-dependent one linked for the load address)")
+    ap.add_argument("--legacy-stub", action="store_true", help="use the position-dependent stubs embedded before the universal "
+                    "one (one per RAM span: the boot ROM's 0x10000, ODR's 0x17000, the DB25-D's 0x30000 / 0x1D000). Fallback only")
     ap.add_argument("--load-base", metavar="ADDR", type=lambda s: int(s, 0),
-                    help="power-on load: write and start the stub at ADDR, with the embedded stub linked for it unless "
-                         "--stub is given. The DB25-D's first stage needs 0x30000 (hardware-db25d.md 7); default 0x%X" % LOAD_ADDR)
-    ap.add_argument("--board", choices=("dm1701", "md380"), help="an STM32 radio (stub/f4stub.py); found from the "
-                    "radio's VERSION reply with --odr-enter, needed with --attach")
-    ap.add_argument("--no-rodata2", action="store_true", help="STM32 --write-app: the DM-1701 application without its "
-                    "sector 9 part, on purpose")
+                    help="power-on load: write and start the stub at ADDR (default 0x%X). The universal stub runs from any "
+                         "base that doesn't overlap its run area; a legacy stub must be linked for it (the DB25-D's first stage "
+                         "took the legacy 0x30000 stub at 0x30000)" % LOAD_ADDR)
+    ap.add_argument("--board", choices=("dm1701", "md380") + tuple(C7_BOARDS),
+                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (dm32, dm1801pro, db25d: the board "
+                         "profile the universal stub gets). Found from the radio's VERSION reply with --odr-enter; give it at "
+                         "power-on and with --attach (without it the stub gets a profile that drives no board pins)")
     ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
-                    "is saved before it is erased (the MD-380's sector 6; default the home directory, never a git tree)")
+                    "is saved before it is erased (default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test:
@@ -1712,10 +2146,12 @@ def main(argv=None):
     if a.out:
         size = MEM[a.mem][3]
         jobs.append((a.mem, a.out, a.start or 0, a.end if a.end is not None else size))
-    for mem, f, rng in (("progmem", a.progmem, a.progmem_range), ("q128", a.q128, a.q128_range)):
+    for mem, f, rng in (("progmem", a.progmem, a.progmem_range), ("q128", a.q128, a.q128_range), ("nand", a.nand, a.nand_range)):
         if f:
-            jobs.append((mem,) + (f,) + parse_range(rng, MEM[mem][3]))
-    if not (jobs or a.probe or a.peek or a.verify_progmem or a.verify_q128 or a.led_test or a.led_seq or a.boot or a.write_test or a.write_app or a.write_q128):
+            if mem == "nand" and not rng:
+                ap.error("--nand needs --nand-range (the chip is 256 MB)")
+            jobs.append((mem, f, rng))
+    if not (jobs or a.probe or a.peek or a.verify_progmem or a.verify_q128 or a.verify_nand or a.led_test or a.led_seq or a.boot or a.write_test or a.write_app or a.write_q128):
         ap.error("nothing to do: give --progmem, --q128, --verify-*, --probe, --peek or OUT")
     try:
         import serial
@@ -1727,34 +2163,43 @@ def main(argv=None):
         if a.port.startswith("udp:"):
             # a radio in USB network mode: the hand-over goes over UDP; the stub then enumerates as a serial port
             port = UdpPort(a.port[4:])
-            reopen = lambda: serial.Serial(a.stub_port or find_odr_port(), 115200, timeout=0.1)
+            reopen = lambda: open_port(serial, a.stub_port or find_odr_port())
         else:
-            port = serial.Serial(a.port, 115200, timeout=0.1)
+            port = open_port(serial, a.port)
             import f4stub
             reopen = f4stub.PortFollower(serial, a.port)
         radio = Radio(port, retries=a.retries)
         # The STM32 radios (DM-1701, MD-380) run their own stub over USB: stub/f4stub.py
         import f4stub
         if a.board is None and a.odr_enter:
-            a.board = f4stub.board_from_version(radio)
+            name = version_board(radio)
+            a.board = f4stub.board_for(name) if name else None
+            if a.board is None and name:
+                a.board = c7_board(name)
+                if a.board is None:
+                    print("ODR reports board %r: not one with a stub profile, using the generic one" % name)
         if a.board in f4stub.BOARDS:
             return f4stub.run(a, port, reopen)
         if a.write_q128:
             raise DumpError("--write-q128 is for the STM32 radios (DM-1701, MD-380)")
         if a.odr_enter:
-            radio.odr_enter(open(a.odr_stub, "rb").read() if a.odr_stub else None)
+            radio.odr_enter(open(a.odr_stub, "rb").read() if a.odr_stub else ("legacy" if a.legacy_stub else None), board=a.board)
         elif a.attach:
             radio.attach()
+            radio.configure(a.board)
         else:
-            load = LOAD_ADDR
-            if a.load_base is not None:
-                load = a.load_base
-                if stub is None:
-                    if load not in odr_stubs():
-                        raise DumpError("no embedded stub is linked for 0x%X: give --stub" % load)
+            load = LOAD_ADDR if a.load_base is None else a.load_base
+            if stub is None and a.legacy_stub:
+                if load == LOAD_ADDR:
+                    stub = stub_image()
+                elif load in odr_stubs():
                     stub = odr_stubs()[load][1]
+                else:
+                    raise DumpError("no legacy stub is linked for 0x%X: give --stub" % load)
             print("radio OFF? switch it on now (waiting up to %d s)" % a.wait)
             radio.start(a.wait, stub, load)
+            radio.configure(a.board)
+        jobs = [(mem, f) + parse_range(rng, radio.mem_size(mem)) for mem, f, rng in jobs]
         if a.baud:
             for b in ([921600, 460800, 230400, 750000, 500000, 375000, 250000] if a.baud == "auto" else [int(a.baud)]):
                 if radio.set_baud(b):
@@ -1774,7 +2219,7 @@ def main(argv=None):
         if a.write_app:
             image = open(a.write_app, "rb").read()
             t0 = time.monotonic()
-            nw, nk = radio.write_image(image, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
+            nw, nk = radio.write_image(image, replace_stage=a.replace_stage, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
             print("\n%s: %d bytes, %d sectors written, %d unchanged, verified by CRC, %.0f s" % (a.write_app, len(image), nw, nk, time.monotonic() - t0))
             print("sha256", fingerprint(a.write_app))
             if not a.boot:
@@ -1806,12 +2251,16 @@ def main(argv=None):
             data = b"".join(radio.peek(addr + i, min(CHUNK, n - i)) for i in range(0, n, CHUNK))
             for i in range(0, len(data), 16):
                 print("%08X  %s" % (addr + i, data[i:i + 16].hex(" ")))
-        for mem, path in (("progmem", a.verify_progmem), ("q128", a.verify_q128)):
+        for mem, path in (("progmem", a.verify_progmem), ("q128", a.verify_q128), ("nand", a.verify_nand)):
             if path:
                 data = open(path, "rb").read()
-                bad = radio.verify(mem, data)
+                data += b"\xff" * (-len(data) % SECTOR)
+                start = parse_range(a.nand_range, radio.mem_size(mem))[0] if mem == "nand" and a.nand_range else 0
+                bad = radio.verify(mem, data, start)
                 print("%s vs %s: %s" % (MEM[mem][4], path, "identical" if not bad else
                       "%d sectors differ, first at 0x%X" % (len(bad), bad[0])))
+        if radio.v6 is not None and (jobs or a.write_app or a.verify_progmem or a.verify_nand):
+            print("stub RAM:", radio.footprint())
         for mem, path, start, end in jobs:
             with open(path, "wb") as f:
                 t0 = time.monotonic()
@@ -1842,4 +2291,7 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # f4stub imports this file as "stubtool": without this it would load a second copy, and its DumpError would be a
+    # different class from the one main() catches (an STM32 error printed as a traceback)
+    sys.modules.setdefault("stubtool", sys.modules[__name__])
     sys.exit(main())

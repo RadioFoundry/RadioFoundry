@@ -155,6 +155,17 @@ static void io_init(void)
 	hrc_pin_in(PIN_FD_DATA);
 }
 
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-dm32.md 5): both PA selects and the PA
+// drive (DAC B to 0, powered down). RAM code, register writes only. The FD6818 may still be set to transmit (its bus is
+// a bit-banged transaction): with the PA selects off its output reaches no keyed PA, and the next start sets it up again
+HRC_RAMFUNC void board_rf_safe(void)
+{
+	hrc_pin_force(PIN_UHF_PA, false);
+	hrc_pin_force(PIN_VHF_PA, false);
+	DAC_DATA_B = 0;
+	DAC_PD_CTRL |= DAC_B_OFF;
+}
+
 void board_early_init(void)
 {
 	io_init();

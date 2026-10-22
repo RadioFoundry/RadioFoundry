@@ -26,5 +26,9 @@ odrflash = "odrflash.cli:main"
 [tool.setuptools]
 packages = ["odrflash"]
 
+# the codec maps (docs/spec/codec-placement.md): addresses and offsets only, no codec bytes
+[tool.setuptools.package-data]
+odrflash = ["codec_maps/*/*.json"]
+
 [tool.setuptools.dynamic]
 version = { attr = "odrflash.__version__" }

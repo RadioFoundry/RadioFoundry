@@ -15,14 +15,24 @@ tested with dmrconf 0.15.1; (R) on an MD-380 running ODR.
 | Step | What | Files in the work directory |
 |---|---|---|
 | Read | the radio tool: stock codeplug to qdmr YAML | `backup-stock.yaml` |
+| Timeslot | `clear_ts_overrides` (section 1.1) | `odr-source.yaml` |
 | Clean-up | `clean_group_lists` (section 2); off with `--no-cleanup` | `odr-source.yaml` |
 | Encode | `dmrconf encode --radio openuv380`, then `decode` | `odr-encoded.dfu`, `odr-encoded.yaml` |
 | Contacts | `restore_contacts` (section 3) on the encoded image | `odr-codeplug.dfu`, `odr-codeplug.yaml` (decoded again) |
 | Write | `cps_write_dfu`: what the regions hold is saved, then the image goes through the CPS shim (`tools/cps_client.py`) at the radio's offset | `codeplug-before.bin` (MD-380), `openfw-window-before.bin` (DM-32) |
 | Check | `check_read_back`: read the regions back, compare bytes, decode, compare the section counts | `readback-odr.dfu`, `readback-odr.yaml` |
 
-The tool reports the clean-up, how many channels keep their TX contact, and ODR's limits checked on `odr-source.yaml`
+The tool reports the timeslot step, the clean-up, how many channels keep their TX contact, and ODR's limits checked on `odr-source.yaml`
 (what the encoder gets).
+
+### 1.1 Contact timeslot override
+
+The open-firmware contact record has a timeslot override (byte 0x17: bit 0 clear = override, bit 1 = TS2), and ODR
+applies it over the channel's timeslot on every call to that contact. A contact without qdmr's `openGD77` extension
+encodes as *override TS1* (T): 26 of 26 contacts, so every call went out on TS1 and a TS2 channel on a duplex hotspot
+used the wrong slot (issue 93). `clear_ts_overrides` gives every contact without the extension
+`openGD77: {timeSlotOverride: None}` before the encoder runs. A contact that has the extension is left as written.
+The tool prints how many contacts it changed and, after the final decode, how many contacts still carry an override.
 
 ## 2. RX group list clean-up
 

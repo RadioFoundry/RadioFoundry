@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""The codec read back from a radio that runs ODR, for radios where an update erases part of it (the MD-380: ODR's
-image shares a flash sector with the codec, boards.py keep_codec_supported). odrflash reads every codec window over
-the debug link (READ_MEM, docs/spec/debuglink.md 3.10), checks each against the stock profile's SHA-256, saves the
-copy on this computer and writes it back after the update, so no stock file is needed. The copy is checked again
+"""The codec read back from a radio that runs ODR and saved on this computer, so that a later flash needs no stock
+file: where an update erases part of it (the MD-380: ODR's image shares a flash sector with the codec, boards.py
+keep_codec_supported), and on every other radio for when it can't be kept (a radio back on stock firmware, a flash
+that stopped halfway, a radio in its bootloader). odrflash reads every codec window over the debug link (READ_MEM,
+docs/spec/debuglink.md 3.10) and checks each against the stock profile's SHA-256, either where stock firmware keeps
+it or where the merge placed it (stockfw.placed_windows: the DM-1701's code in sector 11). The copy is checked again
 when it is loaded, and a window that doesn't match its hash can't come out of this. The web flasher does the same
 (site/static/js/flasher/codecsave.js), keeping its copy in the browser.
 
@@ -20,9 +22,14 @@ def profiles_for(board):
     return [p for p in stockfw.PROFILES.values() if p.get("board") == board.id and p.get("codec_profile") == board.codec.id]
 
 
-def _check(prof, parts):
+def _forms(prof):
+    """Where a profile's codec can be in a radio: [(addr, length, sha256)] where stock firmware keeps it, and where the
+    merge placed it when the profile moves the code."""
+    return [stockfw.windows(prof)] + ([stockfw.placed_windows(prof)] if prof.get("placement") else [])
+
+
+def _check(wins, parts):
     """[(addr, bytes)] when every window matches its hash and the code starts with the codec's signature, else None."""
-    wins = stockfw.windows(prof)
     if len(parts) != len(wins):
         return None
     for (a, d), (wa, n, want) in zip(parts, wins):
@@ -37,13 +44,24 @@ def read_codec(link, board):
     """(profile, segments) through an open debug link, or None when the radio's flash doesn't hold this codec or it
     can't be read."""
     for prof in profiles_for(board):
-        try:
-            parts = [(a, bytes(link.read_mem(a, n))) for a, n, _ in stockfw.windows(prof)]
-        except (debuglink.LinkError, OSError):
-            return None
-        if _check(prof, parts):
-            return prof, parts
+        for wins in _forms(prof):
+            try:
+                parts = [(a, bytes(link.read_mem(a, n))) for a, n, _ in wins]
+            except (debuglink.LinkError, OSError):
+                return None
+            if _check(wins, parts):
+                return prof, parts
     return None
+
+
+def segments(prof, parts):
+    """A copy (read_codec, load) as the merge writes it: windows at their stock addresses placed (stockfw.place),
+    placed windows with their descriptor."""
+    if not prof.get("placement"):
+        return list(parts)
+    if parts[0][0] == prof["code"][0]:
+        return stockfw.place(prof, parts)
+    return list(parts) + [(stockfw.DESC_ADDR, stockfw.descriptor(prof))]
 
 
 def path(board, root=None):
@@ -68,12 +86,13 @@ def load(board, root=None):
     except OSError:
         return None
     for prof in profiles_for(board):
-        parts, off = [], 0
-        for a, n, _ in stockfw.windows(prof):
-            parts.append((a, blob[off:off + n]))
-            off += n
-        if off == len(blob) and _check(prof, parts):
-            return prof, parts
+        for wins in _forms(prof):
+            parts, off = [], 0
+            for a, n, _ in wins:
+                parts.append((a, blob[off:off + n]))
+                off += n
+            if off == len(blob) and _check(wins, parts):
+                return prof, parts
     return None
 
 

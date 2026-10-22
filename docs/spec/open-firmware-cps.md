@@ -112,6 +112,11 @@ large areas (the web flasher's backup) asks for 32 KB at a time and takes what c
 the original firmware and older ODR builds. qdmr checks that the returned length equals the requested one, and asks
 for 2045 or less. The radio info area always returns its own structure length, whatever length was asked for.
 
+Send the header and the first data in one USB write. qdmr (0.15) reads a reply as soon as part of it has arrived and
+doesn't wait for the rest. A 32-byte block sent as the header and then the data reached it short. qdmr then read the
+late data byte as the next reply's first byte, reported an error and asked the radio to reboot. One write of 35 bytes
+fits a single full-speed USB packet, as the original firmware sends it.
+
 ### 2.2 `W` / `X`: write
 
 | Sub (byte 1) | Request after bytes 0-1 | Action |
@@ -140,7 +145,9 @@ Special cases the radio applies to sub commands 1-3 (and 4 on the MK22). An inte
 
 ### 2.3 `C`: control
 
-The reply to every `C` request is a single `-`. It means "done", not "error".
+The reply to every `C` request is a single `-`. It means "done", not "error". qdmr sends every `C` request as a
+23-byte packet: the command, then zeros. The radio takes the command at its own length and drops the zeros, since no
+request starts with a zero byte ([cps-protocol.md](cps-protocol.md) 2.1, `cps.junk`).
 
 | Byte 1 | Arguments | Action |
 | --- | --- | --- |
@@ -388,7 +395,7 @@ assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that 
 | 0x10 | 4 | RX frequency: BCD of the frequency in 10 Hz units, stored as a LE 32-bit word (438.500 MHz = 43850000 -> 0x43850000 -> bytes 00 00 85 43) |
 | 0x14 | 4 | TX frequency, same encoding |
 | 0x18 | 1 | Mode: 0 FM, 1 DMR |
-| 0x19 | 1 | Power: 0 = use the radio's master power; n = power level n-1. qdmr maps 1 min, 3 low, 6 mid, 9 high, 10 max; the levels themselves are per radio |
+| 0x19 | 1 | Power: 0 = use the radio's master power; n = power level n-1. qdmr maps 1 min, 3 low, 6 mid, 9 high, 10 max; the levels themselves are per radio. Radios with 9 or more levels read n as level n-1; radios with fewer spread the scale over their levels (2 levels: 1-5 low, 6-10 high) |
 | 0x1A | 1 | Fixed location latitude, low byte |
 | 0x1B | 1 | TX timeout in 15 s units, 0 = off |
 | 0x1C | 2 | Latitude, middle and high bytes |

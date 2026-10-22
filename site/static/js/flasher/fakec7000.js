@@ -6,12 +6,16 @@
 // (erase sets a sector to 0xFF, programming only clears bits). The ROM side and the stub side follow stub/stubtool.py's
 // FakeRadio. Bytes reach the host no faster than a 115200 baud cable would carry them (times `speed`).
 //
+// A DB25-D's original firmware (usmart: its build) also answers the debug console the page loads the stub through
+// (db25d.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was written.
+//
 // The stock firmware and codec here are random bytes shaped like the real ones: no vendor code is in ODR.
 
 import { concat, crc32, le32, sha256, sleep, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
 import { encodeBlock } from "./lz4.js";
-import { STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE } from "./stub.js";
+import { STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
+import { HIJACK, STUB_WINDOW } from "./db25d.js";
 import { rng, randomBytes } from "./fake.js";
 import { sigBytes } from "./c7000.js";
 
@@ -26,7 +30,7 @@ const ODR_MARK = new TextEncoder().encode("OpenDigitalRadio");
 export async function c7000Simulation(cReal, boardId, seed = 7000) {
 	const c = structuredClone(cReal);
 	const r = rng(seed);
-	const progmem = new Uint8Array(c.progmem_size).fill(0xFF);
+	const progmem = new Uint8Array(c.boards[boardId].progmem_size || c.progmem_size).fill(0xFF);
 	progmem.set(randomBytes(r, 0xA000), 0);					// bootloader, with its ID
 	progmem.set(new TextEncoder().encode(c.boards[boardId].bootloader_id || ""), 0x5000);
 	const fwLen = 0xC0000;
@@ -34,20 +38,36 @@ export async function c7000Simulation(cReal, boardId, seed = 7000) {
 	const real = c.profiles.find((p) => p.board === boardId);
 	const code = randomBytes(r, real.code_len);
 	code.set(sigBytes(c), 0);
+	code.set(le32(real.run + 0x100), 0x40);		// one address word inside the code, which the map lists
 	const tables = randomBytes(r, real.tables_len);
 	const codeAt = 0xA4000, tabAt = 0x6A000;
 	progmem.set(code, codeAt);
 	progmem.set(tables, tabAt);
+	if (c.boards[boardId].stock_console) {	// the entry the vendor loader checks, and the version string the page reads
+		progmem.set([0x2C, 0x11, 0x01, 0xC0], c.app_start);
+		progmem.set(new TextEncoder().encode("909E.DBB.EARSAB.018.Jan 21 2025"), 0x79F3D - 9);
+	}
 	c.profiles = c.profiles.filter((p) => p.board !== boardId);
 	c.profiles.push({ ...real, name: `simulated ${real.name}`, code_sha256: await sha256(code), tables_sha256: await sha256(tables),
 		tables_head_crc: crc32(tables.subarray(0, 64)), stock_file: null });
+	// its codec map (docs/spec/codec-placement.md), as a real build has one
+	const id = `sim-${boardId}`;
+	c.codec_maps = { ...(c.codec_maps || {}), [id]: { format: "odr-codec-map/1", profile: id, board: boardId, isa: "csky",
+		code: { flash: 0, len: code.length, run: real.run, sha256: await sha256(code) }, entries: {},
+		self_refs: [{ off: 0x40, value: real.run + 0x100 }], table_refs: [], objects: [], groups: [], outside_refs: [] } };
 	return { c, progmem, codec: { code, tables, codeAt, tabAt } };
 }
 
 export class FakeC7000 {
 	// firmware: "stock" | "odr" (with stub entry) | "odr-nostub"; speed: how many times faster than a real cable
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
-		romWindow = 400, bootTime = 1500, faults = {} } = {}) {
+		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null } = {}) {
+		this.usmart = usmart;			// a DB25-D's original firmware build ("018"): it has the debug console
+		this.ram = new Map();			// the console's view of RAM: words written since power-on
+		this.frames = [];			// every console frame received, as text
+		this.stubSpan = stubSpan;		// the RAM span ODR offers in STUB INFO (the DB25-D's DMR builds: 0x1D000, 0x12000)
+		this.stubCfg = { board: 0, flags: 0 };	// what the universal stub was configured with (CONFIG, op 0x0D)
+		this.configs = [];
 		this.progmem = progmem;
 		this.q128 = new Uint8Array(dataSize).fill(0xFF);
 		this.q128.set(randomBytes(rng(5), 0x40000), 0x1000);
@@ -135,6 +155,7 @@ export class FakeC7000 {
 
 	boot() {
 		this.state = "rom";
+		this.ram = new Map();
 		this.fwKind = null;
 		this.inb = new Uint8Array(0);
 		this.loaded = new Uint8Array(0);
@@ -159,7 +180,7 @@ export class FakeC7000 {
 		this.inb = concat(this.inb, data);
 		for (;;) {
 			const used = this.state === "rom" || this.state === "romload" ? this.rom() : this.state === "stub" ? this.stub()
-				: this.state === "firmware" ? this.odr() : 0;
+				: this.state === "firmware" ? (this.usmart && this.firmware() === "stock" ? this.console() : this.odr()) : 0;
 			if (!used) break;
 		}
 	}
@@ -210,7 +231,7 @@ export class FakeC7000 {
 		} else if (f.cmd === 0x1A) {
 			if (!this.stubEntry) return reply(3), 1;
 			const p = f.payload, op = p[0];
-			if (op === 0) reply(0, concat(le32(STUB_MAGIC), le32(0x17000), le32(0x18000), new Uint8Array([59, 0, 0]), le32(this.loaded.length)));
+			if (op === 0) reply(0, concat(le32(STUB_MAGIC), le32(this.stubSpan[0]), le32(this.stubSpan[1]), new Uint8Array([59, 0, 0]), le32(this.loaded.length)));
 			else if (op === 1) {
 				this.total = u32le(p, 5);
 				this.crc = u32le(p, 9);
@@ -232,6 +253,48 @@ export class FakeC7000 {
 		return 1;
 	}
 
+	// The original firmware's debug console: "@AT", a filler byte, the text, CR LF. The reply, then the application's
+	// own log line. With the hijack word pointing at the window, any frame but "01" and "DMRCALL" starts what is there.
+	console() {
+		const text = String.fromCharCode(...this.inb);
+		const at = text.indexOf("@AT");
+		if (at < 0) {
+			this.inb = this.inb.slice(Math.max(0, this.inb.length - 2));
+			return 0;
+		}
+		const end = text.indexOf("\r\n", at + 4);
+		if (end < 0) return 0;
+		const cmd = text.slice(at + 4, end);
+		this.inb = this.inb.slice(end + 2);
+		this.frames.push(cmd);
+		const H = (n) => n.toString(16).toUpperCase();
+		if (cmd !== "01" && cmd !== "DMRCALL" && this.ram.get(HIJACK) === STUB_WINDOW[0]) {
+			let top = 0;
+			for (const a of this.ram.keys()) if (a >= STUB_WINDOW[0] && a < STUB_WINDOW[0] + STUB_WINDOW[1]) top = Math.max(top, a + 4 - STUB_WINDOW[0]);
+			this.loaded = new Uint8Array(top);
+			for (let o = 0; o < top; o += 4) this.loaded.set(le32(this.ram.get(STUB_WINDOW[0] + o) || 0), o);
+			this.state = "stub";
+			this.led = "slow";
+			this.events.push("stub (debug console)");
+			return 1;
+		}
+		let m = /^read_addr\((0x[0-9a-f]+)\)$/.exec(cmd);
+		let out = null;
+		if (m) {
+			const a = Number(m[1]);
+			const off = a - 0x03000000;
+			const v = off >= 0 && off + 4 <= this.progmem.length ? u32le(this.progmem, off) : this.ram.get(a) || 0;
+			out = `\r\nread_addr(0X${H(a)})=0X${H(v)};`;
+		} else if ((m = /^write_addr\((0x[0-9a-f]+),(0x[0-9a-f]+)\)$/.exec(cmd))) {
+			const a = Number(m[1]), v = Number(m[2]) >>> 0;
+			if (a >= 0x03000000 && a < 0x04000000) throw new Error("simulated radio: a console write reached the program flash");
+			this.ram.set(a, v);
+			out = `\r\nwrite_addr(0X${H(a)},0X${H(v)});`;
+		}
+		if (out) this.send(new TextEncoder().encode(`${out}\r\nclose slot.\r\nu8PassWord 0 u8EncLevel 0 u8Enc0\r\n`));
+		return 1;
+	}
+
 	stub() {
 		const ib = this.inb;
 		if (ib.length < 6) return 0;
@@ -248,12 +311,25 @@ export class FakeC7000 {
 			const which = base === SSI_PROG ? this.progmem : this.q128;
 			return (flags & 1) && (base === SSI_PROG || ((flags & 2) && cs === 18)) ? which : null;
 		};
-		if (op === 0x01) this.reply(OK, concat(new TextEncoder().encode("C7STUB"), new Uint8Array([1, 0x04, 0x08]), le32(0x10000)));
+		const univ = this.loaded.length >= 0xC0 && String.fromCharCode(...this.loaded.subarray(0x80, 0x84)) === "UCFG";
+		const be = (v) => new Uint8Array([v >>> 24, (v >>> 16) & 0xFF, (v >>> 8) & 0xFF, v & 0xFF]);
+		if (op === 0x01 && univ) {		// the universal stub: protocol 6, board and flags echoed, its RAM footprint
+			const run = u32le(this.loaded, 0xB8), end = u32le(this.loaded, 0xBC);
+			this.reply(OK, concat(new TextEncoder().encode("C7STUB"), new Uint8Array([6, 0x04, 0x08]), be(0x10000), be(0x0808),
+				new Uint8Array([this.stubCfg.board, this.stubCfg.flags]), be(run), be(this.loaded.length), be(end - 0x1004),
+				be(end - 0x1000), be(end), be(200)));
+		} else if (op === 0x0D && univ) {
+			if (p.length !== 16) return this.reply(0x0B, new Uint8Array(0)), 1;
+			this.configs.push(p);
+			this.stubCfg = { board: p[12], flags: p[13] };
+			this.reply(OK, new Uint8Array(0));
+		} else if (op === 0x01) this.reply(OK, concat(new TextEncoder().encode("C7STUB"), new Uint8Array([1, 0x04, 0x08]), le32(0x10000)));
 		else if (op === 0x02) {
 			const a = u32be(p, 0), n = (p[4] << 8) | p[5];
 			const now = (-Math.floor(performance.now() * 24000)) >>> 0;
 			this.reply(OK, a === TIMER2_VALUE ? le32(now) : new Uint8Array(n));
 		} else if (op === 0x03) {
+			if (u32be(p, 0) === WDT_EN && u32le(p, 4) === 0) this.events.push("wdt-off");
 			if (u32be(p, 0) === SYS_SOFT_RSTN) {
 				this.events.push("reset");
 				this.led = "off";

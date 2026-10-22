@@ -1156,14 +1156,12 @@ static void tx_ptt_released(void)
 {
 	switch (s.tx) {
 	case TX_ACCESS:
-	case TX_WAKE_LISTEN:
 	case TX_DENIED:
 		s.tx = TX_NONE;
 		break;
 	case TX_WAKE:
-		s.modem->tx_abort();
-		s.tx = TX_NONE;
-		break;
+	case TX_WAKE_LISTEN:
+		break;		// a short press still wakes the repeater, as other radios do; tx_poll ends it once up
 	case TX_ON:
 		s.stop_req = true;	// at the next superframe boundary
 		break;
@@ -1202,8 +1200,13 @@ static void tx_poll(uint32_t now)
 		break;
 	case TX_WAKE_LISTEN:
 		if (s.rpt_seen && (int32_t)(s.rpt_last_ms - s.wake_sent_ms) >= 0 && repeater_up(now)) {
-			s.tx = TX_ACCESS;
 			s.dirty = true;
+			if (!s.ptt && !s.data_active) {
+				s.tx = TX_NONE;	// PTT let go during the wake-up: the repeater is up, nothing more to send
+				s.view.wake_admits++;	// but the user hears that it would have gone through
+				break;
+			}
+			s.tx = TX_ACCESS;
 			tx_access(now);
 		} else if (!before(now, s.deadline)) {
 			uint8_t tries = s.cfg.wakeup_attempts ? s.cfg.wakeup_attempts : DMR_CALL_WAKEUP_ATTEMPTS;

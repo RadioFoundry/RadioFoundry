@@ -21,7 +21,9 @@ What the stage does at every power-on:
 1. Starts with the 6 bytes of the stock entry (`2C 11 01 C0 20 64`). The loader starts an application on a normal
    power-on only if its first 4 bytes are `2C 11 01 C0`; otherwise it stays in update mode. `pad.py` fails the build
    if the stage loses them.
-2. Drives the power latch (PTB13) high, so the radio stays on once the power key is let go.
+2. Drives the power latch (PTB13) high, so the radio stays on once the power key is let go, and the transmitter
+   off: TX supplies (PTA27, PTB2) and PA selects (PTA26, PTB3) low, the receive supply (PTA23) high. A soft reset
+   in the middle of a transmission may leave them as they were ([crash-log.md](../docs/spec/crash-log.md) 8).
 3. Sets UART1 up as the loader does in its update mode (pins, clocks, 115200 8N1 at the loader's 36 MHz APB), unless
    the loader already did.
 4. Offers the HR_C7000 boot ROM's handshake (`02 24 00 03`) ten times, about 50 ms apart. If `stub/stubtool.py`

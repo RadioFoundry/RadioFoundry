@@ -19,6 +19,7 @@
 #if CONFIG_TFTP
 #include "net/tftp.h"
 #include "net/tftp_codeplug.h"
+#include "net/tftp_iddb.h"
 #endif
 
 #ifndef ODR_GIT
@@ -209,7 +210,12 @@ static bool info_read(uint32_t off, uint8_t *buf, uint16_t len)
 }
 
 static const tftp_file_t info_file = { .name = "info.txt", .open_read = info_open, .read = info_read };
-static const tftp_file_t *const files[] = { &info_file, &tftp_codeplug_file };
+static const tftp_file_t *const files[] = {
+	&info_file, &tftp_codeplug_file,
+#if CONFIG_TFTP_IDDB
+	&tftp_iddb_file,
+#endif
+};
 
 static void tftp_udp(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
 {

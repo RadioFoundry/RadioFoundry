@@ -29,7 +29,7 @@ import time
 APP_BASE = 0x0300C000
 FLASH_END = 0x03100000
 APP_MAX = FLASH_END - APP_BASE          # 0xF4000: everything the bootloader may write
-SLOT_BASE = 0x030E8000                  # ODR's codec slot (boards/dm32/dm32.ld, tools/dm32_codec.py)
+SLOT_BASE = 0x030E8000                  # ODR's codec slot (boards/dm32/dm32.ld, tools/hrc7000_codec.py)
 SLOT_MAGIC = 0x43524444                 # "DDRC", first word of the slot header
 FILE_MAGIC = b"BFUV32-V2"               # the DM-32UV's; MODELS has the others
 FILE_END = b"END"
@@ -598,7 +598,7 @@ def run(image_path, port=None, dry_run=False, yes=False, log=print, stock=False,
         log("   ! --stock, but this is an ODR image (it has the ODR codec slot)")
     if not stock and model.codec_slot and not has_codec_slot(raw):
         log("   no ODR codec slot: fine for a stock file; an ODR image without it has no DMR voice "
-            "(tools/dm32_codec.py merges it)")
+            "(tools/hrc7000_codec.py merges it)")
     if dry_run:
         try:
             dev = find_port(port)

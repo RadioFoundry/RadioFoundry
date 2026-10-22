@@ -115,18 +115,26 @@ hrc_irq_entry:
 	ldw	sp, (r7, 0)
 	br	port_restore
 
-/* CPU exceptions 1 .. 31: keep the vector and the faulting PC for a debugger, then stop */
+/* CPU exceptions 1 .. 31: every register into a frame like the interrupt entry's, below the stack pointer the fault
+ * left (the CPU pushes nothing itself), then hrc_fault(frame, vector) on a stack of its own (irq.c), which keeps the
+ * crash record and restarts, or stops for a debugger. A stack pointer that can't take the frame faults again with
+ * exceptions off: an unrecoverable error, and the radio stays stopped as before */
 	.global	hrc_fault_entry
 	.type	hrc_fault_entry, @function
 hrc_fault_entry:
-	mfcr	r0, psr
-	lsri	r0, r0, 16
-	zextb	r0, r0
-	lrw	r1, hrc_fault_info
-	stw	r0, (r1, 0)
-	mfcr	r0, epc
-	stw	r0, (r1, 4)
+	subi	sp, 68
+	stm	r0-r13, (sp)
+	stw	r15, (sp, 56)
 	mfcr	r0, epsr
-	stw	r0, (r1, 8)
+	stw	r0, (sp, 60)
+	mfcr	r0, epc
+	stw	r0, (sp, 64)
+	mov	r0, sp
+	mfcr	r1, psr
+	lsri	r1, r1, 16
+	zextb	r1, r1
+	lrw	r2, hrc_fault_sp
+	ldw	r2, (r2, 0)
+	mov	sp, r2
 	jbsr	hrc_fault
 3:	br	3b
