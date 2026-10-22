@@ -9,11 +9,12 @@
 #   unit tests the host tests (64 suites, tshark pcap checks) run once, built with --coverage and under ASan and UBSan
 #              (gcovr's report as an artifact, totals in the job summary); the UI screen gallery
 #   checks     Python checks (doc links among them), license checks
-#   firmware   DM-1701 and MD-380 (UHF and VHF) default builds with zero warnings, the size report, app region fit, in
-#              one job
-#   csky       the default build of every C-SKY radio (DM-32UV, DM-1801 Pro, DB25-D), in one job beside the Arm one, in the
-#              csky-elf image (repository variable ODR_CSKY_IMAGE, default odr/csky-gcc14:latest); skipped with a
-#              notice where that image isn't available (GitHub's runners until it is in a registry)
+#   firmware   one job per platform (stm32f4, hrc7000): every board on it from the registry (tools/ci.sh --platform),
+#              each build option value too, with zero warnings, the size report and the app region fit. The compiler
+#              comes from .github/actions/toolchain (platform.toml's pin); C-SKY builds run in the csky-elf image
+#              (repository variable ODR_CSKY_IMAGE, default platform.toml's image) unless the runner has csky-elf GCC,
+#              and are skipped with a notice where that image isn't available (GitHub's runners until it is in a
+#              registry)
 # The feature matrix and the other long builds run nightly (nightly.yml), the radio tests by hand (hil.yml).
 # Runs on Gitea Actions (the self-hosted runner) and GitHub Actions alike; a newer push to the same branch cancels
 # the run in progress. On GitHub the repository variable ODR_CI_RUNNER (a runner label) moves the jobs from the
@@ -38,6 +39,7 @@ on:
       - "tools/**"
       - "LICENSES/**"
       - "REUSE.toml"
+      - ".github/actions/**"
       - ".github/workflows/ci.yml"
   workflow_dispatch:
 
@@ -47,10 +49,6 @@ permissions:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  ARM_GCC_VERSION: "13.3.rel1"   # the release workflow's pinned toolchain (release.yml)
-  ARM_GCC_SHA256: "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4"
 
 jobs:
   unit-tests:
@@ -125,86 +123,55 @@ jobs:
         run: tools/ci.sh --steps registry,python,licenses
 
   firmware:
-    name: firmware (Arm)   # every Arm radio in one job: one checkout, the Arm toolchain once
+    # one job per platform, not per radio: one checkout and one toolchain for every board on it (tools/ci.sh --platform
+    # takes them from the registry, so a new radio joins with no edit here); each runner has 4 cores
+    name: firmware (${{ matrix.platform }})
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
     runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
-      - name: third_party submodules
-        run: tools/checkout-submodules.sh
-      - uses: actions/cache@v4
-        if: runner.environment != 'self-hosted'   # the self-hosted image has the toolchain
-        with:
-          path: ~/opt/arm-gnu-toolchain-${{ env.ARM_GCC_VERSION }}-x86_64-arm-none-eabi
-          key: arm-gnu-${{ env.ARM_GCC_VERSION }}-${{ hashFiles('tools/install-arm-toolchain.sh') }}
-      - name: Arm GNU Toolchain (pinned, trimmed to the Cortex-M4 multilib)
-        run: tools/install-arm-toolchain.sh
-      - name: Default build, warnings, size and app region fit
-        run: |
-          set -eu
-          tools/ci.sh --quick --steps firmware --board dm1701,md380
-          cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: firmware-arm
-          path: |
-            build/ci/size-report.md
-            build/ci/*.log
-            build/ci/*/odr_*.bin
-          if-no-files-found: ignore
-
-  csky:
-    name: firmware (C-SKY)   # every C-SKY radio in one job, beside the Arm one: each runner has 4 cores
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # platform/*/platform.toml; a new platform also gets its set-up in .github/actions/toolchain
+        platform: [stm32f4, hrc7000]
     permissions:
       contents: read
-      packages: read   # pulling a private ghcr.io image with the job token
-    env:
-      ODR_CSKY_IMAGE: ${{ vars.ODR_CSKY_IMAGE || 'odr/csky-gcc14:latest' }}
+      packages: read   # pulling a private ghcr.io csky-elf image with the job token
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       - name: third_party submodules
         run: tools/checkout-submodules.sh
-      - name: Log in to the image's registry
-        if: vars.ODR_CSKY_REGISTRY != ''
-        env:
+      - name: Toolchain (platform.toml [toolchain])
+        id: tc
+        uses: ./.github/actions/toolchain
+        with:
+          platform: ${{ matrix.platform }}
+          image: ${{ vars.ODR_CSKY_IMAGE }}
+          registry: ${{ vars.ODR_CSKY_REGISTRY }}
           # a read-only registry token (secret); on GitHub a ghcr.io package linked to this repository takes the job's
           # own token (packages: read)
-          REGISTRY_TOKEN: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
-          REGISTRY_USER: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
-        run: |
-          command -v csky-elf-gcc > /dev/null && exit 0   # the self-hosted image: no Docker, no image to pull
-          echo "$REGISTRY_TOKEN" | docker login "${{ vars.ODR_CSKY_REGISTRY }}" -u "$REGISTRY_USER" --password-stdin
-      - name: Default builds in the csky-elf image
+          registry-user: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
+          registry-token: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
+      - name: Default builds, warnings, size and app region fit
+        env:
+          RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
+          PLATFORM: ${{ matrix.platform }}
         run: |
           set -u
           rc=0
-          if command -v csky-elf-gcc > /dev/null; then   # the self-hosted image has the toolchain
-            tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d || rc=$?
-          else
-            tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d || rc=$?
-          fi
+          $RUN tools/ci.sh --quick --steps firmware --platform "$PLATFORM" || rc=$?
           if [ "$rc" = 3 ]; then
-            echo "::notice::C-SKY builds skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::$PLATFORM builds skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
-      - name: Log out of the registry
-        if: always() && vars.ODR_CSKY_REGISTRY != ''
-        run: command -v csky-elf-gcc > /dev/null || docker logout "${{ vars.ODR_CSKY_REGISTRY }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: firmware-csky
+          name: firmware-${{ matrix.platform }}
           path: |
             build/ci/size-report.md
             build/ci/*.log
