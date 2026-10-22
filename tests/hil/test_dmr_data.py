@@ -168,6 +168,7 @@ def test_data_view_and_settings(radio, pytestconfig, data_settings):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_unconfirmed_data_rx(radio, sdr_bench, pytestconfig):
     """40 octets of unconfirmed data to our ID: one header, the blocks, one packet for us, no CRC errors."""
     freq, cc, own, _ = _setup(radio, pytestconfig)
@@ -185,6 +186,7 @@ def test_unconfirmed_data_rx(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_confirmed_data_response(radio, sdr_bench, pytestconfig):
     """Confirmed data to our ID: an ETSI response (ACK) goes back to the sender."""
     freq, cc, own, _ = _setup(radio, pytestconfig)
@@ -206,6 +208,7 @@ def test_confirmed_data_response(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_sms_rx(radio, sdr_bench, pytestconfig):
     """A TMS text message to our ID with an ACK requested: kept in the inbox (unread, the bench as sender) and the
     TMS ACK sent back."""
@@ -230,6 +233,7 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
     """A call alert CSBK to our ID: the user is alerted (event call_alert from the bench) and, with the ack setting
     on, a call alert ack (opcode 0x20, octets 4-6 the caller, 7-9 us) goes back."""
@@ -251,6 +255,7 @@ def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_radio_check_rx(radio, sdr_bench, pytestconfig, data_settings):
     """A radio check request (opcode 0x24, Motorola FID, octet 3 0x80) to our ID: answered when the setting allows
     (the request echoed with octet 3 cleared), counted but not answered when it doesn't (the default)."""
@@ -294,6 +299,7 @@ def _radio_sends(radio, sdr_bench, freq, cc, send, seconds, done):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_call_alert_tx(radio, sdr_bench, pytestconfig):
     """Our call alert to the bench (which doesn't answer): three tries on air (opcode 0x1F, octets 4-6 the bench,
     7-9 us), then failed."""
@@ -314,6 +320,7 @@ def test_call_alert_tx(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_radio_check_tx(radio, sdr_bench, pytestconfig):
     """Our radio check of the bench: the request on air (opcode 0x24, Motorola FID, octet 3 0x80), three tries
     without an answer, then failed."""
@@ -333,6 +340,7 @@ def test_radio_check_tx(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_sms_tx(radio, sdr_bench, pytestconfig):
     """Our text message to the bench, no ACK asked: one packet on air (preambles, a data header to the bench from us,
     the blocks), then sent."""
@@ -363,6 +371,7 @@ def _ext(radio):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_etsi_sms_rx(radio, sdr_bench, pytestconfig):
     """An ETSI text message (defined short data, ISO 8859-1) to our ID with a response requested: kept in the inbox
     as ETSI, the ETSI response (ACK, SAP 10) goes back."""
@@ -387,6 +396,7 @@ def test_etsi_sms_rx(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_etsi_sms_tx(radio, sdr_bench, pytestconfig):
     """Our ETSI text message to the bench, no response asked: a defined short data header (DPF 13, SAP 10) to the
     bench from us, then sent."""
@@ -409,6 +419,7 @@ def test_etsi_sms_tx(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_radio_check_tx_etsi(radio, sdr_bench, pytestconfig, data_settings):
     """Our radio check in the ETSI form: opcode 0x24 with FID 0x00 on air, three tries, then failed."""
     freq, cc, own, feats = _setup(radio, pytestconfig, tx=True)

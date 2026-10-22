@@ -57,6 +57,44 @@ SDR bench names come from the environment (`docs/testing/dmr-bench.md` 1): `$ODR
 default `sdr-bench`), `$ODR_SDR_BENCH_SERVICE`, `$ODR_SDR_BENCH_DIR`, `$ODR_SDR_BENCH_PY`, `$ODR_SDR_BENCH_ENV_FILE`;
 `$ODR_SDRBENCH` names an odr_sdrbench checkout when the package isn't installed on the test host.
 
+### Bench hardware markers
+
+Every test that uses the SDR bench carries `bench_service` (it takes the lease) and says which piece of the bench it
+needs. A test with none of these markers needs no bench. `conftest.py`'s `bench_hardware` fixture reads the bench's
+`odr-bench info` (`SdrBench.lacks`) and skips with the reason when the piece is missing; a bench without the shared
+bench daemon is assumed to have both.
+
+| Marker | The test needs | Tests |
+|---|---|---|
+| `sdr_rx` | the RTL-SDR receiver only | the radio transmits and the SDR measures it: `test_fm_tx.py`, `test_audio_probe.py` (the FM TX probes), `test_mic_gain.py`, `test_hotspot_cwid.py`, `test_usrp_fm_tx`, `test_split_tx_half_*`, the three `test_aprs_on_air_*` |
+| `bench_modem` | the bench modem or a bench station only (it transmits to the radio, listens to it or runs as a repeater) | `test_dmr_rx.py`, `test_dmr_voice.py`, `test_dmr_call_features.py`, `test_dmr_data.py`, `test_dmr_emergency.py`, `test_dmr_ip.py`, `test_control_station.py`, `test_roaming.py` (the bench repeater), `test_hotspot_voice.py`, `test_dmr_gps_tx`, `test_dmr_tx_split_repeater` (its repeater is required, the SDR's view of the radio is optional), `test_aprs_dmr_position`, `test_split_rx_half_labels`, `test_net_split_rx_half_labels`, `test_usrp_dmr_rx`, the four scan / battery-save tests in `test_radio_features.py` |
+| `bench_modem` and `sdr_rx` | both | `test_dmr_tx_off_air` (the SDR's waveform and the modem's decode), `test_sfr_repeats_bench_call` (the modem sends the call, the SDR sees the repeat) |
+| `sdr_or_modem` | either one; the test accepts what one of them heard | `test_dmr_tx_talker_alias`, `test_dmr_privacy_tx` |
+| none (radio only) | neither | everything else |
+
+`test_probe_fm_tx_ram_writer_sweep` holds the lease but uses neither receiver.
+
+### Bursts on the bench, raw I/Q only where needed
+
+A test that needs to know what the radio sent as DMR does not pull raw I/Q any more. `SdrBench.dmr_watch_start()` runs
+`odr-bench dmr-bursts` on the bench (`can_watch()`: a bench with the shared daemon whose client has the tool and
+whose shared receiver covers the frequency), which decodes the bursts there: sync, color code, LC, FEC, timing and
+carrier offset come back as one JSON line per burst, nothing else. `dmr_watch_result()` returns them in the shape of
+`analyze_dmr()` (`bursts` with `t_ms`, `slot`, `family`, `kind`, `cc`, `lc`, `foff_hz`, `cach_ts`). The tool uses the
+daemon's `bursts` op when the daemon has it and decodes short captures on the client side when it doesn't. Without
+the daemon, or outside the shared receiver's window, `dmr_watch_start()` falls back to a raw capture and
+`analyze_dmr()`, as before. `ODR_HIL_RAW_IQ=1` forces the raw path (to compare the two).
+
+Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr_tx_split_repeater` and
+`test_sfr_repeats_bench_call`. These stay on raw I/Q:
+
+| Test | Why |
+|---|---|
+| `test_dmr_tx_off_air` | judges the waveform: burst on-time, keying ramps, power steps, overlaps, ADC clipping |
+| `test_split_tx_half_*` | decodes the CACH from the waveform (`sdrmon.py analyze --cach`) |
+| FM tests (`test_fm_tx`, `test_audio_probe`, `test_mic_gain`, `test_hotspot_cwid`, `test_usrp_fm_tx`) | deviation, tones, CTCSS / DCS and carrier offset come from the demodulated audio |
+| `test_aprs_on_air_*` | AFSK is audio on an FM carrier |
+
 ## Rig assumptions
 
 - The radio on USB, with a codeplug whose current zone holds a DMR channel on the DMR test frequency (the tests
@@ -214,8 +252,9 @@ SDR clips, and the bench modem's tries counted with a minimum of one. An attenua
 - Check state with `radio.wait_for(lambda v: ..., timeout)` on the view (key=value strings, `docs/spec/debuglink.md`
   3.7), never with fixed sleeps alone; counters with `radio.reset_counters()` then `radio.counters()` deltas.
 - Anything that transmits gets `@pytest.mark.rf` (the radio: `radio_tx`); anything that uses the SDR bench's
-  transmitter or receiver also gets `@pytest.mark.bench_service` and runs inside `with sdr_bench.lease():`
-  (`transmit` / `voice_call`, `listen_start` / `listen_result`, `capture_start` / `capture_wait`, then
-  `analyze_dmr` / `analyze_fm` after the lease, with the gateway back up).
+  transmitter or receiver also gets `@pytest.mark.bench_service`, one of `sdr_rx` / `bench_modem` / `sdr_or_modem`
+  (both of the first two for a test that needs both, see Bench hardware markers) and runs inside
+  `with sdr_bench.lease():` (`transmit` / `voice_call`, `listen_start` / `listen_result`, `dmr_watch_start` /
+  `dmr_watch_result` for DMR bursts, `capture_start` / `capture_wait` then `analyze_fm` for raw I/Q).
 - Never sleep and capture: use `radio.shot_until(...)` for screenshots that should show a new screen.
 - Document the pass criteria and tolerances in the module docstring and in the table above.

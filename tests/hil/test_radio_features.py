@@ -410,6 +410,7 @@ def test_tone_burst(fm_tx):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
     need_scan(radio)
     if "DMR" not in radio.features():
@@ -490,6 +491,7 @@ def _bench_call_watch(radio, sdr_bench, pytestconfig, keys=("core", "features"))
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
     need_scan(radio)
     if "VFO_FM" not in radio.features():
@@ -516,6 +518,7 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
     need_scan(radio)
     hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
@@ -582,6 +585,7 @@ def test_battery_save(radio, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_battery_save_wakes_for_signal(radio, sdr_bench, pytestconfig):
     with _battery_save(radio, pytestconfig):
         seen, t_start = _bench_call_watch(radio, sdr_bench, pytestconfig)

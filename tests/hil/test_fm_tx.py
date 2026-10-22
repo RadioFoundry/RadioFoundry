@@ -124,6 +124,7 @@ def key_and_check(radio, sdr_bench, pytestconfig, tag, bw_khz, ctcss=None, dcs=N
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_fm_tx_ctcss(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "ctcss", 1000)
     rc, r = key_and_check(fm_vfo, sdr_bench, pytestconfig, "hil_fm_ctcss", 12.5, ctcss=100.0)
@@ -133,6 +134,7 @@ def test_fm_tx_ctcss(fm_vfo, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_fm_tx_dcs(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "dcs", 0o23)
     rc, r = key_and_check(fm_vfo, sdr_bench, pytestconfig, "hil_fm_dcs", 12.5, dcs="023N")
@@ -145,6 +147,7 @@ def test_fm_tx_dcs(fm_vfo, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_fm_tx_bandwidth(fm_vfo, sdr_bench, pytestconfig):
     devs = {}
     for wide, bw in ((False, 12.5), (True, 25.0)):
@@ -159,6 +162,7 @@ def test_fm_tx_bandwidth(fm_vfo, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_fm_tx_tone_burst(fm_vfo, sdr_bench, pytestconfig):
     if "FM_TX_TONES" not in fm_vfo.features():
         pytest.skip("built without CONFIG_FM_TX_TONES")
@@ -183,6 +187,7 @@ def test_fm_tx_tone_burst(fm_vfo, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_fm_tx_roger_beep(fm_vfo, sdr_bench, pytestconfig):
     if "FM_TX_TONES" not in fm_vfo.features():
         pytest.skip("built without CONFIG_FM_TX_TONES")
@@ -221,6 +226,7 @@ def test_fm_tx_roger_beep(fm_vfo, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "none", 0)
     mhz = pytestconfig.getoption("--fm-mhz")

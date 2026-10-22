@@ -102,6 +102,13 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "bench_service: uses the SDR bench's transmitter / receiver through the "
                             "lease (a bench without a shared bench daemon stops its gateway service for it: "
                             "needs --allow-service-stop, else the test skips when it takes the lease)")
+    config.addinivalue_line("markers", "sdr_rx: needs the SDR bench's receiver (the RTL-SDR) and no bench modem; a "
+                            "bench without one skips it. With bench_modem on the same test: needs both")
+    config.addinivalue_line("markers", "bench_modem: needs the SDR bench's modem or a bench station (the MMDVM "
+                            "board that transmits to the radio, listens to it or acts as a repeater) and no SDR; "
+                            "skips without one. With sdr_rx on the same test: needs both")
+    config.addinivalue_line("markers", "sdr_or_modem: needs the SDR or the bench modem, either will do (the test "
+                            "accepts what one of them heard); skips only when the bench has neither")
     config.addinivalue_line("markers", "radio_tx: the radio under test transmits (needs --allow-rf)")
     config.addinivalue_line("markers", "codeplug_write: writes the radio's codeplug over CPS, backed up and restored "
                             "(needs --allow-codeplug-write)")
@@ -173,6 +180,24 @@ def sdr_bench(pytestconfig):
         pytest.skip(f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
                     "sync)")
     return b
+
+
+@pytest.fixture(autouse=True)
+def bench_hardware(request):
+    """Skips a test marked sdr_rx / bench_modem / sdr_or_modem when the SDR bench lacks that piece (SdrBench.lacks).
+    Unmarked tests need neither and don't touch the bench here."""
+    kw = request.node.keywords
+    sdr, modem, either = "sdr_rx" in kw, "bench_modem" in kw, "sdr_or_modem" in kw
+    if not (sdr or modem or either):
+        yield
+        return
+    if "radio" in request.fixturenames:
+        request.getfixturevalue("radio")        # no radio: skip for that first, without asking the bench
+    bench = request.getfixturevalue("sdr_bench")
+    why = bench.lacks(sdr=sdr, modem=modem, either=either)
+    if why:
+        pytest.skip(why)
+    yield
 
 
 @pytest.fixture(scope="session")

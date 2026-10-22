@@ -95,6 +95,7 @@ def segments(text):
 @pytest.mark.manual
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_rx
 def test_mic_gain_deviation(fm_vfo, sdr_bench, pytestconfig):
     radio = fm_vfo
     L = radio.link

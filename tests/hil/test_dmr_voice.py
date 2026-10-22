@@ -26,6 +26,7 @@ PEAK_MIN = 1000
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
     ambe = pytestconfig.getoption("--ambe")
     if not ambe:

@@ -187,6 +187,7 @@ def test_roam_now_passive(roaming):
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_roam_to_bench_repeater(roaming, sdr_bench, pytestconfig):
     rx, tx = pytestconfig.getoption("--roam-rx"), pytestconfig.getoption("--roam-tx")
     if not rx or not tx:
@@ -293,6 +294,7 @@ def bench_events(p):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_roam_beacon_home(roaming, sdr_bench, pytestconfig):
     rx, tx, every, length, pos_b, bench_ch = beacon_setup(roaming, pytestconfig)
     v0 = roam(roaming)
@@ -329,6 +331,7 @@ def test_roam_beacon_home(roaming, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_roam_beacon_other_site(roaming, sdr_bench, pytestconfig):
     rx, tx, every, length, pos_b, bench_ch = beacon_setup(roaming, pytestconfig)
     L = roaming.link

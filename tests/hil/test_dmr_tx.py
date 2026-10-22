@@ -101,6 +101,8 @@ def talker_alias_on_air(bursts):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.sdr_rx
 def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     if "DMR" not in radio.features():
         pytest.skip("built without DMR")
@@ -117,6 +119,8 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     radio.reset_counters()
     _, before = radio.counters()
     rdir = sdr_bench.run_dir("hil_dmr_tx")
+    # Raw I/Q on purpose: check_tx judges the waveform (burst on-time, keying ramps, power steps, overlaps, clipping),
+    # which the bench-side burst records (dmr_watch_start) don't carry
     with sdr_bench.lease():
         cap = sdr_bench.capture_start(rdir, freq, seconds=PTT_S + 8)
         lis = sdr_bench.listen_start(freq, cc, seconds=PTT_S + 6, ambe_out=f"~/{sdr_bench.dir}/{rdir}/heard")
@@ -183,6 +187,7 @@ def _report(c, sdr_bench, rdir):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_dmr_gps_tx(radio, sdr_bench, pytestconfig):
     """Our ETSI GPS Info (FLCO 8) in the alias superframes: a fixed APRS position and "position in DMR calls" set over
     the debug link, a 4 s over, the bench modem's listener decodes the GPS Info LC (bench_tx.py listen: the call's
@@ -233,22 +238,24 @@ def _dmr_tx_setup(radio, pytestconfig):
 
 
 def _over(radio, sdr_bench, freq, cc, seconds, tag):
-    """A PTT over captured by the SDR and heard by the bench modem; returns (sdr analysis, bench lines)."""
+    """A PTT over watched by the SDR and heard by the bench modem; returns (sdr analysis, bench lines). The SDR's
+    bursts are decoded on the bench (dmr_watch_*: only the LC, kind and timing fields these tests read come back, no
+    raw I/Q); without the shared bench daemon it is a raw capture analyzed afterwards, as before."""
     rdir = sdr_bench.run_dir(tag)
     with sdr_bench.lease():
-        cap = sdr_bench.capture_start(rdir, freq, seconds=seconds + 8)
+        watch = sdr_bench.dmr_watch_start(rdir, freq, seconds + 8, cc)
         lis = sdr_bench.listen_start(freq, cc, seconds=seconds + 6)
         radio.ptt_for(seconds)
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
         heard = sdr_bench.listen_result(lis)
-        sdr_bench.capture_wait()
-    sdr = sdr_bench.analyze_dmr(cap, freq, cc)
-    print(f"captures on the bench: ~/{sdr_bench.dir}/{rdir}/")
+        sdr = sdr_bench.dmr_watch_result(watch)
+    print(f"captures on the bench: ~/{sdr_bench.dir}/{rdir}/" if "cap" in watch else "bursts decoded on the bench")
     return sdr, heard
 
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_or_modem
 @pytest.mark.codeplug_write
 def test_dmr_tx_talker_alias(radio, sdr_bench, pytestconfig, backup_dir):
     if "DMR_TALKER_ALIAS" not in radio.features():
@@ -316,6 +323,7 @@ def _repeated_slots(outbound):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 @pytest.mark.codeplug_write
 def test_dmr_tx_split_repeater(radio, sdr_bench, pytestconfig, backup_dir):
     split = pytestconfig.getoption("--split-tx-mhz")
@@ -345,8 +353,8 @@ def test_dmr_tx_split_repeater(radio, sdr_bench, pytestconfig, backup_dir):
                 # the key-up, inside the radio's first listen window (see the docstring for why not on the BS_Dwn_Act)
                 # The captures first: starting them takes 6-8 s on the shared bench, longer than the beacon's delay, so
                 # started after the repeater the beacon was already on at the check below (SDR bench, 2026-10-18)
-                cap = sdr_bench.capture_start(rdir, split, seconds=22)     # the radio's side: what it sent, where
-                cap_out = sdr_bench.capture_start(rdir, freq, seconds=22, name="cap1")   # the repeater's: slot timing
+                cap = sdr_bench.dmr_watch_start(rdir, split, 22, cc)     # the radio's side: what it sent, where
+                cap_out = sdr_bench.dmr_watch_start(rdir, freq, 22, cc, name="cap1")   # the repeater's: slot timing
                 rpt = sdr_bench.repeater_start(split, freq, cc, seconds=30,
                                                extra=f"--beacon 60 --beacon-len 16 --beacon-phase {BEACON_PHASE_S}")
                 at = _wait_line(rpt, "beacon every", 20)       # the beacon timer starts as this is logged
@@ -367,10 +375,9 @@ def test_dmr_tx_split_repeater(radio, sdr_bench, pytestconfig, backup_dir):
                 finally:
                     radio.link.ptt(False)
                 radio.wait_for(lambda x: x.get("state") != "tx", timeout=5, what="TX ended")
-                sdr_bench.capture_wait()
                 events = sdr_bench.repeater_result(rpt, timeout=60)
-                sdr = sdr_bench.analyze_dmr(cap, split, cc)
-                out = sdr_bench.analyze_dmr(cap_out, freq, cc)
+                sdr = sdr_bench.dmr_watch_result(cap)
+                out = sdr_bench.dmr_watch_result(cap_out)
                 _, after = radio.counters()
                 # HR_C7000: the slot choice, and the timeslot interrupt counts after and before
                 txb = [x for x in radio.link.diag()[1] if x.startswith(("txb ", "txh ", "ts "))] + ints0
@@ -439,6 +446,7 @@ def test_dmr_tx_split_repeater(radio, sdr_bench, pytestconfig, backup_dir):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.sdr_or_modem
 def test_dmr_privacy_tx(radio, sdr_bench, pytestconfig):
     if "DMR_PRIVACY" not in radio.features():
         pytest.skip("built without CONFIG_DMR_PRIVACY")

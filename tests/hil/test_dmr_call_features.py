@@ -62,6 +62,7 @@ def _print_lc_trace(radio):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_private_call_to_us(radio, sdr_bench, pytestconfig):
     """A private call to our ID: played, shown as to us, and the reply window points back at the caller."""
     _on_dmr_channel(radio, pytestconfig)
@@ -78,6 +79,7 @@ def test_private_call_to_us(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_private_call_to_other(radio, sdr_bench, pytestconfig):
     """A private call between two other radios: counted (and shown while it lasts) but never played."""
     _on_dmr_channel(radio, pytestconfig)
@@ -88,6 +90,7 @@ def test_private_call_to_other(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_emergency_call(radio, sdr_bench, pytestconfig):
     """The emergency service option is flagged on the call and counted."""
     _on_dmr_channel(radio, pytestconfig)
@@ -101,6 +104,7 @@ def test_emergency_call(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_talker_alias(radio, sdr_bench, pytestconfig):
     """A talker alias in the odd superframes (ISO 8-bit) is assembled and shown."""
     _on_dmr_channel(radio, pytestconfig)
@@ -114,6 +118,7 @@ def test_talker_alias(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_gps_info(radio, sdr_bench, pytestconfig):
     """An ETSI GPS Info LC (FLCO 8) after a talker alias in the odd superframes: the caller's position on the call
     (call.gps_*), kept with the last heard; one step of the fields is 1.1e-5 degree."""
@@ -129,6 +134,7 @@ def test_gps_info(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_late_entry(radio, sdr_bench, pytestconfig):
     """No header and the first 8 of 36 bursts left out: the call is taken from the embedded LC (one call, marked late).
     The radio hears from burst C of the second superframe, but takes voice only from a burst A on, so the first
@@ -157,6 +163,7 @@ def test_late_entry(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_privacy_service_option(radio, sdr_bench, pytestconfig):
     """A call with the privacy service option: without a key every burst is dropped (never played); with a basic
     privacy key loaded the bursts go through the privacy hook to the vocoder. The bench doesn't scramble, so the
@@ -180,6 +187,7 @@ def test_privacy_service_option(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_pi_bit(radio, sdr_bench, pytestconfig):
     """The EMB PI bit on B-F. The HR_C6000 reports PI unreliably for voice, so its driver clears it (gotcha 6.4):
     on the DM-1701 the call plays as clear. Recorded, not asserted beyond one call heard."""
