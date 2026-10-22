@@ -1480,7 +1480,7 @@ static void r2_status(rx2_status_t *st)
 	st->rssi_dbm = -80;
 }
 static void r2_audio(bool on) { r2.audio = on; }
-static const hal_rx2_t fake_rx2 = { r2_tune, r2_stop, r2_status, r2_audio };
+static const hal_rx2_t fake_rx2 = { .tune = r2_tune, .stop = r2_stop, .status = r2_status, .audio = r2_audio };
 
 static void test_dual_rx2(void)
 {
