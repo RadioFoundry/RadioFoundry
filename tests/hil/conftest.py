@@ -67,6 +67,15 @@ def pytest_addoption(parser):
                      "(bench_repeater.py --tx); no default: a pair you are licensed for")
     g.addoption("--roam-tx", type=float, default=None,
                 help="MHz: the radio's transmit frequency of that site (bench_repeater.py --rx)")
+    g.addoption("--split-rx-port", default=os.environ.get("ODR_SPLIT_RX_PORT"),
+                help="test_split_pair: the second radio's port, the RX half (the --radio-port radio is the TX half)")
+    g.addoption("--split-ms-port", default=os.environ.get("ODR_SPLIT_MS_PORT"),
+                help="test_split_pair_handheld: a third radio, the subscriber calling into the pair (its current "
+                     "DMR channel is edited for the run and put back)")
+    g.addoption("--split-ms-ts", default="1,2", help="test_split_pair_handheld: the subscriber's slots, in turn")
+    g.addoption("--split-out-mhz", type=float, default=None,
+                help="MHz: test_split_pair, the repeater output the TX half sends on (its input is --dmr-freq, where "
+                     "the bench calls); no default: one you may transmit on, inside the SDR's shared window")
     g.addoption("--split-tx-mhz", type=float, default=None,
                 help="MHz: test_dmr_tx_split_repeater, the radio's TX frequency on its DMR test channel made split "
                      "(the bench repeater's input; its output is --dmr-freq); no default: one you may transmit on")

@@ -48,8 +48,9 @@ uint8_t dl_reboot_check(uint8_t mode, uint32_t token, const hal_chip_t *chip, bo
 		return DL_REBOOT_TX;
 	}
 	// With RDP level 1 the ROM bootloader refuses flash access, and its read-unprotect command mass-erases all of
-	// flash, the stock bootloader included: never offer the ROM path then. Level 2 disables the ROM bootloader
-	if (mode == HAL_REBOOT_ROM_DFU && dl_rdp_level(chip->optcr) != 0) {
+	// flash, the stock bootloader included: never offer the ROM path then. Level 2 disables the ROM bootloader. A chip
+	// without option bytes has no such ROM path to offer
+	if (mode == HAL_REBOOT_ROM_DFU && (chip->family != HAL_CHIP_STM32F4 || dl_rdp_level(chip->optcr) != 0)) {
 		return DL_REBOOT_RDP;
 	}
 	return DL_REBOOT_OK;

@@ -181,7 +181,9 @@ static void test_init(void)
 	CHECK(at1846s_set_rx_tone(&dev, AT1846S_TONE_CTCSS, 1000));
 	CHECK(last_write(0x4D) == 10000 && last_write(0x5B) == 0x0F0F && (last_write(0x3A) & 0x1F) == 0x08);
 	CHECK(at1846s_set_rx_tone(&dev, AT1846S_TONE_DCS_INV, 023));
-	CHECK(last_write(0x4A) == 13440 && last_write(0x4B) == 0x0076 && last_write(0x4C) == 0x3813);
+	// D023's Golay word 0x763813 bit-reversed: the chip sends and compares from bit 22 (found on air: the guide's
+	// unreversed example went out as D023 read backwards)
+	CHECK(last_write(0x4A) == 13440 && last_write(0x4B) == 0x0064 && last_write(0x4C) == 0x0E37);
 	CHECK((last_write(0x3A) & 0x1F) == 0x04);
 	CHECK(at1846s_set_rx_tone(&dev, AT1846S_TONE_NONE, 0));
 	CHECK((last_write(0x3A) & 0x1F) == 0x03 && last_write(0x4A) == 0);
@@ -204,7 +206,7 @@ static void test_dcs(void)
 	read_value = 0x00FF;		// whatever the chip holds in 0x4E's low bits
 	CHECK(at1846s_set_tx_tone(&dev, AT1846S_TONE_DCS, 0754));
 	CHECK(last_write(0x4A) == 13440 && last_write(0x4D) == 0);
-	CHECK(last_write(0x4B) == 0x0020 && last_write(0x4C) == 0xF9EC);
+	CHECK(last_write(0x4B) == 0x001B && last_write(0x4C) == 0xCF82);	// 0x20F9EC reversed
 	CHECK((last_write(0x4E) & 0x07C0) == 0x0480 && (last_write(0x4E) & 0x003F) == 0x003F);
 	CHECK(at1846s_set_tx_tone(&dev, AT1846S_TONE_DCS_INV, 0754));
 	CHECK((last_write(0x4E) & 0x07C0) == 0x0580);

@@ -48,7 +48,7 @@ Offsets from 0x11000000. Values are those used by OpenDM32 (BIN) unless noted.
 | Offset | Register | Fields (DS) | Value used | Why |
 |---|---|---|---|---|
 | 0x100 | WORK_MODE | b8 digital_analog_en; b7 modulator_mode (0 DMR, 1 FM); b6 Tier II; b5 timeslot mode; b4:3 layer (0 PHY, 1 L2, 2 L3); b2 is_repeater; b1 is_aligned; b0 work_slot_sel | **0x80** FM, **0x6E** DMR (Tier II, timeslot, layer 2, repeater bit, aligned, slot 1) | Only these two values are ever written (BIN). Timeslot choice is done in software with LAYER2_TXRX_CTRL, not with work_slot_sel |
-| 0x104 | RF_MODE | b25 phase_avg_en; b24 af_mode; b23:16 AF gain (n/16); b15 RX IQ invert; b14:13 RX mode; b12 dynamic sync threshold; b11 dual receive channels; b9 soft ramp; b7 TX IQ invert / deviation mapping; b6:5 TX mode (3 = two-point) | **0x03269860**: AF receive on with averaging, gain 0x26 (2.375), RX IQ inverted, dynamic sync threshold, dual RX channels, two-point modulation | Written once at init and left in both modes. The Dec 2025 code switched to 0x03269060 (no dual RX) in DMR; OpenDM32 does not |
+| 0x104 | RF_MODE | b25 phase_avg_en; b24 af_mode; b23:16 AF gain (n/16); b15 RX IQ invert; b14:13 RX mode; b12 dynamic sync threshold; b11 use_dual_phy (second timeslot receive channel, 2.1a); b9 soft ramp; b7 TX IQ invert / deviation mapping; b6:5 TX mode (3 = two-point) | **0x03269860**: AF receive on with averaging, gain 0x26 (2.375), RX IQ inverted, dynamic sync threshold, b11 set (2.1a), two-point modulation | Written once at init and left in both modes. The Dec 2025 code switched to 0x03269060 (b11 clear) in DMR; OpenDM32 does not |
 | 0x108 | SIG_CENTER | b31:24 TX I bias, b23:16 TX Q bias, b15:8 / b7:0 RX I/Q bias | (cal << 24) or (cal << 16) | TX center from factory calibration (`hardware-dm32.md` 11) |
 | 0x10C | TX_IF_FREQ | b23:0 | 0x0BB800 (reset value) | |
 | 0x110 | RF_CONTROL | b20:16 tx_pre_on (100 us steps); b13:8 rf_pre_on_tx (RF TX interrupt advance, 100 us); b5:0 rf_pre_on_rx | **0x00041F1A**: tx_pre_on 0.4 ms, RF TX interrupt **3.1 ms** before the TX burst, RF RX interrupt 2.6 ms before RX | The July build used 0x00040A0A (1.0 ms) and had bad timeslots at low power. b13:8 is per board (`hrc7000_t.rf_tx_lead`): the DM-1801 Pro uses 0x06 (0.6 ms) and the DM-32UV 0x04 (0.4 ms), since longer leads clipped the inbound burst before ours (`hardware-dm1801pro.md` 5.6, `hardware-dm32.md` 8.5) |
@@ -72,6 +72,29 @@ to IF mode only.
 holds only while DAC_CONTROL keeps that DAC powered. In TX it is SIG_CENTER b31:24, ±422 mV around 1.65 V in 3.3 mV
 steps; RF_MODE b9 sets where the ramp starts (0 = 1.65 V). With cal + 384 in b25:16 both states give about the same
 voltage, within one step on the DM-1801 Pro (I).
+
+### 2.1a RF_MODE bit 11: the DCDM receive switch
+
+The HR_C7000 datasheet names bit 11 `use_dual_phy`. It turns on a second receive channel, "for repeater chip receive
+mode and DCDM mode" (`datasheets/C7000/HR_C7000_Document_2.pdf`, register table at p. 98; our translation from the
+Chinese). DCDM is dual-timeslot direct mode: two conversations on the two DMR timeslots of one frequency, with no
+repeater to supply sync. The community name is "dual-capacity direct mode"; the datasheet doesn't expand it. Its DCDM
+set-up (section 18.3.5.1, p. 410) is three steps: turn off MS and BS sync receive, enable TDMA1 and TDMA2 sync
+detection, and set RF_MODE[11]. Receive stays enabled all the time.
+
+- **Stock behavior (DM-1801 Pro, `-ref` notes `hrc7000-rmo-tx-slot.md`, `dm1801pro-firmware-analysis-log.md` 17.6):**
+  the bit follows the channel mode. Simplex channels (RX frequency equal to TX frequency, channel flag byte 0x0D bit 5)
+  set it and enable TDMA1 and TDMA2 sync; repeater channels clear it and enable only MS and BS sync. That is the
+  datasheet's DCDM set-up on simplex. The datasheet also lists "repeater chip receive mode" as a user of bit 11, but stock
+  clears it on repeater channels, so that mode may be a different one. Not resolved. The DB25-D stock sets it on normal simplex and clears it for two channel values
+  (`hardware-db25d.md` 4.5).
+- **ODR:** writes 0x03269860 (bit 11 set) and enables the TDMA1 and TDMA2 sync detection on every channel (`hrc7000.c`,
+  the bench note of 2026-10-16), so ODR runs the DCDM receive set-up on repeater channels too. Whether that matters on a
+  repeater is not measured.
+- **Not a second RF chip.** The RF chip is unchanged. The second channel is a second modem receive path. Multi-chip
+  dual watch is a separate feature (ODR issue #96).
+- **Not known:** whether a simplex receiver with bit 11 on hears a second-timeslot call that it misses with the bit off.
+  No on-air test has compared the two (section 10, item 7).
 
 ### 2.2 Sync words
 
@@ -154,7 +177,11 @@ SYS_INTERP_LIST bits (DS):
 | 0x418 | LAYER2_SEND_TYPE | b31:22 codec type for custom data types 11–15; b12 RC in data sync; b11 data EMB RC source; b10 / b9 BS forwarding; b8 crc_calc_sel (0 = chip computes CRCs); **b7:4 data type / voice burst index; b3 1 = voice (or RC) burst, 0 = data/control burst; b2 second data header; b1:0 LCSS** |
 | 0x41C | LAYER2_STATUS | b31 TX slot number, b30 RX slot number, b17:9 RX slot bit count, b8:0 TX slot bit count |
 | 0x424 | LAYER2_SLOT_PRE | b23:16 0x55 (do not change), b15:8 RX processing-interrupt advance, b7:0 TX advance. Value **0x551010** |
-| 0x428–0x438 | LAYER2_BS_MODE, BS_SECOND_REG, BS_STATUS, BS_CACH | repeater / simulcast modes; never written by working firmware |
+| 0x428 | LAYER2_BS_MODE | b11:8 bs_idle_type (reset 9 = Idle), b5:4 gps_update_rate, b3 gps_pps_en, **b2 bs_tx_mode, b1 bs_rx_mode, b0 bs_single_freq** (0 dual frequency, 1 single frequency). Reset type H: **a chip reset does not clear it**. Section 2.9 |
+| 0x430 | BS_SECOND_REG | b5:0 GPS second, simulcast only |
+| 0x434 | BS_STATUS | read only: b29:28 CACH LCSS counter, b27:19 and b18:8 simulcast slot and frame counters, b5:0 locked second |
+| 0x438 | BS_CACH | b1 bs_cach_at, b0 bs_cach_tc. Does not control the CACH on air as a static value (2.9) |
+| 0x12C, 0x130 | SEND_DATA_SYNC_H / _L | TX data sync word, reset D5D7F7 7FD757 (MS data). Writing the BS data sync (DFF57D 75DF5D) makes the chip send BS-sourced data frames (2.9) |
 
 Values written to LAYER2_CONTROL: **0xC0** = TX and RX enabled, passive timing (receive, follow the other side's
 slots); **0xC3** = TX and RX enabled, active TX and RX timing (we set the slot clock); **0xCB** = 0xC3 plus b3
@@ -291,6 +318,129 @@ chip keeps the previous call's LC there until a new one is decoded (BIN observat
 **Voice RAM (0x16000960)**: write 27 bytes before arming a voice burst; read 27 bytes after a voice deframe interrupt
 (DS, BIN). Burst numbering for privacy keystream purposes is RX_TYPE_INFO's 1–6 (DS).
 
+### 2.9 BS (repeater) mode: bench results 2026-10-20
+
+Datasheet source: the Chinese original (HR_C7000_Document_2, 10.2.2.17, 10.2.2.18, 10.2.2.22, 10.2.2.25-10.2.2.28).
+The registers, their bits and what the chip does with them were tried on a DM-32UV (ODR build with a scratch memory
+poke command, SDR bench capture on 461.4625 MHz, lowest power, `sdrmon.py analyze --cach`). Tag: BENCH.
+
+Datasheet summary (DS):
+
+| Item | Content |
+|---|---|
+| BS_MODE b2 / b1 / b0 | BS transmit mode, BS receive mode, dual (0) or single (1) frequency repeater |
+| LAYER2_SLOTON b3 / b4 (0x404) | bs_tx_slot_on / bs_rx_slot_on: establish the BS TX / RX slot. Status: b28 o_bs_tx_slot_on, b27 o_bs_rx_slot_on |
+| LAYER2_TXRX_CTRL b4 (0x408) | bs_tx_sync_rx_en: BS TX slot follows the BS RX slot |
+| LAYER2_SEND_TYPE b10 bs_tx_data_rdy (0x418) | 0: the chip frames and sends Idle (type from BS_MODE b11:8); 1: forwarded data is ready (self-clears at the slot edge) |
+| LAYER2_SEND_TYPE b9 bs_tx_data_source | 0: the chip encodes; 1: send 196 information bits without coding |
+| AUDIO tx_voice_source = 1 (4.6.5.3) | voice comes from MCU written RAM (the layer 2 BS TX path) |
+| BS_CACH b1:0 | AT and TC "for BS transmit mode" |
+| RDY_NEXT_SHORT_LC interrupt (bit 17) | the chip asks for the next CACH short LC |
+| BS_INTER_IN / BS_INTER_OUT pins (P12 / R12) | baseband BS interrupt in and out, apparently to link two chips |
+| BS_SECOND_REG, BS_STATUS, GPS bits | same-frequency simulcast from a GPS pulse. Not needed here |
+
+Findings:
+
+| # | Finding | Evidence |
+|---|---|---|
+| 1 | The BS registers exist and read the datasheet's reset values: BS_MODE 0x00000900, the others 0 | read at idle |
+| 2 | Writable bits match the datasheet: BS_MODE b11:8, b5:0; BS_CACH b1:0; BS_SECOND b5:0. Reserved bits read 0. BS_STATUS ignores writes. 0x42C is not implemented (reads 0, ignores writes) | write and read back |
+| 3 | BS_MODE survives a chip reset (`stubtool --attach --boot reset`). A radio left in BS mode stays there until written back or hardware reset | read after reset |
+| 4 | With BS_MODE b2 set, ODR's normal call start fails: the TX path never arms (`dmr.tx_error=stalled`, TX denied `rejected`). BS TX needs its own start sequence | `ptt` with b2 set |
+| 5 | With b2 set, then LAYER2_SLOTON b3 set and b0 cleared during a call, the chip reports o_bs_tx_slot_on (SLOTON reads 0x1000000C) and BS_STATUS b29:28 becomes non-zero (one read: 0x10000000, so the CACH LCSS counter runs) | read back, 0x434 = 0x10000000 |
+| 6 | The chip then sends its own Idle frames (data type 9 from bs_idle_type, color code from LOCAL_CC) with no MCU data, every 60 ms in **one** slot, with the same 30 ms bursts keyed and unkeyed (the RF keying is still ODR's). The first frame comes about 0.8 s after the switch | SDR: 54 IDLE bursts, 60.0 ms apart |
+| 7 | The sync word on those frames comes from SEND_DATA_SYNC. At its reset value they carry MS data sync. Written with the BS data sync they decode as BS-sourced (`bs-d`) | SDR family column |
+| 8 | **Each BS frame is preceded by a CACH with valid TACT parity** (the analyzer counts it `tact ok`), but AT, TC, LCSS and the short LC payload are not controlled by BS_CACH: with BS_CACH held at 0, 2 and 3, AT and TC showed all four combinations about equally often and the short LC fragments were noise. TC did not alternate | SDR: 54 CACHs per run, three runs |
+
+Unresolved: where the chip takes the CACH bits from. The likely source is the same as on the HR_C6000, per slot values
+the MCU supplies at the RDY_NEXT_SHORT_LC interrupt (BS_CACH written every slot, short LC in a TX RAM window), which a
+static poke cannot reproduce. Not tried: the real start sequence (arming BS TX without ODR's call), `bs_tx_data_rdy` = 1
+with MCU data in both slots, `tx_voice_source`, `bs_rx_mode` (receive BS, label slots), `bs_single_freq`, the BS_INTER
+pins, and two chips. The test was a register switch in the middle of an ODR call, so the one-slot cadence in 6 may come
+from ODR's own TX loop and not the chip.
+
+
+### 2.10 Physical layer transmit: the split duplex TX half
+
+The split duplex TX half (`split-duplex.md` 5.4) needs a CACH whose AT, TC and short LC it controls, which the BS mode
+of 2.9 doesn't give. It uses the physical layer mode instead (DS 9.5), as the HR_C6000 does (`modem-hrc6000.md` 9.1):
+the chip sends the CPU's bits without coding, and the core builds every slot (`bsOutboundRawSlot`: the CACH, then the
+burst with BS sync, slot type and coded payload). Driver: `drivers/modem/hrc7000/hrc7000_bs.c`. Tag: DS until the bench
+results below say otherwise.
+
+| Item | Content (DS 9.2, 9.4.1, 9.5) |
+|---|---|
+| WORK_MODE | 0x22: physical layer, timeslot mode (b5 set, layermode 0, b1 aligned); 0x02: physical layer, continuous mode |
+| RF_MODE | two-point TX (b6:5 = 3), as the 0x03269860 of 2.1 |
+| LAYER2_CONTROL | b7 txen, b6 rxen, b1 tx_master_mode, b0 rx_master_mode. 0x82: transmit with our own slot timing |
+| LAYER2_TXRX_CTRL | b7 txnextsloten: send in the coming slot; b6 rxnextsloten; b0 autotest. The datasheet's set-up writes 0x81 |
+| TX RAM 0x00-0x23 / 0x24-0x47 | SEND_DATA0 / SEND_DATA1: one 36-byte (288-bit) frame each, sent alternately. Two bits per symbol, 00 +1, 01 +3, 10 -1, 11 -3 (the ETSI dibit mapping), first bit in b7 of the first byte |
+| System interrupt b12 | phy_rdy_interp: the physical layer's slot interrupt |
+
+The datasheet's example frame for a bit error test carries the MS data sync at bits 120-167. In a burst the sync starts at
+bit 108, so that frame is 12 bits of guard, the 264-bit burst and 12 bits of guard: an MS slot, aligned to the slot
+edge. A BS outbound has no guard: its slots follow each other without a gap, each CACH centered on the slot edge. The
+driver writes the core's slots (CACH first) back to back, so the bit stream on air is the continuous outbound, and the
+CACH half that falls before the chip's slot edge is only a constant 1.25 ms offset of the slot clock (the RX half's
+phase tracking absorbs it, `split-duplex.md` 6). Whether the chip ramps the PA between two slots of the timeslot mode
+(it would cut into the CACH) is what the continuous mode variant is for.
+
+The driver, while the BS outbound runs (it takes the slot engine's place, as `hrc6000_bs.c` does):
+
+1. Start: TXRX 0, SLOTON 0, WORK_MODE 0x80 then 0x22 (or 0x02), LAYER2_CONTROL 0x82, codec buffers cleared. A new
+   slot clock.
+2. Slot clock: a boundary at the first of the TX timeslot, RX timeslot or PHY_RDY interrupts in a slot (one more
+   within 15 ms is the same slot). Unkeyed the clock runs and nothing is sent.
+3. Keyed: at each boundary a slot's 36 bytes go to TX RAM and TXRX = 0x80. The chip sends them in the slot that
+   starts about 5 ms after the boundary's interrupt, not in the one after it (finding 11), so the slot clock names that
+   slot. The key-up starts on an outbound TS1 slot. Each slot plays its own queue, an empty one an idle burst.
+4. The first RF TX interrupt keys the RF chip and starts the PA one-shot; the PA then stays up. Unkeyed: no more slots,
+   the PA off one slot later. No boundary for 200 ms: PA off, unkeyed.
+5. Stop (and leaving DMR): TXRX 0, PA off, WORK_MODE 0x80 then 0x6E, LAYER2_CONTROL passive, both slot syncs released,
+   then the normal receive restart (5.2). LAYER2_BS_MODE is never written; the power-on set-up writes its reset value
+   0x900 (2.9: it survives a chip reset).
+
+Bench variants (`dmr_bs_config_t.variant`, the debug link's SPLIT op 1, `split-duplex.md` 10.1), a bit field: b0 the
+continuous mode, b1 the autotest bit with the send bit (0x81), b3:2 the TX RAM halves (0 the slot to both, 1 alternate
+starting with SEND_DATA0, 2 alternate starting with SEND_DATA1). The default 0 is timeslot mode, 0x80, both halves.
+
+Bench results, DM-1801 Pro, 2026-10-20 (TX half keyed 8 s per variant at the lowest power on 461.4625 MHz; no SDR
+capture: the RTL-SDR was in use elsewhere. A DM-1701 on the same frequency as the receiver). Tag: BENCH.
+
+| # | Finding | Evidence |
+|---|---|---|
+| 1 | PHY_RDY (system interrupt b12) comes first in every slot and makes the slot clock; the TX and RX timeslot interrupts follow in the same slot (two per slot) | `bs` lines: 366 PHY_RDY, 734 timeslot interrupts, 1 boundary from a timeslot vector; longest gap 30.0 ms, no late slot |
+| 2 | Variants 0, 1, 4 and 8 give one RF TX interrupt per key-up: the chip stays in TX from slot to slot. With the autotest bit (variant 2) it comes every 60 ms: the chip leaves TX between slots | `bs.rftx_ints` 1 against 141 in 8 s |
+| 3 | Every slot is set up while keyed (about 280 in 8.4 s), no underrun, no stall | `bs.bursts`, STATUS `idle` |
+| 4 | The outbound decodes: the DM-1701 deframed one idle burst per 60 ms with BS sync and color code 2, no CRC errors, labeled TS1 from the CACH TC (variant 8: TS2) | its `I`, `cc2 BS ts1` lines |
+| 5 | After the role ends (also by lease expiry) a normal call goes out whole | `dmr.tx_error=ok`; the DM-1701 heard 3 headers, 42 voice bursts, the terminator |
+
+DM-32UV on the SDR bench, 2026-10-21 (lowest power, 461.4625 MHz, `tests/hil/test_split_duplex.py`). Tag: BENCH.
+
+| # | Finding | Evidence |
+|---|---|---|
+| 6 | Variant 0: the outbound is whole. BS data sync on both slots (189 / 188 idle bursts in 10 s), a burst every 30.0 ms (same slot 60.000 ms), one key-up edge, every CACH of valid TACT parity, TC alternating on every CACH, AT following SET_AT, the short LC decoding (93 ok, 0 bad), no underrun | `test_split_tx_half_off_air`: 377 BS bursts, tact ok 377, TC alternating 376/376 |
+| 7 | Variant 1 (continuous mode) gives the same outbound: the timeslot mode keeps the carrier and every CACH between slots too | 358 BS bursts, tact ok 358, TC 357/357 |
+| 8 | A host-fed voice call goes out whole in its slot | `test_split_tx_half_voice` |
+| 9 | Keyed 5 minutes: carrier offset +58 Hz at key-up, +56 Hz at the end, no underrun, no stall (10 015 slots) | captures across the key-up and the unkey (`sdrmon.py analyze` needs carrier-free air in a capture to find its noise floor) |
+| 10 | The RX half labels a bench call, residual 0-1 us after centering, and the label flips with the epoch | `test_split_rx_half_labels` |
+
+Variant 0 stays the default. Writing the slot to both TX RAM halves works, so which half the chip sends in each slot
+isn't needed. Not measured: PA temperature (no sensor on the diagnostics page), receiver desense with the RX half
+beside it.
+
+The DM-1801 Pro gives the same results on the SDR bench (2026-10-21, variant 0): 352 BS bursts, 176 per slot, tact ok
+352, TC alternating 351/351, AT following SET_AT, short LC 87 ok and 0 bad, no underrun; the voice call whole. Its RX
+half's labels pass too (residual 1 us).
+
+The slot clock against the air, SDR bench, 2026-10-21 (DM-1801 Pro TX half; each GET_EPOCH mapped to wall-clock time
+through the host's time sync, compared with the SDR's timestamps of the outbound's bursts, whose slot comes from
+their CACH TC). Tag: BENCH.
+
+| # | Finding | Evidence |
+|---|---|---|
+| 11 | The slot set up at a boundary is on air from about 5 ms after the boundary's interrupt. The first driver took it to go out one slot later and named the boundary after the slot before: the epoch was one slot early, and a subscriber's TS2 call through a pair went up labeled TS1 and was repeated on TS1 | before the fix TS2 bursts started 5.0 ms after the epoch's "TS1" and TS1 bursts 25.0 ms before it; after it TS1 bursts start 4.6 ms after the epoch (six epochs each). The DM-1701's TX half measures +2.2 ms the same way |
+
 ---
 
 ## 3. Interrupts
@@ -343,7 +493,7 @@ Ordered; (register, value, why). OpenDM32 writes the whole DMR block once here a
 | 8 | LINEOUT_CTRL (0x088) | 0x01 | speaker line out on | KP |
 | 9 | SIG_CENTER | (cal << 24) or (cal << 16) | TX I/Q center | BIN |
 | 10 | RF_MOD_BIAS_CTRL | ((cal + 384) << 16) or 0x4D4D | modulation balance until a TX frequency is known | BIN |
-| 11 | RF_MODE | 0x03269860 | two-point TX, AF RX, dual RX channels | BIN |
+| 11 | RF_MODE | 0x03269860 | two-point TX, AF RX, b11 set (2.1a) | BIN |
 | 12 | DEV_LIMITER | 0x0000FF00 | | KP |
 | 13 | SYS_SOFT_RSTN | 0x190 | see the reset-bit caveat in `hardware-dm32.md` 16 | BIN, KP |
 | 14 | DAC_CONTROL (0x070) | 0x8000001B | baseband DAC set-up: b31 offset code; b5 / b4 power down DAC A / B; b2 / b1 low power DAC A / B (1 = off or low power, DS). So DAC A on at full power, DAC B powered down and low power | KP |
@@ -468,7 +618,7 @@ slot: TXRX_CTRL = 0 (or 0x40 to listen for a response). Sequence for a packet: d
 
 ### 6.5 BS activation (repeater wake)
 
-No layer-3 BS activation: LAYER2_BS_MODE, BS_* registers and WORK_MODE values 0x73/0x76/0x77 are never used (BIN).
+No layer-3 BS activation: LAYER2_BS_MODE, BS_* registers and WORK_MODE values 0x73/0x76/0x77 are never used by stock (BIN). What they do when written is in 2.9 (BENCH).
 
 | # | When | Writes | Tag |
 |---|---|---|---|
@@ -552,7 +702,9 @@ Standard CTCSS addresses (DS table 59; RX uses the same addresses in CTCSS_ADDR 
 The address order is not ascending; map from frequency, not from a list index. Other tones: USER_DEFINE_CTC. TX
 sub-audio deviation via SUBVOICE_COEF b15:8 (typical 350 Hz narrow, 600 Hz wide). The FM_BANDWIDTH bits don't scale
 it: the reset value 0x28 gives 300 Hz CTCSS at both bandwidths, and ODR writes 0x50 at 25 kHz (600 Hz) (BENCH,
-DM-1801 Pro UHF). DCS at 0x28 measured about 100 Hz. The boot stub's restart doesn't reset the modem, so the field
+DM-1801 Pro UHF). DCS gets a third of the deviation from the same value (0x28: 100 Hz), and reads the field as signed:
+0xF0 sent the code inverted at about 40 Hz. ODR writes three times the CTCSS value for DCS, capped at 0x7F: 0x78 at
+12.5 kHz (305 Hz) and 0x7F at 25 kHz (323 Hz) (BENCH, DM-32UV UHF). The boot stub's restart doesn't reset the modem, so the field
 keeps the last transmission's value; ODR's init writes 0x28 rather than reading it back (a DM-32UV read 0xFF there
 after a 25 kHz transmission and sent CTCSS at 1.9 kHz deviation, BENCH). When FM_PTT drops, the chip sends
 the reverse burst / turn-off code before stopping (DS). On a detected tone the FM signaling system interrupt fires
@@ -655,7 +807,7 @@ All BIN; none tested by us on air.
 |---|---|---|---|---|
 | 1 | Vectors | only 61 and 63 hooked; RF TX handler never called | 62 (TX timeslot) and 64 (RF TX) hooked; TX states run on 62; 64 keys the RF chip | DMR TX starts at all |
 | 2 | Register set-up | whole DMR block rewritten at every DMR entry | written once at init | |
-| 3 | RF_MODE | 0x03269060 in DMR | 0x03269860 always (dual RX channels) | minor |
+| 3 | RF_MODE | 0x03269060 in DMR | 0x03269860 always (b11 set, 2.1a) | minor |
 | 4 | RF_CONTROL | 0x00040A0A in the July build | 0x00041F1A (RF TX interrupt 3.1 ms early) | part of the low-power timeslot fix |
 | 5 | DMR entry | long sequence, PA drive DAC left off after FM RX | calibration, mic gain, DAC_PD_CTRL bit 1 cleared, WORK_MODE 0x80 → 0x6E | PA drive present in DMR |
 | 6 | RX restart | TXRX 0xC00000, 0, 0xC00000, 0x8040; SLOTON never written | SLOTON 0, TXRX 0x800000, 0x40, SLOTON 5; VOICE_EMB_CTRL 2 | reliable RX sync |
@@ -683,3 +835,9 @@ All BIN; none tested by us on air.
 5. Data and CSBK transmission on the C7000 have only been checked against the guide and shared host tests, not on air.
 6. FM sub-audio: the C7000's own CTCSS/CDCSS engine (section 8) has not been used by any firmware seen; the port routes
    TX CTCSS to the FD6818 instead.
+7. RF_MODE b11 (2.1a) on simplex receive: does a radio with the bit set hear a call on the second timeslot that it misses
+   with the bit clear? No on-air test has compared the two. A test: a call on one timeslot while the radio receives the
+   other, with b11 on and then off. Also: ODR sets b11 on repeater channels, which stock clears. Does that change repeater
+   reception?
+8. BS mode (2.9): where the chip's CACH AT, TC and short LC come from (likely BS_CACH and a short LC written at every
+   RDY_NEXT_SHORT_LC). The split duplex TX half doesn't need it: it uses the physical layer (2.10).

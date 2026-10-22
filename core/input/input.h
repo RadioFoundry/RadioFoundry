@@ -52,7 +52,7 @@ typedef enum {
 
 typedef enum {
 	INPUT_INJ_OK,
-	INPUT_INJ_BUSY,		// an injected key is still held (or released less than INPUT_INJECT_GAP_MS ago)
+	INPUT_INJ_BUSY,		// an injected key is still held (or released less than INPUT_INJECT_GAP_MS or 3 scans ago)
 	INPUT_INJ_NO_KEY,	// no key in the board's key map gives that action / gesture
 	INPUT_INJ_BAD,		// bad argument
 } input_inject_t;

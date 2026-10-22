@@ -20,6 +20,8 @@
 #define FM_TONE1_DEFAULT	0x05930629u
 #define FM_TONE3_DEFAULT	0x09AC0AB0u
 #define SUBAUDIO_DEV_RESET	0x28u		// SUBVOICE_COEF b15:8 at reset: 300 Hz CTCSS (8.2)
+#define SUBAUDIO_DEV_DCS	3u		// the same field gives DCS a third of CTCSS's deviation (8.2)
+#define SUBAUDIO_DEV_DCS_MAX	0x7Fu		// DCS reads the field as signed: 0xF0 sent the code inverted (8.2)
 
 uint16_t hrc7000_mod_dc(uint8_t tx_center)
 {
@@ -140,6 +142,10 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_wr(d, C7_SCRAMBLE_REG, 0);
 	hrc7000_wr(d, C7_SYS_INTERP_MASK, SYS_INT_ENABLE);
 	hrc7000_wr(d, C7_LAYER2_SLOT_PRE, 0x551010);
+	// No firmware of ours uses the chip's BS mode, but a chip reset doesn't clear it: a build that set it (a bench
+	// experiment) would leave every normal call stalled (modem-hrc7000.md 2.9)
+	hrc7000_wr(d, C7_LAYER2_BS_MODE, C7_BS_MODE_RESET);
+	hrc7000_wr(d, C7_BS_CACH, 0);
 	hrc7000_wr(d, C7_REG_X06, 0x14);
 	hrc7000_wr(d, C7_RF_RECV_DELAY, 0x36B0);	// 1.4 ms
 	hrc7000_wr(d, C7_RX_IF_FREQ, 0x0BB800);
@@ -235,8 +241,13 @@ void hrc7000_fm_tx(hrc7000_t *d, bool wide)
 {
 	hrc7000_wr(d, C7_FM_BANDWIDTH, wide ? 0x5F : 0x50);
 	hrc7000_wr(d, C7_FM_DEV_COEF, hrc7000_fm_tx_dev_coef(d, wide));
-	// Sub-audio deviation (8.2): the bandwidth bits don't scale it; twice the narrow value at 25 kHz
+	// Sub-audio deviation (8.2): the bandwidth bits don't scale it; twice the narrow value at 25 kHz. DCS (set before
+	// this by hrc7000_set_subtone) gets three times that, up to the field's signed top: about 320 Hz at most
 	uint32_t sv_dev = wide ? (uint32_t)d->subaudio_dev * 2u : d->subaudio_dev;
+	if (hrc7000_rd(d, C7_FM_MOD) & FM_MOD_CDCSS) {
+		sv_dev *= SUBAUDIO_DEV_DCS;
+		sv_dev = sv_dev > SUBAUDIO_DEV_DCS_MAX ? SUBAUDIO_DEV_DCS_MAX : sv_dev;
+	}
 	hrc7000_wr(d, C7_SUBVOICE_COEF, (hrc7000_rd(d, C7_SUBVOICE_COEF) & ~0xFF00u) | ((sv_dev > 0xFFu ? 0xFFu : sv_dev) << 8));
 	hrc7000_audio_bits(d, 0, C7_AUDIO_FM_PLAY);
 	hrc7000_wr(d, C7_WORK_MODE, C7_WORK_MODE_FM);

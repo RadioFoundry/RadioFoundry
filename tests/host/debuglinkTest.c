@@ -302,6 +302,11 @@ static void test_chip(void)
 	CHECK(dl_reboot_check(HAL_REBOOT_NORMAL, 0x12345678u, &c, false) == DL_REBOOT_OK, "RDP 1: normal reset fine");
 	c.optcr = 0x0FFFCCEDu;
 	CHECK(dl_reboot_check(HAL_REBOOT_ROM_DFU, 0x12345678u, &c, false) == DL_REBOOT_RDP, "RDP 2 refused");
+	// A chip without option bytes (HR_C7000): the UID token works, there is no ROM path to offer
+	hal_chip_t h = { .uid = { 0x9ABCDEF0u, 3, 4 }, .family = HAL_CHIP_HRC7000 };
+	CHECK(dl_reboot_check(HAL_REBOOT_NORMAL, 0x9ABCDEF0u, &h, false) == DL_REBOOT_OK, "HR_C7000 normal");
+	CHECK(dl_reboot_check(HAL_REBOOT_NORMAL, 0x9ABCDEF1u, &h, false) == DL_REBOOT_BAD_TOKEN, "HR_C7000 token");
+	CHECK(dl_reboot_check(HAL_REBOOT_ROM_DFU, 0x9ABCDEF0u, &h, false) == DL_REBOOT_RDP, "HR_C7000 no ROM DFU");
 }
 
 int main(void)

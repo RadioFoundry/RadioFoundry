@@ -568,8 +568,12 @@ Recipes (as values):
 
 DCS word: the 9-bit code (octal digits as 3-bit groups, e.g. 023 -> 0x013), with bit 11 set (the fixed "100" marker:
 word bits 11:9 = 100), and the 11 Golay(23,12) parity bits of the 12-bit value (marker + code) in bits 22:12. Generator
-polynomial x^11 + x^10 + x^6 + x^5 + x^4 + x^2 + 1 (0xC75). Datasheet check: code 023 -> 0x763813 -> 0x4B = 0x0076,
-0x4C = 0x3813. Compute it; no table is needed.
+polynomial x^11 + x^10 + x^6 + x^5 + x^4 + x^2 + 1 (0xC75). Compute it; no table is needed.
+
+The chip sends the word MSB first (bit 22 first) and compares received bits in the same order, while DCS sends code
+bit 0 first. So 0x4B/0x4C take the word **bit-reversed**: 023 -> 0x763813 -> reversed 0x640E37 -> 0x4B = 0x0064,
+0x4C = 0x0E37. The programming guide's own example (0x0076 / 0x3813, unreversed) went out as D023 read backwards on
+the SDR bench, and the radio accepted no other radio's DCS; with the reversed word it sends and receives D023N.
 
 ### 5.8 Tones, voice channel and TX audio source
 

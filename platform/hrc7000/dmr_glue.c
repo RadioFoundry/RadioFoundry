@@ -20,6 +20,10 @@
 #if CONFIG_DMR	// the whole file: DMR only
 #include "platform.h"
 #include "modem/hrc7000/hrc7000_dmr.h"
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+#include "modem/hrc7000/hrc7000_bs.h"
+#include "dmr/bsOutbound.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -245,11 +249,57 @@ static void set_embedded_lc(const uint8_t lc[9]) { hrc7000_dmr_set_embedded_lc(&
 static void set_cc_filter(int8_t cc) { hrc7000_dmr_set_cc_filter(&eng, cc); }
 static bool is_transmitting(void) { return hrc7000_dmr_is_transmitting(&eng); }
 
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+// --- Split duplex (docs/spec/split-duplex.md 5): the slot clock and the TX half's BS outbound (hrc7000_bs.c) ---
+
+static hrc7000_bs_t bs;
+
+static uint32_t split_now_us(void)
+{
+	return hrc_micros();
+}
+
+static bool slot_clock(uint32_t *counter, uint32_t *t_us, int8_t *ts)
+{
+	return active && hrc7000_dmr_slot_clock(&eng, counter, t_us, ts);
+}
+
+static bool bs_start(const dmr_bs_config_t *cfg)
+{
+	return active && hrc7000_bs_start(&bs, &eng, cfg, bsOutboundRawSlot);
+}
+
+static void bs_key(bool on) { hrc7000_bs_key(&eng, on); }
+
+static bool bs_queue(int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach, const uint8_t *emb_lc)
+{
+	return hrc7000_bs_queue(&eng, ts, b, cach, emb_lc);
+}
+
+static uint8_t bs_space(int8_t ts) { return hrc7000_bs_space(&eng, ts); }
+
+static void bs_stop(void)
+{
+	if (hrc7000_bs_active(&eng)) {
+		hrc7000_bs_stop(&eng);
+	}
+}
+
+static bool bs_keyed(void) { return hrc7000_bs_keyed(&eng); }
+
+#define SPLIT_OPS	.now_us = split_now_us, .slot_clock = slot_clock, .bs_start = bs_start, .bs_key = bs_key, \
+			.bs_queue = bs_queue, .bs_space = bs_space, .bs_stop = bs_stop, .bs_keyed = bs_keyed, \
+			.bs_cach = HRC7000_BS_CACH_METHOD,
+#else
+#define SPLIT_OPS
+#endif
+
 const hal_dmr_modem_t hrc_dmr = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_listen = tx_listen, .tx_end = tx_end,
 	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
 	.is_transmitting = is_transmitting, .tx_fill = tx_fill,
+	SPLIT_OPS
 };
 
 // --- Bring-up counters (the board's diagnostics page shows these lines first) ---
@@ -389,6 +439,25 @@ bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " e", m.txa_est);
 		put_kv(&o, " u", m.txa_rx_us);
 		break;
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	case 12:	// the split duplex TX half's BS outbound (split-duplex.md 11.6), as the DM-1701's "bs" line
+		put_kv(&o, "bs sl", bs.st.slots);
+		put_kv(&o, " b", bs.st.bursts);
+		put_kv(&o, " u", bs.st.underruns);
+		put_kv(&o, " k", bs.st.keyups);
+		put_kv(&o, " c", bs.st.cach_written);
+		put_kv(&o, " st", bs.st.stalls);
+		break;
+	case 13:	// its slot clock: timeslot interrupts and the boundaries they made, PHY_RDY, RF TX, late slots, the
+			// longest gap (us)
+		put_kv(&o, "bs ti", bs.st.ts_ints);
+		put_kv(&o, " tt", bs.st.ts_ticks);
+		put_kv(&o, " ph", bs.st.phy_ints);
+		put_kv(&o, " ri", bs.st.rftx_ints);
+		put_kv(&o, " lt", bs.st.late);
+		put_kv(&o, " mg", bs.st.max_gap_us);
+		break;
+#endif
 	default:
 		return false;
 	}

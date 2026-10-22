@@ -205,9 +205,15 @@ bool hrc6000_bs_slot_clock(const hrc6000_dmr_t *e, uint32_t *counter, uint32_t *
 	if (!e->timing) {
 		return false;
 	}
-	*counter = e->tick;
-	*t_us = e->t_tick;
-	*ts = (bs != NULL) ? bs->ts_tick : 0;
+	// The timeslot interrupt updates all three: read again if it came in between, or t_us and ts could be a slot apart
+	uint32_t c;
+
+	do {
+		c = *(const volatile uint32_t *)&e->tick;
+		*t_us = *(const volatile uint32_t *)&e->t_tick;
+		*ts = (bs != NULL) ? *(const volatile int8_t *)&bs->ts_tick : 0;
+	} while (c != *(const volatile uint32_t *)&e->tick);
+	*counter = c;
 	return true;
 }
 

@@ -70,6 +70,9 @@ typedef struct {
 bool spi_nand_probe(spi_nand_t *nand);
 // Main-area bytes: page_size x pages_per_block x blocks
 uint32_t spi_nand_size(const spi_nand_t *nand);
+// The chip's 16-byte unique ID (the ID page: Kioxia; other vendors differ). False if no copy checks out or the bus fails
+#define SPI_NAND_UID_LEN		16u
+bool spi_nand_read_uid(spi_nand_t *nand, uint8_t id[SPI_NAND_UID_LEN]);
 bool spi_nand_get_feature(spi_nand_t *nand, uint8_t addr, uint8_t *out);
 bool spi_nand_set_feature(spi_nand_t *nand, uint8_t addr, uint8_t value);
 // len bytes of one page from column (0 .. page_size + spare_size). False if the bus fails, the chip stays busy or ECC

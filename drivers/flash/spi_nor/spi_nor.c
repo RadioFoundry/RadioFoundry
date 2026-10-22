@@ -16,6 +16,7 @@ enum {
 	CMD_STATUS3		= 0x15,
 	CMD_JEDEC_ID		= 0x9F,
 	CMD_READ_SECURITY	= 0x48,
+	CMD_READ_UID		= 0x4B,
 };
 
 #define STATUS1_BUSY	0x01u
@@ -122,6 +123,12 @@ bool spi_nor_read_security(const spi_nor_t *nor, uint32_t addr, void *buf, uint3
 	addr_bytes(hdr, CMD_READ_SECURITY, addr);
 	hdr[4] = 0xFF;	// dummy byte
 	return command(nor, hdr, sizeof(hdr), NULL, buf, len);
+}
+
+bool spi_nor_read_uid(const spi_nor_t *nor, uint8_t id[SPI_NOR_UID_LEN])
+{
+	const uint8_t hdr[5] = { CMD_READ_UID, 0xFF, 0xFF, 0xFF, 0xFF };	// four dummy bytes
+	return command(nor, hdr, sizeof(hdr), NULL, id, SPI_NOR_UID_LEN);
 }
 
 bool spi_nor_program(const spi_nor_t *nor, uint32_t addr, const void *buf, uint32_t len)

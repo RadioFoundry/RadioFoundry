@@ -3,6 +3,12 @@
 // HR_C7000 DMR slot engine (hrc7000_dmr.h; docs/spec/modem-hrc7000.md 3, 5, 6)
 #include <string.h>
 #include "hrc7000_dmr.h"
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+#include "hrc7000_bs.h"	// split duplex TX half: the BS outbound takes the chip over (e->bs)
+#define BS_ACTIVE(e)	((e)->bs != NULL)
+#else
+#define BS_ACTIVE(e)	false
+#endif
 
 // RX_TYPE_INFO (2.7)
 #define RTI_ERR_MASK		0x7F000000u	// bits 30:24
@@ -38,12 +44,13 @@
 // (tx_slave_auto_mode 0) and b0 dll_tx_slot_on set (DS 10.2.2.17)
 #define SLOTON_RX_OPEN_TX	0x20u
 
-// The chip slot the RX timeslot interrupt decides is the one after the slot number LAYER2_STATUS b30 shows then
-// (assumed: the interrupt comes 1.6 ms ahead of the boundary, LAYER2_SLOT_PRE). A board whose interrupt comes after
-// the boundary sets 0 (the DB25-D): with the flag on the other slot the chip leaves the voice RAM unwritten, and every
-// voice burst reads the same stale bytes
+// The chip slot the RX timeslot interrupt decides is the one LAYER2_STATUS b30 shows then (0), not the one after it
+// (1). With the flag on the other slot the chip leaves the voice RAM unwritten, and every voice burst reads the same
+// stale bytes: silence with every counter clean (voice.rx_peak about 6, exactly 3 bit errors a frame). 0 on every
+// HR_C7000 radio measured: DB25-D (2026-10-17), DM-32UV (2026-10-19), DM-1801 Pro (2026-10-22, which had the old
+// default of 1). A board can still override it
 #ifndef HRC7000_RX_NEXT_SLOT_XOR
-#define HRC7000_RX_NEXT_SLOT_XOR	1u
+#define HRC7000_RX_NEXT_SLOT_XOR	0u
 #endif
 
 #define VOICE_LOST_TICKS	13u	// about 390 ms without a voice burst on the call's slot
@@ -693,7 +700,8 @@ static void rx_burst(hrc7000_dmr_t *e)
 	}
 	slot->ev.kind = DMR_EV_BURST_RX;
 	slot->ev.ts = ts;
-	slot->ev.arg = tick_arg(e);
+	// The slot after the burst's (hrc7000_dmr.h): a deframe late in a slot is that slot's burst
+	slot->ev.arg = tick_arg(e) + ((now(e) - e->t_tick >= SLOT_US / 2u) ? 1u : 0u);
 	ev_commit(e);
 }
 
@@ -715,6 +723,12 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 		if (!e->running) {
 			continue;
 		}
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+		if (e->bs != NULL) {
+			hrc7000_bs_isr_sys(e, list);	// nothing is received meanwhile
+			continue;
+		}
+#endif
 		if (list & SYS_LATE_LC) {
 			// Embedded LC assembled from a superframe: in the RX RAM (2.8), handed over with the next voice burst
 			e->st.late_entry++;
@@ -742,6 +756,12 @@ void hrc7000_dmr_isr_timeslot(hrc7000_dmr_t *e, bool tx_vector)
 	} else {
 		e->st.ts_rx_ints++;
 	}
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	if (e->running && e->bs != NULL) {
+		hrc7000_bs_isr_timeslot(e);	// either vector: the physical layer's slot clock
+		return;
+	}
+#endif
 	if (!e->running || tx_vector != tx_ticking(e)) {
 		return;	// TX states tick on the TX vector, the rest on the RX vector
 	}
@@ -783,6 +803,12 @@ void hrc7000_dmr_isr_rftx(hrc7000_dmr_t *e)
 {
 	w(e, C7_INTERP_CLEAR, C7_INT_RF_TX);
 	e->st.rftx_ints++;
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	if (e->running && e->bs != NULL) {
+		hrc7000_bs_isr_rftx(e);
+		return;
+	}
+#endif
 	if (!e->running || e->tx_state == TXS_IDLE || !e->tx_any) {
 		return;
 	}
@@ -823,6 +849,9 @@ void hrc7000_dmr_run(hrc7000_dmr_t *e)
 void hrc7000_dmr_halt(hrc7000_dmr_t *e)
 {
 	lock(e);
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	hrc7000_bs_release(e);	// leaving DMR ends the BS outbound too: PA off, the chip back in layer 2
+#endif
 	bool was_tx = e->tx_state != TXS_IDLE;
 	w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
 	rf_off(e);
@@ -856,6 +885,13 @@ bool hrc7000_dmr_pop(hrc7000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst)
 void hrc7000_dmr_poll(hrc7000_dmr_t *e)
 {
 	lock(e);
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	if (e->running && e->bs != NULL) {
+		hrc7000_bs_poll(e);
+		unlock(e);
+		return;
+	}
+#endif
 	if (e->running && e->tx_state != TXS_IDLE && (uint32_t)(now(e) - e->t_tick) > STALL_US) {
 		// No timeslot interrupt for 200 ms while sending: drop the transmission and restart the receiver
 		e->st.stalls++;
@@ -872,7 +908,9 @@ void hrc7000_dmr_configure(hrc7000_dmr_t *e, const dmr_config_t *cfg)
 	bool framing = cfg->repeater != e->cfg.repeater;	// LAYER2_CONTROL changes with it (l2_rx)
 	e->cfg = *cfg;
 	e->cc_filter = cfg->cc;
-	if (e->running && cfg->cc >= 0 && (uint8_t)cfg->cc != e->cc_cur) {
+	if (BS_ACTIVE(e)) {
+		// The BS outbound's bursts carry their color code; the receiver takes this one when it runs again
+	} else if (e->running && cfg->cc >= 0 && (uint8_t)cfg->cc != e->cc_cur) {
 		set_cc(e, (uint8_t)cfg->cc);
 		chip_rx_restart(e);
 	} else if (e->running && framing && e->tx_state == TXS_IDLE) {
@@ -884,7 +922,10 @@ void hrc7000_dmr_configure(hrc7000_dmr_t *e, const dmr_config_t *cfg)
 void hrc7000_dmr_rx_restart(hrc7000_dmr_t *e)
 {
 	lock(e);
-	if (e->running && e->tx_state == TXS_IDLE) {
+	if (e->running && e->tx_state == TXS_IDLE && !BS_ACTIVE(e)) {
+		if (e->cc_filter >= 0 && (uint8_t)e->cc_filter != e->cc_cur) {
+			set_cc(e, (uint8_t)e->cc_filter);	// a color code set while the BS outbound ran
+		}
 		chip_rx_restart(e);
 	}
 	unlock(e);
@@ -898,7 +939,7 @@ void hrc7000_dmr_rx_lock_slot(hrc7000_dmr_t *e, int8_t ts)
 bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_access_t access)
 {
 	lock(e);
-	bool ok = e->running && e->tx_state == TXS_IDLE;
+	bool ok = e->running && e->tx_state == TXS_IDLE && !BS_ACTIVE(e);
 	if (ok && access != DMR_ACCESS_IMPOLITE && e->rx_any && (uint32_t)(e->tick - e->rx_tick) < BUSY_TICKS &&
 	    (access == DMR_ACCESS_POLITE_ALL || (e->cfg.cc >= 0 && e->st.last_cc == (uint8_t)e->cfg.cc))) {
 		e->st.tx_rejected++;
@@ -1028,7 +1069,7 @@ void hrc7000_dmr_set_cc_filter(hrc7000_dmr_t *e, int8_t cc)
 	lock(e);
 	e->cc_filter = cc;
 	e->cfg.cc = cc;
-	if (e->running && cc >= 0 && (uint8_t)cc != e->cc_cur && e->tx_state == TXS_IDLE) {
+	if (e->running && cc >= 0 && (uint8_t)cc != e->cc_cur && e->tx_state == TXS_IDLE && !BS_ACTIVE(e)) {
 		set_cc(e, (uint8_t)cc);
 		chip_rx_restart(e);
 	}
@@ -1037,5 +1078,32 @@ void hrc7000_dmr_set_cc_filter(hrc7000_dmr_t *e, int8_t cc)
 
 bool hrc7000_dmr_is_transmitting(const hrc7000_dmr_t *e)
 {
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+	if (e->bs != NULL) {
+		return hrc7000_bs_keyed(e) || e->bs->keyed;	// the outbound on air (or keying up)
+	}
+#endif
 	return e->tx_state != TXS_IDLE;
+}
+
+bool hrc7000_dmr_slot_clock(const hrc7000_dmr_t *e, uint32_t *counter, uint32_t *t_us, int8_t *ts)
+{
+	if (!e->timing) {
+		return false;
+	}
+	// The timeslot interrupt updates all three: read again if it came in between, or t_us and ts could be a slot apart
+	uint32_t c;
+
+	do {
+		c = *(const volatile uint32_t *)&e->tick;
+		*t_us = *(const volatile uint32_t *)&e->t_tick;
+		*ts = 0;
+#if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
+		if (e->bs != NULL) {
+			*ts = *(const volatile int8_t *)&e->bs->ts_tick;
+		}
+#endif
+	} while (c != *(const volatile uint32_t *)&e->tick);
+	*counter = c;
+	return true;
 }

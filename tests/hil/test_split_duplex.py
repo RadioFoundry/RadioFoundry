@@ -8,7 +8,8 @@ test skips on a build without it.
   still NAKed 1; the debug link's SPLIT view answers.
 - test_split_tx_half_off_air (radio_tx, bench_service: --allow-rf --allow-service-stop): the radio as the TX half on
   --dmr-freq at its lowest power for 10 s, idle bursts with a short LC, SET_AT toggled every 2 s, the framing variant
-  from $ODR_SPLIT_VARIANT (default 0, ours; 1 the chip's, whose CACH is empty). The SDR bench captures and decodes it
+  from $ODR_SPLIT_VARIANT (default 0, ours; on the DM-1701 1 is the chip's, whose CACH is empty; on the HR_C7000
+  radios a bit field of physical layer options, modem-hrc7000.md 2.10). The SDR bench captures and decodes it
   (sdrmon.py analyze --cach). Asserted: BS sync only, one burst every 30 ms on both slots (same-slot spacing 60 ms),
   one key-up edge for the whole outbound, the channel's color code, no driver underruns in STATUS; with our framing
   also the CACH: TC alternating, AT following SET_AT, the short LC decoding.
@@ -194,7 +195,10 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
           f"{max(len(ok) - 1, 0)}, AT values {sorted(at_seen)}, short LC {slc_good} ok / {slc_bad} "
           f"bad; radio {bs_cnt}")
     assert bs_cnt.get("bs.cach", 0) > 0.9 * TX_SECONDS / 0.03, bs_cnt
-    if variant != 1:    # our framing (modem-hrc6000.md 9.1): the CACH on air is the core's
+    # Our framing (the core's CACH on air) except the HR_C6000's variant 1, its chip's layer 2 framing (split-duplex.md
+    # 10.1); every HR_C7000 variant is a physical layer option of ours (modem-hrc7000.md 2.10)
+    chip_framing = variant == 1 and radio.version().get("board", "").startswith("DM-1701")
+    if not chip_framing:
         assert len(ok) >= 0.98 * len(cach) and alt >= 0.98 * (len(ok) - 1), "TC must alternate"
         assert at_seen == {0, 1}, f"AT must follow SET_AT: {sorted(at_seen)}"
         assert slc_good >= 10 and slc_bad == 0, f"short LC {slc_good} ok, {slc_bad} bad"

@@ -86,6 +86,20 @@ void gfx_flush(void);
 // Freeze the frame buffer for a screen capture: the UI skips redraws until ms (hal_millis) or gfx_hold(0)
 void gfx_hold(uint32_t until_ms);
 bool gfx_held(uint32_t now_ms);
+// The UI task's wait for input before its next pass: idle_ms with nothing to draw, else until the next frame (frame_ms
+// after the last draw). While a capture holds redraws it is a whole frame: a wait of 0 would spin the UI task for the
+// whole capture and starve the idle task, which feeds the watchdog (a 40-chunk color screenshot outlasts its timeout)
+static inline uint32_t gfx_pass_wait_ms(bool dirty, bool held, uint32_t since_draw_ms, uint32_t frame_ms,
+	uint32_t idle_ms)
+{
+	if (!dirty) {
+		return idle_ms;
+	}
+	if (held) {
+		return frame_ms;
+	}
+	return since_draw_ms >= frame_ms ? 0 : frame_ms - since_draw_ms;
+}
 // Make the next flush send every row
 void gfx_invalidate(void);
 

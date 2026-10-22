@@ -62,6 +62,10 @@ static bool init(void)
 	hal_delay_us(200);		// 160 us from power-up to the first command
 	take();
 	bool ok = spi_nor_probe(&nor) && nor.size != 0;
+	uint8_t id[SPI_NOR_UID_LEN];
+	if (ok && spi_nor_read_uid(&nor, id)) {
+		hrc_chip_set_uid(id, sizeof(id));
+	}
 	give();
 	jedec = (uint32_t)nor.manufacturer << 16 | nor.device;
 	// Any vendor whose capacity code the driver knows: GD25Q128 C8 40 18, Puya 85 20 18

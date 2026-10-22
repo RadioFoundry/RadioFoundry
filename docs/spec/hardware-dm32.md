@@ -929,7 +929,7 @@ For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
 | Block erase | 0x52 (32 KB), 0xD8 (64 KB); chip erase 0xC7 / 0x60 | datasheet convention |
 | Status | 0x05 SR1 (bit 0 busy/WIP, bit 1 WEL), 0x35 SR2, 0x15 SR3; writes 0x01 / 0x31 / 0x11 | KP |
 | Security registers | 0x48 + 24-bit address + dummy byte, three 256-byte registers at 0x1000, 0x2000, 0x3000. **No DM-32 data is known to be stored there** (the port's reader is a stub) | KP |
-| Unique ID | 0x4B | KP |
+| Unique ID | 0x4B, four dummy bytes, then 128 bits. ODR reads it at boot as the radio's UID for INFO_CHIP ([debuglink.md](debuglink.md) 3.9) | KP, datasheet convention |
 | Power down / release | 0xB9 / 0xAB | KP |
 | Busy timeouts | page program ≤ 3 ms (port waits 10 ms); 4 KB erase about 400 ms worst (port waits 600 ms, polling every 100 us). Stock-style driver polls up to 7000 × 1 ms | KP |
 | Start-up | 160 us after raising CS before the first command | KP |
