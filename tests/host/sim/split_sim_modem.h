@@ -14,6 +14,9 @@
 #define SSIM_AIR_MAX	2048
 #define SSIM_Q		2	// per slot: the core keeps the driver two bursts ahead
 #define SSIM_SLOT_US	30000u
+#define SSIM_AIR_DELAY	4600
+#define SSIM_SLEW_STEP	100	// a driver's slot trim step
+#define SSIM_SLEW_MAX	1500
 
 typedef struct {
 	uint32_t t_us;		// slot start, modem clock
@@ -24,6 +27,8 @@ typedef struct {
 	bool emb_lc_valid;
 	uint8_t emb_lc[9];
 	bool underrun;		// the driver's queue was empty: it repeated an idle burst
+	bool at;		// queued with bs_queue_at for slot at_counter
+	uint32_t at_counter;
 } ssim_air_t;
 
 typedef struct {
@@ -49,17 +54,29 @@ typedef struct {
 	ssim_air_t q[2][SSIM_Q];
 	uint8_t qn[2];
 	unsigned underruns;
+	unsigned late;			// bs_queue_at bursts whose slot had passed (dropped)
+	unsigned restarts;
+	uint8_t ts1_parity;		// boundaries whose counter has this parity set up TS1
+	bool restarting;		// from bs_restart to the new clock's first boundary: no slot clock (as the drivers)
+	int32_t restart_err_us;		// bs_restart puts the boundary this far after the target (a chip's restart delay)
+	bool restart_flip;		// ... and the sign of that flips at every restart (a delay that can't be learned)
 	ssim_air_t air[SSIM_AIR_MAX];
 	unsigned air_n;
 	// RX slot clock
 	bool rx_clock;
 	uint32_t rx_origin;		// the first injected burst's start: boundaries every 30 ms from it
 	bool no_split_ops;		// the INFO "roles offered" check: a modem without the operations
+	// Slewing (bs_slew)
+	int32_t slew_pending;		// the next slot's change, µs
+	int32_t slew_now;		// the slot running now
+	unsigned slew_calls, slew_slots;
+	int32_t slew_largest;		// the largest single change
 } ssim_t;
 
 extern ssim_t ssim;
 extern const hal_dmr_modem_t ssim_modem;
 extern const hal_dmr_modem_t ssim_modem_plain;	// the same without any split operation
+extern const hal_dmr_modem_t ssim_modem_noslew;	// all but bs_slew
 
 void ssim_reset(void);
 // Move the modem clock to t_us (wrapping arithmetic), running the outbound slots that start up to it

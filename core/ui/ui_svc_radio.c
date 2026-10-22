@@ -354,6 +354,11 @@ void ui_svc_ptt_block(bool blocked)
 	input_set_ptt_block(blocked);
 }
 
+void ui_svc_dtmf_block(bool blocked)
+{
+	input_set_dtmf_block(blocked);
+}
+
 // The reply window the Settings screen shows: the radio's setting, else the codeplug's group hang time, else the
 // call stack's 10 s
 int32_t ui_svc_reply_shown(const radio_settings_t *s)
