@@ -400,7 +400,7 @@ PAGE = 256
 # The application area of the program flash: an ODR image is linked for 0x0300C000, which is flash offset 0xC000. The
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
 APP_START, APP_END = 0xC000, 0x100000
-# The first word of ODR's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D, the GD-88). Its
+# The first word of ODR's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D). Its
 # application is linked for 0x0300D000, so the image written at APP_START is the install image, which starts with it
 STAGE_MAGIC = bytes.fromhex("2c1101c0")
 
@@ -2048,7 +2048,7 @@ def self_test():
             radio.images["progmem"] = bytes(pm)
             nw, nk = r.write_image(bytes(pm[APP_START:APP_START + 4 * SECTOR]))
             check(nk == 4, "an install image over a first stage is written")
-        if board in ("db25d", "gd88"):
+        if board == "db25d":
             out = io.BytesIO()
             r.dump(out, "nand", 0, 16 * SECTOR)
             check(out.getvalue() == bytes(nand), "NAND read through the stub's NAND path")
@@ -2227,7 +2227,7 @@ def main(argv=None):
     ap.add_argument("--write-app", metavar="IMAGE", help="program an ODR application image (raw .bin linked for 0x0300C000) into the "
                     "program flash at 0xC000: only changed 4 KB sectors are written, then verified; the bootloader is never touched. "
                     "Use with --odr-enter (radio running ODR) or the boot-ROM load; finish with --boot reset. On a radio with "
-                    "ODR's first stage at 0xC000 (DB25-D, GD-88) give the _install.bin, which starts with it")
+                    "ODR's first stage at 0xC000 (DB25-D) give the _install.bin, which starts with it")
     ap.add_argument("--replace-stage", action="store_true", help="let --write-app put an image that does not start with "
                     "ODR's first stage over one (the radio then starts only what the image holds at 0xC000)")
     ap.add_argument("--attach", action="store_true", help="the stub from an earlier run is still up: skip the boot")

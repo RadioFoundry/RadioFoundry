@@ -224,6 +224,10 @@ export function iapPlan(image, pad = 0xFF) {
 	return { n, pages, sum };
 }
 
+// The loader's read request: "Flash Read " + u32 BE address + u32 BE page count. It answers the version string, the pages
+// and ChecksumR. Read only; the page flasher uses one page of it to tell that the loader is the one answering.
+export const readPacket = (addr, pages) => concat(new TextEncoder().encode("Flash Read "), be32(addr), be32(pages));
+
 export const erasePacket = (n) => concat(new TextEncoder().encode("Erase      "), be32(0), be32(n));
 
 // What the loader takes: the first stage (exactly 4096 bytes, starting 2C 11 01 C0 so the loader boots it at a normal
@@ -272,6 +276,20 @@ export class Iap {
 			} else if ((done(this.text()) && now - last > quiet) || now - t0 > timeout) return this.text();
 			await sleep(2);
 		}
+	}
+
+	// Is the loader's update mode on the cable now (a radio whose application is missing or incomplete stays in it at
+	// every power-on)? Asks for one page of a read, which changes nothing, and never sends Erase. Returns {version} when
+	// the loader answers (version is null when only the banner or the checksum was seen), else null.
+	async probe(timeout = 1500) {
+		this.s.clear();
+		await this.s.write(readPacket(0, 1));
+		const seen = (t) => /Read_\w+_V\d+\.\d+[A-Z]?|ChecksumR|IAPReady/.test(t);
+		const text = await this.until(seen, timeout);
+		if (!seen(text)) return null;
+		const v = /Read_\w+_V\d+\.\d+[A-Z]?/.exec(text);
+		this.s.clear();
+		return { version: v ? v[0] : null };
 	}
 
 	// Listen for the banner the loader prints when it starts in update mode

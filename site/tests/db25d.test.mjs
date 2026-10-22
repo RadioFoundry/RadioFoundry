@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { equal, sha256, be32, concat } from "../static/js/flasher/bytes.js";
 import { stubImages, univFits, StubError } from "../static/js/flasher/stub.js";
 import * as c7 from "../static/js/flasher/c7000.js";
-import { Usmart, HIJACK, Iap, iapPlan, checkInstallImage, checkRestoreImage, trimTail, erasePacket, DB25DError, stockVersion } from "../static/js/flasher/db25d.js";
+import { Usmart, HIJACK, Iap, iapPlan, readPacket, checkInstallImage, checkRestoreImage, trimTail, erasePacket, DB25DError, stockVersion } from "../static/js/flasher/db25d.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
@@ -296,6 +296,13 @@ function iapRadio({ corrupt = false } = {}) {
 	const got = { erase: null, pages: [] };
 	let phase = "banner", want = 0, sum = 0;
 	const pipe = new Pipe((b, p) => {
+		// the read-only request: the version string, one page and its checksum (hardware-db25d.md 7); phase is unchanged
+		if (b.length === 19 && new TextDecoder().decode(b.subarray(0, 11)) === "Flash Read ") {
+			got.reads = (got.reads || 0) + 1;
+			p.push(concat(new TextEncoder().encode("Read_2M_V1.08BZSRJun 30 2023"), new Uint8Array(2048).fill(0xA5),
+				new TextEncoder().encode("ChecksumR"), be32(2048 * 0xA5), new TextEncoder().encode("IAPReady")));
+			return;
+		}
 		if (phase === "banner") {
 			got.erase = b.slice();
 			const n = (b[15] << 24 | b[16] << 16 | b[17] << 8 | b[18]) >>> 0;
@@ -352,6 +359,24 @@ test("IAP: banner, erase, every page acknowledged, checksum compared", async () 
 	assert.equal(seen.at(-1), 1);
 	assert.ok(equal(Uint8Array.from(got.pages.flatMap((p) => [...p]).slice(0, img.length)), img));
 	await assert.rejects(new Iap(new Pipe(() => {})).waitBanner(150), DB25DError);
+});
+
+test("IAP: a radio stuck in update mode at power-on answers the read-only probe, and the install then needs no banner", async () => {
+	const { pipe, got } = iapRadio();
+	const iap = new Iap(pipe);
+	assert.equal(Buffer.from(readPacket(0, 1)).toString("hex"), Buffer.from("Flash Read ").toString("hex") + "00000000" + "00000001");
+	// the banner went by before the page asked: the radio only answers the request
+	const um = await iap.probe(1500);
+	assert.equal(um.version, "Read_2M_V1.08B");
+	assert.equal(got.reads, 1);
+	assert.equal(got.erase, null, "the probe never sends Erase");
+	assert.equal(got.pages.length, 0, "and writes no page");
+	// the install that follows starts at once (no waitBanner), as the page does after a probe
+	const img = installImage();
+	await iap.write(img);
+	assert.equal(got.pages.length, Math.floor(img.length / 2048) + 1);
+	// a radio that is off, or runs something else, does not answer
+	assert.equal(await new Iap(new Pipe(() => {})).probe(200), null);
 });
 
 test("IAP: a checksum that differs is reported, and silence after the erase stops before any data", async () => {
