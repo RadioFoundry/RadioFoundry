@@ -53,7 +53,7 @@ enum {
 
 #define MODE_FM		0x80
 #define MODE_DMR	0x6B	// Tier II, layer 2, aligned, timeslot mode (direct)
-#define MODE_DMR_REP	0x4F	// the same on a repeater channel: relay and continuous
+#define MODE_DMR_REP	0x4F	// the same on a repeater channel: relay and continuous; the engine picks the slot (0x52)
 // The value the set-ups end with. DMR frames go out with DMR protocol and PHY at 0 here, so a 0 bit is a running block on
 // this chip, not the manual's reset (the manual's polarity looks inverted)
 #define RESET_RUN	0x28
@@ -160,6 +160,7 @@ static const hrc_chip_t chip = {
 	.mcu_crc = false,
 	.sync_reg = false,
 	.mode_per_channel = true,
+	.tc_last_rx = true,
 	.dmr_mode = dmr_mode,
 	.crc_len = crc_len,
 	.voice_lcss = voice_lcss,

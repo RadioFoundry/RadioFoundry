@@ -106,6 +106,17 @@ def test_ip_settings_view(radio, pytestconfig, ip_settings):
     assert v["ip.confirmed"] == "off" and v["ip.rule0"] == "none", v
 
 
+def test_gateway_has_netif(radio):
+    """Radio only: a build with the IP gateway has a host netif for its answers. Without one, PPP still negotiates
+    (LCP and IPCP open) but nothing the gateway sends reaches the host, as on the DM-1801 Pro before its board set it."""
+    if "DMR_IP_GATEWAY" not in radio.features():
+        pytest.skip("built without CONFIG_DMR_IP_GATEWAY")
+    v = radio.view(["hotspot"])
+    if "net.netif" not in v:
+        pytest.skip("firmware without the net.netif view key")
+    assert v["net.netif"] == "1", "the board sets no netif: the gateway can't answer the host"
+
+
 def _udp_until_heard(radio, sdr_bench, freq, cc, own, want_sap, what, tries=3):
     for attempt in range(1, tries + 1):
         before, after, pkts, _ = _send_and_listen(

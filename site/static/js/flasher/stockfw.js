@@ -6,6 +6,7 @@
 
 import { u32le, sha256, startsWith, crc32 } from "./bytes.js";
 import { byCodeSha, moveCode, moveBranches, branchesIn, MapError } from "./codecmap.js";
+import { unzip } from "./zip.js";
 
 export class StockError extends Error {}
 
@@ -37,6 +38,21 @@ export function decrypt(data, off, length, key, fb) {
 	const out = new Uint8Array(length);
 	for (let i = 0; i < length; i++) out[i] = data[off + i] ^ key[(off + i - fb.header_len) % fb.key_len];
 	return out;
+}
+
+// A stock file as the user picked it: the updater .bin itself, or the vendor's zip with it inside (TYT ships the .bin
+// next to Upgrade.exe and its DLLs). From a zip: the one entry with the container header, macOS "._" copies skipped.
+// Returns {name, data}.
+export async function stockFile(name, data, fb) {
+	if (!(data.length > 4 && data[0] === 0x50 && data[1] === 0x4B && data[2] === 0x03 && data[3] === 0x04)) return { name, data };
+	const found = [];
+	for (const [path, body] of await unzip(data)) {
+		const base = path.split("/").pop();
+		if (path.startsWith("__MACOSX/") || base.startsWith("._") || !startsWith(body, fb.magic)) continue;
+		found.push({ name: base, data: body });
+	}
+	if (found.length !== 1) throw new StockError(found.length ? `${name} holds ${found.length} firmware files: pick the .bin itself` : `no firmware file (.bin with an "OutSecurityBin" header) in ${name}`);
+	return found[0];
 }
 
 // What a file is: {sha, known: "DM-1701 V02.06 CSV" | null, profile | null}
@@ -125,9 +141,11 @@ export function stockApplication(data, key, board, fb) {
 	return [seg[0], decrypt(data, appFileOffset(segs, seg[0], fb), seg[1], key, fb)];
 }
 
-// Recover the 1024-byte bootloader key from a stock file, checked against its published SHA-256 (stockfw.derive_key:
-// the column vote and the runner-up search). The pair-model refinement the MD-380 files need isn't ported yet; for
-// those files this throws and odrflash can derive the key instead.
+// Recover the 1024-byte bootloader key from a stock file, checked against its published SHA-256: the same steps and
+// tie orders as odrflash's stockfw.derive_key, so both give the same key. The payload is plain XOR key[i mod 1024].
+// The column vote is enough for a DM-1701 image (0x00 dominates every column); the MD-380 image votes about a third of
+// the columns wrong, so a byte-pair model learned from the file itself (refine) re-picks them. A wrong key can't pass
+// the hash check, and no key material is needed or stored.
 export async function deriveKey(data, wantSha, fb, { maxAlternatives = 2, candidates = 24 } = {}) {
 	const segs = parseContainer(data, fb);
 	const total = segs.reduce((a, s) => a + s[1], 0);
@@ -135,20 +153,59 @@ export async function deriveKey(data, wantSha, fb, { maxAlternatives = 2, candid
 	const K = fb.key_len;
 	if (payload.length < 64 * K) throw new StockError("the file is too short to derive the key from");
 	const cols = [];
-	const counts = new Uint32Array(256);
-	for (let j = 0; j < K; j++) {
-		counts.fill(0);
-		for (let i = j; i < payload.length; i += K) counts[payload[i]]++;
-		const order = [...counts.keys()].sort((a, b) => counts[b] - counts[a] || a - b).slice(0, 8);
-		cols.push(order.map((b) => [b, counts[b]]));
-	}
+	for (let j = 0; j < K; j++) cols.push(mostCommon(payload, j, K, 8));
 	const base = Uint8Array.from(cols.map((c) => c[0][0]));
 	if (await sha256(base) === wantSha) return base;
-	const margin = cols.map((c) => c[0][1] - (c[1] ? c[1][1] : 0));
-	const doubtful = [...Array(K).keys()].sort((a, b) => margin[a] - margin[b] || a - b).slice(0, candidates);
-	const cands = cols.map((c) => c.slice(0, 4).map((x) => x[0]));
+	const cands = cols.map((c) => c.map((x) => x[0]));
+	const margin = cols.map((c) => c[0][1] - (c.length > 1 ? c[1][1] : 0));
+	const doubtful = stableOrder(K, (j) => margin[j]).slice(0, candidates);
+	let k = await alternatives(base, cands.map((c) => c.slice(0, 4)), doubtful, wantSha, maxAlternatives);
+	if (k) return k;
+	// cipher byte pairs (column j-1, column j) per column: column 0 pairs with the previous row's last column
+	const pairs = [];
+	for (let j = 0; j < K; j++) {
+		const m = new Map();
+		const start = j || K;
+		for (let i = start; i < payload.length; i += K) {
+			const p = payload[i - 1] << 8 | payload[i];
+			m.set(p, (m.get(p) || 0) + 1);
+		}
+		pairs.push(m);
+	}
+	const rel = stableOrder(K, (j) => (cols[j].length > 1 ? -(cols[j][0][1] - cols[j][1][1]) / cols[j][0][1] : -1));
+	for (const [frac, strict] of [[0.4, false], [0.4, true], [0.3, false], [0.3, true], [0.2, true]]) {
+		const [refined, scoreMargin] = refine(pairs, cands, base, rel.slice(0, Math.floor(K * frac)), strict, K);
+		if (await sha256(refined) === wantSha) return refined;
+		const order = stableOrder(K, (j) => scoreMargin[j]).slice(0, Math.floor(candidates / 2));
+		const alt = cands.map((c, j) => [refined[j], ...c.filter((b) => b !== refined[j]).slice(0, 2)]);
+		k = await alternatives(refined, alt, order, wantSha, maxAlternatives);
+		if (k) return k;
+	}
+	throw new StockError("could not derive the bootloader key from this file (is it a stock firmware file for this radio?)");
+}
+
+// Column j's most common bytes, [[byte, count]], count down, ties in first-seen order (Python's Counter.most_common)
+function mostCommon(payload, j, K, n) {
+	const count = new Uint32Array(256), first = new Int32Array(256).fill(-1);
+	let seen = 0;
+	for (let i = j; i < payload.length; i += K) {
+		const b = payload[i];
+		if (first[b] < 0) first[b] = seen++;
+		count[b]++;
+	}
+	return [...Array(256).keys()].filter((b) => count[b]).sort((a, b) => count[b] - count[a] || first[a] - first[b])
+		.slice(0, n).map((b) => [b, count[b]]);
+}
+
+// Indices 0..n-1 sorted by key, ties by index (a stable sort)
+function stableOrder(n, key) {
+	return [...Array(n).keys()].sort((a, b) => key(a) - key(b) || a - b);
+}
+
+// The next candidates in the least certain columns (order), one or two at a time, until the key matches its hash
+async function alternatives(base, cands, order, wantSha, maxAlternatives) {
 	for (let r = 1; r <= maxAlternatives; r++) {
-		for (const js of combinations(doubtful, r)) {
+		for (const js of combinations(order, r)) {
 			for (const alts of product(js.map((j) => cands[j].slice(1)))) {
 				const k = base.slice();
 				js.forEach((j, n) => { k[j] = alts[n]; });
@@ -156,7 +213,56 @@ export async function deriveKey(data, wantSha, fb, { maxAlternatives = 2, candid
 			}
 		}
 	}
-	throw new StockError("could not derive the bootloader key from this file (is it a stock firmware file for this radio?)");
+	return null;
+}
+
+// Bigram refinement of a voted key (odrflash stockfw._refine). pairs[j] counts the cipher byte pairs (column j-1,
+// column j), so a key guess gives the plain pair counts without touching the payload again; even and odd columns keep
+// separate models (Thumb-2 halfwords, little endian words). Round 0 learns only from the seed columns (the clearest
+// votes) and re-picks the others among their vote candidates (strict: only next to a seed column, judged against its
+// seed neighbors alone); later rounds learn from the whole image and re-pick every column until nothing changes.
+// Returns [key, per-column score margin].
+function refine(pairs, cands, start, seedColumns, strict, K, rounds = 8) {
+	const key = Uint8Array.from(start);
+	const seed = new Set(seedColumns);
+	const margin = new Float64Array(K);
+	const logp = [new Float64Array(65536), new Float64Array(65536)];
+	for (let rnd = 0; rnd < rounds; rnd++) {
+		const counts = [new Float64Array(65536).fill(1), new Float64Array(65536).fill(1)];
+		for (let j = 0; j < K; j++) {
+			const jl = (j - 1 + K) % K;
+			if (rnd === 0 && !(seed.has(j) && seed.has(jl))) continue;
+			const m = counts[jl & 1], kl = key[jl], kj = key[j];
+			for (const [p, n] of pairs[j]) m[((p >> 8) ^ kl) << 8 | ((p & 0xFF) ^ kj)] += n;
+		}
+		for (let s = 0; s < 2; s++) for (let i = 0; i < 65536; i++) logp[s][i] = Math.log(counts[s][i]);
+		let changed = 0;
+		for (let j = 0; j < K; j++) {
+			if (rnd === 0 && seed.has(j)) continue;
+			const jl = (j - 1 + K) % K, jr = (j + 1) % K;
+			const left = logp[jl & 1], right = logp[j & 1];
+			const kl = key[jl], kr = key[jr];
+			// strict: round 0 trusts only seed neighbors (two wrong neighbors can hold each other in place)
+			const trust = rnd !== 0 || !strict;
+			const useL = trust || seed.has(jl), useR = trust || seed.has(jr);
+			if (!useL && !useR) continue;
+			const scored = [];
+			for (const k of cands[j]) {
+				let sc = 0;
+				if (useL) for (const [p, n] of pairs[j]) sc += n * left[((p >> 8) ^ kl) << 8 | ((p & 0xFF) ^ k)];
+				if (useR) for (const [p, n] of pairs[jr]) sc += n * right[((p >> 8) ^ k) << 8 | ((p & 0xFF) ^ kr)];
+				scored.push([sc, k]);
+			}
+			scored.sort((a, b) => b[0] - a[0] || b[1] - a[1]);
+			margin[j] = scored.length > 1 ? scored[0][0] - scored[1][0] : 1e9;
+			if (scored[0][1] !== key[j]) {
+				key[j] = scored[0][1];
+				changed++;
+			}
+		}
+		if (rnd && !changed) break;
+	}
+	return [key, margin];
 }
 
 function* combinations(items, r, start = 0, acc = []) {

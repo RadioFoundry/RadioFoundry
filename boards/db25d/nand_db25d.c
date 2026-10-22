@@ -10,6 +10,7 @@
 #include "pins.h"
 #include "platform.h"
 #include "flash/spi_nand/spi_nand.h"
+#include "hal_watchdog.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "task.h"
@@ -173,6 +174,16 @@ static void dev_mark_bad(void *ctx, uint16_t block)
 	}
 }
 
+// The sector layer's long loops (the mount at start-up reads every page in use; garbage collection) keep the CPU with
+// busy waits: the watchdog is fed per block or sector there instead of by the idle task
+static void dev_busy(void *ctx)
+{
+	(void)ctx;
+#if CONFIG_WATCHDOG
+	hal_watchdog_feed();
+#endif
+}
+
 const nand_dev_t db25d_nand_dev = {
 	.ctx = NULL,
 	.pages_per_block = PPB,
@@ -183,6 +194,7 @@ const nand_dev_t db25d_nand_dev = {
 	.erase = dev_erase,
 	.block_bad = dev_block_bad,
 	.mark_bad = dev_mark_bad,
+	.busy = dev_busy,
 };
 
 uint32_t db25d_nand_program_fails(void)

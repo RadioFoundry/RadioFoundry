@@ -14,10 +14,11 @@
 //
 // DMR (modem-hrc6000.md 4.3 with the HR_C5000 notes of hardware-md380.md 4): the synthesizer is moved to the TX
 // frequency at the first burst of a transmission (from the RF TX interrupt, without waiting for lock: the interrupt
-// comes some milliseconds before the burst) and back with tx_off(); between bursts only the PA supply and loop are
-// switched, so no burst waits for the synthesizer. Each burst's PA is dropped 30 ms after its RF TX interrupt by a
-// TIM7 one-shot (gotchas 3.4: the phase of the HR_C5000's timeslot interrupt against the
-// burst is unknown); the slot engine's own PA-off at the next timeslot interrupt is the fallback.
+// comes some milliseconds before the burst). On simplex it goes back with tx_off() and between bursts only the PA
+// supply and loop are switched; on a split channel (repeater, duplex hotspot) every burst's end puts the receiver back
+// on the RX frequency, so the radio hears the repeater between its bursts (dmr_rx_back). Each burst's PA is dropped
+// 30 ms after its RF TX interrupt by a TIM7 one-shot (gotchas 3.4: the phase of the HR_C5000's timeslot interrupt
+// against the burst is unknown); the slot engine's own PA-off at the next timeslot interrupt is the fallback.
 #include <stddef.h>
 #include "config.h"
 #include "md380.h"
@@ -47,8 +48,11 @@
 #define MD380_VCO_MULT		1u
 #endif
 
-// Measured TX carrier correction (Hz, added to the TX frequency): none known
+// TX carrier correction (Hz, added to the TX frequency). One radio needed -1900 for a hotspot to decode it
+// (hardware-md380.md 5.2): no default until a second radio shows whether it is the unit or the reference tune
+#ifndef MD380_TX_OFFSET_HZ
 #define MD380_TX_OFFSET_HZ	0
+#endif
 
 #define DAC_MAX			4095u
 #define PLL_PD_GAIN		31u	// phase detector gain, the data sheet's largest (1 mA/rad): a guess (?)
@@ -76,6 +80,7 @@ static struct {
 	uint32_t rx_hz;
 	radio_bw_t rx_bw;
 	bool asleep;
+	uint32_t rx_tune_dac;	// DAC1 for the receiver front end at rx_hz (the PA drive shares DAC1)
 	md380_radio_diag_t diag;
 	uint32_t bus_errors;
 	subtone_t rx_tone;	// the RX sub-audio the detector is set for (CONFIG_SUBTONE)
@@ -86,7 +91,7 @@ static struct {
 	volatile uint32_t dmr_tx_hz;
 	volatile uint32_t dmr_drive;
 	uint8_t dmr_mod2, dmr_mod1;
-	uint32_t rf_skipped, rf_unarmed;
+	uint32_t rf_skipped, rf_unarmed, rf_rx_back;
 } r;
 
 static DAC_HandleTypeDef dac;
@@ -338,11 +343,57 @@ bool md380_rf_dmr_switch(bool tx)
 	return true;
 }
 
-static void rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_retries)
+// The transmit side ready before a transmission's first burst (task level with the modem interrupts masked, or the
+// timeslot ISR at tx_slot_found): the receiver off, the HR_C5000's transmit set, the synthesizer on the TX VCO and the
+// transmitter supply up. Done from the RF TX interrupt instead, the first burst of every transmission went out unlocked
+// and with a cold transmitter: a single-burst CSBK (repeater wake-up, radio check) reached no receiver, so a repeater
+// or duplex hotspot never woke (issue 108). The supply alone doesn't radiate: APC_EN keys the PA at the burst
+void md380_rf_dmr_prepare(void)
+{
+	if (!r.dmr_armed || r.dmr_tx_tuned) {
+		return;
+	}
+	rx_path(false);
+	count(hrc5000_dmr_path(&r.modem, true, r.dmr_mod2, r.dmr_mod1, C5000_MIC_GAIN));
+	r.dmr_tx_tuned = pll_tune(tx_vco_hz(r.dmr_tx_hz), true, false);
+	if (r.dmr_tx_tuned) {
+		PIN_WRITE(PIN_TX_5V, true);
+	}
+}
+
+// After md380_rf_dmr_prepare, outside the lock: lock detect, as tx() waits for it in FM
+void md380_rf_dmr_wait_lock(void)
+{
+	if (r.dmr_tx_tuned && !sky72310_wait_lock(&r.pll, PLL_LOCK_US)) {
+		r.diag.pll_fails++;
+	}
+	r.diag.pll_locked = PIN_READ(PIN_PLL_LD);
+}
+
+// A transmission is over (the slot engine's TX done, task level, the modem interrupts masked by the caller): on a
+// split channel (repeater, duplex hotspot) the receiver back on the RX frequency, so the radio hears the repeater's
+// answer to its wake-up. Left on the TX side, every key-up there ended in no_repeater (issue 108). Not per burst: the
+// switch there caught the burst on air. Simplex stays on TX until tx_off() (RX = TX)
+void md380_rf_dmr_tx_done(void)
+{
+	if (!r.dmr_armed || !r.dmr_tx_tuned || !r.rx_valid || r.dmr_tx_hz == r.rx_hz) {
+		return;
+	}
+	pa_timer_stop();
+	pa_off();
+	(void)pll_tune(rx_vco_hz(r.rx_hz), false, false);
+	count(hrc5000_dmr_path(&r.modem, false, r.dmr_mod2, r.dmr_mod1, C5000_MIC_GAIN));
+	dac1_set(r.rx_tune_dac);
+	rx_path(true);
+	r.dmr_tx_tuned = false;
+	r.rf_rx_back++;
+}
+
+void md380_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_back)
 {
 	*skipped = r.rf_skipped;
 	*unarmed = r.rf_unarmed;
-	*rx_retries = 0;	// the back-to-RX switch never fails here
+	*rx_back = r.rf_rx_back;
 }
 
 // The shared DMR glue's view of this board: the modem's interrupt lines are PC0-PC2
@@ -622,6 +673,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 
 	md380_cal_point_t cal;
 	md380_cal_at(hz, &cal);	// on false it fills safe defaults
+	r.rx_tune_dac = cal.rx_tune_dac;
 	dac1_set(cal.rx_tune_dac);
 	dac2_set(hrc5000_ref_dac(cal.ref_tune));
 	count(hrc5000_set_ref(&r.modem, cal.ref_tune));
@@ -669,6 +721,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
+		md380_dmr_tx_prepare();	// a transmission the stack has already begun gets its first burst too
 		return true;
 	}
 

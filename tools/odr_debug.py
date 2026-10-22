@@ -24,6 +24,11 @@
     odr_debug.py crash [show|clear|test trap|test assert]
                                                 the crash log (CONFIG_CRASH_LOG): the record kept from before this
                                                 start, forget it, or crash on purpose (the radio restarts)
+    odr_debug.py watchdog [show|clear-gap]      the hardware watchdog (CONFIG_WATCHDOG): timeout, feeds, longest idle gap
+    odr_debug.py watchdog test starve|spin|irq-off
+                                                stop the feeds (docs/spec/watchdog.md 5): the radio resets. starve polls
+                                                until the link goes quiet and prints how long it lasted
+    odr_debug.py watchdog load H L [RST]        HR_C7000: re-arm with raw OT_LOAD_H / OT_LOAD_L (RST_LOAD), then starve
     odr_debug.py storage info                   the settings / journal region: ours or foreign, its addresses
     odr_debug.py storage dump [--out DIR]       the region and the calibration copy (SPI flash) to files outside git
     odr_debug.py storage claim [--out DIR]      dump first, then let the firmware erase a foreign region and use it
@@ -78,6 +83,11 @@ HWOPT = 0x1E                        # the board's hardware options (docs/spec/de
 HWOPT_OP_LIST, HWOPT_OP_SET = range(2)
 CRASH_TESTS = {"trap": 1, "assert": 2}
 CRASH_TOKEN = 0x48535243            # 'CRSH'
+WATCHDOG = 0x1D                     # the hardware watchdog's bench tests (CONFIG_WATCHDOG; docs/spec/debuglink.md 3.21)
+WDT_OP_CLEAR_GAP, WDT_OP_TEST, WDT_OP_LOAD = range(3)
+WDT_TESTS = {"starve": 1, "spin": 2, "irq-off": 3}
+WDT_TOKEN = 0x474F4457              # 'WDOG'
+WDT_LEAVE = 0xFFFFFFFF              # load: keep RST_LOAD
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
 SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
@@ -136,7 +146,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-                 "sfr", "tasks", "crash", "board"]
+                 "sfr", "tasks", "crash", "watchdog"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -519,16 +529,17 @@ class DebugLink:
         """Crash on purpose (kind: 'trap' or 'assert'); the radio restarts about 100 ms after the reply."""
         self.request(CRASH, struct.pack("<BBI", CRASH_OP_TEST, CRASH_TESTS[kind], CRASH_TOKEN))
 
-    def hwopts(self):
-        """The board's hardware options: [{name, value (-1 = none stored), restart, choices}]"""
-        kv = parse_kv(self.request(HWOPT, bytes([HWOPT_OP_LIST]))[1].decode("ascii", "replace"))
-        return [{"name": kv.get(f"hwopt.{i}.name", ""), "value": int(kv.get(f"hwopt.{i}.value", "-1")),
-                 "restart": kv.get(f"hwopt.{i}.restart") == "1",
-                 "choices": kv.get(f"hwopt.{i}.choices", "").split("|")} for i in range(int(kv.get("hwopt.count", "0")))]
+    def watchdog_clear_gap(self):
+        self.request(WATCHDOG, bytes([WDT_OP_CLEAR_GAP]))
 
-    def hwopt_set(self, option, choice):
-        """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
-        self.request(HWOPT, bytes([HWOPT_OP_SET, option, choice]))
+    def watchdog_test(self, kind):
+        """Stop the watchdog feeds (kind: 'starve', 'spin' or 'irq-off'); starts about 100 ms after the reply and ends in
+        a reset."""
+        self.request(WATCHDOG, struct.pack("<BBI", WDT_OP_TEST, WDT_TESTS[kind], WDT_TOKEN))
+
+    def watchdog_load(self, hi, lo, rst=WDT_LEAVE):
+        """HR_C7000: re-arm the watchdog with raw loads, then starve it (the bench measurement of its clock)."""
+        self.request(WATCHDOG, struct.pack("<BIIII", WDT_OP_LOAD, hi, lo, rst, WDT_TOKEN))
 
     def version(self):
         return parse_kv(self.request(VERSION)[1].decode("ascii", "replace"))
@@ -1526,22 +1537,55 @@ def cmd_crash(link, a):
     return 0
 
 
-def cmd_hwopt(link, a):
-    opts = link.hwopts()
-    if a.option is not None:
-        names = [o["name"].lower() for o in opts]
-        i = int(a.option) if a.option.isdigit() else names.index(a.option.lower()) if a.option.lower() in names else -1
-        if not 0 <= i < len(opts) or a.choice not in opts[i]["choices"]:
-            print("hwopt: OPTION (number or name) and one of its choices; see `hwopt` for the list", file=sys.stderr)
+def watchdog_poll(link, limit_s=120.0):
+    """Read the watchdog section until the link goes quiet (the reset); the last watchdog.starved_ms the radio gave is
+    how long it ran without a feed, so the timeout is at least that and at most that plus one poll."""
+    last, t0 = None, time.monotonic()
+    while time.monotonic() - t0 < limit_s:
+        try:
+            v = link.view(["watchdog"])
+        except (DebugLinkError, OSError):    # a time-out (UART), or the USB port gone with the reset
+            break
+        if "watchdog.starved_ms" in v:
+            last = int(v["watchdog.starved_ms"])
+        time.sleep(0.05)
+    else:
+        print(f"still answering after {limit_s:g} s: no reset (is the load far longer than expected?)")
+        return 1
+    if last is None:
+        print("the link went quiet before the first starved reading")
+        return 1
+    print(f"last answer at watchdog.starved_ms={last}: the timeout is about {last / 1000:.2f} s "
+          f"(plus up to one poll, about 0.1 s)")
+    return 0
+
+
+def cmd_watchdog(link, a):
+    if a.op == "clear-gap":
+        link.watchdog_clear_gap()
+        print("longest idle gap cleared")
+    elif a.op == "test":
+        kind = a.args[0] if a.args else "starve"
+        if kind not in WDT_TESTS:
+            print(f"watchdog test: one of {', '.join(WDT_TESTS)}", file=sys.stderr)
             return 2
-        link.hwopt_set(i, opts[i]["choices"].index(a.choice))
-        print(f"{opts[i]['name']} = {a.choice}" + (" (from the next start-up)" if opts[i]["restart"] else ""))
-        return 0
-    for i, o in enumerate(opts):
-        v = o["choices"][o["value"]] if 0 <= o["value"] < len(o["choices"]) else "not set"
-        print(f"{i} {o['name']}: {v}  ({' | '.join(o['choices'])}){'  restart' if o['restart'] else ''}")
-    if not opts:
-        print("no hardware options on this radio")
+        link.watchdog_test(kind)
+        print(f"watchdog test '{kind}' sent: the radio resets within the timeout")
+        if kind == "starve":
+            return watchdog_poll(link)
+    elif a.op == "load":
+        if len(a.args) not in (2, 3):
+            print("watchdog load H L [RST]", file=sys.stderr)
+            return 2
+        hi, lo = int(a.args[0], 0), int(a.args[1], 0)
+        rst = int(a.args[2], 0) if len(a.args) == 3 else WDT_LEAVE
+        link.watchdog_load(hi, lo, rst)
+        print(f"watchdog re-armed with OT_LOAD_H=0x{hi:X} OT_LOAD_L=0x{lo:X}, feeds stopped")
+        return watchdog_poll(link)
+    else:
+        for k, v in link.view(["watchdog"]).items():
+            if k.startswith("watchdog."):
+                print(f"{k}={v}")
     return 0
 
 
@@ -1641,9 +1685,10 @@ def main(argv=None):
     p = sub.add_parser("crash", help="the crash log: show, clear, test trap|assert (docs/spec/crash-log.md)")
     p.add_argument("op", nargs="?", default="show", choices=["show", "clear", "test"])
     p.add_argument("kind", nargs="?", default="trap")
-    p = sub.add_parser("hwopt", help="hardware options: list, or set OPTION CHOICE (docs/spec/debuglink.md 3.21)")
-    p.add_argument("option", nargs="?", help="number or name, e.g. 'Board revision'")
-    p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
+    p = sub.add_parser("watchdog", help="the hardware watchdog: show, clear-gap, test starve|spin|irq-off, load H L [RST] "
+                       "(docs/spec/watchdog.md)")
+    p.add_argument("op", nargs="?", default="show", choices=["show", "clear-gap", "test", "load"])
+    p.add_argument("args", nargs="*")
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
@@ -1700,8 +1745,8 @@ def main(argv=None):
                 return cmd_reboot(link, a)
             elif a.cmd == "crash":
                 return cmd_crash(link, a)
-            elif a.cmd == "hwopt":
-                return cmd_hwopt(link, a)
+            elif a.cmd == "watchdog":
+                return cmd_watchdog(link, a)
             elif a.cmd == "storage":
                 return cmd_storage(link, a)
             elif a.cmd == "aprobe":

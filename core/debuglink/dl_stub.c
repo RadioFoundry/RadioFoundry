@@ -115,6 +115,11 @@ static size_t op_enter(dl_stub_t *s, const uint8_t *req, uint16_t len, uint8_t *
 	if (s->transmitting) {
 		return status_only(out, DL_ST_BUSY);	// the image stays loaded: ENTER again once the radio is receiving
 	}
+	if (s->image_ok != NULL && !s->image_ok(s->region, s->total_len)) {
+		out[0] = DL_ST_REFUSED;		// a stub that would be reset part way through its work: never start it
+		out[1] = DL_STUB_REFUSE_WATCHDOG;
+		return 2;
+	}
 	*enter = true;
 	*entry = s->entry;
 	return status_only(out, DL_ST_OK);

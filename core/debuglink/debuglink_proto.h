@@ -47,15 +47,25 @@ enum {
 	DL_CMD_SNMP		= 0x19,	// the SNMP agent: settings, communities, notification port, test (debuglink_snmp.c, 3.17)
 	DL_CMD_STUB		= 0x1A,	// load and enter the RAM-monitor stub (CONFIG_STUB_ENTRY; debuglink_stub.c, 3.18)
 	DL_CMD_CRASH		= 0x1B,	// the crash log: clear, crash on purpose (CONFIG_CRASH_LOG; debuglink_crash.c, 3.19)
-	DL_CMD_CODEPLUG		= 0x1C,
-	DL_CMD_HWOPT		= 0x1E,	// the board's hardware options: list, set (debuglink_hwopt.c, 3.21)	// the fast codeplug protocol (CONFIG_CPS_FAST; core/cps/cps_fast.c, 3.20, cps-fast.md)
+	DL_CMD_CODEPLUG		= 0x1C,	// the fast codeplug protocol (CONFIG_CPS_FAST; core/cps/cps_fast.c, 3.20, cps-fast.md)
+	DL_CMD_WATCHDOG		= 0x1D,	// the hardware watchdog's bench tests (CONFIG_WATCHDOG; debuglink_watchdog.c, 3.21)
 };
 
-// DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.21)
+// DL_CMD_WATCHDOG operations (first payload byte; docs/spec/debuglink.md 3.21). u32 little endian. Every test ends in
+// a watchdog reset, and the reset is what it checks
 enum {
-	DL_HWOPT_OP_LIST	= 0,	// none -> key=value text: hwopt.count, hwopt.<i>.name / value / restart / choices
-	DL_HWOPT_OP_SET		= 1,	// option u8, choice u8 -> none (refused: the board didn't store it, or on air)
+	DL_WDT_OP_CLEAR_GAP = 0,	// -> status: restart the longest idle gap measurement (watchdog.max_gap_ms)
+	DL_WDT_OP_TEST = 1,		// kind u8 (DL_WDT_TEST_*), token u32 -> status; the test starts after the reply
+	DL_WDT_OP_LOAD = 2,		// arg u32 x3, token u32 -> status: re-arm with a raw load (platform units,
+					// hal_watchdog_test_load), then starve; unavailable where the platform has no such test
 };
+enum {
+	DL_WDT_TEST_STARVE = 1,		// the idle task stops feeding; everything else runs on (the link answers until the reset)
+	DL_WDT_TEST_SPIN = 2,		// the host link's task spins with interrupts on: the idle task never runs again
+	DL_WDT_TEST_IRQ_OFF = 3,	// the host link's task spins with the kernel's interrupts masked
+};
+// The tests' guard, little endian in the payload: bytes 'W' 'D' 'O' 'G', so a stray frame can't reset the radio
+#define DL_WDT_TOKEN		0x474F4457u
 
 // DL_CMD_CRASH operations (first payload byte; docs/spec/debuglink.md 3.19)
 enum {
@@ -78,6 +88,10 @@ enum {
 // The guard key, little endian in the payload: bytes 'C' '7' 'S' 'B'. Required on BEGIN and ENTER so a stray frame
 // can never arm or launch the monitor; entry also needs the exact length and a matching CRC-32 of the whole image
 #define DL_STUB_MAGIC		0x42533743u
+// ENTER refused (DL_ST_REFUSED) with a reason byte after the status: the platform's watchdog runs and can't be stopped
+// (the STM32 IWDG), and the image header doesn't say the stub feeds it (docs/spec/stub-stm32f4.md 3.1). A bad
+// magic is refused with no reason byte
+#define DL_STUB_REFUSE_WATCHDOG	1u
 
 // DL_CMD_DMR_DATA operations (first payload byte; docs/spec/debuglink.md 3.12). IDs are u32 little endian
 enum {

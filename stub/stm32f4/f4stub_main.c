@@ -127,8 +127,36 @@ static void clock_setup(void)
 	}
 }
 
+// The image header (f4stub_header.h), at F4STUB_HDR_OFFSET by the linker script. ODR reads it before the jump: while its
+// IWDG runs it enters only a stub whose header says it feeds the IWDG (docs/spec/watchdog.md 3.1)
+_Static_assert(sizeof(f4stub_header_t) == F4STUB_HDR_SIZE, "the image header is 16 bytes");
+__attribute__((section(".stub_header"), used)) const f4stub_header_t f4stub_header = {
+	.magic = F4STUB_HDR_MAGIC,
+	.layout = F4STUB_HDR_LAYOUT,
+	.size = F4STUB_HDR_SIZE,
+	.version = F4STUB_VERSION,
+	.flags = F4STUB_FLAG_FEEDS_IWDG,
+};
+
+// The IWDG: ODR started it (CONFIG_WATCHDOG) and nothing but a reset stops it, so the stub feeds it everywhere it can
+// spend time. A write to KR while it isn't running does nothing
+
+void stub_feed(void)
+{
+	IWDG->KR = 0xAAAAu;
+}
+
+static void port_feed(void *ctx)
+{
+	(void)ctx;
+	stub_feed();
+}
+
+// Every loop that waits reads the time here (the main loop, the flash erase and program busy waits, the SPI flash's
+// status polls, the USB waits, the delays), so it feeds the IWDG too
 uint32_t stub_ms(void)
 {
+	stub_feed();
 	uint32_t c = DWT->CYCCNT;
 	acc_cyc += c - last_cyc;
 	last_cyc = c;
@@ -226,7 +254,7 @@ static stubeng_port_t port = {
 	.xread = port_xread,
 	.xerase = port_xerase,
 	.xprogram = port_xprogram,
-	.configure = port_configure,
+	.feed = port_feed,
 };
 static stubeng_t engine;
 static char serial[25];
@@ -246,6 +274,7 @@ static void make_serial(void)
 
 void stub_main(uint32_t flags)
 {
+	stub_feed();			// first: ODR stretched the IWDG for the copy and the jump, nothing more
 	for (uint32_t *p = &_sbss; p < &_ebss; p++) {
 		*p = 0;
 	}

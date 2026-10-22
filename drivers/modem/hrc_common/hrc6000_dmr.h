@@ -76,6 +76,9 @@ typedef struct {
 	void (*unlock)(void *ctx);
 	void (*notify)(void *ctx);	// events queued: wake the board's task (from ISRs and from the lock)
 	bool (*sys_line_low)(void *ctx);	// optional: system interrupt line still asserted after its flags were cleared
+	// Optional (timeslot ISR): an aligned transmission has found its slot; the first burst follows two ticks later.
+	// A board whose receiver can't stay on during the wait (the MD-380: one synthesizer) switches to TX here
+	void (*tx_slot_found)(void *ctx);
 	void *ctx;
 } hrc6000_dmr_ops_t;
 
@@ -278,6 +281,8 @@ typedef struct {
 	bool tx_end_req;
 	bool tx_abort_req;
 	uint32_t tx_wait;	// ticks waited for alignment
+	bool tx_found;		// tx_slot_found called: the start waits for tx_go_tick
+	uint32_t tx_go_tick;
 	uint32_t tx_last_setup;	// tick of the last burst set up
 	bool tx_any_setup;
 	uint8_t reg40;		// shadow of 0x40 while transmitting

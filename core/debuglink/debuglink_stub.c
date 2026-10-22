@@ -79,12 +79,16 @@ size_t debuglink_cmd_stub(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		}
 		uint32_t run = s->stub_run_addr != 0 ? s->stub_run_addr : (uint32_t)(uintptr_t)region;
 		dl_stub_init(&stub, region, size, run);
+		stub.image_ok = s->stub_image_ok;
 		ready = true;
 	}
 	bool enter = false;
 	uint32_t entry = 0;
 	stub.transmitting = on_air();
 	size_t n = dl_stub_request(&stub, req, len, out, cap, &enter, &entry);
+	if (n == 2 && out[0] == DL_ST_REFUSED && out[1] == DL_STUB_REFUSE_WATCHDOG) {
+		dlog("debuglink: stub refused, it doesn't feed the watchdog (an older loader)");
+	}
 	if (enter) {
 		enter_pending = true;
 		enter_addr = entry;

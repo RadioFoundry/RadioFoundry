@@ -216,12 +216,19 @@ void board_sysboot_prepare(void)
 	reset_levels();
 }
 
-// Before the flash stub takes over (platform/stm32f4/stub_entry.c): only the transmitter off (hardware-md380.md 5.6);
-// the backlight and the rest stay, so the "PC Loader Connected" banner stays readable while the stub runs
-void board_stub_prepare(void)
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-md380.md 5.6): the PA power loop
+// (APC_EN) and the transmitter supply (5TC) off, the receive VCO selected, and the APC DAC to 0 when its clock is on.
+// Register writes only. The synthesizer and the HR_C5000 are left as they are (a bus transaction each); with 5TC off
+// their output reaches no powered PA. The backlight and the rest stay, so the stub's "PC Loader Connected" banner stays
+// readable
+void board_rf_safe(void)
 {
-	stm32_pin_write(PIN_PORT(PIN_APC_EN), PIN_MASK(PIN_APC_EN), false);
-	stm32_pin_write(PIN_PORT(PIN_TX_5V), PIN_MASK(PIN_TX_5V), false);
+	stm32_pin_force(PIN_PORT(PIN_APC_EN), PIN_MASK(PIN_APC_EN), false);
+	stm32_pin_force(PIN_PORT(PIN_TX_5V), PIN_MASK(PIN_TX_5V), false);
+	stm32_pin_force(PIN_PORT(PIN_VCO_SEL), PIN_MASK(PIN_VCO_SEL), true);
+	if (RCC->APB1ENR & RCC_APB1ENR_DACEN) {
+		DAC1->DHR12R1 = 0;
+	}
 }
 
 void board_early_init(void)

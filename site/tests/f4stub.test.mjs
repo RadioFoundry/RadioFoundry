@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { crc32, equal, fromHex, toHex } from "../static/js/flasher/bytes.js";
 import { FakeRadio, simulation, randomBytes, rng } from "../static/js/flasher/fake.js";
-import { F4Stub, f4Image, APP_BASE, MEM_SPI, OP } from "../static/js/flasher/f4stub.js";
+import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI } from "../static/js/flasher/f4stub.js";
 import { StubError } from "../static/js/flasher/stub.js";
 import { Link } from "../static/js/flasher/link.js";
 import { readRadio } from "../static/js/flasher/backup.js";
@@ -54,6 +54,20 @@ test("the embedded stub matches its checksum", async () => {
 	const { createHash } = await import("node:crypto");
 	assert.equal(createHash("sha256").update(image).digest("hex"), stubJson.sha256);
 	assert.ok(image.length < 8192, "fits ODR's staging buffer");
+	// The page serves stub/f4stub.py's image (site/odrsite/repo.py), never a copy of its own: one whose header says it
+	// feeds the IWDG, which a watchdog build of ODR insists on (docs/spec/watchdog.md 3.1)
+	const h = f4StubHeader(image);
+	assert.ok(h, "the stub has its image header");
+	assert.ok(h.version >= HDR.VERSION_FEEDS_IWDG && (h.flags & HDR.FLAG_FEEDS_IWDG) && h.feedsIwdg, "the header says it feeds the IWDG");
+	const old = image.slice();
+	old.fill(0, HDR.OFFSET, HDR.OFFSET + 4);
+	assert.equal(f4StubHeader(old), null, "no magic: no header");
+	// The page's numbers are f4stub_header.h's (the one definition the stub and ODR share)
+	const src = readFileSync("stub/stm32f4/f4stub_header.h", "utf8");
+	const def = (n) => Number(new RegExp(`#define\\s+F4STUB_${n}\\s+(0x[0-9A-Fa-f]+|\\d+)u`).exec(src)[1]);
+	for (const [k, n] of [["OFFSET", "HDR_OFFSET"], ["MAGIC", "HDR_MAGIC"], ["LAYOUT", "HDR_LAYOUT"], ["SIZE", "HDR_SIZE"],
+		["VERSION_FEEDS_IWDG", "VERSION_FEEDS_IWDG"], ["FLAG_FEEDS_IWDG", "FLAG_FEEDS_IWDG"]])
+		assert.equal(HDR[k], def(n), `HDR.${k} matches F4STUB_${n}`);
 });
 
 test("hand-over: the stub adopts ODR's port, or comes back on a new one", async () => {

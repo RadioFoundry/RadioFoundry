@@ -100,8 +100,8 @@ CONFIG_HOSTLINK ?= $(CONFIG_USB)
 CONFIG_USB_NETWORK ?= $(if $(and $(filter y,$(CONFIG_USB)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # IPv4 over PPP on the serial host port, into the IP gateway and its services: for radios whose only host link is a
 # USB-serial cable (DM-32UV, GD-88), and a fallback on the USB serial port (needs HOSTLINK and DMR_IP_GATEWAY, which
-# it turns on by default; core/net/ppp.c, core/hostlink/hostlink_ppp.c, docs/spec/ppp.md). New, untested on hardware:
-# on for the DM-32UV, its only IP link (boards/dm32/config.mk); off on the USB radios
+# it turns on by default; core/net/ppp.c, core/hostlink/hostlink_ppp.c, docs/spec/ppp.md). Checked on the DB25-D PRO
+# and the DM-1801 Pro; on for the DM-32UV, its only IP link (boards/dm32/config.mk); off on the USB radios
 CONFIG_NET_PPP ?= n
 # MMDVM modem / hotspot mode over the host port (needs DMR and HOSTLINK)
 CONFIG_HOTSPOT ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
@@ -176,9 +176,9 @@ CONFIG_AUDIO_PROBE ?= n
 # runtime RAM-monitor entry: debug link command 0x1A loads the host's flash-access stub into free RAM and jumps to it
 # without a power cycle, for bench recovery and flash work (docs/spec/debuglink.md 3.18, hardware-dm32.md 17.2; needs
 # DEBUGLINK and a platform with hal_system_t.enter_stub: the HR_C7000, and the STM32F4 with an 8 KB staging buffer,
-# docs/spec/stub-stm32f4.md). On by default on the HR_C7000 radios (their config.mk), where the web flasher and
-# stub/stubtool.py update through it; off elsewhere for now
-CONFIG_STUB_ENTRY ?= n
+# docs/spec/stub-stm32f4.md). On by default wherever the debug link is: updates through it need no key combo at
+# power-on (the web flasher and stub/stubtool.py). A board leaves it off in its config.mk only for a stated reason
+CONFIG_STUB_ENTRY ?= $(CONFIG_DEBUGLINK)
 # the crash log: a CPU fault, a task stack overflow, running out of heap or a failed assertion keeps a record (registers,
 # fault status, task, stack words) where a reset doesn't clear it and restarts the radio; the next start shows it
 # (core/crash, docs/spec/crash-log.md). Off: a crash stops the radio until a power cycle, as before. Needs nothing else
@@ -190,6 +190,15 @@ CONFIG_CRASH_SCREEN ?= $(CONFIG_CRASH_LOG)
 # codeplug contact, from the Crash log screen or after the restart (off / ask / automatic; docs/spec/crash-log.md 5)
 # (needs CRASH_SCREEN and DMR)
 CONFIG_CRASH_REPORT ?= $(if $(and $(filter y,$(CONFIG_CRASH_SCREEN)),$(filter y,$(CONFIG_DMR))),y,n)
+# the hardware watchdog: started in main(), fed by the idle task, so a hang or a starved system of a few seconds resets
+# the chip (the IWDG on the STM32F4, the SoC's watchdog on the HR_C7000; docs/spec/watchdog.md). With the debug link it
+# also has a bench test (command 0x1D). Off: no watchdog runs, as before. Needs nothing else
+CONFIG_WATCHDOG ?= y
+# the fault trace: a CPU fault prints its registers on the host UART, three framed lines a second apart, before the
+# restart (core/crash/crash_trace.c, tools/odr_fault_trace.py; docs/spec/crash-log.md 2.3). Only where the host port is
+# a UART the fault handler can drive polled: the HR_C7000 radios (the STM32 radios' config.mk turn it off: USB only).
+# Off: straight to the record and the restart. Needs nothing else
+CONFIG_FAULT_TRACE ?= y
 # the core's storage (settings, codeplug) on SPI NAND: the NOR-like 4 KB sector layer over the board's own block range
 # (drivers/flash/nand_sectors, docs/spec/nand-sectors.md). On in the config.mk of radios whose data flash is SPI NAND
 # (the DB25-D); off, such a radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it
@@ -220,7 +229,7 @@ CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFI
 
 FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN BEEP FM_TX_TONES \
-	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY NAND_STORAGE MD9600_V1V3 MD9600_V4 MD9600_V5 MD9600_TX MD9600_DMR_TX CRASH_LOG CRASH_SCREEN CRASH_REPORT AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT
+	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))

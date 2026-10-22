@@ -31,6 +31,12 @@ reaches it at run time through the board descriptor, `board_t` in [hal/board.h](
 | `boards/` | The only place that knows the radio. Fills in `board_t`; maps physical keys to logical actions |
 | `platform/` | The SoC, shared by every radio on it (the STM32F405 radios share `platform/stm32f4`) |
 
+Besides `board_t`, every board provides three functions (`hal/board.h`): `board_early_init` (pins and clocks before
+the RTOS), `board_init` (from the first task) and `board_rf_safe` (transmitter off with register writes only). The
+platform calls `board_rf_safe` first in `main()`, in its fault handlers and before every software reset or jump out
+of the application; the crash capture in `core/crash` calls it too. It must work with interrupts off, without the
+RTOS and before the clocks are set up ([crash-log.md](../spec/crash-log.md) 8).
+
 ## Tasks
 
 FreeRTOS tasks, created by [core/app/app.c](../../core/app/app.c) (its header comment has the priorities and stack

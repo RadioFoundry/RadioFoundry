@@ -220,12 +220,20 @@ void board_sysboot_prepare(void)
 	reset_levels();
 }
 
-// Before the flash stub takes over (platform/stm32f4/stub_entry.c): only the transmitter off. The backlight and the
-// rest stay as they are, so the "PC Loader Connected" banner stays readable while the stub runs
-void board_stub_prepare(void)
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-dm1701.md 6, 7): the TX supply
+// (PA_EN1), the APC loop (PA_EN2), the band select low as at reset, and the APC DAC to 0 when its clock is on (it holds
+// its value otherwise). Register writes only. The AT1846S and the HR_C6000 are left as they are: they need a bus
+// transaction, and with the TX supply off their output reaches no powered PA. The DMR bursts are keyed from the HR_C6000
+// RF interrupt, which can't run with interrupts off. The backlight and the rest stay, so the stub's "PC Loader
+// Connected" banner stays readable
+void board_rf_safe(void)
 {
-	stm32_pin_write(PIN_PORT(PIN_PA_EN1), PIN_MASK(PIN_PA_EN1), false);
-	stm32_pin_write(PIN_PORT(PIN_PA_EN2), PIN_MASK(PIN_PA_EN2), false);
+	stm32_pin_force(PIN_PORT(PIN_PA_EN2), PIN_MASK(PIN_PA_EN2), false);
+	stm32_pin_force(PIN_PORT(PIN_PA_EN1), PIN_MASK(PIN_PA_EN1), false);
+	stm32_pin_force(PIN_PORT(PIN_PA_BAND), PIN_MASK(PIN_PA_BAND), false);
+	if (RCC->APB1ENR & RCC_APB1ENR_DACEN) {
+		DAC1->DHR12R1 = 0;
+	}
 }
 
 void board_early_init(void)

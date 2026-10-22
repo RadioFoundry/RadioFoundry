@@ -2,11 +2,14 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The crash log's capture side (crash.h): what every crash adds to the platform's registers, and the FreeRTOS and
 // assert hooks. Runs with interrupts off, from a fault handler or a hook; reads the RTOS's current task but takes no
-// lock and never waits. Firmware only (the host tests have no RTOS).
+// lock and never waits. The transmitter goes off first (board_rf_safe, crash-log.md 8): a crash while transmitting
+// must not leave the PA keyed through the capture, the restart and a start-up that may not finish. The host test
+// (crashCaptureTest) runs it on a stand-in RTOS.
 #include <string.h>
 #include "config.h"
 #include "crash/crash.h"
 #include "hal_time.h"
+#include "board.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -28,6 +31,7 @@ static void put_name(char out[CRASH_TASK_LEN], const char *name)
 void crash_commit(crash_record_t *r)
 {
 	irq_off();
+	board_rf_safe();	// again if the platform's fault handler already did: it costs a few register writes
 	r->uptime_ms = hal_millis();
 	if (!(r->flags & CRASH_F_ISR) && r->task[0] == 0) {
 		TaskHandle_t t = xTaskGetCurrentTaskHandle();	// NULL before the scheduler's first task
@@ -55,6 +59,7 @@ static bool soft_busy;
 __attribute__((noreturn)) static void soft_capture(uint8_t kind, uint32_t cause, uint32_t pc, const char *task)
 {
 	irq_off();
+	board_rf_safe();
 	if (soft_busy)
 		hal_crash_restart();	// an assertion inside the capture: the first record is half made, restart
 	soft_busy = true;

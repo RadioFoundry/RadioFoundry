@@ -94,7 +94,7 @@ static unsigned pa_on_calls;
 static bool fake_rf(void *ctx, bool tx) { if (tx) pa_on_calls++; return true; }
 static uint32_t fake_now(void *ctx) { return t_us; }
 
-static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, NULL, NULL };
+static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, NULL, NULL, NULL };
 
 // --- The board glue: hal_dmr_modem_t over the engine, and a task draining the engine's events into the stack ---
 

@@ -295,6 +295,26 @@ void hrc_crash_fault(const uint32_t *frame, uint32_t vector) __attribute__((nore
 // places .ramfunc in SRAM
 #define HRC_RAMFUNC		__attribute__((section(".ramfunc"), noinline))
 
+// --- Transmitter off (board_rf_safe in board.h, docs/spec/crash-log.md 8) ---
+
+// A pin forced to an output at a level: DR, then DDR, so it never glitches. Plain read-modify-writes without
+// hrc_pin_out's interrupt save (the callers run with interrupts off), inlined so the boards' RAM-resident hook runs
+// nothing from XIP flash
+static inline __attribute__((always_inline)) void hrc_pin_force(uint8_t pin, bool level)
+{
+	uint32_t bank = pin < 32 ? GPIOA_BASE : pin < 64 ? GPIOB_BASE : GPIOC_BASE;
+	uint32_t bit = 1u << (pin & 31u);
+	uint32_t dr = REG32(bank + GPIO_DR);
+	REG32(bank + GPIO_DR) = level ? (dr | bit) : (dr & ~bit);
+	REG32(bank + GPIO_DDR) |= bit;
+}
+// The fault and reset paths: board_rf_safe, then the modem's own transmit state off (FM PTT, the DMR slot engine's
+// TX/RX control). RAM code, interrupts off. Not at start-up, where the modem may still be held in reset
+void hrc_rf_safe(void);
+// CONFIG_WATCHDOG (watchdog.c): before the stub entry a running watchdog gets 32 s and a feed, as the STM32 IWDG; the
+// stub feeds it from then on. RAM code, interrupts off
+void hrc_watchdog_stretch(void);
+
 extern const hal_system_t hrc_system;
 
 // The programming cable's UART as the board's host port (uart.c): UART0 unless the board sets HRC_HOST_UART=1
@@ -307,6 +327,7 @@ void hrc_host_uart_drain(void);
 void hrc_host_uart_loader_div(void);
 // Weak, called from the receive interrupt for every character (error: the UART flagged it)
 void hrc_host_uart_rx_tap(uint8_t b, bool error);
+void hrc_host_uart_put_polled(const char *s);	// interrupts off, no RTOS: the fault trace (irq.c)
 uint32_t hrc_host_uart_overruns(void);	// bytes lost because the receive ring was full
 uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FIFO overran, framing, parity)
 // When the last byte without a line error arrived (hal_millis()); false if none has yet. A board whose PTT shares the

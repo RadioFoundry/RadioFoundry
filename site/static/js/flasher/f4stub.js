@@ -36,6 +36,18 @@ export function f4Image(json) {
 	return Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
 }
 
+// The image header (stub/stm32f4/f4stub_header.h): 16 bytes at 0x10, little endian. A watchdog build of ODR enters
+// only a stub whose header has the magic, a version of at least 3 and the feed flag. null: no header (before version 3)
+export const HDR = { OFFSET: 0x10, MAGIC: 0x48533446, LAYOUT: 1, SIZE: 16, VERSION_FEEDS_IWDG: 3, FLAG_FEEDS_IWDG: 0x1 };
+export function f4StubHeader(image) {
+	if (image.length < HDR.OFFSET + HDR.SIZE) return null;
+	const v = new DataView(image.buffer, image.byteOffset + HDR.OFFSET, HDR.SIZE);
+	const magic = v.getUint32(0, true), layout = v.getUint16(4, true), size = v.getUint16(6, true);
+	if (magic !== HDR.MAGIC || layout < HDR.LAYOUT || size < HDR.SIZE) return null;
+	const version = v.getUint32(8, true), flags = v.getUint32(12, true);
+	return { layout, size, version, flags, feedsIwdg: version >= HDR.VERSION_FEEDS_IWDG && (flags & HDR.FLAG_FEEDS_IWDG) !== 0 };
+}
+
 // [{index, addr, size}] of a single-bank STM32F4: 4 x 16 KB, 64 KB, then 128 KB each
 export function f405Sectors(flashKb = 1024) {
 	const out = [];
@@ -58,21 +70,14 @@ export class F4Stub extends Stub {
 		this.configured = false;	// the stub confirmed this.board's record (or, protocol 2, has its wiring built in)
 	}
 
-	// Status 0x11 is the stub's own refusal of a write before a board record; the rest stay the generic error
-	async request(op, payload, opts) {
-		try {
-			return await super.request(op, payload, opts);
-		} catch (e) {
-			if (e.status === NOCONFIG) {
-				this.configured = false;
-				throw Object.assign(new StubError("the loader has no board configuration (status 0x11): nothing was written"), { status: NOCONFIG });
-			}
-			throw e;
-		}
+	async enterFromOdr(image, progress = () => {}, opts = {}) {
+		const h = f4StubHeader(image);
+		this.log(h ? `STM32F4 stub image v${h.version}${h.feedsIwdg ? ", feeds the watchdog" : ""}` : "STM32F4 stub image without a header (older than version 3)");
+		return super.enterFromOdr(image, progress, opts);
 	}
 
-	async hello({ retries = 0 } = {}) {
-		const r = await this.request(OP.HELLO, new Uint8Array(0), { retries, timeout: 500 });
+	async hello() {
+		const r = await this.request(OP.HELLO, new Uint8Array(0), { retries: 0, timeout: 500 });
 		if (String.fromCharCode(...r.subarray(0, 6)) !== "F4STUB" || r.length < 17) throw new StubError("unexpected hello: not the STM32F4 stub");
 		const i = {
 			version: r[6], maxPayload: u16be(r, 7), flashKb: u16be(r, 9), rdp: r[11], adopted: !!(r[12] & 1), appBase: u32be(r, 13),

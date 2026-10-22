@@ -84,7 +84,7 @@ static void fake_lock(void *ctx) { locks++; }
 static void fake_unlock(void *ctx) { unlocks++; }
 static void fake_notify(void *ctx) { notifies++; }
 
-static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, fake_lock, fake_unlock, fake_notify, NULL, NULL };
+static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, fake_lock, fake_unlock, fake_notify, NULL, NULL, NULL };
 static hrc6000_dmr_t eng;
 
 static void log_reset(void)

@@ -32,16 +32,24 @@ void stm32_sysboot_check(void);
 void board_sysboot_prepare(void);
 
 // Runtime flash-stub entry (CONFIG_STUB_ENTRY, stub_entry.c): the staging buffer the debug link loads the image into,
-// and the quiesce, copy-to-SRAM-base and jump. board_stub_prepare is the optional board hook run first: transmitter
-// off, nothing else (the power latch, display and USB pins stay). Weak default does nothing
+// and the quiesce, copy-to-SRAM-base and jump. The transmitter goes off first (board_rf_safe); the power latch, display
+// and USB pins stay
 uint8_t *stm32_stub_region(uint32_t *size);
 bool stm32_enter_stub(uint32_t entry);
-void board_stub_prepare(void);
+// With CONFIG_WATCHDOG and the IWDG running: true only for an image whose header (stub/stm32f4/f4stub_header.h) says
+// the stub feeds the IWDG. Otherwise true
+bool stm32_stub_image_ok(const uint8_t *img, uint32_t len);
+// CONFIG_WATCHDOG (watchdog.c): the IWDG can't be stopped, so before the stub entry it gets its longest timeout (about
+// 32 s) and a feed. The stub feeds it from then on; ODR refuses a stub that doesn't
+void stm32_watchdog_stretch(void);
 
 // Enable the clock of a GPIO port by its base address
 void stm32_gpio_clock(GPIO_TypeDef *port);
 
 // Simple pin set-up helpers
+// For board_rf_safe: the port's clock on, the level, then push-pull output, with plain register writes (no HAL). Safe
+// in a fault handler and before the clocks are set up
+void stm32_pin_force(GPIO_TypeDef *port, uint16_t pins, bool level);
 void stm32_pin_out(GPIO_TypeDef *port, uint16_t pins, bool level, bool open_drain);
 void stm32_pin_in(GPIO_TypeDef *port, uint16_t pins, uint32_t pull);
 void stm32_pin_af(GPIO_TypeDef *port, uint16_t pins, uint8_t af, bool open_drain, uint32_t pull);

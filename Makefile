@@ -81,6 +81,11 @@ endif
 ifneq ($(CONFIG_TASK_STACKS),y)
 APP_SRC := $(filter-out core/app/task_stack.c,$(APP_SRC))
 endif
+# The idle task's watchdog feed (core/app is always globbed): only with its switch, which also turns on the idle hook in
+# the boards' FreeRTOSConfig.h
+ifneq ($(CONFIG_WATCHDOG),y)
+APP_SRC := $(filter-out core/app/watchdog.c,$(APP_SRC))
+endif
 # Single files of core/dmr, whose other files belong to other features
 ifeq ($(CONFIG_DMR_PRIVACY),y)
 APP_SRC += core/dmr/dmrPrivacy.c
@@ -102,6 +107,12 @@ endif
 # core/hotspot/hotspotSplit.c, the CACH coding in core/dmr/fec)
 ifeq ($(CONFIG_HOTSPOT_SPLIT),y)
 APP_SRC += core/dmr/bsOutbound.c core/dmr/slotEpoch.c
+endif
+# The fault trace line a fault handler prints before the restart (core/crash is globbed with CRASH_LOG): only with its
+# own switch, with or without the crash log
+APP_SRC := $(filter-out core/crash/crash_trace.c,$(APP_SRC))
+ifeq ($(CONFIG_FAULT_TRACE),y)
+APP_SRC += core/crash/crash_trace.c
 endif
 # The IP gateway (the data service above carries its packets: CONFIG_DMR_DATA_CORE follows it)
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)

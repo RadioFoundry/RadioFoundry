@@ -17,12 +17,15 @@ radio until a power cycle, as before.
 | Out of heap | 3 | FreeRTOS's malloc-failed hook | 0 | in the kernel |
 | Assert | 4 | `configASSERT` (the boards' `FreeRTOSConfig.h`) | the line | the caller of the assertion |
 
-The capture runs with interrupts off, on a stack of its own (1 KB), and calls nothing that waits. It adds the running
+The capture runs with interrupts off, on a stack of its own (1 KB), and calls nothing that waits. It turns the
+transmitter off first (8), with or without the crash log. It adds the running
 task's name (empty in an interrupt handler: `CRASH_F_ISR`), the uptime, the 16 words at the stack pointer when that
 points into RAM (`CRASH_F_STACK`), the commit, then seals the record with a CRC-32, stores it and restarts the radio.
 
-Not caught: a hang (no watchdog is enabled yet), a fault while the fault entry pushes its frame (2.2), and NMI or
-an unhandled interrupt on the STM32F4 (the start-up's default handler still spins).
+Not caught: a hang (the hardware watchdog resets the radio instead, [watchdog.md](watchdog.md), with no record), a
+fault while the fault entry pushes its frame (2.2), and an unhandled interrupt on the STM32F4 (the start-up's default
+handler spins until the watchdog resets the radio; no interrupt is enabled without a handler). The NMI on the STM32F4
+takes the HardFault entry (`cause` 2).
 
 ## 2. Platforms
 
@@ -52,7 +55,35 @@ exceptions off: an unrecoverable error, and the radio stays stopped as without t
 The store is 256 bytes at 0x18007F00, the top of the SRAM shared with the modem. The codec's tables (from
 0x18000800, at most to 0x18004F90 in any stock image) and the microphone PCM (0x18000000) don't reach it
 (`hardware-dm32.md` 2). Main SRAM is not used: the Baofeng bootloader and the start-up use it. Restart: the chip's
-soft reset (`hrc_soft_reset`, the same as a reboot).
+soft reset (`hrc_soft_reset`, the same as a reboot). With the fault trace (2.3) the lines go out first; without the
+crash log the fault ends in the same soft reset.
+
+### 2.3 Fault trace
+
+`CONFIG_FAULT_TRACE` (default on; the STM32 radios turn it off). A CPU fault prints its registers on the host UART
+before the record and the restart, so a radio whose debug link is gone can still say where it crashed, with or
+without the crash log. Code: `core/crash/crash_trace.c` (the line, portable), `hrc_fault` in
+`platform/hrc7000/irq.c` (timing and output), `hrc_host_uart_put_polled` in `platform/hrc7000/uart.c`.
+
+| Item | Value |
+|---|---|
+| Port | the host UART, at the rate it runs at (115200 8N1): DM-32UV and DM-1801 Pro UART0 (the programming cable), DB25-D UART1 |
+| Lines | `CRASH_TRACE_LINES` (3), one a second, timed on the free-running clock timer (interrupts are off); then 50 ms for the UART's FIFO to empty, then the record and the restart |
+| Format | `\r\n#ODRFAULT1 n=01 v=<vector> pc=<EPC> psr=<EPSR> lr=<r15> sp=<sp before the frame> r0=<..> .. r13=<..> *<crc>\r\n`; every value 8 lower-case hex digits, `n` the line's number as 2 hex digits |
+| CRC | CRC-16/CCITT-FALSE (polynomial 0x1021, init 0xFFFF, no reflection, no final XOR) over the bytes from `#` up to and including the space before `*`, as 4 lower-case hex digits |
+| Watchdog | fed once before the first line; the three seconds stay inside the timeout ([watchdog.md](watchdog.md) 2) |
+
+The sync word `#ODRFAULT1` and the CRC let a reader pick the lines out of whatever else the port carries (MMDVM or
+CPS traffic, the debug link). `tools/odr_fault_trace.py PORT` reads the port raw for a while (the debug link must not
+hold it), or `--file LOG` a saved capture, checks each line's CRC and prints the registers; `--selftest` decodes the
+golden line `tests/host/crashTest.c` builds.
+
+The STM32 radios have no UART a fault handler could print on: their host port is USB, which needs interrupts, and
+their one UART is a GPS receive line (DM-1701 USART1 RX on PA10, its TX pin PA9 used as the GPS power switch; MD-380 G
+models USART3 RX on PD9). Their faults keep the record only.
+
+Checked on hardware: DB25-D (2026-10-21), `odr_debug.py crash test trap` printed lines the tool decoded with good
+CRCs, then the radio restarted with the record kept.
 
 ## 3. The record
 
@@ -162,12 +193,63 @@ Checked on hardware (2026-10-17, both flashed through the stub), with `tests/hil
 
 ## 7. Tests
 
-`tests/host/crashTest.c`: the CRC, sealing and the count in a row, the build ID, the start-up side on a fake store,
+`tests/host/crashTest.c`: the fault trace's golden line and its CRC (and `tools/odr_fault_trace.py --selftest` on the
+same line), the CRC, sealing and the count in a row, the build ID, the start-up side on a fake store,
 the packed report and the summary line; `ui_svc_crash.c` on fake settings, contacts and data service (the record for
 the screen, seen, clear, the report to a private or group contact, its progress and the sent mark); and
-`debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals, the deferred test).
+`debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals and the deferred test).
+`tests/host/crashCaptureTest.c`: `crash_capture.c` on a stand-in RTOS; every way in (a fault record, a stack
+overflow, out of heap, an assertion inside the capture) calls `board_rf_safe` first, with interrupts off, before the
+store and the restart. `tests/host/bootDb25dTest.c` (`test_tx_off`): the DB25-D first stage drives the transmitter
+pins off.
 `tests/host/dmrDataServiceTest.c` (`testUdpSend`): the UDP mailbox. `tests/host/radioCoreTest.c`
 (`test_ui_settings`): the two settings through the UI service, their clamps, and that they leave the theme, Up/Down
 and the accent alone. `tests/host/uiFlowTest.c` ("C crash ..."): the screen, Send to, the three modes after a
 restart, a report that can't start or fails, no prompt off the Home screen. On the radio: the debug link's CRASH TEST
 and view section 21 ([debuglink.md](debuglink.md) 3.19).
+
+## 8. Transmitter off on any fault or reset
+
+A DB25-D faulted while transmitting (2026-10-21). The capture stored its record and soft-reset the chip, and the radio
+came back stopped before the display was lit with the PA keyed, drawing about 15 W, until a power cycle. Nothing on the
+fault or reset paths turned the transmitter off, and the boards' pin set-up (`board_early_init`) ran only after the
+clock, interrupt and timer set-up. Now every board has `board_rf_safe()` (`hal/board.h`): transmitter off with
+register and GPIO writes only, callable with interrupts off and without the RTOS, any number of times. On the
+HR_C7000 it is RAM code, so it doesn't depend on the XIP flash.
+
+| Board | `board_rf_safe` |
+|---|---|
+| DM-1701 | PA_EN1 (TX supply) and PA_EN2 (APC loop) low, PA_BAND low, APC DAC (DAC1 channel 1) 0 |
+| MD-380 | APC_EN and TX_5V (5TC) low, VCO_SEL high (receive VCO), APC DAC (DAC1 channel 1) 0 |
+| DM-32UV | UHF_PA and VHF_PA low, DAC B 0 and powered down |
+| DM-1801 Pro | TX_UHF and TX_VHF low, DAC B 0 and powered down |
+| DB25-D | TX_SUPPLY_A, TX_SUPPLY_B, UHF_TX, VHF_TX low, DAC B 0 and powered down, RX_SUPPLY (PTA23) high |
+
+Each pin is forced to an output at its level (the level first), so the call also works at start-up before
+`board_early_init`. The STM32 DAC is written only when its clock is on. On the HR_C7000 the platform's `hrc_rf_safe()`
+adds the modem's own transmit state: `FM_PTT` 0 and `LAYER2_TXRX_CTRL` 0 (neither slot direction). The RF chips (AT1846S,
+SKY72310 and HR_C5000/C6000, FD6818, BK4819) are not touched: each needs a bus transaction, and with the TX supplies and
+PA selects off their output reaches no keyed PA. The next start sets them up again.
+
+Where it is called:
+
+| Path | STM32F4 | HR_C7000 |
+|---|---|---|
+| CPU fault | `stm32_fault` first (HardFault, MemManage, BusFault, UsageFault, NMI); without the crash log, `HardFault_Handler` and the NMI | `hrc_fault`, right after interrupts go off, with or without the crash log |
+| Crash capture | `crash_commit` and the soft capture (assert, stack overflow, out of heap), with interrupts off, before the store; `hal_crash_restart` | the same; `hal_crash_restart` is `hrc_soft_reset` |
+| Hooks without the crash log | stack overflow and malloc-failed hooks (`main.c`) | the same |
+| Software reset | `reboot()` (normal and ROM DFU) before `NVIC_SystemReset`; the ROM DFU entry at start-up (`stm32_sysboot_check`) | `hrc_soft_reset`, before the loader's clocks and the flash controller are put back |
+| Stub entry | `stm32_enter_stub` (replaces `board_stub_prepare`) | `enter_stub`, before the PIC, watchdog and flash controller changes |
+| Start-up | first thing in `main()`, before the ROM DFU check and the clocks | first thing in `main()`, before `hrc_clock_init` |
+| DB25-D first stage | | `boot/db25d/boot.c` drives TX_SUPPLY_A/B and UHF_TX/VHF_TX low and RX_SUPPLY high right after the power latch, before it offers the handshake (it may wait there for a host) |
+
+Every reboot request (the debug link's REBOOT, the CPS's reset, the storage UI) goes through `board.system->reboot`, so
+it is covered by the reset row. The time from power-on to the first `board_rf_safe` is the vendor bootloader's (and on
+the DB25-D the first stage's handful of instructions), which ODR can't change.
+
+Unverified on hardware: that each radio's transmitter actually stops (current and RF) at a crash while keyed, and that
+the DAC B write before `hrc_clock_init` is harmless on every HR_C7000 radio (the vendor loaders leave the peripheral
+clock gates on, as far as known: `hardware-dm32.md` 1.1). The debug link's crash test is refused while transmitting,
+so a bench check needs a local test build that lets it through: keyed at the lowest power, the trap, then the supply
+current and the SDR bench's capture drop to receive levels within a millisecond of the crash, and the radio restarts
+receiving.
