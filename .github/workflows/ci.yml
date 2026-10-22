@@ -9,12 +9,12 @@
 #   unit tests the host tests (64 suites, tshark pcap checks) run once, built with --coverage and under ASan and UBSan
 #              (gcovr's report as an artifact, totals in the job summary); the UI screen gallery
 #   checks     Python checks (doc links among them), license checks
-#   firmware   one job per platform (stm32f4, hrc7000): every board on it from the registry (tools/ci.sh --platform),
-#              each build option value too, with zero warnings, the size report and the app region fit. The compiler
-#              comes from .github/actions/toolchain (platform.toml's pin); C-SKY builds run in the csky-elf image
-#              (repository variable ODR_CSKY_IMAGE, default platform.toml's image) unless the runner has csky-elf GCC,
-#              and are skipped with a notice where that image isn't available (GitHub's runners until it is in a
-#              registry)
+#   firmware   one job per toolchain (Arm, C-SKY): every board built with it, from the registry (tools/ci.sh
+#              --toolchain), each build option value too, with zero warnings, the size report and the app region fit.
+#              The compiler comes from .github/actions/toolchain (platform.toml's pin); C-SKY builds run in the
+#              csky-elf image (repository variable ODR_CSKY_IMAGE, default platform.toml's image) unless the runner has
+#              csky-elf GCC, and are skipped with a notice where that image isn't available (GitHub's runners until
+#              it is in a registry)
 # The feature matrix and the other long builds run nightly (nightly.yml), the radio tests by hand (hil.yml).
 # Runs on Gitea Actions (the self-hosted runner) and GitHub Actions alike; a newer push to the same branch cancels
 # the run in progress. On GitHub the repository variable ODR_CI_RUNNER (a runner label) moves the jobs from the
@@ -124,17 +124,20 @@ jobs:
         run: tools/ci.sh --steps registry,python,licenses
 
   firmware:
-    # one job per platform, not per radio: one checkout and one toolchain for every board on it (tools/ci.sh --platform
-    # takes them from the registry, so a new radio joins with no edit here); each runner has 4 cores
-    name: firmware (${{ matrix.platform }})
+    # one job per toolchain, not per radio or platform: one checkout and one compiler for every board built with it
+    # (tools/ci.sh --toolchain takes them from the registry, so a new radio joins with no edit here); 4 cores each
+    name: firmware (${{ matrix.name }})
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
     runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        # platform/*/platform.toml; a new platform also gets its set-up in .github/actions/toolchain
-        platform: [stm32f4, hrc7000]
+        # the [toolchain] ids of platform/*/platform.toml, with their names; a new platform on a toolchain listed here
+        # needs no edit, a new toolchain gets an entry here and its set-up in .github/actions/toolchain
+        include:
+          - { toolchain: arm, name: Arm }
+          - { toolchain: csky, name: C-SKY }
     permissions:
       contents: read
       packages: read   # pulling a private ghcr.io csky-elf image with the job token
@@ -148,7 +151,7 @@ jobs:
         id: tc
         uses: ./.github/actions/toolchain
         with:
-          platform: ${{ matrix.platform }}
+          toolchain: ${{ matrix.toolchain }}
           image: ${{ vars.ODR_CSKY_IMAGE }}
           registry: ${{ vars.ODR_CSKY_REGISTRY }}
           # a read-only registry token (secret); on GitHub a ghcr.io package linked to this repository takes the job's
@@ -158,13 +161,13 @@ jobs:
       - name: Default builds, warnings, size and app region fit
         env:
           RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
-          PLATFORM: ${{ matrix.platform }}
+          TOOLCHAIN: ${{ matrix.toolchain }}
         run: |
           set -u
           rc=0
-          $RUN tools/ci.sh --quick --steps firmware --platform "$PLATFORM" || rc=$?
+          $RUN tools/ci.sh --quick --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
           if [ "$rc" = 3 ]; then
-            echo "::notice::$PLATFORM builds skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::$TOOLCHAIN builds skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
@@ -172,7 +175,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: firmware-${{ matrix.platform }}
+          name: firmware-${{ matrix.toolchain }}
           path: |
             build/ci/size-report.md
             build/ci/*.log
