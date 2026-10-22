@@ -10,7 +10,8 @@ the values it changed.
 
 Pass criteria:
 - test_features_section: every key present; battery one of ok / low / critical, battery_pct 0-100, battery_mv 5000
-  to 9000 (a 2S Li-ion pack; 0 only when the board has no ADC), power_off 0.
+  to 9000 (a 2S Li-ion pack; 0 only when the board has no ADC), or none with both 0 on a board without a battery (a
+  mobile); power_off 0.
 - test_settings_round_trip: SETTING scan_hold_s 7 (8 if it was 7) shows in set.scan_hold_s within 1 s, and the old
   value again within 1 s after it is put back.
 - test_beep_counts: a BEEP error request counts in beep.played or beep.no_stream (one of them, by 1); when played,
@@ -151,10 +152,13 @@ def test_features_section(radio):
     f = features(radio)
     missing = [k for k in FEATURE_KEYS if k not in f]
     assert not missing, f"missing keys in the features section: {missing}"
-    assert f["battery"] in ("ok", "low", "critical"), f
-    assert 0 <= as_int(f["battery_pct"], -1) <= 100, f
-    mv = as_int(f["battery_mv"], -1)
-    assert mv == 0 or 5000 <= mv <= 9000, f"battery_mv {mv}"
+    if f["battery"] == "none":      # a board without a battery (a mobile): percent and millivolts 0 (debuglink.md)
+        assert f["battery_pct"] == "0" and f["battery_mv"] == "0", f
+    else:
+        assert f["battery"] in ("ok", "low", "critical"), f
+        assert 0 <= as_int(f["battery_pct"], -1) <= 100, f
+        mv = as_int(f["battery_mv"], -1)
+        assert mv == 0 or 5000 <= mv <= 9000, f"battery_mv {mv}"
     assert f["power_off"] == "0", f
     print({k: f[k] for k in ("battery", "battery_pct", "battery_mv", "beep.built", "scan.built")})
 

@@ -240,16 +240,22 @@ class Radio:
 
     @contextlib.contextmanager
     def vfo_session(self):
-        """Enter the VFO, yield its frequency, put the VFO frequency back afterwards (restore() does the rest)."""
+        """Enter the FM VFO, yield its frequency, put the VFO's frequency and mode back afterwards (restore() does the
+        rest). The VFO's mode is a kept setting: a run cut short in a DMR VFO test leaves it DMR."""
         L = self.link
         if self.core().get("vfo") != "1":
             self._req_until(lambda: L.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
         hz = int(self.core()["rx_hz"])
+        mode = self.core().get("mode")
+        if mode != "fm":
+            self._req_until(lambda: L.dmr_fields(mode="fm"), lambda v: v.get("mode") == "fm", "FM VFO")
         try:
             yield hz
         finally:
             if self.core().get("rx_hz") != str(hz):
                 self._req_until(lambda: L.vfo_set(hz), lambda v: v.get("rx_hz") == str(hz), "VFO frequency back")
+            if self.core().get("mode") != mode:
+                self._req_until(lambda: L.dmr_fields(mode=mode), lambda v: v.get("mode") == mode, "VFO mode back")
 
     def find_channel(self, rx_hz, mode=None):
         """Select the first channel of the current zone receiving on rx_hz (and in mode 'fm' / 'dmr'); returns its
