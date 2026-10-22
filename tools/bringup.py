@@ -11,8 +11,8 @@ checks it, and the records of those runs (docs/testing/results/<board>/). tests/
   tools/bringup.py check                        host-side consistency (tools/ci.sh)
 
 A radio's state for a feature is resolved, never typed:
-  n/a          the switch is in the board's BOARD_UNSUPPORTED (a reason is required)
-  unsupported  board.toml [features.<id>] state = "unsupported": planned, not working yet (a reason is required)
+  n/a          the switch is in the board's BOARD_UNSUPPORTED (the reason: board.toml [features] <id>)
+  unsupported  board.toml [features] <id> state = "unsupported": planned, not working yet (a reason is required)
   off          the board's default build leaves the switch off: nothing to check
   required     anything else: the feature's tests must pass on the radio
 A required feature's status never understates it. The newest run record that ran it decides: pass, fail, partial
@@ -54,73 +54,30 @@ def die(msg):
 
 # ── board data ──
 #
-# TODO(registry): at integration with the board registry (tools/boards.py, plan commit 1) this whole section becomes
-# boards.load(): unsupported and config from the Board's derived build values, overrides from its [features.*]
-# table, debuglink_names from its identity. Everything below reads boards only through _boards().
-
-def _make_value(board, target):
-    r = subprocess.run(["make", "-s", "--no-print-directory", f"BOARD={board}", target], cwd=ROOT,
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        die(f"make BOARD={board} {target} failed: {r.stderr.strip()[-400:]}")
-    return r.stdout
-
-
-def _unsupported_reason(board):
-    """The comment block right above BOARD_UNSUPPORTED in the board's config.mk: the reason until board.toml has
-    one (TODO(registry): board.toml [features.<id>] reason)."""
-    path = os.path.join(ROOT, "boards", board, "config.mk")
-    if not os.path.exists(path):
-        return ""
-    lines = open(path).read().splitlines()
-    for i, line in enumerate(lines):
-        if re.match(r"\s*BOARD_UNSUPPORTED\s*[:+?]?=", line):
-            j = i
-            while j > 0 and lines[j - 1].startswith("#"):
-                j -= 1
-            return " ".join(x.lstrip("#").strip() for x in lines[j:i]).strip()
-    return ""
-
-
-def _debuglink_names(board):
-    """The board names VERSION can report: board_t .name and BOARD_NAME strings in the board's sources."""
-    names = set()
-    d = os.path.join(ROOT, "boards", board)
-    for fn in sorted(os.listdir(d)):
-        if fn.endswith((".c", ".h", ".mk")):
-            text = open(os.path.join(d, fn), errors="replace").read()
-            names.update(re.findall(r'\.name\s*=\s*"([^"]+)"', text))
-            names.update(re.findall(r'#\s*define\s+BOARD_NAME\s+"([^"]+)"', text))
-    return sorted(names)
-
+# Everything below reads boards only through _boards(), and _boards() only through the board registry
+# (tools/boards.py): the board list, the debug link names, board.toml [features] (each n/a switch's reason, the
+# unsupported marks) and the build's own values (BOARD_UNSUPPORTED and each switch's default, by make).
 
 _BOARDS = None
 
 
 def _boards():
-    """Every board: id -> {unsupported, unsupported_reason, config, overrides, debuglink_names}. The one place this
-    tool reads board data (TODO(registry): boards.load())."""
+    """Every board: id -> {unsupported, config, overrides, debuglink_names}."""
     global _BOARDS
     if _BOARDS is not None:
         return _BOARDS
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import boards as registry
+    sws = switches()
     out = {}
-    bdir = os.path.join(ROOT, "boards")
-    for b in sorted(os.listdir(bdir)):
-        if not os.path.exists(os.path.join(bdir, b, "board.mk")):
-            continue
-        config = {}
-        for line in _make_value(b, "print-config").splitlines():
-            k, _, v = line.partition("=")
-            if k:
-                config[k.strip()] = v.strip()
-        overrides = {}
-        toml = os.path.join(bdir, b, "board.toml")
-        if os.path.exists(toml):
-            with open(toml, "rb") as f:
-                overrides = tomllib.load(f).get("features", {})
-        out[b] = {"unsupported": set(_make_value(b, "print-unsupported").split()),
-                  "unsupported_reason": _unsupported_reason(b), "config": config, "overrides": overrides,
-                  "debuglink_names": _debuglink_names(b)}
+    try:
+        for bid, b in registry.load(ROOT).items():
+            mk = registry.make_vars(ROOT, bid, ["BOARD_UNSUPPORTED"] + [f"CONFIG_{s}" for s in sws])
+            out[bid] = {"unsupported": set(mk.get("BOARD_UNSUPPORTED", "").split()),
+                        "config": {s: mk.get(f"CONFIG_{s}", "") for s in sws},
+                        "overrides": b.get("features", {}), "debuglink_names": b.debuglink_names()}
+    except registry.RegistryError as e:
+        die(f"board registry: {e}")
     _BOARDS = out
     return out
 
@@ -234,7 +191,7 @@ def resolve(board, e):
     if e["switch"] and e["switch"] in bd["unsupported"]:
         if ov and ov.get("state") == "unsupported":
             return "unsupported", ov.get("reason", "")
-        return "n/a", (ov or {}).get("reason") or bd["unsupported_reason"]
+        return "n/a", (ov or {}).get("reason", "")
     if ov:
         return ov.get("state", "required"), ov.get("reason", "")
     if e["switch"] and bd["config"].get(e["switch"]) != "y":
@@ -614,7 +571,8 @@ def check(feats, boards, records, found, all_switches):
         for e in feats:
             state, reason = resolve(b, e)
             if state in ("n/a", "unsupported") and not reason:
-                errs.append(f"{b}: {e['id']} is {state} without a reason")
+                errs.append(f"{b}: {e['id']} is {state} without a reason (boards/{b}/board.toml [features] "
+                            f"{e['id']} = {{ state = \"{state}\", reason = \"...\" }})")
     for b, recs in records.items():
         if b not in boards:
             errs.append(f"docs/testing/results/{b}: no such board")

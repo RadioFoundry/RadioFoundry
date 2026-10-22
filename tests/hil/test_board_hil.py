@@ -1,27 +1,25 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """The HIL tests' board data without a radio (odr_hil.board_names, board_id, board_hil): every board's VERSION name
-maps back to it, and every expectation names a board and a known key."""
-import os
-
+maps back to it through the board registry, and the health checks pass, fail and skip on a fake radio built from a
+board's own [hil] table."""
 import odr_hil
 
 
 def test_every_board_name_maps_back():
     names = odr_hil.board_names()
-    assert names, "no boards found under boards/"
+    assert names, "no boards in the registry"
     for b, ns in names.items():
-        assert ns, f"boards/{b}: no board_t .name or BOARD_NAME string"
+        assert ns, f"boards/{b}: no debug link name"
         for n in ns:
             assert odr_hil.board_id(n) == b, n
     assert odr_hil.board_id("no such radio") is None
 
 
-def test_expectations_name_a_board_and_known_keys():
-    for b, hil in odr_hil._HIL_UNTIL_REGISTRY.items():
-        assert os.path.exists(os.path.join(odr_hil.ROOT, "boards", b, "board.mk")), b
+def test_expectations_use_known_keys():
+    for b in odr_hil.board_names():
+        hil = odr_hil.board_hil(b)
         assert set(hil) <= set(odr_hil.HIL_KEYS), (b, set(hil) - set(odr_hil.HIL_KEYS))
-        assert odr_hil.board_hil(b) == {**hil, **odr_hil.board_hil(b)}
     assert odr_hil.board_hil(None) == {}
 
 
@@ -34,7 +32,7 @@ class FakeLink:
 
 
 class FakeRadio:
-    def __init__(self, name, lines, features=("HOSTLINK", "DEBUGLINK", "DMR"), display="240x320x4"):
+    def __init__(self, name, lines, features=("DMR",), display="1x1x1"):
         self.link, self.name, self.feats, self.display = FakeLink(lines), name, set(features), display
 
     def version(self, fresh=False):
@@ -61,16 +59,24 @@ def outcome(fn, radio):
 
 def test_health_checks_read_the_expectations():
     import test_health as h
-    name = sorted(odr_hil.board_names()["dm32"])[0]
-    good = FakeRadio(name, ["flash C84018 cal factory", "txc 131", "pa 900 1000 1100 1200", "bat 2000 7400",
-                            "codec 049"])
-    for fn in (h.test_display, h.test_build_features, h.test_data_flash, h.test_calibration, h.test_battery,
-               h.test_codec_present):
+    full = [b for b in sorted(odr_hil.board_names()) if set(odr_hil.board_hil(b)) == set(odr_hil.HIL_KEYS)
+            and odr_hil.board_hil(b)["calibration"]]
+    assert full, "no board has every [hil] key: nothing to check the checks against"
+    b = full[0]
+    hil = odr_hil.board_hil(b)
+    name = sorted(odr_hil.board_names()[b])[0]
+    low, high = hil["battery_mv"]
+    feats = set(hil["features"]) | {"DMR"}
+    good = FakeRadio(name, [f"flash {hil['flash_jedec'][0]} cal factory", "txc 131", "pa 900 1000 1100 1200",
+                            f"bat 2000 {(low + high) // 2}", f"codec {hil['codec'][0]}"],
+                     features=feats, display=hil["display"])
+    checks = (h.test_display, h.test_build_features, h.test_data_flash, h.test_calibration, h.test_battery,
+              h.test_codec_present)
+    for fn in checks:
         assert outcome(fn, good) == "passed", fn.__name__
-    bad = FakeRadio(name, ["flash EF4018 cal none", "txc 128", "pa 1408 1408 1408 1408", "bat 2000 3000",
-                           "codec 041"], features=("USB", "DMR"), display="160x128x1")
-    for fn in (h.test_display, h.test_build_features, h.test_data_flash, h.test_calibration, h.test_battery,
-               h.test_codec_present):
+    bad = FakeRadio(name, ["flash 000000 cal none", "txc 128", "pa 1408 1408 1408 1408", f"bat 2000 {high + 1}",
+                           "codec 999"], features=set(hil["no_features"]) | {"DMR"}, display="1x1x1")
+    for fn in checks:
         assert outcome(fn, bad) == "failed", fn.__name__
     # a board without expectations: nothing to compare (other_board); a line the firmware doesn't print: not_built
     other = FakeRadio("no such radio", [])

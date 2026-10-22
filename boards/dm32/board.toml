@@ -75,3 +75,23 @@ shape = "handheld-tall"
 body = "#22252a"
 accent = "#e0a526"
 lens = [24, 34]
+
+
+# What the HIL health checks expect of this radio (tests/hil/test_health.py; a key left out skips its check):
+# display (VERSION display=), features (VERSION features the build must have), no_features (ones it must not),
+# flash_jedec (accepted data flash JEDEC ids), calibration (the diagnostics show the factory calibration), battery_mv
+# ([low, high] a sane reading lies in), codec (accepted stock codec versions)
+[hil]
+display = "240x320x4"
+features = ["HOSTLINK", "DEBUGLINK"]
+no_features = ["USB"]
+flash_jedec = ["C84018", "852018"]
+calibration = true
+battery_mv = [5500, 8800]
+codec = ["049", "046"]
+
+# Why each switch in config.mk's BOARD_UNSUPPORTED is n/a on this radio, by feature (tests/hil/features.toml):
+# tools/bringup.py shows the reason. "unsupported" instead marks a feature planned but not working yet
+[features]
+usb = { state = "n/a", reason = "No USB data port: the host link runs on the programming cable's UART" }
+usb_network = { state = "n/a", reason = "No USB data port for the network adapter: PPP on the host UART stands in" }
