@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// hal_system_t for the HR_C7000: memory reads and reboot. No chip identity registers are known (the eFuse behind SPI
-// master 3 is not mapped out), so chip() reports nothing.
+// hal_system_t for the HR_C7000: chip identity, memory reads and reboot. No chip identity registers are known (the eFuse
+// behind SPI master 3 is not mapped out), so the UID is the board's data flash's unique ID (hrc_chip_set_uid), and
+// chip() reports nothing until the board has read it.
 #include <string.h>
 #include "config.h"
 #include "platform.h"
@@ -12,10 +13,37 @@
 #define SOFT_RESET_SPINS	1000000u
 #define WDT_KEY			0x5ADA7200u
 
+static uint32_t uid[3];
+static bool have_uid;
+
+void hrc_chip_set_uid(const uint8_t *id, uint32_t len)
+{
+	uint32_t w[4] = { 0 };
+	bool varies = false;
+	for (uint32_t i = 0; i < len && i < sizeof(w); i++) {
+		w[i / 4] |= (uint32_t)id[i] << (8u * (i % 4));
+		varies = varies || id[i] != id[0];
+	}
+	if (!varies) {
+		return;		// all one value: a bus that read nothing, not an ID
+	}
+	uid[0] = w[0] ^ w[3];	// all 16 bytes count: the token (uid[0]) differs whichever part of the ID varies
+	uid[1] = w[1];
+	uid[2] = w[2];
+	have_uid = true;
+}
+
 static bool chip(hal_chip_t *c)
 {
-	(void)c;
-	return false;
+	if (!have_uid) {
+		return false;
+	}
+	memset(c, 0, sizeof(*c));
+	c->uid[0] = uid[0];
+	c->uid[1] = uid[1];
+	c->uid[2] = uid[2];
+	c->family = HAL_CHIP_HRC7000;
+	return true;
 }
 
 static void rd(uint32_t addr, void *dst, size_t n)

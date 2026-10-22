@@ -34,6 +34,7 @@ static bool chip(hal_chip_t *c)
 	c->uid[1] = *(volatile const uint32_t *)(UID_BASE_ADDR + 4u);
 	c->uid[2] = *(volatile const uint32_t *)(UID_BASE_ADDR + 8u);
 	c->optcr = FLASH->OPTCR;
+	c->family = HAL_CHIP_STM32F4;
 	return true;
 }
 
