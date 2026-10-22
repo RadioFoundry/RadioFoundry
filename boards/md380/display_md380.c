@@ -58,8 +58,8 @@ void md380_lcd_pins_fsmc(void)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();	// the port registers are shared with other pins on PD and PE
-	set_af12(GPIOD, KEY_COLS_PORTD);
-	set_af12(GPIOE, KEY_COLS_PORTE);
+	set_af12(GPIOD, STM32_FSMC_D0_D3);
+	set_af12(GPIOE, STM32_FSMC_D4_D7);
 	__set_PRIMASK(primask);
 }
 
