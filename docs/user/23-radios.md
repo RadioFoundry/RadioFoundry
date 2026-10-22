@@ -6,13 +6,15 @@ The rest of this manual describes what ODR does on every radio. This chapter lis
 which physical key does each job, the power levels, the battery, the power switch, the display, what a radio lacks,
 and what has been checked on it.
 
+<!-- generated: tools/boards.py docs radios; edit boards/*/board.toml [status] -->
 | Radio | Also sold as | What works |
 |---|---|---|
 | [Baofeng DM-1701](#baofeng-dm-1701) | Retevis RT84 | FM, DMR voice and data, text messages, alerts, emergency, scan, the hotspot, single frequency repeating, each split duplex half and the USB network services work on air. Open: standalone SFR and a two-radio split duplex pair. |
-| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the VHF image. Check your TX frequency (below). |
-| [Baofeng DM-32UV](#baofeng-dm-32uv) | | FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and each split duplex half work on air. Open: FM deviation at 12.5 kHz and an outdoor GPS fix. |
+| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | Baofeng DM-1801 | FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX. |
+| [Baofeng DM-32UV](#baofeng-dm-32uv) |  | FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and each split duplex half work on air. Open: FM deviation at 12.5 kHz and an outdoor GPS fix. |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. Open: the older FD6818 batches and the Retevis RT73. |
-| [Baofeng DM-1801 Pro](#baofeng-dm-1801-pro) | | FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, single frequency repeating, the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX. |
+| [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
+<!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
 
@@ -501,10 +503,12 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 These radios aren't built in a release yet. An in-progress port is on its own branch. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
 models it covers.
 
-| Radio | Note |
+<!-- generated: tools/boards.py docs planned; edit the Port cells of docs/spec/radios.md -->
+| Radio | Status |
 |---|---|
-| TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned as a variant of the DM-1701 board |
-| TYT MD-9600, Retevis RT90 | Mobile. In progress ([#112](https://github.com/sfowlr/OpenDigitalRadio/pull/112)) |
-| Radioddity GD-77 family | In progress ([#111](https://github.com/sfowlr/OpenDigitalRadio/pull/111)). Needs a new processor platform |
-| Radioddity GD-88 | In progress ([#132](https://github.com/sfowlr/OpenDigitalRadio/pull/132)) |
-| Radioddity DB40-D | Mobile. Planned. Hardware needed |
+| TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port ([hardware-mduv380.md](../spec/hardware-mduv380.md)). |
+| TYT MD-9600, Retevis RT90 (mobile) | In progress ([#112](https://github.com/sfowlr/OpenDigitalRadio/pull/112)). Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD. |
+| Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/sfowlr/OpenDigitalRadio/pull/111)). Hardware needed. A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
+| Radioddity GD-88 | In progress ([#132](https://github.com/sfowlr/OpenDigitalRadio/pull/132)). Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
+| Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
+<!-- end generated -->
