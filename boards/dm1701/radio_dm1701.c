@@ -387,7 +387,7 @@ static bool rf_to_rx(void)
 	r.rf_isr_dirty = true;
 	if (r.rf_direct) {
 		r.rf_direct = false;
-		(void)hrc6000_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref);
+		(void)hrc_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref);
 		rx_supply(true, r.rx_uhf);
 		if (rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_RX))) {
 			r.rf_rx_pending = false;
@@ -437,7 +437,7 @@ static bool rf_key(void)
 			r.rf_skipped++;
 			return false;
 		}
-		(void)hrc6000_write(&r.modem, 4, 0x04, (uint8_t)ref);
+		(void)hrc_write(&r.modem, 4, 0x04, (uint8_t)ref);
 		r.rf_direct = true;
 		goto pa;
 	}
@@ -553,7 +553,7 @@ static void rf_resync(void)
 	r.rf_rx_pending = false;
 	if (r.rf_direct) {	// a transmission cut during a direct burst: the MOD1 offset back to the calibrated value
 		r.rf_direct = false;
-		count(hrc6000_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref));
+		count(hrc_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref));
 	}
 	if (r.rx_valid) {
 		count(at1846s_set_freq(&r.rf, r.rx_hz));	// forced writes of 0x30 (idle), 0x29, 0x2A
