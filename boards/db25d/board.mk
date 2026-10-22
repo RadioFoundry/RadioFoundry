@@ -27,3 +27,6 @@ BOOT_STAGE := db25d
 BOOT_SIZE  := 0x1000
 BOOT_DEFS  := -DBOOT_WINDOW=10 -DAPP_RESUME=0x0300D000
 BOOT_SIGNATURE := 2c1101c0
+# The 160x128 panel in 16 colors (display_db25d.c): the 4 bpp frame buffer is 10240 B and 128 rows, not the 40 KB / 160 row
+# RGB565 default. A screen has at most 16 colors (core/ui/gfx.h); with CONFIG_FONT_AA the edge grays compete for them
+MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=10240u -DGFX_MAX_ROWS=128u

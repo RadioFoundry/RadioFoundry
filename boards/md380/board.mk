@@ -19,3 +19,6 @@ BOARD_DIRS := boards/md380 drivers/rf/sky72310 drivers/rf/subaudio drivers/modem
 BOARD_USB_DIRS := drivers/usb
 HAL_MODULES := hal hal_cortex hal_rcc hal_rcc_ex hal_gpio hal_pwr hal_pwr_ex hal_flash hal_flash_ex hal_dma \
 	hal_spi hal_tim hal_tim_ex hal_adc hal_adc_ex hal_dac hal_dac_ex hal_sram ll_fsmc
+# The 160x128 panel in 16 colors (display_md380.c): the 4 bpp frame buffer is 10240 B and 128 rows, not the 40 KB / 160 row
+# RGB565 default. A screen has at most 16 colors (core/ui/gfx.h); with CONFIG_FONT_AA the edge grays compete for them
+MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=10240u -DGFX_MAX_ROWS=128u

@@ -14,3 +14,6 @@ BOARD_DIRS := boards/dm1801pro drivers/rf/fd6818 drivers/rf/subaudio drivers/mod
 MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ram_lo"'
 # The stock codec host (platform/hrc7000/vocoder.c): its profile id is dm1801pro-049
 MCU_DEFS   += -DHRC_CODEC_BOARD='"dm1801pro"'
+# The 128x64 panel is 1 bit per pixel (display_dm1801pro.c): 1 KB of frame buffer and 64 rows, not the 40 KB / 160 row
+# default
+MCU_DEFS   += -DGFX_FB_BYTES=1024u -DGFX_MAX_ROWS=64u
