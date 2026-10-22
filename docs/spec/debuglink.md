@@ -490,7 +490,12 @@ View keys: `split.built`, `split.role` (normal, tx, rx), `split.offered` (INFO b
 `split.underruns2`, `split.at_host` (the host's AT mask now), `split.at_on_air`, `split.cach` (CACH bursts sent),
 `split.idle`, `split.silence`, `split.closed`, `split.slc_taken`, `split.slc_bad`; RX half: `split.epoch_us`,
 `split.period_ns`, `split.epoch_age_s` (65535 never), `split.offset_us` (the last phase residual), `split.track_us`
-(the anchor's correction), `split.busy`, `split.labeled1` / `split.labeled2`, `split.unlabeled`. No GET_VIEW section
+(the anchor's correction), `split.busy`, `split.labeled1` / `split.labeled2`, `split.unlabeled`; ALIGN and the
+scheduled stream (`split-duplex.md` 3.8, 3.9): `split.stream`, `split.align` (STATUS 46), `split.phase_us` (STATUS
+42-45), `split.snap_adj_us` (the learned restart delay), `split.cbase` (ALIGN counter minus the driver's),
+`split.sched_sent`, `split.sched_late`, `split.sched_refused`, `split.sched_replaced`, `split.sched_cooldown`,
+`split.slew_steps` / `split.slew_us` (slot trims asked of the driver and their sum, µs), `split.meta_sent` (RX_META
+events, 3.10). No GET_VIEW section
 is added, so section numbers stay the same in every build. `odr_debug.py split view | variant N [REG=VAL ...]`.
 
 ### 3.16 APRS

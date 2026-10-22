@@ -171,8 +171,8 @@ SYS_INTERP_LIST bits (DS):
 | 0x400 | LAYER2_CONTROL | b7 txen, b6 rxen, b5 layer2slot, b4 txtmp_master_mode, b3 rx_master_auto_update, b2 tx_slave_auto_mode, b1 tx_master_mode (active TX timing), b0 rx_master_mode |
 | 0x404 | LAYER2_SLOTON | write: b0 dll_tx_slot_on, b2 dll_rx_slot_on (establish TX / RX slot in active mode), plus self-clearing open/close strobes b5–b13 (b5 dll_rx_open_tx: build the TX slot from the receive slot, with tx_slave_auto_mode 0 and b0 set; DS 10.2.2.17); read: b31 TX slot on, b29 RX slot on |
 | 0x408 | LAYER2_TXRX_CTRL | b31 tx_complete_cpu (continuous mode only), b23 syncfail_layer2_rx (drop and re-acquire RX slot sync), b22 syncfail_layer2_tx, b15 begin_v_layer2 (voice access success), b7 txnextsloten (transmit in the next slot), b6 rxnextsloten (receive in the next slot), b0 autotest |
-| 0x40C | LAYER2_SLOT_CNT | slot counter presets (unused) |
-| 0x410 | LAYER2_MAX_CNT | slot fine tune ±n × 100 us (unused) |
+| 0x40C | LAYER2_SLOT_CNT | active timing presets: b31 / b30 RX / TX slot number, b29 + b28:20 TX temporary slot counter, b19 + b18:10 RX slot counter, b9 + b8:0 TX slot counter (each enable bit write-clear). In the physical layer mode a TX counter preset (in bits or in symbols) left the slot timing where it was (bench 2026-10-21, 2.10) |
+| 0x410 | LAYER2_MAX_CNT | slot length trim: b15 sign (1 shorter) and b11:8 RX, b7 sign and b3:0 TX, n × 100 us. No effect on the physical layer's slot timer (2.10 finding 13) |
 | 0x414 | LAYER2_SLOT_UPDATE | slot re-sync strobes (unused) |
 | 0x418 | LAYER2_SEND_TYPE | b31:22 codec type for custom data types 11–15; b12 RC in data sync; b11 data EMB RC source; b10 / b9 BS forwarding; b8 crc_calc_sel (0 = chip computes CRCs); **b7:4 data type / voice burst index; b3 1 = voice (or RC) burst, 0 = data/control burst; b2 second data header; b1:0 LCSS** |
 | 0x41C | LAYER2_STATUS | b31 TX slot number, b30 RX slot number, b17:9 RX slot bit count, b8:0 TX slot bit count |
@@ -337,7 +337,7 @@ Datasheet summary (DS):
 | BS_CACH b1:0 | AT and TC "for BS transmit mode" |
 | RDY_NEXT_SHORT_LC interrupt (bit 17) | the chip asks for the next CACH short LC |
 | BS_INTER_IN / BS_INTER_OUT pins (P12 / R12) | baseband BS interrupt in and out, apparently to link two chips |
-| BS_SECOND_REG, BS_STATUS, GPS bits | same-frequency simulcast from a GPS pulse. Not needed here |
+| BS_SECOND_REG, BS_STATUS, GPS bits | same-frequency simulcast from a GPS pulse (2.9a). Not needed here |
 
 Findings:
 
@@ -359,6 +359,28 @@ with MCU data in both slots, `tx_voice_source`, `bs_rx_mode` (receive BS, label 
 pins, and two chips. The test was a register switch in the middle of an ODR call, so the one-slot cadence in 6 may come
 from ODR's own TX loop and not the chip.
 
+### 2.9a gps_pps_en: the simulcast slot lock (DS only)
+
+LAYER2_BS_MODE b3 `gps_pps_en` enables what the datasheet calls same-frequency simulcast (DS 10.2.2.25-10.2.2.27).
+It is a BS mode feature: the chip disciplines its BS slot timing to a GPS second pulse, so several repeaters on one
+frequency send each slot at the same instant. Tag: DS; nothing below has been tried.
+
+| Item | Content (DS) |
+|---|---|
+| BS_MODE b5:4 `gps_update_rate` | how often the slot timing is corrected from the pulse: every 6 s, 3 s or 1 s |
+| BS_SECOND_REG b5:0 | the GPS second (0-59), written by the MCU from the receiver's time messages |
+| BS_STATUS | `gps_lcss_cnt` (the CACH LCSS phase), `gps_bit_cnt` (a 30 ms slot counter run from the pulse), `bs_slot_num` (the 60 ms frame number in the 60 s cycle), `bs_second_lock` |
+| System interrupt b8 `gps_slot_abnormal`, b7 `gps_lost_interp` | the pulse's slot timing jumped; the pulse was lost |
+
+Answers for the split duplex TX half (`split-duplex.md` 3.8, INFO capability bit 5):
+
+1. It needs a pulse on a chip pin. The datasheet names none for it; the only candidate is BS_INTER_IN (P12, "BS sync
+   interrupt input"). Where an HR_C7000 radio in `boards/` has a GPS module, it is wired to an MCU UART only, and
+   no pulse line to the chip or to the MCU is documented. So no radio here can use it.
+2. It locks the chip's BS mode slot timing, which the TX half doesn't use (it sends in the physical layer mode, 2.10).
+   Whether it also moves the physical layer's slot timer is unknown.
+3. The host-side grid (ALIGN with the host's clock on NTP or a GPS-disciplined source) gives the same slot numbering
+   without a pulse, to the clock sync's error bound. A PPS input report stays a follow-up for a board that wires one.
 
 ### 2.10 Physical layer transmit: the split duplex TX half
 
@@ -440,6 +462,13 @@ their CACH TC). Tag: BENCH.
 | # | Finding | Evidence |
 |---|---|---|
 | 11 | The slot set up at a boundary is on air from about 5 ms after the boundary's interrupt. The first driver took it to go out one slot later and named the boundary after the slot before: the epoch was one slot early, and a subscriber's TS2 call through a pair went up labeled TS1 and was repeated on TS1 | before the fix TS2 bursts started 5.0 ms after the epoch's "TS1" and TS1 bursts 25.0 ms before it; after it TS1 bursts start 4.6 ms after the epoch (six epochs each). The DM-1701's TX half measures +2.2 ms the same way |
+| 12 | The slot timer restarts when own TX timing is enabled: LAYER2_CONTROL 0xC0 (passive), then 0x82 at a chosen time. The first boundary then comes about 1.2 ms before a whole slot after the write; with that learned, the boundaries land 9-120 us from the host's grid (ALIGN, `split-duplex.md` 3.8; the host's clock sync bound was 3 ms). Passive timing keeps counting while the driver waits, so it takes no boundary then. Redoing WORK_MODE through FM with LAYER2_CONTROL left at 0x82, or a LAYER2_SLOT_CNT TX counter preset, doesn't move it | `test_split_align`, DM-1801 Pro: 15 ALIGNs in five runs, all aligned; the learned restart delay -1167 us |
+
+Slewing (`split-duplex.md` 3.8, capability bit 2), DM-1801 Pro, 2026-10-22, no RF. Tag: BENCH.
+
+| # | Finding | Evidence |
+|---|---|---|
+| 13 | LAYER2_MAX_CNT (2.5, DS 10.2.2.20: b7 sign and b3:0 n × 100 µs for TX slots, b15 and b11:8 for RX) does not move the physical layer's slot timer. Tried: the TX trim for one slot (written at a boundary, cleared at the next), the TX and RX trims together, and both held set. The boundaries stayed where they were: the HR_C7000 driver offers no `bs_slew`, so a keyed TX half reports its drift and re-aligns at the next unkey, as the HR_C6000 does | `test_split_slew` with a scratch driver: 35 trims of +100 µs asked in 5 s, the phase unchanged (-1535, -1696, -1464 µs in the three runs) |
 
 ---
 
@@ -844,3 +873,5 @@ All BIN; none tested by us on air.
    reception?
 8. BS mode (2.9): where the chip's CACH AT, TC and short LC come from (likely BS_CACH and a short LC written at every
    RDY_NEXT_SHORT_LC). The split duplex TX half doesn't need it: it uses the physical layer (2.10).
+9. A slot length trim for the physical layer mode (2.10 finding 13): LAYER2_MAX_CNT has none. Whether the trim works
+   in the layer 2 timing (LAYER2_CONTROL b5 layer2slot), and any other register that does, is untested.
