@@ -22,11 +22,11 @@ It's early. Read the status section before you flash anything.
 
 | Radio | Builds | Host tests | On the radio | Support |
 |---|:---:|:---:|:---:|---|
-| Baofeng DM-1701 | ● | ● | ◐ | First target. Most features pass on-air tests: FM, DMR voice and data, text, alerts, emergency, hotspot, MMDVM SFR, split duplex (each half alone), scan, and the network services. Still open: Standalone SFR and a two-radio split duplex pair (below) |
-| Baofeng DM-32UV | ● | ● | ◐ | Runs on a radio. FM and DMR voice receive and transmit, CTCSS/DCS, APRS receive and transmit and GPS data checked, most of it on the SDR bench. Each split duplex half passes on air alone. Still open: FM transmit deviation at 12.5 kHz, an outdoor GPS fix, and the host link after a warm restart from the boot stub ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core but not wired up on this radio yet ([airband-and-broadcast](docs/spec/airband-and-broadcast.md)) |
-| Baofeng DM-1801 Pro, DM-1801 (current) | ● | ● | ◐ | Runs on a radio. FM receive and transmit with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and SMS, the MMDVM hotspot and single frequency repeating checked on the SDR bench. Each split duplex half passes on air alone. Still open: VHF transmit and VOX ([hardware-dm1801pro](docs/spec/hardware-dm1801pro.md) 12). Not the GD-77 family despite the name ([radios](docs/spec/radios.md)) |
-| TYT MD-380 / MD-390, Retevis RT3 (and the GPS models) | ● | ● | ● | Fully operational on a UHF radio¹. FM with CTCSS both ways; DMR voice and SMS in simplex and through a repeater or duplex hotspot, on either slot; codeplug and ID database programming (CPS, web editor). The codec comes from the stock D2.32 file ([codec-md380](docs/spec/codec-md380.md)), kept in flash sectors the application never uses, so an update keeps it. Still open: DCS and the tone deviation, the VHF image (untested), FM TX tones and APRS receive ([bring-up checklist](docs/testing/md380-bringup.md)) |
-| Radioddity DB25-D PRO (mobile) | ● | ● | ◐ | Bring-up on a radio: FM receive and transmit, display, keys, host link, settings storage, the open-firmware CPS and volume work. DMR voice receive and transmit checked on the SDR bench; the hotspot, the DMR VFO and the PPP network services work on the radio ([hardware-db25d](docs/spec/hardware-db25d.md) 9). The older DB25-D batches (FD6818) and the Retevis RT73 aren't covered yet |
+| Baofeng DM-1701 | ● | ● | ◐ | First target. FM, DMR voice and data, text, alerts, emergency, hotspot, MMDVM SFR, split duplex (each half), scan and the network services pass on-air tests. Open: Standalone SFR and a two-radio split duplex pair (below) |
+| Baofeng DM-32UV | ● | ● | ◐ | Runs on a radio: FM and DMR voice receive and transmit, CTCSS/DCS, APRS receive and transmit, GPS data and each split duplex half, most of it checked on the SDR bench. Open: FM deviation at 12.5 kHz, an outdoor GPS fix and the host link after a warm restart ([bring-up checklist](docs/testing/dm32-bringup.md)) |
+| Baofeng DM-1801 Pro, DM-1801 (current) | ● | ● | ◐ | Runs on a radio: FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and SMS, the MMDVM hotspot and single frequency repeating, checked on the SDR bench, and each split duplex half on air. Open: VHF transmit and VOX ([hardware-dm1801pro](docs/spec/hardware-dm1801pro.md) 12). Not the GD-77 family despite the name ([radios](docs/spec/radios.md)) |
+| TYT MD-380 / MD-390, Retevis RT3 (and the GPS models) | ● | ● | ● | Fully operational on a UHF radio¹: FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or duplex hotspot on either slot, codeplug and ID database programming (CPS, web editor). The codec comes from the stock D2.32 file ([codec-md380](docs/spec/codec-md380.md)) and an update keeps it. Open: DCS, the tone deviation, the untested VHF image, FM TX tones and APRS receive ([bring-up checklist](docs/testing/md380-bringup.md)) |
+| Radioddity DB25-D PRO (mobile) | ● | ● | ◐ | Runs on a radio: FM receive and transmit, DMR voice (checked on the SDR bench), the hotspot, the DMR VFO, the PPP network services, the display, keys, settings storage and the open-firmware CPS ([hardware-db25d](docs/spec/hardware-db25d.md) 9). Not covered yet: the older FD6818 batches and the Retevis RT73 |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | ○ | ○ | ○ | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port |
 | TYT MD-9600, Retevis RT90 | ○ | ○ | ○ | Planned. Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD |
 | Radioddity GD-77, TYT MD-760, Baofeng DM-1801 (v1), RD-5R | ○ | ○ | ○ | Planned. Hardware needed. Different MCU (NXP MK22FN512), same HR_C6000 and AT1846S, 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated ([radios](docs/spec/radios.md)) |
@@ -125,10 +125,12 @@ releases: [The codec](docs/dev/codec.md).
 
 ## Building and flashing
 
-You need make, Python 3, and `arm-none-eabi-gcc` (STM32F405 radios) or a `csky-elf` GCC (HR_C7000 radios).
+You need make, Python 3.11 or later, and `arm-none-eabi-gcc` (STM32F405 radios) or a `csky-elf` GCC (HR_C7000
+radios).
 
 ```
-make BOARD=dm1701           # or md380, dm32, db25d, dm1801pro
+tools/boards.py list        # the board ids
+make BOARD=dm1701           # one board's image; there is no default board
 make -C tests/host          # host tests
 tools/ci.sh                 # everything a pull request must pass
 ```

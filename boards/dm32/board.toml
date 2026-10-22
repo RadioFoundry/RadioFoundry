@@ -27,9 +27,9 @@ display = "color, 240 × 320"
 gallery = "240x320i10x5"
 
 [status]
-level = "bring-up"
-summary = "Runs on a radio. FM and DMR voice receive and transmit, CTCSS/DCS, APRS receive and transmit and GPS data checked, most of it on the SDR bench. Each split duplex half passes on air alone. Still open: FM transmit deviation at 12.5 kHz, an outdoor GPS fix, and the host link after a warm restart from the boot stub ([bring-up checklist](docs/testing/dm32-bringup.md)). Air band AM and broadcast FM receive are in the core but not wired up on this radio yet ([airband-and-broadcast](docs/spec/airband-and-broadcast.md))"
-release = "testing"
+level = "supported"
+summary = "Runs on a radio: FM and DMR voice receive and transmit, CTCSS/DCS, APRS receive and transmit, GPS data and each split duplex half, most of it checked on the SDR bench. Open: FM deviation at 12.5 kHz, an outdoor GPS fix and the host link after a warm restart ([bring-up checklist](docs/testing/dm32-bringup.md))"
+release = "stable"
 
 # The Baofeng serial updater erases the whole application area before it writes (hardware-dm32.md 13.2 step 7), so
 # the codec can't be kept across an update: every flash merges it again. The platform's two "sectors", the application

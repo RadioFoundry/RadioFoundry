@@ -24,7 +24,7 @@ gallery = "160x120i5"
 
 [status]
 level = "supported"
-summary = "First target. Most features pass on-air tests: FM, DMR voice and data, text, alerts, emergency, hotspot, MMDVM SFR, split duplex (each half alone), scan, and the network services. Still open: Standalone SFR and a two-radio split duplex pair (below)"
+summary = "First target. FM, DMR voice and data, text, alerts, emergency, hotspot, MMDVM SFR, split duplex (each half), scan and the network services pass on-air tests. Open: Standalone SFR and a two-radio split duplex pair (below)"
 release = "stable"
 
 # The audio tap's probe build: without LTO it no longer fits, so ci keeps it building with LTO=1

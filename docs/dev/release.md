@@ -199,8 +199,8 @@ odrflash-*` (or right-click, Open). Windows SmartScreen asks once.
 
 ## The MD-380
 
-Not released yet: `[status] release = "testing"` in `boards/md380/board.toml` and no job in `release.yml` until
-[docs/testing/md380-bringup.md](../testing/md380-bringup.md) passes. The application has sectors 3-7 and the codec
+`[status] release = "stable"` in `boards/md380/board.toml`; `release.yml` has no job for it yet. The open items are in
+[docs/testing/md380-bringup.md](../testing/md380-bringup.md). The application has sectors 3-7 and the codec
 sectors 8, 10 and 11, so an update can keep the codec (`keep_codec_supported=True`), as on the DM-1701. The codec
 profile is `md380-d2032-s11` (a build from before the move reports `md380-d2032`). The moved code has run only in an
 emulator, not on a radio. `tools/md380_migrate.py` flashes it today and keeps the codeplug
@@ -208,16 +208,15 @@ emulator, not on a radio. `tools/md380_migrate.py` flashes it today and keeps th
 
 ## Adding the DM-32UV
 
-The DM-32UV runs on a radio but is still in bring-up. The workflow job is there and off. To turn it
-on once [docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) passes:
+`[status] release = "stable"` in `boards/dm32/board.toml`. The workflow job is there and off; the open items are in
+[docs/testing/dm32-bringup.md](../testing/dm32-bringup.md). To turn the job on:
 
 1. Set the repository variable `ODR_RELEASE_DM32=true` (Settings, Secrets and variables, Actions, Variables). The job
    builds the csky-elf toolchain with `tools/build-csky-toolchain.sh` (GCC from `platform/hrc7000/platform.toml`,
    binutils and newlib pinned in the script; about 45 minutes on four cores) and caches `~/toolchains/csky-elf` keyed by
    the hash of both files, so later releases restore it in seconds. A prebuilt toolchain archive attached to a tools release
    would avoid the first build; that's a later choice.
-2. Set `[status] release = "stable"` in `boards/dm32/board.toml` and regenerate `tools/odrflash/odrflash/registry.json`.
-3. Flashing: the DM-32UV uses Baofeng's serial updater protocol ([hardware-dm32.md](../spec/hardware-dm32.md) 13.2), not
+2. Flashing: the DM-32UV uses Baofeng's serial updater protocol ([hardware-dm32.md](../spec/hardware-dm32.md) 13.2), not
    DFU. odrflash would get a second backend speaking it over pyserial (the `serial-loader` family). The updater erases
    the whole application area before writing (step 7), the codec slot 0x030E8000..0x03100000 included, so **keep is not
    possible on the DM-32UV**: every flash merges the codec from the stock file (`tools/hrc7000_codec.py` logic as a
@@ -227,8 +226,9 @@ on once [docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) passes:
 
 ## The DM-1801 Pro
 
-In bring-up ([docs/testing/dm1801pro-bringup.md](../testing/dm1801pro-bringup.md)): `[status] release = "testing"` in its `board.toml`,
-and the workflow job is off until the repository variable `ODR_RELEASE_DM1801PRO` is `true`.
+`[status] release = "stable"` in its `board.toml`; the open items are in
+[docs/testing/dm1801pro-bringup.md](../testing/dm1801pro-bringup.md). The workflow job is off until the repository
+variable `ODR_RELEASE_DM1801PRO` is `true`.
 
 **Package.** `tools/release.py --board dm1801pro --version v0.1.0` packs `build/dm1801pro/odr_dm1801pro.bin` like any
 board: one range from 0x0300C000, `sectors` `[0]`, codec profile `dm1801pro-049` in "sector" 1 (the slot), not
