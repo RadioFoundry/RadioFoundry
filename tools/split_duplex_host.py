@@ -8,7 +8,8 @@ relays (time sync, epoch). Reference implementation of the host contract (split-
 
     split_duplex_host.py --tx PORT --rx PORT --freq-in MHZ --freq-out MHZ [--cc N] [--power LEVEL] [--seconds S]
         Start both halves (8.1), keep the time sync, the epoch and the AT relay running, print a status line every
-        2 s. Upstream (MMDVMHost) is not attached: this is the pair's bring-up and the timing readout.
+        2 s. Upstream (MMDVMHost) is not attached: this is the pair's bring-up and the timing readout. With --repeat
+        the host repeats every burst heard on its own slot of the TX half itself, as a duplex host would.
     split_duplex_host.py --tx PORT --exp VARIANT [--freq-out MHZ] [--cc N] [--seconds 10] [--reg R=V ...]
         BS framing experiment (10.1): sets the variant over the debug link (same port), takes the TX half role,
         keys the outbound with idle bursts and a short LC, toggles SET_AT every 2 s, prints STATUS and the split view.
@@ -123,7 +124,8 @@ class ClockSync:
     (with 1-3 ms of USB asymmetry the rate is good to about 20 ppm after 30 s and 5 ppm after 120 s; it only scales
     period_ns and extrapolations of a few seconds, so either is far inside the 5 ms budget).
     Before there are 3 points over 5 s, the smallest round trip of the last 16 samples gives the offset and the rate
-    is 0. offset(h) = modem clock - host clock at host time h (µs, unwrapped)."""
+    is 0. offset(h) = modem clock - host clock at host time h (µs, unwrapped). A sample's offset is wrong by at most
+    half its round trip (all of the delay on one side), so bound_us() is the worst error of the estimate."""
 
     KEEP = 16
     GROUP = 4
@@ -132,7 +134,7 @@ class ClockSync:
     def __init__(self):
         self.samples = []       # (rtt, host mid, offset), the last KEEP
         self.group = []
-        self.points = []        # (host mid, offset): one per GROUP samples
+        self.points = []        # (host mid, offset, rtt): one per GROUP samples
         self.base = None        # unwrapping reference: the first offset
         self.last_rtt = None
         self._fit = None
@@ -149,7 +151,7 @@ class ClockSync:
         self.group.append(s)
         if len(self.group) >= self.GROUP:
             best = min(self.group, key=lambda x: x[0])
-            self.points.append((best[1], best[2]))
+            self.points.append((best[1], best[2], best[0]))
             self.group = []
             horizon = mid - self.FIT_S * 1e6
             self.points = [p for p in self.points if p[0] >= horizon]
@@ -178,6 +180,13 @@ class ClockSync:
         self._fit = (rate, mo, mh)
         return self._fit
 
+    def bound_us(self):
+        """Worst error of offset() (µs): half the largest round trip it rests on"""
+        pts = self.points
+        if len(pts) < 3 or pts[-1][0] - pts[0][0] < 5e6:
+            return min(x[0] for x in self.samples) / 2.0 if self.samples else float("inf")
+        return max(p[2] for p in pts) / 2.0
+
     def offset(self, h):
         rate, icpt, h0 = self.fit()
         return icpt + rate * (h - h0)
@@ -202,6 +211,55 @@ def epoch_for_rx(tx, rx, epoch, now_h):
     t_rx = rx.to_modem(h)
     period = int(round(SLOT_NS * (1.0 + rx.rate() - tx.rate())))
     return t_rx, period
+
+
+class EpochRelay:
+    """Which epochs go to the RX half (6.2). An epoch carried through both clock fits is wrong by at most the sum of
+    their bounds, and an error past half a slot (15 ms) files every inbound burst under the other slot while the
+    residual still looks small (the RX half tracks to the nearest boundary). So the first epoch goes only when the
+    bound is under LIMIT_US; later ones only when the bound is, and when they land within AGREE_US of the last one
+    sent, carried forward by whole frames (both are TS1 boundaries). A disagreeing epoch is held back; REPLACE in a
+    row that agree with each other replace the one sent (it was the wrong one). log keeps every decision."""
+
+    LIMIT_US = 10_000
+    AGREE_US = 7_500
+    REPLACE = 3
+
+    def __init__(self):
+        self.sent = None        # t_rx of the last epoch sent (RX clock)
+        self.held = []          # disagreeing epochs in a row
+        self.skipped = 0        # bound over the limit
+        self.rejected = 0       # disagreed with the one sent
+        self.log = []
+
+    @staticmethod
+    def frame_rem(t_a, t_b, period_ns):
+        """t_a - t_b less whole frames (µs, -frame/2 .. +frame/2)"""
+        frame = 2 * period_ns / 1000.0
+        d = wrap_diff(t_a, t_b)
+        return d - round(d / frame) * frame
+
+    def decide(self, t_rx, period_ns, bound_us, **info):
+        """True if t_rx should go to the RX half now"""
+        rem = None if self.sent is None else self.frame_rem(t_rx, self.sent, period_ns)
+        if bound_us > self.LIMIT_US:
+            action = "skip"
+            self.skipped += 1
+        elif rem is None or abs(rem) <= self.AGREE_US:
+            action = "send"
+            self.held = []
+        else:
+            self.held = [t for t in self.held if abs(self.frame_rem(t_rx, t, period_ns)) <= self.AGREE_US] + [t_rx]
+            if len(self.held) >= self.REPLACE:
+                action = "replace"
+                self.held = []
+            else:
+                action = "hold"
+                self.rejected += 1
+        if action in ("send", "replace"):
+            self.sent = t_rx
+        self.log.append(dict(info, t_rx=t_rx, period_ns=period_ns, bound_us=bound_us, rem_us=rem, action=action))
+        return action in ("send", "replace")
 
 
 def epoch_payload(t_us, period_ns=SLOT_NS):
@@ -255,16 +313,18 @@ def busy_mask_from_uplink(open_calls, cmd, control):
 class Radio:
     """One radio's MMDVM port: a reader thread, replies matched by command (and 0xD6 sub-command)."""
 
-    def __init__(self, port, name="radio", log=None, dtr=True):
+    def __init__(self, port, name="radio", log=None, dtr=True, on_uplink=None):
         self.name = name
+        self.on_uplink = on_uplink      # called from the reader thread with (host µs, frame) for each uplink frame
+        self.wlock = threading.Lock()   # one frame at a time on the port (the reader thread may send too)
         if str(port).startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
             from odr_debug import UdpPort
             host, _, udp_port = port[4:].partition(":")
             self.ser = UdpPort(host, int(udp_port or 3334))
         else:
             import serial
-            self.ser = serial.Serial()
-            self.ser.port, self.ser.baudrate, self.ser.timeout = port, 115200, 0.02
+            # A device or a URL such as rfc2217://host:port (a radio on a network serial hub)
+            self.ser = serial.serial_for_url(port, 115200, timeout=0.02, do_not_open=True)
             self.ser.dtr = dtr  # False: as MMDVMHost on Windows; closing then does not end the hotspot session
             self.ser.open()
         self.buf = bytearray()
@@ -301,17 +361,21 @@ class Radio:
             t = self.host_us()
             self.buf += chunk
             for f in self._frames():
+                up = f[2] in (DMR_DATA1, DMR_DATA2, DMR_LOST1, DMR_LOST2)
                 with self.lock:
-                    if f[2] in (DMR_DATA1, DMR_DATA2, DMR_LOST1, DMR_LOST2):
+                    if up:
                         self.uplink.append((t, f))
                     else:
                         if f[2] == GET_STATUS:
                             self.status = f
                         self.replies.append((t, f))
                     self.lock.notify_all()
+                if up and self.on_uplink is not None:
+                    self.on_uplink(t, f)
 
     def send(self, f):
-        self.ser.write(f)
+        with self.wlock:
+            self.ser.write(f)
 
     def request(self, f, match, timeout=1.0):
         """Send f, wait for a frame for which match(frame) is true; (host µs at send, at reply, frame)"""
@@ -402,55 +466,136 @@ def sync_burst(radio, sync, n=8, gap=0.02):
 
 # ── modes ──
 
-def run_pair(a):
-    tx, rx = Radio(a.tx, "tx"), Radio(a.rx, "rx")
-    fin, fout = round(a.freq_in * 1e6), round(a.freq_out * 1e6)
-    try:
-        for r in (tx, rx):
+class Pair:
+    """The two halves run as one repeater (8): start-up (8.1), time sync every 1 s, the epoch relayed every 2 s for
+    the first 30 s and every 10 s after (6), the AT relay from the RX half's uplink and STATUS (8.4). With repeat set
+    the host also does what a duplex host such as MMDVMHost does with an RF call (8.4): every burst heard goes back
+    out on its own slot of the TX half (DMR_START, then the burst's control byte and 33 bytes), at once from the RX
+    half's reader thread. The counters and first-burst times are for a test."""
+
+    def __init__(self, tx_port, rx_port, repeat=False, log=print):
+        self.repeat = repeat
+        self.log = log
+        self.tx = Radio(tx_port, "tx")
+        self.rx = Radio(rx_port, "rx", on_uplink=self._uplink)
+        self.stx, self.srx = ClockSync(), ClockSync()
+        self.open_calls = set()
+        self.rx_busy = 0
+        self.keyed = False
+        self.epochs = 0
+        self.relay = EpochRelay()
+        self.uplink = []                # (host µs, frame) heard by the RX half
+        self.repeated = {1: 0, 2: 0}
+        self.naks = []
+        self.stop = threading.Event()
+        self.thread = None
+        self.st_tx = self.st_rx = None
+
+    def _mask(self):
+        return self.rx_busy | (1 if 1 in self.open_calls else 0) | (2 if 2 in self.open_calls else 0)
+
+    def _uplink(self, t, f):
+        self.uplink.append((t, f))
+        before = self._mask()
+        busy_mask_from_uplink(self.open_calls, f[2], f[3] if len(f) > 3 else 0)
+        if self._mask() != before:
+            self.tx.send(split_frame(SUB_SET_AT, bytes([self._mask()])))
+        if self.repeat and f[2] in (DMR_DATA1, DMR_DATA2) and len(f) >= 37:
+            if not self.keyed:
+                self.tx.send(frame(DMR_START, b"\x01"))
+                self.keyed = True
+            self.tx.send(frame(f[2], f[3:37]))
+            self.repeated[1 if f[2] == DMR_DATA1 else 2] += 1
+
+    def start(self, fin_hz, fout_hz, level, cc, power_cap=0):
+        for r in (self.tx, self.rx):
             ver, info = require_split(r)
-            print(f"{r.name}: SPLIT{ver} offered {info['offered']} cach {CACH_METHODS.get(info['cach'])}")
-            setup_half(r, fin, fout, a.power, a.cc)
-        set_role(tx, ROLE_TX, power_cap=a.power_cap)
-        set_role(rx, ROLE_RX)
-        stx, srx = ClockSync(), ClockSync()
-        sync_burst(tx, stx)
-        sync_burst(rx, srx)
-        open_calls, t_epoch = set(), 0.0
-        t_end = time.monotonic() + a.seconds
-        t_print = 0.0
-        while time.monotonic() < t_end:
-            tx.time_sample(stx)
-            rx.time_sample(srx)
+            self.log(f"{r.name}: SPLIT{ver} offered {info['offered']} cach {CACH_METHODS.get(info['cach'])}")
+            setup_half(r, fin_hz, fout_hz, level, cc)
+        set_role(self.tx, ROLE_TX, power_cap=power_cap)
+        set_role(self.rx, ROLE_RX)
+        sync_burst(self.tx, self.stx)
+        sync_burst(self.rx, self.srx)
+        self.relay_epoch()
+
+    def relay_epoch(self):
+        """True if an epoch went to the RX half (EpochRelay decides)"""
+        _, _, res, d = self.tx.split(SUB_GET_EPOCH)
+        if res != 0:
+            return False
+        h = Radio.host_us()
+        ep = parse_epoch(d)
+        t_rx, period = epoch_for_rx(self.stx, self.srx, ep, h)
+        bound = self.stx.bound_us() + self.srx.bound_us()
+        if not self.relay.decide(t_rx, period, bound, h=h, epoch=ep, rtt_tx=self.stx.last_rtt,
+                                 rtt_rx=self.srx.last_rtt, rate_tx=self.stx.rate(), rate_rx=self.srx.rate()):
+            return False
+        self.rx.split(SUB_SET_EPOCH, epoch_payload(t_rx, period))
+        self.epochs += 1
+        return True
+
+    def step(self, t0, t_epoch):
+        """One 1 s round; returns the time of the last epoch relay"""
+        self.tx.time_sample(self.stx)
+        self.rx.time_sample(self.srx)
+        now = time.monotonic()
+        if now - t_epoch >= (2.0 if now - t0 < 30 else 10.0) and self.relay_epoch():
+            t_epoch = now
+        self.st_rx = get_status(self.rx)
+        self.rx_busy = self.st_rx["inbound_busy"]
+        self.tx.split(SUB_SET_AT, bytes([self._mask()]))   # the TX half drops a mask older than 2 s
+        self.st_tx = get_status(self.tx)
+        return t_epoch
+
+    def status_line(self):
+        a, b = self.st_tx, self.st_rx
+        return (f"tx keyed {a['keyed_s']}s buf {a['buf1']}/{a['buf2']} under {a['underruns1']}/{a['underruns2']} "
+                f"at {a['at_on_air']:02b} | rx busy {b['inbound_busy']:02b} labeled {b['labeled1']}/{b['labeled2']} "
+                f"unlabeled {b['unlabeled']} residual {b['residual_us']} us | rtt {self.stx.last_rtt / 1000:.1f}/"
+                f"{self.srx.last_rtt / 1000:.1f} ms rate {self.stx.rate() * 1e6:+.1f}/{self.srx.rate() * 1e6:+.1f} ppm "
+                f"| epoch bound {(self.stx.bound_us() + self.srx.bound_us()) / 1000:.1f} ms sent {self.epochs} "
+                f"held {self.relay.rejected} skipped {self.relay.skipped}")
+
+    def run(self, seconds=None, every_print=2.0):
+        t0 = time.monotonic()
+        t_epoch, t_print = t0, 0.0
+        while not self.stop.is_set() and (seconds is None or time.monotonic() - t0 < seconds):
             now = time.monotonic()
-            if now - t_epoch >= (2.0 if now - (t_end - a.seconds) < 30 else 10.0):
-                _, _, res, d = tx.split(SUB_GET_EPOCH)
-                if res == 0:
-                    t_rx, period = epoch_for_rx(stx, srx, parse_epoch(d), Radio.host_us())
-                    rx.split(SUB_SET_EPOCH, epoch_payload(t_rx, period))
-                    t_epoch = now
-            st_rx = get_status(rx)
-            with rx.lock:
-                ups, rx.uplink = rx.uplink, []
-            for _, f in ups:
-                busy_mask_from_uplink(open_calls, f[2], f[3] if len(f) > 3 else 0)
-            mask = st_rx["inbound_busy"] | (1 if 1 in open_calls else 0) | (2 if 2 in open_calls else 0)
-            tx.split(SUB_SET_AT, bytes([mask]))     # every loop (1 s): the TX half drops a mask older than 2 s
-            if now - t_print >= 2.0:
-                st_tx = get_status(tx)
-                print(f"tx keyed {st_tx['keyed_s']}s buf {st_tx['buf1']}/{st_tx['buf2']} under "
-                      f"{st_tx['underruns1']}/{st_tx['underruns2']} at {st_tx['at_on_air']:02b} | rx busy "
-                      f"{st_rx['inbound_busy']:02b} labeled {st_rx['labeled1']}/{st_rx['labeled2']} unlabeled "
-                      f"{st_rx['unlabeled']} residual {st_rx['residual_us']} us | rtt {stx.last_rtt / 1000:.1f}/"
-                      f"{srx.last_rtt / 1000:.1f} ms rate {stx.rate() * 1e6:+.1f}/{srx.rate() * 1e6:+.1f} ppm")
+            t_epoch = self.step(t0, t_epoch)
+            if every_print and now - t_print >= every_print:
+                self.log(self.status_line())
                 t_print = now
-            time.sleep(max(0.0, 1.0 - (time.monotonic() - now)))
-    finally:
-        for r in (tx, rx):
+            self.stop.wait(max(0.0, 1.0 - (time.monotonic() - now)))
+
+    def run_background(self):
+        self.thread = threading.Thread(target=self.run, kwargs={"every_print": 0}, daemon=True)
+        self.thread.start()
+
+    def close(self):
+        self.stop.set()
+        if self.thread is not None:
+            self.thread.join(5)
+        if self.keyed:
+            try:
+                self.tx.command(DMR_START, b"\x00")
+            except Exception:
+                pass
+        for r in (self.tx, self.rx):
             try:
                 set_role(r, ROLE_NORMAL)
             except Exception:
                 pass
             r.close()
+
+
+def run_pair(a):
+    p = Pair(a.tx, a.rx, repeat=a.repeat)
+    try:
+        p.start(round(a.freq_in * 1e6), round(a.freq_out * 1e6), a.power, a.cc, a.power_cap)
+        p.run(a.seconds)
+        print(f"repeated {p.repeated[1]}/{p.repeated[2]} bursts (TS1/TS2), epochs relayed {p.epochs}")
+    finally:
+        p.close()
     return 0
 
 
@@ -561,6 +706,8 @@ def main(argv=None):
     ap.add_argument("--power", type=int, default=255, help="SET_FREQ RF level (the role's cap applies)")
     ap.add_argument("--power-cap", type=int, default=0, help="SET_ROLE power cap (0: the radio's default 64)")
     ap.add_argument("--seconds", type=float, default=10.0)
+    ap.add_argument("--repeat", action="store_true", help="pair: repeat every burst heard into the TX half, as a "
+                    "duplex host (MMDVMHost) does")
     a = ap.parse_args(argv)
     if a.info:
         return run_info(a.info)

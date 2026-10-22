@@ -75,6 +75,10 @@ bool db25d_nand_init(void)
 	// The IAP loader has run long past the chip's power-up; the probe resets it and waits until it's ready
 	db25d_nand_lock();
 	ready = spi_nand_probe(&nand);
+	uint8_t id[SPI_NAND_UID_LEN];
+	if (ready && spi_nand_read_uid(&nand, id)) {
+		hrc_chip_set_uid(id, sizeof(id));	// the radio's UID (INFO_CHIP): the SoC has none we can read
+	}
 	db25d_nand_unlock();
 	return ready;
 }

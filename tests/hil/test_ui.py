@@ -270,16 +270,51 @@ def test_quick_color_code_for_now(home):
                what="the channel's color code back")
 
 
-def test_quick_mode_for_now(home):
-    """Quick 4 on a DMR channel listens in FM on the same frequency for now (temp bit 0x80)."""
-    r = dmr_home(home)
-    r.press("quick")
-    wait_screen(r, "quick")
-    r.press("4")
-    r.wait_for(lambda x: x.get("mode") == "fm" and temp_bits(x) & 0x80, what="FM for now")
-    leave_quick(r)
-    r.press("back")
-    r.wait_for(lambda x: x.get("mode") == "dmr" and not temp_bits(x) & 0x80, what="DMR again on BACK")
+VFO_KEYS = ("mode", "rx_hz", "ch.bw", "ch.rx_tone", "ch.tx_tone", "dmr.cc", "dmr.ts", "dmr.target_id",
+            "dmr.target_private")
+
+
+def vfo_state(r):
+    v = r.view(["core", "channel", "dmr"])
+    return {k: v.get(k) for k in VFO_KEYS}
+
+
+def test_quick_copy_to_vfo(home):
+    """Quick 4 on a channel copies it to the VFO and opens it (a channel's tile 4; the VFO's is Mode). The VFO's own
+    frequency, mode, bandwidth, tones, color code, slot and target are put back."""
+    r = home
+    feats = r.features()
+    mode = r.core().get("mode")
+    if "VFO_FM" not in feats or (mode == "dmr" and "VFO_DMR" not in feats):
+        pytest.skip(f"built without a {mode} VFO")
+    L = r.link
+    chan = r.core()
+    L.vfo(True)
+    r.wait_for(lambda x: x.get("vfo") == "1", what="the VFO")
+    before = vfo_state(r)
+    L.vfo(False)
+    r.wait_for(lambda x: x.get("vfo") == "0" and x.get("zone_pos") == chan["zone_pos"], what="the channel again")
+    try:
+        r.press("quick")
+        wait_screen(r, "quick")
+        r.press("4")
+        v = r.wait_for(lambda x: x.get("vfo") == "1", what="the VFO opened")
+        assert v["rx_hz"] == chan["rx_hz"] and v["mode"] == chan["mode"] and v["temporary"] == "0", v
+        leave_quick(r)
+    finally:
+        if r.core().get("vfo") != "1":
+            L.vfo(True)
+            r.wait_for(lambda x: x.get("vfo") == "1", what="the VFO")
+        if before["mode"] == "dmr":
+            L.dmr_fields(mode="dmr", cc=int(before["dmr.cc"]), ts=int(before["dmr.ts"]))
+            L.dmr_target(int(before["dmr.target_id"]), private=before["dmr.target_private"] == "1")
+        L.dmr_fields(mode=before["mode"])
+        L.vfo_set(int(before["rx_hz"]))
+        L.bandwidth(before["ch.bw"] == "25k")
+        for which, key in ((2, "ch.rx_tone"), (1, "ch.tx_tone")):
+            kind, _, value = before[key].partition(":")
+            L.tone(which, kind, int(value or 0))
+        r.wait_for(lambda x: vfo_state(r) == before, sections=("core",), what="the VFO's own settings back")
 
 
 def test_quick_hear_all_latch(home):

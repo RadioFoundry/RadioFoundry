@@ -248,12 +248,12 @@ The core hands the modem driver, for each slot, the burst and the CACH (fields a
   The core builds each slot's 288 bits (`bsOutboundRawSlot`: the CACH, then the burst with BS sync, slot type and
   coded payload, or for voice the AMBE around the sync or EMB and embedded LC) and the driver writes them to TX RAM.
   INFO byte 4 says 1 (ours).
-- **HR_C7000**: LAYER2_BS_MODE, BS_SECOND_REG, BS_STATUS and BS_CACH (0x428-0x438) exist and are never
-  written by working firmware (`modem-hrc7000.md` 2.5); the user guide's descriptions of them are not in our spec yet.
-  Until the register layout is specified the HR_C7000 has no `bs_*` operations, so INFO offers no TX half on it. The
-  DM-32UV glue (`platform/hrc7000/dmr_glue.c`) does not wire `now_us` / `slot_clock` yet either, so that radio offers no role at
-  all (INFO byte 1 = 0, SET_ROLE answers 2); adding them (the engine's `tick` / `t_tick`, as `hrc6000_bs_slot_clock`
-  does) makes it an RX half. Not done here: the csky toolchain was not available to build it.
+- **HR_C7000**: the chip's own BS mode (LAYER2_BS_MODE, 0x428-0x438) sends Idle frames with BS sync and a CACH of
+  valid parity, but their AT, TC and short LC are not under our control (`modem-hrc7000.md` 2.9, bench 2026-10-20). So
+  the driver (`hrc7000_bs.c`) uses the chip's physical layer mode, as on the HR_C6000: the core's 288 bits per slot go
+  to TX RAM and the chip only modulates them (`modem-hrc7000.md` 2.10). INFO byte 4 says 1 (ours). The glue
+  (`platform/hrc7000/dmr_glue.c`) wires `now_us` and `slot_clock` (the slot engine's tick and its time; a received
+  burst's arg is the tick of the slot after its own, as on the HR_C6000), so the HR_C7000 radios offer both halves.
 - **Fallback when the chip can't make a CACH**: BS-synced continuous bursts without valid TACT bits. MMDVMHost-style
   receivers and most radios still decode the bursts, but a subscriber radio in repeater mode takes its slot numbering
   from TC and its channel access from AT, so it may not tell TS1 from TS2 and talks on the wrong slot. That is not a
@@ -296,7 +296,15 @@ relative to each other and to the host):
    any TS1 boundary T_tx = t_us (+ 30 000 µs if ts was 2), and translates it into the RX clock:
    T_rx = T_tx - o_tx + o_rx, with both offsets evaluated at the same host time (extrapolated with the fitted rates).
    period_ns for the RX half = 30 000 000 x (1 + r_rx - r_tx) where r are the fitted rates (ppm / 1e6).
-3. **SET_EPOCH** to the RX half, again every 10 s (2 s while the rates are still being learned, the first 30 s).
+3. **SET_EPOCH** to the RX half, again every 10 s (2 s while the rates are still being learned, the first 30 s), only
+   when the epoch can be trusted. A sample's offset is wrong by at most half its round trip, so each clock fit has an
+   error bound (half the largest round trip it rests on), and the epoch's is the sum of the two. The host relays the
+   first epoch only when that bound is under 10 ms, and a later one only when the bound is under 10 ms and the epoch
+   lands within 7.5 ms of the last one relayed, carried forward by whole frames. One that disagrees is held back; three
+   in a row that agree with each other replace the one relayed (it was the wrong one). An epoch off by more than half a
+   slot labels every inbound burst with the other slot while the residual (step 4) still looks small, because the RX
+   half tracks to the nearest boundary; these rules keep such an epoch from being relayed. `split_duplex_host.py`'s
+   `EpochRelay` keeps a log of every decision.
 4. **RX half tracking**: in a call each in-step burst gives the phase residual (where its slot started minus the
    prediction, folded to ±15 ms); the RX half averages it (1/8 per burst) and moves its anchor by the average, by at
    most ±5 ms in all since the last SET_EPOCH. That absorbs constant chip delays (the TX chip's slot boundary to air
@@ -310,6 +318,11 @@ the radio); the HR_C6000 report time relative to its slot (1-12 ms after the tim
 `modem-hrc6000.md` 4.2: we use the timeslot interrupt time, not the report time, so this does not count); constant
 chip delays, estimated under 3 ms and tracked away; drift between resyncs, 40 ppm x 10 s = 0.4 ms. The target is
 **|error| ≤ 5 ms**, a 10 ms margin. The STATUS phase residual (22-23) shows the real error on the bench (section 10).
+
+The host must reach both radios directly (USB, or a serial port on the host they're plugged into). A serial link
+carried over a network adds a one-way delay that stays put for a session: the round trip still looks plausible, but
+both offsets come out skewed the same way. On the bench, through such a link, 9 of 12 subscriber calls were labeled
+with the wrong slot; with the same radios on the host's own ports, 12 of 12 were right.
 
 ## 7. RX half: labeling
 
@@ -419,7 +432,9 @@ given). `tools/split_duplex_host.py --exp <variant>` or the HIL test (`ODR_SPLIT
 ..."`) keys the outbound with idle bursts and a short LC for 10 s; `sdrmon.py analyze --cach` on the SDR bench
 decodes per burst the family, the CACH (`tact ok AT TC LCSS`) and the short LC.
 
-The results that led to the physical layer mode are in [modem-hrc6000.md](modem-hrc6000.md) 9.2.
+The results that led to the physical layer mode are in [modem-hrc6000.md](modem-hrc6000.md) 9.2. On the HR_C7000
+the variant is a bit field of physical layer options instead (`modem-hrc7000.md` 2.10: continuous mode, the autotest
+bit, the TX RAM halves); 0 is the default there too.
 
 ### 10.2 TX half keyed with idle CACH, RX half labeling, time sync readout
 
@@ -438,8 +453,25 @@ The results that led to the physical layer mode are in [modem-hrc6000.md](modem-
   label, whole (header, voice, terminator), with a residual under 5 ms; a third call with the epoch moved by 30 ms
   must go up under the other label.
 
+`tests/hil/test_split_pair.py` runs a real pair (two radios built with the switch, `--split-rx-port`; the host runs
+`split_duplex_host.Pair`, which also repeats every burst the RX half hears on its own slot of the TX half, as a duplex
+host would):
+
+- `test_split_pair_repeat` (markers `rf`, `radio_tx`): a bench call on the inbound goes up under its label and comes
+  back on the outbound, whole, in under a second.
+- `test_split_pair_handheld` (adds `codeplug_write`; `--split-ms-port`, `--split-ms-ts`, `--split-out-mhz`): a third
+  ODR radio is put on a repeater channel (its codeplug edited and restored) and keys up on each inbound slot the way a
+  subscriber does, synced to the outbound's CACH. Asserted: the call goes up under its own slot only, with no burst
+  unlabeled (an unlabeled burst is sent up as TS2, so a TS2 call could pass without an epoch), comes back on the
+  outbound on the right slot, the header's source is the subscriber, no underruns, residual under 5 ms.
+
+Run the pair from the host the radios are plugged into (section 6). On the bench (2026-10-21, host on the radios' own
+ports): the TX half's epoch matched the outbound's slots on air in 12 of 12 sessions, with the RX half on the outbound;
+subscriber calls were labeled right in 29 of 31 sessions with real epochs (bound 5-9 ms). The two wrong sessions are
+not explained yet (open question 7).
+
 `tools/split_duplex_host.py --rx PORT --rx-only --flip-at 20` does the RX half part by hand, and `--tx A --rx B`
-runs a real pair (bring-up and timing readout, no upstream).
+runs a real pair (bring-up and timing readout, no upstream; `--repeat` repeats as above).
 
 ### 10.3 What runs without hardware
 
@@ -447,7 +479,8 @@ runs a real pair (bring-up and timing readout, no upstream).
 idle message of table D.2, the outbound buffer, the epoch arithmetic, both roles and the guards through mmdvm.c and
 hotspot.c on a simulated modem, the debug link command), `mmdvmTestSplit` and `hotspotSfrTestSplit` (the standard
 host suites with the extension built in), `hrc6000BsTest` and `hrc6000DmrTestSplit` (the HR_C6000 BS outbound on a
-fake chip, and the slot engine's suite with the hand-over hooks built in), and `sim/splitPairTest.py`: two radios'
+fake chip, and the slot engine's suite with the hand-over hooks built in), `hrc7000BsTest` and `hrc7000DmrTestSplit`
+(the same for the HR_C7000), and `sim/splitPairTest.py`: two radios'
 cores in lockstep virtual time, with crystals 18-35 ppm apart, one modem clock wrapping through 2^32, USB jitter
 with spikes, and the host logic of `split_duplex_host.py`: two overlapping mobile calls are heard by the RX half,
 labeled, repeated into the TX half and checked on its outbound (whole, in order, own slot, TC on every CACH, AT busy,
@@ -459,11 +492,19 @@ CACH coding, which is byte-identical with `core/dmr/fec/dmrCach.c`.
 1. The 9-byte layout of DMR_SHORTLC as MMDVMHost sends it (5.3): both forms are accepted; the bench decode settles it.
 2. HR_C6000 CACH (5.4, 10.1): AT / TC (0x52) and the short LC (TX RAM 0x24) are now written per the manual; open
    until the bench shows them on air: the 0x11 value, and where the chip takes the CACH LCSS from.
-3. HR_C7000 BS mode register layout (0x428-0x438): needs the user guide's description in `modem-hrc7000.md`.
+3. HR_C7000 TX half: settled on the DM-32UV (`modem-hrc7000.md` 2.10, bench 2026-10-21): the physical layer's
+   timeslot mode with the slot in both TX RAM halves gives the whole outbound with our CACH.
 4. The constant delay between the TX half's slot boundary and the RX half's (chip pipelines, air): measured on the
-   bench with the phase residual; if it is more than 5 ms, add a fixed correction (the tracker limit).
+   bench with the phase residual; if it is more than 5 ms, add a fixed correction (the tracker limit). Measured
+   (2026-10-21, `modem-hrc7000.md` 2.10): outbound TS1 goes on air 4.6 ms after the HR_C7000 TX half's epoch and
+   2.2 ms after the HR_C6000's; subscriber call residuals were 0.1-2.4 ms. No correction needed.
 5. Whether AT should default to busy during the host's hang time (mode 0 does: the outbound slot is not idle) or only
    from the RX half (mode 1).
 6. The HR_C6000 driver's own counters (`hrc6000_bs_stats_t`) are on the board's diagnostics line `bs` (slots,
    bursts, underruns, key-ups, CACH written, PA failures, stalls; `odr_debug.py` parses them as `bs.*`). Not reachable
    from the core itself (no `hal_dmr_modem_t` stats operation).
+7. Two subscriber calls in 31 sessions went up under the other slot with a good epoch and a small residual. The
+   SDR bench can tell whether the subscriber sent it on that slot (an ODR radio syncing to the wrong CACH phase) or
+   the RX half filed it one slot off: capture the inbound and the outbound together during such a session.
+8. The RX half could find the slot numbers itself: after the outbound keys up and before a subscriber transmits, a
+   short retune to the outbound reads its CACH (TC), with no host clock in the chain. Not built.

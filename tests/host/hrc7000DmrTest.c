@@ -187,10 +187,12 @@ static void test_rx(void)
 	deframe(rti(1, 0, 3, 0, 1, 0));
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1);
 	CHECK(b.kind == DMR_BURST_VOICE && b.voice_index == 0 && b.len == 27 && b.payload[26] == 26);
-	REG(C7_LAYER2_STATUS) = 0;		// slot 0 now: the coming one is slot 1 (HRC7000_RX_NEXT_SLOT_XOR)
+	// The flag goes on the slot LAYER2_STATUS b30 shows at the interrupt (HRC7000_RX_NEXT_SLOT_XOR 0, every HR_C7000
+	// radio measured). The old default 1 put it on the other slot: the DM-1801 Pro played silence (2026-10-22)
+	REG(C7_LAYER2_STATUS) = 1u << 30;
 	tick(false);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x8040);
-	REG(C7_LAYER2_STATUS) = 1u << 30;
+	REG(C7_LAYER2_STATUS) = 0;
 	tick(false);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);
 	count_kind(DMR_EV_SLOT_TICK, NULL);
@@ -675,8 +677,15 @@ static void test_subtone(void)
 	CHECK(REG(C7_CDCSS_ADDR) == ((0754u << 16) | 0023u));
 	hrc7000_set_subtone(&dev, true, HRC7000_TONE_DCS_INV, 0023);
 	CHECK(REG(C7_FM_MOD) & (1u << 11));
+	// DCS gets three times the CTCSS value (the field sends it at a third of the deviation, 100 Hz at 0x28), up to
+	// 0x7F: DCS reads the field as signed, and 0xF0 sent the code inverted
 	dev.subaudio_dev = 0x28;
 	REG(C7_SUBVOICE_COEF) = 0x07D02810u;
+	hrc7000_fm_tx(&dev, true);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D07F10u);
+	hrc7000_fm_tx(&dev, false);
+	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D07810u);
+	hrc7000_set_subtone(&dev, true, HRC7000_TONE_CTCSS, 1000);
 	hrc7000_fm_tx(&dev, true);
 	CHECK(REG(C7_SUBVOICE_COEF) == 0x07D05010u);
 	hrc7000_fm_tx(&dev, false);
@@ -980,10 +989,49 @@ static void test_tx_empty_and_fill(void)
 	count_kind(0xFF, NULL);
 }
 
+// A received burst's arg is the tick of the slot after its own (hrc7000_dmr.h): a deframe late in a slot belongs to
+// that slot, one early in a slot to the one before. The split duplex RX half times its labels from it; the slot clock
+// gives the last boundary
+static void test_rx_slot_arg(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	uint32_t c, t;
+	int8_t ts;
+	CHECK(!hrc7000_dmr_slot_clock(&eng, &c, &t, &ts));	// no slot clock before the first tick
+	tick(false);
+	tick(false);
+	CHECK(hrc7000_dmr_slot_clock(&eng, &c, &t, &ts) && c == 2 && t == now && ts == 0);
+	count_kind(DMR_EV_SLOT_TICK, NULL);
+	dmr_event_t evs[4];
+	dmr_burst_t bs[4];
+	now += 3000;			// 3 ms into slot 2: the burst of slot 1
+	deframe(rti(1, 0, 1, 0, 0, 0));
+	int n = drain(evs, bs, 4);
+	CHECK(n == 1 && evs[0].kind == DMR_EV_BURST_RX && evs[0].arg == 2);
+	now += 24000;			// 27 ms into slot 2: its own burst
+	deframe(rti(2, 0, 1, 0, 0, 0));
+	n = drain(evs, bs, 4);
+	CHECK(n == 1 && evs[0].arg == 3);
+}
+
+// LAYER2_BS_MODE survives a chip reset (modem-hrc7000.md 2.9): the power-on set-up writes it back to its reset value
+static void test_bs_mode_cleared(void)
+{
+	setup();
+	REG(C7_LAYER2_BS_MODE) = 0x904;	// BS TX left on by an earlier build
+	REG(C7_BS_CACH) = 3;
+	hrc7000_power_on_init(&dev, 128, 0);
+	CHECK(REG(C7_LAYER2_BS_MODE) == C7_BS_MODE_RESET);
+	CHECK(REG(C7_BS_CACH) == 0);
+}
+
 int main(void)
 {
 	test_pure();
 	test_rx();
+	test_rx_slot_arg();
+	test_bs_mode_cleared();
 	test_rx_resync();
 	test_cc_scan();
 	test_tx();

@@ -32,10 +32,6 @@ CONFIG_NET_PPP ?= $(if $(and $(filter y,$(CONFIG_HOSTLINK)),$(filter y,$(CONFIG_
 # browser's two and rigctld (TIME_WAIT slots are reused) and keep 11 KB free; 4 leaves 9.6 KB
 TCP_CONNS ?= 3
 MCU_DEFS += -DTCP_CONNS=$(TCP_CONNS)
-# The voice-access flag (modem-hrc7000.md 5.3) belongs on the slot LAYER2_STATUS b30 shows at the RX timeslot interrupt,
-# as on the DB25-D: with the driver's default the chip left its voice RAM unwritten and every call decoded to silence
-# (#73). Checked on the radio 2026-10-19: simplex speech from an AT-D878UV, 0.1 bit errors a frame, clean audio
-MCU_DEFS += -DHRC7000_RX_NEXT_SLOT_XOR=0u
 # What the radio has no hardware for (no USB data port): ci's maximal configuration leaves these off. Everything else
 # is in it, FONT_XL and AUDIO_PROBE too (9.9 KB of main RAM free)
 BOARD_UNSUPPORTED := USB USB_NETWORK

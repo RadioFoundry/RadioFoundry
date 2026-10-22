@@ -119,6 +119,12 @@ again when switching the GPS back on left the UART deaf on the DB25-D. Set it up
 powered; to switch on again, clear the RX FIFO and status (`hrc_uart_rx_clear`) and enable the interrupt
 (hardware-dm32.md 12).
 
+The host port can't wait for a quiet line: it is set up at every boot, and after a reset the host may still be
+sending (the next request of a test run). On the DM-32UV a reset with the host polling left the debug link deaf until a
+power cycle (bench 2026-10-22; quiet resets came back every time): the divisor write was dropped and the low divisor
+byte went out as data. So every HR_C7000 UART set-up (`platform/hrc7000/uart_format.h`) drains the RX FIFO, writes,
+reads LCR, DLL and DLH back, and tries again until they stick (about 100 ms at most).
+
 ## 3. TX/RX state and PA handling
 
 **2.6 HR_C5000 (MD-380) register differences.** Configuration page 0 (page 4 on the HR_C6000); reg 0x10 = 0x6B simplex,
@@ -574,6 +580,13 @@ in an open inbound call, voice headers and terminators are never echo-checked (t
   superframe) then matched our own copy in the 250 ms echo window: 3 bursts dropped as echo.
 - Every terminator heard while keyed came with the chip's RS flag and was dropped in the driver. Rule: while sending,
   the driver passes headers and terminators on with `crc_ok` false and the runner checks them itself (14.1).
+
+**14.16 HR_C7000 voice-access slot polarity.** The RX timeslot interrupt decides the slot LAYER2_STATUS b30 shows
+then (`HRC7000_RX_NEXT_SLOT_XOR` 0), not the one after it. With the flag on the other slot the chip never writes the
+voice RAM, and every frame of every call reads the same stale bytes: silence (`voice.rx_peak` about 6), exactly 3 bit
+errors a frame, every other counter clean. The DB25-D and the DM-32UV each found it and set 0 in their board config;
+the DM-1801 Pro kept the driver's old default of 1 and played every DMR call silent (2026-10-22, bench speech: peak 6
+with 1, 32768 with 0). Rule: 0 is the driver default; `test_dmr_voice_speech` checks the peak, a frame counter can't.
 
 ## 15. Testing practice
 

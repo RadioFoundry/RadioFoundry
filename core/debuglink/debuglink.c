@@ -693,12 +693,17 @@ static size_t cmd_info_chip(uint8_t *out)
 	put32(out + 11, c.uid[1]);
 	put32(out + 15, c.uid[2]);
 	put32(out + 19, c.optcr);
-	out[23] = dl_rdp_level(c.optcr);
-	out[24] = dl_rdp_byte(c.optcr);
-	put16(out + 25, dl_wrp_mask(c.optcr));
-	out[27] = dl_bor_level(c.optcr);
-	out[28] = dl_user_bits(c.optcr);
-	return 29;
+	if (c.family == HAL_CHIP_STM32F4) {
+		out[23] = dl_rdp_level(c.optcr);
+		out[24] = dl_rdp_byte(c.optcr);
+		put16(out + 25, dl_wrp_mask(c.optcr));
+		out[27] = dl_bor_level(c.optcr);
+		out[28] = dl_user_bits(c.optcr);
+	} else {
+		memset(out + 23, 0xFF, 6);	// no option bytes: nothing to decode
+	}
+	out[29] = c.family;
+	return 30;
 }
 
 static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -713,7 +718,8 @@ static size_t cmd_read_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	if (n == 0 || n > DL_MEM_READ_MAX || 5u + n > cap) {
 		return status_only(out, DL_ST_BAD_ARG);
 	}
-	if (board.system == NULL || board.system->read == NULL || !read_chip(&c)) {
+	// The address windows are the STM32F4's
+	if (board.system == NULL || board.system->read == NULL || !read_chip(&c) || c.family != HAL_CHIP_STM32F4) {
 		return status_only(out, DL_ST_UNAVAILABLE);
 	}
 	if (!dl_mem_allowed(addr, n, c.flash_kb)) {

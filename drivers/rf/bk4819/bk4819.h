@@ -27,6 +27,8 @@ typedef struct {
 	void (*delay_ms)(uint32_t ms);	// init only
 } bk4819_bus_t;
 
+typedef enum { BK4819_TONE_NONE, BK4819_TONE_CTCSS, BK4819_TONE_DCS, BK4819_TONE_DCS_INV } bk4819_tone_t;
+
 typedef struct {
 	const bk4819_bus_t *bus;
 	uint32_t freq_10hz;	// last frequency written, 10 Hz units (0 = none)
@@ -38,12 +40,16 @@ typedef struct {
 	uint16_t idle;		// this chip's idle value of 0x30: 0 for the LO, 0x0200 for the main chip (bit 9 stays set)
 	uint16_t tone_hz;	// TX tone set by bk4819_tone_start(), 0 = the microphone is live
 	uint8_t tone_gain;
+	// The receiver ahead of the chip inverts the audio (a high-side LO turns the IF spectrum over, so the deviation's
+	// sign flips): a DCS code then arrives as its inverse, and the chip flags it in the other 0x0C bit. Set by the board
+	bool rx_inverted;
 } bk4819_t;
 
 // Registers with a known meaning
 #define BK4819_REG_ID		0x00	// reads 0x4819; bit 15 written = soft reset
-#define BK4819_REG_CTCSS_FREQ	0x07
-#define BK4819_REG_CSS_STATUS	0x0C	// high byte: b2 CTCSS found (as the FD6818)
+#define BK4819_REG_CTCSS_FREQ	0x07	// CTCSS word, or the DCS bit rate
+#define BK4819_REG_DCS_CODE	0x08	// DCS word: low 12 bits, then the high 12 bits with bit 15 set
+#define BK4819_REG_CSS_STATUS	0x0C	// b10 CTCSS found, b14 DCS found, b15 inverted DCS found (as the FD6818)
 #define BK4819_REG_ENABLES	0x30
 #define BK4819_REG_PA		0x36	// PA bias and gain (the LO's output level)
 #define BK4819_REG_POWER	0x37
@@ -103,6 +109,13 @@ typedef struct {
 #define BK4819_TX_DEV_CTCSS	0x34A8u
 #define BK4819_SUBAUDIO_TX_NONE	0x1050u
 #define BK4819_SUBAUDIO_TX_CTCSS	0x9045u
+// DCS, receive and transmit alike: 0x51 b15 on, b13 inverted, b12 clear (DCS, not CTCSS), gain 0x30; 0x07 the bit
+// rate (134.4 Hz). After the code, receive writes the rate again with bit 14 set (the stock value; meaning unknown)
+#define BK4819_SUBAUDIO_DCS	0x8030u
+#define BK4819_SUBAUDIO_DCS_INV	0x2000u
+#define BK4819_DCS_RATE		0x0AD7u
+#define BK4819_DCS_RATE_RX	0x4AD7u
+#define BK4819_DCS_HIGH_HALF	0x8000u
 // 0x50 in analog mode (bit 15 clear: microphone live) and while a tone is set up
 #define BK4819_TX_AUDIO_LIVE	0x3B18u
 #define BK4819_TX_AUDIO_TONE	0xBB18u
@@ -164,8 +177,9 @@ void bk4819_dmr_rx_end(bk4819_t *dev);
 void bk4819_lo_tune(bk4819_t *dev, uint32_t hz);
 void bk4819_lo_off(bk4819_t *dev);
 // TX, as the stock firmware does it (hardware-db25d.md 4.4). Prepare, while the chip is still in RX: the deviation
-// word (0x40) and the sub-audio (0x51, and the CTCSS word in 0x07 when ctcss_hz_x10 != 0)
-void bk4819_tx_prepare(bk4819_t *dev, uint16_t ctcss_hz_x10);
+// word (0x40) and the sub-audio: 0x51, with CTCSS its word in 0x07 (value = Hz x 10), with DCS the rate in 0x07 and
+// the code's Golay word in 0x08 (value = the 9-bit code)
+void bk4819_tx_prepare(bk4819_t *dev, bk4819_tone_t type, uint16_t value);
 // Tune to hz and enter the TX state (0x37, idle, frequency, 0x30 = 0xC3FE). The caller selects the board's PA afterwards
 // (the stock waits a calibrated time first)
 void bk4819_tx_tune(bk4819_t *dev, uint32_t hz);
@@ -196,8 +210,13 @@ void bk4819_burst_tune(bk4819_t *dev, uint32_t hz, uint16_t state);
 // writes. bk4819_lo_off() is the other half
 void bk4819_lo_resume(bk4819_t *dev);
 
-// RX CTCSS detect (hz_x10 = 0: off) and the detector's answer
-void bk4819_set_rx_ctcss(bk4819_t *dev, uint16_t hz_x10);
-bool bk4819_ctcss_found(bk4819_t *dev);
+// RX sub-audio detect: CTCSS (value = Hz x 10), DCS normal or inverted (value = the 9-bit code), or off. The chip
+// decodes its own demodulated audio; the answer is polled from 0x0C
+void bk4819_set_rx_tone(bk4819_t *dev, bk4819_tone_t type, uint16_t value);
+// Whether a 0x0C reading shows the tone the chip hears (none: always true). The chip's view: see rx_inverted
+bool bk4819_tone_found(uint16_t r0c, bk4819_tone_t type);
+// The same for the channel's tone as sent on air: DCS polarity swapped when dev->rx_inverted
+bool bk4819_heard(const bk4819_t *dev, uint16_t r0c, bk4819_tone_t type);
+bool bk4819_rx_tone_ok(bk4819_t *dev, bk4819_tone_t type);
 
 #endif

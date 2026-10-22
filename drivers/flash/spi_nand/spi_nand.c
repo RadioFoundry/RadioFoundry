@@ -144,6 +144,42 @@ bool spi_nand_read_page(spi_nand_t *nand, uint32_t page, uint16_t column, void *
 	return load(nand, page, false) && read_cache(nand, column, buf, len);
 }
 
+// The unique ID page: feature 0xB0 bit 6 (IDR_E) set, a page read of page 0, then 16 copies of the ID and its
+// complement, 32 bytes each (Kioxia data sheet 4.14). The first copy whose complement matches wins
+#define CONFIG_IDR_E		0x40u
+#define UID_COPIES		16u
+
+bool spi_nand_read_uid(spi_nand_t *nand, uint8_t id[SPI_NAND_UID_LEN])
+{
+	const uint8_t hdr[4] = { CMD_PAGE_READ, 0x00, 0x00, 0x00 };
+	uint8_t config, status, copy[2 * SPI_NAND_UID_LEN];
+	if (!spi_nand_get_feature(nand, SPI_NAND_FEATURE_CONFIG, &config)) {
+		return false;
+	}
+	nand->cached = SPI_NAND_NO_PAGE;	// the cache is about to hold the ID page
+	bool found = false;
+	if (spi_nand_set_feature(nand, SPI_NAND_FEATURE_CONFIG, (uint8_t)(config | CONFIG_IDR_E)) &&
+	    command(nand, hdr, sizeof(hdr), NULL, 0) && wait_ready(nand, PAGE_READ_POLLS, &status)) {
+		for (uint32_t c = 0; c < UID_COPIES && (c + 1u) * sizeof(copy) <= nand->page_size && !found; c++) {
+			if (!read_cache(nand, (uint16_t)(c * sizeof(copy)), copy, sizeof(copy))) {
+				break;
+			}
+			found = true;
+			for (uint32_t i = 0; i < SPI_NAND_UID_LEN; i++) {
+				found = found && (uint8_t)(copy[i] ^ copy[SPI_NAND_UID_LEN + i]) == 0xFFu;
+			}
+		}
+	}
+	// Back to the normal array whatever happened: with IDR_E set, page reads return the ID and parameter pages
+	bool restored = spi_nand_set_feature(nand, SPI_NAND_FEATURE_CONFIG, config);
+	if (found) {
+		for (uint32_t i = 0; i < SPI_NAND_UID_LEN; i++) {
+			id[i] = copy[i];
+		}
+	}
+	return found && restored;
+}
+
 bool spi_nand_read(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len)
 {
 	uint8_t *p = buf;

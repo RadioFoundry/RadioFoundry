@@ -50,11 +50,9 @@ def frame(cmd, payload=b""):
 
 class Link:
     def __init__(self, port, dtr=True):
-        self.s = serial.Serial()
-        self.s.port = port
-        self.s.baudrate = 115200
-        self.s.timeout = 0.05
-        self.s.dtr = dtr                # applied at open: False opens with DTR cleared, as Windows MMDVMHost does
+        # A device or a URL such as rfc2217://host:port (a radio on a network serial hub)
+        self.s = serial.serial_for_url(port, 115200, timeout=0.05, do_not_open=True)
+        self.s.dtr = dtr               # applied at open: False opens with DTR cleared, as Windows MMDVMHost does
         self.s.open()
         self.buf = bytearray()
 

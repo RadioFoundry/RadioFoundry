@@ -26,6 +26,8 @@ def test_ping_latency(radio):
 
 def test_screenshot_geometry(radio, shots):
     w, h, bpp = (int(x) for x in radio.version()["display"].split("x"))
+    if bpp == 4:
+        bpp = 16        # a 16-color panel is sent as RGB565 (debuglink.md 3.3)
     info, data, stable = radio.screenshot()
     assert (info["width"], info["height"], info["bpp"]) == (w, h, bpp)
     stride = w * 2 if bpp == 16 else (w + 7) // 8
