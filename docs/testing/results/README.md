@@ -63,7 +63,7 @@ A feature's status never understates the board. For a feature the board builds:
 |---|---|
 | `pass`, `fail` | The newest run record that ran the feature passed or failed it |
 | `partial` | That run had excused skips, and no seed row covers the feature |
-| `needs re-run` | The feature's `spec` or `source` paths (`tests/hil/features.toml`) differ from the record's `sources` ids: staleness is by content, not by commit ancestry. The mark isn't downgraded; the feature needs a run |
+| `needs re-run` | The feature's `spec` or `source` paths (`tests/hil/features.toml`) differ in the tree (tracked files, uncommitted changes included) from the record's `sources` ids: staleness is by content, not by commit ancestry. The mark isn't downgraded; the feature needs a run |
 | `pass (seed)`, `fail (seed)` | No run passed or failed the feature, and the seed record has a row for it |
 | `built, not yet recorded` | No record covers the feature yet, or it has no HIL test |
 
