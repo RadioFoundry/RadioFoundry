@@ -17,7 +17,7 @@
 #endif
 
 #define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
-#define DL_SETTING_ENC_OPTIONS	30u	// SETTING id of the vocoder's encode options (VOCODER_OPT_*)
+#define DL_SETTING_ENC_OPTIONS	31u	// SETTING id of the vocoder's encode options (VOCODER_OPT_*)
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {

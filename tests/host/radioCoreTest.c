@@ -2669,14 +2669,14 @@ static void test_ui_glue(void)
 	CHECK(ambeVoiceEncodeOptions() == VOCODER_OPT_DEFAULT);
 	settings_read(&sv);
 	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == 0);
-	// The debug link's SETTING 30 sets the options in RAM, any combination (0 = the codec's plain 0x800 word); the
+	// The debug link's SETTING 31 sets the options in RAM, any combination (0 = the codec's plain 0x800 word); the
 	// store is not touched, and the next settings change brings theirs back
-	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 30, 0, 0 }, 3) == DL_ST_OK);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 31, 0, 0 }, 3) == DL_ST_OK);
 	CHECK(ambeVoiceEncodeOptions() == 0);
-	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 30, 7, 0 }, 3) == DL_ST_OK);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 31, 7, 0 }, 3) == DL_ST_OK);
 	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC));
-	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 30, 8, 0 }, 3) == DL_ST_BAD_ARG);
-	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 30, 0, 1 }, 3) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 31, 8, 0 }, 3) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 31, 0, 1 }, 3) == DL_ST_BAD_ARG);
 	CHECK(ambeVoiceEncodeOptions() == (VOCODER_OPT_DEFAULT | VOCODER_OPT_AGC));
 	settings_read(&sv);
 	CHECK((sv.accent & SETTINGS_AUDIO_MASK) == 0);

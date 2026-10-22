@@ -38,7 +38,7 @@ afterwards (the test skips when a key was set already).
 
 test_dmr_tx_encode_options: per vocoder encode option set (0x3 = the default flags word 0x1840, 0x0 = 0x800, 0x2 =
 0x1800 with Mic noise reduction off, 0x7 = 0x3840 with Mic AGC on; docs/spec/dmr-voice.md 6), set over the debug link
-(SETTING 30, RAM only): voice.enc_options equals the set, a 3 s over passes the checks above, voice.enc_flags after the
+(SETTING 31, RAM only): voice.enc_options equals the set, a 3 s over passes the checks above, voice.enc_flags after the
 over is the word (where the board reports it), and the options in force before are back afterwards. The AMBE
 parameter statistics of what the bench modem heard (a quiet room, nobody talking) are printed, not judged.
 
@@ -503,7 +503,7 @@ def ambe_param_stats(amb):
 @pytest.mark.bench_service
 @pytest.mark.parametrize("opts,word", ENC_CASES, ids=[f"{w:#x}" for _, w in ENC_CASES])
 def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
-    """One 3 s over per encode option set, given over the debug link (SETTING 30, RAM only; dmr-voice.md 6): the
+    """One 3 s over per encode option set, given over the debug link (SETTING 31, RAM only; dmr-voice.md 6): the
     options in force (voice.enc_options) are the ones set, the over passes test_dmr_tx_off_air's checks (valid call,
     header and terminator, whole superframes, AMBE FEC corrections), and on a board that reports its codec word,
     voice.enc_flags after the over is the word for those options. The options in force before (the Mic noise
@@ -523,10 +523,10 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
     try:
         radio.link.setting(30, opts)
     except DebugLinkError as e:
-        pytest.skip(f"firmware without the enc_options setting (SETTING 30): {e}")
+        pytest.skip(f"firmware without the enc_options setting (SETTING 31): {e}")
     try:
         got = int(radio.view(["dmr_stats"])["voice.enc_options"], 0)
-        assert got == opts, f"options in force {got:#x} after SETTING 30 {opts:#x}"
+        assert got == opts, f"options in force {got:#x} after SETTING 31 {opts:#x}"
         radio.reset_counters()
         _, before = radio.counters()
         rdir = sdr_bench.run_dir(f"hil_dmr_enc_{word:x}")
