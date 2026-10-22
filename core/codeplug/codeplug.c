@@ -342,22 +342,11 @@ static void index_zones(void)
 	}
 }
 
-static bool in_bands(uint32_t hz, bool need_tx)
-{
-	for (uint8_t i = 0; i < board.band_count; i++) {
-		const band_t *b = &board.bands[i];
-		if (hz >= b->lo_hz && hz <= b->hi_hz && (b->tx || !need_tx)) {
-			return true;
-		}
-	}
-	return false;
-}
-
 static void index_builtin(void)
 {
 	builtin_count = 0;
 	for (unsigned i = 0; i < BUILTIN_COUNT; i++) {
-		if (board.band_count == 0 || in_bands(builtin[i].hz, false)) {
+		if (board.band_count == 0 || board_in_band(builtin[i].hz, false)) {
 			builtin_map[builtin_count++] = (uint8_t)i;
 		}
 	}
@@ -436,7 +425,7 @@ static bool builtin_channel(uint16_t number, channel_t *out)
 	out->mode = RADIO_MODE_FM;
 	out->bw = b->bw;
 	out->power = CODEPLUG_POWER_DEFAULT;
-	out->rx_only = board.band_count != 0 && !in_bands(b->hz, true);
+	out->rx_only = board.band_count != 0 && !board_in_band(b->hz, true);
 	out->color_code = 1;
 	out->timeslot = 1;
 	return true;

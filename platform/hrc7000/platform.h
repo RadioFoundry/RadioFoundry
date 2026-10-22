@@ -219,6 +219,12 @@ void hrc_adc_init(void);
 uint16_t hrc_adc_read(uint8_t ch);	// 10 bits, 0 if the conversion doesn't finish
 uint16_t hrc_adc_last(uint8_t ch);	// the last reading, for diagnostics
 
+// --- DAC (dac.c): B is the PA drive ---
+
+// modem-hrc7000.md 4 steps 1-3: the ADC reset and idle, DAC B to its pin, DACs B and C on (C at dac_c), PA drive 0
+void hrc_modem_analog_init(uint16_t dac_c);
+void hrc_dac_b_power(bool on);	// the PA drive DAC powered up or down (FM receive powers it down)
+
 // --- Start-up and services (clock.c, time.c) ---
 
 // Watchdog off, PLL to 168 MHz unless the bootloader already runs on it, peripheral clocks on, flash cache.
