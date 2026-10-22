@@ -3,6 +3,8 @@
 """The split duplex extension on one radio (a CONFIG_HOTSPOT_SPLIT=y build; docs/spec/split-duplex.md 10). Every
 test skips on a build without it.
 
+- test_split_capability (no RF): the capability gate. The build has the extension and INFO offers both halves; it
+  skips (no_hw) on a radio whose modem glue offers neither or one, and a bring-up run counts that skip as a failure.
 - test_split_protocol (no RF): GET_VERSION announces " SPLIT1"; INFO offers the TX and RX halves; SET_ROLE 2 (the RX
   half never transmits) and back to 0; STATUS; an unknown 0xD6 sub-command answers result 1; an unknown command is
   still NAKed 1; the debug link's SPLIT view answers.
@@ -51,6 +53,22 @@ def need_role(r, sdh, role):
 def leave_hotspot(radio):
     radio.link.hotspot_exit()
     radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot",), what="hotspot left")
+
+
+def test_split_capability(radio):
+    need_split(radio)
+    import split_duplex_host as sdh
+    with radio.released() as port:
+        r = sdh.Radio(port, "radio", dtr=False)
+        try:
+            _, info = sdh.require_split(r)
+        finally:
+            r.close()
+    leave_hotspot(radio)
+    print(f"INFO {info}")
+    if info["offered"] & 3 != 3:
+        skip("no_hw", f"the radio offers split duplex roles {info['offered']}, not both halves (3): its modem glue "
+                      f"has no slot clock or base-station hooks")
 
 
 def test_split_protocol(radio):
