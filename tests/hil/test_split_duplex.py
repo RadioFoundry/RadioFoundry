@@ -55,7 +55,7 @@ def leave_hotspot(radio):
     radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot",), what="hotspot left")
 
 
-@pytest.mark.feature("split_duplex")
+@pytest.mark.feature("split_duplex", gate=True)
 def test_split_capability(radio):
     need_split(radio)
     import split_duplex_host as sdh
