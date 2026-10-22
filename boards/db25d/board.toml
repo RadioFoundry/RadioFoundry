@@ -10,15 +10,15 @@ maker = "Radioddity"
 model = "DB25-D PRO"
 also = ["Kydera CDR-300UV"]
 kind = "mobile"
-# The VERSION board= values that mean this radio (debug link); board_t .name must be one of them
-debuglink_names = ["DB25-D", "DB25-D PRO", "db25d"]
+# Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
+# build option value's board_name), and the id always counts
+debuglink_aliases = ["DB25-D PRO"]
 
 [docs]
 hardware = "docs/spec/hardware-db25d.md"
 
 # One-line summaries for the site and the generated tables; the facts are in docs.hardware
 [hardware]
-cpu = "HR_C7000"
 bands = "136-174 / 400-480 MHz"
 power = "up to 25 W"
 display = "1.77\" color, 160 × 128"
@@ -33,12 +33,8 @@ release = "testing"
 # (board.mk BOOT_*), the application follows it, the codec slot is the DM-32UV's (db25d_dmr.ld). The web flasher (IAP
 # loader, or the stub from ODR) and stub/stubtool.py flash it
 [flash]
-backend = "c7000-stub"
-family = "hrc7000-iap"
-link = "serial-cable"
+family = "serial-iap"
 keep_codec = false
-sectors = "app+slot"
-protected = [[0x03000000, 0x0300C000]]
 stock_versions = []
 backup = { stock = "full", odr = "full", spi_size = 0 }
 
@@ -48,15 +44,13 @@ steps = [
 	"Hold P1 and press power. The red LED lights and the display stays blank.",
 ]
 
-# The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): PTB13 latch, PTB12 power key
-# (hardware-db25d.md 3.3), the same pins under ODR, its first stage and the stock firmware; the data memory is the SPI
-# NAND on the chip select the other radios' data flash uses; 2 MB of program flash (Boya, JEDEC 68 40 15).
+# The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the stub holds the power latch (pins.h:
+# PTB13 latch, PTB12 power key, hardware-db25d.md 3.3, the same pins under ODR, its first stage and the stock firmware);
+# 2 MB of program flash (Boya, JEDEC 68 40 15).
 # stock_console: the stock firmware answers a debug console the web flasher reads before ODR is installed
 [flash.stub]
 id = 3
-latch = 45
-key = 44
-nand = true
+hold_power = true
 progmem = 0x200000
 tested = false
 stock_console = true

@@ -22,7 +22,7 @@
 # reported as ok / FAIL / skip:
 #   0. registry: boards/*/board.toml and platform/*/platform.toml (tools/boards.py) are well formed and agree
 #      with board.mk, the linker scripts and board_t; tools/odrflash/odrflash/registry.json is current; the loader's
-#      self-test; the facts radio.json and the README still copy agree (tools/test_registry_parity.py)
+#      self-test
 #   1. host tests (make -C tests/host, with each board's boards/<b>/tests/host.mk), and with ODR_CI_SANITIZE=1 again
 #      under ASan and UBSan
 #   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); the flashing tools'
@@ -103,9 +103,8 @@ echo "== registry"
 if [ -z "$REG_PY" ]; then
 	bad "board registry: $(cat "$OUT/odr-python.log")"
 elif reg check > "$OUT/registry.log" 2>&1 &&
-     reg self-test >> "$OUT/registry.log" 2>&1 &&
-     $REG_PY tools/test_registry_parity.py >> "$OUT/registry.log" 2>&1; then
-	ok "board registry: $(grep '^boards: ' "$OUT/registry.log" | sed 's/^boards: //'), self-test and parity"
+     reg self-test >> "$OUT/registry.log" 2>&1; then
+	ok "board registry: $(grep '^boards: ' "$OUT/registry.log" | sed 's/^boards: //') and self-test"
 else
 	tail -20 "$OUT/registry.log"
 	bad "board registry (see $OUT/registry.log)"

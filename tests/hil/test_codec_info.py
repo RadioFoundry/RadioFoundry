@@ -16,7 +16,7 @@ def test_version_reports_codec(radio):
     assert "codec" in v, "firmware without the codec= key (older than the release tooling)"
     board = boards.from_debuglink_name(v.get("board", ""))
     allowed = {"none", "absent", "present"} | ({board.codec.id} if board else set())
-    if board is not None and board.family != "anyroad-dfu":
+    if board is not None and board.family != "usb-dfu":
         # HR_C7000: "<board>-<tag>" for each stock build of the radio (platform/hrc7000/vocoder.c profile())
         allowed |= {"%s-%03d" % (board.id, p["tag"]) for p in hrc7000_codec.PROFILES.values() if p["board"] == board.id}
         allowed.add(board.id + "-unknown")

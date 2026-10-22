@@ -9,8 +9,9 @@ maker = "Baofeng"
 model = "DM-1801 Pro"
 also = ["Baofeng DM-1801"]
 kind = "handheld"
-# The VERSION board= values that mean this radio (debug link); board_t .name must be one of them
-debuglink_names = ["DM-1801 Pro", "DM-1801Pro", "dm1801pro"]
+# Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
+# build option value's board_name), and the id always counts
+debuglink_aliases = ["DM-1801Pro"]
 
 [docs]
 hardware = "docs/spec/hardware-dm1801pro.md"
@@ -19,7 +20,6 @@ bringup = "docs/testing/dm1801pro-bringup.md"
 
 # One-line summaries for the site and the generated tables; the facts are in docs.hardware
 [hardware]
-cpu = "HR_C7000"
 bands = "136-174 / 400-470 MHz"
 power = "L / M / H"
 display = "monochrome, 128 × 64"
@@ -33,12 +33,8 @@ release = "testing"
 # The same Baofeng serial updater as the DM-32UV, with its own ID string; the same flash map, the same codec slot and
 # the same erase of the whole application area
 [flash]
-backend = "c7000-stub"
-family = "bfuv32-serial"
-link = "serial-cable"
+family = "serial-loader"
 keep_codec = false
-sectors = "app+slot"
-protected = [[0x03000000, 0x0300C000]]
 stock_versions = []
 backup = { stock = "full", odr = "full", spi_size = 0x1000000 }
 
@@ -52,9 +48,7 @@ id = "BF1801-V1"
 # The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py)
 [flash.stub]
 id = 2
-latch = 255
-key = 255
-nand = false
+hold_power = false
 progmem = 0x100000
 tested = true
 
