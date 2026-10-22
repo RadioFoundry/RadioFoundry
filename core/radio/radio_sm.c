@@ -298,6 +298,16 @@ static void outputs(radio_sm_t *sm)
 		sm->green_out = (int8_t)green;
 		board.power->led(LED_GREEN, green);
 	}
+#if CONFIG_DUAL_WATCH
+	// The second receiver has the speaker while the selected channel is quiet: that one's calls always win
+	if (board.rx2 != NULL) {
+		int8_t on = (int8_t)(sm->rx2_on && !tx && !green);
+		if (sm->rx2_audio_out != on) {
+			sm->rx2_audio_out = on;
+			board.rx2->audio(on != 0);
+		}
+	}
+#endif
 	if (sm->red_out != (int8_t)tx) {
 		sm->red_out = (int8_t)tx;
 		board.power->led(LED_RED, tx);
@@ -1706,6 +1716,136 @@ static bool dual_tune(radio_sm_t *sm, uint8_t i, uint32_t now_ms)
 	return true;
 }
 
+#if CONFIG_DUAL_WATCH
+// Two receivers (board.rx2, hal_rx2.h): the main receiver stays on the selected channel and the second one gets the
+// other, so dual watch hears both at once. While the second one is down or refuses the channel, the main receiver
+// alternates as on any radio, and the second is tried again after RADIO_RX2_RETRY_MS
+
+// Channel i's settings for the second receiver. False: it can't be read now
+static bool rx2_settings(radio_sm_t *sm, uint8_t i, rx2_tune_t *t)
+{
+	static zone_t buf;		// only the radio task uses it
+	const radio_dual_ref_t *r = &sm->dual[i];
+	channel_t ch;
+	memset(t, 0, sizeof(*t));
+	if (r->vfo) {
+		if (!VFO_AVAILABLE) {
+			return false;
+		}
+		ch = sm->vfo_ch;
+	} else if (dual_read(sm, r, &buf, &ch) == NULL) {
+		return false;
+	}
+	t->rx_hz = ch.rx_hz;
+	t->mode = ch.mode;
+	t->bw = ch.bw;
+	t->squelch = sm->view.squelch;
+	t->rx_tone = ch.rx_tone;
+#if CONFIG_DMR
+	if (ch.mode == RADIO_MODE_DMR) {
+		static listen_list_t list;	// only the radio task uses it
+		contact_t c;
+		t->color_code = ch.color_code & 0x0Fu;
+		t->timeslot = ch.timeslot == 2 ? 2 : 1;
+		t->own_id = ch.dmr_id != 0 ? ch.dmr_id : sm->own_id;
+		t->talk_group = 9;
+		if (r->vfo) {
+			if (sm->vfo_talk_id != 0) {
+				t->talk_group = sm->vfo_talk_private ? 0 : sm->vfo_talk_id;
+			}
+		} else {
+			uint16_t talk = codeplug_channel_talk_contact(&ch);
+			if (talk != 0 && codeplug_contact(talk, &c)) {
+				t->talk_group = c.type == CONTACT_PRIVATE ? 0 : c.id;
+			}
+			if (ch.listen_list != 0 && codeplug_listen_list(ch.listen_list, &list)) {
+				for (uint8_t k = 0; k < list.count && t->group_count < RX2_GROUPS; k++) {
+					if (codeplug_contact(list.contacts[k], &c) && c.type != CONTACT_PRIVATE) {
+						t->groups[t->group_count++] = c.id;
+					}
+				}
+			}
+		}
+	}
+#endif
+	return true;
+}
+
+static void rx2_publish(radio_sm_t *sm)
+{
+	if (sm->view.rx2 != sm->rx2_on) {
+		sm->view.rx2 = sm->rx2_on;
+		changed(sm);
+	}
+}
+
+static void rx2_release(radio_sm_t *sm)
+{
+	if (sm->rx2_on) {
+		sm->rx2_on = false;
+		board.rx2->stop();
+		outputs(sm);
+		rx2_publish(sm);
+	}
+}
+
+// Give the second receiver the channel not selected, and the main receiver the selected one. False: it can't now
+static bool rx2_engage(radio_sm_t *sm, uint32_t now_ms)
+{
+	rx2_tune_t t;
+	sm->rx2_try_ms = sm->rx2_refresh_ms = now_ms;
+	if (board.rx2 == NULL || !rx2_settings(sm, (uint8_t)!sm->dual_sel, &t) || !board.rx2->tune(&t)) {
+		rx2_release(sm);
+		return false;
+	}
+	if (!dual_here(sm, sm->dual_sel)) {
+		if (!dual_tune(sm, sm->dual_sel, now_ms)) {
+			rx2_release(sm);
+			return false;
+		}
+		scan_tuned(&sm->scan, now_ms);
+	}
+	sm->dual_at = sm->dual_sel;
+	sm->rx2_on = true;
+	rx2_publish(sm);
+	return true;
+}
+
+// Every poll in dual watch on a radio with a second receiver. True: it has the other channel (nothing to alternate)
+static bool rx2_service(radio_sm_t *sm, uint32_t now_ms)
+{
+	rx2_status_t st;
+	board.rx2->status(&st);
+	if (!sm->rx2_on) {
+		if (st.up && now_ms - sm->rx2_try_ms >= RADIO_RX2_RETRY_MS) {
+			return rx2_engage(sm, now_ms);
+		}
+		return false;
+	}
+	if (!st.up || (!st.tuned && now_ms - sm->rx2_try_ms >= RADIO_RX2_TUNE_MS)) {
+		rx2_release(sm);	// gone, or it won't take the channel: alternate until it's back
+		sm->rx2_try_ms = now_ms;
+		return false;
+	}
+	if (st.tuned) {
+		sm->rx2_try_ms = now_ms;	// the deadline runs from the last time it was on its settings
+	}
+	if (now_ms - sm->rx2_refresh_ms >= RADIO_RX2_REFRESH_MS) {
+		rx2_tune_t t;
+		sm->rx2_refresh_ms = now_ms;
+		if (rx2_settings(sm, (uint8_t)!sm->dual_sel, &t)) {
+			board.rx2->tune(&t);	// a codeplug edit or a squelch change; the same settings again send nothing
+		}
+	}
+	if (!dual_here(sm, sm->dual_sel) && dual_tune(sm, sm->dual_sel, now_ms)) {
+		scan_tuned(&sm->scan, now_ms);
+	}
+	return true;
+}
+#else
+static void rx2_release(radio_sm_t *sm) { (void)sm; }
+#endif
+
 static void scan_publish(radio_sm_t *sm)
 {
 	const scan_t *sc = &sm->scan;
@@ -1727,6 +1867,9 @@ static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 		return;
 	}
 	uint8_t kind = sc->kind;
+	if (kind == SCAN_DUAL) {
+		rx2_release(sm);
+	}
 	scan_end(sc);
 	if (cancel) {
 		if (kind == SCAN_DUAL) {
@@ -1872,6 +2015,12 @@ static void dual_start(radio_sm_t *sm, const radio_dual_ref_t ref[2], uint8_t se
 		}
 	}
 	if (running && here) {
+#if CONFIG_DUAL_WATCH
+		if (board.rx2 != NULL) {
+			rx2_engage(sm, now_ms);	// the selection may have changed: the receivers swap channels
+			scan_publish(sm);
+		}
+#endif
 		return;
 	}
 	if (!running) {
@@ -1880,6 +2029,12 @@ static void dual_start(radio_sm_t *sm, const radio_dual_ref_t ref[2], uint8_t se
 		scan_begin(sc, SCAN_DUAL, &cfg, now_ms);
 		activity(sm, now_ms);
 	}
+#if CONFIG_DUAL_WATCH
+	if (board.rx2 != NULL && rx2_engage(sm, now_ms)) {
+		scan_publish(sm);
+		return;
+	}
+#endif
 	if (!here) {
 		if (!dual_tune(sm, sel, now_ms)) {
 			scan_end(sc);
@@ -1937,6 +2092,12 @@ static void dual_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms
 static void scan_service(radio_sm_t *sm, const radio_status_t *st, uint32_t now_ms)
 {
 	scan_t *sc = &sm->scan;
+#if CONFIG_DUAL_WATCH
+	if (sc->kind == SCAN_DUAL && board.rx2 != NULL && rx2_service(sm, now_ms)) {
+		scan_publish(sm);
+		return;
+	}
+#endif
 	scan_pause(sc, sm->view.monitor, now_ms);
 	bool dmr = sm->view.ch.mode == RADIO_MODE_DMR;
 	bool carrier = carrier_heard(sm, st->noise);
@@ -3466,6 +3627,9 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	sm->audio_out = -1;
 	sm->green_out = -1;
 	sm->red_out = -1;
+#if CONFIG_DUAL_WATCH
+	sm->rx2_audio_out = -1;
+#endif
 	sm->volume_sent = -1;
 	sm->vol_step = RADIO_VOLUME_DEFAULT;
 	sm->vol_override = -1;

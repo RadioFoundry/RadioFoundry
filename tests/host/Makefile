@@ -237,12 +237,16 @@ serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROO
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c
 
 # The VOX mic level (drivers/audio/miclevel): the boards' analog-tap scale and the level from PCM blocks
+# The second receiver's link (core/rx2): frames and both ends back to back
+TESTS   += rx2LinkTest
+rx2LinkTest: rx2LinkTest.c $(CORE)/rx2/rx2_link.c $(CORE)/rx2/rx2_link.h $(ROOT)/hal/hal_rx2.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ rx2LinkTest.c $(CORE)/rx2/rx2_link.c
 TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest rx2LinkTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
@@ -255,6 +259,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./quadratureTest
 	./serialmicTest
 	./miclevelTest
+	./rx2LinkTest
 .PHONY: run-core
 
 # The read-only codeplug (open-firmware layout and built-in channels) and the DM-1701 calibration reader, on fake flash images

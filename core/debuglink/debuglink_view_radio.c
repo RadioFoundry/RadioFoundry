@@ -48,8 +48,10 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 			dl_text(t, "dual.%c=%u:%u\n", 'a' + i, dual[i].zone, dual[i].pos);
 		}
 	}
-	dl_text(t, "dual.built=%u\ndual.sel=%c\ndual.at=%c\ndual.receivers=1\n", CONFIG_DUAL_WATCH,
-		on ? 'a' + sel : '-', on ? 'a' + at : '-');
+	// receivers: what the radio has; both: the second receiver has the channel not selected now (dual.at is then the
+	// main receiver's, always the selected one)
+	dl_text(t, "dual.built=%u\ndual.sel=%c\ndual.at=%c\ndual.receivers=%u\ndual.both=%u\n", CONFIG_DUAL_WATCH,
+		on ? 'a' + sel : '-', on ? 'a' + at : '-', board.rx2 != NULL ? 2u : 1u, on && v->rx2);
 	dl_text(t, "tot_warning=%u\ntone_burst=%u\nroger=%u\nvox_keyed=%u\nrx_sleeping=%u\n", v->tot_warning,
 		v->tone_burst, v->roger, v->vox_keyed, v->rx_sleeping);
 	bool mic = board.power != NULL && board.power->mic_level != NULL;
