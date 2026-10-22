@@ -248,8 +248,18 @@ TESTS   += miclevelTest
 miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclevelTest.c -lm
 
+# The battery average and charge estimate the radios share (drivers/power/battery)
+TESTS   += batteryTest
+batteryTest: batteryTest.c $(ROOT)/drivers/power/battery/battery.h
+	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ batteryTest.c
+# The band check of hal/board.h, which the core and the radios share
+TESTS   += boardBandTest
+boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
+
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest rx2LinkTest
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
+          rx2LinkTest keyassignTest powerSwitchTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
@@ -263,6 +273,10 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./serialmicTest
 	./miclevelTest
 	./rx2LinkTest
+	./keyassignTest
+	./powerSwitchTest
+	./boardBandTest
+	./batteryTest
 .PHONY: run-core
 
 # The read-only codeplug (open-firmware layout and built-in channels), on fake flash images
