@@ -118,9 +118,6 @@ extern hal_flash_t db25d_flash;
 bool db25d_flash_init(void);
 void db25d_flash_stats(nand_sectors_stats_t *st);
 
-// --- Power (power_db25d.c) ---
-uint16_t db25d_adc_raw(uint8_t ch);	// the last reading of ADC channel 0..7
-
 // --- Diagnostics (diag_db25d.c) ---
 uint32_t db25d_input_raw(void);		// the last key scan before debouncing
 // The mic connector's lines PTA9 and PTC11 as the 10 ms scan sees them: levels (bit 0 PTA9, bit 1 PTC11) and how many
