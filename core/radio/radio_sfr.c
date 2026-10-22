@@ -17,7 +17,7 @@ typedef struct {
 	dmr_burst_t burst;
 } sfr_ev_t;
 
-static sfr_ev_t evq[RADIO_SFR_EVQ_DEPTH];
+static sfr_ev_t evq[RADIO_SFR_EVQ_DEPTH] ODR_CPU_RAM;	// CPU only: the board's CPU RAM where it has one
 static uint8_t evq_head, evq_tail;
 static uint32_t evq_drops;
 

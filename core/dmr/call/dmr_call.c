@@ -90,15 +90,7 @@ static struct {
 	sfrDedup_t sfr_dd;	// SFR user, both copies heard: the voice burst last taken, of either copy
 #endif
 #if CONFIG_SFR && CONFIG_SFR_VOTING
-	// SFR user, voting: voice bursts taken but not played yet, oldest first (play order). A burst waits while one of
-	// its frames failed the FEC and the other copy may still fix it
-	struct {
-		dmr_burst_t b;
-		uint32_t ms, slot;	// arrival, the modem's slot counter
-		uint8_t bad;		// bit f: frame f failed the FEC
-		bool wait;		// the other copy hasn't come yet
-	} vq[SFR_VOTE_DEPTH];
-	uint8_t vq_n;
+	uint8_t vq_n;		// bursts in vq
 #endif
 	uint32_t last_call_end_ms;
 	bool call_end_seen;
@@ -165,6 +157,16 @@ static struct {
 	dmr_data_rx_fn data_rx;
 	void *data_rx_ctx;
 } s;
+#if CONFIG_SFR && CONFIG_SFR_VOTING
+// SFR user, voting: voice bursts taken but not played yet, oldest first (play order; s.vq_n of them). A burst waits
+// while one of its frames failed the FEC and the other copy may still fix it. CPU only, so in the board's CPU RAM
+static struct {
+	dmr_burst_t b;
+	uint32_t ms, slot;	// arrival, the modem's slot counter
+	uint8_t bad;		// bit f: frame f failed the FEC
+	bool wait;		// the other copy hasn't come yet
+} vq[SFR_VOTE_DEPTH] ODR_CPU_RAM;
+#endif
 
 // --- RX trace: one entry per burst event, packed into lines for the debug link's log ---
 //
@@ -666,15 +668,15 @@ static uint8_t frames_bad(const uint8_t v[DMR_VOICE_BYTES])
 
 static void vote_pop(void)
 {
-	rx_play(&s.vq[0].b, s.vq[0].ms, s.vq[0].slot);
+	rx_play(&vq[0].b, vq[0].ms, vq[0].slot);
 	s.vq_n--;
-	memmove(&s.vq[0], &s.vq[1], s.vq_n * sizeof(s.vq[0]));
+	memmove(&vq[0], &vq[1], s.vq_n * sizeof(vq[0]));
 }
 
 // Play the held bursts that are ready, in order: the head's other copy came, or it waited long enough
 static void vote_drain(uint32_t now)
 {
-	while (s.vq_n && (!s.vq[0].wait || elapsed(now, s.vq[0].ms, true, DMR_SFR_VOTE_MS)))
+	while (s.vq_n && (!vq[0].wait || elapsed(now, vq[0].ms, true, DMR_SFR_VOTE_MS)))
 		vote_pop();
 }
 
@@ -697,11 +699,11 @@ static void vote_take(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 	}
 	if (s.vq_n == SFR_VOTE_DEPTH)
 		vote_pop();
-	s.vq[s.vq_n].b = *b;
-	s.vq[s.vq_n].ms = now;
-	s.vq[s.vq_n].slot = slot;
-	s.vq[s.vq_n].bad = bad;
-	s.vq[s.vq_n].wait = bad != 0;
+	vq[s.vq_n].b = *b;
+	vq[s.vq_n].ms = now;
+	vq[s.vq_n].slot = slot;
+	vq[s.vq_n].bad = bad;
+	vq[s.vq_n].wait = bad != 0;
 	s.vq_n++;
 	if (bad)
 		stats.rx_sfr_held++;
@@ -712,21 +714,21 @@ static void vote_take(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 static void vote_other(const dmr_burst_t *b, uint32_t now)
 {
 	for (uint8_t k = 0; k < s.vq_n; k++) {
-		if (!s.vq[k].wait || s.vq[k].b.voice_index % 6 != b->voice_index % 6)
+		if (!vq[k].wait || vq[k].b.voice_index % 6 != b->voice_index % 6)
 			continue;
 		uint8_t other = frames_bad(b->payload);
 
 		for (int f = 0; f < DMR_AMBE_FRAMES_PER_BURST; f++) {
 			uint8_t m = (uint8_t)(1u << f);
 
-			if ((s.vq[k].bad & m) && !(other & m)) {
-				memcpy(&s.vq[k].b.payload[f * DMR_AMBE_FRAME_BYTES], &b->payload[f * DMR_AMBE_FRAME_BYTES],
+			if ((vq[k].bad & m) && !(other & m)) {
+				memcpy(&vq[k].b.payload[f * DMR_AMBE_FRAME_BYTES], &b->payload[f * DMR_AMBE_FRAME_BYTES],
 				       DMR_AMBE_FRAME_BYTES);
-				s.vq[k].bad &= (uint8_t)~m;
+				vq[k].bad &= (uint8_t)~m;
 				stats.rx_sfr_fixed++;
 			}
 		}
-		s.vq[k].wait = false;
+		vq[k].wait = false;
 		break;
 	}
 	vote_drain(now);
