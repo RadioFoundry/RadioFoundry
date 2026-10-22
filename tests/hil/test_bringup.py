@@ -213,9 +213,15 @@ def statuses(common, board, t):
     return {x["id"]: (x["status"], x["basis"]) for x in json.loads(st.stdout)}
 
 
-def bringup(*args):
-    return subprocess.run([python311(), BRINGUP, *args], cwd=ROOT, env=env(), capture_output=True, text=True,
-                          timeout=300)
+def bringup(*args, extra_env=None):
+    return subprocess.run([python311(), BRINGUP, *args], cwd=ROOT, env=dict(env(), **(extra_env or {})),
+                          capture_output=True, text=True, timeout=300)
+
+
+def git_checkout():
+    """Whether the tree is a git work tree: a `git archive` export, as some benches run, has no history."""
+    r = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=ROOT, capture_output=True, text=True)
+    return r.returncode == 0 and os.path.realpath(r.stdout.strip()) == os.path.realpath(ROOT)
 
 
 def a_board():
@@ -223,7 +229,32 @@ def a_board():
                                                                                           "board.mk")))[0]
 
 
+def test_bringup_without_git(tmp_path):
+    """A tree that isn't a git checkout (GIT_DIR pointing nowhere stands in for a `git archive` export): status and
+    list say staleness wasn't checked, and run refuses before anything runs, unless --no-record."""
+    t = fake_tree(tmp_path)
+    (t / "features.toml").write_text(FAKE_TOML)
+    results, board = t / "results", a_board()
+    (results / board).mkdir(parents=True)
+    (results / board / "seed.json").write_text(json.dumps(seed(board, {"fake_split": {"result": "pass",
+                                                                                        "commit": "0" * 40}})))
+    nogit = {"GIT_DIR": str(t / "no-git-here")}
+    common = ["--features", str(t / "features.toml"), "--results", str(results)]
+    st = bringup(*common, "status", "--radio", board, extra_env=nogit)
+    assert st.returncode == 0 and "not a git checkout" in st.stdout, st.stdout + st.stderr
+    lst = bringup(*common, "list", "--radio", board, "--json", *collect_args(t), extra_env=nogit)
+    assert lst.returncode == 0 and "not a git checkout" in lst.stderr, lst.stdout + lst.stderr
+    rows = {x["id"]: (x["status"], x["basis"]) for x in json.loads(lst.stdout)}
+    assert rows["fake_split"] == ("pass", "seed"), rows
+    r = bringup(*common, "run", "--radio", board, "--lock", str(t / "radio.lock"), *collect_args(t), "--",
+                "--radio-port", "/nonexistent/odr-fake-port", extra_env=nogit)
+    assert r.returncode != 0 and "not a git checkout" in r.stderr and "--no-record" in r.stderr, r.stdout + r.stderr
+    assert [p.name for p in (results / board).iterdir()] == ["seed.json"]
+
+
 def test_bringup_run_records_and_status(tmp_path):
+    if not git_checkout():
+        skip("bench", "not a git checkout: the staleness check needs history")
     t = fake_tree(tmp_path)
     (t / "features.toml").write_text(FAKE_TOML)
     results, lock, board = t / "results", t / "radio.lock", a_board()
