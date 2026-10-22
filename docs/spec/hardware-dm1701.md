@@ -80,7 +80,7 @@ address 0x08074714 to 0x080E3A74..0x080F3C90, and the descriptor at 0x080FFF80.
 | 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0) |
 | 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E3A71), codec code (0x080E3A74..0x080F3C8F), descriptor (0x080FFF80..0x080FFFFF) |
 
-A flash sector can only be erased whole, so `boards/dm1701/dm1701.ld` gives the application sectors 3-9
+A flash sector can only be erased whole, so `boards/dm1701/memory.ld` gives the application sectors 3-9
 (0x0800C000..0x080BFFFF, 720 KB in one piece) and asserts that everything it loads into flash ends before 0x080C0000.
 The image is one `.bin` from 0x0800C000, and an update erases and writes only the sectors it covers. The bytes around
 the codec in sectors 10 and 11 are 0xFF after a merge and are never executed. The DM-1701's settings and codeplug live

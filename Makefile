@@ -8,7 +8,8 @@
 ##   make test                  -> host tests (no BOARD needed)
 ##   make                       -> lists the boards
 ##
-## Each board says its platform, linker script and source directories in boards/<board>/board.mk.
+## Each board says its platform, image address and source directories in boards/<board>/board.mk, and how it
+## differs from its platform's defaults (platform/<platform>/platform.mk, config.mk, common.ld, FreeRTOSConfig.h).
 ## Every *.c in the listed directories is built, so adding a file needs no Makefile change.
 
 # The flashing tools' view of the board registry (tools/boards.py), regenerated when one of its sources changes. Every
@@ -16,7 +17,7 @@
 # Python 3.11 (tools/odr_python.sh) it stays as it is, with a note; tools/boards.py check fails on a stale copy
 REGISTRY_JSON := tools/odrflash/odrflash/registry.json
 REGISTRY_SRC := $(wildcard boards/*/board.toml boards/*/board.mk boards/*/config.mk boards/*/*.ld boards/*/*.c \
-	boards/*/pins.h platform/*/platform.toml) tools/boards.py
+	boards/*/pins.h platform/*/platform.toml platform/*/platform.mk platform/*/config.mk) tools/boards.py
 ODR_PYTHON = $(shell tools/odr_python.sh 2>/dev/null)
 $(REGISTRY_JSON): $(REGISTRY_SRC)
 	@py="$(ODR_PYTHON)"; if [ -n "$$py" ]; then "$$py" tools/boards.py json --for odrflash --out $@ && touch $@; \
@@ -47,6 +48,8 @@ endif
 include config/variants/$(VARIANT).mk
 endif
 -include boards/$(BOARD)/config.mk
+# The platform's defaults, after the board's: ?= keeps the first value, so the board's wins
+-include platform/$(PLATFORM)/config.mk
 include config/features.mk
 include platform/$(PLATFORM)/platform.mk
 
@@ -116,12 +119,12 @@ ifneq ($(CONFIG_CPS_FAST),y)
 APP_SRC := $(filter-out core/cps/cps_fast.c core/cps/cps_lz4.c,$(APP_SRC))
 endif
 # The task table behind the debug link's tasks view (core/app is always globbed): only with its switch, which also
-# turns on the kernel's trace hooks in the boards' FreeRTOSConfig.h
+# turns on the kernel's trace hooks in the platforms' FreeRTOSConfig.h
 ifneq ($(CONFIG_TASK_STACKS),y)
 APP_SRC := $(filter-out core/app/task_stack.c,$(APP_SRC))
 endif
 # The idle task's watchdog feed (core/app is always globbed): only with its switch, which also turns on the idle hook in
-# the boards' FreeRTOSConfig.h
+# the platforms' FreeRTOSConfig.h
 ifneq ($(CONFIG_WATCHDOG),y)
 APP_SRC := $(filter-out core/app/watchdog.c,$(APP_SRC))
 endif
@@ -214,7 +217,11 @@ CFLAGS_APP := $(COMMON) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wshadow 
 CFLAGS_3P := $(COMMON) -std=gnu11 -w $(DEFS) $(INCLUDES)
 # The C library flavor and linker extras come from the platform (platform.mk); these are the arm-none-eabi ones
 LDSPECS ?= --specs=nano.specs --specs=nosys.specs -Wl,--no-warn-rwx-segments
-LDFLAGS := $(CPUFLAGS) -T$(LDSCRIPT) -Wl,--gc-sections -Wl,-Map=$(TARGET).map -Wl,--print-memory-usage $(LDSPECS)
+# The image address (board.mk APP_BASE) reaches the linker scripts as __app_base, and the application's first byte, after
+# a first stage when there is one, as __app_start. A board's memory.ld INCLUDEs the platform's common.ld (-L)
+APP_START := $(APP_BASE)$(if $(BOOT_STAGE),+$(BOOT_SIZE))
+LDFLAGS := $(CPUFLAGS) -T$(LDSCRIPT) -Lplatform/$(PLATFORM) -Wl,--defsym=__app_base=$(APP_BASE) \
+	-Wl,--defsym=__app_start=$(APP_START) -Wl,--gc-sections -Wl,-Map=$(TARGET).map -Wl,--print-memory-usage $(LDSPECS)
 # Link time optimization: LTO=1 compiles our sources to GCC's IR and optimizes them together at the link (inlining and
 # dead code across files: about 17 KB smaller on the STM32 radios, 20 KB with LTO_3P). A board's config.mk may default
 # it (the MD-380 and the DM-1701 do: without it their images don't hold their features). LTO_3P=1 takes the
@@ -279,7 +286,7 @@ ifeq ($(LTO),1)
 $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto
 endif
 
-$(TARGET).elf: $(OBJ) $(LDSCRIPT)
+$(TARGET).elf: $(OBJ) $(LDSCRIPT) $(wildcard platform/$(PLATFORM)/*.ld)
 	@rm -f $@.ltrans*.ci	# LTO's call graphs, one per partition: none left from a link with more partitions
 	$(CC) $(LDFLAGS) -o $@ $(OBJ) -lm
 $(TARGET).bin: $(TARGET).elf

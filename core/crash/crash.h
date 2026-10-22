@@ -30,7 +30,7 @@ void crash_clear(void);
 // The platform filled arch-specific fields (kind, cause, pc, lr, sp, psr, r, status, ISR flag); this adds the task,
 // the uptime and the stack words, seals the record, stores it and restarts the radio
 void crash_commit(crash_record_t *r) __attribute__((noreturn));
-// configASSERT (the boards' FreeRTOSConfig.h): the line, the caller as pc
+// configASSERT (the platforms' FreeRTOSConfig.h): the line, the caller as pc
 void crash_assert(unsigned line) __attribute__((noreturn));
 // The FreeRTOS hooks: CRASH_KIND_STACK (the task's name) or CRASH_KIND_HEAP (task NULL: the running one)
 void crash_rtos(uint8_t kind, const char *task) __attribute__((noreturn));

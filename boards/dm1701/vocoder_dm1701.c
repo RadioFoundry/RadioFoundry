@@ -24,7 +24,7 @@
 
 #define CODEC_SIGNATURE		0x4FF0E92Du	// push.w {r4-r11, lr}
 #define CODEC_TAG		0x0206u		// the descriptor's tag for stock V02.06 CSV
-#define CODEC_FLASH_LO		0x080C0000u	// sectors 10 and 11: the flash dm1701.ld leaves to the codec
+#define CODEC_FLASH_LO		0x080C0000u	// sectors 10 and 11: the flash boards/dm1701/memory.ld leaves to the codec
 #define CODEC_FLASH_HI		CODEC_DESC_ADDR
 
 // Entry points (offsets from the code start)

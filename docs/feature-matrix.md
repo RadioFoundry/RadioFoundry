@@ -201,7 +201,7 @@ of RAM (TCP, HTTP, rigctld).
 ### DB25-D PRO
 
 Same SoC and glue as the DM-32UV, with 876 KB of code space and 165,424 bytes of main RAM above the codec window plus
-52,912 in RAM_LO (`boards/db25d/db25d_dmr.ld`). The network buffers stay in RAM_LO. Left off: split duplex, USRP (PCM does not fit the 115200 baud host port), SFR, APRS receive and
+52,912 in RAM_LO (`boards/db25d/memory.ld`). The network buffers stay in RAM_LO. Left off: split duplex, USRP (PCM does not fit the 115200 baud host port), SFR, APRS receive and
 iGate, USB, broadcast FM, air band AM, `FONT_XL`, `AUDIO_PROBE` (`boards/db25d/config.mk`).
 
 | DB25-D build | Image | RAM (165,424 B) | RAM_LO (52,912 B) |

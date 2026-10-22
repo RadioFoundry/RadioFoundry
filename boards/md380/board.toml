@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # The MD-380's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
-# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in md380.ld.
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/md380/memory.ld.
 
 id = "md380"
 name = "TYT MD-380"

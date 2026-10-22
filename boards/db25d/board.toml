@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # The DB25-D PRO's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and
-# the web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in db25d.ld and
-# db25d_dmr.ld.
+# the web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/db25d/fm_only.ld and
+# boards/db25d/memory.ld.
 
 id = "db25d"
 name = "Radioddity DB25-D PRO"
@@ -34,7 +34,7 @@ storage work on the radio. Open: the older FD6818 batches and the Retevis RT73."
 release = "stable"
 
 # The vendor IAP loader (0x03000000..0x0300BFFF) is never written. ODR's first stage fills the sector at 0x0300C000
-# (board.mk BOOT_*), the application follows it, the codec slot is the DM-32UV's (db25d_dmr.ld). The web flasher (IAP
+# (board.mk BOOT_*), the application follows it, the codec slot is the DM-32UV's (boards/db25d/memory.ld). The web flasher (IAP
 # loader, or the stub from ODR) and stub/stubtool.py flash it
 [flash]
 family = "serial-iap"
@@ -62,7 +62,7 @@ tested = false
 stock_console = "usmart"
 read_rate = 46000
 
-# The codec slot and windows come from db25d_dmr.ld (__codec_*, the script CONFIG_DMR selects)
+# The codec slot and windows come from boards/db25d/memory.ld (__codec_*, the script CONFIG_DMR selects)
 [codec]
 tool = "hrc7000_codec"
 profile = "db25d-018"

@@ -15,7 +15,7 @@ radio until a power cycle, as before.
 | Fault | 1 | a CPU exception: the platform's fault entry (2) | the exception number (CM4: 3 HardFault; CK803: the vector, 1 misaligned access, 2 access error, 3 divide by zero, 4 illegal instruction, 7 breakpoint, 8 unrecoverable error) | the faulting instruction |
 | Stack overflow | 2 | FreeRTOS's stack check (`configCHECK_FOR_STACK_OVERFLOW` 2), at a context switch | 0 | in the kernel; `task` names the task |
 | Out of heap | 3 | FreeRTOS's malloc-failed hook | 0 | in the kernel |
-| Assert | 4 | `configASSERT` (the boards' `FreeRTOSConfig.h`) | the line | the caller of the assertion |
+| Assert | 4 | `configASSERT` (the platforms' `FreeRTOSConfig.h`) | the line | the caller of the assertion |
 
 The capture runs with interrupts off, on a stack of its own (1 KB), and calls nothing that waits. It turns the
 transmitter off first (8), with or without the crash log. It adds the running

@@ -14,13 +14,17 @@ bootloader and image format, calibration, codec location. Start from the radio's
 
 ## The files
 
+A board's files list only how it differs from its platform. The platform's defaults are in `platform/<p>/`:
+`platform.mk` (compiler, part defines, HAL modules), `config.mk` (feature defaults), `common.ld` (the sections) and
+`FreeRTOSConfig.h`.
+
 | File | Contents |
 |---|---|
-| `boards/<b>/board.mk` | `PLATFORM`, `MCU_DEFS`, `LDSCRIPT`, `BOARD_DIRS` (the board directory and each driver it uses), optional `BOARD_USB_DIRS` (built only with `CONFIG_USB`) and `HAL_MODULES` (STM32) |
-| `boards/<b>/board.toml` | The board registry entry: identity, status, flashing, codec route, the site's data. `tools/boards.py check` validates it against `board.mk`, the linker script and `board_t`, and its schema lists every key. Copy a neighbor on the same platform |
-| `boards/<b>/config.mk` | Feature defaults for this radio, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`), each with the reason. Also `BOARD_UNSUPPORTED` (switches its hardware support lacks, one a line with the reason: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`; ci.sh's maximal build leaves them off), `BOARD_REQUIRED` (switches it can't build without; ci.sh skips their `no-` build) and `MAXIMAL_VARS` (make variables for that build, e.g. `LTO=1`) |
-| `boards/<b>/<b>.ld` | Linker script: the application's start, the end of its region, and the codec window kept free. Keep the application out of every flash sector the codec touches (not only the codec bytes), so odrflash can update the firmware without erasing the codec. The flashing tools read the region and the codec symbols from it, and derive the erasable sectors and the protected range ([release.md](release.md#sector-maps)) |
-| `boards/<b>/FreeRTOSConfig.h` | The RTOS settings: tick, heap, priorities |
+| `boards/<b>/board.mk` | `PLATFORM`, `APP_BASE` (where the image starts: the first byte the bootloader runs), `BOARD_DIRS` (the board directory and each driver it uses) and any `MCU_DEFS` of its own. STM32: `MCU` (the part, which picks the CMSIS define and start-up file) and `HSE_VALUE` (the crystal in Hz); optional `BOARD_HAL_MODULES` (HAL modules beyond the platform's, such as `hal_i2c`) |
+| `boards/<b>/board.toml` | The board registry entry: identity, status, flashing, codec route, the site's data. `tools/boards.py check` validates it against `board.mk`, the linker script and `board_t`. Every key is in [The board registry](board-registry.md). Copy a neighbor on the same platform |
+| `boards/<b>/config.mk` | Feature defaults where this radio differs from `platform/<p>/config.mk`, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`), each with the reason. Also `BOARD_UNSUPPORTED` (switches its hardware support lacks, one a line with the reason: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`; ci.sh's maximal build leaves them off), `BOARD_REQUIRED` (switches it can't build without; ci.sh skips their `no-` build) and `MAXIMAL_VARS` (make variables for that build, e.g. `LTO=1`) |
+| `boards/<b>/memory.ld` | The memory map: the codec symbols, then `MEMORY` (the application's `FLASH` region from `__app_start`, which the Makefile defines from `APP_BASE`, and the RAM regions), then `INCLUDE common.ld`, the platform's sections. Keep the region's end below the codec. Keep the application out of every flash sector the codec touches (not only the codec bytes), so odrflash can update the firmware without erasing the codec. The flashing tools read the region and the codec symbols from it, and derive the erasable sectors and the protected range ([release.md](release.md#sector-maps)) |
+| `boards/<b>/freertos_board.h` | Optional: RTOS settings that differ from `platform/<p>/FreeRTOSConfig.h` (the heap size, for example), read before its defaults |
 | `boards/<b>/board.c` | The `board_t` descriptor, the key map, bands, power level names |
 | `boards/<b>/pins.h`, `<b>.h` | Pin assignments and the board's private declarations |
 | `boards/<b>/*_<b>.c` | One file per interface: radio, DMR, audio, vocoder, display, input, flash, power, calibration, diagnostics, USB |

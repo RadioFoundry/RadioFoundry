@@ -193,7 +193,7 @@ its stock address ([codec-placement.md](codec-placement.md), "STM32 radios").
 | descriptor | 0x080FFF80 (end of sector 11) | 128 | its own (`platform/stm32f4/codec_desc.h`), tag 0x2032 |
 
 * **Flash map.** The application gets sectors 3-7, 0x0800C000..0x0807FFFF, 464 KB in one piece, and
-  `boards/md380/md380.ld` asserts that the image ends before 0x08080000. The codec uses sectors 8, 10 and 11. Sector
+  `boards/md380/memory.ld` asserts that the image ends before 0x08080000. The codec uses sectors 8, 10 and 11. Sector
   9 (0x080A0000..0x080BFFFF) holds nothing. The stock file keeps the code at 0x08050C44, inside sectors 6 and 7, so
   the stock layout leaves the application only 275 KB.
 * **Updates.** No codec byte shares a sector with the application, so an update writes sectors 3-7 only and keeps the

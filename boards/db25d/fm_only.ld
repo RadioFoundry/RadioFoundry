@@ -1,15 +1,17 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The OpenDigitalRadio Authors */
-/* Radioddity DB25-D, HR_C7000 (CK803S), application behind the vendor IAP loader (docs/spec/hardware-db25d.md 2).
+/* Radioddity DB25-D without DMR (CONFIG_DMR=n, config.mk selects this script; memory.ld is the DMR build's), HR_C7000
+ * (CK803S), application behind the vendor IAP loader (docs/spec/hardware-db25d.md 2).
  *
  * Program flash (XIP at 0x03000000): the loader 0x03000000..0x0300C000 (never written), then the application region
  * up to 0x0310C000, where the stock firmware's data area starts; the stock calibration copy at 0x031FE000 is far above
  * it. The loader jumps to 0x0300C000. ODR's first 4 KB sector there is the first stage (docs/spec/hardware-db25d.md 7):
- * it answers a stub load on the PC cable as the serial boot ROM does on UART0, then jumps here, to 0x0300D000.
+ * it answers a stub load on the PC cable as the serial boot ROM does on UART0, then jumps here, to 0x0300D000
+ * (__app_start: board.mk APP_BASE + BOOT_SIZE).
  *
  * SRAM (288 KB at 0x10000): the vector table first (VBR, 1 KB aligned), code that must not run from flash
  * (.ramfunc), data, bss (the RTOS heap is inside it), the interrupt stack and the start-up stack at the top. No codec
- * window yet: DMR isn't built for this board, so nothing is reserved for the stock codec's RAM. */
+ * window: without DMR nothing is reserved for the stock codec's RAM. */
 
 ENTRY(Reset_Handler)
 
@@ -19,7 +21,7 @@ _Irq_Stack_Size = 0x800;
 
 MEMORY
 {
-	FLASH (rx)  : ORIGIN = 0x0300D000, LENGTH = 0x0310C000 - 0x0300D000
+	FLASH (rx)  : ORIGIN = __app_start, LENGTH = 0x0310C000 - __app_start
 	RAM   (rwx) : ORIGIN = 0x00010000, LENGTH = 0x00058000 - 0x00010000
 }
 
