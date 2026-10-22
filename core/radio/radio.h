@@ -264,6 +264,8 @@ typedef struct {
 void radio_core_start(void);
 // A consistent copy of the current state
 void radio_get_view(radio_view_t *v);
+// Just the view's state, for a caller short of stack (the view is some 0.7 KB)
+radio_state_t radio_get_state(void);
 // Bumped on every visible change, so the UI can redraw only when needed
 uint32_t radio_view_serial(void);
 

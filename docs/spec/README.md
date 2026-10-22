@@ -36,6 +36,7 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | [codeplug-stock-tyt.md](codeplug-stock-tyt.md) | Stock TYT-family codeplugs (DM-1701, MD-UV380, MD-380) in SPI flash: detection and conversion |
 | [codeplug-port.md](codeplug-port.md) | Stock codeplug to ODR: the clean-up, contacts, CPS write shared by the migration tools |
 | [debuglink.md](debuglink.md) | The debug link: commands, the view, key injection |
+| [stub-entry.md](stub-entry.md) | The stub entry: loading the flashing tools' RAM monitor at run time, with or without the debug link |
 | [stub-stm32f4.md](stub-stm32f4.md) | The STM32F4 flash stub: entry from ODR, USB, protocol, safety rules, update order |
 | [mmdvm-protocol.md](mmdvm-protocol.md) | The MMDVM modem protocol (hotspot mode) |
 | [usb-network.md](usb-network.md) | USB network personality, the IP gateway, control station mode |

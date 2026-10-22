@@ -376,7 +376,7 @@ the application. It was not chosen:
 
 | | In the application (this protocol) | Through the RAM stub |
 |---|---|---|
-| Flash (DM-1701) | about 3.9 KB | about 0.8 KB for `CONFIG_STUB_ENTRY` (off by default on the DM-1701) |
+| Flash (DM-1701) | about 3.9 KB | about 0.8 KB for `CONFIG_STUB_ENTRY` (on by default) |
 | RAM (DM-1701) | about 0.2 KB | 8 KB: the stub's staging buffer (`CONFIG_STUB_ENTRY` takes RAM from 87 % to 94 %) |
 | The radio meanwhile | keeps working; the codeplug is re-read at the end | stops (the stub owns the SoC); a restart at the end |
 | Power-cut safety | the journal and the staged commit | the stub writes sectors in place: a cut mid-write leaves a broken sector |

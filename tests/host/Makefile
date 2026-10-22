@@ -596,7 +596,7 @@ run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6
 .PHONY: run-split
 
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring (core/debuglink)
-DLINK   := debuglinkTest.c $(CORE)/debuglink/debuglink_proto.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
+DLINK   := debuglinkTest.c $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
 	$(CORE)/debuglink/dl_chip.c
 TESTS   += debuglinkTest
 
@@ -608,16 +608,28 @@ run-debuglink: debuglinkTest
 	./debuglinkTest
 .PHONY: run-debuglink
 
-# The runtime RAM-monitor loader's portable state machine (core/debuglink/dl_stub.c, CONFIG_STUB_ENTRY)
+# The runtime RAM-monitor loader's portable state machine (core/stubentry/stub_load.c, CONFIG_STUB_ENTRY)
 TESTS   += stubEntryTest
-stubEntryTest: stubEntryTest.c $(CORE)/debuglink/dl_stub.c $(CORE)/debuglink/dl_stub.h $(CORE)/debuglink/debuglink_proto.h \
+stubEntryTest: stubEntryTest.c $(CORE)/stubentry/stub_load.c $(CORE)/stubentry/stub_load.h $(CORE)/debuglink/dl_frame.h \
 		$(ROOT)/stub/stm32f4/f4stub_header.h
-	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ stubEntryTest.c $(CORE)/debuglink/dl_stub.c
+	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ stubEntryTest.c $(CORE)/stubentry/stub_load.c
 
 run: run-stubEntry
 run-stubEntry: stubEntryTest
 	./stubEntryTest
 .PHONY: run-stubEntry
+
+# The stub entry on the wire: golden replies through the debug link's dispatch and the stub entry's own listener
+# (core/stubentry/stub_link.c, the build without the debug link), framing from core/debuglink/dl_frame.c
+SLINK   := stubLinkTest.c $(CORE)/stubentry/stub_load.c $(CORE)/stubentry/stub_link.c $(CORE)/debuglink/dl_frame.c
+TESTS   += stubLinkTest
+stubLinkTest: $(SLINK) $(wildcard $(CORE)/stubentry/*.h) $(CORE)/debuglink/dl_frame.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ $(SLINK)
+
+run: run-stubLink
+run-stubLink: stubLinkTest
+	./stubLinkTest
+.PHONY: run-stubLink
 
 # The debug link's tasks view section: each task's least free stack (core/debuglink/debuglink_view_tasks.c; the
 # kernel's task table is faked)
@@ -809,7 +821,7 @@ TESTS   += pppTest
 pppTest: pppTest.c fuzz.h $(PPPT) $(CORE)/net/ppp.h $(CORE)/hostlink/hostlink_ppp.h $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_NET_PPP=1 -o $@ pppTest.c $(PPPT)
 
-PPPPEER := pppPeer.c $(PPPT) $(CORE)/net/tcp.c $(CORE)/debuglink/debuglink_proto.c $(CORE)/snmp/snmp.c \
+PPPPEER := pppPeer.c $(PPPT) $(CORE)/net/tcp.c $(CORE)/debuglink/dl_frame.c $(CORE)/snmp/snmp.c \
            $(CORE)/snmp/snmpBer.c $(CORE)/snmp/snmpMib.c
 TESTS   += pppPeer
 
@@ -936,7 +948,7 @@ run-cpsfast: cpsFastTest
 # debug link's VERSION and CODEPLUG, for tools/cps_fast.py (cpsFastClientTest.py)
 PYTHON  ?= $(shell command -v python3)
 TESTS   += cpsSim
-SIMDL   := $(CPSF) $(CORE)/debuglink/debuglink_proto.c
+SIMDL   := $(CPSF) $(CORE)/debuglink/dl_frame.c
 
 cpsSim: cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP=0 -o $@ cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c

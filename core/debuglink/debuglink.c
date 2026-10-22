@@ -13,6 +13,7 @@
 #include "debuglink/dl_chip.h"
 #include "debuglink/dlog.h"
 #include "hostlink/hostlink.h"
+#include "stubentry/stub_entry.h"
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif
@@ -916,12 +917,7 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 	case DL_CMD_SNMP:
 		return debuglink_cmd_snmp(req, len, out, cap);
 	case DL_CMD_STUB:
-#if CONFIG_STUB_ENTRY
-		if (len >= 1 && req[0] == DL_STUB_OP_ENTER && transmitting()) {
-			return status_only(out, DL_ST_BUSY);	// never hand the SoC over with the transmitter keyed
-		}
-#endif
-		return debuglink_cmd_stub(req, len, out, cap);
+		return stub_entry_request(req, len, out, cap);	// core/stubentry; unavailable without CONFIG_STUB_ENTRY
 	case DL_CMD_CRASH:
 		return debuglink_cmd_crash(req, len, out, cap);
 	case DL_CMD_WATCHDOG:
@@ -948,7 +944,7 @@ static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 	if (reboot_pending) {
 		reboot_now();
 	}
-	debuglink_stub_service();	// enters the RAM monitor after a verified STUB ENTER (noreturn); else a no-op
+	stub_entry_service();		// enters the RAM monitor after a verified STUB ENTER (noreturn); else a no-op
 	debuglink_crash_service();	// a crash test asked for (noreturn); else a no-op
 	debuglink_watchdog_service();	// a watchdog test asked for (ends in a reset); else a no-op
 	return took;

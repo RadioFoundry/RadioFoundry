@@ -524,7 +524,7 @@ The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP e
 ### 3.18 STUB
 
 Load the host's flash-access RAM monitor into a free RAM span and hand the SoC to it at run time, no power cycle
-(`CONFIG_STUB_ENTRY`). Two platforms have it: the HR_C7000 (the "C7 stub", `docs/spec/hardware-dm32.md` 17.2) and the
+(`CONFIG_STUB_ENTRY`, its own feature: [stub-entry.md](stub-entry.md); a build without the debug link answers this command with its own listener, byte for byte the same). Two platforms have it: the HR_C7000 (the "C7 stub", `docs/spec/hardware-dm32.md` 17.2) and the
 STM32F4 (the DM-1701 and the MD-380, [stub-stm32f4.md](stub-stm32f4.md)). Built without the switch, or on a
 board whose platform has no `hal_system_t.enter_stub`, every operation answers `DL_ST_UNAVAILABLE`. All u32 are little
 endian. The guard is a 32-bit magic key `'C7SB'` (`0x42533743`) on BEGIN and ENTER, plus the exact length and a CRC-32
@@ -535,7 +535,7 @@ of the whole image checked before the jump.
 | 0 INFO | none | magic u32, load_addr u32, region_size u32, max_chunk u16, armed u8, received u32: the span and transfer state. `load_addr` / `region_size` are the board's `HRC_STUB_BASE` / `HRC_STUB_SIZE` (the DB25-D reports 0x30000 / 0x20000, or 0x1D000 / 0x12000 with `CONFIG_DMR`) |
 | 1 BEGIN | magic u32, total_len u32, crc32 u32, entry u32 | received u32 (0): zero the span and arm a transfer. Bad magic: refused; total 0 / over the span or entry outside it: bad argument |
 | 2 DATA | offset u32, bytes (<= max_chunk) | received u32: write a chunk (the frame's CRC-16 guards it). Not armed, or past total_len: bad argument |
-| 3 ENTER | magic u32 | ok then (after the reply) quiesce and jump; the monitor answers next. Bad magic: refused; incomplete or the CRC-32 mismatches: bad argument; the radio transmitting: busy (the image stays loaded, ENTER again later); the platform's image check says no: refused with reason byte 1 (`DL_STUB_REFUSE_WATCHDOG`: the STM32's IWDG runs and the image header doesn't say the stub feeds it: no header, a version before 3 or no feed flag, [stub-stm32f4.md](stub-stm32f4.md) 3.1, [watchdog.md](watchdog.md) 3.1) |
+| 3 ENTER | magic u32 | ok then (after the reply) quiesce and jump; the monitor answers next. Bad magic: refused; incomplete or the CRC-32 mismatches: bad argument; the radio transmitting: busy (the image stays loaded, ENTER again later); the platform's image check says no: refused with reason byte 1 (`STUB_REFUSE_WATCHDOG`: the STM32's IWDG runs and the image header doesn't say the stub feeds it: no header, a version before 3 or no feed flag, [stub-stm32f4.md](stub-stm32f4.md) 3.1, [watchdog.md](watchdog.md) 3.1) |
 
 The CRC-32 is the standard (zlib) CRC-32. Per-chunk integrity is the debug link frame's own CRC-16, so DATA carries no
 second checksum; the span is zeroed at BEGIN, so a dropped chunk leaves zeros that fail the ENTER CRC-32. After an ok

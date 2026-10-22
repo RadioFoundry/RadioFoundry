@@ -6,6 +6,7 @@
 #ifndef HAL_VOCODER_H
 #define HAL_VOCODER_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -40,5 +41,21 @@ typedef struct {
 	// docs/spec/codec-*.md)
 	uint32_t (*encode_flags)(void);
 } hal_vocoder_t;
+
+// The codec in flash as VERSION reports it (codec=, docs/spec/debuglink.md 3.1): the profile the board recognized,
+// "absent" when the board has a vocoder but its check failed, "none" without one (FM-only build). The profile comes
+// first: a codec the board has stopped for a stub upload is still in flash, and a flasher asking then must not see it
+// absent. Read only
+static inline const char *hal_vocoder_id(const hal_vocoder_t *v)
+{
+	if (v == NULL) {
+		return "none";
+	}
+	const char *id = v->profile != NULL ? v->profile() : NULL;
+	if (id != NULL) {
+		return id;
+	}
+	return v->present() ? "present" : "absent";
+}
 
 #endif

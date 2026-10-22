@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The runtime RAM-monitor loader's portable state machine (core/debuglink/dl_stub.c, docs/spec/debuglink.md 3.18):
+// The runtime RAM-monitor loader's portable state machine (core/stubentry/stub_load.c, docs/spec/debuglink.md 3.18):
 // arming, chunked load, the magic / length / CRC-32 guards and the verified ENTER, and the STM32F4 stub image header
 // rule ENTER applies while the IWDG runs (stub/stm32f4/f4stub_header.h).
 #include <stdio.h>
 #include <string.h>
-#include "debuglink/dl_stub.h"
-#include "debuglink/debuglink_proto.h"
+#include "stubentry/stub_load.h"
 #include "f4stub_header.h"
 
 static int failures, checks;
@@ -22,7 +21,7 @@ static int failures, checks;
 		}                                                                                                   \
 	} while (0)
 
-// dl_stub.c links against this (core/storage/storage.c in the firmware); the standard CRC-32
+// stub_load.c links against this (core/storage/storage.c in the firmware); the standard CRC-32
 uint32_t storage_crc32(uint32_t crc, const void *buf, uint32_t len)
 {
 	const uint8_t *p = buf;
@@ -57,7 +56,7 @@ static uint32_t get32(const uint8_t *p)
 	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
-// The platform's image check (dl_stub_t.image_ok): the length it was asked about
+// The platform's image check (stub_load_t.image_ok): the length it was asked about
 static uint32_t checked_len;
 
 static bool refuse_image(const uint8_t *img, uint32_t len)
@@ -75,10 +74,10 @@ static bool accept_image(const uint8_t *img, uint32_t len)
 }
 
 // Run one request; returns the reply length, fills *enter / *entry (enter cleared first, as the firmware does)
-static size_t req(dl_stub_t *s, const uint8_t *r, uint16_t len, uint8_t *out, bool *enter, uint32_t *entry)
+static size_t req(stub_load_t *s, const uint8_t *r, uint16_t len, uint8_t *out, bool *enter, uint32_t *entry)
 {
 	*enter = false;
-	return dl_stub_request(s, r, len, out, CAP, enter, entry);
+	return stub_load_request(s, r, len, out, CAP, enter, entry);
 }
 
 // The STM32's image check (platform/stm32f4/stub_entry.c) with the IWDG running: the shared header rule
@@ -89,22 +88,22 @@ static bool f4_image_ok(const uint8_t *img, uint32_t len)
 }
 
 // BEGIN and DATA for a whole image; true when every chunk was taken
-static bool load(dl_stub_t *s, const uint8_t *img, uint32_t len, uint32_t entry_off)
+static bool load(stub_load_t *s, const uint8_t *img, uint32_t len, uint32_t entry_off)
 {
 	uint8_t r[CAP], out[CAP];
 	bool enter;
 	uint32_t entry;
-	r[0] = DL_STUB_OP_BEGIN;
-	put32(r + 1, DL_STUB_MAGIC);
+	r[0] = STUB_OP_BEGIN;
+	put32(r + 1, STUB_MAGIC);
 	put32(r + 5, len);
 	put32(r + 9, storage_crc32(0, img, len));
 	put32(r + 13, LOAD + entry_off);
 	if (req(s, r, 17, out, &enter, &entry) == 0 || out[0] != DL_ST_OK) {
 		return false;
 	}
-	for (uint32_t off = 0; off < len; off += DL_STUB_CHUNK_MAX) {
-		uint32_t k = len - off < DL_STUB_CHUNK_MAX ? len - off : DL_STUB_CHUNK_MAX;
-		r[0] = DL_STUB_OP_DATA;
+	for (uint32_t off = 0; off < len; off += STUB_CHUNK_MAX) {
+		uint32_t k = len - off < STUB_CHUNK_MAX ? len - off : STUB_CHUNK_MAX;
+		r[0] = STUB_OP_DATA;
 		put32(r + 1, off);
 		memcpy(r + 5, img + off, k);
 		if (req(s, r, (uint16_t)(5u + k), out, &enter, &entry) == 0 || out[0] != DL_ST_OK) {
@@ -132,7 +131,7 @@ static void test_f4_header(void)
 	uint8_t img[200], r[CAP], out[CAP];
 	bool enter;
 	uint32_t entry;
-	dl_stub_t s;
+	stub_load_t s;
 	struct {
 		const char *what;
 		bool header;
@@ -159,17 +158,17 @@ static void test_f4_header(void)
 			CHECK(f4stub_image_ok(img, sizeof(img), iwdg_running) == want, "%s, IWDG %s: %s", cases[c].what,
 			      iwdg_running ? "running" : "off", want ? "accepted" : "refused");
 			// The same through ENTER
-			dl_stub_init(&s, region, sizeof(region), LOAD);
+			stub_load_init(&s, region, sizeof(region), LOAD);
 			s.image_ok = f4_image_ok;
 			CHECK(load(&s, img, sizeof(img), 0), "%s: loaded", cases[c].what);
-			r[0] = DL_STUB_OP_ENTER;
-			put32(r + 1, DL_STUB_MAGIC);
+			r[0] = STUB_OP_ENTER;
+			put32(r + 1, STUB_MAGIC);
 			size_t n = req(&s, r, 5, out, &enter, &entry);
 			if (want) {
 				CHECK(n == 1 && out[0] == DL_ST_OK && enter, "%s, IWDG %s: ENTER ok (%u)", cases[c].what,
 				      iwdg_running ? "running" : "off", out[0]);
 			} else {
-				CHECK(n == 2 && out[0] == DL_ST_REFUSED && out[1] == DL_STUB_REFUSE_WATCHDOG && !enter,
+				CHECK(n == 2 && out[0] == DL_ST_REFUSED && out[1] == STUB_REFUSE_WATCHDOG && !enter,
 				      "%s: ENTER refused for the watchdog (%u)", cases[c].what, out[0]);
 			}
 		}
@@ -183,7 +182,7 @@ int main(void)
 	uint8_t out[CAP], r[CAP];
 	bool enter;
 	uint32_t entry;
-	dl_stub_t s;
+	stub_load_t s;
 
 	// A test image: 130 bytes, entry at offset 8
 	uint8_t img[130];
@@ -193,28 +192,28 @@ int main(void)
 	uint32_t img_crc = storage_crc32(0, img, sizeof(img));
 	uint32_t img_entry = LOAD + 8u;
 
-	dl_stub_init(&s, region, sizeof(region), LOAD);
+	stub_load_init(&s, region, sizeof(region), LOAD);
 
 	// INFO before anything: reports the span and no transfer armed
-	r[0] = DL_STUB_OP_INFO;
+	r[0] = STUB_OP_INFO;
 	size_t n = req(&s, r, 1, out, &enter, &entry);
 	CHECK(n == 20 && out[0] == DL_ST_OK, "INFO len/status %zu %u", n, out[0]);
-	CHECK(get32(out + 1) == DL_STUB_MAGIC, "INFO magic");
+	CHECK(get32(out + 1) == STUB_MAGIC, "INFO magic");
 	CHECK(get32(out + 5) == LOAD, "INFO load_addr 0x%x", get32(out + 5));
 	CHECK(get32(out + 9) == sizeof(region), "INFO region_size %u", get32(out + 9));
 	CHECK(out[15] == 0, "INFO not armed");
 	CHECK(!enter, "INFO never enters");
 
 	// DATA before BEGIN is refused
-	r[0] = DL_STUB_OP_DATA;
+	r[0] = STUB_OP_DATA;
 	put32(r + 1, 0);
 	r[5] = 0xAB;
 	n = req(&s, r, 6, out, &enter, &entry);
 	CHECK(out[0] == DL_ST_BAD_ARG, "DATA before BEGIN rejected (%u)", out[0]);
 
 	// BEGIN with a bad magic is refused
-	r[0] = DL_STUB_OP_BEGIN;
-	put32(r + 1, DL_STUB_MAGIC ^ 1u);
+	r[0] = STUB_OP_BEGIN;
+	put32(r + 1, STUB_MAGIC ^ 1u);
 	put32(r + 5, sizeof(img));
 	put32(r + 9, img_crc);
 	put32(r + 13, img_entry);
@@ -222,7 +221,7 @@ int main(void)
 	CHECK(out[0] == DL_ST_REFUSED, "BEGIN bad magic refused (%u)", out[0]);
 
 	// BEGIN with an entry outside the image is a bad arg
-	put32(r + 1, DL_STUB_MAGIC);
+	put32(r + 1, STUB_MAGIC);
 	put32(r + 13, LOAD + sizeof(img));	// one past the end
 	n = req(&s, r, 17, out, &enter, &entry);
 	CHECK(out[0] == DL_ST_BAD_ARG, "BEGIN entry out of range (%u)", out[0]);
@@ -239,19 +238,19 @@ int main(void)
 	CHECK(n == 5 && out[0] == DL_ST_OK && get32(out + 1) == 0, "BEGIN ok");
 
 	// ENTER before the image is complete is refused
-	r[0] = DL_STUB_OP_ENTER;
-	put32(r + 1, DL_STUB_MAGIC);
+	r[0] = STUB_OP_ENTER;
+	put32(r + 1, STUB_MAGIC);
 	n = req(&s, r, 5, out, &enter, &entry);
 	CHECK(out[0] == DL_ST_BAD_ARG && !enter, "ENTER before complete rejected (%u)", out[0]);
 
-	// Stream the image in DL_STUB_CHUNK_MAX pieces
+	// Stream the image in STUB_CHUNK_MAX pieces
 	uint32_t off = 0;
 	while (off < sizeof(img)) {
 		uint32_t c = sizeof(img) - off;
-		if (c > DL_STUB_CHUNK_MAX) {
-			c = DL_STUB_CHUNK_MAX;
+		if (c > STUB_CHUNK_MAX) {
+			c = STUB_CHUNK_MAX;
 		}
-		r[0] = DL_STUB_OP_DATA;
+		r[0] = STUB_OP_DATA;
 		put32(r + 1, off);
 		memcpy(r + 5, img + off, c);
 		n = req(&s, r, (uint16_t)(5u + c), out, &enter, &entry);
@@ -261,20 +260,20 @@ int main(void)
 	CHECK(memcmp(region, img, sizeof(img)) == 0, "image landed in the region");
 
 	// A DATA chunk past the end is refused and does not overrun
-	r[0] = DL_STUB_OP_DATA;
+	r[0] = STUB_OP_DATA;
 	put32(r + 1, sizeof(img));
 	r[5] = 0;
 	n = req(&s, r, 6, out, &enter, &entry);
 	CHECK(out[0] == DL_ST_BAD_ARG, "DATA past end rejected (%u)", out[0]);
 
 	// ENTER with a bad magic is refused even with a complete image
-	r[0] = DL_STUB_OP_ENTER;
-	put32(r + 1, DL_STUB_MAGIC ^ 0xFFu);
+	r[0] = STUB_OP_ENTER;
+	put32(r + 1, STUB_MAGIC ^ 0xFFu);
 	n = req(&s, r, 5, out, &enter, &entry);
 	CHECK(out[0] == DL_ST_REFUSED && !enter, "ENTER bad magic refused (%u)", out[0]);
 
 	// A good ENTER while the radio transmits answers BUSY and doesn't fire; the image stays loaded
-	put32(r + 1, DL_STUB_MAGIC);
+	put32(r + 1, STUB_MAGIC);
 	s.transmitting = true;
 	n = req(&s, r, 5, out, &enter, &entry);
 	CHECK(n == 1 && out[0] == DL_ST_BUSY && !enter, "ENTER while transmitting busy (%u)", out[0]);
@@ -284,7 +283,7 @@ int main(void)
 	// refused with the watchdog reason, nothing fires, and the image stays loaded
 	s.image_ok = refuse_image;
 	n = req(&s, r, 5, out, &enter, &entry);
-	CHECK(n == 2 && out[0] == DL_ST_REFUSED && out[1] == DL_STUB_REFUSE_WATCHDOG && !enter,
+	CHECK(n == 2 && out[0] == DL_ST_REFUSED && out[1] == STUB_REFUSE_WATCHDOG && !enter,
 	      "ENTER refused for the watchdog (%u, %u)", out[0], out[1]);
 	CHECK(checked_len == sizeof(img), "the check saw the whole image (%u)", checked_len);
 	s.image_ok = accept_image;
@@ -295,8 +294,8 @@ int main(void)
 	CHECK(enter && entry == img_entry, "ENTER fires at 0x%x (want 0x%x)", entry, img_entry);
 
 	// Corrupt one byte: re-arm, load with a flipped byte, ENTER must fail the CRC-32 and not fire
-	r[0] = DL_STUB_OP_BEGIN;
-	put32(r + 1, DL_STUB_MAGIC);
+	r[0] = STUB_OP_BEGIN;
+	put32(r + 1, STUB_MAGIC);
 	put32(r + 5, sizeof(img));
 	put32(r + 9, img_crc);
 	put32(r + 13, img_entry);
@@ -304,10 +303,10 @@ int main(void)
 	off = 0;
 	while (off < sizeof(img)) {
 		uint32_t c = sizeof(img) - off;
-		if (c > DL_STUB_CHUNK_MAX) {
-			c = DL_STUB_CHUNK_MAX;
+		if (c > STUB_CHUNK_MAX) {
+			c = STUB_CHUNK_MAX;
 		}
-		r[0] = DL_STUB_OP_DATA;
+		r[0] = STUB_OP_DATA;
 		put32(r + 1, off);
 		memcpy(r + 5, img + off, c);
 		if (off == 0) {
@@ -316,25 +315,25 @@ int main(void)
 		(void)req(&s, r, (uint16_t)(5u + c), out, &enter, &entry);
 		off += c;
 	}
-	r[0] = DL_STUB_OP_ENTER;
-	put32(r + 1, DL_STUB_MAGIC);
+	r[0] = STUB_OP_ENTER;
+	put32(r + 1, STUB_MAGIC);
 	n = req(&s, r, 5, out, &enter, &entry);
 	CHECK(out[0] == DL_ST_BAD_ARG && !enter, "ENTER rejects a bad CRC-32 (%u)", out[0]);
 
 	// A gap (a skipped chunk reads back as the zeroed region) also fails the CRC-32
-	(void)req(&s, (uint8_t[]){ DL_STUB_OP_BEGIN }, 1, out, &enter, &entry);	// malformed BEGIN: stays unarmed
-	r[0] = DL_STUB_OP_BEGIN;
-	put32(r + 1, DL_STUB_MAGIC);
+	(void)req(&s, (uint8_t[]){ STUB_OP_BEGIN }, 1, out, &enter, &entry);	// malformed BEGIN: stays unarmed
+	r[0] = STUB_OP_BEGIN;
+	put32(r + 1, STUB_MAGIC);
 	put32(r + 5, sizeof(img));
 	put32(r + 9, img_crc);
 	put32(r + 13, img_entry);
 	(void)req(&s, r, 17, out, &enter, &entry);
-	r[0] = DL_STUB_OP_DATA;			// write only the first chunk, leave a gap
+	r[0] = STUB_OP_DATA;			// write only the first chunk, leave a gap
 	put32(r + 1, 0);
-	memcpy(r + 5, img, DL_STUB_CHUNK_MAX);
-	(void)req(&s, r, (uint16_t)(5u + DL_STUB_CHUNK_MAX), out, &enter, &entry);
-	r[0] = DL_STUB_OP_ENTER;
-	put32(r + 1, DL_STUB_MAGIC);
+	memcpy(r + 5, img, STUB_CHUNK_MAX);
+	(void)req(&s, r, (uint16_t)(5u + STUB_CHUNK_MAX), out, &enter, &entry);
+	r[0] = STUB_OP_ENTER;
+	put32(r + 1, STUB_MAGIC);
 	n = req(&s, r, 5, out, &enter, &entry);
 	CHECK(out[0] == DL_ST_BAD_ARG && !enter, "ENTER rejects an incomplete image (%u)", out[0]);
 

@@ -183,6 +183,17 @@ void radio_get_view(radio_view_t *v)
 	xSemaphoreGive(view_lock);
 }
 
+radio_state_t radio_get_state(void)
+{
+	if (view_lock == NULL) {
+		return RS_IDLE;		// as radio_get_view's zeroed view
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	radio_state_t st = shared_view.state;
+	xSemaphoreGive(view_lock);
+	return st;
+}
+
 uint32_t radio_view_serial(void)
 {
 	return shared_serial;

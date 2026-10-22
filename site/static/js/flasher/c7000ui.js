@@ -721,7 +721,7 @@ export function doneView() {
 			notice(good ? t("flash.c7.done.ready") : t("flash.c7.done.no_codec"), good ? "ok" : "bad"), good ? null : ctx.helpLink(),
 			// a backup taken from a radio that ran ODR holds that ODR build, not the original firmware
 			c.backupSaved ? h("p", { class: "small muted" }, t(c.odr ? "flash.c7.done.backup_kept_odr" : "flash.c7.done.backup_kept")) : null,
-			// not asked of the radio: any STUB command parks ODR's codec until the next restart (debuglink_stub.c)
+			// not asked of the radio: any STUB command parks ODR's codec until the next restart (platform stub_region, core/stubentry)
 			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")));
 		S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
 		await dropC7();

@@ -74,20 +74,10 @@ static inline bool debuglink_is_feature_op(uint8_t op)
 	return (op >= DL_OP_SCAN && op <= DL_OP_SETTING) || op == DL_OP_ROAM || op == DL_OP_VIBRATE || op == DL_OP_VOLUME ||
 	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY;
 }
-// VERSION's codec=: the vocoder profile the board recognized in flash (signature and hash checked by the board),
-// "absent" when the board has a vocoder but its check failed, "none" without one (FM-only build). The profile comes
-// first: a codec the board has stopped for a stub upload is still in flash, and a flasher asking then must not see it
-// absent. Read only
+// VERSION's codec= (hal_vocoder_id; the name the host tests use)
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)
 {
-	if (v == NULL) {
-		return "none";
-	}
-	const char *id = v->profile != NULL ? v->profile() : NULL;
-	if (id != NULL) {
-		return id;
-	}
-	return v->present() ? "present" : "absent";
+	return hal_vocoder_id(v);
 }
 // The DMR data service (debuglink_dmr_data.c): the dmr_data view section, the DMR_DATA command (docs/spec/debuglink.md
 // 3.12) and its counter reset. Built without CONFIG_DMR_DATA_CORE: "data.built=0", the command answers unavailable
@@ -121,12 +111,6 @@ void debuglink_view_tasks_format(const task_stack_t *ts, unsigned n, unsigned un
 size_t debuglink_cmd_split(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_view_split(dl_text_t *t);
 #endif
-
-// The RAM-monitor loader (debuglink_stub.c, docs/spec/debuglink.md 3.18): the DL_CMD_STUB handler, and the service
-// hook the host link task calls each pass so the jump happens after the ENTER reply has gone out. Built without
-// CONFIG_STUB_ENTRY (or on a board with no hal_system_t.enter_stub) the command answers unavailable and the hook is empty
-size_t debuglink_cmd_stub(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
-void debuglink_stub_service(void);
 
 // The crash log (debuglink_crash.c, docs/spec/debuglink.md 3.19): the crash section, DL_CMD_CRASH and the service hook
 // that crashes on purpose after the reply has gone out. Without CONFIG_CRASH_LOG: "crash.built=0", unavailable, empty
