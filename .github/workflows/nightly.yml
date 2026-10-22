@@ -102,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board: [dm32, dm1801pro, db25d]
+        board: [dm32, dm1801pro, db25d, gd88]
     permissions:
       contents: read
       packages: read   # pulling a private ghcr.io image with the job token
