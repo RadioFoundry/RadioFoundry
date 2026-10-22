@@ -173,6 +173,9 @@ On air (SDR bench, 2026-10-19; DM-32UV repeater, DM-1701 user, 461.1375 MHz CC 2
   stale status (gotchas 14.12). With `sfr_rx` 1 or 2 it falls over to the other copy only between calls or after a
   loss. A user out of range of the talker locks to the repeat; one whose talker fades mid-call hears a gap until the
   receiver's lost-signal restart. Hearing both slots during a call needs the raw RX RAM path (section 3).
+- An HR_C7000 user (DM-32UV, DM-1801 Pro) reports both copies. Its driver gives the voice-access flag to every chip
+  slot with a call on it; with the flag on one slot only, every burst read the voice RAM of the last one decoded and
+  the user played the same burst for the whole call (gotchas 14.15). Fixed in the driver, not yet rechecked on air.
 
 Not built: the HR_C6000 driver level parts (raw RX RAM classification, `sfrRawClassify`; the register switches of
 command 0xD5); a setting on the radio for the role (the Codeplug Editor sets it). On the radio, Tools > Single-freq repeater shows the

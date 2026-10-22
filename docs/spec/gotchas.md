@@ -601,6 +601,16 @@ family, MD-UV380):
   at the interrupt lost frames. Dropping the PA earlier (28.5-30 ms) changed nothing.
 - VHF and split frequencies keep the idle sequence (not measured).
 
+**14.15 An HR_C7000 SFR user needs the voice-access flag on both slots.** The chip writes the voice RAM only for a
+slot decided with TXRX_CTRL 0x8040; with 0x40 the burst is reported, but its voice RAM still holds the last burst
+decoded. The driver gave the flag to the chip slot of the last voice burst only. A user hearing both copies gets voice
+on both slots in turn, so the flag was always on the other slot, and every burst read the same stale bytes: the
+listener played the call's first decoded burst over and over while every counter looked clean (frames, bursts, no
+loss). That is the hand test of 2026-10-20 (DM-1701 user, DM-1801 Pro repeater, DM-32UV user, 1 clean call of about
+30). Rule: each chip slot with a voice header or voice burst in the last 390 ms gets the flag; a terminator clears its
+own slot (`hrc7000DmrTest` test_rx_sfr_both_copies). The frame counters can't show this: an HIL check has to look at
+the payloads (or the audio) the listener plays.
+
 ## 15. Testing practice
 
 - An SDR with a burst analyzer (timing, sync, color code, frequency offset) caught every timing bug above; host tests

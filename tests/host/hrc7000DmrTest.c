@@ -249,6 +249,78 @@ static void test_rx(void)
 	CHECK(eng.tick == t);
 }
 
+// An SFR user hears every call twice: the talker's copy on one chip slot, the repeat three slots (90 ms) later on the
+// other. The chip writes the voice RAM only for a slot decided with the voice-access flag, else the burst reads the
+// bytes of the last one decoded. Each burst here carries its own payload when the chip decodes it: every voice burst
+// of both copies must come out with its own bytes (the flag once followed the last voice burst, so it was always on
+// the other slot and the listener played one burst over and over, 2026-10-20)
+static void test_rx_sfr_both_copies(void)
+{
+	setup();
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_run(&eng);
+	count_kind(DMR_EV_SLOT_TICK, NULL);
+
+	enum { BURSTS = 3 + 12 };	// 3 headers, two superframes
+	unsigned fresh = 0, stale = 0, voice = 0;
+
+	for (int n = 0; n < 2 * BURSTS + 3; n++) {
+		uint8_t cs = (uint8_t)(n & 1);
+
+		REG(C7_LAYER2_STATUS) = (uint32_t)(cs ^ 1u) << 30;	// the coming slot is chip slot cs
+		tick(false);
+		bool flag = REG(C7_LAYER2_TXRX_CTRL) == 0x8040;
+		int k = cs == 0 ? n / 2 : (n - 3) / 2;	// direct copy on chip slot 0, the repeat on chip slot 1
+
+		if (k < 0 || (cs == 1 && n < 3) || k >= BURSTS) {
+			count_kind(DMR_EV_SLOT_TICK, NULL);
+			continue;
+		}
+		uint8_t fam = cs == 0 ? 2 : 3;	// TS1 sync on the talker's copy, TS2 on the repeat
+		if (k < 3) {
+			deframe(rti(0, DMR_BURST_VOICE_LC_HEADER, 2, fam, cs, 0));
+			count_kind(DMR_EV_BURST_RX, NULL);
+			continue;
+		}
+		int v = (k - 3) % 6;
+		uint8_t mark = (uint8_t)(0x40 + (k - 3) * 2 + cs);	// burst and copy
+
+		if (flag) {
+			memset(&buf[C7_VOICE_RAM], mark, 27);
+		}
+		deframe(rti((uint8_t)(v + 1), 0, 2, v == 0 ? fam : 0, cs, 0));
+		dmr_burst_t b;
+
+		CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.kind == DMR_BURST_VOICE && b.voice_index == v);
+		CHECK(b.ts == (cs == 0 ? 1 : 2));
+		voice++;
+		if (b.payload[0] == mark && b.payload[26] == mark) {
+			fresh++;
+		} else {
+			stale++;
+		}
+	}
+	CHECK(voice == 24 && fresh == 24 && stale == 0);
+	// One copy ends with its terminator: its slot loses the flag, the other keeps it
+	REG(C7_LAYER2_STATUS) = 1u << 30;
+	tick(false);
+	deframe(rti(0, DMR_BURST_TERMINATOR_LC, 2, 2, 0, 0));
+	count_kind(DMR_EV_BURST_RX, NULL);
+	REG(C7_LAYER2_STATUS) = 0;
+	tick(false);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x8040);	// chip slot 1, the repeat still running
+	REG(C7_LAYER2_STATUS) = 1u << 30;
+	tick(false);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);	// chip slot 0, the talker's copy over
+	// And with nothing more, the repeat's slot loses it too after the voice-lost time
+	for (int i = 0; i < 16; i++) {
+		REG(C7_LAYER2_STATUS) = (uint32_t)(i & 1) << 30;
+		tick(false);
+	}
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);
+}
+
 // The receiver drops its slot timing when it stops giving bursts: at the end of a reception and when the chip keeps
 // the timing of a sender that left, reporting only unusable slots (bench: no later call was taken)
 static void test_rx_resync(void)
@@ -995,6 +1067,7 @@ int main(void)
 {
 	test_pure();
 	test_rx();
+	test_rx_sfr_both_copies();
 	test_rx_resync();
 	test_cc_scan();
 	test_tx();
