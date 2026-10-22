@@ -323,6 +323,10 @@ It is not in the releases, so there is no odrflash route. It marks the radio as 
 | OpenDigitalRadio | Hands over to a loader in RAM over the debug link (no keys, no power cycle), writes only the changed sectors and restarts the radio. The backup of the program memory is optional |
 | OpenDigitalRadio that does not answer | "Recover at Power-On": the first stage answers for half a second at every power-on, and the radio programming utility loads the loader then |
 
+A radio that shows a white, backlit screen and a solid red LED at every power-on, without P1 held, is stuck in the
+factory update mode because its application is missing or incomplete. It needs no keys: the utility asks the loader a
+read-only question, says that the radio is in update mode and installs. Nothing is written to find this out.
+
 When nothing answers on the cable, Troubleshooting offers "Reinstall in Factory Update Mode", and Restore puts a backup
 back through the factory update mode the same way. Restore through the console or OpenDigitalRadio is the normal route;
 the factory update mode is the way back when neither answers.

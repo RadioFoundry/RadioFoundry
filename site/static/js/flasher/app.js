@@ -1468,6 +1468,9 @@ function afterRestore() {
 // always be put back, and every step says so: someone whose radio just went dark is scared it's ruined.
 
 const SYMPTOMS = ["dark", "stuck", "stopped", "novoice", "channels", "revert"];
+// "iap": a white, backlit screen and a solid red LED at every power-on. Only for a radio whose backend has a way back
+// through the vendor update mode (recovery.extra); it is listed after the dark screen it is mistaken for
+const symptoms = () => (backend().recovery.extra?.(S.radio, fb()).length ? ["dark", "iap", ...SYMPTOMS.slice(1)] : SYMPTOMS);
 
 // From a failure: the radio is known, so the page asks what's wrong right away
 function startHelp() {
@@ -1511,8 +1514,8 @@ function answers(items, pick, chosen = null) {
 function symptomView() {
 	S.forward(null);
 	return h("div", { class: "flasher" }, reassure(),
-		panel(t("flash.help.symptom_title"), answers(SYMPTOMS.map((id) => [id, t(`flash.help.s.${id}`), t(`flash.help.s.${id}_text`)]),
-			(id) => { S.help = { symptom: id, stage: id === "dark" ? "battery" : ["stuck", "stopped"].includes(id) ? backend().recovery.first : "fix" }; next(); })));
+		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, t(`flash.help.s.${id}`), t(`flash.help.s.${id}_text`)]),
+			(id) => { S.help = { symptom: id, stage: id === "dark" ? "battery" : id === "iap" ? "fix" : ["stuck", "stopped"].includes(id) ? backend().recovery.first : "fix" }; next(); })));
 }
 
 function recoverView() {
@@ -1579,7 +1582,8 @@ function fixChooser(st, go) {
 	// a backend's own ways back (the DB25-D's update mode) come after the reinstall
 	const extra = rec.extra?.(S.radio, fb()) || [];
 	for (const x of extra) opts[x.id] = [t(x.title), t(x.text)];
-	const order = { novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"] }[st.symptom]
+	const order = { novoice: ["codec", "backup", "stock"], channels: ["backup"], revert: ["backup", "stock"],
+		iap: ["updatemode", "backup"] }[st.symptom]
 		|| ["again", ...extra.map((x) => x.id), "backup", "stock"];
 	const start = () => {
 		const pick = st.pick;
@@ -1601,8 +1605,17 @@ function fixChooser(st, go) {
 	};
 	S.forward(button(t("flash.help.continue"), start, { primary: true, disabled: !st.pick }));
 	return panel(t(st.fine ? "flash.help.fine_title" : "flash.help.fix_title"),
-		st.fine ? h("p", {}, t("flash.help.fine_text")) : rec.reach ? h("p", {}, t(rec.reach)) : null,
+		st.symptom === "iap" ? stuckInUpdateMode() : st.fine ? h("p", {}, t("flash.help.fine_text")) : rec.reach ? h("p", {}, t(rec.reach)) : null,
 		answers(order.map((id) => [id, ...opts[id]]), (id) => go("fix", { pick: id }), st.pick));
+}
+
+// A radio that shows a white screen and a red LED at every power-on is in the vendor update mode because its application
+// is missing or incomplete: say so, and how to get into update mode if the radio is not showing it
+function stuckInUpdateMode() {
+	return h("div", {}, h("p", {}, t("flash.help.iap_cause")), h("p", {}, t("flash.help.iap_nokeys")),
+		h("p", { class: "small" }, t("flash.help.iap_enter")),
+		h("ol", { class: "steps small" }, S.radio.flash.bootloader.map((x) => h("li", {}, x))),
+		h("p", { class: "small muted" }, t("flash.help.iap_original")));
 }
 
 // STM32 radios back on their original firmware, from the stock file, through update mode (no backup needed)
