@@ -78,7 +78,12 @@ NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory 
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
-             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "HSE_VALUE")
+             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "HSE_VALUE", "MCU_DEFS")
+# The frame buffer core/ui/gfx.h builds when a board's MCU_DEFS don't size it (RGB565, 160x128, at most 160 rows)
+GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED": 0}
+# The [flash.stub] id every stub keeps for its tools' test profiles (stub/f4stub.py test_board()), so a test record
+# never names a real board
+STUB_TEST_ID = 0xFE
 # The pins.h names the STM32F4 stub's board record reads: the SPI flash's clock, data and chip select (stub-stm32f4.md 5.2)
 F4_SPI_PINS = ("PIN_FLASH_SCK", "PIN_FLASH_MISO", "PIN_FLASH_MOSI", "PIN_FLASH_CS")
 
@@ -794,7 +799,9 @@ def check(root=ROOT):
                 for k in set(stub) - {"id", "tested"} - set(bs["keys"]) - set(bs["optional"]):
                     bad("flash.stub %s is not a key of the %s stub (platform.toml board_stub)" % (k, bs["tool"]))
                 # ids are per stub: each stub has its own table of boards
-                if (bs["tool"], stub["id"]) in stub_ids:
+                if stub["id"] == STUB_TEST_ID:
+                    bad("flash.stub id 0x%02X is reserved for the stub tools' test profiles" % STUB_TEST_ID)
+                elif (bs["tool"], stub["id"]) in stub_ids:
                     bad("flash.stub id %d is also the %s's" % (stub["id"], stub_ids[(bs["tool"], stub["id"])]))
                 else:
                     stub_ids[(bs["tool"], stub["id"])] = bid
@@ -1232,6 +1239,8 @@ def self_test():
         broken(re.sub(r'(?m)^gallery = ".*"$', 'gallery = "200x100"', good), "a display class the gallery lacks",
                "sim_geoms")
         broken(re.sub(r"(?m)^hold_power = .*$", "", good), "a missing stub key", "needs hold_power")
+        broken(re.sub(r"(?m)^(\[flash\.stub\]\n)id = .*$", r"\1id = %d" % STUB_TEST_ID, good),
+               "the test profiles' stub id", "reserved for the stub tools' test profiles")
         broken(re.sub(r"(?m)^(hold_power = .*)$", r"\1\nspi = { bus = 1, mode = 0, hz = 1000000 }", good),
                "a key of another platform's stub", "not a key of the stubtool stub")
         two = board_dirs(tmp)[1]
