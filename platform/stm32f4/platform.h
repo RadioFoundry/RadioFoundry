@@ -36,6 +36,12 @@ void board_sysboot_prepare(void);
 // and USB pins stay
 uint8_t *stm32_stub_region(uint32_t *size);
 bool stm32_enter_stub(uint32_t entry);
+// With CONFIG_WATCHDOG and the IWDG running: true only for an image whose header (stub/stm32f4/f4stub_header.h) says
+// the stub feeds the IWDG. Otherwise true
+bool stm32_stub_image_ok(const uint8_t *img, uint32_t len);
+// CONFIG_WATCHDOG (watchdog.c): the IWDG can't be stopped, so before the stub entry it gets its longest timeout (about
+// 32 s) and a feed. The stub feeds it from then on; ODR refuses a stub that doesn't
+void stm32_watchdog_stretch(void);
 
 // Enable the clock of a GPIO port by its base address
 void stm32_gpio_clock(GPIO_TypeDef *port);

@@ -131,6 +131,13 @@ static bool excluded(const nand_sectors_t *ns, uint32_t page)
 	return false;
 }
 
+static void busy(const nand_sectors_t *ns)
+{
+	if (ns->dev->busy != NULL) {
+		ns->dev->busy(ns->dev->ctx);
+	}
+}
+
 static meta_state_t read_meta(nand_sectors_t *ns, uint32_t page, meta_t *m)
 {
 	uint8_t b[META_LEN];
@@ -432,6 +439,7 @@ static bool evacuate(nand_sectors_t *ns, uint16_t v)
 {
 	uint32_t first = v * ppb(ns);
 	for (uint32_t p = 0; p < ppb(ns) && ns->live[v] > 0; p++) {
+		busy(ns);
 		meta_t m;
 		meta_state_t st = read_meta(ns, first + p, &m);
 		if (st == META_BLANK) {
@@ -461,6 +469,7 @@ static bool evacuate(nand_sectors_t *ns, uint16_t v)
 static void collect(nand_sectors_t *ns)
 {
 	while (free_blocks(ns) <= NAND_SECTORS_RESERVE) {
+		busy(ns);
 		uint16_t v = NONE;
 		for (uint16_t b = 0; b < ns->dev->blocks; b++) {
 			if (b == ns->open || (ns->flags[b] & F_BAD)) {
@@ -541,6 +550,7 @@ static void mount_scan(nand_sectors_t *ns)
 		if (ns->flags[b] & F_BAD) {
 			continue;
 		}
+		busy(ns);
 		for (uint32_t p = 0; p < ppb(ns); p++) {
 			meta_t m;
 			meta_state_t st = read_meta(ns, b * ppb(ns) + p, &m);
@@ -567,6 +577,7 @@ static void mount_scan(nand_sectors_t *ns)
 			break;
 		}
 		ns->flags[b] |= F_DONE;
+		busy(ns);
 		ns->rotor = b;		// the newest block: allocation goes on after it
 		uint32_t first = b * ppb(ns);
 		for (uint32_t p = 0; p < ppb(ns); p++) {
@@ -625,6 +636,7 @@ static bool mount_verify(nand_sectors_t *ns)
 		if (!is_data(e)) {
 			continue;
 		}
+		busy(ns);
 		for (uint32_t h = 0; h < 2; h++) {
 			uint32_t page = entry_page(e) + h, crc;
 			meta_t m;
@@ -692,6 +704,7 @@ bool nand_sectors_mount(nand_sectors_t *ns)
 	ns->rotor = (uint16_t)(d->blocks - 1u);
 	// Foreign data anywhere in the region: no mount, nothing programmed or erased. The owner decides what to do
 	for (uint16_t b = 0; b < d->blocks; b++) {
+		busy(ns);
 		bool bad = false;
 		if (!d->block_bad(d->ctx, b, &bad)) {
 			bad = true;		// unreadable: left alone

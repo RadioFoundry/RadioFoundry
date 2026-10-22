@@ -108,6 +108,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1A` | STUB | operation u8 + arguments (3.18); `CONFIG_STUB_ENTRY` builds on a supported SoC, else status 4 | region info, progress, or a reason (3.18) |
 | `0x1B` | CRASH | operation u8 + arguments (3.19); `CONFIG_CRASH_LOG` builds, else status 4 | none (3.19) |
 | `0x1C` | CODEPLUG | operation u8 + arguments (3.20); `CONFIG_CPS_FAST` builds, else status 4 | layout, block sums, an LZ4 stream, or a reason (3.20) |
+| `0x1D` | WATCHDOG | operation u8 + arguments (3.21); `CONFIG_WATCHDOG` builds, else status 4 | none (3.21) |
 
 ### 3.1 VERSION
 
@@ -254,6 +255,7 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 | 19 | `sfr` | The MMDVM hotspot's SFR mode (`docs/spec/sfr.md`): `sfr.on sfr.keyed sfr.busy sfr.slots sfr.rx sfr.repeated sfr.ignored sfr.echo sfr.bad_crc sfr.tx_bursts sfr.tx_idle sfr.tx_starts sfr.up sfr.up_lost sfr.tx_beacons sfr.tx_gaps sfr.ignored_slot sfr.ignored_cc sfr.last_ignored`. Built without it: `sfr.built=0` |
 | 20 | `tasks` | Every FreeRTOS task's least free stack since it started, in bytes (the kernel's high water mark, in creation order): `tasks.count tasks.untracked` (tasks created while the table of 16 was full) `tasks.min_free tasks.min_task` (the task with the least, the first of a tie), then `tasks.free.<name>` per task. A name's characters other than letters, digits and `_` become `_` (`tasks.free.Tmr_Svc`), an empty name is `_`. The kernel's task create and delete trace hooks keep the table (`core/app/task_stack.c`); each stack is walked with the scheduler suspended, one task at a time. Measured on the radio; `make stack-check` computes the worst case ([stack-check.md](../dev/stack-check.md)). Built without it (`CONFIG_TASK_STACKS=n`): `tasks.built=0` |
 | 21 | `crash` | the crash log's record from before this start ([crash-log.md](crash-log.md) 3): `crash.built crash.valid`, when valid `crash.arch` (1 CM4, 2 CK803) `crash.kind` (1 fault, 2 stack overflow, 3 out of heap, 4 assert) `crash.cause crash.flags crash.count crash.pc crash.lr crash.sp crash.psr crash.status` (four words) `crash.task crash.uptime_ms crash.build` (the commit's first 8 hex digits, 00000000 unknown) `crash.r0` .. `crash.r13`, and `crash.stack` (the 16 words at `sp`, comma separated hex) when the flags have bit 2. Built without the crash log: `crash.built=0` |
+| 22 | `watchdog` | the hardware watchdog ([watchdog.md](watchdog.md)): `watchdog.built watchdog.timeout_ms` (the nominal timeout; 0 stopped or re-armed by a bench LOAD) `watchdog.feeds` (by the idle task since start) `watchdog.starving` `watchdog.idle_age_ms` (since the idle task last ran) `watchdog.max_gap_ms` (the longest the idle task stayed out since start or CLEAR_GAP) `watchdog.regs` (the platform's raw registers, comma separated hex: HR_C7000 LOCK, OT_LOAD_H, OT_LOAD_L, RST_LOAD, EN, KNOCK; STM32 IWDG PR, RLR, SR), and while a test starves it `watchdog.starved_ms` (since the feeds stopped). Built without the watchdog: `watchdog.built=0` |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -525,7 +527,7 @@ of the whole image checked before the jump.
 | 0 INFO | none | magic u32, load_addr u32, region_size u32, max_chunk u16, armed u8, received u32: the span and transfer state. `load_addr` / `region_size` are the board's `HRC_STUB_BASE` / `HRC_STUB_SIZE` (the DB25-D reports 0x30000 / 0x20000, or 0x1D000 / 0x12000 with `CONFIG_DMR`) |
 | 1 BEGIN | magic u32, total_len u32, crc32 u32, entry u32 | received u32 (0): zero the span and arm a transfer. Bad magic: refused; total 0 / over the span or entry outside it: bad argument |
 | 2 DATA | offset u32, bytes (<= max_chunk) | received u32: write a chunk (the frame's CRC-16 guards it). Not armed, or past total_len: bad argument |
-| 3 ENTER | magic u32 | ok then (after the reply) quiesce and jump; the monitor answers next. Bad magic: refused; incomplete or the CRC-32 mismatches: bad argument; the radio transmitting: busy (the image stays loaded, ENTER again later) |
+| 3 ENTER | magic u32 | ok then (after the reply) quiesce and jump; the monitor answers next. Bad magic: refused; incomplete or the CRC-32 mismatches: bad argument; the radio transmitting: busy (the image stays loaded, ENTER again later); the platform's image check says no: refused with reason byte 1 (`DL_STUB_REFUSE_WATCHDOG`: the STM32's IWDG runs and the image header doesn't say the stub feeds it: no header, a version before 3 or no feed flag, [stub-stm32f4.md](stub-stm32f4.md) 3.1, [watchdog.md](watchdog.md) 3.1) |
 
 The CRC-32 is the standard (zlib) CRC-32. Per-chunk integrity is the debug link frame's own CRC-16, so DATA carries no
 second checksum; the span is zeroed at BEGIN, so a dropped chunk leaves zeros that fail the ENTER CRC-32. After an ok
@@ -593,6 +595,22 @@ A refusal (`DL_ST_REFUSED`) carries a reason byte: 1 outside the image or a prot
 written, 3 no staging area, 4 staging full, 5 staging busy, 6 out of order, 7 CRC, 8 bad stream, 9 flash failure.
 `tools/cps_fast.py info | read | write | verify` drives it.
 
+### 3.21 WATCHDOG
+
+The hardware watchdog's bench tests (`CONFIG_WATCHDOG`, [watchdog.md](watchdog.md) 6). Every test ends in a watchdog
+reset. Built without the switch, every operation answers `DL_ST_UNAVAILABLE`.
+
+| Op | Name | Arguments | Effect |
+|---|---|---|---|
+| 0 | CLEAR_GAP | none | restart the longest idle gap measurement (`watchdog.max_gap_ms`) |
+| 1 | TEST | kind u8, token u32 | after the reply, about 100 ms later, the feeds stop for good: kind 1 STARVE (the idle task stops feeding; everything else runs, the link answers until the reset), 2 SPIN (the host link's task spins with interrupts on), 3 IRQ_OFF (it spins with the kernel's interrupts masked) |
+| 2 | LOAD | three u32 (platform defined), token u32 | after the reply: the watchdog re-armed with a raw load, then STARVE. HR_C7000: OT_LOAD_H, OT_LOAD_L, RST_LOAD (`0xFFFFFFFF` leaves it). Elsewhere status 4 |
+
+The token is `'WDOG'` (`0x474F4457`, little endian in the payload); another value, or a transmitting radio, is
+answered refused (7). A test is dropped if PTT went down between the reply and its start. During STARVE and LOAD the
+view's `watchdog.starved_ms` counts from the last feed; its last value before the link goes quiet bounds the timeout.
+`odr_debug.py watchdog [show|clear-gap|test starve|spin|irq-off|load H L [RST]]`.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -603,6 +621,7 @@ written, 3 no staging area, 4 staging full, 5 staging busy, 6 out of order, 7 CR
   peripherals. Nothing in the debug link writes or erases internal flash or the option bytes.
 - STUB ENTER is refused while transmitting, and the transmitter is switched to receive before the jump (3.18).
 - CRASH TEST needs its token and is refused while transmitting (3.19).
+- WATCHDOG TEST and LOAD need their token and are refused while transmitting; each ends in a reset (3.21).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the stock bootloader is proprietary).

@@ -22,9 +22,10 @@ transmitter off first (8), with or without the crash log. It adds the running
 task's name (empty in an interrupt handler: `CRASH_F_ISR`), the uptime, the 16 words at the stack pointer when that
 points into RAM (`CRASH_F_STACK`), the commit, then seals the record with a CRC-32, stores it and restarts the radio.
 
-Not caught: a hang (no watchdog is enabled yet), a fault while the fault entry pushes its frame (2.2), and an
-unhandled interrupt on the STM32F4 (the start-up's default handler still spins; no interrupt is enabled without a
-handler). The NMI on the STM32F4 takes the HardFault entry (`cause` 2).
+Not caught: a hang (the hardware watchdog resets the radio instead, [watchdog.md](watchdog.md), with no record), a
+fault while the fault entry pushes its frame (2.2), and an unhandled interrupt on the STM32F4 (the start-up's default
+handler spins until the watchdog resets the radio; no interrupt is enabled without a handler). The NMI on the STM32F4
+takes the HardFault entry (`cause` 2).
 
 ## 2. Platforms
 
@@ -54,7 +55,35 @@ exceptions off: an unrecoverable error, and the radio stays stopped as without t
 The store is 256 bytes at 0x18007F00, the top of the SRAM shared with the modem. The codec's tables (from
 0x18000800, at most to 0x18004F90 in any stock image) and the microphone PCM (0x18000000) don't reach it
 (`hardware-dm32.md` 2). Main SRAM is not used: the Baofeng bootloader and the start-up use it. Restart: the chip's
-soft reset (`hrc_soft_reset`, the same as a reboot).
+soft reset (`hrc_soft_reset`, the same as a reboot). With the fault trace (2.3) the lines go out first; without the
+crash log the fault ends in the same soft reset.
+
+### 2.3 Fault trace
+
+`CONFIG_FAULT_TRACE` (default on; the STM32 radios turn it off). A CPU fault prints its registers on the host UART
+before the record and the restart, so a radio whose debug link is gone can still say where it crashed, with or
+without the crash log. Code: `core/crash/crash_trace.c` (the line, portable), `hrc_fault` in
+`platform/hrc7000/irq.c` (timing and output), `hrc_host_uart_put_polled` in `platform/hrc7000/uart.c`.
+
+| Item | Value |
+|---|---|
+| Port | the host UART, at the rate it runs at (115200 8N1): DM-32UV and DM-1801 Pro UART0 (the programming cable), DB25-D UART1 |
+| Lines | `CRASH_TRACE_LINES` (3), one a second, timed on the free-running clock timer (interrupts are off); then 50 ms for the UART's FIFO to empty, then the record and the restart |
+| Format | `\r\n#ODRFAULT1 n=01 v=<vector> pc=<EPC> psr=<EPSR> lr=<r15> sp=<sp before the frame> r0=<..> .. r13=<..> *<crc>\r\n`; every value 8 lower-case hex digits, `n` the line's number as 2 hex digits |
+| CRC | CRC-16/CCITT-FALSE (polynomial 0x1021, init 0xFFFF, no reflection, no final XOR) over the bytes from `#` up to and including the space before `*`, as 4 lower-case hex digits |
+| Watchdog | fed once before the first line; the three seconds stay inside the timeout ([watchdog.md](watchdog.md) 2) |
+
+The sync word `#ODRFAULT1` and the CRC let a reader pick the lines out of whatever else the port carries (MMDVM or
+CPS traffic, the debug link). `tools/odr_fault_trace.py PORT` reads the port raw for a while (the debug link must not
+hold it), or `--file LOG` a saved capture, checks each line's CRC and prints the registers; `--selftest` decodes the
+golden line `tests/host/crashTest.c` builds.
+
+The STM32 radios have no UART a fault handler could print on: their host port is USB, which needs interrupts, and
+their one UART is a GPS receive line (DM-1701 USART1 RX on PA10, its TX pin PA9 used as the GPS power switch; MD-380 G
+models USART3 RX on PD9). Their faults keep the record only.
+
+Checked on hardware: DB25-D (2026-10-21), `odr_debug.py crash test trap` printed lines the tool decoded with good
+CRCs, then the radio restarted with the record kept.
 
 ## 3. The record
 
@@ -164,7 +193,8 @@ Checked on hardware (2026-10-17, both flashed through the stub), with `tests/hil
 
 ## 7. Tests
 
-`tests/host/crashTest.c`: the CRC, sealing and the count in a row, the build ID, the start-up side on a fake store,
+`tests/host/crashTest.c`: the fault trace's golden line and its CRC (and `tools/odr_fault_trace.py --selftest` on the
+same line), the CRC, sealing and the count in a row, the build ID, the start-up side on a fake store,
 the packed report and the summary line; `ui_svc_crash.c` on fake settings, contacts and data service (the record for
 the screen, seen, clear, the report to a private or group contact, its progress and the sent mark); and
 `debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals and the deferred test).

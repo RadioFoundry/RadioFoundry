@@ -13,6 +13,8 @@
 #include <stdint.h>
 #include "platform.h"
 #include "board.h"
+#include "hal_watchdog.h"
+#include "../../stub/stm32f4/f4stub_header.h"	// the stub's image header: one definition, shared with the stub
 #if CONFIG_USB
 #include "usb/usb_device.h"
 #endif
@@ -41,6 +43,18 @@ static uint32_t handoff_flags(void)
 	return 0;
 }
 
+// The IWDG can't be stopped, so a stub that doesn't feed it would be reset part way through a write. A stub that
+// feeds it says so in its image header (version >= F4STUB_VERSION_FEEDS_IWDG and the feed flag); one without the
+// header, any stub before version 3, is refused here and at ENTER
+bool stm32_stub_image_ok(const uint8_t *img, uint32_t len)
+{
+#if CONFIG_WATCHDOG
+	return f4stub_image_ok(img, len, hal_watchdog_timeout_ms() != 0);
+#else
+	return f4stub_image_ok(img, len, false);
+#endif
+}
+
 bool stm32_enter_stub(uint32_t entry)
 {
 	if (entry < STUB_RUN_ADDR || entry >= STUB_RUN_ADDR + STUB_STAGE_SIZE) {
@@ -51,8 +65,14 @@ bool stm32_enter_stub(uint32_t entry)
 	if ((uint32_t)(uintptr_t)stage < STUB_RUN_ADDR) {
 		return false;
 	}
+	if (!stm32_stub_image_ok(stage, sizeof(stage))) {
+		return false;		// checked at ENTER already; again here, whoever calls this
+	}
 	uint32_t flags = handoff_flags();
 	board_rf_safe();		// transmitter off; the power latch and the display stay as they are
+#if CONFIG_WATCHDOG
+	stm32_watchdog_stretch();	// the IWDG keeps running: the stub feeds it (docs/spec/stub-stm32f4.md 3)
+#endif
 
 	__disable_irq();
 	SysTick->CTRL = 0;
