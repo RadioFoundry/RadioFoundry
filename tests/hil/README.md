@@ -27,6 +27,22 @@ Without a radio every test is skipped with the reason (no failure). The radio is
 `--radio-port` or `$ODR_PORT` picks one when there are several. The port can also be a pyserial URL, such as
 `rfc2217://host:7001` for a radio on another machine's RFC 2217 server.
 
+### Default bench pass
+
+Run this on every radio with DMR before a release, after a modem, vocoder, audio or board change, and after bringing
+up a radio:
+
+```
+python3 -m pytest tests/hil -v -rs -s --allow-rf --ambe ~/recordings/speech.ambe --dmr-freq MHZ
+```
+
+`MHZ` is a frequency where the radio's current zone has a DMR channel and the SDR bench can transmit and receive. The
+run includes the DMR audio smoke (`test_dmr_audio_smoke.py`, marker `audio_smoke`): real audio both ways, which no
+frame counter can check. Without `--allow-rf`, a radio or the SDR bench, these tests skip with a reason starting
+`DMR AUDIO NOT CHECKED`: such a run hasn't checked DMR audio. With the radio and the bench there, nothing else skips
+them: no recording, no vocoder, no DMR channel on `MHZ` or firmware without the view keys fails. Run only the smoke
+with `-m audio_smoke`.
+
 ### Opt-in flags
 
 | Flag | Allows |
@@ -133,6 +149,7 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
 | `test_snmp.py` | the SNMP agent over the USB network: walks the whole MIB at the radio's link address with `tools/odr_snmp.py`, compares values with the debug link, the SET rules with a temporary write community (restored), a wrong community dropped, the test notification received on UDP 16162; back to serial. Nothing transmitted. Not run yet | `--allow-usb-switch`, firmware with `CONFIG_SNMP` |
 | `test_dmr_rx.py` | bench sends 2 group calls (10 superframes, 8 headers, 3 terminators each); counter deltas | `--allow-rf --allow-service-stop` |
 | `test_dmr_voice.py` | bench sends a speech recording; every frame reaches the speaker path. `test_vocoder_encode_options` (radio only): the encode options in force follow Mic noise reduction and Mic AGC (`voice.enc_options`, `settings.audio_flags`), and the codec word (`voice.enc_flags`) is 0x800 plus option bits, never 0x100 / 0x4000; it is the word the codec was last given, so one that still belongs to the previous options (no transmission since a change) is only printed | the same, and `--ambe`; radio only for the options test |
+| `test_dmr_audio_smoke.py` | DMR audio both ways (marker `audio_smoke`, part of the default bench pass). RX: the bench sends the speech recording to the call the radio's channel listens to (its talk target, or a private call to its ID, on the channel's color code); the decoded audio peaks high and the frames aren't one frame repeated. TX: the radio keys 3 s with the voice layer's test signal in place of the mic (RADIO op 33); the bench modem records the call, the frames on air must be distinct and not silence, and the recording played back to the radio must decode to audio. Prints the mic level of the over (`voice.tx_mic_peak`) | `--allow-rf --ambe`; skips only without the radio, the bench, DMR or `--allow-rf` |
 | `test_dmr_tx.py` | radio keys 3 s on DMR (debug-link PTT); SDR capture + sdrmon analysis and the bench modem's listener check src ID, TG, CC, headers / voice / terminator, timing, carrier offset (waveform checks reported as not judged when the capture clips); our ETSI GPS Info from a fixed APRS position decoded by the bench modem's listener (`CONFIG_DMR_GPS` and `CONFIG_APRS`); privacy TX (Motorola BP key 1: service option 0x40 in every LC from us, FID 0x10 in the embedded LCs; a clear over has neither); talker alias TX (the channel's alias flag set over CPS, backed up and restored: the alias on air equals `dmr.tx_alias`); vocoder encode options (`test_dmr_tx_encode_options`, one over each for flags 0x1840, 0x800, 0x1800 and 0x3840, set over the debug link's SETTING 31: the same checks, `voice.enc_options` as set, `voice.enc_flags` after the over equal to the word, the options put back; AMBE parameter statistics of what the bench modem heard printed, not judged); repeater TX on a split channel (the channel's TX frequency set over CPS, backed up and restored; the bench modem as a duplex repeater: the radio wakes it, sees it up while talking, and the repeater takes the call) | `--allow-rf --allow-service-stop` (`--sdr-gain 0` on this bench); the alias test also `--allow-codeplug-write`; the split test also `--allow-codeplug-write --split-tx-mhz MHz` |
 | `test_fm_tx.py` | radio FM VFO keys 3 s with CTCSS 100.0, DCS D023N, and at 12.5 / 25 kHz; the 1750 Hz burst, the roger beep (on and off) and the three lowest power levels; `tools/sdr_fm_check.py` (with `--tones`) on an SDR capture | `--allow-rf --allow-service-stop` |
 | `test_mic_gain.py` | FM mic gain against deviation ([radio-features.md](../../docs/spec/radio-features.md) 3.6): per Mic gain step (`--mic-gain-steps`, default 3,5,7) at 12.5 and then 25 kHz, the step set over the debug link (SETTING 29), then a person unplugs the cable (on the DM-1801 Pro it cuts the microphone), keys, gives a steady tone or the same sentence, releases and plugs back in while the SDR bench records (`--mic-gain-window` s); prints `tools/sdr_fm_check.py`'s voice peak / rms and tone deviation and GCR_ADCL per over. Asserts only a keyed segment per over and the step read back ([dm1801pro-bringup.md](../../docs/testing/dm1801pro-bringup.md) 5.1). No injected tone stands in for the microphone: they all join after the codec ADC | `--manual -s --allow-rf`; a board with `hal_radio_t.mic_gain` (`set.mic_gain_board=1`) |
@@ -153,6 +170,16 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
 
 `test_dmr_rx`: voice bursts exactly 120; voice LC headers 14 to 16 (the first header of a call can fall in the
 receiver's acquisition); terminators 5 to 6; CRC errors 0; the call stack saw exactly 2 calls.
+
+`test_dmr_audio_smoke`: RX: the call played (`call.rx_calls_played` +1); frames into the voice layer at least 90 % of
+the frames sent; `voice.rx_peak` at least 1000; `voice.rx_repeats` at most the recording's own repeats + the superframe padding
++ 2 + 2 % of the frames; FEC corrections at most 2 bits a frame on average. TX: the radio made one call of at least 30
+frames a second of PTT with at most 10 % `voice.tx_repeats`; the bench heard a call from the radio's ID with at least
+as many frames, at most 15 % of them the AMBE silence frame, at most 10 % equal to the frame before and at least a
+tenth distinct (the test signal repeats its cycle); played back to the radio, the RX criteria without the FEC limit (the recording carries what the bench heard).
+Why: the DM-1801 Pro once played every DMR call silent with every counter clean (each burst read the same stale voice
+RAM: `voice.rx_peak` 6, exactly 3 bits corrected a frame). `voice.tx_mic_peak` 0 means the board delivered no mic
+signal (a speaker-mic cable that cuts the mic gives 0 too); it is printed, not judged.
 
 `test_dmr_voice`: frames into the AMBE voice layer = the frames sent (the recording padded to whole superframes of 18
 frames); frames played at least sent - 3 (`AMBE_VOICE_PRIME`) and at most sent; no late entry; zero concealed,

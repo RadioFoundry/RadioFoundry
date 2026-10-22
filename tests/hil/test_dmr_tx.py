@@ -520,7 +520,7 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     if d.get("dmr.codec") != "1":
         pytest.skip("no vocoder merged in this firmware (dmr.codec=0)")
-    v = radio.view(["dmr_stats"])
+    v = radio.view(["dmr"])
     if "voice.enc_supported" not in v:
         pytest.skip("firmware without the voice.enc_* view keys")
     if int(v["voice.enc_supported"], 0) & opts != opts:
@@ -533,7 +533,7 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
     except DebugLinkError as e:
         pytest.skip(f"firmware without the enc_options setting (SETTING 31): {e}")
     try:
-        got = int(radio.view(["dmr_stats"])["voice.enc_options"], 0)
+        got = int(radio.view(["dmr"])["voice.enc_options"], 0)
         assert got == opts, f"options in force {got:#x} after SETTING 31 {opts:#x}"
         radio.reset_counters()
         _, before = radio.counters()
@@ -547,10 +547,10 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
             sdr_bench.capture_wait()
         sdr = sdr_bench.analyze_dmr(cap, freq, cc)
         _, after = radio.counters()
-        flags = radio.view(["dmr_stats"]).get("voice.enc_flags")
+        flags = radio.view(["dmr"]).get("voice.enc_flags")
     finally:
         radio.link.setting(30, prev)
-    assert int(radio.view(["dmr_stats"])["voice.enc_options"], 0) == prev, "the options in force weren't put back"
+    assert int(radio.view(["dmr"])["voice.enc_options"], 0) == prev, "the options in force weren't put back"
     c = _tx_checks(sdr, heard, own, target, private, cc, before, after, d.get("dmr.tx_alias", ""), pytestconfig)
     if flags is not None:
         c.add(f"codec flags word {word:#x}", int(flags, 0) == word, flags)

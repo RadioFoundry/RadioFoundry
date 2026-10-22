@@ -142,6 +142,7 @@ Each flag allows one more kind of action, and a test runs only when all it needs
 | `--allow-usb-switch`, `--allow-codeplug-write`, `--allow-reboot` | as in section 2 (no RF) |
 
 ```
+python3 -m pytest tests/hil -v -rs -s --allow-rf --ambe SPEECH.ambe --dmr-freq MHZ   # the default bench pass, DMR audio smoke included
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop                  # DMR RX / voice, DMR TX, FM TX
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k dmr_data   # DMR data services
@@ -152,6 +153,7 @@ ODR_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s -
 | Test | What is checked |
 |---|---|
 | `test_dmr_rx`, `test_dmr_voice` | the bench modem sends calls; the radio's counters show every burst, every voice frame reaches the speaker path |
+| `test_dmr_audio_smoke` | DMR audio both ways, which no counter shows: the bench's speech decodes to audio on the radio, frames not repeated; the radio's test signal reaches the air as distinct, non-silent frames that decode to audio when played back. Part of every bench pass on every radio with DMR (`tests/hil/README.md`, Default bench pass); a run without it prints `DMR AUDIO NOT CHECKED` |
 | `test_dmr_tx` | the radio keys 3 s; an SDR capture (`sdrmon.py`) and the bench modem's listener check source ID, talkgroup, color code, headers / voice / terminator, slot timing, ramps, carrier offset |
 | `test_fm_tx` | the radio's FM VFO keys with CTCSS 100.0 Hz, DCS D023N, at 12.5 and 25 kHz, the 1750 Hz burst, the roger beep, three power levels; `tools/sdr_fm_check.py` decodes the tones (`--tones`: audio tones) and compares the deviations |
 | `test_aprs` | APRS at the lowest power on a 70 cm simplex frequency (446.050 MHz by default, never an APRS frequency, no path): position, status and message decoded off air by `tools/aprs_afsk_check.py` (Bell 202 / AX.25 from the RTL-SDR's I/Q), with the deviation, twist, phase continuity and TX delay; positions over DMR (LRRP, UDT) decoded from the bench modem |

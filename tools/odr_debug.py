@@ -160,6 +160,7 @@ OP_VIBRATE = 29
 OP_VOLUME = 30
 OP_DMR_FIELDS = 31
 OP_VFO_COPY = 32
+OP_VOICE_TEST = 33
 VOLUME_KNOB = 0xFF
 OP_PPP = 28
 ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
@@ -777,6 +778,11 @@ class DebugLink:
         in the VFO already."""
         self.radio(OP_VFO_COPY)
 
+    def voice_test(self, on):
+        """The DMR voice test signal (RADIO op 33, RAM only): on, the encoder gets a generated tone that changes pitch
+        every 20 ms in place of the mic, so an over carries known, varying audio (the dmr view key voice.tx_test)."""
+        self.radio(OP_VOICE_TEST, bytes([1 if on else 0]))
+
     def tone_burst(self, on):
         """The 1750 Hz burst (FM): keys up and sends the tone while on."""
         self.radio(OP_TONE_BURST, bytes([1 if on else 0]))
@@ -1156,6 +1162,8 @@ def cmd_radio(link, a):
         link.dmr_fields(ts=num(0))
     elif op == "burst":               # burst on|off
         link.tone_burst(args[:1] != ["off"])
+    elif op == "voice-test":          # voice-test on|off (the DMR encoder's test signal, RAM only)
+        link.voice_test(args[:1] != ["off"])
     elif op == "set":                 # set NAME VALUE
         link.setting(args[0], num(1))
     elif op == "usb":                 # usb network|serial
@@ -1669,7 +1677,7 @@ def main(argv=None):
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
-                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo"])
+                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",

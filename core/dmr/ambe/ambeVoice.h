@@ -47,6 +47,11 @@ typedef struct {
 	uint32_t rx_overflows;	// frames dropped, queue full
 	uint32_t rx_bit_errors;	// bits corrected by the FEC
 	uint32_t rx_peak;	// largest decoded sample (absolute) in the latest call that played: near 0 = silent output
+	// The checks a counter can't make: a modem that hands over the same stale voice bytes, or a stuck encoder, sends
+	// or plays the same frame again and again with every other counter clean
+	uint32_t rx_repeats;	// good frames whose parameter bits equal the call's previous good frame
+	uint32_t tx_repeats;	// encoded frames whose parameter bits equal the transmission's previous frame
+	uint32_t tx_mic_peak;	// largest mic sample (absolute) the board delivered in the latest transmission: 0 = no mic
 	uint32_t tx_frames;	// frames encoded
 	uint32_t tx_overflows;	// encoded frames dropped, queue full (the stack didn't pull)
 } ambe_voice_stats_t;
@@ -68,6 +73,11 @@ void ambeVoiceSetMixer(ambe_voice_mixer_t mixer);
 // board delivers it (the samples are scaled, with saturation, before the vocoder). Any task. Set through
 // radio_set_mic_gain (radio/mic_gain.h), which keeps it at 5 when the board applies the gain itself
 void ambeVoiceSetMicGain(uint8_t step);
+// Test signal for DMR transmissions (the debug link's RADIO op 33, RAM only): on, the encoder gets a generated tone
+// that changes pitch every 60 ms in place of the mic, so an over carries known, varying audio whatever the mic hears
+// (the HIL audio smoke test). Any task
+void ambeVoiceSetTestSignal(bool on);
+bool ambeVoiceTestSignal(void);
 // Encode options for DMR transmissions (VOCODER_OPT_*, default VOCODER_OPT_DEFAULT; Settings > Talk & listen > Mic
 // noise reduction). Handed to the vocoder in the audio callback before the next frame it encodes. Any task
 void ambeVoiceSetEncodeOptions(uint32_t opts);
