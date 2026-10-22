@@ -852,6 +852,15 @@ static void volume(uint8_t percent)
 // input muted (4:0xE0 bit 6 cleared). The AT1846S modulates it as it does its CTCSS (seen on the SDR bench) once
 // voice_sel selects tone1; with voice_sel left at "nothing" the carrier was unmodulated (gotchas 3.10). Only during FM
 // TX; the next tx() / rx() reapplies the mode tables
+// The DCS turn-off tail (hardware-dm1701.md 5.7); the core holds the carrier for it
+static bool tx_tail(bool on)
+{
+	if (!r.tx_on || r.mode != RADIO_MODE_FM) {
+		return false;
+	}
+	return at1846s_tx_tail(&r.rf, on);
+}
+
 static bool tx_tone(uint16_t hz)
 {
 	if (!r.tx_on || r.mode != RADIO_MODE_FM) {
@@ -959,6 +968,7 @@ const hal_radio_t dm1701_radio = {
 	.audio = audio,
 	.volume = volume,
 	.tx_tone = tx_tone,
+	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
 	.rx_sleep = rx_sleep,
 };

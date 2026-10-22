@@ -102,6 +102,30 @@ The board restores the microphone path on `tx_tone(0)` and on every return to re
 tone: `hardware-dm1701.md` 5.8. Verified on air on the DM-1701 (HIL 2026-10-10): the burst, the roger beep and APRS
 AFSK (`docs/testing/on-air-coverage.md`).
 
+### 3.3a DCS turn-off tail (CONFIG_SUBTONE)
+
+A DCS transmission ends with the turn-off code: 134.4 Hz (the DCS bit rate) as a steady tone in place of the code.
+Receivers set to the code close their squelch on it while the carrier is still up, so they don't play the noise burst
+of the carrier dropping.
+
+| Step | Behavior |
+|---|---|
+| PTT release (after the roger beep, if on) | the core calls the board's `tx_tail(true)`. True: the radio stays keyed `RADIO_SUBTONE_TAIL_MS` (300 ms), then `tx_tail(false)` and unkeys. False (no DCS, or no tail on the radio): unkeys at once |
+| PTT again during the tail | `tx_tail(false)`: the code again, the transmission goes on |
+| Time-out during the tail | the tail ends with the transmission |
+
+The board maps the hook to its chip; the core owns the timing.
+
+| Radio | Chip | Tail | Measured (SDR bench, D023N, 12.5 kHz) |
+|---|---|---|---|
+| DB25-D | BK4819 | 0x52 bit 15 (`hardware-db25d.md` 4.7) | 134.4 Hz for 0.30 s |
+| DM-32UV, DM-1801 Pro | HR_C7000 | FM_PTT off with FM_MOD b9 (`modem-hrc7000.md` 8.2) | DM-32UV: 134.4 Hz for 0.20 s, then 0.10 s of carrier without modulation |
+| DM-1701 | AT1846S | TX select from CDCSS to CTCSS, 0x4A already 134.4 Hz (`hardware-dm1701.md` 5.7) | not yet measured |
+| MD-380 | software (PWM) | the generator's 134.4 Hz sine (`subaudio_tx_tail`, `hardware-md380.md` 6.4) | not yet measured |
+
+`tools/sdr_fm_check.py` reports the tail on every DCS segment ("sub-audio tail: 134.4 Hz for 0.30 s, ...");
+`test_fm_tx_dcs` requires at least 0.15 s.
+
 ### 3.4 VOX (CONFIG_VOX; the `vox` setting is off by default)
 
 On FM channels (all, or those with the codeplug VOX flag) the microphone level (`mic_level()`, 0-100 logarithmic) at

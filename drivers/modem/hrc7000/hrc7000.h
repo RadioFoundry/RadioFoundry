@@ -252,6 +252,10 @@ typedef enum { HRC7000_TONE_NONE, HRC7000_TONE_CTCSS, HRC7000_TONE_DCS, HRC7000_
 // TX and RX sub-audio; value = Hz x 10 for CTCSS, the 9-bit code for DCS (octal digits as written: 023 -> 19). Set the
 // TX tone before hrc7000_fm_tx(): the modem takes the DCS code when FM_PTT goes on
 void hrc7000_set_subtone(hrc7000_t *d, bool tx, hrc7000_tone_t type, uint16_t value);
+// The DCS turn-off tail (8.2), while transmitting DCS with the RF still keyed: on drops FM_PTT, and the modem sends the
+// 134.4 Hz turn-off tone (FM_MOD b9) before its modulation stops; off raises FM_PTT again, back to the code. False
+// without DCS (nothing written)
+bool hrc7000_tx_tail(hrc7000_t *d, bool on);
 // The received tone or code matches (FM_DECODE_FLAG2 b0 CTCSS / b1 CDCSS); true when no RX tone is set
 bool hrc7000_subtone_ok(hrc7000_t *d);
 // A single FM TX tone instead of the microphone (8.3): DTMF digit "1" with both of its tones at hz, at the DTMF

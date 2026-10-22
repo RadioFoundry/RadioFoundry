@@ -429,8 +429,11 @@ firmware instead inverts its software decoder's polarity, on PB26 / PB27 (BIN). 
 D023N and D023I opened the matching setting only, and D754 and CTCSS settings stayed shut; the radio's D023N went out
 as D023N (RADIO). The diagnostics page's `rssi` line shows 0x0C as `c` (hex), polled with the RSSI.
 
-At the end of a DCS transmission the stock firmware writes 0x52 = 0x828F, waits 300 ms and writes 0x028F (a turn-off
-code, BIN). ODR doesn't send it yet.
+At the end of a DCS transmission the stock firmware writes 0x52 = 0x828F, waits 300 ms and writes 0x028F (BIN).
+0x52 bit 15 is the sub-audio tail generator (as on the FD6818, DS): the chip sends 134.4 Hz in place of the code, the
+DCS turn-off. ODR does the same through the core's tail (`radio-features.md` 3.3a; `bk4819_tx_tail_start` / `_end`;
+the end of the transmission writes 0x028F back if a tail is still on). On the SDR bench: D023N, then 134.4 Hz for
+0.30 s up to the carrier's end (RADIO).
 
 ## 5. Display
 

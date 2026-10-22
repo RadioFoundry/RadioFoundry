@@ -50,6 +50,8 @@ def parse_fm(text):
     m = re.search(r"sub-audio: DCS (\S+), deviation \+-(\d+) Hz", text)
     if m:
         out["dcs"], out["dcs_dev_hz"] = m.group(1), int(m.group(2))
+    m = re.search(r"sub-audio tail: [\d.]+ Hz for ([\d.]+) s", text)
+    out["dcs_tail_s"] = float(m.group(1)) if m else 0.0
     out["expect"] = re.findall(r"expect (?:CTCSS|DCS) [^:]+: (PASS|FAIL[^\n]*)", text)
     out["spans"] = [(float(a), float(b)) for a, b in re.findall(r"^segment \d+: ([\d.]+)-([\d.]+) s", text, re.M)]
     out["levels"] = [float(x) for x in re.findall(r"^segment \d+: .*level ([+-]?[\d.]+) dBFS", text, re.M)]
@@ -137,6 +139,8 @@ def test_fm_tx_dcs(fm_vfo, sdr_bench, pytestconfig):
     assert r["expect"] and r["expect"][0] == "PASS", f"DCS D023N not decoded (or inverted): {r}"
     # The radios send 210-350 Hz; a weak DCS (the HR_C7000's sub-audio field once sent 100 Hz) still decodes on the SDR
     assert 150 <= r["dcs_dev_hz"] <= 900, f"DCS deviation +-{r['dcs_dev_hz']} Hz at 12.5 kHz: {r}"
+    # The turn-off tail after PTT release: 134.4 Hz for about 200-300 ms (the core holds the carrier 300 ms)
+    assert r["dcs_tail_s"] >= 0.15, f"no DCS turn-off tail (134.4 Hz) at the end: {r}"
 
 
 @pytest.mark.radio_tx
