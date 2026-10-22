@@ -190,7 +190,7 @@ The toolchain scripts read these values with `tools/platform_toolchain.sh`, whic
 
 | Command | Output |
 |---|---|
-| `tools/boards.py list [--platform P] [--release R] [--comma]` | Board ids |
+| `tools/boards.py list [--platform P[,Q]] [--release R] [--comma]` | Board ids; an unknown platform fails. `tools/ci.sh --platform` and the CI workflows select boards with it |
 | `tools/boards.py get <id> [key.path]` | One value; a list prints one item per line |
 | `tools/boards.py platform <p> [key.path]` | One platform value |
 | `tools/boards.py builds <id> [--extra]` | The board's builds besides the default, or its `[ci]` extras |
