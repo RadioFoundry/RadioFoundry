@@ -183,13 +183,12 @@ never handles the key. Updates of a radio that runs ODR need no stock file.
 
 | Job | Does |
 |---|---|
-| `firmware-dm1701` | Installs the pinned Arm GNU Toolchain (`platform/stm32f4/platform.toml`, checked by SHA-256) into `~/opt`, runs `tools/ci.sh --quick --board dm1701` as the gate, builds, runs `tools/release.py` |
-| `firmware-dm32` | Only when the repository variable `ODR_RELEASE_DM32` is `true` (below) |
-| `firmware-dm1801pro` | Only when the repository variable `ODR_RELEASE_DM1801PRO` is `true` (below, "The DM-1801 Pro"): the DM-32UV job's toolchain and cache, then `make BOARD=dm1801pro` and `tools/release.py --board dm1801pro` |
+| `firmware (<platform>)` | One job per platform (`stm32f4`, `hrc7000`). Sets up the platform's pinned compiler with `.github/actions/toolchain` ([ci.md](ci.md#toolchains)): the self-hosted image's, the Arm GNU Toolchain checked by SHA-256, or the csky-elf toolchain built from source and cached. On a tag runs `tools/ci.sh --quick --platform <platform>` as the gate. Then, for every board on the platform with `[status] release = "stable"` (`tools/boards.py list --release stable`), builds the default image and each build option value's image (`tools/boards.py builds`), runs `tools/release.py` on each, and uploads them as `firmware-<platform>` |
 | `odrflash` | On Ubuntu 22.04, macOS 14 (arm64), macOS 13 (x86_64) and Windows 2022: installs the package, runs its tests, builds a single-file executable with PyInstaller 6.11.1 (libusb from the `libusb-package` wheel, the `certifi` CA bundle, and `serial_loader`, `hrc7000_codec` and `stubtool` for the serial route inside) and runs `--version` on it |
-| `publish` | On a `v*` tag only: one `SHA256SUMS` over everything, checks every manifest against its image and that none includes the codec, creates the release if the manual workflow hasn't, uploads with `--clobber` |
+| `publish` | On a `v*` tag only, after every platform's job and every odrflash build passed: one `SHA256SUMS` over everything, checks every manifest against its image and that none includes the codec, creates the release if the manual workflow hasn't, uploads with `--clobber` |
 
-Pull requests that touch `tools/odrflash/`, `tools/release.py`, the DM-32 flashing tools or the workflow build
+Pull requests that touch `tools/odrflash/`, `tools/release.py`, the serial flashing tools, the registry (`board.toml`,
+`board.mk`, `platform.toml`, `tools/boards.py`), the toolchain scripts, the toolchain action or the workflow build
 everything as workflow artifacts and publish nothing, without the release gate (the pull request's own checks run the
 same tests), and odrflash for Linux only when the self-hosted runner is set up. A manual run on a tag rebuilds and
 replaces the assets.
@@ -199,7 +198,8 @@ odrflash-*` (or right-click, Open). Windows SmartScreen asks once.
 
 ## The MD-380
 
-`[status] release = "stable"` in `boards/md380/board.toml`; `release.yml` has no job for it yet. The open items are in
+`[status] release = "stable"` in `boards/md380/board.toml`, so the release carries both band images,
+`odr-md380-<version>.bin` (UHF) and `odr-md380-vhf-<version>.bin`. The open items are in
 [docs/testing/md380-bringup.md](../testing/md380-bringup.md). The application has sectors 3-7 and the codec
 sectors 8, 10 and 11, so an update can keep the codec (`keep_codec_supported=True`), as on the DM-1701. The codec
 profile is `md380-d2032-s11` (a build from before the move reports `md380-d2032`). The moved code has run only in an
@@ -208,13 +208,13 @@ emulator, not on a radio. `tools/md380_migrate.py` flashes it today and keeps th
 
 ## Adding the DM-32UV
 
-`[status] release = "stable"` in `boards/dm32/board.toml`. The workflow job is there and off; the open items are in
-[docs/testing/dm32-bringup.md](../testing/dm32-bringup.md). To turn the job on:
+`[status] release = "stable"` in `boards/dm32/board.toml`, so the `hrc7000` job releases it; the open items are in
+[docs/testing/dm32-bringup.md](../testing/dm32-bringup.md).
 
-1. Set the repository variable `ODR_RELEASE_DM32=true` (Settings, Secrets and variables, Actions, Variables). The job
-   builds the csky-elf toolchain with `tools/build-csky-toolchain.sh` (GCC from `platform/hrc7000/platform.toml`,
-   binutils and newlib pinned in the script; about 45 minutes on four cores) and caches `~/toolchains/csky-elf` keyed by
-   the hash of both files, so later releases restore it in seconds. A prebuilt toolchain archive attached to a tools release
+1. Toolchain: without the self-hosted runner the job builds the csky-elf toolchain with
+   `tools/build-csky-toolchain.sh` (GCC from `platform/hrc7000/platform.toml`, binutils and newlib pinned in the
+   script; about 45 minutes on four cores) and caches `~/toolchains/csky-elf` keyed by the GCC version and the
+   script's hash, so later releases restore it in seconds. A prebuilt toolchain archive attached to a tools release
    would avoid the first build; that's a later choice.
 2. Flashing: the DM-32UV uses Baofeng's serial updater protocol ([hardware-dm32.md](../spec/hardware-dm32.md) 13.2), not
    DFU. odrflash would get a second backend speaking it over pyserial (the `serial-loader` family). The updater erases
@@ -227,8 +227,7 @@ emulator, not on a radio. `tools/md380_migrate.py` flashes it today and keeps th
 ## The DM-1801 Pro
 
 `[status] release = "stable"` in its `board.toml`; the open items are in
-[docs/testing/dm1801pro-bringup.md](../testing/dm1801pro-bringup.md). The workflow job is off until the repository
-variable `ODR_RELEASE_DM1801PRO` is `true`.
+[docs/testing/dm1801pro-bringup.md](../testing/dm1801pro-bringup.md). The `hrc7000` job releases it.
 
 **Package.** `tools/release.py --board dm1801pro --version v0.1.0` packs `build/dm1801pro/odr_dm1801pro.bin` like any
 board: one range from 0x0300C000, `sectors` `[0]`, codec profile `dm1801pro-049` in "sector" 1 (the slot), not
