@@ -173,7 +173,34 @@ spec = "tests/hil/README.md"
 source = ["tests/hil/bringup_plugin.py"]
 tests = ["test_fake.py::test_passes"]
 needs = ["radio"]
+
+[[feature]]
+id = "fake_new"
+summary = "a feature no run or seed has recorded"
+spec = "tests/hil/README.md"
+source = ["tests/hil/bringup_plugin.py"]
+tests = []
+needs = ["radio"]
+
+[[feature]]
+id = "fake_seeded"
+summary = "a feature only the seed record vouches for"
+spec = "tests/hil/README.md"
+source = ["tests/hil/bringup_plugin.py"]
+tests = []
+needs = ["radio"]
 '''
+
+
+def seed(board, rows):
+    return {"format": 1, "kind": "seed", "board": board, "source": "tests/hil/README.md", "date": "2026-01-01",
+            "features": rows}
+
+
+def statuses(common, board):
+    st = bringup(*common, "list", "--radio", board, "--json")
+    assert st.returncode == 0, st.stdout + st.stderr
+    return {x["id"]: (x["status"], x["basis"]) for x in json.loads(st.stdout)}
 
 
 def bringup(*args):
@@ -201,26 +228,58 @@ def test_bringup_run_records_and_status(tmp_path):
         assert r.returncode != 0 and "radio lock" in (r.stdout + r.stderr), r.stdout + r.stderr
     assert not results.exists()
 
+    # before any run: nothing reads as unsupported, and a seed row stands on its own
+    (results / board).mkdir(parents=True)
+    (results / board / "seed.json").write_text(json.dumps(seed(board, {"fake_split": {"result": "pass"},
+                                                                         "fake_seeded": {"result": "pass"}})))
+    assert statuses(common, board) == {"fake_split": ("pass", "seed"), "fake_ok": ("built, not yet recorded", None),
+                                       "fake_new": ("built, not yet recorded", None),
+                                       "fake_seeded": ("pass", "seed")}
+    assert "rests on a seed record" in bringup(*common, "status", "--radio", board).stdout
+
     r = bringup(*common, *run)
     assert r.returncode == 1, r.stdout + r.stderr
-    recs = glob.glob(str(results / board / "*.json"))
+    recs = [p for p in glob.glob(str(results / board / "*.json")) if not p.endswith("seed.json")]
     assert len(recs) == 1, recs
     with open(recs[0]) as f:
         rec = json.load(f)
-    assert rec["board"] == board and re.fullmatch(r"[0-9a-f]{40}", rec["commit"]) and rec["date"].endswith("Z")
+    assert rec["kind"] == "run" and rec["board"] == board and re.fullmatch(r"[0-9a-f]{40}", rec["commit"])
+    assert rec["date"].endswith("Z")
     assert {x["id"].split("::")[-1]: x["outcome"] for x in rec["tests"]} == {"test_gate": "failed",
                                                                              "test_passes": "passed"}
     assert rec["tools"]["pytest"] and "/nonexistent" not in json.dumps(rec)
 
-    st = bringup(*common, "list", "--radio", board, "--json")
-    assert st.returncode == 0, st.stdout + st.stderr
-    status = {x["id"]: x["status"] for x in json.loads(st.stdout)}
-    assert status == {"fake_split": "fail", "fake_ok": "pass"}, status
+    # the run's rows replace the seed's: fake_split failed on the radio, and the seed still vouches for fake_seeded
+    assert statuses(common, board) == {"fake_split": ("fail", "run"), "fake_ok": ("pass", "run"),
+                                       "fake_new": ("built, not yet recorded", None),
+                                       "fake_seeded": ("pass", "seed")}
 
-    # a record whose commit this repository doesn't have is stale: it says nothing about this tree
+    # a record whose commit this repository doesn't have needs a re-run: no downgrade, and a failure stays one
     rec["commit"] = "0" * 40
     with open(recs[0], "w") as f:
         json.dump(rec, f)
-    st = bringup(*common, "list", "--radio", board, "--json")
-    assert {x["id"]: x["status"] for x in json.loads(st.stdout)}["fake_ok"] == "stale"
+    st = statuses(common, board)
+    assert st["fake_ok"] == ("needs re-run", "run") and st["fake_split"] == ("fail", "run"), st
     shutil.rmtree(results)
+
+
+def test_check_rejects_a_bad_seed(tmp_path):
+    (tmp_path / "features.toml").write_text(FAKE_TOML)
+    results, board = tmp_path / "results", a_board()
+    common = ["--features", str(tmp_path / "features.toml"), "--results", str(results), "check", "--pytest-python",
+              sys.executable]
+    (results / board).mkdir(parents=True)
+    good = seed(board, {"fake_ok": {"result": "pass", "source": "tests/hil/README.md"}})
+    (results / board / "seed.json").write_text(json.dumps(good))
+    r = bringup(*common)
+    assert "seed.json" not in r.stdout + r.stderr, r.stdout + r.stderr
+    bad = seed(board, {"fake_ok": {"result": "supported"}, "no_such_feature": {"result": "pass"},
+                       "fake_split": {"result": "pass", "commit": "0" * 40}})
+    bad["source"] = "docs/no-such-doc.md"
+    (results / board / "seed.json").write_text(json.dumps(bad))
+    out = bringup(*common)
+    text = out.stdout + out.stderr
+    assert out.returncode != 0
+    for want in ("result is one of", "no_such_feature is not a checklist feature", "is not in this repository",
+                 "source docs/no-such-doc.md does not exist"):
+        assert want in text, text

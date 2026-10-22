@@ -15,9 +15,10 @@ A radio's state for a feature is resolved, never typed:
   unsupported  board.toml [features.<id>] state = "unsupported": planned, not working yet (a reason is required)
   off          the board's default build leaves the switch off: nothing to check
   required     anything else: the feature's tests must pass on the radio
-A required feature's status comes from the newest record that ran it: no HIL test, incomplete (planned tests not
-written), not run, pass, partial (excused skips or tests not run), fail, or stale (spec or source files changed since
-the record's commit).
+A required feature's status never understates it. The newest run record that ran it decides: pass, fail, partial
+(excused skips or tests not run) or "needs re-run" (spec or source files changed since its commit). Without one, the
+board's seed record (<board>/seed.json, the evidence from before its first run) decides, marked as a seed. With
+neither the feature is "built, not yet recorded". Only a failing record shows a failure.
 
 Python 3.11 or later (tomllib). pytest runs on whatever Python has it (--pytest-python, default this one when it has
 pytest, else python3): the bring-up plugin (tests/hil/bringup_plugin.py) reads the JSON plan this tool writes."""
@@ -45,6 +46,9 @@ FIELDS = {"id", "switch", "summary", "spec", "source", "tests", "optional_tests"
 REQUIRED_FIELDS = ("id", "summary", "spec", "tests")
 NEEDS = ("radio", "rf", "bench", "second_radio", "owner_action", "usb_switch", "codeplug_write", "reboot")
 OVERRIDE_STATES = ("n/a", "unsupported", "required")
+# How list shows a resolved state: "required" is the checklist's word, "built" what it means to a reader
+SHOWN = {"required": "built"}
+SEED_RESULTS = ("pass", "fail")
 # Test markers and fixtures -> the need they imply (check: a feature's needs cover its tests')
 MARKER_NEEDS = {"rf": "rf", "radio_tx": "rf", "bench_service": "bench", "usb_switch": "usb_switch",
                 "codeplug_write": "codeplug_write", "reboot": "reboot", "manual": "owner_action"}
@@ -225,7 +229,8 @@ def git(*args, check=True):
 
 
 def load_records(results=RESULTS):
-    """board -> records, newest first."""
+    """board -> {"runs": run records newest first, "seed": the seed record or None}. A seed record
+    (<board>/seed.json, kind "seed") carries the evidence the repository had before the board's first recorded run."""
     out = {}
     if not os.path.isdir(results):
         return out
@@ -233,54 +238,69 @@ def load_records(results=RESULTS):
         d = os.path.join(results, b)
         if not os.path.isdir(d):
             continue
-        recs = []
+        runs, seed = [], None
         for fn in sorted(os.listdir(d)):
             if fn.endswith(".json"):
                 with open(os.path.join(d, fn)) as f:
                     r = json.load(f)
                 r["_file"] = os.path.relpath(os.path.join(d, fn), ROOT)
-                recs.append(r)
-        out[b] = sorted(recs, key=lambda r: r.get("date", ""), reverse=True)
+                if r.get("kind") == "seed":
+                    seed = r
+                else:
+                    runs.append(r)
+        out[b] = {"runs": sorted(runs, key=lambda r: r.get("date", ""), reverse=True), "seed": seed}
     return out
 
 
-def stale(record, e):
-    """Files under the feature's spec or source changed since the record's commit (empty: not stale)."""
-    commit = record.get("commit", "")
+def stale(commit, e):
+    """Files under the feature's spec or source changed since the commit (empty: not stale)."""
     if not commit or git("cat-file", "-e", f"{commit}^{{commit}}", check=False).returncode != 0:
         return ["(the record's commit is not in this repository)"]
     r = git("diff", "--name-only", commit, "HEAD", "--", *feature_paths(e), check=False)
     return r.stdout.split()
 
 
-def feature_status(board, e, records):
-    """(status, detail) of a required feature on a board from its newest record."""
-    if not e["tests"]:
-        return "no HIL test", ""
-    base = {t: None for t in e["tests"]}
-    rec = None
-    for r in records.get(board, []):
-        if e["id"] in r.get("features", []):
-            rec = r
-            break
-    if rec is None:
-        return ("incomplete" if e["planned_tests"] else "not run"), ""
+NOT_RECORDED = "built, not yet recorded"
+
+
+def run_status(rec, e):
+    """pass, fail or partial (excused skips, tests not run) of one run record for a feature."""
     res = {}
     for t in rec.get("tests", []):
         res.setdefault(re.sub(r"\[.*\]$", "", t["id"]), []).append(t)
-    for t in base:
-        base[t] = res.get(t)
-    at = f"{rec.get('commit', '')[:8]} {rec.get('date', '')[:10]}"
-    if any(x["outcome"] == "failed" for v in base.values() if v for x in v):
-        status = "fail"
-    elif all(v and all(x["outcome"] == "passed" for x in v) for v in base.values()):
-        status = "incomplete" if e["planned_tests"] else "pass"
-    else:
-        status = "partial"
-    changed = stale(rec, e) if status in ("pass", "partial", "incomplete") else []
-    if changed:
-        return "stale", f"was {status} at {at}; changed since: {', '.join(changed[:3])}"
-    return status, at
+    got = [res.get(t) for t in e["tests"]]
+    if any(x["outcome"] == "failed" for v in got if v for x in v):
+        return "fail"
+    if all(v and all(x["outcome"] == "passed" for x in v) for v in got):
+        return "pass"
+    return "partial"
+
+
+def feature_status(board, e, records):
+    """(status, basis, detail) of a required feature on a board. Never understates: no record is "built, not yet
+    recorded", only a failing record is a failure, and a stale one "needs re-run". basis is "run", "seed" or None.
+    The newest run that covers the feature decides; a seed row stands until a run passes or fails it."""
+    recs = records.get(board, {"runs": [], "seed": None})
+    run = next((r for r in recs["runs"] if e["id"] in r.get("features", [])), None)
+    row = ((recs["seed"] or {}).get("features") or {}).get(e["id"])
+    planned = f"; {len(e['planned_tests'])} planned tests not written" if e["planned_tests"] else ""
+    status = run_status(run, e) if run and e["tests"] else None
+    if status in ("pass", "fail") or (status == "partial" and not row):
+        at = f"{run.get('commit', '')[:8]} {run.get('date', '')[:10]}"
+        changed = stale(run.get("commit"), e) if status != "fail" else []
+        if changed:
+            return "needs re-run", "run", f"{status} at {at}; changed since: {', '.join(changed[:3])}"
+        return status, "run", at + planned
+    if row:
+        later = "; a later run was partial" if status == "partial" else ""
+        detail = f"seed: {row.get('source') or recs['seed'].get('source', '')}{later}"
+        if row.get("result") == "fail":
+            return "fail", "seed", detail
+        changed = stale(row["commit"], e) if row.get("commit") else []
+        if changed:
+            return "needs re-run", "seed", f"{detail}; changed since: {', '.join(changed[:3])}"
+        return "pass", "seed", detail + planned
+    return NOT_RECORDED, None, "no HIL test yet" if not e["tests"] else planned.lstrip("; ")
 
 
 # ── commands ──
@@ -294,16 +314,18 @@ def cmd_list(args):
     rows = []
     for e in feats:
         state, reason = resolve(args.radio, e)
-        status, detail = feature_status(args.radio, e, records) if state == "required" else (state, reason)
-        rows.append({"id": e["id"], "switch": e["switch"] or "", "state": state, "status": status,
+        status, basis, detail = (feature_status(args.radio, e, records) if state == "required"
+                                 else (state, None, reason))
+        rows.append({"id": e["id"], "switch": e["switch"] or "", "state": state, "status": status, "basis": basis,
                      "detail": detail, "tests": len(e["tests"]), "needs": e["needs"], "owner": e["owner"]})
     if args.json:
         print(json.dumps(rows, indent=1))
         return 0
-    print(f"{'feature':22} {'state':11} {'tests':>5}  {'status':12} detail")
+    print(f"{'feature':22} {'state':11} {'tests':>5}  {'status':24} detail")
     for r in rows:
         detail = r["detail"] if len(r["detail"]) <= 70 else r["detail"][:67] + "..."
-        print(f"{r['id']:22} {r['state']:11} {r['tests']:5}  {r['status']:12} {detail}")
+        mark = r["status"] + (" (seed)" if r["basis"] == "seed" else "")
+        print(f"{r['id']:22} {SHOWN.get(r['state'], r['state']):11} {r['tests']:5}  {mark:24} {detail}")
     owner = [(r["id"], t, a) for r in rows if r["state"] == "required" for t, a in r["owner"].items()]
     if owner:
         print("\nowner actions (run with --manual; they're asked for during the run):")
@@ -320,14 +342,18 @@ def cmd_status(args):
     for b in boards:
         for e in feats:
             state, reason = resolve(b, e)
-            table[e["id"]][b] = feature_status(b, e, records)[0] if state == "required" else state
+            status, basis, _ = feature_status(b, e, records) if state == "required" else (state, None, "")
+            table[e["id"]][b] = {"status": status, "basis": basis}
     if args.json:
         print(json.dumps(table, indent=1))
         return 0
-    w = max(12, *(len(b) for b in boards))
+    w = max(24, *(len(b) for b in boards))
     print(f"{'feature':22} " + " ".join(f"{b:{w}}" for b in boards))
     for fid, row in table.items():
-        print(f"{fid:22} " + " ".join(f"{row[b]:{w}}" for b in boards))
+        print(f"{fid:22} " + " ".join(f"{row[b]['status'] + ('*' if row[b]['basis'] == 'seed' else ''):{w}}"
+                                      for b in boards))
+    if any(c["basis"] == "seed" for row in table.values() for c in row.values()):
+        print("\n* rests on a seed record (docs/testing/results/<board>/seed.json), not on a recorded run")
     return 0
 
 
@@ -425,7 +451,7 @@ def cmd_run(args):
     head = git("rev-parse", "HEAD").stdout.strip()
     dirty = git("diff", "--quiet", "--ignore-submodules=all", "HEAD", "--", ".", check=False).returncode != 0
     now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
-    record = {"format": RECORD_FORMAT, "board": args.radio, "commit": head, "dirty": dirty,
+    record = {"format": RECORD_FORMAT, "kind": "run", "board": args.radio, "commit": head, "dirty": dirty,
               "date": now.isoformat().replace("+00:00", "Z"), **{k: out[k] for k in
               ("features", "granted", "missing", "tests", "firmware", "options", "tools")}}
     d = os.path.join(args.results, args.radio)
@@ -539,14 +565,18 @@ def check(feats, boards, records, found, all_switches):
     for b, recs in records.items():
         if b not in boards:
             errs.append(f"docs/testing/results/{b}: no such board")
-        for r in recs:
+        if recs["seed"]:
+            errs += check_seed(recs["seed"], b, by_id)
+        for r in recs["runs"]:
             where = r["_file"]
+            if r.get("kind", "run") != "run":
+                errs.append(f"{where}: kind {r.get('kind')!r} (a run record is \"run\", a seed record is seed.json)")
             for k in ("format", "board", "commit", "date", "features", "tests", "tools"):
                 if k not in r:
                     errs.append(f"{where}: no {k}")
             if r.get("board") != b:
                 errs.append(f"{where}: board {r.get('board')} in the directory of {b}")
-            if r.get("commit") and git("cat-file", "-e", f"{r['commit']}^{{commit}}", check=False).returncode:
+            if r.get("commit") and not has_commit(r["commit"]):
                 errs.append(f"{where}: commit {r['commit'][:12]} is not in this repository")
             for f in r.get("features", []):
                 if f not in by_id:
@@ -558,6 +588,40 @@ def check(feats, boards, records, found, all_switches):
     # records; until they exist there is nothing to compare, so claims against records is not checked yet
     notes.append("claims against records: not checked until the docs' claim blocks are generated")
     return errs, notes
+
+
+def has_commit(c):
+    return git("cat-file", "-e", f"{c}^{{commit}}", check=False).returncode == 0
+
+
+def check_seed(r, b, by_id):
+    """A seed record: the board's evidence from before its first recorded run, one row per feature."""
+    where, errs = r["_file"], []
+    if os.path.basename(where) != "seed.json":
+        errs.append(f"{where}: a seed record is named seed.json")
+    for k in ("format", "board", "source", "date", "features"):
+        if k not in r:
+            errs.append(f"{where}: no {k}")
+    if r.get("board") != b:
+        errs.append(f"{where}: board {r.get('board')} in the directory of {b}")
+    if r.get("source") and not os.path.exists(os.path.join(ROOT, r["source"])):
+        errs.append(f"{where}: source {r['source']} does not exist")
+    rows = r.get("features", {})
+    if not isinstance(rows, dict):
+        return errs + [f"{where}: features is a table of feature id -> row"]
+    for f, row in rows.items():
+        if f not in by_id:
+            errs.append(f"{where}: {f} is not a checklist feature")
+        if not isinstance(row, dict) or row.get("result") not in SEED_RESULTS:
+            errs.append(f"{where}: {f}: result is one of {', '.join(SEED_RESULTS)}")
+            continue
+        if row.get("commit") and not has_commit(row["commit"]):
+            errs.append(f"{where}: {f}: commit {row['commit'][:12]} is not in this repository")
+        if row.get("source") and not os.path.exists(os.path.join(ROOT, row["source"])):
+            errs.append(f"{where}: {f}: source {row['source']} does not exist")
+    if re.search(r"/dev/|usbmodem|://|\bserial[=:]", json.dumps(r)):
+        errs.append(f"{where}: names a port, host or serial number")
+    return errs
 
 
 def cmd_check(args):
@@ -576,7 +640,7 @@ def cmd_check(args):
     untested = [e["id"] for e in feats if not e["tests"]]
     print(f"bringup check: {len(feats)} features ({sum(1 for e in feats if e['switch'])} with a switch, "
           f"{len(untested)} without a HIL test), {len(boards)} boards, "
-          f"{sum(len(r) for r in records.values())} records, {len(errs)} errors")
+          f"{sum(len(r['runs']) + bool(r['seed']) for r in records.values())} records, {len(errs)} errors")
     return 1 if errs else 0
 
 
