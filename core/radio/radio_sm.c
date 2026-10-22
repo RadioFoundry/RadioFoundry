@@ -1166,7 +1166,7 @@ static void dmr_publish(radio_sm_t *sm)
 }
 
 // Follow the stack: release the board's TX arming once the stack is off the air (after the modem's TX done), PTT
-// refusals, the RX state from the calls heard
+// refusals, TX while the stack sends without PTT, the RX state from the calls and data heard
 static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 {
 	const dmr_call_view_t *cv = dmr_call_view();
@@ -1177,6 +1177,7 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 		board.radio->tx_off();
 	}
 	if (sm->ptt) {
+		sm->tx_no_ptt = false;	// the user keyed: that transmission counts
 		if (cv->phase == DMR_CALL_PHASE_TX_DENIED && sm->view.state != RS_TX_DENIED) {
 			deny(sm, dmr_deny_reason(cv->tx_error));
 #if CONFIG_DMR_ROAMING
@@ -1185,11 +1186,25 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 			}
 #endif
 		}
+	} else if (tx && !sm->hotspot && sm->view.state != RS_TX && sm->view.state != RS_TX_DENIED) {
+		// On the air without PTT: a data burst list (ARS, SMS, a position, the IP gateway) or a roaming probe. The
+		// view says TX like a call does, so the strip, the LEDs and everything that asks whether the radio is
+		// transmitting see it
+		sm->view.state = RS_TX;
+		sm->tx_no_ptt = true;
+		sm->view.tx_deny = TXDENY_NONE;
+		sm->view.tx_elapsed_ms = 0;
+		sm->tx_start_ms = now_ms;
+		sm->tot_warned = false;
+		sm->view.tot_warning = false;
+		changed(sm);
 	} else if (sm->view.state == RS_TX && !tx) {
+		bool data = sm->view.dmr.state == RDMR_TX_DATA;
+		sm->tx_no_ptt = false;
 		sm->view.state = RS_IDLE;
 		sm->view.tx_deny = TXDENY_NONE;
 		changed(sm);
-		if (cv->tx_error == DMR_TX_ERR_NO_REPEATER) {
+		if (cv->tx_error == DMR_TX_ERR_NO_REPEATER && !data) {	// a data sender hears about its own failure
 			// A short press goes on waking the repeater after the release: its failure still gets the deny tone
 			beep(sm, BEEP_TX_DENY);
 #if CONFIG_DMR_ROAMING
@@ -3032,7 +3047,7 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 // Every poll, before anything else: the engine, the "after PTT" trigger, a transmission to start
 static void aprs_poll(radio_sm_t *sm, uint32_t now_ms)
 {
-	bool tx_now = sm->view.state == RS_TX && sm->aprs_phase == APRS_RF_OFF;
+	bool tx_now = sm->view.state == RS_TX && !sm->tx_no_ptt && sm->aprs_phase == APRS_RF_OFF;
 	if (sm->aprs_was_tx && !tx_now) {
 		aprs_ptt_end(now_ms);
 	}

@@ -3470,18 +3470,37 @@ static void test_dmr_data_glue(void)
 	unsigned n0 = sim.air_count;
 	int tx0 = hw.tx_calls;
 	CHECK(dmr_signal_call_alert(3101234));
-	run(600);
+	// On air without PTT, the view says TX like a call (#148): the strip's pill, the red LED, Home's activity line
+	bool shown_tx = false, red = false, unkeyed = true;
+	for (int i = 0; i < 60; i++) {
+		run(10);
+		if (sm.view.state == RS_TX && sm.view.dmr.state == RDMR_TX_DATA) {
+			shown_tx = true;
+			red = red || hw.led[LED_RED];
+#if CONFIG_APRS
+			unkeyed = unkeyed && sm.tx_no_ptt && !sm.aprs_was_tx;	// not the user's PTT: no "beacon after PTT"
+#endif
+		}
+	}
+	CHECK(shown_tx && red && unkeyed);
+	CHECK(!sm.tx_no_ptt);
 	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) >= 1 && hw.tx_calls > tx0);
 	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_SENDING && dst == 3101234);
+	CHECK(sm.view.state != RS_TX && !hw.led[LED_RED]);	// back to receive once the list is out
 	for (unsigned i = n0; i < sim.air_count; i++) {
 		if (sim.air[i].kind == DMR_BURST_CSBK) {
 			CHECK(sim.air[i].host_crc);
 		}
 	}
 	csbk_rx(DMR_CSBKO_CALL_ALERT_ACK, 3101276, 3101234, 2);
-	run(200);
+	run(50);
+	CHECK(sm.view.state == RS_RX && sm.view.dmr.state == RDMR_IDLE);	// the ack heard: RX, though no call
+	CHECK(!hw.led[LED_GREEN]);	// green is for a call being played
+	run(150);
 	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_OK);
 	CHECK(!(sm.view.state == RS_TX));
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);	// faded
 
 	// No answer: the retries, then failed; the keying released each time
 	n0 = sim.air_count;
@@ -3489,6 +3508,7 @@ static void test_dmr_data_glue(void)
 	run(30000);
 	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_FAILED);
 	CHECK(air_count(n0, DMR_BURST_CSBK, 0xFF) >= 2 && !sm.dmr_keyed);
+	CHECK(sm.view.state == RS_IDLE && !sm.tx_no_ptt && !hw.led[LED_RED]);	// a failed data send leaves no TX or deny behind
 
 	// A call alert to us: alerted, and the ack goes out through the same glue
 	n0 = sim.air_count;
@@ -3498,20 +3518,38 @@ static void test_dmr_data_glue(void)
 	// ... not to us: nothing
 	n0 = sim.air_count;
 	csbk_rx(DMR_CSBKO_CALL_ALERT, 3100001, 3109876, 2);
+	run(50);
+	CHECK(sm.view.state == RS_RX && sm.view.dmr.state == RDMR_IDLE && !hw.led[LED_GREEN]);	// others' data: RX, no call
 	run(1000);
 	CHECK(sim.air_count == n0);
+	CHECK(sm.view.state == RS_IDLE);	// faded
+	// ... on another color code: not our channel, no RX
+	csbk_rx(DMR_CSBKO_CALL_ALERT, 3100001, 3109876, 5);
+	run(50);
+	CHECK(sm.view.state == RS_IDLE);
+	run(1000);
 
 	// A group SMS: a whole packet on air (preamble, header, blocks), sent once heard clear
 	n0 = sim.air_count;
 	CHECK(sms_send(9, true, "hello group", false, DMR_SMS_FORMAT_ETSI_IP));
-	run(3000);
+	shown_tx = red = false;
+	for (int i = 0; i < 300; i++) {	// the packet shows as a transmission, red LED included, from start to end
+		run(10);
+		if (sm.view.state == RS_TX && sm.view.dmr.state == RDMR_TX_DATA) {
+			shown_tx = true;
+			red = red || hw.led[LED_RED];
+		}
+	}
+	CHECK(shown_tx && red);
 	CHECK(sms_send_state() == DMR_REQ_OK);
 	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) >= 1 && sim.air_count - n0 >= 3);
+	CHECK(sm.view.state != RS_TX && !sm.tx_no_ptt);
 
 	// While the user transmits voice, data waits: nothing goes out in the middle of the call
 	req(RREQ_PTT, 1);
 	run(300);
 	CHECK((sm.view.state == RS_TX));
+	CHECK(!sm.tx_no_ptt);	// the user's own voice transmission counts for the after-PTT beacon
 	unsigned voice0 = sim.air_count;
 	CHECK(dmr_signal_call_alert(3101234));
 	run(600);

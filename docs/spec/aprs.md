@@ -212,7 +212,7 @@ Triggers (`aprs_beacon.c`), all under the hard minimum:
 | Interval | 10 min when beacons are on | 0 = none |
 | SmartBeaconing | on | slow 5 km/h -> 30 min, fast 90 km/h -> 3 min, linear in between; corner pegging: a turn sharper than 28 degrees + 400 / speed sends after 30 s |
 | Distance | off | after moving N meters |
-| After PTT | off | after our own transmission, if the last beacon is 2 min old |
+| After PTT | off | after our own transmission (the user's PTT, not a DMR data burst list), if the last beacon is 2 min old |
 | Manual | | "Send position now" (UI, debug link) |
 | Boot | off | the first position after power-up |
 

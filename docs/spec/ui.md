@@ -179,8 +179,15 @@ PTT while the keys are locked works unless Settings > Privacy > PTT when locked 
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
 UI gives an error beep and "PTT is off while locked: hold * to unlock".
 
-The state pill follows the green LED (`radio_sm.c` `outputs()`): RX also while the monitor holds an FM squelch open (MON
-stays beside the mode); DMR's monitor key is digital monitor and leaves it IDLE.
+The state pill follows `radio_view_t.state`. RX also shows while the monitor holds an FM squelch open (MON stays beside
+the mode). DMR's monitor key is digital monitor and leaves it IDLE.
+
+On DMR the pill shows TX whenever the stack is on the air, with or without PTT. Data burst lists (ARS, SMS, a
+position, a call alert or its ACK, the IP gateway, a roaming probe) set `RS_TX` with `RDMR_TX_DATA` (`dmr_follow`).
+Home keeps its own screen for them, and the activity line says SENDING instead of TALKING (in dual watch, "SENDING on
+A"). The pill shows RX while data or CSBK bursts arrive on our slot and color code, until the call fade time
+(`DMR_CALL_FADE_MS`) after the last one, even with no call running (`dmr_call.c` `data_receiving`). The green LED
+stays for a call being played.
 
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
 idle, the bars and battery icon give way, the battery percent stays (on a radio without a battery, `CAP_NO_BATTERY`,

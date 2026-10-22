@@ -10,6 +10,7 @@
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
+//   datatx / dataend    DMR data goes out without PTT (ARS, SMS, IP): the view says TX; it ends
 //   dtmf:<digits>       during TX: the radio core has sent these DTMF digits (the TX screen's DTMF line)
 //   wait:<ms>           time passes
 //   reboot              power off and on: the screens start over, the settings stay
@@ -1915,6 +1916,15 @@ static bool run_token(char *t, char *err, size_t len)
 		ui_app_key(&ev);
 		if (!ptt_blocked)
 			ptt(true);
+		advance(1500);
+		return true;
+	}
+	if (strcmp(t, "datatx") == 0 || strcmp(t, "dataend") == 0) {	// the DMR stack sends a data burst list without PTT
+		bool on = t[4] == 't';
+		view.state = on ? RS_TX : RS_IDLE;
+		view.dmr.state = on ? RDMR_TX_DATA : RDMR_IDLE;
+		view.tx_elapsed_ms = 0;
+		changed();
 		advance(1500);
 		return true;
 	}

@@ -384,6 +384,7 @@ typedef struct {
 	bool aprs_was_tx;		// our own transmission (not APRS) at the last poll: the "after PTT" trigger
 	aprs_rf_job_t aprs_job;
 #endif
+	bool tx_no_ptt;		// on the air without PTT (a DMR data burst list): not the user's transmission, no "after PTT"
 } radio_sm_t;
 
 // Start-up: the codeplug and the settings (core/settings): the saved zone, channel or VFO, else zone 0 and its

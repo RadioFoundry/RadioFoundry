@@ -75,6 +75,8 @@ static struct {
 	uint32_t last_rx_ms;	// last burst of the call (played or not)
 	uint32_t last_activity_ms;	// last non-idle burst on our slot with our CC
 	bool activity_seen;
+	uint32_t last_data_ms;	// last data or CSBK burst on our slot with our CC (an ACK, SMS, ARS, IP)
+	bool data_seen;
 	uint32_t last_any_ms;	// last burst of any kind / CC (polite to all)
 	bool any_seen;
 	uint32_t last_call_end_ms;
@@ -808,8 +810,12 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			s.last_rx_ms = now;
 		if (b->kind == DMR_BURST_PI_HEADER)
 			rx_pi_header(b, now);
-		if (s.data_rx && b->kind >= DMR_BURST_CSBK && b->kind <= DMR_BURST_USBD && b->kind != DMR_BURST_IDLE)
-			s.data_rx(b, now, s.data_rx_ctx);
+		if (b->kind >= DMR_BURST_CSBK && b->kind <= DMR_BURST_USBD && b->kind != DMR_BURST_IDLE) {
+			s.last_data_ms = now;	// the view shows RX for it (data_receiving)
+			s.data_seen = true;
+			if (s.data_rx)
+				s.data_rx(b, now, s.data_rx_ctx);
+		}
 		break;
 	}
 }
@@ -1458,6 +1464,12 @@ void dmr_call_reply_cancel(void)
 	s.dirty = true;
 }
 
+// Data or CSBK bursts heard lately on our slot: RX in the view, though no call is running (they don't set s.rx)
+static bool data_receiving(uint32_t now)
+{
+	return !elapsed(now, s.last_data_ms, s.data_seen, fade_ms());
+}
+
 static void view_update(uint32_t now)
 {
 	dmr_call_view_t *v = &s.view;
@@ -1466,7 +1478,7 @@ static void view_update(uint32_t now)
 	if (transmitting() || s.tx == TX_WAKE_LISTEN)
 		state = DMR_CALL_STATE_TX;
 	else
-		state = s.rx != RXC_NONE ? DMR_CALL_STATE_RX : DMR_CALL_STATE_IDLE;
+		state = s.rx != RXC_NONE || data_receiving(now) ? DMR_CALL_STATE_RX : DMR_CALL_STATE_IDLE;
 
 	switch (s.tx) {
 	case TX_ACCESS:
