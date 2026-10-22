@@ -1,0 +1,226 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+"""Bring-up mode without a radio (bringup_plugin.py, tools/bringup.py): a fake radio that lacks a feature, run
+through pytest with this directory's conftest. A required test that skips on it fails the bring-up run; the same
+test only skips in a plain run; an excused skip and an optional test's skip stay skips; a run that finds no radio
+fails. The tools/bringup.py parts need Python 3.11 or later ($ODR_PYTHON, else the newest python3.N on PATH)."""
+import fcntl
+import glob
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+from odr_hil import skip
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+BRINGUP = os.path.join(ROOT, "tools", "bringup.py")
+
+FAKE_TESTS = '''import pytest
+from odr_hil import skip
+
+
+class FakeLink:
+    def ptt(self, on):
+        pass
+
+
+class FakeRadio:
+    """A radio built with FM only: it lacks the split duplex roles."""
+    link = FakeLink()
+
+    def features(self):
+        return {"FM", "DEBUGLINK"}
+
+    def snapshot(self):
+        return None
+
+    def restore(self, snap):
+        pass
+
+
+@pytest.fixture
+def radio():
+    return FakeRadio()
+
+
+def test_gate(radio):
+    if "HOTSPOT_SPLIT" not in radio.features():
+        skip("no_hw", "the radio doesn't offer split duplex")
+
+
+def test_extra(radio):
+    skip("no_hw", "an optional check the radio can't do")
+
+
+@pytest.mark.radio_tx
+def test_keyed(radio):
+    pass
+
+
+def test_passes(radio):
+    pass
+
+
+def test_unlisted(radio):
+    pass
+
+'''
+
+# No fixture of its own: the conftest's radio fixture, with a port that isn't there
+FAKE_LINK_TEST = '''def test_real_radio_fixture(radio):
+    pass
+'''
+
+PLAN = {"features": {
+    "fake_split": {"tests": ["test_fake.py::test_gate", "test_fake.py::test_passes"],
+                   "optional_tests": ["test_fake.py::test_extra"], "needs": ["radio"]},
+    "fake_tx": {"tests": ["test_fake.py::test_keyed"], "optional_tests": [], "needs": ["radio", "rf"]},
+    "fake_link": {"tests": ["test_fake_link.py::test_real_radio_fixture"], "optional_tests": [], "needs": ["radio"]},
+}}
+
+
+def fake_tree(tmp_path):
+    (tmp_path / "test_fake.py").write_text(FAKE_TESTS)
+    (tmp_path / "test_fake_link.py").write_text(FAKE_LINK_TEST)
+    (tmp_path / "plan.json").write_text(json.dumps(PLAN))
+    return tmp_path
+
+
+def env():
+    e = {k: v for k, v in os.environ.items() if k != "ODR_PORT"}
+    e["PYTHONPATH"] = os.pathsep.join([HERE, os.environ.get("PYTHONPATH", "")])
+    return e
+
+
+def pytest_run(tmp_path, *args, python=None):
+    return subprocess.run([python or sys.executable, "-m", "pytest", "-p", "conftest", "-p", "no:cacheprovider",
+                           "-rs", "--rootdir", str(tmp_path), "--radio-port", "/nonexistent/odr-fake-port",
+                           *args], cwd=tmp_path, env=env(), capture_output=True, text=True, timeout=120)
+
+
+def outcomes(path):
+    with open(path) as f:
+        return {t["id"].split("::")[-1]: t for t in json.load(f)["tests"]}
+
+
+def test_required_skip_fails_the_bringup_run(tmp_path):
+    t = fake_tree(tmp_path)
+    plain = pytest_run(t, str(t / "test_fake.py"))
+    assert plain.returncode == 0 and "2 passed, 3 skipped" in plain.stdout, plain.stdout + plain.stderr
+
+    out = t / "out.json"
+    r = pytest_run(t, str(t / "test_fake.py"), "--bringup", "fake_split,fake_tx", "--bringup-plan",
+                   str(t / "plan.json"), "--bringup-out", str(out))
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "bring-up: a required test of fake_split skipped (no_hw)" in r.stdout, r.stdout
+    res = outcomes(out)
+    assert res["test_gate"]["outcome"] == "failed"
+    assert res["test_passes"]["outcome"] == "passed"
+    assert res["test_extra"]["outcome"] == "skipped" and not res["test_extra"]["required"]
+    # fake_tx needs rf and the run didn't give --allow-rf: the opt-in skip is excused, and verifies nothing
+    assert res["test_keyed"]["outcome"] == "skipped" and res["test_keyed"]["excused"]
+    assert res["test_keyed"]["skip_kind"] == "opt_in"
+    assert "test_unlisted" not in res           # not in a selected feature: deselected
+    assert "/nonexistent" not in out.read_text()
+
+
+def test_no_radio_fails_in_bringup_mode(tmp_path):
+    t = fake_tree(tmp_path)
+    plain = pytest_run(t, str(t / "test_fake_link.py"))
+    assert plain.returncode == 0 and "1 skipped" in plain.stdout, plain.stdout + plain.stderr
+    out = t / "out.json"
+    r = pytest_run(t, str(t / "test_fake_link.py"), "--bringup", "fake_link", "--bringup-plan", str(t / "plan.json"),
+                   "--bringup-out", str(out))
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert outcomes(out)["test_real_radio_fixture"]["outcome"] == "failed"
+    assert "<port>" in out.read_text() and "/nonexistent" not in out.read_text()
+
+
+def python311():
+    """A Python 3.11 or later for tools/bringup.py: $ODR_PYTHON, this one, or the newest python3.N on PATH."""
+    if os.environ.get("ODR_PYTHON"):
+        return os.environ["ODR_PYTHON"]
+    if sys.version_info >= (3, 11):
+        return sys.executable
+    best = None
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        for p in glob.glob(os.path.join(d, "python3.*")):
+            m = re.fullmatch(r"python3\.(\d+)", os.path.basename(p))
+            if m and int(m.group(1)) >= 11 and os.access(p, os.X_OK) and (best is None or int(m.group(1)) > best[0]):
+                best = (int(m.group(1)), p)
+    if best is None:
+        skip("bench", "no Python 3.11 or later on PATH for tools/bringup.py (set $ODR_PYTHON)")
+    return best[1]
+
+
+FAKE_TOML = '''
+[[feature]]
+id = "fake_split"
+summary = "a feature the fake radio lacks"
+spec = "tests/hil/README.md"
+source = ["tests/hil/bringup_plugin.py"]
+tests = ["test_fake.py::test_gate", "test_fake.py::test_passes"]
+needs = ["radio"]
+
+[[feature]]
+id = "fake_ok"
+summary = "a feature the fake radio has"
+spec = "tests/hil/README.md"
+source = ["tests/hil/bringup_plugin.py"]
+tests = ["test_fake.py::test_passes"]
+needs = ["radio"]
+'''
+
+
+def bringup(*args):
+    return subprocess.run([python311(), BRINGUP, *args], cwd=ROOT, env=env(), capture_output=True, text=True,
+                          timeout=300)
+
+
+def a_board():
+    return sorted(os.path.basename(os.path.dirname(p)) for p in glob.glob(os.path.join(ROOT, "boards", "*",
+                                                                                          "board.mk")))[0]
+
+
+def test_bringup_run_records_and_status(tmp_path):
+    t = fake_tree(tmp_path)
+    (t / "features.toml").write_text(FAKE_TOML)
+    results, lock, board = t / "results", t / "radio.lock", a_board()
+    common = ["--features", str(t / "features.toml"), "--results", str(results)]
+    run = ["run", "--radio", board, "--lock", str(lock), "--tests", str(t / "test_fake.py"), "--pytest-python",
+           sys.executable, "--", "-p", "conftest", "--rootdir", str(t), "--radio-port", "/nonexistent/odr-fake-port"]
+
+    # the radio lock held by someone else: nothing runs
+    with open(lock, "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        r = bringup(*common, *run)
+        assert r.returncode != 0 and "radio lock" in (r.stdout + r.stderr), r.stdout + r.stderr
+    assert not results.exists()
+
+    r = bringup(*common, *run)
+    assert r.returncode == 1, r.stdout + r.stderr
+    recs = glob.glob(str(results / board / "*.json"))
+    assert len(recs) == 1, recs
+    with open(recs[0]) as f:
+        rec = json.load(f)
+    assert rec["board"] == board and re.fullmatch(r"[0-9a-f]{40}", rec["commit"]) and rec["date"].endswith("Z")
+    assert {x["id"].split("::")[-1]: x["outcome"] for x in rec["tests"]} == {"test_gate": "failed",
+                                                                             "test_passes": "passed"}
+    assert rec["tools"]["pytest"] and "/nonexistent" not in json.dumps(rec)
+
+    st = bringup(*common, "list", "--radio", board, "--json")
+    assert st.returncode == 0, st.stdout + st.stderr
+    status = {x["id"]: x["status"] for x in json.loads(st.stdout)}
+    assert status == {"fake_split": "fail", "fake_ok": "pass"}, status
+
+    # a record whose commit this repository doesn't have is stale: it says nothing about this tree
+    rec["commit"] = "0" * 40
+    with open(recs[0], "w") as f:
+        json.dump(rec, f)
+    st = bringup(*common, "list", "--radio", board, "--json")
+    assert {x["id"]: x["status"] for x in json.loads(st.stdout)}["fake_ok"] == "stale"
+    shutil.rmtree(results)

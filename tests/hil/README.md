@@ -72,6 +72,51 @@ bring-up run counts a skip as a failure unless its kind is one the feature and t
 | `bench` | The radio, the SDR bench or a host tool is missing, unreachable or busy | the shared SDR bench stayed busy |
 | `other_board` | A board-specific test on another board | a wiring check run on a board it doesn't cover |
 
+### Bring-up mode
+
+`features.toml` is the feature checklist: one entry per feature (every switch of `config/features.mk`, and the
+features without one), with its spec, its required HIL tests in order, optional and planned tests, what the tests
+need and the owner actions they ask for. It has no radio columns. `tools/bringup.py` (Python 3.11 or later) resolves
+each radio's state for each feature from the board's build data:
+
+| State | When |
+|---|---|
+| `n/a` | The switch is in the board's `BOARD_UNSUPPORTED`. Needs a reason |
+| `unsupported` | `board.toml` `[features.<id>] state = "unsupported"`: planned, not working yet. Needs a reason |
+| `off` | The board's default build leaves the switch off |
+| `required` | Anything else: the feature's tests must pass on the radio |
+
+```
+tools/bringup.py list --radio ID                  # the radio's checklist and the last result per feature
+tools/bringup.py run --radio ID [--feature F] -- --allow-rf --dmr-freq ...   # under the radio lock, recorded
+tools/bringup.py status                           # every radio and feature
+tools/bringup.py check                            # host-side consistency (tools/ci.sh)
+```
+
+`run` takes the radio lock (`$ODR_RADIO_LOCK`, default `~/.odr-radio.lock`, the file the HIL workflow locks) and
+fails at once when another run holds it (`--lock-wait S` waits). It prints the owner actions of the run first; they
+run with `--manual`. pytest runs with `--bringup FEATURES`, which runs only the listed tests and makes a required
+test's skip a failure unless the feature excuses it:
+
+- `other_board`: always excused.
+- `bench`: excused when the feature needs the SDR bench. A run that finds no radio fails.
+- `opt_in`: excused when the feature needs something the run didn't allow (`--allow-rf` for `rf`, `--manual` for
+  `owner_action` and so on). With every need allowed, a missing option such as `--ambe` fails.
+- `not_built`, `no_hw`, `state`: never excused.
+
+An excused skip is recorded but doesn't verify the feature, and an optional test never fails the run. The first
+required test of a feature that depends on hardware glue is its capability gate (`test_split_capability`): it skips
+`no_hw` on a radio that doesn't offer the feature, and bring-up turns that into a failure.
+
+### Results
+
+Each `run` writes `docs/testing/results/<board>/<date>-<commit>.json`: the commit and whether the tree had changes,
+the date, the features, every test's id, outcome, skip kind and reason, the firmware's VERSION keys (git, board,
+features, codec), the allowed options and the Python and pytest versions. Ports, host names and serial numbers are
+left out. Commit the record with the change it checks. A feature's status on a radio comes from the newest record that
+ran it: `pass`, `partial` (excused skips or tests not run), `fail`, `incomplete` (planned tests not written yet),
+`not run`, `no HIL test`, or `stale` when files under its `spec` or `source` changed after the record's commit.
+
 ## Rig assumptions
 
 - The radio on USB, with a codeplug whose current zone holds a DMR channel on the DMR test frequency (the tests
@@ -118,7 +163,7 @@ bring-up run counts a skip as a failure unless its kind is one the feature and t
 | `test_dmr_call_features.py` | bench sends a private call to us and to another ID, an emergency call, a talker alias, an ETSI GPS Info (after an alias), a late entry (no header, 8 bursts left out), a call with the privacy service option (without and with a key), a call with the PI bit; plus the talk target / privacy key requests (radio only) | `--allow-rf --allow-service-stop` (the last test: radio) |
 | `test_radio_features.py` | the `features` view section, settings round trip, beep counters (does PCM play in this mode), zone scan + cancel, nuisance delete, VFO band scan, dual watch, battery save cycling and MONITOR waking it (radio only); TX inhibit, TOT warning and time-out, roger beep, 1750 Hz burst, VOX quiet (no key-up with nobody talking) on the FM VFO at lowest power (`radio_tx`); the mic level (`vox.level`, and on the HR_C7000 radios the `mic lvl` diagnostics line: the meter counts PCM halves) with VOX off (radio only); the zone scan, the VFO scan and dual watch hold on a bench DMR call, battery save wakes for it (`rf`) | radio; `--allow-rf` (radio_tx); `--allow-rf --allow-service-stop` (the bench ones) |
 | `test_dmr_emergency.py` | DMR emergency: the bench sends an emergency alarm CSBK and an emergency voice call to the channel's talkgroup (alerts raised); the radio sends its alarm (3 CSBKs) and an emergency call with the hot mic (the bench listens); the emergency settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio), firmware with `CONFIG_DMR_EMERGENCY` |
-| `test_split_duplex.py` | split duplex (`docs/spec/split-duplex.md` 10): 0xD6 INFO / SET_ROLE / STATUS, unknown sub-command and command answers, the SPLIT debug view (no RF); the TX half keyed 10 s at the lowest power, the SDR bench's `sdrmon.py analyze --cach` (BS sync only, 30 ms slots, one key-up edge, CACH decode printed; variant from `$ODR_SPLIT_VARIANT`); the RX half labeling bench calls and the label flipping with the epoch | firmware with `CONFIG_HOTSPOT_SPLIT`; the TX and RX tests `--allow-rf --allow-service-stop` |
+| `test_split_duplex.py` | split duplex (`docs/spec/split-duplex.md` 10): the capability gate (both halves offered); 0xD6 INFO / SET_ROLE / STATUS, unknown sub-command and command answers, the SPLIT debug view (no RF); the TX half keyed 10 s at the lowest power, the SDR bench's `sdrmon.py analyze --cach` (BS sync only, 30 ms slots, one key-up edge, CACH decode printed; variant from `$ODR_SPLIT_VARIANT`); the RX half labeling bench calls and the label flipping with the epoch | firmware with `CONFIG_HOTSPOT_SPLIT`; the TX and RX tests `--allow-rf --allow-service-stop` |
 | `test_hotspot_cwid.py` | MMDVM SEND_CWID in hotspot mode: the radio keys the callsign in Morse on FM on the hotspot TX frequency (the SDR bench records), then the hotspot's DMR set-up is back | `--allow-rf --allow-service-stop` |
 | `test_dmr_data.py` | DMR data: bench sends unconfirmed and confirmed data, a TMS and an ETSI text message, a call alert and radio checks to us (the radio's answers listened for); the radio sends a call alert, a radio check (Motorola and ETSI forms) and a text message (TMS and ETSI) to the bench (the bench modem listens); the data settings request (radio only) | `--allow-rf --allow-service-stop` (the first test: radio) |
 | `test_dmr_ip.py` | IP over DMR ([dmr-data.md](../../docs/spec/dmr-data.md) 11, 12): the `dmr_ip` section and the IP settings request (radio only); a build with the gateway has a host netif (`net.netif=1`, radio only); a UDP datagram (50000 to 161) put into the IP gateway's air path by the debug link's IP_SEND, heard by the bench modem and decoded by `tools/bench/dmr_packet.py`: SAP 3 with the 9 octet header in auto, SAP 4 with compression off, confirmed to the bench (which doesn't answer) with 2 tries: two transmissions (F set, then clear, the same N(S)), the CRC-9s checked, then failed; with `--allow-usb-switch` a datagram from this host over the USB network | `--allow-rf --allow-service-stop` (the first test: radio), firmware with `CONFIG_DMR_IP_GATEWAY`; the last test also `--allow-usb-switch` |
@@ -235,3 +280,6 @@ SDR clips, and the bench modem's tries counted with a minimum of one. An attenua
   never `pytest.skip`: the kinds are in [Skip kinds](#skip-kinds), and `tools/check_hil_skips.py` (run by
   `tools/ci.sh`) fails on a skip without one.
 - Document the pass criteria and tolerances in the module docstring and in the table above.
+- List the test in its feature's entry in `features.toml` (`tests`, or `optional_tests` when it shouldn't gate) and
+  keep the entry's `needs` in step with its markers: `tools/bringup.py check` fails on a listed test pytest doesn't
+  collect, a switch without an entry, and markers the entry's needs don't cover.
