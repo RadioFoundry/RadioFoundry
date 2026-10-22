@@ -112,7 +112,7 @@ when an entry is missing or out of step with the tests.
 
 | Change | What to do |
 |---|---|
-| A new switch or feature | Add an entry: `id`, `switch`, `summary`, `spec`, the required `tests` in order (the capability gate first when the feature needs hardware glue), `needs` matching the tests' markers, `owner` for tests that ask a person for something. An entry may have no tests yet; `tools/bringup.py status` then shows "no HIL test" |
+| A new switch or feature | Add an entry: `id`, `switch`, `summary`, `spec`, the required `tests` in order (the capability gate first when the feature needs hardware glue), `needs` matching the tests' markers, `owner` for tests that ask a person for something. An entry may have no tests yet; `tools/bringup.py status` then shows "built, not yet recorded" |
 | A new HIL test | List it in its feature's `tests`, or `optional_tests` when it shouldn't gate. A required test not written yet goes in `planned_tests` |
 | A radio lacks a feature | Put the switch in the board's `BOARD_UNSUPPORTED` with a reason (state `n/a`). Planned but not working yet: `[features.<id>] state = "unsupported"` and a `reason` in its `board.toml` |
 | A new radio | Nothing here: its states resolve from its build data |

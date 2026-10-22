@@ -113,9 +113,11 @@ required test of a feature that depends on hardware glue is its capability gate 
 Each `run` writes `docs/testing/results/<board>/<date>-<commit>.json`: the commit and whether the tree had changes,
 the date, the features, every test's id, outcome, skip kind and reason, the firmware's VERSION keys (git, board,
 features, codec), the allowed options and the Python and pytest versions. Ports, host names and serial numbers are
-left out. Commit the record with the change it checks. A feature's status on a radio comes from the newest record that
-ran it: `pass`, `partial` (excused skips or tests not run), `fail`, `incomplete` (planned tests not written yet),
-`not run`, `no HIL test`, or `stale` when files under its `spec` or `source` changed after the record's commit.
+left out. Commit the record with the change it checks. A feature's status never understates the radio. The newest record that
+ran it decides: `pass`, `partial` (excused skips or tests not run), `fail`, or `needs re-run` when files under its
+`spec` or `source` changed after the record's commit. Before a run, the board's seed record decides (the evidence the
+docs held before bring-up records existed), marked as a seed. With neither, the feature is `built, not yet recorded`.
+Only a failing record shows a failure ([docs/testing/results/README.md](../../docs/testing/results/README.md#status)).
 
 ## Rig assumptions
 
