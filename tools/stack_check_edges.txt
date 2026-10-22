@@ -30,6 +30,9 @@ file platform/hrc7000/vocoder.c @hrc_codec
 # with the stack doesn't matter
 extern flash_stub 0
 call enter_stub @flash_stub
+# The GD-88's SoC B enters its first stage the same way for an update through A (RX2_STUB, boards/gd88b)
+extern boot_stage 0
+call enter_stage @boot_stage
 
 # The C library, where its worst path needs arguments ODR never passes. Each cuts that function out of the disassembly
 # walk: check the reason still holds when adding a call.

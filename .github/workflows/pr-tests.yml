@@ -182,9 +182,9 @@ jobs:
           set -u
           rc=0
           if command -v csky-elf-gcc > /dev/null; then   # the self-hosted image has the toolchain
-            tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d,gd88 || rc=$?
+            tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d,gd88,gd88b || rc=$?
           else
-            tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d,gd88 || rc=$?
+            tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32,dm1801pro,db25d,gd88,gd88b || rc=$?
           fi
           if [ "$rc" = 3 ]; then
             echo "::notice::C-SKY builds skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
