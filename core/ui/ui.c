@@ -20,7 +20,11 @@
 #include "config.h"
 
 #define UI_TASK_PRIORITY	(tskIDLE_PRIORITY + 1)	// below the radio and input tasks
-#define UI_TASK_STACK_WORDS	512	// list screens and Find: about 1.2 KB measured on the host, plus the driver
+// List screens and Find: about 1.2 KB measured on the host, plus the driver. The static stack check's deepest chain
+// (ui_task > ui_draw_hotspot > ui_draw_hint > gfx_text) needs 1724 bytes on the MD-380's maximal build with the CI's
+// Arm toolchain (8 to 16 bytes more than the macOS build of the same compiler); 517 words leave the 128 byte margin
+// plus 8 bytes. Every word here is RAM on all radios: raise it only by what the check shows
+#define UI_TASK_STACK_WORDS	517
 
 #define SPLASH_MS		1000
 #define FRAME_MIN_MS		50	// at most 20 redraws a second
