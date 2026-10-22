@@ -19,7 +19,8 @@ sys.path.insert(0, TOOLS)
 
 # Board -> codec tool (each takes --stock, --image, -o and keeps its supported stock files in PROFILES)
 CODEC_TOOLS = {"dm1701": "codec_extract", "md380": "codec_extract", "dm32": "hrc7000_codec",
-               "dm1801pro": "hrc7000_codec", "db25d": "hrc7000_codec"}
+               "dm1801pro": "hrc7000_codec", "db25d": "hrc7000_codec", "gd88": "hrc7000_codec",
+               "gd88b": "hrc7000_codec"}
 SKIP = ("README.md", ".gitignore")
 
 

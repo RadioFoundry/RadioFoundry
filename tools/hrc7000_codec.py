@@ -54,6 +54,13 @@ BOARDS = {
               # DB25-D has a SPI NAND there, which the page does not read). Its stock firmware answers a debug console
               # the page reads before ODR is installed (stock_console)
               "progmem_size": 0x200000, "data_flash": False, "stock_console": True},
+    # GD-88 (hardware-gd88.md 8): one slot per SoC, at the DB25-D's address. The window fits the 2022-10 code, the
+    # longest; the table windows are the union of each SoC's builds (A 0x18001204-0x180015D4, B 0x18000B40-0x18000DC0
+    # plus 0x2D50). Both SoCs have 2 MB of program flash and a SPI NAND on SPI0
+    "gd88": {"slot": (0x030E8000, 0x03100000), "run": (0x00044E00, 0x00058000), "tables": (0x18001204, 0x18004324),
+             "progmem_size": 0x200000, "data_flash": False, "stock_console": True},
+    "gd88b": {"slot": (0x030E8000, 0x03100000), "run": (0x00044E00, 0x00058000), "tables": (0x18000B40, 0x18003B10),
+              "progmem_size": 0x200000, "data_flash": False, "stock_console": False},
 }
 PROGMEM_BASE = 0x03000000   # a program flash dump starts here
 
@@ -225,6 +232,88 @@ PROFILES.update({
         "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
         "entries": {"decode": 0x0, "encode": 0x294, "dec_init": 0xE8, "dec_set": 0xA4, "enc_init": 0x400,
                     "enc_set": 0x32C, "fec_init": 0x1CE4},
+    },
+})
+# GD-88: two HR_C7000 SoCs, each with its own plain image linked at 0x0300C000 (hardware-gd88.md 1, 8). A is the main
+# SoC (board gd88), B the second transceiver (board gd88b); each carries its own copy of the codec, so each board merges
+# from its own file. 2023-03 and later: the DB25-D 018 code (0x12B20 bytes, the same entry offsets), run at 0x1795C
+# (2023) or 0x1CEB0 (2024 on). 2022-10: the DB25-D 020 compile (0x131E4 bytes, its entry offsets). The table window is
+# the DB25-D's, found by content; in A the last 47 bytes after the tables hold other data, so A's window hash differs
+_GD88_ENTRIES = _DB25D_ENTRIES
+_GD88_2210_ENTRIES = {"decode": 0x0, "encode": 0x294, "dec_init": 0xE8, "dec_set": 0xA4, "enc_init": 0x400,
+                      "enc_set": 0x32C, "fec_init": 0x1EB8}
+PROFILES.update({
+    "6b907bd067fc50893427f73159b3815cde37e407a738ab652df8fefef344e238": {
+        "name": "GD-88 A B49E.D64.EHRSAB.007 (2022-10-27)", "board": "gd88", "tag": 2210, "size": 776908, "hdr": 0, "magic": None,
+        "code_sha256": "0bb4d143ec5b5c404aff4d0c8a64aca648d139138feca0ac5b51de89be65e249",
+        "code": (0x030AF450, 0x131E4, 0x0001795C),
+        "tables": (0x03076954, 0x2D50, 0x18001204),
+        "tables_sha256": "2819cf8418f9a466c804c2ef471b8c66ae2811e17fa444cce5fccacdec60766e",
+        "entries": _GD88_2210_ENTRIES,
+    },
+    "3e9cd8a65a36887485718e960539244ba700bca21f1059171fe58794056fb971": {
+        "name": "GD-88 B B49C.D64.EHRNAB.005 (2022-10-28)", "board": "gd88b", "tag": 2210, "size": 394368, "hdr": 0, "magic": None,
+        "code_sha256": "7a0ab47d59626ee65a705458ff831b7c4c14e70e9b414e6d25e30bdd0de9ea0d",
+        "code": (0x030520F8, 0x131E4, 0x0001795C),
+        "tables": (0x03042074, 0x2D50, 0x18000B94),
+        "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
+        "entries": _GD88_2210_ENTRIES,
+    },
+    "6949edbb2743549aa12c55bc16f513306ed823f77e8c3efe996f5f1f9b05653c": {
+        "name": "GD-88 B B49C.D64.EHRNAB.008 (2023-03-22)", "board": "gd88b", "tag": 2303, "size": 393556, "hdr": 0, "magic": None,
+        "code_sha256": "9a3f267e46132466dfd64bb3cb66f6c6feec7015cdb717c396b17c910918f5a0",
+        "code": (0x030526D8, 0x12B20, 0x0001795C),
+        "tables": (0x030421F0, 0x2D50, 0x18000B40),
+        "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
+        "entries": _GD88_ENTRIES,
+    },
+    "10e9533cef29797f0c3610565f61d61aaea641d5112d928c714655ce77e6b220": {
+        "name": "GD-88 A B49E.D64.EOPSAB.013 (2023-03-27)", "board": "gd88", "tag": 2303, "size": 810636, "hdr": 0, "magic": None,
+        "code_sha256": "b78e268376854154fbc47c5078fd969fd47494b80bc373f31393cc9d7ce3d58b",
+        "code": (0x030B8120, 0x12B20, 0x0001795C),
+        "tables": (0x0307BE28, 0x2D50, 0x18001228),
+        "tables_sha256": "2819cf8418f9a466c804c2ef471b8c66ae2811e17fa444cce5fccacdec60766e",
+        "entries": _GD88_ENTRIES,
+    },
+    "79b14687ef286bca90b139726bdbb7686fa6932c628f8679b4d8ffe5212be594": {
+        "name": "GD-88 B B49C.D64.EHRNAB.010 (2024-01-15)", "board": "gd88b", "tag": 2401, "size": 417292, "hdr": 0, "magic": None,
+        "code_sha256": "0f3f75b17ca289324ebc93e2f2d97a007596e4e1d94780512fc8ad499f80e30a",
+        "code": (0x03058FC4, 0x12B20, 0x0001CEB0),
+        "tables": (0x03043920, 0x2D50, 0x18000DB0),
+        "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
+        "entries": _GD88_ENTRIES,
+    },
+    "3b2ac6666ff0798c9c0f43f3963fe56c5483ac3347561c7fada0a4d24502dbcc": {
+        "name": "GD-88 A B49E.D64.EOPSAB.017 (2024-05-10)", "board": "gd88", "tag": 2405, "size": 836200, "hdr": 0, "magic": None,
+        "code_sha256": "e8742d965e784c51a03d716ce86bbd5344c0c26242220c158c5aa0d5083f1798",
+        "code": (0x030BF140, 0x12B20, 0x0001CEB0),
+        "tables": (0x0307DC28, 0x2D50, 0x180014A8),
+        "tables_sha256": "2819cf8418f9a466c804c2ef471b8c66ae2811e17fa444cce5fccacdec60766e",
+        "entries": _GD88_ENTRIES,
+    },
+    "94115bd990aba9dcf0fe27a5a8f911298dd914f3afe662b688a2e25fefcf625d": {
+        "name": "GD-88 A B49E.D64.EOPSAB.018 (2024-06-07)", "board": "gd88", "tag": 2406, "size": 836244, "hdr": 0, "magic": None,
+        "code_sha256": "dcc527f101709df5b17e3ad8af3c8ec189f0aede38530c00a3bc78e3adb634bd",
+        "code": (0x030BF16C, 0x12B20, 0x0001CEB0),
+        "tables": (0x0307DC3C, 0x2D50, 0x180014AC),
+        "tables_sha256": "2819cf8418f9a466c804c2ef471b8c66ae2811e17fa444cce5fccacdec60766e",
+        "entries": _GD88_ENTRIES,
+    },
+    "7cfd711d2fe2e2a7c885728fcc4c9f4a66514c3a1a4dadf7e615b28a3ec4c7c9": {
+        "name": "GD-88 B B49C.D64.EHRNAB.012 (2025-01-17)", "board": "gd88b", "tag": 2501, "size": 418000, "hdr": 0, "magic": None,
+        "code_sha256": "c072499bdf8f64e1aff5bab65f3a10def0905a50153e614f732621cc558319dc",
+        "code": (0x03059304, 0x12B20, 0x0001CEB0),
+        "tables": (0x03043A90, 0x2D50, 0x18000DC0),
+        "tables_sha256": "e1e435822471894c437048396f2ea96bea5803acc08446b8f1073714978e219e",
+        "entries": _GD88_ENTRIES,
+    },
+    "2c408b492b1449f71cf9e513a4f25498fdabcbab2ce207062ec1969a46c102df": {
+        "name": "GD-88 A B49E.D64.EOPSAB.021 (2025-01-19)", "board": "gd88", "tag": 2501, "size": 843696, "hdr": 0, "magic": None,
+        "code_sha256": "5c8fe6fa8e404d05fb4f301e0ea3a8079ead5be61671c0676cdbe1d12363fab0",
+        "code": (0x030C0EFC, 0x12B20, 0x0001CEB0),
+        "tables": (0x0307F064, 0x2D50, 0x180015D4),
+        "tables_sha256": "2819cf8418f9a466c804c2ef471b8c66ae2811e17fa444cce5fccacdec60766e",
+        "entries": _GD88_ENTRIES,
     },
 })
 # CRC-32 of the first 64 bytes of every table window above: a cheap first test when locate() looks for the tables in a
@@ -621,7 +710,8 @@ def main():
     ap.add_argument("--board", default="dm32", choices=sorted(BOARDS), help="the radio (default: dm32)")
     ap.add_argument("--stock", help="your radio's stock firmware file (DM-32UV: 049 or 046; DM-1801 Pro: a program "
                     "flash dump, stub/stubtool.py --progmem; DB25-D PRO: 018, 2024-05-09 or later, or a program flash read of a "
-                    "radio with 020)")
+                    "radio with 020; GD-88: the package's A file for gd88, its B file for gd88b, or a program flash read of "
+                    "that SoC)")
     ap.add_argument("--image", help="the built raw application image (default: build/<board>/odr_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image (default: <image>_codec.bin)")
     ap.add_argument("--self-test", action="store_true", help="run the built-in checks on synthetic data")
