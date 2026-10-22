@@ -29,6 +29,7 @@ on:
       - "AUTHORS"
       - ".gitmodules"
       - "boards/**"
+      - "boot/**"
       - "config/**"
       - "core/**"
       - "drivers/**"
