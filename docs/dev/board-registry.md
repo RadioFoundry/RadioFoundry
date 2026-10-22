@@ -167,7 +167,6 @@ How the site draws the radio: `shape`, `body` and `accent` colors, `lens` size.
 | Key | Meaning |
 |---|---|
 | `id`, `isa`, `cpu` | The platform directory, the ISA, the SoC |
-| `ci` | `{ group, container }`: the CI job group, and whether it runs in a container |
 | `stubs` | Platform stubs ci.sh builds with the platform's compiler |
 | `board_stub` | The stub its boards' `[flash.stub]` is for: `tool`, the required `keys`, the `optional` ones and, for SPI wiring, `spi_af` (the alternate function per bus). Absent: no `[flash.stub]` |
 | `codec_symbols` | The linker symbols every board's scripts must define |
@@ -178,19 +177,22 @@ How the site draws the radio: `shape`, `body` and `accent` colors, `lens` size.
 
 | Key | Meaning |
 |---|---|
+| `id`, `name` | The toolchain (`arm`, `csky`) and its display name. CI has one firmware job per toolchain (`firmware (Arm)`), and `.github/actions/toolchain` sets it up by id. Platforms with the same id build in the same job and must have the same `[toolchain]` table |
 | `cc` | The compiler `make print-cc` names |
 | `build` | The script that installs or builds it |
 | `version` | The release CI and releases build with |
 | `sha256` | Optional: the SHA-256 of the archive the script downloads |
 | `image` | Optional: the container image that holds the toolchain (`ODR_CSKY_IMAGE` overrides it) |
 
-The toolchain scripts read these values with `tools/platform_toolchain.sh`, which needs no Python.
+The toolchain scripts read these values with `tools/platform_toolchain.sh`, which needs no Python. `check` fails when
+a script, Dockerfile or workflow under `tools/` or `.github/` sets `<ID>_GCC_VERSION` or `<ID>_GCC_SHA256` (for
+example `ARM_GCC_VERSION`) to a literal other than the pin: take it from `platform.toml`.
 
 ## Commands
 
 | Command | Output |
 |---|---|
-| `tools/boards.py list [--platform P[,Q]] [--release R] [--comma]` | Board ids; an unknown platform fails. `tools/ci.sh --platform` and the CI workflows select boards with it |
+| `tools/boards.py list [--platform P[,Q]] [--toolchain T[,U]] [--release R] [--comma]` | Board ids; an unknown platform or toolchain fails. `tools/ci.sh --toolchain` and the CI workflows select boards with it |
 | `tools/boards.py get <id> [key.path]` | One value; a list prints one item per line |
 | `tools/boards.py platform <p> [key.path]` | One platform value |
 | `tools/boards.py builds <id> [--extra]` | The board's builds besides the default, or its `[ci]` extras |
@@ -219,7 +221,7 @@ from outside the tree. It is a stable interface: a change that breaks a reader c
 |---|---|
 | `format` | `odr-build-matrix/1` |
 | `variants` | The release variants: `full`, then each `config/variants/<name>.mk` |
-| `platforms.<p>` | `isa`, `cpu`, `cc`, `version`, `image` (null: no container), `install`, `sha256` (null when none) |
+| `platforms.<p>` | `isa`, `cpu`, `toolchain` (the id), `cc`, `version`, `image` (null: no container), `install`, `sha256` (null when none) |
 | `boards.<id>` | `name`, `platform`, `release`, `released` (true for `stable`), `first_stage`, `build_options`, `builds` |
 | `boards.<id>.build_options` | A list of `{ name, default, values }` |
 | `boards.<id>.builds` | One entry per combination of option values, the all-default one first |
