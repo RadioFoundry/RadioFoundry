@@ -22,6 +22,7 @@
 #include "hal_netif.h"
 #include "hal_bcast.h"
 #include "hal_afsk.h"
+#include "hal_rx2.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -96,6 +97,8 @@ typedef struct {
 	// with the stored value at start-up and on each change; the module is still probed at start-up whatever the
 	// setting says, so board_has_gps() is known. NULL = the module is always on
 	void (*gps_enable)(bool on);
+	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
+	const hal_rx2_t *rx2;
 } board_t;
 
 extern const board_t board;

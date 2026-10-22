@@ -372,10 +372,23 @@ def cmd_analyze(args) -> int:
             cb = _slice(f[st - 12 * SPS + np.arange(12) * SPS], center, outer)
             b.slot = L2.decode_cach_slot(cb)
         bursts.append(b)
+    def drop_misreads():
+        """A sync with many bit errors less than a burst away from a clean burst (sync or EMB) is a misread of the
+        real burst's own data: VOICE_A with 7 errors inside real voice bursts gave false overlaps, power steps and
+        letter-order breaks."""
+        nonlocal bursts
+        good = [x.start for x in bursts if x.errs <= 2]
+        bad = [x for x in bursts if x.errs >= 5 and any(0 < abs(g - x.start) < BURST for g in good)]
+        if bad:
+            print(f"  ignored {len(bad)} noisy sync(s) inside a clean burst at "
+                  + ", ".join(f"{ms(x.start):.1f}" for x in bad[:8]) + " ms (misreads, not bursts)")
+            bursts = [x for x in bursts if x not in bad]
+
+    drop_misreads()     # before the EMB walk, so a misread doesn't anchor it
 
     # Voice B-F (and late entry): walk 60 ms steps from every sync burst and check the EMB.
     def covered(pos):
-        return any(abs(x.start - pos) < 10 * SPS for x in bursts)
+        return any(abs(x.start - pos) < 10 * SPS for x in bursts if x.errs < 5)    # not a noisy misread
 
     def emb_at(pos, ref):
         bestv = None
@@ -418,6 +431,7 @@ def cmd_analyze(args) -> int:
                                     kind=f"VOICE_{letter} pi{pi} lcss{lcss}", slot=a.slot, raw=raw,
                                     anchor_fam=a.fam))
                 pos = q
+    drop_misreads()     # the EMB bursts found now are clean ones too
     bursts.sort(key=lambda b: b.start)
     if args.cach:
         # The 12 symbols before each BS-sourced burst are its CACH (24 bits, TX(23) first)

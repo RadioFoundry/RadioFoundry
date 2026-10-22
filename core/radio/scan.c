@@ -15,15 +15,14 @@ static void phase(scan_t *s, uint8_t p, uint32_t now_ms)
 
 void scan_begin(scan_t *s, uint8_t kind, const scan_cfg_t *cfg, uint32_t now_ms)
 {
-	uint16_t origin_pos = s->origin_pos, dual_pos = s->dual_pos;
+	uint16_t origin_pos = s->origin_pos;
 	uint32_t origin_hz = s->origin_hz, lo = s->lo_hz, hi = s->hi_hz;
 	bool origin_vfo = s->origin_vfo;
 	memset(s, 0, sizeof(*s));
-	// The caller sets the origin, the dual position and the VFO range before scan_begin
+	// The caller sets the origin and the VFO range before scan_begin
 	s->origin_pos = origin_pos;
 	s->origin_hz = origin_hz;
 	s->origin_vfo = origin_vfo;
-	s->dual_pos = dual_pos;
 	s->lo_hz = lo;
 	s->hi_hz = hi;
 	s->sweep_pos = origin_pos;
@@ -61,6 +60,14 @@ void scan_pause(scan_t *s, bool paused, uint32_t now_ms)
 		s->synced = false;
 		phase(s, SCAN_PH_LISTEN, now_ms);
 	}
+}
+
+void scan_talked(scan_t *s, uint32_t now_ms)
+{
+	s->tuned_ms = now_ms;	// the settle again: the receiver comes back from transmitting
+	s->heard = false;
+	s->synced = false;
+	phase(s, SCAN_PH_RESUME, now_ms);
 }
 
 static scan_act_t hold(scan_t *s, uint32_t now_ms)
@@ -171,16 +178,6 @@ int scan_next_pos(scan_t *s, uint16_t count, scan_usable_fn usable, void *ctx)
 {
 	if (count == 0) {
 		return -1;
-	}
-	if (s->kind == SCAN_DUAL) {
-		uint16_t a = s->origin_pos, b = s->dual_pos;
-		bool at_a = s->sweep_pos == a;
-		uint16_t first = at_a ? b : a, second = at_a ? a : b;
-		int next = pos_ok(s, first, usable, ctx) ? first : pos_ok(s, second, usable, ctx) ? second : -1;
-		if (next >= 0) {
-			s->sweep_pos = (uint16_t)next;
-		}
-		return next;
 	}
 	bool origin_ok = s->origin_pos < count && pos_ok(s, s->origin_pos, usable, ctx);
 	if (s->cfg.priority && origin_ok && s->since_priority >= SCAN_PRIORITY_EVERY) {

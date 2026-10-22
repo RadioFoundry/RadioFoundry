@@ -130,11 +130,13 @@ section 1).
 
 Received FM audio comes from one of two places (`aprs.c`, `rx_service`):
 
-1. The board's own AFSK receive path: `hal_afsk_t.rx_start`, `rx_read`, `rx_stop` at `rx_rate_hz`. The DM-32UV has
-   one: the HR_C7000's FM receive audio at 8 kHz, not squelch gated (`modem-hrc7000.md` 8.5). While it runs the
+1. The board's own AFSK receive path: `hal_afsk_t.rx_start`, `rx_read`, `rx_stop` at `rx_rate_hz`. The DM-32UV and
+   the DM-1801 Pro have one (shared `hrc_afsk`): the HR_C7000's FM receive audio at 8 kHz, not squelch gated
+   (`modem-hrc7000.md` 8.5). While it runs the
    speaker plays FM through the HR_C7000 instead of straight from the FD6818 (`hardware-dm32.md` 9).
 2. Otherwise FM receive audio on the board's PCM stream, when its audio tap has `AUDIO_TAP_FM_RX` (`hal_audio_tap.h`):
-   8 kHz, de-emphasized, squelch gated. The DM-1701's HR_C6000 puts it on I2S (`hardware-dm1701.md` 21.3.1). The
+   8 kHz, de-emphasized, squelch gated. The DM-1701's HR_C6000 puts it on I2S (`hardware-dm1701.md` 21.3.1); that stream exists only while the FM
+   feed-through is on, so the volume knob at zero mutes the amp but leaves the feed-through and the RX gain alone. The
    shared stream (`core/usbaudio/audio_mux.c`) gives APRS a ring of its own (1024 samples, 128 ms) next to a USRP
    session's, keeps the stream running while APRS asks for it, and drops whole 20 ms blocks when the radio task reads
    too late.
@@ -218,7 +220,7 @@ Without a known speed SmartBeaconing falls back to the interval. The defaults ar
 
 ## 8. Positions over DMR
 
-Send via (Radio / DMR / Both): DMR positions go out when the radio is on a DMR channel with the call stack running,
+Send via (AFSK / DMR / Both): DMR positions go out when the radio is on a DMR channel with the call stack running,
 as a private data call to the destination ID (default 5057, BrandMeister's APRS service, "person" icon):
 
 - Motorola LRRP triggered location report (the default): UDP port 4001, built by `dmrLrrp.c`.
@@ -265,7 +267,7 @@ frequency, not amateur, no AFSK), the position and its source, the next beacon a
 position now, Automatic beacons, Frequency (region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand
 144.575, Japan 144.660, China 144.640, Custom), Power (As channel, then each of the board's levels), Path (the
 digipeater path of RF packets: None, WIDE1-1, WIDE1-1,WIDE2-1, WIDE2-1, WIDE2-2; OK steps to the next and WIDE2-2
-wraps to None), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (Radio, DMR, Both), Position (opens its page, below), Position in DMR calls (`dmr-voice.md` 3.1), KISS on USB, Stations
+wraps to None), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (AFSK, DMR, Both), Position (opens its page, below), Position in DMR calls (`dmr-voice.md` 3.1), KISS on USB, Stations
 heard (RX builds: the list, most recent first, dimmed when heard through a digipeater). On a radio without
 `board.afsk`, Power and Path are dimmed, and so is Frequency unless the build receives APRS. Rows 11 and 12 have no
 digit key.
@@ -364,7 +366,10 @@ DM-32UV (2026-10-16, 467.375 MHz, 25 kHz, lowest power, a canned frame through `
 air with a valid FCS at every level tried, 29 flags of TX delay, twist about -1.1 dB, 14-15 degrees phase residual.
 Level 50 (PCM amplitude 2750): 3.1 kHz peak, 2.2 / 2.5 kHz mark / space. Level 75: 4.5 kHz peak. PCM amplitude 5850
 and up is limited in the transmitter at 5.1 kHz peak (4.5 kHz on the tones). `test_aprs.py` itself is still to run
-there: it transmits on 2 m amateur.
+there: it transmits on 2 m amateur. Receive decoded off air there too (commit d3269062, 2026-10-16).
+
+DM-1801 Pro (2026-10-16): the shared AFSK through the codec mixer decodes off air with a valid FCS, and `test_aprs`
+passes at amplitude 46 (3.25 kHz peak, `hardware-dm1801pro.md`). Its receive is the DM-32UV's code and is unchecked.
 
 ## 14. Open decisions
 

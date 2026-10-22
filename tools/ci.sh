@@ -35,7 +35,8 @@
 #      notice naming what installs it, its platform.toml toolchain.build):
 #        default            the board's defaults
 #        no-<FEATURE>       each switch that is on by default, turned off alone (sub-features follow), except those
-#                           the board can't build without (BOARD_REQUIRED: FM on the DB25-D while DMR isn't built)
+#                           the board can't build without (BOARD_REQUIRED: FM on the DB25-D while DMR isn't built).
+#                           no-DEBUGLINK keeps STUB_ENTRY on, so it builds the stub entry's own listener
 #        fm-minimal         FM only: no DMR, USB, VFO, diagnostics, sub-audio tones
 #        maximal            every switch on, except those the board lists as unsupported (BOARD_UNSUPPORTED) or as
 #                           not needed (the board's MAXIMAL_SKIP: NET_PPP on the radios with the USB network adapter)
@@ -108,6 +109,23 @@ elif reg check > "$OUT/registry.log" 2>&1 &&
 else
 	tail -20 "$OUT/registry.log"
 	bad "board registry (see $OUT/registry.log)"
+fi
+# the docs blocks generated from the registry are current, and no radio reads lower than on the base branch
+# (ODR_FLOOR_REF, default origin/main; skipped when this checkout doesn't have it)
+if [ -n "$REG_PY" ]; then
+	FLOOR_REF="${ODR_FLOOR_REF:-origin/main}"
+	if git rev-parse -q --verify "$FLOOR_REF^{commit}" > /dev/null; then
+		FLOOR_ARGS="--floor $FLOOR_REF"
+	else
+		FLOOR_ARGS=
+		skip "radio floor: no $FLOOR_REF in this checkout (ODR_FLOOR_REF)"
+	fi
+	if reg docs --check $FLOOR_ARGS > "$OUT/registry-docs.log" 2>&1; then
+		ok "$(tail -1 "$OUT/registry-docs.log" | sed 's/^boards: //')"
+	else
+		cat "$OUT/registry-docs.log"
+		bad "generated docs (run tools/boards.py docs; see $OUT/registry-docs.log)"
+	fi
 fi
 fi
 

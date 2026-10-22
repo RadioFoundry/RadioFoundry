@@ -146,6 +146,7 @@ late entry and color code 2 all counted.
 | Bursts stay inside their 30 ms slot at every power level (SDR waterfall or `tools/bench`) | the DMR PA delay (`DMR_PA_DELAY_US`, 28 ms, Timer 3) |
 | `pa` on the `tx` line about 30 ms; `rf` counts one per burst | PA off rule (20 ms after the RF TX interrupt) |
 | Through a repeater: the repeater keys up and relays both directions | repeater timing after TX (`tx_finish`) |
+| The mic on DMR transmit, no person: `pytest tests/hil -k mic_uart_inject --allow-rf --mic-inject` on the host the cable is plugged into (its device path, not a network bridge). The tone bursts sent on the cable's line show at the vocoder: `voice.tx_mic_spread_db` 12 or more, `tx_mic_level_db` 9 dB over a quiet over (measured 2026-10-22: quiet 3 dB, spread 0; injected 21 dB, spread 18) | both overs at the ADC's floor: the mic doesn't reach the codec ADC on DMR |
 
 ## 10. Long run
 

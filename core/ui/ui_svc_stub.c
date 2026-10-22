@@ -38,6 +38,11 @@ WEAK bool ui_svc_save_talk_target(uint32_t id, bool private_call) { (void)id; (v
 WEAK bool ui_svc_scan(bool on) { (void)on; return false; }
 WEAK bool ui_svc_roam(uint8_t cmd) { (void)cmd; return false; }
 WEAK bool ui_svc_scan_skip(void) { return false; }
+WEAK bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel) { (void)ref; (void)sel; return false; }
+WEAK bool ui_svc_dual_get(ui_dual_ref_t ref[2], uint8_t *sel) { (void)ref; (void)sel; return false; }
+WEAK bool ui_svc_vfo_get(uint8_t index, channel_t *out) { (void)index; (void)out; return false; }
+WEAK uint8_t ui_svc_receivers(void) { return 1; }
+WEAK bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out) { (void)pane; (void)out; return false; }
 WEAK void ui_svc_beep(uint8_t beep) { (void)beep; }
 WEAK void ui_svc_vibrate(uint8_t vibe) { (void)vibe; }
 WEAK void ui_svc_ptt_block(bool blocked) { (void)blocked; }
@@ -74,7 +79,8 @@ static int32_t settings[UI_SET_COUNT] = {
 	[UI_SET_PTT_LOCKED] = 1, [UI_SET_LOW_BATTERY] = 15, [UI_SET_LONG_PRESS_MS] = 600, [UI_SET_REPEAT_MS] = 120,
 	[UI_SET_ROAM_SURVEY] = 1, [UI_SET_ROAM_BEACON_S] = 60, [UI_SET_ROAM_BEACON_LEN] = 4, [UI_SET_TFTP_WRITE] = 1,
 	[UI_SET_MSG_FORMAT] = 2,	// ETSI IP text
-	[UI_SET_VIBRATE] = 1, [UI_SET_VOLUME] = RADIO_VOLUME_DEFAULT,
+	[UI_SET_VIBRATE] = 1, [UI_SET_VOLUME] = RADIO_VOLUME_DEFAULT, [UI_SET_DUAL_DELAY_MS] = RADIO_DUAL_DELAY_MS,
+	[UI_SET_NOISE_REDUCTION] = 1,
 };
 // (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's
 // stand-ins in a build without the store)
