@@ -203,19 +203,6 @@ CONFIG_FAULT_TRACE ?= y
 # (drivers/flash/nand_sectors, docs/spec/nand-sectors.md). On in the config.mk of radios whose data flash is SPI NAND
 # (the DB25-D); off, such a radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it
 CONFIG_NAND_STORAGE ?= n
-# the MD-9600's synthesizer drivers, one per board revision (docs/spec/hardware-md9600.md 16): V1-V3 (SKY72310 and the
-# AK2365A IF receivers), V4 (the 24-bit "PLL1590" part and the AK2365A) and V4A / V5 (LMX2571). On in that radio's
-# config.mk, so one image runs every revision; turning revisions off makes a smaller image for one board. Other
-# radios don't use them
-CONFIG_MD9600_V1V3 ?= n
-CONFIG_MD9600_V4 ?= n
-CONFIG_MD9600_V5 ?= n
-# The MD-9600's transmit path (boards/md9600/rfseq_md9600.c): off until a radio has confirmed the RF sequence. Even
-# built, transmit stays refused until a person arms it for the power cycle and the board revision is a stored one
-CONFIG_MD9600_TX ?= n
-# the MD-9600's DMR transmit glue: the HR_C6000's per-burst RF keying, still refused at run time until enabled and
-# until the radio code keys the RF chain (docs/spec/hardware-md9600.md 4.4). Off everywhere until checked on a radio
-CONFIG_MD9600_DMR_TX ?= n
 
 # APRS (core/aprs, docs/spec/aprs.md): position, status and message packets as AX.25 / 1200 baud AFSK on FM, positions
 # over DMR (LRRP / UDT), a KISS TNC on the host port. Transmit stays off until the user turns it on (needs FM)

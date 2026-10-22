@@ -14,8 +14,12 @@ CONFIG_MD9600_V5 ?= y
 ifeq ($(CONFIG_MD9600_V1V3)$(CONFIG_MD9600_V4)$(CONFIG_MD9600_V5),nnn)
 $(error the MD-9600 needs at least one of CONFIG_MD9600_V1V3, CONFIG_MD9600_V4 and CONFIG_MD9600_V5)
 endif
-# Transmit: off (config/features.mk) until a radio confirms the RF sequence; built, it still needs the run-time arm
+# Transmit: off until a radio confirms the RF sequence; built, it still needs the run-time arm. DMR transmit (the
+# HR_C6000's per-burst RF keying) stays off until the radio code keys the RF chain (docs/spec/hardware-md9600.md 4.4)
 CONFIG_MD9600_TX ?= n
+CONFIG_MD9600_DMR_TX ?= n
+# This board's own switches (config_md9600.h), not feature switches: no other radio has them
+MCU_DEFS += $(foreach s,V1V3 V4 V5 TX DMR_TX,-DCONFIG_MD9600_$(s)=$(if $(filter y,$(CONFIG_MD9600_$(s))),1,0))
 BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V1V3)),drivers/rf/sky72310)
 BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V4)),drivers/rf/pll1590)
 BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V5)),drivers/rf/lmx2571)

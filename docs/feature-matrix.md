@@ -140,11 +140,6 @@ for every feature are planned (issue 106).
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | DM-1701 | MD-380 | DM-32UV | Notes |
 |---|---|---:|---:|:-:|:-:|:-:|---|
 | Settings and codeplug storage on SPI NAND | `NAND_STORAGE` | — | — | ✕ | ✕ | ✕ | For radios whose data flash is SPI NAND: on for the DB25-D (about 6.6 KB flash, 1.5 KB RAM), not in these columns. These radios have SPI NOR and don't use it ([nand-sectors](spec/nand-sectors.md)) |
-| MD-9600 V1-V3 synthesizers (SKY72310, AK2365A) | `MD9600_V1V3` | — | — | ✕ | ✕ | ✕ | MD-9600 only, on there: about 0.6 KB. With `MD9600_V4` and `MD9600_V5` one image runs every board revision ([hardware-md9600](spec/hardware-md9600.md) 19.3) |
-| MD-9600 transmit | `MD9600_TX` | — | — | ✕ | ✕ | ✕ | MD-9600 only, off: the transmit sequence, drive and PA rows are unverified on a radio; a run-time arm and a stored revision are also needed ([hardware-md9600](spec/hardware-md9600.md) 19.8) |
-| MD-9600 DMR transmit | `MD9600_DMR_TX` | — | — | ✕ | ✕ | ✕ | MD-9600 only, off: DMR bursts through the HR_C6000 behind a run-time gate; per-burst keying is not wired yet ([hardware-md9600](spec/hardware-md9600.md) 19.8) |
-| MD-9600 V4 synthesizer ("PLL1590") | `MD9600_V4` | — | — | ✕ | ✕ | ✕ | MD-9600 only, on there: about 0.5 KB |
-| MD-9600 V4A / V5 synthesizer (LMX2571) | `MD9600_V5` | — | — | ✕ | ✕ | ✕ | MD-9600 only, on there: about 0.5 KB |
 
 ## Bench
 

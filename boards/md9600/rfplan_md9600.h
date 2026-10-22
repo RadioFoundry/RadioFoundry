@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "config_md9600.h"
 
 typedef enum {
 	MD9600_REV_UNKNOWN	= 0,

@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# The MD-9600's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in md9600.ld.
+
+id = "md9600"
+name = "TYT MD-9600"
+maker = "TYT"
+model = "MD-9600"
+also = ["Retevis RT90"]
+kind = "mobile"
+debuglink_aliases = ["MD9600", "RT90"]
+
+[docs]
+hardware = "docs/spec/hardware-md9600.md"
+codec = "docs/spec/codec-md9600.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "136-174 / 400-480 MHz"
+power = "up to 50 W"
+display = "monochrome, 128 × 64"
+gallery = "128x64"
+
+[status]
+level = "bring-up"
+summary = "Bring-up: builds, never run on a radio. One image covers every board revision (SKY72310, \"PLL1590\" and LMX2571 synthesizers); transmit is off. The web flasher offers it for testers, through the bootloader and the flash stub; neither route has been tried on an MD-9600 ([hardware-md9600](docs/spec/hardware-md9600.md) 14.4)"
+release = "testing"
+
+# This board's own switches (config.mk, config_md9600.h) aren't feature switches, so ci's per-switch builds don't cover
+# them: the transmit paths built in, and a single-revision image
+[ci]
+extra = [
+	{ name = "tx", make = ["CONFIG_MD9600_TX=y", "CONFIG_MD9600_DMR_TX=y"] },
+	{ name = "v5-only", make = ["CONFIG_MD9600_V1V3=n", "CONFIG_MD9600_V4=n"] },
+]
+
+[flash]
+family = "usb-dfu"
+keep_codec = true
+stock_versions = ["V06.09 CSV (boards V1-V3)", "V16.45 CSV (V4 boards)"]
+backup = { stock = "none", odr = "full", spi_size = 0x1000000 }
+
+[flash.bootloader]
+steps = [
+	"Disconnect the radio's DC power cable (the power key alone is not enough) and connect the USB cable to the mini-USB port on the rear.",
+	"Hold P1 and the orange (alarm) key while you connect the power again. The display flashes, then stays blank. Not yet confirmed on a radio: one report names the red key instead of the orange one.",
+	"Release the keys.",
+]
+
+# The TYT bootloader takes the same DFU protocol and sector order as the DM-1701's, with its own key
+# (docs/spec/hardware-md9600.md 14.2)
+[flash.dfu]
+vid = 0x0483
+pid = 0xDF11
+string1 = "AnyRoad Technology"
+product = "Digital Radio in USB mode"
+key_sha256 = "c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae"
+key_prefix = "A2FABB4B"
+
+# The codec where the merge puts it (docs/spec/codec-md9600.md "Hosting"): the tables stay in sector 9 at the stock
+# build's address, the code moves to the start of sector 11 and the descriptor to its end. The application has sectors
+# 3-7, so an update leaves the codec sectors alone. The 06.09 and 16.45 builds keep their tables at different addresses
+# and report the one codec id; odrflash takes either file, and the windows here are the 06.09 file's
+[codec]
+tool = "codec_extract"
+stock = "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09"
+sources = ["MD9600-CSV-V06.09.bin", "MD9600-CSV(V4)-V16.45.bin"]
+
+# How the site draws the radio
+[frame]
+shape = "mobile"
+body = "#1d1f22"
+accent = "#e07a26"
+lens = [22, 22]

@@ -329,6 +329,19 @@ TESTS   += codecDescTest
 codecDescTest: codecDescTest.c $(ROOT)/platform/stm32f4/codec_desc.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ codecDescTest.c
 
+# The GPS rate hunt (drivers/gps/gps_rx/gps_baud.c) with canned NMEA, and the two-level analog keypad
+# (drivers/input/adckeys) a hand microphone may use
+TESTS   += gpsBaudTest adckeysTest
+
+gpsBaudTest: gpsBaudTest.c $(ROOT)/drivers/gps/gps_rx/gps_baud.c $(ROOT)/drivers/gps/gps_rx/gps_baud.h \
+             $(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/gps_rx/gps_rx.h $(ROOT)/drivers/gps/nmea_line/nmea_line.c
+	$(CC) $(CFLAGS) -Wshadow -o $@ gpsBaudTest.c $(ROOT)/drivers/gps/gps_rx/gps_baud.c \
+		$(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c
+
+adckeysTest: adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c $(ROOT)/drivers/input/adckeys/adckeys.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c
+
+
 run: run-chips
 run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest codecDescTest
 	./sky72310Test
@@ -765,59 +778,6 @@ run-hrc7000soc: bk4819Test hrc7000ClockTest hrc7000CodecSlotTest
 	./hrc7000CodecSlotTest hrc7000_test_slot.bin
 .PHONY: run-hrc7000soc
 
-# The MD-9600 (docs/spec/hardware-md9600.md): its synthesizer and IF receiver drivers and the board's revision and
-# frequency plan, with every revision built in, and again with only V4A / V5 as a single-revision image would have
-MD9600  := $(ROOT)/boards/md9600
-MD9600_RF := md9600RfTest.c $(MD9600)/rev_md9600.c $(MD9600)/rfplan_md9600.c $(ROOT)/drivers/rf/sky72310/sky72310.c \
-	$(ROOT)/drivers/rf/pll1590/pll1590.c $(ROOT)/drivers/rf/lmx2571/lmx2571.c $(ROOT)/drivers/rf/ak2365a/ak2365a.c
-MD9600_RF_H := $(MD9600)/rfplan_md9600.h $(ROOT)/drivers/rf/sky72310/sky72310.h $(ROOT)/drivers/rf/pll1590/pll1590.h \
-	$(ROOT)/drivers/rf/lmx2571/lmx2571.h $(ROOT)/drivers/rf/ak2365a/ak2365a.h $(ROOT)/drivers/bus/wire3.h
-TESTS   += md9600RfTest md9600RfTestV5
-# The RF sequencing and the calibration rows against a fake board, with transmit in the build and without it
-MD9600_SEQ := md9600RfSeqTest.c $(MD9600)/rfseq_md9600.c $(MD9600)/cal_md9600.c $(MD9600)/rfcal_md9600.c \
-	$(MD9600)/hwopt_md9600.c $(ROOT)/drivers/cal/calblock/calblock.c $(filter-out md9600RfTest.c,$(MD9600_RF))
-MD9600_SEQ_H := $(MD9600_RF_H) $(MD9600)/rfseq_md9600.h $(MD9600)/md9600.h
-MD9600_ALL := -DCONFIG_MD9600_V1V3=1 -DCONFIG_MD9600_V4=1 -DCONFIG_MD9600_V5=1
-TESTS   += md9600RfSeqTest md9600RfSeqTestNoTx md9600RfSeqTestV5
-
-md9600RfTest: $(MD9600_RF) $(MD9600_RF_H)
-	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow -DCONFIG_MD9600_V1V3=1 -DCONFIG_MD9600_V4=1 -DCONFIG_MD9600_V5=1 -o $@ $(MD9600_RF)
-
-md9600RfTestV5: $(MD9600_RF) $(MD9600_RF_H)
-	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow -DCONFIG_MD9600_V5=1 -o $@ $(MD9600_RF)
-
-# The MD-9600's calibration and option block reader on the generic calibration block (synthetic blocks only)
-MD9600_CAL := md9600CalTest.c $(MD9600)/cal_md9600.c $(ROOT)/drivers/cal/calblock/calblock.c
-TESTS   += md9600CalTest
-
-md9600CalTest: $(MD9600_CAL) $(MD9600)/cal_md9600.h $(ROOT)/drivers/cal/calblock/calblock.h $(CORE)/radio/cal_curve.h
-	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow -o $@ $(MD9600_CAL)
-
-md9600RfSeqTest: $(MD9600_SEQ) $(MD9600_SEQ_H)
-	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow $(MD9600_ALL) -DCONFIG_MD9600_TX=1 -o $@ $(MD9600_SEQ)
-
-md9600RfSeqTestNoTx: $(MD9600_SEQ) $(MD9600_SEQ_H)
-	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow $(MD9600_ALL) -DCONFIG_MD9600_TX=0 -o $@ $(MD9600_SEQ)
-
-md9600RfSeqTestV5: $(MD9600_SEQ) $(MD9600_SEQ_H)
-	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow -DCONFIG_MD9600_V5=1 -DCONFIG_MD9600_TX=1 -o $@ $(MD9600_SEQ)
-
-# The speaker routing's pin levels (boards/md9600/speaker_md9600.h)
-TESTS   += md9600AudioTest
-md9600AudioTest: md9600AudioTest.c $(MD9600)/speaker_md9600.h
-	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow -o $@ md9600AudioTest.c
-
-run: run-md9600
-run-md9600: md9600RfTest md9600RfTestV5 md9600RfSeqTest md9600RfSeqTestNoTx md9600RfSeqTestV5 md9600CalTest md9600AudioTest
-	./md9600RfTest
-	./md9600RfTestV5
-	./md9600CalTest
-	./md9600RfSeqTest
-	./md9600RfSeqTestNoTx
-	./md9600RfSeqTestV5
-	./md9600AudioTest
-.PHONY: run-md9600
-
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
 # radio's own services are mdnsTest's and tftpTest's)
 HLNET   := hostlinkNetTest.c $(CORE)/hostlink/hostlink_net.c $(CORE)/hostlink/hostlink_net_air.c $(CORE)/dmr/ipGateway.c \
@@ -899,16 +859,13 @@ run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
 .PHONY: run-settings
 
 # The SPI NOR driver against a model of the chip at the bus, and the journal and settings store on it (16 MB and
-# 1 MB parts, power cuts tearing page programs and erases); the MD-9600's map and board record sector on it too
+# 1 MB parts, power cuts tearing page programs and erases)
 TESTS   += spiNorTest
-MD9600_STORE := $(ROOT)/boards/md9600/store_md9600.c $(ROOT)/boards/md9600/rev_md9600.c
 
 spiNorTest: spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c $(ROOT)/drivers/flash/spi_nor/spi_nor.h \
-            $(ROOT)/drivers/bus/spi_bus.h $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h) \
-            $(MD9600_STORE) $(ROOT)/boards/md9600/store_md9600.h $(ROOT)/boards/md9600/rfplan_md9600.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -I$(ROOT)/boards/md9600 -Wshadow -DCONFIG_MD9600_V1V3=1 -DCONFIG_MD9600_V4=1 \
-		-DCONFIG_MD9600_V5=1 -o $@ spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c \
-		$(CORE)/storage/storage.c $(CORE)/settings/settings.c $(MD9600_STORE)
+            $(ROOT)/drivers/bus/spi_bus.h $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ spiNorTest.c $(ROOT)/drivers/flash/spi_nor/spi_nor.c \
+		$(CORE)/storage/storage.c $(CORE)/settings/settings.c
 
 # The SPI NAND driver against a model of the chip at the bus: ID, page reads through the cache, ECC status, bad-block
 # marks, a chip that stays busy or doesn't answer; program loads, internal data moves, erase, the block lock, the write

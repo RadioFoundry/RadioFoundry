@@ -196,22 +196,6 @@
 #ifndef CONFIG_NAND_STORAGE
 #define CONFIG_NAND_STORAGE		0
 #endif
-// The MD-9600's per-revision synthesizer drivers (boards/md9600 only; config/features.mk)
-#ifndef CONFIG_MD9600_V1V3
-#define CONFIG_MD9600_V1V3		0
-#endif
-#ifndef CONFIG_MD9600_V4
-#define CONFIG_MD9600_V4		0
-#endif
-#ifndef CONFIG_MD9600_V5
-#define CONFIG_MD9600_V5		0
-#endif
-#ifndef CONFIG_MD9600_TX
-#define CONFIG_MD9600_TX		0
-#endif
-#ifndef CONFIG_MD9600_DMR_TX
-#define CONFIG_MD9600_DMR_TX		0
-#endif
 #ifndef CONFIG_AM_RX
 #define CONFIG_AM_RX			CONFIG_FM
 #endif
