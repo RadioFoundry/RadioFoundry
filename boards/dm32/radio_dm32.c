@@ -17,9 +17,6 @@
 
 #define DAC_C_INIT		0x06E2u
 
-#define ADC_CTRL		REG32(ADC_BASE + 0x00)
-#define ADC_CTRL_RESET		(1u << 3)
-
 #define UHF_FROM_HZ		280000000u	// PA / LNA band split (8.5)
 #define MIC_GAIN_DB		11u		// GCR_ADCL at init (9.1)
 #define DMR_PA_DELAY_US		28000u		// "DMR PA" default (8.6)
@@ -96,32 +93,10 @@ static void lna(uint32_t hz, bool on)
 	hrc_pin_write(PIN_VHF_LNA, on && !uhf);
 }
 
-static void dac_b_power(bool on)
-{
-	uint32_t s = hrc_irq_save();
-	if (on) {
-		DAC_PD_CTRL &= ~DAC_B_OFF;
-	} else {
-		DAC_PD_CTRL |= DAC_B_OFF;
-	}
-	hrc_irq_restore(s);
-}
-
 static void pa_key(void)
 {
 	hrc_pin_write(tx_uhf ? PIN_UHF_PA : PIN_VHF_PA, true);
 	DAC_DATA_B = tx_drive;
-}
-
-static bool in_band(uint32_t hz, bool tx)
-{
-	for (uint8_t i = 0; i < board.band_count; i++) {
-		const band_t *b = &board.bands[i];
-		if (hz >= b->lo_hz && hz <= b->hi_hz) {
-			return !tx || b->tx;
-		}
-	}
-	return false;
 }
 
 static uint16_t fm_bw_reg(radio_bw_t bw)
@@ -200,18 +175,7 @@ static const hrc_afsk_board_t afsk_board = {
 static void init(void)
 {
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
-	// modem-hrc7000.md 4 steps 1-3: ADC reset and idle, DAC B to its pin, DACs B and C on with the PA drive at 0
-	ADC_CTRL = ADC_CTRL_RESET;
-	hal_delay_us(2);
-	ADC_CTRL = 0;
-	uint32_t s = hrc_irq_save();
-	IO_DIPLEX2 &= ~IO_DIPLEX2_DAC_B;
-	hrc_irq_restore(s);
-	DAC_PD_CTRL = 0x01u;
-	DAC_PD_MODE_EN = 0x01u;
-	DAC_DATA_A = 0;
-	DAC_DATA_B = 0;
-	DAC_DATA_C = DAC_C_INIT;
+	hrc_modem_analog_init(DAC_C_INIT);
 	pa_off();
 	lna(0, false);
 	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DB);
@@ -250,7 +214,7 @@ static void set_mode(radio_mode_t m)
 	}
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
 		fd6818_set_mode(&fd, FD6818_MODE_DMR);
-		dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
+		hrc_dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
 		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(rx_hz)), MIC_GAIN_DB);
 		mode = RADIO_MODE_DMR;
 		hrc_dmr_enter();
@@ -267,7 +231,7 @@ static void set_mode(radio_mode_t m)
 
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 {
-	if (!in_band(hz, false)) {
+	if (!board_in_band(hz, false)) {
 		return false;
 	}
 	wake();
@@ -280,7 +244,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 	} else {
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
 		fd6818_set_state(&fd, FD6818_STATE_RX);
-		dac_b_power(false);
+		hrc_dac_b_power(false);
 		hrc7000_fm_rx(&modem, bw == RADIO_BW_25K);
 		hrc7000_audio_bits(&modem, 0, C7_AUDIO_FM_PLAY);	// FM plays on the analog path (speaker_source)
 		// The FD6818 detects the tone on its own demodulated audio: the C7000's detector gets no audio while the
@@ -298,7 +262,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 {
-	if (!in_band(hz, true)) {
+	if (!board_in_band(hz, true)) {
 		return false;
 	}
 	wake();
@@ -309,7 +273,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	// DMR keeps listening on the RX frequency until a burst (dmr_rf_switch retunes per burst); on a split channel the
 	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
 	fd6818_set_freq(&fd, mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz);
-	dac_b_power(true);
+	hrc_dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
 		// 8.5 "Enter DMR TX": the PA select and drive wait for the PA one-shot of each burst. Between bursts the radio
 		// receives: the FD6818 in RX and the LNA on until the RF TX interrupt switches to the first burst

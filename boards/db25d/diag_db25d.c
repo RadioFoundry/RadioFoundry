@@ -90,15 +90,15 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	case 3:
 		put(&o, "adc0 ");
-		put_u(&o, db25d_adc_raw(0));
+		put_u(&o, hrc_adc_read(0));
 		put(&o, " 2 ");
-		put_u(&o, db25d_adc_raw(2));
+		put_u(&o, hrc_adc_read(2));
 		break;
 	case 4:
 		put(&o, "adc6 ");
-		put_u(&o, db25d_adc_raw(6));
+		put_u(&o, hrc_adc_read(6));
 		put(&o, " 7 ");
-		put_u(&o, db25d_adc_raw(7));
+		put_u(&o, hrc_adc_read(7));
 		break;
 	case 5:
 		put(&o, "rf wr ");

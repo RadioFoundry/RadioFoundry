@@ -23,9 +23,6 @@
 // about half of the DMR senders (bench, strong and weak signal); with 0x067E it took every burst
 #define DAC_C_INIT		0x067Eu
 
-#define ADC_CTRL		REG32(ADC_BASE + 0x00)
-#define ADC_CTRL_RESET		(1u << 3)
-
 #define UHF_FROM_HZ		200000000u	// VHF / UHF split of the path selects (5.2)
 // Mic gains in GCR_ADCL (dB), before the user's offset: DMR at power-on, DMR entry and DMR TX start, FM at each FM TX
 // start. The DM-32UV's 11 dB for all three until the SDR bench sets the FM ones (hardware-dm1801pro.md 12: speech on FM
@@ -109,17 +106,6 @@ static void path_pins(uint8_t vhf_pin, uint8_t uhf_pin, uint32_t hz, bool on)
 static void rx_path(uint32_t hz, bool on) { path_pins(PIN_RX_VHF, PIN_RX_UHF, hz, on); }
 static void tx_path(uint32_t hz, bool on) { path_pins(PIN_TX_VHF, PIN_TX_UHF, hz, on); }
 
-static void dac_b_power(bool on)
-{
-	uint32_t s = hrc_irq_save();
-	if (on) {
-		DAC_PD_CTRL &= ~DAC_B_OFF;
-	} else {
-		DAC_PD_CTRL |= DAC_B_OFF;
-	}
-	hrc_irq_restore(s);
-}
-
 // The PA drive as a ramp, so the carrier doesn't splatter (5.4: 40 steps)
 static void pa_ramp(uint16_t from, uint16_t to)
 {
@@ -128,17 +114,6 @@ static void pa_ramp(uint16_t from, uint16_t to)
 		DAC_DATA_B = (uint32_t)v;
 		hal_delay_us(PA_RAMP_STEP_US);
 	}
-}
-
-static bool in_band(uint32_t hz, bool tx)
-{
-	for (uint8_t i = 0; i < board.band_count; i++) {
-		const band_t *b = &board.bands[i];
-		if (hz >= b->lo_hz && hz <= b->hi_hz) {
-			return !tx || b->tx;
-		}
-	}
-	return false;
 }
 
 static uint16_t fm_bw_reg(radio_bw_t bw)
@@ -243,18 +218,7 @@ static void init(void)
 	modem.fm_tx_limit[0] = FM_TX_LIMIT_12K5;
 	modem.fm_tx_limit[1] = FM_TX_LIMIT_25K;
 	modem.rf_tx_lead = RF_TX_LEAD;
-	// modem-hrc7000.md 4 steps 1-3: ADC reset and idle, DAC B to its pin, DACs B and C on with the PA drive at 0
-	ADC_CTRL = ADC_CTRL_RESET;
-	hal_delay_us(2);
-	ADC_CTRL = 0;
-	uint32_t s = hrc_irq_save();
-	IO_DIPLEX2 &= ~IO_DIPLEX2_DAC_B;
-	hrc_irq_restore(s);
-	DAC_PD_CTRL = 0x01u;
-	DAC_PD_MODE_EN = 0x01u;
-	DAC_DATA_A = 0;
-	DAC_DATA_B = 0;
-	DAC_DATA_C = DAC_C_INIT;
+	hrc_modem_analog_init(DAC_C_INIT);
 	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DMR_DB);
 
 	hrc_pin_out(PIN_RF_CS, true);
@@ -278,7 +242,7 @@ static void set_mode(radio_mode_t m)
 	}
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
 		fd6818_set_mode(&fd, FD6818_MODE_DMR);
-		dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
+		hrc_dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
 		hrc7000_dmr_enter(&modem, mod_bias(rx_hz), hrc7000_mic_db(MIC_GAIN_DMR_DB, mic_offset_db));
 		mode = RADIO_MODE_DMR;
 		hrc_dmr_enter();
@@ -295,7 +259,7 @@ static void set_mode(radio_mode_t m)
 
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 {
-	if (!in_band(hz, false)) {
+	if (!board_in_band(hz, false)) {
 		return false;
 	}
 	DAC_DATA_B = 0;
@@ -310,7 +274,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
 		fd6818_set_state(&fd, FD6818_STATE_RX);
 		rx_path(hz, true);
-		dac_b_power(false);
+		hrc_dac_b_power(false);
 		hrc7000_fm_rx(&modem, bw == RADIO_BW_25K);
 		hrc7000_audio_bits(&modem, 0, C7_AUDIO_FM_PLAY);	// FM plays on the analog path (speaker_source)
 		// The FD6818 detects the tone on its own demodulated audio: while it plays FM to the speaker (PTB15 high) the
@@ -332,7 +296,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 // waits are an uncalibrated busy-wait count; 1 ms each is at least as long
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 {
-	if (!in_band(hz, true) || !bf_cal_valid()) {
+	if (!board_in_band(hz, true) || !bf_cal_valid()) {
 		return false;
 	}
 	// Levels 0..2 are the factory's low, mid and high rows, as the radio's own power setting picks them
@@ -345,7 +309,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
 	fd6818_set_freq(&fd, mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz);
 	fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the HR_C7000's
-	dac_b_power(true);
+	hrc_dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
 		// The FD6818 and the RX path receive until our first burst and between bursts; dmr_rf_switch keys each burst
 		// with the TX path, and the drive waits for the PA one-shot. A hotspot stays keyed like this while it listens,
