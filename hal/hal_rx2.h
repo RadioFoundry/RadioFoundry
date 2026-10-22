@@ -51,6 +51,13 @@ typedef struct {
 	// Its received audio to the speaker (true) or muted. The core gives it the speaker while the main receiver is
 	// quiet: the selected channel's calls always win
 	void (*audio)(bool on);
+	// Optional, NULL where there is no route: the second SoC's update path (docs/spec/rx2-link.md 4). Send it RX2_STUB,
+	// so it restarts into its first stage's long window, then copy bytes between the PC cable's UART and the link both
+	// ways, with the transmitter off and the watchdog fed. It ends 10 s after the host's last byte (90 s if none came;
+	// bytes from the second SoC don't count). Never returns: the radio restarts when the bridge ends
+	void (*bridge)(void);
+	// Optional: restart the second SoC (RX2_RESET)
+	void (*restart)(void);
 } hal_rx2_t;
 
 #endif

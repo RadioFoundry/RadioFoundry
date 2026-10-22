@@ -611,6 +611,21 @@ answered refused (7). A test is dropped if PTT went down between the reply and i
 view's `watchdog.starved_ms` counts from the last feed; its last value before the link goes quiet bounds the timeout.
 `odr_debug.py watchdog [show|clear-gap|test starve|spin|irq-off|load H L [RST]]`.
 
+### 3.22 RX2
+
+The second receiver's SoC, on a radio with two (`board.rx2`, the GD-88; [rx2-link.md](rx2-link.md)). Always built. On
+a radio with one SoC, INFO answers no flags and the rest `DL_ST_UNAVAILABLE`.
+
+| Op | Name | Arguments | Reply / effect |
+|---|---|---|---|
+| 0 | INFO | none | flags u8: bit 0 a second receiver, 1 it answers, 2 the update bridge is there, 3 so is RESTART |
+| 1 | BRIDGE | token u32 | about 100 ms after the reply: the second SoC is sent to its first stage, and the cable is bridged to it ([rx2-link.md](rx2-link.md) 4). Never returns; the radio restarts when the host has been quiet for a while |
+| 2 | RESTART | token u32 | the second SoC restarts |
+
+The token is `'BRDG'` (`0x47445242`, little endian in the payload); another value, or a transmitting radio, is
+answered refused (7). The bridge is dropped if PTT went down between the reply and its start.
+`odr_debug.py rx2 [info|restart]`; `stubtool.py --board gd88b` uses BRIDGE.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -622,6 +637,8 @@ view's `watchdog.starved_ms` counts from the last feed; its last value before th
 - STUB ENTER is refused while transmitting, and the transmitter is switched to receive before the jump (3.18).
 - CRASH TEST needs its token and is refused while transmitting (3.19).
 - WATCHDOG TEST and LOAD need their token and are refused while transmitting; each ends in a reset (3.21).
+- RX2 BRIDGE and RESTART need their token and are refused while transmitting. The bridge keeps the transmitter off
+  and ends in a restart (3.22).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the stock bootloader is proprietary).

@@ -76,5 +76,18 @@ B sends one on every change, and at least every 500 ms.
 
 ## 4. Updating B
 
-B has no USB or PC connector of its own. To update it, A sends `STUB`. B jumps to its flash stub, which listens on the
-link UART. A then bridges its PC UART to the link UART (stub/README.md). `odrflash --board gd88b` does this.
+B has no USB or PC connector of its own. Its first install goes through its IAP loader. Later ones go through A:
+
+1. The host asks A's debug link for the bridge (`DL_CMD_RX2` BRIDGE, [debuglink.md](debuglink.md) 3.22).
+2. After the reply, A sends `STUB`. B writes `STAY` (0x53544159) at 0x0004FFF8 and jumps to its first stage at
+   0x0300C000 ([boot/README.md](../../boot/README.md)).
+3. A copies bytes between the PC cable (UART1) and the link (UART3) both ways. Its transmitter stays off, and it feeds
+   its watchdog.
+4. B's first stage sees `STAY` and offers the boot ROM's handshake on the link for up to a minute. The host answers
+   through A and loads the stub, which is told to stay on UART3.
+5. The host writes B's image and restarts B (`--boot reset`).
+6. A restarts 10 s after the host's last byte, or after 90 s if the host never sends one. It finds B again with
+   `HELLO_REQ`. Bytes from B don't count: its handshake offers go on until the host answers.
+
+The link stays at 115200 baud through the bridge: the host does not switch speed. `stubtool.py --board gd88b`
+does steps 1, 4 and 5. Without a host, B's first stage starts B's application again after the minute, and A restarts.
