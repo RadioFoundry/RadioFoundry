@@ -6,9 +6,13 @@
 # Ubuntu 24.04 and csky-elf GCC in /opt/csky-elf; that image itself is not changed.
 #
 #   docker build -t odr/ci-runner:latest --build-arg BASE=odr/csky-gcc14:latest \
+#       --build-arg ARM_GCC_VERSION="$(tools/platform_toolchain.sh stm32f4 version)" \
+#       --build-arg ARM_GCC_SHA256="$(tools/platform_toolchain.sh stm32f4 sha256)" \
 #       -f tools/ci-runner/Dockerfile tools
 #
 # The build context is tools/ (install-arm-toolchain.sh and ci-runner/). Every download is pinned and checksummed.
+# The Arm toolchain's pin is platform/stm32f4/platform.toml's, passed in as build arguments: this file has no copy
+# (tools/boards.py check fails on one that differs), and the build stops without them.
 ARG BASE=odr/csky-gcc14:latest
 FROM ${BASE}
 
@@ -18,8 +22,8 @@ ARG NODE_VERSION=22.23.3
 ARG NODE_SHA256=df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de
 ARG GH_VERSION=2.102.0
 ARG GH_SHA256=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386
-ARG ARM_GCC_VERSION=13.3.rel1
-ARG ARM_GCC_SHA256=95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4
+ARG ARM_GCC_VERSION
+ARG ARM_GCC_SHA256
 # the runner's uid; match the owner of the host directory mounted at /work
 ARG RUNNER_UID=1000
 
@@ -45,7 +49,9 @@ RUN set -eu; cd /tmp; \
 
 # The pinned Arm GNU Toolchain, trimmed, the same way CI installs it (in /opt; the entrypoint links it into ~/opt)
 COPY install-arm-toolchain.sh /tmp/install-arm-toolchain.sh
-RUN HOME=/ RUNNER_TEMP=/tmp ARM_GCC_VERSION=${ARM_GCC_VERSION} ARM_GCC_SHA256=${ARM_GCC_SHA256} \
+RUN [ -n "${ARM_GCC_VERSION}" ] && [ -n "${ARM_GCC_SHA256}" ] || \
+		{ echo "pass --build-arg ARM_GCC_VERSION and ARM_GCC_SHA256 from platform/stm32f4/platform.toml" >&2; exit 1; }; \
+	HOME=/ RUNNER_TEMP=/tmp ARM_GCC_VERSION=${ARM_GCC_VERSION} ARM_GCC_SHA256=${ARM_GCC_SHA256} \
 	sh /tmp/install-arm-toolchain.sh && rm /tmp/install-arm-toolchain.sh
 ENV ARM_GCC_DIR=/opt/arm-gnu-toolchain-${ARM_GCC_VERSION}-x86_64-arm-none-eabi/bin/ \
 	ARM_GCC_NAME=arm-gnu-toolchain-${ARM_GCC_VERSION}-x86_64-arm-none-eabi
