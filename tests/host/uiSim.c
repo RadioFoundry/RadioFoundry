@@ -51,6 +51,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "rx_private", "rx:3105678,0,p" },
 	{ "tx", "pttdown" },
 	{ "tx_private", "5 6 3 ok wait:5000 pttdown" },
+	{ "tx_dtmf", "down pttdown dtmf:5551234#" },	// DTMF sent on FM (radio-features.md 3.7)
 	{ "banner_message", "msg:3101234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery." },
 	{ "banner_call_alert", "alert:3105678" },
 	{ "banner_radio_check", "call:3101234,91,g wait:11000 ctx 4 wait:1000" },

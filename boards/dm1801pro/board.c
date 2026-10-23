@@ -28,34 +28,34 @@ static const char *const power_names[] = { "L", "M", "H" };
 
 // docs/ux/information-architecture.md 7.6. The key bits are read off the radio (input_dm1801pro.c)
 static const keymap_entry_t keymap[] = {
-	{ KEY_MENU, ACT_SELECT, ACT_SELECT, false, false },
-	{ KEY_BACK, ACT_BACK, ACT_BACK, false, false },
-	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true },
-	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
-	{ KEY_LEFT, ACT_NAV_LEFT, ACT_USER_1, false, true },
-	{ KEY_RIGHT, ACT_NAV_RIGHT, ACT_USER_4, false, true },
-	{ KEY_VFO_MR, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false },
+	{ KEY_MENU, ACT_SELECT, ACT_SELECT, false, false, 0 },
+	{ KEY_BACK, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
+	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ KEY_LEFT, ACT_NAV_LEFT, ACT_USER_1, false, true, 0 },
+	{ KEY_RIGHT, ACT_NAV_RIGHT, ACT_USER_4, false, true, 0 },
+	{ KEY_VFO_MR, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false, 0 },
 #if CONFIG_DUAL_WATCH
-	{ KEY_AB, ACT_AB, ACT_DUAL_WATCH, false, false },	// zones: hold Left / Right, or Zones
+	{ KEY_AB, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },	// zones: hold Left / Right, or Zones
 #else
-	{ KEY_AB, ACT_ZONE_UP, ACT_ZONE_UP, false, false },
+	{ KEY_AB, ACT_ZONE_UP, ACT_ZONE_UP, false, false, 0 },
 #endif
-	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false },
-	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ KEY_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false },
-	{ KEY_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false },
-	{ KEY_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false },
-	{ KEY_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false },
-	{ KEY_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false },
-	{ KEY_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false },
-	{ KEY_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false },
-	{ KEY_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
-	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false },
-	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
-	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ KEY_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ KEY_SOS, ACT_NONE, ACT_EMERGENCY, false, false },
-	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false, '*' },
+	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, '#' },
+	{ KEY_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },
+	{ KEY_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
+	{ KEY_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false, 0 },
+	{ KEY_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false, 0 },
+	{ KEY_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 },
+	{ KEY_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
+	{ KEY_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 },
+	{ KEY_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
+	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
+	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
+	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ KEY_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ KEY_SOS, ACT_NONE, ACT_EMERGENCY, false, false, 0 },
+	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 
 // Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): side key 1, side key 2

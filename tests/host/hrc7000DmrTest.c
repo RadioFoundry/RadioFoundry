@@ -665,6 +665,22 @@ static void test_tx_tone(void)
 	hrc7000_tx_tone_key(&dev, true);	// no tone: nothing
 	CHECK(REG(C7_TONE_SEND_CTRL) == 0);
 	CHECK(hrc7000_dtmf_dev(446000000u, false) == 0xC0u && hrc7000_dtmf_dev(446000000u, true) == 0xFFu);
+
+	// DTMF (radio-features.md 3.7): the low tone's step in FM_TONE1, the high one's in FM_TONE3, digit 1 sent with
+	// the voice muted (b6 = 0) while it sounds; another digit retunes; 0 ends it with the microphone back and the
+	// defaults restored; a digit outside the table changes nothing
+	setup();
+	REG(C7_SUBVOICE_COEF) = 0x07D00930u;
+	CHECK(hrc7000_tx_dtmf(&dev, 'D', 0xC0));
+	CHECK(REG(C7_FM_TONE1) >> 16 == 1927u && REG(C7_FM_TONE3) >> 16 == 3344u);	// round(941 / 1633 x 2.048)
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0x81u && (REG(C7_FM_MOD) & 0x2u) && REG(C7_SUBVOICE_COEF) == 0x07D0C030u);
+	CHECK(hrc7000_tx_dtmf(&dev, '1', 0xC0));
+	CHECK(REG(C7_FM_TONE1) >> 16 == 1427u && REG(C7_FM_TONE3) >> 16 == 2476u && REG(C7_TONE_SEND_CTRL) == 0x81u);
+	CHECK(!hrc7000_tx_dtmf(&dev, 'E', 0xC0) && REG(C7_FM_TONE1) >> 16 == 1427u && dev.tone_on);
+	CHECK(hrc7000_tx_dtmf(&dev, 0, 0));
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0 && (REG(C7_FM_MOD) & 0x2u) == 0 && !dev.tone_on);
+	CHECK(REG(C7_FM_TONE1) == 0x05930629u && REG(C7_FM_TONE3) == 0x09AC0AB0u && REG(C7_SUBVOICE_COEF) == 0x07D00930u);
+	CHECK(hrc7000_tx_dtmf(&dev, 0, 0) && REG(C7_TONE_SEND_CTRL) == 0);	// no tone: nothing
 }
 
 // Sub-audio: DCS TX code in CDCSS_ADDR b8:0 and RX in b24:16 (the guide); the sub-audio deviation doubles at 25 kHz

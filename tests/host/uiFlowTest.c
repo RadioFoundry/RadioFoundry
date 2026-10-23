@@ -436,6 +436,10 @@ static const flow_t flows[] = {
 	{ "T FM transmitting: a digit does nothing (#37)", "down pttdown", "5", "screen=home toast=none", 1, false },
 	{ "T FM transmitting: a held digit does nothing (#37)", "down pttdown", "long:5", "screen=home toast=none", 1, false },
 	{ "T DMR transmitting: a digit does nothing (#37)", "pttdown", "5", "screen=home toast=none", 1, false },
+	// DMR data without PTT (#148): Home stays, the activity line says SENDING, a call's screen is for voice
+	{ "T DMR data on the air: Home says SENDING", "", "datatx", "screen=home shows=SENDING hides=TALKING", 0, false },
+	{ "T DMR data done: Home goes back", "datatx", "dataend", "screen=home hides=SENDING", 0, false },
+	{ "T DMR voice: still TALKING", "", "pttdown", "shows=TALKING hides=SENDING", 1, false },
 	{ "T after the transmission a digit opens Find again", "down pttdown pttup", "5", "screen=find", 1, false },
 	{ "T a transmission without PTT (beacon) leaves the digits alone", "down autotx", "5", "screen=find", 1, false },
 	{ "T a refused transmission (RX only) leaves the digits alone", "ok 4 down ok up up up up up up up up pttdown", "5", "zone=1 pos=9 screen=find", 1, false },
