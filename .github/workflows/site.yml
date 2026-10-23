@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 #
-# The web site (docs/dev/website.md), built from the repository with site/build.py and deployed to GitHub Pages with
-# the newest release's firmware images for the flasher.
+# The web site (docs/dev/website.md), built from the repository with site/build.py, with the newest release's firmware
+# images for the flasher, and deployed to radiofoundry.org: the build is an artifact, and the `deploy` job runs on the
+# self-hosted runner labeled rfoundry-deploy (on the host that serves the site), which swaps it into nginx's web root.
 #
 #   nightly              rebuilt and deployed only when something changed since the last deployment: a file the site
 #                        is built from (the paths below), or a release published after it
@@ -10,8 +11,7 @@
 # Pull requests don't run it: their unit-tests job (tools/ci.sh's Python step) builds the site with --strict and runs
 # the web flasher's tests already.
 #
-# Needs Pages enabled with "GitHub Actions" as the source (repository Settings > Pages); until then the nightly and
-# manual runs stop after the check.
+# Needs the rfoundry-deploy runner (docs/dev/website.md, Hosting); without it the deploy job waits in the queue.
 name: Web site
 
 on:
@@ -24,7 +24,7 @@ permissions:
 
 concurrency:
   # one deployment at a time
-  group: pages
+  group: site
   cancel-in-progress: false
 
 env:
@@ -41,7 +41,6 @@ jobs:
     permissions:
       contents: read
       deployments: read
-      pages: read
     outputs:
       build: ${{ steps.check.outputs.build }}
     steps:
@@ -55,11 +54,10 @@ jobs:
         run: |
           set -u
           decide() { echo "build=$1" >> "$GITHUB_OUTPUT"; echo "build=$1: $2"; exit 0; }
-          gh api "repos/$REPO/pages" > /dev/null 2>&1 || decide false "GitHub Pages isn't enabled (Settings > Pages, source GitHub Actions)"
           [ "${{ github.event_name }}" = workflow_dispatch ] && decide true "run by hand"
-          # the newest github-pages deployment whose latest status is success
+          # the newest deployment of the site whose latest status is success
           last="" at=""
-          for id in $(gh api "repos/$REPO/deployments?environment=github-pages&per_page=20" --jq '.[].id' 2> /dev/null); do
+          for id in $(gh api "repos/$REPO/deployments?environment=site&per_page=20" --jq '.[].id' 2> /dev/null); do
             state=$(gh api "repos/$REPO/deployments/$id/statuses?per_page=1" --jq '.[0].state' 2> /dev/null || true)
             if [ "$state" = success ]; then
               last=$(gh api "repos/$REPO/deployments/$id" --jq .sha || true)
@@ -111,20 +109,36 @@ jobs:
         run: |
           python3 site/build.py --strict --out build/site --firmware dist \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" --ref "${{ github.sha }}"
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
+          name: site
           path: build/site
+          retention-days: 7
 
   deploy:
     needs: build
     if: needs.build.result == 'success'
-    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    # the host that serves the site: it writes the web root directly, no keys and no network crossing. Only this
+    # workflow's scheduled and manual runs reach it, never a pull request
+    runs-on: [self-hosted, rfoundry-deploy]
     permissions:
-      pages: write
-      id-token: write
+      contents: read
     environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      name: site
+      url: https://radiofoundry.org
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: site-out
+      - name: Swap the new build in
+        run: |
+          set -eu
+          root=/var/www/radiofoundry
+          id="${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
+          rsync -a --delete site-out/ "$root/releases/$id/"
+          ln -sfn "$root/releases/$id" "$root/current.new"
+          mv -T "$root/current.new" "$root/current"   # atomic: nginx never sees a half-written site
+          # keep the last three builds to roll back to
+          find "$root/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn | tail -n +4 | cut -d' ' -f2- | xargs -r rm -rf
+          echo "deployed $id"

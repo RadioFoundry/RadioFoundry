@@ -18,7 +18,7 @@ The generator needs one Python package, markdown-it-py (`pip install -r site/req
 command with `uv run --no-project --with-requirements site/requirements.txt`). The pages need no build step and no
 npm packages: plain HTML, CSS and ES modules. `tools/ci.sh` builds the site and runs the tests (Python step).
 
-`.github/workflows/site.yml` deploys it to GitHub Pages:
+`.github/workflows/site.yml` builds it and deploys it to radiofoundry.org (see [Hosting](#hosting)):
 
 | Run | Does |
 |---|---|
@@ -27,6 +27,20 @@ npm packages: plain HTML, CSS and ES modules. `tools/ci.sh` builds the site and 
 | Pull request | Not run: the pull request's unit tests job builds the site (`--strict`) and runs the flasher's tests (`tools/ci.sh`'s Python step) |
 
 A merge or a release therefore shows on the site the next morning, or right away when the workflow is run by hand.
+
+## Hosting
+
+The site is static files. nginx serves them from `/var/www/radiofoundry/current`, a symlink to one directory under
+`releases/`. The workflow's `build` job uploads the finished site as an artifact. Its `deploy` job runs on a
+self-hosted runner labeled `rfoundry-deploy`, which sits on the host that serves the site. The job copies the build
+into a new `releases/<sha>-<run>` directory, swaps the symlink in one step and keeps the last three builds.
+Only the nightly and manual runs reach that runner, never a pull request.
+
+| Part | Setup |
+|---|---|
+| nginx | One server block on port 80 with `root /var/www/radiofoundry/current`. TLS and the public name are the reverse proxy's and the CDN's |
+| Runner | A user without sudo that owns `/var/www/radiofoundry`, with a runner registered for the repository with the label `rfoundry-deploy` |
+| Roll back | Point `current` at an earlier directory in `releases/` (`ln -sfn releases/<id> current.new && mv -T current.new current`) |
 
 ## Sources
 
