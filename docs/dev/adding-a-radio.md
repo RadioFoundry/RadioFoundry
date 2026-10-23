@@ -138,6 +138,7 @@ What the docs claim for a radio comes from its records, so each step above ends 
   its line for visitors. A survey row that names a board is the board's row, so the site doesn't list it as planned.
 - Before it can be released: its `board.toml` `[flash]` and `[codec]` tables, `[status] release = "stable"` and the
   regenerated `tools/odrflash/odrflash/registry.json` (`tools/boards.py json --for odrflash --out ...`). The release
-  workflow's job for its platform then builds and packages it, with each build option value
+  workflow's job for its toolchain then builds and packages it, with each build option value
   ([release.md](release.md#the-release-workflow)); CI and the nightly pick it up from the registry too
-  ([ci.md](ci.md)). No workflow edit, unless the radio brings a new platform.
+  ([ci.md](ci.md)). The jobs are grouped by toolchain (`platform.toml` `[toolchain] id`), so neither a new radio nor
+  a new platform on a known toolchain (another Arm SoC, say) needs a workflow edit. Only a new toolchain does.
