@@ -183,9 +183,9 @@ never handles the key. Updates of a radio that runs ODR need no stock file.
 
 | Job | Does |
 |---|---|
-| `firmware (<platform>)` | One job per platform (`stm32f4`, `hrc7000`). Sets up the platform's pinned compiler with `.github/actions/toolchain` ([ci.md](ci.md#toolchains)): the self-hosted image's, the Arm GNU Toolchain checked by SHA-256, or the csky-elf toolchain built from source and cached. On a tag runs `tools/ci.sh --quick --platform <platform>` as the gate. Then, for every board on the platform with `[status] release = "stable"` (`tools/boards.py list --release stable`), builds the default image and each build option value's image (`tools/boards.py builds`), runs `tools/release.py` on each, and uploads them as `firmware-<platform>` |
+| `firmware (<toolchain>)` | One job per toolchain: `firmware (Arm)` and `firmware (C-SKY)`. Sets up the pinned compiler with `.github/actions/toolchain` ([ci.md](ci.md#toolchains)): the self-hosted image's, the Arm GNU Toolchain checked by SHA-256, or the csky-elf image, never a source build. Without csky-elf GCC on the runner and without the image, the C-SKY job fails. On a tag runs the gate: `tools/ci.sh --quick --steps registry,host,python,licenses` on the runner, then `tools/ci.sh --quick --steps firmware --toolchain <id>` with the toolchain's compiler (through `tools/docker/csky-toolchain/run.sh` for the image). Then `tools/release_build.sh --toolchain <id>`, the same way: for every board on the toolchain with `[status] release = "stable"` (`tools/boards.py list --toolchain <id> --release stable`), it builds the default image and each build option value's image (`tools/boards.py builds`) and runs `tools/release.py` on each. Uploads them as `firmware-arm` or `firmware-csky` |
 | `odrflash` | On Ubuntu 22.04, macOS 14 (arm64), macOS 13 (x86_64) and Windows 2022: installs the package, runs its tests, builds a single-file executable with PyInstaller 6.11.1 (libusb from the `libusb-package` wheel, the `certifi` CA bundle, and `serial_loader`, `hrc7000_codec` and `stubtool` for the serial route inside) and runs `--version` on it |
-| `publish` | On a `v*` tag only, after every platform's job and every odrflash build passed: one `SHA256SUMS` over everything, checks every manifest against its image and that none includes the codec, creates the release if the manual workflow hasn't, uploads with `--clobber` |
+| `publish` | On a `v*` tag only, after every toolchain's job and every odrflash build passed: one `SHA256SUMS` over everything, checks every manifest against its image and that none includes the codec, creates the release if the manual workflow hasn't, uploads with `--clobber` |
 
 Pull requests that touch `tools/odrflash/`, `tools/release.py`, the serial flashing tools, the registry (`board.toml`,
 `board.mk`, `platform.toml`, `tools/boards.py`), the toolchain scripts, the toolchain action or the workflow build
@@ -208,14 +208,13 @@ emulator, not on a radio. `tools/md380_migrate.py` flashes it today and keeps th
 
 ## Adding the DM-32UV
 
-`[status] release = "stable"` in `boards/dm32/board.toml`, so the `hrc7000` job releases it; the open items are in
+`[status] release = "stable"` in `boards/dm32/board.toml`, so the `firmware (C-SKY)` job releases it; the open items are in
 [docs/testing/dm32-bringup.md](../testing/dm32-bringup.md).
 
-1. Toolchain: without the self-hosted runner the job builds the csky-elf toolchain with
-   `tools/build-csky-toolchain.sh` (GCC from `platform/hrc7000/platform.toml`, binutils and newlib pinned in the
-   script; about 45 minutes on four cores) and caches `~/toolchains/csky-elf` keyed by the GCC version and the
-   script's hash, so later releases restore it in seconds. A prebuilt toolchain archive attached to a tools release
-   would avoid the first build; that's a later choice.
+1. Toolchain: the job uses csky-elf GCC on the self-hosted runner, else the csky-elf image (`ODR_CSKY_IMAGE`). No
+   workflow builds the toolchain. The image is built by `tools/docker/csky-toolchain/build.sh`, which runs
+   `tools/build-csky-toolchain.sh` (GCC from `platform/hrc7000/platform.toml`), and published with `push.sh`
+   ([ci.md](ci.md#the-csky-elf-image)). A runner with neither fails the release.
 2. Flashing: the DM-32UV uses Baofeng's serial updater protocol ([hardware-dm32.md](../spec/hardware-dm32.md) 13.2), not
    DFU. odrflash would get a second backend speaking it over pyserial (the `serial-loader` family). The updater erases
    the whole application area before writing (step 7), the codec slot 0x030E8000..0x03100000 included, so **keep is not
@@ -227,7 +226,7 @@ emulator, not on a radio. `tools/md380_migrate.py` flashes it today and keeps th
 ## The DM-1801 Pro
 
 `[status] release = "stable"` in its `board.toml`; the open items are in
-[docs/testing/dm1801pro-bringup.md](../testing/dm1801pro-bringup.md). The `hrc7000` job releases it.
+[docs/testing/dm1801pro-bringup.md](../testing/dm1801pro-bringup.md). The `firmware (C-SKY)` job releases it.
 
 **Package.** `tools/release.py --board dm1801pro --version v0.1.0` packs `build/dm1801pro/odr_dm1801pro.bin` like any
 board: one range from 0x0300C000, `sectors` `[0]`, codec profile `dm1801pro-049` in "sector" 1 (the slot), not

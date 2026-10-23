@@ -114,9 +114,9 @@ jobs:
           if-no-files-found: ignore
 
   firmware:
-    # one job per platform, not per radio: one checkout and one toolchain for every board on it (tools/ci.sh --platform
-    # takes them from the registry, so a new radio joins with no edit here); each runner has 4 cores
-    name: firmware (${{ matrix.platform }})
+    # one job per toolchain, not per radio or platform: one checkout and one compiler for every board built with it
+    # (tools/ci.sh --toolchain takes them from the registry, so a new radio joins with no edit here); 4 cores each
+    name: firmware (${{ matrix.name }})
     needs: changes
     if: needs.changes.outputs.src == 'true'
     runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
@@ -124,8 +124,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # platform/*/platform.toml; a new platform also gets its set-up in .github/actions/toolchain
-        platform: [stm32f4, hrc7000]
+        # the [toolchain] ids of platform/*/platform.toml, with their names; a new platform on a toolchain listed here
+        # needs no edit, a new toolchain gets an entry here and its set-up in .github/actions/toolchain
+        include:
+          - { toolchain: arm, name: Arm }
+          - { toolchain: csky, name: C-SKY }
     permissions:
       contents: read
       packages: read   # pulling the private csky-elf image with the job token
@@ -147,7 +150,7 @@ jobs:
         id: tc
         uses: ./.ci-main/.github/actions/toolchain
         with:
-          platform: ${{ matrix.platform }}
+          toolchain: ${{ matrix.toolchain }}
           cache: "false"
           image: ${{ vars.ODR_CSKY_IMAGE }}
           registry: ${{ vars.ODR_CSKY_REGISTRY }}
@@ -158,13 +161,13 @@ jobs:
       - name: Default builds, warnings, size and app region fit
         env:
           RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
-          PLATFORM: ${{ matrix.platform }}
+          TOOLCHAIN: ${{ matrix.toolchain }}
         run: |
           set -u
           rc=0
-          $RUN tools/ci.sh --quick --steps firmware --platform "$PLATFORM" || rc=$?
+          $RUN tools/ci.sh --quick --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
           if [ "$rc" = 3 ]; then
-            echo "::notice::$PLATFORM builds skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::$TOOLCHAIN builds skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
@@ -172,7 +175,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: firmware-${{ matrix.platform }}
+          name: firmware-${{ matrix.toolchain }}
           path: |
             build/ci/size-report.md
             build/ci/*.log

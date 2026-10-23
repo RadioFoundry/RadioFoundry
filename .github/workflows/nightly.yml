@@ -2,10 +2,10 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
 # Nightly CI (docs/dev/ci.md): the long builds the per-push workflow leaves out, on the default branch.
-#   matrix       one job per platform (stm32f4, hrc7000), every board on it from the registry: a build per feature
+#   matrix       one job per toolchain (Arm, C-SKY), every board built with it from the registry: a build per feature
 #                switch turned off alone, fm-minimal and maximal, each with zero warnings and its size (tools/ci.sh
-#                --matrix --platform; about 4-5 minutes per board on the runner). C-SKY in the csky-elf image unless the
-#                runner has csky-elf GCC (skipped where the image isn't available)
+#                --matrix --toolchain; about 4-5 minutes per board on the runner). C-SKY in the csky-elf image unless
+#                the runner has csky-elf GCC (skipped where the image isn't available)
 #   reuse        `reuse lint`, reported as a warning until the tree passes it
 # A scheduled run builds only what changed since the last commit that passed: a successful run saves a cache entry
 # named after its commit (nightly-ok-<sha>, holding the sha), and the next scheduled run restores the newest one and
@@ -79,9 +79,9 @@ jobs:
           key: nightly-ok-${{ github.sha }}
 
   matrix:
-    # one job per platform: every board on it in turn (tools/ci.sh --platform, from the registry), so the checkout,
-    # submodules and toolchain are set up once per platform, not once per radio
-    name: matrix (${{ matrix.platform }})
+    # one job per toolchain: every board built with it in turn (tools/ci.sh --toolchain, from the registry), so the
+    # checkout, submodules and compiler are set up once per toolchain, not once per radio
+    name: matrix (${{ matrix.name }})
     needs: changes
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
     runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
@@ -89,8 +89,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # platform/*/platform.toml; a new platform also gets its set-up in .github/actions/toolchain
-        platform: [stm32f4, hrc7000]
+        # the [toolchain] ids of platform/*/platform.toml, with their names; a new platform on a toolchain listed here
+        # needs no edit, a new toolchain gets an entry here and its set-up in .github/actions/toolchain
+        include:
+          - { toolchain: arm, name: Arm }
+          - { toolchain: csky, name: C-SKY }
     permissions:
       contents: read
       packages: read   # pulling a private ghcr.io csky-elf image with the job token
@@ -104,24 +107,24 @@ jobs:
         id: tc
         uses: ./.github/actions/toolchain
         with:
-          platform: ${{ matrix.platform }}
+          toolchain: ${{ matrix.toolchain }}
           image: ${{ vars.ODR_CSKY_IMAGE }}
           registry: ${{ vars.ODR_CSKY_REGISTRY }}
           # a read-only registry token (secret); on GitHub a ghcr.io package linked to this repository takes the job's
           # own token (packages: read)
           registry-user: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
           registry-token: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
-      - name: Feature matrix of every board on the platform
+      - name: Feature matrix of every board on the toolchain
         env:
           ODR_CI_PRUNE: "1"   # keep the logs and images, not the build trees (about 65 MB each)
           RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
-          PLATFORM: ${{ matrix.platform }}
+          TOOLCHAIN: ${{ matrix.toolchain }}
         run: |
           set -u
           rc=0
-          $RUN tools/ci.sh --matrix --steps firmware --platform "$PLATFORM" || rc=$?
+          $RUN tools/ci.sh --matrix --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
           if [ "$rc" = 3 ]; then
-            echo "::notice::$PLATFORM matrix skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::$TOOLCHAIN matrix skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
@@ -129,7 +132,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: matrix-${{ matrix.platform }}
+          name: matrix-${{ matrix.toolchain }}
           path: |
             build/ci/size-report.md
             build/ci/*.log
