@@ -64,17 +64,19 @@ CONFIG_BCAST_FM ?= n
 CONFIG_AM_RX ?= n
 # 160x128 like the DM-1701, which builds without the large font
 CONFIG_FONT_XL ?= n
-# What the board lacks or can't do yet, one switch per line with the reason (tools/boards.py checks there is
-# one): ci's maximal configuration leaves these off. USB and USB_NETWORK are the platform's
-BOARD_UNSUPPORTED += NET_USRP	# 8 kHz PCM both ways is more than the 115200 baud host port carries (above)
-BOARD_UNSUPPORTED += HOTSPOT_SPLIT	# the per-burst TX path has no continuous base-station outbound (above)
-BOARD_UNSUPPORTED += SFR	# RX and TX switch every slot: the per-burst retune isn't timed for it (above)
-BOARD_UNSUPPORTED += APRS_RX	# no FM receive audio as PCM (the PCM path is the DMR modem's, above)
-BOARD_UNSUPPORTED += APRS_IGATE	# needs APRS receive, which needs the FM receive audio as PCM
-BOARD_UNSUPPORTED += BCAST_FM	# the RDA5802N broadcast receiver isn't wired yet
-BOARD_UNSUPPORTED += AM_RX	# the air band isn't wired yet
-BOARD_UNSUPPORTED += AUDIO_PROBE	# a bench diagnostic for an audio path this radio doesn't have
+# What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
+# docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off. USB and USB_NETWORK are the platform's
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (owner, 2026-10-22)
+# What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
+# maximal configuration too
+BOARD_NOT_WRITTEN += NET_USRP	# the host link stalls under USRP's PCM; the DM-32UV carries it at the same 115200 baud
+BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the per-burst TX path has no continuous base-station outbound yet (above)
+BOARD_NOT_WRITTEN += SFR	# RX and TX switch every slot: the per-burst retune isn't timed for it (above)
+BOARD_NOT_WRITTEN += APRS_RX	# FM receive audio isn't taken from the modem's AF ADC as PCM yet (above)
+BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
+BOARD_NOT_WRITTEN += BCAST_FM	# the RDA5802N broadcast receiver is fitted, its glue isn't written
+BOARD_NOT_WRITTEN += AM_RX	# the air band isn't wired yet
+BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe's audio tap (board.audio_tap) isn't written for this radio
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
 BOARD_REQUIRED := FM
