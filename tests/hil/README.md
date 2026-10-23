@@ -36,7 +36,7 @@ up a radio:
 python3 -m pytest tests/hil -v -rs -s --allow-rf --ambe ~/recordings/speech.ambe --dmr-freq MHZ
 ```
 
-`MHZ` is a frequency where the radio's current zone has a DMR channel and the SDR bench can transmit and receive. The
+`MHZ` is a frequency where one of the radio's zones has a DMR channel and the SDR bench can transmit and receive. The
 run includes the DMR audio smoke (`test_dmr_audio_smoke.py`, marker `audio_smoke`): real audio both ways, which no
 frame counter can check. Without `--allow-rf`, a radio or the SDR bench, these tests skip with a reason starting
 `DMR AUDIO NOT CHECKED`: such a run hasn't checked DMR audio. With the radio and the bench there, nothing else skips
@@ -197,8 +197,8 @@ Used by `_over()` (`test_dmr_tx_talker_alias`, `test_dmr_privacy_tx`), `test_dmr
 
 ## Rig assumptions
 
-- The radio on USB, with a codeplug whose current zone holds a DMR channel on the DMR test frequency (the tests
-  look for it by frequency and mode, and put the radio back on its channel afterwards).
+- The radio on USB, with a codeplug that holds a DMR channel on the DMR test frequency in any zone (the tests look
+  for it by frequency and mode, the current zone first, and put the radio back on its zone and channel afterwards).
 - The SDR bench reachable by SSH without a password (passwordless sudo for `systemctl` there), with the odr_sdrbench
   package in `$ODR_SDR_BENCH_PY`'s environment and the bench tools installed (`tools/bench/dmr_bench.py sync`; the
   FM tests copy `tools/sdr_fm_check.py` there themselves). Its
