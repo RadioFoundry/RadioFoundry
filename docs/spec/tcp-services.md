@@ -101,13 +101,18 @@ header lines are skipped, except `Sec-WebSocket-Key` (any case) for `/ws`; a req
 
 Static files: every file in `core/net/http_assets/` (html, css, js, svg, ...: add one there and it is served at
 `/<name>`, the type from its extension) is put into a table at build time by `tools/gen_http_assets.py` (run by make
-into the build's `gen/http_assets_gen.h`: path, Content-Type, bytes, length, gzip flag). With `CONFIG_NET_HTTP_GZIP`
+into the build's `gen/http_assets_gen.h`: path, Content-Type, bytes, length, gzip flag). The script minifies each file
+first: comments and the whitespace between tags go, and so does the whitespace in CSS and scripts that the syntax
+doesn't need. Strings, templates and regular expressions are kept as they are, and names are not shortened (that
+would save about 9% of the page's script, at the cost of a node toolchain in the build). With `CONFIG_NET_HTTP_GZIP`
 (the default with `CONFIG_NET_HTTP`) the files are stored gzip compressed (level 9, mtime 0: the same bytes on every
 build machine) and served with `Content-Encoding: gzip`; off, stored and served as they are. A gzip response goes
 whatever the request's `Accept-Encoding` says: a request without the header accepts any coding (RFC 9110 12.5.3),
 every browser takes gzip, and keeping a plain copy too would cost the flash the compression saves; `curl` needs
-`--compressed`. `index.html` today: 498 bytes, 360 gzip compressed. Host test: `httpAssetsTest` (the table, gzip and
-plain, decompresses to the sources), `netSvcTest` (the bytes and headers served).
+`--compressed`. `index.html` today: 498 bytes, 360 gzip compressed; the web control page (5.1) 16.5 KB, 5.9 KB
+minified and compressed. Host test: `httpAssetsTest` (the table, gzip and plain, and the web control set decompress to
+the minified sources; with node on the PATH, every minified script still parses), `netSvcTest` (the bytes and headers
+served).
 
 Bodies stream into TCP as its buffer frees up: the files from flash and the screen straight from the frame buffer;
 JSON is rendered once into a shared 1.5 KB buffer (a view section's text into its upper part, the JSON written from

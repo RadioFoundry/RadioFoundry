@@ -1128,3 +1128,25 @@ check-run:
 		grep -qE "(^|[[:space:];&|(])\./$$t([[:space:];>|)]|$$)" $(MAKEFILE_LIST) || \
 			{ echo "tests/host: no run group runs $$t (add it to one, or to HELPERS)"; exit 1; }; done
 .PHONY: check-run
+
+# The web control page's set (CONFIG_NET_WEBCTL) in its own table: its index.html replaces the plain one, so the two
+# can't share a table. A radio with a drawing gives it its keys.json and radio.svg
+WEBCTL_BOARD  := $(notdir $(basename $(firstword $(wildcard $(ROOT)/site/static/img/radios/src/*.svg))))
+WEBCTL_ASSETS := $(sort $(wildcard $(ROOT)/core/net/webctl_assets/*)) gen/webctl/keys.json gen/webctl/radio.svg
+TESTS   += httpAssetsTestWebctl
+
+gen/webctl/keys.json: $(ROOT)/tools/gen_webctl_assets.py
+	@python3 -I $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_BOARD) gen/webctl > /dev/null
+gen/webctl/radio.svg: gen/webctl/keys.json
+gen/webctl/http_assets_gen.h: $(WEBCTL_ASSETS) $(ROOT)/tools/gen_http_assets.py
+	@python3 -I $(ROOT)/tools/gen_http_assets.py --gzip $@ $(WEBCTL_ASSETS) > /dev/null
+	@touch $@
+httpAssetsTestWebctl: httpAssetsTest.c $(CORE)/net/http_assets.h gen/webctl/http_assets_gen.h
+	$(CC) $(CFLAGS) -Igen/webctl -o $@ httpAssetsTest.c
+
+run: run-webctlassets
+run-webctlassets: httpAssetsTestWebctl
+	@mkdir -p out/http_webctl
+	./httpAssetsTestWebctl out/http_webctl
+	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_webctl $(WEBCTL_ASSETS)
+.PHONY: run-webctlassets
