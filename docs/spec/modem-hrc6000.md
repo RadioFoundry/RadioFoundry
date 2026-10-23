@@ -593,6 +593,17 @@ layer 2. The driver writes each slot's frame (`bsOutboundRawSlot`) to both halve
 isn't known, and nothing to 0x50, 0x52 or the vocoder. Variant 1 keeps the layer 2 framing (0x52 and the short LC
 written for every burst) for comparison; 255 adds up to four raw page 4 pairs at key-up. Host test: `tests/host/hrc6000BsTest.c`.
 
+**Restarting the slot timer** (ALIGN, `split-duplex.md` 3.8; DM-1701 bench 2026-10-21, tag BENCH): 0x41 = 0x00,
+0x40 = 0xC3, 0x41 = 0x20, 0x00, 0x20, 0x00 (the 5.1 sync drop), then 0x40 = 0xE3 at the chosen time. The first
+timeslot interrupt comes 1.18-1.24 ms after that write and every 30 ms from it, and none comes during the wait. Clearing
+TxEn and RxEn (0x40 = 0x03) or 0xC3 then 0xE3 without the sync drop stopped the timer only sometimes: interrupts kept
+coming during the wait and the old phase came back. The driver takes no interrupt while it waits and gives the
+requested slot to the first boundary after the write; the diagnostics line `bs` shows the restarts (`rs`), interrupts
+during waits (`ri`) and the first three after the last write (`r1`-`r3`, µs).
+
+**No slewing.** The manual lists no slot length trim, so the driver offers no `bs_slew` and INFO capability bit 2
+stays clear: a keyed TX half reports its drift (ALIGN flag 10) and is re-aligned by a restart at the next unkey.
+
 
 ### 9.2 BS framing bench results (2026-10-11 and 12)
 

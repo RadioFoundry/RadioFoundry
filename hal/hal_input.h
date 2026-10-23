@@ -43,12 +43,15 @@ typedef struct {
 
 // One physical key: its bit in the scan mask and its short / long logical actions.
 // raw_edges: report DOWN / UP instead of PRESS / LONG (PTT, monitor)
+// dtmf: the DTMF digit the key sends while PTT is held on FM ('*', '#', 'A'-'D'; docs/spec/radio-features.md 3.7).
+// 0 = a digit key's own digit (ACT_DIGIT_n short action), none for other keys
 typedef struct {
 	uint8_t bit;
 	uint8_t short_action;
 	uint8_t long_action;
 	bool raw_edges;
 	bool repeat;
+	char dtmf;
 } keymap_entry_t;
 
 // The encoder decoder's own counts, for the debug link (core/input, input_encoder_stats)

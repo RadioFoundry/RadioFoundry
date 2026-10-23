@@ -307,6 +307,7 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 31 | mode u8, cc u8, ts u8 | `radio_req_mode`, `radio_req_dmr_color_code`, `radio_req_dmr_timeslot` in one request: mode 0 FM, 1 DMR (0xFF = keep), color code 0 to 15 (0xFF = keep), timeslot 1 or 2 (0 = keep). On a channel these are temporary changes, in the VFO the VFO's own settings (`dmr-voice.md` 2.1); the radio core refuses what it can't do (a mode change in a VFO needs both `VFO_FM` and `VFO_DMR`; check the `core` view). UNAVAILABLE without `CONFIG_DMR`. `odr_debug.py radio mode fm\|dmr`, `radio cc N`, `radio ts N` |
 | 32 | none | `radio_req_vfo_copy`: copy the channel on view to the VFO and open it (`dmr-voice.md` 2.2). The check is the radio core's own, made on the current view: OK when the request went out (read the `core` view for the VFO's values), REFUSED for a mode without a VFO in this build or a frequency outside the bands, UNAVAILABLE without a VFO or when already in the VFO. `odr_debug.py radio copy-vfo` |
 | 33 | on u8 (0 / 1) | the DMR voice test signal (`ambeVoiceSetTestSignal`, RAM only): 1 the encoder gets a generated triangle tone, about -12 dBFS, whose pitch steps through 300, 500, 700, 1100 and 1500 Hz one vocoder frame (20 ms) each, in place of the mic; 0 the mic again. Consecutive frames differ, so an over carries known, varying audio whatever the mic hears (`tests/hil/test_dmr_audio_smoke.py`). BAD_ARG above 1, UNAVAILABLE without DMR. The `dmr` section shows it as `voice.tx_test`. `odr_debug.py radio voice-test on` / `off` |
+| 34 | digit u8, down u8 | `radio_req_dtmf`: a DTMF key's down (1) or up (0) during FM TX (`radio-features.md` 3.7), with the same timing as a key. digit is ASCII `0`-`9`, `*`, `#`, `A`-`D`. A down is REFUSED unless the `features` view's `dtmf_ready` is 1; an up is always taken. A digit that isn't DTMF or a short argument answers BAD_ARG, a build without `CONFIG_DTMF` UNAVAILABLE. `odr_debug.py radio dtmf DIGITS [ms]` |
 
 Ops 15-18 last until the channel changes (`dmr.target_manual`); in the DMR VFO ops 15 and 16 set the VFO's own target, which is kept. Unavailable ops answer UNAVAILABLE.
 
@@ -489,7 +490,12 @@ View keys: `split.built`, `split.role` (normal, tx, rx), `split.offered` (INFO b
 `split.underruns2`, `split.at_host` (the host's AT mask now), `split.at_on_air`, `split.cach` (CACH bursts sent),
 `split.idle`, `split.silence`, `split.closed`, `split.slc_taken`, `split.slc_bad`; RX half: `split.epoch_us`,
 `split.period_ns`, `split.epoch_age_s` (65535 never), `split.offset_us` (the last phase residual), `split.track_us`
-(the anchor's correction), `split.busy`, `split.labeled1` / `split.labeled2`, `split.unlabeled`. No GET_VIEW section
+(the anchor's correction), `split.busy`, `split.labeled1` / `split.labeled2`, `split.unlabeled`; ALIGN and the
+scheduled stream (`split-duplex.md` 3.8, 3.9): `split.stream`, `split.align` (STATUS 46), `split.phase_us` (STATUS
+42-45), `split.snap_adj_us` (the learned restart delay), `split.cbase` (ALIGN counter minus the driver's),
+`split.sched_sent`, `split.sched_late`, `split.sched_refused`, `split.sched_replaced`, `split.sched_cooldown`,
+`split.slew_steps` / `split.slew_us` (slot trims asked of the driver and their sum, µs), `split.meta_sent` (RX_META
+events, 3.10). No GET_VIEW section
 is added, so section numbers stay the same in every build. `odr_debug.py split view | variant N [REG=VAL ...]`.
 
 ### 3.16 APRS

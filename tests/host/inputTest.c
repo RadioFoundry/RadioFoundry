@@ -9,15 +9,17 @@ static int failures;
 static int checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
-enum { K_OK, K_UP, K_PTT, K_MON, K_SIDE, K_TOP };
+enum { K_OK, K_UP, K_PTT, K_MON, K_SIDE, K_TOP, K_5, K_STAR };
 
 static const keymap_entry_t keymap[] = {
-	{ K_OK, ACT_SELECT, ACT_QUICK, false, false },
-	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true },
-	{ K_PTT, ACT_PTT, ACT_PTT, true, false },
-	{ K_MON, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ K_SIDE, ACT_USER_1, ACT_NONE, false, false },
-	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false },
+	{ K_OK, ACT_SELECT, ACT_QUICK, false, false, 0 },
+	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
+	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+	{ K_MON, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ K_SIDE, ACT_USER_1, ACT_NONE, false, false, 0 },
+	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false, 0 },
+	{ K_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
+	{ K_STAR, ACT_QUICK, ACT_QUICK, false, false, '*' },
 };
 
 #define MAXEV 128
@@ -225,6 +227,75 @@ static void test_encoder_idle(void)
 	CHECK(now - e.last_activity_ms == 0);	// holding a key counts as activity
 }
 
+// DTMF keys (radio-features.md 3.7): their edges go to the callback; a hold it takes sends no gestures
+static bool dtmf_take;
+static char dtmf_log[16];
+static int dtmf_n;
+static bool dtmf_cb(char digit, bool down, void *ctx)
+{
+	(void)ctx;
+	if (dtmf_n < 15) {
+		dtmf_log[dtmf_n++] = down ? digit : (char)(digit | 0x80);	// bit 7: an up
+	}
+	return dtmf_take;
+}
+
+static void test_dtmf(void)
+{
+	CHECK(input_dtmf_digit(&keymap[K_5]) == '5' && input_dtmf_digit(&keymap[K_STAR]) == '*');
+	CHECK(input_dtmf_digit(&keymap[K_OK]) == 0 && input_dtmf_digit(&keymap[K_PTT]) == 0);
+	// No callback: a digit key is a digit key
+	reset(0);
+	keys = 1u << K_5;
+	run(100, 0);
+	keys = 0;
+	run(30, 0);
+	CHECK(nev == 1 && evs[0].action == ACT_DIGIT_5 && evs[0].gesture == GESTURE_PRESS);
+	// Taken: down and up to the callback, no PRESS, no LONG however long it is held
+	reset(0);
+	input_engine_set_dtmf(&e, dtmf_cb, NULL);
+	dtmf_take = true;
+	dtmf_n = 0;
+	keys = 1u << K_5;
+	run(30, 0);
+	CHECK(dtmf_n == 1 && dtmf_log[0] == '5');
+	run(INPUT_LONG_MS + 200, 0);
+	keys = 0;
+	run(30, 0);
+	CHECK(nev == 0 && dtmf_n == 2 && dtmf_log[1] == (char)('5' | 0x80));
+	// * with its own digit, while OK beside it keeps its gestures and never asks
+	keys = (1u << K_STAR) | (1u << K_OK);
+	run(100, 0);
+	keys = 0;
+	run(30, 0);
+	CHECK(dtmf_n == 4 && dtmf_log[2] == '*' && dtmf_log[3] == (char)('*' | 0x80));
+	CHECK(nev == 1 && evs[0].action == ACT_SELECT && evs[0].gesture == GESTURE_PRESS);
+	// Raw-edge keys never ask
+	keys = 1u << K_PTT;
+	run(30, 0);
+	keys = 0;
+	run(30, 0);
+	CHECK(dtmf_n == 4 && count(ACT_PTT, GESTURE_DOWN) == 1);
+	// Refused: the key's gestures as usual, and its up isn't sent
+	dtmf_take = false;
+	nev = 0;
+	keys = 1u << K_STAR;
+	run(INPUT_LONG_MS + 100, 0);
+	keys = 0;
+	run(30, 0);
+	CHECK(dtmf_n == 5 && dtmf_log[4] == '*' && count(ACT_QUICK, GESTURE_LONG) == 1);
+	// Taken, then the callback goes away mid-hold: the hold still ends quietly
+	dtmf_take = true;
+	nev = 0;
+	keys = 1u << K_5;
+	run(30, 0);
+	input_engine_set_dtmf(&e, NULL, NULL);
+	run(INPUT_LONG_MS, 0);
+	keys = 0;
+	run(30, 0);
+	CHECK(nev == 0 && dtmf_n == 6);
+}
+
 // One input task pass over injected keys: the scan runs at now, late if it waited for a shared bus
 static void inj_pass(input_inj_state_t *s)
 {
@@ -284,6 +355,7 @@ int main(void)
 	test_chord();
 	test_held_at_start();
 	test_encoder_idle();
+	test_dtmf();
 	test_inject_late_scans();
 	printf("# inputTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;

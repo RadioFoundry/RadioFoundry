@@ -5,7 +5,7 @@
 Scan, the FM transmit extras, beeps and power management in the radio core. Code: `core/radio/scan.c` (the scan
 engine, pure), `core/radio/beep.c` (beep patterns and synthesis), `core/radio/vibe.c` (vibration patterns),
 `core/radio/battery.c` (battery levels, the backlight helper), all glued into `core/radio/radio_sm.c`; board hooks in
-`hal/hal_radio.h` (`tx_tone`, `rx_sleep`, `mic_gain`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
+`hal/hal_radio.h` (`tx_tone`, `tx_dtmf`, `rx_sleep`, `mic_gain`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
 and RADIO ops 20-24 (`docs/spec/debuglink.md` 3.7, 3.8). Host tests: `tests/host/radioFeaturesTest.c`; HIL tests:
 `tests/hil/test_radio_features.py`.
 
@@ -227,6 +227,72 @@ The board only stores the offset in the hook; a change takes effect at the next 
 the register is clamped to 0-42 dB (`hrc7000_mic_db`). The VOX meter reads the same codec ADC, so on these radios
 the mic gain also moves the VOX level. Without `CONFIG_DMR` and without the hook the row is dimmed.
 
+### 3.7 DTMF transmit (CONFIG_DTMF)
+
+Touch tones on FM while PTT is held (#54, step 1: manual digits). Stored DTMF codes and DTMF decode are not built.
+
+**Keys.** With PTT held on an FM channel, 0-9, \* and # (the QUICK and CONTEXT keys on keypad radios) send their DTMF
+pair for as long as the key is held. A key map entry names its digit (`keymap_entry_t.dtmf`); a digit key's is its
+own digit. The DB25-D mic's P4-P7 send A-D. The input engine hands these keys' down and up edges to the input task
+before any gesture. When the radio core's `dtmf_ready` is set (`radio_dtmf_ready()`), the input task sends the edge
+to the radio core (`radio_req_dtmf(digit, down)`), as it does for PTT, and the engine sends none of that hold's
+gestures: no Find, Quick settings or key lock under the TX screen, and the tone follows the key, not the UI. Locked
+keys send nothing (`input_set_dtmf_block`, from the UI's key lock). On DMR the digits stay inert during TX, and \* and
+# keep their usual meaning.
+
+**Accepted** only while `dtmf_ready`: state TX on an FM channel, PTT held (the radio's key or the host's), no roger
+beep or 1750 Hz burst on the air, no host audio (USRP), not a hotspot, and a board with `tx_dtmf`. Anything else is
+ignored, never queued. PTT release and the time-out end a digit still sounding before the roger beep and the DCS
+turn-off tail (3.3a) start, so a digit never sounds over either; PTT is up during the tail, so keys send nothing then.
+
+**Timing** (radio core, every poll):
+
+| Item | Value | Why |
+|---|---|---|
+| Shortest tone | `RADIO_DTMF_MIN_MS` 100 ms | a quick tap still decodes (decoders want 40 ms or more) |
+| Shortest gap between two digits | `RADIO_DTMF_GAP_MS` 60 ms | the same digit twice decodes as two (decoders want a 40 ms pause) |
+| A key pressed while a tone sounds or within the gap | waits (one digit); the sounding tone ends once it has had its shortest length, the next starts after the gap | rollover from a fast thumb |
+| PTT released, time-out, any end of TX | the tone stops with the transmitter | no tone outlives the transmission |
+
+The microphone is muted while a tone sounds and comes back between digits. The speaker plays no sidetone; the TX
+screen's second line shows "DTMF" and the last digits sent in this transmission instead of the time left.
+
+**View** (debug link `features` section): `dtmf_ready` and, only while they are not at rest (the view is near the reply's size cap), `dtmf` (the digit
+sounding), `dtmf_sent` (digits sent since start-up) and `dtmf_digits` (the last 8 of this transmission). The RADIO op `DTMF` (`docs/spec/debuglink.md`
+3.8) presses and releases a digit as a key would, including A-D, which no key gives.
+
+**Board hook** `hal_radio_t.tx_dtmf(digit)`: `'0'`-`'9'`, `'*'`, `'#'`, `'A'`-`'D'` on, 0 = off (the microphone
+again); false when the board can't (not in FM TX). The pairs (`hal/hal_dtmf.h`, ITU-T Q.23):
+
+| Low \ high | 1209 Hz | 1336 Hz | 1477 Hz | 1633 Hz |
+|---|---|---|---|---|
+| 697 Hz | 1 | 2 | 3 | A |
+| 770 Hz | 4 | 5 | 6 | B |
+| 852 Hz | 7 | 8 | 9 | C |
+| 941 Hz | \* | 0 | # | D |
+
+| Board | How | Deviation |
+|---|---|---|
+| DM-32UV, DM-1801 Pro (HR_C7000) | the DTMF sender as for `tx_tone` (`modem-hrc7000.md` 8.3): the low tone's step in FM_TONE1's high half, the high tone's in FM_TONE3's, digit "1" sent; TONE_SEND_CTRL b6 = 0 mutes the microphone | SUBVOICE_COEF b15:8 as for the 1750 Hz burst (`hrc7000_dtmf_dev`) |
+| DM-1701 (AT1846S) | tone1 = low, tone2 = high, voice_sel 011 (both tones), the HR_C6000 microphone input muted (`hardware-dm1701.md` 5.8) | reg 0x59 bits 15:6 = `DTMF_DEV` |
+| DB25-D (BK4819) | tone 1 and tone 2 on (0x70), frequencies in 0x71 / 0x72, microphone ADC off (`hardware-db25d.md` 4.4) | the stock DTMF levels (0x70 = 0x9090, 0x40 = 0x348A) |
+| MD-380 | none: no FM TX tone path yet (`hardware-md380.md` 6.4) | |
+
+**Twist** (the high tone's level over the low tone's) is judged on the audio a receiver hears, after its de-emphasis
+(6 dB per octave, 750 us), where the usual DTMF receiver limits apply: the high tone -8 to +4 dB from the low one (the
+North American telephone criteria; other countries' are similar or wider). A tone that goes through the transmitter's
+pre-emphasis reads 3 to 7 dB higher on the carrier than it is received. Measured on the SDR bench (2026-10-21 and -22,
+12.5 and 25 kHz; `sdr_fm_check.py --dtmf` prints both; digits 1, #, 5, D, 0):
+
+| Board | On the carrier | Received | Why |
+|---|---|---|---|
+| DM-1701 (AT1846S) | -0.1 to +0.2 dB | -4.6 to -2.8 dB | equal tones, injected after the pre-emphasis. "A" (697 + 1633 Hz) would be about -7 dB |
+| DM-32UV, DM-1801 Pro (HR_C7000) | +5.0 dB, every digit | +0.4 to +2.1 dB | the chip's DTMF sender sets the low tone below the high one by design (`modem-hrc7000.md` 8.3), after the pre-emphasis |
+| DB25-D (BK4819) | +3.6 to +7.0 dB | +0.7 to +2.3 dB | equal tones (0x70 = 0x9090) through the microphone's pre-emphasis, as a DTMF microphone's would be |
+
+None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) checks the received twist;
+`test_fm_tx_dtmf_stop` checks on air that a held digit ends with the carrier at PTT release and at the time-out.
+
 ## 4. Beeps (CONFIG_BEEP)
 
 | Beep | Sound | When |
@@ -394,7 +460,7 @@ a low fixed value (the DM-1701, `hardware-dm1701.md` 7) or refuses to transmit (
 Host-tested (`radioFeaturesTest`, 783 checks): scan engine and glue (zone, skip flags, nuisance, resume modes,
 priority, dual watch with its wait and looks and the debug link's requests during it, VFO band scan, mixed FM / DMR, a DMR call already in progress with a direct mode carrier and a
 late entry at every superframe phase, PTT and retune behavior), battery levels and power off, beep
-patterns and mixing, vibration patterns and their timing through the radio core, TOT warning, BCL, inhibit, roger beep, burst, VOX, battery save, DMR permit / call-end beeps.
+patterns and mixing, vibration patterns and their timing through the radio core, TOT warning, BCL, inhibit, roger beep, burst, DTMF timing and refusals (`inputTest` for the key routing), VOX, battery save, DMR permit / call-end beeps.
 On the radio (`docs/testing/on-air-coverage.md`, HIL 2026-10-10): zone scan stopping for DMR calls, VFO scan, dual
 watch, the battery saver, the 1750 Hz burst and the roger beep on air; TX inhibit and the TOT warning on the radio's
 state; VOX only in silence (the `mic_level` hook is unverified); whether PCM beeps play in FM mode is still open
