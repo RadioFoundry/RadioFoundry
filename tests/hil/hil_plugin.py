@@ -62,6 +62,8 @@ def radio(pytestconfig):
         bringup_plugin.no_radio(pytestconfig, f"the radio doesn't answer the debug link (firmware without "
                                               f"CONFIG_DEBUGLINK?): {e}")
     bringup_plugin.remember_firmware(pytestconfig, r)
+    if r.auto_lock_off():
+        print("odr-hil: auto lock was on (a run cut short in test_auto_lock?): set back to Off")
     yield r
     r.close()
 
