@@ -43,7 +43,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Feature names, help, dependencies | `config/features.mk` (the comment above each switch, the `needs` checks) |
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
-| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), grouped by `site/data/screens.json` |
+| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has |
 | Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/odrflash/odrflash/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |

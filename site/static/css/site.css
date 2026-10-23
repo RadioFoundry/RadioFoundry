@@ -168,12 +168,11 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .specs dd { margin: 0; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
 @media (max-width: 860px) { .radio-head, .two-col { grid-template-columns: 1fr; } }
-.shot-group h3 { margin-top: var(--space-5); }
-.shots { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+.shots { display: grid; grid-template-columns: repeat(3, minmax(0, 240px)); gap: var(--space-4); }
 .shot { margin: 0; text-align: center; }
-.shot-show { padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; display: block; }
+.shot-show { padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; display: block; width: 100%; }
 .shot-show:hover, .shot-show[aria-pressed="true"] { border-color: var(--accent); }
-.shot img { max-width: 240px;
+.shot img { width: 100%; box-sizing: border-box;
 	image-rendering: pixelated; border-radius: 6px; background: #000; padding: 6px; display: block; height: auto;
 }
 .shot figcaption { font-size: var(--text-sm); color: var(--muted); max-width: 22ch; margin: var(--space-1) auto 0; }

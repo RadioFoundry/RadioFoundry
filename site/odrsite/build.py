@@ -395,25 +395,24 @@ class Site:
 				groups.append('<tbody><tr class="group"><th colspan="%d" scope="rowgroup">%s</th></tr>%s</tbody>'
 					      % (len(self.variants) + 1, html.escape(self.group_title(lang, g)), "".join(rows)))
 		na = [f for f in self.features if self.feature_state(b, f["name"]) == "na" and f["group"] not in BENCH_ONLY]
-		# screenshots: those whose features this radio has, at twice their pixel size (crisp: pixelated)
+		# screenshots: six that show the look and the main features, the first featured ones this radio has, at twice
+		# their pixel size (crisp: pixelated), in two rows of three
 		with open(repo.path("docs", "ux", "screens", b["gallery"], "boot.png"), "rb") as fh:
 			sw, sh = device.png_size(fh.read(32))
-		shots = []
-		for g in self.screens["groups"]:
-			items = []
-			for n in b["screens"]:
-				s = self.screen(n)
-				if s["group"] != g or any(x not in b["config"]["full"] for x in s["needs"]):
-					continue
-				cap = self.screen_caption(lang, n)
-				items.append('<figure class="shot"><button type="button" class="shot-show" title="%s" data-src="{{root}}docs/'
-					     'ux/screens/%s/%s.png"><img src="{{root}}docs/ux/screens/%s/%s.png" alt="%s" width="%d" '
-					     'height="%d" loading="lazy"></button><figcaption>%s</figcaption></figure>'
-					     % (html.escape(self.t(lang, "radio.show_on_radio")), b["gallery"], n, b["gallery"], n,
-						html.escape(cap), 2 * sw, 2 * sh, html.escape(cap)))
-			if items:
-				shots.append('<section class="shot-group"><h3>%s</h3><div class="shots">%s</div></section>'
-					     % (html.escape(self.t(lang, "screens.group." + g)), "".join(items)))
+		items = []
+		for n in self.screens["featured"]:
+			s = self.screen(n)
+			if n not in b["screens"] or s is None or any(x not in b["config"]["full"] for x in s["needs"]):
+				continue
+			cap = self.screen_caption(lang, n)
+			items.append('<figure class="shot"><button type="button" class="shot-show" title="%s" data-src="{{root}}docs/'
+				     'ux/screens/%s/%s.png"><img src="{{root}}docs/ux/screens/%s/%s.png" alt="%s" width="%d" '
+				     'height="%d" loading="lazy"></button><figcaption>%s</figcaption></figure>'
+				     % (html.escape(self.t(lang, "radio.show_on_radio")), b["gallery"], n, b["gallery"], n,
+					html.escape(cap), 2 * sw, 2 * sh, html.escape(cap)))
+			if len(items) == 6:
+				break
+		shots = ['<div class="shots">%s</div>' % "".join(items)] if items else []
 		docs_links = "".join('<li><a href="{{home}}%s">%s</a></li>'
 				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
 				     for k, p in sorted(b["docs"].items(), key=lambda kv: DOC_ORDER.index(kv[0])))
