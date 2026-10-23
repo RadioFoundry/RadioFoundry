@@ -236,7 +236,9 @@ def test_fm_tx_roger_beep(fm_vfo, sdr_bench, pytestconfig):
     assert hi and lo, f"no 1200 Hz + 900 Hz roger beep at the end of the over: {results[1]['tones']}"
     assert hi[-1][1] < lo[-1][1], f"900 Hz before 1200 Hz: {tail}"
     for name, t in (("1200 Hz", hi[-1]), ("900 Hz", lo[-1])):
-        assert 0.06 <= t[2] - t[1] <= 0.16, f"{name} roger tone {t[2] - t[1]:.3f} s (nominal 0.100)"
+        # rounded to the capture's 10 ms steps: 4.71 - 4.55 is 0.16000000000000014 and must still pass
+        d = round(t[2] - t[1], 3)
+        assert 0.06 <= d <= 0.16, f"{name} roger tone {d:.3f} s (nominal 0.100)"
     assert end - lo[-1][2] <= 0.08, f"the carrier stays {end - lo[-1][2]:.3f} s after the roger beep"
     end0 = results[0]["spans"][0][1]
     assert not [t for t in results[0]["tones"] if t[2] >= end0 - 0.5], \
