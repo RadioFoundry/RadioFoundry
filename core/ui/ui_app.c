@@ -110,6 +110,7 @@ static void set_locked(bool locked)
 		entry_cancel();
 	}
 	ui_svc_ptt_block(locked && !ui_st.ptt_locked);
+	ui_svc_dtmf_block(locked);
 	dirty = true;
 }
 
@@ -1686,8 +1687,9 @@ void ui_app_key(const input_event_t *ev)
 	if (ev->action == ACT_PTT || ev->action == ACT_MONITOR)
 		return;		// the input layer already sent these to the radio
 	// While PTT keys the radio the digit keys do nothing: no Find, channel entry or speed dial under the TX screen.
-	// On FM they are for DTMF once it exists (#54). A transmission the radio starts by itself (an APRS beacon) leaves
-	// them alone: the user may be typing a frequency or a filter
+	// On FM with DTMF the input task gives them (and * and #) to the radio core instead and they never get here
+	// (radio-features.md 3.7). A transmission the radio starts by itself (an APRS beacon) leaves them alone: the user
+	// may be typing a frequency or a filter
 	if (ptt_held && view->state == RS_TX && ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9)
 		return;
 	if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)

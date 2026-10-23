@@ -106,9 +106,11 @@ static bool r_tx_tone_key(bool down)
 	tone.changes++;
 	return true;
 }
+static char dtmf_on;		// tx_dtmf: the digit sounding
+static bool r_tx_dtmf(char digit) { dtmf_on = digit; return true; }
 static hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off,
 					.status = r_status, .audio = r_audio, .tx_tone = r_tx_tone,
-					.tx_tone_key = r_tx_tone_key };
+					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf };
 
 // (fake_radio.volume is set by test_soft_volume only)
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
@@ -151,9 +153,9 @@ static const band_t bands[] = {
 static const char *const power_names[] = { "L", "M", "H" };
 // Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys
 static const keymap_entry_t keymap[] = {
-	{ 0, ACT_SELECT, ACT_SELECT, false, false },
-	{ 1, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ 2, ACT_TALK_TARGET, ACT_USER_2, false, false },
+	{ 0, ACT_SELECT, ACT_SELECT, false, false, 0 },
+	{ 1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ 2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
 };
 static const uint8_t side_keys[] = { 1, 2 };
 
@@ -1449,6 +1451,30 @@ static void test_vfo_copy(void)
 	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 146940000 && sm.view.ch.tx_tone.type == TONE_NONE);
 	CHECK(debuglink_radio_feature_op(DL_OP_VFO_COPY, NULL, 0) == DL_ST_UNAVAILABLE);
 	CHECK(radio_vfo_copy_check(&sm.view.ch, true) == VFO_COPY_ALREADY);
+	// The DTMF op (radio-features.md 3.7): a key's edges, refused unless a key would send now
+	CHECK(debuglink_is_feature_op(DL_OP_DTMF));
+	CHECK(debuglink_radio_feature_op(DL_OP_DTMF, (const uint8_t[]){ '5', 1 }, 2) == DL_ST_REFUSED);
+	CHECK(debuglink_radio_feature_op(DL_OP_DTMF, (const uint8_t[]){ '5' }, 1) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_DTMF, (const uint8_t[]){ 'x', 1 }, 2) == DL_ST_BAD_ARG);
+	req(RREQ_PTT, 1);
+	run(60);
+	CHECK(sm.view.state == RS_TX && sm.view.dtmf_ready);
+	CHECK(debuglink_radio_feature_op(DL_OP_DTMF, (const uint8_t[]){ 'D', 1 }, 2) == DL_ST_OK);
+	run(20);
+	CHECK(dtmf_on == 'D' && sm.view.dtmf == 'D');
+	{
+		static char buf[2048];
+		dl_text_t t;
+		dl_text_init(&t, buf, sizeof buf);
+		debuglink_view_radio(&sm.view, &t);
+		CHECK(strstr(buf, "dtmf=D\n") != NULL && strstr(buf, "dtmf_ready=1") != NULL &&
+		      strstr(buf, "dtmf_digits=D\n") != NULL && strstr(buf, "dtmf_sent=1\n") != NULL);
+	}
+	CHECK(debuglink_radio_feature_op(DL_OP_DTMF, (const uint8_t[]){ 'D', 0 }, 2) == DL_ST_OK);
+	run(200);
+	CHECK(dtmf_on == 0 && sm.view.dtmf == 0);
+	req(RREQ_PTT, 0);
+	run(20);
 	// The UI's service call: the code of a refusal, or the request
 	req(RREQ_VFO, 0);
 	run(20);
@@ -2483,6 +2509,8 @@ void radio_req_scan_dual(uint16_t pos) { (void)pos; }
 void radio_req_zone_pos(uint16_t pos) { (void)pos; }
 void radio_req_scan_vfo(uint32_t lo, uint32_t hi) { (void)lo; (void)hi; }
 void radio_req_tone_burst(bool on) { (void)on; }
+void radio_req_dtmf(char digit, bool down) { req(RREQ_DTMF, (uint8_t)digit | (down ? 0x100 : 0)); }
+bool radio_dtmf_ready(void) { return sm.view.dtmf_ready; }
 void radio_req_scan(uint8_t cmd) { req(RREQ_SCAN, cmd); }
 void radio_req_vfo_step_size(uint32_t hz) { req(RREQ_VFO_STEP_SIZE, (int32_t)hz); }
 void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel)
@@ -2540,6 +2568,8 @@ static uint16_t input_long, input_repeat;
 void input_set_timing(uint16_t l, uint16_t r) { input_long = l; input_repeat = r; }
 static bool ptt_blocked;
 void input_set_ptt_block(bool b) { ptt_blocked = b; }
+static bool dtmf_blocked;
+void input_set_dtmf_block(bool b) { dtmf_blocked = b; }
 static keymap_entry_t got_keymap[3];
 static int keymap_sets;
 void input_set_keymap(const keymap_entry_t *map) { memcpy(got_keymap, map, sizeof(got_keymap)); keymap_sets++; }
@@ -2897,6 +2927,10 @@ static void test_ui_glue(void)
 	CHECK(ptt_blocked);
 	ui_svc_ptt_block(false);
 	CHECK(!ptt_blocked);
+	ui_svc_dtmf_block(true);
+	CHECK(dtmf_blocked);
+	ui_svc_dtmf_block(false);
+	CHECK(!dtmf_blocked);
 	// Talk permit tone: the radio core's, saved with its settings
 	CHECK(ui_svc_setting_get(UI_SET_TALK_PERMIT) == 1);
 	ui_svc_apply(UI_SET_TALK_PERMIT, 0);
@@ -3436,18 +3470,37 @@ static void test_dmr_data_glue(void)
 	unsigned n0 = sim.air_count;
 	int tx0 = hw.tx_calls;
 	CHECK(dmr_signal_call_alert(3101234));
-	run(600);
+	// On air without PTT, the view says TX like a call (#148): the strip's pill, the red LED, Home's activity line
+	bool shown_tx = false, red = false, unkeyed = true;
+	for (int i = 0; i < 60; i++) {
+		run(10);
+		if (sm.view.state == RS_TX && sm.view.dmr.state == RDMR_TX_DATA) {
+			shown_tx = true;
+			red = red || hw.led[LED_RED];
+#if CONFIG_APRS
+			unkeyed = unkeyed && sm.tx_no_ptt && !sm.aprs_was_tx;	// not the user's PTT: no "beacon after PTT"
+#endif
+		}
+	}
+	CHECK(shown_tx && red && unkeyed);
+	CHECK(!sm.tx_no_ptt);
 	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) >= 1 && hw.tx_calls > tx0);
 	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_SENDING && dst == 3101234);
+	CHECK(sm.view.state != RS_TX && !hw.led[LED_RED]);	// back to receive once the list is out
 	for (unsigned i = n0; i < sim.air_count; i++) {
 		if (sim.air[i].kind == DMR_BURST_CSBK) {
 			CHECK(sim.air[i].host_crc);
 		}
 	}
 	csbk_rx(DMR_CSBKO_CALL_ALERT_ACK, 3101276, 3101234, 2);
-	run(200);
+	run(50);
+	CHECK(sm.view.state == RS_RX && sm.view.dmr.state == RDMR_IDLE);	// the ack heard: RX, though no call
+	CHECK(!hw.led[LED_GREEN]);	// green is for a call being played
+	run(150);
 	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_OK);
 	CHECK(!(sm.view.state == RS_TX));
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);	// faded
 
 	// No answer: the retries, then failed; the keying released each time
 	n0 = sim.air_count;
@@ -3455,6 +3508,7 @@ static void test_dmr_data_glue(void)
 	run(30000);
 	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_FAILED);
 	CHECK(air_count(n0, DMR_BURST_CSBK, 0xFF) >= 2 && !sm.dmr_keyed);
+	CHECK(sm.view.state == RS_IDLE && !sm.tx_no_ptt && !hw.led[LED_RED]);	// a failed data send leaves no TX or deny behind
 
 	// A call alert to us: alerted, and the ack goes out through the same glue
 	n0 = sim.air_count;
@@ -3464,20 +3518,38 @@ static void test_dmr_data_glue(void)
 	// ... not to us: nothing
 	n0 = sim.air_count;
 	csbk_rx(DMR_CSBKO_CALL_ALERT, 3100001, 3109876, 2);
+	run(50);
+	CHECK(sm.view.state == RS_RX && sm.view.dmr.state == RDMR_IDLE && !hw.led[LED_GREEN]);	// others' data: RX, no call
 	run(1000);
 	CHECK(sim.air_count == n0);
+	CHECK(sm.view.state == RS_IDLE);	// faded
+	// ... on another color code: not our channel, no RX
+	csbk_rx(DMR_CSBKO_CALL_ALERT, 3100001, 3109876, 5);
+	run(50);
+	CHECK(sm.view.state == RS_IDLE);
+	run(1000);
 
 	// A group SMS: a whole packet on air (preamble, header, blocks), sent once heard clear
 	n0 = sim.air_count;
 	CHECK(sms_send(9, true, "hello group", false, DMR_SMS_FORMAT_ETSI_IP));
-	run(3000);
+	shown_tx = red = false;
+	for (int i = 0; i < 300; i++) {	// the packet shows as a transmission, red LED included, from start to end
+		run(10);
+		if (sm.view.state == RS_TX && sm.view.dmr.state == RDMR_TX_DATA) {
+			shown_tx = true;
+			red = red || hw.led[LED_RED];
+		}
+	}
+	CHECK(shown_tx && red);
 	CHECK(sms_send_state() == DMR_REQ_OK);
 	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) >= 1 && sim.air_count - n0 >= 3);
+	CHECK(sm.view.state != RS_TX && !sm.tx_no_ptt);
 
 	// While the user transmits voice, data waits: nothing goes out in the middle of the call
 	req(RREQ_PTT, 1);
 	run(300);
 	CHECK((sm.view.state == RS_TX));
+	CHECK(!sm.tx_no_ptt);	// the user's own voice transmission counts for the after-PTT beacon
 	unsigned voice0 = sim.air_count;
 	CHECK(dmr_signal_call_alert(3101234));
 	run(600);

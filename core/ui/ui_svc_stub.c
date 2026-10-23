@@ -46,6 +46,7 @@ WEAK bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out) { (void)pane; (void)ou
 WEAK void ui_svc_beep(uint8_t beep) { (void)beep; }
 WEAK void ui_svc_vibrate(uint8_t vibe) { (void)vibe; }
 WEAK void ui_svc_ptt_block(bool blocked) { (void)blocked; }
+WEAK void ui_svc_dtmf_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_poll(void) { }
 WEAK void ui_svc_keys_poll(void) { }
 WEAK void ui_svc_apply(uint8_t id, int32_t value) { (void)id; (void)value; }
