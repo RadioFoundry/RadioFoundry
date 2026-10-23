@@ -10,7 +10,7 @@ explains the routing and why pull requests from forks never reach it.
 
 | File | What |
 |---|---|
-| `Dockerfile` | the runner image: the DM-32 image (Ubuntu 24.04 + csky-elf GCC) plus the Arm toolchain, host GCC, Python packages, gcovr, tshark, Node.js, gh, reuse |
+| `Dockerfile` | the runner image: the C-SKY image (Ubuntu 24.04 + csky-elf GCC) plus the Arm toolchain, host GCC, Python packages, gcovr, tshark, Node.js, gh, reuse |
 | `entrypoint.sh` | in the container: empties `/work`, gets the pinned runner release (checksummed, cached in `/work/.cache`), then runs one job or registers |
 | `runner-loop.sh` | on the host: `setup` (networks and proxy), `register` (once), and the loop (one container per job) |
 | `runner.env.example` | the loop's settings |

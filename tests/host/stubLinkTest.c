@@ -76,10 +76,10 @@ static size_t debuglink_handle(uint8_t cmd, const uint8_t *req, uint16_t len, ui
 
 static const char *codec_id(void)
 {
-	return "db25d-2501";
+	return "board-2501";
 }
 
-static const stub_link_t ident = { .board = "DB25-D", .git = "0123abcd", .codec = codec_id, .stub = entry_request };
+static const stub_link_t ident = { .board = "Board", .git = "0123abcd", .codec = codec_id, .stub = entry_request };
 
 static size_t own_handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
@@ -198,7 +198,7 @@ static void test_own_listener(void)
 	char text[STUB_LINK_REPLY_MAX + 1];
 	memcpy(text, pl + 1, n - 1);
 	text[n - 1] = '\0';
-	CHECK(strcmp(text, "proto=1\ngit=0123abcd\nboard=DB25-D\ncodec=db25d-2501\nstub=1\n") == 0, "VERSION text %s", text);
+	CHECK(strcmp(text, "proto=1\ngit=0123abcd\nboard=Board\ncodec=board-2501\nstub=1\n") == 0, "VERSION text %s", text);
 	CHECK(n <= STUB_LINK_REPLY_MAX, "VERSION fits the reply buffer");
 
 	// PING echoes, the longest request included

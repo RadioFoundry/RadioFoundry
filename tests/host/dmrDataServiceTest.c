@@ -389,7 +389,7 @@ static int powerOffMs(int limitMs)
 }
 
 // Switching off (gotcha 7.4): the deregistration goes out before the supply drops, and the radio core is told when
-// it's on air. The DM-1701 and MD-380 switch off this way from the volume knob
+// it's on air. Radios with a latched supply switch off this way from the volume knob
 static void testArsPowerOff(void)
 {
 	// ARS off: nothing to send, done at once
@@ -559,7 +559,7 @@ static void testLrrp(void)
 	CHECK(dmrDataServiceLocationNeededInMs() == UINT32_MAX);
 	haveLocation = false;
 
-	// No position source (the DM-1701): an immediate request says "no fix", a triggered start is refused with it
+	// No position source (a radio without GPS): an immediate request says "no fix", a triggered start is refused with it
 	settings.hasGps = false;
 	sentCount = 0;
 	receiveLrrp("050922040a0b0c0d516257");

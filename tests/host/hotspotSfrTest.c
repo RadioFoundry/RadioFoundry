@@ -504,7 +504,7 @@ static void test_rf_priority(void)
 
 // A call of silence (the SDR bench's test call): every superframe's burst B is the same as the last one's. At the
 // 90 ms repeat latency our copy is out of the echo window when the next one arrives; a modem without tx_fill repeated
-// 210 ms late and dropped 3 of them as our echo (DM-32UV, HIL 2026-10-16)
+// 210 ms late and dropped 3 of them as our echo (HIL 2026-10-16)
 static void test_silent_call(void)
 {
 	hotspot_sfr_view_t v;

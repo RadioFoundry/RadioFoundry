@@ -20,7 +20,7 @@ The UI is designed in `docs/ux/` from first principles of good radio usability, 
 
 The authors' own work moves over; the aftermarket firmware's doesn't.
 
-- **(a) Whole files written entirely by us**, for example the DMR data service, LRRP, privacy, IP gateway, hotspot uplink/data/frame code, SFR, the DM-32 calibration reader and the host tests. They are copied into this repository with MIT SPDX headers. Their old commit is noted in a provenance record the maintainers keep outside this repository.
+- **(a) Whole files written entirely by us**, for example the DMR data service, LRRP, privacy, IP gateway, hotspot uplink/data/frame code, SFR, the Baofeng calibration reader and the host tests. They are copied into this repository with MIT SPDX headers. Their old commit is noted in a provenance record the maintainers keep outside this repository.
 - **(b) Every change we made inside imported files, on every aftermarket firmware tree**, as diff hunks with 3 lines of context. Each hunk has a note with the commit, what the surrounding code did, the symptom, why the fix works, and what new code must do or avoid. The context and removed lines are aftermarket firmware text, so **(b) lives only in the reference directory and is never committed here**. Implementers read it to learn the lessons, then write new code.
 - **(c) `docs/spec/gotchas.md`**: the same lessons in prose, grouped by subsystem. Committed here.
 

@@ -2,7 +2,7 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
 # The self-hosted GitHub Actions runner image (README.md): a fresh container per job with everything tools/ci.sh and
-# the workflows need, so jobs install nothing. Built on the DM-32 image (tools/docker/csky-toolchain), which brings
+# the workflows need, so jobs install nothing. Built on the C-SKY image (tools/docker/csky-toolchain), which brings
 # Ubuntu 24.04 and csky-elf GCC in /opt/csky-elf; that image itself is not changed.
 #
 #   docker build -t odr/ci-runner:latest --build-arg BASE=odr/csky-gcc14:latest \
