@@ -4,7 +4,7 @@
 # superhet LO) + ST7735S 160x128 on a bit-banged serial bus (docs/spec/hardware-db25d.md). The PC link is UART1
 PLATFORM   := hrc7000
 # The IAP loader leaves the PLL at 72 MHz (hardware-db25d.md 2). With DB25D_FULL_CLOCK=1 (default) ODR re-programs it to
-# the DM-32's 168 MHz CPU / 84 MHz APB at start-up (platform/hrc7000/clock.c) and puts the loader's clocks back before
+# the platform's 168 MHz CPU / 84 MHz APB at start-up (platform/hrc7000/clock.c) and puts the loader's clocks back before
 # it hands over to the runtime stub (built for them) or resets. DB25D_FULL_CLOCK=0 keeps the loader's 72 / 36 MHz.
 # The runtime stub's RAM window (HRC_STUB_BASE) and, without DMR, the linker script are set in config.mk: the stub gets
 # the stock codec's RAM window with DMR (memory.ld), and 128 KB above the bss without it (fm_only.ld keeps it free)
