@@ -21,8 +21,9 @@ base to the application), the erasable sectors (the platform geometry from the a
 (the board's drivers), its pins (pins.h), and on the STM32F4 the crystal (HSE_VALUE) and the bootloader's end (APP_BASE)
 for the stub's board record.
 
-    tools/boards.py list [--platform P[,Q]] [--release stable|testing] [--comma]   board ids (an unknown platform is
-                                                  an error, so a typo never selects no board)
+    tools/boards.py list [--platform P[,Q]] [--toolchain T[,U]] [--release stable|testing] [--comma]   board ids (an
+                                                  unknown platform or toolchain is an error, so a typo never selects
+                                                  no board)
     tools/boards.py platform P [key.path]        one platform value
     tools/boards.py get dm32 [key.path]          one value (a list: one item per line), for shell scripts
     tools/boards.py json [--for odrflash|site] [--out FILE | --check FILE]   the merged, derived view
@@ -187,9 +188,9 @@ PLATFORM_SCHEMA = {
     "id": _req(str),
     "isa": _req(str),
     "cpu": _req(str),
-    "toolchain": _req({"cc": _req(str), "build": _req(str), "version": _req(str), "sha256": _opt(str),
-                       "image": _opt(str)}),
-    "ci": _req({"group": _req(str), "container": _req(bool)}),
+    # id and name: the toolchain's CI job; every platform with the same id pins the same toolchain
+    "toolchain": _req({"id": _req(str), "name": _req(str), "cc": _req(str), "build": _req(str), "version": _req(str),
+                       "sha256": _opt(str), "image": _opt(str)}),
     "stubs": _req(STR_LIST),
     # the stub that takes board profiles ([flash.stub]): its tool, the profile keys every board must give, the keys
     # it takes besides id and tested, and the SoC's SPI alternate function per bus (STM32F4); absent: no board profiles
@@ -880,6 +881,8 @@ def check(root=ROOT):
                     if (mk.get("BUILD"), mk.get("TARGET", "") + ".bin") != want:
                         problems.append("%s %s: make names the build %s, %s.bin; the build view says %s, %s"
                                         % (bid, " ".join(args), mk.get("BUILD"), mk.get("TARGET"), *want))
+    # check 6: one pin per toolchain, and no copy of it elsewhere that differs
+    problems += pin_problems(root, load_platforms(root))
     # check 5: the radio survey's Port cells (a fixture tree without the survey has none to check)
     if os.path.isfile(os.path.join(root, registry_docs.SURVEY)):
         try:
@@ -966,7 +969,8 @@ def build_view(boards, root=ROOT):
     plats = {}
     for pid, pl in sorted(load_platforms(root).items()):
         tc = pl.data["toolchain"]
-        plats[pid] = {"isa": pl.data["isa"], "cpu": pl.data["cpu"], "cc": tc["cc"], "version": tc["version"],
+        plats[pid] = {"isa": pl.data["isa"], "cpu": pl.data["cpu"], "toolchain": tc["id"], "cc": tc["cc"],
+                      "version": tc["version"],
                       "image": tc.get("image"), "install": tc["build"], "sha256": tc.get("sha256")}
     out = {}
     for bid, b in sorted(boards.items()):
@@ -1066,15 +1070,66 @@ def full_view(boards, root=ROOT):
     return {"boards": out, "platforms": {p: pl.data for p, pl in sorted(load_platforms(root).items())}}
 
 
-def select(boards, platforms, platform=None, release=None):
-    """The ids `list` prints: the boards on any of the comma separated platforms, with that release. An unknown
-    platform is an error, so a misspelled one in CI never selects no board and passes."""
-    want = [p for p in (platform or "").split(",") if p]
-    unknown = [p for p in want if p not in platforms]
-    if unknown:
-        raise RegistryError("unknown platform %s (known: %s)" % (", ".join(map(repr, unknown)), ", ".join(platforms)))
-    return [b for b, x in boards.items() if (not want or x.platform.id in want)
+def select(boards, platforms, platform=None, release=None, toolchain=None):
+    """The ids `list` prints: the boards on any of the comma separated platforms, built with any of the comma
+    separated toolchains ([toolchain] id), with that release. platforms is {id: Platform}. An unknown platform or
+    toolchain is an error, so a misspelled one in CI never selects no board and passes."""
+    def wanted(arg, known, what):
+        want = [p for p in (arg or "").split(",") if p]
+        unknown = [p for p in want if p not in known]
+        if unknown:
+            raise RegistryError("unknown %s %s (known: %s)" % (what, ", ".join(map(repr, unknown)), ", ".join(known)))
+        return want
+    plats = wanted(platform, list(platforms), "platform")
+    tcs = wanted(toolchain, sorted({x.data["toolchain"]["id"] for x in platforms.values()}), "toolchain")
+    return [b for b, x in boards.items() if (not plats or x.platform.id in plats)
+            and (not tcs or x.platform.data["toolchain"]["id"] in tcs)
             and (not release or x.data["status"]["release"] == release)]
+
+
+# Shell, Dockerfile and workflow variables that would hold a copy of a toolchain's pin: <ID>_GCC_VERSION and
+# <ID>_GCC_SHA256 for the toolchain id. Set to a literal, the copy must equal platform.toml's
+PIN_VARS = {"VERSION": "version", "SHA256": "sha256"}
+PIN_DIRS = ("tools", ".github")
+
+
+def pin_problems(root, platforms):
+    """Every literal copy of a toolchain pin under tools/ or .github/ that differs from platform.toml: a Dockerfile's
+    ARG ARM_GCC_VERSION=..., a script's or a workflow's ARM_GCC_SHA256: ... A value taken from a variable or a
+    command ($...) is not a copy. Also every pair of platforms with the same toolchain id whose [toolchain] differ."""
+    problems, pins = [], {}
+    for pid, pl in sorted(platforms.items()):
+        tc = pl.data["toolchain"]
+        first = pins.setdefault(tc["id"], (pid, tc))
+        if first[1] != tc:
+            problems.append("platform/%s/platform.toml: [toolchain] differs from platform/%s/platform.toml's, which "
+                            "has the same id %r (one toolchain, one pin)" % (pid, first[0], tc["id"]))
+    want = {}
+    for tid, (pid, tc) in pins.items():
+        for suffix, key in PIN_VARS.items():
+            if key in tc:
+                want["%s_GCC_%s" % (tid.upper(), suffix)] = (tc[key], pid, key)
+    if not want:
+        return problems
+    pat = re.compile(r"\b(%s)\b\s*[:=]\s*[\"']?([A-Za-z0-9][A-Za-z0-9._-]*)" % "|".join(map(re.escape, want)))
+    for top in PIN_DIRS:
+        for dirpath, dirs, files in os.walk(os.path.join(root, top)):
+            dirs[:] = [d for d in dirs if d not in ("__pycache__", "node_modules")]
+            for fn in files:
+                path = os.path.join(dirpath, fn)
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        text = f.read()
+                except (OSError, UnicodeDecodeError):
+                    continue
+                for m in pat.finditer(text):
+                    value, pid, key = want[m.group(1)]
+                    if m.group(2) != value:
+                        line = text.count("\n", 0, m.start()) + 1
+                        problems.append("%s:%d: %s=%s, but platform/%s/platform.toml [toolchain] %s is %s: take it "
+                                        "from there" % (os.path.relpath(path, root), line, m.group(1), m.group(2),
+                                                        pid, key, value))
+    return problems
 
 
 def dumps(view):
@@ -1116,17 +1171,45 @@ def self_test():
 
     # list's selection (ci.sh --platform, the workflows' per-platform jobs)
     from types import SimpleNamespace as NS
-    fake = {"a": NS(platform=NS(id="p1"), data={"status": {"release": "stable"}}),
-            "b": NS(platform=NS(id="p2"), data={"status": {"release": "testing"}}),
-            "c": NS(platform=NS(id="p1"), data={"status": {"release": "testing"}})}
-    ok(select(fake, ["p1", "p2"]) == ["a", "b", "c"] and select(fake, ["p1", "p2"], "p1") == ["a", "c"] and
-       select(fake, ["p1", "p2"], "p2,p1", "testing") == ["b", "c"] and select(fake, ["p1", "p2", "p3"], "p3") == [],
+    fp = {p: NS(id=p, data={"toolchain": {"id": t}}) for p, t in (("p1", "t1"), ("p2", "t2"), ("p3", "t1"))}
+    fake = {"a": NS(platform=fp["p1"], data={"status": {"release": "stable"}}),
+            "b": NS(platform=fp["p2"], data={"status": {"release": "testing"}}),
+            "c": NS(platform=fp["p1"], data={"status": {"release": "testing"}}),
+            "d": NS(platform=fp["p3"], data={"status": {"release": "stable"}})}
+    ok(select(fake, fp) == ["a", "b", "c", "d"] and select(fake, fp, "p1") == ["a", "c"] and
+       select(fake, fp, "p2,p1", "testing") == ["b", "c"] and select(fake, {**fp, "p4": fp["p1"]}, "p4") == [],
        "select: by platform, a comma separated list, by release; a platform without boards selects none")
+    ok(select(fake, fp, toolchain="t1") == ["a", "c", "d"] and select(fake, fp, toolchain="t2,t1", release="stable")
+       == ["a", "d"] and select(fake, fp, "p3", toolchain="t1") == ["d"],
+       "select: by toolchain, every platform that has it; with a platform and a release")
+    for args, what in ((("p1,px",), "'px'"), ((None, None, "tx"), "'tx'")):
+        try:
+            select(fake, fp, *args)
+            ok(False, "select refuses an unknown platform or toolchain %s" % what)
+        except RegistryError as e:
+            ok(what in str(e), "select refuses an unknown platform or toolchain (%s)" % e)
+    # one pin per toolchain: a second platform with the same id and another version, a copy that differs
+    tmpp = tempfile.mkdtemp(prefix="odr-boards-pin-")
     try:
-        select(fake, ["p1", "p2"], "p1,px")
-        ok(False, "select refuses an unknown platform")
-    except RegistryError as e:
-        ok("'px'" in str(e), "select refuses an unknown platform (%s)" % e)
+        tc = {"id": "arm", "name": "Arm", "cc": "gcc", "build": "x.sh", "version": "13.3.rel1", "sha256": "ab12"}
+        pl = {"p1": NS(data={"toolchain": tc}), "p2": NS(data={"toolchain": dict(tc)})}
+        os.makedirs(os.path.join(tmpp, "tools", "img"))
+        v = "ARM_GCC_" + "VERSION"	# split, so this file holds no copy pin_problems would find in the tree
+        good = ("ARG V\nRUN V=${V} VER=${V:-$(x)} sh x\n# V=... tools/install-arm-toolchain.sh\nARM_GCC_" +
+                "SHA256: \"ab12\"\n").replace("V", v)
+        with open(os.path.join(tmpp, "tools", "img", "Dockerfile"), "w", encoding="utf-8") as f:
+            f.write(good)
+        ok(pin_problems(tmpp, pl) == [], "pin_problems: variables, commands and an equal literal pass %r"
+           % pin_problems(tmpp, pl))
+        with open(os.path.join(tmpp, "tools", "img", "Dockerfile"), "a", encoding="utf-8") as f:
+            f.write("ARG %s=13.2.rel1\n" % v)
+        got = pin_problems(tmpp, pl)
+        ok(len(got) == 1 and "Dockerfile:5: %s=13.2.rel1" % v in got[0], "pin_problems: a differing copy %r"
+           % got)
+        pl["p2"].data["toolchain"]["version"] = "14.2.rel1"
+        ok(any("same id 'arm'" in q for q in pin_problems(tmpp, pl)), "pin_problems: two pins for one toolchain id")
+    finally:
+        shutil.rmtree(tmpp)
 
     tmpc = tempfile.mkdtemp(prefix="odr-boards-c-")
     with open(os.path.join(tmpc, "board.c"), "w", encoding="utf-8") as f:
@@ -1260,6 +1343,22 @@ def self_test():
             ok(len(survey_of(cells)[1]) == 1, "survey check 5 finds " + what)
         ok(registry_docs.rebase_links("[x](hardware-a.md#k) [y](https://e/z)", "docs/spec", "") ==
            "[x](docs/spec/hardware-a.md#k) [y](https://e/z)", "rebase_links: relative links only")
+        fill = registry_docs.fill
+        yml = "o:\n  # generated: tools/boards.py docs r; edit old\n  - stale\n  # end generated\n  - Other\n"
+        ok(fill(yml, "r", "src", ["- A", "- B"], "t", "yaml") ==
+           "o:\n  # generated: tools/boards.py docs r; edit src\n  - A\n  - B\n  # end generated\n  - Other\n",
+           "fill: a YAML block keeps its indent")
+        bare = "<!-- x:\ngenerated: tools/boards.py docs r; edit s\nold\nend generated\n-->\n"
+        ok(fill(bare, "r", "s", ["A, B"], "t", "bare") == bare.replace("old", "A, B"),
+           "fill: a bare block inside a Markdown comment")
+        try:
+            fill(yml, "r", "s", [], "t")
+            ok(False, "fill: the wrong marker style finds no block")
+        except registry_docs.DocsError:
+            pass
+        ys = registry_docs.yaml_scalar
+        ok(ys("Baofeng DM-1701 / Retevis RT84") == "Baofeng DM-1701 / Retevis RT84" and ys("A: B") == '"A: B"'
+           and ys("No") == '"No"', "yaml_scalar: quoted only where a plain scalar would misread")
         old = ("## Radios and status\n\n| Radio | Builds | Host tests | On the radio | Support |\n"
                "|---|---|---|---|---|\n"
                "| [Maker AB-100](x) | ● | ● | %s | ok |\n| Maker CD-9 | ○ | ○ | ○ | %s |\n")
@@ -1414,6 +1513,8 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("list", help="board ids, one per line")
     p.add_argument("--platform", help="only the boards on this platform (a comma separated list: on any of them)")
+    p.add_argument("--toolchain", help="only the boards whose platform builds with this toolchain ([toolchain] id; a "
+                                       "comma separated list: any of them)")
     p.add_argument("--release", choices=RELEASES)
     p.add_argument("--comma", action="store_true", help="one line, comma separated")
     p = sub.add_parser("get", help="one value of one board (a list: one item per line)")
@@ -1461,7 +1562,7 @@ def main(argv=None):
         # the board's make variables cost a make run each: load only what the command reads
         boards = {} if a.cmd == "platform" else load(only=[a.board] if a.cmd in ("get", "builds") else None)
         if a.cmd == "list":
-            ids = select(boards, load_platforms(), a.platform, a.release)
+            ids = select(boards, load_platforms(), a.platform, a.release, a.toolchain)
             print(",".join(ids) if a.comma else "\n".join(ids))
         elif a.cmd in ("get", "platform"):
             if a.cmd == "platform":

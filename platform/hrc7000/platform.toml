@@ -8,8 +8,6 @@ isa = "csky"
 cpu = "HR_C7000"
 # The compiler print-cc names and what builds it when it's missing (ci.sh's skip message), in its own table at the
 # end of this file
-# One CI job per group; this group runs inside the csky-elf image
-ci = { group = "C-SKY", container = true }
 stubs = []
 # Its boards may carry a [flash.stub] profile of the universal HR_C7000 stub (stub/stubtool.py): whether the stub holds
 # the power latch and the program flash size; a stock debug console, the read rate, the LED pins, the UART, the
@@ -28,8 +26,12 @@ default_sectors = "app+slot"
 
 # The toolchain CI and releases build with. version is the GCC release tools/build-csky-toolchain.sh builds (it keeps
 # the binutils and newlib releases beside their checksums). image is the container that holds it:
-# tools/docker/csky-toolchain/build.sh makes it, run.sh runs a command in it, ODR_CSKY_IMAGE overrides it
+# tools/docker/csky-toolchain/build.sh makes it, run.sh runs a command in it, ODR_CSKY_IMAGE overrides it. id and name:
+# the toolchain's CI job (firmware (C-SKY)) and its .github/actions/toolchain set-up; every platform with this id
+# builds in that job and must pin the same toolchain
 [toolchain]
+id = "csky"
+name = "C-SKY"
 cc = "csky-elf-gcc"
 build = "tools/build-csky-toolchain.sh"
 version = "14.2.0"

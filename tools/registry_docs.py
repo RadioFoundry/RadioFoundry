@@ -8,6 +8,9 @@ A generated block sits between two markers and is rewritten whole:
     ...
     <!-- end generated -->
 
+A YAML file's markers are comments at the block's indent (# generated: ..., # end generated), and a block inside a
+Markdown comment has bare markers (generated: ..., end generated), since comments don't nest.
+
 The survey (docs/spec/radios.md, "Summary table") is hand-written but for one cell: the Port cell of a row that names
 a board is generated from the board's [status]. Every other row's Port cell says how far the port is:
 
@@ -28,6 +31,8 @@ SURVEY_HEADING = "Summary table"
 PORT_COLUMN = "Port"
 BEGIN = "<!-- generated: tools/boards.py docs %s; edit %s -->"
 END = "<!-- end generated -->"
+# a block's marker style: (begin, end), each "%s" for the marker text
+MARKERS = {"html": ("<!-- %s -->", "<!-- %s -->"), "yaml": ("# %s", "# %s"), "bare": ("%s", "%s")}
 BEGIN_RE = re.compile(r"^<!-- generated: tools/boards.py docs ([\w-]+);.*-->$")
 PORT_RE = re.compile(r"^(planned, hardware needed|planned|in progress, #(\d+)|not planned)(?:\.\s+(.*))?$", re.I)
 # how a board's [status] level reads: in the survey's Port cell, and as the README's "On the radio" mark
@@ -103,9 +108,14 @@ def board_title(b, dst_dir):
     """A board's name, linked to its page, then the names it is also sold as (the maker left off where it repeats)
     and "(mobile)" for a mobile radio."""
     d = b.data
-    also = [a[len(d["maker"]) + 1:] if a.startswith(d["maker"] + " ") else a for a in d["also"]]
     link = "[%s](%s)" % (d["name"], os.path.relpath(board_page(b), dst_dir or "."))
-    return link + "".join(", " + a for a in also) + (" (mobile)" if d["kind"] == "mobile" else "")
+    return link + "".join(", " + a for a in also_names(b)) + (" (mobile)" if d["kind"] == "mobile" else "")
+
+
+def also_names(b):
+    """The names a board is also sold as, the maker left off where it repeats the board's."""
+    d = b.data
+    return [a[len(d["maker"]) + 1:] if a.startswith(d["maker"] + " ") else a for a in d["also"]]
 
 
 def ordered(boards):
@@ -251,11 +261,28 @@ def feature_defaults(root, boards):
     return out
 
 
+def yaml_scalar(v):
+    """v as a YAML plain scalar, or double-quoted where a plain one would read as something else."""
+    if re.search(r"^[-?:,\[\]{}#&*!|>'\"%@`]|: | #|^\s|\s$", v) or v.lower() in ("yes", "no", "true", "false", "null"):
+        return '"%s"' % v.replace("\\", "\\\\").replace('"', '\\"')
+    return v
+
+
+def issue_radios(boards):
+    """The bug report form's Radio choices: each board, then the names it is also sold as."""
+    return ["- " + yaml_scalar(" / ".join([b.data["name"]] + also_names(b))) for b in ordered(boards)]
+
+
+def pr_radios(boards):
+    """The pull request template's list of radios, by model."""
+    return [", ".join(b.data["model"] for b in ordered(boards))]
+
+
 VOLTS_WORD = {"battery": "Battery", "supply": "Supply", "none": "None"}
 CLOCK_WORD = {"backed": "Yes", "unbacked": "No (only while on)", "none": "No clock", "unknown": "?"}
 
 
-# file, block, source the marker names, generator(root, boards, rows)
+# file, block, source the marker names, generator(root, boards, rows)[, marker style (MARKERS), default html]
 BLOCKS = (
     ("README.md", "radios", "boards/*/board.toml [status] and docs/spec/radios.md",
      lambda root, boards, rows: readme_radios(boards, rows)),
@@ -265,17 +292,24 @@ BLOCKS = (
      lambda root, boards, rows: manual_planned(rows)),
     ("docs/feature-matrix.md", "feature-defaults", "config/features.mk and boards/*/config.mk",
      lambda root, boards, rows: feature_defaults(root, boards)),
+    (".github/ISSUE_TEMPLATE/bug_report.yml", "radios", "boards/*/board.toml",
+     lambda root, boards, rows: issue_radios(boards), "yaml"),
+    (".github/PULL_REQUEST_TEMPLATE.md", "radios", "boards/*/board.toml",
+     lambda root, boards, rows: pr_radios(boards), "bare"),
 )
 
 
-def fill(text, block, source, lines, where):
-    """text with block's lines between its markers."""
-    pat = re.compile(r"^<!-- generated: tools/boards.py docs %s;[^\n]*-->\n.*?^%s$" % (re.escape(block),
-                                                                                       re.escape(END)), re.M | re.S)
+def fill(text, block, source, lines, where, style="html"):
+    """text with block's lines between its markers, each line at the begin marker's indent."""
+    begin, end = MARKERS[style]
+    head = begin % ("generated: tools/boards.py docs %s; edit %s" % (block, source))
+    tail = end % "end generated"
+    pre, post = begin.split("%s")		# the begin marker matches whatever source it names
+    opening = re.escape(pre + "generated: tools/boards.py docs %s;" % block) + "[^\n]*" + re.escape(post)
+    pat = re.compile(r"^([ \t]*)%s\n.*?^\1%s$" % (opening, re.escape(tail)), re.M | re.S)
     if len(pat.findall(text)) != 1:
-        raise DocsError("%s: needs exactly one generated block %r (%s ... %s)" % (where, block,
-                                                                             BEGIN % (block, source), END))
-    return pat.sub(lambda m: "\n".join([BEGIN % (block, source)] + lines + [END]), text)
+        raise DocsError("%s: needs exactly one generated block %r (%s ... %s)" % (where, block, head, tail))
+    return pat.sub(lambda m: "\n".join(m.group(1) + l for l in [head] + lines + [tail]), text)
 
 
 def survey_text(text, boards):
@@ -295,9 +329,9 @@ def generate(root, boards):
     """{path: new text} of every file with a generated part, and the survey's problems."""
     rows, problems = survey(root, boards)
     out = {}
-    for rel, block, source, gen in BLOCKS:
+    for rel, block, source, gen, *style in BLOCKS:
         text = out.get(rel) or open(os.path.join(root, rel), encoding="utf-8").read()
-        out[rel] = fill(text, block, source, gen(root, boards, rows), rel)
+        out[rel] = fill(text, block, source, gen(root, boards, rows), rel, *style)
     out[SURVEY] = survey_text(open(os.path.join(root, SURVEY), encoding="utf-8").read(), boards)
     return out, problems
 
