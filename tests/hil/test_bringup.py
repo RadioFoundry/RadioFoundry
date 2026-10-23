@@ -356,9 +356,10 @@ def test_the_lock_follows_the_port(tmp_path):
     def lock(*pytest_args, **env_over):
         e = {k: v for k, v in env().items() if k not in ("ODR_RADIO_LOCK", "ODR_PORT")}
         e.update(HOME=str(t), **env_over)
-        r = subprocess.run([python311(), BRINGUP, *common, "run", "--radio", a_board(), "--dry-run", "--feature",
-                            "fake_ok", *collect_args(t), "--", *pytest_args], cwd=ROOT, env=e, capture_output=True,
-                           text=True, timeout=300)
+        # --no-record: only the lock is checked, so a tree without git history (a `git archive` export) runs it too
+        r = subprocess.run([python311(), BRINGUP, *common, "run", "--radio", a_board(), "--dry-run", "--no-record",
+                            "--feature", "fake_ok", *collect_args(t), "--", *pytest_args], cwd=ROOT, env=e,
+                           capture_output=True, text=True, timeout=300)
         assert r.returncode == 0, r.stdout + r.stderr
         return next(x for x in r.stdout.splitlines() if x.startswith("lock: "))[len("lock: "):]
 
