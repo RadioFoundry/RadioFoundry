@@ -43,6 +43,10 @@ uint32_t hal_watchdog_timeout_ms(void) { return timeout_ms; }
 static jmp_buf hang_jmp;
 static unsigned hangs;
 static uint32_t hang_ms;
+// The restart cause's uptime (core/crash/crash.c): what the tick last kept
+static uint32_t alive_ms;
+void crash_alive(uint32_t ms) { alive_ms = ms; }
+
 void hal_crash_hang(uint32_t ms)
 {
 	hangs++;
@@ -165,6 +169,7 @@ static void test_hang_check(void)
 	watchdog_idle(now_ms);
 	now_ms += 2999;
 	CHECK(!tick() && hangs == 0);
+	CHECK(alive_ms == now_ms);	// every tick keeps the uptime, so a watchdog reset still says how long the run was
 	now_ms += 1;
 	CHECK(tick() && hangs == 1 && hang_ms == 3000);	// 4 s timeout: a record at 3 s, a second before the reset
 	watchdog_idle(now_ms);

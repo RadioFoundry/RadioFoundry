@@ -21,7 +21,8 @@ radio until a power cycle, as before.
 The capture runs with interrupts off, on a stack of its own (1 KB), and calls nothing that waits. It turns the
 transmitter off first (8), with or without the crash log. It adds the running
 task's name (empty in an interrupt handler: `CRASH_F_ISR`), the uptime, the 16 words at the stack pointer when that
-points into RAM (`CRASH_F_STACK`), the commit, then seals the record with a CRC-32, stores it and restarts the radio.
+points into RAM (`CRASH_F_STACK`), the other tasks (1.2), the commit, then seals the record with a CRC-32, stores it
+and restarts the radio.
 
 Not caught: a hang with interrupts off (the tick can't run, so the hardware watchdog resets the radio with no record,
 [watchdog.md](watchdog.md)), a fault while the fault entry pushes its frame (2.2), and an unhandled interrupt on the STM32F4 (the start-up's default
@@ -57,6 +58,72 @@ an interrupt storm that keeps the tick out. Those still end in the plain watchdo
 
 The debug link's CRASH TEST kind 3 ([debuglink.md](debuglink.md) 3.19) spins in the host link's task with interrupts
 on: the check keeps a hang record of `host`.
+
+### 1.2 The other tasks
+
+The record's registers are the running task's. The task snapshot says where every other task was, so a hang or a
+fault also shows what the rest of the radio waited for. Code: `put_tasks` in `core/crash/crash_capture.c`, the
+platforms' `hal_crash_task_where`. Needs `CONFIG_TASK_STACKS` (on with the debug link): the tasks come from its table
+(`core/app/task_stack.c`), in creation order. Without it the snapshot is empty.
+
+| Item | Value |
+|---|---|
+| Left out | the running task, and the idle task (`IDLE`), which only waits for work |
+| Entries | at most 8 (`CRASH_TASKS`); `more_tasks` counts the rest |
+| Name | the first 4 letters (`CRASH_TAG_LEN`), NUL padded: `radi`, `ui`, `Tmr ` |
+| `where`, bit 0 set | the task was waiting in the kernel. The rest is the first return address in the 24 words above its saved context (`CRASH_TASK_SCAN_WORDS`): the code that called the wait. No return address found: the saved pc |
+| `where`, bit 0 clear | an interrupt took the task while it was ready. The rest is its pc |
+| `where` 0 | its saved context isn't in RAM |
+
+Each task's TCB starts with the stack pointer its last switch saved (`pxTopOfStack`), which points at its context.
+
+| Platform | Waiting or ready |
+|---|---|
+| HR_C7000 | the 17-word frame (2.2). `vPortYield` stores its return address as both r15 and PC; the interrupt entry stores EPC as PC, which equals r15 only right after a call returns. r15 equal to PC counts as waiting |
+| STM32F4 | r4-r11 and EXC_RETURN, s16-s31 when EXC_RETURN bit 4 is clear, then the CPU's frame (2.1). The instruction before the stacked pc is the yield's `ISB` (`portYIELD`) or the `MSR BASEPRI` of a critical section's exit, where a held-back yield is taken: waiting. Anything else: ready |
+
+The return address is a candidate, as the stack words are (4): a code address left above the context by an earlier
+call looks the same. A kernel task's own wait (the timer task's) can resolve to a kernel function. The packed report
+(4) leaves the snapshot out; the debug link's view shows it (`crash.t<k>`).
+
+### 1.3 The restart cause
+
+A reset the capture never sees leaves no record: the hardware watchdog after a hang with interrupts off, a supply dip,
+the reset pin. The restart cause says which it was. Code: `crash_init` and `crash_reset_cause` in
+`core/crash/crash.c`, the platforms' `hal_crash_boot` and `hal_crash_reset_flags`.
+
+Four words (`crash_boot_t`) sit next to the record, in the same kept memory (2):
+
+| Word | Written by |
+|---|---|
+| `magic` (`BOOT`) | the start-up. Gone after a power loss |
+| `soft` (`SOFT`) | every restart software asks for, first (`hal_crash_soft_mark`): a reboot, a crash's restart, the boot stub's reset. Cleared at each start |
+| `uptime_ms` | the RTOS tick, with the hang check (`watchdog_tick`): the last run's uptime, to the tick |
+| `warm` | the start-up: starts since the memory last lost its contents |
+
+The chip's own reset flags come first where they say what happened. A chip without them leaves it to the words.
+
+| Chip flag | Words | Cause (`reset.cause`) |
+|---|---|---|
+| watchdog, brown-out, power-on or software | any | that flag |
+| none, or the reset pin | `soft` set | `software` |
+| none, or the reset pin | `magic` missing | `power` |
+| the reset pin | `magic` kept, no `soft` | `pin` |
+| none | `magic` kept, no `soft` | `warm`: the watchdog, the reset pin, or a dip too short to lose memory |
+
+| Platform | Chip flags | Words |
+|---|---|---|
+| STM32F4 | `RCC_CSR` (RM0090 7.3.21), read and cleared at start-up. Every reset also sets the pin flag, and a power-on sets the brown-out flag too, so the order is watchdog, software, power-on, brown-out, pin | the backup SRAM, after the record |
+| HR_C7000 | none: the POR, the reset pin and the watchdog drive one global reset (manual 2, 4.1) | `HRC_CRASH_BOOT`, the 16 bytes below the record. `hrc_soft_reset` runs from RAM and writes `soft` by address |
+
+The boot stubs mark their own reset, not their entry, so a stub that hangs and is reset by the watchdog reads as the
+watchdog. The STM32 stub's RESET writes `soft` itself (`F4STUB_SOFT_MARK_ADDR` in `stub/stm32f4/f4stub_header.h`,
+checked against the layout at build time). The HR_C7000 stub has no reset of its own: stubtool's `--boot reset` and
+the web flasher poke `soft` (`CRASH_SOFT_MARK`) before the soft reset, which works with every stub version. The stub
+runs in main SRAM only, so the words and the record survive it.
+
+The debug link's view section `reset` (23) shows it with or without a record: `reset.cause`, `reset.flags` (the chip's
+register as read, 0 without one), `reset.uptime_ms`, `reset.warm`.
 
 ## 2. Platforms
 
@@ -118,12 +185,13 @@ CRCs, then the radio restarted with the record kept.
 
 ## 3. The record
 
-`crash_record_t` (`hal/hal_crash.h`), 188 bytes, little endian, no padding. Version 1.
+`crash_record_t` (`hal/hal_crash.h`), 256 bytes, little endian, no padding. Version 2. Version 1 (188 bytes, without
+the task snapshot) reads as no record.
 
 | Offset | Field | Meaning |
 |---|---|---|
 | 0 | magic u32 | `0x48535243` (`"CRSH"`) |
-| 4 | version u16, size u16 | 1, 188 |
+| 4 | version u16, size u16 | 2, 256 |
 | 8 | arch u8 | 1 Cortex-M4, 2 CK803S |
 | 9 | kind u8 | section 1 |
 | 10 | flags u8 | bit 0 in an interrupt handler, 1 the build had local changes, 2 `stack` is valid, 3 seen (shown or dismissed), 4 sent |
@@ -136,7 +204,9 @@ CRCs, then the radio restarted with the record kept.
 | 108 | build u32 | the firmware commit's first 8 hex digits (0: unknown) |
 | 112 | task char[8] | the running task, NUL padded, not always terminated |
 | 120 | stack[16] u32 | the words at `sp` |
-| 184 | crc u32 | CRC-32 (IEEE, reflected, init and final XOR `0xFFFFFFFF`) of bytes 0-183 |
+| 184 | ntasks u8, more_tasks u8, reserved u16 | entries in `tasks`; the other tasks that didn't fit (saturates at 255); 0 |
+| 188 | tasks[8] {name char[4], where u32} | the other tasks (1.2) |
+| 252 | crc u32 | CRC-32 (IEEE, reflected, init and final XOR `0xFFFFFFFF`) of bytes 0-251 |
 
 A store that fails any of magic, version, size or CRC holds no record (power-on contents). `crash_init()` copies a
 valid record at start-up, before the tasks start; `crash_mark()` sets the seen and sent flags in both copies;
@@ -149,7 +219,7 @@ valid record at start-up, before the tasks start; `crash_mark()` sets the seen a
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 2 | `'O' 'C'` |
-| 2 | 1 | record version (1) |
+| 2 | 1 | the report's version (1, `CRASH_PACK_VERSION`), its own: the record's version 2 didn't change it |
 | 3 | 1 | arch |
 | 4 | 1 | kind |
 | 5 | 1 | flags |
@@ -213,7 +283,13 @@ crash log); without it the debug link still shows the record.
   that doesn't survive shows no record; it can't show a wrong one. Check: `odr_debug.py crash test trap`, then
   `odr_debug.py crash` after the restart.
 - The report on the air: no receiver for port 4090 exists yet.
-- The hang check on hardware: `test_crash_hang_kept` on each radio.
+- The restart cause (1.3) on the MD-380. Check: `tests/hil/test_watchdog.py` under `--allow-reboot`.
+
+The restart cause was checked on hardware (2026-10-23) on the DM-1701, the DM-1801 Pro, the DM-32UV and the DB25-D,
+with `tests/hil/test_watchdog.py` and `tests/hil/test_crash.py` passing under `--allow-reboot` on each. The three
+watchdog tests read `watchdog` on the DM-1701 and `warm` on the HR_C7000 radios: the modem SRAM keeps the words through
+a watchdog reset. A reboot and the stub's reset read `software` on all four. On the DM-1701 `reset.flags` keeps
+`SFTRST` through the stock bootloader, so it leaves `RCC_CSR` alone.
 
 Checked on hardware (2026-10-17, both flashed through the stub), with `tests/hil/test_crash.py` passing under
 `--allow-reboot` on each:
@@ -223,6 +299,11 @@ Checked on hardware (2026-10-17, both flashed through the stub), with `tests/hil
 | DM-1701 | the backup SRAM kept the record through the stock bootloader | HardFault, CFSR UNDEFINSTR, task `host` |
 | DM-1801 Pro | the modem SRAM kept the record through the soft reset and the Baofeng bootloader | exception 7 (breakpoint), task `host` |
 
+The hang check and the task snapshot (2026-10-23, all four bench radios, `test_crash.py` 5 passed on each): CRASH
+TEST hang kept kind 5, 3000 ms (3750 on the DM-1701), task `host`, pc in `debuglink_crash_service`. The DB25-D's and
+the DM-1701's snapshots named each waiting task's own wait (`radio_task`, `dmr_task`, `input_task`, the UI task in
+`input_next` or `ui_task`, the DB25-D's `rf_task_fn` and `gps_task`, the DM-1701's USB task in `tud_task_ext`).
+
 ## 7. Tests
 
 `tests/host/crashTest.c`: the fault trace's golden line and its CRC (and `tools/odr_fault_trace.py --selftest` on the
@@ -231,11 +312,14 @@ the packed report and the summary line (a hang's too); `ui_svc_crash.c` on fake 
 the screen, seen, clear, the report to a private or group contact, its progress and the sent mark); and
 `debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals and the deferred test).
 `tests/host/watchdogTest.c` (`test_hang_check`): when the hang check fires, a long job's kick, the starve and a
-stopped watchdog. `tests/hil/test_crash.py` (`test_crash_hang_kept`): CRASH TEST hang keeps a hang record of `host`
-before the watchdog resets.
+stopped watchdog, and the tick keeping the uptime. `crashTest.c` (`test_reset`): the restart cause's table and a run
+of starts on fake kept words (power-on, an unasked reset, a reboot, chip flags, no words). `tests/hil/test_watchdog.py`:
+after each bench watchdog reset the cause is `watchdog` (or `warm`) with the run's uptime; after a reboot, `software`.
+`tests/hil/test_crash.py` (`test_crash_hang_kept`): CRASH TEST hang keeps a hang record of `host`
+before the watchdog resets, with the UI and radio tasks in its snapshot and at least one of them waiting.
 `tests/host/crashCaptureTest.c`: `crash_capture.c` on a stand-in RTOS; every way in (a fault record, a stack
 overflow, out of heap, an assertion inside the capture) calls `board_rf_safe` first, with interrupts off, before the
-store and the restart. `boards/db25d/tests/bootDb25dTest.c` (`test_tx_off`): the DB25-D first stage drives the transmitter
+store and the restart; the snapshot's order, the running and idle tasks left out, names cut, the count of the rest. `boards/db25d/tests/bootDb25dTest.c` (`test_tx_off`): the DB25-D first stage drives the transmitter
 pins off.
 `tests/host/dmrDataServiceTest.c` (`testUdpSend`): the UDP mailbox. `tests/host/radioCoreTest.c`
 (`test_ui_settings`): the two settings through the UI service, their clamps, and that they leave the theme, Up/Down

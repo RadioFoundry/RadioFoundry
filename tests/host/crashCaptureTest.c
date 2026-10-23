@@ -3,6 +3,7 @@
 // The crash capture (core/crash/crash_capture.c, docs/spec/crash-log.md 8) on a stand-in RTOS (stubs/crash_rtos/): every way
 // in (a platform's fault record, an assertion, a stack overflow, running out of heap, an assertion inside the capture)
 // turns the transmitter off (board_rf_safe) with interrupts off, before the record is stored and before the restart.
+// The task snapshot takes the other tasks from the task table, without the running one and the idle task.
 #include <setjmp.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #include "board.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "app/task_stack.h"
 
 static int failures;
 
@@ -43,6 +45,9 @@ void board_rf_safe(void)
 
 crash_record_t *hal_crash_store(void) { note('S'); return &store; }
 uint8_t hal_crash_arch(void) { return CRASH_ARCH_CK803; }
+static crash_boot_t boot_words;
+crash_boot_t *hal_crash_boot(void) { return &boot_words; }
+uint8_t hal_crash_reset_flags(uint32_t *raw) { *raw = 0; return CRASH_RESET_UNKNOWN; }
 bool hal_crash_ram_addr(uint32_t a) { (void)a; return false; }	// no stack copy: host pointers don't fit in 32 bits
 bool hal_crash_code_addr(uint32_t a) { (void)a; return false; }
 uint32_t hal_millis(void) { return 1234; }
@@ -56,6 +61,17 @@ void hal_crash_restart(void)
 static char task_name[] = "radio";
 TaskHandle_t xTaskGetCurrentTaskHandle(void) { return task_name; }
 char *pcTaskGetName(TaskHandle_t t) { return t; }
+
+// The task table: handles are the names. The running task and the idle task are left out; 10 others, so 2 don't fit
+static char *table[TASK_STACK_MAX] = {"start", task_name, "ui", "IDLE", NULL, "Tmr Svc", "input", "host", "dmr",
+				      "dmrrf", "audio", "gps", "usb"};
+void *task_stack_handle(unsigned i) { return i < TASK_STACK_MAX ? table[i] : NULL; }
+// A waiting task's return address, a ready one's pc; the start task's context can't be read
+uint32_t hal_crash_task_where(const void *task)
+{
+	const char *n = task;
+	return strcmp(n, "start") == 0 ? 0 : strcmp(n, "ui") == 0 ? 0x03001235u : 0x03004000u + (uint32_t)n[0];
+}
 
 static void begin(void)
 {
@@ -90,6 +106,13 @@ static void test_commit(void)
 		crash_commit(&r);
 	check_order("fault", CRASH_KIND_FAULT);
 	CHECK(store.uptime_ms == 1234 && strncmp(store.task, "radio", CRASH_TASK_LEN) == 0);
+	// The snapshot: table order, without "radio" (running) and "IDLE"; names cut to CRASH_TAG_LEN
+	static const char *const want[CRASH_TASKS] = {"star", "ui", "Tmr ", "inpu", "host", "dmr", "dmrr", "audi"};
+	CHECK(store.ntasks == CRASH_TASKS && store.more_tasks == 2 && store.reserved == 0);
+	for (unsigned k = 0; k < CRASH_TASKS; k++)
+		CHECK(strncmp(store.tasks[k].name, want[k], CRASH_TAG_LEN) == 0);
+	CHECK(store.tasks[0].where == 0 && store.tasks[1].where == 0x03001235u);
+	CHECK(store.tasks[5].where == 0x03004000u + 'd' && memcmp(store.tasks[5].name, "dmr\0", 4) == 0);
 }
 
 static void test_stack(void)

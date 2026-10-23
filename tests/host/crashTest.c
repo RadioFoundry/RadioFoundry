@@ -12,6 +12,7 @@
 #include "dmr/dmr_data_api.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
+#include "debuglink/dl_frame.h"
 #include "radio/radio.h"
 
 static int failures;
@@ -27,6 +28,13 @@ uint8_t hal_crash_arch(void) { return CRASH_ARCH_CM4; }
 bool hal_crash_ram_addr(uint32_t a) { return a >= 0x20000000u && a < 0x20020000u; }
 bool hal_crash_code_addr(uint32_t a) { return a >= 0x08000000u && a < 0x08100000u; }
 void hal_crash_restart(void) { for (;;) { } }
+// The restart cause's words and the chip's flags, faked: a test sets what the next crash_init finds
+static crash_boot_t boot_words;
+static bool have_boot = true;
+static uint8_t chip_cause = CRASH_RESET_UNKNOWN;
+static uint32_t chip_raw;
+crash_boot_t *hal_crash_boot(void) { return have_boot ? &boot_words : NULL; }
+uint8_t hal_crash_reset_flags(uint32_t *raw) { *raw = chip_raw; return chip_cause; }
 
 static uint32_t get32(const uint8_t *p)
 {
@@ -61,9 +69,11 @@ static void test_crc(void)
 
 static void test_layout(void)
 {
-	CHECK(sizeof(crash_record_t) == 188);	// tools/crash_decode.py and the spec say so
-	CHECK(offsetof(crash_record_t, crc) == 184);
+	CHECK(sizeof(crash_record_t) == 256);	// the spec says so, and the HR_C7000's store holds no more
+	CHECK(offsetof(crash_record_t, crc) == 252);
 	CHECK(offsetof(crash_record_t, stack) == 120);
+	CHECK(offsetof(crash_record_t, ntasks) == 184 && offsetof(crash_record_t, tasks) == 188);
+	CHECK(sizeof(crash_task_t) == 8);
 }
 
 static void test_build_id(void)
@@ -89,9 +99,9 @@ static void test_seal(void)
 	bad.pc ^= 4;
 	CHECK(!crash_valid(&bad));	// the CRC sees a changed field
 	bad = r;
-	bad.version = 2;
+	bad.version = 1;
 	crash_reseal(&bad);
-	CHECK(!crash_valid(&bad));	// another layout
+	CHECK(!crash_valid(&bad));	// another layout: the 188-byte record before the task snapshot
 	bad = r;
 	bad.size = 100;
 	crash_reseal(&bad);
@@ -169,6 +179,63 @@ static void test_store(void)
 	have_store = true;
 }
 
+// The restart cause (crash-log.md 1.3): the decision on its own, then a run of starts on the fake kept words
+static void test_reset(void)
+{
+	// The chip's flags win where they say what happened; the kept words decide the rest
+	CHECK(crash_reset_cause(CRASH_RESET_WATCHDOG, true, true) == CRASH_RESET_WATCHDOG);	// it hung while rebooting
+	CHECK(crash_reset_cause(CRASH_RESET_POWER, true, false) == CRASH_RESET_POWER);
+	CHECK(crash_reset_cause(CRASH_RESET_BROWNOUT, false, false) == CRASH_RESET_BROWNOUT);
+	CHECK(crash_reset_cause(CRASH_RESET_SOFTWARE, false, false) == CRASH_RESET_SOFTWARE);
+	CHECK(crash_reset_cause(CRASH_RESET_UNKNOWN, true, true) == CRASH_RESET_SOFTWARE);
+	CHECK(crash_reset_cause(CRASH_RESET_PIN, true, true) == CRASH_RESET_SOFTWARE);
+	CHECK(crash_reset_cause(CRASH_RESET_UNKNOWN, false, false) == CRASH_RESET_POWER);
+	CHECK(crash_reset_cause(CRASH_RESET_PIN, false, false) == CRASH_RESET_POWER);
+	CHECK(crash_reset_cause(CRASH_RESET_UNKNOWN, true, false) == CRASH_RESET_WARM);
+	CHECK(crash_reset_cause(CRASH_RESET_PIN, true, false) == CRASH_RESET_PIN);
+	CHECK(strcmp(crash_reset_name(CRASH_RESET_WARM), "warm") == 0 && strcmp(crash_reset_name(99), "unknown") == 0);
+	CHECK(strcmp(crash_reset_name(CRASH_RESET_WATCHDOG), "watchdog") == 0);
+
+	// Power-on: garbage in the kept memory
+	memset(&boot_words, 0xA5, sizeof boot_words);
+	crash_init();
+	const crash_reset_t *x = crash_reset();
+	CHECK(x->cause == CRASH_RESET_POWER && x->uptime_ms == 0 && x->warm == 0 && x->flags == 0);
+	CHECK(boot_words.magic == CRASH_BOOT_MAGIC && boot_words.soft == 0 && boot_words.uptime_ms == 0);
+
+	// A reset nobody asked for, on a chip without flags (the HR_C7000's watchdog): the last uptime the tick kept
+	crash_alive(5000);
+	crash_alive(5001);
+	crash_init();
+	CHECK(x->cause == CRASH_RESET_WARM && x->uptime_ms == 5001 && x->warm == 1);
+	CHECK(boot_words.uptime_ms == 0 && boot_words.warm == 1);
+
+	// A reboot: marked first
+	crash_alive(700);
+	hal_crash_soft_mark();
+	crash_init();
+	CHECK(x->cause == CRASH_RESET_SOFTWARE && x->uptime_ms == 700 && x->warm == 2 && boot_words.soft == 0);
+
+	// The next one isn't marked again: the mark is for one reset only
+	crash_init();
+	CHECK(x->cause == CRASH_RESET_WARM && x->warm == 3);
+
+	// A chip with flags: they come through as read
+	chip_cause = CRASH_RESET_WATCHDOG;
+	chip_raw = 0x24000000u;
+	crash_init();
+	CHECK(x->cause == CRASH_RESET_WATCHDOG && x->flags == 0x24000000u && x->warm == 4);
+	chip_cause = CRASH_RESET_UNKNOWN;
+	chip_raw = 0;
+
+	// A platform without the words: power-on every time, and the tick's write goes nowhere
+	have_boot = false;
+	crash_init();
+	crash_alive(1);
+	CHECK(x->cause == CRASH_RESET_POWER && x->warm == 0);
+	have_boot = true;
+}
+
 static void test_pack(void)
 {
 	crash_record_t r = fault();
@@ -183,7 +250,7 @@ static void test_pack(void)
 	uint8_t out[CRASH_PACK_MAX];
 	size_t n = crash_pack(&r, out, sizeof out, hal_crash_code_addr);
 	CHECK(n == CRASH_PACK_FIXED + 3 * 4);
-	CHECK(out[0] == 'O' && out[1] == 'C' && out[2] == CRASH_VERSION && out[3] == CRASH_ARCH_CM4);
+	CHECK(out[0] == 'O' && out[1] == 'C' && out[2] == CRASH_PACK_VERSION && out[3] == CRASH_ARCH_CM4);
 	CHECK(out[4] == CRASH_KIND_FAULT && out[5] == r.flags && out[6] == 1 && out[7] == 3);
 	CHECK(get32(out + 8) == r.build && get32(out + 12) == 123456u && get32(out + 16) == 3);
 	CHECK(get32(out + 20) == r.pc && get32(out + 24) == r.lr && get32(out + 28) == r.sp && get32(out + 32) == r.psr);
@@ -443,10 +510,31 @@ static void test_debuglink(void)
 {
 	static char text[2048];
 
+	// The fullest section (every field at its widest, the stack, eight tasks) fits one GET_VIEW reply: status, the
+	// uptime u32 and the next section u8, then "section=crash\n" and the text (debuglink.md 3.7)
+	{
+		crash_record_t w;
+		memset(&w, 0xFF, sizeof w);
+		w.arch = CRASH_ARCH_CM4;
+		w.flags = 0xFF;
+		w.ntasks = CRASH_TASKS;
+		memset(w.task, 'x', sizeof w.task);
+		for (int k = 0; k < CRASH_TASKS; k++)
+			memset(w.tasks[k].name, 'x', CRASH_TAG_LEN);
+		crash_seal(&w, NULL);
+		w.count = 255;
+		crash_reseal(&w);
+		put_store(&w);
+		size_t n = strlen(view_text(text, sizeof text));
+		CHECK(strstr(text, "crash.t7=") != NULL);
+		CHECK(1 + 4 + 1 + strlen("section=crash\n") + n <= DL_REPLY_MAX);
+	}
+
 	// No record: the section says so and nothing else
 	memset(&store, 0, sizeof store);
 	crash_init();
-	CHECK(strcmp(view_text(text, sizeof text), "crash.built=1\ncrash.valid=0\n") == 0);
+	view_text(text, sizeof text);
+	CHECK(strcmp(text, "crash.built=1\ncrash.valid=0\n") == 0);
 
 	// A record: every field; the stack words only with CRASH_F_STACK
 	crash_record_t r = fault();
@@ -455,11 +543,28 @@ static void test_debuglink(void)
 	put_store(&r);
 	view_text(text, sizeof text);
 	CHECK(strstr(text, "crash.valid=1\n") != NULL && strstr(text, "crash.arch=1\ncrash.kind=1\ncrash.cause=3\n"));
+	// The restart cause has a section of its own (a full crash section nearly fills a reply): here the software
+	// restart a crash's capture marks
+	memset(&boot_words, 0, sizeof boot_words);
+	crash_init();
+	crash_alive(4242);
+	hal_crash_soft_mark();
+	crash_init();
+	{
+		static char rtext[256];
+		dl_text_t rt;
+		dl_text_init(&rt, rtext, sizeof rtext - 1);
+		debuglink_view_reset(&rt);
+		rtext[rt.len] = 0;
+		CHECK(strcmp(rtext, "reset.built=1\nreset.cause=software\nreset.flags=0x00000000\nreset.uptime_ms=4242\n"
+				    "reset.warm=1\n") == 0);
+	}
 	CHECK(strstr(text, "crash.pc=0x0802c4a9\ncrash.lr=0x0803082d\ncrash.sp=0x20004f00\ncrash.psr=0x21000000\n"));
 	CHECK(strstr(text, "crash.status=0x00008200,0x00000000,0x00000000,0xdeadbeef\n"));
 	CHECK(strstr(text, "crash.task=audio_ta\ncrash.uptime_ms=123456\ncrash.build=00000000\n"));
 	CHECK(strstr(text, "crash.r0=0x00001000\n") && strstr(text, "crash.r13=0x0000100d\n"));
 	CHECK(strstr(text, "crash.stack=") == NULL);
+	CHECK(strstr(text, "crash.tasks=0\ncrash.tasks_more=0\n") && strstr(text, "crash.t0=") == NULL);
 	r.flags |= CRASH_F_STACK;
 	for (int k = 0; k < CRASH_STACK_WORDS; k++)
 		r.stack[k] = 0x20000000u + (uint32_t)k;
@@ -468,6 +573,21 @@ static void test_debuglink(void)
 	view_text(text, sizeof text);
 	CHECK(strstr(text, "crash.flags=0x4\n") != NULL);
 	CHECK(strstr(text, "crash.stack=20000000,20000001,") && strstr(text, ",2000000f\n"));
+
+	// The task snapshot: a full-length tag terminated, a short one cut at its NUL, a comma kept out of the text
+	r.ntasks = 3;
+	r.more_tasks = 2;
+	memcpy(r.tasks[0].name, "dmrr", 4);
+	r.tasks[0].where = 0x0802c4a9u;
+	memcpy(r.tasks[1].name, "ui\0\0", 4);
+	r.tasks[1].where = 0x08001000u;
+	memcpy(r.tasks[2].name, "a,b\0", 4);
+	r.tasks[2].where = 0;
+	crash_reseal(&r);
+	put_store(&r);
+	view_text(text, sizeof text);
+	CHECK(strstr(text, "crash.tasks=3\ncrash.tasks_more=2\ncrash.t0=dmrr,0802c4a9\ncrash.t1=ui,08001000\n"));
+	CHECK(strstr(text, "crash.t2=a_b,00000000\n") && strstr(text, "crash.t3=") == NULL);
 
 	// DL_CMD_CRASH: wrong lengths and operations
 	uint8_t st;
@@ -520,7 +640,8 @@ static void test_debuglink(void)
 	const uint8_t clear[] = { DL_CRASH_OP_CLEAR };
 	CHECK(crash_cmd(clear, 1, &st) == 1 && st == DL_ST_OK);
 	CHECK(crash_last() == NULL && !crash_valid(&store));
-	CHECK(strcmp(view_text(text, sizeof text), "crash.built=1\ncrash.valid=0\n") == 0);
+	view_text(text, sizeof text);
+	CHECK(strcmp(text, "crash.built=1\ncrash.valid=0\n") == 0);
 }
 
 // The fault trace line (crash_trace.c): exactly what tools/odr_fault_trace.py's selftest decodes (its GOLDEN)
@@ -566,6 +687,7 @@ int main(void)
 	test_build_id();
 	test_seal();
 	test_store();
+	test_reset();
 	test_pack();
 	test_summary();
 	test_ui_svc();

@@ -237,6 +237,13 @@ static void port_reset(void *ctx)
 	(void)ctx;
 	usb_flush(200);		// the RESET reply leaves the FIFO first
 	stub_delay_ms(20);
+	RCC->APB1ENR |= RCC_APB1ENR_PWREN;	// the backup SRAM: ODR's entry left its clock off
+	(void)RCC->APB1ENR;
+	PWR->CR |= PWR_CR_DBP;
+	RCC->AHB1ENR |= RCC_AHB1ENR_BKPSRAMEN;
+	(void)RCC->AHB1ENR;
+	*(volatile uint32_t *)F4STUB_SOFT_MARK_ADDR = F4STUB_SOFT_MARK;	// asked for: not the watchdog
+	__DSB();
 	NVIC_SystemReset();
 }
 

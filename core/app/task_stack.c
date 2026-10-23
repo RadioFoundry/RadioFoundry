@@ -34,6 +34,11 @@ void task_stack_deleted(void *task)
 	}
 }
 
+void *task_stack_handle(unsigned i)
+{
+	return i < TASK_STACK_MAX ? tasks[i] : NULL;
+}
+
 unsigned task_stack_snapshot(task_stack_t *out, unsigned max, unsigned *untracked)
 {
 	unsigned n = 0;

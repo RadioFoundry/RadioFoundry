@@ -55,6 +55,68 @@ bool hal_crash_code_addr(uint32_t a)
 	return a >= FLASH_LO && a < FLASH_HI;
 }
 
+// The instruction before pc ends a kernel wait: the yield's ISB (portmacro.h), or the MSR BASEPRI of a critical
+// section's exit, where a yield the section held back is taken
+static bool after_yield(uint32_t pc)
+{
+	pc &= ~1u;
+	if (!hal_crash_code_addr(pc - 4u))
+		return false;
+	const volatile uint16_t *h = (const volatile uint16_t *)(uintptr_t)(pc - 4u);
+	return (h[0] == 0xF3BFu && h[1] == 0x8F6Fu) || ((h[0] & 0xFFF0u) == 0xF380u && h[1] == 0x8811u);
+}
+
+uint32_t hal_crash_task_where(const void *task)
+{
+	// pxTopOfStack: what the PendSV handler (port.c) pushed, low to high r4-r11 and EXC_RETURN, s16-s31 if the task
+	// used the FPU, then the CPU's frame (r0-r3, r12, lr, pc, xPSR, with s0-s15 and FPSCR after it for the FPU)
+	const uint32_t f = *(const uint32_t *)task;
+	if ((f & 3u) || !hal_crash_ram_addr(f) || !hal_crash_ram_addr(f + 35u))
+		return 0;
+	const uint32_t exc_return = ((const uint32_t *)(uintptr_t)f)[8];
+	const uint32_t hw = f + 36u + ((exc_return & FRAME_FPU_BIT) ? 0u : 64u);
+	if (!hal_crash_ram_addr(hw + 31u))
+		return 0;
+	const uint32_t *frame = (const uint32_t *)(uintptr_t)hw;
+	const uint32_t pc = frame[6];
+	if (!after_yield(pc))
+		return pc & ~1u;	// an interrupt took it while ready
+	const uint32_t above = hw + ((exc_return & FRAME_FPU_BIT) ? 32u : 104u) + ((frame[7] & XPSR_ALIGN_BIT) ? 4u : 0u);
+	const uint32_t ret = crash_stack_return(above, CRASH_TASK_SCAN_WORDS);
+	return ((ret != 0 ? ret : pc) & ~1u) | 1u;
+}
+
+#if CONFIG_STUB_ENTRY
+#include "../../stub/stm32f4/f4stub_header.h"
+_Static_assert(F4STUB_SOFT_MARK_ADDR == BKPSRAM_BASE + sizeof(crash_record_t) + offsetof(crash_boot_t, soft) &&
+	       F4STUB_SOFT_MARK == CRASH_BOOT_SOFT, "the stub's RESET mark (f4stub_header.h)");
+#endif
+
+crash_boot_t *hal_crash_boot(void)
+{
+	return (crash_boot_t *)((uint8_t *)hal_crash_store() + sizeof(crash_record_t));	// backup SRAM, after the record
+}
+
+// RCC_CSR (RM0090 7.3.21). Every reset also drives the NRST pin, so PINRSTF alone is the pin; a power-on sets BORRSTF
+// too, so POR before BOR. The stock bootloader runs first and is not known to clear or add to them
+uint8_t hal_crash_reset_flags(uint32_t *raw)
+{
+	const uint32_t csr = RCC->CSR;
+	*raw = csr;
+	RCC->CSR |= RCC_CSR_RMVF;
+	if (csr & (RCC_CSR_IWDGRSTF | RCC_CSR_WWDGRSTF))
+		return CRASH_RESET_WATCHDOG;
+	if (csr & RCC_CSR_SFTRSTF)
+		return CRASH_RESET_SOFTWARE;
+	if (csr & RCC_CSR_PORRSTF)
+		return CRASH_RESET_POWER;
+	if (csr & RCC_CSR_BORRSTF)
+		return CRASH_RESET_BROWNOUT;
+	if (csr & RCC_CSR_PINRSTF)
+		return CRASH_RESET_PIN;
+	return CRASH_RESET_UNKNOWN;
+}
+
 void hal_crash_restart(void)
 {
 	board_rf_safe();

@@ -32,7 +32,8 @@ was not configured refuses every write.
 
 The watchdog: ODR's `enter_stub` leaves it running with a 32 s timeout, and the stub feeds it with the knock sequence on
 every pass of its receive wait and before every SPI read burst, so a stub that hangs resets the radio. `--boot reset`
-turns it off just before the soft reset. No flashing or backup trips the watchdog unless the stub itself hangs (`docs/spec/watchdog.md` 3). The source of this image is kept outside the repository; a rebuild is
+turns it off just before the soft reset, after it writes ODR's restart-cause mark (`CRASH_SOFT_MARK`,
+`docs/spec/crash-log.md` 1.3) through POKE, so ODR reports a software restart. No flashing or backup trips the watchdog unless the stub itself hangs (`docs/spec/watchdog.md` 3). The source of this image is kept outside the repository; a rebuild is
 embedded with `python3 stub/embed_stub.py stub/stubtool.py UNIV stub_univ.bin`, and the site serves the image from
 `stubtool.py`, never a copy.
 

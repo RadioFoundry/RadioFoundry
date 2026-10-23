@@ -22,6 +22,12 @@
 
 #define F4STUB_FLAG_FEEDS_IWDG		0x00000001u	// feeds the IWDG in every loop that can take time
 
+// The stub's RESET marks itself as asked for in ODR's restart-cause words (docs/spec/crash-log.md 1.3: crash_boot_t.soft
+// in the backup SRAM, after the crash record), so the next start doesn't take it for the watchdog. ODR checks the
+// address against its own layout (crash_stm32.c)
+#define F4STUB_SOFT_MARK_ADDR		0x40024104u
+#define F4STUB_SOFT_MARK		0x54464F53u	// "SOFT", CRASH_BOOT_SOFT
+
 typedef struct {
 	uint32_t magic;		// F4STUB_HDR_MAGIC
 	uint16_t layout;	// F4STUB_HDR_LAYOUT

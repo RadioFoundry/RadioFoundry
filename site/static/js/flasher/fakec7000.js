@@ -16,7 +16,7 @@
 import { concat, crc32, le32, sha256, sleep, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
 import { encodeBlock } from "./lz4.js";
-import { STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
+import { CRASH_BOOT_SOFT, CRASH_SOFT_MARK, STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
 import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE } from "./usmart.js";
 import { rng, randomBytes } from "./fake.js";
 import { sigBytes } from "./c7000.js";
@@ -348,6 +348,7 @@ export class FakeC7000 {
 			this.reply(OK, a === TIMER2_VALUE ? le32(now) : new Uint8Array(n));
 		} else if (op === 0x03) {
 			if (u32be(p, 0) === WDT_EN && u32le(p, 4) === 0) this.events.push("wdt-off");
+			if (u32be(p, 0) === CRASH_SOFT_MARK && u32le(p, 4) === CRASH_BOOT_SOFT) this.events.push("soft-mark");
 			if (u32be(p, 0) === SYS_SOFT_RSTN) {
 				this.events.push("reset");
 				this.led = "off";

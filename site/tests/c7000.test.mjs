@@ -149,8 +149,8 @@ test("boot ROM path: load, read with damaged frames, write, reset into ODR", asy
 	assert.equal(states.get(0xC000), "written");
 	await s.ledSequence(DONE_LED);
 	await s.resetChip();
-	const ev = r.events.filter((e) => e === "wdt-off" || e === "reset");
-	assert.deepEqual(ev.slice(-2), ["wdt-off", "reset"], "the watchdog goes off before the soft reset");
+	const ev = r.events.filter((e) => e === "soft-mark" || e === "wdt-off" || e === "reset");
+	assert.deepEqual(ev.slice(-3), ["soft-mark", "wdt-off", "reset"], "the restart-cause mark, then the watchdog off, then the soft reset");
 	await new Promise((ok) => setTimeout(ok, 1500));
 	assert.equal(r.state, "firmware");
 	const p = await probe(new Link(r.stream));
@@ -166,8 +166,8 @@ test("simulated radio: after the stub's reset the host link stays silent until a
 	await s.waitForRom(5000);
 	await s.loadThroughRom(stubs.image, stubs.load);
 	await s.resetChip();
-	const ev = r.events.filter((e) => e === "wdt-off" || e === "reset");
-	assert.deepEqual(ev.slice(-2), ["wdt-off", "reset"], "the watchdog goes off before the soft reset");
+	const ev = r.events.filter((e) => e === "soft-mark" || e === "wdt-off" || e === "reset");
+	assert.deepEqual(ev.slice(-3), ["soft-mark", "wdt-off", "reset"], "the restart-cause mark, then the watchdog off, then the soft reset");
 	await new Promise((ok) => setTimeout(ok, 1500));
 	assert.equal(r.state, "firmware");
 	assert.equal(await probe(new Link(r.stream, { timeout: 500 })), null, "no answer after the soft reset");

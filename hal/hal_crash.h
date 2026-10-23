@@ -10,9 +10,11 @@
 #include <stdint.h>
 
 #define CRASH_MAGIC		0x48535243u	// "CRSH"
-#define CRASH_VERSION		1
+#define CRASH_VERSION		2
 #define CRASH_STACK_WORDS	16
 #define CRASH_TASK_LEN		8
+#define CRASH_TASKS		8	// other tasks in the snapshot: the record then fills the HR_C7000's 256-byte store
+#define CRASH_TAG_LEN		4	// the first letters of each one's name
 
 enum { CRASH_ARCH_CM4 = 1, CRASH_ARCH_CK803 = 2 };
 
@@ -31,7 +33,15 @@ enum {
 #define CRASH_F_SEEN		0x08u	// shown on the screen or dismissed: not news any more
 #define CRASH_F_SENT		0x10u	// the report went out over the air
 
-// Fixed-width members, no padding (188 bytes)
+// Fixed-width members, no padding (256 bytes)
+// One task other than the running one, as the crash found it (crash_record_t.tasks)
+typedef struct {
+	char name[CRASH_TAG_LEN];	// the first letters of its name, NUL padded, not always terminated
+	uint32_t where;			// bit 0 set: it was waiting in the kernel, and the rest is the return address into
+					// the code that called the wait. Clear: an interrupt took it while ready, the rest
+					// is its pc. 0: its saved context couldn't be read
+} crash_task_t;
+
 typedef struct {
 	uint32_t magic;			// CRASH_MAGIC
 	uint16_t version;		// CRASH_VERSION
@@ -51,8 +61,39 @@ typedef struct {
 	uint32_t build;			// the first 8 hex digits of the firmware's commit
 	char task[CRASH_TASK_LEN];	// the running task's name, NUL padded
 	uint32_t stack[CRASH_STACK_WORDS];
+	uint8_t ntasks;			// entries in tasks
+	uint8_t more_tasks;		// other tasks that didn't fit
+	uint16_t reserved;		// 0
+	crash_task_t tasks[CRASH_TASKS];	// in the task table's order (core/app/task_stack.c), not the idle task
 	uint32_t crc;			// CRC-32 of everything before it
 } crash_record_t;
+
+_Static_assert(sizeof(crash_record_t) == 256, "the record's layout (docs/spec/crash-log.md 3) and the HR_C7000 store");
+
+// Why the radio restarted (docs/spec/crash-log.md 1.3), also when there is no record: a few words next to the record,
+// in the same kept memory. The start-up stamps them, the tick keeps the uptime in them, and every restart software
+// asks for marks them first (hal_crash_soft_mark). What the next start finds there, with the chip's own reset flags
+// where it has them, is the cause
+#define CRASH_BOOT_MAGIC	0x544F4F42u	// "BOOT"
+#define CRASH_BOOT_SOFT		0x54464F53u	// "SOFT"
+
+typedef struct {
+	uint32_t magic;			// CRASH_BOOT_MAGIC: the memory has kept its contents since the last start
+	uint32_t soft;			// CRASH_BOOT_SOFT: software asked for the reset that followed
+	uint32_t uptime_ms;		// how long the last run lasted, to the tick (the hang check's tick writes it)
+	uint32_t warm;			// starts since the memory last lost its contents
+} crash_boot_t;
+
+enum {
+	CRASH_RESET_UNKNOWN = 0,
+	CRASH_RESET_POWER = 1,		// the supply came up: the kept memory was lost, or the chip's power-on flag
+	CRASH_RESET_SOFTWARE = 2,	// a reboot, a crash's restart, the boot stub's reset
+	CRASH_RESET_WATCHDOG = 3,	// the chip's watchdog flag
+	CRASH_RESET_BROWNOUT = 4,	// the chip's brown-out flag
+	CRASH_RESET_PIN = 5,		// the chip's reset pin flag and no other
+	CRASH_RESET_WARM = 6,		// memory kept, not asked for, and a chip without reset flags: the watchdog, the reset
+					// pin, or a supply dip too short to lose memory
+};
 
 // Provided by the platform:
 
@@ -64,10 +105,24 @@ uint8_t hal_crash_arch(void);
 // Readable RAM (the stack copy) / code (the report's return address candidates)
 bool hal_crash_ram_addr(uint32_t addr);
 bool hal_crash_code_addr(uint32_t addr);
+// A task that isn't running (its handle): crash_task_t.where from the context its last switch saved, which the
+// TCB's first word points at. 0 when that can't be read
+uint32_t hal_crash_task_where(const void *task);
 // Restart the radio after a capture: interrupts are off; does not return
 void hal_crash_restart(void) __attribute__((noreturn));
 // The hang check (core/app/watchdog.c), from the RTOS tick interrupt: the transmitter off, the interrupted task's
 // registers into a CRASH_KIND_HANG record (cause: ms, the time since the last feed), then crash_commit. Does not return
 void hal_crash_hang(uint32_t ms) __attribute__((noreturn));
+// The restart cause's words, next to the record. The first call turns on its access, as hal_crash_store's does
+crash_boot_t *hal_crash_boot(void);
+// The chip's reset flags as a CRASH_RESET_* (CRASH_RESET_UNKNOWN on a chip without them), *raw the register as read.
+// Clears them for the next start: call it once, at start-up
+uint8_t hal_crash_reset_flags(uint32_t *raw);
+
+// Every restart software asks for calls this first, so the next start doesn't take it for the watchdog's
+static inline void hal_crash_soft_mark(void)
+{
+	hal_crash_boot()->soft = CRASH_BOOT_SOFT;
+}
 
 #endif

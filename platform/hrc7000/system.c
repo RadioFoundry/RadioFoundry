@@ -67,6 +67,7 @@ HRC_RAMFUNC void hrc_rf_safe(void)
 HRC_RAMFUNC void hrc_soft_reset(void)
 {
 	__asm__ volatile ("psrclr ie");
+	HRC_CRASH_SOFT_MARK();	// asked for: not the watchdog (crash-log.md 1.3)
 	hrc_rf_safe();
 	// Watchdog off: whether a soft reset clears it is unknown, and the bootloader (its update mode, which waits for the
 	// PC) never feeds it

@@ -25,6 +25,7 @@ import argparse
 import base64
 import hashlib
 import os
+import re
 import sys
 import time
 import zlib
@@ -386,6 +387,8 @@ LCSFC_BAUDR = 0x11000030            # XIP flash SCLK divider; a soft reset keeps
 WDT_LOCK = 0x14010000               # watchdog: unlock key, then EN = 0, then lock (hardware-dm32.md 3.5)
 WDT_EN = 0x14010010
 WDT_KEY = 0x5ADA7200
+CRASH_SOFT_MARK = 0x18007EF4        # ODR's restart-cause words (crash-log.md 1.3): HRC_CRASH_BOOT + 4, crash_boot_t.soft
+CRASH_BOOT_SOFT = 0x54464F53        # "SOFT": the reset was asked for, so ODR's next start doesn't take it for the watchdog
 TIMER2_VALUE = 0x14000018           # timer 2 current value (counts down; the stub runs it free)
 LED_RED, LED_GREEN = 33, 32         # PTB1 = red, PTB0 = green on the DM-1801 Pro and the DM-32UV (both checked on the radio)
 OK, BADSUM, BADOP, SPITIMEOUT, TOOLONG = 0x05, 0x0A, 0x0B, 0x0C, 0x0E
@@ -925,7 +928,9 @@ class Radio:
         ROM runs again, offers its serial window briefly, then starts the firmware from flash: the same as a power cycle
         without the cycle. The soft reset keeps the divider, and the ROM can't read flash at ODR's divider 2. The watchdog
         goes off first: ODR leaves it running while the stub feeds it, a soft reset may keep it, and the bootloader never
-        feeds it (its update mode waits for the PC). ODR starts it again."""
+        feeds it (its update mode waits for the PC). ODR starts it again. The restart-cause mark goes first, so ODR
+        reports a software restart (it counts only when the memory was kept: a stub loaded at power-on leaves it)."""
+        self.poke(CRASH_SOFT_MARK, CRASH_BOOT_SOFT.to_bytes(4, "little"))
         self.poke(WDT_LOCK, WDT_KEY.to_bytes(4, "little"))
         self.poke(WDT_EN, (0).to_bytes(4, "little"))
         self.poke(WDT_LOCK, (0).to_bytes(4, "little"))
@@ -1783,6 +1788,12 @@ def self_test():
     r.reset_chip()
     check(radio.pokes[-3:] == [(QUAD_ENABLE, 0), (LCSFC_BAUDR, 4), (SYS_SOFT_RSTN, 0)],
           "reset_chip pokes XIP quad off and the reset divider, then the soft reset (%s)" % (radio.pokes[-3:],))
+    check(radio.pokes[-7] == (CRASH_SOFT_MARK, CRASH_BOOT_SOFT),
+          "reset_chip marks the restart as software's first (%s)" % (radio.pokes[-7:],))
+    hdr = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "platform", "hrc7000", "platform.h")
+    if os.path.exists(hdr):                     # in the repository: the mark's address is ODR's crash_boot_t.soft
+        m = re.search(r"#define HRC_CRASH_BOOT\s+0x([0-9A-Fa-f]+)u", open(hdr).read())
+        check(m is not None and int(m.group(1), 16) + 4 == CRASH_SOFT_MARK, "CRASH_SOFT_MARK is HRC_CRASH_BOOT + 4")
     try:
         parse_led_spec("255:0")
         check(False, "bad LED spec refused")

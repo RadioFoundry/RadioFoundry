@@ -25,6 +25,8 @@ export const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, TOOLONG = 0x0E;
 export const SSI_PROG = 0x04000000, SSI_DATA = 0x140A0000;
 export const QUAD_ENABLE = 0x1100005C, LCSFC_BAUDR = 0x11000030, SYS_SOFT_RSTN = 0x11000000, TIMER2_VALUE = 0x14000018;
 export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
+// ODR's restart-cause mark (docs/spec/crash-log.md 1.3; stubtool.py CRASH_SOFT_MARK): the reset was asked for
+export const CRASH_SOFT_MARK = 0x18007EF4, CRASH_BOOT_SOFT = 0x54464F53;
 export const STUB_MAGIC = 0x42533743, DL_STUB = 0x1A;
 const ROM_HELLO = [0x02, 0x24, 0x00, 0x03], ROM_ACK = [0x02, 0x05, 0x00, 0x03];
 // memory: SSI base, the GPIO chip select (the data flash's is PTA18), size
@@ -504,8 +506,10 @@ export class Stub {
 	// Soft-reset the SoC: XIP quad off and the reset divider (the soft reset keeps it, and the ROM can't read flash at
 	// ODR's), then SYS_SOFT_RSTN = 0. The boot ROM runs again and starts the firmware: a power cycle without the cycle.
 	// The watchdog goes off first: ODR leaves it running while the stub feeds it, a soft reset may keep it, and the
-	// bootloader never feeds it. ODR starts it again
+	// bootloader never feeds it. ODR starts it again. The restart-cause mark goes first, so ODR's next start reports a
+	// software restart, not the watchdog
 	async resetChip() {
+		await this.poke(CRASH_SOFT_MARK, le32(CRASH_BOOT_SOFT));
 		await this.poke(WDT_LOCK, le32(WDT_KEY));
 		await this.poke(WDT_EN, le32(0));
 		await this.poke(WDT_LOCK, le32(0));

@@ -105,6 +105,7 @@ def test_crash_hang_kept(radio):
     if wd.get("watchdog.built") != "1":
         skip("not_built", "built without CONFIG_WATCHDOG: nothing would end the hang")
     timeout = as_int(wd["watchdog.timeout_ms"])
+    tasks_built = radio.view(["tasks"]).get("tasks.built") != "0"
     v = _crash(radio, "hang")
     assert v.get("crash.valid") == "1", "no hang record: the watchdog reset the radio first " + str(v)
     assert as_int(v["crash.kind"]) == CRASH_KIND_HANG, v
@@ -112,4 +113,13 @@ def test_crash_hang_kept(radio):
     assert timeout * 3 // 4 <= ms < timeout, (ms, timeout)   # three quarters of the timeout, before the reset
     assert v.get("crash.task") == "host", v       # the spinning task, not the tick's
     assert as_int(v["crash.pc"], 0) != 0, v
+    # The other tasks (crash-log.md 1.2): not host (running) nor IDLE, each with a saved context that could be read.
+    # The UI and radio tasks wait for work, so at least one entry is a kernel wait
+    if tasks_built:
+        n = as_int(v["crash.tasks"])
+        others = dict(v[f"crash.t{k}"].rsplit(",", 1) for k in range(n))
+        assert n >= 2 and "ui" in others and "radi" in others, v
+        assert "host" not in others and "IDLE" not in others, v
+        where = [int(w, 16) for w in others.values()]
+        assert all(where) and any(w & 1 for w in where), others
     radio.link.crash_clear()

@@ -12,6 +12,8 @@
 
 static crash_record_t last;
 static bool have_last;
+static crash_reset_t reset;
+static crash_boot_t *boot;	// the kept words, NULL before crash_init
 
 uint32_t crash_crc32(const void *data, size_t len)
 {
@@ -95,6 +97,53 @@ void crash_init(void)
 	have_last = crash_valid(s);
 	if (have_last)
 		last = *s;
+
+	memset(&reset, 0, sizeof reset);
+	uint8_t chip = hal_crash_reset_flags(&reset.flags);
+	boot = hal_crash_boot();
+	bool kept = boot != NULL && boot->magic == CRASH_BOOT_MAGIC;
+	reset.cause = crash_reset_cause(chip, kept, kept && boot->soft == CRASH_BOOT_SOFT);
+	if (kept) {
+		reset.uptime_ms = boot->uptime_ms;
+		reset.warm = boot->warm + 1u;
+	}
+	if (boot != NULL) {
+		boot->soft = 0;
+		boot->uptime_ms = 0;
+		boot->warm = reset.warm;
+		boot->magic = CRASH_BOOT_MAGIC;
+	}
+}
+
+// The chip's own flags first where they say more than the memory can; a chip without them (or one that says only
+// "the pin", which every internal reset also drives) leaves it to the kept words
+uint8_t crash_reset_cause(uint8_t chip, bool kept, bool soft)
+{
+	if (chip == CRASH_RESET_WATCHDOG || chip == CRASH_RESET_BROWNOUT || chip == CRASH_RESET_POWER ||
+	    chip == CRASH_RESET_SOFTWARE)
+		return chip;
+	if (soft)
+		return CRASH_RESET_SOFTWARE;
+	if (!kept)
+		return CRASH_RESET_POWER;
+	return chip == CRASH_RESET_PIN ? CRASH_RESET_PIN : CRASH_RESET_WARM;
+}
+
+const char *crash_reset_name(uint8_t cause)
+{
+	static const char *const names[] = { "unknown", "power", "software", "watchdog", "brownout", "pin", "warm" };
+	return cause < sizeof names / sizeof names[0] ? names[cause] : "unknown";
+}
+
+const crash_reset_t *crash_reset(void)
+{
+	return &reset;
+}
+
+void crash_alive(uint32_t now_ms)
+{
+	if (boot != NULL)
+		boot->uptime_ms = now_ms;
 }
 
 const crash_record_t *crash_last(void)
@@ -139,7 +188,7 @@ size_t crash_pack(const crash_record_t *r, uint8_t *out, size_t max, bool (*is_c
 	uint8_t *p = out;
 	*p++ = 'O';
 	*p++ = 'C';
-	*p++ = CRASH_VERSION;
+	*p++ = CRASH_PACK_VERSION;
 	*p++ = r->arch;
 	*p++ = r->kind;
 	*p++ = r->flags;

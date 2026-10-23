@@ -285,6 +285,15 @@ void hrc_soft_reset(void) __attribute__((noreturn));
 // codec's tables (from 0x18000800, at most to 0x18004F90 in any stock image) and the microphone PCM (0x18000000)
 // don't reach (hardware-dm32.md 2: free for software). Main SRAM is the bootloader's and the start-up's
 #define HRC_CRASH_STORE		0x18007F00u	// 256 bytes to the end, 0x18008000
+#define HRC_CRASH_BOOT		0x18007EF0u	// the restart cause's words (crash_boot_t), just below the record; stub/
+						// stubtool.py's --boot reset writes .soft (CRASH_SOFT_MARK) by this address
+// Mark the reset to come as software's (hal_crash_soft_mark), by address: the RAM functions that reset can't call into
+// flash
+#if CONFIG_CRASH_LOG
+#define HRC_CRASH_SOFT_MARK()	(*(volatile uint32_t *)(HRC_CRASH_BOOT + 4u) = 0x54464F53u)	// crash_boot_t.soft
+#else
+#define HRC_CRASH_SOFT_MARK()	((void)0)
+#endif
 // The capture for a fault (hrc_fault: kind CRASH_KIND_FAULT, cause the vector) or a hang (hal_crash_hang: the tick's
 // interrupted task). The frame is the entries' (r0..r13, r15, EPSR, EPC): hrc_fault_entry's or hrc_irq_entry's. Does
 // not return

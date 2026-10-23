@@ -7,7 +7,7 @@
 #include "hal_time.h"
 #include "hal_watchdog.h"
 #if CONFIG_CRASH_LOG
-#include "hal_crash.h"
+#include "crash/crash.h"
 #endif
 
 static watchdog_state_t st;
@@ -51,6 +51,7 @@ bool watchdog_hung(uint32_t now_ms, uint32_t timeout_ms)
 void watchdog_tick(void)
 {
 	uint32_t now = hal_millis();
+	crash_alive(now);	// the uptime the next start reports (crash-log.md 1.3)
 	if (watchdog_hung(now, hal_watchdog_timeout_ms())) {
 		hal_crash_hang(now - st.last_fed_ms);
 	}

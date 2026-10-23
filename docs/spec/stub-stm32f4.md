@@ -153,7 +153,7 @@ arriving for 200 ms is dropped. The largest payload is 4104 bytes (`STUBENG_MAX_
 | `02` | PEEK | addr u32, n u16 (1 to max) | n bytes. Allowed: flash, 0x1FFF0000-0x1FFF7A2F (system memory, OTP, UID, flash size), option bytes 0x1FFFC000-0x1FFFC00F, SRAM, CCM. Peripherals are refused |
 | `07` | SUMS | addr u32 (4 KB aligned), count u16 (1 to 820), memory u8 (optional: 0 internal flash, the default; 1 SPI flash, addresses from 0) | count x (CRC-32 u32, blank u8) |
 | `09` | READ | addr u32 (4 KB aligned), count u8 (1 to 255), compress u8, memory u8 (optional, as SUMS) | count frames, one per 4 KB block: CRC-32 u32, method u8 (0 raw, 2 blank), length u16, data. Compression is not offered; a compress request is answered raw |
-| `0D` | RESET | magic u32 | OK, then a system reset once the reply has left |
+| `0D` | RESET | magic u32 | OK, then a system reset once the reply has left. It first writes ODR's restart-cause mark (`F4STUB_SOFT_MARK_ADDR`, [crash-log.md](crash-log.md) 1.3), so ODR reports a software restart |
 | `10` | ERASE | sector u8, magic u32 | OK once erased |
 | `11` | PROGRAM | addr u32 (word aligned), 4 to 4096 bytes (whole words) | OK once programmed and read back |
 | `12` | XERASE | addr u32 (a 4 KB SPI flash sector), magic u32 | OK once erased |

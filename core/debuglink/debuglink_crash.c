@@ -38,12 +38,31 @@ void debuglink_view_crash(dl_text_t *t)
 		(unsigned)r->build);
 	for (int k = 0; k < 14; k++)
 		dl_text(t, "crash.r%d=0x%08x\n", k, (unsigned)r->r[k]);
-	if (!(r->flags & CRASH_F_STACK))
-		return;
-	dl_text(t, "crash.stack=");
-	for (int k = 0; k < CRASH_STACK_WORDS; k++)
-		dl_text(t, k ? ",%08x" : "%08x", (unsigned)r->stack[k]);
-	dl_text(t, "\n");
+	if (r->flags & CRASH_F_STACK) {
+		dl_text(t, "crash.stack=");
+		for (int k = 0; k < CRASH_STACK_WORDS; k++)
+			dl_text(t, k ? ",%08x" : "%08x", (unsigned)r->stack[k]);
+		dl_text(t, "\n");
+	}
+	// The other tasks: "crash.t<k>=<name>,<where>"; the name may hold a space, never a comma
+	const unsigned n = r->ntasks < CRASH_TASKS ? r->ntasks : CRASH_TASKS;
+	dl_text(t, "crash.tasks=%u\ncrash.tasks_more=%u\n", n, r->more_tasks);
+	for (unsigned k = 0; k < n; k++) {
+		char name[CRASH_TAG_LEN + 1];
+		for (int c = 0; c < CRASH_TAG_LEN; c++)
+			name[c] = r->tasks[k].name[c] == ',' ? '_' : r->tasks[k].name[c];
+		name[CRASH_TAG_LEN] = 0;
+		dl_text(t, "crash.t%u=%s,%08x\n", k, name, (unsigned)r->tasks[k].where);
+	}
+}
+
+// Why this start happened, with or without a record (crash-log.md 1.3). A section of its own: a full crash section
+// with the stack and the task snapshot already comes close to a reply's size
+void debuglink_view_reset(dl_text_t *t)
+{
+	const crash_reset_t *x = crash_reset();
+	dl_text(t, "reset.built=1\nreset.cause=%s\nreset.flags=0x%08x\nreset.uptime_ms=%u\nreset.warm=%u\n",
+		crash_reset_name(x->cause), (unsigned)x->flags, (unsigned)x->uptime_ms, (unsigned)x->warm);
 }
 
 static bool on_air(void)
@@ -111,6 +130,11 @@ void debuglink_crash_service(void)
 void debuglink_view_crash(dl_text_t *t)
 {
 	dl_text(t, "crash.built=0\n");
+}
+
+void debuglink_view_reset(dl_text_t *t)
+{
+	dl_text(t, "reset.built=0\n");
 }
 
 size_t debuglink_cmd_crash(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)

@@ -81,10 +81,15 @@ def from_view(text):
     arch = num("arch")
     stack = [int(w, 16) for w in v.get("stack", "").split(",") if w]
     rets = [w for w in stack if is_code(arch, w)][:12]
+    tasks = []
+    for k in range(num("tasks")):
+        name, _, where = v.get(f"t{k}", ",0").rpartition(",")
+        tasks.append((name.rstrip("\0 "), int(where, 16)))
     return dict(arch=arch, kind=num("kind"), flags=num("flags"), count=num("count"), build=int(v.get("build", "0"), 16),
                 uptime_ms=num("uptime_ms"), cause=num("cause"), pc=num("pc"), lr=num("lr"), sp=num("sp"),
                 psr=num("psr"), status=[int(w, 0) for w in v.get("status", "0,0,0,0").split(",")],
-                task=v.get("task", ""), r=[num(f"r{k}") for k in range(14)], returns=rets)
+                task=v.get("task", ""), r=[num(f"r{k}") for k in range(14)], returns=rets, tasks=tasks,
+                tasks_more=num("tasks_more"))
 
 
 def is_code(arch, addr):
@@ -154,6 +159,10 @@ def describe(rep, elf=None, addr2line=None):
     if is_code(arch, rep["lr"]):
         where.append(("lr", rep["lr"], (rep["lr"] & ~1) - 1))
     where += [(f"#{k}", a, (a & ~1) - 1) for k, a in enumerate(rep["returns"])]
+    # The other tasks (record version 2, the view only): bit 0 set, waiting in the kernel, the rest the return address
+    # of the code that waits; clear, ready, the rest its pc; 0 unknown
+    others = [(name, w) for name, w in rep.get("tasks", [])]
+    tool = None
     if elf:
         tool = addr2line or os.environ.get("ODR_ADDR2LINE") or ADDR2LINE.get(arch, "addr2line")
         if shutil.which(tool) is None:
@@ -164,6 +173,16 @@ def describe(rep, elf=None, addr2line=None):
             lines.append(f"    {label:>3} {a:08x}  {name}")
     else:
         lines.append("  where (pass --elf to name them): " + " ".join(f"{label} {a:08x}" for label, a, _ in where))
+    if others:
+        known = [(n, w) for n, w in others if w]
+        names = dict(zip(known, lookup(tool, elf, [(w & ~1) - 1 if w & 1 else w for _, w in known]))) if tool else {}
+        lines.append("  other tasks (waiting: the call that waits; ready: where it was):")
+        for n, w in others:
+            state = "unknown" if not w else "waiting" if w & 1 else "ready"
+            at = f"  {w & ~1:08x}" if w else ""
+            lines.append(f"    {n or '?':<4} {state:<7}{at}" + (f"  {names[(n, w)]}" if (n, w) in names else ""))
+        if rep.get("tasks_more"):
+            lines.append(f"    and {rep['tasks_more']} more")
     return "\n".join(lines)
 
 
@@ -195,6 +214,12 @@ def self_test():
     text = describe(r)
     assert "assertion at line 712" in text and "(an interrupt handler)" in text and "build unknown" in text, text
     hang = view.replace("crash.kind=4", "crash.kind=5").replace("crash.cause=712", "crash.cause=3000")
+    hang += "\ncrash.tasks=3\ncrash.tasks_more=1\ncrash.t0=radi,03012a41\ncrash.t1=Tmr ,03001000\ncrash.t2=ui,00000000"
+    r = read_report(hang.encode())
+    assert r["tasks"] == [("radi", 0x03012a41), ("Tmr", 0x03001000), ("ui", 0)] and r["tasks_more"] == 1, r
+    text = describe(r)
+    for want in ("radi waiting  03012a40", "Tmr  ready    03001000", "ui   unknown", "and 1 more"):
+        assert want in text, (want, text)
     text = describe(read_report(hang.replace("crash.flags=0x5", "crash.flags=0x4").replace("crash.task=", "crash.task=host").encode()))
     assert "Hang on" in text and "no watchdog feed for 3000 ms" in text and "task host" in text, text
 
