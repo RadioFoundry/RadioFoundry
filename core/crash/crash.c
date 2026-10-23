@@ -183,6 +183,7 @@ const char *crash_kind_name(uint8_t kind)
 	case CRASH_KIND_STACK: return "Stack overflow";
 	case CRASH_KIND_HEAP: return "Out of memory";
 	case CRASH_KIND_ASSERT: return "Assert";
+	case CRASH_KIND_HANG: return "Hang";
 	default: return "Crash";
 	}
 }
@@ -195,6 +196,8 @@ void crash_summary(const crash_record_t *r, char *out, size_t len)
 		n += dl_fmt(out + n, len - n, r->kind == CRASH_KIND_FAULT ? " %u" : " line %u", (unsigned)r->cause);
 	if (r->kind != CRASH_KIND_STACK && r->kind != CRASH_KIND_HEAP)
 		n += dl_fmt(out + n, len - n, " at %08X", (unsigned)r->pc);
+	if (r->kind == CRASH_KIND_HANG)
+		n += dl_fmt(out + n, len - n, " for %u ms", (unsigned)r->cause);
 	if (r->flags & CRASH_F_ISR) {
 		dl_fmt(out + n, len - n, " in an interrupt");
 	} else if (r->task[0] != 0) {

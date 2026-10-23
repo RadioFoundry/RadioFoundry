@@ -17,6 +17,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "platform.h"
+#include "config.h"
+#if CONFIG_WATCHDOG && CONFIG_CRASH_LOG
+#include "app/watchdog.h"
+#endif
 
 extern void vPortStartTask(void);
 
@@ -85,10 +89,15 @@ void vPortExitCritical(void)
 	}
 }
 
-// Timer 1 handler (registered by hrc_tick_start)
+// Timer 1 handler (registered by hrc_tick_start). The hang check runs here, not in the tick hook: xTaskResumeAll also
+// calls the hook, from a task, for ticks that came while the scheduler was suspended, and the check needs the frame
+// the interrupt entry saved
 void vPortTickHandler(void)
 {
 	hrc_timer_ack(TIMER_TICK);
+#if CONFIG_WATCHDOG && CONFIG_CRASH_LOG
+	watchdog_tick();	// a record before the watchdog's reset (crash-log.md 1.1)
+#endif
 	if (xTaskIncrementTick() != pdFALSE) {
 		ulPortYieldRequired = 1;
 	}

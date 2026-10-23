@@ -81,6 +81,6 @@ void crash_assert(unsigned line) __attribute__((noreturn));
 
 #define vPortSVCHandler				SVC_Handler
 #define xPortPendSVHandler			PendSV_Handler
-#define xPortSysTickHandler			SysTick_Handler
+// SysTick_Handler is platform/stm32f4/time.c's: the hang check, then xPortSysTickHandler
 
 #endif

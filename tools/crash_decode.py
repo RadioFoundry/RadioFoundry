@@ -23,7 +23,7 @@ import sys
 ARCHS = {1: "Cortex-M4", 2: "CK803S"}
 ADDR2LINE = {1: "arm-none-eabi-addr2line", 2: "csky-elf-addr2line"}
 CODE = {1: [(0x08000000, 0x08100000)], 2: [(0x03000000, 0x04000000)]}  # flash (CK803S: XIP; RAM code isn't known here)
-KINDS = {1: "Fault", 2: "Stack overflow", 3: "Out of memory", 4: "Assert"}
+KINDS = {1: "Fault", 2: "Stack overflow", 3: "Out of memory", 4: "Assert", 5: "Hang"}
 FLAGS = [(0x01, "in an interrupt handler"), (0x02, "build had local changes"), (0x04, "stack copied"),
          (0x08, "seen"), (0x10, "sent")]
 CK803_VECTORS = {1: "misaligned access", 2: "access error", 3: "divide by zero", 4: "illegal instruction",
@@ -130,6 +130,8 @@ def describe(rep, elf=None, addr2line=None):
         lines.append(f"  exception {cause}" + (f" ({why})" if why else ""))
     elif rep["kind"] == 4:
         lines.append(f"  assertion at line {cause} (configASSERT: see the caller below)")
+    elif rep["kind"] == 5:
+        lines.append(f"  no watchdog feed for {cause} ms: pc is where the tick found the task that kept the idle task out")
     task = rep["task"] or ("(an interrupt handler)" if rep["flags"] & 1 else "(none)")
     lines.append(f"  task {task}, after {rep['uptime_ms'] / 1000:.1f} s, {rep['count']} in a row")
     build = f"{rep['build']:08x}" if rep["build"] else "unknown"
@@ -192,6 +194,9 @@ def self_test():
     assert r["arch"] == 2 and r["kind"] == 4 and r["cause"] == 712 and r["returns"] == [0x03001235, 0x03fffffe], r
     text = describe(r)
     assert "assertion at line 712" in text and "(an interrupt handler)" in text and "build unknown" in text, text
+    hang = view.replace("crash.kind=4", "crash.kind=5").replace("crash.cause=712", "crash.cause=3000")
+    text = describe(read_report(hang.replace("crash.flags=0x5", "crash.flags=0x4").replace("crash.task=", "crash.task=host").encode()))
+    assert "Hang on" in text and "no watchdog feed for 3000 ms" in text and "task host" in text, text
 
     for bad in (b"OC\x01", b"XX" + bytes(80), b"crash.built=1\ncrash.valid=0\n", b"not hex at all",
                 pkt[:-1], b"OC\x02" + bytes(80)):

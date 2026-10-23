@@ -582,11 +582,11 @@ test can check the capture. Built without the switch, every operation answers `D
 | Op | Name | Arguments | Effect |
 |---|---|---|---|
 | 0 | CLEAR | none | the record kept from before this start is forgotten (the store too) |
-| 1 | TEST | kind u8, token u32 | after the reply, about 100 ms later: kind 1 runs a trap instruction (a CPU exception: CM4 UsageFault escalated to HardFault, CK803 breakpoint vector 7), kind 2 fails an assertion. The radio keeps the record and restarts |
+| 1 | TEST | kind u8, token u32 | after the reply, about 100 ms later: kind 1 runs a trap instruction (a CPU exception: CM4 UsageFault escalated to HardFault, CK803 breakpoint vector 7), kind 2 fails an assertion, kind 3 spins in the host link's task with interrupts on until the hang check fires ([crash-log.md](crash-log.md) 1.1, about three quarters of the watchdog's timeout; status 4 without `CONFIG_WATCHDOG`). The radio keeps the record and restarts |
 
 The token is `'CRSH'` (`0x48535243`, little endian in the payload); another value, or a transmitting radio, is answered
 refused (7). The test is dropped if PTT went down between the reply and the crash. The record shows in view section 21
-after the restart. `odr_debug.py crash [show|clear|test trap|test assert]`.
+after the restart. `odr_debug.py crash [show|clear|test trap|test assert|test hang]`.
 
 ### 3.20 CODEPLUG
 

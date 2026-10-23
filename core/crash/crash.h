@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The crash log (CONFIG_CRASH_LOG, docs/spec/crash-log.md). A fault, a stack overflow, running out of heap or a failed
-// assertion fills a crash_record_t (hal_crash.h), keeps it where a reset doesn't clear it and restarts the radio. At
+// The crash log (CONFIG_CRASH_LOG, docs/spec/crash-log.md). A fault, a stack overflow, running out of heap, a failed
+// assertion or a hang fills a crash_record_t (hal_crash.h), keeps it where a reset doesn't clear it and restarts the radio. At
 // the next start crash_init() takes it up; the UI shows it and the crash report (CONFIG_CRASH_REPORT) can send it.
 //
 // The capture side (crash_commit and the hooks) runs with interrupts off on a stack of its own and calls nothing that
@@ -55,9 +55,10 @@ uint32_t crash_build_id(const char *version, bool *dirty);
 #define CRASH_PACK_MAX		(CRASH_PACK_FIXED + 4 * CRASH_PACK_RET_MAX)
 size_t crash_pack(const crash_record_t *r, uint8_t *out, size_t max, bool (*is_code)(uint32_t addr));
 
-// One line for the screen: "Fault 3 at 0800C1A4 in radio", "Stack overflow in ui", "Assert line 712 at 03012A40"
+// One line for the screen: "Fault 3 at 0800C1A4 in radio", "Stack overflow in ui", "Assert line 712 at 03012A40",
+// "Hang at 03012A40 for 3000 ms in radio"
 void crash_summary(const crash_record_t *r, char *out, size_t len);
-// What kind of crash, in words ("Fault", "Stack overflow", "Out of memory", "Assert", "Crash")
+// What kind of crash, in words ("Fault", "Stack overflow", "Out of memory", "Assert", "Hang", "Crash")
 const char *crash_kind_name(uint8_t kind);
 
 // --- The fault trace (crash_trace.c, CONFIG_FAULT_TRACE, with or without CONFIG_CRASH_LOG) ---

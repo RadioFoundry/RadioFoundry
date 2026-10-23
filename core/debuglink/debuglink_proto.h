@@ -67,7 +67,9 @@ enum {
 	DL_CRASH_OP_CLEAR = 0,	// -> status: forget the kept record
 	DL_CRASH_OP_TEST = 1,	// kind u8 (DL_CRASH_TEST_*), token u32 -> status; the crash comes after the reply
 };
-enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2 };
+// HANG: the host link's task spins with interrupts on and the watchdog fed as usual, so the hang check (crash-log.md
+// 1.1) keeps the record; unavailable without CONFIG_WATCHDOG
+enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2, DL_CRASH_TEST_HANG = 3 };
 // The test's guard, little endian in the payload: bytes 'C' 'R' 'S' 'H' (as CRASH_MAGIC), so a stray frame can't crash
 // the radio
 #define DL_CRASH_TOKEN		0x48535243u

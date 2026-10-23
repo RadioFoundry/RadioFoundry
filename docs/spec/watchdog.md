@@ -8,6 +8,10 @@ it. The idle task runs only when every other task waits, so a feed says the whol
 A task that spins, a critical section that never ends, an interrupt storm or a hang with interrupts off stops the
 feeds, and the chip resets within a few seconds. Off: no watchdog runs, as before.
 
+With the crash log, the hang check in the tick interrupt keeps a record of the task that kept the idle task out, a
+quarter of the timeout before the reset would come, and restarts the radio itself ([crash-log.md](crash-log.md) 1.1).
+Only a hang with interrupts off still reaches the hardware reset.
+
 A watchdog reset is a chip reset: the radio starts as at power-on. The transmitter must be off by then, which is the
 early-boot RF-off step's job (`board_rf_safe`, [crash-log.md](crash-log.md)), not the watchdog's.
 
@@ -25,7 +29,7 @@ number shows how close legitimate work comes to the timeout.
 |---|---|
 | `main()`, before the scheduler | `main()` after the start, after `board_early_init()` and after `app_start()`; `hal_delay_ms()` once a millisecond while it busy-waits before the scheduler runs |
 | Scheduler running | the idle task |
-| A long busy operation that keeps the idle task out on purpose | the operation, once per block or step (4) |
+| A long busy operation that keeps the idle task out on purpose | the operation, once per block or step, by `watchdog_kick()`, so the hang check counts from that feed too (4) |
 | A CPU fault with the fault trace | `hrc_fault` once, before the 3 s trace ([crash-log.md](crash-log.md) 2.3) |
 
 ## 2. Timeout
@@ -125,7 +129,7 @@ FreeRTOS call after the scheduler starts lets the idle task run and needs nothin
 |---|---|---|
 | Start-up before the scheduler (clocks, board early init, display, the radio chips' reset waits) | `platform/*/main.c`, `board_early_init` | `main()` feeds between steps; `hal_delay_ms()`'s busy wait feeds every millisecond before the scheduler runs |
 | SPI NOR erase and program (settings, journal, codeplug, CPS writes, TFTP) | `drivers/flash/spi_nor` | none needed: the busy polls are `hal_delay_ms(1)`, which sleeps once the scheduler runs |
-| SPI NAND mount, garbage collection, wear leveling (DB25-D storage) | `drivers/flash/nand_sectors` | busy waits of 10 µs: the layer calls `nand_dev_t.busy` once per block or sector, which the DB25-D points at `hal_watchdog_feed()` |
+| SPI NAND mount, garbage collection, wear leveling (DB25-D storage) | `drivers/flash/nand_sectors` | busy waits of 10 µs: the layer calls `nand_dev_t.busy` once per block or sector, which the DB25-D points at `watchdog_kick()` |
 | A single NAND page read, program or block erase | `drivers/flash/spi_nand` | at most a few ms each, fed through the above around them |
 | Settings saves, codeplug sector rewrites, CPS sessions, fast codeplug commits | `core/settings`, `core/storage`, `core/cps` | through the flash drivers above |
 | The HR_C7000 codec load into RAM at the first DMR call | `platform/hrc7000/vocoder.c` | a memcpy of tens of KB: milliseconds |

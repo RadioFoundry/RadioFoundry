@@ -97,6 +97,37 @@ void stm32_fault(const uint32_t *frame, uint32_t exc_return, const uint32_t *hi)
 	crash_commit(&r);
 }
 
+#if CONFIG_WATCHDOG
+// The hang check (core/app/watchdog.c), from SysTick, which runs at the kernel's priority, the lowest: when it runs no
+// other handler is active, so it interrupted a task, whose frame the CPU pushed on the PSP. The record names that task.
+// Only that frame is kept: r4-r11 belong to the handler's callers by now, and without EXC_RETURN the frame's size
+// (FPU or not) is unknown, so sp is the frame's address and stack[] starts with the frame
+void hal_crash_hang(uint32_t ms)
+{
+	static crash_record_t r;	// not on the main stack, which every interrupt shares
+	__disable_irq();
+	board_rf_safe();
+	memset(&r, 0, sizeof r);
+	r.arch = CRASH_ARCH_CM4;
+	r.kind = CRASH_KIND_HANG;
+	r.cause = ms;
+	const uint32_t *frame = (const uint32_t *)__get_PSP();
+	uint32_t f = (uint32_t)(uintptr_t)frame;
+	if ((f & 3u) == 0 && hal_crash_ram_addr(f) && hal_crash_ram_addr(f + 31u)) {
+		for (int k = 0; k < 4; k++)
+			r.r[k] = frame[k];
+		r.r[12] = frame[4];
+		r.lr = frame[5];
+		r.pc = frame[6];
+		r.psr = frame[7];
+	}
+	r.sp = f;
+	r.status[0] = SCB->CFSR;
+	r.status[1] = SCB->HFSR;
+	crash_commit(&r);
+}
+#endif
+
 // Every fault. Interrupts off, then the stack the frame is on (EXC_RETURN bit 2: PSP, a task), our own stack, and
 // r4-r11 pushed there for the C part
 __attribute__((naked, used)) void HardFault_Handler(void)

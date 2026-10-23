@@ -8,7 +8,7 @@ import pytest
 
 from odr_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
 
-CRASH_KIND_FAULT, CRASH_KIND_ASSERT = 1, 4
+CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG = 1, 4, 5
 
 
 def _need(radio):
@@ -20,12 +20,16 @@ def _reconnect(radio, timeout=30.0):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         for port in [radio.port] + find_ports():
+            link = None
             try:
-                radio.link = DebugLink(port, timeout=1.5)
-                radio.link.ping()
-                radio.port = port
+                link = DebugLink(port, timeout=1.5)
+                link.ping()
+                radio.link, radio.port = link, port
                 return
             except (DebugLinkError, OSError):
+                # A serial hub takes one client per port: a link left open would lock out every later try.
+                if link is not None:
+                    link.close()
                 time.sleep(0.5)
     raise AssertionError("the radio did not come back after the crash")
 
@@ -89,3 +93,23 @@ def test_crash_assert_kept(radio):
     assert as_int(v["crash.cause"]) > 0, v         # the line
     radio.link.crash_clear()
     assert radio.view(["crash"]).get("crash.valid") == "0"
+
+
+@pytest.mark.feature("crash_log")
+@pytest.mark.reboot
+def test_crash_hang_kept(radio):
+    """The hang check (crash-log.md 1.1): the host link's task spins with interrupts on, and the tick keeps a hang
+    record of it before the watchdog would reset the radio."""
+    _need(radio)
+    wd = radio.view(["watchdog"])
+    if wd.get("watchdog.built") != "1":
+        skip("not_built", "built without CONFIG_WATCHDOG: nothing would end the hang")
+    timeout = as_int(wd["watchdog.timeout_ms"])
+    v = _crash(radio, "hang")
+    assert v.get("crash.valid") == "1", "no hang record: the watchdog reset the radio first " + str(v)
+    assert as_int(v["crash.kind"]) == CRASH_KIND_HANG, v
+    ms = as_int(v["crash.cause"])
+    assert timeout * 3 // 4 <= ms < timeout, (ms, timeout)   # three quarters of the timeout, before the reset
+    assert v.get("crash.task") == "host", v       # the spinning task, not the tick's
+    assert as_int(v["crash.pc"], 0) != 0, v
+    radio.link.crash_clear()

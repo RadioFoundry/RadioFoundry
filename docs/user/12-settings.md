@@ -155,7 +155,8 @@ position), erases ODR's own data area, and restarts the radio. The codeplug and 
 
 ## Crash log
 
-When the firmware crashes, the radio keeps a short record of where and why, and restarts. **Settings > Advanced >
+When the firmware crashes, the radio keeps a short record of where and why, and restarts. A radio that stops
+responding for about 3 seconds counts as a crash too: the record says "Hang". **Settings > Advanced >
 Crash log** shows the record: what happened, how many crashes in a row, how long the radio ran and the firmware
 build. Without a record it says "No crash recorded." Switching the radio off may lose the record: look before you
 turn it off.

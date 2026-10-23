@@ -16,16 +16,47 @@ radio until a power cycle, as before.
 | Stack overflow | 2 | FreeRTOS's stack check (`configCHECK_FOR_STACK_OVERFLOW` 2), at a context switch | 0 | in the kernel; `task` names the task |
 | Out of heap | 3 | FreeRTOS's malloc-failed hook | 0 | in the kernel |
 | Assert | 4 | `configASSERT` (the platforms' `FreeRTOSConfig.h`) | the line | the caller of the assertion |
+| Hang | 5 | the hang check in the tick interrupt (1.1), with `CONFIG_WATCHDOG` | ms since the last watchdog feed | where the interrupted task was |
 
 The capture runs with interrupts off, on a stack of its own (1 KB), and calls nothing that waits. It turns the
 transmitter off first (8), with or without the crash log. It adds the running
 task's name (empty in an interrupt handler: `CRASH_F_ISR`), the uptime, the 16 words at the stack pointer when that
 points into RAM (`CRASH_F_STACK`), the commit, then seals the record with a CRC-32, stores it and restarts the radio.
 
-Not caught: a hang (the hardware watchdog resets the radio instead, [watchdog.md](watchdog.md), with no record), a
-fault while the fault entry pushes its frame (2.2), and an unhandled interrupt on the STM32F4 (the start-up's default
+Not caught: a hang with interrupts off (the tick can't run, so the hardware watchdog resets the radio with no record,
+[watchdog.md](watchdog.md)), a fault while the fault entry pushes its frame (2.2), and an unhandled interrupt on the STM32F4 (the start-up's default
 handler spins until the watchdog resets the radio; no interrupt is enabled without a handler). The NMI on the STM32F4
 takes the HardFault entry (`cause` 2).
+
+### 1.1 The hang check
+
+The watchdog ([watchdog.md](watchdog.md)) resets a radio whose idle task stops running, but that reset leaves nothing
+to read. The hang check keeps a record first. Code: `watchdog_hung` and `watchdog_tick` in `core/app/watchdog.c`, the
+platforms' `hal_crash_hang`.
+
+| Item | Value |
+|---|---|
+| Where | the RTOS tick interrupt, before the kernel's tick: `vPortTickHandler` (HR_C7000), `SysTick_Handler` (STM32F4). Not the tick hook: `xTaskResumeAll` also calls the hook from a task, for ticks that came while the scheduler was suspended |
+| Counts from | the last feed: the idle task's, or a long job's `watchdog_kick` (the DB25-D's SPI NAND loops) |
+| Fires | three quarters of the watchdog's timeout after it: 3 s on the HR_C7000 (4 s timeout), 3.75 s on the STM32F4 (5 s) |
+| Never | before the idle task's first pass, with the watchdog stopped, or while a bench test starves it on purpose (the test times the hardware reset, [watchdog.md](watchdog.md) 5) |
+| Record | kind 5, `cause` the ms since the last feed, the registers of the task the tick interrupted, its name in `task` |
+| Then | as every capture: the transmitter off, the fault trace on the HR_C7000 (2.3, vector 0), the store, the restart |
+
+What the record shows is the task that ran when the tick came, which on a hang is the one that kept the idle task out.
+The tick runs at the kernel's priority, the lowest on the STM32F4, and HR_C7000 interrupts don't nest, so the tick
+never interrupts another handler.
+
+| Platform | Registers |
+|---|---|
+| HR_C7000 | `hrc_irq_entry` saved the task's frame (r0-r13, r15, EPSR, EPC, as the fault entry's) and wrote its address to the TCB's first word, `pxTopOfStack`. `hal_crash_hang` (`irq.c`) hands that frame to the same capture as a fault (`hrc_crash_frame`) |
+| STM32F4 | the CPU's frame on the PSP: r0-r3, r12, LR, PC, xPSR. r4-r11 belong to the handler's callers by then and stay 0. Without EXC_RETURN the frame's size (FPU or not) isn't known, so `sp` is the frame's address and `stack[]` starts with the frame |
+
+Not caught this way: a hang with interrupts off or in a critical section (the STM32F4 masks the tick there too), and
+an interrupt storm that keeps the tick out. Those still end in the plain watchdog reset.
+
+The debug link's CRASH TEST kind 3 ([debuglink.md](debuglink.md) 3.19) spins in the host link's task with interrupts
+on: the check keeps a hang record of `host`.
 
 ## 2. Platforms
 
@@ -69,7 +100,7 @@ without the crash log. Code: `core/crash/crash_trace.c` (the line, portable), `h
 |---|---|
 | Port | the host UART, at the rate it runs at (115200 8N1): DM-32UV and DM-1801 Pro UART0 (the programming cable), DB25-D UART1 |
 | Lines | `CRASH_TRACE_LINES` (3), one a second, timed on the free-running clock timer (interrupts are off); then 50 ms for the UART's FIFO to empty, then the record and the restart |
-| Format | `\r\n#ODRFAULT1 n=01 v=<vector> pc=<EPC> psr=<EPSR> lr=<r15> sp=<sp before the frame> r0=<..> .. r13=<..> *<crc>\r\n`; every value 8 lower-case hex digits, `n` the line's number as 2 hex digits |
+| Format | `\r\n#ODRFAULT1 n=01 v=<vector, 0 for a hang> pc=<EPC> psr=<EPSR> lr=<r15> sp=<sp before the frame> r0=<..> .. r13=<..> *<crc>\r\n`; every value 8 lower-case hex digits, `n` the line's number as 2 hex digits |
 | CRC | CRC-16/CCITT-FALSE (polynomial 0x1021, init 0xFFFF, no reflection, no final XOR) over the bytes from `#` up to and including the space before `*`, as 4 lower-case hex digits |
 | Watchdog | fed once before the first line; the three seconds stay inside the timeout ([watchdog.md](watchdog.md) 2) |
 
@@ -182,6 +213,7 @@ crash log); without it the debug link still shows the record.
   that doesn't survive shows no record; it can't show a wrong one. Check: `odr_debug.py crash test trap`, then
   `odr_debug.py crash` after the restart.
 - The report on the air: no receiver for port 4090 exists yet.
+- The hang check on hardware: `test_crash_hang_kept` on each radio.
 
 Checked on hardware (2026-10-17, both flashed through the stub), with `tests/hil/test_crash.py` passing under
 `--allow-reboot` on each:
@@ -195,9 +227,12 @@ Checked on hardware (2026-10-17, both flashed through the stub), with `tests/hil
 
 `tests/host/crashTest.c`: the fault trace's golden line and its CRC (and `tools/odr_fault_trace.py --selftest` on the
 same line), the CRC, sealing and the count in a row, the build ID, the start-up side on a fake store,
-the packed report and the summary line; `ui_svc_crash.c` on fake settings, contacts and data service (the record for
+the packed report and the summary line (a hang's too); `ui_svc_crash.c` on fake settings, contacts and data service (the record for
 the screen, seen, clear, the report to a private or group contact, its progress and the sent mark); and
 `debuglink_crash.c` (view section 21, CRASH's argument checks, token and transmit refusals and the deferred test).
+`tests/host/watchdogTest.c` (`test_hang_check`): when the hang check fires, a long job's kick, the starve and a
+stopped watchdog. `tests/hil/test_crash.py` (`test_crash_hang_kept`): CRASH TEST hang keeps a hang record of `host`
+before the watchdog resets.
 `tests/host/crashCaptureTest.c`: `crash_capture.c` on a stand-in RTOS; every way in (a fault record, a stack
 overflow, out of heap, an assertion inside the capture) calls `board_rf_safe` first, with interrupts off, before the
 store and the restart. `boards/db25d/tests/bootDb25dTest.c` (`test_tx_off`): the DB25-D first stage drives the transmitter

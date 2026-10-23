@@ -21,6 +21,7 @@ enum {
 	CRASH_KIND_STACK = 2,	// FreeRTOS found a task's stack overflowed: task names it
 	CRASH_KIND_HEAP = 3,	// FreeRTOS ran out of heap
 	CRASH_KIND_ASSERT = 4,	// configASSERT failed: cause is the line, pc the caller
+	CRASH_KIND_HANG = 5,	// the watchdog's hang check: cause is the ms since the last feed, pc the interrupted task's
 };
 
 // crash_record_t.flags
@@ -65,5 +66,8 @@ bool hal_crash_ram_addr(uint32_t addr);
 bool hal_crash_code_addr(uint32_t addr);
 // Restart the radio after a capture: interrupts are off; does not return
 void hal_crash_restart(void) __attribute__((noreturn));
+// The hang check (core/app/watchdog.c), from the RTOS tick interrupt: the transmitter off, the interrupted task's
+// registers into a CRASH_KIND_HANG record (cause: ms, the time since the last feed), then crash_commit. Does not return
+void hal_crash_hang(uint32_t ms) __attribute__((noreturn));
 
 #endif

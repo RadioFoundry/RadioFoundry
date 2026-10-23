@@ -67,8 +67,12 @@ size_t debuglink_cmd_crash(const uint8_t *req, uint16_t len, uint8_t *out, size_
 	}
 	if (req[0] == DL_CRASH_OP_TEST && len == 6) {
 		uint32_t token = (uint32_t)req[2] | (uint32_t)req[3] << 8 | (uint32_t)req[4] << 16 | (uint32_t)req[5] << 24;
-		if (req[1] < DL_CRASH_TEST_TRAP || req[1] > DL_CRASH_TEST_ASSERT) {
+		if (req[1] < DL_CRASH_TEST_TRAP || req[1] > DL_CRASH_TEST_HANG) {
 			out[0] = DL_ST_BAD_ARG;
+			return 1;
+		}
+		if (req[1] == DL_CRASH_TEST_HANG && !CONFIG_WATCHDOG) {
+			out[0] = DL_ST_UNAVAILABLE;	// nothing would end the spin but a power cycle
 			return 1;
 		}
 		if (token != DL_CRASH_TOKEN || on_air()) {
@@ -95,6 +99,10 @@ void debuglink_crash_service(void)
 		return;		// a PTT came in meanwhile
 	if (kind == DL_CRASH_TEST_TRAP)
 		__builtin_trap();	// an undefined instruction (CM4) / a breakpoint (CK803): a CPU exception
+	if (kind == DL_CRASH_TEST_HANG) {
+		for (;;) {	// the idle task stops running: the tick's hang check ends it
+		}
+	}
 	crash_assert(__LINE__);
 }
 

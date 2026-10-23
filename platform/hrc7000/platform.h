@@ -285,8 +285,10 @@ void hrc_soft_reset(void) __attribute__((noreturn));
 // codec's tables (from 0x18000800, at most to 0x18004F90 in any stock image) and the microphone PCM (0x18000000)
 // don't reach (hardware-dm32.md 2: free for software). Main SRAM is the bootloader's and the start-up's
 #define HRC_CRASH_STORE		0x18007F00u	// 256 bytes to the end, 0x18008000
-// hrc_fault's capture: the frame is hrc_fault_entry's (r0..r13, r15, EPSR, EPC); does not return
-void hrc_crash_fault(const uint32_t *frame, uint32_t vector) __attribute__((noreturn));
+// The capture for a fault (hrc_fault: kind CRASH_KIND_FAULT, cause the vector) or a hang (hal_crash_hang: the tick's
+// interrupted task). The frame is the entries' (r0..r13, r15, EPSR, EPC): hrc_fault_entry's or hrc_irq_entry's. Does
+// not return
+void hrc_crash_frame(const uint32_t *frame, uint8_t kind, uint32_t cause) __attribute__((noreturn));
 
 // Code that must not run from XIP flash (flash controller set-up, the modem slot interrupts): the linker script
 // places .ramfunc in SRAM

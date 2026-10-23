@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The crash log on the HR_C7000 (hal_crash.h, docs/spec/crash-log.md 2.2). hrc_fault_entry (portasm.S) saves every
 // register below the faulting stack pointer and calls hrc_fault (irq.c) on a stack of its own, which hands the frame
-// here. The CK803S has no fault address register: the vector, EPC and EPSR say what and where. The record is kept at
+// here. The CK803S has no fault address register: the vector, EPC and EPSR say what and where. A hang (hal_crash_hang,
+// irq.c) hands over the frame the interrupt entry saved for the task the tick interrupted. The record is kept at
 // HRC_CRASH_STORE in the modem's SRAM, which neither the chip's soft reset nor the Baofeng bootloader is known to
 // touch (unverified on hardware: crash-log.md 5); the radio restarts through the same soft reset as a reboot.
 #include "config.h"
@@ -47,13 +48,13 @@ void hal_crash_restart(void)
 	hrc_soft_reset();
 }
 
-void hrc_crash_fault(const uint32_t *frame, uint32_t vector)
+void hrc_crash_frame(const uint32_t *frame, uint8_t kind, uint32_t cause)
 {
 	crash_record_t r;
 	memset(&r, 0, sizeof r);
 	r.arch = CRASH_ARCH_CK803;
-	r.kind = CRASH_KIND_FAULT;
-	r.cause = vector;	// 1 misaligned access, 2 access error, 3 divide by zero, 4 illegal instruction, ...
+	r.kind = kind;
+	r.cause = cause;	// a fault's vector: 1 misaligned access, 2 access error, 3 divide by zero, 4 illegal instruction, ...
 	for (int k = 0; k < 14; k++)
 		r.r[k] = frame[k];
 	r.lr = frame[14];

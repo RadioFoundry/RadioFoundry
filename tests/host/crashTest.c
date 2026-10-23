@@ -237,6 +237,13 @@ static void test_summary(void)
 	memset(r.task, 0, sizeof r.task);
 	crash_summary(&r, s, sizeof s);
 	CHECK(strcmp(s, "Out of memory") == 0);
+
+	r = fault();
+	r.kind = CRASH_KIND_HANG;
+	r.cause = 3000;
+	crash_summary(&r, s, sizeof s);
+	CHECK(strcmp(s, "Hang at 0802C4A9 for 3000 ms in radio") == 0);
+	CHECK(strcmp(crash_kind_name(CRASH_KIND_HANG), "Hang") == 0);
 	CHECK(strcmp(crash_kind_name(0), "Crash") == 0);
 
 	// Cut to the buffer, always terminated
@@ -473,8 +480,15 @@ static void test_debuglink(void)
 	CHECK(crash_cmd(test, 5, &st) == 1 && st == DL_ST_BAD_ARG);
 	test[1] = 0;
 	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_BAD_ARG);		// no such test
-	test[1] = DL_CRASH_TEST_ASSERT + 1;
+	test[1] = DL_CRASH_TEST_HANG + 1;
 	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_BAD_ARG);
+	test[1] = DL_CRASH_TEST_HANG;
+	test[5] = 0;
+	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_REFUSED);		// the hang test takes the same token
+	test[5] = 0x48;
+	fake_radio_state = RS_TX;
+	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_REFUSED);		// and isn't run while transmitting
+	fake_radio_state = RS_RX;
 	test[1] = DL_CRASH_TEST_ASSERT;
 	test[5] = 0;
 	CHECK(crash_cmd(test, 6, &st) == 1 && st == DL_ST_REFUSED);		// a wrong token

@@ -10,7 +10,8 @@
 #include "pins.h"
 #include "platform.h"
 #include "flash/spi_nand/spi_nand.h"
-#include "hal_watchdog.h"
+#include "hal_time.h"
+#include "app/watchdog.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "task.h"
@@ -179,12 +180,13 @@ static void dev_mark_bad(void *ctx, uint16_t block)
 }
 
 // The sector layer's long loops (the mount at start-up reads every page in use; garbage collection) keep the CPU with
-// busy waits: the watchdog is fed per block or sector there instead of by the idle task
+// busy waits: the watchdog is fed per block or sector there instead of by the idle task, and the hang check counts
+// from that feed (watchdog_kick)
 static void dev_busy(void *ctx)
 {
 	(void)ctx;
 #if CONFIG_WATCHDOG
-	hal_watchdog_feed();
+	watchdog_kick(hal_millis());
 #endif
 }
 
