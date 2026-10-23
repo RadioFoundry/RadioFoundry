@@ -2,9 +2,9 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 ## Firmware build, one tree for every radio:
 ##
-##   make BOARD=dm1701          -> build/dm1701/odr_dm1701.{elf,bin,map}, plus odr_dm1701_codec.bin when the
+##   make BOARD=<radio>         -> build/<radio>/odr_<radio>.{elf,bin,map}, plus odr_<radio>_codec.bin when the
 ##                                 radio's stock firmware is in codecs/ (codecs/README.md)
-##   make BOARD=dm1701 size     -> section sizes and the space left before the codec
+##   make BOARD=<radio> size    -> section sizes and the space left before the codec
 ##   make test                  -> host tests (no BOARD needed)
 ##   make                       -> lists the boards
 ##
@@ -53,7 +53,7 @@ endif
 include config/features.mk
 include platform/$(PLATFORM)/platform.mk
 
-# Hardware build options: hardware versions one image can't serve (the MD-380's UHF and VHF boards). board.mk names
+# Hardware build options: hardware versions one image can't serve (a radio sold with UHF and VHF boards). board.mk names
 # them in BUILD_OPTIONS and lists each one's values in <NAME>_VALUES, the default first; board.toml [[build_options]]
 # only adds the words people read (tools/boards.py check holds the two to the same values). Each value reaches C as
 # ODR_<NAME>_<VALUE> = 0 or 1 (ODR_BAND_VHF). A non-default value names the build directory and the image
@@ -224,7 +224,7 @@ LDFLAGS := $(CPUFLAGS) -T$(LDSCRIPT) -Lplatform/$(PLATFORM) -Wl,--defsym=__app_b
 	-Wl,--defsym=__app_start=$(APP_START) -Wl,--gc-sections -Wl,-Map=$(TARGET).map -Wl,--print-memory-usage $(LDSPECS)
 # Link time optimization: LTO=1 compiles our sources to GCC's IR and optimizes them together at the link (inlining and
 # dead code across files: about 17 KB smaller on the STM32 radios, 20 KB with LTO_3P). A board's config.mk may default
-# it (the MD-380 and the DM-1701 do: without it their images don't hold their features). LTO_3P=1 takes the
+# it (some STM32 radios do: without it their images don't hold their features). LTO_3P=1 takes the
 # third-party code (HAL, CMSIS, FreeRTOS, TinyUSB) along: FreeRTOS marks what its port's inline assembly reaches portDONT_DISCARD, and the
 # vectors and SystemInit are referenced from the assembly start-up, which the linker sees. Files with file-scope
 # assembly are never in it (LTO_EXCLUDE). The optimization flags go to the link too, where the code is generated

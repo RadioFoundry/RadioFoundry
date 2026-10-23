@@ -34,9 +34,9 @@ static uint32_t enter_addr;
 
 // Replace the screen so it does not sit on a stale frame while the monitor runs: the boot splash with a "connected"
 // message. Uses the UI's own ui_draw_splash, then flushes with the board's display (as the boot path does). The host
-// link task outranks the UI task and the flush is synchronous (dm1801pro bit-bangs its ST7567, dm32 writes the LCDC
+// link task outranks the UI task and the flush is synchronous (one board bit-bangs its ST7567, another writes the LCDC
 // polled), so the frame is on the panel before the caller masks interrupts. ui_draw_splash writes only the visible rows,
-// which sit clear of the loaded image on both boards (dm32 codec window; dm1801pro the oversized frame buffer's head)
+// which sit clear of the loaded image on every board (a codec window, or the oversized frame buffer's head)
 static void show_banner(void)
 {
 	if (board.display == NULL || gfx_framebuffer() == NULL || gfx_width() <= 0) {

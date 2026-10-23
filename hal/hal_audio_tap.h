@@ -9,9 +9,9 @@
  *   - later: DTMF / 5-tone decoding in software, voice recording
  *
  * Receive audio rides on the board's one PCM stream (hal_audio_t: 8 kHz, 16-bit, 20 ms blocks): with AUDIO_TAP_FM_RX
- * the stream's input carries FM receive audio whenever the radio receives FM (on the DM-1701 the HR_C6000 puts it on
+ * the stream's input carries FM receive audio whenever the radio receives FM (on an HR_C6000 radio the chip puts it on
  * I2S, squelch gated). DMR receive audio is the stream's output (the decoded voice). Transmit audio in DMR is the
- * stream's input fed to the encoder; in FM it goes through fm_tx_inject, a path of the board's own (the DM-1701: PWM
+ * stream's input fed to the encoder; in FM it goes through fm_tx_inject, a path of the board's own (e.g. PWM
  * on the stock beep pin into the HR_C6000's microphone input). core/usbaudio/audio_mux.c shares the stream between
  * its users (usb-audio.md 5.1).
  */
@@ -58,8 +58,8 @@ typedef struct {
 
 	// --- probe (diagnostics, CONFIG_AUDIO_PROBE; NULL otherwise) ---
 
-	// Read (write false) or write (write true) one register of the chip that owns the audio path (DM-1701: the
-	// HR_C6000, page and register as in docs/spec/modem-hrc6000.md). Returns false when the bus failed
+	// Read (write false) or write (write true) one register of the chip that owns the audio path (an HR_C6000
+	// radio: the chip, page and register as in docs/spec/modem-hrc6000.md). Returns false when the bus failed
 	bool (*modem_reg)(uint8_t page, uint8_t reg, uint8_t *val, bool write);
 	// Read or write len bytes of the same chip's RAM from an 11-bit address (the HR_C6000's 1.2K TX / RX RAMs on
 	// page 2, which hold its FM data buffers). NULL when the chip has none. Returns false when the bus failed
@@ -70,8 +70,8 @@ typedef struct {
 	// The last 20 ms block as received from the codec, both I2S channels (AUDIO_BLOCK_SAMPLES each), and the stream's
 	// block counter; false when the stream isn't running
 	bool (*last_block)(int16_t *left, int16_t *right, uint32_t *blocks);
-	// A square wave of hz (0 = off, back to its idle level) on a spare output the board names (DM-1701: the stock
-	// beep PWM, PC8), to find out whether that net reaches the transmit audio. NULL when the board has none
+	// A square wave of hz (0 = off, back to its idle level) on a spare output the board names (e.g. the stock
+	// beep PWM), to find out whether that net reaches the transmit audio. NULL when the board has none
 	void (*pin_tone)(uint16_t hz);
 	// Sample every MCU GPIO input for ms and set, per port (A, B, ...), the pins that changed; returns the ports
 	// filled (at most max). Finds which MCU pins a clock from the audio chip reaches. NULL when not supported
