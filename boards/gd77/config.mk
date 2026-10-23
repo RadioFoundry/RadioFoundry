@@ -32,3 +32,5 @@ BOARD_UNSUPPORTED := DMR_IP_GATEWAY NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP \
 	FONT_BIG UI_COLOR
 # FM is the one mode this build has
 BOARD_REQUIRED := FM
+CONFIG_DTMF ?= n
+BOARD_UNSUPPORTED += DTMF	# transmit is off until the RF power path is verified (above)
