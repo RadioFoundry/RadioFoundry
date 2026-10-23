@@ -13,11 +13,11 @@ checks it, and the records of those runs (docs/testing/results/<board>/). tests/
 A radio's state for a feature is resolved, never typed:
   n/a          the switch is in the board's BOARD_UNSUPPORTED: the hardware can't (config.mk, the reason on its line)
   not written  the switch is in the board's BOARD_NOT_WRITTEN: the hardware can, the board's code isn't written yet
-  unsupported  board.toml [features] <id> state = "unsupported": planned, not working yet (a reason is required)
-The rule for the two config.mk lists: docs/build-config.md, "Unsupported, not written, unconfirmed". A test skips a
-feature that isn't built as not_built (n/a and not written alike: the firmware leaves it out).
+  unsupported  board.toml [features] <id> state = "unsupported": built, known not to work yet (a reason is required)
   off          the board's default build leaves the switch off: nothing to check
   required     anything else: the feature's tests must pass on the radio
+The rule for the two config.mk lists: docs/build-config.md, "Unsupported, not written, unconfirmed". A test skips a
+feature that isn't built as not_built (n/a and not written alike: the firmware leaves it out).
 A required feature's status never understates it. The newest run record that ran it decides: pass, fail, partial
 (excused skips) or "needs re-run" (its spec or source paths differ in the tree from the hashes the record keeps).
 Without one, the board's seed record (<board>/seed.json, the evidence from before its first run) decides, marked as a
