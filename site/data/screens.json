@@ -427,6 +427,12 @@
     "DUAL_WATCH"
    ]
   },
+  "home_dual_tx_b": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
   "home_dual_two_rx_large_text": {
    "group": "home",
    "needs": [

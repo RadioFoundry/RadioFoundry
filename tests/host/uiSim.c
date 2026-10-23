@@ -123,6 +123,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_dual_large_text", "ok 7 2 down down down down down ok long:back quick 7 ctx 3 5 ok wait:3000 tune:b rx:3101234,91,g" },
 	// A radio with a receiver per channel: calls on both at once, the second one muted
 	{ "home_dual_two_rx", "receivers:2 quick 7 ctx 3 5 ok wait:3000 rxa:3101234,3100,g rxb:3107777,91,g wait:1000" },
+	// Talking on B while a call arrives on A
+	{ "home_dual_tx_b", "receivers:2 quick 7 ctx 3 5 ok wait:3000 ctx 1 wait:500 rxa:3101234,3100,g wait:1000 pttdown" },
 	{ "home_dual_two_rx_large_text", "ok 7 2 down down down down down ok long:back receivers:2 quick 7 ctx 3 5 ok wait:3000 rxa:3101234,3100,g rxb:3107777,91,g wait:1000" },
 	{ "home_dual_talk_back", "ok 7 3 down down down down down down ok long:back quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g wait:4000" },
 	{ "dual_actions", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 ctx" },
