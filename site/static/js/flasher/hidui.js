@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The flasher's steps for the GD-77 (backend "gd77-hid"). Two routes: the radio's own update mode over USB HID
-// (gd77.js, gd77codec.js, docs/spec/update-gd77.md), which every radio has, and, on a radio that already runs ODR
+// The flasher's steps for the radios of the "sgl-hid" backend. Two routes: the radio's own update mode over USB HID
+// (hidboot.js, k22fcodec.js, docs/spec/update-gd77.md), which every radio has, and, on a radio that already runs ODR
 // built with CONFIG_STUB_ENTRY, the cable route: ODR hands over to the K22F stub on its debug link, which writes only
 // the changed flash sectors (k22stub.js, docs/spec/stub-k22f.md).
 //
 //   connect       the radio running ODR answers on its debug link and offers stub entry: the cable route; otherwise
 //                 (or when the user chooses it) update mode
 //   update_file   update mode: the user's own stock update file (.sgl): its header is kept, its codec is placed into the
-//                 ODR image, and the image is written into a copy of it (as odrflash's flash --board gd77 --stock FILE
+//                 ODR image, and the image is written into a copy of it (as odrflash's flash --board BOARD --stock FILE
 //                 does). The cable route: the file is optional; with it the codec is merged as above, without it only
 //                 the application is written and the codec in the radio stays
-//   write         update mode (both side keys held at power-on), then the file through WebHID; or the stub: CONFIG,
+//   write         update mode (the board's keys held at power-on), then the file through WebHID; or the stub: CONFIG,
 //                 changed sectors in the interlock's order, CRC verify, restart
 //   done          what to check on the radio
 //
@@ -21,9 +21,9 @@
 import { h, t, notice, button, panel, progressBar, logBox, filePicker, download, ROOT } from "./dom.js";
 import { hex, startsWith } from "./bytes.js";
 import { register } from "./backends.js";
-import { UpdateFile, Updater, HidLink, hidSupported } from "./gd77.js";
-import { readDonor, updateFile, ownImage, merge, pack } from "./gd77codec.js";
-import { FakeHid, loaderFor } from "./fakegd77.js";
+import { UpdateFile, Updater, HidLink, hidSupported } from "./hidboot.js";
+import { readDonor, updateFile, ownImage, merge, pack } from "./k22fcodec.js";
+import { FakeHid, loaderFor } from "./fakehid.js";
 import { Link, SerialStream, ODR_USB, probe, serialSupported } from "./link.js";
 import { Stub } from "./stub.js";
 import { f4Image } from "./f4stub.js";
@@ -31,7 +31,7 @@ import { k22Board, k22Stub, k22Install } from "./k22stub.js";
 
 let ctx = null;			// from app.js: {S, next, render, reset, fb, helpLink, flashStarted, flashFinished, errorText}
 const S = () => ctx.S;
-const G = () => ctx.fb().gd77;
+const G = () => ctx.fb().hid;
 
 export function init(context) {
 	ctx = context;
@@ -39,12 +39,12 @@ export function init(context) {
 
 function session() {
 	// route: "cable" (the stub on a radio running ODR) or "update" (update mode); link: ODR's debug link while held
-	return (S().gd77 ||= { donor: null, out: null, error: null, noVoice: false, original: false, log: logBox(), route: null, link: null, result: null });
+	return (S().hid ||= { donor: null, out: null, error: null, noVoice: false, original: false, log: logBox(), route: null, link: null, result: null });
 }
 
 const kb = (n) => Math.ceil(n / 1024);
-const simulated = () => !!S().sim?.gd77Donor;
-const simOdr = () => S().sim?.gd77Odr || null;
+const simulated = () => !!S().sim?.hidDonor;
+const simOdr = () => S().sim?.hidOdr || null;
 // the cable route only on a plain install: the help task's reinstall and the original firmware go through update mode
 const cable = () => session().route === "cable" && !session().original && !S().recovering;
 
@@ -62,14 +62,14 @@ async function busy(on) {
 	}
 }
 
-// The page's words for what the update file, the merge and the loader refuse (the codes of gd77.js and gd77codec.js)
+// The page's words for what the update file, the merge and the loader refuse (the codes of hidboot.js and k22fcodec.js)
 function message(e) {
 	const key = {
-		not_sgl: "flash.gd77.err.not_sgl", version: "flash.gd77.err.not_sgl", damaged: "flash.gd77.err.damaged",
-		sum: "flash.gd77.err.damaged", not_donor: "flash.gd77.err.damaged", too_large: "flash.gd77.err.too_large",
-		tail: "flash.gd77.err.too_large", app_too_large: "flash.gd77.err.app_too_large", window: "flash.gd77.err.unsupported",
-		refused: "flash.gd77.err.refused", no_update_mode: "flash.gd77.err.no_update_mode", no_answer: "flash.gd77.err.no_answer",
-		no_device: "flash.gd77.err.no_device", no_hid: "flash.gd77.no_hid",
+		not_sgl: "flash.hid.err.not_sgl", version: "flash.hid.err.not_sgl", damaged: "flash.hid.err.damaged",
+		sum: "flash.hid.err.damaged", not_donor: "flash.hid.err.damaged", too_large: "flash.hid.err.too_large",
+		tail: "flash.hid.err.too_large", app_too_large: "flash.hid.err.app_too_large", window: "flash.hid.err.unsupported",
+		refused: "flash.hid.err.refused", no_update_mode: "flash.hid.err.no_update_mode", no_answer: "flash.hid.err.no_answer",
+		no_device: "flash.hid.err.no_device", no_hid: "flash.hid.no_hid",
 	}[e?.code];
 	if (!key) return ctx.errorText(e);
 	ctx.errorText(e);	// logged with the step
@@ -112,7 +112,7 @@ async function openLink() {
 	const g = session();
 	if (g.link) return g.link;
 	let stream;
-	if (simulated() && !simOdr()) throw new Error(t("flash.gd77.connect.no_answer"));	// the practice radio is in update mode
+	if (simulated() && !simOdr()) throw new Error(t("flash.hid.connect.no_answer"));	// the practice radio is in update mode
 	if (simOdr()) stream = simOdr().serialStream();
 	else {
 		const granted = await odrPorts();
@@ -138,51 +138,51 @@ function connectView() {
 	const g = session();
 	const status = h("div");
 	const noSerial = !simulated() && !serialSupported();
-	const useUpdate = button(t("flash.gd77.connect.update"), async () => {
+	const useUpdate = button(t("flash.hid.connect.update"), async () => {
 		await closeLink();
 		g.route = "update";
 		await build();
 		ctx.next();
 	}, { quiet: true });
 	const onward = () => S().forward([useUpdate, button(t("flash.nav.to_update_file"), ctx.next, { primary: true })]);
-	const go = button(t("flash.gd77.connect.go"), async () => {
+	const go = button(t("flash.hid.connect.go"), async () => {
 		go.disabled = true;
-		status.replaceChildren(h("p", { class: "muted" }, t("flash.gd77.connect.checking")));
+		status.replaceChildren(h("p", { class: "muted" }, t("flash.hid.connect.checking")));
 		g.route = null;
 		try {
 			const link = await openLink();
 			const p = await probe(link);
-			if (!p) throw new Error(t("flash.gd77.connect.no_answer"));
+			if (!p) throw new Error(t("flash.hid.connect.no_answer"));
 			g.log.add(`radio    ${p.board} ${p.git}, codec ${p.codec}`);
 			const board = k22Board(G().stub, p.board);
-			if (board !== S().radio.flash.board) throw new Error(t("flash.gd77.connect.other_radio", { board: p.board }));
+			if (board !== S().radio.flash.board) throw new Error(t("flash.hid.connect.other_radio", { board: p.board }));
 			const rows = h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git));
 			if (!(await Stub.odrOffer(link))) {
 				await closeLink();
 				g.route = "update";
 				await build();
-				status.replaceChildren(rows, notice(t("flash.gd77.connect.no_cable"), "info"));
+				status.replaceChildren(rows, notice(t("flash.hid.connect.no_cable"), "info"));
 				S().forward(button(t("flash.nav.to_update_file"), ctx.next, { primary: true }));
 				return;
 			}
 			g.route = "cable";
 			await build();
-			status.replaceChildren(rows, notice(t("flash.gd77.connect.ready"), "ok"));
+			status.replaceChildren(rows, notice(t("flash.hid.connect.ready"), "ok"));
 			onward();
 		} catch (e) {
 			await closeLink();
-			status.replaceChildren(notice(ctx.errorText(e), "bad"), h("p", {}, t("flash.gd77.connect.failed")));
+			status.replaceChildren(notice(ctx.errorText(e), "bad"), h("p", {}, t("flash.hid.connect.failed")));
 			go.disabled = false;
 			S().forward([useUpdate, go]);
 		}
 	}, { primary: true, disabled: noSerial });
-	const box = h("div", { class: "flasher" }, panel(t("flash.gd77.connect.title"),
-		noSerial ? notice(t("flash.gd77.connect.no_serial"), "info") : null,
-		h("p", {}, t("flash.gd77.connect.lead")),
-		h("p", { class: "small muted" }, t("flash.gd77.connect.original")),
-		status, h("details", { class: "small" }, h("summary", {}, t("flash.gd77.log")), g.log.el)));
+	const box = h("div", { class: "flasher" }, panel(t("flash.hid.connect.title"),
+		noSerial ? notice(t("flash.hid.connect.no_serial"), "info") : null,
+		h("p", {}, t("flash.hid.connect.lead")),
+		h("p", { class: "small muted" }, t("flash.hid.connect.original")),
+		status, h("details", { class: "small" }, h("summary", {}, t("flash.hid.log")), g.log.el)));
 	if (g.route === "cable" && g.link) {
-		status.replaceChildren(notice(t("flash.gd77.connect.ready"), "ok"));
+		status.replaceChildren(notice(t("flash.hid.connect.ready"), "ok"));
 		onward();
 	} else S().forward([useUpdate, go]);
 	return box;
@@ -209,34 +209,34 @@ function fileView() {
 	const draw = () => {
 		const d = g.donor, via = cable();
 		const versions = Object.values(G().specs).map((s) => s.stock?.name || s.profile).sort().join(", ");
-		const picker = simulated() ? button(t("flash.sim.use_stock"), () => take({ name: "practice-update-file.sgl", data: S().sim.gd77Donor }))
-			: filePicker(t("flash.gd77.file.pick"), ".sgl,.SGL", take);
+		const picker = simulated() ? button(t("flash.sim.use_stock"), () => take({ name: "practice-update-file.sgl", data: S().sim.hidDonor }))
+			: filePicker(t("flash.hid.file.pick"), ".sgl,.SGL", take);
 		const rows = d ? [
-			[t("flash.gd77.file.name"), d.name],
-			[t("flash.gd77.file.radio"), d.file.label()],
-			g.original ? null : [t("flash.gd77.file.codec"), d.spec ? t("flash.gd77.file.codec_found", { build: d.spec.stock?.name || d.spec.profile })
-				: t("flash.gd77.file.codec_unknown")],
-			g.out?.image && !via ? [t("flash.gd77.file.size"), t("flash.gd77.file.size_of", { used: kb(g.out.image.length), room: kb(d.file.room) })] : null,
+			[t("flash.hid.file.name"), d.name],
+			[t("flash.hid.file.radio"), d.file.label()],
+			g.original ? null : [t("flash.hid.file.codec"), d.spec ? t("flash.hid.file.codec_found", { build: d.spec.stock?.name || d.spec.profile })
+				: t("flash.hid.file.codec_unknown")],
+			g.out?.image && !via ? [t("flash.hid.file.size"), t("flash.hid.file.size_of", { used: kb(g.out.image.length), room: kb(d.file.room) })] : null,
 		].filter(Boolean) : [];
 		const unknown = d && !d.spec && !g.original;
-		wrap.replaceChildren(panel(t(g.original ? "flash.gd77.file.title_original" : via ? "flash.gd77.file.title_cable" : "flash.gd77.file.title"),
-			notice(t(via ? "flash.gd77.cable.unverified" : "flash.gd77.unverified"), "warn"),
-			h("p", {}, t(g.original ? "flash.gd77.file.lead_original" : via ? "flash.gd77.file.lead_cable" : "flash.gd77.file.lead")),
-			g.original ? null : h("p", { class: "small muted" }, t("flash.gd77.file.versions", { versions })),
+		wrap.replaceChildren(panel(t(g.original ? "flash.hid.file.title_original" : via ? "flash.hid.file.title_cable" : "flash.hid.file.title"),
+			notice(t(via ? "flash.hid.cable.unverified" : "flash.hid.unverified"), "warn"),
+			h("p", {}, t(g.original ? "flash.hid.file.lead_original" : via ? "flash.hid.file.lead_cable" : "flash.hid.file.lead")),
+			g.original ? null : h("p", { class: "small muted" }, t("flash.hid.file.versions", { versions })),
 			picker,
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
-			unknown && via ? notice(t("flash.gd77.file.unsupported_cable", { versions }), "bad") : null,
-			unknown && !via && !g.noVoice ? notice(t("flash.gd77.file.unsupported", { versions }), "bad") : null,
-			unknown && !via && g.noVoice ? notice(t("flash.gd77.file.no_voice"), "info") : null,
-			via && !d ? notice(t("flash.gd77.file.keep"), "info") : null,
+			unknown && via ? notice(t("flash.hid.file.unsupported_cable", { versions }), "bad") : null,
+			unknown && !via && !g.noVoice ? notice(t("flash.hid.file.unsupported", { versions }), "bad") : null,
+			unknown && !via && g.noVoice ? notice(t("flash.hid.file.no_voice"), "info") : null,
+			via && !d ? notice(t("flash.hid.file.keep"), "info") : null,
 			g.error ? notice(g.error, "bad") : null));
 		// the cable route: without a file (or with one the page can't take the codec from) the radio's codec stays
-		const keep = via && d ? button(t("flash.gd77.file.keep_button"), async () => {
+		const keep = via && d ? button(t("flash.hid.file.keep_button"), async () => {
 			g.donor = null;
 			await build();
 			draw();
 		}, { quiet: true }) : null;
-		const noVoice = !via && unknown && !g.error ? button(t(g.noVoice ? "flash.gd77.file.with_voice" : "flash.gd77.file.without_voice"), async () => {
+		const noVoice = !via && unknown && !g.error ? button(t(g.noVoice ? "flash.hid.file.with_voice" : "flash.hid.file.without_voice"), async () => {
 			g.noVoice = !g.noVoice;
 			await build();
 			draw();
@@ -261,10 +261,10 @@ function cableView() {
 	const status = h("div");
 	prog.el.hidden = true;
 	const fw = S().firmware;
-	const what = g.out.profile ? t("flash.gd77.write.what_voice", { build: g.donor.spec.stock?.name || g.out.profile }) : t("flash.gd77.cable.what_keep");
-	const go = button(t("flash.gd77.cable.go"), () => run(), { primary: true });
+	const what = g.out.profile ? t("flash.hid.write.what_voice", { build: g.donor.spec.stock?.name || g.out.profile }) : t("flash.hid.cable.what_keep");
+	const go = button(t("flash.hid.cable.go"), () => run(), { primary: true });
 	// back to the update file step, now for update mode (the update file the radio's loader needs)
-	const viaUpdate = button(t("flash.gd77.cable.use_update"), async () => {
+	const viaUpdate = button(t("flash.hid.cable.use_update"), async () => {
 		try { await stub?.s.close?.(); } catch (e) { /* gone */ }
 		await closeLink();
 		g.route = "update";
@@ -272,12 +272,12 @@ function cableView() {
 		S().step = INSTALL.indexOf("update_file");
 		ctx.render();
 	}, { quiet: true });
-	const box = h("div", { class: "flasher" }, panel(t("flash.gd77.cable.title"),
-		notice(t("flash.gd77.cable.unverified"), "warn"),
-		h("dl", { class: "kv-list" }, h("dt", {}, t("flash.gd77.write.what")), h("dd", {}, what)),
-		h("p", {}, h("b", {}, t("flash.gd77.cable.lead"))),
-		h("p", { class: "small muted" }, t("flash.gd77.cable.safety")),
-		prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.gd77.log")), g.log.el)));
+	const box = h("div", { class: "flasher" }, panel(t("flash.hid.cable.title"),
+		notice(t("flash.hid.cable.unverified"), "warn"),
+		h("dl", { class: "kv-list" }, h("dt", {}, t("flash.hid.write.what")), h("dd", {}, what)),
+		h("p", {}, h("b", {}, t("flash.hid.cable.lead"))),
+		h("p", { class: "small muted" }, t("flash.hid.cable.safety")),
+		prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.hid.log")), g.log.el)));
 	S().forward(go);
 	let stub = null;
 
@@ -294,19 +294,19 @@ function cableView() {
 				const json = await stubJson();
 				stub = k22Stub(link.s, G().stub, S().radio.flash.board, { log: g.log.add, reopen });
 				g.link = null;		// the port belongs to the loader from here
-				await stub.enterFromOdr(f4Image(json), (d, n) => prog.set(d, n, t("flash.gd77.cable.sending")), { entry: json.run });
+				await stub.enterFromOdr(f4Image(json), (d, n) => prog.set(d, n, t("flash.hid.cable.sending")), { entry: json.run });
 			}
-			prog.set(0, 1, t("flash.gd77.cable.reading"));
+			prog.set(0, 1, t("flash.hid.cable.reading"));
 			const r = await k22Install(stub, g.out.image, {
 				// the sector the application ends in also holds the codec's first bytes: a copy first, written back unchanged
 				onKept: async (sec) => {
 					const file = `${S().radio.flash.board}_sector${sec.index}_${hex(sec.addr)}.bin`;
 					if (!simulated()) download(file, sec.kept);
-					g.log.add(t("flash.gd77.cable.kept", { file }));
+					g.log.add(t("flash.hid.cable.kept", { file }));
 				},
-				progress: (done, todo) => prog.set(done, todo, t("flash.gd77.cable.writing", { done, todo })) });
-			prog.set(1, 1, t("flash.gd77.cable.verified"));
-			g.result = t(r.written ? "flash.gd77.cable.ok" : "flash.gd77.cable.same", r);
+				progress: (done, todo) => prog.set(done, todo, t("flash.hid.cable.writing", { done, todo })) });
+			prog.set(1, 1, t("flash.hid.cable.verified"));
+			g.result = t(r.written ? "flash.hid.cable.ok" : "flash.hid.cable.same", r);
 			g.log.add(g.result);
 			await stub.resetChip();
 			try { await stub.s.close?.(); } catch (e) { /* gone */ }
@@ -323,31 +323,31 @@ function cableView() {
 				// ODR did not hand over: nothing changed on the radio
 				stub = null;
 				await closeLink();
-				status.replaceChildren(notice(t("flash.gd77.cable.enter_failed", { error: ctx.errorText(e) }), "bad"));
+				status.replaceChildren(notice(t("flash.hid.cable.enter_failed", { error: ctx.errorText(e) }), "bad"));
 				S().forward([viaUpdate, go]);
 			} else if (!stub.info) {
 				// the loader came up on a port this page can't open without asking: one click picks it
-				const pick = button(t("flash.gd77.cable.repick_button"), async () => {
+				const pick = button(t("flash.hid.cable.repick_button"), async () => {
 					try {
 						stub.s = await (simOdr() ? reopen() : SerialStream.request());
-						await stub.helloWithin(2000, t("flash.gd77.cable.lost"));
+						await stub.helloWithin(2000, t("flash.hid.cable.lost"));
 						stub.attached();
 						await run();
 					} catch (err) {
-						status.replaceChildren(notice(t("flash.gd77.cable.failed", { error: ctx.errorText(err) }), "bad"), h("p", {}, t("flash.gd77.cable.after_fail")), ctx.helpLink());
+						status.replaceChildren(notice(t("flash.hid.cable.failed", { error: ctx.errorText(err) }), "bad"), h("p", {}, t("flash.hid.cable.after_fail")), ctx.helpLink());
 						S().forward(viaUpdate);
 					}
 				}, { primary: true });
-				status.replaceChildren(notice(t("flash.gd77.cable.repick"), "action"));
+				status.replaceChildren(notice(t("flash.hid.cable.repick"), "action"));
 				S().forward([viaUpdate, pick]);
 			} else {
-				const again = button(t("flash.gd77.write.again"), async () => {
+				const again = button(t("flash.hid.write.again"), async () => {
 					again.disabled = true;
 					if (await stub.attach()) return run();
-					status.replaceChildren(notice(t("flash.gd77.cable.failed", { error: t("flash.gd77.cable.lost") }), "bad"), h("p", {}, t("flash.gd77.cable.after_fail")), ctx.helpLink());
+					status.replaceChildren(notice(t("flash.hid.cable.failed", { error: t("flash.hid.cable.lost") }), "bad"), h("p", {}, t("flash.hid.cable.after_fail")), ctx.helpLink());
 					S().forward(viaUpdate);
 				}, { primary: true });
-				status.replaceChildren(notice(t("flash.gd77.cable.failed", { error: ctx.errorText(e) }), "bad"), h("p", {}, t("flash.gd77.cable.after_fail")), ctx.helpLink());
+				status.replaceChildren(notice(t("flash.hid.cable.failed", { error: ctx.errorText(e) }), "bad"), h("p", {}, t("flash.hid.cable.after_fail")), ctx.helpLink());
 				S().forward([viaUpdate, again]);
 			}
 		} finally {
@@ -367,23 +367,23 @@ function writeView() {
 	const prog = progressBar();
 	const status = h("div");
 	prog.el.hidden = true;
-	const what = g.original ? t("flash.gd77.write.what_original", { name: g.donor.name })
-		: g.out.profile ? t("flash.gd77.write.what_voice", { build: g.donor.spec.stock?.name || g.out.profile })
-		: t("flash.gd77.write.what_no_voice");
-	const go = button(t("flash.gd77.write.go"), () => run(), { primary: true, disabled: noHid });
-	const box = h("div", { class: "flasher" }, panel(t("flash.gd77.write.title"),
-		noHid ? notice(t("flash.gd77.no_hid"), "bad") : null,
-		notice(t("flash.gd77.unverified"), "warn"),
-		h("dl", { class: "kv-list" }, h("dt", {}, t("flash.gd77.write.what")), h("dd", {}, what)),
-		h("p", {}, t("flash.gd77.write.lead")),
-		h("ol", { class: "steps" }, S().radio.flash.bootloader.map((x) => h("li", {}, x)), h("li", {}, t("flash.gd77.write.step_go"))),
-		h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.gd77.write.careful"))), h("p", {}, t("flash.gd77.write.careful_text"))),
-		prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.gd77.log")), g.log.el)));
+	const what = g.original ? t("flash.hid.write.what_original", { name: g.donor.name })
+		: g.out.profile ? t("flash.hid.write.what_voice", { build: g.donor.spec.stock?.name || g.out.profile })
+		: t("flash.hid.write.what_no_voice");
+	const go = button(t("flash.hid.write.go"), () => run(), { primary: true, disabled: noHid });
+	const box = h("div", { class: "flasher" }, panel(t("flash.hid.write.title"),
+		noHid ? notice(t("flash.hid.no_hid"), "bad") : null,
+		notice(t("flash.hid.unverified"), "warn"),
+		h("dl", { class: "kv-list" }, h("dt", {}, t("flash.hid.write.what")), h("dd", {}, what)),
+		h("p", {}, t("flash.hid.write.lead")),
+		h("ol", { class: "steps" }, S().radio.flash.bootloader.map((x) => h("li", {}, x)), h("li", {}, t("flash.hid.write.step_go"))),
+		h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.hid.write.careful"))), h("p", {}, t("flash.hid.write.careful_text"))),
+		prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.hid.log")), g.log.el)));
 	S().forward(go);
 
 	async function run() {
 		go.disabled = true;
-		status.replaceChildren(h("p", { class: "muted" }, t("flash.gd77.write.choose")));
+		status.replaceChildren(h("p", { class: "muted" }, t("flash.hid.write.choose")));
 		let link = null, started = null;
 		try {
 			link = await HidLink.request(simulated() ? new FakeHid(loaderFor(g.out.file)) : undefined);
@@ -394,27 +394,27 @@ function writeView() {
 			const fw = S().firmware;
 			started = ctx.flashStarted({ task: g.original ? "restore" : "install", source: g.original ? "stock" : fw?.origin || "",
 				radio: S().radio.flash.board, firmware: g.original ? "stock" : String(fw?.manifest.version || "") });
-			status.replaceChildren(h("p", { class: "muted" }, t("flash.gd77.write.running")));
+			status.replaceChildren(h("p", { class: "muted" }, t("flash.hid.write.running")));
 			prog.el.hidden = false;
 			let last = -1;
 			await new Updater(link).flash(file, { progress: (done, total) => {
 				const pct = Math.floor((100 * done) / total);
 				if (pct === last) return;
 				last = pct;
-				prog.set(done, total, t("flash.gd77.write.writing"));
+				prog.set(done, total, t("flash.hid.write.writing"));
 				if (pct % 10 === 0) g.log.add(`write    ${pct}%`);
 			} });
 			ctx.flashFinished(started);
-			status.replaceChildren(notice(t("flash.gd77.write.done"), "ok"));
+			status.replaceChildren(notice(t("flash.hid.write.done"), "ok"));
 			S().forward(button(t("flash.nav.to_done"), ctx.next, { primary: true }));
 		} catch (e) {
 			if (started) ctx.flashFinished(started, e);
 			const text = message(e);
 			g.log.add(`error    ${e?.message || e}`);
 			prog.el.hidden = true;
-			status.replaceChildren(notice(text, "bad"), notice(t("flash.gd77.write.retry_safe"), "info"), ctx.helpLink());
+			status.replaceChildren(notice(text, "bad"), notice(t("flash.hid.write.retry_safe"), "info"), ctx.helpLink());
 			go.disabled = false;
-			S().forward(button(t("flash.gd77.write.again"), () => run(), { primary: true }));
+			S().forward(button(t("flash.hid.write.again"), () => run(), { primary: true }));
 		} finally {
 			await link?.close();
 			await busy(false);
@@ -430,14 +430,14 @@ function doneView() {
 	const g = session();
 	const original = g.original;
 	S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));
-	const voice = g.out?.profile ? "flash.gd77.done.check_voice" : g.out?.keep ? "flash.gd77.done.check_voice_kept" : "flash.gd77.done.no_voice";
-	return h("div", { class: "flasher" }, panel(t(original ? "flash.gd77.done.title_original" : "flash.gd77.done.title"),
+	const voice = g.out?.profile ? "flash.hid.done.check_voice" : g.out?.keep ? "flash.hid.done.check_voice_kept" : "flash.hid.done.no_voice";
+	return h("div", { class: "flasher" }, panel(t(original ? "flash.hid.done.title_original" : "flash.hid.done.title"),
 		cable() && g.result ? notice(g.result, "ok") : null,
-		h("p", {}, t(original ? "flash.gd77.done.lead_original" : "flash.gd77.done.lead")),
-		original ? null : h("ul", { class: "steps" }, h("li", {}, t("flash.gd77.done.check_screen")), h("li", {}, t(voice))),
-		h("p", { class: "small muted" }, t("flash.gd77.done.no_link")),
-		notice(t("flash.gd77.done.report"), "info"),
-		h("p", { class: "small" }, t(cable() ? "flash.gd77.done.not_starting_cable" : "flash.gd77.done.not_starting"))));
+		h("p", {}, t(original ? "flash.hid.done.lead_original" : "flash.hid.done.lead")),
+		original ? null : h("ul", { class: "steps" }, h("li", {}, t("flash.hid.done.check_screen")), h("li", {}, t(voice))),
+		h("p", { class: "small muted" }, t("flash.hid.done.no_link")),
+		notice(t("flash.hid.done.report"), "info"),
+		h("p", { class: "small" }, t(cable() ? "flash.hid.done.not_starting_cable" : "flash.hid.done.not_starting"))));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -446,28 +446,28 @@ function doneView() {
 const INSTALL = ["radio", "build", "connect", "update_file", "write", "done"];
 const RECOVER = ["build", "update_file", "write", "done"];
 const ORIGINAL = ["update_file", "write", "done"];
-export const isGd77 = (radio, fb) => radio?.flash.backend === "gd77-hid" && !!fb.gd77?.boards.includes(radio.flash.board);
+export const isHid = (radio, fb) => radio?.flash.backend === "sgl-hid" && !!fb.hid?.boards.includes(radio.flash.board);
 
 register({
-	id: "gd77-hid",
+	id: "sgl-hid",
 	// install only: the loader can't read the radio back, so there is no backup, and so nothing to restore
-	available: (radio, fb, task) => task === "install" && isGd77(radio, fb),
-	steps: (task, { recovering }) => (task !== "install" ? null : recovering && ctx?.S.gd77?.original ? ORIGINAL : recovering ? RECOVER : INSTALL),
-	stepLabel: (step) => (step === "done" ? "gd77_done" : step),
+	available: (radio, fb, task) => task === "install" && isHid(radio, fb),
+	steps: (task, { recovering }) => (task !== "install" ? null : recovering && ctx?.S.hid?.original ? ORIGINAL : recovering ? RECOVER : INSTALL),
+	stepLabel: (step) => (step === "done" ? "hid_done" : step),
 	views: { connect: connectView, update_file: fileView, write: writeView, done: doneView },
 	// update mode is in the loader, which the page never writes: reinstalling, or putting the original update file back,
 	// always works the same way
-	recovery: { first: "fix", stock: "file", reach: "flash.help.gd77_reach", stockText: "flash.help.fix.stock_text",
-		choices: ["again"], againText: "flash.help.fix.gd77_again_text", alias: { codec: "again", stock: "original" },
-		extra: () => [{ id: "original", title: "flash.help.fix.gd77_original", text: "flash.help.fix.gd77_original_text",
+	recovery: { first: "fix", stock: "file", reach: "flash.help.hid_reach", stockText: "flash.help.fix.stock_text",
+		choices: ["again"], againText: "flash.help.fix.hid_again_text", alias: { codec: "again", stock: "original" },
+		extra: () => [{ id: "original", title: "flash.help.fix.hid_original", text: "flash.help.fix.hid_original_text",
 			prepare: () => { session().original = true; } }] },
 	ownImage: async (fb, board, data) => {
-		if (startsWith(data, "SGL!")) throw new Error(t("flash.gd77.err.sgl_as_image"));
-		return ownImage(fb.gd77, data);
+		if (startsWith(data, "SGL!")) throw new Error(t("flash.hid.err.sgl_as_image"));
+		return ownImage(fb.hid, data);
 	},
 	release: async () => {
-		if (!ctx?.S.gd77) return;
+		if (!ctx?.S.hid) return;
 		await closeLink();
-		ctx.S.gd77 = null;
+		ctx.S.hid = null;
 	},
 });

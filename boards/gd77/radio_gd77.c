@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-77 radio: the AT1846S (I2C bus A) with the radio's own register profile, the HR_C6000 (SPI0) as the FM audio chain
-// and DMR modem, the RF path lines, DAC0 and the calibration (docs/spec/hardware-gd77.md 5, 8). The DM-1701's
-// structure (radio_dm1701.c) with this radio's wiring.
+// and DMR modem, the RF path lines, DAC0 and the calibration (docs/spec/hardware-gd77.md 5, 8). The structure
+// of boards/dm1701/radio_dm1701.c with this radio's wiring.
 //
 // Switch sequences (rf_gd77.h): receive is TX enable off, drive ramped down, TX path off, tune, the AT1846S to
 // receive, the band's RX path on, the receive DAC value. Transmit is the RX path off, tune, the AT1846S to transmit,
@@ -12,7 +12,8 @@
 //
 // Transmit is built only with CONFIG_GD77_TX=y (off by default, boards/gd77/config.mk), and even then tx() refuses
 // without a valid calibration point for the frequency (cal_gd77.h). Receive applies the point's AT1846S receive values
-// on every retune. Every pin role and value here is unverified on a radio. The RSSI scale is the DM-1701's.
+// on every retune. Every pin role and value here is unverified on a radio. The RSSI scale is
+// boards/dm1701/radio_dm1701.c's.
 #include <stddef.h>
 #include "gd77.h"
 #include "config.h"
@@ -91,7 +92,7 @@ static bool rf_write(void *ctx, uint8_t reg, uint16_t val)
 	if (reg == 0x7F) {
 		r.rf_page = 0xFF;	// unknown until the write is through (the interrupt path writes page 0 only)
 	}
-	bool ok = gd77_i2c_write(AT1846S_ADDR, b, sizeof b);
+	bool ok = i2c_a_write(AT1846S_ADDR, b, sizeof b);
 	if (ok && reg == 0x7F) {
 		r.rf_page = (uint8_t)val;
 	}
@@ -102,7 +103,7 @@ static bool rf_read(void *ctx, uint8_t reg, uint16_t *val)
 {
 	(void)ctx;
 	uint8_t b[2];
-	if (!gd77_i2c_write_read(AT1846S_ADDR, &reg, 1, b, sizeof b)) {
+	if (!i2c_a_write_read(AT1846S_ADDR, &reg, 1, b, sizeof b)) {
 		return false;
 	}
 	*val = (uint16_t)((b[0] << 8) | b[1]);
@@ -236,7 +237,7 @@ static bool rf_isr_write(uint8_t reg, uint16_t val)
 		return false;
 	}
 	uint8_t b[3] = { reg, (uint8_t)(val >> 8), (uint8_t)val };
-	return gd77_i2c_write_isr(AT1846S_ADDR, b, sizeof b);
+	return i2c_a_write_isr(AT1846S_ADDR, b, sizeof b);
 }
 
 static bool rf_isr_tune(uint32_t hz, at1846s_state_t then)

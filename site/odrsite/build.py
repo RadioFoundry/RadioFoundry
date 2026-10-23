@@ -421,7 +421,7 @@ class Site:
 		fl = b["flash"]
 		can_flash = ((fl["backend"] == "anyroad-dfu" and bool(self.flash["boards"].get(fl["board"], {}).get("key_sha256")))
 			     or (fl["backend"] == "c7000-stub" and fl["board"] in self.flash["c7000"]["boards"])
-			     or (fl["backend"] == "gd77-hid" and fl["board"] in self.flash.get("gd77", {}).get("boards", [])))
+			     or (fl["backend"] == "sgl-hid" and fl["board"] in self.flash.get("hid", {}).get("boards", [])))
 		g = b["frame_geometry"]
 		pct = g["screen_pct"]
 		ctx = {"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]) or "—",

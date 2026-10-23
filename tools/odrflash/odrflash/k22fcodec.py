@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""GD-77: place the radio's own AMBE+2 codec where ODR wants it (docs/spec/codec-gd77.md).
+"""K22F: place a radio's own AMBE+2 codec where ODR wants it, from a stock firmware that spreads it over several parts
+(docs/spec/codec-gd77.md, platform/k22f/codec_desc.h).
 
 The codec sits in three parts of the radio's stock firmware: a low block (0x4400, the fixed-point helpers), a main block
 (about 69 KB, with a 13 KB stretch of the stock firmware's own code inside it) and a table window (about 78 KB, with two
@@ -14,9 +15,11 @@ code, so the merge:
   * writes a descriptor at DESC_ADDR (platform/k22f/codec_desc.h) that names the code region and the table window with
     their CRC-32.
 
-The spec for each supported stock build is codec_packs/gd77/<profile>.json (format odr-codec-pack/1): addresses, lengths
-and hashes, never codec bytes. The input is the stock firmware as a flat flash image (flash address = file offset +
-FLASH_BASE). Nothing here is part of a release; the bytes come from the user's own file and go to the user's radio.
+The spec for each supported stock build is codec_packs/<board>/<profile>.json (format odr-codec-pack/1): addresses,
+lengths and hashes, never codec bytes, and under "placed" the codec as the merge places it (the descriptor's tag, the
+code region's length and CRC-32, the table window's CRC-32 after the rewrites), which the board's vocoder pins too. The
+input is the stock firmware as a flat flash image (flash address = file offset + FLASH_BASE). Nothing here is part of a
+release; the bytes come from the user's own file and go to the user's radio.
 """
 import glob
 import hashlib
@@ -26,27 +29,16 @@ import struct
 import zlib
 
 FLASH_BASE = 0x4000			# flat image offset 0 is this flash address
-CODE_BASE = 0x00055D00			# where the main block goes (boards/gd77/gd77.ld ends the application here)
+CODE_BASE = 0x00055D00			# where the main block goes (the board's memory.ld ends the application here)
 DESC_ADDR = 0x0007B700			# the descriptor (platform/k22f/codec_desc.h)
 DESC_LEN = 0x80
 DESC_MAGIC = 0x43534544			# "DESC"
 DESC_VERSION = 1
 TABLE_LO = 0x00067C58			# the lowest table window start of any supported build
 TABLE_HI = 0x0007B5F8			# the highest end
-MAPS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codec_packs", "gd77")
+PACKS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "codec_packs")
 FORMAT = "odr-codec-pack/1"
-# The codec as the merge places it, per supported build: the descriptor's tag, the code region's length and CRC-32 and the
-# table window's CRC-32 after the rewrites. boards/gd77/vocoder_gd77.c pins the same numbers (a test compares them)
-PLACED = {
-    "gd77-v3.2.1": {"tag": 0x3201, "code_len": 0x11E90, "code_crc": 0xBC78498B, "tab_crc": 0xE81AFF5D},
-    "gd77-v3.2.2": {"tag": 0x3202, "code_len": 0x11E90, "code_crc": 0xDBBA763D, "tab_crc": 0x4051B25A},
-    "gd77-v4.2.8": {"tag": 0x4208, "code_len": 0x11E90, "code_crc": 0x1CA7B3D4, "tab_crc": 0xAF1FEB2E},
-    "gd77-v4.3.3": {"tag": 0x4303, "code_len": 0x11B58, "code_crc": 0xC5EB3113, "tab_crc": 0xB9AE6A44},
-    "gd77-v4.3.6": {"tag": 0x4306, "code_len": 0x11B58, "code_crc": 0x8BBE7F89, "tab_crc": 0xDCEC0213},
-    "gd77-v4.3.9": {"tag": 0x4309, "code_len": 0x11B58, "code_crc": 0x9F4B97AC, "tab_crc": 0xC59EC61F},
-    "gd77-v6.0.1": {"tag": 0x6001, "code_len": 0x11B58, "code_crc": 0x28E1981D, "tab_crc": 0xBBC2BCA7},
-}
-CODEC_ID = "gd77-p1"			# what the firmware reports for a build placed as above (debug link VERSION codec=)
+PLACED_KEYS = ("tag", "code_len", "code_crc", "tab_crc")
 ENTRY_NAMES = ("encode", "decode", "enc_init", "fec_init", "dec_init", "enc_params", "enc_set", "dec_set")
 
 
@@ -66,16 +58,21 @@ def _n(v):
     return int(v, 0) if isinstance(v, str) else int(v)
 
 
-def load_specs(directory=MAPS_DIR):
-    """{profile: spec} with every number as an int."""
+def load_specs(directory=PACKS_DIR, board=None):
+    """{profile: spec} with every number as an int: the packs in directory and its per-board directories, only
+    board's when given."""
     out = {}
-    for p in sorted(glob.glob(os.path.join(directory, "*.json"))):
+    for p in sorted(glob.glob(os.path.join(directory, "*.json")) + glob.glob(os.path.join(directory, "*", "*.json"))):
         with open(p) as f:
             j = json.load(f)
         if j.get("format") != FORMAT:
             raise PackError("%s: not a %s file" % (p, FORMAT))
-        s = {"profile": j["profile"], "stock": j["stock"], "entries": {k: _n(v) for k, v in j["entries"].items()},
-             "words": [(_n(a), _n(v)) for a, v in j["words"]], "branches": [(_n(a), _n(t)) for a, t in j["branches"]]}
+        if board is not None and j.get("board") != board:
+            continue
+        s = {"profile": j["profile"], "board": j.get("board"), "stock": j["stock"],
+             "entries": {k: _n(v) for k, v in j["entries"].items()},
+             "words": [(_n(a), _n(v)) for a, v in j["words"]], "branches": [(_n(a), _n(t)) for a, t in j["branches"]],
+             "placed": {k: _n(j["placed"][k]) for k in PLACED_KEYS}}
         for part in ("main", "low", "tab"):
             s[part] = {"flash": _n(j[part]["flash"]), "len": j[part]["len"], "sha256": j[part]["sha256"]}
         if s["profile"] in out:
@@ -84,9 +81,9 @@ def load_specs(directory=MAPS_DIR):
     return out
 
 
-def find_spec(image, specs=None):
+def find_spec(image, specs=None, board=None):
     """The spec whose three windows hash to what the flat stock image holds, or None."""
-    for s in (specs or load_specs()).values():
+    for s in (specs or load_specs(board=board)).values():
         if all(_window(image, s[p]) is not None and sha256(_window(image, s[p])) == s[p]["sha256"]
                for p in ("main", "low", "tab")):
             return s
@@ -141,7 +138,7 @@ class Packed:
 
     def segments(self, tag=None):
         """[(flash address, bytes)] the merge writes: the code region, the table window, the descriptor."""
-        tag = PLACED[self.spec["profile"]]["tag"] if tag is None else tag
+        tag = self.spec["placed"]["tag"] if tag is None else tag
         return [(self.code_addr, self.code), (self.tab_addr, self.tab), (DESC_ADDR, self.descriptor(tag))]
 
 
@@ -202,7 +199,7 @@ def merge(app_image, packed, tag=None):
     """The flat image (from FLASH_BASE) with the application and the codec segments, 0xFF between."""
     if FLASH_BASE + len(app_image) > packed.code_addr:
         raise PackError("the application image ends at 0x%08X, inside the codec at 0x%08X: rebuild with the window "
-                        "reserved (boards/gd77/gd77.ld)" % (FLASH_BASE + len(app_image), packed.code_addr))
+                        "reserved (the board's memory.ld)" % (FLASH_BASE + len(app_image), packed.code_addr))
     segs = packed.segments(tag)
     end = max(a + len(d) for a, d in segs)
     out = bytearray(b"\xFF" * (end - FLASH_BASE))

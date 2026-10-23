@@ -11,9 +11,13 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from odrflash import boards, cli, stubroute  # noqa: E402
-import test_gd77flash as TG  # noqa: E402
-import test_gd77codec as T  # noqa: E402
+import test_hidflash as TG  # noqa: E402
+import test_k22fcodec as T  # noqa: E402
 import random  # noqa: E402
+
+# The radios on the route, from the registry: the STM32F4 stub's, and a board of the USB HID update family (K22F stub)
+F4_BOARDS = sorted(b for b in stubroute.BOARDS if boards.BOARDS[b].stub["tool"] == "f4stub")
+HID_BOARD = TG.BOARD
 
 
 class FakeStubtool:
@@ -51,7 +55,8 @@ class Route(unittest.TestCase):
         return p
 
     def test_f4_radios_get_the_application_through_the_stub(self):
-        for bid in [b for b in ("dm1701", "md380", "md9600") if b in boards.BOARDS]:
+        self.assertTrue(F4_BOARDS)
+        for bid in F4_BOARDS:
             self.fake.calls.clear()
             rc, log = run_cli(["flash", self.image(), "--board", bid, "--route", "stub", "--port", "/dev/x", "--yes"])
             self.assertEqual(rc, 0, log)
@@ -60,39 +65,39 @@ class Route(unittest.TestCase):
             self.assertEqual(len(data), 30000)
             self.assertIn("reset", argv)
 
-    def test_gd77_merges_the_codec_when_given_the_stock_file(self):
+    def test_hid_board_merges_the_codec_when_given_the_stock_file(self):
         img, spec = T.synthetic(random.Random(77))
         stock = os.path.join(self.tmp, "stock.sgl")
         with open(stock, "wb") as f:
             f.write(TG.make_update_file(img))
         G = TG.G
         orig = G.load_specs
-        G.load_specs = lambda directory=G.MAPS_DIR: {"synthetic": spec}
-        G.PLACED["synthetic"] = {"tag": 1}
+        spec["placed"] = {"tag": 1}
+        G.load_specs = lambda directory=G.PACKS_DIR, board=None: {"synthetic": spec}
         try:
-            rc, log = run_cli(["flash", self.image(), "--board", "gd77", "--route", "stub", "--stock", stock,
+            rc, log = run_cli(["flash", self.image(), "--board", HID_BOARD, "--route", "stub", "--stock", stock,
                                "--port", "/dev/x", "--yes"])
             self.assertEqual(rc, 0, log)
             _, data = self.fake.calls[0]
             self.assertEqual(len(data), G.DESC_ADDR + G.DESC_LEN - G.FLASH_BASE)
             self.fake.calls.clear()
-            rc, log = run_cli(["flash", self.image(), "--board", "gd77", "--route", "stub", "--port", "/dev/x", "--yes"])
+            rc, log = run_cli(["flash", self.image(), "--board", HID_BOARD, "--route", "stub", "--port", "/dev/x", "--yes"])
             self.assertEqual(rc, 0, log)
             self.assertEqual(len(self.fake.calls[0][1]), 30000)
             self.assertIn("keeps the one it has", log)
         finally:
             G.load_specs = orig
-            G.PLACED.pop("synthetic", None)
 
     def test_refusals(self):
-        rc, log = run_cli(["flash", self.image(), "--board", "dm1701", "--route", "stub", "--simulate", "blank"])
+        rc, log = run_cli(["flash", self.image(), "--board", F4_BOARDS[0], "--route", "stub", "--simulate", "blank"])
         self.assertNotEqual(rc, 0)
         self.assertIn("simulate", log)
-        rc, log = run_cli(["flash", self.image(), "--board", "dm1701", "--route", "stub", "--dry-run"])
+        rc, log = run_cli(["flash", self.image(), "--board", F4_BOARDS[0], "--route", "stub", "--dry-run"])
         self.assertEqual(rc, 0, log)
         self.assertIn("dry run", log)
         self.assertEqual(self.fake.calls, [])
-        self.assertEqual(set(stubroute.BOARDS), {"dm1701", "md380", "md9600", "gd77"})
+        self.assertIn(HID_BOARD, stubroute.BOARDS)
+        self.assertTrue(all(boards.BOARDS[b].stub["tool"] in ("f4stub", "k22stub") for b in stubroute.BOARDS))
 
 
 if __name__ == "__main__":

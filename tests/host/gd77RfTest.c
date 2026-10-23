@@ -141,7 +141,7 @@ static void test_at1846s_profile(void)
 	CHECK(at1846s_ctrl_value(&dev, AT1846S_BW_12K5, AT1846S_STATE_DMR_TX) == 0x40C6);
 	CHECK(at1846s_reg05_value(&dev, 170625000) == 0x8643);
 
-	// Back to the defaults: the DM-1701's values
+	// Back to the driver's defaults
 	at1846s_set_profile(&dev, NULL);
 	CHECK(at1846s_ctrl_value(&dev, AT1846S_BW_12K5, AT1846S_STATE_IDLE) == 0x6006);
 	CHECK(at1846s_reg05_value(&dev, 136500000) == 0x8763);
@@ -269,7 +269,7 @@ static void test_c6k(void)
 {
 	hrc_t dev;
 	hrc6000_attach(&dev, &c_bus);
-	CHECK(dev.mic_input == HRC_MIC_LINEIN1 && dev.mic_gain_base == 0x20);	// the defaults (DM-1701)
+	CHECK(dev.mic_input == HRC_MIC_LINEIN1 && dev.mic_gain_base == 0x20);	// the driver's defaults
 	c_n = 0;
 	CHECK(hrc6000_power_on_init_clock(&dev, 7, &hrc6000_clock_12m288));
 	CHECK(c_last(4, 0xE4) == 0x27);

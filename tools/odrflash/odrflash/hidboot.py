@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""The GD-77 family's bootloader update protocol over USB HID (docs/spec/update-gd77.md). The radio is started in update
-mode (both side keys held at power-on); it shows up as HID device 15A2:0073. The host sends the file's names, erases,
+"""A vendor bootloader's update protocol over USB HID, taking an SGL update file (updatefile.py,
+docs/spec/update-gd77.md). The radio is started in update mode (the board's keys held at power-on); it shows up as HID
+device 15A2:0073. The host sends the file's names, erases,
 and sends the body in short blocks with a running sum; every step gets a one-byte answer.
 
 Unverified on a radio. FakeBootloader models the protocol as the spec reads it, for the host tests.
@@ -39,12 +40,12 @@ class HidLink:
         try:
             import hid
         except ImportError:
-            raise BootError("the GD-77 update needs the hidapi package (pip install hidapi)")
+            raise BootError("the USB HID update needs the hidapi package (pip install hidapi)")
         self.dev = hid.device()
         try:
             self.dev.open(VID, PID)
         except (OSError, ValueError):
-            raise BootError("no GD-77 in update mode found (USB 15A2:0073): switch it off, hold both side keys, "
+            raise BootError("no radio in update mode found (USB 15A2:0073): switch it off, hold both side keys, "
                             "switch it on and connect the USB cable")
 
     def write(self, report):

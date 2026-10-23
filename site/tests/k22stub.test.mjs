@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The GD-77's cable route (k22stub.js on f4stub.js's client) against stub/k22stub.py (fixtures from site/tests/fixtures.py)
-// and the simulated radio (fakegd77.js FakeGd77Odr): the board record and HELLO byte for byte, CONFIG accepted and
+// The K22F cable route (k22stub.js on f4stub.js's client) against stub/k22stub.py (fixtures from site/tests/fixtures.py)
+// and the simulated radio (fakehid.js FakeHidOdr): the board record and HELLO byte for byte, CONFIG accepted and
 // refused, no write before CONFIG, the hand-over from ODR, installs that erase what k22stub.py erases and leave the
 // flash it leaves, the sector shared with the codec, changed sectors only, a failed verify, a pulled cable, the restart
-// and the SPI flash floor. Nothing here has run on a GD-77. Run with site/tests/run.sh, or: node --test site/tests/
+// and the SPI flash floor. Nothing here has run on a radio. Run with site/tests/run.sh, or: node --test site/tests/
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -15,23 +15,24 @@ import { createHash } from "node:crypto";
 import { fromHex, toHex } from "../static/js/flasher/bytes.js";
 import { f4Image, F4Stub, MEM_SPI } from "../static/js/flasher/f4stub.js";
 import { k22Chip, k22Board, k22Stub, k22Segments, k22Install, ownedFor } from "../static/js/flasher/k22stub.js";
-import { FakeGd77Odr } from "../static/js/flasher/fakegd77.js";
+import { FakeHidOdr } from "../static/js/flasher/fakehid.js";
 import { Link, probe } from "../static/js/flasher/link.js";
 
 const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
 const bin = (n) => new Uint8Array(readFileSync(join(DIR, n)));
 const sha = (b) => createHash("sha256").update(b).digest("hex");
-const ST = json("flash-boards.json").gd77.stub;
+const ST = json("flash-boards.json").hid.stub;
 const stubJson = json("k22-stub.json");
 const image = f4Image(stubJson);
 const fx = json("k22.json");
 const quiet = () => {};
-const B = ST.boards.gd77;
+const BOARD = fx.board;			// the board the fixtures install on (the stub's first, as FakeHidOdr's default)
+const B = ST.boards[BOARD];
 const sector = (radio, i) => radio.flash.subarray(i * ST.sector, (i + 1) * ST.sector);
 
 async function enter(radio, opts = {}) {
-	const s = k22Stub(radio.serialStream(), ST, "gd77", { log: quiet, reopen: async () => radio.serialStream(), ...opts });
+	const s = k22Stub(radio.serialStream(), ST, BOARD, { log: quiet, reopen: async () => radio.serialStream(), ...opts });
 	await s.enterFromOdr(image, () => {}, { entry: stubJson.run });
 	return s;
 }
@@ -62,12 +63,12 @@ test("the K22F data in the flasher tables is k22stub.py's", () => {
 	const chip = k22Chip(ST);
 	for (const [a, ok] of Object.entries(fx.sp)) assert.equal(chip.spOk(Number(a)), ok, a);
 	assert.equal(chip.sectors(ST.flash_kb).length, 256);
-	assert.equal(k22Board(ST, "GD-77"), "gd77");
-	assert.equal(k22Board(ST, "DM-1701"), null);
+	assert.equal(k22Board(ST, B.debuglink_names[0]), BOARD);
+	assert.equal(k22Board(ST, "XR-100"), null);
 });
 
 test("the simulated stub answers HELLO and CONFIG byte for byte as k22stub.py's fake", async () => {
-	const radio = new FakeGd77Odr(ST);
+	const radio = new FakeHidOdr(ST);
 	radio.mode = "stub";
 	const h = fx.hello;
 	assert.deepEqual(ask(radio, 0x01), h.before);
@@ -81,7 +82,7 @@ test("the simulated stub answers HELLO and CONFIG byte for byte as k22stub.py's 
 
 test("hand-over: the stub adopts ODR's port or comes back on a new one; unconfigured until CONFIG", async () => {
 	for (const adopt of [true, false]) {
-		const radio = new FakeGd77Odr(ST, { adopt });
+		const radio = new FakeHidOdr(ST, { adopt });
 		const s = await enter(radio);
 		assert.equal(s.info.flashKb, 512);
 		assert.equal(s.info.version, 3);
@@ -90,17 +91,17 @@ test("hand-over: the stub adopts ODR's port or comes back on a new one; unconfig
 		assert.equal(s.info.spiSize, 0, "no SPI flash before a record");
 		assert.deepEqual(radio.events, ["stub (from ODR)"]);
 	}
-	const radio = new FakeGd77Odr(ST, { stubEntry: false });
+	const radio = new FakeHidOdr(ST, { stubEntry: false });
 	await assert.rejects(enter(radio), /CONFIG_STUB_ENTRY/);
 	assert.equal(radio.mode, "odr");
 	// the STM32F4 client refuses the K22F stub's HELLO
-	const r2 = new FakeGd77Odr(ST);
+	const r2 = new FakeHidOdr(ST);
 	const f4 = new F4Stub(r2.serialStream(), { log: quiet });
 	await assert.rejects(f4.enterFromOdr(image, () => {}, { entry: stubJson.run }), /does not answer/);
 });
 
 test("CONFIG: accepted with its echo checked, refused when the stub won't take it, and no write before it", async () => {
-	const radio = new FakeGd77Odr(ST);
+	const radio = new FakeHidOdr(ST);
 	const s = await enter(radio);
 	await assert.rejects(s.erase(9), /not configured/, "the page refuses before sending");
 	await assert.rejects(s.writeImage(B.owned, [[ST.app_base, app(3, 5000)]]), /not configured/);
@@ -116,21 +117,21 @@ test("CONFIG: accepted with its echo checked, refused when the stub won't take i
 	await s.configure();
 	assert.equal(radio.events.filter((e) => e === "config").length, 1, "an echoed record is not sent again");
 	// a record the stub refuses (a different application base): nothing written
-	const r2 = new FakeGd77Odr(ST);
+	const r2 = new FakeHidOdr(ST);
 	const bad = { ...B, record: B.record.slice(0, 8) + "00002000" + B.record.slice(16) };
 	const s2 = await enter(r2, { board: bad });
 	s2.board = bad;
-	await assert.rejects(s2.configure(), /refused the Radioddity GD-77's board record/);
+	await assert.rejects(s2.configure(), /refused the .+'s board record/);
 	assert.equal(s2.configured, false);
 	// a stub that takes a record but echoes another one
-	const r3 = new FakeGd77Odr(ST);
+	const r3 = new FakeHidOdr(ST);
 	const s3 = await enter(r3);
-	r3.hello = () => new Uint8Array([...FakeGd77Odr.prototype.hello.call(r3).slice(0, -1), 0x01]);
+	r3.hello = () => new Uint8Array([...FakeHidOdr.prototype.hello.call(r3).slice(0, -1), 0x01]);
 	await assert.rejects(s3.configure(), /did not take/);
 });
 
 test("installs erase what k22stub.py erases and leave the flash it leaves", async () => {
-	const radio = new FakeGd77Odr(ST);
+	const radio = new FakeHidOdr(ST);
 	radio.flash.set(bin("k22_flash.bin"));
 	const s = await enter(radio);
 	for (const [i, want] of fx.installs.entries()) {
@@ -153,7 +154,7 @@ test("installs erase what k22stub.py erases and leave the flash it leaves", asyn
 });
 
 test("the application alone keeps the codec; the same image again writes nothing; a change writes only its sectors", async () => {
-	const radio = new FakeGd77Odr(ST);
+	const radio = new FakeHidOdr(ST);
 	const codec = radio.flash.slice(B.codec[0], B.app_end);
 	const loader = radio.flash.slice(0, ST.app_base), last = sector(radio, 255).slice();
 	const s = await enter(radio);
@@ -185,7 +186,7 @@ test("the application alone keeps the codec; the same image again writes nothing
 });
 
 test("a failed verify aborts before the commit: the loader finds no application", async () => {
-	const radio = new FakeGd77Odr(ST, { badAt: 0x20123 });
+	const radio = new FakeHidOdr(ST, { badAt: 0x20123 });
 	const s = await enter(radio);
 	await assert.rejects(k22Install(s, app(5, 300000)), /verify before the commit: sector\(s\) 64, 65 differ/);
 	assert.equal(radio.word(ST.app_base), 0xFFFFFFFF, "not committed");
@@ -195,13 +196,13 @@ test("a failed verify aborts before the commit: the loader finds no application"
 });
 
 test("a pulled cable leaves nothing committed; a second run completes; the restart starts ODR", async () => {
-	const radio = new FakeGd77Odr(ST, { cutAfter: 10 });
+	const radio = new FakeHidOdr(ST, { cutAfter: 10 });
 	let s = await enter(radio);
 	const img = app(7, 300000);
 	await assert.rejects(k22Install(s, img), /lost/);
 	assert.equal(radio.word(ST.app_base), 0xFFFFFFFF);
 	radio.cutAfter = null;
-	s = k22Stub(radio.serialStream(), ST, "gd77", { log: quiet });
+	s = k22Stub(radio.serialStream(), ST, BOARD, { log: quiet });
 	assert.ok(await s.attach(), "the stub still answers");
 	await k22Install(s, img);
 	assert.deepEqual(radio.flash.subarray(ST.app_base, ST.app_base + img.length), img);
@@ -209,11 +210,11 @@ test("a pulled cable leaves nothing committed; a second run completes; the resta
 	assert.equal(radio.mode, "odr");
 	assert.equal(radio.events.at(-1), "reset");
 	const p = await probe(new Link(radio.serialStream()));
-	assert.equal(p.board, "GD-77");
+	assert.equal(p.board, B.debuglink_names[0]);
 });
 
 test("SPI flash: the radio's first megabyte is never written", async () => {
-	const radio = new FakeGd77Odr(ST);
+	const radio = new FakeHidOdr(ST);
 	const s = await enter(radio);
 	await s.configure();
 	const all = await s.readFlash(0, 0x200000, { mem: MEM_SPI });

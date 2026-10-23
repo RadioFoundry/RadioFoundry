@@ -288,29 +288,30 @@ def flash_boards():
 	out["codec_maps"] = codecmap.load_maps()
 	out["c7000"] = c7000_flash()
 	out["f4stub"] = f4_flash()
-	out["gd77"] = gd77_flash()
+	out["hid"] = sgl_hid_flash()
 	return out
 
 
-def gd77_flash():
-	"""What the web flasher needs for the radios it installs through the GD-77's update mode (backend "gd77-hid"): the
-	update file and loader constants (updatefile.py, gd77boot.py), the codec placement constants and the spec of each
-	supported stock build (gd77codec.py: addresses, lengths, hashes, never codec bytes), and the codec as the merge
-	places it (PLACED: the descriptor tag, the code region's length and both CRC-32s)."""
+def sgl_hid_flash():
+	"""What the web flasher needs for the radios it installs through a vendor loader's USB HID update mode (backend
+	"sgl-hid"): the update file and loader constants (updatefile.py, hidboot.py), the codec placement constants and the
+	spec of each supported stock build (k22fcodec.py: addresses, lengths, hashes, never codec bytes), and the codec as
+	the merge places it (each pack's "placed": the descriptor tag, the code region's length and both CRC-32s)."""
 	sys.path.insert(0, path("tools", "odrflash"))
 	try:
-		from odrflash import boards as ob, gd77boot as gb, gd77codec as gc, updatefile as uf
+		from odrflash import boards as ob, hidboot as gb, k22fcodec as gc, updatefile as uf
 	finally:
 		sys.path.pop(0)
-	specs = {}
+	specs, placed = {}, {}
 	for name, s in gc.load_specs().items():
+		placed[name] = dict(s["placed"])
 		specs[name] = {"profile": s["profile"], "stock": s["stock"], "entries": s["entries"],
 			       "words": [list(w) for w in s["words"]], "branches": [list(b) for b in s["branches"]],
 			       **{p: dict(s[p]) for p in ("main", "low", "tab")}}
 	return {"boards": sorted(b.id for b in ob.BOARDS.values() if b.family == "gd77-hid"),
 		"flash_base": gc.FLASH_BASE, "code_base": gc.CODE_BASE, "desc_addr": gc.DESC_ADDR, "desc_len": gc.DESC_LEN,
 		"desc_magic": gc.DESC_MAGIC, "desc_version": gc.DESC_VERSION, "table_lo": gc.TABLE_LO, "table_hi": gc.TABLE_HI,
-		"codec_id": gc.CODEC_ID, "placed": gc.PLACED, "specs": specs,
+		"placed": placed, "specs": specs,
 		"update": {"period": uf.PERIOD, "info_len": uf.INFO_LEN, "body_at": uf.BODY_AT, "flash_base": uf.FLASH_BASE},
 		"loader": {"vid": gb.VID, "pid": gb.PID, "report": gb.REPORT, "step_timeout_ms": int(gb.STEP_TIMEOUT * 1000),
 			   "erase_timeout_ms": int(gb.ERASE_TIMEOUT * 1000)},
@@ -318,7 +319,7 @@ def gd77_flash():
 
 
 def k22_flash():
-	"""What the web flasher's cable route on a GD-77 already running ODR needs (stub/k22stub.py, docs/spec/stub-k22f.md):
+	"""What the web flasher's cable route on a K22F radio already running ODR needs (stub/k22stub.py, docs/spec/stub-k22f.md):
 	the K22F stub's chip facts (HELLO name, op magic, flash map, program unit, where the application starts), and per
 	radio the flash its firmware owns, the codec area, and the board record the stub takes in CONFIG (config_record(),
 	as hex), so the page and k22stub.py send the same bytes. "stack": the lowest and highest initial stack pointer the

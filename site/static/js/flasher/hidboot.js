@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The GD-77's update file (.sgl) and its bootloader's USB HID update protocol (docs/spec/update-gd77.md). A port of
-// tools/odrflash/odrflash/updatefile.py and gd77boot.py; site/tests/gd77.test.mjs checks the two agree byte for byte.
+// The SGL update file (.sgl) and the vendor bootloader's USB HID update protocol (docs/spec/update-gd77.md). A port of
+// tools/odrflash/odrflash/updatefile.py and hidboot.py; site/tests/hidboot.test.mjs checks the two agree byte for byte.
 //
 // An update file is a 1 KB header, then the flash image and one zero byte, byte-scrambled. A new image keeps the header
 // of the file it is written into (the donor, a stock update file the user supplies): same names, same tag, same stream.
 // The donor's own tail, zero before scrambling, gives the stream, so no key is needed.
 //
 // Unverified on a radio: that the loader accepts a body written this way, its timing and its HID enumeration. Every
-// loader behavior here is as the spec reads it, and the tests run it against a model loader (fakegd77.js).
+// loader behavior here is as the spec reads it, and the tests run it against a model loader (fakehid.js).
 
 import { ascii, startsWith, u16le, u32le, sleep as wait } from "./bytes.js";
 
@@ -22,7 +22,7 @@ export const STEP_TIMEOUT = 2000;		// ms
 export const ERASE_TIMEOUT = 10000;
 const KEY = [0x53, 0x47, 0x4C, 0x21];		// "SGL!"
 
-// code: a stable name for the page's message (gd77ui.js); message: what odrflash says
+// code: a stable name for the page's message (hidui.js); message: what odrflash says
 export class UpdateFileError extends Error {
 	constructor(code, message) {
 		super(message);
@@ -53,7 +53,7 @@ export class UpdateFile {
 	constructor(data) {
 		const d = (this.data = data instanceof Uint8Array ? data : new Uint8Array(data));
 		if (d.length < BODY_AT + 64 || !startsWith(d, "SGL!"))
-			throw new UpdateFileError("not_sgl", 'not a GD-77 family update file (no "SGL!" header)');
+			throw new UpdateFileError("not_sgl", 'not an SGL update file (no "SGL!" header)');
 		const h = d.slice(0, 16);
 		for (let i = 4; i < 16; i++) h[i] ^= KEY[i % 4];
 		if (ascii(h.subarray(4, 11)) !== "ENCV001")
@@ -255,7 +255,7 @@ export const HID_FILTERS = [{ vendorId: VID, productId: PID }];
 // The radio in update mode over WebHID: write(report) sends report[0] as the report id and the rest as its data;
 // read(timeoutMs) gives the next input report with its id in front, or null.
 export class HidLink {
-	// hid: navigator.hid, or a model of it (fakegd77.js). Asks the user to choose the radio.
+	// hid: navigator.hid, or a model of it (fakehid.js). Asks the user to choose the radio.
 	static async request(hid = globalThis.navigator?.hid) {
 		if (!hid) throw new BootError("no_hid", "this browser has no WebHID");
 		const [dev] = await hid.requestDevice({ filters: HID_FILTERS });

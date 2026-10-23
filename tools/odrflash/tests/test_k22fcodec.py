@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""Host tests for odrflash's GD-77 codec placement (gd77codec.py): a synthetic stock image with the same shape as a real
-build (a main block, a low block, a table window, a code pointer and cross-part branches), the specs in codec_maps/gd77,
-and the numbers boards/gd77/vocoder_gd77.c pins. No stock file, no radio.
+"""Host tests for odrflash's K22F codec placement (k22fcodec.py): a synthetic stock image with the same shape as a real
+build (a main block, a low block, a table window, a code pointer and cross-part branches), the codec packs of each board
+(codec_packs/<board>/), and the numbers each board's vocoder pins. No stock file, no radio.
 
     python3 -m unittest discover -s tools/odrflash/tests -v        (tools/ci.sh runs this)
 """
@@ -16,7 +16,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
-from odrflash import gd77codec as G  # noqa: E402
+from odrflash import k22fcodec as G  # noqa: E402
 
 REPO = os.path.join(HERE, "..", "..", "..")
 
@@ -124,34 +124,48 @@ class Placement(unittest.TestCase):
             G.pack(img, spec, code_base=0x67800)
 
 
+def pack_boards():
+    """The boards with codec packs: the directories of codec_packs/"""
+    return sorted(d for d in os.listdir(G.PACKS_DIR) if os.path.isdir(os.path.join(G.PACKS_DIR, d)))
+
+
 class Specs(unittest.TestCase):
     def test_specs_are_sound(self):
         specs = G.load_specs()
-        self.assertEqual(sorted(specs), sorted(G.PLACED))
+        self.assertTrue(specs)
         for name, s in specs.items():
             tab_end = s["tab"]["flash"] + s["tab"]["len"]
             self.assertGreaterEqual(s["tab"]["flash"], G.TABLE_LO, name)
             self.assertLessEqual(tab_end, G.TABLE_HI, name)
             region = (s["main"]["len"] + (s["low"]["flash"] - G.CODE_BASE - s["main"]["len"]) % 4) + s["low"]["len"]
-            self.assertEqual(G.PLACED[name]["code_len"], region + ((G.CODE_BASE - s["main"]["flash"]) % 4 and 0), name)
-            self.assertLessEqual(G.CODE_BASE + G.PLACED[name]["code_len"], s["tab"]["flash"], name)
+            self.assertEqual(s["placed"]["code_len"], region + ((G.CODE_BASE - s["main"]["flash"]) % 4 and 0), name)
+            self.assertLessEqual(G.CODE_BASE + s["placed"]["code_len"], s["tab"]["flash"], name)
             self.assertEqual(len(s["branches"]), 171, name)
             self.assertTrue(all(len(set(x)) == len(x) for x in ([a for a, _ in s["branches"]], [a for a, _ in s["words"]])), name)
             self.assertEqual(s["entries"]["encode"], 0x130)
 
     def test_the_firmware_pins_the_same_numbers(self):
-        with open(os.path.join(REPO, "boards", "gd77", "vocoder_gd77.c")) as f:
-            src = f.read()
-        rows = re.findall(r"\{ 0x([0-9A-F]{4})u, 0x([0-9A-F]+)u, 0x([0-9A-F]{8})u, 0x([0-9A-F]{8})u, (\d+)u, 0x([0-9A-F]{8})u \}", src)
-        specs = G.load_specs()
-        self.assertEqual(len(rows), len(G.PLACED))
-        for (tag, code_len, code_crc, tab_addr, tab_len, tab_crc), (name, p) in zip(rows, sorted(G.PLACED.items())):
-            self.assertEqual((int(tag, 16), int(code_len, 16), int(code_crc, 16), int(tab_crc, 16)),
-                             (p["tag"], p["code_len"], p["code_crc"], p["tab_crc"]), name)
-            self.assertEqual((int(tab_addr, 16), int(tab_len)), (specs[name]["tab"]["flash"], specs[name]["tab"]["len"]), name)
-        with open(os.path.join(REPO, "boards", "gd77", "gd77.ld")) as f:
-            self.assertIn("LENGTH = 0x%08X - 0x00004000" % G.CODE_BASE, f.read())
-        self.assertIn("define CODEC_CODE		0x%08Xu" % G.CODE_BASE, src)
+        self.assertTrue(pack_boards())
+        for bid in pack_boards():
+            bdir = os.path.join(REPO, "boards", bid)
+            srcs = []
+            for fn in sorted(os.listdir(bdir)):
+                if fn.endswith(".c"):
+                    with open(os.path.join(bdir, fn)) as f:
+                        srcs.append(f.read())
+            src = "".join(t for t in srcs if "define CODEC_CODE" in t)
+            self.assertTrue(src, "%s: no source defines CODEC_CODE" % bid)
+            rows = re.findall(r"\{ 0x([0-9A-F]{4})u, 0x([0-9A-F]+)u, 0x([0-9A-F]{8})u, 0x([0-9A-F]{8})u, (\d+)u, 0x([0-9A-F]{8})u \}", src)
+            specs = G.load_specs(board=bid)
+            self.assertEqual(len(rows), len(specs), bid)
+            for (tag, code_len, code_crc, tab_addr, tab_len, tab_crc), (name, s) in zip(rows, sorted(specs.items())):
+                p = s["placed"]
+                self.assertEqual((int(tag, 16), int(code_len, 16), int(code_crc, 16), int(tab_crc, 16)),
+                                 (p["tag"], p["code_len"], p["code_crc"], p["tab_crc"]), name)
+                self.assertEqual((int(tab_addr, 16), int(tab_len)), (s["tab"]["flash"], s["tab"]["len"]), name)
+            with open(os.path.join(bdir, "memory.ld")) as f:
+                self.assertIn("__codec_slot = 0x%08X;" % G.CODE_BASE, f.read())
+            self.assertIn("define CODEC_CODE		0x%08Xu" % G.CODE_BASE, src)
 
 
 if __name__ == "__main__":

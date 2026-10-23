@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// GD-77: place the radio's own AMBE+2 codec where ODR wants it, and build the update file the page sends
-// (docs/spec/codec-gd77.md, docs/spec/update-gd77.md). A port of tools/odrflash/odrflash/gd77codec.py and of
-// odrflash's gd77_update_file (cli.py); site/tests/gd77.test.mjs checks them against the Python byte for byte.
+// K22F: place a radio's own AMBE+2 codec where ODR wants it, and build the update file the page sends
+// (docs/spec/codec-gd77.md, docs/spec/update-gd77.md). A port of tools/odrflash/odrflash/k22fcodec.py and of
+// odrflash's hid_update_file (cli.py); site/tests/hidboot.test.mjs checks them against the Python byte for byte.
 //
 // The merge moves the codec's main block to CODE_BASE and its low block after it, leaves the table window where it is,
 // rewrites the code addresses and the branches the spec lists, and writes a descriptor at DESC_ADDR. G is
-// data/flash-boards.json "gd77": the constants and the spec of each supported stock build (addresses, lengths, hashes;
+// data/flash-boards.json "hid": the constants and the spec of each supported stock build (addresses, lengths, hashes;
 // never codec bytes). The codec bytes come from the user's own update file and go only to the user's radio.
 
 import { crc32, sha256, u16le, u32le } from "./bytes.js";
-import { UpdateFile, unpack, pack as packFile } from "./gd77.js";
+import { UpdateFile, unpack, pack as packFile } from "./hidboot.js";
 
 export class PackError extends Error {
 	constructor(code, message) {
@@ -146,13 +146,13 @@ export async function readDonor(G, data) {
 	return { file, flat, spec: await findSpec(G, flat) };
 }
 
-// odrflash's gd77_update_file: the image with the codec merged in (codec "auto"), or without it ("keep"), written into
+// odrflash's hid_update_file: the image with the codec merged in (codec "auto"), or without it ("keep"), written into
 // a copy of the donor. {file: the update file's bytes, image: the flat image, profile: the codec's build or null}
 export async function updateFile(G, donor, app, { codec = "auto" } = {}) {
 	let image = app, profile = null;
 	if (codec !== "keep") {
 		if (!donor.spec)
-			throw new PackError("unsupported", `${donor.file.label()} is not one of the supported GD-77 builds (${Object.keys(G.specs).sort().join(", ")}), `
+			throw new PackError("unsupported", `${donor.file.label()} is not one of the supported stock builds (${Object.keys(G.specs).sort().join(", ")}), `
 				+ "so its codec cannot be placed");
 		image = merge(G, app, await pack(G, donor.flat, donor.spec));
 		profile = donor.spec.profile;
@@ -162,7 +162,7 @@ export async function updateFile(G, donor, app, { codec = "auto" } = {}) {
 	return { file: packFile(image, donor.file), image, profile };
 }
 
-// A user's own image: a build with the codec already merged (make's odr_gd77_codec.bin, with a descriptor at DESC_ADDR)
+// A user's own image: a build with the codec already merged (make's odr_<board>_codec.bin, with a descriptor at DESC_ADDR)
 // gives back its application part, since the codec comes from the update file anyway. Anything else is returned as is.
 export function ownImage(G, data) {
 	const at = G.desc_addr - G.flash_base;

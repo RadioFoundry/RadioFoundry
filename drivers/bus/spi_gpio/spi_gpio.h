@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// SPI master on GPIO pins (bit-banged), MSB first, any of the four modes: for chips wired to plain pins (the GD-77's
-// SPI NOR flash and LCD; docs/spec/hardware-gd77.md 4). The chip select stays with the caller, so a transaction is as
+// SPI master on GPIO pins (bit-banged), MSB first, any of the four modes: for chips wired to plain pins (an SPI NOR
+// flash or an LCD, as in docs/spec/hardware-gd77.md 4). The chip select stays with the caller, so a transaction is as
 // long as the caller keeps it selected. CPHA 0: the data line is set before the leading clock edge and the input is
 // sampled on it; CPHA 1: set on the leading edge, sampled on the trailing one.
 #ifndef SPI_GPIO_H

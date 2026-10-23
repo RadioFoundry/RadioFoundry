@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The K22F pin alternates the GD-77 family's boards may choose (PORTx_PCRn MUX values), as one table: a board's
+// The K22F pin alternates the platform's boards may choose (PORTx_PCRn MUX values), as one table: a board's
 // configuration check (boards/gd77/bus_cfg.h) refuses a peripheral on a pin unless the pin and its ALT number are
 // listed here. Only the alternates ODR uses or offers are in it. Rows marked unverified haven't been checked against
-// the data sheet's signal multiplexing table or on a radio; the others are in use on the GD-77 already
+// the data sheet's signal multiplexing table or on a radio; the others are in use on a board already
 // (docs/spec/hardware-gd77.md 4.2). Pure: the host tests include it.
 #ifndef K22F_MUX_H
 #define K22F_MUX_H

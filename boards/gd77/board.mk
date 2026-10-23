@@ -3,7 +3,7 @@
 # Radioddity GD-77 / TYT MD-760: NXP MK22FN512 (Kinetis K22F, Cortex-M4F) + HR_C6000 + AT1846S + 128x64 monochrome
 # UC1701 / ST7567-class LCD on a bit-banged serial bus (docs/spec/hardware-gd77.md). Bring-up: the image is the raw
 # application for flash 0x4000, and with the radio's stock firmware in codecs/ the image with the codec merged in
-# (tools/gd77_codec.py); the radio's update path needs a packaging step this repository doesn't have yet (10)
+# (tools/k22f_codec.py); the radio's update path needs a packaging step this repository doesn't have yet (10)
 PLATFORM   := k22f
 LDSCRIPT   := boards/gd77/gd77.ld
 # The upper SRAM half: the core's ODR_CPU_RAM state (zeroed at start-up) and the RTOS heap (gd77.ld)

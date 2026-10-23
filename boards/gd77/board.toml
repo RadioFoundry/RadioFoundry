@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# The GD-77's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/gd77/memory.ld.
+
+id = "gd77"
+name = "Radioddity GD-77"
+maker = "Radioddity"
+model = "GD-77"
+also = ["TYT MD-760"]
+kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 12
+
+[docs]
+hardware = "docs/spec/hardware-gd77.md"
+codec = "docs/spec/codec-gd77.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "136-174 / 400-470 MHz"
+power = "1 / 5 W"
+display = "monochrome, 128 × 64"
+gallery = "128x64"
+clock = { rtc = "unknown", note = "the MK22FN512 has an RTC; whether the board fits its 32.768 kHz crystal and a backup supply is not known (docs/spec/hardware-gd77.md)" }
+
+[status]
+level = "bring-up"
+summary = """\
+Bring-up: the UI on the 128x64 display, keys, power and FM receive; DMR carries data and signaling but no voice yet. \
+Open: transmit, the codec and a first run of the update path on a radio."""
+release = "testing"
+
+[flash]
+family = "usb-hid-sgl"
+keep_codec = false
+# The last 2 KB sector holds radio data that must survive (memory.ld)
+protect = [[0x7F800, 0x80000]]
+stock_versions = ["V3.2.1", "V3.2.2", "V4.2.8", "V4.3.3", "V4.3.6", "V4.3.9", "V6.0.1"]
+backup = { stock = "none", odr = "none", spi_size = 0 }
+
+[flash.bootloader]
+steps = [
+	"Turn the radio off and connect the programming cable to the radio and to the computer.",
+	"Hold both side keys below PTT.",
+	"Turn the radio on with the volume knob while you hold both keys.",
+	"Release the keys.",
+]
+
+# The K22F stub's board record (stub/k22stub.py, docs/spec/stub-k22f.md): its board id (HELLO echoes it), whether it
+# has run on a radio, the SPI NOR on GPIO pins (pins.h PIN_NOR_*) with the chip select released to its pull-up when idle
+# (it is also XTAL0) and its first megabyte the radio's own data (hardware-gd77.md 6.2), and where an image merged with
+# the codec ends: after the descriptor at 0x7B700 (platform/k22f/codec_desc.h)
+[flash.stub]
+id = 1
+tested = false
+spi_gpio = { cs_released = true, floor = 0x100000 }
+codec_image_end = 0x7B780
+
+# The codec where the merge puts it (docs/spec/codec-gd77.md): its code at the start of memory.ld's codec slot, its table
+# window above it and the descriptor at its end. profile: what the firmware reports for that placement
+[codec]
+tool = "k22f_codec"
+profile = "gd77-p1"
+
+# How the site draws the radio
+[frame]
+shape = "handheld"
+body = "#1e2024"
+accent = "#d0342c"
+lens = [24, 30]
+
+[hil]
+display = "128x64x1"
+features = ["USB", "DEBUGLINK"]

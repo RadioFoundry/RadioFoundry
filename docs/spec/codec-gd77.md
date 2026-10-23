@@ -58,7 +58,7 @@ profile `gd77-p1`. Without a valid codec the radio is FM only.
 ## Supported stock builds
 
 Seven builds; each is recognized by the SHA-256 of its three parts, not by its file name. The numbers are what the merge
-produces (`gd77codec.PLACED`); the firmware pins the same ones.
+produces (each pack's `placed`, read by `k22fcodec.py`); the firmware pins the same ones.
 
 | Build | Tag | Code region | Code CRC-32 | Table window | Tables CRC-32 |
 |---|---|---|---|---|---|
@@ -80,7 +80,7 @@ About 30 million instructions a second at 8 kHz, a third of the 95 MHz core cloc
 
 ## The merge
 
-`tools/gd77_codec.py --stock FLAT.bin` (also run by `make BOARD=gd77` when a stock file is in `codecs/`) reads the
+`tools/k22f_codec.py --board gd77 --stock FLAT.bin` (also run by `make BOARD=gd77` when a stock file is in `codecs/`) reads the
 stock firmware as a flat flash image, places the codec as above and writes `build/gd77/odr_gd77_codec.bin`, a flat image
 from flash 0x4000 for the radio's update path ([hardware-gd77.md](hardware-gd77.md) 10). The tool refuses a file that is
 not one of the seven builds, writes only under `build/` or outside the tree, and never stores the codec anywhere else.
@@ -91,7 +91,7 @@ Unpacking the radio's update file into the flat image is a separate step that th
 The seven builds were run on the host in a Cortex-M4 model: the stock-address codec against the placed codec, 60 frames
 of tone, noise and silence through encode, encode ECC, FEC decode and decode. The air bits and the PCM are identical for
 every build, and identical between builds. The placed CRC-32s above come from that same pipeline
-(`tools/odrflash/tests/test_gd77codec.py` pins the arithmetic with a synthetic image).
+(`tools/odrflash/tests/test_k22fcodec.py` pins the arithmetic with a synthetic image).
 
 ## Open items
 

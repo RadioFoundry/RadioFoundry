@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The flash stubs' shared protocol engine (stub/common/stubeng.c) with the K22F target's facts and board record check
 // (stub/k22f/k22stub_board.c, docs/spec/stub-k22f.md) against a simulated 512 KB flash and a 2 MB SPI flash: the
-// GD-77's record and the records refused, the 2 KB map and 8-byte units, the loader below 0x4000 and the last sector
+// test profile's record and the records refused, the 2 KB map and 8-byte units, the loader below 0x4000 and the last sector
 // never erased or programmed, the commit sector interlock on a 2 KB sector, an update in the host tool's order, the SPI
 // flash's write floor, and PEEK's ranges.
 #include <stdio.h>
@@ -202,11 +202,11 @@ static uint8_t xop(uint8_t op, uint32_t addr, const uint8_t *data, uint32_t n)
 	return simple(op, p, (uint16_t)(4u + n));
 }
 
-// The GD-77's record (stub/k22stub.py config_record("gd77"))
-static void gd77_record(uint8_t r[K22_REC_LEN])
+// The test profile's record (stub/k22stub.py test_board(), id 0xFE)
+static void test_record(uint8_t r[K22_REC_LEN])
 {
 	memset(r, 0, K22_REC_LEN);
-	r[K22_REC_BOARD] = 1;
+	r[K22_REC_BOARD] = 0xFEu;
 	r[K22_REC_FORMAT] = K22_REC_LAYOUT;
 	r[K22_REC_XFLASH] = 1;
 	r[K22_REC_CS_MODE] = 1;
@@ -234,22 +234,22 @@ static void reset_all(void)
 	stubeng_init(&eng, &port);
 }
 
-static void configure_gd77(void)
+static void configure_test(void)
 {
 	uint8_t r[K22_REC_LEN];
-	gd77_record(r);
-	CHECK(simple(STUB_OP_CONFIG, r, sizeof(r)) == STUB_ST_OK, "the GD-77 record is taken");
+	test_record(r);
+	CHECK(simple(STUB_OP_CONFIG, r, sizeof(r)) == STUB_ST_OK, "the test record is taken");
 }
 
 static void test_records(void)
 {
 	reset_all();
 	uint8_t r[K22_REC_LEN];
-	gd77_record(r);
+	test_record(r);
 	k22_board_t b;
-	CHECK(k22_board_parse(r, sizeof(r), &b) && b.board == 1 && b.xflash == 1 && b.cs_released && b.app_base == APP_BASE &&
+	CHECK(k22_board_parse(r, sizeof(r), &b) && b.board == 0xFEu && b.xflash == 1 && b.cs_released && b.app_base == APP_BASE &&
 	      b.app_end == APP_END && b.xfloor == XFLOOR && b.sck == 0x85 && b.mosi == 0x84 && b.miso == 0x86 && b.cs == 0x13,
-	      "the GD-77 record decodes");
+	      "the test record decodes");
 	struct {
 		int at;
 		uint8_t val;
@@ -294,14 +294,14 @@ static void test_records(void)
 	CHECK(k22_board_parse(none, sizeof(none), &b) && b.xflash == 0, "no SPI flash: the pins are ignored");
 
 	// Accepted: HELLO echoes it, with the chip's facts
-	configure_gd77();
+	configure_test();
 	const uint8_t *body;
 	uint32_t blen;
 	CHECK(request(STUB_OP_HELLO, NULL, 0, &body, &blen) == STUB_ST_OK && blen == STUBENG_HELLO_LEN + K22_REC_LEN,
 	      "HELLO with the echo (%u bytes)", (unsigned)blen);
 	CHECK(memcmp(body, K22STUB_NAME, 6) == 0 && body[6] == K22STUB_VERSION, "HELLO name and version");
 	CHECK(((body[9] << 8) | body[10]) == 512 && (body[12] & STUB_HELLO_CONFIGURED), "HELLO: 512 KB, configured");
-	CHECK(get32(body + 13) == APP_BASE && get32(body + 17) == SPI_SIZE && body[24] == 1, "HELLO: base, SPI size, id");
+	CHECK(get32(body + 13) == APP_BASE && get32(body + 17) == SPI_SIZE && body[24] == 0xFEu, "HELLO: base, SPI size, id");
 	CHECK(memcmp(body + STUBENG_HELLO_LEN, r, K22_REC_LEN) == 0, "HELLO echoes the record");
 }
 
@@ -311,7 +311,7 @@ static void test_flash_rules(void)
 	uint8_t data[STUBENG_BLOCK];
 	memset(data, 0x5A, sizeof(data));
 	CHECK(erase(20) == STUB_ST_NOCONFIG && program(0x10000u, data, 8) == STUB_ST_NOCONFIG, "nothing before CONFIG");
-	configure_gd77();
+	configure_test();
 	CHECK(erase(7) == STUB_ST_REFUSED && erase(0) == STUB_ST_REFUSED, "the loader's sectors refused");
 	CHECK(erase(255) == STUB_ST_REFUSED, "the last sector (0x7F800, radio data) refused");
 	CHECK(erase(20) == STUB_ST_REFUSED && erases[20] == 0, "interlock: the application is committed");
@@ -340,7 +340,7 @@ static void test_flash_rules(void)
 static void test_spi_floor(void)
 {
 	reset_all();
-	configure_gd77();
+	configure_test();
 	uint8_t data[256];
 	memset(data, 0x33, sizeof(data));
 	CHECK(xop(STUB_OP_XERASE, 0x0FF000u, NULL, 0) == STUB_ST_REFUSED && spi_erases == 0,

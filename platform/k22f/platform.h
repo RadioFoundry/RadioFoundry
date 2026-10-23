@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// NXP Kinetis K22F platform services for the boards built on it (the GD-77 family; docs/spec/hardware-gd77.md 2)
+// NXP Kinetis K22F platform services for the boards built on it (docs/spec/hardware-gd77.md 2)
 #ifndef PLATFORM_K22F_H
 #define PLATFORM_K22F_H
 

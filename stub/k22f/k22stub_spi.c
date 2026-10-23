@@ -3,8 +3,8 @@
 // The external SPI NOR flash's bus for the K22F stub: GPIO pins from the board record, mode 0, bit-banged with ODR's
 // own software master (drivers/bus/spi_gpio). The chip's commands are shared with the other stubs
 // (stub/common/stubnor.c). The pins are set up from scratch (GPIO function, directions), since ODR may have left the
-// bus in any state; every other pin keeps the level ODR left. A chip select that idles released (the GD-77's PTA19,
-// which is also XTAL0) is only ever driven low.
+// bus in any state; every other pin keeps the level ODR left. A chip select that idles released (on some boards a pin
+// that is also a crystal input) is only ever driven low.
 #include "k22f.h"
 #include "k22stub_spi.h"
 #include "spi_gpio.h"

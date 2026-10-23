@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """The host tool (stub/k22stub.py, with f4stub.py's radio class) against the K22F stub's real protocol engine
-(k22stubSim, built from stub/common/stubeng.c and stub/k22f/k22stub_board.c): the GD-77's board record, installs of a
-plain and a merged build on a simulated GD-77 flash, the refusals (the loader, the last sector, the SPI flash's first
-megabyte, writes before the record), SPI flash work above the floor, all over the stub's wire protocol. Also checks the
-GD-77 profile against the firmware's own sources (linker script, codec placement, flash window, pins, storage map), so
+(k22stubSim, built from stub/common/stubeng.c and stub/k22f/k22stub_board.c): the test profile's board record, installs
+of a plain and a merged build on a simulated flash of that layout, the refusals (the loader, the last sector, the SPI flash's first
+megabyte, writes before the record), SPI flash work above the floor, all over the stub's wire protocol. Also checks
+every K22F board's profile against the firmware's own sources (linker script, codec placement, flash window, pins, storage map), so
 it can't drift from them. Run by `make -C tests/host`."""
 import os
 import re
@@ -23,9 +23,11 @@ from f4stub_wire_check import PipePort  # noqa: E402
 
 K22 = k22stub.K22
 APP = k22stub.APP_BASE
+TB = k22stub.TEST_BOARD
+k22stub.BOARDS[TB] = k22stub.test_board()
 
 
-def run(sim, flash, job, board="gd77"):
+def run(sim, flash, job, board=TB):
     with tempfile.TemporaryDirectory(prefix="odr-k22wire-") as d:
         fin, fout = os.path.join(d, "in.bin"), os.path.join(d, "out.bin")
         open(fin, "wb").write(flash)
@@ -61,10 +63,10 @@ def main():
     app = bytearray((i * 3 + (i >> 9)) & 0xFF for i in range(200000))
     app[:4] = (0x2000FEF0).to_bytes(4, "little")
 
-    out, _, res, log = run(sim, bytes(flash), lambda r, d: r.write_image("gd77", [(APP, bytes(app))], backup_dir=d))
+    out, _, res, log = run(sim, bytes(flash), lambda r, d: r.write_image(TB, [(APP, bytes(app))], backup_dir=d))
     e = erases(log)
-    check("config 1 85 84 86 13 1" in log, "gd77 record decoded by the stub: %r" % log.splitlines()[:1])
-    check(res == (164, 0) and e[0] == 8 and sorted(e) == list(range(8, 172)), "gd77 install: sectors 8-171 %s" % (res,))
+    check("config 254 85 84 86 13 1" in log, "test record decoded by the stub: %r" % log.splitlines()[:1])
+    check(res == (164, 0) and e[0] == 8 and sorted(e) == list(range(8, 172)), "install: sectors 8-171 %s" % (res,))
     check(out[:APP] == loader and out[0x7F800:] == bytes(flash[0x7F800:]), "the loader and the last sector untouched")
     check(out[0x55D00:] == bytes(flash[0x55D00:]), "the codec area untouched")
     check(out[APP:APP + len(app)] == bytes(app) and out[APP + len(app):0x55D00] == b"\xff" * (0x55D00 - APP - len(app)),
@@ -74,10 +76,10 @@ def main():
     merged[:len(app)] = app
     merged[0x55D00 - APP:0x7B780 - APP] = bytes((i * 11) & 0xFF for i in range(0x7B780 - 0x55D00))
     with tempfile.TemporaryDirectory() as d:
-        mp = os.path.join(d, "odr_gd77_codec.bin")
+        mp = os.path.join(d, "odr_%s_codec.bin" % TB)
         open(mp, "wb").write(merged)
-        segs = f4stub.load_segments(mp, "gd77", K22)
-    out, _, res, log = run(sim, bytes(flash), lambda r, d: r.write_image("gd77", segs, backup_dir=d))
+        segs = f4stub.load_segments(mp, TB, K22)
+    out, _, res, log = run(sim, bytes(flash), lambda r, d: r.write_image(TB, segs, backup_dir=d))
     e = erases(log)
     check(sorted(e) == list(range(8, 247)) and out[APP:0x7B780] == bytes(merged), "merged image: sectors 8-246 %s" % (res,))
     check(out[0x7B780:0x7B800] == b"\xff" * 0x80 and out[0x7B800:] == bytes(flash[0x7B800:]),
@@ -128,29 +130,40 @@ def main():
     check(refused_low and res == (1, 255) and log.count("xerase") == 1, "SPI: first MB refused, one sector above %s" % (res,))
     check(spi_out[:0x100000] == spi[:0x100000] and spi_out[0x100000:] == bytes(upper), "SPI flash holds ODR's new part")
 
-    # The profile against the firmware's sources
+    # Every K22F board's profile against the firmware's sources
     root = os.path.join(HERE, "..", "..")
-    prof = k22stub.BOARDS["gd77"]
     src = lambda *p: open(os.path.join(root, *p)).read()
-    ld = src("boards", "gd77", "gd77.ld")
-    m = re.search(r"FLASH\s*\(rx\)\s*:\s*ORIGIN\s*=\s*(0x[0-9A-Fa-f]+),\s*LENGTH\s*=\s*(0x[0-9A-Fa-f]+)\s*-\s*(0x[0-9A-Fa-f]+)", ld)
-    check(m is not None and int(m.group(1), 16) == APP == int(m.group(3), 16) == prof["owned"][0][0]
-          and int(m.group(2), 16) == prof["owned"][0][1] == prof["codec"][0], "the application area is gd77.ld's")
     m = re.search(r"#define CODEC_DESC_ADDR\s+(0x[0-9A-Fa-f]+)u", src("platform", "k22f", "codec_desc.h"))
-    check(m is not None and int(m.group(1), 16) + 0x80 == prof["codec_image_end"], "a merged image ends after the descriptor")
-    check(prof["codec"][1] % k22stub.SECTOR == 0 and prof["codec"][1] >= prof["codec_image_end"], "the codec area ends on a sector")
+    desc_end = int(m.group(1), 16) + 0x80 if m else None
     m = re.search(r"#define K22F_FTFA_HI\s+(0x[0-9A-Fa-f]+)u", src("platform", "k22f", "ftfa_math.h"))
-    check(m is not None and int(m.group(1), 16) == prof["app_end"], "the writable end is the platform's flash window")
-    m = re.search(r"#define GD77_NOR_FACTORY_END\s+(0x[0-9A-Fa-f]+)u", src("boards", "gd77", "storage_gd77.h"))
-    check(m is not None and int(m.group(1), 16) == prof["spi_floor"], "the SPI floor is the board's factory end")
-    pins = src("boards", "gd77", "pins.h")
-    for key, name in (("cs", "CS"), ("mosi", "MOSI"), ("sck", "SCK"), ("miso", "MISO")):
-        m = re.search(r"#define PIN_NOR_%s\s+K22F_PIN\(K22F_PORT_([A-E]), (\d+)\)" % name, pins)
-        check(m is not None and "PT%s%s" % m.groups() == prof["spi"][key], "the NOR %s pin is pins.h's" % name)
-    check("released" in pins[pins.index("PIN_NOR_CS"):pins.index("PIN_NOR_MOSI")] and prof["spi"]["cs_released"],
-          "the chip select idles released, as pins.h says")
-    m = re.search(r'\.name\s*=\s*"([^"]+)"', src("boards", "gd77", "board.c"))
-    check(m is not None and k22stub.board_for(m.group(1)) == "gd77", "VERSION's board name finds the profile")
+    ftfa_hi = int(m.group(1), 16) if m else None
+    boards = [b for b in k22stub.BOARDS if b != TB]
+    check(boards, "the registry has K22F stub boards")
+    for bid in boards:
+        prof = k22stub.BOARDS[bid]
+        bdir = os.path.join(root, "boards", bid)
+        headers = "".join(src("boards", bid, f) for f in sorted(os.listdir(bdir)) if f.endswith(".h"))
+        ld = src("boards", bid, "memory.ld")
+        m = re.search(r"FLASH\s*\(rx\)\s*:\s*ORIGIN\s*=\s*__app_start,\s*LENGTH\s*=\s*__codec_slot\s*-\s*__app_start", ld) \
+            and re.search(r"__codec_slot\s*=\s*(0x[0-9A-Fa-f]+);", ld)
+        base = re.search(r"^APP_BASE\s*:=\s*(0x[0-9A-Fa-f]+)", src("boards", bid, "board.mk"), re.M)
+        check(m is not None and base is not None and int(base.group(1), 16) == APP == prof["owned"][0][0]
+              and int(m.group(1), 16) == prof["owned"][0][1] == prof["codec"][0], "%s: the application area is memory.ld's" % bid)
+        check(desc_end == prof["codec_image_end"], "%s: a merged image ends after the descriptor" % bid)
+        check(prof["codec"][1] % k22stub.SECTOR == 0 and prof["codec"][1] >= prof["codec_image_end"],
+              "%s: the codec area ends on a sector" % bid)
+        check(ftfa_hi == prof["app_end"], "%s: the writable end is the platform's flash window" % bid)
+        if prof["spi"]:
+            m = re.search(r"#define \w+_NOR_FACTORY_END\s+(0x[0-9A-Fa-f]+)u", headers)
+            check(m is not None and int(m.group(1), 16) == prof["spi_floor"], "%s: the SPI floor is the board's factory end" % bid)
+            pins = src("boards", bid, "pins.h")
+            for key, name in (("cs", "CS"), ("mosi", "MOSI"), ("sck", "SCK"), ("miso", "MISO")):
+                m = re.search(r"#define PIN_NOR_%s\s+K22F_PIN\(K22F_PORT_([A-E]), (\d+)\)" % name, pins)
+                check(m is not None and "PT%s%s" % m.groups() == prof["spi"][key], "%s: the NOR %s pin is pins.h's" % (bid, name))
+            cs = pins[pins.index("PIN_NOR_CS"):pins.index("PIN_NOR_MOSI")]
+            check(("released" in cs) == bool(prof["spi"]["cs_released"]), "%s: the chip select's idle state is pins.h's" % bid)
+        m = re.search(r'\.name\s*=\s*"([^"]+)"', src("boards", bid, "board.c"))
+        check(m is not None and k22stub.board_for(m.group(1)) == bid, "%s: VERSION's board name finds the profile" % bid)
 
     print("k22stub_wire_check %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
                                                    "" if len(fails) == 1 else "s"))

@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The K22F stub over WebSerial: updating a GD-77 that already runs ODR without its update mode, ported from
+// The K22F stub over WebSerial: updating a K22F radio that already runs ODR without its update mode, ported from
 // stub/k22stub.py (docs/spec/stub-k22f.md). The stub runs the shared protocol engine, so the client is f4stub.js's
-// F4Stub with this chip; what is here is the chip, the GD-77's segments and the install.
+// F4Stub with this chip; what is here is the chip, the radio's segments and the install.
 //
-// Every fact comes from Python: data/flash-boards.json gd77.stub (repo.k22_flash(): the chip, each radio's owned flash,
+// Every fact comes from Python: data/flash-boards.json hid.stub (repo.k22_flash(): the chip, each radio's owned flash,
 // codec area and board record) and data/k22-stub.json (the embedded stub image). The radio's loader below 0x4000 and
-// the last flash sector are never written, so update mode always remains. Unverified: nothing here has run on a GD-77.
+// the last flash sector are never written, so update mode always remains. Unverified: nothing here has run on a radio.
 
 import { hex } from "./bytes.js";
 import { F4Stub } from "./f4stub.js";
 import { StubError } from "./stub.js";
 
-// The chip of gd77.stub as f4stub.js takes it: 2 KB sectors, 8-byte program units, the application from 0x4000
+// The chip of hid.stub as f4stub.js takes it: 2 KB sectors, 8-byte program units, the application from 0x4000
 export function k22Chip(st) {
 	const sectors = (flashKb) => Array.from({ length: (flashKb * 1024) / st.sector }, (_, i) => ({ index: i, addr: st.flash_base + i * st.sector, size: st.sector }));
 	return Object.freeze({
@@ -27,13 +27,13 @@ export function k22Board(st, name) {
 	return Object.keys(st.boards).find((id) => id === name || st.boards[id].debuglink_names.includes(name)) || null;
 }
 
-// A client for the stub on stream, for radio boardId of gd77.stub (opts: log, reopen, retries)
+// A client for the stub on stream, for radio boardId of hid.stub (opts: log, reopen, retries)
 export function k22Stub(stream, st, boardId, opts = {}) {
 	return new F4Stub(stream, { ...opts, chip: k22Chip(st), board: st.boards[boardId] });
 }
 
 // [[addr, bytes]] for an image from the application base (stub/f4stub.py load_segments): the application alone, or for
-// an image merged with the codec (what gd77codec.js merge() gives, ending at codec_image_end) the application and the
+// an image merged with the codec (what k22fcodec.js merge() gives, ending at codec_image_end) the application and the
 // whole codec area, the rest of it counted erased
 export function k22Segments(board, appBase, data) {
 	const [lo, hi] = board.codec;

@@ -2,6 +2,7 @@
  "format": "odr-codec-pack/1",
  "profile": "gd77-v4.2.8",
  "board": "gd77",
+ "placed": {"tag": "0x4208", "code_len": "0x11E90", "code_crc": "0x1CA7B3D4", "tab_crc": "0xAF1FEB2E"},
  "isa": "thumb2",
  "stock": {
   "name": "GD-77 V4.2.8",

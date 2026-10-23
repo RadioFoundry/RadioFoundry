@@ -16,7 +16,7 @@ from . import __version__, boards, bootkey, codecsave, debuglink, manifest as mf
 from . import dfu as dfumod
 from . import release as relmod
 from . import serialflash
-from . import gd77codec, gd77boot, stubroute, updatefile
+from . import k22fcodec, hidboot, stubroute, updatefile
 
 EPILOG = """\
 examples:
@@ -637,18 +637,18 @@ def gd77_update_file(args, board, image):
     try:
         u = updatefile.UpdateFile(donor)
         flat = updatefile.unpack(u)
-        spec = gd77codec.find_spec(flat)
+        spec = k22fcodec.find_spec(flat, board=board.id)
         if args.codec == planmod.KEEP:
             out, prof = image, None
         else:
             if spec is None:
-                raise UsageError("%s is not one of the supported GD-77 builds (%s), so its codec cannot be placed. "
-                                 "Use --codec keep to flash without voice" % (u.label(), ", ".join(sorted(gd77codec.load_specs()))))
-            out, prof = gd77codec.merge(image, gd77codec.pack(flat, spec)), spec["profile"]
+                raise UsageError("%s is not one of the supported %s stock builds (%s), so its codec cannot be placed. "
+                                 "Use --codec keep to flash without voice" % (u.label(), board.name, ", ".join(sorted(k22fcodec.load_specs(board=board.id)))))
+            out, prof = k22fcodec.merge(image, k22fcodec.pack(flat, spec)), spec["profile"]
         if len(out) > u.room:
             raise UsageError("the image is %d bytes, the stock update file has room for %d" % (len(out), u.room))
         return updatefile.pack(out, u), u, out, prof
-    except (updatefile.UpdateFileError, gd77codec.PackError) as e:
+    except (updatefile.UpdateFileError, k22fcodec.PackError) as e:
         raise UsageError(str(e))
 
 
@@ -660,8 +660,8 @@ def cmd_flash_stub(args, board, image, merged):
         raise UsageError("--simulate does not cover the stub route")
     if board.family == "gd77-hid":
         if args.stock:
-            _, _, image, prof = gd77_update_file(args, board, image)
-            say("codec    %s" % ("MERGED: %s placed at 0x%X" % (prof, gd77codec.CODE_BASE) if prof else "none"))
+            _, _, image, prof = hid_update_file(args, board, image)
+            say("codec    %s" % ("MERGED: %s placed at 0x%X" % (prof, k22fcodec.CODE_BASE) if prof else "none"))
         else:
             say("codec    the radio keeps the one it has (no --stock given)")
     else:
@@ -682,13 +682,13 @@ def cmd_flash_stub(args, board, image, merged):
     return rc
 
 
-def cmd_flash_gd77(args, board, image):
-    """The GD-77 through its bootloader's USB HID update (gd77boot.py): untested on a radio."""
+def cmd_flash_hid(args, board, image):
+    """A radio whose loader takes a stock update file over USB HID (hidboot.py): untested on a radio."""
     if args.route not in (serialflash.AUTO, serialflash.BOOTLOADER):
         raise UsageError("--route %s does not apply to the %s" % (args.route, board.name))
     new, donor, out, prof = gd77_update_file(args, board, image)
     say("stock    %s: header and codec source" % donor.label())
-    say("codec    %s" % ("MERGED: %s placed at 0x%X" % (prof, gd77codec.CODE_BASE) if prof else "none: the image has no voice"))
+    say("codec    %s" % ("MERGED: %s placed at 0x%X" % (prof, k22fcodec.CODE_BASE) if prof else "none: the image has no voice"))
     say("image    %d bytes of flash from 0x%X written into an update file of %d bytes" % (len(out), updatefile.FLASH_BASE, len(new)))
     warn("not yet tried on a radio: if the loader refuses the file, nothing is erased before the names are checked")
     if args.dry_run:
@@ -696,10 +696,10 @@ def cmd_flash_gd77(args, board, image):
         return 0
     u2 = updatefile.UpdateFile(new)
     if args.simulate:
-        link = gd77boot.FakeBootloader(u2)
+        link = hidboot.FakeBootloader(u2)
     else:
         say("radio    switch it off, hold both side keys, switch it on and connect the USB cable (update mode)")
-        link = gd77boot.HidLink()
+        link = hidboot.HidLink()
     if not args.yes and not args.simulate and not ask_yes("Erase and write the radio's application now?", default=True):
         return 1
     last = [-1]
@@ -709,7 +709,7 @@ def cmd_flash_gd77(args, board, image):
         if pct != last[0] and pct % 10 == 0:
             last[0] = pct
             say("write    %d%%" % pct)
-    gd77boot.Updater(link).flash(u2, progress=progress)
+    hidboot.Updater(link).flash(u2, progress=progress)
     if args.simulate and link.received() != u2.body[:u2.length]:
         raise UsageError("simulation: the model loader received something else than the file's body")
     say("done     the radio restarts by itself")

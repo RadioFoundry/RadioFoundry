@@ -53,10 +53,10 @@ extern const spi_bus_t gd77_lcd_bus;	// display, write only (A0 stays with the d
 const i2c_bus_t *gd77_i2c_b(void);	// bus B, NULL before gd77_i2c_init
 // I2C bus A, shared by the AT1846S and the EEPROM: each call is one whole transaction under the bus lock
 void gd77_i2c_init(void);	// the lock; after the scheduler starts
-bool gd77_i2c_write(uint8_t addr7, const uint8_t *data, uint32_t n);
-bool gd77_i2c_write_read(uint8_t addr7, const uint8_t *w, uint32_t wn, uint8_t *r, uint32_t rn);
+bool i2c_a_write(uint8_t addr7, const uint8_t *data, uint32_t n);
+bool i2c_a_write_read(uint8_t addr7, const uint8_t *w, uint32_t wn, uint8_t *r, uint32_t rn);
 // From the modem interrupts only: one write, false at once when a task-level transaction is on the wire
-bool gd77_i2c_write_isr(uint8_t addr7, const uint8_t *data, uint32_t n);
+bool i2c_a_write_isr(uint8_t addr7, const uint8_t *data, uint32_t n);
 // The HR_C6000 configuration port on SPI0: CS low, header, data, CS high
 void gd77_c6k_bus_init(void);
 bool gd77_c6k_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len);

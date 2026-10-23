@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// A simulated GD-77 in update mode, for the tests and the page's practice mode (#sim=gd77): the loader as
-// docs/spec/update-gd77.md reads it (a port of gd77boot.FakeBootloader), a WebHID model to reach it through, and a
-// synthetic stock update file with a made-up codec in the shape of a real build (a port of the odrflash tests'
-// synthetic image and update file). No vendor data. Also a GD-77 that runs ODR with stub entry (#sim=odr-gd77): its
-// debug link, the hand-over and the K22F stub's protocol and interlock as stub/f4stub.py's FakeF4 has them.
+// A simulated radio in a vendor loader's USB HID update mode, for the tests and the page's practice mode (#sim=<board>
+// on a board of the sgl-hid backend): the loader as docs/spec/update-gd77.md reads it (a port of
+// hidboot.FakeBootloader), a WebHID model to reach it through, and a synthetic stock update file with a made-up codec in
+// the shape of a real build (a port of the odrflash tests' synthetic image and update file). No vendor data. Also such
+// a radio running ODR with stub entry: its debug link, the hand-over and the K22F stub's protocol and interlock as stub/f4stub.py's FakeF4 has them.
 
-import { UpdateFile, forward, PERIOD, BODY_AT, INFO_LEN, REPORT, parse } from "./gd77.js";
-import { encodeBranch } from "./gd77codec.js";
+import { UpdateFile, forward, PERIOD, BODY_AT, INFO_LEN, REPORT, parse } from "./hidboot.js";
+import { encodeBranch } from "./k22fcodec.js";
 import { concat, crc32, fromHex, le32, sha256, u32le } from "./bytes.js";
 import { rng, randomBytes } from "./fake.js";
 import { frame as dlFrame, parseFrames } from "./link.js";
@@ -19,7 +19,7 @@ const sum = (b) => b.reduce((a, x) => a + x, 0);
 const N = bytesOf("N");
 
 // The loader: checks every step in order and the running sums, keeps what it received. reject: a payload it refuses.
-export class FakeGd77Loader {
+export class FakeHidLoader {
 	constructor(u, { reject = null } = {}) {
 		this.u = u;
 		this.q = [];
@@ -88,7 +88,7 @@ export class FakeGd77Loader {
 	}
 }
 
-// navigator.hid as the page uses it, with one radio in update mode behind it (a FakeGd77Loader for the file it will
+// navigator.hid as the page uses it, with one radio in update mode behind it (a FakeHidLoader for the file it will
 // be sent). requestDevice() hands out the radio while `present`; replies come as "inputreport" events.
 export class FakeHid {
 	constructor(loader, { present = true, delay = 0 } = {}) {
@@ -98,7 +98,7 @@ export class FakeHid {
 		this.listeners = new Set();
 		const self = this;
 		this.device = {
-			vendorId: 0x15A2, productId: 0x0073, productName: "simulated GD-77 update mode", opened: false,
+			vendorId: 0x15A2, productId: 0x0073, productName: "simulated update mode", opened: false,
 			async open() { this.opened = true; },
 			async close() { this.opened = false; },
 			addEventListener: (type, fn) => { if (type === "inputreport") self.listeners.add(fn); },
@@ -152,8 +152,8 @@ export async function synthetic(seed = 77) {
 	return { image: img, spec };
 }
 
-// A valid update file around `plain` (the flat image), with the header fields a GD-77 file has
-export function makeUpdateFile(plain, { total = 0x78801 + 0x400, tag = "DV01test", seed = 5, model = "GD-77" } = {}) {
+// A valid update file around `plain` (the flat image), with the header fields a vendor's file has, for radio model
+export function makeUpdateFile(plain, { total = 0x78801 + 0x400, tag = "DV01test", seed = 5, model = "XR-100" } = {}) {
 	const k = forward(randomBytes(rng(seed), 16), PERIOD);
 	const pad = 3, infoAt = 0x100, k0 = 0x5A, k1 = 0xA5;
 	const bodyAt = BODY_AT + pad;
@@ -187,16 +187,17 @@ export function makeUpdateFile(plain, { total = 0x78801 + 0x400, tag = "DV01test
 }
 
 // Practice mode: the data the page reads with the synthetic build added as a supported one, and its update file
-export async function gd77Simulation(G) {
+// (named for the radio model)
+export async function hidSimulation(G, model) {
 	const { image, spec } = await synthetic();
-	return { gd77: { ...G, specs: { ...G.specs, synthetic: spec }, placed: { ...G.placed, synthetic: { tag: 0x1234 } } },
-		donor: makeUpdateFile(image) };
+	return { hid: { ...G, specs: { ...G.specs, synthetic: spec }, placed: { ...G.placed, synthetic: { tag: 0x1234 } } },
+		donor: makeUpdateFile(image, model ? { model } : {}) };
 }
 
-export const loaderFor = (file, opts) => new FakeGd77Loader(new UpdateFile(file), opts);
+export const loaderFor = (file, opts) => new FakeHidLoader(new UpdateFile(file), opts);
 
 // ---------------------------------------------------------------------------------------------------------------
-// a GD-77 running ODR with stub entry, and the K22F stub it hands over to (#sim=odr-gd77)
+// a radio running ODR with stub entry, and the K22F stub it hands over to (#sim=<board>)
 
 const be32 = (n) => new Uint8Array([(n >>> 24) & 0xFF, (n >>> 16) & 0xFF, (n >>> 8) & 0xFF, n & 0xFF]);
 const u32be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
@@ -204,11 +205,12 @@ const blank = (b) => b.every((x) => x === 0xFF);
 const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, BADARG = 0x0D, REFUSED = 0x0F, NOCONFIG = 0x11;
 
 // The radio: its loader below the application base, an ODR already installed, a codec in its area, radio data in the
-// last sector, the SPI flash's first megabyte the radio's own. st: flash-boards.json gd77.stub.
+// last sector, the SPI flash's first megabyte the radio's own. st: flash-boards.json hid.stub; board: one of its boards (the first by default).
+//   codecId    what the debug link reports as the codec (the board's id by default)
 //   stubEntry  ODR built with CONFIG_STUB_ENTRY        adopt     the stub keeps ODR's USB device (else a new port)
 //   cutAfter   programs before the cable is pulled     badAt     a flash address that programs wrong (verify fails)
-export class FakeGd77Odr {
-	constructor(st, { board = "gd77", spiSize = 0x200000, stubEntry = true, adopt = true, cutAfter = null, badAt = null, codecId = "gd77", seed = 77 } = {}) {
+export class FakeHidOdr {
+	constructor(st, { board = Object.keys(st.boards)[0], spiSize = 0x200000, stubEntry = true, adopt = true, cutAfter = null, badAt = null, codecId = board, seed = 77 } = {}) {
 		this.st = st;
 		this.b = st.boards[board];
 		this.flash = new Uint8Array(st.flash_kb * 1024).fill(0xFF);
@@ -404,5 +406,5 @@ export class FakeGd77Odr {
 	}
 }
 
-// The board record of gd77.stub as bytes
-export const recordOf = (st, board = "gd77") => fromHex(st.boards[board].record);
+// The board record of a board of hid.stub as bytes (the first by default)
+export const recordOf = (st, board = Object.keys(st.boards)[0]) => fromHex(st.boards[board].record);

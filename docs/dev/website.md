@@ -44,7 +44,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
 | Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), grouped by `site/data/screens.json` |
-| Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/odrflash/odrflash/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
+| Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/odrflash/odrflash/registry.json`, read through `boards.py`) and `stockfw.py` (the USB HID update route: `k22fcodec.py`, `updatefile.py`, `hidboot.py`), exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
 
@@ -204,13 +204,18 @@ Sentry; the page then works the same and offers the download only.
 | `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/hrc7000_codec.py` |
 | `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, ODR's debug link (VERSION, 0x1A), the stub and both flash chips | |
 | `usmart.js`, `iap.js`, `iapui.js` | The stock side of an HR_C7000 radio, by protocol: the stub loaded through a stock debug console (USMART, `flash.stock_console`), the vendor update mode write (IAP, `flash.update_mode`) and their steps | `docs/spec/hardware-db25d.md` 7 |
+| `hidboot.js` | The USB HID update file (read, write into a donor file) and the update mode protocol over WebHID | `odrflash/updatefile.py`, `odrflash/hidboot.py` |
+| `k22fcodec.js` | The codec placement and merge for the `sgl-hid` backend, and the update file the page sends | `odrflash/k22fcodec.py`, `odrflash/cli.py` `hid_update_file` |
+| `fakehid.js` | A simulated radio in USB HID update mode: the loader model, a WebHID model, a synthetic stock update file; and one running ODR with stub entry, with the K22F stub's rules | `odrflash/hidboot.py` `FakeBootloader`, `stub/f4stub.py` `FakeF4` |
+| `hidui.js` | The `sgl-hid` backend: its steps (connect, update file, install, finish) | |
 | `c7000ui.js`, `radiotop.js` | The HR_C7000 backend: its steps (connect, back up and check, write, check) and the radio picture with its LED | |
 | `dom.js` | DOM helpers and strings shared by `app.js` and `c7000ui.js` | |
 | `app.js` | The page: the tasks, the shared steps and the `anyroad-dfu` backend | |
 
 Add `#sim=<radio>-stock` to the flasher's address to run every step against a simulated radio on its stock firmware,
 `#sim=<radio>` against one that runs ODR (an STM32F4 radio updates through the STM32F4 loader, an HR_C7000 radio
-through the loader hand-over). `#sim` alone is the first radio on stock firmware. The fake comes from the radio's data
+through the loader hand-over, a radio on the `sgl-hid` backend in its update mode with a practice update file whose
+made-up codec the page knows). `#sim` alone is the first radio on stock firmware. The fake comes from the radio's data
 (`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
 console gets one, with its first stock version.
 
@@ -238,6 +243,7 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 |---|---|---|
 | `anyroad-dfu` | DM-1701, MD-380 | `app.js` (`dfu.js`, `f4stub.js`) |
 | `c7000-stub` | DM-1801 Pro, DM-32UV, DB25-D PRO | `c7000ui.js` (`stub.js`, `c7000.js`) |
+| `sgl-hid` | the `usb-hid-sgl` family (install only; not yet tried on a radio) | `hidui.js` (`hidboot.js`, `k22fcodec.js`, `k22stub.js`) |
 | `none` | any other | none: the radio is listed but grayed out |
 
 A radio without a backend the page knows gets `none`, so a family can come before its module. The
@@ -352,7 +358,7 @@ data memory includes it. Restore writes the program memory back from 0x0300C000 
 
 ### GD-77 (update mode over USB HID, or the cable)
 
-Radios whose `radio.json` says `"backend": "gd77-hid"` install through the radio's own update mode (both side keys
+Radios on the `usb-hid-sgl` flash family (`board.toml` `[flash] family`, the `sgl-hid` backend) install through the radio's own update mode (both side keys
 held at power-on), with WebHID (Chrome, Edge and other Chromium browsers on a computer; other browsers get a notice
 on the install step). The update mode only takes the manufacturer's update file format, so the page needs the user's
 own stock update file (`.sgl`), as odrflash does (`odrflash flash --board gd77 --stock FILE`). The protocol and the
@@ -366,25 +372,25 @@ specs read them, and the page says so on each step.
 | Connect | WebSerial to the radio's ODR port (1FC9:0094). The cable route is taken when ODR answers VERSION with this radio's board name and offers stub entry (command 0x1A op 0). Otherwise, or when the user selects Use Update Mode, the install continues in update mode. Skipped by the help task's reinstall and by Restore Original Firmware |
 | Update File (cable route) | Optional. With the user's stock update file the codec is placed as below and merged with the ODR image (a flat image from 0x4000 to the descriptor's end). Without one only the application is written and the codec in the radio is kept |
 | Install (cable route) | The page sends the embedded stub (`data/k22-stub.json`, from `stub/k22stub.py`) through the debug link, sends the board record (CONFIG) and checks its echo, then installs in the order of [stub-stm32f4.md](../spec/stub-stm32f4.md) 7: sector 8 (0x4000) erased first, every other changed 2 KB sector, the commit unit at 0x4000 last, all verified by CRC. Sector 171 (0x55800) holds the application's end and the codec's start: it is read back, downloaded as a file, and its codec bytes written back unchanged. Then RESET. If the hand-over fails nothing changed; if the install fails, the radio may start in its loader, and Use Update Mode Instead finishes it there |
-| Update File | The page reads the user's file (header, sum check, the scrambling stream from its own zero tail) and unpacks the flash image. It finds the stock build by the SHA-256 of its three codec windows (`data/flash-boards.json` `gd77.specs`), moves the codec to the code region, patches the listed words and branches, writes the descriptor, merges it with the ODR image and writes the result into a copy of the file. A build without a spec is refused; the user may then install without DMR voice. An image the file can't hold is refused |
-| Install | The update mode steps from `radio.json`, then the browser's device chooser (15A2:0073) and the protocol: the names, the erase, the blocks with their running sums |
+| Update File | The page reads the user's file (header, sum check, the scrambling stream from its own zero tail) and unpacks the flash image. It finds the stock build by the SHA-256 of its three codec windows (`data/flash-boards.json` `hid.specs`), moves the codec to the code region, patches the listed words and branches, writes the descriptor, merges it with the ODR image and writes the result into a copy of the file. A build without a spec is refused; the user may then install without DMR voice. An image the file can't hold is refused |
+| Install | The update mode steps from `board.toml` `[flash.bootloader] steps`, then the browser's device chooser (15A2:0073) and the protocol: the names, the erase, the blocks with their running sums |
 | Finish | What to check on the radio. The page does not query the radio afterwards |
 
 Backup and restore are not offered: the loader can't read the radio back. The loader below flash 0x4000 is never
 written, so update mode always remains. Troubleshooting offers a reinstall and "Restore Original Firmware", which sends
 the user's stock update file unchanged.
 
-`data/flash-boards.json` `gd77.stub` carries the K22F stub's chip facts and, per radio, the owned flash, the codec area
+`data/flash-boards.json` `hid.stub` carries the K22F stub's chip facts and, per radio, the owned flash, the codec area
 and the board record as hex (`repo.k22_flash()` from `stub/k22stub.py`). `site/tests/k22stub.test.mjs` checks HELLO and
 CONFIG against `k22stub.py`'s simulated stub byte for byte, and two installs on a simulated flash against the sectors
-`k22stub.py` erases and the flash it leaves; the rest of the cable route runs against `fakegd77.js` `FakeGd77Odr`.
+`k22stub.py` erases and the flash it leaves; the rest of the cable route runs against `fakehid.js` `FakeHidOdr`.
 
-`data/flash-boards.json` `gd77` carries the update file and loader constants, the codec placement constants
+`data/flash-boards.json` `hid` carries the update file and loader constants, the codec placement constants
 (`code_base`, `desc_addr`, `desc_len`, `desc_magic`, the table range), `placed` (each build's descriptor tag, code
-length and CRC-32s) and the specs (addresses, lengths, hashes; never codec bytes). `site/tests/gd77.test.mjs` checks
+length and CRC-32s) and the specs (addresses, lengths, hashes; never codec bytes). `site/tests/hidboot.test.mjs` checks
 the JavaScript against odrflash byte for byte: `fixtures.py` makes a synthetic stock update file with the odrflash
 tests' builders, the update file odrflash writes from it (with and without the codec), and every frame its updater
-sends its model loader. `ODR_GD77_STOCK=<a real stock update file> site/tests/run.sh` adds that file to the comparison.
+sends its model loader. `ODR_SGL_STOCK=<a real stock update file> site/tests/run.sh` adds that file to the comparison.
 
 ### STM32F4 radios (the loader route)
 

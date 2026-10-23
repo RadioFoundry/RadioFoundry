@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""GD-77 update file and bootloader client (updatefile.py, gd77boot.py, odrflash flash --board gd77), with a synthetic
-donor file and a model loader. No radio, no vendor data."""
+"""The SGL update file and the USB HID bootloader client (updatefile.py, hidboot.py, odrflash flash on a board of the
+usb-hid-sgl family), with a synthetic donor file and a model loader. No radio, no vendor data."""
 import io
 import contextlib
 import os
@@ -13,12 +13,15 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from odrflash import cli, gd77boot, gd77codec as G, updatefile as U  # noqa: E402
-import test_gd77codec as T  # noqa: E402
+from odrflash import boards as OB, cli, hidboot, k22fcodec as G, updatefile as U  # noqa: E402
+import test_k22fcodec as T  # noqa: E402
+
+# a board on the route: the first of the family
+BOARD = OB.by(family="usb-hid-sgl")[0].id
 
 
 def make_update_file(plain, total=0x78801 + 0x400, tag=b"DV01test"):
-    """A valid update file around `plain` (the flat image) with the header fields a GD-77 file has."""
+    """A valid update file around `plain` (the flat image) with the header fields a vendor's file has."""
     rng = random.Random(5)
     seed = [rng.getrandbits(8) for _ in range(16)]
     k = U._forward(seed, U.PERIOD)
@@ -34,8 +37,8 @@ def make_update_file(plain, total=0x78801 + 0x400, tag=b"DV01test"):
     struct.pack_into("<I", info, 2, 0)
     struct.pack_into("<I", info, 6, n)
     struct.pack_into("<I", info, 10, (~sum(body)) & 0xFFFFFFFF)
-    info[50:66] = b"SG-MD-760".ljust(16, b"\xff")
-    info[66:74] = b"MD-760".ljust(8, b"\xff")
+    info[50:66] = b"SG-XR-100".ljust(16, b"\xff")
+    info[66:74] = b"XR-100".ljust(8, b"\xff")
     info[74:82] = b"V1.00.01"
     info[91], info[92] = 0x35, 0xF4
     struct.pack_into("<H", info, 93, 0x20)
@@ -82,17 +85,17 @@ class Loader(unittest.TestCase):
     def test_flash_against_the_model(self):
         f = make_update_file(bytes(random.Random(3).getrandbits(8) for _ in range(40000)))
         u = U.UpdateFile(f)
-        fake = gd77boot.FakeBootloader(u)
+        fake = hidboot.FakeBootloader(u)
         seen = []
-        gd77boot.Updater(fake, sleep=lambda x: None).flash(u, progress=lambda d, t: seen.append(d))
+        hidboot.Updater(fake, sleep=lambda x: None).flash(u, progress=lambda d, t: seen.append(d))
         self.assertEqual(fake.received(), u.body[:u.length])
         self.assertEqual(seen[-1], u.length)
 
     def test_refusals_stop_the_run(self):
         u = U.UpdateFile(make_update_file(b"y" * 1000))
-        fake = gd77boot.FakeBootloader(u, reject=u.model)
-        with self.assertRaises(gd77boot.BootError) as e:
-            gd77boot.Updater(fake, sleep=lambda x: None).flash(u)
+        fake = hidboot.FakeBootloader(u, reject=u.model)
+        with self.assertRaises(hidboot.BootError) as e:
+            hidboot.Updater(fake, sleep=lambda x: None).flash(u)
         self.assertIn("model", str(e.exception))
         self.assertEqual(fake.mem, {})
 
@@ -104,16 +107,15 @@ class Cli(unittest.TestCase):
         self.stock = os.path.join(self.tmp, "stock.sgl")
         with open(self.stock, "wb") as f:
             f.write(make_update_file(img))
-        self.app = os.path.join(self.tmp, "odr_gd77.bin")
+        self.app = os.path.join(self.tmp, "odr_%s.bin" % BOARD)
         with open(self.app, "wb") as f:
             f.write(bytes(random.Random(9).getrandbits(8) for _ in range(20000)))
         self._orig = G.load_specs
-        G.load_specs = lambda directory=G.MAPS_DIR: {"synthetic": self.spec}
-        G.PLACED["synthetic"] = {"tag": 0x1234}
+        self.spec["placed"] = {"tag": 0x1234}
+        G.load_specs = lambda directory=G.PACKS_DIR, board=None: {"synthetic": self.spec}
 
     def tearDown(self):
         G.load_specs = self._orig
-        G.PLACED.pop("synthetic", None)
 
     def run_cli(self, argv):
         out, err = io.StringIO(), io.StringIO()
@@ -123,7 +125,7 @@ class Cli(unittest.TestCase):
 
     def test_merge_writes_an_update_file_with_the_codec(self):
         outp = os.path.join(self.tmp, "out.sgl")
-        rc, log = self.run_cli(["merge", self.app, "--board", "gd77", "--stock", self.stock, "-o", outp])
+        rc, log = self.run_cli(["merge", self.app, "--board", BOARD, "--stock", self.stock, "-o", outp])
         self.assertEqual(rc, 0, log)
         flat = U.unpack(open(outp, "rb").read())
         app = open(self.app, "rb").read()
@@ -131,22 +133,22 @@ class Cli(unittest.TestCase):
         self.assertEqual(flat[G.DESC_ADDR - G.FLASH_BASE:G.DESC_ADDR - G.FLASH_BASE + 4], struct.pack("<I", G.DESC_MAGIC))
 
     def test_flash_simulated_and_dry_run(self):
-        rc, log = self.run_cli(["flash", self.app, "--board", "gd77", "--stock", self.stock, "--simulate", "blank", "--yes"])
+        rc, log = self.run_cli(["flash", self.app, "--board", BOARD, "--stock", self.stock, "--simulate", "blank", "--yes"])
         self.assertEqual(rc, 0, log)
         self.assertIn("MERGED", log)
-        rc, log = self.run_cli(["flash", self.app, "--board", "gd77", "--stock", self.stock, "--dry-run"])
+        rc, log = self.run_cli(["flash", self.app, "--board", BOARD, "--stock", self.stock, "--dry-run"])
         self.assertEqual(rc, 0, log)
         self.assertIn("dry run", log)
 
     def test_needs_stock_and_unknown_build(self):
-        rc, log = self.run_cli(["flash", self.app, "--board", "gd77", "--dry-run"])
+        rc, log = self.run_cli(["flash", self.app, "--board", BOARD, "--dry-run"])
         self.assertNotEqual(rc, 0)
         self.assertIn("--stock", log)
-        G.load_specs = lambda directory=G.MAPS_DIR: {}
-        rc, log = self.run_cli(["flash", self.app, "--board", "gd77", "--stock", self.stock, "--dry-run"])
+        G.load_specs = lambda directory=G.PACKS_DIR, board=None: {}
+        rc, log = self.run_cli(["flash", self.app, "--board", BOARD, "--stock", self.stock, "--dry-run"])
         self.assertNotEqual(rc, 0)
         self.assertIn("not one of the supported", log)
-        rc, log = self.run_cli(["flash", self.app, "--board", "gd77", "--stock", self.stock, "--dry-run", "--codec", "keep"])
+        rc, log = self.run_cli(["flash", self.app, "--board", BOARD, "--stock", self.stock, "--dry-run", "--codec", "keep"])
         self.assertEqual(rc, 0, log)
 
 

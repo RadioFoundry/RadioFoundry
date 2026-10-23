@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-77 DMR modem: the shared HR_C6000 slot engine (drivers/modem/hrc_common/hrc6000_dmr.c) on the board's four modem
 // interrupt lines, the voice port on SPI1 and the deferred event task that calls the DMR stack
-// (docs/spec/dmr-modem.md 6, docs/spec/hardware-gd77.md 5.3). The structure is the DM-1701's (dmr_dm1701.c); what
+// (docs/spec/dmr-modem.md 6, docs/spec/hardware-gd77.md 5.3). The structure is that of boards/dm1701/dmr_dm1701.c; what
 // differs is the wiring: all four lines are on port C and share one interrupt, the timeslot line interrupts on both
 // edges, and the RF RX line is routed, so the PA comes down when our burst ends instead of at the next slot boundary.
 //

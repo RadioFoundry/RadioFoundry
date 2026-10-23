@@ -11,13 +11,13 @@
 static bool ee_bus_write(void *ctx, uint8_t addr7, const uint8_t *data, size_t n)
 {
 	(void)ctx;
-	return gd77_i2c_write(addr7, data, (uint32_t)n);
+	return i2c_a_write(addr7, data, (uint32_t)n);
 }
 
 static bool ee_bus_write_read(void *ctx, uint8_t addr7, const uint8_t *w, size_t wn, uint8_t *r, size_t rn)
 {
 	(void)ctx;
-	return gd77_i2c_write_read(addr7, w, (uint32_t)wn, r, (uint32_t)rn);
+	return i2c_a_write_read(addr7, w, (uint32_t)wn, r, (uint32_t)rn);
 }
 
 static const i2c_bus_t bus = { .write = ee_bus_write, .write_read = ee_bus_write_read, .ctx = NULL };

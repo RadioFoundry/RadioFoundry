@@ -65,11 +65,13 @@ FAMILIES = {
     # combination, speaking its own file format (tools/serial_loader.py)
     "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
     # loader on the cable, through the RAM stub
+    "usb-hid-sgl": {"link": "usb", "needs": (), "web": "sgl-hid", "update_mode": None},	# a vendor loader's USB HID
+    # update mode, taking the image inside a stock update file (.sgl) as its envelope (odrflash hidboot.py, updatefile.py)
 }
 # [flash.stub] stock_console: the debug console a stock firmware answers on the cable, by protocol (the web flasher
 # loads the stub through it before ODR is installed: site/static/js/flasher/usmart.js)
 STOCK_CONSOLES = ("usmart",)
-CODEC_TOOLS = ("codec_extract", "hrc7000_codec")
+CODEC_TOOLS = ("codec_extract", "hrc7000_codec", "k22f_codec")
 ODRFLASH_JSON = "tools/odrflash/odrflash/registry.json"	# the flashing tools' view, generated and committed
 # hal_flash_map_t fields the site reads (the codeplug editor): the open-firmware image's data flash address, the end of
 # the room for it and the DMR ID database, the TFTP staging area. The open-firmware flash image follows the EEPROM image

@@ -9,13 +9,13 @@ enumerate again, on a port with the same serial number). It runs the protocol en
 (stub/common/stubeng.c), so the radio class, the install order and the checks are f4stub.py's, given this chip
 (K22). stubtool.py hands the GD-77 to it:
 
-    stubtool.py PORT --odr-enter --write-app build/gd77/odr_gd77.bin         install a build
-    stubtool.py PORT --odr-enter --write-app build/gd77/odr_gd77_codec.bin   a build merged with the codec
+    stubtool.py PORT --odr-enter --write-app build/BOARD/odr_BOARD.bin       install a build
+    stubtool.py PORT --odr-enter --write-app build/BOARD/odr_BOARD_codec.bin a build merged with the codec
     stubtool.py PORT --odr-enter --progmem flash.bin                         back up the whole program flash (512 KB)
     stubtool.py PORT --odr-enter --verify-progmem flash.bin                  compare by CRC
     stubtool.py PORT --odr-enter --q128 spi.bin                              back up the SPI flash
     stubtool.py PORT --odr-enter --write-q128 spi.bin --q128-range 0x100000:  put ODR's part back (changed sectors)
-    stubtool.py PORT --attach --board gd77 --boot reset                      restart into the firmware
+    stubtool.py PORT --attach --board BOARD --boot reset                     restart into the firmware
     k22stub.py --self-test                                                   against a simulated radio, no hardware
     k22stub.py --embed build/stub-k22f/k22stub.bin                           put a new stub build into this file
     k22stub.py --check-embedded build/stub-k22f/k22stub.bin                  exit 1 when the build differs from it
@@ -159,6 +159,18 @@ def pin_byte(name):
     return (ord(name[2]) - ord("A")) * 32 + int(name[3:])
 
 
+TEST_BOARD = "k22test"
+
+
+def test_board():
+    """A test profile for the self-test, id 0xFE (tools/boards.py STUB_TEST_ID): a 512 KB part with the codec area at
+    0x55D00-0x7B800, the last sector kept and an SPI NOR on GPIO pins with a 1 MB floor"""
+    return {"id": 0xFE, "name": "K22 test board", "names": ("K22 test board",), "owned": [(APP_BASE, 0x55D00)],
+            "codec": (0x55D00, 0x7B800), "codec_image_end": 0x7B780, "app_end": 0x7F800,
+            "spi": {"sck": "PTE5", "mosi": "PTE4", "miso": "PTE6", "cs": "PTA19", "cs_released": True},
+            "spi_floor": 0x100000}
+
+
 def config_record(board_id):
     """The 24-byte board record the stub's CONFIG takes (stub/k22f/k22stub.h)"""
     b = BOARDS[board_id]
@@ -267,56 +279,58 @@ def self_test():
         r.hello()
         return f, fake, r
 
-    rec = config_record("gd77")
-    check(rec.hex() == "010101010000400000" "07f80000100000" "85848613" "00000000",
-          "gd77 board record %s" % rec.hex())
+    BOARDS[TEST_BOARD] = test_board()
+    TB = TEST_BOARD
+    rec = config_record(TB)
+    check(rec.hex() == "fe0101010000400000" "07f80000100000" "85848613" "00000000",
+          "test board record %s" % rec.hex())
     check(K22.parse_record(rec) == {"app_base": APP_BASE, "app_end": 0x7F800, "xfloor": 0x100000},
-          "gd77 board record decodes")
-    check(board_for("GD-77") == "gd77" and board_for("DM-1701") is None, "board names")
+          "test board record decodes")
+    check(board_for("K22 test board") == TB and board_for("XR-100") is None, "board names")
 
     # A plain build: sectors 8 (the commit sector, first) to 171; sector 171 also holds the codec's first bytes, which
     # are read back, kept and saved; the loader, the codec area and the last sector untouched
     f, fake, r = fresh()
     try:
-        r.write_image("gd77", [(APP_BASE, app(5000, 3))], backup_dir=tmp)
-        check(False, "gd77: no write before the board record")
+        r.write_image(TB, [(APP_BASE, app(5000, 3))], backup_dir=tmp)
+        check(False, "test board: no write before the board record")
     except f4stub.F4Error:
-        check(fake.erased == [] and fake.configs == 0, "gd77: refused by the tool before anything is sent")
-    r.configure("gd77")
-    check(r.board == "gd77" and r.record == rec and r.flash_kb == 512, "gd77: configured, the echo checked")
+        check(fake.erased == [] and fake.configs == 0, "test board: refused by the tool before anything is sent")
+    r.configure(TB)
+    check(r.board == TB and r.record == rec and r.flash_kb == 512, "test board: configured, the echo checked")
     img = app(300000, 3)
-    nw, nk = r.write_image("gd77", [(APP_BASE, img)], backup_dir=tmp)
+    nw, nk = r.write_image(TB, [(APP_BASE, img)], backup_dir=tmp)
     fl = fake.flash
     check(fake.erased[0] == 8 and sorted(fake.erased) == list(range(8, 172)),
-          "gd77: commit sector 8 first, then 9-171 (%d erases, first %s)" % (len(fake.erased), fake.erased[:2]))
-    check(bytes(fl[:APP_BASE]) == loader and bytes(fl[-SECTOR:]) == last, "gd77: loader and last sector untouched")
-    check(bytes(fl[0x55D00:-SECTOR]) == bytes(f[0x55D00:-SECTOR]), "gd77: the codec area untouched")
-    check(bytes(fl[APP_BASE:APP_BASE + len(img)]) == img, "gd77: application in place")
-    check(bytes(fl[APP_BASE + len(img):0x55D00]) == b"\xff" * (0x55D00 - APP_BASE - len(img)), "gd77: old tail erased")
-    saved = os.path.join(tmp, "gd77_sector171_0x00055800.bin")
+          "test board: commit sector 8 first, then 9-171 (%d erases, first %s)" % (len(fake.erased), fake.erased[:2]))
+    check(bytes(fl[:APP_BASE]) == loader and bytes(fl[-SECTOR:]) == last, "test board: loader and last sector untouched")
+    check(bytes(fl[0x55D00:-SECTOR]) == bytes(f[0x55D00:-SECTOR]), "test board: the codec area untouched")
+    check(bytes(fl[APP_BASE:APP_BASE + len(img)]) == img, "test board: application in place")
+    check(bytes(fl[APP_BASE + len(img):0x55D00]) == b"\xff" * (0x55D00 - APP_BASE - len(img)), "test board: old tail erased")
+    saved = os.path.join(tmp, TB + "_sector171_0x00055800.bin")
     check(os.path.exists(saved) and open(saved, "rb").read() == bytes(f[0x55800:0x56000]),
-          "gd77: sector 171 (shared with the codec) saved first")
+          "test board: sector 171 (shared with the codec) saved first")
     fake.erased = []
-    nw, nk = r.write_image("gd77", [(APP_BASE, img)], backup_dir=tmp)
-    check(nw == 0 and fake.erased == [], "gd77: the same image again writes nothing (%d)" % nw)
+    nw, nk = r.write_image(TB, [(APP_BASE, img)], backup_dir=tmp)
+    check(nw == 0 and fake.erased == [], "test board: the same image again writes nothing (%d)" % nw)
     img2 = img[:100000] + app(1000, 9) + img[101000:]
     fake.erased = []
-    nw, _ = r.write_image("gd77", [(APP_BASE, img2)], backup_dir=tmp)
-    check(sorted(fake.erased) == [8, 56, 57] and nw == 3, "gd77: only the changed 2 KB sectors (plus 8) %s" % fake.erased)
-    check(bytes(fake.flash[APP_BASE:APP_BASE + len(img2)]) == img2, "gd77: changed image in place")
+    nw, _ = r.write_image(TB, [(APP_BASE, img2)], backup_dir=tmp)
+    check(sorted(fake.erased) == [8, 56, 57] and nw == 3, "test board: only the changed 2 KB sectors (plus 8) %s" % fake.erased)
+    check(bytes(fake.flash[APP_BASE:APP_BASE + len(img2)]) == img2, "test board: changed image in place")
 
     # A build merged with the codec ends at 0x7B780 (the descriptor's end): split at 0x55D00, the codec area to 0x7B800
     merged = bytearray(b"\xff" * (0x7B780 - APP_BASE))
     merged[:len(img)] = img
     merged[0x55D00 - APP_BASE:0x55D00 - APP_BASE + 0x11F58] = app(0x11F58, 13)
     merged[0x7B700 - APP_BASE:] = app(0x80, 17)
-    mp = os.path.join(tmp, "odr_gd77_codec.bin")
+    mp = os.path.join(tmp, "odr_%s_codec.bin" % TB)
     open(mp, "wb").write(merged)
-    segs = f4stub.load_segments(mp, "gd77", K22)
+    segs = f4stub.load_segments(mp, TB, K22)
     check([(a, len(d)) for a, d in segs] == [(APP_BASE, len(img)), (0x55D00, 0x7B800 - 0x55D00)],
           "merged image split in two %s" % [(hex(a), len(d)) for a, d in segs])
     fake.erased = []
-    r.write_image("gd77", segs, backup_dir=tmp)
+    r.write_image(TB, segs, backup_dir=tmp)
     check(max(fake.erased) == 246 and bytes(fake.flash[APP_BASE:0x7B780]) == bytes(merged),
           "merged image in place, sectors up to 246 (0x7B000)")
     check(bytes(fake.flash[0x7B780:0x7B800]) == b"\xff" * 0x80 and bytes(fake.flash[0x7B800:]) == bytes(f[0x7B800:]),
@@ -324,7 +338,7 @@ def self_test():
     short = os.path.join(tmp, "short_codec.bin")
     open(short, "wb").write(bytes(merged[:-0x800]))
     try:
-        f4stub.load_segments(short, "gd77", K22)
+        f4stub.load_segments(short, TB, K22)
         check(False, "an image ending inside the codec area refused")
     except f4stub.F4Error:
         pass
@@ -332,29 +346,29 @@ def self_test():
                       ([(APP_BASE, app(0x52000, 3))], "into the codec area")):
         fake.erased = []
         try:
-            r.write_image("gd77", bad, backup_dir=tmp)
+            r.write_image(TB, bad, backup_dir=tmp)
             check(False, "refused: " + what)
         except f4stub.F4Error:
             check(fake.erased == [], "refused before erasing: " + what)
 
     # Interrupted after a few programs: the first unit at 0x4000 still erased (the loader finds no application)
     f, fake, r = fresh(seed=7, fail_after=10)
-    r.configure("gd77")
+    r.configure(TB)
     try:
-        r.write_image("gd77", [(APP_BASE, img)], backup_dir=tmp)
+        r.write_image(TB, [(APP_BASE, img)], backup_dir=tmp)
         check(False, "interrupted write raises")
     except OSError:
         pass
     check(fake.w(APP_BASE) == 0xFFFFFFFF and bytes(fake.flash[:APP_BASE]) == loader,
           "interrupted: not committed, loader untouched")
     fake.fail_after = None
-    r.write_image("gd77", [(APP_BASE, img)], backup_dir=tmp)
+    r.write_image(TB, [(APP_BASE, img)], backup_dir=tmp)
     check(bytes(fake.flash[APP_BASE:APP_BASE + len(img)]) == img, "a second run completes the install")
 
     # The SPI flash: the first megabyte is the radio's; a copy that differs there is refused before anything is written
     spi = bytearray((i * 13 + (i >> 12)) & 0xFF for i in range(0x200000))
     f, fake, r = fresh(spi=spi)
-    r.configure("gd77")
+    r.configure(TB)
     path = os.path.join(tmp, "spi.bin")
     r.dump(path, 0, mem=f4stub.MEM_SPI)
     check(open(path, "rb").read() == bytes(spi), "SPI flash dump")
@@ -385,7 +399,7 @@ def self_test():
         odr = stubtool.FakeODR((RUN_ADDR, 8192))
         r = f4stub.F4Radio(odr, log=quiet, chip=K22)
         r.attach = r.configure = lambda *a: None
-        r.odr_enter(image, RUN_ADDR, board="gd77")
+        r.odr_enter(image, RUN_ADDR, board=TB)
         check(odr.entered and bytes(odr.mem[:len(image)]) == image, "odr_enter sends the embedded K22F stub")
         for what, img_, span in (("the STM32F4 stub", f4stub.stub_image(), (RUN_ADDR, 8192)),
                                  ("the stub on the STM32 span", image, (0x20000000, 8192))):
@@ -393,7 +407,7 @@ def self_test():
             r = f4stub.F4Radio(odr, log=quiet, chip=K22)
             r.attach = r.configure = lambda *a: None
             try:
-                r.odr_enter(img_, RUN_ADDR, board="gd77")
+                r.odr_enter(img_, RUN_ADDR, board=TB)
                 check(False, "K22F odr_enter refuses %s" % what)
             except stubtool.DumpError:
                 check(not odr.entered and odr.total is None, "K22F odr_enter refuses %s before BEGIN" % what)
@@ -401,7 +415,7 @@ def self_test():
         r = f4stub.F4Radio(odr, log=quiet)
         r.attach = lambda: None
         try:
-            r.odr_enter(image, 0x20000000, board="dm1701")
+            r.odr_enter(image, 0x20000000, board=next(iter(f4stub.BOARDS)))
             check(False, "the STM32F4 path refuses the K22F stub")
         except stubtool.DumpError:
             check(odr.total is None, "the STM32F4 path refuses the K22F stub before BEGIN")

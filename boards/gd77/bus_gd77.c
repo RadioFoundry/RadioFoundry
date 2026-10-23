@@ -75,7 +75,7 @@ static const i2c_bus_t soft_bus_b = I2C_GPIO_BUS(&soft_i2c_b);
 
 static const i2c_bus_t *i2c_a, *i2c_b;
 static SemaphoreHandle_t i2c_a_lock;
-static volatile bool i2c_a_busy;	// a task-level transaction is on the wire (gd77_i2c_write_isr stays off)
+static volatile bool i2c_a_busy;	// a task-level transaction is on the wire (i2c_a_write_isr stays off)
 
 #define I2C_HW_HZ	100000u		// the rate the software buses run at, until a radio shows the chips take more
 // I2C on the pins: open drain with the pull-ups the software bus uses
@@ -122,7 +122,7 @@ static void unlock(void)
 	}
 }
 
-bool gd77_i2c_write(uint8_t addr7, const uint8_t *data, uint32_t n)
+bool i2c_a_write(uint8_t addr7, const uint8_t *data, uint32_t n)
 {
 	if (i2c_a == NULL || !lock()) {
 		return false;
@@ -134,7 +134,7 @@ bool gd77_i2c_write(uint8_t addr7, const uint8_t *data, uint32_t n)
 	return ok;
 }
 
-bool gd77_i2c_write_read(uint8_t addr7, const uint8_t *w, uint32_t wn, uint8_t *r, uint32_t rn)
+bool i2c_a_write_read(uint8_t addr7, const uint8_t *w, uint32_t wn, uint8_t *r, uint32_t rn)
 {
 	if (i2c_a == NULL || !lock()) {
 		return false;
@@ -148,7 +148,7 @@ bool gd77_i2c_write_read(uint8_t addr7, const uint8_t *w, uint32_t wn, uint8_t *
 
 // From the modem interrupts (the DMR per-burst RF switch): one write on bus A, refused at once when a task-level
 // transaction is on the wire. The interrupt runs to its end before any task continues, so the two never interleave
-bool gd77_i2c_write_isr(uint8_t addr7, const uint8_t *data, uint32_t n)
+bool i2c_a_write_isr(uint8_t addr7, const uint8_t *data, uint32_t n)
 {
 	if (i2c_a == NULL || i2c_a_busy) {
 		return false;

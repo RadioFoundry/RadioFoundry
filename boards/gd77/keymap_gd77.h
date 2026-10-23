@@ -13,7 +13,7 @@
 #include "keys.h"
 
 // The top key: short is the reassignable top key role (power level by default), held is emergency where it is built,
-// else the same role's long function, as on the DM-1701
+// else the same role's long function, as on the other boards with a top key
 #if defined(CONFIG_DMR_EMERGENCY) && CONFIG_DMR_EMERGENCY
 #define GD77_TOP_LONG	ACT_EMERGENCY
 #else

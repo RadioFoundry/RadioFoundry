@@ -106,6 +106,7 @@ endian. The stub writes nothing before a record is accepted; the host checks the
 
 The GD-77's NOR is mode 0 on PTE5 (SCK), PTE4 (MOSI), PTE6 (MISO), chip select PTA19, which is released to its
 pull-up when idle (the pin is also XTAL0). Its first megabyte is the radio's own data: the floor keeps it read only.
+The self-tests and host tests use a test profile with the same layout and id 0xFE (`k22stub.test_board()`).
 `app_end` and `xfloor` are engine fields; the STM32F4 stub leaves them 0 (no limit).
 
 ## 5. Host side

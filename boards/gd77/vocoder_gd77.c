@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-77 vocoder: the radio's own stock AMBE+2 codec, run in place from flash (docs/spec/codec-gd77.md). The codec is the
-// one the DM-1701 carries and runs through the same calls; the audio goes over I2S and the C6000 only frames the voice
+// one the other HR_C6000 boards carry and runs through the same calls; the audio goes over I2S and the C6000 only frames the voice
 // (docs/spec/hardware-gd77.md 5).
 //
-// The merge on the user's machine (tools/odrflash/odrflash/gd77codec.py) writes the codec's code at CODE_BASE, its table
+// The merge on the user's machine (tools/odrflash/odrflash/k22fcodec.py) writes the codec's code at CODE_BASE, its table
 // window at the build's own address, and the descriptor at 0x7B700 (platform/k22f/codec_desc.h). The code reaches its
 // tables through absolute addresses, which don't change; the merge rewrites what does (a few code pointers and the
 // branches between the parts). None of it is part of this repository or a release. Without a valid descriptor and codec,
@@ -44,9 +44,9 @@
 
 #define HALF			(VOCODER_FRAME_SAMPLES / 2)
 
-// One supported stock build as the merge places it (tools/odrflash/odrflash/gd77codec.py, PLACED): the descriptor's
-// tag, the code region's length and CRC-32 (IEEE 802.3) after the rewrites, and the table window with its CRC. The
-// descriptor must carry exactly these
+// One supported stock build as the merge places it (each pack's "placed" in tools/odrflash/odrflash/codec_packs/gd77/,
+// tools/odrflash/odrflash/k22fcodec.py): the descriptor's tag, the code region's length and CRC-32 (IEEE 802.3) after
+// the rewrites, and the table window with its CRC. The descriptor must carry exactly these
 typedef struct {
 	uint32_t tag, code_len, code_crc, tab_addr, tab_len, tab_crc;
 } gd77_codec_profile_t;
@@ -102,7 +102,7 @@ static bool present(void)
 	return presence == 1;
 }
 
-// The stock firmware's own init sequence (the DM-1701's, identical here), on our state blocks
+// The stock firmware's own init sequence (the same on the other HR_C6000 boards), on our state blocks
 static void reset(void)
 {
 	if (!present()) {

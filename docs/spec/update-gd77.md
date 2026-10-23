@@ -68,7 +68,7 @@ The radio restarts by itself afterwards (unverified).
 | Piece | Where |
 |---|---|
 | File format, pack and unpack | `tools/odrflash/odrflash/updatefile.py` |
-| The protocol, and a model loader for tests | `tools/odrflash/odrflash/gd77boot.py` |
+| The protocol, and a model loader for tests | `tools/odrflash/odrflash/hidboot.py` |
 | Command line | `odrflash flash IMAGE --board gd77 --stock FILE.sgl`; `odrflash merge ... -o OUT.sgl` writes the update file |
 | Web flasher | WebHID in the browser, same steps |
 

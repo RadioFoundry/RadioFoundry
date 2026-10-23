@@ -62,7 +62,7 @@ typedef struct {
 } hrc_chip_t;
 
 // The codec input the microphone is wired to (0xE0 bits, hrc6000-registers.md 3.20): a board choice
-#define HRC_MIC_LINEIN1		0x40u	// the default (DM-1701)
+#define HRC_MIC_LINEIN1		0x40u	// the default
 #define HRC_MIC_MIC_P		0x02u
 
 struct hrc {

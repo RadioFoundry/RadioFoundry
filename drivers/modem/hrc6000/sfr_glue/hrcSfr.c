@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 /*
  * DMR single frequency repeater (SFR): the HR-C6000 glue for functions/sfr.h, see hrcSfr.h. The radio provides the RF
- * side (radioSfrSwitch() etc., hrcSfr.h); the rest is the same on the STM32 radios and the GD-77 (MK22)
+ * side (radioSfrSwitch() etc., hrcSfr.h); the rest is the same on every MCU
  */
 
 #if defined(HAS_SFR)
@@ -42,7 +42,7 @@ static const uint8_t SYNC_PATTERNS[4][6] = {
 #define REG10_RELAY							0x6E
 
 #define BURST_MAX_MS						20	// a burst of ours is over by the next timeslot interrupt after this long
-#define BURST_MIN_MS						20	// an RF RX interrupt (GD-77) ends a burst of ours on for this long
+#define BURST_MIN_MS						20	// an RF RX interrupt (where routed) ends a burst of ours on for this long
 #define BURST_STUCK_MS						100	// the timeslot interrupts stopped while a burst was on: back to receive
 #define NO_TIMESLOT_MS						100	// no timeslot interrupt for this long: the HR-C6000 has no slot timing
 

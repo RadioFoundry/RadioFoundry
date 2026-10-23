@@ -491,7 +491,7 @@ power-off sequence is in 15.3.
 
 Holding both side keys at power-on starts the radio's update mode (U). `make BOARD=gd77` produces the raw application
 image (`odr_gd77.bin`, linked for flash 0x4000) with its `.elf` and `.map`, and, with a stock firmware file in
-`codecs/`, `odr_gd77_codec.bin`: the same image with the codec merged in (`tools/gd77_codec.py`), a flat image from
+`codecs/`, `odr_gd77_codec.bin`: the same image with the codec merged in (`tools/k22f_codec.py`), a flat image from
 flash 0x4000 up to 0x7B780, the codec descriptor's end. The radio's loader takes an update file over USB HID: odrflash
 and the web flasher write the image into a copy of an update file the user supplies and send it
 ([update-gd77.md](update-gd77.md)). Unverified on a radio.
@@ -551,7 +551,7 @@ Each needs a radio on the bench.
 | DMR voice codec (5.6) | the radio's own codec run in place, merged on the user's machine ([codec-gd77.md](codec-gd77.md)); host checked, unverified |
 | Storage: settings and codeplug on the data flash (6.2), EEPROM read only (6.3) | written, host tested, unverified |
 | Factory calibration: both blocks loaded and checked, converted and applied (6.4) | written, host tested, unverified |
-| USB serial: host link, debug link, board view (13, 14) | written, unverified; the CPS and the network adapter off |
+| USB serial: host link, debug link, board view (13, 14) | written, unverified; the network adapter off |
 | Update image packaging and flashing (odrflash, web flasher) | written and host tested; unverified on a radio |
 | Flash stub entry and the K22F stub (10, [stub-k22f.md](stub-k22f.md)) | written, host tested, unverified; `CONFIG_STUB_ENTRY` off by default |
 
@@ -567,7 +567,7 @@ buffer descriptor table driver (`portable/chipidea/ci_fs`) behind the repository
 | Regulator | the controller's regulator on (SIM_SOPT1 USBREGEN, after SOPT1CFG URWE) | U |
 | Interrupt | USB0 (IRQ 53) at priority 6 | U |
 | Identity | 1FC9:0094 serial, 1FC9:0096 network, the same as the other ODR radios with USB; product "GD-77"; serial number: the low 96 bits of the chip's unique ID as 24 hex digits | |
-| Personality | CDC-ACM: the host link (`core/hostlink`) and the debug link on it. The network adapter (CDC-NCM) and the open-firmware CPS are off in this build | |
+| Personality | CDC-ACM: the host link (`core/hostlink`), with the open-firmware CPS, and the debug link on it. The network adapter (CDC-NCM) is off in this build | |
 | Endpoints | interrupt IN 0x82 (8 bytes), bulk OUT 0x01 / IN 0x81 (64 bytes), control 64 bytes | |
 
 The selector the USB clock uses (PLLFLLSEL) also feeds the I2S master clock, which this radio doesn't use: the

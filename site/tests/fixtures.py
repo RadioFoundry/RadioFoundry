@@ -13,6 +13,13 @@ Python it was ported from (site/tests/flasher.test.mjs):
   - for the STM32F4 loader: each radio's board record from stub/f4stub.py config_record(), and the HELLO replies its
     simulated stub (FakeF4) gives before and after CONFIG, so f4stub.js sends and parses the Python tool's bytes; and
     f4stub's test profile, a board with other SPI wiring
+  - for the USB HID update route: a synthetic stock update file with a made-up codec (the odrflash tests' builders), what
+    updatefile.py and k22fcodec.py make of it with an application image, and every frame hidboot's updater sends to
+    its model loader, so site/tests/hidboot.test.mjs checks hidboot.js and k22fcodec.js byte for byte
+  - for the K22F stub: a board's record from stub/k22stub.py config_record(), the HELLO replies its simulated
+    stub (FakeF4 with k22stub.K22) gives before and after CONFIG, and two installs on a simulated flash (the
+    application alone, then an image merged with the codec) with the sectors k22stub.py erases and the flash it leaves,
+    so site/tests/k22stub.test.mjs checks k22stub.js and the fake radio against the Python
   - for the codeplug editor: the radio's own codeplug code on the host (tests/host/cpsSim), a codeplug it stored
     and what it reads back, so site/tests/codeplug.test.mjs checks the JavaScript decoder and encoder against it
 
@@ -148,7 +155,7 @@ def main(out):
 	radios, _ = repo.boards([f["name"] for f in feats], [v["id"] for v in variants])
 	# the synthetic codecs' maps go into the flash-boards data, as a real build's would (docs/spec/codec-placement.md)
 	test_maps = {**c7000(out, rng), **db25d(out, rng)}
-	gd77(out)
+	hid(out)
 	k22(out)
 	codeplug(out)
 	fb = repo.flash_boards()
@@ -233,19 +240,19 @@ def db25d(out, rng):
 	return maps
 
 
-def gd77(out):
-	"""The GD-77 update file round: a synthetic stock file (tools/odrflash/tests: test_gd77codec.synthetic,
-	test_gd77flash.make_update_file), an application image, the update file odrflash writes with the codec merged and
+def hid(out):
+	"""The USB HID update file round: a synthetic stock file (tools/odrflash/tests: test_k22fcodec.synthetic,
+	test_hidflash.make_update_file), an application image, the update file odrflash writes with the codec merged and
 	without it, the placed codec's CRC-32s and descriptor, and the frames the updater sends the model loader. With
-	ODR_GD77_STOCK=<a real stock update file> the expected result for that file is made as well (never kept in the repo)."""
+	ODR_SGL_STOCK=<a real stock update file> the expected result for that file is made as well (never kept in the repo)."""
 	import hashlib
 	sys.path.insert(0, os.path.join(ROOT, "tools", "odrflash", "tests"))
 	try:
-		import test_gd77codec as tc
-		import test_gd77flash as tf
+		import test_k22fcodec as tc
+		import test_hidflash as tf
 	finally:
 		sys.path.pop(0)
-	from odrflash import gd77boot as gb, gd77codec as gc, updatefile as uf
+	from odrflash import hidboot as gb, k22fcodec as gc, updatefile as uf
 	sha = lambda b: hashlib.sha256(bytes(b)).hexdigest()
 	stock, spec = tc.synthetic(random.Random(77))
 	donor = tf.make_update_file(stock)
@@ -268,7 +275,7 @@ def gd77(out):
 			return fake.read(timeout_s)
 	gb.Updater(Recorder(), sleep=lambda s: None).flash(u)
 	if fake.received() != u.body[:u.length]:
-		raise SystemExit("gd77 fixture: the model loader received something else than the body")
+		raise SystemExit("hid fixture: the model loader received something else than the body")
 	d = uf.UpdateFile(donor)
 	doc = {
 		"spec": dict(spec, words=[list(w) for w in spec["words"]], branches=[list(b) for b in spec["branches"]]),
@@ -287,8 +294,8 @@ def gd77(out):
 			   "tail": [f.hex() for f in frames[-3:]]},
 		"real": None,
 	}
-	files = {"gd77_donor.sgl": donor, "gd77_app.bin": app, "gd77_out.sgl": sgl}
-	path = os.environ.get("ODR_GD77_STOCK")
+	files = {"hid_donor.sgl": donor, "hid_app.bin": app, "hid_out.sgl": sgl}
+	path = os.environ.get("ODR_SGL_STOCK")
 	if path:
 		with open(path, "rb") as f:
 			real = f.read()
@@ -301,7 +308,7 @@ def gd77(out):
 	for name, data in files.items():
 		with open(os.path.join(out, name), "wb") as f:
 			f.write(data)
-	with open(os.path.join(out, "gd77.json"), "w") as f:
+	with open(os.path.join(out, "hid.json"), "w") as f:
 		json.dump(doc, f, indent=1)
 
 
@@ -321,11 +328,12 @@ def k22(out):
 		fake.out.clear()
 		return {"status": r[1], "body": r[6:].hex()}
 
-	rec = k22.config_record("gd77")
+	bid = next(iter(k22.BOARDS))		# the board the fixture installs on: the stub's first
+	rec = k22.config_record(bid)
 	bad = bytearray(rec)
 	bad[4:8] = (0x2000).to_bytes(4, "big")		# an application base below the loader's end
 	fake = f4.FakeF4(b"\xff" * (k22.FLASH_KB * 1024), spi=b"\xff" * 0x200000, chip=k22.K22)
-	doc = {"record": rec.hex(), "hello": {"before": ask(fake, f4.OP_HELLO), "refused": ask(fake, f4.OP_CONFIG, bytes(bad)),
+	doc = {"board": bid, "record": rec.hex(), "hello": {"before": ask(fake, f4.OP_HELLO), "refused": ask(fake, f4.OP_CONFIG, bytes(bad)),
 					      "erase_before": ask(fake, f4.OP_ERASE, bytes([9]) + k22.MAGIC.to_bytes(4, "big")),
 					      "config": ask(fake, f4.OP_CONFIG, rec), "after": ask(fake, f4.OP_HELLO)},
 	       "sp": {hex(a): k22.K22.sp_ok(a) for a in (0x1FFF0000, 0x1FFF0004, 0x2000FEF0, 0x20010000, 0x20010004, 0x2000FEF2,
@@ -334,7 +342,7 @@ def k22(out):
 	flash = bytearray(rnd.getrandbits(8) for _ in range(k22.FLASH_KB * 1024))
 	app = bytearray(rnd.getrandbits(8) for _ in range(300000))
 	app[:4] = (0x2000FEF0).to_bytes(4, "little")
-	b = k22.BOARDS["gd77"]
+	b = k22.BOARDS[bid]
 	merged = bytearray(b"\xff" * (b["codec_image_end"] - k22.APP_BASE))
 	merged[:len(app) - 5000] = app[:-5000]
 	merged[b["codec"][0] - k22.APP_BASE:] = bytes(rnd.getrandbits(8) for _ in range(b["codec_image_end"] - b["codec"][0]))
@@ -345,13 +353,13 @@ def k22(out):
 	fake = f4.FakeF4(bytes(flash), chip=k22.K22)
 	radio = f4.F4Radio(fake, log=lambda *a: None, chip=k22.K22)
 	radio.hello()
-	radio.configure("gd77")
+	radio.configure(bid)
 	doc["installs"] = []
 	with tempfile.TemporaryDirectory(prefix="odr-k22-fixture-") as tmp:
 		for name in ("k22_app.bin", "k22_merged.bin"):
 			fake.erased = []
-			segs = f4.load_segments(os.path.join(out, name), "gd77", k22.K22)
-			nw, nk = radio.write_image("gd77", segs, backup_dir=tmp)
+			segs = f4.load_segments(os.path.join(out, name), bid, k22.K22)
+			nw, nk = radio.write_image(bid, segs, backup_dir=tmp)
 			doc["installs"].append({"image": name, "segments": [[a, len(d), sha(d)] for a, d in segs], "erased": fake.erased,
 					       "written": nw, "same": nk, "flash_sha256": sha(fake.flash)})
 	with open(os.path.join(out, "k22.json"), "w") as f:

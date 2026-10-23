@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-"""The GD-77 family's update file (.sgl): read one into the flat flash image, and write an image into a copy of a
-file the user already has (docs/spec/update-gd77.md).
+"""The SGL update file (.sgl) a vendor loader takes over USB HID (hidboot.py): read one into the flat flash image, and
+write an image into a copy of a file the user already has (docs/spec/update-gd77.md).
 
 An update file is a 1 KB header, then the flash image and one zero byte, byte-scrambled. The header names the
 company, model and version the radio's loader compares, the address and length fields, and the sum check. A new
@@ -36,7 +36,7 @@ class UpdateFile:
     def __init__(self, data):
         self.data = d = bytes(data)
         if len(d) < BODY_AT + 64 or d[:4] != b"SGL!":
-            raise UpdateFileError("not a GD-77 family update file (no \"SGL!\" header)")
+            raise UpdateFileError("not an SGL update file (no \"SGL!\" header)")
         h = bytearray(d[:16])
         for i in range(4, 16):
             h[i] ^= KEY[i % 4]

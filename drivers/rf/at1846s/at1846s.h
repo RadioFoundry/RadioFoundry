@@ -43,7 +43,7 @@ typedef enum { AT1846S_TONE_NONE, AT1846S_TONE_CTCSS, AT1846S_TONE_DCS, AT1846S_
 
 #define AT1846S_STATE_COUNT	5
 
-// A radio's own register values for the chip, where its design differs from the defaults (the DM-1701's, 5.2-5.5):
+// A radio's own register values for the chip, where its design differs from the defaults (hardware-dm1701.md 5.2-5.5):
 // the init list, the bandwidth table, reg 0x30 per state and the reg 0x05 rule. Board data; the driver only walks it
 typedef struct {
 	uint8_t reg;		// page 0
