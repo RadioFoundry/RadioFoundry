@@ -7,6 +7,8 @@ A name is a board id from the registry or one of its names (board.toml model and
 optional hyphen and an optional letter suffix ("XR-100UV", "XR100", "xr100"). Allowed:
 
   boards/<id>/                 the radio's own files
+  its family                   boards of one radio (board.toml part_of) share their own places: each may name the
+                               others there
   its own pages                a docs path with the id in it (hardware-<id>.md, <id>-bringup.md, results/<id>/), a
                                board.toml [docs] page no other board shares, and a directory named <id> anywhere
                                (that radio's data, such as codec_maps/<id>/)
@@ -69,15 +71,24 @@ def patterns(radios):
 
 
 def registry_radios(root=ROOT):
-    """{id: names} and {id: its [docs] pages}, read from each boards/<id>/board.toml (no make run needed)."""
+    """{id: names}, {id: its [docs] pages} and {id: part_of}, read from each boards/<id>/board.toml (no make run
+    needed)."""
     sys.path.insert(0, os.path.join(root, "tools"))
     import boards	# noqa: E402  (Python 3.11: tomllib)
-    names, docs = {}, {}
+    names, docs, part_of = {}, {}, {}
     for bid in boards.board_dirs(root):
         data = boards._read_toml(os.path.join(root, "boards", bid, "board.toml"))
         names[bid] = [data["model"]] + list(data.get("also", []))
         docs[bid] = set(data.get("docs", {}).values())
-    return names, docs
+        if data.get("part_of"):
+            part_of[bid] = data["part_of"]
+    return names, docs, part_of
+
+
+def families(ids, part_of):
+    """{id: the ids of its radio}: a board, the one it is part_of and every other part of that one."""
+    root = {b: part_of.get(b, b) for b in ids}
+    return {b: {o for o in ids if root[o] == root[b]} for b in ids}
 
 
 def tracked_files(root):
@@ -110,8 +121,10 @@ def read_allow(root):
     return entries, problems
 
 
-def own(path, bid, docs, shared_docs):
-    """path is the radio's own: its board directory, its pages, or its data."""
+def own(path, bid, docs, shared_docs, family=None):
+    """path is the radio's own: its board directory, its pages, or its data, or those of a board of the same radio."""
+    if family:
+        return any(own(path, b, docs, shared_docs) for b in family.get(bid, {bid}))
     if path.startswith("boards/%s/" % bid):
         return True
     if path in docs.get(bid, ()) and shared_docs.get(path, 0) == 1:
@@ -122,10 +135,11 @@ def own(path, bid, docs, shared_docs):
     return bid in parts[:-1]
 
 
-def check(root, radios, docs):
+def check(root, radios, docs, part_of=None):
     """Problems as strings: each file and line that names a radio where it isn't the subject, and unused ALLOW
-    entries."""
+    entries. part_of ({id: id}) joins the boards of one radio."""
     pats = patterns(radios)
+    family = families(list(radios), part_of or {})
     allow, problems = read_allow(root)
     used = set()
     shared_docs = {}
@@ -139,7 +153,7 @@ def check(root, radios, docs):
             continue
         hits = []
         for bid, pat in pats.items():
-            if not own(path, bid, docs, shared_docs) and pat.search(path):
+            if not own(path, bid, docs, shared_docs, family) and pat.search(path):
                 hits.append((0, bid))
         try:
             with open(os.path.join(root, path), encoding="utf-8") as f:
@@ -150,7 +164,7 @@ def check(root, radios, docs):
         for n, line in enumerate(text.split("\n"), 1):
             line = FILE_REF.sub(" ", line)
             for bid, pat in pats.items():
-                if pat.search(line) and not own(path, bid, docs, shared_docs):
+                if pat.search(line) and not own(path, bid, docs, shared_docs, family):
                     hits.append((n, bid))
         if not hits:
             continue
@@ -224,6 +238,15 @@ def self_test():
         put(ALLOW, "tools/qb7_*.py the stock format it reads is this radio's only\ncore/*.c a stale entry\n")
         ok(check(tmp, radios, docs) == ["%s: core/*.c matches no file that names a radio: remove it" % ALLOW],
            "an allowed file passes; an entry nothing needs fails: %s" % check(tmp, radios, docs))
+        os.remove(os.path.join(tmp, ALLOW))
+        os.remove(os.path.join(tmp, "tools/qb7_migrate.py"))
+        radios["xr100b"] = ["XR-100UV B"]
+        docs["xr100b"] = set()
+        put("boards/xr100/radio.c", "// the QB-7's PA, unlike the XR-100UV B\n")
+        put("tools/odrflash/maps/xr100b/a.json", '{"like": "xr100"}\n')
+        got = check(tmp, radios, docs, {"xr100b": "xr100"})
+        ok(got == ["boards/xr100/radio.c:1: names qb7 (AGENTS.md rule 4: name by function; or %s with a reason)"
+                   % ALLOW], "boards of one radio (part_of) may name each other, another radio still fails: %s" % got)
     finally:
         shutil.rmtree(tmp)
     print("check_generic self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
@@ -238,8 +261,8 @@ def main(argv=None):
     if argv:
         print(__doc__, file=sys.stderr)
         return 2
-    radios, docs = registry_radios()
-    problems = check(ROOT, radios, docs)
+    radios, docs, part_of = registry_radios()
+    problems = check(ROOT, radios, docs, part_of)
     for p in problems:
         print("check_generic: %s" % p, file=sys.stderr)
     if not problems:
