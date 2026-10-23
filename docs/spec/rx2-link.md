@@ -1,6 +1,6 @@
 # The second receiver's link
 
-A radio with two SoCs, each with its own receiver (the GD-88), runs ODR on both. The main SoC (A) has the UI, PTT and
+A radio with two SoCs, each with its own receiver, runs ODR on both. The main SoC (A) has the UI, PTT and
 the transmitter; the other (B) is a second receiver. They talk over a UART with this protocol (`core/rx2/rx2_link.c`).
 The radio core sees B as `board.rx2` ([radio-features.md 2.2](radio-features.md#22-a-second-receiver)).
 
@@ -27,7 +27,7 @@ A5 5A  len  type  seq  payload[len]  crc_hi crc_lo
 | 0x04 | `AUDIO` | A | u8 on, u8 volume (percent) |
 | 0x05 | `STUB` | A | u32 0x53545542. B enters the flash stub on the link UART |
 | 0x06 | `RESET` | A | u32 0x53545542. B restarts |
-| 0x07 | `LED` | A | u8: the LEDs on B's SoC that are on (bit 0 LED 1, bit 1 LED 2). On the GD-88 A's status LEDs are wired to B. A sends it on a change and again when B comes back; B turns them off at `HELLO_REQ` |
+| 0x07 | `LED` | A | u8: the LEDs on B's SoC that are on (bit 0 LED 1, bit 1 LED 2), on a board whose status LEDs are wired to B. A sends it on a change and again when B comes back; B turns them off at `HELLO_REQ` |
 | 0x81 | `HELLO` | B | u8 protocol version (1), u8 flags (bit 0: B decodes DMR), then B's firmware version as text |
 | 0x82 | `STATUS` | B | 13 bytes (2.2) |
 | 0x83 | `ACK` | B | u8 the `TUNE`'s seq, u8 result (0 = on it, else refused) |
@@ -89,5 +89,6 @@ B has no USB or PC connector of its own. Its first install goes through its IAP 
 6. A restarts 10 s after the host's last byte, or after 90 s if the host never sends one. It finds B again with
    `HELLO_REQ`. Bytes from B don't count: its handshake offers go on until the host answers.
 
-The link stays at 115200 baud through the bridge: the host does not switch speed. `stubtool.py --board gd88b`
-does steps 1, 4 and 5. Without a host, B's first stage starts B's application again after the minute, and A restarts.
+The link stays at 115200 baud through the bridge: the host does not switch speed.
+`stubtool.py --board <the second SoC's board>` does steps 1, 4 and 5. Without a host, B's first stage starts B's
+application again after the minute, and A restarts.

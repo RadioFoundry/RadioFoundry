@@ -273,7 +273,7 @@ the SPI NAND. Neither has run on a radio yet.
 | LEDs | sent to B (`RX2_LED`) | PTA16, PTB17 |
 | Storage | settings on the SPI NAND, blocks 1920-1951 | none |
 | Calibration | both copies read, never written | the program-flash copy |
-| Update | the cable, through ODR's first stage | through A's bridge (rx2-link.md 4) |
+| Update | the cable, through ODR's first stage | through A's bridge (rx2-link.md 4): `stubtool.py --board gd88b` |
 | Broadcast FM | the RDA5807-class tuner (`CONFIG_BCAST_FM`, on by default, `bcast_gd88.c`): the shared driver on PTA7 / PTA8, its audio on chain bit 6 with the amplifier | - |
 
 Not supported yet: the IMU, the headset path on its own, the RTC.
