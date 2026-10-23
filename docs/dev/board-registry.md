@@ -17,7 +17,7 @@ Each fact is in one file. A value another file already holds is derived from it,
 | File | Holds |
 |---|---|
 | `boards/<id>/board.toml` | Identity, status, build option text, CI extras, flashing family, bootloader and stub data, codec route, the site's data |
-| `platform/<p>/platform.toml` | ISA, CPU, toolchain, CI group, platform stubs, flash base, sector geometries, codec symbols |
+| `platform/<p>/platform.toml` | ISA, CPU, toolchain, platform stubs, flash base, sector geometries, codec symbols |
 | `boards/<id>/board.mk` | `PLATFORM`, `APP_BASE` (the image address), `HSE_VALUE` (the crystal, for the STM32F4 stub), `BOOT_*`, `BOARD_DIRS`, `BUILD_OPTIONS` and each option's `<NAME>_VALUES`, read with `make print-vars` so the board's and the platform's `config.mk` and their conditionals count. `LDSCRIPT` defaults to `memory.ld` |
 | `boards/<id>/memory.ld` | The application region (`MEMORY FLASH`, from `__app_start`) and the codec symbols (`__codec_*`). Every `*.ld` in the board directory is read for the codec symbols |
 | `boards/<id>/*.c` | The `board_t` `.name` values: the names the debug link reports |
@@ -198,7 +198,7 @@ example `ARM_GCC_VERSION`) to a literal other than the pin: take it from `platfo
 | `tools/boards.py builds <id> [--extra]` | The board's builds besides the default, or its `[ci]` extras |
 | `tools/boards.py json [--for all\|odrflash\|build]` | A merged view, below |
 | `tools/boards.py check` | Every inconsistency; ci.sh's registry step runs it |
-| `tools/boards.py docs [--check] [--floor REF]` | Writes the generated blocks of the README, the user manual's radio pages, the feature matrix and the survey's Port cells (`tools/registry_docs.py`). `--check` lists the stale ones instead; `--floor REF` fails when a radio's marks or status in the README read lower than at commit `REF`. ci.sh runs `--check --floor origin/main` |
+| `tools/boards.py docs [--check] [--floor REF]` | Writes the generated blocks of the README, the user manual's radio pages, the feature matrix, the bug report form's and the pull request template's radio lists, and the survey's Port cells (`tools/registry_docs.py`). `--check` lists the stale ones instead; `--floor REF` fails when a radio's marks or status in the README read lower than at commit `REF`. ci.sh runs `--check --floor origin/main` |
 | `tools/boards.py self-test` | The loader's own tests |
 
 `make registry` regenerates `tools/odrflash/odrflash/registry.json` when a source changed. `make` does too, before
