@@ -173,13 +173,20 @@ useful in commercial service and to hams alike.
 
 **How can I help?**
 
-Open an issue or pull request, or donate a new radio model for testing.
+Any way you can:
+
+- **Test and report.** Run ODR on your radio and [report what breaks](https://github.com/sfowlr/OpenDigitalRadio/issues/new?template=bug_report.yml). If the radio restarted,
+  include the crash log from **Settings > Advanced > Crash log** ([settings](docs/user/12-settings.md#crash-log)).
+- **Ask.** [Request a feature](https://github.com/sfowlr/OpenDigitalRadio/issues/new?template=feature_request.yml) or [a radio](https://github.com/sfowlr/OpenDigitalRadio/issues/new?template=radio_request.yml) you'd like supported.
+- **Contribute.** Send pull requests for code or docs ([contributing](docs/dev/contributing.md)).
+- **Donate or lend a radio.** This helps the most, especially older models that are hard to find now, because every
+  port needs the hardware on the bench.
 
 **Was this project AI-generated?**
 
-No. It is the result of thousands of hours of human work by several contributors: tearing down radios, reverse
-engineering the hardware, designing the architecture and testing on the air. AI serves as a pair programmer. It speeds
-up bringing up each new radio, and it makes a project this ambitious possible to build and sustain.
+No. This project is the result of thousands of hours of combined human effort from several contributors, spent on
+radio teardowns, reverse engineering, software architecture, and testing. AI was used as a pair programmer to speed up
+support for additional radios and to make the project's ambitious scope possible and sustainable.
 
 ## Clean room and licensing
 
