@@ -45,6 +45,10 @@
   "split_duplex": {
    "result": "pass",
    "note": "each half alone (one radio), and the transmit half of a pair"
+  },
+  "net_tcp": {
+   "result": "pass",
+   "note": "the network services over PPP"
   }
  }
 }

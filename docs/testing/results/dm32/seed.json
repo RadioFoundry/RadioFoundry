@@ -37,6 +37,10 @@
   "split_duplex": {
    "result": "pass",
    "note": "each half alone (one radio), and the receive half of a pair"
+  },
+  "gps": {
+   "result": "pass",
+   "note": "GPS data from the receiver; a fix not checked yet"
   }
  }
 }
