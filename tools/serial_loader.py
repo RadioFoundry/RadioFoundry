@@ -263,7 +263,7 @@ class Flasher:
         self.port.write(bytes([0x4D, 0, 0, 0, 1]))
         step2 = self.read_exact(3, self.step_timeout)
         self.port.write(bytes([ACK]))
-        step3 = self.read_exact(32, self.step_timeout)  # up to 32 bytes, as many as arrive (the DM-32 sends 9)
+        step3 = self.read_exact(32, self.step_timeout)  # up to 32 bytes, as many as arrive (one loader sends 9)
         return step2, step3
 
     def send_header(self, name, size):

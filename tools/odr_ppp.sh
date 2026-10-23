@@ -3,7 +3,7 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
 # IPv4 to a radio over its serial host port with pppd (CONFIG_NET_PPP builds; docs/spec/ppp.md): for radios that
-# reach a computer only through a USB-serial cable (DM-32UV, GD-88), or as a fallback on the USB serial port.
+# reach a computer only through a USB-serial cable, or as a fallback on the USB serial port.
 #
 #   sudo tools/odr_ppp.sh /dev/ttyUSB0                 Linux
 #   sudo tools/odr_ppp.sh /dev/cu.usbserial-XXXX       macOS (/usr/sbin/pppd)

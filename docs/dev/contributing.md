@@ -43,7 +43,7 @@ names or dates.
 | `ci` | the CI workflows and `tools/ci.sh` | `ci/nightly-dm32` |
 
 The area is the subsystem, matching the commit subjects: `aprs`, `dmr`, `fm`, `sfr`, `ui`, `hotspot`, `net`, `cps`,
-`dm1701`, and so on.
+a board id for one radio's code, and so on.
 
 ### Pull request titles
 
@@ -51,7 +51,7 @@ Pull requests are squash merged, so the title becomes the commit subject on `mai
 subject: `<Area>: <what changed>`, in the present tense, no trailing period.
 
 - `APRS: a Path row on the APRS page`
-- `DM-1701: FM receive audio for the AFSK demodulator`
+- `<Model>: FM receive audio for the AFSK demodulator` (one radio's change, under its board.toml model)
 - `Fix: SFR repeats a late-entry call's first voice burst`
 
 ### What a pull request must have

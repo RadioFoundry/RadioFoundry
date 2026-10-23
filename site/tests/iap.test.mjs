@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The DB25-D pieces of the web flasher: the codec carved from a plain stock file against hrc7000_codec.py (fixtures
+// The IAP route of the web flasher (the stock console and the vendor IAP loader): the codec carved from a plain stock file against hrc7000_codec.py (fixtures
 // from site/tests/fixtures.py), the stub loaded through the stock console and the IAP write against simulated radios, and the stub choice by RAM span.
 
 import { test } from "node:test";

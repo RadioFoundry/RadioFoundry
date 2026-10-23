@@ -100,7 +100,7 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
 6. DMR modem and the codec: receive, then transmit, checked on the SDR bench.
 7. CPS, so qdmr can program it.
 
-[docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) is this list made concrete for the DM-32UV.
+[docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) is this list made concrete for one radio.
 
 ## Bring-up records
 

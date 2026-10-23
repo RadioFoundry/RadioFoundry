@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
-# Runs a command in the DM-32 CI image (build.sh) on this source tree, e.g.
-#   tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm32
-#   ODR_CSKY_IMAGE=ghcr.io/sfowlr/odr-csky-gcc14:20261011b tools/docker/csky-toolchain/run.sh make BOARD=dm32
+# Runs a command in the C-SKY CI image (build.sh) on this source tree, e.g.
+#   tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board <radio>
+#   ODR_CSKY_IMAGE=ghcr.io/sfowlr/odr-csky-gcc14:20261011b tools/docker/csky-toolchain/run.sh make BOARD=<radio>
 #
 # The image is $ODR_CSKY_IMAGE (default platform/hrc7000/platform.toml [toolchain] image, the tag build.sh's image
 # gets on the Gitea runner).

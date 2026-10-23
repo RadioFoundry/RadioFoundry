@@ -34,7 +34,7 @@ int main(int argc, char **argv)
 	data.uptimeMs = 987650;
 	data.dmrId = 3100001;
 	strcpy(data.name, "N0CALL");
-	data.board = "dm1701";
+	data.board = "board1";
 	data.firmware = "peer-test";
 	data.batteryMv = 7600;
 	data.batteryPct = 90;

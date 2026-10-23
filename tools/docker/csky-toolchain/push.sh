@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
-# Pushes the DM-32 CI image (build.sh) to a registry, run on the Docker host that has the image:
+# Pushes the C-SKY CI image (build.sh) to a registry, run on the Docker host that has the image:
 #   tools/docker/csky-toolchain/push.sh ghcr.io/sfowlr/odr-csky-gcc14             (GitHub Packages)
 #   tools/docker/csky-toolchain/push.sh docker.io/<user>/odr-csky-gcc14            (Docker Hub)
 #   SRC=odr/csky-gcc14:20261011b tools/docker/csky-toolchain/push.sh REPO [TAG...]
