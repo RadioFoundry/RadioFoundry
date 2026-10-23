@@ -21,6 +21,13 @@ short version plus what an agent tends to get wrong.
 4. **Generic first.** `core/` never includes a board or platform header and never tests a radio define. Radio
    differences go through `board_t` and the `hal/` interfaces ([docs/dev/architecture.md](docs/dev/architecture.md)).
    Chip drivers go in `drivers/`, SoC code in `platform/`, a radio's wiring in `boards/<radio>/`.
+
+   **Generic docs** never name a radio or its pins. They are `docs/spec/*` other than `hardware-*`, `docs/user/*`
+   other than `23-radios.md`, `docs/build-config.md` and `docs/dev/*`. Describe what a board provides (`CAP_*`,
+   `board_t` fields) and link [docs/feature-matrix.md](docs/feature-matrix.md) for which radios have it. A radio's
+   facts go only on its own hardware, bring-up or radio-reference page, and those pages link to the shared spec, not
+   to another radio's page. `tools/check_generic.py` checks this. Its allowlist names the generic docs not yet
+   rewritten, one path each; don't add one.
 5. **Flash costs go behind a switch.** A feature that adds real code size gets a `CONFIG_` switch in
    `config/features.mk` and `core/config.h` ([docs/build-config.md](docs/build-config.md)). The build must stay
    clean with the switch off. `BOARD_UNSUPPORTED` only for what the hardware can't do; code not written yet is

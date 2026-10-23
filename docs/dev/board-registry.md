@@ -100,7 +100,7 @@ example). `board.mk` holds the build's side: `BUILD_OPTIONS := BAND` and `BAND_V
 | `values` | A list of `{ id, title, text, board_name }`: the make value, its label and description, the name the radio reports on the debug link |
 
 The Makefile defines `ODR_<NAME>_<VALUE>` as 1 or 0 for every value. A value other than the default adds `-<value>`
-to the build directory and the image: `make BOARD=md380 BAND=vhf` writes `build/md380-vhf/odr_md380-vhf.bin`.
+to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<id>-vhf/odr_<id>-vhf.bin`.
 [Building](building.md#hardware-build-options) has the user side.
 
 ### [ci]
@@ -228,15 +228,15 @@ from outside the tree. It is a stable interface: a change that breaks a reader c
 
 Each build:
 
-| Key | Example (MD-380, VHF) |
+| Key | Example (a board `<id>` with `BAND=vhf`) |
 |---|---|
 | `options` | `{"BAND": "vhf"}` |
-| `make` | `["BOARD=md380", "BAND=vhf"]`: the make arguments; add `VARIANT=<name>` for a variant |
-| `release` | `["--board", "md380", "--build-option", "BAND=vhf"]`: the `tools/release.py` arguments; add `--variant <name>` |
-| `image_id` | `md380-vhf` |
-| `build_dir` | `build/md380{variant}-vhf` |
-| `image` | `build/md380{variant}-vhf/odr_md380-vhf.bin`: what make writes and the release carries |
-| `release_image`, `release_manifest` | `odr-md380{variant}-vhf-{version}.bin` and `.json`: what `tools/release.py` writes |
+| `make` | `["BOARD=<id>", "BAND=vhf"]`: the make arguments; add `VARIANT=<name>` for a variant |
+| `release` | `["--board", "<id>", "--build-option", "BAND=vhf"]`: the `tools/release.py` arguments; add `--variant <name>` |
+| `image_id` | `<id>-vhf` |
+| `build_dir` | `build/<id>{variant}-vhf` |
+| `image` | `build/<id>{variant}-vhf/odr_<id>-vhf.bin`: what make writes and the release carries |
+| `release_image`, `release_manifest` | `odr-<id>{variant}-vhf-{version}.bin` and `.json`: what `tools/release.py` writes |
 
 In the names, `{variant}` is empty for the full build and `-<name>` for a variant; `{version}` is the release tag. One
 rule makes all of these names: `tools/odrflash/odrflash/names.py`. The Makefile follows it too, and `check` compares
@@ -246,7 +246,7 @@ make's `BUILD` and `TARGET` with the view for every build.
 
 AGENTS.md rule 4 says only a radio's own files carry its name. `tools/check_generic.py` (run by
 `tools/boards.py check`) enforces it. The names come from the registry: each board's id, `model` and `also`, matched
-without regard to case, hyphens or a letter suffix (`DM-32UV`, `DM32`, `dm32`). A maker's word in front is dropped.
+without regard to case, hyphens or a letter suffix (`XR-100UV`, `XR100`, `xr100`). A maker's word in front is dropped.
 
 | Allowed place | What it covers |
 |---|---|
