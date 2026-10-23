@@ -455,19 +455,7 @@ def test_auto_lock(home):
         r.wait_for(lambda x: x.get("ui.locked") == "1", timeout=40.0, interval=1.0, sections=("link",),
                    what="locked after 30 s idle")
     finally:
-        if ui(r).get("ui.locked") == "1":
-            r.press("quick", LONG)
-            r.wait_for(lambda x: x.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
-        r.press("ok")
-        r.press("7")
-        r.press("4")
-        r.press("down")
-        r.press("down")
-        for _ in range(4):
-            if r.view(["storage"]).get("settings.auto_lock_s") == "0":
-                break
-            r.press("ok")
-        r.press("back", LONG)
+        r.auto_lock_off()	# go_home() unlocks the keys first; the session start also does this after a cut-short run
     r.wait_for(lambda x: x.get("settings.auto_lock_s") == "0", sections=("storage",), what="auto lock off again")
 
 
