@@ -102,7 +102,7 @@ int main(void)
 	}
 	CHECK(s.ignored == 200u);
 
-	// The DM-32 during PPP (#126): a late key scan catches up with two scans in the same millisecond, both on the low
+	// During PPP (#126): a late key scan catches up with two scans in the same millisecond, both on the low
 	// bits of the first byte of a burst, 65 ms after the last byte. Not a press; the next scan on time finds the byte
 	// arrived and the gate shut
 	CHECK(!shared_ptt_pressed(&s, true, true, 4935, 5000));

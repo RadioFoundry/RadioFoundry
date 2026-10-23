@@ -5,8 +5,8 @@
 // low, which the UART sees as a break, never as a good byte. A low pin counts as pressed only once no good byte has
 // arrived for SHARED_PTT_QUIET_MS, and it has read low (and not gated) for SHARED_PTT_HOLD_MS. The hold is time, not
 // scans: a key scan that ran late catches up with scans back to back, and two of them in the same millisecond can land
-// on the low bits of a host byte that starts a burst after a quiet gap, before the UART has reported it (seen on a
-// DM-32UV during PPP, hardware-dm32.md 6.2).
+// on the low bits of a host byte that starts a burst after a quiet gap, before the UART has reported it (seen during
+// PPP, hardware-dm32.md 6.2).
 #ifndef SHARED_PTT_H
 #define SHARED_PTT_H
 
