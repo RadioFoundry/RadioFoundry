@@ -3,7 +3,7 @@
 // MD-380 radio: SKY72310 synthesizer + GT3136 receiver + HR_C5000 (the HR_C6000 driver in its C5000 variant) + RF path
 // GPIOs + the two DACs + calibration (docs/spec/hardware-md380.md 4-8, 11). Nothing here has run on a radio.
 //
-// Unlike the DM-1701 there is no RF transceiver chip: the MCU tunes the synthesizer itself, selects the receive or
+// Unlike the other STM32 radios there is no RF transceiver chip: the MCU tunes the synthesizer itself, selects the receive or
 // transmit VCO, switches the receiver and transmitter supplies, and drives the PA power loop from DAC1 (which tunes
 // the receiver front end while receiving). The HR_C5000 does the FM and DMR modulation (two-point, MOD1 to the VCO,
 // MOD2 to the reference) and takes the receiver's IF for DMR.

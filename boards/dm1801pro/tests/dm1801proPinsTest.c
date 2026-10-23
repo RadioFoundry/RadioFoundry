@@ -61,7 +61,7 @@ int main(void)
 		CHECK(r.mic_path == !r.spk_source);
 	}
 	// Any transmission (FM or DMR) has PTB14 high: the microphone on the codec ADC. DMR transmit with PTB14 low (the
-	// DM-32UV's DMR level) sent near-silent voice (2026-10-22)
+	// other HR_C7000 boards' DMR level) sent near-silent voice (2026-10-22)
 	CHECK(dm1801pro_audio_route(false).mic_path);
 	CHECK(!dm1801pro_audio_route(false).spk_source);
 

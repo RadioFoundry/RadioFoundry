@@ -25,7 +25,7 @@ enum { CH_VOLUME = MD380_ADC_VOLUME, CH_BATTERY = MD380_ADC_BATTERY, CH_MIC = MD
 #define SCANS			8		// about 330 us per scan at 9 MHz ADC clock and 480-cycle sampling: 2.7 ms window
 #endif
 
-#define SETTLE_MS		1500		// readings settle after power-up (DM-1701 experience)
+#define SETTLE_MS		1500		// readings settle after power-up (experience on the other STM32 radios)
 #define FILTER_MS		10000		// time constant of the displayed battery voltage
 
 // Battery divider (hardware-md380.md 10.2, ?): raw counts per 0.1 V, x 10

@@ -59,7 +59,7 @@ steps = [
 	"Release the keys.",
 ]
 
-# The TYT bootloader takes the same DFU protocol and sector order as the DM-1701's, with its own key
+# The TYT bootloader takes the same DFU protocol and sector order as the other STM32 radios', with its own key
 [flash.dfu]
 vid = 0x0483
 pid = 0xDF11

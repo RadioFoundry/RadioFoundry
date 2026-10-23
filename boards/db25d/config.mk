@@ -3,7 +3,7 @@
 # DB25-D feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-db25d.md 9): analog FM
 # on the BK4819s and the host link on UART1, settings stored on the SPI NAND, DMR receive and transmit on the shared
 # modem glue with the codec recipe. The open-firmware CPS (qdmr, tools/cps_client.py) runs on the host link over the
-# stored codeplug (hardware-db25d.md 6.6, 9). RAM is the limit, as on the DM-32UV: ODR has 216,576 B below the codec
+# stored codeplug (hardware-db25d.md 6.6, 9). RAM is the limit, as on the other HR_C7000 boards: ODR has 216,576 B below the codec
 # window (memory.ld). The switches that are off are listed below; USB, PPP and TCP_CONNS follow the platform
 # (platform/hrc7000/config.mk)
 # The core's storage over ODR's NAND block range (hardware-db25d.md 6.6)
@@ -62,7 +62,7 @@ CONFIG_APRS_IGATE ?= n
 # Not wired yet: the RDA5802N (CAP_BCAST_FM) and the air band
 CONFIG_BCAST_FM ?= n
 CONFIG_AM_RX ?= n
-# 160x128 like the DM-1701, which builds without the large font
+# 160x128 like the other 160x128 radios, which build without the large font
 CONFIG_FONT_XL ?= n
 # What the board lacks or can't do yet, one switch per line with the reason (tools/boards.py checks there is
 # one): ci's maximal configuration leaves these off. USB and USB_NETWORK are the platform's

@@ -95,7 +95,7 @@ static void load_frequencies(void)
 }
 
 // Usable when the power rows are neither erased nor zero and low < high at every point, and no gain or tuning row is
-// erased (a gain row may be all zero: the DM-1701's factory table has one)
+// erased (a gain row may be all zero: one radio's factory table has one)
 static bool table_sane(void)
 {
 	const uint8_t *low = &table[ROW_LOW], *high = &table[ROW_HIGH];

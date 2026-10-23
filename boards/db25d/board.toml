@@ -35,7 +35,7 @@ storage work on the radio. Open: the older FD6818 batches and the Retevis RT73."
 release = "stable"
 
 # The vendor IAP loader (0x03000000..0x0300BFFF) is never written. ODR's first stage fills the sector at 0x0300C000
-# (board.mk BOOT_*), the application follows it, the codec slot is the DM-32UV's (boards/db25d/memory.ld). The web flasher (IAP
+# (board.mk BOOT_*), the application follows it, the codec slot is the other HR_C7000 boards' (boards/db25d/memory.ld). The web flasher (IAP
 # loader, or the stub from ODR) and stub/stubtool.py flash it
 [flash]
 family = "serial-iap"

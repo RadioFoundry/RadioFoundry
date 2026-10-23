@@ -21,7 +21,7 @@
 #define MIC_GAIN_DB		11u		// GCR_ADCL at init (9.1)
 #define DMR_PA_DELAY_US		28000u		// "DMR PA" default (8.6)
 // FM TX limiter (FM_DEV_COEF b23:16, hrc7000_t.fm_tx_limit) at 12.5 / 25 kHz: the driver's default 4 holds mic audio
-// to about 1.65 kHz peak at 25 kHz (modem-hrc7000.md 8.4). The DM-1801 Pro's values; at 12.5 kHz a loud whistle and
+// to about 1.65 kHz peak at 25 kHz (modem-hrc7000.md 8.4). The values measured on the other FD6818 board; at 12.5 kHz a loud whistle and
 // voice peaked at 1.3 kHz (99.9 %) on the SDR bench, so the 12.5 kHz value may still be low. 25 kHz not measured yet
 #define FM_TX_LIMIT_12K5	5u
 #define FM_TX_LIMIT_25K		0x0Fu
@@ -375,8 +375,8 @@ static void status(radio_status_t *st)
 
 // The speaker hears one of two sources (PTB15, checked on the radio): 1 = the FD6818's audio output directly (FM
 // receive), 0 = the HR_C7000's codec output (beeps, DMR voice). PTB15 = 1 also takes the FD6818's audio off the
-// HR_C7000's ADC, so DMR receive finds no sync while it is high. PTB14 is driven as its complement, as on the DM-1801
-// Pro; during a transmission the TX path owns PTB14 (the microphone route).
+// HR_C7000's ADC, so DMR receive finds no sync while it is high. PTB14 is driven as its complement, as on the other
+// FD6818 board; during a transmission the TX path owns PTB14 (the microphone route).
 //
 // While APRS listens the HR_C7000 must hear the FD6818 all the time (its FM receive audio is what the demodulator
 // gets, squelch open or not), so PTB15 stays 0 and an open squelch plays FM through the HR_C7000's own FM playback

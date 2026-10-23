@@ -54,7 +54,7 @@
 #define PIN_BEEP_PWM		GPIOC, GPIO_PIN_8	// BEEP, TIM8_CH3 (unused: beeps go through the HR_C5000)
 #define PIN_LCD_BACKLIGHT	GPIOC, GPIO_PIN_6	// LAMP, TIM8_CH1 PWM
 
-// HR_C5000: bit-banged configuration port, voice port on SPI2, three interrupt lines (as the DM-1701, but MOSI and
+// HR_C5000: bit-banged configuration port, voice port on SPI2, three interrupt lines (as the HR_C6000 radios, but MOSI and
 // MISO are the other way round and MOSI also goes to the synthesizer)
 #define PIN_C5000_CS		GPIOE, GPIO_PIN_2
 #define PIN_C5000_CLK		GPIOC, GPIO_PIN_13	// idles low; the chip samples MOSI on the falling edge
@@ -77,7 +77,7 @@
 #define PIN_GPS_POWER		GPIOD, GPIO_PIN_8
 #define PIN_GPS_RX		GPIOD, GPIO_PIN_9
 
-// LCD on FSMC bank 1 (data lines double as keypad columns), the same wiring as the DM-1701
+// LCD on FSMC bank 1 (data lines double as keypad columns), the same wiring as the other STM32 radios
 #define PIN_LCD_CS		GPIOD, GPIO_PIN_6
 #define PIN_LCD_RST		GPIOD, GPIO_PIN_13
 #define LCD_CMD_ADDR		((volatile uint8_t *)0x60000000)
