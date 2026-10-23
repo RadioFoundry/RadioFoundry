@@ -14,6 +14,9 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/dl_fmt.h"
 #include "settings/settings.h"
+#include "ui/ui.h"
+#include "input/input.h"
+#include "net/webctl.h"
 #include "aprs/aprs.h"
 #include "net/aprsis.h"
 #include "net/http_assets.h"
@@ -635,10 +638,281 @@ static void test_fuzz(void)
 	       got_frames - frames0, iters / 3, answered, iters);
 }
 
+#if CONFIG_NET_WEBCTL
+// ---- fake UI and input task (the web control's keys) ----
+static uint32_t ui_draws;
+void ui_get_status(ui_app_status_t *s) { memset(s, 0, sizeof(*s)); s->draws = ui_draws; }
+uint8_t ui_backlight(void) { return 80; }
+static uint32_t inj_mask, inj_hold, inj_released;
+static bool inj_ptt, inj_busy;
+static uint32_t inj_ptt_max, inj_ptt_downs;
+static int inj_enc;
+input_inject_t input_inject_keys(uint32_t mask, uint32_t hold_ms)
+{
+	if (inj_busy || inj_mask != 0) {
+		return INPUT_INJ_BUSY;
+	}
+	inj_mask = mask;
+	inj_hold = hold_ms;
+	return INPUT_INJ_OK;
+}
+void input_inject_release(uint32_t mask) { inj_released |= mask; inj_mask &= ~mask; }
+input_inject_t input_inject_ptt(bool down, uint32_t max_ms)
+{
+	inj_ptt_downs += down && !inj_ptt;
+	inj_ptt = down;
+	inj_ptt_max = max_ms;
+	return INPUT_INJ_OK;
+}
+input_inject_t input_inject_action(uint8_t action, uint8_t gesture, int8_t value)
+{
+	if (action == ACT_ENC_STEP && gesture == GESTURE_DOWN) {
+		inj_enc += value;
+		return INPUT_INJ_OK;
+	}
+	return INPUT_INJ_BAD;
+}
+
+// A client frame, masked (RFC 6455 5.3)
+static void ws_send(peer_t *p, uint8_t op, const void *data, int len)
+{
+	uint8_t f[200];
+	static const uint8_t mask[4] = { 0x12, 0x34, 0x56, 0x78 };
+	f[0] = (uint8_t)(0x80 | op);
+	f[1] = (uint8_t)(0x80 | len);
+	memcpy(f + 2, mask, 4);
+	for (int i = 0; i < len; i++) {
+		f[6 + i] = ((const uint8_t *)data)[i] ^ mask[i & 3];
+	}
+	peer_send(p, f, 6 + len);
+}
+
+static void ws_text(peer_t *p, const char *s)
+{
+	ws_send(p, 0x1, s, (int)strlen(s));
+}
+
+// The server's frames in p->rx from *at on: the next one's opcode (-1: none complete), its payload copied to out
+static int ws_next(peer_t *p, int *at, char *out, int max, int *len)
+{
+	const uint8_t *b = p->rx + *at;
+	int n = p->rxn - *at;
+	if (n < 2) {
+		return -1;
+	}
+	CHECK((b[0] & 0x80) && !(b[1] & 0x80));	// final, unmasked
+	int l = b[1] & 0x7F, h = 2;
+	if (l == 126) {
+		if (n < 4) {
+			return -1;
+		}
+		l = (b[2] << 8) | b[3];
+		h = 4;
+	}
+	if (n < h + l) {
+		return -1;
+	}
+	int c = l < max - 1 ? l : max - 1;
+	memcpy(out, b + h, (size_t)c);
+	out[c] = 0;
+	*len = l;
+	*at += h + l;
+	return b[0] & 0x0F;
+}
+
+// The last text frame holding needle since *at (frames before it skipped); false when none
+static bool ws_find(peer_t *p, int *at, const char *needle, char *out, int max)
+{
+	int op, len;
+	bool found = false;
+	char tmp[1024];
+	while ((op = ws_next(p, at, tmp, sizeof tmp, &len)) >= 0) {
+		if (op == 0x1 && strstr(tmp, needle)) {
+			snprintf(out, (size_t)max, "%s", tmp);
+			found = true;
+		}
+	}
+	return found;
+}
+
+static bool ws_open(peer_t *p, uint32_t ip, uint16_t port, const char *extra)
+{
+	char req[300];
+	snprintf(req, sizeof req, "GET /ws HTTP/1.1\r\nHost: radio\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+		 "sec-WebSocket-KEY:  dGhlIHNhbXBsZSBub25jZQ==\r\n%sSec-WebSocket-Version: 13\r\n\r\n", extra);
+	if (!peer_connect(p, ip, port, NET_HTTP_PORT)) {
+		return false;
+	}
+	peer_send(p, req, (int)strlen(req));
+	run_for(20);
+	p->rx[p->rxn] = 0;
+	return strncmp((char *)p->rx, "HTTP/1.1 101 Switching Protocols\r\n", 34) == 0;
+}
+
+static void test_webctl(void)
+{
+	static peer_t a, b, far;
+	char m[1024];
+	int at, op, len;
+
+	memset(&fake_view, 0, sizeof(fake_view));
+	fake_view.ch.rx_hz = 446006250;
+	fake_view.leds = RADIO_LED_GREEN;
+
+	// The handshake (RFC 6455 1.3's example key, the header name in any case), then the hello and the status
+	CHECK(ws_open(&a, net_test_host_ip(), 53000, ""));
+	CHECK(strstr((char *)a.rx, "\r\nUpgrade: websocket\r\n") && strstr((char *)a.rx, "\r\nConnection: Upgrade\r\n"));
+	CHECK(strstr((char *)a.rx, "\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"));
+	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1);
+	CHECK(strcmp(m, "{\"hello\":1,\"control\":true,\"audio\":false,\"keys\":[3,7],\"ptt\":7}") == 0);
+	run_for(300);
+	CHECK(ws_find(&a, &at, "\"rx_hz\":446006250", m, sizeof m));
+	CHECK(strstr(m, "\"led_green\":true,\"led_red\":false,\"backlight\":80,\"draws\":0"));
+	// Unchanged: not sent again; a change goes out within one status period
+	run_for(600);
+	CHECK(!ws_find(&a, &at, "\"rx_hz\"", m, sizeof m) || strstr(m, "\"uptime_s\":11"));	// only the second ticking
+	ui_draws = 5;
+	fake_view.leds = RADIO_LED_RED;
+	run_for(300);
+	CHECK(ws_find(&a, &at, "\"draws\":5", m, sizeof m) && strstr(m, "\"led_red\":true"));
+	// /status has the same fields
+	CHECK(http_get(&b, 53001, "GET /status HTTP/1.0\r\n\r\n") > 0 && strstr(body_of(&b), "\"led_red\":true"));
+
+	// One client: a second gets 503; a request that is no handshake 400
+	CHECK(http_get(&b, 53002, "GET /ws HTTP/1.1\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0);
+	CHECK(strstr((char *)b.rx, "HTTP/1.0 503 Service Unavailable"));
+	CHECK(http_get(&b, 53003, "GET /ws HTTP/1.1\r\n\r\n") > 0 && strstr((char *)b.rx, " 400 "));
+	CHECK(http_get(&b, 53004, "GET /ws HTTP/1.1\r\nSec-WebSocket-Key: short==\r\n\r\n") > 0 && strstr((char *)b.rx, " 400 "));
+
+	// Keys: down holds (capped by the input task), up releases; one at a time; keys not on the radio refused
+	ws_text(&a, "d3");
+	CHECK(inj_mask == 8u && inj_hold == INPUT_INJECT_MAX_MS);
+	ws_text(&a, "u3");
+	CHECK(inj_mask == 0 && inj_released == 8u);
+	inj_released = 0;
+	inj_busy = true;
+	ws_text(&a, "d3");
+	CHECK(inj_mask == 0);
+	ws_text(&a, "u3");
+	CHECK(inj_released == 0);	// it never went down
+	inj_busy = false;
+	ws_text(&a, "d4");
+	ws_text(&a, "d99");
+	ws_text(&a, "dx");
+	ws_text(&a, "z1");
+	CHECK(inj_mask == 0);
+	ws_text(&a, "e-2");
+	ws_text(&a, "e3");
+	CHECK(inj_enc == 1);
+
+	// PTT: held for WEBCTL_PTT_HOLD_MS, re-armed by each repeat, released at WEBCTL_PTT_MAX_MS and not again until
+	// the page lets go
+	ws_text(&a, "d7");
+	CHECK(inj_ptt && inj_ptt_max == WEBCTL_PTT_HOLD_MS && inj_ptt_downs == 1);
+	for (int i = 0; i < 91; i++) {
+		run_for(2000);
+		ws_text(&a, "d7");
+	}
+	CHECK(!inj_ptt && inj_ptt_downs == 1);
+	ws_text(&a, "u7");
+	ws_text(&a, "d7");
+	CHECK(inj_ptt && inj_ptt_downs == 2);
+	ws_text(&a, "u7");
+	CHECK(!inj_ptt);
+
+	// A ping is answered with its payload
+	at = a.rxn;
+	ws_send(&a, 0x9, "hi", 2);
+	run_for(10);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0xA && len == 2 && strcmp(m, "hi") == 0);
+
+	// The server pings; a client that answers nothing for WEBCTL_IDLE_MS is dropped, with its keys released
+	ws_text(&a, "d3");
+	ws_text(&a, "d7");
+	CHECK(inj_mask == 8u && inj_ptt);
+	at = a.rxn;
+	run_for(WEBCTL_PING_MS + 10);
+	bool pinged = false;
+	while ((op = ws_next(&a, &at, m, sizeof m, &len)) >= 0) {
+		pinged |= op == 0x9;
+	}
+	CHECK(pinged);
+	run_for(WEBCTL_IDLE_MS);
+	CHECK(a.reset && inj_mask == 0 && !inj_ptt);
+	run_for(3000);
+
+	// Receive audio: only after "a1", only while the squelch is open, 20 ms little-endian frames
+	int16_t pcm[WEBCTL_AUDIO_SAMPLES];
+	for (int i = 0; i < (int)WEBCTL_AUDIO_SAMPLES; i++) {
+		pcm[i] = (int16_t)(i * 300 - 20000);
+	}
+	CHECK(ws_open(&a, net_test_host_ip(), 53010, ""));
+	run_for(300);
+	at = a.rxn;
+	webctl_audio(pcm, WEBCTL_AUDIO_SAMPLES, true);
+	run_for(10);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) < 0);
+	ws_text(&a, "a1");
+	at = a.rxn;
+	webctl_audio(pcm, WEBCTL_AUDIO_SAMPLES, false);
+	webctl_audio(pcm, WEBCTL_AUDIO_SAMPLES, true);
+	run_for(10);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x2 && len == 2 * (int)WEBCTL_AUDIO_SAMPLES);
+	CHECK((uint8_t)m[0] == (uint8_t)(pcm[0] & 0xFF) && (uint8_t)m[1] == (uint8_t)((uint16_t)pcm[0] >> 8));
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) < 0);
+
+	// The client closes (code 1001): the code comes back and the connection ends; /ws is free again
+	ws_text(&a, "d3");
+	at = a.rxn;
+	ws_send(&a, 0x8, "\x03\xe9", 2);
+	run_for(20);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x8 && len == 2 && (uint8_t)m[0] == 0x03 && (uint8_t)m[1] == 0xE9);
+	CHECK(a.fin && inj_mask == 0);
+	peer_close(&a);
+	run_for(3000);
+
+	// The tab closes without a close frame (TCP FIN): keys released
+	CHECK(ws_open(&a, net_test_host_ip(), 53011, ""));
+	ws_text(&a, "d7");
+	CHECK(inj_ptt);
+	peer_close(&a);
+	run_for(20);
+	CHECK(!inj_ptt && a.fin);
+	run_for(3000);
+
+	// A protocol error (an unmasked frame): close 1002
+	CHECK(ws_open(&a, net_test_host_ip(), 53012, ""));
+	run_for(300);
+	at = a.rxn;
+	peer_send(&a, "\x81\x02u3", 4);
+	run_for(20);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x8 && len == 2 && (uint8_t)m[0] == 0x03 && (uint8_t)m[1] == 0xEA);
+	CHECK(a.fin);
+	peer_close(&a);
+	run_for(3000);
+
+	// From beyond the host: status only, no keys
+	CHECK(ws_open(&far, 0xC0000201u, 53013, ""));
+	at = (int)(strstr((char *)far.rx, "\r\n\r\n") + 4 - (char *)far.rx);
+	CHECK(ws_next(&far, &at, m, sizeof m, &len) == 0x1 && strstr(m, "\"control\":false"));
+	ws_text(&far, "d3");
+	ws_text(&far, "d7");
+	ws_text(&far, "e1");
+	CHECK(inj_mask == 0 && !inj_ptt && inj_enc == 1);
+	peer_close(&far);
+	run_for(3000);
+	CHECK(tcp_open_count() == 0);
+}
+#endif
+
 void tests_run(void)
 {
 	test_kiss();
 	test_http();
+#if CONFIG_NET_WEBCTL
+	test_webctl();
+#endif
 	test_rigctl();
 	test_aprsis();
 	test_fuzz();

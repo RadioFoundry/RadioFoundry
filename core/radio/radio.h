@@ -206,9 +206,13 @@ typedef struct {
 } radio_roam_view_t;
 #endif
 
+#define RADIO_LED_GREEN		0x01u	// radio_view_t.leds
+#define RADIO_LED_RED		0x02u
+
 typedef struct {
 	radio_state_t state;
 	uint8_t tx_deny;	// tx_deny_t, while RS_TX_DENIED
+	uint8_t leds;		// RADIO_LED_* bits: what the radio core drives its LEDs to (board.power->led)
 	bool vfo;		// tuning a frequency by hand rather than a channel
 	uint8_t vfo_index;	// which VFO: 0, or 1 the second (dual watch gives each channel its own)
 	uint16_t zone_index;

@@ -165,7 +165,7 @@ endif
 # UDP services' glue to the gateway; each service's file only with its switch
 NET_SRC-$(CONFIG_NET_TCP) += core/net/net.c core/net/tcp.c core/net/http.c core/net/kiss_tcp.c core/net/rigctld.c \
 	core/net/aprsis.c
-NET_SRC-$(CONFIG_NET_WEBCTL) += core/net/ws.c
+NET_SRC-$(CONFIG_NET_WEBCTL) += core/net/ws.c core/net/webctl.c
 NET_SRC-$(CONFIG_MDNS) += core/net/net.c core/net/net_services.c core/net/mdns.c
 NET_SRC-$(CONFIG_TFTP) += core/net/net.c core/net/net_services.c core/net/tftp.c core/net/tftp_codeplug.c
 NET_SRC-$(CONFIG_TFTP_IDDB) += core/net/tftp_iddb.c

@@ -64,8 +64,13 @@ static const hal_netif_t fake_netif = { n_select, n_selected, n_up, n_send, n_re
 static const hal_display_t fake_display = { .width = 160, .height = 128, .bpp = 16 };
 static const char *const power_names[] = { "Low", "High" };
 static const band_t bands[] = { { 136000000u, 174000000u, true }, { 400000000u, 480000000u, true } };
+// Two keys for the web control: bit 3 up, bit 7 the PTT
+static const keymap_entry_t keymap[] = {
+	{ 3, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
+	{ 7, ACT_PTT, ACT_PTT, true, false, 0 },
+};
 const board_t board = { .name = "fake", .netif = &fake_netif, .display = &fake_display, .power_count = 2,
-			.power_names = power_names, .bands = bands, .band_count = 2 };
+			.power_names = power_names, .bands = bands, .band_count = 2, .keymap = keymap, .keymap_len = 2 };
 
 // ---- what the gateway needs from its user ----
 bool ipGatewaySendFrame(const uint8_t *f, int length) { return board.netif->send(f, length); }

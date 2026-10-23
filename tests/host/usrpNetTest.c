@@ -11,6 +11,7 @@
 #include "usbaudio/audio_mux.h"
 #include "usbaudio/usrp.h"
 #include "usbaudio/usrp_net.h"
+#include "net/webctl.h"
 
 static int failures;
 static int checks;
@@ -266,6 +267,17 @@ static void test_mux_dmr_tx(void)
 	CHECK(audio_mux_host_tx_fill() == PCM_SLIP_CAP - 41);	// far above the target: one sample slipped
 }
 
+// The web control's receive audio (webctl.c): handed every frame the reader takes, with the squelch state
+static int wc_frames, wc_open;
+static int16_t wc_first;
+void webctl_audio(const int16_t *pcm, uint32_t n, bool open)
+{
+	CHECK(n == USRP_FRAME_SAMPLES);
+	wc_frames++;
+	wc_open += open;
+	wc_first = pcm[0];
+}
+
 static void test_usrp_rx(void)
 {
 	reset();
@@ -279,12 +291,15 @@ static void test_usrp_rx(void)
 		tick();
 	}
 	CHECK(hw.streaming && nsent == 0);
+	CHECK(wc_frames >= 4 && wc_open == 0);
+	wc_frames = 0;
 	// Squelch open: one frame per block to the host's address (no peer yet), from 34001 to 32001, keyup set
 	view.state = RS_RX;
 	for (int i = 0; i < 5; i++) {
 		tick();
 	}
 	CHECK(nsent >= 4 && nsent <= 5);
+	CHECK(wc_open == nsent && wc_frames == nsent && wc_first == 321);	// the same frames go to the web page
 	CHECK(sent[0].ip == 0x0A000002u && sent[0].sport == USRP_PORT && sent[0].dport == USRP_PEER_PORT);
 	usrp_header_t h;
 	int16_t pcm[USRP_FRAME_SAMPLES];
