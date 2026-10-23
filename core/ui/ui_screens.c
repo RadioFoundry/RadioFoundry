@@ -993,6 +993,17 @@ static const char *deny_action(const radio_view_t *v)
 	}
 }
 
+// On the air without PTT: the DMR stack sends a data burst list (ARS, SMS, a position, the IP gateway, a roaming probe)
+static bool sending_data(const radio_view_t *v)
+{
+#if CONFIG_DMR
+	return v->state == RS_TX && v->ch.mode == RADIO_MODE_DMR && v->dmr.state == RDMR_TX_DATA;
+#else
+	(void)v;
+	return false;
+#endif
+}
+
 // --- DMR (docs/ux/wireframes: Home DMR, Receiving, Transmitting) ---
 #if CONFIG_DMR
 // "TG 201 Main Ops", "Joe 3101234", "All call"; a private call without a name shows the ID only
@@ -1106,7 +1117,7 @@ static bool dmr_call_screen(const radio_view_t *v)
 	if (v->ch.mode != RADIO_MODE_DMR || !v->dmr.active || v->hotspot)
 		return false;
 	if (v->state == RS_TX)
-		return true;
+		return !sending_data(v);	// data has no talk target to show: Home stays, its activity line says so
 	return v->state == RS_RX && (v->dmr.state == RDMR_RX || v->dmr.state == RDMR_RX_OTHER);
 }
 
@@ -1398,9 +1409,16 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
 		int tw = gfx_text_width(big, buf);
 		gfx_text(big, w - tw, y, buf, ui_col.fg);
-		gfx_text(big, 0, y, "TALKING", ui_col.tx);
+		gfx_text(big, 0, y, sending_data(v) ? "SENDING" : "TALKING", ui_col.tx);	// data: ARS, SMS, IP
 		if (two) {
 			sb_init(&b, buf, sizeof buf);
+			if (v->dtmf_digits[0] != 0) {
+				// DTMF sent in this transmission (radio-features.md 3.7): what the other end got, newest last
+				sb_str(&b, "DTMF ");
+				sb_str(&b, v->dtmf_digits);
+				gfx_text(sm, 0, y2, buf, ui_col.fg);
+				break;
+			}
 			if (v->tot_s) {
 				uint32_t el = v->tx_elapsed_ms / 1000u;
 				sb_mmss(&b, el < v->tot_s ? v->tot_s - el : 0);
@@ -1950,7 +1968,7 @@ static void dual_activity(const radio_view_t *v, const ui_state_t *s, int y, int
 	// A transmission or a call coming in takes the first line
 	sb_init(&b, buf, sizeof buf);
 	if (v->state == RS_TX) {
-		sb_str(&b, "TALKING on ");
+		sb_str(&b, sending_data(v) ? "SENDING on " : "TALKING on ");
 		sb_str(&b, d->sel ? "B" : "A");
 		gfx_text(sm, 0, y, buf, ui_col.tx);
 		sb_init(&b, buf, sizeof buf);

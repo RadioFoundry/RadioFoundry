@@ -27,6 +27,15 @@ typedef struct {
 	bool heard;
 } rx_slot_t;
 
+// A scheduled burst (spec 3.9), held until its slot is handed to the driver
+typedef struct {
+	bool used;
+	uint32_t counter;		// ALIGN's numbering
+	dmr_tx_burst_t b;
+	uint8_t lc[LC_LEN];
+	bool lc_valid;
+} sched_t;
+
 static struct {
 	uint8_t role;
 	uint32_t lease_ms;
@@ -58,10 +67,37 @@ static struct {
 	uint8_t nregs;
 	uint8_t regs[DMR_BS_REGS_MAX][2];
 
+	// TX half: ALIGN and the scheduled stream (spec 3.8, 3.9)
+	uint8_t stream;
+	bool al_set;			// a grid from ALIGN
+	uint32_t al_t, al_c, al_period;	// one of its boundaries (modem clock), that slot's number, the period (ns)
+	bool al_base;			// the running slot clock is numbered from the grid: counter = driver counter + cbase
+	uint32_t cbase;
+	bool snapping;			// restarted onto the grid, checking the first boundaries
+	bool snap_failed;		// ... and it stayed off after the retries: no more until the next ALIGN or restart
+	uint8_t snap_tries;
+	uint32_t snap_c;		// the driver counter when it restarted
+	int32_t snap_adj;		// the chip's restart delay, learned (µs)
+	sched_t sched[SPLIT_SCHED_N];
+	bool commit_valid;
+	uint32_t commit_next;		// the driver counter of the next slot to hand over
+	bool sched_key;			// the key-up came from a queued burst
+	uint32_t sched_last_ms;		// last scheduled burst handed over
+	uint16_t sch_sent, sch_late, sch_refused, sch_replaced, sch_cool;
+	// ... and the slewing (spec 3.8)
+	bool slewing;			// stepping the slot clock toward the grid
+	uint8_t align_mode;		// SPLIT_ALIGN_xxx of the last ALIGN
+	uint16_t max_slew;		// µs per slot, on average
+	uint32_t slew_c;		// the driver counter at the last step (or the start)
+	uint16_t slew_steps;
+	int32_t slew_us;
+
 	// RX half
 	slotEpoch_t ep;
 	rx_slot_t rx[2];
 	uint16_t labeled[2], unlabeled;
+	uint8_t options;		// SET_ROLE byte 7
+	uint16_t meta_seq;		// RX_META events sent
 } sp;
 
 // ---- Helpers ----
@@ -86,6 +122,11 @@ static void put32(uint8_t *p, uint32_t v)
 {
 	put16(p, v);
 	put16(p + 2, v >> 16);
+}
+
+static int32_t abs32(int32_t v)
+{
+	return (v < 0) ? -v : v;
 }
 
 static void ack(uint8_t command)
@@ -133,6 +174,229 @@ static bool slot_clock(uint32_t *counter, uint32_t *t_us, int8_t *ts)
 	const hal_dmr_modem_t *m = modem();
 
 	return (m != NULL) && (m->slot_clock != NULL) && m->slot_clock(counter, t_us, ts);
+}
+
+static uint16_t caps(void)
+{
+	const hal_dmr_modem_t *m = modem();
+	uint16_t c = 0;
+
+	uint8_t r = roles_offered();
+
+	if (m == NULL) {
+		return 0;
+	}
+	if (r & 2u) {
+		c |= SPLIT_CAP_RX_META;
+	}
+	if ((r & 1u) && (m->bs_restart != NULL)) {
+		c |= SPLIT_CAP_ALIGN;
+		if (m->bs_queue_at != NULL) {
+			c |= SPLIT_CAP_SCHED;	// slots are numbered only after an ALIGN
+		}
+		if ((m->bs_slew != NULL) && (m->bs_slew_step_us > 0)) {
+			c |= SPLIT_CAP_SLEW;
+		}
+	}
+	return c;
+}
+
+static uint32_t now_us(void)
+{
+	const hal_dmr_modem_t *m = modem();
+
+	return ((m != NULL) && (m->now_us != NULL)) ? m->now_us() : 0;
+}
+
+// ---- TX half: the ALIGN grid (spec 3.8) ----
+
+
+// Where boundary t lies on the grid: its slot number there and t minus that slot's grid boundary (±half a period)
+static int32_t grid_phase(uint32_t al_t, uint32_t al_c, uint32_t period, uint32_t t, uint32_t *counter)
+{
+	int64_t d = (int64_t)(int32_t)(t - al_t) * 1000;	// ns from the grid's boundary
+	int64_t k = (d >= 0) ? (d + period / 2) / period : -((-d + period / 2) / period);
+
+	if (counter != NULL) {
+		*counter = al_c + (uint32_t)k;
+	}
+	return (int32_t)((d - k * (int64_t)period) / 1000);
+}
+
+static int8_t ts_of_counter(uint32_t counter)
+{
+	return ((counter & 1u) == 0) ? 1 : 2;	// even: outbound TS1
+}
+
+// The slot clock against the grid now (0 without one, grid_c and drv_c then untouched); ok: the grid's parity matches
+// the slot set up there
+static int32_t phase_now(bool *ok, uint32_t *grid_c, uint32_t *drv_c)
+{
+	uint32_t c, t, g;
+	int8_t ts;
+
+	*ok = false;
+	if (!sp.al_set || !sp.bs_running || !slot_clock(&c, &t, &ts) || (ts == 0)) {
+		return 0;
+	}
+	int32_t ph = grid_phase(sp.al_t, sp.al_c, sp.al_period, t, &g);
+
+	*ok = ts_of_counter(g) == ts;
+	if (grid_c != NULL) {
+		*grid_c = g;
+	}
+	if (drv_c != NULL) {
+		*drv_c = c;
+	}
+	return ph;
+}
+
+static uint8_t align_flags_now(void)
+{
+	bool ok;
+	int32_t ph = phase_now(&ok, NULL, NULL);
+	uint8_t f = 0;
+
+	if (sp.al_base && ok && (abs32(ph) < SPLIT_ALIGNED_US)) {
+		f |= SPLIT_AL_ALIGNED;
+	}
+	if (sp.snapping) {
+		f |= SPLIT_AL_SNAP;
+	}
+	if (sp.slewing) {
+		f |= SPLIT_AL_SLEWING;
+	}
+	if (sp.al_base) {
+		f |= SPLIT_AL_BASE;
+	}
+	return f;
+}
+
+// Restart the slot clock onto the grid's next boundary a few ms ahead (the driver waits for it)
+static bool snap_start(void)
+{
+	const hal_dmr_modem_t *m = modem();
+	uint32_t c, t;
+	int8_t ts;
+
+	if ((m == NULL) || (m->bs_restart == NULL) || sp.keyed) {
+		return false;
+	}
+	if (!slot_clock(&c, &t, &ts)) {
+		return false;
+	}
+	// A grid boundary far enough ahead that the request, earlier by the learned delay, is still ahead too
+	uint32_t now = now_us();
+	int64_t d = (int64_t)(int32_t)(now + 5000u + (uint32_t)((sp.snap_adj > 0) ? sp.snap_adj : 0) - sp.al_t) * 1000;
+	int64_t k = (d >= 0) ? (d + sp.al_period - 1) / sp.al_period : -((-d) / sp.al_period);
+	uint32_t target = sp.al_t + (uint32_t)(int32_t)((k * (int64_t)sp.al_period) / 1000);
+
+	if (!m->bs_restart(target - (uint32_t)sp.snap_adj, ts_of_counter(sp.al_c + (uint32_t)k))) {
+		return false;
+	}
+	sp.snapping = true;
+	sp.snap_c = c;
+	sp.al_base = false;
+	sp.commit_valid = false;
+	return true;
+}
+
+// After a restart: the first boundaries on the new clock tell how far off it came up; again with the delay learned
+static void snap_check(void)
+{
+	bool ok;
+	uint32_t g, c, t;
+	int8_t ts;
+
+	// The drivers give no slot clock from the restart until the new clock's first boundary
+	if (!sp.snapping || !slot_clock(&c, &t, &ts) || (ts == 0) || ((int32_t)(c - sp.snap_c) < 2)) {
+		return;
+	}
+	int32_t ph = phase_now(&ok, &g, &c);
+
+	sp.snapping = false;
+	if (((abs32(ph) >= SPLIT_SNAP_TOL_US) || !ok) && !sp.keyed) {
+		if (sp.snap_tries < SPLIT_SNAP_TRIES) {
+			sp.snap_tries++;
+			sp.snap_adj += ph;	// the chip's restart delay (taken as under half a slot)
+			if (snap_start()) {
+				return;
+			}
+		}
+		sp.snap_failed = true;
+	}
+	if (ok) {
+		sp.cbase = g - c;
+		sp.al_base = true;
+	}
+}
+
+static void align_lost(void)
+{
+	sp.al_base = false;
+	sp.snapping = false;
+	sp.snap_failed = false;
+	sp.commit_valid = false;
+	sp.slewing = false;
+}
+
+// Slewing (spec 3.8): the slot clock stepped toward the grid, never faster than max_slew per slot on average, a step
+// only once the last one shows in the phase. The numbering (counter base) holds throughout: the nearest grid slot
+// stays the same while the phase shrinks
+static void slew_poll(void)
+{
+	const hal_dmr_modem_t *m = modem();
+	bool ok;
+	uint32_t c;
+	int32_t ph;
+
+	if (!sp.slewing) {
+		return;
+	}
+	ph = phase_now(&ok, NULL, &c);
+	if (!ok || !sp.al_base) {
+		sp.slewing = false;	// no clock, or on the other slot: ALIGN again
+		return;
+	}
+	int32_t step = (int32_t)m->bs_slew_step_us;
+
+	if (abs32(ph) <= step / 2) {
+		sp.slewing = false;	// as close as the driver's step gets
+		return;
+	}
+	uint32_t slots = c - sp.slew_c;
+
+	if (slots < SPLIT_SLEW_GAP) {
+		return;
+	}
+	// What the rate allows since the last step, in whole driver steps, and no more than the phase
+	int64_t budget = (int64_t)slots * sp.max_slew;
+	int32_t want = (abs32(ph) / step + ((abs32(ph) % step) * 2 >= step ? 1 : 0)) * step;
+
+	if (budget < step) {
+		return;
+	}
+	if ((int64_t)want > budget) {
+		want = (int32_t)(budget / step) * step;
+	}
+	int32_t got = m->bs_slew((ph > 0) ? -want : want);	// late: shorter slots
+
+	if (got != 0) {
+		sp.slew_c = c;
+		sp.slew_steps++;
+		sp.slew_us += got;
+	}
+}
+
+// Start slewing toward the grid just set (al_* and the counter base)
+static bool slew_start(uint32_t c)
+{
+	if (!(caps() & SPLIT_CAP_SLEW)) {
+		return false;
+	}
+	sp.slewing = true;
+	sp.slew_c = c;
+	return true;
 }
 
 static uint8_t flags_now(void)
@@ -189,6 +453,8 @@ static void tx_unkey(void)
 	sp.keyed = false;
 	sp.want_key = false;
 	sp.unkey_req = false;
+	sp.sched_key = false;
+	sp.commit_valid = false;
 }
 
 static void tx_stop_clock(void)
@@ -201,6 +467,7 @@ static void tx_stop_clock(void)
 	}
 	sp.bs_running = false;
 	bsOutboundReset(&sp.out);
+	align_lost();
 }
 
 static bool tx_start_clock(void)
@@ -242,6 +509,115 @@ static void tx_feed(uint32_t now_ms)
 	}
 }
 
+// ---- TX half: the scheduled stream (spec 3.9) ----
+
+static sched_t *sched_find(uint32_t counter)
+{
+	sched_t *e = &sp.sched[counter % SPLIT_SCHED_N];
+
+	return (e->used && (e->counter == counter)) ? e : NULL;
+}
+
+// The modem clock time of driver counter x's boundary, from the slot clock's last one
+static int32_t until_boundary(uint32_t x, uint32_t c, uint32_t t)
+{
+	return (int32_t)(t + (uint32_t)((int32_t)(x - c) * (int32_t)SLOT_US) - now_us());
+}
+
+// Hand the driver every slot whose boundary is near, each tagged with its counter (a scheduled burst, else what the
+// stream rules give); a slot already passed is skipped, so nothing is ever moved to another slot
+static void sched_commit(uint32_t now_ms)
+{
+	const hal_dmr_modem_t *m = modem();
+	uint32_t c, t;
+	int8_t ts;
+
+	if (!sp.al_base || !slot_clock(&c, &t, &ts) || (ts == 0)) {
+		return;
+	}
+	if (!sp.commit_valid || ((int32_t)(sp.commit_next - (c + 1u)) < 0)) {
+		sp.commit_next = c + 1u;
+		sp.commit_valid = true;
+	}
+	while (until_boundary(sp.commit_next, c, t) < SPLIT_SCHED_COMMIT_US) {
+		uint32_t x = sp.commit_next;
+		int8_t xts = (((x - c) & 1u) != 0) ? (int8_t)(3 - ts) : ts;
+		dmr_tx_burst_t b;
+		dmr_cach_t cach;
+		const uint8_t *lc;
+
+		if (m->bs_space(xts) == 0) {
+			break;		// the driver is behind: the next poll
+		}
+		sched_t *e = sched_find(x + sp.cbase);
+
+		if (e != NULL) {
+			bsOutboundPush(&sp.out, xts, &e->b, e->lc_valid ? e->lc : NULL, now_ms);
+			e->used = false;
+			sp.sch_sent++;
+			sp.sched_last_ms = now_ms;
+		}
+		bsOutboundNext(&sp.out, xts, now_ms, &b, &cach, &lc);
+		if (!m->bs_queue_at(x, xts, &b, &cach, lc)) {
+			break;
+		}
+		sp.commit_next++;
+	}
+}
+
+// Scheduled bursts whose slot can no longer be handed over: late
+static void sched_expire(void)
+{
+	uint32_t c, t;
+	int8_t ts;
+
+	if (!sp.al_base || !slot_clock(&c, &t, &ts)) {
+		return;
+	}
+	for (int i = 0; i < SPLIT_SCHED_N; i++) {
+		sched_t *e = &sp.sched[i];
+
+		if (!e->used) {
+			continue;
+		}
+		uint32_t x = e->counter - sp.cbase;
+		bool passed = sp.commit_valid ? ((int32_t)(x - sp.commit_next) < 0)
+					      : (until_boundary(x, c, t) < SPLIT_SCHED_COMMIT_US);
+
+		if (passed) {
+			e->used = false;
+			sp.sch_late++;
+		}
+	}
+}
+
+// The earliest queued burst's boundary, µs from now (INT32_MAX: none)
+static int32_t sched_first_us(void)
+{
+	uint32_t c, t;
+	int8_t ts;
+	int32_t best = INT32_MAX;
+
+	if (!sp.al_base || !slot_clock(&c, &t, &ts)) {
+		return best;
+	}
+	for (int i = 0; i < SPLIT_SCHED_N; i++) {
+		if (sp.sched[i].used) {
+			int32_t u = until_boundary(sp.sched[i].counter - sp.cbase, c, t);
+
+			best = (u < best) ? u : best;
+		}
+	}
+	return best;
+}
+
+static void sched_clear(void)
+{
+	for (int i = 0; i < SPLIT_SCHED_N; i++) {
+		sp.sched[i].used = false;
+	}
+}
+
 static void tx_poll(uint32_t now_ms)
 {
 	const hal_dmr_modem_t *m = modem();
@@ -252,6 +628,22 @@ static void tx_poll(uint32_t now_ms)
 	if (!sp.bs_running && !tx_start_clock()) {
 		return;
 	}
+	snap_check();
+	slew_poll();
+	if (sp.al_set && !sp.al_base && !sp.snapping && !sp.snap_failed && !sp.keyed && !sp.want_key) {
+		sp.snap_tries = 0;
+		snap_start();		// the slot clock restarted (a retune): back onto the last ALIGN's grid
+	}
+	if (sp.stream == SPLIT_STREAM_SCHED) {
+		if (!sp.keyed) {
+			sched_expire();
+		}
+		if (!sp.keyed && !sp.want_key && !sp.cooldown && (sched_first_us() < SPLIT_SCHED_KEY_US)) {
+			sp.want_key = true;	// a queued burst keys up in time for its slot (a TS1 slot first)
+			sp.sched_key = true;
+			sp.sched_last_ms = now_ms;
+		}
+	}
 	if (sp.want_key && !sp.keyed && !sp.cooldown) {
 		if (sp.variant != sp.variant_started) {
 			tx_stop_clock();	// a new experiment variant: start the clock again with it (a new epoch)
@@ -260,10 +652,13 @@ static void tx_poll(uint32_t now_ms)
 				return;
 			}
 		}
-		tx_feed(now_ms);	// two bursts ahead per slot, then key
+		if (sp.stream == SPLIT_STREAM_BUFFER) {
+			tx_feed(now_ms);	// two bursts ahead per slot, then key
+		}
 		m->bs_key(true);
 		sp.keyed = true;
 		sp.key_ms = now_ms;
+		sp.commit_valid = false;
 	}
 	if (!sp.keyed) {
 		return;
@@ -288,6 +683,16 @@ static void tx_poll(uint32_t now_ms)
 		sp.cooldown_ms = now_ms + (uint32_t)sp.cooldown_s * 1000u;
 		return;
 	}
+	if (sp.stream == SPLIT_STREAM_SCHED) {
+		sched_commit(now_ms);
+		sched_expire();
+		if (sp.sched_key && drained && (sched_first_us() == INT32_MAX) &&
+		    ((uint32_t)(now_ms - sp.sched_last_ms) >= SPLIT_SCHED_HANG_MS)) {
+			tx_unkey();	// a key-up the queued bursts made ends after them
+			bsOutboundReset(&sp.out);
+		}
+		return;
+	}
 	tx_feed(now_ms);
 }
 
@@ -304,26 +709,26 @@ static void frame_emb(const uint8_t *frame, uint8_t *emb_hi, uint8_t frag[4], ui
 	*emb_lo = mid[5];
 }
 
-static uint8_t tx_net_frame(uint8_t command, uint8_t control, const uint8_t *frame, uint32_t now_ms)
+#define NET_SKIP	0xFF	// net_burst: nothing to send (the outbound makes its own)
+
+// A host frame (control byte and 33 bytes, as DMR_DATA1/2) for outbound slot ts as a burst: 0, NET_SKIP, or a NAK
+// reason. lc: for voice A, the host's embedded LC (else NULL)
+static uint8_t net_burst(int8_t ts, uint8_t control, const uint8_t *frame, dmr_tx_burst_t *burst, const uint8_t **lc_out)
 {
-	int8_t ts = (command == MMDVM_DMR_DATA1) ? 1 : 2;
 	int k = ts - 1;
 	uint8_t c = hotspot_frame_control(control, frame);
 	dmr_tx_burst_t b;
 	const uint8_t *lc = NULL;
 
-	if (sp.cooldown) {
-		return MMDVM_NAK_WRONG_MODE;
-	}
 	memset(&b, 0, sizeof(b));
 	if (c & MMDVM_DMR_SYNC_DATA) {
 		uint8_t dt = c & 0x0F;
 
 		if (dt == DT_IDLE) {
-			return 0;		// the outbound makes its own idle bursts
+			return NET_SKIP;	// the outbound makes its own idle bursts
 		}
 		if ((dt == DT_TERMINATOR_WITH_LC) && sp.net_term[k]) {
-			return 0;		// the second and third terminators
+			return NET_SKIP;	// the second and third terminators
 		}
 		b.kind = dt;
 		b.host_crc = true;		// the host's CRC goes out as sent (CRC_MCU_Control)
@@ -375,13 +780,34 @@ static uint8_t tx_net_frame(uint8_t command, uint8_t control, const uint8_t *fra
 			lc = sp.emb_lc[k];
 		}
 	}
-	uint8_t r = bsOutboundPush(&sp.out, ts, &b, lc, now_ms);
+	sp.net_term[k] = (b.kind == DMR_BURST_TERMINATOR_LC);
+	*burst = b;
+	*lc_out = lc;
+	return 0;
+}
 
+static uint8_t tx_net_frame(uint8_t command, uint8_t control, const uint8_t *frame, uint32_t now_ms)
+{
+	int8_t ts = (command == MMDVM_DMR_DATA1) ? 1 : 2;
+	dmr_tx_burst_t b;
+	const uint8_t *lc;
+
+	if (sp.cooldown || (sp.stream == SPLIT_STREAM_SCHED)) {
+		return MMDVM_NAK_WRONG_MODE;	// the scheduled stream takes TX_SCHED only
+	}
+	uint8_t r = net_burst(ts, control, frame, &b, &lc);
+
+	if (r == NET_SKIP) {
+		return 0;
+	}
+	if (r != 0) {
+		return r;
+	}
+	r = bsOutboundPush(&sp.out, ts, &b, lc, now_ms);
 	if (r != 0) {
 		sp.tx_overflow = true;
 		return r;
 	}
-	sp.net_term[k] = (b.kind == DMR_BURST_TERMINATOR_LC);
 	if (!sp.keyed) {
 		sp.want_key = true;	// the first frame keys up too
 	}
@@ -489,20 +915,56 @@ static bool data_with_crc(uint8_t kind)
 	       (kind == DMR_BURST_DATA_HEADER);
 }
 
+// RX_META (spec 3.10): what the RX half knows of one burst, sent before its uplink frames
+static void rx_meta(const dmr_burst_t *b, bool timed, uint32_t t_slot, int8_t label, int32_t res)
+{
+	uint8_t p[2 + SPLIT_META_LEN];
+	uint8_t *d = p + 2;
+	uint8_t f = 0;
+
+	memset(p, 0, sizeof(p));
+	p[0] = SPLIT_EV_RX_META;
+	p[1] = SPLIT_RESULT_OK;
+	put32(d, t_slot);
+	res = (res > 32767) ? 32767 : ((res < -32768) ? -32768 : res);
+	put16(d + 4, (uint16_t)(int16_t)res);
+	d[6] = (uint8_t)label;
+	d[7] = (b->kind == DMR_BURST_VOICE) ? (uint8_t)(DMR_BURST_VOICE + (b->voice_index % 6u)) : b->kind;
+	d[8] = b->cc;
+	f |= b->crc_ok ? SPLIT_META_CRC_OK : 0u;
+	f |= b->in_step ? SPLIT_META_IN_STEP : 0u;
+	f |= b->pi ? SPLIT_META_PI : 0u;
+	f |= b->lc_valid ? SPLIT_META_LC : 0u;
+	f |= (b->sync == DMR_SYNC_BS) ? SPLIT_META_BS_SYNC : 0u;
+	f |= (label != 0) ? SPLIT_META_EPOCH : 0u;
+	f |= timed ? SPLIT_META_TIMED : 0u;
+	d[9] = f;
+	put16(d + 10, (uint16_t)b->rssi_dbm);
+	put16(d + 12, sp.meta_seq);
+	sp.meta_seq++;
+	mmdvm_send(MMDVM_ODR_SPLIT, p, sizeof(p));
+}
+
 static void rx_burst(const dmr_burst_t *b, uint32_t arg, uint32_t now_ms)
 {
-	uint32_t c_last, t_last;
+	uint32_t c_last, t_last, t_slot = 0;
 	int8_t ts_dummy;
 	int8_t label = 0;
 	int32_t res = 0;
+	bool timed = false;
 
 	// The start of the slot the burst was in: the report comes in the slot after it (hrc6000_dmr.h)
 	if (slot_clock(&c_last, &t_last, &ts_dummy)) {
 		uint32_t back = (arg != 0) ? (c_last - arg + 1u) : 1u;
 
 		if (back < 64u) {
-			label = slotEpochLabel(&sp.ep, t_last - back * SLOT_US, now_ms, &res);
+			t_slot = t_last - back * SLOT_US;
+			timed = true;
+			label = slotEpochLabel(&sp.ep, t_slot, now_ms, &res);
 		}
+	}
+	if (sp.options & SPLIT_OPT_RX_META) {
+		rx_meta(b, timed, t_slot, label, res);
 	}
 	if (label == 0) {
 		sp.unlabeled++;
@@ -611,6 +1073,7 @@ static void role_end(void)
 	}
 	sp.role = SPLIT_ROLE_NORMAL;
 	sp.cooldown = false;
+	sp.options = 0;
 	if ((was != SPLIT_ROLE_NORMAL) && hotspot_running()) {
 		const hal_dmr_modem_t *m = modem();
 
@@ -633,6 +1096,12 @@ static void role_begin(uint8_t role)
 		sp.want_key = false;
 		sp.unkey_req = false;
 		sp.tx_overflow = false;
+		sp.al_set = false;	// the learned restart delay stays: it is the chip's
+		align_lost();
+		sched_clear();
+		if (sp.stream == SPLIT_STREAM_SCHED) {
+			bsOutboundSetPrebuffer(&sp.out, 1);	// a scheduled burst plays in its own slot
+		}
 		for (int k = 0; k < 2; k++) {
 			sp.net_index[k] = 5;
 			sp.net_term[k] = false;
@@ -660,6 +1129,12 @@ static uint8_t info_block(uint8_t *b)
 	b[4] = ((m != NULL) && (b[1] & 1u)) ? m->bs_cach : DMR_BS_CACH_NONE;
 	put32(b + 5, ((m != NULL) && (m->now_us != NULL)) ? m->now_us() : 0);
 	b[9] = flags_now();
+	put16(b + 10, caps());
+	int32_t air = (m != NULL) ? m->bs_air_delay_us : 0;
+
+	b[12] = (uint8_t)((SPLIT_SCHED_COMMIT_US + air + 5000 + 999) / 1000);	// the hand-over, the delay, one poll
+	b[13] = SPLIT_SCHED_N;
+	put16(b + 14, (uint16_t)(int16_t)air);
 	return SPLIT_INFO_LEN;
 }
 
@@ -694,6 +1169,17 @@ static uint8_t status_block(uint8_t *b)
 		put16(b + 24, (age > 65535u) ? 65535u : age);
 	}
 	put16(b + 30, sp.lease_expiries);
+	if (sp.role == SPLIT_ROLE_TX) {
+		bool ok;
+
+		put16(b + 32, sp.sch_sent);
+		put16(b + 34, sp.sch_late);
+		put16(b + 36, sp.sch_refused);
+		put16(b + 38, sp.sch_replaced);
+		put16(b + 40, sp.sch_cool);
+		put32(b + 42, (uint32_t)phase_now(&ok, NULL, NULL));
+		b[46] = align_flags_now();
+	}
 	return SPLIT_STATUS_LEN;
 }
 
@@ -722,8 +1208,18 @@ static void set_role(const uint8_t *p, uint8_t len, uint8_t *res)
 	uint8_t pre = ((len > 3) && (p[3] != 0)) ? p[3] : BS_OUT_PREBUFFER;
 	uint8_t mk = ((len > 4) && (p[4] != 0)) ? p[4] : SPLIT_MAX_KEY_10S;
 	uint8_t cool = ((len > 5) && (p[5] != 0)) ? p[5] : SPLIT_COOLDOWN_S;
+	uint8_t stream = (len > 6) ? p[6] : SPLIT_STREAM_BUFFER;
+	uint8_t options = (len > 7) ? p[7] : 0;
 
-	if ((pre > BS_OUT_PREBUFFER_MAX) || (mk > SPLIT_MAX_KEY_10S_MAX)) {
+	if ((options & (uint8_t)~SPLIT_OPT_RX_META) != 0) {
+		*res = SPLIT_RESULT_INVALID;
+		return;
+	}
+	if ((stream == SPLIT_STREAM_SCHED) && !(caps() & SPLIT_CAP_SCHED) && (role == SPLIT_ROLE_TX)) {
+		*res = SPLIT_RESULT_STATE;
+		return;
+	}
+	if ((pre > BS_OUT_PREBUFFER_MAX) || (mk > SPLIT_MAX_KEY_10S_MAX) || (stream > SPLIT_STREAM_SCHED)) {
 		*res = SPLIT_RESULT_INVALID;
 		return;
 	}
@@ -734,13 +1230,165 @@ static void set_role(const uint8_t *p, uint8_t len, uint8_t *res)
 	if (sp.role != role) {
 		role_end();
 		sp.out.prebuffer = pre;
+		sp.stream = stream;
 		role_begin(role);
 	} else {
-		bsOutboundSetPrebuffer(&sp.out, pre);
+		if ((role == SPLIT_ROLE_TX) && (stream != sp.stream)) {
+			tx_unkey();		// the other stream starts clean
+			bsOutboundReset(&sp.out);
+			sched_clear();
+			sp.stream = stream;
+		}
+		bsOutboundSetPrebuffer(&sp.out, (sp.stream == SPLIT_STREAM_SCHED) ? 1 : pre);
 		if (role == SPLIT_ROLE_TX) {
 			hotspot_set_power_cap(cap);
 		}
 	}
+	sp.options = options;	// after role_end, which clears them
+}
+
+// ALIGN (spec 3.8): the reply's phase is measured before anything changes
+static uint8_t align(const uint8_t *p, uint8_t len, uint8_t *data, uint8_t *res)
+{
+	uint32_t c, t, g;
+	int8_t ts;
+
+	if (len < 12) {
+		*res = SPLIT_RESULT_INVALID;
+		return 0;
+	}
+	uint32_t at = le32(p), period = le32(p + 4), counter = le32(p + 8);
+	uint16_t max_slew = (len >= 14) ? (uint16_t)(p[12] | (p[13] << 8)) : 0;
+	uint8_t mode = (len >= 15) ? p[14] : SPLIT_ALIGN_SNAP;
+
+	if (period == 0) {
+		period = SLOT_US * 1000u;
+	}
+	if (max_slew == 0) {
+		max_slew = SPLIT_SLEW_MAX_US;
+	}
+	if ((period < SLOT_EPOCH_PERIOD_MIN_NS) || (period > SLOT_EPOCH_PERIOD_MAX_NS) || !(caps() & SPLIT_CAP_ALIGN) ||
+	    (max_slew > SPLIT_SLEW_MAX_US) || (mode > SPLIT_ALIGN_SLEW) ||
+	    ((mode == SPLIT_ALIGN_SLEW) && !(caps() & SPLIT_CAP_SLEW))) {
+		*res = SPLIT_RESULT_INVALID;
+		return 0;
+	}
+	if ((sp.role != SPLIT_ROLE_TX) || !sp.bs_running || !slot_clock(&c, &t, &ts) || (ts == 0)) {
+		*res = SPLIT_RESULT_STATE;
+		return 0;
+	}
+	int32_t ph = grid_phase(at, counter, period, t, &g);
+	bool parity_ok = ts_of_counter(g) == ts;
+	bool slew = (caps() & SPLIT_CAP_SLEW) != 0;
+	uint8_t f = 0;
+
+	sp.max_slew = max_slew;
+	sp.align_mode = mode;
+	if (sp.keyed || sp.want_key || (mode == SPLIT_ALIGN_SLEW)) {
+		if (parity_ok && ((abs32(ph) < SPLIT_ALIGNED_US) || slew)) {
+			sp.al_t = at;		// the numbering changes; the phase, if it can, by slewing
+			sp.al_c = counter;
+			sp.al_period = period;
+			sp.al_set = true;
+			sp.cbase = g - c;
+			sp.al_base = true;
+			sp.snapping = false;
+			sp.snap_failed = false;
+			sp.slewing = false;
+			if (abs32(ph) < SPLIT_ALIGNED_US) {
+				f |= SPLIT_AL_ALIGNED;
+			}
+			if (slew && (abs32(ph) > (int32_t)modem()->bs_slew_step_us / 2) && slew_start(c)) {
+				f |= SPLIT_AL_SLEWING;
+			}
+		} else {
+			f |= SPLIT_AL_NOT_APPLIED;
+		}
+	} else {
+		sp.slewing = false;
+		sp.al_t = at;
+		sp.al_c = counter;
+		sp.al_period = period;
+		sp.al_set = true;
+		sp.snap_tries = 0;
+		sp.snap_failed = false;
+		if (snap_start()) {
+			f |= SPLIT_AL_SNAP;
+		}
+	}
+	put32(data, (uint32_t)ph);
+	data[4] = f;
+	return 5;
+}
+
+// TX_SCHED (spec 3.9)
+static uint8_t tx_sched(const uint8_t *p, uint8_t len, uint8_t *data, uint8_t *res, uint32_t now_ms)
+{
+	uint32_t c, t;
+	int8_t ts;
+
+	if ((len != 6 + MMDVM_DMR_FRAME_LEN) || (p[4] != (uint8_t)ts_of_counter(le32(p)))) {
+		*res = SPLIT_RESULT_INVALID;
+		return 0;
+	}
+	if ((sp.role != SPLIT_ROLE_TX) || (sp.stream != SPLIT_STREAM_SCHED) || !sp.al_base ||
+	    !slot_clock(&c, &t, &ts) || (ts == 0)) {
+		*res = SPLIT_RESULT_STATE;
+		return 0;
+	}
+	uint32_t g = le32(p);
+	uint32_t x = g - sp.cbase;
+	uint8_t outcome = SPLIT_SCHED_QUEUED;
+
+	put32(data, g);
+	if (sp.cooldown) {
+		outcome = SPLIT_SCHED_FULL;
+		sp.sch_cool++;
+	} else if ((sp.commit_valid && ((int32_t)(x - sp.commit_next) < 0)) ||
+		   (until_boundary(x, c, t) < SPLIT_SCHED_COMMIT_US)) {
+		outcome = SPLIT_SCHED_LATE;
+		sp.sch_late++;
+	} else if ((int32_t)(x - c) > SPLIT_SCHED_N) {
+		outcome = SPLIT_SCHED_EARLY;
+		sp.sch_refused++;
+	} else {
+		dmr_tx_burst_t b;
+		const uint8_t *lc;
+		uint8_t r = net_burst(ts_of_counter(g), p[5], p + 6, &b, &lc);
+
+		if ((r != 0) && (r != NET_SKIP)) {
+			*res = SPLIT_RESULT_INVALID;
+			return 0;
+		}
+		sched_t *e = &sp.sched[g % SPLIT_SCHED_N];
+		bool same = e->used && (e->counter == g);
+
+		if (e->used && !same) {
+			outcome = SPLIT_SCHED_FULL;
+			sp.sch_refused++;
+		} else if (r == NET_SKIP) {
+			e->used = false;	// an idle (or a repeated terminator) for that slot: the stream rules fill it
+			outcome = same ? SPLIT_SCHED_REPLACED : SPLIT_SCHED_QUEUED;
+		} else {
+			e->used = true;
+			e->counter = g;
+			e->b = b;
+			e->lc_valid = lc != NULL;
+			if (lc != NULL) {
+				memcpy(e->lc, lc, LC_LEN);
+			}
+			outcome = same ? SPLIT_SCHED_REPLACED : SPLIT_SCHED_QUEUED;
+		}
+		if (outcome == SPLIT_SCHED_REPLACED) {
+			sp.sch_replaced++;
+		}
+		if (outcome != SPLIT_SCHED_FULL) {
+			sp.unkey_req = false;
+		}
+	}
+	(void)now_ms;
+	data[4] = outcome;
+	return 5;
 }
 
 static void split_command(const uint8_t *p, uint8_t len, uint32_t t_rx, uint32_t now_ms)
@@ -790,7 +1438,7 @@ static void split_command(const uint8_t *p, uint8_t len, uint32_t t_rx, uint32_t
 			res = SPLIT_RESULT_STATE;
 			break;
 		}
-		put32(data, c);
+		put32(data, sp.al_base ? c + sp.cbase : c);
 		put32(data + 4, t);
 		data[8] = (uint8_t)ts;
 		data[9] = (uint8_t)((sp.keyed ? 1u : 0u) | 2u);
@@ -821,6 +1469,12 @@ static void split_command(const uint8_t *p, uint8_t len, uint32_t t_rx, uint32_t
 		break;
 	case SPLIT_SUB_STATUS:
 		n = status_block(data);
+		break;
+	case SPLIT_SUB_ALIGN:
+		n = align(p, len, data, &res);
+		break;
+	case SPLIT_SUB_TX_SCHED:
+		n = tx_sched(p, len, data, &res, now_ms);
 		break;
 	default:
 		res = SPLIT_RESULT_UNKNOWN;
@@ -1112,6 +1766,23 @@ void hotspot_split_get_view(hotspot_split_view_t *v)
 	v->keyed_s = sp.keyed ? (uint16_t)((sp.now_ms - sp.key_ms) / 1000u) : 0;
 	v->lease_expiries = sp.lease_expiries;
 	v->time_requests = sp.time_requests;
+	v->stream = sp.stream;
+	if (sp.role == SPLIT_ROLE_TX) {
+		bool ok;
+
+		v->align_flags = align_flags_now();
+		v->phase_us = phase_now(&ok, NULL, NULL);
+	}
+	v->snap_adj_us = sp.snap_adj;
+	v->cbase = sp.cbase;
+	v->sch_sent = sp.sch_sent;
+	v->sch_late = sp.sch_late;
+	v->sch_refused = sp.sch_refused;
+	v->sch_replaced = sp.sch_replaced;
+	v->sch_cool = sp.sch_cool;
+	v->slew_steps = sp.slew_steps;
+	v->slew_us = sp.slew_us;
+	v->meta_sent = sp.meta_seq;
 }
 
 #endif	// CONFIG_HOTSPOT_SPLIT

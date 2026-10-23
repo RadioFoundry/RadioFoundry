@@ -167,6 +167,8 @@ OP_VOLUME = 30
 OP_DMR_FIELDS = 31
 OP_VFO_COPY = 32
 OP_VOICE_TEST = 33
+OP_DTMF = 34
+DTMF_DIGITS = "0123456789*#ABCD"
 VOLUME_KNOB = 0xFF
 OP_PPP = 28
 ROAM_CMDS = {"zone_off": 0, "zone_on": 1, "zone_toggle": 2, "now": 3, "lock": 4, "unlock": 5, "lock_toggle": 6}
@@ -808,6 +810,19 @@ class DebugLink:
         every 20 ms in place of the mic, so an over carries known, varying audio (the dmr view key voice.tx_test)."""
         self.radio(OP_VOICE_TEST, bytes([1 if on else 0]))
 
+    def dtmf_key(self, digit, down):
+        """A DTMF key's down or up during FM TX (RADIO op 34; radio-features.md 3.7). Raises DebugLinkError "refused"
+        for a down while the radio core isn't ready (features view dtmf_ready=0: not FM TX with PTT held)."""
+        self.radio(OP_DTMF, bytes([ord(digit), 1 if down else 0]))
+
+    def dtmf(self, digits, ms=150, gap=100):
+        """Send DTMF digits as key taps: each held ms, then gap ms up. PTT must already be held on FM."""
+        for d in digits.upper():
+            self.dtmf_key(d, True)
+            time.sleep(ms / 1000.0)
+            self.dtmf_key(d, False)
+            time.sleep(gap / 1000.0)
+
     def tone_burst(self, on):
         """The 1750 Hz burst (FM): keys up and sends the tone while on."""
         self.radio(OP_TONE_BURST, bytes([1 if on else 0]))
@@ -1190,6 +1205,10 @@ def cmd_radio(link, a):
         link.dmr_fields(cc=num(0))
     elif op == "ts":                  # ts 1|2
         link.dmr_fields(ts=num(0))
+    elif op == "dtmf":                # dtmf DIGITS [ms]: key taps during FM TX (PTT held)
+        if not args or any(c not in DTMF_DIGITS for c in args[0].upper()):
+            raise SystemExit("dtmf DIGITS [ms]: digits from " + DTMF_DIGITS)
+        link.dtmf(args[0], num(1) if len(args) > 1 else 150)
     elif op == "burst":               # burst on|off
         link.tone_burst(args[:1] != ["off"])
     elif op == "voice-test":          # voice-test on|off (the DMR encoder's test signal, RAM only)
@@ -1707,7 +1726,7 @@ def main(argv=None):
     p.add_argument("op", choices=["channel", "pos", "zone", "vfo", "freq", "step", "power", "squelch", "bw", "tone",
                                   "monitor", "clear", "reply-cancel", "hotspot-exit", "target", "contact", "call-back",
                                   "target-clear", "privacy", "scan", "scan-vfo", "beep", "burst", "set", "usb",
-                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test"])
+                                  "usb-settings", "ppp", "vibrate", "mode", "cc", "ts", "copy-vfo", "voice-test", "dtmf"])
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",

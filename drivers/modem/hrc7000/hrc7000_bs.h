@@ -29,6 +29,7 @@
 #define HRC7000_BS_Q		3	// bursts queued per slot (the core keeps two ahead)
 #define HRC7000_BS_CACH_METHOD	DMR_BS_CACH_OURS
 #define HRC7000_BS_RAW_BYTES	36	// one slot: CACH (24 bits) and burst (264)
+#define HRC7000_BS_AIR_DELAY_US	4600	// a slot boundary to that slot on air (SDR bench 2026-10-21, split-duplex.md 11)
 
 #define HRC7000_BS_V_CONTINUOUS	0x01u
 #define HRC7000_BS_V_AUTOTEST	0x02u
@@ -57,6 +58,9 @@ typedef struct {
 	uint32_t rftx_ints;
 	uint32_t late;		// a slot boundary more than 33 ms after the last (an interrupt missed or late)
 	uint32_t max_gap_us;	// the longest time between two slot boundaries while keyed
+	uint32_t at_late;	// a burst for a numbered slot that had passed: dropped
+	uint32_t at_wait;	// a slot whose queue head is for a later slot: idle
+	uint32_t restarts;	// slot clock restarts (ALIGN)
 } hrc7000_bs_stats_t;
 
 typedef struct hrc7000_bs {
@@ -68,11 +72,15 @@ typedef struct hrc7000_bs {
 	uint8_t half;		// the TX RAM half the next slot goes to (alternating variants)
 	uint32_t base_tick;	// the tick at bs_start: boundary base_tick + 1 sets up TS2, + 2 TS1
 	int8_t ts_tick;		// the outbound slot set up at the last tick, on air from about 5 ms after it
+	volatile bool restarting;	// bs_restart waits: the old timer's boundaries are not taken
+	int8_t restart_ts;	// the slot the first boundary after a restart sets up (0 none)
 	dmr_tx_burst_t q[2][HRC7000_BS_Q + 1];		// a ring of Q + 1 places: q_count tells full from empty
 	dmr_cach_t q_cach[2][HRC7000_BS_Q + 1];
 	bool q_cach_valid[2][HRC7000_BS_Q + 1];
 	uint8_t q_lc[2][HRC7000_BS_Q + 1][9];
 	bool q_lc_valid[2][HRC7000_BS_Q + 1];
+	bool q_at[2][HRC7000_BS_Q + 1];		// for one numbered slot only (bs_queue_at)
+	uint32_t q_at_c[2][HRC7000_BS_Q + 1];
 	volatile uint8_t head[2], tail[2];
 	uint8_t lc[2][9];	// each slot's embedded LC (from its last voice A)
 	bool lc_valid[2];
@@ -84,6 +92,14 @@ bool hrc7000_bs_start(hrc7000_bs_t *bs, hrc7000_dmr_t *e, const dmr_bs_config_t 
 void hrc7000_bs_key(hrc7000_dmr_t *e, bool on);
 bool hrc7000_bs_queue(hrc7000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
 		      const uint8_t *emb_lc);
+// For the slot set up at boundary counter (slot_clock's numbering) only
+bool hrc7000_bs_queue_at(hrc7000_dmr_t *e, uint32_t counter, int8_t ts, const dmr_tx_burst_t *b,
+			 const dmr_cach_t *cach, const uint8_t *emb_lc);
+// Not keyed: the slot clock restarts with a boundary at the next t_us + k x 30 ms at least 2 ms ahead (waits for it,
+// up to 32 ms), setting up slot ts there (hal_dmr_modem.h bs_restart). Own TX timing off (passive), then on again at
+// that time: the chip's slot timer starts from the write (bench 2026-10-21, modem-hrc7000.md 2.10); the first boundary
+// then comes about 1.2 ms before the time asked for, which the core learns
+bool hrc7000_bs_restart(hrc7000_dmr_t *e, uint32_t t_us, int8_t ts);
 uint8_t hrc7000_bs_space(const hrc7000_dmr_t *e, int8_t ts);
 void hrc7000_bs_stop(hrc7000_dmr_t *e);		// back to the slot engine, receiving
 bool hrc7000_bs_keyed(const hrc7000_dmr_t *e);
