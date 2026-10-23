@@ -17,8 +17,8 @@
 # FreeRTOS creates its idle task through a variable (tasks.c)
 task prvIdleTask configMINIMAL_STACK_SIZE
 
-# The stock AMBE+2 codec runs on the calling task's stack. STM32: the MD-380's peak, 4046 bytes measured
-# (docs/spec/codec-md380.md; the DM-1701's is 3822), plus the veneer's 20 bytes of registers, up to 8 stack arguments
+# The stock AMBE+2 codec runs on the calling task's stack. STM32: the largest stock codec's peak, 4046 bytes
+# measured (docs/spec/codec-md380.md), plus the veneer's 20 bytes of registers, up to 8 stack arguments
 # and 4 for alignment (platform/stm32f4/codec_call.c, assembly)
 lib stm32_codec_call 4104
 # HR_C7000: the same codec library on C-SKY, called by address (platform/hrc7000/vocoder.c). Not measured on this core:

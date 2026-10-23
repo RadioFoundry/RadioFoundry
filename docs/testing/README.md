@@ -50,8 +50,8 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    - `no-<FEATURE>`: every switch that is on by default, turned off alone (its sub-features follow it,
      `docs/build-config.md`);
    - `fm-minimal`: FM only, without DMR, USB, VFO, diagnostics and sub-audio tones;
-   - `maximal`: every switch on, except the board's `BOARD_UNSUPPORTED`, with its `MAXIMAL_VARS` (for example
-     `LTO=1` on the DM-1701);
+   - `maximal`: every switch on, except the board's `BOARD_UNSUPPORTED`, `BOARD_NOT_WRITTEN` and `MAXIMAL_SKIP`,
+     with its `MAXIMAL_VARS` (for example `LTO=1` on the DM-1701);
    - `vhf`: the MD-380's VHF image (MD-380 only).
 
    Every configuration must build with zero compiler and linker warnings. The default and maximal ones must also pass

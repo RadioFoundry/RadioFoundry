@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // USB port glue for TinyUSB on the STM32F4 OTG_FS core (Synopsys DWC2), docs/spec/hardware-dm1701.md section 16:
 // device only, embedded PHY on PA11 (DM) / PA12 (DP), VBUS sensing off, OTG_FS interrupt at priority 6.
-// The 48 MHz USB clock is PLL Q (144 / 3 on the DM-1701), set up with the system clock.
+// The 48 MHz USB clock is PLL Q (e.g. 144 / 3), set up with the system clock.
 #include "config.h"
 #if CONFIG_USB	// the whole file
 #include "config.h"

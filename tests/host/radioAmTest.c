@@ -97,7 +97,7 @@ static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits
 static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
 static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, NULL, NULL, NULL };
 
-// The DM-32UV's table: the air band is an RX-only band below the VHF transmit band
+// A band table with the air band: is an RX-only band below the VHF transmit band
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },

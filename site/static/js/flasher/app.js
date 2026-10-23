@@ -644,7 +644,7 @@ function buildView() {
 				const away = (f.needs?.all || []).filter((n) => !items.some((i) => i.name === n) && sel.supported(n) && !sel.on.has(n));
 				// one line per feature; the help (written for developers) is the tooltip, the build's reason for leaving
 				// a feature out and a needed feature that's off show inline
-				const note = na ? [t("flash.build.unsupported", { radio: S.radio.name })] : [off && !isOn ? off.why : null,
+				const note = na ? [naNote(f.name)] : [off && !isOn ? off.why : null,
 					away.length ? t("flash.build.needs", { names: away.map((n) => sel.byName[n]?.title || n).join(", ") }) : null].filter(Boolean);
 				const tipId = `tip-${f.name}`;
 				const tipOpen = S.openTip === f.name;
@@ -713,6 +713,10 @@ function buildView() {
 let tipEscape = () => {};
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") tipEscape(); });
 
+// Why a feature can't be chosen: the radio's code isn't written for it yet, or its hardware can't
+const naNote = (name) => t(S.selection.notWritten(name) ? "flash.build.not_written" : "flash.build.unsupported",
+	{ radio: S.radio.name });
+
 // The ⓘ bubble: what a feature does, what it needs, its flash cost on this radio
 function featureTip(f, id) {
 	const titles = (names) => names.map((n) => S.selection.byName[n]?.title || n).join(", ");
@@ -720,7 +724,7 @@ function featureTip(f, id) {
 	const needs = [all.length ? titles(all) : null, any.length ? t("flash.build.tip_any", { names: titles(any) }) : null].filter(Boolean);
 	const bytes = f.bytes?.[S.radio.model];
 	return h("div", { class: "tip", id, role: "note", onclick: (e) => e.stopPropagation() },
-		S.selection.supported(f.name) ? null : h("p", { class: "tip-na" }, t("flash.build.unsupported", { radio: S.radio.name })),
+		S.selection.supported(f.name) ? null : h("p", { class: "tip-na" }, naNote(f.name)),
 		h("p", {}, plainHelp(f.help)),
 		f.notes ? h("p", { class: "muted" }, f.notes) : null,
 		h("dl", { class: "kv-list small" },

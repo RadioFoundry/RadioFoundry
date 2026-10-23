@@ -153,7 +153,7 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_wr(d, C7_FM_TONE3, FM_TONE3_DEFAULT);
 	hrc7000_wr(d, C7_FM_TONE4, 0x0BD10D10u);
 	// The reset value, not what the register holds: a restart that doesn't reset the modem (the boot stub's) finds the
-	// last transmission's value there, and at 25 kHz that is twice the narrow one (0xFF on the DM-32UV: 1.9 kHz CTCSS)
+	// last transmission's value there, and at 25 kHz that is twice the narrow one (0xFF seen: 1.9 kHz CTCSS)
 	d->subaudio_dev = SUBAUDIO_DEV_RESET;
 	hrc7000_wr(d, C7_SUBVOICE_COEF, (hrc7000_rd(d, C7_SUBVOICE_COEF) & ~0xFF00u) | (SUBAUDIO_DEV_RESET << 8));
 	hrc7000_set_mic_gain(d, mic_gain_db);
@@ -374,7 +374,7 @@ void hrc7000_tx_pair(hrc7000_t *d, uint16_t low_hz, uint16_t high_hz, uint8_t de
 	}
 }
 
-// About 5.8 Hz of deviation per step (UHF, DM-1801 Pro on the SDR bench: 0x60 = 559 Hz, 0xC0 = 1117 Hz). The guide's
+// About 5.8 Hz of deviation per step (UHF, on the SDR bench: 0x60 = 559 Hz, 0xC0 = 1117 Hz). The guide's
 // DTMF values (0x12 at UHF 12.5 kHz) gave about 100 Hz, too little to hear. 0xFF (about 1.5 kHz) is the most the
 // field holds, so 25 kHz gets less than twice the narrow value. VHF takes the same values: the board's modulation
 // calibration byte is per band, about three times the UHF one on VHF (modem-hrc7000.md 8.3). Unmeasured on VHF

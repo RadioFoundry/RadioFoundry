@@ -106,11 +106,14 @@ class Site:
 		self.releases = repo.releases(self.firmware)
 
 	def feature_state(self, board, name, variant="full"):
-		"""on: in this build; off: the board supports it but this build leaves it out; na: the board can't."""
+		"""on: in this build; off: the board supports it but this build leaves it out; nw: the hardware can, the
+		board's code isn't written yet; na: the hardware can't."""
 		if name in board["config"][variant]:
 			return "on"
 		if name in board["unsupported"]:
 			return "na"
+		if name in board["not_written"]:
+			return "nw"
 		return "off"
 
 	def json_data(self):
@@ -118,7 +121,7 @@ class Site:
 		for b in self.boards:
 			r = {k: b[k] for k in ("id", "name", "maker", "model", "also", "kind", "order", "status", "bands",
 					       "power", "gallery", "cpu", "display", "docs", "flash", "backup", "unsupported",
-					       "unsupported_reasons", "required", "config", "screens", "codeplug", "volts",
+					       "unsupported_reasons", "not_written", "not_written_reasons", "required", "config", "screens", "codeplug", "volts",
 					       "clock")}
 			r["support"] = docsmod.plain(b["summary"])
 			r["image"] = "static/img/radios/%s.svg" % b["id"]
@@ -440,7 +443,7 @@ class Site:
 
 	def state_cell(self, lang, state):
 		return '<td class="st st-%s"><span aria-hidden="true">%s</span><span class="sr">%s</span></td>' % (
-			state, {"on": "●", "off": "○", "na": "✕"}[state], html.escape(self.t(lang, "state." + state)))
+			state, {"on": "●", "off": "○", "nw": "…", "na": "✕"}[state], html.escape(self.t(lang, "state." + state)))
 
 	def group_title(self, lang, g):
 		key = "group." + docsmod.slug(g)

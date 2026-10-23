@@ -2,9 +2,9 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 ## Firmware build, one tree for every radio:
 ##
-##   make BOARD=dm1701          -> build/dm1701/odr_dm1701.{elf,bin,map}, plus odr_dm1701_codec.bin when the
+##   make BOARD=<radio>         -> build/<radio>/odr_<radio>.{elf,bin,map}, plus odr_<radio>_codec.bin when the
 ##                                 radio's stock firmware is in codecs/ (codecs/README.md)
-##   make BOARD=dm1701 size     -> section sizes and the space left before the codec
+##   make BOARD=<radio> size    -> section sizes and the space left before the codec
 ##   make test                  -> host tests (no BOARD needed)
 ##   make                       -> lists the boards
 ##
@@ -53,7 +53,7 @@ endif
 include config/features.mk
 include platform/$(PLATFORM)/platform.mk
 
-# Hardware build options: hardware versions one image can't serve (the MD-380's UHF and VHF boards). board.mk names
+# Hardware build options: hardware versions one image can't serve (a radio sold with UHF and VHF boards). board.mk names
 # them in BUILD_OPTIONS and lists each one's values in <NAME>_VALUES, the default first; board.toml [[build_options]]
 # only adds the words people read (tools/boards.py check holds the two to the same values). Each value reaches C as
 # ODR_<NAME>_<VALUE> = 0 or 1 (ODR_BAND_VHF). A non-default value names the build directory and the image
@@ -229,7 +229,7 @@ LDFLAGS := $(CPUFLAGS) -T$(LDSCRIPT) -Lplatform/$(PLATFORM) -Wl,--defsym=__app_b
 	-Wl,--defsym=__app_start=$(APP_START) -Wl,--gc-sections -Wl,-Map=$(TARGET).map -Wl,--print-memory-usage $(LDSPECS)
 # Link time optimization: LTO=1 compiles our sources to GCC's IR and optimizes them together at the link (inlining and
 # dead code across files: about 17 KB smaller on the STM32 radios, 20 KB with LTO_3P). A board's config.mk may default
-# it (the MD-380 and the DM-1701 do: without it their images don't hold their features). LTO_3P=1 takes the
+# it (some STM32 radios do: without it their images don't hold their features). LTO_3P=1 takes the
 # third-party code (HAL, CMSIS, FreeRTOS, TinyUSB) along: FreeRTOS marks what its port's inline assembly reaches portDONT_DISCARD, and the
 # vectors and SystemInit are referenced from the assembly start-up, which the linker sees. Files with file-scope
 # assembly are never in it (LTO_EXCLUDE). The optimization flags go to the link too, where the code is generated
@@ -252,7 +252,7 @@ OBJ := $(APP_OBJ) $(TP_OBJ)
 
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
-.PHONY: all codec clean size stack-check test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars
+.PHONY: all codec clean size stack-check test print-config print-cc print-unsupported print-not-written print-required print-maximal-skip print-maximal-vars
 all: $(REGISTRY_JSON) $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin) codec
 
 # The codec: merged into $(TARGET)_codec.bin when the radio's stock firmware is in codecs/ (codecs/README.md)
@@ -266,7 +266,7 @@ codec: $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin)
 # are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
 # (and a file removed by a recipe would still be in make's cache)
 VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l ODR_GIT $(APP_SRC) 2>/dev/null))
-ifeq ($(filter clean test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars \
+ifeq ($(filter clean test print-config print-cc print-unsupported print-not-written print-required print-maximal-skip print-maximal-vars \
 	print-vars,$(MAKECMDGOALS)),)
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
@@ -340,10 +340,13 @@ print-config:
 	@$(foreach f,$(FEATURES),echo '$(f)=$(CONFIG_$(f))';)
 print-cc:
 	@echo '$(CC)'
-# Switches the board's hardware support doesn't cover (boards/<board>/config.mk BOARD_UNSUPPORTED, one a line with
-# its reason; strip drops the spaces before each comment): ci's maximal configuration leaves them off
+# Switches the radio's hardware can't do (boards/<board>/config.mk BOARD_UNSUPPORTED, one a line with its reason;
+# strip drops the spaces before each comment) and those its hardware can do but whose driver or glue isn't written
+# yet (BOARD_NOT_WRITTEN, the same form; docs/build-config.md): ci's maximal configuration leaves both off
 print-unsupported:
 	@echo '$(strip $(BOARD_UNSUPPORTED))'
+print-not-written:
+	@echo '$(strip $(BOARD_NOT_WRITTEN))'
 # Switches the board can't build without (boards/<board>/config.mk BOARD_REQUIRED): ci builds no "no-" configuration
 # for them
 print-required:

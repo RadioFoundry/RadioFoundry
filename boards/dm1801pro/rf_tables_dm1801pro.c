@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// FD6818 set-up of the Baofeng DM-1801 Pro (docs/spec/hardware-dm1801pro.md 5): the same chip family as the DM-32UV
+// FD6818 set-up of the Baofeng DM-1801 Pro (docs/spec/hardware-dm1801pro.md 5): the same chip family as the platform's other FD6818 board
 // with other register tables, an extra 0x0200 step in the 0x30 sequences and no band-word table. The values are
 // unverified on a bench; the 12.5 kHz word in particular is the one the spec lists second (hardware-dm1801pro.md 5.2)
 #include <stddef.h>
@@ -8,7 +8,7 @@
 
 #define TBL_N(t)	(uint16_t)(sizeof(t) / sizeof((t)[0]))
 
-// 5.3 power-on order; the 0x09 table that follows is the DM-32UV's
+// 5.3 power-on order; the 0x09 table that follows is the other HR_C7000 boards'
 static const fd6818_regval_t init_table[] = {
 	{ 0x00, 0x8000 }, { 0x00, 0x0000 }, { 0x37, 0x9D1F }, { 0x13, 0x03DF }, { 0x12, 0x03DB }, { 0x11, 0x033A },
 	{ 0x10, 0x0318 }, { 0x14, 0x0210 }, { 0x19, 0x1041 }, { 0x1C, 0x0422 }, { 0x1D, 0x2AAB }, { 0x1E, 0x4C58 },
@@ -36,7 +36,7 @@ static const fd6818_regval_t dmr_table[] = {
 	{ 0x47, 0x0140 }, { 0x48, 0xB2F5 }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 }, { 0x3F, 0x0000 },
 };
 
-// 5.4: 0x37 first, the DM-32UV's 0x30 steps with a 0x0200 between idle and the final word
+// 5.4: 0x37 first, the other HR_C7000 boards' 0x30 steps with a 0x0200 between idle and the final word
 static const fd6818_regval_t rx_seq[] = { { 0x37, 0x9D1F }, { 0x30, 0x0200 }, { 0x30, 0xBFF1 } };
 static const fd6818_regval_t tx_seq[] = { { 0x37, 0x9D1F }, { 0x52, 0x028F }, { 0x30, 0x0200 }, { 0x30, 0xC1FE } };
 

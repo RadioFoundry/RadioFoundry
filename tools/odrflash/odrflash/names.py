@@ -26,7 +26,7 @@ def suffix(options, chosen):
 
 
 def image_id(board_id, options, chosen):
-    """The board id with the non-default values: the image's name in a build and in a release (md380-vhf)."""
+    """The board id with the non-default values: the image's name in a build and in a release (<id>-vhf)."""
     return board_id + suffix(options, chosen)
 
 

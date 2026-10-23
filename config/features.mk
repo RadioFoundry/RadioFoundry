@@ -2,8 +2,8 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 ## Feature switches (y / n). Precedence: the make command line, then boards/<board>/config.mk, then the defaults here.
 ##
-##   make BOARD=dm1701 CONFIG_DMR=n          an FM-only build
-##   make BOARD=dm1701 CONFIG_HOTSPOT=n      no MMDVM hotspot
+##   make BOARD=<radio> CONFIG_DMR=n         an FM-only build
+##   make BOARD=<radio> CONFIG_HOTSPOT=n     no MMDVM hotspot
 ##
 ## Each switch reaches C as CONFIG_<NAME> = 0 or 1 (always defined, so use #if, not #ifdef) and can leave whole
 ## source directories out of the build. Sub-features follow their parent unless set (CONFIG_DMR=n turns off every
@@ -70,7 +70,7 @@ CONFIG_NET_RIGCTL ?= $(CONFIG_NET_TCP)
 CONFIG_NET_APRSIS ?= $(if $(and $(filter y,$(CONFIG_NET_TCP)),$(filter y,$(CONFIG_APRS))),y,n)
 # audio linking for AllStarLink, DVSwitch and bridges (USRP voice over UDP, port 34001): the radio sends what it
 # receives, with the squelch as keyup, and transmits what the computer sends. DMR works both ways on every radio; FM
-# needs the radio's audio paths to the processor: both ways on the DM-1701, on other radios DMR only or FM one way
+# needs the radio's audio paths to the processor, which radios have both ways, DMR only or FM one way
 # (docs/feature-matrix.md) (needs DMR_IP_GATEWAY; core/usbaudio, docs/spec/usb-audio.md)
 CONFIG_NET_USRP ?= $(CONFIG_DMR_IP_GATEWAY)
 # mDNS / DNS-SD responder on the USB network link: <host>.local and the radio's services (needs DMR_IP_GATEWAY, the
@@ -94,14 +94,14 @@ CONFIG_SFR ?= $(CONFIG_DMR)
 # USB device (CDC serial)
 CONFIG_USB ?= y
 # the host link (core/hostlink): MMDVM hotspot, CPS and debug link over the board's host port (USB CDC, or the
-# programming cable's UART on radios without USB, e.g. the DM-32)
+# programming cable's UART on radios without USB)
 CONFIG_HOSTLINK ?= $(CONFIG_USB)
 # USB network adapter personality (CDC-NCM, switched with the serial one at run time; needs USB)
 CONFIG_USB_NETWORK ?= $(if $(and $(filter y,$(CONFIG_USB)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # IPv4 over PPP on the serial host port, into the IP gateway and its services: for radios whose only host link is a
-# USB-serial cable (DM-32UV, GD-88), and a fallback on the USB serial port (needs HOSTLINK and DMR_IP_GATEWAY, which
-# it turns on by default; core/net/ppp.c, core/hostlink/hostlink_ppp.c, docs/spec/ppp.md). Checked on the DB25-D PRO
-# and the DM-1801 Pro; on for the DM-32UV, its only IP link (boards/dm32/config.mk); off on the USB radios
+# USB-serial cable, and a fallback on the USB serial port (needs HOSTLINK and DMR_IP_GATEWAY, which
+# it turns on by default; core/net/ppp.c, core/hostlink/hostlink_ppp.c, docs/spec/ppp.md). On in the config.mk of
+# a radio whose only IP link it is; off on the USB radios (docs/feature-matrix.md)
 CONFIG_NET_PPP ?= n
 # MMDVM modem / hotspot mode over the host port (needs DMR and HOSTLINK)
 CONFIG_HOTSPOT ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
@@ -135,7 +135,7 @@ CONFIG_FONT_XL ?= n
 # can be slightly harder to read (docs/spec/ui.md 5)
 CONFIG_FONT_AA ?= n
 # larger text on 240 px and wider color panels: lists, labels and the status strip in a 9x18 font instead of 8x16
-# (12% larger, 24 characters a line on the DM-32 instead of 27). About 3 KB more flash (needs FONT_AA)
+# (12% larger, 24 characters a line on a 240 px panel instead of 27). About 3 KB more flash (needs FONT_AA)
 CONFIG_FONT_BIG ?= n
 # color screen settings: theme, highlight color, filled status bar (off: the dark theme only; for radios whose only
 # screen is monochrome)
@@ -156,7 +156,7 @@ CONFIG_CHANNEL_LIST ?= y
 # editing a channel on the radio, New channel from current settings, keypad text entry (docs/spec/ui.md 2.1): with
 # the Channels list
 CONFIG_CHANNEL_EDIT ?= $(CONFIG_CHANNEL_LIST)
-# beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which the DM-1701 has with DMR)
+# beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which some radios have only with DMR)
 CONFIG_BEEP ?= y
 # FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
 CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
@@ -174,10 +174,10 @@ CONFIG_VIBRATE ?= n
 # radio has no GPS: DMR_GPS, LRRP and APRS keep a fixed position and answer "no fix". Off where the radio has none
 CONFIG_GPS ?= y
 # air band AM receive: FM channels and the VFO in 108-137 MHz are received in AM, receive only, on radios whose
-# receiver does AM (CAP_AM_RX; needs FM; docs/spec/airband-and-broadcast.md). On for the DM-32UV
+# receiver does AM (CAP_AM_RX; needs FM; docs/spec/airband-and-broadcast.md). No board's glue is written yet
 CONFIG_AM_RX ?= n
 # broadcast FM receiver: Tools > FM radio on a second receiver chip, paused for channel traffic
-# (board.bcast; core/bcast, docs/spec/airband-and-broadcast.md). On for the DM-32UV
+# (board.bcast; core/bcast, docs/spec/airband-and-broadcast.md). On where the board sets board.bcast
 CONFIG_BCAST_FM ?= n
 # audio path probe: debug link command 0x10 to read / write the audio chip's registers and watch the PCM stream's
 # levels, for the USB audio feasibility tests on the bench (docs/spec/hardware-dm1701.md 21.3; needs DEBUGLINK and DMR, whose
@@ -212,7 +212,7 @@ CONFIG_WATCHDOG ?= y
 CONFIG_FAULT_TRACE ?= y
 # the core's storage (settings, codeplug) on SPI NAND: the NOR-like 4 KB sector layer over the board's own block range
 # (drivers/flash/nand_sectors, docs/spec/nand-sectors.md). On in the config.mk of radios whose data flash is SPI NAND
-# (the DB25-D); off, such a radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it
+# (docs/feature-matrix.md); off, such a radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it
 CONFIG_NAND_STORAGE ?= n
 
 # APRS (core/aprs, docs/spec/aprs.md): position, status and message packets as AX.25 / 1200 baud AFSK on FM, positions

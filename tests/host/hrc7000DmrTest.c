@@ -188,7 +188,7 @@ static void test_rx(void)
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1);
 	CHECK(b.kind == DMR_BURST_VOICE && b.voice_index == 0 && b.len == 27 && b.payload[26] == 26);
 	// The flag goes on the slot LAYER2_STATUS b30 shows at the interrupt (HRC7000_RX_NEXT_SLOT_XOR 0, every HR_C7000
-	// radio measured). The old default 1 put it on the other slot: the DM-1801 Pro played silence (2026-10-22)
+	// radio measured). The old default 1 put it on the other slot: one radio played silence (2026-10-22)
 	REG(C7_LAYER2_STATUS) = 1u << 30;
 	tick(false);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x8040);
@@ -636,7 +636,7 @@ static void test_rf_tx_lead(void)
 	setup();
 	hrc7000_power_on_init(&dev, 128, 20);
 	CHECK(REG(C7_RF_CONTROL) == 0x00041F1Au);
-	dev.rf_tx_lead = 20;	// the DM-1801 Pro's 2.0 ms
+	dev.rf_tx_lead = 20;	// one board's 2.0 ms
 	hrc7000_power_on_init(&dev, 128, 20);
 	CHECK(REG(C7_RF_CONTROL) == 0x0004141Au);
 	dev.rf_tx_lead = 0;
@@ -1042,7 +1042,7 @@ static void test_rx_slot_arg(void)
 // A whole call through a chip model: the chip writes a burst's voice into the voice RAM only when the voice-access flag
 // (LAYER2_TXRX_CTRL b15) was set at the timeslot interrupt that decided that burst's slot, the one LAYER2_STATUS b30
 // shows then. Every burst's payload must be the voice the chip wrote for it. With the flag on the other slot
-// (HRC7000_RX_NEXT_SLOT_XOR 1, the DM-1801 Pro until 2026-10-22) the RAM keeps the bytes it had and every burst of
+// (HRC7000_RX_NEXT_SLOT_XOR 1, one board's old default) the RAM keeps the bytes it had and every burst of
 // the call reads them again: silence with every counter clean
 static void test_rx_voice_ram_call(void)
 {

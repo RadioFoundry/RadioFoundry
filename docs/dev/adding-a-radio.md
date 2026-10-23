@@ -32,7 +32,7 @@ The board's own files:
 |---|---|
 | `boards/<b>/board.mk` | `PLATFORM`, `APP_BASE` (where the image starts: the first byte the bootloader runs), `BOARD_DIRS` (the board directory and each driver it uses) and any `MCU_DEFS` of its own. STM32: `MCU` (the part, which picks the CMSIS define and start-up file) and `HSE_VALUE` (the crystal in Hz); optional `BOARD_HAL_MODULES` (HAL modules beyond the platform's, such as `hal_i2c`) |
 | `boards/<b>/board.toml` | The board registry entry: identity, status, flashing, codec route, the site's data. `tools/boards.py check` validates it against `board.mk`, the linker script and `board_t`. Every key is in [The board registry](board-registry.md). Copy a neighbor on the same platform |
-| `boards/<b>/config.mk` | Feature defaults where this radio differs from `platform/<p>/config.mk`, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`), each with the reason. Also `BOARD_UNSUPPORTED` (switches its hardware support lacks, one a line with the reason: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`; ci.sh's maximal build leaves them off), `BOARD_REQUIRED` (switches it can't build without; ci.sh skips their `no-` build) and `MAXIMAL_VARS` (make variables for that build, e.g. `LTO=1`) |
+| `boards/<b>/config.mk` | Feature defaults where this radio differs from `platform/<p>/config.mk`, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`), each with the reason. Also `BOARD_UNSUPPORTED` (switches its hardware can't do, one a line with the reason: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`), `BOARD_NOT_WRITTEN` (the same form: the hardware can, the driver or glue isn't written yet, with `CONFIG_X ?= n`; ci.sh's maximal build leaves both lists off, [the rule](../build-config.md#unsupported-not-written-unconfirmed)), `BOARD_REQUIRED` (switches it can't build without; ci.sh skips their `no-` build) and `MAXIMAL_VARS` (make variables for that build, e.g. `LTO=1`) |
 | `boards/<b>/memory.ld` | The memory map: the codec symbols, then `MEMORY` (the application's `FLASH` region from `__app_start`, which the Makefile defines from `APP_BASE`, and the RAM regions), then `INCLUDE common.ld`, the platform's sections. Keep the region's end below the codec. Keep the application out of every flash sector the codec touches (not only the codec bytes), so odrflash can update the firmware without erasing the codec. The flashing tools read the region and the codec symbols from it, and derive the erasable sectors and the protected range ([release.md](release.md#sector-maps)) |
 | `boards/<b>/freertos_board.h` | Optional: RTOS settings that differ from `platform/<p>/FreeRTOSConfig.h` (the heap size, for example), read before its defaults |
 | `boards/<b>/board.c` | The `board_t` descriptor, the key map, bands, power level names |
@@ -100,7 +100,7 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
 6. DMR modem and the codec: receive, then transmit, checked on the SDR bench.
 7. CPS, so qdmr can program it.
 
-[docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) is this list made concrete for the DM-32UV.
+[docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) is this list made concrete for one radio.
 
 ## Bring-up records
 
@@ -110,8 +110,8 @@ What the docs claim for a radio comes from its records, so each step above ends 
    (`docs/testing/<b>-bringup.md`, `[docs] bringup`) is optional; with one, the README links the radio to it.
 2. `tools/bringup.py list --radio <b>` shows the checklist: every feature of
    [tests/hil/features.toml](../../tests/hil/features.toml) the board builds, `n/a` for its `BOARD_UNSUPPORTED`
-   switches. Give each switch the board can't support yet a reason (`config.mk`) or a `[features]` entry in
-   `board.toml`.
+   switches and `not written` for its `BOARD_NOT_WRITTEN` ones. Each needs a reason in `config.mk`; a feature built
+   but known not to work yet gets a `[features]` entry in `board.toml`.
 3. As a step works, `tools/bringup.py run --radio <b> --feature F -- <pytest options>` runs its tests under the
    radio lock and writes `docs/testing/results/<b>/<date>-<commit>.json`. Commit the record with the change it
    checks; a record with failures is the to-do list ([HIL bring-up mode](../../tests/hil/README.md#bring-up-mode)).

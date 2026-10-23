@@ -35,7 +35,7 @@ FM with CTCSS/DCS, DMR voice with the radio's own codec, DMR data and text, the 
 the PPP network services and each split duplex half work on air. Open: VHF transmit and VOX."""
 release = "stable"
 
-# The same Baofeng serial updater as the DM-32UV, with its own ID string; the same flash map, the same codec slot and
+# The same Baofeng serial updater as the other HR_C7000 boards, with its own ID string; the same flash map, the same codec slot and
 # the same erase of the whole application area
 [flash]
 family = "serial-loader"

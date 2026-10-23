@@ -6,7 +6,7 @@
 // PTB15 (PIN_SPK_SOURCE) high puts the FD6818's audio on the speaker and takes it off the HR_C7000's input (FM receive
 // with the squelch open); low leaves the speaker on the HR_C7000's codec and the FD6818's audio on its input. PTB14
 // (PIN_MIC_PATH) is always its complement, as in the radio's own firmware, which writes the two only as a pair. That
-// includes DMR transmit: the DM-32UV's DMR route (PTB14 low) took the microphone off the codec ADC on this radio, and
+// includes DMR transmit: the other HR_C7000 boards' DMR route (PTB14 low) took the microphone off the codec ADC on this radio, and
 // the vocoder encoded near silence (hardware-dm1801pro.md 12)
 #ifndef DM1801PRO_AUDIO_ROUTE_H
 #define DM1801PRO_AUDIO_ROUTE_H

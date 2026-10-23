@@ -27,7 +27,7 @@
 #define PIN_TX_UHF		0x27	// TX path select, UHF side (UHF TX works)
 #define PIN_RX_UHF		0x28	// RX path select, UHF side (UHF receive works)
 #define PIN_POWER_KEY		0x29	// power knob switch: the level at start-up is "on" (switches off on the radio)
-#define PIN_MIC_PATH		0x2E	// 1 = mic to the analog FM path (as on the DM-32UV, provisional)
+#define PIN_MIC_PATH		0x2E	// 1 = mic to the analog FM path (as on the other HR_C7000 boards, provisional)
 #define PIN_SPK_SOURCE		0x2F	// 0 = audio on, 1 = muted (checked on the radio)
 #define PIN_KEY_STROBE0		0x32	// keypad strobes PTB18-PTB22, driven low one at a time
 #define PIN_KEY_STROBE4		0x36

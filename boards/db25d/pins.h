@@ -26,8 +26,8 @@
 #define PIN_KEY_SENSE0		0x29	// key matrix sense lines 0x29-0x2B, low = closed
 #define PIN_POWER_KEY		0x2C	// low = pressed (INF)
 #define PIN_POWER_LATCH		0x2D	// 1 = stay on
-#define PIN_MIC_PATH		0x2E	// as the DM-32: 1 = mic to the analog path (INF)
-#define PIN_SPK_SOURCE		0x2F	// as the DM-32: 0 = audio on, 1 = muted (INF)
+#define PIN_MIC_PATH		0x2E	// as the other HR_C7000 boards: 1 = mic to the analog path (INF)
+#define PIN_SPK_SOURCE		0x2F	// as the other HR_C7000 boards: 0 = audio on, 1 = muted (INF)
 #define PIN_RF_CLK		0x30	// BK4819 serial clock (both chips)
 #define PIN_GPS_POWER		0x31
 // The level that powers the GPS module. The stock firmware clears PTB17 at GPS init and at power-off and sets it when GPS is

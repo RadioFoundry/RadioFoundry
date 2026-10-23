@@ -231,6 +231,9 @@ def boards(feature_names, variant_ids):
 			raise SourceError("boards/%s/board.toml: gallery %s isn't in docs/ux/screens" % (bid, r["gallery"]))
 		r["unsupported_reasons"] = r["unsupported"]
 		r["unsupported"] = list(r["unsupported"])
+		# the hardware can, the board's code doesn't yet (config.mk BOARD_NOT_WRITTEN): never shown as unavailable
+		r["not_written_reasons"] = r["not_written"]
+		r["not_written"] = list(r["not_written"])
 		r["required"] = make(bid, "print-required").split()
 		r["config"] = {}
 		for v in variant_ids:
@@ -318,7 +321,7 @@ def c7000_flash():
 			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")}}
 	profiles = []
 	for p in dc.PROFILES.values():
-		# a stock file known only by its whole-file hash (the DB25-D 2024-05-09 build) has no codec hashes: it can be
+		# a stock file known only by its whole-file hash (e.g. a 2024-05-09 build) has no codec hashes: it can be
 		# carved but not found in a program flash read
 		if "code_sha256" not in p and p.get("kind") == "progmem":
 			continue

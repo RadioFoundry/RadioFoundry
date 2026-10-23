@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Volume knob power switch read from the battery sense line (docs/spec/radio-features.md 5.5). On radios whose knob
-// switch only breaks the battery divider while the MCU holds its own supply with a latch (DM-1701, MD-380), the
+// switch only breaks the battery divider while the MCU holds its own supply with a latch (docs/spec/radios.md), the
 // battery reading drops to about 0 V the moment the knob turns off. A few low readings in a row mean "off"; one low
 // reading (a TX load dip, an ADC glitch) doesn't. Pure logic: the board feeds it its unfiltered battery reading.
 #ifndef RADIO_POWER_SWITCH_H
