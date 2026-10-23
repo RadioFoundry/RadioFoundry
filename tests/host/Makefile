@@ -1045,6 +1045,17 @@ ifneq ($(TSHARK),)
 	@if [ -s netSvcTest.expert ]; then echo "# tshark found problems in netSvcTest.pcap"; cat netSvcTest.expert; exit 1; else echo "# tshark: netSvcTest.pcap has no malformed segments or bad checksums"; fi
 endif
 .PHONY: run-netsvc
+
+# WebSocket pieces for the HTTP server's /ws (core/net/ws.c): SHA-1, base64, the handshake, frame headers
+TESTS   += wsTest
+wsTest: wsTest.c $(CORE)/net/ws.c $(CORE)/net/ws.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ wsTest.c $(CORE)/net/ws.c
+
+run: run-ws
+run-ws: wsTest
+	./wsTest
+.PHONY: run-ws
+
 # The SNMP agent (docs/spec/snmp.md): the BER codec against hand-worked X.690 encodings, SNMPv2c processing, the MIB and
 # the notifications (snmpTest); then the agent on a loopback UDP socket against tools/rfoundry_snmp.py and, when installed,
 # the system's SNMP command line tools (snmp_peer_check.sh)
