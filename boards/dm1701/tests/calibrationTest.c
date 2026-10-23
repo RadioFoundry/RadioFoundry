@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 calibration reader against synthetic flash: working copy, factory table in the security registers,
 // blank chip, and that it never writes
 #include <stdio.h>

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # Baofeng DM-32UV: HR_C7000 SoC (C-SKY CK803S + DMR modem) + FD6818 + ST7789 240x320 on i8080
 PLATFORM   := hrc7000
 # Behind the Baofeng bootloader (hardware-dm32.md 2)

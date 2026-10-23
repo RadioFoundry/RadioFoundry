@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The host link's network personality (CONFIG_DMR_IP_GATEWAY): the radio as a USB network adapter (CDC-NCM,
 // drivers/usb/usb_ncm.h) routing IPv4 over DMR packet data through the IP gateway (core/dmr/ipGateway.h).
 //
@@ -11,8 +11,8 @@
 //                 link, CPS) in network mode, so the radio stays reachable without its serial port
 //
 // The air ops are called from the host link task and must not block (post to the radio task and return).
-#ifndef ODR_HOSTLINK_NET_H
-#define ODR_HOSTLINK_NET_H
+#ifndef RFOUNDRY_HOSTLINK_NET_H
+#define RFOUNDRY_HOSTLINK_NET_H
 
 #include <stdint.h>
 #include <stdbool.h>

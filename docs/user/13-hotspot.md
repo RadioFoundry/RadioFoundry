@@ -56,7 +56,7 @@ Slot2=1
 On Pi-Star style images, choose a USB MMDVM modem on the radio's serial port and the settings above. This hasn't been
 tested with Pi-Star yet.
 
-The radio reports itself to the host as "OpenDigitalRadio", the radio model (for example "OpenDigitalRadio DM-1701")
+The radio reports itself to the host as "RadioFoundry", the radio model (for example "RadioFoundry DM-1701")
 and the firmware version.
 
 ## Starting

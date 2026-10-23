@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // An HTTP/1.0 status server on port 80 (RFC 1945; docs/spec/tcp-services.md 5): static files (http_assets.h), the
 // radio's state as JSON, the debug link's view sections as JSON, the screen as a BMP. GET and HEAD, one request per
 // connection (Connection: close), no keep-alive, no chunking. Responses are streamed into TCP as its buffer frees up:
@@ -24,8 +24,8 @@
 #include "net/http_assets.h"
 #include "http_assets_gen.h"	// the build's gen directory: core/net/http_assets/* (tools/gen_http_assets.py)
 
-#ifndef ODR_GIT
-#define ODR_GIT "unknown"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "unknown"
 #endif
 
 #define LINE_MAX	96	// request line ("GET /api/view?section=dmr_data_stats HTTP/1.1" and room)
@@ -109,7 +109,7 @@ static void status_json(dl_text_t *t)
 	dl_text(t, "{\"radio\":");
 	json_str(t, board.name);
 	dl_text(t, ",\"version\":\"%s\",\"uptime_s\":%u,\"state\":\"%s\",\"vfo\":%s,\"zone\":%u,\"channel_number\":%u,"
-		"\"channel\":", ODR_GIT, (unsigned)(hal_millis() / 1000u), (v->state < 4) ? states[v->state] : "?",
+		"\"channel\":", RFOUNDRY_GIT, (unsigned)(hal_millis() / 1000u), (v->state < 4) ? states[v->state] : "?",
 		bool_s(v->vfo), v->zone_index, v->channel_number);
 	json_str(t, ch->name);
 	dl_text(t, ",\"rx_hz\":%u,\"tx_hz\":%u,\"mode\":\"%s\",\"bw\":\"%s\",\"power\":", (unsigned)ch->rx_hz,

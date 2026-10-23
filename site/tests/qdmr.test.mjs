@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // qdmr YAML in the codeplug editor: the YAML subset (static/js/codeplug/yaml.js), the mapping to the editing model
 // (static/js/codeplug/qdmr.js), round trips on a file written the way qdmr 0.15 writes one and on cpsSim's populated
 // codeplug, the Tools page converters, and, when dmrconf is installed, qdmr itself encoding what the editor exports.
@@ -17,7 +17,7 @@ import { parse, stringify, flow, Tag, YamlError } from "../static/js/codeplug/ya
 import { importQdmr, exportQdmr, QdmrError, parseFrequency, parseDuration, fromLocator, toLocator } from "../static/js/codeplug/qdmr.js";
 import { convertersFor } from "../static/js/flasher/codeplug.js";
 
-const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
+const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const sim = () => decode(CodeplugImage.from(new Uint8Array(readFileSync(join(DIR, "codeplug_sim.bin"))).slice(0, CODEPLUG_SPAN)));
 
 // A codeplug as qdmr 0.15 writes one (made-up names and IDs): flow maps for contacts, block maps for channels,
@@ -337,7 +337,7 @@ test("converters: qdmr YAML to an image and an image to YAML", async () => {
 	assert.deepEqual(m.channels.map((c) => c.name), ["Repeater TS1", "Simplex: 446", "APRS 2m"]);
 	await assert.rejects(toImg.convert(new TextEncoder().encode("x: 1\n"), "x.yaml"), /not a qdmr codeplug/);
 
-	const toYaml = convertersFor("openfw-image").find((c) => c.id === "odr-to-yaml");
+	const toYaml = convertersFor("openfw-image").find((c) => c.id === "rfoundry-to-yaml");
 	assert.equal(toYaml.status, "ready");
 	const y = await toYaml.convert(r.data, "radio.bin");
 	assert.equal(y.name, "radio.yaml");
@@ -369,7 +369,7 @@ function fromDfu(d) {
 test("dmrconf encodes the exported YAML to the same channels, contacts, lists and zones", { skip: !DMRCONF && "dmrconf is not installed" }, () => {
 	const m = empty();
 	importQdmr(m, SAMPLE);
-	const dir = mkdtempSync(join(tmpdir(), "odr-qdmr-"));
+	const dir = mkdtempSync(join(tmpdir(), "rfoundry-qdmr-"));
 	try {
 		writeFileSync(join(dir, "c.yaml"), exportQdmr(m).text);
 		execFileSync("dmrconf", ["encode", "-y", "-R", "openuv380", join(dir, "c.yaml"), join(dir, "c.dfu")], { stdio: "pipe" });

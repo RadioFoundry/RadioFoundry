@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Nightly CI (docs/dev/ci.md): the long builds the per-push workflow leaves out, on the default branch.
 #   matrix       one job per toolchain (Arm, C-SKY), every board built with it from the registry: a build per feature
@@ -29,8 +29,8 @@ concurrency:
 
 jobs:
   changes:
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       run: ${{ steps.decide.outputs.run }}
@@ -83,8 +83,8 @@ jobs:
     # checkout, submodules and compiler are set up once per toolchain, not once per radio
     name: matrix (${{ matrix.name }})
     needs: changes
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -108,15 +108,15 @@ jobs:
         uses: ./.github/actions/toolchain
         with:
           toolchain: ${{ matrix.toolchain }}
-          image: ${{ vars.ODR_CSKY_IMAGE }}
-          registry: ${{ vars.ODR_CSKY_REGISTRY }}
+          image: ${{ vars.RFOUNDRY_CSKY_IMAGE }}
+          registry: ${{ vars.RFOUNDRY_CSKY_REGISTRY }}
           # a read-only registry token (secret); on GitHub a ghcr.io package linked to this repository takes the job's
           # own token (packages: read)
-          registry-user: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
-          registry-token: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
+          registry-user: ${{ vars.RFOUNDRY_CSKY_REGISTRY_USER || github.actor }}
+          registry-token: ${{ secrets.RFOUNDRY_CSKY_REGISTRY_TOKEN || github.token }}
       - name: Feature matrix of every board on the toolchain
         env:
-          ODR_CI_PRUNE: "1"   # keep the logs and images, not the build trees (about 65 MB each)
+          RFOUNDRY_CI_PRUNE: "1"   # keep the logs and images, not the build trees (about 65 MB each)
           RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
           TOOLCHAIN: ${{ matrix.toolchain }}
         run: |
@@ -124,7 +124,7 @@ jobs:
           rc=0
           $RUN tools/ci.sh --matrix --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
           if [ "$rc" = 3 ]; then
-            echo "::notice::$TOOLCHAIN matrix skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::$TOOLCHAIN matrix skipped: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
@@ -140,8 +140,8 @@ jobs:
 
   reuse:
     needs: changes
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.reuse == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true') && (needs.changes.outputs.reuse == 'true')
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -158,8 +158,8 @@ jobs:
 
   mark:
     needs: [matrix]
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Remember that this commit passed

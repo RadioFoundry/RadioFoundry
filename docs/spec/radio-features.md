@@ -353,7 +353,7 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 
 | `volume.src` | Board | Level in force |
 |---|---|---|
-| `none` | No hook (the MD-380, the DM-32UV: the volume control works in analog hardware, after the chip) | Not set by ODR. The debug link operation answers "unavailable" |
+| `none` | No hook (the MD-380, the DM-32UV: the volume control works in analog hardware, after the chip) | Not set by RadioFoundry. The debug link operation answers "unavailable" |
 | `knob` | A hook and a knob the MCU reads (the DM-1701) | The knob's 0..100 % |
 | `soft` | A hook and no knob (`hal_power_t.volume()` = -1, the DB25-D); `radio_volume_soft()`, reported to the UI as `UI_FEAT_VOLUME` | The stored step |
 | `override` | As `knob`, with the debug link's level in force | The step the debug link set, whatever the knob does |
@@ -372,7 +372,7 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 it stores the step as the UI does (`0xFF` stores the default); on a `knob` radio it sets the override; on a radio with
 `volume.src=none` it answers unavailable. The `features` view shows `volume.src`, `volume.max`, `volume.step` (the
 stored step), `volume.override` (-1 = none), `volume.sent` (the percent last given to the board, -1 = none yet) and
-`volume.soft`. `odr_debug.py volume [N|knob]` prints them and sets.
+`volume.soft`. `rfoundry_debug.py volume [N|knob]` prints them and sets.
 
 The volume screen (`SCR_VOLUME`) opens on `ACT_VOLUME`, a board key map entry (a radio with a knob answers with a
 toast). Up, Down and the encoder change the step by one and save it on each step; OK, Back or the same key close it,
@@ -393,8 +393,8 @@ A board with `CAP_NO_BATTERY` (a mobile on a fixed supply) has no battery monito
 `battery_mv`, the level stays ok, `battery_pct` and `battery_mv` stay 0, and nothing warns or refuses a transmission
 for the battery. The UI shows no battery icon, percentage, Tools > Battery page, Battery saver setting or Low battery
 warning setting. The debug link reports `battery=none` (with `battery_pct=0` and `battery_mv=0`), `/status` leaves
-`battery_pct` and `battery_mv` out, and SNMP reports odrBatteryVoltage 0, odrBatteryPercent 0 and odrBatteryState
-ok(1) without ever sending odrLowBattery.
+`battery_pct` and `battery_mv` out, and SNMP reports rfoundryBatteryVoltage 0, rfoundryBatteryPercent 0 and rfoundryBatteryState
+ok(1) without ever sending rfoundryLowBattery.
 
 Such a board may measure its DC input instead: it sets `hal_power_t.supply_mv`, and `board_volts()` (`hal/board.h`)
 says `BOARD_VOLTS_SUPPLY`. The radio core reads it once a second, outside transmissions like the battery, into the
@@ -437,7 +437,7 @@ doesn't. The boards ignore it for the first 1.5 s after power-up while the readi
 
 ### 5.6 Time of day
 
-ODR keeps no wall clock. `hal_time.h` gives only time since start-up, and that is what every record uses: the crash
+RadioFoundry keeps no wall clock. `hal_time.h` gives only time since start-up, and that is what every record uses: the crash
 log's `uptime_ms`, messages (`ui_msg_t.age_ms`), call history and the APRS station list ("14m ago"). Nothing on the screen shows a time of day, so a
 radio never shows a made-up one after power-on.
 

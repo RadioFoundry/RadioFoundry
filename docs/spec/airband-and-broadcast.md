@@ -25,8 +25,8 @@
 >    (not read; probably not, under the clean-room rules), six presets and the 2 s resume delay, the AM step UI
 >    (8.33k / 25k on the Step tile), and refusing TX in 108-137 MHz only on AM-capable boards.
 
-Status: research and design, 2026-10-10. What the radios ODR supports can do on the aeronautical VHF band (AM,
-108-137 MHz) and FM broadcast (65-108 MHz), and how ODR does it on any radio that has the hardware.
+Status: research and design, 2026-10-10. What the radios RadioFoundry supports can do on the aeronautical VHF band (AM,
+108-137 MHz) and FM broadcast (65-108 MHz), and how RadioFoundry does it on any radio that has the hardware.
 
 Source tags follow [radios.md](radios.md): **C** confirmed (manufacturer, datasheet, bench, or the owner's own
 use of the radio), **D** documented by a reverse-engineering project or permissively licensed code, **F** forum or
@@ -48,7 +48,7 @@ retailer claim, **?** unknown. **BIN** / **KP** / **COM** / **INF** are the tags
 | Radtel RT-4D (not planned) | yes (BK4819, D) | yes (F) | the BK4819 AF output has an AM type (D, Apache-2.0 UV-K5 firmware) |
 
 The AT1846S has no AM demodulator: its datasheet and our driver know only FM and the DMR baseband modes. Any radio
-built on it gets neither feature from ODR. The design below serves any radio whose RF chip has an AM mode
+built on it gets neither feature from RadioFoundry. The design below serves any radio whose RF chip has an AM mode
 (CAP_AM_RX) and any radio with a second broadcast receiver chip (CAP_BCAST_FM).
 
 ## 2. Radio facts
@@ -61,7 +61,7 @@ open questions A1-A4 and B1-B5) is [hardware-dm32.md](hardware-dm32.md) 8.7; its
 
 ### 3.1 Representation: derived from the frequency, codeplug unchanged
 
-The open-firmware CPS codeplug has no AM modulation, and ODR keeps the standard format as long as possible. So AM is not
+The open-firmware CPS codeplug has no AM modulation, and RadioFoundry keeps the standard format as long as possible. So AM is not
 stored: **an FM channel or the VFO tuned inside 108-137 MHz is received in AM** on a radio that can. This is how
 most radios with an air band behave, it needs no CPS change, and qdmr can program air channels today (as FM
 channels in that range). The band is an ITU allocation, the same everywhere, so the range is a core constant

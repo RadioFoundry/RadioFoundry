@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The microphone path on DMR transmit without a person: a test tone through the programming cable's serial line.
 
 On some radios the programming cable's host-to-radio line (the radio's UART RX) reaches the microphone input: a byte
@@ -21,8 +21,8 @@ import time
 
 import pytest
 
-from odr_debug import DebugLinkError
-from odr_hil import skip
+from rfoundry_debug import DebugLinkError
+from rfoundry_hil import skip
 
 INJECT_BAUD = 6000          # 0x55 at 6000 baud: a 3 kHz square, inside the vocoder's band. The coupling grows with
                             # the edge rate: on the DM-1801 Pro 1200 baud rose 3 dB, 2400 baud 9, 6000 baud 15

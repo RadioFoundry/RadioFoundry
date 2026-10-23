@@ -251,7 +251,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 |  |
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 |  |
-| Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one ODR drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
+| Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
 | GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | — | 1,196 | Needs a GPS receiver. Off, DMR GPS, LRRP and APRS keep the fixed position and report no fix. MD-380 measured 2026-10-22 (LTO, 58f2cebe); the DM-1701 has no receiver |
 
 ## DMR data
@@ -302,7 +302,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 |  |
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet). DM-32UV: DMR only until its board code has the FM audio paths |
 | APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | Needs NAT on the host |
-| mDNS / DNS-SD (odr-<id>.local) | `MDNS` | 6,744 | 6,504 |  |
+| mDNS / DNS-SD (rfoundry-<id>.local) | `MDNS` | 6,744 | 6,504 |  |
 | TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | Without the ID database below |
 | DMR ID database over TFTP (`iddb.bin`, combined `codeplug.bin`) | `TFTP_IDDB` | 2,184 | 2,264 | Follows `TFTP` |
 | SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 |  |
@@ -360,20 +360,20 @@ the hotspot off.
 
 The DM-32UV has 880 KB of code space, so RAM limits it: 165,612 bytes above the stock codec's RAM window and 27,868
 below it (RAM_LO). Its network is PPP on the programming cable (`NET_PPP`), on by default with the IP gateway and
-every service, `TCP_CONNS=3` (`boards/dm32/config.mk`). It fits because the state the core marks `ODR_CPU_RAM` lives
+every service, `TCP_CONNS=3` (`boards/dm32/config.mk`). It fits because the state the core marks `RFOUNDRY_CPU_RAM` lives
 in RAM_LO ([hardware-dm32.md](spec/hardware-dm32.md) 17.1). Measured with csky-elf GCC 14 (bytes of the image, RAM
 of the linker's regions; the RTOS heap, 40 KB with every task stack, is inside the used part):
 
 | DM-32UV build | Image | RAM (165,612 B) | RAM_LO (27,868 B) |
 |---|---:|---:|---:|
-| before the network (`ODR_CPU_RAM` in main RAM) | 313,804 | 153,740 (11,872 free) | 8,800 |
+| before the network (`RFOUNDRY_CPU_RAM` in main RAM) | 313,804 | 153,740 (11,872 free) | 8,800 |
 | default (PPP, gateway, every service, 3 TCP connections) | 365,236 | 154,428 (11,184 free) | 24,392 (3,476 free) |
 | default, `TCP_CONNS=4` | 365,236 | 155,956 (9,656 free) | 24,392 |
 | default, `TCP_CONNS=2` | 365,276 | 152,892 (12,720 free) | 24,392 |
 | maximal (also `AUDIO_PROBE`, `FONT_XL`) | 372,856 | 155,740 (9,872 free) | 24,392 |
 
 The margin kept, about 11 KB of main RAM, is what the image had before the network went in. RAM_LO has 3.5 KB left
-for the RAM code (`.ramfunc`) and the core's `ODR_CPU_RAM` state to grow.
+for the RAM code (`.ramfunc`) and the core's `RFOUNDRY_CPU_RAM` state to grow.
 
 Flash each network switch costs on the DM-32UV (default minus the build with it off): the gateway with PPP and every
 service 51,428 (`NET_PPP` or `DMR_IP_GATEWAY` off), TCP and what runs on it 17,028, SNMP 9,116, mDNS 7,220, TFTP

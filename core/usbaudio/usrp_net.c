@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // USRP voice over UDP on the radio's network address (usrp_net.h)
 #include "config.h"
 #if CONFIG_NET_USRP	// the whole file

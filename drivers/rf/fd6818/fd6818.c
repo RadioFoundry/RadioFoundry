@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // FD6818 transceiver driver (docs/spec/hardware-dm32.md 8)
 #include <stddef.h>
 #include "fd6818.h"

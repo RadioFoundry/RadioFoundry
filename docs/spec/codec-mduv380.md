@@ -26,7 +26,7 @@ Older 18.11 and 18.16 packages exist on the same page (attachments 625, 626); th
 
 The four files are for the 5 W radios. A "Plus 10 W" stock file was not found from a reputable source (?). The stock
 updater refuses nothing by model (the header carries no model string), so a user must pick the file for their radio;
-for ODR any of the four is only a codec donor and works on any MD-UV380 family radio, because the codec is the same
+for RadioFoundry any of the four is only a codec donor and works on any MD-UV380 family radio, because the codec is the same
 object code (below).
 
 ## Container and encryption
@@ -53,7 +53,7 @@ plain[i] = file[0x100 + i] ^ key[i % 1024]
 
 For an application address A: file offset = A - 0x0800C000 + 0x5D500, key index = (file offset - 0x100) % 1024.
 
-**Key recovery (C, 2026-10-12).** `odrflash/stockfw.derive_key(stock, <the hash above>)` recovers the key from each of
+**Key recovery (C, 2026-10-12).** `rfoundry/stockfw.derive_key(stock, <the hash above>)` recovers the key from each of
 the four files and checks it by that hash: by the plain column vote in about 0.2 s for V19.26, D19.26 and S19.26, by
 the byte-pair refinement in about 5 s for P19.26. No key file is needed.
 

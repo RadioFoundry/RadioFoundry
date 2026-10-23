@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // UI drawing on the host: text helpers, row-change flushing, and Home / quick settings rendered at each display
 // class (160x120 and 160x128 color, 128x64 mono, 240x320 layout only), written to out/*.ppm for a look. The 16-color
 // frame buffer (bpp 4: palette, reuse, nearest color, captures) and anti-aliased text.

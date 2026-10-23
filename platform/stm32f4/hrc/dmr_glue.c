@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C6000 / HR_C5000 DMR glue the STM32F4 radios share (dmr_glue.h): the slot engine on the chip's three
 // interrupt lines and the deferred event task that calls the DMR stack (docs/spec/dmr-modem.md 6).
 //
@@ -35,7 +35,7 @@
 #define INT_RFTX	GPIO_PIN_2
 #define MODEM_IRQ_PRIORITY	5	// the chips' three lines, one level; must stay >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY
 
-static hrc6000_dmr_t eng ODR_CPU_RAM;	// the slot ISRs' state: CCM, off the DMA bus
+static hrc6000_dmr_t eng RFOUNDRY_CPU_RAM;	// the slot ISRs' state: CCM, off the DMA bus
 static TaskHandle_t task;
 static const stm32_hrc_dmr_board_t *hooks;
 static volatile bool active;

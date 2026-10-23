@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Host test of the split duplex extension (docs/spec/split-duplex.md):
 //   - the CACH and short LC coding (core/dmr/fec/dmrCach.c) against ETSI TS 102 361-1 itself: the generator matrices
 //     of tables B.13 and B.17 multiplied out here, the bit placement of figures B.6 and B.9 written out as tables, the
@@ -592,7 +592,7 @@ static void io_write(const uint8_t *buf, size_t len)
 	}
 }
 
-static const mmdvm_io_t io = { .write = io_write, .description = "OpenDigitalRadio Test 0123abcd" };
+static const mmdvm_io_t io = { .write = io_write, .description = "RadioFoundry Test 0123abcd" };
 
 static uint8_t power_set;
 static bool r_enter(uint32_t rx) { (void)rx; return true; }
@@ -640,7 +640,7 @@ static const uint8_t *last_out(uint8_t cmd)
 static const uint8_t *split_reply(uint8_t sub)
 {
 	for (int i = out_count - 1; i >= 0; i--) {
-		if ((out[i].b[2] == MMDVM_ODR_SPLIT) && (out[i].b[3] == sub)) {
+		if ((out[i].b[2] == MMDVM_RFOUNDRY_SPLIT) && (out[i].b[3] == sub)) {
 			return out[i].b;
 		}
 	}
@@ -685,7 +685,7 @@ static uint8_t split_cmd(uint8_t sub, const uint8_t *data, uint8_t len)
 	if (len > 0) {
 		memcpy(p + 1, data, len);
 	}
-	host(MMDVM_ODR_SPLIT, p, (uint8_t)(len + 1));
+	host(MMDVM_RFOUNDRY_SPLIT, p, (uint8_t)(len + 1));
 	const uint8_t *r = split_reply(sub);
 
 	return (r != NULL) ? r[4] : 0xEE;
@@ -818,8 +818,8 @@ static void test_normal(void)
 	CHECK(split_cmd(SPLIT_SUB_SET_AT, (const uint8_t[]){ 1 }, 1) == SPLIT_RESULT_STATE);
 	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 3 }, 1) == SPLIT_RESULT_INVALID);
 	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, NULL, 0) == SPLIT_RESULT_INVALID);
-	host(MMDVM_ODR_SPLIT, NULL, 0);
-	CHECK(out[out_count - 1].b[2] == MMDVM_ODR_SPLIT && out[out_count - 1].b[4] == SPLIT_RESULT_INVALID);
+	host(MMDVM_RFOUNDRY_SPLIT, NULL, 0);
+	CHECK(out[out_count - 1].b[2] == MMDVM_RFOUNDRY_SPLIT && out[out_count - 1].b[4] == SPLIT_RESULT_INVALID);
 	// Simplex DMR_DATA1 still NAK 2, DMR_START / SHORTLC still silent, unknown commands still NAK 1
 	int from = out_count;
 	uint8_t f[33];
@@ -1728,7 +1728,7 @@ static void test_rx_meta(void)
 	int ev[2], n = 0, data2 = -1, data1 = -1;
 	for (int i = from; i < out_count; i++) {
 		const uint8_t *o = out[i].b;
-		if ((o[2] == MMDVM_ODR_SPLIT) && (o[3] == SPLIT_EV_RX_META) && (n < 2)) {
+		if ((o[2] == MMDVM_RFOUNDRY_SPLIT) && (o[3] == SPLIT_EV_RX_META) && (n < 2)) {
 			CHECK(o[1] == 5 + SPLIT_META_LEN && o[4] == 0);
 			ev[n++] = i;
 		} else if ((o[2] == MMDVM_DMR_DATA2) && (data2 < 0)) {
@@ -1754,7 +1754,7 @@ static void test_rx_meta(void)
 	run_ms(10);
 	const uint8_t *e = NULL;
 	for (int i = from; i < out_count; i++) {
-		if ((out[i].b[2] == MMDVM_ODR_SPLIT) && (out[i].b[3] == SPLIT_EV_RX_META)) {
+		if ((out[i].b[2] == MMDVM_RFOUNDRY_SPLIT) && (out[i].b[3] == SPLIT_EV_RX_META)) {
 			e = out[i].b;
 		}
 	}
@@ -1771,7 +1771,7 @@ static void test_rx_meta(void)
 	run_ms(10);
 	int evs = 0;
 	for (int i = from; i < out_count; i++) {
-		evs += (out[i].b[2] == MMDVM_ODR_SPLIT) && (out[i].b[3] == SPLIT_EV_RX_META);
+		evs += (out[i].b[2] == MMDVM_RFOUNDRY_SPLIT) && (out[i].b[3] == SPLIT_EV_RX_META);
 	}
 	CHECK(evs == 0 && count_out(MMDVM_DMR_DATA2, from) == 1);
 	CHECK(split_cmd(SPLIT_EV_RX_META, NULL, 0) == SPLIT_RESULT_UNKNOWN);

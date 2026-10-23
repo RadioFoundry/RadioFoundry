@@ -148,7 +148,7 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-tnc"></a>TNC | Terminal node controller: the modem that turns packet data into audio tones and back. |
 | <a id="t-udp"></a>UDP | User Datagram Protocol: IP packets with no delivery guarantee. |
 
-## ODR and firmware
+## RadioFoundry and firmware
 
 | Term | Meaning |
 |---|---|
@@ -156,14 +156,14 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-bcd"></a>BCD | Binary coded decimal: each decimal digit in 4 bits. |
 | <a id="t-board"></a>Board | The code and description of one radio model's hardware wiring: pins, chips, memory map. [More](architecture.md) |
 | <a id="t-ci"></a>CI | Continuous integration: the checks every change must pass (tools/ci.sh). |
-| <a id="t-debug-link"></a>Debug link | ODR's USB serial protocol for reading state and driving the radio from a computer. [More](debug-link.md) |
+| <a id="t-debug-link"></a>Debug link | RadioFoundry's USB serial protocol for reading state and driving the radio from a computer. [More](debug-link.md) |
 | <a id="t-feature-switch"></a>Feature switch | A CONFIG_ option that turns a feature's code in or out of the build. [More](../build-config.md) |
-| <a id="t-gpl"></a>GPL | GNU General Public License. ODR does not use GPL code. |
+| <a id="t-gpl"></a>GPL | GNU General Public License. RadioFoundry does not use GPL code. |
 | <a id="t-hal"></a>HAL | Hardware abstraction layer: the interfaces the core uses instead of touching a chip. [More](architecture.md) |
 | <a id="t-hil"></a>HIL | Hardware in the loop: tests that run against a real radio, and a bench radio or SDR for the other side. [More](testing.md) |
 | <a id="t-kb"></a>KB (MB) | Kilobytes (1024 bytes). |
 | <a id="t-lto"></a>LTO | Link-time optimization: the compiler optimizes across files. It shrinks the firmware. |
-| <a id="t-mit"></a>MIT | The permissive license ODR uses. |
+| <a id="t-mit"></a>MIT | The permissive license RadioFoundry uses. |
 | <a id="t-msb"></a>MSB (LSB) | Most significant bit (or byte): the first, highest-value one. |
 | <a id="t-os"></a>OS | Operating system. |
 | <a id="t-rtos"></a>RTOS | Real-time operating system: the scheduler that runs the firmware's tasks. |
@@ -173,6 +173,6 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-soc"></a>SoC | System on chip: the processor and its on-chip peripherals. |
 | <a id="t-st"></a>ST | STMicroelectronics, the maker of the STM32 processors. |
 | <a id="t-stub"></a>Stub | A small program that runs on the radio in place of the firmware so the computer can read or write flash without the stock bootloader. |
-| <a id="t-usrp"></a>USRP | The UDP stream that carries a call's audio between ODR and a network gateway. |
+| <a id="t-usrp"></a>USRP | The UDP stream that carries a call's audio between RadioFoundry and a network gateway. |
 | <a id="t-xip"></a>XIP | Execute in place: running code straight from flash. |
 | <a id="t-xor"></a>XOR | Exclusive or: a bit operation that flips bits where the other operand has a 1. |

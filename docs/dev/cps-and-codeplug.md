@@ -2,7 +2,7 @@
 
 # CPS, codeplug and settings
 
-ODR doesn't have its own programming software. qdmr programs it through a shim that speaks the open-firmware
+RadioFoundry doesn't have its own programming software. qdmr programs it through a shim that speaks the open-firmware
 CPS protocol qdmr already supports, over the codeplug layout qdmr already writes.
 
 ## The CPS shim
@@ -32,7 +32,7 @@ python3 tools/cps_client.py read backup.bin
 python3 tools/cps_client.py --exec "tests/host/cpsSim --populate" info     # against the simulator
 ```
 
-qdmr itself hasn't been run against ODR on a radio yet. When it is, record the qdmr version and radio model chosen in
+qdmr itself hasn't been run against RadioFoundry on a radio yet. When it is, record the qdmr version and radio model chosen in
 [cps-protocol.md](../spec/cps-protocol.md) 2.5.
 
 ## The codeplug

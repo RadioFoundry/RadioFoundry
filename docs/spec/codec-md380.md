@@ -44,8 +44,8 @@ column) is wrong in 352 of the 1024 columns: the image is far less zero-dominate
 What converges is a byte-pair refinement trained on the file itself: plain firmware byte pairs (Thumb-2 halfwords,
 little-endian addresses) are strongly skewed, with even and odd offsets distinct. Learn a pair model from the 40 % of
 columns with the clearest vote, re-pick every other column among its 8 vote candidates, then repeat with the model
-learned from the whole image until nothing changes. Two rounds give the exact key. `odrflash/stockfw.derive_key` does
-this when the plain vote fails (about 5 s in Python), so neither odrflash nor `tools/codec_extract.py` needs a key file
+learned from the whole image until nothing changes. Two rounds give the exact key. `rfoundry/stockfw.derive_key` does
+this when the plain vote fails (about 5 s in Python), so neither rfoundry nor `tools/codec_extract.py` needs a key file
 for the MD-380. The key file is never stored in the repository.
 
 ## How the codec was found
@@ -134,7 +134,7 @@ Radios use one of two patterns, each a constant value on every call of a transmi
 (0x1000 | 0x800 | 0x40). A word that changes from call to call is not one of them. A host that passes 0x1840 on
 the first call and 0x800 afterwards gets the 0x800 behavior: over 234 frames the output equals 0x800 on every call.
 
-What ODR passes (`drivers/vocoder/ambe2_flags.h`, used by the MD-380 and DM-1701 hosts and by
+What RadioFoundry passes (`drivers/vocoder/ambe2_flags.h`, used by the MD-380 and DM-1701 hosts and by
 `platform/hrc7000/vocoder.c` for the DM-1801 Pro and DM-32UV): one word on every call, 0x800 plus 0x40 for
 `VOCODER_OPT_NOISE_REDUCTION`, 0x1000 for `VOCODER_OPT_TONE_FRAMES` and 0x2000 for `VOCODER_OPT_AGC`. Noise
 reduction and tone frames are on by default and AGC is off, which gives 0x1840 (0x3840 with Mic AGC on). 0x100 and
@@ -150,7 +150,7 @@ The stock wrapper keeps the encoder block E at RAM 0x2000C730, its FEC state at 
 block D at 0x20011224 and its FEC state at 0x20011A1C (D+0x7F8): the same offsets as the DM-1701's. It stores the
 wrapper constants (0x1840, 0x2000, -22, 20, -10, -40, 0x4000, 3276, 3276, 1310, 10, 20, 128, -20) and then calls
 encoder init (E, 1, 1), FEC init (E+0x16E4, 1), decoder init (D, 1), FEC init (D+0x7F8, 1), encoder parameters,
-encoder set (E, 128, -20), decoder set (D, 128, -20), and one decode of an all-zero frame with flags 8. ODR runs the same
+encoder set (E, 128, -20), decoder set (D, 128, -20), and one decode of an all-zero frame with flags 8. RadioFoundry runs the same
 sequence on its own blocks.
 
 ### State sizes (measured)
@@ -160,7 +160,7 @@ sequence on its own blocks.
 | decoder state D | 0x7EC bytes | 0x7E8 faults (decoder init) |
 | encoder state E | 0x16E0 bytes | 0x16DC faults (encoder init) |
 | FEC state | 0x44 bytes each | 0x40 faults; only for the codec's own FEC routines |
-| stack | 4046 bytes peak from the entry | 4234 through ODR's call veneer and vocoder; allow 4.5 KB plus the caller |
+| stack | 4046 bytes peak from the entry | 4234 through RadioFoundry's call veneer and vocoder; allow 4.5 KB plus the caller |
 
 The blocks are passed by pointer and can live anywhere. No fixed RAM address is touched: with only the windows, the
 state blocks, the buffers and a stack mapped, init and 300 frames of encode, ECC, FEC decode (with 0 to 4 injected bit
@@ -177,7 +177,7 @@ which no codec function calls.)
 * The literals and the code pointer point into the table windows, so they stay valid while the tables stay at their
   stock addresses. Moving the code alone needs two kinds of rewrite: the two movw/movt pairs in the code that point
   into the code, and the 12 calls (BL) from the islands back into the code. The codec map
-  (`tools/odrflash/odrflash/codec_maps/md380/md380-d2032.json`) lists both, and the merge applies them
+  (`tools/rfoundry/rfoundry/codec_maps/md380/md380-d2032.json`) lists both, and the merge applies them
   ([codec-placement.md](codec-placement.md), "STM32 radios").
 
 ## Hosting
@@ -199,9 +199,9 @@ its stock address ([codec-placement.md](codec-placement.md), "STM32 radios").
 * **Updates.** No codec byte shares a sector with the application, so an update writes sectors 3-7 only and keeps the
   codec (`boards/md380/board.toml`: `keep_codec = true`; the STM32 stub `stub/f4stub.py` owns sectors 3-7). The codec
   is merged on a first install from stock, or when it can't be kept or checked. It comes from the stock file, or from
-  the copy the flashing tools keep: odrflash and the web flasher read the codec from a radio running ODR over the
+  the copy the flashing tools keep: rfoundry and the web flasher read the codec from a radio running RadioFoundry over the
   debug link (READ_MEM), in the stock or the placed layout, check it against the profile hashes and save it on the
-  computer (odrflash's config directory, the browser's IndexedDB; `odrflash/codecsave.py`,
+  computer (rfoundry's config directory, the browser's IndexedDB; `rfoundry/codecsave.py`,
   `site/static/js/flasher/codecsave.js`).
 * **Boot check (`platform/stm32f4/hrc/vocoder.c`, this build's profile in `boards/md380/vocoder_md380.c`).** Once,
   before the first call: the descriptor (its own CRC, tag 0x2032, the code and every table window at the addresses
@@ -223,7 +223,7 @@ its stock address ([codec-placement.md](codec-placement.md), "STM32 radios").
    moved code. Write the code at 0x080E0000 with its two movw/movt self references rewritten, and the descriptor at
    0x080FFF80. Check the placed CRC-32s (Hosting). 0xFF fills the rest after the application image. The codec map
    drives the rewrites. The merge happens on the user's machine (`make` with the stock file in `codecs/`,
-   `tools/codec_extract.py`, odrflash or the web flasher), never in a release.
+   `tools/codec_extract.py`, rfoundry or the web flasher), never in a release.
 
 ## Verification by execution
 
@@ -234,7 +234,7 @@ blocks, so the runs use block hooks only and check flash use by what is mapped.
 * The same harness ran the DM-1701 V02.06 codec at its addresses. For a 1 kHz tone (30 frames) and a 300 frame stress
   run (noise, silence, full scale sweeps, injected bit errors, random frames, flags 8), the MD-380 codec's air bits
   and decoded PCM are **bit-identical** to the DM-1701 codec's. Their FEC decode results agree (0 and 4).
-* ODR's own `boards/md380/vocoder_md380.c` and `platform/stm32f4/codec_call.c`, compiled with the firmware flags, were
+* RadioFoundry's own `boards/md380/vocoder_md380.c` and `platform/stm32f4/codec_call.c`, compiled with the firmware flags, were
   linked into a small harness and run against the windows of the merged image that `make BOARD=md380` writes, with a
   deliberately misaligned caller stack. `present()` passes, and the encoded bits and decoded PCM over 30 frames are
   bit-identical to the direct stock calls.

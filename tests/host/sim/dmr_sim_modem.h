@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A simulated hal_dmr_modem_t for host tests: keeps a slot clock, sends queued bursts one per frame on our slot
 // (recording what went "on air", with the embedded LC fragments it would spread over B-E), and lets a test inject
 // received bursts and repeater activity.

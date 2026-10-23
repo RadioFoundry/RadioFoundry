@@ -210,7 +210,7 @@ is on, the reply window lets you answer any call you heard with **PTT**.
 
 ## Privacy
 
-ODR has two kinds of basic privacy: Motorola basic privacy (keys 1 to 255) and Anytone 16-bit basic privacy. Basic
+RadioFoundry has two kinds of basic privacy: Motorola basic privacy (keys 1 to 255) and Anytone 16-bit basic privacy. Basic
 privacy is a fixed scrambling of the voice. It keeps casual listeners out but isn't encryption. The scrambling hasn't
 been checked against another radio yet ([Radio reference](23-radios.md)).
 
@@ -230,9 +230,9 @@ The radio keeps the key across restarts. Setting the type back to Off removes th
 can't write privacy keys yet. Developers can also load a key over USB with the debug tool:
 
 ```
-tools/odr_debug.py radio privacy moto 5          # Motorola basic privacy, key 5
-tools/odr_debug.py radio privacy anytone 4660    # Anytone basic privacy, key 4660
-tools/odr_debug.py radio privacy off
+tools/rfoundry_debug.py radio privacy moto 5          # Motorola basic privacy, key 5
+tools/rfoundry_debug.py radio privacy anytone 4660    # Anytone basic privacy, key 4660
+tools/rfoundry_debug.py radio privacy off
 ```
 
 Without a key, the Privacy tile shows "No privacy key: set one in Settings > Privacy". The keys are stored without

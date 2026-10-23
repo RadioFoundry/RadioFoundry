@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro broadcast FM receiver: the RDA5807-class tuner on a bit-banged I2C bus on PTA25 / PTA26
 // (hardware-dm1801pro.md 7) as the board's hal_bcast_t. The chip, its register shadows and the HAL are shared
 // (drivers/bcast/rda5807m); this file is the wiring only.

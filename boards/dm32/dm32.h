@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Internal interfaces between the DM-32UV board files
 #ifndef DM32_H
 #define DM32_H

@@ -10,7 +10,7 @@ Before writing code, the facts go into a hardware spec, `docs/spec/hardware-<b>.
 the [clean-room rules](contributing.md#clean-room). Use [hardware-dm1701.md](../spec/hardware-dm1701.md) and
 [hardware-dm32.md](../spec/hardware-dm32.md) as the model: MCU and memory map, pins, chips, keys, display, power,
 bootloader and image format, calibration, codec location. Start from the radio's entry in
-[radios.md](../spec/radios.md): its chip list, sources, confidence tags and which ODR drivers it can reuse.
+[radios.md](../spec/radios.md): its chip list, sources, confidence tags and which RadioFoundry drivers it can reuse.
 
 ## The files
 
@@ -33,7 +33,7 @@ The board's own files:
 | `boards/<b>/board.mk` | `PLATFORM`, `APP_BASE` (where the image starts: the first byte the bootloader runs), `BOARD_DIRS` (the board directory and each driver it uses) and any `MCU_DEFS` of its own. STM32: `MCU` (the part, which picks the CMSIS define and start-up file) and `HSE_VALUE` (the crystal in Hz); optional `BOARD_HAL_MODULES` (HAL modules beyond the platform's, such as `hal_i2c`) |
 | `boards/<b>/board.toml` | The board registry entry: identity, status, flashing, codec route, the site's data. `tools/boards.py check` validates it against `board.mk`, the linker script and `board_t`. Every key is in [The board registry](board-registry.md). Copy a neighbor on the same platform |
 | `boards/<b>/config.mk` | Feature defaults where this radio differs from `platform/<p>/config.mk`, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`), each with the reason. Also `BOARD_UNSUPPORTED` (switches its hardware can't do, one a line with the reason: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`), `BOARD_NOT_WRITTEN` (the same form: the hardware can, the driver or glue isn't written yet, with `CONFIG_X ?= n`; ci.sh's maximal build leaves both lists off, [the rule](../build-config.md#unsupported-not-written-unconfirmed)), `BOARD_REQUIRED` (switches it can't build without; ci.sh skips their `no-` build) and `MAXIMAL_VARS` (make variables for that build, e.g. `LTO=1`) |
-| `boards/<b>/memory.ld` | The memory map: the codec symbols, then `MEMORY` (the application's `FLASH` region from `__app_start`, which the Makefile defines from `APP_BASE`, and the RAM regions), then `INCLUDE common.ld`, the platform's sections. Keep the region's end below the codec. Keep the application out of every flash sector the codec touches (not only the codec bytes), so odrflash can update the firmware without erasing the codec. The flashing tools read the region and the codec symbols from it, and derive the erasable sectors and the protected range ([release.md](release.md#sector-maps)) |
+| `boards/<b>/memory.ld` | The memory map: the codec symbols, then `MEMORY` (the application's `FLASH` region from `__app_start`, which the Makefile defines from `APP_BASE`, and the RAM regions), then `INCLUDE common.ld`, the platform's sections. Keep the region's end below the codec. Keep the application out of every flash sector the codec touches (not only the codec bytes), so rfoundry can update the firmware without erasing the codec. The flashing tools read the region and the codec symbols from it, and derive the erasable sectors and the protected range ([release.md](release.md#sector-maps)) |
 | `boards/<b>/freertos_board.h` | Optional: RTOS settings that differ from `platform/<p>/FreeRTOSConfig.h` (the heap size, for example), read before its defaults |
 | `boards/<b>/board.c` | The `board_t` descriptor, the key map, bands, power level names |
 | `boards/<b>/pins.h`, `<b>.h` | Pin assignments and the board's private declarations. The registry reads the pins the flash stub uses from `pins.h` (`[flash.stub]` in [The board registry](board-registry.md#boardtoml)) |
@@ -142,7 +142,7 @@ What the docs claim for a radio comes from its records, so each step above ends 
 - The web site lists the radio from `board.toml`: `order` places it, `[status] level` and `summary` give its badge and
   its line for visitors. A survey row that names a board is the board's row, so the site doesn't list it as planned.
 - Before it can be released: its `board.toml` `[flash]` and `[codec]` tables, `[status] release = "stable"` and the
-  regenerated `tools/odrflash/odrflash/registry.json` (`tools/boards.py json --for odrflash --out ...`). The release
+  regenerated `tools/rfoundry/rfoundry/registry.json` (`tools/boards.py json --for rfoundry --out ...`). The release
   workflow's job for its toolchain then builds and packages it, with each build option value
   ([release.md](release.md#the-release-workflow)); CI and the nightly pick it up from the registry too
   ([ci.md](ci.md)). The jobs are grouped by toolchain (`platform.toml` `[toolchain] id`), so neither a new radio nor

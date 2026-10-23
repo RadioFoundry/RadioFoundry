@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A simulated SPI NOR flash (sim_flash.h)
 #include <stdlib.h>
 #include <string.h>

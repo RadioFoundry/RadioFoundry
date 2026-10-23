@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The UI task: boot splash, the frame pacing, the backlight, and the glue between the RTOS and the UI's behavior in
 // ui_app.c (which the host simulator runs without an RTOS). Reads the radio view and posts requests; never touches
 // the radio hardware.
@@ -85,7 +85,7 @@ static void ui_task(void *arg)
 		ui_layout_init();
 		char line1[17], line2[17];
 		ui_svc_boot_text(line1, line2);
-		ui_draw_splash(board.name, ODR_GIT, line1, line2);
+		ui_draw_splash(board.name, RFOUNDRY_GIT, line1, line2);
 		gfx_flush();
 	}
 	ui_app_init();

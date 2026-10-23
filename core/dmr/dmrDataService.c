@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR data service, see dmrDataService.h. Single task (the host's, the radio task in the firmware), except the
  * dmr_data_api.h calls at the end, which only touch the mailbox and copies under the lock.
@@ -153,7 +153,7 @@ static struct
 	char text[sizeof(((dmrDataTMS_t *)0)->text)];
 } sms;
 #if CONFIG_DMR_CONFIRMED
-ODR_CPU_RAM static uint8_t smsL4[DMR_ETSI_TEXT_UDP_MAX];	// a confirmed ETSI IP text's datagram, for its retries
+RFOUNDRY_CPU_RAM static uint8_t smsL4[DMR_ETSI_TEXT_UDP_MAX];	// a confirmed ETSI IP text's datagram, for its retries
 #endif
 
 // Our emergency alarm (CONFIG_DMR_EMERGENCY)

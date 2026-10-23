@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # CI on every pull request (docs/dev/ci.md "Pull request checks"), from this file as it is on main: a pull request's
 # own copy of the workflows never runs here, so a change to them takes the owner's review first (.github/CODEOWNERS).
@@ -16,7 +16,7 @@
 # nothing. Never add secrets, another write permission, actions/cache or the pull request's text (title, body, branch
 # name) in a run step to this file.
 #
-# Runners: with the repository variable ODR_CI_RUNNER set, a pull request from a branch of this repository runs on
+# Runners: with the repository variable RFOUNDRY_CI_RUNNER set, a pull request from a branch of this repository runs on
 # that self-hosted runner (tools/ci-runner/); one from a fork always runs on GitHub's hosted runners, since this
 # workflow runs every pull request's code without approval. Keep that condition in every job's runs-on.
 name: PR tests
@@ -39,7 +39,7 @@ env:
 
 jobs:
   changes:
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       src: ${{ steps.files.outputs.src }}
@@ -71,7 +71,7 @@ jobs:
     name: unit tests
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -82,7 +82,7 @@ jobs:
       - name: Install gcovr, tshark, numpy, pytest, pyserial
         run: |
           set -eu
-          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+          if [ "${RFOUNDRY_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
             sudo apt-get update -qq
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
               gcovr tshark python3-numpy python3-pytest python3-serial
@@ -119,7 +119,7 @@ jobs:
     name: firmware (${{ matrix.name }})
     needs: changes
     if: needs.changes.outputs.src == 'true'
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -152,8 +152,8 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
           cache: "false"
-          image: ${{ vars.ODR_CSKY_IMAGE }}
-          registry: ${{ vars.ODR_CSKY_REGISTRY }}
+          image: ${{ vars.RFOUNDRY_CSKY_IMAGE }}
+          registry: ${{ vars.RFOUNDRY_CSKY_REGISTRY }}
           registry-user: ${{ github.actor }}
           registry-token: ${{ github.token }}
       - name: third_party submodules
@@ -167,7 +167,7 @@ jobs:
           rc=0
           $RUN tools/ci.sh --quick --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
           if [ "$rc" = 3 ]; then
-            echo "::notice::$TOOLCHAIN builds skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::$TOOLCHAIN builds skipped: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
@@ -179,13 +179,13 @@ jobs:
           path: |
             build/ci/size-report.md
             build/ci/*.log
-            build/ci/*/odr_*.bin
+            build/ci/*/rfoundry_*.bin
           if-no-files-found: ignore
 
   checks:
     name: checks   # every pull request: Python and license checks (doc links among them), the manual when docs change
     needs: changes
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -196,7 +196,7 @@ jobs:
       - name: Install numpy, pytest, pyserial
         run: |
           set -eu
-          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+          if [ "${RFOUNDRY_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
             sudo apt-get update -qq
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
               python3-numpy python3-pytest python3-serial
@@ -222,7 +222,7 @@ jobs:
         run: |
           set -eu
           VERSION="$(git rev-parse --short=8 HEAD)"
-          tools/build_manual.sh --version "$VERSION" --out "build/manual/OpenDigitalRadio-manual-${VERSION}.pdf"
+          tools/build_manual.sh --version "$VERSION" --out "build/manual/RadioFoundry-manual-${VERSION}.pdf"
       - uses: actions/upload-artifact@v4
         if: needs.changes.outputs.docs == 'true'
         with:
@@ -235,7 +235,7 @@ jobs:
     needs: [changes, unit-tests, firmware, checks]
     if: always()
     # a few seconds of gh at the end: the UI gallery's runner, which is idle by then, so it never holds a build runner
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && (vars.ODR_UI_RUNNER || vars.ODR_CI_RUNNER) || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && (vars.RFOUNDRY_UI_RUNNER || vars.RFOUNDRY_CI_RUNNER) || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       statuses: write   # the PR checks status on the head commit; this job runs none of the pull request's code

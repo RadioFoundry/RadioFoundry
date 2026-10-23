@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The STM32F4 stub's image header (docs/spec/stub-stm32f4.md 3.1): 16 bytes at a fixed offset in the image, right
-// after the entry code. The one definition of its layout and numbers, shared by the stub (f4stub_main.c), ODR
+// after the entry code. The one definition of its layout and numbers, shared by the stub (f4stub_main.c), RadioFoundry
 // (platform/stm32f4/stub_entry.c) and the host tests. f4stub.py and the web flasher read the same layout, and
 // f4stub.py --self-test checks its copies of these numbers against this file. Little endian, as the image.
 #ifndef F4STUB_HEADER_H
@@ -22,8 +22,8 @@
 
 #define F4STUB_FLAG_FEEDS_IWDG		0x00000001u	// feeds the IWDG in every loop that can take time
 
-// The stub's RESET marks itself as asked for in ODR's restart-cause words (docs/spec/crash-log.md 1.3: crash_boot_t.soft
-// in the backup SRAM, after the crash record), so the next start doesn't take it for the watchdog. ODR checks the
+// The stub's RESET marks itself as asked for in RadioFoundry's restart-cause words (docs/spec/crash-log.md 1.3: crash_boot_t.soft
+// in the backup SRAM, after the crash record), so the next start doesn't take it for the watchdog. RadioFoundry checks the
 // address against its own layout (crash_stm32.c)
 #define F4STUB_SOFT_MARK_ADDR		0x40024104u
 #define F4STUB_SOFT_MARK		0x54464F53u	// "SOFT", CRASH_BOOT_SOFT

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The SoC's hardware watchdog (CONFIG_WATCHDOG, docs/spec/watchdog.md). The platform owns the registers and starts it
 // in main() before the scheduler; the idle task feeds it (core/app/watchdog.c), so any starvation or hang of a few
 // seconds resets the chip. Long work that keeps the idle task out on purpose feeds it from inside its loop.

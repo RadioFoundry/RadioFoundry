@@ -27,11 +27,11 @@ end generated
 ## Checklist
 
 - [ ] Branch named `<type>/<area>-<short-description>`, title `<Area>: <what changed>`
-      ([contributing.md](https://github.com/sfowlr/OpenDigitalRadio/blob/main/docs/dev/contributing.md#branches-and-pull-requests)).
+      ([contributing.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/dev/contributing.md#branches-and-pull-requests)).
 - [ ] Host unit tests cover the change (code changes), named in Testing above.
 - [ ] Clean room: written from `docs/spec/`, datasheets, public standards or permissively licensed code. Nothing
       copied, translated or paraphrased from other firmware, GPL code, vendor SDKs or disassembly
-      ([CLEANROOM.md](https://github.com/sfowlr/OpenDigitalRadio/blob/main/docs/CLEANROOM.md)).
+      ([CLEANROOM.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/CLEANROOM.md)).
 - [ ] No AMBE codec, stock firmware, bootloader keys, flash or memory dumps or audio recordings in the diff.
 - [ ] SPDX header on every new file.
 - [ ] `core/` stays radio independent: no board headers, no radio defines.

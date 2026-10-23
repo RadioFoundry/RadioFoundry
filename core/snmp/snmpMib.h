@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The radio's MIB (docs/spec/snmp.md 4, docs/spec/ODR-MIB.txt): the system group (RFC 3418), the snmp group, and the ODR enterprise objects, read from a snapshot (snmpData_t) the
+// Copyright (c) 2026 The RadioFoundry Authors
+// The radio's MIB (docs/spec/snmp.md 4, docs/spec/RFOUNDRY-MIB.txt): the system group (RFC 3418), the snmp group, and the RadioFoundry enterprise objects, read from a snapshot (snmpData_t) the
 // firmware glue fills (snmp_agent.c), so that this file, like snmp.c, runs unchanged in the host tests. SETs change
 // an snmpConfig_t and the system name in the context and flag them for the glue to store.
 //
 // Also the notifications: the events the agent reports (snmpEvents_*), detected from successive snapshots, queued per
 // target (the host over USB, a manager radio over RF), rate limited on RF, and encoded as SNMPv2-Trap messages.
-#ifndef ODR_SNMP_MIB_H
-#define ODR_SNMP_MIB_H
+#ifndef RFOUNDRY_SNMP_MIB_H
+#define RFOUNDRY_SNMP_MIB_H
 
 #include <stdbool.h>
 #include <stdint.h>
 #include "snmp/snmp.h"
 
-// The enterprise number of the ODR MIB. TBD: 32473 is the IANA number reserved for documentation (RFC 5612), a
-// placeholder until the project has its own Private Enterprise Number; change it here and in docs/spec/ODR-MIB.txt
-#ifndef ODR_SNMP_PEN
-#define ODR_SNMP_PEN		32473u
+// The enterprise number of the RadioFoundry MIB. TBD: 32473 is the IANA number reserved for documentation (RFC 5612), a
+// placeholder until the project has its own Private Enterprise Number; change it here and in docs/spec/RFOUNDRY-MIB.txt
+#ifndef RFOUNDRY_SNMP_PEN
+#define RFOUNDRY_SNMP_PEN		32473u
 #endif
 
 #define SNMP_NAME_MAX		16	// = SETTINGS_NAME_LEN, the radio name (sysName)

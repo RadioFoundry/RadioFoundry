@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # TYT MD-9600 / Retevis RT90 hardware (mobile)
 
@@ -50,7 +50,7 @@ is used (section 10.2). Read-out protection level 1 assumed, as on every TYT STM
 | HSE | 8 MHz external clock in **bypass** mode, as the DM-1701 | (D) [ref] |
 | LSE | 32.768 kHz crystal, RTC enabled | (D) [ref] |
 | PLL | M 4, N 72, P 2, Q 3: SYSCLK 72 MHz, USB 48 MHz | (D) [ref] |
-| AHB / APB1 / APB2 | 72 MHz / **18 MHz (/4)** / **36 MHz (/2)** | (D) [ref]; differs from the DM-1701 (/2, /1). ODR may use the DM-1701 plan (?: nothing found that needs the slower buses) |
+| AHB / APB1 / APB2 | 72 MHz / **18 MHz (/4)** / **36 MHz (/2)** | (D) [ref]; differs from the DM-1701 (/2, /1). RadioFoundry may use the DM-1701 plan (?: nothing found that needs the slower buses) |
 
 Standby (section 10.2) drops SYSCLK to HSE / 512 with both APBs / 16 and voltage scale 2 while waiting for the power
 key (D) [ref].
@@ -64,7 +64,7 @@ its application below 0x0807537C and the V26.45 codec there.
 
 ### 1.4 RAM
 
-The reference port does not map CCM; ODR will (as on the DM-1701). Backup SRAM: 4 KB at BKPSRAM_BASE, kept while DC is
+The reference port does not map CCM; RadioFoundry will (as on the DM-1701). Backup SRAM: 4 KB at BKPSRAM_BASE, kept while DC is
 applied, used for the standby flag (10.2) and for non-permanent settings (D) [ref].
 
 ---
@@ -192,7 +192,7 @@ register behavior is the DM-1701's ([modem-hrc6000.md](modem-hrc6000.md)).
 
 | Item | MD-9600 | Tag |
 |---|---|---|
-| Clock / PLL | 4:0x0A=0x80, 0x0B=0x28, 0x0C=0x33, 0x0A=0x00, 0xB9=0x05, 0xBA=0x04, 0xBB=0x02: the same values ODR already uses | (D) [ref] |
+| Clock / PLL | 4:0x0A=0x80, 0x0B=0x28, 0x0C=0x33, 0x0A=0x00, 0xB9=0x05, 0xBA=0x04, 0xBB=0x02: the same values RadioFoundry already uses | (D) [ref] |
 | IF | 450 kHz (4:0x07-0x09 = 0x0B 0xB8 0x00), from the IF receiver chip, two-point modulation (4:0x01=0xB0) | (D) |
 | FM receive audio | **not through the HR_C6000**: 4:0x36 = 0x00 always. FM audio comes from the IF chip's demodulator via U_V_AF_SW, FM_SW, FM_MUTE (6.1) | (D) [ref] |
 | FM TX, CTCSS, DCS, DTMF, tones | through the HR_C6000 (TX tone generator, RX CTCSS / DCS detector); the stock firmware is reported to use PWM on PC7 for TX tones instead | (D) [ref] |
@@ -300,7 +300,7 @@ lock check (?).
 DAC2 (12 bit) is the APC reference. Four calibrated points per frequency (11.2) that the reference port treats as 5 W,
 10 W, 25 W and 40 W (F: labels, not measured); lower levels as a fixed fraction of the 5 W value (VHF 0.82-0.90, UHF
 0.41-0.64 for 100 mW..1 W) (D) [ref]. The forum reports power poorly calibrated on some radios, and some older units
-only working well on DMR at full power (F) [ref notes]. ODR: refuse TX without an accepted table, as on the MD-380.
+only working well on DMR at full power (F) [ref notes]. RadioFoundry: refuse TX without an accepted table, as on the MD-380.
 
 ### 5.7 RSSI, noise, squelch
 
@@ -340,7 +340,7 @@ Reset low 1 ms, then high, wait 5 ms (D). Commands: 0xE2 (reset), 0x2F (booster,
 (electronic volume = contrast 18), 0xA2 (bias 1/9), 0xA1 (SEG reverse), 0xC0 (COM normal), 0xA4 (normal, not all
 pixels on) or 0xA7 (inverse), 0xAF (display on) (D) [ref]. Writes per page: 0xB0 | page, 0x10, 0x04 (column 4 offset),
 then 128 data bytes. Contrast 0x81 + value; the reference port allows 5-30. Sleep: 0xAE then 0xA5 (D). The reference
-port never sends 0xA6; it relies on the reset state for non-inverse video (?: ODR should send 0xA6).
+port never sends 0xA6; it relies on the reset state for non-inverse video (?: RadioFoundry should send 0xA6).
 
 ### 7.3 Backlight
 
@@ -400,7 +400,7 @@ Hand-mic PTT on PE10, pull-up, active low (D). No separate accessory PTT input i
 
 The reference port supports a community-built remote front panel: if PD2 (column K4) reads low at boot, PB10 / PB11
 become USART3 at 250000 baud and keys, encoder, mic keys, PTT and GPS characters arrive as 3-byte messages, while
-display rows go out over the link (D) [ref]. Not stock hardware, and ODR doesn't support it. ODR must not take a P1, P4
+display rows go out over the link (D) [ref]. Not stock hardware, and RadioFoundry doesn't support it. RadioFoundry must not take a P1, P4
 or Enter key held at boot for the panel (whether those keys pull PD2 low is unverified).
 
 ---
@@ -418,8 +418,8 @@ Power key = matrix K0 x K6. The reference port turns the radio "off" by saving s
 to backup SRAM word 0, and resetting; at boot it finds the flag, drops to HSE / 512, drives row K0 low and waits for
 K6 to go low (power key), waits for release, writes the running flag (0xCAFE) and resets again (D) [ref]. Settings
 that need not survive a supply cut also live in backup SRAM. Removing DC is the only true off. The flags are the
-reference port's own values, not stock (?: whether the stock firmware's standby state survives into ODR is
-irrelevant; ODR picks its own).
+reference port's own values, not stock (?: whether the stock firmware's standby state survives into RadioFoundry is
+irrelevant; RadioFoundry picks its own).
 
 ### 10.3 Supply voltage ADC and scan
 
@@ -436,7 +436,7 @@ noise, IN9 UHF noise, temperature sensor; 480 cycles each, PCLK2 / 8 (D) [ref]. 
 512 bytes in the SPI flash security registers, read as one 512-byte security read from register offset 0 (D) [ref]
 (the same mechanism as the MD-380, [hardware-md380.md](hardware-md380.md) 11.1). The reference port also keeps a copy
 at main-array address 0x010000, recognized by the first 8 bytes of the UHF frequency list (00 25 00 40 00 45 01 40,
-400.025 / 400.145 MHz). ODR reads the security registers and never writes them. The stock CPS backs the table up
+400.025 / 400.145 MHz). RadioFoundry reads the security registers and never writes them. The stock CPS backs the table up
 (Ctrl+T test screen) (F) [ref notes].
 
 ### 11.2 Layout (dual band: UHF 9 points, VHF 5 points)
@@ -482,7 +482,7 @@ port) with CS PB12, shared with the LCD (7.1). Security registers hold the calib
 
 The reference port puts its codeplug / "EEPROM" image at 0 and the calibration copy at 0x010000. The stock TYT codeplug
 and the stock user database (CSV builds) also live in this flash: the stock firmware needs its flash content restored
-to run again, so a full backup before the first ODR flash is mandatory (D) [ref notes]. ODR's map: TODO for the
+to run again, so a full backup before the first RadioFoundry flash is mandatory (D) [ref notes]. RadioFoundry's map: TODO for the
 clean side (reuse the DM-1701 map, keeping 0x010000-0x010FFF free if the calibration copy is wanted).
 
 ---

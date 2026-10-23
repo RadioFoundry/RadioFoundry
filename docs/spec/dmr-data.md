@@ -149,7 +149,7 @@ All three are read whatever the setting.
   8859-x (all read as 8859-1), 0x12 UTF-8, 0x13 UTF-16 (with a byte order mark; big endian without one), 0x14
   UTF-16BE, 0x15 UTF-16LE; characters outside Latin-1 become '?'. Binary and BCD are not text: counted, not shown.
   The codes are TS 102 361-1 V2.7.1 Table 9.50 (9.3.38); the bit padding is 9.3.44. A host test holds one message
-  computed from those clauses apart from this code (`dmrDataChainTest`, "ODR ETSI 541"); a commercial radio is still
+  computed from those clauses apart from this code (`dmrDataChainTest`, "ETSI TXT 541"); a commercial radio is still
   to be tried (open point). HIL 2026-10-10: the bench tool sent ISO 8859-1 text marked 0x02 (its bug, fixed), and the
   radio showed it, correctly for that code, as 7-bit characters.
 - Also read: UDT text (TS 102 361-4, UDT header formats 3 ISO 7-bit, 4 ISO 8-bit, 7 UTF-16BE; CRC-CCITT
@@ -436,7 +436,7 @@ ip.rule1`, `ip.busy ip.result`, compression `ip.sap3 ip.sap4 ip.octets_saved ip.
 `ip.packets ip.sent ip.failed`, confirmed `ip.cnf ip.cnf_tx ip.cnf_retries ip.cnf_acks ip.cnf_sacks ip.cnf_nacks
 ip.cnf_resyncs ip.cnf_timeouts ip.cnf_failed ip.cnf_too_long`, receive `ip.rx_sacks_sent ip.rx_nacks_sent
 ip.rx_duplicates ip.rx_crc9_mismatch`. DMR_DATA ops 9 IP_SETTINGS and 10 IP_SEND (`debuglink.md` 3.12;
-`odr_debug.py data ip-settings|ip-send`).
+`rfoundry_debug.py data ip-settings|ip-send`).
 
 ### 12.6 Open
 

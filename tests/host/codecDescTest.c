@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The STM32 codec descriptor (platform/stm32f4/codec_desc.h): a sound one passes, every malformed one is refused, the
 // window CRCs are checked against the bytes. Synthetic flash, no codec. With file arguments, also checks the codec
 // sectors as tools/codec_extract.py merges them for its synthetic codecs (--test-desc: the DM-1701's sectors 10 and

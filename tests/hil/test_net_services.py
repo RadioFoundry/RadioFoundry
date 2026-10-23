@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The radio's own services in USB network mode (opt-in: --allow-usb-switch): mDNS / DNS-SD (docs/spec/mdns.md) and
 TFTP (docs/spec/tftp.md). Each test switches the radio to the network adapter, works over UDP at its address, and
 switches it back to serial, as test_usb_network.py does.
 
-  test_mdns          odr-<id>.local resolves to the radio's address (the system resolver: mDNSResponder on macOS,
-                     nss-mdns on Linux), and the _odr-debug._udp instance is browsed and resolved to port 3334 with
+  test_mdns          rfoundry-<id>.local resolves to the radio's address (the system resolver: mDNSResponder on macOS,
+                     nss-mdns on Linux), and the _rfoundry-debug._udp instance is browsed and resolved to port 3334 with
                      its TXT record: with dns-sd (macOS) or python zeroconf, whichever is there; skips without both
   test_tftp_read     info.txt, two reads of codeplug.bin identical, the current channel's record matching the view
   test_tftp_write    with --allow-codeplug-write too: back up over TFTP, rename one channel, read it back, write the
@@ -26,7 +26,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, as_int, skip
+from rfoundry_hil import DebugLink, as_int, skip
 import cps_client
 import tftp_client
 
@@ -176,14 +176,14 @@ def test_mdns(radio):
     need(radio, "MDNS")
     have_dns_sd = shutil.which("dns-sd") is not None
     with network_mode(radio) as (udp, radio_ip, own_id):
-        host = f"odr-{own_id}.local"
+        host = f"rfoundry-{own_id}.local"
         v = udp.view(["net"])
         # probing and announcing take about 3 s after the link comes up
         end = time.monotonic() + 10
         while v.get("mdns.state") != "3" and time.monotonic() < end:
             time.sleep(0.5)
             v = udp.view(["net"])
-        assert v.get("mdns.state") == "3" and v.get("mdns.name") == f"odr-{own_id}", v
+        assert v.get("mdns.state") == "3" and v.get("mdns.name") == f"rfoundry-{own_id}", v
 
         addr = None
         for _ in range(10):
@@ -198,12 +198,12 @@ def test_mdns(radio):
             assert addr == radio_ip, f"{host} -> {addr}, expected {radio_ip}"
 
         if have_dns_sd:
-            res, log = _browse_dns_sd("_odr-debug._udp")
+            res, log = _browse_dns_sd("_rfoundry-debug._udp")
         else:
-            res, log = _browse_zeroconf("_odr-debug._udp")
+            res, log = _browse_zeroconf("_rfoundry-debug._udp")
             if res is None and log == "zeroconf not installed":
                 skip("bench", "neither dns-sd nor python zeroconf: the name resolved, browsing not checked")
-        assert res is not None, f"_odr-debug._udp not browsed or resolved: {log}"
+        assert res is not None, f"_rfoundry-debug._udp not browsed or resolved: {log}"
         name, port, txt, target = res
         assert port == 3334, res
         assert target.rstrip(".").lower() == host.lower(), res
@@ -277,7 +277,7 @@ def test_tftp_write(radio, backup_dir):
             skip("state", "no stored channel to edit")
         old = cps_client.decode_channel(backup, number)["name"]
         edited = bytearray(backup)
-        cps_client.set_channel_name(edited, number, "ODR TFTP" if old != "ODR TFTP" else "ODR TFTP 2")
+        cps_client.set_channel_name(edited, number, "RadioFoundry TFTP" if old != "RadioFoundry TFTP" else "RadioFoundry TFTP 2")
         changed = cps_client.compare(backup, edited, QDMR, skip=())
         assert changed
         try:

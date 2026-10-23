@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Vector table and PIC (docs/spec/hardware-dm32.md 4). The CPU takes vector = PIC source + 32 from the table at VBR.
 // Every user vector goes to the common entry (freertos/portasm.S), which acks the PIC and calls hrc_irq_table[source];
 // the CPU exceptions go to hrc_fault_entry. The table is in RAM, 1 KB aligned (VBR), filled at start-up.

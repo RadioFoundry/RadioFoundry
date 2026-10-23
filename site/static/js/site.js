@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Shared page behavior: theme toggle, the narrow-screen menu, the features filter.
 
 const root = document.documentElement;
@@ -7,7 +7,7 @@ const root = document.documentElement;
 document.querySelector(".theme-toggle")?.addEventListener("click", () => {
 	const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
 	root.dataset.theme = dark ? "light" : "dark";
-	try { localStorage.setItem("odr-theme", root.dataset.theme); } catch (e) { /* private mode: not remembered */ }
+	try { localStorage.setItem("rfoundry-theme", root.dataset.theme); } catch (e) { /* private mode: not remembered */ }
 });
 
 const navToggle = document.querySelector(".nav-toggle");

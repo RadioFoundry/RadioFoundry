@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GPS receive ring and module detection for board GPS drivers (drivers/gps/gps_rx): sentences through the ring,
 // found / present / absent after the listen time, ring overflow and UART errors in the counts, millisecond wrap
 #include <stdio.h>

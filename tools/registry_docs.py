@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The docs blocks generated from the board registry (tools/boards.py docs), and the radio survey's rows.
 
 A generated block sits between two markers and is rewritten whole:
@@ -32,7 +32,7 @@ import os
 import re
 import subprocess
 
-REPO_URL = "https://github.com/sfowlr/OpenDigitalRadio"
+REPO_URL = "https://github.com/radiofoundry/radiofoundry"
 SURVEY = "docs/spec/radios.md"
 SURVEY_HEADING = "Summary table"
 PORT_COLUMN = "Port"

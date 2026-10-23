@@ -3,14 +3,14 @@
 
 An HR_C7000 radio: the DM-32UV's SoC and RF chip family with a monochrome display and a different pin map. This page
 records what the DM-1801 Pro does and where it differs from [hardware-dm32.md](hardware-dm32.md), which is the
-reference for register names and the pin-index scheme. No board was probed. ODR first ran on a radio on 2026-10-15;
+reference for register names and the pin-index scheme. No board was probed. RadioFoundry first ran on a radio on 2026-10-15;
 facts checked there carry the tag **R**.
 
 | Tag | Meaning |
 |---|---|
 | **K** | Known: a value or behavior of the radio taken from its observed operation, no part marking or measurement |
 | **I** | Inferred from patterns, constants or the DM-32UV; the reasoning is stated |
-| **R** | Checked on a radio running ODR |
+| **R** | Checked on a radio running RadioFoundry |
 | **?** | Not determined |
 
 ## 1. What is the same as the DM-32UV, and what is not
@@ -48,7 +48,7 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 |---|---|---|---|---|
 | 5 / 6 | PTA5 / PTA6 | software I2C SCL / SDA to the authentication chip at 8-bit address 0x7A (section 8.1) | high | K bus, I device |
 | 7 / 8 | PTA7 / PTA8 | RF chip clock / data | high | K |
-| 15 | PTA15 | LCD backlight, high = on; also the PWM0 output, which ODR uses to dim it | low | I |
+| 15 | PTA15 | LCD backlight, high = on; also the PWM0 output, which RadioFoundry uses to dim it | low | I |
 | 16 | PTA16 | audio power amplifier, high = on (the stock broadcast tuner code drives it because the tuner needs the amplifier) | low | R |
 | 17 | PTA17 | power latch | high | I |
 | 18 | PTA18 | data flash chip select, low = selected | high | K |
@@ -65,9 +65,9 @@ Index = GPIO pin index (0-31 PTA, 32-63 PTB, 64-95 PTC). "Boot" is the level the
 | 41 | PTB9 | power knob switch; its level at start-up means "on" | in | R |
 | 42 | PTB10 | input with interrupt, role unknown | in | ? |
 | 43 / 44 | PTB11 / PTB12 | PTT / SOS (top key), low = pressed. PTB11 is also the cable's host-to-radio serial line (9.1) | in | R |
-| 46 / 47 | PTB14 / PTB15 | audio path switches, as on the DM-32UV. PTB14 high = the microphone to the HR_C7000's codec ADC, for FM and DMR alike (set for each transmission; low cut FM speech from 140 to 43 Hz rms, section 12, and left DMR's vocoder the ADC's digital floor: 2 LSB rms, white, where high gives the mic's hum and a tone injected on the programming cable's line, 2026-10-22). Unlike the DM-32UV, whose DMR level is low. PTB15 high = the FD6818's audio to the amplifier, low = the HR_C7000 codec. ODR drives PTB14 as PTB15's complement in every state (`boards/dm1801pro/audio_route.h`), as the stock firmware writes the pair; it doesn't change the speaker | low | R |
+| 46 / 47 | PTB14 / PTB15 | audio path switches, as on the DM-32UV. PTB14 high = the microphone to the HR_C7000's codec ADC, for FM and DMR alike (set for each transmission; low cut FM speech from 140 to 43 Hz rms, section 12, and left DMR's vocoder the ADC's digital floor: 2 LSB rms, white, where high gives the mic's hum and a tone injected on the programming cable's line, 2026-10-22). Unlike the DM-32UV, whose DMR level is low. PTB15 high = the FD6818's audio to the amplifier, low = the HR_C7000 codec. RadioFoundry drives PTB14 as PTB15's complement in every state (`boards/dm1801pro/audio_route.h`), as the stock firmware writes the pair; it doesn't change the speaker | low | R |
 | 50-54 | PTB18-PTB22 | keypad strobes, low one at a time | | K |
-| 48 | PTB16 | output, role unknown; not the amplifier. The radio's start-up drives it low, between the LEDs and the audio switches, and no other code reads or writes it (K). The boot loader leaves it an input; ODR drives it low at start-up too (`boards/dm1801pro/boot_pins.h`) | low | K, R not the amplifier |
+| 48 | PTB16 | output, role unknown; not the amplifier. The radio's start-up drives it low, between the LEDs and the audio switches, and no other code reads or writes it (K). The boot loader leaves it an input; RadioFoundry drives it low at start-up too (`boards/dm1801pro/boot_pins.h`) | low | K, R not the amplifier |
 | 56 | PTB24 | vibration motor, high = on | low | R |
 | 58 / 59 | PTB26 / PTB27 | SK1 (upper side key) / SK2 (lower side key), low = pressed | in | R |
 | 66 | PTC2 | display reset | high | I |
@@ -99,7 +99,7 @@ PTC6, reset PTC2. Bits go out MSB first. K.
 | Block | Base | Use | Tag |
 |---|---|---|---|
 | System control / IO mux | 0x11000000 | SPI0 pins to the peripheral (IO_DIPLEX1 bits 8:3 cleared), ADC B and C analog (IO_DIPLEX2 bits 20, 21 cleared) | K |
-| UART0 | 0x14030000 | 115200 8N1, the programming cable: ODR's host port, where a CPU fault's trace lines appear ([crash-log.md](crash-log.md) 2.3) | K |
+| UART0 | 0x14030000 | 115200 8N1, the programming cable: RadioFoundry's host port, where a CPU fault's trace lines appear ([crash-log.md](crash-log.md) 2.3) | K |
 | SPI0 | 0x140A0000 | 16 MB data flash | K |
 | ADC | 0x140D0000 | channel 2 battery (I); channel 1 compared with the VOX thresholds of the calibration page (6.4, I) | K |
 | DAC | 0x140F0000 | channel B PA drive, channel C set once (0x067E): the modem's AF input bias. With the DM-32UV's 0x06E2 the modem missed the sync of about half of the DMR senders; with 0x067E it took every burst, strong and at -87 dBm | K, R |
@@ -117,13 +117,13 @@ Bluetooth.
 Three-wire serial, bit-banged: clock PTA7, data PTA8, chip select PTA30. A frame is CS low, an 8-bit address (bit 7 set
 for a read), 16 data bits MSB first, CS high. K. The radio's wait per half clock is five passes of a short busy loop,
 well under a microsecond at the 168 MHz core clock, so with the GPIO calls a frame takes some tens of microseconds (I;
-an earlier reading took the loop for 5 microseconds). ODR clocks it at 1 us per half clock, still slower than the
+an earlier reading took the loop for 5 microseconds). RadioFoundry clocks it at 1 us per half clock, still slower than the
 radio; the per-burst switch (5.6) needs the speed.
 
 ### 5.2 Frequency and band
 
 - Unit 10 Hz, 32 bits: register 0x39 = high 16 bits, 0x38 = low 16 bits. 446.000 MHz = 0x02A88AC0. No offset. K.
-- Ranges: 136-174 MHz and 400-470 MHz, plus an air band window of 108-136 MHz on the same chip (not used by ODR yet). K.
+- Ranges: 136-174 MHz and 400-470 MHz, plus an air band window of 108-136 MHz on the same chip (not used by RadioFoundry yet). K.
 - VHF / UHF split at 200 MHz. The channel set-up keeps two band bits, one for the RX and one for the TX frequency,
   each set above 200 MHz. The RX bit picks the RX path pin and the squelch rows; the TX bit picks the TX path pin and
   the PA, modulation and register 0x40 rows (6.4). K.
@@ -145,7 +145,7 @@ Analog FM mode: 0x47=6042, 0x7E=302E, 0x2B=C000 (and 0x32=0244 on the way back t
 0x48=B2F5, 0x7E=B03F, 0x2B=0700, 0x28=0A40. Tone signalling: 0x70=00E0, 0x72=3065, 0x58=00C1, 0x5A=85CF, 0x5B=AB45,
 0x5C=5665. K.
 
-On this radio the analog word 0x47=6042 leaves the FD6818's audio output off. ODR writes 0x47=0140 in FM as well,
+On this radio the analog word 0x47=6042 leaves the FD6818's audio output off. RadioFoundry writes 0x47=0140 in FM as well,
 which gives receive audio on the speaker path (R).
 
 ### 5.4 State sequences
@@ -176,7 +176,7 @@ which gives receive audio on the speaker path (R).
     its value. No wait between steps; each costs a software floating-point calculation. K.
   - 0x43 isn't written per burst, and the RX path is on between bursts. The RX frequency and 0x32 are written at every
     burst end, also on a simplex channel. Every DMR receive set-up writes 0x3F = 0000 and 0x47 = 0140, so in DMR the
-    radio keeps 0x3F at 0, not the power-on 07FE. K. ODR does the same retune on a split channel only
+    radio keeps 0x3F at 0, not the power-on 07FE. K. RadioFoundry does the same retune on a split channel only
     (`fd6818_dmr_burst_at`; `hardware-dm32.md` 8.5).
   - RF_CONTROL (`modem-hrc7000.md`) is only ever ORed, never written whole. A simplex channel with flag bit 5 of channel
     byte 0x0D ORs in an RF TX lead of 0x1A (2.6 ms) and sets RF_MODE b11 (dual receive channels); any other channel,
@@ -188,12 +188,12 @@ which gives receive audio on the speaker path (R).
     slot after ours.
 - **FM key-up** (not per burst): RX path off; FD6818 0x3F = 0000, 0x59 = 0028, 0x70 = 0000, 0x58 = 0000, 0x24 = 0000;
   TX path on; the sub-audio set-up; register 0x40 (6.4); the TX frequency and state writes of step 3 above; then the
-  40-step ramp, without the waits. FM key-down isn't traced. K. None of these writes depends on the band. ODR doesn't
+  40-step ramp, without the waits. FM key-down isn't traced. K. None of these writes depends on the band. RadioFoundry doesn't
   write the five words before the TX path, and FM transmit works without them on UHF. Earlier
-  versions of this page gave the DMR per-burst order as the radio's general "Enter TX / Leave TX"; ODR's FM `tx()`
+  versions of this page gave the DMR per-burst order as the radio's general "Enter TX / Leave TX"; RadioFoundry's FM `tx()`
   still follows that order with 1 ms waits, and FM transmit works with it.
 - RSSI register 0x67, low 9 bits: dBm = value / 2 - 160 (FD6818 programming guide; 0x2C = 0x0022 sets 2 dB of external LNA gain). Status reads 0x0C, 0x68-0x6A. CTCSS register 0x51 with a calibration byte (6.4: 0x201 for CTCSS, 0x202 for DCS); the
-  tone frequency scale (register 0x07) isn't decoded. ODR sends the tone with the modem's generator and detects it with
+  tone frequency scale (register 0x07) isn't decoded. RadioFoundry sends the tone with the modem's generator and detects it with
 the FD6818 (`fd6818_set_rx_tone`, result in 0x0C), as on the DM-32UV: the modem's detector has no input while the FD6818
 plays FM to the speaker.
 
@@ -201,7 +201,7 @@ plays FM to the speaker.
 
 TX path select: PTA31 + PTB7. RX path select: PTA28 + PTB8. Each is a complementary pair chosen by its band bit
 (5.2): above 200 MHz the PTB pin high and the PTA pin low, below the reverse; both low = off. So PTA high = VHF side,
-PTB high = UHF side (K for both pairs, from the radio's path select code). ODR receives on both bands (a VHF weather
+PTB high = UHF side (K for both pairs, from the radio's path select code). RadioFoundry receives on both bands (a VHF weather
 station, UHF DMR) and transmits on UHF with this (R). Separate TX and RX band outputs, unlike the DM-32UV's PA selects
 and LNA supplies. PA drive is DAC channel B (12 bit, the calibration byte times 16), ramped in 40 steps. K.
 
@@ -221,7 +221,7 @@ per-burst handlers (5.4), the bandwidth word and the sub-audio bytes (0x201 / 0x
 the HR_C7000 side the code examined writes FM_BANDWIDTH once (0x5F) and FM_DEV_COEF once at start-up (0x33500), and no
 SUBVOICE_COEF write with a band test was found (?). So the per-band modulation byte is the only VHF deviation value:
 on the radio examined the VHF bytes are about three times the UHF ones, which keeps f x byte about the same on both
-bands, as the DM-32UV's K / f model assumes ([hardware-dm32.md](hardware-dm32.md) 11.3). ODR uses the UHF tone
+bands, as the DM-32UV's K / f model assumes ([hardware-dm32.md](hardware-dm32.md) 11.3). RadioFoundry uses the UHF tone
 deviations on VHF too (`modem-hrc7000.md` 8.3, I).
 
 Transmitter safe state (`board_rf_safe`, [crash-log.md](crash-log.md) 8), at every fault, reset and stub entry and first
@@ -327,7 +327,7 @@ What follows for this radio:
 | 0x201000-0x264FFF | voice prompts, RIFF/WAVE 8 kHz 16-bit mono | K |
 | 0x635000-0xFFFFFF | call recordings | I |
 
-ODR writes only at 0x700000 and above (inside the recordings area, empty on a radio that hasn't recorded). The settings
+RadioFoundry writes only at 0x700000 and above (inside the recordings area, empty on a radio that hasn't recorded). The settings
 ring, journal and codeplug images sit where the DM-32UV has them ([hardware-dm32.md](hardware-dm32.md) 10.1), without
 OpenDM32's calibration copy.
 
@@ -364,7 +364,7 @@ flash 0x0300C000, whose first words match this radio's (K for the DM-32UV files)
 | 0x0FD | ASCII `END` |
 | 0x100 | the raw application, linked for 0x0300C000, at most 0xF4000 bytes. No checksum, no length field |
 
-Such a file can be made from an ODR image with `tools/serial_loader.py --model dm1801pro IMAGE --wrap FILE`, and `tools/serial_loader.py
+Such a file can be made from a RadioFoundry image with `tools/serial_loader.py --model dm1801pro IMAGE --wrap FILE`, and `tools/serial_loader.py
 --model dm1801pro` takes it and strips the header. Whether the stock updater checks anything more is not known (?).
 `tools/serial_loader.py --model dm1801pro` writes a raw image through this protocol: about ten flashes on 2026-10-15, no
 refused block, erase about 12.6 s (R). The loader at 0x1000 is never written. The stock application is 0xB3780 bytes
@@ -434,35 +434,35 @@ bytes, thresholds and point lists are the untuned values (K).
 | RF_MOD_BIAS_CTRL high half | The halfword at 0x27, written once at start-up (0x01EF on the radio examined, in the untuned copies too) |
 | Register 0x40 | On FM transmit: 0x3480 + a byte interpolated between TX points 0 and 2, or 2 and 4, from the three bytes at 0x1C (UHF) or 0xAB (VHF). 0x85 in every point on the radio examined, so 0x3505. What the register controls isn't known (?) |
 | Squelch | The channel's squelch level n (1 to 9) and Wide / Narrow bit pick two rows. Per point: level 1 = the level 1 row, 9 = the level 9 row, 2 to 8 = level 1 row + (level 9 row - level 1 row) x n / 8. The RX points give the segment for the RX frequency; a result of 0 becomes 1. The threshold is stored; what it is compared with isn't traced (?) |
-| Register 0x51 | The channel's tone picks the byte: a CTCSS tone 0x201, a DCS code 0x202, none 0. The register is 0x9000 + byte for CTCSS and 0x8000 or 0xA000 + byte for DCS (normal or inverted, I from ODR's bit names in 5.4) |
+| Register 0x51 | The channel's tone picks the byte: a CTCSS tone 0x201, a DCS code 0x202, none 0. The register is 0x9000 + byte for CTCSS and 0x8000 or 0xA000 + byte for DCS (normal or inverted, I from RadioFoundry's bit names in 5.4) |
 | 0x8E thresholds | A setting (0 to 8) picks one halfword; ADC channel 1 above it triggers, while a setting bit is on. Nine levels in equal steps (15 to 135 on the radio examined) and a menu with "VOX SW", "Gain Level" and "Delay Time" make this the VOX sensitivity (I) |
 
 The 0x300 and 0x328 lists are therefore the receive points: the squelch uses them, and the radio's factory test mode
 tunes its items below 50 at the TX points and those from 50 up at the RX points (K). The two lists hold the same
 frequencies on the radio examined.
 
-ODR reads the PA drive, the modulation and the register 0x40 bytes the radio's way: the band by the TX frequency, the
+RadioFoundry reads the PA drive, the modulation and the register 0x40 bytes the radio's way: the band by the TX frequency, the
 clamp to the band limits, the segment at the TX points and the truncated interpolation (`bf_cal_tx_byte`). DAC B is the
 byte x 16, RF_MOD_BIAS_CTRL low half the byte x 0x0101, and FM transmit writes 0x40 = 0x3480 + byte; receive puts the
-power-on 0x34F0 back. Until 2026-10-16 ODR used the DM-32UV's lookups: the PA drive between even steps from 400 and 136
+power-on 0x34F0 back. Until 2026-10-16 RadioFoundry used the DM-32UV's lookups: the PA drive between even steps from 400 and 136
 MHz (VHF point 2 at 155.0 MHz instead of 155.5), within 16 DAC counts of the radio on UHF and 32 on VHF, and the
 modulation by K / f ([hardware-dm32.md](hardware-dm32.md) 11.3), within 1 of the radio's byte on UHF and 3 on VHF
 (K, computed from the radio examined).
 
-What still differs: ODR doesn't apply the FM factor (x1.8 Wide, x0.9 Narrow) to the modulation byte, since its FM
+What still differs: RadioFoundry doesn't apply the FM factor (x1.8 Wide, x0.9 Narrow) to the modulation byte, since its FM
 deviations were set on the bench without it (section 10); it uses TX center + 384 (0x01F0 on the radio examined) for
 the high half instead of 0x27; and register 0x51 uses the DM-32UV's gain byte 0x45. None of these has shown on the
 bench.
 
 The power level is one value for the three arrays: 0 = low (0x40 / 0xD0), 1 = middle (0x45 / 0xD5), 2 = high
 (0x4A / 0xDA, also used for 3). The radio's menu shows the setting as High / Low / Middle and stores 2 / 0 / 1, and the
-drive bytes rise with the level in every segment (K). ODR's L / M / H use the same arrays and the same lookup.
+drive bytes rise with the level in every segment (K). RadioFoundry's L / M / H use the same arrays and the same lookup.
 
 **L / M / H on air.** At 461.4625 MHz (between the 452.5 and 470 MHz points) the radio examined gets a middle drive 1.40
-times the low drive and a high drive 1.46 times the middle, in DAC counts. The bench run used ODR's older lookup,
+times the low drive and a high drive 1.46 times the middle, in DAC counts. The bench run used RadioFoundry's older lookup,
 within 9 counts of the radio's own; the lookup is now the radio's. The drive steps are about even, so the 0.4 dB
 between L and M against 4.4 dB between M and H on the SDR bench (section 10) doesn't come from the calibration or from
-ODR's lookup. It points at the PA's response to the drive
+RadioFoundry's lookup. It points at the PA's response to the drive
 voltage, or at the measurement. Diagnostics lines `pa 145`, `pa 435` and `pa tx` show L / M / H as DAC counts (`pa
 tx` at the last TX frequency) and `pa <kHz>k dac` the drive the last transmission used, so a wattmeter reading can be
 set against them.
@@ -470,7 +470,7 @@ set against them.
 ### 6.5 The codec in the program flash
 
 The radio's own firmware carries the DM-32UV's 049 codec ([codec-dm32.md](codec-dm32.md)), rebuilt with the data tables
-0x48 bytes higher. It is located in the full program flash image (sha256 `072ece15...9f29e42a`). ODR runs it from the codec slot
+0x48 bytes higher. It is located in the full program flash image (sha256 `072ece15...9f29e42a`). RadioFoundry runs it from the codec slot
 ([codec-dm1801pro.md](codec-dm1801pro.md) section 4).
 
 | Item | Value | Tag |
@@ -490,7 +490,7 @@ DM-32UV. How it is called (state blocks, flags words) and the codec's frame path
 
 128 x 64 pixels, page addressed: page command 0xB0 + n, column address 4 (so the controller has 132 columns and the
 visible ones start at 4), 128 data bytes per page, 8 pages. The controller part isn't identified; ST7567 and UC1701 share
-this command set. ODR sends the common ST7567 initialization (bias 1/9, regulator ratio 4, volume 0x20, power control
+this command set. RadioFoundry sends the common ST7567 initialization (bias 1/9, regulator ratio 4, volume 0x20, power control
 all on). Upright needs the segment outputs reversed (0xA1) and the common outputs normal (0xC0), with the column offset 4
 (R). The picture is readable with these values; contrast and bias are not tuned further. Controller part I.
 
@@ -498,12 +498,12 @@ all on). Upright needs the segment outputs reversed (0xA1) and the common output
 
 | Device | Bus | Detail | Tag |
 |---|---|---|---|
-| FM broadcast tuner | I2C 7-bit 0x10 (sequential access; ODR uses 0x11, random access, the same chip's other address), SDA PTA25, SCL PTA26 | RDA5807 class: 76 and 65 MHz bases, 50 kHz steps; PTA29 enable (low = on, from the order of start and stop, not measured); its audio needs the amplifier (PTA16) | I |
-| Accelerometer | I2C 7-bit 0x19, SDA PTB23, SCL PTB2 | SC7A20, a LIS3DH-compatible part: WHO_AM_I reads 0x11, not the LIS3DH's 0x33 (R). The radio writes CTRL1 = 0x47, CTRL4 = 0x88. ODR reads it for the diagnostics page only. Lying flat it reads (17, -1008, 78) mg: 1 g, so the scale is right (1 mg per count in the 12-bit mode) | R |
-| Authentication chip | I2C 7-bit 0x3D (8-bit 0x7A), SCL PTA5, SDA PTA6 | challenge and response before the codec runs (8.1); an ALPU-MP class part. ODR doesn't use it | K bus, I part |
+| FM broadcast tuner | I2C 7-bit 0x10 (sequential access; RadioFoundry uses 0x11, random access, the same chip's other address), SDA PTA25, SCL PTA26 | RDA5807 class: 76 and 65 MHz bases, 50 kHz steps; PTA29 enable (low = on, from the order of start and stop, not measured); its audio needs the amplifier (PTA16) | I |
+| Accelerometer | I2C 7-bit 0x19, SDA PTB23, SCL PTB2 | SC7A20, a LIS3DH-compatible part: WHO_AM_I reads 0x11, not the LIS3DH's 0x33 (R). The radio writes CTRL1 = 0x47, CTRL4 = 0x88. RadioFoundry reads it for the diagnostics page only. Lying flat it reads (17, -1008, 78) mg: 1 g, so the scale is right (1 mg per count in the 12-bit mode) | R |
+| Authentication chip | I2C 7-bit 0x3D (8-bit 0x7A), SCL PTA5, SDA PTA6 | challenge and response before the codec runs (8.1); an ALPU-MP class part. RadioFoundry doesn't use it | K bus, I part |
 | Real-time clock | SoC I2C2, 7-bit 0x70 | the HR_C7000's own clock, as on the DM-32UV (8.2) | K |
 | SD card | SPI1, chip select 1 | a driver in SPI mode with no caller of its start-up; no card is used (8.3) | K code, I card |
-| Vibration motor | PTB24, high = on | pulse about 500 ms on an incoming call; ODR pulses it once at power-on and plays the vibration alerts on it (`hal_power_t.vibrate`, `radio-features.md` 4.1) | R |
+| Vibration motor | PTB24, high = on | pulse about 500 ms on an incoming call; RadioFoundry pulses it once at power-on and plays the vibration alerts on it (`hal_power_t.vibrate`, `radio-features.md` 4.1) | R |
 
 ### 8.1 Authentication chip (I2C 0x7A)
 
@@ -521,8 +521,8 @@ callers, I for their role). The code sits inside the codec's RAM block, in the r
 code that the codec never calls ([codec-dm32.md](codec-dm32.md)). K.
 
 The part is inferred (I): the same pins carry the ALPU-MP copy-protection chip on the DM-32UV
-([hardware-dm32.md](hardware-dm32.md) 14), and the traffic is a challenge and response. No marking was read. ODR never
-talks to it, and DMR voice works with the radio's own codec (5.6), so ODR's codec host doesn't need it (R).
+([hardware-dm32.md](hardware-dm32.md) 14), and the traffic is a challenge and response. No marking was read. RadioFoundry never
+talks to it, and DMR voice works with the radio's own codec (5.6), so RadioFoundry's codec host doesn't need it (R).
 
 ### 8.2 Real-time clock (I2C2)
 
@@ -540,7 +540,7 @@ board inspection, 2026-10-22).
 | 0x11 | control: bit 1 set at start-up, bit 2 set after a load |
 | 0x12 bit 0 | read at start-up; with it clear or a day count of 0 the clock is reset (0x17 = 0, wait, 0x17 = 1) and set to 2016-09-02 16:45:20 |
 
-ODR doesn't use the clock yet.
+RadioFoundry doesn't use the clock yet.
 
 ### 8.3 SD card (SPI1)
 
@@ -556,7 +556,7 @@ driver speaks SD in SPI mode (K):
 Nothing calls the start-up, the identity reads or the write path (K). The only reachable use is a block read from one
 programming-cable command (`D`), which without the start-up reads with byte addressing. The firmware also holds "NO SD
 CARD" screen strings. So the code is shared with a model that has a card, and this radio has none (I; no slot was
-looked for). ODR doesn't use SPI1.
+looked for). RadioFoundry doesn't use SPI1.
 
 ## 9. Keys, battery, power
 
@@ -589,7 +589,7 @@ hotspot network cases another 14, with no PTT press.
 ADC channel 2, averaged. The radio scales it with the calibration halfword at 0x0E (6.4): volts x 100 = counts x 100 /
 (value x 10 / 75), and shows bars at 8.99, 7.99, 7.50, 6.99, 6.49, 6.31 and 5.81 V; the halfword at 0x0C (6.30 V) sets a
 second low-battery flag (K). On one radio, switched on, the channel read 856 counts while a DMM read 8.306 V across the
-pack (2026-10-16), so ODR uses 103 counts per volt (the DM-32UV's divider gives 82; R). That radio's calibration page
+pack (2026-10-16), so RadioFoundry uses 103 counts per volt (the DM-32UV's divider gives 82; R). That radio's calibration page
 gives 104 counts per volt (value 780), which agrees.
 
 ### 9.3 Interrupts and timers
@@ -599,8 +599,8 @@ slots, RF TX and RX) have vectors as on the DM-32UV. The I2C, SPI, ADC and DAC b
 
 ### 9.4 Power, backlight, LEDs
 
-PTA17 is the power latch, PTB9 the power key (polarity unverified; ODR takes the level at start-up as "on"). The backlight
-is on PTA15. Stock only switches it as a GPIO; PTA15 is also the SoC's PWM0 output (as on the DM-32UV), so ODR dims it
+PTA17 is the power latch, PTB9 the power key (polarity unverified; RadioFoundry takes the level at start-up as "on"). The backlight
+is on PTA15. Stock only switches it as a GPIO; PTA15 is also the SoC's PWM0 output (as on the DM-32UV), so RadioFoundry dims it
 with PWM0 for the brightness setting (I until seen on the radio). LEDs: PTB0 green, PTB1 red (R). The panel's top LED is red while transmitting, green while
 receiving and orange flashing while scanning.
 
@@ -618,7 +618,7 @@ receiving and orange flashing while scanning.
   measured. Speech deviation at both bandwidths with the new limiter needs a cable-out session. The radio itself
   writes FM_DEV_COEF only once, 0x33500 at start-up (limiter 3, TX coefficient 0, K), and FM_BANDWIDTH = 0x5F for both
   bandwidths; how it reaches its deviation with those values is unknown (?). Its FM factor on the modulation byte
-  (6.4: x1.8 on a Wide channel, x0.9 on a Narrow one, kept to 255) may be the answer; ODR leaves it out.
+  (6.4: x1.8 on a Wide channel, x0.9 on a Narrow one, kept to 255) may be the answer; RadioFoundry leaves it out.
 - In the calibration page (6.4): what register 0x40 controls, what the squelch thresholds are compared with, the
   fields read at start-up without a found reader (0x203-0x209), and the unread rows.
 - The authentication chip's marking (8.1), and what PTB16 drives (3.1).
@@ -638,7 +638,7 @@ receiving and orange flashing while scanning.
 
   | Variant | Bursts heard | Sent up | Bad header CRC |
   |---|---|---|---|
-  | Through idle, ODR before the fix | 20-21 | 8-9 | 3 |
+  | Through idle, RadioFoundry before the fix | 20-21 | 8-9 | 3 |
   | No RF switching, no PA ("dry") | 30 | 26 | 0 |
   | RX / TX paths switch per burst, FD6818 held in receive | 28 | 26 | 0 |
   | **Straight between BFF1 and C1FE, no idle (the fix)** | **28** | **24** | **2-4** |
@@ -663,7 +663,7 @@ receiving and orange flashing while scanning.
   for the clipped-header losses (2026-10-19): the empty slot's sync pattern (0 instead of the listen word) and a header
   sent in the gap before voice.
 
-## 11. What ODR reuses
+## 11. What RadioFoundry reuses
 
 | Part | Where |
 |---|---|
@@ -700,7 +700,7 @@ beep) pass. The bandwidth test passes too: the CTCSS 100.0 tone deviates 298 Hz 
 The MMDVM hotspot on the programming cable works both ways on air (2026-10-16: the four `test_hotspot_on_air` cases).
 Not in: the air band, the broadcast tuner's screens, USB (the radio has none).
 
-VOX (not checked on the radio): the radio has no analog microphone level tap, so ODR measures the level on the codec
+VOX (not checked on the radio): the radio has no analog microphone level tap, so RadioFoundry measures the level on the codec
 ADC's mic PCM, the same 10 ms halves DMR voice uses (`radio-features.md` 3.4). The first `mic_level()` call sets
 AUDIO_CONTROL b4 and unmasks the PCM interrupt without starting the PCM stream; 1 s without a call turns them off
 again unless the stream is running. The PCM interrupt runs in FM: FM beeps are paced by it. In FM receive with the
@@ -736,7 +736,7 @@ FM_PTT and RF_MODE matched the DM-32UV's during the tones. An experiment build t
 | FD6818 tone 1 retuned per symbol | decodes, peak 5.15 kHz |
 | FD6818 0x47 = 0x6042, line out 1, PTB16, FM_PTT order, TONE_SEND_CTRL b6, AUDIO_CONTROL b3 | carrier only |
 
-ODR takes the mixer route (`hrc7000_codec_dac_to_tx`, `modem-hrc7000.md` 8.4): it keeps the FIFO feed both radios
+RadioFoundry takes the mixer route (`hrc7000_codec_dac_to_tx`, `modem-hrc7000.md` 8.4): it keeps the FIFO feed both radios
 share. The codec's mic mute sits after the mix, so it would mute the tones too; MIX_3 keeps the microphone out
 instead. With it, positions decode off air with a valid FCS at every level tried.
 

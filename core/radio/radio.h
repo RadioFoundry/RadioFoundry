@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core: owns the channel / VFO state, squelch, PTT and the TX timer, and drives board.radio.
 // It runs in its own task. The UI reads a snapshot and posts requests; it never touches the hardware.
 #ifndef RADIO_CORE_H

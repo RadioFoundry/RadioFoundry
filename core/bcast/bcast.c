@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The broadcast FM receiver's behavior (bcast.h; docs/spec/airband-and-broadcast.md 4.3, 4.5)
 #include <string.h>
 #include "bcast/bcast.h"

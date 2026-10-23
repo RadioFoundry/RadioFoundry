@@ -1,13 +1,13 @@
 <!-- SPDX-License-Identifier: MIT -->
-# Codec placement: moving the stock codec to where ODR wants it
+# Codec placement: moving the stock codec to where RadioFoundry wants it
 
 Status: implemented, 2026-10-19. Hardware: DM-1701, DM-32UV and DB25-D (018 and 020) checked on the radio; MD-380
 checked in an emulator only (Open items).
 
 Each radio still runs the AMBE+2 codec its own stock firmware carries, merged on the user's machine
-([../dev/codec.md](../dev/codec.md)). What changes is where it runs. Until now ODR left the codec at the addresses
-stock linked it to and built its memory map around them. That ties ODR's layout to one stock build per radio, and
-splits ODR's flash and RAM into pieces:
+([../dev/codec.md](../dev/codec.md)). What changes is where it runs. Until now RadioFoundry left the codec at the addresses
+stock linked it to and built its memory map around them. That ties RadioFoundry's layout to one stock build per radio, and
+splits RadioFoundry's flash and RAM into pieces:
 
 | Radio | What the stock addresses cost, before the move |
 |---|---|
@@ -15,7 +15,7 @@ splits ODR's flash and RAM into pieces:
 | MD-380 | The application stops inside sector 6 (275 KB), where the code starts |
 | DM-32UV | The RAM window is the union of two builds' addresses (101 KB for 83 KB of code) and splits RAM in two |
 | DM-1801 Pro, DB25-D | RAM is split in two around the codec |
-| DB25-D with stock 020 | Not supported: its codec ran at an address inside ODR's RAM |
+| DB25-D with stock 020 | Not supported: its codec ran at an address inside RadioFoundry's RAM |
 
 ## Rule
 
@@ -29,8 +29,8 @@ a **codec map**: one per supported stock build, made once by static analysis and
 
 ## Codec maps
 
-A map is a JSON file, `tools/odrflash/odrflash/codec_maps/<board>/<profile>.json`, in format `odr-codec-map/1`. It
-holds addresses, lengths, offsets and hashes, never codec bytes. odrflash, `tools/hrc7000_codec.py` and the web flasher
+A map is a JSON file, `tools/rfoundry/rfoundry/codec_maps/<board>/<profile>.json`, in format `rfoundry-codec-map/1`. It
+holds addresses, lengths, offsets and hashes, never codec bytes. rfoundry, `tools/hrc7000_codec.py` and the web flasher
 (through `data/flash-boards.json`) read the same files.
 
 | Field | Content |
@@ -62,14 +62,14 @@ SHA-256, applies the map, and checks the result.
 
 ## HR_C7000 radios (DM-32UV, DM-1801 Pro, DB25-D)
 
-The codec already sits in an ODR slot in program flash (0x030E8000) and is copied to RAM at boot, so it moves at that
+The codec already sits in a RadioFoundry slot in program flash (0x030E8000) and is copied to RAM at boot, so it moves at that
 copy.
 
 | Item | Before | After |
 |---|---|---|
 | Slot | Version 1: header, code, tables. The code's run address is stock's | Version 2: the same bytes, unchanged from stock, plus the relocation list (the map's `self_refs` offsets; `table_refs` too once tables move) after the tables |
 | Boot | Copies the code to its stock address | Copies the code to the board's codec window and adds (window - stock run address) to each listed word, then checks the signature |
-| RAM | Low region, codec window at stock's address, high region | One region for ODR from 0x10000; the codec window at the top of SRAM, sized to the largest code among the board's maps; the start-up stack below it |
+| RAM | Low region, codec window at stock's address, high region | One region for RadioFoundry from 0x10000; the codec window at the top of SRAM, sized to the largest code among the board's maps; the start-up stack below it |
 | Tables | Copied to their stock modem SRAM address | Unchanged: the board reserves the union of its builds' table windows |
 | Slot identity | CRC-32 and SHA-256 of the stock bytes | The same: the slot keeps stock bytes, so a backup or a kept slot is still recognized by the profile hashes |
 
@@ -110,7 +110,7 @@ checks the layout of the file it merges, never the union.
 
 First step, no table addresses rewritten:
 
-| Radio | Code moves to | Tables | Free for ODR |
+| Radio | Code moves to | Tables | Free for RadioFoundry |
 |---|---|---|---|
 | DM-1701 V02.06 | 0x080E3A74 in sector 11, right after the end of the codec's data (the map's minimal window ends at 0x080E3A72) | Stay at 0x080D19F0, cut to 0x12082 bytes (sectors 10, 11) | Sectors 3-9: 0x0800C000..0x080BFFFF, 720 KB in one piece (was 336 KB + 128 KB) |
 | MD-380 D002.032 | 0x080E0000, the start of sector 11, below the small windows | Stay: the main window in sector 8, the four small ones in sectors 10 and 11 | Sectors 3-7: 0x0800C000..0x0807FFFF, 464 KB in one piece (was 275 KB); sector 9 is unused |
@@ -130,11 +130,11 @@ reports the stock id, so the flashing tools see that the codec isn't where the n
 Later step: rewrite the `table_refs` and pack code and table objects into one sector (sector 11). The maps hold what
 that needs (objects, groups, compaction), so no further analysis of the stock builds is required.
 
-**Moving to the new layout.** The application now covers the sectors where stock firmware, and ODR builds from before
+**Moving to the new layout.** The application now covers the sectors where stock firmware, and RadioFoundry builds from before
 the move, keep the codec code. Updates from such a build erase it, so the flashing tools need the codec from somewhere
 else:
 
-* The copy they keep. odrflash and the web flasher read the codec from every radio running ODR over the debug link
+* The copy they keep. rfoundry and the web flasher read the codec from every radio running RadioFoundry over the debug link
   (READ_MEM), in the stock or the placed layout, check it against the profile, and store it on the user's machine.
   The copy is written as the stock file's merge would write it.
 * Otherwise the stock file, as for a first install. There is no read-back during the update itself: only developer

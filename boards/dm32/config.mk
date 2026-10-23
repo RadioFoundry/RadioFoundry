@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # DM-32UV feature defaults (config/features.mk lists them all). 880 KB of code space before the codec slot, so RAM is
-# the limit: 165,612 B above the codec's RAM window and 27,868 B below it (RAM_LO, which holds the core's ODR_CPU_RAM
+# the limit: 165,612 B above the codec's RAM window and 27,868 B below it (RAM_LO, which holds the core's RFOUNDRY_CPU_RAM
 # state; boards/dm32/memory.ld, docs/spec/hardware-dm32.md 17.1). Every feature the radio has hardware and glue for
 # is on: the image keeps about 11 KB of main RAM free (as much as before the network went in), RAM_LO about 3.5 KB
 # The host link runs on the programming cable's UART0; USB, PPP and TCP_CONNS follow the platform

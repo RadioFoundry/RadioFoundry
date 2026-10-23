@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The link to a second receiver on another SoC (the GD-88's B, over UART3): ODR's own protocol, ODR on both ends
+// Copyright (c) 2026 The RadioFoundry Authors
+// The link to a second receiver on another SoC (the GD-88's B, over UART3): RadioFoundry's own protocol, RadioFoundry on both ends
 // (docs/spec/rx2-link.md). Portable: the board moves the bytes and calls the poll functions; nothing here waits or
 // calls the RTOS, so the host tests run both ends back to back.
 //

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The crash log's record and its start-up side (crash.h). No RTOS calls: the host tests run all of it.
 #include <string.h>
 #include "config.h"
 #include "crash/crash.h"
 #include "debuglink/dl_fmt.h"
 
-#ifndef ODR_GIT
-#define ODR_GIT "host"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "host"
 #endif
 
 static crash_record_t last;
@@ -66,13 +66,13 @@ void crash_seal(crash_record_t *r, const crash_record_t *prev)
 	r->magic = CRASH_MAGIC;
 	r->version = CRASH_VERSION;
 	r->size = sizeof(*r);
-#ifdef ODR_GIT_ID
-	// The firmware: the Makefile worked crash_build_id(ODR_GIT) out already (no parser in flash)
-	const bool dirty = ODR_GIT_DIRTY;
-	r->build = ODR_GIT_ID;
+#ifdef RFOUNDRY_GIT_ID
+	// The firmware: the Makefile worked crash_build_id(RFOUNDRY_GIT) out already (no parser in flash)
+	const bool dirty = RFOUNDRY_GIT_DIRTY;
+	r->build = RFOUNDRY_GIT_ID;
 #else
 	bool dirty;
-	r->build = crash_build_id(ODR_GIT, &dirty);
+	r->build = crash_build_id(RFOUNDRY_GIT, &dirty);
 #endif
 	if (dirty)
 		r->flags |= CRASH_F_DIRTY;

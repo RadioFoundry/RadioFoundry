@@ -1,4 +1,4 @@
-# OpenDigitalRadio
+# RadioFoundry
 
 **Free, MIT-licensed firmware for affordable DMR radios.** One shared core runs the DMR stack, the UI, the codeplug and
 the host tools; each radio adds a thin board layer. It brings the FM and DMR features low-cost stock firmware leaves
@@ -39,9 +39,9 @@ by the UI simulator (`make -C tests/host ui-gallery`).</sub>
 | [Baofeng DM-32UV](docs/testing/dm32-bringup.md) | ● | ● | ● | FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and each split duplex half work on air. Open: FM deviation at 12.5 kHz and an outdoor GPS fix. |
 | [Radioddity DB25-D PRO](docs/spec/hardware-db25d.md), Kydera CDR-300UV (mobile) | ● | ● | ● | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. Open: the older FD6818 batches and the Retevis RT73. |
 | [TYT MD-380](docs/testing/md380-bringup.md), MD-390, Retevis RT3 | ● | ● | ● | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
-| TYT MD-9600, Retevis RT90 (mobile) | ◐ | ◐ | ○ | In progress ([#112](https://github.com/sfowlr/OpenDigitalRadio/pull/112)). Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD. |
-| Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | ◐ | ◐ | ◐ | In progress ([#111](https://github.com/sfowlr/OpenDigitalRadio/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
-| Radioddity GD-88 | ◐ | ◐ | ○ | In progress ([#132](https://github.com/sfowlr/OpenDigitalRadio/pull/132)). Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
+| TYT MD-9600, Retevis RT90 (mobile) | ◐ | ◐ | ○ | In progress ([#112](https://github.com/radiofoundry/radiofoundry/pull/112)). Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD. |
+| Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | ◐ | ◐ | ◐ | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
+| Radioddity GD-88 | ◐ | ◐ | ○ | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | ○ | ○ | ○ | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port ([hardware-mduv380.md](docs/spec/hardware-mduv380.md)). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | ○ | ○ | ○ | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
 | TYT MD-2017 / Retevis RT82 | ○ | ○ | ○ | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once. |
@@ -54,14 +54,14 @@ by the UI simulator (`make -C tests/host ui-gallery`).</sub>
 
 ● done&nbsp;&nbsp; ◐ partly, or only in the linked pull request so far&nbsp;&nbsp; ○ not yet
 
-- **Releases** carry firmware for the supported radios (without the codec), `odrflash` for Windows, macOS and Linux,
+- **Releases** carry firmware for the supported radios (without the codec), `rfoundry` for Windows, macOS and Linux,
   and the user manual as a PDF. Nothing to build: see [Installing](docs/user/02-installing.md).
 - **What has been checked on the air**, per feature and per radio: [on-air coverage](docs/testing/on-air-coverage.md)
   and the [feature matrix](docs/feature-matrix.md#checked-on-each-radio). "Host-tested" means it works against
   simulated chips, not yet on air.
 - **Check TX frequency** against an external reference (counter, service monitor or MMDVMCal) before relying on it:
   accuracy comes from each radio's factory calibration, and one MD-380 measured 1.9 kHz high
-  ([#108](https://github.com/sfowlr/OpenDigitalRadio/issues/108)).
+  ([#108](https://github.com/radiofoundry/radiofoundry/issues/108)).
 - The chips in each radio and the planned port order: [docs/spec/radios.md](docs/spec/radios.md).
 
 ## Features
@@ -99,7 +99,7 @@ modems (HR_C5000, HR_C6000, HR_C7000) and four RF chips (AT1846S, BK4819, FD6818
 | Location | Motorola LRRP location answers and ARS registration; ETSI GPS Info in voice calls (the caller's position shown with distance and bearing, ours sent from the APRS position); APRS position, status and messages on FM (Bell 202 AFSK) and positions over DMR to an APRS gateway ID; KISS TNC on USB | NMEA from the radio's GPS receiver, ETSI UDT location reports, APRS receive and iGate on radios that can sample received audio |
 | Signaling | call alert, radio check and emergency, each in the Motorola and ETSI forms; talker alias in all four ETSI formats | DTMF and 5-tone on FM |
 | Privacy and encryption | Motorola Basic Privacy, Anytone 16-bit Basic Privacy | ARC4 and AES-256 per the DMR Association interoperability profiles |
-| Programming | qdmr, over the GD-77-style CPS protocol. The Codeplug Editor on the web site: every ODR radio over USB or the programming cable, CSV and qdmr YAML import and export, DMR ID database and contacts from RadioID.net | an open, published native codeplug format with its own qdmr driver |
+| Programming | qdmr, over the GD-77-style CPS protocol. The Codeplug Editor on the web site: every RadioFoundry radio over USB or the programming cable, CSV and qdmr YAML import and export, DMR ID database and contacts from RadioID.net | an open, published native codeplug format with its own qdmr driver |
 | Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter (confirmed data, SAP 3 compressed UDP headers, control station mode for dispatch software); HTTP status, Hamlib rigctld, KISS over TCP, APRS-IS, mDNS, TFTP and SNMPv2c on the USB link; two radios as one full duplex repeater (experimental, build switch; each half passes on air, one pair checked on the bench) | the split duplex host side (`tools/split_duplex_host.py` is a test host) |
 | Audio to a computer | | USRP over UDP (AllStarLink, DVSwitch), USB sound card with serial-line PTT ([usb-audio](docs/spec/usb-audio.md)) |
 
@@ -108,11 +108,11 @@ Every format is specified in [docs/spec](docs/spec), so other projects can imple
 
 ## The AMBE codec
 
-DMR voice needs DVSI's proprietary AMBE+2 vocoder. ODR never ships it, in this repository or in any binary.
+DMR voice needs DVSI's proprietary AMBE+2 vocoder. RadioFoundry never ships it, in this repository or in any binary.
 
-Each radio runs the codec from its own stock firmware. [odrflash](tools/odrflash/README.md) takes it from the stock
-firmware file you downloaded, on your machine, checks that file by SHA-256 and writes the codec with ODR. If the radio
-already holds the right codec, it writes only ODR's own sectors. Without a codec the firmware runs FM only. Details
+Each radio runs the codec from its own stock firmware. [rfoundry](tools/rfoundry/README.md) takes it from the stock
+firmware file you downloaded, on your machine, checks that file by SHA-256 and writes the codec with RadioFoundry. If the radio
+already holds the right codec, it writes only RadioFoundry's own sectors. Without a codec the firmware runs FM only. Details
 and supported stock files: [the codec](docs/dev/codec.md).
 
 ## Building
@@ -175,9 +175,9 @@ useful in commercial service and to hams alike.
 
 Any way you can:
 
-- **Test and report.** Run ODR on your radio and [report what breaks](https://github.com/sfowlr/OpenDigitalRadio/issues/new?template=bug_report.yml). If the radio restarted,
+- **Test and report.** Run RadioFoundry on your radio and [report what breaks](https://github.com/radiofoundry/radiofoundry/issues/new?template=bug_report.yml). If the radio restarted,
   include the crash log from **Settings > Advanced > Crash log** ([settings](docs/user/12-settings.md#crash-log)).
-- **Ask.** [Request a feature](https://github.com/sfowlr/OpenDigitalRadio/issues/new?template=feature_request.yml) or [a radio](https://github.com/sfowlr/OpenDigitalRadio/issues/new?template=radio_request.yml) you'd like supported.
+- **Ask.** [Request a feature](https://github.com/radiofoundry/radiofoundry/issues/new?template=feature_request.yml) or [a radio](https://github.com/radiofoundry/radiofoundry/issues/new?template=radio_request.yml) you'd like supported.
 - **Contribute.** Send pull requests for code or docs ([contributing](docs/dev/contributing.md)).
 - **Donate or lend a radio.** This helps the most, especially older models that are hard to find now, because every
   port needs the hardware on the bench.
@@ -190,14 +190,14 @@ support for additional radios and to make the project's ambitious scope possible
 
 ## Clean room and licensing
 
-ODR is MIT licensed ([LICENSE](LICENSE)) and a clean-room project: code is written from prose specs, datasheets and
+RadioFoundry is MIT licensed ([LICENSE](LICENSE)) and a clean-room project: code is written from prose specs, datasheets and
 public standards, independent of earlier radio firmwares. No GPL code, no non-commercial code, no vendor SDKs. The
 rules and checks: [docs/CLEANROOM.md](docs/CLEANROOM.md). Third-party code in `third_party/` (FreeRTOS, TinyUSB, ST's
 HAL and CMSIS) keeps its own permissive license ([LICENSES/](LICENSES/)).
 
 ## Acknowledgements
 
-ODR builds on years of community work that opened these radios up. None of that code is in ODR (see above), but
+RadioFoundry builds on years of community work that opened these radios up. None of that code is in RadioFoundry (see above), but
 the reverse engineering and documentation behind it made this project possible. Thanks to:
 
 - Travis Goodspeed KK4VCZ and the md380tools contributors, for the first open work on the MD-380 family.
@@ -208,7 +208,7 @@ the reverse engineering and documentation behind it made this project possible. 
 - The OpenDM32 project, for its DM-32UV research.
 - Jonathan Naylor G4KLX and the MMDVM and MMDVMHost contributors, for open hotspots and repeaters.
 - Cort Buffington N0MJS and the HBlink contributors, for open DMR networking.
-- Hannes Matuschek DM3MAT and the qdmr contributors, for qdmr, ODR's main programming software.
+- Hannes Matuschek DM3MAT and the qdmr contributors, for qdmr, RadioFoundry's main programming software.
 
 ## Contributing
 
@@ -228,7 +228,7 @@ of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make su
 | `boot/` | First stages in front of the application, for radios whose loader starts it directly (`boot/db25d`) |
 | `config/` | Build-time feature switches |
 | `third_party/` | Permissively licensed upstream code, as submodules (FreeRTOS, ST HAL and CMSIS, TinyUSB) |
-| `tools/` | Flashing (`odrflash`), release packaging, codec merge, CPS client, debug link client (`odr_debug.py`), CI, SDR bench tools |
+| `tools/` | Flashing (`rfoundry`), release packaging, codec merge, CPS client, debug link client (`rfoundry_debug.py`), CI, SDR bench tools |
 | `tests/host/` | Unit and SIL tests, the UI simulator (`tests/host/sim`) |
 | `tests/hil/` | HIL tests: pytest against a radio and the SDR bench |
 | `docs/spec/` | Behavior, hardware facts and protocols; `gotchas.md` lists past bugs by subsystem |

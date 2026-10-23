@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Weak stand-ins for everything in ui_svc.h that another package owns. Each reports "not available", except the
 // settings store, which keeps values in RAM so the Settings screens work before storage-cps lands. A package that
 // owns one of these defines it without the weak attribute and the linker takes that one.

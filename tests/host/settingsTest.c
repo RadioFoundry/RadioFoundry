@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // core/storage (the sector journal) and core/settings (the record ring) on a simulated NOR flash, with power cuts
 // at every point of a save and of a sector rewrite: after the next boot the old or the new content is there, whole,
 // never a mix; wear goes round the ring; old and new record sizes load.
@@ -492,7 +492,7 @@ static void job(void *ctx) { job_runs += *(int *)ctx; }
 static void test_native_and_jobs(void)
 {
 	const uint32_t na = map_native.native_addr, ns = map_native.native_size;
-	static const uint8_t magic[4] = { 'O', 'D', 'R', 'N' };
+	static const uint8_t magic[4] = { 0x4F, 0x44, 0x52, 0x4E };
 	uint8_t junk[16];
 	memset(junk, 0x5A, sizeof(junk));
 

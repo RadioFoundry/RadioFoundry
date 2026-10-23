@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Read a crash report (docs/spec/crash-log.md) and, with the build's ELF, say where it happened.
 
-    tools/crash_decode.py REPORT [--elf build/dm1701/odr_dm1701.elf]
-    tools/crash_decode.py --hex 4f4301010103...  --elf odr_dm32.elf
-    tools/odr_debug.py crash | tools/crash_decode.py - --elf odr_dm1701.elf
+    tools/crash_decode.py REPORT [--elf build/dm1701/rfoundry_dm1701.elf]
+    tools/crash_decode.py --hex 4f4301010103...  --elf rfoundry_dm32.elf
+    tools/rfoundry_debug.py crash | tools/crash_decode.py - --elf rfoundry_dm1701.elf
     tools/crash_decode.py --self-test
 
 REPORT is the packed report as received (the UDP payload, section 4) in a binary file, the same as hex text, or the
-debug link's crash view (`odr_debug.py crash`: crash.* lines). '-' reads standard input. With --elf, pc, lr and the
+debug link's crash view (`rfoundry_debug.py crash`: crash.* lines). '-' reads standard input. With --elf, pc, lr and the
 return addresses go through addr2line: arm-none-eabi-addr2line for a Cortex-M4 record, csky-elf-addr2line for a
-CK803S one, or --addr2line / $ODR_ADDR2LINE. The record's build must match the ELF's commit.
+CK803S one, or --addr2line / $RFOUNDRY_ADDR2LINE. The record's build must match the ELF's commit.
 """
 import argparse
 import os
@@ -164,7 +164,7 @@ def describe(rep, elf=None, addr2line=None):
     others = [(name, w) for name, w in rep.get("tasks", [])]
     tool = None
     if elf:
-        tool = addr2line or os.environ.get("ODR_ADDR2LINE") or ADDR2LINE.get(arch, "addr2line")
+        tool = addr2line or os.environ.get("RFOUNDRY_ADDR2LINE") or ADDR2LINE.get(arch, "addr2line")
         if shutil.which(tool) is None:
             raise ReportError(f"{tool} not found: pass --addr2line")
         names = lookup(tool, elf, [q for _, _, q in where])
@@ -237,7 +237,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("report", nargs="?", help="a file with the report (binary, hex or the crash view), or -")
     p.add_argument("--hex", help="the packed report as hex on the command line")
-    p.add_argument("--elf", help="the build's ELF (build/<board>/odr_<board>.elf), to name the addresses")
+    p.add_argument("--elf", help="the build's ELF (build/<board>/rfoundry_<board>.elf), to name the addresses")
     p.add_argument("--addr2line", help="the addr2line to use (default by the record's architecture)")
     p.add_argument("--self-test", action="store_true", help="check the decoder and exit")
     a = p.parse_args()

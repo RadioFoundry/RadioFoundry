@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR emergency (CONFIG_DMR_EMERGENCY, docs/spec/dmr-emergency.md): what the emergency key starts, and what the radio
  * shows when it hears someone else's emergency.
@@ -18,8 +18,8 @@
  * copies under the lock given to dmr_emergency_set_lock (the firmware: the data service's, a scheduler suspend).
  * Built without CONFIG_DMR_EMERGENCY every call is an inline no-op, so UI code needs no #if.
  */
-#ifndef ODR_DMR_EMERGENCY_H
-#define ODR_DMR_EMERGENCY_H
+#ifndef RFOUNDRY_DMR_EMERGENCY_H
+#define RFOUNDRY_DMR_EMERGENCY_H
 
 #include <stdbool.h>
 #include <stdint.h>

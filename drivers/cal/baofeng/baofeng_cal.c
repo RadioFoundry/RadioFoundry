@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Baofeng HR_C7000 factory calibration: TX I/Q center, modulation balance and PA drive (docs/spec/hardware-dm32.md 11).
 // Every Baofeng HR_C7000 radio keeps it in the same page with the same field offsets (hardware-dm1801pro.md 6.4).
 // bf_cal_tx_byte reads a row the stock firmware's way, at the page's own TX points instead of OpenDM32's even steps.

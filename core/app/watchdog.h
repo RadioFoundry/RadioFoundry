@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Feeding the hardware watchdog from the idle task (CONFIG_WATCHDOG, docs/spec/watchdog.md). The idle task runs only
 // when every other task waits, so a feed from it says the whole system still gets through its work: a task that
 // spins, a stuck critical section or an interrupt storm stops the feeds and the chip resets. Portable (no RTOS calls),

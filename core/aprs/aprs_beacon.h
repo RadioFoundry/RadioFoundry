@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // When to send our position (docs/spec/aprs.md 7): the trigger sources (a fixed interval, SmartBeaconing, distance
 // moved, after our own transmission, a key press, the first fix after power-up) under one hard minimum interval.
 // Pure: it takes the time, the position and the events, and says "send now, because ...". The caller (aprs.c) sends
@@ -8,8 +8,8 @@
 // SmartBeaconing is the algorithm Tony Arnerich (KD7TA) and Steve Bragg (KA9MVA) published for the HamHUD tracker
 // and released for anyone to use: the rate follows the speed between a slow and a fast setting, and a turn sharper
 // than (min angle + slope / speed) sends at once after a minimum time ("corner pegging").
-#ifndef ODR_APRS_BEACON_H
-#define ODR_APRS_BEACON_H
+#ifndef RFOUNDRY_APRS_BEACON_H
+#define RFOUNDRY_APRS_BEACON_H
 
 #include <stdint.h>
 #include <stdbool.h>

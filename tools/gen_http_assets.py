@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Write the HTTP status server's asset table from the files of core/net/http_assets (run by make).
 
     gen_http_assets.py [--gzip] OUT.h FILE...

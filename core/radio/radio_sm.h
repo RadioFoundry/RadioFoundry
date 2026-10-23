@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's state machine, without the RTOS: it takes requests and the time, polls board.radio and keeps
 // the view. radio_task.c runs it in a task; the host tests run it against a fake board.
 #ifndef RADIO_SM_H

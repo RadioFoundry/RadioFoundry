@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flash stubs' shared protocol engine (docs/spec/stub-stm32f4.md 13, "The shared engine"): framing, the
 // operations, the safety rules, CRC-32 SUMS and block READ, for any microcontroller whose stub runs from RAM and talks
 // over a byte stream. No hardware access, so the host tests run it against a simulated flash.

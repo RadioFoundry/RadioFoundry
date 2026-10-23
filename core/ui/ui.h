@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The user interface task (docs/ux/, docs/spec/ui.md)
 #ifndef UI_H
 #define UI_H

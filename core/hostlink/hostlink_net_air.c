@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The IP gateway's air side on the DMR data service (see hostlink_net_air.h)
 #include "config.h"
 #if CONFIG_DMR_IP_GATEWAY	// the whole file

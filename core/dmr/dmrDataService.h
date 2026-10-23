@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR data service: text messages (ETSI IP text, ETSI defined short data and, with CONFIG_DMR_TMS, Motorola TMS)
  * with their ACKs, ETSI responses to
@@ -13,8 +13,8 @@
  * copies under the lock given to dmrDataServiceSetLock(). Specs: docs/spec/dmr-data.md, gotchas 3.6-3.9, 5, 7.
  */
 
-#ifndef ODR_DMRDATASERVICE_H
-#define ODR_DMRDATASERVICE_H
+#ifndef RFOUNDRY_DMRDATASERVICE_H
+#define RFOUNDRY_DMRDATASERVICE_H
 
 #include "dmr/dmrData.h"
 #include "dmr/dmrLrrp.h"

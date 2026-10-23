@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The tasks view section: every FreeRTOS task's least free stack since it started (core/app/task_stack.c), so a test
 // can see a task running low before it overflows. Measured, where make stack-check (docs/dev/stack-check.md) computes.
 #include "config.h"

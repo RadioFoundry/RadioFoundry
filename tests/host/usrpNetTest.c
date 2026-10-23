@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The PCM stream shared with a host audio session (core/usbaudio/audio_mux.c) and USRP on the radio's network address
 // (core/usbaudio/usrp_net.c), against a fake board stream, IP gateway and radio core (docs/spec/usb-audio.md)
 #include <stdio.h>

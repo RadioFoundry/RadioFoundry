@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The host link's network personality (see hostlink_net.h). No RTOS calls except a short wait for the USB IN
 // endpoint; the host tests run it with a fake USB link (usb_ncm.h).
 #include "config.h"

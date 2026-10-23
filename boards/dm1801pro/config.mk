@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # DM-1801 Pro feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-dm1801pro.md 12):
 # the UI, keys, data flash, battery, analog FM, DMR (voice with the radio's own codec merged into the slot,
 # docs/spec/codec-dm1801pro.md) and the broadcast tuner. Transmit needs the calibration to be found, so it is refused

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The host link's PPP personality (see hostlink_ppp.h). No RTOS calls: the host tests run it against scripted peers
 // and pppd on a pseudo-terminal.
 #include "config.h"

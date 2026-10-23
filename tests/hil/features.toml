@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # The feature checklist (tests/hil/README.md, "Bring-up mode"): one table per feature, never a column per radio. The
 # tests say which feature they check (@pytest.mark.feature("<id>")), so this file lists no tests. A radio's state for
@@ -368,7 +368,7 @@ spec = "docs/spec/nand-sectors.md"
 
 [feature.codec_check]
 spec = "docs/spec/codec-placement.md"
-source = ["tools/odrflash/odrflash"]
+source = ["tools/rfoundry/rfoundry"]
 
 # ── Bench ──
 

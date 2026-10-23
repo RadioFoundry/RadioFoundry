@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Host unit test for the DMR data service (core/dmr/dmrDataService.c): the reply queue and retried message handling,
  * CSBK signaling both ways, our SMS with its ACK, ARS registration, LRRP answers with and without a position, the
@@ -500,7 +500,7 @@ static int countLrrp(uint8_t docId)
 	return n;
 }
 
-// Requests made by odr_sdrbench's encoder (odr_sdrbench.dmr.location.encode_lrrp_*)
+// Requests made by rfoundry_sdrbench's encoder (rfoundry_sdrbench.dmr.location.encode_lrrp_*)
 static void testLrrp(void)
 {
 	reset();

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The host link's network personality (core/hostlink/hostlink_net.c) with the real IP gateway (core/dmr/ipGateway.c)
 // and packet codec (core/dmr/dmrData.c), against a fake USB network interface (board.netif) and fake air ops: frames
 // from the host reach the air ops, packets from the air reach the host, UDP serial both ways; control station mode

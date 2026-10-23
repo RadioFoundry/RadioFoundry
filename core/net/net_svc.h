@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The services on the radio's TCP (docs/spec/tcp-services.md), each behind its own switch. Internal to core/net: net.c
 // starts them, polls them and routes the APRS engine's KISS output (the TNC pump) between them.
-#ifndef ODR_NET_SVC_H
-#define ODR_NET_SVC_H
+#ifndef RFOUNDRY_NET_SVC_H
+#define RFOUNDRY_NET_SVC_H
 
 #include <stdbool.h>
 #include <stddef.h>

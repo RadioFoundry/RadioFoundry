@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Restoring a radio from a backup bundle (backup.js). What can be put back depends on what the bundle holds:
 //
-//   target "odr"    the radio as it was when the backup was taken on ODR: the internal flash image exactly (ODR and
+//   target "rfoundry"    the radio as it was when the backup was taken on RadioFoundry: the internal flash image exactly (RadioFoundry and
 //                   its codec, through the bootloader), then the codeplug areas of the SPI flash (through the CPS,
 //                   which only allows the codeplug areas)
 //   target "codeplug"  only the codeplug areas, through the CPS: the firmware stays as it is (a codeplug backup)
@@ -22,14 +22,14 @@ export function targets(bundle) {
 	const out = [];
 	const internal = bundle.parts.get("internal-flash");
 	const spi = bundle.parts.get("spi-flash");
-	if (bundle.meta.firmware_now?.kind === "odr" && internal?.complete) out.push("odr");
-	if (bundle.meta.firmware_now?.kind === "odr" && spi && spi.data.length >= CODEPLUG_SPAN && codeplugLayout(bundle) === "openfw") out.push("codeplug");
+	if (bundle.meta.firmware_now?.kind === "rfoundry" && internal?.complete) out.push("rfoundry");
+	if (bundle.meta.firmware_now?.kind === "rfoundry" && spi && spi.data.length >= CODEPLUG_SPAN && codeplugLayout(bundle) === "openfw") out.push("codeplug");
 	if (bundle.parts.has("stock-firmware") || bundle.meta.firmware_before?.kind === "stock") out.push("stock");
 	return out;
 }
 
-// What the backup's codeplug areas hold (codeplug/detect.js): "openfw" for an ODR codeplug. A backup taken right after
-// a first install still holds the original firmware's codeplug: written back as it is, it would be garbage to ODR, so
+// What the backup's codeplug areas hold (codeplug/detect.js): "openfw" for a RadioFoundry codeplug. A backup taken right after
+// a first install still holds the original firmware's codeplug: written back as it is, it would be garbage to RadioFoundry, so
 // only the Codeplug Editor (which converts it) takes it
 export function codeplugLayout(bundle) {
 	const spi = bundle.parts.get("spi-flash");
@@ -49,7 +49,7 @@ export function planStock(stockFile, key, board, fb) {
 }
 
 // The 4 KB sectors of the codeplug areas whose bytes differ between the radio and the backup: [addr, bytes] (emulated
-// EEPROM 0x00000-0x0FFFF and the open-firmware flash image 0x20000-0x11FFFF; never the calibration and ODR's own areas
+// EEPROM 0x00000-0x0FFFF and the open-firmware flash image 0x20000-0x11FFFF; never the calibration and RadioFoundry's own areas
 // at 0x10000-0x1FFFF, which the CPS refuses anyway)
 export function codeplugSectors(backupSpi, radioSpi) {
 	const out = [];

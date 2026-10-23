@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A GPS module's NMEA output on a receive-only STM32F4 USART, shared by the radios with an optional module: the
 // receive interrupt, the task that drains it through drivers/gps/gps_rx, run-time detection and the
 // rate hunt (gps_baud.h). The same image runs with and without a module: one checksum-valid sentence makes it

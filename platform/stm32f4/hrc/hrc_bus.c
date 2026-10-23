@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C6000 configuration and voice ports on STM32F4 GPIO and SPI (hrc_bus.h; docs/spec/hardware-dm1701.md 4.2, 4.3,
 // hardware-md9600.md 4.1)
 #include <stddef.h>

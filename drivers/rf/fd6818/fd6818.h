@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // FD6818 single-chip VHF/UHF transceiver: chip driver, independent of the board
 // (docs/spec/hardware-dm32.md 8). No datasheet exists; register values are the ones the working firmware uses.
 //

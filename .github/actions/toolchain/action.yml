@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # A toolchain's pinned compiler for a firmware job (docs/dev/ci.md "Toolchains"): the one place the workflows learn how
 # each toolchain gets its compiler. The pin is the [toolchain] table (id, version, sha256, image) of the platforms that
@@ -8,7 +8,7 @@
 #
 #   arm   tools/install-arm-toolchain.sh into ~/opt (a no-op on the self-hosted image, which has it), cached
 #   csky  csky-elf-gcc on PATH (the self-hosted image's /opt/csky-elf): nothing to do. Otherwise the csky-elf image
-#         (ODR_CSKY_IMAGE, default the platform's image): logs in, pulls and logs out right away, and the job runs its
+#         (RFOUNDRY_CSKY_IMAGE, default the platform's image): logs in, pulls and logs out right away, and the job runs its
 #         build through `run` (tools/docker/csky-toolchain/run.sh, exit status 3 when the image isn't there). No
 #         workflow builds csky-elf from source: the image is built by tools/docker/csky-toolchain/build.sh.
 #
@@ -26,10 +26,10 @@ inputs:
     description: '"true": keep a downloaded toolchain in actions/cache (pr-tests.yml passes "false")'
     default: "true"
   image:
-    description: The csky-elf image (repository variable ODR_CSKY_IMAGE); empty for the platform's image
+    description: The csky-elf image (repository variable RFOUNDRY_CSKY_IMAGE); empty for the platform's image
     default: ""
   registry:
-    description: The image registry to log in to (repository variable ODR_CSKY_REGISTRY); empty for none
+    description: The image registry to log in to (repository variable RFOUNDRY_CSKY_REGISTRY); empty for none
     default: ""
   registry-user:
     description: The registry user
@@ -76,7 +76,7 @@ runs:
           else
             mode=image
             run=tools/docker/csky-toolchain/run.sh
-            echo "ODR_CSKY_IMAGE=$image" >> "$GITHUB_ENV"   # run.sh's image
+            echo "RFOUNDRY_CSKY_IMAGE=$image" >> "$GITHUB_ENV"   # run.sh's image
           fi ;;
         *) echo "::error::no set-up for toolchain $TOOLCHAIN in .github/actions/toolchain"; exit 1 ;;
         esac
@@ -99,7 +99,7 @@ runs:
       run: |
         set -u
         echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin
-        docker pull "$ODR_CSKY_IMAGE" || true   # missing: run.sh exits 3; the job skips (release.yml fails)
+        docker pull "$RFOUNDRY_CSKY_IMAGE" || true   # missing: run.sh exits 3; the job skips (release.yml fails)
         docker logout "$REGISTRY"
 
     - name: Arm GNU Toolchain (pinned and checksummed, trimmed to the Cortex-M4 multilib)

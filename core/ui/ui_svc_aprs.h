@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The UI's way into the APRS engine (core/aprs/aprs.h): ui_svc_aprs.c with CONFIG_APRS, weak stand-ins in ui_aprs.c
 // otherwise (and in the UI simulator).
 #ifndef UI_SVC_APRS_H

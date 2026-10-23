@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND ISC
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // SPDX-FileCopyrightText: 2010 DSD Author (BPK_1_TO_4, from DSD-FME include/bp.h, ISC license, see LICENSES/ISC.txt)
 /*
  * Host tests for the DMR voice privacy module

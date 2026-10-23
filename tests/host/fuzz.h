@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A small seeded mutation fuzzer for the host tests' parsers of untrusted input (header only).
 //
 //   fuzz_t f;
@@ -11,10 +11,10 @@
 //           free(p);
 //   }
 //
-// ODR_FUZZ_ITERS=<n> in the environment replaces every default count (long runs by hand or nightly, e.g. under
-// make SANITIZE=1); ODR_FUZZ_SEED=<n> changes the seed. Build with SANITIZE=1 for the memory checks to mean much.
-#ifndef ODR_TEST_FUZZ_H
-#define ODR_TEST_FUZZ_H
+// RFOUNDRY_FUZZ_ITERS=<n> in the environment replaces every default count (long runs by hand or nightly, e.g. under
+// make SANITIZE=1); RFOUNDRY_FUZZ_SEED=<n> changes the seed. Build with SANITIZE=1 for the memory checks to mean much.
+#ifndef RFOUNDRY_TEST_FUZZ_H
+#define RFOUNDRY_TEST_FUZZ_H
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -40,7 +40,7 @@ static inline uint32_t fuzz_below(fuzz_t *f, uint32_t n)
 
 static inline void fuzz_init(fuzz_t *f, uint64_t seed)
 {
-	const char *e = getenv("ODR_FUZZ_SEED");
+	const char *e = getenv("RFOUNDRY_FUZZ_SEED");
 
 	if ((e != NULL) && (*e != '\0')) {
 		seed ^= strtoull(e, NULL, 0);
@@ -53,7 +53,7 @@ static inline void fuzz_init(fuzz_t *f, uint64_t seed)
 
 static inline long fuzz_iters(long dflt)
 {
-	const char *e = getenv("ODR_FUZZ_ITERS");
+	const char *e = getenv("RFOUNDRY_FUZZ_ITERS");
 
 	if ((e != NULL) && (*e != '\0')) {
 		long n = strtol(e, NULL, 0);

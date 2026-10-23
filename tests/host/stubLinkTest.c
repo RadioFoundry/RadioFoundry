@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The stub entry on the wire (docs/spec/stub-entry.md): request frames in, reply frames out, through the framing
 // (core/debuglink/dl_frame.c), the loader (core/stubentry/stub_load.c) and the listener of a build without the debug
 // link (core/stubentry/stub_link.c).
@@ -191,7 +191,7 @@ static void test_own_listener(void)
 	stub_load_init(&stub, region, sizeof(region), 0x30000u);
 	on_air = false;
 
-	// VERSION: the keys the flashing tools read (stubtool version_board, odrflash probe, the web flasher's probe)
+	// VERSION: the keys the flashing tools read (stubtool version_board, rfoundry probe, the web flasher's probe)
 	size_t n = own_request(&p, reply, DL_CMD_VERSION, NULL, 0, &pl);
 	CHECK(sent[2] == (DL_CMD_VERSION | DL_REPLY_FLAG) && sent[3] == 0x42, "VERSION reply cmd/seq");
 	CHECK(n > 1 && pl[0] == DL_ST_OK, "VERSION ok");

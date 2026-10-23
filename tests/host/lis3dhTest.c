@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The LIS3DH driver (drivers/sensor/lis3dh) against a register model: identity check, the start-up configuration,
 // the 12-bit left-justified output with its sign, the new-sample flag and bus failures
 #include <stdio.h>

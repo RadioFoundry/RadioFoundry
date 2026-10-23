@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro diagnostics page lines: raw readings for bench checks (cached values, except the accelerometer, which is
 // read over its own bus when the line is drawn)
 #include <stddef.h>

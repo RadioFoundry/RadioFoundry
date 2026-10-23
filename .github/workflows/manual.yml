@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # The user manual (docs/dev/release.md): check the doc links, build the PDF from docs/user with pandoc and typst,
 # and on a v* tag attach it to the GitHub release (created when missing). Independent of the firmware build. Pull
@@ -28,7 +28,7 @@ env:
 
 jobs:
   manual:
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: write   # gh release create / upload on tags
     steps:
@@ -65,8 +65,8 @@ jobs:
             VERSION="$(git rev-parse --short=8 HEAD)"
             REF="${GITHUB_SHA}"
           fi
-          OUT="build/manual/OpenDigitalRadio-manual-${VERSION}.pdf"
-          ODR_REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${REF}" \
+          OUT="build/manual/RadioFoundry-manual-${VERSION}.pdf"
+          RFOUNDRY_REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${REF}" \
             tools/build_manual.sh --version "$VERSION" --out "$OUT"
           echo "MANUAL_PDF=$OUT" >> "$GITHUB_ENV"
 
@@ -84,7 +84,7 @@ jobs:
           set -eu
           TAG="${GITHUB_REF_NAME}"
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "OpenDigitalRadio $TAG" \
-              --notes "Firmware images (without the AMBE codec), odrflash and the user manual. Flash with: odrflash flash --release ${TAG} (docs/user/02-installing.md)."
+            gh release create "$TAG" --verify-tag --title "RadioFoundry $TAG" \
+              --notes "Firmware images (without the AMBE codec), rfoundry and the user manual. Flash with: rfoundry flash --release ${TAG} (docs/user/02-installing.md)."
           fi
           gh release upload "$TAG" "$MANUAL_PDF" --clobber

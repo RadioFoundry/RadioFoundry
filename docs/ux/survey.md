@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # UI survey: what good radio and device interfaces do
 
-This is the background for `principles.md`. It looks at commercial two-way radios, amateur DMR radios, other open firmware, handheld gadgets, phones and vehicle/aviation HMI guidance, and notes for each what OpenDigitalRadio should borrow and what it should avoid.
+This is the background for `principles.md`. It looks at commercial two-way radios, amateur DMR radios, other open firmware, handheld gadgets, phones and vehicle/aviation HMI guidance, and notes for each what RadioFoundry should borrow and what it should avoid.
 
 Clean-room note: this survey deliberately leaves out the aftermarket firmware and its derivatives. Nothing here, and nothing in `docs/ux/`, is based on their menus, screens or key mappings.
 

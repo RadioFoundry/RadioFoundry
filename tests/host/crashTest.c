@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The crash log's record (core/crash/crash.c, docs/spec/crash-log.md): CRC, sealing and the count of crashes in a row,
 // the build ID, the start-up side on a fake store, the packed report and the summary line; the UI's side
 // (core/ui/ui_svc_crash.c): the record for the screen, seen and clear, the report sent and its progress; the debug
@@ -644,7 +644,7 @@ static void test_debuglink(void)
 	CHECK(strcmp(text, "crash.built=1\ncrash.valid=0\n") == 0);
 }
 
-// The fault trace line (crash_trace.c): exactly what tools/odr_fault_trace.py's selftest decodes (its GOLDEN)
+// The fault trace line (crash_trace.c): exactly what tools/rfoundry_fault_trace.py's selftest decodes (its GOLDEN)
 static char trace_buf[512];
 static size_t trace_len;
 
@@ -662,13 +662,13 @@ static void test_trace(void)
 	static const uint32_t regs[4] = { 0, 1, 2, 3 };
 	crash_trace_t t = { .vector = 2, .pc = 0x0300C1A4u, .psr = 0x80000140u, .lr = 0x0300C180u, .sp = 0x00012340u,
 			    .r = regs, .nr = 4 };
-	static const char body[] = "#ODRFAULT1 n=01 v=00000002 pc=0300c1a4 psr=80000140 lr=0300c180 sp=00012340 "
+	static const char body[] = "#RD0FAULT1 n=01 v=00000002 pc=0300c1a4 psr=80000140 lr=0300c180 sp=00012340 "
 				   "r0=00000000 r1=00000001 r2=00000002 r3=00000003 ";
 	trace_len = 0;
 	crash_trace_line(&t, 1, trace_out);
-	CHECK(strcmp(trace_buf, "\r\n#ODRFAULT1 n=01 v=00000002 pc=0300c1a4 psr=80000140 lr=0300c180 sp=00012340 "
-			  "r0=00000000 r1=00000001 r2=00000002 r3=00000003 *e471\r\n") == 0);
-	CHECK(crash_trace_crc(body) == 0xE471u);
+	CHECK(strcmp(trace_buf, "\r\n#RD0FAULT1 n=01 v=00000002 pc=0300c1a4 psr=80000140 lr=0300c180 sp=00012340 "
+			  "r0=00000000 r1=00000001 r2=00000002 r3=00000003 *eaf9\r\n") == 0);
+	CHECK(crash_trace_crc(body) == 0xEAF9u);
 	CHECK(crash_trace_crc("123456789") == 0x29B1u);	// CRC-16/CCITT-FALSE's check value
 	// Sixteen registers at most, two-digit names from r10
 	static const uint32_t many[20] = { 0 };

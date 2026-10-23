@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The crash capture (core/crash/crash_capture.c, docs/spec/crash-log.md 8) on a stand-in RTOS (stubs/crash_rtos/): every way
 // in (a platform's fault record, an assertion, a stack overflow, running out of heap, an assertion inside the capture)
 // turns the transmitter off (board_rf_safe) with interrupts off, before the record is stored and before the restart.

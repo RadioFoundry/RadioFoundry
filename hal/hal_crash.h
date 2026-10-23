@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Crash capture (CONFIG_CRASH_LOG, docs/spec/crash-log.md): the record a platform's fault handler fills, and the few
 // things the platform provides for it. The record is kept in memory a reset leaves alone, so the next start can show
 // and send it. The layout is fixed (CRASH_VERSION): tools/crash_decode.py reads it.

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Files that may name a radio outside its own places (tools/check_generic.py, AGENTS.md rule 4). One entry a line:
 # a glob (fnmatch: * also crosses /), a space, and why. An entry no file needs any more is an error, so the list only
@@ -17,7 +17,7 @@ README.md the front page's text around the generated radio table names the radio
 boot/README.md the first-stage index describes the one board with a first stage (to generate from boot/<id>/)
 stub/README.md the stub guide's per-radio entry steps (to move into each radio's hardware page)
 stub/USER-GUIDE.md the stub guide's per-radio entry steps (to move into each radio's hardware page)
-tools/odrflash/README.md the flasher guide's examples and per-radio routes
+tools/rfoundry/README.md the flasher guide's examples and per-radio routes
 AGENTS.md the owner has uncommitted edits to it; fix after those land
 
 # Owned by the workflows work in this pull request: fix there.
@@ -36,15 +36,15 @@ tools/codec_extract.py per-radio stock firmware profiles; to move into codec_map
 tools/cps_client.py per-radio CPS radio types and memory maps; to move into board.toml
 tools/hrc7000_codec.py per-radio stock codec slot layouts; to move into codec_maps/<id>/
 tools/stm32_dfu.py per-radio DFU keys and bootloader strings; to move into board.toml
-tools/odrflash/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
-tools/odrflash/odrflash/cli.py per-radio flash routes, stock formats and their tests; to read from registry.json
-tools/odrflash/odrflash/codec_maps/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
-tools/odrflash/odrflash/codecsave.py per-radio flash routes, stock formats and their tests; to read from registry.json
-tools/odrflash/odrflash/manifest.py per-radio flash routes, stock formats and their tests; to read from registry.json
-tools/odrflash/odrflash/serialflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
-tools/odrflash/odrflash/stockfw.py per-radio flash routes, stock formats and their tests; to read from registry.json
-tools/odrflash/tests/test_odrflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
-tools/odrflash/tests/test_serialflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/rfoundry/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/rfoundry/rfoundry/cli.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/rfoundry/rfoundry/codec_maps/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/rfoundry/rfoundry/codecsave.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/rfoundry/rfoundry/manifest.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/rfoundry/rfoundry/serialflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/rfoundry/rfoundry/stockfw.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/rfoundry/tests/test_rfoundry.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/rfoundry/tests/test_serialflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
 
 # Web flasher and editor: per-radio routes and stock formats; to read from the generated registry.
 site/i18n/en.json per-radio route or stock format data

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 FM receive audio for the APRS demodulator (fm_rx_audio.c): the modem's own copy of its demodulated FM
 // audio, 8 kHz, into a ring the radio task drains (hal_afsk.h receive side, modem-hrc7000.md 8.5)
 #ifndef HRC_FM_RX_AUDIO_H

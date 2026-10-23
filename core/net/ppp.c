@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A minimal PPP with IPCP over HDLC-like framing (see ppp.h). Written from RFC 1661, RFC 1662 and RFC 1332.
 #include <string.h>
 #include "net/ppp.h"

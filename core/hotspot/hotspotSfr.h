@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The MMDVM hotspot's SFR mode (CONFIG_SFR): the host turns it on with SET_CONFIG's simplex flag clear and SET_FREQ
 // RX = TX (docs/spec/mmdvm-protocol.md 6, gotchas 8.12). Then the radio is a single frequency repeater on the hotspot
 // frequency (core/dmr/sfrRunner.c on the hotspot's modem): what radios send on the inbound slot is repeated on the
 // outbound slot and goes up to the host as DMR_DATA1 / DMR_DATA2 of the inbound slot; the host's streams for the
 // outbound slot go out between the repeats. Registered as mmdvm.c's extension (version suffix, status flag 0x80, the
 // space bytes, the extra status bytes, command 0xD5) and as hotspot.c's other mode.
-#ifndef ODR_HOTSPOT_SFR_H
-#define ODR_HOTSPOT_SFR_H
+#ifndef RFOUNDRY_HOTSPOT_SFR_H
+#define RFOUNDRY_HOTSPOT_SFR_H
 
 #include <stdbool.h>
 #include <stdint.h>

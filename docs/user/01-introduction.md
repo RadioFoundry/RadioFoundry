@@ -2,11 +2,11 @@
 
 # Introduction
 
-OpenDigitalRadio (ODR) is free, MIT-licensed firmware for inexpensive DMR radios. It replaces the radio's stock
+RadioFoundry is free, MIT-licensed firmware for inexpensive DMR radios. It replaces the radio's stock
 firmware. One radio-independent core provides the DMR stack, the user interface, the codeplug and the host tools.
 Each radio adds a thin board layer underneath.
 
-This manual describes what ODR does on every radio. What differs between radios (the keys, power levels, battery,
+This manual describes what RadioFoundry does on every radio. What differs between radios (the keys, power levels, battery,
 power switch, display, missing hardware and test status) is in the [Radio reference](23-radios.md). The screenshots
 are 160 x 120. Other radios show the same screens, laid out for their display.
 
@@ -14,23 +14,23 @@ are 160 x 120. Other radios show the same screens, laid out for their display.
 
 ## Radios
 
-The [Radio reference](23-radios.md) lists the radios ODR supports, how far each one is, and the planned ones. Only
+The [Radio reference](23-radios.md) lists the radios RadioFoundry supports, how far each one is, and the planned ones. Only
 the radios marked as in the releases are ready for use.
 
 ## Project status
 
-ODR is early software. Each feature is in one of three groups.
+RadioFoundry is early software. Each feature is in one of three groups.
 
 | Group | Meaning | Features |
 |---|---|---|
-| Verified on the radio | Tested on a radio, on air against the SDR bench where RF is involved | Each radio's list is in the [Radio reference](23-radios.md). Only the DM-1701 has run ODR so far ([its list](23-radios.md#verified-on-the-dm-1701)) |
-| Built, host-tested | Works against simulated chips in the host tests, or only partly checked on a radio | Everything on the radios that haven't run ODR yet, and the features the radio's "Verified" list leaves out |
+| Verified on the radio | Tested on a radio, on air against the SDR bench where RF is involved | Each radio's list is in the [Radio reference](23-radios.md). Only the DM-1701 has run RadioFoundry so far ([its list](23-radios.md#verified-on-the-dm-1701)) |
+| Built, host-tested | Works against simulated chips in the host tests, or only partly checked on a radio | Everything on the radios that haven't run RadioFoundry yet, and the features the radio's "Verified" list leaves out |
 | Not built yet | Shown in the menus, dimmed, with a message when selected | Voice prompts, typed text messages, speed dial, saving contacts on the radio |
 
 Some features aren't on every radio. Either the hardware lacks something, or the radio's board code isn't written
 yet. The [Radio reference](23-radios.md) lists them for each radio.
 
-## What ODR does
+## What RadioFoundry does
 
 - DMR voice: group and private calls, talker alias, basic privacy, positions in calls (ETSI GPS Info).
 - DMR data: text messages, call alert, radio check, ARS registration, LRRP location answers.
@@ -49,8 +49,8 @@ yet. The [Radio reference](23-radios.md) lists them for each radio.
 
 ## The AMBE codec
 
-DMR voice needs DVSI's proprietary AMBE+2 vocoder. ODR never ships it. Each radio runs the codec from its own stock
-firmware. odrflash keeps the codec already in your radio, or takes it from the stock firmware file on your computer
+DMR voice needs DVSI's proprietary AMBE+2 vocoder. RadioFoundry never ships it. Each radio runs the codec from its own stock
+firmware. rfoundry keeps the codec already in your radio, or takes it from the stock firmware file on your computer
 and writes it to the radio ([Installing](02-installing.md)). Without the codec the radio works on FM, shows DMR calls
 and handles DMR data. It plays and sends no DMR voice.
 

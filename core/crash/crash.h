@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The crash log (CONFIG_CRASH_LOG, docs/spec/crash-log.md). A fault, a stack overflow, running out of heap, a failed
 // assertion or a hang fills a crash_record_t (hal_crash.h), keeps it where a reset doesn't clear it and restarts the radio. At
 // the next start crash_init() takes it up; the UI shows it and the crash report (CONFIG_CRASH_REPORT) can send it.
 //
 // The capture side (crash_commit and the hooks) runs with interrupts off on a stack of its own and calls nothing that
 // waits. The rest is for the start-up and the UI task.
-#ifndef ODR_CRASH_H
-#define ODR_CRASH_H
+#ifndef RFOUNDRY_CRASH_H
+#define RFOUNDRY_CRASH_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -85,9 +85,9 @@ const char *crash_kind_name(uint8_t kind);
 // --- The fault trace (crash_trace.c, CONFIG_FAULT_TRACE, with or without CONFIG_CRASH_LOG) ---
 
 // A platform's fault handler prints CRASH_TRACE_LINES of these on the host port, one a second, before it restarts:
-// "\r\n#ODRFAULT1 n=01 v=<8 hex> pc= psr= lr= sp= r0= ... *<CRC-16/CCITT-FALSE, 4 hex>\r\n". The CRC covers the
+// "\r\n#RD0FAULT1 n=01 v=<8 hex> pc= psr= lr= sp= r0= ... *<CRC-16/CCITT-FALSE, 4 hex>\r\n". The CRC covers the
 // bytes from '#' up to and including the space before '*'. Three seconds stays inside the watchdog's timeout
-#define CRASH_TRACE_SYNC	"#ODRFAULT1"
+#define CRASH_TRACE_SYNC	"#RD0FAULT1"
 #define CRASH_TRACE_LINES	3u
 typedef struct {
 	uint32_t vector, pc, psr, lr, sp;

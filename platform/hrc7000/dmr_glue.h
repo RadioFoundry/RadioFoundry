@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 DMR modem glue shared by the boards (dmr_glue.c): the slot engine on the SoC's modem interrupts, the PA
 // one-shot, the deferred event task and the hal_dmr_modem_t over them. A board supplies what differs: how its RF chip
 // switches between receive and transmit for each burst and how its PA is keyed

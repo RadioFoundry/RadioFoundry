@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The open-firmware CPS shim on a simulated 16 MB flash with the DM-1701 map, served on stdin / stdout, so host tools
 // (tools/cps_client.py --exec) can be tested without a radio. The debug link's frames on the same stream get VERSION
 // and the fast codeplug protocol (CODEPLUG, docs/spec/cps-fast.md; tools/cps_fast.py --exec):

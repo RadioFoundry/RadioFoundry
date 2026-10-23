@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro display: 128x64 monochrome ST7567-class LCD on a write-only serial bus bit-banged on bank C (chip select
 // PTC3, clock PTC4, data/command PTC6, data PTC8, reset PTC2; docs/spec/hardware-dm1801pro.md 3.2, 7). The backlight is
 // on PTA15, which is also the SoC's PWM0 output: set_backlight() dims it.

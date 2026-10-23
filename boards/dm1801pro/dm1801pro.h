@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Internal interfaces between the DM-1801 Pro board files
 #ifndef DM1801PRO_H
 #define DM1801PRO_H

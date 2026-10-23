@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 ## Host unit tests for the hardware independent parts of the firmware
 ##
 ##   make -C tests/host
@@ -403,7 +403,7 @@ UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c 
            $(CORE)/codeplug/codeplug_talk.c \
            sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
-ABOUT_H := out/gen/odr_about.h
+ABOUT_H := out/gen/rfoundry_about.h
 $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
 UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
            '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE
@@ -476,8 +476,8 @@ run: run-crash
 run-crash: crashTest crashCaptureTest
 	./crashTest
 	./crashCaptureTest
-	@if command -v python3 > /dev/null; then python3 $(ROOT)/tools/odr_fault_trace.py --selftest; \
-	else echo "# odr_fault_trace selftest: skipped (no python3)"; fi
+	@if command -v python3 > /dev/null; then python3 $(ROOT)/tools/rfoundry_fault_trace.py --selftest; \
+	else echo "# rfoundry_fault_trace selftest: skipped (no python3)"; fi
 .PHONY: run-crash
 
 run: run-ambe
@@ -833,8 +833,8 @@ run-hlnet: hostlinkNetTest
 .PHONY: run-hlnet
 
 # PPP on the serial host link (core/net/ppp.c) and its glue to the real gateway (core/hostlink/hostlink_ppp.c), against
-# a scripted peer, with a seeded fuzz loop (ODR_FUZZ_ITERS); pppPeer runs the same on a pseudo-terminal for pppd
-# (tools/odr_ppp_interop.sh)
+# a scripted peer, with a seeded fuzz loop (RFOUNDRY_FUZZ_ITERS); pppPeer runs the same on a pseudo-terminal for pppd
+# (tools/rfoundry_ppp_interop.sh)
 PPPT    := $(CORE)/net/ppp.c $(CORE)/hostlink/hostlink_ppp.c $(CORE)/dmr/ipGateway.c
 TESTS   += pppTest
 
@@ -1053,7 +1053,7 @@ ifneq ($(TSHARK),)
 endif
 .PHONY: run-netsvc
 # The SNMP agent (docs/spec/snmp.md): the BER codec against hand-worked X.690 encodings, SNMPv2c processing, the MIB and
-# the notifications (snmpTest); then the agent on a loopback UDP socket against tools/odr_snmp.py and, when installed,
+# the notifications (snmpTest); then the agent on a loopback UDP socket against tools/rfoundry_snmp.py and, when installed,
 # the system's SNMP command line tools (snmp_peer_check.sh)
 SNMPLIB := $(CORE)/snmp/snmp.c $(CORE)/snmp/snmpBer.c $(CORE)/snmp/snmpMib.c
 TESTS   += snmpTest snmpPeer

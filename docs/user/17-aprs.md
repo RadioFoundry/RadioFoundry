@@ -29,7 +29,7 @@ frequency, your position and its source, and when the next beacon goes out. If t
 |---|---|
 | Send position now | One position at once |
 | Automatic beacons | On: positions go out by themselves (see Triggers) |
-| Frequency | Your region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand 144.575, Japan 144.660, China 144.640 MHz, or Custom (`tools/odr_debug.py aprs set region custom`, then `aprs set freq_hz 144390000`) |
+| Frequency | Your region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand 144.575, Japan 144.660, China 144.640 MHz, or Custom (`tools/rfoundry_debug.py aprs set region custom`, then `aprs set freq_hz 144390000`) |
 | Power | As channel: APRS transmits at the radio's current power level. Or pick a level of its own, for example a low one for a nearby digipeater. Dimmed on radios that can't send APRS over the air |
 | Path | How far digipeaters pass your packets on: None, WIDE1-1, WIDE1-1,WIDE2-1 (the default), WIDE2-1 or WIDE2-2. See Path below. Dimmed on radios that can't send APRS over the air |
 | Interval | How often: Off, 1, 2, 5, 10 or 30 minutes |
@@ -41,7 +41,7 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | Stations heard | Stations the radio heard (radios that can receive APRS) |
 
 The symbol, comment and the DMR destination are set with the debug tool for now
-(`tools/odr_debug.py aprs set ...`), later with qdmr.
+(`tools/rfoundry_debug.py aprs set ...`), later with qdmr.
 
 ## Path
 
@@ -76,7 +76,7 @@ turned it on) passes packets on.
 - The volume knob doesn't matter: a radio turned all the way down still decodes.
 - On the DM-1701 a packet must be strong enough to open the squelch. Keep the squelch at its usual level, not tight.
 - Battery saving pauses while the radio listens for APRS: a sleeping receiver misses packets.
-- Receiving is on by default. Turn it off with `tools/odr_debug.py aprs set rx 0`.
+- Receiving is on by default. Turn it off with `tools/rfoundry_debug.py aprs set rx 0`.
 
 ## Triggers
 

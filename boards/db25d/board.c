@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Radioddity DB25-D PRO: board descriptor, IO mux and reset-time pin levels, key map (docs/spec/hardware-db25d.md)
 #include "board.h"
 #include "config.h"

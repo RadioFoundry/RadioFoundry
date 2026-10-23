@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Posts the UI gallery comment on a pull request (docs/dev/ci.md "UI gallery"), from the `ui-gallery` artifact that
 # ui-gallery.yml made. The changed screens are pushed to the `ui-previews` branch (made on first use) and the comment
@@ -32,9 +32,9 @@ concurrency:
 jobs:
   comment:
     if: >-
-      (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') &&
+      (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true') &&
       github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
-    runs-on: ${{ vars.ODR_UI_RUNNER || vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}   # the gallery's runner (ui-gallery.yml)
+    runs-on: ${{ vars.RFOUNDRY_UI_RUNNER || vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}   # the gallery's runner (ui-gallery.yml)
     timeout-minutes: 10
     permissions:
       contents: write        # the ui-previews branch
@@ -259,7 +259,7 @@ jobs:
           c = m["counts"]
           total = c["changed"] + c["added"] + c["removed"] + c["unchanged"]
 
-          out = ["<!-- odr-ui-gallery -->", "## UI screen gallery", ""]
+          out = ["<!-- rfoundry-ui-gallery -->", "## UI screen gallery", ""]
           out.append(f"Commit [`{head[:7]}`]({commit}) · updated {now} · base `{m['base_sha'][:7]}` · "
                      f"[workflow run]({run})")
           out.append("")
@@ -297,7 +297,7 @@ jobs:
           # top of the conversation. Only when it can't be edited is a new one posted, and the old one then deleted
           # (after, so the pull request never has none). Any duplicate from an earlier run goes too.
           ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-                --jq '.[] | select(.body | startswith("<!-- odr-ui-gallery -->")) | .id')
+                --jq '.[] | select(.body | startswith("<!-- rfoundry-ui-gallery -->")) | .id')
           first=$(printf '%s\n' "$ids" | head -n 1)
           extra=$(printf '%s\n' "$ids" | tail -n +2)
           if [ -n "$first" ] && gh api -X PATCH "repos/$REPO/issues/comments/$first" -F "body=@$BODY" > /dev/null; then

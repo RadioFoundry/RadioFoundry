@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // LIS3DH-class 3-axis accelerometer: chip driver, independent of the board. From the public LIS3DH datasheet
 // (STMicroelectronics, "LIS3DH MEMS digital output motion sensor", DocID17530): WHO_AM_I 0x33, CTRL_REG1 data rate and
 // axis enables, CTRL_REG4 block-data-update and high-resolution mode, 12-bit left-justified output in OUT_X_L..OUT_Z_H.

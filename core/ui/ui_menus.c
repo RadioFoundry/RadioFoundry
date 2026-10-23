@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The list screens and the screen table (information-architecture.md 4, 6, 8): the Hub with its six destinations,
 // actions on a station, Contacts, Messages, Recent, Channels, Tools, Settings grouped by intent, the talk target
 // picker, information pages and the one confirmation (factory reset, P7).
@@ -18,10 +18,10 @@
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
 #endif
-#include "odr_about.h"
+#include "rfoundry_about.h"
 
-#ifndef ODR_GIT
-#define ODR_GIT "host"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "host"
 #endif
 
 extern const ui_scr_def_t ui_find_screen;
@@ -2140,12 +2140,12 @@ static const ui_scr_def_t info_screen = {
 };
 
 // ======================= About (Settings > Advanced) =======================
-// A text page, every word shown (nothing shortened), no status strip while idle: the version, ODR's license, the
+// A text page, every word shown (nothing shortened), no status strip while idle: the version, RadioFoundry's license, the
 // authors, the third-party code and fonts in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
 // through the header make generates (tools/gen_about.py)
 
-static const char *const about_authors[] = ODR_ABOUT_AUTHORS;
-static const char *const about_third[][2] = ODR_ABOUT_THIRD_PARTY;
+static const char *const about_authors[] = RFOUNDRY_ABOUT_AUTHORS;
+static const char *const about_third[][2] = RFOUNDRY_ABOUT_THIRD_PARTY;
 static uint16_t about_first;	// first line shown
 static uint16_t about_max;	// the largest first line (from the last draw)
 
@@ -2154,18 +2154,18 @@ static const char *about_text(void)
 	static char t[400];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
-	sb_str(&b, "OpenDigitalRadio ");
-	sb_str(&b, ODR_GIT);
+	sb_str(&b, "RadioFoundry ");
+	sb_str(&b, RFOUNDRY_GIT);
 	sb_str(&b, "\nRadio: ");
 	sb_str(&b, board.name);
-	sb_str(&b, "\nMIT License, (c) 2026 The OpenDigitalRadio Authors\n");
-	sb_str(&b, ODR_ABOUT_AUTHOR_COUNT > 1 ? "Authors: " : "Author: ");
-	for (unsigned i = 0; i < ODR_ABOUT_AUTHOR_COUNT; i++) {
+	sb_str(&b, "\nMIT License, (c) 2026 The RadioFoundry Authors\n");
+	sb_str(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? "Authors: " : "Author: ");
+	for (unsigned i = 0; i < RFOUNDRY_ABOUT_AUTHOR_COUNT; i++) {
 		if (i)
 			sb_str(&b, ", ");
 		sb_str(&b, about_authors[i]);
 	}
-	for (unsigned i = 0; i < ODR_ABOUT_THIRD_PARTY_COUNT; i++) {
+	for (unsigned i = 0; i < RFOUNDRY_ABOUT_THIRD_PARTY_COUNT; i++) {
 		sb_chr(&b, '\n');
 		sb_str(&b, about_third[i][0]);
 		sb_str(&b, ": ");
@@ -2175,7 +2175,7 @@ static const char *about_text(void)
 #if CONFIG_FONT_AA
 	sb_str(&b, "\nJetBrains Mono font: OFL-1.1");
 #endif
-	sb_str(&b, "\nAMBE+2 codec: DVSI (stock)");	// from the radio's own firmware, not part of ODR
+	sb_str(&b, "\nAMBE+2 codec: DVSI (stock)");	// from the radio's own firmware, not part of RadioFoundry
 	return t;
 }
 

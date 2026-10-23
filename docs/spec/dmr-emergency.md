@@ -97,7 +97,7 @@ user didn't ask for; holding the emergency key is that request).
 
 Debug link view section `dmr_ext` (`debuglink.md` 3.7): `em.state em.mode em.dst ...`, the newest alert
 `em.alert*`, the counters `em.started ... em.tones`, and `data.emergency_alarms_heard / received / sent`.
-`odr_debug.py data emergency start|cancel|dismiss`, `odr_debug.py data em-settings alarm|alarm_call|call [DST]
+`rfoundry_debug.py data emergency start|cancel|dismiss`, `rfoundry_debug.py data em-settings alarm|alarm_call|call [DST]
 [private] [etsi] [no-tone] [tries=N] [hot=S]`.
 
 ## 7. Tests

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Broadcast FM receiver: a second receiver beside the channel receiver (e.g. an RDA5807M), for listening
 // to FM broadcast while the channel stays monitored (docs/spec/airband-and-broadcast.md 4). Not a channel mode.
 //

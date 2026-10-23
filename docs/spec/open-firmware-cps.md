@@ -107,9 +107,9 @@ Reply on success:
 | 3 | n | Data |
 
 On failure the reply is a single `-`. The original firmware clips the length to its reply buffer size minus 3 (2045).
-ODR streams the reply in small pieces instead of building it in a buffer, so it clips at 32768: a client that reads
+RadioFoundry streams the reply in small pieces instead of building it in a buffer, so it clips at 32768: a client that reads
 large areas (the web flasher's backup) asks for 32 KB at a time and takes what comes back, which is 2045 bytes from
-the original firmware and older ODR builds. qdmr checks that the returned length equals the requested one, and asks
+the original firmware and older RadioFoundry builds. qdmr checks that the returned length equals the requested one, and asks
 for 2045 or less. The radio info area always returns its own structure length, whatever length was asked for.
 
 Send the header and the first data in one USB write. qdmr (0.15) reads a reply as soon as part of it has arrived and
@@ -136,7 +136,7 @@ Special cases the radio applies to sub commands 1-3 (and 4 on the MK22). An inte
 | Case | Behavior |
 | --- | --- |
 | Calibration window, flash image 0x10000..0x101FF (STM32 radios and DM-32) | Preparing sector 0x10 succeeds without reading flash. Data inside the window goes to the radio's working calibration copy. The commit saves that copy. Reads of the window are served from the copy (2.1). On the DM-32 the copy is the MD-UV380-format table: the DM-32's own factory calibration lives in the stock pages and is not exposed. The GD-77 has no window: its calibration is plain flash at 0xF000 (working copy) and 0x8F000 (factory) |
-| Quick-key slots, EEPROM image 0x7524..0x7537 (10 entries of 2 bytes) | Written like the rest of the codeplug. ODR keeps the side key assignment there (`ui.md` 3.1); values another firmware left are ignored |
+| Quick-key slots, EEPROM image 0x7524..0x7537 (10 entries of 2 bytes) | Written like the rest of the codeplug. RadioFoundry keeps the side key assignment there (`ui.md` 3.1); values another firmware left are ignored |
 | Channel bank 0 rewritten (a write that falls entirely inside EEPROM image 0x3780..0x538F) | Remembered. At "save and reboot" (`C` 6 0) the radio re-reads the zones and channels, selects the All Channels zone, and points it at its last used channel, or else the first channel in use |
 | LUCZ rewritten (a write inside 0x6000..0x6049) | Remembered. The radio then doesn't overwrite the LUCZ with its own copy at "save and reboot" |
 | Voice prompt header written | If a sub command 2 write starts at the voice prompt header address (new or old location, section 7.6) and its first 8 bytes carry a valid magic and version, the radio switches announcements to voice level 1 |
@@ -177,7 +177,7 @@ request starts with a zero byte ([cps-protocol.md](cps-protocol.md) 2.1, `cps.ju
 | 10 | Wait 10 ms |
 | 8, 9, other | Ignored |
 
-ODR takes `C` 6 0 and `C` 6 1 only in programming mode: after a `C` 0, with no quiet longer than the session time
+RadioFoundry takes `C` 6 0 and `C` 6 1 only in programming mode: after a `C` 0, with no quiet longer than the session time
 (10 s) since. Without it the reply is `-` and nothing happens (`cps.reboots_ignored` on the debug link). On a radio
 whose debug link shares the CPS's serial port, any three bytes "C 6 1" would otherwise reboot it (bench 2026-10-15).
 qdmr sends `C` 0 first (the typical session below).
@@ -333,7 +333,7 @@ range without letting them corrupt the live settings. It can ignore the range, o
 | 0x7518 | 1 | Boot screen type: 0x01 text, 0x00 picture. This byte is also the start of the 7 byte boot PIN block read from 0x7518 |
 | 0x7519 | 1 | Bit 0: boot password (PIN) enabled |
 | 0x751C | 3 | Boot PIN as BCD digits, high nibble first. A nibble of 0xF ends the PIN. Up to 6 digits |
-| 0x7524 | 10 x 2 | Quick-key slots (LE). The aftermarket firmware keeps function ids there; their values aren't documented here. ODR uses the slots for its side key assignment: slot 0 the marker 0x4B01, slots 1-6 the press and long press of side key 1, side key 2 and the top key as `keyfn_t` values (`core/input/keyassign.h`, `ui.md` 3.1), slots 7-9 spare |
+| 0x7524 | 10 x 2 | Quick-key slots (LE). The aftermarket firmware keeps function ids there; their values aren't documented here. RadioFoundry uses the slots for its side key assignment: slot 0 the marker 0x4B01, slots 1-6 the press and long press of side key 1, side key 2 and the top key as `keyfn_t` values (`core/input/keyassign.h`, `ui.md` 3.1), slots 7-9 spare |
 | 0x7540 | 16 | Boot text line 1 |
 | 0x7550 | 16 | Boot text line 2 |
 | 0x7590 | 0x38 | VFO A, channel record format (7.3.3) |

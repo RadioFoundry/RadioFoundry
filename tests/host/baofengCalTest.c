@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The Baofeng factory calibration decoder (drivers/cal/baofeng) on a synthetic factory page in a fake data flash:
 // page search, the three pieces, BCD frequency tables, K values, modulation balance, PA drive interpolation and
 // power levels, the L / M / H diagnostics text, and the fallbacks (docs/spec/hardware-dm32.md 11); the DM-1801 Pro's

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The broadcast FM receiver's behavior (core/bcast, docs/spec/airband-and-broadcast.md 4) against a fake receiver:
 // power, tune, step with wrap, seek followed to the end, volume, presets, the saved state, and the channel traffic
 // policy (paused while the channel is busy, back BCAST_RESUME_MS after, off in hotspot mode)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """A reference USRP voice-over-UDP peer for the radio (CONFIG_NET_USRP, docs/spec/usb-audio.md 4.2): what AllStarLink's
 USRP channel driver or DVSwitch Analog_Bridge would do, for tests and scripts. The radio listens on UDP 34001 and
 sends to UDP 32001 at the address that last sent it a frame (the host's address on the USB link until then).

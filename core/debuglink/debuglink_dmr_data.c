@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR data parts of the debug link (docs/spec/debuglink.md 3.7 dmr_data, 3.12 DMR_DATA): the service's state and
 // counters as key=value text, and requests (send an SMS, call alert, radio check, settings, read the inbox) for the
 // HIL tests. Requests go through dmr_data_api.h, so they are handled by the radio task at its next tick.

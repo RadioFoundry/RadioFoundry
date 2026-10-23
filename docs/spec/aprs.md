@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # APRS
 
-APRS (Automatic Packet Reporting System) on OpenDigitalRadio: our position, status and messages as AX.25 UI frames in
+APRS (Automatic Packet Reporting System) on RadioFoundry: our position, status and messages as AX.25 UI frames in
 Bell 202 AFSK on FM; positions over DMR to an APRS gateway ID; automatic beaconing from several trigger sources; a
 KISS TNC on the host port (and on TCP port 8001 in USB network mode); the iGate rules, with the APRS-IS connection
 held by a host helper or by the radio's own client (`tcp-services.md` 4, 7); and, on radios that can sample their
@@ -99,7 +99,7 @@ fake board whose AFSK output is demodulated back to frames.
 
 ### 4.2 Tocall
 
-Destination `APZODR`: the APZ block is the experimental range anyone may use. A registered tocall (APxxxx from the
+Destination `APZRDF`: the APZ block is the experimental range anyone may use. A registered tocall (APxxxx from the
 tocalls list) is an open decision.
 
 ### 4.3 Received (RX builds)
@@ -255,7 +255,7 @@ in the radio's own APRS-IS client (`CONFIG_NET_APRSIS`, `tcp-services.md` 7), wh
   packet once per 30 s.
 - IS -> RF (`igate_tx`, off): only messages and acks, to a station heard directly in the last 30 minutes, from a
   station not heard on RF in the last 10 minutes, not seen in the last 30 s; sent as `}SRC>DST,TCPIP,OURCALL*:info`.
-- Our own beacons to APRS-IS (`to_is`): `CALL>APZODR,TCPIP*:info` over the same channel.
+- Our own beacons to APRS-IS (`to_is`): `CALL>APZRDF,TCPIP*:info` over the same channel.
 - Digipeater (RX builds, off): fill-in (WIDE1-1 only) or wide (WIDE1-1 and WIDE2-N), also our own call in the path;
   our call inserted before the WIDE entry, marked used (traced), the hop count decremented; duplicates suppressed
   for 30 s.
@@ -281,7 +281,7 @@ OK saves with the places not typed as zeros. The editor starts with the stored v
 Find knows the page as "APRS position".
 
 The rest (symbol, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
-debug link (`odr_debug.py aprs set`) and later by qdmr through the native codeplug.
+debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native codeplug.
 
 ## 11. Settings
 
@@ -343,7 +343,7 @@ saved and put back once the queued frames and message retries have gone out on t
 1. Position, status, message: the bench's RTL-SDR records I/Q while the radio sends; `tools/aprs_afsk_check.py`
    FM demodulates it on the bench and decodes Bell 202 / AX.25 (its own demodulator: tone envelopes, a bit clock PLL,
    NRZI, HDLC, the X.25 CRC; `--self-test` checks it on synthesized I/Q and on `aprsTest --wav`). Asserted: a valid
-   FCS, `CALL-SSID>APZODR` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
+   FCS, `CALL-SSID>APZRDF` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
    `:ADDRESSEE:text{N`), `aprs.rf_sent` +1, the radio back on its channel, deviation peak 2.0-4.5 kHz, twist under
    6 dB. Printed: mark and space deviation, TX delay (flags before the frame, and carrier to first frame bit), the
    phase residual at tone changes after the fitted switching delay (continuous phase: about 10 degrees RMS; random
@@ -374,7 +374,7 @@ passes at amplitude 46 (3.25 kHz peak, `hardware-dm1801pro.md`). Its receive is 
 ## 14. Open decisions
 
 - Default triggers: SmartBeaconing on with a 10 min interval fallback, after-PTT and boot off.
-- A registered tocall instead of APZODR.
+- A registered tocall instead of APZRDF.
 - The LRRP request ID and token for unsolicited reports to BrandMeister; whether LRRP answers should use the APRS
   position when there is no GPS; whether Settings > Location > Send position should drive APRS.
 - APRS messages merged into the Messages inbox (now: Stations heard and the debug link only).

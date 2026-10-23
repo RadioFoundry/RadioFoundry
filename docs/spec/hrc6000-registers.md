@@ -8,7 +8,7 @@ updated edition (revision A2, 2014-04-26). The Chinese text is authoritative. Th
 circulate (the "updated translated English" PDF, the older translated PDF, the VK3KYY and G4EML documents) have
 errors; section 9 lists the ones that matter.
 
-This file is a fact reference: what the manual says each register, bit and RAM location does. How ODR drives the
+This file is a fact reference: what the manual says each register, bit and RAM location does. How RadioFoundry drives the
 chip, and what the bench has confirmed, is in [modem-hrc6000.md](modem-hrc6000.md); section 10 here repeats only
 the bench facts that bear on a register's meaning. FM audio paths and their bench results are in
 [hardware-dm1701.md](hardware-dm1701.md) 21.3 and 21.3.1.
@@ -23,7 +23,7 @@ Conventions:
 | "(text layer only)" | present in the PDF's text layer but not visible on the rendered page |
 | "(not stated)" | the manual says nothing about it |
 | "(conflict)" | two places in the manual disagree; section 9.2 has the details |
-| ODR page n | the U_SPI OPMode value ODR's driver calls "page" (section 1) |
+| RadioFoundry page n | the U_SPI OPMode value RadioFoundry's driver calls "page" (section 1) |
 
 ---
 
@@ -43,7 +43,7 @@ A transaction is: CS low, a command byte, an address, one or more data bytes, CS
 | 5-3 | - | reserved |
 | 2-0 | OPMode | which space the transaction addresses (table below) |
 
-| OPMode | Space (manual) | ODR page | Notes |
+| OPMode | Space (manual) | RadioFoundry page | Notes |
 |---|---|---|---|
 | 000 | reserved | - | |
 | 001 | auxiliary parameter table (附属参数配置表) | 1 | section 4 |
@@ -79,7 +79,7 @@ The vocoder SPI (pins 41-44) is a second slave port with the same framing, one o
 Cmd = 0x83, Addr = 0x00, 27 data bytes; write Cmd = 0x03, Addr = 0x00, 27 data bytes. SCLK is at most 4 MHz. Using
 the HR_V3000 vocoder over V_SPI needs only 0x06 = 0x24 (manual).
 
-ODR note: on U_SPI, OPMode 011 is the prompt tone FIFO (section 7.7). ODR's "flush page 3 with 0x06 = 0x22"
+RadioFoundry note: on U_SPI, OPMode 011 is the prompt tone FIFO (section 7.7). RadioFoundry's "flush page 3 with 0x06 = 0x22"
 (modem-hrc6000.md 3.2) is, in the manual's terms, 64 prompt-tone samples of 0x7F7F written with the prompt tone path
 open (0x06 bit 1).
 
@@ -1189,9 +1189,9 @@ the manual pairs with "send FM voice" is **0xD7 bit 1**, not 0xDB (section 9.3).
 | 表 5.5 codes | 1011 listed twice, 1101 missing | |
 | Layer 2 mode value | 5.4.3: 0x10 = 0x68 | 5.4.5: 0x10 = 0x6A |
 
-### 9.3 Conflicts with ODR's current docs and code
+### 9.3 Conflicts with RadioFoundry's current docs and code
 
-| Item | ODR | Manual |
+| Item | RadioFoundry | Manual |
 |---|---|---|
 | "send FM voice" bit | modem-hrc6000.md 8.1, hardware-dm1701.md 21.3 and `tests/hil/test_audio_probe.py` use **0xDB** bit 1 | 0xD7 bit 1 (msk_voice_send_en). 0xDB is not in the manual. The bench result "0xDB bit 1: no FM TX from RAM" says nothing about 0xD7 |
 | CDCSS TX polarity | modem-hrc6000.md 8: 0xA2 = 0x00 inverted, 0x08 normal | 0xA2 bit 3 = 1 means TX inverted. The RX mapping (0x04 inverted) agrees with the manual |

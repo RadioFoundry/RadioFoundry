@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 PCM audio: the shared I2S3 stream to the HR_C5000's built-in codec (platform/stm32f4/hrc/i2s_pcm.c,
 // docs/spec/hardware-md380.md 6.2). The format is the MD-380's own (8 kHz, Philips, 16 bits in a 32-bit channel, clock
 // idle low); which data line carries which direction is unconfirmed (bring-up stage 6). The HR_C5000's set-ups leave

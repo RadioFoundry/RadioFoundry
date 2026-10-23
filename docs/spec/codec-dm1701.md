@@ -118,9 +118,9 @@ sequence, the state sizes and the call arguments are in "Codec state init and ca
 4. Place them as [codec-placement.md](codec-placement.md) "STM32 radios" says: the tables, cut to 0x12082 bytes,
    stay at 0x080D19F0; the code moves to 0x080E3A74. Rewrite the one literal in the code that points into the code
    and the 12 calls (BL) from the islands in the table window back into the code (the codec map
-   `tools/odrflash/odrflash/codec_maps/dm1701/dm1701-v0206-csv.json`, `self_refs` and `branches`).
+   `tools/rfoundry/rfoundry/codec_maps/dm1701/dm1701-v0206-csv.json`, `self_refs` and `branches`).
 5. Write the descriptor at 0x080FFF80 (`platform/stm32f4/codec_desc.h`): code and table window with their CRC-32s.
-   The merge happens on the user's machine (odrflash, `tools/codec_extract.py`, the web flasher, or `make` with the
+   The merge happens on the user's machine (rfoundry, `tools/codec_extract.py`, the web flasher, or `make` with the
    stock file in `codecs/`), never in a release.
 
 ## Hosting
@@ -198,7 +198,7 @@ Each block was placed so that it ends at an unmapped page. The codec then faults
 | FEC state | 0x44 bytes each | only for the codec's own FEC routines (encode ECC, FEC decode) |
 | stack | 3822 bytes peak | measured over init, encode and decode. Allow 4 KB plus the caller. |
 
-The blocks are passed by pointer and can live anywhere (ODR uses CCM). No fixed RAM address is touched. With
+The blocks are passed by pointer and can live anywhere (RadioFoundry uses CCM). No fixed RAM address is touched. With
 everything else unmapped, init, 30 frames of encode and decode and the ECC routine ran without a fault. The code uses
 no FPU instructions.
 
@@ -215,7 +215,7 @@ no FPU instructions.
   ([codec-md380.md](codec-md380.md), "Encode flags";
   [codec-dm1801pro.md](codec-dm1801pro.md) section 3): 0x40 noise suppression, 0x800 noise gate, 0x1000 tone frames,
   0x2000 input AGC.
-  **On this build they are unverified**: the code is the same family, but the bits were not measured on it. ODR's
+  **On this build they are unverified**: the code is the same family, but the bits were not measured on it. RadioFoundry's
   host passes the same word as the MD-380's (`drivers/vocoder/ambe2_flags.h`, 0x1840 by default). The encoder reads
   the PCM and never writes it. Its output is the 49 parameter bits only. Stock applies its
   privacy XOR to them (E+0x189C ^= E+0x19BC, 49 halfwords) and then calls encode ECC. Encode ECC turns them into the
@@ -240,7 +240,7 @@ no FPU instructions.
 * A 1 kHz tone at -12 dBFS through encode and decode comes back at about 945 zero crossings per second (the first
   frames are the codec's delay). This confirms the init sequence and arguments.
 
-### Hosting in OpenDigitalRadio
+### Hosting in RadioFoundry
 
 * `platform/stm32f4/hrc/vocoder.c` with this build's profile in `boards/dm1701/vocoder_dm1701.c`:
 

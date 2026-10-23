@@ -19,11 +19,11 @@ change when one fails.
    PTT and SK1 are held at power-on ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2). Push the cable fully
    into the jack, or the loader doesn't answer. `python3 tools/serial_loader.py --model dm1801pro --dry-run IMAGE`
    checks the image and the cable first.
-3. Flash: `python3 tools/serial_loader.py --model dm1801pro build/dm1801pro/odr_dm1801pro.bin` over the programming cable.
-   The erase takes about 13 s. `odrflash flash IMAGE --board dm1801pro` wraps the same tool, and the stub for a radio
-   that runs ODR with `CONFIG_STUB_ENTRY=y` ([tools/odrflash/README.md](../../tools/odrflash/README.md#the-dm-1801-pro));
-   neither odrflash route has flashed a radio yet.
-5. The debug link runs on the same cable at 115200 (`ODR_PORT=/dev/cu.usbserial-... tools/odr_debug.py diag`). The
+3. Flash: `python3 tools/serial_loader.py --model dm1801pro build/dm1801pro/rfoundry_dm1801pro.bin` over the programming cable.
+   The erase takes about 13 s. `rfoundry flash IMAGE --board dm1801pro` wraps the same tool, and the stub for a radio
+   that runs RadioFoundry with `CONFIG_STUB_ENTRY=y` ([tools/rfoundry/README.md](../../tools/rfoundry/README.md#the-dm-1801-pro));
+   neither rfoundry route has flashed a radio yet.
+5. The debug link runs on the same cable at 115200 (`RFOUNDRY_PORT=/dev/cu.usbserial-... tools/rfoundry_debug.py diag`). The
    cable's plug switches the internal speaker off: unplug it to listen.
 4. Build: `make BOARD=dm1801pro` (csky-elf GCC: `tools/build-csky-toolchain.sh`).
 

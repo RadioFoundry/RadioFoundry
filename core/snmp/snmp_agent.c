@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The SNMP agent's firmware glue (see snmp_agent.h)
 #include "config.h"
 #if CONFIG_SNMP	// the whole file
@@ -25,8 +25,8 @@
 #endif
 #endif
 
-#ifndef ODR_GIT
-#define ODR_GIT "unknown"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "unknown"
 #endif
 
 #define USB_MAX_REPETITIONS	32
@@ -94,8 +94,8 @@ static void fill(uint32_t now)
 		name_copy(data.name, cp, SNMP_NAME_MAX);
 	}
 	data.board = board.name;
-	data.firmware = ODR_GIT;
-	// The odrPower objects are mandatory: a radio without a battery reports 0 mV, 0 % and state ok, never a trap
+	data.firmware = RFOUNDRY_GIT;
+	// The rfoundryPower objects are mandatory: a radio without a battery reports 0 mV, 0 % and state ok, never a trap
 	data.batteryMv = board_has_battery() ? view.battery_mv : 0;
 	data.batteryPct = board_has_battery() ? view.battery_pct : 0;
 	data.batteryState = board_has_battery() ? view.battery : 0;

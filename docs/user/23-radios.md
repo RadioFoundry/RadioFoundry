@@ -2,7 +2,7 @@
 
 # Radio reference
 
-The rest of this manual describes what ODR does on every radio. This chapter lists what differs from radio to radio:
+The rest of this manual describes what RadioFoundry does on every radio. This chapter lists what differs from radio to radio:
 which physical key does each job, the power levels, the battery, the power switch, the display, what a radio lacks,
 and what has been checked on it.
 
@@ -77,12 +77,12 @@ A and B can be any channel of any zone, or the VFO ([how the core does it](../sp
 Nothing about this dual watch has been checked on the air on any radio.
 
 The Anytone AT-D578UV is the radio the two-receiver case is for: its hardware has two receiver chips
-([Anytone hardware notes](../spec/hardware-anytone.md)). ODR has no board for it, so there is no support.
+([Anytone hardware notes](../spec/hardware-anytone.md)). RadioFoundry has no board for it, so there is no support.
 
 ## Setting the volume from a PC
 
-`odr_debug.py volume` prints the volume the radio uses and where it comes from. `odr_debug.py volume 12` sets step 12
-of 16 (0 is mute), and `odr_debug.py volume knob` gives the knob back (over the serial cable of the DM-32UV, add
+`rfoundry_debug.py volume` prints the volume the radio uses and where it comes from. `rfoundry_debug.py volume 12` sets step 12
+of 16 (0 is mute), and `rfoundry_debug.py volume knob` gives the knob back (over the serial cable of the DM-32UV, add
 `--port /dev/ttyUSB1` or the port of your cable). What this does depends on the radio:
 
 | Radio | Volume from a PC |
@@ -215,7 +215,7 @@ repeater or duplex hotspot, and programming. The VHF image is untested. Installi
 | SK1 | **Monitor** |
 | SK2 | **Talk target** |
 | **PTT** | **PTT** |
-| Channel switch | Channel knob. A 16-position switch, not an endless knob: ODR turns each change of position into steps |
+| Channel switch | Channel knob. A 16-position switch, not an endless knob: RadioFoundry turns each change of position into steps |
 
 No **P1**, **P2** or top side key, so no **Power level** or zone keys and no emergency key. Change the zone with **OK**,
 **4**, the power with **\***, **1**. Where each key sits in the key matrix hasn't been confirmed on a radio. The
@@ -236,8 +236,8 @@ critical below 6.0 V. The voltage scale is assumed, not measured.
 
 ### MD-380 power switch
 
-The power switch is on the volume knob. It is believed to switch the supply directly, so ODR doesn't see the knob
-turn off. When ODR switches itself off (auto power off), it drops its power latch. Unchecked on a radio.
+The power switch is on the volume knob. It is believed to switch the supply directly, so RadioFoundry doesn't see the knob
+turn off. When RadioFoundry switches itself off (auto power off), it drops its power latch. Unchecked on a radio.
 
 ### MD-380 display
 
@@ -298,11 +298,11 @@ warning (**Settings > Power > Low battery warning**) applies, and a low battery 
 ### DM-32UV power switch
 
 The power switch is on the knob. The radio sees it turn off (three readings in a row), saves and drops its own power.
-The volume control works on the audio amplifier directly. ODR doesn't read it and can't set it from a PC either.
+The volume control works on the audio amplifier directly. RadioFoundry doesn't read it and can't set it from a PC either.
 
 ### DM-32UV display
 
-A 240 x 320 color screen. ODR uses its full resolution, with smooth (anti-aliased) bold text one size larger than on other 240 x 320 radios.
+A 240 x 320 color screen. RadioFoundry uses its full resolution, with smooth (anti-aliased) bold text one size larger than on other 240 x 320 radios.
 
 ### What the DM-32UV lacks
 
@@ -326,13 +326,13 @@ A 240 x 320 color screen. ODR uses its full resolution, with smooth (anti-aliase
 - No beeps while transmitting, the talk permit tone included: the radio's beep path would put them on the air. A beep
   still playing when the transmission ends is heard from then on.
 - The signal strength in dBm is uncalibrated: strong signals read high.
-- No vibration alerts: ODR doesn't drive a vibration motor on it, and **Settings > Sound > Vibrate** isn't in the
+- No vibration alerts: RadioFoundry doesn't drive a vibration motor on it, and **Settings > Sound > Vibrate** isn't in the
   image.
 
 ### DM-32UV with qdmr
 
-qdmr can't program a DM-32UV running ODR directly. ODR keeps the codeplug 7 MB into the radio's data flash, so the
-addresses qdmr's driver uses land in the stock area, where ODR refuses writes. Edit the codeplug in qdmr, save it as
+qdmr can't program a DM-32UV running RadioFoundry directly. RadioFoundry keeps the codeplug 7 MB into the radio's data flash, so the
+addresses qdmr's driver uses land in the stock area, where RadioFoundry refuses writes. Edit the codeplug in qdmr, save it as
 YAML, and write it with `dm32_migrate.py restore --yaml FILE` ([Moving from stock DM-32UV
 firmware](19-moving-from-stock-dm32.md)), which adds the offset. The radio reports radio type 6 (MD-UV380) for now.
 
@@ -345,21 +345,21 @@ voice both ways, the hotspot, the DMR VFO and the network services work on the r
 ### Installing the DB25-D PRO
 
 The radio programming utility on the web site installs and updates this radio over the programming cable (K1 jack).
-There is no odrflash route.
+There is no rfoundry route.
 
 | The radio runs | What the radio programming utility does |
 |---|---|
-| The original firmware (909E.DBB.EARSAB.018 or .020) | Switches the radio to update mode through the original firmware's diagnostic console: about 4 minutes, with no keys and nothing written to the radio's memory. Then it backs up the whole 2 MB program memory (about a minute), installs, and restarts the radio, as for a radio that runs OpenDigitalRadio. The voice codec is taken from the backup when the version is 020 or one of the 018 builds (2024-05-09 or later). For any other version the backup is still complete; the utility says so and asks for a stock 018 file from the manufacturer, whose codec works on every version |
+| The original firmware (909E.DBB.EARSAB.018 or .020) | Switches the radio to update mode through the original firmware's diagnostic console: about 4 minutes, with no keys and nothing written to the radio's memory. Then it backs up the whole 2 MB program memory (about a minute), installs, and restarts the radio, as for a radio that runs RadioFoundry. The voice codec is taken from the backup when the version is 020 or one of the 018 builds (2024-05-09 or later). For any other version the backup is still complete; the utility says so and asks for a stock 018 file from the manufacturer, whose codec works on every version |
 | Another version of the original firmware, or a radio that does not start | Installs through the factory update mode of the original loader: turn the radio off, hold P1 and press power. The red LED lights and the display stays blank. No backup is taken this way. The loader itself is never written |
-| OpenDigitalRadio | Hands over to a loader in RAM over the debug link (no keys, no power cycle), writes only the changed sectors and restarts the radio. The backup of the program memory is optional |
-| OpenDigitalRadio that does not answer | "Recover at Power-On": the first stage answers for half a second at every power-on, and the radio programming utility loads the loader then |
+| RadioFoundry | Hands over to a loader in RAM over the debug link (no keys, no power cycle), writes only the changed sectors and restarts the radio. The backup of the program memory is optional |
+| RadioFoundry that does not answer | "Recover at Power-On": the first stage answers for half a second at every power-on, and the radio programming utility loads the loader then |
 
 A radio that shows a white, backlit screen and a solid red LED at every power-on, without P1 held, is stuck in the
 factory update mode because its application is missing or incomplete. It needs no keys: the utility asks the loader a
 read-only question, says that the radio is in update mode and installs. Nothing is written to find this out.
 
 When nothing answers on the cable, Troubleshooting offers "Reinstall in Factory Update Mode", and Restore puts a backup
-back through the factory update mode the same way. Restore through the console or OpenDigitalRadio is the normal route;
+back through the factory update mode the same way. Restore through the console or RadioFoundry is the normal route;
 the factory update mode is the way back when neither answers.
 
 The channels and contacts in the radio's NAND memory are not part of the radio programming utility's
@@ -385,10 +385,10 @@ aren't decoded yet, so there are no number keys.
 
 ### DB25-D PRO power and supply
 
-Two levels, L and H (nominal 20 W). The radio refuses to transmit until ODR can read its power calibration.
+Two levels, L and H (nominal 20 W). The radio refuses to transmit until RadioFoundry can read its power calibration.
 
 The radio runs from a 13.8 V supply and has no battery. The status line shows no battery icon or percentage, Tools has
-no Battery page, and Settings > Power has no Battery saver or Low battery warning. ODR doesn't read the supply
+no Battery page, and Settings > Power has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
 voltage, so nothing warns about it.
 
 ### DB25-D PRO display
@@ -397,7 +397,7 @@ A 1.77" color screen, 160 x 128.
 
 There is no volume knob. Press **VOL/SQL**, turn the front knob (or press Up and Down) to set the volume from 0 (mute)
 to 16, and press OK or Back, or wait 3 seconds, to close it. The screen shows the step as a large number over a bar of
-16 segments. The level is also in Settings > Sound > Volume. ODR sets it at the receiver chip's audio output and
+16 segments. The level is also in Settings > Sound > Volume. RadioFoundry sets it at the receiver chip's audio output and
 keeps it. A value saved by an earlier build that had 10 steps is carried over (step 5 becomes 8, step 10 becomes 16).
 The steps are not calibrated yet: how loud each one is has not been measured, so expect to tune it.
 
@@ -440,7 +440,7 @@ The GPS module is checked at start-up: if it answers within 5 s the radio has GP
 
 The build has the MMDVM hotspot (simplex, over the programming cable) and the IP network over PPP with its services, as the DM-32UV does, both checked on this radio. The DMR VFO works on this radio too (receive and transmit checked). There is no single frequency repeater and no split-duplex hotspot role, and no APRS receive or iGate (the radio gives the core no FM receive audio). There is no VOX yet: the board code that reads the microphone level isn't written. DMR voice needs the codec from a supported stock file (8 in the hardware notes), and DMR
 audio from the speaker hasn't been listened to yet. Programming over the cable has been run on one radio. Settings are kept across power off, in a part of the radio's memory the stock firmware isn't known to use.
-If ODR finds data there it didn't write, it leaves it alone and keeps no settings (the diagnostics page shows `nst
+If RadioFoundry finds data there it didn't write, it leaves it alone and keeps no settings (the diagnostics page shows `nst
 foreign`). This is new and not yet checked on a radio. Only the PRO (two BK4819 receiver chips) is supported, not the
 earlier batches.
 
@@ -456,15 +456,15 @@ radio or to talk.
 
 Settings > Talk & listen > Mic gain sets the microphone level for FM and DMR on this radio.
 
-`odrflash flash IMAGE --board dm1801pro` does the same over the cable, and picks the way in by itself:
+`rfoundry flash IMAGE --board dm1801pro` does the same over the cable, and picks the way in by itself:
 
-| The radio runs | odrflash |
+| The radio runs | rfoundry |
 |---|---|
-| ODR built with `CONFIG_STUB_ENTRY=y` | Enters the loader from ODR (the screen shows "PC Loader Connected"), writes only what changed and restarts the radio. No keys to hold. The codec in the radio stays |
-| Anything else | Asks you to put the radio in update mode (PTT and SK1 at power-on). Update mode erases the codec, so the image must carry it (the build's `odr_dm1801pro_codec.bin`), or give `--stock` with a program flash read of this radio (`stub/stubtool.py PORT --progmem FILE`) |
+| RadioFoundry built with `CONFIG_STUB_ENTRY=y` | Enters the loader from RadioFoundry (the screen shows "PC Loader Connected"), writes only what changed and restarts the radio. No keys to hold. The codec in the radio stays |
+| Anything else | Asks you to put the radio in update mode (PTT and SK1 at power-on). Update mode erases the codec, so the image must carry it (the build's `rfoundry_dm1801pro_codec.bin`), or give `--stock` with a program flash read of this radio (`stub/stubtool.py PORT --progmem FILE`) |
 
 `--route stub` or `--route bootloader` chooses by hand, and `--dry-run` shows the plan without writing. Neither route of
-odrflash has flashed a radio yet; `tools/serial_loader.py` and `stub/stubtool.py` have.
+rfoundry has flashed a radio yet; `tools/serial_loader.py` and `stub/stubtool.py` have.
 
 ### DM-1801 Pro keys
 
@@ -485,7 +485,7 @@ odrflash has flashed a radio yet; `tools/serial_loader.py` and `stub/stubtool.py
 
 ### DM-1801 Pro power and display
 
-Three power levels, L, M and H, the stock firmware's Low, Middle and High. The radio refuses to transmit until ODR can
+Three power levels, L, M and H, the stock firmware's Low, Middle and High. The radio refuses to transmit until RadioFoundry can
 read its factory calibration. The battery
 reading is scaled from a measurement on one radio. The screen is monochrome; the backlight is on or off.
 The radio vibrates for messages, call alerts and emergencies (**Settings > Sound > Vibrate**).
@@ -496,7 +496,7 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
   host-fed voice call, the receive half's slot labels). A real pair of radios hasn't been tested.
 - APRS receive is unchecked. APRS sending works on FM and over DMR.
 - VHF transmit is unchecked on air. UHF transmit and receive on both bands work.
-- VOX is unchecked. ODR now reads the microphone level from the microphone's digital audio, but that hasn't been
+- VOX is unchecked. RadioFoundry now reads the microphone level from the microphone's digital audio, but that hasn't been
   tried on the radio yet.
 - No air band receive. The broadcast FM tuner is wired, but its screens aren't built yet.
 
@@ -508,9 +508,9 @@ models it covers.
 <!-- generated: tools/boards.py docs planned; edit the Port cells of docs/spec/radios.md -->
 | Radio | Status |
 |---|---|
-| TYT MD-9600, Retevis RT90 (mobile) | In progress ([#112](https://github.com/sfowlr/OpenDigitalRadio/pull/112)). Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD. |
-| Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/sfowlr/OpenDigitalRadio/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
-| Radioddity GD-88 | In progress ([#132](https://github.com/sfowlr/OpenDigitalRadio/pull/132)). Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
+| TYT MD-9600, Retevis RT90 (mobile) | In progress ([#112](https://github.com/radiofoundry/radiofoundry/pull/112)). Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD. |
+| Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
+| Radioddity GD-88 | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port ([hardware-mduv380.md](../spec/hardware-mduv380.md)). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |
 | TYT MD-2017 / Retevis RT82 | Planned. The DM-1701's STM32 and HR_C6000 pair with two receivers, so it should reuse the STM32F4 platform. The hardware can receive two channels at once. |

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ST7735 / HX8353-class 8080-bus color TFT controllers, and the variant that needs the 0xFE/0xEF inter-command
 // unlock (docs/spec/hardware-dm1701.md 9.2, 9.3). Generic: the board supplies the bus and knows the pins.
 #ifndef ST7735_H

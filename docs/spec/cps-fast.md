@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Fast codeplug protocol
 
@@ -37,7 +37,7 @@ Why the debug link and not a mode of the CPS port:
 | Request boundary | length field | the header, or 3 ms of quiet |
 | Lost answer | sequence number: the host tells a late answer from a new one | none |
 | Status | a status byte and a reason | `-` for both "done" and "error" |
-| Hosts | `odr_debug.py`, `tests/hil`, the web flasher's `link.js` already speak it, over USB, a UART cable and UDP | needs its own parser |
+| Hosts | `rfoundry_debug.py`, `tests/hil`, the web flasher's `link.js` already speak it, over USB, a UART cable and UDP | needs its own parser |
 
 The debug link's limits shape the operations: a request carries at most 64 payload bytes, a reply at most 1024. Both
 come from buffers the firmware already has, so the protocol adds none. Writes therefore move in pieces of 61 stream
@@ -264,7 +264,7 @@ The record:
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 4 | magic 0x4652444F ("ODRF" in memory order) |
+| 0 | 4 | magic 0x4652444F (bytes 4F 44 52 46 in memory order) |
 | 4 | 4 | version: 1 |
 | 8 | 4 | count: staged blocks (1 to stage_max) |
 | 12 | 4 | CRC-32 of the staged slots, in slot order |
@@ -294,7 +294,7 @@ changed blocks fit, direct mode otherwise or with `--direct`.
 ### 7.3 The staging area is shared
 
 The TFTP server's codeplug write (`tftp.md` 4) uses the same area. The first word of its first sector says whose
-record is there (`STORAGE_STAGE_MAGIC_TFTP` "ODRT", `STORAGE_STAGE_MAGIC_CPSF` "ODRF"):
+record is there (`STORAGE_STAGE_MAGIC_TFTP`, `STORAGE_STAGE_MAGIC_CPSF`):
 
 - At boot `cps_fast_resume` runs first and leaves a TFTP record alone; `tftp_codeplug_resume` leaves ours alone.
 - BEGIN staged is refused (reason 5) while a TFTP write is open or a record of either kind is there.

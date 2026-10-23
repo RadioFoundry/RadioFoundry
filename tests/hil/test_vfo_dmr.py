@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The DMR VFO (docs/spec/dmr-voice.md 2.1), radio only, nothing transmitted: the VFO's mode, color code, slot and
 talk target are set over the debug link (RADIO ops 31 and 15) and read back from the `core` and `dmr` views; they
 are the VFO's own settings (no temporary flag), and a channel change and back keeps them. The VFO is put back to FM
 with color code 1, slot 1 and talkgroup 9 (the defaults) afterwards, which is what a VFO that was never touched has."""
-from odr_hil import skip
+from rfoundry_hil import skip
 
 import pytest
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Shares the board's one PCM stream (hal_audio_t) between the radio's own users (DMR voice, beeps) and a host audio
  * session (USRP over the network, docs/spec/usb-audio.md 5.1). The radio's users get a wrapped hal_audio_t
@@ -19,8 +19,8 @@
  * board's stream); the block callback in the board's audio task; audio_mux_host_* in the host link task;
  * audio_mux_fm_pull in the board's PWM interrupt. Each ring has one producer and one consumer.
  */
-#ifndef ODR_AUDIO_MUX_H
-#define ODR_AUDIO_MUX_H
+#ifndef RFOUNDRY_AUDIO_MUX_H
+#define RFOUNDRY_AUDIO_MUX_H
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Baofeng DM-1701 pin map (docs/spec/hardware-dm1701.md section 2)
 #ifndef DM1701_PINS_H
 #define DM1701_PINS_H

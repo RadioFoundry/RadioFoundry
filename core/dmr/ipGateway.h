@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Minimal IPv4 gateway between a USB network link and DMR packet data
  */
 
-#ifndef ODR_IPGATEWAY_H
-#define ODR_IPGATEWAY_H
+#ifndef RFOUNDRY_IPGATEWAY_H
+#define RFOUNDRY_IPGATEWAY_H
 
 #include <stdbool.h>
 #include <stdint.h>

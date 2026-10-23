@@ -3,7 +3,7 @@
 # Gotchas: lessons from the aftermarket firmware
 
 What went wrong on the aftermarket firmware ([CLEANROOM.md](../CLEANROOM.md)), and what new code has to do so it
-doesn't happen again in ODR. Each entry gives the symptom, the cause, the rule for new code, the radios it applies to,
+doesn't happen again in RadioFoundry. Each entry gives the symptom, the cause, the rule for new code, the radios it applies to,
 and the aftermarket firmware commit where it was found or fixed (for the dirty-side reference notes kept outside this
 repository; implementers don't need the commit to apply the rule).
 
@@ -598,7 +598,7 @@ with 1, 32768 with 0). Rule: 0 is the driver default; `test_dmr_voice_speech` ch
 ## 16. Input
 
 **16.1 Rotary encoder counted on the edges of one line.**
-Symptom: on the DM-1701 the knob sometimes skipped a step, counted two, or stepped back (ODR, 2026-10-10). Cause: one
+Symptom: on the DM-1701 the knob sometimes skipped a step, counted two, or stepped back (RadioFoundry, 2026-10-10). Cause: one
 count per edge of B with A read in the interrupt; a knob leaving a detent and settling back counts a step and a step
 back, and bounce edges merged by the single pending flag count twice. Rule: interrupt on both lines (or poll both fast)
 and decode with a table that counts only whole detents at a rest state and ignores samples where both lines changed
@@ -606,7 +606,7 @@ and decode with a table that counts only whole detents at a rest state and ignor
 when the UI's event queue is full, carry the detents over to the next scan instead of dropping them.
 
 **16.2 PTT on the programming cable's serial line.**
-Symptom: on the DM-32UV a debug link host polling the radio started DMR transmissions on its own (ODR, 2026-10-15).
+Symptom: on the DM-32UV a debug link host polling the radio started DMR transmissions on its own (RadioFoundry, 2026-10-15).
 Cause: the two-pin K-type programming jack carries the host's serial data on the same line as PTT, so every 0 bit
 pulls the PTT pin low, and two low key scans pass the debounce. Rule: on a radio whose PTT shares the host's RX line,
 count the pin low as PTT only after a quiet time with no good UART byte (`drivers/input/sharedptt`, hardware-dm32.md

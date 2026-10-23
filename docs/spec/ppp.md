@@ -18,8 +18,8 @@ Written from RFC 1661 (PPP, LCP), RFC 1662 (HDLC-like framing) and RFC 1332 (IPC
 | `core/hostlink/hostlink_ppp.c` | the netif (`board_t.netif`) between PPP and the gateway, the engine's I/O |
 | `core/hostlink/hostlink.c` | PPP as a personality of the host port: entering, feeding, leaving |
 | `tests/host/pppTest.c` | host test and fuzz loop; `tests/host/pppPeer.c` the same code on a pseudo-terminal |
-| `tools/odr_ppp.sh` | host side: pppd on the radio's serial port, routes |
-| `tools/odr_ppp_interop.sh` | interop test against pppd (Linux, root) |
+| `tools/rfoundry_ppp.sh` | host side: pppd on the radio's serial port, routes |
+| `tools/rfoundry_ppp_interop.sh` | interop test against pppd (Linux, root) |
 
 A board with PPP sets `board.netif = &hostlink_ppp_netif`. Without it the link still negotiates, but the gateway's
 answers go nowhere. The view key `net.netif` shows whether the board has a netif.
@@ -74,7 +74,7 @@ exactly as on the adapter.
 - We don't adopt a Nak of our own address: don't give pppd a remote address.
 
 pppd installs a host route to the radio only. The radio IDs (12.0.0.0/8) and talkgroups (225.0.0.0/8) need routes
-through the PPP interface, as the adapter's DHCP option 121 gives: `tools/odr_ppp.sh` adds them.
+through the PPP interface, as the adapter's DHCP option 121 gives: `tools/rfoundry_ppp.sh` adds them.
 
 ## 4. PPP as a personality of the host port
 
@@ -89,13 +89,13 @@ modes, exactly as on the adapter, so MMDVMHost over UDP gets hotspot mode while 
   `7E FF 7D 23 C0 21 ...` (or `7E FF 03 C0 21 ...` with a narrower ACCM); no other protocol on the port starts a
   request with `0x7E` (MMDVM `0xE0`, debug link `0xA5`, CPS ASCII letters, KISS `0xC0`, NMEA `$`). LCP starts in the
   Stopped state and answers the peer's request.
-- Active: debug link radio op 28 with 1 (`odr_debug.py radio ppp on`), after its reply has gone out. Our
+- Active: debug link radio op 28 with 1 (`rfoundry_debug.py radio ppp on`), after its reply has gone out. Our
   Configure-Request goes out at once and every 3 s, ten times. Not needed with pppd, which starts PPP itself; useful
   with a peer that waits for the other end. Refused (ignored) while the USB network adapter is the personality.
 
 **While in it.** Every byte from the port goes to PPP; no debug link frame is looked for on the port. The network
 personality is in use (`hostlink_network_mode()`): the gateway, the radio's services, and the serial protocols over
-UDP 3334 (`usb-network.md` 1), so `odr_debug.py --port udp:<radio IP>`, MMDVMHost over UDP and the HTTP / SNMP / TFTP
+UDP 3334 (`usb-network.md` 1), so `rfoundry_debug.py --port udp:<radio IP>`, MMDVMHost over UDP and the HTTP / SNMP / TFTP
 / mDNS services work as over the adapter. UDP serial bytes never reach PPP, whatever they start with. The view
 section `hotspot` shows `usb.network=1`, `usb.net_up` (IPCP open) and the `ppp.*` keys; `hostlink` is the mode of
 the protocols over UDP.
@@ -119,11 +119,11 @@ No "+++" escape: the first-byte rule covers it without a guard time.
 
 ## 5. The host side
 
-`tools/odr_ppp.sh PORT` runs pppd on the radio's serial port (root, for the interface) and adds the routes:
+`tools/rfoundry_ppp.sh PORT` runs pppd on the radio's serial port (root, for the interface) and adds the routes:
 
 ```
-sudo tools/odr_ppp.sh /dev/ttyUSB0                   # Linux
-sudo tools/odr_ppp.sh /dev/cu.usbserial-XXXX         # macOS (/usr/sbin/pppd)
+sudo tools/rfoundry_ppp.sh /dev/ttyUSB0                   # Linux
+sudo tools/rfoundry_ppp.sh /dev/cu.usbserial-XXXX         # macOS (/usr/sbin/pppd)
 ```
 
 It runs, in effect:
@@ -139,9 +139,9 @@ copes with the rejects; the options save a round trip). Then, with the radio at 
 
 ```
 ping 12.0.39.20
-tools/odr_debug.py --port udp:12.0.39.20 view
+tools/rfoundry_debug.py --port udp:12.0.39.20 view
 curl http://12.0.39.20/
-python3 tools/odr_snmp.py get 12.0.39.20 sysName.0
+python3 tools/rfoundry_snmp.py get 12.0.39.20 sysName.0
 python3 tools/tftp_client.py ...                     # tftp.md
 ```
 
@@ -189,19 +189,19 @@ figure is the gateway, its air side and the network personality (`hostlink_net*.
   from the air through the real gateway; the ACCM both ways with line noise; byte-by-byte input, back-to-back flags,
   bad FCS, abort, no `FF 03`, too long, a stalled frame; Terminate both ways; the negotiation time-out, the dead
   peer, a live peer answering echoes, another protocol's request; renegotiation on an open link. Then a seeded fuzz
-  loop (`ODR_FUZZ_ITERS`, default 3,000): mutated whole sessions in random pieces, and single packets with a good
+  loop (`RFOUNDRY_FUZZ_ITERS`, default 3,000): mutated whole sessions in random pieces, and single packets with a good
   FCS mutated inside (LCP, IPCP, IPv4, IPv6CP), every frame the radio sends checked. Clean under
   `make -C tests/host SANITIZE=1` with 30,000 iterations.
-- `tools/odr_ppp_interop.sh`: `tests/host/pppPeer` (PPP, the gateway, TCP with a one-line HTTP server, the SNMP
+- `tools/rfoundry_ppp_interop.sh`: `tests/host/pppPeer` (PPP, the gateway, TCP with a one-line HTTP server, the SNMP
   engine, the debug link's PING and VERSION on UDP 3334) on a pseudo-terminal, pppd 2.4.9 on the other side
   (Ubuntu 24.04 container on the CI VM, `--cap-add NET_ADMIN --device /dev/ppp`). Passes passive and `--active`:
-  ping, a 500 byte ping with `7E 7D 11 13` in it, HTTP, SNMP get (`tools/odr_snmp.py`), `odr_debug.py --port udp:`
+  ping, a 500 byte ping with `7E 7D 11 13` in it, HTTP, SNMP get (`tools/rfoundry_snmp.py`), `rfoundry_debug.py --port udp:`
   ping and version, IPv6CP and CCP Protocol-Rejected, pppd's hang-up ending the link cleanly.
-- On a radio, DM-1801 Pro, 2026-10-21: pppd 2.5.2 on Linux (`tools/odr_ppp.sh`) over the programming cable at
+- On a radio, DM-1801 Pro, 2026-10-21: pppd 2.5.2 on Linux (`tools/rfoundry_ppp.sh`) over the programming cable at
   115200 baud. LCP and IPCP open, the host gets 12.<ID> and the routes. Ping (56 and 500 bytes, no loss), the debug
   link over UDP 3334, HTTP 200 and an SNMP get work. Two UDP datagrams, one to a talkgroup (225.0.0.201) and one to a
   radio ID (12.x.y.z), went out as SAP 3 data, and the SDR bench decoded the preamble CSBKs (our source ID, the right
-  destination), the data headers and the blocks, CC 2, no FEC failures. `odr_ppp.sh --stop` hangs up; the debug link
+  destination), the data headers and the blocks, CC 2, no FEC failures. `rfoundry_ppp.sh --stop` hangs up; the debug link
   answers on the cable right after. `ppp.rx_errors` stayed 0. The DB25-D PRO runs the network services over PPP too
   ([23-radios](../user/23-radios.md)).
 - `test_gateway_has_netif` (`tests/hil/test_dmr_ip.py`, radio only): a build with the gateway reports `net.netif=1`.

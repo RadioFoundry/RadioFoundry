@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The UI driven by injected keys over the debug link (docs/spec/ui.md): channel up / down on Home, the Hub and its
 destinations, Quick settings, type-to-find, the key lock, long BACK = Home from anywhere, the diagnostics page,
 screenshots that change with the screen.
@@ -13,8 +13,8 @@ import time
 
 import pytest
 
-from odr_hil import LONG, as_int, skip, skip_if
-from odr_debug import DOWN, UP
+from rfoundry_hil import LONG, as_int, skip, skip_if
+from rfoundry_debug import DOWN, UP
 
 
 def diff_fraction(a, b):
@@ -616,8 +616,8 @@ def test_save_timeslot_to_channel(home):
 
 
 @pytest.mark.feature("dmr_sms")
-@skip_if(os.environ.get("ODR_HIL_DELETE_MESSAGE") != "1", "opt_in",
-         "deletes the newest inbox message: set ODR_HIL_DELETE_MESSAGE=1")
+@skip_if(os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1", "opt_in",
+         "deletes the newest inbox message: set RFOUNDRY_HIL_DELETE_MESSAGE=1")
 def test_delete_message(home):
     """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less."""
     r = home
@@ -639,8 +639,8 @@ def test_delete_message(home):
 
 @pytest.mark.feature("ui_settings")
 @pytest.mark.reboot
-@skip_if(os.environ.get("ODR_HIL_FACTORY_RESET") != "1", "opt_in",
-         "erases the settings and the native area: set ODR_HIL_FACTORY_RESET=1 (and --allow-reboot)")
+@skip_if(os.environ.get("RFOUNDRY_HIL_FACTORY_RESET") != "1", "opt_in",
+         "erases the settings and the native area: set RFOUNDRY_HIL_FACTORY_RESET=1 (and --allow-reboot)")
 def test_factory_reset(home):
     """Settings > Advanced (0) > Factory reset > Yes: the settings go back to their defaults, the native area is erased
     (never the codeplug or calibration), and the radio restarts. The channel position survives only as the default."""

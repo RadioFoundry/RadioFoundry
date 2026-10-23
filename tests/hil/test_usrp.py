@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """USRP voice over UDP in USB network mode (opt-in: --allow-usb-switch; firmware with CONFIG_NET_USRP,
 docs/spec/usb-audio.md 4.2). Each test switches the radio to the network adapter, talks USRP to it with
 tools/usrp_client.py from the host's side of the link, and switches it back to serial.
@@ -19,7 +19,7 @@ import time
 
 import pytest
 
-from odr_hil import skip
+from rfoundry_hil import skip
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import usrp_client  # noqa: E402

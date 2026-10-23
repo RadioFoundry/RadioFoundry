@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """IP over DMR on air (docs/spec/dmr-data.md 11, 12): our UDP packets with the compressed UDP/IPv4 header (SAP 3),
 with the full one when compression is off, and as confirmed data with its retries, heard by the SDR bench's modem.
 
@@ -21,7 +21,7 @@ import warnings
 
 import pytest
 
-from odr_hil import skip
+from rfoundry_hil import skip
 import dmr_packet
 
 BENCH_ID = 9990301
@@ -213,7 +213,7 @@ def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings):
 def test_usb_network_udp_to_air(radio, sdr_bench, pytestconfig, ip_settings):
     """The real host path: the radio as a USB network adapter, a UDP datagram from this host to the bench's address
     (12.x.y.z) goes on air as a SAP 3 packet the bench decodes; then back to the serial port."""
-    from odr_hil import DebugLink, DebugLinkError, find_ports
+    from rfoundry_hil import DebugLink, DebugLinkError, find_ports
     freq, cc, own, _ = _setup(radio, pytestconfig)
     radio.link.ip_settings("auto", "rules", 0, [])
     host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own)

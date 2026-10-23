@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # The web site (docs/dev/website.md), built from the repository with site/build.py and deployed to GitHub Pages with
 # the newest release's firmware images for the flasher.
@@ -30,14 +30,14 @@ concurrency:
 env:
   # what the site is built from: a change here since the last deployment means a rebuild. The radios come from the
   # board registry (site/build.py runs tools/boards.py json --for site, which reads boards/, platform/, boot/, the
-  # Makefile and tests/hil/features.toml), the flasher's data from odrflash
+  # Makefile and tests/hil/features.toml), the flasher's data from rfoundry
   SITE_INPUTS: >-
     site docs README.md boards platform boot config tests/hil/features.toml tools/boards.py tools/registry_docs.py
-    tools/odr_python.sh tools/glossary.py tools/odrflash/odrflash Makefile .github/workflows/site.yml
+    tools/rfoundry_python.sh tools/glossary.py tools/rfoundry/rfoundry Makefile .github/workflows/site.yml
 
 jobs:
   changes:
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: read
       deployments: read
@@ -78,7 +78,7 @@ jobs:
     needs: changes
     # the nightly run builds only when `changes` says so
     if: needs.changes.outputs.build == 'true'
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v4
       # the self-hosted runner's image has Python with markdown-it and Node.js 22, and its proxy doesn't reach PyPI
@@ -92,8 +92,8 @@ jobs:
           node-version: "22"
       - name: Generator dependency
         run: |
-          [ "${ODR_CI_IMAGE:-}" = 1 ] || pip install -r site/requirements.txt
-      - name: Web flasher tests (against odrflash)
+          [ "${RFOUNDRY_CI_IMAGE:-}" = 1 ] || pip install -r site/requirements.txt
+      - name: Web flasher tests (against rfoundry)
         run: site/tests/run.sh
       - name: Newest release's firmware for the flasher
         env:
@@ -101,13 +101,13 @@ jobs:
         run: |
           mkdir -p dist
           # no release yet is fine: the flasher then offers local images only
-          gh release download --repo "${{ github.repository }}" --pattern 'odr-*' --dir dist || echo "no release assets"
+          gh release download --repo "${{ github.repository }}" --pattern 'rfoundry-*' --dir dist || echo "no release assets"
       # site/build.py runs tools/boards.py json --for site itself (setup-python's 3.12, or the image's, through
-      # tools/odr_python.sh), so the radios are always the checkout's registry
+      # tools/rfoundry_python.sh), so the radios are always the checkout's registry
       - name: Build
         env:
           # where the web tools send error reports (Sentry); unset: no reports leave the page
-          ODR_SENTRY_DSN: ${{ vars.ODR_SENTRY_DSN }}
+          RFOUNDRY_SENTRY_DSN: ${{ vars.RFOUNDRY_SENTRY_DSN }}
         run: |
           python3 site/build.py --strict --out build/site --firmware dist \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" --ref "${{ github.sha }}"
@@ -118,7 +118,7 @@ jobs:
   deploy:
     needs: build
     if: needs.build.result == 'success'
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       pages: write
       id-token: write

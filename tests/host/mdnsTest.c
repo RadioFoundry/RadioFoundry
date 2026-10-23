@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The mDNS responder (core/net/mdns.c) behind the real IP gateway (core/dmr/ipGateway.c): host frames in, the
 // gateway's frames out. Probing, announcing, queries (multicast, QU, legacy unicast, known answers, negative answers,
 // enumeration), the rate limit, conflicts and the probe tie-break, goodbyes, link down, malformed messages, a busy
@@ -63,7 +63,7 @@ static uint32_t io_random(void) { return 100; }
 static const mdns_io_t io = { io_identity, io_buffer, io_send, io_random };
 
 static const mdns_service_t services[] = {
-	{ "_odr-debug._udp", 3334 }, { "_mmdvm._udp", 3334 }, { "_tftp._udp", 69 },
+	{ "_rfoundry-debug._udp", 3334 }, { "_mmdvm._udp", 3334 }, { "_tftp._udp", 69 },
 };
 
 static void handler(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
@@ -336,7 +336,7 @@ static void query(const char *name, uint16_t type, uint16_t cls, uint16_t sport,
 	q_send(&q, 0, HOST_IP, sport, MDNS_GROUP);
 }
 
-#define HOST	"odr-10005.local"
+#define HOST	"rfoundry-10005.local"
 #define INST	"N0CALL DM-1701 (10005)"
 
 // Up: three probe rounds, then two announcements
@@ -404,7 +404,7 @@ static void test_probe_announce(void)
 	CHECK(out_count == 8);
 	mdns_stats_t st;
 	mdnsStats(&st);
-	CHECK(st.state == MDNS_RUNNING && strcmp(mdnsHostName(), "odr-10005") == 0);
+	CHECK(st.state == MDNS_RUNNING && strcmp(mdnsHostName(), "rfoundry-10005") == 0);
 }
 
 static void test_queries(void)
@@ -424,7 +424,7 @@ static void test_queries(void)
 	tick_for(5);
 	CHECK(out_count == 1);
 	tick_for(1000);
-	query("ODR-10005.LOCAL", 1, 1, MDNS_PORT, 0);	// names are case insensitive
+	query("RFOUNDRY-10005.LOCAL", 1, 1, MDNS_PORT, 0);	// names are case insensitive
 	tick_for(5);
 	CHECK(out_count == 2);
 
@@ -536,8 +536,8 @@ static void test_conflict(void)
 	q_send(&q, 0x8400, OTHER_IP, MDNS_PORT, MDNS_GROUP);
 	tick_for(5);
 	CHECK(out_count == 4 && parse(0, &d));
-	CHECK(strcmp(d.qname, "odr-10005-2.local") == 0);	// renamed, probing again
-	CHECK(parse(1, &d) && strcmp(d.qname, "N0CALL DM-1701 (10005) (2)._odr-debug._udp.local") == 0);
+	CHECK(strcmp(d.qname, "rfoundry-10005-2.local") == 0);	// renamed, probing again
+	CHECK(parse(1, &d) && strcmp(d.qname, "N0CALL DM-1701 (10005) (2)._rfoundry-debug._udp.local") == 0);
 	mdns_stats_t st;
 	mdnsStats(&st);
 	CHECK(st.conflicts == 1 && st.state == MDNS_PROBING);
@@ -545,11 +545,11 @@ static void test_conflict(void)
 	tick_for(3000);
 	uint8_t ours[4] = { (uint8_t)(RADIO_IP >> 24), (uint8_t)(RADIO_IP >> 16), (uint8_t)(RADIO_IP >> 8), (uint8_t)RADIO_IP };
 	q_begin(&q, 0);
-	q_rr(&q, "odr-10005-2.local", 1, 0x8001, 120, ours, 4, NULL);
+	q_rr(&q, "rfoundry-10005-2.local", 1, 0x8001, 120, ours, 4, NULL);
 	q.an = 1;
 	q_send(&q, 0x8400, OTHER_IP, MDNS_PORT, MDNS_GROUP);
 	mdnsStats(&st);
-	CHECK(st.conflicts == 1 && st.state == MDNS_RUNNING && strcmp(mdnsHostName(), "odr-10005-2") == 0);
+	CHECK(st.conflicts == 1 && st.state == MDNS_RUNNING && strcmp(mdnsHostName(), "rfoundry-10005-2") == 0);
 
 	// Tie-break: a simultaneous probe with a greater address wins, we probe again a second later
 	mdnsInit(&io, services, 3);
@@ -620,8 +620,8 @@ static void test_identity_and_link(void)
 	CHECK(out_count >= 4 && parse(0, &d));
 	const rr_t *a = find(&d, HOST, 1, 1);
 	CHECK(a != NULL && a->ttl == 0);
-	CHECK(parse(1, &d) && find(&d, INST "._odr-debug._udp.local", 33, 1) != NULL &&
-	      find(&d, INST "._odr-debug._udp.local", 33, 1)->ttl == 0);
+	CHECK(parse(1, &d) && find(&d, INST "._rfoundry-debug._udp.local", 33, 1) != NULL &&
+	      find(&d, INST "._rfoundry-debug._udp.local", 33, 1)->ttl == 0);
 	tick_for(300);
 	CHECK(parse(out_count - 1, &d) && strcmp(d.qname, "N1NEW DM-1701 (10005)._tftp._udp.local") == 0);
 	strcpy(ident.callsign, "N0CALL");
@@ -785,9 +785,9 @@ static void test_names(void)
 	put16(m + 14, 1);
 	put16(m + 16, 1);
 	int n = 18;
-	m[n++] = 9;
-	memcpy(m + n, "odr-10005", 9);
-	n += 9;
+	m[n++] = 14;
+	memcpy(m + n, "rfoundry-10005", 14);
+	n += 14;
 	m[n++] = 5;
 	memcpy(m + n, "local", 5);
 	n += 5;
@@ -800,7 +800,7 @@ static void test_names(void)
 
 	// Someone's response with our instance's SRV, 3 bytes of rdata: a conflict, never a read past the rdata
 	q_begin(&q, 0);
-	q_rr(&q, INST "._odr-debug._udp.local", 33, 0x8001, 120, (const uint8_t *)"\0\0\0", 3, NULL);
+	q_rr(&q, INST "._rfoundry-debug._udp.local", 33, 0x8001, 120, (const uint8_t *)"\0\0\0", 3, NULL);
 	q.an = 1;
 	q_send(&q, 0x8400, OTHER_IP, MDNS_PORT, MDNS_GROUP);
 	tick_for(5);
@@ -818,8 +818,8 @@ static void test_fuzz(void)
 	q_question(&seeds[0], HOST, 1, 1);
 	q_question(&seeds[0], "_services._dns-sd._udp.local", 12, 0x8001);
 	q_begin(&seeds[1], 0);
-	q_question(&seeds[1], "_odr-debug._udp.local", 12, 1);
-	q_rr(&seeds[1], "_odr-debug._udp.local", 12, 1, 4500, NULL, 0, INST "._odr-debug._udp.local");
+	q_question(&seeds[1], "_rfoundry-debug._udp.local", 12, 1);
+	q_rr(&seeds[1], "_rfoundry-debug._udp.local", 12, 1, 4500, NULL, 0, INST "._rfoundry-debug._udp.local");
 	seeds[1].an = 1;
 	q_begin(&seeds[2], 0);	// a probe for our host name with an authority record
 	q_question(&seeds[2], HOST, 255, 1);

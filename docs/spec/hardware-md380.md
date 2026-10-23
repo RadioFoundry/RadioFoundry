@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # TYT MD-380 hardware (MD-390, Retevis RT3, and the "G" GPS models)
 
@@ -10,7 +10,7 @@ color LCD on the FSMC 8-bit bus, a SPI NOR flash, a 3-row keypad matrix sharing 
 16-position channel switch, an analog volume knob with the power switch, and USB full speed on the MCU's OTG_FS core.
 Each radio is single band, UHF or VHF. The "G" models (MD-380G, MD-390G, RT3 GPS) add a GPS module on a UART.
 
-Status (2026-10-10): **nothing in this file has been checked on a radio.** ODR builds for the board
+Status (2026-10-10): **nothing in this file has been checked on a radio.** RadioFoundry builds for the board
 (`boards/md380`) from these facts; [md380-bringup.md](../testing/md380-bringup.md) is the order in which a radio
 confirms or corrects them, and section 17 lists every open question.
 
@@ -40,7 +40,7 @@ Read-out protection level 1 on stock radios (unverified).
 
 ### 1.2 Clocks
 
-8 MHz crystal on HSE (unverified). ODR runs the DM-1701's clock plan: PLL M 4, N 72, P 2 (72 MHz SYSCLK), Q 3 (48 MHz
+8 MHz crystal on HSE (unverified). RadioFoundry runs the DM-1701's clock plan: PLL M 4, N 72, P 2 (72 MHz SYSCLK), Q 3 (48 MHz
 USB), AHB 72 MHz, APB1 36 MHz, APB2 72 MHz; the same frequencies the stock firmware is reported to use (72 / 36 /
 72 MHz) (unverified). If HSE does not start as a crystal, `board_early_init` retries it in bypass mode (?: the DM-1701
 needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (?).
@@ -50,7 +50,7 @@ needed bypass) before staying on HSI. LSE: a 32.768 kHz crystal is assumed (?).
 | Sectors | Addresses | Use |
 |---|---|---|
 | 0-2 (3 x 16 KB) | 0x08000000-0x0800BFFF | TYT bootloader, never written (unverified) |
-| 3-7 | 0x0800C000-0x0807FFFF | ODR application, 464 KB in one piece (`boards/md380/memory.ld`) |
+| 3-7 | 0x0800C000-0x0807FFFF | RadioFoundry application, 464 KB in one piece (`boards/md380/memory.ld`) |
 | 8, 10, 11 | see [codec-md380.md](codec-md380.md) | The stock D002.032 codec as the merge places it: the table windows at their stock addresses (sectors 8, 10, 11), the code moved to 0x080E0000 (sector 11), the descriptor at 0x080FFF80 |
 | 9 | 0x080A0000-0x080BFFFF | Holds nothing |
 
@@ -63,7 +63,7 @@ the codec code at 0x08050C44 (sectors 6 and 7), so the merge moves it.
 ### 1.4 RAM
 
 128 KB SRAM for data and every DMA buffer (minus 4 bytes at the top, as the DM-1701 keeps them for the boot request
-word); 64 KB CCM for CPU-only state (`ODR_CPU_RAM`: the task stacks and the slot engine, as on the DM-1701, a76da0d;
+word); 64 KB CCM for CPU-only state (`RFOUNDRY_CPU_RAM`: the task stacks and the slot engine, as on the DM-1701, a76da0d;
 main RAM use went from 89 % to 68 % of the default build with that move).
 
 Sources: STM32F405 data sheet [ST]. The bootloader, clock and flash-map facts above have no independent source.
@@ -81,7 +81,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 |---|---|---|
 | PA0 | ADC1 IN0: volume knob position | (unverified); a TX LED function here is also reported (unverified, ?) |
 | PA1 | ADC1 IN1: battery voltage | (unverified) |
-| PA2 | ADC1 IN2: QT_DQT_IN, sub-audio tone input | (unverified); stock decodes CTCSS / DCS in software; ODR samples it with `CONFIG_SUBTONE` (section 6.4) |
+| PA2 | ADC1 IN2: QT_DQT_IN, sub-audio tone input | (unverified); stock decodes CTCSS / DCS in software; RadioFoundry samples it with `CONFIG_SUBTONE` (section 6.4) |
 | PA3 | ADC1 IN3: VOX, mic level | (unverified) |
 | PA4 | DAC1: APC / TV (PA power reference in TX, front-end tuning in RX) | (unverified); the double use (?) |
 | PA5 | DAC2: MOD2_BIAS (reference oscillator bias) | (unverified); value from [gotchas] 11.1 (F) |
@@ -101,11 +101,11 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 |---|---|---|
 | PB0 | ADC1 IN8: RSSI | (unverified) |
 | PB1 | ADC1 IN9: BUSY, the receiver's noise squelch level | (unverified); polarity (?) |
-| PB2 | FM_SW, FM receive path select | high in FM receive (measured on ODR) |
+| PB2 | FM_SW, FM receive path select | high in FM receive (measured on RadioFoundry) |
 | PB3 / PB4 / PB5 | SPI1 SCK / MISO / MOSI, SPI flash (AF5) | (unverified) |
 | PB6 / PB7 | I2C1 SCL / SDA | (unverified); nothing on it is known; unused |
-| PB8 | SPK_C, speaker mute | high = muted (measured on ODR) |
-| PB9 | AFCO, audio amplifier enable | high = on (measured on ODR) |
+| PB8 | SPK_C, speaker mute | high = muted (measured on RadioFoundry) |
+| PB9 | AFCO, audio amplifier enable | high = on (measured on RadioFoundry) |
 | PB10 / PB11 | Channel switch ECN2 / ECN3 | (unverified) |
 | PB12 | HR_C5000 voice port chip select | (F) [gotchas] 2.6 |
 | PB13 / PB14 / PB15 | SPI2 SCK / MISO / MOSI, HR_C5000 voice port (AF5) | (F) [gotchas] 2.6 |
@@ -160,7 +160,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 | PE7-PE10 | FSMC D4-D7 | (unverified) |
 | PE11 | PTT, active low | (unverified) |
 | PE12 | External PTT (accessory jack), active low | (unverified) |
-| PE13 | FM_MUTE | high = FM audio through, low = muted (measured on ODR) |
+| PE13 | FM_MUTE | high = FM audio through, low = muted (measured on RadioFoundry) |
 | PE14 / PE15 | Channel switch ECN0 / ECN1 | (unverified) |
 
 ### 2.6 Reset-time levels and the SWD pins
@@ -209,7 +209,7 @@ atomic.
 ### 4.1 Overview
 
 The HR_C5000 is the HR_C6000's predecessor in the same family: DMR layer 1/2 baseband, two-point modulation outputs,
-an IF input from the receiver, and an audio codec with I2S. ODR has a driver of its own for it,
+an IF input from the receiver, and an audio codec with I2S. RadioFoundry has a driver of its own for it,
 `drivers/modem/hrc5000`, which shares only the chip-independent code (`drivers/modem/hrc_common`: the bus accessors and
 the DMR slot engine) with the HR_C6000 driver. The shared engine reaches the chip through a description struct
 (`hrc_chip_t`); the MD-380 build links no HR_C6000 code. The HR_C5000 user manual (HR_C5000 用户手册 V2.0, Chinese,
@@ -268,7 +268,7 @@ implemented for this chip yet.
 ### 4.4 Voice port
 
 Hardware SPI2 (PB13-PB15, AF5) with chip select PB12, commands 0x03 (write) and 0x83 (read) followed by 0x00 and 27
-bytes (one voice burst's payload) (F) bench. ODR uses SPI mode 2 at 1.125 MHz (F) on air 2026-10-18. At 4.5 MHz
+bytes (one voice burst's payload) (F) bench. RadioFoundry uses SPI mode 2 at 1.125 MHz (F) on air 2026-10-18. At 4.5 MHz
 transmit voice decodes on another radio, but received voice reads back with the first bits of every byte wrong: the
 C0 words check only two bits off their place and C1 never does. At 1.125 MHz the three frames are in place and C1
 checks too; the first data byte after the command still has a few bit errors that the Golay codes correct (?).
@@ -284,7 +284,7 @@ re-applied by every full mode set-up.
 
 ### 4.6 Power and start-up
 
-PE6 low wakes the chip; ODR waits 12 ms before the first access. `hrc5000_power_on` then programs the clock
+PE6 low wakes the chip; RadioFoundry waits 12 ms before the first access. `hrc5000_power_on` then programs the clock
 (0x0A, 0x0B, 0x0C, 0xB9-0xBB) and enters FM receive. After init the driver reads 0x10 back for the diagnostics page
 (bring-up stage 4).
 
@@ -322,14 +322,14 @@ until they are checked on a radio.
 ### 4.8 I2S clocks and the receive interrupts
 
 Facts from the user manual and the reference port's notes ([ref]; the register values were read from stock firmware
-there). Tester logs: [issue 3](https://github.com/sfowlr/OpenDigitalRadio/issues/3).
+there). Tester logs: [issue 3](https://github.com/radiofoundry/radiofoundry/issues/3).
 
 | Fact | Basis |
 |---|---|
-| Before any ODR write the chip's I2S pins toggle (the reset state has the clocks running); after the set-ups they are driven but do not move (`ck 0 ws 0`) | tester logs |
+| Before any RadioFoundry write the chip's I2S pins toggle (the reset state has the clocks running); after the set-ups they are driven but do not move (`ck 0 ws 0`) | tester logs |
 | Every set-up's 0x11 block writes 0x36 = 0xF0. On the HR_C6000 bit 7 of 0x36 turns the external-codec BCLK / LRCK off; the C5000 has the same pins (17-20, BCLK / LRCK / ADCDAT / DACDAT) | (F) [ref], HR_C6000 manual |
 | The stock firmware changes 0x36 at run time, in a mute / unmute routine | (F) [ref] |
-| ODR never wrote 0x36 after the block, so with the same bit meaning the clocks stay off. Every other register of the DMR and FM set-ups matches the stock sequence, and the reset register tries (0x28, 0x2A, 0x3F, 0xFF) changed nothing | (F) [ref], tester logs |
+| RadioFoundry never wrote 0x36 after the block, so with the same bit meaning the clocks stay off. Every other register of the DMR and FM set-ups matches the stock sequence, and the reset register tries (0x28, 0x2A, 0x3F, 0xFF) changed nothing | (F) [ref], tester logs |
 
 The driver writes 0x36 = 0x00 while a PCM stream runs and puts 0xF0 back when it stops. Clearing bit 7 alone (0x70)
 left the clocks stopped; with 0x00 they run and DMR transmit voice decodes on another radio (issue 66, 2026-10-17).
@@ -367,7 +367,7 @@ the reads fixed (4.2), a call shows as (F) on air 2026-10-18, against an AnyTone
 | Voice | Nothing per burst. The voice RAM changes at every tick, the other slot's ticks included |
 | Late entry, information | 0x10 and 0x04: the LC of the superframe |
 
-The manual's receive flow: with the CPU in charge of the vocoder (0x06 bit 0, which ODR sets), the CPU starts the
+The manual's receive flow: with the CPU in charge of the vocoder (0x06 bit 0, which RadioFoundry sets), the CPU starts the
 decoder after the voice LC header or late entry interrupt by writing 0x22 bit 5 (DecodeStart), and stops it at the
 terminator or loss of sync (bit 4, DecodeStop). Without DecodeStart the voice RAM never holds received voice (0 of 324
 frames checked at any bit offset); with it, the read at the tick after the call's slot holds that slot's burst.
@@ -381,7 +381,7 @@ count as out of step.
 
 On air with this (2026-10-18): calls are taken with the caller and talk group, and 393 frames reached the codec with
 2 bit errors in all. The decoded audio is speech (peak 3521 of 32767) and streams to the chip (`aud blk` climbing),
-but the speaker plays only a faint buzz (4.8). Leads, not checked: 0x0E (HPoutEn, bit 7; ODR writes 0x44, which
+but the speaker plays only a faint buzz (4.8). Leads, not checked: 0x0E (HPoutEn, bit 7; RadioFoundry writes 0x44, which
 leaves it off), 0x37 (DAC gain), the I2S data line directions and sample rate (unknown 17).
 
 ### 4.10 Codec and audio routing
@@ -433,7 +433,7 @@ a call or after our own transmit, the key beep in DMR and FM, and FM receive.
 
 ### 5.1 Bands and power
 
-One band per radio: UHF 400-480 MHz or VHF 136-174 MHz, 1 W and 5 W (unverified). ODR builds one image per band
+One band per radio: UHF 400-480 MHz or VHF 136-174 MHz, 1 W and 5 W (unverified). RadioFoundry builds one image per band
 (`make BOARD=md380 BAND=uhf|vhf`, default UHF); the image's band table refuses the other band. Which band a
 radio is can't be read from the hardware by any method we know (?: the calibration's frequency list, 11.2, is a
 candidate for a run-time check).
@@ -467,7 +467,7 @@ DMR BER test decoded it only from 448.70175 to 448.70200 MHz, BER 0.14-0.28 %; a
 within 50 Hz of 448.700). Hotspot modems (ADF7021) decode only about +-250 Hz around the carrier, so that radio never
 woke a duplex hotspot. `MD380_TX_OFFSET_HZ` (`radio_md380.c`, a build define) corrects it; -1900 put it within 250 Hz.
 Whether the offset is the unit's own error, which the calibration's reference tune (11) should take out, or the way
-ODR applies that tune, is open (?): measure a second radio before setting a default.
+RadioFoundry applies that tune, is open (?): measure a second radio before setting a default.
 
 ### 5.3 Frequency plan
 
@@ -499,11 +499,11 @@ and refuses to key without it.
 
 ### 5.5 RSSI, noise, squelch
 
-RSSI is an analog level on PB0 and the receiver's noise level ("BUSY") on PB1 (unverified). Neither curve is known (?). ODR
+RSSI is an analog level on PB0 and the receiver's noise level ("BUSY") on PB1 (unverified). Neither curve is known (?). RadioFoundry
 reports rssi_dbm = -130 + raw x 90 / 4095 and noise = raw / 16 as placeholders, and shows both raw values on the
 diagnostics page so a bench session with a signal generator can fit them.
 
-Measured on ODR (UHF, 446.000 MHz, raw ADC, a second radio nearby; 2026-10-14):
+Measured on RadioFoundry (UHF, 446.000 MHz, raw ADC, a second radio nearby; 2026-10-14):
 
 | | RSSI (IN8) | BUSY (IN9) |
 |---|---|---|
@@ -553,12 +553,12 @@ frequency plan (F); [gotchas] 3.3, 3.4; MD-380 UHF RF schematic for 5.7.
 
 ### 6.1 Paths
 
-FM receive audio and DMR voice both reach the amplifier through the HR_C5000 in ODR's model: FM through its
+FM receive audio and DMR voice both reach the amplifier through the HR_C5000 in RadioFoundry's model: FM through its
 feed-through (0x36) behind FM_MUTE (PE13), DMR through its codec DAC; SPK_C (PB8) mutes the speaker, AFCO (PB9) turns
-the amplifier on (the routing (?)). Measured on ODR with a pin scan (the 16 levels of FM_MUTE, FM_SW, SPK_C and AFCO,
+the amplifier on (the routing (?)). Measured on RadioFoundry with a pin scan (the 16 levels of FM_MUTE, FM_SW, SPK_C and AFCO,
 monitor held on an FM channel): noise only with FM_MUTE high, FM_SW high, SPK_C low and AFCO high. With those levels
 a received FM call plays clearly. The GT3136's discriminator audio also reaches the MCU on PC3, which
-ODR doesn't use.
+RadioFoundry doesn't use.
 Our tests (2026-10-19, not authoritative) found the HR_C5000's codec output reaching the speaker with FM_SW and
 FM_MUTE low; DMR voice through it doesn't work yet (4.10).
 
@@ -581,7 +581,7 @@ Bias from MICPWR_SW (PA14), on whenever the radio runs (section 2.6). Mic level 
 ### 6.4 Sub-audio
 
 The stock firmware is reported to decode CTCSS / DCS in software from QT_DQT_IN (PA2) and to generate tones as PWM on
-CTC/DCS_OUT (PC7) (unverified). ODR does the same behind `CONFIG_SUBTONE` (on by default, 3.3 KB of
+CTC/DCS_OUT (PC7) (unverified). RadioFoundry does the same behind `CONFIG_SUBTONE` (on by default, 3.3 KB of
 flash). CTCSS 100.0 Hz works on air both ways (tester, 2026-10-19); DCS and the deviation aren't checked yet. Without
 the switch, channels with a tone open on carrier and send no tone.
 The FM TX tones (1750 Hz, roger beep) and APRS AFSK are not written (`CONFIG_FM_TX_TONES`, `CONFIG_APRS_RX` in
@@ -634,7 +634,7 @@ sine at the same swing (`subaudio_tx_tail`, with the interrupt held off for the 
 160 x 128 color TFT on the FSMC 8-bit bus (NE1), command at 0x60000000 and data at 0x60040000 (A17 = RS on PD12),
 chip select PD6, reset PD13: the DM-1701's wiring (unverified). The controller is reported as an HX8302A
 (unverified) or possibly an ILI9481 (unverified, ?); RT3 and MD-380 panels are said to be "slightly
-incompatible" (unverified). ODR drives it with `drivers/display/st7735` (the HX8302A takes the ST7735 command set (?)) with
+incompatible" (unverified). RadioFoundry drives it with `drivers/display/st7735` (the HX8302A takes the ST7735 command set (?)) with
 safe-area insets of 1 px at the top and 2 px on the left (the case edge crowds them; right and bottom are close but usable; seen on the radio, 2026-10-16) and two build-time knobs for the bench: `MD380_PANEL_TYPE` (the st7735 driver's panel
 type, default 0) and `MD380_PANEL_MADCTL_XOR` (orientation bits flipped, default 0). Backlight: LAMP (PC6), TIM8 CH1
 PWM at 1 kHz (unverified for the pin; PWM ours).
@@ -668,7 +668,7 @@ The diagnostics page shows the raw row bits ("keys rr rr rr"), so one press of e
 A 16-position switch with four code lines ECN0-ECN3 on PE14, PE15, PB10, PB11 (unverified), not a quadrature encoder.
 `input_md380.c` reads the code at every 10 ms scan and reports position changes as encoder steps (the shorter way
 round across the stop). A code counts after three equal scans (30 ms): the contacts bounce. Pulled up, closed contacts
-reading low (`MD380_CH_ACTIVE_HIGH` flips it). The code is a Gray code in its own line order. Read on ODR's diagnostics
+reading low (`MD380_CH_ACTIVE_HIGH` flips it). The code is a Gray code in its own line order. Read on RadioFoundry's diagnostics
 page ("ch x", after the polarity), one detent at a time clockwise (bench, 2026-10-16):
 
 | Position | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 |
@@ -696,8 +696,8 @@ on it only showed the battery running down. `switch_on()` now reads the knob fro
 
 ### 10.2 Battery
 
-7.4 V 2S Li-ion pack (unverified). ADC1 IN1 through a divider: ODR assumes 40.3 counts per 0.1 V
-(`MD380_BATT_COUNTS_X10`) (?). Low 6.2 V and critical 6.0 V are ODR's choices, as on the DM-1701.
+7.4 V 2S Li-ion pack (unverified). ADC1 IN1 through a divider: RadioFoundry assumes 40.3 counts per 0.1 V
+(`MD380_BATT_COUNTS_X10`) (?). Low 6.2 V and critical 6.0 V are RadioFoundry's choices, as on the DM-1701.
 
 ### 10.3 ADC scan
 
@@ -712,7 +712,7 @@ ADC1 scans IN0 (volume), IN1 (battery), IN3 (mic), IN8 (RSSI), IN9 (noise) and I
 
 512 bytes in the SPI flash's security registers 1 and 2 (flash addresses 0x1000 and 0x2000, 256 bytes each) (F)
 [gotchas] 11.1. A third 256-byte block must not be read into a 512-byte buffer (F) [gotchas] 11.1;
-ODR reads exactly two. Read only: ODR never writes them.
+RadioFoundry reads exactly two. Read only: RadioFoundry never writes them.
 
 ### 11.2 Layout
 
@@ -748,7 +748,7 @@ size.
 
 ### 12.2 Map
 
-On a 16 MB part ODR uses the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug 0x000000 and
+On a 16 MB part RadioFoundry uses the DM-1701's map (settings 0x011000, journal 0x019000, open-firmware codeplug 0x000000 and
 0x020000-0xE00000, native area 0xE00000, TFTP staging 0xF00000), so the open-firmware CPS works the same. The stock TYT codeplug at 0 is overwritten
 by the first open-firmware write: read it out with the stock CPS first if it matters ([md380-migration.md](md380-migration.md) does that, converts it with qdmr and writes it back). There is no calibration window in the
 main array (11.1). On a smaller part the core gets no areas: settings live in RAM and nothing is written.
@@ -791,7 +791,7 @@ The file examined here (C, our own reading of the container header only):
 | Segment table | one entry: 0x0800C000, 0xF2C00 |
 | Payload | 0x100 + 0xF2C00, then 0x100 trailing bytes |
 
-`odrflash/stockfw.parse_container` reads this single-segment form (count 0xFFFFFFFF = one segment in the first
+`rfoundry/stockfw.parse_container` reads this single-segment form (count 0xFFFFFFFF = one segment in the first
 table entry).
 
 ### 14.2 Encryption and key
@@ -800,15 +800,15 @@ The payload is XOR-encrypted with a 1024-byte key held in the bootloader (unveri
 5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd and its first bytes 2E DF 40 B5 (D,
 `tools/stm32_dfu.py` md380 model). It can be derived from the D2.32 stock file and checked by that hash (C,
 2026-10-10): the plain column vote is wrong in a third of the columns, and a byte-pair refinement learned from the file
-fixes them ([codec-md380.md](codec-md380.md), "Key recovery"; `odrflash/stockfw.derive_key`). A key file still works
+fixes them ([codec-md380.md](codec-md380.md), "Key recovery"; `rfoundry/stockfw.derive_key`). A key file still works
 (`--key`).
 
 ### 14.3 Bootloader and DFU
 
 Entered by holding PTT and the upper side key while switching on (unverified). USB DFU 0483:DF11 with TYT's
-non-standard commands; the same erase-by-sector and block-write protocol as the DM-1701's loader (unverified). Flash an ODR
-image with `tools/stm32_dfu.py --model md380 --key KEY odr_md380.bin`. The image is plain, starts at 0x0800C000, and the
-tool encrypts it for the loader. odrflash knows the board (`boards/md380/board.toml`: release `testing`, an update writes
+non-standard commands; the same erase-by-sector and block-write protocol as the DM-1701's loader (unverified). Flash a RadioFoundry
+image with `tools/stm32_dfu.py --model md380 --key KEY rfoundry_md380.bin`. The image is plain, starts at 0x0800C000, and the
+tool encrypts it for the loader. rfoundry knows the board (`boards/md380/board.toml`: release `testing`, an update writes
 sectors 3-7 and keeps the codec).
 
 ### 14.4 The codec
@@ -818,7 +818,7 @@ DM-1701's, at other addresses. In the stock file: code window 0x08050C44+0x10884
 four small table windows in sectors 10 and 11. The merge moves the code to 0x080E0000, keeps the table windows at
 their stock addresses and writes a descriptor at 0x080FFF80; the codec runs in place from there. Entry points,
 calling convention, state sizes, the placement and the extraction recipe are in [codec-md380.md](codec-md380.md).
-`stockfw.PROFILES` has the profile, the codec map (`odrflash/codec_maps/md380/md380-d2032.json`) the rewrites,
+`stockfw.PROFILES` has the profile, the codec map (`rfoundry/codec_maps/md380/md380-d2032.json`) the rewrites,
 `boards/md380/memory.ld` keeps the application out of sectors 8-11, `vocoder_md380.c` checks and hosts the codec, and
 `make BOARD=md380` merges it when the stock file is in `codecs/`. The debug link reports the codec as
 `md380-d2032-s11`; a build from before the move reports `md380-d2032`. Without the codec merged the radio is FM only.
@@ -827,7 +827,7 @@ calling convention, state sizes, the placement and the extraction recipe are in 
 
 ## 15. USB
 
-OTG_FS device on PA11 / PA12 (unverified). ODR enumerates with the STM32F4 radios' IDs (`platform/stm32f4/platform.h`) and the product
+OTG_FS device on PA11 / PA12 (unverified). RadioFoundry enumerates with the STM32F4 radios' IDs (`platform/stm32f4/platform.h`) and the product
 name "MD-380" (`usb_md380.c`); the bootloader's DFU device is separate (14.3).
 
 The open-firmware CPS shim reports radio type 7 and serves the MCU ROM from 0x08000000, 1 MB (`boards/md380/board.c`,
@@ -843,8 +843,8 @@ The open-firmware CPS shim reports radio type 7 and serves the MCU ROM from 0x08
 | MD-390 | the same electronics in an IP67 case | (unverified) |
 | Retevis RT3 | a rebadged MD-380; its panel is said to be slightly incompatible | (unverified) |
 | MD-380G / MD-390G / RT3 GPS | GPS module on USART3, power on PD8 (section 13) | (unverified, pins ?) |
-| UHF / VHF | separate boards: different RF parts and VCOs, one ODR image each | (unverified) |
-| 1 MB flash | some early VHF radios; ODR stores nothing on them | (unverified) |
+| UHF / VHF | separate boards: different RF parts and VCOs, one RadioFoundry image each | (unverified) |
+| 1 MB flash | some early VHF radios; RadioFoundry stores nothing on them | (unverified) |
 
 ---
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The RDA5807M driver (drivers/bcast/rda5807m) against a simulated register file that behaves as the datasheet
 // describes (chip ID, soft reset, TUNE / SEEK cleared by the chip with STC set some polls later, seek wrapping the band
 // once, stations by frequency), first on a register-level bus, then through the bit-banged I2C master

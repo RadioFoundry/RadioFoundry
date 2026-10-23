@@ -2,7 +2,7 @@
 
 # Developer documentation
 
-How OpenDigitalRadio is put together, built, tested and released. These pages summarize and link the detailed specs;
+How RadioFoundry is put together, built, tested and released. These pages summarize and link the detailed specs;
 they don't repeat them. The user manual is in [docs/user](../user/README.md).
 
 | Page | What it covers |
@@ -15,12 +15,12 @@ they don't repeat them. The user manual is in [docs/user](../user/README.md).
 | [CI](ci.md) | The workflows per push, nightly and on the radio; running each piece locally; coverage figures; the runners; the csky-elf image |
 | [Adding a radio](adding-a-radio.md) | The files a new board needs, `board_t`, the key map, the order to bring it up in |
 | [The board registry](board-registry.md) | `board.toml` and `platform.toml` field by field, what is derived, `tools/boards.py`, the build view for tools that build from a checkout |
-| [Debug link](debug-link.md) | The host-port debug protocol and `tools/odr_debug.py` |
+| [Debug link](debug-link.md) | The host-port debug protocol and `tools/rfoundry_debug.py` |
 | [CPS, codeplug and settings](cps-and-codeplug.md) | The open-firmware CPS shim qdmr uses, the codeplug layout, the settings store |
 | [The codec](codec.md) | How each radio's stock AMBE+2 codec is extracted, merged and hosted |
 | [Web site and web flasher](website.md) | The generated site, where each page's data comes from, templates and design tokens, translating, radio images, the browser flasher, backups and restore |
 | [Developer glossary](glossary.md) | Protocol, hardware and firmware terms of the specs; generated from `docs/glossary.json` |
-| [Releases](release.md) | The checklist, artifacts and manifests, the sector maps, odrflash's codec handling and key, the release and manual workflows |
+| [Releases](release.md) | The checklist, artifacts and manifests, the sector maps, rfoundry's codec handling and key, the release and manual workflows |
 
 ## Common tasks
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Volume knob power switch read from the battery sense line (docs/spec/radio-features.md 5.5). On radios whose knob
 // switch only breaks the battery divider while the MCU holds its own supply with a latch (docs/spec/radios.md), the
 // battery reading drops to about 0 V the moment the knob turns off. A few low readings in a row mean "off"; one low

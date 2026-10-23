@@ -163,7 +163,7 @@ Registers at base +: RBR/THR/DLL 0x00, DLH/IER 0x04, IIR/FCR 0x08, LCR 0x0C, LSR
 | TX ready | USR bit 1 (TX FIFO not full) | KP |
 | RX ready | LSR bit 0 | KP |
 | Interrupts | GPS uses IER = 0x05 (RX data + line status); on stop, IER = 0 and FCR bits 1, 2 to flush | KP |
-| UART0 | 115200 8N1: programming cable (Baofeng CPS, open-firmware CPS, hotspot). ODR's host port, where a CPU fault's trace lines appear ([crash-log.md](crash-log.md) 2.3) | KP, BIN |
+| UART0 | 115200 8N1: programming cable (Baofeng CPS, open-firmware CPS, hotspot). RadioFoundry's host port, where a CPU fault's trace lines appear ([crash-log.md](crash-log.md) 2.3) | KP, BIN |
 | UART1 | 9600 8N1: GPS RX only | KP |
 
 ### 3.2 SPI master (DesignWare SSI)
@@ -235,7 +235,7 @@ value) and 0 while open; any value but the key locks it. OT_LOAD_H is 3 bits (2:
 0xC0000000: about 60 s). RST_LOAD (24:0, reset value 0x03F80000) counts on to 0x03FFFFFF before the reset, about 20
 ms. EN is the only switch: no interrupt, no mode bit, no other enable; the watchdog reset is a global reset. The
 counter runs at the 24 MHz crystal (DB25-D bench: H = 7, L = 0xF0000000, 2^28 counts, reset after 11.1 s). Not
-known (INF): whether a soft reset or a watchdog reset clears EN. ODR (`CONFIG_WATCHDOG`, `platform/hrc7000/watchdog.c`) arms it after the clock set-up with
+known (INF): whether a soft reset or a watchdog reset clears EN. RadioFoundry (`CONFIG_WATCHDOG`, `platform/hrc7000/watchdog.c`) arms it after the clock set-up with
 every write under LOCK: EN = 0, the loads, a feed, EN = 1. It feeds with LOCK = key, KNOCK = 0x55AADD22, LOCK = 0. The
 load is 2^35 - 4 s x 24 MHz. The bench measurement and the
 rest are in [watchdog.md](watchdog.md).
@@ -259,7 +259,7 @@ CTRL_STOP 0x20, CH_VLD 0x24, PD_SEOC_TIME 0x28, P2S_EN 0x2C, DATA_AB 0x30 (A in 
 
 | Signal | How the port reads it | Scale | Tag |
 |---|---|---|---|
-| Battery | Single scan, CH_VLD = 0x04 (channel C = ADC2_IN), INTR = 0x10004, PD_SEOC_TIME = 0xA20, wait INTR_STA bit 2, DATA_CD bits 9:0 | volts × 10 = raw / 8.2 (so raw 672 = 8.2 V). ODR uses raw / 8.32: at 8.21 V by raw / 8.2 a meter on the pack read 8.09 V (2026-10-16). Thresholds used: 8.2 V full, 6.4 / 6.2 V low-battery hysteresis, 5.5 V power-off | KP |
+| Battery | Single scan, CH_VLD = 0x04 (channel C = ADC2_IN), INTR = 0x10004, PD_SEOC_TIME = 0xA20, wait INTR_STA bit 2, DATA_CD bits 9:0 | volts × 10 = raw / 8.2 (so raw 672 = 8.2 V). RadioFoundry uses raw / 8.32: at 8.21 V by raw / 8.2 a meter on the pack read 8.09 V (2026-10-16). Thresholds used: 8.2 V full, 6.4 / 6.2 V low-battery hysteresis, 5.5 V power-off | KP |
 | Mic level (VOX) | CH_VLD = 0x05, INTR = 0x10005, reads DATA_CD bits 25:16 (channel D) | **Suspect**: single scan converts only channel A, and IO_DIPLEX2 leaves ADC0/ADC3 pins as GPIO, so this probably reads nothing useful | KP, INF |
 | Volume knob | **Not read at all** (the variable for it is never written) | — | KP |
 
@@ -311,7 +311,7 @@ each byte was needed in the port (KP).
 The USB-C socket people see is on the BC-32UV battery pack: it charges the pack through the pack's own charger,
 with red (charging) and green (full) LEDs on the pack (COM: Baofeng and Radioddity battery listings; reviewers
 report that the USB-C cable in the box can't program the radio). The radio body has no USB connector; programming and
-firmware updates use the two-pin K1 jack, which carries UART0 through a USB-serial cable (COM, BIN). So ODR keeps
+firmware updates use the two-pin K1 jack, which carries UART0 through a USB-serial cable (COM, BIN). So RadioFoundry keeps
 `CONFIG_USB=n` on this board. The controller facts below are kept for a future HR_C7000 radio that does wire the
 USB pins, and to settle the question for good.
 
@@ -351,7 +351,7 @@ USB pins, and to settle the question for good.
 
 | Item | Value | Tag |
 |---|---|---|
-| Clock gates | CLK_MGR 0x02C (0x1100002C): bit 16 usb_clk_en (48 MHz PHY clock), bit 17 usb_hclk_en (AHB clock to the core); both reset to 0 (off). ODR's clock set-up writes 0x02C = 0xFFFFFFFF (1.1 step 11), which turns them on | DS, KP |
+| Clock gates | CLK_MGR 0x02C (0x1100002C): bit 16 usb_clk_en (48 MHz PHY clock), bit 17 usb_hclk_en (AHB clock to the core); both reset to 0 (off). RadioFoundry's clock set-up writes 0x02C = 0xFFFFFFFF (1.1 step 11), which turns them on | DS, KP |
 | 48 MHz clock | CLK_MGR 0x028 bits 4:0 usb_clk_div_num: USB clock = BPLL VCO / 2 / (n + 1); reset value 4. With the 672 MHz BPLL VCO of 1.1, n = 6 gives 48 MHz (CLK_MGR 0x010 is the BPLL configuration register) | DS, KP |
 | Clock tree | The 48 MHz PHY clock is also gated by the core's suspend output, so it stops while the bus is suspended | DS |
 | Reset | No USB bit in SYS_SOFT_RSTN (0x11000000 bits 8:0 cover CPU, system, ADCs, codec, audio, FM, modem PHY and protocol). Reset the core with GRSTCTL.CSftRst (bit 0) and wait for it to clear; GRSTCTL.AHBIdle (bit 31) shows the AHB master is idle | DS |
@@ -392,10 +392,10 @@ These need only the debug link on UART0 and a host computer; nothing here transm
    LED lights and **no USB device appears** on the host (macOS: System Information, USB; Linux: `lsusb`). If any
    device does appear, report its VID:PID and product string: that would mean the pack or the radio has a USB data
    path we don't know about.
-2. With ODR running, read CLK_MGR 0x02C and GSNPSID (0x13000040) through the debug link once a register-peek command
+2. With RadioFoundry running, read CLK_MGR 0x02C and GSNPSID (0x13000040) through the debug link once a register-peek command
    exists. Expected 0x4F54270A with the USB gates on; this confirms the core is present and clocked on this die
    revision.
-3. Read CLK_MGR 0x02C before ODR's clock set-up runs, to learn whether the Baofeng bootloader leaves the USB gates on.
+3. Read CLK_MGR 0x02C before RadioFoundry's clock set-up runs, to learn whether the Baofeng bootloader leaves the USB gates on.
 4. Optional, only if the radio is opened for another reason: look for test pads or vias near the SoC on the USB_DP /
    USB_DM nets (balls F1/F2). Report a photo; don't probe them live.
 
@@ -594,7 +594,7 @@ firmware then saves state and drops 0x11 (KP).
 ### 6.6 Vibration motor (open)
 
 Online sources say the DM-32UV has a vibration motor (COM). A round two-wire part was seen on a board, but it may be
-the microphone, and no drive pin is known. ODR has no vibration support for the radio until both are confirmed
+the microphone, and no drive pin is known. RadioFoundry has no vibration support for the radio until both are confirmed
 (`boards/dm32/board.toml`, `[hardware] unconfirmed`).
 
 Open item: identify the part and the GPIO that drives it, then add `hal_power_t.vibrate` and `CONFIG_VIBRATE ?= y`.
@@ -606,11 +606,11 @@ Open item: identify the part and the GPIO that drives it, then add `hal_power_t.
 240 × 320 color TFT with an ST7789-class controller on the 8-bit i8080 bus (KP; command set matches ST7789, no
 datasheet in hand). RGB565, two bytes per pixel.
 
-The case's bezel hides the panel's edges: ODR's safe-area insets are 10 px left and right and 5 px top and bottom
+The case's bezel hides the panel's edges: RadioFoundry's safe-area insets are 10 px left and right and 5 px top and bottom
 (`CONFIG_DISPLAY_INSET_*` in `boards/dm32/config.mk`, `ui.md` 1). At bring-up text 6 px from the left or right edge
 was still clipped (measured in a half-resolution frame: 5 px left, 4 px right, 3 px top and 2 px bottom there).
 
-ODR drives the panel at full resolution in 16 colors: the core's frame buffer holds a 4-bit palette index per pixel
+RadioFoundry drives the panel at full resolution in 16 colors: the core's frame buffer holds a 4-bit palette index per pixel
 (37.5 KB; RGB565 would take 150 KB), and each changed row goes out as RGB565 through the palette (`gfx.c`,
 `st7789_write_rows_indexed`).
 
@@ -693,7 +693,7 @@ The stock firmware never reads registers 0x65 / 0x67 (forum observation: S-meter
 
 Rows 18, 20, 22 and 24 (B3 / B4) and the C7 = 0140 of Enter DMR below have address bit 7 set, which the FD6818
 reads as a read cycle: the chip drives the data line while the MCU drives it too. The radio's own firmware never
-sends them (BIN). ODR leaves them out; FM and DMR receive and transmit work without them (HW).
+sends them (BIN). RadioFoundry leaves them out; FM and DMR receive and transmit work without them (HW).
 
 Register 0x09 is written 16 times with the top nibble as an index: a 16-entry internal table (purpose unknown; looks
 like an AGC/gain table).
@@ -741,11 +741,11 @@ Below 16 MHz nothing is written (KP).
 | Item | Register | Use | Tag |
 |---|---|---|---|
 | RSSI | 0x67 bits 8:0 | dBm = value / 2 - 160 (FD6818 programming guide; reg 0x2C bits 4:0 hold the external LNA gain the chip takes off) | DS |
-| Noise | 0x65 low byte | Larger = more noise. No signal: 43-63 (UHF 43-51 on most channels, VHF 57-63); strong carrier: 8. The core's squelch levels open below 64 down to 40, so ODR adds 25 (`fd6818_noise`), or every level opens on noise. Measured on a DM-1801 Pro | KP, HW |
-| Sub-audio mode | 0x51 | b15 on (receive and transmit), b13 DCS inverted, b12 1 = CTCSS / 0 = DCS, b11 24-bit DCS, b6:0 gain. ODR: 0x9045 CTCSS, 0x8045 DCS, 0xA045 DCS inverted, 0 off | DS, BIN |
+| Noise | 0x65 low byte | Larger = more noise. No signal: 43-63 (UHF 43-51 on most channels, VHF 57-63); strong carrier: 8. The core's squelch levels open below 64 down to 40, so RadioFoundry adds 25 (`fd6818_noise`), or every level opens on noise. Measured on a DM-1801 Pro | KP, HW |
+| Sub-audio mode | 0x51 | b15 on (receive and transmit), b13 DCS inverted, b12 1 = CTCSS / 0 = DCS, b11 24-bit DCS, b6:0 gain. RadioFoundry: 0x9045 CTCSS, 0x8045 DCS, 0xA045 DCS inverted, 0 off | DS, BIN |
 | Tone word | 0x07 | b12:0 = Hz × 20.64888 (88.5 Hz → 0x0723, 100.0 Hz → 0x0811); b13 set selects the second (tail) tone word. DCS uses 0x0AD7 (134.4 Hz, the bit rate) | DS, BIN |
 | DCS code | 0x08 | written twice: the 23-bit word's low 12 bits (b15 = 0), then its high bits with b15 = 1 (023 → 0x0813, 0x8763). The word is the Golay(23,12) code word (`drivers/rf/subaudio`) | DS, BIN |
-| CTCSS detect thresholds | 0x52 = 0x028F | b11:6 found, b5:0 lost, in 0.1 Hz. The radio sets b15:13 per band (0x828F-0xE28F); ODR keeps 0x028F | DS, BIN |
+| CTCSS detect thresholds | 0x52 = 0x028F | b11:6 found, b5:0 lost, in 0.1 Hz. The radio sets b15:13 per band (0x828F-0xE28F); RadioFoundry keeps 0x028F | DS, BIN |
 | Tone generator 1 | 0x71 | tone in Hz × 10 (1750 Hz burst) | KP |
 | CSS status | 0x0C | b10 CTCSS detected; b14 DCS normal, b15 DCS inverted. Polled; nothing to clear. The datasheet puts the same results in 0x60 | BIN, DS |
 
@@ -754,7 +754,7 @@ Receive sequences, in the radio's own order. CTCSS: 0x07 = the tone word, 0x07 =
 
 The C7000 does the FM modulation (two-point, `modem-hrc7000.md`) and makes the TX sub-audio. Receive tones come from
 the FD6818: the speaker switch (PTB15) takes the FD6818's audio away from the C7000's ADC in FM receive, so the C7000's
-detector hears nothing. The FD6818 detects on its own demodulated audio. ODR turns the FD6818's sub-audio off before
+detector hears nothing. The FD6818 detects on its own demodulated audio. RadioFoundry turns the FD6818's sub-audio off before
 FM TX because 0x51 b15 also enables its transmitter.
 
 ### 8.5 TX/RX switching, PA and LNA
@@ -767,13 +767,13 @@ FM TX because 0x51 b15 also enables its transmitter.
 | Each DMR burst | at the modem RF TX interrupt: FD6818 0x30 = 0000 then C1FE. A one-shot timer started when the burst is armed (in the TX timeslot interrupt) fires after the DMR PA delay and then raises the band's PA select and writes DAC B (section 8.6) | BIN |
 | After each DMR burst | DAC B = 0; both PA selects low; FD6818 0x43 = 4048 (OpenDM32) or the RX bandwidth (port), 0x30 = 0000, 0x30 = BFF1 | BIN, KP |
 
-ODR departs from "Enter DMR TX" in one place: it leaves the FD6818 in RX (0x30 = BFF1) with the RX band's LNA on, and
+RadioFoundry departs from "Enter DMR TX" in one place: it leaves the FD6818 in RX (0x30 = BFF1) with the RX band's LNA on, and
 turns the LNA off at each burst's RF TX interrupt and back on after the burst. The hotspot keys the transmitter to
 listen (`radio_sm.c`, hotspot_arm); with C1FE and the LNAs off at key-up, the radio heard nothing until its first
 burst. Found on the DM-1801 Pro, which has the same chips (BENCH there); DMR TX off air still passes on the DM-32UV
 with the change (BENCH).
 
-Split channels (RX and TX frequencies differ: a repeater or a duplex hotspot) have one synthesizer for both. ODR keeps
+Split channels (RX and TX frequencies differ: a repeater or a duplex hotspot) have one synthesizer for both. RadioFoundry keeps
 it on the RX frequency from key-up on, so the radio hears the downlink's CACH and sync between bursts and can time its
 bursts to it. The RF TX interrupt moves it to the TX frequency for a burst (idle, frequency words, C1FE), and the
 switch after the burst moves it back (`fd6818_dmr_burst_at`). A simplex channel writes no frequency frames. Before
@@ -830,7 +830,7 @@ audio fed into the C7000's audio path. Bring-up step 6.1 of airband-and-broadcas
 
 | # | Question | How bring-up answers it |
 |---|---|---|
-| A1 | Is 0x47 AF type 7 the FD6818's AM output? | 6.1: stock radio on ATIS for reference; ODR with `rx_am`, compare audio |
+| A1 | Is 0x47 AF type 7 the FD6818's AM output? | 6.1: stock radio on ATIS for reference; RadioFoundry with `rx_am`, compare audio |
 | A2 | Which speaker source (0x2F level) carries FD6818 AF? | answered: 0x2F = 1 (HW, FM receive) |
 | A3 | AM filter bandwidth (0x43) and AGC (0x13, 0x09 table) for AM | 6.1: listen to a strong and a weak station; the UV-K5 needed AGC changes for AM (D) |
 | A4 | RSSI offset in AM (the squelch's dBm) | 6.1: signal generator at -100 dBm, read `rssi` on the debug link |
@@ -847,17 +847,17 @@ A1), the AF gain in 0x48, VHF LNA on, C7000 FM playback off, speaker source to t
 
 ### 8.8 Receiver power saving
 
-The radio's own battery save, in order (BIN). ODR uses it in FM receive (the core only sleeps there).
+The radio's own battery save, in order (BIN). RadioFoundry uses it in FM receive (the core only sleeps there).
 
 | Step | Sleep | Wake |
 |---|---|---|
 | FD6818 0x30 | 0x0000 (idle) first | 0xBFF1 (RX) last, after the retune |
 | FD6818 0x37 | 0x1D11 (FM) or 0x1D00 (DMR) | 0x1F1F, then 0x1F0F |
 | LNA supply (0x22 VHF / 0x24 UHF) | both off | the band's on |
-| HR_C7000 | a low-power clock profile (CLK_MGR); WORK_MODE, ADC and DAC unchanged. ODR leaves the clocks alone | the receive profile, CLK_MGR 0x02C = 0xFFF0FF3C |
+| HR_C7000 | a low-power clock profile (CLK_MGR); WORK_MODE, ADC and DAC unchanged. RadioFoundry leaves the clocks alone | the receive profile, CLK_MGR 0x02C = 0xFFF0FF3C |
 
 The radio's sleep lengths are 12, 18 or 30 ticks of its receive service by the battery save level, with a busy
-detect waking it at once (BIN; the tick's length in ms is not known). ODR's lengths come from the core settings.
+detect waking it at once (BIN; the tick's length in ms is not known). RadioFoundry's lengths come from the core settings.
 
 ## 9. Audio path
 
@@ -887,7 +887,7 @@ Values written at init by the port (KP); field meanings from DS:
 | 0x0F | CR_ADC | 0x20 | soft mute off, left only, ADC on; bit 7 = 1 mutes the mic |
 | 0x12 | CR_VIC | 0x0C | codec active (not sleep, not powered down) |
 | 0x13 | CR_CK | 0x40 | MCLK / 2, 24 MHz |
-| 0x1F | GCR_DACL | 0x80 | left shared, 0 dB (bits 5:0: 0..31 = 0..−31 dB, 63..32 = +1..+32 dB). 0x87 (−7 dB) was quiet on FM receive; the scale direction checked on ODR at bring-up (2026-10-14) |
+| 0x1F | GCR_DACL | 0x80 | left shared, 0 dB (bits 5:0: 0..31 = 0..−31 dB, 63..32 = +1..+32 dB). 0x87 (−7 dB) was quiet on FM receive; the scale direction checked on RadioFoundry at bring-up (2026-10-14) |
 | 0x23 | GCR_MIC1 | 0x00 | 0 dB |
 | 0x25 | GCR_ADCL | 0x8B | shared, +11 dB (bits 5:0 = 0..42 dB). Mic gain settings for FM and DMR are written here with bit 7 set |
 | 0x2B | CR_DAC_AGC | 0x00 | DAC AGC off |
@@ -928,7 +928,7 @@ For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
 | Block erase | 0x52 (32 KB), 0xD8 (64 KB); chip erase 0xC7 / 0x60 | datasheet convention |
 | Status | 0x05 SR1 (bit 0 busy/WIP, bit 1 WEL), 0x35 SR2, 0x15 SR3; writes 0x01 / 0x31 / 0x11 | KP |
 | Security registers | 0x48 + 24-bit address + dummy byte, three 256-byte registers at 0x1000, 0x2000, 0x3000. **No DM-32 data is known to be stored there** (the port's reader is a stub) | KP |
-| Unique ID | 0x4B, four dummy bytes, then 128 bits. ODR reads it at boot as the radio's UID for INFO_CHIP ([debuglink.md](debuglink.md) 3.9) | KP, datasheet convention |
+| Unique ID | 0x4B, four dummy bytes, then 128 bits. RadioFoundry reads it at boot as the radio's UID for INFO_CHIP ([debuglink.md](debuglink.md) 3.9) | KP, datasheet convention |
 | Power down / release | 0xB9 / 0xAB | KP |
 | Busy timeouts | page program ≤ 3 ms (port waits 10 ms); 4 KB erase about 400 ms worst (port waits 600 ms, polling every 100 us). Stock-style driver polls up to 7000 × 1 ms | KP |
 | Start-up | 160 us after raising CS before the first command | KP |
@@ -1007,10 +1007,10 @@ OpenDM32 bug noted: for a UHF frequency below 400 MHz its unsigned subtraction g
 | Power | GPIO 0x2C: low = on, high = off | KP |
 | Interrupt | UART1, vector 42, IER = 0x05 | KP |
 
-ODR's driver is `platform/hrc7000/gps_hrc.c` (the DB25-D uses it on UART2; the board gives it the UART, power pin and level in `hrc_gps_cfg_t`), on the shared receive ring `drivers/gps/gps_rx` (also the MD-380's) and the
+RadioFoundry's driver is `platform/hrc7000/gps_hrc.c` (the DB25-D uses it on UART2; the board gives it the UART, power pin and level in `hrc_gps_cfg_t`), on the shared receive ring `drivers/gps/gps_rx` (also the MD-380's) and the
 line framing `drivers/gps/nmea_line`:
 
-| Step | What ODR does |
+| Step | What RadioFoundry does |
 |---|---|
 | Start-up | GPIO 0x2C low (module on), UART1 at 9600 8N1 (`hrc_uart_setup`, divisor 547, 0.02 % off), receive interrupt on |
 | Listen | 5 s for one checksum-valid sentence. The module sends a sentence a second from about 1 s after power-up, with or without a fix |
@@ -1104,7 +1104,7 @@ These are traps in the old port, listed so a fresh implementation does not copy 
 | 1 | The HR-C6000 "SPI0 page register" access layer is kept as empty stubs. Every C7000 CTCSS / DCS / DTMF / RX gain call that still goes through it (RX CTCSS, RX and TX DCS code, DTMF mode/deviation save/restore, DMR RX gain) is a **no-op** | C7000 sub-audio receive, DCS and DMR volume do nothing |
 | 2 | DCS never finished: TX DCS sets FM_MOD bits but writes the code to the stub instead of CDCSS_ADDR; RX DCS writes are commented out (FD6818 side too). OpenDM32 Aug 2026 added DCS TX ("Check DCS TX") but it was not ported | No DCS |
 | 3 | FD6818 CTCSS tone value truncates the tone to whole tens of Hz before scaling | Wrong CTCSS frequency |
-| 4 | Volume pot level variable is never written (ADC channel not read) | No volume control from the knob. ODR has no `hal_radio_t.volume` here: the knob works on the amplifier, the FM chip's register 0x48 (`BBBF`, the post-init and mode-entry lists in section 8) is written only at mode entry and a chip gain below an analog knob would not "override" it, so the debug link's volume operation answers "unavailable" (INF) |
+| 4 | Volume pot level variable is never written (ADC channel not read) | No volume control from the knob. RadioFoundry has no `hal_radio_t.volume` here: the knob works on the amplifier, the FM chip's register 0x48 (`BBBF`, the post-init and mode-entry lists in section 8) is written only at mode entry and a chip gain below an analog knob would not "override" it, so the debug link's volume operation answers "unavailable" (INF) |
 | 5 | Mic/VOX ADC read uses a channel set-up that single-scan mode cannot deliver | VOX and mic level meter wrong |
 | 6 | Timer naming clash: the SDK calls the timer at 0x14000000 "Timer 0", the port's header and the manual call it "Timer 1"; both "VECTOR_TIMER0" and "VECTOR_TIMER1" are 33. The RTOS tick is hooked on vector 33 but that timer is never configured, and a 10 ms-tick assumption (delay = (ms + 9) / 10 ticks) sits next to a 1000 Hz tick setting | RTOS timing source unclear; check on hardware |
 | 7 | The port's DMR PA one-shot is Timer 4 because Timer 3 polls the ADC; stock uses Timer 3 | Fine if consistent; do not mix |
@@ -1119,7 +1119,7 @@ These are traps in the old port, listed so a fresh implementation does not copy 
 
 ---
 
-## 17. How OpenDigitalRadio uses it (`make BOARD=dm32`)
+## 17. How RadioFoundry uses it (`make BOARD=dm32`)
 
 Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and lists what is still open.
 
@@ -1127,7 +1127,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 |---|---|---|
 | Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; wrapped with `tools/serial_loader.py --wrap` for the Baofeng updater | `boards/dm32/memory.ld`, `platform/hrc7000/crt0.S` |
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `boards/dm32/memory.ld` |
-| SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `ODR_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DODR_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `ODR_CPU_RAM` buffers), start-up stack. See the table below | `boards/dm32/memory.ld` |
+| SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `RFOUNDRY_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DRFOUNDRY_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `RFOUNDRY_CPU_RAM` buffers), start-up stack. See the table below | `boards/dm32/memory.ld` |
 | Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E28 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
 | Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off (then `main()` starts it, [watchdog.md](watchdog.md)); cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
@@ -1150,10 +1150,10 @@ an initializer (it is `NOLOAD`: an initial value would be dropped).
 
 | Region | Contents | Default build | Maximal build |
 |---|---|---:|---:|
-| RAM_LO 0x10000..0x16CDC, 27,868 B | `.vectors` 512 B, `.ramfunc` 6,240 B, `.ram_lo`: `ODR_CPU_RAM` state (radio task 3,072, APRS 5,936, hotspot 2,760, DMR data 3,824) and the 2 KB interrupt stack | 24,392 B (3,476 free) | 24,392 B |
-| RAM 0x2F914..0x58000, 165,612 B | `.data`, `.bss` (frame buffer 40 KB, RTOS heap 40 KB, vocoder states 13 KB, the network's `ODR_CPU_RAM` buffers: TCP connections, the network personality's packets and frame, the gateway's bursts and frame), 2 KB start-up stack | 154,428 B (11,184 free) | 155,740 B (9,872 free) |
+| RAM_LO 0x10000..0x16CDC, 27,868 B | `.vectors` 512 B, `.ramfunc` 6,240 B, `.ram_lo`: `RFOUNDRY_CPU_RAM` state (radio task 3,072, APRS 5,936, hotspot 2,760, DMR data 3,824) and the 2 KB interrupt stack | 24,392 B (3,476 free) | 24,392 B |
+| RAM 0x2F914..0x58000, 165,612 B | `.data`, `.bss` (frame buffer 40 KB, RTOS heap 40 KB, vocoder states 13 KB, the network's `RFOUNDRY_CPU_RAM` buffers: TCP connections, the network personality's packets and frame, the gateway's bursts and frame), 2 KB start-up stack | 154,428 B (11,184 free) | 155,740 B (9,872 free) |
 
-The network's `ODR_CPU_RAM` buffers (`core/net/*.o`, `hostlink_net*.o`, `ipGateway.o`, 6.7 KB with three TCP
+The network's `RFOUNDRY_CPU_RAM` buffers (`core/net/*.o`, `hostlink_net*.o`, `ipGateway.o`, 6.7 KB with three TCP
 connections) are excluded from RAM_LO by file name: RAM_LO can't hold them as well, and main RAM has the room. An
 `LTO=1` build would lose the file names and overflow RAM_LO (the DM-32 doesn't use LTO). The RTOS heap holds every
 task stack (20 KB of stacks with DMR, audio 6 KB the largest) and the queues; the network adds no task (it runs in the host
@@ -1162,32 +1162,32 @@ link task, as on the DM-1701).
 ### 17.2 Runtime stub entry (`CONFIG_STUB_ENTRY`)
 
 A bench and recovery path: the host loads its own flash-access RAM monitor (the "C7 stub", a small program that reads
-and writes the radio's flash chips with no firmware running) into SRAM and ODR jumps to it at run time, with the radio
+and writes the radio's flash chips with no firmware running) into SRAM and RadioFoundry jumps to it at run time, with the radio
 powered on, no power cycle and no DFU. It is the same monitor the serial boot ROM loads with the radio off; this just
 gets it running from a radio that is already up. On by default (`CONFIG_STUB_ENTRY`, with or without the debug link: `docs/spec/stub-entry.md`);
 the command answers unavailable on a board whose platform has no `hal_system_t.enter_stub` (every board but the
 HR_C7000 so far). The wire format is debug link command `0x1A` (`docs/spec/debuglink.md` 3.18).
 
 **RAM region.** The monitor is loaded into the stock-codec window, `0x16CDC..0x2F914` (76,344 B), which `boards/dm32/memory.ld` leaves
-out of the image entirely (section 17.1): ODR links nothing there. A radio that hosts its stock codec runs it in that
+out of the image entirely (section 17.1): RadioFoundry links nothing there. A radio that hosts its stock codec runs it in that
 window, so the first STUB command parks the codec (`hrc_vocoder_park`: it waits for a call in progress, then every
 later call returns silence) before the window is handed out. Without that, an upload on a DMR channel overwrote the
 running codec and hung the radio (bench 2026-10-15). The load span is `0x17000..0x2F000` (`HRC_STUB_BASE` /
-`HRC_STUB_SIZE`, 96 KB, 4 KB aligned inside the window). Nothing in ODR's own RAM (RAM_LO below it,
+`HRC_STUB_SIZE`, 96 KB, 4 KB aligned inside the window). Nothing in RadioFoundry's own RAM (RAM_LO below it,
 `.data`/`.bss`/heap/stack above it) is touched while the image loads, so the host link task keeps running to receive
-it; ODR abandons all of its RAM only at the jump.
+it; RadioFoundry abandons all of its RAM only at the jump.
 
 The monitor (the universal build, protocol version 6) is 7,004 bytes and runs at `0x30000`, not where it was loaded.
 Its first 0x80 bytes are position independent and use no stack: interrupts off, then a copy of the image from the load
 address to `0x30000` and a jump there. It then zeroes its `.bss` and sets its own 4 KB stack. The whole footprint is
 `0x30000..0x37978` (31,096 B: image, `.bss` to `0x36974`, stack `0x36978..0x37978`); the linker refuses a layout over
-32 KB or outside SRAM. That range was ODR's `.data`/`.bss`, which is dead after the jump, and it does not overlap the
+32 KB or outside SRAM. That range was RadioFoundry's `.data`/`.bss`, which is dead after the jump, and it does not overlap the
 loaded copy at `0x17000..0x18B1C`. The entry stops without writing anything if the two would overlap. Deepest stack use
 measured on the DM-32UV and the DM-1801 Pro: 168 bytes. The same image is what the serial boot ROM loads at `0x10000`
 with the radio off (28 blocks of 256 B; the ROM itself uses no RAM, only registers). Placement for every route:
 `stub/README.md`, RAM placement.
 
-**Clock and UART.** The monitor leaves the UART divisor ODR programmed (115200 at 84 MHz, /46), so the link never drops
+**Clock and UART.** The monitor leaves the UART divisor RadioFoundry programmed (115200 at 84 MHz, /46), so the link never drops
 a byte at the hand-over, and listens on UART0 and UART1 until told otherwise. After HELLO the host measures timer 2 (the
 monitor's tick source, 84 MHz here, 24 MHz after a boot ROM load) and sends CONFIG: the clock rates, the UART to keep
 (the one the request came in on), the board id and the board's pins. The next HELLO echoes them, and the host checks the
@@ -1203,10 +1203,10 @@ jump never returns (recover by a power cycle).
 **Load protocol.** The host sends the image over the debug link in `STUB_CHUNK_MAX` (59 B) chunks after a BEGIN that
 carries the length, a CRC-32 of the whole image, the entry address and a 32-bit magic key (`'C7SB'`); each chunk's
 integrity is the debug link frame's own CRC-16, and the region is zeroed at BEGIN so a dropped chunk fails the final
-check. ENTER repeats the magic, and ODR verifies the exact length and the CRC-32 of the loaded bytes before it quiesces
+check. ENTER repeats the magic, and RadioFoundry verifies the exact length and the CRC-32 of the loaded bytes before it quiesces
 and jumps: the three guards (magic, length, CRC-32) are what keep a stray or truncated frame from ever launching it.
 
-**Bench results.** Entry from ODR, program flash and data flash reads, `--write-app` and the restart ran on the DM-1801
-Pro (2026-10-15). The universal build ran from ODR on the DM-1801 Pro and the DM-32UV (2026-10-17): reads of both chips,
+**Bench results.** Entry from RadioFoundry, program flash and data flash reads, `--write-app` and the restart ran on the DM-1801
+Pro (2026-10-15). The universal build ran from RadioFoundry on the DM-1801 Pro and the DM-32UV (2026-10-17): reads of both chips,
 the bootloader identical to earlier dumps, a write test on the data flash, and the restart. Not yet run with the
 universal build: the boot ROM load at power-on.

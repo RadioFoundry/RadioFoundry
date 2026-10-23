@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 factory calibration reader (docs/spec/hardware-md380.md section 11).
 // The radio is single band: the table in SPI flash security registers 1-2 (512 bytes) holds one band. The row layout
 // is assumed to be the MD-UV380 family's (the same factory tool) and is not confirmed on an MD-380, so the reader is
@@ -30,7 +30,7 @@
 #define SAFE_REF	0x80u
 
 // Used when the frequency list is unreadable: the band split in eight equal steps
-#if ODR_BAND_VHF
+#if RFOUNDRY_BAND_VHF
 #define GRID_FIRST	13600000u	// 10 Hz units
 #define GRID_STEP	475000u
 #else
@@ -76,7 +76,7 @@ static void load_frequencies(void)
 	freq_from_table = true;
 	for (uint32_t i = 0; i < POINTS; i++) {
 		uint32_t f = bcd32(&table[FREQ_LIST + i * 4u]);
-#if ODR_BAND_VHF
+#if RFOUNDRY_BAND_VHF
 		bool in_band = f >= 13000000u && f <= 18000000u;
 #else
 		bool in_band = f >= 39000000u && f <= 49000000u;

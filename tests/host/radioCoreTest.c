@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's state machine (core/radio/radio_sm.c) against a fake board and a fake codeplug
 #include "input/keyassign.h"
 #include <stdio.h>
@@ -1742,7 +1742,7 @@ static void mm_write(const uint8_t *buf, size_t len)
 	memcpy(mm_last, buf, len < sizeof(mm_last) ? len : sizeof(mm_last));
 }
 
-static const mmdvm_io_t mm_io = { .write = mm_write, .description = "OpenDigitalRadio fake" };
+static const mmdvm_io_t mm_io = { .write = mm_write, .description = "RadioFoundry fake" };
 
 static void mm_cmd(uint8_t cmd, const uint8_t *p, uint8_t n)
 {
@@ -3709,7 +3709,7 @@ static void test_factory_reset(void)
 	dmr_start(true);
 	memset(&sim_flash_data[0x20000u], 0x42, 64);		// an open-firmware codeplug byte or two
 	memset(&sim_flash_data[0x10000u], 0x24, 64);		// the calibration copy
-	static const uint8_t magic[4] = { 'O', 'D', 'R', 'N' };
+	static const uint8_t magic[4] = { 0x4F, 0x44, 0x52, 0x4E };
 	CHECK(sim_flash.write(reset_map.native_addr, magic, 4));
 	settings_begin()->squelch = 2;
 	settings_end(now);

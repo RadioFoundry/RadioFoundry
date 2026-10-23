@@ -7,7 +7,7 @@ edit it:
 
 | Program | Runs | Radios |
 |---|---|---|
-| The Codeplug Editor on the project's web site | In a Chromium-based browser (Chrome, Edge, Opera), nothing to install | Every ODR radio: over USB, or over the programming cable |
+| The Codeplug Editor on the project's web site | In a Chromium-based browser (Chrome, Edge, Opera), nothing to install | Every RadioFoundry radio: over USB, or over the programming cable |
 | qdmr (github.com/hmatuschek/qdmr), the free codeplug editor | Windows, macOS, Linux | Radios with a USB port. Not the DM-32UV ([below](#radios-qdmr-cant-program-directly)) |
 
 Both use the same codeplug format and the radio's own codeplug interface, so a codeplug written by one reads back in
@@ -20,7 +20,7 @@ sent to a server: files, the codeplug and your RadioID API key stay on your comp
 
 ### Reading and writing the radio
 
-1. Turn the radio on with ODR running and connect it: the USB cable (DM-1701, MD-380), or the programming cable in the
+1. Turn the radio on with RadioFoundry running and connect it: the USB cable (DM-1701, MD-380), or the programming cable in the
    accessory jack (DM-32UV, DM-1801 Pro, DB25-D PRO). The radio must be in USB serial mode, not USB network mode.
 2. Choose **Read from Radio**, then **USB Cable** or **Programming Cable**. The browser asks which port to use.
 3. Edit the codeplug.
@@ -29,9 +29,9 @@ sent to a server: files, the codeplug and your RadioID API key stay on your comp
    new codeplug without restarting.
 
 The first write to a radio that came straight from its original firmware may ask to **Prepare Radio**. The original
-firmware's data is still in the area where ODR keeps its settings, and until that area is erased the radio can't
+firmware's data is still in the area where RadioFoundry keeps its settings, and until that area is erased the radio can't
 store a codeplug or keep its settings when turned off. The web radio programming utility does this by itself after
-the full backup it offers when it installs ODR. The backup holds a copy of that data; the calibration isn't touched.
+the full backup it offers when it installs RadioFoundry. The backup holds a copy of that data; the calibration isn't touched.
 
 Write to Radio is blocked while the **Problems** tab lists errors, such as a name that is too long or a frequency
 that isn't valid. Warnings, such as a frequency outside the radio's bands or a DMR channel without a TX contact,
@@ -71,7 +71,7 @@ starts over.
 - the original firmware's codeplug, from a DM-1701, RT84, MD-UV380/390 or MD-380: in a backup, a dump of the radio's
   data flash, or a TYT MD-380 CPS file (`.rdt`).
 
-A backup made when ODR was installed still holds the original firmware's codeplug, because ODR keeps its own
+A backup made when RadioFoundry was installed still holds the original firmware's codeplug, because RadioFoundry keeps its own
 codeplug in a different layout. The editor recognizes that codeplug and converts it: channels, zones, contacts, RX
 group lists, the DMR ID, the radio name and the boot text. Afterwards it lists what it left out, such as scan lists
 and names that were shortened. A zone with an A and a B list becomes two zones, "Name A" and "Name B". Check the
@@ -126,7 +126,7 @@ qdmr does.
 ### Reading and writing the codeplug
 
 1. Turn the radio on normally and connect the USB cable. The radio appears as a USB serial port (USB ID 1FC9:0094).
-2. In qdmr, read the codeplug from the radio. qdmr identifies the radio by the radio type ODR reports. The
+2. In qdmr, read the codeplug from the radio. qdmr identifies the radio by the radio type RadioFoundry reports. The
    [Radio reference](23-radios.md) lists the type and the qdmr driver for each radio.
 3. Edit the codeplug and write it to the radio.
 4. After a write, the radio restarts and uses the new codeplug.
@@ -135,7 +135,7 @@ The radio keeps its own screen during the transfer.
 
 ## What the radio uses from the codeplug
 
-| Item | Fields ODR uses |
+| Item | Fields RadioFoundry uses |
 |---|---|
 | General settings | Your DMR ID. The callsign (radio name, 8 characters, sent as talker alias). The group and private call hang times (the reply window) |
 | Channels (up to 1024) | Name, receive and transmit frequency, mode (FM or DMR), bandwidth, receive and transmit tones, power, receive only, color code, timeslot, talk target contact, RX group list (listen list), a per-channel DMR ID, force direct mode, transmit timeout, talker alias, zone scan skip, VOX allowed, no beep, no battery saving |
@@ -147,7 +147,7 @@ The radio keeps its own screen during the transfer.
 | Boot text | The two lines on the boot screen |
 
 The radio keeps every other part of the codeplug unchanged (boot image, APRS settings, DTMF contacts and so on), so
-the editor and qdmr read back what they wrote, but ODR doesn't act on those parts.
+the editor and qdmr read back what they wrote, but RadioFoundry doesn't act on those parts.
 
 Changes made on the radio (a channel saved with hold **OK**, a permanent talk target) are written to the same codeplug,
 so the next read shows them.
@@ -155,14 +155,14 @@ so the next read shows them.
 ## What the codeplug can't set yet
 
 - Privacy keys ([DMR](08-dmr.md#privacy)).
-- ODR's own settings ([Settings](12-settings.md)): they are kept separately from the codeplug. The codeplug's quick
+- RadioFoundry's own settings ([Settings](12-settings.md)): they are kept separately from the codeplug. The codeplug's quick
   key assignments are ignored.
 - Emergency, ARS and text message format.
 - SFR settings, in qdmr. The Codeplug Editor sets them on each channel.
 
 ## Coming from stock firmware
 
-On a radio with stock firmware, a migration tool reads the stock codeplug, flashes ODR and writes the codeplug back
+On a radio with stock firmware, a migration tool reads the stock codeplug, flashes RadioFoundry and writes the codeplug back
 in one run:
 
 | Radio | Tool | Chapter |
@@ -172,7 +172,7 @@ in one run:
 
 ## Radios qdmr can't program directly
 
-qdmr can't write the codeplug of a DM-32UV running ODR. [DM-32UV with qdmr](23-radios.md#dm-32uv-with-qdmr) says why
+qdmr can't write the codeplug of a DM-32UV running RadioFoundry. [DM-32UV with qdmr](23-radios.md#dm-32uv-with-qdmr) says why
 and how to write a qdmr codeplug to it. The Codeplug Editor programs it over the programming cable (not yet tested
 on a radio).
 

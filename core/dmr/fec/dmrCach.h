@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * The CACH of a BS outbound (ETSI TS 102 361-1 4.5, 6.3) and the short LC it carries, written from the standard:
  *   - TACT: AT, TC, LCSS (4 bits) with Hamming(7,4,3) parity, generator x^3 + x + 1 (9.1.4, B.3.5 table B.17)
@@ -13,8 +13,8 @@
  * holds TX(23) (the first bit on air) in bit 23. A 17-bit payload holds P(16) (first on air) in bit 16. A short LC is
  * its 28 bits right aligned: SLCO in bits 27-24 (octet 0 bits 3-0), octets 1-3 in bits 23-0.
  */
-#ifndef ODR_DMR_CACH_H
-#define ODR_DMR_CACH_H
+#ifndef RFOUNDRY_DMR_CACH_H
+#define RFOUNDRY_DMR_CACH_H
 
 #include <stdbool.h>
 #include <stdint.h>

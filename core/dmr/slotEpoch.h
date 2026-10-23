@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * The split duplex RX half's slot labels (docs/spec/split-duplex.md 7): the host gives the start E of an outbound TS1
  * slot in this radio's modem clock and the outbound slot length P in this radio's clock units; a burst whose slot
@@ -11,8 +11,8 @@
  * constant delays of the two chips and the drift between the host's updates; the label itself only comes from E.
  * No hardware here.
  */
-#ifndef ODR_SLOT_EPOCH_H
-#define ODR_SLOT_EPOCH_H
+#ifndef RFOUNDRY_SLOT_EPOCH_H
+#define RFOUNDRY_SLOT_EPOCH_H
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Control station mode (docs/spec/usb-network.md 5; firmware built with CONFIG_DMR_CONTROL_STATION): the stored USB
 network settings (radio op 27), booting as the network adapter, the fixed link pair 192.168.10.1 / .2, and
 passthrough (IP data to the radio's ID goes to the PC, not to the radio's own services).
@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FIXED_RADIO = "192.168.10.1"     # IPGW_FIXED_LINK_DEFAULT
@@ -230,7 +230,7 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
         before = _counters(udp)
         s5016, s4007 = _listen(host_ip, 5016), _listen(host_ip, 4007)
         try:
-            text = f"ODR CS {int(time.time()) % 10000}"
+            text = f"RadioFoundry CS {int(time.time()) % 10000}"
             with sdr_bench.lease():
                 sdr_bench.data(freq, cc, own, ip_text=text, src=BENCH_SRC)
                 sdr_bench.data(freq, cc, own, tms=text, tms_seq=(int(time.time()) % 31) + 1, src=BENCH_SRC,

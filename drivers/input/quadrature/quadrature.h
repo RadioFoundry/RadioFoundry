@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Quadrature (rotary encoder) decoding, independent of the board's pins. The board samples both lines on every edge
 // of either one (or polls them fast) and passes the levels in; the decoder turns that into detents.
 //

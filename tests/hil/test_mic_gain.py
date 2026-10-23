@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """FM microphone gain against deviation, measured off air by the SDR bench (radio-features.md 3.6). Manual and opt-in:
 --manual -s --allow-rf, a person at the radio.
 
@@ -31,8 +31,8 @@ import time
 
 import pytest
 
-from odr_hil import skip
-from odr_debug import DebugLink, DebugLinkError, as_int
+from rfoundry_hil import skip
+from rfoundry_debug import DebugLink, DebugLinkError, as_int
 from test_fm_tx import fm_vfo  # noqa: F401  (the fixture)
 
 LINK_BACK_S = 180.0

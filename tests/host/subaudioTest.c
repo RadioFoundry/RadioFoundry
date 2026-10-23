@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Sub-audio math shared by the RF drivers: the DCS Golay word
 #include <stdio.h>
 #include <stdbool.h>

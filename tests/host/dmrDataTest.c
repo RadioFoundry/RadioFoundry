@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Host unit test for the DMR packet data layer (functions/dmrData.c)
  *
  *   make -C tests/host
  *
  * Prints the generated bursts as "<dataType> <hex payload>" lines so that an external decoder
- * (e.g. odr_sdrbench's) can verify them independently.
+ * (e.g. rfoundry_sdrbench's) can verify them independently.
  */
 
 #include <stdio.h>
@@ -71,7 +71,7 @@ static dmrDataRxResult_t feed(const dmrBurst_t *bursts, int count)
 
 static void testCRC32(void)
 {
-	// Packet from odr_sdrbench's test vectors (fec.crc32_dmr): the CRC itself is checked against its Python
+	// Packet from rfoundry_sdrbench's test vectors (fec.crc32_dmr): the CRC itself is checked against its Python
 	// implementation there; here only the self consistency is checked.
 	uint8_t data[8] = { 0x45, 0x00, 0x00, 0x2A, 0x00, 0x01, 0x00, 0x00 };
 	uint32_t a = dmrDataCRC32(data, 8);
@@ -276,7 +276,7 @@ static void testTMSAck(void)
 
 static void testReferenceVectors(void)
 {
-	// TMS samples from odr_sdrbench's tests (ok-dmrlib over the air capture)
+	// TMS samples from rfoundry_sdrbench's tests (ok-dmrlib over the air capture)
 	const uint8_t ahoj[] = { 0x00, 0x0D, 0xE0, 0x01, 0x01, 0x95, 0x44, 0x61, 0x00, 0x68, 0x00, 0x6F, 0x00, 0x6A, 0x00 };
 	const uint8_t ack[] = { 0x00, 0x04, 0x9F, 0x00, 0x95, 0x20 };
 	dmrDataTMS_t tms;
@@ -310,7 +310,7 @@ static void testARS(void)
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 	dmrDataUDP_t udp;
 
-	// odr_sdrbench's test vector (device ID "11"), and the 12 byte PDU hbnet recognizes a MOTOTRBO radio's by (000cf0)
+	// rfoundry_sdrbench's test vector (device ID "11"), and the 12 byte PDU hbnet recognizes a MOTOTRBO radio's by (000cf0)
 	CHECK((dmrDataBuildARSRegistration(11, pdu) == 9) && (memcmp(pdu, "\x00\x07\xF0\x20\x02\x31\x31\x00\x00", 9) == 0));
 	int length = dmrDataBuildARSRegistration(3101276, pdu);
 	CHECK((length == 14) && (memcmp(pdu, "\x00\x0C\xF0\x20\x07" "3101276" "\x00\x00", 14) == 0));
@@ -335,7 +335,7 @@ static void testARS(void)
 	dumpBursts("ars-registration", bursts, n);
 }
 
-// UDT NMEA location report: the bytes odr_sdrbench's decoder (odr_sdrbench.dmr.location._decode_udt) reads as 33.76872 N,
+// UDT NMEA location report: the bytes rfoundry_sdrbench's decoder (rfoundry_sdrbench.dmr.location._decode_udt) reads as 33.76872 N,
 // 84.38539 W, 22.2 km/h, 14:07:30 UTC, header and appended block CRCs good
 static void testUDTLocation(void)
 {
@@ -578,7 +578,7 @@ static void testConfirmedTx(void)
 	uint8_t pdu[8], want[12], flags[8];
 
 	hex("0001000101", pdu);
-	memcpy(&pdu[5], "ODR", 3);
+	memcpy(&pdu[5], "\x4F\x44\x52", 3);
 	CHECK(dmrDataConfirmedBlocks(8, DT_RATE_12_DATA) == 2 && dmrDataConfirmedBlockData(DT_RATE_34_DATA) == 16);
 	int n = dmrDataBuildConfirmed(DMR_SAP_UDPIP_COMPRESSION, 100, 10005, pdu, 8, DT_RATE_12_DATA, 5, true, 0, 1, b, DMR_DATA_MAX_BURSTS);
 	CHECK(n == 4 && b[0].dataType == DT_CSBK && b[0].payload[3] == 3);
@@ -749,7 +749,7 @@ static void testCodedFrames(void)
 
 		if (burst.dataType == DT_RATE_34_DATA)
 		{
-			// Any one bit error in the info bits is corrected. Of two, hard decision decoding corrects most (odr_sdrbench's
+			// Any one bit error in the info bits is corrected. Of two, hard decision decoding corrects most (rfoundry_sdrbench's
 			// decoder corrects exactly the same pairs: 421 of these 560)
 			for (int e = 0; e < 196; e += 7)
 			{
@@ -813,7 +813,7 @@ static void testShortPayloads(void)
 
 // The decoders of what arrives over the air, on mutated payloads: text in every DD / UDT format into small text
 // buffers (always terminated within them), IP / UDP layer 4 always inside the packet, TMS, ARS and IP text from
-// exact-size heap copies (ODR_FUZZ_ITERS)
+// exact-size heap copies (RFOUNDRY_FUZZ_ITERS)
 static void fuzzDecoders(fuzz_t *f, long iters, long *bad)
 {
 	static dmrDataPacket_t p;

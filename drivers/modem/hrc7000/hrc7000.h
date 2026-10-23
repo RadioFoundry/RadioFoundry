@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 baseband (the modem inside the HR_C7000 SoC): register map, power-on set-up, FM modes, sub-audio, audio
 // paths and the internal audio codec (docs/spec/modem-hrc7000.md 2, 4, 5.1, 8; hardware-dm32.md 9).
 //

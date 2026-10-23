@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro start-up pin levels (boards/dm1801pro/boot_pins.h) against the stock firmware's boot levels, and the
 // audio path pair PTB14 / PTB15 (boards/dm1801pro/audio_route.h) (docs/spec/hardware-dm1801pro.md 3.1)
 #include <stdio.h>

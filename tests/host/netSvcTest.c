@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The TCP services (core/net: KISS over TCP, HTTP, rigctld, APRS-IS) through the real IP gateway and TCP, against a
 // small scripted TCP peer on the host side of a fake USB network interface, with fakes for the APRS engine and the
 // radio core. Every frame is written to netSvcTest.pcap for tshark.

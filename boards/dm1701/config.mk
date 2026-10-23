@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # DM-1701 feature defaults (config/features.mk lists them all). 720 KB for code and read-only data: flash sectors 3-9;
 # the codec sectors 10 and 11 are never linked into (boards/dm1701/memory.ld, docs/spec/codec-placement.md).
 # 160x120 display. The fault trace, the large font and LTO follow the platform (platform/stm32f4/config.mk)

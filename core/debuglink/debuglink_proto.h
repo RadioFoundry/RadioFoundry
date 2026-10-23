@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's commands and their operations (docs/spec/debuglink.md 3). The framing, the reply status and the
 // commands the stub entry shares (PING, VERSION, STUB) are in dl_frame.h.
 #ifndef DEBUGLINK_PROTO_H

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HDLC framing (hdlc.h)
 #include <string.h>
 #include "aprs/hdlc.h"

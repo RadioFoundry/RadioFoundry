@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Health checks for any radio, radio only, never transmits: the display geometry and build features VERSION reports,
 the data flash and factory calibration, the battery or supply voltage reading, a receiver that answers, DMR timeslot
-interrupts, the merged stock codec and the GPS. The numbers each board must meet come from its HIL expectations (odr_hil.board_hil:
+interrupts, the merged stock codec and the GPS. The numbers each board must meet come from its HIL expectations (rfoundry_hil.board_hil:
 board.toml [hil]). A check whose expectation the board doesn't have skips (other_board: nothing to compare against on
 this board, which a bring-up run excuses), and one that reads a diagnostics line the firmware doesn't print skips
 not_built."""
@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from odr_hil import board_hil, board_id, diag_lines, find, skip
+from rfoundry_hil import board_hil, board_id, diag_lines, find, skip
 
 
 class Board:

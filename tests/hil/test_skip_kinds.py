@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""The skip helper (odr_hil.skip and friends) and tools/check_hil_skips.py. No radio: these run anywhere, and
+# Copyright (c) 2026 The RadioFoundry Authors
+"""The skip helper (rfoundry_hil.skip and friends) and tools/check_hil_skips.py. No radio: these run anywhere, and
 tools/ci.sh runs them."""
 import os
 import subprocess
@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from odr_hil import ROOT, SKIP_KINDS, skip, skip_if, skip_kind, skip_mark, skip_reason
+from rfoundry_hil import ROOT, SKIP_KINDS, skip, skip_if, skip_kind, skip_mark, skip_reason
 
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import check_hil_skips  # noqa: E402
@@ -51,8 +51,8 @@ def test_skip_kind_reads_every_form():
 
 def test_marks_carry_the_kind():
     assert skip_mark("opt_in", "transmits").kwargs["reason"] == "[opt_in] transmits"
-    m = skip_if(True, "opt_in", "set ODR_X=1")
-    assert m.args == (True,) and m.kwargs["reason"] == "[opt_in] set ODR_X=1"
+    m = skip_if(True, "opt_in", "set RFOUNDRY_X=1")
+    assert m.args == (True,) and m.kwargs["reason"] == "[opt_in] set RFOUNDRY_X=1"
 
 
 def test_report_and_junit_carry_the_kind(tmp_path):
@@ -60,10 +60,10 @@ def test_report_and_junit_carry_the_kind(tmp_path):
     skip reported at the caller's line."""
     (tmp_path / "test_fake.py").write_text(
         "import pytest\n"
-        "from odr_hil import skip, skip_if\n\n"
+        "from rfoundry_hil import skip, skip_if\n\n"
         "def test_called():\n"
         "    skip('no_hw', 'the radio lacks it')\n\n"
-        "@skip_if(True, 'opt_in', 'set ODR_X=1')\n"
+        "@skip_if(True, 'opt_in', 'set RFOUNDRY_X=1')\n"
         "def test_marked():\n"
         "    pass\n\n"
         "def test_plain():\n"
@@ -93,13 +93,13 @@ def test_check_flags_bare_skips():
     assert len(check("import pytest\npytest.importorskip('numpy')\n")) == 1
     assert len(check("import pytest\nraise pytest.skip.Exception('x')\n")) == 1
     assert len(check("from pytest import skip\n")) == 1
-    # the pragma counts only in odr_hil.py
+    # the pragma counts only in rfoundry_hil.py
     assert len(check("import pytest\npytest.skip('x')  # hil-skip: the helper\n")) == 1
 
 
 def test_check_wants_a_known_literal_kind():
-    assert check("from odr_hil import skip\nskip('state', 'the radio is in hotspot mode')\n") == []
-    assert check("import odr_hil\nodr_hil.skip('bench', 'busy')\n") == []
+    assert check("from rfoundry_hil import skip\nskip('state', 'the radio is in hotspot mode')\n") == []
+    assert check("import rfoundry_hil\nrfoundry_hil.skip('bench', 'busy')\n") == []
     assert check("skip_if(True, 'opt_in', 'x')\nskip_mark('opt_in', 'x')\n") == []
     assert "unknown kind" in check("skip('later', 'x')\n")[0]
     assert "string literal" in check("k = 'state'\nskip(k, 'x')\n")[0]

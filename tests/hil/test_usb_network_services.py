@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The host port's protocols over UDP 3334 in the USB network personality (docs/spec/usb-network.md; opt-in:
 --allow-usb-switch). One switch to the network personality for the module, back to serial at the end.
 
@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from odr_hil import DebugLink, skip
+from rfoundry_hil import DebugLink, skip
 from test_split_duplex import check_rx_labels, rx_half_labels
 from test_usb_network import INDIVIDUAL_NET, _serial_back, _udp_link
 
@@ -147,7 +147,7 @@ def test_net_kiss(net):
     if s.get("set.aprs_tx", "0") != "0":
         skip("state", "APRS TX is on: not feeding it a position (it would beacon)")
     old_kiss, old_src = int(s.get("set.aprs_kiss", "0")), int(s.get("set.aprs_pos_src", "0"))
-    from odr_debug import APRS_POS_SRCS
+    from rfoundry_debug import APRS_POS_SRCS
     link.aprs_set("kiss", 1)
     link.aprs_set("pos_src", APRS_POS_SRCS["host"])
     net.close()

@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # TYT MD-UV380 hardware (MD-UV390, Retevis RT3S, MD-UV390 Plus 10 W)
 
@@ -9,7 +9,7 @@ the DM-1701's board family: STM32F405VGT6, HR_C6000, one AT1846S for both bands,
 potentiometer with the power switch, and USB on OTG_FS. GPS is a factory option ("G" models).
 
 This file lists **only what differs from the DM-1701**. Everything not mentioned here is as in
-[hardware-dm1701.md](hardware-dm1701.md) (ODR's working board, `boards/dm1701`), and that file's section 17 already
+[hardware-dm1701.md](hardware-dm1701.md) (RadioFoundry's working board, `boards/dm1701`), and that file's section 17 already
 holds a variants table this file expands.
 
 Status (2026-10-12): **nothing in this file has been checked on an MD-UV380.** No radio is at hand.
@@ -90,7 +90,7 @@ Public notes we cannot name are reported to agree with the 5 W column (PC6 VHF/U
 dimming of [dm1701] 9.4 writes BSRR of the backlight pin's port, so on the 10 W radio the DMA target is GPIOC instead
 of GPIOD.
 
-Pins those notes list that the DM-1701 spec doesn't (unverified), not used by ODR today: PB1 AT1846S GPIO0, PB2
+Pins those notes list that the DM-1701 spec doesn't (unverified), not used by RadioFoundry today: PB1 AT1846S GPIO0, PB2
 AT1846S GPIO6, PC3 not connected on a stock radio.
 
 PB11 / PE14 are the channel selector: the same quadrature encoder (unverified, ?).
@@ -117,7 +117,7 @@ Same bus, controller family, init tables and backlight as [dm1701] 9, with these
   DM-1701 bench found type 2 with MADCTL 0xE0 mirrored top to bottom ([dm1701] 20); whether MD-UV380 type 2 panels
   need 0xE0 is unverified (?).
 - **10 W identification.** Security register 3 byte 0x1C = 0xF4 marks a Plus 10 W radio (D) [ref]; the aftermarket firmware
-  reads but doesn't use it (it is a build variant there). ODR can use it to choose the 10 W pin swap and power table at
+  reads but doesn't use it (it is a build variant there). RadioFoundry can use it to choose the 10 W pin swap and power table at
   run time (?: confirm on both kinds of radio before trusting it; a wrong guess swaps the backlight and the PA band
   select).
 - Backlight: PD8 (5 W) or PC6 (10 W), active high.
@@ -214,7 +214,7 @@ unknown (?).
 
 Same OTG_FS core and descriptors as the DM-1701. The aftermarket firmware reports radio type 6 to the open-firmware CPS (the
 DM-1701 reports 8 or 10 by panel color order) and names the product "OpenMDUV380 Transceiver" or
-"OpenMDUV380Plus 10W Transceiver" (D) [ref]. ODR's `tools/cps_client.py` already maps type 6 to "MD-UV380". A single ODR
+"OpenMDUV380Plus 10W Transceiver" (D) [ref]. RadioFoundry's `tools/cps_client.py` already maps type 6 to "MD-UV380". A single RadioFoundry
 image can tell a Plus 10 W radio by section 4's security register byte; it cannot tell an MD-UV380 from an RT3S or
 UV390 (no known model byte) (?).
 

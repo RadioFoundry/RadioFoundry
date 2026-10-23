@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio's PPP personality on a pseudo-terminal, for interop tests with a real PPP implementation (pppd):
 // core/net/ppp.c and core/hostlink/hostlink_ppp.c on the real IP gateway (core/dmr/ipGateway.c: ping), with the
 // minimal TCP (core/net/tcp.c) serving a one-line HTTP answer on port 80, the SNMP agent's engine and MIB
 // (core/snmp, a fixed snapshot as in snmpPeer) on UDP 161, and the debug link's wire format (core/debuglink) on the
-// UDP serial port 3334 answering PING and VERSION, so tools/odr_debug.py --port udp:<radio> works.
+// UDP serial port 3334 answering PING and VERSION, so tools/rfoundry_debug.py --port udp:<radio> works.
 //
 //   pppPeer [--once] [--active] [PTY_NAME_FILE]
 //
 // Prints the pseudo-terminal's name (and writes it to PTY_NAME_FILE) and serves until killed; --once: until the first
 // PPP link ends (exit status 0 when IPCP was open). --active starts with our Configure-Request, as the debug link's PPP
-// op does; otherwise passive, waiting for the peer's. tools/odr_ppp_interop.sh drives it with pppd.
+// op does; otherwise passive, waiting for the peer's. tools/rfoundry_ppp_interop.sh drives it with pppd.
 #define _XOPEN_SOURCE 600
 #define _DEFAULT_SOURCE
 #define _DARWIN_C_SOURCE
@@ -142,7 +142,7 @@ static unsigned http_requests;
 static void http_recv(int c, const uint8_t *data, int len)
 {
 	static const char answer[] = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n"
-				     "OpenDigitalRadio over PPP\n";
+				     "RadioFoundry over PPP\n";
 
 	(void)data;
 	(void)len;

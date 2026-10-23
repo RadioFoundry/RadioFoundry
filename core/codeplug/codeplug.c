@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Codeplug: an open-firmware codeplug in the board's data flash (docs/spec/open-firmware-cps.md 7,
 // docs/spec/hardware-dm1701.md 13.2), or a small built-in set of simplex FM channels when there is none.
 // Records are read from flash on demand; RAM holds only an in-use bitmap of the channels and the used zone slots.

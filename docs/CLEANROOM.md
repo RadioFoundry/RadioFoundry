@@ -2,7 +2,7 @@
 
 # Clean-room rules
 
-Some of ODR's authors also worked on a popular alternative aftermarket firmware for these radios ("the aftermarket firmware" in these docs), whose license forbids commercial use. ODR is a separate project, not a fork or a successor. None of the aftermarket firmware's code, or code derived from it, may enter this repository or its history. These rules say how the work is split so that holds.
+Some of RadioFoundry's authors also worked on a popular alternative aftermarket firmware for these radios ("the aftermarket firmware" in these docs), whose license forbids commercial use. RadioFoundry is a separate project, not a fork or a successor. None of the aftermarket firmware's code, or code derived from it, may enter this repository or its history. These rules say how the work is split so that holds.
 
 ## Roles
 
@@ -35,5 +35,5 @@ The authors' own work moves over; the aftermarket firmware's doesn't.
 
 - Every source file has an SPDX header, and `reuse lint` must pass. `docs/dev/ci.md` says what it still reports.
 - Every file is accounted for in the maintainers' provenance record, kept outside this repository. Each entry is `ours` (with the original commit), `clean` (with the spec section) or `third-party` (with the license, upstream and version).
-- Before each release, a similarity scan of this tree against the aftermarket firmware trees must have no unreviewed hits. Run it with `tools/similarity_scan.py REF...` or `ODR_SIMILARITY_REFS="REF..." tools/ci.sh` (docs/testing/README.md).
+- Before each release, a similarity scan of this tree against the aftermarket firmware trees must have no unreviewed hits. Run it with `tools/similarity_scan.py REF...` or `RFOUNDRY_SIMILARITY_REFS="REF..." tools/ci.sh` (docs/testing/README.md).
 - `tools/license_grep.sh` finds no `commercial`, `Micrium`, `GPL`, `G4KLX`, `Roger Clark`, `Kai Ludwig` or similar markers outside `docs/` and `LICENSES/`.

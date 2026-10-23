@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Side key assignment (keyassign.h, docs/spec/ui.md 3.1)
 #include "config.h"
 #if CONFIG_KEY_ASSIGN

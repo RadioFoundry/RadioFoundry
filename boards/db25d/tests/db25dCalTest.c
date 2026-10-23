@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D PRO factory calibration (boards/db25d/calibration_db25d.c) on synthetic "TUNE" pages: the choice between the
 // two copies, band halves, interpolation and its edges, the PA and delay limits, squelch segments
 // (docs/spec/hardware-db25d.md 6)

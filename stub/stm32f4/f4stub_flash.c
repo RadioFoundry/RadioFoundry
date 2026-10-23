@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // STM32F4 internal flash: sector erase and word program through the flash interface (reference manual, "Embedded
 // flash memory interface": unlock keys, PSIZE x32 for a 2.7-3.6 V supply, SER/SNB/STRT, PG, the SR error flags). The
 // stub runs from SRAM, so the CPU keeps going while the flash is busy; the wait loop services USB meanwhile.
@@ -45,7 +45,7 @@ static bool wait_idle(uint32_t ms, bool poll_usb)
 void f4flash_init(void)
 {
 	// Caches and prefetch off: the stub runs from SRAM, and a disabled data cache can't return a stale word after an
-	// erase or a program. The wait states ODR set stay (they match the clock it left running)
+	// erase or a program. The wait states RadioFoundry set stay (they match the clock it left running)
 	FLASH->ACR &= ~(FLASH_ACR_ICEN | FLASH_ACR_DCEN | FLASH_ACR_PRFTEN);
 	FLASH->ACR |= FLASH_ACR_ICRST | FLASH_ACR_DCRST;
 	FLASH->ACR &= ~(FLASH_ACR_ICRST | FLASH_ACR_DCRST);

@@ -22,7 +22,7 @@ again"), or restart the radio. The Tools row shows the current mode (serial or n
 Developers can also switch over the debug link:
 
 ```
-tools/odr_debug.py radio usb network
+tools/rfoundry_debug.py radio usb network
 ```
 
 The radio drops off USB for a moment and comes back as a network adapter (USB ID 1FC9:0096). Linux, macOS, Windows 10
@@ -58,7 +58,7 @@ The debug link, the MMDVM hotspot protocol and the CPS protocol stay reachable o
 address:
 
 ```
-tools/odr_debug.py --port udp:12.47.82.51 version
+tools/rfoundry_debug.py --port udp:12.47.82.51 version
 ```
 
 MMDVMHost connects the same way (`Protocol=udp`, `ModemAddress=<radio address>`, `ModemPort=3334`). qdmr finds radios
@@ -66,19 +66,19 @@ only by their serial USB ID, so program the radio in serial mode.
 
 ## Finding the radio by name
 
-The radio answers Multicast DNS (Bonjour, Avahi) on the network adapter. Its name is `odr-<DMR ID>.local`, for
-example `odr-3101234.local`. It advertises its services. A browser for Bonjour services lists it by your call sign,
+The radio answers Multicast DNS (Bonjour, Avahi) on the network adapter. Its name is `rfoundry-<DMR ID>.local`, for
+example `rfoundry-3101234.local`. It advertises its services. A browser for Bonjour services lists it by your call sign,
 the radio model and your DMR ID, for example "N0CALL DM-1701 (3101234)":
 
 ```
-ping odr-3101234.local
-dns-sd -B _odr-debug._udp            # macOS; avahi-browse -r _odr-debug._udp on Linux
-tools/odr_debug.py --port udp:odr-3101234.local version
+ping rfoundry-3101234.local
+dns-sd -B _rfoundry-debug._udp            # macOS; avahi-browse -r _rfoundry-debug._udp on Linux
+tools/rfoundry_debug.py --port udp:rfoundry-3101234.local version
 ```
 
 | Service | Port | What |
 |---|---|---|
-| `_odr-debug._udp` | 3334 | the debug link (and the other serial protocols) over UDP |
+| `_rfoundry-debug._udp` | 3334 | the debug link (and the other serial protocols) over UDP |
 | `_mmdvm._udp` | 3334 | the MMDVM modem, for MMDVMHost |
 | `_tftp._udp` | 69 | the codeplug over TFTP (below) |
 | `_snmp._udp` | 161 | the SNMP agent (below) |
@@ -125,7 +125,7 @@ curl "http://12.47.82.51/api/aprsis?server=off"   # stop
 ```
 
 The radio logs in with its APRS callsign and the passcode computed from it. Your beacons go to APRS-IS when **KISS on
-USB** and "to APRS-IS" are on (`tools/odr_debug.py aprs set to_is 1`).
+USB** and "to APRS-IS" are on (`tools/rfoundry_debug.py aprs set to_is 1`).
 
 ## Linking audio: AllStarLink and DVSwitch
 
@@ -149,9 +149,9 @@ Which radios can transmit FM this way is in the [Radio reference](23-radios.md);
 The radio runs a TFTP server at its address. Any TFTP client works:
 
 ```
-curl tftp://odr-3101234.local/codeplug.bin -o backup.bin       # read the codeplug
-curl -T edited.bin tftp://odr-3101234.local/codeplug.bin        # write it
-curl tftp://odr-3101234.local/info.txt                          # board, firmware, IDs, addresses
+curl tftp://rfoundry-3101234.local/codeplug.bin -o backup.bin       # read the codeplug
+curl -T edited.bin tftp://rfoundry-3101234.local/codeplug.bin        # write it
+curl tftp://rfoundry-3101234.local/info.txt                          # board, firmware, IDs, addresses
 ```
 
 `codeplug.bin` is the same 716,384-byte image `tools/cps_client.py read` makes. A file from either one can be
@@ -164,8 +164,8 @@ keys, as with the CPS, and re-reads the codeplug right after the write.
 The DMR ID database (the names shown for IDs that aren't contacts) has its own file:
 
 ```
-curl tftp://odr-3101234.local/iddb.bin -o iddb.bin             # read the ID database
-curl -T iddb.bin tftp://odr-3101234.local/iddb.bin              # write it
+curl tftp://rfoundry-3101234.local/iddb.bin -o iddb.bin             # read the ID database
+curl -T iddb.bin tftp://rfoundry-3101234.local/iddb.bin              # write it
 ```
 
 `iddb.bin` holds the database alone. The radio drops its old database as the new one starts arriving and shows names
@@ -187,14 +187,14 @@ SNMP out for flash room). Any SNMP manager works. The repository has a
 small one:
 
 ```
-tools/odr_snmp.py walk 12.47.82.51                 # everything the radio reports
-tools/odr_snmp.py get 12.47.82.51 odrBatteryVoltage.0 odrChannelName.0
-tools/odr_snmp.py traps                            # events as they happen (needs port 162: root on Linux)
+tools/rfoundry_snmp.py walk 12.47.82.51                 # everything the radio reports
+tools/rfoundry_snmp.py get 12.47.82.51 rfoundryBatteryVoltage.0 rfoundryChannelName.0
+tools/rfoundry_snmp.py traps                            # events as they happen (needs port 162: root on Linux)
 ```
 
 The radio reports its identity (DMR ID, radio name, model, firmware), battery, channel, frequencies, power, the DMR
 call in progress and the last one heard, message and data counters, ARS state and the USB network counters. The
-objects are described in `docs/spec/ODR-MIB.txt`. Load it into your manager to see names instead of numbers.
+objects are described in `docs/spec/RFOUNDRY-MIB.txt`. Load it into your manager to see names instead of numbers.
 
 While USB is a network adapter, the radio also sends events to your computer (port 162): power-up, calls starting
 and ending, text messages received, emergencies, ARS changes and low battery.
@@ -202,13 +202,13 @@ and ending, text messages received, emergencies, ARS changes and low battery.
 The read community is `public`. Changing settings needs a write community, which is off until you set one:
 
 ```
-tools/odr_debug.py snmp write MySecret             # over the serial port, before switching to network mode
-tools/odr_snmp.py -c MySecret set 12.47.82.51 sysName.0 s:N0CALL
-tools/odr_debug.py snmp status                     # the agent's settings and counters
+tools/rfoundry_debug.py snmp write MySecret             # over the serial port, before switching to network mode
+tools/rfoundry_snmp.py -c MySecret set 12.47.82.51 sysName.0 s:N0CALL
+tools/rfoundry_debug.py snmp status                     # the agent's settings and counters
 ```
 
 Other radios can query this radio over the air at its own 12.x.y.z address (read only unless you allow writes).
-Events over the air go only to a manager radio you name (`tools/odr_debug.py snmp set rf_manager <DMR ID>`). Apart
+Events over the air go only to a manager radio you name (`tools/rfoundry_debug.py snmp set rf_manager <DMR ID>`). Apart
 from emergencies, they go at most once a minute. Nothing is encrypted. SNMP community names travel as plain text.
 
 ## Network over the programming cable (PPP)
@@ -218,12 +218,12 @@ radio's image includes PPP when the radio has no USB and runs DMR. Other builds 
 been checked on the DB25-D PRO and the DM-1801 Pro. Run this on the computer as root. pppd comes with macOS and most Linux systems.
 
 ```
-sudo tools/odr_ppp.sh /dev/ttyUSB0                 # Linux
-sudo tools/odr_ppp.sh /dev/cu.usbserial-XXXX       # macOS
+sudo tools/rfoundry_ppp.sh /dev/ttyUSB0                 # Linux
+sudo tools/rfoundry_ppp.sh /dev/cu.usbserial-XXXX       # macOS
 ```
 
 The radio switches to PPP by itself when pppd starts. It gives the computer the same address as in USB network mode.
-The services above work the same, only slower (about 10 KB/s at 115200 baud). `sudo tools/odr_ppp.sh --stop` hangs
+The services above work the same, only slower (about 10 KB/s at 115200 baud). `sudo tools/rfoundry_ppp.sh --stop` hangs
 up, and the cable goes back to programming and the debug link. The details are in `docs/spec/ppp.md`.
 
 ## Control station for dispatch software
@@ -261,15 +261,15 @@ That saves one or two data blocks (60-120 ms on air) per packet. Radios that can
 compress those ports too:
 
 ```
-tools/odr_debug.py data ip-settings off        # always the full header
-tools/odr_debug.py data ip-settings all        # compress every UDP packet
+tools/rfoundry_debug.py data ip-settings off        # always the full header
+tools/rfoundry_debug.py data ip-settings all        # compress every UDP packet
 ```
 
 Packets to a radio can also go as confirmed data. The other radio acknowledges each packet, and the radio sends again
 what didn't arrive. By default it makes 4 tries in all. Name up to two destinations (DMR IDs) or UDP ports:
 
 ```
-tools/odr_debug.py data ip-settings auto rules id=3101234 port=161 tries=4
+tools/rfoundry_debug.py data ip-settings auto rules id=3101234 port=161 tries=4
 ```
 
 Talkgroup packets are never confirmed. A packet to a radio that doesn't answer is sent every try before it is dropped,

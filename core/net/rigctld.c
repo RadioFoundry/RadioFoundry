@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Hamlib's network rig control protocol on TCP 4532 (docs/spec/tcp-services.md 6), from the rigctld(1) / rigctl(1)
 // manual pages: one command per line, a one-letter short form or a backslash long name, answers as value lines for
 // "get" commands and "RPRT <n>" (0, or a negative Hamlib error number) for the rest. A leading '+' asks for the
@@ -306,7 +306,7 @@ static bool command(int c, char *line)
 		dl_text(&ot, ext ? "get_split_freq:\nTX Frequency: %u\n" : "%u\n", (unsigned)view->ch.tx_hz);
 	} else if (IS("_", "get_info")) {
 		get = true;
-		dl_text(&ot, ext ? "get_info:\nInfo: OpenDigitalRadio %s\n" : "OpenDigitalRadio %s\n", board.name);
+		dl_text(&ot, ext ? "get_info:\nInfo: RadioFoundry %s\n" : "RadioFoundry %s\n", board.name);
 	} else if (strcmp(cmd, "\\chk_vfo") == 0) {
 		get = true;
 		dl_text(&ot, ext ? "chk_vfo:\nCHKVFO: 0\n" : "0\n");

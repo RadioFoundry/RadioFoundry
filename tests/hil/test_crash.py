@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The crash log (docs/spec/crash-log.md): the view section, and on purpose crashes that must leave a record the next
 start shows. The crash tests restart the radio: opt-in with --allow-reboot (marker reboot)."""
 import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
 
 CRASH_KIND_FAULT, CRASH_KIND_ASSERT, CRASH_KIND_HANG = 1, 4, 5
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // netSvcTest's cases: each TCP service against the scripted peer, with fakes for the APRS engine and the radio core
 #include <stdlib.h>
 #include <string.h>
@@ -355,7 +355,7 @@ static void test_rigctl(void)
 	CHECK(strcmp(rig(&a, "V VFOA\n"), "RPRT 0\n") == 0);
 	CHECK(strcmp(rig(&a, "V VFOB\n"), "RPRT -1\n") == 0);
 	CHECK(strcmp(rig(&a, "s\n"), "0\nVFOA\n") == 0);
-	CHECK(strcmp(rig(&a, "\\get_info\n"), "OpenDigitalRadio fake\n") == 0);
+	CHECK(strcmp(rig(&a, "\\get_info\n"), "RadioFoundry fake\n") == 0);
 	CHECK(strcmp(rig(&a, "\\chk_vfo\n"), "0\n") == 0);
 	const char *ds = rig(&a, "\\dump_state\n");
 	CHECK(strncmp(ds, "0\n2\n2\n136000000.000000 174000000.000000 0x20 -1 -1", 49) == 0);
@@ -441,7 +441,7 @@ static void test_aprsis(void)
 	run_for(2000);
 	CHECK(srv.syns == 1 && srv.established);
 	srv.rx[srv.rxn] = 0;
-	CHECK(strcmp((char *)srv.rx, "user N0CALL-7 pass 13023 vers OpenDigitalRadio unknown filter m/50\r\n") == 0);
+	CHECK(strcmp((char *)srv.rx, "user N0CALL-7 pass 13023 vers RadioFoundry unknown filter m/50\r\n") == 0);
 	CHECK(!net_tnc_taken());
 	static const char hello[] = "# aprsc 2.1.14\r\n# logresp N0CALL-7 verified, server T2TEST\r\n";
 	peer_send(&srv, hello, sizeof(hello) - 1);
@@ -449,14 +449,14 @@ static void test_aprsis(void)
 
 	// The engine's lines for APRS-IS go to the server; other frames don't
 	peer_clear(&srv);
-	static const uint8_t g[] = { 0xC0, 0x06, 'G', 'N', '0', 'C', 'A', 'L', 'L', '-', '7', '>', 'A', 'P', 'Z', 'O', 'D',
-				     'R', ',', 'T', 'C', 'P', 'I', 'P', '*', ':', '>', 'h', 'i', 0xC0 };
+	static const uint8_t g[] = { 0xC0, 0x06, 'G', 'N', '0', 'C', 'A', 'L', 'L', '-', '7', '>', 'A', 'P', 'Z', 'R', 'D',
+				     'F', ',', 'T', 'C', 'P', 'I', 'P', '*', ':', '>', 'h', 'i', 0xC0 };
 	static const uint8_t data[] = { 0xC0, 0x00, 'x', 0xC0 };
 	ring_put(data, sizeof(data));
 	ring_put(g, sizeof(g));
 	pump();
 	srv.rx[srv.rxn] = 0;
-	CHECK(ring_n == 0 && strcmp((char *)srv.rx, "N0CALL-7>APZODR,TCPIP*:>hi\r\n") == 0);
+	CHECK(ring_n == 0 && strcmp((char *)srv.rx, "N0CALL-7>APZRDF,TCPIP*:>hi\r\n") == 0);
 
 	// The server's lines go to the engine (its iGate rules decide); comments don't
 	is_lines = 0;
@@ -498,7 +498,7 @@ static void test_aprsis(void)
 	run_for(5000);
 }
 
-// ---- mutated input to every service (fuzz.h; ODR_FUZZ_ITERS) ----
+// ---- mutated input to every service (fuzz.h; RFOUNDRY_FUZZ_ITERS) ----
 
 // KISS: frames with escapes at the ends, cut, doubled FENDs, over the decoder's buffer; HTTP: mutated requests, each
 // on its own connection, always answered with a status line and closed; rigctld: mutated command lines on one

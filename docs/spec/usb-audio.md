@@ -141,7 +141,7 @@ The rule: implement what existing software already speaks; add our own only wher
   software defaults to RTS; AIOC uses DTR=1 and RTS=0 after finding that CHIRP-style programmers toggle DTR) and a
   **Kenwood TS-480-style CAT subset** recognized beside the other protocols.
 - Over IP: **rigctld on the radio**. Built: port 4532 on the USB network link with a minimal TCP (`CONFIG_NET_RIGCTL`,
-  [tcp-services.md](tcp-services.md) 6), so the host bridge first planned here (`tools/odr_rig.py`) isn't needed.
+  [tcp-services.md](tcp-services.md) 6), so the host bridge first planned here (`tools/rfoundry_rig.py`) isn't needed.
 - In the sound-card-only personality: **CM108-compatible HID** report layout (PTT on GPIO 3 as an output report, COS
   as an input report bit), under our own VID/PID.
 
@@ -395,7 +395,7 @@ over USB.
 | USRP on the network address | `core/usbaudio/usrp_net.h`, `usrp_net.c`; `tools/usrp_client.py` (reference peer) | `tests/host/usrpNetTest.c`, `tests/hil/test_usrp.py` |
 | host audio PTT in the radio core | `radio_req_ptt_host()`, `radio_sm.c` (`host_audio`, its watchdog) | `tests/host/radioFeaturesTest.c` |
 | audio tap: FM transmit audio from the MCU | `hal/hal_audio_tap.h`; DM-1701 `audio_dm1701.c` (PWM on PC8), `radio_dm1701.c` (`dm1701_fm_tx_inject`) | HIL `test_usrp.py` |
-| the probe: registers, PCM levels, HR_C6000 RAM, FM flag watch | `core/debuglink/debuglink_audio_probe.c`, `boards/dm1701/audio_dm1701.c` and `radio_dm1701.c` (`CONFIG_AUDIO_PROBE` parts), `hrc6000_ram()`, `tools/odr_debug.py aprobe` | `tests/hil/test_audio_probe.py` |
+| the probe: registers, PCM levels, HR_C6000 RAM, FM flag watch | `core/debuglink/debuglink_audio_probe.c`, `boards/dm1701/audio_dm1701.c` and `radio_dm1701.c` (`CONFIG_AUDIO_PROBE` parts), `hrc6000_ram()`, `tools/rfoundry_debug.py aprobe` | `tests/hil/test_audio_probe.py` |
 
 Running the probe on a DM-1701: [hardware-dm1701.md](hardware-dm1701.md) 21.4.
 

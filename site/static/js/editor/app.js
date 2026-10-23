@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The Codeplug Editor page: a codeplug from a file or a radio, edited in tables and forms, saved to a file or
 // written back to the radio. Everything runs in the page; the codeplug never leaves it unless the user puts it in a
 // bug report (report.js). The working codeplug is kept in this browser (IndexedDB) so a reload doesn't lose edits.
 
 import { h, t, ROOT, button, notice, download, progressBar } from "../flasher/dom.js";
-import { SerialStream, serialSupported, ODR_USB } from "../flasher/link.js";
+import { SerialStream, serialSupported, RFOUNDRY_USB } from "../flasher/link.js";
 import { CodeplugImage } from "../codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
 import { LIMITS } from "../codeplug/records.js";
@@ -475,7 +475,7 @@ async function connect() {
 		const choice = await chooseLink();
 		if (!choice) return null;
 		cable = choice === "cable";
-		const port = await navigator.serial.requestPort(cable ? { filters: CABLES } : { filters: [ODR_USB] });
+		const port = await navigator.serial.requestPort(cable ? { filters: CABLES } : { filters: [RFOUNDRY_USB] });
 		diag.note("port chosen", { cable, ...port.getInfo?.() });
 		stream = await SerialStream.open(port);
 	}
@@ -524,7 +524,7 @@ async function fail(stage, e) {
 	if (msg) say(msg, "bad", { report: !diag.expected(e) });
 }
 
-// A radio fresh from its original firmware may still hold that firmware's data where ODR keeps its settings: it then
+// A radio fresh from its original firmware may still hold that firmware's data where RadioFoundry keeps its settings: it then
 // refuses every write (settings-store.md 5). Offer to prepare it; true when the radio can take the write
 async function ensureStorage(c) {
 	if (c.storage?.region === "ours") return true;

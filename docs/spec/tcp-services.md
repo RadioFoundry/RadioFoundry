@@ -134,7 +134,7 @@ command (clients started with `--vfo`) is skipped. A line longer than 63 charact
 | `l STRENGTH` | dB over S9, S9 = -93 dBm (IARU VHF / UHF); `l RFPOWER` 0.00-1.00 from the power level; other levels -11 |
 | `v`, `V VFOA` | `VFOA`; `V` takes VFOA, currVFO, VFO, Main |
 | `s`, `S 0`, `i` | no split (`0`, `VFOA`); `i` the transmit frequency |
-| `_` `\get_info` | `OpenDigitalRadio <radio>` |
+| `_` `\get_info` | `RadioFoundry <radio>` |
 | `\chk_vfo` | `0` |
 | `\get_powerstat` | `1` |
 | `\dump_state` | a minimal protocol 0 state: model 2, ITU region 2, the board's bands as receive ranges (FM, 0x20) and its transmit bands, FM tuning steps and filters, no RIT / XIT / preamp / attenuator, `STRENGTH` as the only level |
@@ -158,11 +158,11 @@ the iGate rules stay in the APRS engine ([aprs.md](aprs.md) 9.1).
 - Set over HTTP from the host only (a request from beyond the host gets 403): `GET /api/aprsis?server=a.b.c.d[:port]`
   (`off` clears it), `&range=<km>`; `GET /api/aprsis` alone answers the state as JSON (`state server range_km call
   connects logins unverified lines_out lines_in`).
-- Login: `user <CALL-SSID> pass <passcode> vers OpenDigitalRadio <version>[ filter m/<km>]`, the passcode computed
+- Login: `user <CALL-SSID> pass <passcode> vers RadioFoundry <version>[ filter m/<km>]`, the passcode computed
   from the callsign by the published 15-bit hash (`aprsis_passcode`, the same as `tools/aprs_gate.py`). Online once
   the server's `# logresp ... verified` line comes; an "unverified" answer drops the connection and waits 5 minutes.
 - Online, the TNC pump (section 3) sends it the engine's SetHardware 'G' lines with CR LF: our beacons, status and
-  messages as `CALL>APZODR,TCPIP*:...` when the APRS settings "KISS on USB" and "to APRS-IS" (`to_is`) are on, and on
+  messages as `CALL>APZRDF,TCPIP*:...` when the APRS settings "KISS on USB" and "to APRS-IS" (`to_is`) are on, and on
   receive builds the RF packets the iGate passes. Server lines that aren't comments go to the engine
   (`aprs_host_is_line`), whose IS -> RF rules decide (iGate builds; elsewhere they are dropped).
 - Reconnects 30 s after a failure, doubling up to 5 minutes; a server silent for 2 minutes (servers comment every

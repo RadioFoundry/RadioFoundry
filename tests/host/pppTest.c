@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // PPP on the serial host link (core/net/ppp.c) and its glue to the IP gateway (core/hostlink/hostlink_ppp.c), against a
 // scripted peer with its own table driven FCS: framing (escapes, the ACCM both ways, FCS good and bad, frames split
 // across reads, back-to-back flags, aborts), LCP (Configure-Ack / -Nak / -Reject both ways, Max-Failure, the magic

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's task: a request queue in front of the state machine (radio_sm.c), a status poll every
 // RADIO_POLL_MS, the DMR call stack every RADIO_TICK_MS, and a snapshot of the view that other tasks copy under a
 // mutex. It also implements the hotspot's radio operations (hotspot_radio_ops_t): they post requests and never wait,
@@ -36,7 +36,7 @@
 #endif
 #define RADIO_QUEUE_LEN		16
 
-static radio_sm_t sm ODR_CPU_RAM;	// owned by the radio task; CPU only
+static radio_sm_t sm RFOUNDRY_CPU_RAM;	// owned by the radio task; CPU only
 static radio_settings_t pending_settings;	// radio_set_settings -> the radio task, under view_lock
 static radio_settings_t shared_settings;	// the published copy, under view_lock
 static radio_view_t shared_view;	// the published copy, under view_lock

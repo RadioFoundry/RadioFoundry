@@ -56,7 +56,7 @@ comes as a banner:
 | "No answer from ...", with "Not delivered: send it again" | No confirmation came. The message isn't kept for a retry. Send it again from the actions |
 | "Sent to ..." | A message to a talkgroup has gone out. Talkgroup messages have no confirmation |
 
-With confirmed IP data turned off (`tools/odr_debug.py data ip-settings auto off`), ETSI messages to a person also go
+With confirmed IP data turned off (`tools/rfoundry_debug.py data ip-settings auto off`), ETSI messages to a person also go
 once, with "Sent to".
 
 Typing your own text isn't built yet. "Write..." is dimmed. Messages you send aren't stored in the radio.

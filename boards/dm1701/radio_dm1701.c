@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 radio: AT1846S (I2C3) + HR_C6000 (bit-banged config SPI, voice SPI2) + RF path GPIOs + APC DAC +
 // calibration. FM receive and transmit (docs/spec/hardware-dm1701.md 4-8, 12; docs/spec/modem-hrc6000.md 3, 8), and the
 // RF side of DMR (modem-hrc6000.md 3.1, 4.3; hardware-dm1701.md 5.3, 6): set_mode(DMR) puts both chips in DMR and starts

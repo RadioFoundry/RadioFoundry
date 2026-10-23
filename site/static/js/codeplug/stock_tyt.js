@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Stock TYT-family codeplugs (docs/spec/codeplug-stock-tyt.md): the MD-UV380 family (DM-1701, RT84, MD-UV380/390,
 // RT3S, MD-2017) and the MD-380 family, as they sit in the radio's SPI flash. Recognizes one, reads its records, and
 // fills the editing model (model.js) from it the way a qdmr import does (qdmr.js), with the same note codes.
@@ -23,15 +23,15 @@ export const STOCK = {
 
 const CH = 64, CONTACT = 36, LIST = 96, ZONE = 64, ZONE_EXT = 224;
 
-// ODR's settings ring and sector journal on these radios (settings-store.md 1): once ODR has claimed the area, stock
-// records there are gone, and ODR's own bytes must not read as records
-const ODR_AREA = [0x11000, 0x1B000];
+// RadioFoundry's settings ring and sector journal on these radios (settings-store.md 1): once RadioFoundry has claimed the area, stock
+// records there are gone, and RadioFoundry's own bytes must not read as records
+const RFOUNDRY_AREA = [0x11000, 0x1B000];
 const MAGICS = ["OSET", "OJNL", "OJN2"];
 
-export function odrClaimed(b) {
-	if (b.length < ODR_AREA[1]) return false;
+export function rfoundryClaimed(b) {
+	if (b.length < RFOUNDRY_AREA[1]) return false;
 	const at = (a) => String.fromCharCode(b[a], b[a + 1], b[a + 2], b[a + 3]);
-	for (let a = ODR_AREA[0]; a < 0x19000; a += 256) if (at(a) === "OSET") return true;
+	for (let a = RFOUNDRY_AREA[0]; a < 0x19000; a += 256) if (at(a) === "OSET") return true;
 	return MAGICS.includes(at(0x19000)) || MAGICS.includes(at(0x1A000));
 }
 export const RDT_MD380 = 262709, RDT_UV380 = 852533, RDT_HEADER = 549;
@@ -62,7 +62,7 @@ export function utf16(b, off, n) {
 	return { text, ok };
 }
 
-// The text of a valid name; "" for an erased or broken one (ODR's settings area overlaps the lists and zones, 3.2)
+// The text of a valid name; "" for an erased or broken one (RadioFoundry's settings area overlaps the lists and zones, 3.2)
 function okText(b, off, n) {
 	const t = utf16(b, off, n);
 	return t.ok ? t.text : "";
@@ -110,11 +110,11 @@ export function detectStock(bytes) {
 export function readStock(bytes, format) {
 	const b = stockBytes(bytes);
 	const L = STOCK[format];
-	const claimed = odrClaimed(b);
+	const claimed = rfoundryClaimed(b);
 	const rec = (base, size, i) => {
 		const a = base + i * size;
 		if (a + size > b.length) return null;
-		if (claimed && a < ODR_AREA[1] && a + size > ODR_AREA[0]) return null;
+		if (claimed && a < RFOUNDRY_AREA[1] && a + size > RFOUNDRY_AREA[0]) return null;
 		return b.subarray(a, a + size);
 	};
 	const indexes = (r, off, n) => {

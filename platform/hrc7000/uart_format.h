@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C7000 UARTs' divisor and 8N1 set-up, written so it survives a busy UART (docs/spec/gotchas.md 2.8): the UART
 // ignores a line control or divisor write while it is receiving or holds received characters. The host port is set
 // up at every boot, and after a reset the host may still be sending (a test run's next request): plain

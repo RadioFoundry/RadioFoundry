@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's commands (docs/spec/debuglink.md). Everything runs in the host link task, between the bytes of the
 // other protocols: each command is short (a reply of at most DL_REPLY_MAX bytes, no waiting on other tasks; radio
 // requests are queued, injected keys are timed by the input task).
@@ -26,8 +26,8 @@
 #include "settings/settings.h"
 #include "ui/gfx.h"
 
-#ifndef ODR_GIT
-#define ODR_GIT "unknown"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "unknown"
 #endif
 
 #define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
@@ -357,7 +357,7 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	out[0] = DL_ST_OK;
 	dl_text_init(&t, (char *)out + 1, cap - 1);
 	dl_text(&t, "proto=%u\nview=%u\n", DL_PROTO_VERSION, DL_VIEW_VERSION);
-	dl_text_kv_str(&t, "git", ODR_GIT);
+	dl_text_kv_str(&t, "git", RFOUNDRY_GIT);
 	dl_text_kv_str(&t, "board", board.name);
 	dl_text(&t, "%s", features);
 	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));
@@ -972,5 +972,5 @@ void debuglink_start(void)
 {
 	dl_parser_init(&parser);
 	hostlink_set_side_protocol(&side);
-	dlog("debuglink: up, %s %s", board.name, ODR_GIT);
+	dlog("debuglink: up, %s %s", board.name, RFOUNDRY_GIT);
 }

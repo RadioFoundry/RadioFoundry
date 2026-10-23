@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D PRO radio: two BK4819 on one bit-banged 3-wire bus, the superhet's RX paths and analog FM receive
 // (docs/spec/hardware-db25d.md 3.2, 4).
 //

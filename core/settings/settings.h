@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio's own settings, kept across power cycles (docs/spec/settings-store.md): where the radio was (zone,
 // channel, VFO), the VFO's settings and the user's preferences. Stored as versioned records appended to a ring of
 // flash sectors (board.flash->map settings area): a record is valid only once its commit word is programmed, so a
@@ -9,8 +9,8 @@
 //
 // Using it: s = settings_begin(); change fields; settings_end(now). No flash operation happens inside, so any task
 // may do this (the radio task included). Without a flash map everything works from RAM.
-#ifndef ODR_SETTINGS_H
-#define ODR_SETTINGS_H
+#ifndef RFOUNDRY_SETTINGS_H
+#define RFOUNDRY_SETTINGS_H
 
 #include <stdint.h>
 #include <stdbool.h>

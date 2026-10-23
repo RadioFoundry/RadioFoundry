@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // AX.25 UI frames (ax25.h). Written from AX.25 2.2 (TAPR, 1998): 3.12 addresses, 4.3.3.6 UI frames, 3.8 FCS
 #include <string.h>
 #include "aprs/ax25.h"

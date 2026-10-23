@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The input task: scans board.input every INPUT_SCAN_MS, runs the gesture engine, queues events for the UI.
 // PTT and MONITOR edges also go straight to the radio core so they work whatever the UI is doing.
 // Keys injected by the host (input_inject_*, for the debug link) are ORed into the scan here.

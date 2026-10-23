@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The mic gain setting (core/radio/mic_gain.c, docs/spec/radio-features.md 3.6): a step 0..10 goes to the board's
 // hal_radio_t.mic_gain as a dB offset with DMR's sample scaling left at unity, or, without the hook, to the sample
 // scaling alone

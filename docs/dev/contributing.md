@@ -39,7 +39,7 @@ names or dates.
 | `test` | tests only (host or HIL) | `test/sfr-dedup-cases` |
 | `docs` | documentation only | `docs/contributing-branches` |
 | `refactor` | no change in behavior | `refactor/ui-svc-storage` |
-| `tools` | host tools, CPS, scripts | `tools/odrflash-retry` |
+| `tools` | host tools, CPS, scripts | `tools/rfoundry-retry` |
 | `ci` | the CI workflows and `tools/ci.sh` | `ci/nightly-dm32` |
 
 The area is the subsystem, matching the commit subjects: `aprs`, `dmr`, `fm`, `sfr`, `ui`, `hotspot`, `net`, `cps`,
@@ -67,7 +67,7 @@ subject: `<Area>: <what changed>`, in the present tense, no trailing period.
 
 ## Clean room
 
-ODR is MIT licensed and must stay free of code it may not use. The rules are in [docs/CLEANROOM.md](../CLEANROOM.md).
+RadioFoundry is MIT licensed and must stay free of code it may not use. The rules are in [docs/CLEANROOM.md](../CLEANROOM.md).
 The short version:
 
 - Write code from the prose specs in `docs/spec/`, datasheets, public standards (ETSI TS 102 361, the MMDVM protocol)
@@ -80,7 +80,7 @@ The short version:
 - Test vectors come from standards, from your own captures, or from the stock codec's output on your own radio.
 
 The checks, all in `tools/ci.sh`: `tools/license_grep.sh` (markers of foreign code), `reuse lint` (when installed),
-and before a release a similarity scan against the reference trees (only when `ODR_SIMILARITY_REFS` is set; run by
+and before a release a similarity scan against the reference trees (only when `RFOUNDRY_SIMILARITY_REFS` is set; run by
 the project lead, never in public CI).
 
 ## Code
@@ -102,7 +102,7 @@ the project lead, never in public CI).
 - A UI change updates the gallery (`make -C tests/host ui-gallery`) and commits the PNGs it meant to change.
 - A parser of outside input gets a fuzz loop (`tests/host/fuzz.h`); run it under `SANITIZE=1` ([Testing](testing.md)).
 - A change that touches hardware gets a HIL test when it can be scripted ([Testing](testing.md)).
-- A HIL test skips with `odr_hil.skip(kind, reason)`, never `pytest.skip`. The kind says why (`not_built`, `no_hw`,
+- A HIL test skips with `rfoundry_hil.skip(kind, reason)`, never `pytest.skip`. The kind says why (`not_built`, `no_hw`,
   `state`, `opt_in`, `bench`, `other_board`; [tests/hil/README.md](../../tests/hil/README.md#skip-kinds)), and
   `tools/check_hil_skips.py` fails on a skip without one.
 

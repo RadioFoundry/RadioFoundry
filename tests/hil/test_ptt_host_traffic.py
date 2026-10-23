@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Host traffic on the debug link never makes a PTT press, radio only, never transmits.
 
 On radios whose PTT pin is also the programming cable's host-to-radio serial line, every 0 bit the host sends pulls
@@ -13,7 +13,7 @@ passes trivially, so it runs on every board.
 import random
 import time
 
-from odr_hil import skip
+from rfoundry_hil import skip
 
 POLL_S = 30.0               # the owner's first gate check was 30 s of polling (hardware-db25d.md); the PPP
                             # failure made about one press a minute

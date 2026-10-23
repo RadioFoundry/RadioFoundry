@@ -8,7 +8,7 @@ Switch the radio on with its power switch. On the handhelds this is the volume k
 click. The [Radio reference](23-radios.md) says where the switch is on each radio. The boot screen shows for about a
 second, then the radio opens the Home screen. Keys pressed during the boot screen are ignored.
 
-The boot screen shows the ODR logo and the two boot text lines from the codeplug. Along the bottom it shows the radio
+The boot screen shows the RadioFoundry logo and the two boot text lines from the codeplug. Along the bottom it shows the radio
 model and the firmware version. The boot text lines are 16 characters each, set with qdmr, for example your callsign
 and name.
 
@@ -19,8 +19,8 @@ clicks. See [Turning off](16-battery-and-power.md#turning-off).
 
 ## Channels on a new installation
 
-ODR reads the codeplug from the radio's SPI flash, in the layout qdmr writes. The codeplug holds the channels, zones,
-contacts and your DMR ID. When ODR finds no channels there, it uses six built-in FM simplex channels:
+RadioFoundry reads the codeplug from the radio's SPI flash, in the layout qdmr writes. The codeplug holds the channels, zones,
+contacts and your DMR ID. When RadioFoundry finds no channels there, it uses six built-in FM simplex channels:
 
 | Channel | Frequency | Bandwidth |
 |---|---|---|
@@ -34,7 +34,7 @@ contacts and your DMR ID. When ODR finds no channels there, it uses six built-in
 Check that these frequencies are legal for you before you transmit on them. **Settings > Advanced > Codeplug** shows
 which channels the radio uses: "built-in channels" or "from the CPS".
 
-A radio that ran the stock firmware has stock data in the SPI flash. ODR may read it as channels with unreadable
+A radio that ran the stock firmware has stock data in the SPI flash. RadioFoundry may read it as channels with unreadable
 names. In that case, write a codeplug right away.
 
 ## Programming the radio
@@ -48,7 +48,7 @@ DMR needs your DMR ID. Without one, the radio refuses to transmit on DMR channel
 
 ## Checks after installing
 
-1. **Settings > Advanced > About** shows "OpenDigitalRadio" with the version you flashed and the radio model. Below
+1. **Settings > Advanced > About** shows "RadioFoundry" with the version you flashed and the radio model. Below
    them it lists the authors and the licenses of everything in the firmware.
 2. On an FM channel, hold **Monitor** to open the squelch. You hear noise. This shows that the
    receiver and the audio path work.

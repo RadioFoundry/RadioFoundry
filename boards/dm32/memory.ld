@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* Baofeng DM-32UV, HR_C7000 (CK803S), application behind the Baofeng bootloader (docs/spec/hardware-dm32.md 2).
  *
  * Program flash (XIP, 1 MB at 0x03000000): bootloader 0x03000000..0x0300C000 (never written), the application from
  * 0x0300C000 (board.mk APP_BASE), the codec slot 0x030E8000..0x03100000 (docs/spec/codec-dm32.md "Recommended
  * hosting": the stock codec code and tables are merged there on the user's machine; never linked into).
  *
- * SRAM (288 KB at 0x10000): ODR's region from 0x10000, and at the top the codec window 0x43A00..0x58000 (83,456 B, the
+ * SRAM (288 KB at 0x10000): RadioFoundry's region from 0x10000, and at the top the codec window 0x43A00..0x58000 (83,456 B, the
  * 049 code). The modem SRAM window the codec's tables are copied to, 0x18000E48..0x18003E28, is reserved (046 puts its
  * tables lowest, the 049 NRF and fanti builds 8 bytes above 049; codec-dm32.md).
  *

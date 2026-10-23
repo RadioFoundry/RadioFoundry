@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND ISC
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // SPDX-FileCopyrightText: 2010 DSD Author (MOTOROLA_BP_KEYS, from DSD-FME include/bp.h, ISC license, see LICENSES/ISC.txt)
 /*
  * DMR voice privacy (static keystream "basic privacy" schemes)

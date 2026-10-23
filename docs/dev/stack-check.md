@@ -71,7 +71,7 @@ The stock AMBE+2 codec runs on the audio task's stack: 4046 bytes measured on th
 ([codec-md380.md](../spec/codec-md380.md)), so `stm32_codec_call` counts 4104 with the veneer. The HR_C7000 builds call
 the same library by address with 4096 bytes assumed: it isn't measured on C-SKY.
 
-A few C library paths need arguments ODR never passes and are cut with `lib` lines: newlib's `strstr` for needles of
+A few C library paths need arguments RadioFoundry never passes and are cut with `lib` lines: newlib's `strstr` for needles of
 32 characters or more, and the floating point conversions of `printf`. Check the comment in the table before adding a
 call that breaks the assumption (a long `strstr` needle, `%f`).
 
@@ -97,7 +97,7 @@ stack check db25d: every task fits, the least free: prvIdleTask 176 bytes
 
 ## Limits
 
-* Recursion is counted once and listed. ODR has no deep recursion; the cycles found are mutual calls through callbacks
+* Recursion is counted once and listed. RadioFoundry has no deep recursion; the cycles found are mutual calls through callbacks
   (the network stack's `n_*`, the audio mixer).
 * Interrupt handlers aren't checked: they run on the main (STM32) or interrupt (HR_C7000) stack, not a task's.
 * The code before the scheduler starts (`main`) runs on the main stack and isn't checked.

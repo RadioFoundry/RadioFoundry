@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A simulated HR_C7000 radio on its programming cable, for the tests and the flasher's simulated mode
 // (#sim=<board>-stock): the serial boot ROM's short window after power-on or a soft reset, the firmware it then starts
-// (stock, or ODR answering the debug link VERSION and STUB commands), and the stub's protocol over a model of the two
+// (stock, or RadioFoundry answering the debug link VERSION and STUB commands), and the stub's protocol over a model of the two
 // flash chips (erase sets a sector to 0xFF, programming only clears bits). The ROM side and the stub side follow
 // stub/stubtool.py's FakeRadio. Bytes reach the host no faster than a 115200 baud cable would carry them (times
 // `speed`).
@@ -11,7 +11,7 @@
 // through (usmart.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was
 // written.
 //
-// The stock firmware and codec here are random bytes shaped like the real ones: no vendor code is in ODR.
+// The stock firmware and codec here are random bytes shaped like the real ones: no vendor code is in RadioFoundry.
 
 import { concat, crc32, le32, sha256, sleep, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
@@ -25,7 +25,8 @@ const SECTOR = 4096, OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B;
 const sum8 = (b) => b.reduce((a, x) => (a + x) & 0xFF, 0);
 const be32 = (n) => new Uint8Array([(n >>> 24) & 0xFF, (n >>> 16) & 0xFF, (n >>> 8) & 0xFF, n & 0xFF]);
 const u32be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
-const ODR_MARK = new TextEncoder().encode("OpenDigitalRadio");
+const RFOUNDRY_MARK = new TextEncoder().encode("RadioFoundry");
+const LEGACY_MARK = new TextEncoder().encode("OpenDigitalRadio");
 
 // A stock console's build from the board's first stock version ("909E.DBB.EARSAB.018" -> "018"), or null
 const consoleBuild = (radio) => (radio?.flash.stock_console ? radio.flash.stock_versions[0]?.slice(-3) || null : null);
@@ -70,20 +71,20 @@ export async function c7000Simulation(cReal, boardId, seed = 7000, radio = null)
 		tables_head_crc: crc32(tables.subarray(0, 64)), stock_file: null });
 	// its codec map (docs/spec/codec-placement.md), as a real build has one
 	const id = `sim-${boardId}`;
-	c.codec_maps = { ...(c.codec_maps || {}), [id]: { format: "odr-codec-map/1", profile: id, board: boardId, isa: "csky",
+	c.codec_maps = { ...(c.codec_maps || {}), [id]: { format: "rfoundry-codec-map/1", profile: id, board: boardId, isa: "csky",
 		code: { flash: 0, len: code.length, run: real.run, sha256: await sha256(code) }, entries: {},
 		self_refs: [{ off: 0x40, value: real.run + 0x100 }], table_refs: [], objects: [], groups: [], outside_refs: [] } };
 	return { c, progmem, codec: { code, tables, codeAt, tabAt } };
 }
 
 export class FakeC7000 {
-	// firmware: "stock" | "odr" (with stub entry) | "odr-nostub"; speed: how many times faster than a real cable
+	// firmware: "stock" | "rfoundry" (with stub entry) | "rfoundry-nostub"; speed: how many times faster than a real cable
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
 		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null } = {}) {
 		this.usmart = usmart;			// a stock firmware build with the USMART console ("018")
 		this.ram = new Map();			// the console's view of RAM: words written since power-on
 		this.frames = [];			// every console frame received, as text
-		this.stubSpan = stubSpan;		// the RAM span ODR offers in STUB INFO (the DB25-D's DMR builds: 0x1D000, 0x12000)
+		this.stubSpan = stubSpan;		// the RAM span RadioFoundry offers in STUB INFO (the DB25-D's DMR builds: 0x1D000, 0x12000)
 		this.stubCfg = { board: 0, flags: 0 };	// what the universal stub was configured with (CONFIG, op 0x0D)
 		this.configs = [];
 		this.progmem = progmem;
@@ -102,7 +103,7 @@ export class FakeC7000 {
 		this.bootTime = bootTime;
 		// flip: chance per stub frame of a damaged byte; misplace: sector addresses whose record, once, carries the next
 		// sector's data (as a record left over from an earlier request would); silentAfterReset: after the stub's soft
-		// reset ODR runs but its host link stays silent until a power cycle, as on the real radios (dm32-bringup.md)
+		// reset RadioFoundry runs but its host link stays silent until a power cycle, as on the real radios (dm32-bringup.md)
 		this.faults = { flip: 0, misplace: [], silentAfterReset: false, ...faults };
 		this.rand = rng(11);
 		this.state = "off";		// off | rom | booting | firmware | stub
@@ -120,8 +121,8 @@ export class FakeC7000 {
 		const app = this.progmem.subarray(0xC000, 0xE8000);
 		let kind = "stock";
 		if (app.subarray(0, 64).every((b) => b === 0xFF)) kind = "empty";
-		else for (let i = 0; i + ODR_MARK.length < app.length; i++)
-			if (app[i] === 0x4F && ODR_MARK.every((b, k) => app[i + k] === b)) { kind = "odr"; break; }
+		else for (let i = 0; i + RFOUNDRY_MARK.length < app.length; i++)
+			if ([RFOUNDRY_MARK, LEGACY_MARK].some((m) => app[i] === m[0] && m.every((b, k) => app[i + k] === b))) { kind = "rfoundry"; break; }
 		return (this.fwKind = kind);
 	}
 
@@ -198,7 +199,7 @@ export class FakeC7000 {
 		this.inb = concat(this.inb, data);
 		for (;;) {
 			const used = this.state === "rom" || this.state === "romload" ? this.rom() : this.state === "stub" ? this.stub()
-				: this.state === "firmware" ? (this.usmart && this.firmware() === "stock" ? this.console() : this.odr()) : 0;
+				: this.state === "firmware" ? (this.usmart && this.firmware() === "stock" ? this.console() : this.rfoundry()) : 0;
 			if (!used) break;
 		}
 	}
@@ -234,7 +235,7 @@ export class FakeC7000 {
 		return 1;
 	}
 
-	odr() {
+	rfoundry() {
 		const fw = this.firmware();
 		const f = parseFrames(this.inb)[0];
 		if (!f) {
@@ -242,7 +243,7 @@ export class FakeC7000 {
 			return 0;
 		}
 		this.inb = this.inb.slice(f.end);
-		if (fw !== "odr") return 1;			// stock firmware doesn't speak the debug link
+		if (fw !== "rfoundry") return 1;			// stock firmware doesn't speak the debug link
 		const reply = (st, p = new Uint8Array(0)) => this.send(frame(f.cmd | 0x80, f.seq, concat(new Uint8Array([st]), p)));
 		if (f.cmd === 0x02) {
 			reply(0, new TextEncoder().encode(`proto=1\ngit=sim1234\nboard=${this.boardName}\nfeatures=FM,DMR\ncodec=${this.codecReport()}\n`));
@@ -264,7 +265,7 @@ export class FakeC7000 {
 				setTimeout(() => {
 					this.state = "stub";
 					this.led = "slow";
-					this.events.push("stub (from ODR)");
+					this.events.push("stub (from RadioFoundry)");
 				}, 100);
 			}
 		} else reply(3);

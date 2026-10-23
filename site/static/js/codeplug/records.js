@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The open-firmware codeplug's records (docs/spec/open-firmware-cps.md 7.2-7.3), decoded into plain objects and
 // encoded back. An encoder writes only the fields it owns onto the record as stored, so vendor bytes and flags no
 // field covers survive an edit. Addresses are image addresses (image.js). References between records (a channel's

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # MD-380 feature defaults (config/features.mk lists them all). 464 KB for code and read-only data: flash sectors 3-7;
 # the codec sectors 8-11 are never linked into (boards/md380/memory.ld, docs/spec/codec-placement.md).
 # 160x128 display. The case edge crowds the top row and the two left columns (seen on the radio, 2026-10-16);

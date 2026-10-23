@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # DM-1801 Pro: the AMBE+2 codec and how it is called
 
@@ -11,7 +11,7 @@ carves it from the radio's own flash image or an original update file, and no co
 a release.
 
 **Result.** The DM-1801 Pro's codec, its init routine and the wrappers that call it are the DM-32UV 049 build, with
-the data tables and the state blocks at different RAM addresses. ODR's DM-32UV hosting
+the data tables and the state blocks at different RAM addresses. RadioFoundry's DM-32UV hosting
 ([codec-dm32.md](codec-dm32.md), `platform/hrc7000/vocoder.c`) therefore interfaces with it the same way. The changes
 for this board are addresses. One thing in that interface was wrong: the encode flags word
 ([section 3](#3-how-the-codec-is-called) and [section 5](#5-cross-check-against-an-independent-build)).
@@ -113,14 +113,14 @@ tone detection, which acts on a steady tone or tone pair ([codec-md380.md](codec
 0x100, 0x200 and 0x800 are tested in the parameter stage; 0x800 only counts while E[0x138A] is not 0. Both patterns
 produce frames the decoder accepts.
 
-**What ODR's hosts do.** `platform/hrc7000/vocoder.c` (this radio and the DM-32UV) and `platform/stm32f4/hrc/vocoder.c`
+**What RadioFoundry's hosts do.** `platform/hrc7000/vocoder.c` (this radio and the DM-32UV) and `platform/stm32f4/hrc/vocoder.c`
 (the DM-1701 and MD-380) pass one word on every call, from `drivers/vocoder/ambe2_flags.h`: 0x800, plus
 0x40 for noise reduction, 0x1000 for tone frames and 0x2000 for AGC. The default is 0x1840, pattern B's value
 ([dmr-voice.md](dmr-voice.md) 6).
 
 Afterwards the wrapper XORs the bit buffer with a second buffer 0x90 bytes above it, then calls ECC (0x1893C) with
 r0 = r1 = the bit buffer, r2 = E[0x1738], r3 = the buffer minus 440 bytes. The XOR and the ECC step belong to the
-wrapper's own frame building (72 bits); ODR takes the 49 parameter bits from the encode call and builds the frame in
+wrapper's own frame building (72 bits); RadioFoundry takes the 49 parameter bits from the encode call and builds the frame in
 `core/dmr/ambe`.
 
 ### Decode
@@ -149,7 +149,7 @@ value with bit 2 or 3 set (4..0xF) makes the decoder repeat the previous frame, 
 0x4000 replaces the output with a steady noise at a fixed level (RMS about 1190); every other bit does nothing.
 `platform/hrc7000/vocoder.c` passes 0 and does its own error correction and concealment in `core/dmr/ambe`. That is right for a
 good frame, and 0 is also the status an error-free decode returns (see [codec-md380.md](codec-md380.md)). It gives the
-codec no damage information, so the repeat-previous-frame concealment (4 or 8) never runs and ODR conceals before the
+codec no damage information, so the repeat-previous-frame concealment (4 or 8) never runs and RadioFoundry conceals before the
 codec instead. Whether the two sound the same at the edge of coverage is a hardware question, not an interface error.
 
 ### Level setter
@@ -157,7 +157,7 @@ codec instead. Whether the two sound the same at the edge of coverage is a hardw
 `set(level, which)`. With which = 0: E[0x1736] = D[0x1166] = min(level, 4). With which != 0: E[0x1738] = D[0x1168] =
 min(level, 6). The wrapper calls it from four places and only with which = 1: level 0 twice and level 4 twice. So
 **E[0x1736] and D[0x1166] stay 0** (the host's use of the state's own value is right), and E[0x1738] / D[0x1168], the
-ECC parameter, is 0 or 4 by mode. ODR never calls ECC, so it doesn't matter unless a later version moves frame building
+ECC parameter, is 0 or 4 by mode. RadioFoundry never calls ECC, so it doesn't matter unless a later version moves frame building
 into the codec.
 
 ### Not part of the interface
@@ -165,14 +165,14 @@ into the codec.
 The wrapper's start-up also creates three RTOS semaphores (names in the data image at RAM 0x18000EA0, 0xEAC, 0xEB8) and
 stops with an error code 1, 2 or 3 if one fails; that is task start-up, not the codec.
 
-## 4. How ODR hosts it
+## 4. How RadioFoundry hosts it
 
 | Part | What it does |
 |---|---|
 | Slot tool | `tools/hrc7000_codec.py --board dm1801pro` takes a 1 MB program flash read (offset 0 = 0x03000000), recognizes it by the sha256 of the code window (`8f7641b6…`), checks the tables' sha256 (`10684c33…`) and carves the two windows of section 1 into the slot at 0x030E8000, in the DM-32UV slot format. `tools/codec_auto.py` runs it on `make` when the read is in `codecs/` |
-| Host | The shared `platform/hrc7000/vocoder.c`, the DM-32UV's. It takes its RAM windows from the linker (`__codec_run_lo/hi`, `__codec_tab_lo/hi`) and its profile prefix from `ODR_BOARD_ID` (the board's id), so it reports `codec=dm1801pro-049` |
-| Linker | `boards/dm1801pro/memory.ld`: code RAM 0x16CDC..0x2B2DC and table RAM 0x18000EF0..0x18003E68 are left free; ODR's own RAM starts at 0x2B2DC; the low-RAM state (`ODR_CPU_RAM_SECTION`) goes below 0x16CDC |
-| Flashing | `tools/odrflash` profile `dm1801pro-049`. Through update mode the slot is merged on every flash, as on the DM-32UV (the updater erases the whole application area). Through the stub (`stub/stubtool.py --write-app`) only the sectors the image covers are written, so an image without the slot keeps the one in the radio |
+| Host | The shared `platform/hrc7000/vocoder.c`, the DM-32UV's. It takes its RAM windows from the linker (`__codec_run_lo/hi`, `__codec_tab_lo/hi`) and its profile prefix from `RFOUNDRY_BOARD_ID` (the board's id), so it reports `codec=dm1801pro-049` |
+| Linker | `boards/dm1801pro/memory.ld`: code RAM 0x16CDC..0x2B2DC and table RAM 0x18000EF0..0x18003E68 are left free; RadioFoundry's own RAM starts at 0x2B2DC; the low-RAM state (`RFOUNDRY_CPU_RAM_SECTION`) goes below 0x16CDC |
+| Flashing | `tools/rfoundry` profile `dm1801pro-049`. Through update mode the slot is merged on every flash, as on the DM-32UV (the updater erases the whole application area). Through the stub (`stub/stubtool.py --write-app`) only the sectors the image covers are written, so an image without the slot keeps the one in the radio |
 
 Measured on the radio: encode about 12.3 ms per 20 ms frame at the top priority, decode about 2.4 ms, stack use about
 3.9 KB. RX and TX voice work on the bench (hardware-dm1801pro.md 5).

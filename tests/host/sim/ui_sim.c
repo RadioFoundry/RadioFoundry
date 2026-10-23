@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The UI host simulator (ui_sim.h). Everything core/ui needs from the firmware is simulated here: the board
 // descriptor, hal_millis, the radio core (radio_get_view / radio_req_*), the codeplug, the host link and the
 // services other packages own (ui_svc.h; the settings store is the weak one from ui_svc_stub.c).
@@ -221,7 +221,7 @@ void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int
 			// Two words run together. A mark of one glyph (the temporary dot) sits next to its value on purpose,
 			// and the wordmark is two colors of one word
 			bool mark = e - a == 1 || live[i].s[1] == 0;
-			bool wordmark = strcmp(live[i].s, "Open") == 0 && strcmp(s + a, "DigitalRadio") == 0;
+			bool wordmark = strcmp(live[i].s, "Radio") == 0 && strcmp(s + a, "Foundry") == 0;
 			if (!mark && !wordmark)
 				issue("no space between", s, x, y, w, h, live[i].s);
 		} else if (live[i].x0 < x1 && live[i].x1 > x0) {

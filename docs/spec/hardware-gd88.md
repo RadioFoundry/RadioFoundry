@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Radioddity GD-88 (Kydera DR-880UV) hardware
 
-Status: research, 2026-10-11, facts only. ODR has no GD-88 board and no GD-88 radio. This page records whether the
+Status: research, 2026-10-11, facts only. RadioFoundry has no GD-88 board and no GD-88 radio. This page records whether the
 GD-88 programs and updates over native USB or over a USB-serial cable. It also records what is known about the two
 SoCs and the update path. The survey entry is in [radios.md](radios.md); the HR_C7000 facts it builds
 on (UART registers, USB core, clock gates) are in [hardware-dm32.md](hardware-dm32.md).

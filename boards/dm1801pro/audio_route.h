@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro audio path pins PTB14 / PTB15 (hardware-dm1801pro.md 3.1). A table-free helper so the host test
 // (tests/dm1801proPinsTest.c) can check the levels every radio state gets.
 //

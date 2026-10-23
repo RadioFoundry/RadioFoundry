@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 ## Firmware build, one tree for every radio:
 ##
-##   make BOARD=<radio>         -> build/<radio>/odr_<radio>.{elf,bin,map}, plus odr_<radio>_codec.bin when the
+##   make BOARD=<radio>         -> build/<radio>/rfoundry_<radio>.{elf,bin,map}, plus rfoundry_<radio>_codec.bin when the
 ##                                 radio's stock firmware is in codecs/ (codecs/README.md)
 ##   make BOARD=<radio> size    -> section sizes and the space left before the codec
 ##   make test                  -> host tests (no BOARD needed)
@@ -13,15 +13,15 @@
 ## Every *.c in the listed directories is built, so adding a file needs no Makefile change.
 
 # The flashing tools' view of the board registry (tools/boards.py), regenerated when one of its sources changes. Every
-# build and the host tests depend on it, so a board.toml edit reaches odrflash without a separate step. Without a
-# Python 3.11 (tools/odr_python.sh) it stays as it is, with a note; tools/boards.py check fails on a stale copy
-REGISTRY_JSON := tools/odrflash/odrflash/registry.json
+# build and the host tests depend on it, so a board.toml edit reaches rfoundry without a separate step. Without a
+# Python 3.11 (tools/rfoundry_python.sh) it stays as it is, with a note; tools/boards.py check fails on a stale copy
+REGISTRY_JSON := tools/rfoundry/rfoundry/registry.json
 REGISTRY_SRC := $(wildcard boards/*/board.toml boards/*/board.mk boards/*/config.mk boards/*/*.ld boards/*/*.c \
 	boards/*/pins.h platform/*/platform.toml platform/*/platform.mk platform/*/config.mk) tools/boards.py
-ODR_PYTHON = $(shell tools/odr_python.sh 2>/dev/null)
+RFOUNDRY_PYTHON = $(shell tools/rfoundry_python.sh 2>/dev/null)
 $(REGISTRY_JSON): $(REGISTRY_SRC)
-	@py="$(ODR_PYTHON)"; if [ -n "$$py" ]; then "$$py" tools/boards.py json --for odrflash --out $@ && touch $@; \
-	else echo "note: $@ is older than the board registry; no Python 3.11 to regenerate it (tools/odr_python.sh)"; fi
+	@py="$(RFOUNDRY_PYTHON)"; if [ -n "$$py" ]; then "$$py" tools/boards.py json --for rfoundry --out $@ && touch $@; \
+	else echo "note: $@ is older than the board registry; no Python 3.11 to regenerate it (tools/rfoundry_python.sh)"; fi
 registry: $(REGISTRY_JSON)
 .PHONY: registry
 # the rule above is the first in the file: plain make still means all
@@ -56,18 +56,18 @@ include platform/$(PLATFORM)/platform.mk
 # Hardware build options: hardware versions one image can't serve (a radio sold with UHF and VHF boards). board.mk names
 # them in BUILD_OPTIONS and lists each one's values in <NAME>_VALUES, the default first; board.toml [[build_options]]
 # only adds the words people read (tools/boards.py check holds the two to the same values). Each value reaches C as
-# ODR_<NAME>_<VALUE> = 0 or 1 (ODR_BAND_VHF). A non-default value names the build directory and the image
-# (build/md380-vhf/odr_md380-vhf.bin), the names tools/release.py and odrflash look for
+# RFOUNDRY_<NAME>_<VALUE> = 0 or 1 (RFOUNDRY_BAND_VHF). A non-default value names the build directory and the image
+# (build/md380-vhf/rfoundry_md380-vhf.bin), the names tools/release.py and rfoundry look for
 upper = $(shell echo '$1' | tr a-z- A-Z_)
 $(foreach o,$(BUILD_OPTIONS),$(eval $(o) ?= $(firstword $($(o)_VALUES))))
 $(foreach o,$(BUILD_OPTIONS),$(if $(filter $($(o)),$($(o)_VALUES)),,$(error $(o)=$($(o)) is not a $(BOARD) build: \
 	the values are $($(o)_VALUES))))
 OPTION_SUFFIX := $(subst $() ,,$(foreach o,$(BUILD_OPTIONS),$(if $(filter-out $(firstword $($(o)_VALUES)),$($(o))),-$($(o)))))
-OPTION_DEFS := $(foreach o,$(BUILD_OPTIONS),$(foreach x,$($(o)_VALUES),-DODR_$(call upper,$(o)_$(x))=$(if $(filter $(x),$($(o))),1,0)))
+OPTION_DEFS := $(foreach o,$(BUILD_OPTIONS),$(foreach x,$($(o)_VALUES),-DRFOUNDRY_$(call upper,$(o)_$(x))=$(if $(filter $(x),$($(o))),1,0)))
 MCU_DEFS += $(OPTION_DEFS)
 
 BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))$(OPTION_SUFFIX)
-TARGET := $(BUILD)/odr_$(BOARD)$(OPTION_SUFFIX)
+TARGET := $(BUILD)/rfoundry_$(BOARD)$(OPTION_SUFFIX)
 
 CORE_DIRS := core/app core/radio core/ui core/input core/codeplug core/settings core/storage
 ifeq ($(CONFIG_DMR),y)
@@ -188,7 +188,7 @@ endif
 INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
 
 # Firmware version: the commit, with -dirty when tracked files differ from it or untracked sources sit in the built
-# directories (both end up in the image). Only the files that use ODR_GIT get it, through their own stamp, so a new
+# directories (both end up in the image). Only the files that use RFOUNDRY_GIT get it, through their own stamp, so a new
 # commit or an edit rebuilds those few objects, not everything.
 GITVERSION := $(shell git rev-parse --short=8 HEAD 2>/dev/null || echo unknown)
 ifneq ($(GITVERSION),unknown)
@@ -198,15 +198,15 @@ ifeq ($(GITDIRTY),)
 GITDIRTY := $(if $(shell git ls-files --others --exclude-standard -- $(APP_DIRS) config Makefile 2>/dev/null),-dirty)
 endif
 endif
-ODR_VERSION := $(GITVERSION)$(GITDIRTY)
+RFOUNDRY_VERSION := $(GITVERSION)$(GITDIRTY)
 # The same as the crash record's build number and dirty flag (core/crash/crash.c): the version's leading hex digits
 # (at most 8, then its end or "-") as a number, 0 when it isn't a commit. Worked out here, not in the image
-ODR_GIT_HEAD := $(firstword $(subst -, ,$(ODR_VERSION)))
-ODR_GIT_ID := $(if $(shell printf '%s' '$(ODR_GIT_HEAD)' | grep -Eqx '[0-9a-fA-F]{1,8}' && echo y),0x$(ODR_GIT_HEAD)u,0u)
-ODR_GIT_DIRTY := $(if $(findstring -dirty,$(ODR_VERSION)),1,0)
-# ODR_BOARD_ID: the board's id (boards/<id>), for platform code that names things after the board (the HR_C7000 codec
+RFOUNDRY_GIT_HEAD := $(firstword $(subst -, ,$(RFOUNDRY_VERSION)))
+RFOUNDRY_GIT_ID := $(if $(shell printf '%s' '$(RFOUNDRY_GIT_HEAD)' | grep -Eqx '[0-9a-fA-F]{1,8}' && echo y),0x$(RFOUNDRY_GIT_HEAD)u,0u)
+RFOUNDRY_GIT_DIRTY := $(if $(findstring -dirty,$(RFOUNDRY_VERSION)),1,0)
+# RFOUNDRY_BOARD_ID: the board's id (boards/<id>), for platform code that names things after the board (the HR_C7000 codec
 # host's profile ids, "<id>-<stock tag>"); core/ never uses it
-DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DODR_BOARD_ID=\"$(BOARD)\"
+DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DRFOUNDRY_BOARD_ID=\"$(BOARD)\"
 
 OPT ?= -Os
 # Every function's frame size and calls, next to each object (or each LTO partition, next to the .elf), for the stack
@@ -260,17 +260,17 @@ codec: $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin)
 # the version when it changes. Checked while the Makefile is read, before make looks at any object: the stale objects
 # are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
 # (and a file removed by a recipe would still be in make's cache)
-VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l ODR_GIT $(APP_SRC) 2>/dev/null))
+VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l RFOUNDRY_GIT $(APP_SRC) 2>/dev/null))
 ifeq ($(filter clean test print-config print-cc print-unsupported print-not-written print-required print-maximal-skip print-maximal-vars \
 	print-vars,$(MAKECMDGOALS)),)
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
 	rm -f $(OBJ); })
-$(shell echo '$(ODR_VERSION)' | cmp -s - $(BUILD)/version || { echo '$(ODR_VERSION)' > $(BUILD)/version; \
+$(shell echo '$(RFOUNDRY_VERSION)' | cmp -s - $(BUILD)/version || { echo '$(RFOUNDRY_VERSION)' > $(BUILD)/version; \
 	rm -f $(VERSION_OBJ); })
 # The About page's authors and third-party list (tools/gen_about.py), and the objects that include it when it changed
-ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l odr_about.h $(APP_SRC) 2>/dev/null))
-$(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/odr_about.h | grep -q changed \
+ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
+$(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
 # The HTTP status server's static files (core/net/http_assets/*, tools/gen_http_assets.py): a table in the gen
 # directory, gzip compressed with CONFIG_NET_HTTP_GZIP; http.o is rebuilt when it changed
@@ -282,7 +282,7 @@ endif
 endif
 $(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
 $(VERSION_OBJ): $(BUILD)/version
-$(VERSION_OBJ): CFLAGS_APP += -DODR_GIT=\"$(ODR_VERSION)\" -DODR_GIT_ID=$(ODR_GIT_ID) -DODR_GIT_DIRTY=$(ODR_GIT_DIRTY)
+$(VERSION_OBJ): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY)
 ifeq ($(LTO),1)
 $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto
 endif
@@ -292,7 +292,7 @@ $(TARGET).elf: $(OBJ) $(LDSCRIPT) $(wildcard platform/$(PLATFORM)/*.ld)
 	$(CC) $(LDFLAGS) -o $@ $(OBJ) -lm
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $(addprefix -j ,$(BIN_SECTIONS)) $< $@
-	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes, version $(ODR_VERSION)"
+	@echo "image $@: $$(wc -c < $@ | tr -d ' ') bytes, version $(RFOUNDRY_VERSION)"
 
 # A first stage in front of the application (boot/), for a board that sets BOOT_STAGE
 ifneq ($(BOOT_STAGE),)

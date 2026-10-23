@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // STM32F4 system services (hal_system.h): chip identity and option bytes, memory reads, reboot, and the software
 // entry to the MCU's ROM bootloader (docs/spec/hardware-dm1701.md "Software entry to a bootloader").
 //

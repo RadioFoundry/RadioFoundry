@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+#
+# One self-hosted runner loop per instance (README.md): rfoundry-ci-runner@1 reads runner-1.env, @2 runner-2.env, ...
+# Installed with CI_USER replaced by the account that owns ~/rfoundry-ci-runner (a member of the docker group):
+#   sed "s/CI_USER/$USER/g" rfoundry-ci-runner@.service | sudo tee /etc/systemd/system/rfoundry-ci-runner@.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now rfoundry-ci-runner@1 rfoundry-ci-runner@2
+[Unit]
+Description=RadioFoundry self-hosted CI runner %i
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+User=CI_USER
+Environment=RFOUNDRY_CI_ENV=/home/CI_USER/rfoundry-ci-runner/runner-%i.env
+ExecStart=/home/CI_USER/rfoundry-ci-runner/runner-loop.sh
+# Stop the loop first so it starts no new container, then stop the job's container with its SIGINT (the runner closes
+# its GitHub session; a running job fails). The container name is NAME in the env file: rfoundry-ci-%i
+ExecStop=/bin/sh -c 'kill $MAINPID; docker stop rfoundry-ci-%i > /dev/null 2>&1 || true'
+TimeoutStopSec=90
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

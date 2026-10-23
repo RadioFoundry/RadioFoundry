@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Air band AM receive (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3). AM is not stored in the codeplug: an FM
 // channel or the VFO tuned inside the aeronautical band is received in AM on a radio that can (CAP_AM_RX and
 // board.radio->rx_am), and it never transmits there. The helpers are pure (the board descriptor aside) so the radio

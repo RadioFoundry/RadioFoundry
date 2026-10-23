@@ -20,11 +20,11 @@ adapter (`pid_network`), with the descriptors of `hardware-dm1701.md` 16. Switch
 - Boot is serial unless the stored setting `usb_mode` is 1 (Settings > Connections > USB network at start, debug link
   radio op 27, view key `usb.boot_network`): then the personality is chosen before the USB stack starts, and the radio
   enumerates as the adapter straight away. At run time the switch is a request: debug link radio op 25
-  (`odr_debug.py radio usb network`) or Tools > USB network, carried out after its reply has gone out; it doesn't
+  (`rfoundry_debug.py radio usb network`) or Tools > USB network, carried out after its reply has gone out; it doesn't
   change the stored setting.
 - In network mode the serial protocols stay reachable over UDP: datagrams to the radio's own address, port 3334,
   carry the same byte stream as the serial port (debug link, MMDVM, CPS), and the replies go back to the address and
-  port that last sent there, in datagrams of at most 512 bytes. `odr_debug.py --port udp:<radio IP>` uses it, and so
+  port that last sent there, in datagrams of at most 512 bytes. `rfoundry_debug.py --port udp:<radio IP>` uses it, and so
   can MMDVMHost (`Protocol=udp`, `ModemAddress=<radio IP>`, `ModemPort=3334`). The MMDVM session's DTR rule does not
   apply (there is no DTR); the 20 s idle timeout does.
 - Windows 10 binds NCM through Microsoft OS 1.0 descriptors (string 0xEE "MSFT100", vendor code 0x47, extended compat
@@ -203,7 +203,7 @@ vendor control head.
 | `net_link_ip` | 0 = 192.168.10.1 | (the default only) | op 27 IP, `net.link_ip`, `net.link_in_force` |
 
 Radio op 27 (`debuglink.md` 3.8): flags u8, link IP u32 little endian; stored, and applied at once
-(`hostlink_settings_changed`). `odr_debug.py radio usb-settings [boot] [passthrough] [fixed[=IP]]`; no words: all off.
+(`hostlink_settings_changed`). `rfoundry_debug.py radio usb-settings [boot] [passthrough] [fixed[=IP]]`; no words: all off.
 
 ### 5.5 Not done
 

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 vocoder: the stock V02.06 AMBE+2 codec run in place from flash (docs/spec/codec-placement.md, "STM32 radios";
 // the codec: docs/spec/codec-dm1701.md, "Codec state init and calls (stock V02.06)").
 //
-// The merge on the user's machine (odrflash, tools/codec_extract.py, the web flasher) writes the codec's tables at their
+// The merge on the user's machine (rfoundry, tools/codec_extract.py, the web flasher) writes the codec's tables at their
 // stock address (0x080D19F0..0x080E3A72, the codec's own data), its code right after them at 0x080E3A74, and the
 // descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h). The code reaches its tables through absolute
 // addresses, which don't change. The merge rewrites what does: one pointer into the code and the 12 calls from the code
@@ -19,7 +19,7 @@
 #define CODEC_TAG		0x0206u		// the descriptor's tag for stock V02.06 CSV
 #define CODEC_FLASH_LO		0x080C0000u	// sectors 10 and 11: the flash boards/dm1701/memory.ld leaves to the codec
 
-// The V02.06 CSV codec as the merge places it (tools/odrflash/odrflash/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of
+// The V02.06 CSV codec as the merge places it (tools/rfoundry/rfoundry/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of
 // the code and tables after the rewrites. The descriptor must carry exactly these
 #define CODEC_CODE		0x080E3A74u
 #define CODEC_CODE_LEN		0x1021Cu
@@ -30,8 +30,8 @@
 
 static const codec_desc_window_t tables[] = { { CODEC_TABLES, CODEC_TABLES_LEN, CODEC_TABLES_CRC } };
 
-// The id tools/odrflash and the release manifests use for this codec: V02.06 CSV placed as above (the descriptor and
-// both CRCs matched). A build from before the move reports "dm1701-v0206-csv", which tells odrflash that the codec
+// The id tools/rfoundry and the release manifests use for this codec: V02.06 CSV placed as above (the descriptor and
+// both CRCs matched). A build from before the move reports "dm1701-v0206-csv", which tells rfoundry that the codec
 // isn't where this layout keeps it
 static const stm32_codec_profile_t v0206 = {
 	.tag = CODEC_TAG, .id = "dm1701-v0206-csv-s11", .flash_lo = CODEC_FLASH_LO,

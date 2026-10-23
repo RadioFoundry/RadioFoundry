@@ -41,11 +41,11 @@ reference](23-radios.md#key-roles) says which radios have one.
 Developers can also start and cancel it over the debug link:
 
 ```
-tools/odr_debug.py data emergency start
-tools/odr_debug.py data emergency cancel
+tools/rfoundry_debug.py data emergency start
+tools/rfoundry_debug.py data emergency cancel
 ```
 
 The mode (alarm only, alarm then call, call only), the target, the number of alarms and the hot mic time are set the
-same way (`tools/odr_debug.py data em-settings`). See [docs/spec/dmr-emergency.md](../spec/dmr-emergency.md).
+same way (`tools/rfoundry_debug.py data em-settings`). See [docs/spec/dmr-emergency.md](../spec/dmr-emergency.md).
 
 An emergency can't start on an FM channel, the VFO, a receive-only channel, in hotspot mode, or without a DMR ID.

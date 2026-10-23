@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR packet data (ETSI TS 102 361-1 clause 8 / 9)
  */
 
-#ifndef ODR_DMRDATA_H
-#define ODR_DMRDATA_H
+#ifndef RFOUNDRY_DMRDATA_H
+#define RFOUNDRY_DMRDATA_H
 
 #include <stdbool.h>
 #include <stdint.h>
 #include "config.h"
 
-// Big buffers only the CPU touches: in the board's CPU-only RAM where it has one (config.h ODR_CPU_RAM)
-#define DMR_DATA_BUFFER ODR_CPU_RAM
+// Big buffers only the CPU touches: in the board's CPU-only RAM where it has one (config.h RFOUNDRY_CPU_RAM)
+#define DMR_DATA_BUFFER RFOUNDRY_CPU_RAM
 
 // ETSI TS 102 361-1 data types (same values as the hotspot's DT_xxx)
 #ifndef DT_CSBK
@@ -235,7 +235,7 @@ typedef struct
 // format (80 bits: C, N/S, E/W, Q, speed in knots, latitude and longitude in degrees and minutes, UTC to ten
 // seconds), its CRC-CCITT unmasked, after the preamble CSBKs (none straight after a call of ours: receivers are in sync)
 #define DMR_UDT_FORMAT_NMEA				0x05
-#define DMR_UDT_OPCODE					0x1A	// as odr_sdrbench's builder (C_UDTHU)
+#define DMR_UDT_OPCODE					0x1A	// as rfoundry_sdrbench's builder (C_UDTHU)
 int dmrDataBuildUDTLocation(bool group, uint32_t dst, uint32_t src, const dmrDataLocation_t *location, int preambles,
 							dmrBurst_t *out, int maxBursts);
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Side key assignment (docs/spec/ui.md 3.1): what the board's reassignable keys (board.side_keys) do on a press and
 // on a long press, kept in the open-firmware codeplug's ten quick-key slots (open-firmware-cps.md 7.2, EEPROM
 // 0x7524). Slot 0 holds KEYASSIGN_MARKER; without it the slots are another firmware's and the keys keep the board's

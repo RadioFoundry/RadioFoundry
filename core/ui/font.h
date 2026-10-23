@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Fixed-cell fonts: ASCII 0x20..0x7E plus a few extra glyphs reached through the byte codes below. Glyphs are 1 bit a
 // pixel (ink or not) or 2 (anti-aliased: coverage 0..3, blended with what is under them on color panels)
 #ifndef UI_FONT_H

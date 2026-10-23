@@ -40,7 +40,7 @@ multiple of 1024 long). That is exactly the old loader's donor rule for V26.45 (
 
 Key: SHA-256 `c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae`, first bytes A2 FA BB 4B. The plain
 column vote (most common cipher byte per key column) gives it on all eight files without any refinement; this is what
-`odrflash/stockfw.derive_key` does first. No key file is needed.
+`rfoundry/stockfw.derive_key` does first. No key file is needed.
 
 ## Same codec, eight builds
 
@@ -79,7 +79,7 @@ from the decoder set's only in the BL target; the stock wrapper calls it with E)
 
 State: D 0x7EC, E 0x16E0, FEC 0x44 each (guard pages: 0x7E8, 0x16DC and 0x40 fault in decoder init, encoder init and
 FEC init); stack 3822 bytes peak; no fixed RAM address; no FPU instruction executed. Identical to the DM-1701.
-**This is ODR's DM-1701 vocoder call interface unchanged** (`platform/stm32f4/codec_call.c` and the DM-1701 / MD-380
+**This is RadioFoundry's DM-1701 vocoder call interface unchanged** (`platform/stm32f4/codec_call.c` and the DM-1701 / MD-380
 glue): a board only needs the code base, the FEC decode offset and the window table.
 
 ## Codec windows
@@ -156,7 +156,7 @@ the table above, and V26.45 can be added when a copy turns up (its windows: the 
 3. Decrypt each window: file offset = A - 0x0800C000 + 0x59900, key index (A - 0x0800C000) mod 1024. Check each
    window's SHA-256 and the code's first word.
 4. Write them unmodified at their stock addresses after the application image (0xFF between). On the user's machine
-   only (`make`, `tools/codec_extract.py` or odrflash), never in a release.
+   only (`make`, `tools/codec_extract.py` or rfoundry), never in a release.
 
 ## Verification
 
@@ -176,7 +176,7 @@ windows is read. Scripts and notes: kept outside the repository.
 ## Open items
 
 * V26.45 itself (V5 boards) is still not on hand; not needed for the codec.
-* ODR side: a profile per supported file in `stockfw.PROFILES` (with the FEC decode offset, which the DM-1701 profile
+* RadioFoundry side: a profile per supported file in `stockfw.PROFILES` (with the FEC decode offset, which the DM-1701 profile
   does not carry because it is fixed there), `boards.py`, the linker script end and the vocoder glue.
 
 ## Only a radio can check

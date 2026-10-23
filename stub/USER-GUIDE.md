@@ -1,8 +1,8 @@
 # Flash tool user guide (`stubtool.py`)
 
 For the DM-32UV, the DM-1801 Pro and the DB25-D. The tool backs up and checks the radio's two memory chips over the programming
-cable and installs ODR builds. It needs only Python 3 and `pyserial` (`pip install pyserial`). Installing the stock or a
-first ODR build still uses `tools/serial_loader.py`. Items marked **[confirm]** are not checked on every radio yet.
+cable and installs RadioFoundry builds. It needs only Python 3 and `pyserial` (`pip install pyserial`). Installing the stock or a
+first RadioFoundry build still uses `tools/serial_loader.py`. Items marked **[confirm]** are not checked on every radio yet.
 
 ## Before you start
 
@@ -35,31 +35,31 @@ first ODR build still uses `tools/serial_loader.py`. Items marked **[confirm]** 
 
 To read only part of a memory, add `--progmem-range START:END` or `--q128-range START:END` (byte addresses).
 
-## Back up your radio (radio running ODR firmware)
+## Back up your radio (radio running RadioFoundry firmware)
 
-If the radio runs an ODR build with the loader option, you do not need to switch it off.
+If the radio runs a RadioFoundry build with the loader option, you do not need to switch it off.
 
 1. Leave the radio **on** at its normal screen, connected by the cable.
-2. Run the same command and add `--odr-enter`:
+2. Run the same command and add `--rfoundry-enter`:
 
    ```
-   python3 stubtool.py PORT --odr-enter --progmem progmem.bin --q128 q128.bin
+   python3 stubtool.py PORT --rfoundry-enter --progmem progmem.bin --q128 q128.bin
    ```
 
 3. The screen shows "PC Loader Connected" and then stops responding to the keys. This is expected. The LED blinks
    orange as above.
 4. When it is done, restart the radio with the next section.
 
-## Install an ODR build without entering the bootloader
+## Install a RadioFoundry build without entering the bootloader
 
-For a radio that already runs an ODR build with the loader option (`CONFIG_STUB_ENTRY=y`). No key presses, no
+For a radio that already runs a RadioFoundry build with the loader option (`CONFIG_STUB_ENTRY=y`). No key presses, no
 switching off.
 
 1. Leave the radio **on** at its normal screen, connected by the cable.
-2. Run (`odr_dm1801pro.bin` is the build you want to install):
+2. Run (`rfoundry_dm1801pro.bin` is the build you want to install):
 
    ```
-   python3 stubtool.py PORT --odr-enter --write-app odr_dm1801pro.bin
+   python3 stubtool.py PORT --rfoundry-enter --write-app rfoundry_dm1801pro.bin
    ```
 
 3. The screen shows "PC Loader Connected". The tool compares the new build with what is in the radio, writes only the
@@ -71,23 +71,23 @@ switching off.
    python3 stubtool.py PORT --attach --boot reset
    ```
 
-`odrflash flash odr_dm1801pro.bin --board dm1801pro --port PORT` does steps 2 to 4 in one run, and checks the radio
-afterwards ([tools/odrflash/README.md](../tools/odrflash/README.md#the-dm-1801-pro)).
+`rfoundry flash rfoundry_dm1801pro.bin --board dm1801pro --port PORT` does steps 2 to 4 in one run, and checks the radio
+afterwards ([tools/rfoundry/README.md](../tools/rfoundry/README.md#the-dm-1801-pro)).
 
-**DB25-D:** the same, with the install image (`odr_db25d_install.bin`) and the script `db25d_update.sh IMAGE PORT`,
+**DB25-D:** the same, with the install image (`rfoundry_db25d_install.bin`) and the script `db25d_update.sh IMAGE PORT`,
 which also restarts the radio and checks that it answers. The tool picks the loader that matches the running build by
 itself (a build with DMR keeps it in a different place than one without), so the same command installs a DMR build over
-a build without DMR, one DMR build over another, and a build without DMR over a DMR build. Use `--odr-stub FILE` only
+a build without DMR, one DMR build over another, and a build without DMR over a DMR build. Use `--rfoundry-stub FILE` only
 for a stub built elsewhere; the tool refuses one that does not match the running build, before the radio is touched.
 `--legacy-stub` uses the loaders of earlier tool versions, if the current one ever gives trouble.
 
-The DB25-D also has a 256 MB NAND chip (recordings, and ODR's own area at 0xF000000). Read part of it with
+The DB25-D also has a 256 MB NAND chip (recordings, and RadioFoundry's own area at 0xF000000). Read part of it with
 `--nand nand.bin --nand-range START:END` and compare with `--verify-nand nand.bin`. The NAND is only read, never written.
 
 The radio's bootloader area is never written, so the usual update mode (hold the keys while switching on) always still
 works. Do not unplug the cable or remove the battery while it writes. If it is interrupted, run the same command again
 once the radio is back in loader mode, or use update mode and `tools/serial_loader.py`. A build for the **DM-1801 Pro** was
-tested this way **[confirm on the DM-32UV, which also keeps codec data in the program flash]**. Use a raw ODR `.bin`
+tested this way **[confirm on the DM-32UV, which also keeps codec data in the program flash]**. Use a raw RadioFoundry `.bin`
 (linked for 0x0300C000), not a stock firmware file.
 
 ## Check a backup (quick)
@@ -133,10 +133,10 @@ failed on long reads, so leave it off unless a normal run is too slow and you ha
 - **A message about retries**: the tool checks every block and asks again when a block arrives damaged. A few retries are
   normal. If it gives up, switch the radio off and on and run it again.
 - **"flash does not answer"**: the radio is not in loader mode, or the cable is wrong. Switch off and on and try again.
-- **ODR entry says it "refused to enter this stub" because of the watchdog**: the tool or web page carries a loader
+- **RadioFoundry entry says it "refused to enter this stub" because of the watchdog**: the tool or web page carries a loader
   older than the radio's firmware. Nothing was written and the radio keeps running. Update the tool, or reload the web
   page, and run it again. The radio's watchdog never resets it during a backup or an install unless the loader itself
   hangs.
-- **ODR entry says "no answer from ODR's debug link"**: the radio is not running an ODR build with the loader option, or
+- **RadioFoundry entry says "no answer from RadioFoundry's debug link"**: the radio is not running a RadioFoundry build with the loader option, or
   the cable is on a different port. Use the switched-off method above instead.
 - **The radio does not start after a backup**: remove and refit the battery, then switch it on.

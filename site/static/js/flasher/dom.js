@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flasher page's DOM helpers and strings, shared by app.js and the views beside it (c7000ui.js).
 
 import { note } from "../diag.js";

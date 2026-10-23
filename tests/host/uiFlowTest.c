@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The automated UI checks of docs/ux/usability-tests.md 2, in the host simulator:
 // - press budgets: each task flow of docs/ux/task-flows.md as a script on the reference key maps, at most its budget
 //   (impossible on a key map that should have it = failure);

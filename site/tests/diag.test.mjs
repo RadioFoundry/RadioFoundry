@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The web tools' session log and bug report (static/js/diag.js), and the wire trace a codeplug write leaves in it.
 // Run with site/tests/run.sh.
 
@@ -37,7 +37,7 @@ test("an error is recorded once, with its stage, code, params and cause", () => 
 	assert.match(rec.stack, /diag\.test\.mjs/);
 	assert.equal(rec.expected, false);
 	assert.equal(r.description, "it stopped");
-	assert.equal(r.format, "odr-bug-report/1");
+	assert.equal(r.format, "rfoundry-bug-report/1");
 	assert.ok(r.log.some((l) => l.kind === "error" && l.text.startsWith("write codeplug")));
 });
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Bug reports for the web tools. Every failure message offers "Report a Problem": a zip with the session log
 // (diag.js), the browser's details and, if the user ticks it, their codeplug, to download and email. When the site
 // is built with an error reporting address (site.json "reports"), errors are also sent automatically without the
@@ -51,7 +51,7 @@ function scrubEvent(ev) {
 	if (ev.message) ev.message = s(ev.message);
 	for (const v of ev.exception?.values || []) v.value = s(v.value);
 	if (ev.request?.url) ev.request.url = ev.request.url.split("?")[0];
-	if (ev.contexts?.odr) ev.contexts.odr = JSON.parse(diag.scrub(JSON.stringify(ev.contexts.odr)));
+	if (ev.contexts?.rfoundry) ev.contexts.rfoundry = JSON.parse(diag.scrub(JSON.stringify(ev.contexts.rfoundry)));
 	ev.user = undefined;
 	return ev;
 }
@@ -61,7 +61,7 @@ async function startSentry(dsn, tool) {
 	const S = globalThis.Sentry;
 	S.init({
 		dsn,
-		release: site.git ? `odr-site@${site.git}` : undefined,
+		release: site.git ? `rfoundry-site@${site.git}` : undefined,
 		environment: location.hostname,
 		sendDefaultPii: false,
 		defaultIntegrations: false,		// no console, click or fetch breadcrumbs: only what diag.error hands over
@@ -76,7 +76,7 @@ async function startSentry(dsn, tool) {
 		const err = e instanceof Error ? e : new Error(rec.message);
 		sentry.captureException(err, {
 			tags: { stage: rec.stage, ...(rec.code ? { code: String(rec.code) } : {}) },
-			contexts: { odr: { ...diag.context(), ...(rec.params ? { params: rec.params } : {}) } },
+			contexts: { rfoundry: { ...diag.context(), ...(rec.params ? { params: rec.params } : {}) } },
 		});
 	});
 	diag.note("error reporting on");
@@ -119,7 +119,7 @@ export function reportDialog() {
 	const d = h("dialog", { class: "confirm report-dialog", "aria-labelledby": "report-title" });
 	const save = button(t("report.download"), async () => {
 		const { files } = await bundle(text.value, picked());
-		download(`odr-bug-report-${diag.report().tool || "web"}-${stamp()}.zip`, await zip(files), "application/zip");
+		download(`rfoundry-bug-report-${diag.report().tool || "web"}-${stamp()}.zip`, await zip(files), "application/zip");
 		result.replaceChildren(h("p", { class: "notice ok" }, t("report.downloaded")));
 	}, { primary: !sentry });
 	const send = sentry ? button(t("report.send"), async () => {
@@ -129,7 +129,7 @@ export function reportDialog() {
 			const id = sentry.withScope((scope) => {
 				for (const f of files) scope.addAttachment({ filename: f.name, data: f.data });
 				scope.setTag("user_report", "yes");
-				scope.setContext("odr", rep.context);
+				scope.setContext("rfoundry", rep.context);
 				const last = rep.errors.at(-1);
 				return sentry.captureMessage(`Bug report: ${(text.value || last?.message || "no description").slice(0, 120)}`, "error");
 			});

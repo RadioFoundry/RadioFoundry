@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Frame buffer drawing: primitives, text, icons, and a flush that sends only the rows whose content changed
 #include <string.h>
 #include "gfx.h"

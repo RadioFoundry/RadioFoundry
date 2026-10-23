@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The RDA5807M as hal_bcast_t (rda5807m_hal.h)
 #include "rda5807m_hal.h"
 

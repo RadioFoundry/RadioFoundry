@@ -76,7 +76,7 @@ make BOARD=dm1701 VARIANT=commercial     # build/dm1701-commercial/
 Each variant file starts with `## title:` and `## summary:` lines, and the comment above each switch says why it is
 left out; the site shows both. The lists are a draft for the project lead to settle.
 
-The firmware version (`ODR_GIT`) is the commit plus `-dirty` when the tree differs from it (tracked changes, or
+The firmware version (`RFOUNDRY_GIT`) is the commit plus `-dirty` when the tree differs from it (tracked changes, or
 untracked sources in the built directories); only the few files that use it are rebuilt when it changes.
 
 ## Switches
@@ -118,11 +118,11 @@ below are for the DM-1701.
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib rigctld on port 4532: frequency, mode, PTT (from the host only, rate limited), S meter for loggers and SDR programs (`docs/spec/tcp-services.md` 6). About 0.8 KB RAM |
 | `CONFIG_NET_USRP` | = DMR_IP_GATEWAY | USRP voice over UDP on port 34001: the receiver's audio to AllStarLink / DVSwitch / a bridge with the squelch as keyup, the peer's keyup frames transmitted (FM through the board's audio tap, DMR through the encoder; `docs/spec/usb-audio.md` 9.1). About 5.6 KB RAM |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client out through the host (NAT on the host): our beacons and the iGate's lines, off until a server address is set (`docs/spec/tcp-services.md` 7). About 0.2 KB RAM |
-| `CONFIG_MDNS` | = DMR_IP_GATEWAY | mDNS / DNS-SD responder on the USB network link: the radio answers for `odr-<DMR ID>.local` and advertises its debug link, MMDVM modem and TFTP server (`docs/spec/mdns.md`). About 0.4 KB RAM on the DM-1701 |
+| `CONFIG_MDNS` | = DMR_IP_GATEWAY | mDNS / DNS-SD responder on the USB network link: the radio answers for `rfoundry-<DMR ID>.local` and advertises its debug link, MMDVM modem and TFTP server (`docs/spec/mdns.md`). About 0.4 KB RAM on the DM-1701 |
 | `CONFIG_TFTP` | = DMR_IP_GATEWAY | TFTP server on the USB network link: `codeplug.bin` read and written (staged in `hal_flash_map_t.staging_*`, checked, then committed through the journal), `info.txt` (`docs/spec/tftp.md`). About 0.1 KB RAM on the DM-1701 |
 | `CONFIG_TFTP_IDDB` | = TFTP | the DMR ID database over TFTP: `iddb.bin` read and written in place (header erased first, programmed last), and the database part of a combined `codeplug.bin` (`docs/spec/tftp.md` 5). About 2.2 KB of flash |
 | `CONFIG_DMR_CONTROL_STATION` | = DMR_IP_GATEWAY | control station mode for PC dispatch software: passthrough (the PC is the endpoint of the radio's own IP data while the link is up; the link layer stays on the radio) and the fixed link pair 192.168.10.1 / .2 instead of the address by DMR ID (`docs/spec/usb-network.md` 5). The power-on network setting belongs to `CONFIG_USB_NETWORK` |
-| `CONFIG_SNMP` | = DMR_IP_GATEWAY | the SNMPv2c agent on UDP 161 over the USB network and over the air, the ODR MIB, notifications to the host and an RF manager (`core/snmp`, `docs/spec/snmp.md`). Management over the air read-only and RF notifications off by default. About 3.2 KB RAM on the DM-1701 |
+| `CONFIG_SNMP` | = DMR_IP_GATEWAY | the SNMPv2c agent on UDP 161 over the USB network and over the air, the RadioFoundry MIB, notifications to the host and an RF manager (`core/snmp`, `docs/spec/snmp.md`). Management over the air read-only and RF notifications off by default. About 3.2 KB RAM on the DM-1701 |
 | `CONFIG_SFR` | = DMR (MD-380: n) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX); Standalone SFR (the repeater and user roles on a channel) is not wired yet (`docs/spec/sfr.md`) |
 | `CONFIG_AM_RX` | n | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, AM squelch on RSSI, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. No board's glue is written yet (the DM-32's is `BOARD_NOT_WRITTEN`) |
 | `CONFIG_BCAST_FM` | n (DM-1801 Pro: y) | broadcast FM on a second receiver chip (`hal_bcast.h`): `core/bcast`, paused for channel traffic (`docs/spec/airband-and-broadcast.md` 4). The DM-32's glue isn't written yet (`BOARD_NOT_WRITTEN`) |
@@ -145,7 +145,7 @@ below are for the DM-1701.
 | `CONFIG_CRASH_SCREEN` | = `CRASH_LOG` | **Settings > Advanced > Crash log**: the record's summary and Clear, and the controls of the crash report (`docs/spec/crash-log.md` 5.2). Needs `CONFIG_CRASH_LOG`. About 1 KB flash on the DM-1701. Off, the debug link still shows the record |
 | `CONFIG_CRASH_REPORT` | = `CRASH_SCREEN` with DMR | sends the crash log's packed record as one UDP datagram (port 4090) over DMR to a codeplug contact, from the Crash log screen or after the restart (Off, Ask, Auto) (`docs/spec/crash-log.md` 5). Needs `CONFIG_CRASH_SCREEN` and `CONFIG_DMR`; brings in the DMR data core. About 1.4 KB flash on the DM-1701 |
 | `CONFIG_WATCHDOG` | y | the hardware watchdog: `main()` starts it (the STM32 IWDG, about 5 s; the HR_C7000's, 4 s) and the idle task feeds it, so a hang or a starved system resets the radio (`docs/spec/watchdog.md`). With the debug link, command 0x1D and the `watchdog` view section test it on the bench. Needs no other feature. About 0.9 KB flash on the DM-1701, 1.4 KB on the HR_C7000 radios. Off: no watchdog runs |
-| `CONFIG_FAULT_TRACE` | y (DM-1701, MD-380: n) | the fault trace: a CPU fault prints its registers on the host UART, three framed lines a second apart, then the record and the restart (`docs/spec/crash-log.md` 2.3, `tools/odr_fault_trace.py`); without the crash log the radio restarts too. Needs a host port on a UART: the HR_C7000 radios. About 600 B flash. Off: straight to the record and the restart |
+| `CONFIG_FAULT_TRACE` | y (DM-1701, MD-380: n) | the fault trace: a CPU fault prints its registers on the host UART, three framed lines a second apart, then the record and the restart (`docs/spec/crash-log.md` 2.3, `tools/rfoundry_fault_trace.py`); without the crash log the radio restarts too. Needs a host port on a UART: the HR_C7000 radios. About 600 B flash. Off: straight to the record and the restart |
 | `CONFIG_NAND_STORAGE` | n (DB25-D: y) | the core's storage (settings, sector journal, codeplug areas) on SPI NAND: the NOR-like 4 KB sector layer over the board's own block range (`drivers/flash/nand_sectors`, `docs/spec/nand-sectors.md`) and the NAND driver's write side. Off, a NAND radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it. On the DB25-D about 6.6 KB flash and 1.5 KB RAM (no page buffer) |
 | `CONFIG_CHANNEL_LIST` | y | the hub's Channels list: every codeplug channel by number, and a channel's settings (`docs/spec/ui.md` 2) |
 | `CONFIG_CHANNEL_EDIT` | = `CHANNEL_LIST` | editing a channel on the radio, New channel from current settings, keypad text entry (`docs/spec/ui.md` 2.1). Needs `CONFIG_CHANNEL_LIST`; without it the channel's settings are read only |
@@ -204,7 +204,7 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 | db25d | `NET_USRP`, `HOTSPOT_SPLIT`, `SFR`, `APRS_RX`, `APRS_IGATE`, `BCAST_FM`, `VOX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`); `AM_RX` (`BOARD_UNSUPPORTED`) | the board's glue isn't written or timed for them yet; the radio has no air band receive ([hardware-db25d.md](spec/hardware-db25d.md) 9) |
 | every board | `AUDIO_PROBE` | a bench diagnostic |
 
-The DM-32UV puts the state the core marks `ODR_CPU_RAM` in its low RAM below the codec window, and keeps the
+The DM-32UV puts the state the core marks `RFOUNDRY_CPU_RAM` in its low RAM below the codec window, and keeps the
 network's buffers in main RAM ([hardware-dm32.md](spec/hardware-dm32.md) 17.1). With that, everything else whose glue is
 written is on.
 

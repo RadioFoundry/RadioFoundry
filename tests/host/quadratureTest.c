@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The quadrature decoder (drivers/input/quadrature): clean turns, contact bounce, wobble around a detent, reversals,
 // missed samples, fast turns, the consumer's take, and a random walk with bounce against the true count
 #include <stdio.h>

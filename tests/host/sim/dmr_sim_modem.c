@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Simulated DMR modem for the host tests (see dmr_sim_modem.h)
 #include <string.h>
 #include "dmr_sim_modem.h"

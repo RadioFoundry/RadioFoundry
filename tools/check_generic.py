@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Generic first (AGENTS.md rule 4): a radio's id or name appears only where that radio is the subject.
 
 A name is a board id from the registry or one of its names (board.toml model and also), matched loosely: case, an
@@ -41,7 +41,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ALLOW = "tools/generic_allow.txt"
 LIST_PAGES = ("docs/spec/radios.md", "docs/user/23-radios.md", "docs/feature-matrix.md")
 DOC_DIRS = ("docs/spec/", "docs/user/", "docs/dev/", "docs/build-config.md")
-GENERATED = ("tools/odrflash/odrflash/registry.json",)
+GENERATED = ("tools/rfoundry/rfoundry/registry.json",)
 SKIP_DIRS = ("third_party/", "codecs/", "build/")
 TEXT_EXT = (".c", ".h", ".S", ".ld", ".py", ".js", ".mjs", ".sh", ".mk", ".md", ".toml", ".json", ".yml", ".yaml",
             ".txt", ".html", ".css", ".cfg", ".ini", "")
@@ -236,7 +236,7 @@ def self_test():
         put("boards/qb7/radio.c", "// as on the XR-100UV\n")
         put("docs/spec/hardware-xr100.md", "# XR-100UV\n")
         put("docs/testing/results/qb7/seed.json", '{"board": "qb7"}\n')
-        put("tools/odrflash/maps/xr100/a.json", '{"profile": "xr100-a"}\n')
+        put("tools/rfoundry/maps/xr100/a.json", '{"profile": "xr100-a"}\n')
         put("docs/spec/radios.md", "XR-100UV, QB-7\n")
         put("core/radio.c", "// see docs/spec/hardware-xr100.md 3.1\nint x;\n")
         put("README.md", "<!-- generated: tools/boards.py docs radios; edit boards -->\n| XR-100UV |\n"
@@ -268,7 +268,7 @@ def self_test():
         radios["xr100b"] = ["XR-100UV B"]
         docs["xr100b"] = set()
         put("boards/xr100/radio.c", "// the QB-7's PA, unlike the XR-100UV B\n")
-        put("tools/odrflash/maps/xr100b/a.json", '{"like": "xr100"}\n')
+        put("tools/rfoundry/maps/xr100b/a.json", '{"like": "xr100"}\n')
         got = check(tmp, radios, docs, {"xr100b": "xr100"})
         ok(got == ["boards/xr100/radio.c:1: names qb7 (AGENTS.md rule 4: name by function; or %s with a reason)"
                    % ALLOW], "boards of one radio (part_of) may name each other, another radio still fails: %s" % got)

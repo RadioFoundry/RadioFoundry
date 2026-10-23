@@ -1,11 +1,11 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Self-hosted GitHub Actions runner
 
 A containerized runner for this repository's Linux CI jobs, for a Docker host you own: a fresh container for every
 job, and no way out to the network except HTTPS to GitHub. The workflows use it when the repository variable
-`ODR_CI_RUNNER` is set to its label (`odr-ci`); [docs/dev/ci.md](../../docs/dev/ci.md#the-github-self-hosted-runner)
+`RFOUNDRY_CI_RUNNER` is set to its label (`rfoundry-ci`); [docs/dev/ci.md](../../docs/dev/ci.md#the-github-self-hosted-runner)
 explains the routing and why pull requests from forks never reach it.
 
 | File | What |
@@ -28,7 +28,7 @@ explains the routing and why pull requests from forks never reach it.
   host directories except the work directory and the read-only registration. `--cpus`, `--memory` (no swap beyond
   it) and `--pids-limit` from the runner's env file.
 - **Egress through one proxy.** The job container is only on a Docker network created with `--internal`: no route to
-  the LAN, the host or the internet, and no DNS for outside names. The proxy container (`odr-ci-proxy`: tinyproxy,
+  the LAN, the host or the internet, and no DNS for outside names. The proxy container (`rfoundry-ci-proxy`: tinyproxy,
   user `nobody`, read-only, 0.5 CPU, 64 MB) is on that network and on a normal bridge. It allows CONNECT to port 443
   of the hosts in `proxy/allow` (GitHub, its Actions services and the artifact storage, the npm registry and PyPI) and
   refuses everything else,
@@ -43,37 +43,37 @@ explains the routing and why pull requests from forks never reach it.
 On the Docker host, as a user in the `docker` group (no root needed):
 
 ```sh
-mkdir -p ~/odr-ci-runner/context
+mkdir -p ~/rfoundry-ci-runner/context
 # the Arm toolchain's pin, from platform/stm32f4/platform.toml (the Dockerfile has no copy of it)
 ARM_V=$(tools/platform_toolchain.sh stm32f4 version); ARM_S=$(tools/platform_toolchain.sh stm32f4 sha256)
-cp -r tools/install-arm-toolchain.sh tools/ci-runner ~/odr-ci-runner/context/
-cp tools/ci-runner/runner-loop.sh ~/odr-ci-runner/
-cp tools/ci-runner/runner.env.example ~/odr-ci-runner/runner-1.env   # then edit: REPO, directories, subnet, limits
-cd ~/odr-ci-runner/context
-docker build -t odr/ci-runner:latest --build-arg BASE=odr/csky-gcc14:latest --build-arg RUNNER_UID="$(id -u)" \
+cp -r tools/install-arm-toolchain.sh tools/ci-runner ~/rfoundry-ci-runner/context/
+cp tools/ci-runner/runner-loop.sh ~/rfoundry-ci-runner/
+cp tools/ci-runner/runner.env.example ~/rfoundry-ci-runner/runner-1.env   # then edit: REPO, directories, subnet, limits
+cd ~/rfoundry-ci-runner/context
+docker build -t rfoundry/ci-runner:latest --build-arg BASE=rfoundry/csky-gcc14:latest --build-arg RUNNER_UID="$(id -u)" \
 	--build-arg ARM_GCC_VERSION="$ARM_V" --build-arg ARM_GCC_SHA256="$ARM_S" -f ci-runner/Dockerfile .
-docker build -t odr/ci-proxy:latest ci-runner/proxy
-~/odr-ci-runner/runner-loop.sh setup
+docker build -t rfoundry/ci-proxy:latest ci-runner/proxy
+~/rfoundry-ci-runner/runner-loop.sh setup
 ```
 
 Register once, from any machine where `gh` has admin rights on the repository. The registration token is valid for
 an hour and goes over stdin, never onto a command line:
 
 ```sh
-gh api -X POST repos/OWNER/OpenDigitalRadio/actions/runners/registration-token --jq .token |
-	ssh DOCKER_HOST 'ODR_CI_ENV=$HOME/odr-ci-runner/runner-1.env ~/odr-ci-runner/runner-loop.sh register'
+gh api -X POST repos/OWNER/RadioFoundry/actions/runners/registration-token --jq .token |
+	ssh DOCKER_HOST 'RFOUNDRY_CI_ENV=$HOME/rfoundry-ci-runner/runner-1.env ~/rfoundry-ci-runner/runner-loop.sh register'
 ```
 
-Run the loop as a systemd service, one instance per runner (`odr-ci-runner@1` reads `runner-1.env`). It starts after
+Run the loop as a systemd service, one instance per runner (`rfoundry-ci-runner@1` reads `runner-1.env`). It starts after
 Docker, restarts a loop that died, and on `systemctl stop` stops the job's container with SIGINT so the runner
 closes its GitHub session:
 
 ```sh
-sed "s/CI_USER/$USER/g" tools/ci-runner/odr-ci-runner@.service | sudo tee /etc/systemd/system/odr-ci-runner@.service
-sudo systemctl daemon-reload && sudo systemctl enable --now odr-ci-runner@1
+sed "s/CI_USER/$USER/g" tools/ci-runner/rfoundry-ci-runner@.service | sudo tee /etc/systemd/system/rfoundry-ci-runner@.service
+sudo systemctl daemon-reload && sudo systemctl enable --now rfoundry-ci-runner@1
 ```
 
-Then set the repository variable: `gh variable set ODR_CI_RUNNER --body odr-ci`.
+Then set the repository variable: `gh variable set RFOUNDRY_CI_RUNNER --body rfoundry-ci`.
 
 ### More runners
 
@@ -83,16 +83,16 @@ Size `MEMORY` so the runners together fit the host's RAM. A job peaked at about 
 the limit reclaims first, so six runners at 1200m fit an 8 GB host with no swap. `CPUS` is a cap, so runners can share
 the cores.
 
-One runner can be kept for the UI gallery: give it `LABELS=odr-ui` and set the repository variable `ODR_UI_RUNNER` to
-`odr-ui` ([docs/dev/ci.md](../../docs/dev/ci.md#the-github-self-hosted-runner)). Labels are set when the runner
+One runner can be kept for the UI gallery: give it `LABELS=rfoundry-ui` and set the repository variable `RFOUNDRY_UI_RUNNER` to
+`rfoundry-ui` ([docs/dev/ci.md](../../docs/dev/ci.md#the-github-self-hosted-runner)). Labels are set when the runner
 registers; to change a registered runner's, re-register it or set them in the repository's Settings, Actions, Runners.
 
 ```sh
-cd ~/odr-ci-runner
-sed -e 's/^NAME=.*/NAME=odr-ci-2/' -e 's|/work$|/work2|' -e 's|/state$|/state2|' runner-1.env > runner-2.env
-gh api -X POST repos/OWNER/OpenDigitalRadio/actions/runners/registration-token --jq .token |
-	ssh DOCKER_HOST 'ODR_CI_ENV=$HOME/odr-ci-runner/runner-2.env ~/odr-ci-runner/runner-loop.sh register'
-sudo systemctl enable --now odr-ci-runner@2
+cd ~/rfoundry-ci-runner
+sed -e 's/^NAME=.*/NAME=rfoundry-ci-2/' -e 's|/work$|/work2|' -e 's|/state$|/state2|' runner-1.env > runner-2.env
+gh api -X POST repos/OWNER/RadioFoundry/actions/runners/registration-token --jq .token |
+	ssh DOCKER_HOST 'RFOUNDRY_CI_ENV=$HOME/rfoundry-ci-runner/runner-2.env ~/rfoundry-ci-runner/runner-loop.sh register'
+sudo systemctl enable --now rfoundry-ci-runner@2
 ```
 
 The same again with 3, 4, ... for more runners.
@@ -101,12 +101,12 @@ The same again with 3, 4, ... for more runners.
 
 | Task | How |
 |---|---|
-| See what runs | `systemctl status 'odr-ci-runner@*'`; `docker ps --filter name=odr-ci`; `~/odr-ci-runner/log/NAME.log`; `docker logs odr-ci-proxy`; the repository's Settings, Actions, Runners |
-| Pause | `touch ~/odr-ci-runner/disabled` (a running job finishes; no new container starts) |
-| Resume | `rm ~/odr-ci-runner/disabled` |
-| Stop now | `sudo systemctl stop 'odr-ci-runner@*'` (a running job fails) (the runner gets SIGINT and closes its session; a running job fails) |
+| See what runs | `systemctl status 'rfoundry-ci-runner@*'`; `docker ps --filter name=rfoundry-ci`; `~/rfoundry-ci-runner/log/NAME.log`; `docker logs rfoundry-ci-proxy`; the repository's Settings, Actions, Runners |
+| Pause | `touch ~/rfoundry-ci-runner/disabled` (a running job finishes; no new container starts) |
+| Resume | `rm ~/rfoundry-ci-runner/disabled` |
+| Stop now | `sudo systemctl stop 'rfoundry-ci-runner@*'` (a running job fails) (the runner gets SIGINT and closes its session; a running job fails) |
 | Update the runner or tools | change the pinned versions in the Dockerfile and rebuild; the next job uses the new image. Updates are off (`--disableupdate`), so keep `RUNNER_VERSION` current: GitHub stops sending jobs to runner versions that are too old. Rebuild after a `third_party` submodule bump too: the image's clones of the submodules then cover the new commits ([docs/dev/ci.md](../../docs/dev/ci.md#submodules)) |
-| Allow another host | add it to `proxy/allow`, rebuild `odr/ci-proxy`, `docker rm -f odr-ci-proxy`, `runner-loop.sh setup` |
+| Allow another host | add it to `proxy/allow`, rebuild `rfoundry/ci-proxy`, `docker rm -f rfoundry-ci-proxy`, `runner-loop.sh setup` |
 | Re-register | delete the runner in Settings, Actions, Runners (or keep it: `--replace` takes over the name), then `register` as above |
-| Go back to hosted runners | `gh variable delete ODR_CI_RUNNER` |
-| Remove | `gh variable delete ODR_CI_RUNNER`; `sudo systemctl disable --now 'odr-ci-runner@*'` and remove the unit file; delete the runner in Settings, Actions, Runners; `docker rm -f odr-ci-proxy`; `docker network rm odr-ci-internal odr-ci-egress`; `docker rmi odr/ci-runner:latest odr/ci-proxy:latest`; remove `~/odr-ci-runner` (with the credentials in `STATE_DIR`) and the work directory |
+| Go back to hosted runners | `gh variable delete RFOUNDRY_CI_RUNNER` |
+| Remove | `gh variable delete RFOUNDRY_CI_RUNNER`; `sudo systemctl disable --now 'rfoundry-ci-runner@*'` and remove the unit file; delete the runner in Settings, Actions, Runners; `docker rm -f rfoundry-ci-proxy`; `docker network rm rfoundry-ci-internal rfoundry-ci-egress`; `docker rmi rfoundry/ci-runner:latest rfoundry/ci-proxy:latest`; remove `~/rfoundry-ci-runner` (with the credentials in `STATE_DIR`) and the work directory |

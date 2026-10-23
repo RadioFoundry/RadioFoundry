@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The UI's fonts. The bitmaps are Spleen 2.1.0 by Frederic Cambus (BSD-2-Clause, see core/ui/fonts/spleen_*.inc and
 // LICENSES/BSD-2-Clause.txt). CONFIG_FONT_AA replaces the sizes from 6x12 up with JetBrains Mono Bold, anti-aliased,
 // for color panels (font.h), and CONFIG_FONT_BIG adds its 9x18 (OFL-1.1, core/ui/fonts/jbmono_*.inc and

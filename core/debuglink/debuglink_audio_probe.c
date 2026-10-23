@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The audio probe (CONFIG_AUDIO_PROBE; docs/spec/debuglink.md 3.14, docs/spec/hardware-dm1701.md 21.3): a bench tool to find
 // out which audio-chip settings put FM receive audio on the PCM stream and PCM into the FM modulator. It reads and
 // writes the audio chip's registers (board.audio_tap->modem_reg), runs the board's PCM stream with its own callback

@@ -13,7 +13,7 @@ open-firmware CPS protocol on the same port (`core/hostlink`), and it never chan
   `core/input/input_task.c`, the hook in `core/hostlink/hostlink.c`.
 - Chip commands: the portable checks in `core/debuglink/dl_chip.c` (host tested), the platform side in `hal/hal_system.h`
   (`board.system`) and the platform's implementation (`platform/stm32f4/sysboot.c`, `platform/hrc7000/system.c`).
-- Host: `tools/odr_debug.py` (command line and Python module), `tests/hil/` (pytest hardware-in-the-loop tests).
+- Host: `tools/rfoundry_debug.py` (command line and Python module), `tests/hil/` (pytest hardware-in-the-loop tests).
 
 ## 1. Coexistence on the host port
 
@@ -137,7 +137,7 @@ every codec window match the stock codec as the merge places it, code in sector 
 vocoder but the check failed: erased, another stock version, damaged), `present` (a valid codec whose board names no
 profile) or `none` (built without DMR). It describes flash, not whether voice can run at that moment: after the
 HR_C7000 stub entry has stopped the codec (its RAM is the stub's), the profile id is still reported. The first request after boot may take some 20 ms longer while the board
-computes the CRCs. It reads flash only. `tools/odrflash` asks for it before flashing to decide whether the codec
+computes the CRCs. It reads flash only. `tools/rfoundry` asks for it before flashing to decide whether the codec
 sectors can be left alone ([docs/dev/release.md](../dev/release.md)). A build from before the STM32 codec moved
 reports the stock id (`dm1701-v0206-csv`, `md380-d2032`) for the codec at its stock addresses, so the flashing tools
 know the new layout doesn't hold it.
@@ -177,14 +177,14 @@ Request: none (header only), or offset u32 and length u16 (at most 1000 bytes pe
 
 A 16-color frame buffer (bpp 4, the DM-32) is converted through its palette as each chunk is read, so the host sees
 an RGB565 frame of width x height x 2 bytes. The chunks are read live from the UI's frame buffer, without a lock (the UI task owns it, and a 38 KB copy would
-not fit in RAM). A redraw while the host reads the chunks can tear the image. `odr_debug.py screenshot` reads the
+not fit in RAM). A redraw while the host reads the chunks can tear the image. `rfoundry_debug.py screenshot` reads the
 whole buffer twice and repeats until two reads agree (`--tries`, default 4), which gives a consistent image unless
 the screen changes continuously (a running timer); it says so when it gives up.
 
 While a capture is read the UI does not redraw: every SCREENSHOT request holds redraws for 1 s, and the request that
 returns the last chunk for 250 ms, long enough for the host's check pass to start. A key or radio request in that
 time changes the UI's state (`ui.screen` in GET_VIEW) at once, but its screen is drawn only when the hold lapses, so
-a host that captures a new screen waits for the hold to end (`tests/hil/odr_hil.py`: `Radio.screenshot` and
+a host that captures a new screen waits for the hold to end (`tests/hil/rfoundry_hil.py`: `Radio.screenshot` and
 `shot_until`). Firmware before this rule held for 1 s after the last chunk too.
 
 ### 3.4 KEY
@@ -294,21 +294,21 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 17 | none | `radio_req_dmr_call_back`: talk to the last call heard (its ID if private, its talkgroup if group) |
 | 18 | none | `radio_req_dmr_target_clear`: back to the channel's talk target |
 | 19 | type u8, key u16 | `radio_req_dmr_privacy`: basic privacy key in RAM, type 0 off, 1 Motorola BP (key 1-255), 2 Anytone BP (CONFIG_DMR_PRIVACY builds; never stored) |
-| 20 | cmd u8 [, pos u16 \| pane u8] | `radio_req_scan`: 0 stop (stay where it is), 1 zone, 2 VFO (the band of the VFO frequency), 3 dual watch (pos = the second channel, required), 4 cancel (back to where it started), 5 nuisance delete (skip the current channel until the scan ends), 6 toggle (CONFIG_SCAN builds). Dual watch: stop, cancel and toggle end it on the selected channel and count in `dual_stops`, so the UI keeps it off as if the user stopped it. 7 select (pane 0 A, 1 B; `radio_req_dual` with the same pair): the UI follows, and the channel, zone and VFO requests (ops 2-6) then change that channel. UNAVAILABLE when the watch is off or not built (`CONFIG_DUAL_WATCH`). `odr_debug.py radio scan select a\|b` |
+| 20 | cmd u8 [, pos u16 \| pane u8] | `radio_req_scan`: 0 stop (stay where it is), 1 zone, 2 VFO (the band of the VFO frequency), 3 dual watch (pos = the second channel, required), 4 cancel (back to where it started), 5 nuisance delete (skip the current channel until the scan ends), 6 toggle (CONFIG_SCAN builds). Dual watch: stop, cancel and toggle end it on the selected channel and count in `dual_stops`, so the UI keeps it off as if the user stopped it. 7 select (pane 0 A, 1 B; `radio_req_dual` with the same pair): the UI follows, and the channel, zone and VFO requests (ops 2-6) then change that channel. UNAVAILABLE when the watch is off or not built (`CONFIG_DUAL_WATCH`). `rfoundry_debug.py radio scan select a\|b` |
 | 21 | lo u32, hi u32 | `radio_req_scan_vfo`: VFO scan from lo to hi Hz in the VFO step |
 | 22 | beep u8 | `radio_req_beep`: 1 key (only with `set.key_beep`), 2 error, 3 TX permit, 4 TX deny, 5 call end, 6 time-out warning, 7 battery low, 8 battery critical, 9 scan hold (CONFIG_BEEP builds) |
 | 23 | on u8 | `radio_req_tone_burst`: the 1750 Hz burst, keys up while on (FM channels, CONFIG_FM_TX_TONES builds) |
 | 24 | id u8, value u16 | one radio setting in RAM (`radio_set_settings`; not stored): 1 tot_s, 2 tot_warn_s, 3 bcl (0 off, 1 carrier, 2 wrong tone), 4 roger_beep, 5 tx_inhibit, 6 scan_resume (0 time, 1 carrier, 2 stop), 7 scan_hold_s, 8 scan_delay_ms, 9 scan_dwell_ms, 10 scan_priority, 11 beep_level (0-100), 12 key_beep, 13 vox (0 off, 1 channel, 2 all), 14 vox_level (0-10), 15 vox_tail_ms, 16 rx_save (0-3), 17 rx_save_idle_s, 18 battery_off_s, 19 scan_beep, 20 reply_s (0-30, 255 = the codeplug's hang times), 21 roam_rssi_dbm (-125..-60, two's complement), 22 roam_hyst_db (1-30), 23 roam_probe (0 passive, 1 wake), 24 roam_check_s (0 or 30-3600), 25 roam_beacon_s (0 or 10-600), 26 roam_beacon_len_s (1-10), 27 roam_survey (0 off, 1 synced, 2 per site), 28 rpt_beacon (0/1), 29 mic_gain (0-10, `radio_set_mic_gain`: the UI's stored setting is not changed, so a restart brings it back; unavailable when the setting does nothing in this build), 30 dual_delay_ms (0-10000), 31 enc_options (0-7, the vocoder's encode options `VOCODER_OPT_*` for the next frames, `ambeVoiceSetEncodeOptions`: not stored, so a restart or a change of Mic noise reduction or Mic AGC brings the settings' back; 0 gives the AMBE+2 hosts' plain 0x800 word; unavailable when the vocoder has no options, a bad argument in builds without DMR; `dmr-voice.md` 6). Out of range: bad argument |
 | 25 | on u8: 1 network, 0 serial | switch the USB personality once the reply has gone out (`CONFIG_USB_NETWORK`; status 4 without it). The radio re-enumerates; in network mode this link answers over UDP to the radio's address, port 3334 (`docs/spec/usb-network.md`) |
 | 26 | cmd u8 | `radio_req_roam` (CONFIG_DMR_ROAMING builds; status 4 without): 0 zone off, 1 zone on, 2 zone toggle (the current zone's roaming flag, stored), 3 roam now, 4 lock to this site, 5 unlock, 6 lock toggle ([dmr-roaming.md](dmr-roaming.md) 6.1) |
-| 27 | flags u8, link IP u32 | the USB network settings, stored and applied at once (`docs/spec/usb-network.md` 5.4): bit 0 the network personality at power-on, bit 1 control station passthrough, bit 2 the fixed link pair; the radio's link address (0 = 192.168.10.1). Bits 1 and 2 need `CONFIG_DMR_CONTROL_STATION` (ignored without); UNAVAILABLE without `CONFIG_USB_NETWORK`. `odr_debug.py radio usb-settings [boot] [passthrough] [fixed[=IP]]` |
-| 28 | on u8: 1 start, 0 end | PPP on the serial host port once the reply has gone out (`CONFIG_NET_PPP` builds; status 2 without): 1 starts it actively (our LCP Configure-Request goes out at once; ignored while the USB network adapter is in use), 0 ends it with LCP Terminate (send it over UDP while PPP runs). pppd starts PPP by itself, so 1 is only for peers that wait. While PPP runs this link answers over UDP to the radio's address, port 3334, as in USB network mode (`ppp.md` 4). `odr_debug.py radio ppp on\|off` |
-| 29 | pattern u8 | `radio_req_vibrate`: 1 message, 2 call, 3 emergency, on the board's motor whatever the Vibrate setting (CONFIG_VIBRATE builds; status 4 without; nothing happens on a radio without a motor). `odr_debug.py radio vibrate message\|call\|emergency` |
-| 30 | step u8 | the speaker volume (`radio-features.md` 4.2): step 0 (mute) to `volume.max` (16), or 0xFF = back to the knob (a radio without a knob: back to its default step). A radio without a knob (`volume.src=soft`) stores the step like the UI and applies it; one whose MCU reads the knob (`knob`) holds it in RAM over the knob (`override`) until 0xFF or a restart; one whose volume control works in analog hardware (`none`: the MD-380, the DM-32UV) answers UNAVAILABLE (4); a step over 16 other than 0xFF answers BAD_ARG. `odr_debug.py volume [N\|knob]` |
-| 31 | mode u8, cc u8, ts u8 | `radio_req_mode`, `radio_req_dmr_color_code`, `radio_req_dmr_timeslot` in one request: mode 0 FM, 1 DMR (0xFF = keep), color code 0 to 15 (0xFF = keep), timeslot 1 or 2 (0 = keep). On a channel these are temporary changes, in the VFO the VFO's own settings (`dmr-voice.md` 2.1); the radio core refuses what it can't do (a mode change in a VFO needs both `VFO_FM` and `VFO_DMR`; check the `core` view). UNAVAILABLE without `CONFIG_DMR`. `odr_debug.py radio mode fm\|dmr`, `radio cc N`, `radio ts N` |
-| 32 | none | `radio_req_vfo_copy`: copy the channel on view to the VFO and open it (`dmr-voice.md` 2.2). The check is the radio core's own, made on the current view: OK when the request went out (read the `core` view for the VFO's values), REFUSED for a mode without a VFO in this build or a frequency outside the bands, UNAVAILABLE without a VFO or when already in the VFO. `odr_debug.py radio copy-vfo` |
-| 33 | on u8 (0 / 1) | the DMR voice test signal (`ambeVoiceSetTestSignal`, RAM only): 1 the encoder gets a generated triangle tone, about -12 dBFS, whose pitch steps through 300, 500, 700, 1100 and 1500 Hz one vocoder frame (20 ms) each, in place of the mic; 0 the mic again. Consecutive frames differ, so an over carries known, varying audio whatever the mic hears (`tests/hil/test_dmr_audio_smoke.py`). BAD_ARG above 1, UNAVAILABLE without DMR. The `dmr` section shows it as `voice.tx_test`. `odr_debug.py radio voice-test on` / `off` |
-| 34 | digit u8, down u8 | `radio_req_dtmf`: a DTMF key's down (1) or up (0) during FM TX (`radio-features.md` 3.7), with the same timing as a key. digit is ASCII `0`-`9`, `*`, `#`, `A`-`D`. A down is REFUSED unless the `features` view's `dtmf_ready` is 1; an up is always taken. A digit that isn't DTMF or a short argument answers BAD_ARG, a build without `CONFIG_DTMF` UNAVAILABLE. `odr_debug.py radio dtmf DIGITS [ms]` |
+| 27 | flags u8, link IP u32 | the USB network settings, stored and applied at once (`docs/spec/usb-network.md` 5.4): bit 0 the network personality at power-on, bit 1 control station passthrough, bit 2 the fixed link pair; the radio's link address (0 = 192.168.10.1). Bits 1 and 2 need `CONFIG_DMR_CONTROL_STATION` (ignored without); UNAVAILABLE without `CONFIG_USB_NETWORK`. `rfoundry_debug.py radio usb-settings [boot] [passthrough] [fixed[=IP]]` |
+| 28 | on u8: 1 start, 0 end | PPP on the serial host port once the reply has gone out (`CONFIG_NET_PPP` builds; status 2 without): 1 starts it actively (our LCP Configure-Request goes out at once; ignored while the USB network adapter is in use), 0 ends it with LCP Terminate (send it over UDP while PPP runs). pppd starts PPP by itself, so 1 is only for peers that wait. While PPP runs this link answers over UDP to the radio's address, port 3334, as in USB network mode (`ppp.md` 4). `rfoundry_debug.py radio ppp on\|off` |
+| 29 | pattern u8 | `radio_req_vibrate`: 1 message, 2 call, 3 emergency, on the board's motor whatever the Vibrate setting (CONFIG_VIBRATE builds; status 4 without; nothing happens on a radio without a motor). `rfoundry_debug.py radio vibrate message\|call\|emergency` |
+| 30 | step u8 | the speaker volume (`radio-features.md` 4.2): step 0 (mute) to `volume.max` (16), or 0xFF = back to the knob (a radio without a knob: back to its default step). A radio without a knob (`volume.src=soft`) stores the step like the UI and applies it; one whose MCU reads the knob (`knob`) holds it in RAM over the knob (`override`) until 0xFF or a restart; one whose volume control works in analog hardware (`none`: the MD-380, the DM-32UV) answers UNAVAILABLE (4); a step over 16 other than 0xFF answers BAD_ARG. `rfoundry_debug.py volume [N\|knob]` |
+| 31 | mode u8, cc u8, ts u8 | `radio_req_mode`, `radio_req_dmr_color_code`, `radio_req_dmr_timeslot` in one request: mode 0 FM, 1 DMR (0xFF = keep), color code 0 to 15 (0xFF = keep), timeslot 1 or 2 (0 = keep). On a channel these are temporary changes, in the VFO the VFO's own settings (`dmr-voice.md` 2.1); the radio core refuses what it can't do (a mode change in a VFO needs both `VFO_FM` and `VFO_DMR`; check the `core` view). UNAVAILABLE without `CONFIG_DMR`. `rfoundry_debug.py radio mode fm\|dmr`, `radio cc N`, `radio ts N` |
+| 32 | none | `radio_req_vfo_copy`: copy the channel on view to the VFO and open it (`dmr-voice.md` 2.2). The check is the radio core's own, made on the current view: OK when the request went out (read the `core` view for the VFO's values), REFUSED for a mode without a VFO in this build or a frequency outside the bands, UNAVAILABLE without a VFO or when already in the VFO. `rfoundry_debug.py radio copy-vfo` |
+| 33 | on u8 (0 / 1) | the DMR voice test signal (`ambeVoiceSetTestSignal`, RAM only): 1 the encoder gets a generated triangle tone, about -12 dBFS, whose pitch steps through 300, 500, 700, 1100 and 1500 Hz one vocoder frame (20 ms) each, in place of the mic; 0 the mic again. Consecutive frames differ, so an over carries known, varying audio whatever the mic hears (`tests/hil/test_dmr_audio_smoke.py`). BAD_ARG above 1, UNAVAILABLE without DMR. The `dmr` section shows it as `voice.tx_test`. `rfoundry_debug.py radio voice-test on` / `off` |
+| 34 | digit u8, down u8 | `radio_req_dtmf`: a DTMF key's down (1) or up (0) during FM TX (`radio-features.md` 3.7), with the same timing as a key. digit is ASCII `0`-`9`, `*`, `#`, `A`-`D`. A down is REFUSED unless the `features` view's `dtmf_ready` is 1; an up is always taken. A digit that isn't DTMF or a short argument answers BAD_ARG, a build without `CONFIG_DTMF` UNAVAILABLE. `rfoundry_debug.py radio dtmf DIGITS [ms]` |
 
 Ops 15-18 last until the channel changes (`dmr.target_manual`); in the DMR VFO ops 15 and 16 set the VFO's own target, which is kept. Unavailable ops answer UNAVAILABLE.
 
@@ -337,7 +337,7 @@ Read-only. Reply after the status (30 bytes in all; firmware before the family b
 | 28 | 1 | user bits: bit 0 WDG_SW, bit 1 nRST_STOP, bit 2 nRST_STDBY |
 | 29 | 1 | chip family (table above) |
 
-`odr_debug.py chip` prints all of this (only the family and the UID for a family other than 0), and prints a note at RDP level 1 (the
+`rfoundry_debug.py chip` prints all of this (only the family and the UID for a family other than 0), and prints a note at RDP level 1 (the
 stock state: the ROM bootloader route stays closed) and a loud warning at RDP level 2 or when any application sector
 (3..11) is write protected.
 
@@ -367,11 +367,11 @@ this firmware does, or from SRAM, as the flash stub does ([stub-stm32f4.md](stub
 bench run confirms it). So READ_MEM works at
 RDP level 1, and that is how the stock bootloader was saved on the bench unit.
 
-The web flasher and odrflash read the bootloader sectors this way to find the bootloader key by its SHA-256
-(`hardware-dm1701.md` 15.3), so updating a radio that runs ODR needs no stock file. The bytes stay in memory; only the
+The web flasher and rfoundry read the bootloader sectors this way to find the bootloader key by its SHA-256
+(`hardware-dm1701.md` 15.3), so updating a radio that runs RadioFoundry needs no stock file. The bytes stay in memory; only the
 key is kept.
 
-`odr_debug.py dump --addr A --len N -o FILE` reads in 1000-byte pieces. It refuses to write inside any git work
+`rfoundry_debug.py dump --addr A --len N -o FILE` reads in 1000-byte pieces. It refuses to write inside any git work
 tree. The stock bootloader is proprietary: a dump of it is never committed or published.
 
 ### 3.11 REBOOT
@@ -398,7 +398,7 @@ On OK the reply goes out first and the firmware resets 250 ms later. If a check 
 in), it logs `debuglink: reboot ... aborted` and stays up. How mode 1 enters the ROM:
 `docs/spec/hardware-dm1701.md` 15.4.
 
-`odr_debug.py reboot [--rom-dfu]` reads INFO_CHIP first, refuses `--rom-dfu` itself unless RDP is level 0, sends
+`rfoundry_debug.py reboot [--rom-dfu]` reads INFO_CHIP first, refuses `--rom-dfu` itself unless RDP is level 0, sends
 the token and prints the radio's reason when it refuses.
 
 ### 3.12 DMR_DATA
@@ -421,7 +421,7 @@ endian (24 bits used). BUSY: one of the kind is still queued; UNAVAILABLE: built
 | 9 | IP_SETTINGS | compression u8 (0 off, 1 auto, 2 all), confirmed u8 (0 off, 1 rules, 2 all), tries u8 (0 the default 4, 1-8), rule u32 x 2 (0 unused, a radio ID, or 0x80000000 \| a UDP port) | IP packets over DMR ([dmr-data.md](dmr-data.md) 11, 12; saved by the radio core); BAD_ARG out of range |
 | 10 | IP_SEND | destination u32, flags u8 (bit 0 group), source port u16, destination port u16, payload (up to 54) | a UDP datagram into the IP gateway's air path as if from the host (`ipGatewayIPToAir`); BUSY while the gateway's mailbox holds one; UNAVAILABLE without `CONFIG_DMR_IP_GATEWAY` |
 
-RESET_COUNTERS also zeroes the data service's counters. `odr_debug.py data sms|alert|check|settings|inbox|read|emergency|em-settings|ip-settings|ip-send`.
+RESET_COUNTERS also zeroes the data service's counters. `rfoundry_debug.py data sms|alert|check|settings|inbox|read|emergency|em-settings|ip-settings|ip-send`.
 
 ### 3.13 STORAGE
 
@@ -434,7 +434,7 @@ and the claim of a foreign region.
 | 1 READ | address u32, length u16 (1-1000) | address u32, the bytes. Only inside the three ranges of INFO, else `DL_ST_REFUSED`. Taken under the storage lock |
 | 2 CLAIM | token u32: the chip UID's low word (INFO_CHIP offset 7) | reason u8. `DL_ST_REFUSED` with reason 1 (bad token) or 4 (no chip info); `DL_ST_UNAVAILABLE` when the region isn't foreign. On OK the housekeeping task erases the region (10 sector erases, up to about 4 s, during which it does not watch the power knob); poll `storage.region` |
 
-`odr_debug.py storage info | dump | claim` drives it; `claim` always dumps first, outside any git tree.
+`rfoundry_debug.py storage info | dump | claim` drives it; `claim` always dumps first, outside any git tree.
 
 ### 3.14 AUDIO_PROBE
 
@@ -471,7 +471,7 @@ every flag (`modem-hrc6000.md` 8.1).
 
 The probe borrows the stream: a beep or a DMR channel in the meantime may take it back (STATUS bit 0 then reads 0).
 Register and RAM writes change the chip under its driver; the radio's next mode change rewrites what it owns.
-`odr_debug.py aprobe status | reg | wreg | start | stop | samples | ram | wram | watch | music | mod` drives it;
+`rfoundry_debug.py aprobe status | reg | wreg | start | stop | samples | ram | wram | watch | music | mod` drives it;
 `tests/hil/test_audio_probe.py` runs the experiments.
 
 ### 3.15 SPLIT
@@ -497,7 +497,7 @@ scheduled stream (`split-duplex.md` 3.8, 3.9): `split.stream`, `split.align` (ST
 `split.sched_sent`, `split.sched_late`, `split.sched_refused`, `split.sched_replaced`, `split.sched_cooldown`,
 `split.slew_steps` / `split.slew_us` (slot trims asked of the driver and their sum, µs), `split.meta_sent` (RX_META
 events, 3.10). No GET_VIEW section
-is added, so section numbers stay the same in every build. `odr_debug.py split view | variant N [REG=VAL ...]`.
+is added, so section numbers stay the same in every build. `rfoundry_debug.py split view | variant N [REG=VAL ...]`.
 
 ### 3.16 APRS
 
@@ -513,7 +513,7 @@ The state is in the `aprs` and `aprs_set` view sections.
 | 5 SET | field u8, value u32 (signed as two's complement) | one APRS setting, saved like a UI change. Fields: 0 tx, 1 region (0 NA, 1 EU, 2 AU, 3 NZ, 4 JP, 5 CN, 6 custom), 2 freq_hz (custom), 3 ssid (0-15), 4 lat, 5 lon (fixed position, 1e-7 degree), 6 pos_src (0 auto, 1 GPS, 2 host, 3 fixed), 7 interval_s, 8 smart, 9 via (0 RF, 1 DMR, 2 both), 10 dmr_dst, 11 level (0-100), 12 path (0 none, 1 WIDE1-1, 2 WIDE1-1,WIDE2-1, 3 WIDE2-1, 4 WIDE2-2), 13 kiss, 14 dmr_udt, 15 after_ptt, 16 distance_m, 17 rx, 18 igate, 19 igate_tx, 20 digi, 21 txdelay (5-100, 10 ms units), 22 dmr_gps (our position in DMR voice calls), 23 to_is (our own packets to APRS-IS: the host helper or the radio's own client, `tcp-services.md` 7), 24 power (0 = the radio's current level, n = the board's level n - 1, up to its level count; `aprs.md` 9). Out of range: bad argument |
 | 6 NMEA | an NMEA sentence | taken as a host position (`$GPRMC` / `$GPGGA` with a valid checksum) |
 
-`odr_debug.py aprs send | status TEXT | msg CALL TEXT | call [CALL] | set FIELD VALUE | nmea SENTENCE`.
+`rfoundry_debug.py aprs send | status TEXT | msg CALL TEXT | call [CALL] | set FIELD VALUE | nmea SENTENCE`.
 
 ### 3.17 SNMP
 
@@ -526,7 +526,7 @@ The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP e
 | 1 COMMUNITY | which u8 (0 read, 1 write), the text (0-32 bytes) | sets the community (stored as its hash); empty: read back to "public", write none (SET refused) |
 | 2 TEST_TRAP | none | queues a coldStart notification (the HIL test's check of the path) |
 
-`odr_debug.py snmp status | set FIELD VALUE | read [TEXT] | write [TEXT] | trap` (flags as a number or names:
+`rfoundry_debug.py snmp status | set FIELD VALUE | read [TEXT] | write [TEXT] | trap` (flags as a number or names:
 `off,rf_off,rf_write,usb_traps_off,auth_traps,rf_call_traps`).
 
 ### 3.18 STUB
@@ -554,13 +554,13 @@ and stops answering; the host then speaks the monitor's own protocol (`02 op len
 the same UART at the same baud. Recover the radio with a power cycle.
 
 Where the image runs: INFO's load_addr is the address the image is linked for, and the host builds BEGIN's entry from
-it. On the HR_C7000 that is the span itself. On the STM32F4 the span is a staging buffer in ODR's own RAM and
+it. On the HR_C7000 that is the span itself. On the STM32F4 the span is a staging buffer in RadioFoundry's own RAM and
 load_addr is the SRAM base (0x20000000, `hal_system_t.stub_run_addr`): `enter_stub` stops the DMA controllers,
 copies the buffer there and jumps with a handoff flag in r0 ([stub-stm32f4.md](stub-stm32f4.md) 3). The STM32F4
 stub then answers on the USB serial port, with the same framing as the C7 stub. ENTER is answered busy (3) while the
 radio transmits.
 
-The monitor never touches the RF chips, so the transmitter stays as ODR left it for the whole session. ENTER is
+The monitor never touches the RF chips, so the transmitter stays as RadioFoundry left it for the whole session. ENTER is
 refused while the radio core is transmitting, the entry is dropped if PTT went down in the 100 ms between the reply and
 the jump, and the firmware calls `board.radio->tx_off()` just before the jump in every case.
 
@@ -568,7 +568,7 @@ On the HR_C7000 the host sends the universal monitor: its entry is position inde
 `load_addr` to its run address (0x30000) and runs there, with `.bss` and stack after it (`stub/README.md`, RAM
 placement). The firmware does not check where the image will run (it only checks the length, the CRC-32 and that
 `entry` lies inside the span); the host does: `stubtool.py` reads INFO first and refuses a span whose copy would overlap
-the run address or leave SRAM. The older position-dependent monitors (`--legacy-stub`, `--odr-stub FILE`) must be linked
+the run address or leave SRAM. The older position-dependent monitors (`--legacy-stub`, `--rfoundry-stub FILE`) must be linked
 for exactly `load_addr`; the host refuses one whose linked data and stack lie outside the span or that does not end its
 text and data at `load_addr` plus its length. On the STM32F4 the host checks instead that the image starts with the
 STM32F4 stub's entry code and that `load_addr` is the SRAM base. INFO is the whole discovery protocol, so firmware built
@@ -586,7 +586,7 @@ test can check the capture. Built without the switch, every operation answers `D
 
 The token is `'CRSH'` (`0x48535243`, little endian in the payload); another value, or a transmitting radio, is answered
 refused (7). The test is dropped if PTT went down between the reply and the crash. The record shows in view section 21
-after the restart. `odr_debug.py crash [show|clear|test trap|test assert|test hang]`.
+after the restart. `rfoundry_debug.py crash [show|clear|test trap|test assert|test hang]`.
 
 ### 3.20 CODEPLUG
 
@@ -625,7 +625,7 @@ reset. Built without the switch, every operation answers `DL_ST_UNAVAILABLE`.
 The token is `'WDOG'` (`0x474F4457`, little endian in the payload); another value, or a transmitting radio, is
 answered refused (7). A test is dropped if PTT went down between the reply and its start. During STARVE and LOAD the
 view's `watchdog.starved_ms` counts from the last feed; its last value before the link goes quiet bounds the timeout.
-`odr_debug.py watchdog [show|clear-gap|test starve|spin|irq-off|load H L [RST]]`.
+`rfoundry_debug.py watchdog [show|clear-gap|test starve|spin|irq-off|load H L [RST]]`.
 
 ### 3.22 RX2
 
@@ -640,7 +640,7 @@ a radio with one SoC, INFO answers no flags and the rest `DL_ST_UNAVAILABLE`.
 
 The token is `'BRDG'` (`0x47445242`, little endian in the payload); another value, or a transmitting radio, is
 answered refused (7). The bridge is dropped if PTT went down between the reply and its start.
-`odr_debug.py rx2 [info|restart]`; `stubtool.py --board gd88b` uses BRIDGE.
+`rfoundry_debug.py rx2 [info|restart]`; `stubtool.py --board gd88b` uses BRIDGE.
 
 ## 4. Safety
 
@@ -681,5 +681,5 @@ it; a test that resets, waits a moment and then starts its traffic is not affect
 ## 6. Adding a command
 
 Add the number to `debuglink_proto.h`, a handler in `core/debuglink/debuglink.c` (short, non-blocking, reply at most
-1024 bytes), a row here, and a method in `tools/odr_debug.py`. New view keys need only the renderer and the table
+1024 bytes), a row here, and a method in `tools/rfoundry_debug.py`. New view keys need only the renderer and the table
 in 3.7.

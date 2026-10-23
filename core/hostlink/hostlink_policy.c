@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // When the host link leaves hotspot mode (see hostlink.h). DTR is only an edge: a clear DTR from the start (MMDVMHost
 // on Windows) never ends the session; a set DTR that drops (a POSIX host closing the port) does
 // (docs/spec/mmdvm-protocol.md 5.1, test T-USB-2).

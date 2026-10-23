@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * PROTOTYPE, not firmware code. Host-side encoders / decoders for the DMR Tier III (ETSI TS 102 361-4 V1.12.1)
  * PDUs that the minimal mobile station subset needs, written to check the field layouts and tables quoted in

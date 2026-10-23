@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* HR_C7000 / CK803S start-up (docs/spec/hardware-dm32.md 1.2, 2). The Baofeng bootloader jumps to the first byte of
  * the application at 0x0300C000 (no header, no vector table there), so Reset_Handler is linked first. It runs from
  * XIP flash with whatever the bootloader left: interrupts off, supervisor mode, our stack, the RAM sections copied,

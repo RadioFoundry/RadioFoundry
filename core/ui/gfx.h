@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Drawing into the UI's frame buffer and sending changed rows to the display (hal_display_t).
 // Works on any panel whose frame buffer fits GFX_FB_BYTES: RGB565 (bpp 16), 16 colors (bpp 4) or 1 bit per pixel (bpp 1,
 // MSB left). At bpp 4 the drawing calls still take RGB565: gfx keeps a 16-entry palette of the colors in use (a screen

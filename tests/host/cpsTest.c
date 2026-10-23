@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The open-firmware CPS shim (core/cps) against a simulated flash holding an open-firmware codeplug, driven like qdmr's
 // open-firmware UV380 driver does it: radio info, the session opening, 32-byte block reads of the regions it
 // transfers, prepare / data / commit per sector, close, save and reboot. Plus request assembly from arbitrary chunks,

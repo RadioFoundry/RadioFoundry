@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The codec call veneer (codec_call.h). The whole function is assembly at file scope: no compiler-generated frame,
 // no assumptions about the caller's stack layout (docs/spec/gotchas.md 4.1).
 #include "codec_call.h"

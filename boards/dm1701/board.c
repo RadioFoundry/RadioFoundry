@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Baofeng DM-1701: board descriptor, clocks, reset-time pin levels, key map
 #include "board.h"
 #include "config.h"
@@ -25,9 +25,9 @@ static const band_t bands[] = {
 // The RTOS heap, and with it every task stack, in the CCM: zero wait states and no contention with the audio,
 // ADC and backlight DMA on the main SRAM. Nothing on a stack or from pvPortMalloc may be a DMA buffer (DMA can't
 // reach the CCM): the DMA buffers are statics in main RAM, checked where each stream is set up (dm1701.h DMA_RAM_OK)
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] RFOUNDRY_CPU_RAM_NOINIT __attribute__((aligned(8)));
 
-// Zero the CCM's .ccmbss (ODR_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
+// Zero the CCM's .ccmbss (RFOUNDRY_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
 // (the CCM clock is on from reset)
 extern uint32_t _sccmbss[], _eccmbss[];
 static void ccm_zero(void)

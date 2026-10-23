@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The simplex DMR hotspot engine: between the MMDVM host's 33-byte DMR frames and the DMR modem (hal_dmr_modem.h).
 //
 //   host -> RF   DMR_DATA2 frames are typed from the burst itself (docs/spec/gotchas.md 8.2), voice is buffered and
@@ -11,8 +11,8 @@
 // While the hotspot runs it owns the modem: the radio core has stopped its DMR call stack and handed the modem over
 // (hotspot_radio_ops_t.enter). No RTOS and no board globals here, so it runs in the host tests; the host link task
 // calls everything except hotspot_modem_event(), which the modem driver calls from its own task.
-#ifndef ODR_HOTSPOT_H
-#define ODR_HOTSPOT_H
+#ifndef RFOUNDRY_HOTSPOT_H
+#define RFOUNDRY_HOTSPOT_H
 
 #include <stdint.h>
 #include <stdbool.h>

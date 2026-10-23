@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C6000 DMR: register sequences, burst status decode and the slot engine (see hrc6000_dmr.h for the model).
 // Register facts: docs/spec/modem-hrc6000.md 2-7. Behavior rules: docs/spec/dmr-modem.md 6, docs/spec/gotchas.md 1, 3, 5.
 #include <stddef.h>

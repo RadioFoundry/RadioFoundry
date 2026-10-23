@@ -63,7 +63,7 @@ The ECC and FEC init offsets differ between versions because 049 links extra sto
 * Branches and calls are PC-relative. Exactly 3 literal-pool words hold absolute codec addresses. In 049 they are
   the pool words at RAM 0x187B0, 0x187B4 and 0x19B68, holding 0x19540, 0x22754 and 0x26CAC. 046 has the same 3.
 * So the code runs unmodified only at its stock RAM address, with the tables at their stock modem RAM addresses.
-  To move the contiguous block by a constant delta, patch those 3 words; ODR does (Hosting, step 2). To move the
+  To move the contiguous block by a constant delta, patch those 3 words; RadioFoundry does (Hosting, step 2). To move the
   tables, you would patch every modem RAM literal.
 
 ### Calling convention
@@ -185,7 +185,7 @@ accesses are about D >= 0x1400 and E >= 0x1900; the exact sizes are open.
 
 ## Hosting
 
-How ODR runs it ([codec-placement.md](codec-placement.md), "HR_C7000 radios"):
+How RadioFoundry runs it ([codec-placement.md](codec-placement.md), "HR_C7000 radios"):
 
 1. **At the user's machine**, `tools/hrc7000_codec.py` (or the web flasher) checks the sha256 of the stock file,
    carves the code and the table window, and writes them unchanged into the codec slot at 0x030E8000..0x03100000,
@@ -194,7 +194,7 @@ How ODR runs it ([codec-placement.md](codec-placement.md), "HR_C7000 radios"):
 2. **At boot**, `platform/hrc7000/vocoder.c` copies the code to the board's codec window at the top of SRAM
    (0x43A00..0x58000), adds (window start - stock run address) to each listed word, checks the first two words, and
    copies the tables to their stock modem RAM address (049: 0x18000EA8).
-3. **Memory map** (`boards/dm32/memory.ld`): one RAM region for ODR from 0x10000 to the codec window. The modem RAM
+3. **Memory map** (`boards/dm32/memory.ld`): one RAM region for RadioFoundry from 0x10000 to the codec window. The modem RAM
    window 0x18000E48..0x18003E28 (the union of the builds' tables) is reserved.
 4. **Versions**: every DM-32UV build with a codec map (12 stock files, six code windows) runs in the same window,
    since only the 3 words depend on the run address.

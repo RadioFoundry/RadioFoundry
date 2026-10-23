@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 name: New radio
 description: Ask for a radio to be supported, or offer facts or hardware for one.
 labels: ["new radio"]
@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        The README lists the radios planned or in progress, and [docs/spec/radios.md](https://github.com/sfowlr/OpenDigitalRadio/blob/main/docs/spec/radios.md)
+        The README lists the radios planned or in progress, and [docs/spec/radios.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/spec/radios.md)
         what is known about each. A port needs the radio on a developer's bench, so offers of hardware matter most.
 
         Facts only: chip markings, photos of the board you took yourself, FCC IDs, public documents. No code,

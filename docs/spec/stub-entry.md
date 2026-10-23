@@ -2,8 +2,8 @@
 
 # Stub entry
 
-A running ODR loads the host's flash-access RAM monitor (the "stub") into free RAM and jumps to it, so a radio is
-updated with no key held at power-on. The web flasher, `stub/stubtool.py` (`--odr-enter`) and `tools/odrflash` use
+A running RadioFoundry loads the host's flash-access RAM monitor (the "stub") into free RAM and jumps to it, so a radio is
+updated with no key held at power-on. The web flasher, `stub/stubtool.py` (`--rfoundry-enter`) and `tools/rfoundry` use
 it. Because every update after the first one depends on it, the stub entry is its own small feature, apart from the
 debug link: a build without the debug link still offers it.
 
@@ -48,7 +48,7 @@ codec=db25d-2501
 stub=1
 ```
 
-`stubtool.py` and `f4stub.py` take `board=` from it to pick the stub's profile, `odrflash` and the web flasher's probe
+`stubtool.py` and `f4stub.py` take `board=` from it to pick the stub's profile, `rfoundry` and the web flasher's probe
 take `board=`, `git=` and `codec=`. Their INFO_CHIP request gets `DL_ST_UNKNOWN_CMD`, which every tool already treats
 as "older firmware" and goes on without the chip UID.
 

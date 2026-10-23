@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 keypad, side keys, PTT and encoder (docs/spec/hardware-dm1701.md section 10).
 // The keypad columns are the LCD data lines D0..D7: the shared scan (platform/stm32f4/fsmc_keypad) borrows them.
 #include "dm1701.h"

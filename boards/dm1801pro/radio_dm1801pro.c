@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro radio: FD6818 RF transceiver (bit-banged, its own register set), the HR_C7000 baseband for analog FM,
 // separate RX and TX band paths and the PA drive on DAC channel B (docs/spec/hardware-dm1801pro.md 5; modem-hrc7000.md
 // 4, 5.1, 8) for analog FM and DMR. The DMR slot engine, PA one-shot and PCM audio are the shared HR_C7000 glue
@@ -150,7 +150,7 @@ uint16_t dm1801pro_pa_drive(uint32_t hz, uint8_t power)
 }
 
 // RF_MOD_BIAS_CTRL: TX center + 384 in the high half, the band's modulation byte x 0x0101 in the low half. The radio
-// multiplies the byte by 1.8 (Wide) or 0.9 (Narrow) on an FM channel; ODR doesn't, since its FM deviations were set on
+// multiplies the byte by 1.8 (Wide) or 0.9 (Narrow) on an FM channel; RadioFoundry doesn't, since its FM deviations were set on
 // the bench without the factor (hardware-dm1801pro.md 10)
 static uint32_t mod_bias(uint32_t hz)
 {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Dual watch (docs/ux/dual-watch.md): two channels on Home, A and B, each a channel of any zone or the VFO. One of
 // them is selected: PTT transmits on it and the watch goes on after, and Home's keys (Up / Down, the knob, digits,
 // quick settings) act on it as they act on the one channel of the single Home. The A/B key, Left / Right or # 1

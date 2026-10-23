@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The ui_svc.h calls the radio core answers: the talk target and the one-shot target of the focused row
 // (docs/spec/dmr-voice.md), the temporary channel changes (timeslot, color code, mode), the hear all, monitor and VOX
 // latches, privacy with the stored key, scan, key beeps and the radio's settings (docs/spec/radio-features.md).

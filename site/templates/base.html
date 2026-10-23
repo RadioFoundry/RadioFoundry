@@ -4,13 +4,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ title }} · OpenDigitalRadio</title>
+<title>{{ title }} · RadioFoundry</title>
 <meta name="description" content="{{ description }}">
 <meta name="generator" content="site/build.py {{ git }}">
 <link rel="icon" href="{{root}}static/img/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="{{root}}static/css/tokens.css?v={{ assets }}">
 <link rel="stylesheet" href="{{root}}static/css/site.css?v={{ assets }}">
-<script>try{var t=localStorage.getItem("odr-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>try{var t=localStorage.getItem("rfoundry-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body class="page-{{ page_class }}" data-root="{{root}}" data-home="{{ home }}">
 <a class="skip" href="#main">{{t nav.skip}}</a>
@@ -18,7 +18,7 @@
 	<div class="wrap header-row">
 		<a class="brand" href="{{ home }}index.html">
 			<img src="{{root}}static/img/icon.svg" alt="" width="28" height="28">
-			<span>Open<b>Digital</b>Radio</span>
+			<span>Radio<b>Foundry</b></span>
 		</a>
 		<button class="nav-toggle" aria-expanded="false" aria-controls="site-nav">{{t nav.menu}}</button>
 		<nav id="site-nav" class="site-nav" aria-label="{{t nav.label}}">{{{ nav }}}</nav>

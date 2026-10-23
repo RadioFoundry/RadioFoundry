@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's everyday features (docs/spec/radio-features.md): the scan, beep and battery modules on their own,
 // then scan, TX time-out warning, busy channel lockout, roger beep, 1750 Hz burst, VOX, battery monitor, receiver
 // battery saving and the DMR beeps through radio_sm.c, against a fake board whose receiver hears signals per frequency

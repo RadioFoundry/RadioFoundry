@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // What the web tools remember of a session, for bug reports: the steps they took, a summary of each frame on the
 // wire (never its data), and every error with its stack and causes. Errors also go to the browser console. Kept in
 // memory only: nothing leaves the page unless the user downloads a report, or error reporting is on (report.js).
@@ -38,7 +38,7 @@ function push(e) {
 // A step worth seeing in a report
 export function note(text, data) {
 	push({ t: since(), kind: "note", text, ...(data !== undefined ? { data: plain(data) } : {}) });
-	if (globalThis.console?.debug) console.debug("[odr]", text, ...(data !== undefined ? [data] : []));
+	if (globalThis.console?.debug) console.debug("[rfoundry]", text, ...(data !== undefined ? [data] : []));
 }
 
 // One frame on the wire, as text (command, address, length, result): reports only, not the console
@@ -62,7 +62,7 @@ export function error(stage, e, extra) {
 	errors.push(rec);
 	if (errors.length > ERRORS_MAX) errors.shift();
 	push({ t: rec.t, kind: "error", text: `${stage}: ${rec.message}` });
-	if (globalThis.console?.error) console.error(`[odr] ${stage} failed:`, e, ...(extra !== undefined ? [extra] : []));
+	if (globalThis.console?.error) console.error(`[rfoundry] ${stage} failed:`, e, ...(extra !== undefined ? [extra] : []));
 	try {
 		sink?.(rec, e);
 	} catch {
@@ -129,7 +129,7 @@ export function context() {
 // The whole report: what the user wrote, the browser, the tool's state, the errors and the log
 export function report(description = "") {
 	return {
-		format: "odr-bug-report/1",
+		format: "rfoundry-bug-report/1",
 		tool: info.tool,
 		version: info.version,
 		created: new Date().toISOString(),

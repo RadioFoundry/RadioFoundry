@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // An SPI master as the chip drivers see it (flash/spi_nor, flash/spi_nand): a chip select and a full-duplex byte
 // transfer. The board wires it to its controller and pin; locking stays with the board.
 #ifndef SPI_BUS_H

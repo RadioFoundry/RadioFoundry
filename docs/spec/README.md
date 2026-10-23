@@ -35,17 +35,17 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | [open-firmware-cps.md](open-firmware-cps.md) | The open-firmware codeplug format qdmr writes |
 | [qdmr-yaml.md](qdmr-yaml.md) | qdmr's YAML codeplug file and how the Codeplug Editor maps it |
 | [codeplug-stock-tyt.md](codeplug-stock-tyt.md) | Stock TYT-family codeplugs (DM-1701, MD-UV380, MD-380) in SPI flash: detection and conversion |
-| [codeplug-port.md](codeplug-port.md) | Stock codeplug to ODR: the clean-up, contacts, CPS write shared by the migration tools |
+| [codeplug-port.md](codeplug-port.md) | Stock codeplug to RadioFoundry: the clean-up, contacts, CPS write shared by the migration tools |
 | [debuglink.md](debuglink.md) | The debug link: commands, the view, key injection |
 | [stub-entry.md](stub-entry.md) | The stub entry: loading the flashing tools' RAM monitor at run time, with or without the debug link |
-| [stub-stm32f4.md](stub-stm32f4.md) | The STM32F4 flash stub: entry from ODR, USB, protocol, safety rules, update order |
+| [stub-stm32f4.md](stub-stm32f4.md) | The STM32F4 flash stub: entry from RadioFoundry, USB, protocol, safety rules, update order |
 | [mmdvm-protocol.md](mmdvm-protocol.md) | The MMDVM modem protocol (hotspot mode) |
 | [usb-network.md](usb-network.md) | USB network personality, the IP gateway, control station mode |
 | [ppp.md](ppp.md) | PPP on the serial host link |
 | [tcp-services.md](tcp-services.md) | TCP, HTTP, rigctld, KISS over TCP, APRS-IS |
 | [tftp.md](tftp.md) | TFTP codeplug access |
 | [mdns.md](mdns.md) | mDNS and DNS-SD |
-| [snmp.md](snmp.md) | SNMP agent ([ODR-MIB.txt](ODR-MIB.txt)) |
+| [snmp.md](snmp.md) | SNMP agent ([RFOUNDRY-MIB.txt](RFOUNDRY-MIB.txt)) |
 | [usb-audio.md](usb-audio.md) | Analog and DMR voice over USB: design |
 
 ## DMR modems
@@ -60,7 +60,7 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 ## Radios
 
 [radios.md](radios.md) surveys the radios, their chips and the port order; [capabilities.md](capabilities.md) shows
-what the aftermarket firmware does on each (ODR's own state: [feature matrix](../feature-matrix.md)). Where ODR places each radio's
+what the aftermarket firmware does on each (RadioFoundry's own state: [feature matrix](../feature-matrix.md)). Where RadioFoundry places each radio's
 stock codec: [codec-placement.md](codec-placement.md). Per radio:
 
 | Radio | Hardware | Codec | Moving from stock |

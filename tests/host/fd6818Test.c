@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // FD6818 driver: band words, CTCSS word, and the bit-banged frames against a fake chip that samples the data line on
 // rising clock edges while CS is low (docs/spec/hardware-dm32.md 8.1-8.4)
 #include <stdio.h>

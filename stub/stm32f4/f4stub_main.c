@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The STM32F4 flash stub's entry and main loop (docs/spec/stub-stm32f4.md). ODR copies the image to 0x20000000 and
+// Copyright (c) 2026 The RadioFoundry Authors
+// The STM32F4 flash stub's entry and main loop (docs/spec/stub-stm32f4.md). RadioFoundry copies the image to 0x20000000 and
 // jumps to f4stub_entry with interrupts masked, every NVIC source off, the DMA controllers reset and r0 = the handoff
-// flags (platform/stm32f4/stub_entry.c). The clocks, the GPIO levels and the USB core are as ODR left them. The stub
+// flags (platform/stm32f4/stub_entry.c). The clocks, the GPIO levels and the USB core are as RadioFoundry left them. The stub
 // never enables an interrupt: it polls the USB core and runs until a RESET request or a power cycle.
 //
 // Nothing here is a board fact. USB is the chip's OTG_FS core on PA11 / PA12 (the STM32F405's only full speed pins,
-// set up by ODR), with ODR's serial number (the UID). The SPI flash wiring, the crystal and the bootloader's end
+// set up by RadioFoundry), with RadioFoundry's serial number (the UID). The SPI flash wiring, the crystal and the bootloader's end
 // come from the host's board record (CONFIG, f4stub.h); until then the stub reads the internal flash and writes
 // nothing (stub/common/stubeng.h).
 #include <stddef.h>
@@ -19,7 +19,7 @@
 #include "f4stub_spi.h"
 #include "f4stub_usb.h"
 
-#define HANDOFF_USB_ADOPT	0x1u	// r0 bit 0: ODR's CDC-ACM device is configured (stub_entry.c)
+#define HANDOFF_USB_ADOPT	0x1u	// r0 bit 0: RadioFoundry's CDC-ACM device is configured (stub_entry.c)
 #define IDLE_MS			200u	// a request that stops arriving for this long is dropped (as the debug link's)
 #define HSE_DEFAULT_HZ		8000000u	// until a board record says otherwise: only the stub's own timing uses it
 
@@ -84,7 +84,7 @@ void *memset(void *dst, int c, size_t n)
 	return dst;
 }
 
-// ---- time: the cycle counter at the clock ODR left running
+// ---- time: the cycle counter at the clock RadioFoundry left running
 
 static uint32_t cycles_per_ms;
 static uint32_t last_cyc, acc_cyc, now_ms;
@@ -127,7 +127,7 @@ static void clock_setup(void)
 	}
 }
 
-// The image header (f4stub_header.h), at F4STUB_HDR_OFFSET by the linker script. ODR reads it before the jump: while its
+// The image header (f4stub_header.h), at F4STUB_HDR_OFFSET by the linker script. RadioFoundry reads it before the jump: while its
 // IWDG runs it enters only a stub whose header says it feeds the IWDG (docs/spec/watchdog.md 3.1)
 _Static_assert(sizeof(f4stub_header_t) == F4STUB_HDR_SIZE, "the image header is 16 bytes");
 __attribute__((section(".stub_header"), used)) const f4stub_header_t f4stub_header = {
@@ -138,7 +138,7 @@ __attribute__((section(".stub_header"), used)) const f4stub_header_t f4stub_head
 	.flags = F4STUB_FLAG_FEEDS_IWDG,
 };
 
-// The IWDG: ODR started it (CONFIG_WATCHDOG) and nothing but a reset stops it, so the stub feeds it everywhere it can
+// The IWDG: RadioFoundry started it (CONFIG_WATCHDOG) and nothing but a reset stops it, so the stub feeds it everywhere it can
 // spend time. A write to KR while it isn't running does nothing
 
 void stub_feed(void)
@@ -237,7 +237,7 @@ static void port_reset(void *ctx)
 	(void)ctx;
 	usb_flush(200);		// the RESET reply leaves the FIFO first
 	stub_delay_ms(20);
-	RCC->APB1ENR |= RCC_APB1ENR_PWREN;	// the backup SRAM: ODR's entry left its clock off
+	RCC->APB1ENR |= RCC_APB1ENR_PWREN;	// the backup SRAM: RadioFoundry's entry left its clock off
 	(void)RCC->APB1ENR;
 	PWR->CR |= PWR_CR_DBP;
 	RCC->AHB1ENR |= RCC_AHB1ENR_BKPSRAMEN;
@@ -267,7 +267,7 @@ static stubeng_port_t port = {
 static stubeng_t engine;
 static char serial[25];
 
-// ODR's USB serial number (boards/*/usb_*.c): the 96-bit UID as hex, lowest byte first. The same string keeps the
+// RadioFoundry's USB serial number (boards/*/usb_*.c): the 96-bit UID as hex, lowest byte first. The same string keeps the
 // host's port name when the stub has to enumerate again
 static void make_serial(void)
 {
@@ -282,7 +282,7 @@ static void make_serial(void)
 
 void stub_main(uint32_t flags)
 {
-	stub_feed();			// first: ODR stretched the IWDG for the copy and the jump, nothing more
+	stub_feed();			// first: RadioFoundry stretched the IWDG for the copy and the jump, nothing more
 	for (uint32_t *p = &_sbss; p < &_ebss; p++) {
 		*p = 0;
 	}

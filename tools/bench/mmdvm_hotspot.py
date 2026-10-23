@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """
 Adapted from our earlier bench tool hotspot_test.py.
 
@@ -16,14 +16,14 @@ What it does: SET_FREQ, SET_CONFIG (simplex flag set with --simplex, the default
 which is how our firmware's SFR is turned on: core/dmr/sfr.c sfrMmdvmTrigger), SET_MODE DMR; then GET_STATUS every
 250 ms, logging every frame the radio sends up (DMR_DATA1/2, DMR_LOST1/2, NAK) and status changes, for --seconds.
 --send sends a short network voice call after --send-at seconds (simplex: MS sync on DMR_DATA2; SFR: BS sync on the
-outbound slot 2), paced at 60 ms; it needs the odr_sdrbench package (installed, or a checkout in $ODR_SDRBENCH) for
+outbound slot 2), paced at 60 ms; it needs the rfoundry_sdrbench package (installed, or a checkout in $RFOUNDRY_SDRBENCH) for
 burst building.
 
 Transports: --port is a serial port (USB CDC ACM, 115200 8N1, the standard MMDVM link). --udp is MMDVMHost's UDP
 modem transport (MMDVMHost [Modem] Protocol=udp, ModemAddress / ModemPort; also what the bench gateway's UDP port speaks), for a
 radio that offers MMDVM over a USB network interface; optional.
 
-Our MMDVM extensions (OpenDigitalRadio, not part of MMDVM; only sent / parsed when asked):
+Our MMDVM extensions (RadioFoundry, not part of MMDVM; only sent / parsed when asked):
   * vendor command 0xD5 (--debug): SFR experiment switches, payload flags, framing, reg10, reg12, rssiMin, reg11,
     flags2 (drivers/modem/hrc6000/sfr_glue/hrcSfr.h hrcSfrDebugSet; HRC_SFR_DEBUG_* and HRC_SFR_DEBUG2_* bits);
   * extra GET_STATUS bytes from frame offset 13 on: the SFR counters (hrcSfrDebug_t, same header). Printed as
@@ -42,10 +42,10 @@ GET_VERSION, GET_STATUS, SET_CONFIG, SET_MODE, SET_FREQ = 0x00, 0x01, 0x02, 0x03
 DMR_DATA1, DMR_LOST1, DMR_DATA2, DMR_LOST2 = 0x18, 0x19, 0x1A, 0x1B
 DMR_SHORTLC, DMR_START, DMR_ABORT = 0x1C, 0x1D, 0x1E
 ACK, NAK = 0x70, 0x7F
-ODR_SFR_DEBUG = 0xD5          # our extension
+RFOUNDRY_SFR_DEBUG = 0xD5          # our extension
 NAMES = {0x00: "VERSION", 0x01: "STATUS", 0x02: "SET_CONFIG", 0x03: "SET_MODE", 0x04: "SET_FREQ",
          0x18: "DMR_DATA1", 0x19: "DMR_LOST1", 0x1A: "DMR_DATA2", 0x1B: "DMR_LOST2", 0x1C: "DMR_SHORTLC",
-         0x1D: "DMR_START", 0x1E: "DMR_ABORT", 0x70: "ACK", 0x7F: "NAK", 0xD5: "ODR_SFR_DEBUG"}
+         0x1D: "DMR_START", 0x1E: "DMR_ABORT", 0x70: "ACK", 0x7F: "NAK", 0xD5: "RFOUNDRY_SFR_DEBUG"}
 SYNC_DATA, SYNC_AUDIO = 0x40, 0x20
 
 # hrcSfrDebug_t (drivers/modem/hrc6000/sfr_glue/hrcSfr.h), from GET_STATUS frame offset 13. (name, length, hex?)
@@ -166,7 +166,7 @@ class MmdvmLink:
         cmds = [(SET_FREQ, freq_payload(freq_hz, power)), (SET_CONFIG, config_payload(cc, simplex)),
                 (SET_MODE, b"\x02")]
         if debug:
-            cmds.append((ODR_SFR_DEBUG, debug))
+            cmds.append((RFOUNDRY_SFR_DEBUG, debug))
         for cmd, p in cmds:
             self.t.send(frame(cmd, p))
             time.sleep(0.15)
@@ -228,16 +228,16 @@ class MmdvmLink:
 
 
 def sdrbench_path():
-    # A checkout of odr_sdrbench named by $ODR_SDRBENCH, when the package isn't installed in this Python
-    d = os.environ.get("ODR_SDRBENCH")
+    # A checkout of rfoundry_sdrbench named by $RFOUNDRY_SDRBENCH, when the package isn't installed in this Python
+    d = os.environ.get("RFOUNDRY_SDRBENCH")
     if d and os.path.expanduser(d) not in sys.path:
         sys.path.insert(0, os.path.expanduser(d))
 
 
 def network_call(cc: int, sfr: bool):
     sdrbench_path()
-    from odr_sdrbench import sim
-    from odr_sdrbench.dmr import pdu
+    from rfoundry_sdrbench import sim
+    from rfoundry_sdrbench.dmr import pdu
     call = sim.voice_call(3101999, 215, cc, 2, family="bs" if sfr else "ms", slot=2, voice=[sim.AMBE_SILENCE] * 36)
     out = []
     for tb in call:

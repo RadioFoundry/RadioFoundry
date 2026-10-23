@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Motorola LRRP (Location Request / Response Protocol, UDP 4001), the radio's side: requests from a location server
  * decoded, answers and reports built. MBXML binary documents: a document ID, the length of the rest, then tokens.
- * Token values from odr_sdrbench's codec (odr_sdrbench/dmr/location.py, after ok-dmrlib, node-dmr-lib, Moto.Net and
+ * Token values from rfoundry_sdrbench's codec (rfoundry_sdrbench/dmr/location.py, after ok-dmrlib, node-dmr-lib, Moto.Net and
  * TRBO-NET captures), which is also the test oracle.
  */
 
-#ifndef ODR_DMRLRRP_H
-#define ODR_DMRLRRP_H
+#ifndef RFOUNDRY_DMRLRRP_H
+#define RFOUNDRY_DMRLRRP_H
 
 #include <stdbool.h>
 #include <stdint.h>

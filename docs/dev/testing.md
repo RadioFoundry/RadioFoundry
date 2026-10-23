@@ -21,8 +21,8 @@ what each level is for and where a new test goes.
 | Also | Command | Details |
 |---|---|---|
 | Coverage | `tools/coverage.sh` (needs gcovr) | `build/coverage/index.html`; [CI, Coverage](ci.md#coverage) |
-| Sanitizers | `make -C tests/host clean && make -C tests/host SANITIZE=1` | ASan and UBSan; any report fails the test. `ODR_CI_SANITIZE=1 tools/ci.sh` adds it to the host step |
-| Fuzzing | `ODR_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1` | Seeded mutation loops over the parsers of untrusted input (`tests/host/fuzz.h`); `ODR_FUZZ_SEED` varies the seed |
+| Sanitizers | `make -C tests/host clean && make -C tests/host SANITIZE=1` | ASan and UBSan; any report fails the test. `RFOUNDRY_CI_SANITIZE=1 tools/ci.sh` adds it to the host step |
+| Fuzzing | `RFOUNDRY_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1` | Seeded mutation loops over the parsers of untrusted input (`tests/host/fuzz.h`); `RFOUNDRY_FUZZ_SEED` varies the seed |
 
 ## Host tests
 
@@ -105,7 +105,7 @@ result in `docs/testing/results/` ([tests/hil/README.md](../../tests/hil/README.
 
 A second station for on-air tests: a DMR modem, an RTL-SDR and the bench scripts in `tools/bench/`. It sends calls,
 texts and data to the radio and checks what the radio transmits (IDs, color code, slot timing, ramps, carrier offset,
-FM tones and deviation). Its host and paths come from `ODR_SDR_BENCH_*` environment variables, never from files in
+FM tones and deviation). Its host and paths come from `RFOUNDRY_SDR_BENCH_*` environment variables, never from files in
 the repository. Setup and the manual cases: [docs/testing/dmr-bench.md](../testing/dmr-bench.md).
 
 A bug found on the bench should end as a host test, so it stays fixed without the bench.

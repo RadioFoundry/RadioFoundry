@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # CPS protocol
 
@@ -97,7 +97,7 @@ written and verified (about 100 ms). Rules:
   first.
 - **Quick-key slots** (EEPROM 0x7524-0x7537) hold the side key assignment (`ui.md` 3.1) and are written like any
   other codeplug byte. A CPS that writes back a stale copy (an old codeplug file) brings back that file's keys, the
-  same as for channels. Another firmware's values there are ignored: without ODR's marker in slot 0 the keys are the
+  same as for channels. Another firmware's values there are ignored: without RadioFoundry's marker in slot 0 the keys are the
   board's.
 - **Calibration** (`calibration_addr`, `calibration_size` in the board's flash map; on the DM-1701 512 bytes inside
   the sector at 0x010000, `hardware-dm1701.md` 13.2): only the window's bytes take the CPS's values, and the rest of
@@ -128,7 +128,7 @@ Every `C` request is answered `-`, which the open-firmware tools treat as "done"
 | other | nothing |
 
 `D` (the data-service host commands, `open-firmware-cps.md` 5) is answered `D sub 0`, meaning failed: there is no
-data service in ODR yet.
+data service in RadioFoundry yet.
 
 ### 2.5 qdmr
 

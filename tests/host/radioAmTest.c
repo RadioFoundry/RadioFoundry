@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Air band AM receive in the radio core (docs/spec/airband-and-broadcast.md 3, CONFIG_AM_RX): which channels are
 // received in AM, AM is receive only (PTT, split TX, DMR and the hotspot refused in the air band), the squelch on the
 // signal strength with no sub-audio, the 8.33 / 25 kHz VFO steps and the board's RX-only band; against a fake board

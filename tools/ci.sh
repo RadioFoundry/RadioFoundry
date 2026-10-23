@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # The release gate: everything CI runs, in one script (docs/testing/README.md).
 #
@@ -15,26 +15,26 @@
 #   tools/ci.sh --steps host,python   only these steps (registry, host, python, firmware, licenses, similarity;
 #                                     default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
-#   ODR_CI_SANITIZE=1 tools/ci.sh   the host step also runs the host tests under ASan and UBSan (make SANITIZE=1)
-#   ODR_CI_PRUNE=1 tools/ci.sh  remove each build tree once its size is in the report (the log and the .bin stay;
+#   RFOUNDRY_CI_SANITIZE=1 tools/ci.sh   the host step also runs the host tests under ASan and UBSan (make SANITIZE=1)
+#   RFOUNDRY_CI_PRUNE=1 tools/ci.sh  remove each build tree once its size is in the report (the log and the .bin stay;
 #                               the matrix otherwise leaves about 65 MB per configuration)
 #
 # The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses`, the host tests and
 # `--quick --steps firmware --toolchain <t>` for each toolchain; nightly `--matrix --steps firmware --toolchain <t>`.
 #
-# Every step but host needs a Python 3.11 or later (tools/odr_python.sh): the board registry is TOML. Steps, each
+# Every step but host needs a Python 3.11 or later (tools/rfoundry_python.sh): the board registry is TOML. Steps, each
 # reported as ok / FAIL / skip:
 #   0. registry: boards/*/board.toml and platform/*/platform.toml (tools/boards.py) are well formed and agree
-#      with board.mk, the linker scripts and board_t; tools/odrflash/odrflash/registry.json is current; the loader's
+#      with board.mk, the linker scripts and board_t; tools/rfoundry/rfoundry/registry.json is current; the loader's
 #      self-test
-#   1. host tests (make -C tests/host, with each board's boards/<b>/tests/host.mk), and with ODR_CI_SANITIZE=1 again
+#   1. host tests (make -C tests/host, with each board's boards/<b>/tests/host.mk), and with RFOUNDRY_CI_SANITIZE=1 again
 #      under ASan and UBSan
-#   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); odrflash's tests
-#      (tools/odrflash/tests) and every tool's --self-test (the tools under tools/ and stub/ that have one); the stack
+#   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); rfoundry's tests
+#      (tools/rfoundry/tests) and every tool's --self-test (the tools under tools/ and stub/ that have one); the stack
 #      check's self-test
 #      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
 #      the glossary data is sound and its pages current (tools/glossary.py); the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
-#      pass against odrflash (site/tests/run.sh, needs Node 20+)
+#      pass against rfoundry (site/tests/run.sh, needs Node 20+)
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
 #      notice naming what installs it, its platform.toml toolchain.build):
 #        default            the board's defaults
@@ -56,7 +56,7 @@
 #      maximal configuration must pass the static stack check (make stack-check, docs/dev/stack-check.md): each task's
 #      deepest call chain fits its stack with the margin.
 #   4. tools/license_grep.sh, and `reuse lint` (skipped with a notice when reuse isn't installed: pipx install reuse)
-#   5. tools/similarity_scan.py against the trees in $ODR_SIMILARITY_REFS (space separated), only when it is set:
+#   5. tools/similarity_scan.py against the trees in $RFOUNDRY_SIMILARITY_REFS (space separated), only when it is set:
 #      the reference trees are never part of this repository or of public CI
 #
 # Build trees: build/ci/<board>-<config>/ (logs next to them). The exit status is 0 only when nothing failed.
@@ -104,13 +104,13 @@ skip() { echo "ci: skip  $*"; SKIPPED="$SKIPPED
   $*"; }
 # The registry tools (tools/boards.py) read TOML: Python 3.11 or later. Empty when there is none (the steps that need it
 # fail with the reason)
-REG_PY=$(tools/odr_python.sh 2> "$OUT/odr-python.log") || REG_PY=""
+REG_PY=$(tools/rfoundry_python.sh 2> "$OUT/rfoundry-python.log") || REG_PY=""
 reg() { [ -n "$REG_PY" ] && $REG_PY tools/boards.py "$@"; }
 # --toolchain, --platform: their boards from the registry. A selection with no board builds none (not every board);
 # an unknown toolchain or platform fails, as does an unknown --board id, so a typo in a workflow never passes with
 # nothing built
 if [ -n "$PLATFORMS$TOOLCHAINS" ]; then
-	[ -n "$REG_PY" ] || { echo "ci: --toolchain and --platform need the registry: $(cat "$OUT/odr-python.log")" >&2; exit 2; }
+	[ -n "$REG_PY" ] || { echo "ci: --toolchain and --platform need the registry: $(cat "$OUT/rfoundry-python.log")" >&2; exit 2; }
 	ONLY=$(reg list ${PLATFORMS:+--platform "$PLATFORMS"} ${TOOLCHAINS:+--toolchain "$TOOLCHAINS"} --comma) || exit 2
 	sel="${TOOLCHAINS:+toolchain $TOOLCHAINS}"
 	sel="$sel${PLATFORMS:+${sel:+, }platform $PLATFORMS}"
@@ -125,7 +125,7 @@ done
 if step registry; then
 echo "== registry"
 if [ -z "$REG_PY" ]; then
-	bad "board registry: $(cat "$OUT/odr-python.log")"
+	bad "board registry: $(cat "$OUT/rfoundry-python.log")"
 elif reg check > "$OUT/registry.log" 2>&1 &&
      reg self-test >> "$OUT/registry.log" 2>&1; then
 	ok "board registry: $(grep '^boards: ' "$OUT/registry.log" | sed 's/^boards: //') and self-test"
@@ -134,14 +134,14 @@ else
 	bad "board registry (see $OUT/registry.log)"
 fi
 # the docs blocks generated from the registry are current, and no radio reads lower than on the base branch
-# (ODR_FLOOR_REF, default origin/main; skipped when this checkout doesn't have it)
+# (RFOUNDRY_FLOOR_REF, default origin/main; skipped when this checkout doesn't have it)
 if [ -n "$REG_PY" ]; then
-	FLOOR_REF="${ODR_FLOOR_REF:-origin/main}"
+	FLOOR_REF="${RFOUNDRY_FLOOR_REF:-origin/main}"
 	if git rev-parse -q --verify "$FLOOR_REF^{commit}" > /dev/null; then
 		FLOOR_ARGS="--floor $FLOOR_REF"
 	else
 		FLOOR_ARGS=
-		skip "radio floor: no $FLOOR_REF in this checkout (ODR_FLOOR_REF)"
+		skip "radio floor: no $FLOOR_REF in this checkout (RFOUNDRY_FLOOR_REF)"
 	fi
 	if reg docs --check $FLOOR_ARGS > "$OUT/registry-docs.log" 2>&1; then
 		ok "$(tail -1 "$OUT/registry-docs.log" | sed 's/^boards: //')"
@@ -165,7 +165,7 @@ if grep -q 'warning:' "$OUT/host-tests.log"; then
 	grep 'warning:' "$OUT/host-tests.log" | sort -u | head -20
 	bad "host tests built with warnings"
 fi
-if [ "${ODR_CI_SANITIZE:-0}" = 1 ]; then
+if [ "${RFOUNDRY_CI_SANITIZE:-0}" = 1 ]; then
 	# the binaries don't depend on the flags: clean before and after, so later steps get normal builds
 	make -s -C tests/host clean > /dev/null
 	if make -C tests/host -j"$JOBS" SANITIZE=1 > "$OUT/host-sanitize.log" 2>&1; then
@@ -221,7 +221,7 @@ for f in sys.argv[1:]:
 	# plugin's tests with a fake radio. bringup.py needs Python 3.11+ (tomllib): the shared lookup's ($REG_PY)
 	BRINGUP_PY=$REG_PY
 	if [ -n "$BRINGUP_PY" ]; then
-		if env -u ODR_PORT "$BRINGUP_PY" tools/bringup.py check --pytest-python python3 > "$OUT/bringup-check.log" 2>&1
+		if env -u RFOUNDRY_PORT "$BRINGUP_PY" tools/bringup.py check --pytest-python python3 > "$OUT/bringup-check.log" 2>&1
 		then
 			ok "feature checklist: $(tail -1 "$OUT/bringup-check.log" | sed 's/^bringup check: //')"
 		else
@@ -229,10 +229,10 @@ for f in sys.argv[1:]:
 			bad "feature checklist (see $OUT/bringup-check.log)"
 		fi
 	else
-		skip "feature checklist: no Python 3.11 or later (set ODR_PYTHON)"
+		skip "feature checklist: no Python 3.11 or later (set RFOUNDRY_PYTHON)"
 	fi
 	if python3 -c 'import pytest' 2>/dev/null; then
-		if ODR_PYTHON=$BRINGUP_PY python3 -m pytest -q -p no:cacheprovider tests/hil/test_bringup.py \
+		if RFOUNDRY_PYTHON=$BRINGUP_PY python3 -m pytest -q -p no:cacheprovider tests/hil/test_bringup.py \
 			> "$OUT/bringup-test.log" 2>&1; then
 			ok "bring-up mode tests ($(grep -oE '[0-9]+ (passed|skipped)' "$OUT/bringup-test.log" | paste -sd, -))"
 		else
@@ -240,22 +240,22 @@ for f in sys.argv[1:]:
 			bad "bring-up mode tests (see $OUT/bringup-test.log)"
 		fi
 	fi
-	# the flashing tools: odrflash's host tests (sector planning, manifests, codec merge, fake bootloader runs), and
+	# the flashing tools: rfoundry's host tests (sector planning, manifests, codec merge, fake bootloader runs), and
 	# the self-test of every tool that has one (no USB, synthetic keys and stock files). The APRS decoder and the
 	# stack check have their own steps below (a WAV from the host tests, numpy)
 	selftests=""
-	python3 -W ignore -m unittest discover -s tools/odrflash/tests > "$OUT/odrflash-tests.log" 2>&1 && st_ok=1 || st_ok=""
+	python3 -W ignore -m unittest discover -s tools/rfoundry/tests > "$OUT/rfoundry-tests.log" 2>&1 && st_ok=1 || st_ok=""
 	for t in $(grep -l -e '"--self-test"' tools/*.py tools/*/*.py stub/*.py | grep -v -e aprs_afsk_check -e stack_check); do
 		[ -n "$st_ok" ] || break
-		echo "== $t --self-test" >> "$OUT/odrflash-tests.log"
-		python3 "$t" --self-test >> "$OUT/odrflash-tests.log" 2>&1 || { st_ok=""; echo "FAILED: $t" >> "$OUT/odrflash-tests.log"; }
+		echo "== $t --self-test" >> "$OUT/rfoundry-tests.log"
+		python3 "$t" --self-test >> "$OUT/rfoundry-tests.log" 2>&1 || { st_ok=""; echo "FAILED: $t" >> "$OUT/rfoundry-tests.log"; }
 		selftests="$selftests${selftests:+, }$(basename "$t" .py)"
 	done
 	if [ -n "$st_ok" ]; then
-		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash); self-tests of $selftests"
+		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/rfoundry-tests.log") (rfoundry); self-tests of $selftests"
 	else
-		tail -30 "$OUT/odrflash-tests.log"
-		bad "flashing tool tests (see $OUT/odrflash-tests.log)"
+		tail -30 "$OUT/rfoundry-tests.log"
+		bad "flashing tool tests (see $OUT/rfoundry-tests.log)"
 	fi
 	# the APRS AFSK decoder the HIL tests run on the SDR bench: frames, synthesized I/Q and the firmware's own WAV
 	if python3 -c 'import numpy' 2>/dev/null; then
@@ -310,8 +310,8 @@ for f in sys.argv[1:]:
 		skip "web site build: markdown-it-py not installed (pip install -r site/requirements.txt, or install uv)"
 	fi
 	if command -v node > /dev/null; then
-		if ODR_SITE_FIXTURES="$OUT/site-tests" site/tests/run.sh > "$OUT/site-tests.log" 2>&1; then
-			ok "web flasher tests: $(grep -E '^. pass' "$OUT/site-tests.log" | sed 's/^. //') against odrflash"
+		if RFOUNDRY_SITE_FIXTURES="$OUT/site-tests" site/tests/run.sh > "$OUT/site-tests.log" 2>&1; then
+			ok "web flasher tests: $(grep -E '^. pass' "$OUT/site-tests.log" | sed 's/^. //') against rfoundry"
 		else
 			tail -30 "$OUT/site-tests.log"
 			bad "web flasher tests (see $OUT/site-tests.log)"
@@ -382,7 +382,7 @@ build() {
 	fi
 	echo "| $b | $name | $bytes | $delta | $free | $pct % |" >> "$REPORT"
 	ok "$b $name: $bytes bytes, $free bytes free in the app region"
-	if [ "${ODR_CI_PRUNE:-0}" = 1 ]; then
+	if [ "${RFOUNDRY_CI_PRUNE:-0}" = 1 ]; then
 		cp "$bin" "$dir.bin" && rm -rf "$dir"
 	fi
 }
@@ -399,7 +399,7 @@ builds() {
 }
 
 if step firmware; then
-[ -n "$REG_PY" ] || bad "firmware: $(cat "$OUT/odr-python.log") (the build options, extras and stubs come from it)"
+[ -n "$REG_PY" ] || bad "firmware: $(cat "$OUT/rfoundry-python.log") (the build options, extras and stubs come from it)"
 {
 	echo "# Image sizes ($(git rev-parse --short=8 HEAD 2>/dev/null), $(date '+%Y-%m-%d %H:%M'))"
 	echo
@@ -493,7 +493,7 @@ fi
 fi
 
 # ── 5. similarity scan (author's machine only) ──────────────────────────────
-REFS=${ODR_SIMILARITY_REFS:-}
+REFS=${RFOUNDRY_SIMILARITY_REFS:-}
 if ! step similarity; then
 	:
 elif [ -n "$REFS" ]; then
@@ -505,7 +505,7 @@ elif [ -n "$REFS" ]; then
 		bad "similarity scan: shared token runs, review $OUT/similarity.txt by hand"
 	fi
 else
-	skip "similarity scan: set ODR_SIMILARITY_REFS to the reference trees to run it"
+	skip "similarity scan: set RFOUNDRY_SIMILARITY_REFS to the reference trees to run it"
 fi
 
 echo

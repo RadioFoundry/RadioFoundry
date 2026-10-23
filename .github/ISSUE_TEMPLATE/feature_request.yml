@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 name: Feature request
-description: Something ODR should do that it doesn't.
+description: Something RadioFoundry should do that it doesn't.
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Check the README's feature table and [docs/feature-matrix.md](https://github.com/sfowlr/OpenDigitalRadio/blob/main/docs/feature-matrix.md)
+        Check the README's feature table and [docs/feature-matrix.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/feature-matrix.md)
         first: it may be planned or behind a build switch.
   - type: textarea
     id: need
@@ -20,7 +20,7 @@ body:
     id: today
     attributes:
       label: How you do it today
-      description: On ODR, on the stock firmware or on another radio, and what's wrong with that.
+      description: On RadioFoundry, on the stock firmware or on another radio, and what's wrong with that.
   - type: textarea
     id: proposal
     attributes:

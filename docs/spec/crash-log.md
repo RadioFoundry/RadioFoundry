@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Crash log
 
@@ -139,7 +139,7 @@ entry. A frame the CPU couldn't push (a stacking error) leaves the registers 0 a
 The store is the 4 KB backup SRAM at 0x40024000 (`PWR_CR.DBP`, `RCC_AHB1ENR.BKPSRAMEN`). A system reset leaves the
 backup domain alone and the stock bootloader, which runs in main RAM before the application, doesn't look at it
 (`hardware-dm1701.md` 15.4: the ROM DFU entry's RTC backup register survives the same way). The record is lost when
-the supply goes. Restart: `NVIC_SystemReset`, then the stock bootloader and ODR as at power-on.
+the supply goes. Restart: `NVIC_SystemReset`, then the stock bootloader and RadioFoundry as at power-on.
 
 ### 2.2 HR_C7000 (DM-32UV, DM-1801 Pro, DB25-D)
 
@@ -167,12 +167,12 @@ without the crash log. Code: `core/crash/crash_trace.c` (the line, portable), `h
 |---|---|
 | Port | the host UART, at the rate it runs at (115200 8N1): DM-32UV and DM-1801 Pro UART0 (the programming cable), DB25-D UART1 |
 | Lines | `CRASH_TRACE_LINES` (3), one a second, timed on the free-running clock timer (interrupts are off); then 50 ms for the UART's FIFO to empty, then the record and the restart |
-| Format | `\r\n#ODRFAULT1 n=01 v=<vector, 0 for a hang> pc=<EPC> psr=<EPSR> lr=<r15> sp=<sp before the frame> r0=<..> .. r13=<..> *<crc>\r\n`; every value 8 lower-case hex digits, `n` the line's number as 2 hex digits |
+| Format | `\r\n#RD0FAULT1 n=01 v=<vector, 0 for a hang> pc=<EPC> psr=<EPSR> lr=<r15> sp=<sp before the frame> r0=<..> .. r13=<..> *<crc>\r\n`; every value 8 lower-case hex digits, `n` the line's number as 2 hex digits |
 | CRC | CRC-16/CCITT-FALSE (polynomial 0x1021, init 0xFFFF, no reflection, no final XOR) over the bytes from `#` up to and including the space before `*`, as 4 lower-case hex digits |
 | Watchdog | fed once before the first line; the three seconds stay inside the timeout ([watchdog.md](watchdog.md) 2) |
 
-The sync word `#ODRFAULT1` and the CRC let a reader pick the lines out of whatever else the port carries (MMDVM or
-CPS traffic, the debug link). `tools/odr_fault_trace.py PORT` reads the port raw for a while (the debug link must not
+The sync word `#RD0FAULT1` and the CRC let a reader pick the lines out of whatever else the port carries (MMDVM or
+CPS traffic, the debug link). `tools/rfoundry_fault_trace.py PORT` reads the port raw for a while (the debug link must not
 hold it), or `--file LOG` a saved capture, checks each line's CRC and prints the registers; `--selftest` decodes the
 golden line `tests/host/crashTest.c` builds.
 
@@ -180,7 +180,7 @@ The STM32 radios have no UART a fault handler could print on: their host port is
 their one UART is a GPS receive line (DM-1701 USART1 RX on PA10, its TX pin PA9 used as the GPS power switch; MD-380 G
 models USART3 RX on PD9). Their faults keep the record only.
 
-Checked on hardware: DB25-D (2026-10-21), `odr_debug.py crash test trap` printed lines the tool decoded with good
+Checked on hardware: DB25-D (2026-10-21), `rfoundry_debug.py crash test trap` printed lines the tool decoded with good
 CRCs, then the radio restarted with the record kept.
 
 ## 3. The record
@@ -280,8 +280,8 @@ crash log); without it the debug link still shows the record.
 ## 6. Unverified
 
 - That the store survives the restart on the DM-32UV, the DB25-D and the MD-380. The record's CRC means a store
-  that doesn't survive shows no record; it can't show a wrong one. Check: `odr_debug.py crash test trap`, then
-  `odr_debug.py crash` after the restart.
+  that doesn't survive shows no record; it can't show a wrong one. Check: `rfoundry_debug.py crash test trap`, then
+  `rfoundry_debug.py crash` after the restart.
 - The report on the air: no receiver for port 4090 exists yet.
 - The restart cause (1.3) on the MD-380. Check: `tests/hil/test_watchdog.py` under `--allow-reboot`.
 
@@ -306,7 +306,7 @@ the DM-1701's snapshots named each waiting task's own wait (`radio_task`, `dmr_t
 
 ## 7. Tests
 
-`tests/host/crashTest.c`: the fault trace's golden line and its CRC (and `tools/odr_fault_trace.py --selftest` on the
+`tests/host/crashTest.c`: the fault trace's golden line and its CRC (and `tools/rfoundry_fault_trace.py --selftest` on the
 same line), the CRC, sealing and the count in a row, the build ID, the start-up side on a fake store,
 the packed report and the summary line (a hang's too); `ui_svc_crash.c` on fake settings, contacts and data service (the record for
 the screen, seen, clear, the report to a private or group contact, its progress and the sent mark); and
@@ -364,7 +364,7 @@ Where it is called:
 
 Every reboot request (the debug link's REBOOT, the CPS's reset, the storage UI) goes through `board.system->reboot`, so
 it is covered by the reset row. The time from power-on to the first `board_rf_safe` is the vendor bootloader's (and on
-the DB25-D the first stage's handful of instructions), which ODR can't change.
+the DB25-D the first stage's handful of instructions), which RadioFoundry can't change.
 
 Unverified on hardware: that each radio's transmitter actually stops (current and RF) at a crash while keyed, and that
 the DAC B write before `hrc_clock_init` is harmless on every HR_C7000 radio (the vendor loaders leave the peripheral

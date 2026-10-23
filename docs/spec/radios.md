@@ -2,8 +2,8 @@
 
 # Radios: hardware survey and port plan
 
-Status: research, 2026-10-10. This page collects the main chips of every radio ODR supports or plans to support, plus
-close relatives, from public sources only. It also says which ODR platforms and drivers each radio could reuse and
+Status: research, 2026-10-10. This page collects the main chips of every radio RadioFoundry supports or plans to support, plus
+close relatives, from public sources only. It also says which RadioFoundry platforms and drivers each radio could reuse and
 suggests an order for the ports. Register-level facts live in the per-radio specs
 ([hardware-dm1701.md](hardware-dm1701.md), [hardware-dm32.md](hardware-dm32.md),
 [hardware-md380.md](hardware-md380.md), [hardware-mduv380.md](hardware-mduv380.md), [hardware-gd88.md](hardware-gd88.md), [hardware-db25d.md](hardware-db25d.md), [hardware-dm1801pro.md](hardware-dm1801pro.md), [hardware-anytone.md](hardware-anytone.md)). This page is the overview.
@@ -96,7 +96,7 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - A repair-guide snippet claims the dual-band radios use an NXP MK22. That contradicts every other source and is
   almost certainly wrong (?).
 - Open firmware: the OpenGD77 project supports it.
-- **ODR:** the same board family as the DM-1701 ([hardware-mduv380.md](hardware-mduv380.md) lists every difference).
+- **RadioFoundry:** the same board family as the DM-1701 ([hardware-mduv380.md](hardware-mduv380.md) lists every difference).
   It needs a key map, no LCD row offset and its own panel-type table, battery and volume ADC scaling, power tables
   (5 W and Plus 10 W, whose PA band select and backlight pins are swapped), its own DFU key and GPS on USART1 (PA10,
   power PA9; an earlier note here said USART3, which is the MD-380's). No new drivers.
@@ -126,7 +126,7 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - FCC ID POD-DMR3 (TYT), granted 2017-12-28, with class II changes in 2020 and 2021 (MD-9600-5P GPS), three
   internal-photo exhibits (C) ([fccid.io](https://fccid.io/POD-DMR3)). No separate RT90 FCC ID was found.
 - Open firmware: the OpenGD77 project has per-version builds.
-- **ODR:** reuses `platform/stm32f4`, `drivers/modem/hrc6000`, `drivers/flash/spi_nor`, the 128x64 display class
+- **RadioFoundry:** reuses `platform/stm32f4`, `drivers/modem/hrc6000`, `drivers/flash/spi_nor`, the 128x64 display class
   already in the UI ([ui.md](ui.md)). New: a SKY72310 synthesizer driver plus the per-band receive chain, an ST7567
   display driver, analog mic-key decoding, and a board-version probe or per-version builds.
 
@@ -147,7 +147,7 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - FCC ID PODMD-380, granted 2015-07-22, with an 8-page internal-photos exhibit (F, search snippet)
   ([fccid.io](https://fccid.io/PODMD-380/Internal-Photos/Internal-Photos-2688727)).
 - Open firmware: the OpenGD77 project has a port.
-- **ODR:** `boards/md380` builds (UHF and VHF images), passes its host tests and has run on a radio
+- **RadioFoundry:** `boards/md380` builds (UHF and VHF images), passes its host tests and has run on a radio
   ([hardware-md380.md](hardware-md380.md), [md380-bringup.md](../testing/md380-bringup.md)). It reuses
   `platform/stm32f4`, `drivers/flash/spi_nor` and `drivers/display/st7735` (HX8302A assumed compatible, ?). The
   HR_C5000 is a variant of `drivers/modem/hrc6000` (a chip flag selects the register differences). New:
@@ -177,10 +177,10 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   [swenton.com](https://swenton.com/ham-radio/ham-radio-articles/opengd77)). Sources contradict each other on the
   DM-1801A (?).
 - Open firmware: the OpenGD77 project supports the whole family.
-- **ODR:** reuses `drivers/modem/hrc6000`, `drivers/rf/at1846s`, `drivers/flash/spi_nor` and the 128x64 display
+- **RadioFoundry:** reuses `drivers/modem/hrc6000`, `drivers/rf/at1846s`, `drivers/flash/spi_nor` and the 128x64 display
   class. New: a `platform/mk22` (Kinetis start-up, clocks, SPI, I2C, USB device for TinyUSB), a UC1701 display driver,
   an I2C EEPROM driver for settings, and an .sgl image tool. The 512 KB of internal flash is half the STM32 radios'
-  1 MB, so check ODR's image size with codec early. The HD1 v1 is the same platform with a color display and a serial
+  1 MB, so check RadioFoundry's image size with codec early. The HD1 v1 is the same platform with a color display and a serial
   bootloader.
 
 ### Radioddity GD-88
@@ -198,7 +198,7 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 - Programming and updates go over a USB-serial cable (FTDI-class chip in the cable) into the K1 jack, to SoC A's
   UART1 at 115200. The radio has no USB port, and neither stock image uses the HR_C7000 USB core (COM, BIN):
   [hardware-gd88.md](hardware-gd88.md).
-- **ODR:** reuses `platform/hrc7000` and `drivers/modem/hrc7000` from the DM-32UV. New: the RF chip(s), the display,
+- **RadioFoundry:** reuses `platform/hrc7000` and `drivers/modem/hrc7000` from the DM-32UV. New: the RF chip(s), the display,
   and core support for two simultaneous receivers if the hardware really has two independent DMR paths.
 
 ### Baofeng DM-32UV
@@ -250,7 +250,7 @@ Two listings sold new in 2026 under the DM-1801 name. Neither is the DM-1801 v1 
   doesn't get the v1 board.
 - **Telling them apart:** v1 has a 128x64 mono display (D). The model and FCC ID label under the battery is the
   reliable check; the case alone isn't (see the DR-1801 below).
-- **ODR:** reuses `platform/hrc7000`, `drivers/modem/hrc7000`, the FD6818 driver (own register set) and the shared
+- **RadioFoundry:** reuses `platform/hrc7000`, `drivers/modem/hrc7000`, the FD6818 driver (own register set) and the shared
   factory calibration reader. New: the ST7567 display driver and the board. The hardware is in
   [hardware-dm1801pro.md](hardware-dm1801pro.md); the radio is not yet run on a bench. Needs: the key map, the update
   path and the codec's location.
@@ -264,7 +264,7 @@ Two listings sold new in 2026 under the DM-1801 name. Neither is the DM-1801 v1 
 - **Easily mistaken for a DM-1801:** the case looks identical (C, FCC photos). The OpenGD77 FAQ calls the DR-1801
   completely different hardware from the DM-1801 (F) ([OpenGD77 FAQ](https://opengd77.org/viewtopic.php?t=7)). A
   forum claim that Baofeng renamed the redesigned DM-1801 to DR-1801 is unverified (F).
-- **ODR:** not planned. Nothing in ODR drives an Auctus DMR module, and no public documentation for it was found.
+- **RadioFoundry:** not planned. Nothing in RadioFoundry drives an Auctus DMR module, and no public documentation for it was found.
 
 ### Radioddity DB25-D / DB25-D PRO / Retevis RT73 / Kydera CDR-300UV
 
@@ -335,14 +335,14 @@ The Retevis RT73 is reported as the same radio (F) ([kydera-ham forum](https://k
   qdmr's support request has been open since 2021 (C) ([qdmr #165](https://github.com/hmatuschek/qdmr/issues/165)).
   MM7DBT's CPEditor edits stock codeplugs (F) ([codeplugs.rats.net](https://codeplugs.rats.net/help/cps)).
 - **Not DMR:** the DB25-G, DB20-G, DB40-G and DB35-G GMRS mobiles and the "DB25 Pro" (no D) are analog FM radios
-  (C, [radioddity.com DB25-G](https://radioddity.com/products/radioddity-db25g)). They aren't ODR targets.
-- **ODR:** bring-up started, `make BOARD=db25d` ([hardware-db25d.md](hardware-db25d.md) 9): FM receive, nothing run
+  (C, [radioddity.com DB25-G](https://radioddity.com/products/radioddity-db25g)). They aren't RadioFoundry targets.
+- **RadioFoundry:** bring-up started, `make BOARD=db25d` ([hardware-db25d.md](hardware-db25d.md) 9): FM receive, nothing run
   on a radio yet. It reuses `platform/hrc7000` (shared with the DM-32), the `st7735` driver on a bit-banged serial
   bus, `drivers/rf/bk4819` for both chips (receiver and LO synthesizer), the shared calibration curve, and
   `drivers/flash/spi_nand` (read side) for the NAND. The calibration reader takes the newer of the NAND and
   program-flash copies and never writes either. Still to do: TX (refused until a real calibration page has been seen),
   DMR (the DM-32's modem glue shared, plus a codec recipe for a stock image from 2024-05 or later), the NAND's write
-  side and a storage adapter (ODR's stores assume NOR sectors), the mic keypad protocol, the FD6818 boards, and an
+  side and a storage adapter (RadioFoundry's stores assume NOR sectors), the mic keypad protocol, the FD6818 boards, and an
   unbrick path (the JTAG pins look untouched by the app; the ROM serial boot needs checking on this board).
 
 ### Radioddity DB40-D / Kydera CDR-700UV
@@ -373,7 +373,7 @@ The Retevis RT73 is reported as the same radio (F) ([kydera-ham forum](https://k
 - **Codec:** `libc7000_hrvocoder_V1.9.6.a` in both images (IMG). It's software in each C7000, so own-stock extraction
   works as for the DB25-D, once per image if both processors decode voice.
 - **Open firmware:** none.
-- **ODR:** needs two cooperating images (A runs the UI, GPS and Bluetooth; B is a second modem and receiver) and an
+- **RadioFoundry:** needs two cooperating images (A runs the UI, GPS and Bluetooth; B is a second modem and receiver) and an
   A↔B link protocol. That's the GD-88's problem too, so it should follow the GD-88 port. New beyond the DB25-D:
   the dual-SoC core support, the 2.4" panel, two PA power tables and fan control. Effort: months. Blockers: the two
   chips' identity, the A↔B protocol and hardware.
@@ -393,11 +393,11 @@ The Retevis RT73 is reported as the same radio (F) ([kydera-ham forum](https://k
 Not DMR candidates: the BK4819 and BK4829 are analog FM transceivers, and the BK4829 adds only an FSK modem (C)
 ([datasheet listing](https://www.alldatasheet.net/datasheet-pdf/pdf/2171272/BEKEN/BK4829.html)). The Radtel RT-4D does
 DMR through a BK4819 plus an HF6853 vocoder module (unverified), a
-different architecture from anything in ODR. The Retevis C62 and Quansheng-style radios are FM only.
+different architecture from anything in RadioFoundry. The Retevis C62 and Quansheng-style radios are FM only.
 
 ## What exists and what's new
 
-| Building block | In ODR now | Needed by |
+| Building block | In RadioFoundry now | Needed by |
 |---|---|---|
 | `platform/stm32f4` | yes | DM-1701, MD-UV380, MD-9600, MD-380, MD-2017, CS7000 |
 | `platform/hrc7000` | yes | DM-32UV, GD-88, DB25-D family, DB40-D, DM-1801 Pro / DM-1801 (2026) |

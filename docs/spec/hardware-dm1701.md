@@ -74,9 +74,9 @@ address 0x08074714 to 0x080E3A74..0x080F3C90, and the descriptor at 0x080FFF80.
 | Sector | Address | Size | Holds |
 |---|---|---|---|
 | 0-2 | 0x08000000..0x0800BFFF | 48 KB | stock bootloader: never erased or written |
-| 3 | 0x0800C000..0x0800FFFF | 16 KB | ODR (vector table first) |
-| 4 | 0x08010000..0x0801FFFF | 64 KB | ODR |
-| 5-9 | 0x08020000..0x080BFFFF | 5 x 128 KB | ODR |
+| 3 | 0x0800C000..0x0800FFFF | 16 KB | RadioFoundry (vector table first) |
+| 4 | 0x08010000..0x0801FFFF | 64 KB | RadioFoundry |
+| 5-9 | 0x08020000..0x080BFFFF | 5 x 128 KB | RadioFoundry |
 | 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0) |
 | 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E3A71), codec code (0x080E3A74..0x080F3C8F), descriptor (0x080FFF80..0x080FFFFF) |
 
@@ -86,12 +86,12 @@ The image is one `.bin` from 0x0800C000, and an update erases and writes only th
 the codec in sectors 10 and 11 are 0xFF after a merge and are never executed. The DM-1701's settings and codeplug live
 in the external SPI flash, so nothing else writes internal flash.
 
-Stock firmware, and ODR builds from before the codec moved, keep the codec code in sectors 7 and 8, which the
+Stock firmware, and RadioFoundry builds from before the codec moved, keep the codec code in sectors 7 and 8, which the
 application now covers. A release or manifest with two ranges (the application and a sector 9 data part) is from
 before the move and is refused. Moving a radio to this layout writes the codec once, from the stock file or from a
 copy the tools read from the radio earlier ([release.md](../dev/release.md), "Codec handling").
 
-odrflash's keep and merge modes follow from this map ([release.md](../dev/release.md), "Codec handling"). Old builds
+rfoundry's keep and merge modes follow from this map ([release.md](../dev/release.md), "Codec handling"). Old builds
 of the aftermarket firmware ran the MD-9600 V26.45 codec at 0x0807537C instead (`codec-dm1701.md`, comparison).
 
 The codec's entry points, as offsets from the code start: encode +0x130, encode FEC +0x4E8, decode +0x5D8. Call with
@@ -604,7 +604,7 @@ Morse keying for the hotspot's CW ID (`tx_tone_key`, `boards/dm1701/radio_dm1701
 saved value), so the carrier stays up and the tone switches without a retune. On air: `test_hotspot_cwid` checks the
 Morse tone (`docs/testing/on-air-coverage.md`).
 
-ODR's `tx_tone(hz)` (`boards/dm1701/radio_dm1701.c`, the roger beep and the 1750 Hz burst of `radio-features.md`
+RadioFoundry's `tx_tone(hz)` (`boards/dm1701/radio_dm1701.c`, the roger beep and the 1750 Hz burst of `radio-features.md`
 3.3) uses tone1 with 0x79 = 0xC000 and tone deviation 0x1C, and mutes the HR_C6000 microphone path (page 4 0xE0
 bit 6). `tx_tone(0)` and every return to receive restore the saved registers.
 
@@ -631,7 +631,7 @@ firmware register tables (values), on-air measurements (TX offset), field calibr
 
 ### 5.10 APRS AFSK transmit
 
-ODR's `hal_afsk_t` (`boards/dm1701/afsk_dm1701.c`, `aprs.md` 5) uses the AT1846S tone generator as the voice source,
+RadioFoundry's `hal_afsk_t` (`boards/dm1701/afsk_dm1701.c`, `aprs.md` 5) uses the AT1846S tone generator as the voice source,
 as for the roger beep. TIM6 (APB1 timer clock 72 MHz, prescaler 2, `ARR = clk / 2 / 1200 - 1`, interrupt priority
 5, no RTOS calls) interrupts at every symbol boundary. It writes the next tone to register 0x35 when the tone
 changes: one I2C write of about 0.1 ms in an 833 us symbol. The radio core keeps the I2C bus free meanwhile. At the
@@ -644,7 +644,7 @@ set. An earlier build wrote bits 6:4 and keyed a silent carrier (`gotchas.md` 3.
 
 ### 5.11 Receiver sleep
 
-ODR's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches the
+RadioFoundry's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches the
 receive supply off. `rx_sleep(false)` retunes.
 
 ---
@@ -714,7 +714,7 @@ Interpolation fractions (firmware constants, empirical):
 On the 10 W radio levels 5-8 are 2 W, 3 W, 5 W, 10 W: level 5 = low + (mid - low) x f2, level 6 = low + (mid - low) x
 f3, level 7 = mid, level 8 = high. Clamp to 4095.
 
-Without a loaded calibration ODR drives a fixed DAC value of 300 (`DM1701_DAC_UNCALIBRATED` in
+Without a loaded calibration RadioFoundry drives a fixed DAC value of 300 (`DM1701_DAC_UNCALIBRATED` in
 `boards/dm1701/radio_dm1701.c`), a very low drive.
 
 Sources: firmware constants (empirical fractions), CubeMX (DAC).
@@ -768,7 +768,7 @@ Sources: firmware constants, HR_C6000 documentation, CubeMX.
 After each burst the aftermarket firmware writes 0x00 to the data address so the shared data lines rest low before the keypad
 is scanned.
 
-The case's lens hides about 5 px at the left and right edges. ODR's safe-area insets default to 5 px left and right,
+The case's lens hides about 5 px at the left and right edges. RadioFoundry's safe-area insets default to 5 px left and right,
 none top and bottom (`CONFIG_DISPLAY_INSET*` in `boards/dm1701/config.mk`, `ui.md` 1).
 
 ### 9.2 Controller type and orientation
@@ -922,7 +922,7 @@ steps per detent, resting where A equals B (00 and 11). Measured on the bench (2
 fast detents each gave exactly 10 detents and 20 transitions, 11 counterclockwise gave -11 / 22, a wobble without a
 detent gave 0 detents (14 transitions, 12 reversals), never an illegal state.
 
-ODR interrupts on both edges of both lines (EXTI14 for A, EXTI11 for B, one handler) and feeds every sample of the two
+RadioFoundry interrupts on both edges of both lines (EXTI14 for A, EXTI11 for B, one handler) and feeds every sample of the two
 levels to the table decoder in `drivers/input/quadrature`: each sample against the previous one is no change, one
 step either way, or both lines changed (a missed sample, ignored). A detent counts only when the lines reach a rest
 state with two steps the same way since the last one. The interrupt clears its pending flags before it reads the pins,
@@ -972,7 +972,7 @@ Voltage in 0.1 V units = raw / 37.5 on the DM-1701 / RT84 (raw / 40.3 on the MD-
 Ignore readings for 1.5 s after power-up or wake (they settle); average with a long window (1000 samples) for display,
 use the latest sample for decisions.
 
-ODR's thresholds: `board.battery_low_mv` 6200, `battery_critical_mv` 6000 (`boards/dm1701/board.c`,
+RadioFoundry's thresholds: `board.battery_low_mv` 6200, `battery_critical_mv` 6000 (`boards/dm1701/board.c`,
 `radio-features.md` 5.1).
 
 ### 11.2 Volume pot
@@ -986,7 +986,7 @@ breakpoint 317; MD-2017 32..2048, breakpoint 321. A two-segment linear approxima
 
 PA3 gives the microphone level; convert the raw value to dB (20 log10) for VOX.
 
-ODR's `mic_level` (`boards/dm1701/power_dm1701.c`, VOX in `radio-features.md` 3.4) gives 0-100: 20 log10 of the raw
+RadioFoundry's `mic_level` (`boards/dm1701/power_dm1701.c`, VOX in `radio-features.md` 3.4) gives 0-100: 20 log10 of the raw
 reading over the ADC's 72 dB, from the shared scale in `drivers/audio/miclevel/miclevel.h`. Not verified on the bench.
 
 ### 11.4 Temperature
@@ -1160,8 +1160,8 @@ records are in `open-firmware-cps.md`.
 |---|---|---|---|
 | 0x000000 | EEPROM 0x0000 | 64 KB | emulated EEPROM: general settings at 0x00E0 (callsign 0x00E0, DMR ID 0x00E8), DTMF contacts 0x2F88, signaling/DTMF 0x1400, APRS configs 0x1588, first 128 channels (header 0x3780, data 0x3790), last used channel per zone 0x6000, radio settings block at 0x604B, boot screen/password at 0x7518-0x755F, quick keys 0x7524, VFO A/B at 0x7590, zones 0x8000+ |
 | 0x010000 | (local) | 512 B | calibration working copy (12.1). CPS reads/writes it through a 0x10000 window |
-| 0x011000 | (ours) | 32 KB | OpenDigitalRadio settings ring (`settings-store.md` 2); no open-firmware tool uses it, the CPS shim refuses writes |
-| 0x019000 | (ours) | 8 KB | OpenDigitalRadio sector journal (`settings-store.md` 4) |
+| 0x011000 | (ours) | 32 KB | RadioFoundry settings ring (`settings-store.md` 2); no open-firmware tool uses it, the CPS shim refuses writes |
+| 0x019000 | (ours) | 8 KB | RadioFoundry sector journal (`settings-store.md` 4) |
 | 0x020000 | flash 0x00000 | 4 KB | custom data: boot image and boot melody, themes (one 4 KB sector; erased when the user clears custom data) |
 | 0x050000 | flash 0x30000 | 256 KB | DMR ID database part 1 (header "Id" + type byte + record length + entry count; see the CPS spec) |
 | 0x09B1B0 | flash 0x7B1B0 | | channels 129-1024 (bank headers 16 B before each bank, data from 0x9B1C0) |
@@ -1190,7 +1190,7 @@ behavior.
 | RTC | LSE 32.768 kHz, 24 h format; keeps time while the MCU has power (no separate backup battery confirmed, unverified) |
 | LEDs | PE0 green, PE1 red, active high |
 | Backup SRAM | unused |
-| Watchdog | not used by the aftermarket firmware on this platform (its watchdog hook is empty). ODR starts the IWDG and feeds it from the idle task (`CONFIG_WATCHDOG`, [watchdog.md](watchdog.md)) |
+| Watchdog | not used by the aftermarket firmware on this platform (its watchdog hook is empty). RadioFoundry starts the IWDG and feeds it from the idle task (`CONFIG_WATCHDOG`, [watchdog.md](watchdog.md)) |
 
 ---
 
@@ -1217,10 +1217,10 @@ usual DfuSe "@name/0xADDR/NN*SSKg,..." form.
 The image is written as one contiguous stream starting at 0x0800C000: byte n of the file goes to 0x0800C000 + n.
 
 Every listed region has the same rule: blocks 2..N, the key applied from the image start, which is block aligned at
-every sector start (for example 0x080A0000 - 0x0800C000 = 0x94000, a multiple of 1024). odrflash erases and writes a
+every sector start (for example 0x080A0000 - 0x0800C000 = 0x94000, a multiple of 1024). rfoundry erases and writes a
 region only when it has data, so an update leaves sectors 10 and 11 (the codec) out. The loader accepts a sector
-written on its own, with sectors left out on both sides: an ODR image that wrote only sectors 3-6 and 9 flashed
-through odrflash, booted and passed the radio-only HIL group (2026-10-14).
+written on its own, with sectors left out on both sides: a RadioFoundry image that wrote only sectors 3-6 and 9 flashed
+through rfoundry, booted and passed the radio-only HIL group (2026-10-14).
 
 ### 15.3 Image encryption
 
@@ -1247,15 +1247,15 @@ file. The payload is plain XOR key[i mod 1024], and in a firmware image 0x00 is 
 key column, so the most common cipher byte of column j is key[j] for all but a few columns; those are settled by
 trying each close runner-up byte until the SHA-256 of the result matches the table above. On every stock file in
 `codec-dm1701.md` ("Stock files": V02.01, V02.02, V02.03 with and without CSV, V02.06 CSV and noCSV) this gives the key
-with hash `d983ce95...` in under 0.1 s, needing at most a few hundred hash checks. `tools/odrflash/odrflash/stockfw.py`
+with hash `d983ce95...` in under 0.1 s, needing at most a few hundred hash checks. `tools/rfoundry/rfoundry/stockfw.py`
 (`derive_key`) does this on the user's machine; only the hash is in the repository. The same method should work for the
 other models' files (unverified: no MD-UV380, MD-380 or MD-9600 file was tried).
 
 **In the bootloader (2026-10-13), DM-1701.** The stock bootloader (sectors 0-2) holds the key as one plain 1024-byte
-block: in the bench unit's bootloader exactly one 1024-byte window has the hash above. ODR can read those sectors (read
+block: in the bench unit's bootloader exactly one 1024-byte window has the hash above. RadioFoundry can read those sectors (read
 protection level 1 doesn't stop code running from user flash, `debuglink.md` 3.10), so the web flasher
-(`bootkey.js`) and odrflash (`bootkey.py`) read them over READ_MEM and take the block whose SHA-256 matches. Updating a
-radio that runs ODR therefore needs no stock file. The search tries every offset (4-byte aligned first) and assumes
+(`bootkey.js`) and rfoundry (`bootkey.py`) read them over READ_MEM and take the block whose SHA-256 matches. Updating a
+radio that runs RadioFoundry therefore needs no stock file. The search tries every offset (4-byte aligned first) and assumes
 no layout, so a bootloader version that keeps the key elsewhere works too. Unverified for the other models'
 bootloaders; when no block matches, both clients fall back to the stock file.
 
@@ -1278,11 +1278,11 @@ of the DM-1701.
 Goal: re-flash over USB without someone holding PTT + side key 1 at power-on (15.1). There are two possible routes,
 both reached from the running firmware through the debug link (`docs/spec/debuglink.md` 3.9-3.11).
 
-**Read protection on the bench unit.** `odr_debug.py chip` on the bench DM-1701 (2026-10-10) reads idcode
+**Read protection on the bench unit.** `rfoundry_debug.py chip` on the bench DM-1701 (2026-10-10) reads idcode
 `0x0009A413` (STM32F405/407), 1024 KB flash, `FLASH_OPTCR` `0x0FFF55ED`: **RDP level 1** (byte `0x55`), no sector
 write protection, BOR off, user bits all 1. Assume every stock DM-1701 is at RDP level 1 until one reads otherwise.
 RDP level 1 does not stop the application from reading flash (only a debugger, RAM boot and system-memory boot are
-locked out), so the stock bootloader (sectors 0-2) can be read with `odr_debug.py dump`. It was saved outside the
+locked out), so the stock bootloader (sectors 0-2) can be read with `rfoundry_debug.py dump`. It was saved outside the
 repository on 2026-10-10. It is proprietary and is never committed.
 
 **Route 1: ST's ROM bootloader (USB DfuSe in system memory). Refused on this radio.** The firmware has it:
@@ -1299,12 +1299,12 @@ because the stock bootloader runs in RAM before the application. First thing in 
 5. checks that `0x1FFF0000` holds a plausible vector table, maps system memory at 0 (`SYSCFG_MEMRMP`), sets
    `VTOR` to 0, loads MSP from `0x1FFF0000` and jumps to the vector at `0x1FFF0004`.
 
-The firmware and `odr_debug.py` both refuse this mode unless RDP is level 0. At level 1 the ROM bootloader refuses
+The firmware and `rfoundry_debug.py` both refuse this mode unless RDP is level 0. At level 1 the ROM bootloader refuses
 every flash access, and its only way out, the read-unprotect command, sets RDP to 0 by **mass-erasing all of flash,
 the stock bootloader included**. After that the radio could be reloaded only over SWD. At level 2 the ROM
 bootloader is disabled. **On the bench unit (RDP 1) this route is closed.** The code stays in the firmware because it
-is gated and does nothing unless the flag is set. If a unit ever reads RDP 0, the procedure would be: `odr_debug.py
-chip` -> `odr_debug.py reboot --rom-dfu` -> a DfuSe host that erases and writes only sectors 3-11 (`0x0800C000` and
+is gated and does nothing unless the flag is set. If a unit ever reads RDP 0, the procedure would be: `rfoundry_debug.py
+chip` -> `rfoundry_debug.py reboot --rom-dfu` -> a DfuSe host that erases and writes only sectors 3-11 (`0x0800C000` and
 up). No such host tool exists in `tools/`: `stm32_dfu.py` has no ROM mode.
 
 Untested risks of route 1, found while writing it (they matter only on an RDP 0 unit):
@@ -1416,9 +1416,9 @@ Sources: build variant switches and per-variant firmware constants, CubeMX pin s
 1. The bootloader rejects an initial stack pointer equal to the top of RAM; use 0x2001FFFC.
 2. Set VTOR to 0x0800C000; the vector table is not at 0x08000000.
 3. The bootloader leaves HSE/PLL running: switch to HSI before reprogramming HSE/PLL.
-4. CCM RAM is not zeroed or initialized by default startup code and is invisible to DMA. ODR puts the RTOS heap (every
+4. CCM RAM is not zeroed or initialized by default startup code and is invisible to DMA. RadioFoundry puts the RTOS heap (every
    task stack), the slot engine, the radio state machine and the big CPU-only buffers there; `.ccmbss`
-   (`ODR_CPU_RAM`) is zeroed before `main` by a `.preinit_array` entry in `board.c`, `.ccmram` (`ODR_CPU_RAM_NOINIT`)
+   (`RFOUNDRY_CPU_RAM`) is zeroed before `main` by a `.preinit_array` entry in `board.c`, `.ccmram` (`RFOUNDRY_CPU_RAM_NOINIT`)
    is not. DMA buffers stay static in main SRAM, and each stream's set-up checks that (`DMA_RAM_OK`).
 5. The codec must be at exactly 0x0807537C; the code budget is the space below it. Keep large constant tables above the
    codec end if the code grows.
@@ -1449,7 +1449,7 @@ HX8353-E, and the GalaxyCore-like controller used by panel types 2/3); W25Q128 d
 command set); DM-1701 / MD-UV380 schematics or service manual; audio power amplifier, RF PA and TCXO part data; GPS
 module data.
 
-## 20. Bench findings (OpenDigitalRadio on a DM-1701, 2026-10-09)
+## 20. Bench findings (RadioFoundry on a DM-1701, 2026-10-09)
 
 Verified on one radio with the new firmware; they override the unverified notes above where they differ.
 
@@ -1636,7 +1636,7 @@ The probe experiments, in the order they were run:
 With the AMBE codec merged as usual:
 
 ```
-make BOARD=dm1701 CONFIG_AUDIO_PROBE=y BUILD=build/dm1701-probe   # flash build/dm1701-probe/odr_dm1701.bin
+make BOARD=dm1701 CONFIG_AUDIO_PROBE=y BUILD=build/dm1701-probe   # flash build/dm1701-probe/rfoundry_dm1701.bin
 python3 -m pytest tests/hil/test_audio_probe.py -v -s -rs          # stream in FM, the receive variants (NOAA), RX RAM
 python3 -m pytest tests/hil/test_audio_probe.py -v -s -rs --allow-rf --allow-service-stop -k tx   # I2S and RAM TX variants
 ```
@@ -1644,18 +1644,18 @@ python3 -m pytest tests/hil/test_audio_probe.py -v -s -rs --allow-rf --allow-ser
 By hand (an FM channel or the VFO):
 
 ```
-tools/odr_debug.py aprobe start            # stream with silence out; then:
-tools/odr_debug.py aprobe status           # blocks counting up = the I2S clock runs in FM
-tools/odr_debug.py aprobe reg 4 0xE0       # 0x89 expected in FM receive
-tools/odr_debug.py aprobe wreg 4 0xE0 0xA9 # LINEIN2 on (candidate A); status / samples with and without a signal
-tools/odr_debug.py aprobe wreg 4 0xE0 0x89
-tools/odr_debug.py aprobe wreg 4 0xE3 0x53 # candidate B (0xE3 is 0x52 at init: bit 0 set); watch status
-tools/odr_debug.py aprobe wreg 4 0xE3 0x52
-tools/odr_debug.py aprobe samples -o /tmp/blk.raw   # one block of both channels, tone estimate printed
-tools/odr_debug.py aprobe stop
-tools/odr_debug.py aprobe wreg 4 0x81 0x9B # unmask the FM data flags (0x19 | 0x82)
-tools/odr_debug.py aprobe watch 1000 0x82 0x030   # FM flag rates, RX RAM word changes
-tools/odr_debug.py aprobe ram 2 0x030 64   # the start of the RX FM buffer
+tools/rfoundry_debug.py aprobe start            # stream with silence out; then:
+tools/rfoundry_debug.py aprobe status           # blocks counting up = the I2S clock runs in FM
+tools/rfoundry_debug.py aprobe reg 4 0xE0       # 0x89 expected in FM receive
+tools/rfoundry_debug.py aprobe wreg 4 0xE0 0xA9 # LINEIN2 on (candidate A); status / samples with and without a signal
+tools/rfoundry_debug.py aprobe wreg 4 0xE0 0x89
+tools/rfoundry_debug.py aprobe wreg 4 0xE3 0x53 # candidate B (0xE3 is 0x52 at init: bit 0 set); watch status
+tools/rfoundry_debug.py aprobe wreg 4 0xE3 0x52
+tools/rfoundry_debug.py aprobe samples -o /tmp/blk.raw   # one block of both channels, tone estimate printed
+tools/rfoundry_debug.py aprobe stop
+tools/rfoundry_debug.py aprobe wreg 4 0x81 0x9B # unmask the FM data flags (0x19 | 0x82)
+tools/rfoundry_debug.py aprobe watch 1000 0x82 0x030   # FM flag rates, RX RAM word changes
+tools/rfoundry_debug.py aprobe ram 2 0x030 64   # the start of the RX FM buffer
 ```
 
 Expected readings: in FM receive with the defaults, both channels near silence (the microphone is off). A candidate

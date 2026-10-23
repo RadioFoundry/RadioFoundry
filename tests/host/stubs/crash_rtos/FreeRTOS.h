@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Host stand-in for FreeRTOS.h, for crashCaptureTest only: the interrupt switch core/crash/crash_capture.c uses, and
 // whether it was thrown, and the idle task's name
 #ifndef CRASH_STUB_FREERTOS_H

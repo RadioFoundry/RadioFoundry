@@ -3,8 +3,8 @@
 # Capabilities of the aftermarket firmware
 
 What the aftermarket firmware ([CLEANROOM.md](../CLEANROOM.md)) can do, per radio, as user-level capabilities. Users
-will compare ODR with it, so it is a feature target. The status letters below are that firmware's, not ODR's:
-ODR's own state per radio is in the [feature matrix](../feature-matrix.md). It says nothing about how the old
+will compare RadioFoundry with it, so it is a feature target. The status letters below are that firmware's, not RadioFoundry's:
+RadioFoundry's own state per radio is in the [feature matrix](../feature-matrix.md). It says nothing about how the old
 firmware presents these features (no menus, screens or keys): the new UI is designed separately in `docs/ux/`.
 
 Sources: the aftermarket firmware trees' status files and docs (as of 2026-10-09, build `bf08887`), commit history,

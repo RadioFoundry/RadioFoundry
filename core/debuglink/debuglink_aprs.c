@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // APRS on the debug link (docs/spec/debuglink.md 3.16, docs/spec/aprs.md 13): the "aprs" view section and the APRS
 // command (send now, status, message, a RAM-only test callsign, configuration fields, NMEA injection). Built without
 // CONFIG_APRS: "aprs.built=0" and the command answers unavailable.

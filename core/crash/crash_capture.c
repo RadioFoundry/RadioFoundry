@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The crash log's capture side (crash.h): what every crash adds to the platform's registers, and the FreeRTOS and
 // assert hooks. Runs with interrupts off, from a fault handler or a hook; reads the RTOS's current task but takes no
 // lock and never waits. The transmitter goes off first (board_rf_safe, crash-log.md 8): a crash while transmitting

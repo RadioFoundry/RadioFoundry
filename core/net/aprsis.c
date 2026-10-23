@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio's own APRS-IS client (see aprsis.h), after aprs-is.net "Connecting to APRS-IS" (the login line, the
 // passcode, server comments and the logresp line) and "IGate Design". The iGate rules themselves stay in the APRS
 // engine (core/aprs/aprs_igate.c): this file only carries lines, as the host helper tools/aprs_gate.py does over USB.
@@ -13,8 +13,8 @@
 #include "dmr/ipGateway.h"
 #include "hal_time.h"
 
-#ifndef ODR_GIT
-#define ODR_GIT "unknown"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "unknown"
 #endif
 
 #if CONFIG_APRS_IGATE
@@ -93,7 +93,7 @@ static void drop_conn(uint32_t now)
 static void a_opened(int c)
 {
 	char line[128];
-	size_t n = dl_fmt(line, sizeof(line), "user %s pass %u vers OpenDigitalRadio " ODR_GIT, cur_call,
+	size_t n = dl_fmt(line, sizeof(line), "user %s pass %u vers RadioFoundry " RFOUNDRY_GIT, cur_call,
 			  aprsis_passcode(cur_call));
 
 	if (cur_range != 0) {

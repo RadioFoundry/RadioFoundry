@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Static worst-case stack depth of every FreeRTOS task in a firmware build (docs/dev/stack-check.md).
 
 The firmware is compiled with GCC's -fcallgraph-info=su: next to each object (or each LTO partition, next to the .elf)

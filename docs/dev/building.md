@@ -22,7 +22,7 @@ and ST's HAL and CMSIS into `third_party/`.
 
 | Command | Does |
 |---|---|
-| `make BOARD=<b>` | Builds `build/<b>/odr_<b>.{elf,bin,map}`, plus `odr_<b>_codec.bin` when `codecs/` holds the radio's stock file and the board has a codec tool (below). There is no default board: `make` alone lists them |
+| `make BOARD=<b>` | Builds `build/<b>/rfoundry_<b>.{elf,bin,map}`, plus `rfoundry_<b>_codec.bin` when `codecs/` holds the radio's stock file and the board has a codec tool (below). There is no default board: `make` alone lists them |
 | `make BOARD=md380 BAND=vhf` | A build option (`board.toml` `[[build_options]]`): the MD-380 VHF image, in `build/md380-vhf` (default `uhf`; one image per band) |
 | `make BOARD=<b> size` | Section sizes and the space left before the codec |
 | `make BOARD=<b> stack-check` | Each task's worst-case stack depth against its stack ([stack-check.md](stack-check.md)) |
@@ -39,7 +39,7 @@ Every `*.c` and `*.S` file in the directories a build lists is compiled, so a ne
 directories are the core's (some only with their switch), the platform's (`platform/<p>/platform.mk`) and the
 board's (`BOARD_DIRS` in `boards/<b>/board.mk`). A few single files of `core/dmr` are added by their own switch.
 
-The build stamps the image with the commit (`ODR_GIT`), plus `-dirty` when tracked files differ or untracked sources sit
+The build stamps the image with the commit (`RFOUNDRY_GIT`), plus `-dirty` when tracked files differ or untracked sources sit
 in the built directories. Changing the compile flags (a switch, a value) rebuilds everything. See
 [docs/testing/README.md](../testing/README.md), "The firmware version".
 
@@ -67,12 +67,12 @@ choice is a build option:
 |---|---|
 | `boards/<b>/board.mk` | `BUILD_OPTIONS` names the options; `<NAME>_VALUES` lists each one's values, the default first (`BAND_VALUES := uhf vhf`) |
 | `boards/<b>/board.toml` `[[build_options]]` | The words people read: a title and help for the option, a title, a text and the reported board name for each value. `tools/boards.py check` fails when its values differ from `board.mk` |
-| C | `ODR_<NAME>_<VALUE>` is 1 for the chosen value and 0 for the others (`#if ODR_BAND_VHF`) |
+| C | `RFOUNDRY_<NAME>_<VALUE>` is 1 for the chosen value and 0 for the others (`#if RFOUNDRY_BAND_VHF`) |
 
 `make BOARD=md380 BAND=vhf` builds the VHF image. A value the board doesn't list stops the build with the list. A
-non-default value is part of the build directory and the image name (`build/md380-vhf/odr_md380-vhf.bin`), and of the
-release file (`odr-md380-vhf-<version>.bin`). `tools/ci.sh` builds every value. The release manifest records the
-values (`build_options`). odrflash takes them from the board name a running radio reports (`MD-380 VHF`), or from
+non-default value is part of the build directory and the image name (`build/md380-vhf/rfoundry_md380-vhf.bin`), and of the
+release file (`rfoundry-md380-vhf-<version>.bin`). `tools/ci.sh` builds every value. The release manifest records the
+values (`build_options`). rfoundry takes them from the board name a running radio reports (`MD-380 VHF`), or from
 `--option BAND=vhf`, and refuses an image built for other hardware than the radio's.
 
 Prefer one image that detects the hardware at run time when that is possible. Build options are separate from release
@@ -92,7 +92,7 @@ The user manual covers it for users: [Installing](../user/02-installing.md). In 
 
 | Radio | Flash |
 |---|---|
-| DM-1701 | `odrflash flash build/dm1701/odr_dm1701.bin --board dm1701 [--stock FILE]` ([tools/odrflash](../../tools/odrflash/README.md)): keeps the radio's codec or merges it from the stock file, erases only the sectors it needs. The older two-step route still works: `tools/codec_extract.py --stock FILE` (key derived from the file, or `--key`), then `tools/stm32_dfu.py IMAGE --model dm1701 --key dm1701.key`, which erases every application sector |
+| DM-1701 | `rfoundry flash build/dm1701/rfoundry_dm1701.bin --board dm1701 [--stock FILE]` ([tools/rfoundry](../../tools/rfoundry/README.md)): keeps the radio's codec or merges it from the stock file, erases only the sectors it needs. The older two-step route still works: `tools/codec_extract.py --stock FILE` (key derived from the file, or `--key`), then `tools/stm32_dfu.py IMAGE --model dm1701 --key dm1701.key`, which erases every application sector |
 | MD-380 | `tools/md380_migrate.py flash --image IMAGE --stock FILE` (merges the codec), or `tools/codec_extract.py` then `tools/stm32_dfu.py --model md380`. Moving a radio from stock with its codeplug: [md380-migration.md](../spec/md380-migration.md) |
 | DM-32UV | `tools/hrc7000_codec.py` merges the codec; `tools/serial_loader.py IMAGE` writes it through the Baofeng bootloader over the programming cable (or `tools/serial_loader.py --wrap` makes the vendor file for Baofeng's updater). Moving a radio from stock with its codeplug: [dm32-migration.md](../spec/dm32-migration.md) |
 

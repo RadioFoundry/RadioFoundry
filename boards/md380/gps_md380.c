@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-380G / MD-390G / RT3 GPS: the module's NMEA output on USART3 RX (PD9), detected at run time
 // (docs/spec/hardware-md380.md 13), through the shared STM32 GPS receiver (platform/stm32f4/gps_uart).
 //

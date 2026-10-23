@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-32UV pin map by GPIO pin index (0-31 bank A, 32-63 B, 64-95 C; docs/spec/hardware-dm32.md 5)
 #ifndef DM32_PINS_H
 #define DM32_PINS_H

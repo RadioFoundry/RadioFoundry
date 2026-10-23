@@ -1,19 +1,19 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Stock TYT-family codeplugs
 
 The stock firmware of the TYT MD-UV380 family (Baofeng DM-1701, Retevis RT84, TYT MD-UV380 and MD-UV390, Retevis
 RT3S, TYT MD-2017) and of the TYT MD-380 family (MD-380, MD-390, Retevis RT3) keeps its codeplug in the radio's SPI
-flash, in a layout of its own. ODR doesn't use that layout: it keeps the open-firmware layout
-([open-firmware-cps.md](open-firmware-cps.md) 7) in the same flash. A backup taken right after ODR was installed over
+flash, in a layout of its own. RadioFoundry doesn't use that layout: it keeps the open-firmware layout
+([open-firmware-cps.md](open-firmware-cps.md) 7) in the same flash. A backup taken right after RadioFoundry was installed over
 the stock firmware therefore still holds the stock codeplug. This spec covers how the Codeplug Editor tells the two
 layouts apart (section 2) and the stock records it converts (sections 3-4).
 
 Sources (T = tested with dmrconf 0.15.1 on files only): `dmrconf encode --radio dm1701` (and `rt84`, `uv390`,
 `rt3s`, `md2017`, `md390`) run on YAML test files, with one field changed at a time and the binaries compared;
 `dmrconf decode` run on binaries changed one byte at a time; and a DM-1701 SPI flash dump taken by the radio
-programming utility after ODR was installed over the stock firmware, which `dmrconf decode --radio dm1701` reads as a
+programming utility after RadioFoundry was installed over the stock firmware, which `dmrconf decode --radio dm1701` reads as a
 stock codeplug when its two regions are put in a DfuSe file (T). qdmr's source is GPL and was not read
 ([CLEANROOM.md](../CLEANROOM.md)).
 
@@ -34,10 +34,10 @@ addresses are the same addresses (T).
 `dm1701` and `rt84` write the same bytes apart from the programming time (T). `uv390`, `rt3s` and `md2017` write the
 same records at the same addresses as `dm1701`, plus tables this spec doesn't cover (T).
 
-In ODR's map on the DM-1701 ([hardware-dm1701.md](hardware-dm1701.md) 13.2), 0x002000-0x00FFFF is the emulated
+In RadioFoundry's map on the DM-1701 ([hardware-dm1701.md](hardware-dm1701.md) 13.2), 0x002000-0x00FFFF is the emulated
 EEPROM, 0x011000-0x01AFFF the settings ring and journal, and 0x0D8000-0x11FFFF the second DMR ID database area;
 the stock channels and contacts from 0x110000 up overlap its end and lie past it. Until
-the user writes an ODR codeplug and an ID database, those areas still hold the stock bytes.
+the user writes a RadioFoundry codeplug and an ID database, those areas still hold the stock bytes.
 
 Files that carry the same codeplug:
 
@@ -50,8 +50,8 @@ Files that carry the same codeplug:
 
 ## 2. Telling the layouts apart
 
-The editor decides from the bytes, in this order. A file can hold both layouts in part: a radio that moved to ODR and
-was programmed keeps stock bytes wherever ODR hasn't written. The open-firmware layout wins when it has evidence.
+The editor decides from the bytes, in this order. A file can hold both layouts in part: a radio that moved to RadioFoundry and
+was programmed keeps stock bytes wherever RadioFoundry hasn't written. The open-firmware layout wins when it has evidence.
 
 1. **Open-firmware evidence.** Each record the open-firmware layout marks as in use counts as good or bad:
    - the general settings (open-firmware-cps.md 7.3.2): good when the DMR ID is valid BCD and not 0 and the callsign
@@ -77,7 +77,7 @@ was programmed keeps stock bytes wherever ODR hasn't written. The open-firmware 
 A TYT MD-UV380 family `.rdt` file is recognized by its size alone (section 1) and reported as not supported.
 
 The stock dump of the DM-1701 above has no open-firmware evidence (its general settings are erased) and 16 good
-stock channels. An ODR codeplug image of the same radio has good open-firmware records and no stock channels.
+stock channels. A RadioFoundry codeplug image of the same radio has good open-firmware records and no stock channels.
 
 ## 3. Records
 
@@ -112,9 +112,9 @@ Records refer to each other by 1-based index into the table; 0 means none. A ref
 is dropped (dmrconf leaves such a zone member out, T). A name that isn't valid UTF-16 (section 2) counts as empty, so
 erased flash (0xFF) reads as unused.
 
-ODR's settings ring and sector journal (0x011000-0x01AFFF, [settings-store.md](settings-store.md) 1) lie inside the
-RX group list and zone tables of both families. Until ODR claims the area, the stock bytes there are intact. The claim
-erases it, and ODR then writes its own records. The area counts as claimed when a 256-byte slot from 0x011000 to
+RadioFoundry's settings ring and sector journal (0x011000-0x01AFFF, [settings-store.md](settings-store.md) 1) lie inside the
+RX group list and zone tables of both families. Until RadioFoundry claims the area, the stock bytes there are intact. The claim
+erases it, and RadioFoundry then writes its own records. The area counts as claimed when a 256-byte slot from 0x011000 to
 0x018FFF starts with the settings magic "OSET", or 0x019000 or 0x01A000 starts with a journal magic ("OJNL", "OJN2").
 A claimed area holds no stock records: list and zone records that overlap it are skipped, and the conversion reports
 it (note `settings_area`). A backup taken before the claim keeps them.

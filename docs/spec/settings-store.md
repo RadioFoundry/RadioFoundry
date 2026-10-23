@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Settings store and safe flash writes
 
@@ -169,7 +169,7 @@ storage jobs: `storage_job_post(fn, ctx)` hands a function to the housekeeping t
 the UI keeps drawing during the flash write; the job reports back through `ui_notify`.
 
 Factory reset (a job): `settings_defaults` into the live copy and save it at once, then `storage_native_erase`.
-That erases the native area only when its first word is the native magic `STORAGE_NATIVE_MAGIC` (0x4E52444F, "ODRN")
+That erases the native area only when its first word is the native magic `STORAGE_NATIVE_MAGIC` (0x4E52444F, bytes 4F 44 52 4E)
 or when it is blank already; anything else is reported as foreign and left alone. The open-firmware codeplug, the
 calibration and the foreign-guarded regions (section 5) are never touched; a reset of those would need its own
 second confirmation and is not offered.
@@ -294,10 +294,10 @@ send it:
   included), when `STORAGE INFO` reports the region foreign. The Codeplug Editor checks before every write and, on a
   foreign region, explains and claims only when the user confirms. Both poll INFO until the region is ours (20 s
   limit).
-- `odr_debug.py storage claim --out DIR`:
+- `rfoundry_debug.py storage claim --out DIR`:
 
 
-1. `odr_debug.py storage claim` reads the settings ring, the journal and the calibration copy through the debug
+1. `rfoundry_debug.py storage claim` reads the settings ring, the journal and the calibration copy through the debug
    link's read-only SPI flash window (twice, compared) into `--out DIR` (refused inside any git
    work tree), then sends the claim with the token.
 2. The firmware notes the request (`storage.claim_pending`). The housekeeping task (`settings_poll`) erases every
@@ -305,7 +305,7 @@ send it:
    ownership mark, then saves the settings the radio is running with.
 3. The tool polls until `storage.region=ours`.
 
-`odr_debug.py storage dump` saves the same files without claiming; `storage info` shows the state and addresses.
+`rfoundry_debug.py storage dump` saves the same files without claiming; `storage info` shows the state and addresses.
 
 ## 6. Testing
 

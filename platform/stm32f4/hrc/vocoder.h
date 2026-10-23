@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The stock AMBE+2 codec run in place from flash, shared by the STM32F4 radios (docs/spec/codec-placement.md, "STM32
 // radios"; docs/spec/codec-dm1701.md, codec-md380.md, codec-md9600.md). It is one library in every TYT / Baofeng
 // STM32 image, linked at other addresses: the init sequence, the arguments and the state sizes are the same, only the

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The glossary: one data file (docs/glossary.json), the two pages generated from it, and the checks on it.
 
     tools/glossary.py --check          the data is sound and the generated pages are current (CI)
     tools/glossary.py --write          regenerate docs/user/22-glossary.md and docs/dev/glossary.md
     tools/glossary.py --unexplained    acronyms the docs use that have no entry (information only)
 
-The site build (site/odrsite/docs.py) imports this module to mark terms in the rendered pages (docs/dev/website.md).
+The site build (site/rfoundrysite/docs.py) imports this module to mark terms in the rendered pages (docs/dev/website.md).
 An entry has: term, aliases, category, scope ("user" or "dev"), definition, link (a path under docs/, optional) and
 preview (false lists the term on the page but never marks it in the text, for words common in plain prose).
 Exit status 0 when everything is fine, 1 otherwise.

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // What the USB device driver (drivers/usb, on TinyUSB) needs from the platform and the board.
-#ifndef ODR_USB_PORT_H
-#define ODR_USB_PORT_H
+#ifndef RFOUNDRY_USB_PORT_H
+#define RFOUNDRY_USB_PORT_H
 
 #include <stdint.h>
 #include <stdbool.h>

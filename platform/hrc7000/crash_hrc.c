@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The crash log on the HR_C7000 (hal_crash.h, docs/spec/crash-log.md 2.2). hrc_fault_entry (portasm.S) saves every
 // register below the faulting stack pointer and calls hrc_fault (irq.c) on a stack of its own, which hands the frame
 // here. The CK803S has no fault address register: the vector, EPC and EPSR say what and where. A hang (hal_crash_hang,

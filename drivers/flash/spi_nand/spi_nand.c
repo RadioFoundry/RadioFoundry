@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Generic SPI NAND flash (docs/spec/hardware-db25d.md 6.5: the Kioxia TC58CVG1S3HRAIJ data sheet and the sequence a
 // stock firmware uses on it)
 #include <stddef.h>

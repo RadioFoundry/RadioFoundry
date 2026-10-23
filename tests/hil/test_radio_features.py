@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The everyday radio features (docs/spec/radio-features.md): scan, beeps, battery, settings, and the FM transmit
 extras. Radio-only tests never transmit; the radio_tx ones key the radio on its FM VFO at its lowest power (opt-in
 --allow-rf); the rf one uses the SDR bench's transmitter (--allow-rf --allow-service-stop).
@@ -75,8 +75,8 @@ import time
 
 import pytest
 
-from odr_hil import skip
-from odr_debug import DebugLinkError, as_int
+from rfoundry_hil import skip
+from rfoundry_debug import DebugLinkError, as_int
 
 FEATURE_KEYS = ("scan.built", "scan", "scan_phase", "scan_skipped", "tot_warning", "tone_burst", "roger", "vox_keyed",
                 "vox.mic", "vox.level", "rx_sleeping", "battery", "battery_pct", "battery_mv", "power_off", "beep.built", "set.tot_s",

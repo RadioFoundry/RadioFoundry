@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The data flash of an STM32F4 radio (spi_flash.h)
 #include "spi_flash_board.h"
 #include "flash/spi_nor/spi_nor.h"

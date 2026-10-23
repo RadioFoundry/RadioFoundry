@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT Copyright (c) 2026 The OpenDigitalRadio Authors The TFTP server (core/net/tftp.c) behind
+// SPDX-License-Identifier: MIT Copyright (c) 2026 The RadioFoundry Authors The TFTP server (core/net/tftp.c) behind
 // the real IP gateway, driven by a small client in this file: reads with and without options, blksize negotiation and
 // clamping, tsize, the empty last block, block number roll-over, timeouts and retransmits, duplicate ACKs, foreign
 // TIDs, busy, refusals, writes with a slow commit, the dally, a client's error. Then codeplug.bin

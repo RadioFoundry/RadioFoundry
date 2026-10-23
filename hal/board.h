@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The board descriptor: everything the core may know about the radio it runs on.
 // Core code reads this at run time; it never tests a radio define.
 #ifndef HAL_BOARD_H

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Battery voltage for display (hal_power_t.battery_mv, battery_pct): a running average of the board's readings, so TX
 // load and ADC noise don't make the number jump, and a charge estimate between an empty and a full voltage.
 //

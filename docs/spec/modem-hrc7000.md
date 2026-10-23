@@ -88,11 +88,11 @@ detection, and set RF_MODE[11]. Receive stays enabled all the time.
   datasheet's DCDM set-up on simplex. The datasheet also lists "repeater chip receive mode" as a user of bit 11, but stock
   clears it on repeater channels, so that mode may be a different one. Not resolved. The DB25-D stock sets it on normal simplex and clears it for two channel values
   (`hardware-db25d.md` 4.5).
-- **ODR:** writes 0x03269860 (bit 11 set) and enables the TDMA1 and TDMA2 sync detection on every channel (`hrc7000.c`,
-  the bench note of 2026-10-16), so ODR runs the DCDM receive set-up on repeater channels too. Whether that matters on a
+- **RadioFoundry:** writes 0x03269860 (bit 11 set) and enables the TDMA1 and TDMA2 sync detection on every channel (`hrc7000.c`,
+  the bench note of 2026-10-16), so RadioFoundry runs the DCDM receive set-up on repeater channels too. Whether that matters on a
   repeater is not measured.
 - **Not a second RF chip.** The RF chip is unchanged. The second channel is a second modem receive path. Multi-chip
-  dual watch is a separate feature (ODR issue #96).
+  dual watch is a separate feature (RadioFoundry issue #96).
 - **Not known:** whether a simplex receiver with bit 11 on hears a second-timeslot call that it misses with the bit off.
   No on-air test has compared the two (section 10, item 7).
 
@@ -115,7 +115,7 @@ Bit 31 of the RECV_MS / RECV_BS high halves is an undocumented enable (BIN). The
 need it too: without it the chip never detects the direct mode syncs (bench, 2026-10-16: an SFR's TS1 inbound was not
 heard until it was set).
 
-SEND_DATA_SYNC is the only send pattern; a voice burst goes out with its complement. ODR rewrites it before a burst
+SEND_DATA_SYNC is the only send pattern; a voice burst goes out with its complement. RadioFoundry rewrites it before a burst
 that asks for another sync family (`dmr_tx_burst_t.sync_override`: an SFR's TS2 direct mode outbound) and back to MS
 for the next burst without one. On air the burst then carries that family (bench, 2026-10-16: TS2 sync with the
 repeated LC).
@@ -321,7 +321,7 @@ chip keeps the previous call's LC there until a new one is decoded (BIN observat
 ### 2.9 BS (repeater) mode: bench results 2026-10-20
 
 Datasheet source: the Chinese original (HR_C7000_Document_2, 10.2.2.17, 10.2.2.18, 10.2.2.22, 10.2.2.25-10.2.2.28).
-The registers, their bits and what the chip does with them were tried on a DM-32UV (ODR build with a scratch memory
+The registers, their bits and what the chip does with them were tried on a DM-32UV (RadioFoundry build with a scratch memory
 poke command, SDR bench capture on 461.4625 MHz, lowest power, `sdrmon.py analyze --cach`). Tag: BENCH.
 
 Datasheet summary (DS):
@@ -346,18 +346,18 @@ Findings:
 | 1 | The BS registers exist and read the datasheet's reset values: BS_MODE 0x00000900, the others 0 | read at idle |
 | 2 | Writable bits match the datasheet: BS_MODE b11:8, b5:0; BS_CACH b1:0; BS_SECOND b5:0. Reserved bits read 0. BS_STATUS ignores writes. 0x42C is not implemented (reads 0, ignores writes) | write and read back |
 | 3 | BS_MODE survives a chip reset (`stubtool --attach --boot reset`). A radio left in BS mode stays there until written back or hardware reset | read after reset |
-| 4 | With BS_MODE b2 set, ODR's normal call start fails: the TX path never arms (`dmr.tx_error=stalled`, TX denied `rejected`). BS TX needs its own start sequence | `ptt` with b2 set |
+| 4 | With BS_MODE b2 set, RadioFoundry's normal call start fails: the TX path never arms (`dmr.tx_error=stalled`, TX denied `rejected`). BS TX needs its own start sequence | `ptt` with b2 set |
 | 5 | With b2 set, then LAYER2_SLOTON b3 set and b0 cleared during a call, the chip reports o_bs_tx_slot_on (SLOTON reads 0x1000000C) and BS_STATUS b29:28 becomes non-zero (one read: 0x10000000, so the CACH LCSS counter runs) | read back, 0x434 = 0x10000000 |
-| 6 | The chip then sends its own Idle frames (data type 9 from bs_idle_type, color code from LOCAL_CC) with no MCU data, every 60 ms in **one** slot, with the same 30 ms bursts keyed and unkeyed (the RF keying is still ODR's). The first frame comes about 0.8 s after the switch | SDR: 54 IDLE bursts, 60.0 ms apart |
+| 6 | The chip then sends its own Idle frames (data type 9 from bs_idle_type, color code from LOCAL_CC) with no MCU data, every 60 ms in **one** slot, with the same 30 ms bursts keyed and unkeyed (the RF keying is still RadioFoundry's). The first frame comes about 0.8 s after the switch | SDR: 54 IDLE bursts, 60.0 ms apart |
 | 7 | The sync word on those frames comes from SEND_DATA_SYNC. At its reset value they carry MS data sync. Written with the BS data sync they decode as BS-sourced (`bs-d`) | SDR family column |
 | 8 | **Each BS frame is preceded by a CACH with valid TACT parity** (the analyzer counts it `tact ok`), but AT, TC, LCSS and the short LC payload are not controlled by BS_CACH: with BS_CACH held at 0, 2 and 3, AT and TC showed all four combinations about equally often and the short LC fragments were noise. TC did not alternate | SDR: 54 CACHs per run, three runs |
 
 Unresolved: where the chip takes the CACH bits from. The likely source is the same as on the HR_C6000, per slot values
 the MCU supplies at the RDY_NEXT_SHORT_LC interrupt (BS_CACH written every slot, short LC in a TX RAM window), which a
-static poke cannot reproduce. Not tried: the real start sequence (arming BS TX without ODR's call), `bs_tx_data_rdy` = 1
+static poke cannot reproduce. Not tried: the real start sequence (arming BS TX without RadioFoundry's call), `bs_tx_data_rdy` = 1
 with MCU data in both slots, `tx_voice_source`, `bs_rx_mode` (receive BS, label slots), `bs_single_freq`, the BS_INTER
-pins, and two chips. The test was a register switch in the middle of an ODR call, so the one-slot cadence in 6 may come
-from ODR's own TX loop and not the chip.
+pins, and two chips. The test was a register switch in the middle of a RadioFoundry call, so the one-slot cadence in 6 may come
+from RadioFoundry's own TX loop and not the chip.
 
 ### 2.9a gps_pps_en: the simulcast slot lock (DS only)
 
@@ -729,14 +729,14 @@ Standard CTCSS addresses (DS table 59; RX uses the same addresses in CTCSS_ADDR 
 
 The address order is not ascending; map from frequency, not from a list index. Other tones: USER_DEFINE_CTC. TX
 sub-audio deviation via SUBVOICE_COEF b15:8 (typical 350 Hz narrow, 600 Hz wide). The FM_BANDWIDTH bits don't scale
-it: the reset value 0x28 gives 300 Hz CTCSS at both bandwidths, and ODR writes 0x50 at 25 kHz (600 Hz) (BENCH,
+it: the reset value 0x28 gives 300 Hz CTCSS at both bandwidths, and RadioFoundry writes 0x50 at 25 kHz (600 Hz) (BENCH,
 DM-1801 Pro UHF). DCS gets a third of the deviation from the same value (0x28: 100 Hz), and reads the field as signed:
-0xF0 sent the code inverted at about 40 Hz. ODR writes three times the CTCSS value for DCS, capped at 0x7F: 0x78 at
+0xF0 sent the code inverted at about 40 Hz. RadioFoundry writes three times the CTCSS value for DCS, capped at 0x7F: 0x78 at
 12.5 kHz (305 Hz) and 0x7F at 25 kHz (323 Hz) (BENCH, DM-32UV UHF). The boot stub's restart doesn't reset the modem, so the field
-keeps the last transmission's value; ODR's init writes 0x28 rather than reading it back (a DM-32UV read 0xFF there
+keeps the last transmission's value; RadioFoundry's init writes 0x28 rather than reading it back (a DM-32UV read 0xFF there
 after a 25 kHz transmission and sent CTCSS at 1.9 kHz deviation, BENCH). When FM_PTT drops, the chip sends
 the reverse burst / turn-off code before stopping (DS). FM_MOD b9 (reset 1) enables the CDCSS turn-off: a 134.4 Hz
-tone (DS). ODR sets b9 with DCS and, for the core's tail (`radio-features.md` 3.3a), drops FM_PTT while the RF stays
+tone (DS). RadioFoundry sets b9 with DCS and, for the core's tail (`radio-features.md` 3.3a), drops FM_PTT while the RF stays
 keyed; FM_PTT on again resumes the code. On the DM-32UV (SDR bench): 134.4 Hz for 0.20 s, then the carrier without
 modulation until the core unkeys (BENCH). Unkeying together with FM_PTT, as before, put none of it on air. On a detected tone the FM signaling system interrupt fires
 (SYS_INTERP_LIST b13) and FM_DECODE_FLAG2 b0 (CTCSS) or b1 (CDCSS) goes 1, back to 0 at the end (DS). CDCSS tail
@@ -748,10 +748,10 @@ detection uses FM_FUNCTION_COEF1 = 0x7F499D (134.4 Hz) (DS).
 |---|---|---|
 | Tone step | round(f × 2.048) (= f × 65536 / 32000) | DS |
 | Default tone registers | FM_TONE1 = 697 / 770 Hz (0x0593 / 0x0629), FM_TONE2 = 852 / 941 (0x06D1 / 0x0787), FM_TONE3 = 1209 / 1336 (0x09AC / 0x0AB0), FM_TONE4 = 1477 / 1633 (0x0BD1 / 0x0D10); high half = first tone | DS |
-| DTMF deviation (SUBVOICE_COEF b15:8) | KP: UHF 0x24 (25 kHz), 0x12 (12.5 kHz); VHF 0x75 / 0x3A. Measured (BENCH, DM-1801 Pro UHF, 1750 Hz single tone): about 5.8 Hz per step, 0x60 = 559 Hz, 0xC0 = 1117 Hz; KP's 0x12 is about 100 Hz. ODR uses 0xC0 at 12.5 kHz and 0xFF (the most, about 1.5 kHz) at 25 kHz, on both bands. KP's VHF values are about 3.25 times its UHF ones, about the ratio of the VHF to the UHF modulation calibration bytes; ODR applies those bytes per band, so it keeps the UHF values (INF; `hardware-dm1801pro.md` 5.5). VHF unmeasured | KP, BENCH, INF |
+| DTMF deviation (SUBVOICE_COEF b15:8) | KP: UHF 0x24 (25 kHz), 0x12 (12.5 kHz); VHF 0x75 / 0x3A. Measured (BENCH, DM-1801 Pro UHF, 1750 Hz single tone): about 5.8 Hz per step, 0x60 = 559 Hz, 0xC0 = 1117 Hz; KP's 0x12 is about 100 Hz. RadioFoundry uses 0xC0 at 12.5 kHz and 0xFF (the most, about 1.5 kHz) at 25 kHz, on both bands. KP's VHF values are about 3.25 times its UHF ones, about the ratio of the VHF to the UHF modulation calibration bytes; RadioFoundry applies those bytes per band, so it keeps the UHF values (INF; `hardware-dm1801pro.md` 5.5). VHF unmeasured | KP, BENCH, INF |
 | Send sequence | FM_MOD b1 = 1; FM_PTT = 1; TONE_SEND_CTRL b6 = 0 (mute voice); AUDIO_CONTROL b3 = 1 for sidetone; TONE_SEND_CTRL b3:0 = digit; b7 = 1 to start the digit, b7 = 0 to end it; repeat per digit; finally b6 = 1 to restore voice | DS |
 | Arbitrary single tone | write the tone step into the high halves of FM_TONE1 and FM_TONE3 and send DTMF digit "1" (697 + 1209 pair), restore the defaults after. On air at 1750 Hz on the DM-1801 Pro (BENCH): TONE_SEND_CTRL = 0x81 (digit 1 on, voice muted) with FM_MOD b1 set, 0 afterwards (the reset value) | KP, BENCH |
-| ODR's DTMF (`hrc7000_tx_dtmf`, `radio-features.md` 3.7) | the arbitrary-tone sequence with the low tone's step in FM_TONE1's high half and the high tone's in FM_TONE3's, digit "1" sent: one sequence for every digit and for single tones, without the digit codes of figure 95. The deviation is the single tone's (SUBVOICE_COEF b15:8, `hrc7000_dtmf_dev`); the chip attenuates the low tone 2.5 dB (DS); on air the high tone is 5.0 dB over the low one for every digit on the DM-32UV and the DM-1801 Pro (BENCH), so the guide's figure is likely 10 log of the amplitude ratio. That forward twist is the chip's design and isn't corrected: after a receiver's de-emphasis it is +0.4 to +2.1 dB (`radio-features.md` 3.7) | DS, INF |
+| RadioFoundry's DTMF (`hrc7000_tx_dtmf`, `radio-features.md` 3.7) | the arbitrary-tone sequence with the low tone's step in FM_TONE1's high half and the high tone's in FM_TONE3's, digit "1" sent: one sequence for every digit and for single tones, without the digit codes of figure 95. The deviation is the single tone's (SUBVOICE_COEF b15:8, `hrc7000_dtmf_dev`); the chip attenuates the low tone 2.5 dB (DS); on air the high tone is 5.0 dB over the low one for every digit on the DM-32UV and the DM-1801 Pro (BENCH), so the guide's figure is likely 10 log of the amplitude ratio. That forward twist is the chip's design and isn't corrected: after a receiver's de-emphasis it is +0.4 to +2.1 dB (`radio-features.md` 3.7) | DS, INF |
 | Receive | FM_MOD b1 = 1; SUBVOICE_COEF b27:16 = 1056 (33 ms at 32 kHz), b7:0 threshold; FM_FUNCTION_COEF1..8 = 0x7ECD9D, 0x7E8A34, 0x7E368C, 0x7DD245, 0x7C690D, 0x7B9F03, 0x7AA7A8, 0x7979F5; read FM_DECODE_FLAG2 b11:8 on each signaling interrupt; FM_MOD b23:16 sets the repeat-symbol window | DS |
 
 ### 8.4 Prompt / beep FIFO
@@ -760,7 +760,7 @@ Set AUDIO_CONTROL b7, then while AUDIO_CONTROL b31 is 0 write 64 bytes (32 × 16
 to 0x16000980..0x160009BF; clear b7 when done (BIN from the DM-1801 Pro stock image; BENCH on the DM-1801 Pro). High byte first, as KP has it (16
 samples per push), sounds distorted on the DM-1801 Pro. Flushing stale audio: fill with 0x7F bytes (KP).
 
-ODR plays all speaker PCM through this FIFO (`platform/hrc7000/audio_pcm.c`). The CPU-fed speaker buffer at
+RadioFoundry plays all speaker PCM through this FIFO (`platform/hrc7000/audio_pcm.c`). The CPU-fed speaker buffer at
 0x180000A0 (AUDIO_CONTROL b5, section 3) gave rough, choppy beeps on the DM-1801 Pro with every sample layout tried,
 with no queue underruns (BENCH).
 
@@ -780,7 +780,7 @@ The DS doesn't document this route. It names two FM transmit audio sources, sele
 the codec ADC (0) or the TX RAM (1). As a source, the TX RAM is 0x16000030-0x1600042F, two 512-byte halves of 256
 samples (32 ms at 8 kHz), and FM_ADDR_SW (0x56C) names the half in use (1 low, 2 high); SYS_INTERP b15 is the FM TX
 interrupt. The prompt FIFO is documented only as playback to the codec DAC (DS 7.3). LINEOUT_CTRL (0x088) b1 is line
-out 1 and b0 line out 2, the same PWM waveform on both (ODR sets 0x01). Two-point modulation (DS): SIG_CENTER b31:24
+out 1 and b0 line out 2, the same PWM waveform on both (RadioFoundry sets 0x01). Two-point modulation (DS): SIG_CENTER b31:24
 biases MOD1 (the VC-TCXO) and b23:16 MOD2 (the VCO), 3.3 mV a step; RF_MOD_BIAS b7:0 and b15:8 are the MOD1 and MOD2
 amplitudes; RF_MODE b10 sends a 40 Hz test square. The prompt FIFO path decodes on the DM-32UV but not on the DM-1801
 Pro, which takes the mixer route below (`hardware-dm1801pro.md` 12).
@@ -825,7 +825,7 @@ guide's "analog receive recording", on by default in FM; DS):
 The audio is not squelched: it carries noise while no signal is present, so a demodulator can work below the squelch.
 On the DM-32UV receiver noise reaches full scale (peak 32767) with the reset AF gain (BENCH).
 
-ODR reads it in the system interrupt (`platform/hrc7000/fm_rx_audio.c`): the DMR glue owns that interrupt and calls
+RadioFoundry reads it in the system interrupt (`platform/hrc7000/fm_rx_audio.c`): the DMR glue owns that interrupt and calls
 an FM hook for bit 14, in FM too, and the hook copies each half into a 128 ms ring for the APRS demodulator.
 
 ---
@@ -869,7 +869,7 @@ All BIN; none tested by us on air.
    TX CTCSS to the FD6818 instead.
 7. RF_MODE b11 (2.1a) on simplex receive: does a radio with the bit set hear a call on the second timeslot that it misses
    with the bit clear? No on-air test has compared the two. A test: a call on one timeslot while the radio receives the
-   other, with b11 on and then off. Also: ODR sets b11 on repeater channels, which stock clears. Does that change repeater
+   other, with b11 on and then off. Also: RadioFoundry sets b11 on repeater channels, which stock clears. Does that change repeater
    reception?
 8. BS mode (2.9): where the chip's CACH AT, TC and short LC come from (likely BS_CACH and a short LC written at every
    RDY_NEXT_SHORT_LC). The split duplex TX half doesn't need it: it uses the physical layer (2.10).

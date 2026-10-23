@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The UI host simulator's command line (docs/spec/ui.md 7):
 //
 //   uiSim [--geom 160x120i5|160x128|128x64|240x320|WxH[iN|m]] [--map K|M|V|F] [--scale N] [--out FILE.png]
@@ -243,7 +243,7 @@ static int run_layout(const char *only)
 {
 	char err[256], found[SIM_LAYOUT_MAX][160];
 	int problems = 0, screens = 0;
-	const char *shots = getenv("ODR_LAYOUT_SHOTS");
+	const char *shots = getenv("RFOUNDRY_LAYOUT_SHOTS");
 	for (int g = 0; g < sim_geom_count; g++) {
 		if (only != NULL && strcmp(only, sim_geoms[g].name) != 0)
 			continue;
@@ -289,7 +289,7 @@ static int run_layout(const char *only)
 					continue;
 				}
 				screens++;
-				if (shots != NULL) {	// ODR_LAYOUT_SHOTS=DIR: every screen checked, as DIR/<geom>/<name>.png
+				if (shots != NULL) {	// RFOUNDRY_LAYOUT_SHOTS=DIR: every screen checked, as DIR/<geom>/<name>.png
 					char path[512];
 					snprintf(path, sizeof path, "%s/%s", shots, sim_geoms[g].name);
 					mkdir(shots, 0755);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // RDA5807M broadcast FM receiver (rda5807m.h)
 #include <stddef.h>
 #include "rda5807m.h"

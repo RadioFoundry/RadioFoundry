@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Logical input: polls board.input, applies the board key map, produces actions with gestures
 #ifndef CORE_INPUT_H
 #define CORE_INPUT_H

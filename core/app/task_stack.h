@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Every FreeRTOS task's least free stack since it started, for the debug link's "tasks" view section
 // (docs/spec/debuglink.md 3.7). The kernel has no task list without its trace facility, so the boards'
 // FreeRTOSConfig.h pass each task's creation and deletion here (traceTASK_CREATE / traceTASK_DELETE) and this keeps

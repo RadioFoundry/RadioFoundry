@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """
 Adapted from our earlier bench tool sdrmon.py.
 
 sdrmon: on-air DMR burst monitor (one channel, offline analysis of a raw IQ capture from the SDR bench's RTL-SDR).
-Runs on the SDR bench with the odr_sdrbench package (its Channelizer, FmDemod, slicer and FEC).
+Runs on the SDR bench with the rfoundry_sdrbench package (its Channelizer, FmDemod, slicer and FEC).
 
     sdrmon.py capture --seconds N --out FILE [--freq 461.6875] [--offset-khz -200] [--gain 15] [--ppm P]
-                      [--service odr-sdrbench@<bench host> | --service '']
+                      [--service rfoundry-sdrbench@<bench host> | --service '']
         Stops the bench's gateway service (it holds the dongle) unless --service '', records raw IQ (cs8, 1.536 MS/s, bias tee
         on) tuned --offset-khz away from --freq (keeps the channel off the RTL DC spike at the tuner center), then
         restarts the service, always (finally + SIGTERM/SIGHUP/SIGINT handlers). Prints "READY <wall clock of sample
@@ -18,7 +18,7 @@ Runs on the SDR bench with the odr_sdrbench package (its Channelizer, FmDemod, s
         share of I/Q samples at the int8 rails). Clipping above 1 % is reported as a warning: lower --gain, move the
         antenna, or turn the radio's power down (see docs/testing/dmr-bench.md).
         The ppm is applied in software at analysis time (librtlsdr only takes whole ppm). Without --ppm it is the
-        SDR bench's own calibration (odr_sdrbench.benchcal, a file on the bench host), recorded in FILE.json.
+        SDR bench's own calibration (rfoundry_sdrbench.benchcal, a file on the bench host), recorded in FILE.json.
 
     sdrmon.py analyze FILE [--cc 2] [--from MS] [--to MS] [--edges-only] [--dbm-offset DB] [--json OUT]
         Channelizes and FM-demodulates (48 kS/s, 10 samples per symbol), searches every sample for all four sync
@@ -46,7 +46,7 @@ import time
 
 import numpy as np
 
-SERVICE = os.environ.get("ODR_SDR_BENCH_SERVICE") or f"odr-sdrbench@{socket.gethostname()}"
+SERVICE = os.environ.get("RFOUNDRY_SDR_BENCH_SERVICE") or f"rfoundry-sdrbench@{socket.gethostname()}"
 FS_CH = 48000.0
 SPS = 10
 BURST = 132 * SPS                  # 27.5 ms
@@ -160,9 +160,9 @@ def cmd_capture(args) -> int:
 
 def _load(path: str, meta: dict, freq_override=None):
     """Channel baseband at 48 kS/s, delay-compensated: (f Hz through the matched filter, |x|^2)."""
-    from odr_sdrbench.channelizer import Channelizer
-    from odr_sdrbench.dsp import FmDemod
-    from odr_sdrbench.source import from_bytes
+    from rfoundry_sdrbench.channelizer import Channelizer
+    from rfoundry_sdrbench.dsp import FmDemod
+    from rfoundry_sdrbench.source import from_bytes
     fs = meta["fs"]
     freq = freq_override or meta["freq"]
     D = int(round(fs / FS_CH))
@@ -223,7 +223,7 @@ def _sync_scores(f: np.ndarray, unit: np.ndarray) -> np.ndarray:
 
 
 def _slice(vals, center, outer):
-    from odr_sdrbench.demod import _slice as s
+    from rfoundry_sdrbench.demod import _slice as s
     return s(vals, center, outer)
 
 
@@ -240,8 +240,8 @@ def _fec_str(fec3) -> str:
 
 
 def cmd_analyze(args) -> int:
-    from odr_sdrbench.dmr import ambe, fec, pdu
-    from odr_sdrbench import layer2 as L2
+    from rfoundry_sdrbench.dmr import ambe, fec, pdu
+    from rfoundry_sdrbench import layer2 as L2
     meta = json.load(open(args.file + ".json")) if os.path.exists(args.file + ".json") else \
         {"freq": args.freq * 1e6, "center": args.freq * 1e6 - args.offset_khz * 1e3, "fs": args.rate,
          "fmt": "cu8" if args.file.endswith("cu8") else "cs8", "ppm": args.ppm, "t0": None}
@@ -694,7 +694,7 @@ def main() -> int:
             s.add_argument("--cach", action="store_true", help="decode the CACH of BS-sourced bursts (split duplex)")
     args = ap.parse_args()
     if args.cmd == "capture" or not os.path.exists(args.file + ".json"):     # analyze: the capture's own record wins
-        from odr_sdrbench import benchcal
+        from rfoundry_sdrbench import benchcal
         args.ppm = benchcal.resolve("--ppm", args.ppm, "sdr_ppm")
     if args.cmd == "capture":
         return cmd_capture(args)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The hardware watchdog's portable side (docs/spec/watchdog.md): the idle task's feed, the longest idle gap, the bench
 // starve (core/app/watchdog.c), and the debug link's watchdog section and DL_CMD_WATCHDOG
 // (core/debuglink/debuglink_watchdog.c, docs/spec/debuglink.md 3.21). The platform (hal_watchdog.h), the clock, the

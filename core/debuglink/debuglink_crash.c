@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The crash log on the debug link (CONFIG_CRASH_LOG, docs/spec/debuglink.md 3.19, docs/spec/crash-log.md): the crash
 // view section with the record kept from before this start, and DL_CMD_CRASH to clear it or to crash on purpose (a
 // HIL test of the capture). The crash comes after the reply has gone out, as cmd_reboot's reset does. Without the

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // APRS through the radio core (docs/spec/aprs.md 6, 7, 9): the engine (core/aprs/aprs.c) and radio_sm.c's APRS block
 // in an FM-only build, against a fake board with an AFSK transmitter whose tones are decoded back to AX.25 frames.
 // Defaults (nothing sent), the amateur and callsign rules, beacon triggers and the hard minimum, CSMA on a busy
@@ -220,7 +220,7 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out)
 	if (n != 1) {
 		return false;
 	}
-	strcpy(out->comment, "ODR test");
+	strcpy(out->comment, "RadioFoundry test");
 	strcpy(out->path[0], cp_path[0]);
 	strcpy(out->path[1], cp_path[1]);
 	return true;
@@ -377,7 +377,7 @@ static void test_beacon_on_air(void)
 	CHECK(hw.tx_calls == 1 && hw.tx_hz == APRS_HZ && hw.starts == 1);
 	CHECK(sm.view.state == RS_TX);
 	CHECK(nframes == 1);
-	CHECK(strcmp(frames[0], "N0TST-7>APZODR,WIDE1-1,WIDE2-1:!4903.50N/07201.75W[ODR test") == 0);
+	CHECK(strcmp(frames[0], "N0TST-7>APZRDF,WIDE1-1,WIDE2-1:!4903.50N/07201.75W[RadioFoundry test") == 0);
 	if (nframes > 0) {
 		printf("# on air: %s\n", frames[0]);
 	}
@@ -598,7 +598,7 @@ static void test_host_kiss_nmea(void)
 	host_out_has("");
 	CHECK(aprs_send_now());
 	run(1000);
-	CHECK(host_out_has("GN0TST-7>APZODR,TCPIP*:!/"));	// compressed, no messaging (no receive path)
+	CHECK(host_out_has("GN0TST-7>APZRDF,TCPIP*:!/"));	// compressed, no messaging (no receive path)
 }
 
 static void test_messages(void)
@@ -663,23 +663,23 @@ static void test_stations_digi_igate(void)
 	c.igate_tx = true;
 	aprs_set_cfg(&c, now);
 	host_out_has("");
-	rx_line("K1ABC-9>APZODR,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>Mobile");
+	rx_line("K1ABC-9>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>Mobile");
 	CHECK(aprs_station_count() == 1);
 	aprs_station_t s;
 	CHECK(aprs_station(0, &s) && strcmp(s.call, "K1ABC-9") == 0 && s.has_pos && s.direct && s.sym_code == '>');
 	// gated to APRS-IS with our q construct; the raw frame to the KISS host too
-	CHECK(host_out_has("GK1ABC-9>APZODR,WIDE1-1,WIDE2-1,qAR,N0TST-7:=4903.50N/07201.75W>Mobile"));
+	CHECK(host_out_has("GK1ABC-9>APZRDF,WIDE1-1,WIDE2-1,qAR,N0TST-7:=4903.50N/07201.75W>Mobile"));
 	// digipeated (fill-in): our call in the path, used (TNC2 stars the last used entry)
 	CHECK(wait_start(1, 5000));
 	wait_idle();
-	CHECK(nframes == 1 && strcmp(frames[0], "K1ABC-9>APZODR,N0TST-7,WIDE1*,WIDE2-1:=4903.50N/07201.75W>Mobile") == 0);
+	CHECK(nframes == 1 && strcmp(frames[0], "K1ABC-9>APZRDF,N0TST-7,WIDE1*,WIDE2-1:=4903.50N/07201.75W>Mobile") == 0);
 	// a message from APRS-IS for the station we just heard: to RF as a third-party packet
 	nframes = 0;
 	const char *is = "W9XYZ>APRS,TCPIP*,qAC,T2TEST::K1ABC-9  :From the net{7";
 	aprs_host_is_line(is, strlen(is), now);
 	CHECK(wait_start(2, 5000));
 	wait_idle();
-	CHECK(nframes == 1 && strcmp(frames[0], "N0TST-7>APZODR:}W9XYZ>APRS,TCPIP,N0TST-7*::K1ABC-9  :From the net{7") == 0);
+	CHECK(nframes == 1 && strcmp(frames[0], "N0TST-7>APZRDF:}W9XYZ>APRS,TCPIP,N0TST-7*::K1ABC-9  :From the net{7") == 0);
 	// RFONLY stays local
 	rx_line("K2DEF>APRS,RFONLY:>local only");
 	CHECK(!host_out_has("K2DEF"));

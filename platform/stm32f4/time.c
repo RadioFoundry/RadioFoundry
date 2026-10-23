@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Millisecond clock from the DWT cycle counter, so it runs before the scheduler and inside critical sections.
 // The 32-bit cycle counter wraps every 59 s at 72 MHz; it is folded into a 64-bit count on every read, and the RTOS
 // tick hook reads it every millisecond, so no wrap is missed.

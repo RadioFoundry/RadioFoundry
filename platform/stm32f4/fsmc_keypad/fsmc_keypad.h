@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A key matrix whose columns are the FSMC data lines D0-D7 (STM32_FSMC_D0_D3, STM32_FSMC_D4_D7 in platform.h), shared
 // by the STM32F4 radios whose keypad shares the LCD bus: under the board's LCD bus lock the lines leave the FSMC,
 // rows are driven high one at a time and the columns read back, then the lines go back to the FSMC. A board adds

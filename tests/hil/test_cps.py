@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The open-firmware CPS shim (docs/spec/cps-protocol.md 2) and the settings store (docs/spec/settings-store.md) on the
 radio, through tools/cps_client.py the way qdmr talks to it.
 
@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, as_int, board_entry, board_id, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, as_int, board_entry, board_id, find_ports, skip
 import cps_client
 
 QDMR = cps_client.REGIONS["qdmr"]
@@ -201,7 +201,7 @@ def test_cps_write_dry_run(radio, backup_dir):
         skip("state", "no stored channel to edit")
     old = cps_client.decode_channel(backup, number)["name"]
     edited = bytearray(backup)
-    cps_client.set_channel_name(edited, number, "ODR HIL" if old != "ODR HIL" else "ODR HIL 2")
+    cps_client.set_channel_name(edited, number, "RadioFoundry HIL" if old != "RadioFoundry HIL" else "RadioFoundry HIL 2")
     _, rec = cps_client.channel_addr(number)
     changed = cps_client.compare(backup, edited, QDMR, skip=())
     assert changed and all(rec <= a < rec + 16 for a, _, _ in changed), f"the edit touches {changed}"
@@ -225,7 +225,7 @@ def test_cps_write_restore(radio, backup_dir):
         skip("state", "no stored channel to edit")
     v = radio.core()
     old = cps_client.decode_channel(probe, number)["name"]
-    new = "ODR HIL" if old != "ODR HIL" else "ODR HIL 2"
+    new = "RadioFoundry HIL" if old != "RadioFoundry HIL" else "RadioFoundry HIL 2"
     with codeplug_edited(radio, backup_dir, lambda img: cps_client.set_channel_name(img, number, new), "rename") \
             as (_, edited):
         assert cps_client.decode_channel(edited, number)["name"] == new
@@ -240,14 +240,14 @@ def test_cps_write_restore(radio, backup_dir):
 @pytest.mark.feature("settings_store")
 def test_storage_region(radio):
     """The settings / journal region: its state is reported, the read window holds, a read outside it is refused.
-    A foreign region (another firmware's data) is reported, not claimed: `odr_debug.py storage claim` does that"""
+    A foreign region (another firmware's data) is reported, not claimed: `rfoundry_debug.py storage claim` does that"""
     info = radio.link.storage_info()
     s = storage(radio)
     assert s.get("storage.region") == info["region"], (s, info)
     if info["region"] == "foreign":
         assert s.get("settings.load") == "foreign" and s.get("storage.journal") == "foreign", s
         skip("state", "the settings / journal region holds another firmware's data: dump and claim it with "
-                      "tools/odr_debug.py storage claim --out DIR (writes are refused until then)")
+                      "tools/rfoundry_debug.py storage claim --out DIR (writes are refused until then)")
     assert info["region"] == "ours" and s.get("storage.journal") == "ok", (s, info)
     addr, _ = info["ranges"]["settings"]
     assert len(radio.link.storage_read(addr, 64)) == 64

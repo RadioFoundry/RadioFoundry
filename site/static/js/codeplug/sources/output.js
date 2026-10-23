@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // What a contacts source's users become in a codeplug: the DMR ID database, or private-call contacts. Both work on the
 // editing model (model.js); the database is written into a new image that replaces the model's base, so undo can put
 // the old one back.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The ui_svc.h emergency calls on core/dmr/dmr_emergency.h (dmr-ext, docs/spec/dmr-emergency.md): the emergency key
 // starts or cancels the emergency, and each new alert heard (an alarm, or a call with the emergency service option)
 // becomes UI_EV_EMERGENCY. Built only with CONFIG_DMR_EMERGENCY; otherwise the weak stubs say "not set up".

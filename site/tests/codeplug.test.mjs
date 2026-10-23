@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The codeplug editor's decoder and encoder (static/js/codeplug/), checked against the radio's own codeplug code on
 // the host: tests/host/cpsSim stores a codeplug and lists what the radio reads (--detail), both ways. Fixtures from
 // site/tests/fixtures.py; run with site/tests/run.sh.
@@ -17,7 +17,7 @@ import { getTone, putTone, parseTone, parseFreq, mhz, getCoord, coordBytes } fro
 import * as iddb from "../static/js/codeplug/iddb.js";
 import { targets } from "../static/js/flasher/restore.js";
 
-const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
+const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const fx = JSON.parse(readFileSync(join(DIR, "codeplug.json"), "utf8"));
 const simImage = () => CodeplugImage.from(new Uint8Array(readFileSync(join(DIR, "codeplug_sim.bin"))).slice(0, CODEPLUG_SPAN));
 
@@ -56,7 +56,7 @@ function detail(m, ids = [], db = []) {
 }
 
 function simDetail(image, ids = []) {
-	const d = mkdtempSync(join(tmpdir(), "odr-cp-"));
+	const d = mkdtempSync(join(tmpdir(), "rfoundry-cp-"));
 	try {
 		const f = join(d, "image.bin");
 		writeFileSync(f, image.bytes);
@@ -111,7 +111,7 @@ test("an unedited codeplug encodes to the same bytes", () => {
 // A codeplug using every field the radio reads, built in the editor's model
 function rich() {
 	const m = empty();
-	m.general = { ...m.general, radioName: "N0ODR", dmrId: 3101276, bootLine1: "Open", bootLine2: "Digital Radio" };
+	m.general = { ...m.general, radioName: "RD0FDY", dmrId: 3101276, bootLine1: "Radio", bootLine2: "Foundry" };
 	const tg91 = newContact({ name: "Worldwide", id: 91, type: "group" });
 	const tg3100 = newContact({ name: "USA", id: 3100, type: "group", timeslot: 1 });
 	const priv = newContact({ name: "N4NQV", id: 3101276, type: "private", timeslot: 2 });
@@ -319,8 +319,8 @@ test("a sector left pending by an interrupted write is retried; verify skips the
 	await assert.rejects(tr.verify(want, res.plan), (e) => e.code === "verify_failed" && e.params.addr === 0x7600);
 });
 
-test("a backup's codeplug is offered for restore only in ODR's layout", () => {
-	const bundle = (data) => ({ meta: { firmware_now: { kind: "odr" } }, parts: new Map([["spi-flash", { data }]]) });
+test("a backup's codeplug is offered for restore only in RadioFoundry's layout", () => {
+	const bundle = (data) => ({ meta: { firmware_now: { kind: "rfoundry" } }, parts: new Map([["spi-flash", { data }]]) });
 	assert.deepEqual(targets(bundle(encode(rich()).bytes)), ["codeplug"]);
 	const noise = new Uint8Array(CODEPLUG_SPAN);
 	for (let i = 0; i < noise.length; i++) noise[i] = (i * 7919 + (i >> 5)) & 0xFF;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The broadcast FM receiver (CONFIG_BCAST_FM; docs/spec/airband-and-broadcast.md 4): listening on the board's second
 // receiver (hal_bcast.h) while the channel receiver keeps monitoring the channel. Tune, step, seek, volume and six
 // presets; the broadcast pauses (is muted) while the channel has traffic and comes back BCAST_RESUME_MS after it ends.

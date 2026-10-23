@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """DMR audio smoke: real audio both ways, on every radio with DMR, every bench pass (opt-in RF: --allow-rf, --ambe FILE /
-$ODR_HIL_AMBE; README.md "Default bench pass").
+$RFOUNDRY_HIL_AMBE; README.md "Default bench pass").
 
 Frame counters can't see audio. A modem that hands over the same stale voice bytes every burst (the HR_C7000
 voice-access flag on the wrong slot: the DM-1801 Pro played every call silent, 2026-10-22) or a stuck encoder passes
@@ -35,7 +35,7 @@ import time
 
 import pytest
 
-from odr_hil import counter_deltas, skip
+from rfoundry_hil import counter_deltas, skip
 
 PRIME = 3                   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 PEAK_MIN = 1000             # decoded speech peaks at thousands; the stale voice RAM gave 6
@@ -155,7 +155,7 @@ def test_dmr_audio_rx(radio, sdr_bench, pytestconfig):
     freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
     ambe = pytestconfig.getoption("--ambe")
     if not ambe:
-        pytest.fail("the DMR audio smoke needs a speech recording: --ambe FILE or $ODR_HIL_AMBE (9-byte frames)")
+        pytest.fail("the DMR audio smoke needs a speech recording: --ambe FILE or $RFOUNDRY_HIL_AMBE (9-byte frames)")
     if not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
         pytest.fail(f"{ambe}: not a 9-byte-frame .ambe file")
     frames = read_frames(ambe)

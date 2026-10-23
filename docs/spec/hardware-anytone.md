@@ -1,18 +1,18 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Anytone AT-D868UV / AT-D878UV / AT-D578UV hardware
 
-Status: research, 2026-10-12, facts only. ODR has no Anytone board. The owner has an AT-D868UV (hardware version and
-MCU not yet checked). This page collects what is known about the family, what an ODR port would need, and what is
+Status: research, 2026-10-12, facts only. RadioFoundry has no Anytone board. The owner has an AT-D868UV (hardware version and
+MCU not yet checked). This page collects what is known about the family, what a RadioFoundry port would need, and what is
 still missing. The survey entry is in [radios.md](radios.md). The AT-D868UV pin map in section 4 comes from the
 owner's stock firmware image, read as data.
 
 **Summary.** These radios are a GD32F303 (or, on late D578UVs, an Artery AT32F43x) MCU driving a Sicomm SCT3258 DMR
 baseband over an 8-bit parallel host port. The SCT3258 runs DMR layers 1 and 2 and the AMBE+2 vocoder itself, and
 voice audio goes codec ↔ SCT3258 over I2S without passing through the MCU. The RF chip is the AT1846S (or a
-compatible QA4818N), which ODR already drives. On the AT-D868UV, every bus (the SCT3258 host port, the LCD, the SPI
+compatible QA4818N), which RadioFoundry already drives. On the AT-D868UV, every bus (the SCT3258 host port, the LCD, the SPI
 NAND, the AT1846S and I2C) is bit-banged on GPIO: the stock firmware uses no SPI, I2C or EXMC peripheral. Loading our firmware looks possible: native USB, a documented vendor
 update mode, and SWD pads with no read-out protection on the units documented so far. The cost is the baseband.
-ODR's burst-level modem and vocoder interfaces don't map onto it directly, and features that need the AMBE bits
+RadioFoundry's burst-level modem and vocoder interfaces don't map onto it directly, and features that need the AMBE bits
 (privacy, the hotspot voice bridge) aren't possible unless a vocoder bypass is found.
 
 ## Confidence tags
@@ -69,7 +69,7 @@ runs them at once. That block normally holds a second-stage loader, which starts
 flash. DMR and dPMR use different boot blocks, and the block chosen sets the chip's mode. On success the chip sends
 the packet `84 A9 61 00 02 20 17 01` (DS).
 
-So the MCU firmware must hold this 1024-word block and send it at every power-on. It is Sicomm's code. ODR can't
+So the MCU firmware must hold this 1024-word block and send it at every power-on. It is Sicomm's code. RadioFoundry can't
 ship it, so like the AMBE codec on other radios, it has to come from the owner's own radio.
 
 The stock firmware keeps it in the application image (internal flash), not in the NAND (FW). The 2048 bytes are the
@@ -101,18 +101,18 @@ bursts. The AMBE bits come from the chip's own vocoder (DS). Encoded voice passe
 (`CHAN_D`, 36 bytes per 80 ms) **in dPMR mode only** (DS). The manual also has base station activation (continuous
 outbound with CACH) and listen-before-transmit (DS 2.3.4–2.3.5).
 
-### 2.4 Fit with ODR
+### 2.4 Fit with RadioFoundry
 
-ODR's `hal_dmr_modem` takes bursts and gives burst events. `hal_vocoder` converts PCM frames to and from 49-bit
+RadioFoundry's `hal_dmr_modem` takes bursts and gives burst events. `hal_vocoder` converts PCM frames to and from 49-bit
 frames. On the SCT3258:
 
-| ODR function | Layer 2 mode | Tag |
+| RadioFoundry function | Layer 2 mode | Tag |
 |---|---|---|
 | Voice calls, group and private, talker alias, embedded GPS | Yes: the stack builds the LC; the chip does the bursts and voice | INF |
 | CSBK, data headers, rate 1/2, 3/4, 1 data (SMS, IP over DMR, LRRP, ARS) | Likely, through `DIGC_DATA_FRAME` data types. Needs confirming per data type | INF |
-| Basic privacy (Motorola, Anytone BP) | Not by ODR: it XORs the AMBE bits, which the MCU never sees. The chip may have its own scrambler (not checked) | INF |
+| Basic privacy (Motorola, Anytone BP) | Not by RadioFoundry: it XORs the AMBE bits, which the MCU never sees. The chip may have its own scrambler (not checked) | INF |
 | Hotspot / MMDVM voice bridge, voice relay from the network | Not unless AMBE frames can be passed through in DMR mode | INF |
-| ODR's own FEC and burst code (`core/dmr/fec`, `ambeFec`) | Unused: the chip does it | INF |
+| RadioFoundry's own FEC and burst code (`core/dmr/fec`, `ambeFec`) | Unused: the chip does it | INF |
 | Split duplex, the hotspot's BS outbound | Maybe, through base station activation; voice still needs the AMBE bits | INF |
 | The software vocoder (`hal_vocoder`) | Not needed. A stub reports the vocoder as hosted by the modem | INF |
 
@@ -159,7 +159,7 @@ confirm on the radio: the `CHAN_D` frame format in DMR mode and its timing again
 
 From the 868 stock application (V2.40, FW). V1.40 drives the same buses on the same pins; it differs in a few key
 inputs (pull-down instead of pull-up, not yet confirmed) and adds outputs PC10 and PC11. All buses are bit-banged:
-the firmware sets and clears pins one at a time. ODR can do the same, or move a bus to a hardware peripheral where
+the firmware sets and clears pins one at a time. RadioFoundry can do the same, or move a bus to a hardware peripheral where
 the pins allow it (the NAND, LCD and host port pins don't match the GD32F303 SPI or EXMC pin options).
 
 ### 4.1 Buses
@@ -185,7 +185,7 @@ The audio codec is not on the MCU's I2C bus. The SCT3258's PIO0/PIO1 are an I2C 
 The stock init sequence is an ST7735S-class controller (FW): reset low 100 ms, then 500 ms; SLPOUT, 120 ms; frame
 rate B1/B2/B3 = 01 01 01; inversion B4 = 03; power C0 = 28 08 84, C1 = C0, C2 = 0C 00, C3 = 8C 2A, C4 = 8A EE;
 VCOM C5 = 0C; MADCTL = 0x88; gamma E0/E1; COLMOD = 0x55 (16-bit RGB565); column 0–0x80, row 0–0xA0. That is a
-128×160 panel addressed in portrait. ODR's `st7735` driver covers the controller; it needs a parallel-bus
+128×160 panel addressed in portrait. RadioFoundry's `st7735` driver covers the controller; it needs a parallel-bus
 transport instead of SPI.
 
 ### 4.3 Other I/O
@@ -215,18 +215,18 @@ with an A/B pair at 0x02501000 and 0x02521000.
 
 A port must read this calibration from the owner's NAND and never overwrite it. If the stock programming protocol
 addresses the NAND directly (the public flash-tool notes use 32-bit addresses in this range), the calibration can
-be read over USB before ODR is installed. Not yet confirmed.
+be read over USB before RadioFoundry is installed. Not yet confirmed.
 
 ### 4.5 AT1846S setup
 
 The stock firmware programs the AT1846S with a common table, two band and bandwidth tables (each with two variants)
 and the AGC gain table on register page 1. TX and RX switch through register 0x30. The values are kept in the
-reference directory notes, not here. ODR's AT1846S driver already covers the chip; the per-radio values come from
+reference directory notes, not here. RadioFoundry's AT1846S driver already covers the chip; the per-radio values come from
 the owner's radio and its calibration.
 
 ## 5. What a port needs
 
-| Part | ODR has | New work |
+| Part | RadioFoundry has | New work |
 |---|---|---|
 | MCU | `platform/stm32f4` (a different family) | `platform/gd32f30x` (clock tree, GPIO, timers, DAC, ADC, USART, USB FS device). The AT32F43x for late 578s is a second platform |
 | Baseband | none | `drivers/modem/sct3258`: bit-banged HPI on GPIO, reset and boot block load, packet framing, layer 2 mode, 60 ms pacing, calibration |
@@ -235,7 +235,7 @@ the owner's radio and its calibration.
 | Audio codec | none | Codec setup sent through the SCT3258 (codec-bypass packets or `I2C_OPERATION`); register values to work out from the TLV320AIC3204 datasheet |
 | Storage | SPI NOR drivers | SPI NAND driver (bit-banged, dual-output read) with bad-block handling; two vendors (also needed by the DB25-D and GD-88) |
 | Display | `st7735`, `st7789` | An 8080 parallel transport for `st7735`, sharing its data lines with the keypad scan |
-| Flashing | odrflash (DFU, UART loaders) | The Anytone update protocol over USB CDC, or SWD under reset for the first bring-up |
+| Flashing | rfoundry (DFU, UART loaders) | The Anytone update protocol over USB CDC, or SWD under reset for the first bring-up |
 | Calibration | per-radio readers | A reader for the NAND calibration block (4.4), read-only |
 | Core | — | A capability for "voice frames stay in the modem", in case `CHAN_D` pass-through turns out unusable in DMR |
 

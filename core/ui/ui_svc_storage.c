@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The ui_svc.h calls storage-cps answers (docs/spec/settings-store.md, core/codeplug editing):
 //   - settings: each UI setting is read from where it is kept across power cycles. The radio core's own settings
 //     (key tones, tone volume, TX timeout, backlight time, battery saver) from radio_get_settings, which the radio

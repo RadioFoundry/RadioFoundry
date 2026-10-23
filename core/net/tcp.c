@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A minimal TCP (see tcp.h), written from RFC 9293 (the state machine and segment arrival rules of 3.10), RFC 6298
 // (the retransmission timer), RFC 5961 (RST / SYN checks), RFC 1122 4.2.3.6 (keepalive) and RFC 6528 (initial
 // sequence numbers, here a counter and the clock rather than a keyed hash: a local link).
@@ -49,7 +49,7 @@ typedef struct {
 	uint8_t txbuf[TCP_TXBUF];
 } conn_t;
 
-static ODR_CPU_RAM conn_t conns[TCP_CONNS];
+static RFOUNDRY_CPU_RAM conn_t conns[TCP_CONNS];
 static struct {
 	uint16_t port;
 	const tcp_app_t *app;

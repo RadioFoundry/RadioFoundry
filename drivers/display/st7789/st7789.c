@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ST7789-class TFT driver (docs/spec/hardware-dm32.md 7)
 #include <stddef.h>
 #include "st7789.h"

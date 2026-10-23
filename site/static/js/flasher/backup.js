@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// Backup bundles (odr-backup/1): everything the flasher could read from a radio, in one zip the user keeps. A bundle
+// Copyright (c) 2026 The RadioFoundry Authors
+// Backup bundles (rfoundry-backup/1): everything the flasher could read from a radio, in one zip the user keeps. A bundle
 // is what "restore" takes to put the radio back the way it was (docs/user/02-installing.md, docs/dev/website.md).
 //
 //   backup.json              what's in the bundle: the radio, its firmware before and now, each part's address,
@@ -18,13 +18,15 @@ import { hex, sha256 } from "./bytes.js";
 import { zip, unzip } from "./zip.js";
 import { debugLinkReader } from "./readers.js";
 
-export const FORMAT = "odr-backup/1";
+export const FORMAT = "rfoundry-backup/1";
+// Bundles made before the project was renamed: same layout, the old format id and firmware kind
+const LEGACY_FORMAT = "odr-backup/1";
 const CPS_INFO = 9, CPS_SECURITY = 10;
 export const CODEPLUG_SPAN = 0x120000;	// the open-firmware layout: emulated EEPROM, calibration, codeplug, ID database
 
 export class BackupError extends Error {}
 
-// Read a radio that runs ODR. what: {internal, spi: "full" | "codeplug" | "none", security}. Returns the parts.
+// Read a radio that runs RadioFoundry. what: {internal, spi: "full" | "codeplug" | "none", security}. Returns the parts.
 // readers (readers.js): bulk readers to try first, in order, for the two memories; the debug link reads them when
 // none opens. The small parts only the debug link reads (radio info, security registers) come first, before a reader
 // may hand the radio over to a loader. A reader that opened is closed (or aborted on a failure) before this returns.
@@ -86,12 +88,12 @@ export async function makeBundle(meta, parts, site = {}) {
 	}
 	const doc = { format: FORMAT, created: new Date().toISOString(), tool: { site: site.git || "", url: site.url || "" }, ...meta, parts: listed };
 	const readme = [
-		`OpenDigitalRadio backup of a ${meta.radio.name}, ${doc.created}`,
+		`RadioFoundry backup of a ${meta.radio.name}, ${doc.created}`,
 		meta.radio.chip ? `Chip UID ${meta.radio.chip.uid}` : "",
 		`Firmware when the backup was taken: ${describeFirmware(meta.firmware_now)}`,
-		meta.firmware_before ? `Firmware before ODR was installed: ${describeFirmware(meta.firmware_before)}` : "",
+		meta.firmware_before ? `Firmware before RadioFoundry was installed: ${describeFirmware(meta.firmware_before)}` : "",
 		"",
-		"Keep this file. The OpenDigitalRadio radio programming utility (Restore) can restore the radio from it.",
+		"Keep this file. The RadioFoundry radio programming utility (Restore) can restore the radio from it.",
 		"It contains your radio's calibration and codeplug. Do not share it.",
 		"",
 		...listed.map((p) => `${p.file}: ${p.what} at ${p.addr}, ${p.size} bytes${p.complete ? "" : " (incomplete read)"}, sha256 ${p.sha256}`),
@@ -101,7 +103,7 @@ export async function makeBundle(meta, parts, site = {}) {
 
 export function describeFirmware(f) {
 	if (!f) return "unknown";
-	if (f.kind === "odr") return `OpenDigitalRadio ${f.git || ""} (codec ${f.codec || "?"})`.trim();
+	if (f.kind === "rfoundry") return `RadioFoundry ${f.git || ""} (codec ${f.codec || "?"})`.trim();
 	if (f.kind === "stock") return `stock ${f.version || "(version unknown)"}`;
 	return "unknown";
 }
@@ -125,7 +127,9 @@ export async function openBundle(bytes) {
 	const doc = files.get("backup.json");
 	if (!doc) throw new BackupError("this file is not a backup created by the radio programming utility (no backup.json)");
 	const meta = JSON.parse(new TextDecoder().decode(doc));
-	if (meta.format !== FORMAT) throw new BackupError(`unknown backup format ${meta.format}`);
+	if (meta.format !== FORMAT && meta.format !== LEGACY_FORMAT) throw new BackupError(`unknown backup format ${meta.format}`);
+	for (const k of ["firmware_now", "firmware_before"])
+		if (meta[k]?.kind === "odr") meta[k].kind = "rfoundry";
 	const parts = new Map();
 	for (const p of meta.parts) {
 		const data = files.get(p.file);

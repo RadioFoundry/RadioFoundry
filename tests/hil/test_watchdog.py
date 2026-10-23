@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The hardware watchdog (docs/spec/watchdog.md): the view section, the longest idle gap, and the bench tests that stop
 the feeds on purpose and must end in a reset. Those restart the radio: opt-in with --allow-reboot (marker reboot)."""
 import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, as_int, find_ports, skip
 
 
 def _view(radio):

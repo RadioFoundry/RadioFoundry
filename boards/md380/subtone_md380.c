@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 sub-audio: CTCSS / DCS decode in software from QT_DQT_IN (PA2, ADC1 IN2, one rank of the board's scan) and
 // encode as PWM on CTC/DCS_OUT (PC7, TIM3 CH2) for the modulator (docs/spec/hardware-md380.md 6.4). The DSP is
 // drivers/rf/subaudio; this file is the sampling and PWM glue. Nothing here has run on a radio.

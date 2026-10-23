@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // hal_system_t for the HR_C7000: chip identity, memory reads and reboot. No chip identity registers are known (the eFuse
 // behind SPI master 3 is not mapped out), so the UID is the board's data flash's unique ID (hrc_chip_set_uid), and
 // chip() reports nothing until the board has read it.

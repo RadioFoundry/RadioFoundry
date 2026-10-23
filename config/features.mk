@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 ## Feature switches (y / n). Precedence: the make command line, then boards/<board>/config.mk, then the defaults here.
 ##
 ##   make BOARD=<radio> CONFIG_DMR=n         an FM-only build
@@ -184,7 +184,7 @@ CONFIG_BCAST_FM ?= n
 # PCM stream it borrows). A diagnostic, never for a release
 CONFIG_AUDIO_PROBE ?= n
 # runtime RAM-monitor entry: command 0x1A on the host port loads the host's flash-access stub into free RAM and jumps
-# to it without a power cycle, so updates need no key combo at power-on (the web flasher, stub/stubtool.py, odrflash;
+# to it without a power cycle, so updates need no key combo at power-on (the web flasher, stub/stubtool.py, rfoundry;
 # core/stubentry, docs/spec/stub-entry.md). Its own feature: with the debug link off it answers on its own small
 # listener (PING, VERSION, STUB). Needs HOSTLINK (the task that owns the port) and a platform with
 # hal_system_t.enter_stub: the HR_C7000, and the STM32F4 with an 8 KB staging buffer (docs/spec/stub-stm32f4.md). On
@@ -206,7 +206,7 @@ CONFIG_CRASH_REPORT ?= $(if $(and $(filter y,$(CONFIG_CRASH_SCREEN)),$(filter y,
 # also has a bench test (command 0x1D). Off: no watchdog runs, as before. Needs nothing else
 CONFIG_WATCHDOG ?= y
 # the fault trace: a CPU fault prints its registers on the host UART, three framed lines a second apart, before the
-# restart (core/crash/crash_trace.c, tools/odr_fault_trace.py; docs/spec/crash-log.md 2.3). Only where the host port is
+# restart (core/crash/crash_trace.c, tools/rfoundry_fault_trace.py; docs/spec/crash-log.md 2.3). Only where the host port is
 # a UART the fault handler can drive polled: the HR_C7000 radios (the STM32 radios' config.mk turn it off: USB only).
 # Off: straight to the record and the restart. Needs nothing else
 CONFIG_FAULT_TRACE ?= y

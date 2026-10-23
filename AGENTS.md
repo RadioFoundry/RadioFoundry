@@ -2,7 +2,9 @@
 
 # Notes for coding agents
 
-OpenDigitalRadio (ODR) is MIT-licensed firmware for DMR radios: one tree, many radios. The radios and their chips
+ODR / OpenDigitalRadio is a legacy name for this project (now RadioFoundry).
+
+RadioFoundry is MIT-licensed firmware for DMR radios: one tree, many radios. The radios and their chips
 (MCU, DMR chip, RF) are in [docs/spec/radios.md](docs/spec/radios.md); a board's platform is `PLATFORM` in
 `boards/<radio>/board.mk`. What each radio supports is in [docs/feature-matrix.md](docs/feature-matrix.md); check it
 before claiming a radio lacks a feature. Human contributors have the same rules in
@@ -18,7 +20,7 @@ wrong.
 2. **Never commit** the AMBE codec, stock firmware images, bootloader keys, memory or flash dumps, or audio recordings.
    `codecs/` and `build/` are ignored for that reason. Don't weaken those ignore rules.
 3. **SPDX header on every new file**, in the style of its neighbors:
-   `// SPDX-License-Identifier: MIT` and `// Copyright (c) 2026 The OpenDigitalRadio Authors` (`#` for scripts and
+   `// SPDX-License-Identifier: MIT` and `// Copyright (c) 2026 The RadioFoundry Authors` (`#` for scripts and
    makefiles, `<!-- -->` for Markdown).
 4. **Generic first.** `core/` never includes a board or platform header and never tests a radio define. Radio
    differences go through `board_t` and the `hal/` interfaces ([docs/dev/architecture.md](docs/dev/architecture.md)).
@@ -47,7 +49,7 @@ wrong.
 ## Build and test
 
 ```
-make BOARD=dm1701                    # build/dm1701/odr_dm1701.bin (+ _codec.bin if codecs/ has the stock file)
+make BOARD=dm1701                    # build/dm1701/rfoundry_dm1701.bin (+ _codec.bin if codecs/ has the stock file)
 make BOARD=dm1701 CONFIG_X=n BUILD=build/t-x   # a configuration with a switch off
 make -C tests/host                   # host unit and SIL tests
 make -C tests/host ui-gallery        # re-render docs/ux/screens after a UI change
@@ -68,7 +70,7 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
 - Read the spec for the subsystem first, and its section of [docs/spec/gotchas.md](docs/spec/gotchas.md).
 - New behavior gets a host test. A bug fix gets the test that would have caught it. If a HIL test can check it on
   the radio, add one, opt-in as the README describes. Anything a HIL test needs to see goes in a debug link view key
-  (`core/debuglink/debuglink_view*.c`). HIL skips use `odr_hil.skip(kind, reason)`, a new feature gets an entry
+  (`core/debuglink/debuglink_view*.c`). HIL skips use `rfoundry_hil.skip(kind, reason)`, a new feature gets an entry
   in `tests/hil/features.toml`, and its HIL tests a `@pytest.mark.feature("<id>")` marker.
 - A behavior change updates its spec in `docs/spec/`. If users see it, it also updates `docs/user/`. Run
   `python3 tools/check_doc_links.py` after editing docs.

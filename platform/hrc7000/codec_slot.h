@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C7000 codec slot: its header, its checks and the code's move to the board's codec window
 // (docs/spec/codec-placement.md, "HR_C7000 radios"). No hardware here, so the host tests run it
 // (tests/host/hrc7000CodecSlotTest.c); platform/hrc7000/vocoder.c does the copies.
@@ -9,14 +9,14 @@
 // header, code, tables, then the relocation list: rel_count code offsets of the 32-bit words that hold addresses
 // inside the code (the codec map's self_refs). The code runs at the window's start; each listed word gets
 // (window start - stock run address) added. The code and tables in the slot stay the stock bytes.
-#ifndef ODR_HRC7000_CODEC_SLOT_H
-#define ODR_HRC7000_CODEC_SLOT_H
+#ifndef RFOUNDRY_HRC7000_CODEC_SLOT_H
+#define RFOUNDRY_HRC7000_CODEC_SLOT_H
 
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
-#define CODEC_SLOT_MAGIC	0x43524444u	// "DDRC" little-endian: ODR HR_C7000 codec slot
+#define CODEC_SLOT_MAGIC	0x43524444u	// "DDRC" little-endian: RadioFoundry HR_C7000 codec slot
 #define CODEC_SLOT_V2		2u
 #define CODEC_SLOT_ENTRIES	7u
 #define CODEC_SLOT_REL_MAX	64u		// more self references than any known build (3) by far: a bad list is refused

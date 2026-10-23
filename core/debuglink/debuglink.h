@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The USB debug link (docs/spec/debuglink.md): framed commands on the host port, beside the MMDVM hotspot and the CPS
 // protocol (core/hostlink), for bench automation: version, diagnostics and counters, the radio view as key=value
 // text, screenshots, key and PTT injection, radio requests, a log ring. CONFIG_DEBUGLINK.

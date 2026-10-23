@@ -22,7 +22,7 @@ and the release images never contain it. Each radio uses the codec from its own 
    | DM-1801 Pro | A 1 MB program flash read of the radio running its stock firmware (`stub/stubtool.py --progmem`) | Any file whose codec code window hashes to `8f7641b6…` (`tools/hrc7000_codec.py`) |
 
    The DM-1801 Pro has no published update file, so the codec comes from the radio's own flash. Read it **before** the
-   first ODR install: ODR overwrites the stock firmware, and the codec with it.
+   first RadioFoundry install: RadioFoundry overwrites the stock firmware, and the codec with it.
 
 2. Build as usual:
 
@@ -30,13 +30,13 @@ and the release images never contain it. Each radio uses the codec from its own 
    make BOARD=dm1701
    ```
 
-   Next to the plain image, the build writes `build/dm1701/odr_dm1701_codec.bin`. Flash that one.
+   Next to the plain image, the build writes `build/dm1701/rfoundry_dm1701_codec.bin`. Flash that one.
 
 The DM-1701 and the MD-380 need no key file, because the codec tool derives the key from the stock file (a few seconds
 for the MD-380). If you have the radio's 1024-byte firmware key file, you can put it here too, and the build uses it
 instead.
 
-The DB25-D writes `build/db25d/odr_db25d_codec.bin`: the first stage, the application and the codec in one file, the one
+The DB25-D writes `build/db25d/rfoundry_db25d_codec.bin`: the first stage, the application and the codec in one file, the one
 to flash (DMR on that radio is a receive-only build option, `CONFIG_DMR=y`, hardware-db25d.md 9).
 
 If no supported file is here, the build prints a line saying so and writes only the plain image. A radio running the
@@ -50,4 +50,4 @@ published.
 
 To merge by hand instead (a different image or output path), run the board's codec tool directly:
 `tools/codec_extract.py` for the DM-1701 and the MD-380, `tools/hrc7000_codec.py` for the DM-32 and the DB25-D PRO (`--board db25d`). For flashing, including keeping the
-codec that's already in the radio, see [docs/dev/release.md](../docs/dev/release.md) and `tools/odrflash`.
+codec that's already in the radio, see [docs/dev/release.md](../docs/dev/release.md) and `tools/rfoundry`.

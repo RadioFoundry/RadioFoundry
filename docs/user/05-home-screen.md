@@ -89,7 +89,7 @@ do:
 | Outside ... | The frequency is outside the radio's transmit bands | Pick another channel, or tune into a band in the VFO |
 | TX time-out reached | You talked longer than the transmit timeout | Release **PTT** and press it again |
 | No TX frequency set | The channel has no transmit frequency | Fix the channel in qdmr |
-| No codec: voice off | DMR voice without the codec | "Add codec with odrflash" ([Installing](02-installing.md)) |
+| No codec: voice off | DMR voice without the codec | "Add codec with rfoundry" ([Installing](02-installing.md)) |
 | Channel busy | Someone else is talking on the slot | Wait for the call to end |
 | No repeater answered | The repeater didn't wake up | "Check CC and range" |
 | Hotspot mode: PTT off | The radio is a hotspot | Press **OK** to leave hotspot mode |

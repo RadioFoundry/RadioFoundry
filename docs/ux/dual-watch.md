@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Dual watch
 
-Design for dual watch on Home ([#96](https://github.com/sfowlr/OpenDigitalRadio/issues/96)). Built with
+Design for dual watch on Home ([#96](https://github.com/radiofoundry/radiofoundry/issues/96)). Built with
 `CONFIG_DUAL_WATCH` (on with `CONFIG_SCAN`; [build-config.md](../build-config.md)). Code: `core/ui/ui_dual.c` (behavior and
 its screens), `ui_draw_home_dual` in `core/ui/ui_screens.c` (Home), `ui_svc_dual` (the radio).
 
@@ -170,7 +170,7 @@ take A/B or Dual watch in Settings › Keys (press or hold).
 - Dual watch is a kind of scan to the radio: starting it stops a zone scan, and a zone scan (Tools › Scan, the Scan
   key) stops it.
 - Only the user stops it: Back twice, `*` `7`, hold SK2, the Dual watch key, # 5, a zone scan, or a scan stop over the
-  debug link (`odr_debug.py radio scan stop`). Everything else keeps it going:
+  debug link (`rfoundry_debug.py radio scan stop`). Everything else keeps it going:
 
   | Event | Dual watch |
   |---|---|
