@@ -12,7 +12,7 @@ Some of ODR's authors also worked on a popular alternative aftermarket firmware 
 - `docs/spec/capabilities.md`: what the aftermarket firmware can do on each radio, as user-level capabilities. No menu trees, screen layouts or key mappings from it.
 - the carry-over package (below).
 
-**Implementers (the "clean" side)** work only in this repository plus a read-only reference directory kept outside it (`the external reference folder`, next to the checkout). They never open the aftermarket firmware trees, their upstream releases, or any source derived from them. Their inputs are `docs/`, the carry-over package, datasheets and manuals, public standards (ETSI TS 102 361, the MMDVM protocol) and permissively licensed third-party code.
+**Implementers (the "clean" side)** work only in this repository plus a read-only external reference folder kept outside it. They never open the aftermarket firmware trees, their upstream releases, or any source derived from them. Their inputs are `docs/`, the carry-over package, datasheets and manuals, public standards (ETSI TS 102 361, the MMDVM protocol) and permissively licensed third-party code.
 
 The UI is designed in `docs/ux/` from first principles of good radio usability, not from the aftermarket firmware's menus.
 

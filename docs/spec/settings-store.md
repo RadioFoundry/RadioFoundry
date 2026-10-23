@@ -294,11 +294,11 @@ send it:
   included), when `STORAGE INFO` reports the region foreign. The Codeplug Editor checks before every write and, on a
   foreign region, explains and claims only when the user confirms. Both poll INFO until the region is ours (20 s
   limit).
-- `odr_debug.py storage claim`:
+- `odr_debug.py storage claim --out DIR`:
 
 
 1. `odr_debug.py storage claim` reads the settings ring, the journal and the calibration copy through the debug
-   link's read-only SPI flash window (twice, compared) into `the external reference folder` (refused inside any git
+   link's read-only SPI flash window (twice, compared) into `--out DIR` (refused inside any git
    work tree), then sends the claim with the token.
 2. The firmware notes the request (`storage.claim_pending`). The housekeeping task (`settings_poll`) erases every
    settings sector and both journal sectors, checks they read blank, marks the region ours and writes the

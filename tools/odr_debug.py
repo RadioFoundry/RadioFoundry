@@ -18,8 +18,8 @@
     odr_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     odr_debug.py log [--follow]                 the firmware's dlog() ring
     odr_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
-    odr_debug.py dump --addr A --len N [-o F]   read internal flash / system memory / OTP / option bytes to a file
-                                                outside the git tree (default the external reference folder)
+    odr_debug.py dump --addr A --len N -o F     read internal flash / system memory / OTP / option bytes to a file
+                                                outside any git tree
     odr_debug.py reboot [--rom-dfu]             reset; --rom-dfu: into ST's ROM USB DFU (RDP level 0 only)
     odr_debug.py crash [show|clear|test trap|test assert|test hang]
                                                 the crash log (CONFIG_CRASH_LOG): the record kept from before this
@@ -30,8 +30,8 @@
                                                 until the link goes quiet and prints how long it lasted
     odr_debug.py watchdog load H L [RST]        HR_C7000: re-arm with raw OT_LOAD_H / OT_LOAD_L (RST_LOAD), then starve
     odr_debug.py storage info                   the settings / journal region: ours or foreign, its addresses
-    odr_debug.py storage dump [--out DIR]       the region and the calibration copy (SPI flash) to files outside git
-    odr_debug.py storage claim [--out DIR]      dump first, then let the firmware erase a foreign region and use it
+    odr_debug.py storage dump --out DIR         the region and the calibration copy (SPI flash) to files outside git
+    odr_debug.py storage claim --out DIR        dump first, then let the firmware erase a foreign region and use it
     odr_debug.py aprobe OP [ARG...]             audio probe (CONFIG_AUDIO_PROBE builds; docs/spec/hardware-dm1701.md 21.3):
                                                 status | reg PAGE REG | wreg PAGE REG VAL | start [HZ [AMP [spk]]] |
                                                 stop | samples [-o FILE.raw] | ram PAGE ADDR LEN [-o FILE] |
@@ -137,7 +137,6 @@ F4_SECTORS = [(0x08000000 + i * 0x4000, 0x4000) for i in range(4)] + [(0x0801000
     [(0x08020000 + i * 0x20000, 0x20000) for i in range(7)]
 MEM_WHITELIST = [(0x08000000, 0x08100000), (0x1FFF0000, 0x1FFF7800), (0x1FFF7800, 0x1FFF7A10),
                  (0x1FFFC000, 0x1FFFC010)]
-DEFAULT_DUMP_DIR = os.path.expanduser("the external reference folder")
 ST_OK, ST_BUSY = 0, 3
 
 ACTIONS = {"up": 1, "down": 2, "left": 3, "right": 4, "select": 5, "ok": 5, "green": 5, "back": 6, "exit": 6,
@@ -1422,7 +1421,7 @@ def cmd_dump(link, a):
     if not mem_allowed(addr, n):
         print(f"odr_debug: 0x{addr:08X}+0x{n:X} is outside the readable ranges", file=sys.stderr)
         return 2
-    out = a.output or os.path.join(DEFAULT_DUMP_DIR, f"dump_{addr:08X}_{n:X}.bin")
+    out = a.output
     ok, why = dump_path_ok(out)
     if not ok:
         print(f"odr_debug: refusing: {why}", file=sys.stderr)
@@ -1466,6 +1465,9 @@ def storage_dump(link, out_dir, info=None):
 
 
 def cmd_storage(link, a):
+    if a.op != "info" and not a.out:
+        print("odr_debug: storage dump and claim need --out DIR (outside any git tree)", file=sys.stderr)
+        return 2
     info = link.storage_info()
     if a.op == "info":
         print(f"region   {info['region']}{' (claim pending)' if info['claim_pending'] else ''}")
@@ -1747,7 +1749,7 @@ def main(argv=None):
     p = sub.add_parser("dump")
     p.add_argument("--addr", required=True)
     p.add_argument("--len", required=True)
-    p.add_argument("-o", "--output", help=f"file outside any git tree (default {DEFAULT_DUMP_DIR}/dump_ADDR_LEN.bin)")
+    p.add_argument("-o", "--output", required=True, help="file outside any git tree")
     p = sub.add_parser("reboot")
     p.add_argument("--rom-dfu", action="store_true", help="into ST's ROM USB DFU (refused unless RDP level 0)")
     p = sub.add_parser("crash", help="the crash log: show, clear, test trap|assert (docs/spec/crash-log.md)")
@@ -1765,7 +1767,7 @@ def main(argv=None):
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
     p = sub.add_parser("storage", help="the settings / journal region: info, dump, claim (docs/spec/settings-store.md 5)")
     p.add_argument("op", choices=["info", "dump", "claim"])
-    p.add_argument("--out", default=DEFAULT_DUMP_DIR, help=f"dump directory outside any git tree (default {DEFAULT_DUMP_DIR})")
+    p.add_argument("--out", help="dump directory outside any git tree (required for dump and claim)")
     p = sub.add_parser("aprobe", help="audio probe: chip registers and PCM levels (CONFIG_AUDIO_PROBE builds)")
     p.add_argument("op", choices=["status", "reg", "wreg", "start", "stop", "samples", "ram", "wram", "watch", "music",
                                      "mod"])

@@ -2,14 +2,16 @@
 
 # Notes for coding agents
 
-OpenDigitalRadio (ODR) is MIT-licensed firmware for DMR radios: one tree, many radios. The DM-1701 (STM32F405 +
-HR_C6000 + AT1846S) is the radio on the bench. The DM-32UV (CK803S/HR_C7000) builds but hasn't been brought up.
-Human contributors have the same rules in [docs/dev/contributing.md](docs/dev/contributing.md). This file is the
-short version plus what an agent tends to get wrong.
+OpenDigitalRadio (ODR) is MIT-licensed firmware for DMR radios: one tree, many radios. The radios and their chips
+(MCU, DMR chip, RF) are in [docs/spec/radios.md](docs/spec/radios.md); a board's platform is `PLATFORM` in
+`boards/<radio>/board.mk`. What each radio supports is in [docs/feature-matrix.md](docs/feature-matrix.md); check it
+before claiming a radio lacks a feature. Human contributors have the same rules in
+[docs/dev/contributing.md](docs/dev/contributing.md). This file is the short version plus what an agent tends to get
+wrong.
 
 ## Hard rules
 
-1. **Clean room.** Never open, read, search or copy another radio firmware's source (the legacy firmware trees,
+1. **Clean room.** Never open, read, search or copy another radio firmware's source (the aftermarket firmware,
    OpenRTX, MMDVMHost or any GPL code), vendor SDKs under restrictive licenses, or disassembly. Work from `docs/spec/`,
    datasheets, public standards (ETSI TS 102 361-1..4, the MMDVM protocol) and permissively licensed code. The full
    rules are in [docs/CLEANROOM.md](docs/CLEANROOM.md). If a task seems to need foreign code, stop and ask.
@@ -20,7 +22,10 @@ short version plus what an agent tends to get wrong.
    makefiles, `<!-- -->` for Markdown).
 4. **Generic first.** `core/` never includes a board or platform header and never tests a radio define. Radio
    differences go through `board_t` and the `hal/` interfaces ([docs/dev/architecture.md](docs/dev/architecture.md)).
-   Chip drivers go in `drivers/`, SoC code in `platform/`, a radio's wiring in `boards/<radio>/`.
+   Chip drivers go in `drivers/`, SoC code in `platform/`, a radio's wiring in `boards/<radio>/`. The same holds
+   outside `core/`: radios are alike, so assume any tool, protocol module, test or doc written for one radio will
+   serve another. Name it by what it does or the protocol it speaks, never by the radio that first needed it, and
+   don't add a list of radios anywhere: read them from `boards/`.
 
    **Generic docs** never name a radio or its pins. They are `docs/spec/*` other than `hardware-*`, `docs/user/*`
    other than `23-radios.md`, `docs/build-config.md` and `docs/dev/*`. Describe what a board provides (`CAP_*`,
@@ -50,7 +55,8 @@ JOBS=8 tools/ci.sh                   # everything a pull request must pass; ends
 python3 -m pytest tests/hil -v -rs   # HIL, radio only; every test skips without a radio
 ```
 
-The DM-32 needs `csky-elf-gcc` (`tools/build-csky-toolchain.sh`). ci.sh reports it as skipped when it's missing.
+Boards on the `hrc7000` platform (C-SKY) need `csky-elf-gcc` (`tools/build-csky-toolchain.sh`); ci.sh reports them
+as skipped when it's missing.
 
 ## Where things are
 

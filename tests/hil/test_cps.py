@@ -247,7 +247,7 @@ def test_storage_region(radio):
     if info["region"] == "foreign":
         assert s.get("settings.load") == "foreign" and s.get("storage.journal") == "foreign", s
         skip("state", "the settings / journal region holds another firmware's data: dump and claim it with "
-                      "tools/odr_debug.py storage claim (writes are refused until then)")
+                      "tools/odr_debug.py storage claim --out DIR (writes are refused until then)")
     assert info["region"] == "ours" and s.get("storage.journal") == "ok", (s, info)
     addr, _ = info["ranges"]["settings"]
     assert len(radio.link.storage_read(addr, 64)) == 64
