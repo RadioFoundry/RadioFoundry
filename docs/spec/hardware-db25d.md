@@ -114,7 +114,7 @@ the radio stopped before the display was lit, until a power cycle.
 |---|---|---|
 | PTB18, PTB20, PTB21, PTB22, PTB23 (50, 52-55) | Key matrix drive lines, idle high, driven low one at a time | BIN |
 | PTB9, PTB10, PTB11 (41-43) | Key matrix sense lines, low = closed. PTB9 and PTB10 also carry one key each wired straight to ground (low with every drive line high) | BIN |
-| PTA9 (9) | Also read as a GPIO by the key code: the mic connector's line that carries PTT and the radio's RXD. ODR counts a low PTA9 as PTT only 50 ms or more after the last good UART byte (`drivers/input/sharedptt`, [gotchas](gotchas.md) 16.2), then on three scans in a row; the diagnostics line `mic` ends with `ign N`, the low scans ignored. The three-scan filter alone let debug link polling key the radio; with the gate, 30 s of polling gave `ign 5` and no PTT press (2026-10-19, RADIO) | BIN, COM |
+| PTA9 (9) | Also read as a GPIO by the key code: the mic connector's line that carries PTT and the radio's RXD. ODR counts a low PTA9 as PTT only 50 ms or more after the last good UART byte and held low that way for 20 ms (`drivers/input/sharedptt`, [gotchas](gotchas.md) 16.2), then on three scans in a row; the diagnostics line `mic` ends with `ign N`, the low scans ignored. The three-scan filter alone let debug link polling key the radio; with the gate, 30 s of polling gave `ign 5` and no PTT press (2026-10-19, RADIO) | BIN, COM |
 | PTC11 (75) | Hand mic PTT: high at idle, low while held. The mic's digit and P keys change neither PTA9 nor PTC11 at a 10 ms scan; how they reach the radio is open | BIN, RADIO |
 | PTB5 / PTB8 (37 / 40) | Rotary encoder A / B, GPIO B interrupt | BIN |
 | PTB12 (44) | Power key sense, low = pressed | BIN |
