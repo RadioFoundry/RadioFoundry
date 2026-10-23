@@ -42,21 +42,22 @@ push runs only the manual workflow. A newer push cancels the run in progress (`c
 |---|---|---|
 | `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests, 64 suites with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the UI screen gallery (`uiSim --gallery`) | about 3 min on the self-hosted runner: the unit tests 2.8 min on 4 CPUs, gallery 2 s |
 | `checks` | `tools/ci.sh --steps registry,python,licenses` (doc links among the Python checks) | about 1.5 min |
-| `firmware (stm32f4)` | `tools/ci.sh --quick --steps firmware --platform stm32f4`: every board on the platform in one job | about 1 min with the checkout; the toolchain 50 s on a cache miss |
-| `firmware (hrc7000)` | `tools/ci.sh --quick --steps firmware --platform hrc7000`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) unless the runner has csky-elf GCC | about 1 min with the checkout; skipped where the image isn't available |
+| `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --toolchain arm`: every board built with the Arm toolchain, in one job | about 1 min with the checkout; the toolchain 50 s on a cache miss |
+| `firmware (C-SKY)` | `tools/ci.sh --quick --steps firmware --toolchain csky`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) unless the runner has csky-elf GCC | about 1 min with the checkout; skipped where the image isn't available |
 
-There is one firmware job per platform, not one per radio: a job's checkout and start take longer than a radio's
-build, and a runner has 4 cores, so the two firmware jobs side by side keep an 8-core host busy while leaving runners
-free for other pull requests. The two are one job with a `platform` matrix. `--platform` takes the boards from the
-registry (`tools/boards.py list --platform`), so a new radio on an existing platform joins CI, the nightly and the
-release with no workflow edit. A new platform goes in the `platform` lists of `ci.yml`, `pr-tests.yml`,
-`nightly.yml` and `release.yml`, and gets its set-up in the toolchain action ([below](#toolchains)). The jobs run in parallel, so a push is checked in about three minutes plus the
-runner's image start. On an 8-core
-Mac the plain host tests take 43 s.
+There is one firmware job per toolchain, not one per radio or per platform: a job's checkout and start take longer
+than a radio's build, and a runner has 4 cores, so the two firmware jobs side by side keep an 8-core host busy while
+leaving runners free for other pull requests. The two are one job with a `toolchain` matrix: the `[toolchain] id` of
+`platform/*/platform.toml` (`arm`, `csky`) and its `name` for the job's name. `--toolchain` takes the boards from the
+registry (`tools/boards.py list --toolchain`), so a new radio, or a new platform on a toolchain already listed (a
+second Arm SoC, for example), joins CI, the nightly and the release with no workflow edit. Only a new toolchain
+goes in the matrices of `ci.yml`, `pr-tests.yml`, `nightly.yml` and `release.yml` and gets its set-up in the
+toolchain action ([below](#toolchains)). The jobs run in parallel, so a push is checked in about three minutes plus
+the runner's image start. On an 8-core Mac the plain host tests take 43 s.
 
 Each firmware job builds with zero warnings, writes the size report (image bytes and free space in the linker's
 application region, also put in the job summary on GitHub) and fails when the application region overflows. The
-images and logs are workflow artifacts (`firmware-stm32f4`, `firmware-hrc7000`), as are the unit test logs with the screen gallery
+images and logs are workflow artifacts (`firmware-arm`, `firmware-csky`), as are the unit test logs with the screen gallery
 (`host-logs`) and the coverage report (`coverage-report`).
 
 `reuse lint` is part of the `checks` job only when the repository variable `ODR_CI_REUSE` is `true`; it doesn't pass on
@@ -77,8 +78,8 @@ the network. A new submodule also goes in the Dockerfile's `SUBMODULE_URLS`.
 
 ## Pull request checks: `pr-tests.yml`
 
-Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware (stm32f4)` and `firmware (hrc7000)` for every board
-on each platform) and `checks` on its merge commit. The first job,
+Every pull request runs `ci.yml`'s jobs (`unit tests`, `firmware (Arm)` and `firmware (C-SKY)` for every board
+built with each toolchain) and `checks` on its merge commit. The first job,
 `changes`, looks at the files the pull request changes and skips what they don't touch: source changes (`ci.yml`'s
 paths) run the build and test jobs. `checks` runs on every pull request: the Python and license checks (doc links
 among them) always, and the PDF manual build (as `manual.yml` does) when docs change (`manual.yml`'s paths). The last job always runs and sets the
@@ -155,11 +156,11 @@ support it, so check the first run on the Gitea runner before relying on the com
 
 | Job | Command | Time on the Gitea runner |
 |---|---|---|
-| `matrix (stm32f4)` | `ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --platform stm32f4`: for each board, each switch off alone, fm-minimal, maximal | about 8 min: DM-1701 4.4 min (47 builds), MD-380 3.8 min (42) |
-| `matrix (hrc7000)` | the same for every board on the platform, in the csky-elf image unless the runner has csky-elf GCC | about 9 min: DM-32UV 2.9 min (50 builds; measured on the CI VM), the other two about as long |
+| `matrix (Arm)` | `ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --toolchain arm`: for each board, each switch off alone, fm-minimal, maximal | about 8 min: DM-1701 4.4 min (47 builds), MD-380 3.8 min (42) |
+| `matrix (C-SKY)` | the same for every board built with csky-elf GCC, in the csky-elf image unless the runner has csky-elf GCC | about 9 min: DM-32UV 2.9 min (50 builds; measured on the CI VM), the other two about as long |
 | `reuse` | `reuse lint`, a warning until it passes | under a minute |
 
-One job per platform runs its boards one after another. A job per board would finish each board sooner, but it
+One job per toolchain runs its boards one after another (artifacts `matrix-arm`, `matrix-csky`). A job per board would finish each board sooner, but it
 repeats the checkout, the submodules and the toolchain set-up for every board, and a 4-core runner is kept busy by
 one board's builds anyway. Nobody waits on the nightly, so the fewer jobs win.
 
@@ -190,9 +191,10 @@ tools/ci.sh --quick                           # what CI runs, without coverage a
 SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run
 tools/ci.sh --steps registry,python,licenses  # the checks job
 tools/ci.sh --quick --steps firmware --board md380
-tools/ci.sh --quick --steps firmware --platform stm32f4      # a firmware CI job: every board on the platform
+tools/ci.sh --quick --steps firmware --toolchain arm         # a firmware CI job: every board on the toolchain
+tools/ci.sh --quick --steps firmware --platform stm32f4      # every board on one platform
 make BOARD=db25d stack-check                  # the stack check alone, after a build (stack-check.md)
-ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --platform stm32f4    # a nightly matrix job
+ODR_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --toolchain arm    # a nightly matrix job
 tools/coverage.sh                             # build/coverage/index.html
 tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm1801pro   # on a host with the image
 ```
@@ -225,7 +227,8 @@ The `python` step also checks the HIL tests without a radio:
 `tools/bringup.py check` finds its Python through `tools/odr_python.sh` like the other steps. Comparing the docs'
 support claims with the records is not checked yet.
 
-`--board` takes board ids, `--platform` platform ids (each a comma separated list; they exclude each other). An
+`--board` takes board ids, `--platform` platform ids and `--toolchain` toolchain ids (each a comma separated list).
+`--board` excludes the other two; `--platform` and `--toolchain` together select the boards that match both. An
 unknown id fails with exit status 2, so a typo in a workflow never passes with nothing built.
 
 `tools/install-arm-toolchain.sh` installs the pinned Arm toolchain on Linux x86_64 the way CI does, trimmed to the
@@ -234,17 +237,20 @@ Cortex-M4 multilib (215 MB instead of 1 GB; `FULL=1` for all of it).
 ## Toolchains
 
 Every firmware job (`ci.yml`, `pr-tests.yml`, `nightly.yml`, `release.yml`) sets up its compiler with the composite
-action `.github/actions/toolchain`, given the job's platform. A composite action runs as steps of the job, so it adds
-no job. It reads the pin from `platform/<platform>/platform.toml` `[toolchain]`; no workflow types a version.
+action `.github/actions/toolchain`, given the job's toolchain id. A composite action runs as steps of the job, so it
+adds no job. It reads the pin from the `[toolchain]` table of the `platform/*/platform.toml` with that `id`; no
+workflow types a version. Platforms that share a toolchain id must pin the same toolchain (`tools/boards.py check`).
 
-| Platform | On the self-hosted runner | Elsewhere | Cache key |
+| Toolchain | On the self-hosted runner | Elsewhere | Cache key |
 |---|---|---|---|
-| `stm32f4` | `tools/install-arm-toolchain.sh` finds the image's toolchain and does nothing | the same script downloads the pinned, checksummed release into `~/opt` | `arm-gnu-<version>-<script hash>` |
-| `hrc7000` | the image's csky-elf GCC on `PATH` (`/opt/csky-elf`) | the csky-elf image: log in (when `ODR_CSKY_REGISTRY` is set), pull, log out, then the job runs its build through `tools/docker/csky-toolchain/run.sh` (the action's `run` output). With `build-from-source` (the release): `tools/build-csky-toolchain.sh` into `~/toolchains/csky-elf` | `csky-elf-<os>-<version>-<script hash>` |
+| `arm` | `tools/install-arm-toolchain.sh` finds the image's toolchain and does nothing | the same script downloads the pinned, checksummed release into `~/opt` | `arm-gnu-<version>-<script hash>` |
+| `csky` | the image's csky-elf GCC on `PATH` (`/opt/csky-elf`) | the csky-elf image: log in (when `ODR_CSKY_REGISTRY` is set), pull, log out, then the job runs its build through `tools/docker/csky-toolchain/run.sh` (the action's `run` output) | none |
 
-The cache is skipped on the self-hosted runner and in `pr-tests.yml` (`cache: "false"`). A job whose image isn't
-available (`run.sh` exit status 3) ends with a notice instead of failing. A new platform gets a branch in the
-action's first step.
+No workflow builds csky-elf GCC from source. The image is built by `tools/docker/csky-toolchain/build.sh`
+([The csky-elf image](#the-csky-elf-image)). The cache is skipped on the self-hosted runner and in `pr-tests.yml`
+(`cache: "false"`). When the image isn't available (`run.sh` exit status 3), a CI or nightly job ends with a notice
+and the release job fails. A new toolchain gets a branch in the action's first step and an entry in each firmware
+matrix.
 
 ## Coverage
 
@@ -363,7 +369,8 @@ the render is long done, so it never holds a build runner. No other job uses tha
 ### GitHub
 
 The same workflows run on GitHub's hosted runners when the repository is pushed there and `ODR_CI_RUNNER` is unset. Everything except the C-SKY
-jobs works as is; those skip with a notice until the csky-elf image is in a registry the runner can pull (below).
+jobs works as is; those skip with a notice (the release's fails) until the csky-elf image is in a registry the runner
+can pull (below).
 On a private repository the hosted runners use the account's Actions minutes: a push costs about 6 runner minutes, a
 nightly with changes about 12.
 
@@ -373,8 +380,8 @@ The C-SKY jobs use the image named by the repository variable `ODR_CSKY_IMAGE`, 
 (`platform/hrc7000/platform.toml` `[toolchain] image`, which `run.sh` and `push.sh` read):
 the tag `tools/docker/csky-toolchain/build.sh` gives its image on the Gitea runner (`odr/csky-gcc14:20261011b`,
 549 MB). `run.sh` uses an image already on the Docker host, and pulls one only when the name starts with a
-registry host (`ghcr.io/...`, `docker.io/...`), never a bare name from Docker Hub. When the image can't be had the
-job ends with a notice instead of failing.
+registry host (`ghcr.io/...`, `docker.io/...`), never a bare name from Docker Hub. When the image can't be had, a CI
+or nightly job ends with a notice instead of failing; the release job fails.
 
 ### Publishing it to GitHub Packages (ghcr.io)
 
