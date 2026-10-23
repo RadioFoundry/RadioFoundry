@@ -1518,8 +1518,8 @@ def generic_problems(root=ROOT):
     """AGENTS.md rule 4 over the tree: a radio's id or name outside its own places (tools/check_generic.py). Apart
     from check(), which the self-test runs on copies without git history."""
     import check_generic
-    radios, docs = check_generic.registry_radios(root)
-    return ["generic: %s" % p for p in check_generic.check(root, radios, docs)]
+    radios, docs, part_of = check_generic.registry_radios(root)
+    return ["generic: %s" % p for p in check_generic.check(root, radios, docs, part_of)]
 
 
 def main(argv=None):
