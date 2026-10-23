@@ -567,7 +567,14 @@ every 10 ms:
 Two low scans in a row pass the key debounce, so a host polling the debug link can start a transmission. It did,
 twice, on the bench. A real press holds the line low, which UART0 reads as a break or framing error, never as a good
 byte. So the key scan counts the pin low as PTT only once no good byte has arrived for 50 ms
-(`drivers/input/sharedptt`, `hrc_host_uart_last_rx`). The diag line `ptt ign N` counts the low scans ignored.
+(`drivers/input/sharedptt`, `hrc_host_uart_last_rx`), and the pin has read low that way for 20 ms
+(`SHARED_PTT_HOLD_MS`). The diag line `ptt ign N` counts the low scans ignored.
+
+The hold is in time because scans aren't always 10 ms apart. With PPP up and the debug link polled over it, the input
+task ran late about 11 times a second and caught up with scans back to back. A logging build caught a press made by
+two scans in the same millisecond, 65 ms after the last host byte, with the pin low on four quick reads: the start of
+a new host byte, not yet received (2026-10-22, RADIO). Before the hold, 2 such presses came in 100 s, each a short
+DMR voice transmission; no line errors (`ue 0`) and no overruns.
 
 ### 6.3 Rotary encoder
 
