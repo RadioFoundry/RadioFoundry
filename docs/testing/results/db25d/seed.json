@@ -32,10 +32,15 @@
    "note": "volume"
   },
   "settings_store": {
-   "result": "pass"
+   "result": "pass",
+   "note": "settings saved; kept across power off not checked yet"
   },
   "debuglink": {
    "result": "pass"
+  },
+  "net_tcp": {
+   "result": "pass",
+   "note": "the network services over PPP"
   }
  }
 }
