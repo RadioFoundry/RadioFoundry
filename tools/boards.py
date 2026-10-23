@@ -130,7 +130,8 @@ BOARD_SCHEMA = {
     "debuglink_aliases": _opt(STR_LIST),
     "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
     # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
-    # BOARD_UNSUPPORTED because no source says yet whether the radio has the part: switch -> what is missing
+    # BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN because no source says yet whether the radio has the part: switch ->
+    # what is missing (docs/build-config.md, "Unsupported, not written, unconfirmed")
     "hardware": _req({"cpu": _opt(str), "bands": _req(str), "power": _req(str), "display": _req(str),
                       "gallery": _req(str), "unconfirmed": _opt(("map", str)),
                       # the real-time clock (CLOCKS) and the source of that fact; no driver uses it yet
@@ -166,8 +167,9 @@ BOARD_SCHEMA = {
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(str), "profile": _opt(str), "sources": _opt(STR_LIST),
                    "installed": _opt(STR_LIST), "stock_version": _opt(str)}),
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
-    # tests/hil: what the health checks expect (test_health.py), and the features planned here but not working yet
-    # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED)
+    # tests/hil: what the health checks expect (test_health.py), and the features built here but not working yet
+    # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED, code
+    # not written for the radio its BOARD_NOT_WRITTEN)
     "hil": _opt({"display": _opt(str), "features": _opt(STR_LIST), "no_features": _opt(STR_LIST),
                  "flash_jedec": _opt(STR_LIST), "calibration": _opt(bool), "battery_mv": _opt(RANGE),
                  "supply_mv": _opt(RANGE),
