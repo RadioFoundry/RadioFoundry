@@ -3,7 +3,7 @@
 # Baofeng DM-1801 Pro: HR_C7000 SoC (C-SKY CK803S + DMR modem) + FD6818 + 128x64 monochrome ST7567-class LCD on a
 # bit-banged serial bus (docs/spec/hardware-dm1801pro.md). The PC link is UART0 on the programming cable
 PLATFORM   := hrc7000
-# Behind the Baofeng bootloader, as on the DM-32UV (hardware-dm1801pro.md)
+# Behind the Baofeng bootloader, as on the other HR_C7000 boards (hardware-dm1801pro.md)
 APP_BASE   := 0x0300C000
 # The CPS-compatible codeplug image sits at +0x700000 in the 16 MB data flash, below it is all factory data
 # (docs/spec/hardware-dm1801pro.md 6.1)

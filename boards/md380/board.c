@@ -49,7 +49,7 @@ static const band_t bands[] = {
 // The stock radio has two power levels, about 1 W and 5 W (hardware-md380.md 5.6)
 static const char *const power_names[] = { "1W", "5W" };
 
-// docs/ux/information-architecture.md 7.1 on a radio without function or top keys (as the DM-32's few-key map): the
+// docs/ux/information-architecture.md 7.1 on a radio without function or top keys (a few-key map): the
 // zone and power are reached from the menus. Matrix positions are unconfirmed (hardware-md380.md 9.1)
 static const keymap_entry_t keymap[] = {
 	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 },
@@ -129,7 +129,7 @@ const board_t board = {
 #endif
 #endif
 	.system = &stm32_system,
-	// 2S Li-ion as the DM-1701 (hardware-md380.md 10.1): low 6.2 V, critical 6.0 V (our choice)
+	// 2S Li-ion as the other STM32 radios (hardware-md380.md 10.1): low 6.2 V, critical 6.0 V (our choice)
 	.battery_low_mv = 6200,
 	.battery_critical_mv = 6000,
 #if CONFIG_CPS_OPENFW
@@ -238,7 +238,7 @@ void board_early_init(void)
 	reset_levels();		// latch the power before anything slow
 	if (!stm32_clock_init(&clock_crystal)) {
 		// A crystal is what the public notes describe (hardware-md380.md 1.2); an external clock fed in would need
-		// bypass mode, as on the DM-1701. Try that before staying on HSI (no USB there)
+		// bypass mode, as on the other STM32 radios. Try that before staying on HSI (no USB there)
 		stm32_clock_t bypass = clock_crystal;
 		bypass.hse_bypass = true;
 		(void)stm32_clock_init(&bypass);

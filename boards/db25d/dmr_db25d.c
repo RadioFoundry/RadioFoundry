@@ -29,7 +29,7 @@
 #define C7_PHASE_OUT		0x128u	// RO: largest / smallest 14-bit AF phase seen (modem-hrc7000.md 2.1)
 
 // The modem's receive mode word as the stock firmware builds it for this board (hardware-db25d.md 4.5): AF receive with
-// averaging, AF gain 0x4C (4.75; the DM-32UV's word has 0x26), RX IQ inverted, dynamic sync threshold, dual receive
+// averaging, AF gain 0x4C (4.75; the other HR_C7000 boards' word has 0x26), RX IQ inverted, dynamic sync threshold, dual receive
 // channels, two-point TX. make DB25D_DMR_RF_MODE=0x... replaces it on the bench
 #ifndef DB25D_DMR_RF_MODE
 #define DB25D_DMR_RF_MODE	0x034C9860u
@@ -146,7 +146,7 @@ uint32_t db25d_dmr_phase(void)
 #define WAIT_TIMEOUT_MS		10u		// the timer never fired: go on
 #define DISARM_WAIT_MS		20u
 #define RF_MODE_TX_INVERT	(1u << 7)	// RF_MODE rf_transiq_mode: the symbol-to-deviation mapping inverted
-// Stock: RF_MODE bit 7 clear on this board (the DM-32UV's value has it set). make DB25D_DMR_TX_INVERT=1 sets it, to
+// Stock: RF_MODE bit 7 clear on this board (the other HR_C7000 boards' value has it set). make DB25D_DMR_TX_INVERT=1 sets it, to
 // try the other 4FSK polarity on the bench
 #ifndef DB25D_DMR_TX_INVERT
 #define DB25D_DMR_TX_INVERT	0
