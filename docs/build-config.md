@@ -25,16 +25,35 @@ error. Changing a switch rebuilds everything (the build keeps the flags in `buil
 starts). `make BOARD=<b> print-config` lists the resolved switches.
 
 Every feature is on by default wherever the radio has what it needs. A board turns a feature off only for hardware
-it lacks (or board code not written yet) or when the image doesn't fit, and then the most obscure
-large features go first. Bench diagnostics such as `CONFIG_AUDIO_PROBE` stay off.
+it lacks, for board code not written yet, or when the image doesn't fit, and then the most obscure large features go
+first. Bench diagnostics such as `CONFIG_AUDIO_PROBE` stay off.
 
 A feature that needs a part only some radios have (a vibration motor, a GPS receiver, SPI NAND) is a hardware switch:
 `hardware = "..."` on its entry in `tests/hil/features.toml`. Each board then builds it, lists it in
-`BOARD_UNSUPPORTED`, or names it in `board.toml` `[hardware] unconfirmed`, and `tools/boards.py check` enforces that.
+`BOARD_UNSUPPORTED` or `BOARD_NOT_WRITTEN`, or names it in `board.toml` `[hardware] unconfirmed`, and
+`tools/boards.py check` enforces that.
 The accelerometer is the next one: today its driver (`drivers/sensor/lis3dh`) only feeds a board's
 diagnostics page under `CONFIG_DIAG`, so it has no switch. The first feature that uses motion brings a hardware
 switch with it. A real-time clock driver is the same: none exists yet, and it arrives as `CONFIG_RTC`, a hardware
 switch ([radio-features.md](spec/radio-features.md) 5.6).
+
+### Unsupported, not written, unconfirmed
+
+A feature a radio's default image leaves out is in exactly one of these. ✕ is only for what no firmware can change,
+so the docs never understate what a radio can do.
+
+| Mark | Meaning | Where | Example |
+|---|---|---|---|
+| ✕ | The hardware can't: a part is missing, or the chip or the board lacks something | `config.mk` `BOARD_UNSUPPORTED += X  # <the reason>` | GPS on the DM-1701, SFR on the HR_C5000 (no CRC_MCU_Control), `FONT_XL` on a 160 px panel |
+| … | The hardware can, but this radio's driver or glue isn't written yet | `config.mk` `BOARD_NOT_WRITTEN += X  # <what isn't written>` | the MD-380's TX tones and DTMF (the tone path), the DB25-D's broadcast receiver |
+| ? | Not known yet whether the radio has the part | `board.toml` `[hardware] unconfirmed` | a vibration motor no source confirms |
+| ● | Written, built, not yet checked on the radio | no list: on by default. The bring-up records and `board.toml` `[status]` hold its test state | |
+
+Both `config.mk` lists take one switch a line with the reason in its comment (`tools/boards.py check` fails on one
+without a reason, or on a switch in both). Either one turns the switch off by default (`CONFIG_X ?= n` next to it),
+keeps it out of ci's maximal configuration, and satisfies a hardware switch's check. A platform's `config.mk` can
+list switches for all of its radios. The feature matrix and the web site show the mark. Say "untested" in bring-up
+records and pull requests, never in `config.mk`.
 
 ## Variants
 
@@ -162,7 +181,8 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 | `LTO_3P` | 0 (MD-380: 1) | with `LTO=1`, the third-party code too (HAL, CMSIS, FreeRTOS, TinyUSB): about 3 KB more. FreeRTOS marks what its port's assembly reaches `portDONT_DISCARD`; the vectors are referenced from the assembly start-up. `LTO_EXCLUDE` lists files kept out (file-scope assembly: `platform/stm32f4/codec_call.c`) |
 | `TCP_CONNS` | dm32 | TCP connections in all states (`core/net/tcp.h`, 4 elsewhere): 3 by default on the DM-32UV, about 1.5 KB RAM each across TCP, HTTP and rigctld |
 | `MAXIMAL_VARS` | DM-1701: `LTO=1` | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
-| `BOARD_UNSUPPORTED` | DM-1701: `FONT_XL`; MD-380, DM-32: see "Board defaults" | set in a board's `config.mk`, one switch a line with the reason in its comment: switches the radio's hardware code doesn't cover; the maximal build leaves them off (`make print-unsupported`) |
+| `BOARD_UNSUPPORTED` | DM-1701: `FONT_XL`; others: see "Board defaults" | set in a board's or platform's `config.mk`, one switch a line with the reason in its comment: switches the radio's hardware can't do ([above](#unsupported-not-written-unconfirmed)); the maximal build leaves them off (`make print-unsupported`) |
+| `BOARD_NOT_WRITTEN` | MD-380: `FM_TX_TONES`, `DTMF`; others: see "Board defaults" | the same form: switches the hardware can do but whose driver or glue isn't written for the radio yet; the maximal build leaves them off too (`make print-not-written`) |
 | `BOARD_REQUIRED` | DB25-D: `FM` | set in a board's `config.mk`: switches the board can't build without; ci.sh builds no `no-` configuration for them (`make print-required`) |
 | `MAXIMAL_SKIP` | DM-1701: `NET_PPP APRS_IGATE`; MD-380: `NET_PPP NAND_STORAGE` | set in a board's `config.mk`: switches that work on the radio but that it doesn't need, which the maximal build leaves off too (`make print-maximal-skip`). `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); the DM-1701's `audio-probe` build covers it |
 
@@ -173,12 +193,14 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 
 | Board | Off by default | Why |
 |---|---|---|
-| md380 | `FM_TX_TONES`, `DTMF`, `APRS_RX` (maximal build too: `BOARD_UNSUPPORTED`) | no tone path or APRS receive written for the board yet; `APRS_IGATE` follows `APRS_RX` |
-| md380 | `SFR`, `HOTSPOT_SPLIT` (maximal build too) | HR_C6000 only |
+| md380 | `FM_TX_TONES`, `DTMF`, `APRS_RX`, `APRS_IGATE`, `HOTSPOT_SPLIT` (maximal build too: `BOARD_NOT_WRITTEN`) | no TX tone path or APRS receive audio written for the board yet; the split duplex glue is written for the HR_C6000 and HR_C7000 only |
+| md380 | `SFR` (maximal build too: `BOARD_UNSUPPORTED`) | the HR_C5000 has no CRC_MCU_Control ([sfr.md](spec/sfr.md)) |
 | md380 | `FONT_XL`, `AM_RX`, `BCAST_FM`, `NET_PPP` (off on most boards; the maximal build leaves them off here too) | a 160 px panel has no use for the font; no air band or broadcast receiver; PPP stands in for USB |
 | dm1701, md380 | `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | the host port is USB, and the one UART is a GPS receive line: nothing a fault handler can print on |
-| dm32 | `USB`, `USB_NETWORK` (maximal build too: `BOARD_UNSUPPORTED`) | no USB data port on the radio; PPP on the programming cable is its IP link |
+| dm32, dm1801pro, db25d | `USB`, `USB_NETWORK` (maximal build too: the platform's `BOARD_UNSUPPORTED`) | no USB data connector on the radio; PPP on the programming cable is its IP link |
 | dm1801pro | `UI_COLOR` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen: no colors to set |
+| dm1801pro | `AM_RX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the RF chip's air band window isn't used yet; the probe's audio tap isn't written |
+| db25d | `NET_USRP`, `HOTSPOT_SPLIT`, `SFR`, `APRS_RX`, `APRS_IGATE`, `BCAST_FM`, `AM_RX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the board's glue isn't written or timed for them yet ([hardware-db25d.md](spec/hardware-db25d.md) 9) |
 | every board | `AUDIO_PROBE` | a bench diagnostic |
 
 The DM-32UV puts the state the core marks `ODR_CPU_RAM` in its low RAM below the codec window, and keeps the
@@ -193,5 +215,5 @@ network's buffers in main RAM ([hardware-dm32.md](spec/hardware-dm32.md) 17.1). 
    size from it; `site/build.py --strict` fails without the row), and check the build links with the switch off (`make BOARD=<b> CONFIG_X=n BUILD=build/test-x`).
    `tools/ci.sh` builds every board with each default-on switch off alone, an FM-minimal and a maximal
    configuration, all with zero warnings, and reports the image sizes (`docs/testing/README.md`). The maximal
-   configuration leaves out the switches a board lists in `BOARD_UNSUPPORTED` (its `config.mk`): features its
-   hardware support doesn't have, such as the HR_C6000-only SFR glue on the MD-380.
+   configuration leaves out the switches a board lists in `BOARD_UNSUPPORTED` (its `config.mk`: what its hardware
+   can't do, such as SFR on the MD-380's HR_C5000) or `BOARD_NOT_WRITTEN` (what its code doesn't do yet).
