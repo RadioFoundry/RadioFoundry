@@ -1295,6 +1295,22 @@ def self_test():
             ok(len(survey_of(cells)[1]) == 1, "survey check 5 finds " + what)
         ok(registry_docs.rebase_links("[x](hardware-a.md#k) [y](https://e/z)", "docs/spec", "") ==
            "[x](docs/spec/hardware-a.md#k) [y](https://e/z)", "rebase_links: relative links only")
+        fill = registry_docs.fill
+        yml = "o:\n  # generated: tools/boards.py docs r; edit old\n  - stale\n  # end generated\n  - Other\n"
+        ok(fill(yml, "r", "src", ["- A", "- B"], "t", "yaml") ==
+           "o:\n  # generated: tools/boards.py docs r; edit src\n  - A\n  - B\n  # end generated\n  - Other\n",
+           "fill: a YAML block keeps its indent")
+        bare = "<!-- x:\ngenerated: tools/boards.py docs r; edit s\nold\nend generated\n-->\n"
+        ok(fill(bare, "r", "s", ["A, B"], "t", "bare") == bare.replace("old", "A, B"),
+           "fill: a bare block inside a Markdown comment")
+        try:
+            fill(yml, "r", "s", [], "t")
+            ok(False, "fill: the wrong marker style finds no block")
+        except registry_docs.DocsError:
+            pass
+        ys = registry_docs.yaml_scalar
+        ok(ys("Baofeng DM-1701 / Retevis RT84") == "Baofeng DM-1701 / Retevis RT84" and ys("A: B") == '"A: B"'
+           and ys("No") == '"No"', "yaml_scalar: quoted only where a plain scalar would misread")
         old = ("## Radios and status\n\n| Radio | Builds | Host tests | On the radio | Support |\n"
                "|---|---|---|---|---|\n"
                "| [Maker AB-100](x) | ● | ● | %s | ok |\n| Maker CD-9 | ○ | ○ | ○ | %s |\n")
