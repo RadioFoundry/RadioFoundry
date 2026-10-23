@@ -6,6 +6,7 @@ the file stands alone in an <img>).
 An illustration of the radio in site/static/img/radios/src/<id>.svg is used when there is one: its
 <rect id="screen" .../> marks the display and is replaced by the boot screen (docs/dev/website.md "Radio images").
 Its key-<name> ids, for the radio's web control page, must name keys the radio has.
+Its key-<name> ids, for the radio's web control page, must name keys the radio has.
 Without one, a generic drawing per shape (handheld, tall handheld, mobile) tinted by board.toml [frame] stands in.
 """
 import base64
@@ -69,7 +70,12 @@ def render(radio, label):
 	if os.path.isfile(src):
 		with open(src, encoding="utf-8") as f:
 			frame = f.read()
-		check_keys(src, frame, radio["id"])
+		keys = frame
+		mic = src[:-4] + "-mic.svg"	# its hand microphone, on the web control page only
+		if os.path.isfile(mic):
+			with open(mic, encoding="utf-8") as f:
+				keys += f.read()
+		check_keys(src, keys, radio["id"])
 	else:
 		frame = generic(radio, png, label)
 		src = "generic drawing of %s" % radio["id"]

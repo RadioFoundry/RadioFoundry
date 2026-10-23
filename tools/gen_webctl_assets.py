@@ -9,6 +9,8 @@ OUT_DIR/keys.json maps each key's name to its bit: the board's KEY_* enum in boa
 named in lower case without KEY_ ("fn_left": 16). OUT_DIR/radio.svg is the radio's drawing,
 site/static/img/radios/src/BOARD.svg, whose key-<name>, encoder and led ids the page makes clickable
 (docs/dev/website.md "Radio images"); a radio without one gets no radio.svg and the page draws its keys as buttons.
+OUT_DIR/mic.svg is its hand microphone, site/static/img/radios/src/BOARD-mic.svg, when it has a drawing of one; the
+page shows it below the radio.
 A file is rewritten only when its content changes. The script prints the files' paths, for make: a $(wildcard) of a
 directory made while make reads the Makefile can miss them.
 """
@@ -52,14 +54,15 @@ def main():
     os.makedirs(out, exist_ok=True)
     files = [os.path.join(out, "keys.json")]
     write(files[0], json.dumps(keys, separators=(",", ":")).encode())
-    svg = os.path.join(ROOT, "site", "static", "img", "radios", "src", board + ".svg")
-    dst = os.path.join(out, "radio.svg")
-    if os.path.exists(svg):
-        with open(svg, "rb") as f:
-            write(dst, f.read())
-        files.append(dst)
-    elif os.path.exists(dst):
-        os.remove(dst)
+    for src, name in ((board + ".svg", "radio.svg"), (board + "-mic.svg", "mic.svg")):
+        svg = os.path.join(ROOT, "site", "static", "img", "radios", "src", src)
+        dst = os.path.join(out, name)
+        if os.path.exists(svg):
+            with open(svg, "rb") as f:
+                write(dst, f.read())
+            files.append(dst)
+        elif os.path.exists(dst):
+            os.remove(dst)
     print(" ".join(files))
 
 

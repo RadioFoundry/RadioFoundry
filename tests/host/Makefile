@@ -1130,14 +1130,18 @@ check-run:
 .PHONY: check-run
 
 # The web control page's set (CONFIG_NET_WEBCTL) in its own table: its index.html replaces the plain one, so the two
-# can't share a table. A radio with a drawing gives it its keys.json and radio.svg
-WEBCTL_BOARD  := $(notdir $(basename $(firstword $(wildcard $(ROOT)/site/static/img/radios/src/*.svg))))
-WEBCTL_ASSETS := $(sort $(wildcard $(ROOT)/core/net/webctl_assets/*)) gen/webctl/keys.json gen/webctl/radio.svg
+# can't share a table. A radio with a drawing, and a hand mic's if one has it, gives it its keys.json, radio.svg and
+# mic.svg
+WEBCTL_SVGS   := $(wildcard $(ROOT)/site/static/img/radios/src/*.svg)
+WEBCTL_MIC    := $(firstword $(filter %-mic.svg,$(WEBCTL_SVGS)))
+WEBCTL_BOARD  := $(if $(WEBCTL_MIC),$(notdir $(WEBCTL_MIC:-mic.svg=)),$(notdir $(basename $(firstword $(WEBCTL_SVGS)))))
+WEBCTL_ASSETS := $(sort $(wildcard $(ROOT)/core/net/webctl_assets/*)) gen/webctl/keys.json gen/webctl/radio.svg \
+	$(if $(WEBCTL_MIC),gen/webctl/mic.svg)
 TESTS   += httpAssetsTestWebctl
 
 gen/webctl/keys.json: $(ROOT)/tools/gen_webctl_assets.py
 	@python3 -I $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_BOARD) gen/webctl > /dev/null
-gen/webctl/radio.svg: gen/webctl/keys.json
+gen/webctl/radio.svg gen/webctl/mic.svg: gen/webctl/keys.json
 gen/webctl/http_assets_gen.h: $(WEBCTL_ASSETS) $(ROOT)/tools/gen_http_assets.py
 	@python3 -I $(ROOT)/tools/gen_http_assets.py --gzip $@ $(WEBCTL_ASSETS) > /dev/null
 	@touch $@
