@@ -39,7 +39,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | A radio's one-line note for visitors | board.toml `[status] summary`, the same line the README and the user manual show; a catalog may translate it as `radio.note.<radio>`. A planned radio's: the note of its Port cell, which a catalog may translate as `planned.note.<slug of the survey name>` |
 | A radio's name, bands, processor, screen, bootloader steps, flash backend, codeplug location | board.toml, the CPU from `platform/<p>/platform.toml`, the backend from the `[flash] family`, the codeplug location from the board's `hal_flash_map_t` |
 | A radio's status badge (Supported, In development) | board.toml `[status] level`: `supported` reads Supported, `testing` and `bring-up` read In development |
-| Which features a radio has, per variant | `make BOARD=<radio> [VARIANT=<v>] print-config` and `print-required`; what it can't have is config.mk `BOARD_UNSUPPORTED`, with its reasons, through the registry |
+| Which features a radio has, per variant | `make BOARD=<radio> [VARIANT=<v>] print-config` and `print-required`; what it can't have is config.mk `BOARD_UNSUPPORTED` (shown ✕) and what isn't written for it yet `BOARD_NOT_WRITTEN` (shown …), with their reasons, through the registry |
 | Feature names, help, dependencies | `config/features.mk` (the comment above each switch, the `needs` checks) |
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
