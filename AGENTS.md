@@ -21,9 +21,18 @@ short version plus what an agent tends to get wrong.
 4. **Generic first.** `core/` never includes a board or platform header and never tests a radio define. Radio
    differences go through `board_t` and the `hal/` interfaces ([docs/dev/architecture.md](docs/dev/architecture.md)).
    Chip drivers go in `drivers/`, SoC code in `platform/`, a radio's wiring in `boards/<radio>/`.
+
+   **Generic docs** never name a radio or its pins. They are `docs/spec/*` other than `hardware-*`, `docs/user/*`
+   other than `23-radios.md`, `docs/build-config.md` and `docs/dev/*`. Describe what a board provides (`CAP_*`,
+   `board_t` fields) and link [docs/feature-matrix.md](docs/feature-matrix.md) for which radios have it. A radio's
+   facts go only on its own hardware, bring-up or radio-reference page, and those pages link to the shared spec, not
+   to another radio's page. `tools/check_generic.py` checks this. Its allowlist names the generic docs not yet
+   rewritten, one path each; don't add one.
 5. **Flash costs go behind a switch.** A feature that adds real code size gets a `CONFIG_` switch in
    `config/features.mk` and `core/config.h` ([docs/build-config.md](docs/build-config.md)). The build must stay
-   clean with the switch off.
+   clean with the switch off. `BOARD_UNSUPPORTED` only for what the hardware can't do; code not written yet is
+   `BOARD_NOT_WRITTEN`. Written but not yet checked on the radio stays on and in neither list: say "untested" in the
+   bring-up records and PRs, never in `config.mk` ([the rule](docs/build-config.md#unsupported-not-written-unconfirmed)).
 6. **Zero warnings** in every configuration `tools/ci.sh` builds.
 7. **US English** in code, comments, docs and commit messages (color, center, behavior).
 8. **No hardware without the owner.** Don't touch a connected radio (debug link, DFU, MMDVM port), the SDR bench or any
@@ -53,7 +62,8 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
 - Read the spec for the subsystem first, and its section of [docs/spec/gotchas.md](docs/spec/gotchas.md).
 - New behavior gets a host test. A bug fix gets the test that would have caught it. If a HIL test can check it on
   the radio, add one, opt-in as the README describes. Anything a HIL test needs to see goes in a debug link view key
-  (`core/debuglink/debuglink_view*.c`).
+  (`core/debuglink/debuglink_view*.c`). HIL skips use `odr_hil.skip(kind, reason)`, a new feature gets an entry
+  in `tests/hil/features.toml`, and its HIL tests a `@pytest.mark.feature("<id>")` marker.
 - A behavior change updates its spec in `docs/spec/`. If users see it, it also updates `docs/user/`. Run
   `python3 tools/check_doc_links.py` after editing docs.
 - A UI change regenerates the gallery and commits only the PNGs it meant to change.

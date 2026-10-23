@@ -3,8 +3,8 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
 # Build the DB25-D runtime-entry stubs (the ones stubtool loads with --odr-enter) for both RAM layouts:
-#   stub_db25d_odr.bin      linked for 0x30000, 128 KB window   (a build without CONFIG_DMR: boards/db25d/db25d.ld)
-#   stub_db25d_odr_dmr.bin  linked for 0x1D000, 72 KB window    (CONFIG_DMR=y: boards/db25d/db25d_dmr.ld)
+#   stub_db25d_odr.bin      linked for 0x30000, 128 KB window   (a build without CONFIG_DMR: boards/db25d/fm_only.ld)
+#   stub_db25d_odr_dmr.bin  linked for 0x1D000, 72 KB window    (CONFIG_DMR=y: boards/db25d/memory.ld)
 # The base and size must match HRC_STUB_BASE / HRC_STUB_SIZE in boards/db25d/config.mk: the running firmware reports
 # them in STUB INFO and stubtool picks the image by that base. The monitor is position dependent, so a stub linked for
 # the wrong base would run wild.

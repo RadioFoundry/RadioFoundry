@@ -17,7 +17,7 @@
 
 #define P		NAND_SECTORS_PAGE
 #define META_SPARE	8u		// offset in the spare area: bytes 0-7 stay erased (the factory bad-block mark is
-					// byte 0; the DB25-D stock firmware keeps its own block marks at bytes 4-5)
+					// byte 0; a stock firmware keeps its own block marks at bytes 4-5)
 #define META_COL	(P + META_SPARE)
 #define META_LEN	16u
 #define META_MAGIC	0x314C534Eu	// "NSL1"

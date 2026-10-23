@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// MD-380 display: 160x128 TFT on FSMC bank 1 (8-bit on D0-D7, RS on A17), wired as on the DM-1701; backlight on PC6
+// MD-380 display: 160x128 TFT on FSMC bank 1 (8-bit on D0-D7, RS on A17), wired as on the other STM32 radios; backlight on PC6
 // with TIM8 CH1 PWM (docs/spec/hardware-md380.md 7).
 //
 // The controller is reported as an HX8302A (ST7735 compatible) or "maybe an ILI9481": unconfirmed. The ST7735 driver's
@@ -28,7 +28,7 @@
 #define VISIBLE_W	160
 #define VISIBLE_H	128
 
-// ---- FSMC bus (same timing as the DM-1701: HCLK 72 MHz, about 100-125 ns per byte) ----
+// ---- FSMC bus (same timing as the other STM32 radios: HCLK 72 MHz, about 100-125 ns per byte) ----
 
 static void fsmc_init(void)
 {
@@ -58,8 +58,8 @@ void md380_lcd_pins_fsmc(void)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();	// the port registers are shared with other pins on PD and PE
-	set_af12(GPIOD, KEY_COLS_PORTD);
-	set_af12(GPIOE, KEY_COLS_PORTE);
+	set_af12(GPIOD, STM32_FSMC_D0_D3);
+	set_af12(GPIOE, STM32_FSMC_D4_D7);
 	__set_PRIMASK(primask);
 }
 

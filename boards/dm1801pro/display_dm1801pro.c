@@ -106,7 +106,7 @@ static void flush(const void *fb, uint16_t y0, uint16_t y1)
 
 static void set_backlight(uint8_t percent)
 {
-	hrc_backlight(percent);	// PTA15 is PWM0, as on the DM-32UV (stock only switches it on and off)
+	hrc_backlight(percent);	// PTA15 is PWM0, as on the other HR_C7000 boards (stock only switches it on and off)
 }
 
 const hal_display_t dm1801pro_display = {

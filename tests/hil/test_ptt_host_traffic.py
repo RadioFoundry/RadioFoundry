@@ -5,7 +5,7 @@
 On radios whose PTT pin is also the programming cable's host-to-radio serial line, every 0 bit the host sends pulls
 the pin low. The firmware ignores the pin while bytes arrive and for 50 ms after, and then needs it low for 20 ms
 (drivers/input/sharedptt, docs/spec/gotchas.md 16.2). The test polls the radio in bursts whose gaps fall on both sides
-of the 50 ms gate, the pattern that keyed a DM-32UV during PPP (2026-10-22), with some requests back to back. The
+of the 50 ms gate, the pattern that keyed a radio during PPP (2026-10-22, hardware-dm32.md 6.2), with some requests back to back. The
 engine's PTT press count (`input.ptt_downs`) must not move and the radio must never show `tx`. TX inhibit is on for
 the run (RAM, put back after), so a press, if one came, transmits nothing. On a radio with no shared pin the test
 passes trivially, so it runs on every board.
@@ -13,9 +13,9 @@ passes trivially, so it runs on every board.
 import random
 import time
 
-import pytest
+from odr_hil import skip
 
-POLL_S = 30.0               # the owner's first gate check was 30 s of polling (hardware-db25d.md); the DM-32UV's
+POLL_S = 30.0               # the owner's first gate check was 30 s of polling (hardware-db25d.md); the PPP
                             # failure made about one press a minute
 GAP_MIN_S, GAP_MAX_S = 0.040, 0.120     # around the 50 ms gate
 BACK_TO_BACK = 0.15         # share of requests sent with no gap
@@ -24,14 +24,14 @@ BACK_TO_BACK = 0.15         # share of requests sent with no gap
 def ptt_downs(radio):
     v = radio.view(["link"])
     if "input.ptt_downs" not in v:
-        pytest.skip("this build has no input.ptt_downs")
+        skip("not_built", "this build has no input.ptt_downs")
     return int(v["input.ptt_downs"])
 
 
 def test_host_traffic_no_ptt(radio):
     before_inhibit = radio.view().get("set.tx_inhibit")
     if before_inhibit is None:
-        pytest.skip("this build has no set.tx_inhibit")
+        skip("not_built", "this build has no set.tx_inhibit")
     radio.link.setting("tx_inhibit", 1)
     try:
         radio.log()                     # empty the ring

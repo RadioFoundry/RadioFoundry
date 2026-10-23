@@ -1418,9 +1418,9 @@ static const char *ced_problem(void)
 	const channel_t *c = &ced_ch;
 	if (c->name[0] == 0)
 		return "Give it a name first";
-	if (!ui_in_band(c->rx_hz, false))
+	if (!board_in_band(c->rx_hz, false))
 		return "RX is outside the radio's bands";
-	if (!c->rx_only && !ui_in_band(c->tx_hz, true))
+	if (!c->rx_only && !board_in_band(c->tx_hz, true))
 		return "TX can't transmit there: set RX only";
 	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && c->contact == 0)
 		return "Pick a TX contact first";
@@ -1534,7 +1534,7 @@ static void ced_commit(void)
 			// TX moves with RX, keeping a repeater's offset; where that lands outside every band (or the channel
 			// had no TX frequency) TX becomes RX
 			uint32_t tx = c->tx_hz - c->rx_hz + hz;
-			c->tx_hz = ui_in_band(tx, false) ? tx : hz;
+			c->tx_hz = board_in_band(tx, false) ? tx : hz;
 			c->rx_hz = hz;
 		} else {
 			c->tx_hz = hz;
@@ -1977,7 +1977,21 @@ static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "Ab
 // The USB personality can be switched here (the host link's network adapter, CONFIG_USB_NETWORK)
 #define USB_NET_UI	(CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
 
-static const char *info_title(void) { return info_titles[ui_frame()->arg]; }
+static const char *info_title(void)
+{
+	uint16_t a = ui_frame()->arg;
+	return a == INFO_BATTERY && board_volts() == BOARD_VOLTS_SUPPLY ? "Supply" : info_titles[a];
+}
+
+// mV as volts with one decimal: 13.8 V
+static void sb_volts(sbuf_t *b, uint16_t mv)
+{
+	uint32_t dv = (mv + 50u) / 100u;
+	sb_u32(b, dv / 10u, 1);
+	sb_chr(b, '.');
+	sb_u32(b, dv % 10u, 1);
+	sb_str(b, " V");
+}
 
 static void sb_deg(sbuf_t *b, int32_t e7, char pos, char neg)
 {
@@ -2023,6 +2037,10 @@ static const char *info_body(void)
 #endif
 		break;
 	case INFO_BATTERY:
+		if (board_volts() == BOARD_VOLTS_SUPPLY) {	// a reading only: no charge level or warning
+			sb_volts(&b, ui_view()->supply_mv);
+			break;
+		}
 		sb_u32(&b, ui_st.battery_pct, 1);
 		sb_str(&b, ui_st.battery_pct <= (ui_st.low_batt_pct ? ui_st.low_batt_pct : 15) ? "%: charge soon" : "%");
 		break;
@@ -2676,10 +2694,11 @@ void ui_crash_tick(uint32_t now_ms)
 // without diagnostics skips 7
 enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_COUNT };
 
-// A tool this build or radio doesn't have is left out of the list (a radio without a battery has no Battery page)
+// A tool this build or radio doesn't have is left out of the list (Battery, Supply on a radio that measures its DC
+// input instead, is left out where the radio measures neither)
 static bool tool_shown(uint16_t i)
 {
-	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_has_battery());
+	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_volts() != BOARD_VOLTS_NONE);
 }
 
 // The hint names the last number ("1-9 open"): the highest tool this radio has
@@ -2715,7 +2734,7 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
-	strcpy(it->label, names[i]);
+	strcpy(it->label, i == T_BATTERY && board_volts() == BOARD_VOLTS_SUPPLY ? "Supply" : names[i]);
 	item_num(it, (uint16_t)(i + 1u));	// the tool's own number, not its row (see the enum)
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
@@ -2754,6 +2773,10 @@ static void tools_item(uint16_t row, ui_item_t *it)
 			it->flags |= UI_ITEM_DIM;
 		break;
 	case T_BATTERY:
+		if (board_volts() == BOARD_VOLTS_SUPPLY) {
+			sb_volts(&b, ui_view()->supply_mv);
+			break;
+		}
 		sb_u32(&b, ui_st.battery_pct, 1);
 		sb_chr(&b, '%');
 		break;

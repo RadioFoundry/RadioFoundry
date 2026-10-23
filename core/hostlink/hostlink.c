@@ -290,7 +290,7 @@ static void dispatch(const uint8_t *buf, size_t len, uint32_t now)
 	// A side frame's end is a request boundary too, also when the next request comes in a later chunk without the
 	// gap (a debug link client sends its next request as soon as the reply is in)
 	// A CPS request the engine holds part of continues after a gap: a UART delivers it in pieces, and a debug link or
-	// MMDVM start byte in its rest is data (DM-1801 Pro)
+	// MMDVM start byte in its rest is data (a cable on a UART host port)
 	bool cps_mid = (mode == HOSTLINK_CPS) && (cps_mid_request != NULL) && cps_mid_request();
 	bool new_request = side_ended || (((now - last_byte_ms) >= CPS_GAP_MS) && !cps_mid);
 

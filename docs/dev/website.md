@@ -34,16 +34,17 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 
 | Shows | Comes from |
 |---|---|
-| Radios, their status, planned radios | The README's "Radios and status" table |
-| A radio's one-line note for visitors | `radio.note.<radio>` and `planned.note.<slug of the README name>` in the string catalog (the README's notes are for developers; the build warns when one is missing) |
-| A radio's name, bands, processor, screen, bootloader steps, flash backend | `boards/<radio>/radio.json` |
-| A radio's status badge (Supported, In development, Planned) | the README radio table, or `radio.json` `status` (`supported`, `testing`, `planned`) where the two differ |
-| Which features a radio has, per variant | `make BOARD=<radio> [VARIANT=<v>] print-config`, `print-unsupported`, `print-required` |
+| Radios, their order and status | The board registry, `boards/<radio>/board.toml` (`tools/boards.py json --for site`). `order` sorts them; the lowest is the home page's radio |
+| Planned radios | The rows of the [radio survey](../spec/radios.md) "Summary table" that name no board, by their Port cell (`tools/registry_docs.py`): `Planned`, `Planned, hardware needed`, `In progress, #N` (badge "In progress", linked to the pull request) or `Not planned` (not listed), each with an optional `. note` |
+| A radio's one-line note for visitors | board.toml `[status] summary`, the same line the README and the user manual show; a catalog may translate it as `radio.note.<radio>`. A planned radio's: the note of its Port cell, which a catalog may translate as `planned.note.<slug of the survey name>` |
+| A radio's name, bands, processor, screen, bootloader steps, flash backend, codeplug location | board.toml, the CPU from `platform/<p>/platform.toml`, the backend from the `[flash] family`, the codeplug location from the board's `hal_flash_map_t` |
+| A radio's status badge (Supported, In development) | board.toml `[status] level`: `supported` reads Supported, `testing` and `bring-up` read In development |
+| Which features a radio has, per variant | `make BOARD=<radio> [VARIANT=<v>] print-config` and `print-required`; what it can't have is config.mk `BOARD_UNSUPPORTED` (shown ✕) and what isn't written for it yet `BOARD_NOT_WRITTEN` (shown …), with their reasons, through the registry |
 | Feature names, help, dependencies | `config/features.mk` (the comment above each switch, the `needs` checks) |
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
 | Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), grouped by `site/data/screens.json` |
-| Flash layout, codec profiles, stock files, key hashes | `tools/odrflash/odrflash/boards.py` and `stockfw.py`, exported to `data/flash-boards.json` |
+| Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/odrflash/odrflash/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
 
@@ -146,7 +147,7 @@ photos (the photos stay outside the repository: product photos are not ours to p
 The build writes `static/img/radios/<radio>-frame.svg` (screen black), `<radio>.svg` (with the boot screen) and the
 screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages), so any screenshot can be
 laid over the frame; the radio pages do that when a screenshot is clicked. A radio without an illustration gets a
-generic drawing from `radio.json` `frame`.
+generic drawing from board.toml `[frame]`.
 
 ## Error logging and bug reports
 
@@ -199,21 +200,24 @@ Sentry; the page then works the same and offers the download only.
 | `codeplug.js` | Codeplug formats and the converter registry | |
 | `fake.js` | A simulated radio: bootloader with a flash model, ODR's serial port, a synthetic stock file | `odrflash/fakedfu.py` |
 | `stub.js`, `lz4.js` | The HR_C7000 boot stub: loaded through the boot ROM or handed over by ODR, then reads, sector writes and the LED | `stub/stubtool.py` |
-| `f4stub.js` | The STM32F4 loader (DM-1701, MD-380): handed over by ODR, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
+| `f4stub.js` | The STM32F4 loader: handed over by ODR, the board record (CONFIG) and its echo, then the install in the interlock's order and SPI flash writes | `stub/f4stub.py` |
 | `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/hrc7000_codec.py` |
 | `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, ODR's debug link (VERSION, 0x1A), the stub and both flash chips | |
-| `db25d.js`, `db25dui.js` | DB25-D: the stub loaded through the stock debug console (USMART), the vendor update mode write (IAP) and their steps | `docs/spec/hardware-db25d.md` 7 |
+| `usmart.js`, `iap.js`, `iapui.js` | The stock side of an HR_C7000 radio, by protocol: the stub loaded through a stock debug console (USMART, `flash.stock_console`), the vendor update mode write (IAP, `flash.update_mode`) and their steps | `docs/spec/hardware-db25d.md` 7 |
 | `c7000ui.js`, `radiotop.js` | The HR_C7000 backend: its steps (connect, back up and check, write, check) and the radio picture with its LED | |
 | `dom.js` | DOM helpers and strings shared by `app.js` and `c7000ui.js` | |
 | `app.js` | The page: the tasks, the shared steps and the `anyroad-dfu` backend | |
 
-Add `#sim` to the flasher's address to run every step against the simulated radio. `#sim=c7000` simulates a
-DM-1801 Pro on stock firmware, `#sim=c7000-odr` one that runs ODR with the loader hand-over. `#sim=odr` is a DM-1701
-running ODR, which updates through the STM32F4 loader.
+Add `#sim=<radio>-stock` to the flasher's address to run every step against a simulated radio on its stock firmware,
+`#sim=<radio>` against one that runs ODR (an STM32F4 radio updates through the STM32F4 loader, an HR_C7000 radio
+through the loader hand-over). `#sim` alone is the first radio on stock firmware. The fake comes from the radio's data
+(`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
+console gets one, with its first stock version.
 
 ### Radio access backends
 
-A radio's `flash.backend` in radio.json names how the page reaches it. `app.js` runs the tasks and the steps every
+A radio's `flash.backend` in `data/radios.json` names how the page reaches it (from the board.toml `[flash] family`,
+`tools/boards.py` FAMILIES). `app.js` runs the tasks and the steps every
 radio shares (radio, build, bundle, symptom, recover); the backend supplies the rest. A new way to install or back up
 a radio, such as another bootloader protocol or a stock firmware's own read-back protocol, is a new module that calls
 `register()` from `backends.js` and is imported by `app.js`. The task flow doesn't change.
@@ -234,9 +238,9 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 |---|---|---|
 | `anyroad-dfu` | DM-1701, MD-380 | `app.js` (`dfu.js`, `f4stub.js`) |
 | `c7000-stub` | DM-1801 Pro, DM-32UV, DB25-D PRO | `c7000ui.js` (`stub.js`, `c7000.js`) |
-| `none` | DB25-D for now | none: the radio is listed but grayed out |
+| `none` | any other | none: the radio is listed but grayed out |
 
-A radio without a backend the page knows gets `none`, so a radio.json value can come before its module. The
+A radio without a backend the page knows gets `none`, so a family can come before its module. The
 contract tests are in `site/tests/backends.test.mjs`.
 
 Bulk reads for a backup go through readers (`readers.js`). `backup.js` `readRadio` reads the small parts only the
@@ -269,8 +273,8 @@ What can be read depends on the firmware running:
 | Radio runs | Read |
 |---|---|
 | ODR | Everything, through the CPS reads (areas 1, 5, 9 and 10): the whole SPI flash, the internal flash, the security registers |
-| ODR with stub entry (DM-1701, MD-380) | The same. The radio info and security registers come over the debug link; the internal flash and the SPI flash come through the STM32F4 loader, every 4 KB block checked against the radio's CRC, and the radio then restarts into ODR. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves ODR running, and the debug link reads everything |
-| Stock (DM-1701, MD-380) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing ODR: flashing never touches the SPI flash, and ODR doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
+| ODR with stub entry (STM32F4) | The same. The radio info and security registers come over the debug link; the internal flash and the SPI flash come through the STM32F4 loader, once it has taken the radio's board record, every 4 KB block checked against the radio's CRC, and the radio then restarts into ODR. The codeplug choice stays on the debug link (the hand-over would cost more than it saves). A loader that doesn't start leaves ODR running, and the debug link reads everything |
+| Stock (STM32F4) | Nothing: the bootloader can't read flash (read protection level 1) and the stock firmware's own USB protocol has no spec here. The install therefore backs up right after writing ODR: flashing never touches the SPI flash, and ODR doesn't write to a foreign settings region until it is claimed, so the stock codeplug, calibration and resources are still intact |
 
 ### Restore
 
@@ -285,8 +289,8 @@ documented, and ODR doesn't overwrite it unless an ID database is uploaded.
 
 ### HR_C7000 radios (the boot stub)
 
-Radios whose `radio.json` says `"backend": "c7000-stub"` (the DM-1801 Pro, the DM-32UV and the DB25-D PRO, which adds
-the section below) are flashed over their
+Radios whose backend is `c7000-stub` (the `serial-loader` and `serial-iap` families; the DB25-D PRO adds the section
+below) are flashed over their
 programming cable with Web Serial, through the boot stub ([stub/README.md](../../stub/README.md),
 [debuglink.md](../spec/debuglink.md) 3.18). The Baofeng bootloader is never used and never written. The install has
 its own steps:
@@ -302,20 +306,23 @@ its own steps:
 
 The DB25-D has no boot ROM window on its cable until ODR's first stage is installed, and no SPI data flash (its NAND is
 not read). The board's table entry in `data/flash-boards.json` (`c7000.boards.db25d`, from `tools/hrc7000_codec.py`
-BOARDS) carries the 2 MB program flash size, `data_flash: false`, `stock_console: true` and `stub_board`, the profile the page sends in CONFIG (`stub/stubtool.py` `C7_BOARDS`). The steps are
-the ones above, with these changes:
+BOARDS) carries the 2 MB program flash size, `data_flash: false` and `stub_board`, the profile the page sends in CONFIG
+(`stub/stubtool.py` `C7_BOARDS`). Its `data/radios.json` `flash` entry, from board.toml and board.mk, names the rest:
+`first_stage` (`BOOT_SIZE`, `BOOT_SIGNATURE`), `stock_console: "usmart"` with the `stock_versions` the console route
+knows, `update_mode: "iap"` (the `serial-iap` family), `read_rate` (the program memory read's time estimate) and
+`codec_version` (the stock file the page asks for). The steps are the ones above, with these changes:
 
 | Situation | What the page does |
 |---|---|
 | ODR runs (debug link answers) | The universal stub (`data/c7000-stub.json`, `stubImages()` in `stub.js`) goes into the RAM span the firmware reports in STUB INFO (0x30000 for a build without DMR, 0x1D000 with it) and copies itself to 0x30000. `univFits()` refuses a span whose copy would overlap or leave SRAM, as `stubtool.py` does. After HELLO the page sends CONFIG with the board's profile and checks the echo before any write. The backup is the 2 MB program memory |
 | ODR runs but does not answer | "Recover at Power-On": the first stage offers the boot ROM handshake for about half a second at power-on. The page answers it and loads the universal stub at 0x10000, as the boot ROM route does (the first stage takes blocks below 0x4E000) |
-| The stock firmware runs | `db25d.js` `Usmart`: the stock firmware's debug console takes one framed command per write (`@AT` + a filler byte + the text + CR LF) and answers `read_addr` and `write_addr`. The page reads the build from its version string (018 or 020; another build is refused), writes the universal stub word by word into 0x54000-0x58000, reads every word back, then points the console's `cmd_rec` entry (0x18000848) at it and sends one more frame, which starts it. Only those addresses can be written, never flash. The stub then copies itself to 0x30000 and the radio continues as from ODR (`c.how = "usmart"`): the 2 MB backup, the codec, the install and a restore all go through the stub. About 4 minutes for the load at 115200 baud |
-| Factory update mode (recovery) | `db25d.js` `Iap`: the loader's update mode (P1 and power) takes `Erase` and 2 KB pages with additive checksums (`docs/spec/hardware-db25d.md` 7). Install: the first stage, ODR and the codec slot (`odr_db25d_install.bin` with the slot merged in, or the build service's equivalent); it must start with the first stage's `2C 11 01 C0`. Restore: a backup's application area and slot (`restoreTarget()`), which must start with the same entry. Offered when nothing answers on the cable, for a stock build the page doesn't know, and in Troubleshooting (`recovery.extra`, "Reinstall in Factory Update Mode", which skips the search). `Iap.probe()` sends a one-page `Flash Read ` (never Erase) when the console is silent, and again when Troubleshooting forces update mode: a loader that answers (a radio with no valid application, white screen and red LED at power-on) is reported as already in update mode and the install starts without waiting for a banner (`c.iapReady`). Troubleshooting lists the symptom "White screen and a red LED at every power-on" for radios with a `recovery.extra` route; it leads to the reinstall or Restore from Backup |
+| The stock firmware runs | `usmart.js` `Usmart`: the stock firmware's debug console takes one framed command per write (`@AT` + a filler byte + the text + CR LF) and answers `read_addr` and `write_addr`. The page reads the build from its version string (018 or 020; another build is refused), writes the universal stub word by word into 0x54000-0x58000, reads every word back, then points the console's `cmd_rec` entry (0x18000848) at it and sends one more frame, which starts it. Only those addresses can be written, never flash. The stub then copies itself to 0x30000 and the radio continues as from ODR (`c.how = "usmart"`): the 2 MB backup, the codec, the install and a restore all go through the stub. About 4 minutes for the load at 115200 baud |
+| Factory update mode (recovery) | `iap.js` `Iap`: the loader's update mode (P1 and power) takes `Erase` and 2 KB pages with additive checksums (`docs/spec/hardware-db25d.md` 7). Install: the first stage, ODR and the codec slot (`odr_db25d_install.bin` with the slot merged in, or the build service's equivalent); it must start with the first stage's signature (`flash.first_stage`). Restore: a backup's application area and slot (`restoreTarget()`), which must start with the same entry. Offered when nothing answers on the cable, for a stock build the page doesn't know, and in Troubleshooting (`recovery.extra`, "Reinstall in Factory Update Mode", which skips the search). `Iap.probe()` sends a one-page `Flash Read ` (never Erase) when the console is silent, and again when Troubleshooting forces update mode: a loader that answers (a radio with no valid application, white screen and red LED at power-on) is reported as already in update mode and the install starts without waiting for a banner (`c.iapReady`). Troubleshooting lists the symptom "White screen and a red LED at every power-on" for radios with a `recovery.extra` route; it leads to the reinstall or Restore from Backup |
 
-The first stage is the only way into the stub from a radio that runs ODR without answering. `site/tests/db25d.test.mjs`
+The first stage is the only way into the stub from a radio that runs ODR without answering. `site/tests/iap.test.mjs`
 runs the console stub load and the IAP write against simulated radios (`fakec7000.js` with `usmart: "018"` models the
-console; `#sim=c7000-db25d` runs it in the page) and compares the codec carve with `tools/hrc7000_codec.py` (`ODR_DB25D_STOCK=<a real 018
-file> python3 site/tests/fixtures.py` adds the real file to the comparison).
+console; `#sim=db25d-stock` runs it in the page) and compares the codec carve with `tools/hrc7000_codec.py`
+(`ODR_DB25D_STOCK=<a real 018 file> python3 site/tests/fixtures.py` adds the real file to the comparison).
 
 The codec decision (`decide()` in `c7000.js`), first match wins:
 
@@ -331,7 +338,7 @@ The page never sends a STUB command to ODR except right before it enters the stu
 until the next restart.
 
 The build writes the layout and the codec profiles to `data/flash-boards.json` (`c7000`, from `stub/stubtool.py`,
-`tools/hrc7000_codec.py` and `tools/dm32_flash.py`) and the universal stub image (with its load address, run address and RAM end) to `data/c7000-stub.json`. Bundle parts:
+`tools/hrc7000_codec.py` and `tools/serial_loader.py`) and the universal stub image (with its load address, run address and RAM end) to `data/c7000-stub.json`. Bundle parts:
 
 | File | Part | Content |
 |---|---|---|
@@ -345,7 +352,7 @@ data memory includes it. Restore writes the program memory back from 0x0300C000 
 
 ### STM32F4 radios (the loader route)
 
-A DM-1701 or MD-380 on stock firmware always installs through its bootloader (`dfu.js`): that is the only way into a
+An STM32F4 radio on stock firmware always installs through its bootloader (`dfu.js`): that is the only way into a
 stock radio. Once it runs ODR, an update can skip the bootloader. When the "current firmware" step finds ODR, the page
 asks for the STUB offer (command 0x1A op 0; on the STM32 it only reports the staging buffer and parks nothing). The
 loader route is used when all of these hold:
@@ -358,14 +365,31 @@ loader route is used when all of these hold:
 
 The codec step then needs no stock file or key. The write step sends the embedded stub (`data/f4-stub.json`, from
 `stub/f4stub.py`), finds it on the same port or, if it enumerated again, on the granted port with the same serial
-number (one click picks it when the browser didn't keep the grant), and installs in the order of
-[stub-stm32f4.md](../spec/stub-stm32f4.md) 7: sector 3 erased first and its first word written last. On the MD-380,
-sector 6 is shared with the codec: its current content is downloaded as a file before anything is erased, and the
-codec bytes are written back unchanged. The bootloader route stays on the same step, folded, and opens by itself when
-the loader can't finish. An install cut short leaves the radio in its bootloader at the next power-on, which that route
-finishes.
+number (one click picks it when the browser didn't keep the grant), and sends it the radio's board record
+([stub-stm32f4.md](../spec/stub-stm32f4.md) 5.2: SPI flash bus, mode and pins, chip select, chip selects held high,
+crystal, the bootloader's end). It reads HELLO again and goes on only when the echo is the record byte for byte, the
+configured flag is set and the application base is 0x0800C000. Then it installs in the order of
+[stub-stm32f4.md](../spec/stub-stm32f4.md) 7: sector 3 erased first and its first word written last. A sector that
+also holds bytes the firmware doesn't own (no radio has one since the codec moved) is downloaded as a file before
+anything is erased, and those bytes are written back unchanged. The bootloader route stays on the same step, folded,
+and opens by itself when the loader can't finish. An install cut short leaves the radio in its bootloader at the next
+power-on, which that route finishes.
 
-`data/flash-boards.json` carries the owned flash per board (`f4stub`, from `stub/f4stub.py` `BOARDS`).
+| Loader answer | What the page does |
+|---|---|
+| HELLO before CONFIG: application base 0, no SPI flash, configured flag clear | Expected for protocol 4: it sends CONFIG |
+| CONFIG refused (status `0D`) | Stops, nothing written; the bootloader route opens |
+| HELLO after CONFIG echoes other bytes, or another application base | Stops, nothing written |
+| A write answered `11` (not configured) | Stops; the page checks the echo before every write, so this means the loader lost its record |
+| Protocol 2 (an older loader still running from an earlier session) | No CONFIG: accepted only for a board whose record matches the wiring built into it (`v2_wiring`) |
+| A backup through the loader whose record is refused | The page restarts the radio into ODR before it reports the error |
+
+`data/flash-boards.json` carries per board (`f4stub`, from the board registry's `[flash.stub]` through `stub/f4stub.py` `BOARDS` and `config_record()`): the
+owned flash, the stub's board id, the 24-byte record as hex, and `v2_wiring`, with the protocol version and record
+length at the top. `data/f4-stub.json` gives the image and its protocol. The page sends the record as it is and never
+builds one, so the page and `stubtool.py` can't drift; `site/tests/f4stub.test.mjs` checks the records and the HELLO
+layout against `f4stub.py`'s simulated stub (`f4-vectors.json`, written by `site/tests/fixtures.py`), and a board
+with other SPI wiring against f4stub's test profile.
 
 ### Firmware images and custom builds
 
@@ -375,10 +399,11 @@ release) and the feature list, waits for the build, and checks the image against
 site (`firmware/<radio>/`) are not used by the flasher. The `make` command that builds the same selection, and a picker
 for the image it produces, stay under "Build it yourself".
 
-A radio whose image depends on more than the feature switches lists the choices in `radio.json` `flash.build_options`
-(the MD-380's band: `MD380_BAND=uhf|vhf`). The build step asks for each one before it builds, or takes it from a
-connected radio's debug link name (`board_name`), sends it with the request, and refuses an image whose manifest
-doesn't carry it (`build_options`). The current-firmware step refuses a radio whose name says another value.
+A radio whose image depends on more than the feature switches lists the choices in board.toml `[[build_options]]`
+(`flash.build_options` in `data/radios.json`; the MD-380's band: `BAND=uhf|vhf`). The build step asks for each one
+before it builds, or takes it from a connected radio's debug link name (`board_name`), sends it with the request, and
+refuses an image whose manifest doesn't carry it (`build_options`). The current-firmware step refuses a radio whose name
+says another value.
 
 ### Version links
 
@@ -432,7 +457,7 @@ WebUSB and Web Serial: Chrome, Edge and other Chromium browsers on a computer, o
 the WinUSB driver for the bootloader (Zadig, once), as odrflash does. On Windows the bootloader step shows the Zadig
 steps ([installing](../user/02-installing.md#windows-the-bootloader-driver)), open until this computer has reached a
 bootloader once, and again with any failed connect: without the driver Chrome either doesn't list the bootloader or
-can't open it. The device name comes from `dfu_product` in `boards.py`.
+can't open it. The device name comes from `[flash.dfu] product` in the board's `board.toml`.
 
 ## The Codeplug Editor
 
@@ -466,14 +491,14 @@ Add `#sim` to the page's address to read and write a simulated DM-1701 (`fakecps
 ### Transports
 
 A transport has `identify(radios)`, `read({iddb, progress, signal})`, `write(image, current, {progress, signal})` and
-`close()`. Addresses are image addresses; the transport adds the radio's base on the wire. `cps-serial` is the only
-one today: the open-firmware CPS ([cps-protocol.md](../spec/cps-protocol.md) 2) over the radio's USB serial port or
-the programming cable (Web Serial). It identifies the radio by the board name the debug link reports, matched against
-`codeplug.names` in `data/radios.json`. `repo.py` `codeplug_map` fills that entry from the board's flash map: the
-base (0x700000 on the DM-32UV), the end of the room for the codeplug and ID database, and whether the radio has a
-TFTP staging area. A read takes the codeplug's regions and the ID database. A write compares with the radio and sends
-only the changed bytes inside the codeplug's regions, never whole sectors, since a sector can hold the radio's own
-settings (0x6000). It verifies, then ends with `C 5` so the radio reloads the codeplug without a restart.
+`close()`. Addresses are image addresses; the transport adds the radio's base on the wire. `cps-serial` is the only one
+today: the open-firmware CPS ([cps-protocol.md](../spec/cps-protocol.md) 2) over the radio's USB serial port or the
+programming cable (Web Serial). It identifies the radio by the board name the debug link reports, matched against
+`codeplug.names` in `data/radios.json`. The registry (`tools/boards.py` `Board.codeplug()`) fills that entry from the
+board's flash map: the base (0x700000 on the DM-32UV), the end of the room for the codeplug and ID database, and whether
+the radio has a TFTP staging area. A read takes the codeplug's regions and the ID database. A write compares with the
+radio and sends only the changed bytes inside the codeplug's regions, never whole sectors, since a sector can hold the
+radio's own settings (0x6000). It verifies, then ends with `C 5` so the radio reloads the codeplug without a restart.
 
 A browser can't reach the radio's UDP port or its http server (see USB network mode above), so for a radio in USB
 network mode the editor saves `codeplug.bin` for `tftp put` instead. A faster transport (the loader's CRC-compared

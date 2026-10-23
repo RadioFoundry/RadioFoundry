@@ -159,7 +159,7 @@ static void test_rows(void)
 
 static void test_rows_indexed(void)
 {
-	// The DM-32's frame: 240 x 320, two pixels a byte, high nibble left, colors through the palette
+	// A 240 x 320 frame, two pixels a byte, high nibble left, colors through the palette
 	const st7789_t p = { &bus, 240, 320, 0xC0, true, 1 };
 	static uint8_t fb[120 * 320];
 	uint16_t pal[16];

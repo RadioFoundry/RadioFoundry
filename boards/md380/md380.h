@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "board.h"
+#include "spi_flash/spi_flash.h"
 
 // The LCD data bus doubles as the keypad columns: the display and the keypad scan take turns
 void md380_lcdbus_lock(void);
@@ -27,10 +28,7 @@ extern const hal_display_t md380_display;
 extern const hal_input_t md380_input;
 extern const hal_radio_t md380_radio;
 extern const hal_power_t md380_power;
-extern hal_flash_t md380_flash;
-extern const hal_dmr_modem_t md380_dmr;
 extern const hal_audio_t md380_audio;
-extern const hal_vocoder_t md380_vocoder;
 
 // ADC readings (power_md380.c): raw 12-bit averages
 enum { MD380_ADC_VOLUME, MD380_ADC_BATTERY, MD380_ADC_MIC, MD380_ADC_RSSI, MD380_ADC_BUSY, MD380_ADC_TEMP,
@@ -59,14 +57,6 @@ uint32_t md380_subtone_samples(void);
 #endif
 int16_t md380_temperature_c10(void);
 
-// DMR PCM audio counters (audio_md380.c, CONFIG_DMR)
-typedef struct {
-	uint32_t blocks;
-	uint32_t overruns;
-	uint32_t dropped;
-} md380_audio_stats_t;
-void md380_audio_stats(md380_audio_stats_t *out);
-void md380_audio_reset_stats(void);
 
 // Physical key bits returned by md380_input.scan() (matrix positions in docs/spec/hardware-md380.md 9.1)
 enum {
@@ -78,10 +68,8 @@ enum {
 // The raw keypad matrix and channel switch, for the diagnostics page (bring-up: which bit is which key)
 void md380_input_raw(uint8_t rows[3], uint8_t *channel_code);
 
-// SPI flash (flash_md380.c): security registers 1..3, 256 bytes each (factory calibration in 1-2)
-bool md380_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t len);
-bool md380_cps_security_read(uint32_t addr, void *buf, uint32_t len);
-uint16_t md380_flash_device(void);	// JEDEC memory type and capacity, 0 = none
+// SPI flash (flash_md380.c, then stm32_spi_flash): its security registers hold the factory calibration in 1-2
+bool md380_flash_init(void);
 
 // Factory calibration (calibration_md380.c, docs/spec/hardware-md380.md 11)
 typedef struct {
@@ -100,10 +88,8 @@ const char *md380_cal_source(void);	// "factory" or "none"
 const char *md380_cal_why(void);	// why the table was refused, for the diagnostics page
 uint8_t md380_cal_byte(uint16_t offset);
 
-// GPS (gps_md380.c): the module is listened for at start-up and powered by the user's setting once heard
+// GPS (gps_md380.c): the module is listened for at start-up (platform/stm32f4/gps_uart/gps_uart.h has the rest)
 void md380_gps_init(void);
-bool md380_gps_present(void);
-void md380_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes);
 
 // Radio diagnostics (radio_md380.c; cached values, no bus traffic)
 typedef struct {

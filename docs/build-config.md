@@ -3,7 +3,9 @@
 # Build configuration
 
 Features that cost flash, and values that differ per radio, are chosen at build time. Defaults live in
-`config/features.mk`, a board overrides them in `boards/<board>/config.mk`, and the make command line overrides both:
+`config/features.mk`. A platform changes them for every radio on it in `platform/<p>/config.mk`, a board changes them
+in `boards/<board>/config.mk`, and the make command line overrides all of them. The Makefile reads the board's file
+before the platform's: both use `?=`, which keeps the first value set, so the board wins over its platform:
 
 ```
 make BOARD=dm1701                        # the board's defaults
@@ -12,7 +14,7 @@ make BOARD=dm1701 CONFIG_VFO=n           # programmed channels only
 make BOARD=dm1701 CONFIG_DISPLAY_INSET=3 # smaller screen margins
 make BOARD=dm32                          # DM-32UV (csky-elf toolchain: tools/build-csky-toolchain.sh)
 make BOARD=md380                         # MD-380 / MD-390 / RT3, UHF
-make BOARD=md380 MD380_BAND=vhf          # the VHF radios (one band per radio, one image per band)
+make BOARD=md380 BAND=vhf                # the VHF radios (one band per radio, one image per band): build/md380-vhf
 ```
 
 Each switch reaches C as `CONFIG_<NAME>` = 0 or 1, always defined: test it with `#if CONFIG_X`, never `#ifdef`.
@@ -23,8 +25,35 @@ error. Changing a switch rebuilds everything (the build keeps the flags in `buil
 starts). `make BOARD=<b> print-config` lists the resolved switches.
 
 Every feature is on by default wherever the radio has what it needs. A board turns a feature off only for hardware
-it lacks (or board code not written yet) or when the image doesn't fit, and then the most obscure
-large features go first. Bench diagnostics such as `CONFIG_AUDIO_PROBE` stay off.
+it lacks, for board code not written yet, or when the image doesn't fit, and then the most obscure large features go
+first. Bench diagnostics such as `CONFIG_AUDIO_PROBE` stay off.
+
+A feature that needs a part only some radios have (a vibration motor, a GPS receiver, SPI NAND) is a hardware switch:
+`hardware = "..."` on its entry in `tests/hil/features.toml`. Each board then builds it, lists it in
+`BOARD_UNSUPPORTED` or `BOARD_NOT_WRITTEN`, or names it in `board.toml` `[hardware] unconfirmed`, and
+`tools/boards.py check` enforces that.
+The accelerometer is the next one: today its driver (`drivers/sensor/lis3dh`) only feeds a board's
+diagnostics page under `CONFIG_DIAG`, so it has no switch. The first feature that uses motion brings a hardware
+switch with it. A real-time clock driver is the same: none exists yet, and it arrives as `CONFIG_RTC`, a hardware
+switch ([radio-features.md](spec/radio-features.md) 5.6).
+
+### Unsupported, not written, unconfirmed
+
+A feature a radio's default image leaves out is in exactly one of these. ✕ is only for what no firmware can change,
+so the docs never understate what a radio can do.
+
+| Mark | Meaning | Where | Example |
+|---|---|---|---|
+| ✕ | The hardware can't: a part is missing, or the chip or the board lacks something | `config.mk` `BOARD_UNSUPPORTED += X  # <the reason>` | GPS on the DM-1701, SFR on the HR_C5000 (no CRC_MCU_Control), `FONT_XL` on a 160 px panel |
+| … | The hardware can, but this radio's driver or glue isn't written yet | `config.mk` `BOARD_NOT_WRITTEN += X  # <what isn't written>` | the MD-380's TX tones and DTMF (the tone path), the DB25-D's broadcast receiver |
+| ? | Not known yet whether the radio has the part | `board.toml` `[hardware] unconfirmed` | a vibration motor no source confirms |
+| ● | Written, built, not yet checked on the radio | no list: on by default. The bring-up records and `board.toml` `[status]` hold its test state | |
+
+Both `config.mk` lists take one switch a line with the reason in its comment (`tools/boards.py check` fails on one
+without a reason, or on a switch in both). Either one turns the switch off by default (`CONFIG_X ?= n` next to it),
+keeps it out of ci's maximal configuration, and satisfies a hardware switch's check. A platform's `config.mk` can
+list switches for all of its radios. The feature matrix and the web site show the mark. Say "untested" in bring-up
+records and pull requests, never in `config.mk`.
 
 ## Variants
 
@@ -61,9 +90,10 @@ below are for the DM-1701.
 | `CONFIG_SUBTONE` | = FM | CTCSS / DCS encode and decode. MD-380: software decode from the ADC and PWM encode, 3.3 KB |
 | `CONFIG_FM_TX_TONES` | = FM (MD-380: n) | roger beep and 1750 Hz burst sent over the air (`docs/spec/radio-features.md` 3) |
 | `CONFIG_DTMF` | = FM (MD-380: n) | DTMF digits sent from the keys while PTT is held on FM (`docs/spec/radio-features.md` 3.7) |
-| `CONFIG_VOX` | = FM | voice-operated transmit on FM, from the microphone level (`docs/spec/radio-features.md` 3.4) |
+| `CONFIG_VOX` | = FM (DM-32, DB25-D: n) | voice-operated transmit on FM, from the microphone level (`hal_power_t.mic_level`; `docs/spec/radio-features.md` 3.4) |
 | `CONFIG_BATTERY_SAVE` | = FM | receiver duty cycling on an idle FM channel (`docs/spec/radio-features.md` 5.4) |
 | `CONFIG_VIBRATE` | n (radios with a vibration motor: y) | vibration alerts on the board's motor (`hal_power_t.vibrate`) for messages, call alerts, private calls and emergencies, and Settings > Sound > Vibrate (`docs/spec/radio-features.md` 4.1). No radio on main has a motor yet; a board without one shows the row dimmed |
+| `CONFIG_GPS` | y (radios without a GPS receiver: n) | the GPS receiver: the board's module driver and its NMEA input (`drivers/gps`, `platform/*/gps*`, `CAP_GPS`). Off, the radio has no GPS; DMR GPS, LRRP and APRS keep the fixed position and report no fix |
 | `CONFIG_APRS` | = FM | APRS (`core/aprs`, `docs/spec/aprs.md`): position, status and message packets as AX.25 / Bell 202 AFSK on FM through `board.afsk`, positions over DMR (LRRP / UDT), beacon triggers, a KISS TNC on the host port. Transmit stays off until the user turns it on. About 2.8 KB RAM on the DM-1701 |
 | `CONFIG_APRS_RX` | = APRS (MD-380: n) | APRS receive: the AFSK demodulator on the board's received audio, station list, messages to us with acks, the digipeater. Useful only where the board can sample received audio: its own AFSK receive path, or FM receive audio on the PCM stream (the DM-1701, `docs/spec/aprs.md` 5.3). About 6 KB RAM more |
 | `CONFIG_APRS_IGATE` | = APRS_RX and HOSTLINK (DM-1701: n, flash) | the iGate rules, RF to APRS-IS and messages back, with the host helper `tools/aprs_gate.py` holding the APRS-IS connection |
@@ -94,8 +124,8 @@ below are for the DM-1701.
 | `CONFIG_DMR_CONTROL_STATION` | = DMR_IP_GATEWAY | control station mode for PC dispatch software: passthrough (the PC is the endpoint of the radio's own IP data while the link is up; the link layer stays on the radio) and the fixed link pair 192.168.10.1 / .2 instead of the address by DMR ID (`docs/spec/usb-network.md` 5). The power-on network setting belongs to `CONFIG_USB_NETWORK` |
 | `CONFIG_SNMP` | = DMR_IP_GATEWAY | the SNMPv2c agent on UDP 161 over the USB network and over the air, the ODR MIB, notifications to the host and an RF manager (`core/snmp`, `docs/spec/snmp.md`). Management over the air read-only and RF notifications off by default. About 3.2 KB RAM on the DM-1701 |
 | `CONFIG_SFR` | = DMR (MD-380: n) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX); Standalone SFR (the repeater and user roles on a channel) is not wired yet (`docs/spec/sfr.md`) |
-| `CONFIG_AM_RX` | n (DM-32: = FM) | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, AM squelch on RSSI, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. The DM-32 glue isn't written yet |
-| `CONFIG_BCAST_FM` | n (DM-32: y) | broadcast FM on a second receiver chip (`hal_bcast.h`): `core/bcast`, paused for channel traffic (`docs/spec/airband-and-broadcast.md` 4). The task, settings, screen and DM-32 glue aren't written yet |
+| `CONFIG_AM_RX` | n | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, AM squelch on RSSI, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. No board's glue is written yet (the DM-32's is `BOARD_NOT_WRITTEN`) |
+| `CONFIG_BCAST_FM` | n (DM-1801 Pro: y) | broadcast FM on a second receiver chip (`hal_bcast.h`): `core/bcast`, paused for channel traffic (`docs/spec/airband-and-broadcast.md` 4). The DM-32's glue isn't written yet (`BOARD_NOT_WRITTEN`) |
 | `CONFIG_USB` | y (DM-32: n) | USB device (CDC serial) |
 | `CONFIG_HOSTLINK` | = USB (DM-32: y) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB (DM-32) |
 | `CONFIG_USB_NETWORK` | = USB and HOSTLINK | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) or chosen at power-on by the stored setting (`docs/spec/usb-network.md` 1) |
@@ -145,13 +175,14 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 
 | Variable | Board | Meaning |
 |---|---|---|
-| `MD380_BAND` | md380 | `uhf` (default, 400-480 MHz) or `vhf` (136-174 MHz): the band table, the frequency plan and the board name ("MD-380 VHF") |
+| `BAND` | md380 | A build option (`board.toml` `[[build_options]]`, `board.mk` `BUILD_OPTIONS`): `uhf` (default, 400-480 MHz) or `vhf` (136-174 MHz), the band table, the frequency plan and the board name ("MD-380 VHF"). Given on the command line, it adds its value to the build directory (`build/md380-vhf`) |
 | `MD380_DEFS` | md380 | extra defines for the bench (`docs/testing/md380-bringup.md`): `-DMD380_PANEL_TYPE=n` and `-DMD380_PANEL_MADCTL_XOR=0xNN` (display controller and orientation), `-DMD380_CH_ACTIVE_HIGH=1` (channel switch polarity), `-DMD380_BATT_COUNTS_X10=n` (battery divider), `-DMD380_KEEP_SWD` (leave PA13 / PA14 to the debugger; the microphone is then unpowered) |
 | `LTO` | 0 (MD-380, DM-1701: 1) | link time optimization (`-flto=auto` at compile and link): about 17 KB smaller on the DM-1701 (20 KB with `LTO_3P=1`). The DM-1701 and MD-380 defaults needed it while their application areas were 336 KB and 275 KB; since the codec moved ([codec-placement.md](spec/codec-placement.md)) they have 720 KB and 464 KB, and it stays on for the smaller image. The DM-32 (csky) doesn't use it |
 | `LTO_3P` | 0 (MD-380: 1) | with `LTO=1`, the third-party code too (HAL, CMSIS, FreeRTOS, TinyUSB): about 3 KB more. FreeRTOS marks what its port's assembly reaches `portDONT_DISCARD`; the vectors are referenced from the assembly start-up. `LTO_EXCLUDE` lists files kept out (file-scope assembly: `platform/stm32f4/codec_call.c`) |
 | `TCP_CONNS` | dm32 | TCP connections in all states (`core/net/tcp.h`, 4 elsewhere): 3 by default on the DM-32UV, about 1.5 KB RAM each across TCP, HTTP and rigctld |
 | `MAXIMAL_VARS` | DM-1701: `LTO=1` | set in a board's `config.mk`: make variables `tools/ci.sh` adds to that board's maximal build (`make print-maximal-vars`) |
-| `BOARD_UNSUPPORTED` | DM-1701: `FONT_XL`; MD-380, DM-32: see "Board defaults" | set in a board's `config.mk`: switches the radio's hardware code doesn't cover; the maximal build leaves them off (`make print-unsupported`) |
+| `BOARD_UNSUPPORTED` | DM-1701: `FONT_XL`; others: see "Board defaults" | set in a board's or platform's `config.mk`, one switch a line with the reason in its comment: switches the radio's hardware can't do ([above](#unsupported-not-written-unconfirmed)); the maximal build leaves them off (`make print-unsupported`) |
+| `BOARD_NOT_WRITTEN` | MD-380: `FM_TX_TONES`, `DTMF`; others: see "Board defaults" | the same form: switches the hardware can do but whose driver or glue isn't written for the radio yet; the maximal build leaves them off too (`make print-not-written`) |
 | `BOARD_REQUIRED` | DB25-D: `FM` | set in a board's `config.mk`: switches the board can't build without; ci.sh builds no `no-` configuration for them (`make print-required`) |
 | `MAXIMAL_SKIP` | DM-1701: `NET_PPP APRS_IGATE`; MD-380: `NET_PPP NAND_STORAGE` | set in a board's `config.mk`: switches that work on the radio but that it doesn't need, which the maximal build leaves off too (`make print-maximal-skip`). `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); the DM-1701's `audio-probe` build covers it |
 
@@ -162,16 +193,20 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 
 | Board | Off by default | Why |
 |---|---|---|
-| md380 | `FM_TX_TONES`, `DTMF`, `APRS_RX` (maximal build too: `BOARD_UNSUPPORTED`) | no tone path or APRS receive written for the board yet; `APRS_IGATE` follows `APRS_RX` |
-| md380 | `SFR`, `HOTSPOT_SPLIT` (maximal build too) | HR_C6000 only |
+| md380 | `FM_TX_TONES`, `DTMF`, `APRS_RX`, `APRS_IGATE`, `HOTSPOT_SPLIT`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | no TX tone path, APRS receive audio or audio tap written for the board yet; the split duplex glue is written for the HR_C6000 and HR_C7000 only |
+| md380 | `SFR` (maximal build too: `BOARD_UNSUPPORTED`) | the HR_C5000 has no CRC_MCU_Control ([sfr.md](spec/sfr.md)) |
 | md380 | `FONT_XL`, `AM_RX`, `BCAST_FM`, `NET_PPP` (off on most boards; the maximal build leaves them off here too) | a 160 px panel has no use for the font; no air band or broadcast receiver; PPP stands in for USB |
 | dm1701, md380 | `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | the host port is USB, and the one UART is a GPS receive line: nothing a fault handler can print on |
-| dm32 | `USB`, `USB_NETWORK` (maximal build too: `BOARD_UNSUPPORTED`) | no USB data port on the radio; PPP on the programming cable is its IP link |
+| dm32, dm1801pro, db25d | `USB`, `USB_NETWORK` (maximal build too: the platform's `BOARD_UNSUPPORTED`) | no USB data connector on the radio; PPP on the programming cable is its IP link |
+| dm32 | `AM_RX`, `BCAST_FM`, `VOX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the radio has the air band and an RDA5807M, but `rx_am`, `board.bcast`, the mic level hook and the audio tap aren't written ([hardware-dm32.md](spec/hardware-dm32.md) 8.7) |
 | dm1801pro | `UI_COLOR` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen: no colors to set |
+| dm1801pro | `AM_RX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the RF chip's air band window isn't used yet; the probe's audio tap isn't written |
+| db25d | `NET_USRP`, `HOTSPOT_SPLIT`, `SFR`, `APRS_RX`, `APRS_IGATE`, `BCAST_FM`, `VOX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`); `AM_RX` (`BOARD_UNSUPPORTED`) | the board's glue isn't written or timed for them yet; the radio has no air band receive ([hardware-db25d.md](spec/hardware-db25d.md) 9) |
 | every board | `AUDIO_PROBE` | a bench diagnostic |
 
 The DM-32UV puts the state the core marks `ODR_CPU_RAM` in its low RAM below the codec window, and keeps the
-network's buffers in main RAM ([hardware-dm32.md](spec/hardware-dm32.md) 17.1). With that, everything else is on.
+network's buffers in main RAM ([hardware-dm32.md](spec/hardware-dm32.md) 17.1). With that, everything else whose glue is
+written is on.
 
 ## Adding a feature
 
@@ -182,5 +217,7 @@ network's buffers in main RAM ([hardware-dm32.md](spec/hardware-dm32.md) 17.1). 
    size from it; `site/build.py --strict` fails without the row), and check the build links with the switch off (`make BOARD=<b> CONFIG_X=n BUILD=build/test-x`).
    `tools/ci.sh` builds every board with each default-on switch off alone, an FM-minimal and a maximal
    configuration, all with zero warnings, and reports the image sizes (`docs/testing/README.md`). The maximal
-   configuration leaves out the switches a board lists in `BOARD_UNSUPPORTED` (its `config.mk`): features its
-   hardware support doesn't have, such as the HR_C6000-only SFR glue on the MD-380.
+   configuration leaves out the switches a board lists in `BOARD_UNSUPPORTED` (its `config.mk`: what its hardware
+   can't do, such as SFR on the MD-380's HR_C5000) or `BOARD_NOT_WRITTEN` (what its code doesn't do yet). Leaving the not-written switches out keeps the maximal build to code that
+   runs on the radio: built on, they can fill a radio's memory (one radio's maximal build reached 99% of its CCM
+   RAM), and any shared addition would then fail CI on unrelated pull requests.

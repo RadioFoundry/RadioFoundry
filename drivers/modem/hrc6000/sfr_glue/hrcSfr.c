@@ -46,7 +46,7 @@ static const uint8_t SYNC_PATTERNS[4][6] = {
 #define BURST_STUCK_MS						100	// the timeslot interrupts stopped while a burst was on: back to receive
 #define NO_TIMESLOT_MS						100	// no timeslot interrupt for this long: the HR-C6000 has no slot timing
 
-static sfrEngine_t engine;// in the main RAM: the CCM is full on the DM-1701
+static sfrEngine_t engine;// in the main RAM: the CCM is full on the largest STM32 build
 
 #define UPLINK_SIZE							8	// 480 ms of bursts heard, for the hotspot's task
 static sfrBurst_t uplink[UPLINK_SIZE];

@@ -629,14 +629,6 @@ static void entry_range(const char *digits, int len, uint32_t *lo, uint32_t *hi)
 	*hi = *lo + span - unit;
 }
 
-bool ui_in_band(uint32_t hz, bool tx)
-{
-	for (int i = 0; i < board.band_count; i++)
-		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz && (!tx || board.bands[i].tx))
-			return true;
-	return false;
-}
-
 bool ui_freq_entry_digit(char *digits, uint8_t *len, char d)
 {
 	static char hint[40];
@@ -668,7 +660,7 @@ uint32_t ui_freq_entry_hz(const char *digits, uint8_t len)
 	}
 	uint32_t lo, hi;
 	entry_range(digits, len, &lo, &hi);
-	if (!ui_in_band(lo, false)) {
+	if (!board_in_band(lo, false)) {
 		ui_toast("Not in a band: type more digits");
 		return 0;
 	}

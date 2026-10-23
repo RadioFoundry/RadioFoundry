@@ -3,6 +3,8 @@
 """The split duplex extension on one radio (a CONFIG_HOTSPOT_SPLIT=y build; docs/spec/split-duplex.md 10). Every
 test skips on a build without it.
 
+- test_split_capability (no RF): the capability gate. The build has the extension and INFO offers both halves; it
+  skips (no_hw) on a radio whose modem glue offers neither or one, and a bring-up run counts that skip as a failure.
 - test_split_protocol (no RF): GET_VERSION announces " SPLIT1"; INFO offers the TX and RX halves; SET_ROLE 2 (the RX
   half never transmits) and back to 0; STATUS; an unknown 0xD6 sub-command answers result 1; an unknown command is
   still NAKed 1; the debug link's SPLIT view answers.
@@ -42,6 +44,8 @@ import time
 
 import pytest
 
+from odr_hil import skip
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 TX_SECONDS = 10.0
@@ -50,15 +54,15 @@ TX_SECONDS = 10.0
 def need_split(radio):
     feats = radio.features()
     if "HOTSPOT_SPLIT" not in feats:
-        pytest.skip("built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
+        skip("not_built", "built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
 
 
 def need_role(r, sdh, role):
     """Skip unless the radio offers the split duplex role (INFO "offered": bit 0 TX half, bit 1 RX half)"""
     _, info = sdh.require_split(r)
     if not info["offered"] & (1 << (role - 1)):
-        pytest.skip(f"the radio doesn't offer split duplex role {role} (offered {info['offered']}: its modem glue has "
-                    f"no slot clock or base-station hooks)")
+        skip("no_hw", f"the radio doesn't offer split duplex role {role} (offered {info['offered']}: its modem glue "
+                      f"has no slot clock or base-station hooks)")
 
 
 def leave_hotspot(radio):
@@ -66,6 +70,24 @@ def leave_hotspot(radio):
     radio.wait_for(lambda x: x.get("hostlink") == "idle", 5, sections=("hotspot",), what="hotspot left")
 
 
+@pytest.mark.feature("split_duplex", gate=True)
+def test_split_capability(radio):
+    need_split(radio)
+    import split_duplex_host as sdh
+    with radio.released() as port:
+        r = sdh.Radio(port, "radio", dtr=False)
+        try:
+            _, info = sdh.require_split(r)
+        finally:
+            r.close()
+    leave_hotspot(radio)
+    print(f"INFO {info}")
+    if info["offered"] & 3 != 3:
+        skip("no_hw", f"the radio offers split duplex roles {info['offered']}, not both halves (3): its modem glue "
+                      f"has no slot clock or base-station hooks")
+
+
+@pytest.mark.feature("split_duplex")
 def test_split_protocol(radio):
     need_split(radio)
     import split_duplex_host as sdh
@@ -76,7 +98,7 @@ def test_split_protocol(radio):
             ver, info = sdh.require_split(r)
             assert ver == 1
             if info["offered"] == 0:
-                pytest.skip("the radio doesn't offer split duplex (its modem glue has no slot clock)")
+                skip("no_hw", "the radio doesn't offer split duplex (its modem glue has no slot clock)")
             assert info["offered"] & 3 == 3, info
             assert info["role"] == sdh.ROLE_NORMAL
             print(f"INFO {info} (cach method {sdh.CACH_METHODS.get(info['cach'])})")
@@ -106,7 +128,7 @@ def test_split_align(radio):
         try:
             _, info = sdh.require_split(r)
             if not info["caps"] & sdh.CAP_ALIGN:
-                pytest.skip(f"the radio's modem driver can't move its slot clock (caps 0x{info['caps']:04x})")
+                skip("no_hw", f"the radio's modem driver can't move its slot clock (caps 0x{info['caps']:04x})")
             print(f"INFO {info}")
             sdh.setup_half(r, hz, hz, 0, 1)
             sdh.set_role(r, sdh.ROLE_TX, power_cap=1)
@@ -218,6 +240,7 @@ def tx_half_cach(bs):
     return cach, ok, alt, {c["at"] for c in ok}, good, len(slcs) - good
 
 
+@pytest.mark.feature("split_duplex")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
@@ -268,6 +291,7 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
         assert slc_good >= 10 and slc_bad == 0, f"short LC {slc_good} ok, {slc_bad} bad"
 
 
+@pytest.mark.feature("split_duplex")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
@@ -305,7 +329,7 @@ def test_split_slew(radio):
         try:
             _, info = sdh.require_split(r)
             if not info["caps"] & sdh.CAP_SLEW:
-                pytest.skip(f"the radio's modem driver can't trim a slot (caps 0x{info['caps']:04x})")
+                skip("no_hw", f"the radio's modem driver can't trim a slot (caps 0x{info['caps']:04x})")
             sdh.setup_half(r, hz, hz, 0, 1)
             sdh.set_role(r, sdh.ROLE_TX, power_cap=1)
             sync = sdh.ClockSync()
@@ -364,7 +388,7 @@ def test_split_tx_sched(radio, sdr_bench, pytestconfig):
             try:
                 _, info = sdh.require_split(r)
                 if not info["caps"] & sdh.CAP_SCHED:
-                    pytest.skip(f"no scheduled stream on this radio (caps 0x{info['caps']:04x})")
+                    skip("no_hw", f"no scheduled stream on this radio (caps 0x{info['caps']:04x})")
                 sdh.setup_half(r, hz, hz, 0, cc)        # RF level 0: the lowest step
                 sdh.set_role(r, sdh.ROLE_TX, power_cap=1, stream=1)
                 sync = sdh.ClockSync()
@@ -529,6 +553,7 @@ def check_rx_labels(first, marks, ups, results, meta=None):
         assert all(m["cc"] == meta[0]["cc"] for m in meta if m["flags"] & sdh.META_CRC_OK)
 
 
+@pytest.mark.feature("split_duplex")
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem

@@ -13,7 +13,7 @@ static int checks;
 
 enum { K_OK, K_SK1, K_SK2, K_TOP, K_PTT };
 
-// The DM-1701's side keys: SK1 monitor (held), SK2 talk target / scan, top power / emergency
+// Side keys as on a typical handheld: SK1 monitor (held), SK2 talk target / scan, top power / emergency
 static const keymap_entry_t base[] = {
 	{ K_OK, ACT_SELECT, ACT_SELECT, false, false, 0 },
 	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
@@ -236,7 +236,7 @@ static void test_engine(void)
 // press (docs/ux/information-architecture.md 2). Read from the boards' sources: they don't build on the host
 static void test_board_defaults(void)
 {
-	static const char *const boards[] = { "db25d", "dm1701", "dm1801pro", "dm32", "md380" };
+	static const char *const boards[] = { BOARD_IDS };	// the Makefile lists boards/*/board.c
 	int toggles = 0;
 	for (unsigned b = 0; b < sizeof boards / sizeof boards[0]; b++) {
 		char path[64];
@@ -260,7 +260,7 @@ static void test_board_defaults(void)
 		}
 		fclose(f);
 	}
-	CHECK(toggles == 1);	// the DM-1801 Pro's VFO/MR key
+	CHECK(toggles == 1);	// a VFO/MR key
 }
 
 int main(void)

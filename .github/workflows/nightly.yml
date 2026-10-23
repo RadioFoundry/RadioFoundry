@@ -2,15 +2,17 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
 # Nightly CI (docs/dev/ci.md): the long builds the per-push workflow leaves out, on the default branch.
-#   matrix       DM-1701 and MD-380: a build per feature switch turned off alone, fm-minimal and maximal (LTO), each
-#                with zero warnings and its size (tools/ci.sh --matrix; about 4-5 minutes per board on the runner)
-#   csky-matrix  the same for the DM-32UV, DM-1801 Pro and DB25-D in the csky-elf image (skipped where the image
-#                isn't available)
+#   matrix       one job per toolchain (Arm, C-SKY), every board built with it from the registry: a build per feature
+#                switch turned off alone, fm-minimal and maximal, each with zero warnings and its size (tools/ci.sh
+#                --matrix --toolchain; about 4-5 minutes per board on the runner). C-SKY in the csky-elf image unless
+#                the runner has csky-elf GCC (skipped where the image isn't available)
 #   reuse        `reuse lint`, reported as a warning until the tree passes it
-# A scheduled run does nothing when the commit it would test already passed a nightly run: a successful run saves
-# an empty cache entry named after the commit (nightly-ok-<sha>), and the next scheduled run looks that name up
-# first. That works the same on Gitea and GitHub (no API token, no clock arithmetic), catches up after nights the
-# runner was off, and an evicted entry only costs one repeated run. A manual run (workflow_dispatch) always builds.
+# A scheduled run builds only what changed since the last commit that passed: a successful run saves a cache entry
+# named after its commit (nightly-ok-<sha>, holding the sha), and the next scheduled run restores the newest one and
+# diffs against it. The matrix runs when a file the firmware builds read changed (ci.yml's paths), reuse lint when
+# any file did. A night with no firmware change records its commit as passed without building. That works the same
+# on Gitea and GitHub (no API token, no clock arithmetic), catches up after nights the runner was off, and an evicted
+# entry only costs one repeated run. A manual run (workflow_dispatch) always builds.
 name: Nightly
 
 on:
@@ -25,10 +27,6 @@ concurrency:
   group: nightly-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  ARM_GCC_VERSION: "13.3.rel1"
-  ARM_GCC_SHA256: "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4"
-
 jobs:
   changes:
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
@@ -36,117 +34,105 @@ jobs:
     timeout-minutes: 5
     outputs:
       run: ${{ steps.decide.outputs.run }}
+      reuse: ${{ steps.decide.outputs.reuse }}
     steps:
-      - name: Look up this commit's nightly pass
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the last passed commit must be here to diff against
+          submodules: false
+      # the newest nightly-ok-* entry: this commit's (an exact hit) or the last commit that passed (a prefix match)
+      - name: Look up the last nightly pass
         id: tested
         if: github.event_name == 'schedule'
         uses: actions/cache/restore@v4
         with:
           path: .nightly-ok
           key: nightly-ok-${{ github.sha }}
-          lookup-only: true
+          restore-keys: nightly-ok-
       - id: decide
         run: |
-          if [ "${{ steps.tested.outputs.cache-hit }}" = true ]; then
-            echo "::notice::${GITHUB_SHA::8} already passed a nightly run; nothing new to build"
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=true" >> "$GITHUB_OUTPUT"
+          set -u
+          decide() { echo "run=$1" >> "$GITHUB_OUTPUT"; echo "reuse=$2" >> "$GITHUB_OUTPUT"; echo "::notice::$3"; exit 0; }
+          [ "${{ github.event_name }}" = schedule ] || decide true true "run by hand"
+          [ "${{ steps.tested.outputs.cache-hit }}" = true ] && decide false false "${GITHUB_SHA::8} already passed a nightly run"
+          last=$(cat .nightly-ok/sha 2> /dev/null || true)
+          [ -n "$last" ] || decide true true "no earlier nightly pass to compare with"
+          git cat-file -e "$last^{commit}" 2> /dev/null || decide true true "last passed commit $last not in the history"
+          git diff --name-only "$last" HEAD > "$RUNNER_TEMP/files"
+          [ -s "$RUNNER_TEMP/files" ] || decide false false "no change since ${last::8} passed"
+          # what the firmware builds read (ci.yml's paths, less the tests and license files)
+          if grep -qE '^(Makefile|\.gitmodules|\.github/actions/|\.github/workflows/nightly\.yml$|(boards|boot|config|core|drivers|hal|platform|third_party|tools)/)' \
+            "$RUNNER_TEMP/files"; then
+            decide true true "firmware inputs changed since ${last::8} passed"
           fi
+          { echo "run=false"; echo "reuse=true"; echo "mark=true"; } >> "$GITHUB_OUTPUT"
+          echo "::notice::no firmware input changed since ${last::8} passed: matrix skipped, this commit counts as passed"
+      # nothing the builds read changed, so this commit's matrix would be the last pass's: record it as passed here,
+      # without the mark job, so later nights diff against it
+      - name: Remember that this commit passed
+        if: steps.decide.outputs.mark == 'true'
+        run: mkdir -p .nightly-ok && echo "$GITHUB_SHA" > .nightly-ok/sha
+      - if: steps.decide.outputs.mark == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .nightly-ok
+          key: nightly-ok-${{ github.sha }}
 
   matrix:
+    # one job per toolchain: every board built with it in turn (tools/ci.sh --toolchain, from the registry), so the
+    # checkout, submodules and compiler are set up once per toolchain, not once per radio
+    name: matrix (${{ matrix.name }})
     needs: changes
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
     runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        board: [dm1701, md380]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
-      - name: third_party submodules
-        run: tools/checkout-submodules.sh
-      - uses: actions/cache@v4
-        if: runner.environment != 'self-hosted'   # the self-hosted image has the toolchain
-        with:
-          path: ~/opt/arm-gnu-toolchain-${{ env.ARM_GCC_VERSION }}-x86_64-arm-none-eabi
-          key: arm-gnu-${{ env.ARM_GCC_VERSION }}-${{ hashFiles('tools/install-arm-toolchain.sh') }}
-      - name: Arm GNU Toolchain (pinned, trimmed to the Cortex-M4 multilib)
-        run: tools/install-arm-toolchain.sh
-      - name: Feature matrix
-        env:
-          ODR_CI_PRUNE: "1"   # keep the logs and images, not the build trees (about 65 MB each)
-        run: |
-          set -u
-          rc=0
-          tools/ci.sh --matrix --steps firmware --board ${{ matrix.board }} || rc=$?
-          cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
-          exit "$rc"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: matrix-${{ matrix.board }}
-          path: |
-            build/ci/size-report.md
-            build/ci/*.log
-          if-no-files-found: ignore
-
-  csky-matrix:
-    needs: changes
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        board: [dm32, dm1801pro, db25d]
+        # the [toolchain] ids of platform/*/platform.toml, with their names; a new platform on a toolchain listed here
+        # needs no edit, a new toolchain gets an entry here and its set-up in .github/actions/toolchain
+        include:
+          - { toolchain: arm, name: Arm }
+          - { toolchain: csky, name: C-SKY }
     permissions:
       contents: read
-      packages: read   # pulling a private ghcr.io image with the job token
-    env:
-      ODR_CSKY_IMAGE: ${{ vars.ODR_CSKY_IMAGE || 'odr/csky-gcc14:latest' }}
-      ODR_CI_PRUNE: "1"
+      packages: read   # pulling a private ghcr.io csky-elf image with the job token
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       - name: third_party submodules
         run: tools/checkout-submodules.sh
-      - name: Log in to the image's registry
-        if: vars.ODR_CSKY_REGISTRY != ''
-        env:
+      - name: Toolchain (platform.toml [toolchain])
+        id: tc
+        uses: ./.github/actions/toolchain
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          image: ${{ vars.ODR_CSKY_IMAGE }}
+          registry: ${{ vars.ODR_CSKY_REGISTRY }}
           # a read-only registry token (secret); on GitHub a ghcr.io package linked to this repository takes the job's
           # own token (packages: read)
-          REGISTRY_TOKEN: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
-          REGISTRY_USER: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
-        run: |
-          command -v csky-elf-gcc > /dev/null && exit 0   # the self-hosted image: no Docker, no image to pull
-          echo "$REGISTRY_TOKEN" | docker login "${{ vars.ODR_CSKY_REGISTRY }}" -u "$REGISTRY_USER" --password-stdin
-      - name: ${{ matrix.board }} feature matrix in the csky-elf image
+          registry-user: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
+          registry-token: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
+      - name: Feature matrix of every board on the toolchain
+        env:
+          ODR_CI_PRUNE: "1"   # keep the logs and images, not the build trees (about 65 MB each)
+          RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
+          TOOLCHAIN: ${{ matrix.toolchain }}
         run: |
           set -u
           rc=0
-          if command -v csky-elf-gcc > /dev/null; then   # the self-hosted image has the toolchain
-            tools/ci.sh --matrix --steps firmware --board ${{ matrix.board }} || rc=$?
-          else
-            tools/docker/csky-toolchain/run.sh tools/ci.sh --matrix --steps firmware --board ${{ matrix.board }} || rc=$?
-          fi
+          $RUN tools/ci.sh --matrix --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
           if [ "$rc" = 3 ]; then
-            echo "::notice::${{ matrix.board }} matrix skipped: the csky-elf image $ODR_CSKY_IMAGE isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::$TOOLCHAIN matrix skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
-      - name: Log out of the registry
-        if: always() && vars.ODR_CSKY_REGISTRY != ''
-        run: command -v csky-elf-gcc > /dev/null || docker logout "${{ vars.ODR_CSKY_REGISTRY }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: matrix-${{ matrix.board }}
+          name: matrix-${{ matrix.toolchain }}
           path: |
             build/ci/size-report.md
             build/ci/*.log
@@ -154,7 +140,7 @@ jobs:
 
   reuse:
     needs: changes
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
+    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.reuse == 'true')
     runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
@@ -171,13 +157,13 @@ jobs:
           fi
 
   mark:
-    needs: [matrix, csky-matrix]
+    needs: [matrix]
     if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
     runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Remember that this commit passed
-        run: mkdir -p .nightly-ok && date -u > .nightly-ok/stamp
+        run: mkdir -p .nightly-ok && echo "$GITHUB_SHA" > .nightly-ok/sha   # the next run diffs against it
       - uses: actions/cache/save@v4
         with:
           path: .nightly-ok

@@ -193,20 +193,20 @@ its stock address ([codec-placement.md](codec-placement.md), "STM32 radios").
 | descriptor | 0x080FFF80 (end of sector 11) | 128 | its own (`platform/stm32f4/codec_desc.h`), tag 0x2032 |
 
 * **Flash map.** The application gets sectors 3-7, 0x0800C000..0x0807FFFF, 464 KB in one piece, and
-  `boards/md380/md380.ld` asserts that the image ends before 0x08080000. The codec uses sectors 8, 10 and 11. Sector
+  `boards/md380/memory.ld` asserts that the image ends before 0x08080000. The codec uses sectors 8, 10 and 11. Sector
   9 (0x080A0000..0x080BFFFF) holds nothing. The stock file keeps the code at 0x08050C44, inside sectors 6 and 7, so
   the stock layout leaves the application only 275 KB.
 * **Updates.** No codec byte shares a sector with the application, so an update writes sectors 3-7 only and keeps the
-  codec (`boards.py` MD380: `keep_codec_supported=True`; the STM32 stub `stub/f4stub.py` owns sectors 3-7). The codec
+  codec (`boards/md380/board.toml`: `keep_codec = true`; the STM32 stub `stub/f4stub.py` owns sectors 3-7). The codec
   is merged on a first install from stock, or when it can't be kept or checked. It comes from the stock file, or from
   the copy the flashing tools keep: odrflash and the web flasher read the codec from a radio running ODR over the
   debug link (READ_MEM), in the stock or the placed layout, check it against the profile hashes and save it on the
   computer (odrflash's config directory, the browser's IndexedDB; `odrflash/codecsave.py`,
   `site/static/js/flasher/codecsave.js`).
-* **Boot check (`boards/md380/vocoder_md380.c`).** Once, before the first call: the descriptor (its own CRC, tag
-  0x2032, the code and every table window at the addresses and with the CRCs above), then the signature word
-  0x4FF0E92D at 0x080E0000, then the CRC-32 of every window (about 112 KB). Otherwise the vocoder reports no codec and
-  the radio is FM only. Entry points are offsets from the code start (encode +0x14C, decode +0x604, the rest in
+* **Boot check (`platform/stm32f4/hrc/vocoder.c`, this build's profile in `boards/md380/vocoder_md380.c`).** Once,
+  before the first call: the descriptor (its own CRC, tag 0x2032, the code and every table window at the addresses
+  and with the CRCs above), then the signature word 0x4FF0E92D at 0x080E0000, then the CRC-32 of every window (about
+  112 KB). Otherwise the vocoder reports no codec and the radio is FM only. Entry points are offsets from the code start (encode +0x14C, decode +0x604, the rest in
   `vocoder_md380.c`), the same offsets as in the stock layout.
 * **Profile id.** `md380-d2032-s11` (debug link VERSION `codec=`). A build from before the move reports
   `md380-d2032`, so the tools know the codec isn't where the new layout keeps it and ask for the stock file.

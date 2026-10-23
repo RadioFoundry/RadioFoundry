@@ -43,7 +43,7 @@ names or dates.
 | `ci` | the CI workflows and `tools/ci.sh` | `ci/nightly-dm32` |
 
 The area is the subsystem, matching the commit subjects: `aprs`, `dmr`, `fm`, `sfr`, `ui`, `hotspot`, `net`, `cps`,
-`dm1701`, and so on.
+a board id for one radio's code, and so on.
 
 ### Pull request titles
 
@@ -51,7 +51,7 @@ Pull requests are squash merged, so the title becomes the commit subject on `mai
 subject: `<Area>: <what changed>`, in the present tense, no trailing period.
 
 - `APRS: a Path row on the APRS page`
-- `DM-1701: FM receive audio for the AFSK demodulator`
+- `<Model>: FM receive audio for the AFSK demodulator` (one radio's change, under its board.toml model)
 - `Fix: SFR repeats a late-entry call's first voice burst`
 
 ### What a pull request must have
@@ -88,6 +88,8 @@ the project lead, never in public CI).
 - `core/` stays radio independent. Radio differences go through `board_t` and the `hal_*` interfaces
   ([Architecture](architecture.md)).
 - Anything that costs flash goes behind a `CONFIG_` switch ([Building](building.md)).
+- A fact about a radio that the build doesn't need goes in its `board.toml`, once ([The board registry](board-registry.md)).
+  Tools, tests and docs read the boards from the registry; none keeps a list of radios.
 - C11 (gnu11) with `-Wall -Wextra -Wshadow -Wdouble-promotion`. Zero warnings in every configuration.
 - Follow the style of the file you edit. Comments say why, not what.
 - Keep RTOS calls and blocking waits out of the UI's behavior code and the protocol engines, so the host tests can run them.
@@ -100,6 +102,27 @@ the project lead, never in public CI).
 - A UI change updates the gallery (`make -C tests/host ui-gallery`) and commits the PNGs it meant to change.
 - A parser of outside input gets a fuzz loop (`tests/host/fuzz.h`); run it under `SANITIZE=1` ([Testing](testing.md)).
 - A change that touches hardware gets a HIL test when it can be scripted ([Testing](testing.md)).
+- A HIL test skips with `odr_hil.skip(kind, reason)`, never `pytest.skip`. The kind says why (`not_built`, `no_hw`,
+  `state`, `opt_in`, `bench`, `other_board`; [tests/hil/README.md](../../tests/hil/README.md#skip-kinds)), and
+  `tools/check_hil_skips.py` fails on a skip without one.
+
+### The feature checklist
+
+`tests/hil/features.toml` has one entry per feature, no radio columns and no test lists: each HIL test names its
+feature with `@pytest.mark.feature("<id>")` ([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)).
+`tools/bringup.py check` (in `tools/ci.sh`) fails when an entry is missing or a test marks a feature that has none.
+
+| Change | What to do |
+|---|---|
+| A new switch or feature | Add a `[feature.<id>]` table: `switch`, `spec`, and `source` when the Makefile's files for the switch aren't the right ones. A feature may have no tests yet; `tools/bringup.py status` then shows "built, not yet recorded" |
+| A new HIL test | Mark it `@pytest.mark.feature("<id>")`, with `optional=True` when it shouldn't gate, `owner="..."` when it asks a person for something, and `gate=True` on the one test that checks the radio offers a feature that needs hardware glue (its capability gate). Its needs come from its markers and fixtures. A required test not written yet goes in the feature's `planned_tests` |
+| A radio lacks a feature | Add the switch to the board's `BOARD_UNSUPPORTED` in `config.mk`, one a line with the reason: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver` (state `n/a`), only when the hardware can't. When the hardware could but the code isn't written for the radio yet: `CONFIG_X ?= n` and `BOARD_NOT_WRITTEN += X  # <what is missing>` (state `not written`). Built but known not to work yet: `board.toml` `[features] <id> = { state = "unsupported", reason = "..." }`. [The rule](../build-config.md#unsupported-not-written-unconfirmed) |
+| A new radio | Nothing here: its states resolve from its build data |
+
+To record a bring-up run, the owner (or someone at the bench) runs `tools/bringup.py list --radio <id>` for the
+checklist and owner actions, then `tools/bringup.py run --radio <id> -- <HIL options>` with the radio on the debug
+link. The run takes the radio lock, counts unexcused skips as failures and writes a record to
+`docs/testing/results/<id>/`. Commit the record. Failures are allowed in a record: they are the to-do list.
 
 ## Documentation
 

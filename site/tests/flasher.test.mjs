@@ -171,6 +171,14 @@ test("a la carte selection keeps dependencies and finds prebuilt variants", () =
 	assert.ok(!s.on.has("DMR_PRIVACY"));
 	s.set("FONT_XL", true);
 	assert.ok(!s.on.has("FONT_XL"), "unsupported on this radio");
+	// the MD-380's DTMF: the hardware can, the code isn't written (BOARD_NOT_WRITTEN), so it isn't offered either
+	const md380 = json("radios.json").radios.find((r) => r.id === "md380");
+	const m = new Selection(md380, json("features.json").features, json("variants.json").variants);
+	m.useVariant("full");
+	assert.ok(md380.not_written.includes("DTMF") && !md380.unsupported.includes("DTMF"), "not written, not unsupported");
+	assert.ok(m.notWritten("DTMF") && !m.supported("DTMF"));
+	m.set("DTMF", true);
+	assert.ok(!m.on.has("DTMF"), "not written for this radio");
 });
 
 test("codeplug formats", () => {
@@ -192,8 +200,11 @@ test("first install on stock: the codec merged from the stock file, then back up
 	const m = { ...fx.manifest };
 	assert.throws(() => decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV" }), DecisionError);
 	const d = decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV", haveStock: true });
-	const { segments: codec } = await stockfw.extract(sim.stock, sim.key, sim.fb);
-	const plan = makePlan(sim.board, segments(m, image), d.mode, codec);
+	const { profile, segments: codec } = await stockfw.extract(sim.stock, sim.key, sim.fb);
+	// the merge plans against the merged file's layout; with one stock file that is the board's windows
+	assert.deepEqual(stockfw.layoutWindows(profile, sim.fb), sim.board.codec.windows);
+	assert.deepEqual(codec.map(([a, d]) => [a, d.length]), stockfw.layoutWindows(profile, sim.fb));
+	const plan = makePlan(sim.board, segments(m, image), d.mode, codec, stockfw.layoutWindows(profile, sim.fb));
 	radio.enterBootloader();
 	await new Dfu(radio.dfuTransport(), noWait).run(plan, sim.key);
 	assert.deepEqual(radio.violations, []);

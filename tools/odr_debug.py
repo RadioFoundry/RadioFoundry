@@ -461,7 +461,7 @@ class DebugLink:
         return {"switches": switches, "writes": writes, "max_lag_ms": lag, "done": r[6]}
 
     def probe_pin_tone(self, hz):
-        """A hz square wave on the board's spare output (DM-1701: PC8, the stock beep PWM); 0 = off."""
+        """A hz square wave on the board's spare output (hal_audio_tap.h); 0 = off."""
         self.request(AUDIO_PROBE, struct.pack("<BH", PROBE_PIN_TONE, hz))
 
     def probe_pin_pwm(self, top, hz, amp_permille):
@@ -1016,7 +1016,7 @@ def write_png(path, w, h, rows, scale=1):
 
 def parse_counters(lines):
     """Counters from the diagnostics lines as a flat dict: 'k=v' tokens (prefixed by the line's first word, e.g.
-    call.rx, voice.play), the DM-1701 board tokens (V H T I C D crc rc, as modem.voice etc.) and its audio line
+    call.rx, voice.play), the HR_C6000 boards' tokens (V H T I C D crc rc, as modem.voice etc.) and its audio line
     (audio.blk, audio.ov, audio.dr) and BS outbound line (bs.slots, bs.cach, ...)."""
     import re
     out = {}
@@ -1037,7 +1037,7 @@ def parse_counters(lines):
                 if m and m.group(1) in names:
                     out[f"bs.{names[m.group(1)]}"] = int(m.group(2))
             continue
-        if words[0] == "aud":           # "aud blk N ov N dr N": the DM-1701 DMR audio counters
+        if words[0] == "aud":           # "aud blk N ov N dr N": the HR_C6000 boards' DMR audio counters
             for k, v in zip(words[1::2], words[2::2]):
                 if as_int(v) is not None:
                     out[f"audio.{k}"] = as_int(v)
@@ -1403,10 +1403,13 @@ def print_chip(c):
     print(f"bor      level {['3 (2.7 V)', '2 (2.4 V)', '1 (2.1 V)', 'off'][c['bor']]}")
     u = c["user"]
     print(f"user     WDG_SW={u & 1} nRST_STOP={(u >> 1) & 1} nRST_STDBY={(u >> 2) & 1}")
-    if c["rdp"] != 0:
-        print("\n*** WARNING: RDP is not level 0. Do NOT use the ROM bootloader (reboot --rom-dfu is refused): it would\n"
-              "*** refuse flash writes, and its read-unprotect command mass-erases ALL flash including the stock\n"
-              "*** bootloader. Report this to the owner before doing anything else. ***", file=sys.stderr)
+    if c["rdp"] == 1:
+        # the usual state of a radio as it ships: ODR's loaders don't need level 0, only the ROM bootloader does
+        print("note     RDP level 1 is normal for a stock radio. The ROM bootloader route (reboot --rom-dfu) stays "
+              "closed:\n         leaving level 1 mass-erases all flash, the stock bootloader too", file=sys.stderr)
+    elif c["rdp"] != 0:
+        print("\n*** WARNING: RDP level 2 is permanent: the ROM bootloader and the debug port are disabled for good. "
+              "Report this\n*** to the owner before doing anything else. ***", file=sys.stderr)
     app_wrp = [s for s in c["wrp_sectors"] if s >= 3]
     if app_wrp:
         print(f"\n*** WARNING: application sectors {app_wrp} are write protected: no loader can rewrite them ***",

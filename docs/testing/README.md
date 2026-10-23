@@ -37,10 +37,11 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    C compiler. Their binaries, `.dSYM` bundles and outputs stay in `tests/host/` and are ignored by git
    (`tests/host/.gitignore` tracks only sources); `make -C tests/host clean` removes them.
 2. **Python**: every tool and HIL test parses, and pytest collects `tests/hil` (skipped without pytest:
-   `pip install pytest pyserial`). The flashing tools' tests run: `tools/odrflash/tests` (sector planning, manifests,
+   `pip install pytest pyserial`). Every HIL skip names its kind (`tools/check_hil_skips.py`), and the feature
+   checklist is consistent (`tools/bringup.py check` and the bring-up mode tests, [ci.md](../dev/ci.md)). The flashing tools' tests run: `tools/odrflash/tests` (sector planning, manifests,
    the codec library and key derivation, the codec decision, whole flashes against a fake bootloader with a flash
    model; [release.md](../dev/release.md)) and the `--self-test` of `tools/codec_extract.py`, `tools/stm32_dfu.py`,
-   `tools/md380_migrate.py`, `tools/dm32_flash.py` (against a simulated Baofeng bootloader) and
+   `tools/md380_migrate.py`, `tools/serial_loader.py` (against a simulated Baofeng bootloader) and
    `tools/dm32_migrate.py` (DfuSe files, the conversion report, CPS writes against a simulated DM-32 shim), and the
    stack check's (`tools/stack_check.py`). `tools/check_doc_links.py` checks that every relative link, image and anchor in the Markdown resolves.
 3. **Firmware, every board with the feature matrix**. For each `boards/<b>/board.mk` whose compiler is installed:
@@ -48,8 +49,8 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    - `no-<FEATURE>`: every switch that is on by default, turned off alone (its sub-features follow it,
      `docs/build-config.md`);
    - `fm-minimal`: FM only, without DMR, USB, VFO, diagnostics and sub-audio tones;
-   - `maximal`: every switch on, except the board's `BOARD_UNSUPPORTED`, with its `MAXIMAL_VARS` (for example
-     `LTO=1` on the DM-1701);
+   - `maximal`: every switch on, except the board's `BOARD_UNSUPPORTED`, `BOARD_NOT_WRITTEN` and `MAXIMAL_SKIP`,
+     with its `MAXIMAL_VARS` (for example `LTO=1` on the DM-1701);
    - `vhf`: the MD-380's VHF image (MD-380 only).
 
    Every configuration must build with zero compiler and linker warnings. The default and maximal ones must also pass
@@ -100,7 +101,8 @@ python3 -m pytest tests/hil -v -rs
 
 The radio on USB with firmware built with `CONFIG_DEBUGLINK` (the default). Nothing transmits: version and features,
 screenshots, injected keys, FM receive on NOAA weather, MMDVM requests. Without a radio every test is skipped with
-the reason. Every test file, rig assumptions and pass criteria: `tests/hil/README.md`.
+the reason, which starts with the skip's kind (`[bench]`). Every test file, rig assumptions and pass criteria:
+`tests/hil/README.md`. A radio's feature checklist run is `tools/bringup.py run --radio <id>` (its "Bring-up mode").
 
 The USB network tests (`test_usb_network*.py`, `test_tcp_services.py`, `test_net_services.py`, `test_snmp.py`) switch
 the radio to the network personality and back, so they need `--allow-usb-switch`. On macOS a missed NCM carrier can

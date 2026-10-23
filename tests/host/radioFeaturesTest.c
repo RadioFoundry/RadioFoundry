@@ -187,6 +187,12 @@ static const hal_power_t fake_power = {
 	.led = p_led, .battery_mv = p_battery_mv, .battery_pct = p_battery_pct, .mic_level = p_mic,
 	.vibrate = p_vibrate,
 };
+// A mobile that measures its DC input (supply_mv) and has no battery; the battery hooks stay to show they aren't read
+static uint16_t p_supply_mv(void) { return hw.battery_mv; }
+static const hal_power_t fake_supply_power = {
+	.led = p_led, .battery_mv = p_battery_mv, .battery_pct = p_battery_pct, .mic_level = p_mic,
+	.vibrate = p_vibrate, .supply_mv = p_supply_mv,
+};
 
 static struct {
 	int starts, stops;
@@ -2237,10 +2243,36 @@ static void test_no_battery(void)
 	run(80000);
 	beep_get_stats(&b1);
 	CHECK(sm.view.battery == RADIO_BATT_OK && sm.view.battery_mv == 0 && sm.view.battery_pct == 0);
-	CHECK(b1.played == b0.played && !sm.view.power_off);
+	CHECK(b1.played == b0.played && !sm.view.power_off && sm.view.supply_mv == 0);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX);
 	req(RREQ_PTT, 0);
+	board.caps &= ~CAP_NO_BATTERY;
+}
+
+// A supply reading (CAP_NO_BATTERY with hal_power_t.supply_mv): the view carries the reading, and nothing
+// battery-only acts on it: no level, percentage, warning beep, TX refusal or power off, however low it reads
+// (test_no_battery: without supply_mv the radio measures nothing)
+static void test_supply_voltage(void)
+{
+	board.caps |= CAP_NO_BATTERY;
+	board.power = &fake_supply_power;
+	start();
+	hw.battery_mv = 13800;
+	run(3000);
+	CHECK(sm.view.supply_mv == 13800 && sm.view.battery_mv == 0 && sm.view.battery_pct == 0);
+	hw.battery_mv = 100;
+	settings(set_batt_off);
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
+	run(80000);
+	beep_get_stats(&b1);
+	CHECK(sm.view.supply_mv == 100 && sm.view.battery == RADIO_BATT_OK && b1.played == b0.played &&
+	      !sm.view.power_off);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	board.power = &fake_power;
 	board.caps &= ~CAP_NO_BATTERY;
 }
 
@@ -2681,6 +2713,7 @@ int main(void)
 	test_vox();
 	test_battery();
 	test_no_battery();
+	test_supply_voltage();
 	test_battery_save();
 	test_dmr_beeps();
 	test_dmr_short_press_wake();

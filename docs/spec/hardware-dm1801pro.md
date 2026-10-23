@@ -364,9 +364,9 @@ flash 0x0300C000, whose first words match this radio's (K for the DM-32UV files)
 | 0x0FD | ASCII `END` |
 | 0x100 | the raw application, linked for 0x0300C000, at most 0xF4000 bytes. No checksum, no length field |
 
-Such a file can be made from an ODR image the way `tools/dm32_pack.py` makes a DM-32UV one, and `tools/dm32_flash.py
+Such a file can be made from an ODR image with `tools/serial_loader.py --model dm1801pro IMAGE --wrap FILE`, and `tools/serial_loader.py
 --model dm1801pro` takes it and strips the header. Whether the stock updater checks anything more is not known (?).
-`tools/dm32_flash.py --model dm1801pro` writes a raw image through this protocol: about ten flashes on 2026-10-15, no
+`tools/serial_loader.py --model dm1801pro` writes a raw image through this protocol: about ten flashes on 2026-10-15, no
 refused block, erase about 12.6 s (R). The loader at 0x1000 is never written. The stock application is 0xB3780 bytes
 (flash 0x0C000-0xBF77F).
 
@@ -528,6 +528,9 @@ talks to it, and DMR voice works with the radio's own codec (5.6), so ODR's code
 
 The SoC's I2C2 at 0x14080000, set up as on the DM-32UV ([hardware-dm32.md](hardware-dm32.md) 3.3): CON 0x65, INTR_MASK
 0x40, SCL counts for 400 kHz, FIFO thresholds 6. Address 0x70. K.
+
+The board has a 32.768 kHz crystal and a 3 V backup cell for the clock, so it keeps time through power-off (owner,
+board inspection, 2026-10-22).
 
 | Register | Use |
 |---|---|

@@ -31,6 +31,7 @@ import time
 
 import pytest
 
+from odr_hil import skip
 from odr_debug import DebugLink, DebugLinkError, as_int
 from test_fm_tx import fm_vfo  # noqa: F401  (the fixture)
 
@@ -92,6 +93,9 @@ def segments(text):
     return out
 
 
+@pytest.mark.feature("fm", optional=True, owner=(
+        "key PTT and speak or whistle into the microphone in each recording window; on a radio whose programming "
+        "cable mutes the microphone, take the cable out for each over"))
 @pytest.mark.manual
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
@@ -101,9 +105,9 @@ def test_mic_gain_deviation(fm_vfo, sdr_bench, pytestconfig):
     L = radio.link
     f = features(radio)
     if "set.mic_gain" not in f:
-        pytest.skip("firmware without the mic gain view keys")
+        skip("not_built", "firmware without the mic gain view keys")
     if f.get("set.mic_gain_board") != "1":
-        pytest.skip("this board has no mic gain in its audio path (hal_radio_t.mic_gain): FM isn't changed")
+        skip("no_hw", "this board has no mic gain in its audio path (hal_radio_t.mic_gain): FM isn't changed")
     steps = [int(s) for s in pytestconfig.getoption("--mic-gain-steps").split(",") if s.strip()]
     assert steps and all(0 <= s <= 10 for s in steps), f"--mic-gain-steps out of 0-10: {steps}"
     window = pytestconfig.getoption("--mic-gain-window")

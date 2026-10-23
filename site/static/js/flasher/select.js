@@ -16,7 +16,12 @@ export class Selection {
 	}
 
 	supported(name) {
-		return !this.radio.unsupported.includes(name) && name !== "AUDIO_PROBE";
+		return !this.radio.unsupported.includes(name) && !this.notWritten(name) && name !== "AUDIO_PROBE";
+	}
+
+	// the hardware can, but the radio's code isn't written yet (config.mk BOARD_NOT_WRITTEN): not offered either
+	notWritten(name) {
+		return (this.radio.not_written || []).includes(name);
 	}
 
 	required(name) {
@@ -72,7 +77,7 @@ export class Selection {
 	}
 
 	// For a custom selection: the make command that builds it
-	// options: build options such as the MD-380's band ({MD380_BAND: "vhf"}), radio.json build_options
+	// options: build options such as the MD-380's band ({BAND: "vhf"}), radios.json build_options
 	makeCommand(options = {}) {
 		const full = new Set(this.radio.config.full);
 		const args = Object.entries(options).map(([k, v]) => `${k}=${v}`).concat(

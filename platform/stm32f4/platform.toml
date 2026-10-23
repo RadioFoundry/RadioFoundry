@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+# The STM32F4 platform's registry entry (tools/boards.py): what the tools and CI need to know about every board on it.
+# The build itself reads platform.mk, never this file.
+
+id = "stm32f4"
+isa = "arm"
+# The SoC every board on the platform has (a board's [hardware] cpu overrides it for the site's table)
+cpu = "STM32F405"
+# The compiler print-cc names and what installs it when it's missing (ci.sh's skip message), in its own table at the
+# end of this file
+# Built by ci.sh with this platform's compiler when any of its boards is selected: the flash stub CONFIG_STUB_ENTRY loads
+stubs = ["stub/stm32f4"]
+# Every board's [flash.stub] is its record for that stub (stub/f4stub.py, stub-stm32f4.md 5.2): the SPI flash's bus,
+# mode and clock, with its pins from pins.h. spi_af: the alternate function of SPI1, SPI2 and SPI3 (the STM32F405 data
+# sheet, alternate function map: AF5 for SPI1 and SPI2, AF6 for SPI3)
+board_stub = { tool = "f4stub", keys = ["spi"], optional = ["idle_cs"], spi_af = [5, 5, 6] }
+# Linker symbols every board's scripts must define: none (the codec windows come from the stock file)
+codec_symbols = []
+# Program flash starts here. The factory bootloader holds the flash from here to a board's image (its linker FLASH
+# origin), which is never written
+flash_base = 0x08000000
+# The geometry a board's [flash] sectors names unless it says otherwise
+default_sectors = "f405"
+
+# Flash geometries: [index, address, size] in the order the stock bootloader erases them. STM32F405, 1 MB: sectors 0-3
+# 16 KB, 4 64 KB, 5-11 128 KB (reference manual, flash module organization). A board's sectors are those from its image
+# up; the ones below hold the bootloader
+[sectors]
+f405 = [
+	[0, 0x08000000, 0x4000],
+	[1, 0x08004000, 0x4000],
+	[2, 0x08008000, 0x4000],
+	[3, 0x0800C000, 0x4000],
+	[4, 0x08010000, 0x10000],
+	[5, 0x08020000, 0x20000],
+	[6, 0x08040000, 0x20000],
+	[7, 0x08060000, 0x20000],
+	[8, 0x08080000, 0x20000],
+	[9, 0x080A0000, 0x20000],
+	[10, 0x080C0000, 0x20000],
+	[11, 0x080E0000, 0x20000],
+]
+
+# The toolchain CI and releases build with. version and sha256 are the pinned Arm GNU Toolchain release and the
+# SHA-256 of its Linux x86_64 archive: tools/install-arm-toolchain.sh installs that and nothing else. No container
+# image: the runner installs the toolchain. id and name: the toolchain's CI job (firmware (Arm)) and its
+# .github/actions/toolchain set-up; every platform with this id builds in that job and must pin the same toolchain
+[toolchain]
+id = "arm"
+name = "Arm"
+cc = "arm-none-eabi-gcc"
+build = "tools/install-arm-toolchain.sh"
+version = "13.3.rel1"
+sha256 = "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4"

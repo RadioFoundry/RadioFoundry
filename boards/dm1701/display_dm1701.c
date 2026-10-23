@@ -55,8 +55,8 @@ void dm1701_lcd_pins_fsmc(void)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();	// the port registers are shared with other pins on PD and PE
-	set_af12(GPIOD, KEY_COLS_PORTD);
-	set_af12(GPIOE, KEY_COLS_PORTE);
+	set_af12(GPIOD, STM32_FSMC_D0_D3);
+	set_af12(GPIOE, STM32_FSMC_D4_D7);
 	__set_PRIMASK(primask);
 }
 
@@ -224,7 +224,7 @@ static void init(void)
 	fsmc_init();
 	bl_init();
 
-	if (!dm1701_flash_read_security(3, 0x1D, &type, 1)) {
+	if (!stm32_spi_flash_read_security(3, 0x1D, &type, 1)) {
 		type = 0;
 	}
 	panel.type = type & 3;

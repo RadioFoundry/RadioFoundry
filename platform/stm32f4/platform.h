@@ -55,6 +55,25 @@ void stm32_pin_in(GPIO_TypeDef *port, uint16_t pins, uint32_t pull);
 void stm32_pin_af(GPIO_TypeDef *port, uint16_t pins, uint8_t af, bool open_drain, uint32_t pull);
 void stm32_pin_analog(GPIO_TypeDef *port, uint16_t pins);
 
+// SPI master on the registers (spi.c): mode from cpol / cpha, clock PCLK / 2^(br + 1), software chip select
+void stm32_spi_master_init(SPI_TypeDef *spi, bool cpol, bool cpha, uint8_t br);
+// Byte at a time, polled: tx NULL sends 0xFF, rx NULL discards. False on a stuck peripheral
+bool stm32_spi_xfer(SPI_TypeDef *spi, const uint8_t *tx, uint8_t *rx, uint32_t len);
+
+// The FSMC data lines D0-D3 on port D and D4-D7 on port E (the 8-bit LCD bus; a keypad may share them, fsmc_keypad)
+#define STM32_FSMC_D0_D3	(GPIO_PIN_14 | GPIO_PIN_15 | GPIO_PIN_0 | GPIO_PIN_1)
+#define STM32_FSMC_D4_D7	(GPIO_PIN_7 | GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10)
+
+// USB identity (a board's board_usb_ids): the IDs the aftermarket firmware enumerates with, so existing hosts find the
+// radio: qdmr and the open-firmware CPS look for this pair, MMDVMHost and the SDR bench tools only need the serial port.
+// 0x1FC9 is NXP's vendor ID, not ours: a release should move to an ID of its own (for example a pid.codes PID under
+// 0x1209) once the host tools know it
+#define STM32_USB_VID		0x1FC9
+#define STM32_USB_PID_SERIAL	0x0094
+#define STM32_USB_PID_NETWORK	0x0096
+// usb_ids_t.serial_number: the chip's 96-bit unique ID in hex (usb.c, CONFIG_USB)
+void stm32_usb_serial_number(char *buf, uint8_t len);
+
 static inline void stm32_pin_write(GPIO_TypeDef *port, uint16_t pins, bool level)
 {
 	port->BSRR = level ? pins : ((uint32_t)pins << 16);

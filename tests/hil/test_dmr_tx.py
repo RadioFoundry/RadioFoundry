@@ -62,7 +62,7 @@ import warnings
 
 import pytest
 
-from odr_hil import DebugLinkError
+from odr_hil import DebugLinkError, skip
 
 PTT_S = 3.0
 # dmr_bench.check_tx items that judge the waveform, meaningless in a capture whose ADC clipped
@@ -99,13 +99,14 @@ def talker_alias_on_air(bursts):
     return bytes(chars).decode("latin-1")
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.sdr_rx
 def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
@@ -114,7 +115,7 @@ def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     own, target, private = int(d["dmr.own_id"]), int(d["dmr.target_id"]), d.get("dmr.target_private") == "1"
     ch_cc = int(radio.view(["channel"])["ch.color_code"])
     if own == 0:
-        pytest.skip("the radio has no DMR ID (dmr.own_id=0)")
+        skip("state", "the radio has no DMR ID (dmr.own_id=0)")
     assert ch_cc == cc, f"the channel's color code {ch_cc} != --dmr-cc {cc}"
     radio.reset_counters()
     _, before = radio.counters()
@@ -185,6 +186,7 @@ def _report(c, sdr_bench, rdir):
     assert not failed, "; ".join(f"{i['check']} ({i['detail']})" for i in failed)
 
 
+@pytest.mark.feature("dmr_gps")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
@@ -194,13 +196,13 @@ def test_dmr_gps_tx(radio, sdr_bench, pytestconfig):
     "gps"). The settings are put back afterwards."""
     feats = radio.features()
     if "DMR_GPS" not in feats or "APRS" not in feats:
-        pytest.skip("needs CONFIG_DMR_GPS and CONFIG_APRS (the position source)")
+        skip("not_built", "needs CONFIG_DMR_GPS and CONFIG_APRS (the position source)")
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     radio.lowest_power()
     if int(radio.view(["dmr"])["dmr.own_id"]) == 0:
-        pytest.skip("the radio has no DMR ID (dmr.own_id=0)")
+        skip("state", "the radio has no DMR ID (dmr.own_id=0)")
     before = radio.view(["aprs_set"])
     lat, lon = 33.7490, -84.3880
     try:
@@ -226,14 +228,14 @@ def test_dmr_gps_tx(radio, sdr_bench, pytestconfig):
 
 def _dmr_tx_setup(radio, pytestconfig):
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     radio.go_home()
     pos = radio.find_channel(round(freq * 1e6), "dmr")
     radio.lowest_power()
     d = radio.view(["dmr"])
     if int(d["dmr.own_id"]) == 0:
-        pytest.skip("the radio has no DMR ID (dmr.own_id=0)")
+        skip("state", "the radio has no DMR ID (dmr.own_id=0)")
     return freq, cc, pos, d
 
 
@@ -253,18 +255,19 @@ def _over(radio, sdr_bench, freq, cc, seconds, tag):
     return sdr, heard
 
 
+@pytest.mark.feature("dmr_talker_alias")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_or_modem
 @pytest.mark.codeplug_write
 def test_dmr_tx_talker_alias(radio, sdr_bench, pytestconfig, backup_dir):
     if "DMR_TALKER_ALIAS" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_TALKER_ALIAS")
+        skip("not_built", "built without CONFIG_DMR_TALKER_ALIAS")
     import cps_client
     from test_cps import codeplug_edited
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     if d.get("dmr.ts") != "1":
-        pytest.skip("the test channel is on TS2: the edit sets the TS1 flag")
+        skip("state", "the test channel is on TS2: the edit sets the TS1 flag")
     number = int(radio.core()["channel_number"])
     _, before = radio.counters()
     with codeplug_edited(radio, backup_dir, lambda img: cps_client.set_channel_alias(img, number, ts1=True),
@@ -321,6 +324,7 @@ def _repeated_slots(outbound):
     return dict(collections.Counter(2 if 15.0 <= p < 45.0 else 1 for p in pos)), round(agree, 3)
 
 
+@pytest.mark.feature("split_duplex", optional=True)
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
@@ -328,14 +332,14 @@ def _repeated_slots(outbound):
 def test_dmr_tx_split_repeater(radio, sdr_bench, pytestconfig, backup_dir):
     split = pytestconfig.getoption("--split-tx-mhz")
     if not split:
-        pytest.skip("give the split channel's TX frequency: --split-tx-mhz MHz (one you may transmit on)")
+        skip("opt_in", "give the split channel's TX frequency: --split-tx-mhz MHz (one you may transmit on)")
     import cps_client
     from test_cps import codeplug_edited
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     if abs(split - freq) < 0.0125:
-        pytest.skip("--split-tx-mhz must differ from --dmr-freq")
+        skip("opt_in", "--split-tx-mhz must differ from --dmr-freq")
     if radio.view().get("set.tx_inhibit") == "1":
-        pytest.skip("the radio's TX inhibit is on (set.tx_inhibit=1)")
+        skip("state", "the radio's TX inhibit is on (set.tx_inhibit=1)")
     own, ts = int(d["dmr.own_id"]), int(d["dmr.ts"])
     number = int(radio.core()["channel_number"])
     tx_hz = round(split * 1e6)
@@ -444,15 +448,16 @@ def test_dmr_tx_split_repeater(radio, sdr_bench, pytestconfig, backup_dir):
                 time.sleep(8)      # the radio is back to idle and the bench jobs are over
         assert not failed, f"{len(failed)} of {calls} calls failed: {failed}"
 
+@pytest.mark.feature("dmr_privacy")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_or_modem
 def test_dmr_privacy_tx(radio, sdr_bench, pytestconfig):
     if "DMR_PRIVACY" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_PRIVACY")
+        skip("not_built", "built without CONFIG_DMR_PRIVACY")
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     if d.get("dmr.privacy") == "1":
-        pytest.skip("a privacy key is set already: not overwriting it")
+        skip("state", "a privacy key is set already: not overwriting it")
     own = int(d["dmr.own_id"])
     clear_sdr, clear_heard = _over(radio, sdr_bench, freq, cc, 3.0, "hil_dmr_clear")
     try:
@@ -519,19 +524,19 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
     (the room's noise, nobody talking) to compare the settings by hand; nothing is asserted on it."""
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     if d.get("dmr.codec") != "1":
-        pytest.skip("no vocoder merged in this firmware (dmr.codec=0)")
+        skip("not_built", "no vocoder merged in this firmware (dmr.codec=0)")
     v = radio.view(["dmr"])
     if "voice.enc_supported" not in v:
-        pytest.skip("firmware without the voice.enc_* view keys")
+        skip("not_built", "firmware without the voice.enc_* view keys")
     if int(v["voice.enc_supported"], 0) & opts != opts:
-        pytest.skip(f"this board's vocoder doesn't take options {opts:#x} (voice.enc_supported "
+        skip("no_hw", f"this board's vocoder doesn't take options {opts:#x} (voice.enc_supported "
                     f"{v['voice.enc_supported']})")
     prev = int(v["voice.enc_options"], 0)
     own, target, private = int(d["dmr.own_id"]), int(d["dmr.target_id"]), d.get("dmr.target_private") == "1"
     try:
-        radio.link.setting(30, opts)
+        radio.link.setting("enc_options", opts)
     except DebugLinkError as e:
-        pytest.skip(f"firmware without the enc_options setting (SETTING 31): {e}")
+        skip("not_built", f"firmware without the enc_options setting (SETTING 31): {e}")
     try:
         got = int(radio.view(["dmr"])["voice.enc_options"], 0)
         assert got == opts, f"options in force {got:#x} after SETTING 31 {opts:#x}"
@@ -549,7 +554,7 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
         _, after = radio.counters()
         flags = radio.view(["dmr"]).get("voice.enc_flags")
     finally:
-        radio.link.setting(30, prev)
+        radio.link.setting("enc_options", prev)
     assert int(radio.view(["dmr"])["voice.enc_options"], 0) == prev, "the options in force weren't put back"
     c = _tx_checks(sdr, heard, own, target, private, cc, before, after, d.get("dmr.tx_alias", ""), pytestconfig)
     if flags is not None:

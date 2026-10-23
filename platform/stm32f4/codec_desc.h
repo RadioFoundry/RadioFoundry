@@ -16,7 +16,7 @@
 #define CODEC_DESC_ADDR		0x080FFF80u
 #define CODEC_DESC_MAGIC	0x43534544u	// "DESC" little-endian
 #define CODEC_DESC_VERSION	1u
-#define CODEC_DESC_WINDOWS	5u		// table windows: the MD-380 has its tables and four small ones
+#define CODEC_DESC_WINDOWS	5u		// table windows: the most a stock file needs, its tables and four small ones
 
 typedef struct {
 	uint32_t addr, len, crc;		// CRC-32 of the bytes as merged

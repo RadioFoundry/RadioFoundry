@@ -12,20 +12,8 @@
 
 #define REG32(a)		(*(volatile uint32_t *)(uintptr_t)(a))
 
-// --- Clocks: APB peripherals run from sys / 2 (hardware-dm32.md 1.1) ---
-// HRC_CPU_HZ is the clock the application runs at: 168 MHz unless the board sets it in board.mk. The loader in front of
-// it may leave the PLL at another rate: HRC_LOADER_CPU_HZ (default the same). The Baofeng bootloader leaves 168 MHz,
-// the DB25-D's IAP loader 72 MHz. When the two differ, clock.c reprograms the PLL at start-up and
-// hrc_clock_restore_loader() puts the loader's clocks back before a hand-over to RAM code built for them (the runtime
-// stub) or a soft reset
-#ifndef HRC_CPU_HZ
-#define HRC_CPU_HZ		168000000u
-#endif
-#ifndef HRC_LOADER_CPU_HZ
-#define HRC_LOADER_CPU_HZ	HRC_CPU_HZ
-#endif
-#define HRC_APB_HZ		(HRC_CPU_HZ / 2u)
-#define HRC_LOADER_APB_HZ	(HRC_LOADER_CPU_HZ / 2u)
+// --- Clocks: HRC_CPU_HZ and the APB clocks (clock_hz.h, which FreeRTOSConfig.h reads too) ---
+#include "clock_hz.h"
 #define HRC_XTAL_HZ		24000000u
 #include "clock_math.h"
 
@@ -94,7 +82,7 @@
 #define TIMER_CLOCK		2
 #define TIMER_PA		3
 #define TIMER_AFSK		4	// APRS AFSK transmit: tops up the prompt FIFO (hrc_afsk.c)
-#define TIMER_BOARD		5	// a board's one-shot (DB25-D: the waits of its DMR burst sequence, dmr_db25d.c)
+#define TIMER_BOARD		5	// a board's one-shot (e.g. the waits of a board's own DMR burst sequence)
 
 // --- PIC: source s is CPU vector s + 32 (hardware-dm32.md 4) ---
 #define PIC_MODE		REG32(PIC_BASE + 0x00)
@@ -223,11 +211,17 @@ void hrc_chip_set_uid(const uint8_t *id, uint32_t len);
 // The task holding the data flash lock and for how long (ms), "-" when free: a stuck flash user shows here
 const char *hrc_flash_spi0_holder(uint32_t *held_ms);
 
-// --- ADC (adc.c): channels 1 (B) and 2 (C) ---
+// --- ADC (adc.c): channels 0..7 (A..H) ---
 
 void hrc_adc_init(void);
 uint16_t hrc_adc_read(uint8_t ch);	// 10 bits, 0 if the conversion doesn't finish
 uint16_t hrc_adc_last(uint8_t ch);	// the last reading, for diagnostics
+
+// --- DAC (dac.c): B is the PA drive ---
+
+// modem-hrc7000.md 4 steps 1-3: the ADC reset and idle, DAC B to its pin, DACs B and C on (C at dac_c), PA drive 0
+void hrc_modem_analog_init(uint16_t dac_c);
+void hrc_dac_b_power(bool on);	// the PA drive DAC powered up or down (FM receive powers it down)
 
 // --- Start-up and services (clock.c, time.c) ---
 
@@ -250,7 +244,7 @@ typedef struct {
 } hrc_backlight_t;
 // 0 off, 100 fully on, otherwise PWM duty in percent
 void hrc_backlight_pwm(const hrc_backlight_t *bl, uint8_t percent);
-// PTA15 / PWM0 with the DM-32 port's settings
+// PTA15 / PWM0 with the default settings
 void hrc_backlight(uint8_t percent);
 
 // Timer 1 at configTICK_RATE_HZ for the RTOS (called by the port when the scheduler starts)
@@ -279,9 +273,9 @@ void hrc_soft_reset(void) __attribute__((noreturn));
 
 // Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2). The host loads the stub here
 // and ODR jumps to it without a power cycle. The span is the codec window at the top of SRAM, which ODR never links
-// anything into (dm32.ld: 0x43A00..0x58000); the codec is parked before the load, so the whole window is free. Base is
+// anything into (boards/dm32/memory.ld: 0x43A00..0x58000); the codec is parked before the load, so the whole window is free. Base is
 // 4 KB aligned inside it. The universal stub copies itself to 0x30000 (ODR's RAM, dead by then), clear of this span. A
-// board with another layout sets its own span in board.mk or config.mk (the DB25-D)
+// board with another layout sets its own span in board.mk or config.mk
 #ifndef HRC_STUB_BASE
 #define HRC_STUB_BASE		0x00044000u
 #define HRC_STUB_SIZE		0x00014000u	// 80 KB, to the end of SRAM

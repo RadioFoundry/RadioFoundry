@@ -83,8 +83,13 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "vox_on=%u\nvox.mic=%u\nvox.level=%u\n", v->vox_on, mic, listen ? board.power->mic_level() : 0u);
 	// whether battery save can switch the receiver off on this radio (a radio driver without rx_sleep never sleeps)
 	dl_text(t, "rx_save.hw=%u\n", board.radio != NULL && board.radio->rx_sleep != NULL);
-	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", board_has_battery() ? word(v->battery, batt, 3) : "none",
-		v->battery_pct, v->battery_mv, v->power_off);
+	// a radio that measures its DC input has supply_mv in place of the battery's percentage and
+	// reading (the section is near a reply's size)
+	if (board_volts() == BOARD_VOLTS_SUPPLY)
+		dl_text(t, "battery=none\nsupply_mv=%u\npower_off=%u\n", v->supply_mv, v->power_off);
+	else
+		dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n",
+			board_has_battery() ? word(v->battery, batt, 3) : "none", v->battery_pct, v->battery_mv, v->power_off);
 	static const char *const vsrc[] = { "none", "knob", "soft", "override" };
 	dl_text(t, "volume.soft=%u\nvolume.sent=%d\nvolume.src=%s\nvolume.max=%u\nvolume.step=%u\nvolume.override=%d\n",
 		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 4), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);

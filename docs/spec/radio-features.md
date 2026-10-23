@@ -396,6 +396,14 @@ warning setting. The debug link reports `battery=none` (with `battery_pct=0` and
 `battery_pct` and `battery_mv` out, and SNMP reports odrBatteryVoltage 0, odrBatteryPercent 0 and odrBatteryState
 ok(1) without ever sending odrLowBattery.
 
+Such a board may measure its DC input instead: it sets `hal_power_t.supply_mv`, and `board_volts()` (`hal/board.h`)
+says `BOARD_VOLTS_SUPPLY`. The radio core reads it once a second, outside transmissions like the battery, into the
+view's `supply_mv`. Nothing acts on it: no level, percentage, warning, TX refusal or power off, since no supply
+thresholds are defined yet. The UI's last tool is then Supply, showing the reading in volts (13.8 V), with no battery
+settings. The debug link has `supply_mv` in place of `battery_pct` and `battery_mv`, `/status` has `supply_mv`, and
+SNMP reports as for no battery. The feature matrix and the web site show each radio's reading: Battery, Supply or
+None.
+
 ### 5.2 Low and critical
 
 Low: the battery low beep, again every 2 minutes; the backlight is capped at 30 % (5.3). Critical: the critical beep
@@ -426,6 +434,20 @@ into the board's `switch_on()`: three readings in a row below 5.5 V, at least 10
 doesn't. The boards ignore it for the first 1.5 s after power-up while the readings settle. `core/app/app.c` polls
 `switch_on()` and powers off (settings saved, latch released). 5.5 V sits well under a flat 2S pack (critical
 6.0 V), so a weak battery never reads as the switch.
+
+### 5.6 Time of day
+
+ODR keeps no wall clock. `hal_time.h` gives only time since start-up, and that is what every record uses: the crash
+log's `uptime_ms`, messages (`ui_msg_t.age_ms`), call history and the APRS station list ("14m ago"). Nothing on the screen shows a time of day, so a
+radio never shows a made-up one after power-on.
+
+The only time of day is the UTC time a GPS or host NMEA fix carries. It travels with that position into DMR GPS and
+LRRP reports. A fixed position carries none, and the reports leave the time out (`utc_hms` 0xFFFFFFFF, date 0).
+
+Some radios have a real-time clock, and some keep it running through power-off. `board.toml` `[hardware] clock`
+records which, with its source (`backed`, `unbacked`, `none`, or `unknown`), and the feature matrix and the site show
+it. A clock driver arrives behind a hardware switch (`CONFIG_RTC`, `hardware` in `tests/hil/features.toml`). Until GPS,
+the network or the user sets it, the radio shows "no time", and records keep using uptime or mark the time unknown.
 
 ## 6. TX power, calibration, band limits
 

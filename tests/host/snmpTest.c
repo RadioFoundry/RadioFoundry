@@ -276,7 +276,7 @@ static void setup(void)
 	data.uptimeMs = 123450;
 	data.dmrId = 3100001;
 	strcpy(data.name, "N0CALL");
-	data.board = "dm1701";
+	data.board = "board1";
 	data.firmware = "abcdef12";
 	data.batteryMv = 7400;
 	data.batteryPct = 80;
@@ -333,7 +333,7 @@ static void test_get(void)
 	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE));
 	CHECK(r.requestId == 0x12345678 && r.status == 0 && r.count == 1);
 	CHECK(r.vb[0].tag == BER_OCTETS && r.vb[0].valLen == 32 &&
-	      memcmp(r.vb[0].val, "OpenDigitalRadio dm1701 abcdef12", 32) == 0);
+	      memcmp(r.vb[0].val, "OpenDigitalRadio board1 abcdef12", 32) == 0);
 	// The whole answer as bytes: 30 49 02 01 01 04 06 public A2 3C 02 04 12345678 02 01 00 02 01 00 30 2E 30 2C 06 08
 	// <sysDescr.0> 04 20 <text>
 	CHECK(n == 75 && out[0] == 0x30 && out[1] == 0x49 && out[13] == 0xA2 && out[14] == 0x3C && out[27] == 0x30 &&

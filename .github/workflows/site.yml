@@ -28,9 +28,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # what the site is built from: a change here since the last deployment means a rebuild
+  # what the site is built from: a change here since the last deployment means a rebuild. The radios come from the
+  # board registry (site/build.py runs tools/boards.py json --for site, which reads boards/, platform/, boot/, the
+  # Makefile and tests/hil/features.toml), the flasher's data from odrflash
   SITE_INPUTS: >-
-    site docs README.md boards config tools/odrflash/odrflash Makefile .github/workflows/site.yml
+    site docs README.md boards platform boot config tests/hil/features.toml tools/boards.py tools/registry_docs.py
+    tools/odr_python.sh tools/glossary.py tools/odrflash/odrflash Makefile .github/workflows/site.yml
 
 jobs:
   changes:
@@ -99,6 +102,8 @@ jobs:
           mkdir -p dist
           # no release yet is fine: the flasher then offers local images only
           gh release download --repo "${{ github.repository }}" --pattern 'odr-*' --dir dist || echo "no release assets"
+      # site/build.py runs tools/boards.py json --for site itself (setup-python's 3.12, or the image's, through
+      # tools/odr_python.sh), so the radios are always the checkout's registry
       - name: Build
         env:
           # where the web tools send error reports (Sentry); unset: no reports leave the page

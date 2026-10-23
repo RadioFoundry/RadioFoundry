@@ -1,0 +1,200 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# Files that may name a radio outside its own places (tools/check_generic.py, AGENTS.md rule 4). One entry a line:
+# a glob (fnmatch: * also crosses /), a space, and why. An entry no file needs any more is an error, so the list only
+# shrinks. Most entries are debt from before the check: fix the file and drop its line. Don't add one for new code.
+
+# A radio's own spec pages (hardware, codec, migration) that still compare with or link another radio's page.
+docs/spec/* a radio's own pages cite the radio a fact was compared with; to link the shared spec instead
+
+# Docs with per-radio notes and examples: to move per-radio values into docs/user/23-radios.md and hardware pages.
+docs/ux/* the UX research and wireframes name the radio each screen size was drawn for
+docs/testing/* test plans and bring-up pages compare with the radio a case was first run on
+docs/build-config.md the switch tables quote per-radio defaults and sizes (to generate from the registry)
+docs/glossary.json glossary entries give a radio as the example of a term
+README.md the front page's text around the generated radio table names the radios
+boot/README.md the first-stage index describes the one board with a first stage (to generate from boot/<id>/)
+stub/README.md the stub guide's per-radio entry steps (to move into each radio's hardware page)
+stub/USER-GUIDE.md the stub guide's per-radio entry steps (to move into each radio's hardware page)
+tools/odrflash/README.md the flasher guide's examples and per-radio routes
+AGENTS.md the owner has uncommitted edits to it; fix after those land
+
+# Owned by the workflows work in this pull request: fix there.
+.github/ISSUE_TEMPLATE/radio_request.yml the request form's placeholder example
+tools/ci.sh usage examples and the per-board skip notes
+
+# Per-radio tools: each reads one stock format or updater. To fold into a generic tool keyed by board.toml.
+tools/md380_migrate.py the TYT stock codeplug migration; to fold into codeplug_port.py with a board argument
+tools/dm32_migrate.py the Baofeng stock codeplug migration; to fold into codeplug_port.py with a board argument
+stub/build_db25d_stubs.sh builds the stubs for one board's two RAM layouts; to read the layouts from board.toml
+stub/db25d_update.sh one board's keyless update; to take --board and read the route from board.toml
+stub/embed_stub.py names the board whose image embeds a stub
+stub/f4stub.py per-radio memory maps and keys; to move into board.toml [flash.stub]
+stub/stubtool.py per-radio stock console strings and layouts; to move into board.toml [flash.stub]
+tools/codec_extract.py per-radio stock firmware profiles; to move into codec_maps/<id>/
+tools/cps_client.py per-radio CPS radio types and memory maps; to move into board.toml
+tools/hrc7000_codec.py per-radio stock codec slot layouts; to move into codec_maps/<id>/
+tools/stm32_dfu.py per-radio DFU keys and bootloader strings; to move into board.toml
+tools/odrflash/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/cli.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/codec_maps/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/codecsave.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/manifest.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/serialflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/stockfw.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/tests/test_odrflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/tests/test_serialflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
+
+# Web flasher and editor: per-radio routes and stock formats; to read from the generated registry.
+site/i18n/en.json per-radio route or stock format data
+site/static/js/codeplug/detect.js per-radio route or stock format data
+site/static/js/codeplug/fakecps.js per-radio route or stock format data
+site/static/js/codeplug/image.js per-radio route or stock format data
+site/static/js/codeplug/stock_tyt.js per-radio route or stock format data
+site/static/js/codeplug/transport.js per-radio route or stock format data
+site/static/js/editor/app.js per-radio route or stock format data
+site/static/js/editor/files.js per-radio route or stock format data
+site/static/js/flasher/app.js per-radio route or stock format data
+site/static/js/flasher/backup.js per-radio route or stock format data
+site/static/js/flasher/c7000.js per-radio route or stock format data
+site/static/js/flasher/c7000ui.js per-radio route or stock format data
+site/static/js/flasher/codecsave.js per-radio route or stock format data
+site/static/js/flasher/codeplug.js per-radio route or stock format data
+site/static/js/flasher/f4stub.js per-radio route or stock format data
+site/static/js/flasher/fake.js per-radio route or stock format data
+site/static/js/flasher/fakec7000.js per-radio route or stock format data
+site/static/js/flasher/iap.js per-radio route or stock format data
+site/static/js/flasher/iapui.js per-radio route or stock format data
+site/static/js/flasher/select.js per-radio route or stock format data
+site/static/js/flasher/stockfw.js per-radio route or stock format data
+site/static/js/flasher/stub.js per-radio route or stock format data
+site/static/js/flasher/usmart.js per-radio route or stock format data
+site/tests/backends.test.mjs per-radio route or stock format data
+site/tests/c7000.test.mjs per-radio route or stock format data
+site/tests/c7000v1.test.mjs per-radio route or stock format data
+site/tests/codeplug.test.mjs per-radio route or stock format data
+site/tests/diag.test.mjs per-radio route or stock format data
+site/tests/f4stub.test.mjs per-radio route or stock format data
+site/tests/fixtures.py per-radio route or stock format data
+site/tests/flasher.test.mjs per-radio route or stock format data
+site/tests/iap.test.mjs per-radio route or stock format data
+site/tests/stock.test.mjs per-radio route or stock format data
+
+# Host tests built on one radio's recorded data (stock vectors, memory maps, measured values). To move each under boards/<id>/tests/ or name the data by its source.
+tests/host/Makefile uses one radio's recorded data
+tests/host/ambeFecTest.c uses one radio's recorded data
+tests/host/baofengCalTest.c uses one radio's recorded data
+tests/host/bk4819Test.c uses one radio's recorded data
+tests/host/calCurveTest.c uses one radio's recorded data
+tests/host/codecDescTest.c uses one radio's recorded data
+tests/host/codeplugEditTest.c uses one radio's recorded data
+tests/host/cpsClientTest.py uses one radio's recorded data
+tests/host/cpsFastClientTest.py uses one radio's recorded data
+tests/host/cpsFastTest.c uses one radio's recorded data
+tests/host/cpsSim.c uses one radio's recorded data
+tests/host/f4stubTest.c uses one radio's recorded data
+tests/host/f4stub_wire_check.py uses one radio's recorded data
+tests/host/fd6818Test.c uses one radio's recorded data
+tests/host/hrc7000CodecSlotTest.c uses one radio's recorded data
+tests/host/hrc7000DmrTest.c uses one radio's recorded data
+tests/host/keymatrixTest.c uses one radio's recorded data
+tests/host/mdnsTest.c uses one radio's recorded data
+tests/host/nandSectorsTest.c uses one radio's recorded data
+tests/host/powerSwitchTest.c uses one radio's recorded data
+tests/host/radioCoreTest.c uses one radio's recorded data
+tests/host/sim/ui_sim.c uses one radio's recorded data
+tests/host/sky72310Test.c uses one radio's recorded data
+tests/host/spiNandTest.c uses one radio's recorded data
+tests/host/spiNorTest.c uses one radio's recorded data
+tests/host/subaudioDspTest.c uses one radio's recorded data
+tests/host/uiFlowTest.c uses one radio's recorded data
+
+# HIL tests: per-radio skips and bench notes. tests/hil is outside this change; to move per-radio skips into board.toml [features].
+tests/hil/README.md per-radio skip reasons and bench notes
+tests/hil/test_aprs.py per-radio skip reasons and bench notes
+tests/hil/test_audio_probe.py per-radio skip reasons and bench notes
+tests/hil/test_boot.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_audio_smoke.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_call_features.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_emergency.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_ip.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_tx.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_voice.py per-radio skip reasons and bench notes
+tests/hil/test_fm_tx.py per-radio skip reasons and bench notes
+tests/hil/test_hotspot_cwid.py per-radio skip reasons and bench notes
+tests/hil/test_hotspot_sfr.py per-radio skip reasons and bench notes
+tests/hil/test_mic_gain.py per-radio skip reasons and bench notes
+tests/hil/test_mic_uart_inject.py per-radio skip reasons and bench notes
+tests/hil/test_radio_features.py per-radio skip reasons and bench notes
+tests/hil/test_split_duplex.py per-radio skip reasons and bench notes
+
+# Generic docs that still name radios (AGENTS.md, generic docs). Exact paths only: a glob can't excuse a generic doc.
+# Each is to rewrite: say what a board provides (CAP_*, board_t) and link feature-matrix.md; move the radio's facts to
+# its own page.
+docs/dev/README.md names radios inline; to rewrite
+docs/dev/adding-a-radio.md names radios inline; to rewrite
+docs/dev/building.md names radios inline; to rewrite
+docs/dev/ci.md names radios inline; to rewrite
+docs/dev/codec.md names radios inline; to rewrite
+docs/dev/contributing.md names radios inline; to rewrite
+docs/dev/glossary.md names radios inline; to rewrite
+docs/dev/release.md names radios inline; to rewrite
+docs/dev/stack-check.md names radios inline; to rewrite
+docs/dev/testing.md names radios inline; to rewrite
+docs/dev/website.md names radios inline; to rewrite
+docs/spec/README.md names radios inline; to rewrite
+docs/spec/airband-and-broadcast.md names radios inline; to rewrite
+docs/spec/aprs.md names radios inline; to rewrite
+docs/spec/capabilities.md names radios inline; to rewrite
+docs/spec/codec-md9600.md names radios inline; to rewrite
+docs/spec/codec-mduv380.md names radios inline; to rewrite
+docs/spec/codec-placement.md names radios inline; to rewrite
+docs/spec/codeplug-native.md names radios inline; to rewrite
+docs/spec/codeplug-port.md names radios inline; to rewrite
+docs/spec/codeplug-stock-tyt.md names radios inline; to rewrite
+docs/spec/cps-fast.md names radios inline; to rewrite
+docs/spec/cps-protocol.md names radios inline; to rewrite
+docs/spec/crash-log.md names radios inline; to rewrite
+docs/spec/debuglink.md names radios inline; to rewrite
+docs/spec/dmr-data.md names radios inline; to rewrite
+docs/spec/dmr-emergency.md names radios inline; to rewrite
+docs/spec/dmr-modem.md names radios inline; to rewrite
+docs/spec/dmr-roaming.md names radios inline; to rewrite
+docs/spec/dmr-tier3-plan.md names radios inline; to rewrite
+docs/spec/dmr-voice.md names radios inline; to rewrite
+docs/spec/gotchas.md names radios inline; to rewrite
+docs/spec/hrc6000-registers.md names radios inline; to rewrite
+docs/spec/mdns.md names radios inline; to rewrite
+docs/spec/mmdvm-protocol.md names radios inline; to rewrite
+docs/spec/modem-hrc6000.md names radios inline; to rewrite
+docs/spec/modem-hrc7000.md names radios inline; to rewrite
+docs/spec/nand-sectors.md names radios inline; to rewrite
+docs/spec/open-firmware-cps.md names radios inline; to rewrite
+docs/spec/ppp.md names radios inline; to rewrite
+docs/spec/radio-features.md names radios inline; to rewrite
+docs/spec/settings-store.md names radios inline; to rewrite
+docs/spec/sfr.md names radios inline; to rewrite
+docs/spec/snmp.md names radios inline; to rewrite
+docs/spec/split-duplex.md names radios inline; to rewrite
+docs/spec/stub-entry.md names radios inline; to rewrite
+docs/spec/stub-stm32f4.md names radios inline; to rewrite
+docs/spec/tcp-services.md names radios inline; to rewrite
+docs/spec/tftp.md names radios inline; to rewrite
+docs/spec/ui.md names radios inline; to rewrite
+docs/spec/usb-audio.md names radios inline; to rewrite
+docs/spec/usb-network.md names radios inline; to rewrite
+docs/spec/watchdog.md names radios inline; to rewrite
+docs/user/01-introduction.md names radios inline; to rewrite
+docs/user/02-installing.md names radios inline; to rewrite
+docs/user/07-fm.md names radios inline; to rewrite
+docs/user/11-scan.md names radios inline; to rewrite
+docs/user/12-settings.md names radios inline; to rewrite
+docs/user/13-hotspot.md names radios inline; to rewrite
+docs/user/14-usb-network.md names radios inline; to rewrite
+docs/user/15-programming-qdmr.md names radios inline; to rewrite
+docs/user/17-aprs.md names radios inline; to rewrite
+docs/user/20-troubleshooting.md names radios inline; to rewrite
+docs/user/21-faq.md names radios inline; to rewrite
+docs/user/22-glossary.md names radios inline; to rewrite
+docs/user/README.md names radios inline; to rewrite

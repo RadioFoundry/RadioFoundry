@@ -52,7 +52,7 @@ static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
 
 const board_t board = {
 	.name = "DM-32UV",
-	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -85,8 +85,10 @@ const board_t board = {
 #if CONFIG_NET_PPP
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
+#if CONFIG_GPS
 	.gps_enable = hrc_gps_enable,
 	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+#endif
 	.system = &hrc_system,
 };
 
@@ -209,5 +211,7 @@ void board_init(void)
 	dm32_power.init();
 	dm32_flash.init();
 	bf_cal_load(&hrc_flash_spi0, 0x710000u);	// OpenDM32 keeps a decoded copy there
+#if CONFIG_GPS
 	hrc_gps_init(&gps_cfg);
+#endif
 }

@@ -75,6 +75,7 @@ import time
 
 import pytest
 
+from odr_hil import skip
 from odr_debug import DebugLinkError, as_int
 
 FEATURE_KEYS = ("scan.built", "scan", "scan_phase", "scan_skipped", "tot_warning", "tone_burst", "roger", "vox_keyed",
@@ -118,19 +119,19 @@ def settings(radio, **values):
 
 def need_scan(radio):
     if as_int(features(radio).get("scan.built"), 0) != 1:
-        pytest.skip("built without CONFIG_SCAN")
+        skip("not_built", "built without CONFIG_SCAN")
 
 
 def on_channel(radio, minimum):
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     if radio.core().get("vfo") == "1":
         radio.link.vfo(False)
         radio.wait_for(lambda v: v.get("vfo") == "0", what="VFO off")
     size = as_int(radio.core().get("zone_size"), 0)
     if size < minimum:
-        pytest.skip(f"the current zone has {size} channels, the test needs {minimum}")
+        skip("state", f"the current zone has {size} channels, the test needs {minimum}")
     return size
 
 
@@ -152,11 +153,16 @@ def collect(radio, key, seconds, sections=("core",)):
 
 # ── radio only ────────────────────────────────────────────────────────────
 
+@pytest.mark.feature("radio_controls")
 def test_features_section(radio):
     f = features(radio)
-    missing = [k for k in FEATURE_KEYS if k not in f]
+    # a radio that measures its supply has supply_mv in place of battery_pct and battery_mv (debuglink.md 3.7)
+    keys = [k for k in FEATURE_KEYS if "supply_mv" not in f or k not in ("battery_pct", "battery_mv")]
+    missing = [k for k in keys if k not in f]
     assert not missing, f"missing keys in the features section: {missing}"
-    if f["battery"] == "none":      # a board without a battery (a mobile): percent and millivolts 0 (debuglink.md)
+    if "supply_mv" in f:
+        assert f["battery"] == "none" and as_int(f["supply_mv"], -1) >= 0, f
+    elif f["battery"] == "none":    # a board without a battery (a mobile): percent and millivolts 0 (debuglink.md)
         assert f["battery_pct"] == "0" and f["battery_mv"] == "0", f
     else:
         assert f["battery"] in ("ok", "low", "critical"), f
@@ -164,9 +170,11 @@ def test_features_section(radio):
         mv = as_int(f["battery_mv"], -1)
         assert mv == 0 or 5000 <= mv <= 9000, f"battery_mv {mv}"
     assert f["power_off"] == "0", f
-    print({k: f[k] for k in ("battery", "battery_pct", "battery_mv", "beep.built", "scan.built")})
+    shown = ("battery", "battery_pct", "battery_mv", "supply_mv", "beep.built", "scan.built")
+    print({k: f[k] for k in shown if k in f})
 
 
+@pytest.mark.feature("settings_store")
 def test_settings_round_trip(radio):
     old = features(radio)["set.scan_hold_s"]
     new = 7 if old != "7" else 8
@@ -175,12 +183,13 @@ def test_settings_round_trip(radio):
     wait_features(radio, lambda v: v.get("set.scan_hold_s") == old, 1.0, "set.scan_hold_s put back")
 
 
+@pytest.mark.feature("beep")
 def test_beep_counts(radio):
     f0 = features(radio)
     if f0.get("beep.built") != "1":
-        pytest.skip("built without CONFIG_BEEP")
+        skip("not_built", "built without CONFIG_BEEP")
     if as_int(f0.get("set.beep_level"), 0) == 0:
-        pytest.skip("beep level 0")
+        skip("state", "beep level 0")
     played0, none0, blocks0 = (as_int(f0.get(k), 0) for k in ("beep.played", "beep.no_stream", "beep.blocks"))
     radio.link.beep("error")
     f = wait_features(radio, lambda v: as_int(v.get("beep.played"), 0) + as_int(v.get("beep.no_stream"), 0)
@@ -196,10 +205,11 @@ def test_beep_counts(radio):
         print(f"blocks +{as_int(f['beep.blocks'], 0) - blocks0}")
 
 
+@pytest.mark.feature("vibrate")
 def test_vibrate_counts(radio):
     f0 = features(radio)
     if f0.get("vibe.built") != "1":
-        pytest.skip("built without CONFIG_VIBRATE")
+        skip("not_built", "built without CONFIG_VIBRATE")
     played0 = as_int(f0.get("vibe.played"), 0)
     radio.link.vibrate("emergency")
     if f0.get("vibe.motor") != "1":
@@ -211,10 +221,11 @@ def test_vibrate_counts(radio):
     wait_features(radio, lambda v: v.get("vibe.busy") == "0", 3.0, "the pattern finished")
 
 
+@pytest.mark.feature("radio_controls")
 def test_volume_op(radio):
     f0 = features(radio)
     if "volume.src" not in f0:
-        pytest.skip("firmware without the volume view keys")
+        skip("not_built", "firmware without the volume view keys")
     src = f0["volume.src"]
     if src == "none":
         with pytest.raises(DebugLinkError) as e:
@@ -243,6 +254,7 @@ def test_volume_op(radio):
         wait_features(radio, lambda v: v.get("volume.step") == str(old), 1.0, "the old step back")
 
 
+@pytest.mark.feature("scan")
 def test_zone_scan_cancel(radio):
     need_scan(radio)
     on_channel(radio, 2)
@@ -259,6 +271,7 @@ def test_zone_scan_cancel(radio):
     radio.wait_for(lambda v: v.get("zone_pos") == start, 1.0, what="back on the starting channel")
 
 
+@pytest.mark.feature("scan")
 def test_zone_scan_nuisance(radio):
     need_scan(radio)
     on_channel(radio, 3)
@@ -276,10 +289,11 @@ def test_zone_scan_nuisance(radio):
         scan_off(radio)
 
 
+@pytest.mark.feature("scan")
 def test_vfo_scan(radio):
     need_scan(radio)
     if "VFO_FM" not in radio.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     radio.go_home()
     with radio.vfo_session() as hz:
         step = as_int(radio.core().get("vfo_step_hz"), 12500) or 12500
@@ -297,6 +311,8 @@ def test_vfo_scan(radio):
         radio.wait_for(lambda v: v.get("rx_hz") == str(hz), 1.0, what="back on the starting frequency")
 
 
+@pytest.mark.feature("scan")
+@pytest.mark.feature("dual_watch")
 def test_dual_watch(radio):
     need_scan(radio)
     size = on_channel(radio, 2)
@@ -322,14 +338,14 @@ def test_dual_watch(radio):
     radio.wait_for(lambda v: v.get("zone_pos") == str(a), 1.0, what="back on the first channel")
 
 
-
+@pytest.mark.feature("dual_watch")
 def test_dual_watch_debug_link(radio):
     """The debug link during dual watch: select B, a position then changes B, and a scan stop is the user's (the UI
     doesn't start the watch again)."""
     need_scan(radio)
     size = on_channel(radio, 3)
     if "dual.stops" not in features(radio) or features(radio).get("dual.built") != "1":
-        pytest.skip("built without CONFIG_DUAL_WATCH, or a build before dual.stops")
+        skip("not_built", "built without CONFIG_DUAL_WATCH, or a build before dual.stops")
     zone = radio.core().get("zone_index")
     a = as_int(radio.core()["zone_pos"], 0)
     b, c = (a + 1) % size, (a + 2) % size
@@ -358,10 +374,10 @@ def test_dual_watch_debug_link(radio):
 @pytest.fixture
 def fm_tx(radio, pytestconfig):
     if "VFO_FM" not in radio.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     with radio.vfo_session():
         radio.link.vfo_set(round(pytestconfig.getoption("--fm-mhz") * 1e6))
         radio.wait_for(lambda v: v.get("mode") == "fm", what="FM VFO")
@@ -374,6 +390,7 @@ def fm_tx(radio, pytestconfig):
             radio.wait_for(lambda v: v.get("state") != "tx", 3.0, what="TX ended")
 
 
+@pytest.mark.feature("radio_controls")
 @pytest.mark.radio_tx
 def test_tx_inhibit(fm_tx):
     with settings(fm_tx, tx_inhibit=1):
@@ -393,6 +410,7 @@ def test_tx_inhibit(fm_tx):
     assert "input: PTT down (host" in log, log
 
 
+@pytest.mark.feature("radio_controls")
 @pytest.mark.radio_tx
 def test_tot_warning(fm_tx):
     with settings(fm_tx, tot_s=6, tot_warn_s=3):
@@ -413,10 +431,11 @@ def test_tot_warning(fm_tx):
     assert deny == "timeout", deny
 
 
+@pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
 def test_roger_beep(fm_tx):
     if "FM_TX_TONES" not in fm_tx.features():
-        pytest.skip("built without CONFIG_FM_TX_TONES")
+        skip("not_built", "built without CONFIG_FM_TX_TONES")
     with settings(fm_tx, roger_beep=1):
         fm_tx.link.ptt(True)
         fm_tx.wait_for(lambda v: v.get("state") == "tx", 1.0, what="TX")
@@ -435,10 +454,11 @@ def test_roger_beep(fm_tx):
     assert rogers[-1][0] != "tx", f"still transmitting 1 s after release: {rogers[-3:]}"
 
 
+@pytest.mark.feature("fm_tx_tones")
 @pytest.mark.radio_tx
 def test_tone_burst(fm_tx):
     if "FM_TX_TONES" not in fm_tx.features():
-        pytest.skip("built without CONFIG_FM_TX_TONES")
+        skip("not_built", "built without CONFIG_FM_TX_TONES")
     fm_tx.link.tone_burst(True)
     try:
         fm_tx.wait_for(lambda v: v.get("state") == "tx" and v.get("tone_burst") == "1", 1.0,
@@ -451,19 +471,20 @@ def test_tone_burst(fm_tx):
 
 # ── the SDR bench transmits ───────────────────────────────────────────────
 
+@pytest.mark.feature("scan")
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_scan_stops_on_dmr_call(radio, sdr_bench, pytestconfig):
     need_scan(radio)
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     hz = round(freq * 1e6)
     radio.go_home()
     pos = radio.find_channel(hz, "dmr")
     if as_int(radio.core().get("zone_size"), 0) < 2:
-        pytest.skip("the DMR test channel's zone has one channel")
+        skip("state", "the DMR test channel's zone has one channel")
     # start somewhere else so the scan has to find it
     radio.link.zone_pos((pos + 1) % as_int(radio.core()["zone_size"], 1))
     time.sleep(0.2)
@@ -532,15 +553,16 @@ def _bench_call_watch(radio, sdr_bench, pytestconfig, keys=("core", "features"))
     return seen, t_start
 
 
+@pytest.mark.feature("scan")
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
     need_scan(radio)
     if "VFO_FM" not in radio.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     if features(radio).get("rx_save.hw") == "0":
-        pytest.skip("this radio's driver can't switch the receiver off (no rx_sleep)")
+        skip("no_hw", "this radio's driver can't switch the receiver off (no rx_sleep)")
     hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
     radio.go_home()
     with radio.vfo_session():
@@ -559,6 +581,8 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
     assert str(hz) in held, f"the VFO scan never held on {hz}: {sorted(set(held))}"
 
 
+@pytest.mark.feature("scan")
+@pytest.mark.feature("dual_watch")
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
@@ -569,12 +593,12 @@ def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
     pos = radio.find_channel(hz, "dmr")
     size = as_int(radio.core().get("zone_size"), 0)
     if size < 2:
-        pytest.skip("the DMR test channel's zone has one channel")
+        skip("state", "the DMR test channel's zone has one channel")
     other = next((p for p in range(size) if p != pos), None)
     radio.link.zone_pos(other)
     radio.wait_for(lambda v: v.get("zone_pos") == str(other), what="the other channel")
     if radio.core().get("rx_hz") == str(hz):
-        pytest.skip("the other channel is on the test frequency too")
+        skip("state", "the other channel is on the test frequency too")
     with settings(radio, scan_resume=1):
         radio.link.scan("dual", pos)
         try:
@@ -592,15 +616,15 @@ def test_dual_watch_stops_on_call(radio, sdr_bench, pytestconfig):
 @contextlib.contextmanager
 def _battery_save(radio, pytestconfig):
     if "BATTERY_SAVE" not in radio.features():
-        pytest.skip("built without CONFIG_BATTERY_SAVE")
+        skip("not_built", "built without CONFIG_BATTERY_SAVE")
     if "VFO_FM" not in radio.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     if features(radio).get("rx_save.hw") == "0":
-        pytest.skip("this radio's driver can't switch the receiver off (no rx_sleep)")
+        skip("no_hw", "this radio's driver can't switch the receiver off (no rx_sleep)")
     hz = round(pytestconfig.getoption("--dmr-freq") * 1e6)
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     with radio.vfo_session():
         radio.link.vfo_set(hz)
         radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO tuned")
@@ -611,6 +635,7 @@ def _battery_save(radio, pytestconfig):
             yield v
 
 
+@pytest.mark.feature("battery_save")
 def test_battery_save(radio, pytestconfig):
     with _battery_save(radio, pytestconfig):
         seen, _ = collect(radio, "rx_sleeping", 2.0, sections=("features",))
@@ -626,6 +651,7 @@ def test_battery_save(radio, pytestconfig):
             radio.link.monitor(False)
 
 
+@pytest.mark.feature("battery_save")
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
@@ -653,12 +679,13 @@ def _mic_meter_line(radio):
     return None
 
 
+@pytest.mark.feature("vox")
 def test_mic_level(fm_tx):
     # fm_tx only puts the radio on the FM VFO at its lowest power: nothing here keys, and VOX stays off
     if "VOX" not in fm_tx.features():
-        pytest.skip("built without CONFIG_VOX")
+        skip("not_built", "built without CONFIG_VOX")
     if features(fm_tx).get("vox.mic") != "1":
-        pytest.skip("this radio doesn't read its mic level")
+        skip("no_hw", "this radio doesn't read its mic level")
     with settings(fm_tx, vox=0):
         levels, end = [], time.monotonic() + 2.0
         while time.monotonic() < end:
@@ -684,12 +711,13 @@ def test_mic_level(fm_tx):
         print(f"vox.level while a beep plays in the speaker: max {max(heard)} ({heard})")
 
 
+@pytest.mark.feature("vox")
 @pytest.mark.radio_tx
 def test_vox_quiet(fm_tx):
     if "VOX" not in fm_tx.features():
-        pytest.skip("built without CONFIG_VOX")
+        skip("not_built", "built without CONFIG_VOX")
     if fm_tx.view(["features"]).get("vox.mic") == "0":
-        pytest.skip("this radio doesn't read its mic level, so VOX can't key")
+        skip("no_hw", "this radio doesn't read its mic level, so VOX can't key")
     with settings(fm_tx, tot_s=5, vox_tail_ms=500, vox_level=5, vox=2):
         try:
             wait_features(fm_tx, lambda x: x.get("vox_on") == "1", 1.0, "VOX armed (vox_on)")

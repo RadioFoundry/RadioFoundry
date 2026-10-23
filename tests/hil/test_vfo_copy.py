@@ -6,7 +6,7 @@ as it was, and the VFO's values stay across a channel and back. The VFO's freque
 afterwards, and its mode when it was DMR (an FM channel leaves the VFO's DMR color code, slot and target alone)."""
 import pytest
 
-from odr_hil import DebugLinkError
+from odr_hil import DebugLinkError, skip
 
 
 def _channel(radio):
@@ -19,13 +19,14 @@ def _tone_args(text):
     return kind, int(value or 0)
 
 
+@pytest.mark.feature("vfo")
 def test_copy_to_vfo(radio):
     feats = radio.features()
     if "VFO_FM" not in feats:
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     L = radio.link
     with radio.vfo_session():
         before = _channel(radio)	# the VFO's own values, put back at the end
@@ -40,7 +41,7 @@ def test_copy_to_vfo(radio):
                 pos = p
                 break
         if pos is None:
-            pytest.skip("no FM channel in this zone")
+            skip("state", "no FM channel in this zone")
         chan = _channel(radio)
         try:
             L.vfo_copy()

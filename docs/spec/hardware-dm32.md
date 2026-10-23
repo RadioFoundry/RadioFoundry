@@ -591,6 +591,14 @@ Two LEDs, red and green, active high on GPIO 0x20/0x21 (which is which: see the 
 Power knob: the firmware holds GPIO 0x11 high to stay on; GPIO 0x10 reads 1 when the knob is turned off, and the
 firmware then saves state and drops 0x11 (KP).
 
+### 6.6 Vibration motor (open)
+
+Online sources say the DM-32UV has a vibration motor (COM). A round two-wire part was seen on a board, but it may be
+the microphone, and no drive pin is known. ODR has no vibration support for the radio until both are confirmed
+(`boards/dm32/board.toml`, `[hardware] unconfirmed`).
+
+Open item: identify the part and the GPIO that drives it, then add `hal_power_t.vibrate` and `CONFIG_VIBRATE ?= y`.
+
 ---
 
 ## 7. LCD panel
@@ -1050,7 +1058,7 @@ stock CPS also sends seven 130-byte zero blocks before rebooting; they are not n
 
 If the radio does not boot the new image, remove and refit the battery; update mode still works (COM).
 
-`tools/dm32_flash.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1). `dm32_flash.py --probe` runs steps 1-3 only and prints the answers, for checking whether
+`tools/serial_loader.py` implements this protocol (untested on a radio; [dm32-migration.md](dm32-migration.md) 1). `serial_loader.py --probe` runs steps 1-3 only and prints the answers, for checking whether
 another HR_C7000 radio's update loader speaks this protocol and which model string it reports at step 3.
 
 ### 13.3 ROM serial boot (recovery, no bootloader needed)
@@ -1117,9 +1125,9 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 
 | Area | Choice | Where |
 |---|---|---|
-| Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; packed with `tools/dm32_pack.py` for the Baofeng updater | `boards/dm32/dm32.ld`, `platform/hrc7000/crt0.S` |
-| Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `dm32.ld` |
-| SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `ODR_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DODR_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `ODR_CPU_RAM` buffers), start-up stack. See the table below | `dm32.ld` |
+| Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; wrapped with `tools/serial_loader.py --wrap` for the Baofeng updater | `boards/dm32/memory.ld`, `platform/hrc7000/crt0.S` |
+| Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `boards/dm32/memory.ld` |
+| SRAM | RAM_LO 0x10000..0x16CDC (27,868 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), then `.ram_lo`: the state the core marks `ODR_CPU_RAM` (radio task, APRS, hotspot rings, DMR data buffers; `-DODR_CPU_RAM_SECTION=".ram_lo"` in `board.mk`) and the interrupt stack. 0x16CDC..0x2F914: reserved for the stock codec (049 and 046 windows; the codec keeps no state of its own in app RAM, `codec-dm32.md`). RAM 0x2F914..0x58000 (165,612 B): data, bss (RTOS heap inside, the network's `ODR_CPU_RAM` buffers), start-up stack. See the table below | `boards/dm32/memory.ld` |
 | Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E28 the codec's tables (copied at first use) | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c` |
 | Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off (then `main()` starts it, [watchdog.md](watchdog.md)); cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
@@ -1135,7 +1143,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 
 ### 17.1 SRAM layout
 
-The application has two RAM regions on either side of the codec's window (`dm32.ld`; the linker fails the build when
+The application has two RAM regions on either side of the codec's window (`boards/dm32/memory.ld`; the linker fails the build when
 either overflows). No DMA reaches SRAM on this board, so any buffer can sit in either. crt0 (`platform/hrc7000/crt0.S`)
 copies `.ramfunc` and `.data` from flash and zeroes `.bss` and `.ram_lo` before `main`; nothing in `.ram_lo` may have
 an initializer (it is `NOLOAD`: an initial value would be dropped).
@@ -1160,7 +1168,7 @@ gets it running from a radio that is already up. On by default (`CONFIG_STUB_ENT
 the command answers unavailable on a board whose platform has no `hal_system_t.enter_stub` (every board but the
 HR_C7000 so far). The wire format is debug link command `0x1A` (`docs/spec/debuglink.md` 3.18).
 
-**RAM region.** The monitor is loaded into the stock-codec window, `0x16CDC..0x2F914` (76,344 B), which `dm32.ld` leaves
+**RAM region.** The monitor is loaded into the stock-codec window, `0x16CDC..0x2F914` (76,344 B), which `boards/dm32/memory.ld` leaves
 out of the image entirely (section 17.1): ODR links nothing there. A radio that hosts its stock codec runs it in that
 window, so the first STUB command parks the codec (`hrc_vocoder_park`: it waits for a call in progress, then every
 later call returns silence) before the window is handed out. Without that, an upload on a DMR channel overwrote the

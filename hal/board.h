@@ -91,7 +91,7 @@ typedef struct {
 	// not built or the radio can't
 	const hal_afsk_t *afsk;
 	// Optional, with CAP_GPS: whether the GPS module is there, for radios sold with and without one on the same board
-	// (the MD-380 / MD-380G): true once the module has been heard. NULL = CAP_GPS alone says
+	// (a G model beside the plain one): true once the module has been heard. NULL = CAP_GPS alone says
 	bool (*gps_present)(void);
 	// Optional, with CAP_GPS: Settings > Location > GPS. Power the module and its receive path on or off now. Called
 	// with the stored value at start-up and on each change; the module is still probed at start-up whatever the
@@ -107,6 +107,28 @@ extern const board_t board;
 static inline bool board_has_battery(void)
 {
 	return (board.caps & CAP_NO_BATTERY) == 0;
+}
+
+// hz is in one of the radio's bands (board.bands), and one that may transmit when need_tx
+static inline bool board_in_band(uint32_t hz, bool need_tx)
+{
+	for (uint8_t i = 0; i < board.band_count; i++) {
+		const band_t *b = &board.bands[i];
+		if (hz >= b->lo_hz && hz <= b->hi_hz && (b->tx || !need_tx)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// The voltage the radio measures: its battery, its DC input (no battery, hal_power_t.supply_mv set), or neither
+typedef enum { BOARD_VOLTS_NONE, BOARD_VOLTS_BATTERY, BOARD_VOLTS_SUPPLY } board_volts_t;
+
+static inline board_volts_t board_volts(void)
+{
+	if (board_has_battery())
+		return BOARD_VOLTS_BATTERY;
+	return board.power != NULL && board.power->supply_mv != NULL ? BOARD_VOLTS_SUPPLY : BOARD_VOLTS_NONE;
 }
 
 // Settings > Location > GPS took effect (a board without the hook has nothing to switch)

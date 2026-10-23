@@ -30,7 +30,7 @@
 #define SAFE_REF	0x80u
 
 // Used when the frequency list is unreadable: the band split in eight equal steps
-#if MD380_VHF
+#if ODR_BAND_VHF
 #define GRID_FIRST	13600000u	// 10 Hz units
 #define GRID_STEP	475000u
 #else
@@ -76,7 +76,7 @@ static void load_frequencies(void)
 	freq_from_table = true;
 	for (uint32_t i = 0; i < POINTS; i++) {
 		uint32_t f = bcd32(&table[FREQ_LIST + i * 4u]);
-#if MD380_VHF
+#if ODR_BAND_VHF
 		bool in_band = f >= 13000000u && f <= 18000000u;
 #else
 		bool in_band = f >= 39000000u && f <= 49000000u;
@@ -95,7 +95,7 @@ static void load_frequencies(void)
 }
 
 // Usable when the power rows are neither erased nor zero and low < high at every point, and no gain or tuning row is
-// erased (a gain row may be all zero: the DM-1701's factory table has one)
+// erased (a gain row may be all zero: one radio's factory table has one)
 static bool table_sane(void)
 {
 	const uint8_t *low = &table[ROW_LOW], *high = &table[ROW_HIGH];
@@ -127,7 +127,7 @@ static bool table_sane(void)
 bool md380_cal_load(void)
 {
 	source = CAL_NONE;
-	if (!md380_flash_read_security(1, 0, &table[0], 256) || !md380_flash_read_security(2, 0, &table[256], 256)) {
+	if (!stm32_spi_flash_read_security(1, 0, &table[0], 256) || !stm32_spi_flash_read_security(2, 0, &table[256], 256)) {
 		why = "read failed";
 		memset(table, 0xFF, sizeof(table));
 		load_frequencies();

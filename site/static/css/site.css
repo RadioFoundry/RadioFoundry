@@ -130,6 +130,7 @@ details.notice > summary { font-weight: 600; }
 .badge { display: inline-block; font-size: var(--text-sm); font-weight: 600; padding: 0.1em 0.6em; border-radius: 999px; white-space: nowrap; }
 .badge-supported { background: var(--ok-soft); color: var(--ok); }
 .badge-testing { background: var(--warn-soft); color: var(--warn); }
+.badge-in_progress { background: var(--warn-soft); color: var(--warn); }
 .badge-planned { background: var(--surface-2); color: var(--muted); }
 .chip { display: inline-block; font-size: 0.75rem; padding: 0 0.5em; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); font-weight: 500; }
 .chip-out { border-style: dashed; }
@@ -148,6 +149,7 @@ tr:last-child > td, tr:last-child > th { border-bottom: 0; }
 .st-on { color: var(--ok); }
 .st-off { color: var(--muted); }
 .st-na { color: var(--bad); opacity: 0.7; }
+.st-nw { color: var(--muted); }
 .kv th { width: 35%; color: var(--muted); }
 details summary { cursor: pointer; }
 details p { margin: var(--space-2) 0 0; font-weight: 400; }

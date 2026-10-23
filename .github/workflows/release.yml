@@ -1,18 +1,17 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
-# Firmware releases (docs/dev/release.md): on a v* tag, build the codec-less firmware for every releasable radio with
-# pinned toolchains, write a manifest and SHA256SUMS for each image, build odrflash as single-file executables for
-# Linux, macOS and Windows, and attach everything to the GitHub release (created when missing; the user manual
-# workflow attaches its PDF to the same release). The AMBE codec is never part of any of it.
+# Firmware releases (docs/dev/release.md): on a v* tag, build the codec-less firmware for every releasable radio
+# (board.toml [status] release = "stable", each build option value's image too) with the toolchains platform.toml
+# pins, one job per toolchain (C-SKY in the csky-elf image, never built from source), write a manifest and SHA256SUMS
+# for each image, build odrflash as single-file executables for Linux, macOS and Windows, and attach everything to
+# the GitHub release (created when missing; the user manual workflow attaches its PDF to the same release). The AMBE
+# codec is never part of any of it.
 #
 # Pull requests touching the release tooling build everything as workflow artifacts and publish nothing; the release
 # gate (tools/ci.sh) runs for a tag only, since a pull request's own checks already ran it. With the repository
 # variable ODR_CI_RUNNER set, the Linux jobs run on that self-hosted runner, and only a v* tag also builds odrflash on
-# GitHub's macOS and Windows runners (docs/dev/ci.md). The DM-32UV is built only when the repository variable
-# ODR_RELEASE_DM32 is "true" (it isn't verified on a radio yet, and its csky toolchain is built from source:
-# docs/dev/release.md "Adding the DM-32UV"); the DM-1801 Pro only when ODR_RELEASE_DM1801PRO is "true" (bring-up:
-# docs/dev/release.md "The DM-1801 Pro").
+# GitHub's macOS and Windows runners (docs/dev/ci.md).
 name: Release
 
 on:
@@ -22,9 +21,20 @@ on:
     paths:
       - "tools/odrflash/**"
       - "tools/release.py"
-      - "tools/dm32_flash.py"
+      - "tools/serial_loader.py"
       - "tools/hrc7000_codec.py"
+      - "tools/boards.py"
+      - "tools/registry_docs.py"
+      - "tools/odr_python.sh"
+      - "tools/platform_toolchain.sh"
+      - "tools/install-arm-toolchain.sh"
+      - "tools/release_build.sh"
+      - "tools/docker/csky-toolchain/run.sh"
+      - "boards/*/board.toml"
+      - "boards/*/board.mk"
+      - "platform/*/platform.toml"
       - "stub/stubtool.py"
+      - ".github/actions/**"
       - ".github/workflows/release.yml"
   workflow_dispatch:
 
@@ -32,8 +42,6 @@ permissions:
   contents: read
 
 env:
-  ARM_GCC_VERSION: "13.3.rel1"
-  ARM_GCC_SHA256: "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4"
   PYINSTALLER_VERSION: "6.11.1"
   PYTHON_VERSION: "3.12"
 
@@ -66,9 +74,24 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
           fi
 
-  firmware-dm1701:
+  firmware:
+    # one job per toolchain: every releasable board built with it (board.toml [status] release = "stable") and each of
+    # its build option values' images (one per band, for example), all from the registry, so a new radio is released
+    # with no edit here. One artifact per toolchain
+    name: firmware (${{ matrix.name }})
     needs: version
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # the [toolchain] ids of platform/*/platform.toml, with their names; a new platform on a toolchain listed here
+        # needs no edit, a new toolchain gets an entry here and its set-up in .github/actions/toolchain
+        include:
+          - { toolchain: arm, name: Arm }
+          - { toolchain: csky, name: C-SKY }
+    permissions:
+      contents: read
+      packages: read   # pulling a private ghcr.io csky-elf image with the job token
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,113 +99,49 @@ jobs:
           fetch-depth: 0
       - name: third_party submodules
         run: tools/checkout-submodules.sh
+      # the pinned compiler, as in CI: the self-hosted image's, the installed Arm toolchain, or the csky-elf image.
+      # Never built from source here: without the image the C-SKY release fails
+      - name: Toolchain (platform.toml [toolchain])
+        id: tc
+        uses: ./.github/actions/toolchain
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          image: ${{ vars.ODR_CSKY_IMAGE }}
+          registry: ${{ vars.ODR_CSKY_REGISTRY }}
+          registry-user: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
+          registry-token: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
 
-      - name: Install the Arm GNU Toolchain (pinned)
-        if: runner.environment != 'self-hosted'   # the self-hosted image has the same pinned toolchain
-        run: |
-          set -eu
-          f="arm-gnu-toolchain-${ARM_GCC_VERSION}-x86_64-arm-none-eabi.tar.xz"
-          curl -fsSL -o "$RUNNER_TEMP/$f" \
-            "https://developer.arm.com/-/media/Files/downloads/gnu/${ARM_GCC_VERSION}/binrel/$f"
-          echo "${ARM_GCC_SHA256}  $RUNNER_TEMP/$f" | sha256sum -c -
-          mkdir -p "$HOME/opt"
-          tar -xJf "$RUNNER_TEMP/$f" -C "$HOME/opt"   # the Makefile looks in ~/opt/arm-gnu-toolchain-*/bin first
-          make -s BOARD=dm1701 print-cc
-          "$(make -s BOARD=dm1701 print-cc)" --version | head -1
-
-      - name: Release gate (host tests, Python checks, DM-1701 build, license checks)
+      # the host tests and Python checks on the runner (the csky-elf image has no host compiler), the builds with the
+      # toolchain's compiler
+      - name: Release gate (host tests, Python checks, license checks, the toolchain's builds)
         if: needs.version.outputs.publish == 'true'
-        run: tools/ci.sh --quick --board dm1701
-
-      - name: Build and package
+        env:
+          RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
+          TOOLCHAIN: ${{ matrix.toolchain }}
         run: |
-          set -eu
-          make BOARD=dm1701 -j"$(nproc)"
-          python3 tools/release.py --board dm1701 --version "${{ needs.version.outputs.version }}" --out dist
+          set -u
+          tools/ci.sh --quick --steps registry,host,python,licenses
+          rc=0
+          $RUN tools/ci.sh --quick --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
+          [ "$rc" != 3 ] || echo "::error::no $TOOLCHAIN compiler: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+          exit "$rc"
+
+      - name: Build and package every releasable board
+        env:
+          RUN: ${{ steps.tc.outputs.run }}
+          TOOLCHAIN: ${{ matrix.toolchain }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -u
+          rc=0
+          $RUN tools/release_build.sh --toolchain "$TOOLCHAIN" --version "$VERSION" --out dist || rc=$?
+          [ "$rc" != 3 ] || echo "::error::no $TOOLCHAIN compiler: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+          exit "$rc"
 
       - uses: actions/upload-artifact@v4
+        if: hashFiles('dist/*') != ''
         with:
-          name: firmware-dm1701
-          path: dist/
-          if-no-files-found: error
-
-  # Off until the DM-32UV is verified on a radio (docs/testing/dm32-bringup.md). Set the repository variable
-  # ODR_RELEASE_DM32=true to build it. The toolchain build takes about 45 minutes the first time; the cache keeps it.
-  firmware-dm32:
-    needs: version
-    if: vars.ODR_RELEASE_DM32 == 'true'
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
-          fetch-depth: 0
-      - name: third_party submodules
-        run: tools/checkout-submodules.sh
-      - uses: actions/cache@v4
-        if: runner.environment != 'self-hosted'   # the self-hosted image has csky-elf GCC in /opt/csky-elf
-        with:
-          path: ~/toolchains/csky-elf
-          key: csky-elf-${{ runner.os }}-${{ hashFiles('tools/build-csky-toolchain.sh') }}
-      - name: Build the csky-elf toolchain (pinned versions in the script)
-        if: runner.environment != 'self-hosted'
-        run: |
-          set -eu
-          if [ ! -x "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" ]; then
-            sudo apt-get update
-            sudo apt-get install -y build-essential libgmp-dev libmpfr-dev libmpc-dev libisl-dev texinfo bison flex
-            tools/build-csky-toolchain.sh
-          fi
-          "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" --version | head -1
-      - name: Build and package
-        run: |
-          set -eu
-          [ "${{ needs.version.outputs.publish }}" != true ] || tools/ci.sh --quick --board dm32   # the gate: tags only
-          make BOARD=dm32 -j"$(nproc)"
-          python3 tools/release.py --board dm32 --version "${{ needs.version.outputs.version }}" --out dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: firmware-dm32
-          path: dist/
-          if-no-files-found: error
-
-  # Off until the DM-1801 Pro leaves bring-up (docs/testing/dm1801pro-bringup.md). Set the repository variable
-  # ODR_RELEASE_DM1801PRO=true to build it. The same csky-elf toolchain and cache as the DM-32UV job.
-  firmware-dm1801pro:
-    needs: version
-    if: vars.ODR_RELEASE_DM1801PRO == 'true'
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
-          fetch-depth: 0
-      - name: third_party submodules
-        run: tools/checkout-submodules.sh
-      - uses: actions/cache@v4
-        if: runner.environment != 'self-hosted'   # the self-hosted image has csky-elf GCC in /opt/csky-elf
-        with:
-          path: ~/toolchains/csky-elf
-          key: csky-elf-${{ runner.os }}-${{ hashFiles('tools/build-csky-toolchain.sh') }}
-      - name: Build the csky-elf toolchain (pinned versions in the script)
-        if: runner.environment != 'self-hosted'
-        run: |
-          set -eu
-          if [ ! -x "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" ]; then
-            sudo apt-get update
-            sudo apt-get install -y build-essential libgmp-dev libmpfr-dev libmpc-dev libisl-dev texinfo bison flex
-            tools/build-csky-toolchain.sh
-          fi
-          "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" --version | head -1
-      - name: Build and package
-        run: |
-          set -eu
-          [ "${{ needs.version.outputs.publish }}" != true ] || tools/ci.sh --quick --board dm1801pro   # the gate: tags only
-          make BOARD=dm1801pro -j"$(nproc)"
-          python3 tools/release.py --board dm1801pro --version "${{ needs.version.outputs.version }}" --out dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: firmware-dm1801pro
+          name: firmware-${{ matrix.toolchain }}
           path: dist/
           if-no-files-found: error
 
@@ -224,9 +183,10 @@ jobs:
           out="odrflash-${{ needs.version.outputs.version }}-${{ matrix.name }}"
           # the serial route (odrflash/serialflash.py) imports these tools from the checkout; bundle them
           pyinstaller --onefile --clean --name "$out" --paths tools/odrflash --paths tools --paths stub \
-            --hidden-import dm32_flash --hidden-import hrc7000_codec --hidden-import stubtool \
+            --hidden-import serial_loader --hidden-import hrc7000_codec --hidden-import stubtool \
             --collect-binaries libusb_package --collect-data certifi --hidden-import usb.backend.libusb1 \
             --add-data "tools/odrflash/odrflash/codec_maps:odrflash/codec_maps" \
+            --add-data "tools/odrflash/odrflash/registry.json:odrflash" \
             tools/odrflash/odrflash/__main__.py
           "./dist/$out${{ matrix.ext }}" --version
           "./dist/$out${{ matrix.ext }}" --help > /dev/null
@@ -237,12 +197,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [version, firmware-dm1701, firmware-dm32, firmware-dm1801pro, odrflash]
-    # firmware-dm32 and firmware-dm1801pro may be skipped (variables off); publish anyway, but never after a failure
-    if: >-
-      always() && needs.version.outputs.publish == 'true' && needs.firmware-dm1701.result == 'success' &&
-      needs.odrflash.result == 'success' && needs.firmware-dm32.result != 'failure' &&
-      needs.firmware-dm1801pro.result != 'failure'
+    needs: [version, firmware, odrflash]
+    if: needs.version.outputs.publish == 'true'   # and every toolchain's firmware and every odrflash passed
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: write

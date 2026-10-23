@@ -1,9 +1,17 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """Board descriptions for flashing: flash sectors, where the application and the codec live, how the bootloader is
-reached. One source of truth for odrflash and tools/release.py (docs/dev/release.md "Sector maps").
+reached. Read from registry.json, which tools/boards.py generates from boards/*/board.toml, the boards' board.mk and
+linker scripts (docs/dev/release.md "Sector maps"). The flashing tools (odrflash, tools/release.py, stub/stubtool.py,
+stub/f4stub.py, tools/serial_loader.py, tools/hrc7000_codec.py, tools/stm32_dfu.py) all read it from here, so it works
+on any Python 3 and inside the odrflash executable, where there is no repository.
 """
-from . import stockfw
+import json
+import os
+
+from . import names
+
+REGISTRY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "registry.json")
 
 
 class Sector:
@@ -34,27 +42,61 @@ class CodecProfile:
         self.sources = sources		# stock files odrflash can merge it from (names, for messages)
 
 
+def _tuple(v):
+    return tuple(v) if v else None
+
+
 class Board:
-    def __init__(self, id, name, family, app_base, flash_end, sectors, codec, debuglink_names, releasable,
-                 keep_codec_supported, key_sha256=None, dfu_ids=None, dfu_string1=None, dfu_product=None, protected=(),
-                 first_stage=None):
-        self.id = id
-        self.name = name
-        self.family = family
-        self.app_base = app_base
-        self.flash_end = flash_end
-        self.sectors = sectors			# the sectors the bootloader can erase, in its order
-        self.codec = codec			# CodecProfile
-        self.debuglink_names = debuglink_names	# VERSION board= values that mean this board
-        self.releasable = releasable
-        self.keep_codec_supported = keep_codec_supported
-        self.key_sha256 = key_sha256
-        self.dfu_ids = dfu_ids
-        self.dfu_string1 = dfu_string1
-        self.dfu_product = dfu_product		# the bootloader's USB product name (what Zadig lists)
-        self.protected = protected		# address ranges never written (bootloader)
-        self.first_stage = first_stage		# (size, first bytes): the image at app_base starts with a first stage
-        # this long, then the application (make's odr_<board>_install.bin); None: the application starts at app_base
+    """One registry entry. e: the board's object in registry.json (tools/boards.py odrflash_view), whose keys are this
+    class's attributes; only the ones that are richer than JSON are converted here."""
+
+    def __init__(self, e):
+        self.__dict__.update(e)
+        self.app_region = tuple(e["app_region"])	# the application's flash (the linker script's MEMORY FLASH)
+        self.sectors = [Sector(*s) for s in e["sectors"]]	# the sectors the bootloader can erase, in its order
+        self.protected = [tuple(p) for p in e["protected"]]	# address ranges never written (the factory loader)
+        self.codec_slot, self.codec_run, self.codec_tables = (_tuple(e[k]) for k in ("codec_slot", "codec_run",
+                                                                                      "codec_tables"))
+        self.dfu_ids = _tuple(e["dfu_ids"])
+        self.key_prefix = bytes.fromhex(e["key_prefix"]) if e["key_prefix"] else None
+        fs = e["first_stage"]
+        # (size, first bytes): the image at app_base starts with a first stage this long, then the application (make's
+        # odr_<board>_install.bin); None: the application starts at app_base
+        self.first_stage = (fs[0], bytes.fromhex(fs[1])) if fs else None
+        c = dict(e["codec"])
+        self.codec_layouts = {}
+        self.codec_codes = [self.codec_code] if self.codec_code is not None else []
+        if c["id"] is None:
+            # a stock-file placement (STM32): each listed stock file puts its codec where its own layout says. The board's
+            # windows are the union of them all: what the image must stay out of and what keeping the codec protects. A
+            # merge plans against the layout of the file it merges (merge_windows)
+            from . import stockfw
+            profs = [stockfw.PROFILES[h] for h in self.codec_stock]
+            ids = {p["codec_profile"] for p in profs}
+            if len(ids) != 1:
+                raise ValueError("%s: the stock files hold different codecs %s" % (self.id, sorted(ids)))
+            wins = []
+            for h, prof in zip(self.codec_stock, profs):
+                lay = [(a, n) for a, n, _ in stockfw.layout(prof)]
+                self.codec_layouts[h] = lay
+                wins += [w for w in lay if w not in wins]
+            c.update(id=profs[0]["codec_profile"], windows=wins, sources=c["sources"] or [p["name"] for p in profs])
+            # where each file's codec code starts (its first word is the codec signature), first file first
+            self.codec_codes = [self.codec_layouts[h][0][0] for h in self.codec_stock]
+            self.codec_code = self.codec_codes[0]
+        self.codec = CodecProfile(c["id"], [tuple(w) for w in c["windows"]], c["installed"], c["sources"] or [])
+
+    @property
+    def releasable(self):
+        return self.release == "stable"
+
+    def merge_windows(self, prof=None):
+        """The windows a merge of this stock profile writes, [(addr, length)]: its own layout, never the union of every
+        stock file's. Without a profile (a codec in ODR's slot), the board's windows."""
+        if prof is None or not self.codec_layouts:
+            return list(self.codec.windows)
+        from . import stockfw
+        return [(a, n) for a, n, _ in stockfw.layout(prof)]
 
     def sector_at(self, addr):
         for s in self.sectors:
@@ -75,131 +117,80 @@ class Board:
                     out.append(s)
         return sorted(out, key=lambda s: s.addr)
 
+    def build_option(self, name, value):
+        """The build option value's entry, or None if the board has no such option or value."""
+        for o in self.build_options:
+            if o["name"] == name:
+                return next((v for v in o["values"] if v["id"] == value), None)
+        return None
 
-def _f405_sectors():
-    """STM32F405 1 MB: sectors 0-3 16 KB, 4 64 KB, 5-11 128 KB (reference manual, flash module organization).
-    Sectors 0-2 hold the stock bootloader and are not in the list."""
-    out = [Sector(3, 0x0800C000, 0x4000), Sector(4, 0x08010000, 0x10000)]
-    for i in range(5, 12):
-        out.append(Sector(i, 0x08020000 + (i - 5) * 0x20000, 0x20000))
-    return out
+    def options_for_name(self, name):
+        """The build option values a debug link board name stands for ({"BAND": "vhf"} for "<model> VHF"); {} for a
+        name of this board that says nothing about them, None for another board's name."""
+        if name not in self.debuglink_names:
+            return None
+        out = {}
+        for o in self.build_options:
+            v = next((v for v in o["values"] if v["board_name"] == name), None)
+            if v:
+                out[o["name"]] = v["id"]
+        return out
+
+    def option_values(self):
+        """[(name, [value, ...])], each option's default first: what names.py takes."""
+        return [(o["name"], [v["id"] for v in o["values"]]) for o in self.build_options]
+
+    def full_options(self, given):
+        """Every build option's value: the given ones, the defaults (each option's first value) for the rest."""
+        return names.full(self.option_values(), given)
+
+    def image_id(self, options):
+        """The board id with each non-default option value, as the Makefile and the release name images: <id>-vhf."""
+        return names.image_id(self.id, self.option_values(), options)
+
+    def build_image(self, options, variant=None):
+        """The image make writes for these option values, from the source tree (names.build_image)."""
+        return names.build_image(self.id, self.option_values(), options, variant, bool(self.first_stage))
+
+    def release_id(self, options, variant=None):
+        """The name id of the release files for these option values (names.release_id)."""
+        return names.release_id(self.id, self.option_values(), options, variant)
 
 
-_V0206 = stockfw.PROFILES["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
+FORMAT = "odr-board-registry/2"
 
-DM1701 = Board(
-    id="dm1701",
-    name="Baofeng DM-1701",
-    family="anyroad-dfu",
-    app_base=0x0800C000,
-    flash_end=0x08100000,
-    sectors=_f405_sectors(),
-    # the codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after
-    # them and the descriptor, all in sectors 10 and 11. Stock firmware keeps its code in sectors 7 and 8, which are the
-    # application's now, so no stock version leaves it in place ("installed" is empty: from stock, odrflash merges)
-    codec=CodecProfile(
-        id=_V0206["codec_profile"],
-        windows=[(a, n) for a, n, _ in stockfw.layout(_V0206)],
-        installed=[],
-        sources=[_V0206["name"]],
-    ),
-    debuglink_names=["DM-1701", "dm1701"],
-    releasable=True,
-    keep_codec_supported=True,
-    key_sha256=stockfw.DM1701_KEY_SHA256,
-    dfu_ids=(0x0483, 0xDF11),
-    dfu_string1="AnyRoad Technology",
-    dfu_product="Digital Radio in USB mode",
-    protected=[(0x08000000, 0x0800C000)],
-)
 
-# Not released yet (docs/testing/dm32-bringup.md). Program flash 0x03000000..0x03100000; the Baofeng bootloader at
-# 0x03000000..0x0300C000; the codec slot 0x030E8000..0x03100000 (boards/dm32/dm32.ld, tools/hrc7000_codec.py). The
-# Baofeng serial updater erases the whole application area before it writes (hardware-dm32.md 13.2 step 7), so the
-# codec can't be kept across an update: every flash merges it again. Modeled as one "sector" for the app and one for
-# the slot so manifests can say where the codec goes.
-DM32 = Board(
-    id="dm32",
-    name="Baofeng DM-32UV",
-    family="bfuv32-serial",
-    app_base=0x0300C000,
-    flash_end=0x03100000,
-    sectors=[Sector(0, 0x0300C000, 0x030E8000 - 0x0300C000), Sector(1, 0x030E8000, 0x03100000 - 0x030E8000)],
-    codec=CodecProfile(id="dm32-049", windows=[(0x030E8000, 0x03100000 - 0x030E8000)],
-                       installed=[], sources=["DM32.01.01.049.bin", "DM32.00.01.046HRVocoder.bin"]),
-    debuglink_names=["DM-32UV", "DM-32", "dm32"],
-    releasable=False,
-    keep_codec_supported=False,
-    protected=[(0x03000000, 0x0300C000)],
-)
+def _load():
+    with open(REGISTRY, encoding="utf-8") as f:
+        data = json.load(f)
+    if data.get("format") != FORMAT:
+        raise RuntimeError("%s is format %r, not %r: regenerate it (tools/boards.py json --for odrflash)"
+                           % (REGISTRY, data.get("format"), FORMAT))
+    _warn_if_stale()
+    return {bid: Board(e) for bid, e in data["boards"].items()}
 
-# Not released yet (docs/testing/dm1801pro-bringup.md). The same Baofeng serial updater as the DM-32UV, with its own ID
-# string (BF1801-V1); the same flash map, the same codec slot and the same erase of the whole application area. The
-# codec comes from the radio's own program flash (read with stub/stubtool.py), not from a stock file
-# (docs/spec/codec-dm1801pro.md, tools/hrc7000_codec.py --board dm1801pro). tools/dm32_flash.py --model dm1801pro does
-# the writing.
-DM1801PRO = Board(
-    id="dm1801pro",
-    name="Baofeng DM-1801 Pro",
-    family="bfuv32-serial",
-    app_base=0x0300C000,
-    flash_end=0x03100000,
-    sectors=[Sector(0, 0x0300C000, 0x030E8000 - 0x0300C000), Sector(1, 0x030E8000, 0x03100000 - 0x030E8000)],
-    codec=CodecProfile(id="dm1801pro-049", windows=[(0x030E8000, 0x03100000 - 0x030E8000)],
-                       installed=[], sources=["a program flash read of the radio"]),
-    debuglink_names=["DM-1801 Pro", "DM-1801Pro", "dm1801pro"],
-    releasable=False,
-    keep_codec_supported=False,
-    protected=[(0x03000000, 0x0300C000)],
-)
 
-# Not released yet (docs/testing/md380-bringup.md). The TYT bootloader takes the same DFU protocol and sector order as
-# the DM-1701's, with its own key (tools/stm32_dfu.py --model md380). The codec where the merge puts it
-# (docs/spec/codec-placement.md): the main table window at its stock address in sector 8, the small ones in sectors 10
-# and 11, the code moved to the start of sector 11 and the descriptor. The application has sectors 3-7
-# (boards/md380/md380.ld), so an update leaves the codec sectors alone. Stock firmware keeps the code in sectors 6
-# and 7, so no stock version leaves it in place ("installed" is empty: from stock, odrflash merges).
-_D2032 = stockfw.PROFILES["e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"]
+def _warn_if_stale():
+    """From a source tree: warn when a registry source is newer than registry.json (it was edited and not regenerated;
+    the build regenerates it, tools/boards.py check fails on it)."""
+    import glob
+    import sys
+    root = os.path.normpath(os.path.join(os.path.dirname(REGISTRY), "..", "..", ".."))
+    if not os.path.isfile(os.path.join(root, "tools", "boards.py")):
+        return		# the odrflash executable or an installed package: no sources
+    try:
+        built = os.path.getmtime(REGISTRY)
+        srcs = [p for pat in ("boards/*/board.toml", "boards/*/board.mk", "boards/*/*.ld", "boards/*/pins.h",
+                              "platform/*/platform.toml") for p in glob.glob(os.path.join(root, pat))]
+        newer = [os.path.relpath(p, root) for p in srcs if os.path.getmtime(p) > built + 1]
+    except OSError:
+        return
+    if newer:
+        sys.stderr.write("odrflash: warning: %s is older than %s; run make or tools/boards.py json --for odrflash --out "
+                         "%s\n" % (os.path.relpath(REGISTRY, root), newer[0], os.path.relpath(REGISTRY, root)))
 
-MD380 = Board(
-    id="md380",
-    name="TYT MD-380",
-    family="anyroad-dfu",
-    app_base=0x0800C000,
-    flash_end=0x08100000,
-    sectors=_f405_sectors(),
-    codec=CodecProfile(id=_D2032["codec_profile"], windows=[(a, n) for a, n, _ in stockfw.layout(_D2032)],
-                       installed=[], sources=[_D2032["name"]]),
-    debuglink_names=["MD-380", "MD-380 VHF", "md380"],
-    releasable=False,
-    keep_codec_supported=True,
-    key_sha256=stockfw.MD380_KEY_SHA256,
-    dfu_ids=(0x0483, 0xDF11),
-    dfu_string1="AnyRoad Technology",
-    dfu_product="Digital Radio in USB mode",
-    protected=[(0x08000000, 0x0800C000)],
-)
 
-# Bring-up, not released (docs/spec/hardware-db25d.md 2, 7, 8). The vendor IAP loader (0x03000000..0x0300BFFF) is never
-# written. The first stage fills the sector at 0x0300C000, ODR starts at 0x0300D000, the codec slot is the same as the
-# DM-32UV's. No tool here flashes it: the web flasher does (IAP loader, or the stub from ODR), and stub/stubtool.py.
-DB25D = Board(
-    id="db25d",
-    name="Radioddity DB25-D PRO",
-    family="hrc7000-iap",
-    app_base=0x0300C000,
-    flash_end=0x03100000,
-    sectors=[Sector(0, 0x0300C000, 0x030E8000 - 0x0300C000), Sector(1, 0x030E8000, 0x03100000 - 0x030E8000)],
-    codec=CodecProfile(id="db25d-018", windows=[(0x030E8000, 0x03100000 - 0x030E8000)],
-                       installed=[], sources=["DB25-D PRO 909E.Dx.EARSAB.018 stock files", "a program flash read of the radio"]),
-    debuglink_names=["DB25-D", "DB25-D PRO", "db25d"],
-    releasable=False,
-    keep_codec_supported=False,
-    protected=[(0x03000000, 0x0300C000)],
-    first_stage=(0x1000, bytes([0x2C, 0x11, 0x01, 0xC0])),
-)
-
-BOARDS = {b.id: b for b in (DM1701, DM32, DM1801PRO, MD380, DB25D)}
+BOARDS = _load()
 
 
 def get(board_id):
@@ -215,3 +206,8 @@ def from_debuglink_name(name):
         if name in b.debuglink_names:
             return b
     return None
+
+
+def by(**attrs):
+    """The boards whose attributes have these values, in id order: by(platform="hrc7000"), by(family=...)."""
+    return [b for _, b in sorted(BOARDS.items()) if all(getattr(b, k) == v for k, v in attrs.items())]

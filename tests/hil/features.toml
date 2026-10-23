@@ -1,0 +1,377 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# The feature checklist (tests/hil/README.md, "Bring-up mode"): one table per feature, never a column per radio. The
+# tests say which feature they check (@pytest.mark.feature("<id>")), so this file lists no tests. A radio's state for
+# each feature is resolved by tools/bringup.py from its build data and the [features.<id>] overrides of its
+# board.toml, so a new radio adds nothing here. The build data are the switch defaults, BOARD_UNSUPPORTED (the
+# hardware can't) and BOARD_NOT_WRITTEN (the code isn't written for the radio yet): docs/build-config.md,
+# "Unsupported, not written, unconfirmed". tools/bringup.py check (tools/ci.sh) fails when a switch of
+# config/features.mk has no entry or a test marks a feature this file doesn't have.
+#
+# [feature.<id>]    the id: stable, snake case, what the tests' feature markers name
+#   switch          the CONFIG_ switch without the prefix; left out for a feature without one
+#   hardware        what the switch needs that some radios physically lack. tools/boards.py check fails on a board
+#                   that neither builds the switch by default nor lists it with the reason in BOARD_UNSUPPORTED or
+#                   BOARD_NOT_WRITTEN (or, while the fact isn't known, in board.toml [hardware] unconfirmed): never
+#                   "off by default"
+#   spec            the doc that defines the feature
+#   source          paths whose change makes a recorded result stale (default: the files and directories the
+#                   Makefile builds for the switch, else the files that test CONFIG_<switch>; the spec always counts)
+#   planned_tests   required tests not written yet, by node id (listed, not gating, until they exist)
+#   manual          steps a person does for the feature that no single test asks for (a test's own steps are on its
+#                   marker: @pytest.mark.feature("<id>", owner="..."))
+
+# ── Radio and voice ──
+
+[feature.fm]
+switch = "FM"
+spec = "docs/spec/radio-features.md"
+source = ["core/radio", "drivers/rf", "hal/hal_radio.h", "hal/hal_audio.h"]
+
+[feature.subtone]
+switch = "SUBTONE"
+spec = "docs/spec/radio-features.md"
+
+[feature.fm_tx_tones]
+switch = "FM_TX_TONES"
+spec = "docs/spec/radio-features.md"
+
+[feature.dtmf]
+switch = "DTMF"
+spec = "docs/spec/radio-features.md"
+
+[feature.vox]
+switch = "VOX"
+spec = "docs/spec/radio-features.md"
+
+[feature.battery_save]
+switch = "BATTERY_SAVE"
+spec = "docs/spec/radio-features.md"
+
+[feature.am_rx]
+switch = "AM_RX"
+hardware = "an AM-capable receiver for the air band"
+spec = "docs/spec/airband-and-broadcast.md"
+
+[feature.bcast_fm]
+switch = "BCAST_FM"
+hardware = "a broadcast FM receiver"
+spec = "docs/spec/airband-and-broadcast.md"
+
+[feature.dmr_voice]
+switch = "DMR"
+spec = "docs/spec/dmr-voice.md"
+source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "hal/hal_dmr_modem.h", "hal/hal_vocoder.h"]
+
+[feature.dmr_privacy]
+switch = "DMR_PRIVACY"
+spec = "docs/spec/dmr-voice.md"
+
+[feature.dmr_talker_alias]
+switch = "DMR_TALKER_ALIAS"
+spec = "docs/spec/dmr-voice.md"
+
+[feature.dmr_gps]
+switch = "DMR_GPS"
+spec = "docs/spec/dmr-voice.md"
+
+[feature.dmr_emergency]
+switch = "DMR_EMERGENCY"
+spec = "docs/spec/dmr-emergency.md"
+
+[feature.dmr_roaming]
+switch = "DMR_ROAMING"
+spec = "docs/spec/dmr-roaming.md"
+
+[feature.dmr_signaling]
+switch = "DMR_SIGNALING"
+spec = "docs/spec/dmr-data.md"
+
+[feature.vfo]
+switch = "VFO"
+spec = "docs/spec/dmr-voice.md"
+
+[feature.vfo_fm]
+switch = "VFO_FM"
+spec = "docs/spec/dmr-voice.md"
+
+[feature.vfo_dmr]
+switch = "VFO_DMR"
+spec = "docs/spec/dmr-voice.md"
+
+[feature.channel_list]
+switch = "CHANNEL_LIST"
+spec = "docs/spec/ui.md"
+
+[feature.channel_edit]
+switch = "CHANNEL_EDIT"
+spec = "docs/spec/ui.md"
+
+[feature.key_assign]
+switch = "KEY_ASSIGN"
+spec = "docs/spec/ui.md"
+
+[feature.scan]
+switch = "SCAN"
+spec = "docs/spec/radio-features.md"
+
+[feature.dual_watch]
+switch = "DUAL_WATCH"
+spec = "docs/spec/radio-features.md"
+
+[feature.beep]
+switch = "BEEP"
+spec = "docs/spec/radio-features.md"
+
+[feature.vibrate]
+switch = "VIBRATE"
+hardware = "a vibration motor"
+spec = "docs/spec/radio-features.md"
+
+[feature.gps]
+switch = "GPS"
+hardware = "a GPS receiver"
+spec = "docs/spec/aprs.md"
+source = ["drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
+
+# ── DMR data ──
+
+[feature.dmr_data_rx]
+spec = "docs/spec/dmr-data.md"
+source = ["core/dmr/dmrData.c", "core/dmr/dmrDataService.c", "core/dmr/dmr_data_api.h"]
+
+[feature.dmr_sms]
+switch = "DMR_SMS"
+spec = "docs/spec/dmr-data.md"
+
+[feature.dmr_tms]
+switch = "DMR_TMS"
+spec = "docs/spec/dmr-data.md"
+
+[feature.dmr_ars]
+switch = "DMR_ARS"
+spec = "docs/spec/dmr-data.md"
+
+[feature.dmr_lrrp]
+switch = "DMR_LRRP"
+spec = "docs/spec/dmr-data.md"
+
+[feature.dmr_udp_compress]
+switch = "DMR_UDP_COMPRESS"
+spec = "docs/spec/dmr-data.md"
+
+[feature.dmr_confirmed]
+switch = "DMR_CONFIRMED"
+spec = "docs/spec/dmr-data.md"
+
+[feature.sfr]
+switch = "SFR"
+spec = "docs/spec/sfr.md"
+
+[feature.aprs]
+switch = "APRS"
+spec = "docs/spec/aprs.md"
+
+[feature.aprs_rx]
+switch = "APRS_RX"
+hardware = "FM receive audio sampled by the processor (the AFSK input path)"
+spec = "docs/spec/aprs.md"
+
+[feature.aprs_igate]
+switch = "APRS_IGATE"
+spec = "docs/spec/aprs.md"
+
+# ── Host link and USB ──
+
+[feature.usb]
+switch = "USB"
+spec = "docs/spec/usb-audio.md"
+
+[feature.hostlink]
+switch = "HOSTLINK"
+spec = "docs/spec/debuglink.md"
+
+[feature.hotspot]
+switch = "HOTSPOT"
+spec = "docs/spec/mmdvm-protocol.md"
+source = ["core/hotspot", "core/hostlink", "docs/spec/mmdvm-protocol.md"]
+
+[feature.split_duplex]
+switch = "HOTSPOT_SPLIT"
+spec = "docs/spec/split-duplex.md"
+source = [
+    "core/dmr/bsOutbound.c",
+    "core/dmr/slotEpoch.c",
+    "core/hotspot",
+    "drivers/modem",
+    "hal/hal_dmr_modem.h",
+    "tools/split_duplex_host.py",
+]
+planned_tests = [
+    "tests/hil/test_split_duplex.py::test_split_tx_half_continuous",
+    "tests/hil/test_split_duplex.py::test_split_standard_host",
+    "tests/hil/test_split_duplex.py::test_split_state_cleanup",
+]
+
+[feature.debuglink]
+switch = "DEBUGLINK"
+spec = "docs/spec/debuglink.md"
+
+[feature.task_stacks]
+switch = "TASK_STACKS"
+spec = "docs/spec/debuglink.md"
+
+[feature.cps_openfw]
+switch = "CPS_OPENFW"
+spec = "docs/spec/cps-protocol.md"
+
+[feature.cps_fast]
+switch = "CPS_FAST"
+spec = "docs/spec/cps-fast.md"
+
+[feature.stub_entry]
+switch = "STUB_ENTRY"
+spec = "docs/spec/stub-stm32f4.md"
+
+[feature.crash_log]
+switch = "CRASH_LOG"
+spec = "docs/spec/crash-log.md"
+
+[feature.crash_screen]
+switch = "CRASH_SCREEN"
+spec = "docs/spec/crash-log.md"
+
+[feature.crash_report]
+switch = "CRASH_REPORT"
+spec = "docs/spec/crash-log.md"
+
+[feature.watchdog]
+switch = "WATCHDOG"
+spec = "docs/spec/watchdog.md"
+
+[feature.fault_trace]
+switch = "FAULT_TRACE"
+spec = "docs/spec/crash-log.md"
+
+# ── Network ──
+
+[feature.usb_network]
+switch = "USB_NETWORK"
+spec = "docs/spec/usb-network.md"
+
+[feature.dmr_ip_gateway]
+switch = "DMR_IP_GATEWAY"
+spec = "docs/spec/dmr-data.md"
+
+[feature.dmr_control_station]
+switch = "DMR_CONTROL_STATION"
+spec = "docs/spec/usb-network.md"
+
+[feature.net_tcp]
+switch = "NET_TCP"
+spec = "docs/spec/tcp-services.md"
+
+[feature.net_kiss]
+switch = "NET_KISS"
+spec = "docs/spec/tcp-services.md"
+
+[feature.net_http]
+switch = "NET_HTTP"
+spec = "docs/spec/tcp-services.md"
+
+[feature.net_http_gzip]
+switch = "NET_HTTP_GZIP"
+spec = "docs/spec/tcp-services.md"
+
+[feature.net_rigctl]
+switch = "NET_RIGCTL"
+spec = "docs/spec/tcp-services.md"
+
+[feature.net_usrp]
+switch = "NET_USRP"
+spec = "docs/spec/usb-audio.md"
+
+[feature.net_aprsis]
+switch = "NET_APRSIS"
+spec = "docs/spec/aprs.md"
+
+[feature.mdns]
+switch = "MDNS"
+spec = "docs/spec/mdns.md"
+
+[feature.tftp]
+switch = "TFTP"
+spec = "docs/spec/tftp.md"
+
+[feature.tftp_iddb]
+switch = "TFTP_IDDB"
+spec = "docs/spec/tftp.md"
+
+[feature.snmp]
+switch = "SNMP"
+spec = "docs/spec/snmp.md"
+
+[feature.net_ppp]
+switch = "NET_PPP"
+spec = "docs/spec/ppp.md"
+
+# ── User interface ──
+
+[feature.ui_navigation]
+spec = "docs/spec/ui.md"
+source = ["core/ui", "core/input"]
+
+[feature.channel_knob]
+spec = "docs/spec/ui.md"
+source = ["drivers/input/quadrature"]
+
+[feature.ui_settings]
+switch = "UI_SETTINGS"
+spec = "docs/spec/ui.md"
+
+[feature.diag]
+switch = "DIAG"
+spec = "docs/spec/ui.md"
+
+[feature.ui_color]
+switch = "UI_COLOR"
+hardware = "a color display"
+spec = "docs/spec/ui.md"
+
+[feature.font_xl]
+switch = "FONT_XL"
+spec = "docs/spec/ui.md"
+
+[feature.font_aa]
+switch = "FONT_AA"
+spec = "docs/spec/ui.md"
+
+[feature.font_big]
+switch = "FONT_BIG"
+spec = "docs/spec/ui.md"
+
+# ── Radio core, storage and codec ──
+
+[feature.radio_controls]
+spec = "docs/spec/radio-features.md"
+source = ["core/radio"]
+
+[feature.settings_store]
+spec = "docs/spec/settings-store.md"
+source = ["core/settings", "core/storage"]
+
+[feature.nand_storage]
+switch = "NAND_STORAGE"
+hardware = "SPI NAND data flash"
+spec = "docs/spec/nand-sectors.md"
+
+[feature.codec_check]
+spec = "docs/spec/codec-placement.md"
+source = ["tools/odrflash/odrflash"]
+
+# ── Bench ──
+
+[feature.audio_probe]
+switch = "AUDIO_PROBE"
+spec = "docs/spec/usb-audio.md"

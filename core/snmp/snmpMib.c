@@ -25,7 +25,7 @@
 #define SYS_SERVICES	(4u + 64u)		// internet (routes IP over DMR) and applications (RFC 3418)
 
 // The prefixes (each led by its length): system, snmp (RFC 3418) and odrObjects. The interfaces group is left out
-// for the flash it would cost (the MD-380); odrNet has the link's counters
+// for the flash it would cost (the smallest images); odrNet has the link's counters
 enum { P_SYSTEM, P_SNMP, P_ODR };
 static const uint8_t PFX_SYSTEM[] = { 6, 0x2B, 6, 1, 2, 1, 1 };
 static const uint8_t PFX_SNMP[] = { 6, 0x2B, 6, 1, 2, 1, 11 };

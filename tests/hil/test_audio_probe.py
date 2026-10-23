@@ -45,6 +45,8 @@ import time
 
 import pytest
 
+from odr_hil import skip
+
 PAGE = 4
 TONE_HZ = 1000
 TONE_AMP = 8000          # about -12 dBFS
@@ -161,10 +163,10 @@ def probe(radio):
     try:
         radio.link.probe_status()
     except DebugLinkError as e:
-        pytest.skip(f"firmware without the audio probe (build with CONFIG_AUDIO_PROBE=y): {e}")
+        skip("not_built", f"firmware without the audio probe (build with CONFIG_AUDIO_PROBE=y): {e}")
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     try:
         yield radio
     finally:
@@ -196,9 +198,10 @@ def levels(link, settle=0.4, n=5):
     return {ch: (acc[ch][0] / n, acc[ch][1]) for ch in acc}
 
 
+@pytest.mark.feature("audio_probe", optional=True)
 def test_probe_stream_in_fm(probe, pytestconfig):
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     hz = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
     with probe.vfo_session():
@@ -214,7 +217,7 @@ def test_probe_stream_in_fm(probe, pytestconfig):
 
 def test_probe_fm_rx_variants(probe, pytestconfig):
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     noaa = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
     quiet = noaa + 2_000_000          # 2 MHz away: nothing there at the bench, squelch closed (checked)
@@ -321,7 +324,7 @@ def print_tx_rows(title, rows, base_row=0):
 @pytest.mark.sdr_rx
 def test_probe_fm_tx_variants(probe, sdr_bench, pytestconfig):
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
 
     def run(regs, amp, hz):
@@ -338,7 +341,7 @@ def test_probe_fm_tx_variants(probe, sdr_bench, pytestconfig):
 
 def test_probe_fm_ram_rx(probe, pytestconfig):
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     noaa = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
     quiet = noaa + 2_000_000
@@ -383,7 +386,7 @@ def test_probe_fm_ram_rx(probe, pytestconfig):
 @pytest.mark.sdr_rx
 def test_probe_fm_ram_tx_variants(probe, sdr_bench, pytestconfig):
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     saved = regs_saved(L, RAM_TX_SAVED)
 
@@ -423,11 +426,12 @@ MUSIC_HZ = 1400
 MUSIC_MS = 2000
 
 
+@pytest.mark.feature("audio_probe", optional=True)
 def test_probe_music_fifo(probe, pytestconfig):
     """Radio only: with the prompt tone path open (0x06 bit 1), does the chip drain the FIFO (about 8000 samples a
     second = 250 writes of 32), and with it closed, not? Tells whether the path runs at all in FM."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     rows = []
     with probe.vfo_session():
@@ -454,7 +458,7 @@ def test_probe_fm_tx_music(probe, sdr_bench, pytestconfig):
     """The prompt tone path into the modulator: the FIFO feeds the codec DAC; with 0xE3 bit 0 the DAC loops into the
     ADC that feeds the FM transmit chain. Keyed with the microphone muted, a 1400 Hz tone through the FIFO."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     saved = regs_saved(L, {0x06, 0xE3})
 
@@ -503,7 +507,7 @@ def test_probe_fm_tx_sweep(probe, sdr_bench, pytestconfig):
     LINEIN2 on for 1.5 s, whose own 2.49 kHz tone marks the time (it shows up for the last 0.3-0.8 s of it); a tone the SDR finds during a flip says which bit
     and which source (600 Hz: I2S, 1000 Hz: TX RAM) reach the modulator."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     import re
     L = probe.link
     mhz = pytestconfig.getoption("--fm-mhz")
@@ -715,7 +719,7 @@ def test_probe_fm_tx_mode_sweep(probe, sdr_bench, pytestconfig):
     """Experiment 1: every FM value of 0x10 (bit 7 set, 0x81-0xFF), keyed with tones on I2S (600 Hz) and in the TX
     RAM (1000 Hz). On the DM-1701 (2026-10-12): none put a tone on air, none dropped the carrier."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     steps = [(f"4:0x10 = 0x{v:02X}", PAGE, 0x10, v) for v in range(0x81, 0x100)]
     hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps, "mode")
     print_steps("FM TX mode sweep (0x10 values)", len(steps), hits, unmapped, missing, texts)
@@ -729,7 +733,7 @@ def test_probe_fm_tx_hwcfg_sweep(probe, sdr_bench, pytestconfig):
     """Each bit of 0x01 (H/W config: two-point modulation) and page 1 0x50 / 0x51 (FM writes 0) flipped while keyed,
     tones as in test_probe_fm_tx_mode_sweep."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     steps = [(f"{p}:0x{r:02X} bit {b}", p, r, ("xor", 1 << b)) for p, r in ((PAGE, 0x01), (1, 0x50), (1, 0x51))
              for b in range(8)]
     hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps, "hwcfg")
@@ -753,7 +757,7 @@ def test_probe_fm_tx_offsets(probe, sdr_bench, pytestconfig):
     flipped (OFFSET_HOLD_S each, back to the base between them), then a toggle between the base and +32 as fast as
     the debug link writes. The SDR's carrier track (50 ms) shows which steps move the carrier and by how much."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     mhz = pytestconfig.getoption("--fm-mhz")
     hz = round(mhz * 1e6)
@@ -833,7 +837,7 @@ def test_probe_fm_tx_mod_tone(probe, sdr_bench, pytestconfig):
     """FM transmit from the MCU through 0x04: keyed with the microphone muted, the firmware writes base + a sine into
     0x04 for 2 s; the SDR reports the tone and its deviation. The frequency response and the deviation per step."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
 
     def run(hz, steps):
@@ -865,7 +869,7 @@ def test_probe_fm_tx_sweep2(probe, sdr_bench, pytestconfig):
     """As test_probe_fm_tx_sweep, over SWEEP2_REGS: each bit of the keyed value flipped for 0.5 s, tones on I2S
     (600 Hz) and in the TX RAM (1000 Hz, both FM buffers and 0x000-0x02F)."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     steps = [(f"4:0x{r:02X} bit {b}", PAGE, r, ("xor", 1 << b)) for r in SWEEP2_REGS for b in range(8)]
     hits, unmapped, missing, texts = marked_steps(probe, sdr_bench, pytestconfig, steps, "sweep2")
     print_steps("FM TX bit sweep 2", len(steps), hits, unmapped, missing, texts)
@@ -894,7 +898,7 @@ def test_probe_fm_tx_ram_ack(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone muted, the TX RAM holding a 1 kHz tone (big endian) and the FM flags unmasked, the
     host polls 0x82 and answers each "sending data request" (clear it, then the variant's writes)."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     saved = regs_saved(L, {0x81, 0x22, 0x41, 0x50, 0x60})
 
@@ -957,7 +961,7 @@ def test_probe_fm_tx_ram_readback(probe, sdr_bench, pytestconfig):
     muted), the FM buffers read through page 6: does the chip write the codec's samples there, and does what we
     wrote survive?"""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     pattern = bytes(range(64))
     notes = {}
@@ -1024,7 +1028,7 @@ def test_probe_fm_tx_ram_chase(probe, sdr_bench, pytestconfig):
     muted, overwrite each half with a 1 kHz tone (big endian, then little endian) as soon as the codec moves to the
     other one. If the modulator reads a half after the codec, the tone goes on air."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
 
     def run(order, settle=0.0):
@@ -1065,7 +1069,7 @@ def test_probe_fm_tx_ram_writer_sweep(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone muted, each bit of WRITER_REGS flipped in turn: does the codec stop writing the TX RAM
     FM buffers (read back through page 6)? Prints the flips that stop it (no RF analysis; the SDR records anyway)."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     mhz = pytestconfig.getoption("--fm-mhz")
     hz = round(mhz * 1e6)
@@ -1154,7 +1158,7 @@ def test_probe_fm_tx_ramfeed_rerun(probe, sdr_bench, pytestconfig):
 
 def ramfeed_sweep(probe, sdr_bench, pytestconfig, flips, tag):
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     mhz = pytestconfig.getoption("--fm-mhz")
     hz = round(mhz * 1e6)
@@ -1225,7 +1229,7 @@ def ramfeed_sweep(probe, sdr_bench, pytestconfig, flips, tag):
 def test_probe_fm_tx_mod_shaped(probe, sdr_bench, pytestconfig):
     """The 0x04 path's quality: a 1 kHz tone at 32 and 16 steps, plain and noise shaped; SINAD in the voice band."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
 
     def run(steps, shaped):
@@ -1264,7 +1268,7 @@ def test_probe_fm_tx_ramfeed_combos(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone muted: FEED_COMBOS applied together while the firmware keeps a 1 kHz tone in the TX
     RAM FM halves for 2 s; the voice band level and tones per combination."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     regs = {r for _, w in FEED_COMBOS for r, _, _ in w}
     saved = regs_saved(L, regs)
@@ -1302,7 +1306,7 @@ def test_probe_fm_tx_mod_gain(probe, sdr_bench, pytestconfig):
     tone through 0x04 with 0x46 as set, halved and quartered: if the deviation follows, a small 0x46 gives finer
     steps (more resolution, less range)."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
 
     def run(div):
@@ -1334,7 +1338,7 @@ def test_probe_fm_tx_tone_gen(probe, sdr_bench, pytestconfig):
     1000 Hz, retriggered by 0x60 0x00 -> 0x80; then tone A's step rewritten from the host every 100 ms between 1200
     and 2200 Hz (AFSK-style). Shows whether the generator is programmable and follows step writes while it plays."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     regs = (0xA0, 0xA1, 0xA3, 0xA4, 0xA5, 0xA6, 0xAE, 0xAF, 0x60)
     saved = regs_saved(L, set(regs))
@@ -1400,7 +1404,7 @@ def test_probe_fm_tx_ext_codec_switch(probe, sdr_bench, pytestconfig):
     with LINEIN2 on for 1.5 s, then 0x06 bit 2 set for 1.5 s. If the tone stops, the chain reads the external port,
     and a wire from the MCU's PCM line to ADCDAT (pin 19) would be full quality FM transmit audio."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     saved = regs_saved(L, {0x06, 0x36})
 
@@ -1441,7 +1445,7 @@ def test_probe_fm_tx_ext_i2s(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone muted and the probe sending a 1 kHz tone on the I2S stream, the external-codec
     settings of EXT_I2S_VARIANTS: a 1 kHz tone on air means the FM chain reads the MCU's I2S samples."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     saved = regs_saved(L, {0x06, 0x36, 0x22})
 
@@ -1492,7 +1496,7 @@ def test_probe_fm_tx_linein2_loop(probe, sdr_bench, pytestconfig):
     """Keyed with the microphone (LINEIN1) muted and a 1 kHz tone on the I2S stream: does LINEIN2 hear LINEOUT2, and
     with the loop gain lowered, does the I2S tone reach the air through DAC -> LINEOUT2 -> LINEIN2?"""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     saved = regs_saved(L, {0xE4, 0x37})
 
@@ -1532,7 +1536,7 @@ def skip_without_pins(link):
     try:
         link.probe_pin_scan(10)
     except DebugLinkError:
-        pytest.skip("the board has no pin tone / scan (probe ops 12, 13)")
+        skip("no_hw", "the board has no pin tone / scan (probe ops 12, 13)")
 
 
 def scan_text(scan):
@@ -1584,7 +1588,7 @@ def test_probe_fm_tx_pin_tone(probe, sdr_bench, pytestconfig):
     air means the beep net reaches the transmit audio. Then, keyed, pins 16-20 as timed GPIO outputs while the MCU's
     pins are scanned."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     skip_without_pins(L)
     timed = list(range(0xC7, 0xD1))
@@ -1646,13 +1650,13 @@ def test_probe_fm_tx_pin_pwm(probe, sdr_bench, pytestconfig):
     """Keyed FM with MIC_P / MIC_N on and a PWM sine on PC8: the quality (SINAD) of PWM audio through the board's own
     filtering and the chip's FM chain, by carrier and level."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     from odr_debug import DebugLinkError
     try:
         L.probe_pin_pwm(1023, 0, 0)
     except DebugLinkError:
-        pytest.skip("the board has no PWM audio output (probe op 14)")
+        skip("no_hw", "the board has no PWM audio output (probe op 14)")
 
     rows = pwm_runs(probe, sdr_bench, pytestconfig, [(n, t, h, a, []) for n, t, h, a in PWM_VARIANTS])
     print_tx_rows("FM TX with PWM audio on PC8 into MIC_P / MIC_N", rows)
@@ -1667,7 +1671,7 @@ def pwm_runs(probe, sdr_bench, pytestconfig, variants):
     try:
         L.probe_pin_pwm(1023, 0, 0)
     except DebugLinkError:
-        pytest.skip("the board has no PWM audio output (probe op 14)")
+        skip("no_hw", "the board has no PWM audio output (probe op 14)")
 
     def run(top, hz, amp, writes):
         def during():
@@ -1712,7 +1716,7 @@ PWM_SWEEP = [
 def test_probe_fm_tx_pin_pwm_sweep(probe, sdr_bench, pytestconfig):
     """PWM audio on PC8 below the limiter, and the flat path's frequency response."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     rows = pwm_runs(probe, sdr_bench, pytestconfig, PWM_SWEEP)
     print_tx_rows("FM TX with PWM audio on PC8: level and response", rows)
     assert len(rows) == len(PWM_SWEEP)
@@ -1726,7 +1730,7 @@ def test_probe_fm_tx_pin_pwm_sweep(probe, sdr_bench, pytestconfig):
 def test_probe_fm_tx_wideband(probe, sdr_bench, pytestconfig):
     """The PWM path's noise with no audio, and 0x04 tones up to 6 kHz."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     rows = pwm_runs(probe, sdr_bench, pytestconfig, [
         ("PC8 low, MIC_P / MIC_N on, flat", 1023, 0, 0, [FLAT]),
         ("PWM 50 % carrier, no audio, flat", 1023, 1000, 0, [FLAT]),
@@ -1753,7 +1757,7 @@ def test_probe_fm_tx_sinad_reference(probe, sdr_bench, pytestconfig):
     """The measurement's own ceiling: the chip's selcall tone generator (a digital sine inside the FM chain, as in
     test_probe_fm_tx_tone_gen) playing 1 kHz, measured like the PWM and 0x04 paths."""
     if "VFO_FM" not in probe.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     L = probe.link
     saved = regs_saved(L, {0xA0, 0xA1, 0xA3, 0xA4, 0xA5, 0xA6, 0xAE, 0xAF, 0x60})
 

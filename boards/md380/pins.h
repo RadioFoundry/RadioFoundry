@@ -54,7 +54,7 @@
 #define PIN_BEEP_PWM		GPIOC, GPIO_PIN_8	// BEEP, TIM8_CH3 (unused: beeps go through the HR_C5000)
 #define PIN_LCD_BACKLIGHT	GPIOC, GPIO_PIN_6	// LAMP, TIM8_CH1 PWM
 
-// HR_C5000: bit-banged configuration port, voice port on SPI2, three interrupt lines (as the DM-1701, but MOSI and
+// HR_C5000: bit-banged configuration port, voice port on SPI2, three interrupt lines (as the HR_C6000 radios, but MOSI and
 // MISO are the other way round and MOSI also goes to the synthesizer)
 #define PIN_C5000_CS		GPIOE, GPIO_PIN_2
 #define PIN_C5000_CLK		GPIOC, GPIO_PIN_13	// idles low; the chip samples MOSI on the falling edge
@@ -66,7 +66,10 @@
 #define PIN_C5000_SYS_INT	GPIOC, GPIO_PIN_1
 #define PIN_C5000_RFTX_INT	GPIOC, GPIO_PIN_2
 
-// SPI flash on SPI1 (PB3 SCK, PB4 MISO, PB5 MOSI, AF5)
+// SPI flash on SPI1 (AF5). The STM32F4 stub's board record reads these four (tools/boards.py F4_SPI_PINS)
+#define PIN_FLASH_SCK		GPIOB, GPIO_PIN_3
+#define PIN_FLASH_MISO		GPIOB, GPIO_PIN_4
+#define PIN_FLASH_MOSI		GPIOB, GPIO_PIN_5
 #define PIN_FLASH_CS		GPIOD, GPIO_PIN_7
 
 // GPS on the G models (?): module power on PD8 (a second flash chip select on radios without GPS, so it is only
@@ -74,18 +77,16 @@
 #define PIN_GPS_POWER		GPIOD, GPIO_PIN_8
 #define PIN_GPS_RX		GPIOD, GPIO_PIN_9
 
-// LCD on FSMC bank 1 (data lines double as keypad columns), the same wiring as the DM-1701
+// LCD on FSMC bank 1 (data lines double as keypad columns), the same wiring as the other STM32 radios
 #define PIN_LCD_CS		GPIOD, GPIO_PIN_6
 #define PIN_LCD_RST		GPIOD, GPIO_PIN_13
 #define LCD_CMD_ADDR		((volatile uint8_t *)0x60000000)
 #define LCD_DATA_ADDR		((volatile uint8_t *)0x60040000)	// A17 (PD12) = RS
 
-// Keypad rows (driven high one at a time) and columns (the LCD data lines D0..D7)
+// Keypad rows (driven high one at a time); the columns are the LCD data lines D0..D7 (platform.h STM32_FSMC_*)
 #define PIN_KEY_ROW0		GPIOA, GPIO_PIN_6	// K1
 #define PIN_KEY_ROW1		GPIOD, GPIO_PIN_2	// K2
 #define PIN_KEY_ROW2		GPIOD, GPIO_PIN_3	// K3 (side keys ?)
-#define KEY_COLS_PORTD		(GPIO_PIN_14 | GPIO_PIN_15 | GPIO_PIN_0 | GPIO_PIN_1)	// D0 D1 D2 D3
-#define KEY_COLS_PORTE		(GPIO_PIN_7 | GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10)	// D4 D5 D6 D7
 
 // PTT and the 16-position channel switch (four code bits, active low ?)
 #define PIN_PTT			GPIOE, GPIO_PIN_11	// active low

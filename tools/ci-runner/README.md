@@ -10,7 +10,7 @@ explains the routing and why pull requests from forks never reach it.
 
 | File | What |
 |---|---|
-| `Dockerfile` | the runner image: the DM-32 image (Ubuntu 24.04 + csky-elf GCC) plus the Arm toolchain, host GCC, Python packages, gcovr, tshark, Node.js, gh, reuse |
+| `Dockerfile` | the runner image: the C-SKY image (Ubuntu 24.04 + csky-elf GCC) plus the Arm toolchain, host GCC, Python packages, gcovr, tshark, Node.js, gh, reuse |
 | `entrypoint.sh` | in the container: empties `/work`, gets the pinned runner release (checksummed, cached in `/work/.cache`), then runs one job or registers |
 | `runner-loop.sh` | on the host: `setup` (networks and proxy), `register` (once), and the loop (one container per job) |
 | `runner.env.example` | the loop's settings |
@@ -44,12 +44,14 @@ On the Docker host, as a user in the `docker` group (no root needed):
 
 ```sh
 mkdir -p ~/odr-ci-runner/context
+# the Arm toolchain's pin, from platform/stm32f4/platform.toml (the Dockerfile has no copy of it)
+ARM_V=$(tools/platform_toolchain.sh stm32f4 version); ARM_S=$(tools/platform_toolchain.sh stm32f4 sha256)
 cp -r tools/install-arm-toolchain.sh tools/ci-runner ~/odr-ci-runner/context/
 cp tools/ci-runner/runner-loop.sh ~/odr-ci-runner/
 cp tools/ci-runner/runner.env.example ~/odr-ci-runner/runner-1.env   # then edit: REPO, directories, subnet, limits
 cd ~/odr-ci-runner/context
 docker build -t odr/ci-runner:latest --build-arg BASE=odr/csky-gcc14:latest --build-arg RUNNER_UID="$(id -u)" \
-	-f ci-runner/Dockerfile .
+	--build-arg ARM_GCC_VERSION="$ARM_V" --build-arg ARM_GCC_SHA256="$ARM_S" -f ci-runner/Dockerfile .
 docker build -t odr/ci-proxy:latest ci-runner/proxy
 ~/odr-ci-runner/runner-loop.sh setup
 ```

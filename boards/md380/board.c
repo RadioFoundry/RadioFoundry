@@ -5,6 +5,9 @@
 #include "board.h"
 #include "config.h"
 #include "md380.h"
+#include "hrc/dmr_glue.h"
+#include "gps_uart/gps_uart.h"
+#include "hrc/vocoder.h"
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -30,8 +33,8 @@ static void ccm_zero(void)
 }
 __attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
 
-// One band per radio (hardware-md380.md 5.1), chosen at build time (board.mk MD380_BAND)
-#if MD380_VHF
+// One band per radio (hardware-md380.md 5.1), chosen at build time (board.mk BAND)
+#if ODR_BAND_VHF
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 };
@@ -46,7 +49,7 @@ static const band_t bands[] = {
 // The stock radio has two power levels, about 1 W and 5 W (hardware-md380.md 5.6)
 static const char *const power_names[] = { "1W", "5W" };
 
-// docs/ux/information-architecture.md 7.1 on a radio without function or top keys (as the DM-32's few-key map): the
+// docs/ux/information-architecture.md 7.1 on a radio without function or top keys (a few-key map): the
 // zone and power are reached from the menus. Matrix positions are unconfirmed (hardware-md380.md 9.1)
 static const keymap_entry_t keymap[] = {
 	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 },
@@ -84,7 +87,7 @@ static const hal_cps_t cps = {
 	.radio_type = cps_radio_type,
 	.rom_base = 0x08000000u,
 	.rom_size = 1024u * 1024u,
-	.security_read = md380_cps_security_read,
+	.security_read = stm32_spi_flash_cps_security_read,
 };
 #endif
 
@@ -93,7 +96,7 @@ const board_t board = {
 	// CAP_GPS: the G models; gps_present says whether this one has the module (hardware-md380.md 13). No
 	// CAP_VOLUME_POT: the knob sets the volume in the analog path, the MCU only sees its position. CAP_ENCODER: the
 	// channel knob is a 16-position switch, reported to the core as steps (input_md380.c)
-	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -107,15 +110,15 @@ const board_t board = {
 	.side_key_count = sizeof(side_keys),
 	.radio = &md380_radio,
 	.power = &md380_power,
-	.flash = &md380_flash,
+	.flash = &stm32_spi_flash,
 #if CONFIG_DIAG
 	.diag_line = md380_diag_line,
 	.diag_reset = md380_diag_reset,
 #endif
 #if CONFIG_DMR
-	.dmr = &md380_dmr,
+	.dmr = &stm32_hrc_dmr,
 	.audio = &md380_audio,
-	.vocoder = &md380_vocoder,
+	.vocoder = &stm32_vocoder,
 #endif
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,
@@ -126,13 +129,15 @@ const board_t board = {
 #endif
 #endif
 	.system = &stm32_system,
-	// 2S Li-ion as the DM-1701 (hardware-md380.md 10.1): low 6.2 V, critical 6.0 V (our choice)
+	// 2S Li-ion as the other STM32 radios (hardware-md380.md 10.1): low 6.2 V, critical 6.0 V (our choice)
 	.battery_low_mv = 6200,
 	.battery_critical_mv = 6000,
 #if CONFIG_CPS_OPENFW
 	.cps = &cps,
 #endif
-	.gps_present = md380_gps_present,
+#if CONFIG_GPS
+	.gps_present = stm32_gps_present,
+#endif
 };
 
 // hardware-md380.md 1.2: 8 MHz HSE, 72 MHz system clock, APB1 36 MHz, APB2 72 MHz, USB 48 MHz from PLL Q
@@ -233,7 +238,7 @@ void board_early_init(void)
 	reset_levels();		// latch the power before anything slow
 	if (!stm32_clock_init(&clock_crystal)) {
 		// A crystal is what the public notes describe (hardware-md380.md 1.2); an external clock fed in would need
-		// bypass mode, as on the DM-1701. Try that before staying on HSI (no USB there)
+		// bypass mode, as on the other STM32 radios. Try that before staying on HSI (no USB there)
 		stm32_clock_t bypass = clock_crystal;
 		bypass.hse_bypass = true;
 		(void)stm32_clock_init(&bypass);
@@ -244,10 +249,12 @@ void board_init(void)
 {
 	lcdbus = xSemaphoreCreateRecursiveMutex();
 	md380_power.init();
-	md380_flash.init();
+	md380_flash_init();
 	md380_cal_load();
 #if CONFIG_NET_PPP && CONFIG_USB_NETWORK
 	hostlink_ppp_set_usb(&usb_ncm_netif);
 #endif
+#if CONFIG_GPS
 	md380_gps_init();
+#endif
 }

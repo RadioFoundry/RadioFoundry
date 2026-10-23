@@ -251,7 +251,7 @@ export function restoreTarget(c, progmem) {
 }
 
 // Which radio a program flash read belongs to, by the Baofeng bootloader's ID string in its first 48 KB
-// (tools/dm32_flash.py MODELS): a board id, or null
+// (tools/serial_loader.py MODELS): a board id, or null
 export function bootloaderModel(c, head) {
 	const text = new TextDecoder("latin1").decode(head.subarray(0, Math.min(head.length, c.app_start)));
 	for (const [id, b] of Object.entries(c.boards)) if (b.bootloader_id && text.includes(b.bootloader_id)) return id;
