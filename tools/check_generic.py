@@ -4,7 +4,7 @@
 """Generic first (AGENTS.md rule 4): a radio's id or name appears only where that radio is the subject.
 
 A name is a board id from the registry or one of its names (board.toml model and also), matched loosely: case, an
-optional hyphen and an optional letter suffix ("DM-32UV", "DM32", "dm32"). Allowed:
+optional hyphen and an optional letter suffix ("XR-100UV", "XR100", "xr100"). Allowed:
 
   boards/<id>/                 the radio's own files
   its own pages                a docs path with the id in it (hardware-<id>.md, <id>-bringup.md, results/<id>/), a
@@ -44,9 +44,9 @@ FILE_REF = re.compile(r"[\w.+<>*-]*(?:/[\w.+<>*-]+)+/?|[\w+<>-]+\.(?:md|c|h|S|py
 
 
 def name_pattern(name):
-    """A loose pattern for one radio name: "DM-32UV" matches DM-32UV, DM32UV, DM-32, dm32; a maker in front is
-    dropped (a first word without a digit: "TYT MD-390"), and only the model's first word counts ("DM-1801 Pro":
-    DM-1801, dm1801pro)."""
+    """A loose pattern for one radio name: "XR-100UV" matches XR-100UV, XR100UV, XR-100, xr100; a maker in front is
+    dropped (a first word without a digit: "Acme ZT-7"), and only the model's first word counts ("XR-200 Pro":
+    XR-200, xr200pro)."""
     words = name.split()
     if len(words) > 1 and not re.search(r"\d", words[0]):
         words = words[1:]
