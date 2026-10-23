@@ -333,19 +333,46 @@ class Site:
 		if lang == self.i18n.default:
 			self.log("docs: %d pages, %d other files" % (len(self.docs.pages), n))
 
+	def bands(self, lang, b):
+		"""The board's transmit bands, then the receive-only ones its hardware can have: air band AM and broadcast FM
+		unless the board lists the switch unsupported (a part the board's code doesn't drive yet still counts)."""
+		extra = [self.t(lang, "radio.bands_" + k) for sw, k in (("AM_RX", "am"), ("BCAST_FM", "bcast"))
+			 if sw not in b["unsupported"]]
+		return " · ".join([b["bands"]] + extra)
+
 	def radio_card(self, lang, b):
 		dmr = "DMR" in b["config"]["full"]
 		return self.tpl.partial("radio_card", {
 			"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]),
-			"badge": self.badge(lang, b["status"]), "bands": b["bands"],
+			"badge": self.badge(lang, b["status"]), "bands": self.bands(lang, b),
 			"modes": self.t(lang, "radio.modes_dmr_fm" if dmr else "radio.modes_fm"),
 			"href": "radios/%s.html" % b["id"]}, lang)	# under {{home}}
+
+	def request_card(self, lang):
+		return self.tpl.partial("request_card", {"repo": html.escape(self.repo_url)}, lang)
+
+	def dev_rows(self, lang, limit=4):
+		"""The first radios not yet supported, furthest along first: boards still in bring-up, then ports on an open pull
+		request, then the planned ones (each group in the survey's order)."""
+		rows = [(BOARD_ORDER[b["status"]], '<a href="radios/%s.html">%s</a>' % (b["id"], html.escape(b["name"])),
+			 self.badge(lang, b["status"]), b["name"]) for b in self.boards if b["status"] != "supported"]
+		for p in self.planned:
+			name = html.escape(p["radio"])
+			if p["pr"]:
+				name = '<a href="%s/pull/%d">%s</a>' % (html.escape(self.repo_url), p["pr"], name)
+			rows.append((BOARD_ORDER[p["status"]], name, self.badge(lang, p["status"]), p["radio"]))
+		rows.sort(key=lambda r: r[0])	# stable: the survey's order inside a group
+		out = "".join('<li><span class="dev-name" title="%s">%s</span> %s</li>' % (html.escape(full), n, bd) for _, n, bd, full in rows[:limit])
+		if len(rows) > limit:	# say it isn't the whole list
+			out += '<li class="dev-more"><a href="radios/index.html">%s</a></li>' % html.escape(
+				self.t(lang, "home.dev_more").replace("{n}", str(len(rows) - limit)))
+		return out
 
 	def home(self, lang):
 		flagship = self.boards[0]
 		ctx = {"flagship_id": flagship["id"], "flagship_name": flagship["name"],
 		       "cards": "".join(self.radio_card(lang, b) for b in self.boards),
-		       "variants": self.variant_cards(lang),
+		       "dev_rows": self.dev_rows(lang), "request_card": self.request_card(lang), "variants": self.variant_cards(lang),
 		       "radio_count": str(len(self.boards)), "feature_count": str(len(self.features))}
 		self.page(lang, "index.html", self.t(lang, "home.title"), self.tpl.render("home", ctx, lang), "home")
 
@@ -374,7 +401,8 @@ class Site:
 				"name": html.escape(p["radio"]), "also": "", "badge": self.badge(lang, st), "cpu": "—", "display": "—",
 				"support": note}, lang)))
 		ctx = {"cards": "".join(self.radio_card(lang, b) for b in self.boards),
-		       "rows": "".join(e[3] for e in sorted(entries, key=lambda e: e[:2]))}
+		       "rows": "".join(e[3] for e in sorted(entries, key=lambda e: e[:2])),
+		       "request_card": self.request_card(lang)}
 		self.page(lang, "radios/index.html", self.t(lang, "radios.title"),
 			  self.tpl.render("radios", ctx, lang), "radios", nav="radios")
 
@@ -425,7 +453,7 @@ class Site:
 		       "frame_aspect": "%g" % g["aspect"],
 		       "screen_style": "left:%g%%;top:%g%%;width:%g%%;height:%g%%" % (pct["left"], pct["top"], pct["width"], pct["height"]),
 		       "badge": self.badge(lang, b["status"]), "support": self.board_note(lang, b),
-		       "bands": b["bands"], "power": b["power"], "kind": self.t(lang, "radio.kind." + b["kind"]),
+		       "bands": self.bands(lang, b), "power": b["power"], "kind": self.t(lang, "radio.kind." + b["kind"]),
 		       "cpu": b["cpu"], "display": b["display"], "volts": self.t(lang, "radio.volts." + b["volts"]),
 		       "clock": self.t(lang, "radio.clock." + b["clock"]),
 		       "variant_head": vhead, "feature_groups": "".join(groups),

@@ -46,6 +46,17 @@
 
 <section class="wrap section">
 	<div class="section-head">
+		<h2>{{t home.dev_title}}</h2>
+		<a href="{{home}}radios/index.html">{{t home.dev_all}} →</a>
+	</div>
+	<div class="dev-grid">
+		<div class="card"><ul class="dev-list">{{{ dev_rows }}}</ul></div>
+		{{{ request_card }}}
+	</div>
+</section>
+
+<section class="wrap section">
+	<div class="section-head">
 		<h2>{{t home.variants_title}}</h2>
 		<a href="{{home}}features/index.html">{{t home.variants_all}} →</a>
 	</div>
