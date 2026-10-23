@@ -613,7 +613,11 @@ count the pin low as PTT only after a quiet time with no good UART byte (`driver
 6.2). A real press holds the line low, which the UART reads as a break, never a good byte. Radios: DM-32UV, DM-1801 Pro
 and DB25-D confirmed. On the DB25-D a filter of three low scans in a row still let debug link polling key the radio:
 hundreds of PTT presses, each with a key beep, in one SFR test session (2026-10-19). Many handhelds wire the K-type
-jack this way, so check every new radio (adding-a-radio.md, bring-up order).
+jack this way, so check every new radio (adding-a-radio.md, bring-up order). The gate alone still leaked on the
+DM-32UV during PPP, hands off: 2 presses in 100 s (2026-10-22). A key scan that ran late caught up with two scans in
+the same millisecond, and both read the low bits of the first byte of a burst 65 ms after the last one, before the
+UART had reported it. Rule: debounce the shared pin by time, not by scan count. The pin must read low, and not gated,
+for 20 ms (`SHARED_PTT_HOLD_MS`). `tests/hil/test_ptt_host_traffic.py` checks it on the radio.
 
 ## 17. Scan
 
