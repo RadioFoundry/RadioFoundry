@@ -25,8 +25,9 @@ for the stub's board record.
                                                   unknown platform or toolchain is an error, so a typo never selects
                                                   no board)
     tools/boards.py platform P [key.path]        one platform value
-    tools/boards.py get dm32 [key.path]          one value (a list: one item per line), for shell scripts
-    tools/boards.py json [--for odrflash|site] [--out FILE | --check FILE]   the merged, derived view
+    tools/boards.py get <id> [key.path]          one value (a list: one item per line), for shell scripts
+    tools/boards.py json [--for odrflash|site|build] [--out FILE | --check FILE]   the merged, derived view; --for
+                                                  build is the stable view for tools that build from a checkout
     tools/boards.py check                         registry consistency
     tools/boards.py docs [--check] [--floor REF]  the docs blocks generated from the registry (tools/registry_docs.py);
                                                   --floor: fail when a radio reads lower than the README at REF
@@ -1309,7 +1310,7 @@ def self_test():
         except registry_docs.DocsError:
             pass
         ys = registry_docs.yaml_scalar
-        ok(ys("Baofeng DM-1701 / Retevis RT84") == "Baofeng DM-1701 / Retevis RT84" and ys("A: B") == '"A: B"'
+        ok(ys("Acme XR-100 / Other ZT-7") == "Acme XR-100 / Other ZT-7" and ys("A: B") == '"A: B"'
            and ys("No") == '"No"', "yaml_scalar: quoted only where a plain scalar would misread")
         old = ("## Radios and status\n\n| Radio | Builds | Host tests | On the radio | Support |\n"
                "|---|---|---|---|---|\n"
@@ -1445,6 +1446,14 @@ def self_test():
 
 # ---------------------------------------------------------------------------------------------------------------
 
+def generic_problems(root=ROOT):
+    """AGENTS.md rule 4 over the tree: a radio's id or name outside its own places (tools/check_generic.py). Apart
+    from check(), which the self-test runs on copies without git history."""
+    import check_generic
+    radios, docs = check_generic.registry_radios(root)
+    return ["generic: %s" % p for p in check_generic.check(root, radios, docs)]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1479,6 +1488,7 @@ def main(argv=None):
             return self_test()
         if a.cmd == "check":
             problems = check()
+            problems += generic_problems()
             for p in problems:
                 print("boards: %s" % p, file=sys.stderr)
             if not problems:

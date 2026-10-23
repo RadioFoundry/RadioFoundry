@@ -197,7 +197,7 @@ example `ARM_GCC_VERSION`) to a literal other than the pin: take it from `platfo
 | `tools/boards.py platform <p> [key.path]` | One platform value |
 | `tools/boards.py builds <id> [--extra]` | The board's builds besides the default, or its `[ci]` extras |
 | `tools/boards.py json [--for all\|odrflash\|build]` | A merged view, below |
-| `tools/boards.py check` | Every inconsistency; ci.sh's registry step runs it |
+| `tools/boards.py check` | Every inconsistency, and every radio named outside its own places ([Radio names](#radio-names)); ci.sh's registry step runs it |
 | `tools/boards.py docs [--check] [--floor REF]` | Writes the generated blocks of the README, the user manual's radio pages, the feature matrix, the bug report form's and the pull request template's radio lists, and the survey's Port cells (`tools/registry_docs.py`). `--check` lists the stale ones instead; `--floor REF` fails when a radio's marks or status in the README read lower than at commit `REF`. ci.sh runs `--check --floor origin/main` |
 | `tools/boards.py self-test` | The loader's own tests |
 
@@ -241,6 +241,25 @@ Each build:
 In the names, `{variant}` is empty for the full build and `-<name>` for a variant; `{version}` is the release tag. One
 rule makes all of these names: `tools/odrflash/odrflash/names.py`. The Makefile follows it too, and `check` compares
 make's `BUILD` and `TARGET` with the view for every build.
+
+## Radio names
+
+AGENTS.md rule 4 says only a radio's own files carry its name. `tools/check_generic.py` (run by
+`tools/boards.py check`) enforces it. The names come from the registry: each board's id, `model` and `also`, matched
+without regard to case, hyphens or a letter suffix (`DM-32UV`, `DM32`, `dm32`). A maker's word in front is dropped.
+
+| Allowed place | What it covers |
+|---|---|
+| `boards/<id>/` | The radio's own code, tests and data |
+| The radio's pages | A `docs/` path with the id in it (`hardware-<id>.md`, `<id>-bringup.md`, `results/<id>/`), a `[docs]` page no other board shares, and any directory named `<id>` (`codec_maps/<id>/`) |
+| List pages | `docs/spec/radios.md`, `docs/user/23-radios.md`, `docs/feature-matrix.md` |
+| Generated blocks | Between the markers `tools/boards.py docs` writes, in every marker style, and `registry.json` |
+| File references | A path or a file name in the text points to the radio's own page |
+| `tools/generic_allow.txt` | A glob and its reason. An entry no file needs is an error |
+
+Everything else fails, tests included, and so does a file whose own path names a radio. Fix it by naming the
+function, the chip or the platform, or by reading the value from the board. The allowlist holds the debt from before
+the check; don't add new code to it.
 
 ## Changing the registry
 
