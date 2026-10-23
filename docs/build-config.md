@@ -216,4 +216,6 @@ network's buffers in main RAM ([hardware-dm32.md](spec/hardware-dm32.md) 17.1). 
    `tools/ci.sh` builds every board with each default-on switch off alone, an FM-minimal and a maximal
    configuration, all with zero warnings, and reports the image sizes (`docs/testing/README.md`). The maximal
    configuration leaves out the switches a board lists in `BOARD_UNSUPPORTED` (its `config.mk`: what its hardware
-   can't do, such as SFR on the MD-380's HR_C5000) or `BOARD_NOT_WRITTEN` (what its code doesn't do yet).
+   can't do, such as SFR on the MD-380's HR_C5000) or `BOARD_NOT_WRITTEN` (what its code doesn't do yet). Leaving the not-written switches out keeps the maximal build to code that
+   runs on the radio: built on, they can fill a radio's memory (one radio's maximal build reached 99% of its CCM
+   RAM), and any shared addition would then fail CI on unrelated pull requests.
