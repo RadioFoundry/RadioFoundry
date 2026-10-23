@@ -13,8 +13,6 @@ passes trivially, so it runs on every board.
 import random
 import time
 
-import pytest
-
 from odr_hil import skip
 
 POLL_S = 30.0               # the owner's first gate check was 30 s of polling (hardware-db25d.md); the PPP
