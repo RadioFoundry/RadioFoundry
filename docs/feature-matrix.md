@@ -44,8 +44,8 @@ is `tools/bringup.py list --radio <id>`.
 | `dtmf` | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `vox` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `battery_save` | pass (seed) | not recorded | pass (seed) | not recorded | not recorded |
-| `am_rx` | ✕ | ✕ | not recorded | ✕ | ✕ |
-| `bcast_fm` | ✕ | not recorded | not recorded | ✕ | ✕ |
+| `am_rx` | ✕ | not written | not written | ✕ | ✕ |
+| `bcast_fm` | ✕ | not recorded | not written | not written | ✕ |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_talker_alias` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
@@ -63,7 +63,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dual_watch` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
 | `beep` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `vibrate` | ✕ | not recorded | off | ✕ | ✕ |
-| `gps` | ✕ | ✕ | not recorded | not recorded | not recorded |
+| `gps` | ✕ | ✕ | pass (seed) | not recorded | not recorded |
 | `dmr_data_rx` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded |
 | `dmr_sms` | pass (seed) | pass (seed) | not recorded | not recorded | pass (seed) |
 | `dmr_tms` | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -92,7 +92,7 @@ is `tools/bringup.py list --radio <id>`.
 | `usb_network` | pass (seed) | ✕ | ✕ | ✕ | not recorded |
 | `dmr_ip_gateway` | not recorded | pass (seed) | not recorded | not recorded | not recorded |
 | `dmr_control_station` | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `net_tcp` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `net_tcp` | not recorded | pass (seed) | not recorded | pass (seed) | not recorded |
 | `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -125,7 +125,7 @@ What the records don't hold yet: limits and known problems from the bring-up pag
 |---|---|---|
 | DM-1701 | Not yet checked: split duplex with a real pair of radios, standalone SFR, roaming to a repeater, IP over DMR end to end, VOX with a voice, privacy scrambling against another radio | [on-air-coverage](testing/on-air-coverage.md) |
 | DM-32UV | GPS data seen, no fix yet. The transmit half of a split duplex pair not checked. FM transmit deviation at 12.5 kHz, both slots through a duplex hotspot. A DMR receive fault after hours of uptime (2026-10-16, cause unknown). USB not available | [dm32-bringup](testing/dm32-bringup.md) |
-| DM-1801 Pro | PPP checked with the network services. The receive half of a split duplex pair, VHF transmit, VOX and APRS receive not checked | [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
+| DM-1801 Pro | The receive half of a split duplex pair, VHF transmit, VOX and APRS receive not checked | [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
 | DB25-D PRO | Split duplex and MMDVM SFR not built. DMR audio from the speaker, a GPS fix and settings kept across power off not confirmed | [hardware-db25d](spec/hardware-db25d.md) |
 | MD-380 | Fully operational (UHF)¹. DCS, the VHF image, tone deviation and data from a DMR VFO not checked. Split duplex and SFR not available (HR_C5000) | [md380-bringup](testing/md380-bringup.md) |
 
@@ -211,7 +211,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `CRASH_REPORT` | ● | ● | ● | ● | ● |
 | `WATCHDOG` | ● | ● | ● | ● | ● |
 | `FAULT_TRACE` | ✕ | ● | ● | ● | ✕ |
-| `AM_RX` | ✕ | … | … | … | ✕ |
+| `AM_RX` | ✕ | … | … | ✕ | ✕ |
 | `BCAST_FM` | ✕ | ● | … | … | ✕ |
 | `APRS` | ● | ● | ● | ● | ● |
 | `APRS_RX` | ● | ● | ● | … | … |

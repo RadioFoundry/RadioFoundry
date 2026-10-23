@@ -321,8 +321,9 @@ A 240 x 320 color screen. ODR uses its full resolution, with smooth (anti-aliase
 - The GPS module is checked at start-up (it must answer within 5 s) and is then powered only while **Settings >
   Location > GPS** is on, which takes effect at once. A fix outdoors hasn't been checked yet.
 - While APRS listens, FM on the APRS frequency plays through a different audio path, which may sound different.
-- No air band AM or broadcast FM yet: the radio has both receivers, but the board code behind them isn't written,
-  so the image leaves them out.
+- No air band receive.
+- No broadcast FM yet: the radio has the receiver, but the board code behind it isn't written, so the image leaves
+  it out.
 - No VOX yet: the board code that reads the microphone level isn't written.
 - Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
 - No beeps while transmitting, the talk permit tone included: the radio's beep path would put them on the air. A beep

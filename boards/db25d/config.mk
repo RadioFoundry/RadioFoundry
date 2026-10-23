@@ -59,7 +59,7 @@ endif
 # the runtime stub's begins (fm_only.ld), and the CPS's request buffer needs the room (2 KB)
 CONFIG_APRS_RX ?= n
 CONFIG_APRS_IGATE ?= n
-# Not wired yet: the RDA5802N (CAP_BCAST_FM) and the air band
+# The RDA5802N (CAP_BCAST_FM) isn't wired yet; the radio has no air band receive
 CONFIG_BCAST_FM ?= n
 CONFIG_AM_RX ?= n
 # VOX reads the microphone level through hal_power_t.mic_level, which this board doesn't have yet
@@ -71,6 +71,7 @@ CONFIG_FONT_XL ?= n
 # and USB_NETWORK are in the platform's list.
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (owner, 2026-10-22)
+BOARD_UNSUPPORTED += AM_RX	# no air band receive (owner, 2026-10-22)
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
 # maximal configuration too
 BOARD_NOT_WRITTEN += NET_USRP	# the host link stalls under USRP's PCM; the DM-32UV carries it at the same 115200 baud
@@ -79,7 +80,6 @@ BOARD_NOT_WRITTEN += SFR	# RX and TX switch every slot: the per-burst retune isn
 BOARD_NOT_WRITTEN += APRS_RX	# FM receive audio isn't taken from the modem's AF ADC as PCM yet (above)
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += BCAST_FM	# the RDA5802N broadcast receiver is fitted, its glue isn't written
-BOARD_NOT_WRITTEN += AM_RX	# the air band isn't wired yet
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe's audio tap (board.audio_tap) isn't written for this radio
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
