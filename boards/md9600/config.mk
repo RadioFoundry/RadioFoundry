@@ -40,11 +40,23 @@ CONFIG_UI_COLOR ?= n
 CONFIG_FONT_XL ?= n
 CONFIG_AM_RX ?= n
 CONFIG_BCAST_FM ?= n
-# Not written for this radio yet (above) or no use on it: tools/ci.sh's maximal configuration leaves these off
-BOARD_UNSUPPORTED := SUBTONE DMR_IP_GATEWAY DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP \
-	NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR HOTSPOT HOTSPOT_SPLIT \
-	CRASH_REPORT USB_NETWORK NET_PPP FM_TX_TONES APRS_RX APRS_IGATE UI_COLOR FONT_XL FONT_AA FONT_BIG AM_RX BCAST_FM \
-	VIBRATE NAND_STORAGE
+# What the hardware can't do, one switch per line with the reason (tools/boards.py checks there is one): ci's maximal
+# configuration leaves these off. Features only waiting on code or on transmit are off by default above instead, so
+# the maximal build still compiles them
+BOARD_UNSUPPORTED += UI_COLOR	# a 128x64 monochrome panel
+BOARD_UNSUPPORTED += FONT_XL	# the large font is for 240 px and wider panels; this one is 128x64
+BOARD_UNSUPPORTED += FONT_AA	# a monochrome panel draws anti-aliased fonts as plain ink and gains nothing
+BOARD_UNSUPPORTED += FONT_BIG	# for 240 px and wider color panels (and needs FONT_AA)
+BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
+BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-broadcast.md)
+BOARD_UNSUPPORTED += VIBRATE	# no vibration motor
+BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR
+BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and the one UART is the GPS receive line
+# Not written for this radio yet (off by default above, waiting on board code or on transmit): ci's maximal
+# configuration leaves them off too. Until the registry's BOARD_NOT_WRITTEN takes them, MAXIMAL_SKIP does
+MAXIMAL_SKIP += SUBTONE FM_TX_TONES DTMF HOTSPOT HOTSPOT_SPLIT USB_NETWORK NET_PPP DMR_IP_GATEWAY DMR_UDP_COMPRESS \
+	NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP \
+	SFR CRASH_REPORT APRS_IGATE
 # FM receive is the checked path: the matrix has no FM-less configuration
 BOARD_REQUIRED := FM
 # CONFIG_STUB_ENTRY stays off by default (config/features.mk) and is in the maximal configuration: the STM32F4 flash
