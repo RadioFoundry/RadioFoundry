@@ -312,6 +312,7 @@ def test_vfo_scan(radio):
 
 
 @pytest.mark.feature("scan")
+@pytest.mark.feature("dual_watch")
 def test_dual_watch(radio):
     need_scan(radio)
     size = on_channel(radio, 2)
@@ -337,14 +338,14 @@ def test_dual_watch(radio):
     radio.wait_for(lambda v: v.get("zone_pos") == str(a), 1.0, what="back on the first channel")
 
 
-
+@pytest.mark.feature("dual_watch")
 def test_dual_watch_debug_link(radio):
     """The debug link during dual watch: select B, a position then changes B, and a scan stop is the user's (the UI
     doesn't start the watch again)."""
     need_scan(radio)
     size = on_channel(radio, 3)
     if "dual.stops" not in features(radio) or features(radio).get("dual.built") != "1":
-        pytest.skip("built without CONFIG_DUAL_WATCH, or a build before dual.stops")
+        skip("not_built", "built without CONFIG_DUAL_WATCH, or a build before dual.stops")
     zone = radio.core().get("zone_index")
     a = as_int(radio.core()["zone_pos"], 0)
     b, c = (a + 1) % size, (a + 2) % size
@@ -581,6 +582,7 @@ def test_vfo_scan_stops_on_signal(radio, sdr_bench, pytestconfig):
 
 
 @pytest.mark.feature("scan")
+@pytest.mark.feature("dual_watch")
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem

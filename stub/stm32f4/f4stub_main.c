@@ -233,6 +233,22 @@ static bool port_configure(void *ctx, const uint8_t *rec, uint32_t n, stubeng_co
 	return true;
 }
 
+// CONFIG: the board record decides the crystal (for the stub's timing) and the SPI flash wiring
+static bool port_configure(void *ctx, const uint8_t *rec, uint32_t n, stubeng_config_t *out)
+{
+	(void)ctx;
+	f4_board_t b;
+	if (!f4_board_parse(rec, n, &b)) {
+		return false;
+	}
+	hse_hz = b.hse_hz;
+	(void)stub_ms();	// count the time so far at the old rate
+	clock_setup();
+	out->app_base = b.app_base;
+	out->xsize = f4spi_init(&b, pclk_hz(hclk_hz(), b.spi_bus == 1u), out->xid);
+	return true;
+}
+
 static void port_reset(void *ctx)
 {
 	(void)ctx;

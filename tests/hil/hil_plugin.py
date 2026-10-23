@@ -22,7 +22,11 @@ def own_board(path):
 def pytest_collection_modifyitems(config, items):
     for item in items:
         if ("rf" in item.keywords or "radio_tx" in item.keywords) and not config.getoption("--allow-rf"):
-            item.add_marker(skip_mark("opt_in", "transmits: run with --allow-rf"))
+            if "audio_smoke" in item.keywords:
+                item.add_marker(skip_mark("opt_in", "DMR AUDIO NOT CHECKED: transmits; run the bench pass with "
+                                                    "--allow-rf --ambe FILE (README.md, Default bench pass)"))
+            else:
+                item.add_marker(skip_mark("opt_in", "transmits: run with --allow-rf"))
         elif "usb_switch" in item.keywords and not config.getoption("--allow-usb-switch"):
             item.add_marker(skip_mark("opt_in", "re-enumerates the radio as a network adapter: run with "
                                                 "--allow-usb-switch"))
@@ -50,7 +54,8 @@ def pytest_runtest_makereport(item, call):
 def radio(pytestconfig):
     port = pytestconfig.getoption("--radio-port")
     if not port and not find_ports():
-        bringup_plugin.no_radio(pytestconfig, "no radio on USB (1FC9:0094): plug it in or give --radio-port")
+        bringup_plugin.no_radio(pytestconfig, "no radio on USB (1FC9:0094): plug it in or give --radio-port "
+                                            "(DMR audio not checked either)")
     try:
         r = Radio(port)
     except DebugLinkError as e:
@@ -112,8 +117,27 @@ def sdr_bench(pytestconfig):
                  wait_max=pytestconfig.getoption("--bench-wait-max"))
     if not b.reachable():
         skip("bench", f"SDR bench {b.host} not reachable over ssh, or its tools missing (tools/bench/dmr_bench.py "
-                      "sync)")
-    return b
+                      "sync): no bench test runs, the DMR audio smoke neither")
+    yield b
+    b.remove_run_dirs()
+
+
+@pytest.fixture(autouse=True)
+def bench_hardware(request):
+    """Skips a test marked sdr_rx / bench_modem / sdr_or_modem when the SDR bench lacks that piece (SdrBench.lacks).
+    Unmarked tests need neither and don't touch the bench here."""
+    kw = request.node.keywords
+    sdr, modem, either = "sdr_rx" in kw, "bench_modem" in kw, "sdr_or_modem" in kw
+    if not (sdr or modem or either):
+        yield
+        return
+    if "radio" in request.fixturenames:
+        request.getfixturevalue("radio")        # no radio: skip for that first, without asking the bench
+    bench = request.getfixturevalue("sdr_bench")
+    why = bench.lacks(sdr=sdr, modem=modem, either=either)
+    if why:
+        skip("bench", why)
+    yield
 
 
 @pytest.fixture(scope="session")

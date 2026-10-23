@@ -13,13 +13,6 @@ Python it was ported from (site/tests/flasher.test.mjs):
   - for the STM32F4 loader: each radio's board record from stub/f4stub.py config_record(), and the HELLO replies its
     simulated stub (FakeF4) gives before and after CONFIG, so f4stub.js sends and parses the Python tool's bytes; and
     f4stub's test profile, a board with other SPI wiring
-  - for the USB HID update route: a synthetic stock update file with a made-up codec (the odrflash tests' builders), what
-    updatefile.py and k22fcodec.py make of it with an application image, and every frame hidboot's updater sends to
-    its model loader, so site/tests/hidboot.test.mjs checks hidboot.js and k22fcodec.js byte for byte
-  - for the K22F stub: a board's record from stub/k22stub.py config_record(), the HELLO replies its simulated
-    stub (FakeF4 with k22stub.K22) gives before and after CONFIG, and two installs on a simulated flash (the
-    application alone, then an image merged with the codec) with the sectors k22stub.py erases and the flash it leaves,
-    so site/tests/k22stub.test.mjs checks k22stub.js and the fake radio against the Python
   - for the codeplug editor: the radio's own codeplug code on the host (tests/host/cpsSim), a codeplug it stored
     and what it reads back, so site/tests/codeplug.test.mjs checks the JavaScript decoder and encoder against it
 

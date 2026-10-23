@@ -31,8 +31,6 @@ import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
-import * as hidui from "./hidui.js";
-import { hidSimulation, FakeHidOdr } from "./fakehid.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
 import { APP_ENTRY } from "./iap.js";
 import { slotBytes, locateCodec } from "./c7000.js";
@@ -1670,18 +1668,11 @@ async function main() {
 	}
 	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	hidui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText });
 	// #sim=<board>[-stock]: that board, running ODR or its stock firmware; #sim: the first radio on stock firmware
 	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock)?)?(?:&|$)/);
 	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
 	const simStock = !!simAsk && (!simAsk[1] || !!simAsk[2]);
-	if (simRadio && hidui.isHid(simRadio, S.data.fb)) {
-		// in its update mode, with a made-up stock update file whose codec the page knows (fakehid.js); without
-		// -stock it also runs ODR with stub entry, for the cable route
-		const sim = await hidSimulation(S.data.fb.hid, simRadio.model);
-		S.sim = { fb: { ...S.data.fb, hid: sim.hid }, hidDonor: sim.donor,
-			hidOdr: simStock ? null : new FakeHidOdr(sim.hid.stub, { board: simRadio.flash.board }) };
-	} else if (simRadio && c7ui.isC7000(simRadio, S.data.fb)) {
+	if (simRadio && c7ui.isC7000(simRadio, S.data.fb)) {
 		// on its cable: stock firmware (a stock console answers if the board has one), or ODR with the stub hand-over
 		const board = simRadio.id;
 		const sim = await c7000Simulation(S.data.fb.c7000, board, 7000, simRadio);

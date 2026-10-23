@@ -218,10 +218,8 @@ for f in sys.argv[1:]:
 		fi
 	fi
 	# the feature checklist (tests/hil/README.md, "Bring-up mode"): tools/bringup.py check, and the bring-up
-	# plugin's tests with a fake radio. bringup.py needs Python 3.11+ (tomllib): $ODR_PYTHON, else the newest
-	# python3.N on PATH (TODO: the shared ODR_PYTHON lookup once ci.sh has it)
-	BRINGUP_PY=${ODR_PYTHON:-$(IFS=:; for d in $PATH; do for p in "$d"/python3.1[1-9] "$d"/python3.[2-9][0-9]; do
-		[ -x "$p" ] && echo "${p##*.} $p"; done; done | sort -n | tail -1 | cut -d' ' -f2-)}
+	# plugin's tests with a fake radio. bringup.py needs Python 3.11+ (tomllib): the shared lookup's ($REG_PY)
+	BRINGUP_PY=$REG_PY
 	if [ -n "$BRINGUP_PY" ]; then
 		if env -u ODR_PORT "$BRINGUP_PY" tools/bringup.py check --pytest-python python3 > "$OUT/bringup-check.log" 2>&1
 		then
@@ -242,22 +240,19 @@ for f in sys.argv[1:]:
 			bad "bring-up mode tests (see $OUT/bringup-test.log)"
 		fi
 	fi
-	# the flashing tools: odrflash's host tests (sector planning, manifests, codec merge, fake bootloader runs) and
-	# the self-tests of the developer tools (no USB, synthetic keys and stock files)
-	if python3 -W ignore -m unittest discover -s tools/odrflash/tests > "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/codec_extract.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/gd77_codec.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/stm32_dfu.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/codeplug_port.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/md380_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/serial_loader.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/dm32_migrate.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/hrc7000_codec.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/ui_gallery_compare.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 tools/crash_decode.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 stub/stubtool.py --self-test >> "$OUT/odrflash-tests.log" 2>&1 &&
-	   python3 stub/f4stub.py --self-test >> "$OUT/odrflash-tests.log" 2>&1; then
-		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash), codec_extract, stm32_dfu, codeplug_port, md380_migrate, serial_loader, dm32_migrate, hrc7000_codec, ui_gallery_compare, stubtool and f4stub self-tests"
+	# the flashing tools: odrflash's host tests (sector planning, manifests, codec merge, fake bootloader runs), and
+	# the self-test of every tool that has one (no USB, synthetic keys and stock files). The APRS decoder and the
+	# stack check have their own steps below (a WAV from the host tests, numpy)
+	selftests=""
+	python3 -W ignore -m unittest discover -s tools/odrflash/tests > "$OUT/odrflash-tests.log" 2>&1 && st_ok=1 || st_ok=""
+	for t in $(grep -l -e '"--self-test"' tools/*.py tools/*/*.py stub/*.py | grep -v -e aprs_afsk_check -e stack_check); do
+		[ -n "$st_ok" ] || break
+		echo "== $t --self-test" >> "$OUT/odrflash-tests.log"
+		python3 "$t" --self-test >> "$OUT/odrflash-tests.log" 2>&1 || { st_ok=""; echo "FAILED: $t" >> "$OUT/odrflash-tests.log"; }
+		selftests="$selftests${selftests:+, }$(basename "$t" .py)"
+	done
+	if [ -n "$st_ok" ]; then
+		ok "flashing tools: $(grep -E '^Ran [0-9]+ tests' "$OUT/odrflash-tests.log") (odrflash); self-tests of $selftests"
 	else
 		tail -30 "$OUT/odrflash-tests.log"
 		bad "flashing tool tests (see $OUT/odrflash-tests.log)"

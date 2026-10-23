@@ -11,6 +11,7 @@
 #if CONFIG_DMR	// the whole file: DMR only
 #include <string.h>
 #include "codec_call.h"
+#include "vocoder/ambe2_flags.h"
 
 #define CODEC_SIGNATURE		0x4FF0E92Du	// push.w {r4-r11, lr}
 
@@ -33,7 +34,7 @@ static int8_t presence = -1;			// -1 not checked yet
 static const stm32_codec_profile_t *prof;	// the build found
 static uint32_t base;				// the code's start, from the descriptor
 static bool ready;				// states initialized
-static bool enc_first;				// next encode is the first of a transmission
+static uint32_t enc_flags = AMBE2_ENC_DEFAULT;	// set_options (VOCODER_OPT_DEFAULT until then)
 
 static uint32_t call(uint16_t off, uint32_t nargs, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t s0,
 		     uint32_t s1, uint32_t s2, uint32_t s3)
@@ -103,13 +104,12 @@ static void reset(void)
 	call(at->dec_set, 3, D, 128, (uint32_t)-20, 0, 0, 0, 0, 0);
 	// Last, as stock: one decode of an all-zero frame with flags 8
 	call(at->decode, 7, (uint32_t)pcmbuf, HALF, (uint32_t)bitbuf, 0, 8, 0, D, 0);
-	enc_first = true;
 	ready = true;
 }
 
-// Two calls per 20 ms frame, 80 samples each, half index 0 then 1. Flags 0x1840 on the first call after reset (stock
-// uses its init value 0x1840 for the first call of a transmission), 0x800 after that. r1 = 0 and the 0x2000 argument
-// are what stock passes from its wrapper variables. The 49 parameter bits come back one per halfword.
+// Two calls per 20 ms frame, 80 samples each, half index 0 then 1. Both calls pass the same flags word, read once
+// per frame (set_options; 0x1840 by default). r1 = 0 and the 0x2000 argument are what stock passes from its wrapper
+// variables. The 49 parameter bits come back one per halfword.
 static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
 {
 	if (!present()) {
@@ -120,10 +120,10 @@ static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODE
 		reset();
 	}
 	memcpy(pcmbuf, pcm, sizeof pcmbuf);
+	const uint32_t flags = enc_flags;
 	for (uint32_t h = 0; h < 2; h++) {
-		call(prof->at.encode, 8, (uint32_t)bitbuf, 0, (uint32_t)&pcmbuf[h * HALF], HALF,
-		     enc_first ? 0x1840u : 0x800u, h, 0x2000, (uint32_t)enc_state);
-		enc_first = false;
+		call(prof->at.encode, 8, (uint32_t)bitbuf, 0, (uint32_t)&pcmbuf[h * HALF], HALF, flags, h, 0x2000,
+		     (uint32_t)enc_state);
 	}
 	for (int i = 0; i < VOCODER_BITS; i++) {
 		bits[i] = (uint8_t)(bitbuf[i] & 1);
@@ -159,8 +159,26 @@ static const char *profile(void)
 	return present() ? prof->id : NULL;
 }
 
+// Encode options (hal_vocoder_t): one flags word for every encode call, kept across reset(). The same library in
+// every build these profiles accept, so the same bits
+static uint32_t options(void)
+{
+	return AMBE2_OPTIONS;
+}
+
+static void set_options(uint32_t opts)
+{
+	enc_flags = ambe2_enc_flags(opts);
+}
+
+static uint32_t encode_flags(void)
+{
+	return enc_flags;
+}
+
 const hal_vocoder_t stm32_vocoder = {
 	.present = present, .reset = reset, .encode = encode, .decode = decode, .profile = profile,
+	.options = options, .set_options = set_options, .encode_flags = encode_flags,
 };
 
 #endif	// CONFIG_DMR

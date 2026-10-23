@@ -85,13 +85,13 @@ def test_vocoder_encode_options(radio):
     frame it encodes. After a change with no transmission since, the word still belongs to the previous options, so
     a mismatch is only printed here; test_dmr_tx_encode_options checks the word after an over."""
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     v = radio.view(["dmr", "storage"])
     if "voice.enc_supported" not in v:
-        pytest.skip("firmware without the voice.enc_* view keys")
+        skip("not_built", "firmware without the voice.enc_* view keys")
     supported = int(v["voice.enc_supported"], 0)
     if supported == 0:
-        pytest.skip("this board's vocoder has no encode options")
+        skip("no_hw", "this board's vocoder has no encode options")
     audio = int(v["settings.audio_flags"], 0)
     nr_on = (audio & 1) == 0
     want = (0x1 if nr_on else 0) | 0x2 | (0x4 if audio & 2 else 0)

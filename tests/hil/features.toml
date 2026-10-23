@@ -37,6 +37,10 @@ spec = "docs/spec/radio-features.md"
 switch = "FM_TX_TONES"
 spec = "docs/spec/radio-features.md"
 
+[feature.dtmf]
+switch = "DTMF"
+spec = "docs/spec/radio-features.md"
+
 [feature.vox]
 switch = "VOX"
 spec = "docs/spec/radio-features.md"
@@ -110,6 +114,10 @@ spec = "docs/spec/ui.md"
 
 [feature.scan]
 switch = "SCAN"
+spec = "docs/spec/radio-features.md"
+
+[feature.dual_watch]
+switch = "DUAL_WATCH"
 spec = "docs/spec/radio-features.md"
 
 [feature.beep]

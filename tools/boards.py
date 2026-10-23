@@ -65,13 +65,11 @@ FAMILIES = {
     # combination, speaking its own file format (tools/serial_loader.py)
     "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
     # loader on the cable, through the RAM stub
-    "usb-hid-sgl": {"link": "usb", "needs": (), "web": "sgl-hid", "update_mode": None},	# a vendor loader's USB HID
-    # update mode, taking the image inside a stock update file (.sgl) as its envelope (odrflash hidboot.py, updatefile.py)
 }
 # [flash.stub] stock_console: the debug console a stock firmware answers on the cable, by protocol (the web flasher
 # loads the stub through it before ODR is installed: site/static/js/flasher/usmart.js)
 STOCK_CONSOLES = ("usmart",)
-CODEC_TOOLS = ("codec_extract", "hrc7000_codec", "k22f_codec")
+CODEC_TOOLS = ("codec_extract", "hrc7000_codec")
 ODRFLASH_JSON = "tools/odrflash/odrflash/registry.json"	# the flashing tools' view, generated and committed
 # hal_flash_map_t fields the site reads (the codeplug editor): the open-firmware image's data flash address, the end of
 # the room for it and the DMR ID database, the TFTP staging area. The open-firmware flash image follows the EEPROM image
@@ -167,7 +165,7 @@ BOARD_SCHEMA = {
                       "idle_cs": _opt(STR_LIST)}),
     }),
     # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file
-    "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(str), "profile": _opt(str), "sources": _opt(STR_LIST),
+    "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(STR_LIST), "profile": _opt(str), "sources": _opt(STR_LIST),
                    "installed": _opt(STR_LIST), "stock_version": _opt(str)}),
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
     # tests/hil: what the health checks expect (test_health.py), and the features built here but not working yet
@@ -700,6 +698,41 @@ def gallery_classes(root=ROOT):
     return set(re.findall(r'\{\s*"([^"]+)"', m.group(1))) if m else set()
 
 
+def gallery_geoms(root=ROOT):
+    """{class: (width, height, bpp)} from ui_sim.c's sim_geoms table, or None without it."""
+    path = os.path.join(root, UI_SIM)
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        m = re.search(r"sim_geoms\[\]\s*=\s*\{(.*?)\n\};", f.read(), re.S)
+    rows = re.findall(r'\{\s*"([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),', m.group(1)) if m else []
+    return {n: (int(w), int(h), int(bpp)) for n, w, h, bpp in rows}
+
+
+def gfx_defs(mcu_defs):
+    """The frame buffer a board builds: GFX_* from its MCU_DEFS (-DGFX_FB_BYTES=9600u), else gfx.h's defaults."""
+    out = dict(GFX_DEFAULTS)
+    for name, val in re.findall(r"-D(GFX_[A-Z_]+)=(\d+)[uU]?\b", mcu_defs or ""):
+        if name in out:
+            out[name] = int(val)
+    return out
+
+
+def gfx_problems(geom, gfx):
+    """Why a board's frame buffer can't hold its panel's gallery class geom (width, height, bpp): rows, bytes, and the
+    16-color path for a 4 bpp class."""
+    w, h, bpp = geom
+    out = []
+    if gfx["GFX_MAX_ROWS"] < h:
+        out.append("GFX_MAX_ROWS %d is under the panel's %d rows" % (gfx["GFX_MAX_ROWS"], h))
+    need = (w * bpp + 7) // 8 * h
+    if gfx["GFX_FB_BYTES"] < need:
+        out.append("GFX_FB_BYTES %d is under the %d B a %dx%d %d bpp panel needs" % (gfx["GFX_FB_BYTES"], need, w, h, bpp))
+    if bpp == 4 and not gfx["GFX_INDEXED"]:
+        out.append("a 16-color panel needs GFX_INDEXED=1")
+    return out
+
+
 def hardware_switches(root=ROOT):
     """{switch: what it needs}: the features of tests/hil/features.toml with a hardware field."""
     path = os.path.join(root, "tests", "hil", "features.toml")
@@ -745,6 +778,7 @@ def check(root=ROOT):
     hw = hardware_switches(root)
     stub_ids, orders = {}, {}
     classes = gallery_classes(root)
+    geoms = gallery_geoms(root) or {}
     for bid, b in boards.items():
         d = b.data
         where = "boards/%s/board.toml" % bid
@@ -791,6 +825,10 @@ def check(root=ROOT):
             # the site links docs/ux/screens/<class>/, which only the classes in sim_geoms get
             bad("hardware.gallery %r is not in %s sim_geoms (make ui-gallery renders only those)"
                 % (d["hardware"]["gallery"], UI_SIM))
+        if d["hardware"]["gallery"] in geoms:
+            # the gallery renders the panel the radio draws; the build's frame buffer (board.mk MCU_DEFS) must hold it
+            for why in gfx_problems(geoms[d["hardware"]["gallery"]], gfx_defs(b.mk.get("MCU_DEFS"))):
+                bad("board.mk MCU_DEFS: %s (hardware.gallery %s)" % (why, d["hardware"]["gallery"]))
         fl = d["flash"]
         try:
             secs = b.sectors()
@@ -1225,6 +1263,15 @@ def self_test():
     ok(board_t_names(tmpc) == [("Radio X", None), (None, "BOARD_NAME")],
        "board_t_names: only board_t, any whitespace, comments skipped, a macro %r" % board_t_names(tmpc))
     ok(pin_defines(os.path.join(tmpc, "pins.h")) == {"PIN_A": 0x2D, "PIN_B": 12}, "pin_defines: integer defines only")
+    ok(gfx_defs("-DX=1 -DGFX_INDEXED=1 -DGFX_FB_BYTES=9600u -DGFX_MAX_ROWS=120u") ==
+       {"GFX_FB_BYTES": 9600, "GFX_MAX_ROWS": 120, "GFX_INDEXED": 1} and gfx_defs(None) == GFX_DEFAULTS,
+       "gfx_defs: MCU_DEFS values, gfx.h's defaults for the rest")
+    ok(gfx_problems((160, 120, 4), gfx_defs("-DGFX_INDEXED=1 -DGFX_FB_BYTES=9600u -DGFX_MAX_ROWS=120u")) == [] and
+       gfx_problems((128, 64, 1), gfx_defs("-DGFX_FB_BYTES=1024u -DGFX_MAX_ROWS=64u")) == [] and
+       gfx_problems((240, 320, 16), GFX_DEFAULTS) == ["GFX_MAX_ROWS 160 is under the panel's 320 rows",
+                                                       "GFX_FB_BYTES 40960 is under the 153600 B a 240x320 16 bpp panel needs"]
+       and gfx_problems((160, 128, 4), GFX_DEFAULTS) == ["a 16-color panel needs GFX_INDEXED=1"],
+       "gfx_problems: rows, bytes and the 16-color path")
     with open(os.path.join(tmpc, "flash.c"), "w", encoding="utf-8") as f:
         f.write("// hal_flash_map_t old = { .openfw_eeprom = 1 };\n"
                 "static const hal_flash_map_t fmap = {\n\t.openfw_eeprom = 0x00700000u,\t/* { */\n"
@@ -1474,6 +1521,17 @@ def self_test():
             ok(any("_VALUES" in p for p in check(tmp)), "check finds build option values that differ from board.mk")
             with open(mk, "w", encoding="utf-8") as f:
                 f.write(mk_good)
+        # a frame buffer too small for the board's gallery class
+        fb = next((b for b in board_dirs(tmp) if "-DGFX_FB_BYTES=" in open(os.path.join(tmp, "boards", b, "board.mk"),
+                                                                             encoding="utf-8").read()), None)
+        if fb:
+            mk = os.path.join(tmp, "boards", fb, "board.mk")
+            mk_good = open(mk, encoding="utf-8").read()
+            with open(mk, "w", encoding="utf-8") as f:
+                f.write(re.sub(r"-DGFX_FB_BYTES=\d+u?", "-DGFX_FB_BYTES=512u", mk_good))
+            ok(any("GFX_FB_BYTES 512" in p for p in check(tmp)), "check finds a frame buffer smaller than the panel")
+            with open(mk, "w", encoding="utf-8") as f:
+                f.write(mk_good)
         # a stock-file codec: a list of SHA-256 digests, its profile and sources from them
         st = next((b for b in board_dirs(tmp) if re.search(r"(?m)^stock = \[", open(os.path.join(tmp, "boards", b,
                                                                                            "board.toml")).read())), None)
@@ -1543,7 +1601,9 @@ def main(argv=None):
     p.add_argument("board")
     p.add_argument("--extra", action="store_true", help="the [ci] extra configurations instead")
     p = sub.add_parser("json", help="the merged view")
-    p.add_argument("--for", dest="view", choices=("all", "odrflash", "site"), default="all")
+    p.add_argument("--for", dest="view", choices=("all", "odrflash", "site", "build"), default="all",
+                   help="all: every field; odrflash: the flashing tools' registry.json; site: the web site's boards; "
+                        "build: the build view")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--out", metavar="FILE")
     g.add_argument("--check", metavar="FILE", help="fail if FILE differs from what would be written")
@@ -1610,7 +1670,8 @@ def main(argv=None):
             for name, args in (b.ci_extra() if a.extra else b.builds()):
                 print(" ".join([name] + args))
         elif a.cmd == "json":
-            text = dumps({"odrflash": odrflash_view, "site": site_view}.get(a.view, full_view)(boards))
+            text = dumps({"odrflash": odrflash_view, "site": site_view, "build": build_view,
+                          "all": full_view}[a.view](boards))
             if a.check:
                 try:
                     with open(a.check, encoding="utf-8") as f:

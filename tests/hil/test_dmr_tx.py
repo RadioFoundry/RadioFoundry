@@ -62,7 +62,7 @@ import warnings
 
 import pytest
 
-from odr_hil import DebugLinkError
+from odr_hil import DebugLinkError, skip
 
 PTT_S = 3.0
 # dmr_bench.check_tx items that judge the waveform, meaningless in a capture whose ADC clipped
@@ -106,7 +106,7 @@ def talker_alias_on_air(bursts):
 @pytest.mark.sdr_rx
 def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
@@ -524,19 +524,19 @@ def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
     (the room's noise, nobody talking) to compare the settings by hand; nothing is asserted on it."""
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     if d.get("dmr.codec") != "1":
-        pytest.skip("no vocoder merged in this firmware (dmr.codec=0)")
+        skip("not_built", "no vocoder merged in this firmware (dmr.codec=0)")
     v = radio.view(["dmr"])
     if "voice.enc_supported" not in v:
-        pytest.skip("firmware without the voice.enc_* view keys")
+        skip("not_built", "firmware without the voice.enc_* view keys")
     if int(v["voice.enc_supported"], 0) & opts != opts:
-        pytest.skip(f"this board's vocoder doesn't take options {opts:#x} (voice.enc_supported "
+        skip("no_hw", f"this board's vocoder doesn't take options {opts:#x} (voice.enc_supported "
                     f"{v['voice.enc_supported']})")
     prev = int(v["voice.enc_options"], 0)
     own, target, private = int(d["dmr.own_id"]), int(d["dmr.target_id"]), d.get("dmr.target_private") == "1"
     try:
         radio.link.setting("enc_options", opts)
     except DebugLinkError as e:
-        pytest.skip(f"firmware without the enc_options setting (SETTING 31): {e}")
+        skip("not_built", f"firmware without the enc_options setting (SETTING 31): {e}")
     try:
         got = int(radio.view(["dmr"])["voice.enc_options"], 0)
         assert got == opts, f"options in force {got:#x} after SETTING 31 {opts:#x}"

@@ -248,11 +248,12 @@ def test_fm_tx_roger_beep(fm_vfo, sdr_bench, pytestconfig):
 DTMF_SENT = "1#5D0"     # the last a 20 ms tap: the radio holds it to its shortest tone
 
 
+@pytest.mark.feature("dtmf")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 def test_fm_tx_dtmf(fm_vfo, sdr_bench, pytestconfig):
     if "DTMF" not in fm_vfo.features():
-        pytest.skip("built without CONFIG_DTMF")
+        skip("not_built", "built without CONFIG_DTMF")
     L = fm_vfo.link
 
     def over():
@@ -295,7 +296,7 @@ def test_fm_tx_dtmf_stop(fm_vfo, sdr_bench, pytestconfig):
     """A digit held down when the transmission ends (PTT released, then the time-out): the tone ends with the
     carrier, the view's dtmf goes back to '-', and the key's late release sends nothing."""
     if "DTMF" not in fm_vfo.features():
-        pytest.skip("built without CONFIG_DTMF")
+        skip("not_built", "built without CONFIG_DTMF")
     from test_radio_features import settings
     L = fm_vfo.link
     set_fm(fm_vfo, False, "none", 0)
@@ -341,6 +342,7 @@ def test_fm_tx_dtmf_stop(fm_vfo, sdr_bench, pytestconfig):
         assert int(fm_vfo.view(["features"]).get("dtmf_sent", "0")) == sent0 + 1
 
 
+@pytest.mark.feature("fm")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx

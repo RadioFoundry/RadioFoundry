@@ -44,7 +44,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
 | Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), grouped by `site/data/screens.json` |
-| Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/odrflash/odrflash/registry.json`, read through `boards.py`) and `stockfw.py` (the USB HID update route: `k22fcodec.py`, `updatefile.py`, `hidboot.py`), exported to `data/flash-boards.json` |
+| Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/odrflash/odrflash/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
 
@@ -204,18 +204,13 @@ Sentry; the page then works the same and offers the download only.
 | `c7000.js` | HR_C7000 program flash: what a read holds, the codec found by content, the codec slot, what an install writes | `tools/hrc7000_codec.py` |
 | `fakec7000.js` | A simulated HR_C7000 radio: boot ROM window, ODR's debug link (VERSION, 0x1A), the stub and both flash chips | |
 | `usmart.js`, `iap.js`, `iapui.js` | The stock side of an HR_C7000 radio, by protocol: the stub loaded through a stock debug console (USMART, `flash.stock_console`), the vendor update mode write (IAP, `flash.update_mode`) and their steps | `docs/spec/hardware-db25d.md` 7 |
-| `hidboot.js` | The USB HID update file (read, write into a donor file) and the update mode protocol over WebHID | `odrflash/updatefile.py`, `odrflash/hidboot.py` |
-| `k22fcodec.js` | The codec placement and merge for the `sgl-hid` backend, and the update file the page sends | `odrflash/k22fcodec.py`, `odrflash/cli.py` `hid_update_file` |
-| `fakehid.js` | A simulated radio in USB HID update mode: the loader model, a WebHID model, a synthetic stock update file; and one running ODR with stub entry, with the K22F stub's rules | `odrflash/hidboot.py` `FakeBootloader`, `stub/f4stub.py` `FakeF4` |
-| `hidui.js` | The `sgl-hid` backend: its steps (connect, update file, install, finish) | |
 | `c7000ui.js`, `radiotop.js` | The HR_C7000 backend: its steps (connect, back up and check, write, check) and the radio picture with its LED | |
 | `dom.js` | DOM helpers and strings shared by `app.js` and `c7000ui.js` | |
 | `app.js` | The page: the tasks, the shared steps and the `anyroad-dfu` backend | |
 
 Add `#sim=<radio>-stock` to the flasher's address to run every step against a simulated radio on its stock firmware,
 `#sim=<radio>` against one that runs ODR (an STM32F4 radio updates through the STM32F4 loader, an HR_C7000 radio
-through the loader hand-over, a radio on the `sgl-hid` backend in its update mode with a practice update file whose
-made-up codec the page knows). `#sim` alone is the first radio on stock firmware. The fake comes from the radio's data
+through the loader hand-over). `#sim` alone is the first radio on stock firmware. The fake comes from the radio's data
 (`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
 console gets one, with its first stock version.
 
@@ -243,7 +238,6 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 |---|---|---|
 | `anyroad-dfu` | DM-1701, MD-380 | `app.js` (`dfu.js`, `f4stub.js`) |
 | `c7000-stub` | DM-1801 Pro, DM-32UV, DB25-D PRO | `c7000ui.js` (`stub.js`, `c7000.js`) |
-| `sgl-hid` | the `usb-hid-sgl` family (install only; not yet tried on a radio) | `hidui.js` (`hidboot.js`, `k22fcodec.js`, `k22stub.js`) |
 | `none` | any other | none: the radio is listed but grayed out |
 
 A radio without a backend the page knows gets `none`, so a family can come before its module. The
@@ -442,7 +436,7 @@ site (`firmware/<radio>/`) are not used by the flasher. The `make` command that 
 for the image it produces, stay under "Build it yourself".
 
 A radio whose image depends on more than the feature switches lists the choices in board.toml `[[build_options]]`
-(`flash.build_options` in `data/radios.json`; the MD-380's band: `MD380_BAND=uhf|vhf`). The build step asks for each one
+(`flash.build_options` in `data/radios.json`; the MD-380's band: `BAND=uhf|vhf`). The build step asks for each one
 before it builds, or takes it from a connected radio's debug link name (`board_name`), sends it with the request, and
 refuses an image whose manifest doesn't carry it (`build_options`). The current-firmware step refuses a radio whose name
 says another value.
