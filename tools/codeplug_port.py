@@ -33,7 +33,7 @@ class PortError(Exception):
     pass
 
 
-# What RadioFoundry's codeplug layout holds (docs/spec/open-firmware-cps.md 7.2-7.3, docs/user/15-programming-qdmr.md).
+# What RadioFoundry's codeplug layout holds (docs/spec/open-firmware-cps.md 7.2-7.3, docs/user/04-programming.md).
 # dmrconf's OpenUV380 encoder drops what doesn't fit without an error, so these are checked before writing
 RFOUNDRY_LIMITS = {"channels": 1024, "zones": 68, "contacts": 1024, "groupLists": 76}
 SECTION_NAMES = {"channels": "channels", "zones": "zones", "contacts": "contacts", "groupLists": "RX group lists"}

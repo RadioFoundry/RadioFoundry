@@ -2,12 +2,13 @@
 
 # PPP on the serial host link
 
+
 IPv4 over PPP on the radio's serial host port, into the same IP gateway and services as the USB network adapter
 (`usb-network.md`). It is the IP link of radios whose only computer link is a USB-serial cable on a UART at 115200 baud. On radios
 with USB it can also run on the USB serial port, as a fallback when a host doesn't bring up the network adapter.
 
 Switch `CONFIG_NET_PPP` (`docs/build-config.md`), on for boards without USB (their only IP link, with the gateway and
-every service) and off on the USB radios ([feature-matrix.md](../feature-matrix.md)): host tested, interop tested with pppd, and run on the DB25-D PRO and the DM-1801 Pro (section 8). It needs `CONFIG_HOSTLINK` and `CONFIG_DMR_IP_GATEWAY`; the gateway needs a link to
+every service) and off on the USB radios ([feature-matrix.md](../feature-matrix.md)): host tested, interop tested with pppd, and run on radios (section 8). It needs `CONFIG_HOSTLINK` and `CONFIG_DMR_IP_GATEWAY`; the gateway needs a link to
 the host, `CONFIG_USB_NETWORK` or `CONFIG_NET_PPP`, and follows PPP by default.
 
 Written from RFC 1661 (PPP, LCP), RFC 1662 (HDLC-like framing) and RFC 1332 (IPCP) only.
@@ -164,20 +165,18 @@ a full one). The board's receive ring must hold one full frame while that happen
 
 ## 7. Cost
 
-Flash and RAM of `CONFIG_NET_PPP=y` against the default image (agent/ppp at f52d6b9, `SOURCE_DATE_EPOCH` fixed so the
-default images compare byte for byte with main). The USB radios already have the gateway and its services, so the
+Flash and RAM of `CONFIG_NET_PPP=y` against the default image (measured with `SOURCE_DATE_EPOCH` fixed so the default images compare byte for byte). The USB radios already have the gateway and its services, so the
 figure is PPP alone; on a radio without USB the gateway comes with it.
 
 | Board, build | Flash | RAM | Fits |
 |---|---:|---:|---|
-| DM-1701, LTO off (default) | +4,368 | +88 | no: 3,680 B free, 688 B short |
-| DM-1701, `LTO=1 LTO_3P=1` | +3,948 | +104 | yes: 20,424 B left |
-| MD-380 (its default, `LTO=1 LTO_3P=1`) | +3,816 | +88 | no: 2,228 B free, 1,588 B short |
-| DM-32UV, PPP and the IP gateway, no services | +10,736 | +4,080 | yes: RAM 95.3%, 7,792 B left |
+| STM32 board with an HR_C6000, LTO off (default) | +4,368 | +88 | no: 3,680 B free, 688 B short |
+| same board, `LTO=1 LTO_3P=1` | +3,948 | +104 | yes: 20,424 B left |
+| STM32 board with an HR_C5000 (its default, `LTO=1 LTO_3P=1`) | +3,816 | +88 | no: 2,228 B free, 1,588 B short |
+| HR_C7000 board, PPP and the IP gateway, no services | +10,736 | +4,080 | yes: RAM 95.3%, 7,792 B left |
 
-PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B RAM; the rest of the DM-32UV's
-figure is the gateway, its air side and the network personality (`hostlink_net*.c`, 1.6 KB RAM each, the gateway's
-600 B frame). The DM-32UV's per-service costs and its default network build are in
+PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B RAM; the rest of the HR_C7000 row's figure is the gateway, its air side and the network personality (`hostlink_net*.c`, 1.6 KB RAM each, the gateway's
+600 B frame). Per-service costs and its default network build are in
 [feature-matrix.md](../feature-matrix.md), "Whole images".
 
 ## 8. Tests
@@ -197,14 +196,13 @@ figure is the gateway, its air side and the network personality (`hostlink_net*.
   (Ubuntu 24.04 container on the CI VM, `--cap-add NET_ADMIN --device /dev/ppp`). Passes passive and `--active`:
   ping, a 500 byte ping with `7E 7D 11 13` in it, HTTP, SNMP get (`tools/rfoundry_snmp.py`), `rfoundry_debug.py --port udp:`
   ping and version, IPv6CP and CCP Protocol-Rejected, pppd's hang-up ending the link cleanly.
-- On a radio, DM-1801 Pro, 2026-10-21: pppd 2.5.2 on Linux (`tools/rfoundry_ppp.sh`) over the programming cable at
+- On a radio, 2026-10-21: pppd 2.5.2 on Linux (`tools/rfoundry_ppp.sh`) over the programming cable at
   115200 baud. LCP and IPCP open, the host gets 12.<ID> and the routes. Ping (56 and 500 bytes, no loss), the debug
   link over UDP 3334, HTTP 200 and an SNMP get work. Two UDP datagrams, one to a talkgroup (225.0.0.201) and one to a
   radio ID (12.x.y.z), went out as SAP 3 data, and the SDR bench decoded the preamble CSBKs (our source ID, the right
   destination), the data headers and the blocks, CC 2, no FEC failures. `rfoundry_ppp.sh --stop` hangs up; the debug link
-  answers on the cable right after. `ppp.rx_errors` stayed 0. The DB25-D PRO runs the network services over PPP too
-  ([23-radios](../user/23-radios.md)).
+  answers on the cable right after. `ppp.rx_errors` stayed 0. A board without USB runs the network services over PPP too.
 - `test_gateway_has_netif` (`tests/hil/test_dmr_ip.py`, radio only): a build with the gateway reports `net.netif=1`.
-  The DM-1801 Pro's board first set no `board.netif`. LCP and IPCP still opened, but nothing the gateway sent reached
+  One board first set no `board.netif`. LCP and IPCP still opened, but nothing the gateway sent reached
   the host (no ping reply). This test catches that without root or pppd.
 - Not tried yet: macOS pppd (it needs root).

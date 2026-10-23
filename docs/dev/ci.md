@@ -1,8 +1,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Continuous integration
+# Continuous Integration
 
-What runs automatically, when, how long it takes, and how to run each piece by hand. Every CI job calls the same
+What runs automatically, when, and how to run each piece by hand. The runners and the container image are in
+[ci-runners.md](ci-runners.md). Every CI job calls the same
 scripts a developer runs locally (`tools/ci.sh`, `tools/coverage.sh`), so the YAML holds only setup and triggers.
 The workflows are in `.github/workflows/`; Gitea Actions runs them from there too (there is no `.gitea/workflows`),
 so one set serves the self-hosted Gitea runner and GitHub.
@@ -16,20 +17,19 @@ so one set serves the self-hosted Gitea runner and GitHub.
 | `hil.yml` | `rfoundry-hil` (the bench Mac) | by hand; nightly only when `RFOUNDRY_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
 | `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts the pull request's gallery comment with the changed screens attached |
-| `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([release.md](release.md)) |
+| `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([manual-pdf.md](manual-pdf.md)) |
 | `release.yml` | `ubuntu-24.04`, and for rfoundry the hosted macOS / Windows runners | `v*` tags; pull requests that change the release tooling (packaging only, no release gate) | release images and rfoundry ([release.md](release.md)) |
 
 On GitHub, `ci.yml` and `nightly.yml` run only when the repository variable `RFOUNDRY_CI_GITHUB` is `true`: the
-repository is private, so hosted runners use paid minutes (about 6 per push). On Gitea they always run.
+repository is private, so hosted runners use paid minutes. On Gitea they always run.
 
 The `ubuntu-24.04` in the table is the default. When the repository variable `RFOUNDRY_CI_RUNNER` is set (to `rfoundry-ci`),
 every Linux job goes to the self-hosted runner with that label instead
-([below](#the-github-self-hosted-runner)). Pull request code from a fork always stays on `ubuntu-24.04`.
+([runners](ci-runners.md#the-github-self-hosted-runner)). Pull request code from a fork always stays on `ubuntu-24.04`.
 
 Each change is checked once. A branch is tested through its pull request (`pr-tests.yml`), and `main` again after
 the merge (`ci.yml`). The unit tests run once per check, with the coverage counters and the sanitizers in the same
-build. The site's pull request build and the release gate on pull requests are gone: the unit tests job's Python step
-builds the site and runs the flasher's tests, and the release gate runs for a tag.
+build. The unit tests job's Python step builds the site and runs the flasher's tests, and the release gate runs for a tag.
 
 ## On main: `ci.yml`
 
@@ -38,12 +38,12 @@ Triggered by changes under `boards/`, `config/`, `core/`, `drivers/`, `hal/`, `p
 `REUSE.toml`, `.github/actions/` or the workflow itself, pushed to `main`; by hand (Actions, CI, Run workflow) on any branch. A docs-only
 push runs only the manual workflow. A newer push cancels the run in progress (`concurrency`).
 
-| Job | Command | Time on the Gitea runner |
-|---|---|---|
-| `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests, 64 suites with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the UI screen gallery (`uiSim --gallery`) | about 3 min on the self-hosted runner: the unit tests 2.8 min on 4 CPUs, gallery 2 s |
-| `checks` | `tools/ci.sh --steps registry,python,licenses` (doc links among the Python checks) | about 1.5 min |
-| `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --toolchain arm`: every board built with the Arm toolchain, in one job | about 1 min with the checkout; the toolchain 50 s on a cache miss |
-| `firmware (C-SKY)` | `tools/ci.sh --quick --steps firmware --toolchain csky`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) unless the runner has csky-elf GCC | about 1 min with the checkout; skipped where the image isn't available |
+| Job | Command |
+|---|---|
+| `unit tests` | `SANITIZE=1 tools/coverage.sh` (the host tests with the tshark pcap checks, built once with `--coverage` and ASan / UBSan, and gcovr's report), then the UI screen gallery (`uiSim --gallery`) |
+| `checks` | `tools/ci.sh --steps registry,python,licenses` (doc links among the Python checks) |
+| `firmware (Arm)` | `tools/ci.sh --quick --steps firmware --toolchain arm`: every board built with the Arm toolchain, in one job |
+| `firmware (C-SKY)` | `tools/ci.sh --quick --steps firmware --toolchain csky`, in the csky-elf image (`tools/docker/csky-toolchain/run.sh`) unless the runner has csky-elf GCC; skipped where the image isn't available |
 
 There is one firmware job per toolchain, not one per radio or per platform: a job's checkout and start take longer
 than a radio's build, and a runner has 4 cores, so the two firmware jobs side by side keep an 8-core host busy while
@@ -52,8 +52,7 @@ leaving runners free for other pull requests. The two are one job with a `toolch
 registry (`tools/boards.py list --toolchain`), so a new radio, or a new platform on a toolchain already listed (a
 second Arm SoC, for example), joins CI, the nightly and the release with no workflow edit. Only a new toolchain
 goes in the matrices of `ci.yml`, `pr-tests.yml`, `nightly.yml` and `release.yml` and gets its set-up in the
-toolchain action ([below](#toolchains)). The jobs run in parallel, so a push is checked in about three minutes plus
-the runner's image start. On an 8-core Mac the plain host tests take 43 s.
+toolchain action ([below](#toolchains)). The jobs run in parallel.
 
 Each firmware job builds with zero warnings, writes the size report (image bytes and free space in the linker's
 application region, also put in the job summary on GitHub) and fails when the application region overflows. The
@@ -154,11 +153,11 @@ support it, so check the first run on the Gitea runner before relying on the com
 
 ## Nightly: `nightly.yml`
 
-| Job | Command | Time on the Gitea runner |
-|---|---|---|
-| `matrix (Arm)` | `RFOUNDRY_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --toolchain arm`: for each board, each switch off alone, fm-minimal, maximal | about 8 min: DM-1701 4.4 min (47 builds), MD-380 3.8 min (42) |
-| `matrix (C-SKY)` | the same for every board built with csky-elf GCC, in the csky-elf image unless the runner has csky-elf GCC | about 9 min: DM-32UV 2.9 min (50 builds; measured on the CI VM), the other two about as long |
-| `reuse` | `reuse lint`, a warning until it passes | under a minute |
+| Job | Command |
+|---|---|
+| `matrix (Arm)` | `RFOUNDRY_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --toolchain arm`: for each board, each switch off alone, fm-minimal, maximal |
+| `matrix (C-SKY)` | the same for every board built with csky-elf GCC, in the csky-elf image unless the runner has csky-elf GCC |
+| `reuse` | `reuse lint`, a warning until it passes |
 
 The maximal build turns on every switch except the board's `BOARD_UNSUPPORTED` (the hardware can't),
 `BOARD_NOT_WRITTEN` (the code isn't written for the radio yet) and `MAXIMAL_SKIP` lists, and `CONFIG_AUDIO_PROBE`
@@ -171,7 +170,7 @@ repeats the checkout, the submodules and the toolchain set-up for every board, a
 one board's builds anyway. Nobody waits on the nightly, so the fewer jobs win.
 
 `--matrix` leaves out the default builds the per-push run already made; `RFOUNDRY_CI_PRUNE=1` removes each build tree
-once its size is recorded (the logs and images stay), which keeps the runner's disk from filling with about 65 MB
+once its size is recorded (the logs and images stay), which keeps the runner's disk from filling with a lot of disk
 per configuration.
 
 **Only when something changed.** A successful run saves a cache entry named `nightly-ok-<commit>` that holds its
@@ -192,17 +191,17 @@ Nightly, Run workflow, or `gh workflow run nightly.yml`) always builds.
 ## Running the pieces locally
 
 ```
-tools/ci.sh                                   # everything (the release gate), about 10 minutes on an 8-core Mac
+tools/ci.sh                                   # everything (the release gate)
 tools/ci.sh --quick                           # what CI runs, without coverage and sanitizers
 SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run
 tools/ci.sh --steps registry,python,licenses  # the checks job
-tools/ci.sh --quick --steps firmware --board md380
+tools/ci.sh --quick --steps firmware --board <id>
 tools/ci.sh --quick --steps firmware --toolchain arm         # a firmware CI job: every board on the toolchain
 tools/ci.sh --quick --steps firmware --platform stm32f4      # every board on one platform
-make BOARD=db25d stack-check                  # the stack check alone, after a build (stack-check.md)
+make BOARD=<id> stack-check                  # the stack check alone, after a build (stack-check.md)
 RFOUNDRY_CI_PRUNE=1 tools/ci.sh --matrix --steps firmware --toolchain arm    # a nightly matrix job
 tools/coverage.sh                             # build/coverage/index.html
-tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board dm1801pro   # on a host with the image
+tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board <id>   # on a host with the image
 ```
 
 `--steps` takes any of these, comma separated (default all):
@@ -253,7 +252,7 @@ workflow types a version. Platforms that share a toolchain id must pin the same 
 | `csky` | the image's csky-elf GCC on `PATH` (`/opt/csky-elf`) | the csky-elf image: log in (when `RFOUNDRY_CSKY_REGISTRY` is set), pull, log out, then the job runs its build through `tools/docker/csky-toolchain/run.sh` (the action's `run` output) | none |
 
 No workflow builds csky-elf GCC from source. The image is built by `tools/docker/csky-toolchain/build.sh`
-([The csky-elf image](#the-csky-elf-image)). The cache is skipped on the self-hosted runner and in `pr-tests.yml`
+([The csky-elf image](ci-runners.md#the-csky-elf-image)). The cache is skipped on the self-hosted runner and in `pr-tests.yml`
 (`cache: "false"`). When the image isn't available (`run.sh` exit status 3), a CI or nightly job ends with a notice
 and the release job fails. A new toolchain gets a branch in the action's first step and an entry in each firmware
 matrix.
@@ -273,27 +272,12 @@ Counted are the `core/`, `drivers/`, `hal/`, `boards/` and `platform/` sources a
 percentage is of the code under host test, not of the whole firmware. The same file built into several tests with
 different switches is merged (`--merge-mode-functions=separate`).
 
-At the time of writing (Apple clang, 2026-10-11): **90.9 % of lines** (28217 of 31047), **93.1 % of functions** (2313
-of 2484) and 78.6 % of branches, over 122 files (it was 88.3 % / 92.0 % / 74.5 % before the parser and storage tests). The most uncovered lines:
+The report lists the files with the most uncovered lines. Not built into any host test: the debug link commands
+(except the protocol and split parts), `hostlink.c`, `net_services.c`, the RTOS task wrappers, the USB device and NCM drivers,
+the display drivers and the SFR glue. The HIL tests cover most of these on the radio.
 
-| File | Lines | Covered | Notes |
-|---|---|---|---|
-| `core/radio/radio_sm.c` | 2714 | 93 % | the largest file; the misses are rare feature corners (roaming probes, hotspot keying, GPS in calls) |
-| `core/ui/ui_screens.c`, `ui_app.c`, `ui_menus.c` | 3800 | 81 % | screens and menu actions no flow test opens |
-| `core/aprs/aprs.c` | 1008 | 91 % | |
-| `drivers/modem/hrc7000/hrc7000.c` | 165 | 3 % | the DM-32 modem's chip layer (its DMR layer is tested) |
-
-Not built into any host test (25 files, about 7150 lines): the debug link commands (`core/debuglink/debuglink*.c`
-except the protocol and split parts), `hostlink.c`, `net_services.c`, the RTOS task wrappers
-(`radio_task.c`, `input_task.c`, `storage_rtos.c`, `ui.c`, `app.c`), the USB device and NCM drivers,
-`st7735.c` and the SFR glue (`hrcSfr.c`). The HIL tests cover most of these on the radio.
-
-Coverage on the radio itself (gcov counters read out over the debug link after a HIL run) is feasible but not set
-up: the instrumented image would fit only the DM-32UV (588 KB free; the DM-1701 and MD-380 have 3 to 5 KB left), and
-it needs a small handler that dumps the counters on request.
-
-Hosted coverage services (Codecov, Coveralls) would need the report, with source excerpts, sent to a third party; the private repository doesn't use them, and the
-HTML artifact serves the same purpose.
+Coverage on the radio itself (gcov counters read out over the debug link after a HIL run) is not set up. Hosted coverage
+services (Codecov, Coveralls) are not used: the repository is private, and the HTML artifact serves the same purpose.
 
 ### Sanitizers and fuzzing
 
@@ -308,159 +292,3 @@ input, KISS / HTTP / rigctld, LRRP, AX.25 / APRS, DMR data) have seeded mutation
 that feed exact-size heap buffers, so a read past the end is an ASan report; `RFOUNDRY_FUZZ_ITERS=<n>` replaces the small
 default counts and `RFOUNDRY_FUZZ_SEED=<n>` varies the seed, e.g. `RFOUNDRY_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1`
 for a long run by hand.
-
-## Runners
-
-### The Gitea runner
-
-A VM (Ubuntu 24.04, 8 vCPUs, 7 GB RAM) running `gitea-runner` 2.1 (`act_runner.service`, configuration in
-`/etc/gitea_runner.conf`), capacity 4, with the labels `ubuntu-latest`, `ubuntu-24.04` and `ubuntu-22.04` mapped to
-`docker.gitea.com/runner-images`. Each job runs in a fresh container of that image, as root; the workspace is a
-Docker volume. The runner mounts the host's Docker socket into job containers (`container.docker_host` empty), which
-the C-SKY jobs use: `run.sh` starts the csky-elf image with the job container's volumes (`--volumes-from`), so the
-image never has to be the job's own container (it has no Node.js for the JavaScript actions) and the runner's
-`force_pull: true` never tries to fetch the locally built image from Docker Hub.
-
-Things to know:
-
-- The root disk has only about 5.7 GB free and holds Docker's storage (the job containers, workspaces and the
-  runner's cache). The trimmed toolchain (215 MB per firmware job) and `RFOUNDRY_CI_PRUNE` in the matrix keep the jobs
-  small; keep an eye on `df -h /` before adding jobs. `/scratch` (40 GB) is where `build.sh` builds the toolchain.
-- The VM's virtual CPU lacks x86-64-v2, which current NumPy wheels from PyPI require (they stop with "NumPy was built
-  with baseline optimizations (X86_V2)"). The workflows install NumPy from Ubuntu's packages instead, which works;
-  a Proxmox CPU type of `x86-64-v2-AES` or `host` would remove the limit.
-- Gitea runs `schedule`, `workflow_dispatch` (with inputs), path filters, `vars`, `concurrency` (older Gitea
-  versions ignore it, so superseded runs then finish instead of being canceled), the cache
-  (`actions/cache@v4` on the runner's built-in cache server) and `actions/upload-artifact@v4`. The job summary
-  (`$GITHUB_STEP_SUMMARY`) is written but not shown by Gitea; the size and coverage tables are also in the logs.
-
-### The GitHub self-hosted runner
-
-GitHub's hosted runners cost the account's Actions minutes on a private repository. The repository variable
-`RFOUNDRY_CI_RUNNER` moves the Linux jobs to a self-hosted runner instead: each such job has
-`runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}`, so with the variable set to `rfoundry-ci` they go to a runner
-with that label, and with it unset (or on Gitea, where it isn't defined) nothing changes. `hil.yml` keeps its own
-runner. `release.yml` builds rfoundry on GitHub's macOS and Windows runners only for a `v*` tag; a pull request or a
-push to `main` builds the Linux rfoundry alone, on the self-hosted runner.
-
-The runner is the image in `tools/ci-runner/` (its README has the setup): Ubuntu 24.04 with everything the
-workflows install (the Arm and csky-elf toolchains, host GCC, Python with NumPy, pytest, pyserial, Pillow and
-markdown-it, gcovr, tshark, Node.js 22, gh, reuse). The workflows notice it by `RFOUNDRY_CI_IMAGE=1` in the
-environment (and `runner.environment == 'self-hosted'` in a step's `if`) and skip their `apt-get` steps, the
-toolchain cache, `setup-python`, `setup-node`, `pip` and Docker: the C-SKY jobs build directly with the image's
-csky-elf GCC. Every job gets a new container, as a non-root user, with no Docker socket, no host network or other
-host directories, and CPU, memory and process limits. Its network has no route out: an egress proxy passes HTTPS
-to the hosts in `tools/ci-runner/proxy/allow` only (GitHub, the npm registry and PyPI), so a job can't download from
-anywhere else (nodejs.org, developer.arm.com). A tool a job needs goes into the image. Ubuntu's system Python takes
-no `pip install`; a job that needs packages makes a venv (`release.yml`'s rfoundry job does).
-
-Pull request code from a fork never runs on it. `pr-tests.yml` runs on `pull_request_target`, which runs every
-pull request without approval, so its jobs (and `ui-gallery.yml`'s and the site's pull request build) choose the
-runner with `github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER ||
-'ubuntu-24.04'`: a branch of this repository gets the self-hosted runner, a fork GitHub's. The repository's setting
-for fork pull requests ("Run workflows from fork pull requests", off) keeps the `pull_request` workflows from running
-fork code at all.
-
-When the runner is off, jobs routed to it wait in the queue (and fail after a day). Unset `RFOUNDRY_CI_RUNNER` to go back
-to the hosted runners.
-
-The UI gallery has a runner of its own, so a pull request's screenshot preview never waits behind the build and test
-jobs. One runner is registered with the label `rfoundry-ui` instead of `rfoundry-ci` (`LABELS=rfoundry-ui` in its env file,
-[tools/ci-runner/README.md](../../tools/ci-runner/README.md)), and the repository variable `RFOUNDRY_UI_RUNNER` is set to
-`rfoundry-ui`. `ui-gallery.yml` and `ui-gallery-comment.yml` run on `RFOUNDRY_UI_RUNNER`, falling back to `RFOUNDRY_CI_RUNNER` when
-it's unset. So does `pr-tests.yml`'s `PR checks status` job: it runs a few seconds of `gh` after every other job, when
-the render is long done, so it never holds a build runner. No other job uses that label. With six runners that leaves five for everything else. Unset
-`RFOUNDRY_UI_RUNNER` to share the pool again.
-
-### GitHub
-
-The same workflows run on GitHub's hosted runners when the repository is pushed there and `RFOUNDRY_CI_RUNNER` is unset. Everything except the C-SKY
-jobs works as is; those skip with a notice (the release's fails) until the csky-elf image is in a registry the runner
-can pull (below).
-On a private repository the hosted runners use the account's Actions minutes: a push costs about 6 runner minutes, a
-nightly with changes about 12.
-
-## The csky-elf image
-
-The C-SKY jobs use the image named by the repository variable `RFOUNDRY_CSKY_IMAGE`, default `rfoundry/csky-gcc14:latest`
-(`platform/hrc7000/platform.toml` `[toolchain] image`, which `run.sh` and `push.sh` read):
-the tag `tools/docker/csky-toolchain/build.sh` gives its image on the Gitea runner (`rfoundry/csky-gcc14:20261011b`,
-549 MB). `run.sh` uses an image already on the Docker host, and pulls one only when the name starts with a
-registry host (`ghcr.io/...`, `docker.io/...`), never a bare name from Docker Hub. When the image can't be had, a CI
-or nightly job ends with a notice instead of failing; the release job fails.
-
-### Publishing it to GitHub Packages (ghcr.io)
-
-The `gh` login on the Mac lacks the `write:packages` scope; add it, log the VM's Docker in with that token through
-stdin (it never appears in a command line, a file in the repository or a log), push, and log out again:
-
-```
-gh auth refresh -h github.com -s write:packages
-gh auth token | ssh <runner-vm> 'docker login ghcr.io -u <github-user> --password-stdin'
-ssh <runner-vm> 'cd <a checkout> && tools/docker/csky-toolchain/push.sh ghcr.io/<owner>/rfoundry-csky-gcc14'
-ssh <runner-vm> 'docker logout ghcr.io'
-gh auth refresh -h github.com -r write:packages          # optional: drop the scope again
-```
-
-`push.sh REPO [TAG...]` tags the local image (`SRC`, default the platform's `image`) as `REPO:<its dated tag>`
-and `REPO:latest`, pushes both and prints the digest. It never handles a credential: log in before and out after.
-The same script pushes to Docker Hub (`push.sh docker.io/<user>/rfoundry-csky-gcc14` after `docker login`).
-
-A new package on ghcr.io is **private**. Then:
-
-1. Set `RFOUNDRY_CSKY_IMAGE` to the dated tag, e.g. `ghcr.io/<owner>/rfoundry-csky-gcc14:20261011b` (a fixed tag keeps CI
-   reproducible; `latest` follows each push), and `RFOUNDRY_CSKY_REGISTRY=ghcr.io`, in both Gitea's and GitHub's
-   repository variables.
-2. GitHub's hosted runners: in the package's settings, under "Manage Actions access", add the RadioFoundry
-   repository with read access. The jobs log in with their own token (`packages: read`); no secret is needed.
-3. The Gitea runner: either pull the image once on the VM (`docker login ghcr.io`, `docker pull`, `docker logout`;
-   `run.sh` then finds it locally), or give the jobs a token: create a classic personal access token with only
-   `read:packages`, and set it as the Gitea repository secret `RFOUNDRY_CSKY_REGISTRY_TOKEN` and your GitHub user name as the variable
-   `RFOUNDRY_CSKY_REGISTRY_USER`. The jobs log in through stdin and log out at the end.
-
-Making the package public instead removes steps 2 and 3.
-
-## HIL runner
-
-`hil.yml` runs the hardware-in-the-loop suite (`tests/hil/README.md`) on a self-hosted runner labeled `rfoundry-hil`,
-which has to be the machine with the radio on USB and SSH access to the SDR bench. Nothing is registered yet; to set
-one up on the bench Mac:
-
-- **Gitea** (the primary): download `gitea-runner` (act_runner) for macOS arm64, then
-  `gitea-runner register --instance https://<gitea-host> --token <registration token from the
-  repository's Settings, Actions, Runners> --name bench-mac --labels rfoundry-hil:host` and run
-  `gitea-runner daemon` (a LaunchAgent keeps it up). The `:host` label runs jobs directly on the Mac, not in Docker,
-  so the job sees the USB serial ports; the JavaScript actions need `node` on the PATH (`brew install node`).
-- **GitHub**: Settings, Actions, Runners, New self-hosted runner, macOS ARM64; run `./config.sh` with the label
-  `rfoundry-hil`, then `./svc.sh install` and `./svc.sh start`. A self-hosted runner on a private repository is fine;
-  never attach one to a public repository (anyone's pull request could run on it).
-
-The runner's environment (the LaunchAgent's, or a `.env` file next to `gitea-runner`; never the repository) provides:
-
-| Variable | What |
-|---|---|
-| `RFOUNDRY_SDR_BENCH_HOST` | the SDR bench's SSH host or alias (default `sdr-bench`); passwordless SSH from the runner's user |
-| `RFOUNDRY_PORT` | the radio's serial port when several are present |
-| `RFOUNDRY_HIL_AMBE` | the speech recording for `test_dmr_voice` (outside the repository) |
-| `RFOUNDRY_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.rfoundry-radio.lock`); the job holds it with `lockf` for the whole run. `tools/bringup.py run` takes the same file, with `{port}` in it replaced by the radio's port; without the variable it locks `~/.rfoundry-radio-<port>.lock`, so a bench with two radios runs a bring-up on each |
-
-Run it from Actions, HIL, Run workflow, with the inputs that map to the pytest flags: `rf` (`--allow-rf
---allow-service-stop`), `usb_switch`, `codeplug_write`, `reboot`, a `-k` selection and extra options. Without any
-it runs the radio-only tests, which never transmit. A full run with RF takes 30 to 40 minutes. The JUnit XML and
-the screenshots are the `hil-results` artifact. A scheduled nightly run happens only when the repository variable
-`RFOUNDRY_HIL_SCHEDULE` is `true`, with the flags in `RFOUNDRY_HIL_SCHEDULE_FLAGS`.
-
-Gotchas:
-
-- **The radio's firmware isn't flashed by the workflow.** Putting the radio in its bootloader takes a person
-  (`tools/rfoundry`); the job tests whatever is on the radio and prints its version first. Flash the commit to test
-  before starting the run.
-- **USB personality tests can strand the radio.** `usb_switch` tests switch the radio to a CDC-NCM network adapter
-  and back. When macOS misses the NCM carrier the radio can stay a network adapter, and only a power cycle brings the
-  serial port back; later tests then skip with "no radio". Leave `usb_switch` off for unattended runs.
-- **Transmitting stays on the approved test frequencies.** The RF tests use the defaults in `tests/hil/conftest.py`
-  (DMR and FM at 461.6875 MHz at the lowest power, APRS AFSK at 446.050 MHz with the operator's call). Never pass
-  other frequencies in the `extra` input, and run `rf` only with the dummy load or antenna of the bench set-up.
-- **One radio, one run.** The workflow's concurrency group keeps HIL runs one at a time and never cancels a running
-  one (it might be transmitting or restoring a codeplug); the lock keeps people and agents off the radio meanwhile.
-- If the runner is offline a manual run waits in the queue (Gitea) or fails after a day (GitHub).

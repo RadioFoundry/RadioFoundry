@@ -108,7 +108,7 @@ body:
         If the radio restarted or froze, open Settings > Advanced > Crash log before you switch it off (switching off
         may lose the record) and copy what it shows, or attach a photo of the screen. With the radio on USB,
         `tools/rfoundry_debug.py crash` prints the same record. "No crash recorded" is worth saying too.
-        [How the crash log works](https://github.com/radiofoundry/radiofoundry/blob/main/docs/user/12-settings.md#crash-log).
+        [How the crash log works](https://github.com/radiofoundry/radiofoundry/blob/main/docs/user/17-settings.md#crash-log).
   - type: textarea
     id: debug
     attributes:

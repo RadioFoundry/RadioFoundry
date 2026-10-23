@@ -63,20 +63,20 @@ Terms the user guide uses. In the web version, hover over, focus or tap a dotted
 | <a id="t-ars"></a>ARS | Automatic Registration Service: a radio tells a presence server it is on the air. |
 | <a id="t-basic-privacy"></a>Basic privacy (Basic Privacy, Enhanced privacy, Enhanced Privacy) | A fixed voice scrambling from Motorola and Anytone radios. Not encryption. |
 | <a id="t-control-station"></a>Control station | A radio a dispatch program on a computer uses to reach the fleet over the air. |
-| <a id="t-cps"></a>CPS | Customer programming software: the program that writes the codeplug. RadioFoundry uses qdmr. [More](15-programming-qdmr.md) |
+| <a id="t-cps"></a>CPS | Customer programming software: the program that writes the codeplug. RadioFoundry uses qdmr. [More](04-programming.md) |
 | <a id="t-lrrp"></a>LRRP (LIP) | Location Request and Response Protocol: a dispatcher asks a radio for its position. Motorola's position format; the standard has LIP. |
 | <a id="t-mototrbo"></a>MOTOTRBO | Motorola's DMR product line. Its extensions (ARS, TMS, LRRP, Capacity Plus) are not in the ETSI standard. |
 | <a id="t-tms"></a>TMS | Text message service: Motorola's text message format on DMR. The standard's own short data uses other formats. |
-| <a id="t-tyt"></a>TYT | A Chinese maker of DMR radios (MD-380, MD-UV380). "Stock" for those radios means TYT's firmware. |
+| <a id="t-tyt"></a>TYT | A Chinese maker of DMR radios. |
 
 ## Amateur and network
 
 | Term | Meaning |
 |---|---|
-| <a id="t-aprs"></a>APRS | Automatic Packet Reporting System: positions and short messages shared between amateur stations. [More](17-aprs.md) |
+| <a id="t-aprs"></a>APRS | Automatic Packet Reporting System: positions and short messages shared between amateur stations. [More](13-aprs.md) |
 | <a id="t-brandmeister"></a>BrandMeister | A worldwide amateur DMR network of linked servers and talkgroups. |
 | <a id="t-dmr-id"></a>DMR ID (RadioID, DMR IDs) | The number that identifies your radio on DMR. Amateur IDs come from RadioID.net. |
-| <a id="t-hotspot"></a>Hotspot | A small DMR modem that connects radios nearby to a DMR network over the internet. [More](13-hotspot.md) |
+| <a id="t-hotspot"></a>Hotspot | A small DMR modem that connects radios nearby to a DMR network over the internet. [More](14-hotspot.md) |
 | <a id="t-igate"></a>iGate | A station that passes APRS packets between the air and the APRS-IS internet network. |
 | <a id="t-kiss"></a>KISS | A simple protocol between a computer's APRS program and a radio modem (TNC). |
 | <a id="t-mdns"></a>mDNS | Multicast DNS: finding a device on a local network by a `.local` name. [More](../spec/mdns.md) |
@@ -91,7 +91,7 @@ Terms the user guide uses. In the web version, hover over, focus or tap a dotted
 |---|---|
 | <a id="t-codeplug"></a>Codeplug | The radio's programming: channels, zones, contacts, talkgroup lists, DMR ID. [More](../dev/cps-and-codeplug.md) |
 | <a id="t-contact"></a>Contact | A person in the codeplug: name and DMR ID. |
-| <a id="t-csv"></a>CSV | Comma separated values: a table as plain text, as the stock programming software exports it. |
+| <a id="t-csv"></a>CSV | Comma separated values: a table as plain text, as programming software exports it. |
 | <a id="t-digital-monitor"></a>Digital monitor | Playing every talkgroup on the timeslot (promiscuous mode; "hear all" in older RadioFoundry builds). |
 | <a id="t-id"></a>ID | Identifier: a number or name that picks out one thing. |
 | <a id="t-listen-list"></a>Listen list (RX group list) | The talkgroups a channel listens to. The codeplug calls it the RX group list. |
@@ -100,7 +100,7 @@ Terms the user guide uses. In the web version, hover over, focus or tap a dotted
 | <a id="t-one-shot"></a>One-shot | A talk target used for one call and its reply window. |
 | <a id="t-pc"></a>PC | Personal computer. |
 | <a id="t-ptt"></a>PTT | Push to talk: the key that transmits. |
-| <a id="t-qdmr"></a>qdmr | A free, open source codeplug editor for DMR radios. [More](15-programming-qdmr.md) |
+| <a id="t-qdmr"></a>qdmr | A free, open source codeplug editor for DMR radios. [More](04-programming.md) |
 | <a id="t-radiofoundry"></a>RadioFoundry | RadioFoundry, this firmware. |
 | <a id="t-recent"></a>Recent | RadioFoundry's list of stations heard and calls made. |
 | <a id="t-reply-window"></a>Reply window | The time after a call during which PTT answers it. |

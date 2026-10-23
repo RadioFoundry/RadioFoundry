@@ -2,7 +2,7 @@
 
 Text messages, packet data answers, CSBK call alert and radio check, ARS registration and LRRP location answers on
 the DMR call stack; IP packets with compressed headers and confirmed delivery (11, 12). Status: built and host-tested
-(`dmrDataServiceTest`, `dmrDataChainTest`). On air against the SDR bench (measured on the DM-1701): text messages,
+(`dmrDataServiceTest`, `dmrDataChainTest`). On air against the SDR bench (measured): text messages,
 call alert and radio check, both ways (`tests/hil/test_dmr_data.py`); ARS and LRRP not yet (`docs/testing/on-air-coverage.md`);
 IP over DMR: 11.4.
 

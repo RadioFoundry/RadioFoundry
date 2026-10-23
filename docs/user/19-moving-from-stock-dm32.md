@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Moving from stock DM-32UV firmware
+# Moving from Stock DM-32UV Firmware
 
 This chapter is for a Baofeng DM-32UV running Baofeng's stock firmware. One program, `dm32_migrate.py`, does the
 whole move over the programming cable:
@@ -9,9 +9,10 @@ whole move over the programming cable:
 2. It flashes RadioFoundry through the radio's own bootloader (update mode).
 3. It writes the codeplug back, plus the DMR ID (callsign) database.
 
-> The DM-32UV port runs on a radio but is still in testing; [the bring-up checklist](../testing/dm32-bringup.md)
-> lists what is still open. Try it only if you can go back to stock, and keep Baofeng's firmware file
-> (`DM32.01.01.049.bin`).
+The web installer and the Codeplug Editor do the same in two steps ([Installing](02-installing.md)). Use this program
+to do all of it in one run. What has been checked on the radio is in the [Radio reference](23-radios.md#baofeng-dm-32uv),
+and [the bring-up checklist](../testing/dm32-bringup.md) lists what is open. Keep Baofeng's firmware file
+(`DM32.01.01.049.bin`), so you can go back to stock.
 
 RadioFoundry never touches the bootloader, so update mode always works. It never touches the data flash below 7 MB either.
 The stock codeplug, the factory calibration and the stock contact database live there. Going back to stock gives you your old
@@ -85,7 +86,7 @@ talkgroup a channel talks to), as do empty, duplicate and unused ones. Every cha
 outside 136-174 and 400-480 MHz, and the parts of the codeplug RadioFoundry doesn't use. These parts aren't carried over: the
 stock menu, key and display settings, scan lists, roaming, GPS and APRS settings, encryption keys and the stock
 contact database. RadioFoundry
-uses the parts of the codeplug listed in [Programming the radio](15-programming-qdmr.md).
+uses the parts of the codeplug listed in [Programming the radio](04-programming.md).
 
 ## The DMR ID database
 

@@ -2,8 +2,7 @@
 
 # Emergency
 
-Sending and receiving the alarm and emergency calls is tested on air against the SDR bench, not yet with other
-radios on a real system. Don't rely on them for safety.
+Don't rely on the alarm and emergency calls for safety. The [Radio reference](23-radios.md) says what has been checked on each radio.
 
 ## When someone else declares an emergency
 

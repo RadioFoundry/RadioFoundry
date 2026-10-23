@@ -1,21 +1,18 @@
 <!-- SPDX-License-Identifier: MIT -->
-# DM-1701: hosting the stock AMBE+2 codec
+# DM-1701: hosting the AMBE+2 codec
 
-Status: research, 2026-10-09. Static analysis only: decryption, Thumb disassembly with arm-none-eabi-objdump,
-function matching against the codec the old builds used, and literal cross references. The codec has since run on a
-radio at the address the merge places it (2026-10-19, "Open items").
+The codec has run on a radio at the address the merge places it (2026-10-19, "Open items").
 
-Rule: the radio runs the codec that its own Baofeng stock firmware shipped. The user's machine extracts it from
-a stock file the user supplies. No codec bytes go in this repository or in released binaries. The old builds took
-the codec from the TYT MD-9600 V26.45 firmware. That source is no longer used.
+Rule: the radio runs the codec that its own Baofeng firmware shipped. The user's machine extracts it from the firmware
+file the user supplies. No codec bytes go in this repository or in released binaries.
 
-## Stock files
+## Firmware files
 
-Primary source: BG7QVB's archive, github.com/daniel5600/BAOFENG-DM1701-Original-Firmware. It holds only
-V02.06, in a CSV and a noCSV variant, plus the TYT/Baofeng upgrade tool installer.
+The archive github.com/daniel5600/BAOFENG-DM1701-Original-Firmware holds V02.06, in a CSV and a noCSV variant, plus the
+manufacturer's upgrade tool installer.
 
-The official V02.01 to V02.03 files are still downloadable from Radioddity's bucket `dm-1701.s3.amazonaws.com`
-(the zips named "DM-1701 Programming Software V1.0x & Firmware V02.0x"). No V02.04, V02.05 or V02.07 was found.
+The V02.01 to V02.03 files are downloadable from Radioddity's bucket `dm-1701.s3.amazonaws.com` (the zips named
+"DM-1701 Programming Software V1.0x & Firmware V02.0x"). No V02.04, V02.05 or V02.07 file is known.
 
 | version | file | size | sha256 | codec start |
 |---|---|---|---|---|
@@ -30,7 +27,7 @@ V02.01, V02.02 and V02.03 CSV have byte-identical codec code and table windows.
 
 ## Container and encryption
 
-The files are TYT "OutSecurityBin" upgrade files:
+The files are "OutSecurityBin" upgrade files:
 
 | offset | contents |
 |---|---|
@@ -45,20 +42,19 @@ The two segments are:
 1. (0x00060000, 0x5D400): resources for the external SPI flash, such as fonts.
 2. (0x0800C000, 0xD9400 for CSV or 0xDC000 for noCSV): the application in internal flash.
 
-The payload is XORed with the 1024-byte `DM1701_ENCODE_CIPHER` from the MIT-licensed STM32 firmware loader of the aftermarket firmware
-script:
+The payload is XORed with the model's 1024-byte key ([hardware-dm1701.md](hardware-dm1701.md) 15.3):
 
 ```
-plain[i] = file[0x100 + i] ^ DM1701_ENCODE_CIPHER[i % 1024]
+plain[i] = file[0x100 + i] ^ key[i % 1024]
 ```
 
 The application starts at payload offset 0x5D400 (file offset 0x5D500) and is linked at 0x0800C000. The V02.06
 CSV vector table holds SP 0x20003618 and reset 0x080E120D. For any app address A,
 file offset = A - 0x0800C000 + 0x5D500, and the cipher index = (file offset - 0x100) % 1024.
 
-## Codec in the stock image (V02.06 CSV)
+## Codec in the V02.06 CSV file
 
-All addresses in this section are where the stock file holds the codec. The merge moves the code
+All addresses in this section are where the file holds the codec. The merge moves the code
 ([codec-placement.md](codec-placement.md), "STM32 radios"; "Hosting" below).
 
 | item | value |
@@ -76,38 +72,15 @@ All addresses in this section are where the stock file holds the codec. The merg
 The V02.01, V02.02 and V02.03 CSV values are the same, minus 0x40. Their code window is 0x080746D4
 (file 0xC5BD4, sha256 `2ff7b7a8...a86a4cc9`) and their table window is 0x080D19B0 (file 0x122EB0, sha256
 `ab3cfb49...54f1379b`). V02.06 is not only V02.03 shifted. 119 halfwords of the code window differ. Those are the
-table literals (+0x40) and calls from stock wrapper code inside the window.
-
-### Comparison with the MD-9600 V26.45 codec (old builds, 0x0807537C)
-
-* It is the same object code, relinked, not byte-identical. 149 functions are reachable from the 3 entries.
-  136 of them map one-to-one to stock functions with the same mnemonic sequence; the other 13 are short and match
-  2 or 3 places. Byte for byte, 98.2% match (41382 of 42136 bytes). Function order differs between the two images.
-* The entry offsets from the code start (+0x130, +0x4E8, +0x5D8) and the prologues are the same. The
-  register and stack layout in `codec_interface.c` therefore applies unchanged. Only the addresses change.
-* The old 0x48BB0-byte "codec" carve from the MD-9600 file is mostly something else. The vocoder code is the first
-  0xFD6E bytes and its tables sit at +0x36640..+0x4766F. In between is MD-9600 code that the DM-1701 image
-  doesn't contain.
+table literals (+0x40) and calls from non-codec code inside the window.
 
 ### Position dependence
 
-* Calls and branches inside the codec are PC-relative. No code-address literals were found, and no calls from the
-  reachable functions to stock code. Stock wrapper and unreachable code inside the window does call out
-  (0x08040A30 and others), but the codec never runs it.
+* Calls and branches inside the codec are PC-relative. The three entry points make no calls outside the window.
+  Other code inside the window does call out, but the codec never runs it.
 * The code reaches its tables through 46 distinct absolute literals at 63 sites. The code is therefore tied to the
-  stock table address. Moving the code block and the table block as two contiguous blocks requires patching those
-  63 words.
-* Some aligned words fall in the RAM range, but they look like Thumb-2 instruction pairs. The old builds ran this
-  object code with the aftermarket firmware's own RAM layout, so no fixed RAM addresses are expected. This is unverified.
-
-## C. Codec state init tables
-
-None of the STM32 `codec.c` arrays (decode 0x7EC, encode 0x2000, ECC 0x100) occur in the decrypted stock image or
-in the MD-9600 carve. None of their non-zero 16-byte chunks match. They are run-time state snapshots, not stock
-data. The DM-32 stock firmware builds this state with the library's own init functions. On the DM-1701, the
-equivalent init functions are in the code window. Stock V02.06 calls them from its wrapper at 0x08068D4C. The
-sequence, the state sizes and the call arguments are in "Codec state init and calls (stock V02.06)" below. The
-`codec.c` tables are no longer needed.
+  table address. Moving the code block and the table block as two contiguous blocks requires patching those 63 words.
+* The codec touches no fixed RAM address (unverified for every path).
 
 ## Extraction recipe (V02.06 CSV)
 
@@ -121,11 +94,11 @@ sequence, the state sizes and the call arguments are in "Codec state init and ca
    `tools/rfoundry/rfoundry/codec_maps/dm1701/dm1701-v0206-csv.json`, `self_refs` and `branches`).
 5. Write the descriptor at 0x080FFF80 (`platform/stm32f4/codec_desc.h`): code and table window with their CRC-32s.
    The merge happens on the user's machine (rfoundry, `tools/codec_extract.py`, the web flasher, or `make` with the
-   stock file in `codecs/`), never in a release.
+   firmware file in `codecs/`), never in a release.
 
 ## Hosting
 
-The code runs in place from internal flash, at the address the merge moves it to. The tables stay at their stock
+The code runs in place from internal flash, at the address the merge moves it to. The tables stay at their original
 address, so the code's 63 table literals stay as they are.
 
 * `boards/dm1701/memory.ld` keeps the application out of every flash sector the codec uses:
@@ -140,40 +113,32 @@ address, so the code's 63 table literals stay as they are.
   A firmware update then erases and writes only sectors 3-9 and leaves the codec in place (hardware-dm1701.md 1.4,
   docs/dev/release.md "Codec handling").
 * The firmware takes the code's address from the descriptor and calls the entries at their offsets from it.
+* Before the move, the original addresses kept sectors 7, 8, 10 and 11 (512 KB) for about 140 KB of codec, and the application
+  got sectors 3-6 (336 KB) with sector 9 apart.
 * Support one version per build, keyed by sha256. The noCSV variants and older versions sit at other addresses and
   would need their own windows and codec map.
 
 ## Open items
 
-* ~~Exact end of the last table~~: done. The codec map's minimal window ends at 0x080E3A72, and the merge writes only
-  that much. The code window still includes some stock non-codec bytes, which are never executed.
-* ~~Locating the stock codec init functions and their parameters~~: done, see below.
-* ~~A hardware test of TX/RX audio~~: done 2026-10-19 with the code moved to 0x080E3A74. The debug link reported
-  `dm1701-v0206-csv-s11`, on-air speech RX decoded 234 of 234 frames, and the SDR bench modem decoded the radio's
-  voice TX.
+* Done: the codec map's minimal table window ends at 0x080E3A72, and the merge writes only that much. The code window
+  still includes some non-codec bytes, which are never executed.
+* Done 2026-10-19 with the code moved to 0x080E3A74: the debug link reported `dm1701-v0206-csv-s11`, on-air speech RX
+  decoded 234 of 234 frames, and the SDR bench modem decoded the radio's voice TX.
 
-## Codec state init and calls (stock V02.06)
+## Codec state init and calls
 
-Status: 2026-10-09. Static analysis of the stock V02.06 CSV image (decrypted app `app_0314efd4.bin`, listing
-`app0206.asm`), then verified by execution. The decrypted image was run on the host in an instruction set
-emulator (Unicorn, Thumb / M-profile). Only the two codec windows, the state blocks, the I/O buffers and a stack
-were mapped, so any other access faults. Our own `boards/dm1701/vocoder_dm1701.c` and `platform/stm32f4/codec_call.c`,
-cross-compiled with the firmware flags, were run the same way against the stock windows and give bit-identical
-results to the reference run. It has since run on a radio ("Open items").
+The sequence below is what `boards/dm1701/vocoder_dm1701.c` and `platform/stm32f4/codec_call.c` run. It is checked on a
+host against the codec windows, and has run on a radio ("Open items").
 
-### Stock call sites
+### Init
 
-All 21 calls into the codec are in the stock voice module at 0x08068D4C..0x0806A160: decode 7 (one in init),
-encode 10, encode ECC 4. The stock wrapper keeps an encoder block E at RAM 0x2000A528 and a decoder block D at
-0x2000F794. Both also hold stock fields after the codec state (PCM ring, bit buffers, privacy keystream, flags).
+E is the encoder state block, D the decoder state block.
 
-### Init (stock function 0x08068D4C)
+1. Set E+0x1730 = 0x1840 (first encode flags), E+0x173E = 0x2000, E+0x1744.. = -22, 20, -10, -40, 0x4000, 3276, 3276,
+   1310, 10, 20, E+0x1740 = 128, E+0x1742 = -20, D+0x97A = 0, D+0x992 = 128, D+0x994 = -20.
+2. Calls (offsets from the codec start, 0x08074714 in the V02.06 CSV file):
 
-1. Wrapper fields: E+0x1730 = 0x1840 (first encode flags), E+0x173E = 0x2000, E+0x1744.. = -22, 20, -10, -40, 0x4000,
-   3276, 3276, 1310, 10, 20, E+0x1740 = 128, E+0x1742 = -20, D+0x97A = 0, D+0x992 = 128, D+0x994 = -20.
-2. Calls (offsets from the codec start, stock address 0x08074714):
-
-   | call | stock call | arguments |
+   | call | address | arguments |
    |---|---|---|
    | encoder init | 0x08074998 (+0x284) | (E, 1, 1) |
    | FEC init | 0x08074BE0 (+0x4CC) | (E+0x16E4, 1): the encoder side's FEC state, used by encode ECC |
@@ -184,8 +149,7 @@ encode 10, encode ECC 4. The stock wrapper keeps an encoder block E at RAM 0x200
    | decoder set | 0x08074D9C (+0x688) | (D, 128, -20) |
    | decode | 0x08074CEC (+0x5D8) | (D+0xAD6, 80, D+0xB7C, 0, stack 8, 0, D): one decode of an all-zero frame, flags 8 |
 
-   This matches the DM-32 finding (codec-dm32.md section C), with the same parameter values. The DM-1701 build calls
-   the 10-parameter encoder function where the DM-32 wrapper stored the values in E.
+   The DM-32UV codec takes the same parameter values ([codec-dm32.md](codec-dm32.md) section C).
 
 ### State sizes (measured)
 
@@ -206,22 +170,22 @@ no FPU instructions.
 
 | call | r0 | r1 | r2 | r3 | stack [0], [1], [2], [3] |
 |---|---|---|---|---|---|
-| encode | 49-bit out buffer (one bit per halfword) | 0 (stock: E+0x173A, zero) | PCM in, this half | 80 | flags, half (0 / 1), 0x2000, E |
-| decode | PCM out, this half | 80 | 49-bit in buffer (one bit per halfword) | 0 (stock: D+0x98E, zero) | flags, half (0 / 1), D |
-| encode ECC | bit buffer (49 in, 72 out) | same buffer | 0 (stock: E+0x173C, zero) | FEC state | |
+| encode | 49-bit out buffer (one bit per halfword) | 0 (E+0x173A, zero) | PCM in, this half | 80 | flags, half (0 / 1), 0x2000, E |
+| decode | PCM out, this half | 80 | 49-bit in buffer (one bit per halfword) | 0 (D+0x98E, zero) | flags, half (0 / 1), D |
+| encode ECC | bit buffer (49 in, 72 out) | same buffer | 0 (E+0x173C, zero) | FEC state | |
 
-* Encode flags: a set of feature bits, one value on every call of a transmission (stock's init value at E+0x1730
+* Encode flags: a set of feature bits, one value on every call of a transmission (the init value at E+0x1730
   is 0x1840). The bit meanings were measured on the DM-1801 Pro and MD-380 builds of this codec family
   ([codec-md380.md](codec-md380.md), "Encode flags";
   [codec-dm1801pro.md](codec-dm1801pro.md) section 3): 0x40 noise suppression, 0x800 noise gate, 0x1000 tone frames,
   0x2000 input AGC.
   **On this build they are unverified**: the code is the same family, but the bits were not measured on it. RadioFoundry's
   host passes the same word as the MD-380's (`drivers/vocoder/ambe2_flags.h`, 0x1840 by default). The encoder reads
-  the PCM and never writes it. Its output is the 49 parameter bits only. Stock applies its
-  privacy XOR to them (E+0x189C ^= E+0x19BC, 49 halfwords) and then calls encode ECC. Encode ECC turns them into the
+  the PCM and never writes it. Its output is the 49 parameter bits only. A privacy XOR
+  (E+0x189C ^= E+0x19BC, 49 halfwords) is applied to them before encode ECC. Encode ECC turns them into the
   72 air bits in air order (one per halfword, the MSB of byte 0 first).
-* Decode flags: stock unpacks the 72 received bits and runs its own FEC decode. It then XORs the privacy keystream
-  onto the 49 bits and passes flags = D+0x97C (0) OR the FEC routine's result. The FEC decode is at 0x08075268
+* Decode flags: unpack the 72 received bits and run the codec's FEC decode. XOR the privacy keystream
+  onto the 49 bits and pass flags = D+0x97C (0) OR the FEC routine's result. The FEC decode is at 0x08075268
   (+0xB54) with these arguments:
 
   | r0 | r1 | r2 | r3 | stack |
@@ -236,7 +200,7 @@ no FPU instructions.
   them are in `tests/host/ambeFecTest.c`. The firmware therefore runs encode / decode only and does the air frame FEC
   in core/dmr/ambe.
 * The AMBE silence frame the call stack sends (B9 E8 81 52 61 73 00 2A 6B) is a valid frame (0 FEC errors) and decodes
-  to silence (peak |sample| 1 after 10 frames) with the stock decoder.
+  to silence (peak |sample| 1 after 10 frames) with the decoder.
 * A 1 kHz tone at -12 dBFS through encode and decode comes back at about 945 zero crossings per second (the first
   frames are the codec's delay). This confirms the init sequence and arguments.
 
@@ -254,10 +218,10 @@ no FPU instructions.
 * `platform/stm32f4/codec_call.c` holds a file-scope assembly veneer `stm32_codec_call(fn, args, n)` with its own
   frame. It loads r0-r3 from the array and puts the rest on an 8-byte aligned stack. It restores SP from a saved
   frame register. The call therefore does not depend on how the caller was compiled (gotcha 4.1). To the compiler it
-  is an ordinary external call, which orders memory around it (gotcha 4.4). It was verified in the emulator with a
+  is an ordinary external call, which orders memory around it (gotcha 4.4). It was verified on a host with a
   misaligned caller stack.
-* `tools/codec_extract.py` builds the merged image (recipe above) on the user's machine. A run with the real stock
-  file and a key file matching hardware-dm1701.md 15.3 reproduces both stock window hashes and the placed CRCs above.
+* `tools/codec_extract.py` builds the merged image (recipe above) on the user's machine. A run with the real
+  firmware file and a key file matching hardware-dm1701.md 15.3 reproduces both window hashes and the placed CRCs above.
 
 ### Still open
 
@@ -265,5 +229,5 @@ no FPU instructions.
   expects is unknown) and timing (encode + decode per 20 ms on the STM32 at 144 MHz).
 * The encode flags bits on this build (see "Per-frame calls"): measure 0x40, 0x800, 0x1000 and 0x2000 as on the
   MD-380 build, or confirm on air.
-* The parameters the stock wrapper passes from its fields are all constants after init. Whether any stock code path
-  changes them (E+0x173A, E+0x173C, D+0x98E, D+0x97A) during a call was not traced.
+* The init fields are constants after init. Whether anything changes them (E+0x173A, E+0x173C, D+0x98E, D+0x97A)
+  during a call is unverified.

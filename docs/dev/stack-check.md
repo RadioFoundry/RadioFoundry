@@ -1,13 +1,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Stack check
+# Stack Check
 
 `make BOARD=<b> stack-check` computes the worst-case stack depth of every FreeRTOS task in a build and fails when a
 task's deepest call chain doesn't fit its stack. `tools/ci.sh` runs it on each board's default and maximal
 configuration. It exists because an overflow is invisible elsewhere: the host tests run the same code on large pthread
-stacks, and on the radio FreeRTOS' overflow hook spins without a word. On the DB25-D a 768-byte buffer in
-`codeplug_contact_find` overflowed the start task at boot (radio core set-up, `radio_sm_init` > `tune` >
-`dmr_configure` > `find_name`); the check reports that chain 424 bytes over.
+stacks, and on the radio FreeRTOS' overflow hook spins without a word. A 768-byte buffer in `codeplug_contact_find` once overflowed the start task at boot; the check reported that chain
+424 bytes over.
 
 On the radio, the debug link's `tasks` view section shows what each task has really used: its least free stack since
 it started ([debuglink.md](../spec/debuglink.md) 3.7, `CONFIG_TASK_STACKS`), and `tests/hil/test_task_stacks.py`
@@ -64,12 +63,12 @@ hide a deeper chain: add it to the table.
 | `call FUNCTION TARGET...` | Every pointer call FUNCTION makes |
 | `file PATH TARGET...` | Pointer calls in PATH the sources don't resolve |
 | `lib FUNCTION BYTES` | A fixed stack for a function without call graph; also cuts the disassembly walk there |
-| `extern NAME BYTES` | Code outside the build, a target written `@NAME` (the stock codec) |
+| `extern NAME BYTES` | Code outside the build, a target written `@NAME` (the codec) |
 | `recursion FUNCTION...` | Recursion known to be bounded |
 
-The stock AMBE+2 codec runs on the audio task's stack: 4046 bytes measured on the MD-380
-([codec-md380.md](../spec/codec-md380.md)), so `stm32_codec_call` counts 4104 with the veneer. The HR_C7000 builds call
-the same library by address with 4096 bytes assumed: it isn't measured on C-SKY.
+The AMBE+2 codec runs on the audio task's stack: 4046 bytes measured on an STM32F4 radio (`codec-<id>.md`), so
+`stm32_codec_call` counts 4104 with the veneer. The HR_C7000 builds call the same library by address with 4096 bytes
+assumed (not measured on C-SKY).
 
 A few C library paths need arguments RadioFoundry never passes and are cut with `lib` lines: newlib's `strstr` for needles of
 32 characters or more, and the floating point conversions of `printf`. Check the comment in the table before adding a
@@ -78,7 +77,7 @@ call that breaks the assumption (a long `strstr` needle, `%f`).
 ## Reading the report
 
 ```
-stack check db25d: port overhead 68 bytes, margin 128 bytes, 10 tasks (bytes)
+stack check <b>: port overhead 68 bytes, margin 128 bytes, 10 tasks (bytes)
   start    ok   stack  2560  deepest  1892  free   472  (startup_task, core/app/app.c:118)
       startup_task > radio_core_start > radio_sm_init > aprs_init > reload_cfg > load_identity > codeplug_aprs > flas...
   ...
@@ -86,7 +85,7 @@ stack check db25d: port overhead 68 bytes, margin 128 bytes, 10 tasks (bytes)
       prvIdleTask > prvCheckTasksWaitingTermination > vPortFree > xTaskResumeAll > xTaskIncrementTick > vApplicationT...
   recursion (each cycle counted once): materialize, n_macs, n_receive, n_select, n_selected, n_send, n_tick, n_up, room
   21 functions without a call graph counted as 64 bytes each (-v lists them)
-stack check db25d: every task fits, the least free: prvIdleTask 176 bytes
+stack check <b>: every task fits, the least free: prvIdleTask 176 bytes
 ```
 
 | Option | Shows |

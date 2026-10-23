@@ -1,9 +1,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# CPS, codeplug and settings
+# CPS, Codeplug and Settings
 
-RadioFoundry doesn't have its own programming software. qdmr programs it through a shim that speaks the open-firmware
-CPS protocol qdmr already supports, over the codeplug layout qdmr already writes.
+A radio is programmed three ways: the [Codeplug Editor](codeplug-editor.md) in the browser (the recommended way, over
+the debug link's fast codeplug protocol, [cps-fast.md](../spec/cps-fast.md)), qdmr through a shim that speaks the
+open-firmware CPS protocol qdmr already supports, and `tools/cps_client.py` for scripts. All three use the codeplug
+layout qdmr writes. Users: [Programming the radio](../user/04-programming.md).
 
 ## The CPS shim
 
@@ -32,15 +34,12 @@ python3 tools/cps_client.py read backup.bin
 python3 tools/cps_client.py --exec "tests/host/cpsSim --populate" info     # against the simulator
 ```
 
-qdmr itself hasn't been run against RadioFoundry on a radio yet. When it is, record the qdmr version and radio model chosen in
-[cps-protocol.md](../spec/cps-protocol.md) 2.5.
-
 ## The codeplug
 
 The radio reads the open-firmware layout in place (`core/codeplug`): zones, channels, contacts, talkgroup lists, the DMR ID
 database. Edits made on the radio (save a temporary change, rename, add a contact) go through the editing model in
 [codeplug-native.md](../spec/codeplug-native.md) section 2 and are written by the housekeeping task as storage jobs.
-A native codeplug format is planned in the same document, not built.
+A native codeplug format is planned in the same document and only partly built.
 
 ## Settings and safe writes
 
@@ -58,4 +57,4 @@ Radio settings (not the codeplug) live in a ring of records with a sector journa
 | The foreign region guard (a radio coming from stock firmware) | 5 |
 
 A new setting is appended to the record, gets a default, and goes into the settings reference of the user manual,
-[Settings](../user/12-settings.md), with its status.
+[Settings](../user/17-settings.md), with its status.

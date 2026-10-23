@@ -12,7 +12,7 @@ the programming cable, through one of two existing tools that rfoundry wraps ins
 
 auto picks stub when the radio answers the debug link and offers stub entry, else the bootloader. The codec slot is
 built by tools/hrc7000_codec.py from the user's own file (DM-1801 Pro: a program flash read, stubtool.py --progmem;
-DM-32UV: the stock firmware file). docs/dev/release.md "The serial route".
+DM-32UV: the stock firmware file). docs/dev/release.md "The serial route (HR_C7000 radios)".
 
 The tools are loaded from the checkout (tools/, stub/) or, in the rfoundry executable, from the copies PyInstaller
 bundles (--hidden-import).

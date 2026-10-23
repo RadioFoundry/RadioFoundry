@@ -14,15 +14,14 @@ debug link: a build without the debug link still offers it.
 | Firmware glue: the RAM span, the transmit checks, the banner, the jump | `core/stubentry/stub_entry.c` |
 | Own listener for a build without the debug link (portable, host tested) | `core/stubentry/stub_link.c` |
 | Framing shared with the debug link | `core/debuglink/dl_frame.{h,c}` (no RTOS, no board) |
-| Platform: span and quiesce-and-jump | `hal_system_t.stub_region / enter_stub / stub_run_addr / stub_image_ok`: [hardware-dm32.md](hardware-dm32.md) 17.2 (HR_C7000), [stub-stm32f4.md](stub-stm32f4.md) (STM32F4) |
+| Platform: span and quiesce-and-jump | `hal_system_t.stub_region / enter_stub / stub_run_addr / stub_image_ok`: the HR_C7000 platform code (`platform/hrc7000`), [stub-stm32f4.md](stub-stm32f4.md) (STM32F4) |
 | Tests | `tests/host/stubEntryTest.c` (state machine), `tests/host/stubLinkTest.c` (wire bytes, both listeners) |
 
 ## 1. Wire format
 
 The stub entry speaks the debug link's framing ([debuglink.md](debuglink.md) 2) and its command `0x1A` STUB with the
 operations INFO, BEGIN, DATA and ENTER ([debuglink.md](debuglink.md) 3.18). The request and reply bytes are the
-same whichever listener answers, and the same as before the stub entry became its own feature (main a63eb47d):
-`stubLinkTest` replays request frames captured then and checks the replies byte for byte through both listeners. A
+same whichever listener answers, and `stubLinkTest` replays recorded request frames and checks the replies byte for byte through both listeners. A
 host can't tell the listeners apart by the STUB command; VERSION says which one answered (section 2).
 
 ## 2. Listeners
@@ -43,8 +42,8 @@ The own listener's VERSION carries the keys the flashing tools read, then `stub=
 ```
 proto=1
 git=5277f73a
-board=DB25-D
-codec=db25d-2501
+board=XR-100UV
+codec=xr100uv-2501
 stub=1
 ```
 
@@ -78,16 +77,13 @@ host link task's stack in a build without the debug link.
 
 ## 5. Cost
 
-Default builds (debug link on), against main a63eb47d:
+Default builds (debug link on), against a build without the stub entry:
 
-| Board | Flash | RAM |
+| Board family | Flash | RAM |
 |---|---|---|
-| DM-1701 | +52 B | 0 |
-| MD-380 | +232 B (LTO inlining moves) | 0 |
-| DM-32UV | +16 B | 0 |
-| DM-1801 Pro | +12 B | 0 |
-| DB25-D | +16 B | 0 |
+| STM32 with an HR_C6000 | +52 B | 0 |
+| STM32 with an HR_C5000 | +232 B (LTO inlining moves) | 0 |
+| HR_C7000 | +12 to +16 B | 0 |
 
-The stub entry without the debug link (MD-380, `CONFIG_DEBUGLINK=n` with and without `CONFIG_STUB_ENTRY`): 2,356 B of
-flash and 8,456 B of RAM, of which 8 KB is the STM32 staging buffer. The HR_C7000 boards load the image into the stock
-codec window and add no staging buffer.
+The stub entry without the debug link (an STM32 board with an HR_C5000, `CONFIG_DEBUGLINK=n` with and without `CONFIG_STUB_ENTRY`): 2,356 B of
+flash and 8,456 B of RAM, of which 8 KB is the STM32 staging buffer. The HR_C7000 boards load the image into the codec window and add no staging buffer.

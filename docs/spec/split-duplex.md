@@ -8,13 +8,22 @@ repeater: the **TX half** transmits the repeater output (BS sourced, continuous,
 half's slot timing. The host (`tools/split_duplex_host.py`, or any duplex host that implements section 8) coordinates the pair and can present it to
 MMDVMHost as one ordinary duplex modem (section 8).
 
-Switch: `CONFIG_HOTSPOT_SPLIT`, on wherever `CONFIG_HOTSPOT` is (not on the MD-380), a child of `CONFIG_HOTSPOT` (`docs/build-config.md`). Built in, the
+Switch: `CONFIG_HOTSPOT_SPLIT`, on wherever `CONFIG_HOTSPOT` is except where a board lists it as unsupported or not written, a child of `CONFIG_HOTSPOT` (`docs/build-config.md`). Built in, the
 radio still behaves exactly as a simplex hotspot (and as the SFR of `sfr.md`) until a host that knows this extension
 enables a role with the new vendor command (section 3). No existing MMDVM implementation splits TX and RX across two
 modems, so this document defines the small extension; everything else uses the standard MMDVM commands with their
 standard meanings (`mmdvm-protocol.md`).
 
 Standards cited: ETSI TS 102 361-1 V2.7.1 ("-1"), clause numbers given as "-1 4.5".
+
+| Contents | |
+|---|---|
+| 1, 2 | Why two radios, compatibility rules |
+| 3, 4 | The vendor command 0xD6, standard commands in a role |
+| 5 | TX half: the continuous BS outbound |
+| 6, 7 | Time sync, RX half labeling |
+| 8, 9 | Host-side guide, frequency accuracy and antennas |
+| 10, 11 | Bench tests, open questions |
 
 ## 1. Why two radios, and what each half does
 
@@ -592,15 +601,13 @@ runs a real pair (bring-up and timing readout, no upstream; `--repeat` repeats a
 - `test_split_align` (no RF): the TX half, never keyed, snapped three times onto a grid of the host's clock (slot n at
   host n x 30 ms). Each time: STATUS aligned with the counter base, GET_EPOCH's boundary on the grid within the clock
   sync's bound plus 1 ms, TS1 on even counters. 2026-10-21, run on the host the radios are plugged into, each from a
-  fresh boot: DM-1801 Pro 3 of 3 runs, boundaries 9-120 us from the grid (sync bound 3 ms), learned restart delay
-  -1167 us (`modem-hrc7000.md` 2.10 finding 12); DM-1701 4 of 4, 2-317 us (sync bound 0.5 ms), delay +1.2 ms
+  fresh boot: HR_C7000 board A 3 of 3 runs, boundaries 9-120 us from the grid (sync bound 3 ms), learned restart delay
+  -1167 us (`modem-hrc7000.md` 2.10 finding 12); HR_C6000 board 4 of 4, 2-317 us (sync bound 0.5 ms), delay +1.2 ms
   (`modem-hrc6000.md` 9.1). The first snap of a boot lands off by the chip's delay and the second, with it learned,
-  on the grid. DM-32UV 3 of 3, -2 to +227 us, delay -1141 us; DB25-D 3 of 3, -77 to +84 us, delay -1137 us (both
-  over a USB-serial cable, sync bound 5.4-5.6 ms).
+  on the grid. HR_C7000 board B 3 of 3, -2 to +227 us, delay -1141 us; HR_C7000 board C 3 of 3, -77 to +84 us, delay -1137 us (both over a USB-serial cable, sync bound 5.4-5.6 ms).
 - `test_split_tx_sched` (radio_tx): the voice test's call as TX_SCHED for numbered TS2 slots, one resend, one late
   burst, the key-up from the queued bursts; checked off air (one slot, TC 1, the call whole, one key-up, 60 ms
-  spacing) and in STATUS. DM-1801 Pro, 2026-10-21: passed (22 queued, 1 replaced, 1 late; the call decoded without
-  sync errors in its TS2 slots); DM-32UV passed. DB25-D: the radio restarted during the call (no crash record); open.
+  spacing) and in STATUS. Board A, 2026-10-21: passed (22 queued, 1 replaced, 1 late; the call decoded without sync errors in its TS2 slots); board B passed. Board C: the radio restarted during the call (no crash record); open.
 - `test_split_slew` (no RF): the TX half snapped onto the host's grid, then ALIGN mode 1 to a grid 1.5 ms later; the
   clock must reach it by slot trims within 5 s (aligned, not slewing, |phase| within 100 µs, `split.slew_us` about the
   shift). Skips without capability bit 2, which no driver sets yet: the HR_C7000's LAYER2_MAX_CNT trim was tried with
@@ -631,7 +638,7 @@ CACH coding, which is byte-identical with `core/dmr/fec/dmrCach.c`.
 1. The 9-byte layout of DMR_SHORTLC as MMDVMHost sends it (5.3): both forms are accepted; the bench decode settles it.
 2. HR_C6000 CACH (5.4, 10.1): AT / TC (0x52) and the short LC (TX RAM 0x24) are now written per the manual; open
    until the bench shows them on air: the 0x11 value, and where the chip takes the CACH LCSS from.
-3. HR_C7000 TX half: settled on the DM-32UV (`modem-hrc7000.md` 2.10, bench 2026-10-21): the physical layer's
+3. HR_C7000 TX half: settled (`modem-hrc7000.md` 2.10, bench 2026-10-21): the physical layer's
    timeslot mode with the slot in both TX RAM halves gives the whole outbound with our CACH.
 4. The constant delay between the TX half's slot boundary and the RX half's (chip pipelines, air): measured on the
    bench with the phase residual; if it is more than 5 ms, add a fixed correction (the tracker limit). Measured

@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# The Home screen
+# The Home Screen
 
 Home answers four questions at a glance: where you are, what **PTT** will do, what is happening, and whether the radio
 is OK.
@@ -88,12 +88,12 @@ do:
 | This channel is RX only | The channel is set receive only | Pick another channel |
 | Outside ... | The frequency is outside the radio's transmit bands | Pick another channel, or tune into a band in the VFO |
 | TX time-out reached | You talked longer than the transmit timeout | Release **PTT** and press it again |
-| No TX frequency set | The channel has no transmit frequency | Fix the channel in qdmr |
-| No codec: voice off | DMR voice without the codec | "Add codec with rfoundry" ([Installing](02-installing.md)) |
+| No TX frequency set | The channel has no transmit frequency | Fix the channel in the codeplug |
+| No codec: voice off | DMR voice without the codec | "Add codec with rfoundry" ([Installing](02-installing.md#no-codec-no-codec-voice-off)) |
 | Channel busy | Someone else is talking on the slot | Wait for the call to end |
 | No repeater answered | The repeater didn't wake up | "Check CC and range" |
 | Hotspot mode: PTT off | The radio is a hotspot | Press **OK** to leave hotspot mode |
-| No DMR ID in codeplug | The codeplug has no DMR ID | Set your ID in qdmr |
+| No DMR ID in codeplug | The codeplug has no DMR ID | Set your ID in the codeplug |
 | DMR modem not running | The DMR chip didn't start | Restart the radio. See [Troubleshooting](20-troubleshooting.md) |
 | Modem refused to send | The DMR chip refused the call, or took it and sent nothing for 1.5 s | "Release PTT, try again". If it repeats, restart the radio |
 

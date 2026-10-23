@@ -20,17 +20,17 @@ Tags: K = known from the image, I = inferred, ? = not determined.
 
 ## 1. Where it is
 
-| Item | Value | Tag |
-|---|---|---|
-| Code, flash | 0xA22F0..0xB68F0 (0x14600 bytes) | K |
-| Code, RAM (run address) | 0x00016CDC..0x0002B2DC; the start-up code copies flash 0x9B614.. (0x22918 bytes) to RAM 0x10000 | K |
-| Signature | first words 0x152514D8, 0x74C776CD | K |
-| Code sha256 | `8f7641b69a5cdfc946507ec48ddb67febe91d964520d5522bebd707f363f1a42` | K |
-| Tables, flash | 0x68770, 0x2F78 bytes | K |
-| Tables, RAM | 0x18000EF0..0x18003E68 (the data image is flash 0x68080 to RAM 0x18000800, 0x43FC bytes) | K |
-| Tables sha256 | `10684c33e3cc8238376e455fd96b1c15a863a864420dbbaa4589803c4eb0b0e1`, equal to the DM-32UV 049 tables | K |
-| Self-referencing absolute addresses | the three pool words at RAM 0x187B0, 0x187B4, 0x19B68 hold 0x19540, 0x22754, 0x26CAC, as in the 049 code | K |
-| Decoder state D, encoder state E | D at RAM 0x4885C, E at 0x4B2FC (049 DM-32UV: 0x456C0 and 0x48160, both 0x319C lower) | K |
+| Item | Value |
+| --- | --- |
+| Code, flash | 0xA22F0..0xB68F0 (0x14600 bytes) |
+| Code, RAM (run address) | 0x00016CDC..0x0002B2DC; the start-up code copies flash 0x9B614.. (0x22918 bytes) to RAM 0x10000 |
+| Signature | first words 0x152514D8, 0x74C776CD |
+| Code sha256 | `8f7641b69a5cdfc946507ec48ddb67febe91d964520d5522bebd707f363f1a42` |
+| Tables, flash | 0x68770, 0x2F78 bytes |
+| Tables, RAM | 0x18000EF0..0x18003E68 (the data image is flash 0x68080 to RAM 0x18000800, 0x43FC bytes) |
+| Tables sha256 | `10684c33e3cc8238376e455fd96b1c15a863a864420dbbaa4589803c4eb0b0e1`, equal to the DM-32UV 049 tables |
+| Self-referencing absolute addresses | the three pool words at RAM 0x187B0, 0x187B4, 0x19B68 hold 0x19540, 0x22754, 0x26CAC, as in the 049 code |
+| Decoder state D, encoder state E | D at RAM 0x4885C, E at 0x4B2FC (049 DM-32UV: 0x456C0 and 0x48160, both 0x319C lower) |
 
 ### Against the DM-32UV 049 codec
 
@@ -47,7 +47,7 @@ modem and display glue) and addresses.
 
 ## 2. Entry points
 
-All eight sit at the 049 offsets from the code start and begin with the same prologues (K).
+All eight sit at the 049 offsets from the code start and begin with the same prologues.
 
 | Function | Offset | RAM | Prologue |
 |---|---|---|---|
@@ -78,7 +78,7 @@ are those of [codec-dm32.md](codec-dm32.md) C: E[0x172C] = 0x1840, E[0x173A] = 0
 7. decoder set (D, D[0x116A], D[0x116C])
 8. clear the state flags (halfwords and bytes around E + 0x1732..0x1736 and D + 0x1162..0x1168, and the bytes at E + 0x1728..0x19D6 and D + 0x1150..0x1498)
 
-`platform/hrc7000/vocoder.c` `reset()` makes the same calls with the same values (K).
+`platform/hrc7000/vocoder.c` `reset()` makes the same calls with the same values.
 
 ### Encode
 
@@ -93,7 +93,7 @@ are those of [codec-dm32.md](codec-dm32.md) C: E[0x172C] = 0x1840, E[0x173A] = 0
 | sp+8 | E[0x173A] |
 | sp+12 | E |
 
-This is the DM-32UV call ([codec-dm32.md](codec-dm32.md), calling convention) and what `encode()` in `platform/hrc7000/vocoder.c` passes (K).
+This is the DM-32UV call ([codec-dm32.md](codec-dm32.md), calling convention) and what `encode()` in `platform/hrc7000/vocoder.c` passes.
 
 **The flags word (sp+0).** The wrapper has six encode calls in two patterns. Each pattern passes one value on every
 call; none passes 0x1840 first and 0x800 afterwards. Every call is followed by the XOR step and ECC.
@@ -173,6 +173,8 @@ stops with an error code 1, 2 or 3 if one fails; that is task start-up, not the 
 | Host | The shared `platform/hrc7000/vocoder.c`, the DM-32UV's. It takes its RAM windows from the linker (`__codec_run_lo/hi`, `__codec_tab_lo/hi`) and its profile prefix from `RFOUNDRY_BOARD_ID` (the board's id), so it reports `codec=dm1801pro-049` |
 | Linker | `boards/dm1801pro/memory.ld`: code RAM 0x16CDC..0x2B2DC and table RAM 0x18000EF0..0x18003E68 are left free; RadioFoundry's own RAM starts at 0x2B2DC; the low-RAM state (`RFOUNDRY_CPU_RAM_SECTION`) goes below 0x16CDC |
 | Flashing | `tools/rfoundry` profile `dm1801pro-049`. Through update mode the slot is merged on every flash, as on the DM-32UV (the updater erases the whole application area). Through the stub (`stub/stubtool.py --write-app`) only the sectors the image covers are written, so an image without the slot keeps the one in the radio |
+
+Before the move, RAM was split in two around the codec's vendor addresses.
 
 Measured on the radio: encode about 12.3 ms per 20 ms frame at the top priority, decode about 2.4 ms, stack use about
 3.9 KB. RX and TX voice work on the bench (hardware-dm1801pro.md 5).

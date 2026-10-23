@@ -38,7 +38,7 @@ platforms' `hal_crash_hang`.
 | Item | Value |
 |---|---|
 | Where | the RTOS tick interrupt, before the kernel's tick: `vPortTickHandler` (HR_C7000), `SysTick_Handler` (STM32F4). Not the tick hook: `xTaskResumeAll` also calls the hook from a task, for ticks that came while the scheduler was suspended |
-| Counts from | the last feed: the idle task's, or a long job's `watchdog_kick` (the DB25-D's SPI NAND loops) |
+| Counts from | the last feed: the idle task's, or a long job's `watchdog_kick` (a board's long SPI NAND loops) |
 | Fires | three quarters of the watchdog's timeout after it: 3 s on the HR_C7000 (4 s timeout), 3.75 s on the STM32F4 (5 s) |
 | Never | before the idle task's first pass, with the watchdog stopped, or while a bench test starves it on purpose (the test times the hardware reset, [watchdog.md](watchdog.md) 5) |
 | Record | kind 5, `cause` the ms since the last feed, the registers of the task the tick interrupted, its name in `task` |
@@ -127,7 +127,7 @@ register as read, 0 without one), `reset.uptime_ms`, `reset.warm`.
 
 ## 2. Platforms
 
-### 2.1 STM32F4 (DM-1701, MD-380)
+### 2.1 STM32F4
 
 `platform/stm32f4/crash_stm32.c`. `HardFault_Handler` reads EXC_RETURN bit 2 to find the stack the CPU pushed the
 frame on (MSP, or a task's PSP), moves to its own stack, pushes r4-r11 and fills the record: r0-r3, r12, LR, PC and
@@ -137,11 +137,11 @@ are not enabled, so they escalate to HardFault; CFSR still says which. If they a
 entry. A frame the CPU couldn't push (a stacking error) leaves the registers 0 and `sp` the address it tried.
 
 The store is the 4 KB backup SRAM at 0x40024000 (`PWR_CR.DBP`, `RCC_AHB1ENR.BKPSRAMEN`). A system reset leaves the
-backup domain alone and the stock bootloader, which runs in main RAM before the application, doesn't look at it
-(`hardware-dm1701.md` 15.4: the ROM DFU entry's RTC backup register survives the same way). The record is lost when
-the supply goes. Restart: `NVIC_SystemReset`, then the stock bootloader and RadioFoundry as at power-on.
+backup domain alone and the vendor bootloader, which runs in main RAM before the application, doesn't look at it
+(the ROM DFU entry's RTC backup register survives the same way). The record is lost when
+the supply goes. Restart: `NVIC_SystemReset`, then the vendor bootloader and RadioFoundry as at power-on.
 
-### 2.2 HR_C7000 (DM-32UV, DM-1801 Pro, DB25-D)
+### 2.2 HR_C7000
 
 `platform/hrc7000/crash_hrc.c`, the entry in `freertos/portasm.S`. The CK803S pushes nothing on an exception, so
 `hrc_fault_entry` stores r0-r13, r15, EPSR and EPC in a 68-byte frame below the stack pointer the fault left, as the
@@ -151,8 +151,8 @@ register. `status[0]` is the PSR in the handler. A stack pointer that can't take
 exceptions off: an unrecoverable error, and the radio stays stopped as without the crash log.
 
 The store is 256 bytes at 0x18007F00, the top of the SRAM shared with the modem. The codec's tables (from
-0x18000800, at most to 0x18004F90 in any stock image) and the microphone PCM (0x18000000) don't reach it
-(`hardware-dm32.md` 2). Main SRAM is not used: the Baofeng bootloader and the start-up use it. Restart: the chip's
+0x18000800, at most to 0x18004F90 in any supported codec build) and the microphone PCM (0x18000000) don't reach it.
+Main SRAM is not used: the vendor bootloader and the start-up use it. Restart: the chip's
 soft reset (`hrc_soft_reset`, the same as a reboot). With the fault trace (2.3) the lines go out first; without the
 crash log the fault ends in the same soft reset.
 
@@ -165,7 +165,7 @@ without the crash log. Code: `core/crash/crash_trace.c` (the line, portable), `h
 
 | Item | Value |
 |---|---|
-| Port | the host UART, at the rate it runs at (115200 8N1): DM-32UV and DM-1801 Pro UART0 (the programming cable), DB25-D UART1 |
+| Port | the host UART (the programming cable), at the rate it runs at (115200 8N1) |
 | Lines | `CRASH_TRACE_LINES` (3), one a second, timed on the free-running clock timer (interrupts are off); then 50 ms for the UART's FIFO to empty, then the record and the restart |
 | Format | `\r\n#RD0FAULT1 n=01 v=<vector, 0 for a hang> pc=<EPC> psr=<EPSR> lr=<r15> sp=<sp before the frame> r0=<..> .. r13=<..> *<crc>\r\n`; every value 8 lower-case hex digits, `n` the line's number as 2 hex digits |
 | CRC | CRC-16/CCITT-FALSE (polynomial 0x1021, init 0xFFFF, no reflection, no final XOR) over the bytes from `#` up to and including the space before `*`, as 4 lower-case hex digits |
@@ -177,11 +177,10 @@ hold it), or `--file LOG` a saved capture, checks each line's CRC and prints the
 golden line `tests/host/crashTest.c` builds.
 
 The STM32 radios have no UART a fault handler could print on: their host port is USB, which needs interrupts, and
-their one UART is a GPS receive line (DM-1701 USART1 RX on PA10, its TX pin PA9 used as the GPS power switch; MD-380 G
-models USART3 RX on PD9). Their faults keep the record only.
+their one UART is a GPS receive line. Their faults keep the record only.
 
-Checked on hardware: DB25-D (2026-10-21), `rfoundry_debug.py crash test trap` printed lines the tool decoded with good
-CRCs, then the radio restarted with the record kept.
+Checked on hardware (2026-10-21, an HR_C7000 radio): `rfoundry_debug.py crash test trap` printed lines the tool decoded
+with good CRCs, then the radio restarted with the record kept.
 
 ## 3. The record
 
@@ -277,32 +276,24 @@ uptime and the build. Its rows: Send report, Send to (the contacts list, type to
 in turn) and Clear. Without `CONFIG_CRASH_REPORT` only Clear is there. The screen is `CONFIG_CRASH_SCREEN` (on with the
 crash log); without it the debug link still shows the record.
 
-## 6. Unverified
+## 6. Checks on hardware
 
-- That the store survives the restart on the DM-32UV, the DB25-D and the MD-380. The record's CRC means a store
-  that doesn't survive shows no record; it can't show a wrong one. Check: `rfoundry_debug.py crash test trap`, then
-  `rfoundry_debug.py crash` after the restart.
-- The report on the air: no receiver for port 4090 exists yet.
-- The restart cause (1.3) on the MD-380. Check: `tests/hil/test_watchdog.py` under `--allow-reboot`.
+Checked with `tests/hil/test_crash.py` and `tests/hil/test_watchdog.py` under `--allow-reboot` (2026-10-17 to
+2026-10-23) on the bench radios, at least one of each SoC family:
 
-The restart cause was checked on hardware (2026-10-23) on the DM-1701, the DM-1801 Pro, the DM-32UV and the DB25-D,
-with `tests/hil/test_watchdog.py` and `tests/hil/test_crash.py` passing under `--allow-reboot` on each. The three
-watchdog tests read `watchdog` on the DM-1701 and `warm` on the HR_C7000 radios: the modem SRAM keeps the words through
-a watchdog reset. A reboot and the stub's reset read `software` on all four. On the DM-1701 `reset.flags` keeps
-`SFTRST` through the stock bootloader, so it leaves `RCC_CSR` alone.
+- The store survives the restart (backup SRAM on the STM32F4, modem SRAM on the HR_C7000, through the soft reset and
+  the vendor bootloader). The record's CRC means a store that doesn't survive shows no record; it can't show a wrong
+  one.
+- The trap test records a fault of the expected kind and the task `host`.
+- The restart cause (1.3): the watchdog tests read `watchdog` on the STM32F4 and `warm` on the HR_C7000, whose modem SRAM
+  keeps the words through a watchdog reset. A reboot and the stub's reset read `software` on both. On the STM32F4
+  `reset.flags` keeps `SFTRST` through the vendor bootloader, so it leaves `RCC_CSR` alone.
+- The hang check and the task snapshot: CRASH TEST hang keeps kind 5, 3000 ms (3750 on a board with a slower
+  timer), task `host`, pc in `debuglink_crash_service`; the snapshot names each waiting task's own wait.
 
-Checked on hardware (2026-10-17, both flashed through the stub), with `tests/hil/test_crash.py` passing under
-`--allow-reboot` on each:
-
-| Radio | Store | Trap test |
-|---|---|---|
-| DM-1701 | the backup SRAM kept the record through the stock bootloader | HardFault, CFSR UNDEFINSTR, task `host` |
-| DM-1801 Pro | the modem SRAM kept the record through the soft reset and the Baofeng bootloader | exception 7 (breakpoint), task `host` |
-
-The hang check and the task snapshot (2026-10-23, all four bench radios, `test_crash.py` 5 passed on each): CRASH
-TEST hang kept kind 5, 3000 ms (3750 on the DM-1701), task `host`, pc in `debuglink_crash_service`. The DB25-D's and
-the DM-1701's snapshots named each waiting task's own wait (`radio_task`, `dmr_task`, `input_task`, the UI task in
-`input_next` or `ui_task`, the DB25-D's `rf_task_fn` and `gps_task`, the DM-1701's USB task in `tud_task_ext`).
+Each radio's result is in its hardware spec and in `docs/testing/results/`. Not checked: the report on the air (no
+receiver for port 4090 exists yet) and, on a radio that has not run `test_crash.py`, that its store survives the
+restart. Check: `rfoundry_debug.py crash test trap`, then `rfoundry_debug.py crash` after the restart.
 
 ## 7. Tests
 
@@ -319,8 +310,7 @@ after each bench watchdog reset the cause is `watchdog` (or `warm`) with the run
 before the watchdog resets, with the UI and radio tasks in its snapshot and at least one of them waiting.
 `tests/host/crashCaptureTest.c`: `crash_capture.c` on a stand-in RTOS; every way in (a fault record, a stack
 overflow, out of heap, an assertion inside the capture) calls `board_rf_safe` first, with interrupts off, before the
-store and the restart; the snapshot's order, the running and idle tasks left out, names cut, the count of the rest. `boards/db25d/tests/bootDb25dTest.c` (`test_tx_off`): the DB25-D first stage drives the transmitter
-pins off.
+store and the restart; the snapshot's order, the running and idle tasks left out, names cut, the count of the rest. A board with a first stage tests that it drives the transmitter pins off (`boards/<id>/tests/`).
 `tests/host/dmrDataServiceTest.c` (`testUdpSend`): the UDP mailbox. `tests/host/radioCoreTest.c`
 (`test_ui_settings`): the two settings through the UI service, their clamps, and that they leave the theme, Up/Down
 and the accent alone. `tests/host/uiFlowTest.c` ("C crash ..."): the screen, Send to, the three modes after a
@@ -329,20 +319,15 @@ and view section 21 ([debuglink.md](debuglink.md) 3.19).
 
 ## 8. Transmitter off on any fault or reset
 
-A DB25-D faulted while transmitting (2026-10-21). The capture stored its record and soft-reset the chip, and the radio
+A board faulted while transmitting (2026-10-21). The capture stored its record and soft-reset the chip, and the radio
 came back stopped before the display was lit with the PA keyed, drawing about 15 W, until a power cycle. Nothing on the
 fault or reset paths turned the transmitter off, and the boards' pin set-up (`board_early_init`) ran only after the
 clock, interrupt and timer set-up. Now every board has `board_rf_safe()` (`hal/board.h`): transmitter off with
 register and GPIO writes only, callable with interrupts off and without the RTOS, any number of times. On the
 HR_C7000 it is RAM code, so it doesn't depend on the XIP flash.
 
-| Board | `board_rf_safe` |
-|---|---|
-| DM-1701 | PA_EN1 (TX supply) and PA_EN2 (APC loop) low, PA_BAND low, APC DAC (DAC1 channel 1) 0 |
-| MD-380 | APC_EN and TX_5V (5TC) low, VCO_SEL high (receive VCO), APC DAC (DAC1 channel 1) 0 |
-| DM-32UV | UHF_PA and VHF_PA low, DAC B 0 and powered down |
-| DM-1801 Pro | TX_UHF and TX_VHF low, DAC B 0 and powered down |
-| DB25-D | TX_SUPPLY_A, TX_SUPPLY_B, UHF_TX, VHF_TX low, DAC B 0 and powered down, RX_SUPPLY (PTA23) high |
+The pins each board forces are in its hardware spec: the TX supply and PA enables low, the band or VCO select at its
+receive level and the power-control DAC at 0 (powered down where it can be).
 
 Each pin is forced to an output at its level (the level first), so the call also works at start-up before
 `board_early_init`. The STM32 DAC is written only when its clock is on. On the HR_C7000 the platform's `hrc_rf_safe()`
@@ -360,15 +345,14 @@ Where it is called:
 | Software reset | `reboot()` (normal and ROM DFU) before `NVIC_SystemReset`; the ROM DFU entry at start-up (`stm32_sysboot_check`) | `hrc_soft_reset`, before the loader's clocks and the flash controller are put back |
 | Stub entry | `stm32_enter_stub` (replaces `board_stub_prepare`) | `enter_stub`, before the PIC, watchdog and flash controller changes |
 | Start-up | first thing in `main()`, before the ROM DFU check and the clocks | first thing in `main()`, before `hrc_clock_init` |
-| DB25-D first stage | | `boot/db25d/boot.c` drives TX_SUPPLY_A/B and UHF_TX/VHF_TX low and RX_SUPPLY high right after the power latch, before it offers the handshake (it may wait there for a host) |
+| First stage (a board that has one) | | `boot/<id>/boot.c` drives the TX supplies and PA selects low and the RX supply high right after the power latch, before it offers the handshake (it may wait there for a host) |
 
 Every reboot request (the debug link's REBOOT, the CPS's reset, the storage UI) goes through `board.system->reboot`, so
-it is covered by the reset row. The time from power-on to the first `board_rf_safe` is the vendor bootloader's (and on
-the DB25-D the first stage's handful of instructions), which RadioFoundry can't change.
+it is covered by the reset row. The time from power-on to the first `board_rf_safe` is the vendor bootloader's (and, on a board with a first stage, its handful of instructions), which RadioFoundry can't change.
 
 Unverified on hardware: that each radio's transmitter actually stops (current and RF) at a crash while keyed, and that
 the DAC B write before `hrc_clock_init` is harmless on every HR_C7000 radio (the vendor loaders leave the peripheral
-clock gates on, as far as known: `hardware-dm32.md` 1.1). The debug link's crash test is refused while transmitting,
+clock gates on, as far as known). The debug link's crash test is refused while transmitting,
 so a bench check needs a local test build that lets it through: keyed at the lowest power, the trap, then the supply
 current and the SDR bench's capture drop to receive levels within a millisecond of the crash, and the radio restarts
 receiving.

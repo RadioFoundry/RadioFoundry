@@ -112,15 +112,15 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 
 ### 3.1 VERSION
 
-Example from a DM-1701:
+Example from an STM32F4 radio (`<profile>` stands for the codec profile id):
 
 ```
 proto=1                 protocol version (this document)
 view=2                  GET_VIEW record version (3.7)
 git=5277f73a            firmware git hash
-board=DM-1701
+board=XR-100UV
 features=FM,SUBTONE,DMR,DMR_PRIVACY,...,USB,HOSTLINK,DEBUGLINK
-codec=dm1701-v0206-csv-s11  the codec profile found in flash (below)
+codec=<profile>-s11  the codec profile found in flash (below)
 display=160x120x16      panel width x height x bpp
 inset=5,5,5,5           safe area insets: top, bottom, left, right
 uptime_ms=123456
@@ -130,16 +130,17 @@ inject_max_ms=10000     longest hold of an injected key, PTT included
 ```
 
 `codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
-profile id (`dm1701-v0206-csv-s11`, `md380-d2032-s11`: the descriptor is valid and the signature word and the CRC-32 of
-every codec window match the stock codec as the merge places it, code in sector 11, as
+profile id (`<profile>-s11` on an STM32F4 radio: the descriptor is valid and the signature word and the CRC-32 of
+every codec window match the codec as the merge places it, code in sector 11, as
 [codec-placement.md](codec-placement.md) "STM32 radios" describes;
-`dm32-049`, `dm1801pro-049`, `db25d-2501`: an HR_C7000 codec slot is valid, and the digits are the stock version it was carved from; on the DB25-D the year and month of the stock file), `absent` (the board has a
+`<board id>-<build>` on an HR_C7000 radio: the codec slot is valid, and the build is the version of the stock file it
+was carved from), `absent` (the board has a
 vocoder but the check failed: erased, another stock version, damaged), `present` (a valid codec whose board names no
 profile) or `none` (built without DMR). It describes flash, not whether voice can run at that moment: after the
 HR_C7000 stub entry has stopped the codec (its RAM is the stub's), the profile id is still reported. The first request after boot may take some 20 ms longer while the board
 computes the CRCs. It reads flash only. `tools/rfoundry` asks for it before flashing to decide whether the codec
 sectors can be left alone ([docs/dev/release.md](../dev/release.md)). A build from before the STM32 codec moved
-reports the stock id (`dm1701-v0206-csv`, `md380-d2032`) for the codec at its stock addresses, so the flashing tools
+reports the stock id (the profile without `-s11`) for the codec at its stock addresses, so the flashing tools
 know the new layout doesn't hold it.
 
 Unknown keys must be ignored by hosts; keys may be added without a version change.
@@ -175,7 +176,7 @@ Request: none (header only), or offset u32 and length u16 (at most 1000 bytes pe
 | 15 | 4 | offset of this chunk |
 | 19 | n | the chunk |
 
-A 16-color frame buffer (bpp 4, the DM-32) is converted through its palette as each chunk is read, so the host sees
+A 16-color frame buffer (bpp 4) is converted through its palette as each chunk is read, so the host sees
 an RGB565 frame of width x height x 2 bytes. The chunks are read live from the UI's frame buffer, without a lock (the UI task owns it, and a 38 KB copy would
 not fit in RAM). A redraw while the host reads the chunks can tear the image. `rfoundry_debug.py screenshot` reads the
 whole buffer twice and repeats until two reads agree (`--tries`, default 4), which gives a consistent image unless
@@ -196,7 +197,7 @@ activity came from the host.
 
 | Kind | Arguments | Effect |
 |---|---|---|
-| 0 | action u8, gesture u8, value i8 | a logical action (below) with a gesture: PRESS holds the key that gives it for 80 ms, LONG for 720 ms (released after the LONG event), REPEAT for 720 ms + value x 120 ms; DOWN / UP hold and release a raw-edge key (MONITOR; PTT goes to the PTT slot with the 10 s time-out); `enc` with DOWN adds value detents. An action no key gives (e.g. left / right on the DM-1701) goes straight to the UI's event queue |
+| 0 | action u8, gesture u8, value i8 | a logical action (below) with a gesture: PRESS holds the key that gives it for 80 ms, LONG for 720 ms (released after the LONG event), REPEAT for 720 ms + value x 120 ms; DOWN / UP hold and release a raw-edge key (MONITOR; PTT goes to the PTT slot with the 10 s time-out); `enc` with DOWN adds value detents. An action no key gives (e.g. left / right on a radio without those keys) goes straight to the UI's event queue |
 | 1 | mask u32, hold ms u16 | hold the board's physical key bits for hold ms |
 | 2 | none | wake: counts as key activity without an event, so the backlight comes on (the UI drops the first key after the backlight went off) |
 | 3 | action u8, hold ms u16 | hold the key that gives the action for hold ms, whatever gesture that makes |
@@ -208,7 +209,7 @@ Actions (`hal_input.h`): 1 up, 2 down, 3 left, 4 right, 5 select, 6 back, 7 quic
 Rate limit: one injected key at a time. While one is held, and for 40 ms after its release (two scans for the
 debounce to see it released), KEY answers busy (3). Every hold is capped at 10 s. Both also count key scans: a hold
 ends only after three scans have seen the key, and the next starts only after three scans have seen it released. A
-scan can run late (the DM-32UV's key rows are LCD data lines, busy for a whole redraw), and a hold measured in ms
+scan can run late (a key matrix on the LCD data lines is busy for a whole redraw), and a hold measured in ms
 alone ended before the debounce saw it: the press was lost.
 
 ### 3.5 PTT
@@ -304,7 +305,7 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 27 | flags u8, link IP u32 | the USB network settings, stored and applied at once (`docs/spec/usb-network.md` 5.4): bit 0 the network personality at power-on, bit 1 control station passthrough, bit 2 the fixed link pair; the radio's link address (0 = 192.168.10.1). Bits 1 and 2 need `CONFIG_DMR_CONTROL_STATION` (ignored without); UNAVAILABLE without `CONFIG_USB_NETWORK`. `rfoundry_debug.py radio usb-settings [boot] [passthrough] [fixed[=IP]]` |
 | 28 | on u8: 1 start, 0 end | PPP on the serial host port once the reply has gone out (`CONFIG_NET_PPP` builds; status 2 without): 1 starts it actively (our LCP Configure-Request goes out at once; ignored while the USB network adapter is in use), 0 ends it with LCP Terminate (send it over UDP while PPP runs). pppd starts PPP by itself, so 1 is only for peers that wait. While PPP runs this link answers over UDP to the radio's address, port 3334, as in USB network mode (`ppp.md` 4). `rfoundry_debug.py radio ppp on\|off` |
 | 29 | pattern u8 | `radio_req_vibrate`: 1 message, 2 call, 3 emergency, on the board's motor whatever the Vibrate setting (CONFIG_VIBRATE builds; status 4 without; nothing happens on a radio without a motor). `rfoundry_debug.py radio vibrate message\|call\|emergency` |
-| 30 | step u8 | the speaker volume (`radio-features.md` 4.2): step 0 (mute) to `volume.max` (16), or 0xFF = back to the knob (a radio without a knob: back to its default step). A radio without a knob (`volume.src=soft`) stores the step like the UI and applies it; one whose MCU reads the knob (`knob`) holds it in RAM over the knob (`override`) until 0xFF or a restart; one whose volume control works in analog hardware (`none`: the MD-380, the DM-32UV) answers UNAVAILABLE (4); a step over 16 other than 0xFF answers BAD_ARG. `rfoundry_debug.py volume [N\|knob]` |
+| 30 | step u8 | the speaker volume (`radio-features.md` 4.2): step 0 (mute) to `volume.max` (16), or 0xFF = back to the knob (a radio without a knob: back to its default step). A radio without a knob (`volume.src=soft`) stores the step like the UI and applies it; one whose MCU reads the knob (`knob`) holds it in RAM over the knob (`override`) until 0xFF or a restart; one whose volume control works in analog hardware (`none`) answers UNAVAILABLE (4); a step over 16 other than 0xFF answers BAD_ARG. `rfoundry_debug.py volume [N\|knob]` |
 | 31 | mode u8, cc u8, ts u8 | `radio_req_mode`, `radio_req_dmr_color_code`, `radio_req_dmr_timeslot` in one request: mode 0 FM, 1 DMR (0xFF = keep), color code 0 to 15 (0xFF = keep), timeslot 1 or 2 (0 = keep). On a channel these are temporary changes, in the VFO the VFO's own settings (`dmr-voice.md` 2.1); the radio core refuses what it can't do (a mode change in a VFO needs both `VFO_FM` and `VFO_DMR`; check the `core` view). UNAVAILABLE without `CONFIG_DMR`. `rfoundry_debug.py radio mode fm\|dmr`, `radio cc N`, `radio ts N` |
 | 32 | none | `radio_req_vfo_copy`: copy the channel on view to the VFO and open it (`dmr-voice.md` 2.2). The check is the radio core's own, made on the current view: OK when the request went out (read the `core` view for the VFO's values), REFUSED for a mode without a VFO in this build or a frequency outside the bands, UNAVAILABLE without a VFO or when already in the VFO. `rfoundry_debug.py radio copy-vfo` |
 | 33 | on u8 (0 / 1) | the DMR voice test signal (`ambeVoiceSetTestSignal`, RAM only): 1 the encoder gets a generated triangle tone, about -12 dBFS, whose pitch steps through 300, 500, 700, 1100 and 1500 Hz one vocoder frame (20 ms) each, in place of the mic; 0 the mic again. Consecutive frames differ, so an over carries known, varying audio whatever the mic hears (`tests/hil/test_dmr_audio_smoke.py`). BAD_ARG above 1, UNAVAILABLE without DMR. The `dmr` section shows it as `voice.tx_test`. `rfoundry_debug.py radio voice-test on` / `off` |
@@ -320,7 +321,7 @@ modes below are the STM32F4 platform's (`platform/stm32f4/sysboot.c`) unless the
 | Family (offset 29) | Platform | What INFO_CHIP reports |
 |---|---|---|
 | 0 | STM32F4 (`platform/stm32f4/sysboot.c`) | every field below |
-| 1 | HR_C7000 (`platform/hrc7000/system.c`: DM-32UV, DM-1801 Pro, DB25-D) | the UID only. idcode, flash size and `FLASH_OPTCR` are 0, offsets 23-28 are `0xFF`. The SoC has no readable ID register (its eFuse is not mapped out), so the UID is the data flash's 128-bit unique ID, read once at boot: the SPI NOR's (0x4B, four dummy bytes) on the DM-32UV and DM-1801 Pro, the SPI NAND's ID page on the DB25-D (`hardware-db25d.md` 6.5). Words 0-2 of it, with word 3 XORed into word 0. Until the flash has answered, INFO_CHIP answers UNAVAILABLE |
+| 1 | HR_C7000 (`platform/hrc7000/system.c`) | the UID only. idcode, flash size and `FLASH_OPTCR` are 0, offsets 23-28 are `0xFF`. The SoC has no readable ID register (its eFuse is not mapped out), so the UID is the data flash's 128-bit unique ID, read once at boot: the SPI NOR's (0x4B, four dummy bytes) or, on a board whose data flash is SPI NAND, the NAND's ID page. Words 0-2 of it, with word 3 XORed into word 0. Until the flash has answered, INFO_CHIP answers UNAVAILABLE |
 
 Read-only. Reply after the status (30 bytes in all; firmware before the family byte sent 29, and was STM32F4 only):
 
@@ -341,7 +342,7 @@ Read-only. Reply after the status (30 bytes in all; firmware before the family b
 stock state: the ROM bootloader route stays closed) and a loud warning at RDP level 2 or when any application sector
 (3..11) is write protected.
 
-Example (the bench DM-1701, 2026-10-10): idcode `0x0009A413`, 1024 KB, `FLASH_OPTCR` `0x0FFF55ED`: **RDP level 1**
+Example (an STM32F4 radio on the bench): idcode `0x0009A413`, 1024 KB, `FLASH_OPTCR` `0x0FFF55ED`: **RDP level 1**
 (byte `0x55`), no write protection, BOR off, user bits all 1.
 
 ### 3.10 READ_MEM
@@ -352,7 +353,7 @@ answer is refused (7):
 
 | Range | Contents |
 |---|---|
-| `0x08000000` up to the flash size (at most `0x080FFFFF`) | internal flash, the stock bootloader at `0x08000000-0x0800BFFF` included |
+| `0x08000000` up to the flash size (at most `0x080FFFFF`) | internal flash, the vendor bootloader at `0x08000000-0x0800BFFF` included |
 | `0x1FFF0000-0x1FFF77FF` | system memory (ST's ROM bootloader) |
 | `0x1FFF7800-0x1FFF7A0F` | OTP and its lock bytes |
 | `0x1FFFC000-0x1FFFC00F` | option bytes |
@@ -365,14 +366,14 @@ access only while a debugger (SWD/JTAG) is connected and when the chip boots fro
 pins). After a normal boot from user flash, user code reads every flash address, whether it runs from flash, as
 this firmware does, or from SRAM, as the flash stub does ([stub-stm32f4.md](stub-stm32f4.md) 2; the stub's first
 bench run confirms it). So READ_MEM works at
-RDP level 1, and that is how the stock bootloader was saved on the bench unit.
+RDP level 1, and that is how the vendor bootloader is read.
 
 The web flasher and rfoundry read the bootloader sectors this way to find the bootloader key by its SHA-256
-(`hardware-dm1701.md` 15.3), so updating a radio that runs RadioFoundry needs no stock file. The bytes stay in memory; only the
+so updating a radio that runs RadioFoundry needs no stock file. The bytes stay in memory; only the
 key is kept.
 
 `rfoundry_debug.py dump --addr A --len N -o FILE` reads in 1000-byte pieces. It refuses to write inside any git work
-tree. The stock bootloader is proprietary: a dump of it is never committed or published.
+tree. The vendor bootloader is proprietary: a dump of it is never committed or published.
 
 ### 3.11 REBOOT
 
@@ -380,7 +381,7 @@ Request: mode u8, token u32. Reply: the status and a reason byte.
 
 | Mode | Effect |
 |---|---|
-| 0 | normal reset (`NVIC_SystemReset`; on the HR_C7000 the soft reset, transmitter off first): the stock bootloader runs, then the application |
+| 0 | normal reset (`NVIC_SystemReset`; on the HR_C7000 the soft reset, transmitter off first): the vendor bootloader runs, then the application |
 | 1 | ROM DFU: reset, then straight into ST's system-memory bootloader (USB DfuSe, `0483:DF11`). Only at RDP level 0 |
 
 The token must be the low 32 bits of the chip UID (INFO_CHIP offset 7), so a stray frame can't reboot the radio.
@@ -389,14 +390,14 @@ The checks, at the request and again just before the reset:
 | Reason | Refused when |
 |---|---|
 | 1 | the token is not the UID's low word (both modes) |
-| 2 | mode 1 on a chip other than the STM32F4 (INFO_CHIP family), or mode 1 and RDP is not level 0. At level 1 the ROM bootloader refuses flash access, and its read-unprotect command mass-erases all of flash, the stock bootloader included, which would leave the radio unable to load firmware without SWD. Level 2 disables the ROM bootloader |
+| 2 | mode 1 on a chip other than the STM32F4 (INFO_CHIP family), or mode 1 and RDP is not level 0. At level 1 the ROM bootloader refuses flash access, and its read-unprotect command mass-erases all of flash, the vendor bootloader included, which would leave the radio unable to load firmware without SWD. Level 2 disables the ROM bootloader |
 | 3 | transmitting: radio state TX, or the hotspot sending (both modes) |
 | 4 | the chip info could not be read |
 | 5 | (logged only) the ROM DFU flag could not be stored in the backup register |
 
 On OK the reply goes out first and the firmware resets 250 ms later. If a check fails at that point (a PTT came
-in), it logs `debuglink: reboot ... aborted` and stays up. How mode 1 enters the ROM:
-`docs/spec/hardware-dm1701.md` 15.4.
+in), it logs `debuglink: reboot ... aborted` and stays up. Mode 1 stores a flag in an RTC backup
+register that survives the reset, and the start-up code jumps into the ROM bootloader when it finds it.
 
 `rfoundry_debug.py reboot [--rom-dfu]` reads INFO_CHIP first, refuses `--rom-dfu` itself unless RDP is level 0, sends
 the token and prints the radio's reason when it refuses.
@@ -438,12 +439,12 @@ and the claim of a foreign region.
 
 ### 3.14 AUDIO_PROBE
 
-A bench tool for the USB audio feasibility work ([hardware-dm1701.md](hardware-dm1701.md) 21.3), only in firmware built with
+A bench tool for the audio path, only in firmware built with
 `CONFIG_AUDIO_PROBE=y` (off by default, never for a release). It reads and writes registers of the chip that owns
-the audio path (`board.audio_tap->modem_reg`; on the DM-1701 the HR_C6000, pages and registers as in
+the audio path (`board.audio_tap->modem_reg`; on a board with an HR_C6000 the HR_C6000, pages and registers as in
 `modem-hrc6000.md`), runs the board's PCM stream with its own block callback, which sends a test tone, and measures
-both I2S channels (`core/debuglink/debuglink_audio_probe.c`, `hal/hal_audio_tap.h`). Only the DM-1701 provides
-`board.audio_tap` today; on other boards the ops that need it answer UNAVAILABLE. The page, register and RAM
+both I2S channels (`core/debuglink/debuglink_audio_probe.c`, `hal/hal_audio_tap.h`). Only boards with an HR_C6000 whose audio path is open provide
+`board.audio_tap` today (one board at the moment); on other boards the ops that need it answer UNAVAILABLE. The page, register and RAM
 semantics in the table are the HR_C6000's.
 
 | Op | Request | Reply after the status |
@@ -458,15 +459,15 @@ semantics in the table are the HR_C6000's.
 | 7 RAM_WRITE | page u8, address u16, 1 to 60 bytes | none (page 2 writes the TX RAM) |
 | 9 MUSIC | time ms u16 (1-2000), tone Hz u16 (0-3800), amplitude u16, flags u8 (bit 0 little endian samples) | FIFO writes u16, polls u16, elapsed ms u32. Feeds the HR_C6000's prompt tone FIFO (`modem-hrc6000.md` 8.1): 32 samples to page 3 address 0 whenever 0x88 bit 0 reads 0 (`board.audio_tap->modem_burst`); the caller opens the path (0x06 bit 1). Blocks the debug link for the time |
 | 8 WATCH | time ms u16 (1-2000), flag page u8, flag register u8, clear register u8, mask u8, RAM page u8, RAM address u16 (0xFFFF = none) | elapsed ms u32, polls u16, for flag bits 0-7: count u16 and first ms u16, RAM word changes u16 |
-| 10 MOD | time ms u16 (1-2000), page u8, register u8, tone Hz u16 (0-8000), amplitude u8 (register steps), optional flags u8 (bit 0: second order noise shaping) | writes u32, elapsed ms u32, the register's value u8. Writes the register = its signed value + amplitude x sine back to back (about 37,000 writes a second, measured on the DM-1701), the phase from the microsecond clock, then restores it. On the HR_C6000's 0x04 (two-point MOD1 offset) this is MCU audio on air ([hardware-dm1701.md](hardware-dm1701.md) 21.3.1). Blocks the debug link and lower priority tasks for the time |
+| 10 MOD | time ms u16 (1-2000), page u8, register u8, tone Hz u16 (0-8000), amplitude u8 (register steps), optional flags u8 (bit 0: second order noise shaping) | writes u32, elapsed ms u32, the register's value u8. Writes the register = its signed value + amplitude x sine back to back (about 37,000 writes a second, measured on an STM32F4 radio), the phase from the microsecond clock, then restores it. On the HR_C6000's 0x04 (two-point MOD1 offset) this is MCU audio on air ([modem-hrc6000.md](modem-hrc6000.md)). Blocks the debug link and lower priority tasks for the time |
 | 11 RAMFEED | hold ms u16, gap ms u16, tone Hz u16, amplitude u16, n u8 (0-16), n x (page u8, register u8, xor mask u8); n x (hold + gap) + gap at most 9000 ms | half switches u16, writes u16, longest write lag ms u16, flips done u8. Keeps a big endian tone in the HR_C6000 TX RAM FM halves (written through page 2, watched through page 6) by rewriting each half as soon as the codec moves to the other, while applying each flip for hold ms with gap ms between. Blocks the debug link for the time |
-| 12 PIN_TONE | hz u16 (0 = off) | none. A 50 % square wave on the board's spare output (DM-1701: PC8, the stock beep PWM, TIM8 CH3), to find out whether that net reaches the transmit audio; off returns the pin to its low output. Status 4 when the board has none |
+| 12 PIN_TONE | hz u16 (0 = off) | none. A 50 % square wave on the board's spare output (the beep PWM pin), to find out whether that net reaches the transmit audio; off returns the pin to its low output. Status 4 when the board has none |
 | 13 PIN_SCAN | ms u16 (at most 2000) | n u8, n x changed-pin mask u16 (GPIOA, GPIOB, ...). Samples every GPIO input register back to back for ms; output pins read their own level, so two scans (a clock off, then on) are diffed. Blocks the debug link for the time |
-| 14 PIN_PWM | top u16 (at least 15), tone Hz u16 (0 = off), amplitude per mille u16 | carrier Hz u32 (0: not running). PWM audio on the spare output: a carrier of top + 1 counts of 72 MHz (DM-1701: TIM8 CH3 on PC8), its duty a sine around 50 % rewritten each carrier period by DMA (DMA2 stream 2) from a table of whole tone periods |
+| 14 PIN_PWM | top u16 (at least 15), tone Hz u16 (0 = off), amplitude per mille u16 | carrier Hz u32 (0: not running). PWM audio on the spare output: a carrier of top + 1 counts of 72 MHz (the beep PWM timer channel), its duty a sine around 50 % rewritten each carrier period by DMA (DMA2 stream 2) from a table of whole tone periods |
 
 WATCH polls the flag register about once a millisecond, counts each flag in the mask that it finds set and clears it
 by writing it to the clear register, and counts the changes of the two-byte RAM word at the address. It blocks the
-debug link for the whole time. On the DM-1701 in FM mode no handler serves the HR_C6000's interrupt lines, so it sees
+debug link for the whole time. On an HR_C6000 board in FM mode no handler serves the HR_C6000's interrupt lines, so it sees
 every flag (`modem-hrc6000.md` 8.1).
 
 The probe borrows the stream: a beep or a DMR channel in the meantime may take it back (STATUS bit 0 then reads 0).
@@ -532,15 +533,15 @@ The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP e
 ### 3.18 STUB
 
 Load the host's flash-access RAM monitor into a free RAM span and hand the SoC to it at run time, no power cycle
-(`CONFIG_STUB_ENTRY`, its own feature: [stub-entry.md](stub-entry.md); a build without the debug link answers this command with its own listener, byte for byte the same). Two platforms have it: the HR_C7000 (the "C7 stub", `docs/spec/hardware-dm32.md` 17.2) and the
-STM32F4 (the DM-1701 and the MD-380, [stub-stm32f4.md](stub-stm32f4.md)). Built without the switch, or on a
+(`CONFIG_STUB_ENTRY`, its own feature: [stub-entry.md](stub-entry.md); a build without the debug link answers this command with its own listener, byte for byte the same). Two platforms have it: the HR_C7000 (the "C7 stub", [stub-entry.md](stub-entry.md)) and the
+STM32F4 ([stub-stm32f4.md](stub-stm32f4.md)). Built without the switch, or on a
 board whose platform has no `hal_system_t.enter_stub`, every operation answers `DL_ST_UNAVAILABLE`. All u32 are little
 endian. The guard is a 32-bit magic key `'C7SB'` (`0x42533743`) on BEGIN and ENTER, plus the exact length and a CRC-32
 of the whole image checked before the jump.
 
 | Op | Request | Reply / effect |
 |---|---|---|
-| 0 INFO | none | magic u32, load_addr u32, region_size u32, max_chunk u16, armed u8, received u32: the span and transfer state. `load_addr` / `region_size` are the board's `HRC_STUB_BASE` / `HRC_STUB_SIZE` (the DB25-D reports 0x30000 / 0x20000, or 0x1D000 / 0x12000 with `CONFIG_DMR`) |
+| 0 INFO | none | magic u32, load_addr u32, region_size u32, max_chunk u16, armed u8, received u32: the span and transfer state. `load_addr` / `region_size` are the board's `HRC_STUB_BASE` / `HRC_STUB_SIZE` (a board's span depends on `CONFIG_DMR`: the build with DMR reports a smaller one) |
 | 1 BEGIN | magic u32, total_len u32, crc32 u32, entry u32 | received u32 (0): zero the span and arm a transfer. Bad magic: refused; total 0 / over the span or entry outside it: bad argument |
 | 2 DATA | offset u32, bytes (<= max_chunk) | received u32: write a chunk (the frame's CRC-16 guards it). Not armed, or past total_len: bad argument |
 | 3 ENTER | magic u32 | ok then (after the reply) quiesce and jump; the monitor answers next. Bad magic: refused; incomplete or the CRC-32 mismatches: bad argument; the radio transmitting: busy (the image stays loaded, ENTER again later); the platform's image check says no: refused with reason byte 1 (`STUB_REFUSE_WATCHDOG`: the STM32's IWDG runs and the image header doesn't say the stub feeds it: no header, a version before 3 or no feed flag, [stub-stm32f4.md](stub-stm32f4.md) 3.1, [watchdog.md](watchdog.md) 3.1) |
@@ -657,7 +658,7 @@ answered refused (7). The bridge is dropped if PTT went down between the reply a
   and ends in a restart (3.22).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
-- Memory dumps are never written inside a git tree (the stock bootloader is proprietary).
+- Memory dumps are never written inside a git tree (the vendor bootloader is proprietary).
 - AUDIO_PROBE (diagnostic builds only) writes audio chip registers as asked; nothing else in the debug link writes
   chip registers.
 - STUB (bench builds only) writes arbitrary RAM and then runs it, giving the host full control: it is gated by a magic
@@ -671,8 +672,8 @@ answered refused (7). The bridge is dropped if PTT went down between the reply a
 
 ## 5. Counters and resets
 
-RESET_COUNTERS zeroes: the board's diagnostics counters (`board.diag_reset`, whatever the board counts; on the DM-1701
-the HR_C6000 slot engine counters, the RF switch counters and the DMR audio counters), the DMR call stack counters (`dmr_call_reset_stats`),
+RESET_COUNTERS zeroes: the board's diagnostics counters (`board.diag_reset`, whatever the board counts; on a board with an HR_C6000
+the slot engine counters, the RF switch counters and the DMR audio counters), the DMR call stack counters (`dmr_call_reset_stats`),
 the AMBE voice counters (`ambeVoiceResetStats`), the beep counters (`beep_reset_stats`) and the DMR data service
 counters (`dmrDataServiceResetStats`). States and "last" values (last CC, last sync, engine TX state) are kept. The
 resets are not atomic with respect to the tasks and interrupts that count: an increment racing the reset may survive

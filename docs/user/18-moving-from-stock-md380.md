@@ -1,16 +1,18 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Moving from stock MD-380 firmware
+# Moving from Stock MD-380 Firmware
 
-This chapter is for a TYT MD-380, MD-390 or Retevis RT3 that runs TYT's stock firmware or the md380tools patched
-firmware (the KD4Z toolkit). One program, `md380_migrate.py`, does the whole move:
+This chapter is for a TYT MD-380, MD-390 or Retevis RT3 that runs TYT's stock firmware. One program, `md380_migrate.py`, does the whole move:
 
 1. It reads your codeplug from the radio: channels, zones, contacts, RX group lists, your DMR ID.
 2. It flashes RadioFoundry.
 3. It writes the codeplug back, plus the DMR ID (callsign) database.
 
-> The MD-380 port has run on a radio but is still in testing ([Radio reference](23-radios.md#tyt-md-380)). Try it only if you can go
-> back to stock with TYT's updater, and keep your stock firmware file.
+The web installer and the Codeplug Editor do the same in two steps: the installer backs up the radio and installs
+RadioFoundry, and the editor converts the backup ([Installing](02-installing.md), [Programming the
+radio](04-programming.md#files)). Use this program to do all of it in one run. What has been checked on the radio is in
+the [Radio reference](23-radios.md#tyt-md-380). Keep your stock firmware file, so you can go back to stock with TYT's
+updater.
 
 ## What you need
 
@@ -34,7 +36,7 @@ a `requirements.txt`.
 
 ## Getting the image
 
-The MD-380 isn't in the releases yet. Build the image from the source ([building](../dev/building.md)):
+The release page carries the image of each band. To build one yourself ([building](../dev/building.md)):
 
 ```
 make BOARD=md380                                         # UHF: build/md380/rfoundry_md380.bin
@@ -81,8 +83,7 @@ If you have the codeplug as a file, the program doesn't need to read the radio f
 
 | File | From |
 |---|---|
-| `.rdt` (262,709 bytes) | The TYT CPS, or the KD4Z toolkit |
-| a 256 KB `.img` / `.bin` | md380tools' codeplug dump |
+| `.rdt` (262,709 bytes) | The TYT CPS |
 | `.dfu` | dmrconf |
 | `.yaml` | qdmr |
 
@@ -104,21 +105,16 @@ codeplugs have one list per channel holding just that channel's talkgroup. Radio
 talks to, so those lists go, as do empty, duplicate and unused ones. Every channel keeps its talkgroup. `--no-cleanup`
 keeps the lists as they are.
 
-RadioFoundry uses the parts of the codeplug listed in [Programming the radio](15-programming-qdmr.md). Scan lists, GPS
+RadioFoundry uses the parts of the codeplug listed in [Programming the radio](04-programming.md). Scan lists, GPS
 systems and TYT's menu and button settings are not carried over.
 
 ## The DMR ID database
 
-The stock radio shows names from its contacts. md380tools adds a user database. The program writes RadioFoundry's database
-in one of two ways:
+The program writes RadioFoundry's DMR ID database in one of two ways:
 
 - By default, dmrconf downloads the public DMR user database and picks the IDs nearest yours (internet needed).
-- `--users FILE` takes a users CSV instead: radioid.net's `user.csv`, or the users file the KD4Z toolkit or
-  md380tools downloaded. The program shows the first records it read. If a file has no header row and the columns
+- `--users FILE` takes a users CSV instead: radioid.net's `user.csv`. The program shows the first records it read. If a file has no header row and the columns
   look wrong, give their order with `--users-columns id,callsign,fname,surname,city,state,country`.
-
-The database stored in the md380tools radio can't be read out. It is the same public data, so a fresh download is
-equivalent.
 
 | Option | Does |
 |---|---|

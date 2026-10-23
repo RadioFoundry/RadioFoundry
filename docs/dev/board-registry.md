@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# The board registry
+# The Board Registry
 
 The registry holds every fact about a radio that the build itself doesn't need: its identity, status, build options,
 flashing route, codec route and the web site's data. The tools, CI, the docs and the site read it. The build reads no

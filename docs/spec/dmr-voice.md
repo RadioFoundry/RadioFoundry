@@ -63,7 +63,7 @@ Stalled modem: PTT release and the time-out both wait for a superframe boundary,
 sends bursts. When the modem takes no burst for `DMR_CALL_TX_STALL_MS` (1.5 s; a burst counts when it is queued or its
 slot starts), the stack aborts the transmission and returns to receive with `DMR_TX_ERR_STALLED` (`dmr.tx_error=stalled`
 on the debug link). With PTT still held the radio shows "Modem refused to send" until release. A modem without slot
-timing (the MD-380 with its HR_C5000 not answering) otherwise kept the radio keyed until the battery came out
+timing (a modem that stops answering) otherwise kept the radio keyed until the battery came out
 ([gotchas](gotchas.md) 3.12).
 
 ### 2.1 The DMR VFO
@@ -222,8 +222,8 @@ codec bits.
   `reset()`, so a new transmission starts with the options in force.
 * The options are read at start-up from the settings and on every change (`ui_svc_apply`). With AGC on, the mic gain
   is step 5, the board's levels (FM too on a radio whose board sets the gain), and Mic gain is dimmed, showing "AGC".
-* Per codec mapping: [codec-md380.md](codec-md380.md) "Encode flags". The AMBE+2 hosts on the MD-380, DM-1701,
-  DM-1801 Pro and DM-32UV share `drivers/vocoder/ambe2_flags.h`.
+* Each board's codec mapping is on its `codec-<id>.md` page ("Encode flags"). Boards with an AMBE+2 host share
+  `drivers/vocoder/ambe2_flags.h`.
 
 ## 7. Observing it
 
@@ -239,13 +239,13 @@ bench modem's listener).
 
 ## 8. Open points
 
-- The codeplug's hang time unit is not confirmed. Checked: the interop spec lists the group and private hang bytes
-  (general settings 0x18, 0x19) only as vendor layout the aftermarket firmware ignores ("only the callsign and the DMR ID
-  matter", `open-firmware-cps.md` 7.3.2), and neither the reference notes nor the DM-1701 vendor guide give a unit.
+- The codeplug's hang time unit is not confirmed. The interop spec lists the group and private hang bytes
+  (general settings 0x18, 0x19) only as vendor layout that the open-firmware layout does not use
+  (`open-firmware-cps.md` 7.3.2), and neither the reference notes nor the vendor guide give a unit.
   Assumed: 500 ms steps (`codeplug.c`, `GEN_HANG_UNIT_MS`), so a stored 6 is 3 s. Confirm with the vendor CPS
   (set a known hang time, read the byte) on the bench; the reply time setting (`rs_reply_s`) overrides it meanwhile.
 - DMR ID database plain format: the 4-byte BCD ID is read as a little-endian word (the spec doesn't say).
-- A codeplug TOT of 0 means "off" to the aftermarket firmware; here it falls back to the radio's TOT.
+- A codeplug TOT of 0 means "off" in the vendor layout; here it falls back to the radio's TOT.
 - Emergency alarm and emergency call TX are in `dmr-emergency.md`. No enhanced privacy. GPS Info is host-tested
   (`dmrCallTest`) and on air both ways against the SDR bench (`docs/testing/on-air-coverage.md`). Not done: GPS Info in the hotspot's own
   transmissions (it relays the host's), a separate Settings > Location toggle for it (it lives on the APRS page).

@@ -4,7 +4,7 @@
 
 In USB network mode (`usb-network.md`) the radio runs a TFTP server on UDP port 69 at its own address:
 `get codeplug.bin` reads the codeplug, `put codeplug.bin` writes it, `get` and `put iddb.bin` do the same for the DMR
-ID database, `get info.txt` says who the radio is. Any stock TFTP client works (`tftp`, `curl tftp://`, tftpy).
+ID database, `get info.txt` says who the radio is. Any standard TFTP client works (`tftp`, `curl tftp://`, tftpy).
 Switches: `CONFIG_TFTP` (= `CONFIG_DMR_IP_GATEWAY`), `CONFIG_TFTP_IDDB` (= `CONFIG_TFTP`, section 5). Code:
 `core/net/tftp.c` (the protocol, no RTOS), `core/net/tftp_codeplug.c` (codeplug.bin, the staging and the commit),
 `core/net/tftp_iddb.c` (the ID database), `core/net/net_services.c` (the glue, info.txt). Written from RFC 1350, 2347, 2348 and 2349.
@@ -72,7 +72,7 @@ while the flash region is foreign (`settings-store.md` 5), or without a staging 
 | Step | What |
 |---|---|
 | WRQ | `tsize`, when given, must be from 716,384 up to the end of the open-firmware space (else error 3). A commit record left by an earlier failed commit is finished first |
-| DATA | The bytes inside the regions go to the staging area (`hal_flash_map_t.staging_addr`, `staging_size`, set by the board: `hardware-dm1701.md` 13.2, `hardware-md380.md` 12.2; the DM-32 has none), back to back from its second sector, erased as the data reaches it; a CRC-32 runs over them. Bytes outside the regions are ignored. Nothing of the stored codeplug changes |
+| DATA | The bytes inside the regions go to the staging area (`hal_flash_map_t.staging_addr`, `staging_size`, set by the board; some boards have none), back to back from its second sector, erased as the data reaches it; a CRC-32 runs over them. Bytes outside the regions are ignored. Nothing of the stored codeplug changes |
 | Last DATA | The size must be in the same range. An ID database the file carries is finished first (5.2). The staged bytes are read back and checked against the CRC. Then the image check: the general settings' DMR ID is 8 BCD digits, and at least one channel marked used (any bank) decodes (`codeplug_openfw_decode`). The open-firmware layout has no header or version to check, so this is what tells a codeplug from a wrong file |
 | Commit | The commit record (magic 0x5452444F, version 1, length, the staged CRC, its own CRC) goes in the staging area's first sector. Then each 4 KB sector of the codeplug that a region touches is rebuilt (the stored sector, the staged bytes over it) and written through the sector journal (`settings-store.md` 4), one sector per tick so the host link keeps running; unchanged sectors are skipped. The quick-key slots (EEPROM 0x7524-0x7537, the side key assignment, `ui.md` 3.1) are written like the rest, as with the CPS. Then the record is erased, the codeplug re-read (`codeplug_reload`), and the last ACK sent |
 | Failure | Any check failing: error 0 with the reason, the stored codeplug untouched. A transfer that stops, an error from the client, a timeout: the staged bytes are left and never used (no record) |
@@ -100,8 +100,7 @@ receive screen, not a usable radio. So it is written in place, in an order that 
    reads the database again. `codeplug_reload` bumps the codeplug serial, so the radio drops the names it cached.
 
 A transfer that stops, an error from the client or a timeout leaves the header erased: no database, never a broken
-one. No journal, no commit record and no staging area are involved, so `iddb.bin` works on radios without one (the
-DM-32). Writes follow the same rules as codeplug.bin: refused while TFTP codeplug writes are off or the flash region
+one. No journal, no commit record and no staging area are involved, so `iddb.bin` works on radios without one. Writes follow the same rules as codeplug.bin: refused while TFTP codeplug writes are off or the flash region
 is foreign. They are not refused while transmitting, as codeplug.bin's aren't: the flash calls take the storage lock
 like every other writer. A put isn't power-cut safe beyond that rule: a cut mid-transfer leaves no database.
 

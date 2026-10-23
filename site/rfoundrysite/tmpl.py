@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """A very small template language, so the page markup lives in site/templates/ where a designer can rework it
-without touching Python (docs/dev/website.md "Templates").
+without touching Python (docs/dev/website.md "Templates and design").
 
   {{ name }}        the value, HTML escaped (dotted names reach into dicts: {{ radio.name }})
   {{{ name }}}      the value as it is (HTML the generator built)

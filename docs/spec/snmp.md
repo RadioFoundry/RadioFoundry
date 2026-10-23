@@ -79,7 +79,7 @@ for documentation (RFC 5612), a placeholder** until the project has its own Priv
 | rfoundryRadio (.2.1.3) | rfoundryRadioState, rfoundryRssi, rfoundryMode, rfoundryZoneName, rfoundryChannelNumber, rfoundryChannelName, rfoundryRxFrequency, rfoundryTxFrequency, rfoundryTxPowerLevel, rfoundryTxPowerName, rfoundryColorCode, rfoundryTimeslot, rfoundryTalkTarget, rfoundryTalkTargetType (the last four DMR only), rfoundryRole (radio, hotspot, SFR, split TX / RX) |
 | rfoundryDmr (.2.1.4) | rfoundryCallState, rfoundryCallSource, rfoundryCallDestination, rfoundryLastSource, rfoundryLastDestination, rfoundryLastGroup, rfoundryLastAge |
 | rfoundryData (.2.1.5) | rfoundryDataRxPackets, rfoundryDataRxForUs, rfoundrySmsReceived, rfoundrySmsSent, rfoundrySmsFailed, rfoundrySmsInbox, rfoundrySmsUnread, rfoundryArsState |
-| rfoundryNet (.2.1.6) | rfoundryUsbNetwork, rfoundryNetToAir (the gateway's packets to the air), rfoundryNetPacketsUp (air packets to the host); the gateway's other counters are in the debug link's `net.*`. No interfaces group (RFC 2863): it didn't fit the MD-380 |
+| rfoundryNet (.2.1.6) | rfoundryUsbNetwork, rfoundryNetToAir (the gateway's packets to the air), rfoundryNetPacketsUp (air packets to the host); the gateway's other counters are in the debug link's `net.*`. No interfaces group (RFC 2863): it didn't fit the smallest flash |
 | rfoundryAgent (.2.1.7) | the agent's settings (section 6, writable) and its notification counters |
 | rfoundryEvent (.2.1.8) | the notification objects (accessible-for-notify) |
 

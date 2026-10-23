@@ -20,9 +20,9 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib's network rig control, port 4532 (`core/net/rigctld.c`, section 6) |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client (`core/net/aprsis.c`, section 7) |
 
-The DM-32UV has no USB: it runs them over PPP on its host port (`ppp.md`), with 3 TCP connections instead of 4
-(`boards/dm32/config.mk`). On the MD-380 they fit only with link time optimization (its default; `docs/feature-matrix.md`, "Whole images"). Which radios send and receive AFSK:
-`aprs.md` 1.
+A board without USB runs them over PPP on its host port (`ppp.md`), with 3 TCP connections instead of 4
+(`TCP_CONNS` in `platform/hrc7000/config.mk`). On a flash-tight board they fit only with link time optimization (its
+default; [feature-matrix.md](../feature-matrix.md), "Whole images"). Which radios send and receive AFSK: `aprs.md` 1.
 
 ## 2. TCP
 
@@ -32,7 +32,7 @@ address, the host being the only neighbor and the router.
 
 | Item | Value |
 |---|---|
-| Connections | 4 in all, TIME_WAIT included; 4 listening ports. A SYN takes a free slot, else the oldest TIME_WAIT, else the oldest FIN_WAIT_2 (reset) |
+| Connections | `TCP_CONNS` (4 by default) in all, TIME_WAIT included; 4 listening ports. A SYN takes a free slot, else the oldest TIME_WAIT, else the oldest FIN_WAIT_2 (reset) |
 | MSS | 536 (14 + 20 + 20 + 536 = 590 bytes, within the gateway's 600 byte frames); a smaller MSS option from the peer is honored |
 | Options | MSS only (sent on SYN); no window scaling, SACK or timestamps |
 | Transmit | one buffer per connection, 1072 bytes (two segments) from SND.UNA on; data is sent as soon as it is written (no Nagle: the services write whole messages) |

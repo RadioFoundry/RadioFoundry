@@ -36,14 +36,14 @@ number shows how close legitimate work comes to the timeout.
 
 | Platform | Watchdog | Timeout | Start |
 |---|---|---|---|
-| STM32F4 (DM-1701, MD-380) | IWDG on the LSI RC oscillator, prescaler 64, reload 2500 | 5 s at the typical 32 kHz; 3.4 s at the data sheet's fastest LSI (47 kHz), 9.4 s at its slowest (17 kHz) | right after `stm32_sysboot_check()` |
-| HR_C7000 (DM-32UV, DM-1801 Pro, DB25-D) | the SoC watchdog at 0x14010000 ([hardware-dm32.md](hardware-dm32.md) 3.5) | 4 s (the 24 MHz crystal, measured; 2.1) | right after `hrc_clock_init()`, which turns off whatever the loader left |
+| STM32F4 | IWDG on the LSI RC oscillator, prescaler 64, reload 2500 | 5 s at the typical 32 kHz; 3.4 s at the data sheet's fastest LSI (47 kHz), 9.4 s at its slowest (17 kHz) | right after `stm32_sysboot_check()` |
+| HR_C7000 | the SoC watchdog at 0x14010000 (`WDT_BASE`, `platform/hrc7000/platform.h`) | 4 s (the 24 MHz crystal, measured; 2.1) | right after `hrc_clock_init()`, which turns off whatever the loader left |
 
 ### 2.1 The HR_C7000 counter
 
 OT_LOAD_H (bits 2:0) and OT_LOAD_L are one 35-bit start value. The counter counts up from it and the radio resets
-when it overflows at 2^35 ([hardware-dm32.md](hardware-dm32.md) 3.5), so the timeout is (2^35 - load) / f and a small
-load is the longest timeout. f is the 24 MHz crystal: on the DB25-D, H = 7, L = 0xF0000000 (2^28 counts) reset the
+when it overflows at 2^35, so the timeout is (2^35 - load) / f and a small
+load is the longest timeout. f is the 24 MHz crystal: on one HR_C7000 board, H = 7, L = 0xF0000000 (2^28 counts) reset the
 radio after 11.1 s (6.2, 2026-10-21). `WDT_LOAD` is 2^35 - 4 s x 24 MHz (H = 7, L = 0xFA472800). RST_LOAD is left at
 its reset value (0x03F80000: about 20 ms from the overflow to the reset, per the manual). The timeout must stay
 comfortably above 3 s: the fault trace takes that long with no feeds.
@@ -58,8 +58,8 @@ take time, and a watchdog build of RadioFoundry refuses to enter a stub that doe
 
 | Exit | HR_C7000 | STM32F4 |
 |---|---|---|
-| Reboot (`hal_system_t.reboot`, the debug link's REBOOT, a crash restart) | `hrc_soft_reset` turns it off first: whether a soft reset clears it is unknown, and the Baofeng bootloader's update mode never feeds it. If the soft reset doesn't happen, it turns the watchdog back on as the last way out | `NVIC_SystemReset`: a system reset stops the IWDG |
-| ROM DFU entry (REBOOT mode 1, [hardware-dm1701.md](hardware-dm1701.md) "Software entry to a bootloader") | not offered | the request resets first; `stm32_sysboot_check()` jumps to the ROM before `main()` starts the IWDG |
+| Reboot (`hal_system_t.reboot`, the debug link's REBOOT, a crash restart) | `hrc_soft_reset` turns it off first: whether a soft reset clears it is unknown, and the vendor bootloader's update mode never feeds it. If the soft reset doesn't happen, it turns the watchdog back on as the last way out | `NVIC_SystemReset`: a system reset stops the IWDG |
+| ROM DFU entry (REBOOT mode 1, STM32 boards) | not offered | the request resets first; `stm32_sysboot_check()` jumps to the ROM before `main()` starts the IWDG |
 | Runtime stub entry (STUB ENTER, [debuglink.md](debuglink.md) 3.18) | `hrc_watchdog_stretch()` gives it 32 s and a feed, and the stub feeds it from its start-up on (3.2) | the IWDG can't be stopped: ENTER is refused for a stub whose image header doesn't say it feeds; `stm32_watchdog_stretch()` sets the longest timeout (about 32 s, at least 22 s) for the jump, and the stub feeds it from its first instruction on (3.1) |
 | Power off | the supply goes; until it does the idle task feeds as usual (a knob that keeps the radio on leaves it running normally) | the same |
 
@@ -129,7 +129,7 @@ FreeRTOS call after the scheduler starts lets the idle task run and needs nothin
 |---|---|---|
 | Start-up before the scheduler (clocks, board early init, display, the radio chips' reset waits) | `platform/*/main.c`, `board_early_init` | `main()` feeds between steps; `hal_delay_ms()`'s busy wait feeds every millisecond before the scheduler runs |
 | SPI NOR erase and program (settings, journal, codeplug, CPS writes, TFTP) | `drivers/flash/spi_nor` | none needed: the busy polls are `hal_delay_ms(1)`, which sleeps once the scheduler runs |
-| SPI NAND mount, garbage collection, wear leveling (DB25-D storage) | `drivers/flash/nand_sectors` | busy waits of 10 µs: the layer calls `nand_dev_t.busy` once per block or sector, which the DB25-D points at `watchdog_kick()` |
+| SPI NAND mount, garbage collection, wear leveling (boards with SPI NAND storage) | `drivers/flash/nand_sectors` | busy waits of 10 µs: the layer calls `nand_dev_t.busy` once per block or sector, which such a board points at `watchdog_kick()` |
 | A single NAND page read, program or block erase | `drivers/flash/spi_nand` | at most a few ms each, fed through the above around them |
 | Settings saves, codeplug sector rewrites, CPS sessions, fast codeplug commits | `core/settings`, `core/storage`, `core/cps` | through the flash drivers above |
 | The HR_C7000 codec load into RAM at the first DMR call | `platform/hrc7000/vocoder.c` | a memcpy of tens of KB: milliseconds |
@@ -145,7 +145,7 @@ FreeRTOS call after the scheduler starts lets the idle task run and needs nothin
 - Whether the HR_C7000 soft reset, or a watchdog reset itself, leaves the watchdog running into the bootloader. The
   soft reset turns it off first; after a watchdog reset the bootloader's update mode must still be checked to stay up.
 - The STM32 LSI on these radios (the IWDG's timeout scales with it).
-- The longest legitimate idle gap on each radio, in particular the DB25-D's start-up with a full codeplug.
+- The longest legitimate idle gap on each radio, in particular the start-up of a SPI NAND board with a full codeplug.
 - A whole STM32 stub write on a watchdog build, and the refusal of a stub without the header (version 2), on the
   radio.
 

@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Messages, call alert and radio check
+# Messages, Call Alert and Radio Check
 
 Text messages, call alert and radio check work on DMR channels. The [Radio reference](23-radios.md) says which radios
 have them verified. None of them needs the codec. Sending needs a DMR channel you may transmit on

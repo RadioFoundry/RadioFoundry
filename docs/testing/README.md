@@ -56,7 +56,7 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    Every configuration must build with zero compiler and linker warnings. The default and maximal ones must also pass
    the stack check: every task's deepest call chain fits its stack ([docs/dev/stack-check.md](../dev/stack-check.md)).
    A board without its compiler (the DM-32's
-   csky GCC comes from `tools/build-csky-toolchain.sh` or the Docker image, [docs/dev/ci.md](../dev/ci.md#the-csky-elf-image))
+   csky GCC comes from `tools/build-csky-toolchain.sh` or the Docker image, [docs/dev/ci-runners.md](../dev/ci-runners.md#the-csky-elf-image))
    is skipped with a notice. Build trees are `build/ci/<board>-<config>/`, each
    with its log next to it. The sizes go to `build/ci/size-report.md`: image bytes, the change against the board's
    default, and the space left in the linker's application region (the codec windows lie outside it, so "free" is
@@ -106,7 +106,7 @@ the reason, which starts with the skip's kind (`[bench]`). Every test file, rig 
 
 The USB network tests (`test_usb_network*.py`, `test_tcp_services.py`, `test_net_services.py`, `test_snmp.py`) switch
 the radio to the network personality and back, so they need `--allow-usb-switch`. On macOS a missed NCM carrier can
-leave the radio a network adapter until it is power cycled ([docs/dev/ci.md](../dev/ci.md#hil-runner), "Gotchas").
+leave the radio a network adapter until it is power cycled ([docs/dev/ci-runners.md](../dev/ci-runners.md#hil-runner), "Gotchas").
 
 CPS and settings (`test_cps.py`): the radio-only tests read the codeplug twice over the open-firmware CPS protocol and
 compare, and check a channel change is saved. Two opt-in flags change the radio but don't transmit:

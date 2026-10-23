@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# First boot
+# First Boot
 
 ## Turning the radio on
 
@@ -9,8 +9,7 @@ click. The [Radio reference](23-radios.md) says where the switch is on each radi
 second, then the radio opens the Home screen. Keys pressed during the boot screen are ignored.
 
 The boot screen shows the RadioFoundry logo and the two boot text lines from the codeplug. Along the bottom it shows the radio
-model and the firmware version. The boot text lines are 16 characters each, set with qdmr, for example your callsign
-and name.
+model and the firmware version. The boot text lines are 16 characters each, set in the codeplug, for example your callsign and name.
 
 <img src="../ux/screens/160x120i5/boot.png" width="200" alt="Boot screen">
 
@@ -19,7 +18,7 @@ clicks. See [Turning off](16-battery-and-power.md#turning-off).
 
 ## Channels on a new installation
 
-RadioFoundry reads the codeplug from the radio's SPI flash, in the layout qdmr writes. The codeplug holds the channels, zones,
+RadioFoundry reads the codeplug from the radio's SPI flash, in the layout the Codeplug Editor and qdmr write. The codeplug holds the channels, zones,
 contacts and your DMR ID. When RadioFoundry finds no channels there, it uses six built-in FM simplex channels:
 
 | Channel | Frequency | Bandwidth |
@@ -39,9 +38,9 @@ names. In that case, write a codeplug right away.
 
 ## Programming the radio
 
-Program channels, zones, contacts, talkgroup lists and your DMR ID with the Codeplug Editor on the project's web
-site, or with qdmr on a computer. See [Programming the radio](15-programming-qdmr.md). Most settings can also be changed on the radio
-([Settings](12-settings.md)). Channels, contacts and the DMR ID come from the codeplug.
+Program channels, zones, contacts, talkgroup lists and your DMR ID with the Codeplug Editor on the project's web site
+([Programming the radio](04-programming.md)). qdmr is an alternative. Most settings can also be changed on the radio
+([Settings](17-settings.md)). Channels, contacts and the DMR ID come from the codeplug.
 
 DMR needs your DMR ID. Without one, the radio refuses to transmit on DMR channels and shows "No DMR ID in codeplug".
 **Settings > My radio > DMR ID and name** shows the ID the radio has.

@@ -607,7 +607,7 @@
    ],
    "category": "RF and hardware",
    "scope": "dev",
-   "definition": "The HRC6000 family: the baseband chip that codes and decodes DMR bursts in the DM-1701 and MD-380 class radios.",
+   "definition": "The HRC6000 family: the baseband chip that codes and decodes DMR bursts. The radios that use it are in the radio survey.",
    "link": "",
    "preview": true
   },
@@ -619,7 +619,7 @@
    ],
    "category": "RF and hardware",
    "scope": "dev",
-   "definition": "The HRC7000 family: the baseband chip of the DM-32UV and DM-1801 Pro class radios.",
+   "definition": "The HRC7000 family: the baseband chip of the C-SKY class radios. The radios that use it are in the radio survey.",
    "link": "",
    "preview": true
   },
@@ -720,7 +720,7 @@
    "category": "Vendor terms",
    "scope": "user",
    "definition": "Customer programming software: the program that writes the codeplug. RadioFoundry uses qdmr.",
-   "link": "user/15-programming-qdmr.md",
+   "link": "user/04-programming.md",
    "preview": true
   },
   {
@@ -772,7 +772,7 @@
    "category": "Amateur and network",
    "scope": "user",
    "definition": "A small DMR modem that connects radios nearby to a DMR network over the internet.",
-   "link": "user/13-hotspot.md",
+   "link": "user/14-hotspot.md",
    "preview": true
   },
   {
@@ -781,7 +781,7 @@
    "category": "Amateur and network",
    "scope": "user",
    "definition": "Automatic Packet Reporting System: positions and short messages shared between amateur stations.",
-   "link": "user/17-aprs.md",
+   "link": "user/13-aprs.md",
    "preview": true
   },
   {
@@ -911,7 +911,7 @@
    "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "A free, open source codeplug editor for DMR radios.",
-   "link": "user/15-programming-qdmr.md",
+   "link": "user/04-programming.md",
    "preview": true
   },
   {
@@ -1418,7 +1418,7 @@
    "aliases": [],
    "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "Comma separated values: a table as plain text, as the stock programming software exports it.",
+   "definition": "Comma separated values: a table as plain text, as programming software exports it.",
    "link": "",
    "preview": true
   },
@@ -1445,7 +1445,7 @@
    "aliases": [],
    "category": "Vendor terms",
    "scope": "user",
-   "definition": "A Chinese maker of DMR radios (MD-380, MD-UV380). \"Stock\" for those radios means TYT's firmware.",
+   "definition": "A Chinese maker of DMR radios.",
    "link": "",
    "preview": true
   },
@@ -1762,7 +1762,7 @@
    ],
    "category": "RF and hardware",
    "scope": "dev",
-   "definition": "STMicroelectronics' family of ARM microcontrollers. The DM-1701 and MD-380 class radios use them.",
+   "definition": "STMicroelectronics' family of ARM microcontrollers. The radios that use it are in the radio survey.",
    "link": "",
    "preview": true
   },

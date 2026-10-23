@@ -2,7 +2,7 @@
 
 What the emergency key does, and what the radio shows when it hears someone else's emergency. Status: built and
 host-tested (`dmrDataChainTest`, `dmrCallTest`, `radioCoreTest`); the alarm and the emergency call, in and out, on
-air against the SDR bench, measured on the DM-1701 (`tests/hil/test_dmr_emergency.py`, `docs/testing/on-air-coverage.md`).
+air against the SDR bench (`tests/hil/test_dmr_emergency.py`, `docs/testing/on-air-coverage.md` for the radios and results).
 
 Sources: ETSI TS 102 361-2 (the service options octet of the voice LC, 7.2.1: bit 7 emergency), TS 102 361-1 (CSBK
 layout and CRC), the public descriptions of Motorola's emergency alarm (a CSBK with the Motorola FID 0x10 that the

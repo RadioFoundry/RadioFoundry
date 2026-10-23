@@ -6,6 +6,13 @@ How `core/ui` implements the first-principles UX in `docs/ux` (`principles.md`, 
 `task-flows.md`, `wireframes/`, `usability-tests.md`). The UX documents say what the radio does; this page says how
 the code is laid out, who owns the data behind each screen, and how the UI is tested without a radio.
 
+| Contents | |
+|---|---|
+| 1, 2 | File layout, screens and the stack |
+| 3 | Key meanings and side key assignment |
+| 4, 5, 6 | Data other packages own, build switches, debug link |
+| 7, 8 | Host simulator and tests, decisions and open points |
+
 ## 1. Layout
 
 | File | What |
@@ -25,8 +32,8 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip and, from 100 px high, each list row take
 one pixel more than the text cell, so lines never touch (easy to read comes before one more row; principles.md 5).
 The board's safe-area insets (`hal_display_t.inset_*`) are outside the drawing area (`gfx_width` / `gfx_height`),
-for panel edges hidden by the case (DM-1701: 5 px left and right under the lens, `hardware-dm1701.md` 9.1). At 160x120i5 a list shows 7 rows, at 160x128 7, at
-240x320i10x5 (the DM-32) 11, at 128x64 5. The 240 px class keeps 6 px between rows and a separate title row;
+for panel edges hidden by the case (for example 5 px left and right under a lens). At 160x120i5 a list shows 7 rows, at 160x128 7, at
+240x320i10x5 11, at 128x64 5. The 240 px class keeps 6 px between rows and a separate title row;
 `uiSim --layout` fails a class whose row pitch drops below these. A narrow portrait panel (120x160) keeps the 128 px
 class's small font (24 characters a line) and takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
 (name, then "TG 91 11s ago") where it has the rows for them, else one line where the name gives way first; a single
@@ -103,7 +110,7 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 | Kind | OK does | Rows |
 |---|---|---|
 | Toggle | the other value, at once | Mode (FM / DMR, with `CONFIG_DMR`), RX only, Bandwidth (FM), Timeslot (DMR), VOX (FM), Direct mode (DMR), Talk permit beeps (DMR), Talker alias TS1 / TS2 (DMR), Scan, Battery saver |
-| Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX tone and TX tone (None, the CTCSS (PL) tones, the DCS codes normal then inverted; in a build without `CONFIG_SUBTONE`, such as the MD-380's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
+| Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX tone and TX tone (None, the CTCSS (PL) tones, the DCS codes normal then inverted; in a build without `CONFIG_SUBTONE`, such as a small-flash board's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
 | Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16777215) |
 | Text | opens Text entry | Name |
 | Pick | opens the List picker | TX contact, RX group list |
@@ -164,16 +171,15 @@ toast until voice prompts exist).
 
 VFO_TOGGLE is the VFO / MR key's short press (a board key map entry, not a side key function): between the channel
 and the VFO, "VFO" and "Back to channels". Its long press, COPY_VFO, copies the channel to the VFO (`dmr-voice.md`
-2.2). The DM-1801 Pro's VFO/MR key is the only one so far; a board with such a key gives its long press to COPY_VFO,
+2.2). A board with a dedicated VFO/MR key gives its long press to COPY_VFO,
 and `keyassignTest` checks every board's key map for it. The key is a key map entry with fixed meanings (not one of the
 `board.side_keys`), so Settings > Keys doesn't change it.
 
 EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)
 whatever the long press time (`input_long_threshold`, core/input). Which key carries it is the board's key map
-(`board.keymap`): on the DM-1701 the top side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long
-USER_3 as above); the short press stays USER_3. A hold toggles:
+(`board.keymap`): for example the top side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above), or a dedicated SOS key; the short press stays USER_3. A hold toggles:
 "EMERGENCY sent: hold again to cancel", "Emergency canceled" (`ui_svc_emergency_active` reads the radio core's state,
-so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (the DM-32UV: its top key isn't located yet).
+so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (a board whose top key isn't located yet).
 
 PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
@@ -198,7 +204,7 @@ shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", no
 ### 3.1 Side key assignment
 
 Switch: `CONFIG_KEY_ASSIGN`. The board lists the keys a user may reassign (`board.side_keys`, role order: side key 1,
-side key 2, top key; the DM-1701 has all three, the MD-380 and DM-32UV the first two). Each role has a press and a
+side key 2, top key; boards have two or three, see the board's `side_keys`). Each role has a press and a
 long press, and each takes one function:
 
 | Function (`keyfn_t`) | Action sent | Press | Long press |
@@ -289,7 +295,7 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | `CONFIG_FONT_XL` | n | the 16x32 font for 240 px and wider displays |
 | `CONFIG_FONT_AA` | n | the bitmap fonts (Spleen) on color panels; on, the sizes from 6x12 up are anti-aliased (JetBrains Mono Bold, coverage 0..3 a pixel, blended with what is under them; `gfx.c`). Mono radios leave it off. On a 4 bpp panel (every color board) the edge grays share the 16 palette entries with the screen's own colors; a screen that already uses many colors loses some of them, and some font sizes or colors can then be slightly harder to read |
 | `CONFIG_FONT_BIG` | n | on (needs `FONT_AA`), the 240 px class draws lists, labels, the status strip and hints in a 9x18 font instead of 8x16, and its small print in 8x16 instead of 6x12 |
-| `CONFIG_UI_COLOR` | y (DM-1801 Pro: n) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
+| `CONFIG_UI_COLOR` | y (n on a board with a monochrome panel) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_VFO_DMR`, `CONFIG_SCAN`, data features) are
 left out or dimmed with the feature. Some radios' default images have only a few KB free (`docs/feature-matrix.md`); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB by default) bounds the display: 240x320 at
@@ -314,7 +320,7 @@ pixels, so they hold on any display.
 ## 7. Host simulator and tests
 
 `tests/host/sim/` runs the real `core/ui` files against a simulated board (any display geometry, any of the key
-maps K DM-1701, M GD-77 style, V MD-380 style, F few keys), radio core, the usability-test codeplug (3 zones,
+maps K for a three-key board, M for a GD-77 style map, V for a two-key map, F few keys), radio core, the usability-test codeplug (3 zones,
 40 channels, 30 contacts) and the services of section 4.
 
 ```
@@ -332,10 +338,10 @@ status bar), RX, TX, the Channels list and Settings > Display are also drawn in 
 `<screen>__light.png` and `<screen>__high_contrast.png` (color displays).
 
 
-Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `160x128` (MD-380 class; both 160 px classes render through the 4 bpp frame buffer, as the boards do),
-`240x320i10x5` (DM-32: 16 colors, insets 10 px left and right, 5 px top and bottom), `128x64` (mono), `240x320`, or any
+Geometries: `160x120i5` (160x120 visible, 5 px inset left and right), `160x128` (both 160 px classes render through the 4 bpp frame buffer, as the boards do),
+`240x320i10x5` (16 colors, insets 10 px left and right, 5 px top and bottom), `128x64` (mono), `240x320`, or any
 `WxH`, `WxHiN` (inset N all round), `WxHiNxM` (N left and right, M top and bottom), `WxHm` (mono). The 240 px classes
-draw the anti-aliased fonts (`CONFIG_FONT_AA`, as the DM-32 is built), and `240x320i10x5` the larger text too
+draw the anti-aliased fonts (`CONFIG_FONT_AA`), and `240x320i10x5` the larger text too
 (`CONFIG_FONT_BIG`); the others the bitmap ones. Script tokens:
 
 | Token | Meaning |

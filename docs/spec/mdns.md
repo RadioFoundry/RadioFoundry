@@ -13,7 +13,7 @@ only; there is no IPv6 on the link.
 | Name | Value |
 |---|---|
 | Host | `rfoundry-<DMR ID>.local`, e.g. `rfoundry-3101234.local`. The DMR ID is the radio's own (the one the gateway's addresses come from) |
-| Instance | `<callsign> <board> (<DMR ID>)`, e.g. `N0CALL DM-1701 (3101234)`. `<board>` is `board.name`. The call sign is the settings' radio name, else the codeplug's, first word only; left out when there is none |
+| Instance | `<callsign> <board> (<DMR ID>)`, e.g. `N0CALL XR-100UV (3101234)`. `<board>` is `board.name`. The call sign is the settings' radio name, else the codeplug's, first word only; left out when there is none |
 | After a conflict | host `rfoundry-3101234-2`, instance `... (3101234) (2)`, counting up |
 
 | Owner | Type | Data | TTL | Kind |

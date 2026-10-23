@@ -9,7 +9,7 @@
 //   target "stock"  stock firmware back: the application from the user's stock file (in the bundle, or chosen
 //                   again), through the bootloader. The SPI flash keeps what is in it; the bundle's copy shows what
 //                   it was. Writing the whole SPI flash back needs a firmware command that doesn't exist yet
-//                   (docs/dev/website.md "Restore"), so the flasher reports what differs instead of guessing.
+//                   (docs/dev/web-flasher.md "Restore"), so the flasher reports what differs instead of guessing.
 
 import { RESTORE, makePlan } from "./plan.js";
 import { stockApplication } from "./stockfw.js";

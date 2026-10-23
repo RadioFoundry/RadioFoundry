@@ -10,9 +10,8 @@ project doesn't sell DMR firmware. The goal is a decent firmware that everyone c
 
 **Why reinvent the wheel?**
 
-No other open source firmware project covers most of these radios, and none shares this much code across makes and
-models. Earlier "open" firmware projects ended with source code taken down by its authors, licensing issues,
-disputes, or key authors closing the source of their additions.
+RadioFoundry covers most of these radios with one core under a license that lets anyone use it, so work on one
+radio helps every other.
 
 **Why another radio firmware?**
 
@@ -24,7 +23,7 @@ amateur use.
 Any way you can:
 
 - **Test and report.** Run RadioFoundry on your radio and [report what breaks](https://github.com/radiofoundry/radiofoundry/issues/new?template=bug_report.yml). If the radio restarted,
-  include the crash log from **Settings > Advanced > Crash log** ([settings](12-settings.md#crash-log)).
+  include the crash log from **Settings > Advanced > Crash log** ([settings](17-settings.md#crash-log)).
 - **Ask.** [Request a feature](https://github.com/radiofoundry/radiofoundry/issues/new?template=feature_request.yml) or [a radio](https://github.com/radiofoundry/radiofoundry/issues/new?template=radio_request.yml) you'd like supported.
 - **Contribute.** Send pull requests for code or docs ([contributing](../dev/contributing.md)).
 - **Donate or lend a radio.** This helps the most, especially older models that are hard to find now, because every
@@ -65,14 +64,13 @@ Test it before you depend on it, and transmit only where you are licensed to.
 **Does qdmr work with RadioFoundry?**
 
 Yes, through a compatibility layer. qdmr's open-firmware driver reads and writes the codeplug
-([Programming the radio](15-programming-qdmr.md)). On the DM-32UV qdmr can't write the codeplug directly
-([DM-32UV with qdmr](23-radios.md#dm-32uv-with-qdmr)).
+([Programming the radio](04-programming.md)). On a radio whose codeplug sits where qdmr's driver can't write, use the Codeplug Editor ([Radio reference](23-radios.md#programming)).
 
 **Can I program the radio without installing anything?**
 
 Yes. The Codeplug Editor on the project's web site reads and writes the radio from a Chromium-based browser (Chrome,
 Edge, Opera) and builds the DMR ID database from RadioID.net
-([The Codeplug Editor](15-programming-qdmr.md#the-codeplug-editor)).
+([The Codeplug Editor](04-programming.md#the-codeplug-editor)).
 
 **Is basic privacy secure?**
 

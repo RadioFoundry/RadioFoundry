@@ -1,17 +1,16 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Channels, zones and the VFO
+# Channels, Zones and the VFO
 
 A **channel** is a saved frequency with its mode (FM or DMR) and settings. A **zone** is a named list of channels.
-The **VFO** tunes any frequency by hand. Channels and zones come from the codeplug ([Programming with
-qdmr](15-programming-qdmr.md)).
+The **VFO** tunes any frequency by hand. Channels and zones come from the codeplug ([Programming the radio](04-programming.md)).
 
 ## Changing the channel
 
 - Turn the channel knob, or press **Up** or **Down** on Home, to step through the zone's channels.
 - Type the channel's position on Home and press **OK**. For example, **1**, **2**, **OK** goes to channel 12 of the
   zone.
-- Type letters of the channel's name on Home (see [Find](04-keys-and-navigation.md#find)) and press **OK** on it.
+- Type letters of the channel's name on Home (see [Find](05-keys-and-navigation.md#find)) and press **OK** on it.
 - Press **OK**, **4** (Zones), focus the zone and press **#**. The zone's channels open. Focus one and press **OK**.
 
 <img src="../ux/screens/160x120i5/zone_channels.png" width="200" alt="A zone's channels">
@@ -95,8 +94,8 @@ name.
 
 **OK**, **5**, then the first row, **New from current**. It opens an unsaved copy of the channel you are on, with any
 quick-settings changes, or of the VFO, at the lowest free channel number. The name gets " 2" added (from the VFO, the
-frequency). Change what differs, then hold **OK** to save it. A new channel is in no zone yet: add it to one with qdmr
-([Programming the radio](15-programming-qdmr.md)).
+frequency). Change what differs, then hold **OK** to save it. A new channel is in no zone yet: add it to one in the Codeplug Editor
+([Programming the radio](04-programming.md)).
 
 ## Saving changes to a channel
 
@@ -203,7 +202,7 @@ no mode to pick and no menu: the frequency decides.
 | The broadcast band (65 to 108 MHz on most receivers) | FM broadcast, on the radio's broadcast receiver. Home shows "Broadcast FM" |
 
 Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**, and press **OK**), or program an FM
-channel on the frequency in qdmr. Both are receive only: PTT shows "Air band: receive only" or "Broadcast: receive
+channel on the frequency in the codeplug. Both are receive only: PTT shows "Air band: receive only" or "Broadcast: receive
 only" and the radio doesn't transmit. Sub-audio tones are ignored.
 
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a

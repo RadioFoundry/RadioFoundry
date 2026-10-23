@@ -383,6 +383,8 @@ class Site:
 				"id": v["id"], "title": self.vtitle(lang, v), "summary": self.vsummary(lang, v),
 				"off": ", ".join(self.ftitle(lang, self.fmap[o["name"]]) for o in v["off"])
 				or self.t(lang, "variant.nothing_off")}, lang))
+		out.append(self.tpl.partial("variant_custom_card", {"title": self.t(lang, "variant.custom_title"),
+			"text": self.t(lang, "variant.custom_text")}, lang))
 		return "".join(out)
 
 	def radios_index(self, lang):

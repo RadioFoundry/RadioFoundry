@@ -114,7 +114,7 @@ On Home, **#** opens the actions for the current or last caller. A digit picks a
 |---|---|---|
 | 1 | Talk to | Talks to the talkgroup they were heard on, for now. After a private call, talks to them. **PTT** on this row talks once |
 | 2 | Private call | Calls them privately, for now. **PTT** on this row calls them once |
-| 3 | Message | Opens the message composer ([Messages](09-messages-and-signaling.md)) |
+| 3 | Message | Opens the message composer ([Messages](10-messages-and-signaling.md)) |
 | 4 | Radio check | Checks that their radio is on and in range |
 | 5 | Call alert | Pages their radio |
 | 6 | Position | Not built yet |
@@ -156,7 +156,7 @@ Contacts can't be added or edited on the radio yet. Use qdmr.
 - To answer a private call, press **PTT** during the reply window.
 
 While you talk, the top line says "Private" and the screen shows the contact's name
-([Transmitting](05-home-screen.md#transmitting)).
+([Transmitting](06-home-screen.md#transmitting)).
 
 ## Timeslot and color code
 
@@ -184,7 +184,7 @@ color code takes effect when the editor closes.
 <img src="../ux/screens/160x120i5/quick_cc_editor.png" width="200" alt="Editing the color code">
 
 Timeslot and color code are temporary. They can't be changed while transmitting. Hold **OK**
-to save them to the channel. In the VFO they are the VFO's own settings and are kept ([the VFO](06-channels-zones-vfo.md#dmr-in-the-vfo)).
+to save them to the channel. In the VFO they are the VFO's own settings and are kept ([the VFO](07-channels-zones-vfo.md#dmr-in-the-vfo)).
 
 ## Waking a repeater
 
@@ -226,8 +226,8 @@ To set the key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
 2. On **Key**, press **OK**. Type the key in decimal with the number keys (Motorola 1 to 255, Anytone 0 to 65535).
    Press **OK** again.
 
-The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off. qdmr
-can't write privacy keys yet. Developers can also load a key over USB with the debug tool:
+The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off. The codeplug
+can't hold privacy keys yet. Developers can also load a key over USB with the debug tool:
 
 ```
 tools/rfoundry_debug.py radio privacy moto 5          # Motorola basic privacy, key 5
@@ -245,7 +245,7 @@ how far away it is and in which direction, for example "12.3 km NE". When the ra
 it shows the caller's coordinates. Recent keeps the distance with the call.
 
 Your own position goes into your calls when **Tools > APRS > Position in DMR calls** is on (off by default) and the
-radio knows where it is (see [APRS](17-aprs.md#position)). Every other superframe carries it, taking turns with your
+radio knows where it is (see [APRS](13-aprs.md#position)). Every other superframe carries it, taking turns with your
 talker alias.
 
 ## Talker alias
@@ -255,8 +255,6 @@ alias** turns this off. The radio sends your callsign from the codeplug (8 chara
 channel's talker alias setting in the codeplug asks for it.
 
 ## Roaming
-
-*Built and host-tested, not yet tested on air.*
 
 On a system of DMR repeaters that carry the same talkgroups at different sites, the radio can move to a better
 repeater by itself when the one it's on gets weak. You turn roaming on per zone.

@@ -10,7 +10,7 @@ only what *our* radio does with it.
 ## 1. On the host port
 
 The radio has one host port: a USB CDC serial port on radios with USB (the board's `board_usb_ids`, 1FC9:0094 on
-the STM32 radios, `hardware-dm1701.md` 16), a UART on radios without (`hardware-dm32.md` 17). The host link
+the STM32 radios), a UART on radios without. The host link
 (`core/hostlink`) dispatches on the first byte of a burst:
 
 | First byte | Goes to |
@@ -56,7 +56,7 @@ then whatever came is handled (usually `-`), so a UART host port that delivers a
 short.
 
 A byte that no request starts with (anything but `R`, `W`, `X`, `C`, `D`) is dropped and counted (`cps.junk`), never
-answered. The DM-1801 Pro's programming cable sits on the microphone / speaker jack and now and then delivers a burst
+answered. A programming cable on the microphone / speaker jack now and then delivers a burst
 of noise bytes (`0xFC`, `0xFE`) between requests. Answered `-`, such a burst was read as the reply to the next request.
 
 A request longer than 2048 bytes (`CPS_REQUEST_MAX`) is dropped up to the next quiet gap and answered `-`
@@ -79,10 +79,12 @@ A range that runs off the end of the flash or the EEPROM image is refused with `
 
 The board's `hal_cps_t` (`board.cps`) supplies the radio-specific answers:
 
-| Radio | `radio_type()` | `rom_base`, `rom_size` | Details |
-|---|---|---|---|
-| DM-1701 | 8, or 10 when the factory panel type is 2 (RGB) | 0x08000000, 1 MB | `hardware-dm1701.md` 9.2 |
-| MD-380 | 7 | 0x08000000, 1 MB | `hardware-md380.md` 15 |
+| Answer | Meaning |
+|---|---|
+| `radio_type()` | The radio type byte the CPS identifies the radio by. A board may report two values by hardware version |
+| `rom_base`, `rom_size` | The internal flash range area 5 reads |
+
+Each radio's values are in its hardware spec.
 
 ### 2.3 Writes (`X`, `W`)
 
@@ -92,16 +94,16 @@ written and verified (about 100 ms). Rules:
 
 - **Writable**: the EEPROM image (0 to 64 KB) and the open-firmware flash image (`openfw_flash` to `openfw_end`). Anything
   else is refused at `X 1`. That includes the settings ring, the journal and the native area.
-- **Foreign journal**: while the settings / journal region holds another firmware's data (`settings-store.md` 5),
+- **Foreign journal**: while the settings / journal region holds foreign data (`settings-store.md` 5),
   every `X 1` is refused, because a commit would erase the journal. Reads still work, so a backup can be taken
   first.
 - **Quick-key slots** (EEPROM 0x7524-0x7537) hold the side key assignment (`ui.md` 3.1) and are written like any
   other codeplug byte. A CPS that writes back a stale copy (an old codeplug file) brings back that file's keys, the
-  same as for channels. Another firmware's values there are ignored: without RadioFoundry's marker in slot 0 the keys are the
+  same as for channels. Foreign values there are ignored: without RadioFoundry's marker in slot 0 the keys are the
   board's.
-- **Calibration** (`calibration_addr`, `calibration_size` in the board's flash map; on the DM-1701 512 bytes inside
-  the sector at 0x010000, `hardware-dm1701.md` 13.2): only the window's bytes take the CPS's values, and the rest of
-  the sector is kept. A board with no calibration window (size 0: the MD-380, the DM-32, the DB25-D) takes the sector as plain data. *Open decision: refuse calibration writes entirely.*
+- **Calibration** (`calibration_addr`, `calibration_size` in the board's flash map; for example 512 bytes inside
+  a 4 KB sector): only the window's bytes take the CPS's values, and the rest of
+  the sector is kept. A board with no calibration window (size 0) takes the sector as plain data. *Open decision: refuse calibration writes entirely.*
 - **VFO A** (EEPROM 0x7590): a commit whose VFO A record differs from what the radio would show (the CPS edited the
   VFO) is decoded into the settings store's VFO fields. A record written back unchanged is ignored. The VFO
   follows after the next boot or reload.
@@ -152,8 +154,7 @@ last session pending`.
 
 ### 2.7 Open decisions
 
-1. Radio type 8 vs 10 on the DM-1701: 10 only for panel type 2 (BGR / RGB tools' choice). qdmr treats both as
-   a DM-1701.
+1. A board with two radio types for one radio (by panel type, say): qdmr treats both as the same radio.
 2. Area 1 reads of the settings area expose the privacy keys (`settings-store.md` 3.1). Should area 1 be limited
    to the open-firmware image?
 3. Area 10 (security registers) is readable, factory calibration included. Should it be read-only, as now, or

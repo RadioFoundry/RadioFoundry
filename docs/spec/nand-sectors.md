@@ -7,8 +7,7 @@ The core's storage (`core/settings`, `core/storage`, [settings-store.md](setting
 4 KB erase units, bytes programmed at any length and alignment, several programs into one erased unit (a settings
 record, then its commit word). A NAND chip has none of that: 2 KB pages programmed once each and in order, 128 KB
 erase blocks, bad blocks. `drivers/flash/nand_sectors` presents a region of NAND blocks as a device of 4 KB sectors
-with NOR semantics. The board turns it into its `hal_flash_t` (the DB25-D: [hardware-db25d.md](hardware-db25d.md)
-6.6). It is generic: the chip is reached through `nand_dev_t` (read, program with an optional internal data move,
+with NOR semantics. The board turns it into its `hal_flash_t`; [feature-matrix.md](../feature-matrix.md) says which boards have NAND. It is generic: the chip is reached through `nand_dev_t` (read, program with an optional internal data move,
 erase, the bad-block mark), and there is no RTOS in it.
 
 ## 1. Records
@@ -19,7 +18,7 @@ of a sector programs a new record somewhere else (copy on write). The old one st
 erased, which happens only once nothing current is left in the block.
 
 Every page carries 16 bytes in its spare area at spare offset 8 (column 2056). Spare bytes 0-7 stay erased: byte 0
-is the factory bad-block mark, and the DB25-D stock firmware keeps its own block marks at bytes 4-5.
+is the factory bad-block mark, and the vendor firmware may keep its own block marks at bytes 4-5 (they are left alone).
 
 | Offset | Size | Field |
 |---|---|---|
@@ -124,7 +123,7 @@ spare area and its data matches the CRCs. A block is erased only when nothing cu
 | RAM, fixed | About 70 bytes. No page buffer: rewrites move pages inside the chip, reads go straight to the caller |
 | Mount | One spare-area read per programmed page, plus a 2 KB read for every page of current data, plus two full page reads for each block that isn't ours (the foreign-data check) |
 | A write | Two page programs and reads, plus a read of the old pages to work out the CRCs |
-| A replace | The same: two page programs (the DB25-D's CPS commit; 542 programs and 8 to 10 block erases for a whole 1.06 MB codeplug) |
+| A replace | The same: two page programs (a CPS commit; a whole 1.06 MB codeplug takes 542 programs and 8 to 10 block erases) |
 
 ## 9. Testing
 

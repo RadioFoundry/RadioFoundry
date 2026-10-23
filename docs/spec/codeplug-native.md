@@ -76,8 +76,7 @@ until the native format exists every channel uses the radio-wide slot.
 ## 4. Storage plan (not built)
 
 - **Area.** `hal_flash_map_t.native_addr` / `native_size`, set by the board: 1 MB above anything an open-firmware tool
-  writes (`openfw_end`). The CPS shim refuses writes there. Per radio: `hardware-dm1701.md` 13.2,
-  `hardware-md380.md` 12.2, `hardware-dm32.md` 17.
+  writes (`openfw_end`). The CPS shim refuses writes there. Each radio's flash map is in its hardware spec.
 - **Layout.** A header sector (magic, format version, table offsets, CRC) then fixed-size tables (channels, zones,
   contacts, lists) with a used bitmap each, sector-aligned so an edit rewrites one sector through the journal.
   The magic is the header's first word, `STORAGE_NATIVE_MAGIC` 0x4E52444F (bytes 4F 44 52 4E in memory order), already fixed

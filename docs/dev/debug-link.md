@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Debug link
+# Debug Link
 
 A small framed protocol on the radio's host port for bench automation and debugging. The full spec, with every
 command's payload, is [docs/spec/debuglink.md](../spec/debuglink.md).

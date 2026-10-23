@@ -1,10 +1,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# MD-380 migration from stock or md380tools firmware
+# MD-380 migration from stock firmware
 
-How `tools/md380_migrate.py` moves a TYT MD-380, MD-390 or Retevis RT3 from its stock firmware (or the md380tools /
-KD4Z toolkit patched firmware) to RadioFoundry and keeps the codeplug and the DMR ID database. The user guide is
-[Moving from stock or md380tools firmware](../user/18-moving-from-stock-md380.md).
+How `tools/md380_migrate.py` moves a TYT MD-380, MD-390 or Retevis RT3 from its stock firmware to RadioFoundry and keeps the codeplug and the DMR ID database. The user guide is
+[Moving from stock MD-380 firmware](../user/18-moving-from-stock-md380.md).
 
 The codeplug conversion uses qdmr's command line tool `dmrconf` as an external program. qdmr is GPL: RadioFoundry runs it,
 reads its manual and `--help`, and contains none of its code. Facts below marked (T) were tested with dmrconf
@@ -19,7 +18,7 @@ reads its manual and `--help`, and contains none of its code. Facts below marked
 | Commands used | `detect`, `read` (stock radio only), `decode`, `decode --manufacturer`, `encode`, `encode-db`, `write-db`. Not `write`: against RadioFoundry it fails reading the radio first ([codeplug-port.md](codeplug-port.md) 4) |
 | TYT CPS files (.rdt) | `decode --manufacturer --radio md390 FILE.rdt OUT.yaml`. dmrconf requires exactly 262709 bytes (T). That is a 549-byte header, the 256 KB codeplug image and a 16-byte trailer. A synthetic .rdt with a zero header and trailer around an image decodes the same as dmrconf's own binary (T) |
 | md390 binary (dmrconf `.dfu`) | One DfuSe element, codeplug addresses 0x2000-0x40000 of the 256 KB image (T) |
-| Raw 256 KB image (md380tools codeplug dump) | Not read by dmrconf directly. The tool wraps it in a zero .rdt frame (`raw_to_rdt`) and decodes that |
+| Raw 256 KB image | Not read by dmrconf directly. The tool wraps it in a zero .rdt frame (`raw_to_rdt`) and decodes that |
 | Over RadioFoundry's limits | `encode --radio openuv380` silently keeps the first 68 zones and 76 RX group lists (T). The tool reports what would be dropped before it flashes |
 | Callsign DB, md390 | `encode-db --radio md390` fails: "Not implemented for 'md390'" (T). Not needed: the database goes to the radio once it runs RadioFoundry |
 | Callsign DB, openuv380 | `write-db --radio openuv380 --id ID [--database FILE] [--limit N]`. Without `--database`, dmrconf downloads the public database itself |
@@ -42,9 +41,8 @@ reads its manual and `--help`, and contains none of its code. Facts below marked
 - The rest of the open-firmware image still holds stock bytes after the claim. The restore writes the encoded image
   through `cps_client.py`, which doesn't read the old contents to decode them ([codeplug-port.md](codeplug-port.md)
   4). The DMR ID database
-  header at flash 0x50000 is past the 256 KB stock codeplug. md380tools keeps its user database at 0x100000 and up,
-  inside RadioFoundry's open-firmware flash image. The ID database upload overwrites what it needs, and nothing else reads that
-  area.
+  header at flash 0x50000 is past the 256 KB stock codeplug. The 0x100000 and up range lies inside RadioFoundry's
+  open-firmware flash image. The ID database upload overwrites what it needs, and nothing else reads that area.
 
 ## 3. Firmware images
 
@@ -81,7 +79,7 @@ Every step stops on failure. The work directory (`~/RadioFoundry-MD380-migration
 
 ## 5. Open points (need a radio)
 
-- Does `dmrconf read --radio md390` read an MD-380 and an RT3? Does it read one running md380tools?
+- Does `dmrconf read --radio md390` read an MD-380 and an RT3?
 - The USB strings of the TYT bootloader compared with normal programming mode.
 - Whether qdmr's OpenUV380 driver accepts radio type 7 from RadioFoundry without `--radio`. The tool always passes it.
 - How long `write-db` takes over RadioFoundry's shim with a full database. Expect minutes.

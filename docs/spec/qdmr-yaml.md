@@ -98,6 +98,8 @@ uses its defaults.
 
 ### 3.2 Contacts
 
+`openGD77` is the name qdmr gives its block of per-contact and per-channel extension keys for the open-firmware radios.
+
 | qdmr | Editor |
 |---|---|
 | `dmr.name` | Name (16 characters) |

@@ -22,7 +22,7 @@ room. The [Radio reference](23-radios.md) lists them and says where APRS is veri
 
 ## The APRS page
 
-Press **OK**, **6** (Tools), then **APRS** (the last row). The top of the page shows your callsign, the APRS
+Press **OK**, **6** (Tools), **8** (APRS). The top of the page shows your callsign, the APRS
 frequency, your position and its source, and when the next beacon goes out. If the radio can't send, it says why.
 
 | Row | What it does |
@@ -36,7 +36,7 @@ frequency, your position and its source, and when the next beacon goes out. If t
 | SmartBeaconing | More often when you move fast, at once after a turn, rarely when you stand still |
 | Send via | AFSK (on FM), DMR, or both |
 | Position | Where the position comes from, and the fixed position (see Position below) |
-| Position in DMR calls | Your position in your DMR voice calls (see [DMR](08-dmr.md#position-in-calls)) |
+| Position in DMR calls | Your position in your DMR voice calls (see [DMR](09-dmr.md#position-in-calls)) |
 | KISS on USB | The radio works as a KISS TNC for APRS programs on the computer |
 | Stations heard | Stations the radio heard (radios that can receive APRS) |
 
@@ -74,7 +74,7 @@ turned it on) passes packets on.
 - It listens only on the APRS frequency, in FM, and the tuned frequency must equal the APRS **Frequency** exactly.
   On other channels nothing is decoded.
 - The volume knob doesn't matter: a radio turned all the way down still decodes.
-- On the DM-1701 a packet must be strong enough to open the squelch. Keep the squelch at its usual level, not tight.
+- On a radio that decodes only what opens the squelch ([Radio reference](23-radios.md)), a packet must be strong enough to open it. Keep the squelch at its usual level, not tight.
 - Battery saving pauses while the radio listens for APRS: a sleeping receiver misses packets.
 - Receiving is on by default. Turn it off with `tools/rfoundry_debug.py aprs set rx 0`.
 
@@ -121,6 +121,6 @@ Turn on **KISS on USB**, then run `tools/aprs_gate.py --port <radio port>`:
 The radio can't be in hotspot mode at the same time.
 
 In USB network mode the radio does both without the helper. APRS programs connect to the radio's address on TCP
-port 8001 directly ([Services on the radio](14-usb-network.md#services-on-the-radio)). The radio logs in to an
-APRS-IS server itself ([APRS-IS from the radio](14-usb-network.md#aprs-is-from-the-radio)). KISS on USB must be on
+port 8001 directly ([Services on the radio](15-usb-network.md#services-on-the-radio)). The radio logs in to an
+APRS-IS server itself ([APRS-IS from the radio](15-usb-network.md#aprs-is-from-the-radio)). KISS on USB must be on
 for both.

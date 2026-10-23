@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# USB network mode
+# USB Network Mode
 
 In USB network mode the radio is a USB network adapter for the computer. It routes IPv4 packets to other radios over
 DMR packet data. It serves a status page, rig control, KISS, TFTP and SNMP to the computer. It is in the images for
@@ -68,7 +68,7 @@ only by their serial USB ID, so program the radio in serial mode.
 
 The radio answers Multicast DNS (Bonjour, Avahi) on the network adapter. Its name is `rfoundry-<DMR ID>.local`, for
 example `rfoundry-3101234.local`. It advertises its services. A browser for Bonjour services lists it by your call sign,
-the radio model and your DMR ID, for example "N0CALL DM-1701 (3101234)":
+the radio model and your DMR ID, for example "N0CALL XR-100UV (3101234)":
 
 ```
 ping rfoundry-3101234.local
@@ -182,8 +182,7 @@ write**. Reading stays possible.
 
 ## Monitoring the radio with SNMP
 
-The radio answers SNMP version 2c requests at its address, port 161 (not on the MD-380's standard image, which leaves
-SNMP out for flash room). Any SNMP manager works. The repository has a
+The radio answers SNMP version 2c requests at its address, port 161 (not in builds that leave SNMP out for flash room). Any SNMP manager works. The repository has a
 small one:
 
 ```
@@ -214,8 +213,7 @@ from emergencies, they go at most once a minute. Nothing is encrypted. SNMP comm
 ## Network over the programming cable (PPP)
 
 Radios without USB ([Radio reference](23-radios.md)) can get the same network over their programming cable with PPP. A
-radio's image includes PPP when the radio has no USB and runs DMR. Other builds need `CONFIG_NET_PPP=y`. PPP has
-been checked on the DB25-D PRO and the DM-1801 Pro. Run this on the computer as root. pppd comes with macOS and most Linux systems.
+radio's image includes PPP when the radio has no USB and runs DMR. Other builds need `CONFIG_NET_PPP=y`. Run this on the computer as root. pppd comes with macOS and most Linux systems.
 
 ```
 sudo tools/rfoundry_ppp.sh /dev/ttyUSB0                 # Linux

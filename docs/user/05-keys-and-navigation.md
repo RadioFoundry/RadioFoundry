@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Keys and navigation
+# Keys and Navigation
 
 Each key does the same kind of thing on every screen.
 
@@ -30,18 +30,18 @@ a key the radio doesn't have.
 | **OK** | Home: open the hub. Lists: open or choose | Save or make permanent |
 | **Back** | Back one level. Home: undo one temporary change | Home |
 | **Up**, **Down** | Move the focus. Home: next or previous channel (VFO: frequency step), or zone or talk target with **Settings > Keys > Up/Down on Home** (the channel knob stays on the channel). Editors: change the value | Repeats |
-| **\*** | Quick settings. While you transmit on FM with **PTT**: its [touch tone](07-fm.md#touch-tones-dtmf) | Lock or unlock the keys |
-| **#** | While you transmit on FM with **PTT**: its [touch tone](07-fm.md#touch-tones-dtmf). Otherwise: actions for the focused item. Home: actions for the last caller. VFO: tunes a frequency being typed, as **OK** | DMR channels: the talk target picker (pick a talkgroup, or type an ID). Recent is **OK**, **3** |
-| **0** to **9** | Home: start Find. Lists: pick a numbered row, or type to filter. VFO: type a frequency. While you transmit with **PTT**: FM sends the key's [touch tone](07-fm.md#touch-tones-dtmf), DMR nothing | Home: speed dial (not built yet). While you transmit with **PTT**: as a press |
+| **\*** | Quick settings. While you transmit on FM with **PTT**: its [touch tone](08-fm.md#touch-tones-dtmf) | Lock or unlock the keys |
+| **#** | While you transmit on FM with **PTT**: its [touch tone](08-fm.md#touch-tones-dtmf). Otherwise: actions for the focused item. Home: actions for the last caller. VFO: tunes a frequency being typed, as **OK** | DMR channels: the talk target picker (pick a talkgroup, or type an ID). Recent is **OK**, **3** |
+| **0** to **9** | Home: start Find. Lists: pick a numbered row, or type to filter. VFO: type a frequency. While you transmit with **PTT**: FM sends the key's [touch tone](08-fm.md#touch-tones-dtmf), DMR nothing | Home: speed dial (not built yet). While you transmit with **PTT**: as a press |
 | **Previous zone**, **Next zone** | Home: previous or next zone | |
 | **Monitor** | FM: opens the squelch while held. DMR: digital monitor (every talkgroup) on or off | |
 | **Talk target** | Talk target picker (DMR channels) | Dual watch on or off |
-| **Power level** | Home: next power level | Hold 1.5 s: emergency ([Emergency](10-emergency.md)) |
+| **Power level** | Home: next power level | Hold 1.5 s: emergency ([Emergency](11-emergency.md)) |
 | **PTT** | Transmit | |
 | Channel knob | Each click is one step. Clockwise: the next channel on Home (as **Up**), the next row down in a list or menu, a higher value in an editor. Counterclockwise: the opposite | |
 
 The side keys (**Monitor**, **Talk target** and **Power level** on most radios) can do other jobs. Set them in
-**Settings > Keys** ([Settings](12-settings.md#keys-key-8)) or in the codeplug.
+**Settings > Keys** ([Settings](17-settings.md#keys-key-8)) or in the codeplug.
 
 Each key press gives a short key beep unless **Settings > Sound > Key tones** is off.
 

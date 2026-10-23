@@ -5,7 +5,7 @@
 
 A containerized runner for this repository's Linux CI jobs, for a Docker host you own: a fresh container for every
 job, and no way out to the network except HTTPS to GitHub. The workflows use it when the repository variable
-`RFOUNDRY_CI_RUNNER` is set to its label (`rfoundry-ci`); [docs/dev/ci.md](../../docs/dev/ci.md#the-github-self-hosted-runner)
+`RFOUNDRY_CI_RUNNER` is set to its label (`rfoundry-ci`); [docs/dev/ci-runners.md](../../docs/dev/ci-runners.md#the-github-self-hosted-runner)
 explains the routing and why pull requests from forks never reach it.
 
 | File | What |
@@ -84,7 +84,7 @@ the limit reclaims first, so six runners at 1200m fit an 8 GB host with no swap.
 the cores.
 
 One runner can be kept for the UI gallery: give it `LABELS=rfoundry-ui` and set the repository variable `RFOUNDRY_UI_RUNNER` to
-`rfoundry-ui` ([docs/dev/ci.md](../../docs/dev/ci.md#the-github-self-hosted-runner)). Labels are set when the runner
+`rfoundry-ui` ([docs/dev/ci-runners.md](../../docs/dev/ci-runners.md#the-github-self-hosted-runner)). Labels are set when the runner
 registers; to change a registered runner's, re-register it or set them in the repository's Settings, Actions, Runners.
 
 ```sh

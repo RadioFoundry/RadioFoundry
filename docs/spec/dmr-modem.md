@@ -5,8 +5,8 @@
 What a fresh DMR Tier II stack must do on top of any baseband modem (Hongrui HR_C6000, HR_C7000, HR_C5000, a
 future software modem), and the interface a modem driver offers it. Protocol facts are from ETSI TS 102 361-1 (air
 interface), -2 (voice and generic services) and -3 (packet data); clause numbers are given where useful. Modem
-facts come from `modem-hrc6000.md` (HR_C6000, on air on the DM-1701) and from the HR_C7000 port (DM-32, built and
-checked against disassembly, not yet on air), and are marked as such.
+facts come from `modem-hrc6000.md` (HR_C6000) and `modem-hrc7000.md` (HR_C7000), and are marked as such. Which radios
+carry which modem, and what has been checked on each, is in [feature-matrix.md](../feature-matrix.md).
 
 Terms: **slot** = one 30 ms TDMA timeslot; **frame** = two slots (60 ms); **superframe** = six voice bursts A-F on
 one slot (360 ms); **inbound** = MS to BS (repeater input); **outbound** = BS to MS; **RMO** = through a repeater,
@@ -263,7 +263,7 @@ transmitting in the slot after the next one, in phase with the bursts being rece
 
 ## 5. What the modems provide
 
-| | HR_C6000 (DM-1701, MD-UV380, MD-9600, GD-77) | HR_C7000 (DM-32) | HR_C5000 (MD-380) |
+| | HR_C6000 | HR_C7000 | HR_C5000 |
 |---|---|---|---|
 | Host interface | external chip; config SPI (page/register) + voice SPI + I2S | on-chip peripheral of the CK803S SoC, memory-mapped 32-bit registers | external; like the C6000 but config page 0 |
 | Interrupts | timeslot, system, RF TX (RF RX not routed on the STM32 radios) | system (vector 61), TX timeslot (62), RX timeslot (63), RF TX (64) | timeslot, system, RF |
@@ -357,8 +357,8 @@ interrupt.
 
 ## 7. Gaps and uncertainties
 
-- The HR_C7000 facts are from a build checked against disassembly of other firmware; nothing is on air yet.
+- The HR_C7000 facts come from the chip's manual and the port. What has been seen on air is in the "Checked on each radio" records of [feature-matrix.md](../feature-matrix.md#checked-on-each-radio).
 - RF TX interrupt lead on the HR_C6000 has not been measured.
 - Whether the C7000 has the double voice report and the stale LC behavior (assumed, as it derives from the C6000).
-- ETSI hang time and wake-up retry timings are configuration in practice; the 600 ms retry is the TYT firmware's.
+- ETSI hang time and wake-up retry timings are configuration in practice; the 600 ms retry is a common vendor value.
 - Enhanced privacy (PI header, burst F IV) is not exercised by any of our drivers.

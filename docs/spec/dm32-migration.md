@@ -1,15 +1,25 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# DM-32UV flashing and migration from stock firmware
+# DM-32UV flashing and migration from the vendor firmware
 
 How `tools/serial_loader.py` writes firmware through the Baofeng bootloader, and how `tools/dm32_migrate.py` moves a
 DM-32UV from its stock firmware to RadioFoundry and keeps the codeplug. The user guide is
 [Moving from stock DM-32UV firmware](../user/19-moving-from-stock-dm32.md). The MD-380 counterpart, whose structure
 and safety rules this follows, is [md380-migration.md](md380-migration.md).
 
-**Status: untested on hardware.** Neither tool has talked to a radio. Facts marked (T) were tested with dmrconf
+Neither tool has been run against a radio (see `docs/testing/dm32-bringup.md`). Facts marked (T) were tested with dmrconf
 0.15.1 on files, or against the simulators in the self-tests. qdmr is GPL: RadioFoundry runs `dmrconf` as an external
 program and contains none of its code.
+
+| Section | Contents |
+|---|---|
+| 1 | The flasher |
+| 2 | Where the codeplug goes on RadioFoundry |
+| 3 | dmrconf facts |
+| 4-5 | The migration sequence and its conversion report |
+| 6-7 | The kit and the self-test |
+| 8 | Open points |
+
 
 ## 1. The flasher (`serial_loader.py`)
 
@@ -60,7 +70,7 @@ So the tool uses dmrconf only offline (encode, decode) and writes with `tools/cp
 
 | Item | Fact |
 |---|---|
-| Radio keys (0.15.1) | `dm32uv` (stock Baofeng DM-32UV), `openuv380` (qdmr's open firmware driver for the STM32 radios: the open-firmware layout RadioFoundry serves) |
+| Radio keys (0.15.1) | `dm32uv` (the Baofeng DM-32UV firmware), `openuv380` (qdmr's open firmware driver for the STM32 radios: the open-firmware layout RadioFoundry serves) |
 | Stock read | `dmrconf read --radio dm32uv [--device PORT] backup-stock.dfu` over the programming cable. Untested: whether `--device` wants the full path, and whether detection works on its own |
 | dm32uv binary (T) | One DfuSe target "Baofeng DM32UV Codeplug", 4 KB elements at data flash addresses (0x4000, 0xB000, 0xF000..0x12000, 0x42000, ...) |
 | openuv380 binary (T) | DfuSe with an empty "EEPROM" target and a "FLASH" target of four elements at the wire addresses 0x80 (0x5FE0 bytes), 0x7500 (0x3B00), 0x20000 (0x11A0), 0x9B000 (0x13E60). These are exactly qdmr's write regions ([cps-protocol.md](cps-protocol.md) 2.5) |
@@ -134,5 +144,5 @@ finds the calibration page. Then the flasher's self-test.
 - Whether the shim's 32-byte requests over UART0 are reliable at 115200; a larger `CPS_BLOCK` would be faster.
 - Whether the stock firmware leaves data at 0x700000 and up (voice recordings, 10.1). The tool saves those
   regions before writing; RadioFoundry's codeplug decoder ignores bytes outside qdmr's regions.
-- Radio type: reporting 11 (as the open-firmware CPS expects) or 6. A shim-side offset for area 1 on the DM-32 would let
-  qdmr program the radio directly; this tool would then need `CPS_OFFSET = 0`.
+- The radio info reports type 6. A shim-side offset for area 1 on this board would let qdmr program the radio directly;
+  this tool would then need `CPS_OFFSET = 0`.

@@ -95,8 +95,8 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-fifo"></a>FIFO | First in, first out: a queue of data between a producer and a consumer. |
 | <a id="t-fsk"></a>FSK | Frequency shift keying: data as frequency steps. DMR uses 4-level FSK. |
 | <a id="t-gpio"></a>GPIO | General purpose input/output: a pin the firmware can read or drive. |
-| <a id="t-hr-c6000"></a>HR_C6000 (HRC6000, C6000) | The HRC6000 family: the baseband chip that codes and decodes DMR bursts in the DM-1701 and MD-380 class radios. |
-| <a id="t-hr-c7000"></a>HR_C7000 (HRC7000, C7000) | The HRC7000 family: the baseband chip of the DM-32UV and DM-1801 Pro class radios. |
+| <a id="t-hr-c6000"></a>HR_C6000 (HRC6000, C6000) | The HRC6000 family: the baseband chip that codes and decodes DMR bursts. The radios that use it are in the radio survey. |
+| <a id="t-hr-c7000"></a>HR_C7000 (HRC7000, C7000) | The HRC7000 family: the baseband chip of the C-SKY class radios. The radios that use it are in the radio survey. |
 | <a id="t-i2c"></a>I2C (I²C) | Inter-integrated circuit: a 2-wire bus for small chips such as the RF transceiver. |
 | <a id="t-i2s"></a>I2S | Inter-IC sound: the bus audio samples travel on between chips. |
 | <a id="t-jtag"></a>JTAG | A debug and test port of many processors. |
@@ -114,7 +114,7 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-snr"></a>SNR | Signal to noise ratio. |
 | <a id="t-spi"></a>SPI | Serial peripheral interface: the 4-wire bus the processor uses to talk to chips such as the modem. |
 | <a id="t-sram"></a>SRAM | Static RAM: the processor's fast working memory. |
-| <a id="t-stm32"></a>STM32 (STM32F4, STM32F405) | STMicroelectronics' family of ARM microcontrollers. The DM-1701 and MD-380 class radios use them. |
+| <a id="t-stm32"></a>STM32 (STM32F4, STM32F405) | STMicroelectronics' family of ARM microcontrollers. The radios that use it are in the radio survey. |
 | <a id="t-swd"></a>SWD | Serial wire debug: the two-wire debug port of ARM processors. |
 | <a id="t-synthesizer"></a>Synthesizer | The part that makes the radio's transmit and receive frequencies. |
 | <a id="t-tcxo"></a>TCXO | Temperature compensated crystal oscillator: the stable clock the radio's frequency is derived from. |

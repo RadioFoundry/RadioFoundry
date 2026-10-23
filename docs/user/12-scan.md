@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Scan and dual watch
+# Scan and Dual Watch
 
 Which radios have scan and dual watch verified is in the [Radio reference](23-radios.md).
 
@@ -67,7 +67,7 @@ VFO. It is two frequencies, not the two timeslots of one DMR frequency.
 1. Go to the channel you want as A.
 2. Press **\***, then **7** (the **Dual watch** quick tile). The first time, B is the next channel in A's zone
    (in a zone of one channel: the first channel of the next zone, or the VFO). Later it starts with the last B. Two
-   presses are all it takes. Holding **SK2** does the same.
+   presses are all it takes. Holding the **A/B** key does the same.
 
 Home shows both channels, A over B, and "DUAL" in the status strip.
 
@@ -130,9 +130,8 @@ starts over with each reply and each call there. After it, the selection goes ba
 
 ### Talk on B
 
-Press **#**, **1** ("Talk on B"). B is now the selected channel. On a radio with a Left / Right pair (DM-1801 Pro,
-DM-32UV), **Right** selects B and **Left** selects A. A press of **SK2** (the tone key on the DB25-D PRO) switches, and so does any side
-key set to **A/B** (Settings > Keys). With dual watch off, the **A/B** key only says "Turn on dual watch first". Hold **PTT** to talk. The watch goes on after you let go.
+Press **#**, **1** ("Talk on B"). B is now the selected channel. On a radio with a Left / Right pair, **Right** selects B and **Left** selects A. A press of the **A/B** key
+switches, and so does any side key set to **A/B** (Settings > Keys). With dual watch off, the **A/B** key only says "Turn on dual watch first". Hold **PTT** to talk. The watch goes on after you let go.
 
 <img src="../ux/screens/160x120i5/home_dual_on_b.png" width="200" alt="Dual watch Home with B selected">
 
@@ -160,7 +159,7 @@ A channel you pick in Find, Channels or Zones becomes the selected channel; pick
 the selected channel into a VFO. A and B each get their own VFO, so both can be VFOs on different frequencies; the
 radio remembers both. Hotspot mode and a codeplug write don't stop dual watch.
 
-The zone keys (**Previous zone** and **Next zone**, P1 and P2 on the DM-1701) move the selected channel to the
+The zone keys (**Previous zone** and **Next zone**) move the selected channel to the
 previous or next zone, on the zone's first channel that isn't the other one ("A zone: Simplex"). Dual watch goes on.
 The **Home zone** key moves it to the first zone. If **Up** / **Down** are set to **Zone** (Settings > Keys), they do
 the same, and the knob still steps the channel.
@@ -169,7 +168,7 @@ the same, and the knob still steps the channel.
 
 Press **Back** twice on Home. The first press says "Press Back again to stop dual watch", so a stray press doesn't stop
 it. If you entered a frequency or changed a setting for now, **Back** clears that first. The radio stays on the
-selected channel ("Dual watch off: on B"). These stop it too: **\***, **7**; holding **SK2**; **#**, **5**; and a side
+selected channel ("Dual watch off: on B"). These stop it too: **\***, **7**; holding the **A/B** key; **#**, **5**; and a side
 key set to **Dual watch**. Starting a scan (**OK**, **6**, **1**, or the **Scan** key) stops it, staying on the selected
 channel. Nothing else stops it. If the radio can't go on with a channel (it was deleted, for example), Home says where
 the radio is: "Dual watch off: on COUNTY DMR".
@@ -182,10 +181,10 @@ the radio is: "Dual watch off: on COUNTY DMR".
 | **#** | The dual watch actions |
 | **\*** | The quick settings of the selected channel |
 | **Up** / **Down**, the knob | The selected channel moves through its zone (VFO: a step) |
-| **A/B** key (a press of **SK2**, or Settings > Keys), **Left** / **Right** | The other channel / A / B. With dual watch off, the **A/B** key says "Turn on dual watch first" |
+| **A/B** key (a press, or Settings > Keys), **Left** / **Right** | The other channel / A / B. With dual watch off, the **A/B** key says "Turn on dual watch first" |
 | **Previous zone**, **Next zone**, **Home zone** | The selected channel goes to another zone |
 | **Monitor** (held) | Opens the squelch on the selected channel. Dual watch waits there until you let go |
-| **Dual watch** key (Settings > Keys), hold **SK2** (the tone key on the DB25-D PRO) | Starts (with the last B) and stops |
+| **Dual watch** key (Settings > Keys), hold the **A/B** key | Starts (with the last B) and stops |
 | **VFO** | The selected channel to the VFO, and back |
 | **Back**, twice | Stops, staying on the selected channel |
 

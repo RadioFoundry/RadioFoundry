@@ -4,6 +4,14 @@
 the host tools; each radio adds a thin board layer. It brings the FM and DMR features low-cost stock firmware leaves
 out, with a UI designed from first principles. Anyone can use it for anything, commercial products included.
 
+### 🌐 [radiofoundry.org](https://radiofoundry.org)
+
+**The website is the recommended way to install RadioFoundry and to edit your radio's codeplug.** In a Chromium browser
+(Chrome, Edge), plug in the radio and use the [web installer](https://radiofoundry.org/flash/index.html) to back up,
+install, update and restore, and the [Codeplug Editor](https://radiofoundry.org/codeplug/index.html) for channels, zones,
+contacts and the DMR ID database. Nothing to install, and your files never leave your computer. The command line tools
+and the [manual steps](docs/user/02-installing.md) are for scripting and for browsers that can't talk to a radio.
+
 **[Install](docs/user/02-installing.md)** · **[User manual](docs/user/README.md)** · **[Radios](#radios-and-status)** ·
 **[Features](#features)** · **[Developer docs](docs/dev/README.md)**
 
@@ -55,7 +63,7 @@ by the UI simulator (`make -C tests/host ui-gallery`).</sub>
 ● done&nbsp;&nbsp; ◐ partly, or only in the linked pull request so far&nbsp;&nbsp; ○ not yet
 
 - **Releases** carry firmware for the supported radios (without the codec), `rfoundry` for Windows, macOS and Linux,
-  and the user manual as a PDF. Nothing to build: see [Installing](docs/user/02-installing.md).
+  and the user manual as a PDF. Nothing to build: install with the [web installer](https://radiofoundry.org/flash/index.html), or see [Installing](docs/user/02-installing.md).
 - **What has been checked on the air**, per feature and per radio: [on-air coverage](docs/testing/on-air-coverage.md)
   and the [feature matrix](docs/feature-matrix.md#checked-on-each-radio). "Host-tested" means it works against
   simulated chips, not yet on air.
@@ -78,7 +86,7 @@ by the UI simulator (`make -C tests/host ui-gallery`).</sub>
 | **Hotspot** | The radio is an MMDVM modem over USB, including MMDVM single frequency repeating ([mmdvm-protocol](docs/spec/mmdvm-protocol.md), [sfr](docs/spec/sfr.md)) |
 | **USB network** | The radio is a USB network adapter that routes IP over DMR, with a status page, rigctld, KISS over TCP, APRS-IS, mDNS, TFTP and SNMP on the link ([usb-network](docs/spec/usb-network.md), [tcp-services](docs/spec/tcp-services.md)) |
 | **Split duplex repeater** | Experimental: two radios on one MMDVM host as a full duplex repeater ([split-duplex](docs/spec/split-duplex.md)) |
-| **Programming** | qdmr, or the Codeplug Editor on the web site ([cps-protocol](docs/spec/cps-protocol.md)) |
+| **Programming** | The Codeplug Editor on the web site, or qdmr ([cps-protocol](docs/spec/cps-protocol.md)) |
 | **UI** | Designed from first principles, the same on a 128x64 mono LCD or a 240x320 color panel, keypad or knob, with press budgets checked by the host tests ([principles](docs/ux/principles.md), [screens](docs/ux/screens/)) |
 
 What each radio supports is in the [feature matrix](docs/feature-matrix.md). Every feature that costs flash has a
@@ -99,7 +107,7 @@ modems (HR_C5000, HR_C6000, HR_C7000) and four RF chips (AT1846S, BK4819, FD6818
 | Location | Motorola LRRP location answers and ARS registration; ETSI GPS Info in voice calls (the caller's position shown with distance and bearing, ours sent from the APRS position); APRS position, status and messages on FM (Bell 202 AFSK) and positions over DMR to an APRS gateway ID; KISS TNC on USB | NMEA from the radio's GPS receiver, ETSI UDT location reports, APRS receive and iGate on radios that can sample received audio |
 | Signaling | call alert, radio check and emergency, each in the Motorola and ETSI forms; talker alias in all four ETSI formats | DTMF and 5-tone on FM |
 | Privacy and encryption | Motorola Basic Privacy, Anytone 16-bit Basic Privacy | ARC4 and AES-256 per the DMR Association interoperability profiles |
-| Programming | qdmr, over the GD-77-style CPS protocol. The Codeplug Editor on the web site: every RadioFoundry radio over USB or the programming cable, CSV and qdmr YAML import and export, DMR ID database and contacts from RadioID.net | an open, published native codeplug format with its own qdmr driver |
+| Programming | The Codeplug Editor on the web site: every RadioFoundry radio over USB or the programming cable, CSV and qdmr YAML import and export, DMR ID database and contacts from RadioID.net. qdmr, over its open-firmware codeplug protocol | an open, published native codeplug format with its own qdmr driver |
 | Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter (confirmed data, SAP 3 compressed UDP headers, control station mode for dispatch software); HTTP status, Hamlib rigctld, KISS over TCP, APRS-IS, mDNS, TFTP and SNMPv2c on the USB link; two radios as one full duplex repeater (experimental, build switch; each half passes on air, one pair checked on the bench) | the split duplex host side (`tools/split_duplex_host.py` is a test host) |
 | Audio to a computer | | USRP over UDP (AllStarLink, DVSwitch), USB sound card with serial-line PTT ([usb-audio](docs/spec/usb-audio.md)) |
 
@@ -161,10 +169,8 @@ of selling DMR firmware, we just want everyone to have access to a decent one.
 
 **Why reinvent the wheel?**
 
-There is no current truly open source effort to make a firmware for most of these radios, and definitely not one
-that tries to share this much code across all makes and models. Any prior major "open" firmware efforts have ended up
-with source code being taken down by authors, licensing issues, arguments and fights, or key authors closed-sourcing
-their additions to the project.
+RadioFoundry covers most of these radios with one core under a license that lets anyone use it, so work on one radio
+helps every other.
 
 **Why another radio firmware?**
 
@@ -176,7 +182,7 @@ useful in commercial service and to hams alike.
 Any way you can:
 
 - **Test and report.** Run RadioFoundry on your radio and [report what breaks](https://github.com/radiofoundry/radiofoundry/issues/new?template=bug_report.yml). If the radio restarted,
-  include the crash log from **Settings > Advanced > Crash log** ([settings](docs/user/12-settings.md#crash-log)).
+  include the crash log from **Settings > Advanced > Crash log** ([settings](docs/user/17-settings.md#crash-log)).
 - **Ask.** [Request a feature](https://github.com/radiofoundry/radiofoundry/issues/new?template=feature_request.yml) or [a radio](https://github.com/radiofoundry/radiofoundry/issues/new?template=radio_request.yml) you'd like supported.
 - **Contribute.** Send pull requests for code or docs ([contributing](docs/dev/contributing.md)).
 - **Donate or lend a radio.** This helps the most, especially older models that are hard to find now, because every
@@ -208,7 +214,7 @@ the reverse engineering and documentation behind it made this project possible. 
 - The OpenDM32 project, for its DM-32UV research.
 - Jonathan Naylor G4KLX and the MMDVM and MMDVMHost contributors, for open hotspots and repeaters.
 - Cort Buffington N0MJS and the HBlink contributors, for open DMR networking.
-- Hannes Matuschek DM3MAT and the qdmr contributors, for qdmr, RadioFoundry's main programming software.
+- Hannes Matuschek DM3MAT and the qdmr contributors, for qdmr, which RadioFoundry radios work with.
 
 ## Contributing
 

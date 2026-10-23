@@ -7,6 +7,12 @@ How the radio keeps its own state across power cycles (`core/settings`) and how 
 rewritten without a power cut corrupting them (`core/storage`). Both live in the board's SPI NOR. Both are generic:
 the board gives the addresses in its `hal_flash_map_t` (`board.flash->map`) and core code never names a radio.
 
+| Section | Topic |
+|---|---|
+| 1, 2, 3 | Areas, settings records, fields and the append-only rule |
+| 4, 5 | The sector journal, the foreign region guard |
+| 6 | Testing |
+
 ## 1. Areas
 
 The board's flash map (`hal/hal_flash.h`) names these areas. A board without a map runs everything from RAM: the
@@ -23,20 +29,12 @@ settings start from the defaults at every boot and nothing can be written.
 | `native_addr` / `native_size` | reserved for the native codeplug (`codeplug-native.md` 4) |
 | `staging_addr` / `staging_size` | a new codeplug image waits here, checked, before it replaces the stored one (the TFTP write, `tftp.md` 4); never written by the open-firmware CPS (above `openfw_end`); 0 when the board has none |
 
-The settings ring and journal go where no open-firmware tool reads or writes, and the CPS shim refuses to write there. The
-boards' maps:
-
-| Field | DM-1701, MD-380 (16 MB part) | DM-32UV | DB25-D PRO (NAND, 2.375 MB logical) |
-|---|---|---|---|
-| `settings_addr` / `settings_size` | 0x011000, 32 KB (8 sectors) | 0x711000, 32 KB (8 sectors) | 0x011000, 32 KB (8 sectors) |
-| `journal_addr` | 0x019000 | 0x719000 | 0x019000 |
-| `openfw_eeprom` | 0x000000 | 0x700000 | 0x000000 |
-| `openfw_flash` | 0x020000 | 0x720000 | 0x020000 |
-| `openfw_end` | 0xE00000 | 0xF00000 | 0x120000 |
-| `calibration_addr` / `_size` | DM-1701 0x010000, 512 B; MD-380 none | none | none |
-| `native_addr` / `native_size` | 0xE00000, 1 MB | 0xF00000, 1 MB | 0x120000, 1 MB |
-| `staging_addr` / `staging_size` | 0xF00000, 256 KB | none | 0x220000, 256 KB |
-| Details | `hardware-dm1701.md` 13.2, `hardware-md380.md` 12.2 | `hardware-dm32.md` 10.1, 17 | `hardware-db25d.md` 6.6 |
+The settings ring and journal go where no open-firmware tool reads or writes, and the CPS shim refuses to write there.
+Each board fixes the values in its `hal_flash_map_t`, and its hardware page lists the map. The usual order, low to
+high, is the open-firmware EEPROM image, the settings ring (32 KB, 8 sectors), the journal (2 sectors), the
+open-firmware flash image (up to `openfw_end`), the native codeplug (1 MB) and, on boards with room, a 256 KB staging
+area. A board that keeps its calibration in the vendor layout lists no calibration window. The boards are in
+[feature-matrix.md](../feature-matrix.md).
 
 The core works in 4 KB erase units (`STORAGE_SECTOR`). A board whose flash erases in other units gets no writes. A
 NAND board puts `drivers/flash/nand_sectors` in between, which gives NOR behavior in 4 KB sectors
@@ -240,7 +238,7 @@ been erased yet, so it is merged with the data from J0 again; a staged one is co
 in the shared 4 KB buffer, which is shared with the CPS shim's pending sector (`storage_buffer_acquire`), so an edit
 while a CPS write is going on fails cleanly instead of waiting.
 
-A flash that is copy on write underneath offers `hal_flash_t.replace` (the DB25-D's NAND, `nand-sectors.md` 5): the
+A flash that is copy on write underneath offers `hal_flash_t.replace` (a NAND flash, `nand-sectors.md` 5): the
 sector rewrite then calls it and checks the result. There is no journal on such a flash (J0 and J1 stay blank), because
 the replace is one atomic record, and the replay at boot finds nothing to finish. The patch transaction of
 `storage_write` (up to 4 KB across one or two sectors) still uses the journal.
@@ -256,9 +254,8 @@ change) does take `storage_lock` and may wait out a sector rewrite (about 100 ms
 
 ## 5. Foreign region guard
 
-The flash of a radio that ran other firmware may hold that firmware's data where our settings ring and journal go
-(on the DM-1701, 0x011000-0x01AFFF has never been checked on a used radio; on the DM-32UV the region is OpenDM32's
-data area, `hardware-dm32.md` 10.1). Before anything is erased or programmed
+The flash of a radio that ran other firmware may hold that firmware's data where our settings ring and journal go.
+Before anything is erased or programmed
 there, `storage_init()` classifies the region:
 
 | Part | Ours | Anything else |

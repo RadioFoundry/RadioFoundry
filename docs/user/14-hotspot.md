@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Hotspot mode
+# Hotspot Mode
 
 In hotspot mode the radio is a DMR modem for a computer running MMDVMHost, Pi-Star or a similar host. The host
 connects the radio to a DMR network (BrandMeister, TGIF and others). The radio carries the calls to and from radios
@@ -53,10 +53,9 @@ Slot2=1
 - Leave the other modes (D-Star, YSF, P25, NXDN, POCSAG, FM) off. The radio refuses them. POCSAG is accepted but never
   transmitted.
 
-On Pi-Star style images, choose a USB MMDVM modem on the radio's serial port and the settings above. This hasn't been
-tested with Pi-Star yet.
+On Pi-Star style images, choose a USB MMDVM modem on the radio's serial port and the settings above.
 
-The radio reports itself to the host as "RadioFoundry", the radio model (for example "RadioFoundry DM-1701")
+The radio reports itself to the host as "RadioFoundry", the radio model (for example "RadioFoundry XR-100UV")
 and the firmware version.
 
 ## Starting
@@ -108,8 +107,6 @@ Standalone SFR isn't built yet. It would give a channel the repeater and user ro
 ## Two radios as a duplex repeater
 
 Experimental: two radios, each on its own port of one computer, act as one full duplex repeater. One receives, the
-other transmits. Both need split duplex in their image. Only the DM-1701 offers it today, and each half has been
-checked alone, not as a pair. The DM-32UV, DM-1801 Pro and DB25-D don't offer the roles yet
-([Radio reference](23-radios.md)). The computer runs
+other transmits. Both need split duplex in their image. The [feature matrix](../feature-matrix.md) shows which radios offer it. The computer runs
 `tools/split_duplex_host.py`. The slot numbering is still being checked on the bench. Details are in
 [docs/spec/split-duplex.md](../spec/split-duplex.md).

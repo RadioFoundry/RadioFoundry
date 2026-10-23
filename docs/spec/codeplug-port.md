@@ -1,14 +1,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Codeplug port: stock codeplug to RadioFoundry
+# Codeplug port: vendor codeplug to RadioFoundry
 
-How the migration tools turn a radio's stock codeplug into RadioFoundry's and write it. Every radio's tool does it the same
-way, in `tools/codeplug_port.py`; the radio tool only reads its stock codeplug (its own dmrconf driver or a CPS
-file), flashes, and gives the CPS shim's address offset. Users: [md380_migrate.py](md380-migration.md),
-[dm32_migrate.py](dm32-migration.md).
+How the migration tools turn a radio's vendor codeplug into RadioFoundry's and write it. Every radio's tool does it the
+same way, in `tools/codeplug_port.py`; the radio tool only reads its vendor codeplug (its own dmrconf driver or a CPS
+file), flashes, and gives the CPS shim's address offset. Each radio's procedure is in its `<id>-migration.md`
+([index](README.md#migrating-from-stock)).
 
 dmrconf (qdmr) is GPL and runs as an external program; the module contains none of its code. Facts marked (T) were
-tested with dmrconf 0.15.1; (R) on an MD-380 running RadioFoundry.
+measured with dmrconf 0.15.1; (R) on a radio running RadioFoundry.
 
 ## 1. Steps
 
@@ -19,7 +19,7 @@ tested with dmrconf 0.15.1; (R) on an MD-380 running RadioFoundry.
 | Clean-up | `clean_group_lists` (section 2); off with `--no-cleanup` | `rfoundry-source.yaml` |
 | Encode | `dmrconf encode --radio openuv380`, then `decode` | `rfoundry-encoded.dfu`, `rfoundry-encoded.yaml` |
 | Contacts | `restore_contacts` (section 3) on the encoded image | `rfoundry-codeplug.dfu`, `rfoundry-codeplug.yaml` (decoded again) |
-| Write | `cps_write_dfu`: what the regions hold is saved, then the image goes through the CPS shim (`tools/cps_client.py`) at the radio's offset | `codeplug-before.bin` (MD-380), `openfw-window-before.bin` (DM-32) |
+| Write | `cps_write_dfu`: what the regions hold is saved, then the image goes through the CPS shim (`tools/cps_client.py`) at the radio's offset | `codeplug-before.bin` or `openfw-window-before.bin`, by the radio tool |
 | Check | `check_read_back`: read the regions back, compare bytes, decode, compare the section counts | `readback-rfoundry.dfu`, `readback-rfoundry.yaml` |
 
 The tool reports the timeslot step, the clean-up, how many channels keep their TX contact, and RadioFoundry's limits checked on `rfoundry-source.yaml`
@@ -36,7 +36,7 @@ The tool prints how many contacts it changed and, after the final decode, how ma
 
 ## 2. RX group list clean-up
 
-Stock CPS (TYT's in particular) heard only the talkgroups in a channel's RX group list, so codeplugs grew one list per
+A vendor CPS (TYT's in particular) heard only the talkgroups in a channel's RX group list, so codeplugs grew one list per
 channel holding just that channel's TX contact. RadioFoundry always hears the talk target ([dmr-voice.md](dmr-voice.md) 1), so
 on RadioFoundry such a list does nothing. It costs the channel's TX contact: qdmr's open-firmware encoder writes a channel's
 TX contact or its group list, never both (T), and a channel without a contact talks to TG 9.
@@ -48,7 +48,7 @@ TX contact or its group list, never both (T), and a channel without a contact ta
 | Lists with the same contacts | merged into the first; their channels point at it |
 | Lists no channel uses | removed |
 
-Everything else is written as it was. On one stock MD-380 codeplug (541 channels, 96 contacts): 129 lists down to 11,
+Everything else is written as it was. On one vendor codeplug (541 channels, 96 contacts): 129 lists down to 11,
 199 channels lost a list that only repeated their contact, 21 lists were in use (T).
 
 ## 3. TX contacts the encoder dropped
@@ -71,5 +71,4 @@ their contact back, 403 of 403 channels keep theirs (T). Before this module, 194
 `dmrconf write --radio openuv380` reads the radio first and fails against RadioFoundry: "Cannot read from bank 1, addr 80h"
 (R, issue #9); `dmrconf read` fails the same way. `cps_client.py` writes the same regions qdmr does (0x80, 0x7500,
 0x20000, 0x9B000) through the same protocol, sector by sector, and only the sectors that change. The radio keeps its
-quick keys, and its own VFO records (0x7590-0x75B8) differ from the file afterwards (R). The DM-32's tool adds
-0x700000 to every address.
+quick keys, and its own VFO records (0x7590-0x75B8) differ from the file afterwards (R). A radio tool may add an offset to every address (the open-firmware image sits above the data flash base on some radios).

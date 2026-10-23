@@ -1,19 +1,20 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# The codec
+# The Codec
 
 DMR voice needs DVSI's AMBE+2 codec. It is proprietary, so RadioFoundry never contains it: not in the repository, not in a
-release, not in a test vector file. Each radio runs the codec its own stock firmware carries. The user downloads that
+release, not in a test vector file. Each radio runs the codec its own vendor firmware carries. The user supplies that
 firmware, and a tool merges the codec into their RadioFoundry image on their own machine.
 
 ## Per radio
 
-| Radio | Tool | Stock file | Hosting | Spec |
-|---|---|---|---|---|
-| DM-1701 | `tools/rfoundry` (`rfoundry/stockfw.py`; also `tools/codec_extract.py`) | DM-1701(CSV) V02.06, encrypted container | Decrypted; the tables stay at their stock address, the code moves to 0x080E3A74 in sector 11, a descriptor at 0x080FFF80 says where ([codec-placement.md](../spec/codec-placement.md)); runs in place. Updates keep it (sectors 10, 11) | [codec-dm1701.md](../spec/codec-dm1701.md) |
-| DM-32UV | `tools/hrc7000_codec.py` | DM32.01.01.049 or DM32.00.01.046HRVocoder | Placed in a codec slot at 0x030E8000 with a header; copied to its stock RAM addresses at boot | [codec-dm32.md](../spec/codec-dm32.md) |
-| DB25-D PRO | `tools/hrc7000_codec.py --board db25d` | 909E.Dx.EARSAB.018 of 2025-01-21, 2024-09-23 or 2024-05-09, plain images | Placed in the same slot (0x030E8000) behind the first stage and application; copied to its stock RAM addresses at boot | [hardware-db25d.md](../spec/hardware-db25d.md) 8 |
-| MD-380 | `tools/codec_extract.py` (and rfoundry) | TYT D002.032 ("Firmware 2.32"), encrypted container (single segment) | Decrypted; the table windows stay at their stock addresses, the code moves to 0x080E0000 in sector 11, with the descriptor ([codec-placement.md](../spec/codec-placement.md)); runs in place. Updates keep it (sectors 8, 10, 11) | [codec-md380.md](../spec/codec-md380.md) |
+Each radio's `codec-<id>.md` ([the spec index](../spec/README.md#codecs)) lists the stock files it accepts, their
+format and where the codec lands. Two hosting schemes exist ([codec-placement.md](../spec/codec-placement.md)):
+
+| Family | Tool | Hosting |
+|---|---|---|
+| STM32F4 radios | `tools/rfoundry` (`rfoundry/stockfw.py`; also `tools/codec_extract.py`) | Decrypted; the tables stay at their stock address, the code moves into the last flash sectors, and a descriptor says where. It runs in place, and updates keep it |
+| HR_C7000 radios | `tools/hrc7000_codec.py` | Placed in a codec slot at the end of the program flash with a header, behind the first stage and application on a board that has one; copied to its stock RAM addresses at boot |
 
 Each tool checks the stock file by SHA-256 against a profile and refuses anything else, checks the codec's first words
 after carving, and writes the merged image into `build/` (ignored by git) or a path you choose. For release images,
@@ -30,7 +31,7 @@ For source builds, drop the stock file into `codecs/` and `make` runs the board'
 | The interface the core calls | `hal/hal_vocoder.h` (`board.vocoder`) |
 | STM32 radios' hosting: state init, per-frame calls, the descriptor checks | `platform/stm32f4/hrc/vocoder.c` |
 | Which stock builds a radio accepts: entry offsets, placement, CRCs | `boards/<b>/vocoder_<b>.c` |
-| HR_C7000 radios (DM-32UV, DB25-D PRO) hosting: the slot header, the copy to RAM | `platform/hrc7000/vocoder.c`; the slot and windows in the board's linker script, the profile prefix in its `board.mk` |
+| HR_C7000 radios' hosting: the slot header, the copy to RAM | `platform/hrc7000/vocoder.c`; the slot and windows in the board's linker script, the profile prefix in its `board.mk` |
 | The window kept free in flash | the board's linker script |
 | AMBE frame FEC and the voice path around the codec | `core/dmr/ambe` |
 
@@ -38,7 +39,7 @@ Without a codec merged, the vocoder reports itself absent and the radio runs FM 
 
 ## Adding a radio's codec
 
-The spec side finds the codec in the radio's stock firmware and writes `docs/spec/codec-<b>.md`: the stock files and
+The spec side describes the codec in the radio's stock firmware in `docs/spec/codec-<b>.md`: the stock files and
 their hashes, the container format, the code and table windows, entry points, calling convention, state sizes and
 whether the code is position dependent. Use the existing specs as the model. The clean side then writes the
 merge tool and the hosting from that spec.
@@ -54,5 +55,5 @@ The board's `board.toml` `[codec]` table names the tool and the route: `stock`, 
 codec is merged from, or `profile` for a codec in a linker slot ([The board registry](board-registry.md#codec)).
 `codecs/` and `tools/codec_auto.py` find the tool there.
 
-Host tests of the voice path (`tests/host/ambeVoiceTest.c`) use vectors recorded from the stock codec's FEC, not the
+Host tests of the voice path (`tests/host/ambeVoiceTest.c`) use vectors recorded from the codec's FEC, not the
 codec itself.

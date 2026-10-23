@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 #
-# Builds the PDF user manual from the Markdown chapters in docs/user/ (docs/dev/release.md).
+# Builds the PDF user manual from the Markdown chapters in docs/user/ (docs/dev/manual-pdf.md).
 #
 #   tools/build_manual.sh                    # build/manual/RadioFoundry-manual-<version>.pdf
 #   tools/build_manual.sh --version v0.1.0   # the version printed on the title page and in the file name
@@ -40,7 +40,7 @@ fi
 
 need() {
 	if ! command -v "$1" > /dev/null 2>&1; then
-		echo "build_manual.sh: $1 not found (docs/dev/release.md says how to install it)" >&2
+		echo "build_manual.sh: $1 not found (docs/dev/manual-pdf.md says how to install it)" >&2
 		exit 2
 	fi
 }

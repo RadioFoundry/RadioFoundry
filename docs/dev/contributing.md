@@ -35,12 +35,12 @@ names or dates.
 |---|---|---|
 | `feat` | new behavior | `feat/aprs-path-menu` |
 | `fix` | a bug fix; add the issue number when there is one | `fix/123-dmr-late-entry` |
-| `radio` | a new radio, or bring-up of a radio that builds | `radio/md9600-bringup` |
+| `radio` | a new radio, or bring-up of a radio that builds | `radio/<id>-bringup` |
 | `test` | tests only (host or HIL) | `test/sfr-dedup-cases` |
 | `docs` | documentation only | `docs/contributing-branches` |
 | `refactor` | no change in behavior | `refactor/ui-svc-storage` |
 | `tools` | host tools, CPS, scripts | `tools/rfoundry-retry` |
-| `ci` | the CI workflows and `tools/ci.sh` | `ci/nightly-dm32` |
+| `ci` | the CI workflows and `tools/ci.sh` | `ci/nightly-matrix` |
 
 The area is the subsystem, matching the commit subjects: `aprs`, `dmr`, `fm`, `sfr`, `ui`, `hotspot`, `net`, `cps`,
 a board id for one radio's code, and so on.
@@ -77,7 +77,7 @@ The short version:
 - Never add the AMBE codec, a stock firmware image, a bootloader key or a memory dump to the repository.
 - Every file carries an SPDX header (`SPDX-License-Identifier: MIT` and the copyright line, in the style of its
   neighbors). `reuse lint` must not report your files (the whole tree doesn't pass yet, [CI](ci.md)).
-- Test vectors come from standards, from your own captures, or from the stock codec's output on your own radio.
+- Test vectors come from standards or from your own captures.
 
 The checks, all in `tools/ci.sh`: `tools/license_grep.sh` (markers of foreign code), `reuse lint` (when installed),
 and before a release a similarity scan against the reference trees (only when `RFOUNDRY_SIMILARITY_REFS` is set; run by
@@ -97,8 +97,7 @@ the project lead, never in public CI).
 
 ## Tests
 
-- Every pull request that changes code includes host unit tests for it ([What a pull request must have](#what-a-pull-request-must-have)).
-- New behavior gets a host test. A bug fix gets the test that would have caught it.
+- Host tests ([What a pull request must have](#what-a-pull-request-must-have)): new behavior gets one, a bug fix gets the test that would have caught it.
 - A UI change updates the gallery (`make -C tests/host ui-gallery`) and commits the PNGs it meant to change.
 - A parser of outside input gets a fuzz loop (`tests/host/fuzz.h`); run it under `SANITIZE=1` ([Testing](testing.md)).
 - A change that touches hardware gets a HIL test when it can be scripted ([Testing](testing.md)).
@@ -127,7 +126,7 @@ link. The run takes the radio lock, counts unexcused skips as failures and write
 ## Documentation
 
 - A behavior change updates its spec in `docs/spec/` and, if users see it, the user manual in `docs/user/`.
-- A new setting goes into [Settings](../user/12-settings.md) with its default and status.
+- A new setting goes into the user manual's settings reference ([docs/user/](../user/README.md)) with its default and status.
 - A new feature switch goes into [build-config.md](../build-config.md) and [feature-matrix.md](../feature-matrix.md).
 - Docs use US English, short sentences and tables. Links are relative so they work on GitHub and in the PDF.
 - `python3 tools/check_doc_links.py` checks every relative link, image and anchor in the docs (ci.sh runs it).
