@@ -1392,7 +1392,24 @@ def self_test():
            [("a", "board", None, False, ""), (None, "in_progress", 12, False, "Its note"),
             (None, "planned", None, True, ""), (None, None, None, False, "No")],
            "survey: a board's row, in progress with its PR, planned, not planned %r" % (probs or rows))
+        rows, probs = survey_of([("Maker EF-1", "Planned"), ("Maker CD-9", "In progress, #12, builds, host tests. N"),
+                                 ("Maker GH-2", "In progress, #13")])
+        ok(probs == [] and [(r["radio"], r["pr_marks"], r["note"]) for r in registry_docs.planned(rows)] ==
+           [("Maker CD-9", ["builds", "host tests"], "N"), ("Maker GH-2", [], ""), ("Maker EF-1", [], "")],
+           "survey: what a pull request has, and in progress before planned %r" % (probs or rows))
+        ok(registry_docs.readme_radios(tmps, {}, rows)[2:] ==
+           ["| Maker CD-9 | ◐ | ◐ | ○ | In progress ([#12](%s/pull/12)). N. |" % registry_docs.REPO_URL,
+            "| Maker GH-2 | ○ | ○ | ○ | In progress ([#13](%s/pull/13)). |" % registry_docs.REPO_URL,
+            "| Maker EF-1 | ○ | ○ | ○ | Planned. |"], "readme_radios: a pull request's marks read ◐")
+        for lvl, rec, mark in (("supported", {}, "●"), ("bring-up", {}, "○"),
+                               ("bring-up", {"a": {"runs": [], "seed": {"features": {}}}}, "○"),
+                               ("bring-up", {"a": {"runs": [], "seed": {"features": {"fm": {"result": "pass"}}}}}, "◐"),
+                               ("testing", {"a": {"runs": [{"tests": [{"outcome": "failed"}]}], "seed": None}}, "○"),
+                               ("testing", {"a": {"runs": [{"tests": [{"outcome": "passed"}]}], "seed": None}}, "◐")):
+            got = registry_docs.on_radio_mark(Stub("a", "AB-100", lvl), rec)
+            ok(got == mark, "on_radio_mark: %s with %r reads %s (got %s)" % (lvl, rec, mark, got))
         for cells, what in ((("Maker AB-100", "Planned"),), "a planned row for an existing board"), \
+                           ((("Maker CD-9", "In progress, #12, soon"),), "a pull request mark outside the set"), \
                            ((("Maker CD-9", "In progress"),), "in progress without a PR number"), \
                            ((("Maker CD-9", "Soon"),), "a Port cell outside the set"), \
                            ((("Maker AB-100", "Supported"), ("Maker AB-100 GPS", "Supported")), "two rows for a board"):
