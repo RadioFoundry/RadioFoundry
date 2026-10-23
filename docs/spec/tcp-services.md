@@ -124,6 +124,21 @@ it. The page's files are in `core/net/webctl_assets/` and replace `core/net/http
 `tools/gen_webctl_assets.py` writes `/keys.json` (each key's name and bit, from the board's `KEY_*` enum) and
 `/radio.svg`. A radio without a drawing gets its keys as buttons and the screen as an image.
 
+The keyboard presses the same keys (the first of a row's names the radio has; a key held is held on the radio):
+
+| Keyboard | Radio key |
+|---|---|
+| 0-9, `*`, `#` | the digit, star, hash (on a mobile, the hand mic's) |
+| arrows | up, down; left / right, else P1 / P2 (`fn_left`, `fn_right`) |
+| Enter, M | green, else MENU |
+| Esc, Backspace | red, else BACK |
+| V, A | VFO/MR, A/B |
+| Space | PTT, held while the key is |
+| `[` `]`, Page Up / Down | the encoder, one detent back / forward |
+
+A focused key takes Enter and Space itself; clicks don't move the focus, so Space stays PTT. Each key's shortcuts are
+in its `aria-keyshortcuts` and tooltip, and the page lists them under the drawing.
+
 `GET /ws` with `Upgrade: websocket` and a `Sec-WebSocket-Key` gets `HTTP/1.1 101` and the connection becomes a
 WebSocket (RFC 6455; the accept value from SHA-1 and base64, `ws.c`). One client at a time; the next one gets 503
 until it goes. The radio's rules:

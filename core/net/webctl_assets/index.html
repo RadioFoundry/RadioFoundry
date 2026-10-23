@@ -30,9 +30,13 @@ table{border-collapse:collapse}td{padding:2px 10px 2px 0;vertical-align:top}td:f
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
-// Keyboard keys to the radio's key names: the first the radio has is used
+// Keyboard keys to the radio's key names: the first the radio has is used. [ and ] (or Page Up / Down) turn the knob
 const KB = {ArrowUp: ['up'], ArrowDown: ['down'], ArrowLeft: ['left', 'fn_left'], ArrowRight: ['right', 'fn_right'],
-	Enter: ['green', 'menu'], Escape: ['red', 'back'], '*': ['star'], '#': ['hash'], ' ': ['ptt']};
+	Enter: ['green', 'menu'], Escape: ['red', 'back'], Backspace: ['back', 'red'], m: ['menu', 'green'],
+	v: ['vfo_mr'], a: ['ab'], '*': ['star', 'mic_star'], '#': ['hash', 'mic_hash'], ' ': ['ptt']};
+for (let d = 0; d < 10; d++) KB[d] = [String(d), 'mic_' + d];
+const KNOB = {'[': -1, PageUp: -1, ']': 1, PageDown: 1};
+const KB_NAME = {ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Escape: 'Esc', ' ': 'Space'};
 let ws = null, hello = null, names = {}, bits = {}, ctl = false, screen = null, shown = -1, loading = false;
 let ptt = -1, pttTimer = 0, audio = null, next = 0, poll = 0;
 const down = new Set(), els = {};
@@ -62,6 +66,7 @@ function bind(e, bit, label) {
 	e.setAttribute('role', 'button');
 	e.setAttribute('aria-label', label);
 	e.tabIndex = 0;
+	e.addEventListener('mousedown', ev => ev.preventDefault());	// no focus from a click: Space stays PTT
 	e.addEventListener('pointerdown', ev => { ev.preventDefault(); e.setPointerCapture(ev.pointerId); press(bit); });
 	e.addEventListener('pointerup', () => release(bit));
 	e.addEventListener('pointercancel', () => release(bit));
@@ -73,6 +78,7 @@ function button(text, label) {
 	const b = document.createElement('button');
 	b.textContent = text;
 	if (label) b.setAttribute('aria-label', label);
+	b.addEventListener('mousedown', ev => ev.preventDefault());
 	$('btns').append(b);
 	return b;
 }
@@ -115,7 +121,22 @@ async function panel() {
 	}
 	if (ptt >= 0) bind($('ptt') || Object.assign(button('PTT'), {id: 'ptt'}), ptt, 'PTT');
 	document.querySelectorAll('#btns button').forEach(b => b.disabled = !ctl);
-	if (!ctl) note('View only: the keys work from the computer the radio is plugged into.');
+	if (!ctl) return note('View only: the keys work from the computer the radio is plugged into.');
+	// Each key's keyboard keys (aria-keyshortcuts, the tooltip) and the list under the panel: one key per radio key
+	const keys = {}, help = [];
+	for (const k in KB) {
+		const b = keyOf({key: k});
+		if (b >= 0) (keys[b] = keys[b] || []).push([k === ' ' ? 'Space' : k, KB_NAME[k] || (k.length > 1 ? k : k.toUpperCase())]);
+	}
+	for (const b in keys) {
+		const aria = keys[b].map(x => x[0]).join(' '), shown = keys[b].map(x => x[1]);
+		(els[b] || []).forEach(e => { e.setAttribute('aria-keyshortcuts', aria); e.setAttribute('title', shown.join(' or ')); });
+		const l = label(bits[b]);
+		if (!/^([0-9]|star|hash|mic_.*|ptt)$/.test(bits[b])) help.push(shown[0].toUpperCase() === l ? shown[0] : shown[0] + ' = ' + l);
+	}
+	help.unshift('0-9 * #');
+	if (hello.encoder) help.push('[ ] knob');
+	note('Keyboard: ' + help.join(', ') + (ptt >= 0 ? '. Hold Space to talk.' : ''));
 }
 
 function note(s) { $('note').textContent = s; $('note').hidden = !s; }
@@ -126,9 +147,16 @@ function keyOf(ev) {
 }
 
 addEventListener('keydown', ev => {
-	if (ev.repeat || ev.ctrlKey || ev.metaKey || ev.altKey || ev.target.closest('button,.k')) return;
+	if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+	// A focused key or button takes its own Enter and Space
+	if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.closest && ev.target.closest('button,.k')) return;
+	if (ev.key in KNOB && hello && hello.encoder) {
+		ev.preventDefault();
+		if (ctl) send('e' + KNOB[ev.key]);
+		return;
+	}
 	const b = keyOf(ev);
-	if (b >= 0) { ev.preventDefault(); press(b); }
+	if (b >= 0) { ev.preventDefault(); if (!ev.repeat) press(b); }
 });
 addEventListener('keyup', ev => { const b = keyOf(ev); if (b >= 0) release(b); });
 addEventListener('blur', releaseAll);
@@ -178,6 +206,7 @@ function play(buf) {
 	next += b.duration;
 }
 
+$('listen').addEventListener('mousedown', ev => ev.preventDefault());
 $('listen').onclick = () => {
 	const on = !audio;
 	if (on) { audio = new AudioContext(); next = 0; } else { audio.close(); audio = null; }
