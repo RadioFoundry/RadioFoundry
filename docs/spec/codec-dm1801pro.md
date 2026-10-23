@@ -113,8 +113,8 @@ tone detection, which acts on a steady tone or tone pair ([codec-md380.md](codec
 0x100, 0x200 and 0x800 are tested in the parameter stage; 0x800 only counts while E[0x138A] is not 0. Both patterns
 produce frames the decoder accepts.
 
-**What ODR's hosts do.** `platform/hrc7000/vocoder.c` (this radio and the DM-32UV), `boards/dm1701/vocoder_dm1701.c`
-and `boards/md380/vocoder_md380.c` pass one word on every call, from `drivers/vocoder/ambe2_flags.h`: 0x800, plus
+**What ODR's hosts do.** `platform/hrc7000/vocoder.c` (this radio and the DM-32UV) and `platform/stm32f4/hrc/vocoder.c`
+(the DM-1701 and MD-380) pass one word on every call, from `drivers/vocoder/ambe2_flags.h`: 0x800, plus
 0x40 for noise reduction, 0x1000 for tone frames and 0x2000 for AGC. The default is 0x1840, pattern B's value
 ([dmr-voice.md](dmr-voice.md) 6).
 

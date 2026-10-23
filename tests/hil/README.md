@@ -161,7 +161,7 @@ first record to `supported`, are in [Adding a radio](../../docs/dev/adding-a-rad
 ### Bench hardware markers
 
 Every test that uses the SDR bench carries `bench_service` (it takes the lease) and says which piece of the bench it
-needs. A test with none of these markers needs no bench. `conftest.py`'s `bench_hardware` fixture reads the bench's
+needs. A test with none of these markers needs no bench. The `bench_hardware` fixture (`hil_plugin.py`) reads the bench's
 `odr-bench info` (`SdrBench.lacks`) and skips with the reason when the piece is missing; a bench without the shared
 bench daemon is assumed to have both.
 

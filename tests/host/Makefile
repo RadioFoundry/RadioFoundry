@@ -360,19 +360,6 @@ TESTS   += codecDescTest
 codecDescTest: codecDescTest.c $(ROOT)/platform/stm32f4/codec_desc.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ codecDescTest.c
 
-# The GPS rate hunt (drivers/gps/gps_rx/gps_baud.c) with canned NMEA, and the two-level analog keypad
-# (drivers/input/adckeys) a hand microphone may use
-TESTS   += gpsBaudTest adckeysTest
-
-gpsBaudTest: gpsBaudTest.c $(ROOT)/drivers/gps/gps_rx/gps_baud.c $(ROOT)/drivers/gps/gps_rx/gps_baud.h \
-             $(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/gps_rx/gps_rx.h $(ROOT)/drivers/gps/nmea_line/nmea_line.c
-	$(CC) $(CFLAGS) -Wshadow -o $@ gpsBaudTest.c $(ROOT)/drivers/gps/gps_rx/gps_baud.c \
-		$(ROOT)/drivers/gps/gps_rx/gps_rx.c $(ROOT)/drivers/gps/nmea_line/nmea_line.c
-
-adckeysTest: adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c $(ROOT)/drivers/input/adckeys/adckeys.h
-	$(CC) $(CFLAGS) -Wshadow -o $@ adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c
-
-
 run: run-chips
 run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest codecDescTest
 	./sky72310Test
@@ -719,7 +706,11 @@ run-debuglinkRx2: debuglinkRx2Test
 	./debuglinkRx2Test
 .PHONY: run-debuglinkRx2
 
-# The STM32F4 flash stub's protocol engine (stub/stm32f4/f4stub_proto.c, docs/spec/stub-stm32f4.md)
+# The flash stubs' shared protocol engine (stub/common/stubeng.c) with the STM32F4 target's board record check
+# (stub/stm32f4/f4stub_board.c, docs/spec/stub-stm32f4.md)
+F4STUB_SRC := $(ROOT)/stub/common/stubeng.c $(ROOT)/stub/stm32f4/f4stub_board.c
+F4STUB_H   := $(ROOT)/stub/common/stubeng.h $(ROOT)/stub/stm32f4/f4stub.h $(ROOT)/stub/stm32f4/f4stub_header.h
+F4STUB_INC := -I$(ROOT)/stub/common -I$(ROOT)/stub/stm32f4
 TESTS   += f4stubTest
 f4stubTest: f4stubTest.c $(F4STUB_SRC) $(F4STUB_H)
 	$(CC) $(CFLAGS) -Wshadow $(F4STUB_INC) -o $@ f4stubTest.c $(F4STUB_SRC)
@@ -738,7 +729,7 @@ run-f4stub: f4stubTest f4stubSim
 # column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the Baofeng factory calibration decoder
 # (modem-hrc7000.md)
 HRC7    := $(ROOT)/drivers/modem/hrc7000
-TESTS   += fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest
+TESTS   += fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest
 
 fd6818Test: fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(ROOT)/drivers/rf/fd6818/fd6818.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fd6818Test.c $(ROOT)/drivers/rf/fd6818/fd6818.c $(ROOT)/boards/dm1801pro/rf_tables_dm1801pro.c $(SUBAUDIO)
@@ -787,15 +778,9 @@ lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/
 baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
-# The DM-1801 Pro's start-up pin levels (hardware-dm1801pro.md 3.1)
-TESTS   += dm1801proPinsTest
-dm1801proPinsTest: dm1801proPinsTest.c $(ROOT)/boards/dm1801pro/boot_pins.h $(ROOT)/boards/dm1801pro/pins.h \
-		$(ROOT)/boards/dm1801pro/audio_route.h
-	$(CC) $(CFLAGS) -I$(ROOT)/boards/dm1801pro -Wshadow -o $@ dm1801proPinsTest.c
-
-run: run-dm32
-run-dm32: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest dm32CalTest rda5807mTest lis3dhTest \
-          dm1801proPinsTest hrc7000BsTest hrc7000DmrTestSplit
+run: run-drivers
+run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
+             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
 	./hrc7000BsTest
 	./hrc7000DmrTestSplit
 	./lis3dhTest

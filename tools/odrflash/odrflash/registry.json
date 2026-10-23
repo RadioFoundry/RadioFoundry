@@ -510,9 +510,9 @@
      "mode": 0,
      "hz": 4500000,
      "af": 5,
-     "sck": null,
-     "miso": null,
-     "mosi": null,
+     "sck": "PB3",
+     "miso": "PB4",
+     "mosi": "PB5",
      "cs": "PD7",
      "idle": []
     }

@@ -108,6 +108,11 @@ the same codec, but each may put its tables at other addresses. The board's code
 file's layout: the image must stay out of all of them, and keeping the codec keeps all of them. A merge writes and
 checks the layout of the file it merges, never the union.
 
+A board can take its codec from more than one stock file (`[codec] stock` in `board.toml` lists them). The files hold
+the same codec, but each may put its tables at other addresses. The board's codec windows are then the union of every
+file's layout: the image must stay out of all of them, and keeping the codec keeps all of them. A merge writes and
+checks the layout of the file it merges, never the union.
+
 First step, no table addresses rewritten:
 
 | Radio | Code moves to | Tables | Free for ODR |

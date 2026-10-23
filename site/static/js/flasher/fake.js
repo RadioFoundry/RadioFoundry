@@ -247,7 +247,7 @@ export class FakeRadio {
 		return s;
 	}
 
-	// ---- the STM32F4 stub (stub/stm32f4/f4stub_proto.c's rules)
+	// ---- the STM32F4 stub (stub/common/stubeng.c's and stub/stm32f4/f4stub_board.c's rules)
 
 	word(addr) { return u32le(this.flash, addr - FLASH_BASE); }
 

@@ -228,32 +228,6 @@ def board_by_id(num):
     return next((bid for bid, b in BOARDS.items() if b["id"] == num), None)
 
 
-def pin_byte(name):
-    """'PB12' -> 0x1C (port << 4 | pin), None -> 0xFF"""
-    if name is None:
-        return 0xFF
-    if len(name) < 3 or name[0] != "P" or not "A" <= name[1] <= "I" or not 0 <= int(name[2:]) <= 15:
-        raise ValueError("pin %r" % name)
-    return (ord(name[1]) - ord("A")) << 4 | int(name[2:])
-
-
-def config_record(board_id):
-    """The 24-byte board record the stub's CONFIG takes (stub/stm32f4/f4stub.h)"""
-    b = BOARDS[board_id]
-    spi = b["spi"]
-    idle = list(spi["idle"]) + [None] * (2 - len(spi["idle"])) if spi else [None, None]
-    rec = bytes([b["id"], REC_LAYOUT, spi["bus"] if spi else 0, spi["mode"] if spi else 0])
-    rec += b["hse"].to_bytes(4, "big") + APP_BASE.to_bytes(4, "big") + (spi["hz"] if spi else 0).to_bytes(4, "big")
-    rec += bytes([pin_byte(spi and spi["sck"]), pin_byte(spi and spi["miso"]), pin_byte(spi and spi["mosi"]),
-                  spi["af"] if spi else 0, pin_byte(spi and spi["cs"]), pin_byte(idle[0]), pin_byte(idle[1]), 0])
-    assert len(rec) == REC_LEN
-    return rec
-
-
-def board_by_id(num):
-    return next((bid for bid, b in BOARDS.items() if b["id"] == num), None)
-
-
 class F4Error(stubtool.DumpError):
     pass
 

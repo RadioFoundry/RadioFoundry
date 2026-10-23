@@ -86,6 +86,10 @@ The UI draws for a display class (size, color depth, insets). If the new display
 changes in the UI. A new class needs a gallery entry and a key map pair in the UI host tests (see
 [Testing](testing.md)); ask before adding one, since every class multiplies the screens to review.
 
+The frame buffer is sized to the panel in `board.mk` `MCU_DEFS`: `GFX_FB_BYTES` (width times height times bits per pixel,
+over 8), `GFX_MAX_ROWS` (the height) and `GFX_INDEXED=1` for a 16-color panel. Without them the build reserves the
+40 KB RGB565 default. `boards.py check` requires the buffer to hold the board's `hardware.gallery` class.
+
 ## Bring-up order
 
 1. Platform: start-up, clocks, a time base, a UART or USB for logging. Blink something.

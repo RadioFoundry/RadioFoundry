@@ -15,6 +15,7 @@ HR_C7000 stub does for the DM-32UV and the DM-1801 Pro ([hardware-dm32.md](hardw
 | Its protocol engine (portable, shared with other stubs, host tested) | `stub/common/stubeng.c` (section 13), `tests/host/f4stubTest.c` |
 | The STM32F4 target's facts and board record check (portable) | `stub/stm32f4/f4stub.h`, `f4stub_board.c` |
 | Host tool | `stub/f4stub.py`, called by `stub/stubtool.py`; `tests/host/f4stub_wire_check.py` runs it against the real engine |
+| The board profiles | each board's `board.toml` `[flash.stub]` with the SPI flash pins of its `pins.h` (`PIN_FLASH_SCK`, `_MISO`, `_MOSI`, `_CS`), its crystal and image address from `board.mk`; `tools/boards.py` derives the profile and checks it ([board-registry.md](../dev/board-registry.md)), `stub/f4stub.py` `BOARDS` reads it |
 | Switch | `CONFIG_STUB_ENTRY`, on by default on every radio including the DM-1701, with or without the debug link ([stub-entry.md](stub-entry.md)) |
 
 Status (2026-10-22): built, host tested and run on the DM-1701 (section 11, with protocol 2). Protocol 4 (the board
