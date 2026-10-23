@@ -359,9 +359,11 @@ def test_sms_tx(radio, sdr_bench, pytestconfig):
     _need(feats, "DMR_SMS")
 
     def check(before, after):
-        d = _deltas(before, after, ["data.sms_sent", "data.tx_ok", "data.tx_failed"])
+        d = _deltas(before, after, ["data.sms_sent", "data.ars_sent", "data.tx_ok", "data.tx_failed"])
         print("radio deltas:", d)
-        assert after["data.sms_state"] == "ok" and d["data.sms_sent"] == 1 and d["data.tx_ok"] == 1, (after, d)
+        # an ARS registration the radio retries on its own (no ARS server answers on the bench) is a packet too
+        assert after["data.sms_state"] == "ok" and d["data.sms_sent"] == 1 and \
+            d["data.tx_ok"] == 1 + d["data.ars_sent"], (after, d)
 
     send_until_heard(radio, sdr_bench, freq, cc, lambda: radio.link.sms(BENCH_SRC, "ODR HIL TX", ack=False),
                      lambda v: v.get("data.sms_state") in ("ok", "failed"), check,
