@@ -1,32 +1,30 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 #
-# A platform's pinned compiler for a firmware job (docs/dev/ci.md "Toolchains"): the one place the workflows learn how
-# each platform gets its compiler. The pin is the platform's platform.toml [toolchain] table (version, sha256, image),
-# read here and by the scripts it calls, never typed into a workflow. A composite action, so it costs no job.
+# A toolchain's pinned compiler for a firmware job (docs/dev/ci.md "Toolchains"): the one place the workflows learn how
+# each toolchain gets its compiler. The pin is the [toolchain] table (id, version, sha256, image) of the platforms that
+# build with it, read here and by the scripts it calls, never typed into a workflow. A composite action, so it costs no
+# job. A new platform on a known toolchain needs no edit here; a new toolchain needs a branch below.
 #
-#   stm32f4  tools/install-arm-toolchain.sh into ~/opt (a no-op on the self-hosted image, which has it), cached
-#   hrc7000  csky-elf-gcc on PATH (the self-hosted image's /opt/csky-elf): nothing to do. Otherwise the csky-elf image
-#            (ODR_CSKY_IMAGE, default the platform's image): logs in, pulls and logs out right away, and the job runs
-#            its build through `run` (tools/docker/csky-toolchain/run.sh, exit status 3 when the image isn't there).
-#            With build-from-source (release.yml): tools/build-csky-toolchain.sh into ~/toolchains/csky-elf, cached
+#   arm   tools/install-arm-toolchain.sh into ~/opt (a no-op on the self-hosted image, which has it), cached
+#   csky  csky-elf-gcc on PATH (the self-hosted image's /opt/csky-elf): nothing to do. Otherwise the csky-elf image
+#         (ODR_CSKY_IMAGE, default the platform's image): logs in, pulls and logs out right away, and the job runs its
+#         build through `run` (tools/docker/csky-toolchain/run.sh, exit status 3 when the image isn't there). No
+#         workflow builds csky-elf from source: the image is built by tools/docker/csky-toolchain/build.sh.
 #
 # Order matters in pr-tests.yml: there this action is main's copy, run before any of the pull request's code, so the
 # registry login and logout happen before a script from the pull request runs. The pin is read with awk, not with a
 # script from the checkout, for the same reason.
-name: Platform toolchain
-description: Installs or finds a platform's pinned compiler (platform/<platform>/platform.toml [toolchain])
+name: Toolchain
+description: Installs or finds a toolchain's pinned compiler (the [toolchain] table of platform/*/platform.toml)
 
 inputs:
-  platform:
-    description: The platform id (platform/<id>/platform.toml)
+  toolchain:
+    description: The toolchain id ([toolchain] id in platform/*/platform.toml)
     required: true
   cache:
-    description: '"true": keep a downloaded or built toolchain in actions/cache (pr-tests.yml passes "false")'
+    description: '"true": keep a downloaded toolchain in actions/cache (pr-tests.yml passes "false")'
     default: "true"
-  build-from-source:
-    description: '"true": without a compiler on the runner, build it from source instead of using the image'
-    default: "false"
   image:
     description: The csky-elf image (repository variable ODR_CSKY_IMAGE); empty for the platform's image
     default: ""
@@ -52,39 +50,37 @@ runs:
       id: pin
       shell: bash
       env:
-        PLATFORM: ${{ inputs.platform }}
+        TOOLCHAIN: ${{ inputs.toolchain }}
         IMAGE: ${{ inputs.image }}
-        SOURCE: ${{ inputs.build-from-source }}
       run: |
         set -euo pipefail
-        f="platform/$PLATFORM/platform.toml"
-        [ -f "$f" ] || { echo "::error::no $f"; exit 1; }
         # tools/platform_toolchain.sh's reading, inline: a quoted value on a "key = value" line of [toolchain]
+        pin() { awk -v k="$1" '/^\[/ { t = ($0 == "[toolchain]") } t && $1 == k && $2 == "=" { v = $3; gsub(/"/, "", v); print v; exit }' "$2"; }
+        f=""
+        for p in platform/*/platform.toml; do
+          if [ "$(pin id "$p")" = "$TOOLCHAIN" ]; then f=$p; break; fi
+        done
+        [ -n "$f" ] || { echo "::error::no platform/*/platform.toml has [toolchain] id = \"$TOOLCHAIN\""; exit 1; }
         # the cache key: the pinned version and the script that installs it
         hash() { sha256sum "$1" | cut -c1-16; }
-        pin() { awk -v k="$1" '/^\[/ { t = ($0 == "[toolchain]") } t && $1 == k && $2 == "=" { v = $3; gsub(/"/, "", v); print v; exit }' "$f"; }
-        cc=$(pin cc); version=$(pin version); image=${IMAGE:-$(pin image)}
+        cc=$(pin cc "$f"); version=$(pin version "$f"); image=${IMAGE:-$(pin image "$f")}
         run="" mode="" cache_path="" cache_key=""
-        case "$PLATFORM" in
-        stm32f4)
+        case "$TOOLCHAIN" in
+        arm)
           mode=install
           cache_path="$HOME/opt/arm-gnu-toolchain-$version-x86_64-arm-none-eabi"
           h=$(hash tools/install-arm-toolchain.sh); cache_key="arm-gnu-$version-$h" ;;
-        hrc7000)
+        csky)
           if command -v "$cc" > /dev/null; then
             mode=host
-          elif [ "$SOURCE" = true ]; then
-            mode=source
-            cache_path="$HOME/toolchains/csky-elf"
-            h=$(hash tools/build-csky-toolchain.sh); cache_key="csky-elf-${RUNNER_OS}-$version-$h"
           else
             mode=image
             run=tools/docker/csky-toolchain/run.sh
             echo "ODR_CSKY_IMAGE=$image" >> "$GITHUB_ENV"   # run.sh's image
           fi ;;
-        *) echo "::error::no toolchain set-up for platform $PLATFORM in .github/actions/toolchain"; exit 1 ;;
+        *) echo "::error::no set-up for toolchain $TOOLCHAIN in .github/actions/toolchain"; exit 1 ;;
         esac
-        echo "$PLATFORM: $cc $version, $mode${run:+ through $run ($image)}"
+        echo "$TOOLCHAIN ($f): $cc $version, $mode${run:+ through $run ($image)}"
         { echo "mode=$mode"; echo "run=$run"; echo "cache-path=$cache_path"; echo "cache-key=$cache_key"; } >> "$GITHUB_OUTPUT"
 
     - uses: actions/cache@v4
@@ -103,23 +99,10 @@ runs:
       run: |
         set -u
         echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin
-        docker pull "$ODR_CSKY_IMAGE" || true   # missing: run.sh exits 3 and the job reports the build as skipped
+        docker pull "$ODR_CSKY_IMAGE" || true   # missing: run.sh exits 3; the job skips (release.yml fails)
         docker logout "$REGISTRY"
 
     - name: Arm GNU Toolchain (pinned and checksummed, trimmed to the Cortex-M4 multilib)
       if: steps.pin.outputs.mode == 'install'
       shell: bash
       run: tools/install-arm-toolchain.sh
-
-    - name: Build the csky-elf toolchain (about 45 minutes; the cache keeps it)
-      if: steps.pin.outputs.mode == 'source'
-      shell: bash
-      run: |
-        set -eu
-        if [ ! -x "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" ]; then
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential libgmp-dev libmpfr-dev libmpc-dev \
-            libisl-dev texinfo bison flex
-          tools/build-csky-toolchain.sh
-        fi
-        "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" --version | head -1
