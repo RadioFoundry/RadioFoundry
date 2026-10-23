@@ -44,8 +44,8 @@ is `tools/bringup.py list --radio <id>`.
 | `dtmf` | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `vox` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `battery_save` | pass (seed) | not recorded | pass (seed) | not recorded | not recorded |
-| `am_rx` | ✕ | ✕ | not recorded | ✕ | ✕ |
-| `bcast_fm` | ✕ | not recorded | not recorded | ✕ | ✕ |
+| `am_rx` | ✕ | not written | not written | ✕ | ✕ |
+| `bcast_fm` | ✕ | not recorded | not written | not written | ✕ |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_talker_alias` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
@@ -211,7 +211,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `CRASH_REPORT` | ● | ● | ● | ● | ● |
 | `WATCHDOG` | ● | ● | ● | ● | ● |
 | `FAULT_TRACE` | ✕ | ● | ● | ● | ✕ |
-| `AM_RX` | ✕ | … | … | … | ✕ |
+| `AM_RX` | ✕ | … | … | ✕ | ✕ |
 | `BCAST_FM` | ✕ | ● | … | … | ✕ |
 | `APRS` | ● | ● | ● | ● | ● |
 | `APRS_RX` | ● | ● | ● | … | … |
