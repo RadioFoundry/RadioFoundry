@@ -537,7 +537,7 @@ static const flow_t flows_k[] = {
 	{ "K call back: a private call talks to the caller", "call:3101234,1,p wait:11000", "cbkey ptt",
 	  "txid=3101234 txpriv=1", 2, false },
 	{ "K call back: a caller in Contacts by its saved name", "call:3101234,1,p wait:11000", "cbkey",
-	  "talk=3101234 toast=Talking_to_Joe_Smith", 1, false },
+	  "talk=3101234 toast=Talking_to_K1ABC_Joe", 1, false },
 	{ "K call back: a caller not in Contacts by its ID", "call:3109999,1,p wait:11000", "cbkey ptt",
 	  "txid=3109999 txpriv=1", 2, false },
 	{ "K call back: a group call names its talkgroup", CALLER, "cbkey", "talk=91 toast=Talking_to", 1, false },
@@ -832,7 +832,7 @@ static void about_checks(void)
 static void call_screen_checks(void)
 {
 	static const struct { const char *name, *script, *expect; } cases[] = {
-		{ "private to a contact", "3 1 0 1 2 3 4 ok wait:5000 pttdown", "txpriv=1 shows=Joe_Smith shows=Private_310" },
+		{ "private to a contact", "3 1 0 1 2 3 4 ok wait:5000 pttdown", "txpriv=1 shows=K1ABC_Joe shows=Private_310" },
 		{ "private, long name", "worst 3 1 0 9 9 9 9 ok wait:5000 pttdown",
 		  "txpriv=1 shows=Christo shows=Wood shows=Private_310" },
 		{ "private, no contact", "3 1 0 5 5 5 5 down ok wait:5000 pttdown", "txpriv=1 shows=3105555 shows=Private_310" },

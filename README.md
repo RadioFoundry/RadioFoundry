@@ -1,22 +1,33 @@
 # OpenDigitalRadio
 
-OpenDigitalRadio (ODR) is free, MIT-licensed firmware for inexpensive DMR radios. One radio-independent software core handles
-the DMR stack, the UI, the codeplug and the host tools, and each radio adds a thin board layer underneath.
+**Free, MIT-licensed firmware for affordable DMR radios.** One shared core runs the DMR stack, the UI, the codeplug and
+the host tools; each radio adds a thin board layer. It brings the FM and DMR features low-cost stock firmware leaves
+out, with a UI designed from first principles. Anyone can use it for anything, commercial products included.
 
-The goal is one framework that can build firmware for any of these radios, with a UI designed from first principles
-and the FM and DMR features low-cost stock firmware usually omits. Anyone can use it for anything, commercial
-products included.
-
-It's early. Read the status section before you flash anything.
+**[Install](docs/user/02-installing.md)** · **[User manual](docs/user/README.md)** · **[Radios](#radios-and-status)** ·
+**[Features](#features)** · **[Developer docs](docs/dev/README.md)**
 
 <p>
-<img src="docs/ux/screens/160x120i5/boot.png" width="180" alt="Boot screen">
-<img src="docs/ux/screens/160x120i5/home_dmr.png" width="180" alt="Home screen on a DMR channel">
-<img src="docs/ux/screens/160x120i5/hub.png" width="180" alt="The hub">
-<img src="docs/ux/screens/160x120i5/rx_group.png" width="180" alt="Receiving a group call">
+<img src="docs/ux/screens/240x320i10x5/boot.png" width="200" alt="Boot screen">
+<img src="docs/ux/screens/240x320i10x5/home_dual_two_rx.png" width="200" alt="Dual watch with both channels receiving">
+<img src="docs/ux/screens/240x320i10x5/tools.png" width="200" alt="Tools: scan, position, hotspot, USB network, repeater, roaming, APRS">
+<img src="docs/ux/screens/240x320i10x5/channel.png" width="200" alt="The channel editor">
+</p>
+<p>
+<img src="docs/ux/screens/160x120i5/rx_group.png" width="200" alt="A group call with the caller's name and location">
+<img src="docs/ux/screens/160x120i5/message_view.png" width="200" alt="A text message with quick replies">
+<img src="docs/ux/screens/160x120i5/quick_dmr.png" width="200" alt="The channel's quick settings">
+<img src="docs/ux/screens/160x120i5/emergency.png" width="200" alt="An emergency call">
+</p>
+<p>
+<img src="docs/ux/screens/128x64/home_fm.png" width="200" alt="Home screen on an FM channel">
+<img src="docs/ux/screens/128x64/tx.png" width="200" alt="Transmitting">
+<img src="docs/ux/screens/128x64/contacts.png" width="200" alt="Contacts">
+<img src="docs/ux/screens/128x64/zones.png" width="200" alt="Zones">
 </p>
 
-<sub>DM-1701 screens, rendered by the UI simulator (`make -C tests/host ui-gallery`).</sub>
+<sub>Top to bottom: DM-32UV (240x320 color), DM-1701 (160x120 color) and DM-1801 Pro (128x64 mono) screens, rendered
+by the UI simulator (`make -C tests/host ui-gallery`).</sub>
 
 ## Radios and status
 
@@ -43,67 +54,43 @@ It's early. Read the status section before you flash anything.
 
 ● done&nbsp;&nbsp; ◐ partly, or only in the linked pull request so far&nbsp;&nbsp; ○ not yet
 
-TX frequency accuracy depends on each radio's factory calibration: confirm it against an external reference (frequency counter, service monitor, or a hotspot's MMDVMCal BER test) before relying on it. One MD-380 measured +1.9 kHz high, too far for an MMDVM hotspot's narrow decode window ([#108](https://github.com/sfowlr/OpenDigitalRadio/issues/108)).
+- **Releases** carry firmware for the supported radios (without the codec), `odrflash` for Windows, macOS and Linux,
+  and the user manual as a PDF. Nothing to build: see [Installing](docs/user/02-installing.md).
+- **What has been checked on the air**, per feature and per radio: [on-air coverage](docs/testing/on-air-coverage.md)
+  and the [feature matrix](docs/feature-matrix.md#checked-on-each-radio). "Host-tested" means it works against
+  simulated chips, not yet on air.
+- **Check TX frequency** against an external reference (counter, service monitor or MMDVMCal) before relying on it:
+  accuracy comes from each radio's factory calibration, and one MD-380 measured 1.9 kHz high
+  ([#108](https://github.com/sfowlr/OpenDigitalRadio/issues/108)).
+- The chips in each radio and the planned port order: [docs/spec/radios.md](docs/spec/radios.md).
 
-The chips in each radio, their sources and the planned port order: [docs/spec/radios.md](docs/spec/radios.md).
+## Features
 
-On the DM-1701, the automated tests against the SDR bench pass on air for FM, DMR calls, data, emergency, the hotspot,
-MMDVM SFR, scan and each half of the split duplex repeater. qdmr, the USB network adapter and its services are checked
-on the radio. Still open: Standalone SFR, the MMDVM SFR repeat delay and a split duplex test with two radios. Results
-per feature: [on-air coverage](docs/testing/on-air-coverage.md). What is checked on each radio, and what is only built in:
-[feature matrix](docs/feature-matrix.md#checked-on-each-radio).
-"Host-tested" means it works against simulated chips, not that anyone has heard it on air yet.
+| Feature | What it does |
+|---|---|
+| **DMR voice** | Group and private calls, talker alias, basic privacy ([dmr-voice](docs/spec/dmr-voice.md)) |
+| **DMR data** | Text messages, ARS, LRRP, call alert, radio check ([dmr-data](docs/spec/dmr-data.md)) |
+| **Emergency** | Alarm, emergency call with hot mic, alerts ([dmr-emergency](docs/spec/dmr-emergency.md)) |
+| **FM** | CTCSS/DCS, roger beep, 1750 Hz burst ([radio-features](docs/spec/radio-features.md)) |
+| **Dual watch, scan, VFO** | Two channels at once; zone, VFO and dual watch scan that stops for DMR calls in progress; any frequency by hand in FM or DMR ([radio-features](docs/spec/radio-features.md)) |
+| **Roaming** | Moves to the strongest repeater of a zone, surveying sites during idle beacons ([dmr-roaming](docs/spec/dmr-roaming.md)) |
+| **APRS** | Position, status and messages on FM, positions over DMR to an APRS gateway, KISS TNC ([aprs](docs/spec/aprs.md)) |
+| **Hotspot** | The radio is an MMDVM modem over USB, including MMDVM single frequency repeating ([mmdvm-protocol](docs/spec/mmdvm-protocol.md), [sfr](docs/spec/sfr.md)) |
+| **USB network** | The radio is a USB network adapter that routes IP over DMR, with a status page, rigctld, KISS over TCP, APRS-IS, mDNS, TFTP and SNMP on the link ([usb-network](docs/spec/usb-network.md), [tcp-services](docs/spec/tcp-services.md)) |
+| **Split duplex repeater** | Experimental: two radios on one MMDVM host as a full duplex repeater ([split-duplex](docs/spec/split-duplex.md)) |
+| **Programming** | qdmr, or the Codeplug Editor on the web site ([cps-protocol](docs/spec/cps-protocol.md)) |
+| **UI** | Designed from first principles, the same on a 128x64 mono LCD or a 240x320 color panel, keypad or knob, with press budgets checked by the host tests ([principles](docs/ux/principles.md), [screens](docs/ux/screens/)) |
 
-Releases carry the DM-1701 firmware (everything except the codec), `odrflash` to flash it on Windows, macOS and
-Linux, and the user manual as a PDF. You don't build anything; see [Installing](docs/user/02-installing.md).
-
-## What it does
-
-- **DMR voice:** group and private calls, talker alias, basic privacy ([dmr-voice](docs/spec/dmr-voice.md))
-- **DMR data:** text messages, ARS, LRRP, call alert, radio check ([dmr-data](docs/spec/dmr-data.md))
-- **Emergency:** alarm, emergency call with hot mic, alerts ([dmr-emergency](docs/spec/dmr-emergency.md))
-- **Hotspot:** the radio works as an MMDVM modem over USB ([mmdvm-protocol](docs/spec/mmdvm-protocol.md))
-- **SFR (single frequency repeater):** MMDVM SFR is the hotspot repeating on one frequency, turned on by the MMDVM
-  host. Standalone SFR, the repeater and user roles on a channel without a host, is not built yet ([sfr](docs/spec/sfr.md))
-- **USB network mode:** the radio becomes a USB network adapter and routes IP over DMR, with confirmed data and
-  compressed headers; control station mode for PC dispatch software ([usb-network](docs/spec/usb-network.md))
-- **Services on the USB network link:** HTTP status page (port 80), Hamlib rigctld (4532), KISS over TCP (8001), an
-  APRS-IS client, mDNS (`odr-<DMR ID>.local`), TFTP codeplug read and write, and an SNMPv2c agent
-  ([tcp-services](docs/spec/tcp-services.md), [mdns](docs/spec/mdns.md), [tftp](docs/spec/tftp.md),
-  [snmp](docs/spec/snmp.md))
-- **Roaming:** moves to the strongest repeater of a zone when the one it's on gets weak, surveying the other sites
-  during the repeaters' idle beacons; turned on per zone
-  ([dmr-roaming](docs/spec/dmr-roaming.md))
-- **APRS:** position, status and messages on FM (1200 baud AFSK), positions over DMR to an APRS gateway, KISS TNC;
-  transmit only on the DM-1701, DMR positions only on the MD-380 ([aprs](docs/spec/aprs.md))
-- **Split duplex repeater (experimental; DM-1701, DM-32UV, DM-1801 Pro):** two radios on one MMDVM host as a full duplex repeater, idle until the host assigns roles;
-  each half passes on air, and a pair (DM-1801 Pro transmitting, DM-32UV receiving) carried a subscriber's calls on
-  both slots on the bench. The host must reach both radios on its own ports. The DB25-D offers no role yet
-  ([split-duplex](docs/spec/split-duplex.md))
-- **FM:** CTCSS/DCS, roger beep, 1750 Hz burst, dual watch ([radio-features](docs/spec/radio-features.md))
-- **VFO:** tune any frequency by hand, in FM or DMR (the DMR VFO has its own color code, timeslot and talk target)
-  ([dmr-voice](docs/spec/dmr-voice.md) 2.1)
-- **Scan:** zone, VFO and dual watch scan; on DMR it stops for calls in progress, using late entry
-  ([radio-features](docs/spec/radio-features.md))
-- **qdmr as the CPS:** program the radio with qdmr ([cps-protocol](docs/spec/cps-protocol.md))
-- **A UI designed from first principles**, not copied from anyone's menus, with press budgets checked by the host
-  tests ([principles](docs/ux/principles.md), [screens](docs/ux/screens/))
-
-Each feature that costs flash has a build switch. See [docs/build-config.md](docs/build-config.md); sizes and per-radio defaults are in [docs/feature-matrix.md](docs/feature-matrix.md).
+What each radio supports is in the [feature matrix](docs/feature-matrix.md). Every feature that costs flash has a
+build switch ([build-config](docs/build-config.md)).
 
 ## Interoperability
 
-Interoperability is a priority, in two directions.
+**Across hardware.** One core runs on every radio, and never checks which radio it's on. A board file picks the chips
+and describes the bands, power levels, screen and keys. Today that's two MCUs (STM32F405, C-SKY CK803S), three DMR
+modems (HR_C5000, HR_C6000, HR_C7000) and four RF chips (AT1846S, BK4819, FD6818, SKY72310) under the same code.
 
-**Across hardware.** One core runs on every radio. A radio is a board file that picks its chips (DMR modem, RF
-chip, display, keypad or encoder, flash) and describes its bands, power levels and screen. The core never checks
-which radio it's on. The same UI lays itself out on a 128x64 monochrome LCD or a 240x320 color panel, and works
-with a full keypad or just a knob and a couple of buttons. Today that's two MCUs (STM32F405 and C-SKY CK803S),
-three DMR modems (HR_C5000, HR_C6000 and HR_C7000) and four RF chips (AT1846S, BK4819, FD6818 and the SKY72310
-synthesizer) sharing all the code above them.
-
-**With everything else on the air and on your desk.** A radio is only useful if it talks to the radios and software
-people already have. We support the formats other radios use, not just our favorite:
+**With the radios and software people already have.** We support the formats other radios use:
 
 | Area | Supported now | Planned |
 |---|---|---|
@@ -116,22 +103,19 @@ people already have. We support the formats other radios use, not just our favor
 | Hotspot and network | MMDVM modem protocol (MMDVMHost, Pi-Star, WPSD and the networks behind them); IP over DMR with the radio as a USB network adapter (confirmed data, SAP 3 compressed UDP headers, control station mode for dispatch software); HTTP status, Hamlib rigctld, KISS over TCP, APRS-IS, mDNS, TFTP and SNMPv2c on the USB link; two radios as one full duplex repeater (experimental, build switch; each half passes on air, one pair checked on the bench) | the split duplex host side (`tools/split_duplex_host.py` is a test host) |
 | Audio to a computer | | USRP over UDP (AllStarLink, DVSwitch), USB sound card with serial-line PTT ([usb-audio](docs/spec/usb-audio.md)) |
 
-"Supported now" means built and passing its tests; see [Radios and status](#radios-and-status) for what has been
-checked on the air. Specs for every format are in [docs/spec](docs/spec), written so other projects can implement
-the same thing.
+"Supported now" means built and passing its tests; [Radios and status](#radios-and-status) says what is checked on air.
+Every format is specified in [docs/spec](docs/spec), so other projects can implement the same thing.
 
 ## The AMBE codec
 
-DMR voice needs DVSI's proprietary AMBE+2 vocoder. ODR never ships it, not in this repo and not in any binary.
+DMR voice needs DVSI's proprietary AMBE+2 vocoder. ODR never ships it, in this repository or in any binary.
 
-Each radio runs the codec its own stock firmware came with. Release images leave it out, and
-[odrflash](tools/odrflash/README.md) handles it when you flash. If the radio already holds the right codec, odrflash
-writes only ODR's own flash sectors. Otherwise it extracts the codec from the stock firmware file you downloaded, on
-your own machine, and writes it to the radio. It checks the stock file by SHA-256 and refuses anything it doesn't
-recognize. Without a codec the firmware runs FM only. Which stock files work, and the tools for radios not in the
-releases: [The codec](docs/dev/codec.md).
+Each radio runs the codec from its own stock firmware. [odrflash](tools/odrflash/README.md) takes it from the stock
+firmware file you downloaded, on your machine, checks that file by SHA-256 and writes the codec with ODR. If the radio
+already holds the right codec, it writes only ODR's own sectors. Without a codec the firmware runs FM only. Details
+and supported stock files: [the codec](docs/dev/codec.md).
 
-## Building and flashing
+## Building
 
 You need make, Python 3.11 or later, and `arm-none-eabi-gcc` (STM32F405 radios) or a `csky-elf` GCC (HR_C7000
 radios).
@@ -143,35 +127,28 @@ make -C tests/host          # host tests
 tools/ci.sh                 # everything a pull request must pass
 ```
 
-Toolchains, make targets and the flashing route for each radio: [building](docs/dev/building.md). Moving a radio from
-stock firmware with its codeplug: [the user manual](docs/user/README.md).
+Toolchains, make targets and each radio's flashing route: [building](docs/dev/building.md).
 
 ## Documentation
 
-- [User manual](docs/user/README.md): installing, the keys and screens, FM, DMR, messages, hotspot, settings,
-  troubleshooting. Each release also carries it as a PDF.
-- [Developer documentation](docs/dev/README.md): architecture, building, adding a radio, testing, the debug link,
-  CPS, the codec, contributing, releases.
-- Specs and design: [docs/spec](docs/spec/README.md), [docs/ux](docs/ux/), [docs/testing](docs/testing/README.md).
-  All of it: [docs/README.md](docs/README.md).
+| | |
+|---|---|
+| [User manual](docs/user/README.md) | Installing, keys and screens, FM, DMR, messages, hotspot, settings, troubleshooting (also a PDF in each release) |
+| [Developer docs](docs/dev/README.md) | Architecture, building, adding a radio, testing, the debug link, CPS, the codec, contributing, releases |
+| [Specs](docs/spec/README.md), [UX](docs/ux/), [Testing](docs/testing/README.md) | Behavior, hardware and protocols; UI design; test procedures. Everything: [docs/README.md](docs/README.md) |
 
 ## How it's tested
 
-Most of the testing runs on any computer, with no radio:
+| Level | What it does |
+|---|---|
+| Unit | Single pieces (error correction, encoders, the settings format) against answers from the standards or real radios |
+| Software in the loop | The real firmware code, built for the host, runs whole features (calls, messages, codeplug writes) against simulated chips |
+| UI simulator | Draws the real screens at every display size, walks the menus with scripted keys, and renders every screenshot here |
+| Hardware in the loop | The same kind of scripts against a radio on USB over the [debug link](docs/spec/debuglink.md), with an SDR bench as the other station ([tests/hil](tests/hil/README.md)) |
 
-- **Unit tests** check single pieces (error correction, encoders, the settings format) against known answers from
-  the standards or from real radios.
-- **Software-in-the-loop (SIL) tests** compile the real firmware code for the host and run whole features (calls,
-  text messages, codeplug writes) against simulated chips.
-- **The UI simulator** draws the real screens into images at every supported display size, walks the menus with
-  scripted key presses and renders every screenshot in these docs.
-- **Hardware-in-the-loop (HIL) tests** run the same kind of scripts against a radio on USB, through the
-  [debug link](docs/spec/debuglink.md), with an SDR bench as the other station ([tests/hil](tests/hil/README.md)).
-
-`tools/ci.sh` builds every radio with each feature switch on and off, checks that each image fits, and runs the
-license and clean-room checks. CI runs the host tests (also under ASan and UBSan) and every radio's default build on
-each push, and the full matrix nightly ([CI](docs/dev/ci.md)). How to run each level and where a new test goes:
-[testing](docs/dev/testing.md) and [docs/testing](docs/testing/README.md).
+`tools/ci.sh` builds every radio with each feature switch on and off, checks that every image fits, and runs the
+license and clean-room checks. CI runs the host tests (also under ASan and UBSan) and every default build on each
+push, and the full matrix nightly ([CI](docs/dev/ci.md), [testing](docs/dev/testing.md)).
 
 ## FAQ
 
@@ -198,14 +175,18 @@ useful in commercial service and to hams alike.
 
 Open an issue or pull request, or donate a new radio model for testing.
 
+**Was this project AI-generated?**
+
+No. It is the result of thousands of hours of human work by several contributors: tearing down radios, reverse
+engineering the hardware, designing the architecture and testing on the air. AI serves as a pair programmer. It speeds
+up bringing up each new radio, and it makes a project this ambitious possible to build and sustain.
+
 ## Clean room and licensing
 
-ODR is MIT licensed ([LICENSE](LICENSE)). It's a clean-room project, independent of earlier radio firmwares: code is
-written from prose specs, datasheets and public standards. No GPL code, no non-commercial code, no vendor SDKs. The
-rules and the checks behind them are in [docs/CLEANROOM.md](docs/CLEANROOM.md).
-
-Third-party code in `third_party/` (FreeRTOS, TinyUSB, ST's HAL and CMSIS) keeps its own permissive license; see
-[LICENSES/](LICENSES/) and each submodule.
+ODR is MIT licensed ([LICENSE](LICENSE)) and a clean-room project: code is written from prose specs, datasheets and
+public standards, independent of earlier radio firmwares. No GPL code, no non-commercial code, no vendor SDKs. The
+rules and checks: [docs/CLEANROOM.md](docs/CLEANROOM.md). Third-party code in `third_party/` (FreeRTOS, TinyUSB, ST's
+HAL and CMSIS) keeps its own permissive license ([LICENSES/](LICENSES/)).
 
 ## Acknowledgements
 
@@ -225,7 +206,8 @@ the reverse engineering and documentation behind it made this project possible. 
 ## Contributing
 
 Issues and pull requests are welcome. Read [docs/CLEANROOM.md](docs/CLEANROOM.md) first, keep radio-specific code out
-of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make sure `tools/ci.sh` passes. Details: [contributing](docs/dev/contributing.md).
+of `core/`, put anything that costs flash behind a `CONFIG_` switch, and make sure `tools/ci.sh` passes. Details:
+[contributing](docs/dev/contributing.md).
 
 ## Layout
 
