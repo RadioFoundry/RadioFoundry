@@ -90,7 +90,7 @@ below are for the DM-1701.
 | `CONFIG_SUBTONE` | = FM | CTCSS / DCS encode and decode. MD-380: software decode from the ADC and PWM encode, 3.3 KB |
 | `CONFIG_FM_TX_TONES` | = FM (MD-380: n) | roger beep and 1750 Hz burst sent over the air (`docs/spec/radio-features.md` 3) |
 | `CONFIG_DTMF` | = FM (MD-380: n) | DTMF digits sent from the keys while PTT is held on FM (`docs/spec/radio-features.md` 3.7) |
-| `CONFIG_VOX` | = FM | voice-operated transmit on FM, from the microphone level (`docs/spec/radio-features.md` 3.4) |
+| `CONFIG_VOX` | = FM (DM-32, DB25-D: n) | voice-operated transmit on FM, from the microphone level (`hal_power_t.mic_level`; `docs/spec/radio-features.md` 3.4) |
 | `CONFIG_BATTERY_SAVE` | = FM | receiver duty cycling on an idle FM channel (`docs/spec/radio-features.md` 5.4) |
 | `CONFIG_VIBRATE` | n (radios with a vibration motor: y) | vibration alerts on the board's motor (`hal_power_t.vibrate`) for messages, call alerts, private calls and emergencies, and Settings > Sound > Vibrate (`docs/spec/radio-features.md` 4.1). No radio on main has a motor yet; a board without one shows the row dimmed |
 | `CONFIG_GPS` | y (radios without a GPS receiver: n) | the GPS receiver: the board's module driver and its NMEA input (`drivers/gps`, `platform/*/gps*`, `CAP_GPS`). Off, the radio has no GPS; DMR GPS, LRRP and APRS keep the fixed position and report no fix |
@@ -124,8 +124,8 @@ below are for the DM-1701.
 | `CONFIG_DMR_CONTROL_STATION` | = DMR_IP_GATEWAY | control station mode for PC dispatch software: passthrough (the PC is the endpoint of the radio's own IP data while the link is up; the link layer stays on the radio) and the fixed link pair 192.168.10.1 / .2 instead of the address by DMR ID (`docs/spec/usb-network.md` 5). The power-on network setting belongs to `CONFIG_USB_NETWORK` |
 | `CONFIG_SNMP` | = DMR_IP_GATEWAY | the SNMPv2c agent on UDP 161 over the USB network and over the air, the ODR MIB, notifications to the host and an RF manager (`core/snmp`, `docs/spec/snmp.md`). Management over the air read-only and RF notifications off by default. About 3.2 KB RAM on the DM-1701 |
 | `CONFIG_SFR` | = DMR (MD-380: n) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX); Standalone SFR (the repeater and user roles on a channel) is not wired yet (`docs/spec/sfr.md`) |
-| `CONFIG_AM_RX` | n (DM-32: = FM) | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, AM squelch on RSSI, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. The DM-32 glue isn't written yet |
-| `CONFIG_BCAST_FM` | n (DM-32: y) | broadcast FM on a second receiver chip (`hal_bcast.h`): `core/bcast`, paused for channel traffic (`docs/spec/airband-and-broadcast.md` 4). The task, settings, screen and DM-32 glue aren't written yet |
+| `CONFIG_AM_RX` | n | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, AM squelch on RSSI, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. No board's glue is written yet (the DM-32's is `BOARD_NOT_WRITTEN`) |
+| `CONFIG_BCAST_FM` | n (DM-1801 Pro: y) | broadcast FM on a second receiver chip (`hal_bcast.h`): `core/bcast`, paused for channel traffic (`docs/spec/airband-and-broadcast.md` 4). The DM-32's glue isn't written yet (`BOARD_NOT_WRITTEN`) |
 | `CONFIG_USB` | y (DM-32: n) | USB device (CDC serial) |
 | `CONFIG_HOSTLINK` | = USB (DM-32: y) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB (DM-32) |
 | `CONFIG_USB_NETWORK` | = USB and HOSTLINK | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) or chosen at power-on by the stored setting (`docs/spec/usb-network.md` 1) |
@@ -193,18 +193,20 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 
 | Board | Off by default | Why |
 |---|---|---|
-| md380 | `FM_TX_TONES`, `DTMF`, `APRS_RX`, `APRS_IGATE`, `HOTSPOT_SPLIT` (maximal build too: `BOARD_NOT_WRITTEN`) | no TX tone path or APRS receive audio written for the board yet; the split duplex glue is written for the HR_C6000 and HR_C7000 only |
+| md380 | `FM_TX_TONES`, `DTMF`, `APRS_RX`, `APRS_IGATE`, `HOTSPOT_SPLIT`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | no TX tone path, APRS receive audio or audio tap written for the board yet; the split duplex glue is written for the HR_C6000 and HR_C7000 only |
 | md380 | `SFR` (maximal build too: `BOARD_UNSUPPORTED`) | the HR_C5000 has no CRC_MCU_Control ([sfr.md](spec/sfr.md)) |
 | md380 | `FONT_XL`, `AM_RX`, `BCAST_FM`, `NET_PPP` (off on most boards; the maximal build leaves them off here too) | a 160 px panel has no use for the font; no air band or broadcast receiver; PPP stands in for USB |
 | dm1701, md380 | `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | the host port is USB, and the one UART is a GPS receive line: nothing a fault handler can print on |
 | dm32, dm1801pro, db25d | `USB`, `USB_NETWORK` (maximal build too: the platform's `BOARD_UNSUPPORTED`) | no USB data connector on the radio; PPP on the programming cable is its IP link |
+| dm32 | `AM_RX`, `BCAST_FM`, `VOX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the radio has the air band and an RDA5807M, but `rx_am`, `board.bcast`, the mic level hook and the audio tap aren't written ([hardware-dm32.md](spec/hardware-dm32.md) 8.7) |
 | dm1801pro | `UI_COLOR` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen: no colors to set |
 | dm1801pro | `AM_RX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the RF chip's air band window isn't used yet; the probe's audio tap isn't written |
-| db25d | `NET_USRP`, `HOTSPOT_SPLIT`, `SFR`, `APRS_RX`, `APRS_IGATE`, `BCAST_FM`, `AM_RX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the board's glue isn't written or timed for them yet ([hardware-db25d.md](spec/hardware-db25d.md) 9) |
+| db25d | `NET_USRP`, `HOTSPOT_SPLIT`, `SFR`, `APRS_RX`, `APRS_IGATE`, `BCAST_FM`, `AM_RX`, `VOX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the board's glue isn't written or timed for them yet ([hardware-db25d.md](spec/hardware-db25d.md) 9) |
 | every board | `AUDIO_PROBE` | a bench diagnostic |
 
 The DM-32UV puts the state the core marks `ODR_CPU_RAM` in its low RAM below the codec window, and keeps the
-network's buffers in main RAM ([hardware-dm32.md](spec/hardware-dm32.md) 17.1). With that, everything else is on.
+network's buffers in main RAM ([hardware-dm32.md](spec/hardware-dm32.md) 17.1). With that, everything else whose glue is
+written is on.
 
 ## Adding a feature
 
