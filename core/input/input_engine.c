@@ -3,6 +3,8 @@
 // Gestures from key masks (docs/ux/information-architecture.md section 2): PRESS on release before the long-press
 // threshold, LONG once at the threshold, REPEAT while held after LONG for repeating keys, DOWN / UP for raw-edge keys,
 // ENC_STEP (DOWN, value = detents) for the encoder. Several keys may be held at once; each is tracked on its own.
+// A DTMF key (input_dtmf_digit) goes to the DTMF callback first; a hold it takes gives no gestures (radio-features.md
+// 3.7).
 #include <string.h>
 #include "input/input_engine.h"
 
@@ -18,6 +20,12 @@ void input_engine_set_timing(input_engine_t *e, uint16_t long_ms, uint16_t repea
 {
 	e->long_ms = long_ms;
 	e->repeat_ms = repeat_ms;
+}
+
+void input_engine_set_dtmf(input_engine_t *e, input_dtmf_t cb, void *ctx)
+{
+	e->dtmf = cb;
+	e->dtmf_ctx = ctx;
 }
 
 static void send(input_emit_t emit, void *ctx, uint8_t action, uint8_t gesture, int8_t value)
@@ -58,8 +66,19 @@ void input_engine_step(input_engine_t *e, uint32_t raw, int8_t enc, uint32_t now
 			k->down = true;
 			k->long_done = false;
 			k->t_down = now_ms;
+			char digit = e->dtmf != NULL ? input_dtmf_digit(m) : 0;
+			k->dtmf = digit != 0 && e->dtmf(digit, true, e->dtmf_ctx);
 			if (m->raw_edges) {
 				send(emit, ctx, m->short_action, GESTURE_DOWN, 0);
+			}
+		} else if (k->dtmf) {
+			// A DTMF hold: only its end, to the same callback (it took the down, so it is still set)
+			if (!down) {
+				k->down = false;
+				k->dtmf = false;
+				if (e->dtmf != NULL) {
+					e->dtmf(input_dtmf_digit(m), false, e->dtmf_ctx);
+				}
 			}
 		} else if (!down && k->down) {
 			k->down = false;
