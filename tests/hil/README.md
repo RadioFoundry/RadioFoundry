@@ -81,8 +81,8 @@ bring-up run counts a skip as a failure unless its kind is one the feature and t
 
 | Kind | Meaning | Example |
 |---|---|---|
-| `not_built` | The firmware was built without it: a switch off, or firmware older than the feature | built without CONFIG_APRS |
-| `no_hw` | The radio lacks the capability | the board has no PWM audio output |
+| `not_built` | The firmware was built without it: a switch off (including one the board lists in `BOARD_NOT_WRITTEN`: the hardware could, the code isn't written for the radio yet), or firmware older than the feature | built without CONFIG_APRS; VOX on a radio with no mic level hook |
+| `no_hw` | The radio's hardware lacks the capability (`BOARD_UNSUPPORTED`) | the board has no PWM audio output |
 | `state` | A precondition the test could set up itself: a mode, a setting, the codeplug, the channel | the radio is in hotspot mode |
 | `opt_in` | An opt-in option was not given: an `--allow-*` flag, a frequency, a file, a second radio | run with --allow-rf |
 | `bench` | The radio, the SDR bench or the test host's tools (a program, git history) are missing, unreachable or busy | the shared SDR bench stayed busy; the tree is not a git checkout |
@@ -110,8 +110,9 @@ radio's state for each feature from the board registry (`tools/boards.py`) and t
 
 | State | When |
 |---|---|
-| `n/a` | The switch is in the board's `BOARD_UNSUPPORTED` (`config.mk`, one switch a line with the reason in its comment: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`). `tools/boards.py check` fails on one without a reason |
-| `unsupported` | `board.toml` `[features] <id> = { state = "unsupported", reason = "..." }`: planned, the hardware could, not working yet |
+| `n/a` | The switch is in the board's `BOARD_UNSUPPORTED`: the hardware can't (`config.mk`, one switch a line with the reason in its comment: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`). `tools/boards.py check` fails on one without a reason |
+| `not written` | The switch is in the board's `BOARD_NOT_WRITTEN`: the hardware could, the driver or glue isn't written for the radio yet. Same form and check; its tests skip `not_built` ([build-config.md](../../docs/build-config.md#unsupported-not-written-unconfirmed)) |
+| `unsupported` | `board.toml` `[features] <id> = { state = "unsupported", reason = "..." }`: built, but known not to work on the radio yet. Code not written for the radio goes in `BOARD_NOT_WRITTEN` instead |
 | `off` | The board's default build leaves the switch off |
 | `required` | Anything else: the feature's tests must pass on the radio |
 

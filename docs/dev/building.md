@@ -29,7 +29,7 @@ and ST's HAL and CMSIS into `third_party/`.
 | `make test` | The host tests (the same as `make -C tests/host`); needs no `BOARD` |
 | `make BOARD=<b> print-config` | The feature switches this board builds with, as `NAME=y/n` |
 | `make BOARD=<b> print-cc` | The compiler the board uses (ci.sh checks it is installed) |
-| `make BOARD=<b> print-unsupported`, `print-maximal-vars` | `BOARD_UNSUPPORTED` and `MAXIMAL_VARS` from the board's `config.mk`, for ci.sh's maximal build |
+| `make BOARD=<b> print-unsupported`, `print-not-written`, `print-maximal-vars` | `BOARD_UNSUPPORTED`, `BOARD_NOT_WRITTEN` and `MAXIMAL_VARS` from the board's `config.mk`, for ci.sh's maximal build |
 | `make BOARD=<b> clean` | Removes `build/<b>` |
 | `make BOARD=<b> BUILD=dir` | Builds into another directory (ci.sh does this for each configuration) |
 | `make ... OPT=-O0` | Changes the optimization level (default `-Os`) |

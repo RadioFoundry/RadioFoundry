@@ -3,15 +3,18 @@
 #
 # The feature checklist (tests/hil/README.md, "Bring-up mode"): one table per feature, never a column per radio. The
 # tests say which feature they check (@pytest.mark.feature("<id>")), so this file lists no tests. A radio's state for
-# each feature is resolved by tools/bringup.py from its build data (BOARD_UNSUPPORTED, the switch defaults) and the
-# [features.<id>] overrides of its board.toml, so a new radio adds nothing here. tools/bringup.py check (tools/ci.sh)
-# fails when a switch of config/features.mk has no entry or a test marks a feature this file doesn't have.
+# each feature is resolved by tools/bringup.py from its build data and the [features.<id>] overrides of its
+# board.toml, so a new radio adds nothing here. The build data are the switch defaults, BOARD_UNSUPPORTED (the
+# hardware can't) and BOARD_NOT_WRITTEN (the code isn't written for the radio yet): docs/build-config.md,
+# "Unsupported, not written, unconfirmed". tools/bringup.py check (tools/ci.sh) fails when a switch of
+# config/features.mk has no entry or a test marks a feature this file doesn't have.
 #
 # [feature.<id>]    the id: stable, snake case, what the tests' feature markers name
 #   switch          the CONFIG_ switch without the prefix; left out for a feature without one
 #   hardware        what the switch needs that some radios physically lack. tools/boards.py check fails on a board
-#                   that neither builds the switch by default nor lists it in BOARD_UNSUPPORTED with the reason (or,
-#                   while the fact isn't known, in board.toml [hardware] unconfirmed): never "off by default"
+#                   that neither builds the switch by default nor lists it with the reason in BOARD_UNSUPPORTED or
+#                   BOARD_NOT_WRITTEN (or, while the fact isn't known, in board.toml [hardware] unconfirmed): never
+#                   "off by default"
 #   spec            the doc that defines the feature
 #   source          paths whose change makes a recorded result stale (default: the files and directories the
 #                   Makefile builds for the switch, else the files that test CONFIG_<switch>; the spec always counts)

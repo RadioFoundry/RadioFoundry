@@ -318,8 +318,9 @@ A 240 x 320 color screen. ODR uses its full resolution, with smooth (anti-aliase
 - The GPS module is checked at start-up (it must answer within 5 s) and is then powered only while **Settings >
   Location > GPS** is on, which takes effect at once. A fix outdoors hasn't been checked yet.
 - While APRS listens, FM on the APRS frequency plays through a different audio path, which may sound different.
-- The air band AM receiver and the broadcast FM receiver are built in, but the board code behind them isn't written,
-  so nothing runs yet.
+- No air band AM or broadcast FM yet: the radio has both receivers, but the board code behind them isn't written,
+  so the image leaves them out.
+- No VOX yet: the board code that reads the microphone level isn't written.
 - Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
 - No beeps while transmitting, the talk permit tone included: the radio's beep path would put them on the air. A beep
   still playing when the transmission ends is heard from then on.
@@ -436,7 +437,7 @@ storage holds another firmware's data (`nst foreign` on the diagnostics page, be
 
 The GPS module is checked at start-up: if it answers within 5 s the radio has GPS (the APRS position source and the Location settings), if not the GPS features are hidden. It stays powered only while **Settings > Location > GPS** is on. The module is heard on the radio (valid NMEA sentences); a fix outdoors hasn't been checked yet.
 
-The build has the MMDVM hotspot (simplex, over the programming cable) and the IP network over PPP with its services, as the DM-32UV does, both checked on this radio. The DMR VFO works on this radio too (receive and transmit checked). There is no single frequency repeater and no split-duplex hotspot role, and no APRS receive or iGate (the radio gives the core no FM receive audio). DMR voice needs the codec from a supported stock file (8 in the hardware notes), and DMR
+The build has the MMDVM hotspot (simplex, over the programming cable) and the IP network over PPP with its services, as the DM-32UV does, both checked on this radio. The DMR VFO works on this radio too (receive and transmit checked). There is no single frequency repeater and no split-duplex hotspot role, and no APRS receive or iGate (the radio gives the core no FM receive audio). There is no VOX yet: the board code that reads the microphone level isn't written. DMR voice needs the codec from a supported stock file (8 in the hardware notes), and DMR
 audio from the speaker hasn't been listened to yet. Programming over the cable has been run on one radio. Settings are kept across power off, in a part of the radio's memory the stock firmware isn't known to use.
 If ODR finds data there it didn't write, it leaves it alone and keeps no settings (the diagnostics page shows `nst
 foreign`). This is new and not yet checked on a radio. Only the PRO (two BK4819 receiver chips) is supported, not the

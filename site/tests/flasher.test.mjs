@@ -171,6 +171,14 @@ test("a la carte selection keeps dependencies and finds prebuilt variants", () =
 	assert.ok(!s.on.has("DMR_PRIVACY"));
 	s.set("FONT_XL", true);
 	assert.ok(!s.on.has("FONT_XL"), "unsupported on this radio");
+	// the MD-380's DTMF: the hardware can, the code isn't written (BOARD_NOT_WRITTEN), so it isn't offered either
+	const md380 = json("radios.json").radios.find((r) => r.id === "md380");
+	const m = new Selection(md380, json("features.json").features, json("variants.json").variants);
+	m.useVariant("full");
+	assert.ok(md380.not_written.includes("DTMF") && !md380.unsupported.includes("DTMF"), "not written, not unsupported");
+	assert.ok(m.notWritten("DTMF") && !m.supported("DTMF"));
+	m.set("DTMF", true);
+	assert.ok(!m.on.has("DTMF"), "not written for this radio");
 });
 
 test("codeplug formats", () => {

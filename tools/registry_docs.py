@@ -240,16 +240,32 @@ def print_config(root, bid):
     return [tuple(l.split("=", 1)) for l in r.stdout.split()]
 
 
+# the feature matrix's mark for a switch the radio's hardware can do but whose code isn't written for it yet
+# (config.mk BOARD_NOT_WRITTEN); ✕ is only for what the hardware can't (docs/build-config.md)
+NOT_WRITTEN_MARK = "…"
+
+
+def feature_mark(b, s, cfg):
+    """A switch's mark for a board in the feature matrix: ✕ the hardware can't, … not written yet, ● on by default,
+    ? not known whether the radio has the part, ○ off."""
+    if s in b.unsupported:
+        return "✕"
+    if s in getattr(b, "not_written", {}):
+        return NOT_WRITTEN_MARK
+    if cfg.get(s) == "y":
+        return "●"
+    return "?" if s in b.data["hardware"].get("unconfirmed", {}) else "○"
+
+
 def feature_defaults(root, boards):
-    """The feature matrix's table of every switch on every board: on by default, off, or not available."""
+    """The feature matrix's table of every switch on every board: on by default, off, not written yet, or not available."""
     bs = ordered(boards)
     cfg = {b.id: dict(print_config(root, b.id)) for b in bs}
     order = [s for s, _ in print_config(root, bs[0].id)] if bs else []
     out = ["| Feature switch | %s |" % " | ".join(b.data["model"] for b in bs),
            "|---|" + ":-:|" * len(bs)]
     for s in order:
-        marks = ["✕" if s in b.unsupported else "●" if cfg[b.id].get(s) == "y"
-                 else "?" if s in b.data["hardware"].get("unconfirmed", {}) else "○" for b in bs]
+        marks = [feature_mark(b, s, cfg[b.id]) for b in bs]
         out.append("| `%s` | %s |" % (s, " | ".join(marks)))
     # not a switch: what the board measures (hal/board.h board_volts), for the battery or supply features
     out.append("| Voltage reading (board, no switch) | %s |" % " | ".join(VOLTS_WORD[b.volts] for b in bs))

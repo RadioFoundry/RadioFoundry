@@ -247,7 +247,7 @@ OBJ := $(APP_OBJ) $(TP_OBJ)
 
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
-.PHONY: all codec clean size stack-check test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars
+.PHONY: all codec clean size stack-check test print-config print-cc print-unsupported print-not-written print-required print-maximal-skip print-maximal-vars
 all: $(REGISTRY_JSON) $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin) codec
 
 # The codec: merged into $(TARGET)_codec.bin when the radio's stock firmware is in codecs/ (codecs/README.md)
@@ -261,7 +261,7 @@ codec: $(TARGET).bin $(if $(BOOT_STAGE),$(TARGET)_install.bin)
 # are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
 # (and a file removed by a recipe would still be in make's cache)
 VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l ODR_GIT $(APP_SRC) 2>/dev/null))
-ifeq ($(filter clean test print-config print-cc print-unsupported print-required print-maximal-skip print-maximal-vars \
+ifeq ($(filter clean test print-config print-cc print-unsupported print-not-written print-required print-maximal-skip print-maximal-vars \
 	print-vars,$(MAKECMDGOALS)),)
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
@@ -335,10 +335,13 @@ print-config:
 	@$(foreach f,$(FEATURES),echo '$(f)=$(CONFIG_$(f))';)
 print-cc:
 	@echo '$(CC)'
-# Switches the board's hardware support doesn't cover (boards/<board>/config.mk BOARD_UNSUPPORTED, one a line with
-# its reason; strip drops the spaces before each comment): ci's maximal configuration leaves them off
+# Switches the radio's hardware can't do (boards/<board>/config.mk BOARD_UNSUPPORTED, one a line with its reason;
+# strip drops the spaces before each comment) and those its hardware can do but whose driver or glue isn't written
+# yet (BOARD_NOT_WRITTEN, the same form; docs/build-config.md): ci's maximal configuration leaves both off
 print-unsupported:
 	@echo '$(strip $(BOARD_UNSUPPORTED))'
+print-not-written:
+	@echo '$(strip $(BOARD_NOT_WRITTEN))'
 # Switches the board can't build without (boards/<board>/config.mk BOARD_REQUIRED): ci builds no "no-" configuration
 # for them
 print-required:

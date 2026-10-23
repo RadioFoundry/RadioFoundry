@@ -42,8 +42,8 @@
 #                           the board can't build without (BOARD_REQUIRED: FM on the DB25-D while DMR isn't built).
 #                           no-DEBUGLINK keeps STUB_ENTRY on, so it builds the stub entry's own listener
 #        fm-minimal         FM only: no DMR, USB, VFO, diagnostics, sub-audio tones
-#        maximal            every switch on, except those the board lists as unsupported (BOARD_UNSUPPORTED) or as
-#                           not needed (the board's MAXIMAL_SKIP: NET_PPP on the radios with the USB network adapter)
+#        maximal            every switch on, except those the board lists as unsupported (BOARD_UNSUPPORTED: the
+#                           hardware can't), not written yet (BOARD_NOT_WRITTEN) or not needed (the board's MAXIMAL_SKIP: NET_PPP on the radios with the USB network adapter)
 #                           and the bench diagnostics (MAXIMAL_SKIP here: AUDIO_PROBE), with the board's MAXIMAL_VARS
 #                           (the DM-1701: LTO=1)
 #        <value>            each build option value but the first (board.toml [[build_options]], e.g. a band),
@@ -438,7 +438,8 @@ for bm in boards/*/board.mk boards/*/; do
 	[ "$QUICK" = 1 ] && continue
 	features=$(make -s BOARD="$b" print-config 2>/dev/null)
 	all_on=""
-	unsupported=" $(make -s BOARD="$b" print-unsupported 2>/dev/null) $(make -s BOARD="$b" print-maximal-skip 2>/dev/null) $MAXIMAL_SKIP "
+	unsupported=" $(make -s BOARD="$b" print-unsupported 2>/dev/null) $(make -s BOARD="$b" print-not-written 2>/dev/null)"
+	unsupported="$unsupported $(make -s BOARD="$b" print-maximal-skip 2>/dev/null) $MAXIMAL_SKIP "
 	required=" $(make -s BOARD="$b" print-required 2>/dev/null) "
 	for kv in $features; do
 		f=${kv%%=*}
