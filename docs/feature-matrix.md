@@ -112,11 +112,11 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `BEEP` | ● | ● | ● | ● | ● |
 | `FM_TX_TONES` | ● | ● | ● | ● | … |
 | `DTMF` | ● | ● | ● | ● | … |
-| `VOX` | ● | ● | ● | ● | ● |
+| `VOX` | ● | ● | … | … | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● |
 | `VIBRATE` | ✕ | ● | ? | ✕ | ✕ |
 | `GPS` | ✕ | ✕ | ● | ● | ● |
-| `AUDIO_PROBE` | ○ | … | ○ | … | ○ |
+| `AUDIO_PROBE` | ○ | … | … | … | … |
 | `STUB_ENTRY` | ● | ● | ● | ● | ● |
 | `NAND_STORAGE` | ✕ | ✕ | ✕ | ● | ✕ |
 | `CRASH_LOG` | ● | ● | ● | ● | ● |
@@ -124,8 +124,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `CRASH_REPORT` | ● | ● | ● | ● | ● |
 | `WATCHDOG` | ● | ● | ● | ● | ● |
 | `FAULT_TRACE` | ✕ | ● | ● | ● | ✕ |
-| `AM_RX` | ✕ | … | ● | … | ✕ |
-| `BCAST_FM` | ✕ | ● | ● | … | ✕ |
+| `AM_RX` | ✕ | … | … | … | ✕ |
+| `BCAST_FM` | ✕ | ● | … | … | ✕ |
 | `APRS` | ● | ● | ● | ● | ● |
 | `APRS_RX` | ● | ● | ● | … | … |
 | `APRS_IGATE` | ○ | ● | ● | … | … |

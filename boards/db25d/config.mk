@@ -62,6 +62,8 @@ CONFIG_APRS_IGATE ?= n
 # Not wired yet: the RDA5802N (CAP_BCAST_FM) and the air band
 CONFIG_BCAST_FM ?= n
 CONFIG_AM_RX ?= n
+# VOX reads the microphone level through hal_power_t.mic_level, which this board doesn't have yet
+CONFIG_VOX ?= n
 # 160x128 like the DM-1701, which builds without the large font
 CONFIG_FONT_XL ?= n
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
@@ -78,6 +80,7 @@ BOARD_NOT_WRITTEN += APRS_RX	# FM receive audio isn't taken from the modem's AF 
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += BCAST_FM	# the RDA5802N broadcast receiver is fitted, its glue isn't written
 BOARD_NOT_WRITTEN += AM_RX	# the air band isn't wired yet
+BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe's audio tap (board.audio_tap) isn't written for this radio
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
 BOARD_REQUIRED := FM
