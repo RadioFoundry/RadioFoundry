@@ -78,7 +78,8 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
 3. The debug link on the host port, so screenshots and key injection work from here on ([Debug link](debug-link.md)).
    If the host port is a two-pin K-type programming jack, check whether PTT shares the line that carries the host's
    data: send back-to-back 0x00 bytes and watch the raw PTT pin. If it goes low, gate PTT on UART traffic
-   (`drivers/input/sharedptt`, [gotchas.md](../spec/gotchas.md) 16.2) before anything transmits.
+   (`drivers/input/sharedptt`, [gotchas.md](../spec/gotchas.md) 16.2) before anything transmits. Then run
+   `tests/hil/test_ptt_host_traffic.py`: host polling must make no PTT press.
 4. Flash, settings and calibration reads. Check the foreign-region guard on a radio from stock firmware
    ([settings-store.md](../spec/settings-store.md) 5).
 5. RF chip: FM receive, then FM transmit into a dummy load.

@@ -576,7 +576,8 @@ Direct inputs: PTB11 PTT, PTB12 SOS, PTB26 SK1 (upper side key), PTB27 SK2 (lowe
 PTB11 (PTT) is also the programming cable's host-to-radio serial line, as on the DM-32UV (hardware-dm32.md 6.2):
 every 0 bit the host sends pulls it low. Before the fix, two low key scans passed the debounce and made 13 short DMR
 keyups during a debug link soak and one during an MMDVM network call (2026-10-16). The key scan now counts a low PTT
-pin as pressed only after 50 ms without a good byte from the host (`drivers/input/sharedptt`); diagnostics line 0
+pin as pressed only after 50 ms without a good byte from the host, held low that way for 20 ms
+(`drivers/input/sharedptt`, gotchas 16.2); diagnostics line 0
 counts the ignored lows (`ptt ign`). On the radio (R): 30 s of debug link polling gave `ptt ign 20`, and the two
 hotspot network cases another 14, with no PTT press.
 
