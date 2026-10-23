@@ -81,7 +81,7 @@ NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory 
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
-             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "HSE_VALUE", "MCU_DEFS")
+             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "HSE_VALUE", "MCU_DEFS")
 # The frame buffer core/ui/gfx.h builds when a board's MCU_DEFS don't size it (RGB565, 160x128, at most 160 rows)
 GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED": 0}
 # The [flash.stub] id every stub keeps for its tools' test profiles (stub/f4stub.py test_board()), so a test record
@@ -131,7 +131,8 @@ BOARD_SCHEMA = {
     "debuglink_aliases": _opt(STR_LIST),
     "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
     # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
-    # BOARD_UNSUPPORTED because no source says yet whether the radio has the part: switch -> what is missing
+    # BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN because no source says yet whether the radio has the part: switch ->
+    # what is missing (docs/build-config.md, "Unsupported, not written, unconfirmed")
     "hardware": _req({"cpu": _opt(str), "bands": _req(str), "power": _req(str), "display": _req(str),
                       "gallery": _req(str), "unconfirmed": _opt(("map", str)),
                       # the real-time clock (CLOCKS) and the source of that fact; no driver uses it yet
@@ -167,8 +168,9 @@ BOARD_SCHEMA = {
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(str), "profile": _opt(str), "sources": _opt(STR_LIST),
                    "installed": _opt(STR_LIST), "stock_version": _opt(str)}),
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
-    # tests/hil: what the health checks expect (test_health.py), and the features planned here but not working yet
-    # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED)
+    # tests/hil: what the health checks expect (test_health.py), and the features built here but not working yet
+    # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED, code
+    # not written for the radio its BOARD_NOT_WRITTEN)
     "hil": _opt({"display": _opt(str), "features": _opt(STR_LIST), "no_features": _opt(STR_LIST),
                  "flash_jedec": _opt(STR_LIST), "calibration": _opt(bool), "battery_mv": _opt(RANGE),
                  "supply_mv": _opt(RANGE),
@@ -368,6 +370,40 @@ def unsupported_reasons(config_mk):
     return out
 
 
+NOT_WRITTEN_RE = re.compile(r"^\s*BOARD_NOT_WRITTEN\s*[:+]?=([^#]*)(?:#(.*))?$")
+
+
+def not_written_reasons(config_mk):
+    """{switch: reason} from config.mk's BOARD_NOT_WRITTEN lines, in BOARD_UNSUPPORTED's form: the switches the
+    radio's hardware can do but whose driver or glue isn't written yet (docs/build-config.md)."""
+    out = {}
+    try:
+        lines = open(config_mk, encoding="utf-8").read().splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        m = NOT_WRITTEN_RE.match(line)
+        if m:
+            sws = m.group(1).split()
+            for s in sws:
+                out[s] = (m.group(2) or "").strip() if len(sws) == 1 else ""
+    return out
+
+
+def not_written_problems(bid, b):
+    """config.mk's BOARD_NOT_WRITTEN of a board: each switch with its reason, and none also in BOARD_UNSUPPORTED (the
+    hardware either can or can't)."""
+    out = []
+    for s, why in b.not_written.items():
+        if not why:
+            out.append("boards/%s/config.mk: BOARD_NOT_WRITTEN %s has no reason: one switch a line, "
+                       "BOARD_NOT_WRITTEN += %s  # <what isn't written>" % (bid, s, s))
+        if s in b.unsupported:
+            out.append("boards/%s: %s is in both BOARD_UNSUPPORTED and BOARD_NOT_WRITTEN: UNSUPPORTED only when the "
+                       "hardware can't do it (docs/build-config.md)" % (bid, s))
+    return out
+
+
 def pin_defines(path):
     """{NAME: value} of the pin #defines in a pins.h: an integer (the HR_C7000's port << 4 | pin), or "PB3" for the
     STM32 form `GPIOB, GPIO_PIN_3`."""
@@ -407,6 +443,8 @@ class Board:
         # config.mk BOARD_UNSUPPORTED: {switch: reason}, in the build's order (make's value decides the set)
         reasons = unsupported or {}
         self.unsupported = {s: reasons.get(s, "") for s in mk.get("BOARD_UNSUPPORTED", "").split()}
+        # config.mk BOARD_NOT_WRITTEN, the same way (load() fills it)
+        self.not_written = {}
         boot = mk.get("BOOT_STAGE")
         self.first_stage = None
         if boot:
@@ -637,6 +675,9 @@ def load(root=ROOT, only=None):
                          {**unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
                           **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(bdir))
         out[bid].volts = source_volts(bdir)
+        nw = {**not_written_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
+              **not_written_reasons(os.path.join(bdir, "config.mk"))}
+        out[bid].not_written = {s: nw.get(s, "") for s in mk.get("BOARD_NOT_WRITTEN", "").split()}
     return out
 
 
@@ -668,22 +709,24 @@ def hardware_switches(root=ROOT):
 
 def hardware_problems(bid, unsupported, unconfirmed, built, hw):
     """A board's hardware switches that read "off by default": each must be built (built: switch -> "y"/"n"), listed in
-    BOARD_UNSUPPORTED, or, while the fact is unknown, in board.toml [hardware] unconfirmed. One in BOARD_UNSUPPORTED
-    must also be off by default."""
+    BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (unsupported: both, with their reasons), or, while the fact is unknown, in
+    board.toml [hardware] unconfirmed. One in either list must also be off by default."""
     out = []
     for s, what in sorted(hw.items()):
         on, gone = built.get(s) == "y", s in unsupported
         if s in unconfirmed:
             if on or gone:
                 out.append("boards/%s/board.toml: hardware.unconfirmed %s, but the board %s: drop the entry"
-                           % (bid, s, "builds it" if on else "lists it in BOARD_UNSUPPORTED"))
+                           % (bid, s, "builds it" if on else "lists it in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN"))
         elif on and gone:
-            out.append("boards/%s: %s is in BOARD_UNSUPPORTED (it needs %s) but built by default: add CONFIG_%s ?= n to "
-                       "its config.mk" % (bid, s, what, s))
+            out.append("boards/%s: %s is in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (it needs %s) but built by default: "
+                       "add CONFIG_%s ?= n to its config.mk" % (bid, s, what, s))
         elif not on and not gone:
             out.append("boards/%s: %s needs %s and is off by default: build it (config.mk CONFIG_%s ?= y) if the "
-                       "radio has it, else BOARD_UNSUPPORTED += %s  # <the reason, from the hardware spec>; a fact "
-                       "no source has yet goes in board.toml [hardware] unconfirmed" % (bid, s, what, s, s))
+                       "radio has it and the code is written; BOARD_NOT_WRITTEN += %s  # <what isn't written> if "
+                       "the radio has it but the code isn't; else BOARD_UNSUPPORTED += %s  # <the reason, from the "
+                       "hardware spec>. A fact no source has yet goes in board.toml [hardware] unconfirmed"
+                       % (bid, s, what, s, s, s))
     for s in sorted(set(unconfirmed) - set(hw)):
         out.append("boards/%s/board.toml: hardware.unconfirmed %s is not a hardware switch (tests/hil/features.toml)"
                    % (bid, s))
@@ -710,11 +753,14 @@ def check(root=ROOT):
             if not why:
                 problems.append("boards/%s/config.mk: BOARD_UNSUPPORTED %s has no reason: one switch a line, "
                                 "BOARD_UNSUPPORTED += %s  # <reason>" % (bid, s, s))
+        problems += not_written_problems(bid, b)
         if hw:
             try:
                 built = {s: v for s, v in ((k[len("CONFIG_"):], v) for k, v in
                                            make_vars(root, bid, ["CONFIG_" + s for s in hw]).items())}
-                problems += hardware_problems(bid, b.unsupported, d["hardware"].get("unconfirmed", {}), built, hw)
+                # not written yet counts as left off on purpose, as unsupported does
+                problems += hardware_problems(bid, {**b.unsupported, **b.not_written},
+                                              d["hardware"].get("unconfirmed", {}), built, hw)
             except RegistryError as e:
                 problems.append(str(e))
         for k, p in d["docs"].items():
@@ -1003,7 +1049,8 @@ def site_view(boards, root=ROOT):
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
-            "unsupported": dict(b.unsupported), "volts": b.volts, "clock": hw["clock"]["rtc"]})
+            "unsupported": dict(b.unsupported), "not_written": dict(b.not_written), "volts": b.volts,
+            "clock": hw["clock"]["rtc"]})
     # the survey's radios without a board, planned or in progress (docs/spec/radios.md Port cells)
     rows, problems = registry_docs.survey(root, boards)
     if problems:
@@ -1216,6 +1263,11 @@ def self_test():
                 "BOARD_UNSUPPORTED += X Y\t# two on a line\n")
     ok(unsupported_reasons(os.path.join(tmpm, "config.mk")) == {"USB": "no USB port", "AM_RX": "", "X": "", "Y": ""},
        "unsupported_reasons: one switch a line with its comment, none for a bare or shared line")
+    with open(os.path.join(tmpm, "config.mk"), "w", encoding="utf-8") as f:
+        f.write("BOARD_UNSUPPORTED += USB\t# no USB port\nBOARD_NOT_WRITTEN += DTMF\t# no tone path yet\n")
+    ok(not_written_reasons(os.path.join(tmpm, "config.mk")) == {"DTMF": "no tone path yet"}
+       and unsupported_reasons(os.path.join(tmpm, "config.mk")) == {"USB": "no USB port"},
+       "not_written_reasons: BOARD_NOT_WRITTEN lines only, and BOARD_UNSUPPORTED's reader skips them")
     shutil.rmtree(tmpm)
     for bad, what in (({"hil": {"battery_mv": "5V"}}, "a [hil] value of the wrong type"),
                       ({"hil": {"no_such": 1}}, "an unknown [hil] key"),
@@ -1269,6 +1321,8 @@ def self_test():
        "hardware switches: unconfirmed on a switch that isn't a hardware switch fails")
     ok(len(hp("x", {"NAND_STORAGE": "NOR"}, {}, {"VIBRATE": "y", "NAND_STORAGE": "y"}, hw)) == 1,
        "hardware switches: in BOARD_UNSUPPORTED but built by default fails")
+    ok(hp("x", {"NAND_STORAGE": "the driver isn't written"}, {}, {"VIBRATE": "y", "NAND_STORAGE": "n"}, hw) == [],
+       "hardware switches: one in BOARD_NOT_WRITTEN (check() passes both lists) passes off by default")
 
     # the survey's Port cells (check 5) and the floor, on a fixture survey
     class Stub:
@@ -1391,6 +1445,14 @@ def self_test():
         with open(mkp, "w", encoding="utf-8") as f:
             f.write(mk_good + "BOARD_UNSUPPORTED += SCAN\n")
         ok(any("SCAN has no reason" in p for p in check(tmp)), "check finds a BOARD_UNSUPPORTED switch without a reason")
+        with open(mkp, "w", encoding="utf-8") as f:
+            f.write(mk_good + "CONFIG_SCAN ?= n\nBOARD_NOT_WRITTEN += SCAN\n")
+        ok(any("BOARD_NOT_WRITTEN SCAN has no reason" in p for p in check(tmp)),
+           "check finds a BOARD_NOT_WRITTEN switch without a reason")
+        with open(mkp, "w", encoding="utf-8") as f:
+            f.write(mk_good + "CONFIG_SCAN ?= n\nBOARD_UNSUPPORTED += SCAN\t# a\nBOARD_NOT_WRITTEN += SCAN\t# b\n")
+        ok(any("in both BOARD_UNSUPPORTED and BOARD_NOT_WRITTEN" in p for p in check(tmp)),
+           "check finds a switch in both lists")
         with open(mkp, "w", encoding="utf-8") as f:
             f.write(mk_good)
         pins = os.path.join(tmp, "boards", one, "pins.h")
