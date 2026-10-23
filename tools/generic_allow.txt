@@ -5,12 +5,10 @@
 # a glob (fnmatch: * also crosses /), a space, and why. An entry no file needs any more is an error, so the list only
 # shrinks. Most entries are debt from before the check: fix the file and drop its line. Don't add one for new code.
 
-# Specs: a spec cites the radio a fact was measured on or read from (hardware, codec, bench evidence).
-docs/spec/* specs cite the radio each fact was measured on (docs/spec/README.md)
+# A radio's own spec pages (hardware, codec, migration) that still compare with or link another radio's page.
+docs/spec/* a radio's own pages cite the radio a fact was compared with; to link the shared spec instead
 
-# Docs with per-radio notes and examples: to move per-radio values into docs/user/23-radios.md and hardware pages, and examples to <radio>.
-docs/user/* per-radio notes inline in the manual; they belong in 23-radios.md
-docs/dev/* example commands and history name the radio they were written on
+# Docs with per-radio notes and examples: to move per-radio values into docs/user/23-radios.md and hardware pages.
 docs/ux/* the UX research and wireframes name the radio each screen size was drawn for
 docs/testing/* test plans and bring-up pages compare with the radio a case was first run on
 docs/build-config.md the switch tables quote per-radio defaults and sizes (to generate from the registry)
@@ -130,3 +128,73 @@ tests/hil/test_mic_gain.py per-radio skip reasons and bench notes
 tests/hil/test_mic_uart_inject.py per-radio skip reasons and bench notes
 tests/hil/test_radio_features.py per-radio skip reasons and bench notes
 tests/hil/test_split_duplex.py per-radio skip reasons and bench notes
+
+# Generic docs that still name radios (AGENTS.md, generic docs). Exact paths only: a glob can't excuse a generic doc.
+# Each is to rewrite: say what a board provides (CAP_*, board_t) and link feature-matrix.md; move the radio's facts to
+# its own page.
+docs/dev/README.md names radios inline; to rewrite
+docs/dev/adding-a-radio.md names radios inline; to rewrite
+docs/dev/building.md names radios inline; to rewrite
+docs/dev/ci.md names radios inline; to rewrite
+docs/dev/codec.md names radios inline; to rewrite
+docs/dev/contributing.md names radios inline; to rewrite
+docs/dev/glossary.md names radios inline; to rewrite
+docs/dev/release.md names radios inline; to rewrite
+docs/dev/stack-check.md names radios inline; to rewrite
+docs/dev/testing.md names radios inline; to rewrite
+docs/dev/website.md names radios inline; to rewrite
+docs/spec/README.md names radios inline; to rewrite
+docs/spec/airband-and-broadcast.md names radios inline; to rewrite
+docs/spec/aprs.md names radios inline; to rewrite
+docs/spec/capabilities.md names radios inline; to rewrite
+docs/spec/codec-md9600.md names radios inline; to rewrite
+docs/spec/codec-mduv380.md names radios inline; to rewrite
+docs/spec/codec-placement.md names radios inline; to rewrite
+docs/spec/codeplug-native.md names radios inline; to rewrite
+docs/spec/codeplug-port.md names radios inline; to rewrite
+docs/spec/codeplug-stock-tyt.md names radios inline; to rewrite
+docs/spec/cps-fast.md names radios inline; to rewrite
+docs/spec/cps-protocol.md names radios inline; to rewrite
+docs/spec/crash-log.md names radios inline; to rewrite
+docs/spec/debuglink.md names radios inline; to rewrite
+docs/spec/dmr-data.md names radios inline; to rewrite
+docs/spec/dmr-emergency.md names radios inline; to rewrite
+docs/spec/dmr-modem.md names radios inline; to rewrite
+docs/spec/dmr-roaming.md names radios inline; to rewrite
+docs/spec/dmr-tier3-plan.md names radios inline; to rewrite
+docs/spec/dmr-voice.md names radios inline; to rewrite
+docs/spec/gotchas.md names radios inline; to rewrite
+docs/spec/hrc6000-registers.md names radios inline; to rewrite
+docs/spec/mdns.md names radios inline; to rewrite
+docs/spec/mmdvm-protocol.md names radios inline; to rewrite
+docs/spec/modem-hrc6000.md names radios inline; to rewrite
+docs/spec/modem-hrc7000.md names radios inline; to rewrite
+docs/spec/nand-sectors.md names radios inline; to rewrite
+docs/spec/open-firmware-cps.md names radios inline; to rewrite
+docs/spec/ppp.md names radios inline; to rewrite
+docs/spec/radio-features.md names radios inline; to rewrite
+docs/spec/settings-store.md names radios inline; to rewrite
+docs/spec/sfr.md names radios inline; to rewrite
+docs/spec/snmp.md names radios inline; to rewrite
+docs/spec/split-duplex.md names radios inline; to rewrite
+docs/spec/stub-entry.md names radios inline; to rewrite
+docs/spec/stub-stm32f4.md names radios inline; to rewrite
+docs/spec/tcp-services.md names radios inline; to rewrite
+docs/spec/tftp.md names radios inline; to rewrite
+docs/spec/ui.md names radios inline; to rewrite
+docs/spec/usb-audio.md names radios inline; to rewrite
+docs/spec/usb-network.md names radios inline; to rewrite
+docs/spec/watchdog.md names radios inline; to rewrite
+docs/user/01-introduction.md names radios inline; to rewrite
+docs/user/02-installing.md names radios inline; to rewrite
+docs/user/07-fm.md names radios inline; to rewrite
+docs/user/11-scan.md names radios inline; to rewrite
+docs/user/12-settings.md names radios inline; to rewrite
+docs/user/13-hotspot.md names radios inline; to rewrite
+docs/user/14-usb-network.md names radios inline; to rewrite
+docs/user/15-programming-qdmr.md names radios inline; to rewrite
+docs/user/17-aprs.md names radios inline; to rewrite
+docs/user/20-troubleshooting.md names radios inline; to rewrite
+docs/user/21-faq.md names radios inline; to rewrite
+docs/user/22-glossary.md names radios inline; to rewrite
+docs/user/README.md names radios inline; to rewrite
