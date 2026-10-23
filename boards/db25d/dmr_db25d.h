@@ -9,7 +9,7 @@
 #include "config.h"
 #include "modem/hrc7000/hrc7000.h"
 
-#define DB25D_MIC_GAIN_DB	11u	// GCR_ADCL at init, as the DM-32UV. The stock digital channel uses a setting, 0 dB by default
+#define DB25D_MIC_GAIN_DB	11u	// GCR_ADCL at init, as the other HR_C7000 boards. The stock digital channel uses a setting, 0 dB by default
 
 // DMR transmit (make DB25D_DMR_TX=1, with CONFIG_DMR; hardware-db25d.md 4.5): off until it has been checked on air
 #ifndef DB25D_DMR_TX

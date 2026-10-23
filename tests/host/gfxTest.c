@@ -458,7 +458,7 @@ int main(void)
 	sb_init(&b, age, sizeof age); sb_age_long(&b, 30000u);
 	CHECK(strcmp(age, "30s ago") == 0);
 
-	// 160x120 color: the DM-1701
+	// 160x120 color
 	ui_layout_init();
 	render_set("160x120");
 
@@ -493,7 +493,7 @@ int main(void)
 	ui_layout_init();
 	render_set("160x128");
 
-	// A board safe area (the DM-1701's lens): drawing moves inside it and the margins stay background
+	// A board safe area (a lens over the panel): drawing moves inside it and the margins stay background
 	disp.height = 120;
 	disp.inset_top = disp.inset_bottom = disp.inset_left = disp.inset_right = 5;
 	CHECK(gfx_init(&disp));

@@ -3,12 +3,12 @@
 // MD-380 data flash: a Winbond W25Q on SPI1 (PB3 SCK, PB4 MISO, PB5 MOSI, AF5), mode 0, APB2/16, chip select PD7
 // (docs/spec/hardware-md380.md 12), through the shared driver (platform/stm32f4/spi_flash). Early radios are reported
 // with 1 MB parts, later ones with 16 MB: the size is probed, and the core gets its areas only on a 16 MB part (the
-// DM-1701 layout). On a smaller part nothing is stored (settings live in RAM) and the stock codeplug is left alone.
+// 16 MB STM32 layout). On a smaller part nothing is stored (settings live in RAM) and the stock codeplug is left alone.
 #include "md380.h"
 #include "pins.h"
 #include "spi_flash/spi_flash_board.h"
 
-// The DM-1701's layout (hardware-md380.md 12.2). The open-firmware codeplug stays where the CPS tools expect it; our
+// The 16 MB STM32 layout (hardware-md380.md 12.2). The open-firmware codeplug stays where the CPS tools expect it; our
 // own areas sit below the open-firmware flash image (0x011000..0x01FFFF, which no CPS address maps to) and above the 14
 // MB mark that qdmr's DMR ID database may reach. The stock TYT codeplug at 0 is overwritten by the first open-firmware
 // write

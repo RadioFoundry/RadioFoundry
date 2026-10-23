@@ -27,28 +27,117 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 
 ## Checked on each radio
 
-Taken from the test records and bring-up pages named in the last column, as of 2026-10-20. "Checked" means a person or
-a HIL test saw it work on a radio, on air where RF is involved. Anything not listed as checked has no recorded check on
-that radio: it is built in and host tested, and should be treated as unverified. The DM-1701 list is from the HIL run
-of 2026-10-10 and later notes, so it can be out of date for newer features. Each radio's checklist, with the required
-tests for every feature, is `tools/bringup.py list --radio <id>`; recorded runs are in
-[testing/results/](testing/results/README.md). This table moves to those records (issue 106).
+Generated from the bring-up records in [testing/results/](testing/results/README.md), by the status rule of
+`tools/bringup.py status`. "pass" means a recorded run (`tools/bringup.py run`) passed the feature's required tests.
+"(seed)" means the evidence is the board's seed record: a check the docs recorded before the board's first run.
+"needs re-run" means the feature's spec or source files changed since that check; the result shown is the old one.
+"not recorded" means no record covers the feature on that radio: it is built in and host tested, and should be
+treated as unverified. "off" is off in the default build, ✕ not available. A radio's checklist with the required tests
+is `tools/bringup.py list --radio <id>`.
 
-| Radio | Checked on the radio | Built, not checked, or known not to work | Source |
-|---|---|---|---|
-| DM-1701 | FM receive and transmit (tones, 1750 Hz, roger beep), DMR voice and data both ways, late entry, talker alias, GPS in calls, emergency, scan and dual watch, hotspot voice and data, MMDVM SFR (repeat delay 210 ms, not 90 ms), each split duplex half alone (one radio), battery saver, qdmr, the USB network adapter | Split duplex with a real pair of radios, standalone SFR, ARS, LRRP, the TCP services, mDNS, TFTP, SNMP, IP over DMR end to end, roaming to a repeater, control station mode, VOX with a voice, privacy scrambling against another radio | [on-air-coverage](testing/on-air-coverage.md), [23-radios](user/23-radios.md) |
-| DM-32UV | FM receive and transmit, CTCSS and DCS, DMR voice receive (simplex) and transmit, APRS receive and transmit, GPS data (no fix yet), the debug link and the hotspot on the cable, battery saver, each split duplex half alone (one radio), the receive half of a split duplex pair | The transmit half of a split duplex pair. Air band AM, broadcast FM, USB (not available). FM transmit deviation at 12.5 kHz, a GPS fix, both slots through a duplex hotspot. A DMR receive fault after hours of uptime (2026-10-16, cause unknown). No recorded check: emergency, privacy, talker alias, text and data, roaming, scan, MMDVM SFR, PPP and the network services, control station mode, VOX | [dm32-bringup](testing/dm32-bringup.md), [23-radios](user/23-radios.md) |
-| DM-1801 Pro | FM receive and transmit (UHF), CTCSS and DCS, DMR voice with the radio's own codec, DMR data and text, the hotspot, MMDVM SFR on the SDR bench, PPP with the network services and IP over DMR to the SDR bench, each split duplex half alone (one radio), the transmit half of a split duplex pair | The receive half of a split duplex pair. VHF transmit, VOX, APRS receive. No recorded check on the rest | [23-radios](user/23-radios.md), [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
-| DB25-D PRO | FM receive and transmit, DMR voice receive and transmit on the SDR bench, the hotspot, the DMR VFO, PPP network services, programming over the cable, volume | **Split duplex and MMDVM SFR: not built.** DMR audio from the speaker, a GPS fix, settings kept across power off (new). No recorded check on the rest | [23-radios](user/23-radios.md), [hardware-db25d](spec/hardware-db25d.md) |
-| MD-380 | Fully operational (UHF)¹: FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or duplex hotspot on either slot (issue 108), codeplug and ID database programming (CPS, web editor) | DCS, the VHF image, tone deviation, data from a DMR VFO. Split duplex and SFR not available (HR_C5000) | [md380-bringup](testing/md380-bringup.md), [23-radios](user/23-radios.md) |
+<!-- generated: tools/boards.py docs checked; edit docs/testing/results/<board>/ (tools/bringup.py run) -->
+| Feature | DM-1701 | DM-1801 Pro | DM-32UV | DB25-D PRO | MD-380 |
+|---|:-:|:-:|:-:|:-:|:-:|
+| `fm` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) |
+| `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) |
+| `fm_tx_tones` | pass (seed) | not recorded | not recorded | not recorded | ✕ |
+| `dtmf` | not recorded | not recorded | not recorded | not recorded | ✕ |
+| `vox` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `battery_save` | pass (seed) | not recorded | pass (seed) | not recorded | not recorded |
+| `am_rx` | ✕ | ✕ | not recorded | ✕ | ✕ |
+| `bcast_fm` | ✕ | not recorded | not recorded | ✕ | ✕ |
+| `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) |
+| `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_talker_alias` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `dmr_gps` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `dmr_emergency` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_signaling` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `vfo_dmr` | not recorded | not recorded | not recorded | pass (seed) | not recorded |
+| `channel_list` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `channel_edit` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `key_assign` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `scan` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `dual_watch` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `beep` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `vibrate` | ✕ | not recorded | off | ✕ | ✕ |
+| `gps` | ✕ | ✕ | not recorded | not recorded | not recorded |
+| `dmr_data_rx` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded |
+| `dmr_sms` | pass (seed) | pass (seed) | not recorded | not recorded | pass (seed) |
+| `dmr_tms` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_ars` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_udp_compress` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `sfr` | pass (seed) | pass (seed) | not recorded | ✕ | ✕ |
+| `aprs` | not recorded | not recorded | pass (seed) | not recorded | not recorded |
+| `aprs_rx` | not recorded | not recorded | pass (seed) | ✕ | ✕ |
+| `aprs_igate` | off | not recorded | not recorded | ✕ | ✕ |
+| `usb` | pass (seed) | ✕ | ✕ | ✕ | not recorded |
+| `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded |
+| `split_duplex` | pass (seed) | pass (seed) | pass (seed) | ✕ | ✕ |
+| `debuglink` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) |
+| `task_stacks` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `cps_openfw` | pass (seed) | not recorded | not recorded | pass (seed) | pass (seed) |
+| `cps_fast` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `stub_entry` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `crash_log` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `crash_screen` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `crash_report` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `fault_trace` | ✕ | not recorded | not recorded | not recorded | ✕ |
+| `usb_network` | pass (seed) | ✕ | ✕ | ✕ | not recorded |
+| `dmr_ip_gateway` | not recorded | pass (seed) | not recorded | not recorded | not recorded |
+| `dmr_control_station` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `net_tcp` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `net_usrp` | not recorded | not recorded | not recorded | ✕ | not recorded |
+| `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `mdns` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `net_ppp` | off | pass (seed) | not recorded | pass (seed) | off |
+| `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `diag` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `ui_color` | not recorded | ✕ | not recorded | not recorded | not recorded |
+| `font_xl` | ✕ | ✕ | not recorded | ✕ | ✕ |
+| `font_aa` | off | off | not recorded | off | off |
+| `font_big` | off | off | not recorded | off | off |
+| `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded |
+| `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded |
+| `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ |
+| `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `audio_probe` | off | ✕ | off | ✕ | off |
+<!-- end generated -->
+
+What the records don't hold yet: limits and known problems from the bring-up pages.
+
+| Radio | Known limits and problems | Source |
+|---|---|---|
+| DM-1701 | Not yet checked: split duplex with a real pair of radios, standalone SFR, roaming to a repeater, IP over DMR end to end, VOX with a voice, privacy scrambling against another radio | [on-air-coverage](testing/on-air-coverage.md) |
+| DM-32UV | GPS data seen, no fix yet. The transmit half of a split duplex pair not checked. FM transmit deviation at 12.5 kHz, both slots through a duplex hotspot. A DMR receive fault after hours of uptime (2026-10-16, cause unknown). USB not available | [dm32-bringup](testing/dm32-bringup.md) |
+| DM-1801 Pro | PPP checked with the network services. The receive half of a split duplex pair, VHF transmit, VOX and APRS receive not checked | [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
+| DB25-D PRO | Split duplex and MMDVM SFR not built. DMR audio from the speaker, a GPS fix and settings kept across power off not confirmed | [hardware-db25d](spec/hardware-db25d.md) |
+| MD-380 | Fully operational (UHF)¹. DCS, the VHF image, tone deviation and data from a DMR VFO not checked. Split duplex and SFR not available (HR_C5000) | [md380-bringup](testing/md380-bringup.md) |
 
 ¹ TX frequency accuracy depends on each radio's factory calibration: confirm it against an external reference (frequency counter, service monitor, or a hotspot's MMDVMCal BER test). One MD-380 measured +1.9 kHz high, outside an MMDVM hotspot's decode window; `MD380_TX_OFFSET_HZ` corrects it at build time ([hardware-md380](spec/hardware-md380.md)).
 
 ## Built by default on each radio
 
-● on in the radio's default image · ○ off by default (it builds when switched on) · ✕ not available: the board or its
-platform lists it in `BOARD_UNSUPPORTED` with the reason (`config.mk`) · ? off, and no source says yet whether the
-radio has the part it needs (`board.toml` `[hardware] unconfirmed`). From each board's `make print-config`. A switch
+● on in the radio's default image · ○ off by default (it builds when switched on) · ✕ the radio's hardware can't do
+it: the board or its platform lists it in `BOARD_UNSUPPORTED` with the reason (`config.mk`) · … the hardware can, but
+the radio's driver or glue isn't written yet (`BOARD_NOT_WRITTEN`) · ? off, and no source says yet whether the radio
+has the part it needs (`board.toml` `[hardware] unconfirmed`). The rule:
+[build-config.md](build-config.md#unsupported-not-written-unconfirmed). From each board's `make print-config`. A switch
 that needs hardware some radios lack (`hardware` in `tests/hil/features.toml`) is never ○. The last two rows are not
 switches. Voltage reading: what the radio measures, its battery, its DC input (Supply) or none (`board_volts()` in
 `hal/board.h`). Clock: whether the radio's real-time clock keeps time through power-off (`board.toml` `[hardware]
@@ -56,7 +145,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 
 <!-- generated: tools/boards.py docs feature-defaults; edit config/features.mk and boards/*/config.mk -->
 | Feature switch | DM-1701 | DM-1801 Pro | DM-32UV | DB25-D PRO | MD-380 |
-|---|:-:||---|:-:||---|:-:||---|:-:||---|:-:|
+|---|:-:|:-:|:-:|:-:|:-:|
 | `FM` | ● | ● | ● | ● | ● |
 | `SUBTONE` | ● | ● | ● | ● | ● |
 | `DMR` | ● | ● | ● | ● | ● |
@@ -79,20 +168,20 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● |
 | `NET_APRSIS` | ● | ● | ● | ● | ● |
-| `NET_USRP` | ● | ● | ● | ✕ | ● |
+| `NET_USRP` | ● | ● | ● | … | ● |
 | `MDNS` | ● | ● | ● | ● | ● |
 | `TFTP` | ● | ● | ● | ● | ● |
 | `TFTP_IDDB` | ● | ● | ● | ● | ● |
 | `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● |
 | `SNMP` | ● | ● | ● | ● | ● |
-| `SFR` | ● | ● | ● | ✕ | ✕ |
+| `SFR` | ● | ● | ● | … | ✕ |
 | `TASK_STACKS` | ● | ● | ● | ● | ● |
 | `USB` | ● | ✕ | ✕ | ✕ | ● |
 | `HOSTLINK` | ● | ● | ● | ● | ● |
 | `USB_NETWORK` | ● | ✕ | ✕ | ✕ | ● |
 | `NET_PPP` | ○ | ● | ● | ● | ○ |
 | `HOTSPOT` | ● | ● | ● | ● | ● |
-| `HOTSPOT_SPLIT` | ● | ● | ● | ✕ | ✕ |
+| `HOTSPOT_SPLIT` | ● | ● | ● | … | … |
 | `DEBUGLINK` | ● | ● | ● | ● | ● |
 | `CPS_OPENFW` | ● | ● | ● | ● | ● |
 | `CPS_FAST` | ● | ● | ● | ● | ● |
@@ -108,12 +197,13 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `SCAN` | ● | ● | ● | ● | ● |
 | `DUAL_WATCH` | ● | ● | ● | ● | ● |
 | `BEEP` | ● | ● | ● | ● | ● |
-| `FM_TX_TONES` | ● | ● | ● | ● | ✕ |
-| `VOX` | ● | ● | ● | ● | ● |
+| `FM_TX_TONES` | ● | ● | ● | ● | … |
+| `DTMF` | ● | ● | ● | ● | … |
+| `VOX` | ● | ● | … | … | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● |
 | `VIBRATE` | ✕ | ● | ? | ✕ | ✕ |
 | `GPS` | ✕ | ✕ | ● | ● | ● |
-| `AUDIO_PROBE` | ○ | ✕ | ○ | ✕ | ○ |
+| `AUDIO_PROBE` | ○ | … | … | … | … |
 | `STUB_ENTRY` | ● | ● | ● | ● | ● |
 | `NAND_STORAGE` | ✕ | ✕ | ✕ | ● | ✕ |
 | `CRASH_LOG` | ● | ● | ● | ● | ● |
@@ -121,11 +211,11 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `CRASH_REPORT` | ● | ● | ● | ● | ● |
 | `WATCHDOG` | ● | ● | ● | ● | ● |
 | `FAULT_TRACE` | ✕ | ● | ● | ● | ✕ |
-| `AM_RX` | ✕ | ✕ | ● | ✕ | ✕ |
-| `BCAST_FM` | ✕ | ● | ● | ✕ | ✕ |
+| `AM_RX` | ✕ | … | … | … | ✕ |
+| `BCAST_FM` | ✕ | ● | … | … | ✕ |
 | `APRS` | ● | ● | ● | ● | ● |
-| `APRS_RX` | ● | ● | ● | ✕ | ✕ |
-| `APRS_IGATE` | ○ | ● | ● | ✕ | ✕ |
+| `APRS_RX` | ● | ● | ● | … | … |
+| `APRS_IGATE` | ○ | ● | ● | … | … |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● |

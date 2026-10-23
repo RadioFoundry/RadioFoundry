@@ -160,6 +160,12 @@ support it, so check the first run on the Gitea runner before relying on the com
 | `matrix (C-SKY)` | the same for every board built with csky-elf GCC, in the csky-elf image unless the runner has csky-elf GCC | about 9 min: DM-32UV 2.9 min (50 builds; measured on the CI VM), the other two about as long |
 | `reuse` | `reuse lint`, a warning until it passes | under a minute |
 
+The maximal build turns on every switch except the board's `BOARD_UNSUPPORTED` (the hardware can't),
+`BOARD_NOT_WRITTEN` (the code isn't written for the radio yet) and `MAXIMAL_SKIP` lists, and `CONFIG_AUDIO_PROBE`
+([build-config.md](../build-config.md#unsupported-not-written-unconfirmed)). Not-written switches stay off because
+they add code that doesn't run on the radio but still takes its flash and RAM, so a shared addition could push one
+radio over and fail CI on unrelated pull requests.
+
 One job per toolchain runs its boards one after another (artifacts `matrix-arm`, `matrix-csky`). A job per board would finish each board sooner, but it
 repeats the checkout, the submodules and the toolchain set-up for every board, and a 4-core runner is kept busy by
 one board's builds anyway. Nobody waits on the nightly, so the fewer jobs win.

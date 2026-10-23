@@ -70,5 +70,6 @@ A feature's status never understates the board. For a feature the board builds:
 A run's row replaces the seed's row for each feature the run passed or failed. A seed row whose `commit` the
 repository has needs a re-run when the feature's paths differ from that commit's; a row without a commit, or with
 one that is gone, stands until a run replaces it. Only a failing
-record shows a failure. `tools/bringup.py list --radio <board>` shows one board with details; `tools/bringup.py status`
+record shows a failure. The feature matrix's [Checked on each radio](../../feature-matrix.md#checked-on-each-radio) table is generated from
+these statuses (`tools/boards.py docs`), so a new record goes with a `tools/boards.py docs` run. `tools/bringup.py list --radio <board>` shows one board with details; `tools/bringup.py status`
 shows every board and feature and marks with `*` each status that rests on a seed record.

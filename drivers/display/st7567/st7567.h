@@ -25,7 +25,7 @@ typedef struct {
 
 typedef struct {
 	const st7567_bus_t *bus;
-	uint8_t col_offset;	// first visible column of the controller's 132 (4 on the DM-1801 Pro)
+	uint8_t col_offset;	// first visible column of the controller's 132 (the board's)
 	bool seg_reverse;	// mirror left / right
 	bool com_reverse;	// mirror top / bottom
 	uint8_t regulator;	// internal regulator ratio, 0..7

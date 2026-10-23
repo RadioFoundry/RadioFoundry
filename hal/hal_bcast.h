@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Broadcast FM receiver: a second receiver beside the channel receiver (the RDA5807M on the DM-32UV), for listening
+// Broadcast FM receiver: a second receiver beside the channel receiver (e.g. an RDA5807M), for listening
 // to FM broadcast while the channel stays monitored (docs/spec/airband-and-broadcast.md 4). Not a channel mode.
 //
 // The board composes the chip driver, its bus and the audio routing behind this. All calls come from one task (the

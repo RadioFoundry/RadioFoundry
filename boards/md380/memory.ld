@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* Copyright (c) 2026 The OpenDigitalRadio Authors */
 /* TYT MD-380 / MD-390 / RT3, STM32F405VGT6, application behind the 48 KB Tytera bootloader (docs/spec/hardware-md380.md
- * 1.3, 13). The bootloader starts the application at 0x0800C000 like the DM-1701's, so the vector table, stack rule and
+ * 1.3, 13). The bootloader starts the application at 0x0800C000 like the other STM32 radios', so the vector table, stack rule and
  * start-up are the same (platform/stm32f4/common.ld).
  *
  * Codec (docs/spec/codec-placement.md, "STM32 radios"): the merge on the user's machine puts the stock D002.032
@@ -16,7 +16,7 @@
 MEMORY
 {
 	FLASH   (rx)  : ORIGIN = __app_start, LENGTH = 0x08080000 - __app_start	/* sectors 3-7 */
-	RAM     (xrw) : ORIGIN = 0x20000000, LENGTH = 128K - 4	/* as on the DM-1701: SP below the top of RAM */
+	RAM     (xrw) : ORIGIN = 0x20000000, LENGTH = 128K - 4	/* as on the other STM32 radios: SP below the top of RAM */
 	CCMRAM  (rw)  : ORIGIN = 0x10000000, LENGTH = 64K
 }
 

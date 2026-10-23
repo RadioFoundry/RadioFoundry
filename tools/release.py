@@ -3,12 +3,12 @@
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 """Package built firmware images as release artifacts (docs/dev/release.md "Release artifacts").
 
-    tools/release.py --board dm1701 --version v0.1.0 [--bin build/dm1701/odr_dm1701.bin] [--out dist]
-    tools/release.py --board dm1701 --variant amateur --version v0.1.0     a release variant (make VARIANT=amateur)
-    tools/release.py --board dm1801pro --version v0.1.0     an HR_C7000 radio: build/dm1801pro/odr_dm1801pro.bin, the
-                                                            image without the codec slot (never the _codec.bin)
-    tools/release.py --board md380 --build-option BAND=vhf --version v0.1.0   a build option's image (board.toml
-                                                            [[build_options]]): build/md380-vhf/odr_md380-vhf.bin, odr-md380-vhf-<version>
+    tools/release.py --board ID --version v0.1.0 [--bin build/ID/odr_ID.bin] [--out dist]
+    tools/release.py --board ID --variant amateur --version v0.1.0     a release variant (make VARIANT=amateur)
+    tools/release.py --board ID --version v0.1.0     on an HR_C7000 radio build/ID/odr_ID.bin is the image without
+                                                     the codec slot (never the _codec.bin)
+    tools/release.py --board ID --build-option BAND=vhf --version v0.1.0   a build option's image (board.toml
+                                                     [[build_options]]): build/ID-vhf/odr_ID-vhf.bin, odr-ID-vhf-<version>
 
 Writes, into --out:
   odr-<board>-<version>.bin    the codec-less image, as built (a variant or a build option value:

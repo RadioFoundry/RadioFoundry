@@ -19,13 +19,13 @@
 #include "audio_pcm.h"
 #include "hrc_afsk.h"
 
-// DAC C biases the modem's AF input. The radio's own value: with the DM-32UV's 0x06E2 the modem missed the sync of
+// DAC C biases the modem's AF input. The radio's own value: with the other HR_C7000 boards' 0x06E2 the modem missed the sync of
 // about half of the DMR senders (bench, strong and weak signal); with 0x067E it took every burst
 #define DAC_C_INIT		0x067Eu
 
 #define UHF_FROM_HZ		200000000u	// VHF / UHF split of the path selects (5.2)
 // Mic gains in GCR_ADCL (dB), before the user's offset: DMR at power-on, DMR entry and DMR TX start, FM at each FM TX
-// start. The DM-32UV's 11 dB for all three until the SDR bench sets the FM ones (hardware-dm1801pro.md 12: speech on FM
+// start. The other HR_C7000 boards' 11 dB for all three until the SDR bench sets the FM ones (hardware-dm1801pro.md 12: speech on FM
 // gave 1.4 kHz peak, low)
 #define MIC_GAIN_DMR_DB		11u
 #define MIC_GAIN_FM_12K5_DB	11u
@@ -35,10 +35,10 @@
 #define PA_RAMP_STEP_US		50u
 #define FD_REG_TX_AUX		0x50u		// 3B18 after the TX state, before the TX path comes on (5.4)
 #define FD_REG40_BASE		0x3480u		// FM transmit: 0x40 = this + the calibration byte (5.2, 6.4)
-// The DM-32UV's "DMR PA" default. The radio has no PA timer: its ramp starts about 2 ms after the RF TX interrupt
+// The other HR_C7000 boards' "DMR PA" default. The radio has no PA timer: its ramp starts about 2 ms after the RF TX interrupt
 // (5.4). This delay puts the drive 1.0-2.1 ms after it (1.0 ms before the burst to 0.1 ms into it, 5.6)
 #define DMR_PA_DELAY_US		28000u
-// RF TX interrupt 2.0 ms before our burst, not the DM-32UV's 3.1 ms: earlier, the switch cut off the tail of the
+// RF TX interrupt 2.0 ms before our burst, not the other HR_C7000 boards' 3.1 ms: earlier, the switch cut off the tail of the
 // inbound burst before ours, and in SFR mode a clipped header before voice lost the next superframe (5.6)
 #define RF_TX_LEAD		20u
 #define FM_TX_LIMIT_12K5	5u	// FM_DEV_COEF b23:16 (hrc7000_t.fm_tx_limit)
@@ -314,7 +314,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		// The FD6818 and the RX path receive until our first burst and between bursts; dmr_rf_switch keys each burst
 		// with the TX path, and the drive waits for the PA one-shot. A hotspot stays keyed like this while it listens,
 		// so receive must work while keyed (set_freq left the FD6818 idle)
-		// The microphone reaches the codec ADC with PTB14 high, the same as for FM (audio_route.h); the DM-32UV's DMR
+		// The microphone reaches the codec ADC with PTB14 high, the same as for FM (audio_route.h); the other HR_C7000 boards' DMR
 		// level (low) cut it
 		hrc_pin_write(PIN_MIC_PATH, dm1801pro_audio_route(false).mic_path);
 		hrc7000_set_mic_gain(&modem, hrc7000_mic_db(MIC_GAIN_DMR_DB, mic_offset_db));
@@ -518,7 +518,7 @@ static void audio(bool on)
 }
 
 // The prompt FIFO's playback (ring play) also feeds the TX modulator: a talk permit tone played at key-up rode on the
-// voice LC headers, and the bench modem then joined by late entry (DM-32UV bench 2026-10-15, modem-hrc7000.md 8.4).
+// voice LC headers, and the bench modem then joined by late entry (bench 2026-10-15, modem-hrc7000.md 8.4).
 // It plays only while receiving; the caller holds the AUDIO_CONTROL lock (interrupts off)
 static void ring_play_update(void)
 {
@@ -554,7 +554,7 @@ void dm1801pro_speaker_pcm(bool on)
 #if CONFIG_APRS
 // APRS AFSK (hrc_afsk.c): during an FM transmission the tones play through the prompt FIFO (ring play), and the codec
 // mixer puts the DAC's audio on the ADC's output to the modulator with the microphone's input zeroed. Ring play alone
-// (with the mic muted) sent no tones here, unlike the DM-32UV (hardware-dm1801pro.md 10). False when the radio isn't
+// (with the mic muted) sent no tones here, unlike the other HR_C7000 boards (hardware-dm1801pro.md 10). False when the radio isn't
 // transmitting FM
 static bool afsk_tx_route(bool on)
 {

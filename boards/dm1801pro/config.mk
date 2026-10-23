@@ -14,12 +14,15 @@ CONFIG_VIBRATE ?= y
 # 128x64 monochrome: no room for the large font, and no colors to set
 CONFIG_FONT_XL ?= n
 CONFIG_UI_COLOR ?= n
-# What the board lacks or can't do yet, one switch per line with the reason (tools/boards.py checks there is
-# one): ci's maximal configuration leaves these off. USB and USB_NETWORK are the platform's
-BOARD_UNSUPPORTED += AM_RX	# the broadcast tuner's air band isn't wired yet
-BOARD_UNSUPPORTED += AUDIO_PROBE	# a bench diagnostic for an audio path this radio doesn't have
+# What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
+# docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off. USB
+# and USB_NETWORK are in the platform's list.
 BOARD_UNSUPPORTED += FONT_XL	# the 128x64 panel is too small for the large font
 BOARD_UNSUPPORTED += UI_COLOR	# the 128x64 panel is monochrome: no colors to set
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR: 4 KB erase (docs/spec/hardware-dm1801pro.md 6.1)
 CONFIG_GPS ?= n
 BOARD_UNSUPPORTED += GPS	# no GPS receiver, and no room inside for one (owner, 2026-10-22)
+# What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
+# maximal configuration too
+BOARD_NOT_WRITTEN += AM_RX	# the RF chip's 108-136 MHz window isn't used yet (docs/spec/hardware-dm1801pro.md 5)
+BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe's audio tap (board.audio_tap) isn't written for this radio

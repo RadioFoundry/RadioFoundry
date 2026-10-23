@@ -370,3 +370,24 @@ def test_the_lock_follows_the_port(tmp_path):
     assert lock("--radio-port", "/dev/cu.one", ODR_RADIO_LOCK=str(t / "bench-{port}.lock")) == str(
         t / "bench-dev_cu.one.lock")
 
+
+
+def test_not_written_reads_as_not_written():
+    """A switch in a board's BOARD_NOT_WRITTEN resolves to "not written", one in BOARD_UNSUPPORTED to "n/a"
+    (docs/build-config.md, "Unsupported, not written, unconfirmed"), on every board."""
+    py = python311()
+    checked = 0
+    for board in sorted(os.listdir(os.path.join(ROOT, "boards"))):
+        if not os.path.isfile(os.path.join(ROOT, "boards", board, "board.toml")):
+            continue
+        lists = {t: subprocess.run(["make", "-s", "BOARD=" + board, "print-" + t], cwd=ROOT, capture_output=True,
+                                   text=True).stdout.split() for t in ("unsupported", "not-written")}
+        r = subprocess.run([py, BRINGUP, "list", "--radio", board, "--json"], cwd=ROOT, capture_output=True, text=True)
+        assert r.returncode == 0, r.stdout + r.stderr
+        state = {row["switch"]: row["state"] for row in json.loads(r.stdout) if row["switch"]}
+        for t, want in (("unsupported", "n/a"), ("not-written", "not written")):
+            for s in lists[t]:
+                if s in state:
+                    assert state[s] == want, (board, s, state[s])
+                    checked += 1
+    assert checked, "no board lists a switch"

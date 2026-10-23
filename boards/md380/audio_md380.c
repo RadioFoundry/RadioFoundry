@@ -10,7 +10,7 @@
 #if CONFIG_DMR	// the whole file: DMR only
 #include "hrc/i2s_pcm.h"
 
-// Bench knobs (docs/testing/md380-bringup.md): -DMD380_I2S_CKPOL=1 for the DM-1701's clock polarity,
+// Bench knobs (docs/testing/md380-bringup.md): -DMD380_I2S_CKPOL=1 for the HR_C6000 radios' clock polarity,
 // -DMD380_I2S_MASTER for an HR_C5000 that doesn't drive its I2S (issue 3)
 #ifndef MD380_I2S_CKPOL
 #define MD380_I2S_CKPOL	0

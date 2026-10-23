@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Key frames from a hand mic with its own MCU that shares a UART receive line with the PC link (the DB25-D's: "K" and
+// Key frames from a hand mic with its own MCU that shares a UART receive line with the PC link (one format: "K" and
 // the key number as two ASCII digits, repeated every few milliseconds while the key is held; hardware-db25d.md 3.4).
 // Independent of the board: the UART's receive interrupt passes every byte in with a microsecond time stamp, and the
 // key scan asks which key is held.

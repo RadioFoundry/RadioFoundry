@@ -23,7 +23,9 @@ short version plus what an agent tends to get wrong.
    Chip drivers go in `drivers/`, SoC code in `platform/`, a radio's wiring in `boards/<radio>/`.
 5. **Flash costs go behind a switch.** A feature that adds real code size gets a `CONFIG_` switch in
    `config/features.mk` and `core/config.h` ([docs/build-config.md](docs/build-config.md)). The build must stay
-   clean with the switch off.
+   clean with the switch off. `BOARD_UNSUPPORTED` only for what the hardware can't do; code not written yet is
+   `BOARD_NOT_WRITTEN`. Written but not yet checked on the radio stays on and in neither list: say "untested" in the
+   bring-up records and PRs, never in `config.mk` ([the rule](docs/build-config.md#unsupported-not-written-unconfirmed)).
 6. **Zero warnings** in every configuration `tools/ci.sh` builds.
 7. **US English** in code, comments, docs and commit messages (color, center, behavior).
 8. **No hardware without the owner.** Don't touch a connected radio (debug link, DFU, MMDVM port), the SDR bench or any

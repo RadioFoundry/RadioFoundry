@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The OpenDigitalRadio Authors
+#
+# Files that may name a radio outside its own places (tools/check_generic.py, AGENTS.md rule 4). One entry a line:
+# a glob (fnmatch: * also crosses /), a space, and why. An entry no file needs any more is an error, so the list only
+# shrinks. Most entries are debt from before the check: fix the file and drop its line. Don't add one for new code.
+
+# Specs: a spec cites the radio a fact was measured on or read from (hardware, codec, bench evidence).
+docs/spec/* specs cite the radio each fact was measured on (docs/spec/README.md)
+
+# Docs with per-radio notes and examples: to move per-radio values into docs/user/23-radios.md and hardware pages, and examples to <radio>.
+docs/user/* per-radio notes inline in the manual; they belong in 23-radios.md
+docs/dev/* example commands and history name the radio they were written on
+docs/ux/* the UX research and wireframes name the radio each screen size was drawn for
+docs/testing/* test plans and bring-up pages compare with the radio a case was first run on
+docs/build-config.md the switch tables quote per-radio defaults and sizes (to generate from the registry)
+docs/glossary.json glossary entries give a radio as the example of a term
+README.md the front page's text around the generated radio table names the radios
+boot/README.md the first-stage index describes the one board with a first stage (to generate from boot/<id>/)
+stub/README.md the stub guide's per-radio entry steps (to move into each radio's hardware page)
+stub/USER-GUIDE.md the stub guide's per-radio entry steps (to move into each radio's hardware page)
+tools/odrflash/README.md the flasher guide's examples and per-radio routes
+AGENTS.md the owner has uncommitted edits to it; fix after those land
+
+# Owned by the workflows work in this pull request: fix there.
+.github/ISSUE_TEMPLATE/radio_request.yml the request form's placeholder example
+tools/ci.sh usage examples and the per-board skip notes
+
+# Per-radio tools: each reads one stock format or updater. To fold into a generic tool keyed by board.toml.
+tools/md380_migrate.py the TYT stock codeplug migration; to fold into codeplug_port.py with a board argument
+tools/dm32_migrate.py the Baofeng stock codeplug migration; to fold into codeplug_port.py with a board argument
+stub/build_db25d_stubs.sh builds the stubs for one board's two RAM layouts; to read the layouts from board.toml
+stub/db25d_update.sh one board's keyless update; to take --board and read the route from board.toml
+stub/embed_stub.py names the board whose image embeds a stub
+stub/f4stub.py per-radio memory maps and keys; to move into board.toml [flash.stub]
+stub/stubtool.py per-radio stock console strings and layouts; to move into board.toml [flash.stub]
+tools/codec_extract.py per-radio stock firmware profiles; to move into codec_maps/<id>/
+tools/cps_client.py per-radio CPS radio types and memory maps; to move into board.toml
+tools/hrc7000_codec.py per-radio stock codec slot layouts; to move into codec_maps/<id>/
+tools/stm32_dfu.py per-radio DFU keys and bootloader strings; to move into board.toml
+tools/odrflash/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/cli.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/codec_maps/README.md per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/codecsave.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/manifest.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/serialflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/odrflash/stockfw.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/tests/test_odrflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
+tools/odrflash/tests/test_serialflash.py per-radio flash routes, stock formats and their tests; to read from registry.json
+
+# Web flasher and editor: per-radio routes and stock formats; to read from the generated registry.
+site/i18n/en.json per-radio route or stock format data
+site/static/js/codeplug/detect.js per-radio route or stock format data
+site/static/js/codeplug/fakecps.js per-radio route or stock format data
+site/static/js/codeplug/image.js per-radio route or stock format data
+site/static/js/codeplug/stock_tyt.js per-radio route or stock format data
+site/static/js/codeplug/transport.js per-radio route or stock format data
+site/static/js/editor/app.js per-radio route or stock format data
+site/static/js/editor/files.js per-radio route or stock format data
+site/static/js/flasher/app.js per-radio route or stock format data
+site/static/js/flasher/backup.js per-radio route or stock format data
+site/static/js/flasher/c7000.js per-radio route or stock format data
+site/static/js/flasher/c7000ui.js per-radio route or stock format data
+site/static/js/flasher/codecsave.js per-radio route or stock format data
+site/static/js/flasher/codeplug.js per-radio route or stock format data
+site/static/js/flasher/f4stub.js per-radio route or stock format data
+site/static/js/flasher/fake.js per-radio route or stock format data
+site/static/js/flasher/fakec7000.js per-radio route or stock format data
+site/static/js/flasher/iap.js per-radio route or stock format data
+site/static/js/flasher/iapui.js per-radio route or stock format data
+site/static/js/flasher/select.js per-radio route or stock format data
+site/static/js/flasher/stockfw.js per-radio route or stock format data
+site/static/js/flasher/stub.js per-radio route or stock format data
+site/static/js/flasher/usmart.js per-radio route or stock format data
+site/tests/backends.test.mjs per-radio route or stock format data
+site/tests/c7000.test.mjs per-radio route or stock format data
+site/tests/c7000v1.test.mjs per-radio route or stock format data
+site/tests/codeplug.test.mjs per-radio route or stock format data
+site/tests/diag.test.mjs per-radio route or stock format data
+site/tests/f4stub.test.mjs per-radio route or stock format data
+site/tests/fixtures.py per-radio route or stock format data
+site/tests/flasher.test.mjs per-radio route or stock format data
+site/tests/iap.test.mjs per-radio route or stock format data
+site/tests/stock.test.mjs per-radio route or stock format data
+
+# Host tests built on one radio's recorded data (stock vectors, memory maps, measured values). To move each under boards/<id>/tests/ or name the data by its source.
+tests/host/Makefile uses one radio's recorded data
+tests/host/ambeFecTest.c uses one radio's recorded data
+tests/host/baofengCalTest.c uses one radio's recorded data
+tests/host/bk4819Test.c uses one radio's recorded data
+tests/host/calCurveTest.c uses one radio's recorded data
+tests/host/codecDescTest.c uses one radio's recorded data
+tests/host/codeplugEditTest.c uses one radio's recorded data
+tests/host/cpsClientTest.py uses one radio's recorded data
+tests/host/cpsFastClientTest.py uses one radio's recorded data
+tests/host/cpsFastTest.c uses one radio's recorded data
+tests/host/cpsSim.c uses one radio's recorded data
+tests/host/f4stubTest.c uses one radio's recorded data
+tests/host/f4stub_wire_check.py uses one radio's recorded data
+tests/host/fd6818Test.c uses one radio's recorded data
+tests/host/hrc7000CodecSlotTest.c uses one radio's recorded data
+tests/host/hrc7000DmrTest.c uses one radio's recorded data
+tests/host/keymatrixTest.c uses one radio's recorded data
+tests/host/mdnsTest.c uses one radio's recorded data
+tests/host/nandSectorsTest.c uses one radio's recorded data
+tests/host/powerSwitchTest.c uses one radio's recorded data
+tests/host/radioCoreTest.c uses one radio's recorded data
+tests/host/sim/ui_sim.c uses one radio's recorded data
+tests/host/sky72310Test.c uses one radio's recorded data
+tests/host/spiNandTest.c uses one radio's recorded data
+tests/host/spiNorTest.c uses one radio's recorded data
+tests/host/subaudioDspTest.c uses one radio's recorded data
+tests/host/uiFlowTest.c uses one radio's recorded data
+
+# HIL tests: per-radio skips and bench notes. tests/hil is outside this change; to move per-radio skips into board.toml [features].
+tests/hil/README.md per-radio skip reasons and bench notes
+tests/hil/test_aprs.py per-radio skip reasons and bench notes
+tests/hil/test_audio_probe.py per-radio skip reasons and bench notes
+tests/hil/test_boot.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_audio_smoke.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_call_features.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_emergency.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_ip.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_tx.py per-radio skip reasons and bench notes
+tests/hil/test_dmr_voice.py per-radio skip reasons and bench notes
+tests/hil/test_fm_tx.py per-radio skip reasons and bench notes
+tests/hil/test_hotspot_cwid.py per-radio skip reasons and bench notes
+tests/hil/test_hotspot_sfr.py per-radio skip reasons and bench notes
+tests/hil/test_mic_gain.py per-radio skip reasons and bench notes
+tests/hil/test_mic_uart_inject.py per-radio skip reasons and bench notes
+tests/hil/test_radio_features.py per-radio skip reasons and bench notes
+tests/hil/test_split_duplex.py per-radio skip reasons and bench notes

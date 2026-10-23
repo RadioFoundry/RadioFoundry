@@ -294,7 +294,7 @@ static void rx_block(int16_t *spk)
 		cb_call_frames++;
 		if (voc_ok()) {
 			voc->decode(last_bits, spk);
-			// A decoder fed the wrong bits plays silence with every counter clean (the DB25-D's stale voice RAM)
+			// A decoder fed the wrong bits plays silence with every counter clean (a codec reading stale voice RAM)
 			for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
 				uint32_t a = (uint32_t)(spk[i] < 0 ? -spk[i] : spk[i]);
 				if (a > stats.rx_peak) {

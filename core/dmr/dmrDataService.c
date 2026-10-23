@@ -1303,7 +1303,7 @@ dmrArsState_t dmrDataServiceArsState(void)
 
 // Motorola LRRP (UDP 4001): a location server (TRBOnet, SmartPTT, ...) asks for a position now, or starts reports
 // every n seconds or every n meters (checked every interval, 30 s when it gives none), and stops them. Without a
-// position source (settings.hasGps false: the DM-1701) every answer says "no fix" and no trigger is started
+// position source (settings.hasGps false: a radio without GPS) every answer says "no fix" and no trigger is started
 #define LRRP_QUEUE_SIZE				3		// one slot kept free
 #define LRRP_TRIGGERS_MAX			2
 #define LRRP_MIN_INTERVAL_S			5

@@ -13,7 +13,7 @@ static int checks;
 
 enum { K_OK, K_SK1, K_SK2, K_TOP, K_PTT };
 
-// The DM-1701's side keys: SK1 monitor (held), SK2 talk target / scan, top power / emergency
+// Side keys as on a typical handheld: SK1 monitor (held), SK2 talk target / scan, top power / emergency
 static const keymap_entry_t base[] = {
 	{ K_OK, ACT_SELECT, ACT_SELECT, false, false, 0 },
 	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
@@ -260,7 +260,7 @@ static void test_board_defaults(void)
 		}
 		fclose(f);
 	}
-	CHECK(toggles >= 1);	// at least one board has the key, so the check reads something
+	CHECK(toggles == 1);	// a VFO/MR key
 }
 
 int main(void)

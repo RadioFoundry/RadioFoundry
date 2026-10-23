@@ -16,7 +16,7 @@ through that field of that struct type; a function stored into a variable or pas
 the calls through that variable or parameter. What the sources can't show comes from tools/stack_check_edges.txt.
 Unresolved calls, recursion (each cycle counted once) and library functions without a call graph are reported.
 
-  make BOARD=dm1701 stack-check          (the Makefile passes the build's compiler, flags and port overhead)
+  make BOARD=<radio> stack-check         (the Makefile passes the build's compiler, flags and port overhead)
   tools/stack_check.py --build build/dm1701 --cc arm-none-eabi-gcc --cflags "..." --overhead 208
   tools/stack_check.py --self-test
 """
