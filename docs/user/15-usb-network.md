@@ -94,7 +94,7 @@ The radio answers at its own address on these TCP ports, over the USB cable only
 
 | Port | Service |
 |---|---|
-| 80 | A status page. Open `http://<radio address>/` in a browser. It shows the channel, frequency, signal and battery, and the radio's screen. Programs can read `/status` (JSON) and the debug link's sections at `/api/view?section=core` |
+| 80 | The radio's front panel. Open `http://<radio address>/` in a browser. It shows the radio with its live screen and LEDs, and the channel, frequency, signal and battery. Click a key or use the keyboard (digits, arrows, Enter, Esc, Space for PTT) to press it; hold PTT to talk. **Listen** plays what the radio receives (on radios with network audio, [Linking audio](#linking-audio-allstarlink-and-dvswitch)). Keys work only from the computer the radio is plugged into; one page at a time controls the radio, and others show the status only. Programs can read `/status` (JSON) and the debug link's sections at `/api/view?section=core` |
 | 8001 | KISS over TCP for APRS programs (APRSdroid, Xastir, YAAC). Set the program's TNC to "KISS over TCP", the radio's address, port 8001. Turn on **KISS on USB** in Tools > APRS first. The radio sends only packets from your own callsign. On a radio that can't receive APRS ([Radio reference](23-radios.md)), programs see only what they send |
 | 4532 | Hamlib rig control for loggers, SDR and satellite programs. Choose "Hamlib NET rigctl" with the radio's address and port 4532, or run `rigctl -m 2 -r <radio address>:4532 f`. Programs can read and set the frequency, read the mode and the S meter, and key the transmitter. Setting the frequency of a channel switches to the VFO. Transmit works only from your computer, at most 3 minutes per keying |
 

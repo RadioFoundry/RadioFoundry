@@ -158,7 +158,12 @@ photos (the photos stay outside the repository: product photos are not ours to p
 - viewBox `0 0 W H`, transparent background, no external references or embedded images;
 - exactly one `<rect id="screen" x y width height/>`, black, transform-free and not covered by anything, on the
   display's visible area, with the aspect ratio of the radio's gallery (5:4 for 160x128 and 160x120i5, 22:31 for
-  240x320i10x5).
+  240x320i10x5);
+- for the radio's web control page (`docs/spec/tcp-services.md` 5.1): each key it shows carries `id="key-<name>"`, the
+  name being the board's `KEY_*` in lower case without `KEY_` (`key-fn_left`); the channel knob `id="encoder"` and a
+  drawn LED `id="led"`. Keys whose shape doesn't match a key (a d-pad drawn as one piece) get transparent hit rects
+  (`fill="none" pointer-events="all"`) at the end. The build checks that every `key-` id names one of the radio's keys,
+  once; keys not drawn become buttons on the page.
 
 The build writes `static/img/radios/<radio>-frame.svg` (screen black), `<radio>.svg` (with the boot screen) and the
 screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages), so any screenshot can be

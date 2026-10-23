@@ -271,7 +271,8 @@ static void hello(void)
 			ptt = &board.keymap[i];
 		}
 	}
-	dl_text(&t, "],\"ptt\":%d}", (ptt != NULL) ? (int)ptt->bit : -1);
+	dl_text(&t, "],\"ptt\":%d,\"encoder\":%s}", (ptt != NULL) ? (int)ptt->bit : -1,
+		(board.input != NULL && board.input->encoder != NULL) ? "true" : "false");
 	send_frame(WS_OP_TEXT, json, (uint32_t)t.len);
 }
 

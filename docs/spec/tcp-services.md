@@ -17,6 +17,7 @@ Sources: RFC 9293 (TCP), RFC 6298 (retransmission timer), RFC 5681 3.1 (one segm
 | `CONFIG_NET_TCP` | = DMR_IP_GATEWAY | the TCP (`core/net/tcp.c`) and its glue to the gateway (`core/net/net.c`) |
 | `CONFIG_NET_KISS` | = NET_TCP and APRS | KISS over TCP, port 8001 (`core/net/kiss_tcp.c`, section 4) |
 | `CONFIG_NET_HTTP` | = NET_TCP | the HTTP status server, port 80 (`core/net/http.c`, section 5) |
+| `CONFIG_NET_WEBCTL` | = NET_HTTP | web control: the front panel page and its WebSocket `/ws` (`core/net/webctl.c`, `core/net/ws.c`, section 5.1) |
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib's network rig control, port 4532 (`core/net/rigctld.c`, section 6) |
 | `CONFIG_NET_APRSIS` | = NET_TCP and APRS | the radio's own APRS-IS client (`core/net/aprsis.c`, section 7) |
 
@@ -84,16 +85,17 @@ The client receives the engine's output (section 3) exactly as the serial port w
 
 HTTP/1.0 (RFC 1945): GET and HEAD, one request per connection, `Connection: close`, `Content-Length` always, no
 keep-alive or chunking (HTTP/1.1 clients accept a 1.0 answer). The request line may be 95 bytes long (else 414);
-header lines are skipped; a request not complete within 10 s is reset. Responses carry `Cache-Control: no-store` and
+header lines are skipped, except `Sec-WebSocket-Key` (any case) for `/ws`; a request not complete within 10 s is reset. Responses carry `Cache-Control: no-store` and
 `Access-Control-Allow-Origin: *` (a web page on the host may poll the radio).
 
 | Path | Response |
 |---|---|
-| `/` and `/<file>` | the static files (below); `/` is `index.html`, the status as a table and the screen, refreshed every 3 s |
-| `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open` |
+| `/` and `/<file>` | the static files (below); `/` is `index.html`, the status as a table and the screen, refreshed every 3 s; with `CONFIG_NET_WEBCTL` the front panel page (5.1) |
+| `/ws` | with `CONFIG_NET_WEBCTL`: the WebSocket upgrade (5.1); 400 without a valid key or for HEAD, 503 while another client has it |
+| `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open`, `led_green led_red` (the radio's LEDs), `backlight` (percent), `draws` (counts screen redraws: fetch the screen when it changes) |
 | `/api/view` | JSON `{"sections": [...]}`: the debug link's view section names (needs `CONFIG_DEBUGLINK`) |
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
-| `/api/screen.bmp` | the frame buffer as a BMP: top-down (negative height), 16 bit BI_BITFIELDS (RGB565 masks), about 40 KB on a 160 x 128 screen; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame. 404 on a 1 bpp display |
+| `/api/screen.bmp` | the frame buffer as a BMP: top-down (negative height), 16 bit BI_BITFIELDS (RGB565 masks), about 40 KB on a 160 x 128 screen; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame; the hold ends with the last byte, so a page that polls it does not slow the UI. 404 on a 1 bpp display |
 | `/api/aprsis` | the APRS-IS client's settings and state (section 7) |
 | anything else | 404; another method 405; a malformed request line 400 (errors have an empty body) |
 
@@ -112,6 +114,46 @@ JSON is rendered once into a shared 1.5 KB buffer (a view section's text into it
 the start never overtakes it), and a second JSON request waits until the first response is all in TCP's buffer.
 
 View keys: `http.requests http.ok http.not_found http.bad http.busy_waits`.
+
+### 5.1 Web control (`/ws`)
+
+With `CONFIG_NET_WEBCTL` the page at `/` is the radio's front panel: its drawing (the site's
+`site/static/img/radios/src/<radio>.svg`, served as `/radio.svg`) with the live screen in its display, the LEDs, and
+every key clickable. Keys the drawing doesn't show, the knob (when the radio has an encoder) and PTT are buttons below
+it. The page's files are in `core/net/webctl_assets/` and replace `core/net/http_assets/` files of the same name;
+`tools/gen_webctl_assets.py` writes `/keys.json` (each key's name and bit, from the board's `KEY_*` enum) and
+`/radio.svg`. A radio without a drawing gets its keys as buttons and the screen as an image.
+
+`GET /ws` with `Upgrade: websocket` and a `Sec-WebSocket-Key` gets `HTTP/1.1 101` and the connection becomes a
+WebSocket (RFC 6455; the accept value from SHA-1 and base64, `ws.c`). One client at a time; the next one gets 503
+until it goes. The radio's rules:
+
+| Rule | Value |
+|---|---|
+| Client frames | masked, unfragmented, payload up to 125 bytes; else close 1002 (protocol) or 1009 (too big) |
+| Binary from the client | close 1003 (nothing takes it yet) |
+| Close | the client's close code is sent back, then the connection closes |
+| Ping | one every 5 s; nothing from the client for 15 s and it is dropped |
+| Status | `/status`'s JSON as a text frame, rendered every 250 ms and sent when it changed |
+| Audio | 20 ms binary frames, 160 samples of 8 kHz PCM16 little-endian, while the client asked and the squelch is open; needs `CONFIG_NET_USRP` (the frames USRP reads, `usb-audio.md`); a frame that doesn't fit in TCP's buffer is dropped |
+
+The first frame is the hello: `{"hello":1,"control":true,"audio":true,"keys":[0,1,...],"ptt":21,"encoder":true}`
+(the keymap's bits, the PTT key's bit or -1, whether the radio has an encoder). Commands are text frames:
+
+| Command | Effect |
+|---|---|
+| `d<bit>` / `u<bit>` | the key down / up, through the input task as an injected key (`input_inject_keys`): one key at a time, released after 10 s if no `u` comes |
+| `d<ptt bit>` | PTT for 4 s; the page repeats it every 2 s while held. Released after 3 minutes whatever the page sends, and not keyed again until a `u` |
+| `e<n>` | n encoder detents, -127..127 (forward is positive) |
+| `a1` / `a0` | receive audio on / off |
+
+Keys, PTT and the encoder are taken only from the computer the radio is plugged into (`control:false` for a client
+beyond it, as rigctld's PTT); audio and status go to any client. Everything the client holds is released when it
+closes, its TCP ends, or it is dropped. Unknown commands are counted and ignored.
+
+View keys: `webctl.client` (its TCP slot, -1 none) `webctl.control webctl.conns webctl.commands webctl.refused`
+(control from beyond the host, an unknown key) `webctl.busy` (another injected key held) `webctl.errors
+webctl.frames_out webctl.audio_out webctl.audio_dropped webctl.ptt webctl.ptt_downs`.
 
 ## 6. rigctld (port 4532)
 
@@ -211,7 +253,11 @@ send a packet from the radio's address to any destination through the host's MAC
   client replacing the first, the KISS setting off, the client closing. HTTP: the page, HEAD, the status JSON with an
   escaped name, view sections as JSON (numbers, strings, escapes, by name and number, the list, unknown), the screen
   BMP against the frame buffer, 405 / 404 / 400 / 414, a client sending a byte at a time, two JSON requests at once
-  (the second waits for the buffer), the 10 s request timeout. rigctld: get / set frequency (the VFO move, the read
+  (the second waits for the buffer), the 10 s request timeout. Web control: the handshake, the hello, status sent on change, 503 for a second
+  client, 400 without a key, keys down and up (busy, refused from beyond the host), the encoder, PTT repeats and the 3
+  minute release, pings, the 15 s drop with keys released, audio frames only when asked and the squelch is open, the
+  close code echoed, an unmasked frame (1002); `wsTest.c` checks SHA-1, base64 and frame headers against FIPS 180 and
+  RFC 6455. rigctld: get / set frequency (the VFO move, the read
   back before the radio shows it, the request gap, out of band), mode, PTT (the rate limit, the 3 minute limit, the
   release on disconnect, refused from beyond the host), levels, VFO, split, info, chk_vfo, dump_state, extended
   answers, unknown commands, quit. APRS-IS: the passcode, off without a server, settings over HTTP (403 from beyond

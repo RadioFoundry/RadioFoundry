@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- The status server's page with web control (CONFIG_NET_WEBCTL, docs/spec/tcp-services.md 5.1): the radio's front
+     panel over /ws; the status alone while another page holds /ws -->
+<html lang=en><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<link rel=icon href="data:,"><title>OpenDigitalRadio</title>
+<style>
+:root{--bg:#f4f4f4;--fg:#111;--mut:#666;--btn:#fff;--line:#bbb;--on:#2a2}
+@media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#999;--btn:#262626;--line:#444}}
+body{margin:0;padding:12px 16px;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif}
+header{display:flex;gap:12px;align-items:center;flex-wrap:wrap}h1{font-size:18px;margin:0}
+#st{color:var(--mut)}#lamp{width:14px;height:14px;border-radius:50%;background:#333;border:1px solid var(--line)}
+main{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;margin-top:12px}#panel{flex:0 1 380px;min-width:240px}
+#radio svg{width:100%;height:auto;display:block;touch-action:none;user-select:none}
+#radio svg *{pointer-events:none}#radio svg .k{pointer-events:all}
+.k{cursor:pointer}.k:focus{outline:none}.k:focus-visible,.k.dn{filter:brightness(1.6) drop-shadow(0 0 3px #4af)}
+#scr{width:100%;image-rendering:pixelated;background:#000}
+#btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+button{font:inherit;min-width:48px;min-height:40px;padding:4px 10px;background:var(--btn);color:var(--fg);
+border:1px solid var(--line);border-radius:6px;cursor:pointer}button.dn{background:#4af;color:#000}
+button:disabled{opacity:.5;cursor:default}#ptt{min-width:120px;font-weight:bold}#ptt.dn{background:#d22;color:#fff}
+table{border-collapse:collapse}td{padding:2px 10px 2px 0;vertical-align:top}td:first-child{color:var(--mut)}
+#note{color:var(--mut);margin:6px 0 0}
+</style>
+<header><h1 id=name>OpenDigitalRadio</h1><span id=lamp title="LED"></span><span id=st>Connecting</span>
+<button id=listen hidden aria-pressed=false>Listen</button></header>
+<main><div id=panel><div id=radio></div><img id=scr alt="The radio's screen" hidden>
+<div id=btns></div><p id=note hidden></p></div><table id=t></table></main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+// Keyboard keys to the radio's key names: the first the radio has is used
+const KB = {ArrowUp: ['up'], ArrowDown: ['down'], ArrowLeft: ['left', 'fn_left'], ArrowRight: ['right', 'fn_right'],
+	Enter: ['green', 'menu'], Escape: ['red', 'back'], '*': ['star'], '#': ['hash'], ' ': ['ptt']};
+let ws = null, hello = null, names = {}, bits = {}, ctl = false, screen = null, shown = -1, loading = false;
+let ptt = -1, pttTimer = 0, audio = null, next = 0, poll = 0;
+const down = new Set(), els = {};
+
+function send(s) { if (ws && ws.readyState === 1) ws.send(s); }
+
+function press(bit) {
+	if (!ctl || down.has(bit)) return;
+	down.add(bit); send('d' + bit);
+	(els[bit] || []).forEach(e => e.classList.add('dn'));
+	// PTT holds 4 s on the radio; repeating the down keeps it keyed while held here
+	if (bit === ptt) pttTimer = setInterval(() => send('d' + bit), 2000);
+}
+
+function release(bit) {
+	if (!down.delete(bit)) return;
+	send('u' + bit);
+	(els[bit] || []).forEach(e => e.classList.remove('dn'));
+	if (bit === ptt) clearInterval(pttTimer);
+}
+
+function releaseAll() { [...down].forEach(release); }
+
+function bind(e, bit, label) {
+	(els[bit] = els[bit] || []).push(e);
+	e.classList.add('k');
+	e.setAttribute('role', 'button');
+	e.setAttribute('aria-label', label);
+	e.tabIndex = 0;
+	e.addEventListener('pointerdown', ev => { ev.preventDefault(); e.setPointerCapture(ev.pointerId); press(bit); });
+	e.addEventListener('pointerup', () => release(bit));
+	e.addEventListener('pointercancel', () => release(bit));
+	e.addEventListener('keydown', ev => { if ((ev.key === 'Enter' || ev.key === ' ') && !ev.repeat) { ev.preventDefault(); ev.stopPropagation(); press(bit); } });
+	e.addEventListener('keyup', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.stopPropagation(); release(bit); } });
+}
+
+function button(text, label) {
+	const b = document.createElement('button');
+	b.textContent = text;
+	if (label) b.setAttribute('aria-label', label);
+	$('btns').append(b);
+	return b;
+}
+
+const label = n => n === 'ptt' ? 'PTT' : n === 'star' ? '*' : n === 'hash' ? '#' : n.replace(/_/g, ' ').toUpperCase();
+
+// The radio's drawing, its key-<name> shapes made keys; keys it doesn't show become buttons below it
+async function panel() {
+	try { names = await (await fetch('/keys.json')).json(); } catch (e) { names = {}; }
+	for (const n in names) bits[names[n]] = n;
+	let svg = null;
+	try {
+		const r = await fetch('/radio.svg');
+		if (r.ok) { $('radio').innerHTML = await r.text(); svg = $('radio').querySelector('svg'); }
+	} catch (e) {}
+	if (svg) {
+		const s = svg.getElementById('screen');
+		screen = document.createElementNS(svg.namespaceURI, 'image');
+		['x', 'y', 'width', 'height'].forEach(a => screen.setAttribute(a, s.getAttribute(a)));
+		screen.setAttribute('preserveAspectRatio', 'none');
+		screen.style.imageRendering = 'pixelated';
+		screen.setAttribute('pointer-events', 'none');
+		svg.append(screen);
+	} else {
+		$('scr').hidden = false;
+	}
+	for (const bit of hello.keys) {
+		const n = bits[bit] || String(bit), e = svg && svg.getElementById('key-' + n);
+		if (e) bind(e, bit, label(n));
+		else if (n !== 'ptt') bind(button(label(n)), bit, label(n));
+	}
+	if (hello.encoder) {
+		const k = svg && svg.getElementById('encoder');
+		if (k) {
+			k.classList.add('k');
+			k.addEventListener('wheel', ev => { ev.preventDefault(); if (ctl) send('e' + (ev.deltaY > 0 ? 1 : -1)); });
+		}
+		button('◀', 'Knob back').onclick = () => ctl && send('e-1');
+		button('▶', 'Knob forward').onclick = () => ctl && send('e1');
+	}
+	if (ptt >= 0) bind($('ptt') || Object.assign(button('PTT'), {id: 'ptt'}), ptt, 'PTT');
+	document.querySelectorAll('#btns button').forEach(b => b.disabled = !ctl);
+	if (!ctl) note('View only: the keys work from the computer the radio is plugged into.');
+}
+
+function note(s) { $('note').textContent = s; $('note').hidden = !s; }
+
+function keyOf(ev) {
+	const n = (KB[ev.key] || (/^[0-9]$/.test(ev.key) ? [ev.key] : [])).find(k => k in names);
+	return n !== undefined && hello && hello.keys.includes(names[n]) ? names[n] : -1;
+}
+
+addEventListener('keydown', ev => {
+	if (ev.repeat || ev.ctrlKey || ev.metaKey || ev.altKey || ev.target.closest('button,.k')) return;
+	const b = keyOf(ev);
+	if (b >= 0) { ev.preventDefault(); press(b); }
+});
+addEventListener('keyup', ev => { const b = keyOf(ev); if (b >= 0) release(b); });
+addEventListener('blur', releaseAll);
+document.addEventListener('visibilitychange', () => document.hidden && releaseAll());
+
+function show(j) {
+	const t = $('t');
+	t.textContent = '';
+	for (const k in j) {
+		const r = t.insertRow();
+		r.insertCell().textContent = k;
+		r.insertCell().textContent = typeof j[k] === 'object' ? JSON.stringify(j[k]) : j[k];
+	}
+	if (j.radio) $('name').textContent = j.radio;
+	const c = j.led_red ? '#e22' : j.led_green ? '#2c2' : '';
+	$('lamp').style.background = c || '#333';
+	const l = $('radio').querySelector('#led');
+	if (l) { if (!l.dataset.f) l.dataset.f = l.getAttribute('fill') || ''; l.setAttribute('fill', c || l.dataset.f); }
+	if (j.draws !== shown) shot(j.draws);
+}
+
+// The screen, fetched when the radio drew it again, one at a time (each costs the radio a redraw hold)
+function shot(n) {
+	if (loading) return;
+	loading = true;
+	const i = new Image();
+	i.onload = i.onerror = () => {
+		if (i.naturalWidth) {
+			if (screen) screen.setAttribute('href', i.src); else $('scr').src = i.src;
+			shown = n;
+		}
+		setTimeout(() => { loading = false; }, 500);
+	};
+	i.src = '/api/screen.bmp?' + n;
+}
+
+// Receive audio: 20 ms frames of 8 kHz PCM16 little-endian, queued back to back
+function play(buf) {
+	if (!audio) return;
+	const p = new Int16Array(buf), b = audio.createBuffer(1, p.length, 8000), d = b.getChannelData(0);
+	for (let i = 0; i < p.length; i++) d[i] = p[i] / 32768;
+	const s = audio.createBufferSource();
+	s.buffer = b;
+	s.connect(audio.destination);
+	if (next < audio.currentTime + 0.02 || next > audio.currentTime + 0.5) next = audio.currentTime + 0.08;
+	s.start(next);
+	next += b.duration;
+}
+
+$('listen').onclick = () => {
+	const on = !audio;
+	if (on) { audio = new AudioContext(); next = 0; } else { audio.close(); audio = null; }
+	$('listen').setAttribute('aria-pressed', on);
+	$('listen').textContent = on ? 'Stop' : 'Listen';
+	send(on ? 'a1' : 'a0');
+};
+
+function status() {
+	fetch('/status').then(r => r.json()).then(show).catch(() => {});
+}
+
+function connect() {
+	ws = new WebSocket('ws://' + location.host + '/ws');
+	ws.binaryType = 'arraybuffer';
+	ws.onopen = () => { clearInterval(poll); poll = 0; };
+	ws.onmessage = ev => {
+		if (typeof ev.data !== 'string') return play(ev.data);
+		const j = JSON.parse(ev.data);
+		if (j.hello) {
+			const first = !hello;
+			hello = j; ctl = j.control; ptt = j.ptt;
+			$('st').textContent = ctl ? 'Connected' : 'Connected, view only';
+			$('listen').hidden = !j.audio;
+			if (audio) send('a1');
+			if (first) panel();
+		} else show(j);
+	};
+	ws.onclose = () => {
+		releaseAll();
+		$('st').textContent = hello ? 'Reconnecting' : 'Status only';
+		if (!poll) { status(); poll = setInterval(status, 3000); }
+		setTimeout(connect, hello ? 3000 : 30000);	// /ws answers 503 while another page has it
+	};
+}
+connect();
+</script>

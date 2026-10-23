@@ -274,6 +274,12 @@ $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BU
 # directory, gzip compressed with CONFIG_NET_HTTP_GZIP; http.o is rebuilt when it changed
 ifeq ($(CONFIG_NET_HTTP),y)
 HTTP_ASSETS := $(sort $(wildcard core/net/http_assets/*))
+# With web control, its front panel page (core/net/webctl_assets) replaces the files of the same name, and the radio's
+# key map and drawing go with it (tools/gen_webctl_assets.py)
+ifeq ($(CONFIG_NET_WEBCTL),y)
+WEBCTL_ASSETS := $(wildcard core/net/webctl_assets/*) $(shell python3 tools/gen_webctl_assets.py $(BOARD) $(BUILD)/gen/webctl)
+HTTP_ASSETS := $(filter-out $(addprefix core/net/http_assets/,$(notdir $(WEBCTL_ASSETS))),$(HTTP_ASSETS)) $(WEBCTL_ASSETS)
+endif
 $(shell python3 tools/gen_http_assets.py $(if $(filter y,$(CONFIG_NET_HTTP_GZIP)),--gzip) $(BUILD)/gen/http_assets_gen.h \
 	$(HTTP_ASSETS) | grep -q changed && rm -f $(BUILD)/core/net/http.o)
 endif

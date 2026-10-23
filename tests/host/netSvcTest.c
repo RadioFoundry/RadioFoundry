@@ -69,7 +69,13 @@ static const keymap_entry_t keymap[] = {
 	{ 3, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
 	{ 7, ACT_PTT, ACT_PTT, true, false, 0 },
 };
-const board_t board = { .name = "fake", .netif = &fake_netif, .display = &fake_display, .power_count = 2,
+static int8_t fake_encoder(void)
+{
+	return 0;
+}
+
+static const hal_input_t fake_input = { .encoder = fake_encoder };	// the web control's hello says it has one
+const board_t board = { .name = "fake", .input = &fake_input, .netif = &fake_netif, .display = &fake_display, .power_count = 2,
 			.power_names = power_names, .bands = bands, .band_count = 2, .keymap = keymap, .keymap_len = 2 };
 
 // ---- what the gateway needs from its user ----

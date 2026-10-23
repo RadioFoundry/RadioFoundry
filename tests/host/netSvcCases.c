@@ -765,7 +765,7 @@ static void test_webctl(void)
 	CHECK(strstr((char *)a.rx, "\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"));
 	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
 	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1);
-	CHECK(strcmp(m, "{\"hello\":1,\"control\":true,\"audio\":false,\"keys\":[3,7],\"ptt\":7}") == 0);
+	CHECK(strcmp(m, "{\"hello\":1,\"control\":true,\"audio\":false,\"keys\":[3,7],\"ptt\":7,\"encoder\":true}") == 0);
 	run_for(300);
 	CHECK(ws_find(&a, &at, "\"rx_hz\":446006250", m, sizeof m));
 	CHECK(strstr(m, "\"led_green\":true,\"led_red\":false,\"backlight\":80,\"draws\":0"));
