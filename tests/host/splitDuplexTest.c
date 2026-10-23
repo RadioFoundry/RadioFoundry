@@ -812,7 +812,7 @@ static void test_normal(void)
 	const uint8_t *r = split_reply(SPLIT_SUB_INFO);
 	CHECK(r[1] == 5 + SPLIT_INFO_LEN && r[5] == 1 && r[6] == 3 && r[7] == 0 && r[8] == 16 && r[9] == DMR_BS_CACH_OURS);
 	CHECK(rd32(r + 10) == now_ms * 1000u + clock_base_us);
-	CHECK(split_cmd(0x07, NULL, 0) == SPLIT_RESULT_UNKNOWN);		// unknown sub-command
+	CHECK(split_cmd(0x09, NULL, 0) == SPLIT_RESULT_UNKNOWN);		// unknown sub-command
 	CHECK(split_cmd(SPLIT_SUB_GET_EPOCH, NULL, 0) == SPLIT_RESULT_STATE);
 	CHECK(split_cmd(SPLIT_SUB_SET_EPOCH, (const uint8_t[]){ 0, 0, 0, 0 }, 4) == SPLIT_RESULT_STATE);
 	CHECK(split_cmd(SPLIT_SUB_SET_AT, (const uint8_t[]){ 1 }, 1) == SPLIT_RESULT_STATE);
@@ -1291,6 +1291,492 @@ static void test_rx_half(void)
 }
 
 // The extension and the SFR: a role keeps the SFR off and the SFR trigger out; the SFR comes back after the role
+// ---- ALIGN and the scheduled stream (spec 3.8, 3.9) ----
+
+static int32_t rds32(const uint8_t *p)
+{
+	return (int32_t)rd32(p);
+}
+
+static uint8_t align_cmd(uint32_t t_us, uint32_t period_ns, uint32_t counter, int32_t *phase, uint8_t *flags)
+{
+	uint8_t p[12];
+
+	for (int i = 0; i < 4; i++) {
+		p[i] = (uint8_t)(t_us >> (8 * i));
+		p[4 + i] = (uint8_t)(period_ns >> (8 * i));
+		p[8 + i] = (uint8_t)(counter >> (8 * i));
+	}
+	uint8_t r = split_cmd(SPLIT_SUB_ALIGN, p, 12);
+	const uint8_t *f = split_reply(SPLIT_SUB_ALIGN);
+
+	if ((r == 0) && (phase != NULL)) {
+		*phase = rds32(f + 5);
+		*flags = f[9];
+	}
+	return r;
+}
+
+// TX_SCHED: returns the outcome (0xE0 + result when the result isn't 0)
+static uint8_t sched_cmd(uint32_t counter, uint8_t slot, uint8_t control, const uint8_t *frame)
+{
+	uint8_t p[39];
+
+	for (int i = 0; i < 4; i++) {
+		p[i] = (uint8_t)(counter >> (8 * i));
+	}
+	p[4] = slot;
+	p[5] = control;
+	memcpy(p + 6, frame, 33);
+	uint8_t r = split_cmd(SPLIT_SUB_TX_SCHED, p, 39);
+	const uint8_t *f = split_reply(SPLIT_SUB_TX_SCHED);
+
+	if (r != 0) {
+		return (uint8_t)(0xE0 + r);
+	}
+	CHECK(f[1] == 5 + 5 && rd32(f + 5) == counter);
+	return f[9];
+}
+
+static uint8_t slot_of(uint32_t counter)
+{
+	return ((counter & 1u) == 0) ? 1 : 2;
+}
+
+static void epoch(uint32_t *counter, uint32_t *t_us, uint8_t *ts)
+{
+	CHECK(split_cmd(SPLIT_SUB_GET_EPOCH, NULL, 0) == 0);
+	const uint8_t *r = split_reply(SPLIT_SUB_GET_EPOCH);
+
+	*counter = rd32(r + 5);
+	*t_us = rd32(r + 9);
+	*ts = r[13];
+}
+
+static const uint8_t *status(void)
+{
+	CHECK(split_cmd(SPLIT_SUB_STATUS, NULL, 0) == 0);
+	const uint8_t *r = split_reply(SPLIT_SUB_STATUS);
+
+	CHECK(r[1] == 5 + SPLIT_STATUS_LEN);
+	return r + 5;
+}
+
+// The grid: slot GRID_C starts its boundary at GRID_T (a time off the slot clock's own boundaries)
+#define GRID_C	1000000u
+static uint32_t grid_t;
+
+static void start_sched(int32_t restart_err)
+{
+	session(&ssim_modem);
+	ssim.restart_err_us = restart_err;
+	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 1, 10, 50, 3, 0, 0, SPLIT_STREAM_SCHED }, 7) == 0);
+	run_ms(100);
+	grid_t = ssim.now_us + 7300u;
+}
+
+static void test_align(void)
+{
+	hotspot_split_view_t v;
+	int32_t ph;
+	uint8_t fl, ts;
+	uint32_t c, t;
+
+	// INFO: the capabilities, the guard (the hand-over, the delay, a poll), the horizon, the slot-to-air delay
+	start_sched(0);
+	CHECK(split_cmd(SPLIT_SUB_INFO, NULL, 0) == 0);
+	const uint8_t *r = split_reply(SPLIT_SUB_INFO);
+	CHECK(rd16(r + 15) == (SPLIT_CAP_SCHED | SPLIT_CAP_ALIGN | SPLIT_CAP_SLEW | SPLIT_CAP_RX_META) && r[17] == 55 && r[18] == 32 && rd16(r + 19) == 4600);
+
+	// Not TX half / bad period / too short
+	CHECK(align_cmd(grid_t, 31000000u, GRID_C, NULL, NULL) == SPLIT_RESULT_INVALID);
+	CHECK(split_cmd(SPLIT_SUB_ALIGN, (const uint8_t[]){ 1, 2, 3 }, 3) == SPLIT_RESULT_INVALID);
+
+	// Unkeyed: the phase before (the clock is 7.3 ms off the grid, folded), then the snap
+	uint32_t before = ssim.t_tick;
+	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0);
+	int32_t want = (int32_t)(before - grid_t) % 30000;
+	want = (want > 15000) ? want - 30000 : ((want < -15000) ? want + 30000 : want);
+	CHECK(ph == want && fl == SPLIT_AL_SNAP && ssim.restarts == 1);
+	run_ms(100);
+	const uint8_t *st = status();
+	CHECK(rds32(st + 42) == 0 && st[46] == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE));
+	// GET_EPOCH numbers from the grid: its boundary lies on it, even counters are TS1
+	epoch(&c, &t, &ts);
+	CHECK((int32_t)(t - grid_t) == (int32_t)(c - GRID_C) * 30000 && ts == slot_of(c));
+
+	// A chip that comes up 3 ms late: checked at the first boundaries, snapped again with the delay learned
+	start_sched(3000);
+	CHECK(align_cmd(grid_t, 0, GRID_C + 1u, &ph, &fl) == 0 && fl == SPLIT_AL_SNAP);
+	run_ms(60);
+	CHECK(ssim.restarts == 2);
+	run_ms(100);
+	hotspot_split_get_view(&v);
+	CHECK(v.snap_adj_us == 3000 && v.phase_us == 0 && v.align_flags == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE));
+	epoch(&c, &t, &ts);
+	CHECK((int32_t)(t - grid_t) == (int32_t)(c - (GRID_C + 1u)) * 30000 && ts == slot_of(c));
+	// Close to half a slot late: learned the same way
+	start_sched(12000);
+	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0);
+	run_ms(300);
+	hotspot_split_get_view(&v);
+	CHECK(ssim.restarts == 2 && v.snap_adj_us == 12000 && v.align_flags == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE));
+	// A chip that never gets there: three more tries, then it stops: numbered from the grid, not aligned
+	start_sched(5000);
+	ssim.restart_flip = true;
+	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0);
+	run_ms(600);
+	hotspot_split_get_view(&v);
+	CHECK(ssim.restarts == 1 + SPLIT_SNAP_TRIES && v.align_flags == SPLIT_AL_BASE && v.phase_us == -10000);
+
+	// A retune restarts the slot clock: back onto the grid by itself
+	start_sched(0);
+	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0);
+	run_ms(100);
+	set_freq(433000000, 438000000, 255);
+	run_ms(200);
+	hotspot_split_get_view(&v);
+	CHECK(v.align_flags == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE) && v.phase_us == 0);
+	epoch(&c, &t, &ts);
+	CHECK((int32_t)(t - grid_t) == (int32_t)(c - GRID_C) * 30000 && ts == slot_of(c));
+
+	// Keyed (stream 0 too), a driver that can't slew: off the grid, nothing changes and the phase comes back; on it,
+	// only the numbering
+	session(&ssim_modem_noslew);
+	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 1 }, 1) == 0);
+	run_ms(100);
+	grid_t = ssim.now_us + 7300u;
+	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0 && fl == SPLIT_AL_SNAP);
+	run_ms(100);
+	host(MMDVM_DMR_START, (const uint8_t[]){ 1 }, 1);
+	run_ms(100);
+	CHECK(ssim.keyed);
+	unsigned restarts = ssim.restarts;
+	CHECK(align_cmd(grid_t + 2500u, 0, GRID_C, &ph, &fl) == 0 && ph == -2500 && fl == SPLIT_AL_NOT_APPLIED);
+	CHECK(align_cmd(grid_t, 0, GRID_C + 1u, &ph, &fl) == 0 && ph == 0 && fl == SPLIT_AL_NOT_APPLIED);	// parity
+	CHECK(align_cmd(grid_t, 0, GRID_C + 2u, &ph, &fl) == 0 && ph == 0 && fl == SPLIT_AL_ALIGNED);
+	CHECK(ssim.restarts == restarts);
+	epoch(&c, &t, &ts);
+	CHECK((int32_t)(t - grid_t) == (int32_t)(c - (GRID_C + 2u)) * 30000 && ts == slot_of(c));
+	host(MMDVM_DMR_START, (const uint8_t[]){ 0 }, 1);
+	run_ms(200);
+}
+
+static void test_sched(void)
+{
+	hotspot_split_view_t v;
+	int32_t ph;
+	uint8_t fl, ts, f[33];
+	uint32_t c, t;
+
+	start_sched(0);
+	lc_frame(DT_VOICE_LC_HEADER, LC1, f);
+	CHECK(sched_cmd(GRID_C + 20u, 1, 0x41, f) == 0xE0 + SPLIT_RESULT_STATE);	// no ALIGN yet
+	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0);
+	run_ms(100);
+	epoch(&c, &t, &ts);
+	CHECK(!ssim.keyed);
+
+	// A call 10 slots ahead (300 ms): queued; it keys up in time and goes out in exactly its slot
+	uint32_t g = (c + 10u) & ~1u;
+	unsigned air0 = ssim.air_n;
+	CHECK(sched_cmd(g, 1, 0x41, f) == SPLIT_SCHED_QUEUED);
+	CHECK(sched_cmd(g + 1u, 1, 0x41, f) == 0xE0 + SPLIT_RESULT_INVALID);		// slot byte against parity
+	for (int i = 0; i < 6; i++) {
+		uint8_t vf[33];
+
+		voice_frame((uint8_t)i, (uint8_t)(0x10 + i), LC1, vf);
+		CHECK(sched_cmd(g + 2u + 2u * (uint32_t)i, 1, (i == 0) ? 0x20 : (uint8_t)i, vf) == SPLIT_SCHED_QUEUED);
+	}
+	uint8_t term[33];
+	lc_frame(DT_TERMINATOR_WITH_LC, LC1, term);
+	CHECK(sched_cmd(g + 14u, 1, 0x42, term) == SPLIT_SCHED_QUEUED);
+	// Inbound slot 2 data in a TS2 slot, sent twice: the second replaces the first
+	uint8_t d[33], info[12] = { 0x01, 0x02, 0x03 };
+	data_frame(DT_CSBK, info, 12, d);
+	CHECK(sched_cmd(g + 5u, 2, 0x43, d) == SPLIT_SCHED_QUEUED);
+	CHECK(sched_cmd(g + 5u, 2, 0x43, d) == SPLIT_SCHED_REPLACED);
+	CHECK(sched_cmd(c + 40u, slot_of(c + 40u), 0x43, d) == SPLIT_SCHED_EARLY);
+	run_ms(900);
+	hotspot_split_get_view(&v);
+	CHECK(ssim.keyups == 1);
+	int hdr = air_find(air0, 1, DMR_BURST_VOICE_LC_HEADER, -1);
+	CHECK(hdr >= 0 && ssim.air[hdr].counter + v.cbase == g && ssim.air[hdr].at && ssim.air[hdr].at_counter == ssim.air[hdr].counter);
+	for (int i = 0; i < 6; i++) {
+		int a = air_find(air0, 1, DMR_BURST_VOICE, i);
+		CHECK(a >= 0 && ssim.air[a].counter + v.cbase == g + 2u + 2u * (uint32_t)i);
+	}
+	int tm = air_find(air0, 1, DMR_BURST_TERMINATOR_LC, -1);
+	CHECK(tm >= 0 && ssim.air[tm].counter + v.cbase == g + 14u);
+	int cs = air_find(air0, 2, DMR_BURST_CSBK, -1);
+	CHECK(cs >= 0 && ssim.air[cs].counter + v.cbase == g + 5u);
+	// Every slot on air since the key-up carries its CACH (idle or not), TS1 on even counters
+	for (unsigned i = air0; i < ssim.air_n; i++) {
+		CHECK(!ssim.air[i].underrun && slot_of(ssim.air[i].counter + v.cbase) == ssim.air[i].ts);
+		CHECK(ssim.air[i].cach.tc == ((ssim.air[i].ts == 1) ? 0 : 1));
+	}
+	CHECK(ssim.late == 0);
+
+	// Late: the slot is already handed over (or about to be); counted, never moved
+	epoch(&c, &t, &ts);
+	CHECK(sched_cmd(c + 1u, slot_of(c + 1u), 0x43, d) == SPLIT_SCHED_LATE);
+	CHECK(sched_cmd(c - 4u, slot_of(c - 4u), 0x43, d) == SPLIT_SCHED_LATE);
+	const uint8_t *st = status();
+	CHECK(rd16(st + 32) == 9 && rd16(st + 34) == 2 && rd16(st + 36) == 1 && rd16(st + 38) == 1);
+	CHECK(st[46] == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE));
+
+	// DMR_DATA1 isn't taken in the scheduled stream
+	int from = out_count;
+	net(MMDVM_DMR_DATA1, 0x41, f);
+	CHECK(nak_of(MMDVM_DMR_DATA1, from) == MMDVM_NAK_WRONG_MODE);
+
+	// The key-up the queued bursts made ends 1 s after the last one (the host keeps the lease)
+	for (int i = 0; i < 6 && ssim.keyed; i++) {
+		split_cmd(SPLIT_SUB_TIME, (const uint8_t[]){ 0, 0, 0, 0, 0, 0, 0, 0 }, 8);
+		run_ms(300);
+	}
+	CHECK(!ssim.keyed);
+
+	// DMR_START 01 keys as in stream 0 and holds through a hang with nothing queued
+	host(MMDVM_DMR_START, (const uint8_t[]){ 1 }, 1);
+	for (int i = 0; i < 6; i++) {
+		split_cmd(SPLIT_SUB_TIME, (const uint8_t[]){ 0, 0, 0, 0, 0, 0, 0, 0 }, 8);
+		run_ms(300);
+	}
+	CHECK(ssim.keyed);
+	epoch(&c, &t, &ts);
+	air0 = ssim.air_n;
+	CHECK(sched_cmd(c + 6u, slot_of(c + 6u), 0x43, d) == SPLIT_SCHED_QUEUED);
+	run_ms(300);
+	hotspot_split_get_view(&v);
+	cs = air_find(air0, slot_of(c + 6u), DMR_BURST_CSBK, -1);
+	CHECK(cs >= 0 && ssim.air[cs].counter + v.cbase == c + 6u);
+	host(MMDVM_DMR_START, (const uint8_t[]){ 0 }, 1);
+	run_ms(200);
+	CHECK(!ssim.keyed);
+
+	// Unkeyed, a burst whose slot passes before anything keys (it came too close): late, not kept
+	epoch(&c, &t, &ts);
+	CHECK(sched_cmd(c + 3u, slot_of(c + 3u), 0x43, d) == SPLIT_SCHED_QUEUED);
+	ssim.keyed = false;
+	st = status();
+	uint16_t late = rd16(st + 34);
+	run_ms(300);
+	st = status();
+	CHECK(ssim.keyed || (rd16(st + 34) == late + 1u));
+
+	// Stream 1 needs both driver operations: a modem without them offers stream 0 only
+	reset_world(&ssim_modem_plain);
+	host(MMDVM_GET_VERSION, NULL, 0);
+	CHECK(split_cmd(SPLIT_SUB_INFO, NULL, 0) == 0 && rd16(split_reply(0) + 15) == 0);
+}
+
+// ALIGN with a counter, period, max_slew and mode (spec 3.8)
+static uint8_t align_cmd_x(uint32_t t_us, uint32_t counter, uint16_t max_slew, uint8_t mode, int32_t *phase,
+			   uint8_t *flags)
+{
+	uint8_t p[15];
+
+	for (int i = 0; i < 4; i++) {
+		p[i] = (uint8_t)(t_us >> (8 * i));
+		p[4 + i] = 0;
+		p[8 + i] = (uint8_t)(counter >> (8 * i));
+	}
+	p[12] = (uint8_t)max_slew;
+	p[13] = (uint8_t)(max_slew >> 8);
+	p[14] = mode;
+	uint8_t r = split_cmd(SPLIT_SUB_ALIGN, p, 15);
+	const uint8_t *f = split_reply(SPLIT_SUB_ALIGN);
+
+	if ((r == 0) && (phase != NULL)) {
+		*phase = rds32(f + 5);
+		*flags = f[9];
+	}
+	return r;
+}
+
+// Polls with a TIME every 300 ms (the lease and the host-silence guard) until the TX half stops slewing; the time it
+// took, ms (0: still slewing after max_ms)
+static uint32_t until_slewed(uint32_t max_ms)
+{
+	uint32_t t0 = now_ms;
+
+	while (now_ms - t0 < max_ms) {
+		split_cmd(SPLIT_SUB_TIME, (const uint8_t[]){ 0, 0, 0, 0, 0, 0, 0, 0 }, 8);
+		run_ms(30);
+		if ((status()[46] & SPLIT_AL_SLEWING) == 0) {
+			return now_ms - t0;
+		}
+	}
+	return 0;
+}
+
+static void test_slew(void)
+{
+	hotspot_split_view_t v;
+	int32_t ph;
+	uint8_t fl, ts;
+	uint32_t c, t;
+
+	// Keyed, 2.5 ms early against a new grid: the numbering at once, the clock in steps of 100 us at 20 us per slot
+	session(&ssim_modem);
+	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 1 }, 1) == 0);
+	run_ms(100);
+	grid_t = ssim.now_us + 7300u;
+	CHECK(align_cmd(grid_t, 0, GRID_C, &ph, &fl) == 0 && fl == SPLIT_AL_SNAP);
+	run_ms(100);
+	host(MMDVM_DMR_START, (const uint8_t[]){ 1 }, 1);
+	run_ms(100);
+	CHECK(ssim.keyed);
+	unsigned restarts = ssim.restarts, air0 = ssim.air_n;
+	CHECK(align_cmd(grid_t + 2500u, 0, GRID_C, &ph, &fl) == 0 && ph == -2500 && fl == SPLIT_AL_SLEWING);
+	CHECK((status()[46] & (SPLIT_AL_SLEWING | SPLIT_AL_BASE | SPLIT_AL_ALIGNED)) == (SPLIT_AL_SLEWING | SPLIT_AL_BASE));
+	uint32_t took = until_slewed(8000);
+	// 25 steps, the first after 5 slots, then one every 5: no faster than 20 us per slot
+	CHECK(took >= 25u * 5u * 30u - 300u && took <= 25u * 5u * 30u + 600u);
+	hotspot_split_get_view(&v);
+	CHECK(v.slew_steps == 25 && v.slew_us == 2500 && ssim.slew_largest == 100 && ssim.restarts == restarts);
+	CHECK(abs(v.phase_us) <= 50 && v.align_flags == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE));
+	epoch(&c, &t, &ts);
+	CHECK(abs((int32_t)(t - (grid_t + 2500u)) - (int32_t)(c - GRID_C) * 30000) <= 50 && ts == slot_of(c));
+	// The outbound went on through it: every slot, TC alternating, no underrun beyond the idle ones, one key-up
+	for (unsigned i = air0 + 1; i < ssim.air_n; i++) {
+		CHECK(ssim.air[i].ts != ssim.air[i - 1].ts);
+		uint32_t gap = ssim.air[i].t_us - ssim.air[i - 1].t_us;
+		CHECK(gap == 30000u || gap == 30100u);
+	}
+	CHECK(ssim.keyups == 1);
+
+	// Late by 1.23 ms the other way, max 10 us per slot: 12 steps (30 us left, under half a step), every 10 slots
+	unsigned calls = ssim.slew_calls;
+	CHECK(align_cmd_x(grid_t + 2500u - 1230u, GRID_C, 10, SPLIT_ALIGN_SNAP, &ph, &fl) == 0 && ph == 1230 &&
+	      fl == SPLIT_AL_SLEWING);
+	took = until_slewed(8000);
+	CHECK(took >= 12u * 10u * 30u - 300u && ssim.slew_calls - calls == 12);
+	hotspot_split_get_view(&v);
+	CHECK(v.phase_us == 30 && v.slew_us == 2500 - 1200);
+	// A small phase is aligned at once and slewed away too
+	CHECK(align_cmd(grid_t + 2500u - 1230u - 400u, 0, GRID_C, &ph, &fl) == 0 && ph == 430 &&
+	      fl == (SPLIT_AL_ALIGNED | SPLIT_AL_SLEWING));
+	CHECK(until_slewed(3000) > 0);
+	hotspot_split_get_view(&v);
+	CHECK(v.phase_us == 30 && v.align_flags == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE));
+	// The other slot's parity can't be slewed: not applied
+	CHECK(align_cmd(grid_t, 0, GRID_C + 1u, &ph, &fl) == 0 && fl == SPLIT_AL_NOT_APPLIED);
+	// Bad values
+	CHECK(align_cmd_x(grid_t, GRID_C, 21, 0, NULL, NULL) == SPLIT_RESULT_INVALID);
+	CHECK(align_cmd_x(grid_t, GRID_C, 0, 2, NULL, NULL) == SPLIT_RESULT_INVALID);
+	host(MMDVM_DMR_START, (const uint8_t[]){ 0 }, 1);
+	run_ms(300);
+	CHECK(!ssim.keyed);
+
+	// Mode 1 unkeyed: slewed, never restarted
+	restarts = ssim.restarts;
+	CHECK(align_cmd_x(grid_t + 4000u, GRID_C, 0, SPLIT_ALIGN_SLEW, &ph, &fl) == 0 && fl == SPLIT_AL_SLEWING);
+	CHECK(until_slewed(15000) > 0 && ssim.restarts == restarts);
+	hotspot_split_get_view(&v);
+	CHECK(abs(v.phase_us) <= 50 && v.align_flags == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE));
+	// Mode 0 unkeyed snaps as before, and ends a slew under way
+	CHECK(align_cmd_x(grid_t + 6000u, GRID_C, 0, SPLIT_ALIGN_SLEW, &ph, &fl) == 0 && fl == SPLIT_AL_SLEWING);
+	run_ms(300);
+	CHECK(align_cmd(grid_t + 9000u, 0, GRID_C, &ph, &fl) == 0 && fl == SPLIT_AL_SNAP);
+	run_ms(200);
+	hotspot_split_get_view(&v);
+	CHECK(ssim.restarts == restarts + 1 && abs(v.phase_us) <= 50 && !(v.align_flags & SPLIT_AL_SLEWING));
+	// A retune during a slew: the slew ends, the snap brings the clock back
+	CHECK(align_cmd_x(grid_t + 3000u, GRID_C, 0, SPLIT_ALIGN_SLEW, &ph, &fl) == 0 && fl == SPLIT_AL_SLEWING);
+	run_ms(300);
+	set_freq(433000000, 438000000, 255);
+	run_ms(300);
+	hotspot_split_get_view(&v);
+	CHECK(v.align_flags == (SPLIT_AL_ALIGNED | SPLIT_AL_BASE) && abs(v.phase_us) <= 50);
+	epoch(&c, &t, &ts);
+	CHECK(abs((int32_t)(t - (grid_t + 3000u)) - (int32_t)(c - GRID_C) * 30000) <= 50 && ts == slot_of(c));
+
+	// A driver without slewing: no capability, mode 1 refused, keyed off the grid not applied (test_align)
+	session(&ssim_modem_noslew);
+	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 1 }, 1) == 0);
+	run_ms(100);
+	CHECK(split_cmd(SPLIT_SUB_INFO, NULL, 0) == 0 && !(rd16(split_reply(0) + 15) & SPLIT_CAP_SLEW));
+	CHECK(align_cmd_x(grid_t, GRID_C, 0, SPLIT_ALIGN_SLEW, NULL, NULL) == SPLIT_RESULT_INVALID);
+}
+
+// The RX_META event (spec 3.10) before each burst's uplink frames, only when SET_ROLE asked for it
+static void test_rx_meta(void)
+{
+	session(&ssim_modem);
+	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 2, 0, 0, 0, 0, 0, 0, 0x02 }, 8) == SPLIT_RESULT_INVALID);
+	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 2, 0, 0, 0, 0, 0, 0, SPLIT_OPT_RX_META }, 8) == 0);
+	uint32_t E = clock_us() + 100000u;
+	uint8_t ep[8];
+	for (int i = 0; i < 4; i++) {
+		ep[i] = (uint8_t)(E >> (8 * i));
+		ep[4 + i] = 0;
+	}
+	CHECK(split_cmd(SPLIT_SUB_SET_EPOCH, ep, 8) == 0);
+	int from = out_count;
+	uint32_t s2 = E + 600000u + 3000u, s1 = s2 + 30000u;
+	dmr_burst_t h = rx_lc(DMR_BURST_VOICE_LC_HEADER, LC1);
+	h.cc = 1;
+	h.sync = DMR_SYNC_MS;
+	rx_at(&h, s2);
+	dmr_burst_t vb = rx_voice(0, 0x33, LC1);
+	vb.rssi_dbm = -97;
+	vb.in_step = false;
+	rx_at(&vb, s1);
+	run_ms(10);
+	int ev[2], n = 0, data2 = -1, data1 = -1;
+	for (int i = from; i < out_count; i++) {
+		const uint8_t *o = out[i].b;
+		if ((o[2] == MMDVM_ODR_SPLIT) && (o[3] == SPLIT_EV_RX_META) && (n < 2)) {
+			CHECK(o[1] == 5 + SPLIT_META_LEN && o[4] == 0);
+			ev[n++] = i;
+		} else if ((o[2] == MMDVM_DMR_DATA2) && (data2 < 0)) {
+			data2 = i;
+		} else if ((o[2] == MMDVM_DMR_DATA1) && (data1 < 0)) {
+			data1 = i;
+		}
+	}
+	CHECK(n == 2 && data2 > ev[0] && data2 < ev[1] && (data1 < 0 || data1 > ev[1]));
+	const uint8_t *m = out[ev[0]].b + 5;
+	CHECK(rd32(m) == s2 && (int16_t)rd16(m + 4) == 3000 && m[6] == 2 && m[7] == DMR_BURST_VOICE_LC_HEADER && m[8] == 1);
+	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_IN_STEP | SPLIT_META_LC | SPLIT_META_EPOCH | SPLIT_META_TIMED));
+	CHECK((int16_t)rd16(m + 10) == -80 && rd16(m + 12) == 0);
+	m = out[ev[1]].b + 5;
+	CHECK(rd32(m) == s1 && m[6] == 1 && m[7] == DMR_BURST_VOICE && (int16_t)rd16(m + 10) == -97 && rd16(m + 12) == 1);
+	CHECK(m[9] == (SPLIT_META_CRC_OK | SPLIT_META_EPOCH | SPLIT_META_TIMED));
+	// A burst that goes up nowhere (a header with a bad CRC) still gets its event; without an epoch: label 0
+	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 0 }, 1) == 0);
+	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 2, 0, 0, 0, 0, 0, 0, SPLIT_OPT_RX_META }, 8) == 0);
+	from = out_count;
+	h.crc_ok = false;
+	rx_at(&h, clock_us());
+	run_ms(10);
+	const uint8_t *e = NULL;
+	for (int i = from; i < out_count; i++) {
+		if ((out[i].b[2] == MMDVM_ODR_SPLIT) && (out[i].b[3] == SPLIT_EV_RX_META)) {
+			e = out[i].b;
+		}
+	}
+	CHECK(e != NULL && e[5 + 6] == 0 && e[5 + 9] == (SPLIT_META_IN_STEP | SPLIT_META_LC | SPLIT_META_TIMED));
+	CHECK(count_out(MMDVM_DMR_DATA2, from) == 0);
+	hotspot_split_view_t v;
+	hotspot_split_get_view(&v);
+	CHECK(v.meta_sent == 3);
+	// Without the option (the same role again, byte 7 left out): no events; an event sub as a request is unknown
+	CHECK(split_cmd(SPLIT_SUB_SET_ROLE, (const uint8_t[]){ 2 }, 1) == 0);
+	from = out_count;
+	h.crc_ok = true;
+	rx_at(&h, clock_us());
+	run_ms(10);
+	int evs = 0;
+	for (int i = from; i < out_count; i++) {
+		evs += (out[i].b[2] == MMDVM_ODR_SPLIT) && (out[i].b[3] == SPLIT_EV_RX_META);
+	}
+	CHECK(evs == 0 && count_out(MMDVM_DMR_DATA2, from) == 1);
+	CHECK(split_cmd(SPLIT_EV_RX_META, NULL, 0) == SPLIT_RESULT_UNKNOWN);
+}
+
 static void test_space_when_role_ends(void)
 {
 	session(&ssim_modem);
@@ -1342,7 +1828,11 @@ int main(void)
 	test_normal();
 	test_tx_half();
 	test_tx_guard();
+	test_align();
+	test_sched();
+	test_slew();
 	test_rx_half();
+	test_rx_meta();
 	test_space_when_role_ends();
 	test_debuglink();
 	printf("# splitDuplexTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

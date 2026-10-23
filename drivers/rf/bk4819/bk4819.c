@@ -424,6 +424,30 @@ void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain)
 	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
 }
 
+// 4.4 DTMF: the tone start with both generators at the stock DTMF level and the stock DTMF deviation (0x40)
+void bk4819_dtmf_start(bk4819_t *dev, uint16_t low_hz, uint16_t high_hz)
+{
+	if (low_hz == 0) {
+		bk4819_tone_stop(dev);
+		return;
+	}
+	if (dev->tone_hz == 0) {
+		bk4819_write(dev, BK4819_REG_AF, 0x6342u);	// AF select 3, the stock side tone
+		bk4819_write(dev, BK4819_REG_TONE_CTRL, BK4819_DTMF_CTRL);
+		bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_TONE);
+		bk4819_write(dev, BK4819_REG_POWER, BK4819_POWER_ON);
+		bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
+		bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_TX_TONE);
+		bk4819_write(dev, 0x40, BK4819_TX_DEV_DTMF);
+	}
+	dev->tone_hz = low_hz;
+	dev->tone_gain = 0;	// keying (bk4819_tone_key) is for single tones only
+	// The stock DTMF table's words (1633 Hz = 16860; Hz x 10.3244 truncated gave 16859)
+	bk4819_write(dev, BK4819_REG_TONE1_FREQ, bk4819_tone_word(low_hz));
+	bk4819_write(dev, BK4819_REG_TONE2_FREQ, bk4819_tone_word(high_hz));
+	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
+}
+
 // Keyed by the tone generator's enable (0x70 bit 15) while the chip stays at 0xC3FA
 void bk4819_tone_key(bk4819_t *dev, bool down)
 {

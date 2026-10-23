@@ -170,6 +170,21 @@ typedef struct {
 	void (*bs_stop)(void);
 	bool (*bs_keyed)(void);		// the PA is up for the outbound (keyed and on air)
 	uint8_t bs_cach;		// DMR_BS_CACH_xxx
+	// Optional, the scheduled stream and ALIGN (split-duplex.md 3.8, 3.9). bs_queue_at: as bs_queue, for the one
+	// slot that slot_clock numbers counter (the slot set up at that boundary): played there, dropped (counted) once
+	// that slot has passed, never moved; its slot is the queue's ts. bs_restart: not keyed, the slot clock restarts so
+	// that a boundary falls at t_us (the next one of t_us + k x 30 ms at least 2 ms ahead; waits for it) and slot_clock
+	// gives ts at that boundary; false when keyed or not running. bs_air_delay_us: a slot boundary to the start of
+	// that slot on air, 0 unknown
+	bool (*bs_queue_at)(uint32_t counter, int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
+			    const uint8_t *emb_lc);
+	bool (*bs_restart)(uint32_t t_us, int8_t ts);
+	int16_t bs_air_delay_us;
+	// Optional, ALIGN's slewing (split-duplex.md 3.8): keyed or not, one slot from the next boundary is us longer
+	// (negative: shorter), rounded to the driver's step (bs_slew_step_us) and limited to what it can do in one slot.
+	// Returns the change it will make, 0 when none (us under half a step, or one still pending)
+	int32_t (*bs_slew)(int32_t us);
+	uint16_t bs_slew_step_us;
 #endif
 } hal_dmr_modem_t;
 

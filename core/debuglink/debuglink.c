@@ -49,6 +49,7 @@ enum {
 	// 29: a vibration pattern (DL_OP_VIBRATE, debuglink_view_radio.c)
 	// 30: the speaker volume (DL_OP_VOLUME, debuglink_view_radio.c)
 	// 31, 32: DMR fields, Copy to VFO (DL_OP_DMR_FIELDS, DL_OP_VFO_COPY, debuglink_view_radio.c)
+	// 33, 34: the DMR voice test signal, a DTMF key down or up (DL_OP_VOICE_TEST, DL_OP_DTMF, debuglink_view_radio.c)
 };
 
 static dl_parser_t parser;
@@ -186,6 +187,9 @@ static const char features[] = "features="
 #endif
 #if CONFIG_FM_TX_TONES
 	"FM_TX_TONES,"
+#endif
+#if CONFIG_DTMF
+	"DTMF,"
 #endif
 #if CONFIG_VOX
 	"VOX,"

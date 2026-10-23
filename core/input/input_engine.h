@@ -21,12 +21,29 @@ static inline uint32_t input_long_threshold(uint8_t long_action, uint32_t long_m
 }
 
 typedef void (*input_emit_t)(const input_event_t *ev, void *ctx);
+// A DTMF key's down and up (keys with a DTMF digit, input_dtmf_digit; never raw-edge keys). On down, true takes the
+// key: none of its gestures (PRESS, LONG, REPEAT) are sent for this hold, and its up comes here too
+typedef bool (*input_dtmf_t)(char digit, bool down, void *ctx);
+
+// The DTMF digit a key map entry sends (docs/spec/radio-features.md 3.7): its own dtmf, else a digit key's digit,
+// else 0 (none)
+static inline char input_dtmf_digit(const keymap_entry_t *m)
+{
+	if (m->raw_edges) {
+		return 0;
+	}
+	if (m->dtmf != 0) {
+		return m->dtmf;
+	}
+	return m->short_action >= ACT_DIGIT_0 && m->short_action <= ACT_DIGIT_9 ? (char)('0' + (m->short_action - ACT_DIGIT_0)) : 0;
+}
 
 typedef struct {
 	uint32_t t_down;	// when the key went down
 	uint32_t t_next;	// next REPEAT
 	bool down;
 	bool long_done;		// LONG already sent for this hold
+	bool dtmf;		// this hold went to the DTMF callback (no gestures until it ends)
 } input_key_t;
 
 typedef struct {
@@ -39,6 +56,8 @@ typedef struct {
 	uint32_t last_activity_ms;
 	uint16_t long_ms;	// long press threshold, 0 = INPUT_LONG_MS
 	uint16_t repeat_ms;	// repeat period, 0 = INPUT_REPEAT_MS
+	input_dtmf_t dtmf;	// DTMF keys' edges (NULL = none)
+	void *dtmf_ctx;
 	input_key_t keys[INPUT_KEYS_MAX];
 } input_engine_t;
 
@@ -96,6 +115,8 @@ void input_engine_init(input_engine_t *e, const keymap_entry_t *keymap, uint8_t 
 // One scan: raw key mask and encoder detents since the last call
 // Gesture timing in ms (0 = the defaults); keys held now keep their LONG / REPEAT state
 void input_engine_set_timing(input_engine_t *e, uint16_t long_ms, uint16_t repeat_ms);
+// The DTMF keys' callback (NULL: none)
+void input_engine_set_dtmf(input_engine_t *e, input_dtmf_t cb, void *ctx);
 void input_engine_step(input_engine_t *e, uint32_t raw, int8_t enc, uint32_t now_ms, input_emit_t emit, void *ctx);
 
 #endif

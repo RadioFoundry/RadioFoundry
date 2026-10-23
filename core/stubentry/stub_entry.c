@@ -132,7 +132,7 @@ void stub_entry_service(void)
 		return;
 	}
 	// The monitor never touches the RF chips, so whatever the transmitter is doing now lasts the whole session. Put
-	// it in receive even when the core thinks it's idle (a hotspot or data burst the core doesn't track as RS_TX)
+	// it in receive even when the core thinks it's idle (a hotspot burst the core doesn't track as RS_TX)
 	if (board.radio != NULL && board.radio->tx_off != NULL) {
 		board.radio->tx_off();
 	}
