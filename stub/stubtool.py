@@ -516,13 +516,10 @@ def check_univ_load(image, load, window=None):
 
 # Board profiles for the universal stub (CONFIG, op 0x0D), from each board's [flash.stub] (boards/<id>/board.toml):
 # board id echoed by HELLO, power latch / power key pins (255 = none), whether the data memory is the SPI NAND, the
-# program flash size; where the board gives them, the LED pins (red, green), the UART the stub answers on before CONFIG
-# and whether it is reached through the main SoC's bridge. VERSION's board= names them on the ODR route; --board at
-# power-on. Unknown radio: GENERIC (no pins, nothing echoed but 0).
-C7_BOARDS = {b.id: dict({"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names),
-                         "latch": b.stub["latch"], "key": b.stub["key"], "nand": b.stub["nand"],
-                         "progmem": b.stub["progmem"]},
-                        **{k: tuple(v) if k == "leds" else v for k, v in b.stub.items() if k in ("leds", "uart", "bridge")})
+# program flash size. VERSION's board= names them on the ODR route; --board at power-on. Unknown radio: GENERIC (no
+# pins, nothing echoed but 0).
+C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
+                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"]}
              for b in odrboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on

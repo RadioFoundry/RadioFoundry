@@ -35,7 +35,7 @@ import time
 
 import pytest
 
-from odr_hil import counter_deltas
+from odr_hil import counter_deltas, skip
 
 PRIME = 3                   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 PEAK_MIN = 1000             # decoded speech peaks at thousands; the stale voice RAM gave 6
@@ -83,7 +83,7 @@ def dmr_channel(radio, pytestconfig):
     """Put the radio on its DMR channel at --dmr-freq and work out the call that reaches its speaker. Returns
     (freq, cc, dst, private, own_id). Fails (not skips) when the radio has DMR but can't play a call."""
     if "DMR" not in radio.features():
-        pytest.skip("DMR AUDIO NOT CHECKED: firmware built without DMR")
+        skip("not_built", "DMR AUDIO NOT CHECKED: firmware built without DMR")
     freq = pytestconfig.getoption("--dmr-freq")
     radio.go_home()
     find_dmr_channel(radio, round(freq * 1e6))

@@ -64,7 +64,7 @@ CONFIG_BCAST_FM ?= n
 CONFIG_AM_RX ?= n
 # VOX reads the microphone level through hal_power_t.mic_level, which this board doesn't have yet
 CONFIG_VOX ?= n
-# 160x128 like the DM-1701, which builds without the large font
+# 160x128 like the other 160x128 radios, which build without the large font
 CONFIG_FONT_XL ?= n
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off. USB
@@ -74,7 +74,7 @@ BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (owner, 2026-10-22)
 BOARD_UNSUPPORTED += AM_RX	# no air band receive (owner, 2026-10-22)
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
 # maximal configuration too
-BOARD_NOT_WRITTEN += NET_USRP	# the host link stalls under USRP's PCM; the DM-32UV carries it at the same 115200 baud
+BOARD_NOT_WRITTEN += NET_USRP	# the host link stalls under USRP's PCM; another HR_C7000 board carries it at the same 115200 baud
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the per-burst TX path has no continuous base-station outbound yet (above)
 BOARD_NOT_WRITTEN += SFR	# RX and TX switch every slot: the per-burst retune isn't timed for it (above)
 BOARD_NOT_WRITTEN += APRS_RX	# FM receive audio isn't taken from the modem's AF ADC as PCM yet (above)

@@ -1690,21 +1690,17 @@ async function main() {
 	}
 	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText, installSecond,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	// #sim=<board>[-stock]: that board, running ODR or its stock firmware; #sim: the first radio on stock firmware.
-	// -bstock: a second receiver behind it (flash.second) still on its original firmware
-	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock)?(-bstock)?)?(?:&|$)/);
+	// #sim=<board>[-stock]: that board, running ODR or its stock firmware; #sim: the first radio on stock firmware
+	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock)?)?(?:&|$)/);
 	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
 	const simStock = !!simAsk && (!simAsk[1] || !!simAsk[2]);
 	if (simRadio && c7ui.isC7000(simRadio, S.data.fb)) {
 		// on its cable: stock firmware (a stock console answers if the board has one), or ODR with the stub hand-over
 		const board = simRadio.id;
 		const sim = await c7000Simulation(S.data.fb.c7000, board, 7000, simRadio);
-		// a second receiver behind ODR on it (flash.second): its own flash, with its own codec build
-		const second = simRadio.flash.second;
-		const simB = second ? await c7000Simulation(sim.c, second.board, 7001) : null;
-		S.sim = { fb: { ...S.data.fb, c7000: (simB || sim).c } };
+		S.sim = { fb: { ...S.data.fb, c7000: sim.c } };
 		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600, faults: { silentAfterReset: true },
-			...fakeC7000Options(simRadio, S.data.fb), ...(simB ? { rx2: { progmem: simB.progmem, stock: !!simAsk[3] } } : {}) });
+			...fakeC7000Options(simRadio, S.data.fb) });
 		if (!simStock) {
 			const img = randomBytes(rng(98), 180 * 1024);
 			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);

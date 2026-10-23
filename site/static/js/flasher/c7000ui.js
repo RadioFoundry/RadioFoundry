@@ -51,20 +51,6 @@ const CONSOLES = { usmart: Usmart };	// flash.stock_console: the console's proto
 const stockRadio = () => !!CONSOLES[flash().stock_console];
 const updateMode = () => flash().update_mode === "iap";
 const iap = (c) => new Iap(c.stream, { log: (l) => c.log.add(l), firstStage: flash().first_stage });
-// whether the chip the cable reaches has a status LED the stub drives (stub_board.leds 255, 255: none)
-const hasLed = () => (C().boards[boardId()].stub_board?.leds || [0]).some((p) => p !== 255);
-// A second SoC with no cable of its own (stub_board.bridge, a board's flash.second): reached through ODR on the
-// first, whose board the radio entry names (flash.via)
-const bridged = () => !!C().boards[boardId()].stub_board?.bridge;
-const answersAs = () => (bridged() ? ctx.fb().boards[S().radio.flash.via] : S().board).debuglink_names;
-const BRIDGE_ROM_WAIT = 70000;		// the second SoC's first stage offers for about a minute
-const BRIDGE_END_MS = 10000;		// the first SoC ends the bridge this long after the page's last byte, then restarts
-// A radio's own update-mode texts where en.json has them (flash.help.s.iap_<radio id>: what its screen shows), else
-// the common ones. A second SoC's are its radio's
-const iapSuffix = (radio) => {
-	const id = radio.second_of || radio.id;
-	return t(`flash.help.s.iap_${id}`) !== `flash.help.s.iap_${id}` ? `_${id}` : "";
-};
 const progSize = () => c7.totalSize(C(), boardId());
 const viaIap = () => session().how === "iap";
 // What the radio's screen shows while the stub runs: ODR's loader screen, whatever the original firmware last drew, or
@@ -204,54 +190,8 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			if (offer) return fromOdr(offer);
 			return restartOdr();
 		}
-		if (bridged()) return noFirst();
 		if (stockRadio() || updateMode()) return stockOrNothing();
 		return powerCycle();
-	};
-
-	// The second SoC behind ODR on the first: a second SoC that does not answer the first may still run its original
-	// firmware, which has no bridge end; its first installation goes through the loader's update mode (IAP_B)
-	const secondState = async (link) => {
-		const flags = await Stub.secondState(link);
-		if (flags === null || !(flags & RX2_F.present) || (flags & RX2_F.up) || !toIap) return throughFirst(link);
-		// what answered is the first chip, not the one being installed (as throughFirst)
-		c.via = c.odr;
-		c.odr = null;
-		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.odr_found", { git: c.via.git }))),
-			notice(t("flash.second.bridge.second_down"), "info"), h("p", {}, t("flash.second.bridge.second_down_iap")));
-		act(button(t("flash.iap.none.update_mode"), toIap, { primary: true }),
-			button(t("flash.second.bridge.try_anyway"), () => throughFirst(link), { quiet: true }));
-	};
-
-	// ODR does not answer on the cable: the second SoC is reached only through it, or through the update mode
-	const noFirst = () => {
-		if (!toIap) return cableStep(t("flash.second.bridge.need_odr"));
-		show({ led: "off", screen: "any" }, notice(t("flash.second.bridge.need_odr"), "info"), h("p", {}, t("flash.second.bridge.need_odr_iap")));
-		act(button(t("flash.iap.none.again"), () => find(), { primary: true }), button(t("flash.iap.none.update_mode"), toIap, { quiet: true }));
-	};
-
-	// The second SoC: ODR on the first hands the cable over, then the second's first stage takes the stub as the boot
-	// ROM would. No power cycle: the first SoC stays on and restarts by itself afterwards
-	const throughFirst = async (link) => {
-		// what answered is the first chip; what the second one runs is only known from its own flash, so it is read and
-		// backed up as on a first install (secondState may have moved it already)
-		if (c.odr) {
-			c.via = c.odr;
-			c.odr = null;
-		}
-		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.c7.connect.odr_found", { git: c.via.git }))),
-			h("p", {}, t("flash.second.bridge.asking")));
-		const stub = mkStub();
-		try {
-			await Stub.bridgeFromOdr(link);
-			await stub.waitForRom(S().fakeC7 ? 3000 : BRIDGE_ROM_WAIT);
-		} catch (e) {
-			show({ led: "off", screen: "on" }, notice(t("flash.second.bridge.failed", { error: ctx.errorText(e) }), "bad"),
-				toIap ? h("p", {}, t("flash.second.bridge.failed_iap")) : null);
-			return act(button(t("flash.c7.connect.try_again"), () => find(), { primary: true }),
-				toIap && button(t("flash.iap.none.update_mode"), toIap, { quiet: true }));
-		}
-		await load(stub, "bridge");
 	};
 
 	// A radio with a stock console or an update mode that is not ODR: the original firmware answers its debug console
@@ -401,8 +341,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 			show({ led: "wait", screen }, h("p", { class: "c7-big" }, h("b", {}, how)),
 				h("dl", { class: "kv-list" },
 					h("dt", {}, t("flash.c7.radio")), h("dd", {}, c.model ? S().radio.name : t("flash.c7.radio_unconfirmed"))),
-				h("p", {}, t(c.how === "usmart" ? "flash.usmart.led"
-					: `flash.c7.connect.led_${{ odr: "odr", bridge: "bridge" }[c.how] || "rom"}${hasLed() ? "" : "_noled"}`)));
+				h("p", {}, t({ odr: "flash.c7.connect.led_odr", usmart: "flash.usmart.led" }[c.how] || "flash.c7.connect.led_rom")));
 			await sleep(S().fakeC7 ? 400 : 1500);
 			onReady();
 		} catch (e) {
@@ -604,7 +543,7 @@ export function checkView() {
 		const file = { model: S().radio.model, codec_version: flash().codec_version || "" };
 		if (!c.analysis?.otherCodec) return t("flash.usmart.codec.action_text", file);
 		// named as flash.stock_versions name it (iapui.js too); the image's own string carries another batch code
-		const v = c.progmem && stockVersion(c.progmem, flash().stock_versions);
+		const v = c.progmem && stockVersion(c.progmem);
 		return t("flash.usmart.codec.action_other", { ...file, version: v ? stockName(flash(), v.slice(-3)) : t("flash.usmart.codec.version_unknown") });
 	}
 
@@ -647,8 +586,6 @@ async function saveBundle() {
 function fwName(c) {
 	if (c.how === "iap" && !c.progmem) return t("flash.iap.check_is");
 	if (stockRadio() && c.analysis.firmware === "unknown") return t("flash.usmart.check_is_other");
-	// ODR found in the flash read, with no answer from it to name the build (a radio reached in update mode)
-	if (c.analysis.firmware === "odr") return t("flash.c7.check.is_odr_read");
 	return t(`flash.c7.check.is_${c.analysis.firmware}`);
 }
 
@@ -976,10 +913,7 @@ register({
 	recovery: { first: "fix", stock: "restore", reach: "flash.help.c7_reach", stockText: "flash.help.fix.stock_c7",
 		// a vendor update mode: a reinstall that needs nothing to answer on the cable
 		extra: (radio) => (radio.flash.update_mode === "iap"
-			? [{ id: "updatemode", title: "flash.help.fix.iap", text: `flash.help.fix.iap_text${iapSuffix(radio)}`,
-				prepare: () => { session().forceIap = true; } }] : []),
-		// the update-mode symptom as this radio shows it
-		iapSuffix },
+			? [{ id: "updatemode", title: "flash.help.fix.iap", text: "flash.help.fix.iap_text", prepare: () => { session().forceIap = true; } }] : []) },
 	ownsBundle: hasC7Backup,
 	ownImage: async (fb, board, data) => {
 		const { image, slot } = await splitOwnImage(fb.c7000, board, data);

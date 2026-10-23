@@ -60,6 +60,8 @@ def run(sim, flash, job, want_spi=False, board="dm1701"):
             except stubtool.DumpError:
                 if attempt == 19:
                     raise
+        if board:
+            radio.configure(board)
         result = job(radio, d)
         proc.stdin.close()
         log = proc.stderr.read().decode()

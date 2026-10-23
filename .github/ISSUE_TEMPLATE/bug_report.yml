@@ -20,7 +20,6 @@ body:
         - Baofeng DM-32UV
         - Radioddity DB25-D PRO / Kydera CDR-300UV
         - TYT MD-380 / MD-390 / Retevis RT3
-        - Radioddity GD-88 / Kydera DR-880UV
         # end generated
         - Not radio-specific (tools, web site, docs)
         - Other (say which below)

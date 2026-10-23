@@ -159,20 +159,13 @@ BOARD_SCHEMA = {
         "stub": _opt({"id": _req(int), "tested": _req(bool),
                       "hold_power": _opt(bool), "progmem": _opt(int),	# the HR_C7000 universal stub
                       "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int),
-                      # the universal stub's LED pins (pins.h names, red then green; [] for none, where the default
-                      # LED pins are wired to something else), the UART it answers on before CONFIG, and whether it
-                      # is reached through the main SoC's bridge (a part_of board's second receiver)
-                      "leds": _opt(STR_LIST), "uart": _opt(int), "bridge": _opt(bool),
-                      # the data memory is SPI NAND though the build has no NAND driver (a second SoC that keeps
-                      # nothing on its own NAND); otherwise it follows BOARD_DIRS
-                      "nand": _opt(bool),
                       # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
                       # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
                       "spi": _opt({"bus": _req(int), "mode": _req(int), "hz": _req(int)}),
                       "idle_cs": _opt(STR_LIST)}),
     }),
     # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file
-    "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(str), "profile": _opt(str), "sources": _opt(STR_LIST),
+    "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(STR_LIST), "profile": _opt(str), "sources": _opt(STR_LIST),
                    "installed": _opt(STR_LIST), "stock_version": _opt(str)}),
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
     # tests/hil: what the health checks expect (test_health.py), and the features built here but not working yet
@@ -517,14 +510,8 @@ class Board:
         if "hold_power" in s:
             hold = s["hold_power"]
             out.update(latch=self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
-                       key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=s.get("nand", self.nand),
+                       key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=self.nand,
                        progmem=s["progmem"], stock_console=s.get("stock_console"))
-        if "leds" in s:
-            leds = [self.pins.get(n, NO_PIN) for n in s["leds"]]
-            out["leds"] = leds if leds else [NO_PIN, NO_PIN]
-        for k in ("uart", "bridge"):
-            if k in s:
-                out[k] = s[k]
         return out
 
     def codeplug(self):
@@ -711,6 +698,41 @@ def gallery_classes(root=ROOT):
     return set(re.findall(r'\{\s*"([^"]+)"', m.group(1))) if m else set()
 
 
+def gallery_geoms(root=ROOT):
+    """{class: (width, height, bpp)} from ui_sim.c's sim_geoms table, or None without it."""
+    path = os.path.join(root, UI_SIM)
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        m = re.search(r"sim_geoms\[\]\s*=\s*\{(.*?)\n\};", f.read(), re.S)
+    rows = re.findall(r'\{\s*"([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),', m.group(1)) if m else []
+    return {n: (int(w), int(h), int(bpp)) for n, w, h, bpp in rows}
+
+
+def gfx_defs(mcu_defs):
+    """The frame buffer a board builds: GFX_* from its MCU_DEFS (-DGFX_FB_BYTES=9600u), else gfx.h's defaults."""
+    out = dict(GFX_DEFAULTS)
+    for name, val in re.findall(r"-D(GFX_[A-Z_]+)=(\d+)[uU]?\b", mcu_defs or ""):
+        if name in out:
+            out[name] = int(val)
+    return out
+
+
+def gfx_problems(geom, gfx):
+    """Why a board's frame buffer can't hold its panel's gallery class geom (width, height, bpp): rows, bytes, and the
+    16-color path for a 4 bpp class."""
+    w, h, bpp = geom
+    out = []
+    if gfx["GFX_MAX_ROWS"] < h:
+        out.append("GFX_MAX_ROWS %d is under the panel's %d rows" % (gfx["GFX_MAX_ROWS"], h))
+    need = (w * bpp + 7) // 8 * h
+    if gfx["GFX_FB_BYTES"] < need:
+        out.append("GFX_FB_BYTES %d is under the %d B a %dx%d %d bpp panel needs" % (gfx["GFX_FB_BYTES"], need, w, h, bpp))
+    if bpp == 4 and not gfx["GFX_INDEXED"]:
+        out.append("a 16-color panel needs GFX_INDEXED=1")
+    return out
+
+
 def hardware_switches(root=ROOT):
     """{switch: what it needs}: the features of tests/hil/features.toml with a hardware field."""
     path = os.path.join(root, "tests", "hil", "features.toml")
@@ -756,6 +778,7 @@ def check(root=ROOT):
     hw = hardware_switches(root)
     stub_ids, orders = {}, {}
     classes = gallery_classes(root)
+    geoms = gallery_geoms(root) or {}
     for bid, b in boards.items():
         d = b.data
         where = "boards/%s/board.toml" % bid
@@ -787,12 +810,9 @@ def check(root=ROOT):
             bad("order %d is also the %s's" % (d["order"], orders[d["order"]]))
         orders.setdefault(d["order"], bid)
         fm = b.flash_map
-        # a board that is part_of another (a second SoC) keeps no codeplug and draws no screen: the radio's main board
-        # does both, so the codeplug and frame buffer checks are its
-        part = d.get("part_of") is not None
-        if not part and b.codeplug() is None:
+        if b.codeplug() is None:
             bad("no hal_flash_map_t with openfw_eeprom and openfw_end in boards/%s/*.c" % bid)
-        elif not part and fm.get("openfw_flash", fm["openfw_eeprom"] + OPENFW_FLASH_OFFSET) - fm["openfw_eeprom"] \
+        elif fm.get("openfw_flash", fm["openfw_eeprom"] + OPENFW_FLASH_OFFSET) - fm["openfw_eeprom"] \
                 != OPENFW_FLASH_OFFSET:
             bad("hal_flash_map_t openfw_flash isn't openfw_eeprom + 0x%X (the codeplug editor assumes it)"
                 % OPENFW_FLASH_OFFSET)
@@ -805,7 +825,7 @@ def check(root=ROOT):
             # the site links docs/ux/screens/<class>/, which only the classes in sim_geoms get
             bad("hardware.gallery %r is not in %s sim_geoms (make ui-gallery renders only those)"
                 % (d["hardware"]["gallery"], UI_SIM))
-        if d["hardware"]["gallery"] in geoms and not part:
+        if d["hardware"]["gallery"] in geoms:
             # the gallery renders the panel the radio draws; the build's frame buffer (board.mk MCU_DEFS) must hold it
             for why in gfx_problems(geoms[d["hardware"]["gallery"]], gfx_defs(b.mk.get("MCU_DEFS"))):
                 bad("board.mk MCU_DEFS: %s (hardware.gallery %s)" % (why, d["hardware"]["gallery"]))
@@ -874,14 +894,6 @@ def check(root=ROOT):
                     bad("flash.stub id %d is also the %s's" % (stub["id"], stub_ids[(bs["tool"], stub["id"])]))
                 else:
                     stub_ids[(bs["tool"], stub["id"])] = bid
-            if "leds" in stub and (len(stub["leds"]) not in (0, 2)
-                                   or any(not isinstance(b.pins.get(n), int) for n in stub["leds"])):
-                bad("flash.stub leds names two pins in boards/%s/pins.h (red, green), or none" % bid)
-            if "nand" in stub and (not stub["nand"] or b.nand):
-                bad("flash.stub nand is only for a board with SPI NAND and no %s in BOARD_DIRS (else it follows "
-                    "BOARD_DIRS)" % NAND_DRIVER)
-            if stub.get("bridge") and d.get("part_of") is None:
-                bad("flash.stub bridge is for a board that is part_of another (its second receiver)")
             if stub.get("hold_power") and not {"PIN_POWER_LATCH", "PIN_POWER_KEY"} <= set(b.pins):
                 bad("flash.stub hold_power needs PIN_POWER_LATCH and PIN_POWER_KEY in boards/%s/pins.h" % bid)
             if "spi" in stub:
@@ -1053,42 +1065,24 @@ def _product(opts):
     for n, vals in opts:
         combos = [c + [(n, v)] for c in combos for v in vals]
     return combos
-def _site_flash(b):
-    """A board's flash entry for the site (radios.json flash)."""
-    d, fl = b.data, b.data["flash"]
-    stub = fl.get("stub") or {}
-    flash = {"backend": b.family["web"], "board": b.id, "family": fl["family"], "link": b.link,
-             "bootloader": list(fl["bootloader"]["steps"]), "stock_versions": list(fl["stock_versions"]),
-             # the image starts with a first stage of this size, its first word this signature (board.mk BOOT_*)
-             "first_stage": {"size": b.first_stage[0], "head": b.first_stage[1].hex()} if b.first_stage else None,
-             "stock_console": stub.get("stock_console"), "update_mode": b.family["update_mode"],
-             "read_rate": stub.get("read_rate"), "codec_version": d["codec"].get("stock_version"),
-             "build_options": json.loads(json.dumps(d.get("build_options", [])))}
-    if "stock_download" in fl:
-        flash["stock_download"] = fl["stock_download"]
-    if stub:
-        flash["stub_tested"] = stub["tested"]
-    return flash
-
-
 def site_view(boards, root=ROOT):
     """What the web site and the web flasher read (site/odrsite/repo.py), in the boards' order. The radio entries keep
-    the keys the pages' scripts use (site/data/radios.json). A board that is part_of another is that radio's second
-    receiver: not listed on its own, but its flash entry is its radio's flash.second (flashed through the radio's
-    bridge)."""
+    the keys the pages' scripts use (site/data/radios.json)."""
     out = []
-    parts = {}
-    for bid, b in sorted(boards.items()):
-        if b.data.get("part_of") is not None:
-            parts.setdefault(b.data["part_of"], []).append(b)
     for bid, b in sorted(boards.items(), key=lambda kv: kv[1].data["order"]):
         d, fl, hw = b.data, b.data["flash"], b.data["hardware"]
-        if d.get("part_of") is not None:
-            continue
-        flash = _site_flash(b)
-        second = [p for p in parts.get(bid, []) if (p.data["flash"].get("stub") or {}).get("bridge")]
-        if second:
-            flash["second"] = _site_flash(second[0])
+        stub = fl.get("stub") or {}
+        flash = {"backend": b.family["web"], "board": bid, "family": fl["family"], "link": b.link,
+                 "bootloader": list(fl["bootloader"]["steps"]), "stock_versions": list(fl["stock_versions"]),
+                 # the image starts with a first stage of this size, its first word this signature (board.mk BOOT_*)
+                 "first_stage": {"size": b.first_stage[0], "head": b.first_stage[1].hex()} if b.first_stage else None,
+                 "stock_console": stub.get("stock_console"), "update_mode": b.family["update_mode"],
+                 "read_rate": stub.get("read_rate"), "codec_version": d["codec"].get("stock_version"),
+                 "build_options": json.loads(json.dumps(d.get("build_options", [])))}
+        if "stock_download" in fl:
+            flash["stock_download"] = fl["stock_download"]
+        if stub:
+            flash["stub_tested"] = stub["tested"]
         out.append({
             "id": bid, "name": d["name"], "maker": d["maker"], "model": d["model"], "also": list(d["also"]),
             "kind": d["kind"], "order": d["order"], "level": d["status"]["level"], "release": d["status"]["release"],
@@ -1269,6 +1263,15 @@ def self_test():
     ok(board_t_names(tmpc) == [("Radio X", None), (None, "BOARD_NAME")],
        "board_t_names: only board_t, any whitespace, comments skipped, a macro %r" % board_t_names(tmpc))
     ok(pin_defines(os.path.join(tmpc, "pins.h")) == {"PIN_A": 0x2D, "PIN_B": 12}, "pin_defines: integer defines only")
+    ok(gfx_defs("-DX=1 -DGFX_INDEXED=1 -DGFX_FB_BYTES=9600u -DGFX_MAX_ROWS=120u") ==
+       {"GFX_FB_BYTES": 9600, "GFX_MAX_ROWS": 120, "GFX_INDEXED": 1} and gfx_defs(None) == GFX_DEFAULTS,
+       "gfx_defs: MCU_DEFS values, gfx.h's defaults for the rest")
+    ok(gfx_problems((160, 120, 4), gfx_defs("-DGFX_INDEXED=1 -DGFX_FB_BYTES=9600u -DGFX_MAX_ROWS=120u")) == [] and
+       gfx_problems((128, 64, 1), gfx_defs("-DGFX_FB_BYTES=1024u -DGFX_MAX_ROWS=64u")) == [] and
+       gfx_problems((240, 320, 16), GFX_DEFAULTS) == ["GFX_MAX_ROWS 160 is under the panel's 320 rows",
+                                                       "GFX_FB_BYTES 40960 is under the 153600 B a 240x320 16 bpp panel needs"]
+       and gfx_problems((160, 128, 4), GFX_DEFAULTS) == ["a 16-color panel needs GFX_INDEXED=1"],
+       "gfx_problems: rows, bytes and the 16-color path")
     with open(os.path.join(tmpc, "flash.c"), "w", encoding="utf-8") as f:
         f.write("// hal_flash_map_t old = { .openfw_eeprom = 1 };\n"
                 "static const hal_flash_map_t fmap = {\n\t.openfw_eeprom = 0x00700000u,\t/* { */\n"
@@ -1382,9 +1385,7 @@ def self_test():
             with open(os.path.join(tmps, registry_docs.SURVEY), "w", encoding="utf-8") as f:
                 f.write("## Summary table\n\n| Radio | MCU | Port |\n|---|---|---|\n" + "".join(
                     "| %s | x | %s |\n" % r for r in rows))
-            part = Stub("ab", "AB-100 receiver B")
-            part.data["part_of"] = "a"
-            return registry_docs.survey(tmps, {"a": Stub("a", "AB-100"), "ab": part})
+            return registry_docs.survey(tmps, {"a": Stub("a", "AB-100")})
         rows, probs = survey_of([("Maker AB-100, Other", "Supported"), ("Maker CD-9", "In progress, #12. Its note"),
                                  ("Maker EF-1", "Planned, hardware needed"), ("Maker GH-2", "Not planned. No")])
         ok(probs == [] and [(r["board"], r["status"], r["pr"], r["hardware_needed"], r["note"]) for r in rows] ==
@@ -1477,21 +1478,6 @@ def self_test():
                "the test profiles' stub id", "reserved for the stub tools' test profiles")
         broken(re.sub(r"(?m)^(hold_power = .*)$", r"\1\nspi = { bus = 1, mode = 0, hz = 1000000 }", good),
                "a key of another platform's stub", "not a key of the stubtool stub")
-        broken(re.sub(r"(?m)^(hold_power = .*)$", r'\1\nleds = ["PIN_NOT_THERE", "PIN_POWER_KEY"]', good),
-               "stub LEDs that aren't pins.h pins", "leds names two pins")
-        broken(re.sub(r"(?m)^(hold_power = .*)$", r"\1\nbridge = true", good),
-               "a bridged stub on a board that isn't part of another", "bridge is for a board that is part_of")
-        if "hold_power = true" in good:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(re.sub(r"(?m)^(hold_power = .*)$", r'\1\nleds = ["PIN_POWER_LATCH", "PIN_POWER_KEY"]\nuart = 7',
-                               good))
-            b = load(tmp)[one]
-            prof = b.stub()
-            ok(not [p for p in check(tmp) if "flash.stub" in p] and prof["uart"] == 7 and
-               prof["leds"] == [b.pins["PIN_POWER_LATCH"], b.pins["PIN_POWER_KEY"]],
-               "stub: LED pins from pins.h names and the UART %r" % {k: prof.get(k) for k in ("leds", "uart")})
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(good)
         two = board_dirs(tmp)[1]
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")
@@ -1533,6 +1519,17 @@ def self_test():
             with open(mk, "w", encoding="utf-8") as f:
                 f.write(re.sub(r"(?m)^(\w+_VALUES\s*:=\s*)(\S+)\s+(\S+)", r"\1\3 \2", mk_good))
             ok(any("_VALUES" in p for p in check(tmp)), "check finds build option values that differ from board.mk")
+            with open(mk, "w", encoding="utf-8") as f:
+                f.write(mk_good)
+        # a frame buffer too small for the board's gallery class
+        fb = next((b for b in board_dirs(tmp) if "-DGFX_FB_BYTES=" in open(os.path.join(tmp, "boards", b, "board.mk"),
+                                                                             encoding="utf-8").read()), None)
+        if fb:
+            mk = os.path.join(tmp, "boards", fb, "board.mk")
+            mk_good = open(mk, encoding="utf-8").read()
+            with open(mk, "w", encoding="utf-8") as f:
+                f.write(re.sub(r"-DGFX_FB_BYTES=\d+u?", "-DGFX_FB_BYTES=512u", mk_good))
+            ok(any("GFX_FB_BYTES 512" in p for p in check(tmp)), "check finds a frame buffer smaller than the panel")
             with open(mk, "w", encoding="utf-8") as f:
                 f.write(mk_good)
         # a stock-file codec: a list of SHA-256 digests, its profile and sources from them
@@ -1604,7 +1601,9 @@ def main(argv=None):
     p.add_argument("board")
     p.add_argument("--extra", action="store_true", help="the [ci] extra configurations instead")
     p = sub.add_parser("json", help="the merged view")
-    p.add_argument("--for", dest="view", choices=("all", "odrflash", "site"), default="all")
+    p.add_argument("--for", dest="view", choices=("all", "odrflash", "site", "build"), default="all",
+                   help="all: every field; odrflash: the flashing tools' registry.json; site: the web site's boards; "
+                        "build: the build view")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--out", metavar="FILE")
     g.add_argument("--check", metavar="FILE", help="fail if FILE differs from what would be written")
@@ -1671,7 +1670,8 @@ def main(argv=None):
             for name, args in (b.ci_extra() if a.extra else b.builds()):
                 print(" ".join([name] + args))
         elif a.cmd == "json":
-            text = dumps({"odrflash": odrflash_view, "site": site_view}.get(a.view, full_view)(boards))
+            text = dumps({"odrflash": odrflash_view, "site": site_view, "build": build_view,
+                          "all": full_view}[a.view](boards))
             if a.check:
                 try:
                     with open(a.check, encoding="utf-8") as f:

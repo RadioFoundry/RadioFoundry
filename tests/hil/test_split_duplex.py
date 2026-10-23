@@ -128,7 +128,7 @@ def test_split_align(radio):
         try:
             _, info = sdh.require_split(r)
             if not info["caps"] & sdh.CAP_ALIGN:
-                pytest.skip(f"the radio's modem driver can't move its slot clock (caps 0x{info['caps']:04x})")
+                skip("no_hw", f"the radio's modem driver can't move its slot clock (caps 0x{info['caps']:04x})")
             print(f"INFO {info}")
             sdh.setup_half(r, hz, hz, 0, 1)
             sdh.set_role(r, sdh.ROLE_TX, power_cap=1)
@@ -329,7 +329,7 @@ def test_split_slew(radio):
         try:
             _, info = sdh.require_split(r)
             if not info["caps"] & sdh.CAP_SLEW:
-                pytest.skip(f"the radio's modem driver can't trim a slot (caps 0x{info['caps']:04x})")
+                skip("no_hw", f"the radio's modem driver can't trim a slot (caps 0x{info['caps']:04x})")
             sdh.setup_half(r, hz, hz, 0, 1)
             sdh.set_role(r, sdh.ROLE_TX, power_cap=1)
             sync = sdh.ClockSync()
@@ -388,7 +388,7 @@ def test_split_tx_sched(radio, sdr_bench, pytestconfig):
             try:
                 _, info = sdh.require_split(r)
                 if not info["caps"] & sdh.CAP_SCHED:
-                    pytest.skip(f"no scheduled stream on this radio (caps 0x{info['caps']:04x})")
+                    skip("no_hw", f"no scheduled stream on this radio (caps 0x{info['caps']:04x})")
                 sdh.setup_half(r, hz, hz, 0, cc)        # RF level 0: the lowest step
                 sdh.set_role(r, sdh.ROLE_TX, power_cap=1, stream=1)
                 sync = sdh.ClockSync()

@@ -315,9 +315,7 @@ def c7000_flash():
 			       # the radio has the SPI data flash the stub reads, and the board profile the universal stub gets
 			       # (CONFIG). A stock console, the update mode and the read rate are in radios.json flash
 			       "progmem_size": lay.get("progmem_size", dc.PROGMEM_SIZE), "data_flash": lay.get("data_flash", True),
-			       # (CONFIG), with its LED pins, UART and bridge where the board has them (a second SoC)
-			       "stub_board": {k: (list(v) if isinstance(v, tuple) else v) for k, v in st.C7_BOARDS[bid].items()
-					      if k in ("id", "latch", "key", "nand", "leds", "uart", "bridge")} if bid in st.C7_BOARDS
+			       "stub_board": {k: st.C7_BOARDS[bid][k] for k in ("id", "latch", "key", "nand")} if bid in st.C7_BOARDS
 			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")}}
 	profiles = []
 	for p in dc.PROFILES.values():
