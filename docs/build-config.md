@@ -201,7 +201,7 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 | dm32 | `AM_RX`, `BCAST_FM`, `VOX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the radio has the air band and an RDA5807M, but `rx_am`, `board.bcast`, the mic level hook and the audio tap aren't written ([hardware-dm32.md](spec/hardware-dm32.md) 8.7) |
 | dm1801pro | `UI_COLOR` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen: no colors to set |
 | dm1801pro | `AM_RX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the RF chip's air band window isn't used yet; the probe's audio tap isn't written |
-| db25d | `NET_USRP`, `HOTSPOT_SPLIT`, `SFR`, `APRS_RX`, `APRS_IGATE`, `BCAST_FM`, `AM_RX`, `VOX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the board's glue isn't written or timed for them yet ([hardware-db25d.md](spec/hardware-db25d.md) 9) |
+| db25d | `NET_USRP`, `HOTSPOT_SPLIT`, `SFR`, `APRS_RX`, `APRS_IGATE`, `BCAST_FM`, `VOX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`); `AM_RX` (`BOARD_UNSUPPORTED`) | the board's glue isn't written or timed for them yet; the radio has no air band receive ([hardware-db25d.md](spec/hardware-db25d.md) 9) |
 | every board | `AUDIO_PROBE` | a bench diagnostic |
 
 The DM-32UV puts the state the core marks `ODR_CPU_RAM` in its low RAM below the codec window, and keeps the
