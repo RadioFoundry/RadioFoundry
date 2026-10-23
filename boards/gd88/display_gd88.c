@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-88 display: 320x240 ILI9341-class TFT on the SoC's i8080 LCD controller, backlight PWM0 on PTA15
-// (docs/spec/hardware-gd88.md 9.4). Full resolution in 16 colors, as the DM-32UV: the core's frame buffer holds a
-// palette index per pixel (37.5 KB) and each row goes out as RGB565.
+// (docs/spec/hardware-gd88.md 9.4). Full resolution in 16 colors, as in hardware-dm32.md: the core's frame buffer
+// holds a palette index per pixel (37.5 KB) and each row goes out as RGB565.
 //
 // Which controller is fitted comes from the panel record in program flash at 0x031FD000: "lcd" and a type. Type 1 is
 // a register-style panel; the others are command-style init sets.
@@ -17,7 +17,7 @@
 #define LCDC_DATA		REG32(LCDC_BASE + 0x04)	// write: data byte (RS high)
 #define LCDC_CFG		REG32(LCDC_BASE + 0x10)
 #define LCDC_EN			REG32(LCDC_BASE + 0x28)	// b0 enable, b1 ready
-// TODO(gd88): unknown, needs a radio: the controller's timing word. The DM-32UV's is used
+// TODO(gd88): unknown, needs a radio: the controller's timing word. hardware-dm32.md's is used
 #define LCDC_CFG_VALUE		0x303u
 #define LCDC_PINS		0x7FFF8u		// IO_DIPLEX2 bits cleared: the bus pins to the controller
 #define LCDC_READY_SPINS	100000u

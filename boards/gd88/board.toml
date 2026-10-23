@@ -37,7 +37,7 @@ the host link build. Open: a first run on the radio, and transmit."""
 release = "testing"
 
 # The vendor IAP loader (0x03000000..0x0300BFFF) is never written. ODR's first stage fills the sector at 0x0300C000
-# (board.mk BOOT_*), the application follows it, the codec slot is the DM-32UV's (boards/gd88/memory.ld). The web
+# (board.mk BOOT_*), the application follows it, the codec slot is the platform's (boards/gd88/memory.ld). The web
 # flasher (IAP loader, or the stub from ODR) and stub/stubtool.py flash it, then SoC B through A's bridge
 [flash]
 family = "serial-iap"

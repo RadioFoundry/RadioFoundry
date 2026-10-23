@@ -30,7 +30,7 @@ file platform/hrc7000/vocoder.c @hrc_codec
 # with the stack doesn't matter
 extern flash_stub 0
 call enter_stub @flash_stub
-# The GD-88's SoC B enters its first stage the same way for an update through A (RX2_STUB, boards/gd88b)
+# A board's second SoC enters its first stage the same way for an update through the main one (RX2_STUB)
 extern boot_stage 0
 call enter_stage @boot_stage
 

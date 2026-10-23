@@ -56,7 +56,7 @@ static const uint8_t seq3[] = {
 	0x00,
 };
 
-// Variant 2. TODO(gd88): unknown, needs a radio: its gamma sets (0xE0 / 0xE1) aren't fully known, so the controller's
+// Variant 2. TODO(panel): unknown, needs a radio: its gamma sets (0xE0 / 0xE1) aren't fully known, so the controller's
 // own reset gamma is used
 static const uint8_t seq2[] = {
 	0xEF, 3, 0x03, 0x80, 0x02,
@@ -82,7 +82,8 @@ static const uint8_t seq2[] = {
 	0x00,
 };
 
-// Variant 0: variant 2 with MADCTL 0x48 and without 0x30 / 0xB0. TODO(gd88): unknown, needs a radio: gamma as variant 2
+// Variant 0: variant 2 with MADCTL 0x48 and without 0x30 / 0xB0. TODO(panel): unknown, needs a radio: gamma as
+// variant 2
 static const uint8_t seq0[] = {
 	0xEF, 3, 0x03, 0x80, 0x02,
 	0xCF, 3, 0x00, 0xC1, 0x30,
@@ -105,7 +106,7 @@ static const uint8_t seq0[] = {
 	0x00,
 };
 
-// The register-style panel. TODO(gd88): unknown, needs a radio: the orientation (R03 0x1030 is taken to scan the
+// The register-style panel. TODO(panel): unknown, needs a radio: the orientation (R03 0x1030 is taken to scan the
 // long side first, so a landscape row runs along R21) and the R00 writes' value
 const uint16_t ili9341_reg_seq[] = {
 	0x00, 0x0000, 0x00, 0x0000, 0x00, 0x0000, 0x00, 0x0000,

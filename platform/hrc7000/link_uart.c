@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// A link to another SoC on one of the UARTs (platform.h hrc_link_uart_*): the GD-88's two SoCs talk on UART3 at
-// 115200 8N1 (docs/spec/hardware-gd88.md 1, docs/spec/rx2-link.md). Receive by interrupt into a ring buffer with a
+// A link to another SoC on one of the UARTs (platform.h hrc_link_uart_*): a board's two SoCs talk at 115200 8N1
+// (docs/spec/rx2-link.md). Receive by interrupt into a ring buffer with a
 // semaphore for the reading task; transmit by polling the TX FIFO, with a spin limit so a stalled UART drops the rest
 // of a write instead of hanging. Linked only into a build that calls it.
 #include "platform.h"

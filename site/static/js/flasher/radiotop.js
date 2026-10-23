@@ -12,7 +12,7 @@ import { h, svg, t } from "./dom.js";
 // screen: off | loader ("PC Loader Connected") | on | any (the state doesn't matter yet: no screen line in the caption)
 // knob: null | "cycle" (off, then on) | "on"
 // note: a line for the caption in place of the LED's, while the LED says nothing
-// hasLed false: the chip the cable reaches drives no LED (the GD-88's main SoC): none is drawn and the caption names
+// hasLed false: the chip the cable reaches drives no LED (they are on another SoC): none is drawn and the caption names
 // no blink
 export function radioTop(radio, initial = {}, { hasLed = true } = {}) {
 	const body = radio?.frame?.body || "#22252a", accent = radio?.frame?.accent || "#e0a526";

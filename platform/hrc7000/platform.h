@@ -45,7 +45,7 @@
 #define UART0_BASE		0x14030000u
 #define UART1_BASE		0x14040000u
 #define UART2_BASE		0x14050000u
-#define UART3_BASE		0x14090000u	// the GD-88's link between its two SoCs (hardware-gd88.md 1)
+#define UART3_BASE		0x14090000u	// a link between two SoCs on one board (link_uart.c)
 #define SPI0_BASE		0x140A0000u
 #define SPI2_BASE		0x140E0000u
 #define PWM_BASE		0x140C0000u
@@ -352,7 +352,7 @@ uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged));
 bool hrc_uart_poll_rx(uint32_t base, uint8_t *c);	// a character waiting: taken. No interrupts needed
 bool hrc_uart_poll_tx(uint32_t base, uint8_t c);	// false: the TX FIFO is full
 
-// A link to another SoC on a UART (link_uart.c): the GD-88's A and B on UART3 (hardware-gd88.md 1). Receive by
+// A link to another SoC on a UART (link_uart.c), on a board with two SoCs. Receive by
 // interrupt into a ring, transmit by polling the TX FIFO; one writer at a time (the caller serializes). The board muxes
 // the pins first. read takes what has come (never waits); wait blocks the calling task until a byte is there or
 // timeout_ms passes (true: bytes waiting)

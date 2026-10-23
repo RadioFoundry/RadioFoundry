@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // The HR_C7000 first stages' common part (boot/README.md): it answers on a UART the way the HR_C7000 serial boot ROM
-// answers on UART0, so stub/stubtool.py loads a stub through it exactly as on a DM-32UV or DM-1801 Pro. Runs from XIP
+// answers on UART0, so stub/stubtool.py loads a stub through it exactly as on a radio whose boot ROM
+// answers on its cable. Runs from XIP
 // flash and never touches the flash controller. A radio's boot.c defines STAGE_UART, STAGE_UART_PINS() and its own
 // boot_main(), then includes this file.
 //
@@ -41,7 +42,8 @@ static inline void jump(uint32_t a)
 #ifndef BOOT_WINDOW
 #define BOOT_WINDOW	0
 #endif
-// A radio's stage can keep offering past BOOT_WINDOW (offers so far): the GD-88's B when its application asked for it
+// A radio's stage can keep offering past BOOT_WINDOW (offers so far): a second SoC when its application asked for
+// it
 #ifndef STAGE_WINDOW_MORE
 #define STAGE_WINDOW_MORE(offers)	0
 #endif

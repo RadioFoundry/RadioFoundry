@@ -101,7 +101,7 @@ uint32_t hrc_uart_rx_isr(uint32_t base, void (*rx)(uint8_t c, bool flagged))
 	return n;
 }
 
-// Polled receive and transmit of one character, for a loop that runs with interrupts off (the GD-88's bridge)
+// Polled receive and transmit of one character, for a loop that runs with interrupts off (the bridge to a second SoC)
 bool hrc_uart_poll_rx(uint32_t base, uint8_t *c)
 {
 	if ((UB(base, UART_LSR) & LSR_DR) == 0) {

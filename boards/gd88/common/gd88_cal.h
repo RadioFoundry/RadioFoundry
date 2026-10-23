@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-88 factory calibration (calibration_gd88.c, docs/spec/hardware-gd88.md 7), shared by both SoCs' builds. The page
-// has the DB25-D's layout: two halves (UHF, VHF at +0x400), 8 points a band.
+// has the layout of hardware-db25d.md 6: two halves (UHF, VHF at +0x400), 8 points a band.
 #ifndef GD88_CAL_H
 #define GD88_CAL_H
 
@@ -50,7 +50,7 @@ uint8_t gd88_cal_squelch_db(uint32_t hz, uint8_t level);
 #define GD88_CAL_OFF_EXTRA	0x602u
 
 // DMR burst end: the TX-off starts at the modem's RF RX interrupt, 30.5 ms after the RF TX interrupt that keyed the
-// burst, plus the page's TX-off delay, as on the DB25-D (hardware-db25d.md 4.5). How long to wait still, elapsed_us after
+// burst, plus the page's TX-off delay, as in hardware-db25d.md 4.5. How long to wait still, elapsed_us after
 // the RF TX interrupt (0 once that point is past), and by how much it was missed (0 when on time)
 #define GD88_DMR_RFRX_AFTER_RFTX_US	30500u
 static inline uint32_t gd88_dmr_hold_us(uint32_t elapsed_us, uint16_t off_us)

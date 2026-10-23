@@ -7,12 +7,11 @@
 # (platform/hrc7000/config.mk)
 CONFIG_NAND_STORAGE ?= y
 CONFIG_DMR ?= y
-# USRP voice needs more than the 115200 baud host port carries (as the DB25-D)
+# Not written yet (the list below)
 CONFIG_NET_USRP ?= n
-# The split-duplex roles and the single frequency repeater need a transmitter
 CONFIG_HOTSPOT_SPLIT ?= n
 CONFIG_SFR ?= n
-# The 320x240 panel takes the large fonts, as the DM-32UV
+# The 320x240 panel takes the large fonts (they are for 240 px and wider)
 CONFIG_FONT_XL ?= y
 CONFIG_FONT_AA ?= y
 CONFIG_FONT_BIG ?= $(CONFIG_FONT_AA)
@@ -28,7 +27,7 @@ endif
 ifneq ($(GD88_DMR_AF_GAIN),)
 MCU_DEFS += -DGD88_DMR_AF_GAIN=$(GD88_DMR_AF_GAIN)u
 endif
-# The voice-access flag on the slot the RX timeslot interrupt shows, as on the DB25-D and the DM-32UV (same modem)
+# The voice-access flag on the slot the RX timeslot interrupt shows, as on the other HR_C7000 radios (same modem)
 MCU_DEFS += -DHRC7000_RX_NEXT_SLOT_XOR=0u
 GD88_DMR_TX_INVERT ?= 0
 MCU_DEFS += -DGD88_DMR_TX_INVERT=$(GD88_DMR_TX_INVERT)
@@ -46,22 +45,26 @@ GD88_TX_CENTER ?=
 ifneq ($(GD88_TX_CENTER),)
 MCU_DEFS += -DGD88_TX_CENTER_OVERRIDE=$(GD88_TX_CENTER)
 endif
-# APRS receive needs FM receive audio as PCM, which this radio doesn't give the core (its PCM path is the modem's)
+# APRS receive needs FM receive audio as PCM, not written yet (the list below)
 CONFIG_APRS_RX ?= n
 CONFIG_APRS_IGATE ?= n
 # The RDA5807-class broadcast tuner (CAP_BCAST_FM, I2C 0x11 on PTA7 / PTA8); the air band isn't wired yet
 CONFIG_BCAST_FM ?= y
 CONFIG_AM_RX ?= n
-# What the board lacks or can't do yet, one switch per line with the reason (tools/boards.py checks there is one): ci's
-# maximal configuration leaves these off. USB and USB_NETWORK are the platform's
-BOARD_UNSUPPORTED += NET_USRP	# 8 kHz PCM both ways is more than the 115200 baud host port carries
-BOARD_UNSUPPORTED += HOTSPOT_SPLIT	# needs a transmitter, and A's is off until its power control is known
-BOARD_UNSUPPORTED += SFR	# needs a transmitter, and A's is off until its power control is known
-BOARD_UNSUPPORTED += APRS_RX	# no FM receive audio as PCM (the PCM path is the DMR modem's)
-BOARD_UNSUPPORTED += APRS_IGATE	# needs APRS receive, which needs the FM receive audio as PCM
-BOARD_UNSUPPORTED += AM_RX	# the air band isn't wired yet
-BOARD_UNSUPPORTED += AUDIO_PROBE	# a bench diagnostic for an audio path this radio doesn't have
+# Off by default (docs/build-config.md, "Unsupported, not written, unconfirmed"), one switch a line with the reason.
+# The hardware has each of these; the code for it on this radio isn't written yet. Transmit itself is off until A's
+# power control is worked out (GD88_TX), so the transmit-only features wait for it. USB and USB_NETWORK are the
+# platform's (no USB data port)
+CONFIG_VOX ?= n
+CONFIG_DTMF ?= n
+BOARD_NOT_WRITTEN += NET_USRP	# the host link stalls under USRP's PCM; another HR_C7000 board carries it at the same 115200 baud
+BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# needs transmit, which waits for A's power control (GD88_TX)
+BOARD_NOT_WRITTEN += SFR	# needs transmit, which waits for A's power control (GD88_TX)
+BOARD_NOT_WRITTEN += DTMF	# no hal_radio_t.tx_dtmf hook yet, and transmit waits for A's power control (GD88_TX)
+BOARD_NOT_WRITTEN += APRS_RX	# FM receive audio isn't taken from the modem's AF ADC as PCM yet
+BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
+BOARD_NOT_WRITTEN += AM_RX	# the air band isn't wired yet (board.radio->rx_am)
+BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet (the mic level is on ADC channel 0)
+BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe's audio tap (board.audio_tap) isn't written for this radio
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
 BOARD_REQUIRED := FM
-CONFIG_DTMF ?= n
-BOARD_UNSUPPORTED += DTMF	# DTMF is sent in FM transmit, which is off until A's power control is known (GD88_TX)

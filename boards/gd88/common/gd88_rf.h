@@ -15,7 +15,7 @@
 
 // Transmit (config.mk GD88_TX=1). Off by default: A has no PA drive DAC, and how it sets its output power (the main
 // chip's PA bias from the page) isn't worked out; B is built as a receiver only.
-// TODO(gd88): unknown, needs a radio: A's power control. With GD88_TX=1 the DAC B ramp runs as on the DB25-D
+// TODO(gd88): unknown, needs a radio: A's power control. With GD88_TX=1 the DAC B ramp runs as in hardware-db25d.md
 #ifndef GD88_TX
 #define GD88_TX			0
 #endif
@@ -24,7 +24,7 @@
 #ifndef GD88_BAND_LO_GPIO
 #define GD88_BAND_LO_GPIO	1
 #endif
-#define GD88_MIC_GAIN_DB	11u	// GCR_ADCL at init, as the DM-32UV and the DB25-D
+#define GD88_MIC_GAIN_DB	11u	// GCR_ADCL at init, as the other HR_C7000 radios
 
 // The RF chips' 3-wire bus, the same pins on both SoCs
 #define GD88_PIN_RF_SEN_LO	0x13	// PTA19, LO BK4819 enable, low = selected
@@ -93,7 +93,7 @@ void gd88_dmr_tx_stats(gd88_dmr_tx_stats_t *st);
 // --- SPI NAND (nand_gd88.c) ---
 // ODR's own block range, the only blocks it programs or erases: 32 blocks (4 MB) from block 1920, far above the
 // factory areas (0x40000 .. 0x400000 and the image areas after it)
-// TODO(gd88): unknown, needs a radio: the chip's size and whether the top of it is used; the range follows the DB25-D
+// TODO(gd88): unknown, needs a radio: the chip's size and whether the top of it is used; as hardware-db25d.md
 #define GD88_NAND_ODR_FIRST	1920u
 #define GD88_NAND_ODR_BLOCKS	32u
 bool gd88_nand_init(void);

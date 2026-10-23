@@ -1,26 +1,27 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # GD-88 SoC B feature defaults. B runs no radio core: analog FM and DMR receive, the link to A and the watchdog. Every
-# other switch is off and listed as unsupported, one a line with the reason, so ci's maximal configuration is this one.
+# other switch is off and listed as unsupported, one a line with the reason: B has no display, keys, host port,
+# transmitter or storage, so what needs one runs on A. ci's maximal configuration is this one.
 # USB and USB_NETWORK are the platform's (platform/hrc7000/config.mk)
 CONFIG_FM ?= y
 CONFIG_SUBTONE ?= y
 CONFIG_DMR ?= y
 CONFIG_WATCHDOG ?= y
-BOARD_UNSUPPORTED += DMR_PRIVACY	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_TALKER_ALIAS	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_GPS	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_SMS	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_TMS	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_ARS	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_LRRP	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_SIGNALING	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_EMERGENCY	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_ROAMING	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_IP_GATEWAY	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_UDP_COMPRESS	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_CONFIRMED	# B only hands A the received bursts: SoC A runs the DMR services
-BOARD_UNSUPPORTED += DMR_CONTROL_STATION	# B only hands A the received bursts: SoC A runs the DMR services
+BOARD_UNSUPPORTED += DMR_PRIVACY	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_TALKER_ALIAS	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_GPS	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_SMS	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_TMS	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_ARS	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_LRRP	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_SIGNALING	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_EMERGENCY	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_ROAMING	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_IP_GATEWAY	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_UDP_COMPRESS	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_CONFIRMED	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
+BOARD_UNSUPPORTED += DMR_CONTROL_STATION	# B has no display, keys or host port to use it: SoC A runs it on the bursts B hands over
 BOARD_UNSUPPORTED += NET_TCP	# B has no host port, only the link to A: SoC A runs the network
 BOARD_UNSUPPORTED += NET_KISS	# B has no host port, only the link to A: SoC A runs the network
 BOARD_UNSUPPORTED += NET_HTTP	# B has no host port, only the link to A: SoC A runs the network
@@ -39,7 +40,7 @@ BOARD_UNSUPPORTED += CPS_OPENFW	# B has no host port, only the link to A (UART3)
 BOARD_UNSUPPORTED += CPS_FAST	# B has no host port, only the link to A (UART3)
 BOARD_UNSUPPORTED += HOTSPOT	# B has no host port, only the link to A (UART3)
 BOARD_UNSUPPORTED += HOTSPOT_SPLIT	# B has no host port, only the link to A (UART3)
-BOARD_UNSUPPORTED += SFR	# B is receive only
+BOARD_UNSUPPORTED += SFR	# B has no transmitter
 BOARD_UNSUPPORTED += VFO	# B has no display or keys: SoC A runs the user interface
 BOARD_UNSUPPORTED += VFO_FM	# B has no display or keys: SoC A runs the user interface
 BOARD_UNSUPPORTED += VFO_DMR	# B has no display or keys: SoC A runs the user interface
@@ -59,6 +60,7 @@ BOARD_UNSUPPORTED += FM_TX_TONES	# B has no speaker path or transmitter of its o
 BOARD_UNSUPPORTED += VOX	# B has no speaker path or transmitter of its own: SoC A does this
 BOARD_UNSUPPORTED += VIBRATE	# B has no speaker path or transmitter of its own: SoC A does this
 BOARD_UNSUPPORTED += AUDIO_PROBE	# B has no speaker path or transmitter of its own: SoC A does this
+BOARD_UNSUPPORTED += DTMF	# B has no transmitter
 BOARD_UNSUPPORTED += BATTERY_SAVE	# SoC A powers B down and up
 BOARD_UNSUPPORTED += STUB_ENTRY	# B's stub comes through its first stage and A's bridge
 BOARD_UNSUPPORTED += NAND_STORAGE	# B keeps no settings: SoC A stores them
@@ -88,5 +90,3 @@ MCU_DEFS += -DHRC_STUB_BASE=0x00030000u -DHRC_STUB_SIZE=0x00020000u
 endif
 # Receive only: the band's TX switches stay low (paths_gd88b.c), and the shared radio code refuses tx()
 MCU_DEFS += -DGD88_TX=0 -DGD88_BAND_LO_GPIO=0
-CONFIG_DTMF ?= n
-BOARD_UNSUPPORTED += DTMF	# B only receives

@@ -553,7 +553,8 @@ class DebugLink:
 
     def rx2_bridge(self):
         """Hand the cable to the second SoC: about 100 ms after the reply, the port carries its first stage's handshake
-        (stub/stubtool.py --board gd88b). The radio restarts once the host has been quiet for a while."""
+        (stub/stubtool.py --board <the second SoC's board>). The radio restarts once the host has been quiet for a
+        while."""
         self.request(RX2, struct.pack("<BI", RX2_OP_BRIDGE, RX2_TOKEN))
 
     def rx2_restart(self):

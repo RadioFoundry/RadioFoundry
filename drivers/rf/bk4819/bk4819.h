@@ -235,7 +235,7 @@ bool bk4819_heard(const bk4819_t *dev, uint16_t r0c, bk4819_tone_t type);
 bool bk4819_rx_tone_ok(bk4819_t *dev, bk4819_tone_t type);
 
 // GPIO pin 0..6 of the chip as an output at level (register 0x33: data bit 6 - pin, output-disable bit 14 - pin, as the
-// chip's GPIO bank is numbered). A board may wire them to RF switches (the GD-88's band path on its LO chip)
+// chip's GPIO bank is numbered). A board may wire them to RF switches (a band path on the LO chip)
 #define BK4819_REG_GPIO		0x33u
 void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool level);
 

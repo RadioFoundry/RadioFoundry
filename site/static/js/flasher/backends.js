@@ -17,7 +17,7 @@
 //                           from a backup through the restore task. Optional extra(radio, fb): more reinstall choices,
 //                           [{id, title, text, prepare()}] (string keys; prepare() runs once the install task is set up)
 //                           Optional iapSuffix(radio): the update-mode symptom's texts in the radio's own form
-//                           (flash.help.s.iap<suffix>, "_gd88")
+//                           (flash.help.s.iap<suffix>, "_<radio id>")
 //   ownsBundle(bundle)      optional: this backend restores the backup bundle with its own view
 //   ownImage(fb, board, data)  optional: splits a user's own image file into {image, codec} (a merged codec slot)
 //   release()               optional: let go of a port or loader the backend still holds (start over, other radio)

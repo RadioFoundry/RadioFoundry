@@ -5,7 +5,7 @@
 The plan for the first day with a Radioddity GD-88 (Kydera DR-880UV). Follow it top to bottom. Each step says what to
 run, what success looks like, what to write down, and which open item it settles. Nothing in the port has run on a
 GD-88: every pin role, chain bit and register value in the code is read from the original firmware and unverified.
-Section 4 lists every `TODO(gd88)` in one table.
+Section 4 lists every `TODO(gd88)` and the display driver's `TODO(panel)` in one table.
 
 Facts: [hardware-gd88.md](../spec/hardware-gd88.md) (sections 9-14), [rx2-link.md](../spec/rx2-link.md),
 [boot/README.md](../../boot/README.md), [stub/README.md](../../stub/README.md). The other checklists are
@@ -383,9 +383,10 @@ Expected skips (every test skips cleanly, none should fail):
 
 Any failure other than those is a real result: record the test and the diag lines.
 
-## 4. Every `TODO(gd88)` in the code (25)
+## 4. Every `TODO(gd88)` and `TODO(panel)` in the code (25)
 
-Grep: `grep -rn "TODO(gd88)" boards drivers`. "Step" is the section 3 step that settles it.
+Grep: `grep -rn "TODO(gd88)" boards` and `grep -n "TODO(panel)" drivers/display/ili9341/ili9341.c`. "Step" is the
+section 3 step that settles it.
 
 | # | File:line | What is unknown | How to settle it | Step |
 |---|---|---|---|---|

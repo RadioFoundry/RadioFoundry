@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // GD-88 DMR, either SoC: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the main BK4819
-// as the RF front end (docs/spec/hardware-gd88.md 11), the DB25-D PRO's scheme.
+// as the RF front end (docs/spec/hardware-gd88.md 11), the scheme of hardware-db25d.md 4.
 //
 // Transmit only with GD88_TX=1 (gd88_rf.h); without it tx() refuses in DMR mode and the glue's RF hooks do nothing.
 // With it the modem's 4FSK goes on the reference oscillator, and every burst runs the whole TX sequence of the analog
@@ -23,9 +23,9 @@
 #define DMR_PA_DELAY_US		28000u	// the glue's PA one-shot; the PA is keyed by the burst sequence instead
 #define C7_PHASE_OUT		0x128u	// RO: largest / smallest 14-bit AF phase seen (modem-hrc7000.md 2.1)
 
-// The modem's receive mode word, the DB25-D's (the same modem library and RF scheme): AF receive with averaging, AF
-// gain 0x4C, RX IQ inverted, dynamic sync threshold, dual receive channels, two-point TX. GD88_DMR_RF_MODE=0x...
-// replaces it on the bench. TODO(gd88): unknown, needs a radio: the word on the GD-88 itself
+// The modem's receive mode word of hardware-db25d.md 4.5 (the same modem library and RF scheme): AF receive with
+// averaging, AF gain 0x4C, RX IQ inverted, dynamic sync threshold, dual receive channels, two-point TX.
+// GD88_DMR_RF_MODE=0x... replaces it on the bench. TODO(gd88): unknown, needs a radio: the word on the GD-88 itself
 #ifndef GD88_DMR_RF_MODE
 #define GD88_DMR_RF_MODE	0x034C9860u
 #endif
@@ -141,8 +141,8 @@ uint32_t gd88_dmr_phase(void)
 #define WAIT_TIMEOUT_MS		10u		// the timer never fired: go on
 #define DISARM_WAIT_MS		20u
 #define RF_MODE_TX_INVERT	(1u << 7)	// RF_MODE rf_transiq_mode: the symbol-to-deviation mapping inverted
-// RF_MODE bit 7 clear, as on the DB25-D (the DM-32UV's value has it set). GD88_DMR_TX_INVERT=1 sets it, to try the
-// other 4FSK polarity on the bench
+// RF_MODE bit 7 clear, as in hardware-db25d.md (hardware-dm32.md's value has it set). GD88_DMR_TX_INVERT=1 sets it,
+// to try the other 4FSK polarity on the bench
 #ifndef GD88_DMR_TX_INVERT
 #define GD88_DMR_TX_INVERT	0
 #endif

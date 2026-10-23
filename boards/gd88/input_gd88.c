@@ -37,7 +37,8 @@ static uint32_t last_raw, stable;
 static uint8_t ptt_low;
 static shared_ptt_t ptt_gate;	// PTA9 is also the host UART's RXD
 
-// Encoder: both lines on both edges into the table decoder, two steps per detent resting where A == B (as the DB25-D).
+// Encoder: both lines on both edges into the table decoder, two steps per detent resting where A == B (as
+// hardware-db25d.md).
 // TODO(gd88): unknown, needs a radio: the direction (swap PIN_ENC_A / PIN_ENC_B if clockwise steps down) and whether a
 // detent is two steps (one event per detent, when the lines are equal)
 #define ENC_STEPS	2
