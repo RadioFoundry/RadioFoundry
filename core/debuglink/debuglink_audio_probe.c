@@ -38,7 +38,7 @@ enum {
 					// -> writes u32, elapsed ms u32, base u8
 	PROBE_OP_RAMFEED	= 11,	// hold ms u16, gap ms u16, tone Hz u16, amplitude u16, n u8, n x (page, reg, xor)
 					// -> half switches u16, writes u16, max write lag ms u16, flips done u8
-	PROBE_OP_PIN_TONE	= 12,	// hz u16 (0 = off): square wave on the board's spare output (DM-1701: PC8)
+	PROBE_OP_PIN_TONE	= 12,	// hz u16 (0 = off): square wave on the board's spare output (hal_audio_tap.h)
 	PROBE_OP_PIN_SCAN	= 13,	// ms u16 -> n u8, n x changed-pin mask u16 (GPIOA, GPIOB, ...)
 	PROBE_OP_PIN_PWM	= 14,	// top u16, tone Hz u16 (0 = off), amplitude per mille u16 -> carrier Hz u32
 };

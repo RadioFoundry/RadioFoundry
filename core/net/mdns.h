@@ -30,7 +30,7 @@ typedef struct {
 	uint32_t ip;
 	uint32_t dmr_id;
 	char callsign[17];		// "" = none
-	const char *board;		// "DM-1701"
+	const char *board;		// the board.toml model
 	const char *firmware;		// the git version
 } mdns_identity_t;
 

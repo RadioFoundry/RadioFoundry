@@ -5,7 +5,7 @@
 // happens past the last point, so those are flags.
 //
 // Inline on purpose: each reader calls it from one place with constant flags, so the compiler keeps only the paths
-// that reader uses (the rounding and its 64-bit floor cost the DM-1701 about 100 bytes as a shared function).
+// that reader uses (the rounding and its 64-bit floor cost an STM32 build about 100 bytes as a shared function).
 #ifndef RADIO_CAL_CURVE_H
 #define RADIO_CAL_CURVE_H
 #include <stdint.h>
