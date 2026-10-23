@@ -47,7 +47,7 @@
 // The chip slot the RX timeslot interrupt decides is the one LAYER2_STATUS b30 shows then (0), not the one after it
 // (1). With the flag on the other slot the chip leaves the voice RAM unwritten, and every voice burst reads the same
 // stale bytes: silence with every counter clean (voice.rx_peak about 6, exactly 3 bit errors a frame). 0 on every
-// HR_C7000 radio measured: DB25-D (2026-10-17), DM-32UV (2026-10-19), DM-1801 Pro (2026-10-22, which had the old
+// HR_C7000 radio measured (2026-10-17 to 2026-10-22, docs/spec/modem-hrc7000.md; one had the old
 // default of 1). A board can still override it
 #ifndef HRC7000_RX_NEXT_SLOT_XOR
 #define HRC7000_RX_NEXT_SLOT_XOR	0u
@@ -393,7 +393,7 @@ static bool tx_ticking(const hrc7000_dmr_t *e)
 // A repeater's slot numbering (modem-hrc7000.md 5.3): the CACH TC of BS-sourced bursts, locked once it alternated
 // TC_LOCK times in a row; the estimate then runs on with the slot ticks. The first bursts after the receiver syncs
 // to a repeater can carry a wrong TC (LAYER2_STATUS b31 still set): a TX slot picked from one of them was the wrong
-// one about half the time (issue 72, DM-32UV on the SDR bench, 2026-10-18)
+// one about half the time (issue 72, on the SDR bench, 2026-10-18)
 static void track_tc(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
 {
 	e->rx_bs = s->sync == DMR_SYNC_BS;
@@ -403,7 +403,7 @@ static void track_tc(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
 	}
 	// A burst's deframe comes near the end of its slot, around the next timeslot interrupt: in the first half of a slot
 	// it is the previous slot's burst. Counting it to the slot of the last interrupt either way set the estimate one
-	// slot off in some runs and not others (DM-32UV on the SDR bench, 2026-10-18)
+	// slot off in some runs and not others (on the SDR bench, 2026-10-18)
 	uint32_t us = now(e) - e->t_tick;
 	bool early = us < SLOT_US / 2u;
 	uint32_t slot = e->tick - (early ? 1u : 0u);
@@ -423,7 +423,7 @@ static bool tc_locked(const hrc7000_dmr_t *e)
 
 // Aligned start (2.5): LAYER2_CONTROL stays passive and the TX slot is built from the receive slot. Writing
 // LAYER2_CONTROL (0xC3, or 0xC4 for the TX slots to follow) left the receiver without slot sync for about 1 s, deaf to
-// an SFR's inbound call (DM-32UV, 2026-10-16)
+// an SFR's inbound call (2026-10-16)
 static void aligned_arm(hrc7000_dmr_t *e)
 {
 	w(e, C7_LAYER2_SLOTON, SLOTON_RXTX | SLOTON_RX_OPEN_TX);
@@ -463,7 +463,7 @@ static void tx_tick(hrc7000_dmr_t *e)
 	case TXS_ARMING:
 		// Own timing: the first slot is ours. Aligned to an SFR or a direct-mode station (no CACH): the slot whose
 		// number (LAYER2_STATUS b31) is ours; the first one after an aligned start is the one the received bursts
-		// came in (DM-32UV on the SDR bench, 2026-10-16)
+		// came in (on the SDR bench, 2026-10-16)
 		// Through a repeater: the next slot is ours when the one starting now (the TC estimate) is the other TS
 		if (e->tx_timing != DMR_TIMING_ALIGNED) {
 			e->tx_our_next = true;
@@ -614,7 +614,7 @@ static void rx_burst(hrc7000_dmr_t *e)
 		e->st.rx_crc_err++;
 		// Headers and CSBKs with a bad CRC are dropped (dmr-modem.md 2.2), except while we send: the chip's verdict
 		// is wrong at times then, and the caller checks them itself or rebuilds them from the call's LC (gotchas 14.1;
-		// the DM-32UV's SFR lost every terminator heard while keyed to an RS flag)
+		// an SFR lost every terminator heard while keyed to an RS flag)
 		if (header && e->tx_state == TXS_IDLE) {
 			return;
 		}
@@ -750,7 +750,7 @@ void hrc7000_dmr_isr_timeslot(hrc7000_dmr_t *e, bool tx_vector)
 	// Slots alternate: the estimate is the TC of the slot now starting. Through a repeater the receive timing keeps
 	// running when the TX slots take over (l2_rx), and the first TX-vector interrupt came either a slot after the
 	// last receive one or about 5 ms after it, in the same slot: counted as a new slot there, the estimate was one
-	// slot off and the call went out on the other slot (DM-32UV on the SDR bench, 2026-10-18)
+	// slot off and the call went out on the other slot (on the SDR bench, 2026-10-18)
 	bool same_slot = tx_vector && !e->tick_tx && t - e->t_rx_tick < SLOT_US / 2u;
 	if (!same_slot) {
 		e->tc_est ^= 1u;

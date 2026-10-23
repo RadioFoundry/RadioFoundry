@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Beken BK4819 VHF/UHF transceiver: chip driver, independent of the board (docs/spec/hardware-db25d.md 4).
 //
-// One instance per chip. The DB25-D PRO has two on one 3-wire bus with separate enables: the "main" chip receives at
+// One instance per chip. A superhet radio can have two on one 3-wire bus with separate enables: the "main" chip receives at
 // the 51.55 MHz IF and transmits, the "LO" chip runs as the superhet's local oscillator. Register meanings are the
 // BK4819's public ones; the init values are the ones the stock firmware writes.
 //

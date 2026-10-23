@@ -73,18 +73,18 @@ bool fd6818_band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 
 #define TBL_N(t)	(uint16_t)(sizeof(t) / sizeof((t)[0]))
 
-static const regval_t rx_dm32[] = { { 0x30, FD6818_STATE_RX } };
-static const regval_t tx_dm32[] = { { 0x30, FD6818_STATE_TX } };
-static const regval_t fm_tx_prepare_dm32[] = { { 0x3F, 0x0000 }, { 0x40, 0x34EA }, { 0x37, 0x1D0F } };
+static const regval_t rx_default[] = { { 0x30, FD6818_STATE_RX } };
+static const regval_t tx_default[] = { { 0x30, FD6818_STATE_TX } };
+static const regval_t fm_tx_prepare_default[] = { { 0x3F, 0x0000 }, { 0x40, 0x34EA }, { 0x37, 0x1D0F } };
 
-const fd6818_variant_t fd6818_variant_dm32 = {
+const fd6818_variant_t fd6818_variant_default = {
 	.init = init_table, .init_n = TBL_N(init_table),
 	.post_init = post_init_table, .post_init_n = TBL_N(post_init_table),
 	.fm = fm_table, .fm_n = TBL_N(fm_table),
 	.dmr = dmr_table, .dmr_n = TBL_N(dmr_table),
-	.rx = rx_dm32, .rx_n = TBL_N(rx_dm32),
-	.tx = tx_dm32, .tx_n = TBL_N(tx_dm32),
-	.fm_tx_prepare = fm_tx_prepare_dm32, .fm_tx_prepare_n = TBL_N(fm_tx_prepare_dm32),
+	.rx = rx_default, .rx_n = TBL_N(rx_default),
+	.tx = tx_default, .tx_n = TBL_N(tx_default),
+	.fm_tx_prepare = fm_tx_prepare_default, .fm_tx_prepare_n = TBL_N(fm_tx_prepare_default),
 	.bw_fm_25k = FD6818_BW_FM_25K, .bw_fm_12k5 = FD6818_BW_FM_12K5, .bw_dmr = FD6818_BW_DMR,
 	.band_words = fd6818_band_words,
 	.park_10hz = 14400000u,
@@ -99,7 +99,7 @@ uint16_t fd6818_ctcss_word(uint16_t hz_x10)
 
 void fd6818_attach(fd6818_t *dev, const fd6818_bus_t *bus)
 {
-	fd6818_attach_variant(dev, bus, &fd6818_variant_dm32);
+	fd6818_attach_variant(dev, bus, &fd6818_variant_default);
 }
 
 void fd6818_attach_variant(fd6818_t *dev, const fd6818_bus_t *bus, const fd6818_variant_t *variant)

@@ -77,7 +77,7 @@ typedef struct {
 	void (*notify)(void *ctx);	// events queued: wake the board's task (from ISRs and from the lock)
 	bool (*sys_line_low)(void *ctx);	// optional: system interrupt line still asserted after its flags were cleared
 	// Optional (timeslot ISR): an aligned transmission has found its slot; the first burst follows two ticks later.
-	// A board whose receiver can't stay on during the wait (the MD-380: one synthesizer) switches to TX here
+	// A board whose receiver can't stay on during the wait (one synthesizer for both) switches to TX here
 	void (*tx_slot_found)(void *ctx);
 	void *ctx;
 } hrc6000_dmr_ops_t;

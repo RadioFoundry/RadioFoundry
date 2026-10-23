@@ -10,7 +10,7 @@
 
 #if CONFIG_DMR
 extern const hal_vocoder_t hrc_vocoder;
-uint16_t hrc_vocoder_tag(void);	// the stock codec in the slot: 49 or 46 (DM-32UV), 2501, 2409, 2405 (DB25-D), 0 none
+uint16_t hrc_vocoder_tag(void);	// the stock codec in the slot: its version number, 0 none
 // Stop using the codec for good (until the next boot): waits for a call in progress, after which the codec's RAM is
 // free (the stub entry loads the RAM monitor there)
 void hrc_vocoder_park(void);

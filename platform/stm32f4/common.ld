@@ -9,7 +9,7 @@
 
 ENTRY(Reset_Handler)
 
-/* The initial stack pointer: the top of the board's RAM region. The DM-1701's bootloader rejects SP = top of RAM
+/* The initial stack pointer: the top of the board's RAM region. One stock bootloader rejects SP = top of RAM
  * (hardware-dm1701.md 18 (1)), so the regions end 4 bytes short */
 _estack = ORIGIN(RAM) + LENGTH(RAM);
 _Min_Heap_Size = 0x1000;
