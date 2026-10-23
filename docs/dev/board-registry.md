@@ -198,7 +198,7 @@ example `ARM_GCC_VERSION`) to a literal other than the pin: take it from `platfo
 | `tools/boards.py builds <id> [--extra]` | The board's builds besides the default, or its `[ci]` extras |
 | `tools/boards.py json [--for all\|odrflash\|build]` | A merged view, below |
 | `tools/boards.py check` | Every inconsistency, and every radio named outside its own places ([Radio names](#radio-names)); ci.sh's registry step runs it |
-| `tools/boards.py docs [--check] [--floor REF]` | Writes the generated blocks of the README, the user manual's radio pages, the feature matrix, the bug report form's and the pull request template's radio lists, and the survey's Port cells (`tools/registry_docs.py`). `--check` lists the stale ones instead; `--floor REF` fails when a radio's marks or status in the README read lower than at commit `REF`. ci.sh runs `--check --floor origin/main` |
+| `tools/boards.py docs [--check] [--floor REF]` | Writes the generated blocks of the README, the user manual's radio pages, the feature matrix (its Built by default table, and its Checked on each radio table from the bring-up records in `docs/testing/results/`), the bug report form's and the pull request template's radio lists, and the survey's Port cells (`tools/registry_docs.py`). `--check` lists the stale ones instead; `--floor REF` fails when a radio's marks or status in the README read lower than at commit `REF`. ci.sh runs `--check --floor origin/main` |
 | `tools/boards.py self-test` | The loader's own tests |
 
 `make registry` regenerates `tools/odrflash/odrflash/registry.json` when a source changed. `make` does too, before

@@ -1312,6 +1312,12 @@ def self_test():
         ys = registry_docs.yaml_scalar
         ok(ys("Acme XR-100 / Other ZT-7") == "Acme XR-100 / Other ZT-7" and ys("A: B") == '"A: B"'
            and ys("No") == '"No"', "yaml_scalar: quoted only where a plain scalar would misread")
+        cc = registry_docs.checked_cell	# the "Checked on each radio" cells, from tools/bringup.py's statuses
+        ok(cc("built, not yet recorded", None, "") == "not recorded" and cc("pass", "run", "") == "pass"
+           and cc("pass", "seed", "") == "pass (seed)" and cc("fail", "run", "") == "fail"
+           and cc("needs re-run", "run", "fail at x; changed since: y") == "fail, needs re-run"
+           and cc("needs re-run", "seed", "seed: z; changed since: y") == "pass (seed), needs re-run",
+           "checked_cell: no record is never a pass; a stale check keeps its old result")
         old = ("## Radios and status\n\n| Radio | Builds | Host tests | On the radio | Support |\n"
                "|---|---|---|---|---|\n"
                "| [Maker AB-100](x) | ● | ● | %s | ok |\n| Maker CD-9 | ○ | ○ | ○ | %s |\n")

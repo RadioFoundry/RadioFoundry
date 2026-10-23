@@ -246,7 +246,7 @@ def feature_defaults(root, boards):
     cfg = {b.id: dict(print_config(root, b.id)) for b in bs}
     order = [s for s, _ in print_config(root, bs[0].id)] if bs else []
     out = ["| Feature switch | %s |" % " | ".join(b.data["model"] for b in bs),
-           "|---|%s" % ":-:|" * len(bs)]
+           "|---|" + ":-:|" * len(bs)]
     for s in order:
         marks = ["✕" if s in b.unsupported else "●" if cfg[b.id].get(s) == "y"
                  else "?" if s in b.data["hardware"].get("unconfirmed", {}) else "○" for b in bs]
@@ -280,6 +280,42 @@ VOLTS_WORD = {"battery": "Battery", "supply": "Supply", "none": "None"}
 CLOCK_WORD = {"backed": "Yes", "unbacked": "No (only while on)", "none": "No clock", "unknown": "?"}
 
 
+# ── the feature matrix's "Checked on each radio": from the bring-up records ──
+
+# a feature's status (tools/bringup.py feature_status, resolve) as the table reads it
+CHECKED_WORD = {"pass": "pass", "fail": "fail", "partial": "partial", "off": "off", "n/a": "✕", "unsupported": "✕"}
+
+
+def checked_cell(status, basis, detail):
+    """One cell: the result, "(seed)" when it rests on a seed record, and ", needs re-run" when the feature's files
+    changed since. Never reads as a pass without a record: no record is "not recorded"."""
+    import bringup
+    if status == bringup.NOT_RECORDED:
+        return "not recorded"
+    seed = " (seed)" if basis == "seed" else ""
+    if status == "needs re-run":
+        was = detail.split()[0] if basis == "run" and detail else "pass"	# a stale seed row is always a pass
+        return "%s%s, needs re-run" % (was, seed)
+    return CHECKED_WORD.get(status, status) + seed
+
+
+def checked_on_radio(root, boards):
+    """Every checklist feature (tests/hil/features.toml) on every board, from docs/testing/results/<board>/."""
+    import bringup
+    feats = bringup.load_features(os.path.join(root, "tests", "hil", "features.toml"))
+    records = bringup.load_records(os.path.join(root, "docs", "testing", "results"))
+    bs = ordered(boards)
+    out = ["| Feature | %s |" % " | ".join(b.data["model"] for b in bs), "|---|" + ":-:|" * len(bs)]
+    for e in feats:
+        cells = []
+        for b in bs:
+            state, _ = bringup.resolve(b.id, e)
+            cells.append(checked_cell(*bringup.feature_status(b.id, e, records)) if state == "required"
+                         else CHECKED_WORD.get(state, state))
+        out.append("| `%s` | %s |" % (e["id"], " | ".join(cells)))
+    return out
+
+
 # file, block, source the marker names, generator(root, boards, rows)[, marker style (MARKERS), default html]
 BLOCKS = (
     ("README.md", "radios", "boards/*/board.toml [status] and docs/spec/radios.md",
@@ -290,6 +326,8 @@ BLOCKS = (
      lambda root, boards, rows: manual_planned(rows)),
     ("docs/feature-matrix.md", "feature-defaults", "config/features.mk and boards/*/config.mk",
      lambda root, boards, rows: feature_defaults(root, boards)),
+    ("docs/feature-matrix.md", "checked", "docs/testing/results/<board>/ (tools/bringup.py run)",
+     lambda root, boards, rows: checked_on_radio(root, boards)),
     (".github/ISSUE_TEMPLATE/bug_report.yml", "radios", "boards/*/board.toml",
      lambda root, boards, rows: issue_radios(boards), "yaml"),
     (".github/PULL_REQUEST_TEMPLATE.md", "radios", "boards/*/board.toml",
