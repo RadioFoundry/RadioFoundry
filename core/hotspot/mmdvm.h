@@ -125,7 +125,7 @@ uint16_t mmdvm_framer_byte(mmdvm_framer_t *f, uint8_t b);
 typedef struct {
 	// Bytes to the host (one whole frame per call)
 	void (*write)(const uint8_t *buf, size_t len);
-	const char *description;	// GET_VERSION text, e.g. "OpenDigitalRadio DM-1701 ba226121"
+	const char *description;	// GET_VERSION text, e.g. "OpenDigitalRadio <model> ba226121"
 } mmdvm_io_t;
 
 // Optional extension (the SFR, when ported): our vendor command, GET_STATUS bytes after byte 12, a GET_VERSION

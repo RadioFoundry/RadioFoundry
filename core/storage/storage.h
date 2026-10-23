@@ -98,7 +98,7 @@ typedef enum {
 } storage_native_t;
 // Empty the native area (factory reset): only when it holds our data (the magic) or nothing. The data sectors go
 // first and the header sector last, so a cut in between leaves the magic and the reset can run again. Slow: one
-// erase per sector that isn't blank (the DM-1701's 1 MB area: up to 256)
+// erase per sector that isn't blank (a 1 MB area: up to 256)
 storage_native_t storage_native_erase(void);
 
 // --- Deferred flash work: a task that must not wait for the flash (the UI) hands a job to the housekeeping task,
