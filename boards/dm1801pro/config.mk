@@ -15,7 +15,8 @@ CONFIG_VIBRATE ?= y
 CONFIG_FONT_XL ?= n
 CONFIG_UI_COLOR ?= n
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
-# docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off. USB and USB_NETWORK are the platform's
+# docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off. USB
+# and USB_NETWORK are in the platform's list.
 BOARD_UNSUPPORTED += FONT_XL	# the 128x64 panel is too small for the large font
 BOARD_UNSUPPORTED += UI_COLOR	# the 128x64 panel is monochrome: no colors to set
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR: 4 KB erase (docs/spec/hardware-dm1801pro.md 6.1)

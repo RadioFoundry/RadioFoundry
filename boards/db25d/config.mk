@@ -65,7 +65,8 @@ CONFIG_AM_RX ?= n
 # 160x128 like the DM-1701, which builds without the large font
 CONFIG_FONT_XL ?= n
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
-# docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off. USB and USB_NETWORK are the platform's
+# docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off. USB
+# and USB_NETWORK are in the platform's list.
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (owner, 2026-10-22)
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
