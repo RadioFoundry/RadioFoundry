@@ -30,8 +30,8 @@ from odr_debug import (DebugLink, DebugLinkError, as_int, find_ports, parse_coun
 # A bare pytest.skip in tests/hil fails tools/check_hil_skips.py (tools/ci.sh).
 
 SKIP_KINDS = {
-    "not_built": "the firmware was built without it (a switch off, or firmware older than the feature)",
-    "no_hw": "the radio lacks the capability",
+    "not_built": "the firmware was built without it (a switch off, code not written for the radio, older firmware)",
+    "no_hw": "the radio's hardware lacks the capability",
     "state": "a precondition the test could set up itself (a mode, a setting, the codeplug, the channel)",
     "opt_in": "an opt-in option was not given (an --allow-* flag, a frequency, a file, a second radio)",
     "bench": "the radio, the SDR bench or the test host's tools (a program, git history) are missing, unreachable or busy",
