@@ -7,7 +7,9 @@
 <title>{{ title }} · RadioFoundry</title>
 <meta name="description" content="{{ description }}">
 <meta name="generator" content="site/build.py {{ git }}">
-<link rel="icon" href="{{root}}static/img/icon.svg" type="image/svg+xml">
+<link rel="icon" href="{{root}}static/img/icon.svg?v={{ assets }}" type="image/svg+xml">
+<link rel="icon" href="{{root}}static/img/icon-32.png?v={{ assets }}" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="{{root}}static/img/apple-touch-icon.png?v={{ assets }}">
 <link rel="stylesheet" href="{{root}}static/css/tokens.css?v={{ assets }}">
 <link rel="stylesheet" href="{{root}}static/css/site.css?v={{ assets }}">
 <script>try{var t=localStorage.getItem("rfoundry-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
@@ -17,7 +19,7 @@
 <header class="site-header">
 	<div class="wrap header-row">
 		<a class="brand" href="{{ home }}index.html">
-			<img src="{{root}}static/img/icon.svg" alt="" width="28" height="28">
+			<img src="{{root}}static/img/icon.svg?v={{ assets }}" alt="" width="28" height="28">
 			<span>Radio<b>Foundry</b></span>
 		</a>
 		<button class="nav-toggle" aria-expanded="false" aria-controls="site-nav">{{t nav.menu}}</button>
