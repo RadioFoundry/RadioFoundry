@@ -7,7 +7,11 @@
 
 ## Radios
 
-<!-- Which radios this touches: DM-1701, DM-32UV, MD-380, DB25-D, all (core only), none (tools, docs) -->
+<!-- Which radios this touches, from this list, or all (core only), or none (tools, docs):
+generated: tools/boards.py docs radios; edit boards/*/board.toml
+DM-1701, DM-1801 Pro, DM-32UV, DB25-D PRO, MD-380
+end generated
+-->
 
 ## Testing
 
