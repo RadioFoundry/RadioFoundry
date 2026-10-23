@@ -1403,10 +1403,13 @@ def print_chip(c):
     print(f"bor      level {['3 (2.7 V)', '2 (2.4 V)', '1 (2.1 V)', 'off'][c['bor']]}")
     u = c["user"]
     print(f"user     WDG_SW={u & 1} nRST_STOP={(u >> 1) & 1} nRST_STDBY={(u >> 2) & 1}")
-    if c["rdp"] != 0:
-        print("\n*** WARNING: RDP is not level 0. Do NOT use the ROM bootloader (reboot --rom-dfu is refused): it would\n"
-              "*** refuse flash writes, and its read-unprotect command mass-erases ALL flash including the stock\n"
-              "*** bootloader. Report this to the owner before doing anything else. ***", file=sys.stderr)
+    if c["rdp"] == 1:
+        # the usual state of a radio as it ships: ODR's loaders don't need level 0, only the ROM bootloader does
+        print("note     RDP level 1 is normal for a stock radio. The ROM bootloader route (reboot --rom-dfu) stays "
+              "closed:\n         leaving level 1 mass-erases all flash, the stock bootloader too", file=sys.stderr)
+    elif c["rdp"] != 0:
+        print("\n*** WARNING: RDP level 2 is permanent: the ROM bootloader and the debug port are disabled for good. "
+              "Report this\n*** to the owner before doing anything else. ***", file=sys.stderr)
     app_wrp = [s for s in c["wrp_sectors"] if s >= 3]
     if app_wrp:
         print(f"\n*** WARNING: application sectors {app_wrp} are write protected: no loader can rewrite them ***",

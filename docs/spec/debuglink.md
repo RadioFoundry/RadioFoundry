@@ -336,8 +336,9 @@ Read-only. Reply after the status (30 bytes in all; firmware before the family b
 | 28 | 1 | user bits: bit 0 WDG_SW, bit 1 nRST_STOP, bit 2 nRST_STDBY |
 | 29 | 1 | chip family (table above) |
 
-`odr_debug.py chip` prints all of this (only the family and the UID for a family other than 0), and prints a loud warning when RDP is not level 0 or when any application
-sector (3..11) is write protected.
+`odr_debug.py chip` prints all of this (only the family and the UID for a family other than 0), and prints a note at RDP level 1 (the
+stock state: the ROM bootloader route stays closed) and a loud warning at RDP level 2 or when any application sector
+(3..11) is write protected.
 
 Example (the bench DM-1701, 2026-10-10): idcode `0x0009A413`, 1024 KB, `FLASH_OPTCR` `0x0FFF55ED`: **RDP level 1**
 (byte `0x55`), no write protection, BOR off, user bits all 1.
