@@ -144,7 +144,6 @@ docs/dev/stack-check.md names radios inline; to rewrite
 docs/dev/testing.md names radios inline; to rewrite
 docs/dev/website.md names radios inline; to rewrite
 docs/spec/README.md names radios inline; to rewrite
-docs/spec/airband-and-broadcast.md names radios inline; to rewrite
 docs/spec/aprs.md names radios inline; to rewrite
 docs/spec/capabilities.md names radios inline; to rewrite
 docs/spec/codec-md9600.md names radios inline; to rewrite

@@ -238,6 +238,12 @@ static uint8_t rssi_bars(int16_t dbm)
 	return 0;
 }
 
+// The mode word: AM where an FM channel or the VFO is received in AM (the air band)
+static const char *mode_word(const radio_view_t *v)
+{
+	return v->ch.mode == RADIO_MODE_DMR ? "DMR" : v->am ? "AM" : "FM";
+}
+
 // Status strip (P2): state pill, mode, monitor, lock, unread messages, signal, battery.
 // A titled screen (prefix and / or name) on a display under UI_TALL_PX high merges its title into the strip
 // (wireframes 160x128 and 128x64): the pill shows only while not idle, the signal bars and the battery icon give way
@@ -370,12 +376,12 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	}
 	// Left side: the mode, and one mode word when there is room for it with a space either side. In dual watch the
 	// mode is the selected channel's (the tuned one alternates) and the word is DUAL
-	uint8_t mode = v->ch.mode;
+	const char *mw = mode_word(v);
 #if CONFIG_DUAL_WATCH
 	if (s->dual.on)
-		mode = s->dual.pane[s->dual.sel].mode;
+		mw = s->dual.pane[s->dual.sel].mode == RADIO_MODE_DMR ? "DMR" : "FM";
 #endif
-	int lx = gfx_text(f, x, ty, mode == RADIO_MODE_DMR ? "DMR" : "FM", sfg);
+	int lx = gfx_text(f, x, ty, mw, sfg);
 #if CONFIG_DUAL_WATCH
 	if (s->dual.on && lx + 6 * f->w <= rx)
 		lx = gfx_text(f, lx + f->w, ty, "DUAL", swarn);
@@ -885,6 +891,18 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		return;
 	}
 #endif
+	if (v->am || v->bcast) {
+		// No tone, width or power here: the receiver is fixed. The air band squelch is real, the broadcast one isn't used
+		x = gfx_text(f, x, y, v->am ? "Air Band AM" : "Broadcast FM", ui_col.fg) + f->w;
+		if (v->am) {
+			sb_init(&b, buf, sizeof buf);
+			sb_str(&b, "SQ");
+			sb_u32(&b, v->squelch, 1);
+			if (x + gfx_text_width(f, buf) <= w)
+				gfx_text(f, x, y, buf, ui_col.fg);
+		}
+		return;
+	}
 	sb_init(&b, buf, sizeof buf);
 	bool tone_temp = (v->temp & (RADIO_TEMP_TX_TONE | RADIO_TEMP_RX_TONE)) != 0;
 	if (tone_temp)
@@ -964,6 +982,8 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_REJECTED: sb_str(&b, "Modem refused to send"); break;
 	case TXDENY_HOTSPOT: sb_str(&b, "Hotspot mode: PTT off"); break;
 	case TXDENY_NO_ID: sb_str(&b, "No DMR ID in codeplug"); break;
+	case TXDENY_AM: sb_str(&b, "Air band: receive only"); break;
+	case TXDENY_BCAST: sb_str(&b, "Broadcast: receive only"); break;
 	default: sb_str(&b, "Not allowed here"); break;
 	}
 	return buf;
@@ -981,6 +1001,8 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_NO_DMR: return "Release PTT, try again";
 	case TXDENY_HOTSPOT: return "OK stop hotspot";
 	case TXDENY_NO_ID: return "Set your DMR ID in qdmr";
+	case TXDENY_AM:
+	case TXDENY_BCAST: return v->vfo ? "Tune out of the band" : "Pick another channel";
 	default: return "Pick another channel";
 	}
 }
@@ -1540,7 +1562,7 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 	} else
 #endif
 	{
-		sb_str(&b, v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM");
+		sb_str(&b, mode_word(v));
 		sb_chr(&b, ' ');
 		sb_str(&b, ui_power_name(v->power));
 	}
@@ -2632,7 +2654,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		return v->ch.mode == RADIO_MODE_FM;
 	}
 	case QT_MODE:
-		sb_str(&b, v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM");	// what it is, as every other tile
+		sb_str(&b, mode_word(v));	// what it is, as every other tile
 		// Only in the VFO (a channel's tile 4 is QT_TO_VFO), in a build with both VFO kinds; it keeps the mode like
 		// its other settings
 		return feat(UI_FEAT_MODE) && v->vfo && CONFIG_VFO_FM && CONFIG_VFO_DMR;

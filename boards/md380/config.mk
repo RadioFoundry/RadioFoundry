@@ -25,7 +25,9 @@ LTO_3P ?= 1
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off
 BOARD_UNSUPPORTED += SFR	# the HR_C5000 lacks CRC_MCU_Control for the idle bursts (docs/spec/sfr.md)
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
+CONFIG_AM_RX ?= n
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)
+CONFIG_BCAST_FM ?= n
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-broadcast.md)
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is a SPI NOR (docs/spec/hardware-md380.md 12)
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor (docs/user/23-radios.md, What the MD-380 lacks)

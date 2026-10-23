@@ -31,10 +31,10 @@ The manual names keys by the job they do. Each radio puts those jobs on its own 
 | **#** | Actions / Recent | **#** | **#** | **#** | P2 | **#** |
 | **0** to **9** | Number keys | Number keys | Number keys | Number keys | None | Number keys |
 | **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | P3 | SK1 |
-| **Talk target** | Talk target picker / dual watch on or off | Hold **#** for the picker, hold SK2 for dual watch | SK2 | SK2 | TONE/T.SEL | SK2 |
-| **A/B** | Dual watch: the other channel / dual watch on or off | SK2 | None | None | None | A/B key |
+| **Talk target** | Talk target picker | Hold **#** | Hold **#** | Hold **#** | Hold **P2** | Hold **#** |
+| **A/B** | Dual watch: the other channel / dual watch on or off | SK2 | SK2 | SK2 | TONE/T.SEL | A/B key, SK2 |
 | **Power level** | Next power level / emergency (held 1.5 s) | Top side key | None | None | None | None |
-| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | Hold Left, hold Right | None | Hold Left, hold Right |
+| **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | Left, Right | None | Left, Right |
 | **VFO** | Between the channel and the VFO / copy the channel to the VFO | None | None | None | None | VFO/MR key |
 | **Volume** | Open the volume editor. Radios without a volume knob only | None: the knob | None: the knob | None: the knob | VOL/SQL | None: the knob |
 | **PTT** | Transmit | PTT | PTT | PTT | PTT on the microphone | PTT |
@@ -63,15 +63,14 @@ yet, and the core doesn't use them.
 | Radio | Dual watch | Start | Switch A / B |
 |---|---|---|---|
 | DM-1701 | Pseudo, one receiver. The core's alternation between two channels of one zone is checked on air; the new dual watch (any zone, the VFO, the screens) is not yet | **\***, **7**, or hold **SK2** | **SK2** (a press), **#**, **1** |
-| MD-380 | Pseudo, one receiver. Not checked on air | **\***, **7**, or hold **SK2** | **#**, **1**, or a side key set to **A/B** |
-| DM-32UV | Pseudo, one receiver. Not checked on air (scan isn't checked on this radio yet) | **\***, **7**, or hold **SK2** | **Left** / **Right**, or a side key set to **A/B** |
-| DB25-D PRO | Pseudo, one receiver. Not checked on air. Its second BK4819 chip is a local oscillator for the receive chain, not a second receiver | Hold the **TONE/T.SEL** key, or a side key set to **Dual watch** | A side key set to **A/B** |
-| DM-1801 Pro | Pseudo, one receiver. Not checked on air | Hold the **A/B** key, **\***, **7**, or hold **SK2** | The **A/B** key (a press), **Left** / **Right** |
+| MD-380 | Pseudo, one receiver. Not checked on air | **\***, **7**, or hold **SK2** | **SK2** (a press), **#**, **1** |
+| DM-32UV | Pseudo, one receiver. Not checked on air (scan isn't checked on this radio yet) | **\***, **7**, or hold **SK2** | **SK2** (a press), **Left** / **Right** |
+| DB25-D PRO | Pseudo, one receiver. Not checked on air. Its second BK4819 chip is a local oscillator for the receive chain, not a second receiver | Hold the **TONE/T.SEL** key | A press of **TONE/T.SEL** |
+| DM-1801 Pro | Pseudo, one receiver. Not checked on air | Hold the **A/B** key, **\***, **7**, or hold **SK2** | The **A/B** key or **SK2** (a press), **Left** / **Right** |
 
-Holding **SK2** is dual watch on every radio that has an SK2, and on the DB25-D PRO holding the tone key is. On the
-DM-1701 a press of **SK2** switches A / B. The MD-380 and DM-32UV have no key for switching A / B until you set one in
-**Settings > Keys** (**A/B** or **Dual watch**, press or hold). The DM-1801 Pro's A/B key does both: a press switches A / B, a hold starts and stops
-dual watch. On it the zones are on hold **Left** / **Right**, or in the Zones menu.
+Holding **SK2** is dual watch on every radio that has an SK2, and on the DB25-D PRO holding the tone key is. A press of
+**SK2** (the tone key on the DB25-D PRO) switches A / B, and with dual watch off says "Turn on dual watch first". The
+DM-1801 Pro's A/B key does both: a press switches A / B, a hold starts and stops dual watch. On it the zones are on **Left** / **Right**, or in the Zones menu.
 
 A and B can be any channel of any zone, or the VFO ([how the core does it](../spec/radio-features.md#21-dual-watch)).
 Nothing about this dual watch has been checked on the air on any radio.
@@ -213,7 +212,7 @@ repeater or duplex hotspot, and programming. The VHF image is untested. Installi
 | Red Back key | **Back** |
 | Arrow keys | **Up**, **Down** |
 | SK1 | **Monitor** |
-| SK2 | **Talk target** |
+| SK2 | **A/B** |
 | **PTT** | **PTT** |
 | Channel switch | Channel knob. A 16-position switch, not an endless knob: RadioFoundry turns each change of position into steps |
 
@@ -275,9 +274,9 @@ Installing: [Moving from stock DM-32UV firmware](19-moving-from-stock-dm32.md).
 | Green Menu / OK key | **OK** |
 | Red Back key | **Back** |
 | Up, Down | **Up**, **Down** |
-| Left, Right | Press: not used yet. Hold: **Previous zone**, **Next zone**. The key labels are unchecked |
+| Left, Right | Press or hold: **Previous zone**, **Next zone**. The key labels are unchecked |
 | SK1 (the side key below **PTT**) | **Monitor**. Held with **PTT** at power-on, it starts the bootloader |
-| SK2 | **Talk target** |
+| SK2 | **A/B** |
 | **PTT** | **PTT** |
 | Channel knob | Channel knob |
 
@@ -318,9 +317,9 @@ A 240 x 320 color screen. RadioFoundry uses its full resolution, with smooth (an
 - The GPS module is checked at start-up (it must answer within 5 s) and is then powered only while **Settings >
   Location > GPS** is on, which takes effect at once. A fix outdoors hasn't been checked yet.
 - While APRS listens, FM on the APRS frequency plays through a different audio path, which may sound different.
-- No air band receive.
-- No broadcast FM yet: the radio has the receiver, but the board code behind it isn't written, so the image leaves
-  it out.
+- Air band and FM broadcast receive
+  ([Air band and FM broadcast](06-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
+  the radio yet. Broadcast covers 65 to 108 MHz.
 - No VOX yet: the board code that reads the microphone level isn't written.
 - Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
 - No beeps while transmitting, the talk permit tone included: the radio's beep path would put them on the air. A beep
@@ -377,7 +376,7 @@ aren't decoded yet, so there are no number keys.
 | P1 | **\*** |
 | P2 | **#** |
 | P3 | **Monitor** |
-| TONE/T.SEL | **Talk target** |
+| TONE/T.SEL | **A/B** |
 | VOL/SQL | **Volume** |
 | **PTT** on the microphone | **PTT** |
 | Front knob | Channel knob, and **Up** / **Down** in lists |
@@ -479,7 +478,7 @@ rfoundry has flashed a radio yet; `tools/serial_loader.py` and `stub/stubtool.py
 | **\*** | **\*** |
 | **#** | **#** |
 | SK1 | **Monitor** |
-| SK2 | **Talk target** |
+| SK2 | **A/B** |
 | SOS (top) | Hold: emergency, where it is built |
 | **PTT** | **PTT** |
 
@@ -498,7 +497,9 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 - VHF transmit is unchecked on air. UHF transmit and receive on both bands work.
 - VOX is unchecked. RadioFoundry now reads the microphone level from the microphone's digital audio, but that hasn't been
   tried on the radio yet.
-- No air band receive. The broadcast FM tuner is wired, but its screens aren't built yet.
+- Air band and FM broadcast receive
+  ([Air band and FM broadcast](06-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
+  the radio yet. Broadcast covers 65 to 108 MHz.
 
 ## Planned radios
 

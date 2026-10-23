@@ -28,7 +28,7 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_P1, ACT_QUICK, ACT_QUICK, false, false, 0 },
 	{ KEY_P2, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
 	{ KEY_P3, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
-	{ KEY_TONE, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ KEY_TONE, ACT_AB, ACT_USER_2, false, false, 0 },
 	{ KEY_VOL, ACT_VOLUME, ACT_VOLUME, false, false, 0 },
 	{ KEY_MIC_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },
 	{ KEY_MIC_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },

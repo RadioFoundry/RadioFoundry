@@ -45,6 +45,7 @@ static volatile uint16_t tx_drive;	// DAC B value for the transmission
 static uint16_t last_rssi_raw, last_noise_raw;
 static bool pcm_on;		// a beep or DMR voice plays through the codec
 static bool rx_audio;		// the squelch is open (the radio's audio hook)
+static bool rx_am_on;		// the FD6818 plays its AM demodulator (rx_am, the air band)
 static bool asleep;		// the receiver is powered down between listen windows (rx_sleep)
 static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (aprs_listen_route)
 static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modulator (afsk_tx_route)
@@ -52,6 +53,7 @@ static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modula
 // The speaker amplifier is on while any user wants it
 #define AMP_RADIO	0x01u	// receive audio
 #define AMP_PCM		0x02u	// speaker PCM
+#define AMP_BCAST	0x04u	// the broadcast receiver (dm32_bcast_audio)
 
 static void speaker_source(void);
 static void ring_play(void);
@@ -226,12 +228,14 @@ static void set_mode(radio_mode_t m)
 		hrc7000_fm_idle(&modem);
 		mode = RADIO_MODE_FM;
 	}
+	rx_am_on = false;	// both mode tables write the FM AF word
 	have_rx = false;	// the next rx() retunes everything
 }
 
-static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
+// FM (or DMR) receive, or AM in FM mode: the same set-up, only the FD6818's AF output differs
+static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 {
-	if (!board_in_band(hz, false)) {
+	if (!board_in_band(hz, false) || (am && mode != RADIO_MODE_FM)) {
 		return false;
 	}
 	wake();
@@ -250,6 +254,10 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 		// The FD6818 detects the tone on its own demodulated audio: the C7000's detector gets no audio while the
 		// FD6818 plays FM to the speaker (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
+		if (am != rx_am_on) {
+			fd6818_set_am(&fd, am);
+			rx_am_on = am;
+		}
 	}
 	rx_hz = hz;
 	rx_bw = bw;
@@ -258,6 +266,28 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 	transmitting = false;
 	speaker_source();
 	return true;
+}
+
+static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
+{
+	return rx_tune(hz, bw, tone, false);
+}
+
+#if CONFIG_AM_RX
+// Air band AM (docs/spec/airband-and-broadcast.md 3.3, hardware-dm32.md 8.7): FM receive with the FD6818's AF output on
+// its AM demodulator. The speaker plays that output straight, as in FM receive (speaker_source); no sub-audio. The
+// 108-136 MHz signal comes in through the VHF LNA
+static bool rx_am(uint32_t hz, radio_bw_t bw)
+{
+	return rx_tune(hz, bw, NULL, true);
+}
+#endif
+
+// Back on the frequency, mode and demodulator the receiver had (after a transmission or the receiver's sleep)
+static void retune(void)
+{
+	subtone_t t = rx_tone;
+	rx_tune(rx_hz, rx_bw, &t, rx_am_on);
 }
 
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
@@ -316,8 +346,7 @@ static void tx_off(void)
 	transmitting = false;
 	ring_play();	// a beep that started during the transmission is heard from here on
 	if (have_rx) {
-		subtone_t t = rx_tone;
-		rx(rx_hz, rx_bw, &t);
+		retune();
 	}
 }
 
@@ -485,6 +514,15 @@ static bool afsk_tx_route(bool on)
 }
 #endif
 
+#if CONFIG_BCAST_FM
+// The broadcast receiver's audio (hrc_bcast.h audio_path) needs the amplifier. The core mutes the channel's audio
+// while it plays, so the speaker source stays on the codec, which is silent then
+void dm32_bcast_audio(bool on)
+{
+	amp(AMP_BCAST, on);
+}
+#endif
+
 void dm32_radio_diag(dm32_radio_diag_t *d)
 {
 	d->rssi_raw = last_rssi_raw;
@@ -505,8 +543,7 @@ static void rx_sleep(bool sleep)
 		lna(rx_hz, false);
 		asleep = true;
 	} else {
-		subtone_t tone = rx_tone;
-		rx(rx_hz, rx_bw, &tone);
+		retune();
 	}
 }
 
@@ -523,6 +560,9 @@ const hal_radio_t dm32_radio = {
 	.tx_dtmf = tx_dtmf,
 #endif
 	.rx_sleep = rx_sleep,
+#if CONFIG_AM_RX
+	.rx_am = rx_am,
+#endif
 	.status = status,
 	.audio = audio,
 	.volume = NULL,

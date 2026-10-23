@@ -796,10 +796,10 @@ Band for PA/LNA purposes: VHF below 280 MHz, UHF from 280 MHz (the 220 MHz range
 The PA is switched off from the next timeslot interrupt once the burst has run at least 20 ms (KP; the RF RX interrupt
 is not used).
 
-### 8.7 Air band AM and the broadcast receiver (research)
+### 8.7 Air band AM and the broadcast receiver
 
-The generic design is in [airband-and-broadcast.md](airband-and-broadcast.md); its bring-up steps (6) answer the
-questions below. Tags **C**, **D**, **F** as in [radios.md](radios.md).
+The generic design is in [airband-and-broadcast.md](airband-and-broadcast.md); the bring-up checks in
+[dm32-bringup.md](../testing/dm32-bringup.md) 11 answer the questions below. Tags **C**, **D**, **F** as in [radios.md](radios.md).
 
 #### Public claims
 
@@ -824,24 +824,27 @@ Not decided by any source. The evidence:
 **Working hypothesis (INF):** AM is demodulated by the FD6818 (0x47 AF type 7), its AF output goes to the speaker
 amplifier through the source switch (0x2F) instead of the C7000 codec, and the 108-136 MHz signal comes in through the
 VHF front end (VHF LNA, GPIO 0x22; the 136-174 MHz filter costs sensitivity at the low end). The alternative is AM
-audio fed into the C7000's audio path. Bring-up step 6.1 of airband-and-broadcast.md decides between them.
+audio fed into the C7000's audio path. Bring-up check 11 decides between them.
 
 #### Open questions
 
 | # | Question | How bring-up answers it |
 |---|---|---|
-| A1 | Is 0x47 AF type 7 the FD6818's AM output? | 6.1: stock radio on ATIS for reference; RadioFoundry with `rx_am`, compare audio |
+| A1 | Is 0x47 AF type 7 the FD6818's AM output? | 11: stock radio on ATIS for reference; RadioFoundry with `rx_am`, compare audio |
 | A2 | Which speaker source (0x2F level) carries FD6818 AF? | answered: 0x2F = 1 (HW, FM receive) |
-| A3 | AM filter bandwidth (0x43) and AGC (0x13, 0x09 table) for AM | 6.1: listen to a strong and a weak station; the UV-K5 needed AGC changes for AM (D) |
-| A4 | RSSI offset in AM (the squelch's dBm) | 6.1: signal generator at -100 dBm, read `rssi` on the debug link |
-| B1 | Is the RDA5807M really at PTA25 / PTA26, and does it answer at 0x11? | 6.2: chip ID 0x58xx over the debug link probe |
-| B2 | Its reference clock (32.768 kHz crystal or a clock signal; 0x02 CLK_MODE, RCLK_DIRECT) | 6.2: tune a known station with each setting |
-| B3 | Pull-up on SDA (or the pin's own pull) | 6.2: the chip ID read fails without one |
-| B4 | Where its audio goes (into the amplifier directly, through 0x2F, or into the codec) and whether its supply is switched by a GPIO | 6.2: listen with each speaker path set |
-| B5 | Antenna for broadcast (the main antenna through the VHF path, or the headset cable) | 6.2: compare stations with and without a headset |
+| A3 | AM filter bandwidth (0x43) and AGC (0x13, 0x09 table) for AM | 11: listen to a strong and a weak station; the UV-K5 needed AGC changes for AM (D) |
+| A4 | RSSI offset in AM (the squelch's dBm) | 11: signal generator at -100 dBm, read `rssi` on the debug link |
+| B1 | Is the RDA5807M really at PTA25 / PTA26, and does it answer at 0x11? | 11: chip ID 0x58xx over the debug link probe |
+| B2 | Its reference clock (32.768 kHz crystal or a clock signal; 0x02 CLK_MODE, RCLK_DIRECT) | 11: tune a known station with each setting |
+| B3 | Pull-up on SDA (or the pin's own pull) | 11: the chip ID read fails without one |
+| B4 | Where its audio goes (into the amplifier directly, through 0x2F, or into the codec) and whether its supply is switched by a GPIO | 11: listen with each speaker path set |
+| B5 | Antenna for broadcast (the main antenna through the VHF path, or the headset cable) | 11: compare stations with and without a headset |
 
-Planned `rx_am` (`boards/dm32/radio_dm32.c`, not written): the FD6818 FM register set, 0x47 = 0x6742 (AF type 7,
-A1), the AF gain in 0x48, VHF LNA on, C7000 FM playback off, speaker source to the FD6818 (A2) (INF).
+What RadioFoundry does (INF until bring-up): `rx_am` in `boards/dm32/radio_dm32.c` is the FM receive path (VHF LNA, speaker
+source to the FD6818, A2) with the AF output word 0x47 = 0x0740 (AF type 7, A1); `rx()` writes 0x0140 back. The AGC
+and filter are the FM ones (A3). The RDA5807M runs through the shared HR_C7000 glue (`platform/hrc7000/bcast_hrc.c`)
+on PTA25 / PTA26 with no enable pin; its audio path turns the amplifier on and leaves the speaker source alone (B4).
+The air band is an RX-only band of 108-136 MHz and the broadcast range 65-108 MHz in `boards/dm32/board.c`.
 
 ---
 

@@ -206,7 +206,7 @@ The budgets are the ones `tests/host/uiFlowTest.c` checks ("11 dual watch ...").
 
 Enter VFO: `SELECT`, `4`, VFO is the first row in Zones: `SELECT`. (Or type "VFO" in Find.) Home shows the frequency large.
 
-On Home in VFO, digits enter a frequency directly: `4`,`4`,`6`,`0`,`0`,`0` is 446.000 MHz (the decimal point is implied after the band's MHz digits; `*` inserts it explicitly). Preview shows "446.000 MHz" as you type, out-of-band digits are refused as you type with a hint ("UHF 400-480"). `SELECT` tunes. `NAV_UP`/`NAV_DOWN` step by the step size (Settings › Talk › VFO step; Auto follows the width). Mode and tone are quick tiles 4 and 3. "Save as channel" is in `CONTEXT`.
+On Home in VFO, digits enter a frequency directly: `4`,`4`,`6`,`0`,`0`,`0` is 446.000 MHz (the decimal point is implied after the band's MHz digits; `*` inserts it explicitly). Preview shows "446.000 MHz" as you type, out-of-band digits are refused as you type with a hint ("UHF 400-480"). `SELECT` tunes, and so does `CONTEXT` while digits are typed. `NAV_UP`/`NAV_DOWN` step by the step size (Settings › Talk › VFO step; Auto follows the width). Mode and tone are quick tiles 4 and 3. "Save as channel" is in `CONTEXT`.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|

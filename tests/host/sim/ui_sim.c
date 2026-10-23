@@ -274,11 +274,6 @@ const sim_geom_t *sim_geom_find(const char *name)
 enum { K_GREEN, K_RED, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_STAR, K_HASH, K_0, K_9 = K_0 + 9, K_SK1, K_SK2, K_TOP,
        K_FN1, K_FN2, K_PTT, K_P1, K_P2 };
 
-#if CONFIG_DUAL_WATCH
-#define SIM_SK2_SHORT	ACT_AB		// the DM-1701's SK2: A/B on a press, Dual watch held (boards/dm1701/board.c)
-#else
-#define SIM_SK2_SHORT	ACT_TALK_TARGET
-#endif
 static const keymap_entry_t map_k[] = {	// DM-1701 (7.1)
 	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
 	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
@@ -288,7 +283,7 @@ static const keymap_entry_t map_k[] = {	// DM-1701 (7.1)
 	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
 	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
 	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, SIM_SK2_SHORT, ACT_USER_2, false, false, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
 	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false, 0 }, { K_FN1, ACT_USER_1, ACT_USER_1, false, false, 0 },
 	{ K_FN2, ACT_USER_4, ACT_USER_4, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
@@ -302,7 +297,7 @@ static const keymap_entry_t map_m[] = {	// GD-77 (7.3)
 	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
 	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
 	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
 	{ K_TOP, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const keymap_entry_t map_v[] = {	// MD-9600 front panel + hand mic (7.4); the encoder sends ENC_STEP
@@ -315,7 +310,7 @@ static const keymap_entry_t map_v[] = {	// MD-9600 front panel + hand mic (7.4);
 	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
 	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
 	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
 	{ K_TOP, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const keymap_entry_t map_f[] = {	// few keys (7.5): Up / Down / Select / Back, PTT
@@ -1075,7 +1070,12 @@ static uint16_t n_inbox;
 // The volume feature (a radio without a knob: the VOL key, Settings > Sound > Volume) only with the "softvol" token, so
 // the other screens look as on the radios with a knob
 static bool soft_volume;
-uint32_t ui_svc_features(void) { return soft_volume ? 0xFFFFFFFFu : 0xFFFFFFFFu & ~UI_FEAT_VOLUME; }
+// The broadcast receiver (Settings > Talk & listen > FM broadcast step) only with the "bcast" token, the same way
+static bool bcast_rx;
+uint32_t ui_svc_features(void)
+{
+	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST);
+}
 void ui_svc_boot_text(char line1[17], char line2[17])
 {
 	strcpy(line1, "N0CALL");
@@ -1601,6 +1601,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	now_ms = 1000;
 	load_channel();
 	soft_volume = false;
+	bcast_rx = false;
 	ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_DEFAULT);
 	ui_svc_setting_set(UI_SET_HINTS, 1);
 	ui_svc_setting_set(UI_SET_LARGE_TEXT, 0);
@@ -2232,6 +2233,10 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "softvol") == 0) {	// this radio has no volume knob: the board sets the speaker volume
 		soft_volume = true;
 		advance(200);
+		return true;
+	}
+	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
+		bcast_rx = true;
 		return true;
 	}
 	if (strcmp(t, "worst") == 0) {		// worst-case codeplug content from here on (sim_worst)

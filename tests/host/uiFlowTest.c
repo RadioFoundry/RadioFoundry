@@ -92,6 +92,8 @@ static const flow_t flows[] = {
 	{ "11 dual watch: Tools > Scan, a zone scan instead", "quick 7 ctx 3 5 ok", "ok 6 1", "dual=0 scanning=1", 3, false },
 	{ "11 dual watch: the last B after power off", "quick 7 ctx 3 5 ok back back reboot", "quick 7", "dual=1 sel=A bpos=5",
 	  2, false },
+	{ "S FM broadcast step on a radio with the receiver", "bcast", "ok 7 3 down down down down", "shows=FM_broadcast_step",
+	  7, false },
 	{ "11 dual watch talk back on", "", "ok 7 3 down down down down down down down down down ok", "shows=Dual_watch_talk_back", 13,
 	  false },
 	{ "11 dual watch talk back: a call on B", TALK_BACK, "tune:b call:3101234,91,g wait:4000", "dual=1 sel=B", 0,
@@ -345,6 +347,10 @@ static const flow_t flows[] = {
 	{ "S VFO/MR key: channel to VFO and back", "", "vfokey vfokey", "vfo=0 toast=Back_to_channels", 2, false },
 	{ "S VFO/MR key: into the VFO", "", "vfokey", "vfo=1", 1, false },
 	// The VFO's step: Auto follows the width (12.5 kHz narrow, 25 kHz wide); one set in Settings > Talk stays
+	{ "S VFO entry: OK tunes the typed frequency", "vfokey", "1 4 6 5 2 ok", "freq=146520000", 6, false },
+	{ "S VFO entry: # tunes it too", "vfokey", "1 4 6 5 2 ctx", "freq=146520000", 6, false },
+	{ "S VFO entry: # tunes it with a banner up", "vfokey msg:3101234,Meet_at_the_north_lot", "1 4 6 5 2 ctx",
+	  "freq=146520000 screen=home", 6, false },
 	{ "S VFO step: auto, wide", "vfokey", "up", "freq=146545000", 1, false },
 	{ "S VFO step: auto, narrow", "vfokey quick 8 back", "up", "freq=146532500", 1, false },
 	{ "S VFO step: 2.5 kHz", "ok 7 3 down down down ok long:back vfokey", "up", "freq=146522500", 1, false },
@@ -445,8 +451,10 @@ static const flow_t flows[] = {
 	{ "T a refused transmission (RX only) leaves the digits alone", "ok 4 down ok up up up up up up up up pttdown", "5", "zone=1 pos=9 screen=find", 1, false },
 };
 
-// GD-77 key map on its 128x64 monochrome screen only
+// GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
+	{ "2 Right steps to the next zone on Home", "", "right", "zone=1 screen=home", 1, false },
+	{ "2 Left steps back a zone", "right", "left", "zone=0 screen=home", 1, false },
 #if CONFIG_UI_COLOR
 	{ "S theme on a monochrome screen: dimmed", "", "ok 7 2 down down ok", "toast=Colors_are_for set7=0", 6, false },
 	{ "S highlight color on a monochrome screen: dimmed", "", "ok 7 2 down down down ok",

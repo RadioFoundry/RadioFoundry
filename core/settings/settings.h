@@ -193,6 +193,8 @@ typedef struct {
 	uint8_t vfo2_rx_tone_type;	// tone_type_t
 	uint8_t vfo2_tx_tone_type;
 	uint8_t rs_dual_delay;		// radio_settings_t.dual_delay_ms: n - 1 steps of 100 ms, 0 = the default
+	uint8_t rs_bcast_step;		// radio_settings_t.bcast_step + 1, 0 = the default (200 kHz on the odd tenths)
+	uint8_t reserved8[3];
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size

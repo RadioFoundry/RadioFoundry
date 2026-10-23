@@ -69,7 +69,7 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
 	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
 	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
-	{ KEY_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ KEY_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 

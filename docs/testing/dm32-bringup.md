@@ -153,19 +153,21 @@ late entry and color code 2 all counted.
 An hour on a busy DMR channel and an hour of FM scanning: `uo`, `ov` (event overflow), `aud ov / un` stay near 0,
 no stalls (`st`), no resets.
 
-## 11. Air band AM and broadcast FM (once the board glue exists)
+## 11. Air band AM and broadcast FM
 
-The glue isn't written yet ([airband-and-broadcast.md](../spec/airband-and-broadcast.md), parked). When it is:
+The design is [airband-and-broadcast.md](../spec/airband-and-broadcast.md); the open questions are
+[hardware-dm32.md](../spec/hardware-dm32.md) 8.7. `tests/hil/test_listen_bands.py` checks the view keys without
+keying.
 
 | Check | Settles |
 |---|---|
-| The stock radio (or a scanner) on the local ATIS; RadioFoundry on the same frequency: AM audio, `am=1` in the view, read back FD6818 0x47 / 0x30 | which chip demodulates AM, the 0x47 AF type (spec 2.3 A1) |
+| The stock radio (or a scanner) on the local ATIS; RadioFoundry on the same frequency: AM audio, `am=1` in the view, read back FD6818 0x47 / 0x30 | which chip demodulates AM, the 0x47 AF type (A1) |
 | No audio: FD6818 0x47 (0x0140 gives FM audio), then the speaker source switch (GPIO 0x2F high) | AM audio route (A2) |
 | A strong and a weak station; a generator at -100 dBm with `rssi` on the link | AM AGC and filter (A3), the AM squelch offset (A4) |
 | PTT on an air channel and on a split channel with TX in 108-137 MHz | deny screen, red LED off, nothing on the SDR |
 | The RDA5807M chip ID (0x58xx at 0x11) on PTA25 / PTA26 | it is there, the SDA pull-up (B1, B3) |
 | A strong local station with each reference clock setting; with and without the headset | reference clock (B2), audio path (B4), antenna (B5) |
-| A call on the channel while listening | the broadcast mutes and comes back 2 s after |
+| The VFO on 100.1 MHz, then a local station: `bcast=1`, `bcast_fault=0`, the signal meter moves; the knob steps 200 kHz on the odd tenths | the tuner glue, the squelch threshold |
 
 ## 12. GPS
 

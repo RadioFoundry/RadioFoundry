@@ -32,6 +32,7 @@
 #define UI_FEAT_ROAMING		(1u << 15)	// ui_svc_roam (DMR repeater roaming, the radio core)
 #define UI_FEAT_VIBRATE		(1u << 16)	// ui_svc_vibrate: CONFIG_VIBRATE and hal_power_t.vibrate
 #define UI_FEAT_VOLUME		(1u << 17)	// the volume is the radio's to set: no knob (radio_volume_soft), VOL key + Settings
+#define UI_FEAT_BCAST		(1u << 18)	// a broadcast FM receiver (radio_bcast_capable): its VFO step setting
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -240,6 +241,9 @@ typedef enum {
 	UI_SET_DUAL_DELAY_MS,
 	UI_SET_NOISE_REDUCTION,	// the vocoder's mic noise reduction on DMR TX (Settings > Talk & listen; accent bits 6-7)
 	UI_SET_MIC_AGC,		// the vocoder's mic AGC on DMR TX (accent bits 6-7); while on, mic gain is step 5 and dimmed
+	// The VFO's automatic step in the broadcast band (Settings > Talk, CONFIG_BCAST_FM; radio_settings_t.bcast_step) in
+	// kHz: 200 (the odd tenths) or 100
+	UI_SET_BCAST_STEP,
 	UI_SET_COUNT
 } ui_setting_t;
 

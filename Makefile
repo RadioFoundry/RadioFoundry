@@ -91,9 +91,6 @@ endif
 ifeq ($(CONFIG_STUB_ENTRY),y)
 CORE_DIRS += core/stubentry
 endif
-ifeq ($(CONFIG_BCAST_FM),y)
-CORE_DIRS += core/bcast
-endif
 ifeq ($(CONFIG_APRS),y)
 CORE_DIRS += core/aprs
 endif

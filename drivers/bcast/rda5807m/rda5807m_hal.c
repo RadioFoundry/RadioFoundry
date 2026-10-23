@@ -3,9 +3,13 @@
 // The RDA5807M as hal_bcast_t (rda5807m_hal.h)
 #include "rda5807m_hal.h"
 
+#define SETTLE_POLLS		40	// at most 40 x 5 ms for the power-up tune to finish
+#define SETTLE_POLL_MS		5
+
 static const rda5807m_hal_cfg_t *wiring;
 static rda5807m_t dev;
 static uint32_t last_khz;
+static bool tune_pending;	// the tune that came with the power-up may still be running
 
 // The chip's random-access mode: a write is register, high byte, low byte; a read sends the register and then reads two
 static bool reg_write(void *ctx, uint8_t reg, uint16_t val)
@@ -51,6 +55,7 @@ static bool hal_power(bool on)
 		// A tuner left holding SDA by a reset in the middle of a transfer would never answer
 		i2c_gpio_recover(wiring->bus);
 		if (rda5807m_probe(&dev) && rda5807m_power(&dev, true, last_khz)) {
+			tune_pending = true;
 			return true;
 		}
 		if (wiring->enable != NULL) {
@@ -68,8 +73,22 @@ static bool hal_power(bool on)
 	return ok;
 }
 
+// A tune written while the power-up tune is still running leaves the chip on the first frequency: wait for its STC
+static void settle_tune(void)
+{
+	rda5807m_status_t s;
+	for (int i = 0; tune_pending && i < SETTLE_POLLS; i++) {
+		if (!rda5807m_status(&dev, &s) || s.done) {
+			break;
+		}
+		reg_delay(SETTLE_POLL_MS);
+	}
+	tune_pending = false;
+}
+
 static bool hal_tune(uint32_t khz)
 {
+	settle_tune();
 	if (!rda5807m_tune(&dev, khz)) {
 		return false;
 	}

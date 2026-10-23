@@ -83,7 +83,7 @@ typedef struct {
 #define FD6818_REG_FREQ_HI	0x39
 #define FD6818_REG_BAND_B	0x40
 #define FD6818_REG_BANDWIDTH	0x43
-#define FD6818_REG_AF		0x47	// 0x6042 = AF muted in FM
+#define FD6818_REG_AF		0x47	// AF output: 0x6042 = muted in FM, FD6818_AF_FM / FD6818_AF_AM below
 #define FD6818_REG_VOLUME	0x48
 #define FD6818_REG_SUBAUDIO	0x51
 #define FD6818_REG_CSS_THRESH	0x52
@@ -100,6 +100,13 @@ typedef struct {
 #define FD6818_BW_FM_25K	0x3028u
 #define FD6818_BW_FM_12K5	0x4008u
 #define FD6818_BW_DMR		0x4048u
+
+// 0x47 AF output words. Bits 11:8 pick the demodulator whose audio the output carries; the register is laid out as on
+// the BK4819 class of chips (docs/spec/airband-and-broadcast.md 3.3), where type 1 is FM and type 7 is AM. FD6818_AF_FM
+// is the word the FM and DMR tables write (checked on the radio); FD6818_AF_AM is the same word with the AM type
+// (inferred, the air band bring-up confirms it)
+#define FD6818_AF_FM		0x0140u
+#define FD6818_AF_AM		0x0740u
 
 typedef enum { FD6818_MODE_FM, FD6818_MODE_DMR } fd6818_mode_t;
 typedef enum { FD6818_TONE_NONE, FD6818_TONE_CTCSS, FD6818_TONE_DCS, FD6818_TONE_DCS_INV } fd6818_tone_t;
@@ -156,6 +163,9 @@ void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10);
 // also turns the chip's sub-audio transmitter on, so a radio that makes its tones elsewhere sets NONE before TX
 void fd6818_set_rx_tone(fd6818_t *dev, fd6818_tone_t type, uint16_t value);
 bool fd6818_rx_tone_ok(fd6818_t *dev, fd6818_tone_t type);
+// The receiver's audio output: the AM demodulator (true, the air band) or FM. Only the AF word changes: tune and set the
+// FM bandwidth and RX state as for FM receive. fd6818_set_mode writes FM again
+void fd6818_set_am(fd6818_t *dev, bool am);
 // Receiver power saving (8.8, the radio's own sequence): sleep = idle, then 0x37 to its low-power word (FM 0x1D11,
 // DMR 0x1D00); wake = 0x37 back to the receive word (0x1F1F, then 0x1F0F) with the state still idle: the caller
 // retunes and sets the RX state next (fd6818_set_freq, fd6818_set_state)

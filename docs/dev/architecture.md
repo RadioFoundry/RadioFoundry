@@ -62,7 +62,7 @@ state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so t
 
 | Directory | Spec | Contents |
 |---|---|---|
-| `core/radio` | [radio-features](../spec/radio-features.md), [dmr-roaming](../spec/dmr-roaming.md) | The radio state machine (`radio_sm.c`), its task, scan, beeps, battery, Morse, roaming, AM receive |
+| `core/radio` | [radio-features](../spec/radio-features.md), [dmr-roaming](../spec/dmr-roaming.md), [airband-and-broadcast](../spec/airband-and-broadcast.md) | The radio state machine (`radio_sm.c`), its task, scan, beeps, battery, Morse, roaming, air band and broadcast receive |
 | `core/dmr/call` | [dmr-voice](../spec/dmr-voice.md), [dmr-modem](../spec/dmr-modem.md) | The DMR call stack: talk targets, filters, late entry, talker alias |
 | `core/dmr/fec`, `core/dmr/ambe` | [dmr-modem](../spec/dmr-modem.md) | ETSI FEC, AMBE frame FEC and the voice path around the codec |
 | `core/dmr/*.c` | [dmr-data](../spec/dmr-data.md), [dmr-emergency](../spec/dmr-emergency.md), [sfr](../spec/sfr.md), [usb-network](../spec/usb-network.md) | Data service (SMS, CSBK signaling, ARS, LRRP, confirmed data, SAP 3 compression), emergency, privacy, SFR, IP gateway |
@@ -70,7 +70,6 @@ state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so t
 | `core/net` | [tcp-services](../spec/tcp-services.md), [mdns](../spec/mdns.md), [tftp](../spec/tftp.md) | The minimal TCP and the radio's services on the USB network link: KISS, HTTP, rigctld, APRS-IS, mDNS, TFTP |
 | `core/snmp` | [snmp](../spec/snmp.md) | SNMPv2c agent, the RadioFoundry MIB, notifications |
 | `core/aprs` | [aprs](../spec/aprs.md) | AX.25 / AFSK, beacons, messages, KISS TNC, iGate rules |
-| `core/bcast` | [airband-and-broadcast](../spec/airband-and-broadcast.md) | The broadcast FM receiver (parked) |
 | `core/usbaudio` | [usb-audio](../spec/usb-audio.md) | USRP and the jitter buffer (host tested, not in an image yet) |
 | `core/hostlink` | [cps-protocol](../spec/cps-protocol.md) 1 | Dispatch of the host port by first byte; the USB network side |
 | `core/cps` | [cps-protocol](../spec/cps-protocol.md) | The open-firmware CPS shim |

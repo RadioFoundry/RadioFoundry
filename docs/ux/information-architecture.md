@@ -187,7 +187,7 @@ Notation: `short / long`. "-" means none. All maps also follow the text-field ru
 | 0-9 | digits / speed dial |
 | Channel encoder detent | `ENC_STEP` (Home: channel; editors: value; lists: focus, forward = down) |
 | Upper side key (row 2 D5) and middle side key (row 2 D7): see [hardware-dm1701.md](../spec/hardware-dm1701.md) 10 and 20 | `MONITOR` (while held) on the middle key |
-| SK2 (lower side) | `AB` (dual watch A / B; `TALK_TARGET` in a build without dual watch) / Dual watch on/off |
+| SK2 (lower side) | `AB` (dual watch A / B) / Dual watch on/off |
 | Top (orange) key | Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built (hold again to cancel), else speak status |
 | PTT | `PTT` |
 
@@ -207,7 +207,7 @@ zones of any size step through it. No `NAV_LEFT`/`NAV_RIGHT`.
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | SK1 | `MONITOR` |
-| SK2 | `TALK_TARGET` / Dual watch |
+| SK2 | `AB` / Dual watch |
 | Top / alarm key (if present) | `EMERGENCY` or assignable |
 | PTT | `PTT` |
 
@@ -227,7 +227,7 @@ scroll wheel does; Home and editors follow the number. (Until 2026-10-10 the kno
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | SK1 | `MONITOR` |
-| SK2 | `TALK_TARGET` / Dual watch |
+| SK2 | `AB` / Dual watch |
 | Top orange key (if present) | assignable (default Power cycle / Speak status) |
 | PTT | `PTT` |
 
@@ -275,7 +275,7 @@ Mobile-specific: while driving, the "driving" profile (Settings > Display, or au
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | SK1 | `MONITOR` (while held) |
-| SK2 | `TALK_TARGET` / `USER_2` |
+| SK2 | `AB` / `USER_2` |
 | SOS (top) | hold: `EMERGENCY` where it is built |
 | PTT | `PTT` |
 

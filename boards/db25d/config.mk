@@ -59,7 +59,8 @@ endif
 # the runtime stub's begins (fm_only.ld), and the CPS's request buffer needs the room (2 KB)
 CONFIG_APRS_RX ?= n
 CONFIG_APRS_IGATE ?= n
-# The RDA5802N (CAP_BCAST_FM) isn't wired yet; the radio has no air band receive
+# The RDA5802N (CAP_BCAST_FM) isn't wired yet (the shared glue, platform/hrc7000 hrc_bcast, would carry it); the
+# radio has no air band receive
 CONFIG_BCAST_FM ?= n
 CONFIG_AM_RX ?= n
 # VOX reads the microphone level through hal_power_t.mic_level, which this board doesn't have yet

@@ -312,6 +312,11 @@ bool fd6818_rx_tone_ok(fd6818_t *dev, fd6818_tone_t type)
 	return type == FD6818_TONE_NONE || fd6818_tone_found(fd6818_read(dev, FD6818_REG_CSS_STATUS), type);
 }
 
+void fd6818_set_am(fd6818_t *dev, bool am)
+{
+	fd6818_write(dev, FD6818_REG_AF, am ? FD6818_AF_AM : FD6818_AF_FM);
+}
+
 void fd6818_rx_sleep(fd6818_t *dev, bool sleep, fd6818_mode_t mode)
 {
 	if (sleep) {

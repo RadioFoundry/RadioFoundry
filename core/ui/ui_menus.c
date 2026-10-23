@@ -14,6 +14,7 @@
 #include "hal_time.h"
 #include "radio/tones.h"
 #include "radio/mic_gain.h"
+#include "radio/radio_am.h"
 #include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
@@ -812,7 +813,7 @@ static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 	} else
 #endif
 	{
-		sb_str(&wb, ch->mode == RADIO_MODE_DMR ? "DMR" : "FM");
+		sb_str(&wb, ch->mode == RADIO_MODE_DMR ? "DMR" : radio_am_channel(ch) ? "AM" : "FM");
 	}
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_freq(b, ch->rx_hz);
@@ -2936,6 +2937,10 @@ static const int16_t v_step[] = { 0, 250, 500, 625, 833, 1000, 1250, 2000, 2500,
 static const char *const n_step[] = { "Auto", "2.5 kHz", "5 kHz", "6.25 kHz", "8.33 kHz", "10 kHz", "12.5 kHz",
 				      "20 kHz", "25 kHz", "50 kHz", "100 kHz" };
 #endif
+#if CONFIG_VFO && CONFIG_BCAST_FM
+static const int16_t v_bcast_step[] = { 200, 100 };	// kHz
+static const char *const n_bcast_step[] = { "200 kHz", "100 kHz" };
+#endif
 #if CONFIG_DUAL_WATCH
 static const int16_t v_dual_wait[] = { 500, 1000, 1500, 2000, 3000, 5000 };	// ms
 static const char *const n_dual_wait[] = { "0.5 s", "1 s", "1.5 s", "2 s", "3 s", "5 s" };
@@ -2990,6 +2995,9 @@ static const set_item_t s_talk[] = {
 	NUMBER("Default squelch", NULL, UI_SET_SQUELCH, 0, 9, 1, NULL),
 #if CONFIG_VFO
 	LIST("VFO step", "frequency tuning channel spacing", UI_SET_VFO_STEP, v_step, n_step),
+#endif
+#if CONFIG_VFO && CONFIG_BCAST_FM
+	LIST("FM broadcast step", "VFO tuning radio station 200 kHz odd", UI_SET_BCAST_STEP, v_bcast_step, n_bcast_step),
 #endif
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
 	TOGGLE("Mic AGC", "automatic gain level", UI_SET_MIC_AGC),
@@ -3074,11 +3082,13 @@ static const set_group_t groups[] = {
 uint8_t ui_set_group_count(void) { return GROUPS; }
 const char *ui_set_group_name(uint8_t g) { return g < GROUPS ? groups[g].name : ""; }
 
-// Settings a radio without a battery doesn't have are left out of the list, not shown disabled
+// Settings a radio without a battery (or a broadcast receiver) doesn't have are left out of the list, not shown disabled
 static bool set_hidden(const set_item_t *s)
 {
 	if (s->type != ST_ACTION && s->id == UI_SET_VOLUME)
 		return !(feats() & UI_FEAT_VOLUME);	// a knob sets the volume on the other radios
+	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
+		return !(feats() & UI_FEAT_BCAST);
 	return !board_has_battery() && s->type != ST_ACTION &&
 	       (s->id == UI_SET_BATTERY_SAVER || s->id == UI_SET_LOW_BATTERY);
 }

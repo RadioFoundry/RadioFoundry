@@ -59,9 +59,6 @@ void dm1801pro_speaker_pcm(bool on);
 #define DM1801PRO_AMP_PCM	0x04u
 void dm1801pro_amp(uint8_t who, bool on);
 
-// --- Broadcast FM receiver (bcast_dm1801pro.c, CONFIG_BCAST_FM; the HAL is rda5807m_hal) ---
-void dm1801pro_bcast_init(void);
-
 // --- Accelerometer (accel_dm1801pro.c, CONFIG_DIAG): milli-g on x, y, z; false when the chip doesn't answer ---
 bool dm1801pro_accel_read(int16_t mg[3]);
 int16_t dm1801pro_accel_id(void);	// WHO_AM_I, -1 = no acknowledge

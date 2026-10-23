@@ -124,8 +124,8 @@ below are for the DM-1701.
 | `CONFIG_DMR_CONTROL_STATION` | = DMR_IP_GATEWAY | control station mode for PC dispatch software: passthrough (the PC is the endpoint of the radio's own IP data while the link is up; the link layer stays on the radio) and the fixed link pair 192.168.10.1 / .2 instead of the address by DMR ID (`docs/spec/usb-network.md` 5). The power-on network setting belongs to `CONFIG_USB_NETWORK` |
 | `CONFIG_SNMP` | = DMR_IP_GATEWAY | the SNMPv2c agent on UDP 161 over the USB network and over the air, the RadioFoundry MIB, notifications to the host and an RF manager (`core/snmp`, `docs/spec/snmp.md`). Management over the air read-only and RF notifications off by default. About 3.2 KB RAM on the DM-1701 |
 | `CONFIG_SFR` | = DMR (MD-380: n) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX); Standalone SFR (the repeater and user roles on a channel) is not wired yet (`docs/spec/sfr.md`) |
-| `CONFIG_AM_RX` | n | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, AM squelch on RSSI, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. No board's glue is written yet (the DM-32's is `BOARD_NOT_WRITTEN`) |
-| `CONFIG_BCAST_FM` | n (DM-1801 Pro: y) | broadcast FM on a second receiver chip (`hal_bcast.h`): `core/bcast`, paused for channel traffic (`docs/spec/airband-and-broadcast.md` 4). The DM-32's glue isn't written yet (`BOARD_NOT_WRITTEN`) |
+| `CONFIG_AM_RX` | = `CONFIG_FM` | air band AM receive: an FM channel or the VFO in 108-137 MHz is received in AM on a board with `CAP_AM_RX` and `rx_am`, transmit there refused, AM squelch on RSSI, 8.33 kHz steps (`docs/spec/airband-and-broadcast.md` 3); needs FM. Off on boards whose receiver has no AM (`BOARD_UNSUPPORTED`) |
+| `CONFIG_BCAST_FM` | y | broadcast FM receive: an FM channel or the VFO in the range of a second receiver chip (`hal_bcast.h`) plays on it, transmit there refused, the FM broadcast step setting (`core/radio/radio_bcast.c`, the board's tuner glue; `docs/spec/airband-and-broadcast.md` 4). Off on boards without one |
 | `CONFIG_USB` | y (DM-32: n) | USB device (CDC serial) |
 | `CONFIG_HOSTLINK` | = USB (DM-32: y) | the host link (`core/hostlink`) on the board's host port: USB CDC, or the programming cable's UART on radios without USB (DM-32) |
 | `CONFIG_USB_NETWORK` | = USB and HOSTLINK | USB network adapter personality: CDC-NCM, switched with the serial one at run time (debug link op 25) or chosen at power-on by the stored setting (`docs/spec/usb-network.md` 1) |
@@ -195,12 +195,13 @@ Where a board's `config.mk` differs from the defaults, and why. Image sizes: [fe
 |---|---|---|
 | md380 | `FM_TX_TONES`, `DTMF`, `APRS_RX`, `APRS_IGATE`, `HOTSPOT_SPLIT`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | no TX tone path, APRS receive audio or audio tap written for the board yet; the split duplex glue is written for the HR_C6000 and HR_C7000 only |
 | md380 | `SFR` (maximal build too: `BOARD_UNSUPPORTED`) | the HR_C5000 has no CRC_MCU_Control ([sfr.md](spec/sfr.md)) |
-| md380 | `FONT_XL`, `AM_RX`, `BCAST_FM`, `NET_PPP` (off on most boards; the maximal build leaves them off here too) | a 160 px panel has no use for the font; no air band or broadcast receiver; PPP stands in for USB |
+| md380 | `FONT_XL`, `NET_PPP` (off on most boards; the maximal build leaves them off here too) | a 160 px panel has no use for the font; PPP stands in for USB |
+| dm1701, md380 | `AM_RX`, `BCAST_FM` (maximal build too: `BOARD_UNSUPPORTED`) | no AM-capable receiver, no broadcast receiver |
 | dm1701, md380 | `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | the host port is USB, and the one UART is a GPS receive line: nothing a fault handler can print on |
 | dm32, dm1801pro, db25d | `USB`, `USB_NETWORK` (maximal build too: the platform's `BOARD_UNSUPPORTED`) | no USB data connector on the radio; PPP on the programming cable is its IP link |
-| dm32 | `AM_RX`, `BCAST_FM`, `VOX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the radio has the air band and an RDA5807M, but `rx_am`, `board.bcast`, the mic level hook and the audio tap aren't written ([hardware-dm32.md](spec/hardware-dm32.md) 8.7) |
+| dm32 | `VOX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the mic level hook and the audio tap aren't written |
 | dm1801pro | `UI_COLOR` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen: no colors to set |
-| dm1801pro | `AM_RX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the RF chip's air band window isn't used yet; the probe's audio tap isn't written |
+| dm1801pro | `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`) | the probe's audio tap isn't written |
 | db25d | `NET_USRP`, `HOTSPOT_SPLIT`, `SFR`, `APRS_RX`, `APRS_IGATE`, `BCAST_FM`, `VOX`, `AUDIO_PROBE` (maximal build too: `BOARD_NOT_WRITTEN`); `AM_RX` (`BOARD_UNSUPPORTED`) | the board's glue isn't written or timed for them yet; the radio has no air band receive ([hardware-db25d.md](spec/hardware-db25d.md) 9) |
 | every board | `AUDIO_PROBE` | a bench diagnostic |
 

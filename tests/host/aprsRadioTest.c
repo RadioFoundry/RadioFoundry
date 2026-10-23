@@ -163,14 +163,34 @@ static void s_speaker(bool on) { (void)on; }
 static const hal_audio_t fake_audio = { .start = s_start, .stop = s_stop, .speaker_pcm = s_speaker };
 static hal_audio_tap_t fake_tap;	// caps 0: the stream's input is the microphone
 
-static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
+// A broadcast receiver on an empty frequency: an APRS job's carrier sense must read the channel receiver on 144.390
+static bool bc_on;
+static bool b_power(bool on) { bc_on = on; return true; }
+static bool b_tune(uint32_t khz) { (void)khz; return bc_on; }
+static bool b_seek(bool up) { (void)up; return false; }
+static void b_volume(uint8_t level) { (void)level; }
+static bool b_status(bcast_status_t *st)
+{
+	memset(st, 0, sizeof(*st));
+	st->rssi = 5;
+	return bc_on;
+}
+static void b_audio(bool on) { (void)on; }
+static const hal_bcast_t fake_bcast = {
+	.lo_khz = 65000, .hi_khz = 108000, .grid_khz = 50, .power = b_power, .tune = b_tune, .seek = b_seek,
+	.volume = b_volume, .status = b_status, .audio = b_audio,
+};
+
+static const band_t bands[] = {
+	{ 136000000, 174000000, true }, { 400000000, 480000000, true }, { 65000000, 108000000, false },
+};
 static const char *const power_names[] = { "L", "H" };
 
 const board_t board = {
 	.name = "fake",
-	.caps = CAP_GPS,
+	.caps = CAP_GPS | CAP_BCAST_FM,
 	.bands = bands,
-	.band_count = 2,
+	.band_count = 3,
 	.power_count = 2,
 	.power_names = power_names,
 	.power_default = 0,
@@ -181,6 +201,7 @@ const board_t board = {
 	.afsk = &fake_afsk,
 	.audio = &fake_audio,
 	.audio_tap = &fake_tap,
+	.bcast = &fake_bcast,
 };
 
 // ---- fake codeplug: one channel ----
@@ -419,6 +440,26 @@ static void test_busy_channel(void)
 	hw.noise_on_aprs = 120;
 	run(20u * 1000u);	// tried again after the retry wait
 	CHECK(hw.starts == 1);
+}
+
+// On a broadcast channel the beacon's carrier sense reads the channel receiver on 144.390, not the broadcast one
+static void test_bcast_channel(void)
+{
+	reset();
+	chan.rx_hz = chan.tx_hz = 100100000u;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("N0TST");
+	configure(60, false);
+	hw.noise_on_aprs = 30;	// a carrier on 144.390; the broadcast frequency is empty
+	aprs_view_t v;
+	aprs_get_view(&v);
+	uint32_t busy = v.rf_busy;
+	run(61u * 1000u);
+	CHECK(sm.view.bcast && hw.rx_hz == APRS_HZ && hw.tx_calls == 0);	// listening, and holding off
+	run(10u * 1000u);
+	aprs_get_view(&v);
+	CHECK(hw.tx_calls == 0 && v.rf_busy == busy + 1);
+	CHECK(sm.view.bcast && sm.view.state == RS_RX);	// back on the broadcast channel, listening again
 }
 
 static void test_ptt_cuts(void)
@@ -1093,6 +1134,7 @@ int main(void)
 	test_beacon_on_air();
 	test_min_interval();
 	test_busy_channel();
+	test_bcast_channel();
 	test_ptt_cuts();
 	test_not_amateur();
 	test_manual_and_ptt_trigger();

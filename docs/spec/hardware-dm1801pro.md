@@ -123,7 +123,7 @@ radio; the per-burst switch (5.6) needs the speed.
 ### 5.2 Frequency and band
 
 - Unit 10 Hz, 32 bits: register 0x39 = high 16 bits, 0x38 = low 16 bits. 446.000 MHz = 0x02A88AC0. No offset. K.
-- Ranges: 136-174 MHz and 400-470 MHz, plus an air band window of 108-136 MHz on the same chip (not used by RadioFoundry yet). K.
+- Ranges: 136-174 MHz and 400-470 MHz, plus an air band window of 108-136 MHz on the same chip, which RadioFoundry receives in AM (`rx_am`, [airband-and-broadcast.md](airband-and-broadcast.md) 3). K.
 - VHF / UHF split at 200 MHz. The channel set-up keeps two band bits, one for the RX and one for the TX frequency,
   each set above 200 MHz. The RX bit picks the RX path pin and the squelch rows; the TX bit picks the TX path pin and
   the PA, modulation and register 0x40 rows (6.4). K.
@@ -673,7 +673,7 @@ receiving and orange flashing while scanning.
 | Display | `drivers/display/st7567` |
 | Keys | `drivers/input/keymatrix` |
 | Calibration | `drivers/cal/baofeng` |
-| Broadcast FM tuner | `drivers/bcast/rda5807m` (chip and `hal_bcast_t`), `drivers/bus/i2c_gpio` |
+| Broadcast FM tuner | `drivers/bcast/rda5807m` (chip and `hal_bcast_t`), `drivers/bus/i2c_gpio`, composed by `platform/hrc7000/bcast_hrc.c` |
 | Accelerometer | `drivers/sensor/lis3dh` |
 | VOX mic level | `platform/hrc7000/audio_pcm.c` (the meter on the mic PCM), `drivers/audio/miclevel` (the level math) |
 | Board wiring | `boards/dm1801pro` |
@@ -698,7 +698,7 @@ confirmed data with its response, SMS and ETSI SMS received and acknowledged. FM
 beep) pass. The bandwidth test passes too: the CTCSS 100.0 tone deviates 298 Hz at 12.5 kHz (word 0x3048) and 597 Hz at
 25 kHz (0x3028), a ratio of 2.00 (2026-10-16).
 The MMDVM hotspot on the programming cable works both ways on air (2026-10-16: the four `test_hotspot_on_air` cases).
-Not in: the air band, the broadcast tuner's screens, USB (the radio has none).
+Not checked on the radio yet: the air band and the broadcast tuner ([airband-and-broadcast.md](airband-and-broadcast.md)). Not in: USB (the radio has none).
 
 VOX (not checked on the radio): the radio has no analog microphone level tap, so RadioFoundry measures the level on the codec
 ADC's mic PCM, the same 10 ms halves DMR voice uses (`radio-features.md` 3.4). The first `mic_level()` call sets

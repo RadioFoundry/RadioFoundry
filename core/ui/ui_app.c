@@ -670,7 +670,7 @@ uint32_t ui_freq_entry_hz(const char *digits, uint8_t len)
 static void entry_digit(char d)
 {
 	if (ui_st.entry_len >= UI_ENTRY_MAX) {
-		ui_toast("All digits typed: OK tunes");
+		ui_toast("All digits typed: OK or # tunes");
 		return;
 	}
 	if (!ui_freq_entry_digit(ui_st.entry_digits, &ui_st.entry_len, d))
@@ -998,7 +998,9 @@ bool ui_home_key(const input_event_t *ev)
 		ui_push(SCR_QUICK, 0);
 		return true;
 	case ACT_CONTEXT:
-		if (ui_st.scanning)
+		if (ui_st.entry)
+			entry_commit();		// # tunes the typed frequency, like OK
+		else if (ui_st.scanning)
 			ui_push(SCR_SCAN, 0);	// skip / stay / always skip (task-flows.md 11)
 		else
 			open_caller_actions();
@@ -1006,6 +1008,10 @@ bool ui_home_key(const input_event_t *ev)
 	case ACT_USER_1:
 	case ACT_USER_4:
 		zone_step(ev->action == ACT_USER_4 ? 1 : -1);	// "Zone picker" side keys
+		return true;
+	case ACT_NAV_LEFT:
+	case ACT_NAV_RIGHT:
+		zone_step(ev->action == ACT_NAV_RIGHT ? 1 : -1);	// the arrow keys left of the menus: Home steps the zone
 		return true;
 	case ACT_USER_3:
 		radio_req_power(1);	// top key: power cycle (information-architecture.md 7.1)
@@ -1812,8 +1818,8 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 	// In text entry * and # are the typewriter's keys, not quick settings or a banner's
-	// A banner up: CONTEXT opens what it is about
-	if (!typing && ui_st.banner.kind != UI_BANNER_NONE && ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS &&
+	// A banner up: CONTEXT opens what it is about (not while a VFO frequency is typed: # tunes it, as OK)
+	if (!typing && !ui_st.entry && ui_st.banner.kind != UI_BANNER_NONE && ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS &&
 			ui_st.banner.kind != UI_BANNER_RESULT && ui_st.banner.kind != UI_BANNER_INFO) {
 		banner_open();
 		return;

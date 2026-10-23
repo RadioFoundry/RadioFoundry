@@ -190,7 +190,7 @@ static void test_power_and_tune(void)
 
 	delays = 0;
 	CHECK(rda5807m_power(&d, true, 98500));
-	CHECK(chip.resets == 1 && delays >= 5);
+	CHECK(chip.resets == 1 && delays >= 5 + 60);	// the reset, then the settle time before the first tune
 	CHECK(chip.log_reg[0] == 2 && (chip.log_val[0] & RDA5807M_SOFT_RESET));
 	uint16_t r2 = chip.reg[2];
 	CHECK((r2 & RDA5807M_ENABLE) && (r2 & RDA5807M_DHIZ) && (r2 & RDA5807M_NEW_METHOD) && !(r2 & RDA5807M_SOFT_RESET));
@@ -201,6 +201,10 @@ static void test_power_and_tune(void)
 	// Tuned: channel (98.5 - 76) / 0.05 = 450, world band, 50 kHz spacing, TUNE cleared by the chip
 	CHECK((chip.reg[3] >> 6) == 450 && ((chip.reg[3] >> 2) & 3u) == RDA5807M_BAND_WORLD && (chip.reg[3] & 3u) == 2);
 	CHECK(!(chip.reg[3] & RDA5807M_TUNE));
+	// The channel is written with TUNE low, then again with TUNE: the chip tunes on the rising edge
+	CHECK(chip.nlog >= 2 && chip.log_reg[chip.nlog - 2] == 3 && chip.log_reg[chip.nlog - 1] == 3 &&
+		!(chip.log_val[chip.nlog - 2] & RDA5807M_TUNE) && (chip.log_val[chip.nlog - 1] & RDA5807M_TUNE) &&
+		(chip.log_val[chip.nlog - 2] >> 6) == (chip.log_val[chip.nlog - 1] >> 6));
 	CHECK(rda5807m_status(&d, &st) && !st.done);	// still tuning
 	poll_done(&d, &st);
 	CHECK(st.done && st.khz == 98500 && !st.station);

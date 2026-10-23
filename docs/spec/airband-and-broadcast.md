@@ -2,62 +2,32 @@
 
 # Air band AM receive and broadcast FM receive
 
-> **Parked (2026-10-10).** Work stopped here when the owner moved the focus to the DM-1701. Done and committed:
-> the AM receive logic in the radio core (section 3, `radioAmTest`), the RDA5807M driver and a bit-banged I2C
-> master (4.2, `rda5807mTest`), and the broadcast receiver's behavior (4.3, `bcastTest`). Both switches are off
-> on every board except the DM-32UV. On the other boards the code is identical; the image is 8 bytes larger, for
-> the two optional HAL pointers (`hal_radio_t.rx_am`, `board_t.bcast`, NULL there). The DM-32 build wasn't compiled (no csky
-> compiler on the CI machine).
->
-> **Parked: revisit** (in order):
-> 1. DM-32 board glue: `rx_am` in `boards/dm32/radio_dm32.c` (FD6818 0x47 AF type AM, speaker source switch, 3.3),
->    a `hal_bcast_t` on the RDA5807M (`boards/dm32/bcast_dm32.c` over `drivers/bus/i2c_gpio` on PTA25 / PTA26),
->    CAP_AM_RX / CAP_BCAST_FM and the 108-136 MHz RX-only band in `boards/dm32/board.c`. Add
->    `drivers/bcast/rda5807m drivers/bus/i2c_gpio` to `BOARD_DIRS` in `boards/dm32/board.mk`.
-> 2. `core/bcast/bcast_task.c`: the RTOS glue (a request queue, the published view, called from the radio task's
->    poll), the settings fields of 4.4, and the UI services.
-> 3. The UI: "FM radio" as Tools row 9 (4.6), "AM" for the mode on Home and in the strip, the Step quick tile
->    (8.33k, 25k) wired to `radio_req_vfo_step_size`, TXDENY_AM's text ("Air band: receive only" / "Pick another
->    channel"); uiFlowTest flows and gallery shots; the simulator's `radio_req_vfo_step_size` and `view.am`.
-> 4. Debug link view keys (`am=`, `bcast.*`), docs/user (DM-32UV, not yet tested), README status line.
-> 5. On the radio: [dm32-bringup.md](../testing/dm32-bringup.md) 11, which answers the open questions in `hardware-dm32.md` 8.7.
-> 6. Owner decisions: whether the FD6818 "Confidential Programming guide" seen on mikrocontroller.net may be used
->    (not read; probably not, under the clean-room rules), six presets and the 2 s resume delay, the AM step UI
->    (8.33k / 25k on the Step tile), and refusing TX in 108-137 MHz only on AM-capable boards.
+Status: written, not yet tested on a radio (2026-10-22). What the radios RadioFoundry supports can do on the aeronautical
+VHF band (AM, 108-137 MHz) and FM broadcast (65-108 MHz), and how RadioFoundry does it on any radio that has the hardware.
+Both are receive only and need no menu: the frequency decides. An FM channel or the VFO in the air band is received
+in AM; one in the broadcast band plays on the broadcast receiver.
 
-Status: research and design, 2026-10-10. What the radios RadioFoundry supports can do on the aeronautical VHF band (AM,
-108-137 MHz) and FM broadcast (65-108 MHz), and how RadioFoundry does it on any radio that has the hardware.
+## 1. Which radios
 
-Source tags follow [radios.md](radios.md): **C** confirmed (manufacturer, datasheet, bench, or the owner's own
-use of the radio), **D** documented by a reverse-engineering project or permissively licensed code, **F** forum or
-retailer claim, **?** unknown. **BIN** / **KP** / **COM** / **INF** are the tags of
-[hardware-dm32.md](hardware-dm32.md) (disassembly, the dh4570 port, the community pin map, our inference).
+A radio has air band receive when its build has `CONFIG_AM_RX` and its board sets `CAP_AM_RX` and `rx_am`, and
+broadcast receive when it has `CONFIG_BCAST_FM` and sets `CAP_BCAST_FM` and `board.bcast`. Which radios do is in
+[feature-matrix.md](../feature-matrix.md) (`am_rx`, `bcast_fm`), generated from the boards. A radio's own facts (pins,
+audio path, open questions, bring-up checks) are on its hardware and bring-up pages.
 
-## 1. What each radio can do
+## 2. Chips
 
-| Radio | Air band AM RX | Broadcast FM RX | Notes |
-|---|---|---|---|
-| Baofeng DM-32UV | **yes** (C: owner, stock firmware; Baofeng spec "AM 108-136 MHz") | **yes** (C: Baofeng spec "FM 65-108 MHz") | AM on the FD6818 (INF, `hardware-dm32.md` 8.7); broadcast on an RDA5807M (COM pin map, INF) |
-| Baofeng DM-1701 / RT84 | no (C: AT1846S is FM only, bench driver) | no chip found (?) | stays FM / DMR |
-| TYT MD-UV380 / RT3S | no (AT1846S, D) | none known (?) | |
-| TYT MD-9600 / RT90 | no (SKY72310 + FM receive chain, D) | none known (?) | |
-| TYT MD-380 / RT3 | no (GT3136 FM receiver, D/F) | none known (?) | |
-| Radioddity GD-77 family | no (AT1846S, D) | none known (?) | |
-| Radioddity GD-88 | ? (spec sheet lists 136-174 / 400-480 only, F) | ? | RF chips unknown |
-| Anytone 878 family | no airband in any spec found (F) | **yes**, 87.5-108 MHz WFM receiver (F, retailers) | chip unknown (?) |
-| Radtel RT-4D (not planned) | yes (BK4819, D) | yes (F) | the BK4819 AF output has an AM type (D, Apache-2.0 UV-K5 firmware) |
+| Chip | Air band AM | Notes |
+|---|---|---|
+| FD6818 | yes (inferred) | BK4819 class: the AF output type in 0x47 bits 11:8, type 7 = AM on the BK4819 (Apache-2.0 UV-K5 firmware). Unconfirmed on the FD6818 until a radio's bring-up |
+| BK4819 | yes | the same register, documented |
+| AT1846S | no | FM and the DMR baseband modes only (datasheet, our driver) |
 
-The AT1846S has no AM demodulator: its datasheet and our driver know only FM and the DMR baseband modes. Any radio
-built on it gets neither feature from RadioFoundry. The design below serves any radio whose RF chip has an AM mode
-(CAP_AM_RX) and any radio with a second broadcast receiver chip (CAP_BCAST_FM).
+| Broadcast tuner | Driver |
+|---|---|
+| RDA5807M | `drivers/bcast/rda5807m` (4.2) |
+| RDA5802N | none checked yet; the RDA5807M driver may serve it after a bring-up check |
 
-## 2. Radio facts
-
-Each radio's air band and broadcast hardware is on its hardware page. The DM-32UV's (which chip demodulates AM, the
-open questions A1-A4 and B1-B5) is [hardware-dm32.md](hardware-dm32.md) 8.7; its bring-up checks are
-[dm32-bringup.md](../testing/dm32-bringup.md) 11.
-
-## 3. Air band AM (done in the radio core)
+## 3. Air band AM
 
 ### 3.1 Representation: derived from the frequency, codeplug unchanged
 
@@ -76,23 +46,27 @@ channel outside the air band has no use on these radios.
 | When | `CONFIG_AM_RX`, the board has `CAP_AM_RX` and `board.radio->rx_am`, the channel is FM and its RX frequency is in [108, 137) MHz |
 | Tuning | `tune()` calls `rx_am(hz, bw)` instead of `rx()`; if the board refuses, FM as before. `view.am` says AM is on |
 | Transmit | refused with `TXDENY_AM` whenever `view.am`, and for any TX frequency in the air band on an AM radio (split channels, DMR channels, the VFO, the data service, the hotspot's frequencies) |
-| Squelch | on the RSSI: `radio_am_noise()` maps dBm onto the FM noise scale (-60 dBm = 0, 1 dB per step), so the levels and hysteresis are the FM ones: level 1 opens above -124 dBm, 5 above -112, 9 above -100. `view.noise` holds that value in AM. Scan uses the same value |
+| Squelch | on the RSSI: `radio_am_noise()` maps dBm onto the FM noise scale (-18 dBm = 0, 1 dB per step), so the levels and hysteresis are the FM ones: level 1 opens above -82 dBm, 5 above -70, 9 above -58. The boards' AM RSSI isn't calibrated: empty air band channels read -76 to -86 dBm on a radio (2026-10-22), so level 5 sits about 8 dB above that. `view.noise` holds that value in AM. Scan uses the same value |
 | Sub-audio | ignored in AM (`tone_needed()` is false, the tone counts as heard) |
 | Steps | `radio_req_vfo_step_size()` (RREQ_VFO_STEP_SIZE, stored in `settings_t.vfo_step_hz`; 0 is auto, the default: 25 kHz at width 25K or in AM, else `RADIO_VFO_STEP_HZ`, recomputed on every view change, with `view.vfo_step_auto` set; Settings › Talk › VFO step); 8333 means the exact 8.33 kHz grid (n x 25/3 kHz, `radio_am_step()` snaps and steps without drift); 25 kHz is a plain step |
 | Band table | the board lists the air band as an RX-only band ({108000000, 136000000, false} after the VHF TX band) |
+| Screen | "AM" in place of "FM" for the mode on Home, in the strip, on the mode tile and in the channel list. Home's chips are "Air Band AM" and the squelch level (no tone, width or power). PTT shows "Air band: receive only" |
 
 ### 3.3 Board contract (hal_radio.h)
 
 `rx_am(hz, bw)` tunes and receives AM; the board leaves AM at the next `rx()` or `set_mode()`. `status()` gives an
 RSSI in dBm (noise isn't used in AM) and `tone_ok = true`. `tx()` is never called while AM is on. NULL = no AM.
-The DM-32UV's planned `rx_am` (not written): `hardware-dm32.md` 8.7.
+On an FD6818 `rx_am` is `rx` plus the AF output type AM (`fd6818_set_am`, 0x47 = 0x0740; inferred, section 2);
+`rx()` and `set_mode()` write FM back.
 
-## 4. Broadcast FM (driver and behavior done; glue and UI not)
+## 4. Broadcast FM
 
-### 4.1 A second receiver, not a channel mode
+### 4.1 A second receiver, chosen by the frequency
 
 Broadcast FM is wideband FM (about 200 kHz) on a separate chip, so it is a separate receiver (`hal_bcast.h`,
-`board.bcast`, `CAP_BCAST_FM`), not a channel mode. The channel receiver keeps running while the broadcast plays.
+`board.bcast`, `CAP_BCAST_FM`), not a channel mode. As with the air band, nothing is stored: **an FM channel or the
+VFO tuned inside the broadcast receiver's range** (`board.bcast->lo_khz` to `hi_khz`, 65-108 MHz on the RDA5807M) plays
+on it. The helpers are in `core/radio/radio_bcast.h`. The channel receiver stays on its last frequency, muted.
 
 ### 4.2 RDA5807M (drivers/bcast/rda5807m)
 
@@ -111,41 +85,58 @@ The driver tunes 65-76 and 76-108 MHz on a 50 kHz grid, keeps shadows so TUNE an
 follows the chip's STC. The board supplies the bus; `drivers/bus/i2c_gpio` is a bit-banged master (open-drain SDA,
 push-pull SCL, no clock stretching).
 
-### 4.3 Behavior (core/bcast)
+### 4.3 Behavior
 
-Power on / off, tune (snapped to the grid), step 100 kHz with wrap, seek (muted while it sweeps, the result taken
-at STC), volume 0-15, six presets (recall, save the current frequency). The receiver is muted ("paused") while the
-channel has traffic the user should hear: squelch open or monitor (FM, AM), a DMR call we play or our own, the DMR
-reply window, a transmission or refused PTT. A DMR call on our slot that we don't play doesn't pause it. It comes
-back 2 s after the traffic ends. Hotspot mode switches it off. On a radio where the two receivers share the
-speaker, the board's arbitration makes the channel win (hal_bcast.h `audio`).
+| Item | Behavior |
+|---|---|
+| When | `CONFIG_BCAST_FM`, the board has `CAP_BCAST_FM` and `board.bcast`, the channel is FM and its RX frequency is in the receiver's range. `view.bcast` says the broadcast receiver plays |
+| Tuning | the receiver is powered and tuned to the nearest point of its grid (`radio_bcast_khz`). Leaving the range powers it off. If the chip doesn't answer, `view.bcast_fault` is set and the radio stays idle |
+| Transmit | refused with `TXDENY_BCAST` whenever `view.bcast`, and for any TX frequency in the range on a radio with the receiver (split channels, DMR channels, the VFO, the hotspot's frequencies) |
+| Squelch | on the receiver's RSSI (about dBuV): noise = 97 - RSSI on the FM noise scale, so level 5 opens above 45 dBuV, 1 above 33, 9 above 57. Set from a receiver without an antenna (2026-10-22): empty frequencies read 22 to 37, stations 50 and up. The signal meter shows RSSI - 107 dBm. Only a scan uses it (to stop on stations): otherwise the state stays RX, the LED stays on, the screen shows the level and the audio plays whatever the signal (`bcast_listening()`) |
+| Sub-audio | ignored (`tone_needed()` is false) |
+| Volume | the radio's own volume where it has one (`radio_volume_soft`), mapped onto the receiver's 0-15; a fixed 12 where a knob after the amplifier sets the level |
+| Steps | the VFO's automatic step is the broadcast step setting (4.4). An explicit VFO step (Settings › Talk › VFO step) is used as set |
+| Power | battery save is off while the receiver plays; hotspot mode powers it off |
+| Screen | Home's chips are "Broadcast FM" alone (no tone, width, power or squelch level). The mode word stays "FM". PTT shows "Broadcast: receive only" |
+| APRS | a beacon's carrier sense reads the channel receiver on the APRS frequency, as on any channel |
 
-### 4.4 Settings (not added yet)
+### 4.4 Broadcast step
 
-To append to `settings_t` (settings-store.md 3; 16 bytes, the record has 68 left):
-`uint16_t bc_freq` (10 kHz units, 0 = never set), `uint8_t bc_volume` (`SETTINGS_UNSET8` = default),
-`uint8_t bc_flags` (bit 0: listening at power off), `uint16_t bc_preset[6]` (10 kHz units, 0 = empty). They map onto
-`bcast_saved_t`. Check the space left against the other packages' appends when merging.
+Settings › Talk & listen › FM broadcast step, `radio_settings_t.bcast_step`, stored in `settings_t.rs_bcast_step`
+(page 1; `bcast_step + 1`, 0 = the default). The row shows only on a radio with the receiver (`UI_FEAT_BCAST`).
 
-### 4.5 Audio path (board-specific)
+| Setting | VFO knob and Up / Down |
+|---|---|
+| 200 kHz (default) | to the next odd tenth of a MHz: 88.1, 88.3 ... 107.9, the broadcast channels of the Americas. From an even tenth or a point between, the first step lands on the next odd tenth in that direction (90.2 up is 90.3, down is 90.1) |
+| 100 kHz | every 100 kHz, from wherever the VFO is |
 
-The board decides how the broadcast reaches the speaker and arbitrates with the channel's audio. The glue keeps the
-amplifier on while either source plays and gives the channel priority. On the DM-32UV the path is unknown
-(`hardware-dm32.md` 8.7, B4).
+Either way any frequency can be typed in: 90.2 is tuned and heard as entered.
 
-### 4.6 Screen (planned, docs/ux principles)
+### 4.5 Board glue
 
-Tools > "FM radio" (row 9; 8 without diagnostics), a list with the frequency, station, stereo and signal in the body:
-1 Listen on / off, 2 Seek up, 3 Seek down, 4-9 presets 1-6 (SELECT tunes, long SELECT saves the current frequency,
-the global "save" meaning), 0 Volume. Left / Right step 100 kHz (on the Volume row they change the volume). Budget:
-Home to listening in 4 presses (Hub, Tools, 9, 1). "Paused: channel busy" in the body while muted.
+The HR_C7000 boards share one composition, `platform/hrc7000/bcast_hrc.c` (`hrc_bcast_init`): the RDA5807M driver on
+a bit-banged I2C bus (open-drain SDA) on the board's two pins, an optional enable pin and level, and the board's
+audio path callback. A board fills in `hrc_bcast_cfg_t` and sets `board.bcast = &rda5807m_hal`; its pins and audio path
+are on its hardware page.
+
+The board decides how the broadcast reaches the speaker. The core keeps the channel receiver's audio off while the
+broadcast plays, so the two never ask for the speaker at once (hal_bcast.h `audio`).
 
 ## 5. Build switches
 
 | Switch | Default | Covers |
 |---|---|---|
-| `CONFIG_AM_RX` | n; on for boards with an AM receiver | `radio_am.c` use in the radio core, RREQ_VFO_STEP_SIZE; needs FM |
-| `CONFIG_BCAST_FM` | n; on for boards with a broadcast receiver | `core/bcast` |
+| `CONFIG_AM_RX` | on with FM; off where the receiver has no AM | `radio_am.c` in the radio core, RREQ_VFO_STEP_SIZE; needs FM |
+| `CONFIG_BCAST_FM` | on; off where there is no broadcast receiver | `radio_bcast.c` in the radio core, the board's tuner glue, the step setting |
 
 The board must also set the capability bits; without them the code does nothing at run time. Per-board defaults:
 [feature-matrix.md](../feature-matrix.md).
+
+## 6. Tests
+
+| Test | Covers |
+|---|---|
+| `tests/host/radioListenBandsTest.c` | AM and broadcast channels and VFO, TX refusal, squelch, the steps, a dead receiver |
+| `tests/host/fd6818Test.c` | the AF output word for AM and back to FM |
+| `tests/host/uiFlowTest.c` | the FM broadcast step row on a radio with the receiver |
+| `tests/hil/test_listen_bands.py` | the VFO at 118.0 MHz gives `am=1`; at 100.1 MHz `bcast=1` and `bcast_fault=0`. Nothing keys |

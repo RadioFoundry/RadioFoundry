@@ -17,10 +17,6 @@ CONFIG_DISPLAY_INSET_LEFT ?= 10
 CONFIG_DISPLAY_INSET_RIGHT ?= 10
 CONFIG_DISPLAY_INSET_TOP ?= 5
 CONFIG_DISPLAY_INSET_BOTTOM ?= 5
-# Air band AM receive and the RDA5807M broadcast FM receiver (docs/spec/airband-and-broadcast.md, parked): the core
-# is host tested, the board glue isn't written yet (no CAP_AM_RX / CAP_BCAST_FM, board.radio->rx_am, board.bcast)
-CONFIG_AM_RX ?= n
-CONFIG_BCAST_FM ?= n
 # VOX reads the microphone level through hal_power_t.mic_level, which this board doesn't have yet
 CONFIG_VOX ?= n
 # The platform's three TCP connections keep 11 KB of main RAM free; 4 leaves 9.6 KB. ci's maximal configuration has
@@ -29,7 +25,5 @@ CONFIG_VOX ?= n
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q128 class (docs/spec/hardware-dm32.md 10)
 # What the hardware can do but this radio's driver or glue doesn't yet (docs/build-config.md, "Unsupported, not
 # written, unconfirmed"): off by default, and off in ci's maximal configuration too
-BOARD_NOT_WRITTEN += AM_RX	# the stock firmware receives air band AM (hardware-dm32.md 8.7); board.radio->rx_am isn't written
-BOARD_NOT_WRITTEN += BCAST_FM	# the RDA5807M is fitted (hardware-dm32.md 8.7); board.bcast isn't written
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet

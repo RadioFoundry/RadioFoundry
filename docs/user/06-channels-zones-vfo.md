@@ -149,8 +149,9 @@ what you typed as you go.
 | **4** **4** **6** **0** **0** **0** | 446.000 MHz |
 | **1** **4** **6** **5** **2** | 146.520 MHz |
 | **4** **6** **1** **8** **6** **2** **5** | 461.8625 MHz |
+| **0** **8** **8** **1** | 88.100 MHz (below 100 MHz, start with **0**) |
 
-- Type at least the three MHz digits, then press **OK** to tune.
+- Type at least the three MHz digits, then press **OK** (or **#** where the radio has that key) to tune.
 - **Back** deletes the last digit.
 - A digit that can't lead to a frequency in the radio's bands is refused, and the radio shows the bands. The bands
   depend on the radio ([Radio reference](23-radios.md)).
@@ -161,7 +162,8 @@ what you typed as you go.
 ### Stepping
 
 **Up**, **Down** and the channel knob change the VFO frequency by its step. The step is **Settings > Talk > VFO step**. Its
-default, **Auto**, follows the width: 25 kHz at 25K (and in AM), 12.5 kHz at 12.5K. The step is in the status strip.
+default, **Auto**, follows the width: 25 kHz at 25K (and in AM), 12.5 kHz at 12.5K, and the FM broadcast step in the
+broadcast band. The step is in the status strip.
 
 ### DMR in the VFO
 
@@ -189,6 +191,29 @@ DMR ones:
 ### Leaving the VFO
 
 Press **OK**, **4**, then **OK** on the VFO row again ("Back to channels"). Or pick a zone or channel.
+
+## Air band and FM broadcast
+
+Some radios also receive the aircraft band in AM and FM broadcast stations ([Radio reference](23-radios.md)). There is
+no mode to pick and no menu: the frequency decides.
+
+| Tune to | You hear |
+|---|---|
+| 108 to 137 MHz | Air band, in AM. Home shows "Air Band AM" and the squelch level, and "AM" in place of "FM" |
+| The broadcast band (65 to 108 MHz on most receivers) | FM broadcast, on the radio's broadcast receiver. Home shows "Broadcast FM" |
+
+Tune there in the VFO (type **1** **1** **8** **1**, or **0** **8** **8** **1**, and press **OK**), or program an FM
+channel on the frequency in qdmr. Both are receive only: PTT shows "Air band: receive only" or "Broadcast: receive
+only" and the radio doesn't transmit. Sub-audio tones are ignored.
+
+In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a
+fading station isn't cut, and the screen and LED show it is receiving. The squelch only stops a scan on a station:
+while a scan runs, the broadcast band is quiet between stations.
+
+In the broadcast band the knob and **Up** / **Down** step 200 kHz, landing on the odd tenths (88.1, 88.3 ... 107.9)
+where stations are in the Americas. For 100 kHz steps set **Settings > Talk & listen > FM broadcast step** to 100 kHz.
+Either way you can type any frequency, 90.2 for example. In the air band **Auto** steps 25 kHz; set the VFO step to
+8.33 kHz for the narrow channels.
 
 ## Channels the radio can't use
 

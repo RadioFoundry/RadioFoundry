@@ -19,7 +19,7 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | [sfr.md](sfr.md) | Single frequency repeater |
 | [split-duplex.md](split-duplex.md) | Two radios as one duplex MMDVM modem |
 | [aprs.md](aprs.md) | APRS on FM and over DMR |
-| [airband-and-broadcast.md](airband-and-broadcast.md) | Air band AM receive and broadcast FM receive (parked) |
+| [airband-and-broadcast.md](airband-and-broadcast.md) | Air band AM receive and broadcast FM receive, chosen by the frequency |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
 | [crash-log.md](crash-log.md) | The crash log: fault capture on each platform, the record kept across the restart, the fault trace, the packed report |
 | [watchdog.md](watchdog.md) | The hardware watchdog: the idle task's feed, timeouts, long operations, leaving the application, bench tests |

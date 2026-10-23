@@ -22,11 +22,11 @@ typedef enum {
 // access), NO_REPEATER the repeater didn't wake, REJECTED the modem refused, HOTSPOT the radio is a hotspot now,
 // NO_ID no DMR ID in the codeplug. BUSY on FM: busy channel lockout. INHIBIT: transmit is switched off in the
 // settings. BATTERY: the battery is critical. AM: the channel is received in AM (the air band, CONFIG_AM_RX): receive
-// only, the radio never transmits there
+// only, the radio never transmits there. BCAST: the same for the broadcast band (CONFIG_BCAST_FM)
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
-	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM,
+	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_BCAST,
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -77,7 +77,14 @@ typedef struct {
 	uint8_t roam_beacon_len_s;	// their beacon duration (1 .. 10)
 	uint8_t roam_survey;	// 0 off, 1 the sites beacon together (one window), 2 each on its own schedule
 	bool rpt_beacon;	// our repeater roles (SFR) key an idle beacon on that interval and duration
+	// Broadcast FM (CONFIG_BCAST_FM)
+	uint8_t bcast_step;	// the VFO's automatic step there: RADIO_BCAST_STEP_200_ODD or RADIO_BCAST_STEP_100
 } radio_settings_t;
+
+// radio_settings_t.bcast_step: 200 kHz between the odd tenths (88.1, 88.3 MHz: the broadcast channels of the
+// Americas), or every 100 kHz. Either way a frequency typed in may be any 100 kHz point
+#define RADIO_BCAST_STEP_200_ODD	0u
+#define RADIO_BCAST_STEP_100		1u
 
 #define RADIO_REPLY_CODEPLUG	0xFFu	// radio_settings_t.reply_s: the codeplug's hang times (else the stack's 10 s)
 // radio_settings_t.dual_delay_ms: the default and the most. In the wait the receiver looks at the other channel for a
@@ -263,6 +270,12 @@ typedef struct {
 	// VFO frequency (an FM channel in 108-137 MHz on a radio that can); receive only. noise then holds the AM
 	// squelch's value from the RSSI (radio/radio_am.h)
 	bool am;
+	// Broadcast FM (CONFIG_BCAST_FM; airband-and-broadcast.md 4): an FM channel or the VFO in the broadcast
+	// receiver's range plays on that receiver; receive only. noise and rssi_dbm then come from it (radio_bcast.h).
+	// bcast_fault: the receiver didn't answer or refused the frequency
+	bool bcast;
+	bool bcast_fault;
+	uint32_t bcast_khz;		// what the receiver reports it is tuned to, for the debug link (0 = not playing)
 #if CONFIG_DMR
 	radio_dmr_view_t dmr;
 #endif

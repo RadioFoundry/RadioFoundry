@@ -5,6 +5,7 @@
 #include "rda5807m.h"
 
 #define RESET_MS		5	// soft reset pulse
+#define SETTLE_MS		60	// from the configuration to the first tune: the oscillator and the tuner start up
 #define BLEND_TH_DEFAULT	0x10u	// 0x07 soft blend threshold, the datasheet default
 #define VOLUME_DEFAULT		8u
 
@@ -76,6 +77,10 @@ bool rda5807m_power(rda5807m_t *dev, bool on, uint32_t khz)
 	dev->r07 = (uint16_t)((BLEND_TH_DEFAULT << RDA5807M_BLEND_TH_SHIFT) | RDA5807M_65M_MODE | RDA5807M_SOFTBLEND);
 	ok = wr(dev, RDA5807M_REG_R7, dev->r07) && ok;
 	dev->on = ok;
+	// A tune written straight after the reset is lost: the first one after power-up left static on air until a retune
+	if (ok && dev->bus->delay_ms != NULL) {
+		dev->bus->delay_ms(SETTLE_MS);
+	}
 	return ok && rda5807m_tune(dev, khz);
 }
 
@@ -93,7 +98,10 @@ bool rda5807m_tune(rda5807m_t *dev, uint32_t khz)
 	dev->band = band;
 	dev->r03 = (uint16_t)(((uint16_t)chan << RDA5807M_CHAN_SHIFT) | ((uint16_t)band << RDA5807M_BAND_SHIFT) |
 		RDA5807M_SPACE_50K);
-	return wr(dev, RDA5807M_REG_CHAN, (uint16_t)(dev->r03 | RDA5807M_TUNE));
+	// The channel first with TUNE low, then TUNE: the chip tunes on TUNE's rising edge, so a write that carries the
+	// channel and TUNE together is missed when TUNE is still high from a tune in progress
+	bool ok = wr(dev, RDA5807M_REG_CHAN, dev->r03);
+	return wr(dev, RDA5807M_REG_CHAN, (uint16_t)(dev->r03 | RDA5807M_TUNE)) && ok;
 }
 
 bool rda5807m_seek(rda5807m_t *dev, bool up)

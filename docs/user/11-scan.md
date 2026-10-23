@@ -131,7 +131,7 @@ starts over with each reply and each call there. After it, the selection goes ba
 ### Talk on B
 
 Press **#**, **1** ("Talk on B"). B is now the selected channel. On a radio with a Left / Right pair (DM-1801 Pro,
-DM-32UV), **Right** selects B and **Left** selects A. On the DM-1701 a press of **SK2** switches, and so does any side
+DM-32UV), **Right** selects B and **Left** selects A. A press of **SK2** (the tone key on the DB25-D PRO) switches, and so does any side
 key set to **A/B** (Settings > Keys). With dual watch off, the **A/B** key only says "Turn on dual watch first". Hold **PTT** to talk. The watch goes on after you let go.
 
 <img src="../ux/screens/160x120i5/home_dual_on_b.png" width="200" alt="Dual watch Home with B selected">
@@ -182,7 +182,7 @@ the radio is: "Dual watch off: on COUNTY DMR".
 | **#** | The dual watch actions |
 | **\*** | The quick settings of the selected channel |
 | **Up** / **Down**, the knob | The selected channel moves through its zone (VFO: a step) |
-| **A/B** key (**SK2** on the DM-1701, or Settings > Keys), **Left** / **Right** | The other channel / A / B. With dual watch off, the **A/B** key says "Turn on dual watch first" |
+| **A/B** key (a press of **SK2**, or Settings > Keys), **Left** / **Right** | The other channel / A / B. With dual watch off, the **A/B** key says "Turn on dual watch first" |
 | **Previous zone**, **Next zone**, **Home zone** | The selected channel goes to another zone |
 | **Monitor** (held) | Opens the squelch on the selected channel. Dual watch waits there until you let go |
 | **Dual watch** key (Settings > Keys), hold **SK2** (the tone key on the DB25-D PRO) | Starts (with the last B) and stops |

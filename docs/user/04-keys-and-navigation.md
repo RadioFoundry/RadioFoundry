@@ -31,7 +31,7 @@ a key the radio doesn't have.
 | **Back** | Back one level. Home: undo one temporary change | Home |
 | **Up**, **Down** | Move the focus. Home: next or previous channel (VFO: frequency step), or zone or talk target with **Settings > Keys > Up/Down on Home** (the channel knob stays on the channel). Editors: change the value | Repeats |
 | **\*** | Quick settings. While you transmit on FM with **PTT**: its [touch tone](07-fm.md#touch-tones-dtmf) | Lock or unlock the keys |
-| **#** | While you transmit on FM with **PTT**: its [touch tone](07-fm.md#touch-tones-dtmf). Otherwise: actions for the focused item. Home: actions for the last caller | DMR channels: the talk target picker (pick a talkgroup, or type an ID). Recent is **OK**, **3** |
+| **#** | While you transmit on FM with **PTT**: its [touch tone](07-fm.md#touch-tones-dtmf). Otherwise: actions for the focused item. Home: actions for the last caller. VFO: tunes a frequency being typed, as **OK** | DMR channels: the talk target picker (pick a talkgroup, or type an ID). Recent is **OK**, **3** |
 | **0** to **9** | Home: start Find. Lists: pick a numbered row, or type to filter. VFO: type a frequency. While you transmit with **PTT**: FM sends the key's [touch tone](07-fm.md#touch-tones-dtmf), DMR nothing | Home: speed dial (not built yet). While you transmit with **PTT**: as a press |
 | **Previous zone**, **Next zone** | Home: previous or next zone | |
 | **Monitor** | FM: opens the squelch while held. DMR: digital monitor (every talkgroup) on or off | |
