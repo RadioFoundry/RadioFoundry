@@ -174,10 +174,10 @@ CONFIG_VIBRATE ?= n
 # radio has no GPS: DMR_GPS, LRRP and APRS keep a fixed position and answer "no fix". Off where the radio has none
 CONFIG_GPS ?= y
 # air band AM receive: FM channels and the VFO in 108-137 MHz are received in AM, receive only, on radios whose
-# receiver does AM (CAP_AM_RX; needs FM; docs/spec/airband-and-broadcast.md). On for the DM-32UV
+# receiver does AM (CAP_AM_RX; needs FM; docs/spec/airband-and-broadcast.md). No board's glue is written yet
 CONFIG_AM_RX ?= n
 # broadcast FM receiver: Tools > FM radio on a second receiver chip, paused for channel traffic
-# (board.bcast; core/bcast, docs/spec/airband-and-broadcast.md). On for the DM-32UV
+# (board.bcast; core/bcast, docs/spec/airband-and-broadcast.md). On where the board sets board.bcast
 CONFIG_BCAST_FM ?= n
 # audio path probe: debug link command 0x10 to read / write the audio chip's registers and watch the PCM stream's
 # levels, for the USB audio feasibility tests on the bench (docs/spec/hardware-dm1701.md 21.3; needs DEBUGLINK and DMR, whose
