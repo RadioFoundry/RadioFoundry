@@ -189,7 +189,7 @@ static void on_frame(const uint8_t *f, size_t n, void *ctx)
 enum { EMPH_NONE, EMPH_DE, EMPH_PRE };
 
 // Audio below the tones on the channel (afsk_run_emph): a 350 Hz tone this many dB under the AFSK tones, 0 = none.
-// A DM-32UV receiving a flat transmitter heard 320-400 Hz there 1-10 dB under the tones (BENCH)
+// A radio receiving a flat transmitter heard 320-400 Hz there 1-10 dB under the tones (BENCH)
 static float lf_db;
 
 // Modulate count copies of a frame at mod_rate, filter / add noise, demodulate at demod_rate (the rates differing is

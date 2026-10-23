@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Factory calibration of the Baofeng HR_C7000 radios (DM-32UV, DM-1801 Pro): where it is, what it holds and the
+// Factory calibration of the Baofeng HR_C7000 radios (docs/spec/radios.md): where it is, what it holds and the
 // values derived from it (docs/spec/hardware-dm32.md 11, hardware-dm1801pro.md 6.4). Never writes.
 #ifndef BAOFENG_CAL_H
 #define BAOFENG_CAL_H
@@ -14,7 +14,7 @@ typedef struct {
 } bf_cal_power_points_t;
 
 // Find and read the factory calibration from the data flash (page whose last byte is 2). copy_addr: where a decoded
-// copy of the image may be (0x710000 on the DM-32UV), 0 for none. Needs the flash initialized
+// copy of the image may be (the board's), 0 for none. Needs the flash initialized
 bool bf_cal_load(const hal_flash_t *flash, uint32_t copy_addr);
 bool bf_cal_valid(void);
 const char *bf_cal_source(void);	// "factory", "copy" or "none"
@@ -25,7 +25,7 @@ uint16_t bf_cal_modcal(uint32_t hz);
 bool bf_cal_power(uint32_t hz, bf_cal_power_points_t *p);
 // DAC value for a power level 0..8 (hardware-dm32.md 11.3), clamped to 4095; the uncalibrated fallback when false
 uint16_t bf_cal_power_level(uint32_t hz, uint8_t level);
-// A calibration row read the way the DM-1801 Pro's own firmware reads it (hardware-dm1801pro.md 6.4): the band by the
+// A calibration row read the way the stock firmware reads it (hardware-dm1801pro.md 6.4): the band by the
 // TX frequency (UHF above 200 MHz), the frequency clamped to the band limits (0x00 / 0xCC), the five TX points (0x314 /
 // 0x33C) and linear interpolation truncated toward the lower point's byte. REG40 has three bytes, at TX points 0, 2
 // and 4. 0 without calibration

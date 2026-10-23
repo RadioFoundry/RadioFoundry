@@ -53,7 +53,7 @@ sizes):
 | host | `core/hostlink` | The host port: MMDVM hotspot, CPS shim, debug link; in network mode the IP gateway and the radio's own services (`core/net`, `core/snmp`) |
 | usb | `drivers/usb` | TinyUSB device stack |
 | ui | `core/ui` | Frame pacing, drawing, the UI's behavior |
-| gps | board (MD-380) | NMEA from the GPS module, on radios that have one |
+| gps | board | NMEA from the GPS module, on radios that have one |
 
 Other tasks talk to the radio core through requests (`radio_req_*`, queued, never waiting) and read a copy of its
 state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so the host simulator runs it unchanged.
@@ -70,7 +70,7 @@ state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so t
 | `core/net` | [tcp-services](../spec/tcp-services.md), [mdns](../spec/mdns.md), [tftp](../spec/tftp.md) | The minimal TCP and the radio's services on the USB network link: KISS, HTTP, rigctld, APRS-IS, mDNS, TFTP |
 | `core/snmp` | [snmp](../spec/snmp.md) | SNMPv2c agent, the ODR MIB, notifications |
 | `core/aprs` | [aprs](../spec/aprs.md) | AX.25 / AFSK, beacons, messages, KISS TNC, iGate rules |
-| `core/bcast` | [airband-and-broadcast](../spec/airband-and-broadcast.md) | The broadcast FM receiver (DM-32UV, parked) |
+| `core/bcast` | [airband-and-broadcast](../spec/airband-and-broadcast.md) | The broadcast FM receiver (parked) |
 | `core/usbaudio` | [usb-audio](../spec/usb-audio.md) | USRP and the jitter buffer (host tested, not in an image yet) |
 | `core/hostlink` | [cps-protocol](../spec/cps-protocol.md) 1 | Dispatch of the host port by first byte; the USB network side |
 | `core/cps` | [cps-protocol](../spec/cps-protocol.md) | The open-firmware CPS shim |

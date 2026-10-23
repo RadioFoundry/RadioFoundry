@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Software CTCSS and DCS detection on a low-rate ADC stream, for radios whose RF chip has no sub-audio decoder (the
-// MD-380: docs/spec/hardware-md380.md 6.4). No hardware, no RTOS and no blocking: feed one sample per call from a DMA
+// Software CTCSS and DCS detection on a low-rate ADC stream, for radios whose RF chip has no sub-audio decoder (e.g.
+// docs/spec/hardware-md380.md 6.4). No hardware, no RTOS and no blocking: feed one sample per call from a DMA
 // interrupt or a task and read the verdict.
 //
 // CTCSS: three Goertzel filters (the tone and a guard bin 3 Hz either side) over overlapping 0.2 s windows, one result

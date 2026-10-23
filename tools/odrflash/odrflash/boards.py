@@ -125,7 +125,7 @@ class Board:
         return None
 
     def options_for_name(self, name):
-        """The build option values a debug link board name stands for ({"BAND": "vhf"} for "MD-380 VHF"); {} for a
+        """The build option values a debug link board name stands for ({"BAND": "vhf"} for "<model> VHF"); {} for a
         name of this board that says nothing about them, None for another board's name."""
         if name not in self.debuglink_names:
             return None
@@ -145,7 +145,7 @@ class Board:
         return names.full(self.option_values(), given)
 
     def image_id(self, options):
-        """The board id with each non-default option value, as the Makefile and the release name images: md380-vhf."""
+        """The board id with each non-default option value, as the Makefile and the release name images: <id>-vhf."""
         return names.image_id(self.id, self.option_values(), options)
 
     def build_image(self, options, variant=None):

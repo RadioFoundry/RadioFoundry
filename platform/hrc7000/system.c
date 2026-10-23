@@ -61,7 +61,7 @@ HRC_RAMFUNC void hrc_rf_safe(void)
 	hrc_barrier();
 }
 
-// The soft reset keeps some of the chip's state (the clock manager, LCSFC_BAUDR; hardware-dm32.md 1.1), and a DB25-D
+// The soft reset keeps some of the chip's state (the clock manager, LCSFC_BAUDR; hardware-dm32.md 1.1), and a radio
 // reset this way while transmitting came back with the PA keyed and hung before the display was lit (2026-10-21). So
 // the transmitter goes off first, before the clock and flash controller changes
 HRC_RAMFUNC void hrc_soft_reset(void)

@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-# Builds the DM-32 CI image: the builder image (Dockerfile.build) runs tools/build-csky-toolchain.sh (CLEAN=1) with
+# Builds the C-SKY CI image: the builder image (Dockerfile.build) runs tools/build-csky-toolchain.sh (CLEAN=1) with
 # WORK on the host as its work directory, then the CI image (Dockerfile) is made from the installed tree.
 # Docker's own storage only grows by the base image, the build tools and the final image (about 0.6 GB); the build
 # tree (peak about 4 GB) stays in WORK. Linux x86_64 or arm64 with Docker.

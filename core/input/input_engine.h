@@ -62,7 +62,7 @@ typedef struct {
 } input_engine_t;
 
 // Injected keys (the debug link's KEY): held until a time, then released by a later scan. The hold and the gap after
-// it count scans as well as ms. A scan can run late, after a wait for a bus the keys share (the DM-32UV's key rows are
+// it count scans as well as ms. A scan can run late, after a wait for a bus the keys share (key rows that are
 // LCD data lines, held for a whole redraw): measured in ms only, a short press expired before the debounce had seen
 // it twice and was lost
 #define INPUT_INJECT_MIN_SCANS	3	// two agreeing scans to debounce, and one to spare

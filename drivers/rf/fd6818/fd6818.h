@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// FD6818 single-chip VHF/UHF transceiver (DM-32UV): chip driver, independent of the board
+// FD6818 single-chip VHF/UHF transceiver: chip driver, independent of the board
 // (docs/spec/hardware-dm32.md 8). No datasheet exists; register values are the ones the working firmware uses.
 //
 // The chip has a three-wire serial port (chip select, clock, bidirectional data) that the board bit-bangs: the board
@@ -32,7 +32,7 @@ typedef struct {
 } fd6818_regval_t;
 
 // What differs between the boards' chip set-ups: the register tables, the 0x30 sequences and the band words. The
-// DM-32UV's set is fd6818_variant_dm32 (the default); a board with other tables defines its own and passes it to
+// default set is fd6818_variant_default; a board with other tables defines its own and passes it to
 // fd6818_attach_variant
 typedef struct {
 	const fd6818_regval_t *init;		// power-on table, the soft reset first
@@ -50,7 +50,7 @@ typedef struct {
 	const fd6818_regval_t *fm_tx_prepare;	// before the switch to TX, FM only
 	uint16_t fm_tx_prepare_n;
 	// DMR per-burst switch straight from the other state, no idle on the way and no bandwidth write; NULL = idle, then
-	// rx / tx (the DM-32UV)
+	// rx / tx (the default)
 	const fd6818_regval_t *burst_rx;
 	uint16_t burst_rx_n;
 	const fd6818_regval_t *burst_tx;
@@ -61,7 +61,7 @@ typedef struct {
 	bool (*band_words)(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40);
 } fd6818_variant_t;
 
-extern const fd6818_variant_t fd6818_variant_dm32;
+extern const fd6818_variant_t fd6818_variant_default;
 
 typedef struct {
 	const fd6818_bus_t *bus;
@@ -96,7 +96,7 @@ typedef struct {
 #define FD6818_STATE_IDLE	0x0000u
 #define FD6818_STATE_RX		0xBFF1u
 #define FD6818_STATE_TX		0xC1FEu
-// DM-32UV 0x43 bandwidths; fd6818_variant_t holds each board's
+// The default 0x43 bandwidths; fd6818_variant_t holds each board's
 #define FD6818_BW_FM_25K	0x3028u
 #define FD6818_BW_FM_12K5	0x4008u
 #define FD6818_BW_DMR		0x4048u
@@ -119,8 +119,8 @@ static inline uint16_t fd6818_rssi_raw(uint16_t r67) { return (uint16_t)((r67 & 
 // already taken off by the chip)
 static inline int16_t fd6818_rssi_dbm(uint16_t r67) { return (int16_t)((int16_t)fd6818_rssi_raw(r67) - 160); }
 // Noise for the core's squelch (hal_radio_t status, larger = more noise): reg 0x65 bits 7:0 plus an offset. Without a
-// signal the raw value reads 43-63 (UHF 43-51 on most channels, VHF and 420 MHz 57-63), and a strong carrier reads 8 (a
-// DM-1801 Pro on the SDR bench). The core's levels open below 64 (loosest) down to 40 (tightest), so the raw floor
+// signal the raw value reads 43-63 (UHF 43-51 on most channels, VHF and 420 MHz 57-63), and a strong carrier reads 8 (on
+// the SDR bench). The core's levels open below 64 (loosest) down to 40 (tightest), so the raw floor
 // sits inside that range and every level opens on noise. The offset lifts the floor above 64 and keeps a strong
 // carrier at 33
 #define FD6818_NOISE_OFFSET	25u
@@ -132,7 +132,7 @@ static inline uint8_t fd6818_noise(uint16_t r65)
 
 // --- Register access (one frame each, inside the critical section) ---
 
-void fd6818_attach(fd6818_t *dev, const fd6818_bus_t *bus);	// the DM-32UV variant
+void fd6818_attach(fd6818_t *dev, const fd6818_bus_t *bus);	// the default variant
 void fd6818_attach_variant(fd6818_t *dev, const fd6818_bus_t *bus, const fd6818_variant_t *variant);
 void fd6818_write(fd6818_t *dev, uint8_t reg, uint16_t val);
 uint16_t fd6818_read(fd6818_t *dev, uint8_t reg);

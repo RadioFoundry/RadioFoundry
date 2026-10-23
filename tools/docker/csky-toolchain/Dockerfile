@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
-# CI image for the DM-32 build: Ubuntu 24.04, the csky-elf GCC 14 toolchain from tools/build-csky-toolchain.sh in
-# /opt/csky-elf, and what tools/ci.sh needs for `ONLY=dm32`. build.sh builds the toolchain in a throwaway container
+# CI image for the hrc7000 platform's builds: Ubuntu 24.04, the csky-elf GCC 14 toolchain from tools/build-csky-toolchain.sh in
+# /opt/csky-elf, and what tools/ci.sh needs for `ONLY=<radio>`. build.sh builds the toolchain in a throwaway container
 # (on a scratch directory, not in image layers) and then this image from the result; the build context is only
 # csky-elf/ and this file.
 FROM ubuntu:24.04

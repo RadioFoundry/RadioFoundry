@@ -645,7 +645,7 @@ static void test_tx_refused(void)
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
 }
 
-// A modem that takes the transmission but never sends a burst (no slot timing: the MD-380's HR_C5000 not answering).
+// A modem that takes the transmission but never sends a burst (no slot timing: a modem not answering).
 // The call must end on its own, PTT held or released, not wait for a superframe boundary that never comes
 static void test_tx_modem_stalled(void)
 {

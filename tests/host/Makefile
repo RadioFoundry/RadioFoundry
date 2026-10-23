@@ -180,7 +180,7 @@ radioFeaturesTestNoDual: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CO
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -DCONFIG_DUAL_WATCH=0 -o $@ $(RFTEST) -lm
 
-# The volume knob power switch read from the battery sense line (DM-1701, MD-380)
+# The volume knob power switch read from the battery sense line
 TESTS   += powerSwitchTest
 
 powerSwitchTest: powerSwitchTest.c $(CORE)/radio/power_switch.c $(CORE)/radio/power_switch.h
@@ -235,7 +235,7 @@ keyassignTest: keyassignTest.c $(CORE)/input/keyassign.c $(CORE)/input/keyassign
 quadratureTest: quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c $(ROOT)/drivers/input/quadrature/quadrature.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ quadratureTest.c $(ROOT)/drivers/input/quadrature/quadrature.c
 
-# The hand mic key decoder on a UART shared with the PC link (drivers/input/serialmic; the DB25-D)
+# The hand mic key decoder on a UART shared with the PC link (drivers/input/serialmic)
 serialmicTest: serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c $(ROOT)/drivers/input/serialmic/serialmic.h
 	$(CC) $(CFLAGS) -I$(ROOT)/drivers -Wshadow -o $@ serialmicTest.c $(ROOT)/drivers/input/serialmic/serialmic.c
 
@@ -372,7 +372,7 @@ run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest codecDesc
 	./codecDescTest codec_desc_test.bin codec_desc_md380.bin
 .PHONY: run-chips
 
-# Sub-audio: the DCS Golay word, and the software CTCSS / DCS detector and tone generators the MD-380 uses
+# Sub-audio: the DCS Golay word, and the software CTCSS / DCS detector and tone generators for radios without a sub-audio chip
 # (docs/spec/hardware-md380.md 6.4), on synthetic signals
 TESTS   += subaudioDspTest
 SUBAUDIO_ALL := $(wildcard $(ROOT)/drivers/rf/subaudio/*.c)

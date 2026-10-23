@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// HR_C5000 DMR / FM baseband chip driver (MD-380, MD-390, RT3; docs/spec/hardware-md380.md 4). Its register facts
-// are the HR_C5000 user manual (datasheets/C5000/hrc5000.pdf) and the MD-380's own bring-up sequences; what neither
+// HR_C5000 DMR / FM baseband chip driver (docs/spec/hardware-md380.md 4). Its register facts
+// are the HR_C5000 user manual (datasheets/C5000/hrc5000.pdf) and the stock firmware's bring-up sequences; what neither
 // confirms is marked (?) in the spec. Register access, the DMR slot engine and the DMR ID / modulation helpers are
 // shared with the HR_C6000 (drivers/modem/hrc_common); nothing of the HR_C6000's own driver is used.
 #ifndef HRC5000_H
@@ -42,7 +42,7 @@ bool hrc5000_set_mode_dmr(hrc5000_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mi
 // RX: the codec and path registers; TX adds the modulation pair, deviation factor and limiter
 bool hrc5000_dmr_path(hrc5000_t *dev, bool tx, uint8_t mod2, uint8_t mod1, uint8_t mic_gain);
 
-// The chip's I2S clocks (BCLK, LRCK; MD-380 CK PC10, WS PA15). The 0x11 block of every full set-up writes 0x36 = 0xF0, whose
+// The chip's I2S clocks (BCLK, LRCK; the board's pins). The 0x11 block of every full set-up writes 0x36 = 0xF0, whose
 // bit 7 turns the clocks off; on clears it. The board switches them on for the length of a PCM audio stream
 bool hrc5000_i2s_clock(hrc5000_t *dev, bool on);
 bool hrc5000_speaker_voice(hrc5000_t *dev, bool on);

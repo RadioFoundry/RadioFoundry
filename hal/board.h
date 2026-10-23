@@ -91,7 +91,7 @@ typedef struct {
 	// not built or the radio can't
 	const hal_afsk_t *afsk;
 	// Optional, with CAP_GPS: whether the GPS module is there, for radios sold with and without one on the same board
-	// (the MD-380 / MD-380G): true once the module has been heard. NULL = CAP_GPS alone says
+	// (a G model beside the plain one): true once the module has been heard. NULL = CAP_GPS alone says
 	bool (*gps_present)(void);
 	// Optional, with CAP_GPS: Settings > Location > GPS. Power the module and its receive path on or off now. Called
 	// with the stored value at start-up and on each change; the module is still probed at start-up whatever the

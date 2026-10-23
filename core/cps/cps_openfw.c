@@ -597,7 +597,7 @@ static void handle(size_t n)
 	}
 }
 
-// A byte no request starts with. The DM-1801 Pro's cable (on the microphone / speaker jack) now and then delivers a
+// A byte no request starts with. A programming cable on the microphone / speaker jack now and then delivers a
 // burst of noise bytes (0xFC, 0xFE) between requests; answered '-', it was read as the reply to the next request
 static bool junk(uint8_t b)
 {
