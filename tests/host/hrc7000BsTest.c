@@ -37,7 +37,8 @@ static void op_rf(void *ctx, bool tx)
 	rf_state = tx;
 }
 static void op_pa_arm(void *ctx) { (void)ctx; pa_arms++; }
-static uint32_t op_now(void *ctx) { (void)ctx; return now; }
+static uint32_t now_step;	// the clock moves this much per read (a busy wait ends)
+static uint32_t op_now(void *ctx) { (void)ctx; now += now_step; return now; }
 static void op_notify(void *ctx) { (void)ctx; REG(C7_SYS_INTERP_LIST) = 0; }
 
 static const hrc7000_dmr_ops_t ops = { .rf = op_rf, .pa_arm = op_pa_arm, .now_us = op_now, .notify = op_notify };
@@ -319,12 +320,83 @@ static void test_stall_and_release(void)
 	CHECK(!hrc7000_bs_active(&eng));
 }
 
+// bs_queue_at: a burst for one numbered slot (the slot set up at that boundary): dropped once it has passed, held while
+// it is ahead
+static void test_queue_at(void)
+{
+	setup();
+	dmr_bs_config_t c = cfg_of(0);
+	CHECK(hrc7000_bs_start(&bs, &eng, &c, fake_raw));
+	slot();
+	hrc7000_bs_key(&eng, true);
+	slot();			// TS1 set up: on air
+	uint32_t cnt, t;
+	int8_t ts;
+	CHECK(hrc7000_dmr_slot_clock(&eng, &cnt, &t, &ts) && ts == 1);
+	dmr_tx_burst_t old = burst(DMR_BURST_DATA_HEADER, 0x01), cs = burst(DMR_BURST_CSBK, 0x5A);
+	// Boundary cnt + 2 sets up TS1 again
+	CHECK(hrc7000_bs_queue_at(&eng, cnt, 1, &old, NULL, NULL));
+	CHECK(hrc7000_bs_queue_at(&eng, cnt + 2u, 1, &cs, NULL, NULL));
+	slot();
+	slot();
+	CHECK(bs.st.at_late == 1 && buf[0] == 1 && buf[1] == DMR_BURST_CSBK && buf[3] == 0x5A);
+	// For cnt + 6: cnt + 4 goes idle meanwhile, then it plays
+	CHECK(hrc7000_bs_queue_at(&eng, cnt + 6u, 1, &cs, NULL, NULL));
+	slot();
+	slot();
+	CHECK(bs.st.at_wait == 1 && buf[0] == 1 && buf[1] == DMR_BURST_IDLE);
+	slot();
+	slot();
+	CHECK(buf[0] == 1 && buf[1] == DMR_BURST_CSBK && bs.st.at_late == 1);
+	CHECK(hrc7000_dmr_slot_clock(&eng, &cnt, &t, &ts) && ts == 1);
+	hrc7000_bs_stop(&eng);
+}
+
+// bs_restart: not keyed only; own TX timing off (passive), on again at the boundary asked for, slot ts there
+static void test_restart(void)
+{
+	for (int8_t want = 1; want <= 2; want++) {
+		setup();
+		dmr_bs_config_t c = cfg_of(0);
+		CHECK(hrc7000_bs_start(&bs, &eng, &c, fake_raw));
+		slot();
+		hrc7000_bs_key(&eng, true);
+		CHECK(!hrc7000_bs_restart(&eng, now + 10000u, want));		// keyed
+		hrc7000_bs_key(&eng, false);
+		slot();
+		slot();
+		REG(C7_LAYER2_CONTROL) = 0;
+		now_step = 7;
+		uint32_t target = now + 10000u - 30000u * 3u;	// the next of target + k x 30 ms: 10 ms from now
+		CHECK(hrc7000_bs_restart(&eng, target, want));
+		now_step = 0;
+		CHECK((int32_t)(now - (target + 90000u)) >= 0 && (int32_t)(now - (target + 90000u)) < 30);
+		CHECK(REG(C7_WORK_MODE) == C7_WORK_MODE_PHY && REG(C7_LAYER2_CONTROL) == 0x82u);
+		CHECK(bs.st.restarts == 1 && !eng.timing);
+		uint32_t cnt, t;
+		int8_t ts;
+		CHECK(!hrc7000_dmr_slot_clock(&eng, &cnt, &t, &ts));
+		uint32_t ticks = eng.tick;
+		bs.restarting = true;		// a boundary of the old timer while a restart waits: not taken
+		slot();
+		bs.restarting = false;
+		CHECK(eng.tick == ticks && !eng.timing);
+		slot();			// the new clock's first boundary
+		CHECK(hrc7000_dmr_slot_clock(&eng, &cnt, &t, &ts) && ts == want);
+		slot();
+		CHECK(hrc7000_dmr_slot_clock(&eng, &cnt, &t, &ts) && ts == 3 - want);
+		hrc7000_bs_stop(&eng);
+	}
+}
+
 int main(void)
 {
 	test_start_and_clock();
 	test_keyed_outbound();
 	test_variants();
 	test_stall_and_release();
+	test_queue_at();
+	test_restart();
 	if (failures) {
 		printf("hrc7000BsTest: %d of %d checks failed\n", failures, checks);
 		return 1;

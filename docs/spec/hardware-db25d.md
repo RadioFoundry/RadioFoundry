@@ -274,7 +274,14 @@ with the main chip at 0xC3FE:
 | End of the transmission | The same without 30:C3FE: it ends in 30:BFF1 (TX end above), so a tone never survives a transmission |
 
 The stock firmware never leaves 0x50 bit 15 set after the sequence; whether that bit mutes the tone as well as the microphone is
-not readable from the code (INF), so ODR doesn't keep it. DTMF (not used by ODR) writes 70:9090 and 40:348A at 0xC3FA.
+not readable from the code (INF), so ODR doesn't keep it.
+
+**DTMF** (`tx_dtmf`, `radio-features.md` 3.7; `bk4819_dtmf_start`). The stock digit (BIN): as tone on, with 70:9090
+(tone 1 and tone 2 on, gain 0x10 each), 71 = the low tone's word and 72 = the high tone's (the stock DTMF table: Hz x
+10.32444 rounded, 1633 Hz = 16860) and 40:348A, at 0xC3FA. ODR follows it and retunes 71 / 72 for the next digit without
+leaving 0xC3FA; tone off is the single tone's (40 back to 34A8). On air (SDR bench): about 1.6 kHz peak deviation at
+12.5 kHz and 3.3 kHz at 25 kHz; the tones go through the microphone's pre-emphasis, so the high tone reads 3.6 to 7.0 dB
+over the low one on the carrier and +0.7 to +2.3 dB after a receiver's de-emphasis (`radio-features.md` 3.7).
 
 The level is `DB25D_TX_TONE_GAIN` (radio_db25d.c, default 0x30: the stock single tone). Measure the deviation of the 1750 Hz
 burst on the SDR bench (`odr_debug.py burst on`, FM channel) and scale the gain; the target is about 60 % of the nominal

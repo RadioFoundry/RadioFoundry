@@ -3,6 +3,7 @@
 // HR_C7000 baseband: power-on set-up, FM, sub-audio, audio paths (docs/spec/modem-hrc7000.md 4, 5.1, 8)
 #include <stddef.h>
 #include "hrc7000.h"
+#include "hal_dtmf.h"
 
 #define RF_MODE_VALUE		0x03269860u	// AF RX with averaging, gain 2.375, RX IQ invert, dynamic sync, dual RX, two-point TX
 #define RF_CONTROL_VALUE	0x0004001Au	// tx_pre_on 0.4 ms, RF RX interrupt 2.6 ms early; b13:8 from rf_tx_lead
@@ -329,16 +330,37 @@ bool hrc7000_subtone_ok(hrc7000_t *d)
 	return true;
 }
 
+static uint32_t tone_step(uint16_t hz)
+{
+	return ((uint32_t)hz * 2048u + 500u) / 1000u;	// round(f x 2.048)
+}
+
 void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev)
 {
-	if (hz != 0) {
-		uint32_t step = ((uint32_t)hz * 2048u + 500u) / 1000u;	// round(f x 2.048)
+	hrc7000_tx_pair(d, hz, hz, dev);
+}
+
+bool hrc7000_tx_dtmf(hrc7000_t *d, char digit, uint8_t dev)
+{
+	uint16_t low = 0, high = 0;
+	if (digit != 0 && !dtmf_pair(digit, &low, &high)) {
+		return false;
+	}
+	hrc7000_tx_pair(d, low, high, dev);
+	return true;
+}
+
+// Digit "1" is FM_TONE1's high half with FM_TONE3's high half (697 + 1209 Hz by default), so any pair goes out as
+// digit 1 with those two steps rewritten: one sequence for single tones and every DTMF digit, without the digit codes
+void hrc7000_tx_pair(hrc7000_t *d, uint16_t low_hz, uint16_t high_hz, uint8_t dev)
+{
+	if (low_hz != 0) {
 		if (!d->tone_on) {
 			d->subvoice = hrc7000_rd(d, C7_SUBVOICE_COEF);
 		}
 		hrc7000_wr(d, C7_SUBVOICE_COEF, (d->subvoice & ~0xFF00u) | ((uint32_t)dev << 8));
-		hrc7000_wr(d, C7_FM_TONE1, (step << 16) | (FM_TONE1_DEFAULT & 0xFFFFu));
-		hrc7000_wr(d, C7_FM_TONE3, (step << 16) | (FM_TONE3_DEFAULT & 0xFFFFu));
+		hrc7000_wr(d, C7_FM_TONE1, (tone_step(low_hz) << 16) | (FM_TONE1_DEFAULT & 0xFFFFu));
+		hrc7000_wr(d, C7_FM_TONE3, (tone_step(high_hz) << 16) | (FM_TONE3_DEFAULT & 0xFFFFu));
 		hrc7000_wr(d, C7_FM_MOD, hrc7000_rd(d, C7_FM_MOD) | FM_MOD_DTMF);
 		hrc7000_wr(d, C7_TONE_SEND_CTRL, TONE_SEND_START | TONE_DIGIT_1);
 		d->tone_on = true;

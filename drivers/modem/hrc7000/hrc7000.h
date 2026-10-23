@@ -263,6 +263,10 @@ bool hrc7000_subtone_ok(hrc7000_t *d);
 // sub-audio deviation and the default DTMF steps back. tx_tone_key: the tone off (a silent carrier) and on again
 void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev);
 void hrc7000_tx_tone_key(hrc7000_t *d, bool down);
+// Two tones the same way: low in FM_TONE1's high half, high in FM_TONE3's, digit "1" sent. low = 0: as tx_tone(0)
+void hrc7000_tx_pair(hrc7000_t *d, uint16_t low_hz, uint16_t high_hz, uint8_t dev);
+// A DTMF digit ('0'-'9', '*', '#', 'A'-'D'; hal_dtmf.h) with tx_pair, 0 = the microphone again. False: not a digit
+bool hrc7000_tx_dtmf(hrc7000_t *d, char digit, uint8_t dev);
 // TX tone deviation (SUBVOICE_COEF b15:8) for a TX frequency and bandwidth (8.3)
 uint8_t hrc7000_dtmf_dev(uint32_t hz, bool wide);
 // --- Prompt FIFO (8.4) ---
