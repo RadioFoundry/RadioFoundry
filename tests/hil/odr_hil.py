@@ -987,14 +987,14 @@ class SdrBench:
         return json.loads(lines[-1])
 
     def analyze_fm(self, capture, bw_khz=12.5, ctcss=None, dcs=None, ppm=None, freq=None, tones=False, track=False,
-                   levels=False, tone_snr=None):
+                   levels=False, tone_snr=None, dtmf=False):
         """tools/sdr_fm_check.py on the bench; returns (exit status, text). tones: also report the audio tones;
         track: the carrier every 50 ms; levels: the voice band rms every 50 ms. Raw I/Q on purpose: FM audio, tone,
-        deviation and carrier-offset measurements need the demodulated waveform, not decoded DMR bursts."""
+        deviation and carrier-offset measurements need the demodulated waveform, not decoded DMR bursts. dtmf: the DTMF digits."""
         tool = self.sync_tool(os.path.join(ROOT, "tools", "sdr_fm_check.py"))
         off = self._offset_khz(capture)
         a = f"--offset {off * 1000:.0f} --bw {bw_khz}" + (" --tones" if tones else "") + \
-            (" --track" if track else "") + (" --levels" if levels else "") + \
+            (" --track" if track else "") + (" --levels" if levels else "") + (" --dtmf" if dtmf else "") + \
             (f" --tone-snr {tone_snr}" if tone_snr else "")
         if ctcss is not None:
             a += f" --expect-ctcss {ctcss}"

@@ -10,6 +10,8 @@
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
+//   datatx / dataend    DMR data goes out without PTT (ARS, SMS, IP): the view says TX; it ends
+//   dtmf:<digits>       during TX: the radio core has sent these DTMF digits (the TX screen's DTMF line)
 //   wait:<ms>           time passes
 //   reboot              power off and on: the screens start over, the settings stay
 //   receivers:2         a receiver per dual watch channel; rxa:/rxb:<src>,<dst>,g|p a call on A's / B's own,
@@ -279,48 +281,48 @@ enum { K_GREEN, K_RED, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_STAR, K_HASH, K_0, K_9 =
 #define SIM_SK2_SHORT	ACT_TALK_TARGET
 #endif
 static const keymap_entry_t map_k[] = {	// DM-1701 (7.1)
-	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false }, { K_RED, ACT_BACK, ACT_BACK, false, false },
-	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
-	{ K_STAR, ACT_QUICK, ACT_QUICK, false, false }, { K_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ K_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false }, { K_0 + 1, ACT_DIGIT_1, ACT_DIGIT_1, false, false },
-	{ K_0 + 2, ACT_DIGIT_2, ACT_DIGIT_2, false, false }, { K_0 + 3, ACT_DIGIT_3, ACT_DIGIT_3, false, false },
-	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false },
-	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
-	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false }, { K_SK2, SIM_SK2_SHORT, ACT_USER_2, false, false },
-	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false }, { K_FN1, ACT_USER_1, ACT_USER_1, false, false },
-	{ K_FN2, ACT_USER_4, ACT_USER_4, false, false }, { K_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ K_STAR, ACT_QUICK, ACT_QUICK, false, false, 0 }, { K_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
+	{ K_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 }, { K_0 + 1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
+	{ K_0 + 2, ACT_DIGIT_2, ACT_DIGIT_2, false, false, 0 }, { K_0 + 3, ACT_DIGIT_3, ACT_DIGIT_3, false, false, 0 },
+	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
+	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
+	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, SIM_SK2_SHORT, ACT_USER_2, false, false, 0 },
+	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false, 0 }, { K_FN1, ACT_USER_1, ACT_USER_1, false, false, 0 },
+	{ K_FN2, ACT_USER_4, ACT_USER_4, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const keymap_entry_t map_m[] = {	// GD-77 (7.3)
-	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false }, { K_RED, ACT_BACK, ACT_BACK, false, false },
-	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
-	{ K_LEFT, ACT_NAV_LEFT, ACT_NAV_LEFT, false, true }, { K_RIGHT, ACT_NAV_RIGHT, ACT_NAV_RIGHT, false, true },
-	{ K_STAR, ACT_QUICK, ACT_QUICK, false, false }, { K_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ K_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false }, { K_0 + 1, ACT_DIGIT_1, ACT_DIGIT_1, false, false },
-	{ K_0 + 2, ACT_DIGIT_2, ACT_DIGIT_2, false, false }, { K_0 + 3, ACT_DIGIT_3, ACT_DIGIT_3, false, false },
-	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false },
-	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
-	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ K_TOP, ACT_USER_3, ACT_USER_3, false, false }, { K_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ K_LEFT, ACT_NAV_LEFT, ACT_NAV_LEFT, false, true, 0 }, { K_RIGHT, ACT_NAV_RIGHT, ACT_NAV_RIGHT, false, true, 0 },
+	{ K_STAR, ACT_QUICK, ACT_QUICK, false, false, 0 }, { K_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
+	{ K_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 }, { K_0 + 1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
+	{ K_0 + 2, ACT_DIGIT_2, ACT_DIGIT_2, false, false, 0 }, { K_0 + 3, ACT_DIGIT_3, ACT_DIGIT_3, false, false, 0 },
+	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
+	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
+	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ K_TOP, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const keymap_entry_t map_v[] = {	// MD-9600 front panel + hand mic (7.4); the encoder sends ENC_STEP
-	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false }, { K_RED, ACT_BACK, ACT_BACK, false, false },
-	{ K_P1, ACT_QUICK, ACT_QUICK, false, false }, { K_P2, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
-	{ K_STAR, ACT_QUICK, ACT_QUICK, false, false }, { K_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ K_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false }, { K_0 + 1, ACT_DIGIT_1, ACT_DIGIT_1, false, false },
-	{ K_0 + 2, ACT_DIGIT_2, ACT_DIGIT_2, false, false }, { K_0 + 3, ACT_DIGIT_3, ACT_DIGIT_3, false, false },
-	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false },
-	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
-	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ K_TOP, ACT_USER_3, ACT_USER_3, false, false }, { K_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ K_P1, ACT_QUICK, ACT_QUICK, false, false, 0 }, { K_P2, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
+	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ K_STAR, ACT_QUICK, ACT_QUICK, false, false, 0 }, { K_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
+	{ K_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 }, { K_0 + 1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
+	{ K_0 + 2, ACT_DIGIT_2, ACT_DIGIT_2, false, false, 0 }, { K_0 + 3, ACT_DIGIT_3, ACT_DIGIT_3, false, false, 0 },
+	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
+	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
+	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ K_TOP, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const keymap_entry_t map_f[] = {	// few keys (7.5): Up / Down / Select / Back, PTT
-	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false }, { K_RED, ACT_BACK, ACT_BACK, false, false },
-	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
-	{ K_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const uint8_t side_k[] = { K_SK1, K_SK2, K_TOP }, side_m[] = { K_SK1, K_SK2 };	// board.side_keys
 static const struct {
@@ -1012,6 +1014,7 @@ static void ptt(bool down)
 			reply_until = now_ms + REPLY_S * 1000u;
 		view.state = RS_IDLE;
 		view.dmr.state = RDMR_IDLE;
+		view.dtmf_digits[0] = 0;
 	}
 	changed();
 }
@@ -1918,6 +1921,26 @@ static bool run_token(char *t, char *err, size_t len)
 		if (!ptt_blocked)
 			ptt(true);
 		advance(1500);
+		return true;
+	}
+	if (strcmp(t, "datatx") == 0 || strcmp(t, "dataend") == 0) {	// the DMR stack sends a data burst list without PTT
+		bool on = t[4] == 't';
+		view.state = on ? RS_TX : RS_IDLE;
+		view.dmr.state = on ? RDMR_TX_DATA : RDMR_IDLE;
+		view.tx_elapsed_ms = 0;
+		changed();
+		advance(1500);
+		return true;
+	}
+	if (strcmp(t, "dtmf") == 0 && arg != NULL) {
+		const char *d = arg;
+		size_t n = strlen(d);
+		if (n > RADIO_DTMF_SHOWN)
+			d += n - RADIO_DTMF_SHOWN;	// the newest, as the radio core keeps them
+		snprintf(view.dtmf_digits, sizeof view.dtmf_digits, "%s", d);
+		view.dtmf_sent = (uint16_t)(view.dtmf_sent + n);
+		changed();
+		advance(200);
 		return true;
 	}
 	if (strcmp(t, "pttup") == 0) {

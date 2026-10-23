@@ -65,6 +65,7 @@ typedef struct {
 #define BK4819_REG_SUBAUDIO	0x51
 #define BK4819_REG_TONE_CTRL	0x70	// bit 15 tone 1 on, bits 14:8 its gain (bit 7 / bits 6:0: tone 2)
 #define BK4819_REG_TONE1_FREQ	0x71	// tone 1 frequency word
+#define BK4819_REG_TONE2_FREQ	0x72	// tone 2 frequency word (the stock DTMF digit's second word)
 #define BK4819_REG_NOISE	0x65
 #define BK4819_REG_RSSI		0x67
 #define BK4819_REG_AF_FILTER	0x2B	// AF filter bypass bits (RX: 15 HPF, 14 LPF, 13 de-emphasis; TX: 10, 9, 8)
@@ -203,6 +204,12 @@ void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain);
 void bk4819_tone_key(bk4819_t *dev, bool down);
 // Tone off and the microphone back (TX state 0xC3FE, 0x40 as with CTCSS). No-op without a tone
 void bk4819_tone_stop(bk4819_t *dev);
+// A DTMF pair during the TX state, the stock DTMF sequence (hardware-db25d.md 4.4): tone 1 at low, tone 2 at high,
+// both at the stock DTMF gain (0x70 = 0x9090), 0x40 = 0x348A, the microphone ADC off. A second start retunes; stop
+// with bk4819_tone_stop. low = 0 is a stop
+void bk4819_dtmf_start(bk4819_t *dev, uint16_t low_hz, uint16_t high_hz);
+#define BK4819_DTMF_CTRL	0x9090u		// 0x70: tone 1 and tone 2 on, gain 0x10 each (stock)
+#define BK4819_TX_DEV_DTMF	0x348Au		// 0x40 while DTMF sounds (stock)
 // --- DMR transmit (hardware-db25d.md 4.5): the modem's 4FSK goes on the reference oscillator (single-point
 // modulation), so the main chip sends a plain carrier, retuned for every burst ---
 

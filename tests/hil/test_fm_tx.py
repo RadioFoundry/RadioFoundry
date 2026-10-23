@@ -19,6 +19,14 @@ Pass criteria:
 - test_fm_tx_roger_beep: roger_beep 1, a 1.5 s over: the segment ends with 1200 Hz then 900 Hz (+-15 Hz), each 60-160
   ms (nominally 100), the 900 Hz tone within 80 ms of the end of the carrier; the same over with roger_beep 0 ends with
   no tone.
+- test_fm_tx_dtmf: PTT held, DTMF 1 # 5 D sent by the debug link (150 ms each) and 0 as a 20 ms tap
+  (radio-features.md 3.7), at 12.5 and 25 kHz: one keyed segment; the digits decode in order (sdr_fm_check.py --dtmf);
+  each at least 80 ms on air (the 20 ms tap too), at least 40 ms apart, deviation 300 Hz to 2.5 kHz (12.5 kHz) or
+  5 kHz (25 kHz) peak, twist (high tone over low, after a receiver's 750 us de-emphasis) -8 to +4 dB; the view's
+  dtmf_digits and dtmf_sent agree.
+- test_fm_tx_dtmf_stop: a digit held down when PTT is released, then when a 3 s time-out ends the transmission: one
+  keyed segment, the digit decoded for at least 0.8 s and ending within 0.15 s of the carrier, the view's dtmf back
+  to '-' at once, one digit counted (the key's late release sends nothing).
 - test_fm_tx_power_levels: 1.5 s overs at the three lowest power levels (DM-1701: 50, 250, 500 mW) captured at the
   SDR's lowest gain: each level's carrier is at least 1 dB stronger than the one below, and the lowest to the third
   differs by 5-15 dB (nominally 10). Relative only: the SDR isn't calibrated, and the radio is in its near field.
@@ -57,6 +65,10 @@ def parse_fm(text):
     out["expect"] = re.findall(r"expect (?:CTCSS|DCS) [^:]+: (PASS|FAIL[^\n]*)", text)
     out["spans"] = [(float(a), float(b)) for a, b in re.findall(r"^segment \d+: ([\d.]+)-([\d.]+) s", text, re.M)]
     out["levels"] = [float(x) for x in re.findall(r"^segment \d+: .*level ([+-]?[\d.]+) dBFS", text, re.M)]
+    # twist: on the carrier; received: after a receiver's de-emphasis (sdr_fm_check.py)
+    out["dtmf"] = [(d, float(a), float(b), int(dev), float(tw), float(rx)) for d, a, b, dev, tw, rx in
+                   re.findall(r"^  dtmf (\S) ([\d.]+)-([\d.]+) s \([\d.]+ s\), deviation (\d+) Hz peak, "
+                              r"twist ([+-][\d.]+) dB \(received ([+-][\d.]+) dB\)", text, re.M)]
     out["tones"] = [(float(f), float(a), float(b), int(d)) for f, a, b, d in
                     re.findall(r"tone ([\d.]+) Hz ([\d.]+)-([\d.]+) s \([\d.]+ s\), deviation (\d+) Hz", text)]
     return out
@@ -101,7 +113,7 @@ def set_fm(radio, wide, kind, value):
 
 
 def key_and_check(radio, sdr_bench, pytestconfig, tag, bw_khz, ctcss=None, dcs=None, key=None, seconds=PTT_S + 5,
-                  tones=False):
+                  tones=False, dtmf=False):
     """Capture while key() keys the radio (default: PTT for PTT_S), analyze, check one segment and the carrier."""
     mhz = pytestconfig.getoption("--fm-mhz")
     rdir = sdr_bench.run_dir(tag)
@@ -114,7 +126,7 @@ def key_and_check(radio, sdr_bench, pytestconfig, tag, bw_khz, ctcss=None, dcs=N
         radio.wait_for(lambda v: v.get("state") != "tx", timeout=3, what="TX ended")
         sdr_bench.capture_wait()
     rc, text = sdr_bench.analyze_fm(cap, bw_khz=bw_khz, ctcss=ctcss, dcs=dcs, ppm=pytestconfig.getoption("--sdr-ppm"),
-                                    freq=mhz, tones=tones)
+                                    freq=mhz, tones=tones, dtmf=dtmf)
     print(text)
     r = parse_fm(text)
     assert r["segments"] >= 1, f"no keyed segment in the capture (~/{sdr_bench.dir}/{rdir}/): {text[-800:]}"
@@ -231,7 +243,102 @@ def test_fm_tx_roger_beep(fm_vfo, sdr_bench, pytestconfig):
         f"roger_beep 0 still ends with a tone: {results[0]['tones']}"
 
 
-@pytest.mark.feature("fm")
+DTMF_SENT = "1#5D0"     # the last a 20 ms tap: the radio holds it to its shortest tone
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_fm_tx_dtmf(fm_vfo, sdr_bench, pytestconfig):
+    if "DTMF" not in fm_vfo.features():
+        pytest.skip("built without CONFIG_DTMF")
+    L = fm_vfo.link
+
+    def over():
+        L.ptt(True)
+        try:
+            fm_vfo.wait_for(lambda v: v.get("state") == "tx" and v.get("dtmf_ready") == "1", 1.0,
+                            sections=("core", "features"), what="TX, DTMF ready")
+            time.sleep(0.5)
+            L.dtmf(DTMF_SENT[:-1], ms=150, gap=150)
+            L.dtmf(DTMF_SENT[-1], ms=20, gap=300)
+            v = fm_vfo.view(["features"])
+            assert v.get("dtmf_digits") == DTMF_SENT, f"the radio core sent {v.get('dtmf_digits')}"
+        finally:
+            L.ptt(False)
+
+    for wide in (False, True):
+        bw = 25.0 if wide else 12.5
+        set_fm(fm_vfo, wide, "none", 0)
+        sent0 = int(fm_vfo.view(["features"]).get("dtmf_sent", "0"))
+        _, r = key_and_check(fm_vfo, sdr_bench, pytestconfig, f"hil_fm_dtmf{int(bw)}", bw, key=over, seconds=6,
+                             dtmf=True)
+        print(f"{bw} kHz dtmf:", r["dtmf"])
+        assert int(fm_vfo.view(["features"]).get("dtmf_sent", "0")) == sent0 + len(DTMF_SENT)
+        assert len(r["spans"]) == 1, f"{len(r['spans'])} keyed segments: DTMF must not drop the carrier"
+        got = "".join(d[0] for d in r["dtmf"])
+        assert got == DTMF_SENT, f"{bw} kHz: decoded {got!r}, sent {DTMF_SENT!r}: {r['dtmf']}"
+        for d, t0, t1, dev, twist, rx_twist in r["dtmf"]:
+            assert t1 - t0 >= 0.08, f"{d}: {t1 - t0:.3f} s on air (shortest tone 0.100)"
+            assert 300 <= dev <= (2500 if bw == 12.5 else 5000), f"{d}: deviation {dev} Hz peak at {bw} kHz"
+            # The DTMF receiver limits (high tone -8 to +4 dB from the low one) apply to the audio a receiver hears,
+            # after its de-emphasis; on the carrier a tone sent through the pre-emphasis reads 3-7 dB higher
+            assert -8.0 <= rx_twist <= 4.0, f"{d}: twist {rx_twist:+.1f} dB received ({twist:+.1f} dB on the carrier)"
+        for a, b in zip(r["dtmf"], r["dtmf"][1:]):
+            assert b[1] - a[2] >= 0.04, f"{a[0]} to {b[0]}: {b[1] - a[2]:.3f} s apart"
+
+
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+def test_fm_tx_dtmf_stop(fm_vfo, sdr_bench, pytestconfig):
+    """A digit held down when the transmission ends (PTT released, then the time-out): the tone ends with the
+    carrier, the view's dtmf goes back to '-', and the key's late release sends nothing."""
+    if "DTMF" not in fm_vfo.features():
+        pytest.skip("built without CONFIG_DTMF")
+    from test_radio_features import settings
+    L = fm_vfo.link
+    set_fm(fm_vfo, False, "none", 0)
+
+    def held(digit, end):
+        def over():
+            L.ptt(True)
+            try:
+                fm_vfo.wait_for(lambda v: v.get("state") == "tx" and v.get("dtmf_ready") == "1", 1.0,
+                                sections=("core", "features"), what="TX, DTMF ready")
+                time.sleep(0.5)
+                L.dtmf_key(digit, True)
+                time.sleep(0.3)
+                assert fm_vfo.view(["features"]).get("dtmf") == digit
+                end()
+                v = fm_vfo.view(["core", "features"])
+                assert v.get("state") != "tx" and v.get("dtmf") is None, f"after the end of TX: {v}"
+                L.dtmf_key(digit, False)
+            finally:
+                L.ptt(False)
+        return over
+
+    def release():
+        time.sleep(0.7)
+        L.ptt(False)
+        fm_vfo.wait_for(lambda v: v.get("state") != "tx", timeout=2, what="TX ended")
+
+    def timeout():
+        fm_vfo.wait_for(lambda v: v.get("state") != "tx", timeout=5, what="the time-out")
+        assert fm_vfo.core().get("tx_deny") == "timeout"
+
+    for name, digit, end, extra in (("ptt", "7", release, {}), ("tot", "9", timeout, {"tot_s": 3, "tot_warn_s": 0})):
+        sent0 = int(fm_vfo.view(["features"]).get("dtmf_sent", "0"))
+        with settings(fm_vfo, **extra):
+            _, r = key_and_check(fm_vfo, sdr_bench, pytestconfig, f"hil_fm_dtmf_{name}", 12.5,
+                                 key=held(digit, end), seconds=7, dtmf=True)
+        print(f"{name}: segment {r['spans']}, dtmf {r['dtmf']}")
+        assert len(r["spans"]) == 1, f"{name}: {len(r['spans'])} keyed segments"
+        assert [d[0] for d in r["dtmf"]] == [digit], f"{name}: decoded {r['dtmf']}"
+        seg_end, tone_end = r["spans"][0][1], r["dtmf"][0][2]
+        assert r["dtmf"][0][2] - r["dtmf"][0][1] >= 0.8, f"{name}: the held digit lasted {r['dtmf'][0]}"
+        assert abs(seg_end - tone_end) <= 0.15, f"{name}: tone ends {tone_end:.3f} s, carrier {seg_end:.3f} s"
+        assert int(fm_vfo.view(["features"]).get("dtmf_sent", "0")) == sent0 + 1
+
+
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx

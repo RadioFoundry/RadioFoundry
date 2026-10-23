@@ -136,33 +136,33 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 
 ## Radio and voice
 
-| Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
-|---|---|---:|---:|---|
-| Analog FM receive and transmit | `FM` | 29,296 | 28,056 | Includes its children (tones, VOX, APRS, FM VFO) |
-| CTCSS / DCS encode and decode | `SUBTONE` | 904 | 3,292* | MD-380: software decode (ADC) and PWM encode; CTCSS 100.0 Hz works on air both ways (2026-10-19), DCS not yet checked |
-| FM TX tones: roger beep, 1750 Hz burst | `FM_TX_TONES` | 568 | — | MD-380: TX tone path not written |
-| FM VOX | `VOX` | 496 | 1,064 |  |
-| Receiver battery saver | `BATTERY_SAVE` | 296 | 740 |  |
-| Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | Needs a receiver that does AM; DM-32 board glue not written yet, so nothing runs |
-| Broadcast FM receiver | `BCAST_FM` | ~0* | — | Needs a second receiver chip (DM-32's RDA5807M); glue not written yet |
-| DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 175,856 | 134,308 | Includes every DMR feature and everything on IP over DMR |
-| Basic privacy (Motorola / Anytone BP) | `DMR_PRIVACY` | 1,936 | 1,992 |  |
-| Talker alias receive and send | `DMR_TALKER_ALIAS` | 984 | 1,300 |  |
-| ETSI GPS Info in the embedded LC | `DMR_GPS` | 2,208 | 2,152 |  |
-| DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,296 | 3,188 |  |
-| Repeater roaming | `DMR_ROAMING` | 11,952 | 12,380 |  |
-| CSBK signaling: call alert, radio check | `DMR_SIGNALING` | 592 | 752 |  |
-| VFO (hand-tuned frequency) | `VFO` | 656 | 516 | Includes the DMR VFO; `VFO` and `VFO_DMR` re-measured 2026-10-17 (DM-1701 plain build, MD-380 with LTO). Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2) is on top of that figure, behind the same switch: about 630 B on the DM-1701 and 730 B on the MD-380 (default builds, LTO as each has it), 750 B on the C-SKY radios |
-| FM VFO | `VFO_FM` | 504 | 452 |  |
-| DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 144 | 104 | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |
-| Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | 1,536 | 2,140 |  |
-| Channel editor: edit a channel, New channel from current settings, text entry | `CHANNEL_EDIT` | 4,656 | 4,252 | Needs `CHANNEL_LIST`. Without it a channel's settings are read only. Measured 2026-10-17 |
-| Side key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 1,344 | — |  |
-| Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 |  |
-| Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
-| Beeps and alert tones | `BEEP` | 1,552 | 1,800 |  |
-| Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one ODR drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
-| GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | — | 1,196 | Needs a GPS receiver. Off, DMR GPS, LRRP and APRS keep the fixed position and report no fix. MD-380 measured 2026-10-22 (LTO, 58f2cebe); the DM-1701 has no receiver |
+| Feature | Switch | Bytes DM-1701 | Bytes MD-380 | DM-1701 | MD-380 | DM-32UV | Notes |
+|---|---|---:|---:|:-:|:-:|:-:|---|
+| Analog FM receive and transmit | `FM` | 29,296 | 28,056 | ● | ● | ● | Includes its children (tones, VOX, APRS, FM VFO) |
+| CTCSS / DCS encode and decode | `SUBTONE` | 904 | 3,292* | ● | ● | ● | MD-380: software decode (ADC) and PWM encode; CTCSS 100.0 Hz works on air both ways (2026-10-19), DCS not yet checked |
+| FM TX tones: roger beep, 1750 Hz burst | `FM_TX_TONES` | 568 | — | ● | ✕ | ● | MD-380: TX tone path not written |
+| DTMF transmit from the keys | `DTMF` | 920 | — | ● | ✕ | ● | MD-380: TX tone path not written |
+| FM VOX | `VOX` | 496 | 1,064 | ● | ● | ● |  |
+| Receiver battery saver | `BATTERY_SAVE` | 296 | 740 | ● | ● | ● |  |
+| Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | ✕ | ✕ | ● | Needs a receiver that does AM; DM-32 board glue not written yet, so nothing runs |
+| Broadcast FM receiver | `BCAST_FM` | ~0* | — | ✕ | ✕ | ● | Needs a second receiver chip (DM-32's RDA5807M); glue not written yet |
+| DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 175,856 | 134,308 | ● | ● | ● | Includes every DMR feature and everything on IP over DMR |
+| Basic privacy (Motorola / Anytone BP) | `DMR_PRIVACY` | 1,936 | 1,992 | ● | ● | ● |  |
+| Talker alias receive and send | `DMR_TALKER_ALIAS` | 984 | 1,300 | ● | ● | ● |  |
+| ETSI GPS Info in the embedded LC | `DMR_GPS` | 2,208 | 2,152 | ● | ● | ● |  |
+| DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,296 | 3,188 | ● | ● | ● |  |
+| Repeater roaming | `DMR_ROAMING` | 11,952 | 12,380 | ● | ● | ● |  |
+| CSBK signaling: call alert, radio check | `DMR_SIGNALING` | 592 | 752 | ● | ● | ● |  |
+| VFO (hand-tuned frequency) | `VFO` | 656 | 516 | ● | ● | ● | Includes the DMR VFO; `VFO` and `VFO_DMR` re-measured 2026-10-17 (DM-1701 plain build, MD-380 with LTO). Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2) is on top of that figure, behind the same switch: about 630 B on the DM-1701 and 730 B on the MD-380 (default builds, LTO as each has it), 750 B on the C-SKY radios |
+| FM VFO | `VFO_FM` | 504 | 452 | ● | ● | ● |  |
+| DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 144 | 104 | ● | ● | ● | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |
+| Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | 1,536 | 2,140 | ● | ● | ● |  |
+| Channel editor: edit a channel, New channel from current settings, text entry | `CHANNEL_EDIT` | 4,656 | 4,252 | ● | ● | ● | Needs `CHANNEL_LIST`. Without it a channel's settings are read only. Measured 2026-10-17 |
+| Side key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 1,344 | — | ● | ● | ● |  |
+| Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 | ● | ● | ● |  |
+| Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | ● | ● | ● | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
+| Beeps and alert tones | `BEEP` | 1,552 | 1,800 | ● | ● | ● |  |
+| Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | ✕ | ✕ | ✕ | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one ODR drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
 
 ## DMR data
 
