@@ -14,6 +14,7 @@
 				<div><dt>{{t home.f_network}}</dt><dd>{{t home.f_network_text}}</dd></div>
 				<div><dt>{{t home.f_tools}}</dt><dd>{{t home.f_tools_text}}</dd></div>
 			</dl>
+			<p class="features-all"><a href="{{home}}features/index.html">{{t home.features_all}} →</a></p>
 		</div>
 		<figure class="hero-device">
 			<img src="{{root}}static/img/radios/{{ flagship_id }}.svg" alt="{{ flagship_name }}">
@@ -22,7 +23,10 @@
 </section>
 
 <section class="wrap section">
-	<h2>{{t home.screens_title}}</h2>
+	<div class="section-head">
+		<h2>{{t home.screens_title}}</h2>
+		<a href="{{home}}radios/{{ flagship_id }}.html#screens">{{t home.screens_all}} →</a>
+	</div>
 	<div class="screens-strip">
 		<img src="{{root}}docs/ux/screens/240x320i10x5/home_dual_tx_b.png" alt="{{t screen.home_dual_tx_b}}" loading="lazy">
 		<img src="{{root}}docs/ux/screens/240x320i10x5/tools.png" alt="{{t screen.tools}}" loading="lazy">
