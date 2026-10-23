@@ -449,7 +449,7 @@ bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " u", m.txa_rx_us);
 		break;
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
-	case 12:	// the split duplex TX half's BS outbound (split-duplex.md 11.6), as the DM-1701's "bs" line
+	case 12:	// the split duplex TX half's BS outbound (split-duplex.md 11.6), as the HR_C6000 radios' "bs" line
 		put_kv(&o, "bs sl", bs.st.slots);
 		put_kv(&o, " b", bs.st.bursts);
 		put_kv(&o, " u", bs.st.underruns);

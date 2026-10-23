@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The encode flags word of the AMBE+2 codec family the MD-380, DM-1701, DM-1801 Pro and DM-32UV hosts run
+// The encode flags word of the AMBE+2 codec family the STM32 and HR_C7000 radios run
 // (docs/spec/codec-md380.md "Encode flags"): hal_vocoder_t options to the word passed on every encode call. One value
 // for every call of a transmission; the codec takes it as a set of feature bits, so a value that changes from call to
 // call is not a "first frame" marker.

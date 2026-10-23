@@ -223,7 +223,7 @@ void hrc_vocoder_park(void)
 }
 
 // The id tools/odrflash and the release manifests use: which stock file the slot was carved from, "<board>-<tag>" with
-// the tag in at least three digits (dm32-049, db25d-2501)
+// the tag in at least three digits (<board>-049)
 static const char *profile(void)
 {
 	static char id[sizeof ODR_BOARD_ID + 8];

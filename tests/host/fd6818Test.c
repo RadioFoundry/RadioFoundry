@@ -384,7 +384,7 @@ static void test_burst_tables(void)
 	CHECK(chip.n == 1 && chip.log[0].reg == 0x30 && chip.log[0].val == 0xBFF1);
 	CHECK(chip.protocol_errors == 0);
 	// The DM-32UV's set has none: idle first
-	fd6818_attach_variant(&dev, &bus, &fd6818_variant_dm32);
+	fd6818_attach_variant(&dev, &bus, &fd6818_variant_default);
 	chip.n = 0;
 	fd6818_dmr_burst(&dev, true, FD6818_BW_DMR);
 	CHECK(chip.n >= 2 && chip.log[0].reg == 0x30 && chip.log[0].val == 0);
@@ -395,7 +395,7 @@ static void test_burst_tables(void)
 // frequency between bursts and never heard the hotspot's downlink)
 static void test_burst_split(void)
 {
-	const fd6818_variant_t *vars[] = { &fd6818_variant_dm32, &fd6818_variant_dm1801pro };
+	const fd6818_variant_t *vars[] = { &fd6818_variant_default, &fd6818_variant_dm1801pro };
 	for (unsigned i = 0; i < 2; i++) {
 		fd6818_t dev;
 		reset_chip();

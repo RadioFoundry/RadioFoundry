@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// CTCSS and DCS generators for radios that send the sub-audio as a PWM or DAC signal into the modulator (the MD-380:
+// CTCSS and DCS generators for radios that send the sub-audio as a PWM or DAC signal into the modulator (e.g.
 // docs/spec/hardware-md380.md 6.4). One call per output sample from a timer interrupt; the result is a duty value
 // that an analog low-pass filter turns into the tone. No hardware, no RTOS.
 #ifndef SUBAUDIO_TX_H

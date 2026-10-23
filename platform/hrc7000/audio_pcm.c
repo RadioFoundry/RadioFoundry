@@ -7,9 +7,9 @@
 // mic interrupt paces everything: two halves make a 20 ms block, the task runs the block callback (never in the ISR)
 // and queues the speaker block it returned. While the speaker is routed (AUDIO_CONTROL b7, set by the board's hook)
 // the task pushes the queue to the prompt FIFO, 32 samples at a time while b31 says there is room, as stock does. The
-// CPU-fed speaker buffer (b5, 0x180000A0) sounded rough and choppy on the DM-1801 Pro with every sample layout tried.
+// CPU-fed speaker buffer (b5, 0x180000A0) sounded rough and choppy on the bench with every sample layout tried.
 //
-// Sample format: mic buffer 16-bit native words; prompt FIFO 16-bit samples, low byte first (DM-1801 Pro bench).
+// Sample format: mic buffer 16-bit native words; prompt FIFO 16-bit samples, low byte first (bench).
 //
 // Mic level for VOX (CONFIG_VOX, hrc_audio_pcm_mic_level): these radios have no analog mic level tap, so the level is
 // measured on the same mic PCM. The first call turns the PCM interrupt on without the stream (the meter), and the

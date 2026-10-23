@@ -24,8 +24,8 @@ typedef struct {
 typedef struct {
 	const st7789_bus_t *bus;
 	uint16_t width, height;		// panel pixels in the chosen orientation (240 x 320 portrait, 320 x 240 landscape)
-	uint8_t madctl;			// memory access control (0xC0: portrait turned 180 degrees, the DM-32's value)
-	bool invert;			// display inversion for normal colors (the DM-32 panel needs it)
+	uint8_t madctl;			// memory access control (0xC0: portrait turned 180 degrees)
+	bool invert;			// display inversion for normal colors (some panels need it)
 	uint8_t scale;			// frame buffer pixel -> scale x scale panel pixels (1 or more)
 } st7789_t;
 

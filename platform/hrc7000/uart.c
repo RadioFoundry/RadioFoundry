@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The programming cable's UART as the host port (hal_stream.h): 115200 8N1 (docs/spec/hardware-dm32.md 3.1). UART0 on
-// the DM-32UV, UART1 on the DB25-D (the board sets HRC_HOST_UART). Receive by interrupt into a ring buffer; transmit by
+// The programming cable's UART as the host port (hal_stream.h): 115200 8N1 (docs/spec/hardware-dm32.md 3.1). UART0 or
+// UART1, as the board sets HRC_HOST_UART. Receive by interrupt into a ring buffer; transmit by
 // polling the TX FIFO (the host link task is the only writer). The set-up and the receive interrupt's loop are shared
-// with the boards' other UARTs (hrc_uart_*, the DM-32UV's GPS).
+// with the boards' other UARTs (hrc_uart_*, e.g. a GPS).
 #include "platform.h"
 #include "hal_stream.h"
 #include "hal_time.h"
@@ -58,7 +58,7 @@ static SemaphoreHandle_t rx_sem;
 static bool started;
 
 // Every received character with its line status, from the interrupt. A board can override it to see bytes that aren't
-// host traffic (the DB25-D's hand mic shares the line)
+// host traffic (a hand mic that shares the line)
 __attribute__((weak)) void hrc_host_uart_rx_tap(uint8_t b, bool error)
 {
 	(void)b;
