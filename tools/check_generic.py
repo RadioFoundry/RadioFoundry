@@ -18,6 +18,12 @@ optional hyphen and an optional letter suffix ("XR-100UV", "XR100", "xr100"). Al
                                points to is the radio's own
   ALLOW (generic_allow.txt)    a glob and the reason it may name radios; an entry nothing needs is an error
 
+Docs (AGENTS.md, generic docs) are stricter. A generic doc (GENERIC_DOCS: docs/spec/ but hardware-*, docs/user/ but
+23-radios.md, docs/dev/, docs/build-config.md, and no radio's own page) names no radio, not even in a link to the
+radio's page: it says what a board provides and links feature-matrix.md. A radio's own page under those directories
+links to the shared spec, not to another radio's page. ALLOW excuses a generic doc only by its exact path, one file
+at a time.
+
 Everything else counts, in code, comments and docs alike, tests/ included. A file whose own path names a radio counts
 too (a tool or test named after the radio that first needed it).
 
@@ -34,6 +40,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ALLOW = "tools/generic_allow.txt"
 LIST_PAGES = ("docs/spec/radios.md", "docs/user/23-radios.md", "docs/feature-matrix.md")
+DOC_DIRS = ("docs/spec/", "docs/user/", "docs/dev/", "docs/build-config.md")
 GENERATED = ("tools/odrflash/odrflash/registry.json",)
 SKIP_DIRS = ("third_party/", "codecs/", "build/")
 TEXT_EXT = (".c", ".h", ".S", ".ld", ".py", ".js", ".mjs", ".sh", ".mk", ".md", ".toml", ".json", ".yml", ".yaml",
@@ -135,6 +142,16 @@ def own(path, bid, docs, shared_docs, family=None):
     return bid in parts[:-1]
 
 
+def doc_scope(path):
+    """path is a doc under the stricter docs rule: a generic doc, or a radio's own page beside them."""
+    return path.endswith(".md") and path.startswith(DOC_DIRS) and path not in LIST_PAGES
+
+
+def generic_doc(path, owned):
+    """A doc that is no radio's: GENERIC_DOCS less hardware-* pages and pages a radio owns (owned)."""
+    return doc_scope(path) and not os.path.basename(path).startswith("hardware-") and not owned
+
+
 def check(root, radios, docs, part_of=None):
     """Problems as strings: each file and line that names a radio where it isn't the subject, and unused ALLOW
     entries. part_of ({id: id}) joins the boards of one radio."""
@@ -152,8 +169,11 @@ def check(root, radios, docs, part_of=None):
         if os.path.splitext(path)[1] not in TEXT_EXT:
             continue
         hits = []
+        # a generic doc is a radio's only by its path (hardware-<id>.md), never because one board.toml [docs] lists it
+        generic = generic_doc(path, any(own(path, b, {}, {}) for b in radios))
+        pages = {} if generic else docs
         for bid, pat in pats.items():
-            if not own(path, bid, docs, shared_docs, family) and pat.search(path):
+            if not own(path, bid, pages, shared_docs, family) and pat.search(path):
                 hits.append((0, bid))
         try:
             with open(os.path.join(root, path), encoding="utf-8") as f:
@@ -162,21 +182,26 @@ def check(root, radios, docs, part_of=None):
             continue
         text = GEN_BLOCK.sub(lambda m: "\n" * m.group(0).count("\n"), text)
         for n, line in enumerate(text.split("\n"), 1):
-            line = FILE_REF.sub(" ", line)
+            # in docs a link names the radio whose page it is: a generic doc links feature-matrix.md, a radio's page
+            # the shared spec
+            if not doc_scope(path):
+                line = FILE_REF.sub(" ", line)
             for bid, pat in pats.items():
-                if pat.search(line) and not own(path, bid, docs, shared_docs, family):
+                if pat.search(line) and not own(path, bid, pages, shared_docs, family):
                     hits.append((n, bid))
         if not hits:
             continue
-        match = [g for g, _ in allow if fnmatch.fnmatchcase(path, g)]
+        match = [g for g, _ in allow if fnmatch.fnmatchcase(path, g) and (g == path or not generic)]
         if match:
             used.update(match)
             continue
         names = sorted({b for _, b in hits})
         lines = sorted({n for n, _ in hits})
-        problems.append("%s:%s: names %s (AGENTS.md rule 4: name by function; or %s with a reason)"
+        why = ("AGENTS.md, generic docs: say what a board provides and link feature-matrix.md" if generic else
+               "AGENTS.md rule 4: name by function")
+        problems.append("%s:%s: names %s (%s; or %s with a reason)"
                         % (path, ",".join(str(n) for n in lines[:8]) + ("..." if len(lines) > 8 else ""),
-                           ", ".join(names), ALLOW))
+                           ", ".join(names), why, ALLOW))
     for g, _ in allow:
         if g not in used:
             problems.append("%s: %s matches no file that names a radio: remove it" % (ALLOW, g))
@@ -247,6 +272,25 @@ def self_test():
         got = check(tmp, radios, docs, {"xr100b": "xr100"})
         ok(got == ["boards/xr100/radio.c:1: names qb7 (AGENTS.md rule 4: name by function; or %s with a reason)"
                    % ALLOW], "boards of one radio (part_of) may name each other, another radio still fails: %s" % got)
+        put("boards/xr100/radio.c", "// the PA\n")
+        put("docs/spec/audio.md", "The speaker amplifier (docs/spec/hardware-xr100.md 3).\n")
+        got = check(tmp, radios, docs, {"xr100b": "xr100"})
+        ok([p[:22] for p in got] == ["docs/spec/audio.md:1: "] and "generic docs" in got[0],
+           "a generic doc may not link a radio's page: %s" % got)
+        put("docs/spec/audio.md", "The speaker amplifier ([the matrix](../feature-matrix.md)).\n")
+        put("docs/spec/hardware-qb7.md", "As on [the other radio](hardware-xr100.md); see [audio](audio.md).\n")
+        got = check(tmp, radios, docs, {"xr100b": "xr100"})
+        ok([p[:29] for p in got] == ["docs/spec/hardware-qb7.md:1: "],
+           "a radio's page links the shared spec, not another radio's page: %s" % got)
+        put("docs/spec/hardware-qb7.md", "See [audio](audio.md).\n")
+        put("docs/spec/audio.md", "On the QB-7 the amplifier is slow.\n")
+        put(ALLOW, "docs/spec/* specs cite radios\n")
+        got = check(tmp, radios, docs, {"xr100b": "xr100"})
+        ok(len(got) == 2 and got[0].startswith("docs/spec/audio.md:1:") and "matches no file" in got[1],
+           "a glob doesn't excuse a generic doc: %s" % got)
+        put(ALLOW, "docs/spec/audio.md to rewrite\n")
+        got = check(tmp, radios, docs, {"xr100b": "xr100"})
+        ok(got == [], "its exact path does: %s" % got)
     finally:
         shutil.rmtree(tmp)
     print("check_generic self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
