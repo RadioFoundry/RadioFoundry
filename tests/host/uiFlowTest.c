@@ -100,6 +100,25 @@ static const flow_t flows[] = {
 	  "dual=1 sel=A", 0, false },
 	{ "11 dual watch talk back: # 1 goes back at once", TALK_BACK "tune:b call:3101234,91,g wait:4000", "ctx 1",
 	  "dual=1 sel=A", 2, false },
+	// Talk back with a receiver per channel (radio-features.md 2.2): the second receiver's call ends, its channel becomes
+	// the selected one so PTT answers there; each reply or call restarts the 10 s, then the selection goes back
+	{ "11 dual watch talk back, two receivers: B's call ends", "receivers:2 " TALK_BACK,
+	  "rxb:3107777,3100,g wait:300 rxbend wait:300", "dual=1 sel=B toast=Talk_back_on_B", 0, false },
+	{ "11 dual watch talk back, two receivers: PTT answers on B", "receivers:2 " TALK_BACK
+	  "rxb:3107777,3100,g wait:300 rxbend wait:300", "ptt", "dual=1 sel=B tx=1", 1, false },
+	{ "11 dual watch talk back, two receivers: back on A after 10 s", "receivers:2 " TALK_BACK
+	  "rxb:3107777,3100,g wait:300 rxbend wait:300", "wait:10500", "dual=1 sel=A", 0, false },
+	{ "11 dual watch talk back, two receivers: a reply restarts the time", "receivers:2 " TALK_BACK
+	  "rxb:3107777,3100,g wait:300 rxbend wait:300", "wait:8000 ptt wait:8000", "dual=1 sel=B tx=1", 1, false },
+	{ "11 dual watch talk back, two receivers: after the reply's 10 s, A", "receivers:2 " TALK_BACK
+	  "rxb:3107777,3100,g wait:300 rxbend wait:300", "wait:8000 ptt wait:10500", "dual=1 sel=A", 1, false },
+	{ "11 dual watch talk back, two receivers: B's next call restarts the time", "receivers:2 " TALK_BACK
+	  "rxb:3107777,3100,g wait:300 rxbend wait:300", "wait:8000 rxb:3107777,3100,g wait:1000 rxbend wait:8000",
+	  "dual=1 sel=B", 0, false },
+	{ "11 dual watch talk back, two receivers: A's call never moves PTT", "receivers:2 " TALK_BACK,
+	  "rxa:3101234,91,g wait:300 rxaend wait:300", "dual=1 sel=A", 0, false },
+	{ "11 dual watch talk back off, two receivers: B's call never moves PTT", "receivers:2 quick 7 ctx 3 5 ok",
+	  "rxb:3107777,3100,g wait:300 rxbend wait:300 ptt", "dual=1 sel=A tx=1", 1, false },
 	// A reply target lapses with its window: B's pane shows B's own talk group once the receiver has gone back to A
 	{ "11 dual watch: no stale reply target on B", "quick 7 ctx 3 5 ok wait:3000",
 	  "tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000", "dual=1 sel=A hides=World", 0, false },

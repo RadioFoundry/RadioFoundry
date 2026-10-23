@@ -130,7 +130,8 @@ so (the debug link's `dual.both`).
 | Its settings change (a codeplug edit, the squelch) | Sent again every 2 s; the link drops repeats |
 | Audio | The selected channel's always wins. The second receiver has the speaker only while the main one plays nothing (FM squelch closed, no DMR call) and the radio isn't transmitting |
 | PTT | On the selected channel, where the main receiver already is. The second receiver keeps listening; its audio is muted while the radio transmits |
-| It doesn't answer, or isn't on its settings 1.5 s after them | The core falls back to alternating the main receiver (2.1) and tries the second receiver again every 10 s |
+| Talk back (the UI setting, [11-scan.md](../user/11-scan.md)) | A call that ends on the other channel makes it the selected one, so the main receiver retunes there, the second receiver gets the old channel, and PTT answers on the new one. The second receiver never transmits: `hal_rx2_t` has no transmit call, and a receive-only SoC's bands are all `tx = false` |
+| It doesn't answer, or isn't on its settings 1.5 s after them | The core falls back to alternating the main receiver (2.1) and tries the second receiver again every 10 s. PTT, a new selection and talk back work as in 2.1 meanwhile |
 | The watch ends | The second receiver stops and its audio goes off |
 
 `ui_svc_receivers()` is 2 on such a radio, and `ui_svc_dual_rx(pane)` reports each pane's own receiver while the
