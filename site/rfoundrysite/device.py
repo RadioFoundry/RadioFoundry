@@ -28,6 +28,7 @@ def png_size(data):
 
 SCREEN_RECT = re.compile(r"<rect\b[^>]*\bid=\"screen\"[^>]*/>")
 KEY_ID = re.compile(r"\bid=\"key-([^\"]*)\"")
+EDGE = re.compile(r"\bdata-edge=\"([^\"]*)\"")
 
 
 def key_names(radio_id):
@@ -47,6 +48,9 @@ def check_keys(src, frame, radio_id):
 	if bad:
 		raise repo.SourceError("%s: key ids the radio has no key for: %s (its keys: %s)"
 				       % (src, ", ".join(bad), ", ".join(names)))
+	edges = sorted(set(EDGE.findall(frame)) - {"left", "right", "top", "bottom"})
+	if edges:
+		raise repo.SourceError("%s: data-edge must be left, right, top or bottom, not %s" % (src, ", ".join(edges)))
 	twice = sorted(set(i for i in ids if ids.count(i) > 1))
 	if twice:
 		raise repo.SourceError("%s: key ids used twice: %s" % (src, ", ".join(twice)))

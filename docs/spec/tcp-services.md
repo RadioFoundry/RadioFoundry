@@ -125,8 +125,10 @@ View keys: `http.requests http.ok http.not_found http.bad http.busy_waits`.
 With `CONFIG_NET_WEBCTL` the page at `/` is the radio's front panel: its drawing (the site's
 `site/static/img/radios/src/<radio>.svg`, served as `/radio.svg`) with the live screen in its display, the LEDs, and
 every key clickable. A mobile's hand microphone (`<radio>-mic.svg`, served as `/mic.svg`) is drawn below it, its keys
-clickable too. The knob carries two translucent halves that turn it one detent per click (holding repeats). Each side
-key (PTT, `sk1`, `sk2`, `top`) also gets a labeled button outside the drawing's edge, easier to hit than the key.
+clickable too. The knob carries two translucent halves that turn it one detent per click (holding repeats). Each key off
+the front face (side and top keys, marked `data-edge` in the drawing) also gets a labeled button outside the edge it
+is on, easier to hit than the key; buttons are sized in screen pixels, so they are the same on every radio. A
+drawing wider than tall (a mobile) takes the page's width, with its mic and the controls below it.
 Beside the drawing: the status (state, channel, frequency, signal, battery), a large PTT button, Listen with a volume
 slider, and buttons for the keys the drawings don't show. The page's files are in `core/net/webctl_assets/` and
 replace `core/net/http_assets/` files of the same name; `tools/gen_webctl_assets.py` writes `/keys.json` (each key's

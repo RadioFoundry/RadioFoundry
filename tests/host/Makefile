@@ -1139,7 +1139,7 @@ WEBCTL_ASSETS := $(sort $(wildcard $(ROOT)/core/net/webctl_assets/*)) gen/webctl
 	$(if $(WEBCTL_MIC),gen/webctl/mic.svg)
 TESTS   += httpAssetsTestWebctl
 
-gen/webctl/keys.json: $(ROOT)/tools/gen_webctl_assets.py
+gen/webctl/keys.json: $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_SVGS) $(ROOT)/boards/$(WEBCTL_BOARD)/$(WEBCTL_BOARD).h
 	@python3 -I $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_BOARD) gen/webctl > /dev/null
 gen/webctl/radio.svg gen/webctl/mic.svg: gen/webctl/keys.json
 gen/webctl/http_assets_gen.h: $(WEBCTL_ASSETS) $(ROOT)/tools/gen_http_assets.py

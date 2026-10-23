@@ -163,7 +163,9 @@ photos (the photos stay outside the repository: product photos are not ours to p
   name being the board's `KEY_*` in lower case without `KEY_` (`key-fn_left`); the channel knob `id="encoder"` and a
   drawn LED `id="led"`. Keys whose shape doesn't match a key (a d-pad drawn as one piece) get transparent hit rects
   (`fill="none" pointer-events="all"`) at the end. The build checks that every `key-` id names one of the radio's keys,
-  once; keys not drawn become buttons on the page;
+  once; keys not drawn become buttons on the page. A key off the front face (side keys, top keys) also carries
+  `data-edge="left|right|top|bottom"`, the drawing's edge it is on: the page puts a labeled button for it outside
+  that edge;
 - a radio with a keyed hand microphone may have `<radio>-mic.svg` beside its drawing, for the web control page only:
   the same `key-` rule, the ids counted once across both files, and gradient ids of its own (the page puts both
   drawings in one document).

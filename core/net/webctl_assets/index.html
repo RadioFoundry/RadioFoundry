@@ -14,7 +14,8 @@ header,.row,#keys,#help{display:flex;flex-wrap:wrap;align-items:center;gap:8px}h
 header b{font-size:17px;margin-right:auto}#st:before{content:"";display:inline-block;width:8px;height:8px;margin-right:6px;
 border-radius:50%;background:var(--y)}.on #st:before{background:var(--g)}
 main{display:grid;grid-template-columns:minmax(220px,380px) minmax(280px,440px);gap:24px;justify-content:center;align-items:start}
-@media (max-width:700px){main{grid-template-columns:1fr}}
+.wide #radio{display:contents}.wide #radio svg:first-child{grid-column:1/-1}.wide #side{grid-column:2}
+.wide:not(.mic) #side{grid-column:1/-1}@media (max-width:700px){main{grid-template-columns:1fr}.wide #side{grid-column:auto}}
 svg{display:block;width:100%;height:auto;max-height:calc(100vh - 70px);touch-action:none;user-select:none;-webkit-user-select:none}
 #radio svg+svg{max-width:260px;margin:16px auto 0}svg *{pointer-events:none}svg .k{pointer-events:all;cursor:pointer}svg .k:focus{outline:none}
 svg .k:focus-visible,svg .k.dn{filter:brightness(1.7) drop-shadow(0 0 4px var(--a))}
@@ -117,30 +118,40 @@ function knob(k) {
 	}
 }
 
-// A labeled button beside each side key, outside the radio's edge where it is easy to hit; the drawing widens for them
-function sides(svg) {
-	// Sized to the drawing, its height counting half: a narrow hand mic gets buttons as big as a handheld's
-	const vb = svg.viewBox.baseVal, u = Math.max(vb.width, vb.height / 2), W = u * .2, H = u * .09, gap = u * .03, rows = [];
-	let x0 = vb.x, x1 = x0 + vb.width;
+// A labeled button outside the drawing's edge for each key off the front face (its data-edge: left, right, top or
+// bottom), easier to hit than the key; the drawing grows for them
+function edges(svg) {
+	// Sized in screen pixels (s: drawing units per pixel), so the buttons are as big on every radio
+	const vb = svg.viewBox.baseVal, s = vb.width / svg.getBoundingClientRect().width, gap = 8 * s, keys = [];
+	const box = [vb.x, vb.y, vb.x + vb.width, vb.y + vb.height];
 	for (const b of hi.keys) {
-		const n = bits[b], e = /^(ptt|sk\d|top)$/.test(n) && svg.getElementById('key-' + n);
-		if (e) { const r = e.getBBox(); rows.push({b, n, r, y: r.y + r.height / 2, left: r.x + r.width / 2 < x0 + vb.width / 2}); }
+		const n = bits[b], e = svg.getElementById('key-' + n), d = e && e.dataset.edge;
+		if (d) keys.push({b, n, d, r: e.getBBox()});
 	}
-	for (const left of [true, false]) {
-		const side = rows.filter(s => s.left === left).sort((p, q) => p.y - q.y);
-		if (!side.length) continue;
-		const edge = left ? Math.min(...side.map(s => s.r.x)) : Math.max(...side.map(s => s.r.x + s.r.width));
-		const x = left ? edge - gap - W : edge + gap;
-		let last = -1e9;
-		for (const s of side) {
-			const y = last = Math.max(s.y, last + H * 1.2);	// keys close together get their buttons spread apart
-			el('path', svg, undefined, {d: `M${left ? x + W : x} ${y}L${left ? s.r.x : s.r.x + s.r.width} ${s.y}`, class: 'ld'});
-			bind(el('rect', svg, undefined, {x, y: y - H / 2, width: W, height: H, rx: H / 2, class: 'sk'}), s.b, label(s.n));
-			el('text', svg, label(s.n), {x: x + W / 2, y, 'font-size': H * .46, class: 't'});
+	for (const d of ['left', 'right', 'top', 'bottom']) {
+		// v: a row above or below (else a column beside); lo: before the drawing (left or top); c: a key's center along
+		const v = d === 'top' || d === 'bottom', lo = d === 'left' || d === 'top', a = v ? 0 : 1, ks = keys.filter(k => k.d === d);
+		const c = k => v ? k.r.x + k.r.width / 2 : k.r.y + k.r.height / 2, near = k => v ? lo ? k.r.y : k.r.y + k.r.height :
+			lo ? k.r.x : k.r.x + k.r.width;
+		if (!ks.length) continue;
+		ks.sort((p, q) => c(p) - c(q));
+		let W = 72 * s, H = 30 * s, last = -1e9;
+		// A row's buttons as wide as the space between its keys allows
+		if (v) ks.forEach((k, i) => i && (W = Math.min(W, (c(k) - c(ks[i - 1])) * .92)));
+		const len = v ? W : H, deep = v ? H : W, edge = (lo ? Math.min : Math.max)(...ks.map(near)), p = lo ? edge - gap - deep : edge + gap;
+		for (const k of ks) {
+			const at = last = Math.max(c(k), last + len + gap / 2), t = label(k.n);	// keys close together get theirs spread
+			const cx = v ? at : p + W / 2, cy = v ? p + H / 2 : at, side = lo ? p + deep : p;
+			el('path', svg, undefined, {d: v ? `M${cx} ${side}L${c(k)} ${near(k)}` : `M${side} ${cy}L${near(k)} ${c(k)}`, class: 'ld'});
+			bind(el('rect', svg, undefined, {x: cx - W / 2, y: cy - H / 2, width: W, height: H, rx: H / 2, class: 'sk'}), k.b, t);
+			el('text', svg, t, {x: cx, y: cy, 'font-size': Math.min(14 * s, W / t.length / .65), class: 't'});
+			box[a] = Math.min(box[a], at - len / 2 - gap);
+			box[a + 2] = Math.max(box[a + 2], at + len / 2 + gap);
 		}
-		if (left) x0 = x - gap; else x1 = x + W + gap;
+		const i = v ? 1 : 0;
+		if (lo) box[i] = Math.min(box[i], p - gap); else box[i + 2] = Math.max(box[i + 2], p + deep + gap);
 	}
-	svg.setAttribute('viewBox', [x0, vb.y, x1 - x0, vb.height].join(' '));
+	svg.setAttribute('viewBox', [box[0], box[1], box[2] - box[0], box[3] - box[1]].join(' '));
 }
 
 // The radio's drawing and its hand mic's (a mobile's), their key-<name> shapes made keys; keys they don't show become
@@ -151,6 +162,9 @@ async function panel() {
 	const box = $('radio'), get = async u => { const r = await fetch(u).catch(() => 0); return r && r.ok ? r.text() : ''; };
 	box.innerHTML = await get('/radio.svg') + await get('/mic.svg');
 	const svgs = [...box.querySelectorAll('svg')], find = id => svgs.map(v => v.getElementById(id)).find(e => e);
+	const vb = svgs[0] && svgs[0].viewBox.baseVal;
+	// A mobile's drawing (wider than tall) takes the page's width, its mic and the controls below it
+	if (vb && vb.width > vb.height) document.querySelector('main').className = 'wide' + (svgs[1] ? ' mic' : '');
 	const s = find('screen'), at = a => s.getAttribute(a);
 	scr = s ? el('image', s.ownerSVGElement, undefined, {x: at('x'), y: at('y'), width: at('width'), height: at('height'),
 		preserveAspectRatio: 'none', style: 'image-rendering:pixelated'}) : el('img', box, undefined, {id: 'scr'});
@@ -160,7 +174,7 @@ async function panel() {
 		if (e) bind(e, b, label(n));
 		else if (b !== ptt) bind(el('button', $('keys'), label(n)), b, label(n));
 	}
-	svgs.forEach(sides);
+	svgs.forEach(edges);
 	const k = find('encoder');
 	if (hi.encoder && k) knob(k);
 	else if (hi.encoder) for (const v of [-1, 1]) {
