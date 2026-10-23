@@ -73,7 +73,8 @@ static bool fake_rf(void *ctx, bool tx)
 	}
 	return rf_ok;
 }
-static uint32_t fake_now(void *ctx) { return t_us; }
+static uint32_t now_step;	// the clock moves this much per read (a busy wait ends)
+static uint32_t fake_now(void *ctx) { t_us += now_step; return t_us; }
 static void fake_lock(void *ctx) { locks++; }
 static void fake_unlock(void *ctx) { unlocks++; }
 static void fake_notify(void *ctx) { }
@@ -530,6 +531,86 @@ static void test_ring_wrap(void)
 	hrc6000_bs_stop(&eng);
 }
 
+// bs_queue_at: a burst for one numbered slot: dropped once that slot has passed, held while it is ahead
+static void test_queue_at(void)
+{
+	fresh();
+	start(0);
+	tick();
+	tick();
+	hrc6000_bs_key(&eng, true);
+	while (!bs.on_air) {
+		tick();
+	}
+	uint32_t c, t;
+	int8_t ts;
+
+	CHECK(hrc6000_bs_slot_clock(&eng, &c, &t, &ts));
+	// The next boundary (c + 1) sets up slot c + 2, which has ts again
+	dmr_tx_burst_t old = burst(DMR_BURST_DATA_HEADER, 0, 0x01), cs = burst(DMR_BURST_CSBK, 0, 0x5A);
+
+	CHECK(hrc6000_bs_queue_at(&eng, c, ts, &old, NULL, NULL));
+	CHECK(hrc6000_bs_queue_at(&eng, c + 2u, ts, &cs, NULL, NULL));
+	nx = 0;
+	tick();
+	CHECK(bs.st.at_late == 1 && last_write(HRC_PAGE_SYS, 0x50) == hrc6000_dmr_reg50(DMR_BURST_CSBK, 0));
+	// Slot c + 6 (same ts) queued now: slot c + 4 goes idle meanwhile, then it plays
+	CHECK(hrc6000_bs_queue_at(&eng, c + 6u, ts, &cs, NULL, NULL));
+	tick();
+	nx = 0;
+	tick();
+	CHECK(bs.st.at_wait == 1 && last_write(HRC_PAGE_SYS, 0x50) == hrc6000_dmr_reg50(DMR_BURST_IDLE, 0));
+	tick();
+	nx = 0;
+	tick();
+	CHECK(last_write(HRC_PAGE_SYS, 0x50) == hrc6000_dmr_reg50(DMR_BURST_CSBK, 0));
+	CHECK(hrc6000_bs_slot_clock(&eng, &c, &t, &ts) && bs.st.at_late == 1);
+	hrc6000_bs_stop(&eng);
+}
+
+// bs_restart: not keyed only; the clock stops, own timing starts again at the boundary asked for, slot ts there
+static void test_restart(void)
+{
+	for (int8_t want = 1; want <= 2; want++) {
+		fresh();
+		start(0);
+		tick();
+		tick();
+		hrc6000_bs_key(&eng, true);
+		CHECK(!hrc6000_bs_restart(&eng, t_us + 10000u, want));		// keyed
+		hrc6000_bs_key(&eng, false);
+		tick();
+		nx = 0;
+		now_step = 7;
+		// The next of target + k x 30 ms, 10 ms from now: from a target ahead, then one in the past
+		uint32_t target = (want == 1) ? t_us + 10000u + 30000u * 5u : t_us + 10000u - 30000u * 3u;
+		uint32_t at = t_us + 10000u;
+		CHECK(hrc6000_bs_restart(&eng, target, want));
+		now_step = 0;
+		CHECK((int32_t)(t_us - at) >= 0 && (int32_t)(t_us - at) < 30);
+		CHECK(count_writes(HRC_PAGE_SYS, 0x40, 0xC3) == 1 && count_writes(HRC_PAGE_SYS, 0x41, 0x20) == 2 &&
+		      last_write(HRC_PAGE_SYS, 0x40) == 0xE3);
+		CHECK(bs.st.restarts == 1 && !eng.timing);
+		// While a restart waits no boundary is taken (as from the ISR during the wait)
+		uint32_t ticks = eng.tick;
+		bs.restarting = true;
+		hrc6000_dmr_isr_timeslot(&eng);
+		bs.restarting = false;
+		CHECK(eng.tick == ticks && !eng.timing);
+		hrc6000_dmr_isr_timeslot(&eng);		// the new clock's first boundary: slot want starts there
+		uint32_t c, t;
+		int8_t ts;
+
+		CHECK(hrc6000_bs_slot_clock(&eng, &c, &t, &ts) && ts == want);
+		t_us += 1200;
+		hrc6000_dmr_isr_timeslot(&eng);		// one more in the same slot: not a boundary
+		CHECK(eng.tick == ticks + 1u);
+		tick();
+		CHECK(hrc6000_bs_slot_clock(&eng, &c, &t, &ts) && ts == 3 - want);
+		hrc6000_bs_stop(&eng);
+	}
+}
+
 int main(void)
 {
 	hrc6000_attach(&dev, &bus);
@@ -541,6 +622,8 @@ int main(void)
 	test_cach();
 	test_raw_slot();
 	test_stall_and_halt();
+	test_queue_at();
+	test_restart();
 	printf("# hrc6000BsTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;
 }

@@ -45,6 +45,10 @@ typedef struct {
 	// CW ID): false = a silent carrier, true = the tone again. Only while a tone set with tx_tone runs. Without it the
 	// core keys with tx_tone(hz) / tx_tone(0), which lets the microphone through in the gaps
 	bool (*tx_tone_key)(bool down);
+	// Optional (CONFIG_DTMF): during FM TX, send the DTMF pair of digit ('0'-'9', '*', '#', 'A'-'D'; hal_dtmf.h)
+	// instead of the microphone until called again; 0 = the microphone again. A new digit replaces the one sounding.
+	// False when the board can't (not in FM TX, not a digit). The core never mixes it with tx_tone
+	bool (*tx_dtmf)(char digit);
 	// Optional: the turn-off tail of the TX tone tx() set, at the end of an FM transmission (DCS: the 134.4 Hz tone that
 	// closes the receivers' squelch before the carrier drops). on: start it; false when there is none (no DCS, or the
 	// chip can't), and the core unkeys at once. off: stop it, still keyed. The core keeps the carrier up
