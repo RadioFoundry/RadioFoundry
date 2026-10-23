@@ -15,8 +15,8 @@ MAXIMAL_VARS := LTO=1
 # Left out of tools/ci.sh's maximal configuration: PPP stands in for the USB network adapter on UART-only radios
 # (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above)
 MAXIMAL_SKIP := NET_PPP APRS_IGATE
-# What the board lacks or can't do yet, one switch per line with the reason (tools/boards.py checks there is
-# one): ci's maximal configuration leaves these off
+# What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
+# docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off
 BOARD_UNSUPPORTED += FONT_XL	# the 160x120 panel is too small for the large font (it is for 240 px and wider)
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver: the AT1846S is FM only (docs/spec/airband-and-broadcast.md)
 BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-broadcast.md)

@@ -46,9 +46,11 @@ tests for every feature, is `tools/bringup.py list --radio <id>`; recorded runs 
 
 ## Built by default on each radio
 
-● on in the radio's default image · ○ off by default (it builds when switched on) · ✕ not available: the board or its
-platform lists it in `BOARD_UNSUPPORTED` with the reason (`config.mk`) · ? off, and no source says yet whether the
-radio has the part it needs (`board.toml` `[hardware] unconfirmed`). From each board's `make print-config`. A switch
+● on in the radio's default image · ○ off by default (it builds when switched on) · ✕ the radio's hardware can't do
+it: the board or its platform lists it in `BOARD_UNSUPPORTED` with the reason (`config.mk`) · … the hardware can, but
+the radio's driver or glue isn't written yet (`BOARD_NOT_WRITTEN`) · ? off, and no source says yet whether the radio
+has the part it needs (`board.toml` `[hardware] unconfirmed`). The rule:
+[build-config.md](build-config.md#unsupported-not-written-unconfirmed). From each board's `make print-config`. A switch
 that needs hardware some radios lack (`hardware` in `tests/hil/features.toml`) is never ○. The last two rows are not
 switches. Voltage reading: what the radio measures, its battery, its DC input (Supply) or none (`board_volts()` in
 `hal/board.h`). Clock: whether the radio's real-time clock keeps time through power-off (`board.toml` `[hardware]
@@ -79,20 +81,20 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● |
 | `NET_APRSIS` | ● | ● | ● | ● | ● |
-| `NET_USRP` | ● | ● | ● | ✕ | ● |
+| `NET_USRP` | ● | ● | ● | … | ● |
 | `MDNS` | ● | ● | ● | ● | ● |
 | `TFTP` | ● | ● | ● | ● | ● |
 | `TFTP_IDDB` | ● | ● | ● | ● | ● |
 | `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● |
 | `SNMP` | ● | ● | ● | ● | ● |
-| `SFR` | ● | ● | ● | ✕ | ✕ |
+| `SFR` | ● | ● | ● | … | ✕ |
 | `TASK_STACKS` | ● | ● | ● | ● | ● |
 | `USB` | ● | ✕ | ✕ | ✕ | ● |
 | `HOSTLINK` | ● | ● | ● | ● | ● |
 | `USB_NETWORK` | ● | ✕ | ✕ | ✕ | ● |
 | `NET_PPP` | ○ | ● | ● | ● | ○ |
 | `HOTSPOT` | ● | ● | ● | ● | ● |
-| `HOTSPOT_SPLIT` | ● | ● | ● | ✕ | ✕ |
+| `HOTSPOT_SPLIT` | ● | ● | ● | … | … |
 | `DEBUGLINK` | ● | ● | ● | ● | ● |
 | `CPS_OPENFW` | ● | ● | ● | ● | ● |
 | `CPS_FAST` | ● | ● | ● | ● | ● |
@@ -108,12 +110,13 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `SCAN` | ● | ● | ● | ● | ● |
 | `DUAL_WATCH` | ● | ● | ● | ● | ● |
 | `BEEP` | ● | ● | ● | ● | ● |
-| `FM_TX_TONES` | ● | ● | ● | ● | ✕ |
+| `FM_TX_TONES` | ● | ● | ● | ● | … |
+| `DTMF` | ● | ● | ● | ● | … |
 | `VOX` | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● |
 | `VIBRATE` | ✕ | ● | ? | ✕ | ✕ |
 | `GPS` | ✕ | ✕ | ● | ● | ● |
-| `AUDIO_PROBE` | ○ | ✕ | ○ | ✕ | ○ |
+| `AUDIO_PROBE` | ○ | … | ○ | … | ○ |
 | `STUB_ENTRY` | ● | ● | ● | ● | ● |
 | `NAND_STORAGE` | ✕ | ✕ | ✕ | ● | ✕ |
 | `CRASH_LOG` | ● | ● | ● | ● | ● |
@@ -121,11 +124,11 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `CRASH_REPORT` | ● | ● | ● | ● | ● |
 | `WATCHDOG` | ● | ● | ● | ● | ● |
 | `FAULT_TRACE` | ✕ | ● | ● | ● | ✕ |
-| `AM_RX` | ✕ | ✕ | ● | ✕ | ✕ |
-| `BCAST_FM` | ✕ | ● | ● | ✕ | ✕ |
+| `AM_RX` | ✕ | … | ● | … | ✕ |
+| `BCAST_FM` | ✕ | ● | ● | … | ✕ |
 | `APRS` | ● | ● | ● | ● | ● |
-| `APRS_RX` | ● | ● | ● | ✕ | ✕ |
-| `APRS_IGATE` | ○ | ● | ● | ✕ | ✕ |
+| `APRS_RX` | ● | ● | ● | … | … |
+| `APRS_IGATE` | ○ | ● | ● | … | … |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● |
