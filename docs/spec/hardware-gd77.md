@@ -497,7 +497,7 @@ and the web flasher write the image into a copy of an update file the user suppl
 ([update-gd77.md](update-gd77.md)). Unverified on a radio.
 
 A radio already running an ODR build with `CONFIG_STUB_ENTRY=y` can be updated without update mode, through the K22F
-flash stub ([stub-k22f.md](stub-k22f.md)): `stub/stubtool.py PORT --odr-enter --write-app odr_gd77_codec.bin` (or the
+flash stub (section 16): `stub/stubtool.py PORT --odr-enter --write-app odr_gd77_codec.bin` (or the
 plain `odr_gd77.bin`, which keeps the codec in place). It writes only the 2 KB sectors that changed, never below 0x4000
 or the last sector, and backs up or restores the whole flash and the SPI NOR above its first megabyte. Unverified: it
 has not run on a radio.
@@ -553,7 +553,7 @@ Each needs a radio on the bench.
 | Factory calibration: both blocks loaded and checked, converted and applied (6.4) | written, host tested, unverified |
 | USB serial: host link, debug link, board view (13, 14) | written, unverified; the network adapter off |
 | Update image packaging and flashing (odrflash, web flasher) | written and host tested; unverified on a radio |
-| Flash stub entry and the K22F stub (10, [stub-k22f.md](stub-k22f.md)) | written, host tested, unverified; `CONFIG_STUB_ENTRY` off by default |
+| Flash stub entry and the K22F stub (10, 16) | written, host tested, unverified; `CONFIG_STUB_ENTRY` on by default |
 
 ## 13. USB
 
@@ -632,3 +632,26 @@ diagnostics page (`rst`). The crash log ([crash-log.md](crash-log.md)) is on: th
 no backup RAM; the bootloader runs between the reset and the next start and may use that RAM (U). The record's CRC
 decides: a record it overwrote is ignored, never shown wrong.
 
+## 16. Flash stub
+
+The K22F flash stub ([stub-k22f.md](stub-k22f.md)) installs builds and backs up the flash through a running ODR. This
+section holds the GD-77's profile: `boards/gd77/board.toml` `[flash.stub]`, read by `stub/k22stub.py` `BOARDS`.
+`tests/host/k22stub_wire_check.py` checks it against `memory.ld`, `board.mk`, `pins.h` and `storage_gd77.h`.
+Unverified: the stub has not run on a radio.
+
+| Profile key | Value | Source |
+|---|---|---|
+| `id` | 1 | |
+| `owned` | 0x4000..0x55D00: what a plain build replaces | 6.1 |
+| `codec`, `codec_image_end` | 0x55D00..0x7B800; a merged image ends at 0x7B780 (the descriptor's end) | [codec-gd77.md](codec-gd77.md) |
+| `app_end` | 0x7F800: the last sector (radio data) is never written | 6.1 |
+| `spi` | NOR on PTE5 (SCK), PTE4 (MOSI), PTE6 (MISO), chip select PTA19, released to its pull-up when idle (the pin is also XTAL0) | 3.1, 6.2 |
+| `spi_floor` | 0x100000: the first megabyte is the radio's own data, kept read only | 6.2 |
+
+The board record (hex): `01 01 01 01 00004000 0007F800 00100000 85 84 86 13 00000000`.
+
+The stub never writes below 0x4000 (the radio's loader) or the last sector 0x7F800. Sector 171 (0x55800) holds both
+the application's end and the codec's start: the tool reads it back, saves it to the backup directory and keeps the
+codec bytes. `--board gd77` selects the profile with `--attach`; with `--odr-enter` the VERSION reply names it.
+
+Open: whether the radio's loader checks anything at 0x4000 besides the stack pointer and reset vector.
