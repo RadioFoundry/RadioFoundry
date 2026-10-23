@@ -18,7 +18,7 @@ typedef struct {
 	void (*rf_switch)(bool tx);
 	// The PA one-shot expired (ISR context): key the PA if the transmission is still on
 	void (*pa_on)(void);
-	// Microseconds from the start of a burst to the PA one-shot (the DM-32UV's "DMR PA" setting, default 28 ms)
+	// Microseconds from the start of a burst to the PA one-shot (a stock "DMR PA" setting, default 28 ms)
 	uint32_t pa_delay_us;
 } hrc_dmr_board_t;
 

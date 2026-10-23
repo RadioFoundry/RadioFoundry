@@ -14,7 +14,7 @@
 #include <stddef.h>
 
 #define LIS3DH_WHO_AM_I_VALUE	0x33u
-#define LIS3DH_WHO_AM_I_SC7A20	0x11u	// a register-compatible clone (the DM-1801 Pro's)
+#define LIS3DH_WHO_AM_I_SC7A20	0x11u	// a register-compatible clone (found on some radios)
 
 #define LIS3DH_REG_WHO_AM_I	0x0Fu
 #define LIS3DH_REG_CTRL1	0x20u

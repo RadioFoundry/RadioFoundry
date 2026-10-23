@@ -28,7 +28,7 @@ typedef struct {
 	uint32_t tab_off, tab_len, tab_ram;
 	// Entry points, offsets from the code start
 	uint32_t decode, encode, dec_init, dec_set, enc_init, enc_set, fec_init;
-	uint32_t stock_tag;			// which stock file: 49 / 46 (DM-32UV), 2501 / 2409 / 2405 / 20 (DB-25D)
+	uint32_t stock_tag;			// which stock file: its version number (the board's codec_maps)
 	uint32_t crc;				// CRC-32 of code, tables and the relocation list, as in the slot
 	uint32_t rel_off, rel_count;
 	uint32_t reserved[13];
