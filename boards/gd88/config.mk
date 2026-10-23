@@ -63,3 +63,5 @@ BOARD_UNSUPPORTED += AM_RX	# the air band isn't wired yet
 BOARD_UNSUPPORTED += AUDIO_PROBE	# a bench diagnostic for an audio path this radio doesn't have
 # DMR needs the codec merged for voice, so FM stays the one mode every configuration needs
 BOARD_REQUIRED := FM
+CONFIG_DTMF ?= n
+BOARD_UNSUPPORTED += DTMF	# DTMF is sent in FM transmit, which is off until A's power control is known (GD88_TX)
