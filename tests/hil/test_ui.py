@@ -369,9 +369,13 @@ def test_quick_vox_toggle(home):
     wait_screen(r, "quick")
     r.press("6")
     v = r.view(["features", "link"])
-    if v.get("vox_on") == was and "build" in v.get("ui.toast", ""):
+    toast = v.get("ui.toast", "")
+    if v.get("vox_on") == was and "build" in toast:
         leave_quick(r)
         skip("not_built", "built without CONFIG_VOX")
+    if v.get("vox_on") == was and "not on this radio" in toast:
+        leave_quick(r)  # the switch is on, but the board's VOX glue (its microphone level) isn't written
+        skip("not_built", f"this radio's VOX glue isn't written: {toast!r}")
     want = "0" if was == "1" else "1"
     r.wait_for(lambda x: x.get("vox_on") == want, sections=("features",), what=f"vox_on={want}")
     r.press("6")
