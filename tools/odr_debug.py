@@ -461,7 +461,7 @@ class DebugLink:
         return {"switches": switches, "writes": writes, "max_lag_ms": lag, "done": r[6]}
 
     def probe_pin_tone(self, hz):
-        """A hz square wave on the board's spare output (DM-1701: PC8, the stock beep PWM); 0 = off."""
+        """A hz square wave on the board's spare output (hal_audio_tap.h); 0 = off."""
         self.request(AUDIO_PROBE, struct.pack("<BH", PROBE_PIN_TONE, hz))
 
     def probe_pin_pwm(self, top, hz, amp_permille):
@@ -1016,7 +1016,7 @@ def write_png(path, w, h, rows, scale=1):
 
 def parse_counters(lines):
     """Counters from the diagnostics lines as a flat dict: 'k=v' tokens (prefixed by the line's first word, e.g.
-    call.rx, voice.play), the DM-1701 board tokens (V H T I C D crc rc, as modem.voice etc.) and its audio line
+    call.rx, voice.play), the HR_C6000 boards' tokens (V H T I C D crc rc, as modem.voice etc.) and its audio line
     (audio.blk, audio.ov, audio.dr) and BS outbound line (bs.slots, bs.cach, ...)."""
     import re
     out = {}
@@ -1037,7 +1037,7 @@ def parse_counters(lines):
                 if m and m.group(1) in names:
                     out[f"bs.{names[m.group(1)]}"] = int(m.group(2))
             continue
-        if words[0] == "aud":           # "aud blk N ov N dr N": the DM-1701 DMR audio counters
+        if words[0] == "aud":           # "aud blk N ov N dr N": the HR_C6000 boards' DMR audio counters
             for k, v in zip(words[1::2], words[2::2]):
                 if as_int(v) is not None:
                     out[f"audio.{k}"] = as_int(v)

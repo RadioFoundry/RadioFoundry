@@ -494,7 +494,7 @@ static void test_manual_and_ptt_trigger(void)
 }
 
 // APRS keys at the radio's current power level, a temporary change included (it used the settings' default, so a
-// radio stepped down to its lowest level still sent APRS at the default: 1 W on the DM-1701)
+// radio stepped down to its lowest level still sent APRS at the default power)
 static void test_tx_power(void)
 {
 	reset();
@@ -1016,7 +1016,7 @@ static void test_rx_stream(void)
 	CHECK(sm.view.state == RS_IDLE);
 	fake_tap.caps = 0;
 }
-// A board with its own receive path and no transmit one (tx_start NULL, as the DM-32UV): its audio reaches the
+// A board with its own receive path and no transmit one (tx_start NULL): its audio reaches the
 // demodulator at its own rate, nothing is sent on RF and the transmitter is never keyed for APRS
 static struct {
 	const int16_t *s;

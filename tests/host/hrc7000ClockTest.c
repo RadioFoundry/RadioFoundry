@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // HR_C7000 clock arithmetic (platform/hrc7000/clock_math.h): the PLL words clock.c writes and the rates they give, the
-// UART divisor at every APB clock the boards run, and the bit-bang phase length. The DB25-D runs 168 / 84 MHz and hands
+// UART divisor at every APB clock the boards run, and the bit-bang phase length. A board behind an IAP loader runs 168 / 84 MHz and hands
 // over to the runtime stub (built for 72 / 36 MHz) with the loader's clocks restored.
 #include <stdint.h>
 #include <stdio.h>
@@ -28,7 +28,7 @@ int main(void)
 	CHECK(hrc_pll_word(0xFF000000u, 1, 28, 2, 2) == (0xFF000000u | w));
 	CHECK(hrc_pll_word(0xFFFFFFFFu, 1, 28, 2, 2) == (0xFF000000u | w));
 
-	// The DB25-D loader's 72 MHz (24 MHz x 24 / 2 / 4) is a different word, and the decoder reads it back
+	// The IAP loader's 72 MHz (24 MHz x 24 / 2 / 4) is a different word, and the decoder reads it back
 	uint32_t lw = hrc_pll_word(0, 1, 24, 2, 4);
 	CHECK(hrc_pll_out_hz(lw, XTAL) == 72000000u);
 	CHECK(lw != w);

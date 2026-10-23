@@ -316,7 +316,7 @@ def c7000_flash():
 			       else {k: st.GENERIC[k] for k in ("id", "latch", "key", "nand")}}
 	profiles = []
 	for p in dc.PROFILES.values():
-		# a stock file known only by its whole-file hash (the DB25-D 2024-05-09 build) has no codec hashes: it can be
+		# a stock file known only by its whole-file hash (e.g. a 2024-05-09 build) has no codec hashes: it can be
 		# carved but not found in a program flash read
 		if "code_sha256" not in p and p.get("kind") == "progmem":
 			continue
