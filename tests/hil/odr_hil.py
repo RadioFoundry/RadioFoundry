@@ -390,19 +390,26 @@ class Radio:
                 self._req_until(lambda: L.dmr_fields(mode=mode), lambda v: v.get("mode") == mode, "VFO mode back")
 
     def find_channel(self, rx_hz, mode=None):
-        """Select the first channel of the current zone receiving on rx_hz (and in mode 'fm' / 'dmr'); returns its
-        zone position. AssertionError if the zone has none."""
+        """Select the first channel receiving on rx_hz (and in mode 'fm' / 'dmr'): the current zone first, then the
+        others in order, so a test doesn't depend on the zone the radio was left in (restore() puts the zone back).
+        Returns the channel's position in the zone it selected. AssertionError if no zone has one."""
         L = self.link
         if self.core().get("vfo") == "1":
             self._req_until(lambda: L.vfo(False), lambda v: v.get("vfo") == "0", "VFO off")
-        size = int(self.core().get("zone_size") or 0)
-        for pos in range(size):
-            v = self._req_until(lambda: L.zone_pos(pos), lambda x: x.get("zone_pos") == str(pos), f"position {pos}")
-            if int(v["rx_hz"]) == int(rx_hz) and (mode is None or v.get("mode") == mode):
-                return pos
-        raise AssertionError(f"no channel on {rx_hz / 1e6:.5f} MHz{' ' + mode if mode else ''} in zone "
-                             f"{self.core().get('zone_name')!r} ({size} channels)")
-
+        start = int(self.core().get("zone_index") or 0)
+        count = int(self.core().get("zone_count") or 1)
+        searched = []
+        for zone in [start] + [z for z in range(count) if z != start]:
+            if self.core().get("zone_index") != str(zone):
+                self._req_until(lambda: L.zone(zone), lambda v: v.get("zone_index") == str(zone), f"zone {zone}")
+            size = int(self.core().get("zone_size") or 0)
+            for pos in range(size):
+                v = self._req_until(lambda: L.zone_pos(pos), lambda x: x.get("zone_pos") == str(pos), f"position {pos}")
+                if int(v["rx_hz"]) == int(rx_hz) and (mode is None or v.get("mode") == mode):
+                    return pos
+            searched.append(f"{self.core().get('zone_name')!r} ({size})")
+        raise AssertionError(f"no channel on {rx_hz / 1e6:.5f} MHz{' ' + mode if mode else ''} in any zone: "
+                             f"{', '.join(searched)}")
 
 def counter_deltas(before, after, keys):
     return {k: after.get(k, 0) - before.get(k, 0) for k in keys}
