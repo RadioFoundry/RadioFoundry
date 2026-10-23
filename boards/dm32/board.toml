@@ -10,7 +10,7 @@ model = "DM-32UV"
 also = []
 kind = "handheld"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
-order = 3
+order = 1
 # Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
 # build option value's board_name), and the id always counts
 debuglink_aliases = ["DM-32"]
