@@ -252,6 +252,19 @@ def test_bringup_without_git(tmp_path):
     assert [p.name for p in (results / board).iterdir()] == ["seed.json"]
 
 
+def old_commit_differing(paths):
+    """The oldest commit in the history at hand whose copy of paths differs from HEAD's. A shallow clone (CI fetches
+    a pull request's merge and main only) may hold none: skip then."""
+    commits = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"], cwd=ROOT, capture_output=True,
+                             text=True).stdout.split()
+    commits += subprocess.run(["git", "rev-list", "--reverse", "HEAD"], cwd=ROOT, capture_output=True,
+                              text=True).stdout.split()
+    for c in commits:
+        if subprocess.run(["git", "diff", "--quiet", c, "HEAD", "--", *paths], cwd=ROOT).returncode == 1:
+            return c
+    skip("bench", "the history at hand (a shallow clone?) has no commit whose files differ from HEAD's")
+
+
 def test_bringup_run_records_and_status(tmp_path):
     if not git_checkout():
         skip("bench", "not a git checkout: the staleness check needs history")
@@ -271,11 +284,10 @@ def test_bringup_run_records_and_status(tmp_path):
 
     # before any run: nothing reads as unsupported, and a seed row stands on its own
     (results / board).mkdir(parents=True)
-    # fake_split's row was made on the first commit, whose files differ from today's: it needs a re-run. fake_seeded's
+    # fake_split's row was made on an old commit whose files differ from today's: it needs a re-run. fake_seeded's
     # paths (LICENSE) are as HEAD has them unless someone edits the license in their tree
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    root = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"], cwd=ROOT, capture_output=True,
-                          text=True).stdout.split()[0]
+    root = old_commit_differing(["tests/hil/README.md", "tests/hil/bringup_plugin.py"])
     (results / board / "seed.json").write_text(json.dumps(seed(board, {"fake_split": {"result": "pass",
                                                                                         "commit": root},
                                                                          "fake_seeded": {"result": "pass",
