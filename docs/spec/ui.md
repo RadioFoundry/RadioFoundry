@@ -304,7 +304,7 @@ left out or dimmed with the feature. Some radios' default images have only a few
 16 bpp. A mono board sizes the buffer to its panel (128x64 at 1 bpp is 1 KB). Drawing still takes RGB565 colors, and
 `gfx.c` keeps a 16-entry palette of the ones on the screen. An entry gets a new color
 only once nothing drawn since the last clear uses it; anti-aliased edges never take the last 4 free entries and
-otherwise get the nearest color already there. Screen captures (debug link, `/api/screen.bmp`) read it as RGB565.
+otherwise get the nearest color already there. The debug link's screen captures read it as RGB565; `/api/screen.bmp` sends the indexes with the palette.
 
 Without `CONFIG_FONT_AA` a screen uses at most 9 colors (the gallery, all 93 screens), so 4 bpp renders it exactly as
 16 bpp does. With `CONFIG_FONT_AA` the edge grays add up to 20 colors on the busiest screen (Messages); on 14 of the

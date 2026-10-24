@@ -95,7 +95,7 @@ header lines are skipped, except `Sec-WebSocket-Key` (any case) for `/ws`; a req
 | `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open`, `led_green led_red` (the radio's LEDs), `backlight` (percent), `draws` (counts screen redraws: fetch the screen when it changes) |
 | `/api/view` | JSON `{"sections": [...]}`: the debug link's view section names (needs `CONFIG_DEBUGLINK`) |
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
-| `/api/screen.bmp` | the frame buffer as a BMP: top-down (negative height), 16 bit BI_BITFIELDS (RGB565 masks), about 40 KB on a 160 x 128 screen; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame; the hold ends with the last byte, so a page that polls it does not slow the UI. 404 on a 1 bpp display |
+| `/api/screen.bmp` | the frame buffer as a BMP, top-down (negative height), at the panel's depth: 1 bpp with two palette entries (the paper and ink of the UI gallery), 4 bpp with the 16-entry palette (`gfx_palette`), both the frame buffer's rows as they are; 16 bpp as BI_BITFIELDS (RGB565 masks). About 10 KB on a 160 x 128 4 bpp screen, 38 KB on 240 x 320, 1 KB on 128 x 64 1 bpp; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame; the hold ends with the last byte, so a page that polls it does not slow the UI |
 | `/api/aprsis` | the APRS-IS client's settings and state (section 7) |
 | anything else | 404; another method 405; a malformed request line 400 (errors have an empty body) |
 
@@ -161,7 +161,7 @@ until it goes. The radio's rules:
 | Close | the client's close code is sent back, then the connection closes |
 | Ping | one every 5 s; nothing from the client for 15 s and it is dropped |
 | Status | `/status`'s JSON as a text frame, rendered every 250 ms and sent when it changed |
-| Audio | 20 ms binary frames, 160 samples of 8 kHz PCM16 little-endian, while the client asked and the squelch is open; needs `CONFIG_NET_USRP` (the frames USRP reads, `usb-audio.md`); a frame that doesn't fit in TCP's buffer is dropped |
+| Audio | 20 ms binary frames, 160 samples of 8 kHz PCM16 little-endian, while the client asked and the squelch is open; needs `CONFIG_NET_USRP` (the frames USRP reads, `usb-audio.md`); a frame that doesn't fit in TCP's buffer is dropped. Not while PPP carries the link: its 128 kbit/s doesn't fit a 115200 baud UART ([ppp.md](ppp.md) 6), so the hello says `audio:false` and `a1` is refused; keys, status and the screen work as on USB |
 
 The first frame is the hello: `{"hello":1,"control":true,"audio":true,"keys":[0,1,...],"ptt":21,"encoder":true}`
 (the keymap's bits, the PTT key's bit or -1, whether the radio has an encoder). Commands are text frames:

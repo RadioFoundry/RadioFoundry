@@ -299,6 +299,17 @@ void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n)
 	}
 }
 
+color_t gfx_palette(uint8_t i)
+{
+#if GFX_INDEXED
+	if (bpp == 4 && i < pal_n)
+		return pal[i];
+#else
+	(void)i;
+#endif
+	return 0;
+}
+
 void gfx_hline(int x, int y, int w, color_t c) { gfx_fill(x, y, w, 1, c); }
 void gfx_vline(int x, int y, int h, color_t c) { gfx_fill(x, y, 1, h, c); }
 

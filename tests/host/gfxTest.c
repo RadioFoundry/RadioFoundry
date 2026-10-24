@@ -259,6 +259,10 @@ static void test_indexed(void)
 	CHECK(px[0] == (red & 0xFF) && px[1] == (red >> 8) && px[2] == (blue & 0xFF) && px[3] == (blue >> 8));
 	gfx_read_rgb565(160u * 120u * 2u, px, 1);
 	CHECK(px[0] == 0);		// past the frame
+	// A capture at the panel's depth: the frame buffer's nibbles (high first) index the palette
+	const uint8_t *fbb = gfx_framebuffer();
+	CHECK(gfx_palette((uint8_t)(fbb[20 * 80 + 5] & 0x0F)) == blue && gfx_palette((uint8_t)(fbb[20 * 80 + 5] >> 4)) == red);
+	CHECK(gfx_palette((uint8_t)(fbb[12 * 80 + 6] >> 4)) == green && gfx_palette(15) == 0);	// 15: not set
 	flushes = flushed_rows = 0;
 	gfx_flush();
 	CHECK(flushed_rows == 120 && sent_pal[0] == red);

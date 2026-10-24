@@ -16,6 +16,9 @@
 #include "input/input.h"
 #include "dmr/ipGateway.h"
 #include "debuglink/dl_fmt.h"
+#if CONFIG_NET_PPP
+#include "net/ppp.h"
+#endif
 
 #define JSON_MAX	640	// the status (http.c's, about 450 bytes on a DMR channel) and the hello
 #define PAYLOAD_MAX	WS_CTRL_MAX	// client frames: commands and control frames only
@@ -154,6 +157,18 @@ static bool number(const uint8_t *s, uint8_t n, int32_t *v)
 	return true;
 }
 
+// Receive audio is offered only on a link that carries it: 8 kHz PCM16 is 128 kbit/s, more than PPP gets from a
+// 115200 baud UART (docs/spec/ppp.md 6). Keys, status and the screen work on either
+static bool audio_ok(void)
+{
+#if CONFIG_NET_PPP
+	if (ppp_running()) {
+		return false;
+	}
+#endif
+	return CONFIG_NET_USRP != 0;
+}
+
 // One text frame: d<bit> key down, u<bit> key up, e<n> encoder detents, a1 / a0 receive audio on / off
 static void command(const uint8_t *p, uint8_t n, uint32_t now)
 {
@@ -181,7 +196,11 @@ static void command(const uint8_t *p, uint8_t n, uint32_t now)
 		}
 		break;
 	case 'a':
-		w.audio = (v != 0);
+		if ((v != 0) && !audio_ok()) {
+			st.refused++;
+		} else {
+			w.audio = (v != 0);
+		}
 		break;
 	default:
 		st.errors++;
@@ -264,7 +283,7 @@ static void hello(void)
 
 	dl_text_init(&t, json, sizeof(json));
 	dl_text(&t, "{\"hello\":1,\"control\":%s,\"audio\":%s,\"keys\":[", w.control ? "true" : "false",
-		CONFIG_NET_USRP ? "true" : "false");
+		audio_ok() ? "true" : "false");
 	for (uint8_t i = 0; i < board.keymap_len; i++) {
 		dl_text(&t, "%s%u", (i > 0) ? "," : "", board.keymap[i].bit);
 		if (board.keymap[i].short_action == ACT_PTT) {

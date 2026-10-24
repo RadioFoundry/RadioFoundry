@@ -128,6 +128,13 @@ static int holds;
 static bool big_view;
 const void *gfx_framebuffer(void) { return fb; }
 void gfx_hold(uint32_t until) { (void)until; holds++; }
+color_t gfx_palette(uint8_t i) { return (color_t)(0x0841u * i); }
+// The audio linking and PPP the web control asks about: built in, PPP not running unless a case says so
+void usrp_net_start(void) {}
+void usrp_net_poll(uint32_t t, bool link_up) { (void)t; (void)link_up; }
+static bool fake_ppp;
+bool ppp_running(void) { return fake_ppp; }
+extern hal_display_t fake_display;
 void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n)
 {
 	for (size_t i = 0; i < n; i++, off++)
@@ -231,6 +238,31 @@ static void test_http(void)
 	CHECK(bmp[10] == 66 && bmp[18] == 160 && bmp[28] == 16 && bmp[30] == 3);
 	CHECK(bmp[22] == 0x80 && bmp[23] == 0xFF && bmp[24] == 0xFF && bmp[25] == 0xFF);	// -128: top-down
 	CHECK(memcmp(bmp + 66, fb, sizeof(fb)) == 0);
+
+	// At the panel's own depth: bpp 4, the frame buffer's rows after a 16-entry palette
+	fake_display.bpp = 4;
+	CHECK(http_get(&a, 51017, "GET /api/screen.bmp HTTP/1.0\r\n\r\n") > 0);
+	bmp = (const uint8_t *)body_of(&a);
+	blen = a.rxn - (int)(bmp - a.rx);
+	CHECK(blen == 118 + 80 * 128 && bmp[10] == 118 && bmp[28] == 4 && bmp[30] == 0 && bmp[46] == 16);
+	CHECK(bmp[54 + 4 * 2] == 0x10 && bmp[54 + 4 * 2 + 1] == 0x10 && bmp[54 + 4 * 2 + 2] == 0x10);	// 0x1082: B, G, R
+	CHECK(memcmp(bmp + 118, fb, 80 * 128) == 0);
+	// bpp 1, a width whose rows need padding to 4 bytes: 13 bytes of pixels, 3 of zeros; the gallery's paper and ink
+	fake_display.bpp = 1;
+	fake_display.width = 100;
+	CHECK(http_get(&a, 51018, "GET /api/screen.bmp HTTP/1.0\r\n\r\n") > 0);
+	bmp = (const uint8_t *)body_of(&a);
+	blen = a.rxn - (int)(bmp - a.rx);
+	CHECK(blen == 62 + 16 * 128 && bmp[10] == 62 && bmp[18] == 100 && bmp[28] == 1 && bmp[46] == 2);
+	CHECK(bmp[54] == 0xB8 && bmp[55] == 0xD0 && bmp[56] == 0xC8 && bmp[58] == 0x10 && bmp[60] == 0x10);
+	bool rows_ok = true;
+	for (int y = 0; y < 128; y++) {
+		const uint8_t *r = bmp + 62 + 16 * y;
+		rows_ok &= memcmp(r, (const uint8_t *)fb + 13 * y, 13) == 0 && r[13] == 0 && r[14] == 0 && r[15] == 0;
+	}
+	CHECK(rows_ok);
+	fake_display.bpp = 16;
+	fake_display.width = 160;
 
 	// Errors
 	CHECK(http_get(&a, 51008, "POST / HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 405 "));
@@ -765,7 +797,7 @@ static void test_webctl(void)
 	CHECK(strstr((char *)a.rx, "\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"));
 	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
 	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1);
-	CHECK(strcmp(m, "{\"hello\":1,\"control\":true,\"audio\":false,\"keys\":[3,7],\"ptt\":7,\"encoder\":true}") == 0);
+	CHECK(strcmp(m, "{\"hello\":1,\"control\":true,\"audio\":true,\"keys\":[3,7],\"ptt\":7,\"encoder\":true}") == 0);
 	run_for(300);
 	CHECK(ws_find(&a, &at, "\"rx_hz\":446006250", m, sizeof m));
 	CHECK(strstr(m, "\"led_green\":true,\"led_red\":false,\"backlight\":80,\"draws\":0"));
@@ -861,6 +893,28 @@ static void test_webctl(void)
 	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x2 && len == 2 * (int)WEBCTL_AUDIO_SAMPLES);
 	CHECK((uint8_t)m[0] == (uint8_t)(pcm[0] & 0xFF) && (uint8_t)m[1] == (uint8_t)((uint16_t)pcm[0] >> 8));
 	CHECK(ws_next(&a, &at, m, sizeof m, &len) < 0);
+	peer_close(&a);
+	run_for(3000);
+
+	// Over PPP: no audio offered and "a1" refused (128 kbit/s doesn't fit the serial link), keys still work
+	fake_ppp = true;
+	CHECK(ws_open(&a, net_test_host_ip(), 53020, ""));
+	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1 && strstr(m, "\"control\":true,\"audio\":false,"));
+	ws_text(&a, "a1");
+	ws_text(&a, "d3");
+	CHECK(inj_mask == 8u);
+	ws_text(&a, "u3");
+	inj_released = 0;
+	at = a.rxn;
+	webctl_audio(pcm, WEBCTL_AUDIO_SAMPLES, true);
+	run_for(10);
+	bool audio_frame = false;
+	while ((op = ws_next(&a, &at, m, sizeof m, &len)) >= 0) {
+		audio_frame |= op == 0x2;
+	}
+	CHECK(!audio_frame && inj_mask == 0);
+	fake_ppp = false;
 
 	// The client closes (code 1001): the code comes back and the connection ends; /ws is free again
 	ws_text(&a, "d3");

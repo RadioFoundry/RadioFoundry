@@ -47,6 +47,9 @@ color_t gfx_get_pixel(int x, int y);	// RGB565, or 0 / 1 on a 1 bpp panel
 // n bytes of the frame as RGB565 (little endian, rows of width * 2 bytes) from byte off: screen captures of a bpp 4
 // panel. At bpp 16 the frame buffer itself
 void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n);
+// The color index i stands for in a bpp 4 frame buffer (0 for an entry not set, and on other panels): with the frame
+// buffer's rows, a screen capture at the panel's own depth
+color_t gfx_palette(uint8_t i);
 void gfx_fill(int x, int y, int w, int h, color_t c);
 void gfx_clear(color_t c);
 void gfx_hline(int x, int y, int w, color_t c);

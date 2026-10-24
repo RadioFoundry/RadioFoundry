@@ -61,7 +61,7 @@ static int n_receive(uint8_t *buf, int max) { (void)buf; (void)max; return 0; }
 static void n_tick(uint32_t t) { (void)t; }
 static void n_macs(uint8_t host[6], uint8_t radio[6]) { memcpy(host, HOST_MAC, 6); memcpy(radio, RADIO_MAC, 6); }
 static const hal_netif_t fake_netif = { n_select, n_selected, n_up, n_send, n_receive, n_tick, n_macs, NULL, 600 };
-static const hal_display_t fake_display = { .width = 160, .height = 128, .bpp = 16 };
+hal_display_t fake_display = { .width = 160, .height = 128, .bpp = 16 };	// netSvcCases.c changes the depth
 static const char *const power_names[] = { "Low", "High" };
 static const band_t bands[] = { { 136000000u, 174000000u, true }, { 400000000u, 480000000u, true } };
 // Two keys for the web control: bit 3 up, bit 7 the PTT

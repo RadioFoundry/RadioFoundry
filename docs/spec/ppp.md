@@ -158,7 +158,8 @@ escape for each `0x7E` / `0x7D` (0.8% of random data; with the default ACCM ever
 | ping, 56 data bytes | 92 B each way | about 16 ms round trip on the line |
 | TCP, MSS 536 | 584 B a segment | about 10.5 KB/s of payload one way (ACKs use the other direction) |
 | TFTP, 512 B blocks in lock step | 548 B a block + 38 B ACK | about 9 KB/s: a 100 KB codeplug in about 11 s |
-| HTTP screenshot (BMP) | about 40 KB | about 4 s |
+| HTTP screenshot (BMP, at the panel's depth) | 1 KB (128 x 64, 1 bpp), 10 KB (160 x 128, 4 bpp), 38 KB (240 x 320, 4 bpp) | about 0.1 s, 1 s, 4 s |
+| Web control receive audio (8 kHz PCM16) | 16 KB/s | doesn't fit: not offered over PPP ([tcp-services.md](tcp-services.md) 5.1) |
 
 On a board whose UART sends by polling, the host link task is busy for the length of each frame it sends (51 ms for
 a full one). The board's receive ring must hold one full frame while that happens.

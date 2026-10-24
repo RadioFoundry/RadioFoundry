@@ -39,7 +39,7 @@
 #define BUF_MAX		1536	// JSON bodies; a view section's text is rendered into its upper part first
 #define VIEW_AT		512	// where the section's text goes (the JSON written from 0 never catches up with it)
 #define REQ_TIMEOUT_MS	10000u
-#define BMP_HEADER	66	// file header 14, BITMAPINFOHEADER 40, the three BI_BITFIELDS masks 12
+#define BMP_HEADER_MAX	118	// file header 14, BITMAPINFOHEADER 40, then 16 palette entries (bpp 4) at most
 #define SHOT_HOLD_MS	1000u	// UI redraws are held while the screen goes out, so it is one frame
 
 enum { H_FREE, H_REQ, H_WAIT, H_SEND, H_WS };	// H_WS: webctl.c has the connection
@@ -295,55 +295,94 @@ static bool screen_ok(void)
 {
 	const hal_display_t *d = board.display;
 
-	return (d != NULL) && (gfx_framebuffer() != NULL) &&
-	       ((GFX_INDEXED && d->bpp == 4) || ((d->bpp == 16) && ((uint32_t)d->width * d->height * 2u <= GFX_FB_BYTES)));
+	return (d != NULL) && (gfx_framebuffer() != NULL) && ((d->bpp == 1) || (GFX_INDEXED && d->bpp == 4) ||
+	       ((d->bpp == 16) && ((uint32_t)d->width * d->height * 2u <= GFX_FB_BYTES)));
+}
+
+// The screen goes out at the panel's own depth, so a 1 or 4 bpp frame is 16 or 4 times smaller than as RGB565
+// (over PPP at 115200 baud a 240x320 screen takes about 4 s instead of 15): file header, BITMAPINFOHEADER, then the
+// palette (bpp 1, 4) or the three BI_BITFIELDS masks (bpp 16)
+static uint32_t bmp_header(void)
+{
+	uint8_t bpp = board.display->bpp;
+
+	return 54u + ((bpp == 16) ? 12u : (4u << bpp));
 }
 
 static uint32_t bmp_row(void)
 {
-	return ((uint32_t)board.display->width * 2u + 3u) & ~3u;
+	return (((uint32_t)board.display->width * board.display->bpp + 31u) / 32u) * 4u;
 }
 
-// Bytes of the BMP at off: a top-down (negative height) 16-bit BI_BITFIELDS bitmap of the RGB565 frame buffer
+static uint32_t bmp_size(void)
+{
+	return bmp_header() + bmp_row() * board.display->height;
+}
+
+static void put_bgr(uint8_t *p, color_t c)
+{
+	p[0] = (uint8_t)((c & 0x1Fu) << 3);
+	p[1] = (uint8_t)(((c >> 5) & 0x3Fu) << 2);
+	p[2] = (uint8_t)((c >> 11) << 3);
+	p[3] = 0;
+}
+
+// Bytes of the BMP at off: a top-down (negative height) bitmap of the frame buffer. bpp 1 and 4: its rows as they
+// are (both pack the leftmost pixel in the high bits, as BMP does), with the palette (bpp 1: the paper and ink of the
+// UI gallery's screenshots). bpp 16: BI_BITFIELDS RGB565
 static void bmp_bytes(uint32_t off, uint8_t *out, size_t n)
 {
 	const hal_display_t *d = board.display;
-	uint32_t row = bmp_row(), raw = (uint32_t)d->width * 2u;
-	uint8_t h[BMP_HEADER];
+	uint32_t head = bmp_header(), row = bmp_row(), raw = ((uint32_t)d->width * d->bpp + 7u) / 8u;
+	const uint8_t *fb = gfx_framebuffer();
+	uint8_t h[BMP_HEADER_MAX];
 
-	if (off < BMP_HEADER) {
+	if (off < head) {
 		memset(h, 0, sizeof(h));
 		h[0] = 'B';
 		h[1] = 'M';
-		put32le(h + 2, BMP_HEADER + row * d->height);
-		put32le(h + 10, BMP_HEADER);
+		put32le(h + 2, bmp_size());
+		put32le(h + 10, head);
 		put32le(h + 14, 40);
 		put32le(h + 18, d->width);
 		put32le(h + 22, (uint32_t)-(int32_t)d->height);
 		put16le(h + 26, 1);
-		put16le(h + 28, 16);
-		put32le(h + 30, 3);	// BI_BITFIELDS
+		put16le(h + 28, d->bpp);
 		put32le(h + 34, row * d->height);
-		put32le(h + 54, 0xF800u);
-		put32le(h + 58, 0x07E0u);
-		put32le(h + 62, 0x001Fu);
+		if (d->bpp == 16) {
+			put32le(h + 30, 3);	// BI_BITFIELDS
+			put32le(h + 54, 0xF800u);
+			put32le(h + 58, 0x07E0u);
+			put32le(h + 62, 0x001Fu);
+		} else if (d->bpp == 1) {
+			put32le(h + 46, 2);	// colors used
+			put_bgr(h + 54, RGB565(0xC8, 0xD0, 0xB8));
+			put_bgr(h + 58, RGB565(0x14, 0x18, 0x10));
+		} else {
+			put32le(h + 46, 16);
+			for (uint8_t i = 0; i < 16u; i++) {
+				put_bgr(h + 54 + 4u * i, gfx_palette(i));
+			}
+		}
 	}
 	for (size_t i = 0; i < n; i++, off++) {
-		if (off < BMP_HEADER) {
+		if (off < head) {
 			out[i] = h[off];
 		} else {
-			uint32_t p = off - BMP_HEADER, y = p / row, x = p % row;
+			uint32_t p = off - head, y = p / row, x = p % row;
 
-			if (x < raw) {
+			if (x >= raw) {
+				out[i] = 0;
+			} else if (d->bpp == 16) {
 				gfx_read_rgb565(y * raw + x, &out[i], 1);
 			} else {
-				out[i] = 0;
+				out[i] = fb[y * raw + x];
 			}
 		}
 	}
 	// Held while it goes out; the last byte lets the UI draw again at once (a page polling the screen would
 	// otherwise keep it frozen)
-	gfx_hold((off >= BMP_HEADER + bmp_row() * d->height) ? 0 : hal_millis() + SHOT_HOLD_MS);
+	gfx_hold((off >= bmp_size()) ? 0 : hal_millis() + SHOT_HOLD_MS);
 }
 
 static bool claim_buf(int c)
@@ -426,7 +465,7 @@ static void dispatch(int c)
 			fail(c, 404);
 			return;
 		}
-		respond(c, 200, "image/bmp", SRC_BMP, NULL, BMP_HEADER + bmp_row() * board.display->height);
+		respond(c, 200, "image/bmp", SRC_BMP, NULL, bmp_size());
 		return;
 	}
 	bool status = strcmp(path, "/status") == 0;
