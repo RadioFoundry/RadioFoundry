@@ -910,11 +910,283 @@ static const char *zone_title(void)
 	return zone_of_frame()->name;
 }
 
+#if CONFIG_ZONE_SHARE
+// ======================= Zone sharing (docs/spec/zone-share.md; docs/user/07-channels-zones-vfo.md) =======================
+// CONTEXT in a zone: send the zone, or the channel focused, to a contact or talkgroup. An offer from another radio
+// comes as a banner (CONTEXT opens it) and waits under Tools while it lasts: Import, Preview, Reject
+static uint16_t share_zone, share_pos;	// the zone and the channel position CONTEXT was pressed on
+static bool share_one;			// send only that channel
+static char share_name[CODEPLUG_NAME_LEN + 1];
+
+static void zone_context(uint16_t i)
+{
+	const zone_t *z = zone_of_frame();
+	if (z->count == 0)
+		return;
+	share_zone = ui_frame()->arg;
+	share_pos = ui_filter_raw(i);
+	strcpy(share_name, z->name);
+	ui_push(SCR_SHARE, 0);
+}
+
+enum { SH_ZONE, SH_CHANNEL, SH_COUNT };
+
+static uint16_t share_count(void) { return SH_COUNT; }
+
+static void share_item(uint16_t i, ui_item_t *it)
+{
+	strcpy(it->label, i == SH_ZONE ? "Send zone to..." : "Send channel to...");
+	item_num(it, (uint16_t)(i + 1u));
+	if (!(feats() & UI_FEAT_ZONE_SHARE))
+		it->flags |= UI_ITEM_DIM;
+}
+
+static void share_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (!(feats() & UI_FEAT_ZONE_SHARE)) {
+		ui_toast("Zone sharing: not in this build");
+		return;
+	}
+	share_one = i == SH_CHANNEL;
+	ui_push(SCR_SHARE_TO, 0);
+}
+
+static const char *share_title(void) { return share_name; }
+
+static const ui_scr_def_t share_screen = {
+	.name = "zone_share", .flags = SF_LIST | SF_NUMBERED, .prefix = NULL, .hint = "OK pick  Back",
+	.count = share_count, .item = share_item, .select = share_select, .title = share_title,
+};
+
+// Send to: the codeplug's contacts, private or group (type to find, as Contacts)
+static void share_to_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	ui_target_t t;
+	uint8_t total = 0;
+	if (!contacts_target(i, &t))
+		return;
+	uint8_t n = ui_svc_zone_send(share_zone, share_pos, share_one, t.id, t.group, &total);
+	static char msg[48];	// the toast keeps the pointer
+	sbuf_t b;
+	sb_init(&b, msg, sizeof msg);
+	if (n == 0) {
+		ui_toast("Can't send now: try again");
+		return;
+	}
+	if (!share_one && n < total) {
+		// The record holds what fits (zone-share.md 4): say how much goes
+		sb_str(&b, "Sending ");
+		sb_u32(&b, n, 1);
+		sb_str(&b, " of ");
+		sb_u32(&b, total, 1);
+		sb_str(&b, " channels");
+	} else {
+		sb_str(&b, share_one ? "Sending channel to " : "Sending zone to ");
+		sb_str(&b, t.name[0] ? t.name : "this contact");
+	}
+	ui_pop();
+	ui_pop();
+	ui_toast(msg);
+}
+
+static const ui_scr_def_t share_to_screen = {
+	.name = "zone_share_to", .flags = SF_LIST | SF_FILTER, .prefix = "Send to",
+	.hint = "0-9 find  OK send  Back", .empty = "No contacts: add them in qdmr",
+	.count = ui_filter_count, .item = contacts_item, .select = share_to_select,
+	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
+};
+
+// --- An offer from another radio ---
+static ui_zone_offer_t offer;	// read on each pass: it may go (imported, rejected, expired)
+
+static bool offer_get(void)
+{
+	if (!ui_svc_zone_offer(&offer)) {
+		offer.serial = 0;
+		return false;
+	}
+	return true;
+}
+
+enum { OF_IMPORT, OF_PREVIEW, OF_REJECT, OF_COUNT };
+
+static uint16_t offer_count(void) { return offer_get() ? OF_COUNT : 0; }
+
+static void offer_item(uint16_t i, ui_item_t *it)
+{
+	static const char *const names[] = { "Import", "Preview", "Reject" };
+	strcpy(it->label, names[i]);
+	item_num(it, (uint16_t)(i + 1u));
+	if (i == OF_IMPORT && offer.in_band == 0)
+		it->flags |= UI_ITEM_DIM;
+}
+
+static void offer_enter(void)
+{
+	if (offer_get())
+		ui_svc_zone_offer_open(offer.serial);	// open: it doesn't expire while the user reads it
+}
+
+static void offer_import(uint16_t zone)
+{
+	if (!ui_svc_zone_offer_import(offer.serial, zone)) {
+		ui_toast("Busy saving: try again");
+		return;
+	}
+	ui_go_home();
+	ui_toast("Importing...");
+}
+
+static void offer_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (!offer_get())
+		return;
+	switch (i) {
+	case OF_IMPORT:
+		if (offer.in_band == 0)
+			ui_toast("No channel in this radio's bands");
+		else if (offer.channel)
+			ui_push(SCR_OFFER_ZONE, 0);	// which zone it joins
+		else
+			offer_import(0);
+		break;
+	case OF_PREVIEW:
+		ui_push(SCR_OFFER_PREVIEW, 0);
+		break;
+	default:
+		ui_svc_zone_offer_reject(offer.serial);
+		ui_pop();
+		ui_toast("Offer rejected");
+		break;
+	}
+}
+
+// "Zone Club, 24 channels, from Joe 3101234" and how many can't be received here
+static const char *offer_body(void)
+{
+	static char body[96];
+	sbuf_t b;
+	sb_init(&b, body, sizeof body);
+	if (!offer_get())
+		return NULL;
+	sb_str(&b, offer.channel ? "Channel " : "Zone ");
+	sb_str(&b, offer.name);
+	if (!offer.channel) {
+		sb_str(&b, ", ");
+		sb_u32(&b, offer.channels, 1);
+		sb_str(&b, offer.channels == 1 ? " channel" : " channels");
+	}
+	sb_str(&b, ", from ");
+	if (offer.from[0]) {
+		sb_str(&b, offer.from);
+		sb_chr(&b, ' ');
+	}
+	sb_u32(&b, offer.src, 1);
+	if (offer.in_band < offer.channels) {
+		// Left out by the import (the result banner says the rest come in receive only)
+		sb_str(&b, ". ");
+		sb_u32(&b, (uint32_t)(offer.channels - offer.in_band), 1);
+		sb_str(&b, " not in band");
+	}
+	return body;
+}
+
+static const ui_scr_def_t offer_screen = {
+	.name = "zone_offer", .flags = SF_LIST | SF_NUMBERED, .prefix = "Zone offer", .hint = "OK pick  Back",
+	.empty = "No zone offer waiting",
+	.count = offer_count, .item = offer_item, .select = offer_select, .body = offer_body, .enter = offer_enter,
+};
+
+static uint16_t preview_count(void) { return offer_get() ? offer.channels : 0; }
+
+static void preview_item(uint16_t i, ui_item_t *it)
+{
+	ui_zone_offer_ch_t ch;
+	if (!ui_svc_zone_offer_channel(offer.serial, i, &ch))
+		return;
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	sb_str(&b, ch.name[0] ? ch.name : "(no name)");
+	sb_init(&b, it->value, sizeof it->value);
+	if (!ch.in_band) {
+		sb_str(&b, TEXT_ALT_OPEN "Not in band" TEXT_ALT_NEXT "Out" TEXT_ALT_CLOSE);
+		it->flags |= UI_ITEM_DIM;
+		return;
+	}
+	sb_str(&b, TEXT_ALT_OPEN);
+	sb_freq(&b, ch.rx_hz);
+	sb_str(&b, ch.dmr ? " DMR" : " FM");
+	sb_str(&b, TEXT_ALT_NEXT);
+	sb_freq(&b, ch.rx_hz);
+	sb_str(&b, TEXT_ALT_CLOSE);
+}
+
+static void preview_select(uint16_t i, bool hold)
+{
+	(void)i;
+	(void)hold;
+	ui_pop();	// back to Import / Reject
+}
+
+static const char *preview_title(void) { return offer.name; }
+
+static const ui_scr_def_t preview_screen = {
+	.name = "zone_offer_preview", .flags = SF_LIST, .prefix = NULL, .hint = "OK or Back returns",
+	.empty = "No zone offer waiting",
+	.count = preview_count, .item = preview_item, .select = preview_select, .title = preview_title,
+};
+
+// A channel offer joins a zone the user picks
+static uint16_t offer_zone_count(void) { return codeplug_zone_count(); }
+
+static void offer_zone_item(uint16_t i, ui_item_t *it)
+{
+	static zone_t z;
+	if (!codeplug_zone(i, &z))
+		return;
+	strcpy(it->label, z.name);
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	sb_u32(&b, z.count, 1);
+	sb_str(&b, TEXT_ALT_OPEN " channels" TEXT_ALT_NEXT " ch" TEXT_ALT_CLOSE);
+	if (z.count >= CODEPLUG_ZONE_MAX)
+		it->flags |= UI_ITEM_DIM;
+}
+
+static void offer_zone_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (offer_get())
+		offer_import(i);
+}
+
+static const ui_scr_def_t offer_zone_screen = {
+	.name = "zone_offer_zone", .flags = SF_LIST, .prefix = "Add to zone", .hint = "OK add  Back",
+	.empty = "No zones",
+	.count = offer_zone_count, .item = offer_zone_item, .select = offer_zone_select,
+};
+
+// Tools: the offer waiting, while it lasts (the banner may have gone unseen)
+static bool offer_waiting(void)
+{
+	ui_zone_offer_t o;
+	return ui_svc_zone_offer(&o);
+}
+#define ZONE_HINT	TEXT_ALT_OPEN "OK go  # share  0-9 find" TEXT_ALT_NEXT "OK go  # share" TEXT_ALT_CLOSE
+#define ZONE_CONTEXT	zone_context
+#else
+#define ZONE_HINT	"OK go  0-9 find  Back"
+#define ZONE_CONTEXT	NULL
+#endif
+
 static const ui_scr_def_t zone_screen = {
 	.name = "zone", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = NULL,
-	.hint = "OK go  0-9 find  Back", .empty = "Empty zone",
-	.count = ui_filter_count, .item = zone_item, .select = zone_select, .title = zone_title,
-	.enter = zone_enter, .raw_count = zone_raw_count, .raw_label = zone_raw_label,
+	.hint = ZONE_HINT, .empty = "Empty zone",
+	.count = ui_filter_count, .item = zone_item, .select = zone_select, .context = ZONE_CONTEXT,
+	.title = zone_title, .enter = zone_enter, .raw_count = zone_raw_count, .raw_label = zone_raw_label,
 };
 
 #if CONFIG_CHANNEL_LIST
@@ -2693,13 +2965,18 @@ void ui_crash_tick(uint32_t now_ms)
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
 // user guide) is the same everywhere. The one a radio may not have (Battery) is last, so no radio has a gap; a build
 // without diagnostics skips 7
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_COUNT };
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_ZONE_OFFER, T_COUNT };
 
 // A tool this build or radio doesn't have is left out of the list (Battery, Supply on a radio that measures its DC
 // input instead, is left out where the radio measures neither)
 static bool tool_shown(uint16_t i)
 {
-	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_volts() != BOARD_VOLTS_NONE);
+#if CONFIG_ZONE_SHARE
+	if (i == T_ZONE_OFFER)
+		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
+#endif
+	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_volts() != BOARD_VOLTS_NONE) &&
+	       i != T_ZONE_OFFER;
 }
 
 // The hint names the last number ("1-9 open"): the highest tool this radio has
@@ -2714,7 +2991,7 @@ static uint16_t tools_count(void)
 			last = (uint16_t)(i + 1u);
 		}
 	}
-	tools_hint[2] = (char)('0' + (last < 9 ? last : 9));
+	tools_hint[2] = (char)('0' + (last < 9 ? last : 9));	// "1-9": the zone offer's 0 isn't named
 	return n;
 }
 
@@ -2731,7 +3008,7 @@ static uint16_t tools_row(uint16_t row)
 static void tools_item(uint16_t row, ui_item_t *it)
 {
 	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single-freq repeater",
-					     "Roaming", "Diagnostics", "APRS", "Battery" };
+					     "Roaming", "Diagnostics", "APRS", "Battery", "Zone offer" };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
@@ -2792,6 +3069,14 @@ static void tools_item(uint16_t row, ui_item_t *it)
 		if (!CONFIG_APRS)
 			it->flags |= UI_ITEM_DIM;
 		break;
+#if CONFIG_ZONE_SHARE
+	case T_ZONE_OFFER: {
+		ui_zone_offer_t o;
+		if (ui_svc_zone_offer(&o))
+			sb_str(&b, o.name);
+		break;
+	}
+#endif
 	default:
 		break;
 	}
@@ -2817,6 +3102,7 @@ static void tools_select(uint16_t row, bool hold)
 	case T_DIAG: ui_push(SCR_DIAG, 0); break;
 	case T_ROAM: ui_push(SCR_ROAM, 0); break;
 	case T_APRS: ui_push(SCR_APRS, 0); break;
+	case T_ZONE_OFFER: ui_push(SCR_OFFER, 0); break;
 	default: break;
 	}
 }
@@ -2955,6 +3241,10 @@ static const int16_t v_msgfmt[] = { 2, 1,	// dmr_sms_format_t: ETSI IP text, ETS
 };
 static const char *const n_msgfmt[] = { "ETSI", "ETSI short", "Motorola" };
 #endif
+#if CONFIG_ZONE_SHARE
+static const int16_t v_zsoffers[] = { 0, 1 };	// ZS_OFFERS_OFF, ZS_OFFERS_ASK
+static const char *const n_zsoffers[] = { "Off", "Ask" };
+#endif
 #if CONFIG_DMR_CONTROL_STATION
 static const int16_t v_netlink[] = { 0, 1 };
 static const char *const n_netlink[] = { "By DMR ID", "192.168.10.x" };
@@ -3030,6 +3320,9 @@ static const set_item_t s_connections[] = {
 #endif
 #if CONFIG_DMR_SMS
 	LIST("Message format", "SMS text ETSI TMS", UI_SET_MSG_FORMAT, v_msgfmt, n_msgfmt),
+#endif
+#if CONFIG_ZONE_SHARE
+	LIST("Zone offers", "zone sharing receive import", UI_SET_ZONE_OFFERS, v_zsoffers, n_zsoffers),
 #endif
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
 	TOGGLE("USB network at start", "dispatch control station", UI_SET_USB_BOOT_NET),
@@ -3709,6 +4002,10 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_CRASH_REPORT && CONFIG_DMR
 	[SCR_CRASH_TO] = &crash_to_screen,
+#endif
+#if CONFIG_ZONE_SHARE
+	[SCR_SHARE] = &share_screen, [SCR_SHARE_TO] = &share_to_screen, [SCR_OFFER] = &offer_screen,
+	[SCR_OFFER_PREVIEW] = &preview_screen, [SCR_OFFER_ZONE] = &offer_zone_screen,
 #endif
 #if CONFIG_DUAL_WATCH
 	[SCR_DUAL] = &ui_dual_screen, [SCR_DUAL_PICK] = &ui_dual_pick_screen,

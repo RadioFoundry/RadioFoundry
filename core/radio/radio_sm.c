@@ -1705,7 +1705,7 @@ static void data_init(radio_sm_t *sm)
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = false, .callAlertAck = true, .lrrpReply = true,
 				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
-	settings_t st;
+	static settings_t st;	// off the radio task's stack, as in reload()
 	settings_read(&st);
 	if (st.ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
 		set.arsServer = st.ds_ars_server <= 0xFFFFFFu ? st.ds_ars_server : 0;
@@ -3637,7 +3637,7 @@ static void cw_start(radio_sm_t *sm, uint32_t now_ms)
 		radio_hs_cw_ended(false, 0);
 		return;
 	}
-	settings_t st;
+	static settings_t st;	// off the radio task's stack, as in reload(): radio_sm_request inlines this
 	settings_read(&st);
 	uint8_t wpm = st.cw_wpm != 0 ? st.cw_wpm : MORSE_WPM_DEFAULT;
 	if (wpm < MORSE_WPM_MIN || wpm > MORSE_WPM_MAX) {

@@ -592,6 +592,35 @@ static void handle_event(const ui_event_t *ev)
 		break;
 	case UI_EV_SCAN_STOPPED:
 		break;
+	case UI_EV_ZONE_OFFER:
+		sb_str(&b, ev->index ? "Channel from " : "Zone from ");
+		station(&b, ev);
+		banner(UI_BANNER_ZONE_OFFER, false, ev->id, title, ev->text);
+		if (ui_st.message_tone)
+			ui_svc_beep(UI_BEEP_MESSAGE);
+		vibrate(UI_VIBE_MESSAGE);
+		break;
+	case UI_EV_ZONE_SENT:
+		sb_str(&b, ev->ok ? "Sent to " : "Not sent to ");
+		if (ev->index && !ev->name[0])
+			sb_str(&b, "TG ");
+		station(&b, ev);
+		banner(UI_BANNER_RESULT, !ev->ok, ev->id, title, ev->ok ? NULL : "Try again on a DMR channel");
+		break;
+	case UI_EV_ZONE_IMPORTED:
+		if (ev->ok) {
+			char text[32];
+			sbuf_t tb;
+			sb_init(&tb, text, sizeof text);
+			sb_str(&b, ev->id ? "Updated " : "Imported ");
+			sb_str(&b, ev->name);
+			sb_u32(&tb, ev->index, 1);
+			sb_str(&tb, ev->index == 1 ? " channel, receive only" : " channels, receive only");
+			banner(UI_BANNER_RESULT, false, 0, title, text);
+		} else {
+			banner(UI_BANNER_RESULT, true, 0, "Zone not imported", ev->text);
+		}
+		break;
 	default:
 		break;
 	}
@@ -610,6 +639,10 @@ static void banner_open(void)
 	b->kind = UI_BANNER_NONE;
 	if (kind == UI_BANNER_MESSAGE)
 		ui_push(SCR_MESSAGE, msg);
+#if CONFIG_ZONE_SHARE
+	else if (kind == UI_BANNER_ZONE_OFFER)
+		ui_push(SCR_OFFER, 0);
+#endif
 	else
 		ui_open_actions(&t);
 }

@@ -28,6 +28,7 @@
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
+//   zoneoffer:<src>[,c] another radio offers its zone "Club net" (,c: one channel); the import and sends always work
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
@@ -1081,6 +1082,71 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 	strcpy(line1, "N0CALL");
 	strcpy(line2, "Jamie Thompson");	// placeholders: the codeplug's boot text is the user's own
 }
+// Zone sharing (ui_svc.h): one offer of 6 channels, one of them outside the radio's bands
+static struct { bool pending, channel; uint32_t src, serial; unsigned sends, imports; } zs_sim;
+static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; } zs_chans[] = {
+	{ "Club rpt", 146760000, false, true }, { "Club DMR", 442375000, true, true },
+	{ "Simplex", 146520000, false, true }, { "Club TG 2", 442375000, true, true },
+	{ "Field day", 446100000, true, true }, { "Club 900", 927500000, true, false },
+};
+#define ZS_SIM_CHANNELS	(sizeof zs_chans / sizeof zs_chans[0])
+uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bool group, uint8_t *total)
+{
+	(void)zone; (void)pos; (void)dst; (void)group;
+	zs_sim.sends++;
+	if (total != NULL)
+		*total = one ? 1 : 16;
+	return one ? 1 : 16;
+}
+bool ui_svc_zone_offer(ui_zone_offer_t *out)
+{
+	if (!zs_sim.pending)
+		return false;
+	memset(out, 0, sizeof *out);
+	out->channel = zs_sim.channel;
+	out->serial = zs_sim.serial;
+	out->src = zs_sim.src;
+	out->channels = zs_sim.channel ? 1 : (uint8_t)ZS_SIM_CHANNELS;
+	out->in_band = zs_sim.channel ? 1 : (uint8_t)(ZS_SIM_CHANNELS - 1);
+	strcpy(out->name, zs_sim.channel ? "Club rpt" : "Club net");
+	strcpy(out->from, contact_name(zs_sim.src, false));
+	return true;
+}
+void ui_svc_zone_offer_open(uint32_t which) { (void)which; }
+bool ui_svc_zone_offer_channel(uint32_t which, uint16_t i, ui_zone_offer_ch_t *out)
+{
+	if (!zs_sim.pending || which != zs_sim.serial || i >= (zs_sim.channel ? 1 : ZS_SIM_CHANNELS))
+		return false;
+	memset(out, 0, sizeof *out);
+	strcpy(out->name, zs_chans[i].name);
+	out->rx_hz = zs_chans[i].hz;
+	out->dmr = zs_chans[i].dmr;
+	out->in_band = zs_chans[i].in_band;
+	return true;
+}
+void ui_svc_zone_offer_reject(uint32_t which)
+{
+	if (which == zs_sim.serial)
+		zs_sim.pending = false;
+}
+bool ui_svc_zone_offer_import(uint32_t which, uint16_t zone)
+{
+	(void)zone;
+	if (!zs_sim.pending || which != zs_sim.serial)
+		return false;
+	zs_sim.pending = false;
+	zs_sim.imports++;
+	ui_event_t ev;
+	memset(&ev, 0, sizeof ev);
+	ev.kind = UI_EV_ZONE_IMPORTED;
+	ev.ok = true;
+	strcpy(ev.name, zs_sim.channel ? "Zone 1" : "Club net");
+	ev.index = zs_sim.channel ? 1 : (uint16_t)(ZS_SIM_CHANNELS - 1);
+	ui_notify(&ev);
+	return true;
+}
+bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev) { (void)kind; (void)id; (void)ev; return false; }
+
 bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 {
 	to_selected();
@@ -2126,6 +2192,22 @@ static bool run_token(char *t, char *err, size_t len)
 		ev.kind = t[0] == 'a' ? UI_EV_CALL_ALERT : t[0] == 'e' ? UI_EV_EMERGENCY : UI_EV_PRIVATE_CALL;
 		ev.id = (uint32_t)atoi(arg);
 		strcpy(ev.name, contact_name(ev.id, false));
+		ui_notify(&ev);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "zoneoffer") == 0 && arg != NULL) {
+		ui_event_t ev;
+		memset(&ev, 0, sizeof ev);
+		zs_sim.pending = true;
+		zs_sim.channel = strstr(arg, ",c") != NULL;
+		zs_sim.src = (uint32_t)atoi(arg);
+		zs_sim.serial++;
+		ev.kind = UI_EV_ZONE_OFFER;
+		ev.id = zs_sim.src;
+		ev.index = zs_sim.channel;
+		strcpy(ev.name, contact_name(ev.id, false));
+		strcpy(ev.text, zs_sim.channel ? "Channel Club rpt" : "Zone Club net, 6 channels");
 		ui_notify(&ev);
 		advance(200);
 		return true;

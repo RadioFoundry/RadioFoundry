@@ -14,7 +14,8 @@
 
 uint32_t ui_svc_feat_data(void)
 {
-	return (CONFIG_DMR_SMS ? UI_FEAT_SMS : 0) | (CONFIG_DMR_SIGNALING ? UI_FEAT_SIGNALING : 0);
+	return (CONFIG_DMR_SMS ? UI_FEAT_SMS : 0) | (CONFIG_DMR_SIGNALING ? UI_FEAT_SIGNALING : 0) |
+	       (CONFIG_ZONE_SHARE ? UI_FEAT_ZONE_SHARE : 0);
 }
 
 static void contact_name(uint32_t id, bool group, char *out, size_t len)
@@ -129,6 +130,15 @@ void ui_svc_poll(void)
 		ev.ok = d.kind == DMR_DATA_EV_RADIO_CHECK_OK;
 		ev.ms = d.atMs - check_sent_ms;
 		break;
+#if CONFIG_ZONE_SHARE
+	case DMR_DATA_EV_ZONE_OFFER:
+	case DMR_DATA_EV_ZONE_SENT:
+	case DMR_DATA_EV_ZONE_FAILED:
+		// ui_svc_zone.c fills these whole (the offer's text, a talkgroup's name)
+		if (ui_svc_zone_event(d.kind, d.id, &ev))
+			ui_notify(&ev);
+		return;
+#endif
 	default:
 		return;		// ARS changes and checks of us stay off the screen
 	}

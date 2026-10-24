@@ -951,6 +951,18 @@ run-cpedit: codeplugEditTest
 	./codeplugEditTest
 .PHONY: run-cpedit
 
+# Zone sharing's codeplug side: import (band limits, receive only, contacts by ID, update, undo) and export
+ZIMPORT := $(CORE)/codeplug/zone_import.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/dmr/zoneShare.c $(CPEDIT)
+TESTS   += zoneImportTest
+
+zoneImportTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ zoneImportTest.c $(ZIMPORT)
+
+run: run-zimport
+run-zimport: zoneImportTest
+	./zoneImportTest
+.PHONY: run-zimport
+
 # The open-firmware CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
 CPS     := $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
            sim/sim_flash.c

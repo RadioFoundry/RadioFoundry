@@ -215,6 +215,7 @@ static void test_malformed(void)
 	memset(&buf[3], 0, 4);
 	CHECK(!parse(buf, n, &r));		// zone ID 0
 	MUTATED(7, ZS_FLAG_CHANNEL, false);	// one channel flagged, four in the record
+	MUTATED(7, 0x02, false);		// a reserved flag
 	MUTATED(8, 0, false);			// no channels
 	MUTATED(8, 5, false);			// more channels than present
 	MUTATED(8, 3, false);			// fewer: trailing octets
@@ -226,6 +227,7 @@ static void test_malformed(void)
 	int c0 = 11 + good[10];
 	MUTATED(c0, 0x03, false);
 	MUTATED(c0, 0x0C, false);
+	MUTATED(c0, (uint8_t)(good[c0] | 0x10), false);	// reserved bits
 	memcpy(buf, good, (size_t)n);
 	memset(&buf[c0 + 1], 0, 3);
 	CHECK(!parse(buf, n, &r));

@@ -124,6 +124,13 @@ bool zsWriterChannel(zsWriter_t *w, const zsChannel_t *ch);
 // The record's length, 0 when it didn't fit or anything was wrong
 int zsWriterEnd(zsWriter_t *w);
 
+// The octets each part takes in a record, as the writer puts it: for choosing what fits before writing
+int zsHeaderSize(const char *zoneName);
+int zsContactSize(const zsContact_t *c);
+int zsChannelSize(const zsChannel_t *ch);
+// A tone the record can carry (ZS_TONE_NONE with value 0 included)
+bool zsToneValid(uint8_t type, uint16_t value);
+
 // --- Reading a record ---
 
 // Checks the whole record (version, length, counts, every field, references); false: refuse it

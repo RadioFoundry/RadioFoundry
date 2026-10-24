@@ -2581,6 +2581,8 @@ bool ui_svc_ram_set(uint8_t id, int32_t v) { if (id >= UI_SET_COUNT) return fals
 static ui_event_t last_ev;
 static int n_ev;
 bool ui_notify(const ui_event_t *ev) { last_ev = *ev; n_ev++; return true; }
+// Zone sharing's events are formatted by ui_svc_zone.c, not built here: passed on as they are
+bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev) { (void)kind; ev->id = id; return true; }
 static int cp_writes;
 static bool cp_write_fails;
 bool codeplug_set_channel(uint16_t n, const channel_t *ch)

@@ -63,7 +63,7 @@ static void putName(zsWriter_t *w, const char *name)
 	}
 }
 
-static bool toneValid(uint8_t type, uint16_t value)
+bool zsToneValid(uint8_t type, uint16_t value)
 {
 	switch (type)
 	{
@@ -116,7 +116,7 @@ bool zsWriterChannel(zsWriter_t *w, const zsChannel_t *ch)
 
 	if ((w->channels >= ZS_CHANNELS_MAX) || (ch->rxHz == 0) || (tx <= 0) || (tx > 0x7FFFFFFF) || (ch->power > ZS_POWER_HIGH) ||
 			(ch->dmr && ((ch->colorCode > 15) || (ch->timeslot < 1) || (ch->timeslot > 2) || (ch->contact > w->contacts))) ||
-			(!ch->dmr && (!toneValid(ch->rxToneType, ch->rxTone) || !toneValid(ch->txToneType, ch->txTone))))
+			(!ch->dmr && (!zsToneValid(ch->rxToneType, ch->rxTone) || !zsToneValid(ch->txToneType, ch->txTone))))
 	{
 		w->failed = true;
 		return false;
@@ -162,6 +162,34 @@ int zsWriterEnd(zsWriter_t *w)
 	w->out[8] = w->channels;
 	w->out[9] = w->contacts;
 	return w->at;
+}
+
+static int nameSize(const char *name)
+{
+	int n = 0;
+
+	while ((name != NULL) && (n < ZS_NAME_MAX) && (name[n] != '\0'))
+	{
+		n++;
+	}
+	return 1 + n;
+}
+
+int zsHeaderSize(const char *zoneName)
+{
+	return REC_HEADER + nameSize(zoneName);
+}
+
+int zsContactSize(const zsContact_t *c)
+{
+	return 4 + nameSize(c->name);
+}
+
+int zsChannelSize(const zsChannel_t *ch)
+{
+	return 1 + 4 + ((ch->txOffsetHz != 0) ? 4 : 0) + (ch->dmr ? 2 : 0) +
+			((!ch->dmr && (ch->rxToneType != ZS_TONE_NONE)) ? 2 : 0) + ((!ch->dmr && (ch->txToneType != ZS_TONE_NONE)) ? 2 : 0) +
+			nameSize(ch->name);
 }
 
 // --- Reading ---
@@ -233,7 +261,7 @@ static void readContact(reader_t *r, zsContact_t *c)
 	c->id = (uint32_t)get8(r) << 16;
 	c->id |= get16(r);
 	getName(r, c->name);
-	r->bad = r->bad || (c->type > ZS_CONTACT_ALL_CALL) || (c->timeslot > 2) || (c->id == 0);
+	r->bad = r->bad || (c->type > ZS_CONTACT_ALL_CALL) || (c->timeslot > 2) || (c->id == 0) || (t & 0xF0);
 }
 
 static void readChannel(reader_t *r, uint8_t contacts, zsChannel_t *ch)
@@ -267,7 +295,7 @@ static void readChannel(reader_t *r, uint8_t contacts, zsChannel_t *ch)
 
 		ch->rxToneType = (uint8_t)(t >> 14);
 		ch->rxTone = t & 0x3FFF;
-		r->bad = r->bad || (ch->rxToneType == ZS_TONE_NONE) || !toneValid(ch->rxToneType, ch->rxTone);
+		r->bad = r->bad || (ch->rxToneType == ZS_TONE_NONE) || !zsToneValid(ch->rxToneType, ch->rxTone);
 	}
 	if (a & CH_TX_TONE)
 	{
@@ -275,7 +303,7 @@ static void readChannel(reader_t *r, uint8_t contacts, zsChannel_t *ch)
 
 		ch->txToneType = (uint8_t)(t >> 14);
 		ch->txTone = t & 0x3FFF;
-		r->bad = r->bad || (ch->txToneType == ZS_TONE_NONE) || !toneValid(ch->txToneType, ch->txTone);
+		r->bad = r->bad || (ch->txToneType == ZS_TONE_NONE) || !zsToneValid(ch->txToneType, ch->txTone);
 	}
 	getName(r, ch->name);
 	int64_t tx = (int64_t)ch->rxHz + ch->txOffsetHz;
@@ -298,7 +326,8 @@ bool zsParse(const uint8_t *data, int length, zsRecord_t *rec)
 	rec->contacts = get8(&r);
 	getName(&r, rec->name);
 	if (r.bad || (rec->zoneId == 0) || (rec->channels == 0) || (rec->channels > ZS_CHANNELS_MAX) ||
-			(rec->contacts > ZS_CONTACTS_MAX) || ((rec->flags & ZS_FLAG_CHANNEL) && (rec->channels != 1)))
+			(rec->contacts > ZS_CONTACTS_MAX) || (rec->flags & ~ZS_FLAG_CHANNEL) ||
+			((rec->flags & ZS_FLAG_CHANNEL) && (rec->channels != 1)))
 	{
 		return false;
 	}

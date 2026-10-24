@@ -195,8 +195,9 @@ static bool rateAllows(void)
 	return (oldest == 0) || ((nowMs - oldest) >= HOUR_MS);
 }
 
-// The radio task (the data service's receive path)
-void dmrDataServiceZoneShareRx(uint32_t src, bool group, const uint8_t *payload, int length)
+// The radio task (the data service's receive path). Not inlined: its locals would otherwise sit in handlePacket's
+// frame on the radio task's deepest path, through the IP gateway (docs/dev/stack-check.md)
+__attribute__((noinline)) void dmrDataServiceZoneShareRx(uint32_t src, bool group, const uint8_t *payload, int length)
 {
 	zsMessage_t m;
 

@@ -22,6 +22,8 @@ typedef enum {
 	SCR_CRASH_TO,			// the crash report's target, picked from the contacts (CONFIG_CRASH_REPORT)
 	SCR_TEXT, SCR_CHPICK, SCR_DISCARD,	// the channel editor's name entry, contact / list picker, unsaved changes
 	SCR_DUAL, SCR_DUAL_PICK, SCR_DUAL_ZONE,	// dual watch: its actions, a channel for A or B (arg: the pane), a zone
+	// Zone sharing (CONFIG_ZONE_SHARE): send the zone or channel, to whom; an offer, its channels, the zone a channel joins
+	SCR_SHARE, SCR_SHARE_TO, SCR_OFFER, SCR_OFFER_PREVIEW, SCR_OFFER_ZONE,
 	SCR_COUNT
 } ui_scr_t;
 

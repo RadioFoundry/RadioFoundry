@@ -3,6 +3,7 @@
 // Weak stand-ins for everything in ui_svc.h that another package owns. Each reports "not available", except the
 // settings store, which keeps values in RAM so the Settings screens work before storage-cps lands. A package that
 // owns one of these defines it without the weak attribute and the linker takes that one.
+#include <stddef.h>
 #include "ui_svc.h"
 
 #define WEAK __attribute__((weak))
@@ -71,6 +72,18 @@ WEAK void ui_svc_crash_seen(void) { }
 WEAK void ui_svc_crash_clear(void) { }
 WEAK bool ui_svc_crash_send(void) { return false; }
 WEAK uint8_t ui_svc_crash_tx_state(void) { return UI_CRASH_TX_IDLE; }
+WEAK uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bool group, uint8_t *total)
+{
+	(void)zone; (void)pos; (void)one; (void)dst; (void)group;
+	if (total != NULL)
+		*total = 0;
+	return 0;
+}
+WEAK bool ui_svc_zone_offer(ui_zone_offer_t *out) { (void)out; return false; }
+WEAK void ui_svc_zone_offer_open(uint32_t serial) { (void)serial; }
+WEAK bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *out) { (void)serial; (void)i; (void)out; return false; }
+WEAK void ui_svc_zone_offer_reject(uint32_t serial) { (void)serial; }
+WEAK bool ui_svc_zone_offer_import(uint32_t serial, uint16_t zone) { (void)serial; (void)zone; return false; }
 
 // Safe defaults (P7): no auto-transmit feature on, tones on, hints on
 static int32_t settings[UI_SET_COUNT] = {
