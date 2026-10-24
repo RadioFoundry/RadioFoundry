@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Task flows
 
-Step-by-step flows for the 22 most frequent or most important tasks, with press counts per radio class. Keys use the logical names from `information-architecture.md`; the reference mapping is `SELECT` = green/Menu, `BACK` = red/Back, `QUICK` = `*`, `CONTEXT` = `#`, `TALK_TARGET` = SK2, `MONITOR` = SK1.
+Step-by-step flows for the 26 most frequent or most important tasks, with press counts per radio class. Keys use the logical names from `information-architecture.md`; the reference mapping is `SELECT` = green/Menu, `BACK` = red/Back, `QUICK` = `*`, `CONTEXT` = `#`, `TALK_TARGET` = SK2, `MONITOR` = SK1.
 
 ## Radio classes
 
@@ -322,11 +322,70 @@ channels and rows quick settings don't have.
 1. `SELECT`, `5`, `NAV_UP` to the first row, "New from current", `SELECT`: an unsaved copy of the channel in
    use (with its temporary changes) or of the VFO, at the lowest free number.
 2. Change what differs (flow 21, step 3), for example the name and the TX contact.
-3. Long `SELECT` saves it. Add it to a zone with qdmr for now (issue #44 adds it to the current zone).
+3. Long `SELECT` saves it. It is in no zone yet: add it from a zone's list (flow 25), or make the copy with Copy here
+   instead (flow 24), which puts it in the zone right after its source.
 
 | | K | M | V | F | Budget |
 |---|---|---|---|---|---|
 | Copy, saved unchanged | 5+n | 5+n | 5+n | 5+n | 6+n |
+
+---
+
+## 23. Move a channel in a zone
+
+1. `SELECT`, `4`: Zones, on the zone in use. `CONTEXT` opens its list on the channel in use (for another zone,
+   `NAV_DOWN` to it first).
+2. `CONTEXT` on the channel: Channel actions. Without `CONTEXT` (class F), long `SELECT` opens both.
+3. `2` Move down (or `1` Move up). The menu stays open, so each further `2` moves it one more place; the toast says
+   where it is ("Position 4 of 16"). `BACK` returns to the list, on the channel.
+
+| | K | M | V | F | Budget |
+|---|---|---|---|---|---|
+| Channel in use, one place down | 5 | 5 | 5 | 5+n | 6 |
+| Each further place | +1 | +1 | +1 | +1 | +1 |
+
+## 24. Copy a channel into its zone and change it (Copy here)
+
+1. Flow 23, steps 1 and 2.
+2. `3` Copy here: the channel editor opens on an unsaved copy at the lowest free number, named after the source with
+   " 2" appended. A copy of the channel in use keeps its temporary changes. A toast refuses it when no channel number
+   is free or the zone is full.
+3. Change what differs (flow 21, step 3).
+4. Long `SELECT` saves: one storage job writes the channel and puts it in the zone right after its source.
+
+| | K | M | V | F | Budget |
+|---|---|---|---|---|---|
+| Channel in use, saved unchanged | 6 | 6 | 6 | 7+n | 6+n |
+
+## 25. Add a channel to a zone
+
+1. `SELECT`, `4`, `CONTEXT`: the zone's list (flow 23, step 1).
+2. The first row is "Add channel": `NAV_UP` to it, or type `2` (its first letter). `SELECT` opens the picker: every
+   stored channel the zone doesn't hold yet, by number and name, filtered by typing.
+3. Type the number or the name, `SELECT`: the channel goes in after the channel in use (when this is the zone in use)
+   or at the end. "Zone full" when it holds 80 (16 on a codeplug with the old layout).
+
+| | K | M | V | F | Budget |
+|---|---|---|---|---|---|
+| Channel 12 into the zone in use | 8 (`SELECT`,`4`,`#`,`2`,`SELECT`,`1`,`2`,`SELECT`) | 8 | 8 | 5+n+m | 8 |
+
+## 26. Copy, rename or delete a zone
+
+1. `SELECT`, `4`, `CONTEXT`: the zone's list.
+2. The last row is "Zone options": `NAV_UP` from "Add channel" (the list wraps), `SELECT`. Numbered: 1 Rename,
+   2 Copy as new zone, 3 Delete zone.
+3. Rename opens text entry on the name; `SELECT` keeps it. Copy as new zone writes a zone with the same channels,
+   named with " 2" appended. Delete zone asks first, with "No, keep it" focused (P7); its channels stay in Channels.
+   Copy and Delete return to Zones.
+
+| | K | M | V | F | Budget |
+|---|---|---|---|---|---|
+| Copy the zone in use | 5+n | 5+n | 5+n | 5+n | 6+n |
+| Delete a zone | 7+n | 7+n | 7+n | 7+n | 8+n |
+
+Zone writes run as storage jobs, so the screen never waits for a flash erase; the lists show the change within a
+fraction of a second. When a new zone takes a free slot ahead of the zone in use, or a zone ahead of it is deleted,
+the radio follows its zone to the new position and stays on its channel.
 
 ---
 
@@ -357,6 +416,10 @@ channels and rows quick settings don't have.
 | Monitor / hear all | 1 / 2 | yes |
 | Edit a channel (timeslot, saved) | 5+n | yes |
 | New channel from current | 5+n | yes |
+| Move a channel in a zone | 5 | yes |
+| Copy here, saved unchanged | 6 | yes |
+| Add a channel to a zone (typed number) | 8 | yes |
+| Copy / delete a zone | 5+n / 7+n | yes |
 | TS / CC | 3 / 4 | yes |
 
-Every task except typed entries (IDs, frequencies, free text) completes in six presses or fewer, inside the NHTSA six-input guideline.
+Every task except typed entries (IDs, frequencies, free text) and deleting a zone (its confirmation, P7) completes in six presses or fewer, inside the NHTSA six-input guideline.
