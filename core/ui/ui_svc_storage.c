@@ -384,7 +384,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_POS_SEND_S:
 		st = settings_begin();
 		if (id == UI_SET_MIC_GAIN) {
-			settings_set_mic_gain(st, (uint8_t)clamp16(value, 0, 10));
+			st->mic_gain = (uint8_t)clamp16(value, 0, 10);
 		} else if (id == UI_SET_AUTO_LOCK_S) {
 			st->auto_lock_s = clamp16(value, 0, 3600);
 		} else if (id == UI_SET_LONG_PRESS_MS) {

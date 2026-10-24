@@ -61,4 +61,4 @@ SoC B (`gd88b/`) has no cable. Its UART3 (PTA13 / PTA14) is the link to A:
    a minute (1,200 handshakes). ODR on A asks for this with `RX2_STUB` and then bridges the cable to UART3, so the host
    loads the stub into B through A ([rx2-link.md](../docs/spec/rx2-link.md) 4). The stage clears the word either way.
 
-`tests/host/bootGd88Test.c` covers both.
+`boards/gd88/tests/bootGd88Test.c` covers both.

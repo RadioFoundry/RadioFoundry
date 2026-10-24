@@ -115,18 +115,6 @@ static void tx_paths_off(void)
 }
 
 #if GD88_TX
-// The PA control DAC is powered only for a transmission
-static void dac_b_power(bool on)
-{
-	uint32_t st = hrc_irq_save();
-	if (on) {
-		DAC_PD_CTRL &= ~DAC_B_OFF;
-	} else {
-		DAC_PD_CTRL |= DAC_B_OFF;
-	}
-	hrc_irq_restore(st);
-}
-
 static void apc_ramp(uint16_t target, bool up)
 {
 	for (uint16_t i = 0; i <= GD88_APC_STEPS; i++) {
@@ -135,16 +123,6 @@ static void apc_ramp(uint16_t target, bool up)
 	}
 }
 #endif
-
-static bool in_band(uint32_t hz)
-{
-	for (uint8_t i = 0; i < board.band_count; i++) {
-		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz) {
-			return true;
-		}
-	}
-	return false;
-}
 
 // The C7000 modem's DC bias at every receive set-up, in FM too: the page's TX center in SIG_CENTER and the two-point
 // bias level with the modulation balance in RF_MOD_BIAS_CTRL. It is the voltage on the TCXO's control pin, so it sets
@@ -163,12 +141,10 @@ static void init(void)
 	hrc_pin_out(GD88_PIN_RF_CLK, true);
 	hrc_pin_in(GD88_PIN_RF_DATA);
 	gd88_path_init();
-	// The PA control stays powered down until a transmission
-	DAC_PD_MODE_EN = 0;
-	DAC_PD_CTRL = DAC_B_OFF;
-	DAC_DATA_A = 0;
-	DAC_DATA_B = 0;
-	DAC_DATA_C = DAC_C_INIT;
+	// The modem's analog set-up with the bias DAC at its init value; the PA control DAC stays powered down until a
+	// transmission
+	hrc_modem_analog_init(DAC_C_INIT);
+	hrc_dac_b_power(false);
 
 	// The modem block powered as the DMR glue does, so the reference trim reaches the TCXO in FM builds too
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
@@ -258,7 +234,7 @@ static bool tx_stop(void);
 
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 {
-	if (!supported || !in_band(hz)) {
+	if (!supported || !board_in_band(hz, false)) {
 		return false;
 	}
 #if CONFIG_DMR && GD88_TX
@@ -277,7 +253,7 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in)
 	bk4819_set_freq(&rf_main, IF_HZ);
 	if (mode != RADIO_MODE_DMR) {	// DMR: the bandwidth and sub-audio are the digital set's
 		bk4819_set_bandwidth(&rf_main, bw == RADIO_BW_25K ? BK4819_BW_25K : BK4819_BW_12K5);
-		bk4819_set_rx_ctcss(&rf_main, rx_tone.type == TONE_CTCSS ? rx_tone.value : 0);
+		bk4819_set_rx_tone(&rf_main, rx_tone.type == TONE_CTCSS ? BK4819_TONE_CTCSS : BK4819_TONE_NONE, rx_tone.value);
 	}
 #if GD88_BAND_LO_GPIO
 	lo_band(hz);
@@ -302,7 +278,7 @@ static void audio(bool on);
 static bool dmr_tx(uint32_t hz, uint8_t power)
 {
 	gd88_tx_plan_t plan;
-	if (!supported || !in_band(hz) || !gd88_cal_tx_plan(hz, power >= 1, GD88_TX_DRIVE_PCT, &plan)) {
+	if (!supported || !board_in_band(hz, true) || !gd88_cal_tx_plan(hz, power >= 1, GD88_TX_DRIVE_PCT, &plan)) {
 		return false;
 	}
 	if (dmr_armed) {
@@ -316,7 +292,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(gd88_cal_tx_center(), gd88_cal_mod(hz)));
 	bk4819_dmr_tx_prepare(&rf_main);
 	DAC_DATA_B = 0;
-	dac_b_power(true);
+	hrc_dac_b_power(true);
 	dmr_armed = true;
 	gd88_dmr_tx_arm();
 	return true;
@@ -328,7 +304,7 @@ static void dmr_disarm(void)
 		gd88_dmr_tx_disarm();
 		dmr_armed = false;
 		DAC_DATA_B = 0;
-		dac_b_power(false);
+		hrc_dac_b_power(false);
 	}
 }
 
@@ -391,14 +367,14 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	}
 	gd88_tx_plan_t plan;
 	// Power index 1 ("H") is table 0x045; "L" the other table
-	if (!supported || !in_band(hz) || !gd88_cal_tx_plan(hz, power >= 1, GD88_TX_DRIVE_PCT, &plan)) {
+	if (!supported || !board_in_band(hz, true) || !gd88_cal_tx_plan(hz, power >= 1, GD88_TX_DRIVE_PCT, &plan)) {
 		return false;
 	}
 	tx_stop();
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_pa = plan.pa;
 	tx_off_us = plan.off_us;
-	bk4819_tx_prepare(&rf_main, ctcss);	// deviation and sub-audio words while the chip still receives
+	bk4819_tx_prepare(&rf_main, ctcss != 0 ? BK4819_TONE_CTCSS : BK4819_TONE_NONE, ctcss);	// deviation and sub-audio words while the chip still receives
 
 	// Receive audio muted at the chip, then the speaker off
 	bk4819_set_af(&rf_main, BK4819_AF_MUTE);
@@ -412,7 +388,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	hal_delay_us(plan.on_us);
 
 	DAC_DATA_B = 0;
-	dac_b_power(true);
+	hrc_dac_b_power(true);
 	gd88_path_tx_select(tx_uhf);
 	hal_delay_us(TX_SUPPLY_US);
 	gd88_path_tx_supply(tx_uhf);
@@ -439,7 +415,7 @@ static bool tx_stop(void)
 	hal_delay_us(tx_off_us);
 	apc_ramp(tx_pa, false);
 	tx_paths_off();
-	dac_b_power(false);
+	hrc_dac_b_power(false);
 #endif
 	transmitting = false;
 	audio(audio_open);
@@ -493,7 +469,7 @@ static void status(radio_status_t *st)
 	st->rssi_dbm = bk4819_rssi_dbm(r67);	// at the main chip's input, the front end's gain not taken out
 	st->noise = (uint8_t)(r65 & 0x7Fu);
 	st->carrier = false;
-	st->tone_ok = rx_tone.type != TONE_CTCSS || bk4819_ctcss_found(&rf_main);
+	st->tone_ok = bk4819_rx_tone_ok(&rf_main, rx_tone.type == TONE_CTCSS ? BK4819_TONE_CTCSS : BK4819_TONE_NONE);
 }
 
 bool gd88_radio_squelch_open(uint8_t level)

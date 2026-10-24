@@ -1,26 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// DB25-D first stage (boot/README.md): holds the power latch and drives the transmitter off, then answers on UART1 (the K1 programming cable) the way
-// the HR_C7000 serial boot ROM answers on UART0, so stub/stubtool.py loads a stub here exactly as on the other
-// HR_C7000 boards. Without a host it goes on to the application. Runs from XIP flash and never touches the flash controller.
-//
-// ROM protocol (stubtool's start(); frames are 02 op sum8(payload) 03 + payload):
-//   radio: 02 24 00 03, repeated, until the host answers 02 14 00 03
-//   host:  op 0x18, payload u32 BE address + 00 00 00 40 + 256 bytes: stored, acked 02 05 00 03
-//   host:  op 0x1B, payload u32 BE address: acked 02 05 00 03, then the stage jumps there
-// A frame with a bad sum, an unknown op, an address out of range or a gap of RX_SPINS is dropped without an ack: the
-// host sends it again.
-//
-// BOOT_WINDOW (boot.S): 0 offers the handshake forever; n offers it n times, about 50 ms apart, then boot_resume()
-// starts the application. On that path only the power latch and the transmitter pins are changed, to the levels the
-// application drives them to itself.
-#include <stdint.h>
+// DB25-D first stage (boot/README.md): holds the power latch and drives the transmitter off, then offers the boot ROM's
+// handshake on UART1 (the K1 programming cable; boot/hrc7000/stage.c). Without a host it goes on to the application. On
+// that path only the power latch and the transmitter pins are changed, to the levels the application drives them to
+// itself.
+#define STAGE_UART		0x14040000u	// UART1
+// IO_DIPLEX0 bits 9 / 10: 1 = PTA9 / PTA10 are GPIO, 0 = UART1 RXD / TXD
+#define STAGE_UART_PINS()	wr(IO_DIPLEX0, rd(IO_DIPLEX0) & ~0x600u)
 
-#ifndef BOOT_HOST_TEST	// boards/db25d/tests/bootDb25dTest.c supplies these
-static inline uint32_t rd(uint32_t a)
-{
-	return *(volatile uint32_t *)(uintptr_t)a;
-}
+#include "../hrc7000/stage.c"
 
 #define LATCH		(1u << 13)	// PTB13 keeps the radio on once the power key is let go
 // The transmitter's pins (hardware-db25d.md 3.2, boards/db25d/pins.h): PTA26 UHF PA select, PTA27 TX supply A, PTB2 TX

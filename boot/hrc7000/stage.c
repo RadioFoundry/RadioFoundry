@@ -17,7 +17,7 @@
 // starts the application.
 #include <stdint.h>
 
-#ifndef BOOT_HOST_TEST	// tests/host/bootDb25dTest.c supplies these
+#ifndef BOOT_HOST_TEST	// the host tests (boards/<radio>/tests/boot*Test.c) supply these
 static inline uint32_t rd(uint32_t a)
 {
 	return *(volatile uint32_t *)(uintptr_t)a;

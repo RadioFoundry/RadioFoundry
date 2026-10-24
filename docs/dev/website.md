@@ -237,7 +237,7 @@ a radio, such as another bootloader protocol or a stock firmware's own read-back
 | Backend | Radios | Module |
 |---|---|---|
 | `anyroad-dfu` | DM-1701, MD-380 | `app.js` (`dfu.js`, `f4stub.js`) |
-| `c7000-stub` | DM-1801 Pro, DM-32UV, DB25-D PRO | `c7000ui.js` (`stub.js`, `c7000.js`) |
+| `c7000-stub` | DM-1801 Pro, DM-32UV, GD-88, DB25-D PRO | `c7000ui.js` (`stub.js`, `c7000.js`) |
 | `none` | any other | none: the radio is listed but grayed out |
 
 A radio without a backend the page knows gets `none`, so a family can come before its module. The

@@ -31,8 +31,9 @@ Derived values:
 | CPU | The platform, unless `[hardware] cpu` names another |
 | Protected range | The platform's `flash_base` up to the application base |
 | Erasable sectors | The platform geometry from the application base up |
-| Stub NAND flag | `drivers/flash/spi_nand` in `BOARD_DIRS` |
+| Stub NAND flag | `drivers/flash/spi_nand` in `BOARD_DIRS`, unless `[flash.stub] nand` is set |
 | Stub power pins | `PIN_POWER_LATCH` and `PIN_POWER_KEY` in `pins.h`, when `hold_power` is set |
+| Stub LED pins | The `pins.h` pins `[flash.stub] leds` names |
 | Stub board record (STM32F4) | `spi` and `idle_cs`, the `PIN_FLASH_*` pins, the bus's alternate function from the platform's `board_stub.spi_af`, `HSE_VALUE` and `APP_BASE` |
 | Debug link names | The `board_t` names, each build option value's `board_name`, `debuglink_aliases`, the id |
 | Codec windows of a linker slot | The `__codec_slot` symbols |
@@ -52,7 +53,7 @@ neighbor on the same platform.
 | `maker`, `model` | string | The two parts of the name |
 | `also` | list of strings | The same radio sold under other names |
 | `kind` | `handheld` or `mobile` | |
-| `part_of` | string, optional | Another board this one is a build of |
+| `part_of` | string, optional | The radio this board is a second SoC of. The generated tables and the site list only that radio, which flashes this board through its bridge (`[flash.stub] bridge`). The board keeps no codeplug and draws no screen, so the flash map and frame buffer checks are the radio's |
 | `debuglink_aliases` | list, optional | Names older firmware reported on the debug link |
 
 ### [docs]
@@ -137,7 +138,7 @@ per-model XOR key's hash and first bytes, never the key).
 
 | Platform stub | Required | Optional |
 |---|---|---|
-| `stubtool` (HR_C7000) | `hold_power` (the stub drives the power latch), `progmem` (program flash size) | `stock_console` (the stock firmware answers a console the web flasher reads), `read_rate` |
+| `stubtool` (HR_C7000) | `hold_power` (the stub drives the power latch), `progmem` (program flash size) | `stock_console` (the stock firmware answers a console the web flasher reads), `read_rate`, `leds` (the red and green LED `pins.h` names, `[]` for none), `uart` (the UART the stub answers on before CONFIG), `bridge` (reached through the main SoC, for a `part_of` board), `nand` (SPI NAND the build has no driver for) |
 | `f4stub` (STM32F4) | `spi = { bus, mode, hz }` (the SPI flash's bus 1-3, SPI mode 0-3, fastest clock) | `idle_cs` (up to two `pins.h` names of other chip selects on that bus, held high) |
 
 A key of another platform's stub fails the check.

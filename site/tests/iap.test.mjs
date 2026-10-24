@@ -38,7 +38,10 @@ test("the DB25-D's data in the flasher tables", () => {
 	assert.deepEqual(FS, { size: 0x1000, head: "2c1101c0" });
 	assert.equal(radio.flash.read_rate, 46000);
 	// every build the console route knows is a stock version of the board, by which the page names it
-	for (const [build] of BUILDS) assert.equal(stockName(radio.flash, build), `909E.DBB.EARSAB.${build}`);
+	for (const v of radio.flash.stock_versions) {
+		assert.ok(BUILDS.some(([b]) => b === v), `the console knows ${v}`);
+		assert.equal(stockName(radio.flash, v.slice(-3)), v);
+	}
 	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true });
 	assert.deepEqual(b.slot, [0xE8000, 0x100000]);
 	const ps = C.profiles.filter((p) => p.board === "db25d");

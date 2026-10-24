@@ -150,10 +150,10 @@ void boot_resume(void)
 }
 
 #if SOC_B
-#include "../../boot/gd88b/boot.c"
+#include "../../../boot/gd88b/boot.c"
 #define NAME "bootGd88bTest"
 #else
-#include "../../boot/gd88/boot.c"
+#include "../../../boot/gd88/boot.c"
 #define NAME "bootGd88Test"
 #endif
 

@@ -26,6 +26,16 @@ const WORD_RATE = 14;		// console frames per second, written or read back (radio
 // update mode's protocol object
 export function makeStockRoutes(host) {
 	const { S, ctx, C, boardId, session, busy, iap, fill, stubImage } = host;
+	// a text in the radio's own words where en.json has one (<key>_<radio id>, what its update mode shows), else the
+	// common one. A second SoC takes its own board's text first, then its radio's
+	const own = (key) => {
+		const r = S().radio;
+		for (const id of [r.id, r.second_of]) {
+			const k = `${key}_${id}`;
+			if (id && t(k) !== k) return k;
+		}
+		return key;
+	};
 
 	// ---- the original firmware: the stub through its console
 
@@ -34,7 +44,7 @@ export function makeStockRoutes(host) {
 	async function stockFound({ show, act, onLoaded, onUpdateMode, onAgain }) {
 		const c = session();
 		// the simulated radio answers at once: no need to wait for the original firmware's log lines
-		const con = new Usmart(c.stream, { log: (l) => c.log.add(l), quiet: S().fakeC7 ? 2 : 80 });
+		const con = new Usmart(c.stream, { log: (l) => c.log.add(l), quiet: S().fakeC7 ? 2 : 80, versions: S().radio.flash.stock_versions });
 		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.usmart.found"))),
 			h("p", { class: "muted" }, t("flash.usmart.checking")));
 		const other = onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode, { quiet: true });
@@ -103,7 +113,7 @@ export function makeStockRoutes(host) {
 	function nothing({ show, act, onUpdateMode, onPowerOn, onAgain }) {
 		show({ led: "off", screen: "any" },
 			notice(t("flash.iap.none.lead"), "info"),
-			h("ul", {}, h("li", {}, t("flash.iap.none.on")), h("li", {}, t("flash.iap.none.cable")), h("li", {}, t("flash.iap.none.stock"))),
+			h("ul", {}, h("li", {}, t("flash.iap.none.on")), h("li", {}, t("flash.iap.none.cable")), h("li", {}, t(own("flash.iap.none.stock")))),
 			h("p", { class: "small muted" }, t("flash.iap.none.odr")));
 		act(button(t("flash.iap.none.again"), onAgain, { primary: true }), onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode),
 			button(t("flash.iap.none.power_on"), onPowerOn, { quiet: true }));
@@ -115,7 +125,7 @@ export function makeStockRoutes(host) {
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.iap.um.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version)) : null,
-			h("p", {}, t("flash.iap.um.text")), h("p", { class: "small muted" }, t("flash.iap.um.safe")));
+			h("p", {}, t(own("flash.iap.um.text"))), h("p", { class: "small muted" }, t("flash.iap.um.safe")));
 		act(onUpdateMode ? button(t("flash.iap.um.go"), onUpdateMode, { primary: true }) : button(t("flash.iap.none.again"), onAgain, { primary: true }));
 	}
 
@@ -164,7 +174,7 @@ export function makeStockRoutes(host) {
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
 			h("p", {}, t(restore ? "flash.iap.restore_lead" : "flash.iap.lead")),
 			h("ol", { class: "steps c7-big" }, h("li", {}, t(restore ? "flash.iap.restore_step_go" : "flash.iap.step_go")), ...steps.map((x) => h("li", {}, x))),
-			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t("flash.iap.careful_text"))),
+			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(own("flash.iap.careful_text")))),
 			prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		prog.el.hidden = true;
 		S().forward(go);

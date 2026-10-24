@@ -69,9 +69,6 @@ MCU_DEFS += $(OPTION_DEFS)
 BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))$(OPTION_SUFFIX)
 TARGET := $(BUILD)/odr_$(BOARD)$(OPTION_SUFFIX)
 
-BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))$(OPTION_SUFFIX)
-TARGET := $(BUILD)/odr_$(BOARD)$(OPTION_SUFFIX)
-
 # The radio core every radio runs. A board that runs none of it (a receiver-only second SoC with its own start-up in
 # its board directory, boards/gd88b) sets CORE_BASE_DIRS empty in its board.mk
 CORE_BASE_DIRS ?= core/app core/radio core/ui core/input core/codeplug core/settings core/storage

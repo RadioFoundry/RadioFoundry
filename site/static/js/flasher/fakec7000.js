@@ -7,6 +7,12 @@
 // stub/stubtool.py's FakeRadio. Bytes reach the host no faster than a 115200 baud cable would carry them (times
 // `speed`).
 //
+// rx2: the radio has a second SoC behind ODR (a board's flash.second): DL_CMD_RX2 answers, and its BRIDGE
+// hands the cable to the second SoC's first stage, which this model plays with the same stub. rx2: {progmem} gives the
+// second SoC its own program flash, in place while the bridge is up; the first SoC's ODR answers again after the stub's
+// reset. rx2: {stock} is a second SoC still on its original firmware: it does not answer the first, and the bridge
+// reaches nothing.
+//
 // A stock firmware with a USMART console (usmart: its build) also answers the debug console the page loads the stub
 // through (usmart.js): framed read_addr / write_addr over a model of its RAM, and the hijack word that starts what was
 // written.
@@ -17,7 +23,7 @@ import { concat, crc32, le32, sha256, sleep, u32le } from "./bytes.js";
 import { frame, parseFrames } from "./link.js";
 import { encodeBlock } from "./lz4.js";
 import { STUB_MAGIC, SSI_PROG, SYS_SOFT_RSTN, TIMER2_VALUE, WDT_EN } from "./stub.js";
-import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE } from "./usmart.js";
+import { HIJACK, STUB_WINDOW, BUILDS, FLASH_BASE, versionTail } from "./usmart.js";
 import { rng, randomBytes } from "./fake.js";
 import { sigBytes } from "./c7000.js";
 
@@ -60,10 +66,10 @@ export async function c7000Simulation(cReal, boardId, seed = 7000, radio = null)
 	progmem.set(tables, tabAt);
 	const fs = radio?.flash.first_stage;
 	if (fs) progmem.set(fs.head.match(/../g).map((x) => parseInt(x, 16)), c.app_start);	// the entry the loader checks
-	const build = BUILDS.find(([n]) => n === consoleBuild(radio));
+	const build = consoleBuild(radio) && BUILDS.find(([v]) => v === radio.flash.stock_versions[0]);
 	if (build) {	// the version string the console's build check reads: "EARSAB.<build>" just after the build's word
-		const version = radio.flash.stock_versions[0];
-		progmem.set(new TextEncoder().encode(`${version}.Jan 21 2025`), build[1] - FLASH_BASE + 1 - version.lastIndexOf("EARSAB"));
+		const version = build[0];
+		progmem.set(new TextEncoder().encode(`${version}.Jan 21 2025`), build[1] - FLASH_BASE + 1 - version.lastIndexOf(versionTail(version)));
 	}
 	c.profiles = c.profiles.filter((p) => p.board !== boardId);
 	c.profiles.push({ ...real, name: `simulated ${real.name}`, code_sha256: await sha256(code), tables_sha256: await sha256(tables),
@@ -79,7 +85,8 @@ export async function c7000Simulation(cReal, boardId, seed = 7000, radio = null)
 export class FakeC7000 {
 	// firmware: "stock" | "odr" (with stub entry) | "odr-nostub"; speed: how many times faster than a real cable
 	constructor({ progmem, dataSize = 0x1000000, board = "DM-1801 Pro", codecId = "dm1801pro-049", stubEntry = true, speed = 1,
-		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null } = {}) {
+		romWindow = 400, bootTime = 1500, faults = {}, stubSpan = [0x17000, 0x18000], usmart = null, rx2 = false } = {}) {
+		this.rx2 = rx2;
 		this.usmart = usmart;			// a stock firmware build with the USMART console ("018")
 		this.ram = new Map();			// the console's view of RAM: words written since power-on
 		this.frames = [];			// every console frame received, as text

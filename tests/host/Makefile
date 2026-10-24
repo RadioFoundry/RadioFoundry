@@ -760,12 +760,18 @@ TESTS   += lis3dhTest
 lis3dhTest: lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ lis3dhTest.c $(ROOT)/drivers/sensor/lis3dh/lis3dh.c
 
+# The ILI9341-class panel driver: its init streams and windows (drivers/display/ili9341)
+TESTS   += ili9341Test
+ili9341Test: ili9341Test.c $(ROOT)/drivers/display/ili9341/ili9341.c $(ROOT)/drivers/display/ili9341/ili9341.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ ili9341Test.c $(ROOT)/drivers/display/ili9341/ili9341.c
+
 baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-drivers
 run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest hrc7000DmrTest baofengCalTest rda5807mTest \
-             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
+             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit ili9341Test
+	./ili9341Test
 	./hrc7000BsTest
 	./hrc7000DmrTestSplit
 	./lis3dhTest

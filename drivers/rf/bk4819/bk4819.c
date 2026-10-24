@@ -350,6 +350,17 @@ bool bk4819_tone_found(uint16_t r0c, bk4819_tone_t type)
 	}
 }
 
+void bk4819_gpio(bk4819_t *dev, uint8_t pin, bool level)
+{
+	if (pin > 6) {
+		return;
+	}
+	uint16_t data = (uint16_t)(0x40u >> pin);
+	uint16_t v = bk4819_read(dev, BK4819_REG_GPIO) & (uint16_t)~(data << 8);	// output enabled
+	v = level ? (uint16_t)(v | data) : (uint16_t)(v & ~data);
+	bk4819_write(dev, BK4819_REG_GPIO, v);
+}
+
 bool bk4819_heard(const bk4819_t *dev, uint16_t r0c, bk4819_tone_t type)
 {
 	if (dev->rx_inverted && type == BK4819_TONE_DCS) {

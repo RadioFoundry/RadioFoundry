@@ -4,7 +4,7 @@
 // flash.stock_console "usmart"; the DB25-D PRO's, docs/spec/hardware-db25d.md 7). It reads and writes single words of
 // memory, which is enough to put the universal stub (stub.js) into a free stretch of RAM and start it. The stub then
 // reads and writes the program flash as on every other HR_C7000 radio. The console writes RAM only, never flash. The
-// stock builds it knows are below (BUILDS); their versions are the board's flash.stock_versions.
+// stock builds it knows are below (BUILDS), by their versions; a board's flash.stock_versions names the ones it runs.
 //
 // Once ODR runs, the radio is reached the way the other HR_C7000 radios are (stub.js, c7000.js).
 
@@ -24,25 +24,42 @@ const APP_END = 0x0310C000;
 //   write_addr(0x00054000,0x1)   -> "write_addr(0X54000,0X1);" (the function returns nothing; the echo is the reply)
 // The stock application's own log text follows on the same line, so a reply is matched by its address.
 //
-// The stub goes into 0x54000-0x58000, free RAM above the heap in both known builds (018, 020). The console's command
-// table lives in RAM at 0x18000840; its cmd_rec entry (+8) is called through the table for every ordinary frame, so
-// pointing it at the stub makes the next frame start the stub.
+// The stub goes into 0x54000-0x58000, free RAM above the heap in every build in BUILDS. The console's command table
+// lives in RAM at 0x18000840 in all of them; its cmd_rec entry (+8) is called through the table for every ordinary
+// frame, so pointing it at the stub makes the next frame start the stub.
 
 const FRAME = "@AT ";
 export const STUB_WINDOW = [0x54000, 0x4000];		// [load address, size]
 export const HIJACK = 0x18000848;
 export const APP_SIG = [0x0300C000, 0xC001112C];		// the application's first word: 2C 11 01 C0
-// The version string "EARSAB.0NN" of each known build, and a word just below it: four words cover it
-export const BUILDS = [["018", 0x03079F3C], ["020", 0x0307DCCC]];
+// Each build whose console the page drives: its version, and a word just below the version's last two parts
+// ("EARSAB.018"), which four words from there cover. Of the B49E series only 021 (2025-01-19) has the console: the older
+// ones need the manufacturer's update first
+export const BUILDS = [["909E.DBB.EARSAB.018", 0x03079F3C], ["909E.DBB.EARSAB.020", 0x0307DCCC],
+	["B49E.D64.EOPSAB.021", 0x0307E66C]];
+
+// A version's last two parts, what the build check reads ("909E.DBB.EARSAB.018" -> "EARSAB.018"), and its build ("018")
+export const versionTail = (v) => v.split(".").slice(-2).join(".");
+export const buildOf = (v) => v.slice(v.lastIndexOf(".") + 1);
 
 // A build's full version as the board's flash.stock_versions name it ("018" -> "909E.DBB.EARSAB.018"), or the build
 export const stockName = (flash, build) => (flash.stock_versions || []).find((v) => v.endsWith(`.${build}`)) || build;
 
+// A version's form: its first and third parts as they are, any model code and build number ("909E.DBB.EARSAB.018" ->
+// 909E.<2-4 letters or digits>.EARSAB.<3 digits>)
+const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const versionForm = (v) => {
+	const p = v.split(".");
+	return `${esc(p[0])}\\.[0-9A-Za-z]{2,4}\\.${esc(p[2] || "")}\\.\\d{3}`;
+};
+
 // The stock application's version string ("909E.D6x.EARSAB.020") in a read of the program flash, wherever the build
-// put it, or null. Only for messages: what a read holds is decided by its contents (c7000.js analyze)
-export function stockVersion(progmem) {
+// put it, or null. versions: the forms to look for (a board's flash.stock_versions), every known build's by default.
+// Only for messages: what a read holds is decided by its contents (c7000.js analyze)
+export function stockVersion(progmem, versions = BUILDS.map(([v]) => v)) {
+	if (!versions.length) return null;
 	const app = progmem.subarray(APP_SIG[0] - FLASH_BASE, Math.min(progmem.length, APP_END - FLASH_BASE));
-	const m = /909E\.[0-9A-Za-z]{2,4}\.EARSAB\.\d{3}/.exec(latin(app));
+	const m = new RegExp([...new Set(versions.map(versionForm))].join("|")).exec(latin(app));
 	return m ? m[0] : null;
 }
 
@@ -65,8 +82,10 @@ export const hex8 = (n) => (n >>> 0).toString(16).padStart(8, "0");
 const writable = (a) => a === HIJACK || (a >= STUB_WINDOW[0] && a + 4 <= STUB_WINDOW[0] + STUB_WINDOW[1]);
 
 export class Usmart {
-	constructor(stream, { log = () => {}, quiet = 80 } = {}) {
+	// versions: the builds to look for (the board's flash.stock_versions), every known one by default
+	constructor(stream, { log = () => {}, quiet = 80, versions = null } = {}) {
 		this.s = stream;
+		this.builds = versions ? BUILDS.filter(([v]) => versions.includes(v)) : BUILDS;
 		this.log = log;
 		this.quiet = quiet;	// after a write's echo, how long the line must stay quiet before the next frame
 	}
@@ -143,15 +162,16 @@ export class Usmart {
 		return (await this.readWord(APP_SIG[0], timeout)) !== null;
 	}
 
-	// Which stock build runs: "018", "020", or null for one this page does not know (its RAM may differ)
+	// Which stock build runs ("018"; stockName gives its version), or null for one this page does not know (its RAM may
+	// differ)
 	async build(signal) {
-		for (const [name, addr] of BUILDS) {
+		for (const [version, addr] of this.builds) {
 			const words = [];
 			for (let i = 0; i < 4; i++) words.push(await this.readWordRetry(addr + 4 * i, 6, signal));
 			const bytes = new Uint8Array(16);
 			words.forEach((w, i) => new DataView(bytes.buffer).setUint32(4 * i, w, true));
 			const text = latin(bytes);
-			if (text.includes(`EARSAB.${name}`)) return name;
+			if (text.includes(versionTail(version))) return buildOf(version);
 		}
 		return null;
 	}

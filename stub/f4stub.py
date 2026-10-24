@@ -369,9 +369,8 @@ class F4Radio(stubtool.Radio):
         check_stub_fits(image, load, size)
 
     # ---- talking to the stub
-    def hello(self, timeout=0.5):
-        """HELLO; timeout: how long the reply may take (a simulated stub just started may need longer)"""
-        r = self.request(OP_HELLO, retries=0, timeout=timeout)
+    def hello(self):
+        r = self.request(OP_HELLO, retries=0, timeout=0.5)
         if r[:6] != b"F4STUB" or len(r) < 17:
             raise F4Error("unexpected hello %r: not the STM32F4 stub" % r[:16])
         self.version = r[6]
