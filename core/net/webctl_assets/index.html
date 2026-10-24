@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- The status server's page with web control (CONFIG_NET_WEBCTL, docs/spec/tcp-services.md 5.1): the radio's front
+     panel over /ws; the status alone while another page holds /ws. Every byte is flash: keep it short -->
+<html lang=en><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<link rel=icon href="data:,"><title>OpenDigitalRadio</title>
+<style>
+:root{--bg:#eef0f2;--c:#fff;--fg:#15181b;--m:#5d666e;--l:#d3d8dd;--b:#f4f5f6;--a:#1f6fd1;--g:#1d9a46;--r:#d4282f;--y:#c08a1e}
+@media (prefers-color-scheme:dark){:root{--bg:#101214;--c:#1a1d20;--fg:#e9ecef;--m:#959ea6;--l:#30353a;--b:#24282c;--a:#5aa2f5;--g:#3ccf6b;--r:#ff545a;--y:#e7b04a}}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0 auto;padding:0 16px 24px;max-width:900px;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif}
+header,.row,#keys,#help{display:flex;flex-wrap:wrap;align-items:center;gap:8px}header{padding:12px 0}
+header b{font-size:17px;margin-right:auto}#st:before{content:"";display:inline-block;width:8px;height:8px;margin-right:6px;
+border-radius:50%;background:var(--y)}.on #st:before{background:var(--g)}
+main{display:grid;grid-template-columns:minmax(220px,380px) minmax(280px,440px);gap:24px;justify-content:center;align-items:start}
+.wide #radio{display:contents}.wide #radio svg:first-child{grid-column:1/-1}.wide #side{grid-column:2}
+.wide:not(.mic) #side{grid-column:1/-1}@media (max-width:700px){main{grid-template-columns:1fr}.wide #side{grid-column:auto}}
+svg{display:block;width:100%;height:auto;max-height:calc(100vh - 70px);touch-action:none;user-select:none;-webkit-user-select:none}
+#radio svg+svg{max-width:260px;margin:16px auto 0}svg *{pointer-events:none}svg .k{pointer-events:all;cursor:pointer}svg .k:focus{outline:none}
+svg .k:focus-visible,svg .k.dn{filter:brightness(1.7) drop-shadow(0 0 4px var(--a))}
+.sk{fill:var(--c);stroke:var(--l);stroke-width:2}svg .sk.dn{fill:var(--a);filter:none}.ld{stroke:var(--m);stroke-dasharray:4}
+.t{fill:var(--fg);font-family:system-ui,sans-serif;font-weight:650;text-anchor:middle;dominant-baseline:central}.ta{fill:#fff}
+.kh{fill:#fff;fill-opacity:.1;stroke:#fff;stroke-opacity:.4;stroke-width:2}.kh:hover{fill-opacity:.3}svg .kh.dn{fill:var(--a);filter:none}
+#scr{width:100%;image-rendering:pixelated}#side{display:grid;gap:12px}
+#card{background:var(--c);border:1px solid var(--l);border-radius:12px;padding:14px 16px}
+.m,#help,summary{color:var(--m);font-size:13px}#ch{font-size:24px;font-weight:650;margin-top:6px;overflow-wrap:anywhere}
+#fq{font:600 20px ui-monospace,Menlo,monospace}#tags span,#bd{font-size:13px;padding:1px 8px;border-radius:6px;border:1px solid var(--l)}
+#bd{font-weight:650;text-transform:uppercase}.rx,.tx,.tx_denied{color:#fff;border-color:transparent!important}
+.rx{background:var(--g)}.tx{background:var(--r)}.tx_denied{background:var(--y)}#led{width:12px;height:12px;border-radius:50%;background:var(--b)}
+.mt{display:grid;grid-template-columns:56px 1fr 64px;align-items:center;gap:8px;margin-top:8px;font-size:13px}
+.mt div{height:8px;border-radius:4px;background:var(--b);overflow:hidden}.mt i{display:block;height:100%;background:var(--a)}
+button{font:inherit;color:inherit;background:var(--b);border:1px solid var(--l);border-radius:8px;min-height:42px;min-width:52px;
+padding:6px 12px;cursor:pointer}button:hover{border-color:var(--a)}button:disabled{opacity:.4}
+button.dn,[aria-pressed=true]{background:var(--a);color:#fff}#ptt{min-height:64px;font-size:18px;font-weight:650;background:var(--c)}
+#ptt.dn{background:var(--r)}#vol{flex:1;accent-color:var(--a)}#note{color:var(--y);margin:0}
+kbd{font:12px ui-monospace,monospace;padding:0 5px;border:1px solid var(--l);border-bottom-width:2px;border-radius:4px;margin-right:3px}
+td{padding:0 12px 0 0;font-size:13px;overflow-wrap:anywhere}
+</style>
+<header><b id=name>Radio</b><span id=st class=m>Connecting</span></header>
+<main><div id=radio></div><div id=side>
+<div id=card aria-live=polite><div class=row><span id=bd>Idle</span><span id=led></span><span id=wh class=m></span></div>
+<div id=ch>&nbsp;</div><div id=fq></div><div id=tags class=row></div>
+<div class=mt><span>Signal</span><div><i id=sg></i></div><span id=sgt></span></div>
+<div class=mt id=bm hidden><span>Battery</span><div><i id=bt></i></div><span id=btt></span></div></div>
+<button id=ptt hidden>Hold to talk</button>
+<div class=row><button id=ls hidden aria-pressed=false>Listen</button><input id=vol type=range max=2 step=.05 value=1 aria-label=Volume hidden></div>
+<div id=keys></div><p id=note></p><div id=help></div>
+<details><summary>All status</summary><table id=t></table></details></div></main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id), NS = 'http://www.w3.org/2000/svg';
+// Keyboard keys to the radio's key names, the first the radio has; [ ] and Page Up / Down turn the knob
+const KB = {ArrowUp: ['up'], ArrowDown: ['down'], ArrowLeft: ['left', 'fn_left'], ArrowRight: ['right', 'fn_right'],
+	Enter: ['green', 'menu'], Escape: ['red', 'back'], Backspace: ['back', 'red'], m: ['menu', 'green'], v: ['vfo_mr'],
+	a: ['ab'], '*': ['star', 'mic_star'], '#': ['hash', 'mic_hash'], ' ': ['ptt']}, KNOB = {'[': -1, PageUp: -1, ']': 1, PageDown: 1};
+for (let d = 0; d < 10; d++) KB[d] = [d + '', 'mic_' + d];
+let ws, hi, names = {}, bits = {}, ctl, scr, shown = -1, busy, ptt = -1, pt, au, gn, next = 0, poll, txAt, live, img, cv, raf;
+const down = new Set(), els = {};
+
+const send = s => ws && ws.readyState === 1 && ws.send(s), step = v => ctl && send('e' + v);
+const label = n => ({ptt: 'PTT', star: '*', hash: '#', enc_push: 'KNOB PRESS'})[n = n.replace(/^mic_/, '')] || n.replace(/_/g, ' ').toUpperCase();
+const keyOf = k => { const n = (KB[k] || []).find(x => x in names); return n && hi.keys.includes(names[n]) ? names[n] : -1; };
+// Clicks don't take the focus, so Space and Enter keep going to the radio
+const nofocus = e => e.addEventListener('mousedown', ev => ev.preventDefault());
+
+function el(tag, parent, text, attrs) {
+	const e = /^(rect|text|path|image)$/.test(tag) ? document.createElementNS(NS, tag) : document.createElement(tag);
+	if (text !== undefined) e.textContent = text;
+	for (const a in attrs) e.setAttribute(a, attrs[a]);
+	parent.append(e);
+	return e;
+}
+
+function press(b) {
+	if (!ctl || down.has(b)) return;
+	down.add(b); send('d' + b);
+	els[b].forEach(e => e.classList.add('dn'));
+	// PTT holds 4 s on the radio; repeating the down keeps it keyed while held here
+	if (b === ptt) pt = setInterval(() => send('d' + b), 2000);
+}
+
+function release(b) {
+	if (!down.delete(b)) return;
+	send('u' + b);
+	els[b].forEach(e => e.classList.remove('dn'));
+	if (b === ptt) clearInterval(pt);
+}
+
+const releaseAll = () => down.forEach(release);
+
+// e works the key b while held, by pointer or by Enter / Space when focused; dn and up replace pressing the key
+function bind(e, b, name, dn = () => press(b), up = () => release(b)) {
+	if (b >= 0) (els[b] = els[b] || []).push(e);
+	e.classList.add('k');
+	if (e.tagName !== 'BUTTON') { e.setAttribute('role', 'button'); e.tabIndex = 0; }
+	e.setAttribute('aria-label', name);
+	nofocus(e);
+	e.onpointerdown = ev => { ev.preventDefault(); e.setPointerCapture(ev.pointerId); dn(); };
+	e.onpointerup = e.onpointercancel = up;
+	e.onkeydown = ev => { if (/^( |Enter)$/.test(ev.key)) { ev.preventDefault(); ev.stopPropagation(); ev.repeat || dn(); } };
+	e.onkeyup = ev => { if (/^( |Enter)$/.test(ev.key)) { ev.stopPropagation(); up(); } };
+}
+
+// The knob's halves, translucent with an arrow each: a click turns it one detent, holding repeats
+function knob(k) {
+	const r = k.getBBox(), g = k.parentNode, w = r.width / 2, f = Math.min(w, r.height) * .7;
+	for (const v of [-1, 1]) {
+		const x = r.x + (v > 0 ? w : 0), h = el('rect', g, undefined, {x, y: r.y, width: w, height: r.height, rx: f / 3, class: 'kh'});
+		el('text', g, v < 0 ? '‹' : '›', {x: x + w / 2, y: r.y + r.height / 2, 'font-size': f, class: 't ta'});
+		let t;
+		const stop = () => { clearTimeout(t); clearInterval(t); h.classList.remove('dn'); };
+		bind(h, -1, v < 0 ? 'Knob back' : 'Knob forward', () => {
+			h.classList.add('dn'); step(v);
+			t = setTimeout(() => { t = setInterval(() => step(v), 200); }, 450);
+		}, stop);
+		h.onwheel = ev => { ev.preventDefault(); step(ev.deltaY > 0 ? 1 : -1); };
+	}
+}
+
+// A labeled button outside the drawing's edge for each key off the front face (its data-edge: left, right, top or
+// bottom), easier to hit than the key; the drawing grows for them
+function edges(svg) {
+	// Sized in screen pixels (s: drawing units per pixel), so the buttons are as big on every radio
+	const vb = svg.viewBox.baseVal, s = vb.width / svg.getBoundingClientRect().width, gap = 8 * s, keys = [];
+	const box = [vb.x, vb.y, vb.x + vb.width, vb.y + vb.height];
+	for (const b of hi.keys) {
+		const n = bits[b], e = svg.getElementById('key-' + n), d = e && e.dataset.edge;
+		if (d) keys.push({b, n, d, r: e.getBBox()});
+	}
+	for (const d of ['left', 'right', 'top', 'bottom']) {
+		// v: a row above or below (else a column beside); lo: before the drawing (left or top); c: a key's center along
+		const v = d === 'top' || d === 'bottom', lo = d === 'left' || d === 'top', a = v ? 0 : 1, ks = keys.filter(k => k.d === d);
+		const c = k => v ? k.r.x + k.r.width / 2 : k.r.y + k.r.height / 2, near = k => v ? lo ? k.r.y : k.r.y + k.r.height :
+			lo ? k.r.x : k.r.x + k.r.width;
+		if (!ks.length) continue;
+		ks.sort((p, q) => c(p) - c(q));
+		let W = 72 * s, H = 30 * s, last = -1e9;
+		// A row's buttons as wide as the space between its keys allows
+		if (v) ks.forEach((k, i) => i && (W = Math.min(W, (c(k) - c(ks[i - 1])) * .92)));
+		const len = v ? W : H, deep = v ? H : W, edge = (lo ? Math.min : Math.max)(...ks.map(near)), p = lo ? edge - gap - deep : edge + gap;
+		for (const k of ks) {
+			const at = last = Math.max(c(k), last + len + gap / 2), t = label(k.n);	// keys close together get theirs spread
+			const cx = v ? at : p + W / 2, cy = v ? p + H / 2 : at, side = lo ? p + deep : p;
+			el('path', svg, undefined, {d: v ? `M${cx} ${side}L${c(k)} ${near(k)}` : `M${side} ${cy}L${near(k)} ${c(k)}`, class: 'ld'});
+			bind(el('rect', svg, undefined, {x: cx - W / 2, y: cy - H / 2, width: W, height: H, rx: H / 2, class: 'sk'}), k.b, t);
+			el('text', svg, t, {x: cx, y: cy, 'font-size': Math.min(14 * s, W / t.length / .65), class: 't'});
+			box[a] = Math.min(box[a], at - len / 2 - gap);
+			box[a + 2] = Math.max(box[a + 2], at + len / 2 + gap);
+		}
+		const i = v ? 1 : 0;
+		if (lo) box[i] = Math.min(box[i], p - gap); else box[i + 2] = Math.max(box[i + 2], p + deep + gap);
+	}
+	svg.setAttribute('viewBox', [box[0], box[1], box[2] - box[0], box[3] - box[1]].join(' '));
+}
+
+// The radio's drawing and its hand mic's (a mobile's), their key-<name> shapes made keys; keys they don't show become
+// buttons beside them
+async function panel() {
+	try { names = await (await fetch('/keys.json')).json(); } catch (e) {}
+	for (const n in names) bits[names[n]] = n;
+	const box = $('radio'), get = async u => { const r = await fetch(u).catch(() => 0); return r && r.ok ? r.text() : ''; };
+	box.innerHTML = await get('/radio.svg') + await get('/mic.svg');
+	const svgs = [...box.querySelectorAll('svg')], find = id => svgs.map(v => v.getElementById(id)).find(e => e);
+	const vb = svgs[0] && svgs[0].viewBox.baseVal;
+	// A mobile's drawing (wider than tall) takes the page's width, its mic and the controls below it
+	if (vb && vb.width > vb.height) document.querySelector('main').className = 'wide' + (svgs[1] ? ' mic' : '');
+	const s = find('screen'), at = a => s.getAttribute(a);
+	scr = s ? el('image', s.ownerSVGElement, undefined, {x: at('x'), y: at('y'), width: at('width'), height: at('height'),
+		preserveAspectRatio: 'none', style: 'image-rendering:pixelated'}) : el('img', box, undefined, {id: 'scr'});
+	for (const b of hi.keys) {
+		const n = bits[b] || b + '', e = find('key-' + n);
+		if (b === ptt) { $('ptt').hidden = false; bind($('ptt'), b, 'PTT'); }
+		if (e) bind(e, b, label(n));
+		else if (b !== ptt) bind(el('button', $('keys'), label(n)), b, label(n));
+	}
+	svgs.forEach(edges);
+	const k = find('encoder');
+	if (hi.encoder && k) knob(k);
+	else if (hi.encoder) for (const v of [-1, 1]) {
+		const b = el('button', $('keys'), v < 0 ? '‹ Knob' : 'Knob ›');
+		nofocus(b);
+		b.onclick = () => step(v);
+	}
+	document.querySelectorAll('#side button').forEach(b => b.disabled = !ctl && b.id !== 'ls');
+	if (!ctl) return $('note').textContent = 'View only: the keys work from the computer the radio is plugged into.';
+	// The keyboard keys: in each key's aria-keyshortcuts, and listed beside the panel (one per radio key)
+	const help = $('help'), seen = {}, item = (ks, what) => {
+		const sp = el('span', help);
+		ks.forEach(x => el('kbd', sp, x));
+		sp.append(what);
+	};
+	if (keyOf('0') >= 0) item(['0-9', '*', '#'], 'keypad');
+	for (const kk in KB) {
+		const b = keyOf(kk), nm = kk === ' ' ? 'Space' : kk;
+		if (b < 0) continue;
+		els[b].forEach(e => e.setAttribute('aria-keyshortcuts', ((e.getAttribute('aria-keyshortcuts') || '') + ' ' + nm).trim()));
+		if (!seen[b] && !/^(\d|star|hash|mic_.*)$/.test(bits[b]))
+			item([nm.replace('Arrow', '').replace('Escape', 'Esc')], b === ptt ? 'hold to talk' : label(bits[b]));
+		seen[b] = 1;
+	}
+	if (hi.encoder) item(['[', ']'], 'knob');
+}
+
+addEventListener('keydown', ev => {
+	const t = ev.target, v = KNOB[ev.key];
+	// A focused key or button takes its own Enter and Space; the volume slider and the details take theirs
+	if (ev.ctrlKey || ev.metaKey || ev.altKey || !hi || t.closest('input,summary') || /^( |Enter)$/.test(ev.key) && t.closest('button,.k'))
+		return;
+	const b = keyOf(ev.key);
+	if (v && hi.encoder) { ev.preventDefault(); ev.repeat || step(v); }
+	else if (b >= 0) { ev.preventDefault(); ev.repeat || press(b); }
+});
+addEventListener('keyup', ev => hi && release(keyOf(ev.key)));
+addEventListener('blur', releaseAll);
+document.addEventListener('visibilitychange', () => document.hidden && releaseAll());
+
+const mhz = hz => (hz / 1e6).toFixed(5).replace(/0{1,2}$/, '');
+
+function bar(id, pct, text, color) {
+	$(id).style.width = Math.max(0, Math.min(100, pct)) + '%';
+	$(id + 't').textContent = text;
+	if (color) $(id).style.background = color;
+}
+
+function show(j) {
+	const t = $('t'), st = j.state, d = j.dmr, tags = $('tags'), bat = j.battery_pct, l = $('radio').querySelector('#led');
+	t.textContent = '';
+	for (const k in j) { const r = t.insertRow(); r.insertCell().textContent = k; r.insertCell().textContent = JSON.stringify(j[k]); }
+	$('name').textContent = j.radio;
+	document.title = j.radio + ' · OpenDigitalRadio';
+	txAt = st === 'tx' ? txAt || Date.now() : 0;
+	$('bd').className = st === 'idle' ? '' : st;
+	$('bd').textContent = ({idle: 'Idle', rx: 'Receiving', tx: 'Transmitting', tx_denied: 'TX denied'})[st] +
+		(txAt ? ' ' + Math.round((Date.now() - txAt) / 1000) + ' s' : '');
+	$('wh').textContent = j.vfo ? 'VFO' : 'Channel ' + j.channel_number;
+	$('ch').textContent = j.channel || ' ';
+	$('fq').textContent = mhz(j.rx_hz) + ' MHz' + (j.tx_hz !== j.rx_hz ? ', TX ' + mhz(j.tx_hz) : '');
+	tags.textContent = '';
+	(d ? ['DMR', 'CC ' + d.cc, 'TS ' + d.ts, (d.private ? 'Private ' : 'TG ') + d.target] : ['FM', j.bw + ' kHz'])
+		.concat(j.power + ' power', j.hotspot ? 'Hotspot' : [], d && d.heard && st === 'rx' ? 'From ' + d.heard : [])
+		.forEach(s => el('span', tags, s));
+	bar('sg', (j.rssi_dbm + 130) * 1.25, j.rssi_dbm + ' dBm');	// -130 dBm (none) to -50 dBm (full)
+	$('bm').hidden = bat === undefined;
+	if (bat >= 0) bar('bt', bat, bat + ' %', bat < 20 ? 'var(--r)' : 'var(--g)');
+	$('led').style.background = j.led_red ? 'var(--r)' : j.led_green ? 'var(--g)' : '';
+	if (l) {
+		l.dataset.f = l.dataset.f || l.getAttribute('fill');
+		l.setAttribute('fill', j.led_red ? '#ff3b3b' : j.led_green ? '#38e060' : l.dataset.f);
+	}
+	if (!live && j.draws !== shown) shot(j.draws);
+}
+
+// The screen without /ws (status only), fetched when the radio drew it again, one at a time (each costs the radio a redraw hold)
+function shot(n) {
+	if (busy || !scr) return;
+	busy = 1;
+	const i = new Image();
+	i.onload = i.onerror = () => {
+		if (i.naturalWidth) { scr.setAttribute(scr.tagName === 'IMG' ? 'src' : 'href', i.src); shown = n; }
+		setTimeout(() => busy = 0, 500);
+	};
+	i.src = '/api/screen.bmp?' + n;
+}
+
+// The screen over /ws: frames of the rows that changed (palette, then each row raw or as runs of one color) drawn
+// into a copy of the panel; its visible part shown at most once a display frame
+const rgb = c => [(c >> 11) * 255 / 31, (c >> 5 & 63) * 255 / 63, (c & 31) * 255 / 31];
+function frame(d) {
+	const [W, , bpp, l, t] = hi.screen, px = img.data, pal = [], put = (o, c) => { px.set(c, o); px[o + 3] = 255; };
+	for (let i = 0; i < d[1]; i++) pal.push(rgb(d[2 + 2 * i] | d[3 + 2 * i] << 8));
+	for (let i = 2 + 2 * d[1]; i < d.length;) {
+		const y = d[i] | d[i + 1] << 8;
+		let o = (y & 0x7fff) * W * 4, x = 0;
+		i += 2;
+		if (y & 0x8000) {
+			for (; x < W; x++, o += 4) put(o, bpp > 4 ? rgb(d[i + 2 * x] | d[i + 2 * x + 1] << 8) :
+				pal[bpp > 1 ? d[i + (x >> 1)] >> (x & 1 ? 0 : 4) & 15 : d[i + (x >> 3)] >> 7 - (x & 7) & 1]);
+			i += Math.ceil(W * bpp / 8);
+		} else while (x < W) {
+			const c = d[i] >> 4, col = pal[d[i] & 15];
+			for (let n = c < 15 ? c + 1 : 16 + d[i + 1]; n--; x++, o += 4) put(o, col);
+			i += c < 15 ? 1 : 2;
+		}
+	}
+	raf = raf || requestAnimationFrame(() => {
+		raf = 0;
+		cv.getContext('2d').putImageData(img, -l, -t);
+		if (scr) scr.setAttribute(scr.tagName === 'IMG' ? 'src' : 'href', cv.toDataURL());
+	});
+}
+
+// Receive audio: 20 ms frames of 8 kHz PCM16 little-endian, queued back to back
+function play(buf) {
+	if (!au) return;
+	const p = new Int16Array(buf), b = au.createBuffer(1, p.length, 8000), s = au.createBufferSource();
+	b.getChannelData(0).set(Array.from(p, x => x / 32768));
+	s.buffer = b;
+	s.connect(gn);
+	if (next < au.currentTime + .02 || next > au.currentTime + .5) next = au.currentTime + .08;
+	s.start(next);
+	next += b.duration;
+}
+
+nofocus($('ls'));
+$('ls').onclick = () => {
+	const on = !au;
+	if (on) {
+		au = new AudioContext();
+		gn = au.createGain();
+		gn.gain.value = $('vol').value;
+		gn.connect(au.destination);
+	} else {
+		au.close();
+		au = null;
+	}
+	$('ls').setAttribute('aria-pressed', on);
+	$('vol').hidden = !on;
+	send(on ? 'a1' : 'a0');
+};
+$('vol').oninput = () => gn.gain.value = $('vol').value;
+
+const status = () => fetch('/status').then(r => r.json()).then(show).catch(() => 0);
+
+function connect() {
+	ws = new WebSocket('ws://' + location.host + '/ws');
+	ws.binaryType = 'arraybuffer';
+	ws.onopen = () => { clearInterval(poll); poll = 0; };
+	ws.onmessage = ev => {
+		if (typeof ev.data !== 'string') {
+			const d = new Uint8Array(ev.data);	// binary frames: 'A' audio, 'S' screen
+			return d[0] === 65 ? play(ev.data.slice(2)) : d[0] === 83 && live && frame(d);
+		}
+		const j = JSON.parse(ev.data), first = !hi;
+		if (!j.hello) return show(j);
+		hi = j; ctl = j.control; ptt = j.ptt;
+		$('st').textContent = ctl ? 'Connected' : 'View only';
+		document.body.className = 'on';
+		$('ls').hidden = !j.audio;
+		if (au) send('a1');
+		if (live = !!j.screen) {
+			const [w, h, , , , vw, vh] = j.screen;
+			img = new ImageData(w, h);
+			cv = Object.assign(document.createElement('canvas'), {width: vw, height: vh});
+			send('s1');
+		}
+		if (first) panel();
+	};
+	ws.onclose = () => {
+		releaseAll();
+		live = 0;
+		$('st').textContent = hi ? 'Reconnecting' : 'Status only';
+		document.body.className = '';
+		if (!poll) { status(); poll = setInterval(status, 3000); }
+		setTimeout(connect, hi ? 3000 : 30000);	// /ws answers 503 while another page has it
+	};
+}
+connect();
+</script>

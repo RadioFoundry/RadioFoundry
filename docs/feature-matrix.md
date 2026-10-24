@@ -96,6 +96,7 @@ is `tools/bringup.py list --radio <id>`.
 | `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded |
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -166,6 +167,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_KISS` | ● | ● | ● | ● | ● |
 | `NET_HTTP` | ● | ● | ● | ● | ● |
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● |
+| `NET_WEBCTL` | ● | ● | ● | ● | ● |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● |
 | `NET_APRSIS` | ● | ● | ● | ● | ● |
 | `NET_USRP` | ● | ● | ● | … | ● |
@@ -247,7 +249,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 144 | 104 | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |
 | Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | 1,536 | 2,140 |  |
 | Channel editor: edit a channel, New channel from current settings, text entry | `CHANNEL_EDIT` | 4,656 | 4,252 | Needs `CHANNEL_LIST`. Without it a channel's settings are read only. Measured 2026-10-17 |
-| Side key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 1,344 | — |  |
+| Key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 2,120 | 2,188 | Up to 9 keys. Measured 2026-10-24 |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 |  |
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 |  |
@@ -299,6 +301,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | KISS over TCP, port 8001 | `NET_KISS` | 700 | 752 |  |
 | HTTP status page and JSON, port 80 | `NET_HTTP` | 4,796 | 4,860 |  |
 | HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -64 | -96 | Negative: saves flash |
+| Web control: the front panel page, keys, status and receive audio over `/ws` | `NET_WEBCTL` | 9,620 | 9,332 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
 | rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 |  |
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet). DM-32UV: DMR only until its board code has the FM audio paths |
 | APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | Needs NAT on the host |

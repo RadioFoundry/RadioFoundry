@@ -384,7 +384,7 @@ UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/ui_sc
 TESTS   += gfxTest
 
 gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -o $@ gfxTest.c $(UI)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -o $@ gfxTest.c $(UI)
 
 # The UI host simulator (tests/host/sim/ui_sim.c): the whole of core/ui against a simulated radio, codeplug and
 # board at any display geometry and key map. uiFlowTest runs the task flows of docs/ux/task-flows.md against their
@@ -1029,12 +1029,12 @@ endif
 # The TCP services (core/net) through the real gateway and TCP, against a scripted TCP peer and fakes of the APRS
 # engine and the radio core; tshark checks netSvcTest.pcap
 NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE)/net/kiss_tcp.c $(CORE)/aprs/kiss.c \
-           $(CORE)/net/http.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c \
+           $(CORE)/net/http.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c $(CORE)/net/webctl.c $(CORE)/net/ws.c \
            $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c
 TESTS   += netSvcTest
 
 netSvcTest: $(NETSVC) netSvcFakes.h $(wildcard $(CORE)/net/*.h) $(CORE)/dmr/ipGateway.h gen/gz/http_assets_gen.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Igen/gz -Wshadow -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 -DCONFIG_NET_USRP=0 -o $@ $(NETSVC)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Igen/gz -Wshadow -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 -DCONFIG_NET_USRP=1 -DCONFIG_NET_PPP=1 -DGFX_INDEXED=1 -o $@ $(NETSVC)
 
 run: run-netsvc
 run-netsvc: netSvcTest
@@ -1045,6 +1045,17 @@ ifneq ($(TSHARK),)
 	@if [ -s netSvcTest.expert ]; then echo "# tshark found problems in netSvcTest.pcap"; cat netSvcTest.expert; exit 1; else echo "# tshark: netSvcTest.pcap has no malformed segments or bad checksums"; fi
 endif
 .PHONY: run-netsvc
+
+# WebSocket pieces for the HTTP server's /ws (core/net/ws.c): SHA-1, base64, the handshake, frame headers
+TESTS   += wsTest
+wsTest: wsTest.c $(CORE)/net/ws.c $(CORE)/net/ws.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ wsTest.c $(CORE)/net/ws.c
+
+run: run-ws
+run-ws: wsTest
+	./wsTest
+.PHONY: run-ws
+
 # The SNMP agent (docs/spec/snmp.md): the BER codec against hand-worked X.690 encodings, SNMPv2c processing, the MIB and
 # the notifications (snmpTest); then the agent on a loopback UDP socket against tools/rfoundry_snmp.py and, when installed,
 # the system's SNMP command line tools (snmp_peer_check.sh)
@@ -1117,3 +1128,29 @@ check-run:
 		grep -qE "(^|[[:space:];&|(])\./$$t([[:space:];>|)]|$$)" $(MAKEFILE_LIST) || \
 			{ echo "tests/host: no run group runs $$t (add it to one, or to HELPERS)"; exit 1; }; done
 .PHONY: check-run
+
+# The web control page's set (CONFIG_NET_WEBCTL) in its own table: its index.html replaces the plain one, so the two
+# can't share a table. A radio with a drawing, and a hand mic's if one has it, gives it its keys.json, radio.svg and
+# mic.svg
+WEBCTL_SVGS   := $(wildcard $(ROOT)/site/static/img/radios/src/*.svg)
+WEBCTL_MIC    := $(firstword $(filter %-mic.svg,$(WEBCTL_SVGS)))
+WEBCTL_BOARD  := $(if $(WEBCTL_MIC),$(notdir $(WEBCTL_MIC:-mic.svg=)),$(notdir $(basename $(firstword $(WEBCTL_SVGS)))))
+WEBCTL_ASSETS := $(sort $(wildcard $(ROOT)/core/net/webctl_assets/*)) gen/webctl/keys.json gen/webctl/radio.svg \
+	$(if $(WEBCTL_MIC),gen/webctl/mic.svg)
+TESTS   += httpAssetsTestWebctl
+
+gen/webctl/keys.json: $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_SVGS) $(ROOT)/boards/$(WEBCTL_BOARD)/$(WEBCTL_BOARD).h
+	@python3 -I $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_BOARD) gen/webctl > /dev/null
+gen/webctl/radio.svg gen/webctl/mic.svg: gen/webctl/keys.json
+gen/webctl/http_assets_gen.h: $(WEBCTL_ASSETS) $(ROOT)/tools/gen_http_assets.py
+	@python3 -I $(ROOT)/tools/gen_http_assets.py --gzip $@ $(WEBCTL_ASSETS) > /dev/null
+	@touch $@
+httpAssetsTestWebctl: httpAssetsTest.c $(CORE)/net/http_assets.h gen/webctl/http_assets_gen.h
+	$(CC) $(CFLAGS) -Igen/webctl -o $@ httpAssetsTest.c
+
+run: run-webctlassets
+run-webctlassets: httpAssetsTestWebctl
+	@mkdir -p out/http_webctl
+	./httpAssetsTestWebctl out/http_webctl
+	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_webctl $(WEBCTL_ASSETS)
+.PHONY: run-webctlassets

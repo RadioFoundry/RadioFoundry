@@ -107,16 +107,12 @@ int32_t ui_svc_setting_get(uint8_t id)
 {
 	radio_settings_t rs;
 	settings_t st;
-	switch (id) {
 #if CONFIG_KEY_ASSIGN
-	case UI_SET_KEY_SIDE1:
-	case UI_SET_KEY_SIDE1_HOLD:
-	case UI_SET_KEY_SIDE2:
-	case UI_SET_KEY_SIDE2_HOLD:
-	case UI_SET_KEY_TOP:
-	case UI_SET_KEY_TOP_HOLD:
+	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {
 		return key_get(id);
+	}
 #endif
+	switch (id) {
 	case UI_SET_KEY_TONES:
 	case UI_SET_TONE_VOLUME:
 	case UI_SET_TOT_S:
@@ -291,16 +287,12 @@ int32_t ui_svc_setting_get(uint8_t id)
 bool ui_svc_setting_set(uint8_t id, int32_t value)
 {
 	settings_t *st;
-	switch (id) {
 #if CONFIG_KEY_ASSIGN
-	case UI_SET_KEY_SIDE1:
-	case UI_SET_KEY_SIDE1_HOLD:
-	case UI_SET_KEY_SIDE2:
-	case UI_SET_KEY_SIDE2_HOLD:
-	case UI_SET_KEY_TOP:
-	case UI_SET_KEY_TOP_HOLD:
+	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {
 		return key_set(id, value);
+	}
 #endif
+	switch (id) {
 	case UI_SET_KEY_TONES:
 	case UI_SET_TONE_VOLUME:
 	case UI_SET_TOT_S:
@@ -707,6 +699,7 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 // built from them handed to the input task. A codeplug a CPS wrote is read again; a change made in Settings is
 // written by a storage job, and until it lands the copy here is the one that counts ---
 
+_Static_assert(UI_KEY_ROLES == KEYASSIGN_ROLES, "a setting pair per role");
 static uint16_t key_slots[KEYASSIGN_SLOTS];
 static uint16_t key_job_slots[KEYASSIGN_SLOTS];	// what the job writes (filled only while no job is pending)
 static uint32_t key_serial;
@@ -761,13 +754,13 @@ static int32_t key_get(uint8_t id)
 	if (!key_loaded) {
 		key_load();
 	}
-	uint8_t k = (uint8_t)(id - UI_SET_KEY_SIDE1);
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
 	return keyassign_get(key_slots, k / 2u, (k & 1u) != 0);
 }
 
 static bool key_set(uint8_t id, int32_t value)
 {
-	uint8_t k = (uint8_t)(id - UI_SET_KEY_SIDE1);
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
 	if (k / 2u >= board.side_key_count || value < 0 || value >= KEYFN_COUNT) {
 		return false;
 	}

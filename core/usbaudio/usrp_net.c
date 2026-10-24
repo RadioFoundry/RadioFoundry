@@ -3,6 +3,7 @@
 // USRP voice over UDP on the radio's network address (usrp_net.h)
 #include "config.h"
 #if CONFIG_NET_USRP	// the whole file
+#include "net/webctl.h"
 #include "usbaudio/usrp_net.h"
 #include "usbaudio/usrp.h"
 #include "usbaudio/audio_mux.h"
@@ -148,6 +149,9 @@ static void send_rx(uint32_t now_ms)
 			break;
 		}
 		audio_mux_host_read(pcm, USRP_FRAME_SAMPLES);
+#if CONFIG_NET_WEBCTL
+		webctl_audio(pcm, USRP_FRAME_SAMPLES, cos);	// the web page's receive audio: the same frames
+#endif
 		if (!cos && !cos_sent) {
 			continue;
 		}

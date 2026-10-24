@@ -33,15 +33,26 @@ The manual names keys by the job they do. Each radio puts those jobs on its own 
 | **Monitor** | FM: squelch open while held. DMR: digital monitor on / off | SK1 | SK1 | SK1 | P3 | SK1 |
 | **Talk target** | Talk target picker | Hold **#** | Hold **#** | Hold **#** | Hold **P2** | Hold **#** |
 | **A/B** | Dual watch: the other channel / dual watch on or off | SK2 | SK2 | SK2 | TONE/T.SEL | A/B key, SK2 |
-| **Power level** | Next power level / emergency (held 1.5 s) | Top side key | None | None | None | None |
+| **Power level** | Next power level / emergency (held 1.5 s) | SK3 | None | None | None | None |
 | **Previous zone**, **Next zone** | Step the zone on Home | P1, P2 | None | Left, Right | None | Left, Right |
 | **VFO** | Between the channel and the VFO / copy the channel to the VFO | None | None | None | None | VFO/MR key |
 | **Volume** | Open the volume editor. Radios without a volume knob only | None: the knob | None: the knob | None: the knob | VOL/SQL | None: the knob |
 | **PTT** | Transmit | PTT | PTT | PTT | PTT on the microphone | PTT |
 | Channel knob | One step per click | Channel knob | Channel switch (16 positions) | Channel knob | Front knob | None: Up and Down |
 
-These are the defaults. **Settings > Keys** can give SK1, SK2 and the DM-1701's top side key other jobs
-([Settings](17-settings.md#keys-key-8)).
+These are the defaults. **Settings > Keys** can give other jobs to every key the menus don't need
+([Settings](17-settings.md#keys-key-8)):
+
+| Radio | Keys you can set |
+|---|---|
+| DM-1701 | SK1, SK2, SK3, P1, P2 |
+| MD-380 | SK1, SK2 |
+| DM-32UV | SK1, SK2 |
+| DB25-D PRO | P3, TONE/T.SEL, the microphone's P4 and P5 |
+| DM-1801 Pro | SK1, SK2, SOS, A/B, VFO/MR |
+
+OK, Back, the arrows, the number keys, **\***, **#**, PTT and the volume stay as they are. On the DB25-D PRO that
+includes P1, P2 and the microphone's P6 and P7, which are **\*** and **#** there.
 
 On a radio without a key for a job, the menus reach it:
 
@@ -139,13 +150,13 @@ Follow [Installing](02-installing.md) with these values:
 | Red Back key | Keypad | **Back** |
 | Arrow keys | Keypad | **Up**, **Down** |
 | P1, P2 | The two front function keys | **Previous zone**, **Next zone** |
-| Top side key | The uppermost of the three side keys | **Power level**. Press: the next power level. Hold 1.5 s: emergency. A build without emergency says "Voice prompts: not in this build" on a hold |
-| SK1 | The middle side key | **Monitor**. Held with **PTT** at power-on, it starts the bootloader |
-| SK2 | The lowest side key | **A/B**: press to switch A / B in dual watch, hold for dual watch on or off. The talk target picker is on hold **#** |
+| SK1 | The top side key, above **PTT** | **Monitor**. Held with **PTT** at power-on, it starts the bootloader |
+| SK2 | The side key below **PTT** | **A/B**: press to switch A / B in dual watch, hold for dual watch on or off. The talk target picker is on hold **#** |
+| SK3 | The lowest side key | **Power level**. Press: the next power level. Hold 1.5 s: emergency. A build without emergency says "Voice prompts: not in this build" on a hold |
 | **PTT** | | **PTT** |
 | Channel knob | | Channel knob |
 
-The three side keys are, top to bottom, the top side key, SK1 and SK2.
+The side keys are, top to bottom, SK1, **PTT**, SK2 and SK3.
 
 ### DM-1701 power levels
 
@@ -156,7 +167,7 @@ factory calibration.
 |---|---|
 | A channel without a power in the codeplug | 1 W |
 | **\***, **1** | 50 mW, 1 W, 5 W |
-| Top side key on Home | All nine, one per press |
+| SK3 on Home | All nine, one per press |
 
 ### DM-1701 battery
 
@@ -246,7 +257,7 @@ Follow [Installing](02-installing.md) with these values. To keep the stock codep
 | **PTT** | **PTT** |
 | Channel switch | Channel knob. A 16-position switch, not an endless knob: RadioFoundry turns each change of position into steps |
 
-No **P1**, **P2** or top side key, so no **Power level** or zone keys and no emergency key. Change the zone with **OK**,
+No **P1**, **P2** or **SK3**, so no **Power level** or zone keys and no emergency key. Change the zone with **OK**,
 **4**, the power with **\***, **1**. Where each key sits in the key matrix hasn't been confirmed on a radio. The
 bootloader starts when you hold **PTT** and the side key just above it at power-on.
 

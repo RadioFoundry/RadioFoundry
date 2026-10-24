@@ -43,6 +43,10 @@ void rigctld_view(dl_text_t *t);
 void http_start(void);
 void http_poll(uint32_t now_ms);
 void http_view(dl_text_t *t);
+// The /status JSON (one object and a newline), also what webctl.c pushes
+void http_status_json(dl_text_t *t);
+// The frame buffer can be sent as it is: /api/screen.bmp and the web control page's screen
+bool http_screen_ok(void);
 #endif
 
 #endif

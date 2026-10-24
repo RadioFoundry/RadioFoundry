@@ -3390,35 +3390,44 @@ static void test_side_keys(void)
 	keymap_sets = 0;
 	ui_svc_keys_poll();
 	CHECK(keymap_sets == 1 && got_keymap[1].raw_edges && got_keymap[1].short_action == ACT_MONITOR);
-	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_DEFAULT);
-	CHECK(ui_svc_setting_set(UI_SET_KEY_SIDE1, KEYFN_POWER));
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_DEFAULT);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST, KEYFN_POWER));
 	CHECK(keymap_sets == 2 && got_keymap[1].short_action == ACT_POWER && !got_keymap[1].raw_edges);
-	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_POWER);
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_POWER);
 	CHECK(cp_quick[0] == 0);		// not yet: the job does it
-	CHECK(!ui_svc_setting_set(UI_SET_KEY_TOP, KEYFN_SCAN));	// this radio has two side keys
-	CHECK(!ui_svc_setting_set(UI_SET_KEY_SIDE2, KEYFN_COUNT));
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_SCAN));	// this radio has two side keys
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 2, KEYFN_COUNT));
 	uint32_t ser = cp_serial;
 	ui_svc_keys_poll();
 	storage_job_poll();
 	CHECK(cp_quick[0] == KEYASSIGN_MARKER && cp_quick[1] == KEYFN_POWER && cp_serial == ser + 1u);
 	ui_svc_keys_poll();			// our own write read back: the same
-	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_POWER && got_keymap[1].short_action == ACT_POWER);
-	// A CPS wrote the slots
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_POWER && got_keymap[1].short_action == ACT_POWER);
+	// A CPS wrote the slots: role 0's press, role 1's long press
 	cp_quick[1] = KEYFN_SCAN;
-	cp_quick[4] = KEYFN_ZONE_UP;
+	cp_quick[2] = KEYFN_ZONE_UP << 8;
 	cp_serial++;
 	ui_svc_keys_poll();
-	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_SCAN && got_keymap[1].short_action == ACT_SCAN);
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && got_keymap[1].short_action == ACT_SCAN);
 	CHECK(got_keymap[2].short_action == ACT_TALK_TARGET && got_keymap[2].long_action == ACT_ZONE_UP);
 	// A write that fails is reported; the key works for now
 	cp_quick_fail = true;
 	n_ev = 0;
-	CHECK(ui_svc_setting_set(UI_SET_KEY_SIDE2_HOLD, KEYFN_ZONE_DOWN));
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 3, KEYFN_ZONE_DOWN));
 	ui_svc_keys_poll();
 	storage_job_poll();
 	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "save the keys") != NULL);
-	CHECK(got_keymap[2].long_action == ACT_ZONE_DOWN && cp_quick[4] == KEYFN_ZONE_UP);
+	CHECK(got_keymap[2].long_action == ACT_ZONE_DOWN && cp_quick[2] == KEYFN_ZONE_UP << 8);
 	cp_quick_fail = false;
+	// Layout 1 (three roles, a slot per gesture), as an older build wrote it: read as it is
+	memset(cp_quick, 0, sizeof(cp_quick));
+	cp_quick[0] = KEYASSIGN_MARKER_V1;
+	cp_quick[1] = KEYFN_SCAN;
+	cp_quick[4] = KEYFN_ZONE_UP;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && ui_svc_setting_get(UI_SET_KEY_FIRST + 3) == KEYFN_ZONE_UP);
+	CHECK(got_keymap[2].long_action == ACT_ZONE_UP);
 	memset(cp_quick, 0, sizeof(cp_quick));	// leave the board's key map for what follows
 	cp_serial++;
 	ui_svc_keys_poll();
