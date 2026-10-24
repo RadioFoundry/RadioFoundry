@@ -9,47 +9,56 @@
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"
 
-#define PREAMBLES	2	// preamble CSBKs before the packet, as for an SMS (receivers get time to sync)
+#include "dmr/dmrAirQueue.h"
+#include "debuglink/dlog.h"
 
-// FULL: waiting for the radio task; SERVICE: an IP packet the data service has (compressed / confirmed there), read
-// from mb.data until dmrDataServiceIpBusy() is false
-typedef enum { MB_EMPTY, MB_FULL, MB_SERVICE } mb_state_t;
+#define MAX_AGE_MS	10000U	// a packet still queued after this is dropped: what it was for has likely moved on
 
-// One packet from the host link task to the radio task (single producer, single consumer)
-static struct {
-	bool raw;		// SAP 10 user data, else an IP packet from layer 4 on
-	bool group;
-	uint32_t dst;
-	uint8_t protocol;
-	int length;
-	uint32_t since_ms;	// first tried (0: not yet)
-	uint8_t data[HOSTLINK_NET_AIR_MAX];
-} mb;
-static volatile uint8_t mb_state = MB_EMPTY;
 static volatile uint32_t own;
-static DMR_DATA_BUFFER dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 static hostlink_net_air_stats_t stats;
 
+// The host link task: into the air queue, in order behind what is there (#154: a host's datagrams in a row all go)
 static bool put(bool raw, bool group, uint32_t dst, uint8_t protocol, const uint8_t *data, int length)
 {
 	if ((length <= 0) || (length > HOSTLINK_NET_AIR_MAX)) {
 		stats.too_long++;
 		return false;
 	}
-	if (mb_state != MB_EMPTY) {
-		return false;	// one at a time: the host's stack retries (TCP is not carried anyway, ping repeats)
+	airqItem_t it = { .kind = raw ? AIRQ_RAW : AIRQ_IP, .owner = AIRQ_OWNER_GATEWAY, .protocol = protocol,
+			  .delivery = DMR_IPS_SETTINGS, .group = group, .dst = dst, .waitMs = HOSTLINK_NET_AIR_GIVE_UP_MS,
+			  .maxAgeMs = MAX_AGE_MS, .data = data, .length = (uint16_t)length };
+	if (!airqPut(&it)) {
+		stats.refused_full++;
+		dlog("net: to air dropped, queue full, %d octets to %u", length, (unsigned)dst);
+		return false;
 	}
-	mb.raw = raw;
-	mb.group = group;
-	mb.dst = dst;
-	mb.protocol = protocol;
-	mb.length = length;
-	mb.since_ms = 0;
-	memcpy(mb.data, data, (size_t)length);
-	__sync_synchronize();	// the packet is complete before the flag says so
-	mb_state = MB_FULL;
 	stats.queued++;
 	return true;
+}
+
+// The radio task: a packet of ours has ended. A drop is logged on the debug link (the host can watch the log)
+static void done(const airqItem_t *it, airqResult_t result)
+{
+	static const char *const why[] = { "sent", "not delivered", "service busy", "too old", "no DMR ID", "too long",
+					   "canceled" };
+	switch (result) {
+	case AIRQ_SENT:
+		stats.sent++;
+		return;
+	case AIRQ_FAILED:
+		stats.failed++;	// no clear channel in time, or confirmed and never acknowledged
+		break;
+	case AIRQ_TOO_LONG:
+		stats.too_long++;	// more bursts than a list holds
+		break;
+	default:
+		stats.dropped++;	// never taken by the service, too old, or no ID to send from
+		break;
+	}
+	dlog("net: to air %s, %u octets to %s%u", why[result], (unsigned)it->length, it->group ? "TG " : "",
+	     (unsigned)it->dst);
+	(void)why;
+	(void)it;
 }
 
 static uint32_t air_radio_id(void)
@@ -71,66 +80,14 @@ static const hostlink_net_air_t air = { .radio_id = air_radio_id, .ip_to_air = a
 
 void hostlink_net_air_start(void)
 {
+	airqSetDone(AIRQ_OWNER_GATEWAY, done);
 	hostlink_net_set_air(&air);
 }
 
 void hostlink_net_air_tick(uint32_t own_id, uint32_t now_ms)
 {
+	(void)now_ms;
 	own = own_id & 0xFFFFFFu;
-	if (mb_state == MB_SERVICE) {
-		if (!dmrDataServiceIpBusy()) {
-			if (dmrDataServiceIpResult() == DMR_REQ_OK) {
-				stats.sent++;
-			} else {
-				stats.failed++;	// no clear channel in time, or confirmed and never acknowledged
-			}
-			mb_state = MB_EMPTY;
-		}
-		return;
-	}
-	if (mb_state != MB_FULL) {
-		return;
-	}
-	__sync_synchronize();
-	if (mb.since_ms == 0) {
-		mb.since_ms = (now_ms != 0) ? now_ms : 1;
-	}
-	if (own == 0) {
-		stats.dropped++;	// no ID to send from
-		mb_state = MB_EMPTY;
-		return;
-	}
-	if (!mb.raw) {
-		// The service builds it (compressed header, confirmed delivery: its settings) and keeps reading mb.data
-		if (dmrDataServiceSendIP(mb.group, mb.dst, mb.protocol, mb.data, mb.length)) {
-			mb_state = MB_SERVICE;
-			return;
-		}
-		stats.refused_busy++;
-		if ((now_ms - mb.since_ms) >= HOSTLINK_NET_AIR_GIVE_UP_MS) {
-			stats.dropped++;
-			mb_state = MB_EMPTY;
-		}
-		return;
-	}
-	int n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_SHORT_DATA, mb.group, mb.dst, own, mb.data, mb.length,
-				   DT_RATE_12_DATA, PREAMBLES, bursts, DMR_DATA_MAX_BURSTS);
-
-	if (n <= 0) {
-		stats.too_long++;	// more bursts than a list holds
-		mb_state = MB_EMPTY;
-		return;
-	}
-	if (dmrDataServiceSendBursts(bursts, n)) {
-		stats.sent++;
-		mb_state = MB_EMPTY;
-		return;
-	}
-	stats.refused_busy++;
-	if ((now_ms - mb.since_ms) >= HOSTLINK_NET_AIR_GIVE_UP_MS) {
-		stats.dropped++;	// the channel never came free, or not a DMR channel / receive only
-		mb_state = MB_EMPTY;
-	}
 }
 
 void hostlink_net_air_packet(const dmrDataPacket_t *packet, void *ctx)

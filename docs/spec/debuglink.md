@@ -116,7 +116,7 @@ Example from an STM32F4 radio (`<profile>` stands for the codec profile id):
 
 ```
 proto=1                 protocol version (this document)
-view=2                  GET_VIEW record version (3.7)
+view=3                  GET_VIEW record version (3.7)
 git=5277f73a            firmware git hash
 board=XR-100UV
 features=FM,SUBTONE,DMR,DMR_PRIVACY,...,USB,HOSTLINK,DEBUGLINK
@@ -232,7 +232,8 @@ and whether more remain. Built without the debug link, `dlog()` compiles to noth
 The radio's state as key=value lines, one section per request, so each fits a reply. `next` is the following
 section, `0xFF` after the last. Every section starts with `section=<name>`; a section cut short ends with
 `truncated=1`. Hosts ignore keys they don't know; keys may be added at any time, and `view=` in the core section
-(and in VERSION) is bumped only when a key changes meaning or goes away. Each request takes a fresh snapshot
+(and in VERSION) is bumped only when a key changes meaning or goes away. View 3: `net.air_busy` counts the
+host's packets dropped after waiting in the TX queue; in view 2 it counted packets refused because the service was busy. Each request takes a fresh snapshot
 (`radio_get_view()`), so sections may be a few ms apart: compare `serial=` in the core section when that matters.
 
 | # | Section | Keys |
@@ -261,6 +262,7 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 | 21 | `crash` | the crash log's record from before this start ([crash-log.md](crash-log.md) 3): `crash.built crash.valid`; when valid `crash.arch` (1 CM4, 2 CK803) `crash.kind` (1 fault, 2 stack overflow, 3 out of heap, 4 assert, 5 hang) `crash.cause crash.flags crash.count crash.pc crash.lr crash.sp crash.psr crash.status` (four words) `crash.task crash.uptime_ms crash.build` (the commit's first 8 hex digits, 00000000 unknown) `crash.r0` .. `crash.r13`, `crash.stack` (the 16 words at `sp`, comma separated hex) when the flags have bit 2, then `crash.tasks crash.tasks_more` and `crash.t0` .. for each other task `<name>,<where>` (4-letter name, a comma in it shown as `_`; `where` 8 hex digits, [crash-log.md](crash-log.md) 1.2). Built without the crash log: `crash.built=0` |
 | 22 | `watchdog` | the hardware watchdog ([watchdog.md](watchdog.md)): `watchdog.built watchdog.timeout_ms` (the nominal timeout; 0 stopped or re-armed by a bench LOAD) `watchdog.feeds` (by the idle task since start) `watchdog.starving` `watchdog.idle_age_ms` (since the idle task last ran) `watchdog.max_gap_ms` (the longest the idle task stayed out since start or CLEAR_GAP) `watchdog.regs` (the platform's raw registers, comma separated hex: HR_C7000 LOCK, OT_LOAD_H, OT_LOAD_L, RST_LOAD, EN, KNOCK; STM32 IWDG PR, RLR, SR), and while a test starves it `watchdog.starved_ms` (since the feeds stopped). Built without the watchdog: `watchdog.built=0` |
 | 23 | `reset` | why this start happened ([crash-log.md](crash-log.md) 1.3), with or without a crash record: `reset.built reset.cause` (`power software watchdog brownout pin warm unknown`) `reset.flags` (the chip's reset flags register as read, hex; 0 without one) `reset.uptime_ms` (the last run's uptime) `reset.warm` (starts since a power loss). Its own section because a full `crash` section comes close to a reply's size. Built without the crash log: `reset.built=0` |
+| 24 | `air` | the data TX queue ([dmr-data.md](dmr-data.md) 12): `airq.built airq.depth` (packets queued, the one being sent included) `airq.bytes` (their octets with record headers and padding) `airq.high airq.high_bytes` (the most of each since start) `airq.capacity` (`CONFIG_DMR_AIR_QUEUE_BYTES`) `airq.queued airq.full` (refused: no room) `airq.sent airq.failed airq.gave_up` (the service never took it) `airq.aged` (queued too long) `airq.other` (no DMR ID, too long for a list, canceled) `airq.waits` (ticks the oldest packet waited for the service); `data.tx_guarded` (lists held back by the post-TX guard); zone sharing ([zone-share.md](zone-share.md)): `zs.built zs.offers` (0 off, 1 ask) `zs.send_state` (0 idle, 1 sending, 2 sent, 3 failed) `zs.offer_pending zs.offer_src zs.rx_messages zs.rx_bad zs.rx_busy zs.rx_off zs.offered zs.rate_limited zs.expired zs.sends zs.sent zs.send_failed zs.requests zs.refusals zs.last_refusal`. Built without the queue: `airq.built=0`; without zone sharing: `zs.built=0` |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by

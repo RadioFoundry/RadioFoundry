@@ -25,6 +25,8 @@
 #define ZS_MSG_HEADER			6		// a fragment's header
 #define ZS_CHUNK_MAX			(ZS_MSG_MAX - ZS_MSG_HEADER)
 #define ZS_FRAGMENTS_MAX		4
+#define ZS_REQUEST_LEN			5		// a request message, octets
+#define ZS_REFUSAL_LEN			4		// a refusal message, octets
 #define ZS_REASSEMBLY_MS		30000	// a transfer whose fragments stop coming is dropped after this
 
 // Message types (octet 1)
@@ -134,8 +136,8 @@ bool zsChannelAt(const zsRecord_t *rec, int index, zsChannel_t *ch);
 // Fragment `index` of `count` for a record (offset = index * ZS_CHUNK_MAX); the message's length
 int zsBuildFragment(uint8_t transfer, const uint8_t *record, int recordLength, int index, uint8_t out[ZS_MSG_MAX]);
 int zsFragmentCount(int recordLength);
-int zsBuildRequest(uint8_t request, uint8_t want, uint8_t out[ZS_MSG_MAX]);
-int zsBuildRefusal(uint8_t request, uint8_t code, uint8_t out[ZS_MSG_MAX]);
+int zsBuildRequest(uint8_t request, uint8_t want, uint8_t out[ZS_REQUEST_LEN]);
+int zsBuildRefusal(uint8_t request, uint8_t code, uint8_t out[ZS_REFUSAL_LEN]);
 
 typedef struct
 {

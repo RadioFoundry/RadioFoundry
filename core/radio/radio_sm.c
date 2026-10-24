@@ -38,6 +38,12 @@
 #include "hostlink/hostlink_net_air.h"	// the IP gateway's air side (the data service's packet hook)
 #include "hostlink/hostlink_net.h"	// control station passthrough
 #endif
+#if CONFIG_DMR_AIR_QUEUE
+#include "dmr/dmrAirQueue.h"	// what the gateway and zone sharing send, in order (docs/spec/dmr-data.md 12)
+#endif
+#if CONFIG_ZONE_SHARE
+#include "dmr/zone_share_api.h"
+#endif
 #if CONFIG_AM_RX
 #include "radio/radio_am.h"	// air band AM receive (docs/spec/airband-and-broadcast.md 3)
 #endif
@@ -1685,6 +1691,9 @@ static void data_init(radio_sm_t *sm)
 {
 	dmrDataEnv_t env = { .txStart = data_tx_start, .channelClear = data_channel_clear,
 			     .inRxGroup = data_in_rx_group, .ctx = sm };
+#if CONFIG_DMR_AIR_QUEUE
+	airqInit();
+#endif
 #if CONFIG_DMR_IP_GATEWAY
 	env.packet = hostlink_net_air_packet;
 	hostlink_net_air_start();
@@ -1720,6 +1729,10 @@ static void data_init(radio_sm_t *sm)
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);
 	dmrDataServiceSetSettings(&set);
+#if CONFIG_ZONE_SHARE
+	zone_share_init();
+	zone_share_set_offers(st.zs_offers);	// Off unless the user chose Ask (docs/spec/zone-share.md 5)
+#endif
 	dmr_call_set_data_rx(data_rx, NULL);
 #if CONFIG_DMR_EMERGENCY
 	emergency_init(&st);
@@ -1746,13 +1759,19 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 	dmrDataServiceSetPassthrough(hostlink_net_passthrough_active());
 #endif
 	dmrDataServiceTick(now_ms, &c);
+#if CONFIG_DMR_IP_GATEWAY
+	hostlink_net_air_tick(sm->view.dmr.own_id, now_ms);
+#endif
+#if CONFIG_DMR_AIR_QUEUE
+	airqTick(sm->view.dmr.own_id, now_ms);	// the next queued packet, when the service is free
+#endif
+#if CONFIG_ZONE_SHARE
+	zone_share_tick(now_ms);
+#endif
 	data_save_settings(now_ms);
 	if (sm->power_off_req && sm->power_off_busy) {
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
 	}
-#if CONFIG_DMR_IP_GATEWAY
-	hostlink_net_air_tick(sm->view.dmr.own_id, now_ms);
-#endif
 }
 #endif
 

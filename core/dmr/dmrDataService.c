@@ -16,6 +16,9 @@
 #if CONFIG_DMR_CONFIRMED
 #include "dmr/call/dmr_lc.h"
 #endif
+#if CONFIG_ZONE_SHARE
+#include "dmr/zoneShare.h"
+#endif
 
 #if CONFIG_DMR_DATA_CORE
 
@@ -92,6 +95,10 @@ static bool txRunning = false;			// given to the host, waiting for dmrDataServic
 static uint32_t txPendingSince;
 static bool txIsReply;
 static uint8_t txKind;
+static bool txEnded;					// txEndedAt holds when our last list ended (the guard)
+static bool txEndStamp;					// a list just ended: stamped at the next tick, never before the real end
+static bool txGuardCounted;
+static uint32_t txEndedAt;
 
 static uint8_t smsSeq = 0;
 
@@ -252,6 +259,7 @@ static bool queueTx(int count, uint8_t kind)
 	txIsReply = false;
 	txKind = kind;
 	txPending = true;
+	txGuardCounted = false;
 	return true;
 }
 
@@ -591,7 +599,7 @@ static void ipStart(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l
 #endif
 }
 
-bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length, uint8_t delivery)
 {
 	if ((ipx.state != IPX_IDLE) || !canTransmit() || (l4 == NULL) || (length <= 0) || (dst == 0))
 	{
@@ -599,11 +607,17 @@ bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint
 	}
 	uint16_t srcPort = (protocol == DMR_IP_PROTO_UDP) ? udpPort(l4, length, 0) : 0;
 	uint16_t dstPort = (protocol == DMR_IP_PROTO_UDP) ? udpPort(l4, length, 2) : 0;
+	bool confirmed = (delivery == DMR_IPS_SETTINGS) ? dmrDataServiceIpWantConfirmed(&settings, group, dst, protocol, srcPort, dstPort) :
+			(CONFIG_DMR_CONFIRMED && !group && (delivery == DMR_IPS_CONFIRMED));
 
-	ipStart(group, dst, protocol, l4, length, (protocol == DMR_IP_PROTO_UDP) && dmrDataUdpCompress(srcPort, dstPort),
-			dmrDataServiceIpWantConfirmed(&settings, group, dst, protocol, srcPort, dstPort));
+	ipStart(group, dst, protocol, l4, length, (protocol == DMR_IP_PROTO_UDP) && dmrDataUdpCompress(srcPort, dstPort), confirmed);
 	stats.ipPackets++;
 	return true;
+}
+
+bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+{
+	return dmrDataServiceSendIPDelivery(group, dst, protocol, l4, length, DMR_IPS_SETTINGS);
 }
 
 bool dmrDataServiceIpBusy(void)
@@ -1722,6 +1736,12 @@ static void txGiveUp(void)
 void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 {
 	now = nowMs;
+	if (txEndStamp)
+	{
+		txEndStamp = false;
+		txEnded = true;
+		txEndedAt = now;
+	}
 	if (ch != NULL)
 	{
 		channel = *ch;
@@ -1793,7 +1813,15 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 
 	if (txPending && !txRunning)
 	{
-		bool clear = canTransmit() && (env.channelClear == NULL || env.channelClear(now, env.ctx));
+		// Replies go at once: the sender waits for them, and they follow its packet, not ours
+		bool guarded = !txIsReply && txEnded && ((now - txEndedAt) < DMR_DATA_TX_GUARD_MS);
+		bool clear = !guarded && canTransmit() && (env.channelClear == NULL || env.channelClear(now, env.ctx));
+
+		if (guarded && !txGuardCounted)
+		{
+			txGuardCounted = true;
+			stats.txGuarded++;
+		}
 
 		if (clear && (env.txStart != NULL) && env.txStart(txBursts, txBurstCount, env.ctx))
 		{
@@ -1816,6 +1844,7 @@ void dmrDataServiceTxDone(uint8_t err)
 		return;
 	}
 	txRunning = false;
+	txEndStamp = true;
 	stats.txLastError = err;
 	if (err == 0)
 	{
@@ -1978,6 +2007,14 @@ static void handlePacket(const dmrDataPacket_t *packet)
 			((packet->sap == DMR_SAP_IP) || (packet->sap == DMR_SAP_UDPIP_COMPRESSION));
 
 	stats.ptYielded += toPc ? 1 : 0;
+
+#if CONFIG_ZONE_SHARE
+	// A zone offered to us, or our directory request's answer (docs/spec/zone-share.md)
+	if (!toPc && isUDP && (udp.dstPort == ZS_PORT))
+	{
+		dmrDataServiceZoneShareRx(packet->src, packet->group, udp.payload, udp.length);
+	}
+#endif
 
 	// The presence server's answer to our registration, or its request for one
 	if (CONFIG_DMR_ARS && !toPc && isUDP && (udp.appPort == DMR_UDP_PORT_ARS) && !packet->group && (packet->src == ars.server) && (ars.server != 0))
@@ -2332,6 +2369,8 @@ void dmrDataServiceInit(const dmrDataEnv_t *e)
 	{
 		env = *e;
 	}
+	txEnded = false;
+	txEndStamp = false;
 	dmrDataRxReset();
 }
 
@@ -2361,6 +2400,21 @@ void dmrDataServiceSetPassthrough(bool on)
 bool dmrDataServicePassthrough(void)
 {
 	return passthrough;
+}
+
+void dmrDataServiceLock(void)
+{
+	lock();
+}
+
+void dmrDataServiceUnlock(void)
+{
+	unlock();
+}
+
+void dmrDataServicePostEvent(uint8_t kind, uint32_t id)
+{
+	post(kind, id);
 }
 
 void dmrDataServiceSetLock(void (*l)(void), void (*u)(void))

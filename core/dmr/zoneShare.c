@@ -390,23 +390,23 @@ int zsBuildFragment(uint8_t transfer, const uint8_t *record, int recordLength, i
 	return ZS_MSG_HEADER + n;
 }
 
-int zsBuildRequest(uint8_t request, uint8_t want, uint8_t out[ZS_MSG_MAX])
+int zsBuildRequest(uint8_t request, uint8_t want, uint8_t out[ZS_REQUEST_LEN])
 {
 	out[0] = ZS_VERSION;
 	out[1] = ZS_MSG_REQUEST;
 	out[2] = request;
 	out[3] = want;
 	out[4] = 0;// options: none defined
-	return 5;
+	return ZS_REQUEST_LEN;
 }
 
-int zsBuildRefusal(uint8_t request, uint8_t code, uint8_t out[ZS_MSG_MAX])
+int zsBuildRefusal(uint8_t request, uint8_t code, uint8_t out[ZS_REFUSAL_LEN])
 {
 	out[0] = ZS_VERSION;
 	out[1] = ZS_MSG_REFUSAL;
 	out[2] = request;
 	out[3] = code;
-	return 4;
+	return ZS_REFUSAL_LEN;
 }
 
 bool zsParseMessage(const uint8_t *payload, int length, zsMessage_t *m)

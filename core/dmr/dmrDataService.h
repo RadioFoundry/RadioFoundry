@@ -89,6 +89,10 @@ typedef enum
 	DMR_DATA_EV_EMERGENCY_ALARM,			// id: the radio in emergency (an alarm to us or a group we listen to)
 	DMR_DATA_EV_EMERGENCY_SENT,				// id: the alarm's destination; all tries have gone out
 	DMR_DATA_EV_EMERGENCY_FAILED,			// id: the alarm's destination; it couldn't be sent
+	DMR_DATA_EV_ZONE_OFFER,					// id: the sender; a zone or channel is offered (zone_share_api.h)
+	DMR_DATA_EV_ZONE_SENT,					// id: the destination; our zone went out whole
+	DMR_DATA_EV_ZONE_FAILED,				// id: the destination; it couldn't be sent
+	DMR_DATA_EV_ZONE_REFUSED,				// id: the directory service; it answered our request with a refusal
 } dmrDataEventKind_t;
 
 typedef struct
@@ -164,6 +168,7 @@ typedef struct
 	uint32_t txFailed;						// ... dropped by the stack (no repeater, refused, time-out)
 	uint32_t txGaveUp;						// lists never started: no clear channel in time
 	uint8_t  txLastError;					// dmr_tx_error_t of the last list
+	uint32_t txGuarded;						// lists held back for DMR_DATA_TX_GUARD_MS after our last one
 	// IP packets given to dmrDataServiceSendIP (docs/spec/dmr-data.md 11, 12)
 	uint32_t ipPackets;						// taken
 	uint32_t ipSent;						// ... delivered: on air (unconfirmed) or acknowledged (confirmed)
@@ -191,6 +196,16 @@ void dmrDataServiceSetSettings(const dmrDataSettings_t *settings);
 void dmrDataServiceGetSettings(dmrDataSettings_t *settings);
 // The lock that keeps the API callers' copies consistent (the firmware: scheduler suspend); NULL: none
 void dmrDataServiceSetLock(void (*lock)(void), void (*unlock)(void));
+// The same lock, for the modules on the service that share state with other tasks (dmrAirQueue.c, zoneShareSvc.c).
+// Held briefly: no waits, no flash
+void dmrDataServiceLock(void);
+void dmrDataServiceUnlock(void);
+// An event for the UI from a module on the service (the radio task)
+void dmrDataServicePostEvent(uint8_t kind, uint32_t id);
+// Our transmissions are spaced: a list other than a reply (an ACK, a CSBK answer) starts at the earliest this long
+// after our previous list ended, so a receiver has decoded one packet before the next one's header comes (#154:
+// receivers lost the second of two packets sent back to back; 250 ms was enough in every trial)
+#define DMR_DATA_TX_GUARD_MS		250
 // Every 10-25 ms with the time and the channel
 void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *channel);
 // A data / control burst heard on our slot (dmr_call_set_data_rx)
@@ -212,6 +227,12 @@ bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count);
 // individual destination), else unconfirmed; rate 1/2, 2 preamble CSBKs. l4 is not copied: it must stay unchanged
 // until dmrDataServiceIpBusy() is false. False when one is still going or it can't be sent now
 bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length);
+// The same with the delivery chosen by the caller: DMR_IPS_SETTINGS (the confirmed rules, as above), DMR_IPS_CONFIRMED
+// (an individual destination; a group goes unconfirmed) or DMR_IPS_UNCONFIRMED
+#define DMR_IPS_SETTINGS			0
+#define DMR_IPS_CONFIRMED			1
+#define DMR_IPS_UNCONFIRMED			2
+bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length, uint8_t delivery);
 bool dmrDataServiceIpBusy(void);
 // The last one's outcome: DMR_REQ_OK (on air; confirmed: acknowledged) or DMR_REQ_FAILED
 uint8_t dmrDataServiceIpResult(void);
@@ -231,6 +252,10 @@ void dmrDataServiceEmergencyAlarmCancel(void);
 bool dmrDataServiceEmergencyAlarmBusy(void);
 // The 10 octets of an emergency alarm CSBK (docs/spec/dmr-emergency.md 2)
 void dmrDataBuildEmergencyAlarm(uint32_t dst, uint32_t src, bool group, uint8_t fid, uint8_t out[10]);
+
+// Zone share (CONFIG_ZONE_SHARE): a UDP datagram to ZS_PORT for us (or a group we listen to), not left to the PC.
+// zoneShareSvc.c has it
+void dmrDataServiceZoneShareRx(uint32_t src, bool group, const uint8_t *payload, int length);
 
 // Control station passthrough (CONFIG_DMR_CONTROL_STATION, docs/spec/usb-network.md 5): while on, IP based packets
 // (SAP 4, SAP 3) to us or our groups are left to the PC on the USB network link: no TMS ACK, no inbox entry, no ARS

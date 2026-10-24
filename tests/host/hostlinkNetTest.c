@@ -4,6 +4,7 @@
 // and packet codec (core/dmr/dmrData.c), against a fake USB network interface (board.netif) and fake air ops: frames
 // from the host reach the air ops, packets from the air reach the host, UDP serial both ways; control station mode
 // (passthrough follows the link, the fixed link pair end to end)
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include "board.h"
@@ -11,6 +12,7 @@
 #include "hostlink/hostlink_net.h"
 #include "hostlink/hostlink_net_air.h"
 #include "dmr/dmrDataService.h"
+#include "dmr/dmrAirQueue.h"
 #include "dmr/dmr_data_api.h"
 #include "dmr/ipGateway.h"
 #include "dmr/dmrData.h"
@@ -160,8 +162,37 @@ bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint
 	svc_lists++;
 	return svc_count > 0;
 }
+bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length, uint8_t delivery)
+{
+	(void)delivery;
+	return dmrDataServiceSendIP(group, dst, protocol, l4, length);
+}
 bool dmrDataServiceIpBusy(void) { return ip_pending; }
 uint8_t dmrDataServiceIpResult(void) { return ip_result; }
+void dmrDataServiceLock(void) {}
+void dmrDataServiceUnlock(void) {}
+
+// The debug link log: a drop is logged (#154: the host can see it, not only a counter)
+static int dlog_lines;
+static char dlog_last[96];
+#if CONFIG_DEBUGLINK
+void dlog(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(dlog_last, sizeof(dlog_last), fmt, ap);
+	va_end(ap);
+	dlog_lines++;
+}
+#endif
+
+// The radio task's data tick: the gateway's air side, then the air queue
+static void air_tick(uint32_t now)
+{
+	hostlink_net_air_tick(RADIO_ID, now);
+	airqTick(RADIO_ID, now);
+}
 
 // The packet the bursts carry, decoded by the codec's receiver; NULL if none
 static const dmrDataPacket_t *svc_packet(void)
@@ -431,17 +462,20 @@ int main(void)
 	CHECK(memcmp(sent[0], HOST_MAC, 6) == 0 && get32(ip + 12) == (HOST_IP ^ 1u) && get32(ip + 16) == HOST_IP &&
 	      get16(udp) == 161 && get16(udp + 2) == 40000 && memcmp(udp + 8, hello, sizeof(hello)) == 0);
 
-	// The default air side (hostlink_net_air.c): the host link task's packet waits in the mailbox for the radio
-	// task's tick, which builds the bursts and hands them to the data service
+	// The default air side (hostlink_net_air.c): the host link task's packets go into the air queue, whose tick
+	// (the radio task) hands them to the data service in order, one at a time (#154)
+	airqInit();
 	hostlink_net_air_start();
-	hostlink_net_air_tick(RADIO_ID, now_ms);
+	hostlink_net_stats(&st);
+	uint32_t refused0 = st.to_air_refused;
+	air_tick(now_ms);
 	CHECK(ipGatewayRadioId() == RADIO_ID);
 	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 100u, 5000, 5001, hello, sizeof(hello)));
 	CHECK(svc_lists == 0);		// nothing from the host link task itself
 	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 101u, 5000, 5001, hello, sizeof(hello)));
 	hostlink_net_stats(&st);
-	CHECK(st.to_air_refused == 2);	// one packet at a time
-	hostlink_net_air_tick(RADIO_ID, now_ms);
+	CHECK(st.to_air_refused == refused0);	// both queued: a host's datagrams in a row all go
+	air_tick(now_ms);
 	CHECK(svc_lists == 1 && svc_count > 2);
 	const dmrDataPacket_t *pk = svc_packet();
 	dmrDataUDP_t u;
@@ -449,47 +483,101 @@ int main(void)
 	CHECK(pk != NULL && pk->sap == DMR_SAP_UDPIP_COMPRESSION && pk->dst == 100 && pk->src == RADIO_ID && !pk->group);
 	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.srcPort == 5000 && u.dstPort == 5001 &&
 	      u.length == (int)sizeof(hello) && memcmp(u.payload, hello, sizeof(hello)) == 0);
-	// A DMR application port (TMS 4007) keeps the full header the MOTOTRBO side expects; the service holds the
-	// mailbox until it is done (a confirmed packet waits for its response)
-	hostlink_net_air_tick(RADIO_ID, now_ms);	// the service is done with the first: the mailbox is free
+	air_tick(now_ms);		// the service is done with the first: the second goes
+	CHECK(svc_lists == 2);
+	pk = svc_packet();
+	CHECK(pk != NULL && pk->dst == 101);
+	air_tick(now_ms);
+	// A DMR application port (TMS 4007) keeps the full header the MOTOTRBO side expects; the service keeps the
+	// queue's oldest packet until it is done (a confirmed packet waits for its response), the next waits behind it
 	ip_pending = true;
 	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 100u, 4007, 4007, hello, sizeof(hello)));
-	hostlink_net_air_tick(RADIO_ID, now_ms);
-	CHECK(svc_lists == 2);
+	air_tick(now_ms);
+	CHECK(svc_lists == 3);
 	pk = svc_packet();
 	CHECK(pk != NULL && pk->sap == DMR_SAP_IP && dmrDataGetUDP(pk, &u) && u.dstPort == 4007);
 	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 101u, 5000, 5001, hello, sizeof(hello)));
+	air_tick(now_ms);
 	hostlink_net_stats(&st);
-	CHECK(st.to_air_refused == 3);
+	CHECK(st.to_air_refused == refused0 && svc_lists == 3);
 	ip_pending = false;
 	ip_result = DMR_REQ_FAILED;
-	hostlink_net_air_tick(RADIO_ID, now_ms);
+	air_tick(now_ms);		// the first ends failed, the second goes at once
+	CHECK(svc_lists == 4);
 	ip_result = DMR_REQ_OK;
-	svc_lists = 1;
+	air_tick(now_ms);
 
 	// Raw data to a talkgroup: an unconfirmed short data packet (SAP 10); a busy service is tried again
 	service_busy = true;
 	from_host(f, host_udp(f, IPGW_MULTICAST_NET | 9u, IPGW_RAW_PORT, IPGW_RAW_PORT, hello, sizeof(hello)));
-	hostlink_net_air_tick(RADIO_ID, now_ms);
-	CHECK(svc_lists == 1);
+	air_tick(now_ms);
+	CHECK(svc_lists == 4);
 	service_busy = false;
 	now_ms += 100;
-	hostlink_net_air_tick(RADIO_ID, now_ms);
-	CHECK(svc_lists == 2);
+	air_tick(now_ms);
+	CHECK(svc_lists == 5);
 	pk = svc_packet();
 	CHECK(pk != NULL && pk->sap == DMR_SAP_SHORT_DATA && pk->group && pk->dst == 9 &&
 	      pk->length == (int)sizeof(hello) && memcmp(pk->data, hello, sizeof(hello)) == 0);
 
-	// Still busy after HOSTLINK_NET_AIR_GIVE_UP_MS: dropped
+	// Still busy after HOSTLINK_NET_AIR_GIVE_UP_MS: dropped, and logged on the debug link
 	service_busy = true;
+	dlog_lines = 0;
 	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 100u, 5000, 5001, hello, sizeof(hello)));
-	hostlink_net_air_tick(RADIO_ID, now_ms);
+	air_tick(now_ms);
 	now_ms += HOSTLINK_NET_AIR_GIVE_UP_MS;
-	hostlink_net_air_tick(RADIO_ID, now_ms);
+	air_tick(now_ms);
 	service_busy = false;
 	hostlink_net_air_stats_t as;
 	hostlink_net_air_stats(&as);
-	CHECK(as.queued == 4 && as.sent == 2 && as.failed == 1 && as.dropped == 1 && as.refused_busy == 3);
+	CHECK(as.queued == 6 && as.sent == 4 && as.failed == 1 && as.dropped == 1 && as.refused_full == 0);
+	CHECK(!CONFIG_DEBUGLINK || (dlog_lines == 1 && strstr(dlog_last, "service busy") != NULL));
+
+	// A packet behind one the service holds for longer than the maximum age is dropped unsent
+	ip_pending = true;
+	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 100u, 5000, 5001, hello, sizeof(hello)));
+	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 101u, 5000, 5001, hello, sizeof(hello)));
+	air_tick(now_ms);
+	CHECK(svc_lists == 6);
+	now_ms += 10001;
+	air_tick(now_ms);
+	ip_pending = false;
+	air_tick(now_ms);
+	CHECK(svc_lists == 6);
+	airqStats_t qs;
+	airqGetStats(&qs);
+	CHECK(qs.aged == 1 && qs.depth == 0 && qs.bytes == 0 && qs.highWater >= 2);
+	hostlink_net_air_stats(&as);
+	CHECK(as.sent == 5 && as.dropped == 2);
+
+	// The queue full: the host's datagram is refused (counted, logged); after the queue drains, all that was taken
+	// went out in order
+	service_busy = true;
+	uint8_t big[400];
+	memset(big, 0x5A, sizeof(big));
+	int taken = 0;
+	for (int i = 0; i < 12; i++) {
+		hostlink_net_stats(&st);
+		uint32_t refused = st.to_air_refused;
+		from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | (200u + (unsigned)i), 5000, 5001, big, sizeof(big)));
+		hostlink_net_stats(&st);
+		taken += (st.to_air_refused == refused);
+	}
+	hostlink_net_air_stats(&as);
+	CHECK(taken >= 2 && taken < 12 && as.refused_full == (uint32_t)(12 - taken));
+	CHECK(!CONFIG_DEBUGLINK || strstr(dlog_last, "queue full") != NULL);
+	service_busy = false;
+	svc_lists = 0;
+	for (int i = 0; i < taken; i++) {
+		air_tick(now_ms);
+		pk = svc_packet();
+		CHECK(pk != NULL && pk->dst == 200u + (unsigned)i);
+	}
+	air_tick(now_ms);
+	CHECK(svc_lists == taken);
+	airqGetStats(&qs);
+	CHECK(qs.depth == 0);
+	svc_lists = 1;
 	// The packet hook passes what the service hears on to the host
 	memset(&p, 0, sizeof(p));
 	p.sap = DMR_SAP_SHORT_DATA;
@@ -568,7 +656,7 @@ int main(void)
 	svc_lists = 0;
 	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 3101234u, DMR_UDP_PORT_ETSI_TEXT, DMR_UDP_PORT_ETSI_TEXT, answer,
 			      sizeof(answer)));
-	hostlink_net_air_tick(RADIO_ID, now_ms);
+	air_tick(now_ms);
 	pk = svc_packet();
 	CHECK(svc_lists == 1 && pk != NULL && pk->src == RADIO_ID && pk->dst == 3101234 && !pk->group);
 	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.dstPort == DMR_UDP_PORT_ETSI_TEXT && u.length == 4 &&

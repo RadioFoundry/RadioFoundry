@@ -149,8 +149,11 @@ static void hotspot_section(dl_text_t *t)
 	hostlink_net_air_stats_t as;
 
 	hostlink_net_air_stats(&as);
-	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\nnet.air_failed=%u\n", (unsigned)as.sent,
-		(unsigned)as.refused_busy, (unsigned)(as.dropped + as.too_long), (unsigned)as.failed);
+	// air_busy: dropped after waiting for a busy service or for too long in the queue (view 3; view 2 counted
+	// packets refused because the service was busy); air_full: refused because the air queue was full
+	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\nnet.air_failed=%u\nnet.air_full=%u\n",
+		(unsigned)as.sent, (unsigned)as.dropped, (unsigned)(as.dropped + as.too_long),
+		(unsigned)as.failed, (unsigned)as.refused_full);
 #endif
 #if CONFIG_NET_PPP
 	// The PPP link on the serial host port (docs/spec/ppp.md): LCP / IPCP states as RFC 1661 numbers them (9 open)
@@ -307,7 +310,7 @@ static void storage_section(dl_text_t *t)
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-						  "sfr", "tasks", "crash", "watchdog", "reset" };
+						  "sfr", "tasks", "crash", "watchdog", "reset", "air" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -394,6 +397,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_RESET:
 		debuglink_view_reset(t);
+		break;
+	case DL_VIEW_AIR:
+		debuglink_view_air(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP
