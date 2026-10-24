@@ -29,6 +29,42 @@ Changing the channel ends temporary changes, the reply window, digital monitor a
 
 The Zones list shows the VFO first, then every zone with its number of channels. Type letters to filter it.
 
+## Sharing a zone
+
+You can send a zone, or one channel, to another radio or a talkgroup over DMR. Status: works in the host tests,
+untested on the radio.
+
+**Send:**
+
+1. Tune a DMR channel. The zone goes out on it.
+2. Press **OK**, **4** (Zones). Focus the zone and press **#**. Its channels open.
+3. Press **#** again. Pick **Send zone to...**, or **Send channel to...** for the focused channel.
+4. Pick a contact or talkgroup and press **OK**. A banner says "Sent to ..." when it is out.
+
+A zone too big for one send goes in part, and the radio says how much ("Sending 40 of 60 channels"). Scan lists,
+group lists and privacy keys are never sent.
+
+**Receive:** set **Settings > Connections > Zone offers** to **Ask**. It is **Off** at first, and with Off the radio
+ignores what others send.
+
+<img src="../ux/screens/160x120i5/zone_offer.png" width="200" alt="A zone offer: Import, Preview, Reject">
+
+1. A banner says "Zone from ...". Press **#** to open it. It also waits under **Tools > Zone offer** for 10 minutes.
+2. The offer shows the zone's name, its channels, the sender and how many channels are outside your radio's bands.
+3. Pick **Preview** to see the channels, **Import** to add them, or **Reject**.
+
+What an import does:
+
+- The zone is added after your zones. If you have a zone with that name, it gets " 2".
+- Only channels your radio can receive come in. Every one is **receive only**: turn transmit on per channel when
+  you know you may use it.
+- Talkgroups and contacts you already have are used with your names. Missing ones are added.
+- The same zone sent again by the same radio updates your copy instead of adding another. Channels in it that you
+  set to transmit stay.
+- A single channel is added to a zone you pick.
+
+At most 6 offers an hour are shown, one at a time. The format is in [zone-share.md](../spec/zone-share.md).
+
 ## Every channel
 
 **OK**, **5** (Channels) lists every channel in the codeplug by number and name, whichever zones hold it. Each

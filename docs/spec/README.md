@@ -24,6 +24,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 |---|---|
 | [dmr-voice.md](dmr-voice.md) | DMR voice calls |
 | [dmr-data.md](dmr-data.md) | DMR data services: text messages, ARS, LRRP, call alert, radio check |
+| [zone-share.md](zone-share.md) | Zone and channel sharing over DMR data: the record, fragments, offers, the import |
 | [dmr-emergency.md](dmr-emergency.md) | DMR emergency |
 | [dmr-roaming.md](dmr-roaming.md) | DMR repeater roaming |
 | [sfr.md](sfr.md) | Single frequency repeater |
