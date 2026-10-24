@@ -115,7 +115,7 @@ PROBE_BLOCK = 160
 REGIONS = {0: "none", 1: "ours", 2: "foreign"}
 DATA_OP_SMS, DATA_OP_CALL_ALERT, DATA_OP_RADIO_CHECK, DATA_OP_SETTINGS, DATA_OP_INBOX, DATA_OP_MARK_READ = range(1, 7)
 DATA_OP_EMERGENCY, DATA_OP_EMERGENCY_SETTINGS = 7, 8
-DATA_OP_IP_SETTINGS, DATA_OP_IP_SEND = 9, 10
+DATA_OP_IP_SETTINGS, DATA_OP_IP_SEND, DATA_OP_TX_SPACING = 9, 10, 11
 IP_COMPRESS = {"off": 0, "auto": 1, "all": 2}
 IP_CONFIRMED = {"off": 0, "rules": 1, "all": 2}
 IP_RULE_PORT = 0x80000000
@@ -907,6 +907,12 @@ class DebugLink:
         self.data_request(DATA_OP_IP_SEND, struct.pack("<IBHH", int(dst) & 0xFFFFFF, 1 if group else 0,
                                                        int(src_port), int(dst_port)) + bytes(payload)[:IP_SEND_MAX])
 
+    def tx_spacing(self, guard_ms, chain=True):
+        """The data service's spacing of our transmissions (docs/spec/dmr-data.md 12.6), RAM only: the guard after
+        our own transmission in ms, and whether unconfirmed IP packets to one destination share a transmission.
+        State: data.tx_guard_ms and data.tx_chain in the air view section."""
+        self.data_request(DATA_OP_TX_SPACING, struct.pack("<HB", int(guard_ms) & 0xFFFF, 1 if chain else 0))
+
     # APRS (docs/spec/debuglink.md 3.16, docs/spec/aprs.md 13). State: the aprs and aprs_set view sections
     def aprs_request(self, op, args=b""):
         return self.request(APRS, bytes([op]) + bytes(args))[1]
@@ -1333,6 +1339,11 @@ def cmd_data(link, a):
             print("data ip-send: ID SRC_PORT DST_PORT [TEXT] [--group]", file=sys.stderr)
             return 2
         link.ip_send(int(args[0], 0), int(args[1], 0), int(args[2], 0), " ".join(args[3:]).encode(), group=a.group)
+    elif a.op == "tx-spacing":
+        if not args or not args[0].isdigit() or (args[1:] and args[1] not in ("chain", "no-chain")):
+            print("data tx-spacing: GUARD_MS [chain|no-chain]", file=sys.stderr)
+            return 2
+        link.tx_spacing(int(args[0]), args[1:2] != ["no-chain"])
     elif a.op == "em-settings":
         if not args or args[0] not in EMERGENCY_MODES:
             print("data em-settings: alarm|alarm_call|call [DST] [private] [etsi] [no-tone] [tries=N] [hot=S]",
@@ -1734,12 +1745,13 @@ def main(argv=None):
     p.add_argument("args", nargs="*")
     p = sub.add_parser("data", help="DMR data: sms, call alert, radio check, settings, inbox")
     p.add_argument("op", choices=["sms", "alert", "check", "settings", "inbox", "read", "emergency", "em-settings",
-                                  "ip-settings", "ip-send"])
+                                  "ip-settings", "ip-send", "tx-spacing"])
     p.add_argument("args", nargs="*", help="sms: ID TEXT [--group] [--no-ack] [--format tms|etsi|etsi_ip|default]; "
                    "alert / check: ID; settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp] [sms-etsi|sms-tms] "
                    "[check-etsi]; inbox / read: [INDEX]; emergency: start|cancel|dismiss; em-settings: "
                    "alarm|alarm_call|call [DST] [private] [etsi] [no-tone] [tries=N] [hot=S]; ip-settings: off|auto|all "
-                   "[off|rules|all] [tries=N] [id=ID] [port=N]; ip-send: ID SRC_PORT DST_PORT [TEXT] [--group]")
+                   "[off|rules|all] [tries=N] [id=ID] [port=N]; ip-send: ID SRC_PORT DST_PORT [TEXT] [--group]; tx-spacing: "
+                   "GUARD_MS [chain|no-chain]")
     p.add_argument("--format", choices=["tms", "etsi", "etsi_ip", "default"], default="default")
     p.add_argument("--group", action="store_true")
     p.add_argument("--no-ack", action="store_true")

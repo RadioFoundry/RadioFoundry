@@ -47,7 +47,7 @@ static uint16_t rd, wr, wrapEnd;
 static bool wrapped;
 static uint16_t count;					// records
 static uint16_t usedBytes;				// their sizes, the unused end of a wrapped ring not included
-static bool inService;					// the oldest is an IP packet the data service has
+static uint8_t inService;				// the oldest this many are IP packets the data service has (a chain)
 static bool headStamped;
 static uint32_t headSince;				// the oldest first offered to the service
 static airqDoneFn doneFn[AIRQ_OWNERS];
@@ -72,7 +72,7 @@ static void reset(void)
 	wrapped = false;
 	count = 0;
 	usedBytes = 0;
-	inService = false;
+	inService = 0;
 	headStamped = false;
 }
 
@@ -213,7 +213,7 @@ void airqCancel(uint8_t owner, uint32_t tag)
 	{
 		record_t *r = recAt(off);
 
-		if ((r->owner == owner) && (r->tag == tag) && !((i == 0) && inService))
+		if ((r->owner == owner) && (r->tag == tag) && (i >= inService))
 		{
 			r->canceled = 1;
 		}
@@ -258,7 +258,7 @@ static void finish(airqResult_t result)
 		wrapped = false;
 	}
 	headStamped = false;
-	inService = false;
+	inService = (inService > 0) ? (uint8_t)(inService - 1) : 0;
 	switch (result)
 	{
 		case AIRQ_SENT:
@@ -285,6 +285,36 @@ static void finish(airqResult_t result)
 	}
 }
 
+// The oldest IP packet and those right after it to the same destination and call type, as a chain for the service
+// (it takes those that go unconfirmed and fit one transmission). Stops at anything else, so the order stays
+static int gather(uint32_t nowMs, dmrDataChainPacket_t *chain)
+{
+	const record_t *head = recAt(rd);
+	uint16_t off = rd;
+	int c = 0;
+
+	dmrDataServiceLock();// producers may be adding at wr (and wrapping) meanwhile
+	int n = count;
+
+	for (int i = 0; (i < n) && (c < DMR_DATA_CHAIN_MAX); i++, off = nextOf(off))
+	{
+		const record_t *r = recAt(off);
+
+		if ((i > 0) && ((r->kind != AIRQ_IP) || (r->group != head->group) || (r->dst != head->dst) || r->canceled ||
+				((r->maxAgeMs != 0) && ((nowMs - r->queuedAt) > r->maxAgeMs))))
+		{
+			break;
+		}
+		chain[c].protocol = r->protocol;
+		chain[c].delivery = r->delivery;
+		chain[c].l4 = &ring.bytes[off + AIRQ_RECORD_HEADER];
+		chain[c].length = r->length;
+		c++;
+	}
+	dmrDataServiceUnlock();
+	return c;
+}
+
 void airqTick(uint32_t ownId, uint32_t nowMs)
 {
 	// The age counts from the first tick that saw the packet (producers don't have the clock)
@@ -304,14 +334,20 @@ void airqTick(uint32_t ownId, uint32_t nowMs)
 	}
 	dmrDataServiceUnlock();
 
-	if (inService)
+	if (inService > 0)
 	{
 		if (dmrDataServiceIpBusy())
 		{
 			return;
 		}
-		finish((dmrDataServiceIpResult() == DMR_REQ_OK) ? AIRQ_SENT : AIRQ_FAILED);
-		n--;
+		// One transmission: the same end for each packet in it
+		airqResult_t result = (dmrDataServiceIpResult() == DMR_REQ_OK) ? AIRQ_SENT : AIRQ_FAILED;
+
+		while (inService > 0)
+		{
+			finish(result);
+			n--;
+		}
 	}
 	while (n > 0)
 	{
@@ -341,10 +377,16 @@ void airqTick(uint32_t ownId, uint32_t nowMs)
 		}
 		if (r->kind == AIRQ_IP)
 		{
-			// The service builds it and reads it in place until it's done
-			if (dmrDataServiceSendIPDelivery(r->group != 0, r->dst, r->protocol, data, r->length, r->delivery))
+			// The service builds it, and the IP packets right after it to the same destination that can go in the
+			// same transmission, and reads them in place until it's done
+			dmrDataChainPacket_t chain[DMR_DATA_CHAIN_MAX];
+			int c = gather(nowMs, chain);
+			int taken = dmrDataServiceSendIPChain(r->group != 0, r->dst, chain, c);
+
+			if (taken > 0)
 			{
-				inService = true;
+				inService = (uint8_t)taken;
+				stats.chained += (uint32_t)(taken - 1);
 				return;
 			}
 		}

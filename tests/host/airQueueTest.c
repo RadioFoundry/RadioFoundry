@@ -45,6 +45,32 @@ bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, co
 	sentDst[sentCount++ & 255] = dst;
 	return true;
 }
+// Chaining: the service takes up to chainTake of the packets offered (the first as above)
+static int chainTake = 1;
+static int chainOffered;
+static const uint8_t *chainHeld[DMR_DATA_CHAIN_MAX];
+static uint8_t chainCopy[DMR_DATA_CHAIN_MAX][DMR_DATA_MAX_PACKET];
+static int chainLength[DMR_DATA_CHAIN_MAX];
+static int chainHeldCount;
+int dmrDataServiceSendIPChain(bool group, uint32_t dst, const dmrDataChainPacket_t *p, int n)
+{
+	if ((n <= 0) || !dmrDataServiceSendIPDelivery(group, dst, p[0].protocol, p[0].l4, p[0].length, p[0].delivery))
+	{
+		return 0;
+	}
+	int k = (n < chainTake) ? n : chainTake;
+
+	chainOffered = n;
+	chainHeldCount = k - 1;
+	for (int i = 1; i < k; i++)
+	{
+		chainHeld[i - 1] = p[i].l4;
+		chainLength[i - 1] = p[i].length;
+		memcpy(chainCopy[i - 1], p[i].l4, (size_t)p[i].length);
+		sentDst[sentCount++ & 255] = dst;
+	}
+	return k;
+}
 bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count)
 {
 	(void)bursts;
@@ -68,7 +94,12 @@ static void serviceDone(void)
 	if (pending)
 	{
 		heldChanged += memcmp(held, heldCopy, (size_t)heldLength) != 0;
+		for (int i = 0; i < chainHeldCount; i++)
+		{
+			heldChanged += memcmp(chainHeld[i], chainCopy[i], (size_t)chainLength[i]) != 0;
+		}
 	}
+	chainHeldCount = 0;
 	pending = false;
 }
 
@@ -105,6 +136,9 @@ static void reset(void)
 	airqSetDone(AIRQ_OWNER_ZONE_SHARE, done);
 	busy = pending = false;
 	result = DMR_REQ_OK;
+	chainTake = 1;
+	chainOffered = 0;
+	chainHeldCount = 0;
 	sentCount = 0;
 	doneN = 0;
 	heldChanged = 0;
@@ -362,6 +396,59 @@ static void test_random(void)
 	printf("# air queue random run: %ld steps, %d packets\n", iters, sentCount);
 }
 
+// Packets right after the oldest to the same destination go with it in one transmission: offered together, all
+// ending with the transmission's result, kept in place meanwhile, not canceled while the service has them
+static void test_chain(void)
+{
+	reset();
+	chainTake = DMR_DATA_CHAIN_MAX;
+	CHECK(put(1, 120) && put(1, 40) && put(1, 300) && put(2, 60) && put(1, 80));
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	CHECK(chainOffered == 3 && sentCount == 3);	// stops at the packet to another destination
+	airqStats_t s;
+	airqGetStats(&s);
+	CHECK(s.depth == 5 && s.chained == 2);
+	airqCancel(AIRQ_OWNER_GATEWAY, 1);		// the service has the first three; only the last is canceled
+	CHECK(put(3, 200) && put(3, 200));		// added while they are held
+	result = DMR_REQ_FAILED;
+	serviceDone();
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	CHECK(doneCount[AIRQ_FAILED] == 3 && heldChanged == 0);
+	CHECK(sentCount == 4 && sentDst[3] == 2 && chainOffered == 1);	// then the one to 2, alone
+	result = DMR_REQ_OK;
+	serviceDone();
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	CHECK(doneCount[AIRQ_SENT] == 1 && doneCount[AIRQ_CANCELED] == 1);
+	CHECK(sentCount == 6 && chainOffered == 2);	// the canceled one dropped, the two to 3 together
+	serviceDone();
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	airqGetStats(&s);
+	CHECK(doneCount[AIRQ_SENT] == 3 && s.depth == 0 && s.chained == 3);
+
+	// The service taking fewer than offered: the rest go next
+	reset();
+	chainTake = 2;
+	CHECK(put(5, 100) && put(5, 100) && put(5, 100));
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	CHECK(chainOffered == 3 && sentCount == 2);
+	serviceDone();
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	CHECK(doneCount[AIRQ_SENT] == 2 && sentCount == 3 && chainOffered == 1);
+	drain(0);
+	CHECK(doneCount[AIRQ_SENT] == 3);
+
+	// Raw data and a group to the same number don't join an individual chain
+	reset();
+	chainTake = DMR_DATA_CHAIN_MAX;
+	airqItem_t g = item(6, 50);
+	g.group = true;
+	CHECK(put(6, 50) && airqPut(&g));
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	CHECK(chainOffered == 1);
+	drain(0);
+	CHECK(doneCount[AIRQ_SENT] == 2);
+}
+
 int main(void)
 {
 	test_mixed_sizes();
@@ -369,6 +456,7 @@ int main(void)
 	test_wrap_with_head_held();
 	test_batch_and_cancel();
 	test_timing();
+	test_chain();
 	test_random();
 	printf("airQueueTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

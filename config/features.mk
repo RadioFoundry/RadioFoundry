@@ -397,5 +397,10 @@ CONFIG_DISPLAY_INSET_RIGHT ?= $(CONFIG_DISPLAY_INSET)
 # their own length plus a 28-octet header. 2048 holds two longest packets (480) with room to spare, a zone's four
 # fragments, or about thirteen 120-octet datagrams
 CONFIG_DMR_AIR_QUEUE_BYTES ?= 2048
-VALUES := DISPLAY_INSET_TOP DISPLAY_INSET_BOTTOM DISPLAY_INSET_LEFT DISPLAY_INSET_RIGHT DMR_AIR_QUEUE_BYTES
+# The gap the data service keeps after our own data transmission before it keys up for another, in ms (0: none;
+# docs/spec/dmr-data.md 12.6). A workaround: receivers lost a packet that came in a new transmission right after
+# ours ended, cause not yet known; packets to the same destination go in one transmission instead, with no gap
+CONFIG_DMR_DATA_TX_GUARD_MS ?= 250
+VALUES := DISPLAY_INSET_TOP DISPLAY_INSET_BOTTOM DISPLAY_INSET_LEFT DISPLAY_INSET_RIGHT DMR_AIR_QUEUE_BYTES \
+	  DMR_DATA_TX_GUARD_MS
 FEATURE_DEFS += $(foreach v,$(VALUES),-DCONFIG_$(v)=$(strip $(CONFIG_$(v))))

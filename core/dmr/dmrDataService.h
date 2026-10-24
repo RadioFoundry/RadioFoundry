@@ -168,7 +168,9 @@ typedef struct
 	uint32_t txFailed;						// ... dropped by the stack (no repeater, refused, time-out)
 	uint32_t txGaveUp;						// lists never started: no clear channel in time
 	uint8_t  txLastError;					// dmr_tx_error_t of the last list
-	uint32_t txGuarded;						// lists held back for DMR_DATA_TX_GUARD_MS after our last one
+	uint32_t txGuarded;						// lists held back by the guard after our last one
+	uint32_t ipChains;						// transmissions that carried more than one IP packet
+	uint32_t ipChained;						// ... the packets in them after the first
 	// IP packets given to dmrDataServiceSendIP (docs/spec/dmr-data.md 11, 12)
 	uint32_t ipPackets;						// taken
 	uint32_t ipSent;						// ... delivered: on air (unconfirmed) or acknowledged (confirmed)
@@ -202,10 +204,15 @@ void dmrDataServiceLock(void);
 void dmrDataServiceUnlock(void);
 // An event for the UI from a module on the service (the radio task)
 void dmrDataServicePostEvent(uint8_t kind, uint32_t id);
-// Our transmissions are spaced: a list other than a reply (an ACK, a CSBK answer) starts at the earliest this long
-// after our previous list ended, so a receiver has decoded one packet before the next one's header comes (#154:
-// receivers lost the second of two packets sent back to back; 250 ms was enough in every trial)
-#define DMR_DATA_TX_GUARD_MS		250
+// Our transmissions are spaced: a list other than a reply (an ACK, a CSBK answer) starts at the earliest the guard
+// after our previous list ended (#154: receivers lost a packet sent in a new transmission right after ours; 250 ms
+// was enough in every trial, the cause is not known). A workaround, so a build value and a RAM override for the
+// bench; packets that can go together go in one transmission instead (dmrDataServiceSendIPChain)
+#define DMR_DATA_TX_GUARD_MS		CONFIG_DMR_DATA_TX_GUARD_MS
+// The guard in ms (0: none) and whether unconfirmed IP packets to one destination are chained; not stored
+void dmrDataServiceSetTxSpacing(uint16_t guardMs, bool chain);
+uint16_t dmrDataServiceTxGuardMs(void);
+bool dmrDataServiceTxChain(void);
 // Every 10-25 ms with the time and the channel
 void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *channel);
 // A data / control burst heard on our slot (dmr_call_set_data_rx)
@@ -233,6 +240,20 @@ bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint
 #define DMR_IPS_CONFIRMED			1
 #define DMR_IPS_UNCONFIRMED			2
 bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length, uint8_t delivery);
+// Several IP packets to one destination: the first as dmrDataServiceSendIPDelivery; when it goes unconfirmed, the
+// ones after it that also go unconfirmed follow in the same transmission (preamble CSBKs once, then each packet's
+// header and blocks), as many as the list holds, up to DMR_DATA_CHAIN_MAX. Returns how many it took (0: none; the
+// first is refused as by dmrDataServiceSendIPDelivery). The service reads all of them in place until
+// dmrDataServiceIpBusy() is false; dmrDataServiceIpResult() is the transmission's, the same for each
+#define DMR_DATA_CHAIN_MAX			8
+typedef struct
+{
+	uint8_t protocol;
+	uint8_t delivery;
+	const uint8_t *l4;
+	int length;
+} dmrDataChainPacket_t;
+int dmrDataServiceSendIPChain(bool group, uint32_t dst, const dmrDataChainPacket_t *packets, int count);
 bool dmrDataServiceIpBusy(void);
 // The last one's outcome: DMR_REQ_OK (on air; confirmed: acknowledged) or DMR_REQ_FAILED
 uint8_t dmrDataServiceIpResult(void);

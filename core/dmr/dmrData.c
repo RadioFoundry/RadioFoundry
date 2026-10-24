@@ -176,6 +176,42 @@ int dmrDataBlockLength(uint8_t blockType)
 	}
 }
 
+int dmrDataBuildPreambles(bool group, uint32_t dst, uint32_t src, int count, int follow, dmrBurst_t *out)
+{
+	uint8_t buf[10];
+
+	for (int i = 0; i < count; i++)
+	{
+		int cbf = count - 1 - i + follow;
+
+		buf[0] = 0x80 | DMR_CSBKO_PREAMBLE;// Last Block
+		buf[1] = 0x00;// FID
+		buf[2] = 0x80 | (group ? 0x40 : 0x00);// Data follows, G/I
+		buf[3] = (uint8_t)((cbf > 255) ? 255 : cbf);// CSBK blocks to follow
+		putId(&buf[4], dst);
+		putId(&buf[7], src);
+		dmrDataBuildCSBK(buf, out++);
+	}
+	return (count > 0) ? count : 0;
+}
+
+int dmrDataPacketBursts(int length, uint8_t blockType)
+{
+	int blockLen = dmrDataBlockLength(blockType);
+
+	if ((blockLen == 0) || (length <= 0))
+	{
+		return 0;
+	}
+	int blocks = (length + 4 + blockLen - 1) / blockLen;
+
+	if ((((blocks * blockLen) - 4 - length) > 31) || (blocks > 127) || ((blocks * blockLen) > DMR_DATA_MAX_PACKET))
+	{
+		return 0;
+	}
+	return 1 + blocks;
+}
+
 // Unconfirmed packet of Rate 1/2, Rate 3/4 or Rate 1 blocks, preceded by preamble CSBKs
 int dmrDataBuildPacket(uint8_t dpf, uint8_t sap, bool group, uint32_t dst, uint32_t src,
 						const uint8_t *data, int length, uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts)
@@ -197,16 +233,7 @@ int dmrDataBuildPacket(uint8_t dpf, uint8_t sap, bool group, uint32_t dst, uint3
 		return 0;
 	}
 
-	for (int i = 0; i < preambles; i++)
-	{
-		buf[0] = 0x80 | DMR_CSBKO_PREAMBLE;// Last Block
-		buf[1] = 0x00;// FID
-		buf[2] = 0x80 | (group ? 0x40 : 0x00);// Data follows, G/I
-		buf[3] = bursts - 1 - i;// CSBK blocks to follow
-		putId(&buf[4], dst);
-		putId(&buf[7], src);
-		dmrDataBuildCSBK(buf, out++);
-	}
+	out += dmrDataBuildPreambles(group, dst, src, preambles, 1 + blocks, out);
 
 	// Figure 8.3, unconfirmed data header
 	buf[0] = (group ? 0x80 : 0x00) | ((padOctets & 0x10) ? 0x10 : 0x00) | (dpf & 0x0F);

@@ -2,19 +2,21 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
  * The air queue (CONFIG_DMR_AIR_QUEUE): the packets the IP gateway (from the host) and zone sharing (the user's
- * "Send zone to...") hand to the air, kept in order and sent one at a time through the data service, which spaces
- * them by DMR_DATA_TX_GUARD_MS. One queue and one guard for every producer, so a zone being sent and the host's
- * datagrams don't race each other for the service. docs/spec/dmr-data.md 12.
+ * "Send zone to...") hand to the air, kept in order and sent through the data service. Unconfirmed IP packets to the
+ * same destination, one after another in the queue, go in one transmission; the service keeps its guard between
+ * transmissions. One queue and one guard for every producer, so a zone being sent and the host's datagrams don't
+ * race each other for the service. docs/spec/dmr-data.md 12.
  *
  *   producers   airqPut / airqPutBatch from any task: the packet is copied into the queue's byte ring as one record
  *               (a header, then the packet) under the data service's lock (dmrDataServiceLock) and the call returns at
  *               once; false when it doesn't fit. A record never wraps: when the end of the buffer has no room for it,
  *               the end is left unused and it goes at the start, so the service can read the oldest in place
- *   radio task  airqTick, with the data service's tick: the oldest packet goes to the service (an IP packet to
- *               dmrDataServiceSendIPDelivery, which reads it in place until dmrDataServiceIpBusy() is false; raw data
- *               as an unconfirmed SAP 10 packet). While the service refuses it (busy, not a DMR channel we may send
- *               on), the oldest is tried again until its wait is over; a packet older than its maximum age is dropped
- *               unsent. Each packet's end goes to its owner's done function, in the radio task
+ *   radio task  airqTick, with the data service's tick: the oldest packet goes to the service. An IP packet goes to
+ *               dmrDataServiceSendIPChain with the IP packets right after it to the same destination; the service
+ *               takes those that fit one transmission and reads them in place until dmrDataServiceIpBusy() is
+ *               false. Raw data goes as an unconfirmed SAP 10 packet. While the service refuses the oldest (busy, not
+ *               a DMR channel we may send on), it is tried again until its wait is over; a packet older than its
+ *               maximum age is dropped unsent. Each packet's end goes to its owner's done function, in the radio task
  */
 
 #ifndef RFOUNDRY_DMRAIRQUEUE_H
@@ -73,6 +75,7 @@ typedef struct
 	uint32_t aged;						// AIRQ_AGED
 	uint32_t other;						// AIRQ_NO_ID, AIRQ_TOO_LONG, AIRQ_CANCELED
 	uint32_t serviceBusy;				// ticks the oldest packet waited for the service
+	uint32_t chained;					// packets that went in the transmission of the one before them
 	uint16_t depth;						// packets queued now (the one being sent included)
 	uint16_t bytes;						// ... their octets, record headers and padding to 4 included
 	uint16_t highWater;					// the most packets at once

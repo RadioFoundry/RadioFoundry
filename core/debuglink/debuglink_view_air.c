@@ -25,8 +25,8 @@ void debuglink_view_air(dl_text_t *t)
 		q.depth, q.bytes, q.highWater, q.highWaterBytes, q.capacity);
 	dl_text(t, "airq.queued=%u\nairq.full=%u\nairq.sent=%u\nairq.failed=%u\n", (unsigned)q.queued,
 		(unsigned)q.refusedFull, (unsigned)q.sent, (unsigned)q.failed);
-	dl_text(t, "airq.gave_up=%u\nairq.aged=%u\nairq.other=%u\nairq.waits=%u\n", (unsigned)q.gaveUp, (unsigned)q.aged,
-		(unsigned)q.other, (unsigned)q.serviceBusy);
+	dl_text(t, "airq.gave_up=%u\nairq.aged=%u\nairq.other=%u\nairq.waits=%u\nairq.chained=%u\n", (unsigned)q.gaveUp,
+		(unsigned)q.aged, (unsigned)q.other, (unsigned)q.serviceBusy, (unsigned)q.chained);
 #else
 	dl_text(t, "airq.built=0\n");
 #endif
@@ -34,7 +34,10 @@ void debuglink_view_air(dl_text_t *t)
 	dmrDataStats_t d;
 
 	dmrDataServiceGetStats(&d);
-	dl_text(t, "data.tx_guarded=%u\n", (unsigned)d.txGuarded);
+	dl_text(t, "data.tx_guarded=%u\ndata.tx_guard_ms=%u\ndata.tx_chain=%u\n", (unsigned)d.txGuarded,
+		dmrDataServiceTxGuardMs(), dmrDataServiceTxChain());
+	// Transmissions that carried more than one IP packet, and the packets after the first in them
+	dl_text(t, "ip.chains=%u\nip.chained=%u\n", (unsigned)d.ipChains, (unsigned)d.ipChained);
 #endif
 #if CONFIG_ZONE_SHARE
 	zone_share_stats_t z;

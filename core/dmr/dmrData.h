@@ -131,6 +131,12 @@ int dmrDataBuildCSBKAnswer(const uint8_t *csbk, uint32_t src, dmrBurst_t *out);
 int dmrDataBlockLength(uint8_t blockType);
 int dmrDataBuildPacket(uint8_t dpf, uint8_t sap, bool group, uint32_t dst, uint32_t src,
 						const uint8_t *data, int length, uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
+// The bursts of an unconfirmed packet of length octets without preambles (header and blocks), 0 if it doesn't fit one
+int dmrDataPacketBursts(int length, uint8_t blockType);
+// count preamble CSBKs (Pre_CSBK, TS 102 361-2 7.1.2.5) announcing data, followed by `follow` more bursts: each one's
+// CSBK Blocks to Follow is the preambles after it plus `follow` (7.2.7: the count leaves out the CSBK itself). For
+// several packets in one transmission `follow` covers them all
+int dmrDataBuildPreambles(bool group, uint32_t dst, uint32_t src, int count, int follow, dmrBurst_t *out);
 // UDP and IP packets go with the compressed UDP/IPv4 header (SAP 3) when the compression setting allows it for their
 // ports (dmrDataUdpCompress), else with the full IPv4 header (SAP 4)
 int dmrDataBuildUDP(bool group, uint32_t dst, uint32_t src, uint16_t srcPort, uint16_t dstPort,

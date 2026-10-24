@@ -46,6 +46,27 @@ bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, co
 	sentCount++;
 	return true;
 }
+// As the service: unconfirmed packets after an unconfirmed first go in the same transmission
+static int chains;
+int dmrDataServiceSendIPChain(bool group, uint32_t dst, const dmrDataChainPacket_t *p, int n)
+{
+	if ((n <= 0) || !dmrDataServiceSendIPDelivery(group, dst, p[0].protocol, p[0].l4, p[0].length, p[0].delivery))
+	{
+		return 0;
+	}
+	int k = 1;
+
+	pending = false;
+	while ((p[0].delivery == DMR_IPS_UNCONFIRMED) && (k < n) && (p[k].delivery == DMR_IPS_UNCONFIRMED) &&
+			dmrDataServiceSendIPDelivery(group, dst, p[k].protocol, p[k].l4, p[k].length, p[k].delivery))
+	{
+		pending = false;
+		k++;
+	}
+	pending = true;
+	chains += (k > 1);
+	return k;
+}
 bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count)
 {
 	(void)bursts;
@@ -259,13 +280,16 @@ static void testSend(void)
 	CHECK(readBack(0, frags, back) == len && memcmp(back, record, (size_t)len) == 0);
 	CHECK(zone_share_send_state() == ZS_SEND_SENT && events[DMR_DATA_EV_ZONE_SENT] == 1 && eventId == RADIO_B);
 
-	// To a talkgroup: unconfirmed; the first fragment fails, the rest is dropped and the send fails
+	// To a radio, each confirmed fragment went on its own
+	CHECK(chains == 0);
+
+	// To a talkgroup: unconfirmed, the fragments in one transmission; it fails, the send fails once
 	sentCount = 0;
 	CHECK(zone_share_send(91, true, record, len));
 	result = DMR_REQ_FAILED;
 	tick(100);
 	result = DMR_REQ_OK;
-	CHECK(sentCount == 1 && sent[0].group && sent[0].dst == 91 && sent[0].delivery == DMR_IPS_UNCONFIRMED);
+	CHECK(sentCount == frags && chains == 1 && sent[0].group && sent[0].dst == 91 && sent[0].delivery == DMR_IPS_UNCONFIRMED);
 	CHECK(zone_share_send_state() == ZS_SEND_FAILED && events[DMR_DATA_EV_ZONE_FAILED] == 1);
 	airqGetStats(&q);
 	CHECK(q.depth == 0);

@@ -95,6 +95,8 @@ static bool txRunning = false;			// given to the host, waiting for dmrDataServic
 static uint32_t txPendingSince;
 static bool txIsReply;
 static uint8_t txKind;
+static uint16_t txGuardMs = DMR_DATA_TX_GUARD_MS;
+static bool txChain = true;
 static bool txEnded;					// txEndedAt holds when our last list ended (the guard)
 static bool txEndStamp;					// a list just ended: stamped at the next tick, never before the real end
 static bool txGuardCounted;
@@ -376,6 +378,16 @@ static struct
 	uint64_t blocks;					// a selective retry's blocks (0: all of them)
 	uint32_t since;						// taken / due
 	uint32_t due;
+	// Unconfirmed packets to the same destination after this one, in the same transmission (SendIPChain)
+	uint8_t more;
+	struct
+	{
+		const uint8_t *l4;
+		uint16_t length;
+		uint16_t ipId;
+		uint8_t protocol;
+		bool compress;
+	} chain[DMR_DATA_CHAIN_MAX - 1];
 } ipx;
 
 static uint16_t udpPort(const uint8_t *l4, int length, int at)
@@ -510,13 +522,14 @@ static void ipFinish(uint8_t result)
 		smsFinish(result == DMR_REQ_OK ? DMR_REQ_OK : DMR_REQ_FAILED);// the ETSI response confirmed it, or never came
 		return;
 	}
+	// A chain went as one transmission: one result for all of its packets
 	if (result == DMR_REQ_OK)
 	{
-		stats.ipSent++;
+		stats.ipSent += 1u + ipx.more;
 	}
 	else
 	{
-		stats.ipFailed++;
+		stats.ipFailed += 1u + ipx.more;
 	}
 	ipx.result = result;
 }
@@ -552,8 +565,43 @@ static void ipTransmit(void)
 #endif
 	if (!ipx.confirmed)
 	{
-		count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, ipx.sap, ipx.group, ipx.dst, channel.ownId, pdu, n, DT_RATE_12_DATA,
-									IP_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS);
+		// The packets after the preambles, then the preambles counting all of them (docs/spec/dmr-data.md 12.6)
+		count = IP_PREAMBLES;
+		int c = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, ipx.sap, ipx.group, ipx.dst, channel.ownId, pdu, n, DT_RATE_12_DATA,
+									0, &txBursts[count], DMR_DATA_MAX_BURSTS - count);
+
+		count = (c > 0) ? (count + c) : 0;
+		for (int i = 0; (count > 0) && (i < ipx.more); i++)
+		{
+			uint8_t sap;
+			int m = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, ipx.chain[i].protocol, ipx.chain[i].l4,
+									ipx.chain[i].length, ipx.chain[i].compress, ipx.chain[i].ipId, &pdu, &sap);
+
+			c = (m > 0) ? dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, ipx.group, ipx.dst, channel.ownId, pdu, m,
+											DT_RATE_12_DATA, 0, &txBursts[count], DMR_DATA_MAX_BURSTS - count) : 0;
+			if (c <= 0)
+			{
+				count = 0;// checked when it was taken: can't happen
+				break;
+			}
+			count += c;
+			if (ipx.tries == 0)
+			{
+				dmrDataCountIpTx(sap, pdu, m, DT_RATE_12_DATA, false);
+			}
+		}
+		if (count > 0)
+		{
+			dmrDataBuildPreambles(ipx.group, ipx.dst, channel.ownId, IP_PREAMBLES, count - IP_PREAMBLES, txBursts);
+			if ((ipx.more > 0) && (ipx.tries == 0))
+			{
+				stats.ipChains++;
+				stats.ipChained += ipx.more;
+			}
+			// The first packet's octets again for its own count below (the encoder's buffer now holds the last)
+			n = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, ipx.protocol, ipx.l4, ipx.length, ipx.compress, ipx.ipId,
+								&pdu, &ipx.sap);
+		}
 	}
 	if (!queueTx(count, TXK_IP))
 	{
@@ -613,6 +661,79 @@ bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, co
 	ipStart(group, dst, protocol, l4, length, (protocol == DMR_IP_PROTO_UDP) && dmrDataUdpCompress(srcPort, dstPort), confirmed);
 	stats.ipPackets++;
 	return true;
+}
+
+// The bursts an unconfirmed IP packet takes (header and blocks), 0 when it can't go
+static int ipPacketBursts(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length, bool compress, uint16_t ipId)
+{
+	const uint8_t *pdu;
+	uint8_t sap;
+	int n = dmrDataEncodeIP(group, dst, channel.ownId, protocol, l4, length, compress, ipId, &pdu, &sap);
+
+	return (n > 0) ? dmrDataPacketBursts(n, DT_RATE_12_DATA) : 0;
+}
+
+int dmrDataServiceSendIPChain(bool group, uint32_t dst, const dmrDataChainPacket_t *p, int count)
+{
+	if ((p == NULL) || (count <= 0) || !dmrDataServiceSendIPDelivery(group, dst, p[0].protocol, p[0].l4, p[0].length, p[0].delivery))
+	{
+		return 0;
+	}
+	if (ipx.confirmed || !txChain)
+	{
+		return 1;// a confirmed packet waits for its response alone
+	}
+	int bursts = IP_PREAMBLES + ipPacketBursts(group, dst, ipx.protocol, ipx.l4, ipx.length, ipx.compress, ipx.ipId);
+	int taken = 1;
+
+	for (int i = 1; (i < count) && (taken < DMR_DATA_CHAIN_MAX); i++)
+	{
+		const dmrDataChainPacket_t *q = &p[i];
+		uint16_t srcPort = (q->protocol == DMR_IP_PROTO_UDP) ? udpPort(q->l4, q->length, 0) : 0;
+		uint16_t dstPort = (q->protocol == DMR_IP_PROTO_UDP) ? udpPort(q->l4, q->length, 2) : 0;
+		bool confirmed = (q->delivery == DMR_IPS_SETTINGS) ?
+				dmrDataServiceIpWantConfirmed(&settings, group, dst, q->protocol, srcPort, dstPort) :
+				(CONFIG_DMR_CONFIRMED && !group && (q->delivery == DMR_IPS_CONFIRMED));
+
+		if (confirmed || (q->l4 == NULL) || (q->length <= 0))
+		{
+			break;// it goes on its own, after these
+		}
+		bool compress = (q->protocol == DMR_IP_PROTO_UDP) && dmrDataUdpCompress(srcPort, dstPort);
+		uint16_t ipId = dmrDataNextIpId();
+		int b = ipPacketBursts(group, dst, q->protocol, q->l4, q->length, compress, ipId);
+
+		if ((b <= 0) || (bursts + b > DMR_DATA_MAX_BURSTS))
+		{
+			break;// the next transmission's
+		}
+		bursts += b;
+		ipx.chain[ipx.more].l4 = q->l4;
+		ipx.chain[ipx.more].length = (uint16_t)q->length;
+		ipx.chain[ipx.more].ipId = ipId;
+		ipx.chain[ipx.more].protocol = q->protocol;
+		ipx.chain[ipx.more].compress = compress;
+		ipx.more++;
+		taken++;
+		stats.ipPackets++;
+	}
+	return taken;
+}
+
+void dmrDataServiceSetTxSpacing(uint16_t guardMs, bool chain)
+{
+	txGuardMs = guardMs;
+	txChain = chain;
+}
+
+uint16_t dmrDataServiceTxGuardMs(void)
+{
+	return txGuardMs;
+}
+
+bool dmrDataServiceTxChain(void)
+{
+	return txChain;
 }
 
 bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
@@ -1814,7 +1935,7 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 	if (txPending && !txRunning)
 	{
 		// Replies go at once: the sender waits for them, and they follow its packet, not ours
-		bool guarded = !txIsReply && txEnded && ((now - txEndedAt) < DMR_DATA_TX_GUARD_MS);
+		bool guarded = !txIsReply && txEnded && ((now - txEndedAt) < txGuardMs);
 		bool clear = !guarded && canTransmit() && (env.channelClear == NULL || env.channelClear(now, env.ctx));
 
 		if (guarded && !txGuardCounted)

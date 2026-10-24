@@ -167,6 +167,11 @@ bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, co
 	(void)delivery;
 	return dmrDataServiceSendIP(group, dst, protocol, l4, length);
 }
+// One at a time here (chaining is the service's, dmrDataServiceTest)
+int dmrDataServiceSendIPChain(bool group, uint32_t dst, const dmrDataChainPacket_t *p, int n)
+{
+	return ((n > 0) && dmrDataServiceSendIPDelivery(group, dst, p[0].protocol, p[0].l4, p[0].length, p[0].delivery)) ? 1 : 0;
+}
 bool dmrDataServiceIpBusy(void) { return ip_pending; }
 uint8_t dmrDataServiceIpResult(void) { return ip_result; }
 void dmrDataServiceLock(void) {}
