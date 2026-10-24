@@ -192,11 +192,14 @@ static const flow_t flows[] = {
 	{ "11 dual watch: the zone key on the VFO", "quick 7 ctx 1 vfokey ctx 1 ctx 1", "zone+", "dual=1 sel=B bvfo=0 bzone=0 bpos=1", 1, false },
 	{ "11 dual watch: Up/Down on zone moves the selected", "ok 7 8 down down ok long:back quick 7 ctx 3 5 ok", "up",
 	  "dual=1 azone=1 bzone=0", 1, false },
+#if CONFIG_CHANNEL_LIST
 	// task-flows.md 12 says 3: the VFO row is first but Channels opens on the current zone (flow 2), so one Up
 	{ "C channels: every channel", "", "ok 5", "screen=channels focus=3_", 2, false },
 	{ "C a channel's settings", "", "ok 5 ok", "screen=channel", 3, false },
 	// The channel's last rows are Go to it and Save as new channel: two Ups from the first row (lists wrap)
 	{ "C go to it from its settings", "ok 5 down down ok", "up up ok", "screen=home pos=5", 3, false },
+#endif
+#if CONFIG_CHANNEL_EDIT
 	// task-flows.md 21 and 22 (ui.md 2.1). On channel 3 (DMR) the timeslot is the ninth row, the TX contact the tenth
 	{ "21 timeslot of the channel in use, saved", "", "ok 5 ok down down down down down down down down ok long:ok", "writes=1 toast=Saved_channel_3",
 	  13, true },
@@ -260,7 +263,10 @@ static const flow_t flows[] = {
 	{ "E save as new takes the next free number", "ok 5 ok up ok", "ok", "toast=Saved_as_channel_42 writes=2", 1, true },
 	{ "E the new channel is in the list", "ok 5 up up up ok long:ok", "back up", "focus=41_COUNTY_DMR_2", 2, true },
 	{ "E new from the VFO is named by its frequency", "ok 4 up ok", "ok 5 ok", "shows=146.520 shows=41", 3, false },
+#endif
+#if CONFIG_CHANNEL_LIST
 	{ "C go to it from the list", "ok 5 down", "ctx", "screen=home pos=4", 1, false },
+#endif
 	{ "12 into the VFO", "", "ok 4 up ok", "vfo=1 screen=home", 4, false },
 	{ "12 446.000 in the VFO", "ok 4 up ok", "4 4 6 0 0 0 ok", "freq=446000000", 7, false },
 	{ "13 lock", "", "long:quick", "locked=1", 1, false },
@@ -523,7 +529,7 @@ static const flow_t flows_k[] = {
 	{ "S no color rows in this build", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
 	{ "S large text is the third row", "", "ok 7 2 down down ok", "set8=1", 6, false },
 #endif
-#if CONFIG_SUBTONE
+#if CONFIG_SUBTONE && CONFIG_CHANNEL_EDIT
 	{ "E TX tone spinner, the knob", "ok 5 up up ok down down down down down down down down down", "ok enc+ enc+ ok",
 	  "shows=107.2", 4, false },
 #endif
@@ -628,12 +634,14 @@ static const flow_t flows_f[] = {
 	{ "F key lock unlocks on a long press", "lockkey", "long:lockkey", "locked=0", 1, false },
 	{ "F locked: long Back unlocks", "lockkey", "long:back", "locked=0", 1, false },
 	{ "F locked: call back is ignored", CALLER "lockkey", "cbkey", "talk=3100 toast=Keys_locked", 1, false },
+#if CONFIG_CHANNEL_EDIT
 	// Text entry without a keypad (ui.md 2.1): Down steps the last character, OK adds one, long OK keeps; long OK on
 	// the channel saves
 	{ "F text entry by Up / Down", "ok down down down down down ok ok ok", "down ok long:ok",
 	  "screen=channel shows=COUNTY_DMQQ", 3, false },
 	{ "F long OK saves the channel", "ok down down down down down ok ok ok down ok long:ok", "long:ok",
 	  "writes=1 toast=Saved_channel_3", 1, true },
+#endif
 	{ "F no side keys to set","ok up ok up up up ok", "down down down ok", "toast=This_radio_has_no set42=0", 4,
 	  false },
 #if CONFIG_ZONE_EDIT
