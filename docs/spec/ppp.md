@@ -159,6 +159,7 @@ escape for each `0x7E` / `0x7D` (0.8% of random data; with the default ACCM ever
 | TCP, MSS 536 | 584 B a segment | about 10.5 KB/s of payload one way (ACKs use the other direction) |
 | TFTP, 512 B blocks in lock step | 548 B a block + 38 B ACK | about 9 KB/s: a 100 KB codeplug in about 11 s |
 | HTTP screenshot (BMP, at the panel's depth) | 1 KB (128 x 64, 1 bpp), 10 KB (160 x 128, 4 bpp), 38 KB (240 x 320, 4 bpp) | about 0.1 s, 1 s, 4 s |
+| Web control screen (rows as runs, 5.1) | about 2 KB (160 x 128, 4 bpp) and 5 KB (240 x 320) the first time; a redraw sends only the rows it changed, often under 200 B | about 0.2 s, 0.5 s |
 | Web control receive audio (8 kHz PCM16) | 16 KB/s | doesn't fit: not offered over PPP ([tcp-services.md](tcp-services.md) 5.1) |
 
 On a board whose UART sends by polling, the host link task is busy for the length of each frame it sends (51 ms for

@@ -109,7 +109,7 @@ would save about 9% of the page's script, at the cost of a node toolchain in the
 build machine) and served with `Content-Encoding: gzip`; off, stored and served as they are. A gzip response goes
 whatever the request's `Accept-Encoding` says: a request without the header accepts any coding (RFC 9110 12.5.3),
 every browser takes gzip, and keeping a plain copy too would cost the flash the compression saves; `curl` needs
-`--compressed`. `index.html` today: 498 bytes, 360 gzip compressed; the web control page (5.1) 16.5 KB, 5.9 KB
+`--compressed`. `index.html` today: 498 bytes, 360 gzip compressed; the web control page (5.1) 19.7 KB, 6.9 KB
 minified and compressed. Host test: `httpAssetsTest` (the table, gzip and plain, and the web control set decompress to
 the minified sources; with node on the PATH, every minified script still parses), `netSvcTest` (the bytes and headers
 served).
@@ -133,7 +133,8 @@ Beside the drawing: the status (state, channel, frequency, signal, battery), a l
 slider, and buttons for the keys the drawings don't show. The page's files are in `core/net/webctl_assets/` and
 replace `core/net/http_assets/` files of the same name; `tools/gen_webctl_assets.py` writes `/keys.json` (each key's
 name and bit, from the board's `KEY_*` enum), `/radio.svg` and `/mic.svg`. A radio without a drawing gets its keys as
-buttons and the screen as an image.
+buttons and the screen as an image. The screen comes over `/ws` as the rows that changed (below); a page that has
+only the status (another client holds `/ws`) fetches `/api/screen.bmp` when `draws` changes.
 
 The keyboard presses the same keys (the first of a row's names the radio has; a key held is held on the radio):
 
@@ -161,10 +162,14 @@ until it goes. The radio's rules:
 | Close | the client's close code is sent back, then the connection closes |
 | Ping | one every 5 s; nothing from the client for 15 s and it is dropped |
 | Status | `/status`'s JSON as a text frame, rendered every 250 ms and sent when it changed |
-| Audio | 20 ms binary frames, 160 samples of 8 kHz PCM16 little-endian, while the client asked and the squelch is open; needs `CONFIG_NET_USRP` (the frames USRP reads, `usb-audio.md`); a frame that doesn't fit in TCP's buffer is dropped. Not while PPP carries the link: its 128 kbit/s doesn't fit a 115200 baud UART ([ppp.md](ppp.md) 6), so the hello says `audio:false` and `a1` is refused; keys, status and the screen work as on USB |
+| Screen | after `s1`: binary frames of the rows that changed, the first time every row (below). A row goes out when a redraw changed it and only between UI frames, so the copy is never half drawn; rows that don't fit TCP's buffer wait for the next poll |
+| Audio | 20 ms binary frames (`'A'`, a reserved 0, then 160 samples of 8 kHz PCM16 little-endian), while the client asked and the squelch is open; needs `CONFIG_NET_USRP` (the frames USRP reads, `usb-audio.md`); a frame that doesn't fit in TCP's buffer is dropped. Not while PPP carries the link: its 128 kbit/s doesn't fit a 115200 baud UART ([ppp.md](ppp.md) 6), so the hello says `audio:false` and `a1` is refused; keys, status and the screen work as on USB |
 
-The first frame is the hello: `{"hello":1,"control":true,"audio":true,"keys":[0,1,...],"ptt":21,"encoder":true}`
-(the keymap's bits, the PTT key's bit or -1, whether the radio has an encoder). Commands are text frames:
+The first frame is the hello:
+`{"hello":1,"control":true,"audio":true,"keys":[0,1,...],"ptt":21,"encoder":true,"screen":[160,128,4,0,0,160,128]}`
+(the keymap's bits, the PTT key's bit or -1, whether the radio has an encoder). `screen` is the panel's width, height
+and bpp, then the visible part inside the insets: left, top, width, height. It is left out when the frame buffer
+can't be sent (as `/api/screen.bmp`'s 404) or a raw row doesn't fit a frame. Commands are text frames:
 
 | Command | Effect |
 |---|---|
@@ -172,6 +177,20 @@ The first frame is the hello: `{"hello":1,"control":true,"audio":true,"keys":[0,
 | `d<ptt bit>` | PTT for 4 s; the page repeats it every 2 s while held. Released after 3 minutes whatever the page sends, and not keyed again until a `u` |
 | `e<n>` | n encoder detents, -127..127 (forward is positive) |
 | `a1` / `a0` | receive audio on / off |
+| `s1` / `s0` | the screen on / off; `s1` sends every row again |
+
+A screen frame is `'S'`, the palette's size n (2 at bpp 1, 16 at bpp 4, 0 at bpp 16), n RGB565 colors (`gfx_palette`,
+little-endian), then rows. The palette comes with every frame and applies to its rows, as the panel shows them. Each
+row is its y (u16 little-endian) and one of:
+
+| y bit 15 | Row |
+|---|---|
+| set | raw: the frame buffer's bytes for the row, `(width * bpp + 7) / 8` (leftmost pixel in the high bits; RGB565 little-endian at bpp 16) |
+| clear | runs, left to right until the row is full: a byte whose high nibble c and low nibble i (the color index) mean c + 1 pixels of i, or for c = 15, 16 plus the next byte |
+
+A row is sent raw when its runs would not be shorter, and always at bpp 16. The UI's screens are mostly long runs of
+one color: on the UI gallery a 240 x 320 bpp 4 screen is about 5 KB as runs against 38 KB as a BMP, 160 x 128 about
+2 KB against 10 KB. After the first frame a redraw sends only its rows (a signal bar, a clock digit).
 
 Keys, PTT and the encoder are taken only from the computer the radio is plugged into (`control:false` for a client
 beyond it, as rigctld's PTT); audio and status go to any client. Everything the client holds is released when it
@@ -179,7 +198,8 @@ closes, its TCP ends, or it is dropped. Unknown commands are counted and ignored
 
 View keys: `webctl.client` (its TCP slot, -1 none) `webctl.control webctl.conns webctl.commands webctl.refused`
 (control from beyond the host, an unknown key) `webctl.busy` (another injected key held) `webctl.errors
-webctl.frames_out webctl.audio_out webctl.audio_dropped webctl.ptt webctl.ptt_downs`.
+webctl.frames_out webctl.audio_out webctl.audio_dropped webctl.screen` (the client asked for it) `webctl.screen_out`
+(screen frames) `webctl.ptt webctl.ptt_downs`.
 
 ## 6. rigctld (port 4532)
 
@@ -282,7 +302,8 @@ send a packet from the radio's address to any destination through the host's MAC
   (the second waits for the buffer), the 10 s request timeout. Web control: the handshake, the hello, status sent on change, 503 for a second
   client, 400 without a key, keys down and up (busy, refused from beyond the host), the encoder, PTT repeats and the 3
   minute release, pings, the 15 s drop with keys released, audio frames only when asked and the squelch is open, the
-  close code echoed, an unmasked frame (1002); `wsTest.c` checks SHA-1, base64 and frame headers against FIPS 180 and
+  screen at bpp 4 and 1 (every row after `s1` over more than one frame, runs and raw rows decoded against the frame
+  buffer, then only a changed row, nothing during a frame, nothing after `s0`), the close code echoed, an unmasked frame (1002); `wsTest.c` checks SHA-1, base64 and frame headers against FIPS 180 and
   RFC 6455. rigctld: get / set frequency (the VFO move, the read
   back before the radio shows it, the request gap, out of band), mode, PTT (the rate limit, the 3 minute limit, the
   release on disconnect, refused from beyond the host), levels, VFO, split, info, chk_vfo, dump_state, extended

@@ -291,7 +291,7 @@ static void fail(int c, int code)
 	respond(c, code, "text/plain", SRC_MEM, NULL, 0);	// the status line says it all
 }
 
-static bool screen_ok(void)
+bool http_screen_ok(void)
 {
 	const hal_display_t *d = board.display;
 
@@ -328,8 +328,7 @@ static void put_bgr(uint8_t *p, color_t c)
 }
 
 // Bytes of the BMP at off: a top-down (negative height) bitmap of the frame buffer. bpp 1 and 4: its rows as they
-// are (both pack the leftmost pixel in the high bits, as BMP does), with the palette (bpp 1: the paper and ink of the
-// UI gallery's screenshots). bpp 16: BI_BITFIELDS RGB565
+// are (both pack the leftmost pixel in the high bits, as BMP does), with gfx_palette. bpp 16: BI_BITFIELDS RGB565
 static void bmp_bytes(uint32_t off, uint8_t *out, size_t n)
 {
 	const hal_display_t *d = board.display;
@@ -354,13 +353,9 @@ static void bmp_bytes(uint32_t off, uint8_t *out, size_t n)
 			put32le(h + 54, 0xF800u);
 			put32le(h + 58, 0x07E0u);
 			put32le(h + 62, 0x001Fu);
-		} else if (d->bpp == 1) {
-			put32le(h + 46, 2);	// colors used
-			put_bgr(h + 54, RGB565(0xC8, 0xD0, 0xB8));
-			put_bgr(h + 58, RGB565(0x14, 0x18, 0x10));
 		} else {
-			put32le(h + 46, 16);
-			for (uint8_t i = 0; i < 16u; i++) {
+			put32le(h + 46, 1u << d->bpp);	// colors used
+			for (uint8_t i = 0; i < (1u << d->bpp); i++) {
 				put_bgr(h + 54 + 4u * i, gfx_palette(i));
 			}
 		}
@@ -461,7 +456,7 @@ static void dispatch(int c)
 	}
 #endif
 	if (strcmp(path, "/api/screen.bmp") == 0) {
-		if (!screen_ok()) {
+		if (!http_screen_ok()) {
 			fail(c, 404);
 			return;
 		}

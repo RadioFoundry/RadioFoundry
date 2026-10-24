@@ -384,7 +384,7 @@ UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/ui_sc
 TESTS   += gfxTest
 
 gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -o $@ gfxTest.c $(UI)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -o $@ gfxTest.c $(UI)
 
 # The UI host simulator (tests/host/sim/ui_sim.c): the whole of core/ui against a simulated radio, codeplug and
 # board at any display geometry and key map. uiFlowTest runs the task flows of docs/ux/task-flows.md against their

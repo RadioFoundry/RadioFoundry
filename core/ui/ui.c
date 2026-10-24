@@ -130,6 +130,7 @@ static void ui_task(void *arg)
 		if (dirty && have_fb && now - last_draw >= FRAME_MIN_MS && !gfx_held(now)) {
 			dirty = false;
 			last_draw = now;
+			gfx_frame_begin();
 			ui_app_draw();
 			gfx_flush();
 		} else if (!have_fb) {

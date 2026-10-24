@@ -2,8 +2,9 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Web control over the status server's /ws (webctl.h, docs/spec/tcp-services.md 5.1). The HTTP server does the
 // upgrade; from then on the connection's bytes come here: client frames (ws.h) are parsed as they arrive, a text
-// frame is one command, and the client gets the status JSON when it changes, pings, and the receive audio it asked
-// for. Nothing here blocks: what doesn't fit TCP's buffer waits for the next poll (the status) or is dropped (audio).
+// frame is one command, and the client gets the status JSON when it changes, pings, and the screen and receive audio
+// it asked for. Nothing here blocks: what doesn't fit TCP's buffer waits for the next poll (the status and the
+// screen's rows) or is dropped (audio).
 #include "config.h"
 #if CONFIG_NET_WEBCTL	// the whole file
 #include <string.h>
@@ -16,17 +17,20 @@
 #include "input/input.h"
 #include "dmr/ipGateway.h"
 #include "debuglink/dl_fmt.h"
+#include "ui/gfx.h"
 #if CONFIG_NET_PPP
 #include "net/ppp.h"
 #endif
 
-#define JSON_MAX	640	// the status (http.c's, about 450 bytes on a DMR channel) and the hello
+#define JSON_MAX	640	// the status (http.c's, about 450 bytes on a DMR channel), the hello and a screen frame
 #define PAYLOAD_MAX	WS_CTRL_MAX	// client frames: commands and control frames only
 
 static struct {
 	int c;			// the client's connection, -1 = none
 	bool control;		// from the host: keys and PTT taken
 	bool audio;		// the client asked for the receive audio
+	bool screen;		// the client asked for the screen
+	bool screen_all;	// and has none of it yet: every row next time
 	bool closing;		// a close frame went out: the rest is ignored
 	uint8_t hn;		// header bytes collected
 	uint8_t hb[WS_HDR_MAX];
@@ -44,7 +48,7 @@ static struct {
 
 static char json[JSON_MAX];
 static struct {
-	uint32_t conns, commands, refused, busy, frames_out, audio_out, audio_dropped, ptt_downs, errors;
+	uint32_t conns, commands, refused, busy, frames_out, audio_out, audio_dropped, screen_out, ptt_downs, errors;
 } st;
 
 // ---- sending ----
@@ -169,7 +173,141 @@ static bool audio_ok(void)
 	return CONFIG_NET_USRP != 0;
 }
 
-// One text frame: d<bit> key down, u<bit> key up, e<n> encoder detents, a1 / a0 receive audio on / off
+// ---- the screen ----
+
+// A screen frame (binary, docs/spec/tcp-services.md 5.1): 'S', the palette's size n (0 at bpp 16), n RGB565 colors,
+// then rows. A row is its y (u16, bit 15 set: raw) and either the frame buffer's bytes for it (raw; RGB565 at bpp 16)
+// or runs: a byte of count c (high nibble) and color index (low), c + 1 pixels, or for c 15, 16 + the next byte.
+// The page keeps a copy and draws only the rows it is sent: after the first frame, the rows a redraw changed
+#define SCREEN_HEAD_MAX	(2u + 2u * 16u)
+#define RUN_MAX		(16 + 255)
+
+static uint32_t row_raw(void)
+{
+	const hal_display_t *d = board.display;
+
+	return ((uint32_t)d->width * d->bpp + 7u) / 8u;
+}
+
+// Rows go out whole, so one must fit a frame
+static bool screen_ok(void)
+{
+	return http_screen_ok() && (SCREEN_HEAD_MAX + 2u + row_raw() <= JSON_MAX);
+}
+
+static uint8_t pixel(const uint8_t *r, int x, uint8_t bpp)
+{
+	return (bpp == 4) ? (uint8_t)((r[x >> 1] >> ((x & 1) ? 0 : 4)) & 15u) : (uint8_t)((r[x >> 3] >> (7 - (x & 7))) & 1u);
+}
+
+// Row r as runs into out, at most max bytes; -1 when they don't fit
+static int runs(const uint8_t *r, int width, uint8_t bpp, uint8_t *out, int max)
+{
+	int n = 0;
+
+	for (int x = 0; x < width;) {
+		uint8_t i = pixel(r, x, bpp);
+		int len = 1;
+
+		while ((x + len < width) && (len < RUN_MAX) && (pixel(r, x + len, bpp) == i)) {
+			len++;
+		}
+		if (n + ((len < 16) ? 1 : 2) > max) {
+			return -1;
+		}
+		if (len < 16) {
+			out[n++] = (uint8_t)(((len - 1) << 4) | i);
+		} else {
+			out[n++] = (uint8_t)(0xF0u | i);
+			out[n++] = (uint8_t)(len - 16);
+		}
+		x += len;
+	}
+	return n;
+}
+
+// Row y into out as runs, or raw when they aren't shorter; -1 when it doesn't fit max bytes
+static int screen_row(int y, uint8_t *out, int max)
+{
+	const hal_display_t *d = board.display;
+	int raw = (int)row_raw(), n = -1;
+	const uint8_t *r = (const uint8_t *)gfx_framebuffer() + (uint32_t)y * (uint32_t)raw;
+
+	if (max < 2) {
+		return -1;
+	}
+	if (d->bpp != 16) {
+		n = runs(r, d->width, d->bpp, out + 2, (raw - 1 < max - 2) ? raw - 1 : max - 2);
+	}
+	if (n < 0) {
+		if (2 + raw > max) {
+			return -1;
+		}
+		if (d->bpp == 16) {
+			gfx_read_rgb565((uint32_t)y * (uint32_t)raw, out + 2, (size_t)raw);
+		} else {
+			memcpy(out + 2, r, (size_t)raw);
+		}
+		y |= 0x8000;
+		n = raw;
+	}
+	out[0] = (uint8_t)y;
+	out[1] = (uint8_t)(y >> 8);
+	return 2 + n;
+}
+
+// The changed rows, as many frames as TCP's buffer takes now; the rest wait for the next poll. Rows are read only
+// between UI frames (gfx.h): this task outranks the UI task, so a frame that was idle at the start stays whole
+static void screen_poll(void)
+{
+	uint8_t *f = (uint8_t *)json;
+	uint8_t bpp = board.display->bpp, pn = (bpp == 16) ? 0u : (uint8_t)(1u << bpp);
+	uint32_t seq, again;
+	int y;
+
+	if (!w.screen || !gfx_frame_idle(&seq)) {
+		return;
+	}
+	if (w.screen_all) {
+		gfx_rows_mark_all();
+		w.screen_all = false;
+	}
+	// Room left for a receive audio frame, so the screen doesn't crowd it out
+	int keep = 4 + (w.audio ? 2 + 2 * WEBCTL_AUDIO_SAMPLES : 0);
+
+	for (y = gfx_row_next(0); y >= 0;) {
+		int room = tcp_space(w.c) - keep, n = 2 + 2 * pn, first = y, last = -1;
+
+		if (room > JSON_MAX) {
+			room = JSON_MAX;
+		}
+		if (room < n + 2) {
+			return;
+		}
+		f[0] = 'S';
+		f[1] = pn;
+		for (uint8_t i = 0; i < pn; i++) {
+			color_t c = gfx_palette(i);
+
+			f[2 + 2 * i] = (uint8_t)c;
+			f[3 + 2 * i] = (uint8_t)(c >> 8);
+		}
+		for (int r; (y >= 0) && ((r = screen_row(y, f + n, room - n)) > 0); y = gfx_row_next(y + 1)) {
+			n += r;
+			last = y;
+		}
+		if ((last < 0) || !gfx_frame_idle(&again) || (again != seq) || !send_frame(WS_OP_BINARY, f, (uint32_t)n)) {
+			return;
+		}
+		gfx_rows_take(first, last);
+		st.screen_out++;
+	}
+}
+
+// ---- commands ----
+
+// One text frame: d<bit> key down, u<bit> key up, e<n> encoder detents, a1 / a0 receive audio on / off, s1 / s0 the
+// screen on / off
 static void command(const uint8_t *p, uint8_t n, uint32_t now)
 {
 	int32_t v;
@@ -200,6 +338,14 @@ static void command(const uint8_t *p, uint8_t n, uint32_t now)
 			st.refused++;
 		} else {
 			w.audio = (v != 0);
+		}
+		break;
+	case 's':
+		if ((v != 0) && !screen_ok()) {
+			st.refused++;
+		} else {
+			w.screen = (v != 0);
+			w.screen_all = w.screen;
 		}
 		break;
 	default:
@@ -290,8 +436,16 @@ static void hello(void)
 			ptt = &board.keymap[i];
 		}
 	}
-	dl_text(&t, "],\"ptt\":%d,\"encoder\":%s}", (ptt != NULL) ? (int)ptt->bit : -1,
+	dl_text(&t, "],\"ptt\":%d,\"encoder\":%s", (ptt != NULL) ? (int)ptt->bit : -1,
 		(board.input != NULL && board.input->encoder != NULL) ? "true" : "false");
+	if (screen_ok()) {
+		const hal_display_t *d = board.display;
+
+		// The panel, and the part of it that shows (inside the insets)
+		dl_text(&t, ",\"screen\":[%u,%u,%u,%u,%u,%u,%u]", d->width, d->height, d->bpp, d->inset_left, d->inset_top,
+			d->width - d->inset_left - d->inset_right, d->height - d->inset_top - d->inset_bottom);
+	}
+	dl_text(&t, "}");
 	send_frame(WS_OP_TEXT, json, (uint32_t)t.len);
 }
 
@@ -381,18 +535,19 @@ void webctl_poll(uint32_t now_ms)
 		}
 		w.status_ms = now_ms;
 	}
+	screen_poll();
 }
 
 void webctl_audio(const int16_t *pcm, uint32_t n, bool open)
 {
-	uint8_t le[2 * WEBCTL_AUDIO_SAMPLES];
+	uint8_t le[2 + 2 * WEBCTL_AUDIO_SAMPLES] = { 'A', 0 };	// 'A' and a reserved byte: PCM16 at an even offset
 
 	if ((w.c < 0) || !w.audio || !open || (n != WEBCTL_AUDIO_SAMPLES)) {
 		return;
 	}
 	for (uint32_t i = 0; i < n; i++) {
-		le[2 * i] = (uint8_t)pcm[i];
-		le[2 * i + 1] = (uint8_t)((uint16_t)pcm[i] >> 8);
+		le[2 + 2 * i] = (uint8_t)pcm[i];
+		le[3 + 2 * i] = (uint8_t)((uint16_t)pcm[i] >> 8);
 	}
 	if (send_frame(WS_OP_BINARY, le, sizeof(le))) {
 		st.audio_out++;
@@ -405,9 +560,10 @@ void webctl_view(dl_text_t *t)
 {
 	dl_text(t, "webctl.client=%u\nwebctl.control=%u\nwebctl.conns=%u\nwebctl.commands=%u\nwebctl.refused=%u\n"
 		"webctl.busy=%u\nwebctl.errors=%u\nwebctl.frames_out=%u\nwebctl.audio_out=%u\nwebctl.audio_dropped=%u\n"
-		"webctl.ptt=%u\nwebctl.ptt_downs=%u\n", w.c >= 0, w.control, (unsigned)st.conns, (unsigned)st.commands,
-		(unsigned)st.refused, (unsigned)st.busy, (unsigned)st.errors, (unsigned)st.frames_out,
-		(unsigned)st.audio_out, (unsigned)st.audio_dropped, w.ptt, (unsigned)st.ptt_downs);
+		"webctl.screen=%u\nwebctl.screen_out=%u\nwebctl.ptt=%u\nwebctl.ptt_downs=%u\n", w.c >= 0, w.control,
+		(unsigned)st.conns, (unsigned)st.commands, (unsigned)st.refused, (unsigned)st.busy, (unsigned)st.errors,
+		(unsigned)st.frames_out, (unsigned)st.audio_out, (unsigned)st.audio_dropped, w.screen,
+		(unsigned)st.screen_out, w.ptt, (unsigned)st.ptt_downs);
 }
 
 #endif	// CONFIG_NET_WEBCTL

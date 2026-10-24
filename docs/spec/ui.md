@@ -306,6 +306,11 @@ left out or dimmed with the feature. Some radios' default images have only a few
 only once nothing drawn since the last clear uses it; anti-aliased edges never take the last 4 free entries and
 otherwise get the nearest color already there. The debug link's screen captures read it as RGB565; `/api/screen.bmp` sends the indexes with the palette.
 
+With `CONFIG_NET_WEBCTL` the web control page keeps a copy of the screen (`docs/spec/tcp-services.md` 5.1).
+`gfx_flush` marks each row it sends the panel, and `webctl.c` sends the marked rows and unmarks them. The UI task
+calls `gfx_frame_begin` before it draws and `gfx_flush` ends the frame, so the host link task, which runs above the UI,
+reads rows only between frames (`gfx_frame_idle`).
+
 Without `CONFIG_FONT_AA` a screen uses at most 9 colors (the gallery, all 93 screens), so 4 bpp renders it exactly as
 16 bpp does. With `CONFIG_FONT_AA` the edge grays add up to 20 colors on the busiest screen (Messages); on 14 of the
 93 screens some edge grays and colors are replaced by the nearest palette entry, and some font sizes or colors can be

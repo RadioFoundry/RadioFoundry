@@ -129,6 +129,18 @@ static bool big_view;
 const void *gfx_framebuffer(void) { return fb; }
 void gfx_hold(uint32_t until) { (void)until; holds++; }
 color_t gfx_palette(uint8_t i) { return (color_t)(0x0841u * i); }
+// The rows the UI changed (gfx.h), and a frame being drawn
+static bool rows_new[128], drawing;
+bool gfx_frame_idle(uint32_t *frames) { *frames = 0; return !drawing; }
+int gfx_row_next(int from)
+{
+	for (int y = from; y < 128; y++)
+		if (rows_new[y])
+			return y;
+	return -1;
+}
+void gfx_rows_take(int from, int to) { for (int y = from; y <= to; y++) rows_new[y] = false; }
+void gfx_rows_mark_all(void) { memset(rows_new, 1, sizeof rows_new); }
 // The audio linking and PPP the web control asks about: built in, PPP not running unless a case says so
 void usrp_net_start(void) {}
 void usrp_net_poll(uint32_t t, bool link_up) { (void)t; (void)link_up; }
@@ -254,7 +266,7 @@ static void test_http(void)
 	bmp = (const uint8_t *)body_of(&a);
 	blen = a.rxn - (int)(bmp - a.rx);
 	CHECK(blen == 62 + 16 * 128 && bmp[10] == 62 && bmp[18] == 100 && bmp[28] == 1 && bmp[46] == 2);
-	CHECK(bmp[54] == 0xB8 && bmp[55] == 0xD0 && bmp[56] == 0xC8 && bmp[58] == 0x10 && bmp[60] == 0x10);
+	CHECK(bmp[54] == 0 && bmp[58] == 0x08 && bmp[59] == 0x08 && bmp[60] == 0x08);	// gfx_palette's 0, 0x0841
 	bool rows_ok = true;
 	for (int y = 0; y < 128; y++) {
 		const uint8_t *r = bmp + 62 + 16 * y;
@@ -781,6 +793,111 @@ static bool ws_open(peer_t *p, uint32_t ip, uint16_t port, const char *extra)
 	return strncmp((char *)p->rx, "HTTP/1.1 101 Switching Protocols\r\n", 34) == 0;
 }
 
+// The screen frames from *at drawn into img (rows of raw bytes, as the frame buffer's); the frame count, -1 for a
+// bad one. *raw: rows sent raw
+static int screen_frames(peer_t *p, int *at, uint8_t *img, int *rows, int *raw)
+{
+	static char m[1024];
+	int op, len, frames = 0, bpp = fake_display.bpp, rb = (fake_display.width * bpp + 7) / 8;
+
+	while ((op = ws_next(p, at, m, sizeof m, &len)) >= 0) {
+		const uint8_t *f = (const uint8_t *)m;
+		if (op != 0x2 || f[0] != 'S' || f[1] != (bpp == 16 ? 0 : 1 << bpp))
+			continue;
+		frames++;
+		int last = f[1] - 1;
+		if (bpp != 16 && (f[2 + 2 * last] | f[3 + 2 * last] << 8) != 0x0841 * last)
+			return -1;	// the palette, as gfx_palette has it
+		for (int i = 2 + 2 * f[1]; i < len;) {
+			int y = f[i] | f[i + 1] << 8;
+			uint8_t *r = img + (y & 0x7FFF) * rb;
+			i += 2;
+			(*rows)++;
+			if (y & 0x8000) {
+				(*raw)++;
+				memcpy(r, f + i, (size_t)rb);
+				i += rb;
+				continue;
+			}
+			memset(r, 0, (size_t)rb);
+			for (int x = 0; x < fake_display.width;) {
+				int c = f[i] >> 4, ix = f[i] & 15, n = c < 15 ? c + 1 : 16 + f[i + 1];
+				i += c < 15 ? 1 : 2;
+				for (; n > 0; n--, x++)
+					r[x * bpp / 8] |= (uint8_t)(bpp == 4 ? ix << ((x & 1) ? 0 : 4) : ix << (7 - (x & 7)));
+				if (x > fake_display.width)
+					return -1;
+			}
+		}
+	}
+	return frames;
+}
+
+// The screen over /ws: after "s1" every row, then only the rows marked changed, never during a frame; runs or raw rows
+static void test_webctl_screen(void)
+{
+	static peer_t a;
+	static uint8_t img[160 * 128 * 2];
+	char m[1024];
+	int at, len, rows = 0, raw = 0;
+	uint8_t *f8 = (uint8_t *)fb;
+
+	fake_display.bpp = 4;
+	memset(fb, 0x11, sizeof fb);
+	for (int x = 0; x < 80; x++) {
+		for (int y = 20; y < 40; y++)
+			f8[80 * y + x] = (uint8_t)(x * 37 + y);	// rows 20 to 39: noise, raw (more than a frame holds)
+		f8[80 * 9 + x] = (uint8_t)(x < 40 ? 0x22 : 0x33);	// row 9: two runs past 15 pixels
+	}
+	memset(rows_new, 0, sizeof rows_new);
+	CHECK(ws_open(&a, net_test_host_ip(), 53021, ""));
+	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1 && strstr(m, "\"screen\":[160,128,4,0,0,160,128]}"));
+	run_for(300);
+	CHECK(screen_frames(&a, &at, img, &rows, &raw) == 0);	// not asked for
+	ws_text(&a, "s1");
+	run_for(300);
+	int frames = screen_frames(&a, &at, img, &rows, &raw);
+	CHECK(frames > 1 && rows == 128 && raw == 20 && memcmp(img, fb, 80 * 128) == 0);
+	// One row changed: that row alone; none while a frame is being drawn
+	f8[80 * 50 + 3] = 0x5A;
+	rows_new[50] = true;
+	drawing = true;
+	rows = raw = 0;
+	run_for(300);
+	CHECK(screen_frames(&a, &at, img, &rows, &raw) == 0);
+	drawing = false;
+	run_for(300);
+	CHECK(screen_frames(&a, &at, img, &rows, &raw) == 1 && rows == 1 && memcmp(img, fb, 80 * 128) == 0);
+	// "s0": no more
+	ws_text(&a, "s0");
+	rows_new[51] = true;
+	run_for(300);
+	CHECK(screen_frames(&a, &at, img, &rows, &raw) == 0);
+	peer_close(&a);
+	run_for(3000);
+
+	// bpp 1, a width that isn't a whole number of bytes
+	fake_display.bpp = 1;
+	fake_display.width = 100;
+	memset(fb, 0, sizeof fb);
+	f8[13 * 4 + 1] = 0xF0;
+	f8[13 * 4 + 12] = 0x80;	// the last pixel of row 4
+	CHECK(ws_open(&a, net_test_host_ip(), 53022, ""));
+	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1 && strstr(m, "\"screen\":[100,128,1,0,0,100,128]}"));
+	ws_text(&a, "s1");
+	rows = raw = 0;
+	memset(img, 0xEE, sizeof img);
+	run_for(300);
+	frames = screen_frames(&a, &at, img, &rows, &raw);
+	CHECK(frames >= 1 && rows == 128 && memcmp(img, fb, 13 * 128) == 0);
+	peer_close(&a);
+	run_for(3000);
+	fake_display.bpp = 16;
+	fake_display.width = 160;
+}
+
 static void test_webctl(void)
 {
 	static peer_t a, b, far;
@@ -797,7 +914,8 @@ static void test_webctl(void)
 	CHECK(strstr((char *)a.rx, "\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"));
 	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
 	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1);
-	CHECK(strcmp(m, "{\"hello\":1,\"control\":true,\"audio\":true,\"keys\":[3,7],\"ptt\":7,\"encoder\":true}") == 0);
+	CHECK(strcmp(m, "{\"hello\":1,\"control\":true,\"audio\":true,\"keys\":[3,7],\"ptt\":7,\"encoder\":true,"
+		"\"screen\":[160,128,16,0,0,160,128]}") == 0);
 	run_for(300);
 	CHECK(ws_find(&a, &at, "\"rx_hz\":446006250", m, sizeof m));
 	CHECK(strstr(m, "\"led_green\":true,\"led_red\":false,\"backlight\":80,\"draws\":0"));
@@ -890,11 +1008,14 @@ static void test_webctl(void)
 	webctl_audio(pcm, WEBCTL_AUDIO_SAMPLES, false);
 	webctl_audio(pcm, WEBCTL_AUDIO_SAMPLES, true);
 	run_for(10);
-	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x2 && len == 2 * (int)WEBCTL_AUDIO_SAMPLES);
-	CHECK((uint8_t)m[0] == (uint8_t)(pcm[0] & 0xFF) && (uint8_t)m[1] == (uint8_t)((uint16_t)pcm[0] >> 8));
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x2 && len == 2 + 2 * (int)WEBCTL_AUDIO_SAMPLES);
+	CHECK(m[0] == 'A' && m[1] == 0);
+	CHECK((uint8_t)m[2] == (uint8_t)(pcm[0] & 0xFF) && (uint8_t)m[3] == (uint8_t)((uint16_t)pcm[0] >> 8));
 	CHECK(ws_next(&a, &at, m, sizeof m, &len) < 0);
 	peer_close(&a);
 	run_for(3000);
+
+	test_webctl_screen();
 
 	// Over PPP: no audio offered and "a1" refused (128 kbit/s doesn't fit the serial link), keys still work
 	fake_ppp = true;
