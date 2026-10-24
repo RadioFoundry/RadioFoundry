@@ -161,7 +161,7 @@ def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
 @pytest.mark.feature("dmr_emergency")
 @pytest.mark.radio_tx
 def test_emergency_key_hold(radio, pytestconfig, em_settings):
-    """The EMERGENCY key action (the DM-1701's top side key held 1.5 s; injected as the action, held for the
+    """The EMERGENCY key action (the DM-1701's SK3 held 1.5 s; injected as the action, held for the
     hold-to-activate time): alarm-only, one try; the UI says "EMERGENCY sent", em.state leaves idle; a second hold
     cancels ("Emergency canceled", em.state idle). No bench: the alarm goes out at the lowest power."""
     from rfoundry_hil import LONG

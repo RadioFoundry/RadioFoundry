@@ -150,7 +150,7 @@ CONFIG_SCAN ?= y
 # the dual watch screens: two channels on Home, which one PTT uses and which one a call came in on; the radio core's
 # dual watch across zones and with the VFO, PTT on the selected channel (needs SCAN; docs/ux/dual-watch.md)
 CONFIG_DUAL_WATCH ?= $(CONFIG_SCAN)
-# side key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's side keys do
+# key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's programmable keys do
 # (core/input/keyassign.c, docs/spec/ui.md 3.1)
 CONFIG_KEY_ASSIGN ?= y
 # the hub's Channels list: every codeplug channel by number, and a channel's settings (read only; core/ui/ui_menus.c,

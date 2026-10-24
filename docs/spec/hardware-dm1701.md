@@ -880,7 +880,8 @@ DM-1701 / RT84 matrix:
 
 The physical labels of the DM-1701's two "function" keys (right and left in the table, likely the P1/P2 or A/B keys)
 are unverified. Side key 1 is the one just above the PTT (it is the one held with PTT to enter the bootloader); side key
-2 is the lower one (unverified ordering on the RT84).
+2 is the lower one (unverified ordering on the RT84). The table's names are from before the bench check: section 20 has
+the DM-1701's order, and the firmware names the side keys SK1 (D5), SK2 (D7) and SK3 (D6), top to bottom.
 
 MD-UV380 matrix (for comparison):
 
@@ -1409,7 +1410,8 @@ Verified on one radio with the new firmware; they override the unverified notes 
 
 - **Keypad**: the 10.1 matrix is right. The two "function" keys are labeled P1 (row 0, D6) and P2 (row 0, D5). There is
   no orange key: the three black side keys are, top to bottom, row 2 D5 (the "top key" position), row 2 D7, row 2 D6;
-  PTT is separate. A row released while still high stays charged and makes every key also read as the key below it:
+  PTT is separate, between the first and the second. The firmware names them SK1, SK2 and SK3 in that order. SK1 (D5),
+  just above PTT, is the key held with PTT to enter the bootloader. A row released while still high stays charged and makes every key also read as the key below it:
   drive the row low before releasing it and keep idle rows pulled down.
 - **Encoder**: clockwise counts up with the 10.3 rule, one count per detent.
 - **Panel**: this radio reports type 2 (security register 3, byte 0x1D). Driving it with the type 2 MADCTL (0xE0) shows the

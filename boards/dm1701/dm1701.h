@@ -50,7 +50,7 @@ bool dm1701_modem_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t 
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
 	KEY_STAR, KEY_HASH, KEY_UP, KEY_DOWN, KEY_GREEN, KEY_RED,
-	KEY_FN_LEFT, KEY_FN_RIGHT, KEY_TOP, KEY_SK1, KEY_SK2, KEY_PTT,
+	KEY_FN_LEFT, KEY_FN_RIGHT, KEY_SK1, KEY_SK2, KEY_SK3, KEY_PTT,	// side keys top to bottom
 	KEY_COUNT
 };
 

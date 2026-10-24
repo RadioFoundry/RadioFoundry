@@ -54,7 +54,7 @@ Screens consume only these. Each board maps physical inputs to them (`boards/<ra
 | `EMERGENCY` | Hold 1.5 s to start or cancel emergency (if enabled in codeplug) | optional |
 | `CHANNEL_POS(n)` | Absolute channel selector position (1 to 16) | from knob |
 | `ENC_STEP(+/-)` | Encoder detent. Forward (+, clockwise): next channel on Home (as `NAV_UP`), value up in editors, focus **down** in lists and quick tiles (the next row, like a scroll wheel). Back (-): the opposite | from encoder |
-| `USER_1` to `USER_4` | Side and top keys; each has a short and a long function from the assignable list | optional |
+| `USER_1` to `USER_4` | Programmable keys; each has a short and a long function from the assignable list | optional |
 
 Assignable functions for `USER_n` keys (short and long, chosen in Settings > Keys or in qdmr): Monitor, Talk target, Quick, Context, Recent, Power cycle, Scan on/off, Hear all on/off, Privacy on/off, Zone picker, Speak status, Backlight, Mode FM/DMR (in the VFO), Copy to VFO, Lock, Reply, Radio check last caller, Silent (mute tones and prompts), A/B and Dual watch ([dual-watch.md](dual-watch.md)), None.
 
@@ -163,7 +163,7 @@ Settings has a search field on top (T9). Groups, in this order:
 | **Location** | GPS on/off, position format, send position (UDT, LRRP, APRS) and interval, reply to position requests |
 | **Connections** | Hotspot defaults, USB network (at power-on, control station: PC answers data, link address; TFTP codeplug write), single frequency repeater role, ARS registration, radio check auto-reply, call alert answer, message format |
 | **Power** | Battery saver, auto power off, low-battery warning level, power level defaults |
-| **Keys** | Side/top key functions (short and long), long-press time, key repeat, Up/Down on Home (channel / zone / talk target), speed dial slots |
+| **Keys** | Programmable key functions (short and long), long-press time, key repeat, Up/Down on Home (channel / zone / talk target), speed dial slots |
 | **My radio** | DMR ID, callsign, name, talker alias text, radio name, region/band limits, time and date |
 | **Advanced** | Calibration view, codeplug info, firmware info, factory reset (confirmed, P7), diagnostics, crash log (send the report, its target, Off/Ask/Auto after a crash) |
 
@@ -175,7 +175,7 @@ Rule: each setting lives in exactly one group, and Find also reaches it by name 
 
 Notation: `short / long`. "-" means none. All maps also follow the text-field rules in section 2.
 
-### 7.1 Baofeng DM-1701 (and TYT MD-UV380 class): keypad, channel encoder, volume knob, 2 side keys, top key, 160x128 color
+### 7.1 Baofeng DM-1701 (and TYT MD-UV380 class): keypad, channel encoder, volume knob, 3 side keys, 160x128 color
 
 | Physical | Logical (short / long) |
 |---|---|
@@ -186,9 +186,10 @@ Notation: `short / long`. "-" means none. All maps also follow the text-field ru
 | `#` | `CONTEXT` / Recent |
 | 0-9 | digits / speed dial |
 | Channel encoder detent | `ENC_STEP` (Home: channel; editors: value; lists: focus, forward = down) |
-| Upper side key (row 2 D5) and middle side key (row 2 D7): see [hardware-dm1701.md](../spec/hardware-dm1701.md) 10 and 20 | `MONITOR` (while held) on the middle key |
-| SK2 (lower side) | `AB` (dual watch A / B) / Dual watch on/off |
-| Top (orange) key | Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built (hold again to cancel), else speak status |
+| SK1 (top side key, above PTT; row 2 D5, [hardware-dm1701.md](../spec/hardware-dm1701.md) 20) | `MONITOR` (while held) |
+| SK2 (below PTT) | `AB` (dual watch A / B) / Dual watch on/off |
+| SK3 (lowest side key) | Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built (hold again to cancel), else speak status |
+| P1, P2 | Previous zone, Next zone |
 | PTT | `PTT` |
 
 Notes: the channel knob is a quadrature encoder with detents, not a 16-position switch ([hardware-dm1701.md](../spec/hardware-dm1701.md) 10.3), so

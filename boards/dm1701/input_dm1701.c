@@ -15,7 +15,7 @@
 static const uint8_t matrix[ROW_COUNT][8] = {
 	{ KEY_1, KEY_4, KEY_7, KEY_STAR, KEY_UP, KEY_FN_RIGHT, KEY_FN_LEFT, NO_KEY },
 	{ KEY_2, KEY_5, KEY_8, KEY_0, KEY_DOWN, KEY_RED, KEY_GREEN, NO_KEY },
-	{ KEY_3, KEY_6, KEY_9, KEY_HASH, NO_KEY, KEY_TOP, KEY_SK2, KEY_SK1 },
+	{ KEY_3, KEY_6, KEY_9, KEY_HASH, NO_KEY, KEY_SK1, KEY_SK3, KEY_SK2 },	// side keys: hardware-dm1701.md 20
 };
 
 static const stm32_fsmc_keypad_cfg_t keypad = {
