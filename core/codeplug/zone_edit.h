@@ -97,4 +97,12 @@ zone_map_t zone_edit_map(uint32_t from, uint32_t to, uint16_t index, uint16_t *o
 void zone_shift_note(bool deleted, uint16_t index);
 void zone_shift_busy(bool on);
 
+// --- Saved zone indexes across a power cut (zone_settle.c) ---
+// The settings hold zone indexes too (the zone in use, the roaming zones). zone_edit.c notes an add or delete in the
+// settings before its codeplug write (zone_settle_begin) and settles it after (zone_edit_settle): the saved indexes
+// are moved in the record that clears the note. Called at power on, zone_edit_settle finishes a note a power cut
+// left, from what the codeplug shows. Under the storage lock or before the tasks start
+void zone_settle_begin(bool deleted, uint16_t index);
+void zone_edit_settle(void);
+
 #endif

@@ -2945,7 +2945,18 @@ static void roam_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 		uint8_t bit = (uint8_t)(1u << (zi % 8u));
 		sm->roam_zones[zi / 8u] = (uint8_t)(on ? sm->roam_zones[zi / 8u] | bit : sm->roam_zones[zi / 8u] & ~bit);
 		settings_t *s = settings_begin();
-		memcpy(s->roam_zones, sm->roam_zones, sizeof(s->roam_zones));
+		// Only this zone's flag: the others are the zone writes' to move (zone_settle.c), and a reload not done yet
+		// leaves this zone's index the old one
+		uint16_t saved = zi;
+#if CONFIG_ZONE_EDIT
+		if (zone_edit_map(sm->zone_shifts, zone_edit_shifts(), zi, &saved) != ZONE_MAP_KEPT) {
+			saved = SETTINGS_ROAM_ZONE_BYTES * 8u;	// gone or lost: the reload reads the saved flags again
+		}
+#endif
+		if (saved < SETTINGS_ROAM_ZONE_BYTES * 8u) {
+			uint8_t sb = (uint8_t)(1u << (saved % 8u));
+			s->roam_zones[saved / 8u] = (uint8_t)(on ? s->roam_zones[saved / 8u] | sb : s->roam_zones[saved / 8u] & ~sb);
+		}
 		settings_end(now_ms);
 		roam_rebuild(sm, now_ms, true);
 		break;
@@ -3980,7 +3991,9 @@ static void persist(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	st->vfo = vfo;
-	if (z != NULL) {
+	// Zones moved and not followed yet: the indexes here are the old ones, and the zone write saved the new ones
+	// (zone_settle.c). Checked under the settings lock, so a write can't come between
+	if (z != NULL && !ZONES_MOVED(sm)) {
 		st->zone_index = zone;
 		st->zone_pos = pos;
 		st->channel = pos < z->count ? z->channels[pos] : 0;
@@ -4192,9 +4205,9 @@ void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t n
 // the channel if they still exist
 #if CONFIG_ZONE_EDIT
 // A zone added ahead of others or a zone deleted moves the indexes after it (zone_edit.h). Followed here: the zone in
-// use (in the VFO too: the zone it goes back to), dual watch's two channels and the roaming zones, saved again when
-// they moved. A roaming zone that was deleted loses its flag. Returns the zone in use's index now; *gone: it was
-// deleted, and the index is the zone that took its place
+// use (in the VFO too: the zone it goes back to) and dual watch's two channels. The saved roaming zones were moved by
+// the zone write itself (zone_settle.c; a deleted one loses its flag) and the reload reads them. Returns the zone in
+// use's index now; *gone: it was deleted, and the index is the zone that took its place
 static uint16_t follow_zones(radio_sm_t *sm, bool *gone, uint32_t now_ms)
 {
 	uint32_t from = sm->zone_shifts, to = zone_edit_shifts();
@@ -4216,29 +4229,7 @@ static uint16_t follow_zones(radio_sm_t *sm, bool *gone, uint32_t now_ms)
 		}
 	}
 #endif
-#if CONFIG_DMR_ROAMING
-	uint8_t bits[SETTINGS_ROAM_ZONE_BYTES];
-	memset(bits, 0, sizeof(bits));
-	bool lost = false;
-	for (uint16_t z = 0; z < SETTINGS_ROAM_ZONE_BYTES * 8u && !lost; z++) {
-		if (!roam_zone_flag(sm, z)) {
-			continue;
-		}
-		m = zone_edit_map(from, to, z, &out);
-		lost = m == ZONE_MAP_LOST;
-		if (m == ZONE_MAP_KEPT && out < SETTINGS_ROAM_ZONE_BYTES * 8u) {
-			bits[out / 8u] |= (uint8_t)(1u << (out % 8u));
-		}
-	}
-	if (!lost && memcmp(bits, sm->roam_zones, sizeof(bits)) != 0) {
-		memcpy(sm->roam_zones, bits, sizeof(bits));
-		settings_t *s = settings_begin();
-		memcpy(s->roam_zones, bits, sizeof(bits));
-		settings_end(now_ms);
-	}
-#else
 	(void)now_ms;
-#endif
 	return zi;
 }
 
@@ -4342,6 +4333,9 @@ static const hal_audio_t *pcm_audio(void)
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 {
 	settings_t st;
+#if CONFIG_ZONE_EDIT
+	zone_edit_settle();	// a zone add or delete a power cut interrupted: the saved zone indexes match the zones
+#endif
 	settings_read(&st);
 
 	memset(sm, 0, sizeof(*sm));

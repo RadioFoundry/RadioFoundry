@@ -195,6 +195,12 @@ typedef struct {
 	uint8_t rs_dual_delay;		// radio_settings_t.dual_delay_ms: n - 1 steps of 100 ms, 0 = the default
 	uint8_t rs_bcast_step;		// radio_settings_t.bcast_step + 1, 0 = the default (200 kHz on the odd tenths)
 	uint8_t reserved8[3];
+	// A zone add or delete under way (core/codeplug/zone_settle.c): written before the codeplug's zone write, cleared
+	// with zone_index and roam_zones moved to match. Found set at power on, it is finished from the zone list
+	uint16_t zone_jrn_index;	// the index the zone was added at or deleted from
+	uint16_t zone_jrn_count;	// the stored zone count before it (0: only the built-in zone)
+	uint8_t zone_jrn_kind;		// SETTINGS_ZONE_JRN_*
+	uint8_t reserved8b[3];
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -204,6 +210,9 @@ typedef struct {
 #define SETTINGS_PAGES_MAX	16u
 #define SETTINGS_PAGES		((sizeof(settings_t) + SETTINGS_PAGE_BYTES - 1u) / SETTINGS_PAGE_BYTES)
 #define SETTINGS_PAGE_SHIFT	12	// a record's layout field: the page in bits 12-15, the layout in bits 0-11
+#define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
+#define SETTINGS_ZONE_JRN_ADD		1u
+#define SETTINGS_ZONE_JRN_DELETE	2u
 #define SETTINGS_DUAL_VFO	1025u	// dual_b: 1025 the first VFO, 1026 the second
 #define SETTINGS_DUAL_ON	0x01u	// dual_state: it ran at power off, and comes back at power on
 #define SETTINGS_DUAL_B_SEL	0x02u	// ... with B selected: dual_b is then A's (the radio powers up on B)

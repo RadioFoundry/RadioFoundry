@@ -226,6 +226,7 @@ bool codeplug_channel(uint16_t n, channel_t *out)
 	return true;
 }
 uint16_t codeplug_zone_count(void) { return 1; }
+bool codeplug_zones_stored(void) { return true; }
 bool codeplug_zone(uint16_t i, zone_t *out)
 {
 	if (i != 0) {

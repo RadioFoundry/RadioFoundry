@@ -289,6 +289,7 @@ bool codeplug_channel(uint16_t n, channel_t *out)
 static zone_t zone2;		// dual watch: a second zone when nzones is 2
 static uint16_t nzones;
 uint16_t codeplug_zone_count(void) { return nzones; }
+bool codeplug_zones_stored(void) { return true; }
 bool codeplug_zone(uint16_t i, zone_t *out)
 {
 	if (i >= nzones) {

@@ -192,6 +192,11 @@ they show the change within a fraction of a second.
   every holder of a zone index maps it with `zone_edit_map` once no zone write is under way (`zone_edit_busy`). An
   import that writes zones through the same layer is followed the same way. A reader more than 8 shifts behind keeps
   its indexes.
+- The settings hold zone indexes too (the zone in use, the roaming zones). An add or delete that moves indexes is
+  noted in the settings before the codeplug write, and the saved indexes are moved in the settings record that clears
+  the note (`core/codeplug/zone_settle.c`). After a power cut anywhere in between, the next power on finishes the
+  note from the zone list (`zone_edit_settle`), so the radio comes back on the same zone. The radio core's own saves
+  leave the zone fields alone until it has followed.
 - What follows a moved zone, and what happens when the zone itself was deleted:
 
   | Holder | Moved | Deleted |

@@ -93,6 +93,8 @@ bool codeplug_delete_zone(uint16_t index);
 // The index of the zone the last successful codeplug_set_zone wrote. An added zone takes the lowest free record, so
 // it can land before zones that were there (core/codeplug/zone_edit.c follows it)
 uint16_t codeplug_zone_written(void);
+// The index a zone added now (codeplug_set_zone with index == count) would take
+uint16_t codeplug_zone_add_index(void);
 // Channels one zone can hold: CODEPLUG_ZONE_MAX, or 16 in a codeplug with the older 16-channel zone records
 uint16_t codeplug_zone_capacity(void);
 // The radio name (the open-firmware callsign field, 8 characters), "" if none

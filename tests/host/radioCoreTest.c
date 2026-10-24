@@ -2612,6 +2612,7 @@ static uint16_t zone_written;
 bool codeplug_zones_stored(void) { return nzones > 0; }
 uint16_t codeplug_zone_capacity(void) { return CODEPLUG_ZONE_MAX; }
 uint16_t codeplug_zone_written(void) { return zone_written; }
+uint16_t codeplug_zone_add_index(void) { return nzones; }	// these fakes append
 bool codeplug_set_zone(uint16_t i, const zone_t *z)
 {
 	if (i > nzones || i >= 3) {
@@ -3925,7 +3926,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(308);	// the settings records (page 1: 48 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(316);	// the settings records (page 1: 56 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);

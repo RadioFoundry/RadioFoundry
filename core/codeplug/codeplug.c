@@ -811,6 +811,22 @@ uint16_t codeplug_zone_written(void)
 	return zone_written;
 }
 
+uint16_t codeplug_zone_add_index(void)
+{
+	// The lowest free slot; zones are indexed in slot order, so the slots before it are zones 0..slot-1
+	storage_lock();
+	bool taken[ZONE_SLOTS] = { false };
+	for (uint8_t i = 0; i < zone_count; i++) {
+		taken[zone_slot[i]] = true;
+	}
+	uint16_t slot = 0;
+	while (slot < ZONE_SLOTS && taken[slot]) {
+		slot++;
+	}
+	storage_unlock();
+	return slot;
+}
+
 uint16_t codeplug_zone_capacity(void)
 {
 	storage_lock();

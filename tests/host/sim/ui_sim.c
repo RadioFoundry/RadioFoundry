@@ -669,6 +669,10 @@ static void sim_zones_take(void)
 bool codeplug_zones_stored(void) { return true; }
 uint16_t codeplug_zone_capacity(void) { return CODEPLUG_ZONE_MAX; }
 uint16_t codeplug_zone_written(void) { return sim_zone_written; }
+uint16_t codeplug_zone_add_index(void) { return codeplug_zone_count(); }
+// The sim keeps no settings record: nothing to note for a power cut (zone_settle.c, zoneEditTest covers it)
+void zone_settle_begin(bool deleted, uint16_t index) { (void)deleted; (void)index; }
+void zone_edit_settle(void) {}
 
 // A new zone (index = the count) goes last: the sim has no slots to reuse
 bool codeplug_set_zone(uint16_t index, const zone_t *z)

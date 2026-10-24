@@ -8,6 +8,7 @@
 #include <string.h>
 #include "codeplug/codeplug.h"
 #include "codeplug/zone_edit.h"
+#include "settings/settings.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
 
@@ -17,6 +18,8 @@ static int failures;
 
 void storage_lock(void) {}
 void storage_unlock(void) {}
+void storage_quick_lock(void) {}
+void storage_quick_unlock(void) {}
 
 #define FLASH_SIZE	0x200000u
 #define EE		0x000000u
@@ -36,7 +39,18 @@ static void fresh(void)
 {
 	sim_flash_create(FLASH_SIZE, &map);
 	CHECK(storage_init());
+	settings_init();
 	codeplug_init();
+}
+
+// Power on again after a cut: the storage journal, the settings, the codeplug, then what the radio core does first
+static void boot_again(void)
+{
+	sim_flash_power_on();
+	CHECK(storage_init());
+	settings_init();
+	codeplug_init();
+	zone_edit_settle();
 }
 
 static channel_t make(const char *name, uint32_t hz)
@@ -363,6 +377,116 @@ static void test_refusals(void)
 	sim_flash_bad_range(0, 0);
 }
 
+static int find_named(const char *name)
+{
+	zone_t z;
+	for (uint16_t i = 0; i < codeplug_zone_count(); i++) {
+		if (codeplug_zone(i, &z) && strcmp(z.name, name) == 0) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+// A power cut through a zone add or delete that moves indexes: after the next power on the saved zone
+// in use is the same zone (deleted: the one that took its index) and the roaming flags are on the same zones. The
+// settings hold zone Three in use and Two, Three and Four roaming
+enum { CUT_DELETE_AHEAD, CUT_DELETE_IN_USE, CUT_ADD_AHEAD, CUT_KINDS };
+
+static void cut_setup(int kind)
+{
+	fresh();
+	channel_t c = make("A", 145000000);
+	CHECK(codeplug_set_channel(10, &c));
+	static const char *const names[] = { "One", "Two", "Three", "Four" };
+	for (unsigned i = 0; i < 4; i++) {
+		zone_t z = zone_of(names[i], (const uint16_t[]){ 10 }, 1);
+		CHECK(zone_edit_create(&z, NULL) == ZONE_EDIT_OK);	// 0 All channels, 1 One .. 4 Four
+	}
+	if (kind == CUT_ADD_AHEAD) {
+		CHECK(zone_edit_delete(1) == ZONE_EDIT_OK);	// slot 1 free: a new zone lands ahead of Two
+	}
+	settings_t *st = settings_begin();
+	st->zone_index = (uint16_t)find_named("Three");
+	st->zone_pos = 0;
+	st->channel = 10;
+	memset(st->roam_zones, 0, sizeof(st->roam_zones));
+	for (unsigned i = 1; i < 4; i++) {
+		int zi = find_named(names[i]);
+		st->roam_zones[zi / 8] |= (uint8_t)(1u << (zi % 8));
+	}
+	settings_end(1);
+	CHECK(settings_flush());
+}
+
+static void cut_op(int kind)
+{
+	if (kind == CUT_ADD_AHEAD) {
+		zone_t z = zone_of("New", (const uint16_t[]){ 10 }, 1);
+		zone_edit_create(&z, NULL);
+	} else {
+		zone_edit_delete(kind == CUT_DELETE_AHEAD ? 1 : 3);
+	}
+}
+
+// The saved indexes against the zone list now. Returns false on a mismatch
+static bool cut_consistent(int kind, uint32_t cut, uint32_t total)
+{
+	settings_t st;
+	settings_read(&st);
+	int three = find_named("Three");
+	uint16_t n = codeplug_zone_count();
+	uint16_t want = three >= 0 ? (uint16_t)three : (uint16_t)(3u < n ? 3u : n - 1u);
+	bool ok = st.zone_index == want && st.zone_jrn_kind == SETTINGS_ZONE_JRN_NONE;
+	for (uint16_t z = 0; z < SETTINGS_ROAM_ZONE_BYTES * 8u; z++) {
+		bool flag = (st.roam_zones[z / 8u] & (1u << (z % 8u))) != 0;
+		bool roaming = (int)z == find_named("Two") || (int)z == find_named("Three") || (int)z == find_named("Four");
+		ok = ok && flag == roaming;
+	}
+	if (!ok) {
+		printf("FAIL zone power cut: kind %d, cut after %u of %u units: zone_index %u (want %u), roam %02x\n", kind,
+		       cut, total, st.zone_index, want, st.roam_zones[0]);
+	}
+	return ok;
+}
+
+static void test_power_cut(void)
+{
+	for (int kind = 0; kind < CUT_KINDS; kind++) {
+		cut_setup(kind);
+		uint8_t *snapshot = malloc(FLASH_SIZE);
+		memcpy(snapshot, sim_flash_data, FLASH_SIZE);
+		uint32_t u0 = sim_flash_units();
+		cut_op(kind);
+		uint32_t total = sim_flash_units() - u0;
+		CHECK(total > 0);
+		boot_again();
+		CHECK(cut_consistent(kind, 0, total));		// no cut
+		CHECK(find_named("Three") == (kind == CUT_DELETE_IN_USE ? -1 : kind == CUT_ADD_AHEAD ? 3 : 2));
+		int done = 0, not_done = 0;
+		// Every unit at the start and the end (the settings records), every 17th in the sector copies between
+		for (uint32_t cut = 1; cut <= total; cut += cut < 600u || total - cut < 600u ? 1u : 17u) {
+			memcpy(sim_flash_data, snapshot, FLASH_SIZE);
+			boot_again();
+			sim_flash_cut_after(cut);
+			cut_op(kind);
+			boot_again();
+			if (!cut_consistent(kind, cut, total)) {
+				failures++;
+			}
+			uint16_t n = codeplug_zone_count();
+			if (kind == CUT_ADD_AHEAD ? n == 5 : n == 4) {
+				done++;
+			} else {
+				not_done++;
+			}
+		}
+		CHECK(done > 0 && not_done > 0);	// cuts on both sides of the zone write
+		free(snapshot);
+	}
+	CHECK(sim_flash_violations() == 0);
+}
+
 int main(void)
 {
 	test_list();
@@ -372,6 +496,7 @@ int main(void)
 	test_apply_follow();
 	test_log();
 	test_refusals();
+	test_power_cut();
 	if (failures) {
 		printf("zoneEditTest: %d failures\n", failures);
 		return 1;

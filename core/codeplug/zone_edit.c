@@ -121,6 +121,9 @@ static zone_edit_result_t create_locked(uint16_t *index)
 		}
 	}
 	bool first = !codeplug_zones_stored();
+	if (!first) {
+		zone_settle_begin(false, codeplug_zone_add_index());	// the saved indexes, should the power go now
+	}
 	zone_edit_result_t r = write_back(first ? 0 : codeplug_zone_count());
 	if (r == ZONE_EDIT_OK) {
 		uint16_t at = codeplug_zone_written();
@@ -130,6 +133,9 @@ static zone_edit_result_t create_locked(uint16_t *index)
 		if (index != NULL) {
 			*index = at;
 		}
+	}
+	if (!first) {
+		zone_edit_settle();
 	}
 	return r;
 }
@@ -273,11 +279,17 @@ zone_edit_result_t zone_edit_delete(uint16_t zone)
 	storage_lock();
 	zone_shift_busy(true);
 	zone_edit_result_t r = zone < codeplug_zone_count() && codeplug_zones_stored() ? ZONE_EDIT_OK : ZONE_EDIT_NO_ZONE;
-	if (r == ZONE_EDIT_OK && !codeplug_delete_zone(zone)) {
-		r = ZONE_EDIT_FAILED;
+	if (r == ZONE_EDIT_OK) {
+		zone_settle_begin(true, zone);
+		if (!codeplug_delete_zone(zone)) {
+			r = ZONE_EDIT_FAILED;
+		}
 	}
 	if (r == ZONE_EDIT_OK) {
 		zone_shift_note(true, zone);
+	}
+	if (r != ZONE_EDIT_NO_ZONE) {
+		zone_edit_settle();
 	}
 	zone_shift_busy(false);
 	storage_unlock();

@@ -760,6 +760,9 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, vfo2_rx_tone), 252 },
 		{ offsetof(settings_t, vfo2_mode), 256 },
 		{ offsetof(settings_t, vfo2_tx_tone_type), 262 },
+		{ offsetof(settings_t, zone_jrn_index), 268 },
+		{ offsetof(settings_t, zone_jrn_count), 270 },
+		{ offsetof(settings_t, zone_jrn_kind), 272 },
 	};
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
