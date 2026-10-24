@@ -167,6 +167,9 @@ void ui_pop(void)
 		sp--;
 	if (ui_scr[stack[sp].scr]->flags & SF_FILTER)
 		ui_filter_rebuild();
+#if CONFIG_ZONE_EDIT
+	ui_menus_resume();
+#endif
 	ui_st.quick_edit = false;
 	update_focus_target();
 	dirty = true;
@@ -1954,6 +1957,22 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ev_tail = (uint8_t)((ev_tail + 1u) % UI_EVENTS);
 		handle_event(&ev);
 	}
+#if CONFIG_ZONE_EDIT
+	// The codeplug changed (a zone edit's job, a CPS write): a filtered list reads its rows again, so the zone
+	// editor's lists show the change
+	static uint32_t codeplug_seen;
+	if (codeplug_serial() != codeplug_seen) {
+		codeplug_seen = codeplug_serial();
+		ui_frame_t *f = &stack[sp];
+		if (ui_scr[f->scr]->flags & SF_FILTER) {
+			ui_filter_rebuild();
+			if (f->focus >= ui_filter_count())
+				f->focus = ui_filter_count() > 0 ? (uint16_t)(ui_filter_count() - 1u) : 0;
+			ui_menus_resume();
+		}
+		dirty = true;
+	}
+#endif
 #if CONFIG_DMR
 	recent_update(v);
 	// "DMR modem off" only once it's been off a while: a channel or mode change (APRS on FM and back, a retune)

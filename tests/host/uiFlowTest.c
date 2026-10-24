@@ -13,6 +13,7 @@
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "config.h"
 
 static int fails, flows_run;
 
@@ -449,6 +450,37 @@ static const flow_t flows[] = {
 	{ "T after the transmission a digit opens Find again", "down pttdown pttup", "5", "screen=find", 1, false },
 	{ "T a transmission without PTT (beacon) leaves the digits alone", "down autotx", "5", "screen=find", 1, false },
 	{ "T a refused transmission (RX only) leaves the digits alone", "ok 4 down ok up up up up up up up up pttdown", "5", "zone=1 pos=9 screen=find", 1, false },
+#if CONFIG_ZONE_EDIT
+	// The zone editor (task-flows.md 23-26, ui.md 2.2). The radio is on channel 3, position 3 of zone 0 "Local
+	// repeaters" (channels 1-16); a zone's list is "Add channel", the channels, "Zone options"
+	{ "23 move the channel in use down", "", "ok 4 ctx ctx 2", "pos=4 writes=1 toast=Position_4_of_16 screen=zchannel",
+	  5, true },
+	{ "23 the menu stays: the digit again moves it on", "ok 4 ctx ctx 2", "2 2", "pos=6 writes=3 toast=Position_6_of_16",
+	  2, true },
+	{ "23 back on the list, on the moved channel", "ok 4 ctx ctx 2", "back", "screen=zone focus=04_COUNTY_DMR", 1,
+	  true },
+	{ "23 move up", "ok 4 ctx", "ctx 1", "pos=2 writes=1 toast=Position_2_of_16", 2, true },
+	{ "23 the first can't move up", "ok 4 ctx up up", "ctx 1", "writes=0 toast=Already_first", 2, false },
+	{ "24 copy here, saved unchanged", "", "ok 4 ctx ctx 3 long:ok", "writes=2 toast=Saved_as_channel_41", 6, true },
+	{ "24 the copy follows its source", "ok 4 ctx ctx 3 long:ok", "back", "screen=zone focus=04_COUNTY_DMR_2", 1,
+	  true },
+	{ "24 copy here opens an unsaved copy", "ok 4 ctx ctx 3", "", "screen=channel shows=COUNTY_DMR_2 writes=0", 0,
+	  false },
+	{ "24 copy here asks before discarding", "ok 4 ctx ctx 3", "back", "screen=discard writes=0", 1, false },
+	{ "24 edit channel opens the editor", "ok 4 ctx ctx", "4", "screen=channel shows=COUNTY_DMR depth=4", 1, false },
+	{ "25 add channel 20 after the channel in use", "", "ok 4 ctx 2 ok 2 0 ok",
+	  "screen=zone writes=1 toast=Added_to focus=04_", 8, true },
+	{ "25 add channel offers only what the zone doesn't hold", "ok 4 ctx 2", "ok", "screen=zpick count=24", 1, false },
+	{ "25 remove from zone", "ok 4 ctx ctx", "5", "screen=zone writes=1 toast=Removed_from_Local", 1, true },
+	{ "26 copy the zone in use", "", "ok 4 ctx up up up up ok 2",
+	  "screen=zones count=5 writes=1 toast=Copied_as_Local_repeater_2", 9, true },
+	{ "26 rename a zone", "ok 4 ctx up up up up ok 1", "back 2 ok", "screen=zoneedit writes=1 toast=Renamed shows=repeaterA",
+	  3, true },
+	{ "26 delete asks first, No focused", "ok 4 ctx up up up up ok", "3", "screen=zonedel focus=No writes=0", 1, false },
+	{ "26 delete: No keeps it", "ok 4 ctx up up up up ok 3", "ok", "screen=zoneedit writes=0", 1, false },
+	{ "26 delete a zone ahead of the zone in use: the radio follows", "ok 4 down down ok",
+	  "ok 4 up ctx up ok 3 down ok", "screen=zones count=3 zone=1 writes=1 toast=Deleted_Simplex", 9, true },
+#endif
 };
 
 // GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
@@ -600,6 +632,11 @@ static const flow_t flows_f[] = {
 	  "writes=1 toast=Saved_channel_3", 1, true },
 	{ "F no side keys to set","ok up ok up up up ok", "down down down ok", "toast=This_radio_has_no set42=0", 4,
 	  false },
+#if CONFIG_ZONE_EDIT
+	// No CONTEXT: long OK opens a zone's list in Zones and Channel actions in the list (information-architecture 7.5)
+	{ "F 23 move the channel in use down", "", "ok down down down down ok long:ok long:ok down ok",
+	  "pos=4 writes=1 toast=Position_4_of_16", 10, true },
+#endif
 };
 
 static void run_flow(const flow_t *f, const sim_geom_t *g, sim_map_t map, const char *mapname)
