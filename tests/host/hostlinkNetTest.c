@@ -73,13 +73,16 @@ static struct {
 	int ip_calls, raw_calls;
 	bool group;
 	uint32_t dst;
+	uint32_t src_ip, dst_ip;
+	uint8_t ttl;
 	uint8_t protocol;
 	uint8_t data[600];
 	int len;
 	bool refuse;
 } air;
 static uint32_t radio_id(void) { return RADIO_ID; }
-static bool ip_to_air(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+static bool ip_to_air(bool group, uint32_t dst, uint32_t src_ip, uint32_t dst_ip, uint8_t ttl, uint8_t protocol,
+					  const uint8_t *l4, int length)
 {
 	if (air.refuse) {
 		return false;
@@ -87,6 +90,9 @@ static bool ip_to_air(bool group, uint32_t dst, uint8_t protocol, const uint8_t 
 	air.ip_calls++;
 	air.group = group;
 	air.dst = dst;
+	air.src_ip = src_ip;
+	air.dst_ip = dst_ip;
+	air.ttl = ttl;
 	air.protocol = protocol;
 	memcpy(air.data, l4, length);
 	air.len = length;
@@ -150,13 +156,24 @@ bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count)
 // The service's IP path: built by the codec as the service builds an unconfirmed packet (the compression setting
 // applied; confirmed delivery is dmrDataServiceTest's), done at once unless ip_pending says otherwise
 static bool ip_pending;
+static uint16_t get16(const uint8_t *p);
 static uint8_t ip_result = DMR_REQ_OK;
-bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
+						  const uint8_t *l4, int length)
 {
+	const uint8_t *pdu;
+	uint8_t sap;
+
 	if (service_busy) {
 		return false;
 	}
-	svc_count = dmrDataBuildIP(group, dst, RADIO_ID, protocol, l4, length, DT_RATE_12_DATA, 2, svc_bursts, DMR_DATA_MAX_BURSTS);
+	srcIp = (srcIp == DMR_DATA_IP_OURS) ? dmrDataIdAddress(false, RADIO_ID) : srcIp;
+	dstIp = (dstIp == DMR_DATA_IP_OURS) ? dmrDataIdAddress(group, dst) : dstIp;
+	bool compress = (protocol == DMR_IP_PROTO_UDP) && (length >= 8) && dmrDataUdpCompress(get16(&l4[0]), get16(&l4[2]));
+	int n = dmrDataEncodeIP(group, dst, RADIO_ID, dstIp, srcIp, ttl, protocol, l4, length, compress, dmrDataNextIpId(),
+							&pdu, &sap);
+	svc_count = (n > 0) ? dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, group, dst, RADIO_ID, pdu, n, DT_RATE_12_DATA, 2,
+											 svc_bursts, DMR_DATA_MAX_BURSTS) : 0;
 	svc_lists++;
 	return svc_count > 0;
 }

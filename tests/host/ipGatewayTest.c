@@ -12,6 +12,7 @@
 #include <string.h>
 #include "fuzz.h"
 #include "dmr/ipGateway.h"
+#include "dmr/dmrData.h"
 
 static int failures = 0;
 
@@ -65,7 +66,7 @@ bool ipGatewaySendFrame(const uint8_t *frame, int length)
 	return true;
 }
 
-bool ipGatewayIPToAir(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol, const uint8_t *l4, int length)
 {
 	air.calls++;
 	air.group = group;
@@ -402,23 +403,23 @@ static void testOtherProtocols(void)
 	// Over the air to the host: from 12.0.0.235, the message unchanged
 	echo[0] = 0;// the reply
 	echo[2] = echo[3] = 0; c = sum16(echo, sizeof(echo), 0); echo[2] = c >> 8; echo[3] = c;
-	CHECK(ipGatewayDeliverIP(false, RADIO_ID, 235, 1, echo, sizeof(echo)));
+	CHECK(ipGatewayDeliverIP(false, RADIO_ID, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(false, RADIO_ID), 1, echo, sizeof(echo)));
 	CHECK(memcmp(lastFrame, HOST_MAC, 6) == 0 && lastFrame[14 + 9] == 1);
 	CHECK(get32(&lastFrame[26]) == (IPGW_INDIVIDUAL_NET | 235) && get32(&lastFrame[30]) == HOST_IP);
 	CHECK(sum16(&lastFrame[14], 20, 0) == 0 && sum16(&lastFrame[34], sizeof(echo), 0) == 0);
 	CHECK(lastLength == 34 + (int)sizeof(echo) && memcmp(&lastFrame[34], echo, sizeof(echo)) == 0);
 
-	CHECK(ipGatewayDeliverIP(true, 9, 235, 132, sctp, sizeof(sctp)));
+	CHECK(ipGatewayDeliverIP(true, 9, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(true, 9), 132, sctp, sizeof(sctp)));
 	CHECK(lastFrame[0] == 0x01 && lastFrame[14 + 9] == 132 && get32(&lastFrame[30]) == (IPGW_MULTICAST_NET | 9));
 	CHECK(memcmp(&lastFrame[34], sctp, sizeof(sctp)) == 0);
 
 	framesSent = 0;
-	CHECK(ipGatewayDeliverIP(false, RADIO_ID, 235, 6, tcp, sizeof(tcp)));// TCP: dropped, not busy
+	CHECK(ipGatewayDeliverIP(false, RADIO_ID, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(false, RADIO_ID), 6, tcp, sizeof(tcp)));// TCP: dropped, not busy
 	CHECK(framesSent == 0);
 
 	// UDP through the IP path: the checksum is redone for the host side addresses
 	uint8_t udp[12] = { 0x0F, 0xA1, 0x0F, 0xA1, 0, 0, 0, 0, 'l', 'r', 'r', 'p' };
-	CHECK(ipGatewayDeliverIP(false, RADIO_ID, 235, 17, udp, sizeof(udp)));
+	CHECK(ipGatewayDeliverIP(false, RADIO_ID, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(false, RADIO_ID), 17, udp, sizeof(udp)));
 	uint32_t s = IPGW_INDIVIDUAL_NET | 235, d = HOST_IP;
 	uint32_t ps = (s >> 16) + (s & 0xFFFF) + (d >> 16) + (d & 0xFFFF) + 17 + sizeof(udp);
 	CHECK(lastFrame[38] == 0 && lastFrame[39] == sizeof(udp) && sum16(&lastFrame[34], sizeof(udp), ps) == 0);
@@ -428,30 +429,30 @@ static void testDeliver(void)
 {
 	const uint8_t report[] = { 0x0D, 0x0A, 0x22, 0x04, 0x00, 0x00, 0x00, 0x01, 0x66, 0x10, 0x23, 0x45 };
 
-	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, 4001, 4001, report, sizeof(report)));// to us
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(false, RADIO_ID), 4001, 4001, report, sizeof(report)));// to us
 	CHECK(memcmp(lastFrame, HOST_MAC, 6) == 0);
 	CHECK(get32(&lastFrame[26]) == (IPGW_INDIVIDUAL_NET | 235));// from 12.0.0.235
 	CHECK(get32(&lastFrame[30]) == HOST_IP);
 	CHECK(sum16(&lastFrame[14], 20, 0) == 0);
 
-	CHECK(ipGatewayDeliverUDP(false, 236, 235, 4001, 4001, report, sizeof(report)));// between two other radios
+	CHECK(ipGatewayDeliverUDP(false, 236, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(false, 236), 4001, 4001, report, sizeof(report)));// between two other radios
 	CHECK(memcmp(lastFrame, HOST_MAC, 6) != 0 && memcmp(lastFrame, GW_MAC, 6) != 0 && !(lastFrame[0] & 1));
 	CHECK(get32(&lastFrame[30]) == (IPGW_INDIVIDUAL_NET | 236));
 
-	CHECK(ipGatewayDeliverUDP(true, 9, 235, 4007, 4007, report, sizeof(report)));
+	CHECK(ipGatewayDeliverUDP(true, 9, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(true, 9), 4007, 4007, report, sizeof(report)));
 	const uint32_t mip = IPGW_MULTICAST_NET | 9;
 	const uint8_t mcast[6] = { 0x01, 0x00, 0x5E, (mip >> 16) & 0x7F, (mip >> 8) & 0xFF, mip & 0xFF };
 	CHECK(memcmp(lastFrame, mcast, 6) == 0);
 	CHECK(get32(&lastFrame[30]) == mip);
 	// IDs bigger than the range are truncated: in a /16, data to radio 0x010000 | RADIO_ID is also for the host
-	CHECK(ipGatewayDeliverUDP(false, 0x010000 | RADIO_ID, 0x123456, 4001, 4001, report, sizeof(report)));
+	CHECK(ipGatewayDeliverUDP(false, 0x010000 | RADIO_ID, 0x123456, dmrDataIdAddress(false, 0x123456), dmrDataIdAddress(false, 0x010000 | RADIO_ID), 4001, 4001, report, sizeof(report)));
 	CHECK((memcmp(lastFrame, HOST_MAC, 6) == 0) == !FITS_INDIVIDUAL(0x010000));// in a /8 it's another radio
 	CHECK(get32(&lastFrame[26]) == (IPGW_INDIVIDUAL_NET | (0x123456 & ~IPGW_MASK(IPGW_INDIVIDUAL_PREFIX))));
 
-	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, RADIO_ID ^ 1, 4001, 4001, report, sizeof(report)));
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, RADIO_ID ^ 1, dmrDataIdAddress(false, RADIO_ID ^ 1), dmrDataIdAddress(false, RADIO_ID), 4001, 4001, report, sizeof(report)));
 	CHECK((get32(&lastFrame[26]) == (IPGW_INDIVIDUAL_NET | (RADIO_ID ^ 1))) && (IPGW_POINT_TO_POINT == (get32(&lastFrame[26]) == RADIO_IP)));
 
-	CHECK(ipGatewayDeliverUDP(true, 0xFFFFFF, 235, 4007, 4007, report, sizeof(report)));// all call
+	CHECK(ipGatewayDeliverUDP(true, 0xFFFFFF, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(true, 0xFFFFFF), 4007, 4007, report, sizeof(report)));// all call
 	CHECK(memcmp(lastFrame, BCAST_MAC, 6) == 0);
 	CHECK(get32(&lastFrame[30]) == IPGW_BROADCAST_IP);
 
@@ -635,12 +636,12 @@ static void testFixedLink(void)
 
 	// From the air: to our ID reaches the host at its fixed address (UDP checksum redone: tshark checks the pcap)
 	const uint8_t report[] = { 0x0D, 0x0A, 0x22, 0x04, 0x00, 0x00, 0x00, 0x01, 0x66, 0x10, 0x23, 0x45 };
-	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, 4001, 4001, report, sizeof(report)));
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(false, RADIO_ID), 4001, 4001, report, sizeof(report)));
 	CHECK((memcmp(lastFrame, HOST_MAC, 6) == 0) && (get32(&lastFrame[30]) == host));
 	CHECK(get32(&lastFrame[26]) == (IPGW_INDIVIDUAL_NET | 235));
-	CHECK(ipGatewayDeliverUDP(false, 236, 235, 4001, 4001, report, sizeof(report)));// between other radios
+	CHECK(ipGatewayDeliverUDP(false, 236, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(false, 236), 4001, 4001, report, sizeof(report)));// between other radios
 	CHECK((memcmp(lastFrame, HOST_MAC, 6) != 0) && (get32(&lastFrame[30]) == (IPGW_INDIVIDUAL_NET | 236)));
-	CHECK(ipGatewayDeliverUDP(true, 0xFFFFFF, 235, 4007, 4007, report, sizeof(report)));// all call
+	CHECK(ipGatewayDeliverUDP(true, 0xFFFFFF, 235, dmrDataIdAddress(false, 235), dmrDataIdAddress(true, 0xFFFFFF), 4007, 4007, report, sizeof(report)));// all call
 	CHECK(get32(&lastFrame[30]) == 0xFFFFFFFFu);
 	CHECK(ipGatewayDeliverMonitor(report, 4) && (get32(&lastFrame[26]) == radio) && (get32(&lastFrame[30]) == 0xFFFFFFFFu));
 

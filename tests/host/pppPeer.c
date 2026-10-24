@@ -83,7 +83,7 @@ bool ppp_foreign_start(uint8_t b)
 
 bool ipGatewaySendFrame(const uint8_t *f, int length) { return board.netif->send(f, length); }
 uint32_t ipGatewayRadioId(void) { return RADIO_ID; }
-bool ipGatewayIPToAir(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol, const uint8_t *l4, int length)
 {
 	printf("pppPeer: to the air: %s %u, protocol %u, %d bytes\n", group ? "talkgroup" : "radio", (unsigned)dst,
 	       protocol, length);

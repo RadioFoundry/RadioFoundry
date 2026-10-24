@@ -58,7 +58,8 @@ void hostlink_net_init(hostlink_net_serial_fn serial_in)
 }
 
 // UDP over the air to our own DMR ID, for a local service of the gateway (ipGatewayUdpBindAir): taken here, in the
-// radio task, whether or not the network link is up; true when a service took it
+// radio task, whether or not the network link is up; true when a service took it. Only with our ID's IP address too:
+// a packet to our ID for another address is for a host we route to (the off-net route), never the radio's services
 static bool local_udp(const dmrDataPacket_t *p)
 {
 	uint32_t own = ipGatewayRadioId();
@@ -68,7 +69,8 @@ static bool local_udp(const dmrDataPacket_t *p)
 	if (p->group || (own == 0) || ((p->dst & 0xFFFFFFu) != own)) {
 		return false;
 	}
-	if ((p->sap == DMR_SAP_IP) && dmrDataGetIP(p, &ip) && (ip.protocol == 17) && (ip.length >= 8)) {
+	if ((p->sap == DMR_SAP_IP) && dmrDataGetIP(p, &ip) && (ip.protocol == 17) && (ip.length >= 8) &&
+	    dmrDataIpIsId(ip.dstIp, own)) {
 		const uint8_t *u = ip.payload;
 		int n = (u[4] << 8) | u[5];
 
@@ -78,7 +80,7 @@ static bool local_udp(const dmrDataPacket_t *p)
 		return ipGatewayUdpFromAir(p->src, (uint16_t)((u[0] << 8) | u[1]), (uint16_t)((u[2] << 8) | u[3]),
 					 u + 8, n - 8);
 	}
-	if ((p->sap == DMR_SAP_UDPIP_COMPRESSION) && dmrDataGetUDP(p, &udp)) {
+	if ((p->sap == DMR_SAP_UDPIP_COMPRESSION) && dmrDataGetUDP(p, &udp)) {	// the addresses are the IDs'
 		return ipGatewayUdpFromAir(p->src, udp.srcPort, udp.dstPort, udp.payload, udp.length);
 	}
 	return false;
@@ -112,10 +114,11 @@ static bool deliver(const dmrDataPacket_t *q)
 		return true;	// a confirmed data response: the data service's (dmr-data.md 12), not the host's
 	}
 	if ((q->sap == DMR_SAP_IP) && dmrDataGetIP(q, &ip)) {
-		return ipGatewayDeliverIP(q->group, q->dst, q->src, ip.protocol, ip.payload, ip.length);
+		return ipGatewayDeliverIP(q->group, q->dst, q->src, ip.srcIp, ip.dstIp, ip.protocol, ip.payload, ip.length);
 	}
 	if ((q->sap == DMR_SAP_UDPIP_COMPRESSION) && dmrDataGetUDP(q, &udp)) {
-		return ipGatewayDeliverUDP(q->group, q->dst, q->src, udp.srcPort, udp.dstPort, udp.payload, udp.length);
+		return ipGatewayDeliverUDP(q->group, q->dst, q->src, udp.srcIp, udp.dstIp, udp.srcPort, udp.dstPort,
+					   udp.payload, udp.length);
 	}
 	if ((q->sap == DMR_SAP_IP) || (q->sap == DMR_SAP_UDPIP_COMPRESSION)) {
 		return true;	// a fragment, or not for the gateway: dropped
@@ -229,9 +232,11 @@ void ipGatewaySerialIn(const uint8_t *data, int length)
 	}
 }
 
-bool ipGatewayIPToAir(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t src_ip, uint32_t dst_ip, uint8_t ttl, uint8_t protocol,
+		      const uint8_t *l4, int length)
 {
-	bool ok = (air != NULL) && (air->ip_to_air != NULL) && air->ip_to_air(group, dst, protocol, l4, length);
+	bool ok = (air != NULL) && (air->ip_to_air != NULL) &&
+		  air->ip_to_air(group, dst, src_ip, dst_ip, ttl, protocol, l4, length);
 
 	if (ok) {
 		stats.to_air++;

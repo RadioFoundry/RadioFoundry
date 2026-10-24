@@ -50,7 +50,7 @@ bool ipGatewaySendFrame(const uint8_t *frame, int length)
 }
 uint32_t ipGatewayRadioId(void) { return RADIO_ID; }
 void ipGatewaySerialIn(const uint8_t *data, int length) { (void)data; (void)length; }
-bool ipGatewayIPToAir(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length) { to_air++; return true; }
+bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol, const uint8_t *l4, int length) { to_air++; return true; }
 bool ipGatewayRawToAir(bool group, uint32_t dst, const uint8_t *data, int length) { to_air++; return true; }
 
 // ---- the responder's io ----

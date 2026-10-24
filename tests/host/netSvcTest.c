@@ -71,7 +71,7 @@ const board_t board = { .name = "fake", .netif = &fake_netif, .display = &fake_d
 bool ipGatewaySendFrame(const uint8_t *f, int length) { return board.netif->send(f, length); }
 uint32_t ipGatewayRadioId(void) { return RADIO_ID; }
 void ipGatewaySerialIn(const uint8_t *data, int length) { (void)data; (void)length; }
-bool ipGatewayIPToAir(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol, const uint8_t *l4, int length)
 {
 	(void)group; (void)dst; (void)protocol; (void)l4; (void)length;
 	return false;
