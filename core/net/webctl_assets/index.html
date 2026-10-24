@@ -59,7 +59,7 @@ let ws, hi, names = {}, bits = {}, ctl, scr, shown = -1, busy, ptt = -1, pt, au,
 const down = new Set(), els = {};
 
 const send = s => ws && ws.readyState === 1 && ws.send(s), step = v => ctl && send('e' + v);
-const label = n => ({ptt: 'PTT', star: '*', hash: '#'})[n = n.replace(/^mic_/, '')] || n.replace(/_/g, ' ').toUpperCase();
+const label = n => ({ptt: 'PTT', star: '*', hash: '#', enc_push: 'KNOB PRESS'})[n = n.replace(/^mic_/, '')] || n.replace(/_/g, ' ').toUpperCase();
 const keyOf = k => { const n = (KB[k] || []).find(x => x in names); return n && hi.keys.includes(names[n]) ? names[n] : -1; };
 // Clicks don't take the focus, so Space and Enter keep going to the radio
 const nofocus = e => e.addEventListener('mousedown', ev => ev.preventDefault());
