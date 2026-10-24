@@ -290,8 +290,7 @@
    "category": "DMR",
    "scope": "dev",
    "definition": "The trunked DMR tier of the standard (TS 102 361-4): a control channel assigns traffic channels.",
-   "link": "spec/dmr-tier3-plan.md",
-   "preview": true
+   "preview": false
   },
   {
    "term": "TSCC",

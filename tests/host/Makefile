@@ -976,7 +976,7 @@ else
 endif
 .PHONY: run-cpsclient
 
-# DMR Tier III prototype: the PDU layouts, tables and authentication vectors behind docs/spec/dmr-tier3-plan.md
+# DMR Tier III prototype: the PDU layouts, tables and authentication vectors behind the ETSI TS 102 361-4 clauses it cites
 TESTS   += tier3ProtoTest
 
 tier3ProtoTest: tier3ProtoTest.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/call/dmr_lc.h $(CORE)/dmr/fec/dmrFec.c
