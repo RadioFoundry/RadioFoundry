@@ -11,5 +11,7 @@ void ui_start(void);
 const char *ui_screen_name(void);
 // What is on screen (screen, depth, focus, banner, lock, Find query), as of the UI task's last pass (any task)
 void ui_get_status(ui_app_status_t *st);
+// The backlight level last set, percent (any task)
+uint8_t ui_backlight(void);
 
 #endif

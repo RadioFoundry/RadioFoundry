@@ -61,6 +61,9 @@ typedef enum {
 
 // Hold physical key bits (the board's scan mask bits) for hold_ms (capped at INPUT_INJECT_MAX_MS), then release
 input_inject_t input_inject_keys(uint32_t mask, uint32_t hold_ms);
+// Release injected keys in mask now, before their hold ends (the task notices at its next scan; a key still ends
+// only after the scans that debounce it have seen it)
+void input_inject_release(uint32_t mask);
 // A logical action with a gesture, through the key map: PRESS holds the key that gives it for INPUT_INJECT_PRESS_MS,
 // LONG for input_long_ms() + INPUT_INJECT_LONG_EXTRA_MS; DOWN / UP hold and release a raw-edge key (MONITOR; PTT goes to input_inject_ptt);
 // ACT_ENC_STEP with GESTURE_DOWN adds value detents to the encoder

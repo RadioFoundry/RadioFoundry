@@ -259,6 +259,10 @@ static void test_indexed(void)
 	CHECK(px[0] == (red & 0xFF) && px[1] == (red >> 8) && px[2] == (blue & 0xFF) && px[3] == (blue >> 8));
 	gfx_read_rgb565(160u * 120u * 2u, px, 1);
 	CHECK(px[0] == 0);		// past the frame
+	// A capture at the panel's depth: the frame buffer's nibbles (high first) index the palette
+	const uint8_t *fbb = gfx_framebuffer();
+	CHECK(gfx_palette((uint8_t)(fbb[20 * 80 + 5] & 0x0F)) == blue && gfx_palette((uint8_t)(fbb[20 * 80 + 5] >> 4)) == red);
+	CHECK(gfx_palette((uint8_t)(fbb[12 * 80 + 6] >> 4)) == green && gfx_palette(15) == 0);	// 15: not set
 	flushes = flushed_rows = 0;
 	gfx_flush();
 	CHECK(flushed_rows == 120 && sent_pal[0] == red);
@@ -482,6 +486,29 @@ int main(void)
 	flushes = flushed_rows = 0;
 	gfx_flush();
 	CHECK(flushes == 1 && flushed_rows > 0 && flushed_rows <= ui_layout.strip_h);
+#if CONFIG_NET_WEBCTL
+	// The web control's copy: the rows that changed, kept until taken; not readable while a frame is drawn
+	uint32_t seq, seq2;
+	gfx_rows_take(0, 119);
+	CHECK(gfx_row_next(0) < 0);
+	gfx_frame_begin();
+	CHECK(!gfx_frame_idle(&seq));
+	gfx_fill(10, 50, 20, 4, RGB565(255, 0, 255));
+	flushed_rows = 0;
+	gfx_flush();
+	CHECK(gfx_frame_idle(&seq2) && seq2 == seq);
+	int first = gfx_row_next(0), last = first, marked = 0;
+	for (int y = first; y >= 0; y = gfx_row_next(y + 1), marked++)
+		last = y;
+	CHECK(first >= 0 && marked == 4 && flushed_rows == 4 && last == first + 3);	// the rows the panel was sent
+	gfx_rows_take(first, first);
+	CHECK(gfx_row_next(0) == (last > first ? gfx_row_next(first + 1) : -1));
+	gfx_rows_take(0, 119);
+	gfx_rows_mark_all();
+	CHECK(gfx_row_next(0) == 0 && gfx_row_next(119) == 119);
+	gfx_rows_take(0, 119);
+	CHECK(gfx_row_next(0) < 0);
+#endif
 	// The state pill changes color with the state (and says the word)
 	color_t idle = gfx_get_pixel(2, 3);
 	v.state = RS_TX;

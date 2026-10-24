@@ -12,6 +12,10 @@ static int clip_x0, clip_y0, clip_x1, clip_y1;	// panel coordinates, x1, y1 excl
 static int ox, oy, vw, vh;
 static uint32_t row_hash[GFX_MAX_ROWS];
 static bool all_dirty;
+#if CONFIG_NET_WEBCTL
+static uint8_t row_new[(GFX_MAX_ROWS + 7u) / 8u];	// bit y: row y changed since the reader took it
+static volatile uint32_t frames_begun, frames_done;
+#endif
 #if GFX_INDEXED
 // bpp 4: the colors the indexes stand for. An entry is only given a new color once nothing drawn since the last clear
 // uses it, so no pixel on the screen changes color under it
@@ -297,6 +301,17 @@ void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n)
 			c = raw_pixel((int)(off / 2u % (uint32_t)width), (int)(off / 2u / (uint32_t)width));
 		out[k] = (uint8_t)((off & 1u) ? c >> 8 : c);
 	}
+}
+
+color_t gfx_palette(uint8_t i)
+{
+	if (bpp == 1)
+		return i == 0 ? GFX_PAPER : GFX_INK;
+#if GFX_INDEXED
+	if (bpp == 4 && i < pal_n)
+		return pal[i];
+#endif
+	return 0;
 }
 
 void gfx_hline(int x, int y, int w, color_t c) { gfx_fill(x, y, w, 1, c); }
@@ -591,6 +606,10 @@ void gfx_flush(void)
 		uint32_t h = hash_row(y);
 		bool changed = all_dirty || h != row_hash[y];
 		row_hash[y] = h;
+#if CONFIG_NET_WEBCTL
+		if (changed)
+			row_new[y >> 3] |= (uint8_t)(1u << (y & 7));
+#endif
 		if (changed && band < 0)
 			band = y;
 		if (!changed && band >= 0) {
@@ -601,7 +620,43 @@ void gfx_flush(void)
 	if (band >= 0)
 		send(band, height);
 	all_dirty = false;
+#if CONFIG_NET_WEBCTL
+	frames_done = frames_begun;
+#endif
 }
+
+#if CONFIG_NET_WEBCTL
+void gfx_frame_begin(void)
+{
+	frames_begun++;
+}
+
+bool gfx_frame_idle(uint32_t *frames)
+{
+	uint32_t b = frames_begun;
+	*frames = b;
+	return b == frames_done;
+}
+
+int gfx_row_next(int from)
+{
+	for (int y = from < 0 ? 0 : from; y < height; y++)
+		if (row_new[y >> 3] & (1u << (y & 7)))
+			return y;
+	return -1;
+}
+
+void gfx_rows_take(int from, int to)
+{
+	for (int y = from; y <= to && y < height; y++)
+		row_new[y >> 3] &= (uint8_t)~(1u << (y & 7));
+}
+
+void gfx_rows_mark_all(void)
+{
+	memset(row_new, 0xFF, sizeof row_new);
+}
+#endif
 
 void gfx_invalidate(void)
 {

@@ -158,7 +158,22 @@ photos (the photos stay outside the repository: product photos are not ours to p
 - viewBox `0 0 W H`, transparent background, no external references or embedded images;
 - exactly one `<rect id="screen" x y width height/>`, black, transform-free and not covered by anything, on the
   display's visible area, with the aspect ratio of the radio's gallery (5:4 for 160x128 and 160x120i5, 22:31 for
-  240x320i10x5).
+  240x320i10x5);
+- for the radio's web control page (`docs/spec/tcp-services.md` 5.1): each key it shows carries `id="key-<name>"`, the
+  name being the board's `KEY_*` in lower case without `KEY_` (`key-fn_left`); the channel knob `id="encoder"` and a
+  drawn LED `id="led"`. Keys whose shape doesn't match a key (a d-pad drawn as one piece) get transparent hit rects
+  (`fill="none" pointer-events="all"`) at the end. A key off the front face (side keys, top keys) also carries
+  `data-edge="left|right|top|bottom"`, the drawing's edge it is on: the page puts a labeled button for it outside
+  that edge. Every key of the radio is tagged, or named in `data-undrawn="name ..."` on the `<svg>` element when the
+  drawing doesn't show it (a front view without the side keys); the page makes those buttons;
+- `tools/svg_keys.py check` checks the tags: each `key-` id names one of the radio's keys, once, and no key is
+  missing. The site build runs the same check, so a drawing that lost its tags fails CI. After drawing or redrawing a
+  radio, `tools/svg_keys.py tag <radio>` adds the tags: by the labels in the drawing ("MENU", "1", "*"), then by the
+  last tagged version in git, mapped onto the new drawing (edges, the LED, the knob and hit rects come along). It
+  prints each tag and what it couldn't place. Check the result on the web control page before committing;
+- a radio with a keyed hand microphone may have `<radio>-mic.svg` beside its drawing, for the web control page only:
+  the same `key-` rule, the ids counted once across both files, and gradient ids of its own (the page puts both
+  drawings in one document).
 
 The build writes `static/img/radios/<radio>-frame.svg` (screen black), `<radio>.svg` (with the boot screen) and the
 screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages), so any screenshot can be

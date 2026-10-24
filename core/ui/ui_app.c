@@ -1014,7 +1014,7 @@ bool ui_home_key(const input_event_t *ev)
 		zone_step(ev->action == ACT_NAV_RIGHT ? 1 : -1);	// the arrow keys left of the menus: Home steps the zone
 		return true;
 	case ACT_USER_3:
-		radio_req_power(1);	// top key: power cycle (information-architecture.md 7.1)
+		radio_req_power(1);	// power cycle (information-architecture.md 7.1)
 		return true;
 	default:
 		return false;

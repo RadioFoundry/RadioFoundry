@@ -3044,17 +3044,43 @@ static const set_item_t s_power[] = {
 	LIST("Auto power off", NULL, UI_SET_AUTO_OFF_MIN, v_autooff, n_autooff),
 	NUMBER("Low battery warning", NULL, UI_SET_LOW_BATTERY, 5, 30, 5, "%"),
 };
+#if CONFIG_KEY_ASSIGN
+// Settings > Keys: a row pair per key the board lets the user reassign, named as on the radio ("SK1", "SK1 hold")
+_Static_assert(UI_KEY_ROLES == 9, "KEY_ROWS below");
+static char key_label[2 * UI_KEY_ROLES][20];
+
+static void key_labels(void)
+{
+	sbuf_t b;
+
+	if (key_label[0][0] != 0)
+		return;
+	for (uint8_t r = 0; r < UI_KEY_ROLES; r++) {
+		for (uint8_t h = 0; h < 2; h++) {
+			sb_init(&b, key_label[2 * r + h], sizeof key_label[0]);
+			if (board.side_key_names != NULL && r < board.side_key_count) {
+				sb_str(&b, board.side_key_names[r]);
+			} else {
+				sb_str(&b, "Key ");
+				sb_i32(&b, r + 1);
+			}
+			if (h)
+				sb_str(&b, " hold");
+		}
+	}
+}
+#endif
 static const set_item_t s_keys[] = {
 	NUMBER("Long press time", NULL, UI_SET_LONG_PRESS_MS, 400, 1200, 100, " ms"),
 	NUMBER("Key repeat", NULL, UI_SET_REPEAT_MS, 60, 300, 20, " ms"),
 	LIST("Up/Down on Home", NULL, UI_SET_UPDOWN_HOME, v_updown, n_updown),
 #if CONFIG_KEY_ASSIGN
-	LIST("Side key 1", "button programmable", UI_SET_KEY_SIDE1, v_keyfn_press, n_keyfn_press),
-	LIST("Side key 1 hold", "button programmable long press", UI_SET_KEY_SIDE1_HOLD, v_keyfn_hold, n_keyfn_hold),
-	LIST("Side key 2", "button programmable", UI_SET_KEY_SIDE2, v_keyfn_press, n_keyfn_press),
-	LIST("Side key 2 hold", "button programmable long press", UI_SET_KEY_SIDE2_HOLD, v_keyfn_hold, n_keyfn_hold),
-	LIST("Top key", "button programmable", UI_SET_KEY_TOP, v_keyfn_press, n_keyfn_press),
-	LIST("Top key hold", "button programmable long press", UI_SET_KEY_TOP_HOLD, v_keyfn_hold, n_keyfn_hold),
+#define KEY_ROWS(r) \
+	LIST(key_label[2 * (r)], "button programmable", UI_SET_KEY_FIRST + 2 * (r), v_keyfn_press, n_keyfn_press), \
+	LIST(key_label[2 * (r) + 1], "button programmable long press", UI_SET_KEY_FIRST + 2 * (r) + 1, v_keyfn_hold, \
+	     n_keyfn_hold)
+	KEY_ROWS(0), KEY_ROWS(1), KEY_ROWS(2), KEY_ROWS(3), KEY_ROWS(4), KEY_ROWS(5), KEY_ROWS(6), KEY_ROWS(7),
+	KEY_ROWS(8),
 #endif
 };
 static const set_item_t s_my_radio[] = {
@@ -3082,9 +3108,16 @@ static const set_group_t groups[] = {
 uint8_t ui_set_group_count(void) { return GROUPS; }
 const char *ui_set_group_name(uint8_t g) { return g < GROUPS ? groups[g].name : ""; }
 
-// Settings a radio without a battery (or a broadcast receiver) doesn't have are left out of the list, not shown disabled
+// Settings a radio without a battery (or a broadcast receiver, or the key) doesn't have are left out of the list, not
+// shown disabled
 static bool set_hidden(const set_item_t *s)
 {
+#if CONFIG_KEY_ASSIGN
+	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
+		key_labels();
+		return (s->id - UI_SET_KEY_FIRST) / 2 >= board.side_key_count;	// a key this radio doesn't have
+	}
+#endif
 	if (s->type != ST_ACTION && s->id == UI_SET_VOLUME)
 		return !(feats() & UI_FEAT_VOLUME);	// a knob sets the volume on the other radios
 	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
@@ -3211,17 +3244,6 @@ static const char *set_why_not(const set_item_t *s)
 	switch (s->id) {
 	case UI_SET_VOICE_PROMPTS:
 		return "Voice prompts: not in this build";
-#if CONFIG_KEY_ASSIGN
-	case UI_SET_KEY_SIDE1:
-	case UI_SET_KEY_SIDE1_HOLD:
-	case UI_SET_KEY_SIDE2:
-	case UI_SET_KEY_SIDE2_HOLD:
-	case UI_SET_KEY_TOP:
-	case UI_SET_KEY_TOP_HOLD:
-		if ((s->id - UI_SET_KEY_SIDE1) / 2 >= board.side_key_count)
-			return "This radio has no such key";
-		return NULL;
-#endif
 	case UI_SET_TALK_PERMIT:
 		return CONFIG_DMR && CONFIG_BEEP ? NULL : "Talk permit tone: not in this build";
 	case UI_SET_MESSAGE_TONE:
