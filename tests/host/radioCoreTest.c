@@ -2958,9 +2958,20 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_vox(true));
 	run(5);
 	CHECK(sm.set.vox == RADIO_VOX_ALL);
+	// A change made elsewhere (the debug link's SETTING op, a host, the radio core) survives the UI's next one: the
+	// UI changes its own field only (issue 178: the VOX toggle put back a TX inhibit cleared over the debug link)
+	CHECK(!sm.set.tx_inhibit && sm.set.tot_s != 77);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 5, 1, 0 }, 3) == DL_ST_OK);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 1, 77, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.set.tx_inhibit && sm.set.tot_s == 77);
 	ui_svc_vox(false);
 	run(5);
-	CHECK(sm.set.vox == RADIO_VOX_OFF);
+	CHECK(sm.set.vox == RADIO_VOX_OFF && sm.set.tx_inhibit && sm.set.tot_s == 77);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 5, 0, 0 }, 3) == DL_ST_OK);
+	ui_svc_apply(UI_SET_KEY_TONES, 1);
+	CHECK(!sm.set.tx_inhibit && sm.set.tot_s == 77 && sm.set.key_beep);
+	ui_svc_apply(UI_SET_TOT_S, 180);
+	CHECK(!sm.set.tx_inhibit && sm.set.tot_s == 180 && sm.set.key_beep);
 	fake_power.mic_level = NULL;
 
 	// Messages: delete through the data service
