@@ -115,8 +115,8 @@ Host to air, by the IPv4 destination, first match:
 
 | Destination | DMR destination | IP destination on the air | TTL on the air |
 |---|---|---|---|
-| the all call, 255.255.255.255, the link broadcast (UDP to 4000-4099 or the raw port only) | all call 16777215, group | 225.255.255.255 | the host's |
-| the group range, the multicast range | the talkgroup | 225.x.y.z | the host's |
+| the all call, 255.255.255.255, the link broadcast (UDP to 4000-4099 or the raw port only) | all call 16777215, group | 225.255.255.255 | 1 |
+| the group range, the multicast range | the talkgroup | 225.x.y.z | 1 |
 | the individual range | the radio | 12.x.y.z | the host's |
 | any other unicast address, with a gateway ID set | the gateway ID, individual | the address as sent | the host's less 1; dropped at 1 or 0 |
 | anything else | not sent | | |
@@ -126,7 +126,8 @@ Host to air, by the IPv4 destination, first match:
 - "Any other unicast address" excludes 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 224.0.0.0 and up, the gateway's own
   ranges, the radio's and the host's addresses, and on a fixed link the link's /24. Datagrams to the raw port never
   take the off-net route: raw data has no header to carry the address.
-- No ICMP time exceeded goes back for a packet dropped at TTL 1.
+- No ICMP time exceeded goes back for a packet dropped at TTL 1. A packet with TTL 0 is dropped on every route.
+- Group packets always go with TTL 1: the air is the group's one hop, so no gateway that hears one routes it on.
 - The host routes the off-net prefixes through the radio itself (for example a route to 192.168.10.0/24 via the
   radio's address). DHCP option 121 routes only the gateway's ranges.
 - The gateway ID is the data setting `ipGatewayId` ([dmr-data.md](dmr-data.md) 8), 0 by default: off-net packets are
@@ -136,16 +137,19 @@ Air to host: the IP addresses come from the header (SAP 4) or from the IDs (SAP 
 
 | IP destination | Delivered to |
 |---|---|
-| the address of the DMR destination (12.x.y.z / 225.x.y.z, the ID's 24 bits under any network octet) | as before: our ID's to the host's address and MAC, a talkgroup's to its multicast group, the all call to the broadcast, another radio's to its address in the individual range at the monitor MAC |
+| the CAI address of the DMR destination (exactly 12.x.y.z / 225.x.y.z) | as before: our ID's to the host's address and MAC, a talkgroup's to its multicast group, the all call to the broadcast, another radio's to its address in the individual range at the monitor MAC |
 | our own ID's address in another form (12.x.y.z or the individual range) | the host's address and MAC |
 | a multicast group, 255.255.255.255 | its multicast MAC, the broadcast |
 | another unicast address, in a packet to our DMR ID | the host's MAC, the address kept: we are the gateway, the host routes it on |
 | another unicast address, between other radios | the monitor MAC, the address kept |
 | 0.0.0.0/8, 127.0.0.0/8 | dropped |
 
-The source is the sender's address in the individual range when it is the sender ID's address, else kept as it is.
-A kept source must be a radio's or an off-net address, never the host's, the radio's or a group's: the packet is
-dropped otherwise.
+The source is the sender's address in the individual range when it is the sender ID's CAI address, else kept as it is.
+A kept source must be an off-net address: one in the individual range or 12.0.0.0/8 would pass for another radio, and
+the host's, the radio's, the link's or a group's isn't from the air. The packet is dropped otherwise.
+
+The packet reaches the host with the TTL it had on the air (TTL 1 for a talkgroup, 64 for SAP 3 to a radio), so a
+packet that goes round a loop of gateway radios runs out. One with TTL 0 is dropped.
 
 A packet to our DMR ID whose IP destination is not our ID's address is never taken by the radio's own services (TMS,
 ARS, LRRP, text, SNMP): it goes to the host only.

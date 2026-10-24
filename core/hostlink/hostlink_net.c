@@ -70,7 +70,7 @@ static bool local_udp(const dmrDataPacket_t *p)
 		return false;
 	}
 	if ((p->sap == DMR_SAP_IP) && dmrDataGetIP(p, &ip) && (ip.protocol == 17) && (ip.length >= 8) &&
-	    dmrDataIpIsId(ip.dstIp, own)) {
+	    dmrDataIpIsId(ip.dstIp, false, own)) {
 		const uint8_t *u = ip.payload;
 		int n = (u[4] << 8) | u[5];
 
@@ -114,10 +114,11 @@ static bool deliver(const dmrDataPacket_t *q)
 		return true;	// a confirmed data response: the data service's (dmr-data.md 12), not the host's
 	}
 	if ((q->sap == DMR_SAP_IP) && dmrDataGetIP(q, &ip)) {
-		return ipGatewayDeliverIP(q->group, q->dst, q->src, ip.srcIp, ip.dstIp, ip.protocol, ip.payload, ip.length);
+		return ipGatewayDeliverIP(q->group, q->dst, q->src, ip.srcIp, ip.dstIp, ip.ttl, ip.protocol, ip.payload,
+					  ip.length);
 	}
 	if ((q->sap == DMR_SAP_UDPIP_COMPRESSION) && dmrDataGetUDP(q, &udp)) {
-		return ipGatewayDeliverUDP(q->group, q->dst, q->src, udp.srcIp, udp.dstIp, udp.srcPort, udp.dstPort,
+		return ipGatewayDeliverUDP(q->group, q->dst, q->src, udp.srcIp, udp.dstIp, udp.ttl, udp.srcPort, udp.dstPort,
 					   udp.payload, udp.length);
 	}
 	if ((q->sap == DMR_SAP_IP) || (q->sap == DMR_SAP_UDPIP_COMPRESSION)) {

@@ -308,7 +308,8 @@ The packet is an ordinary data packet with SAP 3 in its header; the first data b
 | 5-6 | extended header 1 | the source port when SPID is 0, else the destination port when DPID is 0 |
 | 7-8 | extended header 2 | the destination port when both are 0 |
 
-Not sent, rebuilt by the receiver: version, IHL 5, TOS 0, total length, flags 0, fragment offset 0, TTL 64, protocol 17,
+Not sent, rebuilt by the receiver: version, IHL 5, TOS 0, total length, flags 0, fragment offset 0, TTL (64, a
+talkgroup 1), protocol 17,
 both checksums, the UDP length (from the packet length), and both addresses: the source ID's 12.x.y.z and the
 destination ID's 12.x.y.z or, for a talkgroup, 225.x.y.z (the ID's 24 bits under the CAI network octet).
 
@@ -318,12 +319,15 @@ addresses, so their bytes are as before. A packet from the host may not: the off
 ID with the real destination address ([usb-network.md](usb-network.md) 3.1). So a UDP packet goes compressed only when
 both of its addresses are exactly the IDs' CAI addresses; any other goes with the full header, whatever `udpCompress`
 says. `dmrDataGetIP` and `dmrDataGetUDP` return the addresses: from the header for SAP 4, rebuilt from the IDs for
-SAP 3. On receive a packet is for an ID itself when its IP destination has the ID's 24 bits under any network octet
-(a MOTOTRBO fleet may use another CAI network than 12 / 225); a packet to our DMR ID for another address is passed to
-the gateway only, never answered by our own services (TMS, ARS, LRRP, text, SNMP).
+SAP 3. On receive a packet is for an ID itself only when its IP destination is exactly the ID's CAI address: an off-net
+host's address may have the same 24 bits under another first octet. A packet to our DMR ID for another address is
+passed to the gateway only, never answered by our own services (TMS, ARS, LRRP, text, SNMP).
 
-TTL: the radio's own packets go with 64 (a talkgroup: 1). The host's packets keep the host's TTL, less 1 on the
-off-net route. So a datagram goes compressed only when its UDP length agrees
+TTL: a radio's packets go with 64, the host's keep the host's TTL, less 1 on the off-net route. A talkgroup's always
+go with 1, whatever the host asked: the air is the group's one hop, and a gateway that hears one must not route it on.
+`dmrDataGetIP` and `dmrDataGetUDP` return the TTL: the header's for SAP 4, the sender's default for SAP 3.
+
+The compressed header has no length field, so a datagram goes compressed only when its UDP length agrees
 with what we have (octets past a shorter UDP length are padding and dropped; a longer one goes with the full header).
 IP options never reach the air: the gateway strips them for SAP 4 too, so the rule that options need the full header
 holds. Receive takes opcode 00 only (others are reserved) and SPID / DPID 1, 2, 98; an unknown ID is reported as

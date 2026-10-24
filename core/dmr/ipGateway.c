@@ -520,6 +520,11 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 	uint32_t id;
 	uint8_t ttl = ip[8];// the host's, kept: the air is one link of its path
 
+	if (ttl == 0)
+	{
+		return;// never valid on the wire (RFC 1122 3.2.1.7); 0 would also read as the radio's own TTL on the air
+	}
+
 	if ((dst == IPGW_ALL_CALL_IP) || (dst == IPGW_BROADCAST_IP) || (dst == 0xFFFFFFFF) ||
 			((fixedLink != 0) && (dst == (fixedLink | ~IPGW_FIXED_NETMASK))))
 	{
@@ -654,21 +659,30 @@ static bool literalDestination(bool group, uint32_t dst, uint32_t airIp, uint32_
 }
 
 // Layer 4 (length bytes) is already in tx after the IPv4 header. srcAir / dstAir: the IPv4 addresses on the air. When
-// they are the IDs' (any CAI network), the host sees the gateway's ranges as always; another address is kept as it is
-// (an off-net host's, behind a gateway radio). A UDP checksum covers the addresses, so it is redone
-static bool deliver(bool group, uint32_t dst, uint32_t src, uint32_t srcAir, uint32_t dstAir, uint8_t protocol, int length)
+// they are the IDs' CAI addresses, the host sees the gateway's ranges as always; another address is kept as it is (an
+// off-net host's, behind a gateway radio). ttl: the air's, kept, so a packet that goes round a loop of gateways runs
+// out (0: dropped). A UDP checksum covers the addresses, so it is redone
+static bool deliver(bool group, uint32_t dst, uint32_t src, uint32_t srcAir, uint32_t dstAir, uint8_t ttl,
+					uint8_t protocol, int length)
 {
 	uint32_t srcIp = ADDRESS(INDIVIDUAL, src);
 	uint32_t dstIp;
 	const uint8_t *dstMac;
 	uint8_t multicastMac[6];
 
-	if (!dmrDataIpIsId(srcAir, src))
+	if (ttl == 0)
 	{
+		return true;
+	}
+	if (!dmrDataIpIsId(srcAir, false, src))
+	{
+		// Another source than the sender's own address is an off-net host's, routed by the sender. One in the radio
+		// range or the CAI radio network would pass for another radio; one of the host, the radio, the link or a group
+		// isn't from the air
 		srcIp = srcAir;
-		if ((!isOffNet(srcIp) && !isRadioAddress(srcIp)) || (srcIp == ipGatewayHostIP()) || (srcIp == ipGatewayRadioIP()))
+		if (!isOffNet(srcIp) || ((srcIp & 0xFF000000u) == dmrDataIdAddress(false, 0)))
 		{
-			return true;// would look like the host, the radio, the link or a group, dropped
+			return true;
 		}
 	}
 	else if (!isRadioAddress(srcIp))
@@ -676,7 +690,7 @@ static bool deliver(bool group, uint32_t dst, uint32_t src, uint32_t srcAir, uin
 		return true;// would look like the radio itself or the all call, dropped
 	}
 
-	if (!dmrDataIpIsId(dstAir, dst))
+	if (!dmrDataIpIsId(dstAir, group, dst))
 	{
 		if (!literalDestination(group, dst, dstAir, &dstIp, &dstMac, multicastMac))
 		{
@@ -719,11 +733,14 @@ static bool deliver(bool group, uint32_t dst, uint32_t src, uint32_t srcAir, uin
 		put16(&udp[6], (sum == 0) ? 0xFFFF : sum);
 	}
 
-	return sendIPv4(dstMac, protocol, srcIp, dstIp, length);
+	txTtl = ttl;
+	bool ok = sendIPv4(dstMac, protocol, srcIp, dstIp, length);
+	txTtl = 64;
+	return ok;
 }
 
-bool ipGatewayDeliverIP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp, uint32_t dstIp, uint8_t protocol,
-						const uint8_t *l4, int length)
+bool ipGatewayDeliverIP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
+						uint8_t protocol, const uint8_t *l4, int length)
 {
 	if ((protocol != IP_PROTO_ICMP) && (protocol != IP_PROTO_UDP) && (protocol != IP_PROTO_SCTP))
 	{
@@ -736,11 +753,11 @@ bool ipGatewayDeliverIP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp, 
 	}
 
 	memmove(&tx[ETH_HEADER + 20], l4, length);
-	return deliver(group, dst, src, srcIp, dstIp, protocol, length);
+	return deliver(group, dst, src, srcIp, dstIp, ttl, protocol, length);
 }
 
-bool ipGatewayDeliverUDP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp, uint32_t dstIp, uint16_t srcPort,
-						 uint16_t dstPort, const uint8_t *payload, int length)
+bool ipGatewayDeliverUDP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
+						 uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length)
 {
 	uint8_t *udp = &tx[ETH_HEADER + 20];
 
@@ -752,13 +769,13 @@ bool ipGatewayDeliverUDP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp,
 	memmove(&udp[8], payload, length);
 	put16(&udp[0], srcPort);
 	put16(&udp[2], dstPort);
-	return deliver(group, dst, src, srcIp, dstIp, IP_PROTO_UDP, 8 + length);
+	return deliver(group, dst, src, srcIp, dstIp, ttl, IP_PROTO_UDP, 8 + length);
 }
 
 bool ipGatewayDeliverRaw(bool group, uint32_t dst, uint32_t src, const uint8_t *data, int length)
 {
-	return ipGatewayDeliverUDP(group, dst, src, dmrDataIdAddress(false, src), dmrDataIdAddress(group, dst), IPGW_RAW_PORT,
-								IPGW_RAW_PORT, data, length);
+	return ipGatewayDeliverUDP(group, dst, src, dmrDataIdAddress(false, src), dmrDataIdAddress(group, dst), 64,
+								IPGW_RAW_PORT, IPGW_RAW_PORT, data, length);
 }
 
 bool ipGatewaySerialOut(const uint8_t *data, int length)

@@ -540,7 +540,7 @@ static void test_ipv4(void)
 	n = udp(pkt, HOST_IP, IPGW_INDIVIDUAL_NET | 5u, 4001, 4001, "hello", 5);
 	peer_send(IP, pkt, n);
 	CHECK((air_count == 1) && (air_dst == 5) && (air_proto == 17) && (air_len == 13));
-	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 5, 0x0C000005u, 0x0C000000u | RADIO_ID, 4001, 4001, (const uint8_t *)"back", 4));
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 5, 0x0C000005u, 0x0C000000u | RADIO_ID, 64, 4001, 4001, (const uint8_t *)"back", 4));
 	CHECK(radio_frame(&proto, d, &n));
 	CHECK((proto == IP) && (get32(d + 12) == (IPGW_INDIVIDUAL_NET | 5u)) && (get32(d + 16) == HOST_IP));
 

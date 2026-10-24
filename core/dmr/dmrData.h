@@ -138,10 +138,13 @@ int dmrDataBuildPacket(uint8_t dpf, uint8_t sap, bool group, uint32_t dst, uint3
 // The CAI address of a DMR ID: 12.x.y.z for a radio, 225.x.y.z for a talkgroup (the ID's 24 bits). The compressed
 // header (SAP 3) has no addresses: a receiver rebuilds these from the source and destination IDs
 uint32_t dmrDataIdAddress(bool group, uint32_t id);
-// On receive: true when an address is the ID's, its 24 bits under any network octet (a MOTOTRBO fleet may use another
-// CAI network than 12 / 225), so a packet with it is for the ID itself, not for a host the ID routes to
-bool dmrDataIpIsId(uint32_t ip, uint32_t id);
-#define DMR_IP_TTL_DEFAULT			0			// ttl argument: the radio's own value, 64 (a talkgroup: 1)
+// On receive: true when an address is the ID's CAI address (dmrDataIdAddress), so a packet with it is for the ID
+// itself, not for a host the ID routes to. Exact: an off-net address may have the same 24 bits under another first
+// octet
+bool dmrDataIpIsId(uint32_t ip, bool group, uint32_t id);
+// ttl argument: the radio's own value, 64. A talkgroup always gets 1, whatever is asked: the air is the group's one
+// hop, and no radio may route a group packet on (a receiving gateway delivers it to its link with TTL 1)
+#define DMR_IP_TTL_DEFAULT			0
 // UDP and IP packets go with the compressed UDP/IPv4 header (SAP 3) when the compression setting allows it for their
 // ports (dmrDataUdpCompress), else with the full IPv4 header (SAP 4). Both carry the IDs' CAI addresses
 int dmrDataBuildUDP(bool group, uint32_t dst, uint32_t src, uint16_t srcPort, uint16_t dstPort,
@@ -308,6 +311,7 @@ typedef struct
 	uint16_t appPort;					// the well known one of the two (LRRP, ARS, TMS), else the destination port
 	uint32_t srcIp;						// the IPv4 addresses (host byte order): SAP 4 from its header, SAP 3
 	uint32_t dstIp;						// the IDs' CAI addresses (dmrDataIdAddress), as a receiver rebuilds them
+	uint8_t ttl;						// SAP 4 its header's, SAP 3 the sender's default (64, a talkgroup 1)
 	const uint8_t *payload;
 	int length;
 } dmrDataUDP_t;
@@ -320,6 +324,7 @@ typedef struct
 	uint8_t protocol;
 	uint32_t srcIp;						// the header's IPv4 addresses (host byte order)
 	uint32_t dstIp;
+	uint8_t ttl;						// the header's TTL
 	const uint8_t *payload;
 	int length;
 } dmrDataIP_t;

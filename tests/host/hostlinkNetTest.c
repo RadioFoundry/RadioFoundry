@@ -438,6 +438,20 @@ int main(void)
 	hostlink_net_poll(now_ms);
 	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
 	      get32(sent[0] + 14 + 16) == 0xC0A80A05u);
+	// ... also an off-net address with our ID's 24 bits under another first octet (10.x.y.z), with its TTL kept
+	put32(pip + 16, 0x0A000000u | RADIO_ID);
+	pip[8] = 9;
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
+	sent_count = 0;
+	hostlink_net_packet(&p);
+	hostlink_net_poll(now_ms);
+	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
+	      get32(sent[0] + 14 + 16) == (0x0A000000u | RADIO_ID) && sent[0][14 + 8] == 9);
+	pip[8] = 64;
+	put32(pip + 16, 0xC0A80A05u);
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
 	// ... and ICMP to our ID for an off-net address: to the host as it came, never a local service's
 	uint8_t saved[64];
 	memcpy(saved, pip, sizeof(saved));

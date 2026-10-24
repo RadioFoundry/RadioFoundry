@@ -217,7 +217,7 @@ bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count);
 // The IPv4 addresses (host byte order, dmrData.h): srcIp DMR_DATA_IP_OURS is ours, the CAI address of the channel's
 // own ID; dstIp DMR_DATA_IP_OURS is the destination ID's (dmrDataIdAddress). Another dstIp (an off-net host behind the
 // radio dst) or srcIp goes in the full header (SAP 4) whatever the compression setting. ttl: the IPv4 TTL,
-// DMR_IP_TTL_DEFAULT for the radio's own (64, a talkgroup 1)
+// DMR_IP_TTL_DEFAULT for the radio's own (64); a talkgroup always gets 1
 #define DMR_DATA_IP_OURS			0u
 bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
 							const uint8_t *l4, int length);

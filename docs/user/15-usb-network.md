@@ -298,5 +298,6 @@ sudo ip route add 10.20.0.0/16 via 12.0.39.20 dev usb0     # the radio's address
 
 Packets to that network go over the air to the gateway radio, with the real destination address in the packet. They
 always use the full header, never the compressed one. Each one loses one from its time to live (TTL), and a packet
-with none left is dropped. Answers come back to your radio's DMR ID with the sender's real address, and the radio
+with none left is dropped. The radio passes the time to live it received to the computer, so a packet caught in a
+loop between two gateway radios runs out. Answers come back to your radio's DMR ID with the sender's real address, and the radio
 passes them to the computer.

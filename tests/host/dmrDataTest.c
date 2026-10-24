@@ -592,8 +592,11 @@ static void testIpAddresses(void)
 
 	CHECK(dmrDataIdAddress(false, 10005) == CAI_SRC && dmrDataIdAddress(true, 9) == 0xE1000009u);
 	CHECK(dmrDataIdAddress(false, 0x1FFFFFF) == 0x0CFFFFFFu);// the ID's 24 bits
-	CHECK(dmrDataIpIsId(CAI_SRC, 10005) && dmrDataIpIsId(0x0D002715u, 10005) && !dmrDataIpIsId(CAI_SRC, 10006));
-	CHECK(!dmrDataIpIsId(OFF_NET, 100));
+	CHECK(dmrDataIpIsId(CAI_SRC, false, 10005) && !dmrDataIpIsId(CAI_SRC, false, 10006));
+	CHECK(dmrDataIpIsId(0xE1000009u, true, 9) && !dmrDataIpIsId(0x0C000009u, true, 9) && !dmrDataIpIsId(0xE1000009u, false, 9));
+	// Exact: an off-net address with an ID's 24 bits under another first octet (10.0.39.21, 13.0.39.21) is not the ID's
+	CHECK(!dmrDataIpIsId(0x0A002715u, false, 10005) && !dmrDataIpIsId(0x0D002715u, false, 10005));
+	CHECK(!dmrDataIpIsId(OFF_NET, false, 100));
 
 	uint8_t l4[8 + 20];
 	l4[0] = 50000 >> 8; l4[1] = 50000 & 0xFF; l4[2] = 0; l4[3] = 161; l4[4] = 0; l4[5] = sizeof(l4); l4[6] = 0; l4[7] = 0;
@@ -624,45 +627,62 @@ static void testIpAddresses(void)
 		CHECK(n == 28 + 20 && sap == DMR_SAP_IP && validIp(pdu, n));
 		CHECK(be32(&pdu[12]) == CAI_SRC && be32(&pdu[16]) == OFF_NET && pdu[8] == 37);
 	}
+	// The fallback's UDP checksum over the off-net address: an odd payload length, and a host's UDP length past the
+	// data (the length on the air is what was there)
+	uint8_t odd[8 + 7];
+	memcpy(odd, l4, sizeof(odd));
+	odd[5] = sizeof(odd);
+	odd[6] = 0x12; odd[7] = 0x34;// the host's checksum, over its own addresses: redone
+	n = dmrDataEncodeIP(false, 100, 10005, OFF_NET, CAI_SRC, 64, DMR_IP_PROTO_UDP, odd, sizeof(odd), true, 3, &pdu, &sap);
+	CHECK(n == 20 + sizeof(odd) && sap == DMR_SAP_IP && validIp(pdu, n) && pdu[27] != 0x34);
+	odd[5] = sizeof(odd) + 4;
+	n = dmrDataEncodeIP(false, 100, 10005, OFF_NET, CAI_SRC, 64, DMR_IP_PROTO_UDP, odd, sizeof(odd), true, 3, &pdu, &sap);
+	CHECK(n == 20 + sizeof(odd) && sap == DMR_SAP_IP && validIp(pdu, n) && pdu[25] == sizeof(odd));
 	// ... or another source address, also compressed as asked
 	dmrDataSetUdpCompression(DMR_UDPC_ALL);
 	n = dmrDataEncodeIP(false, 100, 10005, CAI_DST, OFF_NET, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4), true,
 						1, &pdu, &sap);
 	CHECK(sap == DMR_SAP_IP && validIp(pdu, n) && be32(&pdu[12]) == OFF_NET);
-	// ... or the ID's 24 bits under another CAI network: not what a receiver of SAP 3 rebuilds
+	// ... or the ID's 24 bits under another first octet: not what a receiver of SAP 3 rebuilds
 	n = dmrDataEncodeIP(false, 100, 10005, 0x0D000064u, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4),
 						true, 1, &pdu, &sap);
 	CHECK(sap == DMR_SAP_IP);
 
-	// A talkgroup: 225.x.y.z compresses, TTL 1 by default; a multicast group of the host's keeps the full header
+	// A talkgroup: 225.x.y.z compresses, TTL 1; a multicast group of the host's keeps the full header
 	n = dmrDataEncodeIP(true, 9, 10005, 0xE1000009u, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4), true,
 						1, &pdu, &sap);
 	CHECK(sap == DMR_SAP_UDPIP_COMPRESSION && pdu[2] == 0x02);
 	n = dmrDataEncodeIP(true, 9, 10005, 0xEFFF0001u, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4), true,
 						1, &pdu, &sap);
 	CHECK(sap == DMR_SAP_IP && validIp(pdu, n) && pdu[8] == 1 && be32(&pdu[16]) == 0xEFFF0001u);
+	// A host's TTL to a talkgroup is not kept: 1, so no gateway that hears it routes it on
 	n = dmrDataEncodeIP(true, 9, 10005, 0xE1000009u, CAI_SRC, 5, DMR_IP_PROTO_UDP, l4, sizeof(l4), false, 1, &pdu, &sap);
-	CHECK(sap == DMR_SAP_IP && pdu[8] == 5);// a host's TTL is kept
+	CHECK(sap == DMR_SAP_IP && pdu[8] == 1 && validIp(pdu, n));
+	// ... to a radio it is
+	n = dmrDataEncodeIP(false, 100, 10005, CAI_DST, CAI_SRC, 5, DMR_IP_PROTO_UDP, l4, sizeof(l4), false, 1, &pdu, &sap);
+	CHECK(sap == DMR_SAP_IP && pdu[8] == 5 && validIp(pdu, n));
 
 	// Over the air: SAP 4 carries both addresses back; another protocol too
 	n = dmrDataEncodeIP(false, 100, 10005, OFF_NET, CAI_SRC, 64, DMR_IP_PROTO_UDP, l4, sizeof(l4), true, 9, &pdu, &sap);
 	m = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, false, 100, 10005, pdu, n, DT_RATE_12_DATA, 0, bursts,
 						   DMR_DATA_MAX_BURSTS);
 	CHECK(feed(bursts, m) == DMR_DATA_RX_PACKET && dmrDataRxPacket.sap == DMR_SAP_IP);
-	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.srcIp == CAI_SRC && udp.dstIp == OFF_NET && udp.dstPort == 161);
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.srcIp == CAI_SRC && udp.dstIp == OFF_NET && udp.dstPort == 161 &&
+		  udp.ttl == 64);
 	const uint8_t echo[8] = { 8, 0, 0xF7, 0xFE, 0, 1, 0, 0 };
 	n = dmrDataEncodeIP(false, 100, 10005, OFF_NET, 0x0A000001u, 64, DMR_IP_PROTO_ICMP, echo, sizeof(echo), false, 9,
 						&pdu, &sap);
 	m = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, false, 100, 10005, pdu, n, DT_RATE_12_DATA, 0, bursts,
 						   DMR_DATA_MAX_BURSTS);
 	CHECK(feed(bursts, m) == DMR_DATA_RX_PACKET);
-	CHECK(dmrDataGetIP(&dmrDataRxPacket, &ip) && ip.srcIp == 0x0A000001u && ip.dstIp == OFF_NET && ip.protocol == 1);
+	CHECK(dmrDataGetIP(&dmrDataRxPacket, &ip) && ip.srcIp == 0x0A000001u && ip.dstIp == OFF_NET && ip.protocol == 1 &&
+		  ip.ttl == 64);
 	// SAP 3 has no addresses: rebuilt from the IDs (a talkgroup's 225.x.y.z)
 	dmrDataSetUdpCompression(DMR_UDPC_AUTO);
 	m = dmrDataBuildUDP(true, 9, 10005, 5016, 5016, (const uint8_t *)"hi", 2, DT_RATE_12_DATA, 0, bursts,
 						DMR_DATA_MAX_BURSTS);
 	CHECK(feed(bursts, m) == DMR_DATA_RX_PACKET && dmrDataRxPacket.sap == DMR_SAP_UDPIP_COMPRESSION);
-	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.srcIp == CAI_SRC && udp.dstIp == 0xE1000009u);
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.srcIp == CAI_SRC && udp.dstIp == 0xE1000009u && udp.ttl == 1);
 }
 
 // The CRC-9 (B.3.10), vectors from a polynomial division of the clause's M(x) apart from this code

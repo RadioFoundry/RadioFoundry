@@ -64,9 +64,9 @@ uint32_t dmrDataIdAddress(bool group, uint32_t id)
 	return ((uint32_t)(group ? CAI_NETWORK_GROUP : CAI_NETWORK_INDIVIDUAL) << 24) | (id & 0xFFFFFF);
 }
 
-bool dmrDataIpIsId(uint32_t ip, uint32_t id)
+bool dmrDataIpIsId(uint32_t ip, bool group, uint32_t id)
 {
-	return (ip & 0xFFFFFF) == (id & 0xFFFFFF);
+	return ip == dmrDataIdAddress(group, id);
 }
 
 // Clause B.3.9: the octets are taken in pairs, least significant octet of each 16 bit word first,
@@ -349,10 +349,11 @@ static uint16_t getU16(const uint8_t *p)
 	return (uint16_t)((p[0] << 8) | p[1]);
 }
 
-// The radio's own TTL: 64, and 1 to a talkgroup (the air is the group's one hop)
+// The TTL on the air: 1 to a talkgroup whatever was asked (the air is the group's one hop: a receiving gateway must not
+// route it on), else the one given or the radio's own, 64
 static uint8_t ipTtl(bool group, uint8_t ttl)
 {
-	return (ttl != DMR_IP_TTL_DEFAULT) ? ttl : (group ? 1 : 64);
+	return group ? 1 : (ttl != DMR_IP_TTL_DEFAULT) ? ttl : 64;
 }
 
 // The IPv4 header in front of the length bytes of layer 4 already at ipPacket[20]. A UDP checksum covers the addresses,
@@ -1550,6 +1551,7 @@ bool dmrDataGetIP(const dmrDataPacket_t *packet, dmrDataIP_t *ip)
 	ip->protocol = d[9];
 	ip->srcIp = getU32(&d[12]);
 	ip->dstIp = getU32(&d[16]);
+	ip->ttl = d[8];
 	ip->payload = &d[ihl];
 	ip->length = ((total < len) ? total : len) - ihl;// the blocks may be padded
 	return true;
@@ -1578,6 +1580,7 @@ bool dmrDataGetUDP(const dmrDataPacket_t *packet, dmrDataUDP_t *udp)
 		udp->dstPort = (d[ihl + 2] << 8) | d[ihl + 3];
 		udp->srcIp = getU32(&d[12]);
 		udp->dstIp = getU32(&d[16]);
+		udp->ttl = d[8];
 		udp->payload = &d[ihl + 8];
 		udp->length = len - ihl - 8;
 		if ((udpLen >= 8) && ((udpLen - 8) < udp->length))
@@ -1599,6 +1602,7 @@ bool dmrDataGetUDP(const dmrDataPacket_t *packet, dmrDataUDP_t *udp)
 		// No addresses in the header: SAID 0 / DAID 0 or 2, the source and destination IDs' (TS 102 361-3 7.2)
 		udp->srcIp = dmrDataIdAddress(false, packet->src);
 		udp->dstIp = dmrDataIdAddress(packet->group, packet->dst);
+		udp->ttl = ipTtl(packet->group, DMR_IP_TTL_DEFAULT);
 		udp->payload = ptr;
 		udp->length = len - (ptr - d);
 		if (udp->length < 0)

@@ -1149,16 +1149,16 @@ static void testIpAddresses(void)
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
 	decodeTx = true;
 
-	// An LRRP request to our ID: answered when its IP destination is our ID's address (any CAI network), only passed
-	// on when it is another's (we route it, the host answers)
+	// An LRRP request to our ID: answered when its IP destination is our ID's address, only passed on when it is
+	// another's (we route it, the host answers), also one with our ID's 24 bits under another first octet
 	settings.hasGps = true;
 	haveLocation = true;
 	static const uint8_t request[] = { 0x05, 0x09, 0x22, 0x04, 0x0a, 0x0b, 0x0c, 0x0d, 0x51, 0x62, 0x57 };
 	uint8_t l4[8 + sizeof(request)] = { DMR_UDP_PORT_LRRP >> 8, DMR_UDP_PORT_LRRP & 0xFF, DMR_UDP_PORT_LRRP >> 8,
 										DMR_UDP_PORT_LRRP & 0xFF, 0, sizeof(l4), 0, 0 };
 	memcpy(&l4[8], request, sizeof(request));
-	static const uint32_t to[3] = { OFF_NET, 0x0D0003E8u, 0 };// 13.0.3.232: ID 1000 in another CAI network
-	static const int answers[3] = { 0, 1, 1 };
+	static const uint32_t to[3] = { OFF_NET, 0x0A0003E8u, 0 };// 10.0.3.232: an off-net host, ID 1000's 24 bits
+	static const int answers[3] = { 0, 0, 1 };
 	for (int i = 0; i < 3; i++)
 	{
 		const uint8_t *pdu;

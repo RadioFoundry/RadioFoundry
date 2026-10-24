@@ -1991,7 +1991,7 @@ static void handlePacket(const dmrDataPacket_t *packet)
 
 	// UDP whose IP destination isn't the address of the ID it came to (we are the DMR destination of a packet for an
 	// off-net host: the gateway) is the PC's, through env.packet, never the radio's own TMS, ARS, LRRP or text
-	if (isUDP && !dmrDataIpIsId(udp.dstIp, packet->dst))
+	if (isUDP && !dmrDataIpIsId(udp.dstIp, packet->group, packet->dst))
 	{
 		isUDP = false;
 	}

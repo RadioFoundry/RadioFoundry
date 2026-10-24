@@ -126,17 +126,18 @@ uint32_t ipGatewayOffNetId(void);
 // A UDP datagram received over the air, to the host from the source's individual address. Private data to another radio
 // is sent to a MAC address the host doesn't use, so the host ignores it but a packet capture shows it. Group data goes
 // to the multicast range. srcIp / dstIp: the IPv4 addresses on the air (host byte order; dmrDataGetUDP gives them).
-// Addresses that are the IDs' (the 24 bits, any CAI network) are delivered as above; another one (an off-net host's
+// Addresses that are the IDs' CAI addresses (dmrDataIdAddress) are delivered as above; another one (an off-net host's
 // through a gateway radio) is kept: a destination that isn't our ID's address comes to the host when the packet came
 // to our ID (we are the gateway; the host routes it on), else to the monitor MAC; a multicast destination to its
-// group. False if the USB IN endpoint is busy.
-bool ipGatewayDeliverUDP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp, uint32_t dstIp, uint16_t srcPort,
-						 uint16_t dstPort, const uint8_t *payload, int length);
+// group. Another source must be off-net (not the radio range, the link, the host or the radio), else it is dropped.
+// ttl: the TTL on the air, kept for the host (0: dropped). False if the USB IN endpoint is busy.
+bool ipGatewayDeliverUDP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
+						 uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length);
 
 // The same for an IPv4 packet received over the air, from layer 4 on: ICMP, UDP (its checksum is redone for the new
 // addresses) and SCTP; other protocols are dropped (true).
-bool ipGatewayDeliverIP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp, uint32_t dstIp, uint8_t protocol,
-						const uint8_t *l4, int length);
+bool ipGatewayDeliverIP(bool group, uint32_t dst, uint32_t src, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
+						uint8_t protocol, const uint8_t *l4, int length);
 
 // Raw DMR data received over the air (see IPGW_RAW_PORT), the user data of the packet. False if the USB IN endpoint is busy.
 bool ipGatewayDeliverRaw(bool group, uint32_t dst, uint32_t src, const uint8_t *data, int length);
@@ -197,7 +198,7 @@ void ipGatewaySerialIn(const uint8_t *data, int length);
 // srcIp / dstIp: the IPv4 addresses for the air (host byte order). srcIp is IPGW_AIR_SRC_OURS: the host's source is
 // always rewritten to the radio's own on the air (12.<the ID it sends from>), so that answers come back to it. dstIp is
 // the destination ID's CAI address (dmrDataIdAddress), or an off-net address for the off-net route. ttl: the IPv4 TTL
-// on the air (the host's; 0: the radio's own default)
+// on the air (the host's; 0: the radio's own default; a talkgroup always gets 1)
 #define IPGW_AIR_SRC_OURS		0u
 bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
 					  const uint8_t *l4, int length);
