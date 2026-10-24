@@ -308,7 +308,7 @@ def sgl_hid_flash():
 		specs[name] = {"profile": s["profile"], "stock": s["stock"], "entries": s["entries"],
 			       "words": [list(w) for w in s["words"]], "branches": [list(b) for b in s["branches"]],
 			       **{p: dict(s[p]) for p in ("main", "low", "tab")}}
-	return {"boards": sorted(b.id for b in ob.BOARDS.values() if b.family == "gd77-hid"),
+	return {"boards": sorted(b.id for b in ob.BOARDS.values() if b.family == "usb-hid-sgl"),
 		"flash_base": gc.FLASH_BASE, "code_base": gc.CODE_BASE, "desc_addr": gc.DESC_ADDR, "desc_len": gc.DESC_LEN,
 		"desc_magic": gc.DESC_MAGIC, "desc_version": gc.DESC_VERSION, "table_lo": gc.TABLE_LO, "table_hi": gc.TABLE_HI,
 		"placed": placed, "specs": specs,

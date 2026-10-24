@@ -20,7 +20,7 @@ reaches it at run time through the board descriptor, `board_t` in [hal/board.h](
  drivers/     chips shared by several radios: AT1846S, BK4819, FD6818, SKY72310, HR_C6000, HR_C7000, ST7735, ST7789,
               RDA5807M, SPI NOR, key matrix, encoder, NMEA GPS, USB; and the math they share (mic level, battery)
  platform/<p>/ the SoC: start-up, clocks, interrupts, time base, FreeRTOS port glue, and the build defaults its
-              boards share (stm32f4, hrc7000)
+              boards share (stm32f4, hrc7000, k22f)
  third_party/ FreeRTOS, TinyUSB, ST HAL and CMSIS (submodules, permissive licenses)
 ```
 

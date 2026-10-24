@@ -309,7 +309,7 @@ export class FakeHidOdr {
 		return { appBase: u32be(rec, 4), appEnd: u32be(rec, 8) || this.flash.length, xfloor: u32be(rec, 12) };
 	}
 
-	// HELLO v3 (stub-k22f.md 1): name, protocol, max payload, flash KB, the security byte, flags, application base, SPI
+	// HELLO v4 (stub-k22f.md 1): name, protocol, max payload, flash KB, the security byte, flags, application base, SPI
 	// size and JEDEC ID, then the board id, the record length and the record
 	hello() {
 		const rec = this.record, on = rec.length > 0;

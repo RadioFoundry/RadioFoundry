@@ -126,16 +126,6 @@ static const hrc_bus_t modem_bus = {
 
 // --- Helpers ---
 
-static const band_t *find_band(uint32_t hz)
-{
-	for (uint8_t i = 0; i < board.band_count; i++) {
-		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz) {
-			return &board.bands[i];
-		}
-	}
-	return NULL;
-}
-
 static at1846s_tone_t rf_tone(const subtone_t *t, uint16_t *value)
 {
 	*value = 0;
@@ -176,6 +166,18 @@ static void drive_set(uint8_t drive)
 {
 	k22f_dac_write((uint16_t)((uint16_t)drive << GD77_DAC_SHIFT));
 	r.drive_now = drive;
+}
+
+// Transmitter off, now (hal/board.h, docs/spec/crash-log.md 8): TX enable low, both bands' TX path lines low, the
+// drive DAC to 0. Register writes only, for the fault handlers, the crash capture and the jump to the flash stub. The
+// GPIO data registers are never clock gated; DAC0 is written only once its clock runs (a gated write faults)
+void board_rf_safe(void)
+{
+	k22f_pin_write(PIN_TX_EN, false);
+	lines_off(true);
+	if (SIM_SCGC6 & SIM_SCGC6_DAC0) {
+		k22f_dac_write(0);
+	}
 }
 
 // Busy waits of a few tens of microseconds: callable from the modem interrupts
@@ -492,7 +494,7 @@ static void apply_rx_cal(uint32_t hz, at1846s_bw_t bw)
 
 static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 {
-	if (find_band(hz) == NULL) {
+	if (!board_in_band(hz, false)) {
 		return false;
 	}
 	bool same = r.rx_valid && hz == r.rx_hz && bw == r.rx_bw;
@@ -549,8 +551,7 @@ static void apply_tx_cal(const gd77_cal_point_t *cal, at1846s_bw_t bw, at1846s_t
 // Transmit: refused unless the band allows it and the calibration has the frequency
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_tone)
 {
-	const band_t *band = find_band(hz);
-	if (band == NULL || !band->tx) {
+	if (!board_in_band(hz, true)) {
 		r.diag.tx_refused++;
 		return false;
 	}

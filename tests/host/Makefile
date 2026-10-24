@@ -665,6 +665,21 @@ run-taskStack: taskStackTest
 	./taskStackTest
 .PHONY: run-taskStack
 
+# The debug link's board view section (core/debuglink/debuglink_view_board.c): a fake board with lines, and one
+# without the hook
+BVIEW   := boardViewTest.c $(CORE)/debuglink/debuglink_view_board.c $(CORE)/debuglink/dl_fmt.c
+TESTS   += boardViewTest boardViewNoneTest
+boardViewTest: $(BVIEW) $(CORE)/debuglink/debuglink.h $(ROOT)/hal/board.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(BVIEW)
+boardViewNoneTest: $(BVIEW) $(CORE)/debuglink/debuglink.h $(ROOT)/hal/board.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DNO_HOOK -o $@ $(BVIEW)
+
+run: run-boardView
+run-boardView: boardViewTest boardViewNoneTest
+	./boardViewTest
+	./boardViewNoneTest
+.PHONY: run-boardView
+
 # The hardware watchdog's portable side: the idle task's feed, the longest idle gap, the bench starve (core/app/
 # watchdog.c), the debug link's watchdog section and DL_CMD_WATCHDOG (core/debuglink/debuglink_watchdog.c). The
 # platform, the clock, the radio's view and the log are faked; watchdog_stub/ holds the stand-in FreeRTOS headers
@@ -709,6 +724,23 @@ run-f4stub: f4stubTest f4stubSim
 	./f4stubTest
 	python3 f4stub_wire_check.py ./f4stubSim
 .PHONY: run-f4stub
+
+# The same engine with the Kinetis K22F target's board record check (stub/k22f/k22stub_board.c,
+# docs/spec/stub-k22f.md), and the host tool (stub/k22stub.py) against it through a pipe
+K22STUB_SRC := $(ROOT)/stub/common/stubeng.c $(ROOT)/stub/k22f/k22stub_board.c
+K22STUB_H   := $(ROOT)/stub/common/stubeng.h $(ROOT)/stub/k22f/k22stub.h
+K22STUB_INC := -I$(ROOT)/stub/common -I$(ROOT)/stub/k22f
+TESTS   += k22stubTest k22stubSim
+k22stubTest: k22stubTest.c $(K22STUB_SRC) $(K22STUB_H)
+	$(CC) $(CFLAGS) -Wshadow $(K22STUB_INC) -o $@ k22stubTest.c $(K22STUB_SRC)
+k22stubSim: k22stubSim.c $(K22STUB_SRC) $(K22STUB_H)
+	$(CC) $(CFLAGS) -Wshadow $(K22STUB_INC) -o $@ k22stubSim.c $(K22STUB_SRC)
+
+run: run-k22stub
+run-k22stub: k22stubTest k22stubSim
+	./k22stubTest
+	python3 k22stub_wire_check.py ./k22stubSim
+.PHONY: run-k22stub
 
 # FD6818 frames on a fake three-wire chip, ST7567 and ST7789 init streams and 2x scaling, key matrix decode with the
 # column-to-ground side keys, the HR_C7000 DMR engine on plain register arrays, the Baofeng factory calibration decoder
@@ -1106,6 +1138,41 @@ run-httpassets: httpAssetsTest httpAssetsTestPlain
 	./httpAssetsTestPlain out/http_plain
 	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_plain $(HTTP_ASSETS)
 .PHONY: run-httpassets
+
+# The bit-banged SPI master in all four modes, and the HR_C6000 power-on clock presets
+TESTS   += spiGpioTest hrc6000ClockTest
+spiGpioTest: spiGpioTest.c $(ROOT)/drivers/bus/spi_gpio/spi_gpio.c $(ROOT)/drivers/bus/spi_gpio/spi_gpio.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ spiGpioTest.c $(ROOT)/drivers/bus/spi_gpio/spi_gpio.c
+hrc6000ClockTest: hrc6000ClockTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRC6K)/hrc6000.h $(HRCDMR)/hrc.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ hrc6000ClockTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
+
+run: run-spi-gpio
+run-spi-gpio: spiGpioTest hrc6000ClockTest
+	./spiGpioTest
+	./hrc6000ClockTest
+.PHONY: run-spi-gpio
+
+# The K22F USB glue (platform/k22f): token STAT to buffer descriptor, the register bits, the serial number string
+K22F    := $(ROOT)/platform/k22f
+TESTS   += k22fUsbTest
+k22fUsbTest: k22fUsbTest.c $(K22F)/k22f_usb_regs.h $(K22F)/stub_handoff.h
+	$(CC) $(CFLAGS) -I$(K22F) -Wshadow -o $@ k22fUsbTest.c
+
+run: run-k22f-usb
+run-k22f-usb: k22fUsbTest
+	./k22fUsbTest
+.PHONY: run-k22f-usb
+
+# The generic 24-series I2C EEPROM driver against a model of the part (page wrap, write cycle, acknowledge polling)
+EEPROMD := $(ROOT)/drivers/flash/i2c_eeprom
+TESTS   += i2cEepromTest
+i2cEepromTest: i2cEepromTest.c $(EEPROMD)/i2c_eeprom.c $(EEPROMD)/i2c_eeprom.h $(ROOT)/drivers/bus/i2c_bus.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ i2cEepromTest.c $(EEPROMD)/i2c_eeprom.c
+
+run: run-i2c-eeprom
+run-i2c-eeprom: i2cEepromTest
+	./i2cEepromTest
+.PHONY: run-i2c-eeprom
 
 # Each board's own host tests (boards/<id>/tests/host.mk): a fragment adds its tests to TESTS and a run-boards:: rule
 # that builds and runs them. Sources stay in the board directory; the binaries are built here like the rest

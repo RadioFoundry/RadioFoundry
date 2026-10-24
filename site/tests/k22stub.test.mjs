@@ -85,7 +85,7 @@ test("hand-over: the stub adopts ODR's port or comes back on a new one; unconfig
 		const radio = new FakeHidOdr(ST, { adopt });
 		const s = await enter(radio);
 		assert.equal(s.info.flashKb, 512);
-		assert.equal(s.info.version, 3);
+		assert.equal(s.info.version, 4);
 		assert.equal(s.info.adopted, adopt);
 		assert.equal(s.configured, false);
 		assert.equal(s.info.spiSize, 0, "no SPI flash before a record");

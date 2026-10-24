@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include "stubeng.h"
 
-#define K22STUB_VERSION		3u		// the shared engine's protocol: CONFIG, the board record, HELLO's echo
+#define K22STUB_VERSION		4u		// the shared engine's protocol: CONFIG, the board record, HELLO's echo
 #define K22STUB_NAME		"K2STUB"
 #define K22STUB_MAGIC		0x4B325342u	// 'K2SB' (big endian on the wire, as every field here)
 

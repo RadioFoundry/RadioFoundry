@@ -6,8 +6,7 @@
 // Nothing here touches FLASH_OPTCR or its key: the option bytes (read protection, write protection) are never written.
 #include "stm32f4xx.h"
 #include "f4stub_flash.h"
-#include "stubrt.h"
-#include "stubusb.h"
+#include "f4stub_usb.h"
 
 #define KEY1		0x45670123u
 #define KEY2		0xCDEF89ABu

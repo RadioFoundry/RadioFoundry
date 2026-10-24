@@ -21,7 +21,7 @@
 #include <string.h>
 
 #define CODEC_SIGNATURE		0x4FF0E92Du	// push.w {r4-r11, lr}
-#define CODEC_CODE		0x00055D00u	// where the merge puts the code (gd77.ld ends the application here)
+#define CODEC_CODE		0x00055D00u	// where the merge puts the code (memory.ld ends the application here)
 #define CODEC_FLASH_LO		CODEC_CODE
 #define CODEC_FLASH_HI		CODEC_DESC_ADDR
 

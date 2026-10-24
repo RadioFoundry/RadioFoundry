@@ -25,6 +25,13 @@ TUSB_SRC := $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c $(TU
 	$(TUSB)/portable/chipidea/ci_fs/dcd_ci_fs.c \
 	$(if $(filter y,$(CONFIG_USB_NETWORK)),$(TUSB)/class/net/ncm_device.c)
 
+$(if $(APP_BASE),,$(error boards/$(BOARD)/board.mk: APP_BASE, the image address, is missing))
+# common.ld's upper SRAM half: zeroed at start-up for ODR_CPU_RAM, left alone for _NOINIT
+MCU_DEFS += -DODR_CPU_RAM_SECTION='".ramu_bss"' -DODR_CPU_RAM_NOINIT_SECTION='".ramu_noinit"'
+LDSCRIPT ?= boards/$(BOARD)/memory.ld
+# The USB device stack, built only with CONFIG_USB
+BOARD_USB_DIRS ?= drivers/usb
+
 PLATFORM_DIRS := platform/k22f
 PLATFORM_INC := -I$(CMSIS_CORE)/Include -I$(RTOS)/include -I$(RTOS)/portable/GCC/ARM_CM4F \
 	$(if $(filter y,$(CONFIG_USB)),-I$(TUSB) -Idrivers/usb -Iplatform/k22f/tusb)

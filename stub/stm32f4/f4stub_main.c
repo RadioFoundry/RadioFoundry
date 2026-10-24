@@ -17,14 +17,13 @@
 #include "stubeng.h"
 #include "f4stub_flash.h"
 #include "f4stub_spi.h"
-#include "stubnor.h"
-#include "stubrt.h"
-#include "stubusb.h"
+#include "f4stub_usb.h"
 
 #define HANDOFF_USB_ADOPT	0x1u	// r0 bit 0: ODR's CDC-ACM device is configured (stub_entry.c)
 #define IDLE_MS			200u	// a request that stops arriving for this long is dropped (as the debug link's)
 #define HSE_DEFAULT_HZ		8000000u	// until a board record says otherwise: only the stub's own timing uses it
 
+extern uint32_t _sbss, _ebss;
 void stub_main(uint32_t flags) __attribute__((noreturn, used));
 
 // First bytes of the image (the linker puts .entry at 0x20000000): set the stack, keep r0, go to C
@@ -37,7 +36,7 @@ __attribute__((naked, section(".entry"))) void f4stub_entry(void)
 		".ltorg\n\t");
 }
 
-// ---- the clock ODR left running (for the cycle counter's rate and the SPI prescaler)
+// ---- freestanding C library pieces the compiler may call
 
 void *memcpy(void *dst, const void *src, size_t n)
 {
@@ -202,35 +201,19 @@ static bool port_program(void *ctx, uint32_t addr, const uint32_t *words, uint32
 static bool port_xread(void *ctx, uint32_t addr, void *dst, uint32_t n)
 {
 	(void)ctx;
-	return stubnor_read(addr, dst, n);
+	return f4spi_read(addr, dst, n);
 }
 
 static bool port_xerase(void *ctx, uint32_t addr)
 {
 	(void)ctx;
-	return stubnor_erase(addr);
+	return f4spi_erase(addr);
 }
 
 static bool port_xprogram(void *ctx, uint32_t addr, const uint8_t *data, uint32_t n)
 {
 	(void)ctx;
-	return stubnor_program(addr, data, n);
-}
-
-// CONFIG: the board record decides the crystal (for the stub's timing) and the SPI flash wiring
-static bool port_configure(void *ctx, const uint8_t *rec, uint32_t n, stubeng_config_t *out)
-{
-	(void)ctx;
-	f4_board_t b;
-	if (!f4_board_parse(rec, n, &b)) {
-		return false;
-	}
-	hse_hz = b.hse_hz;
-	(void)stub_ms();	// count the time so far at the old rate
-	clock_setup();
-	out->app_base = b.app_base;
-	out->xsize = f4spi_init(&b, pclk_hz(hclk_hz(), b.spi_bus == 1u), out->xid);
-	return true;
+	return f4spi_program(addr, data, n);
 }
 
 // CONFIG: the board record decides the crystal (for the stub's timing) and the SPI flash wiring
@@ -252,15 +235,9 @@ static bool port_configure(void *ctx, const uint8_t *rec, uint32_t n, stubeng_co
 static void port_reset(void *ctx)
 {
 	(void)ctx;
-	f4_board_t b;
-	if (!f4_board_parse(rec, n, &b)) {
-		return false;
-	}
-	hse_hz = b.hse_hz;
-	stubrt_clock_rate(hclk_hz());
-	out->app_base = b.app_base;
-	out->xsize = f4spi_init(&b, pclk_hz(hclk_hz(), b.spi_bus == 1u), out->xid);
-	return true;
+	usb_flush(200);		// the RESET reply leaves the FIFO first
+	stub_delay_ms(20);
+	NVIC_SystemReset();
 }
 
 static stubeng_port_t port = {
@@ -273,7 +250,7 @@ static stubeng_port_t port = {
 	.read = port_read,
 	.erase = port_erase,
 	.program = port_program,
-	.reset = stubrt_reset,
+	.reset = port_reset,
 	.xread = port_xread,
 	.xerase = port_xerase,
 	.xprogram = port_xprogram,
@@ -282,6 +259,19 @@ static stubeng_port_t port = {
 };
 static stubeng_t engine;
 static char serial[25];
+
+// ODR's USB serial number (boards/*/usb_*.c): the 96-bit UID as hex, lowest byte first. The same string keeps the
+// host's port name when the stub has to enumerate again
+static void make_serial(void)
+{
+	static const char hex[] = "0123456789ABCDEF";
+	const uint8_t *uid = (const uint8_t *)UID_BASE;
+	for (unsigned i = 0; i < 12u; i++) {
+		serial[2u * i] = hex[uid[i] >> 4];
+		serial[2u * i + 1u] = hex[uid[i] & 0x0Fu];
+	}
+	serial[24] = '\0';
+}
 
 void stub_main(uint32_t flags)
 {

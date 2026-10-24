@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "platform.h"
+#include "board.h"
 #include "k22f_usb_regs.h"
 #include "stub_handoff.h"
 #if CONFIG_USB
@@ -32,10 +33,6 @@
 
 static uint8_t stage[K22F_STUB_STAGE_SIZE] __attribute__((aligned(8)));
 static uint8_t park[512] __attribute__((aligned(512), section(ODR_CPU_RAM_SECTION)));
-
-__attribute__((weak)) void board_stub_prepare(void)
-{
-}
 
 uint8_t *k22f_stub_region(uint32_t *size)
 {
@@ -94,7 +91,7 @@ bool k22f_enter_stub(uint32_t entry)
 	if (src < K22F_STUB_RUN_ADDR || src + sizeof(stage) > K22F_STUB_RUN_ADDR + K22F_STUB_SPAN) {
 		return false;
 	}
-	board_stub_prepare();		// transmitter off; the power hold and the display stay as they are
+	board_rf_safe();		// transmitter off; the power hold and the display stay as they are
 	// The flash controller runs no command in HSRUN; the stub never steps back up
 	if (!k22f_clock_step_down(true)) {
 		return false;

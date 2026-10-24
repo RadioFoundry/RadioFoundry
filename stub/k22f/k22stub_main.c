@@ -41,6 +41,12 @@ __attribute__((naked, section(".entry"))) void k22stub_entry(void)
 		".ltorg\n\t");
 }
 
+// The watchdog (stubrt.h): ODR's start-up switches the K22F's WDOG off (platform/k22f/startup.c) and nothing turns it
+// on again, so there is nothing to feed
+void stub_feed(void)
+{
+}
+
 // ---- the port the protocol engine drives
 
 static void port_write(void *ctx, const uint8_t *buf, uint32_t n)

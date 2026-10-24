@@ -16,9 +16,8 @@ OBJCOPY := $(CROSS)objcopy
 SIZE := $(CROSS)size
 BUILD ?= $(ROOT)/build/stub-stm32f4
 
-# Soft float: the stub has no floating point, and ODR may hand over with the FPU context flag in any state. Link time
-# optimization lets the shared pieces in stub/common inline across files, which keeps the image well under 8 KB
-CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -std=gnu11 -ffreestanding -fno-builtin -ffunction-sections \
+# Soft float: the stub has no floating point, and ODR may hand over with the FPU context flag in any state
+CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -std=gnu11 -ffreestanding -fno-builtin -ffunction-sections \
 	-fdata-sections -fno-common -Wall -Wextra -Wshadow -Wstrict-prototypes -DSTM32F405xx \
 	-I../common -I$(ROOT)/third_party/cmsis-device-f4/Include -I$(ROOT)/third_party/cmsis-core/Include
 LDFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -nostdlib -nostartfiles -Wl,--gc-sections -T f4stub.ld \

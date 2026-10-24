@@ -346,7 +346,7 @@ never committed.
 
 | Item | Size |
 |---|---|
-| Stub image | 7,968 bytes (limit 8 KB, ODR's staging buffer, asserted by `f4stub.ld`) |
+| Stub image | 8,084 bytes (limit 8 KB, ODR's staging buffer, asserted by `f4stub.ld`) |
 | Stub RAM after the jump | 28.6 KB of SRAM (image, engine buffers, 8 KB receive ring), then the stack: at least 4 KB is left for it (asserted by `f4stub.ld`); the deepest call chain needs under 1 KB (`-fstack-usage`) |
 | ODR with `CONFIG_STUB_ENTRY=y`, DM-1701 | the STUB state machine, the entry and the banner text, all in sectors 3-9 (720 KB); +8 KB of SRAM (the staging buffer): RAM 95.4 % used, the default build |
 | ODR with `CONFIG_STUB_ENTRY=y`, MD-380 | the same code, in an application area of 464 KB (the default image is 320,236 bytes), RAM 78.8 %. The switch fits with no other switch off |
@@ -408,13 +408,13 @@ codec sectors stay (the radio still finds its codec). Step 9 is still to do.
 
 The protocol engine (`stub/common/stubeng.h`, `stubeng.c`) knows no chip. It holds the framing, every op, the safety
 rules of section 6, CRC-32 SUMS and block READ, and the board record's copy for the HELLO echo. A target supplies a
-`stubeng_port_t` and its glue: the STM32F4 target is `stub/stm32f4` (USB, flash controller, SPI, entry); a Kinetis
-K22F target for the GD-77 family would be another directory with the same shape. The wire protocol (section 5) is the
+`stubeng_port_t` and its glue: the STM32F4 target is `stub/stm32f4` (USB, flash controller, SPI, entry); the Kinetis
+K22F target is `stub/k22f` ([stub-k22f.md](stub-k22f.md)). The wire protocol (section 5) is the
 same for every target; only the HELLO name, the op magic and the board record's layout are the target's.
 
 | `stubeng_port_t` field | What the target gives | STM32F4 |
 |---|---|---|
-| `name`, `version`, `magic` | HELLO's first 6 bytes, the protocol version, the u32 ERASE / XERASE / RESET carry | `F4STUB`, 3, 0x46345342 |
+| `name`, `version`, `magic` | HELLO's first 6 bytes, the protocol version, the u32 ERASE / XERASE / RESET carry | `F4STUB`, 4, 0x46345342 |
 | `flash` (`stubeng_flash_t`) | internal flash: `base`, `size` (sectors that don't fit wholly don't exist), `runs` (the sector map as runs of equal sectors), `prog_unit` (PROGRAM's alignment and length unit: 4 or 8 bytes), `min_app_base` (no record opens anything below it) | 0x08000000, the flash size register, 4 x 16 KB + 64 KB + 7 x 128 KB, 4, 0x08004000 |
 | `peek`, `npeek` | address ranges PEEK may read besides the internal flash; never peripherals | system memory and OTP, option bytes, SRAM, CCM |
 | `security`, `flags` | HELLO bytes 11 and 12 (the target's bits below 0x80; the engine adds bit 7, configured) | RDP byte; USB adopted |
@@ -423,12 +423,20 @@ same for every target; only the HELLO name, the op magic and the board record's 
 | `erase`, `program` | erase one sector by index; program words at an address the engine has checked erased (aligned to `prog_unit`) | the flash controller, x32 |
 | `reset` | after the RESET reply | `NVIC_SystemReset` |
 | `xread`, `xerase`, `xprogram` | the external SPI flash, or NULL: read, erase one 4 KB sector, program inside one sector | `f4stub_spi.c` |
-| `configure` | check and apply the board record (1 to 32 bytes, first byte the nonzero board id); fill `stubeng_config_t`: `app_base`, and the SPI flash's `xsize` and `xid` | `f4_board_parse`, then the clock and `f4spi_init` |
+| `configure` | check and apply the board record (1 to 32 bytes, first byte the nonzero board id); fill `stubeng_config_t`: `app_base`, optionally `app_end` (no ERASE or PROGRAM at or above it; 0 the flash end) and `xfloor` (no XERASE or XPROGRAM below it), and the SPI flash's `xsize` and `xid` | `f4_board_parse`, then the clock and `f4spi_init`; `app_end` and `xfloor` 0 |
+| `feed` | optional: feed the watchdog. The engine calls it at every request, before each erase and program, and once per 4 KB block of SUMS and READ | the IWDG (section 3) |
 
 The engine checks the application base `configure` returns: a sector start, not sector 0, at or above
 `min_app_base`. The commit word is at that base, and the commit sector (the interlock's) is the sector holding it. The
 engine keeps 2 x 4 KB frame buffers and a 4 KB word buffer (`stubeng_t`, about 12.3 KB of RAM) and needs no heap. It
 calls nothing but the port, `memcpy`, `memmove`, `memset` and `memcmp`.
+
+Besides the engine, `stub/common` holds what both targets share: `stubrt` (memory functions, cycle counter timing
+that also calls the target's `stub_feed` at every read of the time,
+the hex serial number, the receive loop with the 200 ms idle rule, the reset after the reply), `stubcdc` (the CDC-ACM
+descriptors, control requests and receive ring; the target gives EP0 send, stall, address, endpoint setup and halt)
+and `stubnor` (the SPI NOR commands; the target gives chip select and a byte exchange). Both stubs are built with link
+time optimization to stay under 8 KB.
 
 A new target needs: the port, a receive loop that feeds bytes with `stubeng_feed` and calls `stubeng_idle` after
 200 ms of silence, its board record layout and check (host tested, as `f4stub_board.c`), its host-side profiles, and

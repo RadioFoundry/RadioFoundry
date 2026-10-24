@@ -30,7 +30,7 @@ stub and the entry code is unverified.
 | Run address | 0x1FFF0000, SRAM_L's base; stack top 0x20000000; image at most 8 KB, stack 4 KB (both checked by the linker script) |
 | Clock | what ODR left, in RUN; r2 carries the core clock in Hz for the cycle counter timing |
 | Float | soft float: the stub has none, and ODR clears the FPU context flag before the jump |
-| HELLO | name `K2STUB`, protocol 3, magic `K2SB` 0x4B325342; byte 11 is `FTFA_FSEC`; flags bit 0: USB adopted |
+| HELLO | name `K2STUB`, protocol 4, magic `K2SB` 0x4B325342; byte 11 is `FTFA_FSEC`; flags bit 0: USB adopted |
 | Serial number | ODR's: the low 96 bits of the unique ID (UIDMH, UIDML, UIDL) as 24 hex digits |
 | PEEK | SRAM 0x1FFF0000..0x2000FFFF, the SIM's ID registers 0x40048024..0x40048063 (one word at a time), the FTFA registers 0x40020000..0x40020013, the internal flash. Never the USB controller (its status registers change when read) |
 

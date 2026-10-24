@@ -129,7 +129,7 @@ export function segments(G, packed, tag = G.placed[packed.spec.profile].tag) {
 export function merge(G, app, packed, tag) {
 	if (G.flash_base + app.length > packed.codeAddr)
 		throw new PackError("app_too_large", `the application image ends at ${hex(G.flash_base + app.length)}, inside the codec at `
-			+ `${hex(packed.codeAddr)}: rebuild with the window reserved (boards/gd77/gd77.ld)`);
+			+ `${hex(packed.codeAddr)}: rebuild with the window reserved (boards/gd77/memory.ld)`);
 	const segs = segments(G, packed, tag);
 	const end = Math.max(...segs.map(([a, d]) => a + d.length));
 	const out = new Uint8Array(end - G.flash_base).fill(0xFF);

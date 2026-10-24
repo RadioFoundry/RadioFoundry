@@ -11,6 +11,7 @@
 #if CONFIG_CRASH_LOG
 #include <string.h>
 #include "platform.h"
+#include "board.h"
 #include "crash/crash.h"
 
 #define FAULT_STACK_WORDS	256
@@ -56,6 +57,7 @@ void hal_crash_restart(void)
 void k22f_fault(const uint32_t *frame, uint32_t exc_return, const uint32_t *hi) __attribute__((used, noreturn));
 void k22f_fault(const uint32_t *frame, uint32_t exc_return, const uint32_t *hi)
 {
+	board_rf_safe();	// transmitter off first (docs/spec/crash-log.md 8)
 	crash_record_t r;
 	memset(&r, 0, sizeof r);
 	r.arch = CRASH_ARCH_CM4;

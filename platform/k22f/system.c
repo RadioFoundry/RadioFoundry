@@ -7,6 +7,7 @@
 #include "config.h"
 #include "platform.h"
 #include "stub_handoff.h"
+#include "board.h"
 
 // SIM_FCFG1 PFSIZE codes to KB (reference manual 12.2.16); 0 for a code this part family doesn't use
 static uint16_t flash_kb(uint32_t pfsize)
@@ -38,6 +39,7 @@ static void read_mem(uint32_t addr, void *dst, size_t n)
 void k22f_reset(void)
 {
 	__disable_irq();
+	board_rf_safe();	// a reset leaves the pins floating until the next start drives them: transmitter off first
 	NVIC_SystemReset();
 }
 

@@ -243,6 +243,10 @@ Where it is called:
 | Start-up | first thing in `main()`, before the ROM DFU check and the clocks | first thing in `main()`, before `hrc_clock_init` |
 | DB25-D first stage | | `boot/db25d/boot.c` drives TX_SUPPLY_A/B and UHF_TX/VHF_TX low and RX_SUPPLY high right after the power latch, before it offers the handshake (it may wait there for a host) |
 
+The K22F (GD-77) follows the STM32F4 column: `k22f_fault` first, the crash capture, the hooks without the crash log,
+`k22f_reset` (every software reset), `k22f_enter_stub`, and first thing in `main()`. Its `board_rf_safe` drives TX
+enable and both TX path lines low and DAC0 to 0 (DAC0 only once its clock runs).
+
 Every reboot request (the debug link's REBOOT, the CPS's reset, the storage UI) goes through `board.system->reboot`, so
 it is covered by the reset row. The time from power-on to the first `board_rf_safe` is the vendor bootloader's (and on
 the DB25-D the first stage's handful of instructions), which ODR can't change.

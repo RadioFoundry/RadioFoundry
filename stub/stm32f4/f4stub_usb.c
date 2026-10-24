@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Polled CDC-ACM device on the STM32F4 OTG_FS core (stub/common/stubusb.h). Written from the reference manual's OTG_FS
-// device programming model (slave mode: the CPU moves every packet through the FIFOs). The descriptors and the control
-// requests are shared (stub/common/stubcdc.c). The core's status bits are polled; the interrupt line stays off.
+// Polled CDC-ACM device on the STM32F4 OTG_FS core (f4stub_usb.h). Written from the reference manual's OTG_FS
+// device programming model (slave mode: the CPU moves every packet through the FIFOs), USB 2.0 chapter 9 and the
+// CDC 1.2 / PSTN class documents. The core's status bits are polled; the interrupt line stays off.
 #include <stddef.h>
 #include <string.h>
 #include "stm32f4xx.h"
-#include "stubcdc.h"
-#include "stubrt.h"
-#include "stubusb.h"
+#include "f4stub_usb.h"
 
 #define BASE		USB_OTG_FS_PERIPH_BASE
 #define OTG		((USB_OTG_GlobalTypeDef *)BASE)
@@ -18,11 +16,11 @@
 #define FIFO(n)		(*(volatile uint32_t *)(BASE + USB_OTG_FIFO_BASE + (n) * USB_OTG_FIFO_SIZE))
 #define PCGCCTL		(*(volatile uint32_t *)(BASE + USB_OTG_PCGCCTL_BASE))
 
-#define EP0_SIZE	STUBCDC_EP0_SIZE
-#define DATA_SIZE	STUBCDC_DATA_SIZE
-#define NOTIFY_SIZE	STUBCDC_NOTIFY_SIZE
-#define EP_DATA		STUBCDC_EP_DATA
-#define EP_NOTIFY	STUBCDC_EP_NOTIFY
+#define EP0_SIZE	64u
+#define DATA_SIZE	64u
+#define NOTIFY_SIZE	8u
+#define EP_DATA		1u	// bulk OUT 0x01, bulk IN 0x81
+#define EP_NOTIFY	2u	// interrupt IN 0x82
 
 // FIFO RAM in 32-bit words (1.25 KB on the FS core): RX 128, EP0 TX 16, EP1 TX 64, EP2 TX 16
 #define RX_WORDS	128u
@@ -35,12 +33,57 @@
 #define PKT_SETUP_DONE	4u
 #define PKT_SETUP_DATA	6u
 
+#define RING_SIZE	8192u	// received bytes waiting for the protocol engine (a power of two)
+
 #define WAIT_MS		1000u	// a host that stops reading for this long is gone
+
+// ---- descriptors (USB 2.0 9.6, CDC 1.2 5, PSTN 5.3)
+
+static const uint8_t dev_desc[18] = {
+	18, 1, 0x00, 0x02,	// bLength, DEVICE, bcdUSB 2.00
+	0xEF, 0x02, 0x01,	// miscellaneous class, common subclass, interface association
+	EP0_SIZE,
+	0xC9, 0x1F, 0x94, 0x00,	// VID 0x1FC9, PID 0x0094: ODR's serial-port identity (boards/*/usb_*.c)
+	0x00, 0x7F,		// bcdDevice 0x7F00: not an ODR firmware version
+	1, 2, 3, 1,		// iManufacturer, iProduct, iSerialNumber, one configuration
+};
+
+#define CFG_LEN		75u
+static const uint8_t cfg_desc[CFG_LEN] = {
+	9, 2, CFG_LEN, 0, 2, 1, 0, 0xC0, 50,		// configuration: 2 interfaces, self powered, 100 mA
+	8, 11, 0, 2, 0x02, 0x02, 0x00, 0,		// interface association: interfaces 0-1, CDC ACM
+	9, 4, 0, 0, 1, 0x02, 0x02, 0x00, 4,		// interface 0: communications, ACM, one endpoint, string 4
+	5, 0x24, 0x00, 0x20, 0x01,			// header functional descriptor, CDC 1.20
+	5, 0x24, 0x01, 0x00, 1,				// call management: none, data interface 1
+	4, 0x24, 0x02, 0x02,				// ACM: line coding and serial state
+	5, 0x24, 0x06, 0, 1,				// union: master 0, slave 1
+	7, 5, 0x80 | EP_NOTIFY, 0x03, NOTIFY_SIZE, 0, 16,	// interrupt IN 0x82, 8 bytes, 16 ms
+	9, 4, 1, 0, 2, 0x0A, 0x00, 0x00, 0,		// interface 1: data, two endpoints
+	7, 5, EP_DATA, 0x02, DATA_SIZE, 0, 0,		// bulk OUT 0x01
+	7, 5, 0x80 | EP_DATA, 0x02, DATA_SIZE, 0, 0,	// bulk IN 0x81
+};
+
+static const char *const strings[] = { NULL, "OpenDigitalRadio", "ODR flash stub", NULL, "ODR flash stub serial" };
 
 // ---- state
 
+static const char *serial_str;
+static bool configured;
 static bool ep1_armed;
 static uint8_t setup[8];
+static uint8_t ep0_buf[EP0_SIZE];
+static uint32_t ep0_rx_len;
+static bool ep0_expect_out;	// a control write's data stage is due (SET_LINE_CODING)
+static uint8_t line_coding[7] = { 0x00, 0xC2, 0x01, 0x00, 0, 0, 8 };	// 115200 8N1: only remembered
+static uint8_t desc_buf[2 + 2 * 32];
+
+static uint8_t ring[RING_SIZE];
+static volatile uint32_t ring_head, ring_tail;	// head: written by the RX path; tail: read by usb_read
+
+static uint32_t ring_used(void)
+{
+	return ring_head - ring_tail;
+}
 
 // ---- FIFO access
 
@@ -133,6 +176,40 @@ static void ep0_send(const uint8_t *data, uint32_t len)
 	}
 }
 
+static void ep0_zlp(void)
+{
+	ep0_send(NULL, 0);
+}
+
+static void ep0_reply(const uint8_t *data, uint32_t len, uint16_t wlength)
+{
+	ep0_send(data, len < wlength ? len : wlength);
+}
+
+static uint32_t string_desc(uint8_t index)
+{
+	if (index == 0) {
+		desc_buf[0] = 4;
+		desc_buf[1] = 3;
+		desc_buf[2] = 0x09;	// English (US)
+		desc_buf[3] = 0x04;
+		return 4;
+	}
+	const char *s = index == 3 ? serial_str : (index < sizeof(strings) / sizeof(strings[0]) ? strings[index] : NULL);
+	if (s == NULL) {
+		return 0;
+	}
+	uint32_t n = 0;
+	while (s[n] != '\0' && n < 32u) {
+		desc_buf[2u + 2u * n] = (uint8_t)s[n];
+		desc_buf[3u + 2u * n] = 0;
+		n++;
+	}
+	desc_buf[0] = (uint8_t)(2u + 2u * n);
+	desc_buf[1] = 3;
+	return 2u + 2u * n;
+}
+
 static void endpoints_off(void)
 {
 	for (unsigned ep = 1; ep <= 3u; ep++) {
@@ -145,7 +222,7 @@ static void endpoints_off(void)
 		}
 		OUTEP(ep)->DOEPCTL &= ~USB_OTG_DOEPCTL_USBAEP;
 	}
-	stubcdc_configured = false;
+	configured = false;
 	ep1_armed = false;
 }
 
@@ -158,10 +235,10 @@ static void endpoints_on(void)
 	OUTEP(EP_DATA)->DOEPCTL = DATA_SIZE | (2u << USB_OTG_DOEPCTL_EPTYP_Pos) | USB_OTG_DOEPCTL_SD0PID_SEVNFRM |
 				  USB_OTG_DOEPCTL_USBAEP | USB_OTG_DOEPCTL_SNAK;
 	ep1_armed = false;
-	stubcdc_configured = true;
+	configured = true;
 }
 
-void cdc_hw_halt(uint8_t ep_addr, bool on)
+static void halt(uint8_t ep_addr, bool on)
 {
 	unsigned ep = ep_addr & 0x0Fu;
 	if (ep == 0 || ep > 3u) {
@@ -179,30 +256,95 @@ void cdc_hw_halt(uint8_t ep_addr, bool on)
 	}
 }
 
-// ---- what the shared control request code (stubcdc.c) asks of the core
-
-void cdc_hw_ep0_send(const uint8_t *data, uint32_t len)
+static void handle_setup(void)
 {
-	ep0_send(data, len);
-}
+	uint8_t type = setup[0], req = setup[1];
+	uint16_t value = (uint16_t)(setup[2] | (setup[3] << 8));
+	uint16_t index = (uint16_t)(setup[4] | (setup[5] << 8));
+	uint16_t length = (uint16_t)(setup[6] | (setup[7] << 8));
+	static uint8_t small[2];
 
-void cdc_hw_ep0_stall(void)
-{
-	ep0_stall();
-}
-
-// SET_ADDRESS takes effect at once on this core (before the status stage)
-void cdc_hw_set_address(uint8_t addr)
-{
-	DEV->DCFG = (DEV->DCFG & ~USB_OTG_DCFG_DAD) | ((uint32_t)addr << USB_OTG_DCFG_DAD_Pos);
-}
-
-void cdc_hw_endpoints(bool on)
-{
-	if (on) {
-		endpoints_on();
-	} else {
-		endpoints_off();
+	ep0_arm();		// ready for a data stage or the host's status packet
+	ep0_expect_out = false;
+	if ((type & 0x60u) == 0x20u) {		// class requests to the communications interface
+		switch (req) {
+		case 0x20:			// SET_LINE_CODING: 7 bytes follow
+			ep0_expect_out = true;
+			ep0_rx_len = 0;
+			return;
+		case 0x21:			// GET_LINE_CODING
+			ep0_reply(line_coding, sizeof(line_coding), length);
+			return;
+		case 0x22:			// SET_CONTROL_LINE_STATE
+		case 0x23:			// SEND_BREAK
+			ep0_zlp();
+			return;
+		default:
+			ep0_stall();
+			return;
+		}
+	}
+	if ((type & 0x60u) != 0) {
+		ep0_stall();
+		return;
+	}
+	switch (req) {
+	case 0x00:				// GET_STATUS
+		small[0] = (type & 0x1Fu) == 0 ? 1u : 0u;	// device: self powered
+		small[1] = 0;
+		ep0_reply(small, 2, length);
+		break;
+	case 0x01:				// CLEAR_FEATURE
+	case 0x03:				// SET_FEATURE
+		if ((type & 0x1Fu) == 2u && value == 0) {
+			halt((uint8_t)index, req == 0x03);	// ENDPOINT_HALT
+		}
+		ep0_zlp();
+		break;
+	case 0x05:				// SET_ADDRESS: takes effect at once on this core (before the status stage)
+		DEV->DCFG = (DEV->DCFG & ~USB_OTG_DCFG_DAD) | ((uint32_t)(value & 0x7Fu) << USB_OTG_DCFG_DAD_Pos);
+		ep0_zlp();
+		break;
+	case 0x06: {				// GET_DESCRIPTOR
+		uint8_t dtype = (uint8_t)(value >> 8);
+		if (dtype == 1u) {
+			ep0_reply(dev_desc, sizeof(dev_desc), length);
+		} else if (dtype == 2u) {
+			ep0_reply(cfg_desc, sizeof(cfg_desc), length);
+		} else if (dtype == 3u) {
+			uint32_t n = string_desc((uint8_t)value);
+			if (n == 0) {
+				ep0_stall();
+			} else {
+				ep0_reply(desc_buf, n, length);
+			}
+		} else {
+			ep0_stall();		// device qualifier and the rest: full speed only
+		}
+		break;
+	}
+	case 0x08:				// GET_CONFIGURATION
+		small[0] = configured ? 1u : 0u;
+		ep0_reply(small, 1, length);
+		break;
+	case 0x09:				// SET_CONFIGURATION
+		if (value == 1u) {
+			endpoints_on();
+		} else {
+			endpoints_off();
+		}
+		ep0_zlp();
+		break;
+	case 0x0A:				// GET_INTERFACE
+		small[0] = 0;
+		ep0_reply(small, 1, length);
+		break;
+	case 0x0B:				// SET_INTERFACE: only alternate setting 0 exists
+		ep0_zlp();
+		break;
+	default:
+		ep0_stall();
+		break;
 	}
 }
 
@@ -235,19 +377,23 @@ static void rx_pop(void)
 		}
 		break;
 	case PKT_SETUP_DONE:
-		ep0_arm();		// ready for a data stage or the host's status packet
-		stubcdc_setup(setup);
+		handle_setup();
 		break;
 	case PKT_OUT_DATA:
-		if (ep == 0 || ep == EP_DATA) {
+		if (ep == 0) {
+			uint32_t room = sizeof(ep0_buf) - ep0_rx_len;
+			uint32_t take = n < room ? n : room;
+			fifo_read(ep0_buf + ep0_rx_len, take);
+			fifo_read(NULL, n - take);
+			ep0_rx_len += take;
+		} else if (ep == EP_DATA) {
 			uint8_t tmp[DATA_SIZE];
 			uint32_t take = n < sizeof(tmp) ? n : sizeof(tmp);
 			fifo_read(tmp, take);
 			fifo_read(NULL, n - take);
-			if (ep == 0) {
-				stubcdc_ep0_data(tmp, take);
-			} else {
-				stubcdc_rx(tmp, take);
+			for (uint32_t i = 0; i < take && ring_used() < RING_SIZE; i++) {
+				ring[ring_head % RING_SIZE] = tmp[i];
+				ring_head++;
 			}
 		} else {
 			fifo_read(NULL, n);
@@ -255,7 +401,13 @@ static void rx_pop(void)
 		break;
 	case PKT_OUT_DONE:
 		if (ep == 0) {
-			stubcdc_ep0_out_done();	// SET_LINE_CODING's data arrived: status stage
+			if (ep0_expect_out) {	// SET_LINE_CODING's data arrived: status stage
+				if (ep0_rx_len >= sizeof(line_coding)) {
+					memcpy(line_coding, ep0_buf, sizeof(line_coding));
+				}
+				ep0_expect_out = false;
+				ep0_zlp();
+			}
 			ep0_arm();
 		} else if (ep == EP_DATA) {
 			ep1_armed = false;
@@ -291,11 +443,21 @@ void usb_poll(void)
 	INEP(0)->DIEPINT = 0xFFFFu;
 	INEP(EP_DATA)->DIEPINT = 0xFFFFu;
 
-	if (stubcdc_configured && !ep1_armed && stubcdc_rx_room() >= DATA_SIZE) {
+	if (configured && !ep1_armed && RING_SIZE - ring_used() >= DATA_SIZE) {
 		OUTEP(EP_DATA)->DOEPTSIZ = (1u << USB_OTG_DOEPTSIZ_PKTCNT_Pos) | DATA_SIZE;
 		OUTEP(EP_DATA)->DOEPCTL |= USB_OTG_DOEPCTL_CNAK | USB_OTG_DOEPCTL_EPENA;
 		ep1_armed = true;
 	}
+}
+
+uint32_t usb_read(uint8_t *buf, uint32_t max)
+{
+	uint32_t n = 0;
+	while (n < max && ring_used() > 0) {
+		buf[n++] = ring[ring_tail % RING_SIZE];
+		ring_tail++;
+	}
+	return n;
 }
 
 static bool in_idle(uint32_t ms)
@@ -303,7 +465,7 @@ static bool in_idle(uint32_t ms)
 	uint32_t t0 = stub_ms();
 	while (INEP(EP_DATA)->DIEPCTL & USB_OTG_DIEPCTL_EPENA) {
 		usb_poll();
-		if (!stubcdc_configured || stub_ms() - t0 > ms) {
+		if (!configured || stub_ms() - t0 > ms) {
 			return false;
 		}
 	}
@@ -329,7 +491,7 @@ static bool in_packet(const uint8_t *data, uint32_t n)
 
 bool usb_write(const uint8_t *buf, uint32_t n)
 {
-	if (!stubcdc_configured) {
+	if (!configured) {
 		return false;
 	}
 	for (uint32_t off = 0; off < n; off += DATA_SIZE) {
@@ -347,6 +509,11 @@ bool usb_write(const uint8_t *buf, uint32_t n)
 void usb_flush(uint32_t ms)
 {
 	(void)in_idle(ms);
+}
+
+bool usb_configured(void)
+{
+	return configured;
 }
 
 // ---- start
@@ -371,7 +538,7 @@ static bool adopt(void)
 	flush_tx(0x10u);
 	// The data OUT endpoint: TinyUSB may have left it armed; then the next packet just lands in the RX FIFO
 	ep1_armed = (OUTEP(EP_DATA)->DOEPCTL & USB_OTG_DOEPCTL_EPENA) != 0;
-	stubcdc_configured = true;
+	configured = true;
 	DEV->DCTL |= USB_OTG_DCTL_CGINAK | USB_OTG_DCTL_CGONAK;
 	ep0_arm();
 	return true;
@@ -407,16 +574,16 @@ static void cold_start(void)
 	}
 	OTG->GINTSTS = 0xFFFFFFFFu;
 	OTG->GINTMSK = 0;
-	stubcdc_configured = false;
+	configured = false;
 	ep1_armed = false;
 	stub_delay_ms(100);			// long enough that every host notices the unplug
 	DEV->DCTL &= ~USB_OTG_DCTL_SDIS;
 }
 
-bool usb_start(bool want_adopt, uint32_t state, const char *serial)
+bool usb_start(bool want_adopt, const char *serial)
 {
-	(void)state;		// the OTG_FS core keeps its own data toggles
-	stubcdc_init(serial);
+	serial_str = serial;
+	ring_head = ring_tail = 0;
 	if (want_adopt && adopt()) {
 		return true;
 	}

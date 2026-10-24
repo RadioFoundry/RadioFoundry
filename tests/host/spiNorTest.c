@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // drivers/flash/spi_nor against a model of a W25Q / GD25Q class chip at the SPI bus (the command set of the Winbond
-// W25Q128JV and GigaDevice GD25Q128 data sheets: 03 read, 02 page program, 20 sector erase, 06 write enable,
-// 05 / 35 / 15 status, 9F JEDEC ID, 48 security register read, 4B unique ID). The model keeps what the driver must get right:
+// W25Q128JV and GigaDevice GD25Q128 data sheets: 03 read, 0B fast read, 02 page program, 20 sector erase, D8 64 KB
+// block erase, C7 chip erase, 06 write enable, 05 / 35 / 15 status, 9F JEDEC ID, 48 security register read, 4B unique ID).
+// The model keeps what the driver must get right:
 // erase sets a 4 KB sector to 0xFF, programming only clears bits, a page program that runs past the end of its
 // 256-byte page wraps to the start of the same page, program and erase need the write enable latch (and clear it),
 // the chip stays busy for a while after each, addresses wrap at the chip's size (3-byte addresses reach 16 MB). It

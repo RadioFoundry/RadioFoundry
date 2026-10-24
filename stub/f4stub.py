@@ -46,92 +46,93 @@ import stubtool  # noqa: E402  (the shared framing, LZ4 decoder and debug link l
 from stubtool import odrboards  # noqa: E402  (the board registry, tools/odrflash/odrflash/registry.json)
 
 # --- F4STUB begin (f4stub.py --embed rewrites everything up to the end marker)
-F4STUB_SHA256 = "793a115995dbc0ef7b183e7b344d01f3fc10a17e85fef4aaba60929f56c33467"
+F4STUB_SHA256 = "b699b9397efb419215eedb0fe090d702a8e02f759cb1d8789e5197a3a4268bc8"
 F4STUB_B64 = (
-    "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"
+    "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"
 )
 # --- F4STUB end
 
@@ -226,6 +227,56 @@ def config_record(board_id):
 
 def board_by_id(num):
     return next((bid for bid, b in BOARDS.items() if b["id"] == num), None)
+
+
+class Chip:
+    """One stub target, as the host sees it: HELLO's name, the op magic, the flash map and program unit, where the
+    stub runs, its embedded image and its radios' profiles. F4 (below) is the STM32F4 stub; stub/k22stub.py has the
+    Kinetis K22F one. F4Radio, load_segments, run and the fake stub take one."""
+    title = "STM32F4"
+    name = b"F4STUB"
+    magic = MAGIC
+    flash_base = FLASH_BASE
+    flash_kb = 1024                    # every radio's part
+    prog_unit = 4
+    app_base = APP_BASE
+    run_addr = RUN_ADDR
+    sram_size = SRAM_SIZE              # the span the stub's stack top must be in, from run_addr
+    erase_timeout = ERASE_TIMEOUT
+    min_version = 2                    # protocol 2 stubs (no CONFIG) are still served
+    v2_wiring = V2_WIRING              # the record a stub before CONFIG has built in (None: the target has no such stub)
+
+    @property
+    def boards(self):
+        return BOARDS
+
+    def sectors(self, flash_kb):
+        return f405_sectors(flash_kb)
+
+    def config_record(self, board_id):
+        return config_record(board_id)
+
+    def parse_record(self, rec):
+        """{"app_base", "app_end", "xfloor"} from a board record, or None when the stub would refuse it"""
+        if len(rec) != REC_LEN or rec[0] == 0 or rec[1] != REC_LAYOUT:
+            return None
+        return {"app_base": int.from_bytes(rec[8:12], "big"), "app_end": None, "xfloor": 0}
+
+    def stub_image(self):
+        return stub_image()
+
+    def sp_ok(self, sp):
+        """A vector table's stack pointer the radio's bootloader accepts (in SRAM)"""
+        return sp & 0x2FFE0000 == 0x20000000
+
+    def board_for(self, name):
+        return board_for(name)
+
+    def board_by_id(self, num):
+        return next((bid for bid, b in self.boards.items() if b["id"] == num), None)
+
+
+F4 = Chip()
 
 
 class F4Error(stubtool.DumpError):
@@ -377,11 +428,10 @@ class F4Radio(stubtool.Radio):
         check_stub_fits(image, load, size, self.chip)
 
     # ---- talking to the stub
-    def hello(self, timeout=0.5):
-        """HELLO; timeout: how long the reply may take (a simulated stub just started may need longer)"""
-        r = self.request(OP_HELLO, retries=0, timeout=timeout)
-        if r[:6] != b"F4STUB" or len(r) < 17:
-            raise F4Error("unexpected hello %r: not the STM32F4 stub" % r[:16])
+    def hello(self):
+        r = self.request(OP_HELLO, retries=0, timeout=0.5)
+        if r[:6] != self.chip.name or len(r) < 17:
+            raise F4Error("unexpected hello %r: not the %s stub" % (r[:16], self.chip.title))
         self.version = r[6]
         self.max_payload = (r[7] << 8) | r[8]
         self.flash_kb = (r[9] << 8) | r[10]
@@ -394,9 +444,12 @@ class F4Radio(stubtool.Radio):
             if len(r) < HELLO_LEN or len(r) != HELLO_LEN + r[25]:
                 raise F4Error("HELLO v%d is %d bytes: malformed" % (self.version, len(r)))
             self.record = bytes(r[HELLO_LEN:])
-            self.board = board_by_id(r[24]) if r[12] & HELLO_CONFIGURED else None
-        elif self.app_base != APP_BASE:
-            raise F4Error("the stub reports the application at 0x%08X, this tool knows 0x%08X" % (self.app_base, APP_BASE))
+            self.board = self.chip.board_by_id(r[24]) if r[12] & HELLO_CONFIGURED else None
+        elif self.version < self.chip.min_version:
+            raise F4Error("%s stub protocol %d: too old for this tool" % (self.chip.title, self.version))
+        elif self.app_base != self.chip.app_base:
+            raise F4Error("the stub reports the application at 0x%08X, this tool knows 0x%08X" % (self.app_base,
+                                                                                                self.chip.app_base))
         return self.version, self.max_payload
 
     def configure(self, board_id):
@@ -404,37 +457,38 @@ class F4Radio(stubtool.Radio):
         what stubtool.Radio.odr_enter calls once the stub answers (board_id None there unless run() passed one). A stub
         already configured with exactly this record is left as it is. board_id None: keep what a configured stub has
         (an --attach without --board), else stay unconfigured (reads of the internal flash only). A stub before version
-        4 (2, or 3 with only the image header) has no CONFIG: its wiring is built in (V2_WIRING), so it is refused for a
-        radio whose record differs."""
-        if board_id is not None and board_id not in BOARDS:
-            raise F4Error("%s is not an STM32F4 radio this stub knows (%s)" % (board_id, ", ".join(BOARDS)))
+        4 (2, or 3 with only the image header) has no CONFIG: its wiring is built in (Chip.v2_wiring), so it is refused
+        for a radio whose record differs."""
+        boards = self.chip.boards
+        if board_id is not None and board_id not in boards:
+            raise F4Error("%s is not an %s radio this stub knows (%s)" % (board_id, self.chip.title, ", ".join(boards)))
         if self.version < CONFIG_VERSION:
-            if board_id is not None and config_record(board_id)[1:] != V2_WIRING:
+            if board_id is not None and self.chip.config_record(board_id)[1:] != self.chip.v2_wiring:
                 raise F4Error("this stub (protocol %d) drives the SPI flash wiring built into it and can't serve "
-                              "the %s: restart the radio and enter again" % (self.version, BOARDS[board_id]["name"]))
+                              "the %s: restart the radio and enter again" % (self.version, boards[board_id]["name"]))
             self.board = board_id
             return
         if board_id is None:
             if self.board is not None:
-                self.log("stub already configured for the %s" % BOARDS[self.board]["name"])
+                self.log("stub already configured for the %s" % boards[self.board]["name"])
             return
-        rec = config_record(board_id)
+        rec = self.chip.config_record(board_id)
         if self.board == board_id and self.record == rec:
             return
         self.request(OP_CONFIG, rec, retries=0)
         self.hello()
-        if self.board != board_id or self.record != rec or self.app_base != APP_BASE:
+        if self.board != board_id or self.record != rec or self.app_base != self.chip.app_base:
             self.board = None
             raise F4Error("the stub did not take the %s's board record (HELLO echoes %s): nothing written"
-                          % (BOARDS[board_id]["name"], self.record.hex() or "none"))
-        self.log("stub configured for the %s: %s" % (BOARDS[board_id]["name"], "SPI flash %d KB (JEDEC %s)" % (
+                          % (boards[board_id]["name"], self.record.hex() or "none"))
+        self.log("stub configured for the %s: %s" % (boards[board_id]["name"], "SPI flash %d KB (JEDEC %s)" % (
             self.spi_size // 1024, self.spi_id) if self.spi_size else "no SPI flash answered"))
 
     def need_board(self, board_id=None):
         """Writes need the stub configured, for board_id when given"""
         if self.board is None or (board_id is not None and self.board != board_id):
             raise F4Error("the stub is not configured for %s: nothing written" % (
-                BOARDS[board_id]["name"] if board_id else "a radio (pass --board)"))
+                self.chip.boards[board_id]["name"] if board_id else "a radio (pass --board)"))
 
     def attach(self):
         """After ENTER: the stub either adopted ODR's USB device (same port, answers at once) or enumerated again (the
@@ -466,9 +520,9 @@ class F4Radio(stubtool.Radio):
                         raise F4Error("the stub's USB port did not come back within %d s: power-cycle the radio "
                                       "(ODR starts again) and check the cable" % PORT_WAIT_S)
                     time.sleep(0.3)
-        self.log("STM32F4 stub v%d: %d KB flash, RDP byte 0x%02X, %s, USB %s" % (
-            self.version, self.flash_kb, self.rdp,
-            "configured for the %s" % BOARDS[self.board]["name"] if self.board else
+        self.log("%s stub v%d: %d KB flash, security byte 0x%02X, %s, USB %s" % (
+            self.chip.title, self.version, self.flash_kb, self.rdp,
+            "configured for the %s" % self.chip.boards[self.board]["name"] if self.board else
             ("SPI flash %d KB (JEDEC %s)" % (self.spi_size // 1024, self.spi_id) if self.spi_size else
              "not configured yet" if self.version >= CONFIG_VERSION else "no SPI flash"),
             "adopted from ODR" if self.adopted else "enumerated again"))
@@ -561,8 +615,55 @@ class F4Radio(stubtool.Radio):
 
     # ---- whole-image work
     def check_board(self):
-        if self.flash_kb != 1024:
-            raise F4Error("the chip reports %d KB of flash; every radio in BOARDS has 1024" % self.flash_kb)
+        if self.flash_kb != self.chip.flash_kb:
+            raise F4Error("the chip reports %d KB of flash; every %s radio here has %d" % (
+                self.flash_kb, self.chip.title, self.chip.flash_kb))
+
+    def sector_map(self):
+        return {i: (a, s) for i, a, s in self.chip.sectors(self.flash_kb)}
+
+    def mismatched(self, want):
+        """The sectors (of want: {index: bytes, the sector's whole new content}) whose flash differs. CRCs per 4 KB block
+        where every sector in the block is in want; a block holding a sector that isn't (2 KB sectors) is read and
+        compared byte for byte."""
+        secs = self.sector_map()
+        base = self.chip.flash_base
+        blocks = {}
+        for i in want:
+            a, size = secs[i]
+            for b in range(base + (a - base) // BLOCK * BLOCK, a + size, BLOCK):
+                blocks.setdefault(b, []).append(i)
+        bad = set()
+        whole = []                      # blocks wholly described by want: checked by CRC
+        for b in sorted(blocks):
+            expect = bytearray()
+            for i in sorted(set(blocks[b]), key=lambda k: secs[k][0]):
+                a, size = secs[i]
+                lo, hi = max(a, b), min(a + size, b + BLOCK)
+                if lo - b != len(expect):
+                    expect = None
+                    break
+                expect += want[i][lo - a:hi - a]
+            if expect is not None and len(expect) == BLOCK:
+                whole.append((b, bytes(expect)))
+                continue
+            cur = self.read_flash(b, BLOCK)
+            for i in blocks[b]:
+                a, size = secs[i]
+                lo, hi = max(a, b), min(a + size, b + BLOCK)
+                if cur[lo - b:hi - b] != want[i][lo - a:hi - a]:
+                    bad.add(i)
+        k = 0
+        while k < len(whole):           # contiguous runs, one SUMS request each (up to SUM_MAX blocks)
+            j = k
+            while j + 1 < len(whole) and whole[j + 1][0] == whole[j][0] + BLOCK and j + 1 - k < SUM_MAX:
+                j += 1
+            sums = self.sums(whole[k][0], j - k + 1)
+            for (b, data), (crc, _) in zip(whole[k:j + 1], sums):
+                if zlib.crc32(data) != crc:
+                    bad.update(blocks[b])
+            k = j + 1
+        return sorted(bad)
 
     def plan(self, board_id, segments):
         """{sector index: new content} for every sector that holds firmware-owned flash, and which of those differ
@@ -826,9 +927,10 @@ def run(a, port, reopen, log=print, chip=None):
             board = found
         elif found is not None and found != board:
             raise F4Error("the radio says it is a %s, not a %s" % (found, board))
-        image = open(a.odr_stub, "rb").read() if a.odr_stub else stub_image()
-        log(describe_stub(image))
-        radio.odr_enter(image, RUN_ADDR, board=board)
+        image = open(a.odr_stub, "rb").read() if a.odr_stub else chip.stub_image()
+        if chip is F4:
+            log(describe_stub(image))          # the image header (the K22F stub has none)
+        radio.odr_enter(image, chip.run_addr, board=board)
     else:
         radio.attach()
         if board is None and radio.board is not None:
@@ -837,8 +939,8 @@ def run(a, port, reopen, log=print, chip=None):
     radio.configure(board)
     if a.write_app:
         if board is None:
-            raise F4Error("which radio? pass --board (%s)" % ", ".join(sorted(BOARDS)))
-        segs = load_segments(a.write_app, board)
+            raise F4Error("which radio? pass --board (%s)" % ", ".join(chip.boards))
+        segs = load_segments(a.write_app, board, chip)
         t0 = time.monotonic()
         nw, nk = radio.write_image(board, segs, backup_dir=a.backup_dir or os.path.expanduser("~"),
                                    progress=lambda i, n: log("sector step %d of %d" % (i, n)))
@@ -893,9 +995,12 @@ def run(a, port, reopen, log=print, chip=None):
 # ---- self-test: the stub's rules simulated behind a fake serial port
 
 class FakeF4:
-    """The stub's protocol and safety rules (stub/common/stubeng.c) on a simulated 1 MB flash."""
+    """The stub's protocol and safety rules (stub/common/stubeng.c) on a simulated flash (1 MB on the STM32F4; chip:
+    another target's Chip)."""
 
-    def __init__(self, flash, flash_kb=1024, fail_after=None, spi=None, version=VERSION):
+    def __init__(self, flash, flash_kb=None, fail_after=None, spi=None, version=VERSION, chip=None):
+        self.chip = chip or F4
+        flash_kb = flash_kb or self.chip.flash_kb
         self.version = version
         self.record = b"" if version >= CONFIG_VERSION else bytes([1]) + V2_WIRING     # version 2: wiring built in
         self.configs = 0
@@ -958,21 +1063,23 @@ class FakeF4:
         return next(sa + size for _, sa, size in self.chip.sectors(self.flash_kb) if sa <= a < sa + size)
 
     def handle(self, op, p):
+        chip = self.chip
         if op in (OP_ERASE, OP_PROGRAM, OP_XERASE, OP_XPROGRAM) and not self.record:
             return self.frame(NOCONFIG)
         if op == OP_HELLO:
             rec = self.record
             on = bool(rec) and self.version >= CONFIG_VERSION
-            body = (b"F4STUB" + bytes([self.version]) + (4104).to_bytes(2, "big") + self.flash_kb.to_bytes(2, "big")
+            body = (chip.name + bytes([self.version]) + (4104).to_bytes(2, "big") + self.flash_kb.to_bytes(2, "big")
                     + bytes([0x55, 1 | (HELLO_CONFIGURED if on else 0)])
-                    + (int.from_bytes(rec[8:12], "big") if rec else 0).to_bytes(4, "big")
+                    + (self.cfg()["app_base"] if rec else 0).to_bytes(4, "big")
                     + (len(self.spi) if self.spi and rec else 0).to_bytes(4, "big") + bytes([0xEF, 0x40, 0x18]))
             if self.version >= CONFIG_VERSION:
                 body += bytes([rec[0] if on else 0, len(rec)]) + rec
             self.frame(OK, body)
         elif op == OP_CONFIG and self.version >= CONFIG_VERSION:
             self.configs += 1
-            ok = len(p) == REC_LEN and p[0] != 0 and p[1] == REC_LAYOUT and int.from_bytes(p[8:12], "big") == APP_BASE
+            c = chip.parse_record(bytes(p))
+            ok = c is not None and c["app_base"] == chip.app_base
             self.record = bytes(p) if ok else b""
             self.frame(OK if ok else BADARG)
         elif op == OP_SUMS:

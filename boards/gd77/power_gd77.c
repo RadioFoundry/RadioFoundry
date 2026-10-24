@@ -7,6 +7,7 @@
 #include "pins.h"
 #include "platform.h"
 #include "hal_time.h"
+#include "power/battery/battery.h"
 
 #define ADC_REF_MV		3300u	// VDDA (unverified)
 #define BAT_DIVIDER_X10		30u	// provisional 3:1 divider: replace with the radio's measured scale
@@ -80,14 +81,7 @@ static uint16_t battery_mv(void)
 
 static uint8_t battery_pct(void)
 {
-	uint32_t mv = battery_mv();
-	if (mv <= BAT_EMPTY_MV) {
-		return 0;
-	}
-	if (mv >= BAT_FULL_MV) {
-		return 100;
-	}
-	return (uint8_t)((mv - BAT_EMPTY_MV) * 100u / (BAT_FULL_MV - BAT_EMPTY_MV));
+	return battery_linear_pct(battery_mv(), BAT_EMPTY_MV, BAT_FULL_MV);
 }
 
 static int8_t volume(void)

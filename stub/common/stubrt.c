@@ -100,6 +100,7 @@ void stubrt_clock_start(uint32_t core_hz)
 
 uint32_t stub_ms(void)
 {
+	stub_feed();
 	uint32_t c = DWT_CYCCNT;
 	acc_cyc += c - last_cyc;
 	last_cyc = c;

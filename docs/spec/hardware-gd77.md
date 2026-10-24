@@ -275,7 +275,7 @@ signaling but no voice, and FM is unaffected. Beeps and tones use the PCM stream
 | Range | Use | Tag |
 |---|---|---|
 | 0x00000000..0x00003FFF | the radio's bootloader; never written | U |
-| 0x00004000..0x00055CFF | the ODR application, vector table first (`boards/gd77/gd77.ld`) | U |
+| 0x00004000..0x00055CFF | the ODR application, vector table first (`boards/gd77/memory.ld`) | U |
 | 0x00055D00..0x0007B77F | the radio's AMBE+2 codec, merged in on the user's machine: code, table window, descriptor at 0x7B700 ([codec-gd77.md](codec-gd77.md)) | U |
 | 0x0007B780..0x0007F7FF | not used (the rest of sector 0x7B000 is left erased) | U |
 | 0x0007F800..0x0007FFFF | the last 2 KB sector: radio data that must survive; never linked into or written | U |
@@ -576,8 +576,8 @@ The radio's own update mode (section 10) is a different USB device, from the boo
 
 ## 14. Debug link board view
 
-The debug link's `board` view section ([debuglink.md](debuglink.md) 3.7, section 22) carries the readings a first
-session on a radio needs, read without side effects. `tests/hil/test_gd77.py` checks them.
+The debug link's `board` view section ([debuglink.md](debuglink.md) 3.7, section 23) carries the readings a first
+session on a radio needs, read without side effects. `boards/gd77/hil/test_gd77.py` checks them.
 
 | Key | Value |
 |---|---|

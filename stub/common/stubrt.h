@@ -18,8 +18,12 @@
 void stubrt_clock_start(uint32_t core_hz);
 // The core clock changed: what was counted so far stays counted at the old rate
 void stubrt_clock_rate(uint32_t core_hz);
+// Every wait reads the time here (the main loop, the flash busy waits, the SPI flash's status polls, the USB waits,
+// the delays), so stub_ms() also feeds the target's watchdog
 uint32_t stub_ms(void);
 void stub_delay_ms(uint32_t ms);
+// The target's: feed its watchdog (the STM32F4's IWDG, which ODR may have started); empty where none runs
+void stub_feed(void);
 
 // Zero the image's .bss (the linker script's _sbss.._ebss)
 void stubrt_zero_bss(void);

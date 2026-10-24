@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include "stm32f4xx.h"
 #include "f4stub_spi.h"
-#include "stubnor.h"
+#include "f4stub_usb.h"
 
 #define XFER_SPINS	100000u		// per byte: far longer than a byte takes at any prescaler
 #define PAGE		256u
@@ -63,7 +63,7 @@ static void cs(bool active)
 	cs_port->BSRR = active ? ((uint32_t)cs_mask << 16) : cs_mask;
 }
 
-bool nor_hw_xfer(const uint8_t *tx, uint8_t *rx, uint32_t n)
+static bool xfer(const uint8_t *tx, uint8_t *rx, uint32_t n)
 {
 	for (uint32_t i = 0; i < n; i++) {
 		uint32_t spins = XFER_SPINS;
@@ -87,7 +87,8 @@ bool nor_hw_xfer(const uint8_t *tx, uint8_t *rx, uint32_t n)
 	return true;
 }
 
-void nor_hw_select(bool on)
+// One command: tx bytes out, then n bytes in (or n bytes of data out when out is set), chip select around it
+static bool cmd(const uint8_t *tx, uint32_t ntx, uint8_t *in, const uint8_t *out, uint32_t n)
 {
 	cs(true);
 	bool ok = xfer(tx, NULL, ntx) && (n == 0 || xfer(out, in, n));
@@ -112,15 +113,21 @@ static bool wait_ready(uint32_t ms)
 		if (!cmd(&op, 1, &st, NULL, 1)) {
 			return false;
 		}
+		if ((st & 1u) == 0) {
+			return true;
+		}
+		if (stub_ms() - t0 > ms) {
+			return false;
+		}
+		usb_poll();
 	}
-	cs(on);
 }
 
-uint32_t f4spi_init(const f4_board_t *b, uint32_t pclk_hz, uint8_t id[3])
+static bool write_enable(void)
 {
-	id[0] = id[1] = id[2] = 0;
-	if (b->spi_bus == 0) {
-		return 0;
+	uint8_t op = 0x06, st = 0;
+	if (!cmd(&op, 1, NULL, NULL, 0)) {
+		return false;
 	}
 	op = 0x05;
 	return cmd(&op, 1, &st, NULL, 1) && (st & 2u) != 0;

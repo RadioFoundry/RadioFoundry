@@ -13,23 +13,26 @@
 //  - the address ranges PEEK may read besides the internal flash (RAM, ID registers; never peripherals);
 //  - callbacks: write a reply, read memory, erase a sector, program words, reset, the external SPI flash (read, erase
 //    a 4 KB sector, program inside one), configure: check and apply the board record the host sends in CONFIG, and
-//    an optional watchdog feed.
+//    optionally feed the watchdog.
 //
 // The board record is the target's business (its layout is in the target's header); the engine keeps a copy for the
-// HELLO echo and takes three facts back from the target: the application base (the first writable internal flash
-// address, which is also the commit word, see below) and the SPI flash's size and JEDEC ID. Until a CONFIG has been
-// accepted the stub reads internal flash only, and every write answers STUB_ST_NOCONFIG.
+// HELLO echo and takes these facts back from the target: the application base (the first writable internal flash
+// address, which is also the commit word, see below), optionally the end of the writable internal flash (a radio that
+// keeps data in its last sectors) and the SPI flash's size, JEDEC ID and optionally its write floor (a radio whose own
+// data fills the chip's first part). Until a CONFIG has been accepted the stub reads internal flash only, and every
+// write answers STUB_ST_NOCONFIG.
 //
 // Safety rules, checked here so a host tool with a bug can't break them:
-//  - nothing below the application base is erased or programmed, and the base itself can't be configured below the
-//    target's floor or off a sector start;
+//  - nothing below the application base or from the application end up is erased or programmed, and neither can be
+//    configured below the target's floor or off a sector start;
 //  - the interlock: any erase other than the commit sector (the one holding the application base), and any program
 //    outside it, needs the word at the application base to read erased. The radios' bootloaders treat an erased first
 //    word as "no application", so while any application sector is half written the radio stays in its bootloader. The
 //    host programs that word last, as the commit;
 //  - a program only goes to units that read erased, and every word is read back;
 //  - the external SPI flash holds no code: erase there needs the magic, program needs erased bytes, every byte is read
-//    back. What to write is the host's choice (a backup put back, a codeplug).
+//    back, and nothing below the board's write floor is erased or programmed. What to write is the host's choice (a
+//    backup put back, a codeplug).
 #ifndef STUBENG_H
 #define STUBENG_H
 
@@ -101,7 +104,9 @@ typedef struct {
 // What the target's configure gives back to the engine
 typedef struct {
 	uint32_t app_base;		// first writable internal flash address, a sector start (the engine checks it)
+	uint32_t app_end;		// first address above the writable internal flash, a sector start; 0: the flash's end
 	uint32_t xsize;			// SPI flash bytes (0: none, or none answered)
+	uint32_t xfloor;		// SPI flash below this is never erased or programmed (0: none of it is protected)
 	uint8_t xid[3];			// its JEDEC ID
 } stubeng_config_t;
 
@@ -134,8 +139,9 @@ typedef struct {
 	// Check and apply a board record (1 to STUBENG_CONFIG_MAX bytes, the target's layout, first byte the nonzero
 	// board id). False: refused, and the stub is left unconfigured
 	bool (*configure)(void *ctx, const uint8_t *rec, uint32_t n, stubeng_config_t *out);
-	// Optional (NULL: none): feed the watchdog. The engine calls it at every request, before each erase or program, and
-	// once per 4 KB block in SUMS and READ, so no request runs a second without a feed (docs/spec/watchdog.md 3.1)
+	// Optional (NULL: none): feed the target's watchdog. The engine calls it at every request, before each erase or
+	// program, and once per 4 KB block in SUMS and READ, so no request runs a second without a feed
+	// (docs/spec/watchdog.md 3.1)
 	void (*feed)(void *ctx);
 } stubeng_port_t;
 

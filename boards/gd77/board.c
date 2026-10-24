@@ -14,7 +14,7 @@
 #include "usb/usb_device.h"
 #endif
 
-// The RTOS heap, with every task stack, in the upper SRAM; data and bss are in the lower half (gd77.ld)
+// The RTOS heap, with every task stack, in the upper SRAM; data and bss are in the lower half (platform/k22f/common.ld)
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
 
 // Receive only unless built with CONFIG_GD77_TX (boards/gd77/config.mk); radio_gd77.c tx() also wants calibration

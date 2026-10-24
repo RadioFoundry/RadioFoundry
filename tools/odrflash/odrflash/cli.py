@@ -478,6 +478,10 @@ def cmd_flash(args):
     board, man, image, merged = load_image(args, args.board)
     if board.family == "serial-loader":
         return cmd_flash_serial(args, board, man, image, merged)
+    if board.family == "usb-hid-sgl":
+        if args.route == serialflash.STUB:
+            return cmd_flash_stub(args, board, image, merged)
+        return cmd_flash_hid(args, board, image)
     if board.family == "serial-iap":
         raise UsageError("%s is installed with the web flasher or stub/stubtool.py, not with odrflash" % board.name)
     if args.route == serialflash.STUB:
@@ -626,7 +630,7 @@ def _progress(unit):
     return progress
 
 
-def gd77_update_file(args, board, image):
+def hid_update_file(args, board, image):
     """(update file bytes, donor, flat image, codec profile or None): the image with the codec merged in, written into
     a copy of the stock update file --stock (its header is the donor's)."""
     if not args.stock:
@@ -653,12 +657,12 @@ def gd77_update_file(args, board, image):
 
 
 def cmd_flash_stub(args, board, image, merged):
-    """The STM32F4 radios and the GD-77 through the flash stub (stubroute.py): ODR must be running with stub entry."""
+    """The STM32F4 and K22F radios through the flash stub (stubroute.py): ODR must be running with stub entry."""
     if board.id not in stubroute.BOARDS:
         raise UsageError("the %s has no flash stub; use the bootloader route" % board.name)
     if args.simulate:
         raise UsageError("--simulate does not cover the stub route")
-    if board.family == "gd77-hid":
+    if board.family == "usb-hid-sgl":
         if args.stock:
             _, _, image, prof = hid_update_file(args, board, image)
             say("codec    %s" % ("MERGED: %s placed at 0x%X" % (prof, k22fcodec.CODE_BASE) if prof else "none"))
@@ -686,7 +690,7 @@ def cmd_flash_hid(args, board, image):
     """A radio whose loader takes a stock update file over USB HID (hidboot.py): untested on a radio."""
     if args.route not in (serialflash.AUTO, serialflash.BOOTLOADER):
         raise UsageError("--route %s does not apply to the %s" % (args.route, board.name))
-    new, donor, out, prof = gd77_update_file(args, board, image)
+    new, donor, out, prof = hid_update_file(args, board, image)
     say("stock    %s: header and codec source" % donor.label())
     say("codec    %s" % ("MERGED: %s placed at 0x%X" % (prof, k22fcodec.CODE_BASE) if prof else "none: the image has no voice"))
     say("image    %d bytes of flash from 0x%X written into an update file of %d bytes" % (len(out), updatefile.FLASH_BASE, len(new)))
@@ -960,6 +964,16 @@ def cmd_key(args):
 
 
 def cmd_merge(args):
+    if args.board and boards.get(args.board).family == "usb-hid-sgl":
+        board = boards.get(args.board)
+        with open(os.path.expanduser(args.image), "rb") as f:
+            image = f.read()
+        new, donor, out, prof = hid_update_file(args, board, image)
+        with open(args.output, "wb") as f:
+            f.write(new)
+        say("wrote    %s (%d bytes, an update file%s: keep it to yourself)"
+            % (args.output, len(new), " containing the proprietary codec" if prof else ""))
+        return 0
     with open(os.path.expanduser(args.image), "rb") as f:
         image = f.read()
     with open(os.path.expanduser(args.stock), "rb") as f:
@@ -1057,7 +1071,7 @@ def build_parser():
     m.add_argument("--key")
     m.add_argument("-o", "--output", required=True)
     m.add_argument("--board")
-    m.add_argument("--codec", choices=("auto", "keep", "merge"), default="auto", help="GD-77: keep: no codec in the file")
+    m.add_argument("--codec", choices=("auto", "keep", "merge"), default="auto", help="a USB HID update file (--board): keep: no codec in the file")
     m.set_defaults(fn=cmd_merge)
 
     g = sub.add_parser("download", help="download a release image and manifest, verified")

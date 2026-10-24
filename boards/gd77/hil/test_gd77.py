@@ -3,12 +3,13 @@
 """GD-77 bring-up checks (docs/spec/hardware-gd77.md 14), radio only, never transmits. Everything is read from the
 debug link's board view section (board.* keys: pin levels, the clock plan, the reset cause, ADC readings, what the chip
 drivers found) and the diagnostics lines; nothing writes a pin or a chip register. The manual test asks a person to
-hold each key, to settle the key roles that are still open. Skipped on any other board."""
+hold each key, to settle the key roles that are still open. A board's own test: skipped other_board on any other
+radio (tests/hil/hil_plugin.py)."""
 import time
 
 import pytest
 
-from odr_hil import as_int
+from odr_hil import as_int, skip
 
 PLANS = {49152000: False, 95232000: True}      # core clock -> HSRUN (boards/gd77/clock_gd77.h)
 RESET_NAMES = {"por", "pin", "lvd", "wakeup", "sw", "wdog", "lockup", "lol", "loc", "mdm", "jtag", "ezport",
@@ -17,15 +18,13 @@ RESET_NAMES = {"por", "pin", "lvd", "wakeup", "sw", "wdog", "lockup", "lol", "lo
 
 @pytest.fixture
 def gd77(radio):
-    if radio.version().get("board") != "GD-77":
-        pytest.skip("not a GD-77")
     return radio
 
 
 def board(r):
     v = r.view(["board"])
     if v.get("board.built") != "1":
-        pytest.skip("firmware without the board view section")
+        skip("not_built", "firmware without the board view section")
     return v
 
 
@@ -106,7 +105,7 @@ def test_adc_readings(gd77):
 def test_usb_clock_recovery(gd77):
     b = board(gd77)
     if b.get("board.usb.built") == "0":
-        pytest.skip("built without USB")
+        skip("not_built", "built without USB")
     assert b["board.usb.trim_error"] == "0", "the IRC48M clock recovery ran out of trim range"
 
 

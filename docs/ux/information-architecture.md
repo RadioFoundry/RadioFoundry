@@ -228,7 +228,7 @@ scroll wheel does; Home and editors follow the number. (Until 2026-10-10 the kno
 | 0-9 | digits / speed dial |
 | SK1 | `MONITOR` |
 | SK2 | `TALK_TARGET` / Dual watch |
-| Top orange key (if present) | assignable (default Power cycle / Speak status) |
+| Top orange key (if present) | assignable. Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built, else speak status |
 | PTT | `PTT` |
 
 128x64 has no room for a 3x3 grid; quick settings are a numbered list with the same numbers. Home uses two text sizes only.
