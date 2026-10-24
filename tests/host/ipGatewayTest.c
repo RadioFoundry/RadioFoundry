@@ -477,7 +477,7 @@ static void setTtl(uint8_t *f, uint8_t ttl)
 	uint16_t c = sum16(ip, 20, 0); ip[10] = c >> 8; ip[11] = c;
 }
 
-// Real IP addresses (docs/spec/usb-network.md 5): the host's TTL kept, the off-net route by the gateway ID, and from
+// Real IP addresses (docs/spec/usb-network.md 3.1): the host's TTL kept, the off-net route by the gateway ID, and from
 // the air an address that isn't the DMR ID's kept as it is
 static void testOffNet(void)
 {

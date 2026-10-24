@@ -272,3 +272,31 @@ tools/rfoundry_debug.py data ip-settings auto rules id=3101234 port=161 tries=4
 
 Talkgroup packets are never confirmed. A packet to a radio that doesn't answer is sent every try before it is dropped,
 so confirm only where it helps. The settings are saved in the radio.
+
+## Other networks through a gateway radio
+
+By default the radio carries only addresses that stand for a DMR ID: 12.x.y.z for a radio and 225.x.y.z for a
+talkgroup. A packet from the computer to any other address is dropped.
+
+If another radio in your fleet is a gateway to a network (for example a MOTOTRBO control station on a dispatch PC),
+give the radio that radio's DMR ID:
+
+```
+tools/rfoundry_debug.py data ip-settings auto rules gateway=3100500
+tools/rfoundry_debug.py data ip-settings auto rules gateway=0      # off again
+```
+
+The command sets every IP setting at once, so repeat any `id=`, `port=` or `tries=` you use. The setting is saved in
+the radio.
+
+Then add a route on the computer for that network through the radio's address. For example, on Linux with the radio
+as `usb0`:
+
+```
+sudo ip route add 10.20.0.0/16 via 12.0.39.20 dev usb0     # the radio's address (Addresses, above)
+```
+
+Packets to that network go over the air to the gateway radio, with the real destination address in the packet. They
+always use the full header, never the compressed one. Each one loses one from its time to live (TTL), and a packet
+with none left is dropped. Answers come back to your radio's DMR ID with the sender's real address, and the radio
+passes them to the computer.

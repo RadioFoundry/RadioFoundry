@@ -128,7 +128,8 @@ All three are read whatever the setting.
 
 - Format: IPv4 / UDP port 4007 to 4007, user data SAP 4, unconfirmed data. TMS header 0xE0 (ACK requested) or 0xA0,
   sequence number in 5 bits (with bit 7 set), encoding 4, the text as UTF-16LE (Latin-1 characters only on the
-  radio side). Radio IDs map to 12.x.x.x, groups to 225.x.x.x.
+  radio side). Radio IDs map to 12.x.x.x, groups to 225.x.x.x (the CAI addresses; a packet from the host may carry
+  others, 11.1).
 - Ours (`sms_send`): rate 1/2 blocks (gotcha 5.3), 2 preamble CSBKs. With an ACK requested: waits 8 s for the TMS
   ACK with our sequence number, 2 tries, then `SMS_FAILED`. To a group or without an ACK: `SMS_SENT` once on air.
   One message at a time, at most 140 characters.
@@ -241,6 +242,7 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 | `udpCompress` | auto | SAP 3 saves 19-23 octets per UDP packet; auto leaves the DMR application ports (MOTOTRBO servers) on the full header (11.2) |
 | `ipConfirmed`, `ipConfirmedRule[2]` | rules, none | confirmed only where the user names a destination or UDP port: an unanswered confirmed packet costs every retry on air (12.4) |
 | `ipConfirmedTries` | 4 | the first transmission and 3 retries (N_RtryLmt at most 8) |
+| `ipGatewayId` | 0 (none) | the DMR ID of a gateway radio that gets the host's unicast IP for addresses outside the gateway's ranges ([usb-network.md](usb-network.md) 3.1); 0 drops those packets, as before the setting. Stored in `ds_ip_gateway` |
 
 The settings are kept in the settings store (the `ds_*` fields, `settings-store.md` 3): the radio core loads them
 at start and, from its data tick, saves any change made by `dmr_data_set_settings` or the debug link's DMR_DATA
@@ -307,7 +309,21 @@ The packet is an ordinary data packet with SAP 3 in its header; the first data b
 | 7-8 | extended header 2 | the destination port when both are 0 |
 
 Not sent, rebuilt by the receiver: version, IHL 5, TOS 0, total length, flags 0, fragment offset 0, TTL 64, protocol 17,
-both checksums, the UDP length (from the packet length). So a datagram goes compressed only when its UDP length agrees
+both checksums, the UDP length (from the packet length), and both addresses: the source ID's 12.x.y.z and the
+destination ID's 12.x.y.z or, for a talkgroup, 225.x.y.z (the ID's 24 bits under the CAI network octet).
+
+IPv4 addresses are carried apart from the DMR IDs (`dmrDataEncodeIP`, `dmrDataServiceSendIP`, `ipGatewayIPToAir` take a
+source and a destination address and a TTL). The radio's own packets (TMS, ARS, LRRP, text, SNMP answers) use the IDs'
+addresses, so their bytes are as before. A packet from the host may not: the off-net route sends to a gateway radio's
+ID with the real destination address ([usb-network.md](usb-network.md) 3.1). So a UDP packet goes compressed only when
+both of its addresses are exactly the IDs' CAI addresses; any other goes with the full header, whatever `udpCompress`
+says. `dmrDataGetIP` and `dmrDataGetUDP` return the addresses: from the header for SAP 4, rebuilt from the IDs for
+SAP 3. On receive a packet is for an ID itself when its IP destination has the ID's 24 bits under any network octet
+(a MOTOTRBO fleet may use another CAI network than 12 / 225); a packet to our DMR ID for another address is passed to
+the gateway only, never answered by our own services (TMS, ARS, LRRP, text, SNMP).
+
+TTL: the radio's own packets go with 64 (a talkgroup: 1). The host's packets keep the host's TTL, less 1 on the
+off-net route. So a datagram goes compressed only when its UDP length agrees
 with what we have (octets past a shorter UDP length are padding and dropped; a longer one goes with the full header).
 IP options never reach the air: the gateway strips them for SAP 4 too, so the rule that options need the full header
 holds. Receive takes opcode 00 only (others are reserved) and SPID / DPID 1, 2, 98; an unknown ID is reported as
@@ -320,6 +336,9 @@ holds. Receive takes opcode 00 only (others are reserved) and SPID / DPID 1, 2, 
 | off | none |
 | auto (default) | those whose ports are both outside 4000-4099 |
 | all | every one, TMS / ARS / LRRP included |
+
+The mode decides by the ports only. A packet whose addresses are not its IDs' CAI addresses (11.1) goes with the full
+header in every mode, `all` included.
 
 It applies to every UDP packet the radio builds: the gateway's datagrams from the host (`dmrDataServiceSendIP`) and
 the service's own (`dmrDataBuildUDP`: TMS, TMS ACK, ARS, LRRP, `dmrDataServiceSendUDP`, digital APRS). ICMP and SCTP
@@ -356,8 +375,8 @@ debug link counts what was saved (`ip.octets_saved`, `ip.blocks_saved`).
 
 `tests/hil/test_dmr_ip.py` (radio_tx + bench_service): the debug link's IP_SEND puts a UDP datagram into the gateway's
 air path as the host would, the bench modem listens, and `tools/bench/dmr_packet.py` (the standard read apart from the
-firmware) reassembles and decodes it: SAP 3 with the 9 octet header in auto, SAP 4 with compression off, and the
-confirmed retries (12). With `--allow-usb-switch` the last test sends a real datagram from the host over the USB
+firmware) reassembles and decodes it: SAP 3 with the 9 octet header in auto, SAP 4 with compression off, SAP 4 in
+`all` for an IP destination other than the ID's (IP_SEND's explicit address), and the confirmed retries (12). With `--allow-usb-switch` the last test sends a real datagram from the host over the USB
 network.
 
 ## 12. Confirmed data
@@ -432,11 +451,12 @@ transmissions.
 ### 12.5 Debug link
 
 The `dmr_ip` view section (`docs/spec/debuglink.md` 3.7, section 15): settings `ip.compress ip.confirmed ip.tries ip.rule0
-ip.rule1`, `ip.busy ip.result`, compression `ip.sap3 ip.sap4 ip.octets_saved ip.blocks_saved`, the gateway's packets
+ip.rule1 ip.gateway_id`, `ip.busy ip.result`, compression `ip.sap3 ip.sap4 ip.octets_saved ip.blocks_saved`, the gateway's packets
 `ip.packets ip.sent ip.failed`, confirmed `ip.cnf ip.cnf_tx ip.cnf_retries ip.cnf_acks ip.cnf_sacks ip.cnf_nacks
 ip.cnf_resyncs ip.cnf_timeouts ip.cnf_failed ip.cnf_too_long`, receive `ip.rx_sacks_sent ip.rx_nacks_sent
-ip.rx_duplicates ip.rx_crc9_mismatch`. DMR_DATA ops 9 IP_SETTINGS and 10 IP_SEND (`debuglink.md` 3.12;
-`rfoundry_debug.py data ip-settings|ip-send`).
+ip.rx_duplicates ip.rx_crc9_mismatch`. DMR_DATA ops 9 IP_SETTINGS (the gateway ID appended) and 10 IP_SEND (an
+explicit IP destination optional) (`debuglink.md` 3.12; `rfoundry_debug.py data ip-settings ... gateway=ID`,
+`data ip-send ID@A.B.C.D ...`).
 
 ### 12.6 Open
 
