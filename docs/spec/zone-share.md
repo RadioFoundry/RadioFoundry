@@ -171,4 +171,4 @@ channel; the banner says "Sent to <name>" or "Not sent to <name>". One send at a
 | Record | 1024 octets, 80 channels, 32 contacts |
 | Names | 16 printable ASCII characters |
 | Fragments | 4 of up to 322 octets |
-| RAM | about 6.5 KB on one board's build ([feature-matrix.md](../feature-matrix.md)) |
+| RAM | about 4 KB on one board's build; the record being sent comes from the RTOS heap while it is made ([feature-matrix.md](../feature-matrix.md)) |

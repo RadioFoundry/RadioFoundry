@@ -277,6 +277,21 @@ static void test_messages(void)
 	}
 	CHECK(res == ZS_ASM_DONE && a.length == n && memcmp(a.data, rec, (size_t)n) == 0);
 	CHECK(zsBuildFragment(9, rec, n, count, msg) == 0 && zsBuildFragment(9, rec, 0, 0, msg) == 0);
+	// The header alone (what the sender queues before the record's slice) matches the whole fragment
+	for (int k = 0; k < count; k++)
+	{
+		uint8_t whole[ZS_MSG_MAX], head[ZS_MSG_HEADER];
+		int offset = -1;
+		int len = zsBuildFragment(9, rec, n, k, whole);
+		int chunk = zsFragmentHeader(9, n, k, head, &offset);
+		CHECK(chunk == len - ZS_MSG_HEADER && offset == k * ZS_CHUNK_MAX && memcmp(head, whole, ZS_MSG_HEADER) == 0 &&
+		      memcmp(&rec[offset], &whole[ZS_MSG_HEADER], (size_t)chunk) == 0);
+	}
+	{
+		uint8_t head[ZS_MSG_HEADER];
+		int offset = 0;
+		CHECK(zsFragmentHeader(9, n, count, head, &offset) == 0 && zsFragmentHeader(9, 0, 0, head, &offset) == 0);
+	}
 
 	// Another sender while one is in progress: busy; after the time-out it takes over
 	int len = zsBuildFragment(3, rec, n, 0, msg);

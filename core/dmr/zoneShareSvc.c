@@ -26,7 +26,6 @@ static uint32_t offerTimes[ZS_OFFERS_PER_HOUR];	// when the last offers were mad
 static uint8_t offerTimesNext;
 
 // Sending
-static uint8_t frags[ZS_FRAGMENTS_MAX][UDP_HEADER + ZS_MSG_MAX];
 static volatile uint8_t sendState = ZS_SEND_IDLE;
 static uint8_t sendLeft;				// fragments not yet ended
 static uint32_t sendDst;
@@ -126,15 +125,21 @@ bool zone_share_send(uint32_t dst, bool group, const uint8_t *record, int length
 	}
 	uint8_t transfer = (uint8_t)(sendTransfer + 1);
 	airqItem_t items[ZS_FRAGMENTS_MAX];
+	// Each fragment's headers; its slice of the record goes into the queue straight from the record (no copy of the
+	// fragments here: RAM is tight on some radios)
+	uint8_t heads[ZS_FRAGMENTS_MAX][UDP_HEADER + ZS_MSG_HEADER];
 
 	for (int i = 0; i < count; i++)
 	{
-		int n = zsBuildFragment(transfer, record, length, i, &frags[i][UDP_HEADER]);
+		int offset = 0;
+		int n = zsFragmentHeader(transfer, length, i, &heads[i][UDP_HEADER], &offset);
 
+		udp(heads[i], ZS_MSG_HEADER + n);
 		items[i] = (airqItem_t){ .kind = AIRQ_IP, .owner = AIRQ_OWNER_ZONE_SHARE, .protocol = DMR_IP_PROTO_UDP,
 								 .delivery = group ? DMR_IPS_UNCONFIRMED : DMR_IPS_CONFIRMED, .group = group, .dst = dst,
-								 .tag = transfer, .waitMs = ZS_SEND_WAIT_MS, .data = frags[i],
-								 .length = (uint16_t)udp(frags[i], n) };
+								 .tag = transfer, .waitMs = ZS_SEND_WAIT_MS, .data = heads[i],
+								 .length = UDP_HEADER + ZS_MSG_HEADER, .tail = &record[offset],
+								 .tailLength = (uint16_t)n };
 	}
 	dmrDataServiceLock();
 	sendTransfer = transfer;

@@ -449,9 +449,50 @@ static void test_chain(void)
 	CHECK(doneCount[AIRQ_SENT] == 2);
 }
 
+// A packet in two pieces (a zone share fragment: its headers, then its slice of the record) goes as one
+static void test_head_and_tail(void)
+{
+	reset();
+	uint8_t head[10], tail[DMR_DATA_MAX_PACKET];
+	for (int i = 0; i < (int)sizeof(head); i++)
+	{
+		head[i] = (uint8_t)(0xA0 + i);
+	}
+	for (int i = 0; i < (int)sizeof(tail); i++)
+	{
+		tail[i] = (uint8_t)i;
+	}
+	airqItem_t it = item(7, 0);
+	it.data = head;
+	it.length = sizeof(head);
+	it.tail = tail;
+	it.tailLength = 20;
+	CHECK(airqPut(&it));
+	airqStats_t st;
+	airqGetStats(&st);
+	CHECK(st.bytes == ((AIRQ_RECORD_HEADER + 30 + 3) & ~3));
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	CHECK(heldLength == 30 && memcmp(heldCopy, head, sizeof(head)) == 0 && memcmp(heldCopy + 10, tail, 20) == 0);
+	drain(0);
+	CHECK(doneCount[AIRQ_SENT] == 1);
+	// The two pieces together must fit one packet; a tail without its pointer counts for nothing
+	it.tailLength = (uint16_t)(DMR_DATA_MAX_PACKET - sizeof(head) + 1);
+	CHECK(!airqPut(&it));
+	it.tailLength = (uint16_t)(DMR_DATA_MAX_PACKET - sizeof(head));
+	CHECK(airqPut(&it));
+	it.tail = NULL;
+	it.tailLength = 500;
+	CHECK(airqPut(&it));
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	CHECK(heldLength == DMR_DATA_MAX_PACKET);
+	drain(0);
+	CHECK(heldLength == (int)sizeof(head) && doneCount[AIRQ_SENT] == 3);
+}
+
 int main(void)
 {
 	test_mixed_sizes();
+	test_head_and_tail();
 	test_fill_and_refuse();
 	test_wrap_with_head_held();
 	test_batch_and_cancel();

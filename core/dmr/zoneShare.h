@@ -142,6 +142,9 @@ bool zsChannelAt(const zsRecord_t *rec, int index, zsChannel_t *ch);
 
 // Fragment `index` of `count` for a record (offset = index * ZS_CHUNK_MAX); the message's length
 int zsBuildFragment(uint8_t transfer, const uint8_t *record, int recordLength, int index, uint8_t out[ZS_MSG_MAX]);
+// The same fragment's header alone: the record's slice that follows it starts at *offset and is the return's octets
+// long (0: no such fragment)
+int zsFragmentHeader(uint8_t transfer, int recordLength, int index, uint8_t out[ZS_MSG_HEADER], int *offset);
 int zsFragmentCount(int recordLength);
 int zsBuildRequest(uint8_t request, uint8_t want, uint8_t out[ZS_REQUEST_LEN]);
 int zsBuildRefusal(uint8_t request, uint8_t code, uint8_t out[ZS_REFUSAL_LEN]);

@@ -16,8 +16,7 @@
 #include "settings/settings.h"
 #include "storage/storage.h"
 #include "hal_time.h"
-
-static uint8_t record[ZS_RECORD_MAX];	// the record being sent: zone_share_send copies it into the air queue
+#include "FreeRTOS.h"
 static bool sent_group;			// the last send's destination is a talkgroup (for its result's name)
 
 static void contact_name(uint32_t id, bool group, char *out, size_t len)
@@ -42,15 +41,22 @@ uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bo
 		return 0;
 	if (total != NULL)
 		*total = one ? 1 : (uint8_t)z.count;
+	if (one && pos >= z.count)
+		return 0;
+	// The record being sent, from the RTOS heap for the moment it is made: zone_share_send copies it into the air
+	// queue. Not static: a kilobyte of main RAM is too much on some radios for a buffer used this briefly
+	uint8_t *record = pvPortMalloc(ZS_RECORD_MAX);
+	if (record == NULL)
+		return 0;	// "Can't send now"
 	if (one) {
-		if (pos >= z.count)
-			return 0;
-		len = zone_export_channel(z.channels[pos], record, sizeof record);
+		len = zone_export_channel(z.channels[pos], record, ZS_RECORD_MAX);
 		included = len > 0;
 	} else {
-		len = zone_export_zone(zone, record, sizeof record, &included);
+		len = zone_export_zone(zone, record, ZS_RECORD_MAX, &included);
 	}
-	if (len <= 0 || !zone_share_send(dst, group, record, len))
+	bool ok = len > 0 && zone_share_send(dst, group, record, len);
+	vPortFree(record);
+	if (!ok)
 		return 0;
 	sent_group = group;
 	return included;
@@ -119,7 +125,8 @@ static struct {
 	uint32_t serial;
 	uint16_t zone;
 } job;
-static settings_t job_st;	// the import list's copy: the settings aren't held while the codeplug is written
+// The import list's copy: the settings aren't held while the codeplug is written
+static settings_zs_import_t job_imports[SETTINGS_ZS_IMPORTS];
 
 // ok: name the zone's name here, index the channels written, id 1 when it updated an earlier import; else text why
 static void import_done(bool ok, const char *text, const zone_import_result_t *r)
@@ -167,11 +174,13 @@ static void import_job(void *ctx)
 	if (channel) {
 		st = zone_import_channel(data, o.length, job.zone, &r);
 	} else {
-		settings_read(&job_st);
-		st = zone_import_zone(data, o.length, o.src, job_st.zs_import, &r);
+		settings_t *s = settings_begin();	// only the list is copied, not the whole settings (RAM)
+		memcpy(job_imports, s->zs_import, sizeof job_imports);
+		settings_end(hal_millis());		// unchanged: nothing to save
+		st = zone_import_zone(data, o.length, o.src, job_imports, &r);
 		if (st == ZI_OK) {
-			settings_t *s = settings_begin();
-			memcpy(s->zs_import, job_st.zs_import, sizeof s->zs_import);
+			s = settings_begin();
+			memcpy(s->zs_import, job_imports, sizeof s->zs_import);
 			settings_end(hal_millis());
 		}
 	}

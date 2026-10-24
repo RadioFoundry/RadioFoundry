@@ -137,7 +137,9 @@ bool airqPutBatch(const airqItem_t *items, int n)
 	}
 	for (int i = 0; i < n; i++)
 	{
-		if ((items[i].data == NULL) || (items[i].length == 0) || (items[i].length > DMR_DATA_MAX_PACKET) ||
+		int total = items[i].length + ((items[i].tail != NULL) ? items[i].tailLength : 0);
+
+		if ((items[i].data == NULL) || (items[i].length == 0) || (total > DMR_DATA_MAX_PACKET) ||
 				(items[i].owner >= AIRQ_OWNERS))
 		{
 			return false;
@@ -151,7 +153,9 @@ bool airqPutBatch(const airqItem_t *items, int n)
 
 	for (int i = 0; ok && (i < n); i++)
 	{
-		uint16_t size = (uint16_t)((AIRQ_RECORD_HEADER + items[i].length + 3) & ~3);
+		uint16_t tailLength = (items[i].tail != NULL) ? items[i].tailLength : 0;
+		uint16_t length = (uint16_t)(items[i].length + tailLength);
+		uint16_t size = (uint16_t)((AIRQ_RECORD_HEADER + length + 3) & ~3);
 		int off = alloc(size);
 
 		if (off < 0)
@@ -162,7 +166,7 @@ bool airqPutBatch(const airqItem_t *items, int n)
 		record_t *r = recAt((uint16_t)off);
 
 		r->size = size;
-		r->length = items[i].length;
+		r->length = length;
 		r->kind = items[i].kind;
 		r->owner = items[i].owner;
 		r->protocol = items[i].protocol;
@@ -176,6 +180,10 @@ bool airqPutBatch(const airqItem_t *items, int n)
 		r->waitMs = items[i].waitMs;
 		r->maxAgeMs = items[i].maxAgeMs;
 		memcpy(&ring.bytes[off + AIRQ_RECORD_HEADER], items[i].data, items[i].length);
+		if (tailLength != 0)
+		{
+			memcpy(&ring.bytes[off + AIRQ_RECORD_HEADER + items[i].length], items[i].tail, tailLength);
+		}
 		wr = (uint16_t)(off + size);
 		count++;
 		usedBytes = (uint16_t)(usedBytes + size);

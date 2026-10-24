@@ -459,8 +459,9 @@ gateway's one-packet mailbox (#154): a host that sent a second datagram while th
 
 2048 octets hold two longest packets (480) with room to spare, a zone's four fragments, or about thirteen 120-octet
 datagrams. The RAM is the buffer plus a static list of 40 bursts for raw (SAP 10) packets. Measured on one
-board's build: RAM use rose from 101,664 to 111,824 bytes of 131,068 with the queue, zone sharing and its screens,
-which leaves about 19 KB; boards with less headroom set a smaller `CONFIG_DMR_AIR_QUEUE_BYTES` (at least 2 x (28 + 480)).
+board's build: RAM use rose from 101,664 to 108,056 bytes of 131,068 with the queue, zone sharing and its screens,
+which leaves about 22 KB. A packet may come in two pieces (`airqItem_t.tail`), copied into the queue one after the
+other, so a zone share fragment needs no buffer of its own before the queue; boards with less headroom set a smaller `CONFIG_DMR_AIR_QUEUE_BYTES` (at least 2 x (28 + 480)).
 
 #### 12.6.2 Chaining
 

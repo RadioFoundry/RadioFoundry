@@ -62,7 +62,11 @@ typedef struct
 	uint16_t waitMs;					// the oldest packet is offered to the service this long
 	uint16_t maxAgeMs;					// dropped unsent when queued longer than this; 0: no limit
 	const uint8_t *data;				// airqPut: copied; the done function: NULL
-	uint16_t length;
+	uint16_t length;					// octets at data (the done function: the whole packet's)
+	// Optional, airqPut only: tailLength more octets copied after data's, from here. A zone share fragment is its
+	// headers at data and its slice of the record here, so the sender needs no copy of each fragment of its own
+	const uint8_t *tail;
+	uint16_t tailLength;
 } airqItem_t;
 
 typedef struct

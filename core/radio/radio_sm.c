@@ -150,6 +150,9 @@ static void apply_tot(radio_sm_t *sm)
 }
 
 static uint8_t master_power = SETTINGS_UNSET8;	// the settings' power for "default" channels
+// The radio task's copy of the settings for the few places that read more than one field (data_init, cw_start,
+// reload). Static: off the radio task's stack; one copy, since none of them calls another (RAM is tight on some radios)
+static settings_t st_copy;
 
 static uint8_t default_power(void)
 {
@@ -1705,25 +1708,25 @@ static void data_init(radio_sm_t *sm)
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = false, .callAlertAck = true, .lrrpReply = true,
 				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
-	static settings_t st;	// off the radio task's stack, as in reload()
-	settings_read(&st);
-	if (st.ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
-		set.arsServer = st.ds_ars_server <= 0xFFFFFFu ? st.ds_ars_server : 0;
-		set.radioCheckReply = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
-		set.callAlertAck = (st.ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
-		set.lrrpReply = (st.ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
+	settings_t *st = &st_copy;
+	settings_read(st);
+	if (st->ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
+		set.arsServer = st->ds_ars_server <= 0xFFFFFFu ? st->ds_ars_server : 0;
+		set.radioCheckReply = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
+		set.callAlertAck = (st->ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
+		set.lrrpReply = (st->ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
 		// A record from before ETSI IP text has neither format bit: TMS, as that firmware sent (only the default
 		// changed, docs/spec/dmr-data.md 8)
-		set.smsFormat = (st.ds_flags & SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_ETSI_IP :
-				(st.ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
-		set.radioCheckEtsi = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
-		set.udpCompress = (st.ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
-				  (st.ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
-		uint8_t ipc = (uint8_t)(st.ds_ip_cnf >> SETTINGS_DS_IPC_SHIFT) & 3u;
+		set.smsFormat = (st->ds_flags & SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_ETSI_IP :
+				(st->ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		set.radioCheckEtsi = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
+		set.udpCompress = (st->ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
+				  (st->ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
+		uint8_t ipc = (uint8_t)(st->ds_ip_cnf >> SETTINGS_DS_IPC_SHIFT) & 3u;
 		set.ipConfirmed = ipc == SETTINGS_DS_IPC_OFF ? DMR_IPC_OFF : ipc == SETTINGS_DS_IPC_ALL ? DMR_IPC_ALL :
 				  DMR_IPC_RULES;
-		set.ipConfirmedTries = (st.ds_ip_cnf & 0x0F) ? (st.ds_ip_cnf & 0x0F) : DMR_IPC_TRIES_DEFAULT;
-		memcpy(set.ipConfirmedRule, st.ds_ip_rule, sizeof(set.ipConfirmedRule));
+		set.ipConfirmedTries = (st->ds_ip_cnf & 0x0F) ? (st->ds_ip_cnf & 0x0F) : DMR_IPC_TRIES_DEFAULT;
+		memcpy(set.ipConfirmedRule, st->ds_ip_rule, sizeof(set.ipConfirmedRule));
 	}
 	data_saved = set;
 	data_tx.list = NULL;
@@ -1731,11 +1734,11 @@ static void data_init(radio_sm_t *sm)
 	dmrDataServiceSetSettings(&set);
 #if CONFIG_ZONE_SHARE
 	zone_share_init();
-	zone_share_set_offers(st.zs_offers);	// Off unless the user chose Ask (docs/spec/zone-share.md 5)
+	zone_share_set_offers(st->zs_offers);	// Off unless the user chose Ask (docs/spec/zone-share.md 5)
 #endif
 	dmr_call_set_data_rx(data_rx, NULL);
 #if CONFIG_DMR_EMERGENCY
-	emergency_init(&st);
+	emergency_init(st);
 #endif
 }
 
@@ -3637,13 +3640,13 @@ static void cw_start(radio_sm_t *sm, uint32_t now_ms)
 		radio_hs_cw_ended(false, 0);
 		return;
 	}
-	static settings_t st;	// off the radio task's stack, as in reload(): radio_sm_request inlines this
-	settings_read(&st);
-	uint8_t wpm = st.cw_wpm != 0 ? st.cw_wpm : MORSE_WPM_DEFAULT;
+	settings_t *st = &st_copy;
+	settings_read(st);
+	uint8_t wpm = st->cw_wpm != 0 ? st->cw_wpm : MORSE_WPM_DEFAULT;
 	if (wpm < MORSE_WPM_MIN || wpm > MORSE_WPM_MAX) {
 		wpm = MORSE_WPM_DEFAULT;
 	}
-	uint16_t hz = st.cw_tone_hz;
+	uint16_t hz = st->cw_tone_hz;
 	sm->cw_tone_hz = (hz >= CW_TONE_MIN_HZ && hz <= CW_TONE_MAX_HZ) ? hz : MORSE_TONE_HZ_DEFAULT;
 
 	if (sm->dmr_keyed) {
@@ -4203,11 +4206,11 @@ void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t n
 // the channel if they still exist
 static void reload(radio_sm_t *sm, uint32_t now_ms)
 {
-	static settings_t st;	// off the radio task's stack: its deepest path goes through here (stack-check.md)
+	settings_t *st = &st_copy;
 	roam_cancel(sm, now_ms);	// back to the site the search started from first
-	settings_read(&st);
+	settings_read(st);
 #if CONFIG_DMR_ROAMING
-	memcpy(sm->roam_zones, st.roam_zones, sizeof(sm->roam_zones));
+	memcpy(sm->roam_zones, st->roam_zones, sizeof(sm->roam_zones));
 	sm->roam_dirty = true;
 #endif
 	sm->reload_pending = false;
@@ -4222,9 +4225,9 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	uint16_t number = sm->have_channels && sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
 	bool vfo = sm->view.vfo;
 	select_position(sm, sm->view.zone_index, number, sm->view.zone_pos);
-	apply_prefs(sm, &st);
+	apply_prefs(sm, st);
 	radio_settings_t rs;
-	settings_to_radio(&st, &rs);
+	settings_to_radio(st, &rs);
 	use_settings(sm, &rs, now_ms);
 	if (vfo || !sm->have_channels) {
 		if (VFO_AVAILABLE) {

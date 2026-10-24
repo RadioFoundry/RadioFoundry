@@ -397,7 +397,7 @@ int zsFragmentCount(int recordLength)
 	return (recordLength + ZS_CHUNK_MAX - 1) / ZS_CHUNK_MAX;
 }
 
-int zsBuildFragment(uint8_t transfer, const uint8_t *record, int recordLength, int index, uint8_t out[ZS_MSG_MAX])
+int zsFragmentHeader(uint8_t transfer, int recordLength, int index, uint8_t out[ZS_MSG_HEADER], int *offset)
 {
 	int count = zsFragmentCount(recordLength);
 
@@ -405,16 +405,29 @@ int zsBuildFragment(uint8_t transfer, const uint8_t *record, int recordLength, i
 	{
 		return 0;
 	}
-	int offset = index * ZS_CHUNK_MAX;
-	int n = recordLength - offset;
+	int at = index * ZS_CHUNK_MAX;
+	int n = recordLength - at;
 
 	n = (n > ZS_CHUNK_MAX) ? ZS_CHUNK_MAX : n;
 	out[0] = ZS_VERSION;
 	out[1] = ZS_MSG_FRAGMENT;
 	out[2] = transfer;
 	out[3] = (uint8_t)((index << 4) | count);
-	out[4] = (uint8_t)(offset >> 8);
-	out[5] = (uint8_t)offset;
+	out[4] = (uint8_t)(at >> 8);
+	out[5] = (uint8_t)at;
+	*offset = at;
+	return n;
+}
+
+int zsBuildFragment(uint8_t transfer, const uint8_t *record, int recordLength, int index, uint8_t out[ZS_MSG_MAX])
+{
+	int offset = 0;
+	int n = zsFragmentHeader(transfer, recordLength, index, out, &offset);
+
+	if (n == 0)
+	{
+		return 0;
+	}
 	memcpy(&out[ZS_MSG_HEADER], &record[offset], (size_t)n);
 	return ZS_MSG_HEADER + n;
 }
