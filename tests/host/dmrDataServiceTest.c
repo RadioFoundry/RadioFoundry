@@ -1107,6 +1107,79 @@ static void testIpTx(void)
 	decodeTx = true;
 }
 
+// The packet in lastTx, decoded by the codec's receiver; NULL if none
+static const dmrDataPacket_t *txPacket(void)
+{
+	const dmrDataPacket_t *got = NULL;
+
+	dmrDataRxReset();
+	for (int i = 0; i < lastTxCount; i++)
+	{
+		if (dmrDataRxBurst(&lastTx[i]) == DMR_DATA_RX_PACKET)
+		{
+			got = &dmrDataRxPacket;
+		}
+	}
+	return got;
+}
+
+// Real IP addresses (docs/spec/dmr-data.md 11.1): an IP destination other than the ID's goes with the full header in
+// every compression mode, with the TTL given; to us, a packet for another address is passed on, not answered
+static void testIpAddresses(void)
+{
+	const uint32_t OFF_NET = 0xC0A80A05u;		// 192.168.10.5
+	dmrDataUDP_t udp;
+	reset();
+	decodeTx = false;
+
+	ipSettings(DMR_UDPC_ALL, DMR_IPC_OFF, 0, 0, 0);
+	udpDatagram(50000, 161, 20);
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, OFF_NET, 30, DMR_IP_PROTO_UDP, ipL4, 8 + 20));
+	runMainTask(100);
+	const dmrDataPacket_t *p = txPacket();
+	CHECK(p != NULL && p->sap == DMR_SAP_IP && p->dst == RADIO_A && p->src == OUR_ID && p->data[8] == 30);
+	CHECK(p != NULL && dmrDataGetUDP(p, &udp) && udp.dstIp == OFF_NET && udp.srcIp == dmrDataIdAddress(false, OUR_ID));
+	// The IDs' addresses, as the service's own packets have: compressed, the TTL not on the air
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP,
+							   ipL4, 8 + 20));
+	runMainTask(100);
+	p = txPacket();
+	CHECK(p != NULL && p->sap == DMR_SAP_UDPIP_COMPRESSION);
+	CHECK(p != NULL && dmrDataGetUDP(p, &udp) && udp.dstIp == dmrDataIdAddress(false, RADIO_A));
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
+	decodeTx = true;
+
+	// An LRRP request to our ID: answered when its IP destination is our ID's address (any CAI network), only passed
+	// on when it is another's (we route it, the host answers)
+	settings.hasGps = true;
+	haveLocation = true;
+	static const uint8_t request[] = { 0x05, 0x09, 0x22, 0x04, 0x0a, 0x0b, 0x0c, 0x0d, 0x51, 0x62, 0x57 };
+	uint8_t l4[8 + sizeof(request)] = { DMR_UDP_PORT_LRRP >> 8, DMR_UDP_PORT_LRRP & 0xFF, DMR_UDP_PORT_LRRP >> 8,
+										DMR_UDP_PORT_LRRP & 0xFF, 0, sizeof(l4), 0, 0 };
+	memcpy(&l4[8], request, sizeof(request));
+	static const uint32_t to[3] = { OFF_NET, 0x0D0003E8u, 0 };// 13.0.3.232: ID 1000 in another CAI network
+	static const int answers[3] = { 0, 1, 1 };
+	for (int i = 0; i < 3; i++)
+	{
+		const uint8_t *pdu;
+		uint8_t sap;
+		dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+		uint32_t dstIp = to[i] ? to[i] : dmrDataIdAddress(false, OUR_ID);
+		int n = dmrDataEncodeIP(false, OUR_ID, LRRP_SERVER, dstIp, dmrDataIdAddress(false, LRRP_SERVER), DMR_IP_TTL_DEFAULT,
+								DMR_IP_PROTO_UDP, l4, sizeof(l4), false, 1, &pdu, &sap);
+		int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, false, OUR_ID, LRRP_SERVER, pdu, n, DT_RATE_12_DATA, 1,
+									   bursts, DMR_DATA_MAX_BURSTS);
+		int heard = packetsHeard;
+
+		sentCount = 0;
+		rxBursts(bursts, count);
+		runMainTask(3000);
+		CHECK(packetsHeard == heard + 1);
+		CHECK(countLrrp(0x07) == answers[i]);
+	}
+	reset();
+}
+
 // Confirmed data to us: a bad block asked for again with a selective ACK, the retry completes the packet (passed on
 // once), the same packet again is ACKed but not passed on; lost bursts asked for after CNF_RX_STALL_MS; a CRC-32
 // failure with good blocks NACKed
@@ -1552,6 +1625,7 @@ int main(void)
 	testNotOnChannel();
 #endif
 	testIpTx();
+	testIpAddresses();
 	testConfirmedRx();
 	testIpText();
 	testPassthrough();

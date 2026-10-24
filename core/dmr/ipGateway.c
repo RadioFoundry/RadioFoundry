@@ -666,7 +666,7 @@ static bool deliver(bool group, uint32_t dst, uint32_t src, uint32_t srcAir, uin
 	if (!dmrDataIpIsId(srcAir, src))
 	{
 		srcIp = srcAir;
-		if (!isOffNet(srcIp) && !isRadioAddress(srcIp))
+		if ((!isOffNet(srcIp) && !isRadioAddress(srcIp)) || (srcIp == ipGatewayHostIP()) || (srcIp == ipGatewayRadioIP()))
 		{
 			return true;// would look like the host, the radio, the link or a group, dropped
 		}

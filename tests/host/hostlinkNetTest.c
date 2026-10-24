@@ -428,6 +428,19 @@ int main(void)
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
 	CHECK(local.calls == 2 && sent_count == 2);
+	// ... nor when its IP destination is another address (we are the gateway to it): to the host, the address kept
+	p.dst = RADIO_ID;
+	put32(pip + 16, 0xC0A80A05u);
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
+	sent_count = 0;
+	hostlink_net_packet(&p);
+	hostlink_net_poll(now_ms);
+	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
+	      get32(sent[0] + 14 + 16) == 0xC0A80A05u);
+	put32(pip + 16, IPGW_INDIVIDUAL_NET | RADIO_ID);
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
 	// A port bound for the link only (TFTP, mDNS) never takes datagrams from the air: they go to the host
 	CHECK(ipGatewayUdpBind(69, local_udp));
 	p.dst = RADIO_ID;
@@ -507,6 +520,17 @@ int main(void)
 	hostlink_net_air_stats_t as;
 	hostlink_net_air_stats(&as);
 	CHECK(as.queued == 4 && as.sent == 2 && as.failed == 1 && as.dropped == 1 && as.refused_busy == 3);
+	// Off-net through the gateway ID: the mailbox carries the real destination and the TTL to the service, which
+	// sends the full header to the gateway radio from our ID's address
+	ipGatewaySetOffNetId(3100500);
+	from_host(f, host_udp(f, 0xC0A80A05u, 5000, 5001, hello, sizeof(hello)));
+	hostlink_net_air_tick(RADIO_ID, now_ms);
+	CHECK(svc_lists == 3);
+	pk = svc_packet();
+	CHECK(pk != NULL && pk->sap == DMR_SAP_IP && pk->dst == 3100500 && !pk->group && pk->data[8] == 63);
+	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.dstIp == 0xC0A80A05u && u.srcIp == dmrDataIdAddress(false, RADIO_ID));
+	ipGatewaySetOffNetId(0);
+	hostlink_net_air_tick(RADIO_ID, now_ms);
 	// The packet hook passes what the service hears on to the host
 	memset(&p, 0, sizeof(p));
 	p.sap = DMR_SAP_SHORT_DATA;

@@ -549,6 +549,122 @@ static void testSap3(void)
 	CHECK(!dmrDataGetUDP(&p, &udp));
 }
 
+// Ones' complement sum of 16-bit words from start (for the IPv4 and UDP checksum checks: a valid one sums to 0xFFFF)
+static uint16_t onesSum(uint32_t start, const uint8_t *p, int length)
+{
+	uint32_t sum = start;
+	for (int i = 0; i + 1 < length; i += 2) sum += (uint32_t)((p[i] << 8) | p[i + 1]);
+	if (length & 1) sum += (uint32_t)(p[length - 1] << 8);
+	while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+	return (uint16_t)sum;
+}
+
+static uint32_t be32(const uint8_t *p)
+{
+	return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+}
+
+// A full header PDU (SAP 4) with a valid IPv4 header and, for UDP, a valid UDP checksum over its addresses
+static bool validIp(const uint8_t *pdu, int n)
+{
+	if ((n < 20) || (pdu[0] != 0x45) || (onesSum(0, pdu, 20) != 0xFFFF) || (((pdu[2] << 8) | pdu[3]) != n))
+	{
+		return false;
+	}
+	if (pdu[9] != DMR_IP_PROTO_UDP)
+	{
+		return true;
+	}
+	return onesSum(onesSum(DMR_IP_PROTO_UDP + (n - 20), &pdu[12], 8), &pdu[20], n - 20) == 0xFFFF;
+}
+
+// Real IPv4 addresses (docs/spec/dmr-data.md 11.1): the compressed header only when both are the IDs' CAI addresses
+static void testIpAddresses(void)
+{
+	const uint8_t *pdu;
+	uint8_t sap, keep[200];
+	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+	dmrDataUDP_t udp;
+	dmrDataIP_t ip;
+	const uint32_t CAI_SRC = 0x0C002715u;		// 12.0.39.21: ID 10005
+	const uint32_t CAI_DST = 0x0C000064u;		// 12.0.0.100: ID 100
+	const uint32_t OFF_NET = 0xC0A80A05u;		// 192.168.10.5
+
+	CHECK(dmrDataIdAddress(false, 10005) == CAI_SRC && dmrDataIdAddress(true, 9) == 0xE1000009u);
+	CHECK(dmrDataIdAddress(false, 0x1FFFFFF) == 0x0CFFFFFFu);// the ID's 24 bits
+	CHECK(dmrDataIpIsId(CAI_SRC, 10005) && dmrDataIpIsId(0x0D002715u, 10005) && !dmrDataIpIsId(CAI_SRC, 10006));
+	CHECK(!dmrDataIpIsId(OFF_NET, 100));
+
+	uint8_t l4[8 + 20];
+	l4[0] = 50000 >> 8; l4[1] = 50000 & 0xFF; l4[2] = 0; l4[3] = 161; l4[4] = 0; l4[5] = sizeof(l4); l4[6] = 0; l4[7] = 0;
+	for (int i = 8; i < (int)sizeof(l4); i++) l4[i] = (uint8_t)(0x40 + i);
+
+	// The IDs' addresses: SAP 3, the same bytes as the builder that derives them
+	dmrDataSetUdpCompression(DMR_UDPC_AUTO);
+	int n = dmrDataEncodeIP(false, 100, 10005, CAI_DST, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4), true,
+							0x1234, &pdu, &sap);
+	CHECK(n == 9 + 20 && sap == DMR_SAP_UDPIP_COMPRESSION);
+	memcpy(keep, pdu, n);
+	int m = dmrDataEncodeIP(false, 100, 10005, dmrDataIdAddress(false, 100), dmrDataIdAddress(false, 10005),
+							DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4), true, 0x1234, &pdu, &sap);
+	CHECK(m == n && memcmp(keep, pdu, n) == 0);
+	// ... and with compression off the full header carries them, TTL 64
+	n = dmrDataEncodeIP(false, 100, 10005, CAI_DST, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4), false,
+						0x1234, &pdu, &sap);
+	CHECK(n == 28 + 20 && sap == DMR_SAP_IP && validIp(pdu, n) && pdu[8] == 64);
+	CHECK(be32(&pdu[12]) == CAI_SRC && be32(&pdu[16]) == CAI_DST);
+
+	// Another destination address: the full header whatever the mode (all included), both checksums valid
+	static const uint8_t modes[] = { DMR_UDPC_OFF, DMR_UDPC_AUTO, DMR_UDPC_ALL };
+	for (unsigned i = 0; i < sizeof(modes); i++)
+	{
+		dmrDataSetUdpCompression(modes[i]);
+		n = dmrDataEncodeIP(false, 100, 10005, OFF_NET, CAI_SRC, 37, DMR_IP_PROTO_UDP, l4, sizeof(l4),
+							dmrDataUdpCompress(50000, 161), 0x0102, &pdu, &sap);
+		CHECK(n == 28 + 20 && sap == DMR_SAP_IP && validIp(pdu, n));
+		CHECK(be32(&pdu[12]) == CAI_SRC && be32(&pdu[16]) == OFF_NET && pdu[8] == 37);
+	}
+	// ... or another source address, also compressed as asked
+	dmrDataSetUdpCompression(DMR_UDPC_ALL);
+	n = dmrDataEncodeIP(false, 100, 10005, CAI_DST, OFF_NET, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4), true,
+						1, &pdu, &sap);
+	CHECK(sap == DMR_SAP_IP && validIp(pdu, n) && be32(&pdu[12]) == OFF_NET);
+	// ... or the ID's 24 bits under another CAI network: not what a receiver of SAP 3 rebuilds
+	n = dmrDataEncodeIP(false, 100, 10005, 0x0D000064u, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4),
+						true, 1, &pdu, &sap);
+	CHECK(sap == DMR_SAP_IP);
+
+	// A talkgroup: 225.x.y.z compresses, TTL 1 by default; a multicast group of the host's keeps the full header
+	n = dmrDataEncodeIP(true, 9, 10005, 0xE1000009u, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4), true,
+						1, &pdu, &sap);
+	CHECK(sap == DMR_SAP_UDPIP_COMPRESSION && pdu[2] == 0x02);
+	n = dmrDataEncodeIP(true, 9, 10005, 0xEFFF0001u, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4), true,
+						1, &pdu, &sap);
+	CHECK(sap == DMR_SAP_IP && validIp(pdu, n) && pdu[8] == 1 && be32(&pdu[16]) == 0xEFFF0001u);
+	n = dmrDataEncodeIP(true, 9, 10005, 0xE1000009u, CAI_SRC, 5, DMR_IP_PROTO_UDP, l4, sizeof(l4), false, 1, &pdu, &sap);
+	CHECK(sap == DMR_SAP_IP && pdu[8] == 5);// a host's TTL is kept
+
+	// Over the air: SAP 4 carries both addresses back; another protocol too
+	n = dmrDataEncodeIP(false, 100, 10005, OFF_NET, CAI_SRC, 64, DMR_IP_PROTO_UDP, l4, sizeof(l4), true, 9, &pdu, &sap);
+	m = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, false, 100, 10005, pdu, n, DT_RATE_12_DATA, 0, bursts,
+						   DMR_DATA_MAX_BURSTS);
+	CHECK(feed(bursts, m) == DMR_DATA_RX_PACKET && dmrDataRxPacket.sap == DMR_SAP_IP);
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.srcIp == CAI_SRC && udp.dstIp == OFF_NET && udp.dstPort == 161);
+	const uint8_t echo[8] = { 8, 0, 0xF7, 0xFE, 0, 1, 0, 0 };
+	n = dmrDataEncodeIP(false, 100, 10005, OFF_NET, 0x0A000001u, 64, DMR_IP_PROTO_ICMP, echo, sizeof(echo), false, 9,
+						&pdu, &sap);
+	m = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, false, 100, 10005, pdu, n, DT_RATE_12_DATA, 0, bursts,
+						   DMR_DATA_MAX_BURSTS);
+	CHECK(feed(bursts, m) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataGetIP(&dmrDataRxPacket, &ip) && ip.srcIp == 0x0A000001u && ip.dstIp == OFF_NET && ip.protocol == 1);
+	// SAP 3 has no addresses: rebuilt from the IDs (a talkgroup's 225.x.y.z)
+	dmrDataSetUdpCompression(DMR_UDPC_AUTO);
+	m = dmrDataBuildUDP(true, 9, 10005, 5016, 5016, (const uint8_t *)"hi", 2, DT_RATE_12_DATA, 0, bursts,
+						DMR_DATA_MAX_BURSTS);
+	CHECK(feed(bursts, m) == DMR_DATA_RX_PACKET && dmrDataRxPacket.sap == DMR_SAP_UDPIP_COMPRESSION);
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.srcIp == CAI_SRC && udp.dstIp == 0xE1000009u);
+}
+
 // The CRC-9 (B.3.10), vectors from a polynomial division of the clause's M(x) apart from this code
 static void testCRC9(void)
 {
@@ -990,6 +1106,7 @@ int main(void)
 	testCSBKAnswers();
 	testConfirmedRx();
 	testSap3();
+	testIpAddresses();
 	testCRC9();
 	testConfirmedTx();
 	testAirtime();

@@ -43,6 +43,8 @@ static struct
 	int calls;
 	bool group;
 	uint32_t dst;
+	uint32_t srcIp, dstIp;
+	uint8_t ttl;
 	uint8_t protocol;
 	uint16_t srcPort;
 	uint16_t dstPort;
@@ -71,6 +73,9 @@ bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, 
 	air.calls++;
 	air.group = group;
 	air.dst = dst;
+	air.srcIp = srcIp;
+	air.dstIp = dstIp;
+	air.ttl = ttl;
 	air.protocol = protocol;
 	if (protocol == 17)
 	{
@@ -461,6 +466,105 @@ static void testDeliver(void)
 	CHECK(memcmp(lastFrame, BCAST_MAC, 6) == 0);
 	CHECK(get32(&lastFrame[26]) == RADIO_IP && get32(&lastFrame[30]) == IPGW_BROADCAST_IP);
 	CHECK(lastFrame[36] == (IPGW_MONITOR_PORT >> 8) && lastFrame[37] == (IPGW_MONITOR_PORT & 0xFF));
+}
+
+// A frame from hostUdp / hostIp with another TTL (the IPv4 checksum redone)
+static void setTtl(uint8_t *f, uint8_t ttl)
+{
+	uint8_t *ip = f + 14;
+	ip[8] = ttl;
+	ip[10] = ip[11] = 0;
+	uint16_t c = sum16(ip, 20, 0); ip[10] = c >> 8; ip[11] = c;
+}
+
+// Real IP addresses (docs/spec/usb-network.md 5): the host's TTL kept, the off-net route by the gateway ID, and from
+// the air an address that isn't the DMR ID's kept as it is
+static void testOffNet(void)
+{
+	uint8_t f[200];
+	const uint8_t text[] = { 0x00, 'h', 0x00, 'i' };
+	const uint32_t OFF_NET = 0xC0A80A05u;		// 192.168.10.5
+	const uint32_t GATEWAY = 3100500;
+	int n;
+
+	int calls = air.calls;// the tests after count on from the ones before
+
+	// In the ranges: the IDs' CAI addresses on the air, the host's source as ours, its TTL kept
+	ipGatewaySetOffNetId(0);
+	air.calls = 0;
+	n = hostUdp(f, GW_MAC, HOST_IP, IPGW_INDIVIDUAL_NET | 235, 5016, 5016, text, sizeof(text));
+	setTtl(f, 9);
+	in(f, n);
+	CHECK(air.calls == 1 && !air.group && air.dst == 235 && air.ttl == 9);
+	CHECK(air.srcIp == IPGW_AIR_SRC_OURS && air.dstIp == dmrDataIdAddress(false, 235));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_MULTICAST_NET | 9, 5016, 5016, text, sizeof(text)));
+	CHECK(air.calls == 2 && air.group && air.dst == 9 && air.ttl == 64 && air.dstIp == dmrDataIdAddress(true, 9));
+
+	// Off-net without a gateway ID: dropped, as before
+	in(f, hostUdp(f, GW_MAC, HOST_IP, OFF_NET, 5000, 161, text, sizeof(text)));
+	CHECK(air.calls == 2 && framesSent == 0);
+
+	// With one: an individual packet to it, the real destination, one hop less
+	ipGatewaySetOffNetId(0x01000000u | GATEWAY);
+	CHECK(ipGatewayOffNetId() == GATEWAY);
+	in(f, hostUdp(f, GW_MAC, HOST_IP, OFF_NET, 5000, 161, text, sizeof(text)));
+	CHECK(air.calls == 3 && !air.group && air.dst == GATEWAY && air.dstIp == OFF_NET && air.ttl == 63);
+	CHECK(air.srcIp == IPGW_AIR_SRC_OURS && air.protocol == 17 && air.dstPort == 161 && air.length == sizeof(text));
+	uint8_t echo[8] = { 8, 0, 0, 0, 0, 1, 0, 1 };
+	uint16_t c = sum16(echo, sizeof(echo), 0); echo[2] = c >> 8; echo[3] = c;
+	in(f, hostIp(f, GW_MAC, HOST_IP, OFF_NET, 1, echo, sizeof(echo)));
+	CHECK(air.calls == 4 && air.dst == GATEWAY && air.dstIp == OFF_NET && air.protocol == 1);
+	// TTL 2 leaves with 1; at 1 or 0 it is dropped (the last hop)
+	n = hostUdp(f, GW_MAC, HOST_IP, OFF_NET, 5000, 161, text, sizeof(text));
+	setTtl(f, 2);
+	in(f, n);
+	CHECK(air.calls == 5 && air.ttl == 1);
+	setTtl(f, 1);
+	in(f, n);
+	setTtl(f, 0);
+	in(f, n);
+	CHECK(air.calls == 5);
+	// Raw data has no header for the address; never routed: loopback, link local, 0/8, multicast
+	raw.calls = 0;
+	in(f, hostUdp(f, GW_MAC, HOST_IP, OFF_NET, IPGW_RAW_PORT, IPGW_RAW_PORT, text, sizeof(text)));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, 0x7F000001u, 5000, 161, text, sizeof(text)));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, 0xA9FE0101u, 5000, 161, text, sizeof(text)));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, 0x00000005u, 5000, 161, text, sizeof(text)));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, 0xEF010203u, 5000, 161, text, sizeof(text)));
+	CHECK(air.calls == 5 && raw.calls == 0);
+	// The ranges still go by their own IDs, not to the gateway
+	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_INDIVIDUAL_NET | 235, 5016, 5016, text, sizeof(text)));
+	CHECK(air.calls == 6 && air.dst == 235 && air.ttl == 64);
+	ipGatewaySetOffNetId(0);
+	air.calls = calls;
+
+	// From the air, to our ID for another address: we are its gateway, so the host gets it as it is
+	const uint8_t report[] = { 0x0D, 0x0A, 0x22, 0x04 };
+	const uint32_t cai235 = dmrDataIdAddress(false, 235);
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, cai235, OFF_NET, 4001, 4001, report, sizeof(report)));
+	CHECK(memcmp(lastFrame, HOST_MAC, 6) == 0 && get32(&lastFrame[30]) == OFF_NET);
+	CHECK(get32(&lastFrame[26]) == (IPGW_INDIVIDUAL_NET | 235) && sum16(&lastFrame[14], 20, 0) == 0);
+	// ... from an off-net host behind radio 235: its address kept, to the host's
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, 0x0A010203u, dmrDataIdAddress(false, RADIO_ID), 4001, 4001, report,
+							  sizeof(report)));
+	CHECK(memcmp(lastFrame, HOST_MAC, 6) == 0 && get32(&lastFrame[26]) == 0x0A010203u && get32(&lastFrame[30]) == HOST_IP);
+	// ... between two other radios: the monitor's MAC, the address kept
+	CHECK(ipGatewayDeliverUDP(false, 236, 235, cai235, OFF_NET, 4001, 4001, report, sizeof(report)));
+	CHECK(memcmp(lastFrame, HOST_MAC, 6) != 0 && !(lastFrame[0] & 1) && get32(&lastFrame[30]) == OFF_NET);
+	// ... a multicast group of the host's: its MAC
+	CHECK(ipGatewayDeliverUDP(true, 9, 235, cai235, 0xEF010203u, 4007, 4007, report, sizeof(report)));
+	const uint8_t mcast[6] = { 0x01, 0x00, 0x5E, 0x01, 0x02, 0x03 };
+	CHECK(memcmp(lastFrame, mcast, 6) == 0 && get32(&lastFrame[30]) == 0xEF010203u);
+	// ... a source that would look like the host, the radio or loopback, or a destination of loopback: dropped
+	framesSent = 0;
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, ipGatewayHostIP(), dmrDataIdAddress(false, RADIO_ID), 4001, 4001, report,
+							  sizeof(report)));
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, RADIO_IP, dmrDataIdAddress(false, RADIO_ID), 4001, 4001, report,
+							  sizeof(report)));
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, 0x7F000001u, dmrDataIdAddress(false, RADIO_ID), 4001, 4001, report,
+							  sizeof(report)));
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, cai235, 0x7F000001u, 4001, 4001, report, sizeof(report)));
+	CHECK(framesSent == 0);
 }
 
 // MMDVMHost's UDP modem protocol: datagrams to the radio's port 3334 carry the serial byte stream, replies go back
@@ -896,6 +1000,7 @@ int main(void)
 	testPing();
 	testToAir();
 	testDeliver();
+	testOffNet();
 	testSerial();
 	testOtherProtocols();
 	testRaw();

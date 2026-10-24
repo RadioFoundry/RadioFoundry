@@ -1964,14 +1964,29 @@ static void test_persist(void)
 	ds.arsServer = 3100999;
 	ds.radioCheckReply = true;
 	ds.callAlertAck = false;
+	CHECK(ds.ipGatewayId == 0);		// no off-net route by default
+	ds.ipGatewayId = 3100500;
 	dmr_data_set_settings(&ds);
 	run(50);
 	settings_read(&cur);
 	CHECK(cur.ds_stored == 1 && cur.ds_ars_server == 3100999 && cur.ds_flags == (SETTINGS_DS_RADIO_CHECK_REPLY |
 											SETTINGS_DS_LRRP_REPLY | SETTINGS_DS_SMS_ETSI_IP));
+	CHECK(cur.ds_ip_gateway == 3100500);
 	boot();
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 3100999 && ds.radioCheckReply && !ds.callAlertAck && ds.lrrpReply);
+	CHECK(ds.ipGatewayId == 3100500);
+	// Only the ID's 24 bits are read back; a record from before the gateway ID has 0 there: off
+	settings_begin()->ds_ip_gateway = 0xFF000000u | 3100501;
+	settings_end(now);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.ipGatewayId == (3100501 & 0xFFFFFFu));
+	settings_begin()->ds_ip_gateway = 0;
+	settings_end(now);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.ipGatewayId == 0);
 	// A record from before ETSI IP text (no format bit) keeps TMS: only the default changed
 	settings_begin()->ds_flags = SETTINGS_DS_CALL_ALERT_ACK | SETTINGS_DS_LRRP_REPLY;
 	settings_end(now);
