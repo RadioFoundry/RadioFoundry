@@ -16,6 +16,11 @@ start-up (the `rs_*` fields, `settings-store.md` 3) and saves every change made 
 settings screen hands the whole struct over on a change and reads it back with `radio_get_settings()`. The debug
 link's SETTING op goes through `radio_set_settings()` too, so its changes are saved.
 
+Every caller reads the struct, changes its own fields and sets it again. The settings screen reads it afresh for each
+change, so a change made elsewhere (the debug link, a host, the radio core) is kept. Until the radio task has taken
+in the last `radio_set_settings()`, `radio_get_settings()` answers with those settings, not the ones in force. A run of
+quick changes therefore never reads back a value from before its own last change.
+
 | Setting | Default | Meaning |
 |---|---|---|
 | `tot_s` | 180 | the radio's TX time-out, for channels whose own (codeplug) value is 0; 0 = none |
