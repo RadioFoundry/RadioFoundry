@@ -83,6 +83,11 @@ TESTS   += lrrpTest
 lrrpTest: lrrpTest.c fuzz.h $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmrLrrp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ lrrpTest.c $(CORE)/dmr/dmrLrrp.c -lm
 
+# The zone share record and messages (docs/spec/zone-share.md): round trip, malformed input, fragments, fuzzing
+TESTS   += zoneShareTest
+zoneShareTest: zoneShareTest.c fuzz.h $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShare.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ zoneShareTest.c $(CORE)/dmr/zoneShare.c
+
 dmrPrivacyTest: dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/dmrPrivacy.h $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -o $@ dmrPrivacyTest.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
 
@@ -109,6 +114,7 @@ run: $(TESTS)
 	./hotspotUplinkTest
 	./dmrPrivacyTest
 	./lrrpTest
+	./zoneShareTest
 	./ipGatewayTest
 	./ipGatewayTest16
 	./ipGatewayTest31
