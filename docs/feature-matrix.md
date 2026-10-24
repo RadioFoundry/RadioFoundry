@@ -96,6 +96,7 @@ is `tools/bringup.py list --radio <id>`.
 | `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded |
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded |
