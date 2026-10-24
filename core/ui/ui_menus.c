@@ -2308,6 +2308,53 @@ static void zdel_select(uint16_t i, bool hold)
 	ze_toast("Deleted ", ze_z.name);
 }
 
+// Zone indexes moved (zone_edit.h): the stack's zone screens follow them. Zones keeps its focus on the same zone, a
+// zone's list and the editor's screens on their zone; a list whose zone was deleted closes, with what is above it.
+// Returns the new top of the stack
+uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint32_t to)
+{
+	uint16_t out;
+	bool ze_ok = zone_edit_map(from, to, ze_zone, &out) == ZONE_MAP_KEPT;
+	if (ze_ok)
+		ze_zone = out;
+	for (uint8_t i = 1; i <= sp; i++) {
+		ui_frame_t *f = &stack[i];
+		if (f->scr == SCR_ZONES && f->focus >= CH_VFO) {
+			if (zone_edit_map(from, to, (uint16_t)(f->focus - CH_VFO), &out) != ZONE_MAP_LOST)
+				f->focus = (uint16_t)(out + CH_VFO);	// a deleted one: the next zone, clamped by the list
+		} else if (f->scr == SCR_ZONE) {
+			if (zone_edit_map(from, to, f->arg, &out) != ZONE_MAP_KEPT)
+				return (uint8_t)(i - 1u);
+			f->arg = out;
+		} else if (f->scr == SCR_ZCHANNEL || f->scr == SCR_ZPICK || f->scr == SCR_ZONEEDIT || f->scr == SCR_ZONEDEL) {
+			if (!ze_ok)
+				return (uint8_t)(i - 1u);
+		}
+	}
+	return sp;
+}
+
+// The codeplug changed and nothing of ours is queued (our last change written, or refused, or a CPS write): the
+// editor's screens show the zone as stored. Channel actions stay on their channel, found by number; it closes when
+// the channel is no longer in the zone
+void ui_menus_codeplug(void)
+{
+	ui_frame_t *f = ui_frame();
+	if (f->scr != SCR_ZCHANNEL && f->scr != SCR_ZPICK && f->scr != SCR_ZONEEDIT && f->scr != SCR_ZONEDEL)
+		return;
+	uint16_t num = f->scr == SCR_ZCHANNEL && f->arg < ze_z.count ? ze_z.channels[f->arg] : 0;
+	ze_read();
+	if (f->scr == SCR_ZCHANNEL) {
+		int at = zone_list_find(&ze_z, num);
+		if (at < 0) {
+			ui_pop();
+			return;
+		}
+		f->arg = (uint16_t)at;
+		zone_focus_num = num;
+	}
+}
+
 static const char *zdel_body(void)
 {
 	sbuf_t b;

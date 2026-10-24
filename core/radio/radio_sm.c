@@ -11,6 +11,14 @@
 #include "settings/settings.h"
 #include "config.h"
 #include "hal_dtmf.h"
+#if CONFIG_ZONE_EDIT
+#include "codeplug/zone_edit.h"
+#define ZONE_WRITE_BUSY()	zone_edit_busy()
+#define ZONES_MOVED(sm)		(zone_edit_shifts() != (sm)->zone_shifts)
+#else
+#define ZONE_WRITE_BUSY()	false
+#define ZONES_MOVED(sm)		false
+#endif
 #if CONFIG_DMR
 #include "dmr/call/dmr_call.h"
 #include "dmr/ambe/ambeVoice.h"
@@ -4182,6 +4190,69 @@ void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t n
 
 // The codeplug changed underneath (an edit, a CPS write) or the preferences did: read them again, keep the zone and
 // the channel if they still exist
+#if CONFIG_ZONE_EDIT
+// A zone added ahead of others or a zone deleted moves the indexes after it (zone_edit.h). Followed here: the zone in
+// use (in the VFO too: the zone it goes back to), dual watch's two channels and the roaming zones, saved again when
+// they moved. A roaming zone that was deleted loses its flag. Returns the zone in use's index now; *gone: it was
+// deleted, and the index is the zone that took its place
+static uint16_t follow_zones(radio_sm_t *sm, bool *gone, uint32_t now_ms)
+{
+	uint32_t from = sm->zone_shifts, to = zone_edit_shifts();
+	uint16_t zi = sm->view.zone_index, out;
+	sm->zone_shifts = to;
+	*gone = false;
+	if (from == to) {
+		return zi;
+	}
+	zone_map_t m = zone_edit_map(from, to, zi, &out);
+	if (m != ZONE_MAP_LOST) {
+		zi = out;
+		*gone = m == ZONE_MAP_GONE;
+	}
+#if CONFIG_SCAN
+	for (uint8_t i = 0; i < 2; i++) {
+		if (!sm->dual[i].vfo && zone_edit_map(from, to, sm->dual[i].zone, &out) != ZONE_MAP_LOST) {
+			sm->dual[i].zone = out;		// a deleted one: the UI finds its channel again or ends the watch
+		}
+	}
+#endif
+#if CONFIG_DMR_ROAMING
+	uint8_t bits[SETTINGS_ROAM_ZONE_BYTES];
+	memset(bits, 0, sizeof(bits));
+	bool lost = false;
+	for (uint16_t z = 0; z < SETTINGS_ROAM_ZONE_BYTES * 8u && !lost; z++) {
+		if (!roam_zone_flag(sm, z)) {
+			continue;
+		}
+		m = zone_edit_map(from, to, z, &out);
+		lost = m == ZONE_MAP_LOST;
+		if (m == ZONE_MAP_KEPT && out < SETTINGS_ROAM_ZONE_BYTES * 8u) {
+			bits[out / 8u] |= (uint8_t)(1u << (out % 8u));
+		}
+	}
+	if (!lost && memcmp(bits, sm->roam_zones, sizeof(bits)) != 0) {
+		memcpy(sm->roam_zones, bits, sizeof(bits));
+		settings_t *s = settings_begin();
+		memcpy(s->roam_zones, bits, sizeof(bits));
+		settings_end(now_ms);
+	}
+#else
+	(void)now_ms;
+#endif
+	return zi;
+}
+
+// A checksum of the zone in use and its channel list: an edit of it ends a zone scan (its skips are by position)
+static uint32_t zone_sum(const radio_sm_t *sm)
+{
+	uint32_t h = sm->have_channels ? 2166136261u ^ sm->zone.count : 0;
+	for (uint16_t i = 0; sm->have_channels && i < sm->zone.count; i++) {
+		h = (h ^ sm->zone.channels[i]) * 16777619u;
+	}
+	return h ^ sm->view.zone_index;
+}
+#endif
+
 static void reload(radio_sm_t *sm, uint32_t now_ms)
 {
 	static settings_t st;	// off the radio task's stack: its deepest path goes through here (stack-check.md)
@@ -4202,7 +4273,26 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 #endif
 	uint16_t number = sm->have_channels && sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
 	bool vfo = sm->view.vfo;
-	select_position(sm, sm->view.zone_index, number, sm->view.zone_pos);
+	uint16_t zi = sm->view.zone_index, pos = sm->view.zone_pos;
+#if CONFIG_ZONE_EDIT
+	uint32_t sum = zone_sum(sm);
+	bool gone;
+	zi = follow_zones(sm, &gone, now_ms);
+	if (gone) {
+		// The zone in use was deleted: the zone that took its place (the last one when it was the last), on the
+		// same channel when that zone holds it, else its first channel
+		uint16_t n = codeplug_zone_count();
+		zi = n > 0 && zi >= n ? (uint16_t)(n - 1u) : zi;
+		pos = 0;
+	}
+	sm->view.zone_index = zi;
+#endif
+	select_position(sm, zi, number, pos);
+#if CONFIG_ZONE_EDIT && CONFIG_SCAN
+	if (sm->scan.kind == SCAN_ZONE && zone_sum(sm) != sum) {
+		scan_stop(sm, false, now_ms);
+	}
+#endif
 	apply_prefs(sm, &st);
 	radio_settings_t rs;
 	settings_to_radio(&st, &rs);
@@ -4290,6 +4380,9 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	step_update(sm);
 	sm->view.source = codeplug_source();
 	sm->codeplug_serial = codeplug_serial();
+#if CONFIG_ZONE_EDIT
+	sm->zone_shifts = zone_edit_shifts();
+#endif
 
 #if CONFIG_DUAL_WATCH
 	vfo_defaults(&sm->vfo_ch);	// the second VFO first, then moved to vfo_other
@@ -4811,7 +4904,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 #if CONFIG_APRS
 		aprs_reload();
 #endif
-		if (busy || sm->ptt) {
+		if (busy || sm->ptt || ZONE_WRITE_BUSY()) {
 			sm->reload_pending = true;	// after the transmission or the hotspot (radio_sm_poll)
 		} else {
 			reload(sm, now_ms);
@@ -5142,8 +5235,9 @@ static int16_t rssi_held(radio_sm_t *sm, int16_t rssi_dbm)
 void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
-	if ((sm->reload_pending || codeplug_serial() != sm->codeplug_serial) && !sm->hotspot && !sm->ptt &&
-	    sm->view.state != RS_TX) {
+	// codeplug_serial() before zone_edit_busy(): a zone write that moved indexes has its log entry by then
+	if ((sm->reload_pending || codeplug_serial() != sm->codeplug_serial || ZONES_MOVED(sm)) && !ZONE_WRITE_BUSY() &&
+	    !sm->hotspot && !sm->ptt && sm->view.state != RS_TX) {
 		reload(sm, now_ms);
 		persist(sm, now_ms);
 	}

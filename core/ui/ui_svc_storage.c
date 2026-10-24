@@ -620,14 +620,13 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 }
 
 #if CONFIG_ZONE_EDIT
-// The zone editor's change (ui.md 2.2). The zone in use is taken on the UI task when the job is posted: a new zone in
-// a slot ahead of it, or a deleted zone ahead of it, moves its index, and the radio core is told to follow it (its
-// reload alone would keep the old index, now another zone)
-static zone_op_t zone_job;
-static struct {
-	bool on;		// on a channel of a zone, not the VFO
-	uint16_t zone, pos;
-} zone_was;
+// The zone editor's changes (ui.md 2.2), queued: Move up pressed again while the last move is still being written
+// waits its turn instead of being refused. The UI task adds at zq_head, the job takes from zq_tail. A new zone ahead
+// of others or a deleted zone moves zone indexes: the radio core and dual watch follow them through zone_edit's log
+// when they see the codeplug change, so the job only writes
+#define ZONE_QUEUE	4u
+static zone_op_t zq[ZONE_QUEUE];
+static volatile uint8_t zq_head, zq_tail;
 
 static const char *zone_edit_text(zone_edit_result_t r)
 {
@@ -637,37 +636,55 @@ static const char *zone_edit_text(zone_edit_result_t r)
 	case ZONE_EDIT_IN_ZONE: return "Already in this zone";
 	case ZONE_EDIT_NO_FREE: return "No free channel";
 	case ZONE_EDIT_NO_NAME: return "Give it a name first";
+	case ZONE_EDIT_EDGE: return "Already at the end";
+	case ZONE_EDIT_NO_ZONE: return "That zone is gone";
+	case ZONE_EDIT_NO_CHANNEL: return "That channel is gone";
 	default: return "Couldn't write the codeplug: not saved";
 	}
 }
 
+// A refusal drops the changes queued after it: they were made on the zone as the UI saw it with this one done
 static void zone_edit_job(void *ctx)
 {
 	(void)ctx;
-	uint16_t added;
-	zone_edit_result_t r = zone_edit_apply(&zone_job, &added);
-	if (r != ZONE_EDIT_OK) {
-		save_failed(zone_edit_text(r));
-		return;
+	while (zq_tail != zq_head) {
+		zone_edit_result_t r = zone_edit_apply(&zq[zq_tail % ZONE_QUEUE], NULL);
+		if (r != ZONE_EDIT_OK) {
+			save_failed(zone_edit_text(r));
+			zq_tail = zq_head;
+			break;
+		}
+		zq_tail = (uint8_t)(zq_tail + 1u);
 	}
-	uint16_t to = zone_edit_follow(&zone_job, added, zone_was.zone);
-	if (zone_was.on && to != zone_was.zone) {
-		radio_req_zone(to);
-		radio_req_zone_pos(zone_was.pos);
+}
+
+// The job, unless one (this or another write) is running: then ui_svc_zone_poll posts it later
+static void zone_kick(void)
+{
+	if (zq_tail != zq_head && !storage_job_busy()) {
+		storage_job_post(zone_edit_job, NULL);
 	}
 }
 
 bool ui_svc_zone_edit(const zone_op_t *op)
 {
-	if (storage_job_busy()) {
+	if ((uint8_t)(zq_head - zq_tail) >= ZONE_QUEUE) {
 		return false;
 	}
-	radio_get_view(&v);
-	zone_was.on = !v.vfo && !v.hotspot;
-	zone_was.zone = v.zone_index;
-	zone_was.pos = v.zone_pos;
-	zone_job = *op;
-	return storage_job_post(zone_edit_job, NULL);
+	zq[zq_head % ZONE_QUEUE] = *op;
+	zq_head = (uint8_t)(zq_head + 1u);
+	zone_kick();
+	return true;
+}
+
+void ui_svc_zone_poll(void)
+{
+	zone_kick();
+}
+
+bool ui_svc_zone_pending(void)
+{
+	return zq_tail != zq_head;
 }
 #endif
 

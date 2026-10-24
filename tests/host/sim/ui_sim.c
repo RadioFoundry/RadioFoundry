@@ -698,18 +698,30 @@ bool codeplug_delete_zone(uint16_t index)
 }
 
 bool codeplug_set_channel(uint16_t number, const channel_t *ch) { return ui_svc_write_channel(number, ch); }
+// Only a channel the editor wrote (Copy here's rollback when its zone write fails)
+bool codeplug_delete_channel(uint16_t number)
+{
+	for (uint8_t i = 0; i < n_edits; i++) {
+		if (sim_edits[i].number == number) {
+			sim_edits[i] = sim_edits[--n_edits];
+			return true;
+		}
+	}
+	return false;
+}
 void storage_lock(void) { }
 void storage_unlock(void) { }
 
 static radio_view_t view;
 static void load_channel(void);
+static ui_dual_ref_t sim_dual[2];
 
-// The zone editor's job, run at once. The radio follows its zone as ui_svc_storage.c makes it, and stays on its
-// channel as the radio core's reload does (by number); a refusal is the job's failure toast
+// The zone editor's job, run at once. The radio follows its zone through zone_edit's log as the radio core's reload
+// does, and stays on its channel (by number); a refusal is the job's failure toast
 bool ui_svc_zone_edit(const zone_op_t *op)
 {
-	uint16_t added, was = view.zone_index;
-	zone_edit_result_t r = zone_edit_apply(op, &added);
+	uint32_t from = zone_edit_shifts();
+	zone_edit_result_t r = zone_edit_apply(op, NULL);
 	if (r != ZONE_EDIT_OK) {
 		ui_event_t ev;
 		memset(&ev, 0, sizeof ev);
@@ -718,10 +730,18 @@ bool ui_svc_zone_edit(const zone_op_t *op)
 		ui_notify(&ev);
 		return true;
 	}
+	uint16_t to;
+	for (int i = 0; i < 2; i++) {
+		// Dual watch's channels follow their zones as in the radio core; the UI finds a deleted one's channel again
+		if (!sim_dual[i].vfo && zone_edit_map(from, zone_edit_shifts(), sim_dual[i].zone, &to) != ZONE_MAP_LOST)
+			sim_dual[i].zone = to;
+	}
 	if (view.vfo)
 		return true;
 	zone_t z;
-	view.zone_index = zone_edit_follow(op, added, was);
+	if (zone_edit_map(from, zone_edit_shifts(), view.zone_index, &to) == ZONE_MAP_GONE)
+		view.zone_pos = 0;
+	view.zone_index = to < codeplug_zone_count() ? to : (uint16_t)(codeplug_zone_count() - 1u);
 	if (codeplug_zone(view.zone_index, &z) && zone_list_find(&z, view.channel_number) >= 0)
 		view.zone_pos = (uint16_t)zone_list_find(&z, view.channel_number);
 	uint16_t pos = view.zone_pos;
@@ -834,7 +854,6 @@ static void sim_vfo_use(uint8_t idx)
 	vfo_talk_private = t.talk_private;
 	view.vfo_index = idx;
 }
-static ui_dual_ref_t sim_dual[2];
 static uint8_t sim_sel;
 static uint32_t reply_until;
 static uint32_t ptt_up_at;

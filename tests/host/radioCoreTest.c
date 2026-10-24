@@ -2596,6 +2596,16 @@ bool codeplug_set_channel(uint16_t n, const channel_t *ch)
 	return true;
 }
 
+bool codeplug_delete_channel(uint16_t n)
+{
+	if (n < 1 || n > NCH) {
+		return false;
+	}
+	used[n] = false;
+	cp_serial++;
+	return true;
+}
+
 // Zone writes (the zone editor's job, zone_edit.c on these fakes)
 static int zone_writes;
 static uint16_t zone_written;
@@ -2834,30 +2844,74 @@ static void test_ui_glue(void)
 	CHECK(sm.view.ch.mode == RADIO_MODE_DMR);
 #if CONFIG_ZONE_EDIT
 	{
-		// The zone editor's job (ui_svc_zone_edit, ui.md 2.2): nothing is written by the call and a second one waits.
-		// A move in the zone in use keeps the radio on its channel at its new position
+		// The zone editor's queue (ui_svc_zone_edit, ui.md 2.2): nothing is written by the call; what is queued runs in
+		// order in one job; a refusal drops what was queued after it; a full queue refuses
 		zone_t keep[3];
 		uint16_t nkeep = nzones;
 		memcpy(keep, zones, sizeof keep);
-		zone_op_t op;
-		memset(&op, 0, sizeof op);
+		zone_op_t op, q[4];
+		memset(q, 0, sizeof q);
 		uint16_t num = sm.view.channel_number, pos = sm.view.zone_pos;
 		CHECK(sm.view.zone_index == 0 && pos > 0);
-		op.kind = ZONE_OP_MOVE;
-		op.pos = pos;
-		op.dir = -1;
+		q[0].kind = ZONE_OP_MOVE;	// up
+		q[0].pos = pos;
+		q[0].dir = -1;
+		q[1] = q[0];			// and back down
+		q[1].pos = (uint16_t)(pos - 1u);
+		q[1].dir = 1;
+		q[2].kind = ZONE_OP_INSERT;	// refused: it is in the zone
+		q[2].channel = num;
+		q[3] = q[0];			// dropped
 		int zw = zone_writes;
-		CHECK(ui_svc_zone_edit(&op) && zone_writes == zw && !ui_svc_zone_edit(&op));
+		n_ev = 0;
+		for (int i = 0; i < 4; i++) {
+			CHECK(ui_svc_zone_edit(&q[i]));
+		}
+		CHECK(!ui_svc_zone_edit(&q[0]) && zone_writes == zw && ui_svc_zone_pending());
 		storage_job_poll();
 		run(100);
-		CHECK(zone_writes == zw + 1 && zones[0].channels[pos - 1u] == num);
+		CHECK(zone_writes == zw + 2 && zones[0].channels[pos] == num && !ui_svc_zone_pending());
+		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "Already") != NULL);
+		uint32_t applied;
+		uint8_t last;
+		zone_edit_stats(&applied, &last);
+		CHECK(applied >= 2 && last == ZONE_EDIT_IN_ZONE);
+		// A move in the zone in use keeps the radio on its channel at its new position
+		CHECK(ui_svc_zone_edit(&q[0]));
+		storage_job_poll();
+		run(100);
+		CHECK(zones[0].channels[pos - 1u] == num);
 		CHECK(sm.view.channel_number == num && sm.view.zone_pos == pos - 1u && sm.view.zone_index == 0);
-		// Deleting a zone ahead of the zone in use: the radio follows its zone to the index it moved to
+		// Removing the channel in use: the radio goes to the one that took its place (the next usable one)
+		memset(&op, 0, sizeof op);
+		op.kind = ZONE_OP_REMOVE;
+		op.pos = (uint16_t)(pos - 1u);
+		CHECK(ui_svc_zone_edit(&op));
+		storage_job_poll();
+		run(100);
+		CHECK(sm.view.zone_index == 0 && sm.view.channel_number != num && sm.view.zone_pos >= pos - 1u &&
+		      zones[0].channels[sm.view.zone_pos] == sm.view.channel_number);
+		memcpy(zones, keep, sizeof keep);
+		cp_serial++;
+		run(100);
+
+		// Deleting a zone ahead of the zone in use: the radio follows its zone to the index it moved to, and so do dual
+		// watch's channels and the roaming zones; a deleted roaming zone loses its flag
 		req(RREQ_ZONE, 2);
 		run(50);
 		CHECK(sm.view.zone_index == 2 && sm.view.channel_number == 7);
 		req(RREQ_ZONE_POS, 1);
 		run(50);
+#if CONFIG_SCAN
+		radio_dual_ref_t dual_keep[2] = { sm.dual[0], sm.dual[1] };
+		sm.dual[0] = (radio_dual_ref_t){ .vfo = false, .zone = 2, .pos = 0 };
+		sm.dual[1] = (radio_dual_ref_t){ .vfo = false, .zone = 0, .pos = 1 };
+#endif
+#if CONFIG_DMR_ROAMING
+		st = settings_begin();
+		st->roam_zones[0] = 0x05;	// zones 0 and 2
+		settings_end(0);
+#endif
 		memset(&op, 0, sizeof op);
 		op.kind = ZONE_OP_DELETE;
 		op.zone = 0;
@@ -2865,19 +2919,60 @@ static void test_ui_glue(void)
 		storage_job_poll();
 		run(100);
 		CHECK(nzones == 2 && sm.view.zone_index == 1 && sm.view.channel_number == 8 && sm.view.zone_pos == 1);
-		// A refusal comes back as an event: channel 8 is in the zone already
-		memset(&op, 0, sizeof op);
-		op.kind = ZONE_OP_INSERT;
+#if CONFIG_SCAN
+		CHECK(sm.dual[0].zone == 1 && sm.dual[1].zone == 0);	// the deleted one's index: the zone that took it
+		sm.dual[0] = dual_keep[0];
+		sm.dual[1] = dual_keep[1];
+#endif
+#if CONFIG_DMR_ROAMING
+		settings_t saved;
+		settings_read(&saved);
+		CHECK(sm.roam_zones[0] == 0x02 && saved.roam_zones[0] == 0x02);	// zone 2 is zone 1; zone 0's flag is gone
+		st = settings_begin();
+		st->roam_zones[0] = 0;
+		settings_end(0);
+#endif
+		// Deleting the zone in use, the last one: the radio goes to the zone before it, on its first channel (it
+		// doesn't hold channel 8)
 		op.zone = 1;
-		op.channel = 8;
-		n_ev = 0;
 		CHECK(ui_svc_zone_edit(&op));
 		storage_job_poll();
-		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "Already") != NULL);
-		uint32_t applied;
-		uint8_t last;
-		zone_edit_stats(&applied, &last);
-		CHECK(applied >= 2 && last == ZONE_EDIT_IN_ZONE);
+		run(100);
+		CHECK(nzones == 1 && sm.view.zone_index == 0 && sm.view.channel_number == 6 && sm.view.zone_pos == 0);
+		// An outside writer's entries (an import), seen only when its write is done: zone_edit_busy holds the reload
+		memcpy(zones, keep, sizeof keep);
+		nzones = nkeep;
+		zone_shift_busy(true);
+		zone_shift_note(false, 0);	// as if zone 0 (Local) had come in ahead of Two and Tones
+		cp_serial++;
+		run(100);
+		CHECK(sm.view.zone_index == 0 && sm.view.channel_number == 6);	// held
+		zone_shift_busy(false);
+		run(100);
+		CHECK(sm.view.zone_index == 1 && sm.view.channel_number == 6);	// Two is zone 1
+		CHECK(sm.view.zone_index == 1);
+#if CONFIG_SCAN
+		// A zone scan ends when the zone in use's list changes under it (its skips are by position); a rename doesn't
+		req(RREQ_ZONE, 0);
+		run(50);
+		req(RREQ_SCAN, RSCAN_ZONE);
+		run(200);
+		CHECK(sm.scan.kind == SCAN_ZONE);
+		memset(&op, 0, sizeof op);
+		op.kind = ZONE_OP_RENAME;
+		strcpy(op.name, "Renamed");
+		CHECK(ui_svc_zone_edit(&op));
+		storage_job_poll();
+		run(100);
+		CHECK(sm.scan.kind == SCAN_ZONE && strcmp(zones[0].name, "Renamed") == 0);
+		op.kind = ZONE_OP_MOVE;
+		op.pos = 0;
+		op.dir = 1;
+		CHECK(ui_svc_zone_edit(&op));
+		storage_job_poll();
+		run(100);
+		CHECK(sm.scan.kind == SCAN_OFF);
+#endif
 		memcpy(zones, keep, sizeof keep);
 		nzones = nkeep;
 		cp_serial++;

@@ -100,18 +100,36 @@ static zone_edit_result_t make_room(void)
 	return codeplug_zone_count() >= CODEPLUG_ZONES_MAX ? ZONE_EDIT_ZONES_FULL : ZONE_EDIT_OK;
 }
 
-// work, written as a new zone after make_room
+// work, written as a new zone after make_room; logged as a shift unless it is the first zone (nothing moves)
 static zone_edit_result_t create_locked(uint16_t *index)
 {
 	if (work.name[0] == '\0') {
 		return ZONE_EDIT_NO_NAME;
 	}
-	if (work.count > codeplug_zone_capacity()) {
+	if (work.count > codeplug_zone_capacity() || work.count > CODEPLUG_ZONE_MAX) {
 		return ZONE_EDIT_FULL;
 	}
-	zone_edit_result_t r = write_back(codeplug_zones_stored() ? codeplug_zone_count() : 0);
-	if (r == ZONE_EDIT_OK && index != NULL) {
-		*index = codeplug_zone_written();
+	channel_t ch;
+	for (uint16_t i = 0; i < work.count; i++) {
+		if (!codeplug_channel(work.channels[i], &ch)) {
+			return ZONE_EDIT_NO_CHANNEL;
+		}
+		for (uint16_t j = 0; j < i; j++) {
+			if (work.channels[j] == work.channels[i]) {
+				return ZONE_EDIT_IN_ZONE;	// a zone holds a channel once
+			}
+		}
+	}
+	bool first = !codeplug_zones_stored();
+	zone_edit_result_t r = write_back(first ? 0 : codeplug_zone_count());
+	if (r == ZONE_EDIT_OK) {
+		uint16_t at = codeplug_zone_written();
+		if (!first) {
+			zone_shift_note(false, at);
+		}
+		if (index != NULL) {
+			*index = at;
+		}
 	}
 	return r;
 }
@@ -119,12 +137,14 @@ static zone_edit_result_t create_locked(uint16_t *index)
 zone_edit_result_t zone_edit_create(const zone_t *z, uint16_t *index)
 {
 	storage_lock();
+	zone_shift_busy(true);
 	zone_edit_result_t r = make_room();
 	if (r == ZONE_EDIT_OK) {
 		work = *z;
 		work.name[CODEPLUG_NAME_LEN] = '\0';
 		r = create_locked(index);
 	}
+	zone_shift_busy(false);
 	storage_unlock();
 	return r;
 }
@@ -186,8 +206,10 @@ zone_edit_result_t zone_edit_add_new(uint16_t zone, uint16_t pos, uint16_t numbe
 		r = pos > work.count ? ZONE_EDIT_NO_CHANNEL : work.count >= codeplug_zone_capacity() ? ZONE_EDIT_FULL :
 										      ZONE_EDIT_OK;
 	}
-	if (r == ZONE_EDIT_OK && !codeplug_set_channel(number, ch)) {
-		r = ZONE_EDIT_FAILED;
+	bool wrote = false;
+	if (r == ZONE_EDIT_OK) {
+		wrote = codeplug_set_channel(number, ch);
+		r = wrote ? ZONE_EDIT_OK : ZONE_EDIT_FAILED;
 	}
 	if (r == ZONE_EDIT_OK) {
 		// Read the zone again: writing the channel can turn the built-in set into a stored codeplug, and the virtual
@@ -204,6 +226,9 @@ zone_edit_result_t zone_edit_add_new(uint16_t zone, uint16_t pos, uint16_t numbe
 	if (r == ZONE_EDIT_OK) {
 		r = write_back(zone);
 	}
+	if (r != ZONE_EDIT_OK && wrote) {
+		codeplug_delete_channel(number);	// the zone write failed: no channel left behind in no zone
+	}
 	storage_unlock();
 	return r;
 }
@@ -211,6 +236,7 @@ zone_edit_result_t zone_edit_add_new(uint16_t zone, uint16_t pos, uint16_t numbe
 zone_edit_result_t zone_edit_copy(uint16_t zone, uint16_t *index)
 {
 	storage_lock();
+	zone_shift_busy(true);
 	zone_edit_result_t r = make_room();	// first: it can use work
 	if (r == ZONE_EDIT_OK) {
 		r = load(zone);
@@ -221,6 +247,7 @@ zone_edit_result_t zone_edit_copy(uint16_t zone, uint16_t *index)
 		strcpy(work.name, name);
 		r = create_locked(index);
 	}
+	zone_shift_busy(false);
 	storage_unlock();
 	return r;
 }
@@ -244,10 +271,15 @@ zone_edit_result_t zone_edit_rename(uint16_t zone, const char *name)
 zone_edit_result_t zone_edit_delete(uint16_t zone)
 {
 	storage_lock();
+	zone_shift_busy(true);
 	zone_edit_result_t r = zone < codeplug_zone_count() && codeplug_zones_stored() ? ZONE_EDIT_OK : ZONE_EDIT_NO_ZONE;
 	if (r == ZONE_EDIT_OK && !codeplug_delete_zone(zone)) {
 		r = ZONE_EDIT_FAILED;
 	}
+	if (r == ZONE_EDIT_OK) {
+		zone_shift_note(true, zone);
+	}
+	zone_shift_busy(false);
 	storage_unlock();
 	return r;
 }
@@ -286,15 +318,4 @@ void zone_edit_stats(uint32_t *n, uint8_t *last)
 {
 	*n = applied;
 	*last = last_result;
-}
-
-uint16_t zone_edit_follow(const zone_op_t *op, uint16_t added, uint16_t index)
-{
-	if (op->kind == ZONE_OP_COPY && index >= added) {
-		return (uint16_t)(index + 1u);
-	}
-	if (op->kind == ZONE_OP_DELETE && index > op->zone) {
-		return (uint16_t)(index - 1u);
-	}
-	return index;
 }

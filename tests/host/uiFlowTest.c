@@ -480,6 +480,10 @@ static const flow_t flows[] = {
 	{ "26 delete: No keeps it", "ok 4 ctx up up up up ok 3", "ok", "screen=zoneedit writes=0", 1, false },
 	{ "26 delete a zone ahead of the zone in use: the radio follows", "ok 4 down down ok",
 	  "ok 4 up ctx up ok 3 down ok", "screen=zones count=3 zone=1 writes=1 toast=Deleted_Simplex", 9, true },
+	{ "26 delete a zone ahead of dual watch's B: B follows its zone", "quick 7 ctx 1 zone+ zone+",
+	  "ok 4 up ctx up ok 3 down ok back wait:500", "dual=1 azone=0 bzone=1 writes=1", 11, true },
+	{ "26 delete dual watch's B zone: B's channel is in no other zone, the watch ends", "quick 7 ctx 1 zone+",
+	  "ok 4 ctx up up ok 3 down ok back wait:500", "dual=0 zone=1 writes=1 toast=Dual_watch_off", 11, true },
 #endif
 };
 

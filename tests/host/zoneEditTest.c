@@ -251,10 +251,14 @@ static void test_apply_follow(void)
 	memset(&op, 0, sizeof(op));
 	op.kind = ZONE_OP_COPY;
 	op.zone = 0;
-	uint16_t at = 0;
+	uint16_t at = 0, out;
+	uint32_t s0 = zone_edit_shifts();
 	CHECK(zone_edit_apply(&op, &at) == ZONE_EDIT_OK && at == 1 && codeplug_zone_count() == 2);
 	// A zone at or after the new one moves on; one before stays
-	CHECK(zone_edit_follow(&op, 1, 0) == 0 && zone_edit_follow(&op, 1, 1) == 2);
+	uint32_t s1 = zone_edit_shifts();
+	CHECK(s1 == s0 + 1u && !zone_edit_busy());
+	CHECK(zone_edit_map(s0, s1, 0, &out) == ZONE_MAP_KEPT && out == 0);
+	CHECK(zone_edit_map(s0, s1, 1, &out) == ZONE_MAP_KEPT && out == 2);
 	op.kind = ZONE_OP_RENAME;
 	strcpy(op.name, "Renamed");
 	op.zone = 1;
@@ -275,14 +279,88 @@ static void test_apply_follow(void)
 	CHECK(zone_edit_apply(&op, NULL) == ZONE_EDIT_OK);
 	// 1-6 and 10, less the first, the next two swapped, the new one first
 	CHECK(holds(1, (const uint16_t[]){ op.channel, 3, 2, 4, 5, 6, 10 }, 7));
+	CHECK(zone_edit_shifts() == s1);	// edits inside a zone and a rename move no index
 	op.kind = ZONE_OP_DELETE;
 	op.zone = 0;
 	CHECK(zone_edit_apply(&op, NULL) == ZONE_EDIT_OK && codeplug_zone_count() == 1 && named(0, "Renamed"));
 	// After a delete the ones after it move back; the deleted index is the next zone now
-	CHECK(zone_edit_follow(&op, 0, 0) == 0 && zone_edit_follow(&op, 0, 3) == 2);
+	uint32_t s2 = zone_edit_shifts();
+	CHECK(zone_edit_map(s1, s2, 0, &out) == ZONE_MAP_GONE && out == 0);
+	CHECK(zone_edit_map(s1, s2, 3, &out) == ZONE_MAP_KEPT && out == 2);
+	// Both entries at once: the copy (index 1) is index 0 now; the original zone 0 is gone
+	CHECK(zone_edit_map(s0, s2, 0, &out) == ZONE_MAP_GONE && out == 0);
+	// The last stored zone deleted: the radio shows the virtual one again, at the same index
+	op.kind = ZONE_OP_DELETE;
+	CHECK(zone_edit_apply(&op, NULL) == ZONE_EDIT_OK && !codeplug_zones_stored() && named(0, "All channels"));
+	CHECK(zone_edit_map(s2, zone_edit_shifts(), 0, &out) == ZONE_MAP_GONE && out == 0);
+	CHECK(zone_edit_apply(&op, NULL) == ZONE_EDIT_NO_ZONE);	// and that one can't be deleted
 	op.kind = 0xEE;
 	CHECK(zone_edit_apply(&op, NULL) == ZONE_EDIT_FAILED);
 	CHECK(sim_flash_violations() == 0);
+}
+
+// The zone index log: mapping through several entries, a zone deleted then others added ahead of where it was, a
+// reader too far behind
+static void test_log(void)
+{
+	fresh();
+	channel_t c = make("A", 145000000);
+	CHECK(codeplug_set_channel(10, &c));
+	zone_t z = zone_of("One", (const uint16_t[]){ 10 }, 1);
+	CHECK(zone_edit_create(&z, NULL) == ZONE_EDIT_OK);	// 0 All channels, 1 One
+	z = zone_of("Two", (const uint16_t[]){ 10 }, 1);
+	CHECK(zone_edit_create(&z, NULL) == ZONE_EDIT_OK);	// 2 Two
+	z = zone_of("Three", (const uint16_t[]){ 10 }, 1);
+	CHECK(zone_edit_create(&z, NULL) == ZONE_EDIT_OK);	// 3 Three
+	uint32_t s0 = zone_edit_shifts();
+	uint16_t out;
+	CHECK(zone_edit_delete(1) == ZONE_EDIT_OK);		// One goes: Two 1, Three 2, slot 1 free
+	z = zone_of("New", (const uint16_t[]){ 10 }, 1);
+	uint16_t at = 99;
+	CHECK(zone_edit_create(&z, &at) == ZONE_EDIT_OK && at == 1 && named(1, "New"));	// the free slot: ahead of Two
+	uint32_t s1 = zone_edit_shifts();
+	CHECK(s1 == s0 + 2u);
+	CHECK(zone_edit_map(s0, s1, 0, &out) == ZONE_MAP_KEPT && out == 0);
+	CHECK(zone_edit_map(s0, s1, 2, &out) == ZONE_MAP_KEPT && out == 2 && named(2, "Two"));
+	CHECK(zone_edit_map(s0, s1, 3, &out) == ZONE_MAP_KEPT && out == 3 && named(3, "Three"));
+	CHECK(zone_edit_map(s0, s1, 1, &out) == ZONE_MAP_GONE && out == 2);	// One's place went to Two, then New came
+	CHECK(zone_edit_map(s1, s1, 3, &out) == ZONE_MAP_KEPT && out == 3);
+	// The last zone deleted: its index is the count now (a reader clamps it)
+	CHECK(zone_edit_delete(3) == ZONE_EDIT_OK);
+	CHECK(zone_edit_map(s1, zone_edit_shifts(), 3, &out) == ZONE_MAP_GONE && out == 3 && codeplug_zone_count() == 3);
+	// More entries than the log keeps
+	uint32_t s2 = zone_edit_shifts();
+	for (unsigned i = 0; i <= ZONE_SHIFT_LOG; i++) {
+		CHECK(zone_edit_copy(0, NULL) == ZONE_EDIT_OK);
+	}
+	CHECK(zone_edit_map(s2, zone_edit_shifts(), 0, &out) == ZONE_MAP_LOST);
+	CHECK(zone_edit_map(s2 + 1u, zone_edit_shifts(), 0, &out) == ZONE_MAP_KEPT);
+	CHECK(!zone_edit_busy() && sim_flash_violations() == 0);
+}
+
+// A new zone is checked whole before anything is written (an import hands in any zone_t); Copy here's channel is
+// taken back when its zone can't be written
+static void test_refusals(void)
+{
+	fresh();
+	channel_t c = make("A", 145000000);
+	CHECK(codeplug_set_channel(10, &c));
+	CHECK(codeplug_set_channel(11, &c));
+	zone_t z = zone_of("One", (const uint16_t[]){ 10 }, 1);
+	CHECK(zone_edit_create(&z, NULL) == ZONE_EDIT_OK);
+	uint16_t count = codeplug_zone_count();
+	uint32_t s0 = zone_edit_shifts(), serial = codeplug_serial();
+	z = zone_of("Bad", (const uint16_t[]){ 10, 99 }, 2);
+	CHECK(zone_edit_create(&z, NULL) == ZONE_EDIT_NO_CHANNEL);
+	z = zone_of("Twice", (const uint16_t[]){ 10, 11, 10 }, 3);
+	CHECK(zone_edit_create(&z, NULL) == ZONE_EDIT_IN_ZONE);
+	CHECK(codeplug_zone_count() == count && zone_edit_shifts() == s0 && codeplug_serial() == serial);
+	// The zone records can't be written: the channel written for it is deleted again
+	sim_flash_bad_range(0x8000u, 0x8000u);
+	uint16_t n = codeplug_free_channel();
+	CHECK(zone_edit_add_new(1, 0, n, &c) == ZONE_EDIT_FAILED);
+	CHECK(!codeplug_channel(n, &c) && codeplug_free_channel() == n);
+	sim_flash_bad_range(0, 0);
 }
 
 int main(void)
@@ -292,6 +370,8 @@ int main(void)
 	test_full();
 	test_builtin();
 	test_apply_follow();
+	test_log();
+	test_refusals();
 	if (failures) {
 		printf("zoneEditTest: %d failures\n", failures);
 		return 1;

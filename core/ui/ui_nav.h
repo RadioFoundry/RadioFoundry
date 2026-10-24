@@ -126,6 +126,10 @@ void ui_filter_rebuild(void);
 #if CONFIG_ZONE_EDIT
 // A list shows again, or the codeplug changed under it (ui_menus.c): the zone editor's focus follows its change
 void ui_menus_resume(void);
+// Zone indexes moved (zone_edit_map from..to): the stack's zone screens follow; returns the new top (sp)
+uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint32_t to);
+// The codeplug changed and no zone change of ours is queued: the editor's screens read their zone again
+void ui_menus_codeplug(void);
 #endif
 
 // T9 (ui_find.c): the key that types c (letters, digits; others 0xFF)

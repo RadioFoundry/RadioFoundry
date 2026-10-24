@@ -72,8 +72,29 @@ zone_edit_result_t zone_edit_apply(const zone_op_t *op, uint16_t *index);
 // Calls zone_edit_apply ran since start-up that wrote (OK), and the last one's result (the debug link's zone.edits,
 // zone.edit_last)
 void zone_edit_stats(uint32_t *applied, uint8_t *last);
-// Where a zone that was at index is after op: a new zone (COPY) at added moves those at or after it one on, a
-// DELETE moves those after it one back (the deleted one itself stays at its index, which is now the next zone)
-uint16_t zone_edit_follow(const zone_op_t *op, uint16_t added, uint16_t index);
+// --- Zone indexes that moved ---
+// A zone's index is its place in the list, so a new zone (it takes the lowest free slot, which can be ahead of others)
+// moves the zones after it one on, and a deleted zone moves them one back. Whoever keeps a zone index (the zone in
+// use, dual watch, the roaming zones, an open screen) follows it through this log: note zone_edit_shifts() when the
+// index is taken, and later map it with zone_edit_map from that count to the count now.
+//
+// zone_edit_create, _copy and _delete add an entry. zone_edit_busy() is true from before such a write until its
+// entry is in the log: a task that sees codeplug_serial() change waits while it is true, so it never reads the new
+// zone list without the entry that explains it. Read codeplug_serial() first, then zone_edit_busy().
+#define ZONE_SHIFT_LOG	8	// entries kept: a reader further behind gets ZONE_MAP_LOST
+
+typedef enum {
+	ZONE_MAP_KEPT = 0,	// *out: where the zone is now (maybe the same index)
+	ZONE_MAP_GONE,		// deleted; *out: the index it had, moved on by later entries (now the next zone, or the
+				// count when it was the last)
+	ZONE_MAP_LOST,		// more than ZONE_SHIFT_LOG entries since `from`: find the zone again another way
+} zone_map_t;
+
+uint32_t zone_edit_shifts(void);
+bool zone_edit_busy(void);
+zone_map_t zone_edit_map(uint32_t from, uint32_t to, uint16_t index, uint16_t *out);
+// zone_edit.c's side of the log (zone_shift.c)
+void zone_shift_note(bool deleted, uint16_t index);
+void zone_shift_busy(bool on);
 
 #endif
