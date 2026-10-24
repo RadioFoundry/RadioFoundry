@@ -555,6 +555,26 @@ static void testOffNet(void)
 	CHECK(ipGatewayDeliverUDP(true, 9, 235, cai235, 0xEF010203u, 4007, 4007, report, sizeof(report)));
 	const uint8_t mcast[6] = { 0x01, 0x00, 0x5E, 0x01, 0x02, 0x03 };
 	CHECK(memcmp(lastFrame, mcast, 6) == 0 && get32(&lastFrame[30]) == 0xEF010203u);
+	// ICMP from the air on the off-net path: an echo reply from an off-net host behind radio 235 to our ID's address
+	// reaches the host with the source kept and the message (checksum included) as it came; nothing goes on air
+	uint8_t reply[12] = { 0, 0, 0, 0, 0x12, 0x34, 0, 7, 'p', 'o', 'n', 'g' };
+	uint16_t rc = sum16(reply, sizeof(reply), 0); reply[2] = rc >> 8; reply[3] = rc;
+	int airCalls = air.calls;
+	framesSent = 0;
+	CHECK(ipGatewayDeliverIP(false, RADIO_ID, 235, 0x0A010203u, dmrDataIdAddress(false, RADIO_ID), 1, reply,
+							 sizeof(reply)));
+	CHECK(framesSent == 1 && memcmp(lastFrame, HOST_MAC, 6) == 0 && lastFrame[14 + 9] == 1);
+	CHECK(get32(&lastFrame[26]) == 0x0A010203u && get32(&lastFrame[30]) == HOST_IP && sum16(&lastFrame[14], 20, 0) == 0);
+	CHECK(lastLength == 34 + (int)sizeof(reply) && memcmp(&lastFrame[34], reply, sizeof(reply)) == 0);
+	CHECK(sum16(&lastFrame[34], sizeof(reply), 0) == 0);
+	// ... and ICMP to our ID for an off-net destination: the host's MAC, the address kept (the host routes it)
+	uint8_t request[12] = { 8, 0, 0, 0, 0x12, 0x34, 0, 8, 'p', 'i', 'n', 'g' };
+	rc = sum16(request, sizeof(request), 0); request[2] = rc >> 8; request[3] = rc;
+	framesSent = 0;
+	CHECK(ipGatewayDeliverIP(false, RADIO_ID, 235, cai235, OFF_NET, 1, request, sizeof(request)));
+	CHECK(framesSent == 1 && memcmp(lastFrame, HOST_MAC, 6) == 0 && get32(&lastFrame[30]) == OFF_NET);
+	CHECK(get32(&lastFrame[26]) == (IPGW_INDIVIDUAL_NET | 235) && memcmp(&lastFrame[34], request, sizeof(request)) == 0);
+	CHECK(air.calls == airCalls);// not answered by the radio: no echo reply on air
 	// ... a source that would look like the host, the radio or loopback, or a destination of loopback: dropped
 	framesSent = 0;
 	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 235, ipGatewayHostIP(), dmrDataIdAddress(false, RADIO_ID), 4001, 4001, report,

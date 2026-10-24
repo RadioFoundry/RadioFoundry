@@ -438,6 +438,23 @@ int main(void)
 	hostlink_net_poll(now_ms);
 	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
 	      get32(sent[0] + 14 + 16) == 0xC0A80A05u);
+	// ... and ICMP to our ID for an off-net address: to the host as it came, never a local service's
+	uint8_t saved[64];
+	memcpy(saved, pip, sizeof(saved));
+	static const uint8_t echo[12] = { 8, 0, 0x06, 0xF3, 0x12, 0x34, 0, 8, 'p', 'i', 'n', 'g' };
+	pip[9] = 1;
+	put16(pip + 2, (uint16_t)(20 + sizeof(echo)));
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
+	memcpy(pip + 20, echo, sizeof(echo));
+	p.length = (uint16_t)(20 + sizeof(echo));
+	sent_count = 0;
+	hostlink_net_packet(&p);
+	hostlink_net_poll(now_ms);
+	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 && sent[0][14 + 9] == 1 &&
+	      get32(sent[0] + 14 + 16) == 0xC0A80A05u && memcmp(sent[0] + 34, echo, sizeof(echo)) == 0);
+	memcpy(pip, saved, sizeof(saved));
+	p.length = (uint16_t)(28 + sizeof(hello));
 	put32(pip + 16, IPGW_INDIVIDUAL_NET | RADIO_ID);
 	put16(pip + 10, 0);
 	put16(pip + 10, ip_checksum(pip, 20));
