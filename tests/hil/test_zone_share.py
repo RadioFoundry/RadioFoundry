@@ -4,7 +4,9 @@
 heard on air as a zone share fragment.
 
 The send test drives the UI with injected keys: Zones, # on the current zone (its channels), # on the focused channel,
-2 (Send channel to...), OK on the first contact. A talkgroup contact gets an unconfirmed packet, a private one a
+then Send channel to... and OK on the first contact. Which menu # opens depends on the build: zone sharing's own
+(`zone_share`, item 2), or with the zone editor its Channel actions (`zchannel`, item 5); the test reads the screen
+name and takes either path. A talkgroup contact gets an unconfirmed packet, a private one a
 confirmed packet the bench doesn't answer; either way the first try is on air. The pass criteria are the radio's
 counters (one send taken and ended) and the bench hearing a UDP datagram from the radio to port 4100 whose payload is
 a fragment of a valid record header.
@@ -29,6 +31,18 @@ def _zs(radio):
 
 def _screen(radio, name):
     radio.wait_for(lambda v: v.get("ui.screen") == name, sections=("link",), what=f"screen {name}")
+
+
+# Where "Send channel to..." is in each menu # on a channel can open (docs/spec/zone-share.md; the zone editor's
+# Channel actions: Move up, Move down, Copy here, Edit channel, Send channel to..., Remove from zone)
+SEND_CHANNEL_ITEM = {"zone_share": "2", "zchannel": "5"}
+
+
+def _send_channel_menu(radio):
+    """The menu # on a channel opened, and the key that picks Send channel to... in it."""
+    v = radio.wait_for(lambda x: x.get("ui.screen") in SEND_CHANNEL_ITEM, sections=("link",),
+                       what="screen " + " or ".join(SEND_CHANNEL_ITEM))
+    return SEND_CHANNEL_ITEM[v["ui.screen"]]
 
 
 @pytest.mark.feature("zone_share")
@@ -56,8 +70,7 @@ def test_send_channel_heard(radio, sdr_bench, pytestconfig):
         radio.press("hash")
         _screen(radio, "zone")
         radio.press("hash")
-        _screen(radio, "zone_share")
-        radio.press("2")
+        radio.press(_send_channel_menu(radio))
         _screen(radio, "zone_share_to")
         radio.press("ok")
         v = radio.wait_for(lambda x: int(x.get("zs.sends", 0)) > int(before["zs.sends"]) and
