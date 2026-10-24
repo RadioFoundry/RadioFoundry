@@ -15,7 +15,6 @@ extern const hal_display_t md9600_display;
 extern const hal_input_t md9600_input;
 extern const hal_radio_t md9600_radio;
 extern const hal_power_t md9600_power;
-extern hal_flash_t md9600_flash;
 
 // SPI2 carries the data flash and the LCD: one lock for both (board.c). Recursive, a no-op before the scheduler
 void md9600_spi2_lock(void);
@@ -49,10 +48,10 @@ _Static_assert(KEY_COUNT <= 32, "key bits are a 32-bit mask");
 // The raw matrix (columns low per row, bits 0-2 = K4-K6), for the diagnostics page
 void md9600_input_raw(uint8_t rows[4]);
 
-// Data flash (flash_md9600.c): security registers 1..3, 256 bytes each (calibration in 1-2, options in 3)
+// Data flash (flash_md9600.c, on platform/stm32f4/spi_flash's stm32_spi_flash): probe it from board_init, and its
+// security registers 1..3, 256 bytes each (calibration in 1-2, options in 3)
+bool md9600_flash_init(void);
 bool md9600_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t len);
-bool md9600_cps_security_read(uint32_t addr, void *buf, uint32_t len);
-uint16_t md9600_flash_device(void);	// JEDEC memory type and capacity, 0 = none
 // The board's own record sector: the stored board revision
 md9600_rev_t md9600_flash_rev_load(void);
 bool md9600_flash_rev_store(md9600_rev_t rev);

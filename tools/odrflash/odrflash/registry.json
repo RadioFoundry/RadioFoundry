@@ -538,6 +538,133 @@
      ]
     }
    ]
+  },
+  "md9600": {
+   "id": "md9600",
+   "name": "TYT MD-9600",
+   "model": "MD-9600",
+   "part_of": null,
+   "platform": "stm32f4",
+   "platform_stubs": [
+    "stub/stm32f4"
+   ],
+   "family": "usb-dfu",
+   "link": "usb",
+   "release": "testing",
+   "debuglink_names": [
+    "MD-9600",
+    "MD9600",
+    "RT90",
+    "md9600"
+   ],
+   "app_base": 134266880,
+   "flash_end": 135266304,
+   "app_region": [
+    134266880,
+    134742016
+   ],
+   "sectors": [
+    [
+     3,
+     134266880,
+     16384
+    ],
+    [
+     4,
+     134283264,
+     65536
+    ],
+    [
+     5,
+     134348800,
+     131072
+    ],
+    [
+     6,
+     134479872,
+     131072
+    ],
+    [
+     7,
+     134610944,
+     131072
+    ],
+    [
+     8,
+     134742016,
+     131072
+    ],
+    [
+     9,
+     134873088,
+     131072
+    ],
+    [
+     10,
+     135004160,
+     131072
+    ],
+    [
+     11,
+     135135232,
+     131072
+    ]
+   ],
+   "protected": [
+    [
+     134217728,
+     134266880
+    ]
+   ],
+   "keep_codec_supported": true,
+   "first_stage": null,
+   "codec_tool": "codec_extract",
+   "codec_stock": [
+    "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09",
+    "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532"
+   ],
+   "codec": {
+    "id": null,
+    "windows": null,
+    "installed": [],
+    "sources": null
+   },
+   "codec_code": null,
+   "codec_slot": null,
+   "codec_run": null,
+   "codec_tables": null,
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "key_sha256": "c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae",
+   "key_prefix": "A2FABB4B",
+   "dfu_ids": [
+    1155,
+    57105
+   ],
+   "dfu_string1": "AnyRoad Technology",
+   "dfu_product": "Digital Radio in USB mode",
+   "stub": {
+    "tool": "f4stub",
+    "id": 3,
+    "tested": false,
+    "hse": 8000000,
+    "boot_end": 134266880,
+    "spi": {
+     "bus": 2,
+     "mode": 3,
+     "hz": 4500000,
+     "af": 5,
+     "sck": "PB13",
+     "miso": "PB14",
+     "mosi": "PB15",
+     "cs": "PB12",
+     "idle": [
+      "PD14"
+     ]
+    }
+   },
+   "build_options": []
   }
  }
 }

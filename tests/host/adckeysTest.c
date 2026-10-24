@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// Two-level analog keypad (drivers/input/adckeys) with the MD-9600 hand microphone's windows
+// Two-level analog keypad (drivers/input/adckeys) with a two-ladder hand microphone's windows
 // (docs/spec/hardware-md9600.md 9.3): every key at its window's edges and center, the gaps between windows, idle,
 // and the debounce holding a key through levels that pass another key's window
 #include <stdio.h>

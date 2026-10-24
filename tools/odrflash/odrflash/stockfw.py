@@ -91,7 +91,7 @@ PROFILES = {
     },
     # TYT MD-9600 06.09 CSV (V1-V3 boards) and 16.45 CSV (V4), docs/spec/codec-md9600.md. The codec is board independent,
     # so either file serves every board revision, and both report one codec id (the descriptor's tag tells them apart). Stock keeps the code in sectors 7 and 8, which are the application's
-    # now; the tables stay in sector 9 and the code goes to the start of sector 11 (boards/md9600/md9600.ld,
+    # now; the tables stay in sector 9 and the code goes to the start of sector 11 (boards/md9600/memory.ld,
     # boards/md9600/vocoder_md9600.c), checked in an emulator against the stock-address run
     "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09": {
         "name": "MD9600-CSV-V06.09.bin",
@@ -135,6 +135,14 @@ KNOWN_FILES = {
     "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43": "MD-380 D002.032",
     # the bootloader key and a restore to stock only: no codec profile (the codec comes from D002.032)
     "1c903d440e35917e8a16906ccae1cbbd539230a5a3352e3eb896ffc3e96eccc6": "MD-380 D002.030",
+    # MD-9600 builds that are not codec donors here (docs/spec/codec-md9600.md "Stock files"): the key derives from any
+    "9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5": "MD-9600 V06.09 CSV + GPS",
+    "7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f": "MD-9600 V06.09 REC",
+    "4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7": "MD-9600 V06.09 GPS + REC",
+    "7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f": "MD-9600 V16.45 CSV + GPS",
+    "d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c": "MD-9600 V16.45 REC",
+    "3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff": "MD-9600 V16.45 GPS + REC",
+    "d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f": "MD-9600 V26.45 CSV (V5)",
 }
 
 

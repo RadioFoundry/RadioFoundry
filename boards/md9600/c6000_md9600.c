@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // MD-9600 HR_C6000: power-up, the DMR receive path, the PCM audio stream and the speaker routing
-// (docs/spec/hardware-md9600.md 4, 6). The chip is the DM-1701's, on the shared STM32 code: the configuration and voice
+// (docs/spec/hardware-md9600.md 4, 6). The chip and its glue are the shared STM32 code: the configuration and voice
 // ports (platform/stm32f4/hrc/hrc_bus.c; MOSI is PE5 and MISO PE4 here, the voice port SPI1), the slot engine and its
 // three interrupt lines (dmr_glue.c, PC0-PC2), the I2S3 PCM stream (i2s_pcm.c) and the codec host (vocoder.c).
 //
-// Unlike the DM-1701 the chip is not in the FM receive path: FM audio comes from the IF chip, and 4:0x36 (the FM
+// Unlike on radios with an HR_C6000 in the FM path, the chip is not in the FM receive path: FM audio comes from the IF chip, and 4:0x36 (the FM
 // feed-through) stays 0. The chip still runs in FM, because its codec's line out carries the beeps and prompts there.
 // In DMR the band's IF reaches the chip at 450 kHz (the IF set-up is radio_md9600.c's); entering DMR and every retune
 // rewrite the reference offset and the DMR modulation pair from the calibration.
@@ -29,8 +29,8 @@
 #include "task.h"
 #include "semphr.h"
 
-#define C6000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first access (as the DM-1701)
-#define DMR_MIC_GAIN		7	// the DM-1701's (unverified here)
+#define C6000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first access (as the other HR_C6000 radios)
+#define DMR_MIC_GAIN		7	// the other HR_C6000 radios' value (unverified here)
 #define RX_GAIN_DB		2	// 4:0x37 = 0xC2 (unverified)
 #define SAFE_GAIN		0x80u	// modulation gain without a calibration value
 #define VOICE_SPI_PINS		(GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5)	// PB3 SCK, PB4 MISO, PB5 MOSI (AF5)
@@ -43,7 +43,7 @@
 #define CAL_DMR_Q_VHF		0x149u
 
 // The configuration port on PE2-PE5 and the voice port on SPI1 (PB3-PB5, chip select PD7): mode 2 at PCLK2 / 16 =
-// 4.5 MHz, the DM-1701's rate (unverified on this radio)
+// 4.5 MHz, the other HR_C6000 radios' rate (unverified on this radio)
 static const stm32_hrc_bus_cfg_t modem_cfg = {
 	.port = GPIOE,
 	.cs = PIN_MASK(PIN_C6000_CS), .clk = PIN_MASK(PIN_C6000_CLK), .mosi = PIN_MASK(PIN_C6000_MOSI),
@@ -103,7 +103,7 @@ static bool fm_wanted, pcm_wanted, band_vhf;
 static SemaphoreHandle_t speaker_lock;
 
 // The codec DAC to the line out (4:0xE2 bit 1); in DMR also the codec under MCU control (4:0xE0 = 0xC9) with the I2S
-// mode bits of 4:0x22 kept set (the DM-1701's PCM playback set-up)
+// mode bits of 4:0x22 kept set (the HR_C6000's PCM playback set-up on the other radios)
 static void codec_out(void)
 {
 	uint8_t v;
@@ -262,7 +262,7 @@ void md9600_c6000_diag(md9600_c6000_diag_t *d)
 // --- hal_audio_t ---
 
 #if CONFIG_DMR
-// Clock idle high, as the DM-1701 (unverified here)
+// Clock idle high, as on the other HR_C6000 radios (unverified here)
 static const stm32_i2s_pcm_cfg_t i2s_cfg = { .ckpol = true };
 
 static bool audio_start(audio_block_cb_t cb, void *ctx)

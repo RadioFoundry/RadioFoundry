@@ -109,6 +109,8 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x1B` | CRASH | operation u8 + arguments (3.19); `CONFIG_CRASH_LOG` builds, else status 4 | none (3.19) |
 | `0x1C` | CODEPLUG | operation u8 + arguments (3.20); `CONFIG_CPS_FAST` builds, else status 4 | layout, block sums, an LZ4 stream, or a reason (3.20) |
 | `0x1D` | WATCHDOG | operation u8 + arguments (3.21); `CONFIG_WATCHDOG` builds, else status 4 | none (3.21) |
+| `0x1E` | RX2 | operation u8 + arguments (3.22) | flags, or none (3.22) |
+| `0x1F` | HWOPT | operation u8 + arguments (3.23) | the options as key=value text, or none (3.23) |
 
 ### 3.1 VERSION
 
@@ -259,6 +261,7 @@ section, `0xFF` after the last. Every section starts with `section=<name>`; a se
 | 20 | `tasks` | Every FreeRTOS task's least free stack since it started, in bytes (the kernel's high water mark, in creation order): `tasks.count tasks.untracked` (tasks created while the table of 16 was full) `tasks.min_free tasks.min_task` (the task with the least, the first of a tie), then `tasks.free.<name>` per task. A name's characters other than letters, digits and `_` become `_` (`tasks.free.Tmr_Svc`), an empty name is `_`. The kernel's task create and delete trace hooks keep the table (`core/app/task_stack.c`); each stack is walked with the scheduler suspended, one task at a time. Measured on the radio; `make stack-check` computes the worst case ([stack-check.md](../dev/stack-check.md)). Built without it (`CONFIG_TASK_STACKS=n`): `tasks.built=0` |
 | 21 | `crash` | the crash log's record from before this start ([crash-log.md](crash-log.md) 3): `crash.built crash.valid`, when valid `crash.arch` (1 CM4, 2 CK803) `crash.kind` (1 fault, 2 stack overflow, 3 out of heap, 4 assert) `crash.cause crash.flags crash.count crash.pc crash.lr crash.sp crash.psr crash.status` (four words) `crash.task crash.uptime_ms crash.build` (the commit's first 8 hex digits, 00000000 unknown) `crash.r0` .. `crash.r13`, and `crash.stack` (the 16 words at `sp`, comma separated hex) when the flags have bit 2. Built without the crash log: `crash.built=0` |
 | 22 | `watchdog` | the hardware watchdog ([watchdog.md](watchdog.md)): `watchdog.built watchdog.timeout_ms` (the nominal timeout; 0 stopped or re-armed by a bench LOAD) `watchdog.feeds` (by the idle task since start) `watchdog.starving` `watchdog.idle_age_ms` (since the idle task last ran) `watchdog.max_gap_ms` (the longest the idle task stayed out since start or CLEAR_GAP) `watchdog.regs` (the platform's raw registers, comma separated hex: HR_C7000 LOCK, OT_LOAD_H, OT_LOAD_L, RST_LOAD, EN, KNOCK; STM32 IWDG PR, RLR, SR), and while a test starves it `watchdog.starved_ms` (since the feeds stopped). Built without the watchdog: `watchdog.built=0` |
+| 23 | `board` | `board.name`, then the board's own keys, each as `board.<key>` (`board.view_line`): bring-up readings such as pin levels, raw ADC values, the clock that started and the flash ID. The keys are listed in the radio's hardware spec; a board without its own keys sends only `board.name` |
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -533,7 +536,7 @@ The SNMP agent's settings ([snmp.md](snmp.md) 6, 7). Built without CONFIG_SNMP e
 
 Load the host's flash-access RAM monitor into a free RAM span and hand the SoC to it at run time, no power cycle
 (`CONFIG_STUB_ENTRY`, its own feature: [stub-entry.md](stub-entry.md); a build without the debug link answers this command with its own listener, byte for byte the same). Two platforms have it: the HR_C7000 (the "C7 stub", `docs/spec/hardware-dm32.md` 17.2) and the
-STM32F4 (the DM-1701 and the MD-380, [stub-stm32f4.md](stub-stm32f4.md)). Built without the switch, or on a
+STM32F4 (every STM32F4 radio, [stub-stm32f4.md](stub-stm32f4.md)). Built without the switch, or on a
 board whose platform has no `hal_system_t.enter_stub`, every operation answers `DL_ST_UNAVAILABLE`. All u32 are little
 endian. The guard is a 32-bit magic key `'C7SB'` (`0x42533743`) on BEGIN and ENTER, plus the exact length and a CRC-32
 of the whole image checked before the jump.
@@ -642,6 +645,19 @@ The token is `'BRDG'` (`0x47445242`, little endian in the payload); another valu
 answered refused (7). The bridge is dropped if PTT went down between the reply and its start.
 `odr_debug.py rx2 [info|restart]`; `stubtool.py --board gd88b` uses BRIDGE.
 
+### 3.23 HWOPT
+
+The board's hardware options (`hal/hal_hwopt.h`): facts a person states because software can't read them, such as
+a board revision. The board stores them outside the settings record. Settings > Advanced > Hardware shows
+the same list; a radio without options has no such row and answers an empty list here.
+
+| Op | Name | Arguments | Reply after the status |
+|---|---|---|---|
+| 0 | LIST | none | key=value text: `hwopt.count`, then per option i `hwopt.<i>.value` (the stored choice, -1 none), `hwopt.<i>.restart` (1: applies from the next start-up), `hwopt.<i>.name`, `hwopt.<i>.choices` (labels separated by `\|`) |
+| 1 | SET | option u8, choice u8 | none. Refused (7) while transmitting or when the board doesn't store it; bad argument (2) for an unknown option or choice |
+
+`odr_debug.py hwopt` lists them; `odr_debug.py hwopt "Board revision" V4A/V5` sets one.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -655,6 +671,7 @@ answered refused (7). The bridge is dropped if PTT went down between the reply a
 - WATCHDOG TEST and LOAD need their token and are refused while transmitting; each ends in a reset (3.21).
 - RX2 BRIDGE and RESTART need their token and are refused while transmitting. The bridge keeps the transmitter off
   and ends in a restart (3.22).
+- HWOPT SET is refused while transmitting (3.23).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused
   unless RDP is level 0. The host tool checks RDP too.
 - Memory dumps are never written inside a git tree (the stock bootloader is proprietary).

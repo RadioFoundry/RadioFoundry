@@ -23,6 +23,7 @@
 #include "hal_bcast.h"
 #include "hal_afsk.h"
 #include "hal_rx2.h"
+#include "hal_hwopt.h"
 
 typedef struct {
 	uint32_t lo_hz;
@@ -106,6 +107,11 @@ typedef struct {
 	void (*gps_enable)(bool on);
 	// Optional: a second receiver, so dual watch hears both channels at once (hal_rx2.h); NULL on one-receiver radios
 	const hal_rx2_t *rx2;
+
+	// Optional: hardware options a person states because software can't read them (hal_hwopt.h): Settings >
+	// Advanced > Hardware and the debug link's HWOPT. NULL / 0 = none
+	const hal_hwopt_t *hwopts;
+	uint8_t hwopt_count;
 } board_t;
 
 extern const board_t board;

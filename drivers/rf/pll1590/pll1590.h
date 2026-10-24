@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// "PLL1590" fractional-N synthesizer of the MD-9600 V4 boards (docs/spec/hardware-md9600.md 5.3). The exact part is
+// "PLL1590" fractional-N synthesizer (the boards that carry it document it in their hardware specs). The exact part is
 // not identified, so this driver knows only the word layout: 24-bit words, MSB first, 20 data bits on top and the
 // 4-bit register number in the low nibble. Six registers are written per frequency, in the order 5, 6, 3, 4, 1, 2:
 // register 3 holds the reference divider R, register 4 a board constant, register 1 an 18-bit signed fraction and

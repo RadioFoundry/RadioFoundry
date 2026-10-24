@@ -9,6 +9,7 @@
 // released. The power key is a matrix position (K0 x K6): the key scan reports it here.
 #include "md9600.h"
 #include "pins.h"
+#include "periph_md9600.h"
 #include "hal_time.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -147,4 +148,5 @@ const hal_power_t md9600_power = {
 	.volume = volume,
 	.switch_on = switch_on,
 	.led = led,
+	.supply_mv = md9600_supply_mv,
 };

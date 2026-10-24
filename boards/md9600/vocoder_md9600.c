@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // MD-9600 vocoder: the radio's own stock AMBE+2 codec, run from flash (docs/spec/codec-md9600.md). Two builds are
 // accepted, 06.09 CSV (V1-V3 boards) and 16.45 CSV (V4); the codec is board-independent, so either serves every
-// revision. The calls are the DM-1701's, at the same entry offsets (platform/stm32f4/hrc/vocoder.c).
+// revision. The calls are the other STM32F4 hosts', at the same entry offsets (platform/stm32f4/hrc/vocoder.c).
 //
 // The merge on the user's machine (odrflash, tools/codec_extract.py, the web flasher) writes the codec's table window at
 // its stock address (sector 9; the two builds' addresses differ, so a profile names its own), the code at the start of
@@ -17,7 +17,7 @@
 #if CONFIG_DMR	// the whole file: DMR only
 #include "hrc/vocoder.h"
 
-#define CODEC_FLASH_LO		0x08080000u	// sectors 8-11: the flash md9600.ld leaves to the codec
+#define CODEC_FLASH_LO		0x08080000u	// sectors 8-11: the flash boards/md9600/memory.ld leaves to the codec
 #define CODEC_CODE		0x080E0000u	// sector 11
 #define CODE_LEN		0xF214u		// both builds' code window
 

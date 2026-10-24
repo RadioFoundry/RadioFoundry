@@ -5,6 +5,7 @@
 // ADC channels, keys, flash. The debug link's board view (view_md9600.c) carries the same and more
 #include <stddef.h>
 #include "md9600.h"
+#include "spi_flash/spi_flash.h"
 #include "config.h"
 #include "rfseq_md9600.h"
 
@@ -125,8 +126,8 @@ bool md9600_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 	case 13:
 		put(&o, "flash ");
-		put_x(&o, md9600_flash_device(), 4);
-		put(&o, md9600_flash.map != NULL ? " mapped" : " no map");
+		put_x(&o, stm32_spi_flash_device(), 4);
+		put(&o, stm32_spi_flash.map != NULL ? " mapped" : " no map");
 		break;
 	case 14:	// the RF sequencer: state, the transmit arm, the last refusal or failure
 		put(&o, rd.state == MD9600_RF_TX ? "rf tx" : rd.state == MD9600_RF_RX ? "rf rx" : "rf off");

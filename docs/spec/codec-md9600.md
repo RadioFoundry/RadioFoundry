@@ -82,6 +82,11 @@ FEC init); stack 3822 bytes peak; no fixed RAM address; no FPU instruction execu
 **This is ODR's DM-1701 vocoder call interface unchanged** (`platform/stm32f4/codec_call.c` and the DM-1701 / MD-380
 glue): a board only needs the code base, the FEC decode offset and the window table.
 
+Encode flags: the shared host (`platform/stm32f4/hrc/vocoder.c`) passes one flags word on every encode call, the
+same word as on the DM-1701 and MD-380 (`drivers/vocoder/ambe2_flags.h`, 0x1840 by default; the bits:
+[codec-md380.md](codec-md380.md), "Encode flags"). On the MD-9600 builds the bits are unverified: the code is the
+same family, but they were not measured on it.
+
 ## Codec windows
 
 Two windows per build, cut by execution (below) and checked against the literal targets: the code window from the
@@ -129,7 +134,7 @@ are **no small tables outside the two windows** (every literal target lies in th
 ## Hosting
 
 Decided 2026-10-21, as the MD-380 (`docs/spec/codec-placement.md`). The code window starts in sector 7
-(0x08074B18 or 0x08075C98), which the application owns (sectors 3-7, `boards/md9600/md9600.ld`), so the merge moves it:
+(0x08074B18 or 0x08075C98), which the application owns (sectors 3-7, `boards/md9600/memory.ld`), so the merge moves it:
 
 | Part | Where it goes | Why |
 |---|---|---|

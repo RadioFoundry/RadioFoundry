@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The OpenDigitalRadio Authors
 # The MD-9600's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
-# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in md9600.ld.
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in memory.ld.
 
 id = "md9600"
 name = "TYT MD-9600"
@@ -10,6 +10,8 @@ model = "MD-9600"
 also = ["Retevis RT90"]
 kind = "mobile"
 debuglink_aliases = ["MD9600", "RT90"]
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 6
 
 [docs]
 hardware = "docs/spec/hardware-md9600.md"
@@ -21,10 +23,13 @@ bands = "136-174 / 400-480 MHz"
 power = "up to 50 W"
 display = "monochrome, 128 × 64"
 gallery = "128x64"
+clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal; the backup domain is only known to hold while DC is applied, VBAT unverified (docs/spec/hardware-md9600.md 1.3, 1.4)" }
 
 [status]
 level = "bring-up"
-summary = "Bring-up: builds, never run on a radio. One image covers every board revision (SKY72310, \"PLL1590\" and LMX2571 synthesizers); transmit is off. The web flasher offers it for testers, through the bootloader and the flash stub; neither route has been tried on an MD-9600 ([hardware-md9600](docs/spec/hardware-md9600.md) 14.4)"
+summary = """\
+Builds for every board revision (SKY72310, "PLL1590" and LMX2571 synthesizers) and is offered to testers through the \
+bootloader and the flash stub. Open: everything on a radio; nothing has run on an MD-9600 yet, and transmit is off."""
 release = "testing"
 
 # This board's own switches (config.mk, config_md9600.h) aren't feature switches, so ci's per-switch builds don't cover
@@ -48,7 +53,15 @@ steps = [
 	"Release the keys.",
 ]
 
-# The TYT bootloader takes the same DFU protocol and sector order as the DM-1701's, with its own key
+# The STM32F4 flash stub's board record (docs/spec/stub-stm32f4.md 5.2): the data flash on SPI2 in mode 3, its pins in
+# pins.h, the LCD's chip select held high so the panel ignores the bus. Not run on a radio yet
+[flash.stub]
+id = 3
+tested = false
+spi = { bus = 2, mode = 3, hz = 4500000 }
+idle_cs = ["PIN_LCD_CS"]
+
+# The TYT bootloader takes the same DFU protocol and sector order as the other usb-dfu radios, with its own key
 # (docs/spec/hardware-md9600.md 14.2)
 [flash.dfu]
 vid = 0x0483
@@ -75,3 +88,17 @@ shape = "mobile"
 body = "#1d1f22"
 accent = "#e07a26"
 lens = [22, 22]
+
+# What the health checks expect (tests/hil/test_health.py): the supply range is a vehicle's 13.8 V system with margin
+# (the divider's scale is unverified, hardware-md9600.md 10.3). The data flash's JEDEC ID and the calibration lines
+# aren't here: no radio has confirmed the part, and the calibration is read by the board's own HIL test
+# (boards/md9600/hil)
+[hil]
+display = "128x64x1"
+features = ["USB", "DEBUGLINK", "CPS_OPENFW"]
+supply_mv = [10000, 16000]
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them
+[cps]
+radio_types = [5]

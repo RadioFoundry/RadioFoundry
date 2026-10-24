@@ -305,7 +305,7 @@ The DM-1701 bootloader stays in DFU mode when the application's initial stack po
 
 The bootloader (sectors 0-2) is never touched, so the bootloader route always stays.
 
-MD-380 and MD-9600: whether the TYT bootloader checks the stack pointer the same way is **unverified**. If it does not, an
+MD-380: whether the TYT bootloader checks the stack pointer the same way is **unverified**. If it does not, an
 interrupted update makes the radio jump to an erased vector. The power-on key combination still reaches DFU, so
 recovery is the same with the keys held.
 
@@ -317,7 +317,6 @@ The host knows which flash the firmware owns (`f4stub.BOARDS`, from the board re
 |---|---|---|---|
 | DM-1701 | 0x0800C000-0x080BFFFF (sectors 3-9) | those of 3-9 the image covers | sectors 10 and 11: written only from an image merged with the codec, otherwise never erased, so the installed codec stays (odrflash's keep mode) |
 | MD-380 | 0x0800C000-0x0807FFFF (sectors 3-7) | those of 3-7 the image covers | sectors 8-11: written only from an image merged with the codec, otherwise never erased |
-| MD-9600 | 0x0800C000-0x0807FFFF (sectors 3-7) | those of 3-7 the image covers | sectors 8-11, as the MD-380 (the merge puts the tables in sector 9 and the code and descriptor in sector 11, [codec-placement.md](codec-placement.md)) |
 
 Inside an owned range, bytes past the image end become 0xFF, so an older, longer build leaves nothing behind. An image
 merged with the codec (`odr_<board>_codec.bin`) runs to the end of flash; the tool splits it into the application and
@@ -350,7 +349,6 @@ never committed.
 | Stub RAM after the jump | 28.6 KB of SRAM (image, engine buffers, 8 KB receive ring), then the stack: at least 4 KB is left for it (asserted by `f4stub.ld`); the deepest call chain needs under 1 KB (`-fstack-usage`) |
 | ODR with `CONFIG_STUB_ENTRY=y`, DM-1701 | the STUB state machine, the entry and the banner text, all in sectors 3-9 (720 KB); +8 KB of SRAM (the staging buffer): RAM 95.4 % used, the default build |
 | ODR with `CONFIG_STUB_ENTRY=y`, MD-380 | the same code, in an application area of 464 KB (the default image is 320,236 bytes), RAM 78.8 %. The switch fits with no other switch off |
-| ODR with `CONFIG_STUB_ENTRY=y`, MD-9600 | the same code: 283 KB of the 464 KB application area, RAM 72.5 % (the maximal configuration: 73.9 %) |
 | ODR with the switch off | no change: the same image, byte for byte in size |
 
 The switch is on by default. The command hands the whole SoC to whatever image the host sends, guarded by the magic,
@@ -398,8 +396,6 @@ codec sectors stay (the radio still finds its codec). Step 9 is still to do.
 - Step 9 of section 11 (an interrupted write and the recovery) on hardware.
 - Protocol 4 (the board record) on hardware: section 11 again on the DM-1701.
 - MD-380: the bootloader's stack pointer check, and the stub on a real MD-380.
-- MD-9600: everything on a real radio. The SPI2 wiring, mode 3 and the LCD's chip select are taken from the board's
-  documentation and ODR's driver, not from a radio ([hardware-md9600.md](hardware-md9600.md) 14.4).
 - odrflash: use the stub when the radio runs a `CONFIG_STUB_ENTRY` build, with the bootloader as the fallback.
 - Release use: pin the stub image (the radio could refuse a stub whose SHA-256 is not built in), then turn the switch on
   by default.

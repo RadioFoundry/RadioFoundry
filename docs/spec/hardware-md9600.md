@@ -162,6 +162,9 @@ low, all T5/R5/C5 supply switches low, U_V_MOD_SW low, FM_SW and FM_MUTE low, CT
 `radioPowerOn` sets both T5 low, all C5 and R5 high (both receivers are always powered together, "as the TYT firmware
 does"), then Power_Control high (D) [ref].
 
+ODR's transmitter-off levels (`board_rf_safe`, on any fault, crash or reset; [crash-log.md](crash-log.md)): APC_EN,
+T5_V and T5_U low, VCO_U and VCO_V high (the receive VCOs), the PA reference DAC (DAC1 channel 2) at 0.
+
 PA13 / PA14 are the receiver supplies of both bands: like the MD-380, the radio takes the SWD pins at run time, and a
 debugger has to connect under reset (D for the pins; the consequence ours).
 
@@ -831,7 +834,8 @@ set, any brightness above 0 drives the backlight fully on. Transmit stays refuse
 
 ### 19.6 Debug link keys
 
-The `board` view section ([debuglink.md](debuglink.md) 3.7) carries, each as `board.<key>`:
+The `board` view section ([debuglink.md](debuglink.md) 3.7) carries these keys, each as `board.<key>`. The supply
+voltage is the generic `supply_mv` key instead (`hal_power_t.supply_mv`; the divider's scale is unverified, 10.3).
 
 | Key | Value |
 |---|---|
@@ -844,7 +848,6 @@ The `board` view section ([debuglink.md](debuglink.md) 3.7) carries, each as `bo
 | `opt.backlight_switched`, `opt.vhf_hz`, `opt.uhf_hz` | the option bit; the band edges as `low-high` in Hz, `0-0` when there are none |
 | `keys` | the matrix, one hex digit per row K0-K3, bits 0-2 = columns K4-K6, 1 = pressed |
 | `ptt` | 1 while the hand-mic PTT is down |
-| `supply_mv` | the supply voltage (scale unverified, 10.3) |
 | `lo_hz`, `retunes`, `refused` | the synthesizer's last frequency, retunes and refused retunes |
 | `pin.power`, `pin.c5`, `pin.r5`, `pin.tx` | output levels: Power_Control; C5 UHF and VHF; R5 UHF and VHF; T5 UHF, T5 VHF and the PA loop enable (`000` in this build) |
 | `adc.noise_u`, `adc.noise_v`, `adc.rssi_u`, `adc.rssi_v`, `adc.mic`, `adc.supply`, `adc.mic_row`, `adc.mic_col` | the ADC1 scan, raw 12-bit (10.3) |
@@ -917,3 +920,24 @@ arm and the last refusal.
 | PC7, TIM8 CH2 | sub-audio tone PWM (`md9600_pwm_out`), on the backlight's 28 kHz timebase. No tone generator drives it yet |
 | PC8, TIM8 CH3 | beep PWM, same helper |
 | PA temperature, fan | no sensor or fan line is known on any revision (?) |
+
+### 19.10 Build switches
+
+The board's own switches, in `boards/md9600/board.mk` and `config.mk` (the shared ones:
+[build-config.md](../build-config.md)):
+
+| Switch | Values |
+|---|---|
+| `MD9600_REV_DEFAULT` | `v5` (default), `v4` or `v1v3`: the board revision driven when none is stored and the probe gives no verdict (19.3) |
+| `MD9600_REV_PROBE` | `1`: the receiver probe at start-up picks the revision when none is stored. Off (`0`) until its thresholds are measured |
+| `CONFIG_MD9600_V1V3` / `_V4` / `_V5` | `y` (default) or `n`: the synthesizer driver per board revision: V1-V3 (SKY72310 and the AK2365A IF receivers), V4 (the 24-bit "PLL1590" part and the AK2365A), V4A / V5 (LMX2571). All on, one image runs every revision; fewer make a smaller image for those boards. At least one must be on (19.3) |
+| `CONFIG_MD9600_TX` | `n` (default) or `y`: the transmit sequence (`boards/md9600/rfseq_md9600.c`). Built, transmit is still refused until it is armed for the power cycle (Settings > Advanced > Hardware, or the debug link) on a radio whose board revision is stored, and the PA calibration rows look plausible (19.8) |
+| `CONFIG_MD9600_DMR_TX` | `n` (default) or `y`: the HR_C6000's per-burst RF keying for DMR transmit. Still refused at run time until enabled (19.1) |
+
+Feature switches that differ from the platform's defaults (`config.mk`; the two lists:
+[build-config.md](../build-config.md#unsupported-not-written-unconfirmed)):
+
+| Off by default | Why |
+|---|---|
+| `SUBTONE`, `FM_TX_TONES`, `DTMF`, `APRS_RX`, `HOTSPOT`, `USB_NETWORK`, `NET_PPP` and what follows them (maximal build too: `BOARD_NOT_WRITTEN`) | bring-up: transmit is refused until a radio confirms the RF sequence, and the tone, sub-audio and APRS receive paths aren't written (19.1) |
+| `UI_COLOR`, `FONT_XL`, `FONT_AA`, `FONT_BIG`, `AM_RX`, `BCAST_FM`, `VIBRATE`, `NAND_STORAGE`, `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen; no air band or broadcast receiver; no vibration motor; NOR data flash; no UART for a fault trace |

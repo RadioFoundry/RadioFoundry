@@ -138,7 +138,7 @@ written to the codeplug. Rows for keys your radio doesn't have are dimmed.
 | Diagnostics | The diagnostics page (also **OK**, **6**, **7**) |
 | Factory reset | Puts every setting back to its default ([below](#factory-reset)) |
 | Crash log | What the last crash left, and sending it to the developers ([below](#crash-log)) |
-| Hardware | Only on radios that need it: facts about the radio the firmware can't read, such as the MD-9600's board revision. **OK** steps through the choices, holding **OK** stores the one shown. "Not set" shows until one is stored. A revision applies from the next start-up |
+| Hardware | Only on radios that need it: facts about the radio the firmware can't read, such as a board revision. **OK** steps through the choices, holding **OK** stores the one shown. "Not set" shows until one is stored. A revision applies from the next start-up |
 
 <img src="../ux/screens/160x120i5/about.png" width="200" alt="Settings > Advanced > About">
 

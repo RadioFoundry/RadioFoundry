@@ -5,19 +5,19 @@
 # 25Q128 flash on SPI2 (docs/spec/hardware-md9600.md). One image for every board revision: the revision is chosen at
 # run time (rfplan_md9600.h); the per-revision drivers are added in config.mk with their switches
 PLATFORM   := stm32f4
-MCU_DEFS   := -DSTM32F405xx -DHSE_VALUE=8000000U -DUSER_VECT_TAB_ADDRESS -DVECT_TAB_OFFSET=0xC000U
+MCU        := stm32f405
+# The 8 MHz crystal; the image starts at sector 3, behind the 48 KB TYT bootloader (hardware-md9600.md 1.3)
+HSE_VALUE  := 8000000U
+APP_BASE   := 0x0800C000
+# The 128x64 panel is 1 bit per pixel (display_md9600.c): 1 KB of frame buffer and 64 rows, not the 40 KB / 160 row
+# default
+MCU_DEFS   += -DGFX_FB_BYTES=1024u -DGFX_MAX_ROWS=64u
 # The revision driven when none is stored and the probe has no verdict: v5 (V4A / V5, the current boards), v4 or v1v3
 MD9600_REV_DEFAULT ?= v5
 MCU_DEFS   += -DMD9600_REV_DEFAULT=MD9600_REV_$(shell echo $(MD9600_REV_DEFAULT) | tr a-z A-Z)
 # The receiver probe at start-up (rev_probe in radio_md9600.c): off until its thresholds are measured on radios
 MD9600_REV_PROBE ?= 0
 MCU_DEFS   += -DMD9600_REV_PROBE=$(MD9600_REV_PROBE)
-LDSCRIPT   := boards/md9600/md9600.ld
-# The linker script's CPU-only RAM (CCM: no DMA): zeroed at start-up for ODR_CPU_RAM, left alone for _NOINIT
-MCU_DEFS   += -DODR_CPU_RAM_SECTION='".ccmbss"' -DODR_CPU_RAM_NOINIT_SECTION='".ccmram"'
 BOARD_DIRS := boards/md9600 drivers/display/st7567 drivers/flash/spi_nor drivers/input/keymatrix drivers/input/quadrature \
-	drivers/cal/calblock drivers/input/adckeys platform/stm32f4/hrc drivers/modem/hrc6000 drivers/modem/hrc_common \
+	drivers/cal/calblock drivers/input/adckeys platform/stm32f4/hrc platform/stm32f4/spi_flash drivers/modem/hrc6000 drivers/modem/hrc_common \
 	drivers/gps/nmea_line drivers/gps/gps_rx platform/stm32f4/gps_uart
-# Built only with CONFIG_USB
-BOARD_USB_DIRS := drivers/usb
-HAL_MODULES := hal hal_cortex hal_rcc hal_rcc_ex hal_gpio hal_pwr hal_pwr_ex hal_flash hal_flash_ex hal_dma

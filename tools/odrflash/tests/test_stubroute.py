@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from odrflash import boards, cli, stubroute  # noqa: E402
+from odrflash import cli, stubroute  # noqa: E402
 import random  # noqa: E402
 
 
@@ -49,7 +49,8 @@ class Route(unittest.TestCase):
         return p
 
     def test_f4_radios_get_the_application_through_the_stub(self):
-        for bid in ("dm1701", "md380", "md9600"):
+        self.assertTrue(stubroute.BOARDS)
+        for bid in stubroute.BOARDS:
             self.fake.calls.clear()
             rc, log = run_cli(["flash", self.image(), "--board", bid, "--route", "stub", "--port", "/dev/x", "--yes"])
             self.assertEqual(rc, 0, log)
@@ -59,14 +60,13 @@ class Route(unittest.TestCase):
             self.assertIn("reset", argv)
 
     def test_refusals(self):
-        rc, log = run_cli(["flash", self.image(), "--board", "dm1701", "--route", "stub", "--simulate", "blank"])
+        rc, log = run_cli(["flash", self.image(), "--board", stubroute.BOARDS[0], "--route", "stub", "--simulate", "blank"])
         self.assertNotEqual(rc, 0)
         self.assertIn("simulate", log)
-        rc, log = run_cli(["flash", self.image(), "--board", "dm1701", "--route", "stub", "--dry-run"])
+        rc, log = run_cli(["flash", self.image(), "--board", stubroute.BOARDS[0], "--route", "stub", "--dry-run"])
         self.assertEqual(rc, 0, log)
         self.assertIn("dry run", log)
         self.assertEqual(self.fake.calls, [])
-        self.assertEqual(set(stubroute.BOARDS), {"dm1701", "md380", "md9600"})
 
 
 if __name__ == "__main__":

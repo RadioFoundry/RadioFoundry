@@ -16,6 +16,7 @@
 #include "rfseq_md9600.h"
 #include "config.h"
 #include "pins.h"
+#include "periph_md9600.h"
 #include "hal_time.h"
 
 // The revision driven when none is stored and the probe has no verdict: one constant, set by the build

@@ -738,9 +738,7 @@ class StockLibrary(unittest.TestCase):
         self.assertTrue(b.keep_codec_supported)		# the application has sectors 3-7, the codec 9 and 11
         self.assertEqual(b.codec.id, "md9600-s11")
         self.assertEqual([s.index for s in b.codec_sectors()], [9, 11])
-        with open(os.path.join(HERE, "..", "..", "..", "boards", "md9600", "md9600.ld")) as f:
-            ld = f.read()
-        self.assertIn("ORIGIN = 0x0800C000, LENGTH = 0x08080000 - 0x0800C000", ld)
+        self.assertEqual(tuple(b.app_region), (0x0800C000, 0x08080000))	# memory.ld: sectors 3-7
         # The board's windows are the union of both stock builds' (a radio may hold either): every window of each
         # file's layout lies inside one of them, and an image reaching either table range is refused
         for sha in MD9600_STOCK:
@@ -784,7 +782,7 @@ class StockLibrary(unittest.TestCase):
             merged = stockfw.merge(img, prof, segs)
             for a, d in segs:
                 self.assertEqual(merged[a - 0x0800C000:a - 0x0800C000 + len(d)], d)
-            p = plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs)
+            p = plan.make_plan(b, [(b.app_base, img)], plan.MERGE, segs, b.merge_windows(prof))
             self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7, 9, 11])
             p = plan.make_plan(b, [(b.app_base, img)], plan.KEEP)
             self.assertEqual([s.index for s in p.erase], [3, 4, 5, 6, 7])

@@ -14,6 +14,7 @@ and what has been checked on it.
 | [Baofeng DM-32UV](#baofeng-dm-32uv) |  | FM and DMR voice both ways, CTCSS/DCS, APRS both ways, GPS data, the hotspot and each split duplex half work on air. Open: FM deviation at 12.5 kHz and an outdoor GPS fix. |
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. Open: the older FD6818 batches and the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
+| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | Builds for every board revision (SKY72310, "PLL1590" and LMX2571 synthesizers) and is offered to testers through the bootloader and the flash stub. Open: everything on a radio; nothing has run on an MD-9600 yet, and transmit is off. |
 <!-- end generated -->
 
 [Planned radios](#planned-radios) lists the radios that aren't built yet.
@@ -503,16 +504,59 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
   tried on the radio yet.
 - No air band receive. The broadcast FM tuner is wired, but its screens aren't built yet.
 
+## TYT MD-9600
+
+Covers the TYT MD-9600 and the Retevis RT90, a mobile radio. **Bring-up: not run on a radio yet.** The image builds
+for every board revision and picks the revision's synthesizer at start-up, but nothing has been checked on an
+MD-9600. Transmit is refused in this image. Only install it if you can go back to the original firmware. The hardware
+facts are in [hardware-md9600.md](../spec/hardware-md9600.md).
+
+### MD-9600 keys
+
+| Key | Role |
+|---|---|
+| Enter | **OK** |
+| Back | **Back** |
+| Up, Down | **Up**, **Down** |
+| P1 | **Quick** |
+| P2 | **Context** |
+| P3 | **Monitor** |
+| P4 | **Talk target** |
+| Orange key | User key 3 |
+| Channel knob | Channel knob |
+| **PTT** | **PTT** (on the hand microphone) |
+
+The hand microphone's keypad gives digits, **\*** (**Quick**) and **#** (**Context**). Its A/B key switches between
+the channel and the VFO, and holding it copies the channel to the VFO. The roles of A-D and A/B are a proposal, and
+the keypad's levels haven't been measured on a radio.
+
+### MD-9600 bands and power levels
+
+Both bands on every radio: VHF (136-174 MHz) and UHF (400-480 MHz). Four power levels, labeled 5, 10, 25 and 40 W
+(the labels aren't measured). The radio runs from a vehicle's 13.8 V supply, so it shows the supply voltage
+instead of a battery level and never warns about a low battery. The voltage's scale isn't checked on a radio yet.
+
+### MD-9600 display
+
+A 128 x 64 monochrome screen.
+
+### What the MD-9600 lacks today
+
+- No transmit, FM or DMR: it stays refused until a radio confirms the transmit sequence.
+- No CTCSS or DCS: the sub-audio path isn't written.
+- No hotspot, DTMF, USB network or IP services: they all need the transmitter.
+- No APRS: the radio doesn't pass its received audio to the decoder yet.
+- No air band or broadcast receiver, and no vibration motor.
+
 ## Planned radios
 
-These radios aren't built yet. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
+These radios aren't built in a release yet. An in-progress port is on its own branch. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
 models it covers.
 
 <!-- generated: tools/boards.py docs planned; edit the Port cells of docs/spec/radios.md -->
 | Radio | Status |
 |---|---|
 | TYT MD-UV380 / MD-UV390, Retevis RT3S | Planned. Same board family as the DM-1701 (STM32F405, HR_C6000, AT1846S), so it should be the next port ([hardware-mduv380.md](../spec/hardware-mduv380.md)). |
-| TYT MD-9600, Retevis RT90 (mobile) | In progress ([#112](https://github.com/sfowlr/OpenDigitalRadio/pull/112)). Mobile radio on the same STM32F405 and HR_C6000 pair, with SKY72310 synthesizers (older boards) and a 128x64 mono LCD. |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/sfowlr/OpenDigitalRadio/pull/111)). Hardware needed. A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
 | Radioddity GD-88 | In progress ([#132](https://github.com/sfowlr/OpenDigitalRadio/pull/132)). Hardware needed. Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |

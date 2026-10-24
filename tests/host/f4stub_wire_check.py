@@ -6,7 +6,6 @@ and stub/stm32f4/f4stub_board.c): the board records, installs on a simulated DM-
 profile (other SPI wiring), a read-back and the refusals, all over the stub's wire protocol. The profiles come from the
 board registry, whose check holds them to the boards' sources (tools/boards.py). Run by `make -C tests/host`."""
 import os
-import re
 import select
 import subprocess
 import sys

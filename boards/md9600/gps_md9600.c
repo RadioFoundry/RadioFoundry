@@ -5,6 +5,8 @@
 // hand mic, so it stays on whatever the GPS setting says; the setting only stops the sentences reaching the position
 // source. 9600 baud first (8N1, receive only), then the other usual rates: a line that stays silent for the first
 // window ends the search, so a radio without a module listens once and turns the UART off again.
+#include "config.h"
+#if CONFIG_GPS	// off: the driver and its interrupt handler are left out, and the radio has no GPS
 #include "md9600.h"
 #include "pins.h"
 #include "gps_uart/gps_uart.h"
@@ -28,3 +30,5 @@ void md9600_gps_init(void)
 {
 	stm32_gps_init(&gps);
 }
+
+#endif	// CONFIG_GPS

@@ -253,14 +253,15 @@ def self_test():
 
 def test_desc(path, board="dm1701"):
     """Write the codec sectors as the merge leaves them for a synthetic codec, for tests/host/codecDescTest.c (the
-    firmware's descriptor checks and this writer must agree): the DM-1701's sectors 10 and 11 (0x080C0000..0x08100000),
-    the MD-380's sectors 8-11 (0x08080000..0x08100000)"""
+    firmware's descriptor checks and this writer must agree): the board's flash from its application's end up, for its
+    first registry stock file ([codec] stock)"""
     import random
     rng = random.Random(1701)
     key = bytes(rng.randrange(256) for _ in range(KEY_LEN))
-    stock, profiles, _, _ = build_synthetic_stock(key, rng, {"md380": MD380_D2032, "md9600": MD9600_V0609}.get(board, DM1701_V0206))
+    b = boards.get(board)
+    stock, profiles, _, _ = build_synthetic_stock(key, rng, b.codec_stock[0])
     p, wins = extract(stock, key, profiles)
-    lo = 0x08080000 if board in ("md380", "md9600") else 0x080C0000
+    lo = b.app_region[1]
     out = bytearray(b"\xFF" * (FLASH_END - lo))
     for a, d in wins:
         out[a - lo:a - lo + len(d)] = d

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// The debug link's HWOPT command (core/debuglink/debuglink_hwopt.c, docs/spec/debuglink.md 3.21) against a fake board
+// The debug link's HWOPT command (core/debuglink/debuglink_hwopt.c, docs/spec/debuglink.md 3.23) against a fake board
 // with two hardware options: the list text, a stored choice, the refusals (unknown option or choice, the board
 // refusing, the radio transmitting); built again with HWOPT_NONE_BOARD for a board without options (hwoptTestNone).
 #include <stdio.h>

@@ -81,7 +81,10 @@
 #define PIN_C6000_SYS_INT	GPIOC, GPIO_PIN_1
 #define PIN_C6000_RFTX_INT	GPIOC, GPIO_PIN_2
 
-// SPI2 (PB13 SCK, PB14 MISO, PB15 MOSI, AF5): the data flash and the LCD
+// SPI2 (AF5): the data flash and the LCD
+#define PIN_FLASH_SCK		GPIOB, GPIO_PIN_13
+#define PIN_FLASH_MISO		GPIOB, GPIO_PIN_14
+#define PIN_FLASH_MOSI		GPIOB, GPIO_PIN_15
 #define PIN_FLASH_CS		GPIOB, GPIO_PIN_12
 #define PIN_LCD_RST		GPIOD, GPIO_PIN_12	// low = reset
 #define PIN_LCD_A0		GPIOD, GPIO_PIN_13	// low = command

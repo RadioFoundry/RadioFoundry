@@ -39,7 +39,7 @@ are left out whole from the right. A toast is one centered line instead. A banne
 between lines of the screen under it (a row all one color), never through a line of text.
 
 Hints and toasts call the QUICK and CONTEXT keys `*` and `#`. A radio without those keys gives its own names
-(`board.quick_label`, `board.context_label`: "P1" and "P2" on the MD-9600), and each `*` or `#` that stands alone is
+(`board.quick_label`, `board.context_label`: for example a front panel's own key names), and each `*` or `#` that stands alone is
 drawn as that name ("OK Menu  P1 Quick"). On a radio with no digit keys a hint group that starts with a digit
 ("0-9 find") is left out. Toasts keep their numbers.
 
@@ -95,7 +95,7 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
 | About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
-| Hardware | `hwopt` | Settings > Advanced > Hardware, only on a radio with hardware options (`hal/hal_hwopt.h`; the MD-9600's board revision): each option with the stored choice, "Not set" (warning) without one. OK shows the next choice (marked `*` until stored), long OK stores it; a toast says when it applies from the next start-up. The simulator has no options, so the gallery has no picture of it |
+| Hardware | `hwopt` | Settings > Advanced > Hardware, only on a radio with hardware options (`hal/hal_hwopt.h`, such as a board revision): each option with the stored choice, "Not set" (warning) without one. OK shows the next choice (marked `*` until stored), long OK stores it; a toast says when it applies from the next start-up. The simulator has no options, so the gallery has no picture of it |
 
 The gallery (section 7) shows every screen at every display class.
 
@@ -320,8 +320,8 @@ pixels, so they hold on any display.
 ## 7. Host simulator and tests
 
 `tests/host/sim/` runs the real `core/ui` files against a simulated board (any display geometry, any of the key
-maps K DM-1701, M GD-77 style, V the MD-9600's front panel with the hand-mic keypad, F few keys, P the MD-9600's
-front panel alone), radio core, the usability-test codeplug (3 zones,
+maps K full keypad, M navigation keys, V a mobile's front panel with a hand-mic keypad, F few keys, P that front
+panel alone), radio core, the usability-test codeplug (3 zones,
 40 channels, 30 contacts) and the services of section 4.
 
 ```
@@ -363,7 +363,7 @@ draw the anti-aliased fonts (`CONFIG_FONT_AA`, as the DM-32 is built), and `240x
 
 `uiFlowTest` runs every task flow of `task-flows.md` with the press budgets of `usability-tests.md` on four display
 and key map pairs (K at 160x120i5, M at 128x64, V at 128x64, K at 240x320) plus the few-key fallbacks and the
-MD-9600's front panel alone (P at 128x64: no digits, P1 / P2 named in the hints).
+front panel alone (P at 128x64: no digits, the panel's key names in the hints).
 A crawler then visits every reachable screen and checks the rules that hold everywhere: BACK leaves every screen, long
 BACK reaches Home, long QUICK locks on Home and nowhere else, long CONTEXT opens the talk target picker on a DMR channel, the status strip is drawn (except About while idle),
 PTT shows TX, and every field-use screen is at most 3 presses deep. The crawler runs with K, M, F and P. The About check scrolls the page to its end at

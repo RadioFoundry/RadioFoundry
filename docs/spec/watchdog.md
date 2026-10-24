@@ -76,7 +76,7 @@ The stub (`stub/stm32f4`) feeds the IWDG:
 |---|---|
 | `stub_main`, first | once, before anything else: ODR's stretch covered the copy and the jump |
 | `stub_ms()`, which every wait loop reads: the main loop's receive poll, the flash erase and program busy waits (a 128 KB sector: up to 2 s), the SPI flash's status polls, the USB transmit waits, the delays | every pass |
-| The protocol engine (`f4stub_port_t.feed`) | at every request, before each erase or program, once per 4 KB block in SUMS and READ (a 1 MB SUMS is 256 blocks) |
+| The protocol engine (`stubeng_port_t.feed`, `stub/common/stubeng.c`) | at every request, before each erase or program, once per 4 KB block in SUMS and READ (a 1 MB SUMS is 256 blocks) |
 
 The loops left without a feed are bounded to microseconds (the SPI byte transfers, the FIFO copies) or are the stub
 hanging, which is what the watchdog is for.

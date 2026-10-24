@@ -5,6 +5,7 @@
 #include "board.h"
 #include "config.h"
 #include "md9600.h"
+#include "spi_flash/spi_flash.h"
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -15,7 +16,7 @@
 #include "usb/usb_device.h"
 #endif
 
-// The RTOS heap, and with it every task stack, in the CCM (as the DM-1701 and MD-380): nothing on a stack or from
+// The RTOS heap, and with it every task stack, in the CCM (as on the other STM32F4 radios): nothing on a stack or from
 // pvPortMalloc may be a DMA buffer
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
 
@@ -44,35 +45,35 @@ static const char *const power_names[] = { "5W", "10W", "25W", "40W" };
 // CONTEXT, its up / down as the panel's, A and B user keys, C monitor, D talk target, A/B between channel and VFO (the
 // roles of A-D and A/B are a proposal, unverified)
 static const keymap_entry_t keymap[] = {
-	{ KEY_ENTER, ACT_SELECT, ACT_SELECT, false, false },
-	{ KEY_BACK, ACT_BACK, ACT_BACK, false, false },
-	{ KEY_P1, ACT_QUICK, ACT_QUICK, false, false },
-	{ KEY_P2, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true },
-	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
-	{ KEY_P3, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ KEY_P4, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ KEY_ALARM, ACT_USER_3, ACT_USER_3, false, false },
-	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
-	{ KEY_MIC_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false },
-	{ KEY_MIC_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false },
-	{ KEY_MIC_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false },
-	{ KEY_MIC_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false },
-	{ KEY_MIC_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false },
-	{ KEY_MIC_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false },
-	{ KEY_MIC_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false },
-	{ KEY_MIC_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
-	{ KEY_MIC_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false },
-	{ KEY_MIC_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
-	{ KEY_MIC_STAR, ACT_QUICK, ACT_QUICK, false, false },
-	{ KEY_MIC_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ KEY_MIC_UP, ACT_NAV_UP, ACT_NAV_UP, false, true },
-	{ KEY_MIC_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
-	{ KEY_MIC_A, ACT_USER_1, ACT_USER_1, false, false },
-	{ KEY_MIC_B, ACT_USER_4, ACT_USER_4, false, false },
-	{ KEY_MIC_C, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ KEY_MIC_D, ACT_TALK_TARGET, ACT_TALK_TARGET, false, false },
-	{ KEY_MIC_AB, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false },
+	{ KEY_ENTER, ACT_SELECT, ACT_SELECT, false, false, 0 },
+	{ KEY_BACK, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ KEY_P1, ACT_QUICK, ACT_QUICK, false, false, 0 },
+	{ KEY_P2, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
+	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
+	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ KEY_P3, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ KEY_P4, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ KEY_ALARM, ACT_USER_3, ACT_USER_3, false, false, 0 },
+	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+	{ KEY_MIC_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },
+	{ KEY_MIC_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
+	{ KEY_MIC_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false, 0 },
+	{ KEY_MIC_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false, 0 },
+	{ KEY_MIC_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 },
+	{ KEY_MIC_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
+	{ KEY_MIC_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 },
+	{ KEY_MIC_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
+	{ KEY_MIC_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
+	{ KEY_MIC_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
+	{ KEY_MIC_STAR, ACT_QUICK, ACT_QUICK, false, false, '*' },
+	{ KEY_MIC_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, '#' },
+	{ KEY_MIC_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
+	{ KEY_MIC_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ KEY_MIC_A, ACT_USER_1, ACT_USER_1, false, false, 'A' },
+	{ KEY_MIC_B, ACT_USER_4, ACT_USER_4, false, false, 'B' },
+	{ KEY_MIC_C, ACT_MONITOR, ACT_MONITOR, true, false, 'C' },
+	{ KEY_MIC_D, ACT_TALK_TARGET, ACT_TALK_TARGET, false, false, 'D' },
+	{ KEY_MIC_AB, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false, 0 },
 };
 
 // Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): P3, P4, the orange key
@@ -89,7 +90,7 @@ static const hal_cps_t cps = {
 	.radio_type = cps_radio_type,
 	.rom_base = 0x08000000u,
 	.rom_size = 1024u * 1024u,
-	.security_read = md9600_cps_security_read,
+	.security_read = stm32_spi_flash_cps_security_read,
 };
 #endif
 
@@ -98,7 +99,7 @@ const board_t board = {
 	// A mobile on a fixed supply: no battery. No CAP_VOLUME_POT: the knob sets the volume in the analog path only.
 	// No CAP_KEYPAD: the keypad is on the hand mic, which may not have one, so text entry keeps the panel's way. The
 	// GPS module is optional: gps_present says
-	.caps = CAP_ENCODER | CAP_NO_BATTERY | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -119,10 +120,12 @@ const board_t board = {
 	.audio = &md9600_audio,
 	.vocoder = &stm32_vocoder,
 #endif
+#if CONFIG_GPS
 	.gps_present = stm32_gps_present,
 	.gps_enable = stm32_gps_enable,
+#endif
 	.power = &md9600_power,
-	.flash = &md9600_flash,
+	.flash = &stm32_spi_flash,
 #if CONFIG_DIAG
 	.diag_line = md9600_diag_line,
 	.diag_reset = md9600_diag_reset,
@@ -142,7 +145,7 @@ const board_t board = {
 };
 
 // hardware-md9600.md 1.2: an 8 MHz HSE; SYSCLK 72 MHz from a 2 MHz PLL input (M 4, N 72, P 2), USB 48 MHz (Q 3),
-// APB1 36 MHz, APB2 72 MHz: the DM-1701's plan
+// APB1 36 MHz, APB2 72 MHz: the platform's usual plan
 static const stm32_clock_t clock_crystal = {
 	.hse_hz = 8000000,
 	.hse_bypass = false,
@@ -184,7 +187,8 @@ void md9600_spi2_init(void)
 	done = true;
 	PIN_OUT(PIN_FLASH_CS, true);
 	PIN_OUT(PIN_LCD_CS, true);
-	stm32_pin_af(GPIOB, GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15, GPIO_AF5_SPI2, false, GPIO_NOPULL);
+	stm32_pin_af(PIN_PORT(PIN_FLASH_SCK), PIN_MASK(PIN_FLASH_SCK) | PIN_MASK(PIN_FLASH_MISO) | PIN_MASK(PIN_FLASH_MOSI),
+		     GPIO_AF5_SPI2, false, GPIO_NOPULL);
 	stm32_spi_master_init(SPI2, true, true, 0);
 }
 
@@ -240,12 +244,21 @@ void board_sysboot_prepare(void)
 	reset_levels();
 }
 
-// Before the flash stub takes over: only the transmitter off
-void board_stub_prepare(void)
+// Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-md9600.md 2.6): the PA power loop
+// (APC_EN) and both transmitter supplies (T5_V, T5_U) off, both receive VCOs selected, and the PA reference DAC (DAC2)
+// to 0 when its clock is on. Register writes only. The synthesizers and the HR_C6000 are left as they are (a bus
+// transaction each); with T5 off their output reaches no powered PA. The backlight and the rest stay, so the stub's
+// banner stays readable
+void board_rf_safe(void)
 {
-	PIN_WRITE(PIN_APC_EN, false);
-	PIN_WRITE(PIN_T5_V, false);
-	PIN_WRITE(PIN_T5_U, false);
+	stm32_pin_force(PIN_PORT(PIN_APC_EN), PIN_MASK(PIN_APC_EN), false);
+	stm32_pin_force(PIN_PORT(PIN_T5_V), PIN_MASK(PIN_T5_V), false);
+	stm32_pin_force(PIN_PORT(PIN_T5_U), PIN_MASK(PIN_T5_U), false);
+	stm32_pin_force(PIN_PORT(PIN_VCO_U), PIN_MASK(PIN_VCO_U), true);
+	stm32_pin_force(PIN_PORT(PIN_VCO_V), PIN_MASK(PIN_VCO_V), true);
+	if (RCC->APB1ENR & RCC_APB1ENR_DACEN) {
+		DAC1->DHR12R2 = 0;
+	}
 }
 
 void board_early_init(void)
@@ -265,8 +278,10 @@ void board_init(void)
 {
 	spi2_lock = xSemaphoreCreateRecursiveMutex();
 	md9600_power.init();
-	md9600_flash.init();
+	md9600_flash_init();
 	md9600_cal_load();
 	md9600_radio_early();
+#if CONFIG_GPS
 	md9600_gps_init();
+#endif
 }

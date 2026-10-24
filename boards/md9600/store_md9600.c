@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include "store_md9600.h"
 
-// The DM-1701's map: the open-firmware codeplug where the CPS tools expect it; settings and journal at
+// The map of the other usb-dfu radios with this flash layout: the open-firmware codeplug where the CPS tools expect it; settings and journal at
 // 0x011000-0x01AFFF. 0x010000-0x010FFF stays free (no calibration copy: the calibration is in the security
 // registers, which the core never sees). The stock codeplug at 0 is overwritten by the first open-firmware write
 const hal_flash_map_t md9600_flash_map = {

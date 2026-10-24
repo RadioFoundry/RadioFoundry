@@ -3,7 +3,7 @@
 // Hardware options: facts about the radio that software can't read and a person has to state, such as which board
 // revision a radio with several revisions has. The board keeps them itself, outside the settings record, so a
 // settings reset doesn't lose them. Settings > Advanced > Hardware lists them and the debug link reads and sets them
-// (HWOPT, docs/spec/debuglink.md 3.21). Optional: board.hwopts is NULL where the radio has none.
+// (HWOPT, docs/spec/debuglink.md 3.23). Optional: board.hwopts is NULL where the radio has none.
 #ifndef HAL_HWOPT_H
 #define HAL_HWOPT_H
 

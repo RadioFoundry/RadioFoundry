@@ -87,7 +87,7 @@ codec map can't be written.
 
 The runtime stub's window (`HRC_STUB_BASE`) follows the codec window. The slot tool is `tools/hrc7000_codec.py`.
 
-## STM32 radios (DM-1701, MD-380, MD-9600)
+## STM32 radios (DM-1701, MD-380)
 
 The codec runs in place from internal flash, so it moves at the merge, and the firmware finds it through a
 **descriptor**: 128 bytes at 0x080FFF80, the end of sector 11.
@@ -95,18 +95,13 @@ The codec runs in place from internal flash, so it moves at the merge, and the f
 | Field | Content |
 |---|---|
 | Magic, version | "DESC", 1 |
-| Profile tag | Which stock build (0x0206 V02.06, 0x2032 D002.032, 0x0609 and 0x1645 for the MD-9600's 06.09 and 16.45); the firmware supports only the builds whose calling convention it knows |
+| Profile tag | Which stock build (0x0206 V02.06, 0x2032 D002.032); the firmware supports only the builds whose calling convention it knows |
 | Code | Flash address, length, CRC-32 |
 | Table windows | Count, then up to five (address, length, CRC-32) |
 | CRC-32 | Of the 124 bytes before it |
 
 Entry points stay in the firmware, as offsets from the code start. Every window must lie inside the flash the board
-leaves to the codec (DM-1701 sectors 10 and 11, MD-380 and MD-9600 sectors 8-11).
-
-A board can take its codec from more than one stock file (`[codec] stock` in `board.toml` lists them). The files hold
-the same codec, but each may put its tables at other addresses. The board's codec windows are then the union of every
-file's layout: the image must stay out of all of them, and keeping the codec keeps all of them. A merge writes and
-checks the layout of the file it merges, never the union.
+leaves to the codec (DM-1701 sectors 10 and 11, MD-380 sectors 8-11).
 
 A board can take its codec from more than one stock file (`[codec] stock` in `board.toml` lists them). The files hold
 the same codec, but each may put its tables at other addresses. The board's codec windows are then the union of every
@@ -119,7 +114,6 @@ First step, no table addresses rewritten:
 |---|---|---|---|
 | DM-1701 V02.06 | 0x080E3A74 in sector 11, right after the end of the codec's data (the map's minimal window ends at 0x080E3A72) | Stay at 0x080D19F0, cut to 0x12082 bytes (sectors 10, 11) | Sectors 3-9: 0x0800C000..0x080BFFFF, 720 KB in one piece (was 336 KB + 128 KB) |
 | MD-380 D002.032 | 0x080E0000, the start of sector 11, below the small windows | Stay: the main window in sector 8, the four small ones in sectors 10 and 11 | Sectors 3-7: 0x0800C000..0x0807FFFF, 464 KB in one piece (was 275 KB); sector 9 is unused |
-| MD-9600 06.09 and 16.45 | 0x080E0000, the start of sector 11 | Stay in sector 9 at the build's address (0x080AB13C or 0x080AC2BC); no small windows | Sectors 3-7: 0x0800C000..0x0807FFFF, 464 KB in one piece; sectors 8 and 10 are unused |
 
 What the merge rewrites (the map's `self_refs` and `branches`):
 
@@ -127,11 +121,10 @@ What the merge rewrites (the map's `self_refs` and `branches`):
 |---|---|---|
 | DM-1701 V02.06 | One literal word that points into the code | 12 calls (BL) from the code stock keeps in the window back into the code |
 | MD-380 D002.032 | Two movw/movt pairs that point into the code | 12 calls (BL), as on the DM-1701 |
-| MD-9600 06.09 and 16.45 | One literal word that points into the code | 12 calls (BL), as on the DM-1701 |
 
 The firmware (`boards/<radio>/vocoder_<radio>.c`) checks the descriptor, that the code and every table window are
 where this build expects them with the expected CRCs, and the code's first word. Only then does it call the codec, and
-it reports the profile with an `-s11` suffix (`dm1701-v0206-csv-s11`, `md380-d2032-s11`, `md9600-s11` for both MD-9600 builds). A build from before the move
+it reports the profile with an `-s11` suffix (`dm1701-v0206-csv-s11`, `md380-d2032-s11`). A build from before the move
 reports the stock id, so the flashing tools see that the codec isn't where the new layout keeps it.
 
 Later step: rewrite the `table_refs` and pack code and table objects into one sector (sector 11). The maps hold what

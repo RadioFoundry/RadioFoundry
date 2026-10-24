@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
-// A write-only three-wire bus bit-banged on GPIO (platform.h, drivers/bus/wire3.h), for chips on pins no SPI
+// A write-only three-wire bus bit-banged on GPIO (periph_md9600.h, drivers/bus/wire3.h), for chips on pins no SPI
 // peripheral reaches. Per bit: clock low, data set, half a period, clock high (the chip takes the bit on the rising
 // edge), half a period. The chip select goes low before the first bit and high after the last, which latches the
 // word; clock and data are left low.
-#include "platform.h"
+#include "periph_md9600.h"
 
 static inline void wait_cycles(uint32_t cycles)
 {

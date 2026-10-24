@@ -34,7 +34,7 @@ typedef struct {
 } calblock_t;
 
 // A row: points evenly spaced in frequency, one byte each. Values are the bytes as stored; the board applies the
-// scale its hardware needs (the MD-9600's DACs take byte x 16)
+// scale its hardware needs (some radios' DACs take byte x 16)
 typedef struct {
 	uint16_t offset;	// the first point's byte in the block
 	uint8_t points;		// 1..CAL_CURVE_MAX_POINTS

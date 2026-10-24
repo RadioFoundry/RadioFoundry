@@ -928,6 +928,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_watchdog(req, len, out, cap);
 	case DL_CMD_RX2:
 		return debuglink_cmd_rx2(req, len, out, cap);
+	case DL_CMD_HWOPT:
+		return debuglink_cmd_hwopt(req, len, out, cap);
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST
 		return cps_fast_cmd(req, len, out, cap, hal_millis());

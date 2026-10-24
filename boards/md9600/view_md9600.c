@@ -7,6 +7,7 @@
 #include "config.h"
 #if CONFIG_DEBUGLINK	// the whole file
 #include "md9600.h"
+#include "spi_flash/spi_flash.h"
 #include "pins.h"
 #include "debuglink/dl_fmt.h"
 #include "gps_uart/gps_uart.h"
@@ -45,9 +46,11 @@ static uint8_t latch(GPIO_TypeDef *port, uint16_t pin)
 static bool audio_line(uint8_t i, char *buf, uint8_t len)
 {
 	md9600_c6000_diag_t c;
-	uint32_t good, bad, bytes;
+	uint32_t good = 0, bad = 0, bytes = 0;
 	md9600_c6000_diag(&c);
+#if CONFIG_GPS
 	stm32_gps_counts(&good, &bad, &bytes);
+#endif
 	switch (i) {
 	case 0:		// the chip answered after its set-up, and its 4:0x10
 		dl_fmt(buf, len, "c6000=%u r10=0x%02x", c.up ? 1u : 0u, c.r10);
@@ -67,11 +70,11 @@ static bool audio_line(uint8_t i, char *buf, uint8_t len)
 	case 5:		// the hand-mic key decoded on the last scan, 255 for none (the md9600.h key number)
 		dl_fmt(buf, len, "mic_key=%u", md9600_mic_key());
 		return true;
-	case 6:
-		dl_fmt(buf, len, "gps=%u", stm32_gps_present() ? 1u : 0u);
+	case 6:		// GPS not built: the lines stay, as a radio without a module (0)
+		dl_fmt(buf, len, "gps=%u", CONFIG_GPS && stm32_gps_present() ? 1u : 0u);
 		return true;
 	case 7:		// the rate listened at, 0 once given up
-		dl_fmt(buf, len, "gps.baud=%u", (unsigned)stm32_gps_baud());
+		dl_fmt(buf, len, "gps.baud=%u", (unsigned)(CONFIG_GPS ? stm32_gps_baud() : 0u));
 		return true;
 	case 8:
 		dl_fmt(buf, len, "gps.nmea=%u/%u/%u", (unsigned)good, (unsigned)bad, (unsigned)bytes);
@@ -115,13 +118,13 @@ bool md9600_view_line(uint8_t i, char *buf, uint8_t len)
 		dl_fmt(buf, len, "sysclk_hz=%u", (unsigned)SystemCoreClock);
 		return true;
 	case 8:		// JEDEC memory type and capacity (0x4018: a 25Q128 class part), 0 = no answer
-		dl_fmt(buf, len, "flash.id=0x%04x", md9600_flash_device());
+		dl_fmt(buf, len, "flash.id=0x%04x", stm32_spi_flash_device());
 		return true;
 	case 9:
-		dl_fmt(buf, len, "flash.size=%u", (unsigned)md9600_flash.size);
+		dl_fmt(buf, len, "flash.size=%u", (unsigned)stm32_spi_flash.size);
 		return true;
 	case 10:
-		dl_fmt(buf, len, "flash.map=%u", md9600_flash.map != NULL ? 1u : 0u);
+		dl_fmt(buf, len, "flash.map=%u", stm32_spi_flash.map != NULL ? 1u : 0u);
 		return true;
 	case 11:
 		dl_fmt(buf, len, "cal=%s", md9600_cal_source());
@@ -147,34 +150,31 @@ bool md9600_view_line(uint8_t i, char *buf, uint8_t len)
 	case 17:
 		dl_fmt(buf, len, "ptt=%u", PIN_READ(PIN_PTT) ? 0u : 1u);
 		return true;
-	case 18:
-		dl_fmt(buf, len, "supply_mv=%u", md9600_supply_mv());
-		return true;
-	case 19:	// the radio core's synthesizer state
+	case 18:	// the radio core's synthesizer state
 		dl_fmt(buf, len, "lo_hz=%u", (unsigned)rd.lo_hz);
 		return true;
-	case 20:
+	case 19:
 		dl_fmt(buf, len, "retunes=%u", (unsigned)rd.retunes);
 		return true;
-	case 21:
+	case 20:
 		dl_fmt(buf, len, "refused=%u", (unsigned)rd.refused);
 		return true;
-	case 22:	// output levels: Power_Control and the receiver supplies
+	case 21:	// output levels: Power_Control and the receiver supplies
 		dl_fmt(buf, len, "pin.power=%u", LATCH(PIN_POWER));
 		return true;
-	case 23:
+	case 22:
 		dl_fmt(buf, len, "pin.c5=%u%u", LATCH(PIN_C5_U), LATCH(PIN_C5_V));
 		return true;
-	case 24:
+	case 23:
 		dl_fmt(buf, len, "pin.r5=%u%u", LATCH(PIN_R5_U), LATCH(PIN_R5_V));
 		return true;
-	case 25:	// the transmitter: both T5 supplies and the PA loop, all 0 while transmit is refused
+	case 24:	// the transmitter: both T5 supplies and the PA loop, all 0 while transmit is refused
 		dl_fmt(buf, len, "pin.tx=%u%u%u", LATCH(PIN_T5_U), LATCH(PIN_T5_V), LATCH(PIN_APC_EN));
 		return true;
 	default:
 		break;
 	}
-	uint8_t a = (uint8_t)(i - 26u);
+	uint8_t a = (uint8_t)(i - 25u);
 	if (a < MD9600_ADC_COUNT) {
 		dl_fmt(buf, len, "adc.%s=%u", adc_names[a], md9600_adc_raw(a));
 		return true;

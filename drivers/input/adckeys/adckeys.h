@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The OpenDigitalRadio Authors
 // Keys read as two analog levels: a keypad whose rows pull one ADC input and whose columns pull another to a level
-// per position through resistor ladders (the MD-9600's hand microphone, docs/spec/hardware-md9600.md 9.3). One key at a
+// per position through resistor ladders (a hand microphone's keypad, for example). One key at a
 // time. Generic and pure: the board reads the two levels, this maps them to a key and holds it until it has read the
 // same for a few scans, so a level passing through another key's window while a key goes down or up is never
 // reported.

@@ -30,19 +30,21 @@ CONFIG_HOTSPOT ?= n
 # The USB network adapter carries the DMR IP gateway's services, which wait for DMR transmit
 CONFIG_USB_NETWORK ?= n
 CONFIG_NET_PPP ?= n
-# FM transmit is refused for now, so the TX tones, VOX and APRS (AFSK out through the FM transmitter) have no path
+# FM transmit is refused for now, so the TX tones and DTMF have no path. APRS receive: the radio has the receive audio
+# on PC3, but the board doesn't feed it samples yet
 CONFIG_FM_TX_TONES ?= n
+CONFIG_DTMF ?= n
+CONFIG_APRS_RX ?= n
 # No sub-audio decode or encode path written yet (the tone PWM on PC7, the discriminator samples on PC3)
 CONFIG_SUBTONE ?= n
-CONFIG_APRS_RX ?= n
-# A 128x64 monochrome panel: no colors, no large font. No air band or broadcast receiver
+# A 128x64 monochrome panel: no colors. No air band or broadcast receiver. The fault trace, the large font and LTO
+# follow the platform (platform/stm32f4/config.mk)
 CONFIG_UI_COLOR ?= n
-CONFIG_FONT_XL ?= n
 CONFIG_AM_RX ?= n
 CONFIG_BCAST_FM ?= n
-# What the hardware can't do, one switch per line with the reason (tools/boards.py checks there is one): ci's maximal
-# configuration leaves these off. Features only waiting on code or on transmit are off by default above instead, so
-# the maximal build still compiles them
+# What the hardware can't do, and what the hardware can do but this board's code doesn't yet, one switch per line with
+# the reason (docs/build-config.md, "Unsupported, not written, unconfirmed"; tools/boards.py checks there is one). ci's
+# maximal configuration leaves both lists off
 BOARD_UNSUPPORTED += UI_COLOR	# a 128x64 monochrome panel
 BOARD_UNSUPPORTED += FONT_XL	# the large font is for 240 px and wider panels; this one is 128x64
 BOARD_UNSUPPORTED += FONT_AA	# a monochrome panel draws anti-aliased fonts as plain ink and gains nothing
@@ -52,12 +54,32 @@ BOARD_UNSUPPORTED += BCAST_FM	# no broadcast receiver (docs/spec/airband-and-bro
 BOARD_UNSUPPORTED += VIBRATE	# no vibration motor
 BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR
 BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and the one UART is the GPS receive line
-# Not written for this radio yet (off by default above, waiting on board code or on transmit): ci's maximal
-# configuration leaves them off too. Until the registry's BOARD_NOT_WRITTEN takes them, MAXIMAL_SKIP does
-MAXIMAL_SKIP += SUBTONE FM_TX_TONES DTMF HOTSPOT HOTSPOT_SPLIT USB_NETWORK NET_PPP DMR_IP_GATEWAY DMR_UDP_COMPRESS \
-	NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP \
-	SFR CRASH_REPORT APRS_IGATE
+BOARD_NOT_WRITTEN += SUBTONE	# the sub-audio paths (the tone PWM on PC7, the discriminator samples on PC3)
+BOARD_NOT_WRITTEN += FM_TX_TONES	# FM transmit is refused until a radio confirms the RF sequence
+BOARD_NOT_WRITTEN += DTMF	# the tones go out through the FM transmitter, refused for now (above)
+BOARD_NOT_WRITTEN += APRS_RX	# the receive audio (PC3) isn't fed to the AFSK decoder
+BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
+BOARD_NOT_WRITTEN += HOTSPOT	# needs the transmitter (CONFIG_MD9600_TX, CONFIG_MD9600_DMR_TX), refused for now
+BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# needs the hotspot (above)
+BOARD_NOT_WRITTEN += SFR	# repeats on air: waits for DMR transmit
+BOARD_NOT_WRITTEN += CRASH_REPORT	# sends over DMR packet data: waits for DMR transmit
+BOARD_NOT_WRITTEN += DMR_IP_GATEWAY	# the IP services send over DMR: waits for DMR transmit
+BOARD_NOT_WRITTEN += DMR_UDP_COMPRESS	# compresses transmitted headers: waits for DMR transmit
+BOARD_NOT_WRITTEN += USB_NETWORK	# carries the DMR IP gateway's services (above)
+BOARD_NOT_WRITTEN += NET_PPP	# carries the DMR IP gateway's services (above)
+BOARD_NOT_WRITTEN += NET_TCP	# an IP service: waits for the DMR IP gateway (above)
+BOARD_NOT_WRITTEN += NET_KISS	# an IP service: waits for the DMR IP gateway (above)
+BOARD_NOT_WRITTEN += NET_HTTP	# an IP service: waits for the DMR IP gateway (above)
+BOARD_NOT_WRITTEN += NET_HTTP_GZIP	# needs NET_HTTP (above)
+BOARD_NOT_WRITTEN += NET_RIGCTL	# an IP service: waits for the DMR IP gateway (above)
+BOARD_NOT_WRITTEN += NET_APRSIS	# an IP service: waits for the DMR IP gateway (above)
+BOARD_NOT_WRITTEN += NET_USRP	# an IP service: waits for the DMR IP gateway (above)
+BOARD_NOT_WRITTEN += MDNS	# an IP service: waits for the DMR IP gateway (above)
+BOARD_NOT_WRITTEN += TFTP	# an IP service: waits for the DMR IP gateway (above)
+BOARD_NOT_WRITTEN += TFTP_IDDB	# needs TFTP (above)
+BOARD_NOT_WRITTEN += DMR_CONTROL_STATION	# needs the DMR IP gateway (above)
+BOARD_NOT_WRITTEN += SNMP	# needs the DMR IP gateway (above)
 # FM receive is the checked path: the matrix has no FM-less configuration
 BOARD_REQUIRED := FM
-# CONFIG_STUB_ENTRY stays off by default (config/features.mk) and is in the maximal configuration: the STM32F4 flash
-# stub serves this radio through its board record (docs/spec/stub-stm32f4.md)
+# CONFIG_STUB_ENTRY is on with the host link (config/features.mk): the STM32F4 flash stub serves this radio through its
+# board record (board.toml [flash.stub], docs/spec/stub-stm32f4.md)
