@@ -7,6 +7,7 @@ An illustration of the radio in site/static/img/radios/src/<id>.svg is used when
 <rect id="screen" .../> marks the display and is replaced by the boot screen (docs/dev/website.md "Radio images").
 Its key-<name> ids, for the radio's web control page, must name keys the radio has.
 Its key-<name> ids, for the radio's web control page, must name keys the radio has.
+Its key-<name> ids, for the radio's web control page, must name keys the radio has.
 Without one, a generic drawing per shape (handheld, tall handheld, mobile) tinted by board.toml [frame] stands in.
 """
 import base64
@@ -27,33 +28,20 @@ def png_size(data):
 
 
 SCREEN_RECT = re.compile(r"<rect\b[^>]*\bid=\"screen\"[^>]*/>")
-KEY_ID = re.compile(r"\bid=\"key-([^\"]*)\"")
-EDGE = re.compile(r"\bdata-edge=\"([^\"]*)\"")
-
-
-def key_names(radio_id):
-	"""The radio's key names as its web control page has them (tools/gen_webctl_assets.py)."""
-	spec = importlib.util.spec_from_file_location("gen_webctl_assets", repo.path("tools", "gen_webctl_assets.py"))
+def svg_keys():
+	spec = importlib.util.spec_from_file_location("svg_keys", repo.path("tools", "svg_keys.py"))
 	mod = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(mod)
-	return mod.key_bits(repo.path("boards", radio_id, radio_id + ".h"))
+	return mod
 
 
 def check_keys(src, frame, radio_id):
-	ids = KEY_ID.findall(frame)
-	if not ids:
-		return
-	names = key_names(radio_id)
-	bad = sorted(set(i for i in ids if i not in names))
+	"""The drawing's key tags (tools/svg_keys.py check): each names a key of the radio, once, and each key of the
+	radio is tagged or listed in data-undrawn, so a redrawn radio can't drop its tags unnoticed."""
+	mod = svg_keys()
+	bad = mod.problems(frame, mod.key_names(radio_id))
 	if bad:
-		raise repo.SourceError("%s: key ids the radio has no key for: %s (its keys: %s)"
-				       % (src, ", ".join(bad), ", ".join(names)))
-	edges = sorted(set(EDGE.findall(frame)) - {"left", "right", "top", "bottom"})
-	if edges:
-		raise repo.SourceError("%s: data-edge must be left, right, top or bottom, not %s" % (src, ", ".join(edges)))
-	twice = sorted(set(i for i in ids if ids.count(i) > 1))
-	if twice:
-		raise repo.SourceError("%s: key ids used twice: %s" % (src, ", ".join(twice)))
+		raise repo.SourceError("%s: %s" % (src, "; ".join(bad)))
 
 
 def attr(tag, name):
