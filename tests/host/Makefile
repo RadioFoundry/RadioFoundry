@@ -684,6 +684,17 @@ run-debuglinkRx2: debuglinkRx2Test
 	./debuglinkRx2Test
 .PHONY: run-debuglinkRx2
 
+# DL_CMD_DMR_DATA's IP operations (core/debuglink/debuglink_dmr_data.c): the settings' gateway ID and IP_SEND's parsing
+DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/debuglink/dl_fmt.c $(DATA)
+TESTS   += debuglinkDmrDataTest
+debuglinkDmrDataTest: $(DLDATA) $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h $(CORE)/dmr/ipGateway.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_DMR_EMERGENCY=0 -o $@ $(DLDATA)
+
+run: run-debuglinkDmrData
+run-debuglinkDmrData: debuglinkDmrDataTest
+	./debuglinkDmrDataTest
+.PHONY: run-debuglinkDmrData
+
 # The flash stubs' shared protocol engine (stub/common/stubeng.c) with the STM32F4 target's board record check
 # (stub/stm32f4/f4stub_board.c, docs/spec/stub-stm32f4.md)
 F4STUB_SRC := $(ROOT)/stub/common/stubeng.c $(ROOT)/stub/stm32f4/f4stub_board.c
