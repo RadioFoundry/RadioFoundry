@@ -57,8 +57,42 @@ def _setup(radio, pytestconfig, tx=True):
     own = int(radio.view(["dmr"])["dmr.own_id"])
     if own == 0:
         skip("state", "the radio has no DMR ID (dmr.own_id=0)")
-    time.sleep(1.0)
+    if tx:
+        _data_quiet(radio)
+    else:
+        time.sleep(1.0)
     return freq, cc, own, feats
+
+
+# ARS sends its registration (or, turned off, a deregistration) as a compressed UDP packet ARS_SETTLE_MS (5 s) after
+# the channel or the server changed (docs/spec/dmr-data.md). It counts in ip.sap3 like ours, so a test that checks the
+# SAP counters waits it out before sending. The ars_off fixture keeps it from starting again
+ARS_SETTLE_S = 5.0
+
+
+def _data_quiet(radio):
+    time.sleep(ARS_SETTLE_S + 1.5)
+    radio.wait_for(lambda x: x.get("data.busy") == "0", sections=("dmr_data",), what="the data service idle")
+
+
+@pytest.fixture
+def ars_off(radio):
+    """ARS off for the test (its packets would count with ours), put back after it."""
+    v = radio.data_view()
+    if v.get("data.built") != 1 or not v.get("data.ars_server"):
+        yield
+        return
+    x = radio.view(["dmr_ext"])
+
+    def put(server):
+        radio.link.data_settings(server, v["data.radio_check_reply"] == 1, v["data.call_alert_ack"] == 1,
+                                 v["data.lrrp_reply"] == 1, radio_check_etsi=x.get("data.radio_check_etsi") == "1",
+                                 sms_format=x.get("data.sms_format", "etsi_ip"))
+
+    put(0)
+    radio.wait_for(lambda y: y.get("data.ars_server") == "0", sections=("dmr_data",), what="ARS off")
+    yield
+    put(v["data.ars_server"])
 
 
 def _rule(text):
@@ -148,7 +182,7 @@ def _udp_until_heard(radio, sdr_bench, freq, cc, own, want_sap, what, tries=3, d
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-def test_udp_compressed_tx(radio, sdr_bench, pytestconfig, ip_settings):
+def test_udp_compressed_tx(radio, sdr_bench, pytestconfig, ip_settings, ars_off):
     """A UDP datagram (50000 to 161, 40 octets) in auto mode: one unconfirmed SAP 3 packet with the 9 octet header
     (IPv4 identification, SAID / DAID 0, no port IDs, both ports in the extended headers), 6 blocks instead of 7."""
     freq, cc, own, _ = _setup(radio, pytestconfig)
@@ -165,7 +199,7 @@ def test_udp_compressed_tx(radio, sdr_bench, pytestconfig, ip_settings):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-def test_udp_full_header_tx(radio, sdr_bench, pytestconfig, ip_settings):
+def test_udp_full_header_tx(radio, sdr_bench, pytestconfig, ip_settings, ars_off):
     """The same datagram with compression off: SAP 4, the full IPv4 / UDP header (28 octets)."""
     freq, cc, own, _ = _setup(radio, pytestconfig)
     radio.link.ip_settings("off", "rules", 0, [])
@@ -193,7 +227,7 @@ def test_ip_gateway_id_view(radio, pytestconfig, ip_settings):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-def test_udp_off_net_tx(radio, sdr_bench, pytestconfig, ip_settings):
+def test_udp_off_net_tx(radio, sdr_bench, pytestconfig, ip_settings, ars_off):
     """A datagram to the bench's DMR ID for another IPv4 address (OFF_NET_IP, as a host behind a gateway radio):
     the full header (SAP 4) even with compression set to all, since the compressed header has no address. On air the
     IP destination is OFF_NET_IP and the source our ID's CAI address (12.x.y.z), TTL 64."""
@@ -213,7 +247,7 @@ def test_udp_off_net_tx(radio, sdr_bench, pytestconfig, ip_settings):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings):
+def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings, ars_off):
     """Confirmed for the bench's ID, 2 tries: the C_HEAD (DPF 3, A set, F set, an N(S), FSN 1000) with every block
     (each with its serial number and a CRC-9 the bench's independent check accepts), no response, the whole packet
     again with F clear and the same N(S), then failed. In direct mode each ends with a data terminator LC."""
@@ -250,7 +284,7 @@ def test_confirmed_tx_unanswered(radio, sdr_bench, pytestconfig, ip_settings):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
-def test_usb_network_udp_to_air(radio, sdr_bench, pytestconfig, ip_settings):
+def test_usb_network_udp_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars_off):
     """The real host path: the radio as a USB network adapter, a UDP datagram from this host to the bench's address
     (12.x.y.z) goes on air as a SAP 3 packet the bench decodes; then back to the serial port."""
     from rfoundry_hil import DebugLink, DebugLinkError, find_ports
