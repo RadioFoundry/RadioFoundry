@@ -166,6 +166,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_KISS` | ● | ● | ● | ● | ● |
 | `NET_HTTP` | ● | ● | ● | ● | ● |
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● |
+| `NET_WEBCTL` | ● | ● | ● | ● | ● |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● |
 | `NET_APRSIS` | ● | ● | ● | ● | ● |
 | `NET_USRP` | ● | ● | ● | … | ● |
