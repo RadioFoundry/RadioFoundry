@@ -30,7 +30,7 @@ link's SETTING op goes through `radio_set_settings()` too, so its changes are sa
 | `scan_priority` | off | zone scan: the start channel again after every 2 others |
 | `scan_beep` | off | a short beep when the scan stops on a signal |
 | `dual_delay_ms` | 1000 | dual watch on one receiver: its wait after a signal ends, in place of `scan_delay_ms` (0-10000; section 2.1) |
-| `beep_level` | 50 | 0 (silent) to 100, relative to the volume knob |
+| `beep_level` | 50 | 0 (silent) to 100: the loudest a beep gets (section 4) |
 | `key_beep` | on | `radio_req_beep(BEEP_KEY)` sounds |
 | `talk_permit` | on | DMR: the talk permit tone when the voice goes on air (stored as `SETTINGS_RS_NO_TALK_PERMIT` in `rs_flags`, 0 = on) |
 | `vox` | off | off, on channels whose codeplug entry allows it, on every FM channel (CONFIG_VOX) |

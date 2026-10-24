@@ -238,6 +238,8 @@ typedef enum {
 	UI_SET_DUAL_DELAY_MS,
 	UI_SET_NOISE_REDUCTION,	// the vocoder's mic noise reduction on DMR TX (Settings > Talk & listen; accent bits 6-7)
 	UI_SET_MIC_AGC,		// the vocoder's mic AGC on DMR TX (accent bits 6-7); while on, mic gain is step 5 and dimmed
+	UI_SET_SFR_RX,		// what an SFR user channel hears, dmr_sfr_rx_t (Settings > Talk, CONFIG_SFR; radio_settings_t.sfr_rx)
+	UI_SET_SFR_CWID,	// the SFR repeater's CW ID interval code 0..4 (Settings > Talk, CONFIG_SFR_CWID; radio_settings_t.sfr_cwid)
 	UI_SET_COUNT
 } ui_setting_t;
 

@@ -458,8 +458,17 @@
    "aliases": [],
    "category": "RF and hardware",
    "scope": "user",
-   "definition": "Single frequency repeater. It repeats a call from one timeslot on the other timeslot of the same frequency. In MMDVM SFR the hotspot repeats, turned on by its host. In standalone SFR a channel repeats on its own (not built yet).",
+   "definition": "Single frequency repeater. It repeats a call from one timeslot on the other timeslot of the same frequency. In MMDVM SFR the hotspot repeats, turned on by its host. In standalone SFR a channel set up in the codeplug repeats on its own, or talks through one.",
    "link": "spec/sfr.md",
+   "preview": true
+  },
+  {
+   "term": "CW ID",
+   "aliases": [],
+   "category": "Amateur and network",
+   "scope": "user",
+   "definition": "A station's callsign sent in Morse code. A standalone SFR repeater channel sends one in FM every few minutes after traffic (Settings > Talk & listen > SFR CW ID).",
+   "link": "user/13-hotspot.md",
    "preview": true
   },
   {

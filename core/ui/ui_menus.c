@@ -3018,6 +3018,12 @@ static const set_item_t s_talk[] = {
 	TOGGLE("Dual watch talk back", "reply other channel A B", UI_SET_DUAL_TALK_BACK),
 	LIST("Dual watch delay", "resume wait reply A B", UI_SET_DUAL_DELAY_MS, v_dual_wait, n_dual_wait),
 #endif
+#if CONFIG_SFR
+	LIST("SFR receive", "single frequency repeater both copies voting", UI_SET_SFR_RX, v_sfrrx, n_sfrrx),
+#endif
+#if CONFIG_SFR_CWID
+	LIST("SFR CW ID", "single frequency repeater morse callsign identify", UI_SET_SFR_CWID, v_sfrcwid, n_sfrcwid),
+#endif
 };
 static const set_item_t s_privacy[] = {
 	LIST("Key type", "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),

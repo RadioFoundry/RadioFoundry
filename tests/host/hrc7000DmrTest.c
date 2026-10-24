@@ -1193,6 +1193,7 @@ int main(void)
 {
 	test_pure();
 	test_rx();
+	test_rx_sfr_both_copies();
 	test_rx_slot_arg();
 	test_rx_voice_ram_call();
 	test_bs_mode_cleared();

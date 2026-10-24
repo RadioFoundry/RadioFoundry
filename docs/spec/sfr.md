@@ -135,7 +135,7 @@ Settings > Talk & listen > SFR receive and by debug link setting 30.
 
 CW ID (`CONFIG_SFR_CWID`, `core/radio/radio_cwid.c`): the repeater role can identify itself in Morse. The setting
 `sfr_cwid` picks the interval: 0 off (default), 1 5 min, 2 10 min, 3 15 min, 4 30 min. It is stored in bits 3-5 of
-`rpt_beacon`, set in Settings > Talk & listen > SFR CW ID and by debug link setting 31.
+`rpt_beacon`, set in Settings > Talk & listen > SFR CW ID and by debug link setting 32.
 
 | Rule | Detail |
 |---|---|
