@@ -24,6 +24,7 @@
 //   dlsel:a|b           the debug link selects A or B of the dual watch (view.dual_sel); no UI tick after it
 //   cpwrite, cpdel:<n>, zonesize:<z>,<n>   the codeplug is written: channel 40 first in zone 0, channel n deleted,
 //                       zone z cut to n channels
+//   zonejob:<z>         another task (an import) deletes zone z (0-based) through the zone storage job
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
@@ -2161,6 +2162,17 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(300);
 		return true;
 	}
+#if CONFIG_ZONE_EDIT
+	if (strcmp(t, "zonejob") == 0 && arg != NULL) {	// not the UI's own edit: its screens learn of it from the log
+		zone_op_t op;
+		memset(&op, 0, sizeof op);
+		op.kind = ZONE_OP_DELETE;
+		op.zone = (uint16_t)atoi(arg);
+		ui_svc_zone_edit(&op);
+		advance(300);
+		return true;
+	}
+#endif
 	if (strcmp(t, "dlpos") == 0 && arg != NULL) {	// the debug link (or any other task) asks for channel position N
 		radio_req_zone_pos((uint16_t)(atoi(arg) - 1));
 		advance(100);
