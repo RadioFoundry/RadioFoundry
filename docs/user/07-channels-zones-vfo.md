@@ -58,9 +58,13 @@ nothing to save or discard. On a radio without **#**, hold **OK** wherever this 
 
 <img src="../ux/screens/160x120i5/zone_options.png" width="200" alt="Zone options">
 
-Moving, adding and removing keep the radio on its channel. A zone holds a channel once, and the radio refuses a
-channel past the zone's size ("Zone full"). A radio whose codeplug has no zones shows one zone, "All channels"; the
-first change saves it as a real zone.
+Moving, adding and removing keep the radio on its channel. Removing the channel you are on moves the radio to the
+next channel in the zone. A zone holds a channel once, and the radio refuses a channel past the zone's size ("Zone
+full"). A radio whose codeplug has no zones shows one zone, "All channels"; the first change saves it as a real zone.
+
+Deleting the zone you are using moves the radio to the zone that comes after it in the list (or the one before, when
+it was last). Dual watch keeps watching a channel from a deleted zone when another zone holds it, and otherwise
+stops. A zone marked for roaming loses the mark when it is deleted; the other marks stay on their zones.
 
 ## Every channel
 

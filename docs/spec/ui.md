@@ -157,10 +157,15 @@ that would take it past 16777215, and takes at most 8 digits.
 ### 2.2 Zone editor
 
 With `CONFIG_ZONE_EDIT` a zone's list (`zone`) edits the zone. Every change is written at once, as a storage job
-(`ui_svc_zone_edit`), so there is nothing to save or discard and the UI never waits for a flash erase. The job runs
-`zone_edit_apply` (`core/codeplug/zone_edit.h`), the same layer an import uses. A failed job raises
-`UI_EV_SAVE_FAILED` with the reason ("Zone full", "No room for another zone", "Couldn't write the codeplug"). The lists
-read the codeplug again when `codeplug_serial()` changes, so they show the change within a fraction of a second.
+(`ui_svc_zone_edit`), so there is nothing to save or discard and the UI never waits for a flash erase. Changes made
+faster than the flash takes them (a digit pressed again in Channel actions) wait in a queue of 4 and are written in
+order by one job; a fifth is refused. The job runs `zone_edit_apply` (`core/codeplug/zone_edit.h`), the same layer an
+import uses. A failed change raises `UI_EV_SAVE_FAILED` with the reason ("Zone full", "No room for another zone",
+"Already at the end", "That zone is gone", "That channel is gone", "Couldn't write the codeplug") and drops the changes
+queued after it, since they were made on a list that didn't happen. A change is checked whole before anything is
+written: a new zone with a missing or repeated channel is refused, and a Copy here whose zone can't be written deletes
+the channel it wrote. The lists read the codeplug again when `codeplug_serial()` changes and the queue is empty, so
+they show the change within a fraction of a second.
 
 | Where | Row or key | Does |
 |---|---|---|
@@ -183,10 +188,25 @@ read the codeplug again when `codeplug_serial()` changes, so they show the chang
 - With no zones stored the radio shows one zone, "All channels", that holds every channel. The first change stores it
   as a real zone 0, so the user keeps what they saw; it can't be deleted until then ("It holds every channel").
 - A new zone takes the lowest free slot, so it can come ahead of zones already there, and deleting a zone moves the
-  ones after it up. The job tells the radio core to follow the zone in use to its new index (`zone_edit_follow`), and
-  the radio stays on its channel. Index-based references elsewhere are not followed yet: dual watch's B channel and
-  the per-zone roaming flags keep the old index.
-- Copy and Delete return to Zones, so no open screen keeps a zone index that moved.
+  ones after it up. `zone_edit.c` logs each such shift (`zone_edit_shifts`, the last `ZONE_SHIFT_LOG` = 8 kept), and
+  every holder of a zone index maps it with `zone_edit_map` once no zone write is under way (`zone_edit_busy`). An
+  import that writes zones through the same layer is followed the same way. A reader more than 8 shifts behind keeps
+  its indexes.
+- What follows a moved zone, and what happens when the zone itself was deleted:
+
+  | Holder | Moved | Deleted |
+  |---|---|---|
+  | The zone in use (radio core, saved as the settings' zone) | follows; the radio stays on its channel | the zone that took its index (the last zone when it was the last), on the same channel if that zone holds it, else its first usable channel |
+  | Dual watch's channels (radio core and `ui_dual.c`) | follow | the pane's channel is found by number in another zone; when no zone holds it the watch ends ("Dual watch off") |
+  | The last B and A kept while the watch is off | found again by channel number | found again by channel number |
+  | Roaming zone flags (settings `roam_zones`) | follow, saved again | the flag is cleared |
+  | Open screens: Zones' focus, a zone's list, Zone options, Channel actions | follow | the zone's screens close, "That zone was deleted" |
+
+- Saved references by channel number (dual watch's B setting, scan lists) need no change.
+- A zone scan ends when the zone in use's channel list changes under it (its skipped channels are kept by position); a
+  rename doesn't end it.
+- Removing the channel in use from the zone in use moves the radio to the next usable channel in the zone. A move in
+  the zone in use keeps the radio on its channel at its new position.
 - The debug link's `zone.edits` counts the zone edits written since start-up and `zone.edit_last` is the last result
   (`zone_edit_result_t`, 0 = OK).
 
