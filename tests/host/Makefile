@@ -931,6 +931,19 @@ run-cpedit: codeplugEditTest
 	./codeplugEditTest
 .PHONY: run-cpedit
 
+# Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
+# rename, delete, a new channel added in one step, the limits
+ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CPEDIT)
+TESTS   += zoneEditTest
+
+zoneEditTest: zoneEditTest.c $(ZEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ zoneEditTest.c $(ZEDIT)
+
+run: run-zedit
+run-zedit: zoneEditTest
+	./zoneEditTest
+.PHONY: run-zedit
+
 # The open-firmware CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
 CPS     := $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
            sim/sim_flash.c

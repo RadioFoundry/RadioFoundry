@@ -94,6 +94,7 @@ static uint16_t channel_max;		// highest used channel number
 static uint8_t zone_slot[ZONE_SLOTS];
 static uint8_t zone_count;
 static uint8_t zone_channels;		// 80 or 16
+static uint16_t zone_written;		// the index codeplug_set_zone wrote last
 static uint16_t zone_record;		// 0xB0 or 0x30
 
 // Built-in channels: common simplex calling and working frequencies, kept if they fall in one of the board's bands
@@ -794,10 +795,28 @@ bool codeplug_set_zone(uint16_t index, const zone_t *z)
 	}
 	if (ok) {
 		index_zones();
+		for (uint16_t i = 0; i < zone_count; i++) {
+			if (zone_slot[i] == slot) {
+				zone_written = i;	// an added zone takes the lowest free slot: not always the last index
+			}
+		}
 		serial++;
 	}
 	storage_unlock();
 	return ok;
+}
+
+uint16_t codeplug_zone_written(void)
+{
+	return zone_written;
+}
+
+uint16_t codeplug_zone_capacity(void)
+{
+	storage_lock();
+	uint16_t n = codeplug_zones_stored() ? zone_channels : CODEPLUG_ZONE_MAX;
+	storage_unlock();
+	return n;
 }
 
 bool codeplug_delete_zone(uint16_t index)
