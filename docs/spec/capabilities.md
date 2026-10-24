@@ -56,6 +56,6 @@ areas and says nothing about menus, screens or keys: the UI is designed in `docs
 
 ## Not built
 
-- Trunking (Capacity Plus, Connect Plus, Tier III): planning only ([dmr-tier3-plan.md](dmr-tier3-plan.md)).
+- Trunking (Capacity Plus, Connect Plus, Tier III): not built.
 - Encryption beyond Basic Privacy (ARC4, AES).
 - DTMF decode and stored DTMF codes ([radio-features.md](radio-features.md)).

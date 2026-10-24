@@ -188,7 +188,7 @@ void board_early_init(void)
 }
 
 // Everything the core stores lives above the write floor (hardware-dm32.md 10.1): the open-firmware codeplug's 64 KB
-// "EEPROM" image at 0x700000 (CODEPLUG_OPENFW_EEPROM_BASE in board.mk), OpenDM32's calibration copy left alone at
+// "EEPROM" image at 0x700000 (CODEPLUG_OPENFW_EEPROM_BASE in board.mk), a decoded calibration copy from other firmware left alone at
 // 0x710000, the settings ring and the sector journal after it, the 1 MB open-firmware "flash" image at 0x720000
 // (CODEPLUG_OPENFW_FLASH_BASE) with room above it for the DMR ID database, the native codeplug in the last 1 MB. The
 // factory calibration is read only, so the open-firmware CPS gets no calibration window
@@ -234,7 +234,7 @@ void board_init(void)
 	lcdbus = xSemaphoreCreateRecursiveMutex();
 	dm32_power.init();
 	dm32_flash.init();
-	bf_cal_load(&hrc_flash_spi0, 0x710000u);	// OpenDM32 keeps a decoded copy there
+	bf_cal_load(&hrc_flash_spi0, 0x710000u);	// other firmware may keep a decoded copy there
 #if CONFIG_GPS
 	hrc_gps_init(&gps_cfg);
 #endif
