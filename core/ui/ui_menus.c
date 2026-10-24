@@ -2218,7 +2218,7 @@ static void zpick_select(uint16_t i, bool hold)
 static const ui_scr_def_t zpick_screen = {
 	.name = "zpick", .flags = SF_LIST | SF_FILTER, .prefix = "Add channel",
 	.hint = TEXT_ALT_OPEN "OK add  0-9 find  Back" TEXT_ALT_NEXT "OK add  Back" TEXT_ALT_CLOSE,
-	.empty = "Every channel is in it", .title = ze_title,
+	.empty = "Every channel is in it",
 	.count = ui_filter_count, .item = zpick_item, .select = zpick_select,
 	.raw_count = zpick_raw_count, .raw_label = zpick_raw_label,
 };
@@ -2312,9 +2312,9 @@ static const char *zdel_body(void)
 {
 	sbuf_t b;
 	sb_init(&b, ze_msg, sizeof ze_msg);
-	sb_str(&b, "Delete the zone ");
+	sb_str(&b, "Delete ");
 	sb_str(&b, ze_z.name);
-	sb_str(&b, "? Its channels stay.");
+	sb_str(&b, "? Channels stay.");
 	return ze_msg;
 }
 

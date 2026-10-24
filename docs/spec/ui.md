@@ -174,7 +174,7 @@ read the codeplug again when `codeplug_serial()` changes, so they show the chang
 | | 5 Remove from zone | takes it out of this zone at once, "Removed from <zone>". The channel stays in Channels and any other zone |
 | Zone options | 1 Rename | text entry on the zone's name (2.1); OK writes it, an empty name is refused |
 | | 2 Copy as new zone | a new zone with the same channels, named with " 2" appended, then back to Zones |
-| | 3 Delete zone | asks first (`zonedel`): "Delete the zone <name>? Its channels stay." with "No, keep it" focused (P7). Yes deletes it and returns to Zones |
+| | 3 Delete zone | asks first (`zonedel`): "Delete <name>? Channels stay." with "No, keep it" focused (P7). Yes deletes it and returns to Zones |
 
 - Channel actions and Edit channel replace their menu on the stack, so the deepest path (Home, Hub, Zones, the zone,
   the channel editor, text entry) fits the six frames.
