@@ -129,7 +129,7 @@ static void hotspot_section(dl_text_t *t)
 		(board.netif != NULL) && board.netif->up());
 #if CONFIG_DMR_IP_GATEWAY
 	hostlink_net_stats_t ns;
-	settings_t st;
+	static settings_t st;	// off the host task's stack: its deepest path comes through here (stack-check.md)
 
 	settings_read(&st);
 	// Control station mode (docs/spec/usb-network.md 5): the stored settings and what is in force

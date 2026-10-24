@@ -138,11 +138,19 @@ The import runs as a storage job, not on the UI task. The banner after it reads 
 A zone sent again by the same sender with the same zone ID updates the earlier import instead of adding a zone.
 
 - The radio remembers its last four imports in the settings record (`zs_import`): a key (an FNV-1a hash of the
-  sender's ID and the zone ID) and the name the zone got. The oldest is forgotten first.
+  sender's ID and the zone ID), the name the zone got, how many channels the import wrote and their signature (the
+  XOR of an FNV-1a hash of each channel's number and every field). The oldest is forgotten first.
 - The update finds the zone by that name. If the user renamed or deleted it, the zone comes in as a new one.
-- The zone's channel list is replaced by the new channels. Channels of the earlier copy that transmit stay in the
-  zone, after the new ones: every import is receive only, so a channel that transmits is the user's.
-- Channels of the earlier copy that no zone lists any more are deleted. Contacts are never deleted.
+- An update replaces only the earlier import's channels that the user left unchanged. Anything the user added to
+  the zone or changed (a field, transmit turned on) stays in the zone, after the new channels, in its order.
+- Which channels are the import's:
+
+  | Case | Replaced |
+  |---|---|
+  | The zone still starts with the channels the import wrote, unchanged (the first `count` match the signature) | those; everything after them is the user's |
+  | Otherwise (the user changed, moved in or removed a channel among them) | only channels identical to one the new copy brings. An earlier channel the sender has since changed or dropped stays; the user deletes it |
+
+- Replaced channels that no zone lists any more are deleted. Contacts are never deleted.
 
 ## 6. Directory requests
 
@@ -163,4 +171,4 @@ channel; the banner says "Sent to <name>" or "Not sent to <name>". One send at a
 | Record | 1024 octets, 80 channels, 32 contacts |
 | Names | 16 printable ASCII characters |
 | Fragments | 4 of up to 322 octets |
-| RAM | about 6 KB on one board's build ([feature-matrix.md](../feature-matrix.md)) |
+| RAM | about 6.5 KB on one board's build ([feature-matrix.md](../feature-matrix.md)) |

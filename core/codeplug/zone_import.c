@@ -302,20 +302,109 @@ static bool in_other_zone(uint16_t n, int skip)
 	return false;
 }
 
-// An update keeps the earlier copy's channels that transmit, after the new ones: every imported channel came in
-// receive only, so one that transmits is the user's (turned on, or added to the zone) and isn't the sender's to remove
-static void keep_transmit(const zone_t *old)
+// --- Updates: which of the earlier copy's channels are the import's, untouched ---
+
+// A channel's hash: its number (0: content only) and every field, so any change the user makes shows
+static uint32_t channel_hash(uint16_t number, const channel_t *ch)
 {
+	uint8_t b[40];
+	int n = 0;
+
+	b[n++] = (uint8_t)(number >> 8);
+	b[n++] = (uint8_t)number;
+	for (int i = 0; i < 4; i++) {
+		b[n++] = (uint8_t)(ch->rx_hz >> (8 * i));
+		b[n++] = (uint8_t)(ch->tx_hz >> (8 * i));
+		b[n++] = (uint8_t)(ch->dmr_id >> (8 * i));
+	}
+	b[n++] = ch->mode;
+	b[n++] = ch->bw;
+	b[n++] = ch->rx_tone.type;
+	b[n++] = (uint8_t)ch->rx_tone.value;
+	b[n++] = (uint8_t)(ch->rx_tone.value >> 8);
+	b[n++] = ch->tx_tone.type;
+	b[n++] = (uint8_t)ch->tx_tone.value;
+	b[n++] = (uint8_t)(ch->tx_tone.value >> 8);
+	b[n++] = ch->power;
+	b[n++] = ch->color_code;
+	b[n++] = ch->timeslot;
+	b[n++] = (uint8_t)ch->contact;
+	b[n++] = (uint8_t)(ch->contact >> 8);
+	b[n++] = (uint8_t)ch->listen_list;
+	b[n++] = (uint8_t)(ch->listen_list >> 8);
+	b[n++] = (uint8_t)ch->tot_s;
+	b[n++] = (uint8_t)(ch->tot_s >> 8);
+	b[n++] = ch->alias_tx;
+	b[n++] = (uint8_t)((ch->rx_only ? 1 : 0) | (ch->dmo ? 2 : 0) | (ch->scan_skip ? 4 : 0) | (ch->vox ? 8 : 0) |
+			   (ch->no_beep ? 16 : 0) | (ch->no_eco ? 32 : 0) | (ch->roam ? 64 : 0));
+	uint32_t h = fnv1a(2166136261u, b, n);
+
+	return fnv1a(h, (const uint8_t *)ch->name, (int)strnlen(ch->name, CODEPLUG_NAME_LEN));
+}
+
+// The XOR of channel_hash over list[0..n): the import's signature (order doesn't matter)
+static uint32_t list_sig(const uint16_t *list, uint16_t n)
+{
+	uint32_t sig = 0;
 	channel_t ch;
 
-	for (uint16_t k = 0; k < old->count && new_zone.count < CODEPLUG_ZONE_MAX; k++) {
-		if (codeplug_channel(old->channels[k], &ch) && !ch.rx_only) {
-			new_zone.channels[new_zone.count++] = old->channels[k];
+	for (uint16_t k = 0; k < n; k++) {
+		if (codeplug_channel(list[k], &ch)) {
+			sig ^= channel_hash(list[k], &ch);
+		}
+	}
+	return sig;
+}
+
+static bool replaced[CODEPLUG_ZONE_MAX];	// old_zone.channels[k] is the import's, untouched: the update replaces it
+static uint32_t new_hash[CODEPLUG_ZONE_MAX];	// the new channels' content hashes
+
+// Which of the earlier copy's channels the update replaces. Only the import's channels the user left as they were:
+// - the zone still starts with the channels the import wrote, unchanged (their signature matches): those, and
+//   everything after them is the user's;
+// - otherwise (the user moved, changed or removed one): only the channels identical to one the new copy brings, so
+//   nothing the user added or changed is lost, at worst an outdated channel stays
+// The rest stay in the zone, after the new channels
+static void mark_replaced(const settings_zs_import_t *earlier)
+{
+	channel_t ch;
+	uint16_t imported = new_zone.count;
+
+	memset(replaced, 0, sizeof(replaced));
+	if (earlier->count > 0 && earlier->count <= old_zone.count &&
+	    list_sig(old_zone.channels, earlier->count) == earlier->sig) {
+		for (uint16_t k = 0; k < earlier->count; k++) {
+			replaced[k] = true;
+		}
+		return;
+	}
+	for (uint16_t i = 0; i < imported; i++) {
+		new_hash[i] = codeplug_channel(new_zone.channels[i], &ch) ? channel_hash(0, &ch) : 0;
+	}
+	for (uint16_t k = 0; k < old_zone.count; k++) {
+		if (!codeplug_channel(old_zone.channels[k], &ch)) {
+			continue;
+		}
+		uint32_t h = channel_hash(0, &ch);
+
+		for (uint16_t i = 0; i < imported && !replaced[k]; i++) {
+			replaced[k] = new_hash[i] == h;
 		}
 	}
 }
 
-static void remember(settings_zs_import_t imports[SETTINGS_ZS_IMPORTS], uint32_t key, const char *name)
+// The earlier copy's channels the update doesn't replace, after the new ones (as many as fit)
+static void keep_users(void)
+{
+	for (uint16_t k = 0; k < old_zone.count && new_zone.count < CODEPLUG_ZONE_MAX; k++) {
+		if (!replaced[k]) {
+			new_zone.channels[new_zone.count++] = old_zone.channels[k];
+		}
+	}
+}
+
+static void remember(settings_zs_import_t imports[SETTINGS_ZS_IMPORTS], uint32_t key, const char *name, uint32_t sig,
+		     uint8_t count)
 {
 	int at = SETTINGS_ZS_IMPORTS - 1;// the oldest goes when the list is full
 
@@ -329,8 +418,10 @@ static void remember(settings_zs_import_t imports[SETTINGS_ZS_IMPORTS], uint32_t
 	for (int i = at; i > 0; i--) {
 		imports[i] = imports[i - 1];
 	}
+	memset(&imports[0], 0, sizeof(imports[0]));
 	imports[0].key = key;
-	memset(imports[0].zone, 0, sizeof(imports[0].zone));
+	imports[0].sig = sig;
+	imports[0].count = count;
 	memcpy(imports[0].zone, name, strnlen(name, sizeof(imports[0].zone)));
 }
 
@@ -351,6 +442,7 @@ zone_import_status_t zone_import_zone(const uint8_t *record, int length, uint32_
 	}
 	uint32_t key = zone_import_key(sender, rec.zoneId);
 	int target = -1;
+	int earlier = -1;
 
 	// An earlier import of this zone, if its zone is still there under the name it got
 	for (int i = 0; i < SETTINGS_ZS_IMPORTS && target < 0; i++) {
@@ -360,6 +452,7 @@ zone_import_status_t zone_import_zone(const uint8_t *record, int length, uint32_
 			memcpy(name, imports[i].zone, CODEPLUG_NAME_LEN);
 			name[CODEPLUG_NAME_LEN] = '\0';
 			target = codeplug_zones_stored() ? find_zone(name, -1) : -1;
+			earlier = i;
 		}
 	}
 	bool stored = codeplug_zones_stored();
@@ -385,9 +478,14 @@ zone_import_status_t zone_import_zone(const uint8_t *record, int length, uint32_
 		undo();
 		return st;
 	}
+	// What a later update recognizes as this import's own channels (they lead the zone)
+	uint32_t sig = list_sig(new_zone.channels, new_zone.count);
+	uint8_t count = (uint8_t)new_zone.count;
+
 	if (target >= 0) {
 		strncpy(new_zone.name, old_zone.name, CODEPLUG_NAME_LEN);
-		keep_transmit(&old_zone);
+		mark_replaced(&imports[earlier]);
+		keep_users();
 	} else {
 		unique_name(rec.name, -1, new_zone.name);
 	}
@@ -410,16 +508,15 @@ zone_import_status_t zone_import_zone(const uint8_t *record, int length, uint32_
 	}
 	res->zone = index;
 	res->updated = target >= 0;
-	// The earlier import's channels that no zone holds now go (in_other_zone reuses new_zone: it is written). The
-	// ones keep_transmit kept are in ours
+	// The replaced channels that no zone holds now go (in_other_zone reuses new_zone: it is written)
 	if (target >= 0) {
 		for (uint16_t k = 0; k < old_zone.count; k++) {
-			if (!in_other_zone(old_zone.channels[k], -1)) {
+			if (replaced[k] && !in_other_zone(old_zone.channels[k], -1)) {
 				codeplug_delete_channel(old_zone.channels[k]);
 			}
 		}
 	}
-	remember(imports, key, res->name);
+	remember(imports, key, res->name, sig, count);
 	return ZI_OK;
 }
 

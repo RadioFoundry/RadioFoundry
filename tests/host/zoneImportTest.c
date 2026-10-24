@@ -244,12 +244,16 @@ static void test_update(void)
 	CHECK(codeplug_zone(0, &z));
 	z.channels[z.count++] = before.channels[3];
 	CHECK(codeplug_set_zone(0, &z));
-	// and turned transmit on for another: that one is the user's now, and the update keeps it in the zone
-	channel_t ch;
+	// and added a channel of their own to the import's zone, at the end: the update keeps it, after the new ones
+	channel_t ch = make("Mine", 146550000, 146550000, false);
+	uint16_t mine = codeplug_free_channel();
 
-	CHECK(codeplug_channel(before.channels[1], &ch) && ch.rx_only);
-	ch.rx_only = false;
-	CHECK(codeplug_set_channel(before.channels[1], &ch));
+	ch.rx_only = true;// shaped like an imported one: still the user's
+	CHECK(mine != 0 && codeplug_set_channel(mine, &ch));
+	CHECK(codeplug_zone(1, &z));
+	z.channels[z.count++] = mine;
+	CHECK(codeplug_set_zone(1, &z));
+	channels = used_channels();
 	// Another zone in between, so the import's zone isn't the last
 	zone_t other;
 
@@ -270,15 +274,20 @@ static void test_update(void)
 	CHECK(strcmp(r.name, "Club") == 0);// the name it got here stays
 	CHECK(codeplug_zone_count() == 3);
 	CHECK(codeplug_zone(1, &z) && z.count == 3 && strcmp(z.name, "Club") == 0);
-	CHECK(z.channels[2] == before.channels[1]);// the transmit channel kept, after the new ones
-	CHECK(codeplug_channel(before.channels[1], &ch) && !ch.rx_only);
-	// Old channels gone except the one Home holds and the one kept; the new two added
-	CHECK(used_channels() == channels - 4 + 1 + 1 + 2);
+	CHECK(z.channels[2] == mine && codeplug_channel(mine, &ch) && strcmp(ch.name, "Mine") == 0);
+	// The import's four go except the one Home holds; the new two added
+	CHECK(used_channels() == channels - 4 + 1 + 2);
 
 	CHECK(codeplug_channel(before.channels[3], &ch) && strcmp(ch.name, "DMR USA") == 0);
 	CHECK(!codeplug_channel(before.channels[0], &ch) || strcmp(ch.name, "Rpt FM") != 0);
 	CHECK(used_contacts() == contacts);// contacts are never deleted by an update
 	CHECK(imports[0].key == zone_import_key(3101276, 0x11223344) && imports[1].key == 0);
+	CHECK(imports[0].count == 2);
+	// Sent once more: the two it wrote lead the zone untouched, so they are replaced and Mine stays again
+	channels = used_channels();
+	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK && r.updated);
+	CHECK(codeplug_zone(1, &z) && z.count == 3 && z.channels[2] == mine && codeplug_channel(mine, &ch));
+	CHECK(used_channels() == channels);
 	// The same zone ID from another sender is another zone; its name is taken, so it gets a suffix
 	CHECK(zone_import_zone(recbuf, len, 3101277, imports, &r) == ZI_OK);
 	CHECK(!r.updated && r.zone == 3 && strcmp(r.name, "Club v2") == 0);
@@ -292,6 +301,61 @@ static void test_update(void)
 	CHECK(codeplug_set_zone(1, &z));
 	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK);
 	CHECK(!r.updated && r.zone == 5);
+}
+
+// The user changed one imported channel and put one of their own first: the earlier copy can't be told apart by its
+// signature, so only the channels identical to one the new copy brings are replaced; the rest stay
+static void test_update_user_changes(void)
+{
+	zone_import_result_t r;
+	zone_t z, before;
+	channel_t ch;
+
+	fresh();
+	with_zones();
+	int len = build_record(0x5555, "Club", recbuf);
+
+	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK);
+	CHECK(codeplug_zone(1, &before) && before.count == 4);
+	// Transmit on for the second
+	CHECK(codeplug_channel(before.channels[1], &ch) && ch.rx_only);
+	ch.rx_only = false;
+	CHECK(codeplug_set_channel(before.channels[1], &ch));
+	// A channel of the user's, first in the zone
+	ch = make("Mine", 146550000, 146550000, false);
+	ch.rx_only = true;
+	uint16_t mine = codeplug_free_channel();
+
+	CHECK(mine != 0 && codeplug_set_channel(mine, &ch));
+	z = before;
+	memmove(&z.channels[1], &z.channels[0], z.count * sizeof(z.channels[0]));
+	z.channels[0] = mine;
+	z.count++;
+	CHECK(codeplug_set_zone(1, &z));
+	int channels = used_channels();
+
+	// The same record again: three of the earlier channels are identical to new ones and go; the changed one and Mine
+	// stay, after the new four, in their order
+	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK && r.updated && r.channels == 4);
+	CHECK(codeplug_zone(1, &z) && z.count == 6);
+	CHECK(z.channels[4] == mine && z.channels[5] == before.channels[1]);
+	CHECK(codeplug_channel(mine, &ch) && strcmp(ch.name, "Mine") == 0);
+	CHECK(codeplug_channel(before.channels[1], &ch) && !ch.rx_only);
+	CHECK(used_channels() == channels - 3 + 4);
+	for (int k = 0; k < 4; k++) {
+		CHECK(codeplug_channel(z.channels[k], &ch) && ch.rx_only);
+	}
+	// From here the new four lead the zone untouched: a different record replaces exactly them
+	zsWriter_t w;
+	zsChannel_t zc = zch("New A", 145500000, 0, false, 0);
+
+	zsWriterBegin(&w, recbuf, sizeof(recbuf), 0x5555, 0, "Club");
+	zsWriterChannel(&w, &zc);
+	len = zsWriterEnd(&w);
+	channels = used_channels();
+	CHECK(zone_import_zone(recbuf, len, 3101276, imports, &r) == ZI_OK && r.updated);
+	CHECK(codeplug_zone(1, &z) && z.count == 3 && z.channels[1] == mine && z.channels[2] == before.channels[1]);
+	CHECK(used_channels() == channels - 4 + 1);
 }
 
 static void test_names_and_list(void)
@@ -504,6 +568,7 @@ int main(void)
 {
 	test_import();
 	test_update();
+	test_update_user_changes();
 	test_names_and_list();
 	test_band_and_room();
 	test_virtual_zone();

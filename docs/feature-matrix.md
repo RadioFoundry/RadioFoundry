@@ -267,7 +267,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | LRRP location | `DMR_LRRP` | 8,548 | 2,048 |  |
 | Compressed UDP/IP headers on transmit (SAP 3) | `DMR_UDP_COMPRESS` | 408 | 356 | Auto: not for ports 4000-4099 or ETSI IP text |
 | Confirmed packet data | `DMR_CONFIRMED` | 2,880 | 2,920 |  |
-| Zone and channel sharing: send a zone or a channel, import an offered one | `ZONE_SHARE` | 11,276 | 11,548 | Includes its screens and the import; about 6 KB of RAM. Receiving is off until the user sets Ask ([zone-share.md](spec/zone-share.md)). Measured 2026-10-24 with LTO, on the zone share branch |
+| Zone and channel sharing: send a zone or a channel, import an offered one | `ZONE_SHARE` | 12,240 | 12,388 | Includes its screens and the import; about 6.5 KB of RAM. Receiving is off until the user sets Ask ([zone-share.md](spec/zone-share.md)). Measured 2026-10-24 with LTO, on the zone share branch |
 | Single frequency repeater (MMDVM SFR) | `SFR` | 6,884 | — | MD-380: HR_C5000 lacks what the SFR glue uses |
 | APRS: AFSK positions, status, messages; DMR positions; KISS TNC | `APRS` | 26,568 | 26,628 | Includes APRS receive, KISS over TCP and APRS-IS where built. MD-380: AFSK TX needs the tone path (not written), DMR positions work |
 | APRS receive: demodulator, station list, digipeater | `APRS_RX` | 8,892 | — | DM-1701: FM receive audio on the I2S stream, squelch gated ([aprs](spec/aprs.md) 5.3). MD-380: not written |

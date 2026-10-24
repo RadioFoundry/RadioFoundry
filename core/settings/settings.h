@@ -29,6 +29,9 @@
 typedef struct {
 	uint32_t key;			// hash of the sender's ID and the record's zone ID, 0 = unused
 	char zone[16];			// the zone's name here (not terminated when 16 long)
+	uint32_t sig;			// XOR of the imported channels' hashes (number and content), as written
+	uint8_t count;			// how many channels the import wrote (the first count of the zone)
+	uint8_t reserved[3];
 } settings_zs_import_t;
 
 typedef struct {

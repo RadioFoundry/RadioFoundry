@@ -59,8 +59,9 @@ What an import does:
 - Only channels your radio can receive come in. Every one is **receive only**: turn transmit on per channel when
   you know you may use it.
 - Talkgroups and contacts you already have are used with your names. Missing ones are added.
-- The same zone sent again by the same radio updates your copy instead of adding another. Channels in it that you
-  set to transmit stay.
+- The same zone sent again by the same radio updates your copy instead of adding another. It replaces only the
+  channels from the earlier import that you left as they were. Channels you added to the zone or changed stay,
+  after the new ones.
 - A single channel is added to a zone you pick.
 
 At most 6 offers an hour are shown, one at a time. The format is in [zone-share.md](../spec/zone-share.md).
