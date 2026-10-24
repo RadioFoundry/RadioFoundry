@@ -219,6 +219,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● |
+| `ZONE_EDIT` | ● | ● | ● | ● | ● |
 | Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery |
 | Clock kept through power-off (board, no switch) | Yes | ? | Yes | ? | ? |
 <!-- end generated -->

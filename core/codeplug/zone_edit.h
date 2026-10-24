@@ -69,6 +69,9 @@ typedef struct {
 
 // Run op. *index (may be NULL): COPY, the new zone's index; others, op->zone
 zone_edit_result_t zone_edit_apply(const zone_op_t *op, uint16_t *index);
+// Calls zone_edit_apply ran since start-up that wrote (OK), and the last one's result (the debug link's zone.edits,
+// zone.edit_last)
+void zone_edit_stats(uint32_t *applied, uint8_t *last);
 // Where a zone that was at index is after op: a new zone (COPY) at added moves those at or after it one on, a
 // DELETE moves those after it one back (the deleted one itself stays at its index, which is now the next zone)
 uint16_t zone_edit_follow(const zone_op_t *op, uint16_t added, uint16_t index);

@@ -252,11 +252,11 @@ zone_edit_result_t zone_edit_delete(uint16_t zone)
 	return r;
 }
 
-zone_edit_result_t zone_edit_apply(const zone_op_t *op, uint16_t *index)
+static uint32_t applied;
+static uint8_t last_result;
+
+static zone_edit_result_t run(const zone_op_t *op, uint16_t *index)
 {
-	if (index != NULL) {
-		*index = op->zone;
-	}
 	switch (op->kind) {
 	case ZONE_OP_INSERT: return zone_edit_insert(op->zone, op->pos, op->channel);
 	case ZONE_OP_REMOVE: return zone_edit_remove(op->zone, op->pos);
@@ -267,6 +267,25 @@ zone_edit_result_t zone_edit_apply(const zone_op_t *op, uint16_t *index)
 	case ZONE_OP_DELETE: return zone_edit_delete(op->zone);
 	default: return ZONE_EDIT_FAILED;
 	}
+}
+
+zone_edit_result_t zone_edit_apply(const zone_op_t *op, uint16_t *index)
+{
+	if (index != NULL) {
+		*index = op->zone;
+	}
+	zone_edit_result_t r = run(op, index);
+	last_result = (uint8_t)r;
+	if (r == ZONE_EDIT_OK) {
+		applied++;
+	}
+	return r;
+}
+
+void zone_edit_stats(uint32_t *n, uint8_t *last)
+{
+	*n = applied;
+	*last = last_result;
 }
 
 uint16_t zone_edit_follow(const zone_op_t *op, uint16_t added, uint16_t index)

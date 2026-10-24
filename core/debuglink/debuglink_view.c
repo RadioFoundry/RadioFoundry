@@ -10,6 +10,7 @@
 #include "input/input.h"
 #include "ui/ui.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/zone_edit.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
 #if CONFIG_APRS
@@ -279,6 +280,10 @@ static void storage_section(dl_text_t *t)
 		st.foreign_slots, (unsigned)st.foreign_refusals, st.claim_pending);
 	dl_text(t, "codeplug.source=%s\ncodeplug.serial=%u\n", (unsigned)src < 3 ? sources[src] : "?",
 		(unsigned)codeplug_serial());
+	uint32_t zone_edits;
+	uint8_t zone_last;
+	zone_edit_stats(&zone_edits, &zone_last);
+	dl_text(t, "zone.edits=%u\nzone.edit_last=%u\n", (unsigned)zone_edits, zone_last);
 #if CONFIG_CPS_OPENFW
 	cps_stats_t c;
 

@@ -2506,7 +2506,8 @@ void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
 void radio_req_scan_dual(uint16_t pos) { (void)pos; }
-void radio_req_zone_pos(uint16_t pos) { (void)pos; }
+void radio_req_zone_pos(uint16_t pos) { req(RREQ_ZONE_POS, pos); }
+void radio_req_zone(uint16_t index) { req(RREQ_ZONE, index); }
 void radio_req_scan_vfo(uint32_t lo, uint32_t hi) { (void)lo; (void)hi; }
 void radio_req_tone_burst(bool on) { (void)on; }
 void radio_req_dtmf(char digit, bool down) { req(RREQ_DTMF, (uint8_t)digit | (down ? 0x100 : 0)); }
@@ -2591,6 +2592,38 @@ bool codeplug_set_channel(uint16_t n, const channel_t *ch)
 	chans[n] = *ch;
 	used[n] = true;
 	cp_writes++;
+	cp_serial++;
+	return true;
+}
+
+// Zone writes (the zone editor's job, zone_edit.c on these fakes)
+static int zone_writes;
+static uint16_t zone_written;
+bool codeplug_zones_stored(void) { return nzones > 0; }
+uint16_t codeplug_zone_capacity(void) { return CODEPLUG_ZONE_MAX; }
+uint16_t codeplug_zone_written(void) { return zone_written; }
+bool codeplug_set_zone(uint16_t i, const zone_t *z)
+{
+	if (i > nzones || i >= 3) {
+		return false;
+	}
+	zones[i] = *z;
+	if (i == nzones) {
+		nzones++;
+	}
+	zone_written = i;
+	zone_writes++;
+	cp_serial++;
+	return true;
+}
+bool codeplug_delete_zone(uint16_t i)
+{
+	if (i >= nzones) {
+		return false;
+	}
+	memmove(&zones[i], &zones[i + 1u], (size_t)(nzones - i - 1u) * sizeof(zones[0]));
+	nzones--;
+	zone_writes++;
 	cp_serial++;
 	return true;
 }
@@ -2799,6 +2832,63 @@ static void test_ui_glue(void)
 	req(RREQ_CLEAR_TEMP, 0);
 	run(50);
 	CHECK(sm.view.ch.mode == RADIO_MODE_DMR);
+#if CONFIG_ZONE_EDIT
+	{
+		// The zone editor's job (ui_svc_zone_edit, ui.md 2.2): nothing is written by the call and a second one waits.
+		// A move in the zone in use keeps the radio on its channel at its new position
+		zone_t keep[3];
+		uint16_t nkeep = nzones;
+		memcpy(keep, zones, sizeof keep);
+		zone_op_t op;
+		memset(&op, 0, sizeof op);
+		uint16_t num = sm.view.channel_number, pos = sm.view.zone_pos;
+		CHECK(sm.view.zone_index == 0 && pos > 0);
+		op.kind = ZONE_OP_MOVE;
+		op.pos = pos;
+		op.dir = -1;
+		int zw = zone_writes;
+		CHECK(ui_svc_zone_edit(&op) && zone_writes == zw && !ui_svc_zone_edit(&op));
+		storage_job_poll();
+		run(100);
+		CHECK(zone_writes == zw + 1 && zones[0].channels[pos - 1u] == num);
+		CHECK(sm.view.channel_number == num && sm.view.zone_pos == pos - 1u && sm.view.zone_index == 0);
+		// Deleting a zone ahead of the zone in use: the radio follows its zone to the index it moved to
+		req(RREQ_ZONE, 2);
+		run(50);
+		CHECK(sm.view.zone_index == 2 && sm.view.channel_number == 7);
+		req(RREQ_ZONE_POS, 1);
+		run(50);
+		memset(&op, 0, sizeof op);
+		op.kind = ZONE_OP_DELETE;
+		op.zone = 0;
+		CHECK(ui_svc_zone_edit(&op));
+		storage_job_poll();
+		run(100);
+		CHECK(nzones == 2 && sm.view.zone_index == 1 && sm.view.channel_number == 8 && sm.view.zone_pos == 1);
+		// A refusal comes back as an event: channel 8 is in the zone already
+		memset(&op, 0, sizeof op);
+		op.kind = ZONE_OP_INSERT;
+		op.zone = 1;
+		op.channel = 8;
+		n_ev = 0;
+		CHECK(ui_svc_zone_edit(&op));
+		storage_job_poll();
+		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "Already") != NULL);
+		uint32_t applied;
+		uint8_t last;
+		zone_edit_stats(&applied, &last);
+		CHECK(applied >= 2 && last == ZONE_EDIT_IN_ZONE);
+		memcpy(zones, keep, sizeof keep);
+		nzones = nkeep;
+		cp_serial++;
+		run(100);
+		req(RREQ_ZONE, 0);
+		run(50);
+		req(RREQ_ZONE_POS, pos);
+		run(50);
+		CHECK(sm.view.zone_index == 0 && sm.view.channel_number == num);
+	}
+#endif
 
 	// Privacy: no key stored, nothing to turn on; then the first valid slot is used
 	CHECK(!ui_svc_privacy(true) && !d->privacy);

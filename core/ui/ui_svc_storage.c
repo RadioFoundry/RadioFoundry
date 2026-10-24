@@ -619,6 +619,58 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 	return storage_job_post(write_channel_job, NULL);
 }
 
+#if CONFIG_ZONE_EDIT
+// The zone editor's change (ui.md 2.2). The zone in use is taken on the UI task when the job is posted: a new zone in
+// a slot ahead of it, or a deleted zone ahead of it, moves its index, and the radio core is told to follow it (its
+// reload alone would keep the old index, now another zone)
+static zone_op_t zone_job;
+static struct {
+	bool on;		// on a channel of a zone, not the VFO
+	uint16_t zone, pos;
+} zone_was;
+
+static const char *zone_edit_text(zone_edit_result_t r)
+{
+	switch (r) {
+	case ZONE_EDIT_FULL: return "Zone full: not saved";
+	case ZONE_EDIT_ZONES_FULL: return "No room for another zone";
+	case ZONE_EDIT_IN_ZONE: return "Already in this zone";
+	case ZONE_EDIT_NO_FREE: return "No free channel";
+	case ZONE_EDIT_NO_NAME: return "Give it a name first";
+	default: return "Couldn't write the codeplug: not saved";
+	}
+}
+
+static void zone_edit_job(void *ctx)
+{
+	(void)ctx;
+	uint16_t added;
+	zone_edit_result_t r = zone_edit_apply(&zone_job, &added);
+	if (r != ZONE_EDIT_OK) {
+		save_failed(zone_edit_text(r));
+		return;
+	}
+	uint16_t to = zone_edit_follow(&zone_job, added, zone_was.zone);
+	if (zone_was.on && to != zone_was.zone) {
+		radio_req_zone(to);
+		radio_req_zone_pos(zone_was.pos);
+	}
+}
+
+bool ui_svc_zone_edit(const zone_op_t *op)
+{
+	if (storage_job_busy()) {
+		return false;
+	}
+	radio_get_view(&v);
+	zone_was.on = !v.vfo && !v.hotspot;
+	zone_was.zone = v.zone_index;
+	zone_was.pos = v.zone_pos;
+	zone_job = *op;
+	return storage_job_post(zone_edit_job, NULL);
+}
+#endif
+
 #if CONFIG_DMR
 // The first stored contact with this ID and kind becomes the channel's talk target. Searching the contacts reads up
 // to 1024 records, so it is part of the job too. Until it is done the target is a temporary one (ui_svc_talk_to)
