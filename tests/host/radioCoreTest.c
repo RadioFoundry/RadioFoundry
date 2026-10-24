@@ -3475,6 +3475,126 @@ static void test_power_off_ars(void)
 	CHECK(!dmrDataServiceIsBusy() && dmrDataServiceArsState() == DMR_ARS_STATE_OFF);
 }
 
+#if CONFIG_VFO_DMR
+// Data from a DMR VFO (docs/spec/dmr-data.md 6): ARS, an IP packet as the IP gateway's air path sends it and a CSBK
+// answer go out as on a DMR channel, with the VFO's own color code, and an emergency starts. A retune re-registers once
+// it has settled, not on every step. Nothing goes out from an FM VFO, nor on a frequency outside the transmit bands
+static void test_vfo_dmr_data(void)
+{
+	dmrDataSettings_t ds;
+	uint8_t kind;
+	uint32_t dst;
+
+	dmr_start(true);
+	req(RREQ_VFO_SET, 446000000);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DMR && sim.started && sm.view.dmr.cc == 1);
+
+	// ARS: the power-on registration (5-15 s on)
+	dmrDataServiceGetSettings(&ds);
+	ds.arsServer = 9990100;
+	dmr_data_set_settings(&ds);
+	unsigned n0 = sim.air_count;
+	run(20000);
+	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) == 1);
+	// Turning the knob: nothing while the frequency keeps changing, one registration once it has held still
+	n0 = sim.air_count;
+	for (int i = 0; i < 4; i++) {
+		req(RREQ_VFO_STEP, 1);
+		run(1000);
+	}
+	CHECK(sm.view.ch.rx_hz == 446050000 && air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) == 0);
+	run(6000);
+	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) == 1);
+	ds.arsServer = 0;
+	dmr_data_set_settings(&ds);
+	run(10000);
+	CHECK(!dmrDataServiceIsBusy());
+
+	// An IP packet through the IP gateway's air path (dmrDataServiceSendIP): on air from the VFO
+	static const uint8_t l4[12] = { 0x13, 0x88, 0x13, 0x88, 0, 12, 0, 0, 'p', 'i', 'n', 'g' };
+	n0 = sim.air_count;
+	int tx0 = hw.tx_calls;
+	CHECK(dmrDataServiceSendIP(false, 3101234, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4,
+				   sizeof(l4)));
+	run(3000);
+	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
+	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) >= 1 && hw.tx_calls > tx0 && hw.tx_hz == 446050000);
+
+	// A CSBK answer: a call alert to us on the VFO's color code is acknowledged
+	n0 = sim.air_count;
+	csbk_rx(DMR_CSBKO_CALL_ALERT, 3101276, 3109876, 1);
+	run(1000);
+	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT_ACK) == 1);
+	// ... and our own call alert goes out
+	n0 = sim.air_count;
+	CHECK(dmr_signal_call_alert(3101234));
+	run(600);
+	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) >= 1);
+	csbk_rx(DMR_CSBKO_CALL_ALERT_ACK, 3101276, 3101234, 1);
+	run(1000);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_OK);
+
+	// An emergency starts here too (it is gated as data is): the hot mic keys the VFO's talk target (TG 9)
+	dmr_emergency_settings_t es, es0;
+	dmr_emergency_get_settings_now(&es0);
+	dmr_emergency_settings_default(&es);
+	es.mode = DMR_EMERGENCY_MODE_CALL;
+	es.hot_mic_s = 1;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	dmr_lc_t l;
+	n0 = sim.air_count;
+	CHECK(dmr_emergency_start());
+	run(600);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_HOT_MIC && sm.em_keyed && hw.tx_hz == 446050000);
+	air_lc(n0, &l);
+	CHECK(sim.air[n0].kind == DMR_BURST_VOICE_LC_HEADER && (l.svc & DMR_SVC_EMERGENCY) && l.dst == 9);
+	dmr_emergency_cancel();
+	run(2000);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE && !sm.em_keyed && sm.view.state == RS_IDLE);
+	dmr_emergency_set_settings(&es0);
+	run(20);
+
+	// Outside the transmit bands (a receive only band): nothing on air, the transmitter never keyed
+	req(RREQ_VFO_SET, 125000000);
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DMR && sm.view.ch.tx_hz == 125000000);
+	n0 = sim.air_count;
+	tx0 = hw.tx_calls;
+	dmr_signal_call_alert(3101234);
+	csbk_rx(DMR_CSBKO_CALL_ALERT, 3101276, 3109876, 1);
+	run(3000);
+	CHECK(air_count(n0, DMR_BURST_CSBK, 0xFF) == 0 && air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) == 0 &&
+	      hw.tx_calls == tx0);
+
+	// An FM VFO: no data at all
+	req(RREQ_VFO_SET, 446000000);
+	req(RREQ_MODE, RADIO_MODE_FM);
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_FM && !sim.started);
+	n0 = sim.air_count;
+	tx0 = hw.tx_calls;
+	dmr_signal_call_alert(3101234);
+	CHECK(!dmrDataServiceSendIP(false, 3101234, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT,
+				    DMR_IP_PROTO_UDP, l4, sizeof(l4)));
+	run(3000);
+	dmr_emergency_start();		// queued, then refused by the tick
+	run(3000);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_FAILED && !sm.em_keyed);
+	CHECK(sim.air_count == n0 && hw.tx_calls == tx0);
+	dmr_emergency_cancel();
+
+	// Leave the VFO the way the other tests expect it
+	req(RREQ_VFO, 0);
+	run(30000);	// any request left fails out
+	settings_defaults(settings_begin());
+	settings_end(now);
+	setup_codeplug();
+}
+#endif
+
 static void test_dmr_data_glue(void)
 {
 	uint8_t kind;
@@ -3872,6 +3992,9 @@ int main(void)
 	test_hotspot_cwid();
 	test_dmr_emergency();
 	test_power_off_ars();
+#if CONFIG_VFO_DMR
+	test_vfo_dmr_data();
+#endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

@@ -250,9 +250,13 @@ SETTINGS. `hasGps` is the board's, not saved. The codeplug does not hold them. O
 progress (gotcha 3.7).
 
 Transmission rules: nothing is sent unless the channel is a DMR channel we may transmit on (not RX only, in band,
-not a VFO, not in hotspot mode, an own ID set), the channel has been quiet (`dmr_call_channel_clear`: 120 ms in
-direct mode, 180 ms and no repeater hang time through a repeater, gotcha 3.6), and PTT is not held. A list still
-waiting after 10 s (3 s for replies) is given up (`data.tx_gave_up`).
+not in hotspot mode, an own ID set), the channel has been quiet (`dmr_call_channel_clear`: 120 ms in direct mode,
+180 ms and no repeater hang time through a repeater, gotcha 3.6), and PTT is not held. A list still waiting after 10 s
+(3 s for replies) is given up (`data.tx_gave_up`).
+
+A DMR VFO counts as a DMR channel: it sends with its own color code, timeslot and talk target, and `tx_check` covers
+its frequency. An FM VFO sends nothing. A VFO retune changes the ARS channel key, so registration waits until the
+frequency has held still (5 s, `ARS_SETTLE_MS`) and turning the knob sends no burst of registrations.
 
 ## 9. API (core/dmr/dmr_data_api.h)
 

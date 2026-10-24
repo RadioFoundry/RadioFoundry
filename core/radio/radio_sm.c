@@ -1523,13 +1523,15 @@ static void data_rx(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 	dmrDataServiceRxBurst(&d, now_ms);
 }
 
+// A DMR VFO sends data as a DMR channel does: it has its own color code, slot and talk target, and tx_check covers its
+// frequency. An FM VFO is out by the mode
 static bool data_can_send(const radio_sm_t *sm)
 {
 	bool roaming = false;
 #if CONFIG_DMR_ROAMING
 	roaming = roam_searching(&sm->roam);	// never on a site being looked at
 #endif
-	return sm->dmr_running && !sm->hotspot && sm->view.ch.mode == RADIO_MODE_DMR && !sm->view.vfo &&
+	return sm->dmr_running && !sm->hotspot && sm->view.ch.mode == RADIO_MODE_DMR &&
 		tx_check(sm) == TXDENY_NONE && sm->view.dmr.own_id != 0 && !roaming;
 }
 
