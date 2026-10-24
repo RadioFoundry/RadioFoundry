@@ -12,8 +12,10 @@ What the bench modem heard is reassembled and decoded on this host by tools/benc
 standards apart from the firmware's code: the data header, the blocks, the CRC-32, the CRC-9 of confirmed blocks, the
 compressed header. The bench modem sits next to the radio and misses or garbles some bursts (test_dmr_data.py's
 notes): a packet it didn't hear whole is sent again, up to 3 times; the radio's own counters (the dmr_ip view section)
-are the pass criteria for what it sent. The bench doesn't answer confirmed data, so the confirmed test checks the
-retries and the failure, not an ACK (an ACK and a selective retry are covered on the host: dmrDataServiceTest)."""
+are the pass criteria for what it sent. A datagram for an IPv4 address other than the DMR ID's (the off-net route)
+goes with the full header whatever the compression setting. The bench doesn't answer confirmed data, so the
+confirmed test checks the retries and the failure, not an ACK (an ACK and a selective retry are covered on the host:
+dmrDataServiceTest)."""
 import ipaddress
 import socket
 import time
@@ -28,6 +30,7 @@ BENCH_ID = 9990301
 SRC_PORT, DST_PORT = 50000, 161            # an SNMP request: no port IDs, both ports in the extended headers
 PAYLOAD = bytes(range(0x30, 0x30 + 40))
 INDIVIDUAL_NET = 0x0C000000                # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
+OFF_NET_IP = "192.0.2.10"                  # TEST-NET-1 (RFC 5737): an address no radio's ID gives
 
 
 def _ip_view(radio):
@@ -73,7 +76,8 @@ def ip_settings(radio):
     yield
     if v.get("ip.built") == 1:
         rules = [r for r in (_rule(str(v.get("ip.rule0", "none"))), _rule(str(v.get("ip.rule1", "none")))) if r]
-        radio.link.ip_settings(v["ip.compress"], v["ip.confirmed"], v["ip.tries"], rules)
+        radio.link.ip_settings(v["ip.compress"], v["ip.confirmed"], v["ip.tries"], rules,
+                               gateway_id=v.get("ip.gateway_id"))
 
 
 def _send_and_listen(radio, sdr_bench, freq, cc, send, seconds):
@@ -120,13 +124,14 @@ def test_gateway_has_netif(radio):
     assert v["net.netif"] == "1", "the board sets no netif: the gateway can't answer the host"
 
 
-def _udp_until_heard(radio, sdr_bench, freq, cc, own, want_sap, what, tries=3):
+def _udp_until_heard(radio, sdr_bench, freq, cc, own, want_sap, what, tries=3, dst_ip=None):
     for attempt in range(1, tries + 1):
         before, after, pkts, _ = _send_and_listen(
-            radio, sdr_bench, freq, cc, lambda: radio.link.ip_send(BENCH_ID, SRC_PORT, DST_PORT, PAYLOAD), 12)
+            radio, sdr_bench, freq, cc,
+            lambda: radio.link.ip_send(BENCH_ID, SRC_PORT, DST_PORT, PAYLOAD, dst_ip=dst_ip), 12)
         assert after["ip.result"] == "ok" and after["ip.sent"] - before["ip.sent"] == 1, (before, after)
-        key = "ip.sap3" if want_sap == dmr_packet.SAP_UDPIP_COMPRESSION else "ip.sap4"
-        assert after[key] - before[key] == 1, (key, before, after)
+        key, other = ("ip.sap3", "ip.sap4") if want_sap == dmr_packet.SAP_UDPIP_COMPRESSION else ("ip.sap4", "ip.sap3")
+        assert after[key] - before[key] == 1 and after[other] == before[other], (key, before, after)
         mine = _ours(pkts, own)
         wrong = [p for p in mine if p["dpf"] != dmr_packet.DPF_UNCONFIRMED or p["sap"] != want_sap]
         assert not wrong, f"{what}: a packet from us with the wrong header: {wrong}"
@@ -167,6 +172,41 @@ def test_udp_full_header_tx(radio, sdr_bench, pytestconfig, ip_settings):
     p, _, _ = _udp_until_heard(radio, sdr_bench, freq, cc, own, dmr_packet.SAP_IP, "SAP 4")
     assert p["header_octets"] == 28 and p["src_port"] == SRC_PORT and bytes.fromhex(p["payload"]) == PAYLOAD, p
     assert p["blocks"] == 6, p
+
+
+@pytest.mark.feature("dmr_ip_gateway")
+def test_ip_gateway_id_view(radio, pytestconfig, ip_settings):
+    """Radio only: the off-net gateway ID (docs/spec/dmr-data.md 8) set by the IP settings request shows in the
+    dmr_ip section, and 0 turns the route off."""
+    _setup(radio, pytestconfig, tx=False)
+    if "ip.gateway_id" not in _ip_view(radio):
+        skip("not_built", "firmware without the ip.gateway_id view key (before real IP addresses)")
+    radio.link.ip_settings("auto", "rules", 0, [], gateway_id=BENCH_ID)
+    v = radio.wait_for(lambda x: x.get("ip.gateway_id") == str(BENCH_ID), sections=("dmr_ip",),
+                       what="the gateway ID set")
+    assert v["ip.compress"] == "auto", v
+    radio.link.ip_settings("auto", "rules", 0, [], gateway_id=0)
+    radio.wait_for(lambda x: x.get("ip.gateway_id") == "0", sections=("dmr_ip",), what="the gateway ID off")
+
+
+@pytest.mark.feature("dmr_ip_gateway")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+def test_udp_off_net_tx(radio, sdr_bench, pytestconfig, ip_settings):
+    """A datagram to the bench's DMR ID for another IPv4 address (OFF_NET_IP, as a host behind a gateway radio):
+    the full header (SAP 4) even with compression set to all, since the compressed header has no address. On air the
+    IP destination is OFF_NET_IP and the source our ID's CAI address (12.x.y.z), TTL 64."""
+    freq, cc, own, _ = _setup(radio, pytestconfig)
+    if "ip.gateway_id" not in _ip_view(radio):
+        skip("not_built", "firmware without IP_SEND's IPv4 destination (before real IP addresses)")
+    radio.link.ip_settings("all", "rules", 0, [])
+    p, _, _ = _udp_until_heard(radio, sdr_bench, freq, cc, own, dmr_packet.SAP_IP, "off-net SAP 4",
+                               dst_ip=OFF_NET_IP)
+    user = bytes.fromhex(p["user"])
+    assert p["header_octets"] == 28 and p["src_port"] == SRC_PORT and bytes.fromhex(p["payload"]) == PAYLOAD, p
+    assert str(ipaddress.IPv4Address(user[16:20])) == OFF_NET_IP, p
+    assert int.from_bytes(user[12:16], "big") == INDIVIDUAL_NET | (own & 0xFFFFFF) and user[8] == 64, p
 
 
 @pytest.mark.feature("dmr_confirmed")
