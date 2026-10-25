@@ -65,7 +65,7 @@ typedef struct {
 	uint8_t accent;			// color displays (docs/spec/ui.md 8): SETTINGS_ACCENT_* (was reserved1's first byte;
 					// 0 = the defaults: the theme's highlight, the strip filled)
 	uint8_t vfo_talk_lo;		// the DMR VFO's talk target ID, bits 0-7 (was reserved1's second byte; see below)
-	uint32_t dmr_id;		// own DMR ID override, 0 = the codeplug's
+	uint32_t dmr_id;		// own DMR ID override, 0 = the codeplug's (in force: settings_dmr_id)
 	char radio_name[SETTINGS_NAME_LEN];	// NUL padded, "" = the codeplug's callsign
 	// DMR basic privacy keys (the key store dmr-voice's privacy uses; docs/spec/settings-store.md 3). A channel's
 	// choice of key will be a slot number in the native codeplug
@@ -214,7 +214,10 @@ typedef struct {
 	uint16_t zone_jrn_index;	// the index the zone was added at or deleted from
 	uint16_t zone_jrn_count;	// the stored zone count before it (0: only the built-in zone)
 	uint8_t zone_jrn_kind;		// SETTINGS_ZONE_JRN_*
-	uint8_t reserved8b[3];
+	// The codeplug's own DMR ID when dmr_id was saved, little endian (was reserved8b): a codeplug write that changes
+	// it replaces the override (settings_dmr_id). SETTINGS_DMR_ID_BASE_NONE: the codeplug had none; 0 = not known (an
+	// older record: the override stays)
+	uint8_t dmr_id_base[3];
 	// Zone share: the zones imported last, so the same zone sent again updates its import instead of adding a copy
 	// (docs/spec/zone-share.md 5.4); key 0 = unused, the oldest replaced first
 	settings_zs_import_t zs_import[SETTINGS_ZS_IMPORTS];
@@ -227,12 +230,38 @@ typedef struct {
 #define SETTINGS_PAGES_MAX	16u
 #define SETTINGS_PAGES		((sizeof(settings_t) + SETTINGS_PAGE_BYTES - 1u) / SETTINGS_PAGE_BYTES)
 #define SETTINGS_PAGE_SHIFT	12	// a record's layout field: the page in bits 12-15, the layout in bits 0-11
+#define SETTINGS_DMR_ID_BASE_NONE	0xFFFFFFu	// dmr_id_base: the codeplug had no ID (above every own ID)
 #define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
 #define SETTINGS_ZONE_JRN_ADD		1u
 #define SETTINGS_ZONE_JRN_DELETE	2u
 #define SETTINGS_DUAL_VFO	1025u	// dual_b: 1025 the first VFO, 1026 the second
 #define SETTINGS_DUAL_ON	0x01u	// dual_state: it ran at power off, and comes back at power on
 #define SETTINGS_DUAL_B_SEL	0x02u	// ... with B selected: dual_b is then A's (the radio powers up on B)
+
+// The own DMR ID override (dmr_id, dmr_id_base). settings_set_dmr_id saves one, 0 = the codeplug's, with the
+// codeplug's ID at that moment; settings_dmr_id gives the one in force, 0 when there is none or the codeplug's ID has
+// changed since (a CPS write of another ID wins over one typed on the radio)
+static inline uint32_t settings_dmr_id_base(const settings_t *s)
+{
+	return s->dmr_id_base[0] | ((uint32_t)s->dmr_id_base[1] << 8) | ((uint32_t)s->dmr_id_base[2] << 16);
+}
+static inline void settings_set_dmr_id(settings_t *s, uint32_t id, uint32_t codeplug_id)
+{
+	uint32_t base = id == 0 ? 0 : codeplug_id != 0 ? codeplug_id : SETTINGS_DMR_ID_BASE_NONE;
+	s->dmr_id = id;
+	s->dmr_id_base[0] = (uint8_t)base;
+	s->dmr_id_base[1] = (uint8_t)(base >> 8);
+	s->dmr_id_base[2] = (uint8_t)(base >> 16);
+}
+static inline uint32_t settings_dmr_id(const settings_t *s, uint32_t codeplug_id)
+{
+	uint32_t base = settings_dmr_id_base(s);
+	if (s->dmr_id == 0 || s->dmr_id > 0xFFFFFFu)
+		return 0;
+	if (base != 0 && base != (codeplug_id != 0 ? codeplug_id : SETTINGS_DMR_ID_BASE_NONE))
+		return 0;	// the codeplug's ID was written since
+	return s->dmr_id;
+}
 
 // The DMR VFO's talk target (docs/spec/settings-store.md 3): a 24-bit ID and a private call flag, packed into bytes
 // that were reserved or held a small value, so the record stays 236 bytes and an older record reads as "none" (0).

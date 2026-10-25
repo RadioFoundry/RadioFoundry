@@ -245,6 +245,8 @@
  "screen.settings_display": "Display settings",
  "screen.settings_editor": "Changing a setting",
  "screen.volume": "Volume",
+ "screen.dmr_id": "Your DMR ID, from the codeplug or set on the radio",
+ "screen.dmr_id_entry": "Typing a new DMR ID",
  "screen.volume_muted": "Volume muted",
  "screen.settings": "Settings",
  "screen.talk_target_picker": "Talk target",

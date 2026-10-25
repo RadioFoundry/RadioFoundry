@@ -2990,10 +2990,13 @@ static const ui_scr_def_t info_screen = {
 
 #if CONFIG_DMR
 // ======================= DMR ID (Settings > My radio) =======================
-// One row: the radio's own DMR ID, 0 = the codeplug's. Digits type a new one, OK saves it, BACK leaves it unchanged
+// One row: the radio's own DMR ID, 0 = the codeplug's. Digits type a new one, OK saves it. Typed as the channel
+// editor's Own ID (ui.md 2.1): a digit past CODEPLUG_DMR_ID_MAX is refused, BACK takes the last digit back and with
+// none typed leaves the ID unchanged
 
 static uint32_t dmr_id_value;
-static bool dmr_id_editing, dmr_id_typed;
+static uint8_t dmr_id_len;		// digits typed
+static bool dmr_id_editing;
 
 static uint16_t dmr_id_count(void) { return 1; }
 
@@ -3004,10 +3007,15 @@ static void dmr_id_item(uint16_t i, ui_item_t *it)
 	uint32_t v = dmr_id_editing ? dmr_id_value : (uint32_t)ui_svc_setting_get(UI_SET_DMR_ID);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
-	if (v != 0 || dmr_id_typed)
+	if (dmr_id_editing) {
+		if (dmr_id_len > 0)
+			sb_u32(&b, v, 1);
+		sb_chr(&b, '_');		// what is typed so far, as the channel editor: "3101_"
+	} else if (v != 0) {
 		sb_u32(&b, v, 1);
-	else
+	} else {
 		sb_str(&b, "Codeplug's");
+	}
 	if (dmr_id_editing)
 		it->flags |= UI_ITEM_EDIT;
 }
@@ -3022,23 +3030,24 @@ static const char *dmr_id_body(void)
 		sb_u32(&b, codeplug_dmr_id(), 1);
 	else
 		sb_str(&b, "not set");
-	sb_str(&b, "\n0 uses the codeplug's");
+	sb_str(&b, "\n0 uses the codeplug's\nRadio: ");
+	sb_str(&b, board.name);		// as the info page it replaces
 	return t;
 }
 
 static void dmr_id_begin(void)
 {
 	dmr_id_editing = true;
-	dmr_id_typed = false;
-	dmr_id_value = (uint32_t)ui_svc_setting_get(UI_SET_DMR_ID);
+	dmr_id_len = 0;
+	dmr_id_value = 0;
 }
 
 static void dmr_id_save(void)
 {
 	dmr_id_editing = false;
-	if (dmr_id_value > CODEPLUG_DMR_ID_MAX)
-		ui_toast("Not changed: 0 to 16776415");
-	else if (!ui_svc_setting_set(UI_SET_DMR_ID, (int32_t)dmr_id_value))
+	if (dmr_id_len == 0)
+		return;			// nothing typed: as it was
+	if (!ui_svc_setting_set(UI_SET_DMR_ID, (int32_t)dmr_id_value))
 		ui_toast("Couldn't save: try again");
 	else
 		ui_toast(dmr_id_value != 0 ? "DMR ID saved" : "Using the codeplug's DMR ID");
@@ -3060,17 +3069,25 @@ static bool dmr_id_key(const input_event_t *ev)
 	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
 		if (!dmr_id_editing)
 			dmr_id_begin();
-		uint32_t d = (uint32_t)(ev->action - ACT_DIGIT_0);
-		uint32_t v = dmr_id_typed ? dmr_id_value * 10u + d : d;
-		dmr_id_value = v > CODEPLUG_DMR_ID_MAX ? d : v;	// starts over when the number would be too big
-		dmr_id_typed = true;
+		uint32_t v = dmr_id_value * 10u + (uint32_t)(ev->action - ACT_DIGIT_0);
+		if (v > CODEPLUG_DMR_ID_MAX) {
+			ui_toast("IDs go up to 16776415");	// the IDs above are the network's
+			return true;
+		}
+		dmr_id_value = v;
+		dmr_id_len++;
 		ui_dirty();
 		return true;
 	}
 	if (!dmr_id_editing)
 		return false;
 	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
-		dmr_id_editing = false;
+		if (dmr_id_len > 0) {
+			dmr_id_len--;
+			dmr_id_value /= 10u;	// takes the last digit back
+		} else {
+			dmr_id_editing = false;
+		}
 		ui_dirty();
 		return true;
 	}

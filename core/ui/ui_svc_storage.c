@@ -232,9 +232,11 @@ int32_t ui_svc_setting_get(uint8_t id)
 		settings_read(&st);
 		return st.zs_offers == ZS_OFFERS_ASK;
 #endif
+#if CONFIG_DMR
 	case UI_SET_DMR_ID:
 		settings_read(&st);
-		return st.dmr_id <= 0xFFFFFFu ? (int32_t)st.dmr_id : 0;
+		return (int32_t)settings_dmr_id(&st, codeplug_dmr_id());
+#endif
 	case UI_SET_NOISE_REDUCTION:
 		settings_read(&st);
 		return (st.accent & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0;
@@ -455,14 +457,16 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		zone_share_set_offers((uint8_t)value);
 		return true;
 #endif
+#if CONFIG_DMR
 	case UI_SET_DMR_ID:
 		if (value < 0 || (uint32_t)value > CODEPLUG_DMR_ID_MAX)
 			return false;
 		st = settings_begin();
-		st->dmr_id = (uint32_t)value;
+		settings_set_dmr_id(st, (uint32_t)value, codeplug_dmr_id());	// held while the codeplug's ID stays
 		settings_end(hal_millis());
 		radio_req_reload();
 		return true;
+#endif
 	case UI_SET_NOISE_REDUCTION:	// ui_svc_apply hands them to the vocoder
 	case UI_SET_MIC_AGC: {
 		// The stored bit is set for "on" with AGC, for "off" with noise reduction (0 = the defaults)

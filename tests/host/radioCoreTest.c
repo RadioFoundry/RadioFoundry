@@ -1916,6 +1916,35 @@ static void test_persist(void)
 	CHECK(sm.view.power == 0);
 	boot();
 	CHECK(sm.view.squelch == 2 && sm.view.power == 0 && sm.view.dmr.own_id == 1234567);
+	// One typed on the radio holds while the codeplug's ID stays, and a codeplug write of another ID wins: the
+	// override goes, also from the store (settings_dmr_id)
+	settings_set_dmr_id(settings_begin(), 7654321, own_dmr_id);
+	settings_end(now);
+	req(RREQ_RELOAD, 0);
+	CHECK(sm.view.dmr.own_id == 7654321);
+	boot();
+	CHECK(sm.view.dmr.own_id == 7654321);
+	own_dmr_id = 3105555;
+	cp_serial++;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.dmr.own_id == 3105555);
+	settings_t got;
+	settings_read(&got);
+	CHECK(got.dmr_id == 0 && settings_dmr_id_base(&got) == 0);
+	boot();
+	CHECK(sm.view.dmr.own_id == 3105555);
+	// Typed while the codeplug had none: the codeplug's first ID wins too
+	own_dmr_id = 0;
+	cp_serial++;
+	poll_for(RADIO_POLL_MS);
+	settings_set_dmr_id(settings_begin(), 7654321, own_dmr_id);
+	settings_end(now);
+	req(RREQ_RELOAD, 0);
+	CHECK(sm.view.dmr.own_id == 7654321);
+	own_dmr_id = 3101276;
+	cp_serial++;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.dmr.own_id == 3101276);
 
 	// The codeplug changes underneath: the channel is deleted, the radio moves on to the next one in the zone
 	req(RREQ_ZONE_POS, 3);
