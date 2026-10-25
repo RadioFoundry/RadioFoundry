@@ -354,6 +354,7 @@ build() {
 	rm -f "$target.elf"		# always relink: the size report reads the linker's memory-usage lines
 	if ! make BOARD="$b" BUILD="$dir" -j"$JOBS" "$@" > "$log" 2>&1; then
 		grep -E 'error|undefined' "$log" | head -10
+		find "$dir" -name '*.o' | while read -r o; do "${cc_size:-$(dirname "$(command -v arm-none-eabi-gcc)")/arm-none-eabi-size}" -A "$o" | awk -v f="$o" '$1==".bss"||$1==".data"||$1 ~ /^\.(bss|data)\./ {print "DIAGSIZE", $2, $1, f}'; done | sort -k2 -n -r | head -60	# TEMP diagnostic
 		bad "$b $name: build failed ($*; see $log)"
 		echo "| $b | $name | build failed | | | | |" >> "$REPORT"
 		return
@@ -478,6 +479,7 @@ for p in $(for x in ${SELECTED_PLATFORMS:-}; do echo "$x"; done | sort -u); do
 			fi
 		else
 			grep -E 'error|ASSERT|differs' "$log" | head -10
+			for f in "$sdir"/*.bin; do echo "DIAGBIN $f"; base64 < "$f" | tr -d '\n'; echo; done	# TEMP diagnostic
 			bad "$st: build or check failed (see $log)"
 		fi
 	done
