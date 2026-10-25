@@ -32,7 +32,7 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_NAV2, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
 	{ KEY_NAV5, ACT_BACK, ACT_BACK, false, false, 0 },
 	{ KEY_NAV6, ACT_SELECT, ACT_SELECT, false, false, 0 },
-	{ KEY_MODE, ACT_VFO_TOGGLE, ACT_VFO_TOGGLE, false, false, 0 },
+	{ KEY_MODE, ACT_VFO_TOGGLE, ACT_COPY_VFO, false, false, 0 },
 	{ KEY_P4, ACT_AB, ACT_DUAL_WATCH, false, false, 0 },
 	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false, 0 },
 	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },

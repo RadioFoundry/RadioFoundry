@@ -2022,7 +2022,7 @@ def self_test():
         want = patch_univ(univ, C7_BOARDS.get(board))
         check(radio.running and not radio.errors and bytes(radio.loaded[:len(univ)]) == want,
               "the universal stub is the default power-on image, at 0x10000 (%s)" % radio.errors)
-        check((want == univ) == (board != "gd88"), "only the GD-88's image is patched (%s)" % board)
+        check((want == univ) == (board not in ("gd88", "gd88b")), "only the GD-88 SoCs' images are patched (%s)" % board)
         check(r.v6 is not None and r.v6["run"] == 0x30000 and r.v6["load"] == 0x10000, "HELLO v6 parsed")
         try:
             r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
@@ -2035,7 +2035,7 @@ def self_test():
         check(cfg[8:10] == bytes([prof["latch"], prof["key"]]) and cfg[12] == prof["id"] and cfg[14] == CFG_UART_THIS,
               "CONFIG carries the %s profile" % prof["name"])
         check(23e6 < int.from_bytes(cfg[:4], "big") < 25e6, "CONFIG carries the measured clock")
-        check(cfg[10:12] == (b"\xff\xff" if board == "gd88" else bytes([LED_RED, LED_GREEN])),
+        check(cfg[10:12] == (bytes(prof["leds"]) if "leds" in prof else bytes([LED_RED, LED_GREEN])),
               "CONFIG's LED pins for %s" % prof["name"])
         check(r.configured is prof, "the %s profile is confirmed by the HELLO echo" % prof["name"])
         nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
