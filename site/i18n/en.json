@@ -136,6 +136,7 @@
  "screen.zone_offer": "What to do with an offered zone",
  "screen.zone_offer_preview": "The channels of an offered zone",
  "screen.zone_offer_ch": "One channel shared by another radio",
+ "screen.tools_zone_offer": "Tools with a shared zone waiting",
  "screen.zone_offer_channel": "An offered channel",
  "screen.banner_radio_check": "Radio check",
  "screen.boot": "Boot screen",

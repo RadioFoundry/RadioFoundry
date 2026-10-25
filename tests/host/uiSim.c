@@ -98,6 +98,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "zone_offer", "zoneoffer:3101234 ctx" },
 	{ "zone_offer_preview", "zoneoffer:3101234 ctx 2" },
 	{ "zone_offer_ch", "zoneoffer:3101234,c ctx" },
+	{ "tools_zone_offer", "zoneoffer:3101234 wait:9000 ok 6 down down down down down down down down down" },	// Tools > Zones/Chs Received
 	{ "zone_offer_channel", "zoneoffer:3101234,c ctx 1" },
 	{ "zone_imported", "zoneoffer:3101234 ctx 1 wait:300" },
 #if CONFIG_ZONE_EDIT

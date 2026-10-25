@@ -3559,7 +3559,7 @@ static uint16_t tools_row(uint16_t row)
 static void tools_item(uint16_t row, ui_item_t *it)
 {
 	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single-freq repeater",
-					     "Roaming", "Diagnostics", "APRS", "Battery", "Share received" };
+					     "Roaming", "Diagnostics", "APRS", "Battery", "Zones/Chs Received" };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
@@ -3623,8 +3623,11 @@ static void tools_item(uint16_t row, ui_item_t *it)
 #if CONFIG_ZONE_SHARE
 	case T_ZONE_OFFER: {
 		ui_zone_offer_t o;
-		if (ui_svc_zone_offer(&o))
+		if (ui_svc_zone_offer(&o)) {
+			sb_str(&b, TEXT_ALT_OPEN);	// the name where it fits beside the whole label, else none
 			sb_str(&b, o.name);
+			sb_str(&b, TEXT_ALT_NEXT TEXT_ALT_CLOSE);
+		}
 		break;
 	}
 #endif
