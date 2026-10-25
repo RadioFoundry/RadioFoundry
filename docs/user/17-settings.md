@@ -130,9 +130,9 @@ the codeplug.
 
 ### My radio (key 9)
 
-| Setting | What it shows |
+| Setting | What it does |
 |---|---|
-| DMR ID and name | Your DMR ID from the codeplug ("not set: set it in qdmr" without one) and the radio model |
+| DMR ID and name | Your DMR ID, as stored in the codeplug ("Not set" without one), and the radio model. Type a new ID with the digit keys (up to 16776415; the IDs above it are reserved for the network) and press **OK**: the radio writes it into the codeplug and uses it at once, and the Codeplug Editor or qdmr shows it on the next read. **Back** takes back the last digit, and with none left leaves the ID unchanged |
 
 ### Advanced (key 0)
 

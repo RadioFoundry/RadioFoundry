@@ -16,6 +16,7 @@
 
 #define CODEPLUG_NAME_LEN	16
 #define CODEPLUG_ZONE_MAX	80	// channels per zone
+#define CODEPLUG_DMR_ID_MAX	16776415u	// a radio's own ID; the IDs above it are the system's (gateways, all call)
 
 typedef struct {
 	char name[CODEPLUG_NAME_LEN + 1];
@@ -173,7 +174,7 @@ bool codeplug_listen_list(uint16_t index, listen_list_t *out);
 // it has neither (then talkgroup 9). codeplug_talk.c, docs/spec/dmr-voice.md 2
 uint16_t codeplug_channel_talk_contact(const channel_t *ch);
 
-bool codeplug_set_dmr_id(uint32_t id);		// 1..16776415, 0 = none
+bool codeplug_set_dmr_id(uint32_t id);		// 1..CODEPLUG_DMR_ID_MAX, 0 = none
 bool codeplug_set_contact(uint16_t index, const contact_t *c);
 bool codeplug_delete_contact(uint16_t index);
 bool codeplug_set_listen_list(uint16_t index, const listen_list_t *l);

@@ -616,6 +616,18 @@
    "group": "settings",
    "needs": []
   },
+  "dmr_id": {
+   "group": "settings",
+   "needs": [
+    "DMR"
+   ]
+  },
+  "dmr_id_entry": {
+   "group": "settings",
+   "needs": [
+    "DMR"
+   ]
+  },
   "volume_muted": {
    "group": "settings",
    "needs": []

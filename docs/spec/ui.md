@@ -114,6 +114,7 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Offer preview | `zone_offer_preview` | Preview in Zone Share Received: the offered channels, "Not in band" dimmed |
 | Add to zone | `zone_offer_zone` | Import of a one-channel offer: the zone it goes in |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
+| DMR ID | `dmr-id` | Settings > My radio > DMR ID and name (`CONFIG_DMR`; without it the row opens the read-only My Radio info page): one row, the radio's own DMR ID from the codeplug ("Not set" without one), and the radio model above it. Digits type an ID as the channel editor's Own ID (2.1): the first digit replaces the shown one, a digit that would take it past `CODEPLUG_DMR_ID_MAX` (16776415) is refused, BACK takes the last digit back and with none typed leaves the ID as it was, OK writes it into the codeplug (with nothing typed, leaves it; 0 is refused: "IDs start at 1") |
 | About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
 
 The gallery (section 7) shows every screen at every display class.
@@ -129,7 +130,7 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 |---|---|---|
 | Toggle | the other value, at once | Mode (FM / DMR, with `CONFIG_DMR`), RX only, Bandwidth (FM), Timeslot (DMR), VOX (FM), Direct mode (DMR), Talk permit beeps (DMR), Talker alias TS1 / TS2 (DMR), Scan, Battery saver |
 | Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX tone and TX tone (None, the CTCSS (PL) tones, the DCS codes normal then inverted; in a build without `CONFIG_SUBTONE`, such as a small-flash board's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
-| Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16777215) |
+| Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16776415, `CODEPLUG_DMR_ID_MAX`) |
 | Text | opens Text entry | Name |
 | Pick | opens the List picker | TX contact, RX group list |
 | Read only | nothing | Number, Zones |
@@ -165,7 +166,8 @@ one, long OK keeps. Names stop at `CODEPLUG_NAME_LEN` (16).
 Typed rows (frequencies, the ID): BACK takes back the last digit, and with none typed closes the editor; OK keeps what
 is typed, and with nothing typed leaves the row as it was. A new RX frequency moves TX with it, keeping a repeater's
 offset. Where that offset would put TX outside every band, TX becomes the new RX (simplex). Own ID refuses a digit
-that would take it past 16777215, and takes at most 8 digits.
+that would take it past 16776415 (the IDs above it are the network's: gateways, all call), and takes at most 8
+digits.
 
 ### 2.2 Zone editor
 
@@ -353,6 +355,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR scales the samples before the vocoder; radio-features.md 3.6); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain is step 5 |
 | `ui_svc_beep` kinds (key, error, message, battery low) | radio-features | `ui_svc_radio.c`: a table from `UI_BEEP_*` to `BEEP_*` (`BEEP_MESSAGE` is the new-message tone) |
 | `UI_FEAT_VOLUME`, `UI_SET_VOLUME` | radio-features | `ui_svc_radio.c`: the feature bit when `radio_volume_soft()` (no knob, a board volume hook); `ui_svc_storage.c`: the step in `settings_t.volume`, and `radio_req_volume` so it is in force at once. The UI side is the volume screen (`SCR_VOLUME`, opened by `ACT_VOLUME`) and Settings > Sound > Volume, both only with the feature (`radio-features.md` 4.2) |
+| `UI_SET_DMR_ID` | storage-cps | `ui_svc_storage.c`: the codeplug's own DMR ID (`codeplug_dmr_id`); a set (1..`CODEPLUG_DMR_ID_MAX`) posts a storage job that calls `codeplug_set_dmr_id`, and the radio core takes the new ID when `codeplug_serial()` changes. A CPS read shows it |
 | `ui_svc_vibrate` patterns (message, call, emergency), `UI_FEAT_VIBRATE` | radio-features | `ui_svc_radio.c` (CONFIG_VIBRATE): a table from `UI_VIBE_*` to `VIBE_*` for `radio_req_vibrate`; the feature bit when the board has `hal_power_t.vibrate` (`radio-features.md` 4.1). Weak no-op otherwise |
 | `ui_svc_ptt_block`, `ui_svc_emergency_active` | input / dmr-ext | `ui_svc_radio.c`: `input_set_ptt_block`; `ui_svc_emergency.c`: `dmr_emergency_state` |
 | backlight dim / off | radio-features | `ui.c`: `radio_backlight_pct` (dims on a low battery too) |

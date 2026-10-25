@@ -159,6 +159,10 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 	{ "emergency", "emergency:3101234" },
 	{ "volume", "softvol volkey up up" },
+#if CONFIG_DMR
+	{ "dmr_id", "ok 7 9 ok" },		// Settings > My radio
+	{ "dmr_id_entry", "ok 7 9 ok 3 1 0 9" },
+#endif
 	{ "volume_muted", "softvol volkey down down down down down down down down" },
 	{ "hotspot", "hotspot:on" },
 };
