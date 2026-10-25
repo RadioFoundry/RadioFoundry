@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// Talking to a radio that runs ODR, over its USB serial port (WebSerial): the debug link (docs/spec/debuglink.md:
+// Copyright (c) 2026 The RadioFoundry Authors
+// Talking to a radio that runs RadioFoundry, over its USB serial port (WebSerial): the debug link (docs/spec/debuglink.md:
 // VERSION, INFO_CHIP, READ_MEM) and the open-firmware CPS reads (docs/spec/open-firmware-cps.md 2.1 and 3: area 1 the
 // SPI flash, 5 the MCU flash, 9 the radio info, 10 the flash security registers). Read only, apart from the CPS
 // codeplug writes restore uses (X 1-3), which the radio limits to the codeplug areas.
@@ -8,10 +8,10 @@
 import { be32, concat, le32, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
 import { wire, note } from "../diag.js";
 
-export const ODR_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
+export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
 // driver owns the interfaces, so a page can only see that it is there (WebUSB lists it without claiming it)
-export const ODR_NET = { vendorId: 0x1FC9, productId: 0x0096 };
+export const RFOUNDRY_NET = { vendorId: 0x1FC9, productId: 0x0096 };
 const SOF1 = 0xA5, SOF2 = 0x5A;
 export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F };
 
@@ -70,7 +70,7 @@ export class SerialStream {
 	}
 
 	static async request() {
-		const port = await navigator.serial.requestPort({ filters: [ODR_USB] });
+		const port = await navigator.serial.requestPort({ filters: [RFOUNDRY_USB] });
 		return SerialStream.open(port);
 	}
 
@@ -241,7 +241,7 @@ export class Link {
 		throw new LinkError(`no answer to a codeplug read at 0x${addr.toString(16)}`);
 	}
 
-	// Read [addr, addr + size) of an area in pieces; stops early (and says so) when the radio refuses. ODR answers up
+	// Read [addr, addr + size) of an area in pieces; stops early (and says so) when the radio refuses. RadioFoundry answers up
 	// to 32 KB per read, older builds 2045 bytes (open-firmware-cps.md 2.1): each read takes what comes back.
 	async cpsDump(area, addr, size, { chunk = 32768, progress = () => {}, signal } = {}) {
 		const out = new Uint8Array(size);
@@ -297,7 +297,7 @@ export class Link {
 	}
 }
 
-// Ask a running ODR radio what it is. Returns null when nothing answers.
+// Ask a running RadioFoundry radio what it is. Returns null when nothing answers.
 export async function probe(link) {
 	try {
 		const v = await link.version();

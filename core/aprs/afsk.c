@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Bell 202 AFSK on PCM (afsk.h)
 #include <string.h>
 #include "aprs/afsk.h"
@@ -54,7 +54,7 @@ size_t afsk_mod(afsk_mod_t *m, const uint8_t *tones, uint32_t nbits, int16_t amp
 
 // Hysteresis on the normalized difference, in 1/256 (13 = 0.05)
 // The high passed path's corner, two first-order stages. A one-bit correlator is short and its passband wide, so
-// audio under the tones (a receiver's hum, sub-audible tone residue) leaks into the mark correlator. A DM-32UV heard
+// audio under the tones (a receiver's hum, sub-audible tone residue) leaks into the mark correlator. A radio heard
 // a flat transmitter with 320-400 Hz 1-10 dB under the tones and decoded about half the frames; high passed, all of
 // them (BENCH, docs/spec/aprs.md 5). Alone the filter costs weak signals (its phase shift between the tones moves the
 // edges), so the path as received runs beside it

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The VOX mic level (drivers/audio/miclevel): the log scale the DM-1701 and MD-380 analog taps use, the peak of a PCM
+// Copyright (c) 2026 The RadioFoundry Authors
+// The VOX mic level (drivers/audio/miclevel): the log scale the STM32 boards' analog taps use, the peak of a PCM
 // block from its mean, the envelope, and where tones of known level land against the core's VOX threshold
 // (100 - 8 x sensitivity, radio-features.md 3.4)
 #include <math.h>
@@ -15,8 +15,8 @@ static int failures;
 #define HALF	80	// the HR_C7000's 10 ms mic half at 8 kHz
 #define DECAY	((int)MICLEVEL_DECAY)
 
-// The analog-tap math the DM-1701 and MD-380 boards each kept a copy of before they called miclevel_log(x, 12)
-// (power_dm1701.c, power_md380.c), kept here so the shared scale can't drift from what they computed
+// The analog-tap math two STM32 boards each kept a copy of before they called miclevel_log(x, 12)
+// (in their power code), kept here so the shared scale can't drift from what they computed
 static uint8_t board_scale(uint32_t x)
 {
 	if (x == 0) {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * The DMR voice call stack, modem neutral: it talks only to a hal_dmr_modem_t (docs/spec/dmr-modem.md section 6) and
  * runs at task level.
@@ -19,8 +19,8 @@
  * (slot ticks are counted, not queued). Everything else, including the voice sink and source calls, happens in
  * dmr_call_poll(), from one task. The other functions must be called from that same task.
  */
-#ifndef ODR_DMR_CALL_H
-#define ODR_DMR_CALL_H
+#ifndef RFOUNDRY_DMR_CALL_H
+#define RFOUNDRY_DMR_CALL_H
 
 #include <stdint.h>
 #include <stdbool.h>

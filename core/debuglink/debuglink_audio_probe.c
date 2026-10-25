@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The audio probe (CONFIG_AUDIO_PROBE; docs/spec/debuglink.md 3.14, docs/spec/hardware-dm1701.md 21.3): a bench tool to find
 // out which audio-chip settings put FM receive audio on the PCM stream and PCM into the FM modulator. It reads and
 // writes the audio chip's registers (board.audio_tap->modem_reg), runs the board's PCM stream with its own callback
@@ -38,7 +38,7 @@ enum {
 					// -> writes u32, elapsed ms u32, base u8
 	PROBE_OP_RAMFEED	= 11,	// hold ms u16, gap ms u16, tone Hz u16, amplitude u16, n u8, n x (page, reg, xor)
 					// -> half switches u16, writes u16, max write lag ms u16, flips done u8
-	PROBE_OP_PIN_TONE	= 12,	// hz u16 (0 = off): square wave on the board's spare output (DM-1701: PC8)
+	PROBE_OP_PIN_TONE	= 12,	// hz u16 (0 = off): square wave on the board's spare output (hal_audio_tap.h)
 	PROBE_OP_PIN_SCAN	= 13,	// ms u16 -> n u8, n x changed-pin mask u16 (GPIOA, GPIOB, ...)
 	PROBE_OP_PIN_PWM	= 14,	// top u16, tone Hz u16 (0 = off), amplitude per mille u16 -> carrier Hz u32
 };

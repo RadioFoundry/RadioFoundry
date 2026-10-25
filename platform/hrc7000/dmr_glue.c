@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 DMR modem glue (dmr_glue.h): the slot engine (drivers/modem/hrc7000/hrc7000_dmr.c) on the SoC's modem
 // interrupts, the DMR PA one-shot on Timer 3, and the deferred event task that calls the DMR stack (docs/spec/dmr-modem.md
 // 6, modem-hrc7000.md 3, hardware-dm32.md 8.5, 8.6).
@@ -276,6 +276,14 @@ static bool bs_queue(int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
 	return hrc7000_bs_queue(&eng, ts, b, cach, emb_lc);
 }
 
+static bool bs_queue_at(uint32_t counter, int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
+			const uint8_t *emb_lc)
+{
+	return hrc7000_bs_queue_at(&eng, counter, ts, b, cach, emb_lc);
+}
+
+static bool bs_restart(uint32_t t_us, int8_t ts) { return active && hrc7000_bs_restart(&eng, t_us, ts); }
+
 static uint8_t bs_space(int8_t ts) { return hrc7000_bs_space(&eng, ts); }
 
 static void bs_stop(void)
@@ -289,7 +297,8 @@ static bool bs_keyed(void) { return hrc7000_bs_keyed(&eng); }
 
 #define SPLIT_OPS	.now_us = split_now_us, .slot_clock = slot_clock, .bs_start = bs_start, .bs_key = bs_key, \
 			.bs_queue = bs_queue, .bs_space = bs_space, .bs_stop = bs_stop, .bs_keyed = bs_keyed, \
-			.bs_cach = HRC7000_BS_CACH_METHOD,
+			.bs_cach = HRC7000_BS_CACH_METHOD, .bs_queue_at = bs_queue_at, .bs_restart = bs_restart, \
+			.bs_air_delay_us = HRC7000_BS_AIR_DELAY_US,
 #else
 #define SPLIT_OPS
 #endif
@@ -440,7 +449,7 @@ bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " u", m.txa_rx_us);
 		break;
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
-	case 12:	// the split duplex TX half's BS outbound (split-duplex.md 11.6), as the DM-1701's "bs" line
+	case 12:	// the split duplex TX half's BS outbound (split-duplex.md 11.6), as the HR_C6000 radios' "bs" line
 		put_kv(&o, "bs sl", bs.st.slots);
 		put_kv(&o, " b", bs.st.bursts);
 		put_kv(&o, " u", bs.st.underruns);

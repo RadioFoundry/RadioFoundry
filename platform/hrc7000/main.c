@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 entry (from crt0.S): transmitter off, clocks, interrupts, time base, the board's early init, then the core under FreeRTOS
 #include "config.h"
 #include "platform.h"

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio's SNMP agent (core/snmp, the real MIB on a fixed snapshot) on a UDP socket at 127.0.0.1, for testing with
-// independent managers (tools/odr_snmp.py, and the system's SNMP command line tools when installed):
+// independent managers (tools/rfoundry_snmp.py, and the system's SNMP command line tools when installed):
 //   snmpPeer PORT           answer requests until 1 s passes without one (read community public, write private)
-//   snmpPeer --trap PORT    send one odrCallStart and one coldStart notification to 127.0.0.1:PORT
+//   snmpPeer --trap PORT    send one rfoundryCallStart and one coldStart notification to 127.0.0.1:PORT
 // snmp_peer_check.sh drives it.
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -34,7 +34,7 @@ int main(int argc, char **argv)
 	data.uptimeMs = 987650;
 	data.dmrId = 3100001;
 	strcpy(data.name, "N0CALL");
-	data.board = "dm1701";
+	data.board = "board1";
 	data.firmware = "peer-test";
 	data.batteryMv = 7600;
 	data.batteryPct = 90;

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Two radios as one split duplex repeater (docs/spec/split-duplex.md 10.2): the --radio-port radio is the TX half,
 the --split-rx-port radio the RX half, each a CONFIG_HOTSPOT_SPLIT=y build. split_duplex_host.Pair runs the host
 side (time sync, epoch relay, AT relay) and repeats every burst heard into the TX half, as a duplex host does.
@@ -12,7 +12,7 @@ side (time sync, epoch relay, AT relay) and repeats every burst heard into the T
   right (TC alternating) and no underrun in STATUS. The repeat delay (the first header on the input to the first on
   the output) and the RX half's residual are printed.
 
-- test_split_pair_handheld (radio_tx, codeplug_write: also --split-ms-port): an ODR radio as the subscriber, the one
+- test_split_pair_handheld (radio_tx, codeplug_write: also --split-ms-port): a RadioFoundry radio as the subscriber, the one
   thing the bench can't be. Its current DMR channel is edited for the run (codeplug_edited puts it back) to receive
   the outbound and transmit on the input, on TS1 and then TS2 (--split-ms-ts). It hears the outbound, takes its slot
   from the CACH and keys 4 s. Asserted per slot: the RX half sends the call up under that slot's label only, every
@@ -31,6 +31,8 @@ import threading
 import time
 
 import pytest
+
+from rfoundry_hil import skip
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -51,6 +53,8 @@ def call_bursts(bursts):
     return [b for b in bursts if b["family"] in ("bs", "ms", "emb") and b["kind"] != "IDLE"]
 
 
+@pytest.mark.feature("split_duplex", owner="connect a second radio as the RX half (--split-rx-port)")
+@pytest.mark.second_radio
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
@@ -58,9 +62,10 @@ def test_split_pair_repeat(radio, sdr_bench, pytestconfig):
     rx_port = pytestconfig.getoption("--split-rx-port")
     fout = pytestconfig.getoption("--split-out-mhz")
     if not rx_port or not fout:
-        pytest.skip("needs a second radio as the RX half (--split-rx-port) and the repeater output (--split-out-mhz)")
+        skip("opt_in", "needs a second radio as the RX half (--split-rx-port) and the repeater output "
+                       "(--split-out-mhz)")
     if "HOTSPOT_SPLIT" not in radio.features():
-        pytest.skip("built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
+        skip("not_built", "built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
     import split_duplex_host as sdh
     fin, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     rdir = sdr_bench.run_dir("hil_split_pair")
@@ -74,7 +79,7 @@ def test_split_pair_repeat(radio, sdr_bench, pytestconfig):
                 for r, role in ((p.tx, sdh.ROLE_TX), (p.rx, sdh.ROLE_RX)):
                     _, info = sdh.require_split(r)
                     if not info["offered"] & (1 << (role - 1)):
-                        pytest.skip(f"{r.name}: the radio doesn't offer split duplex role {role}")
+                        skip("no_hw", f"{r.name}: the radio doesn't offer split duplex role {role}")
                 p.start(round(fin * 1e6), round(fout * 1e6), 0, cc, power_cap=1)
                 p.run_background()
                 time.sleep(2.0)
@@ -160,6 +165,8 @@ def set_ms_channel(number, rx_hz, tx_hz, ts, cc):
     return edit
 
 
+@pytest.mark.feature("split_duplex", optional=True, owner="connect a third radio as the subscriber (--split-ms-port)")
+@pytest.mark.second_radio
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
@@ -168,19 +175,19 @@ def test_split_pair_handheld(radio, sdr_bench, pytestconfig, backup_dir):
     rx_port, ms_port = pytestconfig.getoption("--split-rx-port"), pytestconfig.getoption("--split-ms-port")
     fout = pytestconfig.getoption("--split-out-mhz")
     if not (rx_port and ms_port and fout):
-        pytest.skip("needs the RX half (--split-rx-port), a subscriber radio (--split-ms-port) and the repeater "
-                    "output (--split-out-mhz)")
+        skip("opt_in", "needs the RX half (--split-rx-port), a subscriber radio (--split-ms-port) and the repeater "
+                       "output (--split-out-mhz)")
     if "HOTSPOT_SPLIT" not in radio.features():
-        pytest.skip("built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
+        skip("not_built", "built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
     import split_duplex_host as sdh
-    from odr_hil import Radio
+    from rfoundry_hil import Radio
     from test_cps import codeplug_edited
     fin, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     slots = [int(x) for x in pytestconfig.getoption("--split-ms-ts").split(",")]
     ms = Radio(ms_port)
     try:
         if ms.view().get("set.tx_inhibit") == "1":
-            pytest.skip("the subscriber's TX inhibit is on (set.tx_inhibit=1)")
+            skip("state", "the subscriber's TX inhibit is on (set.tx_inhibit=1)")
         own = int(ms.view(["dmr"])["dmr.own_id"])
         ms.go_home()
         ms.find_channel(round(fin * 1e6), "dmr")

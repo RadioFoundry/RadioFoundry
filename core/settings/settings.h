@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio's own settings, kept across power cycles (docs/spec/settings-store.md): where the radio was (zone,
 // channel, VFO), the VFO's settings and the user's preferences. Stored as versioned records appended to a ring of
 // flash sectors (board.flash->map settings area): a record is valid only once its commit word is programmed, so a
@@ -9,8 +9,8 @@
 //
 // Using it: s = settings_begin(); change fields; settings_end(now). No flash operation happens inside, so any task
 // may do this (the radio task included). Without a flash map everything works from RAM.
-#ifndef ODR_SETTINGS_H
-#define ODR_SETTINGS_H
+#ifndef RFOUNDRY_SETTINGS_H
+#define RFOUNDRY_SETTINGS_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -195,6 +195,17 @@ typedef struct {
 	uint8_t vfo2_rx_tone_type;	// tone_type_t
 	uint8_t vfo2_tx_tone_type;
 	uint8_t rs_dual_delay;		// radio_settings_t.dual_delay_ms: n - 1 steps of 100 ms, 0 = the default
+	uint8_t rs_bcast_step;		// radio_settings_t.bcast_step + 1, 0 = the default (200 kHz on the odd tenths)
+	uint8_t reserved8[3];
+	// The IP gateway's off-net route (dmrDataSettings_t.ipGatewayId, docs/spec/usb-network.md 3.1; appended for
+	// ip-addr), taken with the other ds_ fields: the gateway radio's DMR ID, 0 = off-net packets dropped
+	uint32_t ds_ip_gateway;
+	// A zone add or delete under way (core/codeplug/zone_settle.c): written before the codeplug's zone write, cleared
+	// with zone_index and roam_zones moved to match. Found set at power on, it is finished from the zone list
+	uint16_t zone_jrn_index;	// the index the zone was added at or deleted from
+	uint16_t zone_jrn_count;	// the stored zone count before it (0: only the built-in zone)
+	uint8_t zone_jrn_kind;		// SETTINGS_ZONE_JRN_*
+	uint8_t reserved8b[3];
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -204,6 +215,9 @@ typedef struct {
 #define SETTINGS_PAGES_MAX	16u
 #define SETTINGS_PAGES		((sizeof(settings_t) + SETTINGS_PAGE_BYTES - 1u) / SETTINGS_PAGE_BYTES)
 #define SETTINGS_PAGE_SHIFT	12	// a record's layout field: the page in bits 12-15, the layout in bits 0-11
+#define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
+#define SETTINGS_ZONE_JRN_ADD		1u
+#define SETTINGS_ZONE_JRN_DELETE	2u
 #define SETTINGS_DUAL_VFO	1025u	// dual_b: 1025 the first VFO, 1026 the second
 #define SETTINGS_DUAL_ON	0x01u	// dual_state: it ran at power off, and comes back at power on
 #define SETTINGS_DUAL_B_SEL	0x02u	// ... with B selected: dual_b is then A's (the radio powers up on B)

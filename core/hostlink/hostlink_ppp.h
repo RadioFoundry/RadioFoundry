@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The host link's PPP personality (CONFIG_NET_PPP, docs/spec/ppp.md): IPv4 over PPP (core/net/ppp.c) on the serial
 // host port, into the same IP gateway and services as the USB network adapter.
 //
@@ -8,8 +8,8 @@
 // have no meaning on PPP and are dropped). On a board that also has the USB network adapter, it wraps that one
 // (hostlink_ppp_set_usb from board_init): PPP while a PPP link runs on the serial port, the adapter otherwise.
 // The host link (hostlink.c) starts the link and feeds it the port's bytes while PPP has the port.
-#ifndef ODR_HOSTLINK_PPP_H
-#define ODR_HOSTLINK_PPP_H
+#ifndef RFOUNDRY_HOSTLINK_PPP_H
+#define RFOUNDRY_HOSTLINK_PPP_H
 
 #include <stdbool.h>
 #include <stdint.h>

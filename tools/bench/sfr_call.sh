@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Adapted from our earlier bench tool run_sfr_call.sh.
 #
@@ -13,13 +13,13 @@
 # `dmr_bench.py run S1` instead (raw SDR capture, the gateway stopped and restored around it).
 #
 # Env: PORT (the radio's MMDVM serial port) or UDP (host:port), POWER (radio RF level), MODEM_POWER, LOGDIR
-# (default /tmp/odr-bench), ODR_SDR_BENCH_HOST (default sdr-bench), ODR_SDR_BENCH_DIR (default ~/odr-bench, where bench_tx.py and
-# sdr_watch.py are copied: `dmr_bench.py sync`), RECEIVER (default SDR15, the 461.6875 MHz SDR receiver), ODR_SDR_BENCH_PY (default
-# /opt/odr-sdrbench/.venv/bin/python), ODR_SDR_BENCH_ENV_FILE (default /etc/odr-sdrbench/env).
+# (default /tmp/rfoundry-bench), RFOUNDRY_SDR_BENCH_HOST (default sdr-bench), RFOUNDRY_SDR_BENCH_DIR (default ~/rfoundry-bench, where bench_tx.py and
+# sdr_watch.py are copied: `dmr_bench.py sync`), RECEIVER (default SDR15, the 461.6875 MHz SDR receiver), RFOUNDRY_SDR_BENCH_PY (default
+# /opt/rfoundry-sdrbench/.venv/bin/python), RFOUNDRY_SDR_BENCH_ENV_FILE (default /etc/rfoundry-sdrbench/env).
 set -u
-S=$(cd "$(dirname "$0")" && pwd); L=${LOGDIR:-/tmp/odr-bench}; mkdir -p "$L"
-C=${ODR_SDR_BENCH_HOST:-sdr-bench}; BP=${ODR_SDR_BENCH_PY:-/opt/odr-sdrbench/.venv/bin/python}
-E=${ODR_SDR_BENCH_ENV_FILE:-/etc/odr-sdrbench/env}; D=${ODR_SDR_BENCH_DIR:-~/odr-bench}; R=${RECEIVER:-SDR15}
+S=$(cd "$(dirname "$0")" && pwd); L=${LOGDIR:-/tmp/rfoundry-bench}; mkdir -p "$L"
+C=${RFOUNDRY_SDR_BENCH_HOST:-sdr-bench}; BP=${RFOUNDRY_SDR_BENCH_PY:-/opt/rfoundry-sdrbench/.venv/bin/python}
+E=${RFOUNDRY_SDR_BENCH_ENV_FILE:-/etc/rfoundry-sdrbench/env}; D=${RFOUNDRY_SDR_BENCH_DIR:-~/rfoundry-bench}; R=${RECEIVER:-SDR15}
 name=$1; modem=$2; secs=$3; dbg=${4:-}
 if [ -n "${UDP:-}" ]; then link="--udp $UDP"; else link="--port ${PORT:?set PORT to the radio serial port or UDP}"; fi
 PY=${PY:-python3}

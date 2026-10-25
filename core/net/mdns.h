@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A small Multicast DNS responder with DNS service discovery (RFC 6762, RFC 6763) for the USB network personality
 // (docs/spec/mdns.md): the radio answers for <host>.local (its address on the link) and advertises one instance of
 // each service in a table. Probes its names at link up, announces them, answers queries (multicast, the unicast
@@ -8,8 +8,8 @@
 //
 // No RTOS and no gateway calls here: the user feeds datagrams to port 5353 in and calls mdnsTick every few ms; the
 // replies go out through mdns_io_t (core/net/net_services.c is the firmware glue, tests/host/mdnsTest.c the fake).
-#ifndef ODR_MDNS_H
-#define ODR_MDNS_H
+#ifndef RFOUNDRY_MDNS_H
+#define RFOUNDRY_MDNS_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -30,7 +30,7 @@ typedef struct {
 	uint32_t ip;
 	uint32_t dmr_id;
 	char callsign[17];		// "" = none
-	const char *board;		// "DM-1701"
+	const char *board;		// the board.toml model
 	const char *firmware;		// the git version
 } mdns_identity_t;
 

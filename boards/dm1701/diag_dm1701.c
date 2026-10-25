@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 diagnostics page lines: raw readings for bench checks (no bus traffic; everything is cached elsewhere)
 #include <stddef.h>
 #include "dm1701.h"
 #include "config.h"
 #if CONFIG_DMR
 #include "dmr_dm1701.h"
+#include "hrc/i2s_pcm.h"
 #endif
 
 #if CONFIG_DIAG
@@ -57,10 +58,10 @@ bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 #if CONFIG_DMR
 	// The DMR modem counters first (bring-up), then the board readings
-	if (i < DM1701_DMR_DIAG_LINES) {
-		return dm1701_dmr_stats_line(i, buf, len);
+	if (i < STM32_HRC_DMR_DIAG_LINES) {
+		return stm32_hrc_dmr_stats_line(i, buf, len);
 	}
-	i -= DM1701_DMR_DIAG_LINES;
+	i -= STM32_HRC_DMR_DIAG_LINES;
 #endif
 	out_t o = { buf, buf + len - 1 };
 	dm1701_radio_diag_t d;
@@ -130,8 +131,8 @@ bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len)
 	}
 #if CONFIG_DMR
 	case 11: {	// DMR PCM audio: blocks, overruns, blocks dropped
-		dm1701_audio_stats_t a;
-		dm1701_audio_stats(&a);
+		stm32_i2s_pcm_stats_t a;
+		stm32_i2s_pcm_stats(&a);
 		put(&o, "aud blk ");
 		put_u(&o, a.blocks);
 		put(&o, " ov ");
@@ -164,8 +165,8 @@ bool dm1701_diag_line(uint8_t i, char *buf, uint8_t len)
 void dm1701_diag_reset(void)
 {
 #if CONFIG_DMR
-	dm1701_dmr_stats_reset();
-	dm1701_audio_reset_stats();
+	stm32_hrc_dmr_stats_reset();
+	stm32_i2s_pcm_reset_stats();
 #endif
 }
 

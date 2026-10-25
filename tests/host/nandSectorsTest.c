@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // drivers/flash/nand_sectors on a simulated NAND region, and core/storage + core/settings on top of it.
 //
 // The simulated NAND: 2 KB pages with 64 spare bytes, erase sets a block to 0xFF, a page takes one program and only
@@ -1309,7 +1309,7 @@ static void test_cps(void)
 	// Channel 1's record is at 0x3790: name, then RX and TX as BCD 10 Hz units
 	CHECK(memcmp(&sec3[0x790], "First", 5) == 0);
 	memset(&sec3[0x790], 0xFF, 16);
-	memcpy(&sec3[0x790], "ODR DMR TG201", 13);
+	memcpy(&sec3[0x790], "Test DMR TG201", 14);
 	sec3[0x790 + 0x10] = 0x00; sec3[0x790 + 0x11] = 0x00; sec3[0x790 + 0x12] = 0x20; sec3[0x790 + 0x13] = 0x46;
 	sec3[0x790 + 0x14] = 0x00; sec3[0x790 + 0x15] = 0x00; sec3[0x790 + 0x16] = 0x20; sec3[0x790 + 0x17] = 0x46;
 	sec3[0x790 + 0x18] = 1;		// DMR
@@ -1319,8 +1319,8 @@ static void test_cps(void)
 	CHECK(cps_ctl(5, 0));
 	CHECK(codeplug_serial() != serial);
 	CHECK(codeplug_channel(1, &c));
-	CHECK(strcmp(c.name, "ODR DMR TG201") == 0 && c.rx_hz == 462000000u && c.mode == RADIO_MODE_DMR && c.color_code == 2);
-	CHECK(boot_big() && codeplug_channel(1, &c) && strcmp(c.name, "ODR DMR TG201") == 0);
+	CHECK(strcmp(c.name, "Test DMR TG201") == 0 && c.rx_hz == 462000000u && c.mode == RADIO_MODE_DMR && c.color_code == 2);
+	CHECK(boot_big() && codeplug_channel(1, &c) && strcmp(c.name, "Test DMR TG201") == 0);
 	CHECK(nand.violations == 0);
 }
 

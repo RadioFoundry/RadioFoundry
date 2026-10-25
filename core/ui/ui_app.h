@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The UI's behavior without the RTOS: one navigation stack of screens, logical actions in, drawing out
 // (docs/ux/information-architecture.md, docs/spec/ui.md). ui.c runs it in the UI task; the host simulator
 // (tests/host/sim/ui_sim.c) runs the same code against a simulated radio, codeplug and display.

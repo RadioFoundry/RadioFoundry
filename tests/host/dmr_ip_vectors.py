@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Test vectors for dmrDataTest (testSap3, testCRC9, testConfirmedTx), worked out from the standards apart from
 core/dmr/dmrData.c: the CRCs by polynomial division as ETSI TS 102 361-1 B.3.8 (CRC-CCITT), B.3.9 (CRC-32) and
 B.3.10 (CRC-9) describe them, the confirmed header as Table 9.10, the response as Figure 8.5 / 8.17, the compressed
@@ -48,8 +48,8 @@ print('udpc snmp', udpc(0x1234, False, 50000, 161).hex())
 print('udpc text group', udpc(7, True, 5016, 5016).hex())
 print('udpc lip->x', udpc(7, False, 5017, 6000).hex())
 
-# A confirmed rate 1/2 packet: SAP 3, dst 100, src 10005, ns 5, first try; pdu = udpc(0x0001, F, 5016, 5016) + "ODR"
-pdu = udpc(1, False, 5016, 5016) + b'ODR'
+# A confirmed rate 1/2 packet: SAP 3, dst 100, src 10005, ns 5, first try; pdu = udpc(0x0001, F, 5016, 5016) + "RadioFoundry"
+pdu = udpc(1, False, 5016, 5016) + b'RadioFoundry'
 dl = 10
 blocks = (len(pdu) + 4 + dl - 1) // dl
 pad = blocks * dl - 4 - len(pdu)

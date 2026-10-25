@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // KISS over TCP on port 8001 (see net_svc.h): the KISS framing of Chepponis and Karn ("The KISS TNC", 1987) on a TCP
 // stream, as APRS programs (APRSdroid, Xastir, YAAC ...) speak it to network TNCs. The frames are the same as on the
 // serial port's KISS TNC (core/aprs/aprs_host.c): data frames to RF after the APRS engine's checks, SetHardware 'G'

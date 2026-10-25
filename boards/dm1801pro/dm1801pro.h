@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Internal interfaces between the DM-1801 Pro board files
 #ifndef DM1801PRO_H
 #define DM1801PRO_H
@@ -10,12 +10,15 @@
 #include "dmr_glue.h"
 #include "audio_pcm.h"
 #include "vocoder.h"
+#include "rf/fd6818/fd6818.h"
 
 // Ops each board file provides
 extern const hal_display_t dm1801pro_display;
 extern const hal_input_t dm1801pro_input;
 extern const hal_radio_t dm1801pro_radio;
 extern const hal_power_t dm1801pro_power;
+// The FD6818 set-up tables (rf_tables_dm1801pro.c, hardware-dm1801pro.md 5)
+extern const fd6818_variant_t fd6818_variant_dm1801pro;
 
 // Physical key bits returned by dm1801pro_input.scan(); the matrix positions and the four direct pins are in
 // input_dm1801pro.c (hardware-dm1801pro.md 9.1)
@@ -55,9 +58,6 @@ void dm1801pro_speaker_pcm(bool on);
 #define DM1801PRO_AMP_BCAST	0x02u
 #define DM1801PRO_AMP_PCM	0x04u
 void dm1801pro_amp(uint8_t who, bool on);
-
-// --- Broadcast FM receiver (bcast_dm1801pro.c, CONFIG_BCAST_FM; the HAL is rda5807m_hal) ---
-void dm1801pro_bcast_init(void);
 
 // --- Accelerometer (accel_dm1801pro.c, CONFIG_DIAG): milli-g on x, y, z; false when the chip doesn't answer ---
 bool dm1801pro_accel_read(int16_t mg[3]);

@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // TYT MD-380 / MD-390 / Retevis RT3: board descriptor, clocks, reset-time pin levels, key map
 // (docs/spec/hardware-md380.md)
 #include "board.h"
 #include "config.h"
 #include "md380.h"
+#include "hrc/dmr_glue.h"
+#include "gps_uart/gps_uart.h"
+#include "hrc/vocoder.h"
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -19,9 +22,9 @@
 // The RTOS heap, and with it every task stack, in the CCM: zero wait states and off the bus the audio and ADC DMA
 // use. Nothing on a stack or from pvPortMalloc may be a DMA buffer (DMA can't reach the CCM): the DMA buffers are
 // statics in main RAM, checked where each stream is set up (md380.h DMA_RAM_OK)
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] RFOUNDRY_CPU_RAM_NOINIT __attribute__((aligned(8)));
 
-// Zero the CCM's .ccmbss (ODR_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
+// Zero the CCM's .ccmbss (RFOUNDRY_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
 extern uint32_t _sccmbss[], _eccmbss[];
 static void ccm_zero(void)
 {
@@ -30,8 +33,8 @@ static void ccm_zero(void)
 }
 __attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
 
-// One band per radio (hardware-md380.md 5.1), chosen at build time (board.mk MD380_BAND)
-#if MD380_VHF
+// One band per radio (hardware-md380.md 5.1), chosen at build time (board.mk BAND)
+#if RFOUNDRY_BAND_VHF
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 };
@@ -46,32 +49,33 @@ static const band_t bands[] = {
 // The stock radio has two power levels, about 1 W and 5 W (hardware-md380.md 5.6)
 static const char *const power_names[] = { "1W", "5W" };
 
-// docs/ux/information-architecture.md 7.1 on a radio without function or top keys (as the DM-32's few-key map): the
+// docs/ux/information-architecture.md 7.1 on a radio without function or top keys (a few-key map): the
 // zone and power are reached from the menus. Matrix positions are unconfirmed (hardware-md380.md 9.1)
 static const keymap_entry_t keymap[] = {
-	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false },
-	{ KEY_RED, ACT_BACK, ACT_BACK, false, false },
-	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true },
-	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
-	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false },
-	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ KEY_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false },
-	{ KEY_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false },
-	{ KEY_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false },
-	{ KEY_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false },
-	{ KEY_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false },
-	{ KEY_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false },
-	{ KEY_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false },
-	{ KEY_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
-	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false },
-	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
-	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ KEY_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 },
+	{ KEY_RED, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
+	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false, '*' },
+	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, '#' },
+	{ KEY_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },
+	{ KEY_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
+	{ KEY_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false, 0 },
+	{ KEY_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false, 0 },
+	{ KEY_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 },
+	{ KEY_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
+	{ KEY_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 },
+	{ KEY_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
+	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
+	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
+	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ KEY_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
+	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 
-// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): side key 1, side key 2
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom
 static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
+static const char *const side_key_names[] = { "SK1", "SK2" };
 
 #if CONFIG_CPS_OPENFW
 // open-firmware-cps.md 4: type 7 is the MD-380
@@ -84,7 +88,7 @@ static const hal_cps_t cps = {
 	.radio_type = cps_radio_type,
 	.rom_base = 0x08000000u,
 	.rom_size = 1024u * 1024u,
-	.security_read = md380_cps_security_read,
+	.security_read = stm32_spi_flash_cps_security_read,
 };
 #endif
 
@@ -93,7 +97,7 @@ const board_t board = {
 	// CAP_GPS: the G models; gps_present says whether this one has the module (hardware-md380.md 13). No
 	// CAP_VOLUME_POT: the knob sets the volume in the analog path, the MCU only sees its position. CAP_ENCODER: the
 	// channel knob is a 16-position switch, reported to the core as steps (input_md380.c)
-	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -104,18 +108,19 @@ const board_t board = {
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
 	.side_keys = side_keys,
+	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
 	.radio = &md380_radio,
 	.power = &md380_power,
-	.flash = &md380_flash,
+	.flash = &stm32_spi_flash,
 #if CONFIG_DIAG
 	.diag_line = md380_diag_line,
 	.diag_reset = md380_diag_reset,
 #endif
 #if CONFIG_DMR
-	.dmr = &md380_dmr,
+	.dmr = &stm32_hrc_dmr,
 	.audio = &md380_audio,
-	.vocoder = &md380_vocoder,
+	.vocoder = &stm32_vocoder,
 #endif
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,
@@ -126,13 +131,15 @@ const board_t board = {
 #endif
 #endif
 	.system = &stm32_system,
-	// 2S Li-ion as the DM-1701 (hardware-md380.md 10.1): low 6.2 V, critical 6.0 V (our choice)
+	// 2S Li-ion as the other STM32 radios (hardware-md380.md 10.1): low 6.2 V, critical 6.0 V (our choice)
 	.battery_low_mv = 6200,
 	.battery_critical_mv = 6000,
 #if CONFIG_CPS_OPENFW
 	.cps = &cps,
 #endif
-	.gps_present = md380_gps_present,
+#if CONFIG_GPS
+	.gps_present = stm32_gps_present,
+#endif
 };
 
 // hardware-md380.md 1.2: 8 MHz HSE, 72 MHz system clock, APB1 36 MHz, APB2 72 MHz, USB 48 MHz from PLL Q
@@ -233,7 +240,7 @@ void board_early_init(void)
 	reset_levels();		// latch the power before anything slow
 	if (!stm32_clock_init(&clock_crystal)) {
 		// A crystal is what the public notes describe (hardware-md380.md 1.2); an external clock fed in would need
-		// bypass mode, as on the DM-1701. Try that before staying on HSI (no USB there)
+		// bypass mode, as on the other STM32 radios. Try that before staying on HSI (no USB there)
 		stm32_clock_t bypass = clock_crystal;
 		bypass.hse_bypass = true;
 		(void)stm32_clock_init(&bypass);
@@ -244,10 +251,12 @@ void board_init(void)
 {
 	lcdbus = xSemaphoreCreateRecursiveMutex();
 	md380_power.init();
-	md380_flash.init();
+	md380_flash_init();
 	md380_cal_load();
 #if CONFIG_NET_PPP && CONFIG_USB_NETWORK
 	hostlink_ppp_set_usb(&usb_ncm_netif);
 #endif
+#if CONFIG_GPS
 	md380_gps_init();
+#endif
 }

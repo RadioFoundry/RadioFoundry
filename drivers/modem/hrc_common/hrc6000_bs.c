@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The split duplex TX half's continuous BS outbound on the HR_C6000 (see hrc6000_bs.h)
 #include <string.h>
 #include "hrc6000_bs.h"
@@ -20,6 +20,7 @@
 
 #define L2_ACTIVE	0xE3	// own timing (modem-hrc6000.md 6.2)
 #define L2_PASSIVE	0xC3
+#define CTL_SYNC_FAIL	0x20	// 0x41 SyncFail: drop the slot sync and search again
 #define L2_MCU_CRC	0x08
 #define CTL_TX		0x80
 #define CTL_NONE	0x00
@@ -132,8 +133,8 @@ static uint8_t q_count(const hrc6000_bs_t *bs, int k)
 	return (uint8_t)((bs->head[k] + HRC6000_BS_Q + 1u - bs->tail[k]) % (HRC6000_BS_Q + 1u));
 }
 
-bool hrc6000_bs_queue(hrc6000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
-		      const uint8_t *emb_lc)
+static bool queue(hrc6000_dmr_t *e, bool tagged, uint32_t counter, int8_t ts, const dmr_tx_burst_t *b,
+		  const dmr_cach_t *cach, const uint8_t *emb_lc)
 {
 	lock(e);
 	hrc6000_bs_t *bs = e->bs;
@@ -145,6 +146,8 @@ bool hrc6000_bs_queue(hrc6000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, cons
 		// past q[k] there (every fourth TS2 burst went out as a zeroed PI header; gotchas 8.x)
 		uint8_t at = bs->head[k];
 
+		bs->q_at[k][at] = tagged;
+		bs->q_at_c[k][at] = counter;
 		bs->q[k][at] = *b;
 		bs->q_cach_valid[k][at] = cach != NULL;
 		if (cach != NULL) {
@@ -159,6 +162,63 @@ bool hrc6000_bs_queue(hrc6000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, cons
 	}
 	unlock(e);
 	return ok;
+}
+
+bool hrc6000_bs_queue(hrc6000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
+		      const uint8_t *emb_lc)
+{
+	return queue(e, false, 0, ts, b, cach, emb_lc);
+}
+
+bool hrc6000_bs_queue_at(hrc6000_dmr_t *e, uint32_t counter, int8_t ts, const dmr_tx_burst_t *b,
+			 const dmr_cach_t *cach, const uint8_t *emb_lc)
+{
+	return queue(e, true, counter, ts, b, cach, emb_lc);
+}
+
+bool hrc6000_bs_restart(hrc6000_dmr_t *e, uint32_t t_us, int8_t ts)
+{
+	lock(e);
+	hrc6000_bs_t *bs = e->bs;
+	bool ok = (bs != NULL) && !bs->keyed && !bs->pa;
+
+	if (ok) {
+		// As before a role's start (the receive restart, modem-hrc6000.md 5.1): passive timing, then the slot sync
+		// dropped. Clearing TxEn and RxEn alone left the timer running on the bench
+		w(e, R_SLOT_CTL, CTL_NONE);
+		w(e, R_L2_CTL, L2_PASSIVE);
+		w(e, R_SLOT_CTL, CTL_SYNC_FAIL);
+		w(e, R_SLOT_CTL, CTL_NONE);
+		w(e, R_SLOT_CTL, CTL_SYNC_FAIL);
+		w(e, R_SLOT_CTL, CTL_NONE);
+		bs->restarting = true;
+		e->timing = false;
+	}
+	unlock(e);
+	if (!ok) {
+		return false;
+	}
+	uint32_t t0 = e->ops->now_us(e->ops->ctx);
+	int32_t d = (int32_t)(t_us - t0) % 30000;	// signed: 2^32 is no multiple of a slot
+	uint32_t ahead = (uint32_t)((d < 0) ? d + 30000 : d);
+
+	if (ahead < 2000u) {
+		ahead += 30000u;
+	}
+	uint32_t target = t0 + ahead;
+
+	while ((int32_t)(e->ops->now_us(e->ops->ctx) - target) < 0) {
+	}
+	lock(e);
+	w(e, R_L2_CTL, L2_ACTIVE);		// own timing again, from now
+	bs->rs_t = e->ops->now_us(e->ops->ctx);
+	bs->rs_n = 0;
+	bs->restart_ts = ts;			// slot ts starts at the first boundary from here
+	bs->restarting = false;
+	bs->on_air = false;
+	bs->st.restarts++;
+	unlock(e);
+	return true;
 }
 
 uint8_t hrc6000_bs_space(const hrc6000_dmr_t *e, int8_t ts)
@@ -329,10 +389,21 @@ void hrc6000_bs_isr_timeslot(hrc6000_dmr_t *e)
 	hrc6000_bs_t *bs = e->bs;
 	uint32_t t = e->ops->now_us(e->ops->ctx);
 
+	if ((bs->st.restarts > 0) && (bs->rs_n < 3) && !bs->restarting) {
+		bs->st.rs_dt[bs->rs_n++] = (int32_t)(t - bs->rs_t);
+	}
+	bs->st.rs_ignored += bs->restarting;
+	if (bs->restarting || (e->timing && ((uint32_t)(t - e->t_tick) < 15000u))) {
+		return;		// bs_restart waits, or one more interrupt in the same slot
+	}
 	e->tick++;
 	e->st.ticks++;
 	e->t_tick = t;
 	e->timing = true;
+	if (bs->restart_ts != 0) {
+		bs->base_tick = e->tick - ((bs->restart_ts == 1) ? 1u : 0u);	// ts_of(tick) = restart_ts
+		bs->restart_ts = 0;
+	}
 	bs->st.slots++;
 	bs->ts_tick = ts_of(bs, e->tick);
 	int8_t next = ts_of(bs, e->tick + 1u);
@@ -365,7 +436,18 @@ void hrc6000_bs_isr_timeslot(hrc6000_dmr_t *e)
 	const dmr_tx_burst_t *b;
 	const uint8_t *lc = NULL;
 
-	if (q_count(bs, k) > 0) {
+	// A burst for a numbered slot that has passed is dropped; one for a later slot waits. The slot set up here starts
+	// at the next boundary, so it is numbered tick + 1
+	uint32_t slot = e->tick + 1u;
+
+	while ((q_count(bs, k) > 0) && bs->q_at[k][bs->tail[k]] && ((int32_t)(bs->q_at_c[k][bs->tail[k]] - slot) < 0)) {
+		bs->tail[k] = (uint8_t)((bs->tail[k] + 1u) % (HRC6000_BS_Q + 1u));
+		bs->st.at_late++;
+	}
+	bool wait = (q_count(bs, k) > 0) && bs->q_at[k][bs->tail[k]] && (bs->q_at_c[k][bs->tail[k]] != slot);
+
+	bs->st.at_wait += wait;
+	if ((q_count(bs, k) > 0) && !wait) {
 		uint8_t at = bs->tail[k];
 
 		b = &bs->q[k][at];

@@ -1,18 +1,21 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The DMR VFO (docs/spec/dmr-voice.md 2.1), radio only, nothing transmitted: the VFO's mode, color code, slot and
 talk target are set over the debug link (RADIO ops 31 and 15) and read back from the `core` and `dmr` views; they
 are the VFO's own settings (no temporary flag), and a channel change and back keeps them. The VFO is put back to FM
 with color code 1, slot 1 and talkgroup 9 (the defaults) afterwards, which is what a VFO that was never touched has."""
+from rfoundry_hil import skip
+
 import pytest
 
 
+@pytest.mark.feature("vfo_dmr")
 def test_vfo_dmr_settings(radio):
     if "VFO_DMR" not in radio.features() or "VFO_FM" not in radio.features():
-        pytest.skip("built without both VFO kinds")
+        skip("not_built", "built without both VFO kinds")
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     L = radio.link
     with radio.vfo_session():
         try:

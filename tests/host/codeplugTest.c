@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // core/codeplug against synthetic flash images: an open-firmware codeplug, an erased flash, no flash at all
 #include <stdio.h>
 #include <stdlib.h>

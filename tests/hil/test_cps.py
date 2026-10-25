@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The open-firmware CPS shim (docs/spec/cps-protocol.md 2) and the settings store (docs/spec/settings-store.md) on the
 radio, through tools/cps_client.py the way qdmr talks to it.
 
@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, as_int, find_ports
+from rfoundry_hil import DebugLink, DebugLinkError, as_int, board_entry, board_id, find_ports, skip
 import cps_client
 
 QDMR = cps_client.REGIONS["qdmr"]
@@ -37,18 +37,20 @@ def storage(radio):
     return radio.view(["storage"])
 
 
+@pytest.mark.feature("cps_openfw")
 def test_cps_info(radio):
     info = cps_session(radio, lambda c: c.info())
     assert info["struct"] == 3, info
-    # The type qdmr knows the radio by (cps-protocol.md 2.2): the DM-1701's own; other radios one qdmr knows (a board
-    # without a hal_cps_t reports the shim's default, 6)
+    # The type qdmr knows the radio by (cps-protocol.md 2.2): the board's board.toml [cps] radio_types; without one,
+    # any type qdmr knows (a board without a hal_cps_t reports the shim's default, 6)
     board_name = radio.version().get("board")
-    want = (8, 10) if board_name == "DM-1701" else tuple(cps_client.RADIO_TYPES)
+    want = tuple(board_entry(board_id(board_name)).get("cps", {}).get("radio_types", cps_client.RADIO_TYPES))
     assert info["radio_type"] in want, f"radio type {info['radio_type']} on the {board_name}: {info}"
     assert info["flash_id"] not in (0, 0xFFFFFFFF), info
     assert info["git"], info
 
 
+@pytest.mark.feature("cps_openfw")
 def test_cps_readback_matches(radio, tmp_path):
     """Two reads of the qdmr regions are identical; the current channel matches the decoded record"""
     a = cps_session(radio, lambda c: c.read_image(QDMR))
@@ -59,9 +61,9 @@ def test_cps_readback_matches(radio, tmp_path):
 
     v = radio.core()
     if v.get("codeplug") != "open-firmware":
-        pytest.skip(f"the radio runs the {v.get('codeplug')} codeplug: nothing stored to compare with")
+        skip("state", f"the radio runs the {v.get('codeplug')} codeplug: nothing stored to compare with")
     if v.get("vfo") == "1" or as_int(v.get("channel_number"), 0) == 0:
-        pytest.skip("the radio is in the VFO: no channel to compare")
+        skip("state", "the radio is in the VFO: no channel to compare")
     ch = cps_client.decode_channel(a, as_int(v["channel_number"]))
     assert ch is not None, f"channel {v['channel_number']} not marked used in the read"
     assert ch["name"] == v["channel_name"], (ch, v["channel_name"])
@@ -73,14 +75,15 @@ def test_cps_readback_matches(radio, tmp_path):
     assert as_int(s.get("cps.overflows"), 0) == 0 and as_int(s.get("storage.errors"), 0) == 0, s
 
 
+@pytest.mark.feature("settings_store")
 def test_settings_saved(radio):
     """A channel change is saved within SETTINGS_SAVE_DELAY_MS (2 s); no failures or torn records"""
     v = radio.core()
     if v.get("vfo") == "1" or as_int(v.get("zone_size"), 0) < 2:
-        pytest.skip("needs a zone with two channels or more, on a channel")
+        skip("state", "needs a zone with two channels or more, on a channel")
     s0 = storage(radio)
     if s0.get("settings.load") == "ram":
-        pytest.skip("no flash settings area on this board")
+        skip("no_hw", "no flash settings area on this board")
     assert as_int(s0["settings.failures"]) == 0, s0
     pos = (as_int(v["zone_pos"]) + 1) % as_int(v["zone_size"])
     radio.link.zone_pos(pos)
@@ -106,11 +109,12 @@ def reconnect(radio, timeout=20.0):
     raise AssertionError("the radio did not come back after the restart")
 
 
+@pytest.mark.feature("settings_store")
 @pytest.mark.reboot
 def test_settings_survive_restart(radio):
     v = radio.core()
     if v.get("vfo") == "1" or as_int(v.get("zone_size"), 0) < 2:
-        pytest.skip("needs a zone with two channels or more, on a channel")
+        skip("state", "needs a zone with two channels or more, on a channel")
     pos = (as_int(v["zone_pos"]) + 1) % as_int(v["zone_size"])
     radio.link.zone_pos(pos)
     radio.wait_for(lambda s: s.get("settings.dirty") == "0", timeout=5.0, sections=("storage",),
@@ -145,10 +149,10 @@ def read_backup(radio, backup_dir, tag):
 def codeplug_edited(radio, backup_dir, edit, tag):
     """Back the codeplug up (read_backup), write edit(copy of the backup) over CPS (only the sectors that differ),
     check the radio reads back exactly the edit, yield (backup, edited); afterwards write the backup again over
-    whatever the radio holds then and verify it byte for byte. With --codeplug-image (ODR_HIL_CODEPLUG_IMAGE) that
+    whatever the radio holds then and verify it byte for byte. With --codeplug-image (RFOUNDRY_HIL_CODEPLUG_IMAGE) that
     file is the backup and only the sectors the edit writes are read, before the write (a stale file fails there),
     after it and after the restore."""
-    path = os.environ.get("ODR_HIL_CODEPLUG_IMAGE")
+    path = os.environ.get("RFOUNDRY_HIL_CODEPLUG_IMAGE")
     if path:
         backup = bytes(cps_client.load_image(path))
     else:
@@ -158,7 +162,7 @@ def codeplug_edited(radio, backup_dir, edit, tag):
     changed = cps_client.compare(backup, edited, QDMR, skip=())
     assert changed, "the edit changes nothing"
     check = QDMR                                # what is read back after the write and after the restore
-    if os.environ.get("ODR_HIL_CODEPLUG_IMAGE"):
+    if os.environ.get("RFOUNDRY_HIL_CODEPLUG_IMAGE"):
         # Only the sectors the edit writes are read: they must hold the file's bytes, else the file is stale
         spans = [(max(s, n * cps_client.SECTOR), min(e, (n + 1) * cps_client.SECTOR))
                  for n, s, e in cps_client.plan_write(edited, QDMR, backup)]
@@ -176,7 +180,7 @@ def codeplug_edited(radio, backup_dir, edit, tag):
     finally:
         try:
             # With --codeplug-image the radio holds the edit (checked above), so only the edited sectors go back
-            now = edited if os.environ.get("ODR_HIL_CODEPLUG_IMAGE") else \
+            now = edited if os.environ.get("RFOUNDRY_HIL_CODEPLUG_IMAGE") else \
                 cps_session(radio, lambda c: c.read_image(QDMR))
         except Exception:                       # write every sector of the edit's plan if the read fails
             now = edited
@@ -203,6 +207,7 @@ def pick_channel(radio, image):
     return number
 
 
+@pytest.mark.feature("cps_openfw")
 def test_cps_write_dry_run(radio, backup_dir):
     """Radio only, nothing written: everything test_cps_write_restore relies on, checked before any write. Two reads
     identical, the backup file reads back, the channel rename changes only that name's 16 bytes, writing the edit
@@ -211,10 +216,10 @@ def test_cps_write_dry_run(radio, backup_dir):
     backup, _ = read_backup(radio, backup_dir, "dryrun")
     number = pick_channel(radio, backup)
     if number == 0:
-        pytest.skip("no stored channel to edit")
+        skip("state", "no stored channel to edit")
     old = cps_client.decode_channel(backup, number)["name"]
     edited = bytearray(backup)
-    cps_client.set_channel_name(edited, number, "ODR HIL" if old != "ODR HIL" else "ODR HIL 2")
+    cps_client.set_channel_name(edited, number, "RadioFoundry HIL" if old != "RadioFoundry HIL" else "RadioFoundry HIL 2")
     _, rec = cps_client.channel_addr(number)
     changed = cps_client.compare(backup, edited, QDMR, skip=())
     assert changed and all(rec <= a < rec + 16 for a, _, _ in changed), f"the edit touches {changed}"
@@ -228,16 +233,17 @@ def test_cps_write_dry_run(radio, backup_dir):
     print(f"dry run: channel {number} {old!r}: {len(changed)} bytes, sectors {[hex(j[0]) for j in write_plan]}")
 
 
+@pytest.mark.feature("cps_openfw")
 @pytest.mark.codeplug_write
 def test_cps_write_restore(radio, backup_dir):
     """Back up, rename one channel over CPS, read it back, restore the backup and verify it byte for byte"""
     probe, _ = read_backup(radio, backup_dir, "probe")
     number = pick_channel(radio, probe)
     if number == 0:
-        pytest.skip("no stored channel to edit")
+        skip("state", "no stored channel to edit")
     v = radio.core()
     old = cps_client.decode_channel(probe, number)["name"]
-    new = "ODR HIL" if old != "ODR HIL" else "ODR HIL 2"
+    new = "RadioFoundry HIL" if old != "RadioFoundry HIL" else "RadioFoundry HIL 2"
     with codeplug_edited(radio, backup_dir, lambda img: cps_client.set_channel_name(img, number, new), "rename") \
             as (_, edited):
         assert cps_client.decode_channel(edited, number)["name"] == new
@@ -249,16 +255,17 @@ def test_cps_write_restore(radio, backup_dir):
     assert as_int(s["cps.commits"]) >= 2 and as_int(s["storage.errors"]) == 0, s
 
 
+@pytest.mark.feature("settings_store")
 def test_storage_region(radio):
     """The settings / journal region: its state is reported, the read window holds, a read outside it is refused.
-    A foreign region (another firmware's data) is reported, not claimed: `odr_debug.py storage claim` does that"""
+    A foreign region (another firmware's data) is reported, not claimed: `rfoundry_debug.py storage claim` does that"""
     info = radio.link.storage_info()
     s = storage(radio)
     assert s.get("storage.region") == info["region"], (s, info)
     if info["region"] == "foreign":
         assert s.get("settings.load") == "foreign" and s.get("storage.journal") == "foreign", s
-        pytest.skip("the settings / journal region holds another firmware's data: dump and claim it with "
-                    "tools/odr_debug.py storage claim (writes are refused until then)")
+        skip("state", "the settings / journal region holds another firmware's data: dump and claim it with "
+                      "tools/rfoundry_debug.py storage claim --out DIR (writes are refused until then)")
     assert info["region"] == "ours" and s.get("storage.journal") == "ok", (s, info)
     addr, _ = info["ranges"]["settings"]
     assert len(radio.link.storage_read(addr, 64)) == 64

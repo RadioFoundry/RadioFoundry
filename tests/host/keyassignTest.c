@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Side key assignment (core/input/keyassign.c, docs/spec/ui.md 3.1): the quick-key slots with and without our marker,
 // what each slot may hold, and the key map built from them, run through the gesture engine
 #include <stdio.h>
@@ -13,13 +13,13 @@ static int checks;
 
 enum { K_OK, K_SK1, K_SK2, K_TOP, K_PTT };
 
-// The DM-1701's side keys: SK1 monitor (held), SK2 talk target / scan, top power / emergency
+// Side keys as on a typical handheld: SK1 monitor (held), SK2 talk target / scan, top power / emergency
 static const keymap_entry_t base[] = {
-	{ K_OK, ACT_SELECT, ACT_SELECT, false, false },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false },
-	{ K_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ K_OK, ACT_SELECT, ACT_SELECT, false, false, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false, 0 },
+	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 #define N	(sizeof(base) / sizeof(base[0]))
 static const uint8_t side[] = { K_SK1, K_SK2, K_TOP };
@@ -49,9 +49,9 @@ static void test_marker(void)
 	CHECK(memcmp(map, base, sizeof(map)) == 0);
 	// The first change writes the marker and clears the foreign slots
 	keyassign_set(s, 1, true, KEYFN_SCAN);
-	CHECK(s[0] == KEYASSIGN_MARKER && s[4] == KEYFN_SCAN);
+	CHECK(s[0] == KEYASSIGN_MARKER && s[2] == (uint16_t)(KEYFN_SCAN << 8));
 	for (unsigned i = 1; i < KEYASSIGN_SLOTS; i++) {
-		CHECK(i == 4 || s[i] == 0);
+		CHECK(i == 2 || s[i] == 0);
 	}
 	CHECK(keyassign_get(s, 1, true) == KEYFN_SCAN && keyassign_get(s, 0, false) == KEYFN_DEFAULT);
 	// An unknown value reads as the default; a role past the last one is ignored
@@ -59,6 +59,30 @@ static void test_marker(void)
 	CHECK(keyassign_get(s, 0, false) == KEYFN_DEFAULT);
 	keyassign_set(s, KEYASSIGN_ROLES, false, KEYFN_POWER);
 	CHECK(s[7] == 0 && keyassign_get(s, KEYASSIGN_ROLES, false) == KEYFN_DEFAULT);
+}
+
+static void test_layouts(void)
+{
+	uint16_t s[KEYASSIGN_SLOTS] = { KEYASSIGN_MARKER_V1, KEYFN_POWER, KEYFN_ZONE_UP, 0, 0, KEYFN_SCAN, 0 };
+	// Layout 1 (three roles, a slot per press and per hold) reads as is
+	CHECK(keyassign_get(s, 0, false) == KEYFN_POWER && keyassign_get(s, 0, true) == KEYFN_ZONE_UP);
+	CHECK(keyassign_get(s, 2, false) == KEYFN_SCAN && keyassign_get(s, 3, false) == KEYFN_DEFAULT);
+	// The first change converts it to layout 2 and keeps what was set
+	keyassign_set(s, 8, true, KEYFN_ZONE_UP);
+	CHECK(s[0] == KEYASSIGN_MARKER);
+	CHECK(keyassign_get(s, 0, false) == KEYFN_POWER && keyassign_get(s, 0, true) == KEYFN_ZONE_UP);
+	CHECK(keyassign_get(s, 2, false) == KEYFN_SCAN && keyassign_get(s, 1, false) == KEYFN_DEFAULT);
+	CHECK(keyassign_get(s, 8, true) == KEYFN_ZONE_UP && keyassign_get(s, 8, false) == KEYFN_DEFAULT);
+	// Every role has its own slot: press and hold don't disturb each other or a neighbor
+	for (uint8_t r = 0; r < KEYASSIGN_ROLES; r++) {
+		keyassign_set(s, r, false, KEYFN_SCAN);
+		keyassign_set(s, r, true, KEYFN_POWER);
+	}
+	keyassign_set(s, 4, false, KEYFN_DEFAULT);
+	for (uint8_t r = 0; r < KEYASSIGN_ROLES; r++) {
+		CHECK(keyassign_get(s, r, false) == (r == 4 ? KEYFN_DEFAULT : KEYFN_SCAN));
+		CHECK(keyassign_get(s, r, true) == KEYFN_POWER);
+	}
 }
 
 static void test_allowed(void)
@@ -236,7 +260,7 @@ static void test_engine(void)
 // press (docs/ux/information-architecture.md 2). Read from the boards' sources: they don't build on the host
 static void test_board_defaults(void)
 {
-	static const char *const boards[] = { "db25d", "dm1701", "dm1801pro", "dm32", "md380" };
+	static const char *const boards[] = { BOARD_IDS };	// the Makefile lists boards/*/board.c
 	int toggles = 0;
 	for (unsigned b = 0; b < sizeof boards / sizeof boards[0]; b++) {
 		char path[64];
@@ -260,12 +284,13 @@ static void test_board_defaults(void)
 		}
 		fclose(f);
 	}
-	CHECK(toggles == 1);	// the DM-1801 Pro's VFO/MR key
+	CHECK(toggles == 1);	// a VFO/MR key
 }
 
 int main(void)
 {
 	test_marker();
+	test_layouts();
 	test_allowed();
 	test_build();
 	test_toggles();

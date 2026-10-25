@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Host test of the MMDVM hotspot's SFR mode (core/hotspot/hotspotSfr.c on core/dmr/sfrRunner.c and core/dmr/sfr.c),
 // through the MMDVM protocol (mmdvm.c) and the hotspot engine (hotspot.c), against the simulated DMR modem: the
 // trigger (duplex, RX = TX), the version suffix, the status bytes, an RF call repeated on the outbound slot and sent
@@ -41,7 +41,7 @@ static void io_write(const uint8_t *buf, size_t len)
 	}
 }
 
-static const mmdvm_io_t io = { .write = io_write, .description = "OpenDigitalRadio Test 0123abcd" };
+static const mmdvm_io_t io = { .write = io_write, .description = "RadioFoundry Test 0123abcd" };
 
 static bool r_enter(uint32_t rx) { (void)rx; return true; }
 static bool r_set_freq(uint32_t rx, uint32_t tx) { (void)rx; (void)tx; return true; }
@@ -292,7 +292,7 @@ static void test_trigger(void)
 	CHECK(v != NULL);
 	memset(d, 0, sizeof(d));
 	memcpy(d, v + 4, (size_t)(v[1] - 4));
-	CHECK(strstr(d, "OpenDigitalRadio Test 0123abcd SFR TS1>TS2 TS") != NULL);	// announced, on or not (6.1)
+	CHECK(strstr(d, "RadioFoundry Test 0123abcd SFR TS1>TS2 TS") != NULL);	// announced, on or not (6.1)
 
 	// Simplex: no SFR, no extra status bytes, DATA1 refused
 	configure(true, 1);
@@ -507,7 +507,7 @@ static void test_rf_priority(void)
 
 // A call of silence (the SDR bench's test call): every superframe's burst B is the same as the last one's. At the
 // 90 ms repeat latency our copy is out of the echo window when the next one arrives; a modem without tx_fill repeated
-// 210 ms late and dropped 3 of them as our echo (DM-32UV, HIL 2026-10-16)
+// 210 ms late and dropped 3 of them as our echo (HIL 2026-10-16)
 static void test_silent_call(void)
 {
 	hotspot_sfr_view_t v;
@@ -638,11 +638,11 @@ static void test_vendor(void)
 
 	sfr_on();
 	o = out_count;
-	host(MMDVM_ODR_SFR_DEBUG, p, 1);
-	CHECK(nak_reason(MMDVM_ODR_SFR_DEBUG, o) == MMDVM_NAK_INVALID);
+	host(MMDVM_RFOUNDRY_SFR_DEBUG, p, 1);
+	CHECK(nak_reason(MMDVM_RFOUNDRY_SFR_DEBUG, o) == MMDVM_NAK_INVALID);
 	o = out_count;
-	host(MMDVM_ODR_SFR_DEBUG, p, 7);
-	CHECK(reply(MMDVM_ACK, MMDVM_ODR_SFR_DEBUG, o));
+	host(MMDVM_RFOUNDRY_SFR_DEBUG, p, 7);
+	CHECK(reply(MMDVM_ACK, MMDVM_RFOUNDRY_SFR_DEBUG, o));
 	host(MMDVM_GET_VERSION, NULL, 0);
 	v = last_out(MMDVM_GET_VERSION);
 	memset(d, 0, sizeof(d));

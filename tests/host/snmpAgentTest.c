@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The SNMP agent's firmware glue (core/snmp/snmp_agent.c) on fakes of the radio, the settings, the IP gateway and the
 // USB network interface: requests from the host answered at once (and retried while the IN endpoint is busy), requests
 // over the air through the one-request mailbox (size limit, busy, the answer gap, RF write access, the air side busy
 // until the give-up time), settings saved on SET and from the debug link, authentication-failure notifications to the
-// host, the agent switched off; then mutated requests from both sides (fuzz.h; ODR_FUZZ_ITERS).
+// host, the agent switched off; then mutated requests from both sides (fuzz.h; RFOUNDRY_FUZZ_ITERS).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,7 +88,7 @@ static bool air_busy;
 static int air_sent, air_len;
 static uint32_t air_dst;
 static uint8_t air_buf[1600];
-bool ipGatewayIPToAir(bool group, uint32_t dst, uint8_t proto, const uint8_t *l4, int n)
+bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t proto, const uint8_t *l4, int n)
 {
 	if (air_busy) {
 		return false;
@@ -237,9 +237,9 @@ static void test_usb(void)
 	from_host(q, qn);
 	CHECK(usb_sent == 1 && usb_ip == host_ip && usb_sport == 161 && usb_dport == 40000);
 	CHECK(answer(usb_buf, usb_len, text, &nb) == 0 && nb == 1 && strcmp(text, "CPCALL") == 0);
-	memcpy(stored.radio_name, "ODRTEST", 7);
+	memcpy(stored.radio_name, "RADIO01", 7);
 	from_host(q, qn);
-	CHECK(usb_sent == 2 && answer(usb_buf, usb_len, text, NULL) == 0 && strcmp(text, "ODRTEST") == 0);
+	CHECK(usb_sent == 2 && answer(usb_buf, usb_len, text, NULL) == 0 && strcmp(text, "RADIO01") == 0);
 	// a full SETTINGS_NAME_LEN name with no NUL in settings is cut at the MIB's limit, never read past
 	memset(stored.radio_name, 'Z', sizeof(stored.radio_name));
 	from_host(q, qn);
@@ -352,7 +352,7 @@ static void test_rf(void)
 	// the UDP header: 161 -> the requester's port, its length; the message after it within SNMP_RF_MAX
 	CHECK(air_len > 8 && air_len <= 8 + SNMP_RF_MAX && air_buf[0] == 0 && air_buf[1] == 161 && air_buf[2] == (41000 >> 8) &&
 	      air_buf[3] == (41000 & 0xFF) && ((air_buf[4] << 8) | air_buf[5]) == air_len);
-	CHECK(answer(air_buf + 8, air_len - 8, text, NULL) == 0 && strncmp(text, "OpenDigitalRadio testboard", 26) == 0);
+	CHECK(answer(air_buf + 8, air_len - 8, text, NULL) == 0 && strncmp(text, "RadioFoundry testboard", 22) == 0);
 	snmp_agent_stats(&s1);
 	CHECK(s1.rf_requests == s0.rf_requests + 2 && s1.rf_answers == s0.rf_answers + 1 && s1.rf_dropped == s0.rf_dropped + 1);
 

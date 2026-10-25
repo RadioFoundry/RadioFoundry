@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The standalone SFR repeater's CW ID schedule (radio_cwid.h, docs/spec/sfr.md 4, CW ID)
 #include "config.h"
 #if CONFIG_SFR_CWID	// the whole file

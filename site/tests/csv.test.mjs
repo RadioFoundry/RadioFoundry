@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The codeplug editor's CSV tables (static/js/codeplug/csv.js): parsing, export and import round trips on cpsSim's
 // populated codeplug, matching rows to existing records, references by name, partial files and problems.
 
@@ -12,7 +12,7 @@ import { CodeplugImage, CODEPLUG_SPAN } from "../static/js/codeplug/image.js";
 import { decode, encode, empty, newChannel, newContact } from "../static/js/codeplug/model.js";
 import { parse, stringify, detect, exportTable, importTable, exportAll, importAll, ORDER } from "../static/js/codeplug/csv.js";
 
-const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
+const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const sim = () => decode(CodeplugImage.from(new Uint8Array(readFileSync(join(DIR, "codeplug_sim.bin"))).slice(0, CODEPLUG_SPAN)));
 
 test("parse: quotes, doubled quotes, newlines in a field, CRLF, BOM, blank lines", () => {

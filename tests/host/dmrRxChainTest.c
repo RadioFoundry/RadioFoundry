@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR receive chain end to end on the host: a model of the HR_C6000's receive reports (the bench call of
 // 2026-10-10: 8 voice LC headers, 16 superframes, 3 terminators, CC 2, MS sync, direct mode) drives the real slot engine
 // (drivers/modem/hrc_common/hrc6000_dmr.c) through its interrupt entry points; a board-like task drains the engine's
@@ -96,7 +96,7 @@ static bool fake_sys_line_low(void *ctx) { return rd[4][0x82] != 0; }
 
 static const hrc6000_dmr_ops_t ops = { fake_rf, fake_now, NULL, NULL, NULL, fake_sys_line_low, NULL, NULL };
 
-// --- The board glue (what boards/dm1701/dmr_dm1701.c does): hal_dmr_modem_t over the engine, a draining task ---
+// --- The board glue (what platform/stm32f4/hrc/dmr_glue.c does): hal_dmr_modem_t over the engine, a draining task ---
 
 static dmr_event_cb_t stack_cb;
 static void *stack_ctx;

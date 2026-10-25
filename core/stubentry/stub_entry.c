@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The stub entry's firmware glue (see stub_entry.h, docs/spec/stub-entry.md): load the host's RAM-monitor image into a
 // free RAM span and, once it verifies, hand the SoC to it at run time with no power cycle. The portable state machine
 // is stub_load.c, the listener of a build without the debug link stub_link.c; this file finds the span through
@@ -21,8 +21,8 @@
 #include "hotspot/hotspot.h"
 #endif
 
-#ifndef ODR_GIT
-#define ODR_GIT "unknown"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "unknown"
 #endif
 
 #define STUB_ENTER_DELAY_MS	100u	// let the ENTER reply leave the UART before interrupts are masked
@@ -34,15 +34,15 @@ static uint32_t enter_addr;
 
 // Replace the screen so it does not sit on a stale frame while the monitor runs: the boot splash with a "connected"
 // message. Uses the UI's own ui_draw_splash, then flushes with the board's display (as the boot path does). The host
-// link task outranks the UI task and the flush is synchronous (dm1801pro bit-bangs its ST7567, dm32 writes the LCDC
+// link task outranks the UI task and the flush is synchronous (one board bit-bangs its ST7567, another writes the LCDC
 // polled), so the frame is on the panel before the caller masks interrupts. ui_draw_splash writes only the visible rows,
-// which sit clear of the loaded image on both boards (dm32 codec window; dm1801pro the oversized frame buffer's head)
+// which sit clear of the loaded image on every board (a codec window, or the oversized frame buffer's head)
 static void show_banner(void)
 {
 	if (board.display == NULL || gfx_framebuffer() == NULL || gfx_width() <= 0) {
 		return;
 	}
-	ui_draw_splash(board.name, ODR_GIT, "PC Loader Connected", "Power-cycle to exit");
+	ui_draw_splash(board.name, RFOUNDRY_GIT, "PC Loader Connected", "Power-cycle to exit");
 	gfx_flush();
 	// Full backlight: the UI's idle timeout may have dimmed or switched it off, and the UI never runs again while the
 	// monitor has the radio, so the splash would otherwise sit on a dark panel
@@ -132,7 +132,7 @@ void stub_entry_service(void)
 		return;
 	}
 	// The monitor never touches the RF chips, so whatever the transmitter is doing now lasts the whole session. Put
-	// it in receive even when the core thinks it's idle (a hotspot or data burst the core doesn't track as RS_TX)
+	// it in receive even when the core thinks it's idle (a hotspot burst the core doesn't track as RS_TX)
 	if (board.radio != NULL && board.radio->tx_off != NULL) {
 		board.radio->tx_off();
 	}
@@ -187,7 +187,7 @@ void stub_entry_start(void)
 	dl_parser_init(&parser);
 	parser.reply_cap = STUB_LINK_REPLY_MAX;
 	ident.board = board.name;
-	ident.git = ODR_GIT;
+	ident.git = RFOUNDRY_GIT;
 	ident.codec = codec_id;
 	ident.stub = stub_entry_request;
 	hostlink_set_side_protocol(&side);

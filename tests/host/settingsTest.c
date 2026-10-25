@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // core/storage (the sector journal) and core/settings (the record ring) on a simulated NOR flash, with power cuts
 // at every point of a save and of a sector rewrite: after the next boot the old or the new content is there, whole,
 // never a mix; wear goes round the ring; old and new record sizes load.
@@ -492,7 +492,7 @@ static void job(void *ctx) { job_runs += *(int *)ctx; }
 static void test_native_and_jobs(void)
 {
 	const uint32_t na = map_native.native_addr, ns = map_native.native_size;
-	static const uint8_t magic[4] = { 'O', 'D', 'R', 'N' };
+	static const uint8_t magic[4] = { 0x4F, 0x44, 0x52, 0x4E };
 	uint8_t junk[16];
 	memset(junk, 0x5A, sizeof(junk));
 
@@ -563,6 +563,39 @@ static void put_record(const hal_flash_map_t *m, unsigned sector, unsigned slot,
 		memset(&r[252], 0, 4);
 	}
 	memcpy(&sim_flash_data[m->settings_addr + sector * STORAGE_SECTOR + slot * 256u], r, sizeof(r));
+}
+
+// A set saved before the IP gateway ID was appended (page 1 ended at ds_ip_gateway): it loads with the gateway ID 0,
+// so a radio updated from it drops off-net packets until the owner sets one
+static void test_settings_gateway_upgrade(void)
+{
+	settings_t s, old;
+	settings_stats_t st;
+	uint16_t n1 = (uint16_t)(offsetof(settings_t, ds_ip_gateway) - SETTINGS_PAGE_BYTES);
+
+	CHECK(n1 == 32);
+	sim_flash_create(FLASH_SIZE, &map);
+	settings_defaults(&old);
+	old.squelch = 4;
+	old.ds_stored = 1;
+	old.vfo2_rx_hz = 446006250u;
+	old.ds_ip_gateway = 0x123456u;	// past the old page's end: never stored, never read
+	put_record(&map, 0, 0, 1, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT), n1, (const uint8_t *)&old + SETTINGS_PAGE_BYTES,
+		   true, true);
+	put_record(&map, 0, 1, 2, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, &old, true, true);
+	boot();
+	settings_read(&s);
+	settings_get_stats(&st);
+	CHECK(st.load == SETTINGS_UPGRADED && st.seq == 2 && s.squelch == 4 && s.ds_stored == 1 &&
+	      s.vfo2_rx_hz == 446006250u && s.ds_ip_gateway == 0);
+	// The next save stores it, and it loads whole
+	settings_begin()->ds_ip_gateway = 3101276u;
+	settings_end(1);
+	CHECK(settings_flush());
+	boot();
+	settings_read(&s);
+	settings_get_stats(&st);
+	CHECK(st.load == SETTINGS_LOADED && s.ds_ip_gateway == 3101276u && s.vfo2_rx_hz == 446006250u);
 }
 
 // The crash report's mode and target live in spare bits of accent, theme and updown_home (settings.h): each field
@@ -760,6 +793,10 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, vfo2_rx_tone), 252 },
 		{ offsetof(settings_t, vfo2_mode), 256 },
 		{ offsetof(settings_t, vfo2_tx_tone_type), 262 },
+		{ offsetof(settings_t, ds_ip_gateway), 268 },
+		{ offsetof(settings_t, zone_jrn_index), 272 },
+		{ offsetof(settings_t, zone_jrn_count), 274 },
+		{ offsetof(settings_t, zone_jrn_kind), 276 },
 	};
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
@@ -1055,6 +1092,7 @@ int main(void)
 	test_settings_layout();
 	test_crash_bits();
 	test_settings_pages();
+	test_settings_gateway_upgrade();
 	test_settings_bad_records();
 	test_settings_worn_sector();
 	test_write_across_sectors();

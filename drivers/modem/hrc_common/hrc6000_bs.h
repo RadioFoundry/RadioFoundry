@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The split duplex TX half's continuous BS outbound on the HR_C6000 (CONFIG_HOTSPOT_SPLIT; docs/spec/split-duplex.md
 // 5.4, 10.1; modem-hrc6000.md 4.1, 6). While it runs it owns the chip in place of the slot engine of hrc6000_dmr.c,
 // whose three ISRs and watchdog hand over to it (e->bs set): own timing (0x40 = 0xE3) gives a free-running slot clock,
@@ -28,6 +28,7 @@
 #define HRC6000_BS_VARIANT_CHIP	1	// the chip's layer 2 framing (its CACH is empty)
 #define HRC6000_BS_VARIANT_RAW	255
 #define HRC6000_BS_RAW_BYTES	36	// one slot: CACH (24 bits) and burst (264)
+#define HRC6000_BS_AIR_DELAY_US	2200	// a slot boundary to that slot on air (SDR bench 2026-10-21, split-duplex.md 11)
 
 // Builds one slot (core/dmr/bsOutbound.h bsOutboundRawSlot, passed by the board; NULL: the chip's framing). False:
 // the burst couldn't be coded and the idle message is in its place
@@ -46,6 +47,11 @@ typedef struct {
 	uint32_t page2_lc;	// embedded LC rewrites (two slots share page 2)
 	uint32_t raw;		// slots of our framing written
 	uint32_t uncoded;	// ... of those, a burst the builder couldn't code (idle sent instead)
+	uint32_t at_late;	// a burst for a numbered slot that had passed: dropped
+	uint32_t at_wait;	// a slot whose queue head is for a later slot: idle
+	uint32_t restarts;	// slot clock restarts (ALIGN)
+	uint32_t rs_ignored;	// timeslot interrupts while a restart waited
+	int32_t rs_dt[3];	// the first three timeslot interrupts after the last restart's 0x40 write, µs after it
 } hrc6000_bs_stats_t;
 
 typedef struct hrc6000_bs {
@@ -58,12 +64,18 @@ typedef struct hrc6000_bs {
 	uint8_t reg40;
 	uint32_t base_tick;	// the tick at bs_start (slot base_tick + 1 is an outbound TS1 slot)
 	int8_t ts_tick;		// the outbound slot that started at the last tick
+	volatile bool restarting;	// bs_restart waits: no boundary is taken
+	int8_t restart_ts;	// the slot that starts at the first boundary after a restart (0 none)
+	uint32_t rs_t;		// when the last restart wrote 0x40 = 0xE3
+	uint8_t rs_n;		// timeslot interrupts recorded since (st.rs_dt)
 	int8_t page2_slot;	// whose embedded LC page 2 0x00 holds (0 none)
 	dmr_tx_burst_t q[2][HRC6000_BS_Q + 1];		// a ring of Q + 1 places: q_count tells full from empty
 	dmr_cach_t q_cach[2][HRC6000_BS_Q + 1];
 	bool q_cach_valid[2][HRC6000_BS_Q + 1];
 	uint8_t q_lc[2][HRC6000_BS_Q + 1][9];
 	bool q_lc_valid[2][HRC6000_BS_Q + 1];
+	bool q_at[2][HRC6000_BS_Q + 1];		// for one numbered slot only (bs_queue_at)
+	uint32_t q_at_c[2][HRC6000_BS_Q + 1];
 	volatile uint8_t head[2], tail[2];
 	uint8_t lc[2][9];	// each slot's embedded LC (from its last voice A)
 	bool lc_valid[2];
@@ -76,6 +88,13 @@ bool hrc6000_bs_start(hrc6000_bs_t *bs, hrc6000_dmr_t *e, const dmr_bs_config_t 
 void hrc6000_bs_key(hrc6000_dmr_t *e, bool on);
 bool hrc6000_bs_queue(hrc6000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
 		      const uint8_t *emb_lc);
+// For the slot slot_clock numbers counter only (it starts at that boundary; set up at the one before)
+bool hrc6000_bs_queue_at(hrc6000_dmr_t *e, uint32_t counter, int8_t ts, const dmr_tx_burst_t *b,
+			 const dmr_cach_t *cach, const uint8_t *emb_lc);
+// Not keyed: the slot clock restarts with a boundary at the next t_us + k x 30 ms at least 2 ms ahead (waits for it,
+// up to 32 ms), slot ts starting there (hal_dmr_modem.h bs_restart): 0x40 with TxEn and RxEn clear, then own timing
+// (0xE3) at that time
+bool hrc6000_bs_restart(hrc6000_dmr_t *e, uint32_t t_us, int8_t ts);
 uint8_t hrc6000_bs_space(const hrc6000_dmr_t *e, int8_t ts);
 void hrc6000_bs_stop(hrc6000_dmr_t *e);		// back to the slot engine, receiving
 bool hrc6000_bs_slot_clock(const hrc6000_dmr_t *e, uint32_t *counter, uint32_t *t_us, int8_t *ts);

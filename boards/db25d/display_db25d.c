@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D display: 1.77" 160x128 ST7735S-class TFT on a 4-wire serial bus (docs/spec/hardware-db25d.md 3.1, 5). ADC 2
 // is a board strap: 50 or more, the bus is bit-banged with data on PTC7; below 50, it's the SPI2 controller with data on
 // PTC8. Clock (PTC4), CS, D/C and reset are the same on both. The backlight is PWM1 on PTA16 and needs PTA15 high.
@@ -22,7 +22,7 @@
 #define DIPLEX2_MOSI_MASK	(3u << 11)
 #define DIPLEX2_MOSI_SPI2	(1u << 11)
 // SPI2 clock divider: the stock value is 2 (18 MHz at the loader's 36 MHz APB). 6 keeps the clock below the ST7735S's
-// 15 MHz write limit at any APB clock up to 90 MHz: 14 MHz at ODR's 84 MHz, 6 MHz at 36 MHz
+// 15 MHz write limit at any APB clock up to 90 MHz: 14 MHz at RadioFoundry's 84 MHz, 6 MHz at 36 MHz
 #define LCD_SPI_BAUDR	6u
 _Static_assert(HRC_APB_HZ / LCD_SPI_BAUDR <= 15000000u, "SPI2 is too fast for the ST7735S");
 
@@ -134,7 +134,7 @@ static void init(void)
 	hrc_pin_out(PIN_LCD_SCL, false);
 	hrc_pin_out(PIN_LCD_SDA, false);
 	hrc_pin_out(PIN_LCD_RESET, true);
-	spi2 = db25d_adc_raw(2) < ADC2_BITBANG;
+	spi2 = hrc_adc_read(2) < ADC2_BITBANG;
 	if (spi2) {
 		uint32_t s = hrc_irq_save();
 		IO_DIPLEX2 = (IO_DIPLEX2 & ~(DIPLEX2_SCLK_MASK | DIPLEX2_MOSI_MASK)) | DIPLEX2_SCLK_SPI2 | DIPLEX2_MOSI_SPI2;
@@ -145,10 +145,10 @@ static void init(void)
 	ready = true;
 }
 
-static void flush(const void *fb, uint16_t y0, uint16_t y1)
+static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t y1)
 {
 	if (ready) {
-		st7735_write_rows(&panel, (const uint16_t *)fb, y0, y1);
+		st7735_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 	}
 }
 
@@ -163,12 +163,12 @@ static void set_backlight(uint8_t percent)
 const hal_display_t db25d_display = {
 	.width = LCD_W,
 	.height = LCD_H,
-	.bpp = 16,
+	.bpp = 4,
 	.inset_top = CONFIG_DISPLAY_INSET_TOP,
 	.inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
 	.inset_left = CONFIG_DISPLAY_INSET_LEFT,
 	.inset_right = CONFIG_DISPLAY_INSET_RIGHT,
 	.init = init,
-	.flush = flush,
+	.flush_indexed = flush,
 	.set_backlight = set_backlight,
 };

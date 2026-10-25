@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 DMR engine (drivers/modem/hrc7000/hrc7000_dmr.c) on plain arrays standing in for the modem registers and
 // buffers: RX_TYPE_INFO decode, send types, the receive path (events, slot numbers, voice access flag, CRC policy,
 // late entry), the transmit schedule (one burst every other tick, PA one-shot, RF switch, drain, TX_DONE), polite
@@ -188,7 +188,7 @@ static void test_rx(void)
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1);
 	CHECK(b.kind == DMR_BURST_VOICE && b.voice_index == 0 && b.len == 27 && b.payload[26] == 26);
 	// The flag goes on the slot LAYER2_STATUS b30 shows at the interrupt (HRC7000_RX_NEXT_SLOT_XOR 0, every HR_C7000
-	// radio measured). The old default 1 put it on the other slot: the DM-1801 Pro played silence (2026-10-22)
+	// radio measured). The old default 1 put it on the other slot: one radio played silence (2026-10-22)
 	REG(C7_LAYER2_STATUS) = 1u << 30;
 	tick(false);
 	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x8040);
@@ -741,13 +741,13 @@ static void test_fm_tx_limit(void)
 }
 
 // RF_CONTROL: the RF TX interrupt 3.1 ms ahead unless the board set its lead, the other fields unchanged. The setter
-// reaches the chip after power-on (the DM-32UV once set the field after it, and kept 3.1 ms), and power-on keeps it
+// reaches the chip after power-on (a board once set the field after it, and kept 3.1 ms), and power-on keeps it
 static void test_rf_tx_lead(void)
 {
 	setup();
 	hrc7000_power_on_init(&dev, 128, 20);
 	CHECK(REG(C7_RF_CONTROL) == 0x00041F1Au);
-	hrc7000_set_rf_tx_lead(&dev, 4);	// the DM-32UV's 0.4 ms
+	hrc7000_set_rf_tx_lead(&dev, 4);	// a board's 0.4 ms
 	CHECK(REG(C7_RF_CONTROL) == 0x0004041Au);
 	hrc7000_power_on_init(&dev, 128, 20);
 	CHECK(REG(C7_RF_CONTROL) == 0x0004041Au);
@@ -778,6 +778,22 @@ static void test_tx_tone(void)
 	hrc7000_tx_tone_key(&dev, true);	// no tone: nothing
 	CHECK(REG(C7_TONE_SEND_CTRL) == 0);
 	CHECK(hrc7000_dtmf_dev(446000000u, false) == 0xC0u && hrc7000_dtmf_dev(446000000u, true) == 0xFFu);
+
+	// DTMF (radio-features.md 3.7): the low tone's step in FM_TONE1, the high one's in FM_TONE3, digit 1 sent with
+	// the voice muted (b6 = 0) while it sounds; another digit retunes; 0 ends it with the microphone back and the
+	// defaults restored; a digit outside the table changes nothing
+	setup();
+	REG(C7_SUBVOICE_COEF) = 0x07D00930u;
+	CHECK(hrc7000_tx_dtmf(&dev, 'D', 0xC0));
+	CHECK(REG(C7_FM_TONE1) >> 16 == 1927u && REG(C7_FM_TONE3) >> 16 == 3344u);	// round(941 / 1633 x 2.048)
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0x81u && (REG(C7_FM_MOD) & 0x2u) && REG(C7_SUBVOICE_COEF) == 0x07D0C030u);
+	CHECK(hrc7000_tx_dtmf(&dev, '1', 0xC0));
+	CHECK(REG(C7_FM_TONE1) >> 16 == 1427u && REG(C7_FM_TONE3) >> 16 == 2476u && REG(C7_TONE_SEND_CTRL) == 0x81u);
+	CHECK(!hrc7000_tx_dtmf(&dev, 'E', 0xC0) && REG(C7_FM_TONE1) >> 16 == 1427u && dev.tone_on);
+	CHECK(hrc7000_tx_dtmf(&dev, 0, 0));
+	CHECK(REG(C7_TONE_SEND_CTRL) == 0 && (REG(C7_FM_MOD) & 0x2u) == 0 && !dev.tone_on);
+	CHECK(REG(C7_FM_TONE1) == 0x05930629u && REG(C7_FM_TONE3) == 0x09AC0AB0u && REG(C7_SUBVOICE_COEF) == 0x07D00930u);
+	CHECK(hrc7000_tx_dtmf(&dev, 0, 0) && REG(C7_TONE_SEND_CTRL) == 0);	// no tone: nothing
 }
 
 // Sub-audio: DCS TX code in CDCSS_ADDR b8:0 and RX in b24:16 (the guide); the sub-audio deviation doubles at 25 kHz
@@ -1139,7 +1155,7 @@ static void test_rx_slot_arg(void)
 // A whole call through a chip model: the chip writes a burst's voice into the voice RAM only when the voice-access flag
 // (LAYER2_TXRX_CTRL b15) was set at the timeslot interrupt that decided that burst's slot, the one LAYER2_STATUS b30
 // shows then. Every burst's payload must be the voice the chip wrote for it. With the flag on the other slot
-// (HRC7000_RX_NEXT_SLOT_XOR 1, the DM-1801 Pro until 2026-10-22) the RAM keeps the bytes it had and every burst of
+// (HRC7000_RX_NEXT_SLOT_XOR 1, one board's old default) the RAM keeps the bytes it had and every burst of
 // the call reads them again: silence with every counter clean
 static void test_rx_voice_ram_call(void)
 {

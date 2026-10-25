@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Undo and redo for the codeplug editor. Before each change the page takes a snapshot: the order of every table and
 // a shallow copy of every record. Records hold plain values and references to other records (never shared arrays),
 // so restoring the copies into the same objects brings back the codeplug exactly, references included. The image

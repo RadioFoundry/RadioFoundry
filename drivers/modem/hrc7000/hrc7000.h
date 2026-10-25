@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// HR_C7000 baseband (the modem inside the DM-32's SoC): register map, power-on set-up, FM modes, sub-audio, audio
+// Copyright (c) 2026 The RadioFoundry Authors
+// HR_C7000 baseband (the modem inside the HR_C7000 SoC): register map, power-on set-up, FM modes, sub-audio, audio
 // paths and the internal audio codec (docs/spec/modem-hrc7000.md 2, 4, 5.1, 8; hardware-dm32.md 9).
 //
 // The modem is memory mapped: 32-bit registers at 0x11000000, byte buffers at 0x16000000. The driver reaches both
@@ -188,8 +188,8 @@ static inline uint32_t hrc7000_sig_center(uint8_t tx_center) { return ((uint32_t
 // RF_MOD_BIAS_CTRL: two-point bias from the TX center, modulation balance (b x 0x0101) from the frequency
 static inline uint32_t hrc7000_mod_bias(uint8_t tx_center, uint16_t modcal) { return (((uint32_t)tx_center + 384u) << 16) | modcal; }
 #define HRC7000_MODCAL_DEFAULT	0x4D4Du	// before a TX frequency is known
-// The two-point modulation's DC level from the TX center byte in its exact form, as the DB25-D stock firmware computes
-// it: round((1.228 + c x 0.422 / 128) x 1023 / 3.3), 381 at 0, 512 at 128 (hardware-db25d.md 6.4). The DM-32's
+// The two-point modulation's DC level from the TX center byte in its exact form, as one stock firmware computes
+// it: round((1.228 + c x 0.422 / 128) x 1023 / 3.3), 381 at 0, 512 at 128 (hardware-db25d.md 6.4). Another's
 // c + 384 above is its straight-line fit
 uint16_t hrc7000_mod_dc(uint8_t tx_center);
 // SIG_CENTER and RF_MOD_BIAS_CTRL with that level: its low byte in both low bytes of SIG_CENTER, all 10 bits in the
@@ -210,7 +210,7 @@ static inline uint32_t hrc7000_mod_bias_dc(uint8_t tx_center, uint16_t modcal)
 // mic_gain (0..42 dB) in GCR_ADCL
 void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db);
 // The RF TX interrupt's lead (rf_tx_lead), written to RF_CONTROL at once. Call it after power_on_init, which writes the
-// stored lead again. A plain field write after power_on_init never reached the chip on the DM-32UV
+// stored lead again. A plain field write after power_on_init never reached the chip on one board
 void hrc7000_set_rf_tx_lead(hrc7000_t *d, uint8_t lead);
 // GCR_ADCL bits 5:0 (0..42 dB, clamped). The stock firmware writes one value for FM at each FM transmit start and
 // another for DMR at each DMR entry and DMR transmit start (modem-hrc7000.md 4 step 32, 5.1 step 2)
@@ -223,7 +223,7 @@ static inline uint8_t hrc7000_mic_db(uint8_t base_db, int8_t offset_db)
 	return (uint8_t)(v < 0 ? 0 : v > (int)HRC7000_MIC_GAIN_MAX_DB ? (int)HRC7000_MIC_GAIN_MAX_DB : v);
 }
 // Speaker line out gain, GCR_DACL bits 5:0: 0..31 = 0..-31 dB, 32..63 = +32..+1 dB (hardware-dm32.md 9.1; the
-// direction checked on the DM-32 at bring-up: code 0 and code 48 both louder than code 7). Kept in dac_gain
+// direction checked at bring-up: code 0 and code 48 both louder than code 7). Kept in dac_gain
 void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code);
 // The GCR_DACL code for a gain in dB, clamped to the register's -31..+32 dB
 #define HRC7000_DAC_MIN_DB	(-31)
@@ -236,7 +236,7 @@ int hrc7000_volume_db(unsigned step, unsigned def_step, unsigned steps, int top_
 
 // FM receive / transmit (8.2). wide = 25 kHz. FM receive turns the FM audio path to the speaker on
 void hrc7000_fm_rx(hrc7000_t *d, bool wide);
-#define HRC7000_FM_TX_LIMIT_DEF	4u	// the KP value; about 1.65 kHz peak at 25 kHz (DM-1801 Pro BENCH)
+#define HRC7000_FM_TX_LIMIT_DEF	4u	// the KP value; about 1.65 kHz peak at 25 kHz (BENCH)
 void hrc7000_fm_tx(hrc7000_t *d, bool wide);
 // FM_DEV_COEF for a transmission: the limiter for the bandwidth, the RX and TX deviation coefficients
 uint32_t hrc7000_fm_tx_dev_coef(const hrc7000_t *d, bool wide);
@@ -277,6 +277,10 @@ bool hrc7000_subtone_ok(hrc7000_t *d);
 // sub-audio deviation and the default DTMF steps back. tx_tone_key: the tone off (a silent carrier) and on again
 void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev);
 void hrc7000_tx_tone_key(hrc7000_t *d, bool down);
+// Two tones the same way: low in FM_TONE1's high half, high in FM_TONE3's, digit "1" sent. low = 0: as tx_tone(0)
+void hrc7000_tx_pair(hrc7000_t *d, uint16_t low_hz, uint16_t high_hz, uint8_t dev);
+// A DTMF digit ('0'-'9', '*', '#', 'A'-'D'; hal_dtmf.h) with tx_pair, 0 = the microphone again. False: not a digit
+bool hrc7000_tx_dtmf(hrc7000_t *d, char digit, uint8_t dev);
 // TX tone deviation (SUBVOICE_COEF b15:8) for a TX frequency and bandwidth (8.3)
 uint8_t hrc7000_dtmf_dev(uint32_t hz, bool wide);
 // --- Prompt FIFO (8.4) ---

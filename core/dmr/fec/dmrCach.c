@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The CACH and the short LC (see dmrCach.h), from ETSI TS 102 361-1 6.3, 7.1.4, 9.1.4, B.2.3, B.3.3, B.3.5, B.3.7, B.4.1
 #include "dmr/fec/dmrCach.h"
 

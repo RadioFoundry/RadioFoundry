@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Copy to VFO (docs/spec/dmr-voice.md 2.2), radio only, nothing transmitted: RADIO op 32 copies the channel on view to
 the VFO and opens it. The channel's frequencies, mode, bandwidth and tones show in the VFO afterwards, the channel is
 as it was, and the VFO's values stay across a channel and back. The VFO's frequency, bandwidth and tones are put back
 afterwards, and its mode when it was DMR (an FM channel leaves the VFO's DMR color code, slot and target alone)."""
 import pytest
 
-from odr_hil import DebugLinkError
+from rfoundry_hil import DebugLinkError, skip
 
 
 def _channel(radio):
@@ -19,13 +19,14 @@ def _tone_args(text):
     return kind, int(value or 0)
 
 
+@pytest.mark.feature("vfo")
 def test_copy_to_vfo(radio):
     feats = radio.features()
     if "VFO_FM" not in feats:
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     L = radio.link
     with radio.vfo_session():
         before = _channel(radio)	# the VFO's own values, put back at the end
@@ -40,7 +41,7 @@ def test_copy_to_vfo(radio):
                 pos = p
                 break
         if pos is None:
-            pytest.skip("no FM channel in this zone")
+            skip("state", "no FM channel in this zone")
         chan = _channel(radio)
         try:
             L.vfo_copy()

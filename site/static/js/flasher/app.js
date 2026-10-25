@@ -1,26 +1,27 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The web flasher: a step-by-step page over the modules beside it. Three tasks:
 //
-//   install   pick the radio and the build, find out what runs on the radio (backing it up if it runs ODR), decide
-//             the codec, write through the bootloader (or, on a radio already running ODR with stub entry, through
+//   install   pick the radio and the build, find out what runs on the radio (backing it up if it runs RadioFoundry), decide
+//             the codec, write through the bootloader (or, on a radio already running RadioFoundry with stub entry, through
 //             the STM32F4 loader: f4stub.js), check the result and complete the backup
-//   backup    read everything a radio running ODR can give into a bundle the user keeps (over the debug link, or
-//             through the STM32F4 loader when ODR offers it: readers.js)
-//   restore   put a radio back from a bundle: exactly as it was on ODR, or back on stock firmware
+//   backup    read everything a radio running RadioFoundry can give into a bundle the user keeps (over the debug link, or
+//             through the STM32F4 loader when RadioFoundry offers it: readers.js)
+//   restore   put a radio back from a bundle: exactly as it was on RadioFoundry, or back on stock firmware
 //
 // How a radio is reached (which steps a task takes on it) is its backend's business: backends.js.
 //
 // Everything runs in the page: release images come from this site, custom images from the build API, stock files
-// and backups from the user's disk, which never leave it. Add #sim to the address for a simulated radio (no hardware;
-// for trying the flow), #sim=odr for one that already runs ODR.
+// and backups from the user's disk, which never leave it. Add #sim=<board>-stock to the address for a simulated radio
+// on its stock firmware (no hardware; for trying the flow), #sim=<board> for one that already runs RadioFoundry, #sim for the
+// first radio on stock firmware. The fake is built from the board's data.
 
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import * as stockfw from "./stockfw.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, SerialStream, ODR_USB, ODR_NET, probe, serialSupported } from "./link.js";
+import { Link, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, serialSupported } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -30,7 +31,8 @@ import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
 import { t, ROOT, h, download, filePicker, progressBar, logBox, notice, button, panel, localTime, partNames } from "./dom.js";
 import * as c7ui from "./c7000ui.js";
-import { FakeC7000, c7000Simulation } from "./fakec7000.js";
+import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
+import { APP_ENTRY } from "./iap.js";
 import { slotBytes, locateCodec } from "./c7000.js";
 import { Stub } from "./stub.js";
 import { F4Stub, f4Image } from "./f4stub.js";
@@ -62,7 +64,7 @@ function errorText(e) {
 const initialState = () => ({
 	task: null, step: 0, data: null, radio: null, board: null, selection: null, sim: null, fakeRadio: null,
 	firmware: null,		// {manifest, image, source}
-	now: null,		// what runs on the radio: {kind: "odr", probe} | {kind: "stock", version} | {kind: "unknown"}
+	now: null,		// what runs on the radio: {kind: "rfoundry", probe} | {kind: "stock", version} | {kind: "unknown"}
 	stock: null,		// {name, data, info: identify()}
 	key: null,
 	decision: null,
@@ -78,14 +80,14 @@ const initialState = () => ({
 const S = initialState();
 
 // Custom builds and the flash log
-const API = "https://odr.spencerfowler.com/v1/";
-// minimal non-invasive reporting for helping the ODR project track programming failures; opt out with
+const API = "https://api.radiofoundry.org/v1/";
+// minimal non-invasive reporting for helping the RadioFoundry project track programming failures; opt out with
 // ?reporting=0
 const FLASH_LOG = new URLSearchParams(location.search).get("reporting") !== "0";
 
 // A version link (/flash/?version=<full commit hash or tag>) builds that version instead of the latest release. The tab keeps
 // it for the session, so a reload or a visit to another page doesn't lose it; ?version= (empty) or the banner drops it.
-const VERSION_STORE = "odr-flash-version";
+const VERSION_STORE = "rfoundry-flash-version";
 const VERSION_RE = /^(v[0-9][0-9A-Za-z.\-+]{0,31}|[0-9a-f]{40})$/;
 let VERSION_REF = (() => {
 	const q = new URLSearchParams(location.search).get("version");
@@ -173,7 +175,7 @@ const STEPS = {
 	restore: ["bundle", "restore"],
 	help: ["radio", "symptom", "recover"],
 };
-// A radio running ODR that updates over the cable has no codec decision to make: the step goes
+// A radio running RadioFoundry that updates over the cable has no codec decision to make: the step goes
 const STUB_INSTALL = ["radio", "build", "now", "write", "done"];
 // Installing again from the help task: what runs on the radio is known to be broken, so that question goes
 const RECOVER_INSTALL = ["build", "codec", "write", "done"];
@@ -192,27 +194,27 @@ const fb = () => (S.sim ? S.sim.fb : S.data.fb);
 // Every image comes from the build service, so a radio needs only a backend the page has for it (backends.js)
 const available = (r, task) => backendOf(r).available(r, fb(), task);
 
-// The STM32 radios (DM-1701, MD-380): stock firmware is reached through the AnyRoad bootloader (dfu.js), which takes
-// the key from the stock file; a radio running ODR with stub entry also updates and backs up through the STM32F4
+// The STM32 radios: stock firmware is reached through the AnyRoad bootloader (dfu.js), which takes
+// the key from the stock file; a radio running RadioFoundry with stub entry also updates and backs up through the STM32F4
 // loader (f4stub.js), and backs up over the debug link without it (backup.js). Stock firmware isn't backed up here.
 register({
 	id: "anyroad-dfu",
-	available: (r, fbd, task) => (task === "backup" ? r.backup.odr === "full" : !!fbd.boards[r.flash.board]?.key_sha256),
+	available: (r, fbd, task) => (task === "backup" ? r.backup.rfoundry === "full" : !!fbd.boards[r.flash.board]?.key_sha256),
 	steps: (task, { recovering }) => (task !== "install" ? null : recovering ? RECOVER_INSTALL : stubRoute() ? STUB_INSTALL : null),
 	views: { now: nowView, codec: codecView, write: writeView, done: doneView, backup: backupView, restore: restoreView },
 	recovery: { first: "updatemode", stock: "file", reach: null, stockText: "flash.help.fix.stock_text" },
 });
 
-// The STM32F4 loader route (f4stub.js): the radio runs ODR with stub entry and its codec, the image leaves the codec
+// The STM32F4 loader route (f4stub.js): the radio runs RadioFoundry with stub entry and its codec, the image leaves the codec
 // alone, and nobody asked for a bootloader mode. Everything else, a stock radio first of all, uses the bootloader.
 const f4Board = () => fb().f4stub?.boards[S.board?.id];
-const stubRoute = () => !!(S.task === "install" && f4Board() && S.now?.kind === "odr" && S.now.stubOffer && !S.requested
+const stubRoute = () => !!(S.task === "install" && f4Board() && S.now?.kind === "rfoundry" && S.now.stubOffer && !S.requested
 	&& S.now.probe?.codec === S.board.codec.id && !S.firmware?.manifest.codec?.included);
 let f4Json = null;
 const f4StubJson = async () => (f4Json ||= await (await fetch(`${ROOT}data/f4-stub.json`)).json());
 
-// Build options (radio.json flash.build_options, such as the MD-380's band): all chosen, and the value a radio running ODR
-// reports by its debug link name
+// Build options (radios.json flash.build_options, such as the MD-380's band): all chosen, and the value a radio
+// running RadioFoundry reports by its debug link name
 const buildOptions = () => S.radio?.flash.build_options || [];
 const optionsChosen = () => buildOptions().every((o) => S.buildOptions?.[o.name]);
 function optionsFromProbe(p) {
@@ -233,14 +235,14 @@ function optionMismatch(p) {
 // ---------------------------------------------------------------------------------------------------------------
 // connections (real or simulated)
 
-// What runs on the radio, once it answered as ODR: on the STM32 radios also whether it offers the loader hand-over
-async function odrNow(link, p) {
-	return { kind: "odr", probe: p, stubOffer: f4Board() ? await Stub.odrOffer(link) : null };
+// What runs on the radio, once it answered as RadioFoundry: on the STM32 radios also whether it offers the loader hand-over
+async function rfoundryNow(link, p) {
+	return { kind: "rfoundry", probe: p, stubOffer: f4Board() ? await Stub.rfoundryOffer(link) : null };
 }
 
-const grantedOdrPorts = async () => (await navigator.serial.getPorts()).filter((p) => {
+const grantedRFoundryPorts = async () => (await navigator.serial.getPorts()).filter((p) => {
 	const i = p.getInfo();
-	return i.usbVendorId === ODR_USB.usbVendorId && i.usbProductId === ODR_USB.usbProductId;
+	return i.usbVendorId === RFOUNDRY_USB.usbVendorId && i.usbProductId === RFOUNDRY_USB.usbProductId;
 });
 
 async function connectSerial() {
@@ -250,7 +252,7 @@ async function connectSerial() {
 	else {
 		if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
 		if (await networkModeSeen()) throw new NetworkModeError();
-		const granted = await grantedOdrPorts();
+		const granted = await grantedRFoundryPorts();
 		stream = granted.length ? await SerialStream.open(granted[0]) : await SerialStream.request();
 	}
 	S.link = new Link(stream);
@@ -259,21 +261,21 @@ async function connectSerial() {
 
 // The loader's port after it enumerated again: the same USB IDs and serial number, so the browser lists it as granted
 // (no prompt). Throws until it is back.
-async function reopenOdrPort() {
+async function reopenRFoundryPort() {
 	if (S.fakeRadio) return S.fakeRadio.serialStream();
-	const ports = await grantedOdrPorts();
+	const ports = await grantedRFoundryPorts();
 	if (!ports.length) throw new Error("not back yet");
 	return SerialStream.open(ports[ports.length - 1]);
 }
 
-// After the loader's restart: ODR answering on its port again (S.link set), within ms. false: it hasn't come back
-async function waitForOdr(ms = 20000) {
+// After the loader's restart: RadioFoundry answering on its port again (S.link set), within ms. false: it hasn't come back
+async function waitForRFoundry(ms = 20000) {
 	const end = Date.now() + ms;
 	while (Date.now() < end) {
 		await sleep(S.fakeRadio ? 10 : 1000);
 		let stream = null;
 		try {
-			stream = await reopenOdrPort();
+			stream = await reopenRFoundryPort();
 			const link = new Link(stream);
 			if (await probe(link)) {
 				S.link = link;
@@ -289,7 +291,7 @@ async function waitForOdr(ms = 20000) {
 async function networkModeSeen() {
 	if (!usbSupported()) return false;
 	try {
-		return (await navigator.usb.getDevices()).some((d) => d.vendorId === ODR_NET.vendorId && d.productId === ODR_NET.productId);
+		return (await navigator.usb.getDevices()).some((d) => d.vendorId === RFOUNDRY_NET.vendorId && d.productId === RFOUNDRY_NET.productId);
 	} catch (e) {
 		return false;
 	}
@@ -304,7 +306,7 @@ function serialHelp() {
 		if (S.fakeRadio) return;
 		if (!usbSupported()) return out.replaceChildren(notice(t("flash.err.no_usb"), "bad"));
 		try {
-			await navigator.usb.requestDevice({ filters: [ODR_NET] });
+			await navigator.usb.requestDevice({ filters: [RFOUNDRY_NET] });
 			out.replaceChildren(networkModeHelp());
 		} catch (err) {
 			out.replaceChildren(notice(err?.name === "NotFoundError" ? t("flash.net.none") : errorText(err)));
@@ -342,11 +344,11 @@ async function connectBootloader() {
 	return WebUsbTransport.request(S.board);
 }
 
-const KEY_STORE = (id) => `odr-key-${id}`;
+const KEY_STORE = (id) => `rfoundry-key-${id}`;
 
 // Windows needs a driver for the bootloader; nobody else should read about it
 const onWindows = () => /win/i.test(navigator.userAgentData?.platform || navigator.platform || "");
-const WINUSB_STORE = "odr-winusb-ok";
+const WINUSB_STORE = "rfoundry-winusb-ok";
 
 // Zadig steps (docs/user/02-installing.md). Open until this computer has reached a bootloader once, and always after a
 // failed connect: without the driver Chrome either doesn't list the bootloader or can't open it.
@@ -376,7 +378,7 @@ function savedKey(board) {
 	}
 }
 
-// A radio that runs ODR hands over its bootloader key (bootkey.js), so updating it needs no stock file. Quiet when it
+// A radio that runs RadioFoundry hands over its bootloader key (bootkey.js), so updating it needs no stock file. Quiet when it
 // can't: the stock file still works.
 async function keyFromRadio(link) {
 	if (S.key || !S.board?.key_sha256) return;
@@ -387,7 +389,7 @@ async function keyFromRadio(link) {
 	if (!S.sim) try { localStorage.setItem(KEY_STORE(S.board.id), toHex(key)); } catch (e) { /* not remembered */ }
 }
 
-// A radio running ODR with its codec hands it over (codecsave.js), and this browser keeps a copy: where an update
+// A radio running RadioFoundry with its codec hands it over (codecsave.js), and this browser keeps a copy: where an update
 // erases the codec (keep_codec_supported false) before anything is erased, elsewhere once, for an install that can't
 // keep it (a radio back on stock firmware, an interrupted install, a radio in its bootloader). Quiet when it can't:
 // the stock file still works.
@@ -493,9 +495,15 @@ function startView() {
 			h("div", { class: "choice-grid" }, choice("install", "⤓"), choice("backup", "⎘"), choice("restore", "↺"), choice("help", "?"))),
 		h("details", { class: "small" }, h("summary", {}, t("flash.start.privacy_title")), h("p", {}, t("flash.start.privacy"))),
 		h("p", { class: "small muted" }, S.sim ? h("a", { href: "#", onclick: (e) => { e.preventDefault(); location.hash = ""; location.reload(); } }, t("flash.sim.leave"))
-			: [h("a", { href: "#sim", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try")), " · ",
-				h("a", { href: "#sim=c7000", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_c7000")), " · ",
-				h("a", { href: "#sim=c7000-odr", onclick: () => setTimeout(() => location.reload(), 0) }, t("flash.sim.try_c7000_odr"))]));
+			: simLinks()));
+}
+
+// The practice links: the first radio, and the first one flashed through the C7 stub on stock firmware and on RadioFoundry
+function simLinks() {
+	const link = (hash, text) => h("a", { href: hash, onclick: () => setTimeout(() => location.reload(), 0) }, text);
+	const c7 = S.data.radios.find((r) => r.flash.backend === "c7000-stub");
+	return [link("#sim", t("flash.sim.try")), ...(c7 ? [" · ", link(`#sim=${c7.id}-stock`, t("flash.sim.try_c7000", { name: c7.model })),
+		" · ", link(`#sim=${c7.id}`, t("flash.sim.try_c7000_rfoundry"))] : [])];
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -520,7 +528,7 @@ function radioView() {
 			if (!r) throw new Error(t("flash.err.unknown_board", { board: p.board }));
 			selectRadio(r);
 			optionsFromProbe(p);
-			S.now = await odrNow(link, p);
+			S.now = await rfoundryNow(link, p);
 			await keyFromRadio(link);
 			await codecFromRadio(link, p, status);
 			next();
@@ -618,7 +626,7 @@ function buildView() {
 				const away = (f.needs?.all || []).filter((n) => !items.some((i) => i.name === n) && sel.supported(n) && !sel.on.has(n));
 				// one line per feature; the help (written for developers) is the tooltip, the build's reason for leaving
 				// a feature out and a needed feature that's off show inline
-				const note = na ? [t("flash.build.unsupported", { radio: S.radio.name })] : [off && !isOn ? off.why : null,
+				const note = na ? [naNote(f.name)] : [off && !isOn ? off.why : null,
 					away.length ? t("flash.build.needs", { names: away.map((n) => sel.byName[n]?.title || n).join(", ") }) : null].filter(Boolean);
 				const tipId = `tip-${f.name}`;
 				const tipOpen = S.openTip === f.name;
@@ -687,6 +695,10 @@ function buildView() {
 let tipEscape = () => {};
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") tipEscape(); });
 
+// Why a feature can't be chosen: the radio's code isn't written for it yet, or its hardware can't
+const naNote = (name) => t(S.selection.notWritten(name) ? "flash.build.not_written" : "flash.build.unsupported",
+	{ radio: S.radio.name });
+
 // The ⓘ bubble: what a feature does, what it needs, its flash cost on this radio
 function featureTip(f, id) {
 	const titles = (names) => names.map((n) => S.selection.byName[n]?.title || n).join(", ");
@@ -694,7 +706,7 @@ function featureTip(f, id) {
 	const needs = [all.length ? titles(all) : null, any.length ? t("flash.build.tip_any", { names: titles(any) }) : null].filter(Boolean);
 	const bytes = f.bytes?.[S.radio.model];
 	return h("div", { class: "tip", id, role: "note", onclick: (e) => e.stopPropagation() },
-		S.selection.supported(f.name) ? null : h("p", { class: "tip-na" }, t("flash.build.unsupported", { radio: S.radio.name })),
+		S.selection.supported(f.name) ? null : h("p", { class: "tip-na" }, naNote(f.name)),
 		h("p", {}, plainHelp(f.help)),
 		f.notes ? h("p", { class: "muted" }, f.notes) : null,
 		h("dl", { class: "kv-list small" },
@@ -790,12 +802,13 @@ async function ensureFirmware() {
 	if (S.firmware) return S.firmware;
 	if (S.sim) {
 		const img = randomBytes(rng(99), 200 * 1024);
-		img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);	// what a C7000 read recognizes ODR by
+		img.set(new TextEncoder().encode("RadioFoundry"), 0x1000);	// what a C7000 read recognizes RadioFoundry by
 		img.set([0xFC, 0xFF, 0x01, 0x20], 0);	// a RAM stack pointer, as the STM32 loader checks
-		if (S.radio?.flash.board === "db25d") {	// the DB25-D's install image: first stage, then ODR's reset handler
-			img.set([0x2C, 0x11, 0x01, 0xC0], 0);
-			img.set([0x80, 0xC0, 0x20, 0x70], 0x1000);
-			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1100);
+		const fs = S.radio?.flash.first_stage;
+		if (fs) {	// an install image with a first stage: its signature, then RadioFoundry's reset handler after it
+			img.set(fromHex(fs.head), 0);
+			img.set(APP_ENTRY, fs.size);
+			img.set(new TextEncoder().encode("RadioFoundry"), fs.size + 0x100);
 		}
 		return (S.firmware = { manifest: await forDevBuild(S.board, img), image: img, source: t("flash.sim.image_name") });
 	}
@@ -816,14 +829,14 @@ function nowView() {
 	const draw = () => {
 		runBackup = null;
 		const opts = h("div", { class: "choice-grid" },
-			h("button", { class: "choice", type: "button", "aria-pressed": String(S.now?.kind === "odr"), onclick: checkOdr },
-				h("strong", {}, t("flash.now.odr")), h("span", { class: "small muted" }, t("flash.now.odr_text"))),
+			h("button", { class: "choice", type: "button", "aria-pressed": String(S.now?.kind === "rfoundry"), onclick: checkRFoundry },
+				h("strong", {}, t("flash.now.rfoundry")), h("span", { class: "small muted" }, t("flash.now.rfoundry_text"))),
 			h("button", { class: "choice", type: "button", "aria-pressed": String(S.now?.kind === "stock"), onclick: () => { S.now = { kind: "stock", version: null }; draw(); } },
 				h("strong", {}, t("flash.now.stock")), h("span", { class: "small muted" }, t("flash.now.stock_text"))),
 			h("button", { class: "choice", type: "button", "aria-pressed": String(S.now?.kind === "unknown"), onclick: () => { S.now = { kind: "unknown" }; draw(); } },
 				h("strong", {}, t("flash.now.unknown")), h("span", { class: "small muted" }, t("flash.now.unknown_text"))));
 		const detail = h("div");
-		if (S.now?.kind === "odr" && S.now.probe) {
+		if (S.now?.kind === "rfoundry" && S.now.probe) {
 			const p = S.now.probe;
 			detail.append(h("dl", { class: "kv-list" },
 				h("dt", {}, t("flash.now.board")), h("dd", {}, p.board),
@@ -839,14 +852,14 @@ function nowView() {
 			notice(t(S.radio.backup.stock === "none" ? "flash.now.stock_backup_later" : "flash.now.stock_backup_planned"), "info"));
 		}
 		out.replaceChildren(panel(t("flash.now.title"), opts, detail, status));
-		// on ODR the backup comes first: saving it is the main action, skipping it the quiet one beside it
-		const skip = S.now?.kind === "odr" && !S.backupDone && runBackup;
+		// on RadioFoundry the backup comes first: saving it is the main action, skipping it the quiet one beside it
+		const skip = S.now?.kind === "rfoundry" && !S.backupDone && runBackup;
 		if (S.now) render.stepper?.();	// the steps change when the radio turns out to update over the cable
 		forward(skip ? [button(t("flash.nav.skip_backup"), next, { quiet: true }), runBackup]
-			: button(t("flash.nav.to_codec"), next, { primary: true, disabled: !S.now || (S.now.kind === "odr" && !S.now.probe) }));
+			: button(t("flash.nav.to_codec"), next, { primary: true, disabled: !S.now || (S.now.kind === "rfoundry" && !S.now.probe) }));
 	};
 	const status = h("div");
-	async function checkOdr() {
+	async function checkRFoundry() {
 		status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));
 		try {
 			const link = await connectSerial();
@@ -855,7 +868,7 @@ function nowView() {
 			if (!S.board.debuglink_names.includes(p.board)) throw new Error(t("flash.err.wrong_board", { board: p.board, name: S.board.name }));
 			const odd = optionMismatch(p);
 			if (odd) throw new Error(t("flash.err.wrong_option", { board: p.board, option: odd[0].title.toLowerCase(), value: odd[1].title }));
-			S.now = await odrNow(link, p);
+			S.now = await rfoundryNow(link, p);
 			await keyFromRadio(link);
 			await codecFromRadio(link, p, status);
 			status.replaceChildren();
@@ -873,7 +886,7 @@ function nowView() {
 // What the radio's codec report means to a user
 const codecText = (c) => (c === S.board.codec.id ? t("flash.now.codec_ok") : !c || c === "absent" ? t("flash.now.codec_none") : c);
 
-// The backup panel used on an ODR radio (before an update, the backup task, after a first install)
+// The backup panel used on a RadioFoundry radio (before an update, the backup task, after a first install)
 // actions(run): where the "save a backup" button goes (the nav bar); without it, in the panel
 function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 	const box = h("div", { class: "panel" });
@@ -889,7 +902,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 	const times = {};
 	// the loader reads the internal flash at about 500 KB/s and the SPI flash at about 280 KB/s (stub-stm32f4.md 11),
 	// plus the hand-over and the restart; the codeplug alone is no faster that way, so the debug link reads it
-	const viaLoader = () => !!(f4Board() && S.now?.kind === "odr" && S.now.stubOffer && pick !== "codeplug");
+	const viaLoader = () => !!(f4Board() && S.now?.kind === "rfoundry" && S.now.stubOffer && pick !== "codeplug");
 	const seconds = (id) => (id !== "codeplug" && f4Board() && S.now?.stubOffer
 		? 12 + internalSize / 500e3 + (choices[id].what.spi === "full" ? S.radio.backup.spi_size / 280e3 : 0)
 		: S.readRate ? choices[id].bytes / S.readRate : null);
@@ -904,7 +917,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			// the backup task is a use of its own; the backups around an install belong to the install
 			if (S.task === "backup") started = flashStarted({ task: "backup", source: pick, radio: S.board.id, firmware: p.git || "", features: p.features || "" });
 			const t0 = performance.now();
-			bulk = viaLoader() ? f4LoaderReader(link, { stubJson: f4StubJson, reopen: reopenOdrPort, onHandOver: () => { S.link = null; } }) : null;
+			bulk = viaLoader() ? f4LoaderReader(link, { stubJson: f4StubJson, reopen: reopenRFoundryPort, board: f4Board(), onHandOver: () => { S.link = null; } }) : null;
 			S.backupParts = await readRadio(link, S.board, S.radio, {
 				what: choices[pick].what, readers: bulk ? [bulk] : [], progress: (part, d, total) => prog.set(d, total, t(`flash.backup.part.${part}`)) });
 			if (!bulk?.used) S.readRate = choices[pick].bytes / Math.max(0.5, (performance.now() - t0) / 1000);
@@ -912,10 +925,10 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			const after = when === "after";
 			const meta = {
 				radio: { board: S.radio.id, name: S.radio.name, model: S.radio.model, chip: p.chip, version: p.version },
-				firmware_now: { kind: "odr", git: p.git, codec: p.codec, features: p.features },
+				firmware_now: { kind: "rfoundry", git: p.git, codec: p.codec, features: p.features },
 				firmware_before: after && S.now?.kind === "stock" ? { kind: "stock", version: S.now.version, stock_file_sha256: S.stock?.info.sha || null } : undefined,
 				contents: pick,
-				notes: after && S.now?.kind !== "odr" ? [t("flash.backup.note_after")] : [],
+				notes: after && S.now?.kind !== "rfoundry" ? [t("flash.backup.note_after")] : [],
 			};
 			const bytes = await makeBundle(meta, S.backupParts, { git: S.data.site.git, url: location.origin });
 			const name = bundleName(meta);
@@ -926,20 +939,20 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			box.append(notice(t("flash.backup.saved", { name, size: Math.round(bytes.length / 1024) }), "ok"));
 			if (incomplete.length) box.append(notice(t("flash.backup.incomplete", { files: incomplete.join(", ") })));
 			if (bulk?.used) {
-				// the next step talks to ODR again: it has to be back first
+				// the next step talks to RadioFoundry again: it has to be back first
 				prog.set(0, 1, t("flash.backup.restarting"));
-				if (!await waitForOdr()) {
+				if (!await waitForRFoundry()) {
 					box.append(notice(t("flash.backup.not_back"), "action"));
 					return;
 				}
 				prog.el.remove();
 			}
-			// the backup holds the whole memory chip now, so the original firmware's data in ODR's settings area can go
+			// the backup holds the whole memory chip now, so the original firmware's data in RadioFoundry's settings area can go
 			if (pick === "all") await prepareStorage(box);
 			onDone?.();
 		} catch (e) {
 			flashFinished(started, e);
-			if (bulk?.used) await waitForOdr();	// readRadio restarted the radio
+			if (bulk?.used) await waitForRFoundry();	// readRadio restarted the radio
 			box.append(notice(errorText(e), "bad"));
 			box.querySelectorAll("button, input").forEach((b) => { b.disabled = false; });
 			runBtn.disabled = false;
@@ -951,7 +964,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 			h("span", { class: "why" }, t(`flash.backup.opt.${id}_text`), " ", times[id] = h("span", {}, estimate(choices[id].bytes, seconds(id))))),
 		h("span"));
 	box.append(h("h3", {}, t(`flash.backup.title_${when}`)),
-		h("p", {}, t(when === "after" && S.now?.kind !== "odr" ? "flash.backup.after_lead" : "flash.backup.lead")),
+		h("p", {}, t(when === "after" && S.now?.kind !== "rfoundry" ? "flash.backup.after_lead" : "flash.backup.lead")),
 		option("all"), option("firmware"), option("codeplug"));
 	const runBtn = button(t("flash.backup.run"), run, { primary: true });
 	if (actions) actions(runBtn);
@@ -963,7 +976,7 @@ function backupNow({ when = "task", onDone = null, actions = null } = {}) {
 	return box;
 }
 
-// A radio fresh from its original firmware still holds that firmware's data where ODR keeps its settings and journal:
+// A radio fresh from its original firmware still holds that firmware's data where RadioFoundry keeps its settings and journal:
 // until that area is claimed the radio keeps no settings and refuses every codeplug write (settings-store.md 5)
 async function prepareStorage(box) {
 	try {
@@ -1025,7 +1038,7 @@ function codecView() {
 		try {
 			S.decision = decideCodec(S.board, fw.manifest, {
 				haveStock, haveSaved: !!S.savedCodec, requested: S.requested || null,
-				probe: S.now?.kind === "odr" ? S.now.probe : null,
+				probe: S.now?.kind === "rfoundry" ? S.now.probe : null,
 				stockInstalled: S.now?.kind === "stock" ? S.now.version : null,
 			});
 		} catch (e) {
@@ -1061,7 +1074,7 @@ function codecView() {
 		} else if (needs.length) {
 			parts.push(h("div", { class: "notice action" }, h("strong", {}, t("flash.codec.action_title")),
 				needs.length > 1 ? h("ul", {}, needs.map((n) => h("li", {}, n))) : h("p", {}, needs[0]), where, picker, loaded));
-			if (!S.decision && S.now?.kind !== "odr") parts.push(h("p", { class: "small muted" }, t("flash.codec.or_connect")));
+			if (!S.decision && S.now?.kind !== "rfoundry") parts.push(h("p", { class: "small muted" }, t("flash.codec.or_connect")));
 		} else if (!S.decision) {
 			parts.push(notice(err, "bad"));
 		} else {
@@ -1191,10 +1204,13 @@ function writeView() {
 	const dfu = (opts) => bootloaderPanel(t("flash.write.title"), async () => {
 		// from the cable route the codec step was skipped: decide now, from what the radio reported
 		S.decision ||= decideCodec(S.board, fw.manifest, { haveStock: false, haveSaved: !!S.savedCodec, probe: S.now?.probe || null });
-		let codec = [];
-		if (S.decision.mode === MERGE) codec = S.decision.source === "saved" ? await codecSegments(S.savedCodec.profile, S.savedCodec.segments, fb())
-			: (await stockfw.extract(S.stock.data, S.key, fb())).segments;
-		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec);
+		let codec = [], prof = null;
+		if (S.decision.mode === MERGE && S.decision.source === "saved") {
+			prof = S.savedCodec.profile;
+			codec = await codecSegments(prof, S.savedCodec.segments, fb());
+		} else if (S.decision.mode === MERGE) ({ profile: prof, segments: codec } = await stockfw.extract(S.stock.data, S.key, fb()));
+		return makePlan(S.board, segments(fw.manifest, fw.image), S.decision.mode, codec,
+			prof ? stockfw.layoutWindows(prof, fb()) : S.board.codec.windows);
 	}, next, what, opts);
 	if (!stubRoute()) return dfu();
 	// the bootloader route stays one click away: it finishes an install the loader couldn't
@@ -1203,7 +1219,7 @@ function writeView() {
 	return h("div", { class: "flasher" }, stubPanel(fallback, next, what), fallback);
 }
 
-// Install through the STM32F4 loader on a radio running ODR (f4stub.js). fallback: the bootloader route's details,
+// Install through the STM32F4 loader on a radio running RadioFoundry (f4stub.js). fallback: the bootloader route's details,
 // opened when the loader can't finish
 function stubPanel(fallback, onDone, what) {
 	const box = h("section", { class: "panel" });
@@ -1217,6 +1233,7 @@ function stubPanel(fallback, onDone, what) {
 		let started = null;
 		try {
 			started = flashStarted(what);
+			await stub.configure();	// the radio's board record, its echo checked before any write
 			prog.set(0, 1, t("flash.f4.reading"));
 			const r = await stub.writeImage(f4Board().owned, segments(fw.manifest, fw.image), {
 				// bytes in a rewritten sector that aren't the firmware's (no radio has them since the codec moved): a copy first
@@ -1274,9 +1291,9 @@ function stubPanel(fallback, onDone, what) {
 		try {
 			const link = await connectSerial();
 			const json = await f4StubJson();
-			stub = new F4Stub(link.s, { log: log.add, reopen: reopenOdrPort });
+			stub = new F4Stub(link.s, { log: log.add, reopen: reopenRFoundryPort, board: f4Board() });
 			S.link = null;		// the port belongs to the loader from here
-			await stub.enterFromOdr(f4Image(json), (d, n) => prog.set(d, n, t("flash.f4.sending")), { entry: json.run });
+			await stub.enterFromRFoundry(f4Image(json), (d, n) => prog.set(d, n, t("flash.f4.sending")), { entry: json.run });
 		} catch (e) {
 			if (stub?.jumped && !S.fakeRadio) return repick();
 			await dropSerial();
@@ -1316,7 +1333,7 @@ function doneView() {
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, codecText(p.codec))),
 			notice(good ? t("flash.done.ready") : t("flash.done.no_codec"), good ? "ok" : "bad"), good ? null : helpLink());
 			if (!S.backupDone) {
-				S.now = { ...S.now, probe: S.now?.kind === "odr" ? p : S.now?.probe, after: p };
+				S.now = { ...S.now, probe: S.now?.kind === "rfoundry" ? p : S.now?.probe, after: p };
 				status.append(backupNow({ when: "after", onDone: () => S.forward(finish()),
 					actions: (b) => S.forward([button(t("flash.nav.finish_no_backup"), () => reset(), { quiet: true }), b]) }));
 			} else S.forward(finish());
@@ -1344,7 +1361,7 @@ function backupView() {
 			const p = await probe(link);
 			if (!p) throw new Error(t("flash.err.no_answer"));
 			if (!S.board.debuglink_names.includes(p.board)) throw new Error(t("flash.err.wrong_board", { board: p.board, name: S.board.name }));
-			S.now = await odrNow(link, p);
+			S.now = await rfoundryNow(link, p);
 			status.replaceChildren(h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, p.codec || "?")),
 			h("details", { class: "small" }, h("summary", {}, t("flash.backup.add_stock")),
@@ -1396,7 +1413,7 @@ function restoreView() {
 		h("dt", {}, t("flash.restore.fw_now")), h("dd", {}, describeFirmware(meta.firmware_now)),
 		meta.firmware_before ? [h("dt", {}, t("flash.restore.fw_before")), h("dd", {}, describeFirmware(meta.firmware_before))] : null,
 		h("dt", {}, t("flash.restore.parts")), h("dd", {}, partNames(b.parts)));
-	const choices = h("div", { class: "choice-grid" }, ["odr", "codeplug", "stock"].map((tg) =>
+	const choices = h("div", { class: "choice-grid" }, ["rfoundry", "codeplug", "stock"].map((tg) =>
 		h("button", { class: "choice", type: "button", disabled: !avail.includes(tg), "aria-pressed": String(S.restoreTarget === tg),
 			onclick: () => { S.restoreTarget = tg; render(); } },
 		h("strong", {}, t(`flash.restore.to_${tg}`)), h("span", { class: "small muted" }, t(`flash.restore.to_${tg}_text`)))));
@@ -1408,7 +1425,7 @@ function restoreView() {
 			filePicker(t("flash.codec.stock_pick"), ".bin,.zip", async (f) => { S.stock = await pickedStock(f); render(); })));
 	else if (S.restoreTarget) {
 		parts.push(bootloaderPanel(t("flash.restore.write_title"), async (key) =>
-			(S.restoreTarget === "odr" ? planInternal(b, S.board) : planStock(S.stock.data, key, S.board, fb())), () => {
+			(S.restoreTarget === "rfoundry" ? planInternal(b, S.board) : planStock(S.stock.data, key, S.board, fb())), () => {
 			if (S.fakeRadio && S.restoreTarget === "stock") S.fakeRadio.running = "stock";
 			box.append(afterRestore());
 		}, { task: "restore", source: S.restoreTarget, radio: S.board.id,
@@ -1432,7 +1449,7 @@ function afterRestore() {
 	if (codeplugLayout(S.bundle) !== "openfw") {
 		S.forward(button(t("flash.nav.finish"), () => reset(), { primary: true }));
 		return panel(t("flash.restore.done_fw_title"), h("p", {}, t("flash.restore.done_fw_only")),
-			notice(t("flash.restore.codeplug_not_odr"), "info"));
+			notice(t("flash.restore.codeplug_not_rfoundry"), "info"));
 	}
 	const status = h("div");
 	const prog = progressBar();
@@ -1445,7 +1462,7 @@ function afterRestore() {
 			const spi = S.bundle.parts.get("spi-flash");
 			const now = await link.cpsDump(1, 0, Math.min(spi.data.length, 0x120000), { progress: (d, n) => prog.set(d, n, t("flash.restore.comparing")) });
 			const sectors = codeplugSectors(spi.data, now.data);
-			await prepareStorage(status);	// the radio refuses every codeplug write until its settings area is ODR's
+			await prepareStorage(status);	// the radio refuses every codeplug write until its settings area is RadioFoundry's
 			const refused = await writeCodeplug(link, sectors, (d, n) => prog.set(d, n, t("flash.restore.writing_codeplug")));
 			status.append(notice(refused.length ? t("flash.restore.codeplug_refused", { n: refused.length, total: sectors.length })
 				: t("flash.restore.codeplug_done", { n: sectors.length }), refused.length ? "" : "ok"));
@@ -1599,7 +1616,7 @@ function fixChooser(st, go) {
 		} else {
 			S.task = "restore";
 			S.step = 0;
-			S.restoreHint = pick === "backup" ? (st.symptom === "channels" ? "codeplug" : "odr") : "stock";
+			S.restoreHint = pick === "backup" ? (st.symptom === "channels" ? "codeplug" : "rfoundry") : "stock";
 		}
 		render();
 	};
@@ -1649,27 +1666,29 @@ async function main() {
 	}
 	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	if (location.hash.includes("sim=c7000")) {
-		// a DM-1801 Pro on its cable: running stock firmware, or (#sim=c7000-odr) ODR with the stub hand-over;
-		// #sim=c7000-db25d: a DB25-D PRO running its original firmware 018, reached through its debug console
-		const db25 = location.hash.includes("c7000-db25d");
-		const board = db25 ? "db25d" : "dm1801pro";
-		const sim = await c7000Simulation(S.data.fb.c7000, board);
+	// #sim=<board>[-stock]: that board, running RadioFoundry or its stock firmware; #sim: the first radio on stock firmware
+	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock)?)?(?:&|$)/);
+	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
+	const simStock = !!simAsk && (!simAsk[1] || !!simAsk[2]);
+	if (simRadio && c7ui.isC7000(simRadio, S.data.fb)) {
+		// on its cable: stock firmware (a stock console answers if the board has one), or RadioFoundry with the stub hand-over
+		const board = simRadio.id;
+		const sim = await c7000Simulation(S.data.fb.c7000, board, 7000, simRadio);
 		S.sim = { fb: { ...S.data.fb, c7000: sim.c } };
 		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: 600, faults: { silentAfterReset: true },
-			...(db25 ? { board: "DB25-D", codecId: "db25d-018", dataSize: 0x200000, usmart: "018", stubSpan: [0x1D000, 0x12000] } : {}) });
-		if (location.hash.includes("c7000-odr")) {
+			...fakeC7000Options(simRadio, S.data.fb) });
+		if (!simStock) {
 			const img = randomBytes(rng(98), 180 * 1024);
-			img.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);
+			img.set(new TextEncoder().encode("RadioFoundry"), 0x1000);
 			S.fakeC7.progmem.set(img, sim.c.app_start);
 			S.fakeC7.progmem.set(slotBytes(sim.c, board, await locateCodec(sim.progmem, sim.c, board)), sim.c.boards[board].slot[0]);
 		}
 		S.fakeC7.powerOn();
-	} else if (location.hash.includes("sim")) {
-		S.sim = await simulation(S.data.fb, "dm1701");
-		S.fakeRadio = new FakeRadio(S.sim, { state: location.hash.includes("sim=odr") ? "odr" : "stock", spiSize: 0x400000 });
+	} else if (simRadio) {
+		S.sim = await simulation(S.data.fb, simRadio.id);
+		S.fakeRadio = new FakeRadio(S.sim, { state: simStock ? "stock" : "rfoundry", spiSize: 0x400000 });
 		// a smaller SPI flash keeps the simulated backup quick
-		for (const r of S.data.radios) if (r.id === "dm1701") r.backup = { ...r.backup, spi_size: 0x400000 };
+		simRadio.backup = { ...simRadio.backup, spi_size: 0x400000 };
 	}
 	S.backupParts = [];
 	const m = location.hash.match(/radio=(\w+)/);

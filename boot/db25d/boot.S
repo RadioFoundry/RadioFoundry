@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* DB25-D first stage entry (boot.c; boot/README.md). The IAP loader jumps to 0x0300C000, the first byte of this
  * sector. On a normal power-on it does so only if the application's first 4 bytes are 2C 11 01 C0 (right after an
  * update it jumps without looking): those are the stock firmware's entry, "lrw r1, [0x0300C0B0]; mtcr r1, psr". The
  * same 6 bytes start this stage, with a harmless PSR (supervisor, interrupts off) in that literal.
  *
  * BOOT_WINDOW = 0: no application behind the stage, the handshake is offered forever.
- * BOOT_WINDOW > 0: boot_resume jumps to APP_RESUME, the application's first byte (ODR at 0x0300D000 sets up PSR,
+ * BOOT_WINDOW > 0: boot_resume jumps to APP_RESUME, the application's first byte (RadioFoundry at 0x0300D000 sets up PSR,
  * stack and RAM itself, platform/hrc7000/crt0.S). */
 	.section .entry, "ax"
 	.align	2

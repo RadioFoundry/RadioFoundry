@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * A PCM jitter buffer between two free-running 8 kHz clocks (docs/spec/usb-audio.md 5.3): audio the host produces at
  * its clock (USB audio OUT, USRP datagrams, serial frames) and the radio consumes at its codec's clock (the HR_C6000's
- * I2S word clock on the DM-1701), or the other way round. The clocks differ by up to a few hundred ppm, so a plain
+ * I2S word clock), or the other way round. The clocks differ by up to a few hundred ppm, so a plain
  * FIFO slowly runs dry or full. This one primes to a target fill, then keeps the smoothed fill near it by dropping or
  * repeating one sample per pull when it drifts more than one block away: at 100 ppm that's one sample about every
  * 1.25 s, inaudible on voice and harmless for AFSK. Overflow drops the oldest samples (latency stays bounded), an
@@ -12,8 +12,8 @@
  * first can run against a consumer in an interrupt without a lock (core/usbaudio/audio_mux.c). Host tested
  * (tests/host/usrpTest.c).
  */
-#ifndef ODR_PCM_SLIP_H
-#define ODR_PCM_SLIP_H
+#ifndef RFOUNDRY_PCM_SLIP_H
+#define RFOUNDRY_PCM_SLIP_H
 
 #include <stdbool.h>
 #include <stddef.h>

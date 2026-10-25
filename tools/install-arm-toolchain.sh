@@ -1,20 +1,21 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Installs the pinned Arm GNU Toolchain (Linux x86_64) into ~/opt, where the Makefile looks first, trimmed to what the
 # STM32F4 boards use: the Cortex-M4 hard-float multilib (thumb/v7e-m+fp), C and LTO only, no documentation, no
 # debugger. About 215 MB instead of 1 GB, which matters on a runner whose job containers share a small disk.
 #
-#   tools/install-arm-toolchain.sh             (CI: docs/dev/ci.md; release.yml pins the same version)
+#   tools/install-arm-toolchain.sh             (CI: docs/dev/ci.md): platform/stm32f4/platform.toml [toolchain]
 #   ARM_GCC_VERSION=... ARM_GCC_SHA256=... tools/install-arm-toolchain.sh
 #   FULL=1 tools/install-arm-toolchain.sh      every multilib and tool, as Arm ships it
 #
 # Does nothing when ~/opt/arm-gnu-toolchain-<version>-x86_64-arm-none-eabi/bin/arm-none-eabi-gcc already runs (a CI
 # cache restored it). Downloads to $RUNNER_TEMP (or /tmp) and checks the SHA-256 before extracting.
 set -eu
-VER=${ARM_GCC_VERSION:-13.3.rel1}
-SHA=${ARM_GCC_SHA256:-95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4}
+TCV="$(dirname "$0")/platform_toolchain.sh"
+VER=${ARM_GCC_VERSION:-$("$TCV" stm32f4 version)}
+SHA=${ARM_GCC_SHA256:-$("$TCV" stm32f4 sha256)}
 NAME="arm-gnu-toolchain-${VER}-x86_64-arm-none-eabi"
 DEST="$HOME/opt"
 TC="$DEST/$NAME"

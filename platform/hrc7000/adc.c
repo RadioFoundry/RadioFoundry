@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// ADC (0x140D0000): one single-scan conversion of channel B (1) or C (2), 10 bits (docs/spec/hardware-dm32.md 3.7).
+// Copyright (c) 2026 The RadioFoundry Authors
+// ADC (0x140D0000): one single-scan conversion of channel A..H (0..7), 10 bits (docs/spec/hardware-dm32.md 3.7).
 // A mutex serializes the readers once the scheduler runs.
 #include "platform.h"
 #include "FreeRTOS.h"
@@ -13,12 +13,13 @@
 #define ADC_START		REG32(ADC_BASE + 0x14)
 #define ADC_CH_VLD		REG32(ADC_BASE + 0x24)
 #define ADC_PD_SEOC_TIME	REG32(ADC_BASE + 0x28)
-#define ADC_DATA_AB		REG32(ADC_BASE + 0x30)
-#define ADC_DATA_CD		REG32(ADC_BASE + 0x34)
+// Channel pairs: A/B at 0x30, C/D at 0x34 (hardware-dm32.md 3.7); E/F and G/H are taken to follow at 0x38 / 0x3C (INF)
+#define ADC_DATA(ch)		REG32(ADC_BASE + 0x30u + 4u * ((ch) >> 1))
+#define ADC_CHANNELS		8u
 #define ADC_SPINS		200000u
 
 static SemaphoreHandle_t lock;
-static uint16_t raw_last[3];
+static uint16_t raw_last[ADC_CHANNELS];
 
 void hrc_adc_init(void)
 {
@@ -45,7 +46,7 @@ static void give(void)
 // Single scan converts the lowest enabled channel only (3.7)
 uint16_t hrc_adc_read(uint8_t ch)
 {
-	if (ch < 1 || ch > 2) {
+	if (ch >= ADC_CHANNELS) {
 		return 0;
 	}
 	take();
@@ -58,7 +59,7 @@ uint16_t hrc_adc_read(uint8_t ch)
 	uint16_t v = 0;
 	for (uint32_t n = ADC_SPINS; n != 0; n--) {
 		if (ADC_INTR_STA & bit) {
-			v = (uint16_t)((ch == 1 ? ADC_DATA_AB >> 16 : ADC_DATA_CD) & 0x3FFu);
+			v = (uint16_t)((ADC_DATA(ch) >> ((ch & 1u) * 16u)) & 0x3FFu);
 			break;
 		}
 	}
@@ -70,5 +71,5 @@ uint16_t hrc_adc_read(uint8_t ch)
 
 uint16_t hrc_adc_last(uint8_t ch)
 {
-	return ch < 3 ? raw_last[ch] : 0;
+	return ch < ADC_CHANNELS ? raw_last[ch] : 0;
 }

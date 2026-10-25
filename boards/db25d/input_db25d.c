@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D front keys, encoder and the mic's PTT (docs/spec/hardware-db25d.md 3.3).
 //
 // Five drive lines and three sense lines make a 15-position matrix. The front keys' positions were found on the radio
 // by pressing each one with the diagnostics page's raw scan running; the other positions report as spares. The mic's PTT pulls
 // its RXD line (UART1 RXD, also the PC link and the hand mic's key frames) low. Every 0 bit on that line pulls it low
-// too, so a low read within 50 ms of a good byte is serial data, not PTT (drivers/input/sharedptt, as on the DM-32UV),
+// too, so a low read within 50 ms of a good byte is serial data, not PTT (drivers/input/sharedptt, as on the other HR_C7000 boards),
 // and the line then has to read low on three scans in a row (INF: the pad level is assumed readable while the pin is
 // the UART's). The hand mic's PTT is PTC11, low while held (found on the radio), as the stock firmware reads it.
 #include "db25d.h"
@@ -56,7 +56,7 @@ static uint8_t mic_levels;
 static uint16_t a9_changes, c11_changes;
 
 // Encoder: both lines on both edges into the table decoder, two steps per detent resting where A == B (as on the
-// DM-32). PTB8 goes in as A and PTB5 as B: the other way round, clockwise stepped down on the radio. The interrupt is
+// other HR_C7000 boards). PTB8 goes in as A and PTB5 as B: the other way round, clockwise stepped down on the radio. The interrupt is
 // the only writer
 #define ENC_STEPS	2
 static quad_dec_t enc;

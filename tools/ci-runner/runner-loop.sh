@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Host side of the self-hosted runner (README.md). Subcommands:
 #
@@ -8,19 +8,19 @@
 #   runner-loop.sh register    one-time registration, with a registration token on stdin (never on a command line)
 #   runner-loop.sh             forever: one fresh container per job (`run.sh --once`, then `--rm`), repeat
 #
-# Settings come from $ODR_CI_ENV (default: runner.env next to this script). systemd runs the loop, one
-# odr-ci-runner@.service instance per runner, each with its own env file (NAME, WORK_DIR, STATE_DIR; README.md).
+# Settings come from $RFOUNDRY_CI_ENV (default: runner.env next to this script). systemd runs the loop, one
+# rfoundry-ci-runner@.service instance per runner, each with its own env file (NAME, WORK_DIR, STATE_DIR; README.md).
 # Touch $BASE/disabled to stop starting new containers (a running job finishes).
 set -u
 BASE=$(cd "$(dirname "$0")" && pwd)
 # shellcheck disable=SC1090
-. "${ODR_CI_ENV:-$BASE/runner.env}"
+. "${RFOUNDRY_CI_ENV:-$BASE/runner.env}"
 : "${REPO:?}" "${IMAGE:?}" "${PROXY_IMAGE:?}" "${WORK_DIR:?}" "${STATE_DIR:?}" "${SUBNET:?}" "${PROXY_IP:?}"
-NAME=${NAME:-odr-ci-1}
-LABELS=${LABELS:-odr-ci}
-NETWORK=${NETWORK:-odr-ci-internal}
-EGRESS_NETWORK=${EGRESS_NETWORK:-odr-ci-egress}
-PROXY_NAME=${PROXY_NAME:-odr-ci-proxy}
+NAME=${NAME:-rfoundry-ci-1}
+LABELS=${LABELS:-rfoundry-ci}
+NETWORK=${NETWORK:-rfoundry-ci-internal}
+EGRESS_NETWORK=${EGRESS_NETWORK:-rfoundry-ci-egress}
+PROXY_NAME=${PROXY_NAME:-rfoundry-ci-proxy}
 CPUS=${CPUS:-4}
 MEMORY=${MEMORY:-4g}
 PIDS=${PIDS:-4096}
@@ -42,7 +42,7 @@ runner() {
 		--network "$NETWORK" \
 		-e "https_proxy=$PROXY" -e "http_proxy=$PROXY" -e "HTTPS_PROXY=$PROXY" -e "HTTP_PROXY=$PROXY" \
 		-e no_proxy= -e NO_PROXY= \
-		-e "ODR_CI_REPO=$REPO" -e "ODR_CI_NAME=$NAME" -e "ODR_CI_LABELS=$LABELS" \
+		-e "RFOUNDRY_CI_REPO=$REPO" -e "RFOUNDRY_CI_NAME=$NAME" -e "RFOUNDRY_CI_LABELS=$LABELS" \
 		--mount "type=bind,src=$WORK_DIR,dst=/work" \
 		--mount "type=bind,src=$STATE_DIR,dst=/state$2" \
 		"$IMAGE" "$1"

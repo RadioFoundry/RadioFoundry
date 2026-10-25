@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Microphone gain (Settings > Talk & listen > Mic gain; docs/spec/radio-features.md 3.6): a step 0..10, 2 dB a step,
 // 5 = the board's own levels. A board with hal_radio_t.mic_gain gets the step as a dB offset for FM and DMR (the
 // modem's microphone gain); otherwise DMR scales the mic samples before the vocoder (ambeVoiceSetMicGain) and FM

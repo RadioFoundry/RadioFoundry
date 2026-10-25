@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Host stand-in for task.h, for crashCaptureTest only: the running task's handle and name
 #ifndef CRASH_STUB_TASK_H
 #define CRASH_STUB_TASK_H

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The SFR roles of a codeplug channel, without the hotspot (docs/spec/sfr.md 4). The bench modem is the talker: a
 group call on the channel's timeslot with direct mode sync. The tests judge by the radio's own counters (sfr.*,
 dmr.*, call.*), not the SDR. They need a channel with the role on --sfr-freq (default --dmr-freq) in the current zone,
@@ -8,7 +8,7 @@ set in the codeplug (the tests don't write it), and skip without one. Every sett
 test_sfr_repeater_quality (rf, radio_tx, bench_service): a repeater-role channel (Rpt or Rpt Moto) repeats a 4
 superframe call. Pass: at least 19 bursts repeated (18 voice and a header); the inbound frames the runner decoded
 (sfr.rx_fec) at least 60 of the call's 72, with at most 3 lost and fewer than 4 bit errors a frame on average. The
-DM-1701 gives 0 lost and under 1 bit a frame (gotchas 14.14); the per-frame-place counts (sfr.rx_fec_pos) are printed.
+An AT1846S board with the direct keying gives 0 lost and under 1 bit a frame (gotchas 14.14); the per-frame-place counts (sfr.rx_fec_pos) are printed.
 
 test_sfr_repeater_tx_inhibit (rf, radio_tx, bench_service): with TX inhibit the repeater role lets go of the modem
 (dmr.sfr_rpt 0) and a call is not repeated; cleared, the role starts again by itself (dmr.sfr_rpt 1) with no channel
@@ -22,7 +22,7 @@ test_sfr_user_modes (rf, bench_service): a user-role channel (User or User ERDM)
 Receive mode 0 (repeater only) drops it (call.rx_sfr_direct counts its voice bursts, nothing plays); mode 1 (first
 copy) plays it. The radio doesn't transmit.
 
-test_sfr_chain_odr_user (rf, radio_tx: also --sfr-talker-port, --sfr-listener-port): the whole chain with ODR radios
+test_sfr_chain_rfoundry_user (rf, radio_tx: also --sfr-talker-port, --sfr-listener-port): the whole chain with RadioFoundry radios
 only, the thing the bench talker can't show. The --radio-port radio is on a repeater-role channel, the talker and the
 listener on user-role channels, all on --sfr-freq. The talker keys TALKER_S seconds at its lowest power with the voice
 layer's test signal in place of the mic (RADIO op 33). One call per listener receive mode (--sfr-listen-modes, default
@@ -38,7 +38,7 @@ import time
 
 import pytest
 
-from odr_hil import counter_deltas
+from rfoundry_hil import counter_deltas
 
 RPT_ROLES = (3, 4)  # sfrRole_t: RPT_STANDARD, RPT_MOTOROLA
 USER_ROLES = (1, 2)  # USER_STANDARD, USER_ERDM
@@ -207,7 +207,7 @@ def _bench_lease(request):
 
 def _user_radio(port, hz, what):
     """Open the radio on port and put it on a user-role channel on hz; returns (Radio, snapshot, tx_inhibit)."""
-    from odr_hil import Radio
+    from rfoundry_hil import Radio
     r = Radio(port)
     try:
         if "DMR" not in r.features():
@@ -228,7 +228,7 @@ def _user_radio(port, hz, what):
 
 @pytest.mark.rf
 @pytest.mark.radio_tx
-def test_sfr_chain_odr_user(radio, pytestconfig, request, tx_allowed):
+def test_sfr_chain_rfoundry_user(radio, pytestconfig, request, tx_allowed):
     talker_port = pytestconfig.getoption("--sfr-talker-port")
     listener_port = pytestconfig.getoption("--sfr-listener-port")
     if not (talker_port and listener_port):

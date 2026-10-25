@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Read and write the radio's codeplug over the fast codeplug protocol (docs/spec/cps-fast.md): the debug link's
 CODEPLUG command, in 4 KB blocks, blank blocks skipped, only blocks whose CRC-32 differs moved, LZ4 both ways.
 
@@ -13,7 +13,7 @@ CODEPLUG command, in 4 KB blocks, blank blocks skipped, only blocks whose CRC-32
 Image files are the ones tools/cps_client.py keeps (file offset = image offset = the STM32 wire address). Regions
 (--regions) as cps_client.py's: qdmr (default), codeplug, all. Whole blocks travel: a write keeps the radio's bytes
 of a block outside the regions (it reads such a block first). Transport as cps_client.py: --port (the radio's USB
-serial port or a programming cable), $ODR_PORT, the only 1FC9:0094 device, or --exec "tests/host/cpsSim --populate".
+serial port or a programming cable), $RFOUNDRY_PORT, the only 1FC9:0094 device, or --exec "tests/host/cpsSim --populate".
 A radio without the protocol (CONFIG_CPS_FAST off, older firmware) answers unavailable or unknown: use
 cps_client.py.
 """
@@ -28,7 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "..", "stub"))
 import cps_client  # noqa: E402  (transports, regions, image files)
-import odr_debug  # noqa: E402  (debug link framing)
+import rfoundry_debug  # noqa: E402  (debug link framing)
 import stubtool  # noqa: E402  (LZ4 block encoder and decoder)
 
 CMD = 0x1C
@@ -88,7 +88,7 @@ class FastLink:
     # ── debug link frames ──
     def _frame(self, deadline):
         while True:
-            i = self.buf.find(bytes([odr_debug.SOF1, odr_debug.SOF2]))
+            i = self.buf.find(bytes([rfoundry_debug.SOF1, rfoundry_debug.SOF2]))
             if i < 0:
                 del self.buf[:-1]
             else:
@@ -100,7 +100,7 @@ class FastLink:
                         continue
                     if len(self.buf) >= 8 + n:
                         f = bytes(self.buf[:8 + n])
-                        if odr_debug.crc16(f[2:6 + n]) == (f[6 + n] | (f[7 + n] << 8)):
+                        if rfoundry_debug.crc16(f[2:6 + n]) == (f[6 + n] | (f[7 + n] << 8)):
                             del self.buf[:8 + n]
                             return f[2], f[3], f[6:6 + n]
                         del self.buf[:1]
@@ -127,7 +127,7 @@ class FastLink:
         body = bytes([op]) + bytes(payload)
         for attempt in range(tries):
             self.seq = (self.seq + 1) & 0xFF
-            f = odr_debug.frame(CMD, self.seq, body)
+            f = rfoundry_debug.frame(CMD, self.seq, body)
             self.t.write(f)
             self.requests += 1
             self.wire += len(f)
@@ -140,7 +140,7 @@ class FastLink:
                 if seq != self.seq:
                     continue
                 self.wire += 8 + len(data)
-                if cmd == odr_debug.CMD_ERROR:
+                if cmd == rfoundry_debug.CMD_ERROR:
                     raise FastError(f"op {op}: frame error {data[:1].hex()}", data[0] if data else None)
                 if cmd != (CMD | 0x80) or not data:
                     raise FastError(f"op {op}: unexpected reply {cmd:#x}")
@@ -158,7 +158,7 @@ class FastLink:
             if st == 0:
                 return d
             why = d[0] if st == 7 and d else None
-            text = odr_debug.STATUS.get(st, st) if why is None else REASONS.get(why, why)
+            text = rfoundry_debug.STATUS.get(st, st) if why is None else REASONS.get(why, why)
             raise FastError(f"op {op}: {text}", st, why)
 
     # ── operations ──
@@ -338,7 +338,7 @@ class FastLink:
 def open_link(port=None, exec_cmd=None, timeout=2.0):
     if exec_cmd:
         return FastLink(cps_client.ExecTransport(exec_cmd), timeout)
-    port = port or os.environ.get("ODR_PORT") or cps_client.find_port()
+    port = port or os.environ.get("RFOUNDRY_PORT") or cps_client.find_port()
     if not port:
         raise FastError("no radio found (1FC9:0094): give --port")
     return FastLink(cps_client.SerialTransport(port), timeout)

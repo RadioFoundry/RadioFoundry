@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Home, quick settings and the boot splash, laid out from the display size (docs/ux/information-architecture.md 3, 5;
 // docs/ux/wireframes). Regions top to bottom: status strip, place, talk target, activity, hint row.
 #include <string.h>
@@ -238,6 +238,12 @@ static uint8_t rssi_bars(int16_t dbm)
 	return 0;
 }
 
+// The mode word: AM where an FM channel or the VFO is received in AM (the air band)
+static const char *mode_word(const radio_view_t *v)
+{
+	return v->ch.mode == RADIO_MODE_DMR ? "DMR" : v->am ? "AM" : "FM";
+}
+
 // Status strip (P2): state pill, mode, monitor, lock, unread messages, signal, battery.
 // A titled screen (prefix and / or name) on a display under UI_TALL_PX high merges its title into the strip
 // (wireframes 160x128 and 128x64): the pill shows only while not idle, the signal bars and the battery icon give way
@@ -246,7 +252,7 @@ static uint8_t rssi_bars(int16_t dbm)
 uint32_t ui_strip_draws;
 
 // The pill shows st instead of v->state: the hotspot screen shows what the hotspot does without a copy of the whole
-// view on the UI task's stack (the MD-380's deepest path, stack check)
+// view on the UI task's stack (the UI task's deepest path, stack check)
 static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t *s, const char *prefix, const char *name)
 {
 	ui_strip_draws++;
@@ -371,12 +377,12 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 	}
 	// Left side: the mode, and one mode word when there is room for it with a space either side. In dual watch the
 	// mode is the selected channel's (the tuned one alternates) and the word is DUAL
-	uint8_t mode = v->ch.mode;
+	const char *mw = mode_word(v);
 #if CONFIG_DUAL_WATCH
 	if (s->dual.on)
-		mode = s->dual.pane[s->dual.sel].mode;
+		mw = s->dual.pane[s->dual.sel].mode == RADIO_MODE_DMR ? "DMR" : "FM";
 #endif
-	int lx = gfx_text(f, x, ty, mode == RADIO_MODE_DMR ? "DMR" : "FM", sfg);
+	int lx = gfx_text(f, x, ty, mw, sfg);
 #if CONFIG_DUAL_WATCH
 	if (s->dual.on && lx + 6 * f->w <= rx)
 		lx = gfx_text(f, lx + f->w, ty, "DUAL", swarn);
@@ -582,45 +588,86 @@ void ui_draw_hint(const char *text, bool toast)
 
 // --- boot splash ---
 
-// The mark: a mast with a station dot on top and three arcs of signal either side, drawn to the size asked for (r =
-// outer arc radius; the mark is 2r wide and about 1.4r tall, the dot at cx, cy). Plain pixels, so it scales to every
-// display class and stays crisp on a 1 bpp panel
-static void draw_mark(int cx, int cy, int r)
+// The mark: a hexagon with a skyline behind a handheld radio, signal arcs either side of its antenna. It is drawn
+// per pixel from shapes laid out on a 1024 grid (hex radius 482, center 512,512), so it scales to every display class
+// with no bitmap. Six flat colors fit the 16-entry palette of a 4 bpp panel. On a 1 bpp panel the hexagon is solid ink
+// with the radio and arcs cut out of it, and a small mark has one arc a side, so the strokes stay a pixel or more
+
+static const color_t ORANGE = RGB565(242, 96, 31), SKY = RGB565(203, 74, 24), CREAM = RGB565(255, 243, 220),
+	BROWN = RGB565(59, 23, 9), AMBER = RGB565(255, 179, 71), PEACH = RGB565(255, 217, 168);
+
+static bool in_rrect(int px, int py, int x, int y, int w, int h, int r)
 {
-	static const color_t arc_rgb[3] = { RGB565(110, 170, 255), RGB565(64, 140, 255), RGB565(32, 96, 200) };
-	int t = r >= 28 ? 3 : r >= 14 ? 2 : 1;		// arc thickness
-	int dot = r / 7 > 1 ? r / 7 : 1;
-	for (int i = 0; i < 3; i++) {
-		int ro = r * (i + 2) / 4, ri = ro - t;	// radii r/2, 3r/4, r
-		color_t c = gfx_bpp() == 1 ? ui_col.fg : arc_rgb[i];
-		for (int dy = -ro; dy <= ro; dy++) {
-			for (int dx = -ro; dx <= ro; dx++) {
-				int d2 = dx * dx + dy * dy, ady = dy < 0 ? -dy : dy, adx = dx < 0 ? -dx : dx;
-				// in the ring, within 40 degrees of horizontal (tan 40 = 0.84)
-				if (d2 <= ro * ro && d2 > ri * ri && ady * 100 <= adx * 84)
-					gfx_pixel(cx + dx, cy + dy, c);
-			}
-		}
-	}
-	// The mast: a narrow triangle from under the dot to the base, then the dot
-	int top = cy + dot + 1, base = cy + r * 3 / 4, half = r / 5 > 1 ? r / 5 : 1;
-	for (int y = top; y <= base; y++) {
-		int hw = half * (y - top) / (base - top > 0 ? base - top : 1);
-		gfx_hline(cx - hw, y, 2 * hw + 1, gfx_bpp() == 1 ? ui_col.fg : ui_col.dim);
-	}
-	for (int dy = -dot; dy <= dot; dy++)
-		for (int dx = -dot; dx <= dot; dx++)
-			if (dx * dx + dy * dy <= dot * dot + dot / 2)
-				gfx_pixel(cx + dx, cy + dy, ui_col.fg);
+	if (px < x || px >= x + w || py < y || py >= y + h)
+		return false;
+	int cx = px < x + r ? x + r : px >= x + w - r ? x + w - r - 1 : px;
+	int cy = py < y + r ? y + r : py >= y + h - r ? y + h - r - 1 : py;
+	return (px - cx) * (px - cx) + (py - cy) * (py - cy) <= r * r;
 }
 
-// The wordmark: "Open" in the accent color, "DigitalRadio" in the text color, centered; returns its height
+// The color at one point of the 1024 grid, or -1 outside the hexagon
+static int mark_color(int X, int Y, bool mono, bool small)
+{
+	color_t ink = ui_col.fg, paper = ui_col.bg;
+	int ax = X > 512 ? X - 512 : 512 - X, ay = Y > 512 ? Y - 512 : 512 - Y;
+	if (ay * 1000 + ax * 577 > 482000 || ax > 417)
+		return -1;
+	// Radio: antenna and side knob, body, display, speaker slits and the key
+	color_t body = mono ? paper : CREAM, det = mono ? ink : BROWN, scr = mono ? ink : AMBER;
+	if (in_rrect(X, Y, 434, 193, 37, 311, 18) || in_rrect(X, Y, 553, 441, 46, 74, 14) || in_rrect(X, Y, 397, 482, 230, 370, 46)) {
+		if (in_rrect(X, Y, 448, 532, 129, 63, 7))
+			return scr;
+		if (in_rrect(X, Y, 436, 519, 152, 89, 11))
+			return det;
+		for (int i = 0; i < 3; i++)
+			if (in_rrect(X, Y, 436, 652 + 37 * i, 152, 15, 7))
+				return det;
+		if ((X - 512) * (X - 512) + (Y - 800) * (Y - 800) <= 23 * 23)
+			return det;
+		return body;
+	}
+	// Signal arcs, within 42 degrees of horizontal either side of the antenna, centered 452,286
+	static const short ring[2][3][2] = { { { 76, 22 }, { 122, 20 }, { 168, 18 } }, { { 120, 60 }, { 0, 0 }, { 0, 0 } } };
+	int dx = X - 452, dy = Y - 286, d2 = dx * dx + dy * dy, ady = dy < 0 ? -dy : dy, adx = dx < 0 ? -dx : dx;
+	if (ady * 100 <= adx * 90) {
+		for (int i = 0; i < 3; i++) {
+			int r = ring[small][i][0], hw = ring[small][i][1] / 2;
+			if (r && d2 >= (r - hw) * (r - hw) && d2 <= (r + hw) * (r + hw))
+				return mono ? paper : PEACH;
+		}
+	}
+	if (mono)
+		return ink;
+	// Skyline: a sawtooth roof, two chimneys, in a darker orange than the hexagon
+	if (X >= 30 && X < 994) {
+		int roof = 490 - 120 * ((X - 30) % 241) / 241;
+		if (Y >= roof || (X >= 678 && X < 762 && Y >= 230 && Y < 260) || (X >= 690 && X < 750 && Y >= 250) ||
+		    (X >= 223 && X < 267 && Y >= 270))
+			return SKY;
+	}
+	return ORANGE;
+}
+
+// r = the hexagon's radius in pixels (the mark is 1.73 r wide and 2 r tall), centered on cx, cy
+static void draw_mark(int cx, int cy, int r)
+{
+	bool mono = gfx_bpp() == 1, small = mono && r < 26;
+	for (int dy = -r; dy < r; dy++) {
+		for (int dx = -r; dx < r; dx++) {
+			int c = mark_color(512 + (2 * dx + 1) * 241 / r, 512 + (2 * dy + 1) * 241 / r, mono, small);
+			if (c >= 0)
+				gfx_pixel(cx + dx, cy + dy, (color_t)c);
+		}
+	}
+}
+
+// The wordmark: "Radio" in the accent color, "Foundry" in the text color, centered; returns its height
 static int draw_wordmark(const font_t *f, int y)
 {
-	int w1 = gfx_text_width(f, "Open"), w = w1 + gfx_text_width(f, "DigitalRadio");
+	int w1 = gfx_text_width(f, "Radio") + 1, w = w1 + gfx_text_width(f, "Foundry");
 	int x = (gfx_width() - w) / 2;
-	gfx_text(f, x, y, "Open", gfx_bpp() == 1 ? ui_col.fg : ui_col.priv);
-	gfx_text(f, x + w1, y, "DigitalRadio", ui_col.fg);
+	gfx_text(f, x, y, "Radio", gfx_bpp() == 1 ? ui_col.fg : AMBER);
+	gfx_text(f, x + w1, y, "Foundry", ui_col.fg);
 	return f->h;
 }
 
@@ -630,7 +677,7 @@ void ui_draw_splash(const char *board_name, const char *git, const char *line1, 
 	const ui_layout_t *L = &ui_layout;
 	gfx_clear(ui_col.bg);
 
-	const char *word = "OpenDigitalRadio";
+	const char *word = "RadioFoundry";
 	const font_t *wf = gfx_text_width(L->large, word) <= w - 4 ? L->large :
 		gfx_text_width(L->medium, word) <= w - 4 ? L->medium : L->small;
 	// The owner's lines (the CPS boot text): as large as fits, never dropped
@@ -655,45 +702,49 @@ void ui_draw_splash(const char *board_name, const char *git, const char *line1, 
 	int gap = h >= 200 ? 8 : h >= 100 ? 4 : 2;
 	int text_h = wf->h + gap + (n_lines > 0 ? gap + n_lines * lf->h : 0);
 	int avail = foot_y - gap - text_h - gap;
-	int r = avail * 10 / 14;			// the mark is about 1.4 r tall
-	if (r > w / 4)
-		r = w / 4;
-	if (r > h / 4)
-		r = h / 4;
-	bool mark = r >= 12;		// smaller than this the arcs merge into noise
+	int r = avail / 2;				// the mark is 2 r tall
+	if (r > w * 3 / 10)
+		r = w * 3 / 10;
+	if (r > h * 3 / 10)
+		r = h * 3 / 10;
+	bool mark = r >= 20;		// smaller than this the radio is a smudge
 	// Too short for the mark above the name (128x64): the mark left of the name instead, at the smallest size that
 	// stays clear, with the name in the largest font that leaves it room. The owner's lines keep their size
-	int side_r = 0;
+	int side_r = 0, side_w = 0;
 	if (!mark) {
-		int sr = 12, sw = 2 * sr + 4;
-		const font_t *sf = gfx_text_width(L->medium, word) <= w - 4 - sw ? L->medium :
-			gfx_text_width(L->small, word) <= w - 4 - sw ? L->small : NULL;
-		int row_h = sr * 14 / 10 > (sf != NULL ? sf->h : 0) ? sr * 14 / 10 : (sf != NULL ? sf->h : 0);
-		if (sf != NULL && text_h - wf->h + row_h <= foot_y - gap) {
-			side_r = sr;
-			wf = sf;
-			text_h += row_h - wf->h;
+		// The largest mark (14 px radius down to 10) whose row, with the name beside it, fits above the footer
+		for (int sr = 14; sr >= 10 && side_r == 0; sr--) {
+			int sw = sr * 173 / 100 + 4;
+			const font_t *sf = gfx_text_width(L->medium, word) <= w - 4 - sw ? L->medium :
+				gfx_text_width(L->small, word) <= w - 4 - sw ? L->small : NULL;
+			int row_h = 2 * sr > (sf != NULL ? sf->h : 0) ? 2 * sr : (sf != NULL ? sf->h : 0);
+			if (sf != NULL && text_h - wf->h + row_h <= foot_y - gap) {
+				text_h += row_h - wf->h;
+				side_r = sr;
+				side_w = sw;
+				wf = sf;
+			}
 		}
 	}
-	int mark_h = mark ? r * 14 / 10 : 0;
+	int mark_h = mark ? 2 * r : 0;
 	int total = mark_h + (mark ? gap : 0) + text_h;
 	int y = (foot_y - total) / 2;
 	if (y < 0)
 		y = 0;
 	if (mark) {
-		draw_mark(w / 2, y + r * 64 / 100 + 1, r);	// the arcs reach 0.64 r above the dot
+		draw_mark(w / 2, y + r, r);
 		y += mark_h + gap;
 	}
 	if (side_r > 0) {
-		int sw = 2 * side_r + 4, ww = gfx_text_width(wf, word);
-		int x0 = (w - sw - ww) / 2, row_h = side_r * 14 / 10 > wf->h ? side_r * 14 / 10 : wf->h;
-		draw_mark(x0 + side_r, y + (row_h - side_r * 14 / 10) / 2 + side_r * 64 / 100 + 1, side_r);
-		gfx_text(wf, x0 + sw, y + (row_h - wf->h) / 2, "Open", gfx_bpp() == 1 ? ui_col.fg : ui_col.priv);
-		gfx_text(wf, x0 + sw + gfx_text_width(wf, "Open"), y + (row_h - wf->h) / 2, "DigitalRadio", ui_col.fg);
+		int sw = side_w, ww = gfx_text_width(wf, word);
+		int x0 = (w - sw - ww) / 2, row_h = 2 * side_r > wf->h ? 2 * side_r : wf->h;
+		draw_mark(x0 + (sw - 4) / 2, y + row_h / 2, side_r);
+		gfx_text(wf, x0 + sw, y + (row_h - wf->h) / 2, "Radio", gfx_bpp() == 1 ? ui_col.fg : AMBER);
+		gfx_text(wf, x0 + sw + gfx_text_width(wf, "Radio") + 1, y + (row_h - wf->h) / 2, "Foundry", ui_col.fg);
 		y += row_h;
 	} else
 		y += draw_wordmark(wf, y);
-	gfx_hline(w / 2 - w / 6, y + gap / 2, w / 3, gfx_bpp() == 1 ? ui_col.fg : ui_col.focus);
+	gfx_hline(w / 2 - w / 6, y + gap / 2, w / 3, gfx_bpp() == 1 ? ui_col.fg : ORANGE);
 	y += gap;
 	if (n_lines > 0) {
 		y += gap;
@@ -846,6 +897,18 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		return;
 	}
 #endif
+	if (v->am || v->bcast) {
+		// No tone, width or power here: the receiver is fixed. The air band squelch is real, the broadcast one isn't used
+		x = gfx_text(f, x, y, v->am ? "Air Band AM" : "Broadcast FM", ui_col.fg) + f->w;
+		if (v->am) {
+			sb_init(&b, buf, sizeof buf);
+			sb_str(&b, "SQ");
+			sb_u32(&b, v->squelch, 1);
+			if (x + gfx_text_width(f, buf) <= w)
+				gfx_text(f, x, y, buf, ui_col.fg);
+		}
+		return;
+	}
 	sb_init(&b, buf, sizeof buf);
 	bool tone_temp = (v->temp & (RADIO_TEMP_TX_TONE | RADIO_TEMP_RX_TONE)) != 0;
 	if (tone_temp)
@@ -925,6 +988,8 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_REJECTED: sb_str(&b, "Modem refused to send"); break;
 	case TXDENY_HOTSPOT: sb_str(&b, "Hotspot mode: PTT off"); break;
 	case TXDENY_NO_ID: sb_str(&b, "No DMR ID in codeplug"); break;
+	case TXDENY_AM: sb_str(&b, "Air band: receive only"); break;
+	case TXDENY_BCAST: sb_str(&b, "Broadcast: receive only"); break;
 	case TXDENY_SFR_RPT: sb_str(&b, "Repeater channel: PTT off"); break;
 	default: sb_str(&b, "Not allowed here"); break;
 	}
@@ -936,16 +1001,29 @@ static const char *deny_action(const radio_view_t *v)
 	switch (v->tx_deny) {
 	case TXDENY_BAND: return v->vfo ? "Tune into a band, then PTT" : "Pick another channel";
 	case TXDENY_TIMEOUT: return "Release PTT to talk again";
-	case TXDENY_NO_CODEC: return "Add codec with odrflash";
+	case TXDENY_NO_CODEC: return "Add codec with rfoundry";
 	case TXDENY_BUSY: return "Wait for the call to end";
 	case TXDENY_NO_REPEATER: return "Check CC and range";
 	case TXDENY_REJECTED:
 	case TXDENY_NO_DMR: return "Release PTT, try again";
 	case TXDENY_HOTSPOT: return "OK stop hotspot";
 	case TXDENY_NO_ID: return "Set your DMR ID in qdmr";
+	case TXDENY_AM:
+	case TXDENY_BCAST: return v->vfo ? "Tune out of the band" : "Pick another channel";
 	case TXDENY_SFR_RPT: return "Pick a user channel to talk";
 	default: return "Pick another channel";
 	}
+}
+
+// On the air without PTT: the DMR stack sends a data burst list (ARS, SMS, a position, the IP gateway, a roaming probe)
+static bool sending_data(const radio_view_t *v)
+{
+#if CONFIG_DMR
+	return v->state == RS_TX && v->ch.mode == RADIO_MODE_DMR && v->dmr.state == RDMR_TX_DATA;
+#else
+	(void)v;
+	return false;
+#endif
 }
 
 // --- DMR (docs/ux/wireframes: Home DMR, Receiving, Transmitting) ---
@@ -1061,7 +1139,7 @@ static bool dmr_call_screen(const radio_view_t *v)
 	if (v->ch.mode != RADIO_MODE_DMR || !v->dmr.active || v->hotspot)
 		return false;
 	if (v->state == RS_TX)
-		return true;
+		return !sending_data(v);	// data has no talk target to show: Home stays, its activity line says so
 	return v->state == RS_RX && (v->dmr.state == RDMR_RX || v->dmr.state == RDMR_RX_OTHER);
 }
 
@@ -1355,9 +1433,16 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		sb_mmss(&b, v->tx_elapsed_ms / 1000u);
 		int tw = gfx_text_width(big, buf);
 		gfx_text(big, w - tw, y, buf, ui_col.fg);
-		gfx_text(big, 0, y, "TALKING", ui_col.tx);
+		gfx_text(big, 0, y, sending_data(v) ? "SENDING" : "TALKING", ui_col.tx);	// data: ARS, SMS, IP
 		if (two) {
 			sb_init(&b, buf, sizeof buf);
+			if (v->dtmf_digits[0] != 0) {
+				// DTMF sent in this transmission (radio-features.md 3.7): what the other end got, newest last
+				sb_str(&b, "DTMF ");
+				sb_str(&b, v->dtmf_digits);
+				gfx_text(sm, 0, y2, buf, ui_col.fg);
+				break;
+			}
 			if (v->tot_s) {
 				uint32_t el = v->tx_elapsed_ms / 1000u;
 				sb_mmss(&b, el < v->tot_s ? v->tot_s - el : 0);
@@ -1487,7 +1572,7 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 	} else
 #endif
 	{
-		sb_str(&b, v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM");
+		sb_str(&b, mode_word(v));
 		sb_chr(&b, ' ');
 		sb_str(&b, ui_power_name(v->power));
 	}
@@ -1907,7 +1992,7 @@ static void dual_activity(const radio_view_t *v, const ui_state_t *s, int y, int
 	// A transmission or a call coming in takes the first line
 	sb_init(&b, buf, sizeof buf);
 	if (v->state == RS_TX) {
-		sb_str(&b, "TALKING on ");
+		sb_str(&b, sending_data(v) ? "SENDING on " : "TALKING on ");
 		sb_str(&b, d->sel ? "B" : "A");
 		gfx_text(sm, 0, y, buf, ui_col.tx);
 		sb_init(&b, buf, sizeof buf);
@@ -2578,7 +2663,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		return v->ch.mode == RADIO_MODE_FM;
 	}
 	case QT_MODE:
-		sb_str(&b, v->ch.mode == RADIO_MODE_DMR ? "DMR" : "FM");	// what it is, as every other tile
+		sb_str(&b, mode_word(v));	// what it is, as every other tile
 		// Only in the VFO (a channel's tile 4 is QT_TO_VFO), in a build with both VFO kinds; it keeps the mode like
 		// its other settings
 		return feat(UI_FEAT_MODE) && v->vfo && CONFIG_VFO_FM && CONFIG_VFO_DMR;

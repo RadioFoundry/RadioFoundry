@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # HR_C7000 (C-SKY CK803S): csky-elf GCC 14 with newlib built for ck803s (tools/build-csky-toolchain.sh), FreeRTOS on
 # our port of the CDK CK802 port (platform/hrc7000/freertos)
 # ~/toolchains/csky-elf (the build script's default), else csky-elf-gcc on PATH (the CI image), else /usr/bin
@@ -17,6 +17,13 @@ CPUFLAGS := -mcpu=ck803s -mlittle-endian -mno-high-registers -msoft-float
 STACK_OVERHEAD := 68
 
 RTOS := third_party/FreeRTOS-Kernel
+
+$(if $(APP_BASE),,$(error boards/$(BOARD)/board.mk: APP_BASE, the image address, is missing))
+# The low SRAM below the codec window (common.ld .ram_lo, zeroed by crt0) holds the state the core marks RFOUNDRY_CPU_RAM. A
+# board whose linker script has no such section sets CPU_RAM_SECTION empty
+CPU_RAM_SECTION ?= .ram_lo
+MCU_DEFS += $(if $(CPU_RAM_SECTION),-DRFOUNDRY_CPU_RAM_SECTION='"$(CPU_RAM_SECTION)"')
+LDSCRIPT ?= boards/$(BOARD)/memory.ld
 
 # drivers/gps/*: the shared GPS receive ring under gps_hrc.c (unreferenced, so linked out, on a radio without a GPS)
 PLATFORM_DIRS := platform/hrc7000 platform/hrc7000/freertos drivers/gps/nmea_line drivers/gps/gps_rx

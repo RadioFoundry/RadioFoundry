@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // APRS through the radio core (docs/spec/aprs.md 6, 7, 9): the engine (core/aprs/aprs.c) and radio_sm.c's APRS block
 // in an FM-only build, against a fake board with an AFSK transmitter whose tones are decoded back to AX.25 frames.
 // Defaults (nothing sent), the amateur and callsign rules, beacon triggers and the hard minimum, CSMA on a busy
@@ -163,14 +163,34 @@ static void s_speaker(bool on) { (void)on; }
 static const hal_audio_t fake_audio = { .start = s_start, .stop = s_stop, .speaker_pcm = s_speaker };
 static hal_audio_tap_t fake_tap;	// caps 0: the stream's input is the microphone
 
-static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true } };
+// A broadcast receiver on an empty frequency: an APRS job's carrier sense must read the channel receiver on 144.390
+static bool bc_on;
+static bool b_power(bool on) { bc_on = on; return true; }
+static bool b_tune(uint32_t khz) { (void)khz; return bc_on; }
+static bool b_seek(bool up) { (void)up; return false; }
+static void b_volume(uint8_t level) { (void)level; }
+static bool b_status(bcast_status_t *st)
+{
+	memset(st, 0, sizeof(*st));
+	st->rssi = 5;
+	return bc_on;
+}
+static void b_audio(bool on) { (void)on; }
+static const hal_bcast_t fake_bcast = {
+	.lo_khz = 65000, .hi_khz = 108000, .grid_khz = 50, .power = b_power, .tune = b_tune, .seek = b_seek,
+	.volume = b_volume, .status = b_status, .audio = b_audio,
+};
+
+static const band_t bands[] = {
+	{ 136000000, 174000000, true }, { 400000000, 480000000, true }, { 65000000, 108000000, false },
+};
 static const char *const power_names[] = { "L", "H" };
 
 const board_t board = {
 	.name = "fake",
-	.caps = CAP_GPS,
+	.caps = CAP_GPS | CAP_BCAST_FM,
 	.bands = bands,
-	.band_count = 2,
+	.band_count = 3,
 	.power_count = 2,
 	.power_names = power_names,
 	.power_default = 0,
@@ -181,6 +201,7 @@ const board_t board = {
 	.afsk = &fake_afsk,
 	.audio = &fake_audio,
 	.audio_tap = &fake_tap,
+	.bcast = &fake_bcast,
 };
 
 // ---- fake codeplug: one channel ----
@@ -205,6 +226,7 @@ bool codeplug_channel(uint16_t n, channel_t *out)
 	return true;
 }
 uint16_t codeplug_zone_count(void) { return 1; }
+bool codeplug_zones_stored(void) { return true; }
 bool codeplug_zone(uint16_t i, zone_t *out)
 {
 	if (i != 0) {
@@ -220,7 +242,7 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out)
 	if (n != 1) {
 		return false;
 	}
-	strcpy(out->comment, "ODR test");
+	strcpy(out->comment, "RadioFoundry test");
 	strcpy(out->path[0], cp_path[0]);
 	strcpy(out->path[1], cp_path[1]);
 	return true;
@@ -377,7 +399,7 @@ static void test_beacon_on_air(void)
 	CHECK(hw.tx_calls == 1 && hw.tx_hz == APRS_HZ && hw.starts == 1);
 	CHECK(sm.view.state == RS_TX);
 	CHECK(nframes == 1);
-	CHECK(strcmp(frames[0], "N0TST-7>APZODR,WIDE1-1,WIDE2-1:!4903.50N/07201.75W[ODR test") == 0);
+	CHECK(strcmp(frames[0], "N0TST-7>APZRDF,WIDE1-1,WIDE2-1:!4903.50N/07201.75W[RadioFoundry test") == 0);
 	if (nframes > 0) {
 		printf("# on air: %s\n", frames[0]);
 	}
@@ -419,6 +441,26 @@ static void test_busy_channel(void)
 	hw.noise_on_aprs = 120;
 	run(20u * 1000u);	// tried again after the retry wait
 	CHECK(hw.starts == 1);
+}
+
+// On a broadcast channel the beacon's carrier sense reads the channel receiver on 144.390, not the broadcast one
+static void test_bcast_channel(void)
+{
+	reset();
+	chan.rx_hz = chan.tx_hz = 100100000u;
+	radio_sm_init(&sm, now);
+	aprs_set_test_call("N0TST");
+	configure(60, false);
+	hw.noise_on_aprs = 30;	// a carrier on 144.390; the broadcast frequency is empty
+	aprs_view_t v;
+	aprs_get_view(&v);
+	uint32_t busy = v.rf_busy;
+	run(61u * 1000u);
+	CHECK(sm.view.bcast && hw.rx_hz == APRS_HZ && hw.tx_calls == 0);	// listening, and holding off
+	run(10u * 1000u);
+	aprs_get_view(&v);
+	CHECK(hw.tx_calls == 0 && v.rf_busy == busy + 1);
+	CHECK(sm.view.bcast && sm.view.state == RS_RX);	// back on the broadcast channel, listening again
 }
 
 static void test_ptt_cuts(void)
@@ -494,7 +536,7 @@ static void test_manual_and_ptt_trigger(void)
 }
 
 // APRS keys at the radio's current power level, a temporary change included (it used the settings' default, so a
-// radio stepped down to its lowest level still sent APRS at the default: 1 W on the DM-1701)
+// radio stepped down to its lowest level still sent APRS at the default power)
 static void test_tx_power(void)
 {
 	reset();
@@ -598,7 +640,7 @@ static void test_host_kiss_nmea(void)
 	host_out_has("");
 	CHECK(aprs_send_now());
 	run(1000);
-	CHECK(host_out_has("GN0TST-7>APZODR,TCPIP*:!/"));	// compressed, no messaging (no receive path)
+	CHECK(host_out_has("GN0TST-7>APZRDF,TCPIP*:!/"));	// compressed, no messaging (no receive path)
 }
 
 static void test_messages(void)
@@ -663,23 +705,23 @@ static void test_stations_digi_igate(void)
 	c.igate_tx = true;
 	aprs_set_cfg(&c, now);
 	host_out_has("");
-	rx_line("K1ABC-9>APZODR,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>Mobile");
+	rx_line("K1ABC-9>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>Mobile");
 	CHECK(aprs_station_count() == 1);
 	aprs_station_t s;
 	CHECK(aprs_station(0, &s) && strcmp(s.call, "K1ABC-9") == 0 && s.has_pos && s.direct && s.sym_code == '>');
 	// gated to APRS-IS with our q construct; the raw frame to the KISS host too
-	CHECK(host_out_has("GK1ABC-9>APZODR,WIDE1-1,WIDE2-1,qAR,N0TST-7:=4903.50N/07201.75W>Mobile"));
+	CHECK(host_out_has("GK1ABC-9>APZRDF,WIDE1-1,WIDE2-1,qAR,N0TST-7:=4903.50N/07201.75W>Mobile"));
 	// digipeated (fill-in): our call in the path, used (TNC2 stars the last used entry)
 	CHECK(wait_start(1, 5000));
 	wait_idle();
-	CHECK(nframes == 1 && strcmp(frames[0], "K1ABC-9>APZODR,N0TST-7,WIDE1*,WIDE2-1:=4903.50N/07201.75W>Mobile") == 0);
+	CHECK(nframes == 1 && strcmp(frames[0], "K1ABC-9>APZRDF,N0TST-7,WIDE1*,WIDE2-1:=4903.50N/07201.75W>Mobile") == 0);
 	// a message from APRS-IS for the station we just heard: to RF as a third-party packet
 	nframes = 0;
 	const char *is = "W9XYZ>APRS,TCPIP*,qAC,T2TEST::K1ABC-9  :From the net{7";
 	aprs_host_is_line(is, strlen(is), now);
 	CHECK(wait_start(2, 5000));
 	wait_idle();
-	CHECK(nframes == 1 && strcmp(frames[0], "N0TST-7>APZODR:}W9XYZ>APRS,TCPIP,N0TST-7*::K1ABC-9  :From the net{7") == 0);
+	CHECK(nframes == 1 && strcmp(frames[0], "N0TST-7>APZRDF:}W9XYZ>APRS,TCPIP,N0TST-7*::K1ABC-9  :From the net{7") == 0);
 	// RFONLY stays local
 	rx_line("K2DEF>APRS,RFONLY:>local only");
 	CHECK(!host_out_has("K2DEF"));
@@ -1016,7 +1058,7 @@ static void test_rx_stream(void)
 	CHECK(sm.view.state == RS_IDLE);
 	fake_tap.caps = 0;
 }
-// A board with its own receive path and no transmit one (tx_start NULL, as the DM-32UV): its audio reaches the
+// A board with its own receive path and no transmit one (tx_start NULL): its audio reaches the
 // demodulator at its own rate, nothing is sent on RF and the transmitter is never keyed for APRS
 static struct {
 	const int16_t *s;
@@ -1093,6 +1135,7 @@ int main(void)
 	test_beacon_on_air();
 	test_min_interval();
 	test_busy_channel();
+	test_bcast_channel();
 	test_ptt_cuts();
 	test_not_amateur();
 	test_manual_and_ptt_trigger();

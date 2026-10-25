@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // LZ4 blocks (the open LZ4 block format): the decoder for the sectors the C7000 stub sends compressed, a port of
 // lz4_block() in stub/stubtool.py, and a small greedy encoder the simulated radio uses (stubtool's lz4_encode).
 

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """USRP voice over UDP in USB network mode (opt-in: --allow-usb-switch; firmware with CONFIG_NET_USRP,
 docs/spec/usb-audio.md 4.2). Each test switches the radio to the network adapter, talks USRP to it with
 tools/usrp_client.py from the host's side of the link, and switches it back to serial.
@@ -19,6 +19,8 @@ import time
 
 import pytest
 
+from rfoundry_hil import skip
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import usrp_client  # noqa: E402
 
@@ -31,11 +33,11 @@ def usrp_session(radio):
     the Radio helpers work"""
     radio.go_home()
     if radio.screen() == "hotspot":
-        pytest.skip("the radio is in hotspot mode")
+        skip("state", "the radio is in hotspot mode")
     serial = radio.link
     with network_mode(radio) as (udp, radio_ip, _):
         if "usrp.peer" not in udp.view(["usrp"]):
-            pytest.skip("built without CONFIG_NET_USRP")
+            skip("not_built", "built without CONFIG_NET_USRP")
         peer = usrp_client.Peer(radio_ip)
         radio.link = udp
         try:
@@ -59,12 +61,13 @@ def keyed(rows):
     return [r for r in rows if r[2] and r[3]]
 
 
+@pytest.mark.feature("net_usrp")
 @pytest.mark.usb_switch
 def test_usrp_fm_rx(radio, pytestconfig):
     if not pytestconfig.getoption("--allow-usb-switch"):
-        pytest.skip("needs --allow-usb-switch")
+        skip("opt_in", "needs --allow-usb-switch")
     if "VFO_FM" not in radio.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     hz = round(pytestconfig.getoption("--noaa-mhz") * 1e6)
     with usrp_session(radio) as (link, peer):
         with radio.vfo_session():
@@ -73,7 +76,7 @@ def test_usrp_fm_rx(radio, pytestconfig):
             try:
                 radio.wait_for(lambda v: v.get("state") == "rx", 10, interval=0.2, what="NOAA opens the squelch")
             except AssertionError:
-                pytest.skip(f"NOAA on {hz / 1e6:.3f} MHz doesn't open the squelch here")
+                skip("bench", f"NOAA on {hz / 1e6:.3f} MHz doesn't open the squelch here")
             peer.hello()
             rows = peer.receive(5)
             v = usrp_view(link)
@@ -96,13 +99,14 @@ def test_usrp_fm_rx(radio, pytestconfig):
                 f"{len(rows)} frames after the squelch closed, the last with keyup {rows[-1][2] if rows else '-'}"
 
 
+@pytest.mark.feature("net_usrp")
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_usrp_dmr_rx(radio, sdr_bench, pytestconfig):
     if not pytestconfig.getoption("--allow-usb-switch"):
-        pytest.skip("needs --allow-usb-switch")
+        skip("opt_in", "needs --allow-usb-switch")
     mhz = pytestconfig.getoption("--dmr-freq")
     tg = pytestconfig.getoption("--dmr-tg")
     ambe = pytestconfig.getoption("--ambe")
@@ -129,15 +133,16 @@ def test_usrp_dmr_rx(radio, sdr_bench, pytestconfig):
         assert got[-1][2] is False, "no keyup 0 frame after the call"
 
 
+@pytest.mark.feature("net_usrp")
 @pytest.mark.usb_switch
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
 def test_usrp_fm_tx(radio, sdr_bench, pytestconfig):
     if not pytestconfig.getoption("--allow-usb-switch"):
-        pytest.skip("needs --allow-usb-switch")
+        skip("opt_in", "needs --allow-usb-switch")
     if "VFO_FM" not in radio.features():
-        pytest.skip("built without the FM VFO")
+        skip("not_built", "built without the FM VFO")
     mhz = pytestconfig.getoption("--fm-mhz")
     hz = round(mhz * 1e6)
     with usrp_session(radio) as (link, peer):

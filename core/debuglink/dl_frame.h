@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The host link's framed protocol (docs/spec/debuglink.md 2): framing, CRC, reply status and the frame parser, without
 // the RTOS or the board, so the host tests run it. Two listeners use it: the debug link (CONFIG_DEBUGLINK, every
 // command) and, in a build without the debug link, the stub entry (core/stubentry, CONFIG_STUB_ENTRY: PING, VERSION

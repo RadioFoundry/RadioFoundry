@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The input task: scans board.input every INPUT_SCAN_MS, runs the gesture engine, queues events for the UI.
 // PTT and MONITOR edges also go straight to the radio core so they work whatever the UI is doing.
 // Keys injected by the host (input_inject_*, for the debug link) are ORed into the scan here.
 #include <string.h>
 #include "board.h"
+#include "config.h"
 #include "hal_time.h"
 #include "input/input.h"
 #include "input/input_engine.h"
@@ -42,6 +43,7 @@ static volatile uint32_t timing;	// input_set_timing: long ms << 16 | repeat ms 
 static volatile uint16_t long_now = INPUT_LONG_MS;
 static volatile bool ptt_blocked;	// input_set_ptt_block
 static volatile uint32_t ptt_downs;	// PTT presses seen by the engine (debug link: input.ptt_downs)
+static volatile bool dtmf_blocked;	// input_set_dtmf_block
 
 static void emit(const input_event_t *ev, void *ctx)
 {
@@ -68,6 +70,20 @@ static void emit(const input_event_t *ev, void *ctx)
 		enc_deferred++;
 	}
 }
+
+#if CONFIG_DTMF
+// A DTMF key's edges (radio-features.md 3.7): while the radio core says a digit would send now, the key is the radio
+// core's for this hold and the UI sees none of it (no Find, Quick settings or key lock under the TX screen)
+static bool dtmf_edge(char digit, bool down, void *ctx)
+{
+	(void)ctx;
+	if (down && (dtmf_blocked || !radio_dtmf_ready())) {
+		return false;
+	}
+	radio_req_dtmf(digit, down);
+	return true;
+}
+#endif
 
 static bool due(uint32_t now, uint32_t t)
 {
@@ -137,6 +153,9 @@ void input_start(void)
 	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
 	memcpy(keymap_live, board.keymap, n * sizeof(keymap_live[0]));
 	input_engine_init(&engine, keymap_live, n, hal_millis());
+#if CONFIG_DTMF
+	input_engine_set_dtmf(&engine, dtmf_edge, NULL);
+#endif
 	xTaskCreate(input_task, "input", INPUT_TASK_STACK, NULL, INPUT_TASK_PRIORITY, NULL);
 }
 
@@ -189,6 +208,11 @@ void input_set_keymap(const keymap_entry_t *map)
 void input_set_ptt_block(bool blocked)
 {
 	ptt_blocked = blocked;
+}
+
+void input_set_dtmf_block(bool blocked)
+{
+	dtmf_blocked = blocked;
 }
 
 uint16_t input_long_ms(void)
@@ -257,8 +281,7 @@ input_inject_t input_inject_keys(uint32_t mask, uint32_t hold_ms)
 	return r;
 }
 
-// Release injected keys in mask now (the task notices at its next scan)
-static void release_keys(uint32_t mask)
+void input_inject_release(uint32_t mask)
 {
 	taskENTER_CRITICAL();
 	if (inj.active && (inj.mask & mask) != 0) {
@@ -340,7 +363,7 @@ input_inject_t input_inject_action(uint8_t action, uint8_t gesture, int8_t value
 			if (gesture == GESTURE_DOWN) {
 				return input_inject_keys(1u << m->bit, INPUT_INJECT_MAX_MS);
 			}
-			release_keys(1u << m->bit);
+			input_inject_release(1u << m->bit);
 			return INPUT_INJ_OK;
 		}
 		break;

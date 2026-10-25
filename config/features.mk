@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 ## Feature switches (y / n). Precedence: the make command line, then boards/<board>/config.mk, then the defaults here.
 ##
-##   make BOARD=dm1701 CONFIG_DMR=n          an FM-only build
-##   make BOARD=dm1701 CONFIG_HOTSPOT=n      no MMDVM hotspot
+##   make BOARD=<radio> CONFIG_DMR=n         an FM-only build
+##   make BOARD=<radio> CONFIG_HOTSPOT=n     no MMDVM hotspot
 ##
 ## Each switch reaches C as CONFIG_<NAME> = 0 or 1 (always defined, so use #if, not #ifdef) and can leave whole
 ## source directories out of the build. Sub-features follow their parent unless set (CONFIG_DMR=n turns off every
@@ -62,6 +62,9 @@ CONFIG_NET_HTTP ?= $(CONFIG_NET_TCP)
 # the status server's static files (core/net/http_assets) stored gzip compressed at build time and served with
 # Content-Encoding: gzip; off: stored and served as they are (needs NET_HTTP; tools/gen_http_assets.py)
 CONFIG_NET_HTTP_GZIP ?= $(CONFIG_NET_HTTP)
+# web control on the status server: /ws (WebSocket) for the radio's front panel page, keys, status and receive audio
+# (needs NET_HTTP; core/net/ws.c, docs/spec/tcp-services.md 5)
+CONFIG_NET_WEBCTL ?= $(CONFIG_NET_HTTP)
 # Hamlib rigctld on port 4532: frequency, mode, PTT, S meter for loggers and SDR programs (needs NET_TCP;
 # core/net/rigctld.c)
 CONFIG_NET_RIGCTL ?= $(CONFIG_NET_TCP)
@@ -70,7 +73,7 @@ CONFIG_NET_RIGCTL ?= $(CONFIG_NET_TCP)
 CONFIG_NET_APRSIS ?= $(if $(and $(filter y,$(CONFIG_NET_TCP)),$(filter y,$(CONFIG_APRS))),y,n)
 # audio linking for AllStarLink, DVSwitch and bridges (USRP voice over UDP, port 34001): the radio sends what it
 # receives, with the squelch as keyup, and transmits what the computer sends. DMR works both ways on every radio; FM
-# needs the radio's audio paths to the processor: both ways on the DM-1701, on other radios DMR only or FM one way
+# needs the radio's audio paths to the processor, which radios have both ways, DMR only or FM one way
 # (docs/feature-matrix.md) (needs DMR_IP_GATEWAY; core/usbaudio, docs/spec/usb-audio.md)
 CONFIG_NET_USRP ?= $(CONFIG_DMR_IP_GATEWAY)
 # mDNS / DNS-SD responder on the USB network link: <host>.local and the radio's services (needs DMR_IP_GATEWAY, the
@@ -98,14 +101,14 @@ CONFIG_SFR_CWID ?= $(CONFIG_SFR)
 # USB device (CDC serial)
 CONFIG_USB ?= y
 # the host link (core/hostlink): MMDVM hotspot, CPS and debug link over the board's host port (USB CDC, or the
-# programming cable's UART on radios without USB, e.g. the DM-32)
+# programming cable's UART on radios without USB)
 CONFIG_HOSTLINK ?= $(CONFIG_USB)
 # USB network adapter personality (CDC-NCM, switched with the serial one at run time; needs USB)
 CONFIG_USB_NETWORK ?= $(if $(and $(filter y,$(CONFIG_USB)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 # IPv4 over PPP on the serial host port, into the IP gateway and its services: for radios whose only host link is a
-# USB-serial cable (DM-32UV, GD-88), and a fallback on the USB serial port (needs HOSTLINK and DMR_IP_GATEWAY, which
-# it turns on by default; core/net/ppp.c, core/hostlink/hostlink_ppp.c, docs/spec/ppp.md). Checked on the DB25-D PRO
-# and the DM-1801 Pro; on for the DM-32UV, its only IP link (boards/dm32/config.mk); off on the USB radios
+# USB-serial cable, and a fallback on the USB serial port (needs HOSTLINK and DMR_IP_GATEWAY, which
+# it turns on by default; core/net/ppp.c, core/hostlink/hostlink_ppp.c, docs/spec/ppp.md). On in the config.mk of
+# a radio whose only IP link it is; off on the USB radios (docs/feature-matrix.md)
 CONFIG_NET_PPP ?= n
 # MMDVM modem / hotspot mode over the host port (needs DMR and HOSTLINK)
 CONFIG_HOTSPOT ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
@@ -134,10 +137,12 @@ CONFIG_DIAG ?= y
 # 16x32 font, only useful on 240 px and wider displays
 CONFIG_FONT_XL ?= n
 # anti-aliased fonts from 6x12 up (JetBrains Mono Bold, 2 bits a pixel) instead of the bitmap ones: smooth text on color
-# panels. About 5 KB more flash, 12 KB more with FONT_XL; a mono panel draws them as plain ink and gains nothing
+# panels. About 5 KB more flash, 12 KB more with FONT_XL; a mono panel draws them as plain ink and gains nothing.
+# On a 4 bpp color panel the edge grays share the 16 palette entries with the screen's colors: some font sizes or colors
+# can be slightly harder to read (docs/spec/ui.md 5)
 CONFIG_FONT_AA ?= n
 # larger text on 240 px and wider color panels: lists, labels and the status strip in a 9x18 font instead of 8x16
-# (12% larger, 24 characters a line on the DM-32 instead of 27). About 3 KB more flash (needs FONT_AA)
+# (12% larger, 24 characters a line on a 240 px panel instead of 27). About 3 KB more flash (needs FONT_AA)
 CONFIG_FONT_BIG ?= n
 # color screen settings: theme, highlight color, filled status bar (off: the dark theme only; for radios whose only
 # screen is monochrome)
@@ -149,7 +154,7 @@ CONFIG_SCAN ?= y
 # the dual watch screens: two channels on Home, which one PTT uses and which one a call came in on; the radio core's
 # dual watch across zones and with the VFO, PTT on the selected channel (needs SCAN; docs/ux/dual-watch.md)
 CONFIG_DUAL_WATCH ?= $(CONFIG_SCAN)
-# side key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's side keys do
+# key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's programmable keys do
 # (core/input/keyassign.c, docs/spec/ui.md 3.1)
 CONFIG_KEY_ASSIGN ?= y
 # the hub's Channels list: every codeplug channel by number, and a channel's settings (read only; core/ui/ui_menus.c,
@@ -158,10 +163,15 @@ CONFIG_CHANNEL_LIST ?= y
 # editing a channel on the radio, New channel from current settings, keypad text entry (docs/spec/ui.md 2.1): with
 # the Channels list
 CONFIG_CHANNEL_EDIT ?= $(CONFIG_CHANNEL_LIST)
-# beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which the DM-1701 has with DMR)
+# the zone editor in a zone's list: add, move, copy here, remove channels; rename, copy, delete zones (docs/spec/ui.md
+# 2.2): with the channel editor
+CONFIG_ZONE_EDIT ?= $(CONFIG_CHANNEL_EDIT)
+# beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which some radios have only with DMR)
 CONFIG_BEEP ?= y
 # FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
 CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
+# DTMF transmit: keypad digits send touch tones while PTT is held on FM (needs FM; docs/spec/radio-features.md 3.7)
+CONFIG_DTMF ?= $(CONFIG_FM)
 # FM VOX: voice-operated transmit from the microphone level (needs FM; unverified on the bench)
 CONFIG_VOX ?= $(CONFIG_FM)
 # receiver battery saving: FM receiver duty cycling while idle (needs FM)
@@ -170,18 +180,21 @@ CONFIG_BATTERY_SAVE ?= $(CONFIG_FM)
 # Settings > Sound > Vibrate (core/radio/vibe.c, docs/spec/radio-features.md 4.1). On for radios with a motor (their
 # config.mk); a board without one shows the setting dimmed
 CONFIG_VIBRATE ?= n
+# the GPS receiver: the board's module driver and its NMEA parsing (drivers/gps, platform/*/gps*, CAP_GPS). Off, the
+# radio has no GPS: DMR_GPS, LRRP and APRS keep a fixed position and answer "no fix". Off where the radio has none
+CONFIG_GPS ?= y
 # air band AM receive: FM channels and the VFO in 108-137 MHz are received in AM, receive only, on radios whose
-# receiver does AM (CAP_AM_RX; needs FM; docs/spec/airband-and-broadcast.md). On for the DM-32UV
-CONFIG_AM_RX ?= n
-# broadcast FM receiver: Tools > FM radio on a second receiver chip, paused for channel traffic
-# (board.bcast; core/bcast, docs/spec/airband-and-broadcast.md). On for the DM-32UV
-CONFIG_BCAST_FM ?= n
+# receiver does AM (CAP_AM_RX; needs FM; docs/spec/airband-and-broadcast.md). Off where the receiver can't
+CONFIG_AM_RX ?= $(CONFIG_FM)
+# broadcast FM receive: FM channels and the VFO in the broadcast receiver's range play on that second receiver
+# chip, receive only (board.bcast, CAP_BCAST_FM; docs/spec/airband-and-broadcast.md). Off where there is none
+CONFIG_BCAST_FM ?= y
 # audio path probe: debug link command 0x10 to read / write the audio chip's registers and watch the PCM stream's
 # levels, for the USB audio feasibility tests on the bench (docs/spec/hardware-dm1701.md 21.3; needs DEBUGLINK and DMR, whose
 # PCM stream it borrows). A diagnostic, never for a release
 CONFIG_AUDIO_PROBE ?= n
 # runtime RAM-monitor entry: command 0x1A on the host port loads the host's flash-access stub into free RAM and jumps
-# to it without a power cycle, so updates need no key combo at power-on (the web flasher, stub/stubtool.py, odrflash;
+# to it without a power cycle, so updates need no key combo at power-on (the web flasher, stub/stubtool.py, rfoundry;
 # core/stubentry, docs/spec/stub-entry.md). Its own feature: with the debug link off it answers on its own small
 # listener (PING, VERSION, STUB). Needs HOSTLINK (the task that owns the port) and a platform with
 # hal_system_t.enter_stub: the HR_C7000, and the STM32F4 with an 8 KB staging buffer (docs/spec/stub-stm32f4.md). On
@@ -203,13 +216,13 @@ CONFIG_CRASH_REPORT ?= $(if $(and $(filter y,$(CONFIG_CRASH_SCREEN)),$(filter y,
 # also has a bench test (command 0x1D). Off: no watchdog runs, as before. Needs nothing else
 CONFIG_WATCHDOG ?= y
 # the fault trace: a CPU fault prints its registers on the host UART, three framed lines a second apart, before the
-# restart (core/crash/crash_trace.c, tools/odr_fault_trace.py; docs/spec/crash-log.md 2.3). Only where the host port is
+# restart (core/crash/crash_trace.c, tools/rfoundry_fault_trace.py; docs/spec/crash-log.md 2.3). Only where the host port is
 # a UART the fault handler can drive polled: the HR_C7000 radios (the STM32 radios' config.mk turn it off: USB only).
 # Off: straight to the record and the restart. Needs nothing else
 CONFIG_FAULT_TRACE ?= y
 # the core's storage (settings, codeplug) on SPI NAND: the NOR-like 4 KB sector layer over the board's own block range
 # (drivers/flash/nand_sectors, docs/spec/nand-sectors.md). On in the config.mk of radios whose data flash is SPI NAND
-# (the DB25-D); off, such a radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it
+# (docs/feature-matrix.md); off, such a radio runs on the default settings and stores nothing. Radios with SPI NOR don't use it
 CONFIG_NAND_STORAGE ?= n
 
 # APRS (core/aprs, docs/spec/aprs.md): position, status and message packets as AX.25 / 1200 baud AFSK on FM, positions
@@ -222,9 +235,9 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR SFR_VOTING SFR_CWID TASK_STACKS \
-	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES \
-	VOX BATTERY_SAVE VIBRATE AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR SFR_VOTING SFR_CWID TASK_STACKS \
+	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES DTMF \
+	VOX BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT
 
 # Dependencies
 feature_on = $(filter y,$(CONFIG_$(1)))
@@ -238,6 +251,11 @@ $(foreach f,SFR_VOTING SFR_CWID,$(if $(and $(call feature_on,$(f)),$(if $(call f
 ifneq ($(call feature_on,CHANNEL_EDIT),)
   ifeq ($(call feature_on,CHANNEL_LIST),)
     $(error CONFIG_CHANNEL_EDIT=y needs CONFIG_CHANNEL_LIST=y)
+  endif
+endif
+ifneq ($(call feature_on,ZONE_EDIT),)
+  ifeq ($(call feature_on,CHANNEL_EDIT),)
+    $(error CONFIG_ZONE_EDIT=y needs CONFIG_CHANNEL_EDIT=y)
   endif
 endif
 ifneq ($(call feature_on,DUAL_WATCH),)
@@ -303,7 +321,7 @@ ifneq ($(call feature_on,NET_TCP),)
     $(error CONFIG_NET_TCP=y needs CONFIG_DMR_IP_GATEWAY=y)
   endif
 endif
-$(foreach f,NET_HTTP_GZIP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_HTTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_HTTP=y)))
+$(foreach f,NET_HTTP_GZIP NET_WEBCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_HTTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_HTTP=y)))
 $(foreach f,NET_HTTP NET_RIGCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_TCP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y)))
 $(foreach f,NET_KISS NET_APRSIS,$(if $(call feature_on,$(f)),$(if $(and $(call feature_on,NET_TCP),$(call feature_on,APRS)),,$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y and CONFIG_APRS=y))))
 $(foreach f,MDNS TFTP NET_USRP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_IP_GATEWAY),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_IP_GATEWAY=y)))
@@ -339,7 +357,7 @@ ifneq ($(call feature_on,VFO_DMR),)
     $(error CONFIG_VFO_DMR=y needs CONFIG_DMR=y)
   endif
 endif
-$(foreach f,FM_TX_TONES VOX BATTERY_SAVE AM_RX APRS,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
+$(foreach f,FM_TX_TONES DTMF VOX BATTERY_SAVE AM_RX APRS,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
 ifneq ($(call feature_on,AUDIO_PROBE),)
   ifeq ($(call feature_on,DEBUGLINK)$(call feature_on,DMR),yy)
   else

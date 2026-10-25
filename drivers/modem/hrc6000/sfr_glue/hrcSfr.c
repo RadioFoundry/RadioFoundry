@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR single frequency repeater (SFR): the HR-C6000 glue for functions/sfr.h, see hrcSfr.h. The radio provides the RF
  * side (radioSfrSwitch() etc., hrcSfr.h); the rest is the same on the STM32 radios and the GD-77 (MK22)
@@ -46,7 +46,7 @@ static const uint8_t SYNC_PATTERNS[4][6] = {
 #define BURST_STUCK_MS						100	// the timeslot interrupts stopped while a burst was on: back to receive
 #define NO_TIMESLOT_MS						100	// no timeslot interrupt for this long: the HR-C6000 has no slot timing
 
-static sfrEngine_t engine;// in the main RAM: the CCM is full on the DM-1701
+static sfrEngine_t engine;// in the main RAM: the CCM is full on the largest STM32 build
 
 #define UPLINK_SIZE							8	// 480 ms of bursts heard, for the hotspot's task
 static sfrBurst_t uplink[UPLINK_SIZE];

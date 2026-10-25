@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""codeplug_port: the codeplug half of moving a radio to ODR, shared by the migration tools (md380_migrate.py,
+# Copyright (c) 2026 The RadioFoundry Authors
+"""codeplug_port: the codeplug half of moving a radio to RadioFoundry, shared by the migration tools (md380_migrate.py,
 dm32_migrate.py) so every radio converts, cleans and writes its codeplug the same way (docs/spec/codeplug-port.md).
 
     python3 tools/codeplug_port.py --self-test      the pure logic, no radio, no dmrconf
 
 Each tool reads its stock codeplug with its own dmrconf driver into qdmr YAML. From there:
 
-1. clean_group_lists: drop the RX group lists ODR doesn't need (empty, or only the channel's own TX contact: ODR
+1. clean_group_lists: drop the RX group lists RadioFoundry doesn't need (empty, or only the channel's own TX contact: RadioFoundry
    always hears the talk target), lists no channel uses, and duplicates. Stock CPS habits leave many; qdmr's
    open-firmware encoder writes a channel's TX contact or its group list, never both, so each one costs a contact.
 2. dmrconf encode --radio openuv380, decode again (the radio tool runs dmrconf).
 3. restore_contacts: put back each TX contact the encoder dropped, in the encoded image's channel records.
-4. cps_write_dfu / check_read_back: write the image through ODR's CPS shim (tools/cps_client.py), with what was there
-   saved first, then read it back and compare. dmrconf's own write reads the radio first and fails against ODR.
+4. cps_write_dfu / check_read_back: write the image through RadioFoundry's CPS shim (tools/cps_client.py), with what was there
+   saved first, then read it back and compare. dmrconf's own write reads the radio first and fails against RadioFoundry.
 
 Pure logic raises PortError; the tools catch it like their own errors.
 """
@@ -33,9 +33,9 @@ class PortError(Exception):
     pass
 
 
-# What ODR's codeplug layout holds (docs/spec/open-firmware-cps.md 7.2-7.3, docs/user/15-programming-qdmr.md).
+# What RadioFoundry's codeplug layout holds (docs/spec/open-firmware-cps.md 7.2-7.3, docs/user/04-programming.md).
 # dmrconf's OpenUV380 encoder drops what doesn't fit without an error, so these are checked before writing
-ODR_LIMITS = {"channels": 1024, "zones": 68, "contacts": 1024, "groupLists": 76}
+RFOUNDRY_LIMITS = {"channels": 1024, "zones": 68, "contacts": 1024, "groupLists": 76}
 SECTION_NAMES = {"channels": "channels", "zones": "zones", "contacts": "contacts", "groupLists": "RX group lists"}
 
 # The open-firmware channel record's TX contact: 16-bit little endian, 1-based, 0 = none (open-firmware-cps.md 7.2)
@@ -87,10 +87,10 @@ def item_list(item, field):
 
 
 def codeplug_summary(text):
-    """Counts and names of what ODR uses, plus the radio's own DMR ID(s), from qdmr YAML."""
+    """Counts and names of what RadioFoundry uses, plus the radio's own DMR ID(s), from qdmr YAML."""
     sec = yaml_sections(text)
     s = {"counts": {}, "names": {}, "radio_ids": []}
-    for key in ODR_LIMITS:
+    for key in RFOUNDRY_LIMITS:
         items = sec.get(key) or []
         s["counts"][key] = len(items)
         s["names"][key] = [item_field(i, "name") or "?" for i in items]
@@ -101,8 +101,8 @@ def codeplug_summary(text):
     return s
 
 
-def limit_report(summary, limits=ODR_LIMITS):
-    """[(key, count, limit, [dropped names])] for every section that doesn't fit ODR."""
+def limit_report(summary, limits=RFOUNDRY_LIMITS):
+    """[(key, count, limit, [dropped names])] for every section that doesn't fit RadioFoundry."""
     out = []
     for key, lim in limits.items():
         n = summary["counts"].get(key, 0)
@@ -112,8 +112,8 @@ def limit_report(summary, limits=ODR_LIMITS):
 
 
 def compare_counts(expected, got):
-    """[(key, expected, got)] where a read back differs from what was written (after ODR's limits)."""
-    return [(k, min(expected.get(k, 0), lim), got.get(k, 0)) for k, lim in ODR_LIMITS.items()
+    """[(key, expected, got)] where a read back differs from what was written (after RadioFoundry's limits)."""
+    return [(k, min(expected.get(k, 0), lim), got.get(k, 0)) for k, lim in RFOUNDRY_LIMITS.items()
             if min(expected.get(k, 0), lim) != got.get(k, 0)]
 
 
@@ -280,28 +280,28 @@ def format_cleanup(rep):
 # ---------------------------------------------------------------------------------------------------------------
 # step 3: TX contacts the encoder dropped
 
-def restore_contacts(src_text, odr_text, img, channel_addr, decode_channel):
+def restore_contacts(src_text, rfoundry_text, img, channel_addr, decode_channel):
     """Put back in img (the encoded image, flat) the TX contact of every channel that has one in src_text and none
-    in odr_text (qdmr's open-firmware encoder writes the contact or the group list, not both). Channels pair by
-    position and must have the same name; the contact is found in odr_text by name and number; the record in img
+    in rfoundry_text (qdmr's open-firmware encoder writes the contact or the group list, not both). Channels pair by
+    position and must have the same name; the contact is found in rfoundry_text by name and number; the record in img
     must carry the channel's name. Returns (restored, skipped): [(number, channel name, contact name, contact
     number)] and [(channel name, reason)]."""
-    src, odr = channels(src_text), channels(odr_text)
+    src, rfoundry = channels(src_text), channels(rfoundry_text)
     src_ct = {cid: (name, num) for cid, name, num in contacts(src_text)}
     index = {}
-    for i, (cid, name, num) in enumerate(contacts(odr_text)):
+    for i, (cid, name, num) in enumerate(contacts(rfoundry_text)):
         index.setdefault((name, num), i + 1)
     restored, skipped = [], []
-    for s, o in zip(src, odr):
+    for s, o in zip(src, rfoundry):
         if s["kind"] != "dmr" or not s["contact"] or o["contact"]:
             continue
         if s["name"] != o["name"]:
-            skipped.append((s["name"], "channel order differs (%r in the ODR file)" % o["name"]))
+            skipped.append((s["name"], "channel order differs (%r in the RadioFoundry file)" % o["name"]))
             continue
         ct = src_ct.get(s["contact"])
         k = index.get(ct) if ct else None
         if k is None:
-            skipped.append((s["name"], "contact %s not in the ODR file" % s["contact"]))
+            skipped.append((s["name"], "contact %s not in the RadioFoundry file" % s["contact"]))
             continue
         number = o["index"] + 1
         rec = decode_channel(img, number)
@@ -381,7 +381,7 @@ def image_to_dfu(template, img):
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# step 4: write through ODR's CPS shim, read back
+# step 4: write through RadioFoundry's CPS shim, read back
 
 def _cps():
     import cps_client
@@ -399,7 +399,7 @@ def cps_write_dfu(sess, open_cps, dfu_path, label, before_name, offset=0, floor=
                                                   ", at +0x%06X in the data flash" % offset if offset else ""))
     for s, e in regions:
         if s + offset < floor or (ceiling is not None and e + offset > ceiling):
-            raise PortError("region 0x%X..0x%X is outside ODR's open-firmware image" % (s, e))
+            raise PortError("region 0x%X..0x%X is outside RadioFoundry's open-firmware image" % (s, e))
     if sess.dry:
         sess.say("   [dry run] would save the regions to %s, then write them" % before_name)
         return targets, img
@@ -424,8 +424,8 @@ def cps_write_dfu(sess, open_cps, dfu_path, label, before_name, offset=0, floor=
     return targets, img
 
 
-def check_read_back(sess, open_cps, targets, img, expected, odr_driver, block=32, progress=None):
-    """Read the written regions back, save them as readback-odr.dfu / .yaml, compare bytes and counts. Raises
+def check_read_back(sess, open_cps, targets, img, expected, rfoundry_driver, block=32, progress=None):
+    """Read the written regions back, save them as readback-rfoundry.dfu / .yaml, compare bytes and counts. Raises
     PortError when a section's count differs from what was written."""
     regions = dfu_regions(targets)
     cps = open_cps()
@@ -436,11 +436,11 @@ def check_read_back(sess, open_cps, targets, img, expected, odr_driver, block=32
     finally:
         cps.close()
     diffs = _cps().compare(img, back, regions)
-    back_dfu = sess.path("readback-odr.dfu")
+    back_dfu = sess.path("readback-rfoundry.dfu")
     with open(back_dfu, "wb") as f:
         f.write(build_dfuse(image_to_dfu(targets, back)))
-    back_yaml = sess.path("readback-odr.yaml")
-    sess.dmr("decode", "--radio", odr_driver, back_dfu, back_yaml, radio=False)
+    back_yaml = sess.path("readback-rfoundry.yaml")
+    sess.dmr("decode", "--radio", rfoundry_driver, back_dfu, back_yaml, radio=False)
     with open(back_yaml, encoding="utf-8") as f:
         got = codeplug_summary(f.read())
     print_summary(sess, "read back", got)
@@ -454,10 +454,10 @@ def check_read_back(sess, open_cps, targets, img, expected, odr_driver, block=32
     return back
 
 
-def convert_for_odr(sess, yaml_path, odr_driver, cleanup=True):
-    """Clean (unless cleanup is false), encode, decode, put back the dropped TX contacts. Returns (odr_dfu,
-    odr_yaml, report) with the work directory files odr-codeplug.dfu / .yaml; the YAML that went into the encoder is
-    odr-source.yaml. Offline only: needs the YAML file to exist."""
+def convert_for_rfoundry(sess, yaml_path, rfoundry_driver, cleanup=True):
+    """Clean (unless cleanup is false), encode, decode, put back the dropped TX contacts. Returns (rfoundry_dfu,
+    rfoundry_yaml, report) with the work directory files rfoundry-codeplug.dfu / .yaml; the YAML that went into the encoder is
+    rfoundry-source.yaml. Offline only: needs the YAML file to exist."""
     with open(yaml_path, encoding="utf-8") as f:
         src_text = f.read()
     rep = {"cleanup": None, "restored": [], "skipped": [], "ts_cleared": 0}
@@ -467,29 +467,29 @@ def convert_for_odr(sess, yaml_path, odr_driver, cleanup=True):
     if cleanup:
         src_text, rep["cleanup"] = clean_group_lists(src_text)
         sess.say("   " + format_cleanup(rep["cleanup"]))
-    src = sess.path("odr-source.yaml")
+    src = sess.path("rfoundry-source.yaml")
     with open(src, "w", encoding="utf-8") as f:
         f.write(src_text)
-    encoded = sess.path("odr-encoded.dfu")
-    sess.dmr("encode", "--radio", odr_driver, src, encoded, radio=False)
-    decoded = sess.path("odr-encoded.yaml")
-    sess.dmr("decode", "--radio", odr_driver, encoded, decoded, radio=False)
+    encoded = sess.path("rfoundry-encoded.dfu")
+    sess.dmr("encode", "--radio", rfoundry_driver, src, encoded, radio=False)
+    decoded = sess.path("rfoundry-encoded.yaml")
+    sess.dmr("decode", "--radio", rfoundry_driver, encoded, decoded, radio=False)
     with open(encoded, "rb") as f:
         targets = parse_dfuse(f.read())
     with open(decoded, encoding="utf-8") as f:
-        odr_text = f.read()
+        rfoundry_text = f.read()
     img, _ = dfu_image(targets)
     c = _cps()
-    rep["restored"], rep["skipped"] = restore_contacts(src_text, odr_text, img, c.channel_addr, c.decode_channel)
-    odr_dfu, odr_yaml = sess.path("odr-codeplug.dfu"), sess.path("odr-codeplug.yaml")
-    with open(odr_dfu, "wb") as f:
+    rep["restored"], rep["skipped"] = restore_contacts(src_text, rfoundry_text, img, c.channel_addr, c.decode_channel)
+    rfoundry_dfu, rfoundry_yaml = sess.path("rfoundry-codeplug.dfu"), sess.path("rfoundry-codeplug.yaml")
+    with open(rfoundry_dfu, "wb") as f:
         f.write(build_dfuse(image_to_dfu(targets, img)))
-    sess.dmr("decode", "--radio", odr_driver, odr_dfu, odr_yaml, radio=False)
-    with open(odr_yaml, encoding="utf-8") as f:
+    sess.dmr("decode", "--radio", rfoundry_driver, rfoundry_dfu, rfoundry_yaml, radio=False)
+    with open(rfoundry_yaml, encoding="utf-8") as f:
         final = channels(f.read())
     want = sum(1 for ch in channels(src_text) if ch["kind"] == "dmr" and ch["contact"])
     have = sum(1 for ch in final if ch["kind"] == "dmr" and ch["contact"])
-    with open(odr_yaml, encoding="utf-8") as f:
+    with open(rfoundry_yaml, encoding="utf-8") as f:
         over = len(re.findall(r"timeSlotOverride:\s*(?!None)\w+", f.read()))
     sess.say("   contacts with a timeslot override in the result: %d" % over)
     rep["ts_overrides"] = over
@@ -498,7 +498,7 @@ def convert_for_odr(sess, yaml_path, odr_driver, cleanup=True):
     for name, why in rep["skipped"]:
         sess.say("   ! %s: TX contact not put back: %s" % (name, why))
     rep["contacts"] = (have, want)
-    return odr_dfu, odr_yaml, rep
+    return rfoundry_dfu, rfoundry_yaml, rep
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -605,20 +605,20 @@ def self_test():
         return {"name": bytes(img[a:a + 16]).split(b"\xff")[0].decode()}
 
     src = SAMPLE
-    odr = SAMPLE.replace("      contact: cont2\n      groupList: grp4\n", "      groupList: grp4\n")
+    rfoundry = SAMPLE.replace("      contact: cont2\n      groupList: grp4\n", "      groupList: grp4\n")
     img = bytearray(b"\xff" * 0x400)
     for n, name in ((1, "Local 9"), (2, "Simplex FM"), (3, "Empty list"), (4, "TAC 310 mon"), (5, "No contact")):
         a = addr(n)[1]
         img[a:a + 16] = name.encode().ljust(16, b"\xff")
         img[a + CH_CONTACT:a + CH_CONTACT + 2] = b"\0\0"
-    r, sk = restore_contacts(src, odr, img, addr, dec)
+    r, sk = restore_contacts(src, rfoundry, img, addr, dec)
     check(r == [(4, "TAC 310 mon", "TAC 310", "310")] and sk == [], "contact put back %r %r" % (r, sk))
     check(struct.unpack_from("<H", img, addr(4)[1] + CH_CONTACT)[0] == 2, "1-based index of TAC 310")
     check(struct.unpack_from("<H", img, addr(5)[1] + CH_CONTACT)[0] == 0, "a channel without a contact untouched")
     img2 = bytearray(img)
     struct.pack_into("<H", img2, addr(4)[1] + CH_CONTACT, 0)
     img2[addr(4)[1]:addr(4)[1] + 16] = b"Other".ljust(16, b"\xff")
-    r, sk = restore_contacts(src, odr, img2, addr, dec)
+    r, sk = restore_contacts(src, rfoundry, img2, addr, dec)
     check(r == [] and len(sk) == 1 and "holds" in sk[0][1], "a record with another name is left alone")
     check(struct.unpack_from("<H", img2, addr(4)[1] + CH_CONTACT)[0] == 0, "... and not written")
 

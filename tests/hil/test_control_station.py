@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Control station mode (docs/spec/usb-network.md 5; firmware built with CONFIG_DMR_CONTROL_STATION): the stored USB
 network settings (radio op 27), booting as the network adapter, the fixed link pair 192.168.10.1 / .2, and
 passthrough (IP data to the radio's ID goes to the PC, not to the radio's own services).
@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, find_ports
+from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FIXED_RADIO = "192.168.10.1"     # IPGW_FIXED_LINK_DEFAULT
@@ -26,9 +26,9 @@ BENCH_SRC = 9990301
 
 def _need(radio):
     if "DMR_IP_GATEWAY" not in radio.features():
-        pytest.skip("built without CONFIG_DMR_IP_GATEWAY")
+        skip("not_built", "built without CONFIG_DMR_IP_GATEWAY")
     if "net.passthrough" not in radio.view(["hotspot"]):
-        pytest.skip("firmware without control station mode (no net.passthrough view key)")
+        skip("not_built", "firmware without control station mode (no net.passthrough view key)")
 
 
 def _udp_link(ip, timeout):
@@ -86,12 +86,13 @@ def _addresses(radio):
     return own, str(host), str(ipaddress.IPv4Address(int(host) ^ 1))
 
 
+@pytest.mark.feature("dmr_control_station")
 def test_usb_settings_stored(radio):
     """Radio only: op 27 stores each setting, the view keys follow; nothing re-enumerates (the power-on setting acts
     at the next boot only)."""
     _need(radio)
     if "USB" not in radio.features():
-        pytest.skip("no USB on this radio: no USB network settings")
+        skip("no_hw", "no USB on this radio: no USB network settings")
     try:
         radio.link.usb_net_settings(boot_network=True)
         v = radio.view(["hotspot"])
@@ -112,6 +113,7 @@ def test_usb_settings_stored(radio):
     assert v["usb.boot_network"] == "0" and v["net.passthrough"] == "0" and v["net.fixed_link"] == "0", v
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 def test_fixed_link(radio):
     """The fixed link: the host gets 192.168.10.2 by DHCP, pings 192.168.10.1, the debug link answers there."""
@@ -140,6 +142,7 @@ def test_fixed_link(radio):
     assert radio.view(["hotspot"]).get("usb.network") == "0"
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 @pytest.mark.reboot
 def test_boot_network(radio):
@@ -212,6 +215,7 @@ def _received(sock, seconds):
     return got
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service
@@ -226,7 +230,7 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
         before = _counters(udp)
         s5016, s4007 = _listen(host_ip, 5016), _listen(host_ip, 4007)
         try:
-            text = f"ODR CS {int(time.time()) % 10000}"
+            text = f"RadioFoundry CS {int(time.time()) % 10000}"
             with sdr_bench.lease():
                 sdr_bench.data(freq, cc, own, ip_text=text, src=BENCH_SRC)
                 sdr_bench.data(freq, cc, own, tms=text, tms_seq=(int(time.time()) % 31) + 1, src=BENCH_SRC,
@@ -250,6 +254,7 @@ def test_passthrough_text(radio, sdr_bench, pytestconfig):
         _back_to_serial(radio, [radio_ip])
 
 
+@pytest.mark.feature("dmr_control_station")
 @pytest.mark.usb_switch
 @pytest.mark.rf
 @pytest.mark.bench_service

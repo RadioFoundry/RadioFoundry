@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """splitPairTest: the split duplex repeater end to end on two simulated radios (docs/spec/split-duplex.md).
 
     python3 splitPairTest.py ./splitSim
@@ -171,14 +171,14 @@ class Host:
     def on_frame(self, r, h, f):
         name = r.name
         cmd = f[2]
-        if cmd == sdh.ODR_SPLIT and f[3] == sdh.SUB_TIME and f[4] == 0:
+        if cmd == sdh.RFOUNDRY_SPLIT and f[3] == sdh.SUB_TIME and f[4] == 0:
             tok = int.from_bytes(f[5:13], "little")
             if tok in self.pending_time:
                 rn, t1 = self.pending_time.pop(tok)
                 t_rx, t_tx = int.from_bytes(f[13:17], "little"), int.from_bytes(f[17:21], "little")
                 self.sync[rn].add(t1, h, t_rx, t_tx)
             return
-        if cmd == sdh.ODR_SPLIT and f[3] == sdh.SUB_GET_EPOCH and f[4] == 0 and name == "tx":
+        if cmd == sdh.RFOUNDRY_SPLIT and f[3] == sdh.SUB_GET_EPOCH and f[4] == 0 and name == "tx":
             ep = sdh.parse_epoch(f[5:])
             self.epochs.append((h, ep))
             if self.sync["tx"].ready() and self.sync["rx"].ready():
@@ -188,7 +188,7 @@ class Host:
                     self.w.send(self.w.rx, sdh.split_frame(sdh.SUB_SET_EPOCH, sdh.epoch_payload(t_rx, period)))
                     self.epoch_sent += 1
             return
-        if cmd == sdh.ODR_SPLIT and f[3] == sdh.SUB_STATUS and f[4] == 0:
+        if cmd == sdh.RFOUNDRY_SPLIT and f[3] == sdh.SUB_STATUS and f[4] == 0:
             st = sdh.parse_status(f[5:])
             self.status[name] = st
             if name == "rx":
@@ -292,7 +292,7 @@ def scenario(exe, seed, ppm_tx, ppm_rx, off_tx, off_rx, spike_ms, label):
         for name in ("tx", "rx"):
             v = [f for _, f in host.replies[name] if f[2] == sdh.GET_VERSION]
             check(v and sdh.SUFFIX_RE.search(v[0][4:]), f"{label} {name}: SPLIT suffix")
-            roles = [f for _, f in host.replies[name] if f[2] == sdh.ODR_SPLIT and f[3] == sdh.SUB_SET_ROLE]
+            roles = [f for _, f in host.replies[name] if f[2] == sdh.RFOUNDRY_SPLIT and f[3] == sdh.SUB_SET_ROLE]
             want = sdh.ROLE_TX if name == "tx" else sdh.ROLE_RX
             check(roles and roles[-1][4] == 0 and sdh.parse_info(roles[-1][5:])["role"] == want,
                   f"{label} {name}: SET_ROLE")
@@ -360,7 +360,7 @@ def scenario(exe, seed, ppm_tx, ppm_rx, off_tx, off_rx, spike_ms, label):
             w.send(r, sdh.split_frame(sdh.SUB_INFO))
         w.run_until(w.h + 100_000)
         for name in ("tx", "rx"):
-            info = [f for _, f in host.replies[name] if f[2] == sdh.ODR_SPLIT and f[3] == sdh.SUB_INFO]
+            info = [f for _, f in host.replies[name] if f[2] == sdh.RFOUNDRY_SPLIT and f[3] == sdh.SUB_INFO]
             check(info and sdh.parse_info(info[-1][5:])["role"] == sdh.ROLE_NORMAL,
                   f"{label} {name}: back to normal after the lease")
             check(info and not sdh.parse_info(info[-1][5:])["flags"] & sdh.FLAG_KEYED, f"{label} {name}: unkeyed")

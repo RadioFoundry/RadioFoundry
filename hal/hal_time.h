@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Time: a millisecond clock that works before and after the RTOS starts
 #ifndef HAL_TIME_H
 #define HAL_TIME_H

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Internal interfaces between the DB25-D board files
 #ifndef DB25D_H
 #define DB25D_H
@@ -95,10 +95,10 @@ static inline uint32_t db25d_dmr_late_us(uint32_t elapsed_us, uint16_t off_us)
 }
 
 // --- SPI NAND (nand_db25d.c, hardware-db25d.md 6.5) ---
-// ODR's own block range, the only blocks it programs or erases (hardware-db25d.md 6.6): 32 blocks (4 MB) from block
+// RadioFoundry's own block range, the only blocks it programs or erases (hardware-db25d.md 6.6): 32 blocks (4 MB) from block
 // 1920, far above every stock area and below the stock firmware's scratch blocks at the top of the chip
-#define DB25D_NAND_ODR_FIRST	1920u
-#define DB25D_NAND_ODR_BLOCKS	32u
+#define DB25D_NAND_RFOUNDRY_FIRST	1920u
+#define DB25D_NAND_RFOUNDRY_BLOCKS	32u
 bool db25d_nand_init(void);
 bool db25d_nand_ready(void);
 uint16_t db25d_nand_id(void);		// manufacturer << 8 | device, 0 if nothing answered
@@ -107,19 +107,16 @@ bool db25d_nand_read(uint32_t addr, void *buf, uint32_t len);
 // The NAND's mutex (recursive): taken by every function here, and by the storage around each whole operation
 void db25d_nand_lock(void);
 void db25d_nand_unlock(void);
-// CONFIG_NAND_STORAGE: ODR's range for the sector layer, and how many programs and erases the chip reported failed
+// CONFIG_NAND_STORAGE: RadioFoundry's range for the sector layer, and how many programs and erases the chip reported failed
 extern const nand_dev_t db25d_nand_dev;
 uint32_t db25d_nand_program_fails(void);
 
 // --- Data flash (flash_db25d.c, hardware-db25d.md 6.6; CONFIG_NAND_STORAGE): the core's storage as 4 KB sectors
-// over ODR's NAND range ---
+// over RadioFoundry's NAND range ---
 extern hal_flash_t db25d_flash;
 // Mount the sector layer (after db25d_nand_init). False leaves db25d_flash with size 0: nothing is stored
 bool db25d_flash_init(void);
 void db25d_flash_stats(nand_sectors_stats_t *st);
-
-// --- Power (power_db25d.c) ---
-uint16_t db25d_adc_raw(uint8_t ch);	// the last reading of ADC channel 0..7
 
 // --- Diagnostics (diag_db25d.c) ---
 uint32_t db25d_input_raw(void);		// the last key scan before debouncing

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Key matrix decoding, independent of the board's pins. The board drives one row at a time and
 // reads the columns (active low); keys wired from a column straight to ground (no row) show up as columns that are
 // already low before any row is driven. Those columns can't be scanned while held, so their matrix keys are ignored
-// then (DM-32 SK1 / SK2, docs/spec/hardware-dm32.md 6.1, 6.2).
+// then (side keys wired that way: docs/spec/hardware-dm32.md 6.1, 6.2).
 #ifndef KEYMATRIX_H
 #define KEYMATRIX_H
 

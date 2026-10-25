@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DMR emergency (dmr_emergency.h, docs/spec/dmr-emergency.md)
 #include <string.h>
 #include "config.h"

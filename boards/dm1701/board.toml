@@ -1,0 +1,91 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# The DM-1701's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/dm1701/memory.ld.
+
+id = "dm1701"
+name = "Baofeng DM-1701"
+maker = "Baofeng"
+model = "DM-1701"
+also = ["Retevis RT84"]
+kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 2
+
+[docs]
+hardware = "docs/spec/hardware-dm1701.md"
+codec = "docs/spec/codec-dm1701.md"
+install = "docs/user/02-installing.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "136-174 / 400-480 MHz"
+power = "1 / 2 / 5 W"
+display = "1.77\" color, 160 × 128"
+gallery = "160x120i5"
+clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal; no backup supply confirmed (docs/spec/hardware-dm1701.md, VBAT unverified)" }
+
+[status]
+level = "supported"
+summary = """\
+FM, DMR voice and data, text messages, alerts, emergency, scan, the hotspot, single frequency repeating, each split \
+duplex half and the USB network services work on air. Open: standalone SFR and a two-radio split duplex pair."""
+release = "stable"
+
+# The audio tap's probe build: without LTO it no longer fits, so ci keeps it building with LTO=1
+[ci]
+extra = [
+	{ name = "audio-probe", make = ["CONFIG_AUDIO_PROBE=y", "CONFIG_APRS_RX=n", "LTO=1"] },
+]
+
+[flash]
+family = "usb-dfu"
+keep_codec = true
+stock_download = "https://github.com/daniel5600/BAOFENG-DM1701-Original-Firmware"
+stock_versions = ["V02.06 CSV", "V02.06 noCSV", "V02.03 CSV", "V02.03 noCSV", "V02.02 CSV", "V02.01 CSV"]
+backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
+
+[flash.bootloader]
+steps = [
+	"Turn the radio off and connect the programming cable.",
+	"Hold PTT and SK1 (the side key just above PTT).",
+	"Turn the radio on with the volume knob while you hold both keys. The screen stays dark.",
+	"Release the keys.",
+]
+
+# The AnyRoad DFU bootloader (hardware-dm1701.md 15): its USB identity and the identity of its per-model XOR key (the
+# key itself is never in the repository)
+[flash.dfu]
+vid = 0x0483
+pid = 0xDF11
+string1 = "AnyRoad Technology"
+product = "Digital Radio in USB mode"
+key_sha256 = "d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb3deff"
+key_prefix = "3A0474AD"
+
+# The STM32F4 stub's board record (stub/f4stub.py, stub-stm32f4.md 5.2): its board id (HELLO echoes it), whether
+# protocol 4 has run on a radio, and the SPI flash's bus, mode and clock (its pins: pins.h PIN_FLASH_*)
+[flash.stub]
+id = 1
+tested = false
+spi = { bus = 1, mode = 0, hz = 4500000 }
+
+# The codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after them
+# and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file rfoundry merges the codec
+# from (tools/rfoundry/rfoundry/stockfw.py PROFILES); stock firmware keeps its code in sectors 7 and 8, which are the
+# application's now, so no stock version leaves it in place and rfoundry merges it from the stock file
+[codec]
+tool = "codec_extract"
+stock = ["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
+
+# How the site draws the radio
+[frame]
+shape = "handheld"
+body = "#25272b"
+accent = "#d24b2a"
+lens = [36, 30]
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them: 8, or 10 when the factory panel type is RGB
+[cps]
+radio_types = [8, 10]

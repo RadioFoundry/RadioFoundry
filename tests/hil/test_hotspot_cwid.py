@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The hotspot's CW ID (MMDVM SEND_CWID, docs/spec/mmdvm-protocol.md 2.11) on a radio whose board keys the FM tone
 (the DM-1701, hal_radio_t tx_tone_key): the radio leaves DMR, keys an FM carrier on the hotspot's TX frequency with
 the tone keyed in Morse at the settings' speed (20 wpm by default), then the hotspot's DMR set-up is back.
@@ -16,6 +16,7 @@ import time
 
 import pytest
 
+from rfoundry_hil import skip
 from test_fm_tx import parse_fm
 
 GET_VERSION, GET_STATUS, SET_CONFIG, SET_MODE, SET_FREQ, SEND_CWID = 0x00, 0x01, 0x02, 0x03, 0x04, 0x0A
@@ -37,15 +38,16 @@ def freq(rx, tx):
     return bytes([0]) + struct.pack("<II", rx, tx) + bytes([255]) + struct.pack("<I", tx)
 
 
+@pytest.mark.feature("hotspot", optional=True)
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
 def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
     feats = radio.features()
     if "HOTSPOT" not in feats:
-        pytest.skip("built without the hotspot")
+        skip("not_built", "built without the hotspot")
     if radio.view(["dmr_ext"]).get("hs.cw_requests") is None:
-        pytest.skip("firmware without the CW ID keyer")
+        skip("not_built", "firmware without the CW ID keyer")
     import mmdvm_probe
     assert morse_units(CALL) == UNITS
     mhz = pytestconfig.getoption("--dmr-freq")

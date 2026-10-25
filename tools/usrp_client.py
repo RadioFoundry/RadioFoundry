@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """A reference USRP voice-over-UDP peer for the radio (CONFIG_NET_USRP, docs/spec/usb-audio.md 4.2): what AllStarLink's
 USRP channel driver or DVSwitch Analog_Bridge would do, for tests and scripts. The radio listens on UDP 34001 and
 sends to UDP 32001 at the address that last sent it a frame (the host's address on the USB link until then).
@@ -112,7 +112,7 @@ class Peer:
 
 
 def tone_frames(hz, seconds, peak=13800):
-    """A sine at peak (13800: about 60 % of the peak deviation on the DM-1701) in 160-sample frames"""
+    """A sine at peak (13800: about 60 % of the peak deviation on an HR_C6000 radio) in 160-sample frames"""
     n = int(seconds * 50)
     return [[int(peak * math.sin(2 * math.pi * hz * (k * SAMPLES + i) / 8000)) for i in range(SAMPLES)]
             for k in range(n)]

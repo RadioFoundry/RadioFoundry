@@ -1,18 +1,18 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
-# Firmware releases (docs/dev/release.md): on a v* tag, build the codec-less firmware for every releasable radio with
-# pinned toolchains, write a manifest and SHA256SUMS for each image, build odrflash as single-file executables for
-# Linux, macOS and Windows, and attach everything to the GitHub release (created when missing; the user manual
-# workflow attaches its PDF to the same release). The AMBE codec is never part of any of it.
+# Firmware releases (docs/dev/release.md): on a v* tag, build the codec-less firmware for every releasable radio
+# (board.toml [status] release = "stable", each build option value's image too) with the toolchains platform.toml
+# pins, one job per toolchain (C-SKY in the csky-elf image, never built from source), write a manifest and SHA256SUMS
+# for each image, build rfoundry as single-file executables for Linux, macOS and Windows, and attach everything to
+# the GitHub release (created when missing; the user manual workflow attaches its PDF to the same release). The AMBE
+# codec is never part of any of it.
 #
 # Pull requests touching the release tooling build everything as workflow artifacts and publish nothing; the release
 # gate (tools/ci.sh) runs for a tag only, since a pull request's own checks already ran it. With the repository
-# variable ODR_CI_RUNNER set, the Linux jobs run on that self-hosted runner, and only a v* tag also builds odrflash on
-# GitHub's macOS and Windows runners (docs/dev/ci.md). The DM-32UV is built only when the repository variable
-# ODR_RELEASE_DM32 is "true" (it isn't verified on a radio yet, and its csky toolchain is built from source:
-# docs/dev/release.md "Adding the DM-32UV"); the DM-1801 Pro only when ODR_RELEASE_DM1801PRO is "true" (bring-up:
-# docs/dev/release.md "The DM-1801 Pro").
+# variable RFOUNDRY_CI_RUNNER set, a push's Linux jobs run on that self-hosted runner, and only a v* tag also builds
+# rfoundry on GitHub's macOS and Windows runners (docs/dev/ci.md). A pull request's jobs always run on GitHub's runners:
+# the self-hosted runner takes only main's and v* tags' workflows (tools/ci-runner/job-gate.sh).
 name: Release
 
 on:
@@ -20,11 +20,22 @@ on:
     tags: ["v*"]
   pull_request:
     paths:
-      - "tools/odrflash/**"
+      - "tools/rfoundry/**"
       - "tools/release.py"
-      - "tools/dm32_flash.py"
+      - "tools/serial_loader.py"
       - "tools/hrc7000_codec.py"
+      - "tools/boards.py"
+      - "tools/registry_docs.py"
+      - "tools/rfoundry_python.sh"
+      - "tools/platform_toolchain.sh"
+      - "tools/install-arm-toolchain.sh"
+      - "tools/release_build.sh"
+      - "tools/docker/csky-toolchain/run.sh"
+      - "boards/*/board.toml"
+      - "boards/*/board.mk"
+      - "platform/*/platform.toml"
       - "stub/stubtool.py"
+      - ".github/actions/**"
       - ".github/workflows/release.yml"
   workflow_dispatch:
 
@@ -32,32 +43,31 @@ permissions:
   contents: read
 
 env:
-  ARM_GCC_VERSION: "13.3.rel1"
-  ARM_GCC_SHA256: "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4"
   PYINSTALLER_VERSION: "6.11.1"
   PYTHON_VERSION: "3.12"
 
 jobs:
   version:
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     outputs:
       version: ${{ steps.v.outputs.version }}
       publish: ${{ steps.v.outputs.publish }}
-      odrflash: ${{ steps.v.outputs.odrflash }}
+      rfoundry: ${{ steps.v.outputs.rfoundry }}
     steps:
       - id: v
         env:
-          # never for a fork's pull request: its code stays on GitHub's runners
-          RUNNER_LABEL: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER) || '' }}
+          # never for a pull request: its workflow file is its own, and the self-hosted runner refuses those
+          # (tools/ci-runner/job-gate.sh), so a pull request's jobs run on GitHub's runners
+          RUNNER_LABEL: ${{ (github.event_name != 'pull_request' && vars.RFOUNDRY_CI_RUNNER) || '' }}
         run: |
-          # odrflash's runners: all four for a release or without the self-hosted runner; otherwise Linux only, there
+          # rfoundry's runners: all four for a release or without the self-hosted runner; otherwise Linux only, there
           if [ "${GITHUB_REF_TYPE}" = tag ] || [ -z "$RUNNER_LABEL" ]; then
             m='[{"os":"ubuntu-22.04","name":"linux-x86_64"},{"os":"macos-14","name":"macos-arm64"},'
             m="$m"'{"os":"macos-15-intel","name":"macos-x86_64"},{"os":"windows-2022","name":"windows-x86_64","ext":".exe"}]'
           else
             m="[{\"os\":\"$RUNNER_LABEL\",\"name\":\"linux-x86_64\"}]"
           fi
-          echo "odrflash=$m" >> "$GITHUB_OUTPUT"
+          echo "rfoundry=$m" >> "$GITHUB_OUTPUT"
           if [ "${GITHUB_REF_TYPE}" = tag ] && [ "${GITHUB_REF_NAME#v}" != "${GITHUB_REF_NAME}" ]; then
             echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
@@ -66,127 +76,78 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
           fi
 
-  firmware-dm1701:
+  firmware:
+    # one job per toolchain: every releasable board built with it (board.toml [status] release = "stable") and each of
+    # its build option values' images (one per band, for example), all from the registry, so a new radio is released
+    # with no edit here. One artifact per toolchain
+    name: firmware (${{ matrix.name }})
     needs: version
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04   # a write token: GitHub's runners only (docs/dev/ci-runners.md)
+    strategy:
+      fail-fast: false
+      matrix:
+        # the [toolchain] ids of platform/*/platform.toml, with their names; a new platform on a toolchain listed here
+        # needs no edit, a new toolchain gets an entry here and its set-up in .github/actions/toolchain
+        include:
+          - { toolchain: arm, name: Arm }
+          - { toolchain: csky, name: C-SKY }
+    permissions:
+      contents: read
+      packages: read   # pulling a private ghcr.io csky-elf image with the job token
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
           fetch-depth: 0
       - name: third_party submodules
         run: tools/checkout-submodules.sh
+      # the pinned compiler, as in CI: the self-hosted image's, the installed Arm toolchain, or the csky-elf image.
+      # Never built from source here: without the image the C-SKY release fails
+      - name: Toolchain (platform.toml [toolchain])
+        id: tc
+        uses: ./.github/actions/toolchain
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          image: ${{ vars.RFOUNDRY_CSKY_IMAGE }}
+          registry: ${{ vars.RFOUNDRY_CSKY_REGISTRY }}
+          registry-user: ${{ vars.RFOUNDRY_CSKY_REGISTRY_USER || github.actor }}
+          registry-token: ${{ secrets.RFOUNDRY_CSKY_REGISTRY_TOKEN || github.token }}
 
-      - name: Install the Arm GNU Toolchain (pinned)
-        if: runner.environment != 'self-hosted'   # the self-hosted image has the same pinned toolchain
-        run: |
-          set -eu
-          f="arm-gnu-toolchain-${ARM_GCC_VERSION}-x86_64-arm-none-eabi.tar.xz"
-          curl -fsSL -o "$RUNNER_TEMP/$f" \
-            "https://developer.arm.com/-/media/Files/downloads/gnu/${ARM_GCC_VERSION}/binrel/$f"
-          echo "${ARM_GCC_SHA256}  $RUNNER_TEMP/$f" | sha256sum -c -
-          mkdir -p "$HOME/opt"
-          tar -xJf "$RUNNER_TEMP/$f" -C "$HOME/opt"   # the Makefile looks in ~/opt/arm-gnu-toolchain-*/bin first
-          make -s BOARD=dm1701 print-cc
-          "$(make -s BOARD=dm1701 print-cc)" --version | head -1
-
-      - name: Release gate (host tests, Python checks, DM-1701 build, license checks)
+      # the host tests and Python checks on the runner (the csky-elf image has no host compiler), the builds with the
+      # toolchain's compiler
+      - name: Release gate (host tests, Python checks, license checks, the toolchain's builds)
         if: needs.version.outputs.publish == 'true'
-        run: tools/ci.sh --quick --board dm1701
-
-      - name: Build and package
+        env:
+          RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
+          TOOLCHAIN: ${{ matrix.toolchain }}
         run: |
-          set -eu
-          make BOARD=dm1701 -j"$(nproc)"
-          python3 tools/release.py --board dm1701 --version "${{ needs.version.outputs.version }}" --out dist
+          set -u
+          tools/ci.sh --quick --steps registry,host,python,licenses
+          rc=0
+          $RUN tools/ci.sh --quick --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
+          [ "$rc" != 3 ] || echo "::error::no $TOOLCHAIN compiler: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+          exit "$rc"
 
-      - uses: actions/upload-artifact@v4
+      - name: Build and package every releasable board
+        env:
+          RUN: ${{ steps.tc.outputs.run }}
+          TOOLCHAIN: ${{ matrix.toolchain }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -u
+          rc=0
+          $RUN tools/release_build.sh --toolchain "$TOOLCHAIN" --version "$VERSION" --out dist || rc=$?
+          [ "$rc" != 3 ] || echo "::error::no $TOOLCHAIN compiler: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+          exit "$rc"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        if: hashFiles('dist/*') != ''
         with:
-          name: firmware-dm1701
+          name: firmware-${{ matrix.toolchain }}
           path: dist/
           if-no-files-found: error
 
-  # Off until the DM-32UV is verified on a radio (docs/testing/dm32-bringup.md). Set the repository variable
-  # ODR_RELEASE_DM32=true to build it. The toolchain build takes about 45 minutes the first time; the cache keeps it.
-  firmware-dm32:
-    needs: version
-    if: vars.ODR_RELEASE_DM32 == 'true'
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
-          fetch-depth: 0
-      - name: third_party submodules
-        run: tools/checkout-submodules.sh
-      - uses: actions/cache@v4
-        if: runner.environment != 'self-hosted'   # the self-hosted image has csky-elf GCC in /opt/csky-elf
-        with:
-          path: ~/toolchains/csky-elf
-          key: csky-elf-${{ runner.os }}-${{ hashFiles('tools/build-csky-toolchain.sh') }}
-      - name: Build the csky-elf toolchain (pinned versions in the script)
-        if: runner.environment != 'self-hosted'
-        run: |
-          set -eu
-          if [ ! -x "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" ]; then
-            sudo apt-get update
-            sudo apt-get install -y build-essential libgmp-dev libmpfr-dev libmpc-dev libisl-dev texinfo bison flex
-            tools/build-csky-toolchain.sh
-          fi
-          "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" --version | head -1
-      - name: Build and package
-        run: |
-          set -eu
-          [ "${{ needs.version.outputs.publish }}" != true ] || tools/ci.sh --quick --board dm32   # the gate: tags only
-          make BOARD=dm32 -j"$(nproc)"
-          python3 tools/release.py --board dm32 --version "${{ needs.version.outputs.version }}" --out dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: firmware-dm32
-          path: dist/
-          if-no-files-found: error
-
-  # Off until the DM-1801 Pro leaves bring-up (docs/testing/dm1801pro-bringup.md). Set the repository variable
-  # ODR_RELEASE_DM1801PRO=true to build it. The same csky-elf toolchain and cache as the DM-32UV job.
-  firmware-dm1801pro:
-    needs: version
-    if: vars.ODR_RELEASE_DM1801PRO == 'true'
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
-          fetch-depth: 0
-      - name: third_party submodules
-        run: tools/checkout-submodules.sh
-      - uses: actions/cache@v4
-        if: runner.environment != 'self-hosted'   # the self-hosted image has csky-elf GCC in /opt/csky-elf
-        with:
-          path: ~/toolchains/csky-elf
-          key: csky-elf-${{ runner.os }}-${{ hashFiles('tools/build-csky-toolchain.sh') }}
-      - name: Build the csky-elf toolchain (pinned versions in the script)
-        if: runner.environment != 'self-hosted'
-        run: |
-          set -eu
-          if [ ! -x "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" ]; then
-            sudo apt-get update
-            sudo apt-get install -y build-essential libgmp-dev libmpfr-dev libmpc-dev libisl-dev texinfo bison flex
-            tools/build-csky-toolchain.sh
-          fi
-          "$HOME/toolchains/csky-elf/bin/csky-elf-gcc" --version | head -1
-      - name: Build and package
-        run: |
-          set -eu
-          [ "${{ needs.version.outputs.publish }}" != true ] || tools/ci.sh --quick --board dm1801pro   # the gate: tags only
-          make BOARD=dm1801pro -j"$(nproc)"
-          python3 tools/release.py --board dm1801pro --version "${{ needs.version.outputs.version }}" --out dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: firmware-dm1801pro
-          path: dist/
-          if-no-files-found: error
-
-  odrflash:
+  rfoundry:
     needs: version
     strategy:
       fail-fast: false
@@ -194,16 +155,16 @@ jobs:
       # macos-14, macos-15-intel (macos-13 is retired; the last Intel image) and windows-2022, or the self-hosted
       # runner alone
       matrix:
-        include: ${{ fromJSON(needs.version.outputs.odrflash) }}
+        include: ${{ fromJSON(needs.version.outputs.rfoundry) }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
         if: runner.environment != 'self-hosted'
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -215,42 +176,39 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "pyinstaller==${PYINSTALLER_VERSION}" ./tools/odrflash
+          python -m pip install "pyinstaller==${PYINSTALLER_VERSION}" ./tools/rfoundry
       - name: Test
-        run: python -W ignore -m unittest discover -s tools/odrflash/tests -v
+        run: python -W ignore -m unittest discover -s tools/rfoundry/tests -v
       - name: Build the executable
         run: |
           set -eu
-          out="odrflash-${{ needs.version.outputs.version }}-${{ matrix.name }}"
-          # the serial route (odrflash/serialflash.py) imports these tools from the checkout; bundle them
-          pyinstaller --onefile --clean --name "$out" --paths tools/odrflash --paths tools --paths stub \
-            --hidden-import dm32_flash --hidden-import hrc7000_codec --hidden-import stubtool \
+          out="rfoundry-${{ needs.version.outputs.version }}-${{ matrix.name }}"
+          # the serial route (rfoundry/serialflash.py) imports these tools from the checkout; bundle them
+          pyinstaller --onefile --clean --name "$out" --paths tools/rfoundry --paths tools --paths stub \
+            --hidden-import serial_loader --hidden-import hrc7000_codec --hidden-import stubtool \
             --collect-binaries libusb_package --collect-data certifi --hidden-import usb.backend.libusb1 \
-            --add-data "tools/odrflash/odrflash/codec_maps:odrflash/codec_maps" \
-            tools/odrflash/odrflash/__main__.py
+            --add-data "tools/rfoundry/rfoundry/codec_maps:rfoundry/codec_maps" \
+            --add-data "tools/rfoundry/rfoundry/registry.json:rfoundry" \
+            tools/rfoundry/rfoundry/__main__.py
           "./dist/$out${{ matrix.ext }}" --version
           "./dist/$out${{ matrix.ext }}" --help > /dev/null
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         with:
-          name: odrflash-${{ matrix.name }}
-          path: dist/odrflash-*
+          name: rfoundry-${{ matrix.name }}
+          path: dist/rfoundry-*
           if-no-files-found: error
 
   publish:
-    needs: [version, firmware-dm1701, firmware-dm32, firmware-dm1801pro, odrflash]
-    # firmware-dm32 and firmware-dm1801pro may be skipped (variables off); publish anyway, but never after a failure
-    if: >-
-      always() && needs.version.outputs.publish == 'true' && needs.firmware-dm1701.result == 'success' &&
-      needs.odrflash.result == 'success' && needs.firmware-dm32.result != 'failure' &&
-      needs.firmware-dm1801pro.result != 'failure'
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    needs: [version, firmware, rfoundry]
+    if: needs.version.outputs.publish == 'true'   # and every toolchain's firmware and every rfoundry passed
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
         with:
           path: artifacts
       - name: Collect the files and one SHA256SUMS
@@ -260,7 +218,7 @@ jobs:
           find artifacts -type f ! -name SHA256SUMS -exec cp {} out/ \;
           (cd out && sha256sum * > SHA256SUMS && cat SHA256SUMS)
           # the manifests' own image hashes must agree with the files
-          for j in out/odr-*.json; do
+          for j in out/rfoundry-*.json; do
             python3 - "$j" <<'EOF'
           import hashlib, json, os, sys
           m = json.load(open(sys.argv[1]))
@@ -276,11 +234,11 @@ jobs:
         run: |
           set -eu
           TAG="${GITHUB_REF_NAME}"
-          NOTES="Firmware images for the radios listed below, without the AMBE codec, and odrflash for Linux, macOS and
-          Windows. Flash with: odrflash flash --release ${TAG}. odrflash keeps the codec already in your radio when
+          NOTES="Firmware images for the radios listed below, without the AMBE codec, and rfoundry for Linux, macOS and
+          Windows. Flash with: rfoundry flash --release ${TAG}. rfoundry keeps the codec already in your radio when
           that is known to be safe, or writes it from your radio's stock firmware file (--stock). See
           docs/user/02-installing.md."
           gh release view "$TAG" > /dev/null 2>&1 || \
-            gh release create "$TAG" --verify-tag --title "OpenDigitalRadio $TAG" --notes "$NOTES" || \
+            gh release create "$TAG" --verify-tag --title "RadioFoundry $TAG" --notes "$NOTES" || \
             gh release view "$TAG" > /dev/null   # created meanwhile by the manual workflow
           gh release upload "$TAG" out/* --clobber

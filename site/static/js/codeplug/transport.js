@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // How the codeplug editor reaches a radio. A transport reads the codeplug's regions into an image and writes back
 // the bytes that changed; the page doesn't care how. Today there is one, "cps-serial": the radio's own codeplug
 // interface (the open-firmware CPS, docs/spec/cps-protocol.md 2) over its USB serial port or the programming cable.

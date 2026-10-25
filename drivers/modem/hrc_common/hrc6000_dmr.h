@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C6000 in DMR: register sequences, burst status decode, and the slot engine behind hal_dmr_modem.h
 // (docs/spec/modem-hrc6000.md 3.1, 4-7; docs/spec/dmr-modem.md 6; docs/spec/gotchas.md 1, 3, 5).
 //
@@ -77,7 +77,7 @@ typedef struct {
 	void (*notify)(void *ctx);	// events queued: wake the board's task (from ISRs and from the lock)
 	bool (*sys_line_low)(void *ctx);	// optional: system interrupt line still asserted after its flags were cleared
 	// Optional (timeslot ISR): an aligned transmission has found its slot; the first burst follows two ticks later.
-	// A board whose receiver can't stay on during the wait (the MD-380: one synthesizer) switches to TX here
+	// A board whose receiver can't stay on during the wait (one synthesizer for both) switches to TX here
 	void (*tx_slot_found)(void *ctx);
 	void *ctx;
 } hrc6000_dmr_ops_t;

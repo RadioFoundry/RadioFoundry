@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // STM32F4 entry: platform set-up, the board's early init, then the core application under FreeRTOS
 #include "config.h"
 #include "platform.h"

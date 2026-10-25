@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core: owns the channel / VFO state, squelch, PTT and the TX timer, and drives board.radio.
 // It runs in its own task. The UI reads a snapshot and posts requests; it never touches the hardware.
 #ifndef RADIO_CORE_H
@@ -22,11 +22,11 @@ typedef enum {
 // access), NO_REPEATER the repeater didn't wake, REJECTED the modem refused, HOTSPOT the radio is a hotspot now,
 // NO_ID no DMR ID in the codeplug, SFR_RPT the radio is the channel's single frequency repeater. BUSY on FM: busy channel lockout. INHIBIT: transmit is switched off in the
 // settings. BATTERY: the battery is critical. AM: the channel is received in AM (the air band, CONFIG_AM_RX): receive
-// only, the radio never transmits there
+// only, the radio never transmits there. BCAST: the same for the broadcast band (CONFIG_BCAST_FM)
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
-	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_SFR_RPT,
+	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_BCAST, TXDENY_SFR_RPT,
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -79,7 +79,14 @@ typedef struct {
 	bool rpt_beacon;	// our repeater roles (SFR) key an idle beacon on that interval and duration
 	uint8_t sfr_rx;		// SFR user channels hear: dmr_sfr_rx_t (0 the repeat only, 1 both first arrival, 2 voting)
 	uint8_t sfr_cwid;	// our SFR repeater's CW ID interval: 0 off, 1 5 min, 2 10, 3 15, 4 30 (CONFIG_SFR_CWID)
+	// Broadcast FM (CONFIG_BCAST_FM)
+	uint8_t bcast_step;	// the VFO's automatic step there: RADIO_BCAST_STEP_200_ODD or RADIO_BCAST_STEP_100
 } radio_settings_t;
+
+// radio_settings_t.bcast_step: 200 kHz between the odd tenths (88.1, 88.3 MHz: the broadcast channels of the
+// Americas), or every 100 kHz. Either way a frequency typed in may be any 100 kHz point
+#define RADIO_BCAST_STEP_200_ODD	0u
+#define RADIO_BCAST_STEP_100		1u
 
 #define RADIO_REPLY_CODEPLUG	0xFFu	// radio_settings_t.reply_s: the codeplug's hang times (else the stack's 10 s)
 // radio_settings_t.dual_delay_ms: the default and the most. In the wait the receiver looks at the other channel for a
@@ -88,6 +95,11 @@ typedef struct {
 #define RADIO_DUAL_DELAY_MAX_MS	10000u
 
 typedef enum { RADIO_BATT_OK, RADIO_BATT_LOW, RADIO_BATT_CRITICAL } radio_batt_t;	// = batt_level_t
+
+// DTMF (radio-features.md 3.7)
+#define RADIO_DTMF_MIN_MS	100	// shortest tone: a quick tap still decodes
+#define RADIO_DTMF_GAP_MS	60	// shortest pause between two digits: the same digit twice decodes as two
+#define RADIO_DTMF_SHOWN	8	// digits of this transmission the view keeps (the TX screen shows them)
 
 #if CONFIG_DMR
 #define RADIO_ALIAS_MAX		31	// talker alias characters (DMR_TA_TEXT_MAX)
@@ -205,9 +217,13 @@ typedef struct {
 } radio_roam_view_t;
 #endif
 
+#define RADIO_LED_GREEN		0x01u	// radio_view_t.leds
+#define RADIO_LED_RED		0x02u
+
 typedef struct {
 	radio_state_t state;
 	uint8_t tx_deny;	// tx_deny_t, while RS_TX_DENIED
+	uint8_t leds;		// RADIO_LED_* bits: what the radio core drives its LEDs to (board.power->led)
 	bool vfo;		// tuning a frequency by hand rather than a channel
 	uint8_t vfo_index;	// which VFO: 0, or 1 the second (dual watch gives each channel its own)
 	uint16_t zone_index;
@@ -247,6 +263,11 @@ typedef struct {
 	bool tot_warning;	// TX: the time-out is near (tot_warn_s)
 	bool tone_burst;	// TX: the 1750 Hz burst is on
 	bool roger;		// TX: the roger beep is being sent after the PTT release
+	// DTMF (CONFIG_DTMF; radio-features.md 3.7)
+	bool dtmf_ready;	// a digit key would send its tone now (FM TX with PTT held, nothing else on the air)
+	char dtmf;		// the digit sounding, 0 = none
+	char dtmf_digits[RADIO_DTMF_SHOWN + 1];	// the last digits sent in this transmission (oldest first)
+	uint16_t dtmf_sent;	// digits sent since start-up
 	bool vox_keyed;		// TX keyed by VOX
 	bool vox_on;		// VOX listens on this channel (the settings' vox, the channel, an FM channel)
 	bool rx_sleeping;	// battery save: the receiver is off for now
@@ -254,6 +275,7 @@ typedef struct {
 	uint8_t battery;	// radio_batt_t
 	uint8_t battery_pct;	// board.power->battery_pct(), 0 if unknown
 	uint16_t battery_mv;
+	uint16_t supply_mv;	// board.power->supply_mv() where the radio measures its supply (board_volts), else 0
 	bool power_off;		// the radio core asks to be switched off (critical battery, battery_off_s)
 	int8_t volume;		// percent last passed to hal_radio_t.volume (the knob, the override or the step), -1 = none yet
 	uint8_t volume_src;	// radio_volume_src_t: where that level comes from
@@ -263,6 +285,12 @@ typedef struct {
 	// VFO frequency (an FM channel in 108-137 MHz on a radio that can); receive only. noise then holds the AM
 	// squelch's value from the RSSI (radio/radio_am.h)
 	bool am;
+	// Broadcast FM (CONFIG_BCAST_FM; airband-and-broadcast.md 4): an FM channel or the VFO in the broadcast
+	// receiver's range plays on that receiver; receive only. noise and rssi_dbm then come from it (radio_bcast.h).
+	// bcast_fault: the receiver didn't answer or refused the frequency
+	bool bcast;
+	bool bcast_fault;
+	uint32_t bcast_khz;		// what the receiver reports it is tuned to, for the debug link (0 = not playing)
 #if CONFIG_DMR
 	radio_dmr_view_t dmr;
 #endif
@@ -402,6 +430,11 @@ void radio_req_beep(uint8_t beep);
 void radio_req_vibrate(uint8_t pattern);
 // FM 1750 Hz tone burst while on (CONFIG_FM_TX_TONES): keys up if not transmitting, stops when off
 void radio_req_tone_burst(bool on);
+// A DTMF key down / up (CONFIG_DTMF; radio-features.md 3.7): digit '0'-'9', '*', '#', 'A'-'D'. Ignored unless the
+// view's dtmf_ready; the tone lasts at least RADIO_DTMF_MIN_MS. The input task sends the keypad's edges (any task)
+void radio_req_dtmf(char digit, bool down);
+// The view's dtmf_ready as last published, cheap for the input task (false without CONFIG_DTMF)
+bool radio_dtmf_ready(void);
 // Speaker volume steps (radio-features.md 4.2): 0 (mute) .. RADIO_VOLUME_MAX, passed to hal_radio_t.volume() as a
 // percent, round(step * 100 / RADIO_VOLUME_MAX). The step count is this one constant: the stored form, the screens,
 // the debug link and the boards' tables follow it. A radio without a volume knob (radio_volume_soft(): the board has
@@ -432,7 +465,9 @@ uint8_t radio_volume_stored(uint8_t step);
 // beep_level setting (cap). volume_percent < 0 (none given yet): the cap
 uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent);
 
-// Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them
+// Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them. get answers
+// with the last ones set until the radio task has taken them in, so a caller that reads, changes one field and sets
+// (the UI, the debug link) keeps every other caller's change, its own earlier ones included
 void radio_settings_default(radio_settings_t *s);
 void radio_set_settings(const radio_settings_t *s);
 void radio_get_settings(radio_settings_t *s);

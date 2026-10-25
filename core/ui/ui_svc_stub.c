@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Weak stand-ins for everything in ui_svc.h that another package owns. Each reports "not available", except the
 // settings store, which keeps values in RAM so the Settings screens work before storage-cps lands. A package that
 // owns one of these defines it without the weak attribute and the linker takes that one.
@@ -33,6 +33,9 @@ WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
 WEAK bool ui_svc_vox(bool on) { (void)on; return false; }
 WEAK bool ui_svc_save_channel(void) { return false; }
 WEAK bool ui_svc_write_channel(uint16_t number, const channel_t *ch) { (void)number; (void)ch; return false; }
+WEAK bool ui_svc_zone_edit(const zone_op_t *op) { (void)op; return false; }
+WEAK void ui_svc_zone_poll(void) { }
+WEAK bool ui_svc_zone_pending(void) { return false; }
 WEAK bool ui_svc_save_talk_target(uint32_t id, bool private_call) { (void)id; (void)private_call; return false; }
 
 WEAK bool ui_svc_scan(bool on) { (void)on; return false; }
@@ -46,6 +49,7 @@ WEAK bool ui_svc_dual_rx(uint8_t pane, ui_dual_rx_t *out) { (void)pane; (void)ou
 WEAK void ui_svc_beep(uint8_t beep) { (void)beep; }
 WEAK void ui_svc_vibrate(uint8_t vibe) { (void)vibe; }
 WEAK void ui_svc_ptt_block(bool blocked) { (void)blocked; }
+WEAK void ui_svc_dtmf_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_poll(void) { }
 WEAK void ui_svc_keys_poll(void) { }
 WEAK void ui_svc_apply(uint8_t id, int32_t value) { (void)id; (void)value; }
@@ -80,6 +84,7 @@ static int32_t settings[UI_SET_COUNT] = {
 	[UI_SET_ROAM_SURVEY] = 1, [UI_SET_ROAM_BEACON_S] = 60, [UI_SET_ROAM_BEACON_LEN] = 4, [UI_SET_TFTP_WRITE] = 1,
 	[UI_SET_MSG_FORMAT] = 2,	// ETSI IP text
 	[UI_SET_VIBRATE] = 1, [UI_SET_VOLUME] = RADIO_VOLUME_DEFAULT, [UI_SET_DUAL_DELAY_MS] = RADIO_DUAL_DELAY_MS,
+	[UI_SET_BCAST_STEP] = 200,
 	[UI_SET_NOISE_REDUCTION] = 1,
 };
 // (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's

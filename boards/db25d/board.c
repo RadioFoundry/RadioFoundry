@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Radioddity DB25-D PRO: board descriptor, IO mux and reset-time pin levels, key map (docs/spec/hardware-db25d.md)
 #include "board.h"
 #include "config.h"
@@ -20,37 +20,38 @@ static const band_t bands[] = {
 static const char *const power_names[] = { "L", "H" };
 
 // docs/ux/information-architecture.md 7.4 (mobile: front encoder and a few keys; the encoder push is OK). The hand
-// mic adds the digits, * and # (marked down and up) and P4-P7
+// mic adds the digits, * and # (marked down and up) and P4-P7, which send DTMF A-D while PTT is held on FM (the
+// manual's DTMF A-D keys)
 static const keymap_entry_t keymap[] = {
-	{ KEY_ENC_PUSH, ACT_SELECT, ACT_SELECT, false, false },
-	{ KEY_BE, ACT_BACK, ACT_BACK, false, false },
-	{ KEY_P1, ACT_QUICK, ACT_QUICK, false, false },
-	{ KEY_P2, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ KEY_P3, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ KEY_TONE, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ KEY_VOL, ACT_VOLUME, ACT_VOLUME, false, false },
-	{ KEY_MIC_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false },
-	{ KEY_MIC_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false },
-	{ KEY_MIC_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false },
-	{ KEY_MIC_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false },
-	{ KEY_MIC_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false },
-	{ KEY_MIC_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false },
-	{ KEY_MIC_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false },
-	{ KEY_MIC_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
-	{ KEY_MIC_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false },
-	{ KEY_MIC_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
-	{ KEY_MIC_STAR, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
-	{ KEY_MIC_HASH, ACT_NAV_UP, ACT_NAV_UP, false, true },
-	{ KEY_MIC_P4, ACT_USER_3, ACT_USER_3, false, false },
-	{ KEY_MIC_P5, ACT_USER_4, ACT_USER_4, false, false },
-	{ KEY_MIC_P6, ACT_QUICK, ACT_QUICK, false, false },
-	{ KEY_MIC_P7, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ KEY_ENC_PUSH, ACT_SELECT, ACT_SELECT, false, false, 0 },
+	{ KEY_BE, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ KEY_P1, ACT_QUICK, ACT_QUICK, false, false, 0 },
+	{ KEY_P2, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
+	{ KEY_P3, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ KEY_TONE, ACT_AB, ACT_USER_2, false, false, 0 },
+	{ KEY_VOL, ACT_VOLUME, ACT_VOLUME, false, false, 0 },
+	{ KEY_MIC_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },
+	{ KEY_MIC_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
+	{ KEY_MIC_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false, 0 },
+	{ KEY_MIC_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false, 0 },
+	{ KEY_MIC_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 },
+	{ KEY_MIC_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
+	{ KEY_MIC_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 },
+	{ KEY_MIC_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
+	{ KEY_MIC_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
+	{ KEY_MIC_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
+	{ KEY_MIC_STAR, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, '*' },
+	{ KEY_MIC_HASH, ACT_NAV_UP, ACT_NAV_UP, false, true, '#' },
+	{ KEY_MIC_P4, ACT_USER_3, ACT_USER_3, false, false, 'A' },
+	{ KEY_MIC_P5, ACT_USER_4, ACT_USER_4, false, false, 'B' },
+	{ KEY_MIC_P6, ACT_QUICK, ACT_QUICK, false, false, 'C' },
+	{ KEY_MIC_P7, ACT_CONTEXT, ACT_CONTEXT, false, false, 'D' },
+	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 
 #if CONFIG_CPS_OPENFW
 // What the open-firmware CPS reads in the radio info (open-firmware-cps.md 4). qdmr and the CPS know no DB25-D, and the
-// image layout is the STM32 radios' (flash_db25d.c), so the radio reports type 6 (MD-UV380) as the DM-32UV does. No
+// image layout is the STM32 radios' (flash_db25d.c), so the radio reports type 6 (MD-UV380) as the other HR_C7000 boards do. No
 // MCU ROM area and no flash security registers: those areas are refused. The factory calibration is outside the
 // image (flash_db25d.c), so there is no calibration window either
 static uint32_t cps_radio_type(void)
@@ -63,9 +64,13 @@ static const hal_cps_t cps = {
 };
 #endif
 
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the keys with a function of their own. P1, P2 and the mic's P6, P7 are QUICK and CONTEXT, which the menus need
+static const uint8_t side_keys[] = { KEY_P3, KEY_TONE, KEY_MIC_P4, KEY_MIC_P5 };
+static const char *const side_key_names[] = { "P3", "TONE", "Mic P4", "Mic P5" };
+
 const board_t board = {
 	.name = "DB25-D",
-	.caps = CAP_ENCODER | CAP_NO_BATTERY | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -75,10 +80,15 @@ const board_t board = {
 	.input = &db25d_input,
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
+	.side_keys = side_keys,
+	.side_key_names = side_key_names,
+	.side_key_count = sizeof(side_keys),
 	.radio = &db25d_radio,
 	.power = &db25d_power,
+#if CONFIG_GPS
 	.gps_enable = hrc_gps_enable,
 	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+#endif
 #if CONFIG_DIAG
 	.diag_line = db25d_diag_line,
 	.diag_reset = db25d_diag_reset,
@@ -182,7 +192,9 @@ void board_early_init(void)
 void board_init(void)
 {
 	db25d_power.init();
+#if CONFIG_GPS
 	hrc_gps_init(&gps_cfg);
+#endif
 	// Both calibration copies, the higher save counter wins (hardware-db25d.md 6.1). Without the NAND, the flash copy
 	bool nand = db25d_nand_init();
 	db25d_cal_load((const uint8_t *)DB25D_CAL_FLASH_ADDR, nand ? db25d_nand_read : NULL);

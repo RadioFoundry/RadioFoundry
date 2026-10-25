@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Runtime entry to the STM32F4 flash stub (CONFIG_STUB_ENTRY, docs/spec/debuglink.md 3.18, docs/spec/stub-stm32f4.md).
 //
-// The debug link loads the stub image into a staging buffer in ODR's own RAM while ODR runs. The image is linked to
-// run at the SRAM base (0x20000000), which ODR's .data and .bss hold until the jump, so enter_stub masks everything,
+// The debug link loads the stub image into a staging buffer in RadioFoundry's own RAM while RadioFoundry runs. The image is linked to
+// run at the SRAM base (0x20000000), which RadioFoundry's .data and .bss hold until the jump, so enter_stub masks everything,
 // stops the DMA controllers (a stream still writing into SRAM would corrupt the copied image), copies the staging buffer
 // down to the SRAM base and jumps there. Code stays in flash until the jump and the task stack is in CCM, so the copy
 // overwrites nothing it still needs. The clocks, the GPIO levels (power latch) and the USB core's state are kept: the
@@ -20,7 +20,7 @@
 #endif
 
 #define STUB_RUN_ADDR		0x20000000u	// SRAM1 base: the stub's link address (stub/stm32f4/f4stub.ld)
-#define STUB_STAGE_SIZE		(8u * 1024u)	// the biggest stub image ODR accepts
+#define STUB_STAGE_SIZE		(8u * 1024u)	// the biggest stub image RadioFoundry accepts
 #define STUB_FLAG_USB_ADOPT	0x1u		// r0 at entry: the OTG_FS core is a configured CDC-ACM device (ours)
 
 static uint8_t stage[STUB_STAGE_SIZE] __attribute__((aligned(8)));

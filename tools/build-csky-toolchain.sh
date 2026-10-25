@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-# Builds a csky-elf cross toolchain for the DM-32 (C-SKY CK803S): binutils, GCC (C only) and newlib, into
+# Copyright (c) 2026 The RadioFoundry Authors
+# Builds a csky-elf cross toolchain for the hrc7000 platform (C-SKY CK803S): binutils, GCC (C only) and newlib, into
 # ~/toolchains/csky-elf. Tested on Ubuntu 22.04 arm64 (4 cores, about 45 minutes):
 #   sudo apt install build-essential libgmp-dev libmpfr-dev libmpc-dev libisl-dev texinfo bison flex
 # newlib is built for -mcpu=ck803s only (no multilib): GCC 14 runs away (gigabytes of memory, no end) on the
@@ -12,7 +12,10 @@
 set -e
 PREFIX=${PREFIX:-$HOME/toolchains/csky-elf}
 SRC=${SRC:-$HOME/toolchains/src}
-BV=2.43.1; GV=14.2.0; NV=4.5.0.20241231; J=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+# GCC's release is platform/hrc7000/platform.toml [toolchain] version; docker/csky-toolchain/build.sh passes it in GV,
+# since only this script is in its container
+GV=${GV:-$("$(dirname "$0")/platform_toolchain.sh" hrc7000 version)}
+BV=2.43.1; NV=4.5.0.20241231; J=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 export PATH=$PREFIX/bin:$PATH
 mkdir -p $SRC && cd $SRC
 [ -f binutils-$BV.tar.xz ] || curl -fsSLO https://ftp.gnu.org/gnu/binutils/binutils-$BV.tar.xz

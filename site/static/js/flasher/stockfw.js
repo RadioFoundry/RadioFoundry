@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // TYT / Baofeng stock firmware files in the browser: container, decryption, codec extraction, key derivation.
-// A port of tools/odrflash/odrflash/stockfw.py; the profiles come from that file through data/flash-boards.json, so
+// A port of tools/rfoundry/rfoundry/stockfw.py; the profiles come from that file through data/flash-boards.json, so
 // both read the same table. The codec and the key are only ever handled on the user's machine.
 
 import { u32le, sha256, startsWith, crc32 } from "./bytes.js";
@@ -67,6 +67,14 @@ export function placedWindows(prof) {
 	if (!prof.placement) return prof.windows;
 	const pl = prof.placement, pd = prof.placed, tab = prof.windows[1];
 	return [[pl.code, prof.windows[0][1], pd.code[1]], [tab[0], pl.tables_len ?? tab[1], pd.tables[1]], ...prof.windows.slice(2)];
+}
+
+// The windows a merge of this profile writes, [[addr, length]] (stockfw.layout): the placed windows and the descriptor
+// for a profile that moves the code, else its stock windows. A board with several stock files plans each merge
+// against its own file's layout, not the board's windows (their union)
+export function layoutWindows(prof, fb) {
+	const wins = placedWindows(prof).map(([a, n]) => [a, n]);
+	return prof.placement ? [...wins, [fb.descriptor.addr, fb.descriptor.len]] : wins;
 }
 
 // The 128-byte descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h, stockfw.descriptor)
@@ -142,7 +150,7 @@ export function stockApplication(data, key, board, fb) {
 }
 
 // Recover the 1024-byte bootloader key from a stock file, checked against its published SHA-256: the same steps and
-// tie orders as odrflash's stockfw.derive_key, so both give the same key. The payload is plain XOR key[i mod 1024].
+// tie orders as rfoundry's stockfw.derive_key, so both give the same key. The payload is plain XOR key[i mod 1024].
 // The column vote is enough for a DM-1701 image (0x00 dominates every column); the MD-380 image votes about a third of
 // the columns wrong, so a byte-pair model learned from the file itself (refine) re-picks them. A wrong key can't pass
 // the hash check, and no key material is needed or stored.
@@ -216,7 +224,7 @@ async function alternatives(base, cands, order, wantSha, maxAlternatives) {
 	return null;
 }
 
-// Bigram refinement of a voted key (odrflash stockfw._refine). pairs[j] counts the cipher byte pairs (column j-1,
+// Bigram refinement of a voted key (rfoundry stockfw._refine). pairs[j] counts the cipher byte pairs (column j-1,
 // column j), so a key guess gives the plain pair counts without touching the payload again; even and odd columns keep
 // separate models (Thumb-2 halfwords, little endian words). Round 0 learns only from the seed columns (the clearest
 // votes) and re-picks the others among their vote candidates (strict: only next to a seed column, judged against its

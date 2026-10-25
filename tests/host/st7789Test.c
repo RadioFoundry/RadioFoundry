@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ST7789 driver: reset and init command stream (MADCTL after 0x35, inversion, clear, display on), bus begin / end
 // pairing, and frame buffer rows sent at 2x scale and from a 16-color frame buffer (docs/spec/hardware-dm32.md 7)
 #include <stdio.h>
@@ -159,7 +159,7 @@ static void test_rows(void)
 
 static void test_rows_indexed(void)
 {
-	// The DM-32's frame: 240 x 320, two pixels a byte, high nibble left, colors through the palette
+	// A 240 x 320 frame, two pixels a byte, high nibble left, colors through the palette
 	const st7789_t p = { &bus, 240, 320, 0xC0, true, 1 };
 	static uint8_t fb[120 * 320];
 	uint16_t pal[16];

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // AT1846S driver: pure helpers (frequency word, CTCSS threshold, tone flags) and the register cache,
 // page handling and write sequences against a fake bus
 #include <stdio.h>

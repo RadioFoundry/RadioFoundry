@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's state machine, without the RTOS: it takes requests and the time, polls board.radio and keeps
 // the view. radio_task.c runs it in a task; the host tests run it against a fake board.
 #ifndef RADIO_SM_H
@@ -36,7 +36,7 @@
 #define RADIO_SQL_HYST_DB	3
 #define RADIO_SQL_CLOSE_POLLS	2
 // While APRS receive listens (aprs.md 5.3): a packet's tones at full deviation push the noise reading over the line
-// for a poll or two, and on the DM-1701 a closed squelch zeroes the receive audio, so a packet came apart (on air,
+// for a poll or two, and on a radio whose modem gates it, a closed squelch zeroes the receive audio, so a packet came apart (on air,
 // 2026-10-13). On the APRS frequency the squelch holds this many polls (300 ms) instead
 #define RADIO_SQL_CLOSE_POLLS_APRS	12
 
@@ -139,6 +139,7 @@ typedef enum {
 	RREQ_VOLUME,		// arg: the volume step 0..RADIO_VOLUME_MAX (radios without a knob)
 	RREQ_VOLUME_OVERRIDE,	// arg: the step over the knob, -1 = back to the knob
 	RREQ_VFO_COPY,		// the channel's settings into the VFO, and open it (CONFIG_VFO); no-op in the VFO
+	RREQ_DTMF,		// arg: the digit (ASCII) in bits 7:0, bit 8 = key down (0 = up)
 	RREQ_DUAL,		// dual watch (CONFIG_DUAL_WATCH): arg channel A, arg2 channel B, radio_dual_arg()
 } radio_req_type_t;
 
@@ -246,6 +247,11 @@ typedef struct {
 	uint8_t rssi_ring_pos;
 #endif
 	int8_t audio_out;		// last speaker / LED settings sent to the board, -1 = not yet
+#if CONFIG_BCAST_FM
+	bool bcast_on;			// the broadcast receiver is powered (radio_bcast.h)
+	int8_t bcast_audio_out;		// last board.bcast audio / volume sent, -1 = not yet
+	int8_t bcast_volume_out;
+#endif
 	int8_t green_out;
 	int8_t red_out;
 	bool hotspot;			// hotspot mode: the host link owns the modem
@@ -280,6 +286,13 @@ typedef struct {
 	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
 	uint32_t roger_ms;		// roger beep start, 0 = none
 #endif
+#if CONFIG_DTMF
+	bool dtmf_held;			// the key of the digit sounding (view.dtmf) is still down
+	char dtmf_next;			// a digit waiting for the one sounding (or the gap) to end, 0 = none
+	bool dtmf_next_held;		// ... its key is still down
+	uint32_t dtmf_on_ms;		// the digit sounding started
+	uint32_t dtmf_off_ms;		// the last digit ended
+#endif
 #if CONFIG_SUBTONE
 	uint32_t tail_ms;		// sub-audio tail start (hal_radio_t.tx_tail), 0 = none
 #endif
@@ -294,6 +307,9 @@ typedef struct {
 	uint32_t save_ms;		// start of the current sleep / wake
 #endif
 	uint32_t codeplug_serial;	// codeplug_serial() when the zone and channel were last read
+#if CONFIG_ZONE_EDIT
+	uint32_t zone_shifts;		// zone_edit_shifts() when the zone indexes below were last followed (zone_edit.h)
+#endif
 	bool reload_pending;		// RREQ_RELOAD came while busy
 	bool power_off_req;		// RREQ_POWER_OFF seen
 	bool power_off_busy;		// still sending what has to go out before the supply drops
@@ -385,6 +401,7 @@ typedef struct {
 	bool aprs_was_tx;		// our own transmission (not APRS) at the last poll: the "after PTT" trigger
 	aprs_rf_job_t aprs_job;
 #endif
+	bool tx_no_ptt;		// on the air without PTT (a DMR data burst list): not the user's transmission, no "after PTT"
 } radio_sm_t;
 
 // Start-up: the codeplug and the settings (core/settings): the saved zone, channel or VFO, else zone 0 and its

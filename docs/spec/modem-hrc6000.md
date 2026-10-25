@@ -2,38 +2,40 @@
 
 # HR_C6000 as a DMR modem
 
-Facts about driving the Hongrui HR_C6000 as a DMR Tier II modem on the STM32 radios (DM-1701 / RT-84, MD-UV380,
-MD-2017, MD-9600). Pins and the MCU side are in `hardware-dm1701.md`; the modem-neutral behavior a DMR stack needs is
-in `dmr-modem.md`. This file is register-level: what to write, when, and what the chip reports.
+Facts about driving the Hongrui HR_C6000 as a DMR Tier II modem on a board with an STM32 host. Pins and the MCU side
+are on the board's hardware page ([feature-matrix.md](../feature-matrix.md) lists the boards); the modem-neutral
+behavior a DMR stack needs is in `dmr-modem.md`. This file is register-level: what to write, when, and what the chip
+reports.
 
 Full register reference: [hrc6000-registers.md](hrc6000-registers.md)
 
-Sources: the HR_C6000 user manual (Hongrui, Chinese, with an English machine translation; register chapter and the
-"Layer 2" application chapter), a cleaned-up register table by G4EML, a register-write trace of the official TYT MD-9600
-firmware (the init values below come from it), and on-air measurements on a DM-1701 with an SDR watching (bit exact
-decode of every burst). Values marked "(trace)" were captured from the TYT firmware and are not explained by the
-manual. Values marked "(unverified)" have not been confirmed on our hardware.
+Sources: the HR_C6000 user manual (Hongrui; register chapter and the "Layer 2" application chapter) and on-air
+measurements with an SDR watching (bit exact decode of every burst). Values marked "(unexplained)" are init values the
+manual does not explain; keep them. Values marked "(unverified)" have not been confirmed on our hardware.
 
-Datasheets available (in the aftermarket firmware tree's `docs/data_sheets/C6000/`, kept outside this repository):
-`HR_C6000_updated_chinese_translated_english.pdf` (the most complete), `HR_C6000_translated.pdf`, `HR_C6000_simple.pdf`,
-`HR_C6000_chinese.docx`, `HR-C6000 Registers_G4EML.docx`, `HRC6000_VK3KYY.docx`. These are vendor documents, fine to
-read on the clean side.
+| Section | Topic |
+|---|---|
+| 1, 2, 3 | Interfaces, registers, power-on initialization |
+| 4, 5, 6 | Interrupts, receive, transmit |
+| 7 | Timing quirks found on air |
+| 8 | FM mode |
+| 9, 10 | Single-frequency repeater facts, open questions |
 
 ---
 
 ## 1. Interfaces
 
-| Interface | Manual name | Use | DM-1701 wiring |
+| Interface | Manual name | Use | Host side |
 |---|---|---|---|
-| Config SPI | U_SPI | every register page, LC / data RAM, sync pattern | bit-banged by the MCU (CS, CLK, MOSI, MISO on GPIOE 2-5) |
-| Voice SPI | V_SPI | the 27-byte AMBE voice frame for each voice burst (page 3) | STM32 SPI2, CS on PB12, mode CPOL=1 CPHA=0 (first edge), MSB first, prescaler 8 |
-| I2S | I2S | 8 kHz PCM between the chip's built-in codec (mic ADC, line-out DAC) and the MCU, which runs the AMBE codec in software | see the hardware spec |
-| PWD pin | PWD | power down; drive low to run, wait 10 ms before the first SPI access | PE6 |
-| TIME_SLOT_INTER | timeslot interrupt | every 30 ms slot boundary once timing exists | PC0, EXTI0, falling edge |
-| SYS_INTER | system interrupt | events (burst decoded, TX start/end, late entry, ...) | PC1, EXTI1, falling edge |
-| RF_TX_INTER | RF TX interrupt | "key the RF now": comes shortly before each transmitted burst | PC2, EXTI2, falling edge |
-| RF_RX_INTER | RF RX interrupt | "RX window now" / end of TX burst | **not routed** on the DM-1701 / MD-UV380 (the MK22 GD-77 has it) |
-| RF_TX_EN / RF_RX_EN | chip-timed RF enables | could switch the RF directly | not routed on the DM-1701 |
+| Config SPI | U_SPI | every register page, LC / data RAM, sync pattern | bit-banged by the MCU |
+| Voice SPI | V_SPI | the 27-byte AMBE voice frame for each voice burst (page 3) | STM32 SPI, mode CPOL=1 CPHA=0 (first edge), MSB first, prescaler 8 |
+| I2S | I2S | 8 kHz PCM between the chip's built-in codec (mic ADC, line-out DAC) and the MCU, which runs the AMBE codec in software | see the board's hardware page |
+| PWD pin | PWD | power down; drive low to run, wait 10 ms before the first SPI access | a GPIO |
+| TIME_SLOT_INTER | timeslot interrupt | every 30 ms slot boundary once timing exists | an EXTI line, falling edge |
+| SYS_INTER | system interrupt | events (burst decoded, TX start/end, late entry, ...) | an EXTI line, falling edge |
+| RF_TX_INTER | RF TX interrupt | "key the RF now": comes shortly before each transmitted burst | an EXTI line, falling edge |
+| RF_RX_INTER | RF RX interrupt | "RX window now" / end of TX burst | not routed on some boards (an MK22 board has it) |
+| RF_TX_EN / RF_RX_EN | chip-timed RF enables | could switch the RF directly | not routed on some boards |
 
 All three interrupt lines share one NVIC priority. On the STM32 radios it is 5, which is more urgent than the USB and
 other EXTI lines at 6 (numerically lower is more urgent). Thread-level SPI traffic must not re-enter the handlers. A
@@ -57,7 +59,7 @@ to 128 data bytes and burst reads of up to 96.
 
 | Page | Contents | Used for |
 |---|---|---|
-| 1 | auxiliary parameters (sync patterns, DTMF tone table at extended addresses 0x11A-0x129, unexplained trace values) | init, sync pattern, tones |
+| 1 | auxiliary parameters (sync patterns, DTMF tone table at extended addresses 0x11A-0x129, unexplained values) | init, sync pattern, tones |
 | 2 | data RAM: a write fills the **TX** RAM, a read returns the **RX** RAM ("1.2K RAM" in the manual) | LC, CSBK, data header / block payloads |
 | 3 | vocoder frame buffer | 128 bytes of 0x7F to flush it; on V_SPI, the 27-byte AMBE frame |
 | 4 | system parameter table (the main registers) | everything else |
@@ -78,7 +80,7 @@ V_SPI uses the same command / address framing (page 3, address 0x00, then 27 byt
 
 ### 1.2 Clock
 
-The PLL settings used match the manual's 29.4912 MHz crystal row (crystal frequency on the DM-1701 unverified):
+The PLL settings used match the manual's 29.4912 MHz crystal row (crystal frequency on the boards unverified):
 PLL output 49.152 MHz, system clock 9.8304 MHz, codec clock 12.288 MHz, CLKOUT 24.576 MHz.
 
 ---
@@ -89,13 +91,13 @@ Names are the manual's. Only the bits we rely on are listed.
 
 | Reg | Name | Bits / values used |
 |---|---|---|
-| 0x00 | reset (active low per module: DMR, PHY, codec, FM, vocoder IF, MSK, I2S, built-in codec) | 0xFF at init (all running) then 0x2A (partial reset, trace) |
-| 0x01 | H/W config | 0xF0 in DMR (two-point modulation TX, IF RX); 0xB0 then 0xF8 during init (trace). The same value is used on UHF and VHF on these radios |
-| 0x02-0x05 | TX / RX I and Q offsets | 0 at init; 0x04 is rewritten in FM with the calibration "Mod2 offset". In two-point mode 0x04 is the MOD1 (reference crystal) offset and 0x02 the MOD2 (VCO) one (manual 4.7.2; the register table says MOD2 for both): 0x04 moves the FM carrier about 75 Hz a step, signed (bench 2026-10-12, [hardware-dm1701.md](hardware-dm1701.md) 21.3.1) |
+| 0x00 | reset (active low per module: DMR, PHY, codec, FM, vocoder IF, MSK, I2S, built-in codec) | 0xFF at init (all running) then 0x2A (partial reset, unexplained) |
+| 0x01 | H/W config | 0xF0 in DMR (two-point modulation TX, IF RX); 0xB0 then 0xF8 during init (unexplained). The same value is used on UHF and VHF |
+| 0x02-0x05 | TX / RX I and Q offsets | 0 at init; 0x04 is rewritten in FM with the calibration "Mod2 offset". In two-point mode 0x04 is the MOD1 (reference crystal) offset and 0x02 the MOD2 (VCO) one (manual 4.7.2; the register table says MOD2 for both): 0x04 moves the FM carrier about 75 Hz a step, signed (bench 2026-10-12) |
 | 0x06 | vocoder select | 0x21 = vocoder over SPI under MCU control; 0x22 = "open music" (used only while flushing page 3); 0x20 = normal |
 | 0x07-0x09 | IF frequency H/M/L | 0x0B, 0xB8, 0x00 (450 kHz) |
 | 0x0A-0x0C, 0xB9-0xBB | clock source, PLL M/N, system clock dividers | section 3 |
-| 0x10 | ModulatorMode / TierMode / ContinueMode / LayerMode / ISRepeater / ISAligned / RepeaterSlot | bit 7 FM(1)/DMR(0); bit 6 Tier II; bit 5 timeslot mode; bits 4-3 layer (01 = layer 2); bit 2 relay (BS); bit 1 aligned; bit 0 slot. **0x6E in DMR operation**, 0x6B at init (trace), 0x80 for FM |
+| 0x10 | ModulatorMode / TierMode / ContinueMode / LayerMode / ISRepeater / ISAligned / RepeaterSlot | bit 7 FM(1)/DMR(0); bit 6 Tier II; bit 5 timeslot mode; bits 4-3 layer (01 = layer 2); bit 2 relay (BS); bit 1 aligned; bit 0 slot. **0x6E in DMR operation**, 0x6B at init (unexplained), 0x80 for FM |
 | 0x11 | LocalChanMode | 0x80 (bit 7: direct simplex in direct mode, repeated simplex in relay mode). bit 6 direct duplex / repeated duplex in relay mode, bit 3 single-frequency simplex (not used) |
 | 0x14-0x16 | local DMR ID (H/M/L) | set at init to a placeholder, then the radio ID |
 | 0x1D | unaddressed mask | 0xFF |
@@ -115,7 +117,7 @@ Names are the manual's. Only the bits we rely on are listed.
 | 0x42 | TransSlot (7), RecvSlot (6), UsedSlot (5) | read at the timeslot interrupt: what the slot now starting is |
 | 0x43 / 0x44 | RSSI H / L | not used (the AT1846S RSSI is used instead) |
 | 0x45 / 0x46 | Mod2 / Mod1 amplitude | from calibration: the DMR pair in DMR, the FM pair in FM |
-| 0x47 / 0x48 | reference oscillator offset / two-point bias | 0x21 / 0x00 at init (trace); 0x48 = 0 in FM |
+| 0x47 / 0x48 | reference oscillator offset / two-point bias | 0x21 / 0x00 at init (unexplained); 0x48 = 0 in FM |
 | 0x49 / 0x4A | modulation limits | 0xFF / 0xFF in FM |
 | 0x50 | LocalDataType (7-4), LocalVoD (3, 1 = voice), data-header-2 (2), LCSS (1-0) | the burst to send in the next slot: data burst = DT << 4; voice burst = 0x08 \| (n << 4) with n = 0..5 for A..F |
 | 0x51 (R) | DLLRecvDataType (7-4), DLLRecvPI (3), DLLRecvCRC (2, 1 = error), SyncClass (1-0: 0 none / EMB only, 1 voice, 2 data, 3 RC) | read on every "received data" interrupt. For voice, bit 7 is set and bits 6-4 are 1..6 for A..F, so the 4-bit field reads 0x9..0xE: **use the low 3 bits** |
@@ -123,11 +125,11 @@ Names are the manual's. Only the bits we rely on are listed.
 | 0x52 (W) | CACH AT (3), TC (2) | the BS downstream CACH's AT and TC for the burst being set up (relay mode) |
 | 0x53 / 0x54 (R) | RC info / EMB LCSS | not used |
 | 0x55 (R) | per-check error flags (CRC8, golay, QR, CS, CRC16, CRC24, CRC9) | not used |
-| 0x56 / 0x57 | unknown; 0x56 = 0x00 at init (trace). A note from the original authors says the TYT firmware reads 0x57 for the time code | not used |
-| 0x5C | unknown; 0x09 at init (trace) | |
+| 0x56 / 0x57 | unknown; 0x56 = 0x00 at init (unexplained) | not used |
+| 0x5C | unknown; 0x09 at init (unexplained) | |
 | 0x5F | Sync_Detect_Ctrl (7-4: MS, BS, TDMA1, TDMA2 enables); read: Recv_Sync_Type (1-0: 0 MS, 1 BS, 2 TS1 direct, 3 TS2 direct) | **0xF0**: detect all four |
 | 0x60 | TransControl | 0x80 = analog voice TX on (FM); 0x00 off. (Manual: 10 voice request, 01 data request, for layer 3) |
-| 0x64, 0x65, 0x39, 0x3D, 0xD1 | unknown (trace) | 0x00, 0x0A, 0x02, 0x0A, 0xC4 at init |
+| 0x64, 0x65, 0x39, 0x3D, 0xD1 | unknown (unexplained) | 0x00, 0x0A, 0x02, 0x0A, 0xC4 at init |
 | 0x81 | InterClass1Mask (mask for 0x82, 0 = masked) | **0x19** |
 | 0x82 (R) | interrupt flags | section 4 |
 | 0x83 (W) | interrupt clear | write back the value read from 0x82; 0xFF clears all |
@@ -139,7 +141,7 @@ Names are the manual's. Only the bits we rely on are listed.
 | 0xA0-0xAF, 0xD2-0xD4 | tone generator / decoder | section 8 |
 | 0xC2 | mic AGC | 0x00 (off) in FM TX |
 | 0xE0 | codec control (MCU control, line in, mic, line out, I2S slave) | **0xC9** in DMR and FM TX (mic on); 0x89 FM RX (mic off). bit 6 = mic input enable |
-| 0xE1, 0xE3, 0xE5 | codec defaults (trace) | 0x0F, 0x52, 0x1A |
+| 0xE1, 0xE3, 0xE5 | codec defaults (unexplained) | 0x0F, 0x52, 0x1A |
 | 0xE2 | codec config; bit 1 = DAC to line-out | 0x06 at init; bit 1 cleared mutes the line out |
 | 0xE4 | line-out gain (7-6) / mic gain | 0x20 + mic gain (0..31) |
 
@@ -158,28 +160,27 @@ are their inverses.
 
 ## 3. Power-on initialization
 
-PWD low, wait 10 ms, then in this order. Everything is page 4 unless a page is given. "(trace)" values are copied from
-the TYT MD-9600 firmware and not explained by the manual; keep them.
+PWD low, wait 10 ms, then in this order. Everything is page 4 unless a page is given. "(unexplained)" values are not
+explained by the manual; keep them.
 
 | Step | Writes | Why |
 |---|---|---|
 | 1 | 0x0A=0x80, 0x0B=0x28, 0x0C=0x33, 0x0A=0x00, 0xB9=0x05, 0xBA=0x04, 0xBB=0x02 | run from the crystal, program the PLL (M, N/NO), switch to the PLL, set system / codec / CLKOUT dividers |
-| 2 | 0xA1=0x80, 0x10=0xF3, 0x5F=0xF0, 0x40=0x43, 0x07=0x0B, 0x08=0xB8, 0x09=0x00, 0x06=0x21, 0x00=0xFF, 0x01=0xB0, 0x02..0x05=0x00, 0x01=0xF8 | tones off, temporary mode (trace), detect all syncs, RX passive, 450 kHz IF, vocoder over SPI under MCU control, release all resets, two-point modulation, zero I/Q offsets |
-| 3 | page 4 burst from 0x11, 44 bytes: 80 0C 22 01 00 00 33 EF 00 FF FF FF F0 F0 10 00 00 06 3B F8 0E FD 40 FF 00 0B 00 00 00 06 0B 00 17 02 FF E0 14 00 00 00 00 00 00 00 | bulk system parameters 0x11-0x3C (trace) |
+| 2 | 0xA1=0x80, 0x10=0xF3, 0x5F=0xF0, 0x40=0x43, 0x07=0x0B, 0x08=0xB8, 0x09=0x00, 0x06=0x21, 0x00=0xFF, 0x01=0xB0, 0x02..0x05=0x00, 0x01=0xF8 | tones off, temporary mode (unexplained), detect all syncs, RX passive, 450 kHz IF, vocoder over SPI under MCU control, release all resets, two-point modulation, zero I/Q offsets |
+| 3 | page 4 burst from 0x11, 44 bytes: 80 0C 22 01 00 00 33 EF 00 FF FF FF F0 F0 10 00 00 06 3B F8 0E FD 40 FF 00 0B 00 00 00 06 0B 00 17 02 FF E0 14 00 00 00 00 00 00 00 | bulk system parameters 0x11-0x3C (unexplained) |
 | 4 | 0x00=0x2A, 0x06=0x22 | partial reset, "open music" (vocoder buffer access) |
 | 5 | page 3 burst from 0x00: 128 x 0x7F | flush the vocoder frame buffer |
 | 6 | 0x06=0x20, 0x14/0x15/0x16 = a placeholder ID | music off; the real radio ID is written later |
-| 7 | page 1 bursts: from 0x10 (32 bytes) 69 69 96 96 96 99 99 99 A5 A5 AA AA CC CC 00 F0 01 FF 01 0F 00 00 00 00 0D 70 00 00 00 00 00 00; from 0x30 (16) 00 00 20 3C FF FF 3F 50 07 60 00 00 00 00 00 00; from 0x40 (7) 00 01 01 02 01 1E F0; from 0x50 (5) 00 08 EB 78 67 | auxiliary parameters (trace). The 0x10 block holds the CRC masks: PI 0x6969, RS header 0x969696, RS terminator 0x999999, CSBK 0xA5A5, MBC 0xAAAA, data header 0xCCCC (as in ETSI TS 102 361-1 B.3.12) |
-| 8 | page 1: 0x52=0x08, 0x53=0xEB, 0x54=0x78, 0x45=0x1E, 0x37=0x50, 0x35=0xFF | more auxiliary values (trace) |
+| 7 | page 1 bursts: from 0x10 (32 bytes) 69 69 96 96 96 99 99 99 A5 A5 AA AA CC CC 00 F0 01 FF 01 0F 00 00 00 00 0D 70 00 00 00 00 00 00; from 0x30 (16) 00 00 20 3C FF FF 3F 50 07 60 00 00 00 00 00 00; from 0x40 (7) 00 01 01 02 01 1E F0; from 0x50 (5) 00 08 EB 78 67 | auxiliary parameters (unexplained). The 0x10 block holds the CRC masks: PI 0x6969, RS header 0x969696, RS terminator 0x999999, CSBK 0xA5A5, MBC 0xAAAA, data header 0xCCCC (as in ETSI TS 102 361-1 B.3.12) |
+| 8 | page 1: 0x52=0x08, 0x53=0xEB, 0x54=0x78, 0x45=0x1E, 0x37=0x50, 0x35=0xFF | more auxiliary values (unexplained) |
 | 9 | 0x39=0x02, 0x3D=0x0A, 0x83=0xFF, 0x87=0x00, 0x65=0x0A, 0x1D=0xFF, 0x1E=0xF1, 0xE2=0x06, 0xE4=0x27, 0xE3=0x52, 0xE5=0x1A, 0xE1=0x0F, 0xD1=0xC4, 0x25=0x0E, 0x26=0xFD, 0x64=0x00, 0x10=0x6B, 0x81=0x19, 0x01=0xF0, 0xE4=0x27, 0xE5=0x1A, 0x37=0x9E, 0xE0=0xC9, 0x25=0x0E, 0x26=0xFD, 0x48=0x00, 0x47=0x21, 0x1F=0x10 | clear interrupts, unmask TX sub-status, addressing, codec defaults and mic gain, DAC / ADC power, DMR layer 2 mode, interrupt mask, two-point modulation, RX gain, codec under MCU control, reference oscillator offset, color code 1 |
-| 10 | page 1: 0x54=0x78, 0x24..0x27=0x00 | (trace) |
+| 10 | page 1: 0x54=0x78, 0x24..0x27=0x00 | (unexplained) |
 | 11 | 0x41=0x40, 0x56=0x00, 0x5C=0x09, 0x5F=0xF0 | receive in the next slot; detect all syncs |
 | 12 | page 1 burst from 0x04: D5 D7 F7 7F D7 57 | MS data sync |
 | 13 | 0x11=0x80, 0x81=0x19, 0x85=0x00 | direct simplex channel mode, interrupt mask, TX-start sub-status mask |
 | 14 | 0xE4 = 0x20 + DMR mic gain; DTMF tone table (section 8) | |
 
-The trace notes also list a page 1 burst from 0x60 (a table of 32 three-byte entries `nn EF 00`). The TYT firmware
-does not send it. Don't send it.
+A page 1 burst from 0x60 (a table of 32 three-byte entries `nn EF 00`) is not needed. Don't send it.
 
 ### 3.1 Entering DMR (after FM, or at every DMR channel change)
 
@@ -228,7 +229,7 @@ Read 0x82 (flags) and 0x52 (CC / CACH) first, handle each set flag, then write t
 | 0 | physical layer receive | none | not used |
 
 The mask 0x81=0x19 enables bits 4, 3 and 0. Bit 7 (send rejected) still shows set in 0x82 when 0x82 is read on
-another interrupt. The DM-1701 SFR debug build counts these. So 0x82 shows more flags than the mask lets interrupt.
+another interrupt. The SFR debug build counts these. So 0x82 shows more flags than the mask lets interrupt.
 Whether bit 7 raises the line by itself is unverified.
 
 **Two interrupts per voice burst.** A voice burst produces one received-data interrupt for its EMB (SyncClass 0) and
@@ -242,13 +243,12 @@ step with the sender, because it locked to noise or to another station. The rece
 ### 4.3 RF TX interrupt
 
 The interrupt comes before each burst the chip is about to send. The handler keys the PA and switches the RF chip to
-TX. The DM-1701 has no RF RX interrupt, so the MCU ends each TX burst itself. At the next timeslot interrupt, if the PA
-has been on for more than 20 ms, the MCU turns it off and puts the RF chip back in RX, after the last burst of a
-transmission too. Keying takes the PA enables high and writes AT1846S register 0x30 = 0x60C6 (digital TX). Un-keying
-takes them low and writes 0x30 = 0x7026 (25 kHz) or 0x6026 (12.5 kHz). The DM-1701 keys 1 ms after the interrupt, and
-its two switching sequences (straight from RX, or through idle) are in hardware-dm1701.md 6.
+TX. On a board without the RF RX interrupt the MCU ends each TX burst itself. At the next timeslot interrupt, if the PA
+has been on for more than 20 ms, the MCU turns it off and puts the RF chip back in RX. After the last burst of a
+transmission, a one-shot 29 ms timer does the same. Keying takes the PA enables high and writes AT1846S register
+0x30 = 0x60C6 (digital TX). Un-keying takes them low and writes 0x30 = 0x7026 (25 kHz) or 0x6026 (12.5 kHz). A board may key a fixed delay after the interrupt (a timer, 1 ms on one board) and switch from RX straight to TX or through idle; its hardware page has the sequences.
 
-On these radios the RF chip's "transmitting" state therefore goes on and off **burst by burst**. Code that needs to
+On such a board the RF chip's "transmitting" state therefore goes on and off **burst by burst**. Code that needs to
 know whether a transmission is in progress must use the modem slot state (section 7.5), not the PA.
 
 ---
@@ -297,7 +297,7 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   driver also reads page 2 at the next burst A, at F's repeated report and at the post-access interrupt (an LC that
   differs there is handed over with the next voice burst).
 - **LC trace** (for the bench): every look at page 2 until the reception's LC is handed over is logged, with the ticks
-  since the capture, the voice bursts taken and page 2's source ID. DM-1701 debug link log lines
+  since the capture, the voice bursts taken and page 2's source ID. Debug link log lines
   `dle cap<how> <src>` (how: `0` status report, `A` lone burst A, `T` burst taken) and
   `dle <ev><res> @<ticks> v<voice> <src>` (ev: `F` burst F, `f` F's repeated report, `A` the next burst A, `P`
   post-access, `p` post-access just before the reception, `H` header; res: `n` differs from the capture, taken; `s`
@@ -400,7 +400,7 @@ Polite access: with 0x21=0xA2 the chip refuses to send while our CC is busy on t
 A transmission that must go out in a busy channel (an SFR repeat, a reply in a repeater's hang time on a single
 frequency) writes 0x20=0x00 and 0x21=0x02 (impolite).
 
-### 6.3 Voice sequence (the official TYT pattern, one entry per timeslot interrupt)
+### 6.3 Voice sequence (one entry per timeslot interrupt)
 
 | # | Next slot | Writes |
 |---|---|---|
@@ -420,9 +420,8 @@ So a transmission is 3 voice LC headers in our slot (180 ms of lead-in), then wh
 It always ends at a superframe boundary: PTT release takes effect only before burst A.
 
 Encoding: each 40 ms of PCM (two 20 ms buffers) gives one 9-byte AMBE frame; the voice burst takes three. Encode in a
-1 ms-tick task ahead of the timeslot interrupt; a 4-burst ring of encoded frames is enough. The AMBE codec code on
-these radios is a binary blob from the stock firmware; it must not be compiled with optimization that changes its
-inline assembly (it crashed DMR TX at -Os).
+1 ms-tick task ahead of the timeslot interrupt; a 4-burst ring of encoded frames is enough. The AMBE codec code is a binary blob supplied per radio (`codec-placement.md`); its glue must not be compiled with
+optimization that changes its inline assembly (it crashed DMR TX at -Os).
 
 ### 6.4 LC content
 
@@ -442,7 +441,7 @@ byte 2 and 6 characters), and FLCO 8 for GPS (7 bytes: longitude as 25-bit two's
 2. Next timeslot interrupt: arm the 29 ms PA-off timer, restart the receiver (passive).
 3. Wait for the repeater: the received TC must toggle correctly more than 3 times in a row. Then treat it as the
    "already receiving the repeater" case above.
-4. No answer in 600 ms (the official firmware's retry period): send the CSBK again, up to the codeplug's wake attempt
+4. No answer in 600 ms (the retry period): send the CSBK again, up to the codeplug's wake attempt
    count, then fail.
 
 ### 6.6 Data transmission
@@ -462,7 +461,7 @@ heard, so the first burst lands in the opposite slot.
 
 ---
 
-## 7. Timing quirks found on air (DM-1701)
+## 7. Timing quirks found on air
 
 1. **"Transmitting" must come from the modem slot state.** The PA and the RF chip's TX mode toggle every burst
    (section 4.3), and putting the RF chip in RX between bursts clears any "transmitting" flag that follows it. A status
@@ -490,7 +489,7 @@ heard, so the first burst lands in the opposite slot.
    25-30 ms means out of step: resynchronize the receiver (section 5.1).
 10. **The color-code probe busy-waits 3 ms in the interrupt** after rewriting 0x40; don't run it while transmitting.
 11. **SPI contention**: the U_SPI is shared by interrupt and thread code with a simple in-use flag; a transfer
-    attempted while another is running is refused (counted on the DM-1701 SFR builds). Mask the modem interrupts
+    attempted while another is running is refused (counted on SFR builds). Mask the modem interrupts
     around thread-level transfers.
 12. **Retuning the instant "transmitting" clears is safe** once (1)-(3) hold: measured 0.70-0.73 s after the host
     writes its terminator (buffered voice + the rest of the superframe + the terminator), never before the terminator
@@ -532,8 +531,7 @@ deviation, 0xA0 = CTCSS or DCS deviation, 0x3F=0x04, 0x34=0x3C, 0x3E=0x08, page 
 ### 8.1 FM audio paths in the manual (unverified)
 
 What the manual documents about where FM audio can come from and go to, beyond the codec. None of it is used yet;
-`tests/hil/test_audio_probe.py` tries it, and [hardware-dm1701.md](hardware-dm1701.md) 21.3.1 has the bench results. Measured
-on the DM-1701: the RX FM buffers hold 8 kHz big endian 16-bit receive audio, ungated, after 0x34's de-emphasis
+`tests/hil/test_audio_probe.py` tries it. Measured on an AT1846S board: the RX FM buffers hold 8 kHz big endian 16-bit receive audio, ungated, after 0x34's de-emphasis
 and filters, one half per 32 ms with 0x82 bit 1 (once 0x81 unmasks it); keyed, 0x82 bit 7 comes every 32 ms and the
 codec writes its samples into the TX buffers (read back through page 6, U_SPI OPMode 110): they are a tap, and no
 setting tried (525, with the MCU rewriting each half within 4 ms) makes them the modulation source. MCU audio goes on
@@ -546,17 +544,17 @@ bit 5) puts a 2.5-2.6 kHz tone of its own on air when enabled during FM TX: keep
 |---|---|---|
 | FM data RAM | TX RAM table (5.2): "FM data address 1 / 2", 0x030-0x22F and 0x230-0x42F, 512 bytes each, "can be written externally for FM send; voice data can also come internally from the codec". The RX RAM table has the same two buffers | a ping-pong buffer each way over U_SPI (page 2, 11-bit addresses). If the samples are 16-bit at 8 kHz, each half is 256 samples, 32 ms. Format, rate and the bit that picks the RAM over the codec are not stated |
 | 0x82 in FM mode | bit 7 "sending data request", bit 1 "receiving data", bit 2 "FM function detection" | the buffer handshake. FM RX sets 0x81 = 0x19, which masks bits 7 and 1 |
-| 0x06 bit 2 CodeCMode | 0 built-in codec, 1 external codec (appendix A2: chosen for the FM path) | external: the FM chain's audio goes through the external-codec I2S port (pins 17-20: LRCK, BCLK, ADCDAT, DACDAT, chip as master, 8 kHz from 0x30-0x33, BCLK and LRCK enabled by 0x36 bit 7 = 0). That is not the vocoder I2S port (pins 34-37) the MCU uses on the DM-1701; pins 17-20 double as RF enable outputs, and their wiring on our radios is unknown |
+| 0x06 bit 2 CodeCMode | 0 built-in codec, 1 external codec (appendix A2: chosen for the FM path) | external: the FM chain's audio goes through the external-codec I2S port (pins 17-20: LRCK, BCLK, ADCDAT, DACDAT, chip as master, 8 kHz from 0x30-0x33, BCLK and LRCK enabled by 0x36 bit 7 = 0). That is not the vocoder I2S port (pins 34-37) the MCU uses; pins 17-20 double as RF enable outputs, and their wiring on our radios is unknown |
 | 0x06 bit 1 OpenMusic | "prompt tone" path (appendix A1) | the MCU writes 16-bit DAC samples over U_SPI (command 0x03, address 0x00, 32 samples per write) into a 64-sample FIFO, polling 0x88 bit 0 every 1 ms. Speaker only |
-| 0xE3 bit 0 | "codec internal DAC and ADC pass-through" (G4EML: "CODEC Internal Passthrough") | loops the DAC into the ADC. With the I2S or prompt-tone path feeding the DAC, this may put MCU audio into the FM transmit chain |
+| 0xE3 bit 0 | "codec internal DAC and ADC pass-through" | loops the DAC into the ADC. With the I2S or prompt-tone path feeding the DAC, this may put MCU audio into the FM transmit chain |
 | 0x36 bit 7 | external codec BCLK / LRCK off | |
-| 0xD7 bit 1 | msk_voice_send_en: "send FM voice" (vs. MSK signaling), in the MSK controls (earlier notes said 0xDB, which the manual doesn't list) | bench 2026-10-12: no effect on the TX RAM ([hardware-dm1701.md](hardware-dm1701.md) 21.3.1) |
+| 0xD7 bit 1 | msk_voice_send_en: "send FM voice" (vs. MSK signaling), in the MSK controls (earlier notes said 0xDB, which the manual doesn't list) | bench 2026-10-12: no effect on the TX RAM |
 
 ---
 
 ## 9. Single-frequency repeater (SFR) facts on the HR_C6000
 
-From our SFR work on the DM-1701 (on air in MMDVM SFR):
+From our SFR work (on air in MMDVM SFR):
 
 - Repeating on the other slot: write the outbound sync pattern (page 1 0x04, e.g. direct mode TS2 data sync) before
   keying and restore the MS pattern after; save and restore 0x10; keep 0x11=0x80; impolite access (0x20=0x00,
@@ -585,7 +583,7 @@ at the first timeslot interrupt after the unkey, or by the watchdog when no time
 0x10 / 0x11 back to 0x6E / 0x80, MS sync, 0x40 = 0xC3, the slot engine restarts the receiver.
 
 The CACH: the manual has the MCU give the BS downstream CACH's AT and TC in 0x52 (written) and the short LC in TX RAM
-0x24-0x28, and the chip encode it. On air (DM-1701, 2026-10-12) the layer 2 CACH stays all zero whatever is written
+0x24-0x28, and the chip encode it. On air (2026-10-12) the layer 2 CACH stays all zero whatever is written
 there, in every 0x10 / 0x11 / 0x50 combination tried (9.2). What works is the **physical layer
 mode** (0x10 = 0x66, LayerMode 00), which the manual documents only for receive: the chip then modulates TX RAM page
 2 as given, 288 bits per slot (24 CACH, 264 burst, MSB of the first byte first), from 0x00-0x23 and 0x24-0x47 in
@@ -594,10 +592,21 @@ layer 2. The driver writes each slot's frame (`bsOutboundRawSlot`) to both halve
 isn't known, and nothing to 0x50, 0x52 or the vocoder. Variant 1 keeps the layer 2 framing (0x52 and the short LC
 written for every burst) for comparison; 255 adds up to four raw page 4 pairs at key-up. Host test: `tests/host/hrc6000BsTest.c`.
 
+**Restarting the slot timer** (ALIGN, `split-duplex.md` 3.8; bench 2026-10-21): 0x41 = 0x00,
+0x40 = 0xC3, 0x41 = 0x20, 0x00, 0x20, 0x00 (the 5.1 sync drop), then 0x40 = 0xE3 at the chosen time. The first
+timeslot interrupt comes 1.18-1.24 ms after that write and every 30 ms from it, and none comes during the wait. Clearing
+TxEn and RxEn (0x40 = 0x03) or 0xC3 then 0xE3 without the sync drop stopped the timer only sometimes: interrupts kept
+coming during the wait and the old phase came back. The driver takes no interrupt while it waits and gives the
+requested slot to the first boundary after the write; the diagnostics line `bs` shows the restarts (`rs`), interrupts
+during waits (`ri`) and the first three after the last write (`r1`-`r3`, µs).
+
+**No slewing.** The manual lists no slot length trim, so the driver offers no `bs_slew` and INFO capability bit 2
+stays clear: a keyed TX half reports its drift (ALIGN flag 10) and is re-aligned by a restart at the next unkey.
+
 
 ### 9.2 BS framing bench results (2026-10-11 and 12)
 
-DM-1701, 467.375 MHz, lowest power, 10 s and about 335 bursts per run, with the framing variants of
+467.375 MHz, lowest power, 10 s and about 335 bursts per run, with the framing variants of
 [split-duplex.md](split-duplex.md) 10.1 and `sdrmon.py analyze --cach` on the SDR bench:
 
 | Build / variant | On air |
@@ -619,8 +628,7 @@ at the slot start. Earlier runs also found every fourth TS2 burst sent as a zero
 ## 10. Open questions
 
 - Page 6 (manual: TX RAM) vs page 2 for TX: page 2 works; page 6 untested.
-- Registers 0x56 / 0x57: one report says the TYT firmware uses 0x57 for the time code instead of 0x52.
-- The meaning of the trace-only values (0x10=0xF3 / 0x6B during init, the 0x11-0x3C bulk block, the page 1 tables).
+- The meaning of the unexplained init values (0x10=0xF3 / 0x6B during init, the 0x11-0x3C bulk block, the page 1 tables).
 - Whether the post-access interrupt is reliable for data calls (it is a voice mechanism in the manual).
-- Crystal frequency on the DM-1701 (the PLL values match 29.4912 MHz).
+- Crystal frequency on the boards (the PLL values match 29.4912 MHz).
 - Passive full duplex (manual 5.4.4) for a true SFR / repeater: not tried.

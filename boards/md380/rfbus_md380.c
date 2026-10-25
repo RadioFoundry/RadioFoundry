@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 RF bus: the bit-banged HR_C5000 configuration port and the SKY72310 synthesizer bus, which share the data
-// line (hardware-md380.md 4.2, 5.2). Kept apart from radio_md380.c so the host test (tests/host/md380RfbusTest.c) can
+// line (hardware-md380.md 4.2, 5.2). Kept apart from radio_md380.c so the host test (tests/md380RfbusTest.c) can
 // run it against fake chips wired as the hardware is.
 #include <stddef.h>
 #include "rfbus_md380.h"

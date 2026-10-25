@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Baofeng DM-32UV: board descriptor, IO mux and reset-time pin levels, key map
 #include "board.h"
 #include "config.h"
@@ -7,6 +7,10 @@
 #include "pins.h"
 #include "platform.h"
 #include "hrc_afsk.h"
+#include "hrc_bcast.h"
+#if CONFIG_BCAST_FM
+#include "bcast/rda5807m/rda5807m_hal.h"
+#endif
 #include "FreeRTOS.h"
 #include "semphr.h"
 #if CONFIG_NET_PPP
@@ -16,6 +20,12 @@
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
+#if CONFIG_AM_RX
+	{ 108000000, 136000000, false },	// the air band, AM receive only (docs/spec/airband-and-broadcast.md 3)
+#endif
+#if CONFIG_BCAST_FM
+	{ 65000000, 108000000, false },		// the broadcast band, on the RDA5807M (airband-and-broadcast.md 4)
+#endif
 };
 
 // Power levels 0..8 of hardware-dm32.md 11.3 (level 9, the user value, isn't offered). Labels are nominal: the radio
@@ -24,35 +34,37 @@ static const char *const power_names[] = { "L-", "L", "L+", "L++", "M", "M+", "M
 
 // docs/ux/information-architecture.md 7.1 (the DM-32 has no top key; SK1 / SK2 are the side keys below the PTT)
 static const keymap_entry_t keymap[] = {
-	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false },
-	{ KEY_RED, ACT_BACK, ACT_BACK, false, false },
-	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true },
-	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true },
-	{ KEY_LEFT, ACT_NAV_LEFT, ACT_USER_1, false, true },
-	{ KEY_RIGHT, ACT_NAV_RIGHT, ACT_USER_4, false, true },
-	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false },
-	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false },
-	{ KEY_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false },
-	{ KEY_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false },
-	{ KEY_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false },
-	{ KEY_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false },
-	{ KEY_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false },
-	{ KEY_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false },
-	{ KEY_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false },
-	{ KEY_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false },
-	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false },
-	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false },
-	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false },
-	{ KEY_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false },
-	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false },
+	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 },
+	{ KEY_RED, ACT_BACK, ACT_BACK, false, false, 0 },
+	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
+	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
+	{ KEY_LEFT, ACT_NAV_LEFT, ACT_USER_1, false, true, 0 },
+	{ KEY_RIGHT, ACT_NAV_RIGHT, ACT_USER_4, false, true, 0 },
+	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false, '*' },
+	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, '#' },
+	{ KEY_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },
+	{ KEY_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
+	{ KEY_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false, 0 },
+	{ KEY_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false, 0 },
+	{ KEY_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 },
+	{ KEY_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
+	{ KEY_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 },
+	{ KEY_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
+	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
+	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
+	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+	{ KEY_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
+	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 
-// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): side key 1, side key 2
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom
 static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
+static const char *const side_key_names[] = { "SK1", "SK2" };
 
 const board_t board = {
 	.name = "DM-32UV",
-	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_GPS | (CONFIG_DMR ? CAP_DMR : 0),
+	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0) |
+		(CONFIG_AM_RX ? CAP_AM_RX : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -63,6 +75,7 @@ const board_t board = {
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
 	.side_keys = side_keys,
+	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
 	.radio = &dm32_radio,
 	.power = &dm32_power,
@@ -85,9 +98,14 @@ const board_t board = {
 #if CONFIG_NET_PPP
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
+#if CONFIG_GPS
 	.gps_enable = hrc_gps_enable,
 	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+#endif
 	.system = &hrc_system,
+#if CONFIG_BCAST_FM
+	.bcast = &rda5807m_hal,
+#endif
 };
 
 static SemaphoreHandle_t lcdbus;
@@ -172,7 +190,7 @@ void board_early_init(void)
 }
 
 // Everything the core stores lives above the write floor (hardware-dm32.md 10.1): the open-firmware codeplug's 64 KB
-// "EEPROM" image at 0x700000 (CODEPLUG_OPENFW_EEPROM_BASE in board.mk), OpenDM32's calibration copy left alone at
+// "EEPROM" image at 0x700000 (CODEPLUG_OPENFW_EEPROM_BASE in board.mk), a decoded calibration copy from other firmware left alone at
 // 0x710000, the settings ring and the sector journal after it, the 1 MB open-firmware "flash" image at 0x720000
 // (CODEPLUG_OPENFW_FLASH_BASE) with room above it for the DMR ID database, the native codeplug in the last 1 MB. The
 // factory calibration is read only, so the open-firmware CPS gets no calibration window
@@ -202,12 +220,27 @@ static const hrc_gps_cfg_t gps_cfg = {
 	.power_on_level = GPS_POWER_ON_LEVEL,
 };
 
+#if CONFIG_BCAST_FM
+// The RDA5807M on PTA25 / PTA26 (hardware-dm32.md 8.7): no enable line is known; its audio is assumed to reach the
+// amplifier as on the other FD6818 radio (bring-up B4)
+static const hrc_bcast_cfg_t bcast_cfg = {
+	.sda_pin = PIN_BCAST_SDA, .scl_pin = PIN_BCAST_SCL,
+	.enable_pin = HRC_BCAST_NO_PIN,
+	.audio_path = dm32_bcast_audio,
+};
+#endif
+
 void board_init(void)
 {
 	hrc_flash_spi0_configure(&flash_cfg);
 	lcdbus = xSemaphoreCreateRecursiveMutex();
 	dm32_power.init();
 	dm32_flash.init();
-	bf_cal_load(&hrc_flash_spi0, 0x710000u);	// OpenDM32 keeps a decoded copy there
+	bf_cal_load(&hrc_flash_spi0, 0x710000u);	// other firmware may keep a decoded copy there
+#if CONFIG_GPS
 	hrc_gps_init(&gps_cfg);
+#endif
+#if CONFIG_BCAST_FM
+	hrc_bcast_init(&bcast_cfg);
+#endif
 }

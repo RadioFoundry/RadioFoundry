@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// Broadcast FM receiver: a second receiver beside the channel receiver (the RDA5807M on the DM-32UV), for listening
-// to FM broadcast while the channel stays monitored (docs/spec/airband-and-broadcast.md 4). Not a channel mode.
+// Copyright (c) 2026 The RadioFoundry Authors
+// Broadcast FM receiver: a second receiver chip beside the channel receiver (e.g. an RDA5807M) that plays FM broadcast
+// (wideband FM) when a channel or the VFO is tuned into its range (docs/spec/airband-and-broadcast.md 4).
 //
-// The board composes the chip driver, its bus and the audio routing behind this. All calls come from one task (the
-// radio task, through core/bcast); tune() and seek() only start the operation, status() says when it is done.
+// The board composes the chip driver, its bus and the audio routing behind this. All calls come from the radio task
+// (core/radio/radio_bcast.h: a channel or the VFO in the receiver's range plays on it); tune() and seek() only start
+// the operation, status() says when it is done.
 #ifndef HAL_BCAST_H
 #define HAL_BCAST_H
 
@@ -35,8 +36,8 @@ typedef struct {
 	void (*volume)(uint8_t level);
 	// The receiver's state. False: not powered or the chip didn't answer
 	bool (*status)(bcast_status_t *st);
-	// Broadcast audio to the speaker (true) or muted (false). The board arbitrates the speaker with hal_radio's
-	// audio(): while the channel's audio is on, the channel wins and the broadcast is muted whatever this says
+	// Broadcast audio to the speaker (true) or muted (false). The core keeps hal_radio's audio() off while this is on;
+	// a board whose two paths share a switch may still let the channel win
 	void (*audio)(bool on);
 } hal_bcast_t;
 

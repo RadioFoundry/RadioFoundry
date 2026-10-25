@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR ID database (docs/spec/open-firmware-cps.md 7.5): names for DMR IDs that aren't contacts. Written in
 // format N: a 12-byte header, then records sorted by ID, each a 3-byte LE ID and text packed at 6 bits per character
 // (4 characters in 3 bytes). Area 1 holds the header and as many whole records as fit in 256 KB; the rest continue at

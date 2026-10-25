@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Battery monitor (docs/spec/radio-features.md 5): the board's battery voltage against its low and critical levels,
 // with hysteresis and repeat warnings, and the backlight level that follows from idle time and battery state. Pure
 // logic: the radio core feeds it readings (never during or just after a transmission, whose load pulls the voltage

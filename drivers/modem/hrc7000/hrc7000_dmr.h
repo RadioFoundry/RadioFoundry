@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 in DMR: burst status decode, burst framing codes and the slot engine behind hal_dmr_modem.h
 // (docs/spec/modem-hrc7000.md 2-7; docs/spec/dmr-modem.md 6; docs/spec/gotchas.md 2).
 //

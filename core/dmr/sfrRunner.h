@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The single frequency repeater (SFR) on any DMR modem behind hal_dmr_modem_t: the repeater roles' runtime around
 // sfrEngine_t (core/dmr/sfr.h). It takes the modem's received bursts, filters them (inbound slot, own echo, late
 // entry, checksums while keyed), feeds the engine, and keys the modem for the outbound slot, asking the engine for one
@@ -17,8 +17,8 @@
 //
 // No RTOS, no board headers: the host link task (hotspot) or the radio task (repeater role) runs it, and the host
 // tests drive it against the simulated modem.
-#ifndef ODR_SFR_RUNNER_H
-#define ODR_SFR_RUNNER_H
+#ifndef RFOUNDRY_SFR_RUNNER_H
+#define RFOUNDRY_SFR_RUNNER_H
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Digital APRS (docs/spec/aprs.md 8): our position over DMR to a location service, as a Motorola LRRP triggered
 // report (UDP 4001, core/dmr/dmrLrrp.c) or an ETSI UDT short NMEA location (core/dmr/dmrData.c), through the DMR
 // data service. BrandMeister's location service turns either into an APRS position under the callsign registered
 // for the sending DMR ID. Radio task only (the data service's own context).
-#ifndef ODR_APRS_DMR_H
-#define ODR_APRS_DMR_H
+#ifndef RFOUNDRY_APRS_DMR_H
+#define RFOUNDRY_APRS_DMR_H
 
 #include <stdint.h>
 #include <stdbool.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GPS NMEA receive ring and module detection (gps_rx.h)
 #include "gps_rx.h"
 #include <stddef.h>

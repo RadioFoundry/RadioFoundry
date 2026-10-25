@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio access backend registry (backends.js): what a backend must declare, the fallback for a radio without
 // one, and the HR_C7000 backend's steps. Run with site/tests/run.sh, or: node --test site/tests/
 

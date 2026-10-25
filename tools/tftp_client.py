@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """A small TFTP client (RFC 1350, octet mode, the blksize / tsize options) for the radio's TFTP server in USB network
 mode (docs/spec/tftp.md). Any TFTP client works; this one is for tests and scripts that want the error text.
 

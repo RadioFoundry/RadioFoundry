@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D diagnostics page lines: what the bring-up needs to see (docs/spec/hardware-db25d.md 10): the RF chips' IDs,
 // the raw key scan (to place the keys), the ADC channels (the supply voltage), the host UART's overruns, the
 // calibration page found and the PA values it gives, the NAND's ID, the storage on it and the settings it holds
@@ -90,15 +90,15 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	case 3:
 		put(&o, "adc0 ");
-		put_u(&o, db25d_adc_raw(0));
+		put_u(&o, hrc_adc_read(0));
 		put(&o, " 2 ");
-		put_u(&o, db25d_adc_raw(2));
+		put_u(&o, hrc_adc_read(2));
 		break;
 	case 4:
 		put(&o, "adc6 ");
-		put_u(&o, db25d_adc_raw(6));
+		put_u(&o, hrc_adc_read(6));
 		put(&o, " 7 ");
-		put_u(&o, db25d_adc_raw(7));
+		put_u(&o, hrc_adc_read(7));
 		break;
 	case 5:
 		put(&o, "rf wr ");
@@ -180,7 +180,7 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 	case 12:
 	case 13:
 	case 14: {
-		// The storage layer over ODR's NAND range (hardware-db25d.md 6.6): blocks in use, free and bad; then records
+		// The storage layer over RadioFoundry's NAND range (hardware-db25d.md 6.6): blocks in use, free and bad; then records
 		// written, block erases, blocks emptied by garbage collection and pages that read back wrong since boot;
 		// then torn pages the mount set aside, blocks retired since boot and the next sequence number
 		nand_sectors_stats_t st;
@@ -188,9 +188,9 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, "nst ");
 		if (db25d_flash.size == 0) {
 			if (st.status == NAND_SECTORS_FOREIGN && i == 12) {
-				// Data ODR didn't write in its range: nothing touched, no storage. The physical block and how many
+				// Data RadioFoundry didn't write in its range: nothing touched, no storage. The physical block and how many
 				put(&o, "foreign ");
-				put_u(&o, DB25D_NAND_ODR_FIRST + st.foreign_block);
+				put_u(&o, DB25D_NAND_RFOUNDRY_FIRST + st.foreign_block);
 				put(&o, " n");
 				put_u(&o, st.foreign);
 			} else if (i == 12) {
@@ -248,6 +248,7 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 		if (i == DIAG_GPS_LINE) {
 			// The GPS module on UART2 (platform/hrc7000/gps_hrc.c): heard, valid / bad sentences, bytes received. "b0"
 			// with the module powered: the RXD pad's mux or the power pin's level (GPS_POWER_ON_LEVEL)
+#if CONFIG_GPS
 			uint32_t good, bad, n;
 			hrc_gps_counts(&good, &bad, &n);
 			put(&o, hrc_gps_present() ? "gps yes " : "gps no ");
@@ -257,6 +258,9 @@ bool db25d_diag_line(uint8_t i, char *buf, uint8_t len)
 			put(&o, " b");
 			put_u(&o, n);
 			put(&o, hrc_gps_running() ? " on" : " off");
+#else
+			put(&o, "gps not built");
+#endif
 			break;
 		}
 #if CONFIG_DMR

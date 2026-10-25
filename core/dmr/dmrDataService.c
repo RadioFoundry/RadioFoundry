@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR data service, see dmrDataService.h. Single task (the host's, the radio task in the firmware), except the
  * dmr_data_api.h calls at the end, which only touch the mailbox and copies under the lock.
@@ -153,7 +153,7 @@ static struct
 	char text[sizeof(((dmrDataTMS_t *)0)->text)];
 } sms;
 #if CONFIG_DMR_CONFIRMED
-ODR_CPU_RAM static uint8_t smsL4[DMR_ETSI_TEXT_UDP_MAX];	// a confirmed ETSI IP text's datagram, for its retries
+RFOUNDRY_CPU_RAM static uint8_t smsL4[DMR_ETSI_TEXT_UDP_MAX];	// a confirmed ETSI IP text's datagram, for its retries
 #endif
 
 // Our emergency alarm (CONFIG_DMR_EMERGENCY)
@@ -361,8 +361,11 @@ static struct
 	uint8_t sap;
 	uint8_t ns;
 	uint8_t tries;
+	uint8_t ttl;						// DMR_IP_TTL_DEFAULT: ours
 	uint16_t ipId;
 	uint32_t dst;
+	uint32_t srcIp;						// DMR_DATA_IP_OURS: the IDs' CAI addresses
+	uint32_t dstIp;
 	const uint8_t *l4;
 	int length;
 	uint64_t blocks;					// a selective retry's blocks (0: all of them)
@@ -516,8 +519,11 @@ static void ipFinish(uint8_t result)
 static void ipTransmit(void)
 {
 	const uint8_t *pdu;
-	int n = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, ipx.protocol, ipx.l4, ipx.length, ipx.compress, ipx.ipId, &pdu,
-							&ipx.sap);
+	// Our own address follows the channel's ID (sent from the channel's ID, as the gateway's packets are)
+	uint32_t srcIp = (ipx.srcIp != DMR_DATA_IP_OURS) ? ipx.srcIp : dmrDataIdAddress(false, channel.ownId);
+	uint32_t dstIp = (ipx.dstIp != DMR_DATA_IP_OURS) ? ipx.dstIp : dmrDataIdAddress(ipx.group, ipx.dst);
+	int n = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, dstIp, srcIp, ipx.ttl, ipx.protocol, ipx.l4, ipx.length,
+							ipx.compress, ipx.ipId, &pdu, &ipx.sap);
 	int count = 0;
 
 	if (n <= 0)
@@ -591,7 +597,8 @@ static void ipStart(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l
 #endif
 }
 
-bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
+							const uint8_t *l4, int length)
 {
 	if ((ipx.state != IPX_IDLE) || !canTransmit() || (l4 == NULL) || (length <= 0) || (dst == 0))
 	{
@@ -602,6 +609,9 @@ bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint
 
 	ipStart(group, dst, protocol, l4, length, (protocol == DMR_IP_PROTO_UDP) && dmrDataUdpCompress(srcPort, dstPort),
 			dmrDataServiceIpWantConfirmed(&settings, group, dst, protocol, srcPort, dstPort));
+	ipx.srcIp = srcIp;
+	ipx.dstIp = dstIp;
+	ipx.ttl = ttl;
 	stats.ipPackets++;
 	return true;
 }
@@ -1303,7 +1313,7 @@ dmrArsState_t dmrDataServiceArsState(void)
 
 // Motorola LRRP (UDP 4001): a location server (TRBOnet, SmartPTT, ...) asks for a position now, or starts reports
 // every n seconds or every n meters (checked every interval, 30 s when it gives none), and stops them. Without a
-// position source (settings.hasGps false: the DM-1701) every answer says "no fix" and no trigger is started
+// position source (settings.hasGps false: a radio without GPS) every answer says "no fix" and no trigger is started
 #define LRRP_QUEUE_SIZE				3		// one slot kept free
 #define LRRP_TRIGGERS_MAX			2
 #define LRRP_MIN_INTERVAL_S			5
@@ -1978,6 +1988,13 @@ static void handlePacket(const dmrDataPacket_t *packet)
 			((packet->sap == DMR_SAP_IP) || (packet->sap == DMR_SAP_UDPIP_COMPRESSION));
 
 	stats.ptYielded += toPc ? 1 : 0;
+
+	// UDP whose IP destination isn't the address of the ID it came to (we are the DMR destination of a packet for an
+	// off-net host: the gateway) is the PC's, through env.packet, never the radio's own TMS, ARS, LRRP or text
+	if (isUDP && !dmrDataIpIsId(udp.dstIp, packet->group, packet->dst))
+	{
+		isUDP = false;
+	}
 
 	// The presence server's answer to our registration, or its request for one
 	if (CONFIG_DMR_ARS && !toPc && isUDP && (udp.appPort == DMR_UDP_PORT_ARS) && !packet->group && (packet->src == ars.server) && (ars.server != 0))

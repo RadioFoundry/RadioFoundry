@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Logical input: polls board.input, applies the board key map, produces actions with gestures
 #ifndef CORE_INPUT_H
 #define CORE_INPUT_H
@@ -31,6 +31,8 @@ uint16_t input_long_ms(void);		// in effect now
 // PTT while the keys are locked and Settings > Privacy > PTT when locked is off: a PTT press is not handed to the
 // radio core (the UI still gets it, to say why). A release always is, so a transmission never sticks
 void input_set_ptt_block(bool blocked);
+// Keys locked: DTMF keys don't send during FM TX (radio-features.md 3.7)
+void input_set_dtmf_block(bool blocked);
 // The key map in use (core/input/keyassign.c builds it): board.keymap_len entries, the board's keys in the board's
 // order with other actions. Copied; in effect once no key is held
 void input_set_keymap(const keymap_entry_t *map);
@@ -59,6 +61,9 @@ typedef enum {
 
 // Hold physical key bits (the board's scan mask bits) for hold_ms (capped at INPUT_INJECT_MAX_MS), then release
 input_inject_t input_inject_keys(uint32_t mask, uint32_t hold_ms);
+// Release injected keys in mask now, before their hold ends (the task notices at its next scan; a key still ends
+// only after the scans that debounce it have seen it)
+void input_inject_release(uint32_t mask);
 // A logical action with a gesture, through the key map: PRESS holds the key that gives it for INPUT_INJECT_PRESS_MS,
 // LONG for input_long_ms() + INPUT_INJECT_LONG_EXTRA_MS; DOWN / UP hold and release a raw-edge key (MONITOR; PTT goes to input_inject_ptt);
 // ACT_ENC_STEP with GESTURE_DOWN adds value detents to the encoder

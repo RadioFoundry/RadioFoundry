@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Standalone SFR (CONFIG_SFR, docs/spec/sfr.md 4): what a channel's SFR settings make of it. A repeater role hands the
 // modem to a single frequency repeater (core/dmr/sfrRunner.c) instead of the call stack, with no host; a user role
 // is the call stack's SFR user mode (dmr_call_config_t.sfr_user). The radio task calls everything here.

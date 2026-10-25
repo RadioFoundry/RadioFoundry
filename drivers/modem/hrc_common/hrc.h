@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // What the HR_C6000 and HR_C5000 DMR / FM baseband chips have in common: the configuration port, the register pages
 // and the chip description the shared DMR slot engine (hrc6000_dmr.h) works through. Each chip's own set-up and FM
 // modes are in its driver (drivers/modem/hrc6000, drivers/modem/hrc5000). Nothing here knows which chip it is: the

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""split_duplex_host: the host side of the split duplex repeater (docs/spec/split-duplex.md): two OpenDigitalRadio
+# Copyright (c) 2026 The RadioFoundry Authors
+"""split_duplex_host: the host side of the split duplex repeater (docs/spec/split-duplex.md): two RadioFoundry
 radios, each an MMDVM modem on its own USB port, run as one duplex repeater; the TX half sends the continuous BS
 outbound, the RX half receives both inbound slots and labels them from the TX half's slot clock, which this host
 relays (time sync, epoch). Reference implementation of the host contract (split-duplex.md 8) and bench tool.
@@ -21,7 +21,7 @@ relays (time sync, epoch). Reference implementation of the host contract (split-
 
 PORT is a USB serial port, or udp:<radio IP>[:3334] for a radio in USB network mode (usb-network.md).
 
-Only the standard MMDVM commands and the vendor command 0xD6 (ODR_SPLIT) are used; a radio without " SPLIT1" in
+Only the standard MMDVM commands and the vendor command 0xD6 (RFOUNDRY_SPLIT) are used; a radio without " SPLIT1" in
 its GET_VERSION description is refused. Needs pyserial for the radios (pip install pyserial); the classes below
 (ClockSync, epoch_for_rx, VirtualStatus, the frame codecs) have no dependencies and are what tests/host/sim/
 splitPairTest.py runs against two simulated radios.
@@ -42,8 +42,15 @@ GET_VERSION, GET_STATUS, SET_CONFIG, SET_MODE, SET_FREQ = 0x00, 0x01, 0x02, 0x03
 DMR_DATA1, DMR_LOST1, DMR_DATA2, DMR_LOST2 = 0x18, 0x19, 0x1A, 0x1B
 DMR_SHORTLC, DMR_START, DMR_ABORT = 0x1C, 0x1D, 0x1E
 ACK, NAK = 0x70, 0x7F
-ODR_SPLIT = 0xD6
-SUB_INFO, SUB_SET_ROLE, SUB_TIME, SUB_GET_EPOCH, SUB_SET_EPOCH, SUB_SET_AT, SUB_STATUS = range(7)
+RFOUNDRY_SPLIT = 0xD6
+SUB_INFO, SUB_SET_ROLE, SUB_TIME, SUB_GET_EPOCH, SUB_SET_EPOCH, SUB_SET_AT, SUB_STATUS, SUB_ALIGN, SUB_TX_SCHED = range(9)
+EV_RX_META = 0x89       # events (3.10): sent by the radio unasked, sub 0x80 and up
+OPT_RX_META = 0x01      # SET_ROLE byte 7
+META_CRC_OK, META_IN_STEP, META_PI, META_LC, META_BS_SYNC, META_EPOCH, META_TIMED = (1 << i for i in range(7))
+ALIGN_SNAP, ALIGN_SLEW = 0, 1
+CAP_SCHED, CAP_ALIGN, CAP_SLEW, CAP_RX_META, CAP_TRIM, CAP_PPS = (1 << i for i in range(6))
+AL_ALIGNED, AL_SLEWING, AL_SNAP, AL_PERIOD, AL_NOT_APPLIED, AL_BASE = 0x01, 0x02, 0x04, 0x08, 0x10, 0x20
+SCHED_OUTCOMES = {0: "queued", 1: "late", 2: "early", 3: "replaced", 4: "full"}
 ROLE_NORMAL, ROLE_TX, ROLE_RX = 0, 1, 2
 ROLE_NAMES = {0: "normal", 1: "tx", 2: "rx"}
 RESULTS = {0: "ok", 1: "unknown sub-command", 2: "wrong state", 4: "invalid"}
@@ -61,7 +68,7 @@ def frame(cmd, payload=b""):
 
 
 def split_frame(sub, data=b""):
-    return frame(ODR_SPLIT, bytes([sub]) + bytes(data))
+    return frame(RFOUNDRY_SPLIT, bytes([sub]) + bytes(data))
 
 
 def config_payload(cc, simplex=False):
@@ -77,16 +84,44 @@ def freq_payload(rx_hz, tx_hz, level):
         rx_hz.to_bytes(4, "little")
 
 
-def role_payload(role, lease_s=0, power_cap=0, prebuffer=0, max_key_10s=0, cooldown_s=0):
-    return bytes([role, lease_s, power_cap, prebuffer, max_key_10s, cooldown_s])
+def role_payload(role, lease_s=0, power_cap=0, prebuffer=0, max_key_10s=0, cooldown_s=0, stream=None, options=None):
+    p = bytes([role, lease_s, power_cap, prebuffer, max_key_10s, cooldown_s])
+    if options is not None:
+        return p + bytes([stream or 0, options])
+    return p if stream is None else p + bytes([stream])
+
+
+def align_payload(t_us, counter, period_ns=0, max_slew=None, mode=None):
+    """ALIGN (3.8): t_us a slot boundary in the TX half's modem clock, counter that slot's number; max_slew µs per
+    slot (0 the default) and mode (ALIGN_SNAP: snap unkeyed, slew keyed; ALIGN_SLEW: always slew)"""
+    p = struct.pack("<III", t_us % WRAP, period_ns, counter % WRAP)
+    if max_slew is not None or mode is not None:
+        p += struct.pack("<H", max_slew or 0)
+    if mode is not None:
+        p += bytes([mode])
+    return p
+
+
+def parse_align(data):
+    phase_us, flags = struct.unpack_from("<iB", data, 0)
+    return {"phase_us": phase_us, "flags": flags}
+
+
+def sched_payload(counter, control, frame33):
+    """TX_SCHED (3.9): one burst for slot counter (even TS1)"""
+    return struct.pack("<IBB", counter % WRAP, 1 if counter % 2 == 0 else 2, control) + bytes(frame33)
 
 
 def parse_info(data):
     """The INFO block (3.1) from a reply's data (after sub and result)"""
     if len(data) < 10:
         raise ValueError("INFO block too short")
-    return {"version": data[0], "offered": data[1], "role": data[2], "buffer": data[3], "cach": data[4],
-            "clock_us": struct.unpack_from("<I", data, 5)[0], "flags": data[9]}
+    info = {"version": data[0], "offered": data[1], "role": data[2], "buffer": data[3], "cach": data[4],
+            "clock_us": struct.unpack_from("<I", data, 5)[0], "flags": data[9], "caps": 0}
+    if len(data) >= 16:
+        caps, guard, horizon, air = struct.unpack_from("<HBBh", data, 10)
+        info.update(caps=caps, guard_ms=guard, horizon=horizon, air_delay_us=air)
+    return info
 
 
 STATUS_FIELDS = ("role", "flags", "inbound_busy", "at_on_air", "buf1", "buf2")
@@ -101,7 +136,18 @@ def parse_status(data):
     out = dict(zip(STATUS_FIELDS, data[:6]))
     vals = struct.unpack_from("<HHHHHHHHhHHHH", data, 6)
     out.update(zip(STATUS_U16, vals))
+    if len(data) >= 48:
+        vals = struct.unpack_from("<HHHHHiB", data, 32)
+        out.update(zip(("sched_sent", "sched_late", "sched_refused", "sched_replaced", "sched_cooldown", "phase_us",
+                        "align"), vals))
     return out
+
+
+def parse_rx_meta(data):
+    """An RX_META event (3.10) from its data (after sub and result)"""
+    t_slot, residual, label, kind, cc, flags, rssi, seq = struct.unpack_from("<IhbBBBhH", data, 0)
+    return {"t_slot": t_slot, "residual_us": residual, "label": label, "kind": kind, "cc": cc, "flags": flags,
+            "rssi_dbm": rssi, "seq": seq}
 
 
 def parse_epoch(data):
@@ -318,7 +364,7 @@ class Radio:
         self.on_uplink = on_uplink      # called from the reader thread with (host µs, frame) for each uplink frame
         self.wlock = threading.Lock()   # one frame at a time on the port (the reader thread may send too)
         if str(port).startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
-            from odr_debug import UdpPort
+            from rfoundry_debug import UdpPort
             host, _, udp_port = port[4:].partition(":")
             self.ser = UdpPort(host, int(udp_port or 3334))
         else:
@@ -331,6 +377,7 @@ class Radio:
         self.lock = threading.Condition()
         self.replies = []
         self.uplink = []        # DMR_DATA / DMR_LOST frames heard, (host µs, frame)
+        self.meta = []          # RX_META events, (host µs, parse_rx_meta dict), in arrival order (before their uplink)
         self.status = None
         self.log = log or (lambda *a: None)
         self.stop = False
@@ -362,8 +409,11 @@ class Radio:
             self.buf += chunk
             for f in self._frames():
                 up = f[2] in (DMR_DATA1, DMR_DATA2, DMR_LOST1, DMR_LOST2)
+                ev = f[2] == RFOUNDRY_SPLIT and len(f) >= 5 + 16 and f[3] == EV_RX_META
                 with self.lock:
-                    if up:
+                    if ev:
+                        self.meta.append((t, parse_rx_meta(f[5:])))
+                    elif up:
                         self.uplink.append((t, f))
                     else:
                         if f[2] == GET_STATUS:
@@ -398,8 +448,8 @@ class Radio:
     def split(self, sub, data=b"", timeout=1.0):
         """0xD6 request: (t1, t4, result, data)"""
         t1, t4, r = self.request(split_frame(sub, data),
-                                 lambda r: (r[2] == ODR_SPLIT and len(r) >= 5 and r[3] == sub) or
-                                 (r[2] == NAK and len(r) >= 4 and r[3] == ODR_SPLIT), timeout)
+                                 lambda r: (r[2] == RFOUNDRY_SPLIT and len(r) >= 5 and r[3] == sub) or
+                                 (r[2] == NAK and len(r) >= 4 and r[3] == RFOUNDRY_SPLIT), timeout)
         if r[2] == NAK:
             raise RuntimeError(f"{self.name}: 0xD6 NAKed: firmware without the split extension")
         return t1, t4, r[4], r[5:]
@@ -601,11 +651,11 @@ def run_pair(a):
 
 def run_exp(a):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import odr_debug
+    import rfoundry_debug
     fout = round(a.freq_out * 1e6)
     regs = [tuple(int(x, 0) for x in r.split("=", 1)) for r in a.reg]
     # The debug link shares the port (its frames start A5 5A, never E0): set the variant first, then close it
-    with odr_debug.DebugLink(a.tx, 2.0) as link:
+    with rfoundry_debug.DebugLink(a.tx, 2.0) as link:
         link.split_variant(a.exp, regs)
     tx = Radio(a.tx, "tx")
     try:
@@ -636,7 +686,7 @@ def run_exp(a):
         set_role(tx, ROLE_NORMAL)
     finally:
         tx.close()
-    with odr_debug.DebugLink(a.tx, 2.0) as link:
+    with rfoundry_debug.DebugLink(a.tx, 2.0) as link:
         for k, v in link.split_view().items():
             print(f"{k}={v}")
     return 0

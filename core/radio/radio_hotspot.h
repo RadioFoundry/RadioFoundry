@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's side of the hotspot: hotspot_radio_ops_t (core/hotspot/hotspot.h), called from the host link
 // task. No RTOS here (the host tests run it with the real state machine): the radio task gives it a way to post
 // requests, publishes the state machine's hotspot state after every pass and runs the orphan watch.

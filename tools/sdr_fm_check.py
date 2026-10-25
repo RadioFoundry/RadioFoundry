@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """FM transmit checker for an RTL-SDR capture (rtl_sdr raw unsigned-centered int8 I/Q, "CS8").
 
     tools/sdr_fm_check.py CAPTURE.cs8 --offset -25000 [--center 461887500 --ppm P] [--bw 12.5]
@@ -23,6 +23,13 @@ keyed segment (carrier above the capture's noise floor) it reports:
   - with --tones: the audio tones in the voice band (a roger beep, a 1750 Hz burst): each run of 40 ms windows whose
     strongest 300-3000 Hz line holds most of the band's power, with its frequency, start and end (s from the start
     of the capture) and peak deviation, as "tone 1750.0 Hz 0.52-2.47 s (1.95 s), deviation 2400 Hz peak"
+  - with --dtmf: DTMF digits (ITU-T Q.23 pairs) in the voice band: each run of 40 ms windows (5 ms steps) where one row and one
+    column tone stand 10 dB over the other six and the pair holds most of the band's power, as "dtmf 5 0.52-0.68 s
+    (0.16 s), deviation 1900 Hz peak, twist +5.9 dB (received +1.2 dB)" (high tone over low), the gaps between them
+    and a "dtmf digits:" line; --expect-dtmf DIGITS checks that line. "twist" is on the carrier (deviation, the
+    discriminator output); "received" is after a receiver's 750 us de-emphasis, the audio a DTMF decoder hears, which
+    the twist limits of the DTMF standards apply to (a tone that went through the transmitter's pre-emphasis reads
+    about 3-7 dB higher on the carrier than received)
 The exit status is 1 when an expectation fails (or no keyed segment is found), else 0.
 
 Processing is streamed in chunks (0.25 s of I/Q at a time) and only a 16 kHz discriminator output is kept, so
@@ -389,6 +396,69 @@ def tone_runs(x, fs, t_first):
     return runs
 
 
+# --- DTMF digits ---
+
+DTMF_LOW = (697.0, 770.0, 852.0, 941.0)
+DTMF_HIGH = (1209.0, 1336.0, 1477.0, 1633.0)
+DTMF_KEYS = '123A456B789C*0#D'
+DTMF_WIN_S, DTMF_HOP_S = 0.04, 0.005   # 40 ms: 25 Hz bins, so neighbors 73 Hz apart stay outside the Hann main lobe
+DTMF_OVER_DB = 10.0             # the row and column tones over the strongest other DTMF tone
+DTMF_PURITY = 0.6               # the pair holds this share of the 300-3000 Hz power
+DTMF_MIN_S = 0.03               # shortest run reported as a digit
+DEEMPH_S = 750e-6               # land mobile FM de-emphasis time constant (6 dB per octave over the voice band)
+
+
+def deemph_db(f_hz):
+    """A receiver's de-emphasis gain at f_hz (dB, single pole at 1 / (2 pi 750 us) = 212 Hz)."""
+    return -10 * np.log10(1.0 + (2 * np.pi * f_hz * DEEMPH_S) ** 2)
+
+
+def received_twist(twist_db, digit):
+    """Twist on the carrier -> twist after a receiver's de-emphasis, for digit's pair."""
+    k = DTMF_KEYS.index(digit)
+    return twist_db + deemph_db(DTMF_HIGH[k % 4]) - deemph_db(DTMF_LOW[k // 4])
+
+
+def goertzel_power(seg, fs, freqs):
+    n = np.arange(len(seg))
+    return [abs(np.dot(seg, np.exp(-2j * np.pi * f * n / fs))) ** 2 for f in freqs]
+
+
+def dtmf_runs(x, fs, t_first):
+    """DTMF digits in a voice band signal x (Hz of deviation, sample 0 at t_first s): a list of (digit, start s, end
+    s, peak deviation Hz, twist dB = high tone over low)."""
+    win, hop = int(DTMF_WIN_S * fs), int(DTMF_HOP_S * fs)
+    w = np.hanning(win)
+    hits = []
+    for i in range(0, len(x) - win, hop):
+        seg = x[i:i + win] * w
+        p = goertzel_power(seg, fs, DTMF_LOW + DTMF_HIGH)
+        lo, hi = p[:4], p[4:]
+        r, c = int(np.argmax(lo)), int(np.argmax(hi))
+        others = max([v for k, v in enumerate(lo) if k != r] + [v for k, v in enumerate(hi) if k != c])
+        total = float(np.sum(seg ** 2)) * win / 3.0 + 1e-12     # a Hann-windowed tone's Goertzel power is N / 3 of its energy
+        ok = min(lo[r], hi[c]) > others * 10 ** (DTMF_OVER_DB / 10) and (lo[r] + hi[c]) >= DTMF_PURITY * total
+        if ok:
+            twist = 10 * np.log10(hi[c] / lo[r])
+            hits.append((t_first + (i + win / 2) / fs, DTMF_KEYS[r * 4 + c], float(np.sqrt(2.0) * np.std(x[i:i + win])),
+                         twist))
+        else:
+            hits.append(None)
+    runs, cur = [], None
+    for h in hits + [None]:
+        if h is not None and cur is not None and h[1] == cur[0]:
+            cur[1].append(h)
+            continue
+        if cur is not None:
+            # window centers: a window decodes while most of it is tone, so the centers span about the tone itself
+            t0, t1 = cur[1][0][0] - DTMF_HOP_S / 2, cur[1][-1][0] + DTMF_HOP_S / 2
+            if t1 - t0 >= DTMF_MIN_S:
+                runs.append((cur[0], t0, t1, float(np.median([v[2] for v in cur[1]])),
+                             float(np.median([v[3] for v in cur[1]]))))
+        cur = (h[1], [h]) if h is not None else None
+    return runs
+
+
 # --- report ---
 
 def parse_dcs(s):
@@ -500,6 +570,22 @@ def analyze(args):
                 print('  tone %.1f Hz %.2f-%.2f s (%.2f s), deviation %.0f Hz peak' % (hz, r0, r1, r1 - r0, dev))
             if not runs:
                 print('  tones: none')
+        if args.dtmf or args.expect_dtmf is not None:
+            e0, e1 = int(a * POWER_WIN_S * FS_AUDIO), min(int(b * POWER_WIN_S * FS_AUDIO), len(audio))
+            xt = fir(audio[e0:e1] - carrier, voice_bp)
+            runs = dtmf_runs(xt, FS_AUDIO, e0 / FS_AUDIO)
+            prev = None
+            for d, r0, r1, dev, twist in runs:
+                gap = '' if prev is None else ', gap %.3f s' % (r0 - prev)
+                print('  dtmf %s %.3f-%.3f s (%.3f s), deviation %.0f Hz peak, twist %+.1f dB (received %+.1f dB)%s' %
+                      (d, r0, r1, r1 - r0, dev, twist, received_twist(twist, d), gap))
+                prev = r1
+            digits = ''.join(r[0] for r in runs)
+            print('  dtmf digits: %s' % (digits or 'none'))
+            if args.expect_dtmf is not None:
+                ok = digits == args.expect_dtmf.upper()
+                print('  expect DTMF %s: %s' % (args.expect_dtmf.upper(), 'PASS' if ok else 'FAIL'))
+                failed |= not ok
 
         freq, tone_dev, ratio = ctcss_find(sub, sub_fs)
         tail_s = 0.0
@@ -572,6 +658,8 @@ def main():
     ap.add_argument('--expect-tail', type=float, help='expected DCS turn-off tail, at least this many seconds')
     ap.add_argument('--wav', help='write the voice band (300-3000 Hz) of the keyed segments to this WAV')
     ap.add_argument('--tones', action='store_true', help='report the steady audio tones (roger beep, 1750 Hz burst)')
+    ap.add_argument('--dtmf', action='store_true', help='report DTMF digits')
+    ap.add_argument('--expect-dtmf', help='expected DTMF digits in each keyed segment, in order (e.g. 123#)')
     ap.add_argument('--tone-snr', type=float, help='report the SINAD of a test tone at this frequency, Hz')
     ap.add_argument('--levels', action='store_true', help='print the voice band rms deviation every 50 ms')
     ap.add_argument('--track', action='store_true', help='print the carrier frequency every 50 ms of each segment')

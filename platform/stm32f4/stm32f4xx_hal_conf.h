@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file    stm32f4xx_hal_conf.h
   * @author  MCD Application Team
-  * @brief   HAL configuration for OpenDigitalRadio (from ST's template, modules trimmed).
+  * @brief   HAL configuration for RadioFoundry (from ST's template, modules trimmed).
   ******************************************************************************
   * @attention
   *

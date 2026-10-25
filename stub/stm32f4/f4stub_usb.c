@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Polled CDC-ACM device on the STM32F4 OTG_FS core (f4stub_usb.h). Written from the reference manual's OTG_FS
 // device programming model (slave mode: the CPU moves every packet through the FIFOs), USB 2.0 chapter 9 and the
 // CDC 1.2 / PSTN class documents. The core's status bits are polled; the interrupt line stays off.
@@ -43,8 +43,8 @@ static const uint8_t dev_desc[18] = {
 	18, 1, 0x00, 0x02,	// bLength, DEVICE, bcdUSB 2.00
 	0xEF, 0x02, 0x01,	// miscellaneous class, common subclass, interface association
 	EP0_SIZE,
-	0xC9, 0x1F, 0x94, 0x00,	// VID 0x1FC9, PID 0x0094: ODR's serial-port identity (boards/*/usb_*.c)
-	0x00, 0x7F,		// bcdDevice 0x7F00: not an ODR firmware version
+	0xC9, 0x1F, 0x94, 0x00,	// VID 0x1FC9, PID 0x0094: RadioFoundry's serial-port identity (boards/*/usb_*.c)
+	0x00, 0x7F,		// bcdDevice 0x7F00: not a RadioFoundry firmware version
 	1, 2, 3, 1,		// iManufacturer, iProduct, iSerialNumber, one configuration
 };
 
@@ -63,7 +63,7 @@ static const uint8_t cfg_desc[CFG_LEN] = {
 	7, 5, 0x80 | EP_DATA, 0x02, DATA_SIZE, 0, 0,	// bulk IN 0x81
 };
 
-static const char *const strings[] = { NULL, "OpenDigitalRadio", "ODR flash stub", NULL, "ODR flash stub serial" };
+static const char *const strings[] = { NULL, "RadioFoundry", "RadioFoundry flash stub", NULL, "RadioFoundry flash stub serial" };
 
 // ---- state
 
@@ -518,7 +518,7 @@ bool usb_configured(void)
 
 // ---- start
 
-// Take over ODR's configured device: the address and the endpoints stay, a transfer TinyUSB left half done on
+// Take over RadioFoundry's configured device: the address and the endpoints stay, a transfer TinyUSB left half done on
 // the IN side is cut off (the host saw the ENTER reply complete before the jump), and the FIFOs start empty
 static bool adopt(void)
 {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The host link: one task that owns the board's host port (board.host_port: USB CDC-ACM on the STM32 radios, the
 // programming cable's UART on others) and hands its byte stream to one protocol at a time:
 //
@@ -29,8 +29,8 @@
 // and the protocols above over UDP serial, with their modes as on the adapter. The port is the protocols' again when
 // the PPP link ends: LCP Terminate either way, negotiation timed out, 60 s without a frame from the peer, or a frame
 // starting with another protocol's first byte (those bytes then go to that protocol at once).
-#ifndef ODR_HOSTLINK_H
-#define ODR_HOSTLINK_H
+#ifndef RFOUNDRY_HOSTLINK_H
+#define RFOUNDRY_HOSTLINK_H
 
 #include <stdint.h>
 #include <stdbool.h>

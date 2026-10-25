@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The radio is up and the debug link works: version and features, screenshot geometry, no stalls, error replies."""
 import struct
 import time
 
 import pytest
 
-from odr_hil import DebugLinkError, as_int
+from rfoundry_hil import DebugLinkError, as_int
 
 
+@pytest.mark.feature("debuglink")
 def test_version_and_features(radio):
     v = radio.version(fresh=True)
     assert v.get("proto") == "1"
@@ -19,11 +20,13 @@ def test_version_and_features(radio):
     assert "FM" in feats or "DMR" in feats
 
 
+@pytest.mark.feature("debuglink")
 def test_ping_latency(radio):
     times = [radio.ping() for _ in range(20)]
     assert max(times) < 0.15, f"slowest ping {max(times) * 1000:.0f} ms"
 
 
+@pytest.mark.feature("debuglink")
 def test_screenshot_geometry(radio, shots):
     w, h, bpp = (int(x) for x in radio.version()["display"].split("x"))
     if bpp == 4:
@@ -36,6 +39,7 @@ def test_screenshot_geometry(radio, shots):
     radio.save_screenshot(f"{shots}/boot.png")
 
 
+@pytest.mark.feature("debuglink")
 def test_no_stalls(radio):
     """The firmware clock advances with wall time, the link answers throughout, nothing timed out."""
     link0 = radio.view(["link"])
@@ -51,6 +55,7 @@ def test_no_stalls(radio):
     assert link1["dl.bad_crc"] == link0["dl.bad_crc"]
 
 
+@pytest.mark.feature("debuglink")
 def test_view_sections(radio):
     v = radio.view()
     for k in ("view", "state", "rx_hz", "ch.name", "dmr.built", "hostlink", "ui.screen", "input.idle_ms"):
@@ -58,6 +63,7 @@ def test_view_sections(radio):
     assert v["view"] == "2"
 
 
+@pytest.mark.feature("debuglink")
 def test_diag_has_clock_and_lines(radio):
     ms0, lines = radio.link.diag()
     assert len(lines) >= 2 and lines[0].startswith("radio ")
@@ -66,23 +72,26 @@ def test_diag_has_clock_and_lines(radio):
     assert 300 < ms1 - ms0 < 1500
 
 
+@pytest.mark.feature("debuglink")
 def test_reset_counters_returns_clock(radio):
     t = radio.reset_counters()
     assert abs(t - as_int(radio.view(["link"])["uptime_ms"])) < 1000
 
 
+@pytest.mark.feature("debuglink")
 def test_log_readable(radio):
     dropped, text = radio.log()
     assert dropped >= 0
     assert all(line.split(" ", 1)[0].isdigit() for line in text.splitlines()), text[:200]
 
 
+@pytest.mark.feature("debuglink")
 def test_unknown_command_and_bad_crc(radio):
     with pytest.raises(DebugLinkError) as e:
         radio.link.request(0x7E)
     assert e.value.status == 1
     # A frame with a broken CRC gets an error frame (command 0xFF, status 5)
-    from odr_debug import frame
+    from rfoundry_debug import frame
     f = bytearray(frame(0x01, 0x33, b"x"))
     f[-1] ^= 0xFF
     radio.link.s.write(bytes(f))
@@ -91,6 +100,7 @@ def test_unknown_command_and_bad_crc(radio):
     radio.ping()   # still fine afterwards
 
 
+@pytest.mark.feature("debuglink")
 def test_oversized_request_rejected(radio):
     hdr = bytes([0xA5, 0x5A, 0x01, 0x44]) + struct.pack("<H", 65)
     radio.link.s.write(hdr)

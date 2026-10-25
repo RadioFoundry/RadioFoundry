@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The UI host simulator's command line (docs/spec/ui.md 7):
 //
 //   uiSim [--geom 160x120i5|160x128|128x64|240x320|WxH[iN|m]] [--map K|M|V|F] [--scale N] [--out FILE.png]
@@ -27,6 +27,7 @@
 #include <sys/stat.h>
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
+#include "config.h"
 #include "ui/ui_screens.h"
 #include "ui/gfx.h"
 
@@ -47,10 +48,11 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_locked", "long:quick 5" },
 	{ "home_usb_ip", "usbnet:on" },
 	{ "home_usb_ip_up", "usbnet:up" },
-	{ "rx_group", "rx:3101234,91,g,Joe_-_Boston,_MA" },
+	{ "rx_group", "rx:3101234,91,g,K1ABC_Joe_-_Boston,_MA" },
 	{ "rx_private", "rx:3105678,0,p" },
 	{ "tx", "pttdown" },
 	{ "tx_private", "5 6 3 ok wait:5000 pttdown" },
+	{ "tx_dtmf", "down pttdown dtmf:5551234#" },	// DTMF sent on FM (radio-features.md 3.7)
 	{ "banner_message", "msg:3101234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery." },
 	{ "banner_call_alert", "alert:3105678" },
 	{ "banner_radio_check", "call:3101234,91,g wait:11000 ctx 4 wait:1000" },
@@ -86,6 +88,13 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "channel_discard", "ok 5 ok down down down down down ok enc+ ok back" },
 	{ "channel_new", "ok 5 up up up ok" },
 	{ "zone_channels", "ok 4 ctx" },
+#if CONFIG_ZONE_EDIT
+	// The zone editor (ui.md 2.2)
+	{ "zone_actions", "ok 4 ctx ctx" },
+	{ "zone_add", "ok 4 ctx 2 ok" },
+	{ "zone_options", "ok 4 ctx up up up up ok" },
+	{ "zone_delete", "ok 4 ctx up up up up ok 3" },
+#endif
 	{ "tools", "ok 6" },
 	{ "position", "ok 6 2" },
 	{ "hotspot_info", "ok 6 3" },
@@ -122,6 +131,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_dual_large_text", "ok 7 2 down down down down down ok long:back quick 7 ctx 3 5 ok wait:3000 tune:b rx:3101234,91,g" },
 	// A radio with a receiver per channel: calls on both at once, the second one muted
 	{ "home_dual_two_rx", "receivers:2 quick 7 ctx 3 5 ok wait:3000 rxa:3101234,3100,g rxb:3107777,91,g wait:1000" },
+	// Talking on B while a call arrives on A
+	{ "home_dual_tx_b", "receivers:2 quick 7 ctx 3 5 ok wait:3000 ctx 1 wait:500 rxa:3101234,3100,g wait:1000 pttdown" },
 	{ "home_dual_two_rx_large_text", "ok 7 2 down down down down down ok long:back receivers:2 quick 7 ctx 3 5 ok wait:3000 rxa:3101234,3100,g rxb:3107777,91,g wait:1000" },
 	{ "home_dual_talk_back", "ok 7 3 down down down down down down ok long:back quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g wait:4000" },
 	{ "dual_actions", "quick 7 ctx 3 5 ok wait:3000 tune:b call:3101234,91,g tune:a call:3107777,3100,g wait:4000 ctx" },
@@ -192,6 +203,10 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_channels", "ok 4" },
 	{ "w_zone", "ok 4 ctx" },
 	{ "w_zone_end", "ok 4 ctx up" },
+#if CONFIG_ZONE_EDIT
+	{ "w_zone_actions", "ok 4 ctx ctx" },
+	{ "w_zone_delete", "ok 4 ctx up up up up ok 3" },
+#endif
 	{ "w_quick", "quick" },
 	{ "w_quick_fm", "down quick" },
 	{ "w_quick_cc", "quick 3 1 5" },
@@ -242,7 +257,7 @@ static int run_layout(const char *only)
 {
 	char err[256], found[SIM_LAYOUT_MAX][160];
 	int problems = 0, screens = 0;
-	const char *shots = getenv("ODR_LAYOUT_SHOTS");
+	const char *shots = getenv("RFOUNDRY_LAYOUT_SHOTS");
 	for (int g = 0; g < sim_geom_count; g++) {
 		if (only != NULL && strcmp(only, sim_geoms[g].name) != 0)
 			continue;
@@ -288,7 +303,7 @@ static int run_layout(const char *only)
 					continue;
 				}
 				screens++;
-				if (shots != NULL) {	// ODR_LAYOUT_SHOTS=DIR: every screen checked, as DIR/<geom>/<name>.png
+				if (shots != NULL) {	// RFOUNDRY_LAYOUT_SHOTS=DIR: every screen checked, as DIR/<geom>/<name>.png
 					char path[512];
 					snprintf(path, sizeof path, "%s/%s", shots, sim_geoms[g].name);
 					mkdir(shots, 0755);

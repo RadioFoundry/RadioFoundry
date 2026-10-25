@@ -1,10 +1,10 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
-# Build the DB25-D runtime-entry stubs (the ones stubtool loads with --odr-enter) for both RAM layouts:
-#   stub_db25d_odr.bin      linked for 0x30000, 128 KB window   (a build without CONFIG_DMR: boards/db25d/db25d.ld)
-#   stub_db25d_odr_dmr.bin  linked for 0x1D000, 72 KB window    (CONFIG_DMR=y: boards/db25d/db25d_dmr.ld)
+# Build the DB25-D runtime-entry stubs (the ones stubtool loads with --rfoundry-enter) for both RAM layouts:
+#   stub_db25d_rfoundry.bin      linked for 0x30000, 128 KB window   (a build without CONFIG_DMR: boards/db25d/fm_only.ld)
+#   stub_db25d_rfoundry_dmr.bin  linked for 0x1D000, 72 KB window    (CONFIG_DMR=y: boards/db25d/memory.ld)
 # The base and size must match HRC_STUB_BASE / HRC_STUB_SIZE in boards/db25d/config.mk: the running firmware reports
 # them in STUB INFO and stubtool picks the image by that base. The monitor is position dependent, so a stub linked for
 # the wrong base would run wild.
@@ -12,22 +12,22 @@
 #   STUB_SRC=/path/to/monitor/source STUB_HOST=user@buildhost stub/build_db25d_stubs.sh [OUTDIR]
 #
 # STUB_SRC holds common/ and hrc7000/ of the monitor (kept with the reverse-engineering notes, not in this tree).
-# STUB_HOST is a machine with docker and the csky-elf GCC 14 image (STUB_IMAGE, default odr/csky-gcc14:latest); leave it
+# STUB_HOST is a machine with docker and the csky-elf GCC 14 image (STUB_IMAGE, default rfoundry/csky-gcc14:latest); leave it
 # empty to run docker here. STUB_W is the scratch directory on that machine. Then embed the results:
-#   python3 stub/embed_stub.py stub/stubtool.py DB25D OUTDIR/stub_db25d_odr.bin
-#   python3 stub/embed_stub.py stub/stubtool.py DB25D_DMR OUTDIR/stub_db25d_odr_dmr.bin
+#   python3 stub/embed_stub.py stub/stubtool.py DB25D OUTDIR/stub_db25d_rfoundry.bin
+#   python3 stub/embed_stub.py stub/stubtool.py DB25D_DMR OUTDIR/stub_db25d_rfoundry_dmr.bin
 set -e
 SRC=${STUB_SRC:?set STUB_SRC to the monitor source directory (common/ and hrc7000/)}
 HOST=${STUB_HOST-}
-W=${STUB_W:-/tmp/odr-stub-build}
-IMAGE=${STUB_IMAGE:-odr/csky-gcc14:latest}
+W=${STUB_W:-/tmp/rfoundry-stub-build}
+IMAGE=${STUB_IMAGE:-rfoundry/csky-gcc14:latest}
 OUT=${1:-$(pwd)/stub-out}
 mkdir -p "$OUT"
 
-# Pins (UART1 = the K1 jack, power latch PTB13, power key PTB12) and the loader's 36 MHz APB, which ODR keeps.
+# Pins (UART1 = the K1 jack, power latch PTB13, power key PTB12) and the loader's 36 MHz APB, which RadioFoundry keeps.
 COMMON="-DPORT_UART_BASE=0x14040000u -DPORT_POWER_LATCH=45u -DPORT_POWER_KEY=44u -DPORT_DIPLEX0_GPIO_CLR=0x600u -DPORT_TICK_HZ=36000000u -DPORT_UART_HZ=36000000u"
 # name:base:length (linker script values take no u suffix)
-VARIANTS="stub_db25d_odr:0x30000:0x20000 stub_db25d_odr_dmr:0x1D000:0x12000"
+VARIANTS="stub_db25d_rfoundry:0x30000:0x20000 stub_db25d_rfoundry_dmr:0x1D000:0x12000"
 
 run() {
 	if [ -n "$HOST" ]; then ssh "$HOST" "$1"; else sh -c "$1"; fi

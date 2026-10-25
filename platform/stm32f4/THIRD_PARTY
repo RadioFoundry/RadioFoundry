@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # Third-party code in the STM32F4 image, shown on Settings > Advanced > About (tools/gen_about.py)
 FreeRTOS-Kernel: MIT
 TinyUSB: MIT

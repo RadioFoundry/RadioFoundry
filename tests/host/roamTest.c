@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DMR repeater roaming (docs/spec/dmr-roaming.md): the engine (core/radio/roam.c) on its own, then through the radio
 // core (radio_sm.c) against a fake board whose repeaters sit on frequencies: each one, while up, sends idle bursts
 // with base station sync and its color code through the simulated modem, at a signal level the test sets; a sleeping
@@ -736,6 +736,7 @@ bool codeplug_channel(uint16_t n, channel_t *out)
 	return true;
 }
 uint16_t codeplug_zone_count(void) { return 1; }
+bool codeplug_zones_stored(void) { return true; }
 bool codeplug_zone(uint16_t i, zone_t *out)
 {
 	if (i != 0) {

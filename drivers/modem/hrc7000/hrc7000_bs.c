@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The split duplex TX half's continuous BS outbound on the HR_C7000 (see hrc7000_bs.h)
 #include <string.h>
 #include "hrc7000_bs.h"
@@ -99,8 +99,8 @@ static uint8_t q_count(const hrc7000_bs_t *bs, int k)
 	return (uint8_t)((bs->head[k] + HRC7000_BS_Q + 1u - bs->tail[k]) % (HRC7000_BS_Q + 1u));
 }
 
-bool hrc7000_bs_queue(hrc7000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
-		      const uint8_t *emb_lc)
+static bool queue(hrc7000_dmr_t *e, bool tagged, uint32_t counter, int8_t ts, const dmr_tx_burst_t *b,
+		  const dmr_cach_t *cach, const uint8_t *emb_lc)
 {
 	lock(e);
 	hrc7000_bs_t *bs = e->bs;
@@ -109,6 +109,9 @@ bool hrc7000_bs_queue(hrc7000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, cons
 
 	if (ok) {
 		uint8_t at = bs->head[k];
+
+		bs->q_at[k][at] = tagged;
+		bs->q_at_c[k][at] = counter;
 
 		bs->q[k][at] = *b;
 		bs->q_cach_valid[k][at] = cach != NULL;
@@ -124,6 +127,57 @@ bool hrc7000_bs_queue(hrc7000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, cons
 	}
 	unlock(e);
 	return ok;
+}
+
+bool hrc7000_bs_queue(hrc7000_dmr_t *e, int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
+		      const uint8_t *emb_lc)
+{
+	return queue(e, false, 0, ts, b, cach, emb_lc);
+}
+
+bool hrc7000_bs_queue_at(hrc7000_dmr_t *e, uint32_t counter, int8_t ts, const dmr_tx_burst_t *b,
+			 const dmr_cach_t *cach, const uint8_t *emb_lc)
+{
+	return queue(e, true, counter, ts, b, cach, emb_lc);
+}
+
+bool hrc7000_bs_restart(hrc7000_dmr_t *e, uint32_t t_us, int8_t ts)
+{
+	lock(e);
+	hrc7000_bs_t *bs = e->bs;
+	bool ok = (bs != NULL) && !bs->keyed && !bs->pa;
+
+	if (ok) {
+		w(e, C7_LAYER2_TXRX_CTRL, TXRX_NONE);
+		w(e, C7_LAYER2_CONTROL, L2_PASSIVE);	// own TX timing off (passive timing keeps counting meanwhile)
+		bs->restarting = true;
+		e->timing = false;
+		e->t_tick = now(e);
+	}
+	unlock(e);
+	if (!ok) {
+		return false;
+	}
+	uint32_t t0 = now(e);
+	int32_t d = (int32_t)(t_us - t0) % (int32_t)SLOT_US;	// signed: 2^32 is no multiple of a slot
+	uint32_t ahead = (uint32_t)((d < 0) ? d + (int32_t)SLOT_US : d);
+
+	if (ahead < 2000u) {
+		ahead += SLOT_US;
+	}
+	uint32_t target = t0 + ahead;
+
+	while ((int32_t)(now(e) - target) < 0) {
+	}
+	lock(e);
+	w(e, C7_LAYER2_CONTROL, L2_PHY_TX_MASTER);	// on again: the slot timer starts here
+	bs->restart_ts = ts;		// the first boundary from here sets up slot ts
+	bs->restarting = false;
+	bs->on_air = false;
+	e->t_tick = now(e);
+	bs->st.restarts++;
+	unlock(e);
+	return true;
 }
 
 uint8_t hrc7000_bs_space(const hrc7000_dmr_t *e, int8_t ts)
@@ -210,6 +264,9 @@ static void boundary(hrc7000_dmr_t *e, hrc7000_bs_t *bs)
 {
 	uint32_t t = now(e);
 
+	if (bs->restarting) {
+		return;		// the old timer's, while bs_restart waits
+	}
 	if (e->timing) {
 		uint32_t gap = t - e->t_tick;
 
@@ -230,6 +287,10 @@ static void boundary(hrc7000_dmr_t *e, hrc7000_bs_t *bs)
 	e->t_tick = t;
 	e->timing = true;
 	bs->st.slots++;
+	if (bs->restart_ts != 0) {
+		bs->base_tick = e->tick + ((bs->restart_ts == 1) ? 0u : 1u);	// ts_of(tick + 1) = restart_ts
+		bs->restart_ts = 0;
+	}
 	// The slot set up at this boundary goes on air in the slot that starts about 5 ms later, not in the one after
 	// (SDR bench 2026-10-21: the epoch was one slot early, and the RX half labeled a subscriber's TS2 call TS1)
 	int8_t next = ts_of(bs, e->tick + 1u);
@@ -251,7 +312,15 @@ static void boundary(hrc7000_dmr_t *e, hrc7000_bs_t *bs)
 	bs->on_air = true;
 	int k = next - 1;
 
-	if (q_count(bs, k) > 0) {
+	// A burst for a numbered slot that has passed is dropped; one for a later slot waits
+	while ((q_count(bs, k) > 0) && bs->q_at[k][bs->tail[k]] && ((int32_t)(bs->q_at_c[k][bs->tail[k]] - e->tick) < 0)) {
+		bs->tail[k] = (uint8_t)((bs->tail[k] + 1u) % (HRC7000_BS_Q + 1u));
+		bs->st.at_late++;
+	}
+	bool wait = (q_count(bs, k) > 0) && bs->q_at[k][bs->tail[k]] && (bs->q_at_c[k][bs->tail[k]] != e->tick);
+
+	bs->st.at_wait += wait;
+	if ((q_count(bs, k) > 0) && !wait) {
 		uint8_t at = bs->tail[k];
 
 		setup(e, bs, next, &bs->q[k][at], bs->q_lc_valid[k][at] ? bs->q_lc[k][at] : NULL,

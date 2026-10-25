@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # The UI screen gallery before and after a pull request that changes the UI (docs/dev/ci.md "UI gallery"). This job
 # renders every screen twice, from the base commit and from the pull request's merge commit, and puts each changed
@@ -7,7 +7,9 @@
 #
 # This job runs the pull request's code (uiSim is built from its tree), so it is a plain pull_request run: a read-only
 # token, no secrets, no cache, nothing a fork couldn't have. It never writes to the repository or the pull request;
-# the comment job does that, from main's copy of its workflow, and never runs anything from the artifact.
+# the comment job does that, from main's copy of its workflow, and never runs anything from the artifact. It runs on
+# GitHub's runners: a pull request runs its own copy of this file, so the self-hosted runner refuses it
+# (tools/ci-runner/job-gate.sh, docs/dev/ci-runners.md).
 name: UI gallery
 
 on:
@@ -39,17 +41,16 @@ concurrency:
 
 jobs:
   render:
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    # ODR_UI_RUNNER: a runner kept for the gallery, so its preview never waits behind the build and test jobs
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && (vars.ODR_UI_RUNNER || vars.ODR_CI_RUNNER) || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
+    runs-on: ubuntu-24.04   # never self-hosted: the runner refuses a pull_request run (tools/ci-runner/job-gate.sh)
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           persist-credentials: false
           submodules: false   # the host tests use none of third_party
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base
@@ -59,7 +60,7 @@ jobs:
       - name: Install Pillow
         run: |
           set -eu
-          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+          if [ "${RFOUNDRY_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
             sudo apt-get update -qq
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends python3-pil
           fi
@@ -84,7 +85,7 @@ jobs:
           python3 -c 'import json; print(json.load(open("build/ui/out/manifest.json"))["counts"])' \
             >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         with:
           name: ui-gallery
           path: build/ui/out

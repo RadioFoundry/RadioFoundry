@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR single frequency repeater (SFR): the HR-C6000 glue for functions/sfr.h (STM32 radios and the GD-77)
  */
 
-#ifndef ODR_HRC_SFR_H
-#define ODR_HRC_SFR_H
+#ifndef RFOUNDRY_HRC_SFR_H
+#define RFOUNDRY_HRC_SFR_H
 
 #if defined(HAS_SFR)
 

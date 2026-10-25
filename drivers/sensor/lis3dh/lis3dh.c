@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // LIS3DH-class accelerometer driver (lis3dh.h)
 #include "lis3dh.h"
 

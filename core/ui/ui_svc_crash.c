@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The ui_svc.h calls for the crash log (core/crash/crash.h) and its report: the record packed (crash_pack) and sent as
 // one UDP datagram through the DMR data service (dmr_data_send_udp, safe from any task) to the target the settings
 // name. Built with the crash log only; otherwise the weak stubs stay.

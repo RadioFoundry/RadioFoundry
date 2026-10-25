@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT Copyright (c) 2026 The OpenDigitalRadio Authors The open-firmware CPS engine on the host
+// SPDX-License-Identifier: MIT Copyright (c) 2026 The RadioFoundry Authors The open-firmware CPS engine on the host
 // link (cps_openfw.h): replies through hostlink_write, ticks from the host link task while a CPS session lasts, reboot
 // through board.system
 #include "cps/cps_openfw.h"

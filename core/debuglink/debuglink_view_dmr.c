@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR parts of the debug link: the GET_VIEW sections dmr, dmr_call and dmr_stats, the voice path diagnostics
 // lines and their counter reset. Kept apart from debuglink_view.c so DMR work can extend it on its own: add keys
 // freely (new keys don't bump DL_VIEW_VERSION), keep the existing ones.

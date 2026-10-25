@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The STM32 codec descriptor: where the merge put the radio's stock codec in internal flash (docs/spec/codec-placement.md,
 // "STM32 radios"). 128 bytes at the end of sector 11, written with the codec by the merge tools
-// (tools/odrflash/odrflash/stockfw.py, the web flasher's stockfw.js); keep the three in step. The codec runs in place
+// (tools/rfoundry/rfoundry/stockfw.py, the web flasher's stockfw.js); keep the three in step. The codec runs in place
 // from flash, so the firmware only needs to know where its code is and that the bytes there are what the merge wrote.
 // No hardware here: the host tests run it (tests/host/codecDescTest.c).
-#ifndef ODR_STM32_CODEC_DESC_H
-#define ODR_STM32_CODEC_DESC_H
+#ifndef RFOUNDRY_STM32_CODEC_DESC_H
+#define RFOUNDRY_STM32_CODEC_DESC_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -16,7 +16,7 @@
 #define CODEC_DESC_ADDR		0x080FFF80u
 #define CODEC_DESC_MAGIC	0x43534544u	// "DESC" little-endian
 #define CODEC_DESC_VERSION	1u
-#define CODEC_DESC_WINDOWS	5u		// table windows: the MD-380 has its tables and four small ones
+#define CODEC_DESC_WINDOWS	5u		// table windows: the most a stock file needs, its tables and four small ones
 
 typedef struct {
 	uint32_t addr, len, crc;		// CRC-32 of the bytes as merged

@@ -2,19 +2,28 @@
 
 # Split duplex repeater (two radios as one duplex MMDVM modem)
 
-Two OpenDigitalRadio radios, each connected to the same host as an MMDVM modem, act together as one full-duplex DMR
+Two RadioFoundry radios, each connected to the same host as an MMDVM modem, act together as one full-duplex DMR
 repeater: the **TX half** transmits the repeater output (BS sourced, continuous, both slots, with the CACH), the
 **RX half** receives the repeater input (MS sourced bursts on both slots) and labels each burst TS1 or TS2 from the TX
 half's slot timing. The host (`tools/split_duplex_host.py`, or any duplex host that implements section 8) coordinates the pair and can present it to
 MMDVMHost as one ordinary duplex modem (section 8).
 
-Switch: `CONFIG_HOTSPOT_SPLIT`, on wherever `CONFIG_HOTSPOT` is (not on the MD-380), a child of `CONFIG_HOTSPOT` (`docs/build-config.md`). Built in, the
+Switch: `CONFIG_HOTSPOT_SPLIT`, on wherever `CONFIG_HOTSPOT` is except where a board lists it as unsupported or not written, a child of `CONFIG_HOTSPOT` (`docs/build-config.md`). Built in, the
 radio still behaves exactly as a simplex hotspot (and as the SFR of `sfr.md`) until a host that knows this extension
 enables a role with the new vendor command (section 3). No existing MMDVM implementation splits TX and RX across two
 modems, so this document defines the small extension; everything else uses the standard MMDVM commands with their
 standard meanings (`mmdvm-protocol.md`).
 
 Standards cited: ETSI TS 102 361-1 V2.7.1 ("-1"), clause numbers given as "-1 4.5".
+
+| Contents | |
+|---|---|
+| 1, 2 | Why two radios, compatibility rules |
+| 3, 4 | The vendor command 0xD6, standard commands in a role |
+| 5 | TX half: the continuous BS outbound |
+| 6, 7 | Time sync, RX half labeling |
+| 8, 9 | Host-side guide, frequency accuracy and antennas |
+| 10, 11 | Bench tests, open questions |
 
 ## 1. Why two radios, and what each half does
 
@@ -55,7 +64,7 @@ slot clock to the RX half (time sync, section 6).
    extension's counters. Short LC, keying, abort, per-slot data, per-slot buffer space, RX overflow and the TX flag
    use the standard commands and status fields.
 
-## 3. The vendor command 0xD6 (ODR_SPLIT)
+## 3. The vendor command 0xD6 (RFOUNDRY_SPLIT)
 
 MMDVM leaves 0xD0-0xDF unused; 0xD5 is our SFR debug command (`mmdvm-protocol.md` 6.4), 0xD6 is this one.
 
@@ -68,12 +77,18 @@ refreshes the role lease. A firmware without the extension answers `E0 05 7F D6 
 | Sub | Name | To | Request data | Reply data |
 |---|---|---|---|---|
 | 00 | INFO | either | none | the INFO block (3.1) |
-| 01 | SET_ROLE | either | role u8 [lease_s u8] [power_cap u8] [prebuffer u8] [max_key_10s u8] [cooldown_s u8] | the INFO block |
+| 01 | SET_ROLE | either | role u8 [lease_s u8] [power_cap u8] [prebuffer u8] [max_key_10s u8] [cooldown_s u8] [stream u8] [options u8] | the INFO block |
 | 02 | TIME | either | token, 8 bytes (echoed) | token 8 bytes, t_rx u32, t_tx u32 |
 | 03 | GET_EPOCH | TX half | none | counter u32, t_us u32, ts u8, flags u8 |
 | 04 | SET_EPOCH | RX half | t_us u32 [period_ns u32] | none |
 | 05 | SET_AT | TX half | busy mask u8 [mode u8] | AT mask on air u8 |
 | 06 | STATUS | either | none | the STATUS block (3.6) |
+| 07 | ALIGN | TX half | t_us u32, period_ns u32, counter u32 [max_slew_us u16] [mode u8] | phase_us s32, flags u8 (3.8) |
+| 08 | TX_SCHED | TX half | counter u32, slot u8, control u8, burst 33 bytes | counter u32, outcome u8 (3.9) |
+| 89 | RX_META | from the RX half | (an event, never a request) | result 0, the metadata block (3.10) |
+
+Sub-commands 80 and up are events: frames the radio sends without a request, in the reply format. A host never sends
+them; a request with one gets result 1.
 
 Examples: `E0 04 D6 00` (INFO), `E0 05 D6 01 01` (TX half, defaults), `E0 05 D6 01 00` (back to normal),
 `E0 0C D6 02 01 02 03 04 05 06 07 08` (TIME with token 0102..08), `E0 05 D6 05 03` (both inbound slots busy).
@@ -89,6 +104,12 @@ Examples: `E0 04 D6 00` (INFO), `E0 05 D6 01 01` (TX half, defaults), `E0 05 D6 
 | 4 | CACH on air: 0 none (BS bursts without a CACH: section 5.4), 1 the chip sends our CACH bits, 2 the chip makes its own CACH (TC at least; our AT / short LC unknown), 3 unknown (experiment) |
 | 5-8 | the modem clock now, µs (u32, wraps every 71.6 minutes) |
 | 9 | flags: 01 RX half has a valid epoch, 02 TX half keyed, 04 TX half in its cool-down, 08 TX half slot clock running |
+| 10-11 | capabilities (u16): bit 0 scheduled TX (3.9), bit 1 ALIGN with the counter base and the snap (3.8), bit 2 ALIGN slewing (3.8), bit 3 RX metadata (3.10), bit 4 carrier trim (reserved, not built), bit 5 PPS input (reserved: no radio wires a pulse, `modem-hrc7000.md` 2.9a). A bit is set only where the radio's modem driver can do it |
+| 12 | scheduled TX guard, ms (u8): a TX_SCHED burst must arrive at least this long before its slot goes on air |
+| 13 | scheduled TX horizon, slots (u8, 32): a TX_SCHED burst may arrive at most this many slots ahead |
+| 14-15 | TX half slot-to-air delay, µs (s16): the time from a slot boundary as GET_EPOCH and ALIGN give it to the start of that slot on air, a constant of the modem driver (0 unknown) |
+
+The block grew from 10 to 16 bytes without a new version: hosts read the bytes they know and test the capability bits.
 
 ### 3.2 SET_ROLE (01)
 
@@ -100,9 +121,11 @@ Examples: `E0 04 D6 00` (INFO), `E0 05 D6 01 01` (TX half, defaults), `E0 05 D6 
 | 3 | TX half prebuffer per slot, bursts (the target repeat delay); 0 = default | 3 (180 ms) | 1-12 |
 | 4 | TX half longest continuous key-up, 10 s units; 0 = default | 18 (180 s) | 1-60 (600 s) |
 | 5 | TX half cool-down after that, seconds; 0 = default | 20 | 1-255 |
+| 6 | TX half stream: 0 the DMR_DATA1 / DMR_DATA2 buffers (section 5.5), 1 scheduled (TX_SCHED, 3.9) | 0 | 0-1 |
+| 7 | options: bit 0 RX_META events (RX half, 3.10). Other bits must be 0 | 0 | 0-1 |
 
 Result 2 when the hotspot hasn't taken the modem yet (send GET_VERSION or SET_FREQ first) or the driver lacks the
-operations of that role (INFO byte 1); 4 for a role above 2. Setting the same role again only updates the parameters.
+operations of that role (INFO byte 1); 4 for a role above 2 or an unknown option bit. Setting the same role again only updates the parameters.
 Changing role drops whatever the previous role had (buffers, epoch, calls going up get their DMR_LOST). Role 0 is
 always accepted.
 
@@ -158,12 +181,109 @@ STATUS block (all counters wrap):
 | 26-27 | TX half: seconds keyed in this key-up (u16) |
 | 28-29 | TX half: DMR_SHORTLC frames that failed the check (u16) |
 | 30-31 | lease expiries (u16, since boot) |
+| 32-33 | TX half: scheduled bursts sent (u16) |
+| 34-35 | TX half: scheduled bursts late (u16): outcome 1, or committed too late for the driver to place |
+| 36-37 | TX half: scheduled bursts refused, too early or full (u16) |
+| 38-39 | TX half: scheduled bursts replaced by a later copy (u16) |
+| 40-41 | TX half: scheduled bursts refused in the cool-down (u16) |
+| 42-45 | TX half: phase now, µs (s32): the slot clock against the last ALIGN's grid (3.8), 0 without one |
+| 46 | TX half: ALIGN flags now (3.8): 01 aligned, 04 snapping, 20 GET_EPOCH numbers slots from the last ALIGN (counter base) |
+| 47 | reserved, 0 |
+
+The block grew from 32 to 48 bytes; a host that reads 32 is unaffected.
 
 ### 3.7 The description suffix
 
 ` SPLIT1` is appended to the GET_VERSION description whenever the extension is built in, role or not (the number is
 the extension version). Find it with `\bSPLIT(\d+)\b`; send 0xD6 only to a modem that announces it. It never contains
 `MMDVM`, `SFR` or a slot pattern, so no host's modem type detection or SFR regular expression changes.
+
+### 3.8 ALIGN (07), TX half
+
+ALIGN puts the TX half's slot clock on the host's grid, for instance UTC slots (slot n starts at n x 30 ms after a
+UTC epoch, outbound TS1 on even n). **t_us** is a slot boundary as GET_EPOCH gives it, in the TX half's modem clock (the
+host translates it with TIME, as for SET_EPOCH; it subtracts INFO bytes 14-15 to turn an on-air time into a
+boundary). **counter** is that slot's number (for UTC slots, n mod 2^32); an even counter is an outbound TS1 slot, an
+odd one TS2. **period_ns**: the slot length in TX half clock units, 0 = 30 000 000 (range as SET_EPOCH). The grid is
+t_us + (c - counter) x period_ns / 1000 for slot c, either side of t_us. **max_slew_us**: the average slot length
+change while slewing, µs per slot (0 = default 20; above 20 is invalid). **mode**: 0 (default) snap while unkeyed,
+slew while keyed; 1 always slew, never restart the clock (needs capability bit 2).
+
+The reply's **phase_us** is the slot clock's boundary minus the grid's, folded to ±15 000 µs, measured before anything
+is changed. Flags: 01 aligned (|phase| < 1000 µs after this request), 02 slewing, 04 snapped, 08 period applied to the
+slot clock (else the period is stored for the phase only), 10 not applied (keyed).
+
+- **Not keyed**: the slot clock snaps: it restarts so that a boundary falls on the grid, and from then on GET_EPOCH's
+  counter is the grid's number (counter base) and even counters are outbound TS1. The TX half checks the new clock
+  against the grid at its first boundaries and snaps again (up to three times) if it is off by 1000 µs or more or on
+  the wrong slot, with the chip's restart delay learned from the first boundary (kept for the role). STATUS 42-46 show
+  the result: a clock that stays off keeps the counter base but not the aligned flag. Allowed in either stream mode.
+- **Keyed, or mode 1**: if the counter's parity matches the slot clock's and either |phase| < 1000 µs or the driver can
+  slew (bit 2), the numbering changes at once (counter base, flag 01 when |phase| < 1000 µs) and, with bit 2, the
+  clock slews onto the grid (flag 02 while the phase is over half a driver step). Otherwise nothing changes and the
+  reply carries the phase with flag 10, result 0: the host learns how far a long key-up has drifted (20 ppm over
+  180 s is 3.6 ms) and re-aligns at the next unkey.
+- **Slewing** moves the boundaries without a restart, so the transmitter stays keyed and no slot is lost. The driver
+  makes one slot longer or shorter by whole steps (`bs_slew`, `bs_slew_step_us` in `hal_dmr_modem.h`), at least 3
+  slots apart, never more than max_slew_us times the slots since the last step, and never past the grid. The default
+  20 µs per slot is 667 ppm, 30 times the 20 ppm of two crystals, so a host that re-aligns every few seconds keeps the
+  phase within a step; a 3 ms drift takes about 4.5 s. Slewing ends when the phase is within half a step, at a snap
+  (an unkeyed mode 0 ALIGN, a retune), or when the clock is lost or on the other slot (ALIGN again). Each step counts
+  in `split.slew_steps` / `split.slew_us`.
+- A retune (SET_FREQ) restarts the slot clock. The TX half snaps back onto the last ALIGN's grid by itself at the
+  next poll while unkeyed (STATUS 46 shows 04 until it is done); the host may send ALIGN again as well. The TX half
+  keeps no period of its own: with flag 08 clear the host re-aligns while unkeyed (every 10 s is enough: 20 ppm is
+  0.2 ms) and watches STATUS 42-45 while keyed.
+- Result 2: not TX half, or the slot clock is not running. Result 4: too short, period out of range, or the modem can't
+  move its slot clock (capability bit 1 clear).
+
+### 3.9 TX_SCHED (08), TX half, stream 1
+
+One burst for one numbered outbound slot (`E0 2B D6 08 ...`). **counter**: the slot, in ALIGN's numbering; **slot**: 1
+or 2, which must be the counter's parity (TS1 even) or the request is invalid (result 4); **control** and **burst**: as
+DMR_DATA1/2 (`mmdvm-protocol.md` 2.8). Counters compare with wrap-around (signed 32-bit difference). Every request gets
+its reply: counter echoed and an outcome:
+
+| Outcome | Meaning | Counted (STATUS) |
+|---|---|---|
+| 0 | queued | 32-33 when sent |
+| 1 | late: the slot is already committed to the driver (about INFO 12 before air), dropped, never moved | 34-35 |
+| 2 | early: more than INFO 13 slots ahead | 36-37 |
+| 3 | replaced the burst already queued for that slot (a resend, or a better copy from a voter) | 38-39 |
+| 4 | full (another slot's burst holds the place), or in the key-up cool-down | 36-37, 40-41 |
+
+Result 2 when not TX half, stream 0, or no counter base (no ALIGN yet, or the slot clock restarted and has not snapped
+back). An idle burst (or a repeated terminator, as in 4.1) for a slot is taken as "nothing": the place is cleared and
+the stream rules fill the slot. A slot with nothing queued sends
+what the stream rules give (section 5.1: an idle burst, a silence voice burst inside a voice stream, a terminator for a
+stream the host left), and the CACH runs as usual: AT, TC and the short LC are the same as in stream 0.
+
+**Keying** is the same as stream 0: DMR_START 01 keys and 00 unkeys, the 2 s host-silence rule and the duty guard
+apply. A queued burst keys the transmitter too, early enough for its slot (key-up starts with a TS1 slot, so up to two
+slots of idle before it); a key-up that came from a queued burst (not DMR_START 01) ends 1 s after the last scheduled
+burst went out. Bursts are committed to the driver one slot ahead, each tagged with its counter: the driver plays a
+burst only in that slot and drops it if the slot has passed, so a late commit is lost, never shifted.
+
+### 3.10 RX_META (89), RX half event
+
+With SET_ROLE option bit 0 (capability bit 3), the RX half sends `E0 15 D6 89 00 <16 bytes>` for every burst it hears,
+just before that burst's DMR_DATA / DMR_LOST frames, so a host (a voter, a logger) gets what the standard frames
+leave out. The block:
+
+| Offset | Content |
+|---|---|
+| 0-3 | the start of the burst's slot, modem clock µs (valid with flag 40) |
+| 4-5 | residual against the epoch, µs (s16, clamped; as STATUS 22-23) |
+| 6 | label: 1 TS1, 2 TS2, 0 none (no epoch or the slot clock didn't place it) |
+| 7 | kind: the slot type (`hal_dmr_modem.h` burst kinds), voice 0x10 + burst index (A = 0) |
+| 8 | color code heard |
+| 9 | flags: 01 CRC good, 02 in step, 04 PI, 08 LC complete, 10 BS sync, 20 labeled by the epoch, 40 slot time valid |
+| 10-11 | RSSI, dBm (s16, 0 unknown) |
+| 12-13 | sequence number (u16, counts every event; a gap means a lost frame) |
+| 14-15 | reserved, 0 |
+
+A burst that fails its CRC still gets its event (flag 01 clear), though no uplink frame may follow. The events cost
+21 bytes per 30 ms slot heard, well inside the port's budget.
 
 ## 4. Standard commands in a role
 
@@ -226,7 +346,7 @@ TX(23..0) = AT  P16 P15 P14  TC  P13 P12 P11  LS1 P10 P9 P8  LS0 P7  H2 P6 P5 P4
   LCSS first fragment (01), continuation (11), continuation (11), last (10). One short LC per 4 CACH = 120 ms.
   Without a short LC from the host the TX half sends the Null message (SLCO 0000, -1 4.6.1, TS 102 361-2 7.1.3).
 
-The encoders are `core/dmr/fec/dmrCach.c` (no hardware), shared with the Tier III plan (`dmr-tier3-plan.md`, a TSCC
+The encoders are `core/dmr/fec/dmrCach.c` (no hardware), shared with a Tier III control channel (a TSCC
 outbound needs the same CACH with C_SYS_Parms).
 
 ### 5.3 DMR_SHORTLC
@@ -402,7 +522,7 @@ the two radios.
 
 ### 8.6 Using an MMDVM board as the TX half
 
-If only the RX half is an OpenDigitalRadio (for example the TX chip can't make a CACH, 5.4): the epoch must then come
+If only the RX half is a RadioFoundry (for example the TX chip can't make a CACH, 5.4): the epoch must then come
 from the MMDVM board's slot timing, which MMDVM doesn't expose. Not supported by this extension; noted for completeness.
 
 ## 9. Frequency accuracy, calibration and antennas
@@ -428,7 +548,7 @@ Debug link command `SPLIT` (0x15) op 1 sets the framing variant the next TX half
 view. Variants: 0 ours (the default: physical layer mode, the core's 288 bits per slot), 1 the chip's layer 2
 framing (0x10 = 0x6E; AT / TC written to 0x52 and the short LC to TX RAM 0x24 for every burst), 255 ours with up to
 4 raw (page 4 register, value) pairs written at key-up (0x10 restored at unkey; 0x11 and 0x40 too when pairs were
-given). `tools/split_duplex_host.py --exp <variant>` or the HIL test (`ODR_SPLIT_VARIANT`, `ODR_SPLIT_REGS="REG=VAL
+given). `tools/split_duplex_host.py --exp <variant>` or the HIL test (`RFOUNDRY_SPLIT_VARIANT`, `RFOUNDRY_SPLIT_REGS="REG=VAL
 ..."`) keys the outbound with idle bursts and a short LC for 10 s; `sdrmon.py analyze --cach` on the SDR bench
 decodes per burst the family, the CACH (`tact ok AT TC LCSS`) and the short LC.
 
@@ -441,13 +561,16 @@ bit, the TX RAM halves); 0 is the default there too.
 `tests/hil/test_split_duplex.py` (one radio flashed with `CONFIG_HOTSPOT_SPLIT=y`; the TX and RX tests opt-in with
 `--allow-rf --allow-service-stop`):
 
+- `test_split_capability` (no RF): the capability gate of the `split_duplex` checklist feature
+  (`tests/hil/features.toml`). The build has the extension and INFO offers both halves (offered bits 0 and 1). On a
+  radio that offers fewer it skips `no_hw`, which a bring-up run counts as a failure.
 - `test_split_protocol` (no RF): the suffix, INFO, SET_ROLE 2 and 0, STATUS, unknown sub-command (result 1) and
   unknown command (NAK 1), the debug link's SPLIT view.
 - `test_split_tx_half_off_air` (marker `radio_tx`): the TX half keyed 10 s at the lowest power with idle bursts, a
   short LC and SET_AT toggling; asserted off air: BS sync only, a burst every 30 ms (same-slot spacing 60 ms), one
   key-up edge, the color code, and with our framing (variant 0) the CACH: TC alternating, AT following SET_AT, the
   short LC decoding; asserted on the radio: no underruns, short LC taken, a CACH for every burst (`bs.cach`).
-  `ODR_SPLIT_VARIANT` picks the variant, `ODR_SPLIT_REGS` the raw writes of variant 255.
+  `RFOUNDRY_SPLIT_VARIANT` picks the variant, `RFOUNDRY_SPLIT_REGS` the raw writes of variant 255.
 - `test_split_rx_half_labels` (marker `rf`): the RX half with an epoch made from its own clock; a first bench call
   measures the phase residual and the epoch is centered on the bench's slots; a second call must go up under one
   label, whole (header, voice, terminator), with a residual under 5 ms; a third call with the epoch moved by 30 ms
@@ -460,7 +583,7 @@ host would):
 - `test_split_pair_repeat` (markers `rf`, `radio_tx`): a bench call on the inbound goes up under its label and comes
   back on the outbound, whole, in under a second.
 - `test_split_pair_handheld` (adds `codeplug_write`; `--split-ms-port`, `--split-ms-ts`, `--split-out-mhz`): a third
-  ODR radio is put on a repeater channel (its codeplug edited and restored) and keys up on each inbound slot the way a
+  RadioFoundry radio is put on a repeater channel (its codeplug edited and restored) and keys up on each inbound slot the way a
   subscriber does, synced to the outbound's CACH. Asserted: the call goes up under its own slot only, with no burst
   unlabeled (an unlabeled burst is sent up as TS2, so a TS2 call could pass without an epoch), comes back on the
   outbound on the right slot, the header's source is the subscriber, no underruns, residual under 5 ms.
@@ -473,14 +596,37 @@ not explained yet (open question 7).
 `tools/split_duplex_host.py --rx PORT --rx-only --flip-at 20` does the RX half part by hand, and `--tx A --rx B`
 runs a real pair (bring-up and timing readout, no upstream; `--repeat` repeats as above).
 
-### 10.3 What runs without hardware
+### 10.3 ALIGN and the scheduled stream
+
+- `test_split_align` (no RF): the TX half, never keyed, snapped three times onto a grid of the host's clock (slot n at
+  host n x 30 ms). Each time: STATUS aligned with the counter base, GET_EPOCH's boundary on the grid within the clock
+  sync's bound plus 1 ms, TS1 on even counters. 2026-10-21, run on the host the radios are plugged into, each from a
+  fresh boot: HR_C7000 board A 3 of 3 runs, boundaries 9-120 us from the grid (sync bound 3 ms), learned restart delay
+  -1167 us (`modem-hrc7000.md` 2.10 finding 12); HR_C6000 board 4 of 4, 2-317 us (sync bound 0.5 ms), delay +1.2 ms
+  (`modem-hrc6000.md` 9.1). The first snap of a boot lands off by the chip's delay and the second, with it learned,
+  on the grid. HR_C7000 board B 3 of 3, -2 to +227 us, delay -1141 us; HR_C7000 board C 3 of 3, -77 to +84 us, delay -1137 us (both over a USB-serial cable, sync bound 5.4-5.6 ms).
+- `test_split_tx_sched` (radio_tx): the voice test's call as TX_SCHED for numbered TS2 slots, one resend, one late
+  burst, the key-up from the queued bursts; checked off air (one slot, TC 1, the call whole, one key-up, 60 ms
+  spacing) and in STATUS. Board A, 2026-10-21: passed (22 queued, 1 replaced, 1 late; the call decoded without sync errors in its TS2 slots); board B passed. Board C: the radio restarted during the call (no crash record); open.
+- `test_split_slew` (no RF): the TX half snapped onto the host's grid, then ALIGN mode 1 to a grid 1.5 ms later; the
+  clock must reach it by slot trims within 5 s (aligned, not slewing, |phase| within 100 µs, `split.slew_us` about the
+  shift). Skips without capability bit 2, which no driver sets yet: the HR_C7000's LAYER2_MAX_CNT trim was tried with
+  this test and does not move the physical layer's slot timer (`modem-hrc7000.md` 2.10 finding 13), and the HR_C6000
+  has no trim (`modem-hrc6000.md` 9.1).
+- `test_split_rx_half_labels` (10.2) turns RX_META on when INFO offers it and checks an event for every burst sent up,
+  the sequence numbers and both labels.
+
+### 10.4 What runs without hardware
 
 `make -C tests/host`: `splitDuplexTest` (CACH and short LC against tables B.13 and B.17 and figures B.6 and B.9, the
 idle message of table D.2, the outbound buffer, the epoch arithmetic, both roles and the guards through mmdvm.c and
-hotspot.c on a simulated modem, the debug link command), `mmdvmTestSplit` and `hotspotSfrTestSplit` (the standard
+hotspot.c on a simulated modem, ALIGN's snap with a chip delay learned, one beyond half a slot and one that can't
+be, the counter base after a retune, keyed ALIGN, slewing (keyed and in mode 1: its rate, the steps, the end within half
+a step, the grid kept, no restart; a snap, a retune or a parity mismatch during it), RX_META (its fields, the order
+before the uplink frames, a bad CRC, the option off), TX_SCHED's outcomes, slots and keying, the debug link command), `mmdvmTestSplit` and `hotspotSfrTestSplit` (the standard
 host suites with the extension built in), `hrc6000BsTest` and `hrc6000DmrTestSplit` (the HR_C6000 BS outbound on a
 fake chip, and the slot engine's suite with the hand-over hooks built in), `hrc7000BsTest` and `hrc7000DmrTestSplit`
-(the same for the HR_C7000), and `sim/splitPairTest.py`: two radios'
+(the same for the HR_C7000, both with the numbered queue and the restart of 3.8 and 3.9), and `sim/splitPairTest.py`: two radios'
 cores in lockstep virtual time, with crystals 18-35 ppm apart, one modem clock wrapping through 2^32, USB jitter
 with spikes, and the host logic of `split_duplex_host.py`: two overlapping mobile calls are heard by the RX half,
 labeled, repeated into the TX half and checked on its outbound (whole, in order, own slot, TC on every CACH, AT busy,
@@ -492,7 +638,7 @@ CACH coding, which is byte-identical with `core/dmr/fec/dmrCach.c`.
 1. The 9-byte layout of DMR_SHORTLC as MMDVMHost sends it (5.3): both forms are accepted; the bench decode settles it.
 2. HR_C6000 CACH (5.4, 10.1): AT / TC (0x52) and the short LC (TX RAM 0x24) are now written per the manual; open
    until the bench shows them on air: the 0x11 value, and where the chip takes the CACH LCSS from.
-3. HR_C7000 TX half: settled on the DM-32UV (`modem-hrc7000.md` 2.10, bench 2026-10-21): the physical layer's
+3. HR_C7000 TX half: settled (`modem-hrc7000.md` 2.10, bench 2026-10-21): the physical layer's
    timeslot mode with the slot in both TX RAM halves gives the whole outbound with our CACH.
 4. The constant delay between the TX half's slot boundary and the RX half's (chip pipelines, air): measured on the
    bench with the phase residual; if it is more than 5 ms, add a fixed correction (the tracker limit). Measured
@@ -501,10 +647,10 @@ CACH coding, which is byte-identical with `core/dmr/fec/dmrCach.c`.
 5. Whether AT should default to busy during the host's hang time (mode 0 does: the outbound slot is not idle) or only
    from the RX half (mode 1).
 6. The HR_C6000 driver's own counters (`hrc6000_bs_stats_t`) are on the board's diagnostics line `bs` (slots,
-   bursts, underruns, key-ups, CACH written, PA failures, stalls; `odr_debug.py` parses them as `bs.*`). Not reachable
+   bursts, underruns, key-ups, CACH written, PA failures, stalls; `rfoundry_debug.py` parses them as `bs.*`). Not reachable
    from the core itself (no `hal_dmr_modem_t` stats operation).
 7. Two subscriber calls in 31 sessions went up under the other slot with a good epoch and a small residual. The
-   SDR bench can tell whether the subscriber sent it on that slot (an ODR radio syncing to the wrong CACH phase) or
+   SDR bench can tell whether the subscriber sent it on that slot (a RadioFoundry radio syncing to the wrong CACH phase) or
    the RX half filed it one slot off: capture the inbound and the outbound together during such a session.
 8. The RX half could find the slot numbers itself: after the outbound keys up and before a subscriber transmits, a
    short retune to the outbound reads its CACH (TC), with no host clock in the chain. Not built.

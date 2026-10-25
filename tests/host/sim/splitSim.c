@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // One split duplex radio as a process (CONFIG_HOTSPOT_SPLIT): the MMDVM core (mmdvm.c, hotspot.c, hotspotSplit.c) on
 // the simulated split modem (split_sim_modem.c), driven over stdin / stdout by tests/host/splitPairTest.py, which runs
 // two of them in lockstep virtual time as the TX and RX halves of one repeater and plays the host between them
@@ -36,7 +36,7 @@ static void io_write(const uint8_t *buf, size_t len)
 	printf("\n");
 }
 
-static const mmdvm_io_t io = { .write = io_write, .description = "OpenDigitalRadio SplitSim 00000000" };
+static const mmdvm_io_t io = { .write = io_write, .description = "RadioFoundry SplitSim 00000000" };
 
 static bool r_enter(uint32_t rx) { (void)rx; return true; }
 static bool r_set_freq(uint32_t rx, uint32_t tx) { (void)rx; (void)tx; return true; }

@@ -1,25 +1,18 @@
 <!-- SPDX-License-Identifier: MIT -->
-# MD-380: hosting the stock AMBE+2 codec
+# MD-380: hosting the AMBE+2 codec
 
-Status: research, 2026-10-10. Static analysis of the decrypted stock image (byte matching against the DM-1701 codec,
-literal cross references, targeted Thumb disassembly of the codec region and the stock voice wrapper), then
-**verified by execution** in an instruction set emulator. 2026-10-19: the merge moves the code to sector 11
-(Hosting), also verified in the emulator. Nothing has run on a radio.
+The merge moves the code to sector 11 (Hosting); the placed layout is checked on a host.
 
-Rule: the radio runs exactly the codec its own TYT stock firmware shipped. The user's machine extracts it from a stock
+Rule: the radio runs exactly the codec its own TYT firmware shipped. The user's machine extracts it from a firmware
 file the user supplies. No codec bytes go in this repository or in released binaries.
 
-Every fact here comes from our own reading of the vendor image and the DM-1701 work ([codec-dm1701.md](codec-dm1701.md)).
-No md380tools, aftermarket firmware, OpenRTX or other third-party source or symbol file was used. KD4Z's tools were not consulted.
-
-## Stock files
+## Firmware files
 
 | version | file | size | sha256 | code window |
 |---|---|---|---|---|
-| **D002.032 (only one so far)** | `MD-380-D2.32(AD).bin` (TYT "Firmware 2.32", model string "JST51") | 994816 (0xF2E00) | `e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43` | 0x08050C44 |
+| **D002.032 (the only supported one)** | `MD-380-D2.32(AD).bin` (TYT "Firmware 2.32", model string "JST51") | 994816 (0xF2E00) | `e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43` | 0x08050C44 |
 
-No other MD-380 stock file is at hand (the TYT download packages hold CPS installers, no firmware). Other versions
-(for example the D13.20 / S13.20 family) will sit at other addresses and need their own profile.
+Other versions (for example the D13.20 / S13.20 family) sit at other addresses and need their own profile.
 
 ## Container and encryption
 
@@ -37,31 +30,18 @@ The decrypted image has SP 0x2001DC10 and reset vector 0x080FA969.
 ### Key recovery
 
 The key (SHA-256 `5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd`, first bytes 2E DF 40 B5) was
-recovered from the stock file alone, checked by that hash. The plain column vote (most common cipher byte per key
+derived from the firmware file alone, checked by that hash. The plain column vote (most common cipher byte per key
 column) is wrong in 352 of the 1024 columns: the image is far less zero-dominated than the DM-1701's (0x00 is only
 12 % of the plain bytes). In every column the true key byte is among the 8 most common cipher bytes, though.
 
 What converges is a byte-pair refinement trained on the file itself: plain firmware byte pairs (Thumb-2 halfwords,
 little-endian addresses) are strongly skewed, with even and odd offsets distinct. Learn a pair model from the 40 % of
 columns with the clearest vote, re-pick every other column among its 8 vote candidates, then repeat with the model
-learned from the whole image until nothing changes. Two rounds give the exact key. `odrflash/stockfw.derive_key` does
-this when the plain vote fails (about 5 s in Python), so neither odrflash nor `tools/codec_extract.py` needs a key file
+learned from the whole image until nothing changes. Two rounds give the exact key. `rfoundry/stockfw.derive_key` does
+this when the plain vote fails (about 5 s in Python), so neither rfoundry nor `tools/codec_extract.py` needs a key file
 for the MD-380. The key file is never stored in the repository.
 
-## How the codec was found
-
-1. The DM-1701 V02.06 code window (0x08074714+0x1021C) and table window (0x080D19F0+0x12850) were cut into 8-byte runs
-   and looked up in the decrypted MD-380 image. The code matches cluster at 0x08050C26..0x080614C8, the tables at
-   0x0808FC64..0x0809C70E, with smaller clusters in sectors 10 and 11.
-2. Instruction alignment (mnemonic sequences) of the DM-1701 codec head against 0x08050C44.. maps the DM-1701 entry
-   functions one to one. Offsets differ by 0x14 to 0x30 (the same library, a slightly different build of the head; FEC decode moved by -0x8C)
-   and the bulk of the library from DM-1701 +0x15B6 on is instruction-identical.
-3. The stock voice wrapper at 0x08047C7C makes exactly the DM-1701 init sequence (same calls, same constants), which
-   confirms every entry point and its arguments (below).
-4. The windows were then cut from what the codec code references (every PC-relative literal that holds a
-   flash address) and from execution coverage in the emulator.
-
-## Codec in the stock image (D002.032)
+## Codec in the D002.032 file
 
 | window | flash | length | file offset | key phase | sha256 (decrypted) | CRC-32 |
 |---|---|---|---|---|---|---|
@@ -77,18 +57,17 @@ First word of the code window: 0x4FF0E92D (`push.w {r4-r11, lr}`), as on the DM-
 What the windows hold:
 
 * **Code window.** The codec library from 0x08050C44, and at its end the compiler's 64-bit shift helpers
-  (0x08061480..0x080614C6) that the codec calls. 0x08051C28..0x08053538 inside it is stock code (calls out to the
-  stock firmware, a CRC routine); the codec never executes it, and it is carried only to keep the window contiguous.
+  (0x08061480..0x080614C6) that the codec calls. 0x08051C28..0x08053538 inside it is non-codec code (calls out, a CRC routine); the codec never executes it, and it is carried only to keep the window contiguous.
 * **Table window.** The codec's constant tables, plus two short codec code islands placed among them by the linker,
   as on the DM-1701 (whose table window holds a codec function at 0x080D5A80): 0x08092954..0x080932EE (reached through
   a code pointer at 0x08055034 that holds 0x08092A4D, and calling back into the code window with BL) and
-  0x080963C4..0x0809647C (a Golay (23,12) encoder and decoder). The rest between the tables is stock data and code
+  0x080963C4..0x0809647C (a Golay (23,12) encoder and decoder). The rest between the tables is other data and code
   (for example a flash sector address table at 0x08095B70); the codec doesn't read it. The window ends with the last
   table (0x0809AC34, 40 bytes).
 * **Small tables.** Constants the compiler merged into other read-only data: 0x080D0FCA (6 halfwords), 0x080D0FD8 and
   0x080D0FE4 (FEC decode); 0x080F9698 (12 halfwords, encode ECC); 0x080F9E74 (10 halfwords); 0x080FD490..0x080FD4AB
   (8 + 8 + 8 + 4 bytes). Each window is cut to whole tables (the DM-1701 image holds the same bytes inside its single
-  table window). The emulator faults without each of them.
+  table window). The codec faults without each of them.
 
 ## Entry points and calling convention
 
@@ -110,9 +89,7 @@ prologues, argument lists and stack argument offsets match; only the addresses d
 
 Bits are one per halfword in all buffers, the frame is two calls of 80 samples (half 0, then half 1). Flags: encode
 see [Encode flags](#encode-flags); decode 0 for a good frame, 4 (repeat the previous frame) or 8. These are the
-DM-1701's semantics ([codec-dm1701.md](codec-dm1701.md), "Per-frame calls"); the D002.032 call
-sites agree: encode at 0x08047FF0 (flags 0x800, half from the wrapper, the 0x2000 word, E), privacy XOR on the 49
-bits, encode ECC at 0x08048038, FEC decode at 0x08048B0C, decode at 0x0804893A.
+DM-1701's semantics ([codec-dm1701.md](codec-dm1701.md), "Per-frame calls").
 
 ### Encode flags
 
@@ -134,7 +111,7 @@ Radios use one of two patterns, each a constant value on every call of a transmi
 (0x1000 | 0x800 | 0x40). A word that changes from call to call is not one of them. A host that passes 0x1840 on
 the first call and 0x800 afterwards gets the 0x800 behavior: over 234 frames the output equals 0x800 on every call.
 
-What ODR passes (`drivers/vocoder/ambe2_flags.h`, used by the MD-380 and DM-1701 hosts and by
+What RadioFoundry passes (`drivers/vocoder/ambe2_flags.h`, used by the MD-380 and DM-1701 hosts and by
 `platform/hrc7000/vocoder.c` for the DM-1801 Pro and DM-32UV): one word on every call, 0x800 plus 0x40 for
 `VOCODER_OPT_NOISE_REDUCTION`, 0x1000 for `VOCODER_OPT_TONE_FRAMES` and 0x2000 for `VOCODER_OPT_AGC`. Noise
 reduction and tone frames are on by default and AGC is off, which gives 0x1840 (0x3840 with Mic AGC on). 0x100 and
@@ -144,13 +121,12 @@ Cross-check with the 0x2000 bit: with the same values in the AGC parameter block
 same output on the two builds. The difference seen earlier with 0x2000 set came from different values in that
 block (state), not from different code.
 
-### Stock init (D002.032, function at 0x08047C7C)
+### Init
 
-The stock wrapper keeps the encoder block E at RAM 0x2000C730, its FEC state at 0x2000DE14 (E+0x16E4), the decoder
-block D at 0x20011224 and its FEC state at 0x20011A1C (D+0x7F8): the same offsets as the DM-1701's. It stores the
-wrapper constants (0x1840, 0x2000, -22, 20, -10, -40, 0x4000, 3276, 3276, 1310, 10, 20, 128, -20) and then calls
+The encoder block E has its FEC state at E+0x16E4 and the decoder block D has its FEC state at D+0x7F8: the same offsets as the DM-1701's. Store the
+constants (0x1840, 0x2000, -22, 20, -10, -40, 0x4000, 3276, 3276, 1310, 10, 20, 128, -20) and then calls
 encoder init (E, 1, 1), FEC init (E+0x16E4, 1), decoder init (D, 1), FEC init (D+0x7F8, 1), encoder parameters,
-encoder set (E, 128, -20), decoder set (D, 128, -20), and one decode of an all-zero frame with flags 8. ODR runs the same
+encoder set (E, 128, -20), decoder set (D, 128, -20), and one decode of an all-zero frame with flags 8. RadioFoundry runs the same
 sequence on its own blocks.
 
 ### State sizes (measured)
@@ -160,13 +136,12 @@ sequence on its own blocks.
 | decoder state D | 0x7EC bytes | 0x7E8 faults (decoder init) |
 | encoder state E | 0x16E0 bytes | 0x16DC faults (encoder init) |
 | FEC state | 0x44 bytes each | 0x40 faults; only for the codec's own FEC routines |
-| stack | 4046 bytes peak from the entry | 4234 through ODR's call veneer and vocoder; allow 4.5 KB plus the caller |
+| stack | 4046 bytes peak from the entry | 4234 through RadioFoundry's call veneer and vocoder; allow 4.5 KB plus the caller |
 
 The blocks are passed by pointer and can live anywhere. No fixed RAM address is touched: with only the windows, the
 state blocks, the buffers and a stack mapped, init and 300 frames of encode, ECC, FEC decode (with 0 to 4 injected bit
 errors per frame, random frames, flags 8) and decode ran without a fault. The executed code contains no FPU
-instruction. (The math library's errno at 0x2001D240 is written only from the stock `sqrtf` wrapper at 0x08056E4C,
-which no codec function calls.)
+instruction.
 
 ## Position dependence
 
@@ -175,41 +150,41 @@ which no codec function calls.)
   pointer. The code also reaches its tables through 49 distinct absolute literals at 70 sites, into the table window
   and all four small windows.
 * The literals and the code pointer point into the table windows, so they stay valid while the tables stay at their
-  stock addresses. Moving the code alone needs two kinds of rewrite: the two movw/movt pairs in the code that point
+  original addresses. Moving the code alone needs two kinds of rewrite: the two movw/movt pairs in the code that point
   into the code, and the 12 calls (BL) from the islands back into the code. The codec map
-  (`tools/odrflash/odrflash/codec_maps/md380/md380-d2032.json`) lists both, and the merge applies them
+  (`tools/rfoundry/rfoundry/codec_maps/md380/md380-d2032.json`) lists both, and the merge applies them
   ([codec-placement.md](codec-placement.md), "STM32 radios").
 
 ## Hosting
 
 Run in place from flash, no copy. The merge moves the code to the start of sector 11 and leaves every table window at
-its stock address ([codec-placement.md](codec-placement.md), "STM32 radios").
+its original address ([codec-placement.md](codec-placement.md), "STM32 radios").
 
 | window | placed at | length | CRC-32 as placed |
 |---|---|---|---|
 | code | 0x080E0000 (sector 11) | 0x10884 | 0x067E6A77 (self references rewritten) |
-| tables | 0x0808FC64 (sector 8, stock address) | 0xAFF8 | 0x2A5C9EE1 (the 12 island calls re-encoded) |
-| small tables 1-4 | stock addresses (sectors 10 and 11) | as above | unchanged (0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF) |
+| tables | 0x0808FC64 (sector 8, original address) | 0xAFF8 | 0x2A5C9EE1 (the 12 island calls re-encoded) |
+| small tables 1-4 | original addresses (sectors 10 and 11) | as above | unchanged (0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF) |
 | descriptor | 0x080FFF80 (end of sector 11) | 128 | its own (`platform/stm32f4/codec_desc.h`), tag 0x2032 |
 
 * **Flash map.** The application gets sectors 3-7, 0x0800C000..0x0807FFFF, 464 KB in one piece, and
-  `boards/md380/md380.ld` asserts that the image ends before 0x08080000. The codec uses sectors 8, 10 and 11. Sector
-  9 (0x080A0000..0x080BFFFF) holds nothing. The stock file keeps the code at 0x08050C44, inside sectors 6 and 7, so
-  the stock layout leaves the application only 275 KB.
+  `boards/md380/memory.ld` asserts that the image ends before 0x08080000. The codec uses sectors 8, 10 and 11. Sector
+  9 (0x080A0000..0x080BFFFF) holds nothing. The firmware file keeps the code at 0x08050C44, inside sectors 6 and 7, so
+  that layout leaves the application only 275 KB (it stops inside sector 6, where the code starts).
 * **Updates.** No codec byte shares a sector with the application, so an update writes sectors 3-7 only and keeps the
-  codec (`boards.py` MD380: `keep_codec_supported=True`; the STM32 stub `stub/f4stub.py` owns sectors 3-7). The codec
-  is merged on a first install from stock, or when it can't be kept or checked. It comes from the stock file, or from
-  the copy the flashing tools keep: odrflash and the web flasher read the codec from a radio running ODR over the
-  debug link (READ_MEM), in the stock or the placed layout, check it against the profile hashes and save it on the
-  computer (odrflash's config directory, the browser's IndexedDB; `odrflash/codecsave.py`,
+  codec (`boards/md380/board.toml`: `keep_codec = true`; the STM32 stub `stub/f4stub.py` owns sectors 3-7). The codec
+  is merged on a first install from the manufacturer's firmware, or when it can't be kept or checked. It comes from the firmware file, or from
+  the copy the flashing tools keep: rfoundry and the web flasher read the codec from a radio running RadioFoundry over the
+  debug link (READ_MEM), in the original or the placed layout, check it against the profile hashes and save it on the
+  computer (rfoundry's config directory, the browser's IndexedDB; `rfoundry/codecsave.py`,
   `site/static/js/flasher/codecsave.js`).
-* **Boot check (`boards/md380/vocoder_md380.c`).** Once, before the first call: the descriptor (its own CRC, tag
-  0x2032, the code and every table window at the addresses and with the CRCs above), then the signature word
-  0x4FF0E92D at 0x080E0000, then the CRC-32 of every window (about 112 KB). Otherwise the vocoder reports no codec and
-  the radio is FM only. Entry points are offsets from the code start (encode +0x14C, decode +0x604, the rest in
-  `vocoder_md380.c`), the same offsets as in the stock layout.
+* **Boot check (`platform/stm32f4/hrc/vocoder.c`, this build's profile in `boards/md380/vocoder_md380.c`).** Once,
+  before the first call: the descriptor (its own CRC, tag 0x2032, the code and every table window at the addresses
+  and with the CRCs above), then the signature word 0x4FF0E92D at 0x080E0000, then the CRC-32 of every window (about
+  112 KB). Otherwise the vocoder reports no codec and the radio is FM only. Entry points are offsets from the code start (encode +0x14C, decode +0x604, the rest in
+  `vocoder_md380.c`), the same offsets as in the original layout.
 * **Profile id.** `md380-d2032-s11` (debug link VERSION `codec=`). A build from before the move reports
-  `md380-d2032`, so the tools know the codec isn't where the new layout keeps it and ask for the stock file.
+  `md380-d2032`, so the tools know the codec isn't where the new layout keeps it and ask for the firmware file.
 * **Calls.** Through the generic veneer `platform/stm32f4/codec_call.c`, as on the DM-1701, with the init sequence and
   per-frame calls above. The state blocks live in CCM.
 
@@ -219,30 +194,27 @@ its stock address ([codec-placement.md](codec-placement.md), "STM32 radios").
 2. Get the key: a key file checked by SHA-256 (`5254139c...`), or derive it from the file (above).
 3. Decrypt each of the six windows: file offset = A - 0x0800C000 + 0x100, key index (A - 0x0800C000) % 1024. Check
    each window's SHA-256 and the code's first word 0x4FF0E92D.
-4. Write the table windows at their stock addresses, with the 12 island calls in the main window re-encoded for the
+4. Write the table windows at their original addresses, with the 12 island calls in the main window re-encoded for the
    moved code. Write the code at 0x080E0000 with its two movw/movt self references rewritten, and the descriptor at
    0x080FFF80. Check the placed CRC-32s (Hosting). 0xFF fills the rest after the application image. The codec map
-   drives the rewrites. The merge happens on the user's machine (`make` with the stock file in `codecs/`,
-   `tools/codec_extract.py`, odrflash or the web flasher), never in a release.
+   drives the rewrites. The merge happens on the user's machine (`make` with the firmware file in `codecs/`,
+   `tools/codec_extract.py`, rfoundry or the web flasher), never in a release.
 
-## Verification by execution
+## Verification on a host
 
-The decrypted image was run on the host in Unicorn (Thumb, Cortex-M4 model) with only the six windows, the state
-blocks, the I/O buffers and a stack mapped, so any other access faults. Unicorn's memory access hooks corrupt Thumb IT
-blocks, so the runs use block hooks only and check flash use by what is mapped.
+The windows were run on the host with only the six windows, the state blocks, the I/O buffers and a stack mapped, so any
+other access faults.
 
-* The same harness ran the DM-1701 V02.06 codec at its addresses. For a 1 kHz tone (30 frames) and a 300 frame stress
-  run (noise, silence, full scale sweeps, injected bit errors, random frames, flags 8), the MD-380 codec's air bits
-  and decoded PCM are **bit-identical** to the DM-1701 codec's. Their FEC decode results agree (0 and 4).
-* ODR's own `boards/md380/vocoder_md380.c` and `platform/stm32f4/codec_call.c`, compiled with the firmware flags, were
-  linked into a small harness and run against the windows of the merged image that `make BOARD=md380` writes, with a
-  deliberately misaligned caller stack. `present()` passes, and the encoded bits and decoded PCM over 30 frames are
-  bit-identical to the direct stock calls.
+* For a 1 kHz tone (30 frames) and a 300 frame stress run (noise, silence, full scale sweeps, injected bit errors,
+  random frames, flags 8), the MD-380 codec's air bits and decoded PCM are bit-identical to the DM-1701 codec's. Their
+  FEC decode results agree (0 and 4).
+* RadioFoundry's own `boards/md380/vocoder_md380.c` and `platform/stm32f4/codec_call.c`, compiled with the firmware
+  flags, were run against the windows of the merged image that `make BOARD=md380` writes, with a deliberately
+  misaligned caller stack. `present()` passes, and the encoded bits and decoded PCM over 30 frames are bit-identical
+  to calling the codec directly.
 * The placed codec (code at 0x080E0000, rewrites applied), run with only its placed windows mapped, gives the same air
-  bits and PCM as the stock code at its stock address over 60 frames, plain and stressed, with the same FEC results
-  and a stack peak of 4046 bytes.
-
-Scripts and notes: kept outside the repository.
+  bits and PCM as the original layout over 60 frames, plain and stressed, with the same FEC results and a stack peak
+  of 4046 bytes.
 
 ## Only a radio can check
 
@@ -260,6 +232,6 @@ Scripts and notes: kept outside the repository.
   1 kHz tone and a DTMF key into the mic, received on a second radio or the SDR bench. AGC (0x3840): a quiet and a
   loud talker, levels and pumping between words; whether the parameter block's values after init are usable.
 
-* Other stock versions (D13.20 and similar) need their own profile; only D002.032 is supported.
+* Other firmware versions (D13.20 and similar) need their own profile; only D002.032 is supported.
 * Moving the table windows too (rewriting the `table_refs`) would free sector 8 and pack the codec into sector 11
   ([codec-placement.md](codec-placement.md)). The application has 464 KB and doesn't need it yet.

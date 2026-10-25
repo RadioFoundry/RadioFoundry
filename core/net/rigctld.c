@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Hamlib's network rig control protocol on TCP 4532 (docs/spec/tcp-services.md 6), from the rigctld(1) / rigctl(1)
 // manual pages: one command per line, a one-letter short form or a backslash long name, answers as value lines for
 // "get" commands and "RPRT <n>" (0, or a negative Hamlib error number) for the rest. A leading '+' asks for the
@@ -61,16 +61,6 @@ static uint32_t freq_now(void)
 	return view->ch.rx_hz;
 }
 
-static bool in_band(uint32_t hz)
-{
-	for (uint8_t i = 0; i < board.band_count; i++) {
-		if ((hz >= board.bands[i].lo_hz) && (hz <= board.bands[i].hi_hz)) {
-			return true;
-		}
-	}
-	return false;
-}
-
 // A decimal number with an optional fraction (Hamlib sends "145500000.000000"); false when it isn't one
 static bool parse_num(const char *s, int32_t *v)
 {
@@ -118,7 +108,7 @@ static int set_freq(const char *arg)
 	int32_t hz;
 	uint32_t now = hal_millis();
 
-	if ((arg == NULL) || !parse_num(arg, &hz) || (hz <= 0) || !in_band((uint32_t)hz)) {
+	if ((arg == NULL) || !parse_num(arg, &hz) || (hz <= 0) || !board_in_band((uint32_t)hz, false)) {
 		return -RIG_EINVAL;
 	}
 	if (view->hotspot) {
@@ -316,7 +306,7 @@ static bool command(int c, char *line)
 		dl_text(&ot, ext ? "get_split_freq:\nTX Frequency: %u\n" : "%u\n", (unsigned)view->ch.tx_hz);
 	} else if (IS("_", "get_info")) {
 		get = true;
-		dl_text(&ot, ext ? "get_info:\nInfo: OpenDigitalRadio %s\n" : "OpenDigitalRadio %s\n", board.name);
+		dl_text(&ot, ext ? "get_info:\nInfo: RadioFoundry %s\n" : "RadioFoundry %s\n", board.name);
 	} else if (strcmp(cmd, "\\chk_vfo") == 0) {
 		get = true;
 		dl_text(&ot, ext ? "chk_vfo:\nCHKVFO: 0\n" : "0\n");

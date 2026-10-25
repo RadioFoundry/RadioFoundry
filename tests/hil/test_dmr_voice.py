@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""DMR voice path end to end (opt-in RF: --allow-rf --allow-service-stop, and --ambe FILE / $ODR_HIL_AMBE): the SDR
+# Copyright (c) 2026 The RadioFoundry Authors
+"""DMR voice path end to end (opt-in RF: --allow-rf --allow-service-stop, and --ambe FILE / $RFOUNDRY_HIL_AMBE): the SDR
 bench sends one call carrying a real speech recording; every frame must reach the speaker path.
 
 Pass criteria (README.md): the AMBE voice layer takes in every frame the bench sent (the file padded to whole
@@ -17,31 +17,32 @@ import time
 
 import pytest
 
-from odr_hil import counter_deltas
+from rfoundry_hil import counter_deltas, skip
 
 PRIME = 3   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 # Decoded speech peaks at thousands; a decoder fed the wrong bits gave 6 with every counter clean (DB25-D, 2026-10-17)
 PEAK_MIN = 1000
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
     ambe = pytestconfig.getoption("--ambe")
     if not ambe:
-        pytest.skip("give --ambe FILE (or $ODR_HIL_AMBE): a 9-byte-frame .ambe speech recording")
+        skip("opt_in", "give --ambe FILE (or $RFOUNDRY_HIL_AMBE): a 9-byte-frame .ambe speech recording")
     if not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
         pytest.fail(f"{ambe}: not a 9-byte-frame .ambe file")
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     frames = os.path.getsize(ambe) // 9
     sent = 18 * -(-frames // 18)        # bench_tx.py pads to whole superframes
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")
     if radio.view(["dmr"]).get("dmr.codec") != "1":
-        pytest.skip("no vocoder merged in this firmware (dmr.codec=0): voice can't play")
+        skip("not_built", "no vocoder merged in this firmware (dmr.codec=0): voice can't play")
     remote = sdr_bench.upload(ambe, "hil_speech.ambe")
     time.sleep(1.0)
     radio.reset_counters()
@@ -84,13 +85,13 @@ def test_vocoder_encode_options(radio):
     frame it encodes. After a change with no transmission since, the word still belongs to the previous options, so
     a mismatch is only printed here; test_dmr_tx_encode_options checks the word after an over."""
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     v = radio.view(["dmr", "storage"])
     if "voice.enc_supported" not in v:
-        pytest.skip("firmware without the voice.enc_* view keys")
+        skip("not_built", "firmware without the voice.enc_* view keys")
     supported = int(v["voice.enc_supported"], 0)
     if supported == 0:
-        pytest.skip("this board's vocoder has no encode options")
+        skip("no_hw", "this board's vocoder has no encode options")
     audio = int(v["settings.audio_flags"], 0)
     nr_on = (audio & 1) == 0
     want = (0x1 if nr_on else 0) | 0x2 | (0x4 if audio & 2 else 0)

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The HR_C7000 radios' program flash, seen from the web flasher: what a read of it holds (ODR, stock firmware, the
-// codec and where), the codec slot ODR boots from, and the bytes an install writes. A port of tools/hrc7000_codec.py
+// Copyright (c) 2026 The RadioFoundry Authors
+// The HR_C7000 radios' program flash, seen from the web flasher: what a read of it holds (RadioFoundry, stock firmware, the
+// codec and where), the codec slot RadioFoundry boots from, and the bytes an install writes. A port of tools/hrc7000_codec.py
 // (locate, slot_bytes, parse_slot, the stock-file windows); the layout and the codec profiles come from that file and
 // stub/stubtool.py through data/flash-boards.json ("c7000"), so the two read the same table.
 //
 // Program flash, as offsets from 0x03000000 (1 MB):
 //   0x00000 .. 0x0C000   the Baofeng bootloader: never written
-//   0x0C000 .. slot      the application (stock firmware, or ODR)
-//   slot .. 0x100000     ODR's codec slot: a 128-byte header, the radio's own stock codec code and tables, and
+//   0x0C000 .. slot      the application (stock firmware, or RadioFoundry)
+//   slot .. 0x100000     RadioFoundry's codec slot: a 128-byte header, the radio's own stock codec code and tables, and
 //                        the relocation list: the words the firmware moves when it copies the code to its window
 //                        (platform/hrc7000/codec_slot.h, docs/spec/codec-placement.md)
 //
@@ -73,7 +73,7 @@ export async function locateCodec(progmem, c, boardId) {
 
 // The flash offset of the first codec signature on a word boundary in buf[from, to), or -1. A stock build whose codec
 // is a compile no profile describes (the DB25-D's 020: other code bytes, another RAM address) still starts with it,
-// which tells "a codec ODR has no recipe for" from "no codec at all". The signature alone never makes a codec usable.
+// which tells "a codec RadioFoundry has no recipe for" from "no codec at all". The signature alone never makes a codec usable.
 export function codecSignature(buf, c, from = 0, to = buf.length) {
 	const sig = sigBytes(c);
 	for (let at = find(buf, sig, from); at >= 0 && at + sig.length <= to; at = find(buf, sig, at + 1)) if (at % 4 === 0) return at;
@@ -110,7 +110,7 @@ export async function codecFromFile(data, c, boardId) {
 		const got = await locateCodec(low, c, boardId);
 		if (got) return got;
 		throw new CodecError(codecSignature(low, c, c.app_start, c.boards[boardId].slot[0]) >= 0
-			? `this program memory backup holds a stock codec build OpenDigitalRadio has no recipe for; take the codec from a stock firmware file${supported(c, boardId)}`
+			? `this program memory backup holds a stock codec build RadioFoundry has no recipe for; take the codec from a stock firmware file${supported(c, boardId)}`
 			: "this program memory backup contains no codec recognized for this radio");
 	}
 	const sha = await sha256(data);
@@ -119,7 +119,7 @@ export async function codecFromFile(data, c, boardId) {
 		const got = await locateInFile(data, c, boardId);
 		if (got) return got;
 		throw new CodecError(codecSignature(data, c) >= 0
-			? `this file holds a codec build OpenDigitalRadio has no recipe for${supported(c, boardId)}`
+			? `this file holds a codec build RadioFoundry has no recipe for${supported(c, boardId)}`
 			: `not a stock firmware file the codec can be taken from${supported(c, boardId)}`);
 	}
 	// the whole file is identified by its SHA-256 above; the codec hashes, where the profile has them, check the carve too
@@ -201,10 +201,12 @@ export async function parseSlot(c, boardId, slot) {
 	return { length: r.end, version: r.version, tag: r.tag, crc: r.crc, codeSha, name: known?.name || null };
 }
 
-const ODR_MARK = new TextEncoder().encode("OpenDigitalRadio");
+const RFOUNDRY_MARK = new TextEncoder().encode("RadioFoundry");
+// Builds flashed before the project was renamed carry the old name in the same place: still RadioFoundry firmware
+const LEGACY_MARK = new TextEncoder().encode("OpenDigitalRadio");
 
-// What a program flash read holds: {firmware: "odr" | "stock" | "empty" | "unknown", slot: parseSlot() | null,
-// codec: locateCodec() | null (the stock codec in the application area), otherCodec: whether firmware that isn't ODR
+// What a program flash read holds: {firmware: "rfoundry" | "stock" | "empty" | "unknown", slot: parseSlot() | null,
+// codec: locateCodec() | null (the stock codec in the application area), otherCodec: whether firmware that isn't RadioFoundry
 // carries a codec no profile describes (a stock version without a recipe)}
 export async function analyze(progmem, c, boardId) {
 	const app = progmem.subarray(c.app_start, c.boards[boardId].slot[0]);
@@ -212,7 +214,7 @@ export async function analyze(progmem, c, boardId) {
 	const slot = await parseSlot(c, boardId, slotRaw);
 	const codec = await locateCodec(lowPart(c, progmem), c, boardId);
 	const firmware = app.subarray(0, 4096).every((b) => b === 0xFF) ? "empty"
-		: find(app, ODR_MARK) >= 0 ? "odr" : codec ? "stock" : "unknown";
+		: find(app, RFOUNDRY_MARK) >= 0 || find(app, LEGACY_MARK) >= 0 ? "rfoundry" : codec ? "stock" : "unknown";
 	const otherCodec = firmware === "unknown" && codecSignature(app, c) >= 0;
 	return { firmware, slot, slotBytes: slot ? slotRaw.slice(0, slot.length) : null, codec, otherCodec };
 }
@@ -251,7 +253,7 @@ export function restoreTarget(c, progmem) {
 }
 
 // Which radio a program flash read belongs to, by the Baofeng bootloader's ID string in its first 48 KB
-// (tools/dm32_flash.py MODELS): a board id, or null
+// (tools/serial_loader.py MODELS): a board id, or null
 export function bootloaderModel(c, head) {
 	const text = new TextDecoder("latin1").decode(head.subarray(0, Math.min(head.length, c.app_start)));
 	for (const [id, b] of Object.entries(c.boards)) if (b.bootloader_id && text.includes(b.bootloader_id)) return id;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The editing model: a whole codeplug as plain objects. Records keep their number (channel 1..1024, contact
 // 1..1024, list 1..76, DTMF contact 1..63, APRS configuration 1..8) so an edit rewrites only what changed. References
 // are the referenced objects themselves, so deleting or renumbering a record can't leave a reference pointing at the

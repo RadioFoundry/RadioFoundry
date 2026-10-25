@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The MD-380's bit-banged RF bus: HR_C5000 configuration port and SKY72310 synthesizer bus (rfbus_md380.c)
 #ifndef RFBUS_MD380_H
 #define RFBUS_MD380_H

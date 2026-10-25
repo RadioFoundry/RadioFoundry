@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// Codec maps in the web flasher: a port of tools/odrflash/odrflash/codecmap.py (docs/spec/codec-placement.md, "Codec
+// Copyright (c) 2026 The RadioFoundry Authors
+// Codec maps in the web flasher: a port of tools/rfoundry/rfoundry/codecmap.py (docs/spec/codec-placement.md, "Codec
 // maps"). The maps come from that package through data/flash-boards.json ("codec_maps"), already normalized (every
 // address a number). Moving a codec rewrites the words that hold addresses inside it; both ports must give the same
-// bytes (the shared vectors in tools/odrflash/tests/codecmap_vectors.json).
+// bytes (the shared vectors in tools/rfoundry/tests/codecmap_vectors.json).
 
 import { sha256, u32le, hex } from "./bytes.js";
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // AMBE+2 3600x2450 air frame FEC: interleave coverage, Golay codes, round trips with injected errors, burst layout,
 // and known-good vectors.
 #include <stdio.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The hand mic key decoder (drivers/input/serialmic): a held key, its release, a key change, single frames, UART
 // errors, and the PC's traffic on the same line (packets split at any point, payloads full of "K01") never giving a
 // key, with the mic working again once the host has been quiet for a second

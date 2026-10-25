@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Generic SPI NOR flash: command set from the Winbond W25Q / GigaDevice GD25Q datasheets
 // (docs/spec/hardware-dm1701.md 13.1)
 #include <stddef.h>

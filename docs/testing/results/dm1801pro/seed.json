@@ -1,0 +1,54 @@
+{
+ "format": 1,
+ "kind": "seed",
+ "board": "dm1801pro",
+ "source": "docs/spec/hardware-dm1801pro.md",
+ "date": "2026-10-22",
+ "note": "From the docs' evidence before the first recorded run: docs/spec/hardware-dm1801pro.md and its row in docs/feature-matrix.md",
+ "features": {
+  "fm": {
+   "result": "pass",
+   "note": "receive and transmit (UHF)"
+  },
+  "subtone": {
+   "result": "pass",
+   "note": "CTCSS and DCS"
+  },
+  "dmr_voice": {
+   "result": "pass",
+   "note": "with the radio's own codec"
+  },
+  "dmr_data_rx": {
+   "result": "pass"
+  },
+  "dmr_sms": {
+   "result": "pass"
+  },
+  "hotspot": {
+   "result": "pass"
+  },
+  "sfr": {
+   "result": "pass",
+   "note": "on the SDR bench"
+  },
+  "net_ppp": {
+   "result": "pass",
+   "note": "with the network services"
+  },
+  "dmr_ip_gateway": {
+   "result": "pass",
+   "note": "IP over DMR to the SDR bench"
+  },
+  "debuglink": {
+   "result": "pass"
+  },
+  "split_duplex": {
+   "result": "pass",
+   "note": "each half alone (one radio), and the transmit half of a pair"
+  },
+  "net_tcp": {
+   "result": "pass",
+   "note": "the network services over PPP"
+  }
+ }
+}

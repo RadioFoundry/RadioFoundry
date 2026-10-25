@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR voice call stack (see dmr_call.h). Two independent halves share this file: the RX side (rx_*: is a call
 // on our slot, and do we play it) and the TX side (tx_*: from PTT to the modem's tx_done). RX bursts are ignored while
 // the modem transmits (their status can't be trusted then, docs/spec/dmr-modem.md 6.5).
@@ -82,6 +82,8 @@ static struct {
 	uint32_t last_rx_ms;	// last burst of the call (played or not)
 	uint32_t last_activity_ms;	// last non-idle burst on our slot with our CC
 	bool activity_seen;
+	uint32_t last_data_ms;	// last data or CSBK burst on our slot with our CC (an ACK, SMS, ARS, IP)
+	bool data_seen;
 	uint32_t last_any_ms;	// last burst of any kind / CC (polite to all)
 	bool any_seen;
 	uint32_t slots_ms;	// last burst whose sync gave its slot number (TS1 / TS2 / BS), our CC
@@ -165,7 +167,7 @@ static struct {
 	uint32_t ms, slot;	// arrival, the modem's slot counter
 	uint8_t bad;		// bit f: frame f failed the FEC
 	bool wait;		// the other copy hasn't come yet
-} vq[SFR_VOTE_DEPTH] ODR_CPU_RAM;
+} vq[SFR_VOTE_DEPTH] RFOUNDRY_CPU_RAM;
 #endif
 
 // --- RX trace: one entry per burst event, packed into lines for the debug link's log ---
@@ -177,7 +179,7 @@ static struct {
 //   what:  p played, d repeat dropped, e not played (privacy, no key), x other CC, s other slot, o call not played
 //          (filters), n no call yet (late entry waiting), t ignored while transmitting, h call (re)started from it,
 //          k ended the call, - nothing to do
-// The driver side logs the same entries ("drx", boards/dm1701/dmr_dm1701.c), so the two can be diffed.
+// The driver side logs the same entries ("drx", platform/stm32f4/hrc/dmr_glue.c), so the two can be diffed.
 
 #if DMR_RX_TRACE
 #define TRACE_PER_LINE	10
@@ -1021,8 +1023,12 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			s.last_rx_ms = now;
 		if (b->kind == DMR_BURST_PI_HEADER)
 			rx_pi_header(b, now);
-		if (s.data_rx && b->kind >= DMR_BURST_CSBK && b->kind <= DMR_BURST_USBD && b->kind != DMR_BURST_IDLE)
-			s.data_rx(b, now, s.data_rx_ctx);
+		if (b->kind >= DMR_BURST_CSBK && b->kind <= DMR_BURST_USBD && b->kind != DMR_BURST_IDLE) {
+			s.last_data_ms = now;	// the view shows RX for it (data_receiving)
+			s.data_seen = true;
+			if (s.data_rx)
+				s.data_rx(b, now, s.data_rx_ctx);
+		}
 		break;
 	}
 }
@@ -1676,6 +1682,12 @@ void dmr_call_reply_cancel(void)
 	s.dirty = true;
 }
 
+// Data or CSBK bursts heard lately on our slot: RX in the view, though no call is running (they don't set s.rx)
+static bool data_receiving(uint32_t now)
+{
+	return !elapsed(now, s.last_data_ms, s.data_seen, fade_ms());
+}
+
 static void view_update(uint32_t now)
 {
 	dmr_call_view_t *v = &s.view;
@@ -1684,7 +1696,7 @@ static void view_update(uint32_t now)
 	if (transmitting() || s.tx == TX_WAKE_LISTEN)
 		state = DMR_CALL_STATE_TX;
 	else
-		state = s.rx != RXC_NONE ? DMR_CALL_STATE_RX : DMR_CALL_STATE_IDLE;
+		state = s.rx != RXC_NONE || data_receiving(now) ? DMR_CALL_STATE_RX : DMR_CALL_STATE_IDLE;
 
 	switch (s.tx) {
 	case TX_ACCESS:

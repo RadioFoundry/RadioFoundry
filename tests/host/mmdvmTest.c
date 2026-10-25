@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Host test of the MMDVM protocol (core/hotspot/mmdvm.c) and the simplex hotspot engine (core/hotspot/hotspot.c),
 // against a fake DMR modem (hal_dmr_modem_t) and a fake radio core. Frames are checked with independent decoding:
 // the RS(12,9) check evaluates the codeword at a, a^2, a^3 rather than dividing like the encoder; the uplink EMB and
@@ -41,7 +41,7 @@ static void io_write(const uint8_t *buf, size_t len)
 	}
 }
 
-static const mmdvm_io_t io = { .write = io_write, .description = "OpenDigitalRadio Test 0123abcd" };
+static const mmdvm_io_t io = { .write = io_write, .description = "RadioFoundry Test 0123abcd" };
 
 // ---- Fake modem ----
 
@@ -447,7 +447,7 @@ static void test_version_status(void)
 	if (v != NULL) {
 		CHECK(v[3] == 1);
 		CHECK(v[1] == 4 + strlen(io.description) + SPLIT_SUFFIX_LEN);
-		CHECK(memcmp(v + 4, "OpenDigitalRadio Test 0123abcd", strlen(io.description)) == 0);
+		CHECK(memcmp(v + 4, "RadioFoundry Test 0123abcd", strlen(io.description)) == 0);
 	}
 	const uint8_t *s = status();
 	CHECK(s != NULL && s[1] == 13);
@@ -559,8 +559,8 @@ static void test_config(void)
 	CHECK(nak_for(MMDVM_SET_CONFIG, MMDVM_NAK_INVALID));
 	host(0xC3, NULL, 0);
 	CHECK(nak_for(0xC3, MMDVM_NAK_UNKNOWN));
-	host(MMDVM_ODR_SFR_DEBUG, junk, 2);
-	CHECK(nak_for(MMDVM_ODR_SFR_DEBUG, MMDVM_NAK_UNKNOWN));
+	host(MMDVM_RFOUNDRY_SFR_DEBUG, junk, 2);
+	CHECK(nak_for(MMDVM_RFOUNDRY_SFR_DEBUG, MMDVM_NAK_UNKNOWN));
 	int before = out_count;
 	host(MMDVM_QSO_INFO, junk, 10);
 	CHECK(out_count == before);	// never answered
@@ -584,10 +584,10 @@ static void test_extension(void)
 	reset_world();
 	mmdvm_set_ext(&ext);
 	uint8_t p[2] = { 1, 2 };
-	host(MMDVM_ODR_SFR_DEBUG, p, 2);
-	CHECK(ack_for(MMDVM_ODR_SFR_DEBUG));
-	host(MMDVM_ODR_SFR_DEBUG, p, 1);
-	CHECK(nak_for(MMDVM_ODR_SFR_DEBUG, 4));
+	host(MMDVM_RFOUNDRY_SFR_DEBUG, p, 2);
+	CHECK(ack_for(MMDVM_RFOUNDRY_SFR_DEBUG));
+	host(MMDVM_RFOUNDRY_SFR_DEBUG, p, 1);
+	CHECK(nak_for(MMDVM_RFOUNDRY_SFR_DEBUG, 4));
 	const uint8_t *s = status();
 	CHECK(s[1] == 15 && s[13] == 0xAA && s[14] == 0x55 && (s[5] & 0x80));
 	host(MMDVM_GET_VERSION, NULL, 0);

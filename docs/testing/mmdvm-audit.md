@@ -3,7 +3,7 @@
 # MMDVM implementation audit (2d45a21)
 
 An audit of the MMDVM modem implementation at commit 2d45a21 against `docs/spec/mmdvm-protocol.md`: its section 7 test
-list and the per-client needs of MMDVMHost, odr_sdrbench (the SDR bench's modem driver), the bench tools and the
+list and the per-client needs of MMDVMHost, rfoundry_sdrbench (the SDR bench's modem driver), the bench tools and the
 behavior of the aftermarket firmware. Done by reading the code; nothing was run on a radio.
 
 Files: `core/hotspot/{mmdvm.c,mmdvm.h,hotspot.c,hotspot.h}`, the carried-over `hotspotUplink.c`, `hotspotData.c`,
@@ -31,7 +31,7 @@ The findings below are as written at 2d45a21. Where they stand now, checked agai
 | A-4 silence fill across a superframe | fixed (modulo 6) | test_uplink_wrapped_gap |
 | A-5 DMR_SHORTLC NAK, I-2 DMR_START NAK | fixed: taken silently (ACKed in SFR mode) | test_config, `hotspotSfrTest` |
 | A-6 SEND_CWID NAK | fixed: ACKed in idle; keyed in Morse on FM on boards with `tx_tone` (the DM-1701 so far; radio core CW keyer, `tx_tone_key`; host-tested, not yet on air) | test_cwid, radioCoreTest test_hotspot_cwid, tests/hil/test_hotspot_cwid.py |
-| A-7 odr_sdrbench doesn't know the description | open, on odr_sdrbench's side | |
+| A-7 rfoundry_sdrbench doesn't know the description | open, on rfoundry_sdrbench's side | |
 | A-8 slot 1 space / SFR hook | the hook exists (`mmdvm_ext_t.space`); simplex keeps 0, which the spec allows | test_ext_space, `hotspotSfrTest` |
 | A-9 no RSSI after uplink bursts | fixed (AT1846S raw scale) | test_uplink_rssi |
 | A-10 no DMR_LOST on SET_FREQ mid-call | fixed | test_retune_lost |
@@ -58,9 +58,9 @@ Found since:
 - **Network transport**: MMDVM over UDP 3334 in the USB network personality (`docs/spec/usb-network.md`); the DTR
   rule does not apply there, the 20 s idle timeout does.
 
-Updated per-client view: MMDVMHost on Linux and Windows and odr_sdrbench in simplex should work for voice and data in
-simplex (odr_sdrbench still needs the radio profile set by hand until A-7); CW ID keyed on boards with `tx_tone` (the
-DM-1701 so far; host-tested only); odr_sdrbench SFR answers correctly but repeats only what it heard before keying
+Updated per-client view: MMDVMHost on Linux and Windows and rfoundry_sdrbench in simplex should work for voice and data in
+simplex (rfoundry_sdrbench still needs the radio profile set by hand until A-7); CW ID keyed on boards with `tx_tone` (the
+DM-1701 so far; host-tested only); rfoundry_sdrbench SFR answers correctly but repeats only what it heard before keying
 until the driver work lands.
 
 ## Summary
@@ -83,8 +83,8 @@ What needs fixing:
 - Uplink voice bursts B-F have a malformed EMB and zeroed embedded signaling (A-3).
 - The uplink silence fill doesn't handle a superframe boundary (A-4).
 - DMR_SHORTLC, which MMDVMHost sends on every call even in simplex, gets a NAK (A-5).
-- SEND_CWID gets a NAK, which breaks odr_sdrbench whenever a CW ID is configured (A-6).
-- odr_sdrbench doesn't recognize the new description (A-7, a change on odr_sdrbench's side).
+- SEND_CWID gets a NAK, which breaks rfoundry_sdrbench whenever a CW ID is configured (A-6).
+- rfoundry_sdrbench doesn't recognize the new description (A-7, a change on rfoundry_sdrbench's side).
 
 Structural copying scan: no copying from the GPL trees found (section 3).
 
@@ -96,7 +96,7 @@ Structural copying scan: no copying from the GPL trees found (section 3).
   it, `hotspot_start()` returns false (`hotspot.c:270-272`), and `mmdvm.c:281-283` tries again on every frame.
 - **Spec**: 2.4 (space), 2.8 (DMR data), 7.4 and 7.5. The hotspot must take the modem and run.
 - **Code**: on the radio, GET_VERSION is answered, but status always reports slot 2 space 0 and every DMR_DATA2 gets
-  NAK 2. MMDVMHost logs a NAK for every frame of every network call; odr_sdrbench never sees space and its calls stall
+  NAK 2. MMDVMHost logs a NAK for every frame of every network call; rfoundry_sdrbench never sees space and its calls stall
   until its stream timeout.
 - **Fix**: the radio core implements the radio operations: enter, set_freq, set_power, leave, carrier and changed.
   `enter` stops FM and the DMR call stack and hands over the modem; `carrier` comes from the receiver's noise level.
@@ -167,37 +167,37 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 - **Spec**: 2.11. In idle, ACK it and send the callsign in Morse on FM, with the TX bit set while keying. In any
   other state, NAK 5.
 - **Code**: always NAK 2.
-  - odr_sdrbench waits for an ACK to SEND_CWID. A NAK raises an error in its simplex and SFR loops, which drops the
+  - rfoundry_sdrbench waits for an ACK to SEND_CWID. A NAK raises an error in its simplex and SFR loops, which drops the
     connection and reconnects with backoff. This happens every time a CW ID is due (default every 15 minutes) when
     `cwid` is configured, and the ID is never sent.
   - MMDVMHost with CW ID enabled logs a NAK every time, and no station ID goes out. The operator may count on that
     ID for licensing.
 - **Fix**: implement CW ID per 2.11: accept only in idle, ACK, key FM, send the Morse (about 20 wpm), keep the TX bit
   set until done, then restore the DMR setup fully (gotchas 8.13). Until then, list it as a limitation in
-  the feature matrix and the odr_sdrbench docs ("set no cwid").
+  the feature matrix and the rfoundry_sdrbench docs ("set no cwid").
 
-### A-7 Medium: odr_sdrbench doesn't recognize the description (change on odr_sdrbench's side)
+### A-7 Medium: rfoundry_sdrbench doesn't recognize the description (change on rfoundry_sdrbench's side)
 
-- **Where**: `core/hostlink/hostlink.c:77-89`. The description is `OpenDigitalRadio <board name> <git version>`, for
-  example `OpenDigitalRadio DM-1701 2d45a21`.
+- **Where**: `core/hostlink/hostlink.c:77-89`. The description is `RadioFoundry <board name> <git version>`, for
+  example `RadioFoundry DM-1701 2d45a21`.
 - **Spec**: 2.3.2 and section 4, row 1.
 - **Code**: the string itself meets the spec: printable ASCII, under 64 bytes, and none of the MMDVM_HS-type names.
   With no SFR in this build, the missing SFR suffix is right.
-- **odr_sdrbench today**: its `detect()` (`odr_sdrbench/mmdvm/radio.py`) returns nothing, and with `radio.type: auto`
-  odr_sdrbench stops with "can't tell what 'OpenDigitalRadio ...' is: set radio.type". The workaround is setting the
-  radio profile by hand in the odr_sdrbench config, which gives the 1-header / 1-terminator profile and simplex
+- **rfoundry_sdrbench today**: its `detect()` (`rfoundry_sdrbench/mmdvm/radio.py`) returns nothing, and with `radio.type: auto`
+  rfoundry_sdrbench stops with "can't tell what 'RadioFoundry ...' is: set radio.type". The workaround is setting the
+  radio profile by hand in the rfoundry_sdrbench config, which gives the 1-header / 1-terminator profile and simplex
   operation. SFR stays impossible: `sfr_slots()` requires the aftermarket firmware's name in the description, and the
   config can't override that.
-- **Fix, in odr_sdrbench**:
-  - (a) `detect()`: a description containing `OpenDigitalRadio` (case-insensitive) gives the same radio kind as the
+- **Fix, in rfoundry_sdrbench**:
+  - (a) `detect()`: a description containing `RadioFoundry` (case-insensitive) gives the same radio kind as the
     aftermarket firmware, checked before the MMDVM names.
-  - (b) `sfr_slots()`: accept `OpenDigitalRadio` wherever it accepts the aftermarket firmware's name. `sfr_framing()`
+  - (b) `sfr_slots()`: accept `RadioFoundry` wherever it accepts the aftermarket firmware's name. `sfr_framing()`
     needs no change.
   - (c) The `config.py` error texts that name the aftermarket firmware.
-  - (d) odr_sdrbench's tests: a fake modem entry with the new description, plus `detect` and `sfr_slots` cases (in
+  - (d) rfoundry_sdrbench's tests: a fake modem entry with the new description, plus `detect` and `sfr_slots` cases (in
     `tests/mmdvm_fakes.py`, `test_mmdvm_hardware.py`, `test_mmdvm_sfr.py`).
-  - (e) odr_sdrbench's RSSI conversion for that kind assumes the AT1846S raw scale (see A-9).
-- **Firmware side**: keep `OpenDigitalRadio` as the first word, unchanged. When SFR is ported, append ` SFR
+  - (e) rfoundry_sdrbench's RSSI conversion for that kind assumes the AT1846S raw scale (see A-9).
+- **Firmware side**: keep `RadioFoundry` as the first word, unchanged. When SFR is ported, append ` SFR
   TS<in>>TS<out> <framing>` through the extension hook. Putting the aftermarket firmware's name in the description
   isn't allowed: `tools/license_grep.sh` rejects it in sources.
 
@@ -208,11 +208,11 @@ Structural copying scan: no copying from the GPL trees found (section 3).
   carry the outbound slot's space in SFR mode.
 - **Code**: 0.
   - MMDVMHost then never writes DMR_DATA1. That is harmless, even better, since it would only get NAK 2.
-  - odr_sdrbench's simplex driver reads only slot 2's byte.
+  - rfoundry_sdrbench's simplex driver reads only slot 2's byte.
   - The bench tools only print it.
   - **Confirmed deviation, accepted**: the spec will say "0 or 10 in simplex".
 - **Problem left for SFR**: the extension interface (`mmdvm.h:123-129`) can append bytes and OR flags, but can't set
-  offset 7. When SFR is ported with an outbound TS1, odr_sdrbench writes DMR_DATA1 gated on offset 7 and would never
+  offset 7. When SFR is ported with an outbound TS1, rfoundry_sdrbench writes DMR_DATA1 gated on offset 7 and would never
   send.
 - **Fix**: keep 0 in plain simplex. When SFR is on, report the outbound slot's space at offsets 7 and 8 (an
   extension hook for the space values).
@@ -221,9 +221,9 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 
 - **Where**: `core/hotspot/hotspot.c:171-179`. Frames go up with length 37.
 - **Spec**: 2.8 and 5.4. Optional. The aftermarket firmware sent 2 bytes (00, then the AT1846S register 0x1B high
-  byte), and odr_sdrbench converts that scale to dBm (raw − 151 at 300 MHz and up, −164 + raw × 32 / 27 below). Test
+  byte), and rfoundry_sdrbench converts that scale to dBm (raw − 151 at 300 MHz and up, −164 + raw × 32 / 27 below). Test
   U-8.
-- **Code**: none. odr_sdrbench gets no signal strength for anything the radio hears; MMDVMHost shows none.
+- **Code**: none. rfoundry_sdrbench gets no signal strength for anything the radio hears; MMDVMHost shows none.
 - **Fix**: when the modem reports an RSSI for the burst (`rssi_dbm` in `dmr_burst_t` is non-zero), send two bytes
   after the burst (frame length 39), big endian: 00, then the raw value on the AT1846S scale. Use the raw reading
   directly if the board can pass it, otherwise invert the formula above for the band in use. Leave them off when
@@ -234,7 +234,7 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 - **Where**: `core/hotspot/hotspot.c:331-355`. The uplink call is reset with no DMR_LOST.
 - **Spec**: 2.7 and test C-16. If an uplink call is open, send DMR_LOST2 before the SET_FREQ ACK. MMDVMHost has no
   RF watchdog, so it keeps such a call open until its 180 s timeout.
-- **Code**: silent reset. MMDVMHost never retunes in operation; odr_sdrbench retunes only after 1 s of quiet, so the
+- **Code**: silent reset. MMDVMHost never retunes in operation; rfoundry_sdrbench retunes only after 1 s of quiet, so the
   effect is small.
 - **Fix**: if the uplink call is open when SET_FREQ arrives, send DMR_LOST2 first, then reset, retune and ACK.
 
@@ -244,7 +244,7 @@ Structural copying scan: no copying from the GPL trees found (section 3).
 - **Spec**: 2.6 and test D-12. Idle stops new traffic for TX, ends a call in progress with a terminator within a
   superframe, clears the queue, and the TX bit clears once off air.
 - **Code**: a buffered or running call carries on. MMDVMHost sends idle only after its mode hang (3 s after network
-  traffic), and odr_sdrbench only after the TX bit has cleared, so neither normally hits this.
+  traffic), and rfoundry_sdrbench only after the TX bit has cleared, so neither normally hits this.
 - **Fix**: on SET_MODE idle, end a call in progress (our terminator), drop what's queued, then ACK.
 
 ### A-12 Low: SET_MODE and SET_CONFIG refuse POCSAG (06)
@@ -293,7 +293,7 @@ requirement is met. Still run T-USB-1 on the radio.
 
 ### I-2 Info: DMR_START gets NAK 2
 
-`mmdvm.c:308-311`. MMDVMHost sends DMR_START only in duplex, and odr_sdrbench doesn't send it in SFR, so no current
+`mmdvm.c:308-311`. MMDVMHost sends DMR_START only in duplex, and rfoundry_sdrbench doesn't send it in SFR, so no current
 client is affected. The spec says ignore it. Low priority: take it silently along with DMR_SHORTLC (A-5).
 
 ### I-3 Info: DMR_LOST timing correct
@@ -344,7 +344,7 @@ Missing:
 - RSSI bytes (A-9).
 - A host link test with DTR clear (A-2).
 - A slow `enter` (A-15).
-- The probe always raises DTR. Add a `--no-dtr` run (T-USB-2) and an odr_sdrbench-order run (`--order sdrbench`)
+- The probe always raises DTR. Add a `--no-dtr` run (T-USB-2) and an rfoundry_sdrbench-order run (`--order sdrbench`)
   (GET_VERSION, SET_MODE DMR, then SET_FREQ, SET_CONFIG, SET_MODE).
 
 ## 2. Per-client verdict at 2d45a21
@@ -353,8 +353,8 @@ Missing:
 | --- | --- | --- |
 | MMDVMHost, Linux / Pi-Star | handshake and polling OK; no calls until A-1; then voice works, with a malformed uplink EMB, NAK warnings per call and lost bursts at wrapped gaps | A-1, A-3, A-5, A-4 |
 | MMDVMHost, Windows | broken: config never sticks | A-2 (and the above) |
-| odr_sdrbench simplex | needs the radio profile set by hand until odr_sdrbench accepts ODR's name; no CW ID; no RSSI | A-1, A-7, A-6, A-9 |
-| odr_sdrbench SFR | not available (SFR not ported; odr_sdrbench refuses the description; offset 7 hook missing) | A-7, A-8 |
+| rfoundry_sdrbench simplex | needs the radio profile set by hand until rfoundry_sdrbench accepts RadioFoundry's name; no CW ID; no RSSI | A-1, A-7, A-6, A-9 |
+| rfoundry_sdrbench SFR | not available (SFR not ported; rfoundry_sdrbench refuses the description; offset 7 hook missing) | A-7, A-8 |
 | Bench tools (`hs_normal.py`, copies) | UDP transport not in this build; over serial, `rf_*` cases are at risk from A-4 and `net_*` from A-1 | A-1, A-4 |
 
 ## 3. Structural copying scan

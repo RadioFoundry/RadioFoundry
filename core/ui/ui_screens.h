@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Screen drawing (docs/ux/wireframes): layout from the display size, no task or input code, so host tests and the
 // host simulator can render any screen at any geometry
 #ifndef UI_SCREENS_H
@@ -251,8 +251,6 @@ uint8_t ui_diag_next_page(uint8_t first_line);
 bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *label, size_t label_len,
 	char *value, size_t value_len);
 
-// Whether a board band holds hz (tx: one the radio can transmit in)
-bool ui_in_band(uint32_t hz, bool tx);
 // Frequency typed as digits (VFO entry, the channel editor): positional from 100 MHz down to 10 Hz, at most
 // UI_ENTRY_MAX of them in digits[UI_ENTRY_MAX + 1]. A digit is appended when some band can still start so; false
 // when the digits are full, or with a toast naming the bands when no band can

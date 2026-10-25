@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """md380_migrate: move a TYT MD-380 / MD-390 / Retevis RT3 from stock or md380tools (KD4Z toolkit) firmware to
-OpenDigitalRadio, keeping the channels, zones, contacts, RX group lists and the DMR ID (callsign) database.
+RadioFoundry, keeping the channels, zones, contacts, RX group lists and the DMR ID (callsign) database.
 
-    md380_migrate.py all --image odr_md380_codec.bin --stock "MD-380-D2.32(AD).bin"     the whole migration
-    md380_migrate.py all --image odr_md380_codec.bin --key md380.key --from my.rdt      codeplug from a CPS file
+    md380_migrate.py all --image rfoundry_md380_codec.bin --stock "MD-380-D2.32(AD).bin"     the whole migration
+    md380_migrate.py all --image rfoundry_md380_codec.bin --key md380.key --from my.rdt      codeplug from a CPS file
     md380_migrate.py backup [--from FILE]       read the codeplug from the stock radio (or convert a file) and check it
-    md380_migrate.py flash --image FILE ...     flash ODR (or any TYT updater file) through the TYT bootloader
-    md380_migrate.py restore --workdir DIR      write the converted codeplug and the ID database to the radio on ODR
+    md380_migrate.py flash --image FILE ...     flash RadioFoundry (or any TYT updater file) through the TYT bootloader
+    md380_migrate.py restore --workdir DIR      write the converted codeplug and the ID database to the radio on RadioFoundry
     md380_migrate.py package OUTDIR --image FILE   a directory to hand to a tester
     md380_migrate.py --self-test                the pure conversion logic, no radio, no dmrconf
 
@@ -16,14 +16,14 @@ Every command takes --dry-run: offline steps (file conversion, image checks) run
 
 The codeplug conversion is done by qdmr's command line tool dmrconf (an external program, installed separately):
 the stock codeplug is read with dmrconf's TyT MD-390 driver (the MD-380, MD-390 and RT3 share one codeplug format),
-turned into qdmr's radio-independent YAML, cleaned of RX group lists ODR doesn't need, encoded with the driver for
-qdmr's open firmware family (OpenUV380), which is the layout ODR's CPS compatibility layer serves, and written through
+turned into qdmr's radio-independent YAML, cleaned of RX group lists RadioFoundry doesn't need, encoded with the driver for
+qdmr's open firmware family (OpenUV380), which is the layout RadioFoundry's CPS compatibility layer serves, and written through
 that layer with cps_client.py. The codeplug steps are shared with the other radios' migration tools
 (codeplug_port.py, docs/spec/codeplug-port.md). docs/spec/md380-migration.md has the details,
 docs/user/18-moving-from-stock-md380.md the user guide.
 
 Needs Python 3.8+, dmrconf (qdmr 0.12 or newer) on PATH, pyusb with libusb (flashing) and pyserial (talking to the
-radio once it runs ODR). The flash and debug link helpers (stm32_dfu.py, odr_debug.py, odrflash's stockfw.py) are
+radio once it runs RadioFoundry). The flash and debug link helpers (stm32_dfu.py, rfoundry_debug.py, rfoundry's stockfw.py) are
 loaded from this script's directory or the repository layout, as are codeplug_port.py and cps_client.py.
 """
 import argparse
@@ -55,10 +55,10 @@ RDT_TRAILER = 16
 RDT_SIZE = RDT_HEADER + CODEPLUG_SIZE + RDT_TRAILER
 
 STOCK_DRIVER = "md390"        # dmrconf --radio for the stock codeplug (MD-380, MD-390, RT3)
-ODR_DRIVER = "openuv380"      # dmrconf --radio for ODR (open-firmware-cps.md 4: radio type 7, OpenUV380 family)
+RFOUNDRY_DRIVER = "openuv380"      # dmrconf --radio for RadioFoundry (open-firmware-cps.md 4: radio type 7, OpenUV380 family)
 
-# What ODR's codeplug layout holds, and the qdmr YAML helpers: shared (codeplug_port.py)
-ODR_LIMITS = cp.ODR_LIMITS
+# What RadioFoundry's codeplug layout holds, and the qdmr YAML helpers: shared (codeplug_port.py)
+RFOUNDRY_LIMITS = cp.RFOUNDRY_LIMITS
 SECTION_NAMES = cp.SECTION_NAMES
 
 APP_BASE = 0x0800C000
@@ -173,7 +173,7 @@ def users_json(users):
 
 
 def classify_image(data):
-    """('container', [(addr, len)]) for a TYT updater file, ('plain', has_codec) for an ODR application image."""
+    """('container', [(addr, len)]) for a TYT updater file, ('plain', has_codec) for a RadioFoundry application image."""
     if data.startswith(CONTAINER_MAGIC):
         if len(data) < CONTAINER_HEADER + 8:
             raise MigrateError("truncated TYT updater file")
@@ -238,13 +238,13 @@ def stm32_dfu():
 
 
 def stockfw():
-    return load_module("stockfw", ["stockfw.py", os.path.join("odrflash", "odrflash", "stockfw.py")])
+    return load_module("stockfw", ["stockfw.py", os.path.join("rfoundry", "rfoundry", "stockfw.py")])
 
 
-def odr_debug_path():
-    p = os.path.join(HERE, "odr_debug.py")
+def rfoundry_debug_path():
+    p = os.path.join(HERE, "rfoundry_debug.py")
     if not os.path.isfile(p):
-        raise MigrateError("odr_debug.py not found next to this script")
+        raise MigrateError("rfoundry_debug.py not found next to this script")
     return p
 
 
@@ -268,7 +268,7 @@ class Session:
     def open_workdir(self, path=None, create=True):
         if path is None:
             stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            path = os.path.join(os.path.expanduser("~"), "ODR-MD380-migration", stamp)
+            path = os.path.join(os.path.expanduser("~"), "RadioFoundry-MD380-migration", stamp)
         path = os.path.abspath(os.path.expanduser(path))
         if create:
             os.makedirs(path, exist_ok=True)
@@ -359,8 +359,8 @@ class Session:
             cmd += ["--device", self.port]
         return self.run(cmd + list(args), radio, check, capture)
 
-    def odr_debug(self, *args, check=True, capture=True):
-        cmd = [sys.executable, odr_debug_path()]
+    def rfoundry_debug(self, *args, check=True, capture=True):
+        cmd = [sys.executable, rfoundry_debug_path()]
         if self.port:
             cmd += ["--port", self.port]
         return self.run(cmd + list(args), True, check, capture)
@@ -395,7 +395,7 @@ def check_dmrconf(sess):
 # step 1: backup and convert
 
 def step_backup(sess, args):
-    sess.step("1. Back up the codeplug and convert it for ODR")
+    sess.step("1. Back up the codeplug and convert it for RadioFoundry")
     check_dmrconf(sess)
     if args.source:
         src = os.path.abspath(args.source)
@@ -440,19 +440,19 @@ def step_backup(sess, args):
         sess.say("   [dry run] the conversion (group list clean-up, encode, TX contacts put back) runs once the "
                  "codeplug has been read")
         return True
-    odr_dfu, odr_yaml, _ = cp.convert_for_odr(sess, yaml_path, ODR_DRIVER, cleanup=not args.no_cleanup)
-    need_file(sess, odr_yaml, "the codeplug converted for ODR")
+    rfoundry_dfu, rfoundry_yaml, _ = cp.convert_for_rfoundry(sess, yaml_path, RFOUNDRY_DRIVER, cleanup=not args.no_cleanup)
+    need_file(sess, rfoundry_yaml, "the codeplug converted for RadioFoundry")
     with open(yaml_path, encoding="utf-8") as f:
         before = codeplug_summary(f.read())
-    with open(odr_yaml, encoding="utf-8") as f:
+    with open(rfoundry_yaml, encoding="utf-8") as f:
         after = codeplug_summary(f.read())
     print_summary(sess, "stock codeplug", before)
-    print_summary(sess, "for ODR       ", after)
-    with open(sess.path("odr-source.yaml"), encoding="utf-8") as f:
+    print_summary(sess, "for RadioFoundry       ", after)
+    with open(sess.path("rfoundry-source.yaml"), encoding="utf-8") as f:
         over = limit_report(codeplug_summary(f.read()))      # after the clean-up: what the encoder gets
     for key, n, lim, dropped in over:
         shown = ", ".join(dropped[:8]) + (" and %d more" % (len(dropped) - 8) if len(dropped) > 8 else "")
-        sess.say("   ! ODR holds %d %s, the codeplug has %d: these are left out: %s"
+        sess.say("   ! RadioFoundry holds %d %s, the codeplug has %d: these are left out: %s"
                  % (lim, SECTION_NAMES[key], n, shown))
     if over:
         sess.say("     To choose yourself, open %s in qdmr, remove what you don't need, save it, and run" % yaml_path)
@@ -462,7 +462,7 @@ def step_backup(sess, args):
     if not before["radio_ids"]:
         sess.say("   ! the codeplug has no DMR ID: set yours in qdmr after the migration (or pass --id for the ID "
                  "database)")
-    sess.save_state(odr_yaml=odr_yaml, odr_dfu=odr_dfu, expected=after["counts"], radio_ids=before["radio_ids"])
+    sess.save_state(rfoundry_yaml=rfoundry_yaml, rfoundry_dfu=rfoundry_dfu, expected=after["counts"], radio_ids=before["radio_ids"])
     prepare_users(sess, args)
     sess.say("   backup done: %s" % sess.workdir)
     return True
@@ -489,7 +489,7 @@ def prepare_users(sess, args):
     # offline check that dmrconf takes the file: encode it the way write-db will
     ids = [args.id] if getattr(args, "id", None) else (sess.state.get("radio_ids") or [users[0]["id"]])
     check_dmrconf(sess)
-    sess.dmr("encode-db", "--radio", ODR_DRIVER, "--database", path, "--id", str(ids[0]), "--limit", "16",
+    sess.dmr("encode-db", "--radio", RFOUNDRY_DRIVER, "--database", path, "--id", str(ids[0]), "--limit", "16",
              sess.path("users-check.dfu"), radio=False)
     sess.save_state(users_json=path, users_count=len(users))
 
@@ -555,7 +555,7 @@ def prepare_stream(sess, args):
             sess.say("   merged the codec from %s: %d bytes" % (args.stock, len(data)))
         else:
             sess.say("   ! this image has no codec: the radio will work on FM only (no DMR voice). Use the merged")
-            sess.say("     image (odr_md380_codec.bin) or give --stock \"MD-380-D2.32(AD).bin\" to merge it.")
+            sess.say("     image (rfoundry_md380_codec.bin) or give --stock \"MD-380-D2.32(AD).bin\" to merge it.")
             if not sess.ask("Flash it anyway?"):
                 raise MigrateError("stopped before flashing")
     try:
@@ -568,7 +568,7 @@ def prepare_stream(sess, args):
         raise MigrateError("the image has warnings (above); fix them or pass --force")
     if key is None:
         if not sess.dry:
-            raise MigrateError("flashing an ODR image needs the bootloader key: --key FILE, or --stock with TYT's "
+            raise MigrateError("flashing a RadioFoundry image needs the bootloader key: --key FILE, or --stock with TYT's "
                                "\"MD-380-D2.32(AD).bin\" to derive it")
         sess.say("   [dry run] no --key or --stock: plan only")
         stream = None
@@ -590,10 +590,10 @@ def preflight(sess, args):
     except Exception as e:      # DfuError, or the module missing
         missing.append("pyusb + libusb (flashing): %s" % e)
     try:
-        import serial  # noqa: F401  (odr_debug.py needs it once the radio runs ODR)
+        import serial  # noqa: F401  (rfoundry_debug.py needs it once the radio runs RadioFoundry)
     except ImportError:
-        missing.append("pyserial (talking to the radio on ODR): pip install pyserial")
-    odr_debug_path()
+        missing.append("pyserial (talking to the radio on RadioFoundry): pip install pyserial")
+    rfoundry_debug_path()
     for m in missing:
         sess.say("   ! missing: " + m)
     if missing and not sess.dry:
@@ -615,7 +615,7 @@ def wait_dfu(sess, dfu, timeout):
 
 
 def step_flash(sess, args):
-    sess.step("2. Flash OpenDigitalRadio")
+    sess.step("2. Flash RadioFoundry")
     stream = prepare_stream(sess, args)
     dfu = stm32_dfu()
     shown = stream if stream is not None else bytes(sess.cache.get("plain_len", 0))
@@ -654,20 +654,20 @@ def step_flash(sess, args):
     except Exception as e:
         raise MigrateError("flashing failed: %s. The bootloader is never erased: enter it again and rerun "
                            "'flash'. Your codeplug backup is in %s" % (e, sess.workdir))
-    sess.say("   written; the radio restarts into ODR")
+    sess.say("   written; the radio restarts into RadioFoundry")
     sess.save_state(flashed=sha256(stream))
     return True
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# step 3: make the flash area ODR's, write the codeplug and the ID database
+# step 3: make the flash area RadioFoundry's, write the codeplug and the ID database
 
-def wait_odr(sess, timeout):
+def wait_rfoundry(sess, timeout):
     if sess.dry:
-        sess.say("   [dry run] would wait for the radio on ODR (USB serial 1FC9:0094)")
+        sess.say("   [dry run] would wait for the radio on RadioFoundry (USB serial 1FC9:0094)")
         return
-    cmd = [sys.executable, odr_debug_path()] + (["--port", sess.port] if sess.port else []) + ["ping"]
-    sess.say("   waiting for the radio on ODR (USB serial 1FC9:0094) ...")
+    cmd = [sys.executable, rfoundry_debug_path()] + (["--port", sess.port] if sess.port else []) + ["ping"]
+    sess.say("   waiting for the radio on RadioFoundry (USB serial 1FC9:0094) ...")
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
@@ -681,32 +681,32 @@ def wait_odr(sess, timeout):
                        "screen stays dark, flash again (the bootloader is never erased)" % timeout)
 
 
-def step_prepare_odr(sess, args):
-    sess.step("3. Check ODR on the radio and give it its settings area")
+def step_prepare_rfoundry(sess, args):
+    sess.step("3. Check RadioFoundry on the radio and give it its settings area")
     sess.wait_user("""
-        Radio: it should be running ODR now (the ODR home screen). If the screen is dark, switch it off and on
+        Radio: it should be running RadioFoundry now (the RadioFoundry home screen). If the screen is dark, switch it off and on
         normally. Keep the cable connected.""")
-    wait_odr(sess, args.wait)
-    rc, out = sess.odr_debug("version")
+    wait_rfoundry(sess, args.wait)
+    rc, out = sess.rfoundry_debug("version")
     if not sess.dry and "MD-380" not in out:
         raise MigrateError("the radio does not report board=MD-380 over its debug link (see above)")
-    rc, out = sess.odr_debug("storage", "info")
+    rc, out = sess.rfoundry_debug("storage", "info")
     region = re.search(r"region\s+(\w+)", out or "")
     region = region.group(1) if region else ("foreign" if sess.dry else "?")
     if region == "none":
-        raise MigrateError("ODR found no usable SPI flash: this radio has the small (1 MB) flash part, or the flash "
-                           "was not detected. ODR runs on this radio but keeps nothing (no codeplug, no settings), "
+        raise MigrateError("RadioFoundry found no usable SPI flash: this radio has the small (1 MB) flash part, or the flash "
+                           "was not detected. RadioFoundry runs on this radio but keeps nothing (no codeplug, no settings), "
                            "so there is nothing to restore. Your backup is in %s" % sess.workdir)
     if region == "foreign":
-        sess.say("   The flash area ODR keeps its settings in still holds the stock firmware's data. ODR doesn't")
+        sess.say("   The flash area RadioFoundry keeps its settings in still holds the stock firmware's data. RadioFoundry doesn't")
         sess.say("   overwrite it on its own. Your stock codeplug is already backed up; this saves the area again")
-        sess.say("   (raw) into the work directory and then gives it to ODR.")
-        if not sess.ask("Give the settings area to ODR now?"):
-            raise MigrateError("stopped: codeplug writes are refused until the area is ODR's")
-        sess.odr_debug("storage", "claim", "--out", sess.path("storage-before-claim"))
+        sess.say("   (raw) into the work directory and then gives it to RadioFoundry.")
+        if not sess.ask("Give the settings area to RadioFoundry now?"):
+            raise MigrateError("stopped: codeplug writes are refused until the area is RadioFoundry's")
+        sess.rfoundry_debug("storage", "claim", "--out", sess.path("storage-before-claim"))
     elif region != "ours":
         raise MigrateError("unexpected storage state %r" % region)
-    sess.say("   the settings area is ODR's")
+    sess.say("   the settings area is RadioFoundry's")
     return True
 
 
@@ -721,24 +721,24 @@ def step_restore(sess, args):
         src = os.path.abspath(args.yaml)
         if not os.path.isfile(src):
             raise MigrateError("%s not found" % src)
-        odr_dfu, odr_yaml, _ = cp.convert_for_odr(sess, src, ODR_DRIVER, cleanup=not args.no_cleanup)
-        with open(odr_yaml, encoding="utf-8") as f:
-            sess.save_state(odr_yaml=odr_yaml, odr_dfu=odr_dfu, expected=codeplug_summary(f.read())["counts"])
-    src = sess.state.get("odr_dfu")
+        rfoundry_dfu, rfoundry_yaml, _ = cp.convert_for_rfoundry(sess, src, RFOUNDRY_DRIVER, cleanup=not args.no_cleanup)
+        with open(rfoundry_yaml, encoding="utf-8") as f:
+            sess.save_state(rfoundry_yaml=rfoundry_yaml, rfoundry_dfu=rfoundry_dfu, expected=codeplug_summary(f.read())["counts"])
+    src = sess.state.get("rfoundry_dfu")
     if sess.dry and not src:
-        sess.say("   [dry run] would write odr-codeplug.dfu through ODR's CPS shim, then read it back and compare")
+        sess.say("   [dry run] would write rfoundry-codeplug.dfu through RadioFoundry's CPS shim, then read it back and compare")
         return True
     if not src or (not sess.dry and not os.path.isfile(src)):
         raise MigrateError("no converted codeplug: run 'backup' first or give --yaml FILE")
-    # dmrconf's own write reads the radio first, and that read fails against ODR (#9): cps_client writes the same
+    # dmrconf's own write reads the radio first, and that read fails against RadioFoundry (#9): cps_client writes the same
     # regions qdmr would, with what was there saved first
     targets, img = cp.cps_write_dfu(sess, lambda: open_cps(sess), src, "codeplug", "codeplug-before.bin")
     if sess.dry:
         return True
     sess.say("   written; the radio restarts")
     time.sleep(3)
-    wait_odr(sess, args.wait)
-    cp.check_read_back(sess, lambda: open_cps(sess), targets, img, sess.state.get("expected"), ODR_DRIVER)
+    wait_rfoundry(sess, args.wait)
+    cp.check_read_back(sess, lambda: open_cps(sess), targets, img, sess.state.get("expected"), RFOUNDRY_DRIVER)
     sess.save_state(restored=True)
     return True
 
@@ -751,7 +751,7 @@ def step_iddb(sess, args):
     ids = [args.id] if args.id else (sess.state.get("radio_ids") or [])
     if not ids:
         raise MigrateError("no DMR ID to choose the database around: give --id YOUR_ID, or --no-db")
-    cmd = ["write-db", "--radio", ODR_DRIVER, "--id", ",".join(str(i)[:3] if args.id_prefix else str(i) for i in ids)]
+    cmd = ["write-db", "--radio", RFOUNDRY_DRIVER, "--id", ",".join(str(i)[:3] if args.id_prefix else str(i) for i in ids)]
     users = args.users_json or sess.state.get("users_json")
     if users:
         cmd += ["--database", users]
@@ -761,7 +761,7 @@ def step_iddb(sess, args):
     if args.db_limit:
         cmd += ["--limit", str(args.db_limit)]
     sess.say("   a large database takes several minutes over USB; don't unplug the radio")
-    wait_odr(sess, args.wait)
+    wait_rfoundry(sess, args.wait)
     sess.dmr(*cmd, radio=True)
     sess.say("   done: names show on the receive screen for IDs that are not contacts")
     return True
@@ -771,15 +771,15 @@ def step_iddb(sess, args):
 # package for a tester
 
 PACKAGE_README = """\
-OpenDigitalRadio for the TYT MD-380 / MD-390 / Retevis RT3: migration kit (TESTING ONLY)
+RadioFoundry for the TYT MD-380 / MD-390 / Retevis RT3: migration kit (TESTING ONLY)
 
-This kit moves a radio from its stock or md380tools firmware to OpenDigitalRadio and keeps your channels, zones,
+This kit moves a radio from its stock or md380tools firmware to RadioFoundry and keeps your channels, zones,
 contacts, RX group lists and the DMR ID database. The firmware has not been proven on every radio yet: keep the
 TYT updater and your stock firmware file at hand to go back.
 
 Not for redistribution: the merged firmware image contains the codec from TYT's firmware.
-The image is built for one band: odr_md380_codec.bin from a UHF build for a UHF radio, from a VHF build
-(MD380_BAND=vhf) for a VHF radio. The band is on the label under the battery.
+The image is built for one band: rfoundry_md380_codec.bin from a UHF build for a UHF radio, from a VHF build
+(BAND=vhf) for a VHF radio. The band is on the label under the battery.
 
 Install once
   - Python 3.8 or newer.
@@ -796,7 +796,7 @@ Run
   python3 md380_migrate.py all --image {image}{keyarg}
 
 The tool asks before each step that needs you at the radio (switching on, the bootloader keys). It keeps every file
-in ~/ODR-MD380-migration/<date-time>/ and never deletes them. If a step fails it stops and says how to go on;
+in ~/RadioFoundry-MD380-migration/<date-time>/ and never deletes them. If a step fails it stops and says how to go on;
 'restore --workdir DIR' continues after the flash.
 """
 
@@ -805,10 +805,10 @@ def cmd_package(sess, args):
     out = os.path.abspath(args.outdir)
     files = {os.path.abspath(__file__): "md380_migrate.py",
              os.path.join(HERE, "stm32_dfu.py"): "stm32_dfu.py",
-             os.path.join(HERE, "odr_debug.py"): "odr_debug.py",
+             os.path.join(HERE, "rfoundry_debug.py"): "rfoundry_debug.py",
              os.path.join(HERE, "codeplug_port.py"): "codeplug_port.py",
              os.path.join(HERE, "cps_client.py"): "cps_client.py"}
-    sfw = next((p for p in (os.path.join(HERE, "stockfw.py"), os.path.join(HERE, "odrflash", "odrflash", "stockfw.py"))
+    sfw = next((p for p in (os.path.join(HERE, "stockfw.py"), os.path.join(HERE, "rfoundry", "rfoundry", "stockfw.py"))
                 if os.path.isfile(p)), None)
     if sfw:
         files[sfw] = "stockfw.py"
@@ -871,7 +871,7 @@ def self_test():
 settings:
   defaultID: id1
   boot:
-    message1: ODR
+    message1: RadioFoundry
 radioIDs:
   - dmr: {id: id1, name: N0CALL, number: 3100001}
 contacts:
@@ -955,12 +955,12 @@ zones:
 
 EPILOG = """\
 examples:
-  %(prog)s all --image odr_md380_codec.bin --stock "MD-380-D2.32(AD).bin" --dry-run
-  %(prog)s all --image odr_md380_codec.bin --key md380.key --users user.csv
+  %(prog)s all --image rfoundry_md380_codec.bin --stock "MD-380-D2.32(AD).bin" --dry-run
+  %(prog)s all --image rfoundry_md380_codec.bin --key md380.key --users user.csv
   %(prog)s backup --from KD4Z-codeplug.rdt
-  %(prog)s flash --image odr_md380.bin --stock "MD-380-D2.32(AD).bin"      (merges the codec)
+  %(prog)s flash --image rfoundry_md380.bin --stock "MD-380-D2.32(AD).bin"      (merges the codec)
   %(prog)s flash --image "MD-380-D2.32(AD).bin"                            (back to stock: a TYT updater file)
-  %(prog)s restore --workdir ~/ODR-MD380-migration/20261011-101500
+  %(prog)s restore --workdir ~/RadioFoundry-MD380-migration/20261011-101500
 
 The steps of 'all': backup (radio on stock firmware) -> flash (bootloader) -> settings area -> codeplug -> ID
 database. Each asks before anything happens at the radio; it stops at the first failure and never deletes a file.
@@ -971,8 +971,8 @@ def main(argv=None):
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--dry-run", action="store_true", help="run the offline steps; print what would touch the radio")
     common.add_argument("--yes", "-y", action="store_true", help="don't ask (physical steps are still announced)")
-    common.add_argument("--workdir", help="where backups and converted files go (default ~/ODR-MD380-migration/DATE)")
-    common.add_argument("--port", help="the radio's serial port once it runs ODR (found by USB ID otherwise)")
+    common.add_argument("--workdir", help="where backups and converted files go (default ~/RadioFoundry-MD380-migration/DATE)")
+    common.add_argument("--port", help="the radio's serial port once it runs RadioFoundry (found by USB ID otherwise)")
     common.add_argument("--dmrconf", help="path of dmrconf (default: from PATH)")
     common.add_argument("--wait", type=int, default=120, help="seconds to wait for the radio (default 120)")
 
@@ -992,10 +992,10 @@ def main(argv=None):
     b.add_argument("--stock-radio", default=STOCK_DRIVER, choices=("md390", "rt8"),
                    help="dmrconf driver for the stock codeplug (default md390; the MD-380 and RT3 use the same format)")
     b.add_argument("--accept-trim", action="store_true", help="continue without asking when zones or RX group lists "
-                                                              "don't all fit ODR")
+                                                              "don't all fit RadioFoundry")
 
     f = argparse.ArgumentParser(add_help=False)
-    f.add_argument("--image", required=True, help="the ODR image (odr_md380_codec.bin, or odr_md380.bin with --stock), "
+    f.add_argument("--image", required=True, help="the RadioFoundry image (rfoundry_md380_codec.bin, or rfoundry_md380.bin with --stock), "
                                                   "or a TYT updater file")
     f.add_argument("--key", help="the 1024-byte MD-380 bootloader key file (checked by SHA-256)")
     f.add_argument("--stock", metavar="FILE", help="TYT's \"MD-380-D2.32(AD).bin\": gives the key and, for an image "
@@ -1012,13 +1012,13 @@ def main(argv=None):
     r.add_argument("--no-db", action="store_true", help="don't write the ID database")
 
     ap = argparse.ArgumentParser(description="Move a TYT MD-380 / MD-390 / Retevis RT3 from stock or md380tools "
-                                             "firmware to OpenDigitalRadio, keeping the codeplug and the ID database.",
+                                             "firmware to RadioFoundry, keeping the codeplug and the ID database.",
                                  epilog=EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true", help="test the conversion logic (no radio, no dmrconf)")
     sub = ap.add_subparsers(dest="cmd")
-    sub.add_parser("backup", parents=[common, b, c, u], help="read (or import) the codeplug and convert it for ODR")
-    sub.add_parser("flash", parents=[common, f], help="flash ODR through the TYT bootloader")
-    sub.add_parser("restore", parents=[common, r, c, u], help="settings area, codeplug and ID database to the radio on ODR")
+    sub.add_parser("backup", parents=[common, b, c, u], help="read (or import) the codeplug and convert it for RadioFoundry")
+    sub.add_parser("flash", parents=[common, f], help="flash RadioFoundry through the TYT bootloader")
+    sub.add_parser("restore", parents=[common, r, c, u], help="settings area, codeplug and ID database to the radio on RadioFoundry")
     sub.add_parser("all", parents=[common, b, f, r, c, u], help="backup, flash, restore")
     p = sub.add_parser("package", parents=[common], help="a directory for a tester")
     p.add_argument("outdir")
@@ -1037,11 +1037,11 @@ def main(argv=None):
             return 0 if cmd_package(sess, args) else 1
         if args.cmd == "restore":
             sess.open_workdir(args.workdir, create=args.workdir is None or args.yaml is not None)
-            if not args.yaml and not sess.state.get("odr_yaml"):
+            if not args.yaml and not sess.state.get("rfoundry_yaml"):
                 raise MigrateError("no converted codeplug in %s: give --workdir of an earlier backup, or --yaml"
                                    % sess.workdir)
             prepare_users(sess, args)
-            step_prepare_odr(sess, args)
+            step_prepare_rfoundry(sess, args)
             step_restore(sess, args)
             step_iddb(sess, args)
         else:
@@ -1052,11 +1052,11 @@ def main(argv=None):
                 step_backup(sess, args)
             if args.cmd in ("flash", "all"):
                 if args.cmd == "all":
-                    if not sess.ask("The codeplug is backed up. Flash ODR now?"):
+                    if not sess.ask("The codeplug is backed up. Flash RadioFoundry now?"):
                         raise MigrateError("stopped before flashing; the backup is in %s" % sess.workdir)
                 step_flash(sess, args)
             if args.cmd == "all":
-                step_prepare_odr(sess, args)
+                step_prepare_rfoundry(sess, args)
                 step_restore(sess, args)
                 step_iddb(sess, args)
         sess.say("")
@@ -1066,7 +1066,7 @@ def main(argv=None):
     except MigrateError as e:
         sess.say("")
         sess.say("stopped: %s" % e)
-        if sess.state.get("flashed") and sess.state.get("odr_yaml") and args.cmd in ("all", "restore"):
+        if sess.state.get("flashed") and sess.state.get("rfoundry_yaml") and args.cmd in ("all", "restore"):
             sess.say("to continue once the cause is fixed: %s restore --workdir \"%s\""
                      % (os.path.basename(sys.argv[0]), sess.workdir))
         return 1

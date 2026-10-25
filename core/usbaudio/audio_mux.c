@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The PCM stream shared between the radio's users and a host audio session (audio_mux.h)
 #include "config.h"
 #include "usbaudio/audio_mux.h"

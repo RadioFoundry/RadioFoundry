@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's SPLIT command (0x15, docs/spec/debuglink.md 3.15, docs/spec/split-duplex.md 10.1), built only with
 // CONFIG_HOTSPOT_SPLIT (without it the command is unknown, as before):
 //   op 1  variant u8, nregs u8 (<= 4), nregs x (page 4 register u8, value u8) -> status: the BS framing experiment's
@@ -35,6 +35,12 @@ void debuglink_view_split(dl_text_t *t)
 		(unsigned)v.epoch_us, (unsigned)v.period_ns, v.epoch_age_s, (int)v.residual_us, (int)v.track_us);
 	dl_text(t, "split.busy=%u\nsplit.labeled1=%u\nsplit.labeled2=%u\nsplit.unlabeled=%u\n", v.inbound_busy,
 		v.labeled[0], v.labeled[1], v.unlabeled);
+	dl_text(t, "split.stream=%u\nsplit.align=0x%02x\nsplit.phase_us=%d\nsplit.snap_adj_us=%d\nsplit.cbase=%u\n",
+		v.stream, v.align_flags, (int)v.phase_us, (int)v.snap_adj_us, (unsigned)v.cbase);
+	dl_text(t, "split.sched_sent=%u\nsplit.sched_late=%u\nsplit.sched_refused=%u\nsplit.sched_replaced=%u\n"
+		"split.sched_cooldown=%u\n", v.sch_sent, v.sch_late, v.sch_refused, v.sch_replaced, v.sch_cool);
+	dl_text(t, "split.slew_steps=%u\nsplit.slew_us=%d\nsplit.meta_sent=%u\n", v.slew_steps, (int)v.slew_us,
+		v.meta_sent);
 }
 
 size_t debuglink_cmd_split(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)

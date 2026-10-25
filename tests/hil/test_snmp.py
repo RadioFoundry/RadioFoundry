@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The SNMP agent over the USB network (opt-in: --allow-usb-switch; firmware built with CONFIG_SNMP): the radio
-switches to the network adapter, then tools/odr_snmp.py walks the whole MIB at the radio's link address (UDP 161),
+switches to the network adapter, then tools/rfoundry_snmp.py walks the whole MIB at the radio's link address (UDP 161),
 checks values against the debug link, sets an agent setting with a write community and back, sees a SET with the
 read community refused and a wrong community ignored, and receives a notification (the debug link's test trap, sent
 to a high port so no root is needed on Linux); then USB goes back to serial and the settings back to what they were.
@@ -16,13 +16,13 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, find_ports
+from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
-import odr_snmp  # noqa: E402
+import rfoundry_snmp  # noqa: E402
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
-TEST_COMMUNITY = "odr-hil-rw"
+TEST_COMMUNITY = "rfoundry-hil-rw"
 TRAP_PORT = 16162
 
 
@@ -48,17 +48,18 @@ def _serial_back(timeout):
 
 
 def _value(vbs, name):
-    want = odr_snmp.oid_tuple(name)
+    want = rfoundry_snmp.oid_tuple(name)
     for oid, tag, value in vbs:
         if oid == want:
             return value
     raise AssertionError(f"{name} not in the answer")
 
 
+@pytest.mark.feature("snmp")
 @pytest.mark.usb_switch
 def test_snmp_usb(radio, pytestconfig):
     if "SNMP" not in radio.features():
-        pytest.skip("built without CONFIG_SNMP")
+        skip("not_built", "built without CONFIG_SNMP")
     # On a DMR channel: the DMR objects (talk group, target type) are only in the walk then
     radio.go_home()
     radio.find_channel(round(pytestconfig.getoption("--dmr-freq") * 1e6), "dmr")
@@ -67,7 +68,7 @@ def test_snmp_usb(radio, pytestconfig):
     before = radio.view(["snmp"])
     assert before.get("snmp.built") == "1", before
     if int(before.get("snmp.flags", "0"), 16) & 0x01:
-        pytest.skip("the agent is switched off in this radio's settings (snmp.flags)")
+        skip("state", "the agent is switched off in this radio's settings (snmp.flags)")
     had_write = before.get("snmp.write_set") == "1"
     if not had_write:
         radio.link.snmp_community(True, TEST_COMMUNITY)
@@ -80,52 +81,52 @@ def test_snmp_usb(radio, pytestconfig):
     try:
         udp = _udp_link(radio_ip, 30)
         assert udp is not None, f"no debug link over UDP at {radio_ip} within 30 s (DHCP on the host's adapter?)"
-        m = odr_snmp.Manager(radio_ip, "public", timeout=2.0)
+        m = rfoundry_snmp.Manager(radio_ip, "public", timeout=2.0)
 
         # The whole MIB, in order (Manager.walk refuses a non-increasing answer)
         walk = m.walk("1.3")
-        names = {odr_snmp.name_of(oid) for oid, _, _ in walk}
+        names = {rfoundry_snmp.name_of(oid) for oid, _, _ in walk}
         assert len(walk) >= 60, f"only {len(walk)} instances"
-        for n in ("sysDescr.0", "sysObjectID.0", "sysUpTime.0", "sysName.0", "odrDmrId.0", "odrBoard.0", "odrBatteryVoltage.0", "odrRxFrequency.0", "odrAgentRfManager.0"):
+        for n in ("sysDescr.0", "sysObjectID.0", "sysUpTime.0", "sysName.0", "rfoundryDmrId.0", "rfoundryBoard.0", "rfoundryBatteryVoltage.0", "rfoundryRxFrequency.0", "rfoundryAgentRfManager.0"):
             assert n in names, f"{n} missing from the walk"
         v = udp.view(["core", "dmr"])
-        got = m.get("odrDmrId.0", "odrRxFrequency.0", "sysUpTime.0", "odrUsbNetwork.0")
-        assert _value(got, "odrDmrId.0") == own_id
-        assert _value(got, "odrRxFrequency.0") == int(v["rx_hz"])
-        assert _value(got, "odrUsbNetwork.0") == 1      # TruthValue true
+        got = m.get("rfoundryDmrId.0", "rfoundryRxFrequency.0", "sysUpTime.0", "rfoundryUsbNetwork.0")
+        assert _value(got, "rfoundryDmrId.0") == own_id
+        assert _value(got, "rfoundryRxFrequency.0") == int(v["rx_hz"])
+        assert _value(got, "rfoundryUsbNetwork.0") == 1      # TruthValue true
         t1 = _value(got, "sysUpTime.0")
         time.sleep(1.0)
         t2 = _value(m.get("sysUpTime.0"), "sysUpTime.0")
         assert 50 <= t2 - t1 <= 300, (t1, t2)            # hundredths of a second
         descr = _value(m.get("sysDescr.0"), "sysDescr.0").decode()
-        assert descr.startswith("OpenDigitalRadio "), descr
+        assert descr.startswith("RadioFoundry "), descr
 
         # SET: refused with the read community; with the write community the RF trap interval round trip
-        with pytest.raises(odr_snmp.SnmpError, match="noAccess"):
-            m.set(("odrAgentRfTrapInterval.0", "u:120"))
+        with pytest.raises(rfoundry_snmp.SnmpError, match="noAccess"):
+            m.set(("rfoundryAgentRfTrapInterval.0", "u:120"))
         if not had_write:
-            w = odr_snmp.Manager(radio_ip, TEST_COMMUNITY, timeout=2.0)
-            old = _value(w.get("odrAgentRfTrapInterval.0"), "odrAgentRfTrapInterval.0")
+            w = rfoundry_snmp.Manager(radio_ip, TEST_COMMUNITY, timeout=2.0)
+            old = _value(w.get("rfoundryAgentRfTrapInterval.0"), "rfoundryAgentRfTrapInterval.0")
             new = 120 if old != 120 else 90
-            w.set(("odrAgentRfTrapInterval.0", f"u:{new}"))
-            assert _value(m.get("odrAgentRfTrapInterval.0"), "odrAgentRfTrapInterval.0") == new
-            with pytest.raises(odr_snmp.SnmpError, match="wrongValue"):
-                w.set(("odrAgentRfTrapInterval.0", "u:5"))
-            with pytest.raises(odr_snmp.SnmpError, match="notWritable"):
+            w.set(("rfoundryAgentRfTrapInterval.0", f"u:{new}"))
+            assert _value(m.get("rfoundryAgentRfTrapInterval.0"), "rfoundryAgentRfTrapInterval.0") == new
+            with pytest.raises(rfoundry_snmp.SnmpError, match="wrongValue"):
+                w.set(("rfoundryAgentRfTrapInterval.0", "u:5"))
+            with pytest.raises(rfoundry_snmp.SnmpError, match="notWritable"):
                 w.set(("sysDescr.0", "s:x"))
-            w.set(("odrAgentRfTrapInterval.0", f"u:{old}"))
+            w.set(("rfoundryAgentRfTrapInterval.0", f"u:{old}"))
             w.close()
 
         # A wrong community: no answer, counted
         bad0 = _value(m.get("snmpInBadCommunityNames.0"), "snmpInBadCommunityNames.0")
-        b = odr_snmp.Manager(radio_ip, "wrong", timeout=0.5, retries=0)
-        with pytest.raises(odr_snmp.SnmpError, match="no answer"):
+        b = rfoundry_snmp.Manager(radio_ip, "wrong", timeout=0.5, retries=0)
+        with pytest.raises(rfoundry_snmp.SnmpError, match="no answer"):
             b.get("sysName.0")
         b.close()
         assert _value(m.get("snmpInBadCommunityNames.0"), "snmpInBadCommunityNames.0") == bad0 + 1
 
         # A notification to the host (the test trap: coldStart), from the radio's address
-        traps = odr_snmp.listen(TRAP_PORT, count=1, timeout=5.0)
+        traps = rfoundry_snmp.listen(TRAP_PORT, count=1, timeout=5.0)
         udp.snmp_test_trap()
         addr, vbs = next(traps)
         assert addr[0] == radio_ip, addr

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The LIS3DH driver (drivers/sensor/lis3dh) against a register model: identity check, the start-up configuration,
 // the 12-bit left-justified output with its sign, the new-sample flag and bus failures
 #include <stdio.h>
@@ -71,7 +71,7 @@ int main(void)
 	CHECK(lis3dh_init(&bus));
 	CHECK(chip.reg[LIS3DH_REG_CTRL1] == 0x47 && chip.reg[LIS3DH_REG_CTRL4] == 0x88);
 	reset();
-	chip.reg[LIS3DH_REG_WHO_AM_I] = 0x11;	// SC7A20, the clone on the DM-1801 Pro
+	chip.reg[LIS3DH_REG_WHO_AM_I] = 0x11;	// SC7A20, the register-compatible clone
 	CHECK(lis3dh_probe(&bus) && lis3dh_init(&bus));
 	reset();
 	chip.reg[LIS3DH_REG_WHO_AM_I] = 0x32;

@@ -7,7 +7,11 @@
 
 ## Radios
 
-<!-- Which radios this touches: DM-1701, DM-32UV, MD-380, DB25-D, all (core only), none (tools, docs) -->
+<!-- Which radios this touches, from this list, or all (core only), or none (tools, docs):
+generated: tools/boards.py docs radios; edit boards/*/board.toml
+DM-32UV, DM-1701, DM-1801 Pro, DB25-D PRO, MD-380
+end generated
+-->
 
 ## Testing
 
@@ -23,11 +27,11 @@
 ## Checklist
 
 - [ ] Branch named `<type>/<area>-<short-description>`, title `<Area>: <what changed>`
-      ([contributing.md](https://github.com/sfowlr/OpenDigitalRadio/blob/main/docs/dev/contributing.md#branches-and-pull-requests)).
+      ([contributing.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/dev/contributing.md#branches-and-pull-requests)).
 - [ ] Host unit tests cover the change (code changes), named in Testing above.
 - [ ] Clean room: written from `docs/spec/`, datasheets, public standards or permissively licensed code. Nothing
       copied, translated or paraphrased from other firmware, GPL code, vendor SDKs or disassembly
-      ([CLEANROOM.md](https://github.com/sfowlr/OpenDigitalRadio/blob/main/docs/CLEANROOM.md)).
+      ([CLEANROOM.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/CLEANROOM.md)).
 - [ ] No AMBE codec, stock firmware, bootloader keys, flash or memory dumps or audio recordings in the diff.
 - [ ] SPDX header on every new file.
 - [ ] `core/` stays radio independent: no board headers, no radio defines.

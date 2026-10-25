@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The runtime RAM-monitor loader's portable core (docs/spec/stub-entry.md, docs/spec/debuglink.md 3.18): the STUB
 // command's state machine (INFO, BEGIN, DATA, ENTER) with no RTOS or board, so the host tests run it. The firmware glue
 // is stub_entry.c; the platform supplies the RAM span and the quiesce-and-jump (hal_system_t.stub_region / enter_stub).

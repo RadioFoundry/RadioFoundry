@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // NOR-like 4 KB sectors over NAND (nand_sectors.h, docs/spec/nand-sectors.md).
 //
 // A record is the content of one sector at one moment: two pages (half 0, half 1), or one page that says the sector is
@@ -17,7 +17,7 @@
 
 #define P		NAND_SECTORS_PAGE
 #define META_SPARE	8u		// offset in the spare area: bytes 0-7 stay erased (the factory bad-block mark is
-					// byte 0; the DB25-D stock firmware keeps its own block marks at bytes 4-5)
+					// byte 0; a stock firmware keeps its own block marks at bytes 4-5)
 #define META_COL	(P + META_SPARE)
 #define META_LEN	16u
 #define META_MAGIC	0x314C534Eu	// "NSL1"

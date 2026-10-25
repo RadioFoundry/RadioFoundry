@@ -2,7 +2,7 @@
 
 # Testing
 
-How to run every test of OpenDigitalRadio, from the host tests to the radio on the SDR bench. Each tier is
+How to run every test of RadioFoundry, from the host tests to the radio on the SDR bench. Each tier is
 repeatable and skips cleanly what it can't reach. What each level is for and where a new test goes:
 [docs/dev/testing.md](../dev/testing.md).
 
@@ -25,8 +25,8 @@ tools/ci.sh --board <b>        # one board, for example dm1701
 tools/ci.sh --matrix           # only the feature matrix (no default builds)
 tools/ci.sh --steps host,python   # only some steps: host, python, firmware, licenses, similarity
 JOBS=8 tools/ci.sh             # parallel make jobs (default: the CPU count)
-ODR_CI_PRUNE=1 tools/ci.sh     # drop each build tree once its size is recorded (logs and images stay)
-ODR_CI_SANITIZE=1 tools/ci.sh  # the host step also runs the host tests under ASan and UBSan
+RFOUNDRY_CI_PRUNE=1 tools/ci.sh     # drop each build tree once its size is recorded (logs and images stay)
+RFOUNDRY_CI_SANITIZE=1 tools/ci.sh  # the host step also runs the host tests under ASan and UBSan
 ```
 
 The CI workflows run these pieces per push and nightly ([docs/dev/ci.md](../dev/ci.md)).
@@ -37,10 +37,11 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    C compiler. Their binaries, `.dSYM` bundles and outputs stay in `tests/host/` and are ignored by git
    (`tests/host/.gitignore` tracks only sources); `make -C tests/host clean` removes them.
 2. **Python**: every tool and HIL test parses, and pytest collects `tests/hil` (skipped without pytest:
-   `pip install pytest pyserial`). The flashing tools' tests run: `tools/odrflash/tests` (sector planning, manifests,
+   `pip install pytest pyserial`). Every HIL skip names its kind (`tools/check_hil_skips.py`), and the feature
+   checklist is consistent (`tools/bringup.py check` and the bring-up mode tests, [ci.md](../dev/ci.md)). The flashing tools' tests run: `tools/rfoundry/tests` (sector planning, manifests,
    the codec library and key derivation, the codec decision, whole flashes against a fake bootloader with a flash
    model; [release.md](../dev/release.md)) and the `--self-test` of `tools/codec_extract.py`, `tools/stm32_dfu.py`,
-   `tools/md380_migrate.py`, `tools/dm32_flash.py` (against a simulated Baofeng bootloader) and
+   `tools/md380_migrate.py`, `tools/serial_loader.py` (against a simulated Baofeng bootloader) and
    `tools/dm32_migrate.py` (DfuSe files, the conversion report, CPS writes against a simulated DM-32 shim), and the
    stack check's (`tools/stack_check.py`). `tools/check_doc_links.py` checks that every relative link, image and anchor in the Markdown resolves.
 3. **Firmware, every board with the feature matrix**. For each `boards/<b>/board.mk` whose compiler is installed:
@@ -48,14 +49,14 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    - `no-<FEATURE>`: every switch that is on by default, turned off alone (its sub-features follow it,
      `docs/build-config.md`);
    - `fm-minimal`: FM only, without DMR, USB, VFO, diagnostics and sub-audio tones;
-   - `maximal`: every switch on, except the board's `BOARD_UNSUPPORTED`, with its `MAXIMAL_VARS` (for example
-     `LTO=1` on the DM-1701);
+   - `maximal`: every switch on, except the board's `BOARD_UNSUPPORTED`, `BOARD_NOT_WRITTEN` and `MAXIMAL_SKIP`,
+     with its `MAXIMAL_VARS` (for example `LTO=1` on the DM-1701);
    - `vhf`: the MD-380's VHF image (MD-380 only).
 
    Every configuration must build with zero compiler and linker warnings. The default and maximal ones must also pass
    the stack check: every task's deepest call chain fits its stack ([docs/dev/stack-check.md](../dev/stack-check.md)).
    A board without its compiler (the DM-32's
-   csky GCC comes from `tools/build-csky-toolchain.sh` or the Docker image, [docs/dev/ci.md](../dev/ci.md#the-csky-elf-image))
+   csky GCC comes from `tools/build-csky-toolchain.sh` or the Docker image, [docs/dev/ci-runners.md](../dev/ci-runners.md#the-csky-elf-image))
    is skipped with a notice. Build trees are `build/ci/<board>-<config>/`, each
    with its log next to it. The sizes go to `build/ci/size-report.md`: image bytes, the change against the board's
    default, and the space left in the linker's application region (the codec windows lie outside it, so "free" is
@@ -63,12 +64,12 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
 4. **Licenses**: `tools/license_grep.sh` (markers of code that must not be here, `docs/CLEANROOM.md`) and
    `reuse lint`. Without `reuse` installed the lint is skipped with a notice; install it with `pipx install reuse`
    (or `pip install --user reuse`).
-5. **Similarity scan**, only when `ODR_SIMILARITY_REFS` names the reference trees (space separated). The reference
+5. **Similarity scan**, only when `RFOUNDRY_SIMILARITY_REFS` names the reference trees (space separated). The reference
    trees are never part of this repository or of public CI; the project lead runs it against the aftermarket firmware trees
    before a release:
 
    ```
-   ODR_SIMILARITY_REFS="/path/to/aftermarket-tree /path/to/other-tree" tools/ci.sh
+   RFOUNDRY_SIMILARITY_REFS="/path/to/aftermarket-tree /path/to/other-tree" tools/ci.sh
    tools/similarity_scan.py /path/to/aftermarket-tree                    # the scan alone, every region with lines
    tools/similarity_scan.py --ids --report scan.txt /path/to/tree   # also finds copies with renamed identifiers
    ```
@@ -79,7 +80,7 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
 
 ### The firmware version
 
-The image carries the commit it was built from (`ODR_GIT`, shown on the splash screen, in the debug link's VERSION
+The image carries the commit it was built from (`RFOUNDRY_GIT`, shown on the splash screen, in the debug link's VERSION
 and in the MMDVM GET_VERSION description) with `-dirty` appended when tracked files differ from that commit or untracked
 sources sit in the built directories. The build prints it on the image line (`image ...: N bytes, version
 c1544f29-dirty`). An image for anyone else is built from a clean, committed tree.
@@ -100,11 +101,12 @@ python3 -m pytest tests/hil -v -rs
 
 The radio on USB with firmware built with `CONFIG_DEBUGLINK` (the default). Nothing transmits: version and features,
 screenshots, injected keys, FM receive on NOAA weather, MMDVM requests. Without a radio every test is skipped with
-the reason. Every test file, rig assumptions and pass criteria: `tests/hil/README.md`.
+the reason, which starts with the skip's kind (`[bench]`). Every test file, rig assumptions and pass criteria:
+`tests/hil/README.md`. A radio's feature checklist run is `tools/bringup.py run --radio <id>` (its "Bring-up mode").
 
 The USB network tests (`test_usb_network*.py`, `test_tcp_services.py`, `test_net_services.py`, `test_snmp.py`) switch
 the radio to the network personality and back, so they need `--allow-usb-switch`. On macOS a missed NCM carrier can
-leave the radio a network adapter until it is power cycled ([docs/dev/ci.md](../dev/ci.md#hil-runner), "Gotchas").
+leave the radio a network adapter until it is power cycled ([docs/dev/ci-runners.md](../dev/ci-runners.md#hil-runner), "Gotchas").
 
 CPS and settings (`test_cps.py`): the radio-only tests read the codeplug twice over the open-firmware CPS protocol and
 compare, and check a channel change is saved. Two opt-in flags change the radio but don't transmit:
@@ -124,8 +126,8 @@ monitor and VOX tests an FM channel; the others skip. Three change the radio and
 
 ```
 python3 -m pytest tests/hil/test_ui.py -v -rs -k save --allow-codeplug-write          # timeslot saved to the channel and back
-ODR_HIL_DELETE_MESSAGE=1 python3 -m pytest tests/hil/test_ui.py -v -rs -k delete      # deletes the newest inbox message
-ODR_HIL_FACTORY_RESET=1 python3 -m pytest tests/hil/test_ui.py -v -rs -k factory --allow-reboot   # erases all settings
+RFOUNDRY_HIL_DELETE_MESSAGE=1 python3 -m pytest tests/hil/test_ui.py -v -rs -k delete      # deletes the newest inbox message
+RFOUNDRY_HIL_FACTORY_RESET=1 python3 -m pytest tests/hil/test_ui.py -v -rs -k factory --allow-reboot   # erases all settings
 ```
 
 Factory reset puts every setting back to its default (brightness, privacy keys, radio settings, the channel position)
@@ -147,7 +149,7 @@ python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop           
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k dmr_data   # DMR data services
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k aprs --aprs-call CALL   # APRS, 446.050 MHz
-ODR_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s --allow-rf --allow-service-stop
+RFOUNDRY_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s --allow-rf --allow-service-stop
 ```
 
 | Test | What is checked |
@@ -158,7 +160,7 @@ ODR_SPLIT_VARIANT=0 python3 -m pytest tests/hil/test_split_duplex.py -v -rs -s -
 | `test_fm_tx` | the radio's FM VFO keys with CTCSS 100.0 Hz, DCS D023N, at 12.5 and 25 kHz, the 1750 Hz burst, the roger beep, three power levels; `tools/sdr_fm_check.py` decodes the tones (`--tones`: audio tones) and compares the deviations |
 | `test_aprs` | APRS at the lowest power on a 70 cm simplex frequency (446.050 MHz by default, never an APRS frequency, no path): position, status and message decoded off air by `tools/aprs_afsk_check.py` (Bell 202 / AX.25 from the RTL-SDR's I/Q), with the deviation, twist, phase continuity and TX delay; positions over DMR (LRRP, UDT) decoded from the bench modem |
 | `test_dmr_data` | the bench sends data, a text message, a call alert and radio checks to the radio, which answers (its `dmr_data` counters, the answers heard by the bench modem); the radio sends a call alert, a radio check and a text message the bench modem hears (`docs/spec/dmr-data.md`) |
-| `test_split_duplex` | a `CONFIG_HOTSPOT_SPLIT=y` build: the 0xD6 protocol (no RF); the TX half's continuous BS outbound at the lowest power checked off air with the CACH decode of the BS framing experiment (variant from `ODR_SPLIT_VARIANT`); the RX half labeling bench calls, the label flipping with the epoch (`docs/spec/split-duplex.md` 10) |
+| `test_split_duplex` | a `CONFIG_HOTSPOT_SPLIT=y` build: the 0xD6 protocol (no RF); the TX half's continuous BS outbound at the lowest power checked off air with the CACH decode of the BS framing experiment (variant from `RFOUNDRY_SPLIT_VARIANT`); the RX half labeling bench calls, the label flipping with the epoch (`docs/spec/split-duplex.md` 10) |
 | `test_hotspot_voice` | the hotspot on air both ways: bench calls and data up the USB link, host calls and data heard on air |
 | `test_radio_features` (rf) | the zone scan, VFO scan and dual watch holding on a bench call; battery save waking for it |
 
@@ -166,8 +168,8 @@ Which feature is covered on air, and what the last run found: [on-air-coverage.m
 bench the radio overloads both receivers even at 50 mW; `tests/hil/README.md` ("On this bench") says what the tests
 do about it.
 
-The SDR bench's names come from the environment: `ODR_SDR_BENCH_HOST` (ssh host or alias, default `sdr-bench`),
-`ODR_SDR_BENCH_SERVICE`, `ODR_SDR_BENCH_DIR`, `ODR_SDR_BENCH_PY`, `ODR_SDR_BENCH_ENV_FILE`
+The SDR bench's names come from the environment: `RFOUNDRY_SDR_BENCH_HOST` (ssh host or alias, default `sdr-bench`),
+`RFOUNDRY_SDR_BENCH_SERVICE`, `RFOUNDRY_SDR_BENCH_DIR`, `RFOUNDRY_SDR_BENCH_PY`, `RFOUNDRY_SDR_BENCH_ENV_FILE`
 (`docs/testing/dmr-bench.md` section 1).
 
 ## 4. Manual bench cases

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """DMR receive from the SDR bench's transmitter (opt-in RF: --allow-rf --allow-service-stop). The bench sends two group
 calls of 10
 superframes each (8 voice LC headers, 60 voice bursts and 3 terminators per call) on the DMR test channel; the radio's
@@ -11,17 +11,18 @@ import time
 
 import pytest
 
-from odr_hil import counter_deltas
+from rfoundry_hil import counter_deltas, skip
 
 CALLS, SUPERFRAMES, HEADERS, TERMINATORS = 2, 10, 8, 3
 
 
+@pytest.mark.feature("dmr_voice")
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_dmr_rx_counters(radio, sdr_bench, pytestconfig):
     if "DMR" not in radio.features():
-        pytest.skip("built without DMR")
+        skip("not_built", "built without DMR")
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
     radio.go_home()
     radio.find_channel(round(freq * 1e6), "dmr")

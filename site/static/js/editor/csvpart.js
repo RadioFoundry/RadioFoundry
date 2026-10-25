@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // CSV in the Codeplug Editor: Save offers the open table as a CSV file and every table as a .zip of CSV files; Open
 // File takes either back. An import is one undoable change, and its problems are listed by row and column.
 

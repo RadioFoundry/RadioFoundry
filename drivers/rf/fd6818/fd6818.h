@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// FD6818 single-chip VHF/UHF transceiver (DM-32UV): chip driver, independent of the board
+// Copyright (c) 2026 The RadioFoundry Authors
+// FD6818 single-chip VHF/UHF transceiver: chip driver, independent of the board
 // (docs/spec/hardware-dm32.md 8). No datasheet exists; register values are the ones the working firmware uses.
 //
 // The chip has a three-wire serial port (chip select, clock, bidirectional data) that the board bit-bangs: the board
@@ -32,7 +32,8 @@ typedef struct {
 } fd6818_regval_t;
 
 // What differs between the boards' chip set-ups: the register tables, the 0x30 sequences and the band words. The
-// DM-32UV's set is fd6818_variant_dm32 (the default), the DM-1801 Pro's fd6818_variant_dm1801pro
+// default set is fd6818_variant_default; a board with other tables defines its own and passes it to
+// fd6818_attach_variant
 typedef struct {
 	const fd6818_regval_t *init;		// power-on table, the soft reset first
 	uint16_t init_n;
@@ -49,7 +50,7 @@ typedef struct {
 	const fd6818_regval_t *fm_tx_prepare;	// before the switch to TX, FM only
 	uint16_t fm_tx_prepare_n;
 	// DMR per-burst switch straight from the other state, no idle on the way and no bandwidth write; NULL = idle, then
-	// rx / tx (the DM-32UV)
+	// rx / tx (the default)
 	const fd6818_regval_t *burst_rx;
 	uint16_t burst_rx_n;
 	const fd6818_regval_t *burst_tx;
@@ -60,8 +61,7 @@ typedef struct {
 	bool (*band_words)(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40);
 } fd6818_variant_t;
 
-extern const fd6818_variant_t fd6818_variant_dm32;
-extern const fd6818_variant_t fd6818_variant_dm1801pro;
+extern const fd6818_variant_t fd6818_variant_default;
 
 typedef struct {
 	const fd6818_bus_t *bus;
@@ -83,7 +83,7 @@ typedef struct {
 #define FD6818_REG_FREQ_HI	0x39
 #define FD6818_REG_BAND_B	0x40
 #define FD6818_REG_BANDWIDTH	0x43
-#define FD6818_REG_AF		0x47	// 0x6042 = AF muted in FM
+#define FD6818_REG_AF		0x47	// AF output: 0x6042 = muted in FM, FD6818_AF_FM / FD6818_AF_AM below
 #define FD6818_REG_VOLUME	0x48
 #define FD6818_REG_SUBAUDIO	0x51
 #define FD6818_REG_CSS_THRESH	0x52
@@ -96,10 +96,17 @@ typedef struct {
 #define FD6818_STATE_IDLE	0x0000u
 #define FD6818_STATE_RX		0xBFF1u
 #define FD6818_STATE_TX		0xC1FEu
-// DM-32UV 0x43 bandwidths; fd6818_variant_t holds each board's
+// The default 0x43 bandwidths; fd6818_variant_t holds each board's
 #define FD6818_BW_FM_25K	0x3028u
 #define FD6818_BW_FM_12K5	0x4008u
 #define FD6818_BW_DMR		0x4048u
+
+// 0x47 AF output words. Bits 11:8 pick the demodulator whose audio the output carries; the register is laid out as on
+// the BK4819 class of chips (docs/spec/airband-and-broadcast.md 3.3), where type 1 is FM and type 7 is AM. FD6818_AF_FM
+// is the word the FM and DMR tables write (checked on the radio); FD6818_AF_AM is the same word with the AM type
+// (inferred, the air band bring-up confirms it)
+#define FD6818_AF_FM		0x0140u
+#define FD6818_AF_AM		0x0740u
 
 typedef enum { FD6818_MODE_FM, FD6818_MODE_DMR } fd6818_mode_t;
 typedef enum { FD6818_TONE_NONE, FD6818_TONE_CTCSS, FD6818_TONE_DCS, FD6818_TONE_DCS_INV } fd6818_tone_t;
@@ -128,8 +135,8 @@ typedef struct {
 // bands), the nearest point's value outside them; 0 with no table
 int8_t fd6818_rssi_cal_db(const fd6818_rssi_cal_t *t, uint8_t n, uint32_t hz);
 // Noise for the core's squelch (hal_radio_t status, larger = more noise): reg 0x65 bits 7:0 plus an offset. Without a
-// signal the raw value reads 43-63 (UHF 43-51 on most channels, VHF and 420 MHz 57-63), and a strong carrier reads 8 (a
-// DM-1801 Pro on the SDR bench). The core's levels open below 64 (loosest) down to 40 (tightest), so the raw floor
+// signal the raw value reads 43-63 (UHF 43-51 on most channels, VHF and 420 MHz 57-63), and a strong carrier reads 8 (on
+// the SDR bench). The core's levels open below 64 (loosest) down to 40 (tightest), so the raw floor
 // sits inside that range and every level opens on noise. The offset lifts the floor above 64 and keeps a strong
 // carrier at 33
 #define FD6818_NOISE_OFFSET	25u
@@ -141,7 +148,7 @@ static inline uint8_t fd6818_noise(uint16_t r65)
 
 // --- Register access (one frame each, inside the critical section) ---
 
-void fd6818_attach(fd6818_t *dev, const fd6818_bus_t *bus);	// the DM-32UV variant
+void fd6818_attach(fd6818_t *dev, const fd6818_bus_t *bus);	// the default variant
 void fd6818_attach_variant(fd6818_t *dev, const fd6818_bus_t *bus, const fd6818_variant_t *variant);
 void fd6818_write(fd6818_t *dev, uint8_t reg, uint16_t val);
 uint16_t fd6818_read(fd6818_t *dev, uint8_t reg);
@@ -165,6 +172,9 @@ void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10);
 // also turns the chip's sub-audio transmitter on, so a radio that makes its tones elsewhere sets NONE before TX
 void fd6818_set_rx_tone(fd6818_t *dev, fd6818_tone_t type, uint16_t value);
 bool fd6818_rx_tone_ok(fd6818_t *dev, fd6818_tone_t type);
+// The receiver's audio output: the AM demodulator (true, the air band) or FM. Only the AF word changes: tune and set the
+// FM bandwidth and RX state as for FM receive. fd6818_set_mode writes FM again
+void fd6818_set_am(fd6818_t *dev, bool am);
 // Receiver power saving (8.8, the radio's own sequence): sleep = idle, then 0x37 to its low-power word (FM 0x1D11,
 // DMR 0x1D00); wake = 0x37 back to the receive word (0x1F1F, then 0x1F0F) with the state still idle: the caller
 // retunes and sets the RX state next (fd6818_set_freq, fd6818_set_state)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # Pad a first stage to its flash sector with 0xFF (erased flash) and check it starts with the signature its loader
 # looks for before it starts an application (boot/README.md). Fails, and writes nothing, when either is wrong.
 #   pad.py RAW OUT SIZE SIGNATURE_HEX

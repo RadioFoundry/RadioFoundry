@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 baseband: power-on set-up, FM, sub-audio, audio paths (docs/spec/modem-hrc7000.md 4, 5.1, 8)
 #include <stddef.h>
 #include "hrc7000.h"
+#include "hal_dtmf.h"
 
 #define RF_MODE_VALUE		0x03269860u	// AF RX with averaging, gain 2.375, RX IQ invert, dynamic sync, dual RX, two-point TX
 #define RF_CONTROL_VALUE	0x0004001Au	// tx_pre_on 0.4 ms, RF RX interrupt 2.6 ms early; b13:8 from rf_tx_lead
@@ -186,7 +187,7 @@ void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db)
 	hrc7000_wr(d, C7_FM_TONE3, FM_TONE3_DEFAULT);
 	hrc7000_wr(d, C7_FM_TONE4, 0x0BD10D10u);
 	// The reset value, not what the register holds: a restart that doesn't reset the modem (the boot stub's) finds the
-	// last transmission's value there, and at 25 kHz that is twice the narrow one (0xFF on the DM-32UV: 1.9 kHz CTCSS)
+	// last transmission's value there, and at 25 kHz that is twice the narrow one (0xFF seen: 1.9 kHz CTCSS)
 	d->subaudio_dev = SUBAUDIO_DEV_RESET;
 	hrc7000_wr(d, C7_SUBVOICE_COEF, (hrc7000_rd(d, C7_SUBVOICE_COEF) & ~0xFF00u) | (SUBAUDIO_DEV_RESET << 8));
 	hrc7000_set_mic_gain(d, mic_gain_db);
@@ -363,16 +364,37 @@ bool hrc7000_subtone_ok(hrc7000_t *d)
 	return true;
 }
 
+static uint32_t tone_step(uint16_t hz)
+{
+	return ((uint32_t)hz * 2048u + 500u) / 1000u;	// round(f x 2.048)
+}
+
 void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev)
 {
-	if (hz != 0) {
-		uint32_t step = ((uint32_t)hz * 2048u + 500u) / 1000u;	// round(f x 2.048)
+	hrc7000_tx_pair(d, hz, hz, dev);
+}
+
+bool hrc7000_tx_dtmf(hrc7000_t *d, char digit, uint8_t dev)
+{
+	uint16_t low = 0, high = 0;
+	if (digit != 0 && !dtmf_pair(digit, &low, &high)) {
+		return false;
+	}
+	hrc7000_tx_pair(d, low, high, dev);
+	return true;
+}
+
+// Digit "1" is FM_TONE1's high half with FM_TONE3's high half (697 + 1209 Hz by default), so any pair goes out as
+// digit 1 with those two steps rewritten: one sequence for single tones and every DTMF digit, without the digit codes
+void hrc7000_tx_pair(hrc7000_t *d, uint16_t low_hz, uint16_t high_hz, uint8_t dev)
+{
+	if (low_hz != 0) {
 		if (!d->tone_on) {
 			d->subvoice = hrc7000_rd(d, C7_SUBVOICE_COEF);
 		}
 		hrc7000_wr(d, C7_SUBVOICE_COEF, (d->subvoice & ~0xFF00u) | ((uint32_t)dev << 8));
-		hrc7000_wr(d, C7_FM_TONE1, (step << 16) | (FM_TONE1_DEFAULT & 0xFFFFu));
-		hrc7000_wr(d, C7_FM_TONE3, (step << 16) | (FM_TONE3_DEFAULT & 0xFFFFu));
+		hrc7000_wr(d, C7_FM_TONE1, (tone_step(low_hz) << 16) | (FM_TONE1_DEFAULT & 0xFFFFu));
+		hrc7000_wr(d, C7_FM_TONE3, (tone_step(high_hz) << 16) | (FM_TONE3_DEFAULT & 0xFFFFu));
 		hrc7000_wr(d, C7_FM_MOD, hrc7000_rd(d, C7_FM_MOD) | FM_MOD_DTMF);
 		hrc7000_wr(d, C7_TONE_SEND_CTRL, TONE_SEND_START | TONE_DIGIT_1);
 		d->tone_on = true;
@@ -386,7 +408,7 @@ void hrc7000_tx_tone(hrc7000_t *d, uint16_t hz, uint8_t dev)
 	}
 }
 
-// About 5.8 Hz of deviation per step (UHF, DM-1801 Pro on the SDR bench: 0x60 = 559 Hz, 0xC0 = 1117 Hz). The guide's
+// About 5.8 Hz of deviation per step (UHF, on the SDR bench: 0x60 = 559 Hz, 0xC0 = 1117 Hz). The guide's
 // DTMF values (0x12 at UHF 12.5 kHz) gave about 100 Hz, too little to hear. 0xFF (about 1.5 kHz) is the most the
 // field holds, so 25 kHz gets less than twice the narrow value. VHF takes the same values: the board's modulation
 // calibration byte is per band, about three times the UHF one on VHF (modem-hrc7000.md 8.3). Unmeasured on VHF

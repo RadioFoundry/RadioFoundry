@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Data flash on SPI0 (a 16 MB SPI NOR, GD25Q128 or Puya PY25Q128HA class), chip select on a GPIO the board names and
 // drives by hand (docs/spec/hardware-dm32.md 3.2, 10; hardware-dm1801pro.md 6.1). One mutex serializes every
 // transaction once the scheduler runs. Everything below the board's write floor belongs to the radio's own firmware:

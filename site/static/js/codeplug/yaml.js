@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The YAML subset a qdmr codeplug file uses (docs/spec/qdmr-yaml.md 2): block maps and lists, flow maps and lists,
 // plain, single- and double-quoted scalars, literal and folded block scalars, comments, document markers and local
 // tags (!default). Anchors, aliases, complex keys and multiple documents are refused with a YamlError. Written from

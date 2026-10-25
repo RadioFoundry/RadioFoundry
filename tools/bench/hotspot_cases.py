@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """
 Adapted from our earlier bench tool hs_normal.py.
 
@@ -21,10 +21,10 @@ optional UDP transport); the SDR bench's MMDVM_HS modem board (bench_tx.py, over
     hotspot_cases.py (--port /dev/tty.usbmodemXXXX | --udp host:3334) [--cases rf_voice8,net_voice,...|all]
                      [--freq 461.6875] [--cc 2] [--power 12] [--sync-tools] [--json results.json] [--list]
 
-Needs the odr_sdrbench package (installed, or a checkout in $ODR_SDRBENCH) for
+Needs the rfoundry_sdrbench package (installed, or a checkout in $RFOUNDRY_SDRBENCH) for
 burst building and decoding. The bench's gateway service must not hold the bench modem: run it through `dmr_bench.py run H1` (which stops and
-restores $ODR_SDR_BENCH_SERVICE around it) or stop the service yourself. --sync-tools copies bench_tx.py to the
-SDR bench (~/odr-bench/) first.
+restores $RFOUNDRY_SDR_BENCH_SERVICE around it) or stop the service yourself. --sync-tools copies bench_tx.py to the
+SDR bench (~/rfoundry-bench/) first.
 """
 import argparse
 import json
@@ -39,12 +39,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mmdvm_hotspot as M      # noqa: E402
 
 M.sdrbench_path()
-from odr_sdrbench.dmr import packet, pdu        # noqa: E402
-from odr_sdrbench import layer2 as L2, sim     # noqa: E402
+from rfoundry_sdrbench.dmr import packet, pdu        # noqa: E402
+from rfoundry_sdrbench import layer2 as L2, sim     # noqa: E402
 
-BENCH_HOST = os.environ.get("ODR_SDR_BENCH_HOST", "sdr-bench")
-BENCH_DIR = os.environ.get("ODR_SDR_BENCH_DIR", "~/odr-bench")
-BENCH_PY = os.environ.get("ODR_SDR_BENCH_PY", "/opt/odr-sdrbench/.venv/bin/python")
+BENCH_HOST = os.environ.get("RFOUNDRY_SDR_BENCH_HOST", "sdr-bench")
+BENCH_DIR = os.environ.get("RFOUNDRY_SDR_BENCH_DIR", "~/rfoundry-bench")
+BENCH_PY = os.environ.get("RFOUNDRY_SDR_BENCH_PY", "/opt/rfoundry-sdrbench/.venv/bin/python")
 MODEM_CMD = f"cd {BENCH_DIR} && {BENCH_PY} bench_tx.py"
 
 DMR_DATA2, DMR_LOST2 = M.DMR_DATA2, M.DMR_LOST2

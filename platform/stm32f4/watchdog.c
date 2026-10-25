@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The STM32F4 independent watchdog, IWDG (hal_watchdog.h, CONFIG_WATCHDOG; docs/spec/watchdog.md 3.1). It runs from the
 // LSI RC oscillator, which starts by itself with it. Once started nothing but a reset stops it: a system reset does
 // (NVIC_SystemReset, the ROM DFU request's path), so main() starts it only after stm32_sysboot_check() has had its

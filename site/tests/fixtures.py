@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""Fixtures for the web flasher's tests, made with odrflash itself, so the JavaScript port is checked against the
+# Copyright (c) 2026 The RadioFoundry Authors
+"""Fixtures for the web flasher's tests, made with rfoundry itself, so the JavaScript port is checked against the
 Python it was ported from (site/tests/flasher.test.mjs):
 
-  - a synthetic DM-1701 stock file and its key (odrflash's stockfw.build_synthetic_stock), with its profile
+  - a synthetic DM-1701 stock file and its key (rfoundry's stockfw.build_synthetic_stock), with its profile
   - plans for a synthetic image in keep and merge mode, as plan.describe() prints them
   - a release manifest for that image (manifest.generate)
   - the site's data files (radios, features, variants, flash boards, the C7000 stub), as site/build.py writes them
   - for the HR_C7000 radios: an LZ4 block from stubtool's encoder, and a synthetic program flash with a codec at
     made-up addresses, its profile, what hrc7000_codec.locate() finds and the slot hrc7000_codec.merge() builds from it
+  - for the STM32F4 loader: each radio's board record from stub/f4stub.py config_record(), and the HELLO replies its
+    simulated stub (FakeF4) gives before and after CONFIG, so f4stub.js sends and parses the Python tool's bytes; and
+    f4stub's test profile, a board with other SPI wiring
   - for the codeplug editor: the radio's own codeplug code on the host (tests/host/cpsSim), a codeplug it stored
     and what it reads back, so site/tests/codeplug.test.mjs checks the JavaScript decoder and encoder against it
 
@@ -24,18 +27,18 @@ import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-sys.path.insert(0, os.path.join(ROOT, "tools", "odrflash"))
+sys.path.insert(0, os.path.join(ROOT, "tools", "rfoundry"))
 
 sys.path.insert(0, os.path.join(ROOT, "site"))
 
-from odrflash import boards, codecmap, manifest, plan, stockfw  # noqa: E402
-from odrsite import repo  # noqa: E402
-from odrflash.fakedfu import synthetic_key  # noqa: E402
+from rfoundry import boards, codecmap, manifest, plan, stockfw  # noqa: E402
+from rfoundrysite import repo  # noqa: E402
+from rfoundry.fakedfu import synthetic_key  # noqa: E402
 
 
 def codec_map_vectors(out):
-	"""odrflash's shared codec map vectors with the map normalized, as data/flash-boards.json carries maps"""
-	with open(os.path.join(ROOT, "tools", "odrflash", "tests", "codecmap_vectors.json")) as f:
+	"""rfoundry's shared codec map vectors with the map normalized, as data/flash-boards.json carries maps"""
+	with open(os.path.join(ROOT, "tools", "rfoundry", "tests", "codecmap_vectors.json")) as f:
 		v = json.load(f)
 	v["map"] = codecmap.normalize(v["map"])
 	v["new_run"] = int(v["new_run"], 0)
@@ -47,9 +50,36 @@ def codec_map_vectors(out):
 		json.dump(v, f, indent=1)
 
 
+def f4_vectors(out):
+	"""stub/f4stub.py's board records, and HELLO from its FakeF4 before and after each radio's CONFIG"""
+	f4 = repo._tool("stub", "f4stub.py")
+	st = f4.stubtool
+
+	def ask(fake, op, payload=b""):
+		fake.write(bytes([0x02, op, len(payload) >> 8, len(payload) & 0xFF, st.sum8(payload), 0x03]) + payload)
+		r = bytes(fake.out)
+		fake.out.clear()
+		return {"status": r[1], "body": r[6:].hex()}
+
+	doc = {"protocol": f4.VERSION, "records": {}, "hello": {}}
+	for bid in f4.BOARDS:
+		rec = f4.config_record(bid)
+		doc["records"][bid] = rec.hex()
+		fake = f4.FakeF4(b"\xff" * 0x100000, spi=b"\xff" * 0x10000)
+		doc["hello"][bid] = {"before": ask(fake, f4.OP_HELLO), "config": ask(fake, f4.OP_CONFIG, rec),
+				     "after": ask(fake, f4.OP_HELLO)}
+	# a profile with other wiring than any board's (f4stub.test_board), in data/flash-boards.json's shape
+	tb = f4.test_board()
+	doc["test_board"] = {"id": f4.TEST_BOARD, "name": tb["name"], "stub_id": tb["id"], "record": f4.record(tb).hex(),
+			     "owned": [list(r) for r in tb["owned"]], "codec": list(tb["codec"]),
+			     "v2_wiring": f4.record(tb)[1:] == f4.V2_WIRING}
+	with open(os.path.join(out, "f4-vectors.json"), "w") as f:
+		json.dump(doc, f, indent=1)
+
+
 def md380_like(out):
 	"""A stock file whose plain text is like Thumb code, 0x00 common but not dominant, as in the MD-380 image: the column
-	vote gets hundreds of key columns wrong and only the byte-pair refinement finds the key (odrflash's
+	vote gets hundreds of key columns wrong and only the byte-pair refinement finds the key (rfoundry's
 	test_derive_key_refines_a_bad_vote). Returns its fixture entry."""
 	rng = random.Random(1)
 	key = synthetic_key(380)
@@ -80,11 +110,12 @@ def md380_like(out):
 def main(out):
 	os.makedirs(out, exist_ok=True)
 	codec_map_vectors(out)
+	f4_vectors(out)
 	rng = random.Random(42)
 	key = synthetic_key(1701)
 	stock, profiles, code, tables = stockfw.build_synthetic_stock(key, rng)
 	(sha, prof), = profiles.items()
-	board = boards.DM1701
+	board = boards.get("dm1701")
 	image = bytes(rng.getrandbits(8) for _ in range(150 * 1024 + 123))
 	_, codec = stockfw.extract(stock, key, profiles)
 	keep = plan.make_plan(board, [(board.app_base, image)], plan.KEEP)
@@ -131,7 +162,7 @@ def c7000(out, rng):
 	import struct
 	import zlib
 	st, dc = repo._tool("stub", "stubtool.py"), repo._tool("tools", "hrc7000_codec.py")
-	sector = bytes(rng.choice(b"ODR flash  \x00\xff") for _ in range(st.SECTOR))
+	sector = bytes(rng.choice(b"RadioFoundry flash  \x00\xff") for _ in range(st.SECTOR))
 	real = next(p for p in dc.PROFILES.values() if p["board"] == "dm1801pro")
 	dump = bytearray(rng.getrandbits(8) for _ in range(dc.PROGMEM_SIZE))
 	code = bytearray(rng.getrandbits(8) for _ in range(real["code"][1]))
@@ -167,7 +198,7 @@ def c7000(out, rng):
 
 def db25d(out, rng):
 	"""The DB25-D's plain stock image (no header, no container), a synthetic one with the real profile's addresses, and
-	the merged image hrc7000_codec.merge() builds from it. With ODR_DB25D_STOCK=<one of the real 018 files> the expected
+	the merged image hrc7000_codec.merge() builds from it. With RFOUNDRY_DB25D_STOCK=<one of the real 018 files> the expected
 	result for that file is made as well, so the JavaScript can be checked on the real bytes (never kept in the repo)."""
 	import struct
 	dc = repo._tool("tools", "hrc7000_codec.py")
@@ -184,7 +215,7 @@ def db25d(out, rng):
 	merged = dc.merge(image, found, code, tables, maps)
 	files = {"db25d_stock.bin": plain, "db25d_image.bin": image, "db25d_merged.bin": merged}
 	doc = {"sha256": dc.sha256(plain), "size": len(plain), "code": caddr, "tables": taddr, "real": None}
-	path = os.environ.get("ODR_DB25D_STOCK")
+	path = os.environ.get("RFOUNDRY_DB25D_STOCK")
 	if path:
 		with open(path, "rb") as f:
 			data = f.read()

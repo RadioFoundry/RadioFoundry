@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Codeplug: an open-firmware codeplug in the board's data flash (docs/spec/open-firmware-cps.md 7,
 // docs/spec/hardware-dm1701.md 13.2), or a small built-in set of simplex FM channels when there is none.
 // Records are read from flash on demand; RAM holds only an in-use bitmap of the channels and the used zone slots.
@@ -97,6 +97,7 @@ static uint16_t channel_max;		// highest used channel number
 static uint8_t zone_slot[ZONE_SLOTS];
 static uint8_t zone_count;
 static uint8_t zone_channels;		// 80 or 16
+static uint16_t zone_written;		// the index codeplug_set_zone wrote last
 static uint16_t zone_record;		// 0xB0 or 0x30
 
 // Built-in channels: common simplex calling and working frequencies, kept if they fall in one of the board's bands
@@ -345,22 +346,11 @@ static void index_zones(void)
 	}
 }
 
-static bool in_bands(uint32_t hz, bool need_tx)
-{
-	for (uint8_t i = 0; i < board.band_count; i++) {
-		const band_t *b = &board.bands[i];
-		if (hz >= b->lo_hz && hz <= b->hi_hz && (b->tx || !need_tx)) {
-			return true;
-		}
-	}
-	return false;
-}
-
 static void index_builtin(void)
 {
 	builtin_count = 0;
 	for (unsigned i = 0; i < BUILTIN_COUNT; i++) {
-		if (board.band_count == 0 || in_bands(builtin[i].hz, false)) {
+		if (board.band_count == 0 || board_in_band(builtin[i].hz, false)) {
 			builtin_map[builtin_count++] = (uint8_t)i;
 		}
 	}
@@ -439,7 +429,7 @@ static bool builtin_channel(uint16_t number, channel_t *out)
 	out->mode = RADIO_MODE_FM;
 	out->bw = b->bw;
 	out->power = CODEPLUG_POWER_DEFAULT;
-	out->rx_only = board.band_count != 0 && !in_bands(b->hz, true);
+	out->rx_only = board.band_count != 0 && !board_in_band(b->hz, true);
 	out->color_code = 1;
 	out->timeslot = 1;
 	return true;
@@ -813,10 +803,44 @@ bool codeplug_set_zone(uint16_t index, const zone_t *z)
 	}
 	if (ok) {
 		index_zones();
+		for (uint16_t i = 0; i < zone_count; i++) {
+			if (zone_slot[i] == slot) {
+				zone_written = i;	// an added zone takes the lowest free slot: not always the last index
+			}
+		}
 		serial++;
 	}
 	storage_unlock();
 	return ok;
+}
+
+uint16_t codeplug_zone_written(void)
+{
+	return zone_written;
+}
+
+uint16_t codeplug_zone_add_index(void)
+{
+	// The lowest free slot; zones are indexed in slot order, so the slots before it are zones 0..slot-1
+	storage_lock();
+	bool taken[ZONE_SLOTS] = { false };
+	for (uint8_t i = 0; i < zone_count; i++) {
+		taken[zone_slot[i]] = true;
+	}
+	uint16_t slot = 0;
+	while (slot < ZONE_SLOTS && taken[slot]) {
+		slot++;
+	}
+	storage_unlock();
+	return slot;
+}
+
+uint16_t codeplug_zone_capacity(void)
+{
+	storage_lock();
+	uint16_t n = codeplug_zones_stored() ? zone_channels : CODEPLUG_ZONE_MAX;
+	storage_unlock();
+	return n;
 }
 
 bool codeplug_delete_zone(uint16_t index)

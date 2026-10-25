@@ -1,0 +1,46 @@
+{
+ "format": 1,
+ "kind": "seed",
+ "board": "db25d",
+ "source": "docs/spec/hardware-db25d.md",
+ "date": "2026-10-22",
+ "note": "From the docs' evidence before the first recorded run: docs/spec/hardware-db25d.md and its row in docs/feature-matrix.md",
+ "features": {
+  "fm": {
+   "result": "pass"
+  },
+  "dmr_voice": {
+   "result": "pass",
+   "note": "receive and transmit on the SDR bench"
+  },
+  "hotspot": {
+   "result": "pass"
+  },
+  "vfo_dmr": {
+   "result": "pass"
+  },
+  "net_ppp": {
+   "result": "pass",
+   "note": "PPP network services"
+  },
+  "cps_openfw": {
+   "result": "pass",
+   "note": "programming over the cable"
+  },
+  "radio_controls": {
+   "result": "pass",
+   "note": "volume"
+  },
+  "settings_store": {
+   "result": "pass",
+   "note": "settings saved; kept across power off not checked yet"
+  },
+  "debuglink": {
+   "result": "pass"
+  },
+  "net_tcp": {
+   "result": "pass",
+   "note": "the network services over PPP"
+  }
+ }
+}

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The MMDVM hotspot on air, both directions (opt-in: --allow-rf --allow-service-stop; the radio transmits).
 
 The radio is driven over USB as MMDVMHost drives a simplex modem (tools/bench/mmdvm_hotspot.py's MmdvmLink on the
@@ -14,7 +14,7 @@ tools/bench/hotspot_cases.py's (docs/testing/dmr-bench.md); this module runs the
   modem: one call, the network call's LC, >= 17 of 18 voice bursts, a terminator, no voice after it, no NAKs.
 - net_data: network data on air: the data header and blocks heard by the bench modem.
 
-Needs the odr_sdrbench package on this machine (burst building; installed, or a checkout in $ODR_SDRBENCH) and
+Needs the rfoundry_sdrbench package on this machine (burst building; installed, or a checkout in $RFOUNDRY_SDRBENCH) and
 numpy; skipped without them. The hotspot ends when the MMDVM port closes (DTR
 drop); restore_radio puts the channel back."""
 import os
@@ -23,7 +23,7 @@ import time
 
 import pytest
 
-from odr_hil import ROOT
+from rfoundry_hil import ROOT, skip
 
 CASES = ("rf_voice8", "rf_data_unconf", "net_voice", "net_data")
 
@@ -34,10 +34,11 @@ def hotspot_cases():
     try:
         import hotspot_cases as H
     except ImportError as e:
-        pytest.skip(f"needs odr_sdrbench and numpy for burst building: {e}")
+        skip("bench", f"needs rfoundry_sdrbench and numpy for burst building: {e}")
     return H
 
 
+@pytest.mark.feature("hotspot")
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
@@ -46,7 +47,7 @@ def hotspot_cases():
 def test_hotspot_on_air(radio, sdr_bench, pytestconfig, hotspot_cases, case):
     H = hotspot_cases
     if "HOTSPOT" not in radio.features():
-        pytest.skip("built without the hotspot")
+        skip("not_built", "built without the hotspot")
     freq, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     H.BENCH_HOST = sdr_bench.host
     args = type("Args", (), {"freq": freq, "cc": cc, "power": 12})()

@@ -6,19 +6,24 @@ The order to bring the DM-1801 Pro port (`make BOARD=dm1801pro`) up on a radio, 
 change when it doesn't work. Steps 0 to 3, 7 and 8 passed on 2026-10-15 (hardware-dm1801pro.md 12). Hardware facts:
 [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md).
 
+The feature checklist, with every feature's required HIL tests and the last recorded result, is
+`tools/bringup.py list --radio dm1801pro`. `tools/bringup.py run --radio dm1801pro` records a run
+([tests/hil/README.md](../../tests/hil/README.md#bring-up-mode)). This page keeps the hardware steps and what to
+change when one fails.
+
 ## 0. Before anything
 
 1. **Back up both flashes** (1 MB program flash, 16 MB data flash). The port never writes the data flash below
    0x700000 and never touches the boot loader, but a backup is the only way back from a mistake.
 2. Confirm update mode before the first flash: it is the recovery path for every step below. The loader stays in it while
    PTT and SK1 are held at power-on ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.2). Push the cable fully
-   into the jack, or the loader doesn't answer. `python3 tools/dm32_flash.py --model dm1801pro --dry-run IMAGE`
+   into the jack, or the loader doesn't answer. `python3 tools/serial_loader.py --model dm1801pro --dry-run IMAGE`
    checks the image and the cable first.
-3. Flash: `python3 tools/dm32_flash.py --model dm1801pro build/dm1801pro/odr_dm1801pro.bin` over the programming cable.
-   The erase takes about 13 s. `odrflash flash IMAGE --board dm1801pro` wraps the same tool, and the stub for a radio
-   that runs ODR with `CONFIG_STUB_ENTRY=y` ([tools/odrflash/README.md](../../tools/odrflash/README.md#the-dm-1801-pro));
-   neither odrflash route has flashed a radio yet.
-5. The debug link runs on the same cable at 115200 (`ODR_PORT=/dev/cu.usbserial-... tools/odr_debug.py diag`). The
+3. Flash: `python3 tools/serial_loader.py --model dm1801pro build/dm1801pro/rfoundry_dm1801pro.bin` over the programming cable.
+   The erase takes about 13 s. `rfoundry flash IMAGE --board dm1801pro` wraps the same tool, and the stub for a radio
+   that runs RadioFoundry with `CONFIG_STUB_ENTRY=y` ([tools/rfoundry/README.md](../../tools/rfoundry/README.md#the-dm-1801-pro));
+   neither rfoundry route has flashed a radio yet.
+5. The debug link runs on the same cable at 115200 (`RFOUNDRY_PORT=/dev/cu.usbserial-... tools/rfoundry_debug.py diag`). The
    cable's plug switches the internal speaker off: unplug it to listen.
 4. Build: `make BOARD=dm1801pro` (csky-elf GCC: `tools/build-csky-toolchain.sh`).
 
@@ -101,18 +106,27 @@ board levels from the step that reaches the target (level = 11 + offset), then r
 | No keyed segment | PTT pressed inside the window; the capture under `~/<bench dir>/hil_mic_gain_N/` |
 | The same deviation at every step | the limiter (DEV_LIMITER) clips: try lower steps; or the gain isn't in the path the microphone takes |
 
-## 6. Broadcast FM tuner
+## 6. Broadcast FM and air band
 
-The tuner's hardware side is built (`CONFIG_BCAST_FM`, on); the screens that drive it are parked
-([airband-and-broadcast.md](../spec/airband-and-broadcast.md)), so check it through the debug link or a test build that
-calls `board.bcast`.
+### 6.1 Broadcast FM tuner
+
+Tune the VFO into the broadcast band ([airband-and-broadcast.md](../spec/airband-and-broadcast.md) 4).
+`tests/hil/test_listen_bands.py` checks the view keys without keying.
 
 | Step | Expect | If not |
 |---|---|---|
-| `power(true)` | Returns true: the chip answers at 0x11 with ID 0x58 | `PIN_BCAST_EN` polarity, `PIN_BCAST_SDA` / `PIN_BCAST_SCL`, the I2C speed (`bus.half_us`), the reference clock mode (`cfg.clk_mode` in `bcast_dm1801pro.c`) |
-| `tune(100000)`, `audio(true)` | A station, audible | The tuner's audio route; the amplifier (`PIN_AMP_EN`) is shared with the channel audio |
-| `seek` | Stops on stations | Seek threshold (`cfg.seek_th`) |
-| Receive a channel signal | The broadcast mutes while the channel has traffic | Core policy, not the board |
+| VFO to 100.1 MHz | `bcast=1`, `bcast_fault=0` in the view: the chip answers at 0x11 with ID 0x58 | `bcast_fault=1`: `PIN_BCAST_EN` polarity, `PIN_BCAST_SDA` / `PIN_BCAST_SCL`, the I2C speed (`half_us`), the reference clock mode (`clk_mode`), all in `platform/hrc7000/bcast_hrc.c` and the board's `hrc_bcast_cfg_t` |
+| A local station | Audible; the signal meter moves; the knob steps 200 kHz on the odd tenths | The tuner's audio route; the amplifier (`PIN_AMP_EN`) is shared with the channel audio |
+| Squelch 9 on a weak station | Still plays (broadcast audio ignores the squelch); the green LED stays on | The squelch threshold (`RADIO_BCAST_SQL_REF`) |
+| Scan a zone of broadcast channels | Stops on stations, quiet between them | The squelch threshold |
+| PTT | "Broadcast: receive only", nothing keys | The core's refusal |
+
+### 6.2 Air band AM
+
+| Step | Expect | If not |
+|---|---|---|
+| VFO to the local ATIS | `am=1`, "Air Band AM" on Home, AM audio | FD6818 0x47 (AF type, `fd6818_set_am`), the AGC and filter ([airband-and-broadcast.md](../spec/airband-and-broadcast.md) 2, 3.3) |
+| PTT | "Air band: receive only", nothing keys | The core's refusal |
 
 ## 7. Accelerometer
 
@@ -133,7 +147,7 @@ DMR counters.
 
 | Step | Expect | If not |
 |---|---|---|
-| Select a DMR channel on a local repeater or hotspot | `tk` (ticks) climbs by about 33 a second, `ts` interrupts count up | No ticks: the modem never got timing; check the DMR mode register set (`dmr_table` in `fd6818_dm1801pro.c`) and the RX path |
+| Select a DMR channel on a local repeater or hotspot | `tk` (ticks) climbs by about 33 a second, `ts` interrupts count up | No ticks: the modem never got timing; check the DMR mode register set (`dmr_table` in `boards/dm1801pro/rf_tables_dm1801pro.c`) and the RX path |
 | Receive a transmission | `H` (headers) and `V` / `T` counters rise, `crc` stays low | Many `crc` or `u` (unusable): the bandwidth word 0x3048 or the DMR register set |
 | Hear a call | Silence: the codec is located but not hosted yet | |
 | Transmit on a dummy load (data call or a short key-up) | A burst per slot on a meter or SDR, `tx`, `rf` and `ok` rise | `un` (underrun) or `rj`: the per-burst switch takes too long (`dmr_rf_switch`, `RF_BIT_SCALE_US`); no carrier: `dmr_pa_on`, the 28 ms PA delay |
@@ -153,5 +167,5 @@ from the diagnostics page.
 
 ## 11. After this
 
-DMR voice needs the codec hosted (it is the DM-32UV's: [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.5) and the air band its own receive path. The
+DMR voice needs the codec hosted (it is the DM-32UV's: [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 6.5) and the air band and the tuner a check on the radio (6). The
 open items are in [hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 10.

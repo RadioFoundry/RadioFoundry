@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# The MD-380's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/md380/memory.ld.
+
+id = "md380"
+name = "TYT MD-380"
+maker = "TYT"
+model = "MD-380"
+also = ["TYT MD-390", "Retevis RT3"]
+kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 5
+
+[docs]
+hardware = "docs/spec/hardware-md380.md"
+codec = "docs/spec/codec-md380.md"
+install = "docs/user/18-moving-from-stock-md380.md"
+bringup = "docs/testing/md380-bringup.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "400-480 MHz or 136-174 MHz (one band per radio)"
+power = "1 / 5 W"
+display = "color, 160 × 128"
+gallery = "160x128"
+clock = { rtc = "unknown", note = "STM32 RTC; the 32.768 kHz crystal is assumed and no backup supply is known (docs/spec/hardware-md380.md)" }
+
+[status]
+level = "supported"
+summary = """\
+FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug \
+and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image."""
+release = "stable"
+
+# One band per radio, a build choice (board.mk BAND). The first value is the default build; ci and the release
+# build every other one too. board_name: what the radio reports as board= on the debug link
+[[build_options]]
+name = "BAND"
+title = "Band"
+help = "The MD-380 comes in a UHF and a VHF version; the label under the battery and the frequencies the radio covers tell which."
+values = [
+	{ id = "uhf", title = "UHF", text = "400-480 MHz", board_name = "MD-380" },
+	{ id = "vhf", title = "VHF", text = "136-174 MHz", board_name = "MD-380 VHF" },
+]
+
+[flash]
+family = "usb-dfu"
+keep_codec = true
+stock_download = "https://md380.org/firmware/orig/"
+stock_versions = ["D002.032"]
+backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
+
+[flash.bootloader]
+steps = [
+	"Turn the radio off and connect the programming cable.",
+	"Hold PTT and the side key just above it.",
+	"Turn the radio on while you hold both keys. The LED blinks; the screen stays dark.",
+	"Release the keys.",
+]
+
+# The TYT bootloader takes the same DFU protocol and sector order as the other STM32 radios', with its own key
+[flash.dfu]
+vid = 0x0483
+pid = 0xDF11
+string1 = "AnyRoad Technology"
+product = "Digital Radio in USB mode"
+key_sha256 = "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd"
+key_prefix = "2EDF40B5"
+
+# The STM32F4 stub's board record (stub/f4stub.py, stub-stm32f4.md 5.2): its board id (HELLO echoes it), whether
+# protocol 4 has run on a radio, and the SPI flash's bus, mode and clock (its pins: pins.h PIN_FLASH_*)
+[flash.stub]
+id = 2
+tested = false
+spi = { bus = 1, mode = 0, hz = 4500000 }
+
+# The codec where the merge puts it (docs/spec/codec-placement.md): the main table window at its stock address in
+# sector 8, the small ones in sectors 10 and 11, the code moved to the start of sector 11 and the descriptor. The
+# application has sectors 3-7, so an update leaves the codec sectors alone. Stock firmware keeps the code in sectors 6
+# and 7, so no stock version leaves it in place and rfoundry merges it from the stock file. stock lists the SHA-256
+# of each stock file rfoundry merges the codec from (tools/rfoundry/rfoundry/stockfw.py PROFILES)
+[codec]
+tool = "codec_extract"
+stock = ["e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"]
+
+# How the site draws the radio
+[frame]
+shape = "handheld"
+body = "#1f2124"
+accent = "#3d7bd9"
+lens = [30, 30]
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them
+[cps]
+radio_types = [7]

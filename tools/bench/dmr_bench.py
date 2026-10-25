@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """
 dmr_bench: run a named DMR bench test case end to end from the Mac against the radio under test, with the SDR
 bench's MMDVM_HS modem board and RTL-SDR as the other station and the instruments. New tool; the test cases and their
@@ -8,7 +8,7 @@ pass criteria are described in docs/testing/dmr-bench.md.
 
     dmr_bench.py list                          the test cases, in bring-up order
     dmr_bench.py show CASE                     what CASE does, what the user does, the pass criteria
-    dmr_bench.py sync [--dry-run]              copy the bench-side tools to $ODR_SDR_BENCH_HOST:~/odr-bench/
+    dmr_bench.py sync [--dry-run]              copy the bench-side tools to $RFOUNDRY_SDR_BENCH_HOST:~/rfoundry-bench/
     dmr_bench.py run CASE [--dry-run] [--yes] [--radio-id ID] [--tg TG] [--freq MHz] [--cc N] [--gain dB]
                           [--modem-power N] [--rpt-rx MHz --rpt-tx MHz] [--ambe FILE] [--port DEV] [--out DIR]
     dmr_bench.py check CASE SDRMON.json [--modem LISTEN.jsonl] [--radio-id ID] [--tg TG] [--cc N]
@@ -17,27 +17,27 @@ pass criteria are described in docs/testing/dmr-bench.md.
 --dry-run prints every command, in order, exactly as it would run (local and over ssh), including the gateway service
 stop and start, and runs nothing: give that to the owner for approval before the first real run of a case.
 
-Configuration (environment): ODR_SDR_BENCH_HOST (ssh host or alias, default sdr-bench), ODR_SDR_BENCH_SERVICE
-(default odr-sdrbench@$(hostname), expanded on the bench), ODR_SDR_BENCH_DIR (default odr-bench, under the bench
-user's home), ODR_SDR_BENCH_PY (the bench's Python with the odr_sdrbench package, default
-/opt/odr-sdrbench/.venv/bin/python), ODR_SDR_BENCH_ENV_FILE (the gateway's environment file with the MQTT login,
-default /etc/odr-sdrbench/env).
+Configuration (environment): RFOUNDRY_SDR_BENCH_HOST (ssh host or alias, default sdr-bench), RFOUNDRY_SDR_BENCH_SERVICE
+(default rfoundry-sdrbench@$(hostname), expanded on the bench), RFOUNDRY_SDR_BENCH_DIR (default rfoundry-bench, under the bench
+user's home), RFOUNDRY_SDR_BENCH_PY (the bench's Python with the rfoundry_sdrbench package, default
+/opt/rfoundry-sdrbench/.venv/bin/python), RFOUNDRY_SDR_BENCH_ENV_FILE (the gateway's environment file with the MQTT login,
+default /etc/rfoundry-sdrbench/env).
 
-Shared bench. When the bench runs the shared bench daemon (the bench repo's benchd: its socket
-/run/benchd/bench.sock exists), nothing is stopped: a lease is a daemon *session* (held by an ssh process for the
+Shared bench. When the bench runs the shared bench daemon (rfoundry-testbench's rfoundry-benchd: its socket
+/run/rfoundry-benchd/bench.sock exists), nothing is stopped: a lease is a daemon *session* (held by an ssh process for the
 lease's length), bench modem jobs go through its FIFO queue, captures come from its always-on receiver, and every
-wait is reported (predicted time, worst case, who holds what). ODR_SDR_BENCH_DAEMON=0 forces the old lease below,
-=1 the daemon; ODR_SDR_BENCH_WAIT_MAX (default 900 s) is the longest wait for the bench before giving up.
+wait is reported (predicted time, worst case, who holds what). RFOUNDRY_SDR_BENCH_DAEMON=0 forces the old lease below,
+=1 the daemon; RFOUNDRY_SDR_BENCH_WAIT_MAX (default 900 s) is the longest wait for the bench before giving up.
 
 Service handling (no daemon). The bench modem and the RTL-SDR are normally held by the bench's gateway service. A case that needs either
-takes a *lease*: one detached process on the SDR bench stops the service, waits while ~/odr-bench/hold exists (at most
+takes a *lease*: one detached process on the SDR bench stops the service, waits while ~/rfoundry-bench/hold exists (at most
 --lease-max seconds, default 300), then starts the service again, whatever happens to this script or the ssh link
 (a signal to the lease process also ends the wait and restarts the service). This script removes the hold file in a
 finally block and then checks that the service is active again. Cases that only need the gateway's own decode (T0) don't
 stop anything.
 
-The script never deletes captures; they collect in ~/odr-bench/runs/ on the SDR bench (about 50 MB per 16 s capture; the HIL
-fixtures delete the run directories they made, unless ODR_HIL_KEEP_RUNS=1)
+The script never deletes captures; they collect in ~/rfoundry-bench/runs/ on the SDR bench (about 50 MB per 16 s capture; the HIL
+fixtures delete the run directories they made, unless RFOUNDRY_HIL_KEEP_RUNS=1)
 and the analysis JSON comes back to --out (default ./bench-results/). Clean up by hand when asked to.
 
 Needs: ssh access to the SDR bench (passwordless sudo for systemctl there); the bench-side tools from `sync`; python3
@@ -56,17 +56,17 @@ import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BENCH_HOST = os.environ.get("ODR_SDR_BENCH_HOST", "sdr-bench")    # an ssh host or alias for the SDR bench
+BENCH_HOST = os.environ.get("RFOUNDRY_SDR_BENCH_HOST", "sdr-bench")    # an ssh host or alias for the SDR bench
 # The gateway instance is named after the bench's host name: the default is expanded by the shell on the bench
-SERVICE = os.environ.get("ODR_SDR_BENCH_SERVICE", "odr-sdrbench@$(hostname)")
-DIR = os.environ.get("ODR_SDR_BENCH_DIR", "odr-bench")          # relative to the SDR bench user's home
-PY = os.environ.get("ODR_SDR_BENCH_PY", "/opt/odr-sdrbench/.venv/bin/python")
-ENV_FILE = os.environ.get("ODR_SDR_BENCH_ENV_FILE", "/etc/odr-sdrbench/env")
+SERVICE = os.environ.get("RFOUNDRY_SDR_BENCH_SERVICE", "rfoundry-sdrbench@$(hostname)")
+DIR = os.environ.get("RFOUNDRY_SDR_BENCH_DIR", "rfoundry-bench")          # relative to the SDR bench user's home
+PY = os.environ.get("RFOUNDRY_SDR_BENCH_PY", "/opt/rfoundry-sdrbench/.venv/bin/python")
+ENV_FILE = os.environ.get("RFOUNDRY_SDR_BENCH_ENV_FILE", "/etc/rfoundry-sdrbench/env")
 BENCH_TOOLS = ["bench_tx.py", "bench_repeater.py", "sdrmon.py", "sdr_watch.py"]
-DAEMON = os.environ.get("ODR_SDR_BENCH_DAEMON", "auto")         # auto (the socket exists) | 1 | 0
-DAEMON_SOCK = "/run/benchd/bench.sock"
-WAIT_MAX = float(os.environ.get("ODR_SDR_BENCH_WAIT_MAX", "900"))
-EX_TEMPFAIL, EX_NOPERM = 75, 77                                  # odr-bench: waited too long / refused by the config
+DAEMON = os.environ.get("RFOUNDRY_SDR_BENCH_DAEMON", "auto")         # auto (the socket exists) | 1 | 0
+DAEMON_SOCK = "/run/rfoundry-benchd/bench.sock"
+WAIT_MAX = float(os.environ.get("RFOUNDRY_SDR_BENCH_WAIT_MAX", "900"))
+EX_TEMPFAIL, EX_NOPERM = 75, 77                                  # rfoundry-bench: waited too long / refused by the config
 
 
 class BenchBusy(RuntimeError):
@@ -170,8 +170,8 @@ CASES = [
      "user": "Radio on the test channel, no privacy key.", "why": "Service options and EMB PI (dmr-modem.md 3).",
      "pass": "Emergency indicated; the PI call is not played (or played as configured)."},
     {"id": "R14", "phase": "radio receives", "title": "Talker alias in the embedded LC",
-     "steps": [("modem", "voice --dst {tg} --superframes 8 --talker-alias 'ODR bench modem'"),
-               ("ask", ["Alias shown ('ODR bench modem')? (y/n)"])],
+     "steps": [("modem", "voice --dst {tg} --superframes 8 --talker-alias 'RadioFoundry bench modem'"),
+               ("ask", ["Alias shown ('RadioFoundry bench modem')? (y/n)"])],
      "user": "Radio on the test channel.", "why": "FLCO 4-7 assembly (dmr-modem.md 4).",
      "pass": "Alias shown within ~2 s; the call's LC stays right between alias superframes."},
     # (b) the radio transmits
@@ -240,7 +240,7 @@ CASES = [
     {"id": "H1", "phase": "hotspot (planned)", "title": "MMDVM hotspot cases (rf_* and net_*)",
      "steps": [("local", ["python3", "-I", os.path.join(HERE, "hotspot_cases.py"), "--port", "{port}", "--freq",
                           "{freq}", "--cc", "{cc}", "--cases", "all"])],
-     "user": "Radio connected to the Mac over USB, hotspot mode. The odr_sdrbench package on the Mac (installed, or $ODR_SDRBENCH).",
+     "user": "Radio connected to the Mac over USB, hotspot mode. The rfoundry_sdrbench package on the Mac (installed, or $RFOUNDRY_SDRBENCH).",
      "why": "Automated coverage of the modem driver and call stack: every burst heard / sent is visible.",
      "pass": "All cases PASS (see hotspot_cases.py --list)."},
     {"id": "S1", "phase": "SFR (planned)", "title": "SFR repeat of one bench modem call (raw SDR capture)",
@@ -265,7 +265,7 @@ class Bench:
         self.bg = []
         self.leased = False
         self.out = None
-        self.daemon = None          # the bench runs benchd (decided on first use)
+        self.daemon = None          # the bench runs rfoundry-benchd (decided on first use)
         self.session = None         # its session id while leased
         self.session_p = None
         self.claimed = set()
@@ -313,10 +313,10 @@ class Bench:
 
     @property
     def ctl(self):
-        return f"{PY} -m odr_sdrbench.benchd.cli"
+        return f"{PY} -m rfoundry_sdrbench.benchd.cli"
 
     def ssh_live(self, cmd, timeout=600):
-        """(exit status, stdout, stderr) of cmd on the bench; the daemon's wait reports ("odr-bench: ...") are
+        """(exit status, stdout, stderr) of cmd on the bench; the daemon's wait reports ("rfoundry-bench: ...") are
         printed as they come, so a caller sees why it is waiting and for how long."""
         self.note(f"$ ssh {BENCH_HOST} {cmd}")
         p = subprocess.Popen(["ssh", "-o", "BatchMode=yes", BENCH_HOST, cmd], stdout=subprocess.PIPE,
@@ -326,7 +326,7 @@ class Bench:
         def pump():
             for line in p.stderr:
                 err.append(line)
-                if line.startswith("odr-bench:"):
+                if line.startswith("rfoundry-bench:"):
                     print(line.rstrip(), file=sys.stderr, flush=True)
         t = threading.Thread(target=pump, daemon=True)
         t.start()
@@ -341,7 +341,7 @@ class Bench:
     @staticmethod
     def check_rc(rc, err, what):
         if rc == EX_TEMPFAIL:
-            raise BenchBusy(next((ln for ln in reversed(err.splitlines()) if ln.startswith("odr-bench:")),
+            raise BenchBusy(next((ln for ln in reversed(err.splitlines()) if ln.startswith("rfoundry-bench:")),
                                  f"{what}: the bench stayed busy"))
         if rc == EX_NOPERM:
             raise RuntimeError(f"{what} refused by the bench config: {err.strip()[-500:]}")
@@ -389,7 +389,7 @@ class Bench:
             # the daemon may queue it (another gain or frequency needs the SDR to itself): wait while it lives
             wait = (f"sleep 0.3; for i in $(seq 1 {int(WAIT_MAX * 4) + 40}); do grep -q READY {out}.log && break; "
                     f"pgrep -f 'benchd[.]cli capture --session {self.session} .*{os.path.basename(out)}' > /dev/null "
-                    f"|| break; sleep 0.25; done; sleep 0.5; grep -h '^odr-bench:' {out}.log >&2; grep READY {out}.log")
+                    f"|| break; sleep 0.25; done; sleep 0.5; grep -h '^rfoundry-bench:' {out}.log >&2; grep READY {out}.log")
         else:
             wait = f"for i in $(seq 1 60); do grep -q READY {out}.log && break; sleep 0.25; done; sleep 2; " \
                    f"grep READY {out}.log"
@@ -419,7 +419,7 @@ class Bench:
             d = json.loads(line)
         except ValueError:
             p.kill()
-            raise RuntimeError(f"benchd session failed: {line}{p.stderr.read()[-1500:]}")
+            raise RuntimeError(f"rfoundry-benchd session failed: {line}{p.stderr.read()[-1500:]}")
         self.session, self.session_p, self.leased = d["session"], p, True
         self.claimed = set()
 
@@ -545,7 +545,7 @@ def check_tx(sdr, expect, radio_id, cc, c):
                                             for e in emb_call), "")
     if voice:
         c.add("terminator after the last voice", any(t["t_ms"] > voice[-1]["t_ms"] for t in term), f"{len(term)}")
-        # The letters of the call's own bursts (odr_sdrbench.calls: same stream, header to terminator; a false sync
+        # The letters of the call's own bursts (rfoundry_sdrbench.calls: same stream, header to terminator; a false sync
         # match, another channel's burst or a misread family is left out, listed in summary.left_out)
         calls = sdr["summary"].get("calls")
         if calls:

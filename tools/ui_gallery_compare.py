@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Compares two UI screen galleries (uiSim --gallery DIR, one PNG per screen and display class) and makes the pictures
 # a pull request's comment shows: for each display class that has a changed screen, one or more composites, each a

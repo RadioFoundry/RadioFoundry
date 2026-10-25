@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The application: the start-up task brings up the board and starts the core tasks, then stays on as housekeeping
 // (power switch watch).
 //
-// Tasks (FreeRTOS, configMAX_PRIORITIES 7, heap 28 KB on the DM-1701 shared by stacks and queues; stack sizes in
+// Tasks (FreeRTOS, configMAX_PRIORITIES 7, heap 28 KB on the STM32F405 radios, shared by stacks and queues; stack sizes in
 // words):
 //   timer service   6   256   FreeRTOS
 //   start / house   5   512   this file: start-up, then a 100 ms power switch poll, the settings saves and the
@@ -48,8 +48,8 @@
 #include "task.h"
 
 #define START_TASK_PRIORITY	5
-// words: the radio core's set-up runs here at boot (radio_sm_init, 584 bytes of frame on the DB25-D, then the APRS
-// identity load or a DMR VFO's contact search down to the flash driver); 512 left the DB25-D 88 bytes (make stack-check)
+// words: the radio core's set-up runs here at boot (radio_sm_init, 584 bytes of frame on an HR_C7000 radio, then the APRS
+// identity load or a DMR VFO's contact search down to the flash driver); 512 left that radio 88 bytes (make stack-check)
 #define START_TASK_STACK	640
 #define HOUSEKEEPING_MS		100
 #define POWER_OFF_TX_MS		200	// after the PTT release, before the latch drops

@@ -5,13 +5,22 @@
 A complete English register reference for the Hongrui HR_C6000 DMR / FM baseband chip, translated from the vendor's
 user manual: Zhejiang Hongrui Communication Technology (浙江宏睿通信技术有限公司), *HR_C6000 用户手册*, Chinese,
 updated edition (revision A2, 2014-04-26). The Chinese text is authoritative. The English machine translations that
-circulate (the "updated translated English" PDF, the older translated PDF, the VK3KYY and G4EML documents) have
+circulate (the "updated translated English" PDF, the older translated PDF and other translations) have
 errors; section 9 lists the ones that matter.
 
-This file is a fact reference: what the manual says each register, bit and RAM location does. How ODR drives the
+This file is a fact reference: what the manual says each register, bit and RAM location does. How RadioFoundry drives the
 chip, and what the bench has confirmed, is in [modem-hrc6000.md](modem-hrc6000.md); section 10 here repeats only
-the bench facts that bear on a register's meaning. FM audio paths and their bench results are in
-[hardware-dm1701.md](hardware-dm1701.md) 21.3 and 21.3.1.
+the bench facts that bear on a register's meaning. FM audio paths and their bench results are in `modem-hrc6000.md` 8.
+
+| Contents | |
+|---|---|
+| 1, 2 | U_SPI access, RAM maps |
+| 3 | System parameter table, register by register (0x00-0xE6) |
+| 4 | Auxiliary parameter table |
+| 5, 6 | Transmit and receive interfaces, interrupts and layer 2 timing |
+| 7, 8 | FM, signaling and MSK; FM transmit from MCU data |
+| 9 | Translation notes and manual conflicts |
+| 10 | Bench notes |
 
 Conventions:
 
@@ -23,7 +32,7 @@ Conventions:
 | "(text layer only)" | present in the PDF's text layer but not visible on the rendered page |
 | "(not stated)" | the manual says nothing about it |
 | "(conflict)" | two places in the manual disagree; section 9.2 has the details |
-| ODR page n | the U_SPI OPMode value ODR's driver calls "page" (section 1) |
+| RadioFoundry page n | the U_SPI OPMode value RadioFoundry's driver calls "page" (section 1) |
 
 ---
 
@@ -43,7 +52,7 @@ A transaction is: CS low, a command byte, an address, one or more data bytes, CS
 | 5-3 | - | reserved |
 | 2-0 | OPMode | which space the transaction addresses (table below) |
 
-| OPMode | Space (manual) | ODR page | Notes |
+| OPMode | Space (manual) | RadioFoundry page | Notes |
 |---|---|---|---|
 | 000 | reserved | - | |
 | 001 | auxiliary parameter table (附属参数配置表) | 1 | section 4 |
@@ -79,7 +88,7 @@ The vocoder SPI (pins 41-44) is a second slave port with the same framing, one o
 Cmd = 0x83, Addr = 0x00, 27 data bytes; write Cmd = 0x03, Addr = 0x00, 27 data bytes. SCLK is at most 4 MHz. Using
 the HR_V3000 vocoder over V_SPI needs only 0x06 = 0x24 (manual).
 
-ODR note: on U_SPI, OPMode 011 is the prompt tone FIFO (section 7.7). ODR's "flush page 3 with 0x06 = 0x22"
+RadioFoundry note: on U_SPI, OPMode 011 is the prompt tone FIFO (section 7.7). RadioFoundry's "flush page 3 with 0x06 = 0x22"
 (modem-hrc6000.md 3.2) is, in the manual's terms, 64 prompt-tone samples of 0x7F7F written with the prompt tone path
 open (0x06 bit 1).
 
@@ -1145,24 +1154,24 @@ the manual pairs with "send FM voice" is **0xD7 bit 1**, not 0xDB (section 9.3).
 |---|---|---|---|
 | everywhere (pin list, chapter 6, A2) | 模拟 | "simulation", "simulates" (pin list: "Codec simulates a 3.3V power supply"; 6.1: "In simulation mode") | analog: "analog 3.3 V supply", "in analog mode" |
 | feature list, figure 6.1, 6.1 | 加重 / 去加重 | "aggravation", "weighting and de-weighting", "Aggravate" | pre-emphasis / de-emphasis |
-| 0x02 / 0x04 (G4EML) | 两点模式下：调整输出 MOD2 路偏置 (both rows) | 0x02 "transmit I or Mod1 output", 0x04 "Q or Mod2 output" | the table says MOD2 for both; 4.7.2 says 0x04 = MOD1, 0x02 = MOD2 (9.2) |
-| 0x1D / 0x1E masks (G4EML) | 匹配码为 1 的对应 bit ... 予以忽略 | "1 = compare, 0 = ignore" | a mask bit of 1 means **ignore** that address bit |
-| 0x11 bit 7 / 6 (G4EML) | 置 1 有效。在中继模式下表示 RepeatedSimplex；在直接模式下表示 DirectSimplex | "0 = Direct Simplex, 1 = Repeated Simplex" | 1 = simplex in either mode; repeater vs direct comes from the mode, not the bit |
-| 0x11 bit 0 (G4EML) | 只开启数字或者模拟接收 | "only numbers or modes" | digital or analog receive only |
-| 0x41 bit 3 (G4EML) | 0 表示接收需要 CC 匹配才做解帧处理，1 表示接收无需 CC 匹配便做解帧处理 | "0 = CC decode off, 1 = CC decode on" | 0 = deframe only on a CC match, 1 = deframe regardless of CC |
-| 0x51 SyncClass 00 (G4EML) | 无同步头 | "Sync Header" | no sync |
-| 0x85 (G4EML) | SendStart 中断的使能 | "mask bits for reg 0x86" | enables for 0x84 |
-| 0x86 bit 3 (G4EML) | 需要等待反馈的确认数据包的一个 fragment 发送完成 | "confirmation packet received" | a fragment that needs a response was **sent** |
-| 0x82 FM meanings (G4EML) | FM 模式下表示发送数据请求中断 / 接收数据中断 / FM 功能接收检测中断 | absent: bit 7 "request rejected", bit 1 "voice unusual exit" only | FM: bit 7 send data request, bit 2 FM tone detect, bit 1 receive data |
+| 0x02 / 0x04 | 两点模式下：调整输出 MOD2 路偏置 (both rows) | 0x02 "transmit I or Mod1 output", 0x04 "Q or Mod2 output" | the table says MOD2 for both; 4.7.2 says 0x04 = MOD1, 0x02 = MOD2 (9.2) |
+| 0x1D / 0x1E masks | 匹配码为 1 的对应 bit ... 予以忽略 | "1 = compare, 0 = ignore" | a mask bit of 1 means **ignore** that address bit |
+| 0x11 bit 7 / 6 | 置 1 有效。在中继模式下表示 RepeatedSimplex；在直接模式下表示 DirectSimplex | "0 = Direct Simplex, 1 = Repeated Simplex" | 1 = simplex in either mode; repeater vs direct comes from the mode, not the bit |
+| 0x11 bit 0 | 只开启数字或者模拟接收 | "only numbers or modes" | digital or analog receive only |
+| 0x41 bit 3 | 0 表示接收需要 CC 匹配才做解帧处理，1 表示接收无需 CC 匹配便做解帧处理 | "0 = CC decode off, 1 = CC decode on" | 0 = deframe only on a CC match, 1 = deframe regardless of CC |
+| 0x51 SyncClass 00 | 无同步头 | "Sync Header" | no sync |
+| 0x85 | SendStart 中断的使能 | "mask bits for reg 0x86" | enables for 0x84 |
+| 0x86 bit 3 | 需要等待反馈的确认数据包的一个 fragment 发送完成 | "confirmation packet received" | a fragment that needs a response was **sent** |
+| 0x82 FM meanings | FM 模式下表示发送数据请求中断 / 接收数据中断 / FM 功能接收检测中断 | absent: bit 7 "request rejected", bit 1 "voice unusual exit" only | FM: bit 7 send data request, bit 2 FM tone detect, bit 1 receive data |
 | 0x82 bit 1 FM (updated translation) | FM 模式下表示接收数据中断 | "it indicates that receiving data is interrupted" | a "receive data" interrupt, not an interruption |
-| 0x36 bit 1 (G4EML) | FM 模式下接收开启语音通道 Codec 开关 | "Open FM Voice Channel" | FM **receive** voice channel to the codec on / off; nothing to do with TX |
-| 0x37 bit 7 (G4EML) | mcu 控制内置与外置 Codec 的 DACDATA 变化 | "MCU Control Codec enable" | enables the MCU's DAC data level change (volume step), not codec control |
-| 0x3E (G4EML) | FM 收端调制频偏系数 | "FM Modulation Frequency Offset" | FM **receive** deviation coefficient |
-| 0x32 / 0x33 (G4EML) | 配置 I2S_FS_M 的时钟频率 | "Set Codec Operating Frequency" | I2S frame clock (LRCK) divider, must give 8 kHz |
-| 0x2A (G4EML) | C_SPI 时钟 = Codec 时钟 / [2 x (spi_clk_cnt + 1)] | "Codec Clock / (value + 1)" | the factor 2 is missing |
-| 0x42 bit 5 (G4EML) | 0 表示当前时隙是通信使用的，1 表示...不使用的 | "current timeslot active" (1 = active) | the table says 0 = in use (but see 9.2) |
-| 0x0F access (G4EML) | 0x0F R | "R/W" | 0x0F is read only |
-| 0xB9 default (G4EML) | 0x05 | 0x04 | 0x05 |
+| 0x36 bit 1 | FM 模式下接收开启语音通道 Codec 开关 | "Open FM Voice Channel" | FM **receive** voice channel to the codec on / off; nothing to do with TX |
+| 0x37 bit 7 | mcu 控制内置与外置 Codec 的 DACDATA 变化 | "MCU Control Codec enable" | enables the MCU's DAC data level change (volume step), not codec control |
+| 0x3E | FM 收端调制频偏系数 | "FM Modulation Frequency Offset" | FM **receive** deviation coefficient |
+| 0x32 / 0x33 | 配置 I2S_FS_M 的时钟频率 | "Set Codec Operating Frequency" | I2S frame clock (LRCK) divider, must give 8 kHz |
+| 0x2A | C_SPI 时钟 = Codec 时钟 / [2 x (spi_clk_cnt + 1)] | "Codec Clock / (value + 1)" | the factor 2 is missing |
+| 0x42 bit 5 | 0 表示当前时隙是通信使用的，1 表示...不使用的 | "current timeslot active" (1 = active) | the table says 0 = in use (but see 9.2) |
+| 0x0F access | 0x0F R | "R/W" | 0x0F is read only |
+| 0xB9 default | 0x05 | 0x04 | 0x05 |
 | 5.4.4 (all) | 盲收 | "blind reception" | continuous receive before any sync (searching) |
 | 5.4.5 (all) | 忙收 | "busy receiving" | the same continuous receive-and-search state that 5.4.4 calls 盲收 ("blind" receive); not a busy channel |
 | 1.2KRAM (all) | 发端 / 收端 RAM | "send end / receive end RAM" | TX RAM / RX RAM |
@@ -1189,21 +1198,20 @@ the manual pairs with "send FM voice" is **0xD7 bit 1**, not 0xDB (section 9.3).
 | 表 5.5 codes | 1011 listed twice, 1101 missing | |
 | Layer 2 mode value | 5.4.3: 0x10 = 0x68 | 5.4.5: 0x10 = 0x6A |
 
-### 9.3 Conflicts with ODR's current docs and code
+### 9.3 Conflicts with RadioFoundry's current docs and code
 
-| Item | ODR | Manual |
+| Item | RadioFoundry | Manual |
 |---|---|---|
-| "send FM voice" bit | modem-hrc6000.md 8.1, hardware-dm1701.md 21.3 and `tests/hil/test_audio_probe.py` use **0xDB** bit 1 | 0xD7 bit 1 (msk_voice_send_en). 0xDB is not in the manual. The bench result "0xDB bit 1: no FM TX from RAM" says nothing about 0xD7 |
+| "send FM voice" bit | `tests/hil/test_audio_probe.py` uses **0xDB** bit 1 (modem-hrc6000.md 8.1 names 0xD7) | 0xD7 bit 1 (msk_voice_send_en). 0xDB is not in the manual. The bench result "0xDB bit 1: no FM TX from RAM" says nothing about 0xD7 |
 | CDCSS TX polarity | modem-hrc6000.md 8: 0xA2 = 0x00 inverted, 0x08 normal | 0xA2 bit 3 = 1 means TX inverted. The RX mapping (0x04 inverted) agrees with the manual |
-| Page 1 table at 0x60 | modem-hrc6000.md 3: a 32-entry table of `nn EF 00` in the trace notes | aux 0x60-0xBF is the 32-entry multi-group address table; `nn EF 00` matches the group default 0x00EF33 pattern (L, M, H) |
+| Page 1 table at 0x60 | modem-hrc6000.md 3: a 32-entry table of `nn EF 00` is not needed | aux 0x60-0xBF is the 32-entry multi-group address table; `nn EF 00` matches the group default 0x00EF33 pattern (L, M, H) |
 | Page 3 flush | modem-hrc6000.md 3.2: "vocoder frame buffer" | U_SPI OPMode 011 with 0x06 bit 1 is the prompt tone FIFO (7.7) |
 
 ---
 
 ## 10. Bench notes
 
-Only facts already recorded in [modem-hrc6000.md](modem-hrc6000.md) and [hardware-dm1701.md](hardware-dm1701.md) 21.3.1, plus
-the 2026-10-12 two-point measurement. DM-1701 throughout.
+Only facts already recorded in [modem-hrc6000.md](modem-hrc6000.md), plus the 2026-10-12 two-point measurement, measured on an AT1846S board.
 
 | Register | Bench fact |
 |---|---|

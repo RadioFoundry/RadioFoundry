@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# The HR_C7000 platform's registry entry (tools/boards.py): what the tools and CI need to know about every board on it.
+# The build itself reads platform.mk, never this file.
+
+id = "hrc7000"
+isa = "csky"
+cpu = "HR_C7000"
+# The compiler print-cc names and what builds it when it's missing (ci.sh's skip message), in its own table at the
+# end of this file
+stubs = []
+# Its boards may carry a [flash.stub] profile of the universal HR_C7000 stub (stub/stubtool.py): whether the stub holds
+# the power latch and the program flash size; a stock debug console and the read rate if known
+board_stub = { tool = "stubtool", keys = ["hold_power", "progmem"], optional = ["stock_console", "read_rate"] }
+# Linker symbols every board's scripts must define: the codec slot in program flash, the codec's RAM window and the
+# modem table window (platform/hrc7000/vocoder.c, tools/hrc7000_codec.py)
+codec_symbols = ["__codec_slot", "__codec_slot_end", "__codec_run_lo", "__codec_run_hi", "__codec_tab_lo", "__codec_tab_hi"]
+# Program flash (XIP) starts here. The factory loader holds the flash from here to a board's image, which is never
+# written
+flash_base = 0x03000000
+# No sector geometry: the boards' loaders erase the application area whole, so a board has two "sectors", the
+# application and the codec slot
+default_sectors = "app+slot"
+[sectors]
+
+# The toolchain CI and releases build with. version is the GCC release tools/build-csky-toolchain.sh builds (it keeps
+# the binutils and newlib releases beside their checksums). image is the container that holds it:
+# tools/docker/csky-toolchain/build.sh makes it, run.sh runs a command in it, RFOUNDRY_CSKY_IMAGE overrides it. id and name:
+# the toolchain's CI job (firmware (C-SKY)) and its .github/actions/toolchain set-up; every platform with this id
+# builds in that job and must pin the same toolchain
+[toolchain]
+id = "csky"
+name = "C-SKY"
+cc = "csky-elf-gcc"
+build = "tools/build-csky-toolchain.sh"
+version = "14.2.0"
+image = "rfoundry/csky-gcc14:latest"

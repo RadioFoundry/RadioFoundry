@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The ui_svc.h calls the radio core answers: the talk target and the one-shot target of the focused row
 // (docs/spec/dmr-voice.md), the temporary channel changes (timeslot, color code, mode), the hear all, monitor and VOX
 // latches, privacy with the stored key, scan, key beeps and the radio's settings (docs/spec/radio-features.md).
@@ -11,6 +11,7 @@
 #include "radio/vibe.h"
 #include "radio/mic_gain.h"
 #include "radio/radio_cwid.h"
+#include "radio/radio_bcast.h"
 #include "input/input.h"
 #include "settings/settings.h"
 #include <string.h>
@@ -43,17 +44,15 @@ uint32_t ui_svc_feat_voice(void)
 	return f;
 }
 
-// The radio core's settings as the UI last sent them: a run of changes (ui_svc_apply, ui_svc_vox) works on this copy,
-// so it never reads back a value the radio task hasn't taken in yet
+// The radio core's settings, read again for every change so one made elsewhere (the debug link, a host, the radio
+// core) is kept. radio_get_settings answers with the last ones set until the radio task has taken them in, so a run
+// of changes (ui_svc_apply, ui_svc_vox) never reads back a value from before its own last one. Static: off the UI
+// task's stack
 static radio_settings_t rs;
-static bool rs_have;
 
 static radio_settings_t *rs_copy(void)
 {
-	if (!rs_have) {
-		radio_get_settings(&rs);
-		rs_have = true;
-	}
+	radio_get_settings(&rs);
 	return &rs;
 }
 
@@ -192,7 +191,8 @@ uint32_t ui_svc_feat_radio(void)
 {
 	bool motor = CONFIG_VIBRATE && board.power != NULL && board.power->vibrate != NULL;
 	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
-	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0);
+	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0) |
+	       (radio_bcast_capable() ? UI_FEAT_BCAST : 0);
 }
 
 #if CONFIG_DMR
@@ -355,6 +355,11 @@ void ui_svc_ptt_block(bool blocked)
 	input_set_ptt_block(blocked);
 }
 
+void ui_svc_dtmf_block(bool blocked)
+{
+	input_set_dtmf_block(blocked);
+}
+
 // The reply window the Settings screen shows: the radio's setting, else the codeplug's group hang time, else the
 // call stack's 10 s
 int32_t ui_svc_reply_shown(const radio_settings_t *s)
@@ -386,7 +391,7 @@ static void apply_mic_gain(int32_t step, bool agc)
 
 // The UI's settings that live in radio_settings_t. The radio core saves them (settings store) and restores them at
 // start-up, so ui_svc_setting_get reads them back from it (ui_svc_storage.c) and a value it already has is not sent
-// again. A local copy, so a run of changes doesn't read back one the radio task hasn't taken in yet
+// again. Only the field the setting names changes (rs_copy)
 void ui_svc_apply(uint8_t id, int32_t value)
 {
 	radio_settings_t was = *rs_copy();
@@ -423,6 +428,11 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	case UI_SET_TOT_S:
 		rs.tot_s = v16;
 		break;
+#if CONFIG_BCAST_FM
+	case UI_SET_BCAST_STEP:
+		rs.bcast_step = value == 100 ? RADIO_BCAST_STEP_100 : RADIO_BCAST_STEP_200_ODD;
+		break;
+#endif
 #if CONFIG_DUAL_WATCH
 	case UI_SET_DUAL_DELAY_MS:	// the radio core clamps
 		rs.dual_delay_ms = v16;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // SKY72310 synthesizer (sky72310.h; docs/spec/hardware-md380.md 5.2)
 #include <stddef.h>
 #include "sky72310.h"
@@ -10,7 +10,7 @@ bool sky72310_ratio(uint32_t f_osc_hz, uint8_t ref_div, uint32_t f_vco_hz, sky72
 		return false;
 	}
 	// N x 2^18 = f_vco x ref_div x 2^18 / f_osc, rounded to the nearest step, then split into the nearest whole N and
-	// a signed fraction of -0.5 .. +0.5 (signed mode). Sent unsigned, a fraction over one half put the MD-380's
+	// a signed fraction of -0.5 .. +0.5 (signed mode). Sent unsigned, a fraction over one half put the
 	// synthesizer one phase detector step (8.4 MHz) low, at about half of all channels (issue 108)
 	uint64_t num = ((uint64_t)f_vco_hz * ref_div) << SKY72310_FRAC_BITS;
 	uint64_t total = (num + f_osc_hz / 2u) / f_osc_hz;

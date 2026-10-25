@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D first stage (boot/README.md): holds the power latch and drives the transmitter off, then answers on UART1 (the K1 programming cable) the way
-// the HR_C7000 serial boot ROM answers on UART0, so stub/stubtool.py loads a stub here exactly as on a DM-32UV or
-// DM-1801 Pro. Without a host it goes on to the application. Runs from XIP flash and never touches the flash controller.
+// the HR_C7000 serial boot ROM answers on UART0, so stub/stubtool.py loads a stub here exactly as on the other
+// HR_C7000 boards. Without a host it goes on to the application. Runs from XIP flash and never touches the flash controller.
 //
 // ROM protocol (stubtool's start(); frames are 02 op sum8(payload) 03 + payload):
 //   radio: 02 24 00 03, repeated, until the host answers 02 14 00 03
@@ -16,7 +16,7 @@
 // application drives them to itself.
 #include <stdint.h>
 
-#ifndef BOOT_HOST_TEST	// tests/host/bootDb25dTest.c supplies these
+#ifndef BOOT_HOST_TEST	// boards/db25d/tests/bootDb25dTest.c supplies these
 static inline uint32_t rd(uint32_t a)
 {
 	return *(volatile uint32_t *)(uintptr_t)a;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A simulated split duplex modem for host tests (see split_sim_modem.h)
 #include <string.h>
 #include "split_sim_modem.h"
@@ -42,7 +42,7 @@ static uint32_t now_us(void) { return ssim.now_us; }
 static bool slot_clock(uint32_t *counter, uint32_t *t_us, int8_t *ts)
 {
 	if (ssim.bs) {
-		if (ssim.counter == 0) {
+		if ((ssim.counter == 0) || ssim.restarting) {
 			return false;
 		}
 		*counter = ssim.counter;
@@ -72,6 +72,7 @@ static bool bs_start(const dmr_bs_config_t *cfg)
 	ssim.bs_cfg = *cfg;
 	ssim.bs_starts++;
 	ssim.counter = 0;
+	ssim.ts1_parity = 1;				// boundary 1 starts TS1
 	ssim.next_tick_us = ssim.now_us + 1000u;	// the first boundary 1 ms after the start
 	memset(ssim.qn, 0, sizeof(ssim.qn));
 	return true;
@@ -108,6 +109,57 @@ static bool bs_queue(int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
 	return true;
 }
 
+static bool bs_queue_at(uint32_t counter, int8_t ts, const dmr_tx_burst_t *b, const dmr_cach_t *cach,
+			const uint8_t *emb_lc)
+{
+	int k = (ts == 1) ? 0 : 1;
+
+	if (!bs_queue(ts, b, cach, emb_lc)) {
+		return false;
+	}
+	ssim.q[k][ssim.qn[k] - 1u].at = true;
+	ssim.q[k][ssim.qn[k] - 1u].at_counter = counter;
+	return true;
+}
+
+static bool bs_restart(uint32_t t_us, int8_t ts)
+{
+	if (!ssim.bs || ssim.keyed) {
+		return false;
+	}
+	int32_t d = (int32_t)(t_us - ssim.now_us) % (int32_t)SSIM_SLOT_US;	// the next t_us + k x 30 ms from now
+	uint32_t ahead = (uint32_t)((d < 0) ? d + (int32_t)SSIM_SLOT_US : d);
+
+	if (ahead < 2000u) {
+		ahead += SSIM_SLOT_US;
+	}
+	ssim.next_tick_us = ssim.now_us + ahead + (uint32_t)ssim.restart_err_us;
+	if (ssim.restart_flip) {
+		ssim.restart_err_us = -ssim.restart_err_us;
+	}
+	ssim.ts1_parity = (uint8_t)(((ssim.counter + 1u) & 1u) ^ ((ts == 1) ? 0u : 1u));
+	ssim.on_air = false;
+	ssim.restarting = true;
+	ssim.restarts++;
+	ssim.slew_pending = 0;
+	return true;
+}
+
+// One slot from the next boundary longer by the request, in whole steps of SSIM_SLEW_STEP, at most SSIM_SLEW_MAX
+static int32_t bs_slew(int32_t us)
+{
+	if (!ssim.bs || (ssim.slew_pending != 0)) {
+		return 0;
+	}
+	int32_t n = (us >= 0) ? (us + SSIM_SLEW_STEP / 2) / SSIM_SLEW_STEP : -((-us + SSIM_SLEW_STEP / 2) / SSIM_SLEW_STEP);
+	int32_t v = n * SSIM_SLEW_STEP;
+
+	v = (v > SSIM_SLEW_MAX) ? SSIM_SLEW_MAX : ((v < -SSIM_SLEW_MAX) ? -SSIM_SLEW_MAX : v);
+	ssim.slew_pending = v;
+	ssim.slew_calls++;
+	return v;
+}
+
 static uint8_t bs_space(int8_t ts)
 {
 	return (uint8_t)(SSIM_Q - ssim.qn[(ts == 1) ? 0 : 1]);
@@ -131,6 +183,19 @@ const hal_dmr_modem_t ssim_modem = {
 	.is_transmitting = is_transmitting,
 	.now_us = now_us, .slot_clock = slot_clock, .bs_start = bs_start, .bs_key = bs_key, .bs_queue = bs_queue,
 	.bs_space = bs_space, .bs_stop = bs_stop, .bs_keyed = bs_keyed, .bs_cach = DMR_BS_CACH_OURS,
+	.bs_queue_at = bs_queue_at, .bs_restart = bs_restart, .bs_air_delay_us = SSIM_AIR_DELAY,
+	.bs_slew = bs_slew, .bs_slew_step_us = SSIM_SLEW_STEP,
+};
+
+// Without slewing (the HR_C6000's drivers)
+const hal_dmr_modem_t ssim_modem_noslew = {
+	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
+	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_end = tx_end,
+	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
+	.is_transmitting = is_transmitting,
+	.now_us = now_us, .slot_clock = slot_clock, .bs_start = bs_start, .bs_key = bs_key, .bs_queue = bs_queue,
+	.bs_space = bs_space, .bs_stop = bs_stop, .bs_keyed = bs_keyed, .bs_cach = DMR_BS_CACH_OURS,
+	.bs_queue_at = bs_queue_at, .bs_restart = bs_restart, .bs_air_delay_us = SSIM_AIR_DELAY,
 };
 
 const hal_dmr_modem_t ssim_modem_plain = {
@@ -151,7 +216,15 @@ static void tick(uint32_t t)
 {
 	ssim.counter++;
 	ssim.t_tick = t;
-	ssim.ts_tick = (ssim.counter & 1u) ? 1 : 2;	// boundary 1 starts TS1
+	ssim.restarting = false;
+	ssim.slew_now = ssim.slew_pending;	// the slot starting here takes the pending change
+	ssim.slew_pending = 0;
+	if (ssim.slew_now != 0) {
+		ssim.slew_slots++;
+		ssim.slew_largest = (ssim.slew_now > ssim.slew_largest) ? ssim.slew_now :
+				    ((-ssim.slew_now > ssim.slew_largest) ? -ssim.slew_now : ssim.slew_largest);
+	}
+	ssim.ts_tick = (((ssim.counter ^ ssim.ts1_parity) & 1u) == 0) ? 1 : 2;
 	if (!ssim.keyed) {
 		ssim.on_air = false;
 		return;
@@ -163,7 +236,13 @@ static void tick(uint32_t t)
 	int k = ssim.ts_tick - 1;
 	ssim_air_t a;
 
-	if (ssim.qn[k] > 0) {
+	// Bursts for a numbered slot that has passed are dropped; one for a later slot waits (idle now)
+	while ((ssim.qn[k] > 0) && ssim.q[k][0].at && ((int32_t)(ssim.q[k][0].at_counter - ssim.counter) < 0)) {
+		memmove(&ssim.q[k][0], &ssim.q[k][1], sizeof(ssim_air_t) * (SSIM_Q - 1u));
+		ssim.qn[k]--;
+		ssim.late++;
+	}
+	if ((ssim.qn[k] > 0) && (!ssim.q[k][0].at || (ssim.q[k][0].at_counter == ssim.counter))) {
 		a = ssim.q[k][0];
 		memmove(&ssim.q[k][0], &ssim.q[k][1], sizeof(ssim_air_t) * (SSIM_Q - 1u));
 		ssim.qn[k]--;
@@ -186,7 +265,8 @@ void ssim_advance_to(uint32_t t_us)
 	while (ssim.bs && ((int32_t)(t_us - ssim.next_tick_us) >= 0)) {
 		ssim.now_us = ssim.next_tick_us;
 		tick(ssim.next_tick_us);
-		ssim.next_tick_us += SSIM_SLOT_US;
+		ssim.next_tick_us += (uint32_t)((int32_t)SSIM_SLOT_US + ssim.slew_now);
+		ssim.slew_now = 0;
 	}
 	ssim.now_us = t_us;
 }

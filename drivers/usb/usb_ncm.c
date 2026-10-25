@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The network personality's frames on TinyUSB's NCM class (see usb_ncm.h). TinyUSB's network calls run in the USB
 // task only: frames from the host are copied into a small ring in its receive callback, and a frame to the host is
 // handed over through usbd_defer_func(), so the consumer's task never touches the class driver.

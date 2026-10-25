@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // NMEA 0183 line framing for a GPS module on a UART: bytes in, checksum-valid sentences out (docs/spec/hardware-md380.md
 // 13, gotchas 13.7). Generic and pure: no UART, no RTOS. A sentence is "$" ... "*hh" (up to 82 characters by the
 // standard), ended by CR and / or LF. Sentences without a valid checksum are dropped; so are overlong ones. Any talker

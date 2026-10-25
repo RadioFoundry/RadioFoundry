@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // USB / network audio building blocks (core/usbaudio, docs/spec/usb-audio.md): the USRP framing and G.711 mu-law,
 // the link's PTT watchdogs and sequence accounting, and the PCM jitter buffer between two drifting 8 kHz clocks
 #include <math.h>

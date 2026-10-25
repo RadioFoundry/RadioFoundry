@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// HR_C6000 DMR / FM baseband chip driver (DM-1701, MD-UV380, MD-9600, GD-77): its power-on set-up and FM modes
+// Copyright (c) 2026 The RadioFoundry Authors
+// HR_C6000 DMR / FM baseband chip driver (docs/spec/radios.md): its power-on set-up and FM modes
 // (docs/spec/modem-hrc6000.md, docs/spec/hardware-dm1701.md 4 and 12). The register access and the DMR slot engine
 // are shared with the HR_C5000 (drivers/modem/hrc_common); the HR_C5000 has its own driver (drivers/modem/hrc5000).
 #ifndef HRC6000_H

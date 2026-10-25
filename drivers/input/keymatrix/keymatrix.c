@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Key matrix decoding (keymatrix.h)
 #include <stddef.h>
 #include "keymatrix.h"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR voice call stack (core/dmr/call) against a simulated modem (sim/dmr_sim_modem.c), plus its link control
 // coding checked against references written here from the ETSI TS 102 361-1 definitions and against the older
 // clean-tree checkers (sfr.c's RS(12,9) / CRC check, dmrData.c's CSBK builder)
@@ -645,7 +645,7 @@ static void test_tx_refused(void)
 	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
 }
 
-// A modem that takes the transmission but never sends a burst (no slot timing: the MD-380's HR_C5000 not answering).
+// A modem that takes the transmission but never sends a burst (no slot timing: a modem not answering).
 // The call must end on its own, PTT held or released, not wait for a superframe boundary that never comes
 static void test_tx_modem_stalled(void)
 {

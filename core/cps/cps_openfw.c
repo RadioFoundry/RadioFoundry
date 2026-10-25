@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT Copyright (c) 2026 The OpenDigitalRadio Authors The open-firmware CPS protocol engine
+// SPDX-License-Identifier: MIT Copyright (c) 2026 The RadioFoundry Authors The open-firmware CPS protocol engine
 // (cps_openfw.h). Requests are assembled from the byte stream: the host link sees no USB packet boundaries, so a
 // request ends when its header says it is complete (R, W/X, most C commands), or after CPS_GAP_MS of quiet for the rest
 // (C 2 text without a NUL, D, unknown bytes). A request still short of its header's length waits CPS_STALL_MS, so a
@@ -10,8 +10,8 @@
 #include "settings/settings.h"
 #include "storage/storage.h"
 
-#ifndef ODR_GIT
-#define ODR_GIT "unknown"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "unknown"
 #endif
 
 #define NAK		0x2D	// '-': "error", and also the normal reply to every C command
@@ -203,7 +203,7 @@ static void radio_info(void)
 	r[2] = INFO_LEN;
 	put32le(&p[0], 3);
 	put32le(&p[4], board.cps != NULL && board.cps->radio_type != NULL ? board.cps->radio_type() : 6);
-	strncpy((char *)&p[8], ODR_GIT, 15);
+	strncpy((char *)&p[8], RFOUNDRY_GIT, 15);
 	for (int i = 0; i < 12; i++) {
 		if (strncmp(&months[3 * i], d, 3) == 0) {
 			m = i + 1;
@@ -597,7 +597,7 @@ static void handle(size_t n)
 	}
 }
 
-// A byte no request starts with. The DM-1801 Pro's cable (on the microphone / speaker jack) now and then delivers a
+// A byte no request starts with. A programming cable on the microphone / speaker jack now and then delivers a
 // burst of noise bytes (0xFC, 0xFE) between requests; answered '-', it was read as the reply to the next request
 static bool junk(uint8_t b)
 {

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The bootloader key from a radio that runs ODR, so an update needs no stock file. The stock bootloader holds the key
+// Copyright (c) 2026 The RadioFoundry Authors
+// The bootloader key from a radio that runs RadioFoundry, so an update needs no stock file. The stock bootloader holds the key
 // as one plain block: the page reads the bootloader sectors over the debug link (READ_MEM, docs/spec/debuglink.md
 // 3.10) and takes the block whose SHA-256 is the board's key_sha256. No offset or layout is assumed, and a key that
-// doesn't match the hash can't come out of this. Same rules as odrflash/bootkey.py.
+// doesn't match the hash can't come out of this. Same rules as rfoundry/bootkey.py.
 
 import { sha256 } from "./bytes.js";
 

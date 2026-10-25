@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The web flasher's modules, checked against odrflash (fixtures from site/tests/fixtures.py) and run end to end
+// Copyright (c) 2026 The RadioFoundry Authors
+// The web flasher's modules, checked against rfoundry (fixtures from site/tests/fixtures.py) and run end to end
 // against the simulated radio (fake.js). Run with site/tests/run.sh, or: node --test site/tests/
 
 import { test } from "node:test";
@@ -24,7 +24,7 @@ import { findKey, readBootKey } from "../static/js/flasher/bootkey.js";
 import { codecSegments, readCodec } from "../static/js/flasher/codecsave.js";
 import { detect, convertersFor } from "../static/js/flasher/codeplug.js";
 
-const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
+const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
 const bin = (n) => new Uint8Array(readFileSync(join(DIR, n)));
 const fx = json("fixtures.json");
@@ -47,14 +47,14 @@ test("crc32 check value", () => {
 	assert.equal(crc32(new TextEncoder().encode("123456789")), 0xCBF43926);
 });
 
-test("key derivation matches odrflash", async () => {
+test("key derivation matches rfoundry", async () => {
 	const key = await stockfw.deriveKey(stock, await sha256(fromHex(fx.key)), fb);
 	assert.equal(toHex(key), fx.key);
 	assert.equal(toHex(key), fx.derived_key);
 });
 
 // The MD-380 image is far less zero-dominated: the column vote misses hundreds of columns and only the byte-pair
-// refinement finds the key (issue 119). Synthetic file from fixtures.py, the same key as odrflash gives
+// refinement finds the key (issue 119). Synthetic file from fixtures.py, the same key as rfoundry gives
 test("key derivation refines a bad vote (MD-380-like file)", async () => {
 	const m = fx.md380like;
 	assert.ok(m.vote_wrong > 200, `the vote alone should be far off (${m.vote_wrong} columns)`);
@@ -63,9 +63,9 @@ test("key derivation refines a bad vote (MD-380-like file)", async () => {
 	assert.equal(toHex(key), m.derived_key);
 });
 
-// Opt-in: a real TYT updater file (never in the repository), e.g. ODR_MD380_STOCK="MD-380-D2.32(AD).bin" site/tests/run.sh
-test("key derivation from a real MD-380 updater file", { skip: !process.env.ODR_MD380_STOCK && "set ODR_MD380_STOCK" }, async () => {
-	const st = await stockfw.stockFile("stock", new Uint8Array(readFileSync(process.env.ODR_MD380_STOCK)), fb);
+// Opt-in: a real TYT updater file (never in the repository), e.g. RFOUNDRY_MD380_STOCK="MD-380-D2.32(AD).bin" site/tests/run.sh
+test("key derivation from a real MD-380 updater file", { skip: !process.env.RFOUNDRY_MD380_STOCK && "set RFOUNDRY_MD380_STOCK" }, async () => {
+	const st = await stockfw.stockFile("stock", new Uint8Array(readFileSync(process.env.RFOUNDRY_MD380_STOCK)), fb);
 	const key = await stockfw.deriveKey(st.data, fb.boards.md380.key_sha256, fb);
 	assert.equal(await sha256(key), fb.boards.md380.key_sha256);
 });
@@ -122,7 +122,7 @@ test("a manifest with a second range (an image from before the codec moved) is r
 	assert.throws(() => makePlan(board, [[board.app_base, image], [0x080A0000, new Uint8Array(16)]], KEEP), PlanError);
 });
 
-test("manifest from odrflash verifies; tampering is refused", async () => {
+test("manifest from rfoundry verifies; tampering is refused", async () => {
 	assert.equal((await verify(fx.manifest, image, fb)).id, "dm1701");
 	await assert.rejects(verify(fx.manifest, image, fb, "md380"), ManifestError);
 	const bad = image.slice();
@@ -139,16 +139,16 @@ test("zip round trip", async () => {
 	assert.ok(z.length < 2000, "0xFF fill compresses");
 });
 
-test("codec decision follows odrflash's rules", () => {
+test("codec decision follows rfoundry's rules", () => {
 	const m = fx.manifest;
 	assert.equal(decideCodec(board, m, { probe: { board: "DM-1701", codec: board.codec.id } }).mode, KEEP);
 	assert.equal(decideCodec(board, m, { probe: { board: "DM-1701", codec: "absent" }, haveStock: true }).mode, MERGE);
 	assert.throws(() => decideCodec(board, m, { probe: { board: "DM-1701", codec: "absent" } }), DecisionError);
-	// no stock firmware keeps the codec where ODR does: the stock file is needed
+	// no stock firmware keeps the codec where RadioFoundry does: the stock file is needed
 	assert.throws(() => decideCodec(board, m, { stockInstalled: "V02.06 CSV" }), DecisionError);
 	assert.equal(decideCodec(board, m, { stockInstalled: "V02.06 CSV", haveStock: true }).mode, MERGE);
 	assert.equal(decideCodec(board, m, { stockInstalled: "V02.03 CSV", haveStock: true }).mode, MERGE);
-	// ODR from before the codec moved reports the old id: its codec is in flash this firmware overwrites
+	// RadioFoundry from before the codec moved reports the old id: its codec is in flash this firmware overwrites
 	assert.throws(() => decideCodec(board, m, { probe: { board: "DM-1701", codec: "dm1701-v0206-csv" } }), DecisionError);
 	assert.equal(decideCodec(board, m, { probe: { board: "DM-1701", codec: "dm1701-v0206-csv" }, haveStock: true }).mode, MERGE);
 	assert.throws(() => decideCodec(board, m, {}), DecisionError);
@@ -171,6 +171,14 @@ test("a la carte selection keeps dependencies and finds prebuilt variants", () =
 	assert.ok(!s.on.has("DMR_PRIVACY"));
 	s.set("FONT_XL", true);
 	assert.ok(!s.on.has("FONT_XL"), "unsupported on this radio");
+	// the MD-380's DTMF: the hardware can, the code isn't written (BOARD_NOT_WRITTEN), so it isn't offered either
+	const md380 = json("radios.json").radios.find((r) => r.id === "md380");
+	const m = new Selection(md380, json("features.json").features, json("variants.json").variants);
+	m.useVariant("full");
+	assert.ok(md380.not_written.includes("DTMF") && !md380.unsupported.includes("DTMF"), "not written, not unsupported");
+	assert.ok(m.notWritten("DTMF") && !m.supported("DTMF"));
+	m.set("DTMF", true);
+	assert.ok(!m.on.has("DTMF"), "not written for this radio");
 });
 
 test("codeplug formats", () => {
@@ -187,13 +195,16 @@ async function simulated(state) {
 	return { sim, radio: new FakeRadio(sim, { state, spiSize: 0x200000 }) };
 }
 
-test("first install on stock: the codec merged from the stock file, then back up through ODR", async () => {
+test("first install on stock: the codec merged from the stock file, then back up through RadioFoundry", async () => {
 	const { sim, radio } = await simulated("stock");
 	const m = { ...fx.manifest };
 	assert.throws(() => decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV" }), DecisionError);
 	const d = decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV", haveStock: true });
-	const { segments: codec } = await stockfw.extract(sim.stock, sim.key, sim.fb);
-	const plan = makePlan(sim.board, segments(m, image), d.mode, codec);
+	const { profile, segments: codec } = await stockfw.extract(sim.stock, sim.key, sim.fb);
+	// the merge plans against the merged file's layout; with one stock file that is the board's windows
+	assert.deepEqual(stockfw.layoutWindows(profile, sim.fb), sim.board.codec.windows);
+	assert.deepEqual(codec.map(([a, d]) => [a, d.length]), stockfw.layoutWindows(profile, sim.fb));
+	const plan = makePlan(sim.board, segments(m, image), d.mode, codec, stockfw.layoutWindows(profile, sim.fb));
 	radio.enterBootloader();
 	await new Dfu(radio.dfuTransport(), noWait).run(plan, sim.key);
 	assert.deepEqual(radio.violations, []);
@@ -208,16 +219,16 @@ test("first install on stock: the codec merged from the stock file, then back up
 	assert.ok(spi.complete);
 	assert.deepEqual(spi.data, radio.spi);
 	parts.push({ file: "stock-firmware.bin", what: "stock-firmware", addr: 0, data: sim.stock, complete: true });
-	const meta = { radio: { board: "dm1701", name: sim.board.name, chip: p.chip }, firmware_now: { kind: "odr", git: p.git, codec: p.codec },
+	const meta = { radio: { board: "dm1701", name: sim.board.name, chip: p.chip }, firmware_now: { kind: "rfoundry", git: p.git, codec: p.codec },
 		firmware_before: { kind: "stock", version: "V02.06 CSV" } };
 	const bundle = await openBundle(await makeBundle(meta, parts));
-	// the memory chip still holds the stock codeplug: written back to ODR it would be garbage, so it isn't offered
-	assert.deepEqual(targets(bundle), ["odr", "stock"]);
+	// the memory chip still holds the stock codeplug: written back to RadioFoundry it would be garbage, so it isn't offered
+	assert.deepEqual(targets(bundle), ["rfoundry", "stock"]);
 	assert.deepEqual(bundle.parts.get("internal-flash").data, radio.flash.subarray(0xC000));
 });
 
-test("after the backup, the stock data in ODR's settings area is claimed; a wrong token changes nothing", async () => {
-	const { radio } = await simulated("odr");
+test("after the backup, the stock data in RadioFoundry's settings area is claimed; a wrong token changes nothing", async () => {
+	const { radio } = await simulated("rfoundry");
 	const link = new Link(radio.serialStream());
 	const before = await link.storageInfo();
 	assert.equal(before.region, "foreign");
@@ -233,7 +244,7 @@ test("after the backup, the stock data in ODR's settings area is claimed; a wron
 });
 
 test("a read whose reply lost its tail is asked again", async () => {
-	const { radio } = await simulated("odr");
+	const { radio } = await simulated("rfoundry");
 	const answer = radio.serialAnswer.bind(radio);
 	let reads = 0;
 	radio.serialAnswer = (req) => {
@@ -247,8 +258,8 @@ test("a read whose reply lost its tail is asked again", async () => {
 	assert.deepEqual(r.data, radio.flash.subarray(0xC000, 0xC000 + 5 * 2045));
 });
 
-test("an ODR radio gives its bootloader key: found in the bootloader by its hash, nowhere else", async () => {
-	const { sim, radio } = await simulated("odr");
+test("a RadioFoundry radio gives its bootloader key: found in the bootloader by its hash, nowhere else", async () => {
+	const { sim, radio } = await simulated("rfoundry");
 	const link = new Link(radio.serialStream());
 	const key = await readBootKey(link, sim.board, sim.fb.key_len);
 	assert.deepEqual(key, sim.key);
@@ -268,8 +279,8 @@ test("an ODR radio gives its bootloader key: found in the bootloader by its hash
 	assert.deepEqual(radio.flash.subarray(0xC000, 0xC000 + image.length), image);
 });
 
-test("big reads: 32 KB from ODR, and whatever an older build gives (2045 bytes)", async () => {
-	const { radio } = await simulated("odr");
+test("big reads: 32 KB from RadioFoundry, and whatever an older build gives (2045 bytes)", async () => {
+	const { radio } = await simulated("rfoundry");
 	let reads = 0;
 	const answer = radio.serialAnswer.bind(radio);
 	radio.serialAnswer = (req) => { if (req[0] === 0x52) reads++; return answer(req); };
@@ -286,7 +297,7 @@ test("big reads: 32 KB from ODR, and whatever an older build gives (2045 bytes)"
 });
 
 test("merge on a radio without a codec, then restore stock from the bundle's stock file", async () => {
-	const { sim, radio } = await simulated("odr-nocodec");
+	const { sim, radio } = await simulated("rfoundry-nocodec");
 	radio.flash.fill(0xFF, 0x60000, 0x100000);		// no codec anywhere
 	const link = new Link(radio.serialStream());
 	const p = await probe(link);
@@ -309,12 +320,22 @@ test("merge on a radio without a codec, then restore stock from the bundle's sto
 	assert.deepEqual(radio.violations, []);
 });
 
-test("restore an ODR backup exactly, codeplug included", async () => {
-	const { sim, radio } = await simulated("odr");
+test("a backup made before the project was renamed still opens, as a RadioFoundry backup", async () => {
+	const { sim, radio } = await simulated("rfoundry");
 	const link = new Link(radio.serialStream());
 	const p = await probe(link);
 	const parts = await readRadio(link, sim.board, { backup: { spi_size: 0x200000 } });
-	const bundle = await openBundle(await makeBundle({ radio: { board: "dm1701", name: "x", chip: p.chip }, firmware_now: { kind: "odr", git: p.git, codec: p.codec } }, parts));
+	const bundle = await openBundle(await makeBundle({ format: "odr-backup/1", radio: { board: "dm1701", name: "x", chip: p.chip },
+		firmware_now: { kind: "odr", git: p.git, codec: p.codec } }, parts));
+	assert.equal(bundle.meta.firmware_now.kind, "rfoundry");
+});
+
+test("restore a RadioFoundry backup exactly, codeplug included", async () => {
+	const { sim, radio } = await simulated("rfoundry");
+	const link = new Link(radio.serialStream());
+	const p = await probe(link);
+	const parts = await readRadio(link, sim.board, { backup: { spi_size: 0x200000 } });
+	const bundle = await openBundle(await makeBundle({ radio: { board: "dm1701", name: "x", chip: p.chip }, firmware_now: { kind: "rfoundry", git: p.git, codec: p.codec } }, parts));
 	const flashBefore = radio.flash.slice(), spiBefore = radio.spi.slice();
 	// the radio changes: a new firmware and an edited codeplug
 	radio.flash.fill(0x00, 0xC000, 0x20000);
@@ -378,11 +399,11 @@ test("a radio that keeps its codec hands over a copy too, from where the merge p
 	assert.equal(await readCodec(link(now), board, fbx), null, "a changed byte: no copy");
 	// with a copy, a radio whose codec can't be kept or checked needs no stock file
 	const m = { codec: { profile: board.codec.id } };
-	const odr = (codec) => ({ board: "DM-1701", codec });
-	assert.equal(decideCodec(board, m, { probe: odr(board.codec.id), haveSaved: true }).mode, KEEP, "a radio with its codec keeps it");
+	const rfoundry = (codec) => ({ board: "DM-1701", codec });
+	assert.equal(decideCodec(board, m, { probe: rfoundry(board.codec.id), haveSaved: true }).mode, KEEP, "a radio with its codec keeps it");
 	assert.equal(decideCodec(board, m, { haveSaved: true }).source, "saved", "no radio answers");
 	assert.equal(decideCodec(board, m, { stockInstalled: "V02.06 CSV", haveSaved: true }).source, "saved", "back on stock firmware");
-	assert.equal(decideCodec(board, m, { probe: odr("absent"), haveSaved: true }).source, "saved", "ODR without its codec");
+	assert.equal(decideCodec(board, m, { probe: rfoundry("absent"), haveSaved: true }).source, "saved", "RadioFoundry without its codec");
 	assert.equal(decideCodec(board, m, { haveSaved: true, requested: KEEP }).mode, KEEP, "keep, as asked");
 });
 

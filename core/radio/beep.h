@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Beeps and alert tones (docs/spec/radio-features.md 4): short tone patterns synthesized as 8 kHz PCM and played
 // through the board's PCM audio (hal_audio_t), so they follow the volume knob like received audio does.
 //

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The microphone path on DMR transmit without a person: a test tone through the programming cable's serial line.
 
 On some radios the programming cable's host-to-radio line (the radio's UART RX) reaches the microphone input: a byte
@@ -21,7 +21,8 @@ import time
 
 import pytest
 
-from odr_debug import DebugLinkError
+from rfoundry_debug import DebugLinkError
+from rfoundry_hil import skip
 
 INJECT_BAUD = 6000          # 0x55 at 6000 baud: a 3 kHz square, inside the vocoder's band. The coupling grows with
                             # the edge rate: on the DM-1801 Pro 1200 baud rose 3 dB, 2400 baud 9, 6000 baud 15
@@ -44,14 +45,14 @@ RISE_MIN = 9                # dB the burst blocks reach over the quiet over's lo
 @pytest.fixture
 def inject_port(radio, pytestconfig):
     if not pytestconfig.getoption("--mic-inject"):
-        pytest.skip("drives the radio's serial line with test tones: run with --mic-inject (and --allow-rf)")
+        skip("opt_in", "drives the radio's serial line with test tones: run with --mic-inject (and --allow-rf)")
     port = str(radio.link.port)
     if "://" in port or port.startswith("udp:"):
-        pytest.skip(f"the radio is on {port}: the injection needs a local serial port (run on the host the cable "
+        skip("bench", f"the radio is on {port}: the injection needs a local serial port (run on the host the cable "
                     "is plugged into, by its device path)")
     board = radio.version().get("board", "")
     if board not in INJECT_BOARDS and not pytestconfig.getoption("--mic-inject-any"):
-        pytest.skip(f"no known path from the programming cable's line to the mic input on the {board!r} "
+        skip("no_hw", f"no known path from the programming cable's line to the mic input on the {board!r} "
                     "(--mic-inject-any tries anyway)")
     return radio.link.s
 
@@ -99,7 +100,7 @@ def over(radio, s, inject):
 def test_mic_uart_inject(radio, inject_port, pytestconfig):
     f = radio.view(["dmr"])
     if "voice.tx_mic_level_db" not in f:
-        pytest.skip("this build has no voice.tx_mic_* statistics")
+        skip("not_built", "this build has no voice.tx_mic_* statistics")
     radio.find_channel(int(round(pytestconfig.getoption("--dmr-freq") * 1e6)), mode="dmr")
     radio.lowest_power()
     quiet = over(radio, inject_port, inject=False)

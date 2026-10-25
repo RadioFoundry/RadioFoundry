@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // FD6818 driver: band words, CTCSS word, and the bit-banged frames against a fake chip that samples the data line on
 // rising clock edges while CS is low (docs/spec/hardware-dm32.md 8.1-8.4)
 #include <stdio.h>
 #include <string.h>
 #include "rf/fd6818/fd6818.h"
+
+// A board's own set, the one other than the driver's default (boards/dm1801pro/rf_tables_dm1801pro.c)
+extern const fd6818_variant_t fd6818_variant_dm1801pro;
 
 static int failures;
 
@@ -280,6 +283,23 @@ static void test_rx_sleep(void)
 	CHECK(chip.n == 2 && chip.log[0].reg == 0x37 && chip.log[0].val == 0x1F1F && chip.log[1].val == 0x1F0F);
 }
 
+// AM receive: one AF word, the FM word with the AM demodulator type; FM gives the tables' word back
+static void test_am(void)
+{
+	fd6818_t dev;
+	reset_chip();
+	fd6818_attach(&dev, &bus);
+	fd6818_set_am(&dev, true);
+	CHECK(chip.n == 1 && chip.log[0].reg == FD6818_REG_AF && chip.log[0].val == 0x0740);
+	CHECK((FD6818_AF_AM & ~0x0F00u) == (FD6818_AF_FM & ~0x0F00u));
+	fd6818_set_am(&dev, false);
+	CHECK(chip.n == 2 && chip.log[1].val == 0x0140);
+	fd6818_set_mode(&dev, FD6818_MODE_FM);
+	int i = find_last(FD6818_REG_AF);
+	CHECK(i >= 0 && chip.log[i].val == FD6818_AF_FM);
+	CHECK(chip.protocol_errors == 0);
+}
+
 // RX sub-audio set-up in the radio's own order, and the 0x0C detect bits
 static void test_rx_tones(void)
 {
@@ -400,7 +420,7 @@ static void test_burst_tables(void)
 	CHECK(chip.n == 1 && chip.log[0].reg == 0x30 && chip.log[0].val == 0xBFF1);
 	CHECK(chip.protocol_errors == 0);
 	// The DM-32UV's set has none: idle first
-	fd6818_attach_variant(&dev, &bus, &fd6818_variant_dm32);
+	fd6818_attach_variant(&dev, &bus, &fd6818_variant_default);
 	chip.n = 0;
 	fd6818_dmr_burst(&dev, true, FD6818_BW_DMR);
 	CHECK(chip.n >= 2 && chip.log[0].reg == 0x30 && chip.log[0].val == 0);
@@ -411,7 +431,7 @@ static void test_burst_tables(void)
 // frequency between bursts and never heard the hotspot's downlink)
 static void test_burst_split(void)
 {
-	const fd6818_variant_t *vars[] = { &fd6818_variant_dm32, &fd6818_variant_dm1801pro };
+	const fd6818_variant_t *vars[] = { &fd6818_variant_default, &fd6818_variant_dm1801pro };
 	for (unsigned i = 0; i < 2; i++) {
 		fd6818_t dev;
 		reset_chip();
@@ -454,6 +474,7 @@ int main(void)
 	test_sequences();
 	test_rx_tones();
 	test_rx_sleep();
+	test_am();
 	if (failures) {
 		printf("fd6818Test: %d failures\n", failures);
 		return 1;

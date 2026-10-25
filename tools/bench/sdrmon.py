@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """
 Adapted from our earlier bench tool sdrmon.py.
 
 sdrmon: on-air DMR burst monitor (one channel, offline analysis of a raw IQ capture from the SDR bench's RTL-SDR).
-Runs on the SDR bench with the odr_sdrbench package (its Channelizer, FmDemod, slicer and FEC).
+Runs on the SDR bench with the rfoundry_sdrbench package (its Channelizer, FmDemod, slicer and FEC).
 
     sdrmon.py capture --seconds N --out FILE [--freq 461.6875] [--offset-khz -200] [--gain 15] [--ppm P]
-                      [--service odr-sdrbench@<bench host> | --service '']
+                      [--service rfoundry-sdrbench@<bench host> | --service '']
         Stops the bench's gateway service (it holds the dongle) unless --service '', records raw IQ (cs8, 1.536 MS/s, bias tee
         on) tuned --offset-khz away from --freq (keeps the channel off the RTL DC spike at the tuner center), then
         restarts the service, always (finally + SIGTERM/SIGHUP/SIGINT handlers). Prints "READY <wall clock of sample
@@ -18,7 +18,7 @@ Runs on the SDR bench with the odr_sdrbench package (its Channelizer, FmDemod, s
         share of I/Q samples at the int8 rails). Clipping above 1 % is reported as a warning: lower --gain, move the
         antenna, or turn the radio's power down (see docs/testing/dmr-bench.md).
         The ppm is applied in software at analysis time (librtlsdr only takes whole ppm). Without --ppm it is the
-        SDR bench's own calibration (odr_sdrbench.benchcal, a file on the bench host), recorded in FILE.json.
+        SDR bench's own calibration (rfoundry_sdrbench.benchcal, a file on the bench host), recorded in FILE.json.
 
     sdrmon.py analyze FILE [--cc 2] [--from MS] [--to MS] [--edges-only] [--dbm-offset DB] [--json OUT]
         Channelizes and FM-demodulates (48 kS/s, 10 samples per symbol), searches every sample for all four sync
@@ -46,7 +46,7 @@ import time
 
 import numpy as np
 
-SERVICE = os.environ.get("ODR_SDR_BENCH_SERVICE") or f"odr-sdrbench@{socket.gethostname()}"
+SERVICE = os.environ.get("RFOUNDRY_SDR_BENCH_SERVICE") or f"rfoundry-sdrbench@{socket.gethostname()}"
 FS_CH = 48000.0
 SPS = 10
 BURST = 132 * SPS                  # 27.5 ms
@@ -160,9 +160,9 @@ def cmd_capture(args) -> int:
 
 def _load(path: str, meta: dict, freq_override=None):
     """Channel baseband at 48 kS/s, delay-compensated: (f Hz through the matched filter, |x|^2)."""
-    from odr_sdrbench.channelizer import Channelizer
-    from odr_sdrbench.dsp import FmDemod
-    from odr_sdrbench.source import from_bytes
+    from rfoundry_sdrbench.channelizer import Channelizer
+    from rfoundry_sdrbench.dsp import FmDemod
+    from rfoundry_sdrbench.source import from_bytes
     fs = meta["fs"]
     freq = freq_override or meta["freq"]
     D = int(round(fs / FS_CH))
@@ -173,7 +173,7 @@ def _load(path: str, meta: dict, freq_override=None):
     bps = {"cu8": 2, "cs8": 2, "cs16": 4, "cf32": 8}[meta["fmt"]]
     fs_out, ps_out = [], []
     clipped = total = 0
-    from odr_sdrbench.burstmetrics import ClipTrack
+    from rfoundry_sdrbench.burstmetrics import ClipTrack
     track = ClipTrack(D) if meta["fmt"] in ("cs8", "cu8") else None
     with open(path, "rb") as fh:
         while True:
@@ -229,7 +229,7 @@ def _sync_scores(f: np.ndarray, unit: np.ndarray) -> np.ndarray:
 
 
 def _slice(vals, center, outer):
-    from odr_sdrbench.demod import _slice as s
+    from rfoundry_sdrbench.demod import _slice as s
     return s(vals, center, outer)
 
 
@@ -246,8 +246,8 @@ def _fec_str(fec3) -> str:
 
 
 def cmd_analyze(args) -> int:
-    from odr_sdrbench.dmr import ambe, fec, pdu
-    from odr_sdrbench import layer2 as L2
+    from rfoundry_sdrbench.dmr import ambe, fec, pdu
+    from rfoundry_sdrbench import layer2 as L2
     meta = json.load(open(args.file + ".json")) if os.path.exists(args.file + ".json") else \
         {"freq": args.freq * 1e6, "center": args.freq * 1e6 - args.offset_khz * 1e3, "fs": args.rate,
          "fmt": "cu8" if args.file.endswith("cu8") else "cs8", "ppm": args.ppm, "t0": None}
@@ -453,8 +453,8 @@ def cmd_analyze(args) -> int:
                     b.cach = cdec.push(dmr_cach.bits_to_int(cb))
 
     # LCs: voice LC header / terminator (RS(12,9) checked by pdu), CSBK opcode, embedded LC from B-E (voice E), each
-    # with a `type` (grp_voice, talker_alias_hdr, gps_info, ...): odr_sdrbench.rxmon._decode_lc / lcinfo
-    from odr_sdrbench.rxmon import _decode_lc
+    # with a `type` (grp_voice, talker_alias_hdr, gps_info, ...): rfoundry_sdrbench.rxmon._decode_lc / lcinfo
+    from rfoundry_sdrbench.rxmon import _decode_lc
     frags, ta_state = {}, {}
     for b in bursts:
         _decode_lc(b, frags, ta_state)
@@ -474,8 +474,8 @@ def cmd_analyze(args) -> int:
         bd = 10 * np.log10(blocks + 1e-12)
         b.spread = float(bd.max() - bd.min())
         b.step = b.spread > args.step_db
-    # Ramp times, first-burst flag, per-burst ADC clipping and misread-family flags (odr_sdrbench.burstmetrics)
-    from odr_sdrbench import burstmetrics
+    # Ramp times, first-burst flag, per-burst ADC clipping and misread-family flags (rfoundry_sdrbench.burstmetrics)
+    from rfoundry_sdrbench import burstmetrics
     burstmetrics.annotate(bursts, f, p, clip, D=int(round(meta["fs"] / FS_CH)), noise_db=noise)
 
     # Window.
@@ -566,7 +566,7 @@ def cmd_analyze(args) -> int:
            "errs_vs_neighbor": b.errs_vs_neighbor,
            "ambe_fec": [{"c0": c0, "c1": c1, "bad": bad} for c0, c1, bad in b.fec] if b.fec else None}
           for b in sel]
-    from odr_sdrbench import calls as _calls
+    from rfoundry_sdrbench import calls as _calls
     grouped = _calls.group_calls(bj)
     counts = {}
     for b in sel:
@@ -676,7 +676,7 @@ def cmd_analyze(args) -> int:
                 "repeat_gap_ms": sorted(round(x, 2) for x in gaps),
                 "overlaps": len(ov), "power_steps": len(steps),
                 "unexplained_carrier": [[round(a, 1), round(u, 1)] for a, u in unexpl],
-                # calls (odr_sdrbench.calls): per call its own voice letters, LC types, alias, GPS, and every burst
+                # calls (rfoundry_sdrbench.calls): per call its own voice letters, LC types, alias, GPS, and every burst
                 # left out of the calls with the reason (another family / slot, outside the call, a false sync match)
                 "calls": grouped["calls"], "left_out": grouped["left_out"],
                 "isolated": [x["t_ms"] for x in bj if x["isolated"]],
@@ -720,7 +720,7 @@ def main() -> int:
             s.add_argument("--cach", action="store_true", help="decode the CACH of BS-sourced bursts (split duplex)")
     args = ap.parse_args()
     if args.cmd == "capture" or not os.path.exists(args.file + ".json"):     # analyze: the capture's own record wins
-        from odr_sdrbench import benchcal
+        from rfoundry_sdrbench import benchcal
         args.ppm = benchcal.resolve("--ppm", args.ppm, "sdr_ppm")
     if args.cmd == "capture":
         return cmd_capture(args)

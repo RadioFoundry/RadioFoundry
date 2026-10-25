@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // BK4819 transceiver driver (docs/spec/hardware-db25d.md 4)
 #include <stddef.h>
 #include "bk4819.h"
@@ -254,7 +254,7 @@ void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain)
 }
 
 // 4.5 DMR receive: the stock digital mode set, in its order. 0x27 and 0x48 are saved for the end; the stock firmware
-// leaves its digital values there when it goes back to analog, ODR doesn't
+// leaves its digital values there when it goes back to analog, RadioFoundry doesn't
 static const regval_t dmr_rx_set[] = {
 	{ 0x2A, 0x4711 }, { BK4819_REG_SUBAUDIO, 0x0000 }, { 0x52, 0x028F }, { BK4819_REG_AF, 0x6943 },
 	{ BK4819_REG_AGC_DC, 0x3006 }, { BK4819_REG_BANDWIDTH, BK4819_BW_DMR }, { 0x40, 0x0000 }, { 0x27, 0x0430 },
@@ -274,7 +274,7 @@ void bk4819_dmr_rx_enter(bk4819_t *dev)
 	write_table(dev, &dmr_rx_set[2], sizeof(dmr_rx_set) / sizeof(dmr_rx_set[0]) - 2u);
 }
 
-// The stock analog mode set (it also turns the AFC back on and mutes the AF), then what ODR's analog receive had
+// The stock analog mode set (it also turns the AFC back on and mutes the AF), then what RadioFoundry's analog receive had
 void bk4819_dmr_rx_end(bk4819_t *dev)
 {
 	if (!dev->digital) {
@@ -421,6 +421,30 @@ void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain)
 	dev->tone_gain = gain;
 	// The stock word is the product truncated: 1750 Hz = 18067
 	bk4819_write(dev, BK4819_REG_TONE1_FREQ, (uint16_t)((uint32_t)hz * 103244u / 10000u));
+	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
+}
+
+// 4.4 DTMF: the tone start with both generators at the stock DTMF level and the stock DTMF deviation (0x40)
+void bk4819_dtmf_start(bk4819_t *dev, uint16_t low_hz, uint16_t high_hz)
+{
+	if (low_hz == 0) {
+		bk4819_tone_stop(dev);
+		return;
+	}
+	if (dev->tone_hz == 0) {
+		bk4819_write(dev, BK4819_REG_AF, 0x6342u);	// AF select 3, the stock side tone
+		bk4819_write(dev, BK4819_REG_TONE_CTRL, BK4819_DTMF_CTRL);
+		bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_TONE);
+		bk4819_write(dev, BK4819_REG_POWER, BK4819_POWER_ON);
+		bk4819_write(dev, BK4819_REG_ENABLES, dev->idle);
+		bk4819_write(dev, BK4819_REG_ENABLES, BK4819_STATE_TX_TONE);
+		bk4819_write(dev, 0x40, BK4819_TX_DEV_DTMF);
+	}
+	dev->tone_hz = low_hz;
+	dev->tone_gain = 0;	// keying (bk4819_tone_key) is for single tones only
+	// The stock DTMF table's words (1633 Hz = 16860; Hz x 10.3244 truncated gave 16859)
+	bk4819_write(dev, BK4819_REG_TONE1_FREQ, bk4819_tone_word(low_hz));
+	bk4819_write(dev, BK4819_REG_TONE2_FREQ, bk4819_tone_word(high_hz));
 	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
 }
 

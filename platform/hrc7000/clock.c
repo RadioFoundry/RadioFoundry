@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Watchdog, PLL, peripheral clocks and the XIP flash cache (docs/spec/hardware-dm32.md 1.1, 1.3, 3.5).
 //
 // The Baofeng bootloader starts us with the chip already running (it drives a display and the UART) on the 168 MHz PLL.
 // The PLL steps run only when the system clock still comes from the 24 MHz oscillator (CLK_MGR_CTRL bits 3:2 set), or
-// when the board's loader leaves another rate (HRC_LOADER_CPU_HZ differs from HRC_CPU_HZ: the DB25-D's IAP loader, 72
+// when the board's loader leaves another rate (HRC_LOADER_CPU_HZ differs from HRC_CPU_HZ: an IAP loader at 72
 // MHz). Reprogramming a PLL the CPU is clocked from is not safe, so that case first moves the SoC clock to the
 // oscillator, then follows the PLL re-configuration flow of the user guide (4.2.3.2). Everything here runs from RAM: it
 // changes the XIP flash controller's timing, and polls with a cycle loop (no timer yet).

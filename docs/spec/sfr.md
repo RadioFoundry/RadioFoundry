@@ -4,8 +4,7 @@
 
 A single frequency repeater receives a DMR call on one TDMA slot of a frequency (the inbound slot) and repeats it on
 the other slot of the same frequency (the outbound slot), 90 ms later. Radios in direct mode hear both copies. Switch:
-`CONFIG_SFR`, on with DMR except on the MD-380, whose HR_C5000 has no CRC_MCU_Control for the idle bursts of section
-3 item 4 (gotchas 14.6; `docs/build-config.md`). Background and the HR_C6000 findings: `docs/spec/gotchas.md` 8.11,
+`CONFIG_SFR`, on with DMR except where a board lists it as unsupported (the HR_C5000 has no CRC_MCU_Control for the idle bursts of section 3 item 4, gotchas 14.6) or not written (see `docs/build-config.md`). Background and the HR_C6000 findings: `docs/spec/gotchas.md` 8.11,
 8.12 and 14; the host protocol: `docs/spec/mmdvm-protocol.md` 6.
 
 There are two kinds:
@@ -93,12 +92,12 @@ Status per modem driver:
 
 | Driver | Radios | Items |
 |---|---|---|
-| HR_C6000 (`drivers/modem/hrc6000/hrc6000_dmr.c`, owned by the DMR modem work) | DM-1701 (the MD-380 builds without SFR) | all: `sync_override`, idle bursts, `host_crc`, `DMR_TIMING_ALIGNED` (to the slot numbering it learned from the bursts heard), `tx_listen`, `DMR_BURST_EMPTY`, the TX slot events; reports keep coming while it transmits |
-| HR_C7000 (`drivers/modem/hrc7000/hrc7000_dmr.c`) | DM-32UV, DM-1801 Pro | all: `sync_override`, `DMR_TIMING_ALIGNED` (the TX slot built from the receive slot, ours picked by slot number), `tx_listen` (with the voice-access flag during a call), `DMR_BURST_EMPTY`, `tx_fill`, the TX slot events; headers and terminators heard while sending are passed on with the chip's CRC verdict. On air on the DM-32UV (gotchas 14.11) |
+| HR_C6000 (`drivers/modem/hrc6000/hrc6000_dmr.c`, owned by the DMR modem work) | STM32 boards with an HR_C6000 (an HR_C5000 board builds without SFR) | all: `sync_override`, idle bursts, `host_crc`, `DMR_TIMING_ALIGNED` (to the slot numbering it learned from the bursts heard), `tx_listen`, `DMR_BURST_EMPTY`, the TX slot events; reports keep coming while it transmits |
+| HR_C7000 (`drivers/modem/hrc7000/hrc7000_dmr.c`) | HR_C7000 boards | all: `sync_override`, `DMR_TIMING_ALIGNED` (the TX slot built from the receive slot, ours picked by slot number), `tx_listen` (with the voice-access flag during a call), `DMR_BURST_EMPTY`, `tx_fill`, the TX slot events; headers and terminators heard while sending are passed on with the chip's CRC verdict. On air (gotchas 14.11) |
 
 The board switches the RF per burst: the RF TX interrupt keys the PA, the timeslot interrupt that starts the next slot
-drops it (on the DM-1701 the AT1846S goes back to RX about 1.3 ms into the slot, gotchas 3.4). The rest of this
-section is the HR_C6000 bring-up, measured on the DM-1701. Item 1 was missing in the chip: the slot between our bursts was written
+drops it (the AT1846S goes back to RX about 1.3 ms into the slot, gotchas 3.4). The rest of this
+section is the HR_C6000 bring-up, measured on an AT1846S board. Item 1 was missing in the chip: the slot between our bursts was written
 "no receive" (0x41 = 0x00), so nothing was heard there and MMDVM SFR repeated only what it heard before
 keying (HIL 2026-10-10: mode switching and the first repeat on TS2 passed, the rest of the call failed). With
 `tx_listen` (`hrc6000_dmr_tx_listen`) the engine writes "receive" (0x50) for that slot instead, for that transmission
@@ -145,10 +144,9 @@ CW ID (`CONFIG_SFR_CWID`, `core/radio/radio_cwid.c`): the repeater role can iden
 | Meanwhile | The role stays active: PTT is still refused, calls aren't repeated, the Home screen says "Sending ID" |
 | Cut | A channel change or hotspot mode during the ID ends it at once; it counts as cut |
 
-On air (SDR bench, 2026-10-19; DM-32UV repeater, 461.1375 MHz): after a user's call the ID came 2 s after the
-hang, "N4NQV" at 20 wpm (60 ms elements), 800 Hz, about 1.8 kHz deviation, the 150 ms lead and tail; the next one
-5 min later after new traffic (interval 5 min). The runner's counters carry on over the ID (`radio_sfr_start`
-`keep_stats`).
+On air the ID came 2 s after the hang, at 20 wpm (60 ms elements), 800 Hz, about 1.8 kHz deviation, with the 150 ms lead and
+tail, and the next one an interval later after new traffic. The runner's counters carry on over the ID (`radio_sfr_start`
+`keep_stats`). Bench figures: the HR_C7000 repeater's hardware page.
 
 Debug link view `dmr`: `dmr.sfr_cwid` (the setting), `dmr.sfr_cw` (keying now), `dmr.sfr_cwid_sent`,
 `dmr.sfr_cwid_cut` (cut or skipped).
@@ -160,22 +158,22 @@ inbound slots still hear each other: they are users of two different repeater se
 No CACH: the repeater keys only its own slot (it listens on the other one), so there is no continuous BS outbound to
 carry it. Users find the slots from the outbound slot's sync (TS framing) and the hang's idle bursts.
 
-On air (SDR bench, 2026-10-19; DM-32UV repeater, DM-1701 user, 461.1375 MHz CC 2):
+On air (SDR bench, 2026-10-19), the numbers on the radios' own hardware pages:
 
-- The user's call goes out on slot A with the TS1 direct mode sync; the DM-32UV repeats it on slot B with the TS2
+- The user's call goes out on slot A with the TS1 direct mode sync; the repeater repeats it on slot B with the TS2
   sync, every voice burst 90.2 ms after the original (72 of 72), then the hang's idle bursts. The repeat carried 2 of
   the 3 headers and no terminator (the users' fade time ends the call), and its voice frames needed Golay
-  corrections where the direct copy was clean (212 of 216 repeated frames corrected, 4 uncorrectable): the DM-32UV's
-  receiver takes bit errors while it switches per burst. Both open.
-- The DM-1701 as a user played a bench call (TS1 sync) whole, 24 of 24 voice bursts, no frame lost. It never
-  reported the repeated copy during the call (`rx_sfr_dup` 0): its HR_C6000 decodes the voice of the slot it locked
-  onto, although the driver writes "receive" for every slot (`rx_lock_slot(0)`); its reports for the other slot are
-  stale status (gotchas 14.12). With `sfr_rx` 1 or 2 it falls over to the other copy only between calls or after a
-  loss. A user out of range of the talker locks to the repeat; one whose talker fades mid-call hears a gap until the
-  receiver's lost-signal restart. Hearing both slots during a call needs the raw RX RAM path (section 3).
-- An HR_C7000 user (DM-32UV, DM-1801 Pro) reports both copies. Its driver gives the voice-access flag to every chip
-  slot with a call on it; with the flag on one slot only, every burst read the voice RAM of the last one decoded and
-  the user played the same burst for the whole call (gotchas 14.15). Fixed in the driver, not yet rechecked on air.
+  corrections where the direct copy was clean: an HR_C7000 repeater's receiver takes bit errors while it switches per
+  burst (gotchas 14.13). Both open.
+- An HR_C6000 user played a bench call (TS1 sync) whole, no frame lost. It never reported the repeated copy during
+  the call (`rx_sfr_dup` 0): the chip decodes the voice of the slot it locked onto, although the driver writes
+  "receive" for every slot (`rx_lock_slot(0)`); its reports for the other slot are stale status (gotchas 14.12). With
+  `sfr_rx` 1 or 2 it falls over to the other copy only between calls or after a loss. A user out of range of the
+  talker locks to the repeat; one whose talker fades mid-call hears a gap until the receiver's lost-signal restart.
+  Hearing both slots during a call needs the raw RX RAM path (section 3).
+- An HR_C7000 user reports both copies. Its driver gives the voice-access flag to every chip slot with a call on it;
+  with the flag on one slot only, every burst read the voice RAM of the last one decoded and the user played the same
+  burst for the whole call (gotchas 14.15). Fixed in the driver, not yet rechecked on air.
 
 Not built: the HR_C6000 driver level parts (raw RX RAM classification, `sfrRawClassify`; the register switches of
 command 0xD5); a setting on the radio for the role (the Codeplug Editor sets it). On the radio, Tools > Single-freq repeater shows the

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Drawing into the UI's frame buffer and sending changed rows to the display (hal_display_t).
 // Works on any panel whose frame buffer fits GFX_FB_BYTES: RGB565 (bpp 16), 16 colors (bpp 4) or 1 bit per pixel (bpp 1,
 // MSB left). At bpp 4 the drawing calls still take RGB565: gfx keeps a 16-entry palette of the colors in use (a screen
@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "config.h"
 #include "hal_display.h"
 #include "font.h"
 
@@ -47,6 +48,26 @@ color_t gfx_get_pixel(int x, int y);	// RGB565, or 0 / 1 on a 1 bpp panel
 // n bytes of the frame as RGB565 (little endian, rows of width * 2 bytes) from byte off: screen captures of a bpp 4
 // panel. At bpp 16 the frame buffer itself
 void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n);
+// The color index i stands for, for a screen capture at the panel's own depth (the frame buffer's rows and this):
+// bpp 4 the palette (0 for an entry not set), bpp 1 the paper (0) and ink (1) of the UI gallery's screenshots, bpp 16
+// 0
+color_t gfx_palette(uint8_t i);
+#define GFX_PAPER	RGB565(0xC8, 0xD0, 0xB8)
+#define GFX_INK		RGB565(0x14, 0x18, 0x10)
+
+#if CONFIG_NET_WEBCTL
+// A copy of the screen kept elsewhere (the web control page, core/net/webctl.c), sent the rows that change. The UI
+// task marks each frame's start; gfx_flush its end and the rows it sent the panel. The reader (a higher priority task)
+// reads rows only between frames: gfx_frame_idle gives the frame count when no frame is being drawn, and the same
+// count after the read says the rows were whole
+void gfx_frame_begin(void);
+bool gfx_frame_idle(uint32_t *frames);
+int gfx_row_next(int from);		// the first row from `from` on that changed since it was taken, -1 none
+void gfx_rows_take(int from, int to);	// rows from..to (inclusive) sent: unmarked
+void gfx_rows_mark_all(void);		// a new reader: every row
+#else
+static inline void gfx_frame_begin(void) {}
+#endif
 void gfx_fill(int x, int y, int w, int h, color_t c);
 void gfx_clear(color_t c);
 void gfx_hline(int x, int y, int w, color_t c);

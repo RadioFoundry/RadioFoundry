@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A minimal TCP (RFC 9293 subset) for the radio's own services on the USB network link (docs/spec/tcp-services.md).
 // Never over RF: the IP gateway hands it only segments to the radio's own address (ipGatewaySetTCP).
 //
@@ -15,8 +15,8 @@
 // tests from a scripted peer. Applications are callbacks; they write with tcp_write (copied into the transmit buffer)
 // and are told when room frees up (sent). The connection handle is an index, valid from opened (or tcp_connect)
 // until closed or the application's own tcp_close / tcp_abort; after those the application hears nothing more.
-#ifndef ODR_TCP_H
-#define ODR_TCP_H
+#ifndef RFOUNDRY_TCP_H
+#define RFOUNDRY_TCP_H
 
 #include <stdbool.h>
 #include <stdint.h>

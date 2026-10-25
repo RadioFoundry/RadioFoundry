@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The RDA5807M as the board's hal_bcast_t: chip driver (rda5807m.h) and a bit-banged I2C bus on two GPIO pins
 // (drivers/bus/i2c_gpio) behind the interface the core's broadcast receiver uses (hal_bcast.h). A board supplies its
 // pins and, if it has them, the tuner's enable line and the audio path switch; one tuner per radio, so the state is

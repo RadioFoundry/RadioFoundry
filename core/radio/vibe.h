@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Vibration alerts (docs/spec/radio-features.md 4.1): short pulse patterns on the board's vibration motor
 // (hal_power_t.vibrate), for the alerts the UI already shows. The board's vibrate(ms) runs the motor for one pulse and
 // returns at once; this module times the pulses of a pattern from the radio task's poll, so nothing waits.

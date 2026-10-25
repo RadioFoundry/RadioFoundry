@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR single frequency repeater (SFR): the hardware independent parts
  */
 
-#ifndef ODR_SFR_H
-#define ODR_SFR_H
+#ifndef RFOUNDRY_SFR_H
+#define RFOUNDRY_SFR_H
 
 #include <stdbool.h>
 #include <stddef.h>

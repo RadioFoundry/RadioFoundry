@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // NOR-like 4 KB sectors over a region of NAND blocks (docs/spec/nand-sectors.md), for the core's storage
 // (hal_flash.h): read anywhere, program erased bytes at any length and alignment as often as the core likes, erase a
 // sector. Each logical sector lives in two NAND pages, rewritten elsewhere on every change (copy on write), found

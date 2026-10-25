@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C7000 UART set-up (platform/hrc7000/uart_format.h) against a model of a UART that ignores line control and
 // divisor writes while it is busy (docs/spec/gotchas.md 2.8): receiving a character, or holding received ones. The
 // host port is set up at every boot, with the host maybe still sending; plain writes left the link deaf.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
- * The DM-32's GPS (ATGM336H, interfaces/gps.c) as the position source of the shared DMR data service: ETSI UDT NMEA
+ * The board's GPS (hal_gps.h) as the position source of the shared DMR data service: ETSI UDT NMEA
  * location reports and Motorola LRRP (shared/source/functions/dmrDataService.c, dmrLrrp.c).
  */
 

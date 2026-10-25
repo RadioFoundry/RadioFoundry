@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Skyworks SKY72310 fractional-N frequency synthesizer (docs/spec/hardware-md380.md 5.2, from the Skyworks
 // SKY72310-11 data sheet 203639L): register words, the divider arithmetic, and a write sequence over a board-supplied
 // three-wire bus. Generic: the board knows the reference oscillator, the VCO and how its pins are shared.
@@ -7,7 +7,7 @@
 // Serial interface: 16-bit words, MSB first, 4 address bits then 12 data bits, latched when CS goes high. All
 // registers are write only. The main divide ratio N = f_vco / f_pd (f_pd = f_osc / reference divider) is programmed
 // in signed mode as N_reg = round(N) - 32 (9 bits, 6..505 in fractional mode) plus an 18-bit two's complement
-// dividend = round(2^18 x (N - round(N))), -0.5 .. +0.5. The unsigned mode (floor(N), a fraction 0 .. 1) put the MD-380
+// dividend = round(2^18 x (N - round(N))), -0.5 .. +0.5. The unsigned mode (floor(N), a fraction 0 .. 1) put the synthesizer
 // one phase detector step low whenever the fraction was over one half (issue 108). A new ratio takes effect when the
 // dividend MSB register is written, so the order is divider, dividend LSB, dividend MSB.
 #ifndef SKY72310_H

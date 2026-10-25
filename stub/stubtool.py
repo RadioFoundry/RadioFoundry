@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""stubtool: flash access for ODR-supported radios through a RAM monitor (the stub). Today: read the program flash and the data flash of an HR_C7000 radio (DM-32UV, DM-1801 Pro) through the chip's
+# Copyright (c) 2026 The RadioFoundry Authors
+"""stubtool: flash access for RadioFoundry-supported radios through a RAM monitor (the stub). Today: read the program flash and the data flash of an HR_C7000 radio (DM-32UV, DM-1801 Pro) through the chip's
 serial boot ROM, every reply checked, both memories in one power-on. Protocol, history and the stub's source:
-stub/USER-GUIDE.md in the ODR repository.
+stub/USER-GUIDE.md in the RadioFoundry repository.
 
     stubtool.py PORT --progmem progmem.bin --q128 q128.bin     both memories, one boot (1 MB + 16 MB)
     stubtool.py PORT --q128 q.bin --q128-range 0x7C000:0x7C200   part of one (any byte range)
     stubtool.py PORT --verify-q128 q128.bin                      compare flash with a file by CRC, no data transferred
-    stubtool.py PORT --odr-enter --progmem p.bin --q128 q.bin     the same from a radio running ODR (built with CONFIG_STUB_ENTRY=y)
-    stubtool.py PORT --odr-enter --write-app odr_dm1801pro.bin   program an ODR build into the program flash (changed sectors only)
+    stubtool.py PORT --rfoundry-enter --progmem p.bin --q128 q.bin     the same from a radio running RadioFoundry (built with CONFIG_STUB_ENTRY=y)
+    stubtool.py PORT --rfoundry-enter --write-app rfoundry_dm1801pro.bin   program an RadioFoundry build into the program flash (changed sectors only)
     stubtool.py PORT --attach --boot reset                      restart the radio into its firmware, no power cycle
     stubtool.py PORT --probe                                    chip IDs and a few registers, no files
     stubtool.py PORT --peek 0x14020000:16                       read radio memory (registers, SRAM, flash window)
     stubtool.py PORT out.bin --mem q128                         the old form: one memory into out.bin
     stubtool.py --self-test                                     against a simulated radio, no hardware
 
-Radio OFF, cable in, run the script, then switch the radio ON within --wait seconds (or --odr-enter with the radio running ODR).
+Radio OFF, cable in, run the script, then switch the radio ON within --wait seconds (or --rfoundry-enter with the radio running RadioFoundry).
 Reads never write. Only --write-app (the application area from 0xC000, never the bootloader) and --write-test (two reserved
 test sectors per chip) write flash. The monitor the script loads into the radio's RAM is embedded below (source: the stub's own repository folder), so this file
 needs only Python 3 and pyserial.
@@ -24,9 +24,15 @@ needs only Python 3 and pyserial.
 import argparse
 import base64
 import hashlib
+import os
+import re
 import sys
 import time
 import zlib
+
+# the board registry (tools/boards.py generates it): the boards with a stub profile, their pins and memories
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "rfoundry"))
+from rfoundry import boards as rfoundryboards  # noqa: E402
 
 # --- STUB begin (stub/embed.py rewrites everything up to the end marker)
 STUB_SHA256 = "053a6b645d122dc85443616ed622c3a91229d8f949fc5e07aec68d14a8e4cbe1"
@@ -91,9 +97,9 @@ STUB_B64 = (
     "tNQ6j96/+pfaDWJ76Otyj+HG1TfPn98XcJ70fyS/fvazzzvbLqUfmvN/H3yg4o/sQlrficXQ9zj6DvmTAJtINp/9Pvw/2PEC2Q=="
 )
 # --- STUB end
-# --- STUB ODR begin (stub/embed.py odr rewrites everything up to the end marker)
-STUB_ODR_SHA256 = "a014d3b1ad500448f3a26702ffc5025384339648feb61d768440e37aa3c2db7b"
-STUB_ODR_B64 = (
+# --- STUB RadioFoundry begin (stub/embed.py rfoundry rewrites everything up to the end marker)
+STUB_RFOUNDRY_SHA256 = "a014d3b1ad500448f3a26702ffc5025384339648feb61d768440e37aa3c2db7b"
+STUB_RFOUNDRY_B64 = (
     "eNpdWA10U1W23jf3pvemuW3SNqJPeI/bBNIWCv0JvxafaVNooPWBP2hFlJv2pq30pvTxM3YUNdBacYEKTcSM+sYyzqozjrMMJIyd"
     "t8a3qqTIE9cTFJhUU6eQVHpbFPwb2/Tnvn0CLmdN1jrn3nPOPufs8+19vr1vvH1CK2eEPkHijO3boLjK2GQ8JTEcHKPNUywMDWqB"
     "AQq8cE0DfR0U/OUTCorodlk89LpiAMsobXqjzFBsDLUPGIXipvUraAmOArY1igC30K51faIjInjFQxZFC6wACUOxkDAYxZOWDYaF"
@@ -153,7 +159,7 @@ STUB_ODR_B64 = (
     "ytr9W+S6swIAMsHRyWr8Kqq48VVUOU5WxrCY0oF5EvXB8gkW81MUjGDp8KK+eynwYsnGkont3VjITzK+86+nhJayt4oHrAfLY7/4"
     "/q7m5lrXsTtX/ad2g9De+1Wlz3Bt5PULFw6EXKeD70uvnPvk0862S+ndc759910Vf2QVUrqXd4PgRAzIHwVYUFPwfuHV/D/dJAsO"
 )
-# --- STUB ODR end
+# --- STUB RadioFoundry end
 # --- STUB DB25D begin (stub/embed_stub.py rewrites everything up to the end marker)
 STUB_DB25D_SHA256 = "08a1b669c42ec028131f2011c70b47e1867107e0d3058f3d8148559d54a9b9e4"
 STUB_DB25D_B64 = (
@@ -381,6 +387,8 @@ LCSFC_BAUDR = 0x11000030            # XIP flash SCLK divider; a soft reset keeps
 WDT_LOCK = 0x14010000               # watchdog: unlock key, then EN = 0, then lock (hardware-dm32.md 3.5)
 WDT_EN = 0x14010010
 WDT_KEY = 0x5ADA7200
+CRASH_SOFT_MARK = 0x18007EF4        # RadioFoundry's restart-cause words (crash-log.md 1.3): HRC_CRASH_BOOT + 4, crash_boot_t.soft
+CRASH_BOOT_SOFT = 0x54464F53        # "SOFT": the reset was asked for, so RadioFoundry's next start doesn't take it for the watchdog
 TIMER2_VALUE = 0x14000018           # timer 2 current value (counts down; the stub runs it free)
 LED_RED, LED_GREEN = 33, 32         # PTB1 = red, PTB0 = green on the DM-1801 Pro and the DM-32UV (both checked on the radio)
 OK, BADSUM, BADOP, SPITIMEOUT, TOOLONG = 0x05, 0x0A, 0x0B, 0x0C, 0x0E
@@ -394,13 +402,13 @@ MEM = {"progmem": (SSI_PROG, True, None, 0x100000, "program flash"),
 NAND_FLAG = 4
 
 
-# Writes are only allowed here (chosen 2026-10-15 from the dumps: blank in every dump, away from ODR)
+# Writes are only allowed here (chosen 2026-10-15 from the dumps: blank in every dump, away from RadioFoundry)
 WRITE_OK = {"progmem": [(0xF0000, 0xF4000)], "q128": [(0xC00000, 0xC04000)]}
 PAGE = 256
-# The application area of the program flash: an ODR image is linked for 0x0300C000, which is flash offset 0xC000. The
+# The application area of the program flash: an RadioFoundry image is linked for 0x0300C000, which is flash offset 0xC000. The
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
 APP_START, APP_END = 0xC000, 0x100000
-# The first word of ODR's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D). Its
+# The first word of RadioFoundry's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D). Its
 # application is linked for 0x0300D000, so the image written at APP_START is the install image, which starts with it
 STAGE_MAGIC = bytes.fromhex("2c1101c0")
 
@@ -427,16 +435,16 @@ def _unpack(b64, sha, what):
     return blob
 
 
-def stub_odr_image():
-    """The stub linked for a running ODR on the DM-32UV / DM-1801 Pro (RAM at 0x17000, 84 MHz clock), for --odr-enter."""
-    return _unpack(STUB_ODR_B64, STUB_ODR_SHA256, "ODR")
+def stub_rfoundry_image():
+    """The stub linked for a running RadioFoundry on the DM-32UV / DM-1801 Pro (RAM at 0x17000, 84 MHz clock), for --rfoundry-enter."""
+    return _unpack(STUB_RFOUNDRY_B64, STUB_RFOUNDRY_SHA256, "RadioFoundry")
 
 
-def odr_stubs():
-    """The stubs embedded for --odr-enter, by the load address the running firmware reports in STUB INFO (the
-    monitor is position dependent, so the image has to be linked for exactly the span ODR offers): {base: (name, image)}.
+def rfoundry_stubs():
+    """The stubs embedded for --rfoundry-enter, by the load address the running firmware reports in STUB INFO (the
+    monitor is position dependent, so the image has to be linked for exactly the span RadioFoundry offers): {base: (name, image)}.
     0x17000 DM-32UV / DM-1801 Pro; 0x30000 DB25-D; 0x1D000 DB25-D built with CONFIG_DMR=y (boards/db25d/config.mk)."""
-    out = {0x17000: ("DM-32UV / DM-1801 Pro", stub_odr_image())}
+    out = {0x17000: ("DM-32UV / DM-1801 Pro", stub_rfoundry_image())}
     for base, name, b64, sha in ((0x30000, "DB25-D", "STUB_DB25D_B64", "STUB_DB25D_SHA256"),
                                  (0x1D000, "DB25-D with DMR", "STUB_DB25D_DMR_B64", "STUB_DB25D_DMR_SHA256")):
         if b64 in globals():
@@ -453,7 +461,7 @@ def stub_link(image):
 
 
 def check_stub_fits(image, load, size):
-    """Refuse a stub that was not linked for the span ODR offers: jumping into one built for another base runs wild
+    """Refuse a stub that was not linked for the span RadioFoundry offers: jumping into one built for another base runs wild
     (the radio then needs a power cycle). The image's bss and stack have to lie inside [load, load + size)."""
     link = stub_link(image)
     if link is None:
@@ -462,7 +470,7 @@ def check_stub_fits(image, load, size):
     # the raw image is the stub's text and data and ends where its bss starts, which pins the base it was linked for
     if not (load <= bss0 <= bss1 <= top <= load + size and bss0 - load - len(image) in range(4)):
         raise DumpError("this stub image is linked for a different RAM span (its data and stack are at 0x%X-0x%X) than the "
-                        "0x%X-0x%X ODR offers. Use the image built for that base (see stub/README.md)"
+                        "0x%X-0x%X RadioFoundry offers. Use the image built for that base (see stub/README.md)"
                         % (bss0, top, load, load + size))
 
 
@@ -471,7 +479,7 @@ SRAM = (0x10000, 0x58000)               # the HR_C7000's main SRAM, 288 KB (hard
 
 def stub_univ_image():
     """The universal stub: one image for every HR_C7000 radio and every way in (boot ROM, the DB25-D's first stage, a
-    running ODR, a stock DB25-D through its console). It copies itself to its run address and asks the host for the
+    running RadioFoundry, a stock DB25-D through its console). It copies itself to its run address and asks the host for the
     board's values (CONFIG) after HELLO. stub/README.md has the RAM table."""
     return _unpack(STUB_UNIV_B64, STUB_UNIV_SHA256, "universal")
 
@@ -509,18 +517,13 @@ def check_univ_load(image, load, window=None):
     return run, end
 
 
-# Board profiles for the universal stub (CONFIG, op 0x0D): board id echoed by HELLO, power latch / power key pins (255 =
-# none), whether the data memory is the SPI NAND, the program flash size. VERSION's board= names them on the ODR route;
-# --board at power-on. Unknown radio: GENERIC (no pins, nothing echoed but 0).
-C7_BOARDS = {
-    "dm32": {"id": 1, "name": "DM-32UV", "names": ("DM-32UV", "dm32", "dm32uv"), "latch": 255, "key": 255, "nand": False,
-             "progmem": 0x100000},
-    "dm1801pro": {"id": 2, "name": "DM-1801 Pro", "names": ("DM-1801 Pro", "dm1801pro"), "latch": 255, "key": 255,
-                  "nand": False, "progmem": 0x100000},
-    # PTB13 latch, PTB12 power key (hardware-db25d.md 3.3); the same pins under ODR, its first stage and the stock firmware
-    "db25d": {"id": 3, "name": "DB25-D", "names": ("DB25-D", "db25d"), "latch": 45, "key": 44, "nand": True,
-              "progmem": 0x200000},
-}
+# Board profiles for the universal stub (CONFIG, op 0x0D), from each board's [flash.stub] (boards/<id>/board.toml):
+# board id echoed by HELLO, power latch / power key pins (255 = none), whether the data memory is the SPI NAND, the
+# program flash size. VERSION's board= names them on the RadioFoundry route; --board at power-on. Unknown radio: GENERIC (no
+# pins, nothing echoed but 0).
+C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
+                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"]}
+             for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000}
 CFG_UART_THIS = 3                        # CONFIG uart field: answer only on the UART the CONFIG came in on
 
@@ -541,7 +544,7 @@ def crc16_ccitt(data, crc=0xFFFF):
     return crc
 
 
-STUB_MAGIC = 0x42533743                 # 'C7SB': the guard word of ODR's STUB command (docs/spec/debuglink.md 3.18)
+STUB_MAGIC = 0x42533743                 # 'C7SB': the guard word of RadioFoundry's STUB command (docs/spec/debuglink.md 3.18)
 DL_STUB = 0x1A
 
 
@@ -783,7 +786,7 @@ class Radio:
     def configure(self, board=None):
         """Send the board's profile to the universal stub (CONFIG, op 0x0D) and check the echo in the next HELLO; writes
         are refused until this has succeeded. The timer and UART clock is the APB clock, measured here (24 MHz under the
-        boot ROM, 36 MHz under the DB25-D's loader, its stock firmware and ODR's hand-over there, 84 MHz under ODR on the
+        boot ROM, 36 MHz under the DB25-D's loader, its stock firmware and RadioFoundry's hand-over there, 84 MHz under RadioFoundry on the
         DM-32UV / DM-1801 Pro). An older stub has no CONFIG: nothing is sent."""
         if self.v6 is None:
             self.log("stub protocol before 6: no board configuration")
@@ -824,10 +827,11 @@ class Radio:
     def mem_flags(self, mem):
         base, ser, cs, _, _ = MEM[mem]
         if mem == "nand" and not (self.v6 and self.v6["flags"] & 1):
-            raise DumpError("the NAND is read through the universal stub on a radio configured with one (--board db25d)")
+            raise DumpError("the NAND is read through the universal stub on a radio configured with one (--board %s)"
+                           % " or ".join(sorted(b for b, p in C7_BOARDS.items() if p["nand"])))
         return (1 if ser else 0) | (2 if cs is not None else 0) | (NAND_FLAG if mem == "nand" else 0)
 
-    # ---- entering the stub from a running ODR (debug link frames: A5 5A cmd seq len(2 LE) payload crc16(2 LE))
+    # ---- entering the stub from a running RadioFoundry (debug link frames: A5 5A cmd seq len(2 LE) payload crc16(2 LE))
     def check_stub(self, image, load, size):
         """Refuse an image that is not this SoC's stub or is linked for another span. A method so that the STM32 radios
         (f4stub.F4Radio), whose stub has another entry code and runs at the SRAM base, check their own image."""
@@ -863,12 +867,12 @@ class Radio:
                 if f[1] == seq and f[0] == (cmd | 0x80):
                     return f[4:]
                 buf = buf[k + 8 + n:]
-        raise DumpError("no answer from ODR's debug link to command 0x%02X (is ODR running with CONFIG_STUB_ENTRY=y and "
+        raise DumpError("no answer from RadioFoundry's debug link to command 0x%02X (is RadioFoundry running with CONFIG_STUB_ENTRY=y and "
                         "the programming cable on UART0 at 115200?)" % cmd)
 
-    def odr_enter(self, image=None, entry=None, board=None):
-        """Load the stub into a running ODR's free RAM over its debug link and jump to it (radio ON, ODR running). Without
-        `image` the embedded stub whose base is the span ODR reports in STUB INFO is used; a given image must be linked
+    def rfoundry_enter(self, image=None, entry=None, board=None):
+        """Load the stub into a running RadioFoundry's free RAM over its debug link and jump to it (radio ON, RadioFoundry running). Without
+        `image` the embedded stub whose base is the span RadioFoundry reports in STUB INFO is used; a given image must be linked
         for that span (checked). Afterwards the stub answers on the same port. Recover the radio with a power cycle
         (or --boot reset)."""
         if board is None:                       # the profile the stub gets: from VERSION's board= (a library caller)
@@ -876,40 +880,40 @@ class Radio:
             board = c7_board(name) if name else None
         r = self.dl_request(DL_STUB, b"\x00")
         if r[0] != 0 or len(r) < 19 or int.from_bytes(r[1:5], "little") != STUB_MAGIC:
-            raise DumpError("ODR's STUB info refused or malformed (%s): firmware built without CONFIG_STUB_ENTRY?" % r.hex())
+            raise DumpError("RadioFoundry's STUB info refused or malformed (%s): firmware built without CONFIG_STUB_ENTRY?" % r.hex())
         load, size = int.from_bytes(r[5:9], "little"), int.from_bytes(r[9:13], "little")
         chunk = min(int.from_bytes(r[13:15], "little"), 59)
         if image == "legacy":                   # the position-dependent stubs, one per span (the fallback)
-            known = odr_stubs()
+            known = rfoundry_stubs()
             if load not in known:
-                raise DumpError("ODR offers RAM at 0x%X and no legacy stub is linked for that base (have %s): give the "
-                                "matching image with --odr-stub" % (load, ", ".join("0x%X %s" % (k, v[0]) for k, v in sorted(known.items()))))
+                raise DumpError("RadioFoundry offers RAM at 0x%X and no legacy stub is linked for that base (have %s): give the "
+                                "matching image with --rfoundry-stub" % (load, ", ".join("0x%X %s" % (k, v[0]) for k, v in sorted(known.items()))))
             self.log("the firmware's stub span 0x%X: using the legacy stub for %s" % (load, known[load][0]))
             image = known[load][1]
         elif image is None:
             image = stub_univ_image()
         self.check_stub(image, load, size)
         if len(image) > size:
-            raise DumpError("stub image (%d bytes) does not fit ODR's free RAM (%d bytes)" % (len(image), size))
+            raise DumpError("stub image (%d bytes) does not fit RadioFoundry's free RAM (%d bytes)" % (len(image), size))
         entry = load if entry is None else entry
-        self.log("ODR offers %d bytes of RAM at 0x%X; sending the %d-byte stub in %d-byte chunks" % (size, load, len(image), chunk))
+        self.log("RadioFoundry offers %d bytes of RAM at 0x%X; sending the %d-byte stub in %d-byte chunks" % (size, load, len(image), chunk))
         r = self.dl_request(DL_STUB, b"\x01" + STUB_MAGIC.to_bytes(4, "little") + len(image).to_bytes(4, "little")
                             + (zlib.crc32(image) & 0xFFFFFFFF).to_bytes(4, "little") + entry.to_bytes(4, "little"))
         if r[0] != 0:
-            raise DumpError("ODR refused the stub transfer (status %d)" % r[0])
+            raise DumpError("RadioFoundry refused the stub transfer (status %d)" % r[0])
         for off in range(0, len(image), chunk):
             r = self.dl_request(DL_STUB, b"\x02" + off.to_bytes(4, "little") + image[off:off + chunk])
             if r[0] != 0:
-                raise DumpError("ODR refused the chunk at offset %d (status %d)" % (off, r[0]))
+                raise DumpError("RadioFoundry refused the chunk at offset %d (status %d)" % (off, r[0]))
         r = self.dl_request(DL_STUB, b"\x03" + STUB_MAGIC.to_bytes(4, "little"))
         if r[0] == 3:
-            raise DumpError("ODR refused to enter the stub: the radio is transmitting. Release PTT and run again")
+            raise DumpError("RadioFoundry refused to enter the stub: the radio is transmitting. Release PTT and run again")
         if r[0] == 7 and len(r) > 1 and r[1] == 1:
-            raise DumpError("ODR refused to enter this stub: its watchdog runs and the stub doesn't feed it, so the radio "
+            raise DumpError("RadioFoundry refused to enter this stub: its watchdog runs and the stub doesn't feed it, so the radio "
                             "would reset part way through. Use the stub from a current stubtool.py / f4stub.py")
         if r[0] != 0:
-            raise DumpError("ODR refused to enter the stub (status %d): image incomplete or CRC mismatch" % r[0])
-        self.log("ODR is jumping to the stub")
+            raise DumpError("RadioFoundry refused to enter the stub (status %d): image incomplete or CRC mismatch" % r[0])
+        self.log("RadioFoundry is jumping to the stub")
         time.sleep(0.3)
         self.attach()
         self.configure(board)
@@ -922,9 +926,11 @@ class Radio:
     def reset_chip(self):
         """Soft-reset the SoC (hardware-dm32.md 1.1: XIP quad off and the reset divider, then SYS_SOFT_RSTN = 0). The boot
         ROM runs again, offers its serial window briefly, then starts the firmware from flash: the same as a power cycle
-        without the cycle. The soft reset keeps the divider, and the ROM can't read flash at ODR's divider 2. The watchdog
-        goes off first: ODR leaves it running while the stub feeds it, a soft reset may keep it, and the bootloader never
-        feeds it (its update mode waits for the PC). ODR starts it again."""
+        without the cycle. The soft reset keeps the divider, and the ROM can't read flash at RadioFoundry's divider 2. The watchdog
+        goes off first: RadioFoundry leaves it running while the stub feeds it, a soft reset may keep it, and the bootloader never
+        feeds it (its update mode waits for the PC). RadioFoundry starts it again. The restart-cause mark goes first, so RadioFoundry
+        reports a software restart (it counts only when the memory was kept: a stub loaded at power-on leaves it)."""
+        self.poke(CRASH_SOFT_MARK, CRASH_BOOT_SOFT.to_bytes(4, "little"))
         self.poke(WDT_LOCK, WDT_KEY.to_bytes(4, "little"))
         self.poke(WDT_EN, (0).to_bytes(4, "little"))
         self.poke(WDT_LOCK, (0).to_bytes(4, "little"))
@@ -1002,7 +1008,7 @@ class Radio:
             self._write_cmd(mem, bytes([0x20, a >> 16 & 0xFF, a >> 8 & 0xFF, a & 0xFF]), "erase 0x%X" % a, 3.0)
 
     def write_image(self, image, progress=None, replace_stage=False):
-        """Program an ODR application image into the program flash at 0xC000 (where it is linked to run): only the 4 KB
+        """Program an RadioFoundry application image into the program flash at 0xC000 (where it is linked to run): only the 4 KB
         sectors whose CRC differs from the flash are erased and written, then everything is verified by CRC. The
         bootloader below 0xC000 is never touched. Returns (sectors written, sectors left alone)."""
         mem = "progmem"
@@ -1018,8 +1024,8 @@ class Radio:
         self.check_id(mem)
         # The application alone over a first stage leaves the radio in its update loader (white screen, red LED)
         if not replace_stage and self.read_flash(mem, APP_START, 4) == STAGE_MAGIC and image[:4] != STAGE_MAGIC:
-            raise DumpError("this radio has ODR's first stage at 0x%X and the image does not start with it: write the "
-                            "install image (odr_<board>_install.bin), not the application alone (--replace-stage "
+            raise DumpError("this radio has RadioFoundry's first stage at 0x%X and the image does not start with it: write the "
+                            "install image (rfoundry_<board>_install.bin), not the application alone (--replace-stage "
                             "writes it anyway)" % APP_START)
         todo = self.verify(mem, padded, APP_START)
         for n, a in enumerate(todo):
@@ -1617,8 +1623,8 @@ class FakeRadio:
         return True
 
 
-class FakeODR:
-    """A running ODR's debug link STUB command (docs/spec/debuglink.md 3.18) for the self-tests: offers `span`,
+class FakeRFoundry:
+    """A running RadioFoundry's debug link STUB command (docs/spec/debuglink.md 3.18) for the self-tests: offers `span`,
     takes the image, enters if its CRC matches. Also used by f4stub.py's self-test."""
 
     def __init__(self, span=(0x17000, 0x18000)):
@@ -1640,7 +1646,7 @@ class FakeODR:
         assert b[:2] == b"\xA5\x5A" and crc16_ccitt(b[2:-2]) == int.from_bytes(b[-2:], "little")
         cmd, seq, n = b[2], b[3], b[4] | b[5] << 8
         p = b[6:6 + n]
-        if cmd == 0x02:                             # VERSION: the board odr_enter picks the stub profile by
+        if cmd == 0x02:                             # VERSION: the board rfoundry_enter picks the stub profile by
             rep = bytes([cmd | 0x80, seq]) + (14).to_bytes(2, "little") + b"\0board=DB25-D\n"
             self.out = b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
             return
@@ -1782,6 +1788,12 @@ def self_test():
     r.reset_chip()
     check(radio.pokes[-3:] == [(QUAD_ENABLE, 0), (LCSFC_BAUDR, 4), (SYS_SOFT_RSTN, 0)],
           "reset_chip pokes XIP quad off and the reset divider, then the soft reset (%s)" % (radio.pokes[-3:],))
+    check(radio.pokes[-7] == (CRASH_SOFT_MARK, CRASH_BOOT_SOFT),
+          "reset_chip marks the restart as software's first (%s)" % (radio.pokes[-7:],))
+    hdr = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "platform", "hrc7000", "platform.h")
+    if os.path.exists(hdr):                     # in the repository: the mark's address is RadioFoundry's crash_boot_t.soft
+        m = re.search(r"#define HRC_CRASH_BOOT\s+0x([0-9A-Fa-f]+)u", open(hdr).read())
+        check(m is not None and int(m.group(1), 16) + 4 == CRASH_SOFT_MARK, "CRASH_SOFT_MARK is HRC_CRASH_BOOT + 4")
     try:
         parse_led_spec("255:0")
         check(False, "bad LED spec refused")
@@ -1826,57 +1838,57 @@ def self_test():
         check(False, "range beyond the chip refused")
     except DumpError:
         pass
-    # entering the stub from ODR (FakeODR: the debug link STUB command)
+    # entering the stub from RadioFoundry (FakeRFoundry: the debug link STUB command)
     def fake_stub(base, length):                       # an image with the entry code's literal pool, linked at `base`
         return (b"\x80\xc0\x20\x70" + bytes(0x24) + (base + length).to_bytes(4, "little") + (base + 0x34 + 1024).to_bytes(4, "little")
                 + (base + 0x632C).to_bytes(4, "little") + bytes(range(256)) * 4)
 
     spans = {0x17000: (0x18000, "DM-32UV"), 0x30000: (0x20000, "DB25-D"), 0x1D000: (0x12000, "DB25-D with DMR")}
-    known = odr_stubs()
-    check(set(known) == set(spans), "embedded ODR stubs cover %s" % sorted(hex(k) for k in spans))
+    known = rfoundry_stubs()
+    check(set(known) == set(spans), "embedded RadioFoundry stubs cover %s" % sorted(hex(k) for k in spans))
     for base, (size, name) in spans.items():
         link = stub_link(known[base][1])
         check(link is not None and base <= link[1] <= link[2] <= link[0] <= base + size,
               "embedded %s stub is linked inside its span (%s)" % (name, link and [hex(x) for x in link]))
-        odr = FakeODR((base, size))                    # no image given: chosen by the span the firmware reports
-        ro = Radio(odr, log=quiet)
+        rfoundry = FakeRFoundry((base, size))                    # no image given: chosen by the span the firmware reports
+        ro = Radio(rfoundry, log=quiet)
         ro.attach = lambda: None
-        ro.odr_enter("legacy")
-        check(odr.entered and bytes(odr.mem[:len(known[base][1])]) == known[base][1],
-              "odr_enter picks the legacy stub for the %s span 0x%X" % (name, base))
-        odr = FakeODR((base, size))                    # default: the universal stub, at the span's base
-        ro = Radio(odr, log=quiet)
+        ro.rfoundry_enter("legacy")
+        check(rfoundry.entered and bytes(rfoundry.mem[:len(known[base][1])]) == known[base][1],
+              "rfoundry_enter picks the legacy stub for the %s span 0x%X" % (name, base))
+        rfoundry = FakeRFoundry((base, size))                    # default: the universal stub, at the span's base
+        ro = Radio(rfoundry, log=quiet)
         ro.attach = lambda: None
-        ro.odr_enter()
+        ro.rfoundry_enter()
         univ = stub_univ_image()
-        check(odr.entered and bytes(odr.mem[:len(univ)]) == univ, "odr_enter loads the universal stub into the %s span 0x%X" % (name, base))
+        check(rfoundry.entered and bytes(rfoundry.mem[:len(univ)]) == univ, "rfoundry_enter loads the universal stub into the %s span 0x%X" % (name, base))
         for other, (_, img) in known.items():           # every stub linked for another base is refused, nothing is sent
             if other == base:
                 continue
-            odr = FakeODR((base, size))
-            ro = Radio(odr, log=quiet)
+            rfoundry = FakeRFoundry((base, size))
+            ro = Radio(rfoundry, log=quiet)
             ro.attach = lambda: None
             try:
-                ro.odr_enter(img)
+                ro.rfoundry_enter(img)
                 check(False, "a stub linked for 0x%X is refused by the 0x%X span" % (other, base))
             except DumpError:
-                check(not odr.entered and odr.total is None, "stub for 0x%X refused before BEGIN on the 0x%X span" % (other, base))
-    odr = FakeODR((0x40000, 0x10000))
+                check(not rfoundry.entered and rfoundry.total is None, "stub for 0x%X refused before BEGIN on the 0x%X span" % (other, base))
+    rfoundry = FakeRFoundry((0x40000, 0x10000))
     try:
-        Radio(odr, log=quiet).odr_enter("legacy")
+        Radio(rfoundry, log=quiet).rfoundry_enter("legacy")
         check(False, "an unknown span with no legacy image is refused")
     except DumpError as e:
-        check("--odr-stub" in str(e), "unknown span message names --odr-stub")
-    odr = FakeODR((0x17000, 0x18000))
+        check("--rfoundry-stub" in str(e), "unknown span message names --rfoundry-stub")
+    rfoundry = FakeRFoundry((0x17000, 0x18000))
     try:
-        Radio(odr, log=quiet).odr_enter(stub)           # not a stub at all (no entry code)
+        Radio(rfoundry, log=quiet).rfoundry_enter(stub)           # not a stub at all (no entry code)
         check(False, "an image without the monitor's entry code is refused")
     except DumpError:
         pass
-    ro = Radio(odr, log=quiet)
+    ro = Radio(rfoundry, log=quiet)
     ro.attach = lambda: None
-    ro.odr_enter(fake_stub(0x17000, 0x18000))
-    check(odr.entered, "odr_enter loads a given image that fits the span")
+    ro.rfoundry_enter(fake_stub(0x17000, 0x18000))
+    check(rfoundry.entered, "rfoundry_enter loads a given image that fits the span")
     mute = FakeRadio(images)
     mute.out.clear()
     try:
@@ -1897,9 +1909,9 @@ def self_test():
     lay = univ_layout(univ)
     check(lay is not None and lay[0] == 0x30000 and lay[0] + len(univ) <= lay[1] <= 0x40000,
           "universal stub runs at 0x30000 and stays below 0x40000 (%s)" % (lay and [hex(x) for x in lay]))
-    check(univ_layout(stub_image()) is None and all(univ_layout(v[1]) is None for v in odr_stubs().values()),
+    check(univ_layout(stub_image()) is None and all(univ_layout(v[1]) is None for v in rfoundry_stubs().values()),
           "legacy stubs are told apart from the universal one")
-    # every way in: ROM / first stage at 0x10000, ODR's spans, run address itself, a stock DB25-D's console window
+    # every way in: ROM / first stage at 0x10000, RadioFoundry's spans, run address itself, a stock DB25-D's console window
     for load, win in ((0x10000, None), (0x17000, (0x17000, 0x18000)), (0x1D000, (0x1D000, 0x12000)), (0x30000, (0x30000, 0x20000)),
                       (0x54000, (0x54000, 0x4000))):
         try:
@@ -1914,16 +1926,17 @@ def self_test():
             check(False, "universal stub refused %s (0x%X)" % (why, load))
         except DumpError:
             pass
-    odr = FakeODR((0x2F000, 0x4000))                    # a span that would overlap the run copy: refused before BEGIN
+    rfoundry = FakeRFoundry((0x2F000, 0x4000))                    # a span that would overlap the run copy: refused before BEGIN
     try:
-        Radio(odr, log=quiet).odr_enter()
-        check(False, "odr_enter refuses a span overlapping the universal stub's run address")
+        Radio(rfoundry, log=quiet).rfoundry_enter()
+        check(False, "rfoundry_enter refuses a span overlapping the universal stub's run address")
     except DumpError:
-        check(odr.total is None, "overlapping span refused before BEGIN")
+        check(rfoundry.total is None, "overlapping span refused before BEGIN")
     # power-on with the universal stub, CONFIG, the HELLO echo, writes gated on it, the NAND path
     nand = bytearray(images["q128"][:16 * SECTOR])
     nand[SECTOR:2 * SECTOR] = b"\xff" * SECTOR
-    for board in ("db25d", "dm1801pro", None):
+    for board in sorted(C7_BOARDS) + [None]:
+        b = rfoundryboards.get(board) if board else None
         imgs = dict(images, nand=bytes(nand))
         radio = FakeRadio(imgs, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
         radio.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
@@ -1946,7 +1959,7 @@ def self_test():
         check(r.configured is prof, "the %s profile is confirmed by the HELLO echo" % prof["name"])
         nw, nk = r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
         check(nw == 0 and nk == 4, "writing the same image after CONFIG changes nothing")
-        if board == "db25d":		# a first stage in the radio: only an image that starts with one goes over it
+        if b and b.first_stage:		# a first stage in the radio: only an image that starts with one goes over it
             pm = bytearray(radio.images["progmem"])
             pm[APP_START:APP_START + 4] = STAGE_MAGIC
             radio.images["progmem"] = bytes(pm)
@@ -1961,11 +1974,11 @@ def self_test():
             radio.images["progmem"] = bytes(pm)
             nw, nk = r.write_image(bytes(pm[APP_START:APP_START + 4 * SECTOR]))
             check(nk == 4, "an install image over a first stage is written")
-        if board == "db25d":
+        check(r.mem_size("progmem") == prof["progmem"], "the %s's program flash is %d KB" % (prof["name"], prof["progmem"] >> 10))
+        if prof["nand"]:
             out = io.BytesIO()
             r.dump(out, "nand", 0, 16 * SECTOR)
             check(out.getvalue() == bytes(nand), "NAND read through the stub's NAND path")
-            check(r.mem_size("progmem") == 0x200000, "the DB25-D's program flash is 2 MB")
         else:
             try:
                 r.dump(io.BytesIO(), "nand", 0, SECTOR)
@@ -1977,7 +1990,7 @@ def self_test():
     r = Radio(radio, log=quiet)
     r.start(wait=2)
     try:
-        r.configure("db25d")
+        r.configure(sorted(C7_BOARDS)[0])
         check(False, "a stub that ignores CONFIG is caught by the HELLO echo")
     except DumpError:
         try:
@@ -1989,7 +2002,7 @@ def self_test():
     radio = FakeRadio(images, stub_len=len(stub))
     r = Radio(radio, log=quiet)
     r.start(wait=2, stub=stub)
-    r.configure("db25d")
+    r.configure(sorted(C7_BOARDS)[0])
     check(r.v6 is None and not radio.configs, "an old stub gets no CONFIG")
     r.write_image(images["progmem"][APP_START:APP_START + SECTOR])
     print("stubtool self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),
@@ -2048,7 +2061,7 @@ class UdpPort:
 
 
 def version_board(radio):
-    """The board= name from a running ODR's debug link VERSION reply, or None."""
+    """The board= name from a running RadioFoundry's debug link VERSION reply, or None."""
     try:
         r = radio.dl_request(0x02, b"")
     except DumpError:
@@ -2061,8 +2074,8 @@ def version_board(radio):
     return None
 
 
-def find_odr_port():
-    """The one serial port with ODR's USB identity (1FC9:0094), which the STM32 stub also uses"""
+def find_rfoundry_port():
+    """The one serial port with RadioFoundry's USB identity (1FC9:0094), which the STM32 stub also uses"""
     from serial.tools import list_ports
     ports = [p.device for p in list_ports.comports() if (p.vid, p.pid) == (0x1FC9, 0x0094)]
     if len(ports) != 1:
@@ -2082,7 +2095,7 @@ def main(argv=None):
     ap.add_argument("--q128", metavar="FILE", help="read the 16 MB data flash into FILE")
     ap.add_argument("--progmem-range", metavar="START:END", help="byte range, any alignment (default all)")
     ap.add_argument("--q128-range", metavar="START:END")
-    ap.add_argument("--nand", metavar="FILE", help="DB25-D (--board db25d or found from ODR): read the SPI NAND into FILE "
+    ap.add_argument("--nand", metavar="FILE", help="DB25-D (--board db25d or found from RadioFoundry): read the SPI NAND into FILE "
                     "(2 KB pages without the spare bytes; give --nand-range, the chip is 256 MB)")
     ap.add_argument("--nand-range", metavar="START:END")
     ap.add_argument("--verify-nand", metavar="FILE", help="compare the NAND from --nand-range's start (default 0) with FILE by CRC")
@@ -2110,29 +2123,31 @@ def main(argv=None):
     ap.add_argument("--baud", metavar="N|auto", help="after the boot, switch the serial link to N baud (this UART has no fractional divider, so only 750000, 500000, 375000, 250000 are offered; 921600/460800/230400 are refused); auto tries them from fast to slow. Tested before it is kept; falls back to 115200 if the cable cannot do it")
     ap.add_argument("--write-test", choices=("progmem", "q128", "both"), help="erase, program a test pattern into, read back and erase "
                     "again the sectors reserved for write tests (see WRITE_OK); nothing else is touched")
-    ap.add_argument("--odr-enter", action="store_true", help="the radio is ON and runs ODR (built with CONFIG_STUB_ENTRY=y): load "
+    ap.add_argument("--rfoundry-enter", action="store_true", help="the radio is ON and runs RadioFoundry (built with CONFIG_STUB_ENTRY=y): load "
                     "the stub into its RAM over the debug link and jump to it, instead of the boot-ROM load")
-    ap.add_argument("--odr-stub", metavar="FILE", help="with --odr-enter: this stub image instead of the embedded one (which is chosen by the RAM span the "
+    ap.add_argument("--rfoundry-stub", metavar="FILE", help="with --rfoundry-enter: this stub image instead of the embedded one (which is chosen by the RAM span the "
                     "firmware reports); refused unless it is linked for that span")
-    ap.add_argument("--write-app", metavar="IMAGE", help="program an ODR application image (raw .bin linked for 0x0300C000) into the "
+    ap.add_argument("--write-app", metavar="IMAGE", help="program an RadioFoundry application image (raw .bin linked for 0x0300C000) into the "
                     "program flash at 0xC000: only changed 4 KB sectors are written, then verified; the bootloader is never touched. "
-                    "Use with --odr-enter (radio running ODR) or the boot-ROM load; finish with --boot reset. On a radio with "
-                    "ODR's first stage at 0xC000 (DB25-D) give the _install.bin, which starts with it")
+                    "Use with --rfoundry-enter (radio running RadioFoundry) or the boot-ROM load; finish with --boot reset. On a radio with "
+                    "RadioFoundry's first stage at 0xC000 (DB25-D) give the _install.bin, which starts with it")
     ap.add_argument("--replace-stage", action="store_true", help="let --write-app put an image that does not start with "
-                    "ODR's first stage over one (the radio then starts only what the image holds at 0xC000)")
+                    "RadioFoundry's first stage over one (the radio then starts only what the image holds at 0xC000)")
     ap.add_argument("--attach", action="store_true", help="the stub from an earlier run is still up: skip the boot")
     ap.add_argument("--stub", metavar="FILE", help="load this stub image instead of the embedded universal one (a universal "
                     "image, or a position-dependent one linked for the load address)")
     ap.add_argument("--legacy-stub", action="store_true", help="use the position-dependent stubs embedded before the universal "
-                    "one (one per RAM span: the boot ROM's 0x10000, ODR's 0x17000, the DB25-D's 0x30000 / 0x1D000). Fallback only")
+                    "one (one per RAM span: the boot ROM's 0x10000, RadioFoundry's 0x17000, the DB25-D's 0x30000 / 0x1D000). Fallback only")
     ap.add_argument("--load-base", metavar="ADDR", type=lambda s: int(s, 0),
                     help="power-on load: write and start the stub at ADDR (default 0x%X). The universal stub runs from any "
                          "base that doesn't overlap its run area; a legacy stub must be linked for it (the DB25-D's first stage "
                          "took the legacy 0x30000 stub at 0x30000)" % LOAD_ADDR)
-    ap.add_argument("--board", choices=("dm1701", "md380") + tuple(C7_BOARDS),
-                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (dm32, dm1801pro, db25d: the board "
-                         "profile the universal stub gets). Found from the radio's VERSION reply with --odr-enter; give it at "
-                         "power-on and with --attach (without it the stub gets a profile that drives no board pins)")
+    ap.add_argument("--board", choices=sorted(b.id for b in rfoundryboards.BOARDS.values()
+                                              if b.stub or "stub/stm32f4" in b.platform_stubs),
+                    help="the radio: an STM32 one (stub/f4stub.py) or an HR_C7000 one (%s: the board profile the "
+                         "universal stub gets). Found from the radio's VERSION reply with --rfoundry-enter; give it at "
+                         "power-on and with --attach (without it the stub gets a profile that drives no board pins)"
+                         % ", ".join(sorted(C7_BOARDS)))
     ap.add_argument("--backup-dir", metavar="DIR", help="STM32 --write-app: where a sector that also holds codec bytes "
                     "is saved before it is erased (default the home directory, never a git tree)")
     ap.add_argument("--self-test", action="store_true")
@@ -2163,7 +2178,7 @@ def main(argv=None):
         if a.port.startswith("udp:"):
             # a radio in USB network mode: the hand-over goes over UDP; the stub then enumerates as a serial port
             port = UdpPort(a.port[4:])
-            reopen = lambda: open_port(serial, a.stub_port or find_odr_port())
+            reopen = lambda: open_port(serial, a.stub_port or find_rfoundry_port())
         else:
             port = open_port(serial, a.port)
             import f4stub
@@ -2171,19 +2186,19 @@ def main(argv=None):
         radio = Radio(port, retries=a.retries)
         # The STM32 radios (DM-1701, MD-380) run their own stub over USB: stub/f4stub.py
         import f4stub
-        if a.board is None and a.odr_enter:
+        if a.board is None and a.rfoundry_enter:
             name = version_board(radio)
             a.board = f4stub.board_for(name) if name else None
             if a.board is None and name:
                 a.board = c7_board(name)
                 if a.board is None:
-                    print("ODR reports board %r: not one with a stub profile, using the generic one" % name)
+                    print("RadioFoundry reports board %r: not one with a stub profile, using the generic one" % name)
         if a.board in f4stub.BOARDS:
             return f4stub.run(a, port, reopen)
         if a.write_q128:
             raise DumpError("--write-q128 is for the STM32 radios (DM-1701, MD-380)")
-        if a.odr_enter:
-            radio.odr_enter(open(a.odr_stub, "rb").read() if a.odr_stub else ("legacy" if a.legacy_stub else None), board=a.board)
+        if a.rfoundry_enter:
+            radio.rfoundry_enter(open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else ("legacy" if a.legacy_stub else None), board=a.board)
         elif a.attach:
             radio.attach()
             radio.configure(a.board)
@@ -2192,8 +2207,8 @@ def main(argv=None):
             if stub is None and a.legacy_stub:
                 if load == LOAD_ADDR:
                     stub = stub_image()
-                elif load in odr_stubs():
-                    stub = odr_stubs()[load][1]
+                elif load in rfoundry_stubs():
+                    stub = rfoundry_stubs()[load][1]
                 else:
                     raise DumpError("no legacy stub is linked for 0x%X: give --stub" % load)
             print("radio OFF? switch it on now (waiting up to %d s)" % a.wait)

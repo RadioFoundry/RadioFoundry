@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Check the relative links, images and anchors in the repository's Markdown.
 
     tools/check_doc_links.py              every *.md file git tracks or would track

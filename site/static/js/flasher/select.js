@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Picking features "a la carte": a set of switches for one radio that respects the dependencies in
 // config/features.mk (data/features.json "needs") and the radio's limits (BOARD_UNSUPPORTED). A selection that equals
 // a prebuilt variant can be flashed right away; any other is a custom build, which the build API makes on request (or
@@ -16,7 +16,12 @@ export class Selection {
 	}
 
 	supported(name) {
-		return !this.radio.unsupported.includes(name) && name !== "AUDIO_PROBE";
+		return !this.radio.unsupported.includes(name) && !this.notWritten(name) && name !== "AUDIO_PROBE";
+	}
+
+	// the hardware can, but the radio's code isn't written yet (config.mk BOARD_NOT_WRITTEN): not offered either
+	notWritten(name) {
+		return (this.radio.not_written || []).includes(name);
 	}
 
 	required(name) {
@@ -72,7 +77,7 @@ export class Selection {
 	}
 
 	// For a custom selection: the make command that builds it
-	// options: build options such as the MD-380's band ({MD380_BAND: "vhf"}), radio.json build_options
+	// options: build options such as the MD-380's band ({BAND: "vhf"}), radios.json build_options
 	makeCommand(options = {}) {
 		const full = new Set(this.radio.config.full);
 		const args = Object.entries(options).map(([k, v]) => `${k}=${v}`).concat(

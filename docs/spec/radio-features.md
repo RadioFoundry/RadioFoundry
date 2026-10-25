@@ -5,7 +5,7 @@
 Scan, the FM transmit extras, beeps and power management in the radio core. Code: `core/radio/scan.c` (the scan
 engine, pure), `core/radio/beep.c` (beep patterns and synthesis), `core/radio/vibe.c` (vibration patterns),
 `core/radio/battery.c` (battery levels, the backlight helper), all glued into `core/radio/radio_sm.c`; board hooks in
-`hal/hal_radio.h` (`tx_tone`, `rx_sleep`, `mic_gain`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
+`hal/hal_radio.h` (`tx_tone`, `tx_dtmf`, `rx_sleep`, `mic_gain`) and `hal/hal_power.h` (`mic_level`, `vibrate`). Build switches: `docs/build-config.md`. Debug link: the `features` view section
 and RADIO ops 20-24 (`docs/spec/debuglink.md` 3.7, 3.8). Host tests: `tests/host/radioFeaturesTest.c`; HIL tests:
 `tests/hil/test_radio_features.py`.
 
@@ -15,6 +15,11 @@ The radio core keeps one `radio_settings_t` (`core/radio/radio.h`). It loads it 
 start-up (the `rs_*` fields, `settings-store.md` 3) and saves every change made with `radio_set_settings()`, so the
 settings screen hands the whole struct over on a change and reads it back with `radio_get_settings()`. The debug
 link's SETTING op goes through `radio_set_settings()` too, so its changes are saved.
+
+Every caller reads the struct, changes its own fields and sets it again. The settings screen reads it afresh for each
+change, so a change made elsewhere (the debug link, a host, the radio core) is kept. Until the radio task has taken
+in the last `radio_set_settings()`, `radio_get_settings()` answers with those settings, not the ones in force. A run of
+quick changes therefore never reads back a value from before its own last change.
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -157,8 +162,8 @@ unkeys; PTT again during the beep cancels it and the transmission goes on. Tone 
 keys up if needed and sends 1750 Hz until `false` (repeater access); `tone_burst=1` in the view. A board without
 `tx_tone` gets neither.
 
-The board restores the microphone path on `tx_tone(0)` and on every return to receive. How the DM-1701 makes the
-tone: `hardware-dm1701.md` 5.8. Verified on air on the DM-1701 (HIL 2026-10-10): the burst, the roger beep and APRS
+The board restores the microphone path on `tx_tone(0)` and on every return to receive. An AT1846S board makes the
+tone with the voice source select (tone 1, tone 2 or both) in place of the microphone. Verified on air on an HR_C6000 + AT1846S board (HIL 2026-10-10): the burst, the roger beep and APRS
 AFSK (`docs/testing/on-air-coverage.md`).
 
 ### 3.3a DCS turn-off tail (CONFIG_SUBTONE)
@@ -175,12 +180,12 @@ of the carrier dropping.
 
 The board maps the hook to its chip; the core owns the timing.
 
-| Radio | Chip | Tail | Measured (SDR bench, D023N, 12.5 kHz) |
-|---|---|---|---|
-| DB25-D | BK4819 | 0x52 bit 15 (`hardware-db25d.md` 4.7) | 134.4 Hz for 0.30 s |
-| DM-32UV, DM-1801 Pro | HR_C7000 | FM_PTT off with FM_MOD b9 (`modem-hrc7000.md` 8.2) | DM-32UV: 134.4 Hz for 0.20 s, then 0.10 s of carrier without modulation |
-| DM-1701 | AT1846S | TX select from CDCSS to CTCSS, 0x4A already 134.4 Hz (`hardware-dm1701.md` 5.7) | not yet measured |
-| MD-380 | software (PWM) | the generator's 134.4 Hz sine (`subaudio_tx_tail`, `hardware-md380.md` 6.4) | not yet measured |
+| Chip | Tail | Measured (SDR bench, D023N, 12.5 kHz) |
+|---|---|---|
+| BK4819 | 0x52 bit 15 | 134.4 Hz for 0.30 s |
+| HR_C7000 | FM_PTT off with FM_MOD b9 (`modem-hrc7000.md` 8.2) | 134.4 Hz for 0.20 s, then 0.10 s of carrier without modulation (one board measured) |
+| AT1846S | TX select from CDCSS to CTCSS, 0x4A already 134.4 Hz | not yet measured |
+| software (PWM), HR_C5000 boards | the generator's 134.4 Hz sine (`subaudio_tx_tail`) | not yet measured |
 
 `tools/sdr_fm_check.py` reports the tail on every DCS segment ("sub-audio tail: 134.4 Hz for 0.30 s, ...");
 `test_fm_tx_dcs` requires at least 0.15 s.
@@ -195,10 +200,10 @@ VOX. Boards put their reading on the hal's scale with `miclevel_log()` in `drive
 steps per bit, about 0.72 dB per step), so a threshold `100 - 8 x vox_level` sits `(8 x vox_level) x 0.72` dB below
 the top of the scale: about 6 dB at sensitivity 1, 29 dB at 5, 58 dB at 10.
 
-| Radio | Where the level comes from | Checked |
+| Board kind | Where the level comes from | Checked |
 |---|---|---|
-| DM-1701, MD-380 | an analog level tap on PA3 (ADC1 IN3), 12 bits, passed straight in (`hardware-dm1701.md` 11.3, `hardware-md380.md`) | DM-1701: in silence only (`test_vox_quiet`) |
-| HR_C7000 radios (DM-1801 Pro, DM-32UV) | the codec ADC's mic PCM, 80 samples every 10 ms (`platform/hrc7000/audio_pcm.c`, `drivers/audio/miclevel`): the peak of each half from its mean, 100 = a full-scale 16-bit peak; the level follows a louder half at once and falls 4 steps per half. These radios have no analog level tap. The first `mic_level()` call starts the meter (AUDIO_CONTROL b4 and the PCM interrupt, shared with the PCM stream) and returns 0; 1 s without a call stops it. The meter's interrupt clears b4 itself, so every AUDIO_CONTROL update in the driver (FM receive, transmit and idle, DMR entry) runs with interrupts off (`hrc7000_set_crit`, set by `hrc_audio_pcm_attach`). Needs `CONFIG_DMR` (the PCM stream); without it there is no hook | not on the bench |
+| STM32 boards with an analog level tap | an ADC channel on the microphone level, 12 bits, passed straight in | in silence only (`test_vox_quiet`) |
+| HR_C7000 boards | the codec ADC's mic PCM, 80 samples every 10 ms (`platform/hrc7000/audio_pcm.c`, `drivers/audio/miclevel`): the peak of each half from its mean, 100 = a full-scale 16-bit peak; the level follows a louder half at once and falls 4 steps per half. These radios have no analog level tap. The first `mic_level()` call starts the meter (AUDIO_CONTROL b4 and the PCM interrupt, shared with the PCM stream) and returns 0; 1 s without a call stops it. The meter's interrupt clears b4 itself, so every AUDIO_CONTROL update in the driver (FM receive, transmit and idle, DMR entry) runs with interrupts off (`hrc7000_set_crit`, set by `hrc_audio_pcm_attach`). Needs `CONFIG_DMR` (the PCM stream); without it there is no hook | not on the bench |
 
 The debug link's `vox.level` (features section) calls the hook on FM channels outside hotspot mode, so the level can
 be read with VOX off.
@@ -220,12 +225,78 @@ the debug link's SETTING op 29 sets it in RAM only.
 
 | Board | FM | DMR |
 |---|---|---|
-| with `hal_radio_t.mic_gain` (HR_C7000 radios: DM-1801 Pro) | the board's FM level for the channel bandwidth plus (step - 5) x 2 dB, written into the modem's mic gain at each FM transmit start | the board's DMR level plus the same offset, at each DMR entry and DMR transmit start; the samples to the vocoder are not scaled |
+| with `hal_radio_t.mic_gain` (HR_C7000 boards) | the board's FM level for the channel bandwidth plus (step - 5) x 2 dB, written into the modem's mic gain at each FM transmit start | the board's DMR level plus the same offset, at each DMR entry and DMR transmit start; the samples to the vocoder are not scaled |
 | without it | not changed | the mic samples are scaled before the vocoder (`ambeVoiceSetMicGain`, with saturation) |
 
 The board only stores the offset in the hook; a change takes effect at the next transmission. On an HR_C7000 radio
 the register is clamped to 0-42 dB (`hrc7000_mic_db`). The VOX meter reads the same codec ADC, so on these radios
 the mic gain also moves the VOX level. Without `CONFIG_DMR` and without the hook the row is dimmed.
+
+### 3.7 DTMF transmit (CONFIG_DTMF)
+
+Touch tones on FM while PTT is held (#54, step 1: manual digits). Stored DTMF codes and DTMF decode are not built.
+
+**Keys.** With PTT held on an FM channel, 0-9, \* and # (the QUICK and CONTEXT keys on keypad radios) send their DTMF
+pair for as long as the key is held. A key map entry names its digit (`keymap_entry_t.dtmf`); a digit key's is its
+own digit. A microphone with extra keys (P4-P7) sends A-D. The input engine hands these keys' down and up edges to the input task
+before any gesture. When the radio core's `dtmf_ready` is set (`radio_dtmf_ready()`), the input task sends the edge
+to the radio core (`radio_req_dtmf(digit, down)`), as it does for PTT, and the engine sends none of that hold's
+gestures: no Find, Quick settings or key lock under the TX screen, and the tone follows the key, not the UI. Locked
+keys send nothing (`input_set_dtmf_block`, from the UI's key lock). On DMR the digits stay inert during TX, and \* and
+# keep their usual meaning.
+
+**Accepted** only while `dtmf_ready`: state TX on an FM channel, PTT held (the radio's key or the host's), no roger
+beep or 1750 Hz burst on the air, no host audio (USRP), not a hotspot, and a board with `tx_dtmf`. Anything else is
+ignored, never queued. PTT release and the time-out end a digit still sounding before the roger beep and the DCS
+turn-off tail (3.3a) start, so a digit never sounds over either; PTT is up during the tail, so keys send nothing then.
+
+**Timing** (radio core, every poll):
+
+| Item | Value | Why |
+|---|---|---|
+| Shortest tone | `RADIO_DTMF_MIN_MS` 100 ms | a quick tap still decodes (decoders want 40 ms or more) |
+| Shortest gap between two digits | `RADIO_DTMF_GAP_MS` 60 ms | the same digit twice decodes as two (decoders want a 40 ms pause) |
+| A key pressed while a tone sounds or within the gap | waits (one digit); the sounding tone ends once it has had its shortest length, the next starts after the gap | rollover from a fast thumb |
+| PTT released, time-out, any end of TX | the tone stops with the transmitter | no tone outlives the transmission |
+
+The microphone is muted while a tone sounds and comes back between digits. The speaker plays no sidetone; the TX
+screen's second line shows "DTMF" and the last digits sent in this transmission instead of the time left.
+
+**View** (debug link `features` section): `dtmf_ready` and, only while they are not at rest (the view is near the reply's size cap), `dtmf` (the digit
+sounding), `dtmf_sent` (digits sent since start-up) and `dtmf_digits` (the last 8 of this transmission). The RADIO op `DTMF` (`docs/spec/debuglink.md`
+3.8) presses and releases a digit as a key would, including A-D, which no key gives.
+
+**Board hook** `hal_radio_t.tx_dtmf(digit)`: `'0'`-`'9'`, `'*'`, `'#'`, `'A'`-`'D'` on, 0 = off (the microphone
+again); false when the board can't (not in FM TX). The pairs (`hal/hal_dtmf.h`, ITU-T Q.23):
+
+| Low \ high | 1209 Hz | 1336 Hz | 1477 Hz | 1633 Hz |
+|---|---|---|---|---|
+| 697 Hz | 1 | 2 | 3 | A |
+| 770 Hz | 4 | 5 | 6 | B |
+| 852 Hz | 7 | 8 | 9 | C |
+| 941 Hz | \* | 0 | # | D |
+
+| Chip | How | Deviation |
+|---|---|---|
+| HR_C7000 | the DTMF sender as for `tx_tone` (`modem-hrc7000.md` 8.3): the low tone's step in FM_TONE1's high half, the high tone's in FM_TONE3's, digit "1" sent; TONE_SEND_CTRL b6 = 0 mutes the microphone | SUBVOICE_COEF b15:8 as for the 1750 Hz burst (`hrc7000_dtmf_dev`) |
+| AT1846S | tone1 = low, tone2 = high, voice_sel 011 (both tones), the HR_C6000 microphone input muted | reg 0x59 bits 15:6 = `DTMF_DEV` |
+| BK4819 | tone 1 and tone 2 on (0x70), frequencies in 0x71 / 0x72, microphone ADC off | levels 0x70 = 0x9090, 0x40 = 0x348A |
+| HR_C5000 boards | none: no FM TX tone path yet | |
+
+**Twist** (the high tone's level over the low tone's) is judged on the audio a receiver hears, after its de-emphasis
+(6 dB per octave, 750 us), where the usual DTMF receiver limits apply: the high tone -8 to +4 dB from the low one (the
+North American telephone criteria; other countries' are similar or wider). A tone that goes through the transmitter's
+pre-emphasis reads 3 to 7 dB higher on the carrier than it is received. Measured on the SDR bench (2026-10-21 and -22,
+12.5 and 25 kHz; `sdr_fm_check.py --dtmf` prints both; digits 1, #, 5, D, 0):
+
+| Chip | On the carrier | Received | Why |
+|---|---|---|---|
+| AT1846S | -0.1 to +0.2 dB | -4.6 to -2.8 dB | equal tones, injected after the pre-emphasis. "A" (697 + 1633 Hz) would be about -7 dB |
+| HR_C7000 | +5.0 dB, every digit | +0.4 to +2.1 dB | the chip's DTMF sender sets the low tone below the high one by design (`modem-hrc7000.md` 8.3), after the pre-emphasis |
+| BK4819 | +3.6 to +7.0 dB | +0.7 to +2.3 dB | equal tones (0x70 = 0x9090) through the microphone's pre-emphasis, as a DTMF microphone's would be |
+
+None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) checks the received twist;
+`test_fm_tx_dtmf_stop` checks on air that a held digit ends with the carrier at PTT release and at the time-out.
 
 ## 4. Beeps (CONFIG_BEEP)
 
@@ -245,8 +316,8 @@ the mic gain also moves the VOX level. Without `CONFIG_DMR` and without the hook
 
 Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no clicks); level 100 is about half of full
 scale so a beep mixed over voice doesn't clip. Beeps follow the radio's volume up to `beep_level`. A radio with an analog
-knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM path (`volume_pcm`: the DM-1701's
-HR_C6000 RX gain, the DB25-D's HR_C7000 line out gain) play the beep at `beep_level`, and the volume acts on it in the
+knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM path (`volume_pcm`: an HR_C6000
+board's RX gain, an HR_C7000 board's line out gain) play the beep at `beep_level`, and the volume acts on it in the
 speaker path. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
 volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`); otherwise the beep
 starts the board's PCM audio stream itself and stops it two silent blocks after the pattern. If that stream delivers no
@@ -290,9 +361,9 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 
 | `volume.src` | Board | Level in force |
 |---|---|---|
-| `none` | No hook (the MD-380, the DM-32UV: the volume control works in analog hardware, after the chip) | Not set by ODR. The debug link operation answers "unavailable" |
-| `knob` | A hook and a knob the MCU reads (the DM-1701) | The knob's 0..100 % |
-| `soft` | A hook and no knob (`hal_power_t.volume()` = -1, the DB25-D); `radio_volume_soft()`, reported to the UI as `UI_FEAT_VOLUME` | The stored step |
+| `none` | No hook (the volume control works in analog hardware, after the chip) | Not set by RadioFoundry. The debug link operation answers "unavailable" |
+| `knob` | A hook and a knob the MCU reads | The knob's 0..100 % |
+| `soft` | A hook and no knob (`hal_power_t.volume()` = -1); `radio_volume_soft()`, reported to the UI as `UI_FEAT_VOLUME` | The stored step |
 | `override` | As `knob`, with the debug link's level in force | The step the debug link set, whatever the knob does |
 
 | Item | Value |
@@ -309,7 +380,7 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 it stores the step as the UI does (`0xFF` stores the default); on a `knob` radio it sets the override; on a radio with
 `volume.src=none` it answers unavailable. The `features` view shows `volume.src`, `volume.max`, `volume.step` (the
 stored step), `volume.override` (-1 = none), `volume.sent` (the percent last given to the board, -1 = none yet) and
-`volume.soft`. `odr_debug.py volume [N|knob]` prints them and sets.
+`volume.soft`. `rfoundry_debug.py volume [N|knob]` prints them and sets.
 
 The volume screen (`SCR_VOLUME`) opens on `ACT_VOLUME`, a board key map entry (a radio with a knob answers with a
 toast). Up, Down and the encoder change the step by one and save it on each step; OK, Back or the same key close it,
@@ -323,15 +394,23 @@ the smallest display, 5 px filled). On the radio without the feature the setting
 The radio core reads `battery_mv` every second (not while transmitting nor for 3 s after: the sag under TX is not the
 battery's state) and shows `battery_mv`, `battery_pct` (the board's) and `battery` (ok / low / critical). Thresholds
 are per board (`board.battery_low_mv`, `battery_critical_mv`; 0 means no warnings; values in each radio's hardware
-page, e.g. `hardware-dm1701.md` 11.1). Three readings in a row
+page). Three readings in a row
 below a threshold lower the level; it goes back up 200 mV above it.
 
 A board with `CAP_NO_BATTERY` (a mobile on a fixed supply) has no battery monitor. The core never reads
 `battery_mv`, the level stays ok, `battery_pct` and `battery_mv` stay 0, and nothing warns or refuses a transmission
 for the battery. The UI shows no battery icon, percentage, Tools > Battery page, Battery saver setting or Low battery
 warning setting. The debug link reports `battery=none` (with `battery_pct=0` and `battery_mv=0`), `/status` leaves
-`battery_pct` and `battery_mv` out, and SNMP reports odrBatteryVoltage 0, odrBatteryPercent 0 and odrBatteryState
-ok(1) without ever sending odrLowBattery.
+`battery_pct` and `battery_mv` out, and SNMP reports rfoundryBatteryVoltage 0, rfoundryBatteryPercent 0 and rfoundryBatteryState
+ok(1) without ever sending rfoundryLowBattery.
+
+Such a board may measure its DC input instead: it sets `hal_power_t.supply_mv`, and `board_volts()` (`hal/board.h`)
+says `BOARD_VOLTS_SUPPLY`. The radio core reads it once a second, outside transmissions like the battery, into the
+view's `supply_mv`. Nothing acts on it: no level, percentage, warning, TX refusal or power off, since no supply
+thresholds are defined yet. The UI's last tool is then Supply, showing the reading in volts (13.8 V), with no battery
+settings. The debug link has `supply_mv` in place of `battery_pct` and `battery_mv`, `/status` has `supply_mv`, and
+SNMP reports as for no battery. The feature matrix and the web site show each radio's reading: Battery, Supply or
+None.
 
 ### 5.2 Low and critical
 
@@ -351,31 +430,45 @@ The UI owns the backlight and calls it; the radio core doesn't drive the backlig
 On an idle FM channel after `rx_save_idle_s` without activity (keys, requests, receptions, PTT), the receiver sleeps
 200 / 400 / 800 ms and listens 100 ms (`rx_sleeping` in the view). Any signal in the listen window keeps it awake;
 anything else (a key, a request, MONITOR, scan, VOX, DMR channel, hotspot, a channel with the codeplug "no eco" flag,
-APRS receive listening on the APRS frequency, `aprs.md` 5.3) stops it. The board's `rx_sleep` hook turns the receiver off and back on (DM-1701: `hardware-dm1701.md` 5.11). On air
-on the DM-1701 since 2026-10-10 (`test_battery_save*`: cycles when idle, MONITOR and a call wake it); the setting stays off by default.
+APRS receive listening on the APRS frequency, `aprs.md` 5.3) stops it. The board's `rx_sleep` hook turns the receiver off and back on. On air
+on an AT1846S board since 2026-10-10 (`test_battery_save*`: cycles when idle, MONITOR and a call wake it); the setting stays off by default.
 
 ### 5.5 Power switch
 
-The volume knob's switch on the DM-1701 and the MD-380 doesn't cut the supply: the MCU holds its own with the power
+On boards with a volume knob that has a switch, the switch doesn't cut the supply: the MCU holds its own with the power
 latch, and the switch only breaks the battery sense line, so the unfiltered battery reading drops to about 0 V the
-moment the knob turns off (MD-380: raw 3345 at 8.3 V, 3 with the knob off). `core/radio/power_switch.c` turns that
+moment the knob turns off. `core/radio/power_switch.c` turns that
 into the board's `switch_on()`: three readings in a row below 5.5 V, at least 10 ms apart, mean off; one low reading
 doesn't. The boards ignore it for the first 1.5 s after power-up while the readings settle. `core/app/app.c` polls
 `switch_on()` and powers off (settings saved, latch released). 5.5 V sits well under a flat 2S pack (critical
 6.0 V), so a weak battery never reads as the switch.
 
+### 5.6 Time of day
+
+RadioFoundry keeps no wall clock. `hal_time.h` gives only time since start-up, and that is what every record uses: the crash
+log's `uptime_ms`, messages (`ui_msg_t.age_ms`), call history and the APRS station list ("14m ago"). Nothing on the screen shows a time of day, so a
+radio never shows a made-up one after power-on.
+
+The only time of day is the UTC time a GPS or host NMEA fix carries. It travels with that position into DMR GPS and
+LRRP reports. A fixed position carries none, and the reports leave the time out (`utc_hms` 0xFFFFFFFF, date 0).
+
+Some radios have a real-time clock, and some keep it running through power-off. `board.toml` `[hardware] clock`
+records which, with its source (`backed`, `unbacked`, `none`, or `unknown`), and the feature matrix and the site show
+it. A clock driver arrives behind a hardware switch (`CONFIG_RTC`, `hardware` in `tests/hil/features.toml`). Until GPS,
+the network or the user sets it, the radio shows "no time", and records keep using uptime or mark the time unknown.
+
 ## 6. TX power, calibration, band limits
 
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,
 and refuses a TX frequency outside the board's bands (`tx_deny=band`). Without a calibration the board either drives
-a low fixed value (the DM-1701, `hardware-dm1701.md` 7) or refuses to transmit (the MD-380, the DB25-D).
+a low fixed value or refuses to transmit; the board's hardware page says which.
 
 ## 7. Verification status
 
-Host-tested (`radioFeaturesTest`, 783 checks): scan engine and glue (zone, skip flags, nuisance, resume modes,
+Host-tested (`radioFeaturesTest`): scan engine and glue (zone, skip flags, nuisance, resume modes,
 priority, dual watch with its wait and looks and the debug link's requests during it, VFO band scan, mixed FM / DMR, a DMR call already in progress with a direct mode carrier and a
 late entry at every superframe phase, PTT and retune behavior), battery levels and power off, beep
-patterns and mixing, vibration patterns and their timing through the radio core, TOT warning, BCL, inhibit, roger beep, burst, VOX, battery save, DMR permit / call-end beeps.
+patterns and mixing, vibration patterns and their timing through the radio core, TOT warning, BCL, inhibit, roger beep, burst, DTMF timing and refusals (`inputTest` for the key routing), VOX, battery save, DMR permit / call-end beeps.
 On the radio (`docs/testing/on-air-coverage.md`, HIL 2026-10-10): zone scan stopping for DMR calls, VFO scan, dual
 watch, the battery saver, the 1750 Hz burst and the roger beep on air; TX inhibit and the TOT warning on the radio's
 state; VOX only in silence (the `mic_level` hook is unverified); whether PCM beeps play in FM mode is still open

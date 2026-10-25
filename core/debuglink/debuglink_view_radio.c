@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio features for the debug link (docs/spec/debuglink.md 3.7, 3.8): the "features" view section (scan, FM
 // extras, battery, beeps, settings) and the RADIO operations that drive them (scan, beep, tone burst, one setting,
 // roaming)
@@ -12,6 +12,7 @@
 #include "radio/mic_gain.h"
 #include "radio/radio_cwid.h"
 #include "hal_time.h"
+#include "hal_dtmf.h"
 #include "settings/settings.h"
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
@@ -61,6 +62,20 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "dual.busy=%u\ndual.stops=%u\n", v->dual_busy, v->dual_stops);
 	dl_text(t, "tot_warning=%u\ntone_burst=%u\nroger=%u\nvox_keyed=%u\nrx_sleeping=%u\n", v->tot_warning,
 		v->tone_burst, v->roger, v->vox_keyed, v->rx_sleeping);
+#if CONFIG_DTMF
+	// DTMF (radio-features.md 3.7): whether a key would send now, then, only when they are not at rest, the digit
+	// sounding, the count since start-up and this transmission's digits (this view is close to the reply's size cap)
+	dl_text(t, "dtmf_ready=%u\n", v->dtmf_ready);
+	if (v->dtmf != 0) {
+		dl_text(t, "dtmf=%c\n", v->dtmf);
+	}
+	if (v->dtmf_sent != 0) {
+		dl_text(t, "dtmf_sent=%u\n", v->dtmf_sent);
+	}
+	if (v->dtmf_digits[0] != 0) {
+		dl_text(t, "dtmf_digits=%s\n", v->dtmf_digits);
+	}
+#endif
 	bool mic = board.power != NULL && board.power->mic_level != NULL;
 	// The hook itself, not the VOX poll's last reading, so the level reads with VOX off (nothing keys). Only where VOX
 	// could listen (FM, not a hotspot): a meter that starts on demand (the HR_C7000's mic PCM) then runs in the state
@@ -69,8 +84,13 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "vox_on=%u\nvox.mic=%u\nvox.level=%u\n", v->vox_on, mic, listen ? board.power->mic_level() : 0u);
 	// whether battery save can switch the receiver off on this radio (a radio driver without rx_sleep never sleeps)
 	dl_text(t, "rx_save.hw=%u\n", board.radio != NULL && board.radio->rx_sleep != NULL);
-	dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n", board_has_battery() ? word(v->battery, batt, 3) : "none",
-		v->battery_pct, v->battery_mv, v->power_off);
+	// a radio that measures its DC input has supply_mv in place of the battery's percentage and
+	// reading (the section is near a reply's size)
+	if (board_volts() == BOARD_VOLTS_SUPPLY)
+		dl_text(t, "battery=none\nsupply_mv=%u\npower_off=%u\n", v->supply_mv, v->power_off);
+	else
+		dl_text(t, "battery=%s\nbattery_pct=%u\nbattery_mv=%u\npower_off=%u\n",
+			board_has_battery() ? word(v->battery, batt, 3) : "none", v->battery_pct, v->battery_mv, v->power_off);
 	static const char *const vsrc[] = { "none", "knob", "soft", "override" };
 	dl_text(t, "volume.soft=%u\nvolume.sent=%d\nvolume.src=%s\nvolume.max=%u\nvolume.step=%u\nvolume.override=%d\n",
 		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 4), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
@@ -281,6 +301,20 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			return DL_ST_UNAVAILABLE;
 		}
 		radio_req_tone_burst(a[0] != 0);
+		return DL_ST_OK;
+	case DL_OP_DTMF:
+		// digit u8 (ASCII), down u8: as a DTMF key's edge, so the same rules and timing apply. Refused unless a key
+		// would send now (dtmf_ready); an up is always taken
+		if (len < 2 || (a[1] != 0 && !dtmf_valid((char)a[0]))) {
+			return DL_ST_BAD_ARG;
+		}
+		if (!CONFIG_DTMF) {
+			return DL_ST_UNAVAILABLE;
+		}
+		if (a[1] != 0 && !radio_dtmf_ready()) {
+			return DL_ST_REFUSED;
+		}
+		radio_req_dtmf((char)a[0], a[1] != 0);
 		return DL_ST_OK;
 	case DL_OP_ROAM:
 		if (len < 1 || a[0] > RROAM_LOCK_TOGGLE) {

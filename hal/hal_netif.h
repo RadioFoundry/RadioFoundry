@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A network interface to a host computer: Ethernet frames over the board's USB network personality (CDC-NCM on the
 // STM32 radios, drivers/usb/usb_ncm.c). The host link's IP gateway (core/hostlink/hostlink_net.c) uses it. Every op
 // is safe from any task and none blocks.

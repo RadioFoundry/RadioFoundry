@@ -1,5 +1,20 @@
 {
- "_about": "The UI gallery (docs/ux/screens) as the site shows it: each screen's group and the feature switches it needs. Captions are in site/i18n (screen.<name>). The site build fails on a screen missing here. A color page's shots in each gallery highlight color (<name>__<color>) take its entry, and the caption screen.in_color with color.<color>; its shots in the light and high-contrast themes (<name>__light, <name>__high_contrast) take screen.in_theme with theme.<theme>.",
+ "_about": "The UI gallery (docs/ux/screens) as the site shows it. A radio page shows the first six featured screens the radio has (its build has the features they need), two rows of three. each screen's group and the feature switches it needs. Captions are in site/i18n (screen.<name>). The site build fails on a screen missing here. A color page's shots in each gallery highlight color (<name>__<color>) take its entry, and the caption screen.in_color with color.<color>; its shots in the light and high-contrast themes (<name>__light, <name>__high_contrast) take screen.in_theme with theme.<theme>.",
+ "featured": [
+  "home_dmr",
+  "rx_group",
+  "home_dual",
+  "channels",
+  "message_view",
+  "settings",
+  "home_fm",
+  "tx",
+  "zones",
+  "recent",
+  "hub",
+  "volume",
+  "about"
+ ],
  "groups": [
   "home",
   "calls",
@@ -143,6 +158,12 @@
    "group": "calls",
    "needs": [
     "DMR"
+   ]
+  },
+  "tx_dtmf": {
+   "group": "calls",
+   "needs": [
+    "DTMF"
    ]
   },
   "rx_group": {
@@ -296,6 +317,38 @@
    "group": "channels",
    "needs": []
   },
+  "zone_actions": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT",
+    "ZONE_EDIT"
+   ]
+  },
+  "zone_add": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT",
+    "ZONE_EDIT"
+   ]
+  },
+  "zone_options": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT",
+    "ZONE_EDIT"
+   ]
+  },
+  "zone_delete": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT",
+    "ZONE_EDIT"
+   ]
+  },
   "find_channel": {
    "group": "channels",
    "needs": []
@@ -401,6 +454,12 @@
    ]
   },
   "home_dual_two_rx": {
+   "group": "home",
+   "needs": [
+    "DUAL_WATCH"
+   ]
+  },
+  "home_dual_tx_b": {
    "group": "home",
    "needs": [
     "DUAL_WATCH"

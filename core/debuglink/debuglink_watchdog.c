@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The hardware watchdog on the debug link (CONFIG_WATCHDOG, docs/spec/debuglink.md 3.21, docs/spec/watchdog.md): the
 // watchdog view section, and DL_CMD_WATCHDOG's bench tests, which stop the feeds in one of three ways (or re-arm with
 // a raw load first, to measure an undocumented counter clock) so the reset can be seen and timed. A test starts after

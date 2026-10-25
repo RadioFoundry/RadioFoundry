@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// Sector planning: which flash sectors to erase and write. A port of tools/odrflash/odrflash/plan.py (keep, merge),
-// plus one mode odrflash doesn't have yet:
+// Copyright (c) 2026 The RadioFoundry Authors
+// Sector planning: which flash sectors to erase and write. A port of tools/rfoundry/rfoundry/plan.py (keep, merge),
+// plus one mode rfoundry doesn't have yet:
 //
 //   restore  put back a whole flash image exactly (a backup's internal flash, or a stock application): every
 //            sector the image spans is erased, and written where the image has data. Codec windows may be inside
@@ -43,8 +43,9 @@ function checkSegments(board, segments) {
 		throw new PlanError(`the image must start at the application base ${hex(board.app_base)} (the vector table)`);
 }
 
-// segments: the firmware as [[addr, Uint8Array]]; codecSegments: the codec (merge mode)
-export function makePlan(board, segments, mode, codecSegments = []) {
+// segments: the firmware as [[addr, Uint8Array]]; codecSegments: the codec (merge mode); codecWindows: the windows that
+// codec fills (stockfw.layoutWindows of the merged file), default the board's windows (the union over its stock files)
+export function makePlan(board, segments, mode, codecSegments = [], codecWindows = board.codec.windows) {
 	if (![KEEP, MERGE, RESTORE].includes(mode)) throw new PlanError(`unknown codec mode ${mode}`);
 	const codecSecs = codecSectors(board);
 	const codecIdx = new Set(codecSecs.map((s) => s.index));
@@ -62,7 +63,7 @@ export function makePlan(board, segments, mode, codecSegments = []) {
 	}
 	if (mode !== MERGE && codecSegments.length) throw new PlanError(`codec data given in ${mode} mode`);
 	if (mode === MERGE) {
-		for (const [wlo, wlen] of board.codec.windows)
+		for (const [wlo, wlen] of codecWindows)
 			if (!codecSegments.some(([a, d]) => a <= wlo && wlo + wlen <= a + d.length))
 				throw new PlanError(`merge mode needs the whole codec window ${hex(wlo)}+0x${wlen.toString(16).toUpperCase()}`);
 	}

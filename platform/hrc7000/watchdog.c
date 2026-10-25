@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C7000 watchdog (hal_watchdog.h, CONFIG_WATCHDOG; docs/spec/hardware-dm32.md 3.5, docs/spec/watchdog.md 3.2).
 // Every register write goes through LOCK: the unlock key first, LOCK = 0 after. The counter counts up from the load
 // and the timeout is its overflow (see WDT_LOAD).
@@ -22,11 +22,11 @@
 
 // The timeout aimed for. It must stay comfortably above 3 s: a CPU fault prints its trace on the host UART three times,
 // a second apart, with interrupts off and no feeds, before it saves the crash record and restarts (irq.c hrc_fault).
-// The boot also has to fit: main() feeds before the scheduler starts, and the slowest start-up step (the DB25-D's NAND
+// The boot also has to fit: main() feeds before the scheduler starts, and the slowest start-up step (a SPI NAND
 // mount) feeds per block
 #define WDT_TIMEOUT_MS	4000u
 // OT_LOAD_H (3 bits) and OT_LOAD_L are one 35-bit start value; the counter counts up from it at the 24 MHz crystal and
-// the timeout is the overflow at 2^35 (HR_C7000 manual 2, WDT registers; the rate measured on the DB25-D: 2^28 counts
+// the timeout is the overflow at 2^35 (HR_C7000 manual 2, WDT registers; the rate measured on the bench: 2^28 counts
 // in 11.1 s). So the load is 2^35 minus the timeout's counts, and a small load is the longest timeout, not the shortest
 #define WDT_HZ		24000000ull
 #define WDT_LOAD	((1ull << 35) - WDT_HZ / 1000u * WDT_TIMEOUT_MS)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 factory calibration reader (docs/spec/hardware-dm1701.md section 12).
 // Read only: the working copy at 0x010000 is used when it carries the marker, otherwise the factory table in the
 // SPI flash security registers 1-2 is converted in RAM the way a working copy would be. Nothing is ever written.
@@ -170,7 +170,7 @@ static bool load_working(void)
 {
 	why = why_working;
 	why_set(why, 'w', "------");
-	if (!dm1701_flash.read(CAL_WORKING_ADDR, table, CAL_SIZE)) {
+	if (!stm32_spi_flash.read(CAL_WORKING_ADDR, table, CAL_SIZE)) {
 		why_set(why, 'w', "read");
 		return false;
 	}
@@ -186,7 +186,7 @@ static bool load_factory(void)
 {
 	why = why_factory;
 	why_set(why, 'f', "------");
-	if (!dm1701_flash_read_security(1, 0, &table[0], 256) || !dm1701_flash_read_security(2, 0, &table[256], 256)) {
+	if (!stm32_spi_flash_read_security(1, 0, &table[0], 256) || !stm32_spi_flash_read_security(2, 0, &table[256], 256)) {
 		why_set(why, 'f', "read");
 		return false;
 	}

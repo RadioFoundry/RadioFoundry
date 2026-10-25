@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-32UV radio: FD6818 RF transceiver (bit-banged), the HR_C7000 baseband for FM and DMR, LNA / PA selects and the
 // PA drive on DAC channel B (docs/spec/hardware-dm32.md 3.8, 8, 9, 11.3; modem-hrc7000.md 4, 5.1, 8).
 //
@@ -17,9 +17,6 @@
 
 #define DAC_C_INIT		0x06E2u
 
-#define ADC_CTRL		REG32(ADC_BASE + 0x00)
-#define ADC_CTRL_RESET		(1u << 3)
-
 #define UHF_FROM_HZ		280000000u	// PA / LNA band split (8.5)
 #define MIC_GAIN_DB		11u		// GCR_ADCL at init (9.1)
 #define DMR_PA_DELAY_US		28000u		// "DMR PA" default (8.6)
@@ -27,7 +24,7 @@
 // inbound burst an SFR receives before ours (swept 0.4-2.0 ms in hardware-dm32.md 8.5)
 #define RF_TX_LEAD		4u
 // FM TX limiter (FM_DEV_COEF b23:16, hrc7000_t.fm_tx_limit) at 12.5 / 25 kHz: the driver's default 4 holds mic audio
-// to about 1.65 kHz peak at 25 kHz (modem-hrc7000.md 8.4). The DM-1801 Pro's values; at 12.5 kHz a loud whistle and
+// to about 1.65 kHz peak at 25 kHz (modem-hrc7000.md 8.4). The values measured on the other FD6818 board; at 12.5 kHz a loud whistle and
 // voice peaked at 1.3 kHz (99.9 %) on the SDR bench, so the 12.5 kHz value may still be low. 25 kHz not measured yet
 #define FM_TX_LIMIT_12K5	5u
 #define FM_TX_LIMIT_25K		0x0Fu
@@ -51,6 +48,7 @@ static volatile uint16_t tx_drive;	// DAC B value for the transmission
 static uint16_t last_rssi_raw, last_noise_raw;
 static bool pcm_on;		// a beep or DMR voice plays through the codec
 static bool rx_audio;		// the squelch is open (the radio's audio hook)
+static bool rx_am_on;		// the FD6818 plays its AM demodulator (rx_am, the air band)
 static bool asleep;		// the receiver is powered down between listen windows (rx_sleep)
 static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (aprs_listen_route)
 static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modulator (afsk_tx_route)
@@ -58,6 +56,7 @@ static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modula
 // The speaker amplifier is on while any user wants it
 #define AMP_RADIO	0x01u	// receive audio
 #define AMP_PCM		0x02u	// speaker PCM
+#define AMP_BCAST	0x04u	// the broadcast receiver (dm32_bcast_audio)
 
 static void speaker_source(void);
 static void ring_play(void);
@@ -99,32 +98,10 @@ static void lna(uint32_t hz, bool on)
 	hrc_pin_write(PIN_VHF_LNA, on && !uhf);
 }
 
-static void dac_b_power(bool on)
-{
-	uint32_t s = hrc_irq_save();
-	if (on) {
-		DAC_PD_CTRL &= ~DAC_B_OFF;
-	} else {
-		DAC_PD_CTRL |= DAC_B_OFF;
-	}
-	hrc_irq_restore(s);
-}
-
 static void pa_key(void)
 {
 	hrc_pin_write(tx_uhf ? PIN_UHF_PA : PIN_VHF_PA, true);
 	DAC_DATA_B = tx_drive;
-}
-
-static bool in_band(uint32_t hz, bool tx)
-{
-	for (uint8_t i = 0; i < board.band_count; i++) {
-		const band_t *b = &board.bands[i];
-		if (hz >= b->lo_hz && hz <= b->hi_hz) {
-			return !tx || b->tx;
-		}
-	}
-	return false;
 }
 
 static uint16_t fm_bw_reg(radio_bw_t bw)
@@ -203,18 +180,7 @@ static const hrc_afsk_board_t afsk_board = {
 static void init(void)
 {
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
-	// modem-hrc7000.md 4 steps 1-3: ADC reset and idle, DAC B to its pin, DACs B and C on with the PA drive at 0
-	ADC_CTRL = ADC_CTRL_RESET;
-	hal_delay_us(2);
-	ADC_CTRL = 0;
-	uint32_t s = hrc_irq_save();
-	IO_DIPLEX2 &= ~IO_DIPLEX2_DAC_B;
-	hrc_irq_restore(s);
-	DAC_PD_CTRL = 0x01u;
-	DAC_PD_MODE_EN = 0x01u;
-	DAC_DATA_A = 0;
-	DAC_DATA_B = 0;
-	DAC_DATA_C = DAC_C_INIT;
+	hrc_modem_analog_init(DAC_C_INIT);
 	pa_off();
 	lna(0, false);
 	hrc7000_power_on_init(&modem, bf_cal_tx_center(), MIC_GAIN_DB);
@@ -254,7 +220,7 @@ static void set_mode(radio_mode_t m)
 	}
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
 		fd6818_set_mode(&fd, FD6818_MODE_DMR);
-		dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
+		hrc_dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
 		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(rx_hz)), MIC_GAIN_DB);
 		mode = RADIO_MODE_DMR;
 		hrc_dmr_enter();
@@ -266,12 +232,14 @@ static void set_mode(radio_mode_t m)
 		hrc7000_fm_idle(&modem);
 		mode = RADIO_MODE_FM;
 	}
+	rx_am_on = false;	// both mode tables write the FM AF word
 	have_rx = false;	// the next rx() retunes everything
 }
 
-static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
+// FM (or DMR) receive, or AM in FM mode: the same set-up, only the FD6818's AF output differs
+static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 {
-	if (!in_band(hz, false)) {
+	if (!board_in_band(hz, false) || (am && mode != RADIO_MODE_FM)) {
 		return false;
 	}
 	wake();
@@ -284,12 +252,16 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 	} else {
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
 		fd6818_set_state(&fd, FD6818_STATE_RX);
-		dac_b_power(false);
+		hrc_dac_b_power(false);
 		hrc7000_fm_rx(&modem, bw == RADIO_BW_25K);
 		hrc7000_audio_bits(&modem, 0, C7_AUDIO_FM_PLAY);	// FM plays on the analog path (speaker_source)
 		// The FD6818 detects the tone on its own demodulated audio: the C7000's detector gets no audio while the
 		// FD6818 plays FM to the speaker (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
+		if (am != rx_am_on) {
+			fd6818_set_am(&fd, am);
+			rx_am_on = am;
+		}
 	}
 	rx_hz = hz;
 	rx_bw = bw;
@@ -300,9 +272,31 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 	return true;
 }
 
+static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
+{
+	return rx_tune(hz, bw, tone, false);
+}
+
+#if CONFIG_AM_RX
+// Air band AM (docs/spec/airband-and-broadcast.md 3.3, hardware-dm32.md 8.7): FM receive with the FD6818's AF output on
+// its AM demodulator. The speaker plays that output straight, as in FM receive (speaker_source); no sub-audio. The
+// 108-136 MHz signal comes in through the VHF LNA
+static bool rx_am(uint32_t hz, radio_bw_t bw)
+{
+	return rx_tune(hz, bw, NULL, true);
+}
+#endif
+
+// Back on the frequency, mode and demodulator the receiver had (after a transmission or the receiver's sleep)
+static void retune(void)
+{
+	subtone_t t = rx_tone;
+	rx_tune(rx_hz, rx_bw, &t, rx_am_on);
+}
+
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 {
-	if (!in_band(hz, true)) {
+	if (!board_in_band(hz, true)) {
 		return false;
 	}
 	wake();
@@ -313,7 +307,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	// DMR keeps listening on the RX frequency until a burst (dmr_rf_switch retunes per burst); on a split channel the
 	// synthesizer on the TX frequency here left the radio deaf to the repeater's downlink
 	fd6818_set_freq(&fd, mode == RADIO_MODE_DMR && have_rx ? rx_hz : hz);
-	dac_b_power(true);
+	hrc_dac_b_power(true);
 	if (mode == RADIO_MODE_DMR) {
 		// 8.5 "Enter DMR TX": the PA select and drive wait for the PA one-shot of each burst. Between bursts the radio
 		// receives: the FD6818 in RX and the LNA on until the RF TX interrupt switches to the first burst
@@ -356,8 +350,7 @@ static void tx_off(void)
 	transmitting = false;
 	ring_play();	// a beep that started during the transmission is heard from here on
 	if (have_rx) {
-		subtone_t t = rx_tone;
-		rx(rx_hz, rx_bw, &t);
+		retune();
 	}
 }
 
@@ -390,6 +383,17 @@ static bool tx_tone_key(bool down)
 	return true;
 }
 
+#if CONFIG_DTMF
+// DTMF (radio-features.md 3.7): the same sender with the digit's two tones at the tone deviation
+static bool tx_dtmf(char digit)
+{
+	if (!transmitting || mode != RADIO_MODE_FM) {
+		return false;
+	}
+	return hrc7000_tx_dtmf(&modem, digit, hrc7000_dtmf_dev(tx_hz, tx_wide));
+}
+#endif
+
 static void status(radio_status_t *st)
 {
 	uint16_t r67 = fd6818_read(&fd, FD_REG_RSSI);
@@ -404,8 +408,8 @@ static void status(radio_status_t *st)
 
 // The speaker hears one of two sources (PTB15, checked on the radio): 1 = the FD6818's audio output directly (FM
 // receive), 0 = the HR_C7000's codec output (beeps, DMR voice). PTB15 = 1 also takes the FD6818's audio off the
-// HR_C7000's ADC, so DMR receive finds no sync while it is high. PTB14 is driven as its complement, as on the DM-1801
-// Pro; during a transmission the TX path owns PTB14 (the microphone route).
+// HR_C7000's ADC, so DMR receive finds no sync while it is high. PTB14 is driven as its complement, as on the other
+// FD6818 board; during a transmission the TX path owns PTB14 (the microphone route).
 //
 // While APRS listens the HR_C7000 must hear the FD6818 all the time (its FM receive audio is what the demodulator
 // gets, squelch open or not), so PTB15 stays 0 and an open squelch plays FM through the HR_C7000's own FM playback
@@ -514,6 +518,15 @@ static bool afsk_tx_route(bool on)
 }
 #endif
 
+#if CONFIG_BCAST_FM
+// The broadcast receiver's audio (hrc_bcast.h audio_path) needs the amplifier. The core mutes the channel's audio
+// while it plays, so the speaker source stays on the codec, which is silent then
+void dm32_bcast_audio(bool on)
+{
+	amp(AMP_BCAST, on);
+}
+#endif
+
 void dm32_radio_diag(dm32_radio_diag_t *d)
 {
 	d->rssi_raw = last_rssi_raw;
@@ -534,8 +547,7 @@ static void rx_sleep(bool sleep)
 		lna(rx_hz, false);
 		asleep = true;
 	} else {
-		subtone_t tone = rx_tone;
-		rx(rx_hz, rx_bw, &tone);
+		retune();
 	}
 }
 
@@ -548,7 +560,13 @@ const hal_radio_t dm32_radio = {
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
+#if CONFIG_DTMF
+	.tx_dtmf = tx_dtmf,
+#endif
 	.rx_sleep = rx_sleep,
+#if CONFIG_AM_RX
+	.rx_am = rx_am,
+#endif
 	.status = status,
 	.audio = audio,
 	.volume = NULL,

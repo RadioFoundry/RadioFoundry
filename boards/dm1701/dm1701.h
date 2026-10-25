@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Internal interfaces between the DM-1701 board files
 #ifndef DM1701_H
 #define DM1701_H
@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "board.h"
+#include "spi_flash/spi_flash.h"
 
 // The LCD data bus doubles as the keypad columns: the display and the keypad scan take turns
 void dm1701_lcdbus_lock(void);
@@ -22,24 +23,13 @@ void dm1701_speaker_pcm(bool on);
 uint16_t dm1701_mic_level_raw(void);
 int16_t dm1701_temperature_c10(void);
 
-// Ops each board file provides (display_dm1701.c, input_dm1701.c, radio_dm1701.c, power_dm1701.c, flash_dm1701.c)
+// Ops each board file provides (display_dm1701.c, input_dm1701.c, radio_dm1701.c, power_dm1701.c)
 extern const hal_display_t dm1701_display;
 extern const hal_input_t dm1701_input;
 extern const hal_radio_t dm1701_radio;
 extern const hal_power_t dm1701_power;
-extern hal_flash_t dm1701_flash;
-extern const hal_dmr_modem_t dm1701_dmr;
 extern const hal_audio_t dm1701_audio;
-extern const hal_vocoder_t dm1701_vocoder;
 
-// DMR PCM audio counters (audio_dm1701.c, CONFIG_DMR): the debug link's GET_DIAG / RESET_COUNTERS
-typedef struct {
-	uint32_t blocks;	// 20 ms blocks processed
-	uint32_t overruns;	// a DMA half completed before the task took the previous one
-	uint32_t dropped;	// blocks skipped because the task was a whole block late
-} dm1701_audio_stats_t;
-void dm1701_audio_stats(dm1701_audio_stats_t *out);
-void dm1701_audio_reset_stats(void);
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
 // The audio tap: FM receive audio on the PCM stream for APRS (CONFIG_APRS_RX) and USRP, FM transmit audio for USRP
 // (CONFIG_NET_USRP), the probe (CONFIG_AUDIO_PROBE, docs/spec/hardware-dm1701.md
@@ -60,13 +50,13 @@ bool dm1701_modem_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t 
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
 	KEY_STAR, KEY_HASH, KEY_UP, KEY_DOWN, KEY_GREEN, KEY_RED,
-	KEY_FN_LEFT, KEY_FN_RIGHT, KEY_TOP, KEY_SK1, KEY_SK2, KEY_PTT,
+	KEY_FN_LEFT, KEY_FN_RIGHT, KEY_SK1, KEY_SK2, KEY_SK3, KEY_PTT,	// side keys top to bottom
 	KEY_COUNT
 };
 
-// SPI flash security registers (1..3, 256 bytes each): factory calibration in 1-2, panel type and model flags in 3
-bool dm1701_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t len);
-bool dm1701_cps_security_read(uint32_t addr, void *buf, uint32_t len);
+// SPI flash (flash_dm1701.c, then stm32_spi_flash): its security registers hold the factory calibration in 1-2 and
+// the panel type and model flags in 3
+bool dm1701_flash_init(void);
 
 // Diagnostics (diag_dm1701.c and the accessors it reads; all return cached values, no bus traffic)
 typedef struct {
@@ -116,7 +106,7 @@ bool dm1701_cal_at(uint32_t hz, dm1701_cal_point_t *out);
 bool dm1701_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out);
 
 // A DMA stream's memory address must be in main SRAM (0x2000_0000): the DMA controllers can't reach the CCM, where
-// ODR_CPU_RAM state and every task stack live. Stops here, at set-up, instead of a silent transfer error later
+// RFOUNDRY_CPU_RAM state and every task stack live. Stops here, at set-up, instead of a silent transfer error later
 #define DMA_RAM_OK(p)	configASSERT(((uintptr_t)(p) >> 24) == 0x20u)
 
 #endif

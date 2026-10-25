@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Standalone SFR (see radio_sfr.h)
 #include "config.h"
 #if CONFIG_SFR	// the whole file
@@ -17,7 +17,7 @@ typedef struct {
 	dmr_burst_t burst;
 } sfr_ev_t;
 
-static sfr_ev_t evq[RADIO_SFR_EVQ_DEPTH] ODR_CPU_RAM;	// CPU only: the board's CPU RAM where it has one
+static sfr_ev_t evq[RADIO_SFR_EVQ_DEPTH] RFOUNDRY_CPU_RAM;	// CPU only: the board's CPU RAM where it has one
 static uint8_t evq_head, evq_tail;
 static uint32_t evq_drops;
 

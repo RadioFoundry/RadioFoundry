@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // PCM audio between the MCU and the radio's codec (mic in, speaker out): 8 kHz, 16-bit signed, 20 ms blocks.
 // Used for DMR voice (vocoder in / out), beeps and voice prompts. FM audio does not pass through here on radios
-// whose modem chip routes it (the DM-1701).
+// whose modem chip routes it (the HR_C6000).
 #ifndef HAL_AUDIO_H
 #define HAL_AUDIO_H
 

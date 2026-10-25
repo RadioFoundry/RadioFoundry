@@ -1,18 +1,12 @@
 <!-- SPDX-License-Identifier: MIT -->
-# MD-9600: hosting the stock AMBE+2 codec
+# MD-9600: hosting the AMBE+2 codec
 
-Status: research, 2026-10-12. Static analysis of eight decrypted TYT stock images (V06.09 and V16.45, four variants
-each) and the V26.45 carve the old builds used, then **verified by execution** in an instruction set emulator.
-Nothing has run on a radio.
+Status: format description for eight TYT images (V06.09 and V16.45, four variants each) and V26.45. The codecs were run
+in a host instruction set emulator (measured); nothing has run on a radio.
 
-Rule: the radio runs exactly the codec its own TYT stock firmware shipped. The user's machine extracts it from a stock
-file the user supplies. No codec bytes go in this repository or in released binaries. Any MD-9600 stock version is the
-MD-9600's own donor; the codec is board-independent code, so a file for one board revision serves every revision
-(the hardware-specific parts of the stock image are never run).
-
-Every fact here comes from our own reading of the vendor images, the DM-1701 and MD-380 work
-([codec-dm1701.md](codec-dm1701.md), [codec-md380.md](codec-md380.md)) and the old loader's donor constants. No
-third-party source or symbol file was used.
+Rule: the radio runs exactly the codec its own TYT firmware shipped. The user's machine extracts it from a firmware
+file the user supplies. No codec bytes go in this repository or in released binaries. Any MD-9600 firmware version is the
+MD-9600's own donor; the codec is board-independent code, so a file for one board revision serves every revision.
 
 ## Stock files
 
@@ -26,7 +20,7 @@ third-party source or symbol file was used.
 | 16.45 CSV + GPS | V4 | `MD9600-CSV-GPS(V4)-P16.45.bin` | 1105408 | `7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f` |
 | 16.45 REC | V4 | `MD9600-REC(V4)-D16.45.bin` | 1108480 | `d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c` |
 | 16.45 GPS + REC | V4 | `MD9600-GPS-REC(V4)-S16.45.bin` | 1114624 | `3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff` |
-| 26.45 CSV | V5 ("2571") | `MD9600-CSV(2571V5)-V26.45.bin` | ? | `d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f` (not on hand; the old builds' donor) |
+| 26.45 CSV | V5 ("2571") | `MD9600-CSV(2571V5)-V26.45.bin` | ? | `d8a653307222e576ee416ab6d4704d14758fa71c1b0e826ffd840f26266cf11f` (not described) |
 
 All eight on hand: TYT "OutSecurityBin" container, two segments (0x00060000, 0x59800) and (0x0800C000, app length),
 payload at 0x100, 0x100 trailing bytes ([hardware-md9600.md](hardware-md9600.md) 14.3).
@@ -35,32 +29,29 @@ payload at 0x100, 0x100 trailing bytes ([hardware-md9600.md](hardware-md9600.md)
 
 plain[i] = file[0x100 + i] ^ key[i mod 1024]; the application starts at payload offset 0x59800, so for an application
 address A: **file offset = A - 0x0800C000 + 0x59900, key index = (A - 0x0800C000) mod 1024** (the resource segment is a
-multiple of 1024 long). That is exactly the old loader's donor rule for V26.45 (file 0xC2C7C, index (j + 0x37C) mod
-1024 for the codec at 0x0807537C), so V26.45 has the same layout.
+multiple of 1024 long). V26.45 has the same layout (its codec is at 0x0807537C).
 
 Key: SHA-256 `c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae`, first bytes A2 FA BB 4B. The plain
 column vote (most common cipher byte per key column) gives it on all eight files without any refinement; this is what
-`odrflash/stockfw.derive_key` does first. No key file is needed.
+`rfoundry/stockfw.derive_key` does first. No key file is needed.
 
 ## Same codec, eight builds
 
 The codec does not sit at one address: every version and variant links it elsewhere, and the library's object code
 differs slightly between builds (the head of V06.09 has 0x14 extra bytes at +0x9D2 against V26.45, which moves the FEC
 decode; literal pools and relocations differ throughout). So **none of the V06.09 / V16.45 codec windows is
-byte-identical to the V26.45 carve**: they are different links of the same library, as the DM-1701 V02.06 and V26.45
+byte-identical to the V26.45 carve**: they are different links of the same library, as the reference V02.06 and V26.45
 codecs are.
 
 Functionally they are the same codec: with the same init and per-frame calls, all eight builds, the V26.45 carve and
-the DM-1701 V02.06 codec give **bit-identical** air bits and decoded PCM (below, "Verification").
+the reference V02.06 codec give **bit-identical** air bits and decoded PCM (below, "Verification").
 
 ## Entry points
 
-Offsets from the code start C (the first word 0x4FF0E92D, `push.w {r4-r11, lr}`), found by matching the DM-1701
-function heads and confirmed by the stock wrapper's calls (V06.09 CSV calls encoder init, FEC init x2, decoder init,
-encoder parameters, encoder set, decoder set and one decode in that order from 0x0806F49A, then encode, encode ECC,
-FEC decode and decode from the per-frame code):
+Offsets from the code start C (the first word 0x4FF0E92D, `push.w {r4-r11, lr}`), . The init order is encoder init, FEC init x2, decoder init, encoder parameters, encoder set, decoder set and one
+decode; the per-frame calls are encode, encode ECC, FEC decode and decode:
 
-| call | offset | DM-1701 | arguments (as [codec-dm1701.md](codec-dm1701.md)) |
+| call | offset | reference | arguments (as the reference build's codec page) |
 |---|---|---|---|
 | encode | +0x130 | +0x130 | (bits out, 0, PCM in, 80, stack: flags, half, 0x2000, E) |
 | encoder set | **+0x1C0** | +0x1C0 | (E, 128, -20) |
@@ -74,20 +65,19 @@ FEC decode and decode from the per-frame code):
 | FEC decode | **per build** | +0xB54 | (49 bits out, 0, 72 bits in, 1, stack: flags, F_dec): 0 good, 4 C0 uncorrectable |
 
 FEC decode: **+0xB78** in the CSV and CSV + GPS builds of both versions, **+0xB68** in the REC and GPS + REC builds,
-+0xB64 in V26.45. The encoder set settles the open item of the first pass: +0x1C0 is the encoder set (its head differs
-from the decoder set's only in the BL target; the stock wrapper calls it with E).
++0xB64 in V26.45. +0x1C0 is the encoder set (its head differs from the decoder set's only in the BL target).
 
 State: D 0x7EC, E 0x16E0, FEC 0x44 each (guard pages: 0x7E8, 0x16DC and 0x40 fault in decoder init, encoder init and
-FEC init); stack 3822 bytes peak; no fixed RAM address; no FPU instruction executed. Identical to the DM-1701.
-**This is ODR's DM-1701 vocoder call interface unchanged** (`platform/stm32f4/codec_call.c` and the DM-1701 / MD-380
+FEC init); stack 3822 bytes peak; no fixed RAM address; no FPU instruction executed. Identical to the reference build.
+**This is RadioFoundry's STM32 vocoder call interface unchanged** (`platform/stm32f4/codec_call.c` and the boards'
 glue): a board only needs the code base, the FEC decode offset and the window table.
 
 ## Codec windows
 
 Two windows per build, cut by execution (below) and checked against the literal targets: the code window from the
 first word to the end of the last executed instruction and literal pool; the table window from the lowest table
-literal to the end of the last table (14 bytes at the window's end, the same bytes the DM-1701 V02.06 table window
-ends with; what follows differs between builds and is stock data). Both hold some stock bytes the codec never uses.
+literal to the end of the last table (14 bytes at the window's end, the same bytes the reference V02.06 table window
+ends with; what follows differs between builds). Both hold some vendor bytes the codec never uses.
 File offset = A - 0x0800C000 + 0x59900; "key phase" = (A - 0x0800C000) mod 1024.
 
 **06.09 CSV (`79a561ed...`), FEC decode +0xB78:**
@@ -104,7 +94,7 @@ File offset = A - 0x0800C000 + 0x59900; "key phase" = (A - 0x0800C000) mod 1024.
 | code | 0x08075C98..0x08084EAC | 0xF214 | 0xC3598 | 0x098 | `4bcfec3e1113d17bb53bee1543039894db00c00c32d1b7dfd258f224043f52cd` | 0xB212C7A1 |
 | tables | 0x080AC2BC..0x080BD2F2 | 0x11036 | 0xF9BBC | 0x2BC | `a101749f26c6df7d784130c45570e25abc5c88e02bee6f2510beb0a6c3ad4dfa` | 0xAAFA995B |
 
-The other six builds (verified the same way; not proposed as profiles):
+The other six builds (not proposed as profiles):
 
 | file | code | tables | FEC decode | code sha256 | tables sha256 |
 |---|---|---|---|---|---|
@@ -116,26 +106,26 @@ The other six builds (verified the same way; not proposed as profiles):
 | GPS-REC(V4)-S16.45 | 0x08079630+0xF1FC | 0x080AFFE0+0x110C6 | +0xB68 | `5a7f1d52...` | `2172ecdd...` |
 
 Executed code in 06.09 CSV: 0x08074B18..0x08083D2A and a code island 0x080B25B8..0x080B26A0 inside the table window
-(reached by BL from the code window, as on the DM-1701 and MD-380). The code also holds two code pointers, one into
+(reached by BL from the code window, as in the hosted builds). The code also holds two code pointers, one into
 each window (0x0807A40D and 0x080B01BD in 06.09 CSV).
 
 ## Position dependence
 
-As on the DM-1701 and MD-380: calls inside the code are PC-relative, but the code reaches its tables through absolute
+As in the hosted builds: calls inside the code are PC-relative, but the code reaches its tables through absolute
 literals, the table window holds a short code island (executed; reached by BL from the code window), and the code holds
-absolute code pointers into both windows. So the windows must sit at their stock addresses. Unlike the MD-380 there
+absolute code pointers into both windows. So the windows must sit at their vendor addresses. Unlike one hosted family there
 are **no small tables outside the two windows** (every literal target lies in them).
 
 ## Hosting (proposal)
 
-Run in place at the stock addresses. The code window starts at 0x08074B18 (06.09 CSV) or 0x08075C98 (16.45 CSV), inside
+Run in place at the vendor addresses. The code window starts at 0x08074B18 (06.09 CSV) or 0x08075C98 (16.45 CSV), inside
 flash sector 7 (0x08060000..0x0807FFFF), and runs into sector 8; the table window lies in sector 9 (0x080A0000..
 0x080BFFFF). So:
 
 * The application gets 0x0800C000 up to the code window (0x68B18 = 428,824 bytes for 06.09 CSV, 0x69C98 = 433,304 bytes
   for 16.45 CSV) if every
-  flash re-merges the codec, as the MD-380 does (`keep_codec_supported=False`), or 0x0800C000..0x0805FFFF (336 KB,
-  sectors 3-6) if the codec sectors are to survive updates, as on the DM-1701.
+  flash re-merges the codec, (`keep_codec_supported=False`), or 0x0800C000..0x0805FFFF (336 KB,
+  sectors 3-6) if the codec sectors are to survive updates, as for the reference build.
 * The gap between the windows (0x08083D2C..0x080AB13B for 06.09 CSV) and sectors 10-11 are free for the application's
   read-only data if the linker splits it.
 * A board builds for one profile at a time (the windows differ per file). Proposed profile ids `md9600-v0609-csv` and
@@ -143,9 +133,9 @@ flash sector 7 (0x08060000..0x0807FFFF), and runs into sector 8; the table windo
 * Boot check: first word 0x4FF0E92D at the code start, then the CRC-32 of both windows.
 
 **Supported donor: 06.09 CSV**, with 16.45 CSV as the second profile. Reasons: both are the plain CSV builds (no
-recorder or GPS code moving the codec), both are bit-identical in function to V26.45 and the DM-1701, and between them
+recorder or GPS code moving the codec), both are bit-identical in function to V26.45 and the reference build, and between them
 they cover the files an owner of a V1-V4 radio has. Any of the other six works the same way with its own windows from
-the table above, and V26.45 can be added when a copy turns up (its windows: the code at 0x0807537C, the FEC decode at
+the table above, and V26.45 can be added (its windows: the code at 0x0807537C, the FEC decode at
 +0xB64; the table window still to be cut).
 
 ## Extraction recipe (06.09 CSV)
@@ -155,28 +145,27 @@ the table above, and V26.45 can be added when a copy turns up (its windows: the 
 2. Derive the key (plain column vote) and check it by SHA-256 (`c3d665b2...`), or use a key file with that hash.
 3. Decrypt each window: file offset = A - 0x0800C000 + 0x59900, key index (A - 0x0800C000) mod 1024. Check each
    window's SHA-256 and the code's first word.
-4. Write them unmodified at their stock addresses after the application image (0xFF between). On the user's machine
-   only (`make`, `tools/codec_extract.py` or odrflash), never in a release.
+4. Write them unmodified at their vendor addresses after the application image (0xFF between). On the user's machine
+   only (`make`, `tools/codec_extract.py` or rfoundry), never in a release.
 
 ## Verification
 
-The decrypted images were run on the host in Unicorn (Thumb, Cortex-M4 model); the per-run hash covers the 72 air bits
+The decrypted images were run in a host emulator (Thumb, Cortex-M4 model); the per-run hash covers the 72 air bits
 and the decoded PCM of every frame.
 
-| run | DM-1701 V02.06 | V26.45 carve | each of the 8 V06.09 / V16.45 builds |
+| run | reference V02.06 | V26.45 carve | each of the 8 V06.09 / V16.45 builds |
 |---|---|---|---|
 | 1 kHz tone, 30 frames | `32b5fdbac4a399c9` | same | same |
 | stress, 300 frames (noise, silence, full-scale sweeps, 0-4 injected bit errors, random frames, flags 8) | `40d0ca30a8c2f7e0` | same | same |
 
-FEC decode results 0 and 4 as on the DM-1701. The minimal windows were found by bisection: each end was moved until the
+FEC decode results 0 and 4 as in the reference build. The minimal windows were found by bisection: each end was moved until the
 stress run (60 frames) changed, then the final windows were checked with 300 stress frames with the rest of the mapped
 pages filled three ways (0x00 and two random patterns); all three give the reference hash, so nothing outside the
-windows is read. Scripts and notes: kept outside the repository.
+windows is read.
 
 ## Open items
 
-* V26.45 itself (V5 boards) is still not on hand; not needed for the codec.
-* ODR side: a profile per supported file in `stockfw.PROFILES` (with the FEC decode offset, which the DM-1701 profile
+* RadioFoundry side: a profile per supported file in `stockfw.PROFILES` (with the FEC decode offset, which the reference profile
   does not carry because it is fixed there), `boards.py`, the linker script end and the vocoder glue.
 
 ## Only a radio can check

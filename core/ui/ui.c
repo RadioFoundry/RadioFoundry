@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The UI task: boot splash, the frame pacing, the backlight, and the glue between the RTOS and the UI's behavior in
 // ui_app.c (which the host simulator runs without an RTOS). Reads the radio view and posts requests; never touches
 // the radio hardware.
@@ -21,10 +21,11 @@
 
 #define UI_TASK_PRIORITY	(tskIDLE_PRIORITY + 1)	// below the radio and input tasks
 // List screens and Find: about 1.2 KB measured on the host, plus the driver. The static stack check's deepest chain
-// (ui_task > ui_draw_hotspot > ui_draw_hint > gfx_text) needs 1724 bytes on the MD-380's maximal build with the CI's
-// Arm toolchain (8 to 16 bytes more than the macOS build of the same compiler); 517 words leave the 128 byte margin
-// plus 8 bytes. Every word here is RAM on all radios: raise it only by what the check shows
-#define UI_TASK_STACK_WORDS	517
+// (ui_task > ui_draw_hotspot > ui_draw_hint > gfx_text, down to the 4 bpp span) needs 1816 bytes on the STM32 radios'
+// maximal builds with the macOS Arm toolchain, up to 1832 with the CI's (8 to 16 bytes more than the macOS build of
+// the same compiler); default builds need about 1760. 543 words leave the 208 byte port overhead, the 128 byte margin
+// and 4 bytes. Every word here is RAM on all radios: raise it only by what the check shows
+#define UI_TASK_STACK_WORDS	543
 
 #define SPLASH_MS		1000
 #define FRAME_MIN_MS		50	// at most 20 redraws a second
@@ -60,6 +61,11 @@ const char *ui_screen_name(void)
 	return status.screen != NULL ? status.screen : "home";
 }
 
+uint8_t ui_backlight(void)
+{
+	return (backlight_now > 100u) ? 100u : backlight_now;	// 0xFF: not set yet, full at start-up
+}
+
 void ui_get_status(ui_app_status_t *st)
 {
 	*st = status;
@@ -84,7 +90,7 @@ static void ui_task(void *arg)
 		ui_layout_init();
 		char line1[17], line2[17];
 		ui_svc_boot_text(line1, line2);
-		ui_draw_splash(board.name, ODR_GIT, line1, line2);
+		ui_draw_splash(board.name, RFOUNDRY_GIT, line1, line2);
 		gfx_flush();
 	}
 	ui_app_init();
@@ -124,6 +130,7 @@ static void ui_task(void *arg)
 		if (dirty && have_fb && now - last_draw >= FRAME_MIN_MS && !gfx_held(now)) {
 			dirty = false;
 			last_draw = now;
+			gfx_frame_begin();
 			ui_app_draw();
 			gfx_flush();
 		} else if (!have_fb) {

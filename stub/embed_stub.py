@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Put a built stub into stubtool.py between its `# --- STUB <TAG> begin/end` markers (base64 of zlib, plus its sha256).
-    embed_stub.py stubtool.py DB25D stub_db25d_odr.bin       (variables STUB_DB25D_SHA256 / STUB_DB25D_B64)
-    embed_stub.py stubtool.py DB25D_DMR stub_db25d_odr_dmr.bin"""
+    embed_stub.py stubtool.py DB25D stub_db25d_rfoundry.bin       (variables STUB_DB25D_SHA256 / STUB_DB25D_B64)
+    embed_stub.py stubtool.py DB25D_DMR stub_db25d_rfoundry_dmr.bin"""
 import base64
 import hashlib
 import sys

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D PRO factory calibration, the stock "TUNE" page (docs/spec/hardware-db25d.md 6.1 - 6.4): PA drive, RX front-end
 // tuning, TX center and modulation, TX switching delays, squelch thresholds.
 //

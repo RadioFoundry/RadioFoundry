@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's task: a request queue in front of the state machine (radio_sm.c), a status poll every
 // RADIO_POLL_MS, the DMR call stack every RADIO_TICK_MS, and a snapshot of the view that other tasks copy under a
 // mutex. It also implements the hotspot's radio operations (hotspot_radio_ops_t): they post requests and never wait,
@@ -22,6 +22,9 @@
 #if CONFIG_APRS
 #include "aprs/aprs.h"
 #endif
+#if CONFIG_ZONE_EDIT
+#include "codeplug/zone_edit.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -36,10 +39,15 @@
 #endif
 #define RADIO_QUEUE_LEN		16
 
-static radio_sm_t sm ODR_CPU_RAM;	// owned by the radio task; CPU only
+static radio_sm_t sm RFOUNDRY_CPU_RAM;	// owned by the radio task; CPU only
 static radio_settings_t pending_settings;	// radio_set_settings -> the radio task, under view_lock
 static radio_settings_t shared_settings;	// the published copy, under view_lock
+// Settings generations, under view_lock: radio_set_settings counts sent, the radio task notes the one it copied
+// (taken) and publish() the one shared_settings now holds (published). While published lags sent, the last sent
+// settings are the ones in force soon, so radio_get_settings answers with them
+static uint32_t settings_sent, settings_taken, settings_published;
 static radio_view_t shared_view;	// the published copy, under view_lock
+static volatile bool dtmf_ready;	// shared_view.dtmf_ready, read without the lock (radio_dtmf_ready)
 #if CONFIG_DUAL_WATCH
 static channel_t shared_vfo[2];		// the VFOs' settings (radio_get_vfo), under view_lock
 static bool shared_vfo_ok[2];
@@ -79,9 +87,11 @@ static void publish(void)
 {
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	shared_view = sm.view;
+	dtmf_ready = sm.view.dtmf_ready;
 	radio_sm_shown_view(&sm, &shared_view);	// a roaming survey visit: the screens keep the site it left
 	shared_serial = sm.serial;
 	shared_settings = sm.set;
+	settings_published = settings_taken;
 #if CONFIG_DUAL_WATCH
 	shared_vfo[sm.vfo_idx & 1u] = sm.vfo_ch;
 	shared_vfo_ok[sm.vfo_idx & 1u] = sm.vfo_seeded;
@@ -125,6 +135,7 @@ static void radio_task(void *arg)
 					radio_settings_t set;
 					xSemaphoreTake(view_lock, portMAX_DELAY);
 					set = pending_settings;
+					settings_taken = settings_sent;
 					xSemaphoreGive(view_lock);
 					radio_sm_set_settings(&sm, &set, hal_millis());
 				} else {
@@ -181,6 +192,11 @@ void radio_core_start(void)
 	view_lock = xSemaphoreCreateMutex();
 	requests = xQueueCreate(RADIO_QUEUE_LEN, sizeof(radio_req_t));
 	configASSERT(view_lock != NULL && requests != NULL);
+#if CONFIG_ZONE_EDIT
+	// A zone add or delete a power cut interrupted: the saved zone indexes match the zones before the radio core reads
+	// them. Here, not in radio_sm_init: its frame isn't live under the settings save down to the flash driver
+	zone_edit_settle();
+#endif
 	radio_sm_init(&sm, hal_millis());
 	shared_view = sm.view;
 	shared_serial = sm.serial;
@@ -308,6 +324,14 @@ static void post_pair(uint8_t type, int32_t arg, uint32_t arg2)
 void radio_req_scan(uint8_t cmd) { post(RREQ_SCAN, cmd, 0); }
 void radio_req_scan_vfo(uint32_t lo_hz, uint32_t hi_hz) { post_pair(RREQ_SCAN_VFO, (int32_t)lo_hz, hi_hz); }
 void radio_req_scan_dual(uint16_t pos) { post_pair(RREQ_SCAN, RSCAN_DUAL, pos); }
+bool radio_dtmf_ready(void)
+{
+	return dtmf_ready;
+}
+
+// A lost key up would hold the tone until PTT is released: wait a little for room, as PTT does. Without CONFIG_DTMF
+// the radio core drops it
+void radio_req_dtmf(char digit, bool down) { post(RREQ_DTMF, (uint8_t)digit | (down ? 0x100 : 0), pdMS_TO_TICKS(50)); }
 
 void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel)
 {
@@ -369,6 +393,7 @@ void radio_set_settings(const radio_settings_t *s)
 	}
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	pending_settings = *s;
+	settings_sent++;
 	xSemaphoreGive(view_lock);
 	post(RREQ_SETTINGS, 0, pdMS_TO_TICKS(50));
 }
@@ -380,7 +405,7 @@ void radio_get_settings(radio_settings_t *s)
 		return;
 	}
 	xSemaphoreTake(view_lock, portMAX_DELAY);
-	*s = shared_settings;
+	*s = settings_published == settings_sent ? shared_settings : pending_settings;
 	xSemaphoreGive(view_lock);
 }
 

@@ -2,7 +2,7 @@ version = 1
 
 [[annotations]]
 path = ["docs/**", "*.md", "AUTHORS", ".gitignore", "REUSE.toml"]
-SPDX-FileCopyrightText = "2026 The OpenDigitalRadio Authors"
+SPDX-FileCopyrightText = "2026 The RadioFoundry Authors"
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
@@ -11,11 +11,11 @@ SPDX-FileCopyrightText = "2017 STMicroelectronics"
 SPDX-License-Identifier = "BSD-3-Clause"
 
 [[annotations]]
-path = ["boards/*/radio.json", "site/templates/**", "site/**/*.json", "site/**/*.png", "site/**/*.svg"]
-SPDX-FileCopyrightText = "2026 The OpenDigitalRadio Authors"
+path = ["site/templates/**", "site/**/*.json", "site/**/*.png", "site/**/*.svg"]
+SPDX-FileCopyrightText = "2026 The RadioFoundry Authors"
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
 path = ["stub/*.bin"]
-SPDX-FileCopyrightText = "2026 The OpenDigitalRadio Authors"
+SPDX-FileCopyrightText = "2026 The RadioFoundry Authors"
 SPDX-License-Identifier = "MIT"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 DMR modem glue shared by the boards (dmr_glue.c): the slot engine on the SoC's modem interrupts, the PA
 // one-shot, the deferred event task and the hal_dmr_modem_t over them. A board supplies what differs: how its RF chip
 // switches between receive and transmit for each burst and how its PA is keyed
@@ -18,7 +18,7 @@ typedef struct {
 	void (*rf_switch)(bool tx);
 	// The PA one-shot expired (ISR context): key the PA if the transmission is still on
 	void (*pa_on)(void);
-	// Microseconds from the start of a burst to the PA one-shot (the DM-32UV's "DMR PA" setting, default 28 ms)
+	// Microseconds from the start of a burst to the PA one-shot (a stock "DMR PA" setting, default 28 ms)
 	uint32_t pa_delay_us;
 } hrc_dmr_board_t;
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * The split duplex TX half's continuous BS outbound, without hardware (docs/spec/split-duplex.md 5): a buffer of host
  * bursts per outbound slot with its prebuffer (the target repeat delay), what goes out in each slot (the next burst, a
@@ -11,8 +11,8 @@
  * driver plays (it plays each slot's bursts in order, TS1 and TS2 alternating). The short LC fragment of slot s is
  * row s % 4, so a new short LC starts at a multiple of 4 for both slots alike.
  */
-#ifndef ODR_BS_OUTBOUND_H
-#define ODR_BS_OUTBOUND_H
+#ifndef RFOUNDRY_BS_OUTBOUND_H
+#define RFOUNDRY_BS_OUTBOUND_H
 
 #include <stdbool.h>
 #include <stdint.h>
