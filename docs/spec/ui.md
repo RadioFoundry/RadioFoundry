@@ -40,6 +40,12 @@ class's small font (24 characters a line) and takes the 160 px class's channel a
 line ("No calls heard yet") is centered in the region. Text that doesn't fit is shortened (an alternate, the name
 dropped, then an ellipsis), never drawn in a smaller font.
 
+A page title is in Title Case: every word capitalized except a, an, the, and, or, to, of, in, on, for and by
+inside the title; acronyms and units as written ("Unsaved Changes", "RX Group List", "Single-Freq Repeater", "Send To").
+A fixed prefix ahead of a name is lowercase in the middle ("Talk to Ops", "Zone for A"). Names and counts in a title
+("1 of 3", a zone's name) are shown as stored. List rows, values, hints, toasts and banners keep sentence case, so the
+row that opens a page can differ from its title: the Settings row "Talk & listen" opens "Talk & Listen".
+
 The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The group for the Back key (it starts with
 "Back") is drawn against the right edge, under the key; the other groups run from the left, and those that don't fit
 are left out whole from the right. A toast is one centered line instead. A banner or a two-line toast starts in a gap
@@ -90,13 +96,13 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Zones | `zones` | Hub 4: the VFO, then every zone with its channel count. OK goes to the zone, CONTEXT opens its channels (`zone`; long OK on a radio without CONTEXT) |
 | Zone | `zone` | CONTEXT in Zones: the zone's channels in order, OK goes to one. With `CONFIG_ZONE_EDIT` also the zone's editor (2.2): "Add channel" first, "Zone options" last, CONTEXT on a channel opens Channel actions |
 | Channel actions | `zchannel` | CONTEXT (long OK without CONTEXT) on a channel in a zone's list (2.2) |
-| Add channel | `zpick` | "Add channel" in a zone's list: the stored channels the zone doesn't hold, T9 filtered (2.2) |
+| Add Channel | `zpick` | "Add channel" in a zone's list: the stored channels the zone doesn't hold, T9 filtered (2.2) |
 | Zone options | `zoneedit` | "Zone options" in a zone's list: Rename, Copy as new zone, Delete zone (2.2) |
-| Delete zone | `zonedel` | Zone options 3: the confirmation, "No, keep it" first (P7) |
+| Delete Zone | `zonedel` | Zone options 3: the confirmation, "No, keep it" first (P7) |
 | Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
 | Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), save, and save as a new channel |
 | Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
-| Unsaved changes | `discard` | BACK in the channel editor with unsaved changes (2.1) |
+| Unsaved Changes | `discard` | BACK in the channel editor with unsaved changes (2.1) |
 | List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
@@ -124,7 +130,7 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 
 - A changed row shows the temporary mark (`UI_ITEM_TEMP`, the dot Home uses).
 - Long SELECT anywhere saves, as long SELECT makes a quick setting permanent. The Save row does the same.
-- BACK with unsaved changes opens Unsaved changes (`discard`): "No, keep editing" first (the default, P7), then "Yes,
+- BACK with unsaved changes opens Unsaved Changes (`discard`): "No, keep editing" first (the default, P7), then "Yes,
   discard". Long BACK still goes Home (P3) and drops the copy without asking.
 - Save checks the copy first and names the first problem in a toast: an empty name, RX out of every band, TX out of
   the transmit bands on a channel that isn't RX only, a DMR channel without a TX contact.

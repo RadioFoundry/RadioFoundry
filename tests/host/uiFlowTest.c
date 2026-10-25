@@ -203,8 +203,8 @@ static const flow_t flows[] = {
 	// task-flows.md 21 and 22 (ui.md 2.1). On channel 3 (DMR) the timeslot is the ninth row, the TX contact the tenth
 	{ "21 timeslot of the channel in use, saved", "", "ok 5 ok down down down down down down down down ok long:ok", "writes=1 toast=Saved_channel_3",
 	  13, true },
-	{ "21 TX contact opens the picker", "ok 5 ok down down down down down down down down down", "ok", "screen=chpick", 1, false },
-	{ "21 a change asks before discarding", "ok 5 ok down down down down down down down down ok", "back", "screen=discard", 1, false },
+	{ "21 TX contact opens the picker", "ok 5 ok down down down down down down down down down", "ok", "screen=chpick shows=TX_Contact", 1, false },
+	{ "21 a change asks before discarding", "ok 5 ok down down down down down down down down ok", "back", "screen=discard shows=Unsaved_Changes", 1, false },
 	{ "21 keep editing", "ok 5 ok down down down down down down down down ok back", "ok", "screen=channel", 1, false },
 	{ "21 discard goes back to Channels", "ok 5 ok down down down down down down down down ok back", "down ok", "screen=channels", 2, false },
 	{ "21 the name opens text entry", "ok 5 ok", "ok", "screen=text", 1, false },
@@ -361,6 +361,9 @@ static const flow_t flows[] = {
 	{ "S VFO step: auto, wide", "vfokey", "up", "freq=146545000", 1, false },
 	{ "S VFO step: auto, narrow", "vfokey quick 8 back", "up", "freq=146532500", 1, false },
 	{ "S VFO step: 2.5 kHz", "ok 7 3 down down down ok long:back vfokey", "up", "freq=146522500", 1, false },
+	// Page titles are in Title Case; the row that opens the page keeps its sentence case (ui.md 1)
+	{ "S a group's title in Title Case", "", "ok 7 3", "screen=group shows=Talk_&_Listen hides=Talk_&_listen", 3, false },
+	{ "S the group's row as it was", "", "ok 7", "screen=settings shows=Talk_&_listen", 2, false },
 	// Quick settings in the FM VFO: tile 8 is Width, as on a channel
 	{ "Q FM VFO: Width on 8", "vfokey", "quick 8", "toast=Bandwidth", 2, false },
 	{ "S VFO mode back to FM", "ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_FM mode=fm temporary=0", 2, false },
@@ -412,7 +415,7 @@ static const flow_t flows[] = {
 	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },
 	// The crash log and its report (docs/spec/crash-log.md): Settings > Advanced > Crash log, after the restart
-	{ "C crash log from Advanced", "crash:on", "ok 7 0 down down down down ok", "screen=crash shows=Fault_3 crash_seen=1",
+	{ "C crash log from Advanced", "crash:on", "ok 7 0 down down down down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
 	  8, false },
 	{ "C crash: Off neither asks nor sends", "crash:on wait:2500", "", "screen=home crash_sends=0 crash_seen=0", 0, false },
 	{ "C crash: Ask prompts after the restart", "crash:ask wait:2500", "", "screen=crash shows=USA?",
