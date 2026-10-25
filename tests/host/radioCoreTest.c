@@ -4215,6 +4215,34 @@ static void test_sfr_roles(void)
 	run(50);
 	CHECK(sm.view.state == RS_IDLE && sm.sfr_rpt);
 
+	// Hotspot mode takes the modem from the role; leaving it starts the role again
+	req(RREQ_HS_ENTER, 0);
+	CHECK(sm.hotspot && !sm.sfr_rpt && !sm.dmr_keyed && !sim.started);
+	req(RREQ_HS_LEAVE, 0);
+	run(50);
+	CHECK(!sm.hotspot && sm.sfr_rpt && sm.dmr_keyed);
+
+	// A scan visits the channel to listen: the role waits, and starts again once the scan ends there
+	req(RREQ_SCAN, RSCAN_ZONE);
+	bool visited = false;
+	for (int i = 0; i < 300 && sm.view.scan != 0; i++) {
+		run(20);
+		CHECK(!sm.sfr_rpt);
+		visited |= sm.view.zone_pos == 3;
+	}
+	CHECK(sm.view.scan != 0 && visited);
+	req(RREQ_SCAN, RSCAN_CANCEL);
+	run(50);
+	CHECK(sm.view.scan == 0 && sm.view.zone_pos == 3 && sm.sfr_rpt && sm.dmr_keyed);
+
+	// The board won't key: an ordinary channel, not a repeater that can't send
+	tx_fail = true;
+	reload_channel();
+	CHECK(!sm.sfr_rpt && !sm.dmr_keyed && sm.view.dmr.active);
+	tx_fail = false;
+	reload_channel();
+	CHECK(sm.sfr_rpt && sm.dmr_keyed);
+
 	// TX inhibit: an ordinary channel again (the keying released, the stack back)
 	radio_settings_t set = sm.set;
 	set.tx_inhibit = true;

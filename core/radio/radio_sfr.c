@@ -25,6 +25,7 @@ uint8_t radio_sfr_channel(const channel_t *ch, bool vfo, sfrConfig_t *cfg)
 {
 	sfrChannelSettings_t s;
 
+	memset(cfg, 0, sizeof(*cfg));	// SFR_ROLE_OFF reads as a cleared configuration (the view's inbound slot)
 	if (vfo || ch->mode != RADIO_MODE_DMR || !sfrChannelDecode(ch->sfr_flag1, ch->sfr_a, ch->sfr_b, &s)) {
 		return SFR_ROLE_OFF;
 	}

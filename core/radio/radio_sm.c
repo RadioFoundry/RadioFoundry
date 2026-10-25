@@ -1144,6 +1144,18 @@ static void sfr_rpt_end(radio_sm_t *sm)
 	sm->view.dmr.sfr_busy = false;
 }
 
+// The repeater role waits while the radio may not transmit (TX inhibit, the battery, the band) and while a scan or dual
+// watch runs: they visit the channel to listen, and their activity check reads the call stack
+static bool sfr_rpt_wait(radio_sm_t *sm)
+{
+#if CONFIG_SCAN
+	if (scan_on(&sm->scan)) {
+		return true;
+	}
+#endif
+	return tx_check(sm) != TXDENY_NONE;
+}
+
 #if CONFIG_SFR_CWID
 #define SFR_RPT_RESUMING(sm)	((sm)->cw_sfr)	// back from its CW ID: the same role, its counters carry on
 #else
@@ -1151,8 +1163,8 @@ static void sfr_rpt_end(radio_sm_t *sm)
 #endif
 
 // A channel whose SFR role is a repeater: the runner takes the modem instead of the call stack, and the keying is armed
-// on the channel's frequency for the modem's per-burst keying, as in hotspot mode. Not while the radio may not transmit
-// (TX inhibit, the battery, the band): then the channel is an ordinary one. False: the call stack's channel
+// on the channel's frequency for the modem's per-burst keying, as in hotspot mode. Not while it must wait (sfr_rpt_wait),
+// or when the board won't key: then the channel is an ordinary one. False: the call stack's channel
 static bool sfr_rpt_begin(radio_sm_t *sm)
 {
 	static const subtone_t none = { TONE_NONE, 0 };
@@ -1166,8 +1178,8 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 	if (!sfrRoleIsRepeater(sm->view.dmr.sfr_role) || board.dmr == NULL) {
 		return false;
 	}
-	if (tx_check(sm) != TXDENY_NONE) {
-		sm->sfr_denied = true;	// radio_sm_tick starts the role once the radio may transmit
+	if (sfr_rpt_wait(sm)) {
+		sm->sfr_denied = true;	// radio_sm_tick starts the role once it may
 		return false;
 	}
 	if (sm->dmr_running) {
@@ -1181,6 +1193,10 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 		return false;
 	}
 	sm->dmr_keyed = board.radio->tx(ch->tx_hz, RADIO_BW_12K5, sm->view.power, &none);
+	if (!sm->dmr_keyed) {
+		radio_sfr_stop();	// the board refused the keying: no repeater that can't send
+		return false;
+	}
 #if CONFIG_SFR_CWID
 	if (!sm->cw_sfr) {
 		memset(&sm->cwid, 0, sizeof(sm->cwid));	// a new role (not back from its ID): the first ID after its first
@@ -3905,7 +3921,11 @@ static void cw_service(radio_sm_t *sm, uint32_t now_ms)
 static void hotspot_enter(radio_sm_t *sm, uint32_t rx_hz, uint32_t now_ms)
 {
 	static const subtone_t none = { TONE_NONE, 0 };
-	if (sm->hotspot || board.dmr == NULL || sm->ptt || sm->view.state == RS_TX || sm->dmr_keyed) {
+	bool keyed = sm->dmr_keyed;
+#if CONFIG_SFR
+	keyed = keyed && !sm->sfr_rpt;	// the repeater role's keying stays armed while it runs: dmr_end ends it
+#endif
+	if (sm->hotspot || board.dmr == NULL || sm->ptt || sm->view.state == RS_TX || keyed) {
 		return;		// refused for now: the hotspot asks again
 	}
 #if CONFIG_SFR_CWID
@@ -5669,7 +5689,7 @@ static void sfr_rpt_tick(radio_sm_t *sm, uint32_t now_ms)
 		return;		// the ID is being keyed (cw_service); the role starts again after it
 	}
 #endif
-	if (tx_check(sm) != TXDENY_NONE) {
+	if (sfr_rpt_wait(sm)) {
 		sfr_rpt_end(sm);
 		dmr_begin(sm);
 		changed(sm);
@@ -5711,8 +5731,7 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_SFR
 	if (sm->sfr_rpt) {
 		sfr_rpt_tick(sm, now_ms);
-	} else if (sm->sfr_denied && sm->dmr_running && !sm->ptt && sm->view.state == RS_IDLE &&
-		   tx_check(sm) == TXDENY_NONE) {
+	} else if (sm->sfr_denied && sm->dmr_running && !sm->ptt && sm->view.state == RS_IDLE && !sfr_rpt_wait(sm)) {
 		dmr_begin(sm);		// the repeater role back, between calls
 		changed(sm);
 	}
