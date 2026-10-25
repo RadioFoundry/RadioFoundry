@@ -235,7 +235,7 @@ jobs:
     name: PR checks status
     needs: [changes, unit-tests, firmware, checks]
     if: always()
-    # a few seconds of gh at the end: the UI gallery's runner, which is idle by then, so it never holds a build runner
+    # a few seconds of gh at the end: the UI gallery's runner, which runs no pull request's code
     runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && (vars.RFOUNDRY_UI_RUNNER || vars.RFOUNDRY_CI_RUNNER) || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:

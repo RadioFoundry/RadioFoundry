@@ -30,21 +30,11 @@ Things to know:
 
 ## The GitHub self-hosted runner
 
-**The public GitHub repository has no self-hosted runner, and `RFOUNDRY_CI_RUNNER` and `RFOUNDRY_UI_RUNNER` are unset
-there.** On a public repository, anyone can open a pull request whose own workflow file names any runner label, and a
-`pull_request` run uses the pull request's copy of the workflows. The `runs-on` conditions below don't stop that: the
-attacker writes the workflow. Approving fork runs one by one is the only other gate, and a missed `.github/` change in
-one approval is enough. A job on the runner can read the runner's credentials and take its place for later jobs,
-`main`'s included. The hosted runners cost nothing on a public repository. What follows applies to a private copy
-of the repository (a mirror, or a fork kept private). A self-hosted runner on a public repository needs, at least, an
-organization runner group restricted to `main`'s workflow files and single-use (just-in-time) registrations.
-
-GitHub's hosted runners cost the account's Actions minutes on a private repository. The repository variable
-`RFOUNDRY_CI_RUNNER` moves the Linux jobs to a self-hosted runner instead: each such job has
-`runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}`, so with the variable set to `rfoundry-ci` they go to a runner
-with that label, and with it unset (or on Gitea, where it isn't defined) nothing changes. `hil.yml` keeps its own
-runner. `release.yml` builds rfoundry on GitHub's macOS and Windows runners only for a `v*` tag; a pull request or a
-push to `main` builds the Linux rfoundry alone, on the self-hosted runner.
+The repository variable `RFOUNDRY_CI_RUNNER` moves the Linux jobs to a self-hosted runner: each such job has
+`runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}`, so with the variable set to `rfoundry-ci` they go to a
+runner with that label, and with it unset (or on Gitea, where it isn't defined) nothing changes. `hil.yml` keeps its
+own runner. `release.yml` builds rfoundry on GitHub's macOS and Windows runners only for a `v*` tag; a push to `main`
+builds the Linux rfoundry alone, on the self-hosted runner.
 
 The runner is the image in `tools/ci-runner/` (its README has the setup): Ubuntu 24.04 with everything the
 workflows install (the Arm and csky-elf toolchains, host GCC, Python with NumPy, pytest, pyserial, Pillow and
@@ -57,24 +47,40 @@ to the hosts in `tools/ci-runner/proxy/allow` only (GitHub, the npm registry and
 anywhere else (nodejs.org, developer.arm.com). A tool a job needs goes into the image. Ubuntu's system Python takes
 no `pip install`; a job that needs packages makes a venv (`release.yml`'s rfoundry job does).
 
-`pr-tests.yml` runs on `pull_request_target`, which runs every pull request without approval, so its jobs (and
-`ui-gallery.yml`'s and `release.yml`'s) choose the runner with `github.event.pull_request.head.repo.full_name ==
-github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04'`: a branch of this repository gets the self-hosted
-runner, a fork GitHub's. Only `pr-tests.yml`'s condition holds against a fork, because `pull_request_target` runs
-`main`'s copy of the workflow. In `ui-gallery.yml` and `release.yml`, `pull_request` runs, it only routes. On a private
-repository, the setting "Run workflows from fork pull requests" (off) keeps those from running a fork's code. A
-public repository doesn't have that setting, which is why it has no self-hosted runner (above).
-
 When the runner is off, jobs routed to it wait in the queue (and fail after a day). Unset `RFOUNDRY_CI_RUNNER` to go back
 to the hosted runners.
 
-The UI gallery has a runner of its own, so a pull request's screenshot preview never waits behind the build and test
-jobs. One runner is registered with the label `rfoundry-ui` instead of `rfoundry-ci` (`LABELS=rfoundry-ui` in its env file,
-[tools/ci-runner/README.md](../../tools/ci-runner/README.md)), and the repository variable `RFOUNDRY_UI_RUNNER` is set to
-`rfoundry-ui`. `ui-gallery.yml` and `ui-gallery-comment.yml` run on `RFOUNDRY_UI_RUNNER`, falling back to `RFOUNDRY_CI_RUNNER` when
-it's unset. So does `pr-tests.yml`'s `PR checks status` job: it runs a few seconds of `gh` after every other job, when
-the render is long done, so it never holds a build runner. No other job uses that label. With six runners that leaves five for everything else. Unset
-`RFOUNDRY_UI_RUNNER` to share the pool again.
+### Which jobs it takes
+
+On a public repository anyone can open a pull request, and a `pull_request` run uses the pull request's own copy of
+the workflows: it can name any runner label, whatever `runs-on` says on `main`. So the runner decides for itself.
+Its job-started hook, `tools/ci-runner/job-gate.sh`, runs before the first step of every job and fails the job
+unless the workflow file is this repository's, from `main` or a `v*` tag (`GITHUB_WORKFLOW_REF`). That is a push to
+`main`, a schedule, a manual run on `main`, a `pull_request_target` or `workflow_run` run (both always use `main`'s
+copy) or a release tag. A `pull_request` run is refused before anything in it runs, from a fork or a branch. It is
+the check an organization runner group restricted to selected workflows makes, on the runner, where no workflow can
+change it, and on any GitHub plan.
+
+| Job | Runs | Why |
+|---|---|---|
+| `pr-tests.yml` (`pull_request_target`) | self-hosted for a branch of this repository, GitHub's for a fork | `main`'s workflow; the condition `github.event.pull_request.head.repo.full_name == github.repository` holds, because the pull request can't edit it |
+| `ui-gallery.yml`, and `release.yml` on a pull request (`pull_request`) | always GitHub's | the pull request's own workflow file: the gate would refuse it |
+| Jobs with a write token: `ui-gallery-comment.yml`, `release.yml` `publish`, `manual.yml`, `pr-tests.yml` `PR checks status` | `rfoundry-ui`, or `RFOUNDRY_CI_RUNNER` | [below](#jobs-with-a-write-token) |
+
+A branch of this repository still runs its code on the runner, through `pr-tests.yml`. Whoever can push a branch
+can therefore read the runner's registration and take its place for later jobs, so write access to the repository
+is what the runner trusts. Keep it to the people who have it on purpose.
+
+### Jobs with a write token
+
+Four jobs hold a write token: `ui-gallery-comment.yml` (`contents: write`, the `ui-previews` branch), `release.yml`'s
+`publish` (`contents: write`, the release), `manual.yml` (`contents: write` on tags) and `pr-tests.yml`'s `PR checks
+status` (`statuses: write`, the required check). `ui-gallery-comment.yml` and the status job run on the runner labeled
+`rfoundry-ui` (the repository variable `RFOUNDRY_UI_RUNNER`), and no job that runs a pull request's code uses that
+label; `publish` and `manual.yml` run on `RFOUNDRY_CI_RUNNER`.
+
+The `rfoundry-ui` runner is registered with that label instead of `rfoundry-ci` (`LABELS=rfoundry-ui` in its env file,
+[tools/ci-runner/README.md](../../tools/ci-runner/README.md)). With six runners that leaves five for everything else.
 
 ## GitHub hosted runners
 

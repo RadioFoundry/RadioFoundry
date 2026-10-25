@@ -87,8 +87,12 @@ RUN set -eu; for url in $SUBMODULE_URLS; do \
 RUN useradd --create-home --uid "${RUNNER_UID}" --shell /bin/bash runner 2>/dev/null \
 	|| { userdel -r "$(id -nu "${RUNNER_UID}")" && useradd --create-home --uid "${RUNNER_UID}" --shell /bin/bash runner; }
 COPY ci-runner/entrypoint.sh /usr/local/bin/rfoundry-ci-entrypoint
+# the job-started hook: only main's (or a v* tag's) workflows run here (README.md "Which jobs it takes"). Root-owned,
+# so a job can't change it for the next one (each job gets a fresh container anyway)
+COPY --chmod=755 ci-runner/job-gate.sh /usr/local/lib/rfoundry/job-gate.sh
 # RFOUNDRY_CI_IMAGE tells the workflows that the tools are already installed (they skip their apt and download steps)
-ENV RFOUNDRY_CI_IMAGE=1 RUNNER_ALLOW_RUNASROOT=0 DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENV RFOUNDRY_CI_IMAGE=1 RUNNER_ALLOW_RUNASROOT=0 DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+	ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/lib/rfoundry/job-gate.sh
 USER runner
 WORKDIR /work
 ENTRYPOINT ["/usr/local/bin/rfoundry-ci-entrypoint"]

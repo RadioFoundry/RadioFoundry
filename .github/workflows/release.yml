@@ -10,8 +10,9 @@
 #
 # Pull requests touching the release tooling build everything as workflow artifacts and publish nothing; the release
 # gate (tools/ci.sh) runs for a tag only, since a pull request's own checks already ran it. With the repository
-# variable RFOUNDRY_CI_RUNNER set, the Linux jobs run on that self-hosted runner, and only a v* tag also builds rfoundry on
-# GitHub's macOS and Windows runners (docs/dev/ci.md).
+# variable RFOUNDRY_CI_RUNNER set, a push's Linux jobs run on that self-hosted runner, and only a v* tag also builds
+# rfoundry on GitHub's macOS and Windows runners (docs/dev/ci.md). A pull request's jobs always run on GitHub's runners:
+# the self-hosted runner takes only main's and v* tags' workflows (tools/ci-runner/job-gate.sh).
 name: Release
 
 on:
@@ -47,7 +48,7 @@ env:
 
 jobs:
   version:
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     outputs:
       version: ${{ steps.v.outputs.version }}
       publish: ${{ steps.v.outputs.publish }}
@@ -55,9 +56,9 @@ jobs:
     steps:
       - id: v
         env:
-          # never for a fork's pull request: its code stays on GitHub's runners (routing only: a fork's pull request runs
-          # its own copy of this file, which is why the public repository has no self-hosted runner)
-          RUNNER_LABEL: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RFOUNDRY_CI_RUNNER) || '' }}
+          # never for a pull request: its workflow file is its own, and the self-hosted runner refuses those
+          # (tools/ci-runner/job-gate.sh), so a pull request's jobs run on GitHub's runners
+          RUNNER_LABEL: ${{ (github.event_name != 'pull_request' && vars.RFOUNDRY_CI_RUNNER) || '' }}
         run: |
           # rfoundry's runners: all four for a release or without the self-hosted runner; otherwise Linux only, there
           if [ "${GITHUB_REF_TYPE}" = tag ] || [ -z "$RUNNER_LABEL" ]; then
@@ -81,7 +82,7 @@ jobs:
     # with no edit here. One artifact per toolchain
     name: firmware (${{ matrix.name }})
     needs: version
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -200,7 +201,7 @@ jobs:
   publish:
     needs: [version, firmware, rfoundry]
     if: needs.version.outputs.publish == 'true'   # and every toolchain's firmware and every rfoundry passed
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: write
     steps:

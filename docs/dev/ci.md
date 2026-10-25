@@ -25,8 +25,9 @@ private copy, hosted runners use paid minutes). On Gitea they always run.
 
 The `ubuntu-24.04` in the table is the default. When the repository variable `RFOUNDRY_CI_RUNNER` is set (to `rfoundry-ci`),
 every Linux job goes to the self-hosted runner with that label instead
-([runners](ci-runners.md#the-github-self-hosted-runner)). The public repository leaves it unset and has no self-hosted
-runner: a fork's pull request could name the label in its own workflow file.
+([runners](ci-runners.md#the-github-self-hosted-runner)). The runner takes only `main`'s and release tags' workflows
+([which jobs it takes](ci-runners.md#which-jobs-it-takes)), so a pull request's `pull_request` jobs and a fork's
+`pr-tests.yml` jobs stay on GitHub's runners.
 
 Each change is checked once. A branch is tested through its pull request (`pr-tests.yml`), and `main` again after
 the merge (`ci.yml`). The unit tests run once per check, with the coverage counters and the sanitizers in the same
