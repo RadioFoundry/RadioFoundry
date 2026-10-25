@@ -152,7 +152,7 @@ async function api(method, path, body) {
 function analysisOffer(cand, boardId) {
 	if (!cand || S.sim) return null;
 	const status = h("p", { class: "small" });
-	const note = h("textarea", { rows: 2, maxlength: 500, placeholder: t("flash.analysis.note") });
+	const note = h("textarea", { class: "analysis-note", rows: 2, maxlength: 500, placeholder: t("flash.analysis.note") });
 	const send = button(t("flash.analysis.send"), async () => {
 		send.disabled = true;
 		status.textContent = t("flash.analysis.sending");
