@@ -70,6 +70,8 @@ void zone_copy_name(char out[CODEPLUG_NAME_LEN + 1], const char *name)
 
 // The zone every call works on: one at a time (the storage lock), off the callers' stacks
 static zone_t work;
+// A channel read only to see that it is there, as work: off the storage job's stack, which runs the editor
+static channel_t probe;
 
 static zone_edit_result_t write_back(uint16_t zone)
 {
@@ -109,9 +111,8 @@ static zone_edit_result_t create_locked(uint16_t *index)
 	if (work.count > codeplug_zone_capacity() || work.count > CODEPLUG_ZONE_MAX) {
 		return ZONE_EDIT_FULL;
 	}
-	channel_t ch;
 	for (uint16_t i = 0; i < work.count; i++) {
-		if (!codeplug_channel(work.channels[i], &ch)) {
+		if (!codeplug_channel(work.channels[i], &probe)) {
 			return ZONE_EDIT_NO_CHANNEL;
 		}
 		for (uint16_t j = 0; j < i; j++) {
@@ -157,11 +158,10 @@ zone_edit_result_t zone_edit_create(const zone_t *z, uint16_t *index)
 
 zone_edit_result_t zone_edit_insert(uint16_t zone, uint16_t pos, uint16_t channel)
 {
-	channel_t ch;
 	storage_lock();
 	zone_edit_result_t r = load(zone);
 	if (r == ZONE_EDIT_OK) {
-		r = codeplug_channel(channel, &ch) ? zone_list_insert(&work, pos, channel, codeplug_zone_capacity()) :
+		r = codeplug_channel(channel, &probe) ? zone_list_insert(&work, pos, channel, codeplug_zone_capacity()) :
 						     ZONE_EDIT_NO_CHANNEL;
 	}
 	if (r == ZONE_EDIT_OK) {
@@ -201,10 +201,9 @@ zone_edit_result_t zone_edit_move(uint16_t zone, uint16_t pos, int dir)
 
 zone_edit_result_t zone_edit_add_new(uint16_t zone, uint16_t pos, uint16_t number, const channel_t *ch)
 {
-	channel_t old;
 	storage_lock();
 	zone_edit_result_t r = load(zone);
-	if (r == ZONE_EDIT_OK && (number == 0 || codeplug_channel(number, &old))) {
+	if (r == ZONE_EDIT_OK && (number == 0 || codeplug_channel(number, &probe))) {
 		r = ZONE_EDIT_NO_FREE;		// not a free number: never overwrite a channel
 	}
 	if (r == ZONE_EDIT_OK) {
