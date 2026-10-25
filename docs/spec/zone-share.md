@@ -5,8 +5,9 @@
 
 One radio sends a zone, or one channel, to another radio or to a talkgroup over DMR data. The receiver shows it as an
 offer and imports it only when the user says so. Status: built and host-tested (`zoneShareTest`, `zoneShareSvcTest`,
-`zoneImportTest`, the UI flow tests). Untested on the radio; the opt-in HIL test is `tests/hil/test_zone_share.py`
-(feature `zone_share`).
+`zoneImportTest`, the UI flow tests). On a radio, sending one channel has been checked against the SDR bench; sending
+a zone, offers and the import are untested there. The opt-in HIL test is `tests/hil/test_zone_share.py` (feature
+`zone_share`).
 
 Sources: ETSI TS 102 361-3 (packet data, the UDP/IP bearer), RFC 768 (UDP), [dmr-data.md](dmr-data.md) 11 and 12 (IP
 over DMR, the TX queue). The record format is ours.

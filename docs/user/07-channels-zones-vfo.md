@@ -70,8 +70,8 @@ stops. A zone marked for roaming loses the mark when it is deleted; the other ma
 
 ## Sharing a zone
 
-You can send a zone, or one channel, to another radio or a talkgroup over DMR. Status: works in the host tests,
-untested on the radio.
+You can send a zone, or one channel, to another radio or a talkgroup over DMR. Status: sending one channel works on a
+radio; sending a whole zone and receiving are tested only in the host tests so far.
 
 **Send:**
 
