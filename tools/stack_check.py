@@ -419,18 +419,19 @@ class CModel:
         self.globals = {}	# variable name -> type (file scope and extern declarations)
         self.file_vars = {}	# (path, name) -> type (file scope, including anonymous struct types)
         self.binds = {}		# key -> set of refs: ("fn", title) or ("key", key)
+        self.member_args = []	# (member key, argument index, ref): resolve_member_args
         self.anon = 0
         for p in list(files) + list(headers):
             raw = self.read(p)
             if raw is not None:
                 self.files[p] = FileText(p, raw)
-        self.params = {}	# function name -> parameter names
+        self.params = {}	# function name (param_fn) -> parameter names
         self.defined_in = {}	# function name -> files that define it
         self.global_in = {}	# function name -> files that define it without static
         for p, ft in self.files.items():
             self.scan_types(ft)
             for _s, _e, name, params in ft.funcs:
-                self.params.setdefault(name, [pn for pn, _t in params])
+                self.params.setdefault(self.param_fn(ft, name), [pn for pn, _t in params])
                 self.defined_in.setdefault(name, set()).add(p)
                 if name not in ft.statics:
                     self.global_in.setdefault(name, set()).add(p)
@@ -440,6 +441,7 @@ class CModel:
         for p in headers:
             if p in self.files:
                 self.scan_values(self.files[p])
+        self.resolve_member_args()
 
     def read(self, path):
         try:
@@ -549,6 +551,12 @@ class CModel:
         return len(t)
 
     # values: initializers, assignments, arguments
+
+    @staticmethod
+    def param_fn(ft, name):
+        """A function as parameter keys name it: a static one with its file, so two files' static functions of one
+        name (each file's start()) don't share what is passed to them"""
+        return "%s:%s" % (ft.path, name) if name in ft.statics else name
 
     def bind(self, key, ref):
         if key is not None and ref is not None:
@@ -667,7 +675,14 @@ class CModel:
         for start, end, _name, _params in ft.funcs:
             for m in CALL_RE.finditer(t, start, end):
                 callee = m.group(1)
-                if callee in KEYWORDS or callee not in self.params:
+                if callee in KEYWORDS:
+                    continue
+                fn = self.param_fn(ft, callee)
+                # a call through a member (aud->start(cb)): its arguments go to the functions the member holds,
+                # bound once every file is scanned (resolve_member_args)
+                via = re.search(r"(" + CHAIN + r")\s*\($", t[max(start, m.start() - 200):m.end()])
+                via = self.chain_key(ft, m.start(), via.group(1)) if via and via.group(1) != callee else None
+                if fn not in self.params and via is None:
                     continue
                 b = m.end() - 1
                 e = match_close(t, b)
@@ -676,7 +691,21 @@ class CModel:
                     continue
                 for i, a in enumerate(split_top(args, ",")):
                     for ref in self.value_refs(ft, b + 1, a):
-                        self.bind(("p", callee, i), ref)
+                        if fn in self.params:
+                            self.bind(("p", fn, i), ref)
+                        if via is not None and via[0] in "mf":
+                            self.member_args.append((via, i, ref))
+
+    def resolve_member_args(self):
+        """Bind the arguments of calls through members to the parameters of the functions those members hold"""
+        for key, i, ref in self.member_args:
+            for title in self.targets(key) | (self.targets(("u", key[2])) if key[0] == "m" else set()):
+                f = self.g.funcs.get(title)
+                fn = "%s:%s" % (f.file, f.name) if f is not None and f.file else title
+                if fn not in self.params and f is not None:
+                    fn = f.name
+                if fn in self.params:
+                    self.bind(("p", fn, i), ref)
 
     def assign(self, ft, off, lhs, rhs):
         for ref in self.value_refs(ft, off, rhs):
@@ -726,7 +755,7 @@ class CModel:
             if f is not None:
                 for i, (pn, _pt) in enumerate(f[3]):
                     if pn == name:
-                        return ("p", f[2], i)
+                        return ("p", self.param_fn(ft, f[2]), i)
             return ("v", ft.path, name)
         typ = base_type or self.ident_type(ft, off, parts[0])
         for p in parts[1:-1]:
@@ -1431,7 +1460,7 @@ def self_test():
         keys, _e = model.call_site("t.c:23:31")
         check(keys == [("m", model.resolve_type("ops_t"), "go")], "a pointer call in an argument, at the outer call")
         keys, _e = model.call_site("t.c:13:31")
-        check(keys == [("p", "run_cb", 0)] and model.targets(keys[0]) == {"t.c:leaf"}, "a parameter bound by a call")
+        check(keys == [("p", "t.c:run_cb", 0)] and model.targets(keys[0]) == {"t.c:leaf"}, "a parameter bound by a call")
         keys, _e = model.call_site("t.c:15:45")
         check(model.targets(keys[0]) == {"t.c:other"}, "a macro expanded to a variable bound by an assignment")
         check(eval_c_int("( ( uint16_t ) 128U )", {}) == 128, "a cast and a suffix")
@@ -1458,6 +1487,11 @@ def self_test():
         model.scan_types(ft)
         check(not model.is_function("start", ft) and model.is_function("start", FileText("w.c", "")),
               "a file's pointer variable shadows another file's function of that name")
+        body = "void start(int cfg, void (*cb)(void))\n{\n\tcb();\n}\n"
+        fx, fy = FileText("x.c", "static " + body), FileText("y.c", body)
+        kx, ky = (model.chain_key(f, f.code.index("cb();"), "cb") for f in (fx, fy))
+        check(kx == ("p", "x.c:start", 1) and ky == ("p", "start", 1),
+              "two files' static functions of one name keep their parameters apart: %s %s" % (kx, ky))
         t = Table()
         t.ptr["go"] = ["leaf"]
         an3 = Analysis(g, model, t, DEFAULT_LIB_BYTES)

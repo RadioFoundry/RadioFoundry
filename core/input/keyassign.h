@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Side key assignment (docs/spec/ui.md 3.1): what the board's reassignable keys (board.side_keys) do on a press and
-// on a long press, kept in the open-firmware codeplug's ten quick-key slots (open-firmware-cps.md 7.2, EEPROM
-// 0x7524). Slot 0 holds KEYASSIGN_MARKER; without it the slots are another firmware's and the keys keep the board's
-// key map. Slot 1 + 2k is role k's press, slot 2 + 2k its long press; slots 7-9 are spare. No RTOS: the host tests
-// run it.
+// Key assignment (docs/spec/ui.md 3.1): what the board's reassignable keys (board.side_keys) do on a press and on a
+// long press, kept in the open-firmware codeplug's ten quick-key slots (open-firmware-cps.md 7.2, EEPROM 0x7524).
+// Slot 0 holds KEYASSIGN_MARKER; without it the slots are another firmware's and the keys keep the board's key map.
+// Slot 1 + k is role k: its press in the low byte, its long press in the high byte. Slots of layout 1
+// (KEYASSIGN_MARKER_V1: slot 1 + 2k role k's press, 2 + 2k its long press, three roles) are read as they are and
+// rewritten as layout 2 by the first change. No RTOS: the host tests run it.
 #ifndef KEYASSIGN_H
 #define KEYASSIGN_H
 
@@ -13,10 +14,11 @@
 #include "hal_input.h"
 
 #define KEYASSIGN_SLOTS		10
-#define KEYASSIGN_MARKER	0x4B01u	// "K", layout 1
-#define KEYASSIGN_ROLES		3	// side key 1, side key 2, top key
+#define KEYASSIGN_MARKER	0x4B02u	// "K", layout 2
+#define KEYASSIGN_MARKER_V1	0x4B01u	// "K", layout 1
+#define KEYASSIGN_ROLES		9	// a slot each after the marker
 
-// A slot's value. Stored: append only, never renumbered (gotchas 9.11)
+// A role's function. Stored: append only, never renumbered (gotchas 9.11), and below 256 (a byte in layout 2)
 typedef enum {
 	KEYFN_DEFAULT,		// what the board's key map gives
 	KEYFN_NONE,		// nothing
@@ -42,8 +44,8 @@ typedef enum {
 bool keyassign_allowed(uint8_t fn, bool hold);
 // The function in role's press or long press slot: KEYFN_DEFAULT without the marker or for a value not allowed there
 uint8_t keyassign_get(const uint16_t slots[KEYASSIGN_SLOTS], uint8_t role, bool hold);
-// Set it (KEYFN_DEFAULT for a value not allowed there). Slots without the marker are another firmware's: they are
-// cleared and the marker written first
+// Set it (KEYFN_DEFAULT for a value not allowed there). Slots without a marker are another firmware's: they are
+// cleared and the marker written first; layout 1 is converted first
 void keyassign_set(uint16_t slots[KEYASSIGN_SLOTS], uint8_t role, bool hold, uint8_t fn);
 // The key map in use: base with the roles' keys (side_keys, side_key_count of them) changed as the slots say. out
 // holds base_len entries

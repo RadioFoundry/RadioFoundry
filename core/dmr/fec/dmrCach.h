@@ -7,7 +7,7 @@
  *   - short LC: 28 bits (SLCO + 3 octets, 7.1.4) + CRC-8 x^8 + x^2 + x + 1 (B.3.7), BPTC of three Hamming(17,12,3)
  *     rows (generator x^5 + x^2 + 1, B.3.3 table B.13) and a column parity row, read out by columns into four 17-bit
  *     CACH payloads (B.2.3 figure B.6)
- * Shared by the split duplex TX half (docs/spec/split-duplex.md 5.2) and the Tier III plan (dmr-tier3-plan.md).
+ * Shared by the split duplex TX half (docs/spec/split-duplex.md 5.2) and a Tier III control channel.
  *
  * Bit conventions: a 7-bit TACT codeword holds AT in bit 6, TC bit 5, LCSS bits 4-3, H(2..0) bits 2-0. A 24-bit CACH
  * holds TX(23) (the first bit on air) in bit 23. A 17-bit payload holds P(16) (first on air) in bit 16. A short LC is

@@ -89,7 +89,7 @@ The top 20 tasks (`task-flows.md`) each show their first useful result within tw
 
 - Visual response to every press within 50 ms (focus moves, value changes, or a "not available here" hint). A full redraw may take longer, but something changes at once.
 - Key tones are on by default and distinct from protocol tones: key click, invalid key, long-press threshold, talk permit, channel busy, call alert, message, low battery, emergency each sound different. Volume is separate from the receive volume.
-- Optional voice prompts announce what the focus moved to and what changed ("Channel 3, Base repeater", "Power high", "Timeslot 2"), and on request the full Home state ("Speak status", on an assignable key, default long press of the top key, and in the Home `CONTEXT` actions).
+- Optional voice prompts announce what the focus moved to and what changed ("Channel 3, Base repeater", "Power high", "Timeslot 2"), and on request the full Home state ("Speak status", on an assignable key, default long press of a side key, and in the Home `CONTEXT` actions).
 - A press that does nothing on the current screen gives the invalid tone and a one-line hint ("Hold * to unlock" when locked).
 
 **Test:** simulator measures press-to-first-pixel latency; on hardware, a high-speed camera test per release. Target p95 below 50 ms, max below 150 ms.

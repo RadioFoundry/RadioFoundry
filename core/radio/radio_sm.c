@@ -350,6 +350,7 @@ static void outputs(radio_sm_t *sm)
 		sm->red_out = (int8_t)tx;
 		board.power->led(LED_RED, tx);
 	}
+	sm->view.leds = (uint8_t)((green ? RADIO_LED_GREEN : 0u) | (tx ? RADIO_LED_RED : 0u));
 }
 
 static void end_reception(radio_sm_t *sm, uint32_t now_ms)

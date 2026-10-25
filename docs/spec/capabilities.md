@@ -41,7 +41,7 @@ areas and says nothing about menus, screens or keys: the UI is designed in `docs
 
 | Capability | Switch | Spec |
 |---|---|---|
-| Zones and channels, VFO, scan, dual watch, channel editor, side key assignment | `VFO`, `SCAN`, `DUAL_WATCH`, `CHANNEL_LIST`, `CHANNEL_EDIT`, `KEY_ASSIGN` | [ui.md](ui.md) |
+| Zones and channels, VFO, scan, dual watch, channel editor, key assignment | `VFO`, `SCAN`, `DUAL_WATCH`, `CHANNEL_LIST`, `CHANNEL_EDIT`, `KEY_ASSIGN` | [ui.md](ui.md) |
 | Power levels, TX time-out, battery saver, battery display, calibration | `BATTERY_SAVE` | [radio-features.md](radio-features.md) |
 | GPS receiver, fixed position | `GPS` | [radio-features.md](radio-features.md) |
 | Settings menu, color themes, fonts | `UI_SETTINGS`, `UI_COLOR`, `FONT_*` | [ui.md](ui.md) |
@@ -56,6 +56,6 @@ areas and says nothing about menus, screens or keys: the UI is designed in `docs
 
 ## Not built
 
-- Trunking (Capacity Plus, Connect Plus, Tier III): planning only ([dmr-tier3-plan.md](dmr-tier3-plan.md)).
+- Trunking (Capacity Plus, Connect Plus, Tier III): not built.
 - Encryption beyond Basic Privacy (ARC4, AES).
 - DTMF decode and stored DTMF codes ([radio-features.md](radio-features.md)).

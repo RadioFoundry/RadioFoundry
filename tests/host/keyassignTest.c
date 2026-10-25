@@ -49,9 +49,9 @@ static void test_marker(void)
 	CHECK(memcmp(map, base, sizeof(map)) == 0);
 	// The first change writes the marker and clears the foreign slots
 	keyassign_set(s, 1, true, KEYFN_SCAN);
-	CHECK(s[0] == KEYASSIGN_MARKER && s[4] == KEYFN_SCAN);
+	CHECK(s[0] == KEYASSIGN_MARKER && s[2] == (uint16_t)(KEYFN_SCAN << 8));
 	for (unsigned i = 1; i < KEYASSIGN_SLOTS; i++) {
-		CHECK(i == 4 || s[i] == 0);
+		CHECK(i == 2 || s[i] == 0);
 	}
 	CHECK(keyassign_get(s, 1, true) == KEYFN_SCAN && keyassign_get(s, 0, false) == KEYFN_DEFAULT);
 	// An unknown value reads as the default; a role past the last one is ignored
@@ -59,6 +59,30 @@ static void test_marker(void)
 	CHECK(keyassign_get(s, 0, false) == KEYFN_DEFAULT);
 	keyassign_set(s, KEYASSIGN_ROLES, false, KEYFN_POWER);
 	CHECK(s[7] == 0 && keyassign_get(s, KEYASSIGN_ROLES, false) == KEYFN_DEFAULT);
+}
+
+static void test_layouts(void)
+{
+	uint16_t s[KEYASSIGN_SLOTS] = { KEYASSIGN_MARKER_V1, KEYFN_POWER, KEYFN_ZONE_UP, 0, 0, KEYFN_SCAN, 0 };
+	// Layout 1 (three roles, a slot per press and per hold) reads as is
+	CHECK(keyassign_get(s, 0, false) == KEYFN_POWER && keyassign_get(s, 0, true) == KEYFN_ZONE_UP);
+	CHECK(keyassign_get(s, 2, false) == KEYFN_SCAN && keyassign_get(s, 3, false) == KEYFN_DEFAULT);
+	// The first change converts it to layout 2 and keeps what was set
+	keyassign_set(s, 8, true, KEYFN_ZONE_UP);
+	CHECK(s[0] == KEYASSIGN_MARKER);
+	CHECK(keyassign_get(s, 0, false) == KEYFN_POWER && keyassign_get(s, 0, true) == KEYFN_ZONE_UP);
+	CHECK(keyassign_get(s, 2, false) == KEYFN_SCAN && keyassign_get(s, 1, false) == KEYFN_DEFAULT);
+	CHECK(keyassign_get(s, 8, true) == KEYFN_ZONE_UP && keyassign_get(s, 8, false) == KEYFN_DEFAULT);
+	// Every role has its own slot: press and hold don't disturb each other or a neighbor
+	for (uint8_t r = 0; r < KEYASSIGN_ROLES; r++) {
+		keyassign_set(s, r, false, KEYFN_SCAN);
+		keyassign_set(s, r, true, KEYFN_POWER);
+	}
+	keyassign_set(s, 4, false, KEYFN_DEFAULT);
+	for (uint8_t r = 0; r < KEYASSIGN_ROLES; r++) {
+		CHECK(keyassign_get(s, r, false) == (r == 4 ? KEYFN_DEFAULT : KEYFN_SCAN));
+		CHECK(keyassign_get(s, r, true) == KEYFN_POWER);
+	}
 }
 
 static void test_allowed(void)
@@ -266,6 +290,7 @@ static void test_board_defaults(void)
 int main(void)
 {
 	test_marker();
+	test_layouts();
 	test_allowed();
 	test_build();
 	test_toggles();

@@ -61,6 +61,11 @@ const char *ui_screen_name(void)
 	return status.screen != NULL ? status.screen : "home";
 }
 
+uint8_t ui_backlight(void)
+{
+	return (backlight_now > 100u) ? 100u : backlight_now;	// 0xFF: not set yet, full at start-up
+}
+
 void ui_get_status(ui_app_status_t *st)
 {
 	*st = status;
@@ -125,6 +130,7 @@ static void ui_task(void *arg)
 		if (dirty && have_fb && now - last_draw >= FRAME_MIN_MS && !gfx_held(now)) {
 			dirty = false;
 			last_draw = now;
+			gfx_frame_begin();
 			ui_app_draw();
 			gfx_flush();
 		} else if (!have_fb) {

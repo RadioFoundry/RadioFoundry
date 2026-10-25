@@ -321,9 +321,9 @@ static const flow_t flows[] = {
 	{ "S Up/Down: back to the default", "ok 7 8 down down ok ok long:back up", "down", "talk=3100", 1, false },
 	{ "S hear all by default", "ok 7 3 down down down down down down down ok long:back", "up up", "hearall=1 pos=5", 2, false },
 	{ "S hear all by default: BACK", "ok 7 3 down down down down down down down ok long:back up up", "back", "hearall=0", 1, false },
-	{ "S mic noise reduction off", "", "ok 7 3 down down down down down down ok", "set58=0", 10, false },
+	{ "S mic noise reduction off", "", "ok 7 3 down down down down down down ok", "set70=0", 10, false },
 	// Mic AGC on: Mic gain (the row above) shows "AGC", is dimmed and says why
-	{ "S mic AGC on", "", "ok 7 3 down down down down down ok", "set59=1 shows=AGC", 9, false },
+	{ "S mic AGC on", "", "ok 7 3 down down down down down ok", "set71=1 shows=AGC", 9, false },
 	{ "S mic gain while AGC is on", "ok 7 3 down down down down down ok", "up ok", "toast=Mic_AGC_sets set13=5", 2, false },
 	{ "S message tone", "", "msg:3101234,Hi", "beep=2", 0, false },
 	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
@@ -458,9 +458,9 @@ static const flow_t flows_mono[] = {
 #if CONFIG_UI_COLOR
 	{ "S theme on a monochrome screen: dimmed", "", "ok 7 2 down down ok", "toast=Colors_are_for set7=0", 6, false },
 	{ "S highlight color on a monochrome screen: dimmed", "", "ok 7 2 down down down ok",
-	  "toast=Colors_are_for set49=0", 7, false },
+	  "toast=Colors_are_for set61=0", 7, false },
 	{ "S filled status bar on a monochrome screen: dimmed", "", "ok 7 2 down down down down ok",
-	  "toast=Colors_are_for set50=1", 8, false },	// unchanged: on by default
+	  "toast=Colors_are_for set62=1", 8, false },	// unchanged: on by default
 #else
 	{ "S no color rows on a monochrome screen", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
 #endif
@@ -480,8 +480,8 @@ static const flow_t flows_k[] = {
 	  "dual=1 azone=0 apos=4", 1, false },
 #if CONFIG_UI_COLOR
 	{ "S theme light (color screens)", "", "ok 7 2 down down ok", "set7=1", 6, false },
-	{ "S highlight color red (the first after Default)", "", "ok 7 2 down down down ok", "set49=1", 7, false },
-	{ "S filled status bar off (on by default)", "", "ok 7 2 down down down down ok", "set50=0", 8, false },
+	{ "S highlight color red (the first after Default)", "", "ok 7 2 down down down ok", "set61=1", 7, false },
+	{ "S filled status bar off (on by default)", "", "ok 7 2 down down down down ok", "set62=0", 8, false },
 #else
 	// Built without CONFIG_UI_COLOR: Display has no color rows; the third row is Large text
 	{ "S no color rows in this build", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
@@ -598,8 +598,8 @@ static const flow_t flows_f[] = {
 	  "screen=channel shows=COUNTY_DMQQ", 3, false },
 	{ "F long OK saves the channel", "ok down down down down down ok ok ok down ok long:ok", "long:ok",
 	  "writes=1 toast=Saved_channel_3", 1, true },
-	{ "F no side keys to set","ok up ok up up up ok", "down down down ok", "toast=This_radio_has_no set42=0", 4,
-	  false },
+	// No programmable keys: the Keys group ends at its three general rows (ui.md 3.1)
+	{ "F no key rows without keys", "ok up ok up up up ok", "down down down", "focus=Long hides=Key_1", 3, false },
 };
 
 static void run_flow(const flow_t *f, const sim_geom_t *g, sim_map_t map, const char *mapname)

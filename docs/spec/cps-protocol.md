@@ -97,7 +97,7 @@ written and verified (about 100 ms). Rules:
 - **Foreign journal**: while the settings / journal region holds foreign data (`settings-store.md` 5),
   every `X 1` is refused, because a commit would erase the journal. Reads still work, so a backup can be taken
   first.
-- **Quick-key slots** (EEPROM 0x7524-0x7537) hold the side key assignment (`ui.md` 3.1) and are written like any
+- **Quick-key slots** (EEPROM 0x7524-0x7537) hold the key assignment (`ui.md` 3.1) and are written like any
   other codeplug byte. A CPS that writes back a stale copy (an old codeplug file) brings back that file's keys, the
   same as for channels. Foreign values there are ignored: without RadioFoundry's marker in slot 0 the keys are the
   board's.
