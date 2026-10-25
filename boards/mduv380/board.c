@@ -115,7 +115,7 @@ static const band_t bands[] = {
 	{ 400000000, 480000000, true },
 };
 
-// The DM-1701's nine levels; the Plus 10 W's top four are 2, 3, 5 and 10 W (hardware-mduv380.md 7)
+// The UV380 family's nine levels; the Plus 10 W's top four are 2, 3, 5 and 10 W (hardware-mduv380.md 7)
 #if RFOUNDRY_POWER_10W
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "5W", "10W" };
 #define BOARD_NAME	"MD-UV380 10W"
@@ -211,8 +211,7 @@ const board_t board = {
 #if CONFIG_GPS
 	.gps_present = stm32_gps_present,
 #endif
-	// The DM-1701's thresholds (hardware-mduv380.md 6: power-off and low battery as the DM-1701): low battery 6.2 V,
-	// critical 6.0 V
+	// The family's thresholds (hardware-mduv380.md 6): low battery 6.2 V, critical 6.0 V
 	.battery_low_mv = 6200,
 	.battery_critical_mv = 6000,
 #if CONFIG_CPS_OPENFW

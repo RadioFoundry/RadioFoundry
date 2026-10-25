@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// MD-UV380 USB identity (the DM-1701's USB, docs/spec/hardware-dm1701.md 16): the STM32F4 radios' IDs and serial number
-// (platform.h)
+// MD-UV380 USB identity: the STM32F4 radios' IDs and serial number (platform.h), this radio's product string
 #include "config.h"
 #if CONFIG_USB	// the whole file
 #include "platform.h"

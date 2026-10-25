@@ -4,8 +4,8 @@
 # the codec sectors 10 and 11 are never linked into (boards/mduv380/memory.ld, docs/spec/codec-placement.md).
 # 160x128 display, every row visible. The fault trace, the large font and LTO follow the platform
 # (platform/stm32f4/config.mk)
-# Safe area: the case is the MD-380's (the same TYT housing family), whose edge crowds the top row and the two left
-# columns; unconfirmed on this radio (hardware-mduv380.md 4)
+# Safe area: the TYT housing's edge crowds the top row and the two left columns; unconfirmed on this radio
+# (hardware-mduv380.md 4)
 CONFIG_DISPLAY_INSET ?= 0
 CONFIG_DISPLAY_INSET_TOP ?= 1
 CONFIG_DISPLAY_INSET_LEFT ?= 2
