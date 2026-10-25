@@ -538,6 +538,152 @@
      ]
     }
    ]
+  },
+  "mduv380": {
+   "id": "mduv380",
+   "name": "TYT MD-UV380",
+   "model": "MD-UV380",
+   "part_of": null,
+   "platform": "stm32f4",
+   "platform_stubs": [
+    "stub/stm32f4"
+   ],
+   "family": "usb-dfu",
+   "link": "usb",
+   "release": "testing",
+   "debuglink_names": [
+    "MD-UV380",
+    "MD-UV380 10W",
+    "mduv380"
+   ],
+   "app_base": 134266880,
+   "flash_end": 135266304,
+   "app_region": [
+    134266880,
+    135004160
+   ],
+   "sectors": [
+    [
+     3,
+     134266880,
+     16384
+    ],
+    [
+     4,
+     134283264,
+     65536
+    ],
+    [
+     5,
+     134348800,
+     131072
+    ],
+    [
+     6,
+     134479872,
+     131072
+    ],
+    [
+     7,
+     134610944,
+     131072
+    ],
+    [
+     8,
+     134742016,
+     131072
+    ],
+    [
+     9,
+     134873088,
+     131072
+    ],
+    [
+     10,
+     135004160,
+     131072
+    ],
+    [
+     11,
+     135135232,
+     131072
+    ]
+   ],
+   "protected": [
+    [
+     134217728,
+     134266880
+    ]
+   ],
+   "keep_codec_supported": true,
+   "first_stage": null,
+   "codec_tool": "codec_extract",
+   "codec_stock": [
+    "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e",
+    "7dec4b751e8a0f44cf7d54d0ebc3b439a9f49899eadd7c8ff14d2804edbe8ac2",
+    "84331dbc9bccf5021122b715dcb77d7589dba0745694bf3a249aae6e7c383ef1",
+    "77923d67aa75a07f7601a1c53ae1d5f5af37bd4367d52a50c8aeff89b834eceb"
+   ],
+   "codec": {
+    "id": null,
+    "windows": null,
+    "installed": [],
+    "sources": null
+   },
+   "codec_code": null,
+   "codec_slot": null,
+   "codec_run": null,
+   "codec_tables": null,
+   "loader_id": null,
+   "loader_keys": null,
+   "loader_sign": "",
+   "key_sha256": "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991",
+   "key_prefix": "00AA8989",
+   "dfu_ids": [
+    1155,
+    57105
+   ],
+   "dfu_string1": "AnyRoad Technology",
+   "dfu_product": "Digital Radio in USB mode",
+   "stub": {
+    "tool": "f4stub",
+    "id": 5,
+    "tested": false,
+    "hse": 8000000,
+    "boot_end": 134266880,
+    "spi": {
+     "bus": 1,
+     "mode": 0,
+     "hz": 4500000,
+     "af": 5,
+     "sck": "PB3",
+     "miso": "PB4",
+     "mosi": "PB5",
+     "cs": "PD7",
+     "idle": []
+    }
+   },
+   "build_options": [
+    {
+     "name": "POWER",
+     "title": "Power",
+     "help": "The MD-UV380, MD-UV390 and RT3S are 5 W radios. Choose 10 W only for an MD-UV390 Plus, whose box and label say 10 W.",
+     "values": [
+      {
+       "id": "5w",
+       "title": "5 W",
+       "text": "MD-UV380, MD-UV390, RT3S",
+       "board_name": "MD-UV380"
+      },
+      {
+       "id": "10w",
+       "title": "10 W",
+       "text": "MD-UV390 Plus 10 W",
+       "board_name": "MD-UV380 10W"
+      }
+     ]
+    }
+   ]
   }
  }
 }
