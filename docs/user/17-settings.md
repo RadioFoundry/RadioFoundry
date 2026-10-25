@@ -130,7 +130,7 @@ the codeplug.
 
 | Setting | What it does |
 |---|---|
-| DMR ID and name | Your DMR ID. "Codeplug's" means the radio uses the ID in the codeplug, which the page shows above the row. Type a new ID with the digit keys (up to 16776415; the IDs above it are reserved for the network) and press **OK** to save it; **Back** takes back the last digit, and with none left leaves the ID unchanged. Save 0 to go back to the codeplug's ID. The radio uses the new ID at once, until a codeplug write brings a different ID: then the codeplug's ID is used again |
+| DMR ID and name | Your DMR ID, as stored in the codeplug ("Not set" without one), and the radio model. Type a new ID with the digit keys (up to 16776415; the IDs above it are reserved for the network) and press **OK**: the radio writes it into the codeplug and uses it at once, and the Codeplug Editor or qdmr shows it on the next read. **Back** takes back the last digit, and with none left leaves the ID unchanged |
 
 ### Advanced (key 0)
 

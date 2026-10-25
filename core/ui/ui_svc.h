@@ -288,7 +288,7 @@ typedef enum {
 	// kHz: 200 (the odd tenths) or 100
 	UI_SET_BCAST_STEP,
 	UI_SET_ZONE_OFFERS,	// zone share offers from other radios: 0 Off (the default), 1 Ask (settings_t.zs_offers)
-	UI_SET_DMR_ID,		// own DMR ID override, 0 = the codeplug's, up to CODEPLUG_DMR_ID_MAX (settings_t.dmr_id)
+	UI_SET_DMR_ID,		// the radio's own DMR ID in the codeplug, 1..CODEPLUG_DMR_ID_MAX (a set is a codeplug write job)
 	UI_SET_COUNT
 } ui_setting_t;
 

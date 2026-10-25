@@ -3790,7 +3790,7 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 // --- Settings: what the radio was set to, back at power-on (core/settings), and saved when it changes ---
 
 // The preferences the radio core uses: base squelch, master power, VFO step, the own DMR ID override
-static void apply_prefs(radio_sm_t *sm, const settings_t *st, uint32_t now_ms)
+static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 {
 	master_power = st->master_power;
 	sm->vol_step = radio_volume_step(st->volume);
@@ -3806,16 +3806,7 @@ static void apply_prefs(radio_sm_t *sm, const settings_t *st, uint32_t now_ms)
 	sm->vfo_step_set = st->vfo_step_hz >= 1000u && st->vfo_step_hz <= 1000000u ? st->vfo_step_hz : 0;
 	step_update(sm);
 #if CONFIG_DMR
-	sm->own_id = settings_dmr_id(st, codeplug_dmr_id());
-	if (sm->own_id == 0 && st->dmr_id != 0) {
-		// A codeplug write changed the codeplug's ID since one was typed on the radio: the codeplug's wins, and
-		// the override goes (st is the caller's copy)
-		settings_set_dmr_id(settings_begin(), 0, 0);
-		settings_end(now_ms);
-	}
-	if (sm->own_id == 0) {
-		sm->own_id = codeplug_dmr_id();
-	}
+	sm->own_id = st->dmr_id != 0 && st->dmr_id <= 0xFFFFFFu ? st->dmr_id : codeplug_dmr_id();
 	if (sm->own_id == 0) {
 		sm->own_id = RADIO_DMR_ID_DEFAULT;
 	}
@@ -4324,7 +4315,7 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 		scan_stop(sm, false, now_ms);
 	}
 #endif
-	apply_prefs(sm, st, now_ms);
+	apply_prefs(sm, st);
 	radio_settings_t rs;
 	settings_to_radio(st, &rs);
 	use_settings(sm, &rs, now_ms);
@@ -4449,7 +4440,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 
 	// The saved zone and channel; else zone 0 and its first channel; if zone 0 has none, the first zone that has one
 	select_position(sm, st.zone_index, st.channel, st.zone_pos);
-	apply_prefs(sm, &st, now_ms);
+	apply_prefs(sm, &st);
 #if CONFIG_DMR
 	sm->hs_power = default_power();
 #endif

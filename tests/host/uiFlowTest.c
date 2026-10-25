@@ -354,8 +354,8 @@ static const flow_t flows[] = {
 	{ "S mic AGC on", "", "ok 7 3 down down down down down ok", "set71=1 shows=AGC", 9, false },
 	{ "S mic gain while AGC is on", "ok 7 3 down down down down down ok", "up ok", "toast=Mic_AGC_sets set13=5", 2, false },
 	{ "S message tone", "", "msg:3101234,Hi", "beep=2", 0, false },
-	// The own DMR ID (Settings > My radio, set74): digits type it, OK saves, BACK takes the last digit back and with
-	// none typed leaves it, 0 = the codeplug's
+	// The own DMR ID (Settings > My radio, set74, the codeplug's): digits type it, OK saves, BACK takes the last digit
+	// back and with none typed leaves it; 0 is refused
 	{ "S DMR ID opens", "", "ok 7 9 ok", "screen=dmr-id shows=DMR_ID", 4, false },
 	{ "S DMR ID typed and saved", "ok 7 9 ok", "3 1 0 9 9 9 9 ok", "set74=3109999 toast=DMR_ID_saved", 8, false },
 	{ "S DMR ID: BACK takes a digit back", "ok 7 9 ok", "3 1 back ok", "set74=3 toast=DMR_ID_saved", 4, false },
@@ -367,7 +367,7 @@ static const flow_t flows[] = {
 	// Above 16776415 are the network's IDs: the digit that would go past it is refused, as the channel editor's Own ID
 	{ "S DMR ID: past the last is refused", "ok 7 9 ok", "1 6 7 7 6 4 1 6", "toast=IDs_go_up", 8, false },
 	{ "S DMR ID: the refused digit isn't kept", "ok 7 9 ok", "1 6 7 7 6 4 1 6 ok", "set74=1677641", 9, false },
-	{ "S DMR ID 0: the codeplug's", "ok 7 9 ok 3 1 ok", "0 ok", "set74=0 toast=Using_the", 2, false },
+	{ "S DMR ID 0 is refused", "ok 7 9 ok 3 1 ok", "0 ok", "set74=31 toast=IDs_start screen=dmr-id", 2, false },
 	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
 	{ "S vibrate on a message", "", "msg:3101234,Hi", "vibes=1 vibe=0", 0, false },
 	{ "S vibrate on a call alert", "", "alert:91", "vibes=1 vibe=1", 0, false },

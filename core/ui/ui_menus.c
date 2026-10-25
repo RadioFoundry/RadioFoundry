@@ -2990,13 +2990,14 @@ static const ui_scr_def_t info_screen = {
 
 #if CONFIG_DMR
 // ======================= DMR ID (Settings > My radio) =======================
-// One row: the radio's own DMR ID, 0 = the codeplug's. Digits type a new one, OK saves it. Typed as the channel
-// editor's Own ID (ui.md 2.1): a digit past CODEPLUG_DMR_ID_MAX is refused, BACK takes the last digit back and with
-// none typed leaves the ID unchanged
+// One row: the radio's own DMR ID, the codeplug's (a CPS read shows it). Digits type a new one, OK writes it into the
+// codeplug. Typed as the channel editor's Own ID (ui.md 2.1): a digit past CODEPLUG_DMR_ID_MAX is refused, BACK takes
+// the last digit back and with none typed leaves the ID unchanged
 
 static uint32_t dmr_id_value;
 static uint8_t dmr_id_len;		// digits typed
 static bool dmr_id_editing;
+static uint32_t dmr_id_saved, dmr_id_serial;	// the ID just saved, shown until the codeplug's serial moves on
 
 static uint16_t dmr_id_count(void) { return 1; }
 
@@ -3004,33 +3005,28 @@ static void dmr_id_item(uint16_t i, ui_item_t *it)
 {
 	(void)i;
 	strcpy(it->label, "DMR ID");
-	uint32_t v = dmr_id_editing ? dmr_id_value : (uint32_t)ui_svc_setting_get(UI_SET_DMR_ID);
+	uint32_t v = dmr_id_editing ? dmr_id_value : dmr_id_saved != 0 && codeplug_serial() == dmr_id_serial ?
+		     dmr_id_saved : (uint32_t)ui_svc_setting_get(UI_SET_DMR_ID);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	if (dmr_id_editing) {
 		if (dmr_id_len > 0)
 			sb_u32(&b, v, 1);
 		sb_chr(&b, '_');		// what is typed so far, as the channel editor: "3101_"
+		it->flags |= UI_ITEM_EDIT;
 	} else if (v != 0) {
 		sb_u32(&b, v, 1);
 	} else {
-		sb_str(&b, "Codeplug's");
+		sb_str(&b, "Not set");	// DMR transmit is refused until there is one
 	}
-	if (dmr_id_editing)
-		it->flags |= UI_ITEM_EDIT;
 }
 
 static const char *dmr_id_body(void)
 {
-	static char t[64];
+	static char t[48];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
-	sb_str(&b, "Codeplug: ");
-	if (codeplug_dmr_id())
-		sb_u32(&b, codeplug_dmr_id(), 1);
-	else
-		sb_str(&b, "not set");
-	sb_str(&b, "\n0 uses the codeplug's\nRadio: ");
+	sb_str(&b, "Saved in the codeplug\nRadio: ");
 	sb_str(&b, board.name);		// as the info page it replaces
 	return t;
 }
@@ -3044,13 +3040,23 @@ static void dmr_id_begin(void)
 
 static void dmr_id_save(void)
 {
+	if (dmr_id_len == 0) {
+		dmr_id_editing = false;	// nothing typed: as it was
+		return;
+	}
+	if (dmr_id_value == 0) {
+		ui_toast("IDs start at 1");	// 0 would leave the codeplug without one
+		return;
+	}
 	dmr_id_editing = false;
-	if (dmr_id_len == 0)
-		return;			// nothing typed: as it was
-	if (!ui_svc_setting_set(UI_SET_DMR_ID, (int32_t)dmr_id_value))
+	uint32_t serial = codeplug_serial();
+	if (!ui_svc_setting_set(UI_SET_DMR_ID, (int32_t)dmr_id_value)) {
 		ui_toast("Couldn't save: try again");
-	else
-		ui_toast(dmr_id_value != 0 ? "DMR ID saved" : "Using the codeplug's DMR ID");
+		return;
+	}
+	dmr_id_saved = dmr_id_value;
+	dmr_id_serial = serial;
+	ui_toast("DMR ID saved");
 }
 
 static void dmr_id_select(uint16_t i, bool hold)
@@ -3094,7 +3100,11 @@ static bool dmr_id_key(const input_event_t *ev)
 	return false;
 }
 
-static void dmr_id_enter(void) { dmr_id_editing = false; }
+static void dmr_id_enter(void)
+{
+	dmr_id_editing = false;
+	dmr_id_saved = 0;
+}
 
 static const ui_scr_def_t dmr_id_screen = {
 	.name = "dmr-id", .flags = SF_LIST | SF_FIELD, .prefix = "My Radio", .hint = "0-9 type  OK save  Back",

@@ -43,7 +43,8 @@ Program channels, zones, contacts, talkgroup lists and your DMR ID with the Code
 ([Settings](17-settings.md)). Channels, contacts and the DMR ID come from the codeplug.
 
 DMR needs your DMR ID. Without one, the radio refuses to transmit on DMR channels and shows "No DMR ID in codeplug".
-**Settings > My radio > DMR ID and name** shows the ID the radio has, and sets one without the codeplug.
+**Settings > My radio > DMR ID and name** shows the ID the radio has, and sets one on the radio: it is written into
+the codeplug.
 
 ## Checks after installing
 
