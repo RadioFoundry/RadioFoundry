@@ -248,6 +248,30 @@
     "DMR_SMS"
    ]
   },
+  "banner_zone_offer": {
+   "group": "messages",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "zone_offer": {
+   "group": "messages",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "zone_offer_preview": {
+   "group": "messages",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "zone_offer_channel": {
+   "group": "messages",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
   "zones": {
    "group": "channels",
    "needs": []
@@ -347,6 +371,18 @@
     "CHANNEL_LIST",
     "CHANNEL_EDIT",
     "ZONE_EDIT"
+   ]
+  },
+  "zone_share_to": {
+   "group": "channels",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
+  "zone_imported": {
+   "group": "channels",
+   "needs": [
+    "ZONE_SHARE"
    ]
   },
   "find_channel": {
