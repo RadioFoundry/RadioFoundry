@@ -541,7 +541,36 @@ delivery chained, separate with no gap, and separate with 250 ms.
   response formats are from the standard and the vectors (`dmr_ip_vectors.py`); `ip.rx_crc9_mismatch` on air will
   show a disagreement.
 - Rate 3/4 for confirmed IP (16 octets per block) and the sliding window (TS 102 361-3 5.4.4) are not used.
-- Fragmentation (FSN chains) is not built: one packet per datagram.
+- Fragmentation (FSN chains) is not built: one packet per datagram, so a datagram longer than the air MTU (12.8)
+  doesn't go. The gateway drops IP fragments from the host too ([usb-network.md](usb-network.md) 3.2).
+
+### 12.8 The air MTU
+
+The longest IP datagram we send in one transmission. It follows from the burst list (`DMR_DATA_MAX_BURSTS`, 40;
+[gotchas.md](gotchas.md) 5.5), and `core/dmr/dmrData.h` derives it so that it moves with the list:
+
+| Constant | Value | From |
+|---|---|---|
+| `DMR_DATA_MAX_BURSTS` | 40 | the burst list of one transmission |
+| `DMR_DATA_IP_PREAMBLES` | 2 | preamble CSBKs before an IP packet (also SMS) |
+| `DMR_DATA_IP_MAX_BLOCKS` | 37 | 40 - 2 preambles - 1 data header |
+| `DMR_DATA_IP_MTU` | 440 | 37 blocks x 12 octets (rate 1/2, unconfirmed) - the 4-octet CRC-32 |
+
+- The MTU counts the user data on air: the IP and UDP header as sent (SAP 4: 28 octets; SAP 3: 5, 7 or 9, 11.1)
+  plus the payload. The largest UDP payload is 412 octets with the full header and up to 431 with the compressed one
+  (9 octets: ports outside 4000-4099 in the extended headers). A raw port packet (no header) carries 440.
+- Confirmed (12.2) carries 10 octets per block, so a packet too long for confirmed goes unconfirmed: 440 is the limit
+  either way. Longer packets are refused (`DMR_REQ_FAILED`, `ip.failed`), nothing goes on air.
+- The gateway checks the length before the air queue, with the header the packet will get
+  (`ipGatewayAirLength`): too long is dropped there and counted, and a host that set DF gets an ICMP fragmentation
+  needed with the next-hop MTU 440 ([usb-network.md](usb-network.md) 3.2).
+- Receiving is not bound by it: the receiver reassembles up to `DMR_DATA_MAX_PACKET` (480 octets, 40 blocks, 476 of
+  user data) from other radios. A longer packet ends in a receive error (`data.rx_crc_errors`) and nothing is
+  delivered.
+- Not done, follow-ups: a bigger burst list (64 blocks would carry about 740 octets: about 40 bytes of RAM per burst
+  slot, and a longer keyed time per transmission, for which the TX deadline and the guard (12.6.3) would grow), and
+  fragmentation (12.7: a lost burst loses the whole datagram, and a receiver that misses one fragment drops the
+  rest).
 
 ## 13. Tests
 
@@ -564,8 +593,12 @@ delivery chained, separate with no gap, and separate with 250 ms.
   packet and a selective ACK byte for byte against vectors, the selective retry round trip through the receiver with a
   bad block and with a lost block, the NACK cases; testAirtime: the table in 11.3), `tests/host/dmrDataServiceTest.c`
   (testIpTx: unconfirmed SAP 3, confirmed with ACK, selective ACK, N(S) resync, time-outs to failure, tries, repeater
-  mode, group, too long, no channel; testConfirmedRx: selective ACK and the retry passed on once, a duplicate, lost
+  mode, group, too long, no channel; testIpAirMtu: the constants, SAP 4 and SAP 3 at the air MTU in 40 bursts and
+  decoded back, one octet more refused with nothing on air; testConfirmedRx: selective ACK and the retry passed on once, a duplicate, lost
   bursts, NACK), `tests/host/hostlinkNetTest.c` (the gateway's datagrams through the service path: SAP 3 for ports
   outside 4000-4099, SAP 4 for 4007). The vectors come from `tests/host/dmr_ip_vectors.py` (polynomial division from
   the standard's text, apart from the C code).
 - `tests/hil/test_dmr_ip.py`: on air, the bench modem decoding with `tools/bench/dmr_packet.py` (opt-in RF; 11.4).
+- `tests/hil/test_dmr_ip_burst.py`: datagrams back to back each way (radio, host and bench) and the air MTU on air
+  (12.8): the largest datagram each way and one octet more, the receiver's limit, the ICMP reply to the host. The
+  bench sends UDP with `tools/bench/bench_tx.py data --udp-port` (its offline check: `bench_tx.py selftest`).

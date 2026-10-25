@@ -46,6 +46,7 @@ run; **none** = no automated test. Last run:
 | SNMP agent over USB | `test_snmp` | not run | host-tested against an independent manager (`snmpPeer`); over the air untested |
 | Control station mode (settings, boot as network, fixed link, passthrough) | `test_control_station` | not run | passthrough tests need `--allow-rf --allow-service-stop` |
 | IP over DMR, our side (SAP 3 compressed and full headers, confirmed data retries) | `test_dmr_ip` | not run | decoded off air by the bench modem with `tools/bench/dmr_packet.py`; the bench can't answer confirmed data, so ACKs and selective retry are host-tested only |
+| IP over DMR in bursts and at the air MTU (5 datagrams back to back each way, the largest datagram each way and one octet more, the ICMP fragmentation needed) | `test_dmr_ip_burst` | not run | the radio's counters and the host's socket pass or fail; what the bench modem misses of the radio's bursts is a warning |
 | IP over DMR, end to end | none | none (rig) | needs a second station that speaks IP over DMR data |
 | Roaming (settings, zone flag, roam now) | `test_roaming` radio tests | radio | |
 | Roaming to the bench repeater, beacon surveys | `test_roaming` rf tests | none (rig) | need a repeater-pair channel and a second frequency; only 467.375 MHz is approved |

@@ -273,6 +273,16 @@ tools/rfoundry_debug.py data ip-settings auto rules id=3101234 port=161 tries=4
 Talkgroup packets are never confirmed. A packet to a radio that doesn't answer is sent every try before it is dropped,
 so confirm only where it helps. The settings are saved in the radio.
 
+## Packet size
+
+One packet on the air carries at most 440 bytes of IP: 412 bytes of UDP data with the full header, up to 431 with the
+compressed one. Longer packets are not split; the radio drops them. A computer that marks its packets "don't
+fragment" (most do for TCP, and many programs for UDP) gets an ICMP "fragmentation needed" back with the size
+and sends shorter ones from then on. For other programs, keep UDP packets to radios at 412 bytes or less.
+
+The network link itself takes 586 bytes (the radio gives this size to the computer by DHCP, and to PPP as its MRU), so
+the radio's own services, such as programming by TFTP, use full-size packets.
+
 ## Other networks through a gateway radio
 
 By default the radio carries only addresses that stand for a DMR ID: 12.x.y.z for a radio and 225.x.y.z for a
