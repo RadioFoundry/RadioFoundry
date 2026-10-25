@@ -6,8 +6,6 @@ the file stands alone in an <img>).
 An illustration of the radio in site/static/img/radios/src/<id>.svg is used when there is one: its
 <rect id="screen" .../> marks the display and is replaced by the boot screen (docs/dev/website.md "Radio images").
 Its key-<name> ids, for the radio's web control page, must name keys the radio has.
-Its key-<name> ids, for the radio's web control page, must name keys the radio has.
-Its key-<name> ids, for the radio's web control page, must name keys the radio has.
 Without one, a generic drawing per shape (handheld, tall handheld, mobile) tinted by board.toml [frame] stands in.
 """
 import base64

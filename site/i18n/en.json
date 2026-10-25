@@ -1,6 +1,7 @@
 {
  "_about": "English strings for the site (site/i18n/README in docs/dev/website.md). Keys are grouped by page; {name} placeholders are filled in by the generator or the scripts.",
  "site.tagline": "Open-source firmware for DMR radios.",
+ "site.preview_alt": "The radios RadioFoundry runs on, each showing a different screen.",
  "nav.skip": "Skip to content",
  "nav.menu": "Menu",
  "nav.label": "Main",

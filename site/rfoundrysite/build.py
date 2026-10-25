@@ -19,10 +19,12 @@ import posixpath
 import re
 import shutil
 
-from . import device, docs as docsmod, i18n, repo, tmpl
+from . import device, docs as docsmod, i18n, repo, social, tmpl
 
 # feature-matrix.md groups of developer tools that never ship in a release: not on the visitor pages
 BENCH_ONLY = {"Bench"}
+# the production address: link previews need absolute URLs (og:url, og:image)
+SITE_URL = "https://radiofoundry.org/"
 BOARD_ORDER = {"supported": 0, "testing": 1, "in_progress": 2, "planned": 3}
 # a radio page's documentation links (board.toml [docs]), in this order
 DOC_ORDER = ("hardware", "install", "codec", "bringup")
@@ -185,7 +187,10 @@ class Site:
 		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts, "footer": footer,
 		       "languages": langs, "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
 		       "built_at": self.built_at, "built_iso": self.built_iso, "git_full": self.git_full,
-		       "git_stamp": self.git + ("-dirty" if self.git_dirty else ""), "repo": self.repo_url, "nav_current": nav}
+		       "git_stamp": self.git + ("-dirty" if self.git_dirty else ""), "repo": self.repo_url, "nav_current": nav,
+		       "url": SITE_URL + (full[:-len("index.html")] if full.endswith("index.html") else full),
+		       "og_image": SITE_URL + "static/img/social.png?v=" + self.asset_version,
+		       "og_width": social.W * social.ZOOM, "og_height": social.H * social.ZOOM}
 		ctx["nav"] = self.nav(lang, ctx["home"], nav)
 		self.write(full, self.tpl.render("base", ctx, lang).replace("{{root}}", root).replace("{{home}}", root + prefix))
 
@@ -264,6 +269,9 @@ class Site:
 			self.write("static/img/radios/%s.svg" % b["id"], img["boot"])
 			self.write("static/img/radios/%s-frame.svg" % b["id"], img["frame"])
 			b["frame_geometry"] = img["geometry"]
+			b["render"] = img
+		with open(os.path.join(self.out, "static", "img", "social.png"), "wb") as f:
+			f.write(social.png(social.card(self.boards)))
 		data = self.json_data()
 		for name, obj in data.items():
 			self.write("data/" + name, json.dumps(obj, indent=1, ensure_ascii=False) + "\n")

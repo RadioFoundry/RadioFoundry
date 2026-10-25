@@ -16,7 +16,7 @@ python3 site/build.py --strict              # any warning fails (CI)
 site/tests/run.sh                           # the flasher's and the editor's tests (Node 20+)
 ```
 
-The generator needs one Python package, markdown-it-py (`pip install -r site/requirements.txt`, or prefix the
+The generator needs two Python packages, markdown-it-py and resvg_py (`pip install -r site/requirements.txt`, or prefix the
 command with `uv run --no-project --with-requirements site/requirements.txt`). The pages need no build step and no
 npm packages: plain HTML, CSS and ES modules. `tools/ci.sh` builds the site and runs the tests (Python step).
 
@@ -105,6 +105,7 @@ Nothing on the page names a screen, a group or a radio:
 | `site/rfoundrysite/build.py` | Assembles the pages and data files |
 | `site/rfoundrysite/docs.py` | `docs/` to HTML: GitHub heading ids, `.md` links to `.html`, links out of `docs/` to the repository |
 | `site/rfoundrysite/device.py` | Radio images: frame, overlay geometry, boot screen composite |
+| `site/rfoundrysite/social.py` | The link preview image (`static/img/social.png`, every page's `og:image`): each radio with a different screen, rasterized with resvg |
 | `site/rfoundrysite/tmpl.py`, `site/templates/` | Page markup (below) |
 | `site/i18n/` | String catalogs (below) |
 | `site/static/css/tokens.css`, `site.css` | Design tokens, then layout and components |
