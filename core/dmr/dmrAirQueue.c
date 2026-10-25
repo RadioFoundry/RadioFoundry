@@ -9,7 +9,7 @@
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"
 
-#define RAW_PREAMBLES	DMR_DATA_SMS_PREAMBLES	// as for an SMS: receivers get time to sync
+#define RAW_PREAMBLES	DMR_DATA_IP_PREAMBLES	// as for an SMS: receivers get time to sync (raw data's limit is the air MTU)
 #define RING_BYTES		((CONFIG_DMR_AIR_QUEUE_BYTES + 3) & ~3)
 
 // One packet in the ring: this header, then its octets, the whole rounded up to 4

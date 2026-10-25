@@ -49,7 +49,8 @@
 #define ARS_REFRESH_DEFAULT_MS	(30U * 60U * 1000U)
 // IP packets (dmrDataServiceSendIP): one taken but never on air within this is given up (the gateway's mailbox waits)
 #define IP_QUEUE_TIMEOUT_MS		START_TIMEOUT_MS
-#define IP_PREAMBLES			DMR_DATA_SMS_PREAMBLES
+#define IP_PREAMBLES			DMR_DATA_IP_PREAMBLES	// what the air MTU (dmrData.h) counts on
+_Static_assert(DMR_DATA_IP_PREAMBLES == DMR_DATA_SMS_PREAMBLES, "IP packets keep the preambles of an SMS");
 // Confirmed data to us whose blocks stopped coming before the count in its header: lost bursts, asked for again
 #define CNF_RX_STALL_MS			300
 // A confirmed packet again from the same radio with the N(S) we last ACKed this soon is a retry (our ACK was lost)

@@ -1141,6 +1141,61 @@ static const dmrDataPacket_t *txPacket(void)
 	return got;
 }
 
+// The air MTU (dmrData.h, docs/spec/dmr-data.md 12.8): a UDP datagram whose user data on the air is exactly
+// DMR_DATA_IP_MTU octets goes in one transmission of DMR_DATA_MAX_BURSTS bursts (the preambles, the header,
+// DMR_DATA_IP_MAX_BLOCKS blocks), with either header; one octet more doesn't go at all
+static void testIpAirMtu(void)
+{
+	static uint8_t l4[8 + DMR_DATA_IP_MTU];
+	static const struct { uint8_t compress; uint8_t sap; int header; } cases[] = {
+		{ DMR_UDPC_OFF, DMR_SAP_IP, 28 },// the full IPv4 / UDP header
+		{ DMR_UDPC_AUTO, DMR_SAP_UDPIP_COMPRESSION, 9 },// 50000 to 161: both ports in extended headers
+	};
+	dmrDataStats_t st0, st;
+
+	reset();
+	decodeTx = false;
+	CHECK(DMR_DATA_IP_MTU == 440 && DMR_DATA_IP_MAX_BLOCKS == 37);// as the spec gives them
+	CHECK(DMR_DATA_IP_PREAMBLES + dmrDataPacketBursts(DMR_DATA_IP_MTU, DT_RATE_12_DATA) == DMR_DATA_MAX_BURSTS);
+	CHECK(DMR_DATA_IP_PREAMBLES + dmrDataPacketBursts(DMR_DATA_IP_MTU + 1, DT_RATE_12_DATA) > DMR_DATA_MAX_BURSTS);
+	for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++)
+	{
+		ipSettings(cases[c].compress, DMR_IPC_OFF, 0, 0, 0);
+		for (int extra = 0; extra <= 1; extra++)
+		{
+			int payload = DMR_DATA_IP_MTU - cases[c].header + extra;
+			int lists = txLists;
+
+			l4[0] = 50000 >> 8; l4[1] = 50000 & 0xFF; l4[2] = 0; l4[3] = 161;
+			l4[4] = (uint8_t)((8 + payload) >> 8); l4[5] = (uint8_t)(8 + payload); l4[6] = 0; l4[7] = 0;
+			for (int i = 0; i < payload; i++) l4[8 + i] = (uint8_t)(i * 7 + c);
+			dmrDataServiceGetStats(&st0);
+			CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT,
+										DMR_IP_PROTO_UDP, l4, 8 + payload));
+			runMainTask(SEND_MS);
+			dmrDataServiceGetStats(&st);
+			CHECK(!dmrDataServiceIpBusy());
+			if (extra == 0)
+			{
+				CHECK(dmrDataServiceIpResult() == DMR_REQ_OK && st.ipSent - st0.ipSent == 1);
+				CHECK(txLists - lists == 1 && lastTxCount == DMR_DATA_MAX_BURSTS);
+				const dmrBurst_t *h = txHeader();
+				CHECK(h != NULL && (h->payload[1] >> 4) == cases[c].sap && (h->payload[8] & 0x7F) == DMR_DATA_IP_MAX_BLOCKS);
+				const dmrDataPacket_t *p = txPacket();
+				CHECK(p != NULL && p->length == DMR_DATA_IP_MTU && p->sap == cases[c].sap);
+				CHECK(p != NULL && memcmp(&p->data[cases[c].header], &l4[8], payload) == 0);
+			}
+			else
+			{
+				CHECK(dmrDataServiceIpResult() == DMR_REQ_FAILED && st.ipFailed - st0.ipFailed == 1);
+				CHECK(txLists == lists);// nothing of it on air
+			}
+		}
+	}
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
+	decodeTx = true;
+}
+
 // Real IP addresses (docs/spec/dmr-data.md 11.1): an IP destination other than the ID's goes with the full header in
 // every compression mode, with the TTL given; to us, a packet for another address is passed on, not answered
 static void testIpAddresses(void)
@@ -1908,6 +1963,7 @@ int main(void)
 	testNotOnChannel();
 #endif
 	testIpTx();
+	testIpAirMtu();
 	testIpAddresses();
 	testConfirmedRx();
 	testIpText();
