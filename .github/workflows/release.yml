@@ -82,7 +82,7 @@ jobs:
     # with no edit here. One artifact per toolchain
     name: firmware (${{ matrix.name }})
     needs: version
-    runs-on: ${{ github.event_name != 'pull_request' && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04   # a write token: GitHub's runners only (docs/dev/ci-runners.md)
     strategy:
       fail-fast: false
       matrix:

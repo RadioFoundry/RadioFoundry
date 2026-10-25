@@ -28,7 +28,7 @@ env:
 
 jobs:
   manual:
-    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04   # a write token: GitHub's runners only (docs/dev/ci-runners.md)
     permissions:
       contents: write   # gh release create / upload on tags
     steps:

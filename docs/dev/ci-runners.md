@@ -65,7 +65,7 @@ change it, and on any GitHub plan.
 |---|---|---|
 | `pr-tests.yml` (`pull_request_target`) | self-hosted for a branch of this repository, GitHub's for a fork | `main`'s workflow; the condition `github.event.pull_request.head.repo.full_name == github.repository` holds, because the pull request can't edit it |
 | `ui-gallery.yml`, and `release.yml` on a pull request (`pull_request`) | always GitHub's | the pull request's own workflow file: the gate would refuse it |
-| Jobs with a write token: `ui-gallery-comment.yml`, `release.yml` `publish`, `manual.yml`, `pr-tests.yml` `PR checks status` | `rfoundry-ui`, or `RFOUNDRY_CI_RUNNER` | [below](#jobs-with-a-write-token) |
+| Jobs with a write token: `ui-gallery-comment.yml`, `release.yml` `publish`, `manual.yml`, `pr-tests.yml` `PR checks status` | always GitHub's | [below](#jobs-with-a-write-token) |
 
 A branch of this repository still runs its code on the runner, through `pr-tests.yml`. Whoever can push a branch
 can therefore read the runner's registration and take its place for later jobs, so write access to the repository
@@ -75,12 +75,12 @@ is what the runner trusts. Keep it to the people who have it on purpose.
 
 Four jobs hold a write token: `ui-gallery-comment.yml` (`contents: write`, the `ui-previews` branch), `release.yml`'s
 `publish` (`contents: write`, the release), `manual.yml` (`contents: write` on tags) and `pr-tests.yml`'s `PR checks
-status` (`statuses: write`, the required check). `ui-gallery-comment.yml` and the status job run on the runner labeled
-`rfoundry-ui` (the repository variable `RFOUNDRY_UI_RUNNER`), and no job that runs a pull request's code uses that
-label; `publish` and `manual.yml` run on `RFOUNDRY_CI_RUNNER`.
+status` (`statuses: write`, the required check). They always run on GitHub's runners (`runs-on: ubuntu-24.04`), never
+the self-hosted one: a branch's code runs there through `pr-tests.yml`, and code that read the runner's registration
+could take the runner's place and receive one of these jobs with its token. They are short jobs.
 
-The `rfoundry-ui` runner is registered with that label instead of `rfoundry-ci` (`LABELS=rfoundry-ui` in its env file,
-[tools/ci-runner/README.md](../../tools/ci-runner/README.md)). With six runners that leaves five for everything else.
+No workflow uses the `rfoundry-ui` label or the variable `RFOUNDRY_UI_RUNNER` any more: every self-hosted runner
+has the label `rfoundry-ci`.
 
 ## GitHub hosted runners
 

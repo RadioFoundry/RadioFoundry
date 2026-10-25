@@ -3,8 +3,16 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 #
 # Cases for job-gate.sh, the runner's job-started hook: the jobs it takes and the ones it refuses. tools/ci.sh runs it.
+# It runs a copy whose kill marker can't exist: in the runner image the real one does, and a refused case would kill
+# the runner running this test.
 set -u
 cd "$(dirname "$0")" || exit 1
+KILL=/usr/local/lib/rfoundry/job-gate.kill
+grep -q "\[\[ -e $KILL \]\] && /usr/bin/kill -KILL -1" job-gate.sh ||
+	{ echo "job-gate: job-gate.sh no longer kills the runner on a refusal through $KILL"; exit 1; }
+GATE=$(mktemp "${TMPDIR:-/tmp}/job-gate.XXXXXX") || exit 1
+trap 'rm -f "$GATE"' EXIT
+sed "s#$KILL#/nonexistent/job-gate.kill#" job-gate.sh > "$GATE"
 R=RadioFoundry/RadioFoundry
 W=$R/.github/workflows
 fails=0 n=0
@@ -12,7 +20,7 @@ fails=0 n=0
 check() {
 	n=$((n + 1))
 	if env -i RFOUNDRY_CI_REPO=$R GITHUB_REPOSITORY="${4-$R}" GITHUB_EVENT_NAME="$2" GITHUB_WORKFLOW_REF="$3" \
-		${5:+"$5"} bash ./job-gate.sh 2> /dev/null; then got=allow; else got=deny; fi
+		${5:+"$5"} bash "$GATE" 2> /dev/null; then got=allow; else got=deny; fi
 	[ "$got" = "$1" ] || { echo "job-gate: $2 $3: expected $1, got $got"; fails=$((fails + 1)); }
 }
 check allow push "$W/ci.yml@refs/heads/main"
@@ -46,7 +54,7 @@ check deny push "$W/ci.yml@refs/heads/main" ""
 check deny pull_request "$W/x.yml@refs/pull/1/merge" "$R" "BASH_FUNC_printf%%=() { :; }"
 # no repository configured: nothing runs
 n=$((n + 1))
-env -i GITHUB_REPOSITORY=$R GITHUB_EVENT_NAME=push GITHUB_WORKFLOW_REF="$W/ci.yml@refs/heads/main" bash ./job-gate.sh 2> /dev/null &&
+env -i GITHUB_REPOSITORY=$R GITHUB_EVENT_NAME=push GITHUB_WORKFLOW_REF="$W/ci.yml@refs/heads/main" bash "$GATE" 2> /dev/null &&
 	{ echo "job-gate: no RFOUNDRY_CI_REPO: expected deny, got allow"; fails=$((fails + 1)); }
 if [ "$fails" != 0 ]; then
 	echo "job-gate: $fails of $n cases fail"
