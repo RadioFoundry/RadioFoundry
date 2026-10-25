@@ -333,6 +333,61 @@ void gfx_round_fill(int x, int y, int w, int h, color_t c)
 	gfx_vline(x + w - 1, y + 1, h - 2, c);
 }
 
+// A line t pixels thick from x0, y0 to x1, y1 (Bresenham), for the icon glyphs
+static void seg(int x0, int y0, int x1, int y1, int t, color_t fg)
+{
+	int dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y0 - y1 : y1 - y0;
+	int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, err = dx + dy;
+	for (;;) {
+		gfx_fill(x0, y0, t, t, fg);
+		if (x0 == x1 && y0 == y1)
+			break;
+		int e2 = 2 * err;
+		if (e2 >= dy) {
+			err += dy;
+			x0 += sx;
+		}
+		if (e2 <= dx) {
+			err += dx;
+			y0 += sy;
+		}
+	}
+}
+
+// The icon glyphs (font.h), in the box of the font's capital H (less a column on the right in the larger fonts), so
+// they sit with the text; a space follows them
+static void icon_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)
+{
+	int top = 0, rows = f->ascent;
+	if (font_glyph(f, 'H', &top, &rows) == NULL || rows == 0) {
+		top = 1;
+		rows = f->ascent - 1;
+	}
+	int t = f->w >= 12 ? 2 : 1;			// line width
+	int l = x, r = x + f->w - 1 - (f->w >= 8 ? 1 : 0), tp = y + top, bt = y + top + rows - 1;
+	if (c == 0x84) {	// share: a dot on the left linked to one at the top right and one at the bottom right
+		int d = f->w >= 12 ? 4 : f->w >= 8 ? 3 : 2;	// dot size
+		int mid = tp + (bt - tp + 1 - d) / 2;
+		seg(l + d / 2, mid + d / 2, r - d / 2, tp + d / 2, t, fg);
+		seg(l + d / 2, mid + d / 2, r - d / 2, bt - d / 2, t, fg);
+		for (int k = 0; k < 3; k++) {
+			int dx = k == 0 ? l : r - d + 1, dy = k == 0 ? mid : k == 1 ? tp : bt - d + 1;
+			if (d > 2)
+				gfx_round_fill(dx, dy, d, d, fg);
+			else
+				gfx_fill(dx, dy, d, d, fg);	// gfx_round_fill draws nothing at 2x2
+		}
+	} else {		// download: an arrow down onto a tray
+		int cx = l + (r - l + 1 - t) / 2, tip = bt - 2 * t, head = (r - l) / 2 - (t - 1);
+		gfx_fill(l, bt - t + 1, r - l + 1, t, fg);			// the tray
+		gfx_fill(l, bt - t - head / 2, t, head / 2 + 1, fg);		// its sides
+		gfx_fill(r - t + 1, bt - t - head / 2, t, head / 2 + 1, fg);
+		gfx_fill(cx, tp, t, tip - tp, fg);				// the stem
+		seg(cx - head, tip - head, cx, tip, t, fg);			// the head
+		seg(cx + head, tip - head, cx, tip, t, fg);
+	}
+}
+
 // Extra glyphs a font lacks, drawn from primitives inside the cell at x, y
 static void fallback_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)
 {
@@ -360,6 +415,10 @@ static void fallback_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)
 	}
 	case 0x83:	// degree
 		gfx_rect(x + 1, y + 1, dot + 2, dot + 2, fg);
+		break;
+	case 0x84:
+	case 0x85:
+		icon_glyph(f, x, y, c, fg);
 		break;
 	default:	// not drawable: a box
 		gfx_rect(x + 1, y + 1, f->w - 2, f->ascent - 1, fg);

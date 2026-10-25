@@ -1029,12 +1029,16 @@ static const char *zone_title(void)
 // CONTEXT in a zone: send the zone, or the channel focused, to a contact or talkgroup (with the zone editor: from
 // its Channel actions and Zone options). An offer from another radio comes as a banner (CONTEXT opens it) and waits
 // under Tools while it lasts: Import, Preview, Reject
+// The rows that share, with the share icon in front
+#define SHARE_ZONE	GLYPH_SHARE " Share zone to..."
+#define SHARE_CHANNEL	GLYPH_SHARE " Share channel to..."
+
 static uint16_t share_zone, share_pos;	// the zone and the channel position CONTEXT was pressed on
 static bool share_one;			// send only that channel
 static char share_name[CODEPLUG_NAME_LEN + 1];
 
-// Send to... for the zone, or (one) only its channel at pos; from a menu one level above the zone's list, which
-// share_to_select leaves with it
+// Share To for the zone, or (one) only its channel at pos; from a menu one level above the zone's list, which
+// share_to_select leaves with it. Zone UI_ZONE_NONE: pos is a channel's number (the channel editor, which stays)
 static void share_send_to(uint16_t zone, uint16_t pos, bool one, const char *name)
 {
 	if (!(feats() & UI_FEAT_ZONE_SHARE)) {
@@ -1073,7 +1077,7 @@ static uint16_t share_count(void) { return SH_COUNT; }
 
 static void share_item(uint16_t i, ui_item_t *it)
 {
-	strcpy(it->label, i == SH_ZONE ? "Send zone to..." : "Send channel to...");
+	strcpy(it->label, i == SH_ZONE ? SHARE_ZONE : SHARE_CHANNEL);
 	item_num(it, (uint16_t)(i + 1u));
 	if (!(feats() & UI_FEAT_ZONE_SHARE))
 		it->flags |= UI_ITEM_DIM;
@@ -1093,7 +1097,7 @@ static const ui_scr_def_t share_screen = {
 };
 #endif
 
-// Send to: the codeplug's contacts, private or group (type to find, as Contacts)
+// Share To: the codeplug's contacts, private or group (type to find, as Contacts)
 static void share_to_select(uint16_t i, bool hold)
 {
 	(void)hold;
@@ -1121,12 +1125,13 @@ static void share_to_select(uint16_t i, bool hold)
 		sb_str(&b, t.name[0] ? t.name : "this contact");
 	}
 	ui_pop();
-	ui_pop();
+	if (share_zone != UI_ZONE_NONE)
+		ui_pop();	// and the menu it came from; the channel editor stays
 	ui_toast(msg);
 }
 
 static const ui_scr_def_t share_to_screen = {
-	.name = "zone_share_to", .flags = SF_LIST | SF_FILTER, .prefix = "Send To",
+	.name = "zone_share_to", .flags = SF_LIST | SF_FILTER, .prefix = "Share To",
 	.hint = "0-9 find  OK send  Back", .empty = "No contacts: add them in qdmr",
 	.count = ui_filter_count, .item = contacts_item, .select = share_to_select,
 	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
@@ -1232,9 +1237,10 @@ static const char *offer_body(void)
 static const char *offer_title(void)
 {
 	if (offer_get() && offer.channel)
-		return TEXT_ALT_OPEN "Channel Share Received" TEXT_ALT_NEXT "Ch Share Received" TEXT_ALT_NEXT
-		       "Ch Received" TEXT_ALT_CLOSE;
-	return TEXT_ALT_OPEN "Zone Share Received" TEXT_ALT_NEXT "Zone Received" TEXT_ALT_CLOSE;
+		return TEXT_ALT_OPEN "Channel Share Received " GLYPH_DOWNLOAD TEXT_ALT_NEXT "Ch Share Received " GLYPH_DOWNLOAD
+		       TEXT_ALT_NEXT "Ch Received " GLYPH_DOWNLOAD TEXT_ALT_NEXT "Ch Received" TEXT_ALT_CLOSE;
+	return TEXT_ALT_OPEN "Zone Share Received " GLYPH_DOWNLOAD TEXT_ALT_NEXT "Zone Received " GLYPH_DOWNLOAD TEXT_ALT_NEXT
+	       "Zone Received" TEXT_ALT_CLOSE;
 }
 
 static const ui_scr_def_t offer_screen = {
@@ -1480,7 +1486,7 @@ static const ui_scr_def_t chlist_screen = {
 
 enum { CE_NAME, CE_NUMBER, CE_MODE, CE_RX, CE_TX, CE_POWER, CE_RX_ONLY, CE_BW, CE_RX_TONE, CE_TX_TONE, CE_VOX,
        CE_CC, CE_TS, CE_CONTACT, CE_LIST, CE_ID, CE_DMO, CE_BEEP, CE_ALIAS1, CE_ALIAS2, CE_TOT, CE_SCAN, CE_ECO,
-       CE_ZONES, CE_GO, CE_SAVE, CE_SAVE_NEW, CE_COUNT, CE_NONE = 0xFF };
+       CE_ZONES, CE_GO, CE_SHARE, CE_SAVE, CE_SAVE_NEW, CE_COUNT, CE_NONE = 0xFF };
 
 static channel_t ced_ch;		// what the screen shows (the working copy when editing)
 static uint16_t ced_num;		// its number, 0 = no such channel
@@ -1579,7 +1585,9 @@ static void ced_build(void)
 		bool dmr_only = r >= CE_CC && r <= CE_ALIAS2;
 		if ((fm_only && dmr) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR))
 			continue;
-		if ((r == CE_ZONES || r == CE_GO || r == CE_SAVE_NEW) && fresh)
+		if ((r == CE_ZONES || r == CE_GO || r == CE_SHARE || r == CE_SAVE_NEW) && fresh)
+			continue;
+		if (r == CE_SHARE && !CONFIG_ZONE_SHARE)
 			continue;
 		if ((r == CE_SAVE && !(changed || fresh)) || ((r == CE_SAVE || r == CE_SAVE_NEW) && !edit))
 			continue;
@@ -1715,7 +1723,7 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 	static const char *const labels[CE_COUNT] = { "Name", "Number", "Mode", "RX", "TX", "Power", "RX only",
 		"Bandwidth", "RX tone", "TX tone", "VOX", "Color code", "Timeslot", "TX contact", "RX group list", "Own ID",
 		"Direct mode", "Talk permit beeps", "Talker alias TS1", "Talker alias TS2", "TX time-out", "Scan",
-		"Battery saver", "Zones", "Go to it", "Save", "Save as new channel" };
+		"Battery saver", "Zones", "Go to it", GLYPH_SHARE " Share channel to...", "Save", "Save as new channel" };
 	const channel_t *ch = &ced_ch;
 	if (i >= ced_n)
 		return;
@@ -1729,6 +1737,10 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		it->flags |= UI_ITEM_TEMP;
 #endif
 	strcpy(it->label, labels[r]);
+#if CONFIG_ZONE_SHARE
+	if (r == CE_SHARE && !(feats() & UI_FEAT_ZONE_SHARE))
+		it->flags |= UI_ITEM_DIM;
+#endif
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 #if CONFIG_CHANNEL_EDIT
@@ -2078,6 +2090,18 @@ static bool chinfo_key(const input_event_t *ev)
 
 static void chinfo_select(uint16_t i, bool hold)
 {
+#if CONFIG_ZONE_SHARE
+	if (i < ced_n && ced_rows[i] == CE_SHARE && !hold) {
+#if CONFIG_CHANNEL_EDIT
+		if (ced_changed(CE_COUNT)) {
+			ui_toast("Save first: hold OK");	// the send reads the stored channel
+			return;
+		}
+#endif
+		share_send_to(UI_ZONE_NONE, ced_num, true, ced_ch.name);
+		return;
+	}
+#endif
 #if CONFIG_CHANNEL_EDIT
 	if (i >= ced_n)
 		return;
@@ -2405,7 +2429,7 @@ static void zchan_item(uint16_t i, ui_item_t *it)
 	static const char *const names[ZC_COUNT] = {
 		[ZC_UP] = "Move up", [ZC_DOWN] = "Move down", [ZC_COPY] = "Copy here", [ZC_EDIT] = "Edit channel",
 #if CONFIG_ZONE_SHARE
-		[ZC_SEND] = "Send channel to...",
+		[ZC_SEND] = SHARE_CHANNEL,
 #endif
 		[ZC_REMOVE] = "Remove from zone" };
 	strcpy(it->label, names[i]);
@@ -2556,7 +2580,7 @@ static void zopt_item(uint16_t i, ui_item_t *it)
 	static const char *const names[ZO_COUNT] = {
 		[ZO_RENAME] = "Rename", [ZO_COPY] = "Copy as new zone",
 #if CONFIG_ZONE_SHARE
-		[ZO_SEND] = "Send zone to...",
+		[ZO_SEND] = SHARE_ZONE,
 #endif
 		[ZO_DELETE] = "Delete zone" };
 	strcpy(it->label, names[i]);

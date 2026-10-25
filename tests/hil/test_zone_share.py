@@ -4,7 +4,7 @@
 heard on air as a zone share fragment.
 
 The send test drives the UI with injected keys: Zones, # on the current zone (its channels), # on the focused channel,
-then Send channel to... and OK on the first contact. Which menu # opens depends on the build: zone sharing's own
+then Share channel to... and OK on the first contact. Which menu # opens depends on the build: zone sharing's own
 (`zone_share`, item 2), or with the zone editor its Channel actions (`zchannel`, item 5); the test reads the screen
 name and takes either path. A talkgroup contact gets an unconfirmed packet, a private one a
 confirmed packet the bench doesn't answer; either way the first try is on air. The pass criteria are the radio's
@@ -40,13 +40,13 @@ def _screen(radio, name):
     radio.wait_for(lambda v: v.get("ui.screen") == name, sections=("link",), what=f"screen {name}")
 
 
-# Where "Send channel to..." is in each menu # on a channel can open (docs/spec/zone-share.md; the zone editor's
-# Channel actions: Move up, Move down, Copy here, Edit channel, Send channel to..., Remove from zone)
+# Where "Share channel to..." is in each menu # on a channel can open (docs/spec/zone-share.md; the zone editor's
+# Channel actions: Move up, Move down, Copy here, Edit channel, Share channel to..., Remove from zone)
 SEND_CHANNEL_ITEM = {"zone_share": "2", "zchannel": "5"}
 
 
 def _send_channel_menu(radio):
-    """The menu # on a channel opened, and the key that picks Send channel to... in it."""
+    """The menu # on a channel opened, and the key that picks Share channel to... in it."""
     v = radio.wait_for(lambda x: x.get("ui.screen") in SEND_CHANNEL_ITEM, sections=("link",),
                        what="screen " + " or ".join(SEND_CHANNEL_ITEM))
     return SEND_CHANNEL_ITEM[v["ui.screen"]]
@@ -117,7 +117,7 @@ def _zones(img):
 
 
 def _private_contact_1(dmr_id):
-    """A CPS edit: contact 1 becomes a private contact for dmr_id, the first row of the Send to list."""
+    """A CPS edit: contact 1 becomes a private contact for dmr_id, the first row of the Share To list."""
     def edit(img):
         name = b"HIL zone peer"
         img[CONTACT_BASE:CONTACT_BASE + CONTACT_SIZE] = (name + b"\xff" * (16 - len(name)) +
@@ -137,7 +137,7 @@ def _open_zone(radio):
 
 
 def _send(radio, before, what):
-    """On Send to: OK on the first contact; wait for the send to end and return the view."""
+    """On Share To: OK on the first contact; wait for the send to end and return the view."""
     _screen(radio, "zone_share_to")
     radio.press("ok")
     v = radio.wait_for(lambda x: int(x.get("zs.sends", 0)) > int(before["zs.sends"]) and
@@ -227,7 +227,7 @@ def test_zone_and_channel_between_radios(radio, pytestconfig, backup_dir):
                               if len(ch) == int(sender_zone["zone_size"]) and here in ch), None)
             if zone_name is None:
                 skip("state", "the sender's channel on --dmr-freq is in no stored zone (only All channels)")
-            # 1. The whole zone, from Zone options > Send zone to...
+            # 1. The whole zone, from Zone options > Share zone to...
             b_r, b_p = radio.view(["air"]), peer.view(["air"])
             _open_zone(radio)
             for _ in range(90):         # Zone options is the list's last row
@@ -246,7 +246,7 @@ def test_zone_and_channel_between_radios(radio, pytestconfig, backup_dir):
             _wait_import(peer, lambda x: "Imported" in x.get("ui.banner", "") or "Updated" in x.get("ui.banner", ""),
                          120, "the zone import")
             print("peer banner:", peer.view(["link"]).get("ui.banner"))
-            # 2. One channel, from the channel's actions > Send channel to...
+            # 2. One channel, from the channel's actions > Share channel to...
             b_r, b_p = radio.view(["air"]), peer.view(["air"])
             _open_zone(radio)
             radio.press("hash")

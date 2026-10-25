@@ -99,17 +99,17 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Zone | `zone` | CONTEXT in Zones: the zone's channels in order, OK goes to one. With `CONFIG_ZONE_EDIT` also the zone's editor (2.2): "Add channel" first, "Zone options" last, CONTEXT on a channel opens Channel actions |
 | Channel actions | `zchannel` | CONTEXT (long OK without CONTEXT) on a channel in a zone's list (2.2) |
 | Add Channel | `zpick` | "Add channel" in a zone's list: the stored channels the zone doesn't hold, T9 filtered (2.2) |
-| Zone options | `zoneedit` | "Zone options" in a zone's list: Rename, Copy as new zone, Send zone to... (with `CONFIG_ZONE_SHARE`), Delete zone (2.2) |
+| Zone options | `zoneedit` | "Zone options" in a zone's list: Rename, Copy as new zone, Share zone to... (with `CONFIG_ZONE_SHARE`), Delete zone (2.2) |
 | Delete Zone | `zonedel` | Delete zone in Zone options: the confirmation, "No, keep it" first (P7) |
 | Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
-| Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), save, and save as a new channel |
+| Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), share it (with `CONFIG_ZONE_SHARE`), save, and save as a new channel |
 | Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
 | Unsaved Changes | `discard` | BACK in the channel editor with unsaved changes (2.1) |
 | List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
-| Share | `zone_share` | without `CONFIG_ZONE_EDIT`: CONTEXT in a zone's channels (`zone`): Send zone to..., Send channel to... ([zone-share.md](zone-share.md) 7). With the zone editor these are rows of Zone options and Channel actions (2.2) |
-| Send to | `zone_share_to` | a pick in Share, Channel actions or Zone options: the contacts, T9 filtered; OK sends and returns to the zone's list |
+| Share | `zone_share` | without `CONFIG_ZONE_EDIT`: CONTEXT in a zone's channels (`zone`): Share zone to..., Share channel to... ([zone-share.md](zone-share.md) 7). With the zone editor these are rows of Zone options and Channel actions (2.2) |
+| Share To | `zone_share_to` | a pick in Share, Channel actions, Zone options or the channel editor: the contacts, T9 filtered; OK sends and returns to the zone's list (to the channel editor from there) |
 | Zone Share Received | `zone_offer` | CONTEXT on the offer's banner, or Tools > Zones/Chs Received while one waits; titled Channel Share Received (shorter where it doesn't fit) for one channel: the offer's text, then Import, Preview, Reject ([zone-share.md](zone-share.md) 5.2) |
 | Offer preview | `zone_offer_preview` | Preview in Zone Share Received: the offered channels, "Not in band" dimmed |
 | Add to zone | `zone_offer_zone` | Import of a one-channel offer: the zone it goes in |
@@ -133,7 +133,7 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 | Text | opens Text entry | Name |
 | Pick | opens the List picker | TX contact, RX group list |
 | Read only | nothing | Number, Zones |
-| Action | runs it | Go to it, Save, Save as new channel |
+| Action | runs it | Go to it, Share channel to... (with `CONFIG_ZONE_SHARE`: Share To for the stored channel; with unsaved changes "Save first: hold OK"), Save, Save as new channel |
 
 - A changed row shows the temporary mark (`UI_ITEM_TEMP`, the dot Home uses).
 - Long SELECT anywhere saves, as long SELECT makes a quick setting permanent. The Save row does the same.
@@ -189,11 +189,11 @@ they show the change within a fraction of a second.
 | Channel actions | 1 Move up, 2 Move down | swaps it with its neighbor. The menu stays open, so the digit again moves it on; the toast gives the position ("Position 4 of 16"), and "Already first" / "Already last" at the ends |
 | | 3 Copy here | the channel editor (2.1) on an unsaved copy at the lowest free number, named with " 2" appended (a copy of the channel in use keeps its temporary changes). Save writes it and inserts it after its source in one job (`ZONE_OP_ADD_NEW`); BACK asks as for any unsaved channel. Refused first with "No free channel" or "Zone full" |
 | | 4 Edit channel | the channel editor on the channel |
-| | 5 Send channel to... | with `CONFIG_ZONE_SHARE`: Send to (`zone_share_to`) for this channel ([zone-share.md](zone-share.md) 7). Waits while a zone change is still being saved ("Saving the zone: try again"): the send reads the stored zone |
+| | 5 Share channel to... | with `CONFIG_ZONE_SHARE`: Share To (`zone_share_to`) for this channel ([zone-share.md](zone-share.md) 7). Waits while a zone change is still being saved ("Saving the zone: try again"): the send reads the stored zone |
 | | 6 Remove from zone (5 without zone sharing) | takes it out of this zone at once, "Removed from <zone>". The channel stays in Channels and any other zone |
 | Zone options | 1 Rename | text entry on the zone's name (2.1); OK writes it, an empty name is refused |
 | | 2 Copy as new zone | a new zone with the same channels, named with " 2" appended, then back to Zones |
-| | 3 Send zone to... | with `CONFIG_ZONE_SHARE`: Send to (`zone_share_to`) for the whole zone (zone-share.md 7) |
+| | 3 Share zone to... | with `CONFIG_ZONE_SHARE`: Share To (`zone_share_to`) for the whole zone (zone-share.md 7) |
 | | 4 Delete zone (3 without zone sharing) | asks first (`zonedel`): "Delete <name>? Channels stay." with "No, keep it" focused (P7). Yes deletes it and returns to Zones |
 
 - Channel actions and Edit channel replace their menu on the stack, so the deepest path (Home, Hub, Zones, the zone,

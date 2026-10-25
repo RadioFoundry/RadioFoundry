@@ -35,21 +35,29 @@ uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bo
 	uint8_t included = 0;
 	int len = 0;
 
+	uint16_t num = pos;	// the channel, when one
 	if (total != NULL)
 		*total = 0;
-	if (!codeplug_zone(zone, &z))
-		return 0;
+	if (zone == UI_ZONE_NONE) {
+		if (!one || num == 0)
+			return 0;
+	} else {
+		if (!codeplug_zone(zone, &z))
+			return 0;
+		if (one && pos >= z.count)
+			return 0;
+		if (one)
+			num = z.channels[pos];
+	}
 	if (total != NULL)
 		*total = one ? 1 : (uint8_t)z.count;
-	if (one && pos >= z.count)
-		return 0;
 	// The record being sent, from the RTOS heap for the moment it is made: zone_share_send copies it into the air
 	// queue. Not static: a kilobyte of main RAM is too much on some radios for a buffer used this briefly
 	uint8_t *record = pvPortMalloc(ZS_RECORD_MAX);
 	if (record == NULL)
 		return 0;	// "Can't send now"
 	if (one) {
-		len = zone_export_channel(z.channels[pos], record, ZS_RECORD_MAX);
+		len = zone_export_channel(num, record, ZS_RECORD_MAX);
 		included = len > 0;
 	} else {
 		len = zone_export_zone(zone, record, ZS_RECORD_MAX, &included);

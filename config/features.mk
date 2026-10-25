@@ -45,7 +45,7 @@ CONFIG_DMR_ROAMING ?= $(CONFIG_DMR)
 # IP over DMR packet data through a network link to the host: the USB network adapter or PPP on the serial host port
 # (needs DMR and USB_NETWORK or NET_PPP; core/hostlink/hostlink_net.c)
 CONFIG_DMR_IP_GATEWAY ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_USB_NETWORK) $(CONFIG_NET_PPP))),y,n)
-# zone and channel sharing over DMR data: "Send zone to..." and offers of zones from other radios, imported only when
+# zone and channel sharing over DMR data: "Share zone to..." and offers of zones from other radios, imported only when
 # the user accepts (needs DMR; core/dmr/zoneShare*.c, docs/spec/zone-share.md)
 CONFIG_ZONE_SHARE ?= $(CONFIG_DMR)
 # compressed UDP/IPv4 headers on transmit (SAP 3, ETSI TS 102 361-3 5.6 / 7.2): UDP packets whose header fits the
