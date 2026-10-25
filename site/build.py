@@ -37,9 +37,9 @@ def main(argv=None):
 	ap.add_argument("--port", type=int, default=8000)
 	args = ap.parse_args(argv)
 	try:
-		import markdown_it  # noqa: F401
+		import markdown_it, resvg_py  # noqa: F401
 	except ImportError:
-		print("site/build.py: markdown-it-py is missing. pip install -r site/requirements.txt, or run:\n"
+		print("site/build.py: markdown-it-py or resvg_py is missing. pip install -r site/requirements.txt, or run:\n"
 		      "  uv run --no-project --with-requirements site/requirements.txt python3 site/build.py", file=sys.stderr)
 		return 2
 	from rfoundrysite.build import Site
