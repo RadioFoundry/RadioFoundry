@@ -128,9 +128,9 @@ the codeplug.
 
 ### My radio (key 9)
 
-| Setting | What it shows |
+| Setting | What it does |
 |---|---|
-| DMR ID and name | Your DMR ID from the codeplug ("not set: set it in qdmr" without one) and the radio model |
+| DMR ID and name | Your DMR ID. "Codeplug's" means the radio uses the ID in the codeplug, which the page shows above the row. Type a new ID with the digit keys (up to 16777215) and press **OK** to save it; **Back** leaves it unchanged. Save 0 to go back to the codeplug's ID. The radio uses the new ID at once |
 
 ### Advanced (key 0)
 

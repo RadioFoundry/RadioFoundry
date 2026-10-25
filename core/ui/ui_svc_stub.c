@@ -115,10 +115,3 @@ bool ui_svc_ram_set(uint8_t id, int32_t value)
 
 WEAK int32_t ui_svc_setting_get(uint8_t id) { return ui_svc_ram_get(id); }
 WEAK bool ui_svc_setting_set(uint8_t id, int32_t value) { return ui_svc_ram_set(id, value); }
-
-// Test stub for DMR ID editor: a simple in-memory settings structure
-#include "settings/settings.h"
-static settings_t test_settings = {0};
-
-WEAK settings_t *settings_begin(void) { return &test_settings; }
-WEAK void settings_end(uint32_t now) { (void)now; }

@@ -16,7 +16,6 @@
 #include "radio/mic_gain.h"
 #include "radio/radio_am.h"
 #include "input/keyassign.h"
-#include "settings/settings.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
 #endif
@@ -2964,87 +2963,105 @@ static const ui_scr_def_t info_screen = {
 	.select = info_select, .title = info_title, .body = info_body,
 };
 
-// ======================= DMR ID Editor =======================
+#if CONFIG_DMR
+// ======================= DMR ID (Settings > My radio) =======================
+// One row: the radio's own DMR ID, 0 = the codeplug's. Digits type a new one, OK saves it, BACK leaves it unchanged
 
-static uint32_t dmr_id_value;	// value being edited
-static bool dmr_id_editing;	// in edit mode
-static bool dmr_id_typed;	// digits were typed (for auto-reset on overflow)
-static bool dmr_id_initialized;	// have we loaded the value from settings
+#define DMR_ID_MAX	0xFFFFFFu
 
-static void dmr_id_load(void)
+static uint32_t dmr_id_value;
+static bool dmr_id_editing, dmr_id_typed;
+
+static uint16_t dmr_id_count(void) { return 1; }
+
+static void dmr_id_item(uint16_t i, ui_item_t *it)
 {
-	if (!dmr_id_initialized) {
-		settings_t *s = settings_begin();
-		dmr_id_value = s->dmr_id;
-		settings_end(false);
-		dmr_id_initialized = true;
-	}
+	(void)i;
+	strcpy(it->label, "DMR ID");
+	uint32_t v = dmr_id_editing ? dmr_id_value : (uint32_t)ui_svc_setting_get(UI_SET_DMR_ID);
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	if (v != 0 || dmr_id_typed)
+		sb_u32(&b, v, 1);
+	else
+		sb_str(&b, "Codeplug's");
+	if (dmr_id_editing)
+		it->flags |= UI_ITEM_EDIT;
 }
 
 static const char *dmr_id_body(void)
 {
-	static char t[200];
+	static char t[64];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
-	dmr_id_load();
-	sb_str(&b, "Enter your DMR ID\n");
-	if (dmr_id_editing)
-		sb_str(&b, "Editing: ");
+	sb_str(&b, "Codeplug: ");
+	if (codeplug_dmr_id())
+		sb_u32(&b, codeplug_dmr_id(), 1);
 	else
-		sb_str(&b, "Current: ");
-	if (dmr_id_value == 0)
-		sb_str(&b, "use codeplug");
-	else
-		sb_u32(&b, dmr_id_value, 1);
-	sb_str(&b, "\n\nKeys: 0-9 type\nSELECT save\nBACK cancel");
+		sb_str(&b, "not set");
+	sb_str(&b, "\n0 uses the codeplug's");
 	return t;
+}
+
+static void dmr_id_begin(void)
+{
+	dmr_id_editing = true;
+	dmr_id_typed = false;
+	dmr_id_value = (uint32_t)ui_svc_setting_get(UI_SET_DMR_ID);
+}
+
+static void dmr_id_save(void)
+{
+	dmr_id_editing = false;
+	if (dmr_id_value > DMR_ID_MAX)
+		ui_toast("Not changed: 0 to 16777215");
+	else if (!ui_svc_setting_set(UI_SET_DMR_ID, (int32_t)dmr_id_value))
+		ui_toast("Couldn't save: try again");
+	else
+		ui_toast(dmr_id_value != 0 ? "DMR ID saved" : "Using the codeplug's DMR ID");
+}
+
+static void dmr_id_select(uint16_t i, bool hold)
+{
+	(void)i;
+	(void)hold;
+	if (dmr_id_editing)
+		dmr_id_save();
+	else
+		dmr_id_begin();
 }
 
 static bool dmr_id_key(const input_event_t *ev)
 {
-	dmr_id_load();
-	// Digit entry
-	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 &&
-			(ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)) {
-		uint32_t d = ev->action - ACT_DIGIT_0;
-		uint32_t v = dmr_id_typed ? dmr_id_value * 10 + d : d;
-		// Max DMR ID is 16777215 (0xFFFFFF)
-		dmr_id_value = v > 16777215 ? d : v;
-		dmr_id_editing = true;
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		if (!dmr_id_editing)
+			dmr_id_begin();
+		uint32_t d = (uint32_t)(ev->action - ACT_DIGIT_0);
+		uint32_t v = dmr_id_typed ? dmr_id_value * 10u + d : d;
+		dmr_id_value = v > DMR_ID_MAX ? d : v;	// starts over when the number would be too big
 		dmr_id_typed = true;
 		ui_dirty();
 		return true;
 	}
-	// SELECT to save
-	if (ev->action == ACT_SELECT && (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)) {
-		if (dmr_id_editing) {
-			settings_t *s = settings_begin();
-			s->dmr_id = dmr_id_value;
-			settings_end(hal_millis());
-			dmr_id_editing = false;
-			dmr_id_typed = false;
-			ui_toast("DMR ID saved");
-		}
-		ui_pop();
-		ui_dirty();
-		return true;
-	}
-	// BACK to cancel
+	if (!dmr_id_editing)
+		return false;
 	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
 		dmr_id_editing = false;
-		dmr_id_typed = false;
-		dmr_id_initialized = false;
-		ui_pop();
 		ui_dirty();
 		return true;
 	}
 	return false;
 }
 
+static void dmr_id_enter(void) { dmr_id_editing = false; }
+
 static const ui_scr_def_t dmr_id_screen = {
-	.name = "dmr_id", .flags = SF_FIELD, .hint = "SELECT save  BACK cancel", .body = dmr_id_body,
-	.key = dmr_id_key,
+	.name = "dmr-id", .flags = SF_LIST | SF_FIELD, .prefix = "My Radio", .hint = "0-9 type  OK save  Back",
+	.count = dmr_id_count, .item = dmr_id_item, .select = dmr_id_select, .key = dmr_id_key, .enter = dmr_id_enter,
+	.body = dmr_id_body,
 };
+#endif
 
 // ======================= About (Settings > Advanced) =======================
 // A text page, every word shown (nothing shortened), no status strip while idle: the version, RadioFoundry's license, the
@@ -4302,7 +4319,13 @@ static void group_select(uint16_t i, bool hold)
 			break;
 		case SA_FIRMWARE: ui_push(SCR_ABOUT, 0); break;
 		case SA_CODEPLUG: ui_push(SCR_INFO, INFO_CODEPLUG); break;
-		case SA_MY_RADIO: ui_push(SCR_DMR_ID, 0); break;
+		case SA_MY_RADIO:
+#if CONFIG_DMR
+			ui_push(SCR_DMR_ID, 0);
+#else
+			ui_push(SCR_INFO, INFO_MY_RADIO);
+#endif
+			break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
 #if CONFIG_CRASH_SCREEN
 		case SA_CRASH: ui_push(SCR_CRASH, 0); break;
@@ -4653,7 +4676,10 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_POS] = &ui_aprs_pos_screen, [SCR_ABOUT] = &about_screen,
-	[SCR_VOLUME] = &volume_screen, [SCR_DMR_ID] = &dmr_id_screen,
+	[SCR_VOLUME] = &volume_screen,
+#if CONFIG_DMR
+	[SCR_DMR_ID] = &dmr_id_screen,
+#endif
 #if CONFIG_CHANNEL_LIST
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,
 #if CONFIG_CHANNEL_EDIT
