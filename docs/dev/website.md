@@ -59,7 +59,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Feature names, help, dependencies | `config/features.mk` (the comment above each switch, the `needs` checks) |
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
-| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has |
+| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height |
 | Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/rfoundry/rfoundry/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
@@ -83,7 +83,7 @@ file the build didn't write.
 | `site/rfoundrysite/tmpl.py`, `site/templates/` | Page markup (below) |
 | `site/i18n/` | String catalogs (below) |
 | `site/static/css/tokens.css`, `site.css` | Design tokens, then layout and components |
-| `site/static/js/site.js` | Theme toggle, menu, features filter, screen overlay on radio pages |
+| `site/static/js/site.js` | Theme toggle, menu, features filter, screen overlay on radio pages, the home page's screenshot carousel |
 | `site/static/js/flasher/` | The web flasher (below) |
 | `site/static/js/codeplug/` | Codeplug decoding and encoding, CSV, the radio transport, contacts sources ([codeplug-editor.md](codeplug-editor.md)) |
 | `site/static/js/editor/` | The Codeplug Editor page |

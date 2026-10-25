@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Shared page behavior: theme toggle, the narrow-screen menu, the features filter.
+// Shared page behavior: theme toggle, the narrow-screen menu, the features filter, the home page's carousel.
 
 const root = document.documentElement;
 
@@ -39,6 +39,60 @@ for (const b of document.querySelectorAll(".shot-show")) {
 		for (const o of document.querySelectorAll(".shot-show")) o.setAttribute("aria-pressed", String(o === b));
 		screen.closest(".radio-device").scrollIntoView({ behavior: "smooth", block: "nearest" });
 	});
+}
+
+// the home page's screenshot carousel. The row scrolls and snaps on its own (CSS); this adds previous and next,
+// which move by the screens in view, and the position ("3–5 of 12"). Without the script the row still scrolls.
+for (const box of document.querySelectorAll("[data-carousel]")) {
+	const track = box.querySelector(".carousel-track");
+	const slides = [...track.children];
+	const controls = box.querySelector(".carousel-controls");
+	const prev = box.querySelector(".carousel-prev");
+	const next = box.querySelector(".carousel-next");
+	const pos = box.querySelector(".carousel-pos");
+	const still = matchMedia("(prefers-reduced-motion: reduce)");
+	// slide edges relative to the row's visible area; a slide counts as in view when it shows nearly whole
+	const edges = () => {
+		const r = track.getBoundingClientRect();
+		return slides.map((s) => { const b = s.getBoundingClientRect(); return { l: b.left - r.left, r: b.right - r.left }; });
+	};
+	const go = (dx) => track.scrollBy({ left: dx, behavior: still.matches ? "auto" : "smooth" });
+	next.addEventListener("click", () => {
+		const e = edges(), w = track.clientWidth;
+		// the first slide cut off on the right comes to the left edge; one wider than the row moves on by one
+		let i = e.findIndex((s) => s.r > w + 2);
+		if (i < 0) i = slides.length - 1;
+		if (e[i].l <= 2 && i + 1 < slides.length) i++;
+		go(e[i].l);
+	});
+	prev.addEventListener("click", () => {
+		const e = edges(), w = track.clientWidth;
+		// a row's width back: the leftmost earlier slide that still fits with the first one in view
+		const before = e.map((s, i) => i).filter((i) => e[i].l < -2);
+		if (!before.length) return;
+		const last = before[before.length - 1];
+		const i = before.find((j) => e[last].r - e[j].l <= w + 2) ?? last;
+		go(e[i].l);
+	});
+	let timer = 0;
+	const update = () => {
+		const e = edges(), w = track.clientWidth;
+		const seen = e.map((s, i) => i).filter((i) => e[i].l >= -2 && e[i].r <= w + 2);
+		const from = (seen[0] ?? e.findIndex((s) => s.r > 0)) + 1;
+		const to = seen.length ? seen[seen.length - 1] + 1 : from;
+		const fmt = from === to ? pos.dataset.one : pos.dataset.range;
+		const text = fmt.replace("{from}", from).replace("{to}", to).replace("{n}", slides.length);
+		if (pos.textContent !== text) pos.textContent = text;	// the live region speaks only on a change
+		prev.disabled = track.scrollLeft <= 2;
+		next.disabled = track.scrollLeft + w >= track.scrollWidth - 2;
+	};
+	const later = () => { clearTimeout(timer); timer = setTimeout(update, 80); };
+	track.addEventListener("scroll", later, { passive: true });
+	addEventListener("resize", later);
+	// lazy images take their width from their attributes, but a late layout change still moves the edges
+	for (const img of track.querySelectorAll("img")) img.addEventListener("load", later);
+	controls.hidden = false;
+	update();
 }
 
 // glossary terms in the docs: <abbr class="gl" title="..."> becomes a popover on hover, focus and tap.
