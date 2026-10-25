@@ -6,7 +6,7 @@
 A containerized runner for this repository's Linux CI jobs, for a Docker host you own: a fresh container for every
 job, and no way out to the network except HTTPS to GitHub. The workflows use it when the repository variable
 `RFOUNDRY_CI_RUNNER` is set to its label (`rfoundry-ci`); [docs/dev/ci-runners.md](../../docs/dev/ci-runners.md#the-github-self-hosted-runner)
-explains the routing and why pull requests from forks never reach it.
+explains the routing.
 
 | File | What |
 |---|---|
@@ -36,7 +36,22 @@ explains the routing and why pull requests from forks never reach it.
   Anything a job needs from elsewhere (nodejs.org, for one) must be in the image.
 - **What a job could still do.** A job runs as the same user as the runner, so it can read the runner's
   credentials, as on any runner. With them someone could take this runner's place and receive later jobs of this
-  repository until the runner is removed. That is why only this repository's own branches run here, never forks.
+  repository until the runner is removed. That is why only this repository's own branches run code here, never forks
+  (next section).
+
+## Which jobs it takes
+
+`job-gate.sh` is the runner's job-started hook (`ACTIONS_RUNNER_HOOK_JOB_STARTED`, set in the image). The runner runs
+it before the first step of every job, and a job it refuses fails before anything from the workflow runs. It takes
+a job only when its workflow file is this repository's, from `main` or a `v*` tag: a push to `main`, a schedule, a
+manual run on `main`, `pull_request_target`, `workflow_run` or a release tag. A `pull_request` run uses the pull
+request's own workflow file, which can name any label, so it is always refused. `RFOUNDRY_CI_REPO` (the env file's
+`REPO`) is the repository it accepts. `job-gate-test.sh` checks the cases, and `tools/ci.sh` runs it.
+
+A refused job shows `rfoundry job gate: refused ...` in its "Set up runner" step. The gate then kills the runner,
+because a failed hook alone still lets the job's `if: always()` steps run: the container ends, the loop starts a new
+one (which can wait up to ten minutes for GitHub to drop the killed runner's session), and GitHub fails the job. Then check that the workflow sends
+that job to GitHub's runners ([docs/dev/ci-runners.md](../../docs/dev/ci-runners.md#which-jobs-it-takes)).
 
 ## Set up
 

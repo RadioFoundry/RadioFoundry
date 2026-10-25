@@ -319,6 +319,16 @@ for f in sys.argv[1:]:
 	else
 		skip "web flasher tests: node not installed"
 	fi
+	if command -v bash > /dev/null; then
+		if tools/ci-runner/job-gate-test.sh > "$OUT/job-gate.log" 2>&1; then
+			ok "runner job gate: $(tail -1 "$OUT/job-gate.log" | sed 's/^job-gate: //')"
+		else
+			cat "$OUT/job-gate.log"
+			bad "runner job gate (see $OUT/job-gate.log)"
+		fi
+	else
+		skip "runner job gate: bash not installed"
+	fi
 else
 	skip "python checks: no python3"
 fi

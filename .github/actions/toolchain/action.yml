@@ -6,7 +6,9 @@
 # build with it, read here and by the scripts it calls, never typed into a workflow. A composite action, so it costs no
 # job. A new platform on a known toolchain needs no edit here; a new toolchain needs a branch below.
 #
-#   arm   tools/install-arm-toolchain.sh into ~/opt (a no-op on the self-hosted image, which has it), cached
+#   arm   tools/install-arm-toolchain.sh into ~/opt (a no-op on the self-hosted image, which has it). Never cached:
+#         pr-tests.yml runs a pull request's code with main's cache scope, and a cache restore can write any file the
+#         job's user can, so a poisoned entry could swap the compiler of a release build (docs/dev/ci.md)
 #   csky  csky-elf-gcc on PATH (the self-hosted image's /opt/csky-elf): nothing to do. Otherwise the csky-elf image
 #         (RFOUNDRY_CSKY_IMAGE, default the platform's image): logs in, pulls and logs out right away, and the job runs its
 #         build through `run` (tools/docker/csky-toolchain/run.sh, exit status 3 when the image isn't there). No
@@ -22,9 +24,6 @@ inputs:
   toolchain:
     description: The toolchain id ([toolchain] id in platform/*/platform.toml)
     required: true
-  cache:
-    description: '"true": keep a downloaded toolchain in actions/cache (pr-tests.yml passes "false")'
-    default: "true"
   image:
     description: The csky-elf image (repository variable RFOUNDRY_CSKY_IMAGE); empty for the platform's image
     default: ""
@@ -61,15 +60,11 @@ runs:
           if [ "$(pin id "$p")" = "$TOOLCHAIN" ]; then f=$p; break; fi
         done
         [ -n "$f" ] || { echo "::error::no platform/*/platform.toml has [toolchain] id = \"$TOOLCHAIN\""; exit 1; }
-        # the cache key: the pinned version and the script that installs it
-        hash() { sha256sum "$1" | cut -c1-16; }
         cc=$(pin cc "$f"); version=$(pin version "$f"); image=${IMAGE:-$(pin image "$f")}
-        run="" mode="" cache_path="" cache_key=""
+        run="" mode=""
         case "$TOOLCHAIN" in
         arm)
-          mode=install
-          cache_path="$HOME/opt/arm-gnu-toolchain-$version-x86_64-arm-none-eabi"
-          h=$(hash tools/install-arm-toolchain.sh); cache_key="arm-gnu-$version-$h" ;;
+          mode=install ;;
         csky)
           if command -v "$cc" > /dev/null; then
             mode=host
@@ -81,13 +76,7 @@ runs:
         *) echo "::error::no set-up for toolchain $TOOLCHAIN in .github/actions/toolchain"; exit 1 ;;
         esac
         echo "$TOOLCHAIN ($f): $cc $version, $mode${run:+ through $run ($image)}"
-        { echo "mode=$mode"; echo "run=$run"; echo "cache-path=$cache_path"; echo "cache-key=$cache_key"; } >> "$GITHUB_OUTPUT"
-
-    - uses: actions/cache@v4
-      if: inputs.cache == 'true' && steps.pin.outputs.cache-path != '' && runner.environment != 'self-hosted'
-      with:
-        path: ${{ steps.pin.outputs.cache-path }}
-        key: ${{ steps.pin.outputs.cache-key }}
+        { echo "mode=$mode"; echo "run=$run"; } >> "$GITHUB_OUTPUT"
 
     - name: Pull the image, then log out
       if: steps.pin.outputs.mode == 'image' && inputs.registry != ''
