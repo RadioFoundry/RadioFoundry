@@ -21,8 +21,8 @@
 // builds, since it is the same codec
 #define CODEC_ID		"mduv380-1926-s11"
 
-// Entry offsets from the code start: the DM-1701's (codec-mduv380.md). Not used: encode ECC +0x4E8 and FEC decode
-// +0xB54. The air frame FEC is ours (core/dmr/ambe) and matches stock's
+// Entry offsets from the code start: the UV380 family's codec (codec-mduv380.md). Not used: encode ECC +0x4E8 and
+// FEC decode +0xB54. The air frame FEC is ours (core/dmr/ambe) and matches the radio's own
 #define CODEC_ENTRIES { .encode = 0x130, .decode = 0x5D8, .enc_init = 0x284, .fec_init = 0x4CC, .dec_init = 0x6D0, \
 		.enc_params = 0x848, .enc_set = 0x1C0, .dec_set = 0x688 }
 
