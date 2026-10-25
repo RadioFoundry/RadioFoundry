@@ -982,6 +982,28 @@ static void no_battery_checks(void)
 	}
 }
 
+// A page's title is centered on every display class. Where it shares the status strip (displays under UI_TALL_PX)
+// the battery gives way to it; on tall displays the strip above the title row keeps the battery
+static void title_row_checks(void)
+{
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		bool merged = sim_geoms[g].h - 2 * sim_geoms[g].inset_tb < UI_TALL_PX;	// as ui_draw_top's gfx_height()
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		snprintf(buf, sizeof buf, "ok 7 expect:screen=settings expect:centered=Settings expect:%s=%%", merged ? "hides" : "shows");
+		bool ok = sim_run(buf, err, sizeof err);
+		if (ok) {	// a group page, opened from its sentence case row
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			snprintf(buf, sizeof buf, "ok 7 3 expect:centered=Talk_&_Listen");
+			ok = sim_run(buf, err, sizeof err);
+		}
+		if (!ok) {
+			printf("FAIL title row [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+	}
+}
+
 // Home's talk target line drops a contact name that only repeats the ID ("TG 201 TG 201" on the DB25-D, 2026-10-17)
 static int check_name_is_id(void)
 {
@@ -1027,6 +1049,7 @@ int main(void)
 	about_checks();
 	call_screen_checks();
 	no_battery_checks();
+	title_row_checks();
 
 	crawl(sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	crawl(sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");

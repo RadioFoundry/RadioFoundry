@@ -45,6 +45,8 @@ inside the title; acronyms and units as written ("Unsaved Changes", "RX Group Li
 A fixed prefix ahead of a name is lowercase in the middle ("Talk to Ops", "Zone for A"). Names and counts in a title
 ("1 of 3", a zone's name) are shown as stored. List rows, values, hints, toasts and banners keep sentence case, so the
 row that opens a page can differ from its title: the Settings row "Talk & listen" opens "Talk & Listen".
+A page title is centered on the screen at every display class, moved only as far as it must to clear what shares its
+row (the state pill, the lock, the unread count).
 
 The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The group for the Back key (it starts with
 "Back") is drawn against the right edge, under the key; the other groups run from the left, and those that don't fit
@@ -268,8 +270,9 @@ A"). The pill shows RX while data or CSBK bursts arrive on our slot and color co
 stays for a call being played.
 
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
-idle, the bars and battery icon give way, the battery percent stays (on a radio without a battery, `CAP_NO_BATTERY`,
-neither is drawn anywhere, and Tools > Battery, Settings > Power > Battery saver and Low battery warning are left
+idle, the bars and the battery (icon and percent) give way, so the title is centered across the whole row; the lock
+and the unread count stay. Home shows the battery, and the low battery banner warns on any screen. On a radio without
+a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Tools > Battery, Settings > Power > Battery saver and Low battery warning are left
 out of their lists, so the other Tools rows move up), and only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 

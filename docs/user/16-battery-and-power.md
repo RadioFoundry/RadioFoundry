@@ -9,7 +9,8 @@ battery warnings.
 
 ## Battery level
 
-The status line shows the battery as an icon and a percentage. The percentage turns to the warning color at the low
+The status line shows the battery as an icon and a percentage. On a small screen a page's title takes over the
+status line, so the battery shows on Home and on the larger screens' pages. The percentage turns to the warning color at the low
 battery warning level and below. The level is set in **Settings > Power > Low battery warning** (15 % by default).
 
 **OK**, **6**, **9** opens Tools > Battery, which shows the level. At the warning level and below it also shows "charge

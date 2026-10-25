@@ -39,7 +39,8 @@
 //   splash              draw the boot screen (put it last: nothing redraws over it)
 //   shot:<name>         save the screen (sim_set_shot_dir)
 //   expect:<key>=<value>   check (see check()); value "*" = anything; shows=<text> / hides=<text>: a drawn
-//                          text contains it / none does; markafter=<text> / nomarkafter=<text>: a mark is drawn just right of it / none is
+//                          text contains it / none does; markafter=<text> / nomarkafter=<text>: a mark is drawn just right of it / none is;
+//                          centered=<text>: a text that contains it is centered on the screen, to a character cell
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1965,6 +1966,20 @@ static bool check(const char *kv, char *err, size_t len)
 					mark |= gfx_get_pixel(px, py) != paper;
 		}
 		snprintf(got, sizeof got, "%s", mark == (key[0] == 'm') ? want : mark ? "a mark after it" : "nothing after it");
+	}
+	else if (strcmp(key, "centered") == 0) {	// a text that contains the value, its middle within a cell of the screen's
+		snprintf(got, sizeof got, "not shown");
+		for (int i = 0; i < live_n; i++) {
+			if (strstr(live[i].s, want) == NULL || live[i].s[0] == 0)
+				continue;
+			int cw = (live[i].x1 - live[i].x0) / (int)strlen(live[i].s);
+			int off = (live[i].x0 + live[i].x1) / 2 - gfx_width() / 2;
+			if (off >= -cw && off <= cw) {
+				snprintf(got, sizeof got, "%s", want);
+				break;
+			}
+			snprintf(got, sizeof got, "%d px off center", off);
+		}
 	}
 	else if (strcmp(key, "hides") == 0) {	// no text on the screen contains the value
 		snprintf(got, sizeof got, "%s", want);
