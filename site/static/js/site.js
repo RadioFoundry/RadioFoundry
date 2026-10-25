@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Shared page behavior: theme toggle, the narrow-screen menu, the features filter, the home page's carousel.
+// Shared page behavior: theme toggle, the narrow-screen menu, the features filter, the home page's carousel, the
+// screenshots page's radio picker.
 
 const root = document.documentElement;
 
@@ -39,6 +40,36 @@ for (const b of document.querySelectorAll(".shot-show")) {
 		for (const o of document.querySelectorAll(".shot-show")) o.setAttribute("aria-pressed", String(o === b));
 		screen.closest(".radio-device").scrollIntoView({ behavior: "smooth", block: "nearest" });
 	});
+}
+
+// the screenshots page: the radio links switch the section shown at once and keep the address (#<radio>) for links.
+// Without the script CSS shows the section the address names (:target), else the first.
+const screensPage = document.querySelector("[data-screens]");
+if (screensPage) {
+	const all = screensPage.querySelector(".rshots-all");
+	const sections = [...all.querySelectorAll(".rshots")];
+	const picks = [...screensPage.querySelectorAll(".radio-pick a")];
+	const toggle = screensPage.querySelector(".variants-toggle");
+	const pick = (id) => {
+		const cur = sections.find((s) => s.id === id) ?? sections[0];
+		for (const s of sections) s.classList.toggle("is-current", s === cur);
+		for (const a of picks) {
+			if (a.hash === "#" + cur.id) a.setAttribute("aria-current", "true"); else a.removeAttribute("aria-current");
+		}
+		// a radio with no other colors or themes (a monochrome display) has nothing to toggle
+		toggle.hidden = !cur.querySelector(".gshot-variant");
+		return cur;
+	};
+	all.classList.add("js");
+	pick(decodeURIComponent(location.hash.slice(1)));
+	for (const a of picks) {
+		a.addEventListener("click", (ev) => {
+			ev.preventDefault();
+			const cur = pick(a.hash.slice(1));
+			history.replaceState(null, "", "#" + cur.id);
+		});
+	}
+	addEventListener("hashchange", () => pick(decodeURIComponent(location.hash.slice(1))));
 }
 
 // the home page's screenshot carousel. The row scrolls and snaps on its own (CSS); this adds previous and next,

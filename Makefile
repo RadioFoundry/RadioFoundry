@@ -105,8 +105,9 @@ ifeq ($(CONFIG_NAND_STORAGE),y)
 BOARD_DIRS += $(BOARD_NAND_DIRS)
 endif
 APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
-APP_SRC := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.c))
-APP_ASM := $(foreach d,$(APP_DIRS),$(wildcard $(d)/*.S))
+# Sorted: the link order steers LTO's code, and $(wildcard)'s order depends on the make (gotchas 13.10)
+APP_SRC := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.c)))
+APP_ASM := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.S)))
 # The stub entry without the debug link: its listener uses the debug link's framing (dl_frame.c, no RTOS or board)
 ifeq ($(CONFIG_STUB_ENTRY)$(CONFIG_DEBUGLINK),yn)
 APP_SRC += core/debuglink/dl_frame.c
@@ -285,7 +286,7 @@ HTTP_ASSETS := $(sort $(wildcard core/net/http_assets/*))
 # With web control, its front panel page (core/net/webctl_assets) replaces the files of the same name, and the radio's
 # key map and drawing go with it (tools/gen_webctl_assets.py)
 ifeq ($(CONFIG_NET_WEBCTL),y)
-WEBCTL_ASSETS := $(wildcard core/net/webctl_assets/*) $(shell python3 tools/gen_webctl_assets.py $(BOARD) $(BUILD)/gen/webctl)
+WEBCTL_ASSETS := $(sort $(wildcard core/net/webctl_assets/*)) $(shell python3 tools/gen_webctl_assets.py $(BOARD) $(BUILD)/gen/webctl)
 HTTP_ASSETS := $(filter-out $(addprefix core/net/http_assets/,$(notdir $(WEBCTL_ASSETS))),$(HTTP_ASSETS)) $(WEBCTL_ASSETS)
 endif
 $(shell python3 tools/gen_http_assets.py $(if $(filter y,$(CONFIG_NET_HTTP_GZIP)),--gzip) $(BUILD)/gen/http_assets_gen.h \
