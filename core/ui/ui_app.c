@@ -167,6 +167,9 @@ void ui_pop(void)
 		sp--;
 	if (ui_scr[stack[sp].scr]->flags & SF_FILTER)
 		ui_filter_rebuild();
+#if CONFIG_ZONE_EDIT
+	ui_menus_resume();
+#endif
 	ui_st.quick_edit = false;
 	update_focus_target();
 	dirty = true;
@@ -1937,6 +1940,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	ui_st.now_ms = now_ms;
 	ui_svc_poll();
 	ui_svc_keys_poll();
+#if CONFIG_ZONE_EDIT
+	ui_svc_zone_poll();
+#endif
 #if CONFIG_CRASH_SCREEN
 	ui_crash_tick(now_ms);
 #endif
@@ -1954,6 +1960,40 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ev_tail = (uint8_t)((ev_tail + 1u) % UI_EVENTS);
 		handle_event(&ev);
 	}
+#if CONFIG_ZONE_EDIT
+	// The codeplug changed (a zone edit's job, a CPS write): the screens holding a zone index follow it when zones
+	// moved (zone_edit.h), a filtered list reads its rows again, so the zone editor's lists show the change, and the
+	// editor's screens read their zone again once our queued changes are written (or one was refused). Not while a
+	// zone write is under way: codeplug_serial() first, then zone_edit_busy(), as the radio core does
+	static uint32_t codeplug_seen, shifts_seen;
+	static bool zone_queued;
+	bool queued = ui_svc_zone_pending();
+	if ((codeplug_serial() != codeplug_seen || zone_edit_shifts() != shifts_seen || (zone_queued && !queued)) &&
+	    !zone_edit_busy()) {
+		codeplug_seen = codeplug_serial();
+		uint32_t to = zone_edit_shifts();
+		if (to != shifts_seen) {
+			uint8_t top = ui_menus_zones_moved(stack, sp, shifts_seen, to);
+			shifts_seen = to;
+			if (top < sp) {
+				sp = (uint8_t)(top + 1u);
+				ui_pop();	// down to the screen below the first one whose zone was deleted
+				ui_toast("That zone was deleted");
+			}
+		}
+		ui_frame_t *f = &stack[sp];
+		if (ui_scr[f->scr]->flags & SF_FILTER) {
+			ui_filter_rebuild();
+			if (f->focus >= ui_filter_count())
+				f->focus = ui_filter_count() > 0 ? (uint16_t)(ui_filter_count() - 1u) : 0;
+			ui_menus_resume();
+		}
+		if (!queued)
+			ui_menus_codeplug();
+		dirty = true;
+	}
+	zone_queued = queued;
+#endif
 #if CONFIG_DMR
 	recent_update(v);
 	// "DMR modem off" only once it's been off a while: a channel or mode change (APRS on FM and back, a retune)

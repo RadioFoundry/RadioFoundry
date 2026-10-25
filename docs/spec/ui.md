@@ -20,7 +20,7 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 | `gfx.c`, `fonts.c`, `fmt.c` | drawing in a viewport inside the display's safe-area insets, fonts, number / text formatting |
 | `ui_screens.c` | drawing only: status strip, title, hint row, lists, Home, call screens, Quick tiles, banners, emergency |
 | `ui_app.c` | behavior without the RTOS: the navigation stack, global keys, Home and Quick keys, filters, Recent, events, banners |
-| `ui_menus.c` | every list screen and the screen table `ui_scr[]`: Hub, Actions, Compose, Contacts, Messages, Recent, Zones, Zone, Channels, Channel, Tools, Settings, Picker, Info, Confirm, Scan, Roaming |
+| `ui_menus.c` | every list screen and the screen table `ui_scr[]`: Hub, Actions, Compose, Contacts, Messages, Recent, Zones, Zone, the zone editor's (2.2), Channels, Channel, Tools, Settings, Picker, Info, Confirm, Scan, Roaming |
 | `ui_find.c` | type-to-find (T9 word starts, numbers, channel positions) |
 | `ui_svc.h`, `ui_svc_stub.c` | the thin interface to data other packages own, with weak "not in this build" stubs (section 4) |
 | `ui_svc_radio.c`, `ui_svc_data.c`, `ui_svc_storage.c` | the strong implementations on the radio core, the DMR data service and the settings store / codeplug editing |
@@ -87,7 +87,12 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Find | `find` | a digit on Home |
 | Actions | `actions` | CONTEXT (`#`) on a person, a talkgroup, the last caller, a message |
 | Recent | `recent` | Hub 3 |
-| Zones | `zones` | Hub 4: the VFO, then every zone with its channel count. OK goes to the zone, CONTEXT opens its channels (`zone`) |
+| Zones | `zones` | Hub 4: the VFO, then every zone with its channel count. OK goes to the zone, CONTEXT opens its channels (`zone`; long OK on a radio without CONTEXT) |
+| Zone | `zone` | CONTEXT in Zones: the zone's channels in order, OK goes to one. With `CONFIG_ZONE_EDIT` also the zone's editor (2.2): "Add channel" first, "Zone options" last, CONTEXT on a channel opens Channel actions |
+| Channel actions | `zchannel` | CONTEXT (long OK without CONTEXT) on a channel in a zone's list (2.2) |
+| Add channel | `zpick` | "Add channel" in a zone's list: the stored channels the zone doesn't hold, T9 filtered (2.2) |
+| Zone options | `zoneedit` | "Zone options" in a zone's list: Rename, Copy as new zone, Delete zone (2.2) |
+| Delete zone | `zonedel` | Zone options 3: the confirmation, "No, keep it" first (P7) |
 | Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
 | Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), save, and save as a new channel |
 | Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
@@ -128,8 +133,8 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   use when `codeplug_serial()` changes, so any save drops its temporary changes, whichever channel was written.
   Whether the written channel is the one in use is decided when the job is posted, on the UI task.
 - Save as new channel writes the copy to the lowest free number (`codeplug_free_channel`) and opens that channel.
-  "No free channel" when all 1024 are used. The new channel is in no zone until one is edited (issue #44 adds it to
-  the current zone).
+  "No free channel" when all 1024 are used. The new channel is in no zone until a zone's Add channel takes it (2.2);
+  Copy here makes a copy that goes in a zone as it is saved.
 - New from current (the first row in Channels: New channel from current settings) fills a copy from what the radio uses now: the channel in use
   with its temporary changes, or the VFO. It opens as an unsaved channel at the lowest free number, named after the
   source with a number appended (or the frequency, from the VFO).
@@ -148,6 +153,67 @@ Typed rows (frequencies, the ID): BACK takes back the last digit, and with none 
 is typed, and with nothing typed leaves the row as it was. A new RX frequency moves TX with it, keeping a repeater's
 offset. Where that offset would put TX outside every band, TX becomes the new RX (simplex). Own ID refuses a digit
 that would take it past 16777215, and takes at most 8 digits.
+
+### 2.2 Zone editor
+
+With `CONFIG_ZONE_EDIT` a zone's list (`zone`) edits the zone. Every change is written at once, as a storage job
+(`ui_svc_zone_edit`), so there is nothing to save or discard and the UI never waits for a flash erase. Changes made
+faster than the flash takes them (a digit pressed again in Channel actions) wait in a queue of 4 and are written in
+order by one job; a fifth is refused. The job runs `zone_edit_apply` (`core/codeplug/zone_edit.h`), the same layer an
+import uses. A failed change raises `UI_EV_SAVE_FAILED` with the reason ("Zone full", "No room for another zone",
+"Already at the end", "That zone is gone", "That channel is gone", "Couldn't write the codeplug") and drops the changes
+queued after it, since they were made on a list that didn't happen. A change is checked whole before anything is
+written: a new zone with a missing or repeated channel is refused, and a Copy here whose zone can't be written deletes
+the channel it wrote. The lists read the codeplug again when `codeplug_serial()` changes and the queue is empty, so
+they show the change within a fraction of a second.
+
+| Where | Row or key | Does |
+|---|---|---|
+| A zone's list | "Add channel" (first row) | opens Add channel (`zpick`): every stored channel the zone doesn't hold, number and name, T9 filtered. OK inserts it after the channel in use when this is the zone in use, else at the end |
+| | a channel, OK | goes to it (as before) |
+| | a channel, CONTEXT (long OK without CONTEXT) | opens Channel actions (`zchannel`) on it |
+| | "Zone options" (last row) | opens Zone options (`zoneedit`) |
+| Channel actions | 1 Move up, 2 Move down | swaps it with its neighbor. The menu stays open, so the digit again moves it on; the toast gives the position ("Position 4 of 16"), and "Already first" / "Already last" at the ends |
+| | 3 Copy here | the channel editor (2.1) on an unsaved copy at the lowest free number, named with " 2" appended (a copy of the channel in use keeps its temporary changes). Save writes it and inserts it after its source in one job (`ZONE_OP_ADD_NEW`); BACK asks as for any unsaved channel. Refused first with "No free channel" or "Zone full" |
+| | 4 Edit channel | the channel editor on the channel |
+| | 5 Remove from zone | takes it out of this zone at once, "Removed from <zone>". The channel stays in Channels and any other zone |
+| Zone options | 1 Rename | text entry on the zone's name (2.1); OK writes it, an empty name is refused |
+| | 2 Copy as new zone | a new zone with the same channels, named with " 2" appended, then back to Zones |
+| | 3 Delete zone | asks first (`zonedel`): "Delete <name>? Channels stay." with "No, keep it" focused (P7). Yes deletes it and returns to Zones |
+
+- Channel actions and Edit channel replace their menu on the stack, so the deepest path (Home, Hub, Zones, the zone,
+  the channel editor, text entry) fits the six frames.
+- A zone holds at most `codeplug_zone_capacity()` channels (80, or 16 with the old layout) and a channel once; there
+  are at most `CODEPLUG_ZONES_MAX` zones.
+- With no zones stored the radio shows one zone, "All channels", that holds every channel. The first change stores it
+  as a real zone 0, so the user keeps what they saw; it can't be deleted until then ("It holds every channel").
+- A new zone takes the lowest free slot, so it can come ahead of zones already there, and deleting a zone moves the
+  ones after it up. `zone_edit.c` logs each such shift (`zone_edit_shifts`, the last `ZONE_SHIFT_LOG` = 8 kept), and
+  every holder of a zone index maps it with `zone_edit_map` once no zone write is under way (`zone_edit_busy`). An
+  import that writes zones through the same layer is followed the same way. A reader more than 8 shifts behind keeps
+  its indexes.
+- The settings hold zone indexes too (the zone in use, the roaming zones). An add or delete that moves indexes is
+  noted in the settings before the codeplug write, and the saved indexes are moved in the settings record that clears
+  the note (`core/codeplug/zone_settle.c`). After a power cut anywhere in between, the next power on finishes the
+  note from the zone list (`zone_edit_settle`), so the radio comes back on the same zone. The radio core's own saves
+  leave the zone fields alone until it has followed.
+- What follows a moved zone, and what happens when the zone itself was deleted:
+
+  | Holder | Moved | Deleted |
+  |---|---|---|
+  | The zone in use (radio core, saved as the settings' zone) | follows; the radio stays on its channel | the zone that took its index (the last zone when it was the last), on the same channel if that zone holds it, else its first usable channel |
+  | Dual watch's channels (radio core and `ui_dual.c`) | follow | the pane's channel is found by number in another zone; when no zone holds it the watch ends ("Dual watch off") |
+  | The last B and A kept while the watch is off | found again by channel number | found again by channel number |
+  | Roaming zone flags (settings `roam_zones`) | follow, saved again | the flag is cleared |
+  | Open screens: Zones' focus, a zone's list, Zone options, Channel actions | follow | the zone's screens close, "That zone was deleted" |
+
+- Saved references by channel number (dual watch's B setting, scan lists) need no change.
+- A zone scan ends when the zone in use's channel list changes under it (its skipped channels are kept by position); a
+  rename doesn't end it.
+- Removing the channel in use from the zone in use moves the radio to the next usable channel in the zone. A move in
+  the zone in use keeps the radio on its channel at its new position.
+- The debug link's `zone.edits` counts the zone edits written since start-up and `zone.edit_last` is the last result
+  (`zone_edit_result_t`, 0 = OK).
 
 ## 3. Key meanings
 
@@ -299,6 +365,7 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | `CONFIG_FONT_XL` | n | the 16x32 font for 240 px and wider displays |
 | `CONFIG_FONT_AA` | n | the bitmap fonts (Spleen) on color panels; on, the sizes from 6x12 up are anti-aliased (JetBrains Mono Bold, coverage 0..3 a pixel, blended with what is under them; `gfx.c`). Mono radios leave it off. On a 4 bpp panel (every color board) the edge grays share the 16 palette entries with the screen's own colors; a screen that already uses many colors loses some of them, and some font sizes or colors can then be slightly harder to read |
 | `CONFIG_FONT_BIG` | n | on (needs `FONT_AA`), the 240 px class draws lists, labels, the status strip and hints in a 9x18 font instead of 8x16, and its small print in 8x16 instead of 6x12 |
+| `CONFIG_ZONE_EDIT` | = `CHANNEL_EDIT` | a zone's list only goes to its channels: no Add channel, Channel actions or Zone options (2.2). Needs `CONFIG_CHANNEL_EDIT` |
 | `CONFIG_UI_COLOR` | y (n on a board with a monochrome panel) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_VFO_DMR`, `CONFIG_SCAN`, data features) are

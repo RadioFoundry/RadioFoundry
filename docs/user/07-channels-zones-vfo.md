@@ -29,6 +29,43 @@ Changing the channel ends temporary changes, the reply window, digital monitor a
 
 The Zones list shows the VFO first, then every zone with its number of channels. Type letters to filter it.
 
+## Editing a zone
+
+A zone's list (**OK**, **4**, focus the zone, **#**) also edits the zone. Each change is saved at once: there is
+nothing to save or discard. On a radio without **#**, hold **OK** wherever this section says **#**.
+
+<img src="../ux/screens/160x120i5/zone_actions.png" width="200" alt="Channel actions in a zone">
+
+- **Add channel** (the first row) lists every channel the zone doesn't hold. Type letters or digits to filter it and
+  press **OK** on one. It goes after the channel you are on, or at the end of a zone you are not using.
+- **#** on a channel opens its actions:
+
+  | Key | Action | Does |
+  |---|---|---|
+  | 1 | Move up | swaps it with the channel above. The menu stays open, so press **1** again to move it on |
+  | 2 | Move down | swaps it with the channel below |
+  | 3 | Copy here | opens a copy at the lowest free channel number, named with " 2" added. Change what differs and hold **OK**: the copy is saved and put after the channel in this zone |
+  | 4 | Edit channel | opens the channel's settings ([Editing a channel](#editing-a-channel)) |
+  | 5 | Remove from zone | takes it out of this zone. The channel stays in Channels and in any other zone |
+
+- **Zone options** (the last row):
+
+  | Key | Action | Does |
+  |---|---|---|
+  | 1 | Rename | type the new name and press **OK** |
+  | 2 | Copy as new zone | makes a new zone with the same channels, named with " 2" added |
+  | 3 | Delete zone | asks first, with "No, keep it" focused. The zone's channels stay in Channels |
+
+<img src="../ux/screens/160x120i5/zone_options.png" width="200" alt="Zone options">
+
+Moving, adding and removing keep the radio on its channel. Removing the channel you are on moves the radio to the
+next channel in the zone. A zone holds a channel once, and the radio refuses a channel past the zone's size ("Zone
+full"). A radio whose codeplug has no zones shows one zone, "All channels"; the first change saves it as a real zone.
+
+Deleting the zone you are using moves the radio to the zone that comes after it in the list (or the one before, when
+it was last). Dual watch keeps watching a channel from a deleted zone when another zone holds it, and otherwise
+stops. A zone marked for roaming loses the mark when it is deleted; the other marks stay on their zones.
+
 ## Every channel
 
 **OK**, **5** (Channels) lists every channel in the codeplug by number and name, whichever zones hold it. Each
@@ -94,8 +131,8 @@ name.
 
 **OK**, **5**, then the first row, **New from current**. It opens an unsaved copy of the channel you are on, with any
 quick-settings changes, or of the VFO, at the lowest free channel number. The name gets " 2" added (from the VFO, the
-frequency). Change what differs, then hold **OK** to save it. A new channel is in no zone yet: add it to one in the Codeplug Editor
-([Programming the radio](04-programming.md)).
+frequency). Change what differs, then hold **OK** to save it. A new channel is in no zone yet: add it to one with **Add channel** in the
+zone's list ([Editing a zone](#editing-a-zone)), or use **Copy here** there to make the copy and add it in one step.
 
 ## Saving changes to a channel
 

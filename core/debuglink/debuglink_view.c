@@ -10,6 +10,7 @@
 #include "input/input.h"
 #include "ui/ui.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/zone_edit.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
 #if CONFIG_APRS
@@ -129,14 +130,19 @@ static void hotspot_section(dl_text_t *t)
 		(board.netif != NULL) && board.netif->up());
 #if CONFIG_DMR_IP_GATEWAY
 	hostlink_net_stats_t ns;
-	settings_t st;
+	// The three settings fields read in place: no copy of the whole settings on the host task's stack (its deepest
+	// path comes through here, stack-check.md) nor a static one (RAM is tight on some radios)
+	const settings_t *cfg = settings_begin();
+	uint8_t usb_mode = cfg->usb_mode;
+	uint8_t net_flags = cfg->net_flags;
+	uint32_t link_ip = cfg->net_link_ip;
 
-	settings_read(&st);
+	settings_end(hal_millis());	// nothing changed: nothing to save
 	// Control station mode (docs/spec/usb-network.md 5): the stored settings and what is in force
 	dl_text(t, "usb.boot_network=%u\nnet.passthrough=%u\nnet.passthrough_active=%u\nnet.fixed_link=%u\n",
-		st.usb_mode == 1, (st.net_flags & SETTINGS_NET_PASSTHROUGH) != 0, hostlink_net_passthrough_active(),
-		(st.net_flags & SETTINGS_NET_FIXED_LINK) != 0);
-	dl_text(t, "net.link_ip=%08x\nnet.link_in_force=%08x\n", (unsigned)st.net_link_ip, (unsigned)ipGatewayFixedLink());
+		usb_mode == 1, (net_flags & SETTINGS_NET_PASSTHROUGH) != 0, hostlink_net_passthrough_active(),
+		(net_flags & SETTINGS_NET_FIXED_LINK) != 0);
+	dl_text(t, "net.link_ip=%08x\nnet.link_in_force=%08x\n", (unsigned)link_ip, (unsigned)ipGatewayFixedLink());
 
 	hostlink_net_stats(&ns);
 	dl_text(t, "net.host_ip=%08x\nnet.radio_ip=%08x\n", (unsigned)ipGatewayHostIP(), (unsigned)ipGatewayRadioIP());
@@ -279,6 +285,10 @@ static void storage_section(dl_text_t *t)
 		st.foreign_slots, (unsigned)st.foreign_refusals, st.claim_pending);
 	dl_text(t, "codeplug.source=%s\ncodeplug.serial=%u\n", (unsigned)src < 3 ? sources[src] : "?",
 		(unsigned)codeplug_serial());
+	uint32_t zone_edits;
+	uint8_t zone_last;
+	zone_edit_stats(&zone_edits, &zone_last);
+	dl_text(t, "zone.edits=%u\nzone.edit_last=%u\n", (unsigned)zone_edits, zone_last);
 #if CONFIG_CPS_OPENFW
 	cps_stats_t c;
 

@@ -298,12 +298,17 @@ class Radio:
             # auto lock locks the keys while the radio sits idle; a locked radio ignores every other key
             self.long_press("quick")
             self.wait_for(lambda v: v.get("ui.locked") == "0", sections=("link",), what="keys unlocked")
-        for _ in range(4):
+        # The zone editor's screens go five deep below Home (menu, zones, zone, channel actions, a picker), so a test cut
+        # short there leaves more than a few screens; each press is waited on, so a slow one isn't pressed again
+        for _ in range(8):
             s = self.screen()
             if s in ("home", "hotspot"):
                 return s
             # an emergency call or alarm heard raises this screen; only OK acknowledges and leaves it
             self.press("ok" if s == "emergency" else "back")
+            end = time.monotonic() + 1.0
+            while self.screen() == s and time.monotonic() < end:
+                time.sleep(0.05)
         raise AssertionError(f"could not get to the Home screen (screen {self.screen()})")
 
     def auto_lock_off(self):

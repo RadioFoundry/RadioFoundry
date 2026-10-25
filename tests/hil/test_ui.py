@@ -615,6 +615,45 @@ def test_save_timeslot_to_channel(home):
     save_slot(ts)
 
 
+@pytest.mark.feature("zone_edit")
+@pytest.mark.codeplug_write
+def test_zone_editor_moves_a_channel(home):
+    """Hub 4, # on the zone in use, # on the channel in use: Channel actions (ui.md 2.2). Move down (Move up on the
+    last channel) writes the zone off the UI task (storage.job_busy, zone.edits one more, zone.edit_last 0), the menu
+    stays open and the radio stays on its channel at the new position; the opposite move puts the zone back."""
+    r = home
+    c = r.core()
+    num, pos, size = as_int(c.get("channel_number")), as_int(c.get("zone_pos")), as_int(c.get("zone_size"))
+    if num == 0 or size < 2:
+        skip("state", "the zone in use has fewer than two channels")
+    r.press("ok")
+    wait_screen(r, "hub")
+    r.press("4")
+    wait_screen(r, "zones", "Zones on 4")
+    r.press("context")
+    wait_screen(r, "zone", "the zone's list on #")
+    r.press("context")
+    time.sleep(0.5)
+    if ui(r).get("ui.screen") == "zone":
+        skip("not_built", "built without CONFIG_ZONE_EDIT")
+    wait_screen(r, "zchannel", "Channel actions on #")
+    edits = as_int(r.view(["storage"]).get("zone.edits"))
+    first, back, to = ("2", "1", pos + 1) if pos + 1 < size else ("1", "2", pos - 1)
+
+    def move(key, want_pos, want_edits):
+        r.press(key)
+        r.wait_for(lambda x: x.get("storage.job_busy") == "0" and as_int(x.get("zone.edits")) == want_edits and
+                   as_int(x.get("zone_pos")) == want_pos and as_int(x.get("channel_number")) == num, timeout=5.0,
+                   sections=("core", "storage"), what=f"channel {num} at position {want_pos + 1}, written")
+        assert r.view(["storage"]).get("zone.edit_last") == "0"
+        assert ui(r).get("ui.screen") == "zchannel"		# the menu stays for the next move
+
+    move(first, to, edits + 1)
+    move(back, pos, edits + 2)
+    r.press("back", LONG)
+    wait_screen(r, "home")
+
+
 @pytest.mark.feature("dmr_sms")
 @skip_if(os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1", "opt_in",
          "deletes the newest inbox message: set RFOUNDRY_HIL_DELETE_MESSAGE=1")
