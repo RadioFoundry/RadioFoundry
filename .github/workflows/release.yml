@@ -137,6 +137,11 @@ jobs:
           set -u
           rc=0
           $RUN tools/release_build.sh --toolchain "$TOOLCHAIN" --version "$VERSION" --out dist || rc=$?
+          if [ "$rc" = 3 ] && [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            # a pull request's packaging check runs on GitHub's runners, which can't pull the private csky-elf image
+            echo "::notice::$TOOLCHAIN packaging skipped: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+            exit 0
+          fi
           [ "$rc" != 3 ] || echo "::error::no $TOOLCHAIN compiler: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
           exit "$rc"
 
