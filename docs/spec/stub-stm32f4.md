@@ -350,7 +350,7 @@ never committed.
 
 | Item | Size |
 |---|---|
-| Stub image | 8,084 bytes (limit 8 KB, RadioFoundry's staging buffer, asserted by `f4stub.ld`) |
+| Stub image | 8,156 bytes (limit 8 KB, RadioFoundry's staging buffer, asserted by `f4stub.ld`) |
 | Stub RAM after the jump | 28.6 KB of SRAM (image, engine buffers, 8 KB receive ring), then the stack: at least 4 KB is left for it (asserted by `f4stub.ld`); the deepest call chain needs under 1 KB (`-fstack-usage`) |
 | RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C6000 board | the STUB state machine, the entry and the banner text, all in sectors 3-9 (720 KB); +8 KB of SRAM (the staging buffer): RAM 95.4 % used, the default build |
 | RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C5000 board | the same code, in an application area of 464 KB (the default image is 320,236 bytes), RAM 78.8 %. The switch fits with no other switch off |
