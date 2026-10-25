@@ -270,6 +270,9 @@ class Site:
 			self.write("static/img/radios/%s-frame.svg" % b["id"], img["frame"])
 			b["frame_geometry"] = img["geometry"]
 			b["render"] = img
+			for lk in b["looks"]:
+				limg = device.render(b, lk["name"], lk["id"])
+				self.write("static/img/radios/%s-%s.svg" % (b["id"], lk["id"]), limg["boot"])
 		with open(os.path.join(self.out, "static", "img", "social.png"), "wb") as f:
 			f.write(social.png(social.card(self.boards)))
 		data = self.json_data()
@@ -378,12 +381,17 @@ class Site:
 		return " · ".join([b["bands"]] + extra)
 
 	def radio_card(self, lang, b):
+		"""The board's card, then one per other body it ships in (board.toml looks), each with its own drawing and the
+		radios in it; the board's card lists the rest."""
 		dmr = "DMR" in b["config"]["full"]
-		return self.tpl.partial("radio_card", {
-			"id": b["id"], "name": b["name"], "also": ", ".join(b["also"]),
+		moved = {n for lk in b["looks"] for n in [lk["name"]] + lk.get("also", [])}
+		cards = [(b["id"], b["name"], [n for n in b["also"] if n not in moved])]
+		cards += [("%s-%s" % (b["id"], lk["id"]), lk["name"], lk.get("also", [])) for lk in b["looks"]]
+		return "".join(self.tpl.partial("radio_card", {
+			"id": img, "name": name, "also": ", ".join(also),
 			"badge": self.badge(lang, b["status"]), "bands": self.bands(lang, b),
 			"modes": self.t(lang, "radio.modes_dmr_fm" if dmr else "radio.modes_fm"),
-			"href": "radios/%s.html" % b["id"]}, lang)	# under {{home}}
+			"href": "radios/%s.html" % b["id"]}, lang) for img, name, also in cards)	# under {{home}}
 
 	def request_card(self, lang):
 		return self.tpl.partial("request_card", {"repo": html.escape(self.repo_url)}, lang)

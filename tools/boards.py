@@ -128,6 +128,11 @@ BOARD_SCHEMA = {
     "kind": _req(KINDS),
     "order": _req(int),		# where the radio appears in the site's lists; the lowest is the home page's radio
     "part_of": _opt(str),
+    # other bodies the same board ships in that look too different to share its picture: each is its own card on the
+    # site, drawn in site/static/img/radios/src/<id>-<look id>.svg (the site build refuses a missing one), and links to
+    # the board's page. name is one of also;
+    # also lists the radios in that body (each one of the board's also too)
+    "looks": _opt(("list", {"id": _req(str), "name": _req(str), "also": _opt(STR_LIST)})),
     "debuglink_aliases": _opt(STR_LIST),
     "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
     # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
@@ -149,6 +154,8 @@ BOARD_SCHEMA = {
         "keep_codec": _req(bool),
         "sectors": _opt(str),
         "stock_download": _opt(str),
+        # a warning the web flasher shows on every step once the radio is picked: a choice the radio can't check itself
+        "notice": _opt(str),
         "stock_versions": _req(STR_LIST),
         "backup": _req({"stock": _req(("none", "full")), "rfoundry": _req(("none", "full")), "spi_size": _req(int)}),
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str)}),
@@ -822,6 +829,10 @@ def check(root=ROOT):
         for k, p in d["docs"].items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
+        for lk in d.get("looks", []):
+            for n in [lk["name"]] + lk.get("also", []):
+                if n not in d["also"]:
+                    bad("looks %s: %r is not in also" % (lk["id"], n))
         if d.get("part_of") is not None and d["part_of"] not in boards:
             bad("part_of %r is not a board" % d["part_of"])
         if not b.source_names:
@@ -1103,6 +1114,8 @@ def site_view(boards, root=ROOT):
                  "build_options": json.loads(json.dumps(d.get("build_options", [])))}
         if "stock_download" in fl:
             flash["stock_download"] = fl["stock_download"]
+        if "notice" in fl:
+            flash["notice"] = fl["notice"]
         if stub:
             flash["stub_tested"] = stub["tested"]
         out.append({
@@ -1111,6 +1124,7 @@ def site_view(boards, root=ROOT):
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
+            "looks": json.loads(json.dumps(d.get("looks", []))),
             "unsupported": dict(b.unsupported), "not_written": dict(b.not_written), "volts": b.volts,
             "clock": hw["clock"]["rtc"]})
     # the survey's radios without a board, planned or in progress (docs/spec/radios.md Port cells)

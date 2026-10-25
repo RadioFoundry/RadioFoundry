@@ -442,6 +442,7 @@ function render() {
 	render.stepper = () => { const n = stepper(); shown.replaceWith(n); shown = n; };
 	if (S.sim) app.append(h("p", { class: "small muted sim-line" }, t("flash.sim.banner")));
 	if (VERSION_REF && S.task === "install") app.append(versionBanner());
+	if (S.radio && S.radio.status !== "supported" && S.step > 0) app.append(prereleaseNotice());
 	// One bar of buttons under every step: back, start over, and the step's own next action, which the view sets (and
 	// changes when it redraws) through S.forward. The main action is always there, at the right; a step never puts a
 	// second one in its panel. S.forward also takes [alternative, ..., main].
@@ -461,6 +462,15 @@ function render() {
 			S.step > 0 ? button("← " + t("flash.back"), () => { S.step--; render(); }) : null,
 			h("button", { class: "btn btn-quiet", type: "button", onclick: () => reset() }, t("flash.start_over"))),
 		info, fwd));
+}
+
+// A radio still in development (board.toml [status] below supported): on every step after it is picked
+function prereleaseNotice() {
+	const repo = S.data.site.repo;
+	return h("div", { class: "notice prerelease", role: "note" },
+		h("p", {}, h("strong", {}, t("flash.prerelease.title")), " ", t("flash.prerelease.text", { radio: S.radio.name })),
+		S.radio.flash.notice ? h("p", {}, h("strong", {}, S.radio.flash.notice)) : null,
+		repo ? h("p", {}, h("a", { href: `${repo}/issues/new/choose`, target: "_blank", rel: "noopener" }, t("flash.prerelease.link"))) : null);
 }
 
 function next() {
