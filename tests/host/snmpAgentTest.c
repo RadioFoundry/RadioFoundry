@@ -88,7 +88,7 @@ static bool air_busy;
 static int air_sent, air_len;
 static uint32_t air_dst;
 static uint8_t air_buf[1600];
-bool ipGatewayIPToAir(bool group, uint32_t dst, uint8_t proto, const uint8_t *l4, int n)
+bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t proto, const uint8_t *l4, int n)
 {
 	if (air_busy) {
 		return false;

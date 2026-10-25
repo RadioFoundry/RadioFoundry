@@ -47,4 +47,5 @@ tools/rfoundry_debug.py data emergency cancel
 The mode (alarm only, alarm then call, call only), the target, the number of alarms and the hot mic time are set the
 same way (`tools/rfoundry_debug.py data em-settings`). See [docs/spec/dmr-emergency.md](../spec/dmr-emergency.md).
 
-An emergency can't start on an FM channel, the VFO, a receive-only channel, in hotspot mode, or without a DMR ID.
+An emergency can't start on an FM channel or the FM VFO, a receive-only channel, in hotspot mode, or without a DMR ID.
+The DMR VFO works as a DMR channel does.

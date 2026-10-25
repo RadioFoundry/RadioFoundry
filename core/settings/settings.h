@@ -195,6 +195,9 @@ typedef struct {
 	uint8_t rs_dual_delay;		// radio_settings_t.dual_delay_ms: n - 1 steps of 100 ms, 0 = the default
 	uint8_t rs_bcast_step;		// radio_settings_t.bcast_step + 1, 0 = the default (200 kHz on the odd tenths)
 	uint8_t reserved8[3];
+	// The IP gateway's off-net route (dmrDataSettings_t.ipGatewayId, docs/spec/usb-network.md 3.1; appended for
+	// ip-addr), taken with the other ds_ fields: the gateway radio's DMR ID, 0 = off-net packets dropped
+	uint32_t ds_ip_gateway;
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size

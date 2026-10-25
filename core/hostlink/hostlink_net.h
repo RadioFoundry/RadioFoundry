@@ -25,8 +25,10 @@ typedef struct {
 	uint32_t (*radio_id)(void);
 	// ICMP, UDP or SCTP from the host for a radio ID or talkgroup, from layer 4 on: queue it as an IP packet (SAP 4,
 	// or SAP 3 with the compressed UDP/IPv4 header; confirmed or not: the data service's settings) on the current DMR
-	// channel. False if it can't be taken now (one still going, not a DMR channel, receive only)
-	bool (*ip_to_air)(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length);
+	// channel. False if it can't be taken now (one still going, not a DMR channel, receive only). src_ip / dst_ip / ttl:
+	// the IPv4 addresses (host byte order) and TTL for the air, as ipGatewayIPToAir gives them
+	bool (*ip_to_air)(bool group, uint32_t dst, uint32_t src_ip, uint32_t dst_ip, uint8_t ttl, uint8_t protocol,
+			  const uint8_t *l4, int length);
 	// The payload of a datagram to IPGW_RAW_PORT: the user data of an unconfirmed short data packet (SAP 10)
 	bool (*raw_to_air)(bool group, uint32_t dst, const uint8_t *data, int length);
 } hostlink_net_air_t;

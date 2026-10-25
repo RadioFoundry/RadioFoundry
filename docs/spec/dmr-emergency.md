@@ -64,7 +64,7 @@ access. The radio core reconfigures the call stack when the emergency starts, en
 (`dmr_emergency_config_serial`); it takes effect at the next call.
 
 It can't start (state `failed`, until the next start) when the channel is not a DMR channel we may transmit on (the
-data service's rule: not RX only, in band, not a VFO, not in hotspot mode, an own ID) or there is no target.
+data service's rule: not RX only, in band, not in hotspot mode, an own ID; a DMR VFO counts) or there is no target.
 
 ## 4. Alerts heard
 

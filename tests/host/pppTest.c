@@ -68,7 +68,7 @@ void ipGatewaySerialIn(const uint8_t *data, int length)
 static uint32_t air_dst;
 static uint8_t air_proto;
 static int air_len, air_count;
-bool ipGatewayIPToAir(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol, const uint8_t *l4, int length)
 {
 	(void)group; (void)l4;
 	air_dst = dst;
@@ -540,7 +540,7 @@ static void test_ipv4(void)
 	n = udp(pkt, HOST_IP, IPGW_INDIVIDUAL_NET | 5u, 4001, 4001, "hello", 5);
 	peer_send(IP, pkt, n);
 	CHECK((air_count == 1) && (air_dst == 5) && (air_proto == 17) && (air_len == 13));
-	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 5, 4001, 4001, (const uint8_t *)"back", 4));
+	CHECK(ipGatewayDeliverUDP(false, RADIO_ID, 5, 0x0C000005u, 0x0C000000u | RADIO_ID, 64, 4001, 4001, (const uint8_t *)"back", 4));
 	CHECK(radio_frame(&proto, d, &n));
 	CHECK((proto == IP) && (get32(d + 12) == (IPGW_INDIVIDUAL_NET | 5u)) && (get32(d + 16) == HOST_IP));
 
