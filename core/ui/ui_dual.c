@@ -1206,7 +1206,7 @@ static void actions_select(uint16_t i, bool hold)
 }
 
 const ui_scr_def_t ui_dual_screen = {
-	.name = "dual", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Dual watch", .hint = "1-5 pick  Back",
+	.name = "dual", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Dual Watch", .hint = "1-5 pick  Back",
 	.count = actions_count, .item = actions_item, .select = actions_select,
 };
 
