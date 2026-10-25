@@ -321,7 +321,7 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 #define SETTINGS_RS_NO_TALK_PERMIT	0x20u	// the talk permit tone off (0 = on, as before)
 // settings_t.rpt_beacon (taken with the roam_ fields)
 #define SETTINGS_RPT_BEACON		0x01u	// our repeater roles key an idle beacon
-#define SETTINGS_RPT_SFR_RX		0x06u	// an SFR user channel hears: 0 the repeat, 1 both (first), 2 both (voting)
+#define SETTINGS_RPT_SFR_RX		0x06u	// an SFR user channel hears: 0 the repeat, 1 both (first), 2 both (dual RX)
 #define SETTINGS_RPT_SFR_RX_SHIFT	1
 #define SETTINGS_RPT_SFR_CWID		0x38u	// the SFR repeater's CW ID interval code (radio_cwid_interval_ms), 0 off
 #define SETTINGS_RPT_SFR_CWID_SHIFT	3

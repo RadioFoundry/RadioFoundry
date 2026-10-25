@@ -127,7 +127,7 @@ in the VFO, the bytes are ignored and the channel is an ordinary one.
 |---|---|
 | 0 Repeater (default) | The repeat only. The talker's copy is dropped (`dmr_call` stat `rx_sfr_direct`) |
 | 1 First copy | Both copies; each voice burst once, whichever comes first (`sfrDedupVoice`, stat `rx_sfr_dup`). The second copy of a header doesn't restart the burst sequence |
-| 2 Voting (`CONFIG_SFR_VOTING`) | As first copy, but a voice burst with a frame whose C0 Golay check fails (`ambeFecDecode`) is held up to `DMR_SFR_VOTE_MS` (120 ms) for the other copy, and each failed frame is taken from it when its own check passes (stats `rx_sfr_held`, `rx_sfr_fixed`). A pass/fail check per frame, nothing ranked. No other copy in time: the burst plays as it came. Encrypted voice is never held |
+| 2 Dual RX (`CONFIG_SFR_DUALRX`) | As first copy, but a voice burst with a frame whose C0 Golay check fails (`ambeFecDecode`) is held up to `DMR_SFR_DUAL_MS` (120 ms) for the other copy, and each failed frame is taken from it when its own check passes (stats `rx_sfr_held`, `rx_sfr_fixed`). A pass/fail check per frame, nothing ranked. No other copy in time: the burst plays as it came. Encrypted voice is never held |
 
 The setting is stored in bits 1-2 of the settings record's `rpt_beacon` byte (`settings-store.md`), set in
 Settings > Talk & listen > SFR receive and by debug link setting 30.

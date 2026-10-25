@@ -77,7 +77,7 @@ typedef struct {
 	uint8_t roam_beacon_len_s;	// their beacon duration (1 .. 10)
 	uint8_t roam_survey;	// 0 off, 1 the sites beacon together (one window), 2 each on its own schedule
 	bool rpt_beacon;	// our repeater roles (SFR) key an idle beacon on that interval and duration
-	uint8_t sfr_rx;		// SFR user channels hear: dmr_sfr_rx_t (0 the repeat only, 1 both first arrival, 2 voting)
+	uint8_t sfr_rx;		// SFR user channels hear: dmr_sfr_rx_t (0 the repeat only, 1 both first arrival, 2 dual RX)
 	uint8_t sfr_cwid;	// our SFR repeater's CW ID interval: 0 off, 1 5 min, 2 10, 3 15, 4 30 (CONFIG_SFR_CWID)
 	// Broadcast FM (CONFIG_BCAST_FM)
 	uint8_t bcast_step;	// the VFO's automatic step there: RADIO_BCAST_STEP_200_ODD or RADIO_BCAST_STEP_100

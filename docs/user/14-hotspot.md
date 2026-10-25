@@ -109,7 +109,7 @@ Codeplug Editor. The channel must have one frequency (receive = transmit).
 | Role | What the radio does |
 |---|---|
 | Repeater (Rpt, Rpt Moto) | Repeats every call heard on the inbound slot on the other slot, 90 ms later. PTT is off ("Repeater channel"). The radio shows receiving while it repeats; the red LED lights while it sends. It stays an ordinary channel while transmit is inhibited or the battery is critical, and repeats again once that clears. **Settings > Talk & listen > SFR CW ID** makes it send its callsign in Morse every 5 to 30 minutes, after traffic |
-| User (User, ERDM) | Talks on the inbound slot, in step with the repeater. Plays the repeater's copy of a call. **Settings > Talk & listen > SFR receive** can also take the talker's own copy: the first to arrive, or both with damaged frames voted out |
+| User (User, ERDM) | Talks on the inbound slot, in step with the repeater. Plays the repeater's copy of a call. **Settings > Talk & listen > SFR receive** can also take the talker's own copy: the first to arrive, or both, with each damaged frame taken from the other copy (Dual RX) |
 
 All radios on the frequency must use the same inbound slot. A user with inbound slot 2 listens on slot 1, so it still
 hears a user set to inbound slot 1: two set-ups can't share a frequency. There is no CACH on an SFR: users follow the

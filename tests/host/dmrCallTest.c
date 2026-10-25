@@ -1957,10 +1957,10 @@ static void test_sfr_user(void)
 	CHECK(sink_log.begins == 1 && sink_log.frames == 18 && st.rx_cc_dropped == 1);
 }
 
-#if CONFIG_SFR_VOTING
-// Voting needs real voice frames: frame n of the call is the FEC encoding of parameters made from n, and a bad copy of
+#if CONFIG_SFR_DUALRX
+// Dual RX needs real voice frames: frame n of the call is the FEC encoding of parameters made from n, and a bad copy of
 // it has four bits of its C0 word flipped (detected, not corrected: the vocoder would conceal it)
-static void vote_frame(unsigned n, bool bad, uint8_t out[9])
+static void dual_frame(unsigned n, bool bad, uint8_t out[9])
 {
 	uint8_t bits[AMBE_PARAM_BITS];
 
@@ -1978,7 +1978,7 @@ static void vote_frame(unsigned n, bool bad, uint8_t out[9])
 
 // One SFR call, as in sfr_rx_call, with real frames. bad_direct / bad_repeat: bit k = burst k's frame 1 is bad in
 // that copy. repeat: the repeater is heard
-static void sfr_vote_call(int superframes, uint32_t bad_direct, uint32_t bad_repeat, bool repeat)
+static void sfr_dual_call(int superframes, uint32_t bad_direct, uint32_t bad_repeat, bool repeat)
 {
 	uint8_t lc[9];
 	int n = 3 + superframes * 6 + 1;
@@ -2013,7 +2013,7 @@ static void sfr_vote_call(int superframes, uint32_t bad_direct, uint32_t bad_rep
 			uint32_t bad = copy == 0 ? bad_direct : bad_repeat;
 
 			for (int f = 0; f < 3; f++)
-				vote_frame((unsigned)(v * 3 + f), f == 1 && ((bad >> v) & 1u), &b.payload[f * 9]);
+				dual_frame((unsigned)(v * 3 + f), f == 1 && ((bad >> v) & 1u), &b.payload[f * 9]);
 			if (v % 6 == 5) {
 				b.lc_valid = true;
 				memcpy(b.lc, lc, 9);
@@ -2026,21 +2026,21 @@ static void sfr_vote_call(int superframes, uint32_t bad_direct, uint32_t bad_rep
 }
 
 // The frames played are the good ones, in order
-static bool vote_played_good(unsigned frames)
+static bool dual_played_good(unsigned frames)
 {
 	if (sink_log.frames != frames || sink_log.losts != 0)
 		return false;
 	for (unsigned i = 0; i < frames; i++) {
 		uint8_t g[9];
 
-		vote_frame(i, false, g);
+		dual_frame(i, false, g);
 		if (sink_log.seq[i] != g[0])
 			return false;
 	}
 	return true;
 }
 
-static void test_sfr_vote(void)
+static void test_sfr_dualrx(void)
 {
 	dmr_call_config_t c = base_cfg();
 	dmr_call_stats_t st;
@@ -2049,46 +2049,46 @@ static void test_sfr_vote(void)
 	uint8_t bits[AMBE_PARAM_BITS];
 
 	// The test's bad frame: C0 fails, and its first octet differs from the good one's (what the sink log keeps)
-	vote_frame(4, false, g);
-	vote_frame(4, true, b);
+	dual_frame(4, false, g);
+	dual_frame(4, true, b);
 	ambeFecDecode(b, bits, &r);
 	CHECK(r.c0_failed && g[0] != b[0]);
 
 	c.sfr_user = true;
 	c.tx_sync = DMR_SYNC_TS1;
 	c.rx_sync = DMR_SYNC_TS2;
-	c.sfr_rx = DMR_SFR_RX_VOTE;
+	c.sfr_rx = DMR_SFR_RX_DUAL;
 
 	// Bursts B and E of the talker's copy have a bad frame, the repeat's are good: those frames come from the repeat
 	setup(&c);
-	sfr_vote_call(2, (1u << 1) | (1u << 4), 0, true);
+	sfr_dual_call(2, (1u << 1) | (1u << 4), 0, true);
 	dmr_call_get_stats(&st);
-	CHECK(sink_log.begins == 1 && sink_log.ends == 1 && vote_played_good(36));
+	CHECK(sink_log.begins == 1 && sink_log.ends == 1 && dual_played_good(36));
 	CHECK(st.rx_sfr_held == 2 && st.rx_sfr_fixed == 2 && st.rx_sfr_dup == 12);
 
 	// The repeat bad where the talker's copy is good: nothing held (the first copy decodes), the talker's played
 	setup(&c);
-	sfr_vote_call(2, 0, (1u << 2), true);
+	sfr_dual_call(2, 0, (1u << 2), true);
 	dmr_call_get_stats(&st);
-	CHECK(vote_played_good(36) && st.rx_sfr_held == 0 && st.rx_sfr_fixed == 0);
+	CHECK(dual_played_good(36) && st.rx_sfr_held == 0 && st.rx_sfr_fixed == 0);
 
 	// Both copies bad in the same burst: held, then played as it is (the vocoder conceals the frame)
 	setup(&c);
-	sfr_vote_call(1, 1u << 3, 1u << 3, true);
+	sfr_dual_call(1, 1u << 3, 1u << 3, true);
 	dmr_call_get_stats(&st);
 	CHECK(sink_log.frames == 18 && st.rx_sfr_held == 1 && st.rx_sfr_fixed == 0);
-	vote_frame(3 * 3 + 1, true, b);
+	dual_frame(3 * 3 + 1, true, b);
 	CHECK(sink_log.seq[3 * 3 + 1] == b[0]);
 
-	// No repeat heard: a bad burst waits DMR_SFR_VOTE_MS, then plays; the call keeps its order and every frame
+	// No repeat heard: a bad burst waits DMR_SFR_DUAL_MS, then plays; the call keeps its order and every frame
 	setup(&c);
-	sfr_vote_call(2, 1u << 1, 0, false);
+	sfr_dual_call(2, 1u << 1, 0, false);
 	dmr_call_get_stats(&st);
 	CHECK(sink_log.begins == 1 && sink_log.frames == 36 && sink_log.losts == 0 && st.rx_sfr_held == 1);
-	vote_frame(4, true, b);
+	dual_frame(4, true, b);
 	CHECK(sink_log.seq[4] == b[0] && sink_log.seq[5] != b[0]);
 	for (unsigned i = 0; i < 36; i++) {
-		vote_frame(i, false, g);
+		dual_frame(i, false, g);
 		if (i != 4)
 			CHECK(sink_log.seq[i] == g[0]);
 	}
@@ -2096,10 +2096,10 @@ static void test_sfr_vote(void)
 	// First arrival doesn't fix anything: the talker's bad frame is played
 	c.sfr_rx = DMR_SFR_RX_FIRST;
 	setup(&c);
-	sfr_vote_call(2, 1u << 1, 0, true);
+	sfr_dual_call(2, 1u << 1, 0, true);
 	dmr_call_get_stats(&st);
 	CHECK(sink_log.frames == 36 && st.rx_sfr_held == 0 && st.rx_sfr_fixed == 0);
-	vote_frame(4, true, b);
+	dual_frame(4, true, b);
 	CHECK(sink_log.seq[4] == b[0]);
 }
 #endif
@@ -2135,8 +2135,8 @@ int main(void)
 	test_gps_lc();
 	test_gps_call();
 	test_sfr_user();
-#if CONFIG_SFR_VOTING
-	test_sfr_vote();
+#if CONFIG_SFR_DUALRX
+	test_sfr_dualrx();
 #endif
 	printf("# dmrCallTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
