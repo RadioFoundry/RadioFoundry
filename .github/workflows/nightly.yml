@@ -36,7 +36,7 @@ jobs:
       run: ${{ steps.decide.outputs.run }}
       reuse: ${{ steps.decide.outputs.reuse }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           fetch-depth: 0   # the last passed commit must be here to diff against
           submodules: false
@@ -44,7 +44,7 @@ jobs:
       - name: Look up the last nightly pass
         id: tested
         if: github.event_name == 'schedule'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830   # v4.3.0
         with:
           path: .nightly-ok
           key: nightly-ok-${{ github.sha }}
@@ -73,7 +73,7 @@ jobs:
         if: steps.decide.outputs.mark == 'true'
         run: mkdir -p .nightly-ok && echo "$GITHUB_SHA" > .nightly-ok/sha
       - if: steps.decide.outputs.mark == 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830   # v4.3.0
         with:
           path: .nightly-ok
           key: nightly-ok-${{ github.sha }}
@@ -98,7 +98,7 @@ jobs:
       contents: read
       packages: read   # pulling a private ghcr.io csky-elf image with the job token
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       - name: third_party submodules
@@ -129,7 +129,7 @@ jobs:
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         if: always()
         with:
           name: matrix-${{ matrix.toolchain }}
@@ -144,7 +144,7 @@ jobs:
     runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false
       - name: reuse lint (a warning until the tree passes)
@@ -164,7 +164,7 @@ jobs:
     steps:
       - name: Remember that this commit passed
         run: mkdir -p .nightly-ok && echo "$GITHUB_SHA" > .nightly-ok/sha   # the next run diffs against it
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830   # v4.3.0
         with:
           path: .nightly-ok
           key: nightly-ok-${{ github.sha }}

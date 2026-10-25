@@ -6,7 +6,10 @@
 A containerized runner for this repository's Linux CI jobs, for a Docker host you own: a fresh container for every
 job, and no way out to the network except HTTPS to GitHub. The workflows use it when the repository variable
 `RFOUNDRY_CI_RUNNER` is set to its label (`rfoundry-ci`); [docs/dev/ci-runners.md](../../docs/dev/ci-runners.md#the-github-self-hosted-runner)
-explains the routing and why pull requests from forks never reach it.
+explains the routing.
+
+**Only for a private repository.** Never register it on a public one: there a fork's pull request runs its own
+workflow file, which can name this runner's label (the same page explains it).
 
 | File | What |
 |---|---|
@@ -36,7 +39,8 @@ explains the routing and why pull requests from forks never reach it.
   Anything a job needs from elsewhere (nodejs.org, for one) must be in the image.
 - **What a job could still do.** A job runs as the same user as the runner, so it can read the runner's
   credentials, as on any runner. With them someone could take this runner's place and receive later jobs of this
-  repository until the runner is removed. That is why only this repository's own branches run here, never forks.
+  repository until the runner is removed. That is why only this repository's own branches may run here, never forks,
+  and why the runner belongs on a private repository only.
 
 ## Set up
 

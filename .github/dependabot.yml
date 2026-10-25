@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+#
+# The workflows pin every action to a commit (docs/dev/ci.md): Dependabot proposes the newer commits, with the release
+# in the trailing comment, as pull requests for the owner's review (.github/CODEOWNERS).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/toolchain
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

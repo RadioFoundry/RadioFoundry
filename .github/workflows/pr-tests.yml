@@ -18,7 +18,9 @@
 #
 # Runners: with the repository variable RFOUNDRY_CI_RUNNER set, a pull request from a branch of this repository runs on
 # that self-hosted runner (tools/ci-runner/); one from a fork always runs on GitHub's hosted runners, since this
-# workflow runs every pull request's code without approval. Keep that condition in every job's runs-on.
+# workflow runs every pull request's code without approval. Keep that condition in every job's runs-on. The public
+# repository has no self-hosted runner at all (docs/dev/ci-runners.md): a fork's pull_request workflows pick their
+# own runner.
 name: PR tests
 
 on:
@@ -45,7 +47,7 @@ jobs:
       src: ${{ steps.files.outputs.src }}
       docs: ${{ steps.files.outputs.docs }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           ref: ${{ env.MERGE_REF }}
           fetch-depth: 2   # the merge commit and main, its first parent
@@ -74,7 +76,7 @@ jobs:
     runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           ref: ${{ env.MERGE_REF }}
           persist-credentials: false
@@ -98,7 +100,7 @@ jobs:
           make -s -C tests/host uiSim
           mkdir -p build/ci   # uiSim makes only the last directory
           tests/host/uiSim --gallery build/ci/gallery > build/ci/gallery.log || { grep FAIL build/ci/gallery.log; exit 1; }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         if: always()
         with:
           name: host-logs
@@ -106,7 +108,7 @@ jobs:
             build/ci/*.log
             build/ci/gallery/
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         if: always()
         with:
           name: coverage-report
@@ -133,25 +135,24 @@ jobs:
       contents: read
       packages: read   # pulling the private csky-elf image with the job token
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           ref: ${{ env.MERGE_REF }}
           persist-credentials: false
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       # main's copy of the toolchain action, never the pull request's: it gets the registry token, and it runs before
       # any of the pull request's code, so the image is pulled and the registry logged out of first
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           ref: ${{ github.sha }}   # main's commit, the one this workflow comes from
           path: .ci-main
           persist-credentials: false
           sparse-checkout: .github/actions
-      - name: Toolchain (platform.toml [toolchain]; no cache here)
+      - name: Toolchain (platform.toml [toolchain])
         id: tc
         uses: ./.ci-main/.github/actions/toolchain
         with:
           toolchain: ${{ matrix.toolchain }}
-          cache: "false"
           image: ${{ vars.RFOUNDRY_CSKY_IMAGE }}
           registry: ${{ vars.RFOUNDRY_CSKY_REGISTRY }}
           registry-user: ${{ github.actor }}
@@ -172,7 +173,7 @@ jobs:
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         if: always()
         with:
           name: firmware-${{ matrix.toolchain }}
@@ -188,7 +189,7 @@ jobs:
     runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           ref: ${{ env.MERGE_REF }}
           persist-credentials: false
@@ -223,7 +224,7 @@ jobs:
           set -eu
           VERSION="$(git rev-parse --short=8 HEAD)"
           tools/build_manual.sh --version "$VERSION" --out "build/manual/RadioFoundry-manual-${VERSION}.pdf"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         if: needs.changes.outputs.docs == 'true'
         with:
           name: manual

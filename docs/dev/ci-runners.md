@@ -30,6 +30,15 @@ Things to know:
 
 ## The GitHub self-hosted runner
 
+**The public GitHub repository has no self-hosted runner, and `RFOUNDRY_CI_RUNNER` and `RFOUNDRY_UI_RUNNER` are unset
+there.** On a public repository, anyone can open a pull request whose own workflow file names any runner label, and a
+`pull_request` run uses the pull request's copy of the workflows. The `runs-on` conditions below don't stop that: the
+attacker writes the workflow. Approving fork runs one by one is the only other gate, and a missed `.github/` change in
+one approval is enough. A job on the runner can read the runner's credentials and take its place for later jobs,
+`main`'s included. The hosted runners cost nothing on a public repository. What follows applies to a private copy
+of the repository (a mirror, or a fork kept private). A self-hosted runner on a public repository needs, at least, an
+organization runner group restricted to `main`'s workflow files and single-use (just-in-time) registrations.
+
 GitHub's hosted runners cost the account's Actions minutes on a private repository. The repository variable
 `RFOUNDRY_CI_RUNNER` moves the Linux jobs to a self-hosted runner instead: each such job has
 `runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}`, so with the variable set to `rfoundry-ci` they go to a runner
@@ -40,20 +49,21 @@ push to `main` builds the Linux rfoundry alone, on the self-hosted runner.
 The runner is the image in `tools/ci-runner/` (its README has the setup): Ubuntu 24.04 with everything the
 workflows install (the Arm and csky-elf toolchains, host GCC, Python with NumPy, pytest, pyserial, Pillow and
 markdown-it, gcovr, tshark, Node.js 22, gh, reuse). The workflows notice it by `RFOUNDRY_CI_IMAGE=1` in the
-environment (and `runner.environment == 'self-hosted'` in a step's `if`) and skip their `apt-get` steps, the
-toolchain cache, `setup-python`, `setup-node`, `pip` and Docker: the C-SKY jobs build directly with the image's
+environment (and `runner.environment == 'self-hosted'` in a step's `if`) and skip their `apt-get` steps,
+`setup-python`, `setup-node`, `pip` and Docker: the C-SKY jobs build directly with the image's
 csky-elf GCC. Every job gets a new container, as a non-root user, with no Docker socket, no host network or other
 host directories, and CPU, memory and process limits. Its network has no route out: an egress proxy passes HTTPS
 to the hosts in `tools/ci-runner/proxy/allow` only (GitHub, the npm registry and PyPI), so a job can't download from
 anywhere else (nodejs.org, developer.arm.com). A tool a job needs goes into the image. Ubuntu's system Python takes
 no `pip install`; a job that needs packages makes a venv (`release.yml`'s rfoundry job does).
 
-Pull request code from a fork never runs on it. `pr-tests.yml` runs on `pull_request_target`, which runs every
-pull request without approval, so its jobs (and `ui-gallery.yml`'s and the site's pull request build) choose the
-runner with `github.event.pull_request.head.repo.full_name == github.repository && vars.RFOUNDRY_CI_RUNNER ||
-'ubuntu-24.04'`: a branch of this repository gets the self-hosted runner, a fork GitHub's. The repository's setting
-for fork pull requests ("Run workflows from fork pull requests", off) keeps the `pull_request` workflows from running
-fork code at all.
+`pr-tests.yml` runs on `pull_request_target`, which runs every pull request without approval, so its jobs (and
+`ui-gallery.yml`'s and `release.yml`'s) choose the runner with `github.event.pull_request.head.repo.full_name ==
+github.repository && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04'`: a branch of this repository gets the self-hosted
+runner, a fork GitHub's. Only `pr-tests.yml`'s condition holds against a fork, because `pull_request_target` runs
+`main`'s copy of the workflow. In `ui-gallery.yml` and `release.yml`, `pull_request` runs, it only routes. On a private
+repository, the setting "Run workflows from fork pull requests" (off) keeps those from running a fork's code. A
+public repository doesn't have that setting, which is why it has no self-hosted runner (above).
 
 When the runner is off, jobs routed to it wait in the queue (and fail after a day). Unset `RFOUNDRY_CI_RUNNER` to go back
 to the hosted runners.
@@ -123,9 +133,10 @@ one up on the bench Mac:
   repository's Settings, Actions, Runners> --name bench-mac --labels rfoundry-hil:host` and run
   `gitea-runner daemon` (a LaunchAgent keeps it up). The `:host` label runs jobs directly on the Mac, not in Docker,
   so the job sees the USB serial ports; the JavaScript actions need `node` on the PATH (`brew install node`).
-- **GitHub**: Settings, Actions, Runners, New self-hosted runner, macOS ARM64; run `./config.sh` with the label
-  `rfoundry-hil`, then `./svc.sh install` and `./svc.sh start`. A self-hosted runner on a private repository is fine;
-  never attach one to a public repository (anyone's pull request could run on it).
+- **GitHub**: only on a private copy of the repository: Settings, Actions, Runners, New self-hosted runner, macOS
+  ARM64; run `./config.sh` with the label `rfoundry-hil`, then `./svc.sh install` and `./svc.sh start`. Never on the
+  public repository: a pull request's own workflow could name the label and run on the machine with the radio and the
+  bench ([above](#the-github-self-hosted-runner)).
 
 The runner's environment (the LaunchAgent's, or a `.env` file next to `gitea-runner`; never the repository) provides:
 
