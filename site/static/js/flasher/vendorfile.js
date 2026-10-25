@@ -95,7 +95,7 @@ export async function identifyFile(data, fb, boardId = null) {
 				const app = stockfw.decrypt(data, stockfw.appFileOffset(segs, seg[0], fb), seg[1], key, fb);
 				for (let i = 0; i + 4 <= app.length; i += 4) if (u32le(app, i) === fb.codec_sig) { codecAt = seg[0] + i; break; }
 			}
-			// a known file without a profile (the MD-380 D2.30) is known to give the key only
+			// a known file without a profile (KNOWN_FILES only) is known to give the key, not a codec RadioFoundry can place
 			return { sha, board: b.id, kind: codecAt === null || known ? "key" : "codec-unmapped", how: "key", key, known, codecAt };
 		}
 		return { sha, board: null, known, why: "a TYT/Baofeng firmware file for a radio whose bootloader key RadioFoundry doesn't know" };
