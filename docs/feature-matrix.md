@@ -72,9 +72,9 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_udp_compress` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `sfr` | not recorded | pass (seed) | pass (seed) | not written | ✕ |
-| `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not written | ✕ |
-| `sfr_cwid` | not recorded | not recorded | not recorded | not written | ✕ |
+| `sfr` | not recorded | pass (seed) | pass (seed) | not recorded | ✕ |
+| `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not recorded | ✕ |
+| `sfr_cwid` | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written |
 | `aprs_igate` | not recorded | off | not recorded | not written | not written |
@@ -130,7 +130,7 @@ What the records don't hold yet: limits and known problems from the bring-up pag
 | DM-1701 | Not yet checked: split duplex with a real pair of radios, standalone SFR, roaming to a repeater, IP over DMR end to end, VOX with a voice, privacy scrambling against another radio | [on-air-coverage](testing/on-air-coverage.md) |
 | DM-32UV | GPS data seen, no fix yet. The transmit half of a split duplex pair not checked. FM transmit deviation at 12.5 kHz, both slots through a duplex hotspot. A DMR receive fault after hours of uptime (2026-10-16, cause unknown). USB not available | [dm32-bringup](testing/dm32-bringup.md) |
 | DM-1801 Pro | The receive half of a split duplex pair, VHF transmit, VOX and APRS receive not checked | [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
-| DB25-D PRO | Split duplex and MMDVM SFR not built. DMR audio from the speaker, a GPS fix and settings kept across power off not confirmed | [hardware-db25d](spec/hardware-db25d.md) |
+| DB25-D PRO | Split duplex not built. Standalone and MMDVM SFR checked on the SDR bench (experimental). DMR audio from the speaker, a GPS fix and settings kept across power off not confirmed | [hardware-db25d](spec/hardware-db25d.md) |
 | MD-380 | Fully operational (UHF)¹. DCS, the VHF image, tone deviation and data from a DMR VFO not checked. Split duplex and SFR not available (HR_C5000) | [md380-bringup](testing/md380-bringup.md) |
 
 ¹ TX frequency accuracy depends on each radio's factory calibration: confirm it against an external reference (frequency counter, service monitor, or a hotspot's MMDVMCal BER test). One MD-380 measured +1.9 kHz high, outside an MMDVM hotspot's decode window; `MD380_TX_OFFSET_HZ` corrects it at build time ([hardware-md380](spec/hardware-md380.md)).
@@ -179,9 +179,9 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `TFTP_IDDB` | ● | ● | ● | ● | ● |
 | `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● |
 | `SNMP` | ● | ● | ● | ● | ● |
-| `SFR` | ● | ● | ● | … | ✕ |
-| `SFR_DUALPATH_RX` | ● | ● | ● | … | ✕ |
-| `SFR_CWID` | ● | ● | ● | … | ✕ |
+| `SFR` | ● | ● | ● | ● | ✕ |
+| `SFR_DUALPATH_RX` | ● | ● | ● | ● | ✕ |
+| `SFR_CWID` | ● | ● | ● | ● | ✕ |
 | `TASK_STACKS` | ● | ● | ● | ● | ● |
 | `USB` | ✕ | ● | ✕ | ✕ | ● |
 | `HOSTLINK` | ● | ● | ● | ● | ● |
