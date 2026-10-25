@@ -2967,8 +2967,6 @@ static const ui_scr_def_t info_screen = {
 // ======================= DMR ID (Settings > My radio) =======================
 // One row: the radio's own DMR ID, 0 = the codeplug's. Digits type a new one, OK saves it, BACK leaves it unchanged
 
-#define DMR_ID_MAX	0xFFFFFFu
-
 static uint32_t dmr_id_value;
 static bool dmr_id_editing, dmr_id_typed;
 
@@ -3013,8 +3011,8 @@ static void dmr_id_begin(void)
 static void dmr_id_save(void)
 {
 	dmr_id_editing = false;
-	if (dmr_id_value > DMR_ID_MAX)
-		ui_toast("Not changed: 0 to 16777215");
+	if (dmr_id_value > CODEPLUG_DMR_ID_MAX)
+		ui_toast("Not changed: 0 to 16776415");
 	else if (!ui_svc_setting_set(UI_SET_DMR_ID, (int32_t)dmr_id_value))
 		ui_toast("Couldn't save: try again");
 	else
@@ -3039,7 +3037,7 @@ static bool dmr_id_key(const input_event_t *ev)
 			dmr_id_begin();
 		uint32_t d = (uint32_t)(ev->action - ACT_DIGIT_0);
 		uint32_t v = dmr_id_typed ? dmr_id_value * 10u + d : d;
-		dmr_id_value = v > DMR_ID_MAX ? d : v;	// starts over when the number would be too big
+		dmr_id_value = v > CODEPLUG_DMR_ID_MAX ? d : v;	// starts over when the number would be too big
 		dmr_id_typed = true;
 		ui_dirty();
 		return true;

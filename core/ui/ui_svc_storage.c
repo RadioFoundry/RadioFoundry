@@ -456,7 +456,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		return true;
 #endif
 	case UI_SET_DMR_ID:
-		if (value < 0 || (uint32_t)value > 0xFFFFFFu)
+		if (value < 0 || (uint32_t)value > CODEPLUG_DMR_ID_MAX)
 			return false;
 		st = settings_begin();
 		st->dmr_id = (uint32_t)value;

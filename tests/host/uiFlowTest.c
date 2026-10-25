@@ -337,6 +337,9 @@ static const flow_t flows[] = {
 	{ "S DMR ID opens", "", "ok 7 9 ok", "screen=dmr-id shows=DMR_ID", 4, false },
 	{ "S DMR ID typed and saved", "ok 7 9 ok", "3 1 0 9 9 9 9 ok", "set74=3109999 toast=DMR_ID_saved", 8, false },
 	{ "S DMR ID: BACK leaves it", "ok 7 9 ok 3 1 0 9 9 9 9 ok", "3 1 back", "set74=3109999 screen=dmr-id", 3, false },
+	{ "S DMR ID: the last own ID", "ok 7 9 ok", "1 6 7 7 6 4 1 5 ok", "set74=16776415 toast=DMR_ID_saved", 9, false },
+	// Above 16776415 are the system's IDs: the digit that would go past it starts the number over
+	{ "S DMR ID: past the last starts over", "ok 7 9 ok", "1 6 7 7 6 4 1 6 ok", "set74=6", 9, false },
 	{ "S DMR ID 0: the codeplug's", "ok 7 9 ok 3 1 ok", "0 ok", "set74=0 toast=Using_the", 2, false },
 	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
 	{ "S vibrate on a message", "", "msg:3101234,Hi", "vibes=1 vibe=0", 0, false },
