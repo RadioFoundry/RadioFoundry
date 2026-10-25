@@ -12,7 +12,12 @@ counters (one send taken and ended) and the bench hearing a UDP datagram from th
 a fragment of a valid record header.
 
 Opt-in RF: radio_tx + bench_service + bench_modem (--allow-rf), a DMR channel on --dmr-freq in the current zone and at
-least one contact in the codeplug. Import is not tested on air: the bench doesn't send zones."""
+least one contact in the codeplug.
+
+test_zone_and_channel_between_radios needs a second radio (--peer-port) and writes codeplugs (--allow-codeplug-write,
+both put back): the --radio-port radio sends a zone and then a channel over a private contact, the peer takes each
+offer and imports it, and its codeplug, read over CPS, must hold them (kept as a file for the Codeplug Editor)."""
+import os
 import time
 
 import pytest
@@ -141,6 +146,28 @@ def _send(radio, before, what):
     return v
 
 
+def _wait_import(peer, pred, timeout, what):
+    """Wait on the peer through an import: its debug link may not answer while the import holds the storage, so a
+    missed answer is retried until timeout. Prints how long the import took and the longest silence."""
+    from rfoundry_hil import DebugLinkError
+    start = time.monotonic()
+    silent_since, longest = None, 0.0
+    while time.monotonic() - start < timeout:
+        try:
+            v = peer.view(["link"])
+        except DebugLinkError:
+            silent_since = silent_since or time.monotonic()
+            continue
+        if silent_since:
+            longest = max(longest, time.monotonic() - silent_since)
+            silent_since = None
+        if pred(v):
+            print(f"{what}: {time.monotonic() - start:.1f} s, the debug link silent {longest:.1f} s at most")
+            return v
+        time.sleep(0.2)
+    raise AssertionError(f"{what}: not within {timeout} s (silent {longest:.1f} s at most; last {silent_since})")
+
+
 def _take_offer(peer, before, what):
     """Wait for the offer on the peer, open it from the banner (CONTEXT) and pick Import."""
     v = peer.wait_for(lambda x: int(x.get("zs.offered", 0)) > int(before["zs.offered"]) and
@@ -214,8 +241,8 @@ def test_zone_and_channel_between_radios(radio, pytestconfig, backup_dir):
             sent = _send(radio, b_r, "zone")
             assert sent["zs.send_state"] == "2", f"the zone send failed: {sent}"
             _take_offer(peer, b_p, "zone")
-            peer.wait_for(lambda x: "Imported" in x.get("ui.banner", "") or "Updated" in x.get("ui.banner", ""),
-                          timeout=30, sections=("link",), what="the zone import's banner")
+            _wait_import(peer, lambda x: "Imported" in x.get("ui.banner", "") or "Updated" in x.get("ui.banner", ""),
+                         120, "the zone import")
             print("peer banner:", peer.view(["link"]).get("ui.banner"))
             # 2. One channel, from the channel's actions > Send channel to...
             b_r, b_p = radio.view(["air"]), peer.view(["air"])
@@ -227,10 +254,14 @@ def test_zone_and_channel_between_radios(radio, pytestconfig, backup_dir):
             _take_offer(peer, b_p, "channel")
             _screen(peer, "zone_offer_zone")
             peer.press("ok")            # into the peer's first zone
-            peer.wait_for(lambda x: x.get("ui.screen") == "home" and "Importing" not in x.get("ui.toast", ""),
-                          timeout=30, sections=("link",), what="the channel import done")
+            _wait_import(peer, lambda x: x.get("ui.screen") == "home" and "Importing" not in x.get("ui.toast", ""),
+                         120, "the channel import")
             time.sleep(2)
             peer_after = cps_session(peer, lambda c: c.read_image(QDMR))
+            kept = os.path.join(str(backup_dir), f"codeplug-zs_peer_imported-{time.strftime('%Y%m%d-%H%M%S')}.bin")
+            with open(kept, "wb") as f:
+                f.write(peer_after)     # for the Codeplug Editor check (site/tests, docs/spec/zone-share.md 5.3)
+            print("peer codeplug after the imports:", kept)
             zones_after = _zones(peer_after)
             print("sender zone:", zone_name, sender_zones[zone_name])
             print("peer zones before:", {n: len(c) for n, c in zones_before.items()})
