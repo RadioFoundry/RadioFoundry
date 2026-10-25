@@ -272,6 +272,12 @@ The modem is the HR_C7000's, so the slot engine, the interrupt glue and the PCM 
   margin above 0.4 ms, which measured the same. Earlier, with 2.0 ms, the SFR repeat test
   (`tests/hil/test_hotspot_sfr.py`) passed 10 of 10 runs and `test_dmr_tx_off_air` passed: ramps up 0.33 ms, down
   0.29 ms, slot spacing 60.00 ms (BENCH 2026-10-19).
+  Plain simplex at 0.6 ms (BENCH 2026-10-25, 461.1375 MHz, lowest power, dummy load): `test_dmr_tx_off_air` 3 of 3
+  overs with all 3 voice LC headers and the terminator decoded, ramps up 0.31-0.56 ms and down 0.29-0.31 ms, burst
+  on-time 30.42-30.82 ms, spacing 60.00 ms, carrier -13 to -15 Hz; a DM-32UV and a DM-1701 each played 5 of 5 overs
+  whole from the header (no late entry, no lost frame). The same build at 2.0 ms: the same headers and ramps, burst
+  on-time 31.83-31.94 ms. The bench's MMDVM modem decoded none of these overs at either lead (it decodes the DM-1701's),
+  so its check fails on this radio for a reason other than the lead.
 - **PA key:** the TX path switches on and off with each burst. With it on for the whole transmission, a hotspot (keyed
   while it listens) received nothing (2026-10-16). Per burst, `test_dmr_tx_off_air` passes: ramps up 1.44 ms, down
   0.31 ms, slot spacing 60.00 ms. The DAC B drive is set 28 ms after each burst is armed (the DM-32UV's "DMR PA"

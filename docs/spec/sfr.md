@@ -173,7 +173,8 @@ On air (SDR bench, 2026-10-19), the numbers on the radios' own hardware pages:
   Hearing both slots during a call needs the raw RX RAM path (section 3).
 - An HR_C7000 user reports both copies. Its driver gives the voice-access flag to every chip slot with a call on it;
   with the flag on one slot only, every burst read the voice RAM of the last one decoded and the user played the same
-  burst for the whole call (gotchas 14.15). Fixed in the driver, not yet rechecked on air.
+  burst for the whole call (gotchas 14.15). Fixed in the driver; on air (2026-10-25, `test_sfr_chain_rfoundry_user`, 12
+  calls) the HR_C7000 listener's `voice.rx_repeats` was 0 on every call.
 
 Not built: the HR_C6000 driver level parts (raw RX RAM classification, `sfrRawClassify`; the register switches of
 command 0xD5); a setting on the radio for the role (the Codeplug Editor sets it). On the radio, Tools > Single-freq repeater shows the
@@ -211,11 +212,11 @@ receiving radio's Golay decoders corrected (`sfr.rx_fec`, by frame place `sfr.rx
 
 | Radio | Role | What fails | How often | Evidence | Workaround |
 |---|---|---|---|---|---|
-| Any | Whole chain (user, repeater, user) | A call through a RadioFoundry repeater between RadioFoundry users doesn't come through clean | Hand test 2026-10-20 (DM-1701 user, DM-1801 Pro repeater, DM-32UV user, live voice): about 1 clean call in 30. SDR bench, same radios, debug-link PTT: 9 of 11 calls played whole | PR hand test; `test_sfr_chain_rfoundry_user` | None. MMDVM SFR (a host) is not affected |
+| Any | Whole chain (user, repeater, user) | Not rechecked with live voice and a hand-keyed PTT since the voice RAM fix (gotchas 14.15): the hand test before it had about 1 clean call in 30 | `test_sfr_chain_rfoundry_user` (DM-1701 talker, DM-1801 Pro repeater, DM-32UV listener, debug-link PTT, the voice test signal) after the fix: 12 of 12 calls played whole, 4 per receive mode, no repeated frames, at most 2 bad frames a call (2026-10-25) | Hand test 2026-10-20 | A hand test with voice is still to do |
 | DM-1701 | Repeater | Inbound bit errors sit in the first frame of each burst, the one right after the radio's own outbound burst, and the repeat carries them on | Every call: 54-66 bits per 72 frames, 48-54 of them in the first frame, no frame lost (3 calls, 2026-10-25) | Switching back to RX earlier trades them against our own burst: 28.0 ms after the key, inbound 17-39 bits but the repeat's last frame took 45-61 bits on the SDR (the burst cut short); 28.8 ms, inbound 104-143 bits. The timeslot interrupt (30.25 ms) stays. Dropping only the PA earlier did nothing (`hardware-dm1701.md` 6) | None needed to play: the errors are corrected. A weak inbound signal adds to them |
 | DM-1701 | User | Hears one copy of a call at a time, so First copy and Dual-path RX only switch copies between calls | Always | Gotchas 14.12 | Receive mode Repeater (the default) |
-| DM-1801 Pro | Repeater | The repeat carries the inbound bit errors on (about 1.3 bits a frame) | Every call | Gotchas 14.13; SDR bench rerun of the chain, 2026-10-24 | None; it plays |
-| DM-1801 Pro, DM-32UV | User | The listener played the call's first decoded burst over and over (stale voice RAM: the voice-access flag on the wrong chip slot) | Hand test 2026-10-20: most calls | Gotchas 14.15; fixed in the driver, `hrc7000DmrTest` test_rx_sfr_both_copies; on-air recheck: below | Receive mode Repeater |
+| DM-1801 Pro | Repeater | The repeat carries the inbound bit errors on: a listener playing the repeat corrects about 1.1-1.9 bits a frame, against 0-0.03 for one playing the talker's own copy | Every call | Gotchas 14.13; `test_sfr_chain_rfoundry_user` 2026-10-25 (receive mode Repeater against First copy and Dual-path RX) | Receive mode First copy or Dual-path RX where the talker is in range |
+| DM-1801 Pro, DM-32UV | User | Fixed: the listener played the call's first decoded burst over and over (stale voice RAM: the voice-access flag on the wrong chip slot) | Hand test 2026-10-20: most calls. After the fix: none in 12 calls (`voice.rx_repeats` 0) | Gotchas 14.15; `hrc7000DmrTest` test_rx_sfr_both_copies | - |
 | DM-32UV | Repeater | Repeat quality falls with a weak, fading inbound path | One site: 39 of 72 frames repeated | `hardware-dm32.md` 8.9 | Put the repeater where it hears the users well |
 | DB25-D PRO | Any | Not built (`CONFIG_SFR=n`): same-frequency TX needs the BK4819 without its per-burst VCO calibration | - | `boards/db25d/config.mk` | None |
 | MD-380 | Any | Not available: the HR_C5000 lacks what the SFR uses (section 3) | - | Gotchas 14.6 | None |
