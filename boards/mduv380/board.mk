@@ -22,3 +22,5 @@ BOARD_HAL_MODULES := hal_i2c
 # The 160x128 panel in 16 colors, every row visible (hardware-mduv380.md 4): the 4 bpp frame buffer is 10240 B and 128
 # rows. A screen has at most 16 colors (core/ui/gfx.h); with CONFIG_FONT_AA the edge grays compete for them
 MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=10240u -DGFX_MAX_ROWS=128u -DUVF_LCD_HIDDEN_ROWS=0
+# The TYT images start the HSE as a crystal (hardware-mduv380.md 2); the bypass mode stays the fallback
+MCU_DEFS   += -DUVF_HSE_XTAL_FIRST=1

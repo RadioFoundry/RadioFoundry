@@ -28,10 +28,13 @@ static void ccm_zero(void)
 }
 __attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
 
-// docs/spec/hardware-dm1701.md 1.2
+// docs/spec/hardware-dm1701.md 1.2. UVF_HSE_XTAL_FIRST (board.mk): the radio's HSE is tried as a crystal first
+#ifndef UVF_HSE_XTAL_FIRST
+#define UVF_HSE_XTAL_FIRST	0
+#endif
 static const stm32_clock_t clock = {
 	.hse_hz = 8000000,
-	.hse_bypass = true,
+	.hse_bypass = !UVF_HSE_XTAL_FIRST,
 	.pll_m = 4,
 	.pll_n = 72,
 	.pll_p = RCC_PLLP_DIV2,
@@ -118,8 +121,7 @@ void board_rf_safe(void)
 
 static uint8_t hse_mode;
 
-// The DM-1701's HSE is an external clock (hardware-dm1701.md 1.2); whether the MD-UV380's is the same or a crystal is
-// open (hardware-mduv380.md 2): the other mode is tried when the first never starts, and the diagnostics page says which
+// The radio's HSE mode first (UVF_HSE_XTAL_FIRST), then the other when it never starts; the diagnostics page says which
 // ran. Neither: the clock stays on the HSI (no USB)
 void board_early_init(void)
 {
