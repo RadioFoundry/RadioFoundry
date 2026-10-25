@@ -18,7 +18,7 @@
 
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import * as stockfw from "./stockfw.js";
-import { openVendorFile, describe as describeVendorFile } from "./vendorfile.js";
+import { openVendorFile, describe as describeVendorFile, analysisCandidate } from "./vendorfile.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
 import { validRef, refShort, defaultRef } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
@@ -144,6 +144,32 @@ async function api(method, path, body) {
 	const j = await r.json().catch(() => ({}));
 	if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
 	return j;
+}
+
+// "Send this file for further analysis": a vendor firmware file the page couldn't take the codec from goes to the
+// backend (POST /v1/samples: vendor containers only, size and rate limited, never served back), so its build can be
+// mapped. Only on the user's click, with what was found; nothing from the radio. Not offered in a simulation
+function analysisOffer(cand, boardId) {
+	if (!cand || S.sim) return null;
+	const status = h("p", { class: "small" });
+	const note = h("textarea", { rows: 2, maxlength: 500, placeholder: t("flash.analysis.note") });
+	const send = button(t("flash.analysis.send"), async () => {
+		send.disabled = true;
+		status.textContent = t("flash.analysis.sending");
+		const q = new URLSearchParams({ board: boardId, name: cand.file.path.split("/").pop(), reason: cand.reason,
+			version: S.data.site.version || "", note: note.value.trim() });
+		try {
+			const r = await fetch(new URL(`samples?${q}`, API), { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: cand.file.data });
+			const j = await r.json().catch(() => ({}));
+			if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+			status.textContent = t(j.status === "already-have" ? "flash.analysis.have" : "flash.analysis.sent");
+		} catch (e) {
+			status.textContent = t("flash.analysis.failed", { error: e.message });
+			send.disabled = false;
+		}
+	});
+	return h("div", { class: "notice" }, h("strong", {}, t("flash.analysis.title")),
+		h("p", {}, t("flash.analysis.text", { name: cand.file.path.split("/").pop() })), note, send, status);
 }
 
 // One id per use: the custom build requests and the write that follows share it; each write ends the use
@@ -409,8 +435,9 @@ async function pickedStock(f) {
 		const opened = await openVendorFile(f.name, f.data, fb(), S.board.id);
 		const report = describeVendorFile(opened, fb(), S.board.id);
 		const b = opened.best;
-		if (!b) return { ...f, report, info: { sha: null, known: null, profile: null } };
-		return { name: b.path.split("/").pop(), data: b.data, report, match: b.match, info: await stockfw.identify(b.data, fb()) };
+		const analysis = analysisCandidate(opened, fb());
+		if (!b) return { ...f, report, analysis, info: { sha: null, known: null, profile: null } };
+		return { name: b.path.split("/").pop(), data: b.data, report, analysis, match: b.match, info: await stockfw.identify(b.data, fb()) };
 	} catch (e) {
 		console.warn(e.message);
 		return { ...f, report: [e.message], info: { sha: null, known: null, profile: null } };
@@ -1082,7 +1109,7 @@ function codecView() {
 			? h("details", { class: "small", open: !S.stock.info.known }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, S.stock.report.map((l) => h("li", {}, l)))) : null;
 		const loaded = !S.stock ? null : [keyOnly ? notice(`${loadedText}. ${t("flash.codec.stock_key_only", { files: S.board.codec.sources.join(", ") })}`, "action")
 			: unmapped ? notice(`${loadedText}. ${unmapped}`, "action")
-			: S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad"), report];
+			: S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad"), report, analysisOffer(S.stock.analysis, S.board.id)];
 		// a download link only where there is a known one; no vague pointers
 		const where = h("p", {}, t("flash.codec.stock_files", { files: S.board.codec.sources.join(", ") }),
 			S.radio.flash.stock_download ? [" ", h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download"))] : null);
@@ -1684,7 +1711,7 @@ async function main() {
 		app.replaceChildren(notice(t("flash.err.load"), "bad"), reportLine());
 		return;
 	}
-	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText,
+	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, errorText, analysisOffer,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
 	// #sim=<board>[-stock]: that board, running RadioFoundry or its stock firmware; #sim: the first radio on stock firmware
 	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock)?)?(?:&|$)/);

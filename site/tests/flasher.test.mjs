@@ -168,6 +168,23 @@ test("vendor file: an unknown build is told apart by the bootloader key, and its
 	assert.match(z.files[0].match.why, /bootloader key RadioFoundry doesn't know/);
 });
 
+test("vendor file: only a vendor container the page can't use is offered for analysis", async () => {
+	const fbX = await radioX();
+	// the codec of a build without a map: offered, with what was found
+	const unmapped = vendorfile.analysisCandidate(await vendorfile.openVendorFile("new.bin", stock, fbX, "x"), fbX);
+	assert.equal(unmapped.reason, "codec-unmapped");
+	// a container no known key opens
+	const nokey = { ...fbX, boards: {} };
+	assert.equal(vendorfile.analysisCandidate(await vendorfile.openVendorFile("new.bin", stock, nokey, "x"), nokey).reason, "key-unknown");
+	// a mapped build: nothing to send
+	const mapped = await radioX({ profiles: { [fx.stock_sha256]: { ...fx.profile, board: "x" } } });
+	assert.equal(vendorfile.analysisCandidate(await vendorfile.openVendorFile("x.bin", stock, mapped, "x"), mapped), null);
+	// not a vendor container (a readout, anything else), or too large: never offered
+	const other = new Uint8Array(100000).fill(0x5A);
+	assert.equal(vendorfile.analysisCandidate(await vendorfile.openVendorFile("dump.bin", other, fbX, "x"), fbX), null);
+	assert.equal(vendorfile.analysisCandidate(await vendorfile.openVendorFile("new.bin", stock, fbX, "x"), fbX, stock.length - 1), null);
+});
+
 test("codec extraction checks every window", async () => {
 	const { segments: segs } = await stockfw.extract(stock, fromHex(fx.key), fb, profiles);
 	assert.equal(segs.length, 3);	// code (moved), tables, descriptor

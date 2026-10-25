@@ -72,6 +72,20 @@ The page lists what each file is: used, for another radio, set aside and why. A 
 never taken. Moving the codec needs that build's map, because its calls into the rest of the vendor firmware differ
 per build ([codec-placement.md](../spec/codec-placement.md)).
 
+When the page can't take the codec from what was picked, it offers **Send this file for further analysis** for a
+vendor firmware container in it: a file with the `OutSecurityBin` or the C-SKY stock header, 4 MB at most. Readouts
+and anything else are never offered. The file goes to the backend only on the user's click, with:
+
+- its name;
+- the radio being flashed;
+- what the page found (`codec-unmapped`, `key-unknown`, `unknown-container`);
+- the site version;
+- an optional note.
+
+The backend (`POST /v1/samples`, raw body, the rest as query parameters) checks the header and the size itself. It
+rate-limits per address and per day, caps the total storage, keeps one copy per SHA-256 and never serves a file back.
+Simulations don't offer it.
+
 ## Radio access backends
 
 A radio's `flash.backend` in `data/radios.json` names how the page reaches it (from the board.toml `[flash] family`,

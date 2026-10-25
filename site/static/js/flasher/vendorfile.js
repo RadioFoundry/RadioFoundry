@@ -145,3 +145,13 @@ export function describe(opened, fb, boardId) {
 	});
 	return lines.concat(opened.skipped.map((s) => `${s.path}: skipped, ${s.why}`));
 }
+
+// The file to offer for analysis when the page can't take the codec from what was picked: a vendor firmware container
+// (the headers the backend accepts, never a readout) of at most maxBytes, with what the page found as its reason
+export function analysisCandidate(opened, fb, maxBytes = 4 << 20) {
+	const magics = [fb.magic, fb.c7000?.stock_magic].filter(Boolean);
+	const f = opened.files.find((x) => x.match.kind !== "codec" && x.data.length <= maxBytes && magics.some((m) => startsWith(x.data, m)));
+	if (!f) return null;
+	const m = f.match;
+	return { file: f, reason: m.board ? m.kind : /bootloader key/.test(m.why || "") ? "key-unknown" : "unknown-container" };
+}

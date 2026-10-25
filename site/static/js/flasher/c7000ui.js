@@ -20,7 +20,7 @@ import { hex, sha256, sleep } from "./bytes.js";
 import { SerialStream, Link, probe, serialSupported } from "./link.js";
 import { Stub, stubImages, StubError, DONE_LED, MEM } from "./stub.js";
 import * as c7 from "./c7000.js";
-import { openVendorFile, describe as describeVendorFile } from "./vendorfile.js";
+import { openVendorFile, describe as describeVendorFile, analysisCandidate } from "./vendorfile.js";
 import { upgradeSlot } from "./c7000v1.js";
 import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
@@ -524,7 +524,8 @@ export function checkView() {
 				const got = opened.best?.match;
 				if (got?.kind !== "codec") {
 					const lines = describeVendorFile(opened, ctx.fb(), boardId());
-					fill(status, h("div", { class: "notice bad" }, h("p", {}, got?.why || t("flash.c7.codec.file_unusable")), h("ul", { class: "small" }, lines.map((l) => h("li", {}, l)))));
+					fill(status, h("div", { class: "notice bad" }, h("p", {}, got?.why || t("flash.c7.codec.file_unusable")), h("ul", { class: "small" }, lines.map((l) => h("li", {}, l)))),
+						ctx.analysisOffer(analysisCandidate(opened, ctx.fb()), boardId()));
 					return;
 				}
 				c.fileCodec = got.codec;
