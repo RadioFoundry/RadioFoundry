@@ -90,6 +90,9 @@ class Site:
 			for off in v["off"]:
 				if off["name"] not in self.fmap:
 					raise repo.SourceError("variant %s turns off unknown switch %s" % (v["id"], off["name"]))
+		for name, entry in self.screens["screens"].items():
+			if entry["group"] not in self.screens["groups"]:
+				self.warn("site/data/screens.json: screen %s has group %s, not in \"groups\"" % (name, entry["group"]))
 		for b in self.boards:
 			names = repo.screens(b["gallery"])
 			unknown = [n for n in names if self.screen(n) is None]
@@ -189,7 +192,7 @@ class Site:
 	def nav(self, lang, home, current):
 		items = [("radios", "radios/index.html"), ("features", "features/index.html"),
 			 ("flash", "flash/index.html"), ("codeplug", "codeplug/index.html"), ("docs", "docs/index.html"),
-			 ("tools", "tools/index.html")]
+			 ("screenshots", "screenshots/index.html"), ("tools", "tools/index.html")]
 		return "".join('<a href="%s%s"%s>%s</a>' % (home, href, ' aria-current="page"' if key == current else "",
 							    html.escape(self.i18n.t(lang, "nav." + key)))
 			       for key, href in items)
@@ -201,6 +204,12 @@ class Site:
 		"""A gallery screen's screens.json entry; a color page's shot in a highlight color or a theme (<page>__<color>)
 		takes the page's."""
 		return self.screens["screens"].get(name.partition("__")[0])
+
+	def has_screen(self, board, name):
+		"""The board's build shows this gallery screen: its gallery has the shot and the full build has every switch
+		the screen needs."""
+		s = self.screen(name)
+		return name in board["screens"] and s is not None and all(x in board["config"]["full"] for x in s["needs"])
 
 	def screen_caption(self, lang, name):
 		page, _, color = name.partition("__")
@@ -265,6 +274,7 @@ class Site:
 			self.radios_index(lang)
 			for b in self.boards:
 				self.radio_page(lang, b)
+			self.screenshots_page(lang)
 			self.features_page(lang)
 			self.flash_page(lang)
 			self.tools_page(lang)
@@ -272,11 +282,30 @@ class Site:
 			self.docs_pages(lang)
 			self.not_found(lang)
 		self.write(".nojekyll", "")
+		self.check_screenshots()
 		self.check_links()
 		missing = self.i18n.unused_check()
 		if missing:
 			self.warn("keys missing from the %s catalog: %s" % (self.i18n.default, ", ".join(missing)))
 		return self.warnings
+
+	SHOTS_SECTION = re.compile(r'<section class="rshots" id="([^"]+)".*?</section>', re.S)
+
+	def check_screenshots(self):
+		"""The screenshots page has a section for every board in boards/, and each section every gallery screen
+		that board's build has: what the page shows comes from the registry, the gallery and screens.json alone."""
+		with open(os.path.join(self.out, "screenshots", "index.html"), encoding="utf-8") as fh:
+			sections = {m.group(1): m.group(0) for m in self.SHOTS_SECTION.finditer(fh.read())}
+		for b in self.boards:
+			sec = sections.get(b["id"])
+			if sec is None:
+				self.warn("screenshots page: no section for %s" % b["id"])
+				continue
+			shown = set(re.findall(r'docs/ux/screens/%s/([^"/]+)\.png' % re.escape(b["gallery"]), sec))
+			want = {n for n in repo.screens(b["gallery"]) if self.has_screen(b, n)}
+			if shown != want:
+				self.warn("screenshots page, %s: missing %s; unexpected %s" % (
+					b["id"], ", ".join(sorted(want - shown)) or "none", ", ".join(sorted(shown - want)) or "none"))
 
 	LINK = re.compile(r'(?:href|src)="([^"]*)"')
 
@@ -431,8 +460,7 @@ class Site:
 			sw, sh = device.png_size(fh.read(32))
 		items = []
 		for n in self.screens["featured"]:
-			s = self.screen(n)
-			if n not in b["screens"] or s is None or any(x not in b["config"]["full"] for x in s["needs"]):
+			if not self.has_screen(b, n):
 				continue
 			cap = self.screen_caption(lang, n)
 			items.append('<figure class="shot"><button type="button" class="shot-show" title="%s" data-src="{{root}}docs/'
@@ -443,6 +471,8 @@ class Site:
 			if len(items) == 6:
 				break
 		shots = ['<div class="shots">%s</div>' % "".join(items)] if items else []
+		shots.append('<p class="shots-all"><a href="{{home}}screenshots/index.html#%s">%s →</a></p>'
+			     % (b["id"], html.escape(self.t(lang, "radio.screens_all"))))
 		docs_links = "".join('<li><a href="{{home}}%s">%s</a></li>'
 				     % (docsmod.site_path(p), html.escape(self.t(lang, "radio.doc." + k)))
 				     for k, p in sorted(b["docs"].items(), key=lambda kv: DOC_ORDER.index(kv[0])))
@@ -469,6 +499,46 @@ class Site:
 			       else fl.get("bootloader", [])))}
 		self.page(lang, "radios/%s.html" % b["id"], b["name"], self.tpl.render("radio", ctx, lang), "radio",
 			  description=self.t(lang, "radio.description", name=b["name"]), nav="radios")
+
+	def screenshots_page(self, lang):
+		"""Every screen each radio's build has, a section per radio, grouped as screens.json groups them, in its order.
+		A color page's shots in other highlight colors and themes follow it, hidden until the visitor asks for them.
+		Without the script the first radio shows, or the one the address names (#<radio>, CSS :target)."""
+		order = list(self.screens["screens"])
+		picks, sections = [], []
+		for b in self.boards:
+			with open(repo.path("docs", "ux", "screens", b["gallery"], "boot.png"), "rb") as fh:
+				sw, sh = device.png_size(fh.read(32))
+			# a small display at twice its pixels, kept square; a QVGA one as it is
+			scale = 2 if sw <= 160 else 1
+			names = [n for n in b["screens"] if self.has_screen(b, n)]
+			names.sort(key=lambda n: (order.index(n.partition("__")[0]), n.partition("__")[2]))
+			groups = []
+			for g in self.screens["groups"]:
+				items = []
+				for n in names:
+					if self.screen(n)["group"] != g:
+						continue
+					cap = html.escape(self.screen_caption(lang, n))
+					items.append('<figure class="gshot%s"><img src="{{root}}docs/ux/screens/%s/%s.png" alt="%s" width="%d" '
+						     'height="%d" loading="lazy"%s><figcaption>%s</figcaption></figure>'
+						     % (" gshot-variant" if "__" in n else "", b["gallery"], n, cap, scale * sw, scale * sh,
+							' class="px"' if scale > 1 else "", cap))
+				if items:
+					groups.append('<h3>%s</h3><div class="gshots">%s</div>'
+						      % (html.escape(self.t(lang, "screens.group." + g)), "".join(items)))
+			base = sum(1 for n in names if "__" not in n)
+			count = html.escape(self.t(lang, "screens.count", n=base, display=b["display"]))
+			sections.append('<section class="rshots" id="%s" aria-labelledby="rshots-%s" style="--shot-w:%dpx">'
+					'<h2 id="rshots-%s">%s</h2><p class="muted small">%s · <a href="{{home}}radios/%s.html">%s</a></p>'
+					'%s</section>' % (b["id"], b["id"], scale * sw, b["id"], html.escape(b["name"]), count, b["id"],
+							  html.escape(self.t(lang, "screens.radio_page", name=b["name"])), "".join(groups)))
+			# site.js marks the radio shown (aria-current); without it the section's heading names the radio
+			picks.append('<a href="#%s">%s</a>' % (b["id"], html.escape(b["name"])))
+		ctx = {"picks": "".join(picks), "sections": "".join(sections)}
+		self.page(lang, "screenshots/index.html", self.t(lang, "screens.title"),
+			  self.tpl.render("screenshots", ctx, lang), "screenshots", description=self.t(lang, "screens.lead"),
+			  nav="screenshots")
 
 	def state_cell(self, lang, state):
 		return '<td class="st st-%s"><span aria-hidden="true">%s</span><span class="sr">%s</span></td>' % (

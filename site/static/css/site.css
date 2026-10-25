@@ -217,7 +217,38 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 	image-rendering: pixelated; border-radius: 6px; background: #000; padding: 6px; display: block; height: auto;
 }
 .shot figcaption { font-size: var(--text-sm); color: var(--muted); max-width: 22ch; margin: var(--space-1) auto 0; }
+.shots-all { margin-top: var(--space-4); }
 .steps li, .links li { margin-bottom: var(--space-2); }
+
+/* screenshots page: one radio's section at a time. Without the script CSS picks it: the one the address names
+   (#<radio>, :target), else the first. With it, site.js marks the chosen one (.is-current) and the links. */
+.screens-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-5); margin-bottom: var(--space-2); }
+.radio-pick { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.radio-pick a {
+	display: inline-flex; align-items: center; min-height: 40px; padding: var(--space-1) var(--space-3);
+	border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
+	text-decoration: none; font-weight: 500;
+}
+.radio-pick a:hover { background: var(--surface-2); }
+.radio-pick a[aria-current="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.variants-toggle { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--muted); cursor: pointer; }
+.variants-toggle input { width: 1.1rem; height: 1.1rem; margin: 0; accent-color: var(--accent); }
+/* the browser scrolls a link to #<radio> to its section; the large margin keeps the page at its top, picker in view */
+.rshots { display: none; scroll-margin-top: 30rem; }
+.rshots h2 { margin: var(--space-4) 0 var(--space-1); }
+.rshots h3 { margin: var(--space-5) 0 var(--space-3); }
+.rshots-all:not(.js) .rshots:first-child, .rshots-all:not(.js) .rshots:target { display: block; }
+.rshots-all:not(.js):has(.rshots:target) .rshots:first-child:not(:target) { display: none; }
+.rshots-all.js .rshots.is-current { display: block; }
+/* each radio's screens at one width (--shot-w, set per section), as many to a row as fit */
+.gshots { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--shot-w)), var(--shot-w))); gap: var(--space-5) var(--space-4); }
+.gshot { margin: 0; }
+.gshot img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; background: #000; }
+.gshot img.px { image-rendering: pixelated; }
+.gshot figcaption { margin-top: var(--space-1); font-size: var(--text-sm); color: var(--muted); line-height: 1.35; }
+/* a color page's shots in other highlight colors and themes: only when asked for (no script needed) */
+.gshot-variant { display: none; }
+.screens-page:has(#show-variants:checked) .gshot-variant { display: block; }
 
 /* docs */
 .doc-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr) 200px; gap: var(--space-6); padding-top: var(--space-5); }
