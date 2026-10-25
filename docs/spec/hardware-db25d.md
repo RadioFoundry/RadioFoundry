@@ -375,9 +375,9 @@ RadioFoundry (`boards/db25d/dmr_db25d.c`, `radio_db25d.c`; tests in `tests/host/
 
 | Step | RadioFoundry |
 |---|---|
-| `tx()` in DMR mode | Checks band and page as FM does, keeps the TX plan (PA drive, TX-on and TX-off delays), writes RF_MOD_BIAS_CTRL with the modulation byte for the TX frequency, main chip 0x40 = 0 and 0x51 = 0 (`bk4819_dmr_tx_prepare`), powers DAC B at 0, clears RF_MODE bit 7 (`make DB25D_DMR_TX_INVERT=1` sets it, to try the other 4FSK polarity) and arms. The RF stays receiving until the first burst |
+| `tx()` in DMR mode | Checks band and page as FM does, keeps the TX plan (PA drive, TX-on and TX-off delays), writes RF_MOD_BIAS_CTRL with the modulation byte for the TX frequency, main chip 0x40 = 0 and 0x51 = 0 (`bk4819_dmr_tx_prepare`), powers DAC B at 0, clears RF_MODE bit 7 (`make DB25D_DMR_TX_INVERT=1` sets it, to try the other 4FSK polarity), sets the RF TX interrupt's lead (RF_CONTROL b13:8, `db25d_dmr_rf_tx_lead`: 1.6 ms with the UHF page, below) and arms. The RF stays receiving until the first burst |
 | RF TX interrupt | The glue's `rf_switch(true)` records the time and wakes the RF task (priority above every other task), which runs the TX on sequence (`db25d_burst_on`) |
-| End of a burst | Woken by the modem's RF RX interrupt (enabled while armed) or by the engine's `rf_switch(false)` at the first slot tick 20 ms after the RF TX interrupt, whichever comes first. The task then waits until 30.5 ms + the page's TX-off delay after the RF TX interrupt (`db25d_dmr_hold_us`) and runs the TX off sequence (`db25d_burst_off`). A wake-up after that point ramps down at once and counts as late |
+| End of a burst | Woken by the modem's RF RX interrupt (enabled while armed) or by the engine's `rf_switch(false)` at the first slot tick 20 ms after the RF TX interrupt, whichever comes first. The task then waits for the burst's last symbol, lead + 0.85 ms + 27.5 ms after the RF TX interrupt (`db25d_dmr_hold_us`), and runs the TX off sequence (`db25d_burst_off`) without the stock's 300, 300 and 200 us waits. A wake-up after that point ramps down at once and counts as late |
 | Waits | Below 50 us a spin; from 50 us TIMER_BOARD (timer 5) while the task sleeps |
 | `tx_off()`, `rx()`, leaving DMR | Disarm: TX off at once (no hold) if a burst is on, wait for the task, DAC B powered down, then the normal receive set-up |
 | PA one-shot | The glue still arms it per burst; the board's hook does nothing |
@@ -390,6 +390,44 @@ four symbol levels at -1970, -653, +676 and +1970 Hz around the carrier, so the 
 standard's 1944 Hz and the outer / inner ratio 2.97 (3.00 ideal); carrier 187 Hz high (0.4 ppm) (measured).
 
 The receive and transmit checks are at the end of section 9.
+
+**Burst timing for receiving between bursts (SFR).** The stock timing above keeps the receiver off from 3.95 ms
+before our burst's first symbol to 1 ms or more into the next slot's burst: an SFR repeater lost 10-13 of the
+inbound call's 72 voice frames. Measured on the SDR bench (461.0875 MHz, low power, our idle bursts during the hang,
+2026-10-25), against our first symbol:
+
+| Point | Stock timing (lead 3.1 ms) | RadioFoundry (lead 1.6 ms) |
+|---|---|---|
+| RF TX interrupt, receiver off | -3.95 ms | -2.45 ms |
+| First carrier (main chip in TX, PA supply off) | -3.0 ms | -1.5 ms |
+| PA fully up (1 dB below the plateau) | -1.5 ms | -0.25..0 ms |
+| Ramp down starts | +28.25 ms | +27.5 ms (the last symbol) |
+| Carrier gone | +30.0 ms | +29.3..29.5 ms |
+| Receiver back (from the sequence: the 0.72 ms ramp, the waits, the register writes) | about +29.6 ms | about +28.3 ms |
+
+The inbound bursts lie from -32.5 to -2.5 ms and from +30.0 ms on (about 0.2 ms later in practice: our bursts sit
+0.15-0.24 ms behind the inbound grid). The first symbol comes 0.85 ms after the lead and the PA is up 2.4 ms after the
+RF TX interrupt with the UHF page's 1 us TX-on delay, so the lead is the shortest 100 us step that has the PA up for
+the first symbol: `db25d_dmr_rf_tx_lead` = (2.4 ms + the page's TX-on delay - 0.85 ms), rounded up (1.6 ms UHF; 2.6 ms
+with the VHF page's 1000 us, not measured). The same timing serves every DMR transmission (simplex, split, hotspot,
+SFR).
+
+| Measurement (SDR bench, bench talker at low level, 4-superframe call) | Stock timing | RadioFoundry |
+|---|---|---|
+| SFR repeater, inbound frames lost per 72 | 10-13 (5 calls) | 0 (8 calls) |
+| SFR repeater, inbound AMBE bits corrected per 72 (first / second / third frame of each burst) | 155-200 (97-117 / 24-40 / 34-58) | 170-194 (98-120 / 22-30 / 48-54) |
+| The same call received without transmitting (TX inhibit, plain receive) | 29-37 | - |
+| Our idle bursts: symbol error, sync errors, carrier vs the bench | 0.10, 0, +15..20 Hz | 0.05-0.12, 0, +13 Hz |
+| Plain simplex call (`test_dmr_tx_off_air`): burst on-time, ramps up / down | 32.76-33.27 ms, 1.62 / 1.65 ms, carrier after the call | 30.38-30.60 ms, 1.56-1.58 / 1.17-1.23 ms, none |
+
+Tried and dropped (no change in the inbound counts): keeping the LO chip running through TX, the modem's RF_MODE b25
+phase averaging off, a ramp down 0.45 ms before the last symbol (16 bits fewer per 72 frames, our last symbols at
+reduced power), and shorter waits in the TX on sequence. The extra errors stay in the first and third frame of each
+burst, at about 3 bits a burst, whatever the switch points: the receive chain settling after the retune, not the
+switch timing. The ramp up (1.56 ms) is still just over the off-air check's 1.5 ms.
+
+The bench's talker keeps its carrier up through both slots during its call, so our repeat inside the call can't be
+judged off air (the SDR sees the sum of both); the repeat's terminator and the hang's idle bursts after it can.
 
 ### 4.6 Frequency reference: the modem's bias
 

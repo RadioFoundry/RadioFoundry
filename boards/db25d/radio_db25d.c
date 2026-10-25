@@ -83,6 +83,7 @@ static uint16_t tx_off_us;
 static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25d.c)
 #if CONFIG_DMR && DB25D_DMR_TX
 static uint16_t tx_on_us;
+static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_rf_tx_lead)
 static uint32_t tx_hz;
 static void dmr_disarm(void);
 #endif
@@ -331,9 +332,10 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_pa = plan.pa;
 	tx_on_us = plan.on_us;
-	tx_off_us = plan.off_us;
+	tx_lead = db25d_dmr_rf_tx_lead(plan.on_us);
 	tx_hz = hz;
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(db25d_cal_tx_center(), db25d_cal_mod(hz)));
+	hrc7000_set_rf_tx_lead(&modem, tx_lead);
 	bk4819_dmr_tx_prepare(&rf_main);
 	DAC_DATA_B = 0;
 	hrc_dac_b_power(true);
@@ -373,24 +375,23 @@ void db25d_burst_on(db25d_wait_fn wait)
 	apc_ramp(tx_pa, true);
 }
 
-// The stock TX off after a burst: the hold until the ramp-down point (db25d_dmr_hold_us; none when now), the ramp
-// down, supplies and PA selects off with PTA23 high, 300 us, the main chip back to the IF and the LO on again, 300 us,
-// the RX path of the band, 200 us. Returns how late the ramp down started, in us
+// TX off after a burst: the hold until the burst's last symbol (db25d_dmr_hold_us; none when now), the ramp down,
+// supplies and PA selects off with PTA23 high, the main chip back to the IF and the LO on again, the RX path of the
+// band. The stock's waits between these steps (300, 300 and 200 us) are left out: they kept the receiver off for the
+// start of the next slot's burst, which an SFR repeater has to hear (hardware-db25d.md 4.5). Returns how late the ramp
+// down started, in us
 uint32_t db25d_burst_off(db25d_wait_fn wait, uint32_t elapsed_us, bool now)
 {
-	uint32_t late = now ? 0 : db25d_dmr_late_us(elapsed_us, tx_off_us);
+	uint32_t late = now ? 0 : db25d_dmr_late_us(elapsed_us, tx_lead);
 	if (!now) {
-		wait(db25d_dmr_hold_us(elapsed_us, tx_off_us));
+		wait(db25d_dmr_hold_us(elapsed_us, tx_lead));
 	}
 	apc_ramp(tx_pa, false);
 	tx_paths_off();
 	hrc_pin_write(PIN_RX_SUPPLY, true);
-	wait(TX_END_PATH_US);
 	bk4819_burst_tune(&rf_main, IF_HZ, BK4819_STATE_RX);
 	bk4819_lo_resume(&rf_lo);
-	wait(TX_END_PATH_US);
 	rx_paths(rx_hz, true);
-	wait(TX_END_RX_US);
 	return late;
 }
 #endif
