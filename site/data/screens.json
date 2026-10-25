@@ -317,6 +317,38 @@
    "group": "channels",
    "needs": []
   },
+  "zone_actions": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT",
+    "ZONE_EDIT"
+   ]
+  },
+  "zone_add": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT",
+    "ZONE_EDIT"
+   ]
+  },
+  "zone_options": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT",
+    "ZONE_EDIT"
+   ]
+  },
+  "zone_delete": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "CHANNEL_EDIT",
+    "ZONE_EDIT"
+   ]
+  },
   "find_channel": {
    "group": "channels",
    "needs": []

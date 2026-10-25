@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include "config.h"
 #include "radio/radio.h"
+#include "codeplug/zone_edit.h"
 
 // --- What is available (screens gray out what isn't, and say why on SELECT) ---
 #define UI_FEAT_TALK_TARGET	(1u << 0)	// ui_svc_talk_to / ui_svc_focus_target (dmr-voice)
@@ -72,6 +73,13 @@ bool ui_svc_save_channel(void);
 // Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
 // ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch);
+// The zone editor (ui.md 2.2): op is queued and runs as a storage job (zone_edit_apply), in order; the radio follows
+// zone indexes it moves. A refusal in the job raises UI_EV_SAVE_FAILED and drops what was queued after it. false:
+// the queue is full, or no codeplug storage in this build. ui_svc_zone_poll (every UI tick) starts the job when
+// another write held it back; ui_svc_zone_pending: changes not yet written
+bool ui_svc_zone_edit(const zone_op_t *op);
+void ui_svc_zone_poll(void);
+bool ui_svc_zone_pending(void);
 // Write the talk target into the channel (UI_TALK_PERMANENT): false if it isn't a stored contact or can't be written
 bool ui_svc_save_talk_target(uint32_t id, bool private_call);
 

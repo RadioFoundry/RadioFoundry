@@ -305,6 +305,9 @@ typedef struct {
 	uint32_t save_ms;		// start of the current sleep / wake
 #endif
 	uint32_t codeplug_serial;	// codeplug_serial() when the zone and channel were last read
+#if CONFIG_ZONE_WRITE
+	uint32_t zone_shifts;		// zone_edit_shifts() when the zone indexes below were last followed (zone_edit.h)
+#endif
 	bool reload_pending;		// RREQ_RELOAD came while busy
 	bool power_off_req;		// RREQ_POWER_OFF seen
 	bool power_off_busy;		// still sending what has to go out before the supply drops

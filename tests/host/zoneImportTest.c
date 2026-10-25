@@ -8,6 +8,7 @@
 #include <string.h>
 #include "codeplug/codeplug.h"
 #include "codeplug/zone_import.h"
+#include "codeplug/zone_edit.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
 
@@ -17,6 +18,8 @@ static int failures, checks;
 
 void storage_lock(void) {}
 void storage_unlock(void) {}
+void storage_quick_lock(void) {}
+void storage_quick_unlock(void) {}
 
 #define FLASH_SIZE	0x200000u
 #define EE		0x000000u
@@ -40,6 +43,7 @@ static void fresh(void)
 {
 	sim_flash_create(FLASH_SIZE, &map);
 	CHECK(storage_init());
+	settings_init();	// the zone write layer's power-cut journal is in the settings
 	codeplug_init();
 	memset(imports, 0, sizeof(imports));
 }
@@ -484,6 +488,45 @@ static void test_virtual_zone(void)
 	CHECK(codeplug_zone(1, &z) && z.count == 4 && r.zone == 1);
 }
 
+// A new zone goes through the zone write layer: it takes a deleted zone's free slot, ahead of the zones after it, the
+// result says where it landed, and the move is logged for whoever keeps a zone index. A channel goes to the end of
+// the picked zone the same way
+static void test_lands_ahead(void)
+{
+	zone_import_result_t r;
+	zone_t z;
+	uint16_t out;
+
+	fresh();
+	with_zones();// 0 Home
+	memset(&z, 0, sizeof(z));
+	z.count = 1;
+	z.channels[0] = 1;
+	strcpy(z.name, "One");
+	CHECK(zone_edit_create(&z, NULL) == ZONE_EDIT_OK);// 1 One
+	strcpy(z.name, "Two");
+	CHECK(zone_edit_create(&z, NULL) == ZONE_EDIT_OK);// 2 Two
+	CHECK(zone_edit_delete(1) == ZONE_EDIT_OK);// Two moves to 1, slot 1 free
+	uint32_t s0 = zone_edit_shifts();
+	int len = build_record(0x77, "Club", recbuf);
+
+	CHECK(zone_import_zone(recbuf, len, 1, imports, &r) == ZI_OK);
+	CHECK(r.zone == 1 && codeplug_zone(1, &z) && strcmp(z.name, "Club") == 0 && z.count == 4);
+	CHECK(zone_edit_shifts() == s0 + 1u);
+	CHECK(zone_edit_map(s0, zone_edit_shifts(), 1, &out) == ZONE_MAP_KEPT && out == 2);// Two follows
+	CHECK(codeplug_zone(2, &z) && strcmp(z.name, "Two") == 0);
+	// An update of it rewrites the zone in place: nothing moves
+	uint32_t s1 = zone_edit_shifts();
+
+	CHECK(zone_import_zone(recbuf, len, 1, imports, &r) == ZI_OK && r.updated && r.zone == 1);
+	CHECK(zone_edit_shifts() == s1);
+	// One channel (Home's, sent back as a copy), to the end of Two
+	len = zone_export_channel(1, recbuf, sizeof(recbuf));
+	CHECK(len > 0 && zone_import_channel(recbuf, len, 2, &r) == ZI_OK && r.zone == 2);
+	CHECK(codeplug_zone(2, &z) && z.count == 2 && z.channels[0] == 1 && z.channels[1] != 1);
+	CHECK(zone_edit_shifts() == s1);
+}
+
 static void test_export(void)
 {
 	zone_t z;
@@ -572,6 +615,7 @@ int main(void)
 	test_names_and_list();
 	test_band_and_room();
 	test_virtual_zone();
+	test_lands_ahead();
 	test_export();
 	printf("zoneImportTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

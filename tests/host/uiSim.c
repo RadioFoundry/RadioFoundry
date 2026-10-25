@@ -27,6 +27,7 @@
 #include <sys/stat.h>
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
+#include "config.h"
 #include "ui/ui_screens.h"
 #include "ui/gfx.h"
 
@@ -87,13 +88,28 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "channel_discard", "ok 5 ok down down down down down ok enc+ ok back" },
 	{ "channel_new", "ok 5 up up up ok" },
 	{ "zone_channels", "ok 4 ctx" },
+#if CONFIG_ZONE_EDIT
+	{ "zone_share_to", "ok 4 ctx down down ctx 5" },	// Channel actions' Send channel to...
+#else
 	{ "zone_share", "ok 4 ctx down down ctx" },
 	{ "zone_share_to", "ok 4 ctx down down ctx 1" },
+#endif
 	{ "banner_zone_offer", "zoneoffer:3101234" },
 	{ "zone_offer", "zoneoffer:3101234 ctx" },
 	{ "zone_offer_preview", "zoneoffer:3101234 ctx 2" },
 	{ "zone_offer_channel", "zoneoffer:3101234,c ctx 1" },
 	{ "zone_imported", "zoneoffer:3101234 ctx 1 wait:300" },
+#if CONFIG_ZONE_EDIT
+	// The zone editor (ui.md 2.2)
+	{ "zone_actions", "ok 4 ctx ctx" },
+	{ "zone_add", "ok 4 ctx 2 ok" },
+	{ "zone_options", "ok 4 ctx up up up up ok" },
+#if CONFIG_ZONE_SHARE
+	{ "zone_delete", "ok 4 ctx up up up up ok 4" },	// after Send zone to...
+#else
+	{ "zone_delete", "ok 4 ctx up up up up ok 3" },
+#endif
+#endif
 	{ "tools", "ok 6" },
 	{ "position", "ok 6 2" },
 	{ "hotspot_info", "ok 6 3" },
@@ -202,6 +218,10 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_channels", "ok 4" },
 	{ "w_zone", "ok 4 ctx" },
 	{ "w_zone_end", "ok 4 ctx up" },
+#if CONFIG_ZONE_EDIT
+	{ "w_zone_actions", "ok 4 ctx ctx" },
+	{ "w_zone_delete", "ok 4 ctx up up up up ok 3" },
+#endif
 	{ "w_quick", "quick" },
 	{ "w_quick_fm", "down quick" },
 	{ "w_quick_cc", "quick 3 1 5" },

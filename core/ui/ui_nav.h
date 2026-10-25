@@ -22,8 +22,11 @@ typedef enum {
 	SCR_CRASH_TO,			// the crash report's target, picked from the contacts (CONFIG_CRASH_REPORT)
 	SCR_TEXT, SCR_CHPICK, SCR_DISCARD,	// the channel editor's name entry, contact / list picker, unsaved changes
 	SCR_DUAL, SCR_DUAL_PICK, SCR_DUAL_ZONE,	// dual watch: its actions, a channel for A or B (arg: the pane), a zone
-	// Zone sharing (CONFIG_ZONE_SHARE): send the zone or channel, to whom; an offer, its channels, the zone a channel joins
+	// Zone sharing (CONFIG_ZONE_SHARE): send the zone or channel (SCR_SHARE only without the zone editor, whose menus
+	// send them), to whom; an offer, its channels, the zone a channel joins
 	SCR_SHARE, SCR_SHARE_TO, SCR_OFFER, SCR_OFFER_PREVIEW, SCR_OFFER_ZONE,
+	SCR_ZCHANNEL, SCR_ZPICK, SCR_ZONEEDIT, SCR_ZONEDEL,	// the zone editor (ui.md 2.2): Channel actions, Add
+								// channel, Zone options, Delete zone
 	SCR_COUNT
 } ui_scr_t;
 
@@ -123,6 +126,17 @@ uint16_t ui_filter_raw(uint16_t i);
 const char *ui_filter_text(void);
 void ui_filter_reset(void);
 void ui_filter_rebuild(void);
+#if CONFIG_ZONE_EDIT
+// A list shows again, or the codeplug changed under it (ui_menus.c): the zone editor's focus follows its change
+void ui_menus_resume(void);
+// The codeplug changed and no zone change of ours is queued: the editor's screens read their zone again
+void ui_menus_codeplug(void);
+#endif
+#if CONFIG_ZONE_WRITE
+// Zone indexes moved (zone_edit_map from..to; the zone editor's or an import's): the stack's zone screens follow;
+// returns the new top (sp)
+uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint32_t to);
+#endif
 
 // T9 (ui_find.c): the key that types c (letters, digits; others 0xFF)
 uint8_t ui_t9_key(char c);

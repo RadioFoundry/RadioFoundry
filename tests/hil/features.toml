@@ -108,6 +108,10 @@ spec = "docs/spec/ui.md"
 switch = "CHANNEL_EDIT"
 spec = "docs/spec/ui.md"
 
+[feature.zone_edit]
+switch = "ZONE_EDIT"
+spec = "docs/spec/ui.md"
+
 [feature.key_assign]
 switch = "KEY_ASSIGN"
 spec = "docs/spec/ui.md"

@@ -629,6 +629,75 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 	return storage_job_post(write_channel_job, NULL);
 }
 
+#if CONFIG_ZONE_EDIT
+// The zone editor's changes (ui.md 2.2), queued: Move up pressed again while the last move is still being written
+// waits its turn instead of being refused. The UI task adds at zq_head, the job takes from zq_tail. A new zone ahead
+// of others or a deleted zone moves zone indexes: the radio core and dual watch follow them through zone_edit's log
+// when they see the codeplug change, so the job only writes
+#define ZONE_QUEUE	4u
+static zone_op_t zq[ZONE_QUEUE];
+static volatile uint8_t zq_head, zq_tail;
+
+static const char *zone_edit_text(zone_edit_result_t r)
+{
+	switch (r) {
+	case ZONE_EDIT_FULL: return "Zone full: not saved";
+	case ZONE_EDIT_ZONES_FULL: return "No room for another zone";
+	case ZONE_EDIT_IN_ZONE: return "Already in this zone";
+	case ZONE_EDIT_NO_FREE: return "No free channel";
+	case ZONE_EDIT_NO_NAME: return "Give it a name first";
+	case ZONE_EDIT_EDGE: return "Already at the end";
+	case ZONE_EDIT_NO_ZONE: return "That zone is gone";
+	case ZONE_EDIT_NO_CHANNEL: return "That channel is gone";
+	default: return "Couldn't write the codeplug: not saved";
+	}
+}
+
+// A refusal drops the changes queued after it: they were made on the zone as the UI saw it with this one done
+static void zone_edit_job(void *ctx)
+{
+	(void)ctx;
+	while (zq_tail != zq_head) {
+		zone_edit_result_t r = zone_edit_apply(&zq[zq_tail % ZONE_QUEUE], NULL);
+		if (r != ZONE_EDIT_OK) {
+			save_failed(zone_edit_text(r));
+			zq_tail = zq_head;
+			break;
+		}
+		zq_tail = (uint8_t)(zq_tail + 1u);
+	}
+}
+
+// The job, unless one (this or another write) is running: then ui_svc_zone_poll posts it later
+static void zone_kick(void)
+{
+	if (zq_tail != zq_head && !storage_job_busy()) {
+		storage_job_post(zone_edit_job, NULL);
+	}
+}
+
+bool ui_svc_zone_edit(const zone_op_t *op)
+{
+	if ((uint8_t)(zq_head - zq_tail) >= ZONE_QUEUE) {
+		return false;
+	}
+	zq[zq_head % ZONE_QUEUE] = *op;
+	zq_head = (uint8_t)(zq_head + 1u);
+	zone_kick();
+	return true;
+}
+
+void ui_svc_zone_poll(void)
+{
+	zone_kick();
+}
+
+bool ui_svc_zone_pending(void)
+{
+	return zq_tail != zq_head;
+}
+#endif
+
 #if CONFIG_DMR
 // The first stored contact with this ID and kind becomes the channel's talk target. Searching the contacts reads up
 // to 1024 records, so it is part of the job too. Until it is done the target is a temporary one (ui_svc_talk_to)

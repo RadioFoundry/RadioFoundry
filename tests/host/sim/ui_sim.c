@@ -24,6 +24,7 @@
 //   dlsel:a|b           the debug link selects A or B of the dual watch (view.dual_sel); no UI tick after it
 //   cpwrite, cpdel:<n>, zonesize:<z>,<n>   the codeplug is written: channel 40 first in zone 0, channel n deleted,
 //                       zone z cut to n channels
+//   zonejob:<z>         another task (an import) deletes zone z (0-based) through the zone storage job
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
@@ -607,7 +608,16 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	return true;
 }
 
-uint16_t codeplug_zone_count(void) { return 3; }
+// Zones the zone editor wrote (ui_svc_zone_edit, the real zone_edit.c on these fakes): once one is written, every
+// zone is a copy here, which the editor changes
+#define SIM_ZONES	6
+static zone_t sim_z[SIM_ZONES];
+static uint16_t sim_zn;
+static bool sim_zones_edited;
+static uint16_t sim_zone_written;
+static bool sim_zone_builtin(uint16_t index, zone_t *out);
+
+uint16_t codeplug_zone_count(void) { return sim_zones_edited ? sim_zn : 3; }
 
 // A codeplug written while the radio runs (cpwrite, cpdel:N, zonesize:Z,N): codeplug_serial() moves on
 static uint32_t sim_cp_serial;
@@ -617,6 +627,17 @@ static uint8_t sim_zone_size[3];	// zonesize:Z,N: zone Z has its first N channel
 uint32_t codeplug_serial(void) { return sim_cp_serial; }
 
 bool codeplug_zone(uint16_t index, zone_t *out)
+{
+	if (sim_zones_edited) {
+		if (index >= sim_zn)
+			return false;
+		*out = sim_z[index];
+		return true;
+	}
+	return sim_zone_builtin(index, out);
+}
+
+static bool sim_zone_builtin(uint16_t index, zone_t *out)
 {
 	if (index >= 3)
 		return false;
@@ -636,6 +657,103 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 	for (uint16_t i = 0; i < n; i++)
 		if (zones[index].first + i != sim_cp_deleted)
 			out->channels[out->count++] = (uint16_t)(zones[index].first + i);
+	return true;
+}
+
+static void sim_zones_take(void)
+{
+	if (sim_zones_edited)
+		return;
+	for (sim_zn = 0; sim_zn < 3; sim_zn++)
+		sim_zone_builtin(sim_zn, &sim_z[sim_zn]);
+	sim_zones_edited = true;
+}
+
+bool codeplug_zones_stored(void) { return true; }
+uint16_t codeplug_zone_capacity(void) { return CODEPLUG_ZONE_MAX; }
+uint16_t codeplug_zone_written(void) { return sim_zone_written; }
+uint16_t codeplug_zone_add_index(void) { return codeplug_zone_count(); }
+// The sim keeps no settings record: nothing to note for a power cut (zone_settle.c, zoneEditTest covers it)
+void zone_settle_begin(bool deleted, uint16_t index) { (void)deleted; (void)index; }
+void zone_edit_settle(void) {}
+
+// A new zone (index = the count) goes last: the sim has no slots to reuse
+bool codeplug_set_zone(uint16_t index, const zone_t *z)
+{
+	sim_zones_take();
+	if (index > sim_zn || (index == sim_zn && sim_zn >= SIM_ZONES))
+		return false;
+	sim_z[index] = *z;
+	if (index == sim_zn)
+		sim_zn++;
+	sim_zone_written = index;
+	sim_cp_serial++;
+	sim_rec.codeplug_writes++;
+	return true;
+}
+
+bool codeplug_delete_zone(uint16_t index)
+{
+	sim_zones_take();
+	if (index >= sim_zn)
+		return false;
+	memmove(&sim_z[index], &sim_z[index + 1u], (size_t)(sim_zn - index - 1u) * sizeof sim_z[0]);
+	sim_zn--;
+	sim_cp_serial++;
+	sim_rec.codeplug_writes++;
+	return true;
+}
+
+bool codeplug_set_channel(uint16_t number, const channel_t *ch) { return ui_svc_write_channel(number, ch); }
+// Only a channel the editor wrote (Copy here's rollback when its zone write fails)
+bool codeplug_delete_channel(uint16_t number)
+{
+	for (uint8_t i = 0; i < n_edits; i++) {
+		if (sim_edits[i].number == number) {
+			sim_edits[i] = sim_edits[--n_edits];
+			return true;
+		}
+	}
+	return false;
+}
+void storage_lock(void) { }
+void storage_unlock(void) { }
+
+static radio_view_t view;
+static void load_channel(void);
+static ui_dual_ref_t sim_dual[2];
+
+// The zone editor's job, run at once. The radio follows its zone through zone_edit's log as the radio core's reload
+// does, and stays on its channel (by number); a refusal is the job's failure toast
+bool ui_svc_zone_edit(const zone_op_t *op)
+{
+	uint32_t from = zone_edit_shifts();
+	zone_edit_result_t r = zone_edit_apply(op, NULL);
+	if (r != ZONE_EDIT_OK) {
+		ui_event_t ev;
+		memset(&ev, 0, sizeof ev);
+		ev.kind = UI_EV_SAVE_FAILED;
+		snprintf(ev.text, sizeof ev.text, "Zone edit refused (%d)", (int)r);
+		ui_notify(&ev);
+		return true;
+	}
+	uint16_t to;
+	for (int i = 0; i < 2; i++) {
+		// Dual watch's channels follow their zones as in the radio core; the UI finds a deleted one's channel again
+		if (!sim_dual[i].vfo && zone_edit_map(from, zone_edit_shifts(), sim_dual[i].zone, &to) != ZONE_MAP_LOST)
+			sim_dual[i].zone = to;
+	}
+	if (view.vfo)
+		return true;
+	zone_t z;
+	if (zone_edit_map(from, zone_edit_shifts(), view.zone_index, &to) == ZONE_MAP_GONE)
+		view.zone_pos = 0;
+	view.zone_index = to < codeplug_zone_count() ? to : (uint16_t)(codeplug_zone_count() - 1u);
+	if (codeplug_zone(view.zone_index, &z) && zone_list_find(&z, view.channel_number) >= 0)
+		view.zone_pos = (uint16_t)zone_list_find(&z, view.channel_number);
+	uint16_t pos = view.zone_pos;
+	load_channel();
+	view.zone_pos = pos;
 	return true;
 }
 
@@ -743,7 +861,6 @@ static void sim_vfo_use(uint8_t idx)
 	vfo_talk_private = t.talk_private;
 	view.vfo_index = idx;
 }
-static ui_dual_ref_t sim_dual[2];
 static uint8_t sim_sel;
 static uint32_t reply_until;
 static uint32_t ptt_up_at;
@@ -1084,7 +1201,13 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 	strcpy(line2, "Jamie Thompson");	// placeholders: the codeplug's boot text is the user's own
 }
 // Zone sharing (ui_svc.h): one offer of 6 channels, one of them outside the radio's bands
-static struct { bool pending, channel; uint32_t src, serial; unsigned sends, imports; } zs_sim;
+static struct {
+	bool pending, channel;
+	uint32_t src, serial;
+	unsigned sends, imports;
+	bool sent_one;			// the last send: one channel, from this zone and position
+	uint16_t sent_zone, sent_pos;
+} zs_sim;
 static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; } zs_chans[] = {
 	{ "Club rpt", 146760000, false, true }, { "Club DMR", 442375000, true, true },
 	{ "Simplex", 146520000, false, true }, { "Club TG 2", 442375000, true, true },
@@ -1093,8 +1216,11 @@ static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; } z
 #define ZS_SIM_CHANNELS	(sizeof zs_chans / sizeof zs_chans[0])
 uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bool group, uint8_t *total)
 {
-	(void)zone; (void)pos; (void)dst; (void)group;
+	(void)dst; (void)group;
 	zs_sim.sends++;
+	zs_sim.sent_one = one;
+	zs_sim.sent_zone = zone;
+	zs_sim.sent_pos = pos;
 	if (total != NULL)
 		*total = one ? 1 : 16;
 	return one ? 1 : 16;
@@ -1662,6 +1788,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	sim_cp_insert = false;
 	sim_cp_deleted = 0;
 	memset(sim_zone_size, 0, sizeof sim_zone_size);
+	sim_zones_edited = false;
+	sim_zn = 0;
 	focus_id = 0;
 	check_due = 0;
 	ptt_up_at = 0;
@@ -1711,6 +1839,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	sim_keep_ok[0] = sim_keep_ok[1] = false;
 #endif
 	memset(&crash_sim, 0, sizeof crash_sim);
+	memset(&zs_sim, 0, sizeof zs_sim);
 	ptt_blocked = false;
 	ui_app_init();
 	presses = 0;
@@ -1930,6 +2059,10 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "hotspot") == 0) snprintf(got, sizeof got, "%u", hotspot_on);
 	else if (strcmp(key, "usbnet") == 0) snprintf(got, sizeof got, "%u", usb_net);
 	else if (strcmp(key, "aprs_sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)aprs_sim.sent);
+	else if (strcmp(key, "zs_sends") == 0) snprintf(got, sizeof got, "%u", zs_sim.sends);
+	else if (strcmp(key, "zs_one") == 0) snprintf(got, sizeof got, "%u", zs_sim.sent_one);
+	else if (strcmp(key, "zs_zone") == 0) snprintf(got, sizeof got, "%u", zs_sim.sent_zone);
+	else if (strcmp(key, "zs_pos") == 0) snprintf(got, sizeof got, "%u", zs_sim.sent_pos);
 	else if (strcmp(key, "crash_sends") == 0) snprintf(got, sizeof got, "%u", crash_sim.sends);
 	else if (strcmp(key, "crash_seen") == 0) snprintf(got, sizeof got, "%u", crash_sim.seen);
 	else if (strcmp(key, "crash_have") == 0) snprintf(got, sizeof got, "%u", crash_sim.have);
@@ -2111,6 +2244,17 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(300);
 		return true;
 	}
+#if CONFIG_ZONE_EDIT
+	if (strcmp(t, "zonejob") == 0 && arg != NULL) {	// not the UI's own edit: its screens learn of it from the log
+		zone_op_t op;
+		memset(&op, 0, sizeof op);
+		op.kind = ZONE_OP_DELETE;
+		op.zone = (uint16_t)atoi(arg);
+		ui_svc_zone_edit(&op);
+		advance(300);
+		return true;
+	}
+#endif
 	if (strcmp(t, "dlpos") == 0 && arg != NULL) {	// the debug link (or any other task) asks for channel position N
 		radio_req_zone_pos((uint16_t)(atoi(arg) - 1));
 		advance(100);

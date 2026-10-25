@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "codeplug/zone_import.h"
+#include "codeplug/zone_edit.h"
 #include "board.h"
 
 // The import's working state: static, as the housekeeping task's stack is small. One import or export at a time (the
@@ -227,7 +228,7 @@ static zone_import_status_t write_channels(zone_import_result_t *res)
 			continue;
 		}
 		channel_here(&z, i, &ch);
-		if (new_zone.count >= CODEPLUG_ZONE_MAX) {
+		if (new_zone.count >= codeplug_zone_capacity()) {
 			return ZI_ZONE_FULL;
 		}
 		uint16_t n = codeplug_free_channel();
@@ -396,7 +397,7 @@ static void mark_replaced(const settings_zs_import_t *earlier)
 // The earlier copy's channels the update doesn't replace, after the new ones (as many as fit)
 static void keep_users(void)
 {
-	for (uint16_t k = 0; k < old_zone.count && new_zone.count < CODEPLUG_ZONE_MAX; k++) {
+	for (uint16_t k = 0; k < old_zone.count && new_zone.count < codeplug_zone_capacity(); k++) {
 		if (!replaced[k]) {
 			new_zone.channels[new_zone.count++] = old_zone.channels[k];
 		}
@@ -461,7 +462,7 @@ zone_import_status_t zone_import_zone(const uint8_t *record, int length, uint32_
 		return ZI_NO_ZONE;
 	}
 	// No zones stored yet: the virtual "All channels" zone (the first CODEPLUG_ZONE_MAX channels, as the user sees it)
-	// is stored as zone 0 first, so adding ours doesn't replace it
+	// is read now, before our channels are written (it would list them too), and stored as zone 0 below
 	if (!stored) {
 		if (!codeplug_zone(0, &old_zone)) {
 			return ZI_NO_ZONE;
@@ -490,21 +491,34 @@ zone_import_status_t zone_import_zone(const uint8_t *record, int length, uint32_
 		unique_name(rec.name, -1, new_zone.name);
 	}
 	if (!stored) {
-		// old_zone holds the virtual zone as read before ours were written
+		// The first stored zone takes index 0, which the virtual zone had: no index moves
 		if (!codeplug_set_zone(0, &old_zone)) {
 			undo();
 			return ZI_FLASH;
 		}
 	}
-	uint16_t index = (target >= 0) ? (uint16_t)target : codeplug_zone_count();
-
 	strcpy(res->name, new_zone.name);
-	if (!codeplug_set_zone(index, &new_zone)) {
-		if (!stored) {
-			codeplug_delete_zone(0);
+	uint16_t index = (uint16_t)target;
+
+	if (target >= 0) {
+		// An update rewrites its zone in place: no zone index moves
+		if (!codeplug_set_zone(index, &new_zone)) {
+			undo();
+			return ZI_FLASH;
 		}
-		undo();
-		return ZI_FLASH;
+	} else {
+		// A new zone through the zone write layer (zone_edit.h), as the zone editor adds one: it takes the lowest free
+		// slot, which can be ahead of others, and the zones after it move on (logged, so whoever keeps a zone index
+		// follows; journaled against a power cut). index is where it landed
+		zone_edit_result_t er = zone_edit_create(&new_zone, &index);
+
+		if (er != ZONE_EDIT_OK) {
+			if (!stored) {
+				codeplug_delete_zone(0);
+			}
+			undo();
+			return (er == ZONE_EDIT_ZONES_FULL) ? ZI_NO_ZONE : (er == ZONE_EDIT_FULL) ? ZI_ZONE_FULL : ZI_FLASH;
+		}
 	}
 	res->zone = index;
 	res->updated = target >= 0;
@@ -532,7 +546,7 @@ zone_import_status_t zone_import_channel(const uint8_t *record, int length, uint
 	if ((!stored && zone != 0) || !codeplug_zone(zone, &old_zone)) {
 		return ZI_NO_ZONE;
 	}
-	if (stored && old_zone.count >= CODEPLUG_ZONE_MAX) {
+	if (stored && old_zone.count >= codeplug_zone_capacity()) {
 		return ZI_ZONE_FULL;
 	}
 	zone_import_status_t st = map_contacts(res);
@@ -545,10 +559,12 @@ zone_import_status_t zone_import_channel(const uint8_t *record, int length, uint
 		return st;
 	}
 	if (stored) {
-		old_zone.channels[old_zone.count++] = new_zone.channels[0];
-		if (!codeplug_set_zone(zone, &old_zone)) {
+		// At the end of the picked zone, through the zone write layer (its checks: the zone's size, the channel there)
+		zone_edit_result_t er = zone_edit_insert(zone, old_zone.count, new_zone.channels[0]);
+
+		if (er != ZONE_EDIT_OK) {
 			undo();
-			return ZI_FLASH;
+			return (er == ZONE_EDIT_FULL) ? ZI_ZONE_FULL : (er == ZONE_EDIT_NO_ZONE) ? ZI_NO_ZONE : ZI_FLASH;
 		}
 	}
 	res->zone = zone;

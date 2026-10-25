@@ -110,7 +110,7 @@ Large-text mode (accessibility, or chosen by the user) shows only the status str
 | 1 | **Contacts** | Search field on top. Tabs (or filter chips): Talkgroups, People, Listen lists. Item actions: Talk to, Private call, Message, Radio check, Call alert, Request position, Add to speed dial, Edit |
 | 2 | **Messages** | Inbox (unread first), New message, Canned messages, Sent, Drafts |
 | 3 | **Recent** | Everyone heard and every call made, newest first, filters: All / Calls to me / Missed / Talkgroups. Item actions are the same as Contacts, plus "Save as contact" and "Show position" |
-| 4 | **Zones** | Zone picker, current zone's channels, VFO, Scan lists |
+| 4 | **Zones** | Zone picker, current zone's channels, VFO, Scan lists. A zone's list is also its editor: "Add channel" first, "Zone options" (Rename, Copy as new zone, Send zone to..., Delete zone) last, and Channel actions on a channel (Move up, Move down, Copy here, Edit channel, Send channel to..., Remove from zone; the Send rows with zone sharing) |
 | 5 | **Channels** | Every channel by number; New channel from current settings (first row); a channel's settings, edited in place and saved (ui.md 2.1) |
 | 6 | **Tools** | Scan, Position (GPS), Hotspot, USB network, Single frequency repeater, ID lookup, Signal meter, DTMF, APRS, Registration (ARS), Battery |
 | 7 | **Settings** | Grouped by intent (below), with search |
@@ -256,7 +256,7 @@ Mobile-specific: while driving, the "driving" profile (Settings > Display, or au
 | Missing action | Fallback |
 |---|---|
 | `QUICK` | long `SELECT` (save then moves into `CONTEXT` > "Save to channel") |
-| `CONTEXT` | Hub item 0 "Last caller" above Contacts |
+| `CONTEXT` | Hub item 0 "Last caller" above Contacts. In Zones and a zone's list, long `SELECT` opens what `CONTEXT` would (the zone's list, Channel actions) |
 | Digits | Find uses a letter wheel (encoder or Up/Down) with recent and frequent items first |
 | `TALK_TARGET` | Quick tile 8 |
 | `MONITOR` | Quick tile 5 latch |
@@ -296,6 +296,10 @@ The layouts are the 128x64 ones of section 7.3. Which matrix position is which k
 | Hub | `SELECT` | 1 |
 | Contacts / Messages / Recent / Zones / Channels / Tools / Settings | Hub | 2 |
 | Item actions (contact, message, channel) | from a list | 3 |
+| A zone's list (channels, Add channel, Zone options) | `CONTEXT` in Zones | 3 |
+| Channel actions, Add channel picker, Zone options | a zone's list | 4 |
+| Copy here (the channel editor), Edit channel | Channel actions (replaces it) | 4 |
+| Rename (text entry), Delete zone (confirmation) | Zone options | 5 |
 | Message composer | Contacts/Recent/Messages actions | 3 |
 | Settings group / setting | Settings | 3 (setting editors are inline, not a fourth level) |
 | Hotspot, Network, SFR status | Tools | 2, and shown on Home while active |

@@ -125,9 +125,9 @@ A one-channel offer asks which zone to add the channel to.
 | Receive only | every imported channel is receive only, whatever the sender had. The user turns transmit on per channel |
 | Power | the power class maps to this radio's levels: low the lowest, mid the middle, high the highest, default the codeplug's default |
 | Contacts | matched by ID and type against the user's contacts; a match keeps the user's name. Only contacts that imported channels use are added, in the lowest free slots. The same contact twice in a record becomes one |
-| New zone | the zone is added after the last zone. A name already in use gets " 2" to " 99", shortened to fit 16 characters |
+| New zone | added through the zone editor's write layer, as a new zone there is ([ui.md 2.2](ui.md#22-zone-editor)): it takes the lowest free slot, which can be ahead of other zones, and whoever holds a zone index follows the move. An update rewrites its zone in place. A name already in use gets " 2" to " 99", shortened to fit 16 characters |
 | No stored zones | the radio's "All channels" zone is stored as zone 0 first, so the user keeps it |
-| One channel | added to the end of the zone the user picked |
+| One channel | added to the end of the zone the user picked (`zone_edit_insert`) |
 | Failure | anything written is undone: no full zone list, no free channel or contact, a flash write error |
 
 The import runs as a storage job, not on the UI task. The banner after it reads "Imported <zone>" or "Updated
@@ -160,8 +160,9 @@ a refusal (3.3). An answer later than 60 s is not taken. No screen sends request
 
 ## 7. Sending
 
-In a zone's channel list, **#** opens "Send zone to..." and "Send channel to..." (the focused channel). Then the
-contact list: a private contact gets confirmed packets, a talkgroup unconfirmed ones. The send works only on a DMR
+In a zone's channel list, **#** opens "Send zone to..." and "Send channel to..." (the focused channel). With the
+zone editor (`CONFIG_ZONE_EDIT`), **#** on a channel opens its Channel actions, where "Send channel to..." is item 5,
+and "Send zone to..." is item 3 of Zone options ([ui.md](ui.md) 2.2). Then the contact list: a private contact gets confirmed packets, a talkgroup unconfirmed ones. The send works only on a DMR
 channel; the banner says "Sent to <name>" or "Not sent to <name>". One send at a time.
 
 ## 8. Limits
