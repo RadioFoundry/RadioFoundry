@@ -48,7 +48,9 @@ manual run on `main`, `pull_request_target`, `workflow_run` or a release tag. A 
 request's own workflow file, which can name any label, so it is always refused. `RFOUNDRY_CI_REPO` (the env file's
 `REPO`) is the repository it accepts. `job-gate-test.sh` checks the cases, and `tools/ci.sh` runs it.
 
-A refused job shows `rfoundry job gate: refused ...` in its "Set up runner" step. Then check that the workflow sends
+A refused job shows `rfoundry job gate: refused ...` in its "Set up runner" step. The gate then kills the runner,
+because a failed hook alone still lets the job's `if: always()` steps run: the container ends, the loop starts a new
+one (which can wait up to ten minutes for GitHub to drop the killed runner's session), and GitHub fails the job. Then check that the workflow sends
 that job to GitHub's runners ([docs/dev/ci-runners.md](../../docs/dev/ci-runners.md#which-jobs-it-takes)).
 
 ## Set up
