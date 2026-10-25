@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The SFR repeater roles on hal_dmr_modem_t (see sfrRunner.h)
-#if CONFIG_SFR || defined(HAS_SFR)	// the whole file
+#include "config.h"
+#if CONFIG_SFR	// the whole file
 
 #include <string.h>
 #include "dmr/sfrRunner.h"
 #include "dmr/dmrData.h"
 #include "dmr/call/dmr_lc.h"
+#include "dmr/ambe/ambeFec.h"
 
 #define VOICE_TYPE_NIBBLE	0x0F	// stats.last_rx: a voice burst
 
@@ -109,6 +111,8 @@ static bool is_echo(const sfrRunner_t *r, const sfrBurst_t *b, uint32_t now_ms)
 	}
 	return false;
 }
+
+sfrRunner_t sfr_runner;
 
 void sfrRunnerStart(sfrRunner_t *r, const hal_dmr_modem_t *modem, const sfrConfig_t *cfg, const sfrRunnerUplink_t *up)
 {
@@ -424,6 +428,23 @@ static bool to_sfr_burst(sfrRunner_t *r, const dmr_burst_t *b, bool keyed, sfrBu
 	return true;
 }
 
+static void rx_voice_fec(sfrRunner_t *r, const sfrBurst_t *s)
+{
+	for (uint8_t f = 0; f < 3; f++) {
+		uint8_t bits[AMBE_PARAM_BITS];
+		ambe_fec_result_t res;
+
+		(void)ambeFecDecode(&s->payload[f * AMBE_FRAME_BYTES], bits, &res);
+		r->stats.rx_fec_frames++;
+		if (res.c0_failed) {
+			r->stats.rx_fec_lost++;
+		} else {
+			r->stats.rx_fec_bits += res.errors;
+			r->stats.rx_fec_pos[f] += res.errors;
+		}
+	}
+}
+
 static void rx_burst(sfrRunner_t *r, const dmr_burst_t *b, uint32_t now_ms)
 {
 	sfrBurst_t s;
@@ -465,6 +486,9 @@ static void rx_burst(sfrRunner_t *r, const dmr_burst_t *b, uint32_t now_ms)
 	switch (res) {
 	case SFR_RX_REPEATED:
 		r->stats.rx_repeated++;
+		if (s.kind == SFR_BURST_VOICE) {
+			rx_voice_fec(r, &s);
+		}
 		fill_gaps(r, now_ms);
 		break;
 	case SFR_RX_IGNORED:

@@ -141,7 +141,9 @@ typedef struct {
 	uint16_t roam_beacon_s;		// the repeaters' beacon interval, 0 = no beacons, else 10..600
 	uint8_t roam_beacon_len_s;	// their beacon duration, 1..10
 	uint8_t roam_survey;		// 0 off, 1 the sites beacon together, 2 each site on its own schedule
-	uint8_t rpt_beacon;		// our repeater roles key an idle beacon (roam_beacon_s / _len_s): 0 off, 1 on
+	uint8_t rpt_beacon;		// SETTINGS_RPT_* bits: our repeater roles key an idle beacon (roam_beacon_s / _len_s);
+					// bits 1-2 what an SFR user channel hears (radio_settings_t.sfr_rx; 0 in older records),
+					// bits 3-5 the SFR repeater's CW ID interval (radio_settings_t.sfr_cwid; 0 off)
 	uint8_t aprs_power;		// APRS RF power: 0 = the radio's current level, n = level n - 1 (was reserved6[0]; taken
 					// with the aprs_ fields below)
 	uint8_t aprs_cp_path;		// the codeplug APRS record's path last taken into aprs_path, aprs_path_t + 1 (0 = none
@@ -331,6 +333,12 @@ static inline void settings_set_crash_contact(settings_t *s, uint16_t num)
 #define SETTINGS_RS_SCAN_BEEP		0x08u
 #define SETTINGS_RS_KEY_BEEP		0x10u
 #define SETTINGS_RS_NO_TALK_PERMIT	0x20u	// the talk permit tone off (0 = on, as before)
+// settings_t.rpt_beacon (taken with the roam_ fields)
+#define SETTINGS_RPT_BEACON		0x01u	// our repeater roles key an idle beacon
+#define SETTINGS_RPT_SFR_RX		0x06u	// an SFR user channel hears: 0 the repeat, 1 both (first), 2 both (dual-path RX)
+#define SETTINGS_RPT_SFR_RX_SHIFT	1
+#define SETTINGS_RPT_SFR_CWID		0x38u	// the SFR repeater's CW ID interval code (radio_cwid_interval_ms), 0 off
+#define SETTINGS_RPT_SFR_CWID_SHIFT	3
 
 // settings_t.ds_flags
 #define SETTINGS_DS_RADIO_CHECK_REPLY	0x01u

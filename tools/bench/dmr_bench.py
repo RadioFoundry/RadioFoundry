@@ -495,7 +495,28 @@ class Checks:
         return "PASS"
 
 
-def check_tx(sdr, expect, radio_id, cc, c):
+# A TX burst's key-up and key-down ramps, each: the regions either side of the 27.5 ms of symbols in the power mask of
+# ETSI TS 102 361-1 clause 10.2.3.1.1 (figure 10.3), which keeps a burst out of the other slot. A board can be held to
+# another limit (board.toml [hil.limits] dmr_tx_ramp_ms, with its reason)
+RAMP_MAX_MS = 1.5
+
+
+def limit(limits, name, default):
+    """(value, reason) of a pass limit: the board's override from limits ([hil.limits]), else (default, None)."""
+    o = (limits or {}).get(name)
+    return (o["value"], o["reason"]) if o else (default, None)
+
+
+def check_ramps(per_burst, c, limits=None):
+    """The slowest key-up and key-down ramp of the bursts' edges against RAMP_MAX_MS or the board's limit."""
+    ru = max(e["ramp_up_ms"] for e in per_burst)
+    rd = max(e["ramp_down_ms"] for e in per_burst)
+    rmax, why = limit(limits, "dmr_tx_ramp_ms", RAMP_MAX_MS)
+    c.add(f"ramps < {rmax} ms" + (f" (board limit: {why})" if why else ""), ru < rmax and rd < rmax,
+          f"up {ru}, down {rd}")
+
+
+def check_tx(sdr, expect, radio_id, cc, c, limits=None):
     meta = sdr.get("meta", {})
     clip = meta.get("clip_pct_analyzed") or meta.get("clip_pct") or 0
     c.add("capture not saturated (clip < 1 %)", clip < 1.0, f"{clip} %")
@@ -511,8 +532,13 @@ def check_tx(sdr, expect, radio_id, cc, c):
     c.add("bursts found" + (" (from the radio's first header)" if mine else ""), len(b) > 0, f"{len(b)}")
     if not b:
         return
-    fams = sorted({x["family"] for x in b if x["family"] != "emb"})
-    c.add("sync family MS only (DMO)", fams == ["ms"], ",".join(fams))
+    # A lone burst whose family differs from both neighbors (`isolated`: one misread in a weak signal, not a second
+    # transmitter) is reported but does not fail the check.
+    fams = sorted({x["family"] for x in b if x["family"] != "emb" and not x.get("isolated")})
+    lone = [x for x in b if x["family"] != "emb" and x.get("isolated")]
+    c.add("sync family MS only (DMO)", fams == ["ms"],
+          ",".join(fams) + (f" ({len(lone)} isolated misread ignored: "
+                            + ", ".join(f"{x['family']}@{x['t_ms']:.0f}" for x in lone[:4]) + ")" if lone else ""))
     ccs = sorted({x["cc"] for x in b if x["cc"] is not None})
     c.add(f"color code {cc} only", ccs == [cc], f"{ccs}")
     hdr = [x for x in b if x["kind"] == "VLC_HDR"]
@@ -534,14 +560,25 @@ def check_tx(sdr, expect, radio_id, cc, c):
         c.add("header / terminator LC decoded", False)
     emb = [x["lc"] for x in voice if x.get("lc") and "emb_flco" in x["lc"]]
     c.add("embedded LC decoded (B-E)", len(emb) > 0, f"{len(emb)} superframes")
-    if emb and lcs:
+    emb_call = [e for e in emb if e.get("type", "grp_voice") in ("grp_voice", "priv_voice")]   # not alias / GPS
+    if emb_call and lcs:
         c.add("embedded LC = header LC", all((e.get("src"), e.get("dst")) == (lcs[0].get("src"), lcs[0].get("dst"))
-                                            for e in emb), "")
+                                            for e in emb_call), "")
     if voice:
         c.add("terminator after the last voice", any(t["t_ms"] > voice[-1]["t_ms"] for t in term), f"{len(term)}")
-        letters = [x["kind"][6:7] for x in voice]
-        c.add("voice A-F in order (whole superframes)", "".join(letters).replace("ABCDEF", "") == "",
-              "".join(letters)[-24:])
+        # The letters of the call's own bursts (rfoundry_sdrbench.calls: same stream, header to terminator; a false sync
+        # match, another channel's burst or a misread family is left out, listed in summary.left_out)
+        calls = sdr["summary"].get("calls")
+        if calls:
+            big = max(calls, key=lambda k: k["voice_bursts"])
+            c.add("voice A-F in order (whole superframes)", big["letters_ok"],
+                  f"{big['voice_letters'][-24:]}"
+                  + (f", {len(big['left_out'])} burst(s) left out" if big["left_out"] else "")
+                  + (f", {big['inferred_letters']} letter(s) from position" if big["inferred_letters"] else ""))
+        else:
+            letters = [x["kind"][6:7] for x in voice]
+            c.add("voice A-F in order (whole superframes)", "".join(letters).replace("ABCDEF", "") == "",
+                  "".join(letters)[-24:])
     sp = sdr["summary"].get("same_slot_spacing_ms") or {}
     c.add("same-slot spacing 60.00 +- 0.05 ms", sp and abs(sp["mean"] - 60.0) <= 0.05 and sp["sd"] < 0.1, f"{sp}")
     fo = sorted(x["foff_hz"] for x in b)
@@ -552,9 +589,7 @@ def check_tx(sdr, expect, radio_id, cc, c):
     if per_burst:
         on = [e["on_ms"] for e in per_burst]
         c.add("burst on-time 27-31.5 ms", all(27 <= x <= 31.5 for x in on), f"{min(on):.2f}-{max(on):.2f}")
-        ru = max(e["ramp_up_ms"] for e in per_burst)
-        rd = max(e["ramp_down_ms"] for e in per_burst)
-        c.add("ramps < 1.5 ms", ru < 1.5 and rd < 1.5, f"up {ru}, down {rd}")
+        check_ramps(per_burst, c, limits)
     else:
         long = [e["on_ms"] for e in edges if e["on_ms"] >= 40]
         c.add("per-burst keying (carrier off in the other slot)", False,

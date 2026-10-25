@@ -117,6 +117,11 @@ def _req(spec):
 
 
 STR_LIST = ("list", str)
+# The HIL pass limits a board can override ([hil.limits]): name -> the check that reads it
+HIL_LIMITS = {
+    "dmr_tx_ramp_ms": "a DMR TX burst's key-up and key-down ramps, each (tools/bench/dmr_bench.py check_tx)",
+}
+HIL_LIMIT = {"value": _req(float), "reason": _req(str)}
 RANGE = ("list", int)
 
 BOARD_SCHEMA = {
@@ -170,11 +175,13 @@ BOARD_SCHEMA = {
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
     # tests/hil: what the health checks expect (test_health.py), and the features built here but not working yet
     # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED, code
-    # not written for the radio its BOARD_NOT_WRITTEN)
+    # not written for the radio its BOARD_NOT_WRITTEN). limits: a HIL pass limit this radio is held to instead of the
+    # test's default, by name (HIL_LIMITS), with the reason the check prints beside its result
     "hil": _opt({"display": _opt(str), "features": _opt(STR_LIST), "no_features": _opt(STR_LIST),
                  "flash_jedec": _opt(STR_LIST), "calibration": _opt(bool), "battery_mv": _opt(RANGE),
                  "supply_mv": _opt(RANGE),
-                 "codec": _opt(STR_LIST)}),
+                 "codec": _opt(STR_LIST),
+                 "limits": _opt({name: _opt(HIL_LIMIT) for name in HIL_LIMITS})}),
     "features": _opt(("map", {"state": _req(("unsupported",)), "reason": _req(str)})),
     # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
     "cps": _opt({"radio_types": _req(("list", int))}),
@@ -229,6 +236,9 @@ def validate(value, spec, where):
     elif spec is int:
         if not isinstance(value, int) or isinstance(value, bool):
             raise RegistryError("%s: an integer expected" % where)
+    elif spec is float:
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise RegistryError("%s: a number expected" % where)
     elif not isinstance(value, spec):
         raise RegistryError("%s: %s expected" % (where, spec.__name__))
 
@@ -1322,12 +1332,19 @@ def self_test():
                       ({"hil": {"no_such": 1}}, "an unknown [hil] key"),
                       ({"features": {"usb": {"state": "maybe", "reason": "x"}}}, "a [features] state"),
                       ({"features": {"usb": {"state": "unsupported"}}}, "a [features] entry without a reason"),
-                      ({"cps": {"radio_types": ["8"]}}, "a [cps] radio type that isn't a number")):
+                      ({"cps": {"radio_types": ["8"]}}, "a [cps] radio type that isn't a number"),
+                      ({"hil": {"limits": {"no_such_ms": {"value": 1, "reason": "x"}}}}, "a [hil.limits] name it doesn't know"),
+                      ({"hil": {"limits": {"dmr_tx_ramp_ms": {"value": 1.75}}}}, "a [hil.limits] entry without a reason"),
+                      ({"hil": {"limits": {"dmr_tx_ramp_ms": {"value": "1.75", "reason": "x"}}}},
+                       "a [hil.limits] value that isn't a number")):
         try:
             validate(bad, {k: BOARD_SCHEMA[k] for k in ("hil", "features", "cps")}, "t")
             ok(False, "validate refuses " + what)
         except RegistryError:
             ok(True, "validate refuses " + what)
+
+    validate({"hil": {"limits": {"dmr_tx_ramp_ms": {"value": 1.75, "reason": "x"}}}}, {"hil": BOARD_SCHEMA["hil"]}, "t")
+    ok(True, "validate takes a [hil.limits] override with a value and a reason")
 
     # the voltage a board measures, from its sources
     tmpv = tempfile.mkdtemp(prefix="rfoundry-boards-volts-")

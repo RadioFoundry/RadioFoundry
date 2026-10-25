@@ -67,9 +67,11 @@ def result(call):
 
 def test_health_checks_read_the_expectations():
     import test_health as h
-    # supply_mv is the one key no board has yet (no radio measures its supply): checked on a fake below
+    # supply_mv is the one key no board has yet (no radio measures its supply): checked on a fake below. limits isn't
+    # a health check
     full = [b for b in sorted(rfoundry_hil.board_names())
-            if set(rfoundry_hil.HIL_KEYS) - set(rfoundry_hil.board_hil(b)) <= {"supply_mv"} and rfoundry_hil.board_hil(b)["calibration"]]
+            if set(rfoundry_hil.HIL_KEYS) - set(rfoundry_hil.board_hil(b)) <= {"supply_mv", "limits"}
+            and rfoundry_hil.board_hil(b)["calibration"]]
     assert full, "no board has every [hil] key: nothing to check the checks against"
     b = full[0]
     hil = rfoundry_hil.board_hil(b)
@@ -119,3 +121,20 @@ def test_board_tests_run_on_their_own_board_only():
     mine = FakeRadio(sorted(rfoundry_hil.board_names()[b])[0], [])
     assert result(lambda: hil_plugin.only_on(b, mine)) == "passed"
     assert result(lambda: hil_plugin.only_on(b, FakeRadio("no such radio", []))) == "other_board"
+
+
+def test_limit_overrides():
+    """A board's [hil.limits] entry replaces a check's default and its reason shows in the check's name; a board
+    without one gets the default. Every override in the registry has a reason."""
+    import dmr_bench
+    assert dmr_bench.limit({}, "dmr_tx_ramp_ms", 1.5) == (1.5, None)
+    assert dmr_bench.limit({"dmr_tx_ramp_ms": {"value": 1.75, "reason": "why"}}, "dmr_tx_ramp_ms", 1.5) == (1.75, "why")
+    edges = [{"on_ms": 30.0, "ramp_up_ms": 1.6, "ramp_down_ms": 1.2}]
+    for limits, ok in ((None, False), ({"dmr_tx_ramp_ms": {"value": 1.75, "reason": "slow PA"}}, True)):
+        c = dmr_bench.Checks()
+        dmr_bench.check_ramps(edges, c, limits)
+        assert len(c.items) == 1 and c.items[0]["ok"] is ok, (limits, c.items)
+        assert ("slow PA" in c.items[0]["check"]) == bool(limits)
+    for b in rfoundry_hil.board_names():
+        for name, o in rfoundry_hil.board_hil(b).get("limits", {}).items():
+            assert o.get("reason"), (b, name)

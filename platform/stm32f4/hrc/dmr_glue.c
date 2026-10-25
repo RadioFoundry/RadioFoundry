@@ -843,6 +843,8 @@ bool stm32_hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, "tx", m->tx_bursts);
 		put_kv(&o, " rf", m->rftx_ints);
 		put_kv(&o, " pa", m->last_pa_ms);
+		put_kv(&o, " ld", m->pa_lead_us);
+		put_kv(&o, " on", m->pa_on_us);
 		put_kv(&o, " rj", m->tx_rejected);
 		put_kv(&o, " sk", s.rf_skipped);
 		put_kv(&o, " na", s.rf_unarmed);

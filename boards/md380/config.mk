@@ -24,6 +24,8 @@ LTO_3P ?= 1
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off
 BOARD_UNSUPPORTED += SFR	# the HR_C5000 lacks CRC_MCU_Control for the idle bursts (docs/spec/sfr.md)
+BOARD_UNSUPPORTED += SFR_DUALPATH_RX	# needs SFR
+BOARD_UNSUPPORTED += SFR_CWID	# needs SFR
 BOARD_UNSUPPORTED += FONT_XL	# the 160x128 panel is too small for the large font (it is for 240 px and wider)
 CONFIG_AM_RX ?= n
 BOARD_UNSUPPORTED += AM_RX	# no air band receiver (docs/spec/airband-and-broadcast.md)

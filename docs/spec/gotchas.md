@@ -160,7 +160,9 @@ time.
 **3.5 The AT1846S +3 kHz TX offset is a sequencing hack.** The driver adds 3 kHz to the TX frequency to compensate an
 offset caused by turning the receiver on between the frequency write and TX. A switch that writes the frequency with
 the receiver off and goes straight to TX must not add it (bursts were +2.93 kHz off). Rule: measure TX frequency per
-switching sequence; don't carry a fixed offset.
+switching sequence; don't carry a fixed offset. RFoundry's direct sequence (RX straight to TX, no idle, which a
+single frequency repeater needs) corrects the same shift with the HR_C6000 MOD1 offset, because the AT1846S applies a
+frequency write only coming out of idle.
 
 **3.6 Listen before talk for machine traffic.** Data, ACKs and CSBK answers collided with the far end. Rule: direct
 mode: no voice, data burst or carrier for 120 ms; repeater: 180 ms without data bursts and wait for the hang time to
@@ -570,6 +572,45 @@ in an open inbound call, voice headers and terminators are never echo-checked (t
   superframe) then matched our own copy in the 250 ms echo window: 3 bursts dropped as echo.
 - Every terminator heard while keyed came with the chip's RS flag and was dropped in the driver. Rule: while sending,
   the driver passes headers and terminators on with `crc_ok` false and the runner checks them itself (14.1).
+
+**14.12 An HR_C6000 SFR user hears one copy of a call (SDR bench, 2026-10-19).** In direct mode the chip
+decodes the voice stream of the slot it locked onto. Reports for the other slot during the call are stale status
+(class 0, the same values again and again), not the other copy. So the user modes "First copy" and "Dual-path RX" only fall
+over from one copy to the other between calls or after a loss, never take frames from both. Not timing (the repeat
+sat 0.13 ms off the talker's slot grid) and not the repeat's sync (clean TS2 voice sync); a stronger repeat made it
+worse. Rule: don't count on both copies from an HR_C6000; hearing both needs the raw RX RAM path (sfr.md 3).
+
+**14.13 The HR_C7000 repeat carries bit errors (SDR bench, 2026-10-19).** The repeater's own receiver takes errors while it switches
+TX/RX every burst: on air 212 of 216 repeated voice frames needed Golay corrections and 4 were uncorrectable, where
+the talker's direct copy was clean. It plays, but it is the reason a user would want the direct copy (sfr.md 4).
+
+**14.14 An AT1846S SFR keys straight from RX (SDR bench, 2026-10-19).** For any AT1846S + HR_C6000 radio (GD-77
+family, MD-UV380):
+- Going through idle (reg 0x30) at every switch (14.9) makes the synthesizer settle again each slot. The repeat then
+  lost 5-10 of 72 inbound frames, with about 190 bit errors. With RX and TX on one frequency, switching 0x30 straight
+  between RX and DMR TX keeps it locked: no frames lost, 48-68 bits. The band's RX supply still follows the PA.
+- Straight from RX the carrier is about 3.07 kHz low, and a frequency write can't correct it (3.5). Raise the HR_C6000
+  MOD1 offset (4:0x04, about 75 Hz a step at 461 MHz) for the burst and restore it for RX. On the board measured that is 42
+  steps over the calibrated value (41: -57..-15 Hz, 42: +16..+60 Hz), at 461.1375 MHz only. Check it at
+  other frequencies and on each radio.
+- Key 1 ms after the RF TX interrupt, which comes about 1.28 ms before the slot. 0.6-1.2 ms all did the same; keying
+  at the interrupt lost frames. Dropping the PA earlier (28.5-30 ms) changed nothing.
+- VHF and split frequencies keep the idle sequence (not measured).
+
+**14.15 An HR_C7000 SFR user needs the voice-access flag on both slots.** The chip writes the voice RAM only for a
+slot decided with TXRX_CTRL 0x8040; with 0x40 the burst is reported, but its voice RAM still holds the last burst
+decoded. The driver gave the flag to the chip slot of the last voice burst only. A user hearing both copies gets voice
+on both slots in turn, so the flag was always on the other slot, and every burst read the same stale bytes: the
+listener played the call's first decoded burst over and over while every counter looked clean (frames, bursts, no
+loss). That is the hand test of 2026-10-20 (an HR_C7000 repeater and two users, 1 clean call of about
+30). Rule: each chip slot with a voice header or voice burst in the last 390 ms gets the flag; a terminator clears its
+own slot (`hrc7000DmrTest` test_rx_sfr_both_copies). The frame counters can't show this: an HIL check has to look at
+the payloads (or the audio) the listener plays.
+
+This rule picks which slots carry a call; 14.16 picks which slot an interrupt decides. They compose at each RX slot
+interrupt: the decided slot is LAYER2_STATUS b30 (XOR 0), and it gets 0x8040 if that slot is in the voice set, else
+0x40. The test models the chip the same way (b30 names the slot about to be decided), so it fails both on a flag that
+follows the last voice burst and on the old polarity.
 
 **14.16 HR_C7000 voice-access slot polarity.** The RX timeslot interrupt decides the slot LAYER2_STATUS b30 shows
 then (`HRC7000_RX_NEXT_SLOT_XOR` 0), not the one after it. With the flag on the other slot the chip never writes the

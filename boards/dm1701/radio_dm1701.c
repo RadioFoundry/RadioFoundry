@@ -42,6 +42,9 @@
 #define I2C_TIMEOUT_MS		5
 #define C6000_PWD_WAIT_MS	12	// at least 10 ms after PWD low before the first SPI access
 #define RF_ISR_I2C_TIMEOUT_MS	2	// one reg 0x30 write from a modem ISR takes about 0.1 ms at 400 kHz
+// The RF TX interrupt comes about 1.28 ms before the slot boundary. Keyed at once, the PA cut the end of the inbound
+// burst an SFR receives in the other slot; 0.6-1.2 ms later all measured the same, without a delay frames were lost
+#define DMR_KEY_DELAY_US	1000u
 
 // Voice SPI2 (hardware-dm1701.md 4.3): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C6000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
@@ -79,6 +82,9 @@ static struct {
 	volatile bool rf_isr_dirty;	// the ISR wrote the AT1846S behind the task-level driver
 	volatile bool rf_rx_pending;	// a back-to-RX write was skipped: retry at the next timeslot interrupt
 	volatile uint8_t rf_page;	// AT1846S page last written to reg 0x7F, 0xFF unknown
+	volatile int8_t rf_ref;		// calibrated HR_C6000 MOD1 offset (4:0x04) for the RX frequency
+	volatile bool rf_direct;	// this burst was keyed without the idle step: 4:0x04 raised, the receiver not retuned
+	volatile bool rf_key_pending;	// TIM7 keys this burst at its expiry
 	uint32_t rf_skipped, rf_unarmed, rf_rx_retries;
 } r = { .rf_page = 0xFF };
 
@@ -302,59 +308,85 @@ static void apply_rx_tone(void)
 
 // --- DMR per-burst RF switching (modem-hrc6000.md 4.3, hardware-dm1701.md 6): modem ISR context ---
 
-bool dm1701_rf_dmr_switch(bool tx)
+// Back to RX after a burst. A direct burst comes back the same way: 4:0x04 to the calibrated value and the receiver
+// straight on, no idle step (the synthesizer still holds the frequency, and an idle step makes it settle again, which
+// cost an SFR the first and last frames of the inbound bursts: SDR bench, 2026-10-19)
+static bool rf_to_rx(void)
 {
-	if (!tx) {
-		pa_off();
-		r.rf_isr_dirty = true;
-		// As the TX side: transmitter off first, the RX frequency, then the RX supply and the receiver on. Straight from
-		// DMR TX to RX on (one 0x30 write) left the receiver marginal between an SFR's bursts (inbound bursts lost at
-		// random, HIL 2026-10-12), and the receiver stayed on the TX frequency where RX != TX
-		uint16_t idle = at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE);
-		bool ok = rf_isr_write(0x30, idle);
-		if (ok && r.rf_tuned_hz != r.rx_hz) {
-			uint32_t word = at1846s_freq_word(r.rx_hz);
-			r.rf_tuned_hz = 0;
-			ok = rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu)) && rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
-			if (ok) {
-				r.rf_tuned_hz = r.rx_hz;
-			}
-		}
+	pa_off();
+	r.rf_isr_dirty = true;
+	if (r.rf_direct) {
+		r.rf_direct = false;
+		(void)hrc_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref);
 		rx_supply(true, r.rx_uhf);
-		if (ok && rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_RX))) {
+		if (rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_RX))) {
 			r.rf_rx_pending = false;
 			return true;
 		}
-		r.rf_rx_pending = true;
+		r.rf_rx_pending = true;	// the retry takes the idle sequence below
 		r.rf_skipped++;
 		return false;
 	}
+	// Through idle: transmitter off first, the RX frequency, then the RX supply and the receiver on. Straight from
+	// DMR TX to RX on (one 0x30 write) after an idle-entered burst left the receiver about 3 kHz off (inbound
+	// bursts lost, HIL 2026-10-12), and the receiver stayed on the TX frequency where RX != TX
+	uint16_t idle = at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE);
+	bool ok = rf_isr_write(0x30, idle);
+	if (ok && r.rf_tuned_hz != r.rx_hz) {
+		uint32_t word = at1846s_freq_word(r.rx_hz);
+		r.rf_tuned_hz = 0;
+		ok = rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu)) && rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
+		if (ok) {
+			r.rf_tuned_hz = r.rx_hz;
+		}
+	}
+	rx_supply(true, r.rx_uhf);
+	if (ok && rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_RX))) {
+		r.rf_rx_pending = false;
+		return true;
+	}
+	r.rf_rx_pending = true;
+	r.rf_skipped++;
+	return false;
+}
+
+// Key one burst: the AT1846S to DMR TX, then the PA
+static bool rf_key(void)
+{
 	if (!r.dmr_armed) {
 		r.rf_unarmed++;
 		return false;
 	}
 	uint32_t hz = r.dmr_tx_hz;
-	bool ok = true;
 	r.rf_isr_dirty = true;
-	// Always tune with the receiver off, then straight to TX (gotchas 3.5), simplex included: going from RX on
-	// straight to TX on the already-tuned frequency put the DMR carrier about 3.07 kHz low (SDR bench, 2026-10-10),
-	// too far for a 4FSK receiver to decode. The extra two writes cost about 0.25 ms per burst
-	r.rf_tuned_hz = 0;
-	if (r.rf_tuned_hz != hz) {
-		uint32_t word = at1846s_freq_word(hz);
-		r.rf_tuned_hz = 0;
-		ok = rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE))
-			&& rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu))
-			&& rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
-		if (ok) {
-			r.rf_tuned_hz = hz;
+	int8_t ref;
+	if (!r.rf_rx_pending && r.rf_tuned_hz == hz && dm1701_direct_tx_ref(hz, r.rf_ref, &ref)) {
+		// Direct (SFR, simplex): the receiver on the TX frequency goes straight to DMR TX, which puts the carrier
+		// about 3.07 kHz low; the raised MOD1 offset puts it back (dm1701_direct_tx_ref)
+		if (!rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_DMR_TX))) {
+			r.rf_skipped++;
+			return false;
 		}
+		(void)hrc_write(&r.modem, 4, 0x04, (uint8_t)ref);
+		r.rf_direct = true;
+		goto pa;
+	}
+	// Otherwise tune with the receiver off, then straight to TX (gotchas 3.5): a frequency write applies only coming
+	// out of idle. The extra writes cost about 0.25 ms per burst
+	uint32_t word = at1846s_freq_word(hz);
+	r.rf_tuned_hz = 0;
+	bool ok = rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE))
+		&& rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu))
+		&& rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
+	if (ok) {
+		r.rf_tuned_hz = hz;
 	}
 	ok = ok && rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_DMR_TX));
 	if (!ok) {
 		r.rf_skipped++;
 		return false;	// no RF without the AT1846S in TX: leave the PA off
 	}
+pa:
 	r.rf_rx_pending = false;
 	rx_supply(false, false);	// the RX pre-amps off while the PA is up (hardware-dm1701.md 6)
 	apc_set(r.dmr_drive);
@@ -364,11 +396,62 @@ bool dm1701_rf_dmr_switch(bool tx)
 	return true;
 }
 
+// TIM7: one-shot at 1 MHz for the key delay, at the modem interrupts' priority (they share I2C3 and never preempt
+// each other)
+static void key_timer_setup(void)
+{
+	__HAL_RCC_TIM7_CLK_ENABLE();
+	TIM7->CR1 = 0;
+	TIM7->PSC = (uint16_t)(2u * HAL_RCC_GetPCLK1Freq() / 1000000u - 1u);
+	TIM7->ARR = DMR_KEY_DELAY_US - 1u;
+	TIM7->EGR = TIM_EGR_UG;		// load the prescaler
+	TIM7->SR = 0;
+	TIM7->DIER = TIM_DIER_UIE;
+	HAL_NVIC_SetPriority(TIM7_IRQn, 5, 0);
+	HAL_NVIC_EnableIRQ(TIM7_IRQn);
+}
+
+static void key_timer_stop(void)
+{
+	TIM7->CR1 = 0;
+	TIM7->SR = 0;
+	r.rf_key_pending = false;
+}
+
+void TIM7_IRQHandler(void)
+{
+	TIM7->SR = 0;
+	if (r.rf_key_pending) {
+		r.rf_key_pending = false;
+		(void)rf_key();	// disarmed meanwhile: counted unarmed, nothing keyed
+	}
+}
+
+// The RF TX interrupt arms the key timer (the engine counts the burst as keyed from here: the PA drop at the timeslot
+// interrupt more than 20 ms later is unchanged); the timeslot interrupt drops the PA, a key still pending included
+bool dm1701_rf_dmr_switch(bool tx)
+{
+	if (!tx) {
+		key_timer_stop();
+		return rf_to_rx();
+	}
+	if (!r.dmr_armed) {
+		r.rf_unarmed++;
+		return false;
+	}
+	TIM7->CR1 = 0;
+	TIM7->CNT = 0;
+	TIM7->SR = 0;
+	r.rf_key_pending = true;
+	TIM7->CR1 = TIM_CR1_OPM | TIM_CR1_CEN;
+	return true;
+}
+
 void dm1701_rf_dmr_service(void)
 {
 	if (r.rf_rx_pending) {
 		r.rf_rx_retries++;
-		(void)dm1701_rf_dmr_switch(false);	// the whole sequence again (it clears rf_rx_pending)
+		(void)rf_to_rx();	// the whole sequence again (it clears rf_rx_pending); a key pending stays
 	}
 }
 
@@ -391,6 +474,7 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 static void dmr_disarm(void)
 {
 	r.dmr_armed = false;
+	key_timer_stop();
 	if (stm32_hrc_dmr_tx_active()) {
 		stm32_hrc_dmr_tx_drop();
 	}
@@ -405,6 +489,10 @@ static void rf_resync(void)
 	}
 	r.rf_isr_dirty = false;
 	r.rf_rx_pending = false;
+	if (r.rf_direct) {	// a transmission cut during a direct burst: the MOD1 offset back to the calibrated value
+		r.rf_direct = false;
+		count(hrc_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref));
+	}
 	if (r.rx_valid) {
 		count(at1846s_set_freq(&r.rf, r.rx_hz));	// forced writes of 0x30 (idle), 0x29, 0x2A
 		r.rf_tuned_hz = r.rx_hz;
@@ -527,6 +615,7 @@ static void init(void)
 	audio(false);
 	r.diag.c6000_ok = hrc_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
 	stm32_hrc_dmr_init(&r.modem, &dmr_board);
+	key_timer_setup();
 }
 
 static void set_mode(radio_mode_t mode)
@@ -647,6 +736,8 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	dm1701_cal_point_t cal;
 	dm1701_cal_at(hz, &cal);	// on false it fills safe defaults
 	count(hrc6000_set_ref_offset(&r.modem, cal.ref_offset, false));
+	r.rf_ref = cal.ref_offset;
+	r.rf_direct = false;
 	if (r.mode == RADIO_MODE_FM) {
 		count(hrc6000_set_mode_fm_rx(&r.modem));
 	} else if (!same) {
@@ -932,6 +1023,7 @@ const hal_radio_t dm1701_radio = {
 	.status = status,
 	.audio = audio,
 	.volume = volume,
+	.volume_pcm = true,	// HR_C6000 4:0x37 scales the codec DAC's PCM as well
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
