@@ -8,7 +8,8 @@
  * a DHCP server with a single lease, ICMP, UDP and SCTP between the host and DMR IDs / talkgroups (addressing in
  * ipGateway.h), raw DMR data on IPGW_RAW_PORT, and the radio's own services (core/net): TCP to the radio's address
  * (ipGatewaySetTCP) and a port table for its UDP services (ipGatewayUdpBind; SNMP also from the air,
- * ipGatewayUdpFromAir), all sending to the link through ipGatewaySendLocal. No other protocols, no fragments.
+ * ipGatewayUdpFromAir), all sending to the link through ipGatewaySendLocal. No other protocols, no fragments: a host
+ * packet too long for one transmission is dropped, with an ICMP "fragmentation needed" back when it has DF set.
  */
 
 #include <string.h>
@@ -28,6 +29,11 @@
 #define DHCP_LEASE_SECONDS	600				// short, so the host soon moves if the radio's DMR ID is changed
 #define DMR_APP_PORT_FIRST	4000			// broadcasts go over the air only to these ports, not the host's own
 #define DMR_APP_PORT_LAST	4099			// chatter (NetBIOS, discovery, LAN sync ...)
+#define DHCP_OPTION_MTU		26				// interface MTU (RFC 2132 5.1)
+#define ICMP_UNREACHABLE	3
+#define ICMP_FRAG_NEEDED	4				// with ICMP_UNREACHABLE, the next-hop MTU in octets 6-7 (RFC 1191)
+#define IP_DF				0x4000
+#define ICMP_QUOTED_L4		8				// the original datagram's first 64 bits after its header (RFC 792)
 
 // An ID in a range and back. IDs too big for the range are truncated to its low bits, so in a /16 radio 0x010203 is
 // x.y.2.3, the same address as radio 0x0203
@@ -50,6 +56,7 @@ static struct {
 	ipGatewayUdpHandler handler;
 } udpPorts[IPGW_UDP_PORTS];				// the radio's own UDP services
 static uint8_t txTtl = 64;				// IP TTL of the next sendIPv4 (the radio's own packets: 255)
+static ipGatewayStats_t stats;
 static bool deliverLocal(uint8_t protocol, uint32_t src, uint32_t dst, const uint8_t *l4, int length);
 
 static const uint8_t BROADCAST_MAC[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
@@ -270,6 +277,11 @@ static uint8_t *putOption(uint8_t *o, uint8_t code, uint8_t length, uint32_t val
 		put32(o, value);
 		o += 4;
 	}
+	else if (length == 2)
+	{
+		put16(o, (uint16_t)value);
+		o += 2;
+	}
 	else
 	{
 		*o++ = value;
@@ -389,6 +401,7 @@ static void handleDHCP(const uint8_t *bootp, int length)
 	{
 		o = putOption(o, 51, 4, DHCP_LEASE_SECONDS);
 		o = putOption(o, 1, 4, (fixedLink != 0) ? IPGW_FIXED_NETMASK : IPGW_NETMASK);
+		o = putOption(o, DHCP_OPTION_MTU, 2, IPGW_LINK_MTU);// the frames the link holds; the air's narrower path: ICMP
 		o = putRoutes(o, 121, radioIp);
 		o = putRoutes(o, 249, radioIp);
 	}
@@ -424,6 +437,85 @@ static void handleICMP(const uint8_t *frame, const uint8_t *ip, const uint8_t *i
 	put16(&reply[2], 0);
 	put16(&reply[2], checksum(reply, length, 0));
 	sendIPv4(&frame[6], IP_PROTO_ICMP, get32(&ip[16]), get32(&ip[12]), length);
+}
+
+void ipGatewayGetStats(ipGatewayStats_t *s)
+{
+	*s = stats;
+}
+
+// Not inlined, nor fitsAir: the gateway is inlined into the host link task's loop, whose frame is on the task's
+// deepest path (docs/dev/stack-check.md); their locals stay in their own frames, off it
+__attribute__((noinline)) int ipGatewayAirLength(bool group, bool offNet, uint8_t protocol, const uint8_t *l4, int length)
+{
+	if ((protocol != IP_PROTO_UDP) || (length < 8))
+	{
+		return 20 + length;
+	}
+	uint16_t srcPort = get16(&l4[0]);
+	uint16_t dstPort = get16(&l4[2]);
+
+	if (dstPort == IPGW_RAW_PORT)
+	{
+		return length - 8;
+	}
+	if (!offNet && dmrDataUdpCompress(srcPort, dstPort))
+	{
+		uint8_t h[DMR_UDPC_HEADER_MAX];
+
+		return dmrDataCompressUDPHeader(0, group, srcPort, dstPort, h) + length - 8;
+	}
+	return 20 + length;
+}
+
+// RFC 1122 3.2.2: never about an ICMP error, nor about a packet to a multicast or broadcast address
+static bool mayAnswerWithError(const uint8_t *ip, const uint8_t *l4, int l4Length)
+{
+	uint32_t dst = get32(&ip[16]);
+
+	if ((ip[9] == IP_PROTO_ICMP) && (l4Length > 0) && (l4[0] != 0) && (l4[0] != 8))
+	{
+		return false;// anything but an echo or its reply: an error, or a query this radio never forwards anyway
+	}
+	return ((dst >> 28) != 0xE) && (dst != 0xFFFFFFFFu) && (dst != IPGW_BROADCAST_IP) && (dst != IPGW_ALL_CALL_IP) &&
+			((fixedLink == 0) || (dst != (fixedLink | ~IPGW_FIXED_NETMASK)));
+}
+
+// A host packet for the air (the IPv4 header at frame[14], layer 4 l4Length octets) fits one transmission: true. Else
+// it is dropped, and with DF set answered with an ICMP destination unreachable, fragmentation needed, next-hop MTU the
+// air's (RFC 792, RFC 1191), from the radio's address, quoting the packet's header and its first 64 bits. Without DF a
+// router would fragment it: there are no fragments on the air (dmr-data.md 12.7), and a receiver couldn't put them
+// together, so it is just dropped. Four arguments, all in registers, and not inlined: see ipGatewayAirLength
+__attribute__((noinline)) static bool fitsAir(const uint8_t *frame, int l4Length, bool group, bool offNet)
+{
+	const uint8_t *ip = &frame[ETH_HEADER];
+	int ihl = (ip[0] & 0x0F) * 4;
+	const uint8_t *l4 = &ip[ihl];
+
+	if (ipGatewayAirLength(group, offNet, ip[9], l4, l4Length) <= DMR_DATA_IP_MTU)
+	{
+		return true;
+	}
+	stats.airTooBig++;
+	if (!(get16(&ip[6]) & IP_DF) || !mayAnswerWithError(ip, l4, l4Length))
+	{
+		return false;
+	}
+	uint8_t *m = &tx[ETH_HEADER + 20];
+	int quoted = ihl + ((l4Length < ICMP_QUOTED_L4) ? l4Length : ICMP_QUOTED_L4);
+
+	memmove(&m[8], ip, quoted);
+	m[0] = ICMP_UNREACHABLE;
+	m[1] = ICMP_FRAG_NEEDED;
+	put16(&m[2], 0);
+	put16(&m[4], 0);// unused
+	put16(&m[6], DMR_DATA_IP_MTU);
+	put16(&m[2], checksum(m, 8 + quoted, 0));
+	if (sendIPv4(&frame[6], IP_PROTO_ICMP, ipGatewayRadioIP(), get32(&ip[12]), 8 + quoted))
+	{
+		stats.fragNeeded++;
+	}
+	return false;
 }
 
 void ipGatewayEthernetIn(const uint8_t *frame, int length)
@@ -567,12 +659,17 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 		return;// no route: no off-net ID, or an address of the link or one never routed
 	}
 
+	if ((ip[9] == IP_PROTO_UDP) && (dstPort == IPGW_RAW_PORT) && ((l4Length <= 8) || offNet))
+	{
+		return;// empty, or off-net: raw data has no IP header to carry the off-net address
+	}
+	if (!fitsAir(frame, l4Length, group, offNet))
+	{
+		return;
+	}
 	if ((ip[9] == IP_PROTO_UDP) && (dstPort == IPGW_RAW_PORT))
 	{
-		if ((l4Length > 8) && !offNet)// raw data has no IP header to carry the off-net address
-		{
-			ipGatewayRawToAir(group, id, &l4[8], l4Length - 8);
-		}
+		ipGatewayRawToAir(group, id, &l4[8], l4Length - 8);
 		return;
 	}
 

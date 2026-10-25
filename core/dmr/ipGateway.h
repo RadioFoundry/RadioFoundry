@@ -93,6 +93,23 @@ _Static_assert((IPGW_MULTICAST_NET >> 28) == 0xE, "the multicast range must be i
 
 #define IPGW_MAX_FRAME		600				// largest Ethernet frame handled, bigger datagrams can't go over the air anyway
 
+// MTUs (docs/spec/usb-network.md 3.2). The link's: the IP packets the gateway's frames hold, what DHCP gives the host
+// (option 26). The air's (DMR_DATA_IP_MTU, 440) is narrower and not the link's: the radio's own services (TFTP's
+// 512 octet blocks, TCP's 536 octet segments) take more. A host packet for the air that doesn't fit one transmission
+// is dropped and counted; with DF set the host gets an ICMP "fragmentation needed" with the air MTU as the next-hop
+// MTU (RFC 1191), so path MTU discovery finds it
+#define IPGW_LINK_MTU		(IPGW_MAX_FRAME - 14)
+typedef struct
+{
+	uint32_t airTooBig;						// host packets for the air that don't fit one transmission (dropped)
+	uint32_t fragNeeded;					// ICMP "fragmentation needed" sent back for them (DF set)
+} ipGatewayStats_t;
+void ipGatewayGetStats(ipGatewayStats_t *stats);
+// The octets a host packet (from layer 4 on) takes as the user data of a packet on the air, as the data service will
+// build it: the compressed header and the UDP payload when compression takes its ports and the addresses are the
+// IDs' (not off-net), else a 20 octet IPv4 header and layer 4; raw data its payload
+int ipGatewayAirLength(bool group, bool offNet, uint8_t protocol, const uint8_t *l4, int length);
+
 // No hardware dependencies, so the gateway can be unit tested on a host (see tests/host)
 void ipGatewayInit(const uint8_t gatewayMac[6], const uint8_t hostMac[6]);
 
