@@ -110,7 +110,7 @@ Large-text mode (accessibility, or chosen by the user) shows only the status str
 | 1 | **Contacts** | Search field on top. Tabs (or filter chips): Talkgroups, People, Listen lists. Item actions: Talk to, Private call, Message, Radio check, Call alert, Request position, Add to speed dial, Edit |
 | 2 | **Messages** | Inbox (unread first), New message, Canned messages, Sent, Drafts |
 | 3 | **Recent** | Everyone heard and every call made, newest first, filters: All / Calls to me / Missed / Talkgroups. Item actions are the same as Contacts, plus "Save as contact" and "Show position" |
-| 4 | **Zones** | Zone picker, current zone's channels, VFO, Scan lists. A zone's list is also its editor: "Add channel" first, "Zone options" (Rename, Copy as new zone, Send zone to..., Delete zone) last, and Channel actions on a channel (Move up, Move down, Copy here, Edit channel, Send channel to..., Remove from zone; the Send rows with zone sharing) |
+| 4 | **Zones** | Zone picker, current zone's channels, VFO, Scan lists. A zone's list is also its editor: "Add channel" first, "Zone options" (Rename, Copy as new zone, Share zone to..., Delete zone) last, and Channel actions on a channel (Move up, Move down, Copy here, Edit channel, Share channel to..., Remove from zone; the Share rows with zone sharing) |
 | 5 | **Channels** | Every channel by number; New channel from current settings (first row); a channel's settings, edited in place and saved (ui.md 2.1) |
 | 6 | **Tools** | Scan, Position (GPS), Hotspot, USB network, Single frequency repeater, ID lookup, Signal meter, DTMF, APRS, Registration (ARS), Battery |
 | 7 | **Settings** | Grouped by intent (below), with search |

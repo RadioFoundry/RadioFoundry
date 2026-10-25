@@ -202,7 +202,9 @@ uint8_t ui_svc_crash_tx_state(void);
 // --- Zone sharing (CONFIG_ZONE_SHARE; ui_svc_zone.c, docs/spec/zone-share.md). Weak stubs say "not in this build" ---
 // Send zone `zone`, or only its channel at position `pos` when one is true, to a contact or talkgroup on the channel
 // in use. The channels that went (a zone may not fit whole; 0: nothing went: a send still going, no DMR channel, or
-// it can't be read); *total, when not NULL, the zone's channels. The end comes as UI_EV_ZONE_SENT
+// it can't be read); *total, when not NULL, the zone's channels. The end comes as UI_EV_ZONE_SENT. With zone
+// UI_ZONE_NONE and one, pos is a channel's number instead (the channel editor's Share channel to...)
+#define UI_ZONE_NONE	0xFFFFu
 uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bool group, uint8_t *total);
 typedef struct {
 	bool channel;		// one channel, not a zone

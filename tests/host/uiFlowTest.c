@@ -196,8 +196,24 @@ static const flow_t flows[] = {
 	// task-flows.md 12 says 3: the VFO row is first but Channels opens on the current zone (flow 2), so one Up
 	{ "C channels: every channel", "", "ok 5", "screen=channels focus=3_", 2, false },
 	{ "C a channel's settings", "", "ok 5 ok", "screen=channel", 3, false },
-	// The channel's last rows are Go to it and Save as new channel: two Ups from the first row (lists wrap)
-	{ "C go to it from its settings", "ok 5 down down ok", "up up ok", "screen=home pos=5", 3, false },
+	// The channel's last rows are Go to it, Share channel to... (with zone sharing) and Save as new channel: Ups from
+	// the first row (lists wrap)
+#if CONFIG_ZONE_SHARE
+#define CE_SHARE_UP	" up"
+#define CE_SHARE_PRESS	1
+#else
+#define CE_SHARE_UP	""
+#define CE_SHARE_PRESS	0
+#endif
+	{ "C go to it from its settings", "ok 5 down down ok", "up up" CE_SHARE_UP " ok", "screen=home pos=5",
+	  3 + CE_SHARE_PRESS, false },
+#if CONFIG_ZONE_SHARE
+	// Share channel to... sends the channel by its number, then the editor stays (zone-share.md 7)
+	{ "C share channel to... from its settings", "ok 5 down down ok", "up up ok", "shows=Share_To zs_sends=0", 3,
+	  false },
+	{ "C the channel goes, back in its settings", "ok 5 down down ok up up ok", "ok",
+	  "screen=channel zs_sends=1 zs_one=1 zs_zone=65535 zs_pos=5", 1, false },
+#endif
 #endif
 #if CONFIG_CHANNEL_EDIT
 	// task-flows.md 21 and 22 (ui.md 2.1). On channel 3 (DMR) the timeslot is the ninth row, the TX contact the tenth
@@ -256,8 +272,13 @@ static const flow_t flows[] = {
 	{ "E a name to save", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ok long:ok",
 	  "toast=Give_it_a_name writes=0", 2, false },
 	{ "E nothing changed to save", "ok 5 ok", "long:ok", "toast=No_changes writes=0", 1, false },
-	{ "E go to it asks for a save first", "ok 5 ok down down ok", "up up up up up ok", "toast=Save_first screen=channel",
-	  6, false },
+	{ "E go to it asks for a save first", "ok 5 ok down down ok", "up up up up up" CE_SHARE_UP " ok",
+	  "toast=Save_first screen=channel",
+	  6 + CE_SHARE_PRESS, false },
+#if CONFIG_ZONE_SHARE
+	{ "E share asks for a save first", "ok 5 ok down down ok", "up up up up up ok",
+	  "toast=Save_first screen=channel zs_sends=0", 6, false },
+#endif
 	{ "E saved: Back leaves without asking", "ok 5 ok down down ok", "long:ok back", "screen=channels writes=1", 2,
 	  true },
 	{ "E save as new takes the next free number", "ok 5 ok up ok", "ok", "toast=Saved_as_channel_42 writes=2", 1, true },
@@ -470,15 +491,15 @@ static const flow_t flows[] = {
 #if CONFIG_ZONE_EDIT
 	// The zone editor (task-flows.md 23-26, ui.md 2.2). The radio is on channel 3, position 3 of zone 0 "Local
 	// repeaters" (channels 1-16); a zone's list is "Add channel", the channels, "Zone options"
-	// With zone sharing, Channel actions has Send channel to... before Remove and Zone options Send zone to... before
+	// With zone sharing, Channel actions has Share channel to... before Remove and Zone options Share zone to... before
 	// Delete zone (zone-share.md 7)
 #if CONFIG_ZONE_SHARE
 #define ZC_REMOVE_KEY	"6"
 #define ZO_DELETE_KEY	"4"
-	{ "Z send channel to... from Channel actions", "ok 4 ctx ctx", "5", "shows=Send_To zs_sends=0", 1, false },
+	{ "Z share channel to... from Channel actions", "ok 4 ctx ctx", "5", "shows=Share_To zs_sends=0", 1, false },
 	{ "Z the channel goes, back on the zone's list", "ok 4 ctx ctx 5", "ok",
 	  "screen=zone zs_sends=1 zs_one=1 zs_zone=0 zs_pos=2", 1, false },
-	{ "Z send zone to... from Zone options", "ok 4 ctx up up up up ok", "3 ok",
+	{ "Z share zone to... from Zone options", "ok 4 ctx up up up up ok", "3 ok",
 	  "screen=zone zs_sends=1 zs_one=0 zs_zone=0", 2, false },
 #else
 #define ZC_REMOVE_KEY	"5"

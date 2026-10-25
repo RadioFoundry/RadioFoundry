@@ -596,7 +596,7 @@ static void handle_event(const ui_event_t *ev)
 	case UI_EV_SCAN_STOPPED:
 		break;
 	case UI_EV_ZONE_OFFER:
-		sb_str(&b, ev->index ? "Channel from " : "Zone from ");
+		sb_str(&b, ev->index ? GLYPH_DOWNLOAD " Channel from " : GLYPH_DOWNLOAD " Zone from ");
 		station(&b, ev);
 		banner(UI_BANNER_ZONE_OFFER, false, ev->id, title, ev->text);
 		if (ui_st.message_tone)

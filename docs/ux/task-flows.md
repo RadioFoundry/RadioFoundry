@@ -373,7 +373,7 @@ channels and rows quick settings don't have.
 
 1. `SELECT`, `4`, `CONTEXT`: the zone's list.
 2. The last row is "Zone options": `NAV_UP` from "Add channel" (the list wraps), `SELECT`. Numbered: 1 Rename,
-   2 Copy as new zone, 3 Delete zone (with zone sharing: 3 Send zone to..., 4 Delete zone).
+   2 Copy as new zone, 3 Delete zone (with zone sharing: 3 Share zone to..., 4 Delete zone).
 3. Rename opens text entry on the name; `SELECT` keeps it. Copy as new zone writes a zone with the same channels,
    named with " 2" appended. Delete zone asks first, with "No, keep it" focused (P7); its channels stay in Channels.
    Copy and Delete return to Zones.
