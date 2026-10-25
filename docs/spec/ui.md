@@ -40,6 +40,14 @@ class's small font (24 characters a line) and takes the 160 px class's channel a
 line ("No calls heard yet") is centered in the region. Text that doesn't fit is shortened (an alternate, the name
 dropped, then an ellipsis), never drawn in a smaller font.
 
+A page title is in Title Case: every word capitalized except a, an, the, and, or, to, of, in, on, for and by
+inside the title; acronyms and units as written ("Unsaved Changes", "RX Group List", "Single-Freq Repeater", "Send To").
+A fixed prefix ahead of a name is lowercase in the middle ("Talk to Ops", "Zone for A"). Names and counts in a title
+("1 of 3", a zone's name) are shown as stored. List rows, values, hints, toasts and banners keep sentence case, so the
+row that opens a page can differ from its title: the Settings row "Talk & listen" opens "Talk & Listen".
+A page title is centered on the screen at every display class, moved only as far as it must to clear what shares its
+row (the state pill, the lock, the unread count).
+
 The hint row is groups separated by two spaces (`"OK open  # more  Back"`). The group for the Back key (it starts with
 "Back") is drawn against the right edge, under the key; the other groups run from the left, and those that don't fit
 are left out whole from the right. A toast is one centered line instead. A banner or a two-line toast starts in a gap
@@ -90,16 +98,21 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Zones | `zones` | Hub 4: the VFO, then every zone with its channel count. OK goes to the zone, CONTEXT opens its channels (`zone`; long OK on a radio without CONTEXT) |
 | Zone | `zone` | CONTEXT in Zones: the zone's channels in order, OK goes to one. With `CONFIG_ZONE_EDIT` also the zone's editor (2.2): "Add channel" first, "Zone options" last, CONTEXT on a channel opens Channel actions |
 | Channel actions | `zchannel` | CONTEXT (long OK without CONTEXT) on a channel in a zone's list (2.2) |
-| Add channel | `zpick` | "Add channel" in a zone's list: the stored channels the zone doesn't hold, T9 filtered (2.2) |
-| Zone options | `zoneedit` | "Zone options" in a zone's list: Rename, Copy as new zone, Delete zone (2.2) |
-| Delete zone | `zonedel` | Zone options 3: the confirmation, "No, keep it" first (P7) |
+| Add Channel | `zpick` | "Add channel" in a zone's list: the stored channels the zone doesn't hold, T9 filtered (2.2) |
+| Zone options | `zoneedit` | "Zone options" in a zone's list: Rename, Copy as new zone, Send zone to... (with `CONFIG_ZONE_SHARE`), Delete zone (2.2) |
+| Delete Zone | `zonedel` | Delete zone in Zone options: the confirmation, "No, keep it" first (P7) |
 | Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
 | Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), save, and save as a new channel |
 | Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
-| Unsaved changes | `discard` | BACK in the channel editor with unsaved changes (2.1) |
+| Unsaved Changes | `discard` | BACK in the channel editor with unsaved changes (2.1) |
 | List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8 |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
+| Share | `zone_share` | without `CONFIG_ZONE_EDIT`: CONTEXT in a zone's channels (`zone`): Send zone to..., Send channel to... ([zone-share.md](zone-share.md) 7). With the zone editor these are rows of Zone options and Channel actions (2.2) |
+| Send to | `zone_share_to` | a pick in Share, Channel actions or Zone options: the contacts, T9 filtered; OK sends and returns to the zone's list |
+| Zone Share Received | `zone_offer` | CONTEXT on the offer's banner, or Tools > Zones/Chs Received while one waits; titled Channel Share Received (shorter where it doesn't fit) for one channel: the offer's text, then Import, Preview, Reject ([zone-share.md](zone-share.md) 5.2) |
+| Offer preview | `zone_offer_preview` | Preview in Zone Share Received: the offered channels, "Not in band" dimmed |
+| Add to zone | `zone_offer_zone` | Import of a one-channel offer: the zone it goes in |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |
 | About | `about` | Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
 
@@ -124,7 +137,7 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 
 - A changed row shows the temporary mark (`UI_ITEM_TEMP`, the dot Home uses).
 - Long SELECT anywhere saves, as long SELECT makes a quick setting permanent. The Save row does the same.
-- BACK with unsaved changes opens Unsaved changes (`discard`): "No, keep editing" first (the default, P7), then "Yes,
+- BACK with unsaved changes opens Unsaved Changes (`discard`): "No, keep editing" first (the default, P7), then "Yes,
   discard". Long BACK still goes Home (P3) and drops the copy without asking.
 - Save checks the copy first and names the first problem in a toast: an empty name, RX out of every band, TX out of
   the transmit bands on a channel that isn't RX only, a DMR channel without a TX contact.
@@ -176,10 +189,12 @@ they show the change within a fraction of a second.
 | Channel actions | 1 Move up, 2 Move down | swaps it with its neighbor. The menu stays open, so the digit again moves it on; the toast gives the position ("Position 4 of 16"), and "Already first" / "Already last" at the ends |
 | | 3 Copy here | the channel editor (2.1) on an unsaved copy at the lowest free number, named with " 2" appended (a copy of the channel in use keeps its temporary changes). Save writes it and inserts it after its source in one job (`ZONE_OP_ADD_NEW`); BACK asks as for any unsaved channel. Refused first with "No free channel" or "Zone full" |
 | | 4 Edit channel | the channel editor on the channel |
-| | 5 Remove from zone | takes it out of this zone at once, "Removed from <zone>". The channel stays in Channels and any other zone |
+| | 5 Send channel to... | with `CONFIG_ZONE_SHARE`: Send to (`zone_share_to`) for this channel ([zone-share.md](zone-share.md) 7). Waits while a zone change is still being saved ("Saving the zone: try again"): the send reads the stored zone |
+| | 6 Remove from zone (5 without zone sharing) | takes it out of this zone at once, "Removed from <zone>". The channel stays in Channels and any other zone |
 | Zone options | 1 Rename | text entry on the zone's name (2.1); OK writes it, an empty name is refused |
 | | 2 Copy as new zone | a new zone with the same channels, named with " 2" appended, then back to Zones |
-| | 3 Delete zone | asks first (`zonedel`): "Delete <name>? Channels stay." with "No, keep it" focused (P7). Yes deletes it and returns to Zones |
+| | 3 Send zone to... | with `CONFIG_ZONE_SHARE`: Send to (`zone_share_to`) for the whole zone (zone-share.md 7) |
+| | 4 Delete zone (3 without zone sharing) | asks first (`zonedel`): "Delete <name>? Channels stay." with "No, keep it" focused (P7). Yes deletes it and returns to Zones |
 
 - Channel actions and Edit channel replace their menu on the stack, so the deepest path (Home, Hub, Zones, the zone,
   the channel editor, text entry) fits the six frames.
@@ -189,8 +204,9 @@ they show the change within a fraction of a second.
   as a real zone 0, so the user keeps what they saw; it can't be deleted until then ("It holds every channel").
 - A new zone takes the lowest free slot, so it can come ahead of zones already there, and deleting a zone moves the
   ones after it up. `zone_edit.c` logs each such shift (`zone_edit_shifts`, the last `ZONE_SHIFT_LOG` = 8 kept), and
-  every holder of a zone index maps it with `zone_edit_map` once no zone write is under way (`zone_edit_busy`). An
-  import that writes zones through the same layer is followed the same way. A reader more than 8 shifts behind keeps
+  every holder of a zone index maps it with `zone_edit_map` once no zone write is under way (`zone_edit_busy`). Zone
+  sharing's import adds its zones through the same layer and is followed the same way, editor or not
+  (`CONFIG_ZONE_WRITE`). A reader more than 8 shifts behind keeps
   its indexes.
 - The settings hold zone indexes too (the zone in use, the roaming zones). An add or delete that moves indexes is
   noted in the settings before the codeplug write, and the saved indexes are moved in the settings record that clears
@@ -262,8 +278,9 @@ A"). The pill shows RX while data or CSBK bursts arrive on our slot and color co
 stays for a call being played.
 
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
-idle, the bars and battery icon give way, the battery percent stays (on a radio without a battery, `CAP_NO_BATTERY`,
-neither is drawn anywhere, and Tools > Battery, Settings > Power > Battery saver and Low battery warning are left
+idle, the bars and the battery (icon and percent) give way, so the title is centered across the whole row; the lock
+and the unread count stay. Home shows the battery, and the low battery banner warns on any screen. On a radio without
+a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Tools > Battery, Settings > Power > Battery saver and Low battery warning are left
 out of their lists, so the other Tools rows move up), and only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 

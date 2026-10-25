@@ -45,7 +45,7 @@ NEED_FLAGS = {
     "codeplug_write": ("--allow-codeplug-write",),
     "reboot": ("--allow-reboot",),
     "owner_action": ("--manual",),
-    "second_radio": ("--split-rx-port", "--bench-station"),
+    "second_radio": ("--split-rx-port", "--bench-station", "--peer-port"),
 }
 # The VERSION keys a record keeps (docs/spec/debuglink.md 3.1): no uptime, nothing that names one unit
 FIRMWARE_KEYS = ("proto", "view", "git", "board", "features", "codec", "display")

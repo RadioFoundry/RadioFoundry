@@ -399,7 +399,7 @@ assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that 
 | 0x18 | 1 | Mode: 0 FM, 1 DMR |
 | 0x19 | 1 | Power: 0 = use the radio's master power; n = power level n-1. qdmr maps 1 min, 3 low, 6 mid, 9 high, 10 max; the levels themselves are per radio. Radios with 9 or more levels read n as level n-1; radios with fewer spread the scale over their levels (2 levels: 1-5 low, 6-10 high) |
 | 0x1A | 1 | Fixed location latitude, low byte |
-| 0x1B | 1 | TX timeout in 15 s units, 0 = off |
+| 0x1B | 1 | TX timeout in 15 s units; 0 = the radio's own TX time-out (the TOT setting), which zone sharing's imported channels use |
 | 0x1C | 2 | Latitude, middle and high bytes |
 | 0x1E | 2 | Longitude, low and middle bytes |
 | 0x20 | 2 | RX tone (LE): 0xFFFF or 0 = none. CTCSS: BCD of tenths of Hz (0x0885 = 88.5 Hz), bits 14-15 clear. DCS: bit 15 set, bit 14 set = inverted, the low bits are the code's octal digits written as hex digits (D023 = 0x8023, D023I = 0xC023) |

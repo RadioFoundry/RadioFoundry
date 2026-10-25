@@ -29,6 +29,9 @@
 #if CONFIG_TFTP
 #include "net/tftp_codeplug.h"
 #endif
+#if CONFIG_ZONE_SHARE
+#include "dmr/zone_share_api.h"
+#endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
@@ -234,6 +237,11 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_TFTP_WRITE:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
+#if CONFIG_ZONE_SHARE
+	case UI_SET_ZONE_OFFERS:
+		settings_read(&st);
+		return st.zs_offers == ZS_OFFERS_ASK;
+#endif
 	case UI_SET_NOISE_REDUCTION:
 		settings_read(&st);
 		return (st.accent & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0;
@@ -450,6 +458,16 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		tftp_codeplug_allow_write(value != 0);
 #endif
 		return true;
+#if CONFIG_ZONE_SHARE
+	case UI_SET_ZONE_OFFERS:
+		if (value != ZS_OFFERS_OFF && value != ZS_OFFERS_ASK)
+			return false;
+		st = settings_begin();
+		st->zs_offers = (uint8_t)value;
+		settings_end(hal_millis());
+		zone_share_set_offers((uint8_t)value);
+		return true;
+#endif
 	case UI_SET_NOISE_REDUCTION:	// ui_svc_apply hands them to the vocoder
 	case UI_SET_MIC_AGC: {
 		// The stored bit is set for "on" with AGC, for "off" with noise reduction (0 = the defaults)

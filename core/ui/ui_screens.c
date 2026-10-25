@@ -246,9 +246,10 @@ static const char *mode_word(const radio_view_t *v)
 
 // Status strip (P2): state pill, mode, monitor, lock, unread messages, signal, battery.
 // A titled screen (prefix and / or name) on a display under UI_TALL_PX high merges its title into the strip
-// (wireframes 160x128 and 128x64): the pill shows only while not idle, the signal bars and the battery icon give way
-// to the title, the battery % stays. The prefix ("Quick") is kept whole; only the name is shortened, from the middle.
-// On tall displays the strip stays whole and the title gets its own row below it. Returns the y where content starts.
+// (wireframes 160x128 and 128x64): the pill shows only while not idle, the signal bars and the battery give way to the
+// title (Home shows the battery; the low battery banner warns on any screen). The prefix ("Quick") is kept whole; only
+// the name is shortened, from the middle. On tall displays the strip stays whole and the title gets its own row below
+// it. Either way the title is centered. Returns the y where content starts.
 uint32_t ui_strip_draws;
 
 // The pill shows st instead of v->state: the hotspot screen shows what the hotspot does without a copy of the whole
@@ -320,20 +321,20 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 	int ty = (ph - f->h + 1) / 2;
 
 	// Right side, right to left: battery %, battery icon, signal bars, unread messages, lock
-	char pct[6];
 	sbuf_t b;
 	int rx = w;
-	color_t bc = sfg;
-	if (!s->no_battery) {
-		sb_init(&b, pct, sizeof pct);
-		sb_u32(&b, s->battery_pct, 1);
-		sb_chr(&b, '%');
-		rx -= gfx_text_width(f, pct);
-		uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;	// Settings > Power > Low battery warning
-		bc = s->battery_pct <= low ? swarn : sfg;
-		gfx_text(f, rx, ty, pct, bc);
-	}
 	if (!merged) {
+		color_t bc = sfg;
+		if (!s->no_battery) {
+			char pct[6];
+			sb_init(&b, pct, sizeof pct);
+			sb_u32(&b, s->battery_pct, 1);
+			sb_chr(&b, '%');
+			rx -= gfx_text_width(f, pct);
+			uint8_t low = s->low_batt_pct ? s->low_batt_pct : 15;	// Settings > Power > Low battery warning
+			bc = s->battery_pct <= low ? swarn : sfg;
+			gfx_text(f, rx, ty, pct, bc);
+		}
 		int bh = f->ascent - 2 < 5 ? 5 : f->ascent - 2;
 		int bw = bh * 2;
 		if (!s->no_battery) {
@@ -371,7 +372,7 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 		color_t dim = ui_col.dim;
 		if (filled)
 			ui_col.dim = sfg;	// the title's prefix, normally dim, in the strip's one text color
-		ui_draw_title(f, x, ty, rx - f->w / 2 - x, prefix, name, sfg);
+		ui_draw_title(f, x, ty, (rx < w ? rx - f->w / 2 : w) - x, prefix, name, sfg);
 		ui_col.dim = dim;
 		return L->strip_h;
 	}
@@ -437,23 +438,36 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	return draw_top_as(v, v->state, s, prefix, name);
 }
 
+// The prefix (dim when a name follows) and the name, centered on the screen and moved as little as needed to stay
+// within x .. x + max_w (the pill, the lock and the unread count share the merged strip). Both are fitted first, so a
+// shortened title fills its space
 void ui_draw_title(const font_t *f, int x, int y, int max_w, const char *prefix, const char *name, color_t c)
 {
-	char fit[48];
+	char pfit[48] = "", nfit[48] = "";
+	int pw = 0, gap = 0, nw = 0, room = max_w;
 	if (prefix != NULL) {
-		gfx_text_fit(f, prefix, max_w, fit, sizeof fit);
-		int nx = gfx_text(f, x, y, fit, name != NULL ? ui_col.dim : c);
-		max_w -= nx - x;
-		x = nx;
-		if (name == NULL || max_w < 3 * f->w)
-			return;
-		x += f->w;
-		max_w -= f->w;
+		gfx_text_fit(f, prefix, room, pfit, sizeof pfit);
+		pw = gfx_text_width(f, pfit);
+		room -= pw + f->w;
+		if (room < 3 * f->w)
+			name = NULL;	// no room for the name after the prefix
+		else if (name != NULL)
+			gap = f->w;
 	}
 	if (name != NULL) {
-		gfx_text_fit(f, name, max_w, fit, sizeof fit);
-		gfx_text(f, x, y, fit, c);
+		gfx_text_fit(f, name, room, nfit, sizeof nfit);
+		nw = gfx_text_width(f, nfit);
 	}
+	int tw = pw + gap + nw;
+	int tx = (gfx_width() - tw) / 2;
+	if (tx + tw > x + max_w)
+		tx = x + max_w - tw;
+	if (tx < x)
+		tx = x;
+	if (prefix != NULL)
+		tx = gfx_text(f, tx, y, pfit, name != NULL ? ui_col.dim : c) + gap;
+	if (name != NULL)
+		gfx_text(f, tx, y, nfit, c);
 }
 
 static const char *wrap_line(const font_t *f, const char *t, int max_w, char *line, size_t cap);
@@ -2166,7 +2180,7 @@ void ui_draw_banner(const ui_state_t *s)
 		gfx_text(f, 2, ty, title[i], gfx_bpp() == 1 ? fg : bn->warn ? ui_col.warn : ui_col.fg);
 	for (int i = 0; i < nx; i++, ty += f->h)
 		gfx_text(f, 2, ty, text[i], fg);
-	const char *act = bn->kind == UI_BANNER_MESSAGE ? "# Open" :
+	const char *act = (bn->kind == UI_BANNER_MESSAGE || bn->kind == UI_BANNER_ZONE_OFFER) ? "# Open" :
 		(bn->kind == UI_BANNER_CALL_ALERT || bn->kind == UI_BANNER_PRIVATE) ? "# Actions" : "Back hide";
 	gfx_text(f, 2, ty, act, gfx_bpp() == 1 ? fg : ui_col.dim);
 	char sec[8];

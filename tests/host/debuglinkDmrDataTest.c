@@ -59,6 +59,7 @@ bool dmrDataServiceIsBusy(void) { return false; }
 bool dmrDataServiceIpBusy(void) { return false; }
 uint8_t dmrDataServiceIpResult(void) { return DMR_REQ_OK; }
 int dmrDataServiceLrrpTriggerCount(void) { return 0; }
+void dmrDataServiceSetTxSpacing(uint16_t guardMs, bool chain) { (void)guardMs; (void)chain; }
 
 bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
 		      const uint8_t *l4, int length)

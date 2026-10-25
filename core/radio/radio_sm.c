@@ -11,7 +11,7 @@
 #include "settings/settings.h"
 #include "config.h"
 #include "hal_dtmf.h"
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 #include "codeplug/zone_edit.h"
 #define ZONE_WRITE_BUSY()	zone_edit_busy()
 #define ZONES_MOVED(sm)		(zone_edit_shifts() != (sm)->zone_shifts)
@@ -52,6 +52,12 @@ static void cw_cancel(radio_sm_t *sm);
 #include "hostlink/hostlink_net_air.h"	// the IP gateway's air side (the data service's packet hook)
 #include "hostlink/hostlink_net.h"	// control station passthrough
 #include "dmr/ipGateway.h"		// the off-net route's gateway ID
+#endif
+#if CONFIG_DMR_AIR_QUEUE
+#include "dmr/dmrAirQueue.h"	// what the gateway and zone sharing send, in order (docs/spec/dmr-data.md 12)
+#endif
+#if CONFIG_ZONE_SHARE
+#include "dmr/zone_share_api.h"
 #endif
 #if CONFIG_AM_RX
 #include "radio/radio_am.h"	// air band AM receive (docs/spec/airband-and-broadcast.md 3)
@@ -165,6 +171,9 @@ static void apply_tot(radio_sm_t *sm)
 }
 
 static uint8_t master_power = SETTINGS_UNSET8;	// the settings' power for "default" channels
+// The radio task's copy of the settings for the few places that read more than one field (data_init, cw_begin,
+// reload). Static: off the radio task's stack; one copy, since none of them calls another (RAM is tight on some radios)
+static settings_t st_copy;
 
 static uint8_t default_power(void)
 {
@@ -1799,6 +1808,9 @@ static void data_init(radio_sm_t *sm)
 {
 	dmrDataEnv_t env = { .txStart = data_tx_start, .channelClear = data_channel_clear,
 			     .inRxGroup = data_in_rx_group, .ctx = sm };
+#if CONFIG_DMR_AIR_QUEUE
+	airqInit();
+#endif
 #if CONFIG_DMR_IP_GATEWAY
 	env.packet = hostlink_net_air_packet;
 	hostlink_net_air_start();
@@ -1810,34 +1822,38 @@ static void data_init(radio_sm_t *sm)
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = false, .callAlertAck = true, .lrrpReply = true,
 				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
-	settings_t st;
-	settings_read(&st);
-	if (st.ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
-		set.arsServer = st.ds_ars_server <= 0xFFFFFFu ? st.ds_ars_server : 0;
-		set.radioCheckReply = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
-		set.callAlertAck = (st.ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
-		set.lrrpReply = (st.ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
+	settings_t *st = &st_copy;
+	settings_read(st);
+	if (st->ds_stored == 1) {	// as saved (docs/spec/settings-store.md 3)
+		set.arsServer = st->ds_ars_server <= 0xFFFFFFu ? st->ds_ars_server : 0;
+		set.radioCheckReply = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
+		set.callAlertAck = (st->ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
+		set.lrrpReply = (st->ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
 		// A record from before ETSI IP text has neither format bit: TMS, as that firmware sent (only the default
 		// changed, docs/spec/dmr-data.md 8)
-		set.smsFormat = (st.ds_flags & SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_ETSI_IP :
-				(st.ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
-		set.radioCheckEtsi = (st.ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
-		set.udpCompress = (st.ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
-				  (st.ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
-		uint8_t ipc = (uint8_t)(st.ds_ip_cnf >> SETTINGS_DS_IPC_SHIFT) & 3u;
+		set.smsFormat = (st->ds_flags & SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_ETSI_IP :
+				(st->ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		set.radioCheckEtsi = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
+		set.udpCompress = (st->ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
+				  (st->ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
+		uint8_t ipc = (uint8_t)(st->ds_ip_cnf >> SETTINGS_DS_IPC_SHIFT) & 3u;
 		set.ipConfirmed = ipc == SETTINGS_DS_IPC_OFF ? DMR_IPC_OFF : ipc == SETTINGS_DS_IPC_ALL ? DMR_IPC_ALL :
 				  DMR_IPC_RULES;
-		set.ipConfirmedTries = (st.ds_ip_cnf & 0x0F) ? (st.ds_ip_cnf & 0x0F) : DMR_IPC_TRIES_DEFAULT;
-		memcpy(set.ipConfirmedRule, st.ds_ip_rule, sizeof(set.ipConfirmedRule));
-		set.ipGatewayId = st.ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
+		set.ipConfirmedTries = (st->ds_ip_cnf & 0x0F) ? (st->ds_ip_cnf & 0x0F) : DMR_IPC_TRIES_DEFAULT;
+		memcpy(set.ipConfirmedRule, st->ds_ip_rule, sizeof(set.ipConfirmedRule));
+		set.ipGatewayId = st->ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
 	}
 	data_saved = set;
 	data_tx.list = NULL;
 	dmrDataServiceInit(&env);
 	dmrDataServiceSetSettings(&set);
+#if CONFIG_ZONE_SHARE
+	zone_share_init();
+	zone_share_set_offers(st->zs_offers);	// Off unless the user chose Ask (docs/spec/zone-share.md 5)
+#endif
 	dmr_call_set_data_rx(data_rx, NULL);
 #if CONFIG_DMR_EMERGENCY
-	emergency_init(&st);
+	emergency_init(st);
 #endif
 }
 
@@ -1861,13 +1877,21 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 	dmrDataServiceSetPassthrough(hostlink_net_passthrough_active());
 #endif
 	dmrDataServiceTick(now_ms, &c);
+#if CONFIG_DMR_IP_GATEWAY
+	hostlink_net_air_tick(sm->view.dmr.own_id, now_ms);
+#endif
+#if CONFIG_DMR_AIR_QUEUE
+	airqTick(sm->view.dmr.own_id, now_ms);	// the next queued packet, when the service is free
+#endif
+#if CONFIG_ZONE_SHARE
+	zone_share_tick(now_ms);
+#endif
 	data_save_settings(now_ms);
 	if (sm->power_off_req && sm->power_off_busy) {
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
 	}
 #if CONFIG_DMR_IP_GATEWAY
 	ipGatewaySetOffNetId(data_saved.ipGatewayId);	// the setting in force (data_save_settings above follows it)
-	hostlink_net_air_tick(sm->view.dmr.own_id, now_ms);
 #endif
 }
 #endif
@@ -3056,7 +3080,7 @@ static void roam_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 		// Only this zone's flag: the others are the zone writes' to move (zone_settle.c), and a reload not done yet
 		// leaves this zone's index the old one
 		uint16_t saved = zi;
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 		if (zone_edit_map(sm->zone_shifts, zone_edit_shifts(), zi, &saved) != ZONE_MAP_KEPT) {
 			saved = SETTINGS_ROAM_ZONE_BYTES * 8u;	// gone or lost: the reload reads the saved flags again
 		}
@@ -3764,13 +3788,13 @@ static void cw_restore(radio_sm_t *sm)
 static uint8_t cw_begin(radio_sm_t *sm, uint32_t hz, uint8_t power, const char *text, uint8_t n, uint32_t now_ms)
 {
 	static const subtone_t none = { TONE_NONE, 0 };
-	settings_t st;
-	settings_read(&st);
-	uint8_t wpm = st.cw_wpm != 0 ? st.cw_wpm : MORSE_WPM_DEFAULT;
+	settings_t *st = &st_copy;
+	settings_read(st);
+	uint8_t wpm = st->cw_wpm != 0 ? st->cw_wpm : MORSE_WPM_DEFAULT;
 	if (wpm < MORSE_WPM_MIN || wpm > MORSE_WPM_MAX) {
 		wpm = MORSE_WPM_DEFAULT;
 	}
-	uint16_t tone_hz = st.cw_tone_hz;
+	uint16_t tone_hz = st->cw_tone_hz;
 	sm->cw_tone_hz = (tone_hz >= CW_TONE_MIN_HZ && tone_hz <= CW_TONE_MAX_HZ) ? tone_hz : MORSE_TONE_HZ_DEFAULT;
 
 	if (sm->dmr_keyed) {
@@ -4410,7 +4434,7 @@ void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t n
 
 // The codeplug changed underneath (an edit, a CPS write) or the preferences did: read them again, keep the zone and
 // the channel if they still exist
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 // A zone added ahead of others or a zone deleted moves the indexes after it (zone_edit.h). Followed here: the zone in
 // use (in the VFO too: the zone it goes back to) and dual watch's two channels. The saved roaming zones were moved by
 // the zone write itself (zone_settle.c; a deleted one loses its flag) and the reload reads them. Returns the zone in
@@ -4453,11 +4477,11 @@ static uint32_t zone_sum(const radio_sm_t *sm)
 
 static void reload(radio_sm_t *sm, uint32_t now_ms)
 {
-	static settings_t st;	// off the radio task's stack: its deepest path goes through here (stack-check.md)
+	settings_t *st = &st_copy;
 	roam_cancel(sm, now_ms);	// back to the site the search started from first
-	settings_read(&st);
+	settings_read(st);
 #if CONFIG_DMR_ROAMING
-	memcpy(sm->roam_zones, st.roam_zones, sizeof(sm->roam_zones));
+	memcpy(sm->roam_zones, st->roam_zones, sizeof(sm->roam_zones));
 	sm->roam_dirty = true;
 #endif
 	sm->reload_pending = false;
@@ -4472,7 +4496,7 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	uint16_t number = sm->have_channels && sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
 	bool vfo = sm->view.vfo;
 	uint16_t zi = sm->view.zone_index, pos = sm->view.zone_pos;
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 	uint32_t sum = zone_sum(sm);
 	bool gone;
 	zi = follow_zones(sm, &gone, now_ms);
@@ -4486,14 +4510,14 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	sm->view.zone_index = zi;
 #endif
 	select_position(sm, zi, number, pos);
-#if CONFIG_ZONE_EDIT && CONFIG_SCAN
+#if CONFIG_ZONE_WRITE && CONFIG_SCAN
 	if (sm->scan.kind == SCAN_ZONE && zone_sum(sm) != sum) {
 		scan_stop(sm, false, now_ms);
 	}
 #endif
-	apply_prefs(sm, &st);
+	apply_prefs(sm, st);
 	radio_settings_t rs;
-	settings_to_radio(&st, &rs);
+	settings_to_radio(st, &rs);
 	use_settings(sm, &rs, now_ms);
 	if (vfo || !sm->have_channels) {
 		if (VFO_AVAILABLE) {
@@ -4578,7 +4602,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	step_update(sm);
 	sm->view.source = codeplug_source();
 	sm->codeplug_serial = codeplug_serial();
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 	sm->zone_shifts = zone_edit_shifts();
 #endif
 

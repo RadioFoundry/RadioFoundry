@@ -94,6 +94,8 @@ is `tools/bringup.py list --radio <id>`.
 | `fault_trace` | not recorded | ✕ | not recorded | not recorded | ✕ |
 | `usb_network` | ✕ | pass (seed) | ✕ | ✕ | not recorded |
 | `dmr_ip_gateway` | not recorded | not recorded | pass (seed) | not recorded | not recorded |
+| `dmr_tx_spacing` | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `zone_share` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_control_station` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `net_tcp` | not recorded | not recorded | pass (seed) | pass (seed) | not recorded |
 | `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -164,6 +166,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DMR_EMERGENCY` | ● | ● | ● | ● | ● |
 | `DMR_ROAMING` | ● | ● | ● | ● | ● |
 | `DMR_IP_GATEWAY` | ● | ● | ● | ● | ● |
+| `ZONE_SHARE` | ● | ● | ● | ● | ● |
 | `DMR_UDP_COMPRESS` | ● | ● | ● | ● | ● |
 | `DMR_CONFIRMED` | ● | ● | ● | ● | ● |
 | `NET_TCP` | ● | ● | ● | ● | ● |
@@ -273,6 +276,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | LRRP location | `DMR_LRRP` | 8,548 | 2,048 |  |
 | Compressed UDP/IP headers on transmit (SAP 3) | `DMR_UDP_COMPRESS` | 408 | 356 | Auto: not for ports 4000-4099 or ETSI IP text |
 | Confirmed packet data | `DMR_CONFIRMED` | 2,880 | 2,920 |  |
+| Zone and channel sharing: send a zone or a channel, import an offered one | `ZONE_SHARE` | 12,240 | 12,388 | Includes its screens and the import; about 4 KB of RAM. Receiving is off until the user sets Ask ([zone-share.md](spec/zone-share.md)). Measured 2026-10-24 with LTO, on the zone share branch |
 | Single frequency repeater: MMDVM SFR, and the standalone SFR (experimental) | `SFR` | 6,884 | — | MD-380: HR_C5000 lacks what the SFR glue uses |
 | Experimental: SFR user receive "dual-path RX": a voice frame whose FEC failed comes from the other copy | `SFR_DUALPATH_RX` | 696 | — | Needs `SFR`. DM-1701 figure with LTO (2026-10-22) |
 | Experimental: standalone SFR repeater's periodic CW ID (callsign in Morse, FM) | `SFR_CWID` | 900 | — | Needs `SFR`. DM-1701 figure with LTO (2026-10-22) |

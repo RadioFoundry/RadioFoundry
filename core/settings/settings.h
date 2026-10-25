@@ -24,6 +24,16 @@
 
 // Fields are only ever appended (docs/spec/settings-store.md 3); a record written by an older firmware fills the
 // fields it knows, the rest keep their defaults. Fixed-width members, ordered so there is no padding
+// A zone share import: which sender's zone it was, and the zone it became
+#define SETTINGS_ZS_IMPORTS	4
+typedef struct {
+	uint32_t key;			// hash of the sender's ID and the record's zone ID, 0 = unused
+	char zone[16];			// the zone's name here (not terminated when 16 long)
+	uint32_t sig;			// XOR of the imported channels' hashes (number and content), as written
+	uint8_t count;			// how many channels the import wrote (the first count of the zone)
+	uint8_t reserved[3];
+} settings_zs_import_t;
+
 typedef struct {
 	// Where the radio is
 	uint8_t vfo;			// 1 = tuning the VFO, 0 = on a channel
@@ -196,7 +206,8 @@ typedef struct {
 	uint8_t vfo2_tx_tone_type;
 	uint8_t rs_dual_delay;		// radio_settings_t.dual_delay_ms: n - 1 steps of 100 ms, 0 = the default
 	uint8_t rs_bcast_step;		// radio_settings_t.bcast_step + 1, 0 = the default (200 kHz on the odd tenths)
-	uint8_t reserved8[3];
+	uint8_t zs_offers;		// zone share offers: 0 Off (the default), 1 Ask (docs/spec/zone-share.md 5)
+	uint8_t reserved8[2];
 	// The IP gateway's off-net route (dmrDataSettings_t.ipGatewayId, docs/spec/usb-network.md 3.1; appended for
 	// ip-addr), taken with the other ds_ fields: the gateway radio's DMR ID, 0 = off-net packets dropped
 	uint32_t ds_ip_gateway;
@@ -206,6 +217,9 @@ typedef struct {
 	uint16_t zone_jrn_count;	// the stored zone count before it (0: only the built-in zone)
 	uint8_t zone_jrn_kind;		// SETTINGS_ZONE_JRN_*
 	uint8_t reserved8b[3];
+	// Zone share: the zones imported last, so the same zone sent again updates its import instead of adding a copy
+	// (docs/spec/zone-share.md 5.4); key 0 = unused, the oldest replaced first
+	settings_zs_import_t zs_import[SETTINGS_ZS_IMPORTS];
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size

@@ -32,7 +32,7 @@ static uint32_t cp_serial;	// the codeplug the panes were found in
 static bool resume;		// power on: the watch comes back if it ran at power off (UI_DUAL_ON)
 static ui_dual_ref_t chan[2];	// a pane's channel before it became the VFO: the VFO key goes back to it
 static bool chan_ok[2];
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 static uint16_t chan_num[2];	// its channel number: found again by it when the codeplug changes
 static uint32_t zones_seen;	// zone_edit_shifts() when the zone indexes here were last followed
 static uint32_t serial_seen;	// codeplug_serial() then (the watch on: find_again keeps its own)
@@ -73,7 +73,7 @@ void ui_dual_reset(void)
 	resume = true;
 	memset(snap, 0, sizeof snap);
 	memset(chan_ok, 0, sizeof chan_ok);
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 	zones_seen = zone_edit_shifts();
 	serial_seen = codeplug_serial();
 #endif
@@ -570,7 +570,7 @@ static void pane_changed(uint8_t pane, const ui_dual_ref_t *old)
 	if (!old->vfo && ref[pane].vfo) {
 		chan[pane] = *old;	// the VFO key goes back to it
 		chan_ok[pane] = true;
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 		static zone_t z;	// static: not on the UI task's stack
 		chan_num[pane] = codeplug_zone(old->zone, &z) && old->pos < z.count ? z.channels[old->pos] : 0;
 		chan_ok[pane] = chan_num[pane] != 0;
@@ -871,7 +871,7 @@ static bool watch_again(ui_dual_t *d, const radio_view_t *v)
 	return true;
 }
 
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 // The zone editor moved zone indexes (zone_edit.h) or changed a zone: the references kept here follow. The panes'
 // zones are mapped (find_again then finds their channels by number, starting there); the VFO key's channel is found
 // again by number from its mapped zone; the last B and A, kept while the watch is off, are dropped when their zone
@@ -1008,7 +1008,7 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 	stops_seen = v->dual_stops;
 	sel_seen = v->dual_sel;
 	seen_ok = true;
-#if CONFIG_ZONE_EDIT
+#if CONFIG_ZONE_WRITE
 	if (zone_edit_busy())
 		return false;	// a zone write under way: the codeplug and the zone indexes are read once it is done
 	follow_zones(d);
@@ -1206,7 +1206,7 @@ static void actions_select(uint16_t i, bool hold)
 }
 
 const ui_scr_def_t ui_dual_screen = {
-	.name = "dual", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Dual watch", .hint = "1-5 pick  Back",
+	.name = "dual", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = "Dual Watch", .hint = "1-5 pick  Back",
 	.count = actions_count, .item = actions_item, .select = actions_select,
 };
 

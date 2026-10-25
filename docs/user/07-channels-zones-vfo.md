@@ -46,7 +46,8 @@ nothing to save or discard. On a radio without **#**, hold **OK** wherever this 
   | 2 | Move down | swaps it with the channel below |
   | 3 | Copy here | opens a copy at the lowest free channel number, named with " 2" added. Change what differs and hold **OK**: the copy is saved and put after the channel in this zone |
   | 4 | Edit channel | opens the channel's settings ([Editing a channel](#editing-a-channel)) |
-  | 5 | Remove from zone | takes it out of this zone. The channel stays in Channels and in any other zone |
+  | 5 | Send channel to... | sends the channel to another radio or a talkgroup ([Sharing a zone](#sharing-a-zone)) |
+  | 6 | Remove from zone | takes it out of this zone. The channel stays in Channels and in any other zone |
 
 - **Zone options** (the last row):
 
@@ -54,7 +55,8 @@ nothing to save or discard. On a radio without **#**, hold **OK** wherever this 
   |---|---|---|
   | 1 | Rename | type the new name and press **OK** |
   | 2 | Copy as new zone | makes a new zone with the same channels, named with " 2" added |
-  | 3 | Delete zone | asks first, with "No, keep it" focused. The zone's channels stay in Channels |
+  | 3 | Send zone to... | sends the zone to another radio or a talkgroup ([Sharing a zone](#sharing-a-zone)) |
+  | 4 | Delete zone | asks first, with "No, keep it" focused. The zone's channels stay in Channels |
 
 <img src="../ux/screens/160x120i5/zone_options.png" width="200" alt="Zone options">
 
@@ -65,6 +67,44 @@ full"). A radio whose codeplug has no zones shows one zone, "All channels"; the 
 Deleting the zone you are using moves the radio to the zone that comes after it in the list (or the one before, when
 it was last). Dual watch keeps watching a channel from a deleted zone when another zone holds it, and otherwise
 stops. A zone marked for roaming loses the mark when it is deleted; the other marks stay on their zones.
+
+## Sharing a zone
+
+You can send a zone, or one channel, to another radio or a talkgroup over DMR. Status: sending one channel works on a
+radio; sending a whole zone and receiving are tested only in the host tests so far.
+
+**Send:**
+
+1. Tune a DMR channel. The zone goes out on it.
+2. Press **OK**, **4** (Zones). Focus the zone and press **#**. Its channels open.
+3. For one channel: press **#** on it and pick **5 Send channel to...**. For the whole zone: pick **Zone options**
+   (the last row), then **3 Send zone to...**.
+4. Pick a contact or talkgroup and press **OK**. A banner says "Sent to ..." when it is out.
+
+A zone too big for one send goes in part, and the radio says how much ("Sending 40 of 60 channels"). Scan lists,
+group lists and privacy keys are never sent.
+
+**Receive:** set **Settings > Connections > Zone offers** to **Ask**. It is **Off** at first, and with Off the radio
+ignores what others send.
+
+<img src="../ux/screens/160x120i5/zone_offer.png" width="200" alt="Zone Share Received: Import, Preview, Reject">
+
+1. A banner says "Zone from ...". Press **#** to open it. It also waits under **Tools > Zones/Chs Received** for 10 minutes. The screen is titled **Zone Share Received**, or **Channel Share Received** for one channel.
+2. The offer shows the zone's name, its channels, the sender and how many channels are outside your radio's bands.
+3. Pick **Preview** to see the channels, **Import** to add them, or **Reject**.
+
+What an import does:
+
+- The zone is added after your zones. If you have a zone with that name, it gets " 2".
+- Only channels your radio can receive come in. Every one is **receive only**: turn transmit on per channel when
+  you know you may use it.
+- Talkgroups and contacts you already have are used with your names. Missing ones are added.
+- The same zone sent again by the same radio updates your copy instead of adding another. It replaces only the
+  channels from the earlier import that you left as they were. Channels you added to the zone or changed stay,
+  after the new ones.
+- A single channel is added to a zone you pick.
+
+At most 6 offers an hour are shown, one at a time. The format is in [zone-share.md](../spec/zone-share.md).
 
 ## Every channel
 

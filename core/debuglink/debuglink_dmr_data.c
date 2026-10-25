@@ -292,6 +292,13 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		dmr_data_set_settings(&set);
 		break;
 	}
+	case DL_DATA_OP_TX_SPACING:
+		if (n < 3 || a[2] > 1) {
+			st = DL_ST_BAD_ARG;
+			break;
+		}
+		dmrDataServiceSetTxSpacing((uint16_t)(a[0] | (a[1] << 8)), a[2] != 0);
+		break;
 	case DL_DATA_OP_IP_SEND: {
 #if CONFIG_DMR_IP_GATEWAY
 		uint8_t l4[8 + DL_REQ_MAX];

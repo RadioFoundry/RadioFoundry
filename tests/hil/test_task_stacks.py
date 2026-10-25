@@ -5,7 +5,8 @@
 The firmware reports each FreeRTOS task's least free stack since it started (the kernel's high water mark). After
 the radio has done a little work (every view section read, a screenshot), every task must still have at least
 MIN_FREE bytes free (64; `RFOUNDRY_HIL_STACK_MIN_FREE` overrides it) and none may be missing from the table
-(`tasks.untracked=0`). The idle, timer, start, radio, input, UI and host tasks must be there. Radio only, nothing
+(`tasks.untracked=0`). The RTOS heap's least free since start must be at least HEAP_MIN_FREE (2048;
+`RFOUNDRY_HIL_HEAP_MIN_FREE`). The idle, timer, start, radio, input, UI and host tasks must be there. Radio only, nothing
 transmitted; skipped on firmware without the section or built with `CONFIG_TASK_STACKS=n`. A task near the limit here
 but passing `make stack-check` points at the check's table (docs/dev/stack-check.md); a task failing both needs a
 larger stack.
@@ -17,6 +18,9 @@ import pytest
 from rfoundry_hil import as_int, skip
 
 MIN_FREE = int(os.environ.get("RFOUNDRY_HIL_STACK_MIN_FREE", "64"))
+# The RTOS heap holds every stack; a radio short of RAM sets it smaller (boards/<radio>/freertos_board.h), so its least
+# free since start must keep this much for the stacks and buffers made later (a DMR call's audio task, an FM ring)
+HEAP_MIN_FREE = int(os.environ.get("RFOUNDRY_HIL_HEAP_MIN_FREE", "2048"))
 # Created on every radio: the kernel's own two, the core's five (the board's audio, dmr, usb, gps vary)
 EXPECTED = ("IDLE", "Tmr_Svc", "start", "radio", "input", "ui", "host")
 
@@ -51,3 +55,7 @@ def test_every_task_has_stack_left(radio):
     assert not low, f"tasks with under {MIN_FREE} bytes of stack left: {low}"
     least = min(free, key=free.get)
     assert as_int(kv["tasks.min_free"]) == free[least] and kv["tasks.min_task"] in free, kv
+    if "tasks.heap_min_free" in kv:     # firmware from before the heap keys has none
+        print("heap free (bytes):", kv["tasks.heap_free"], "least", kv["tasks.heap_min_free"])
+        heap_least = as_int(kv["tasks.heap_min_free"])
+        assert heap_least >= HEAP_MIN_FREE, f"RTOS heap down to {heap_least} bytes free (want {HEAP_MIN_FREE})"

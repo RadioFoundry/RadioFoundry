@@ -158,8 +158,11 @@ static void hotspot_section(dl_text_t *t)
 	hostlink_net_air_stats_t as;
 
 	hostlink_net_air_stats(&as);
-	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\nnet.air_failed=%u\n", (unsigned)as.sent,
-		(unsigned)as.refused_busy, (unsigned)(as.dropped + as.too_long), (unsigned)as.failed);
+	// air_busy: dropped after waiting for a busy service or for too long in the queue (view 3; view 2 counted
+	// packets refused because the service was busy); air_full: refused because the air queue was full
+	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\nnet.air_failed=%u\nnet.air_full=%u\n",
+		(unsigned)as.sent, (unsigned)as.dropped, (unsigned)(as.dropped + as.too_long),
+		(unsigned)as.failed, (unsigned)as.refused_full);
 #endif
 #if CONFIG_NET_PPP
 	// The PPP link on the serial host port (docs/spec/ppp.md): LCP / IPCP states as RFC 1661 numbers them (9 open)
@@ -296,16 +299,24 @@ static void storage_section(dl_text_t *t)
 	dl_text(t, "settings.saves=%u\nsettings.erases=%u\nsettings.failures=%u\n", (unsigned)ss.saves,
 		(unsigned)ss.erases, (unsigned)ss.failures);
 	dl_text(t, "settings.sector=%u\nsettings.slot=%u\nsettings.skipped=%u\n", ss.sector, ss.slot, ss.skipped);
-	settings_t sv;
-	settings_read(&sv);
-	dl_text(t, "settings.auto_lock_s=%u\nsettings.long_press_ms=%u\nsettings.repeat_ms=%u\nsettings.mic_gain=%u\n",
-		sv.auto_lock_s, sv.long_press_ms, sv.repeat_ms, sv.mic_gain);
-	dl_text(t, "settings.theme=%u\nsettings.ui_flags=%u\nsettings.updown_home=%u\nsettings.low_batt_pct=%u\n",
-		settings_theme(&sv), sv.ui_flags, settings_updown_home(&sv), sv.low_batt_pct);
-	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", sv.auto_off_min,
-		sv.privacy_type[0], sv.privacy_active);
+	// The fields shown, read in place: no copy of the whole settings on the host task's stack (its deepest path
+	// comes through here, stack-check.md), and the lock not held while formatting
+	const settings_t *sv = settings_begin();
+	unsigned auto_lock_s = sv->auto_lock_s, long_press_ms = sv->long_press_ms, repeat_ms = sv->repeat_ms;
+	unsigned mic_gain = sv->mic_gain, theme = settings_theme(sv), ui_flags = sv->ui_flags;
+	unsigned updown_home = settings_updown_home(sv), low_batt_pct = sv->low_batt_pct, auto_off_min = sv->auto_off_min;
+	unsigned privacy_type = sv->privacy_type[0], privacy_active = sv->privacy_active;
 	// bit 0 noise reduction off, bit 1 AGC on (settings_t.accent bits 6-7)
-	dl_text(t, "settings.audio_flags=%u\n", (unsigned)((sv.accent & SETTINGS_AUDIO_MASK) >> SETTINGS_AUDIO_SHIFT));
+	unsigned audio_flags = (unsigned)((sv->accent & SETTINGS_AUDIO_MASK) >> SETTINGS_AUDIO_SHIFT);
+
+	settings_end(hal_millis());	// nothing changed: nothing to save
+	dl_text(t, "settings.auto_lock_s=%u\nsettings.long_press_ms=%u\nsettings.repeat_ms=%u\nsettings.mic_gain=%u\n",
+		auto_lock_s, long_press_ms, repeat_ms, mic_gain);
+	dl_text(t, "settings.theme=%u\nsettings.ui_flags=%u\nsettings.updown_home=%u\nsettings.low_batt_pct=%u\n",
+		theme, ui_flags, updown_home, low_batt_pct);
+	dl_text(t, "settings.auto_off_min=%u\nsettings.privacy_type=%u\nsettings.privacy_active=%u\n", auto_off_min,
+		privacy_type, privacy_active);
+	dl_text(t, "settings.audio_flags=%u\n", audio_flags);
 	dl_text(t, "storage.job_busy=%u\n", storage_job_busy());
 	dl_text(t, "storage.sector_writes=%u\nstorage.sector_skips=%u\n", (unsigned)st.sector_writes,
 		(unsigned)st.sector_skips);
@@ -349,7 +360,7 @@ static void storage_section(dl_text_t *t)
 static const char *const section_names[DL_VIEW_COUNT] = { "core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot",
 						  "link", "features", "dmr_data", "storage", "dmr_ext",
 						  "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
-						  "sfr", "tasks", "crash", "watchdog", "reset" };
+						  "sfr", "tasks", "crash", "watchdog", "reset", "air" };
 
 const char *debuglink_view_name(uint8_t section)
 {
@@ -436,6 +447,9 @@ void debuglink_view_section(uint8_t section, const radio_view_t *v, dl_text_t *t
 		break;
 	case DL_VIEW_RESET:
 		debuglink_view_reset(t);
+		break;
+	case DL_VIEW_AIR:
+		debuglink_view_air(t);
 		break;
 	case DL_VIEW_USRP:
 #if CONFIG_NET_USRP
