@@ -20,6 +20,7 @@ import { hex, sha256, sleep } from "./bytes.js";
 import { SerialStream, Link, probe, serialSupported } from "./link.js";
 import { Stub, stubImages, StubError, DONE_LED, MEM } from "./stub.js";
 import * as c7 from "./c7000.js";
+import { openVendorFile, describe as describeVendorFile } from "./vendorfile.js";
 import { upgradeSlot } from "./c7000v1.js";
 import { radioTop } from "./radiotop.js";
 import { putBlob, getBlob } from "./codecsave.js";
@@ -516,9 +517,17 @@ export function checkView() {
 		const text = !d ? t("flash.c7.codec.missing") : d.mode === "keep" ? t("flash.c7.codec.keep")
 			: d.mode === "none" ? t("flash.c7.codec.none") : t(`flash.c7.codec.from_${d.source}`, { name: d.name || "", tag: String(d.tag ?? "").padStart(3, "0") });
 		say("codec", d ? (d.mode === "none" ? "bad" : "ok") : "bad", text);
-		const pick = filePicker(t("flash.c7.codec.pick"), ".bin", async (f) => {
+		// any vendor file: a .bin, a readout or the vendor's zip, opened as on every radio's page (vendorfile.js)
+		const pick = filePicker(t("flash.c7.codec.pick"), ".bin,.zip", async (f) => {
 			try {
-				c.fileCodec = await c7.codecFromFile(f.data, C(), boardId());
+				const opened = await openVendorFile(f.name, f.data, ctx.fb(), boardId());
+				const got = opened.best?.match;
+				if (got?.kind !== "codec") {
+					const lines = describeVendorFile(opened, ctx.fb(), boardId());
+					fill(status, h("div", { class: "notice bad" }, h("p", {}, got?.why || t("flash.c7.codec.file_unusable")), h("ul", { class: "small" }, lines.map((l) => h("li", {}, l)))));
+					return;
+				}
+				c.fileCodec = got.codec;
 				await decideView();
 			} catch (e) {
 				fill(status, notice(ctx.errorText(e), "bad"));

@@ -765,6 +765,7 @@
  "flash.c7.codec.action": "DMR voice requires the radio's own codec",
  "flash.c7.codec.action_text": "The radio programming utility found no recognized codec in the radio. Select a firmware backup of this radio (program-memory.bin from an earlier backup) or a stock firmware file.",
  "flash.c7.codec.pick": "Select Backup or Stock File",
+ "flash.c7.codec.file_unusable": "RadioFoundry can't take the codec from this file. What it holds:",
  "flash.c7.codec.without": "Install without the codec (FM only; the codec can be added later)",
  "flash.c7.codec.none_risk": "DMR voice is not available until the radio is reinstalled with a codec.",
  "flash.c7.write.title": "Install",

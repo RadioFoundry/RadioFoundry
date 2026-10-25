@@ -11,6 +11,7 @@ The flasher is plain ES modules. The logic ports rfoundry, and the tests check t
 | Module | Does | Ported from |
 |---|---|---|
 | `stockfw.js` | Stock file container, decryption, codec extraction, key derivation (column vote and runner-up search; the byte-pair refinement some keys need isn't ported) | `rfoundry/stockfw.py` |
+| `vendorfile.js` | Every vendor file a user picks, on every radio's page (below) | |
 | `bytes.js` | Byte helpers (hex, CRC, concatenation) shared by the modules | |
 | `codecmap.js` | Codec maps: which words a relocated codec rewrites ([codec-placement.md](../spec/codec-placement.md)) | `rfoundry/codecmap.py` |
 | `plan.js` | Sector plans: keep, merge, and restore (a whole image put back exactly) | `rfoundry/plan.py` |
@@ -42,6 +43,34 @@ Add `#sim=<radio>-stock` to the flasher's address to run every step against a si
 through the loader hand-over). `#sim` alone is the first radio on stock firmware. The fake comes from the radio's data
 (`fakeC7000Options()` and `c7000Simulation()` in `fakec7000.js`, `simulation()` in `fake.js`): a radio with a stock
 console gets one, with its first stock version.
+
+## Vendor files
+
+`vendorfile.js` opens whatever the user picks, the same way on every radio's page. The input can be:
+
+- a firmware `.bin`;
+- a program flash readout;
+- a vendor's zip with updaters, manuals and several builds inside, or a zip inside a zip (three levels at most).
+
+Files are set aside by their content, never their extension: Windows programs, Office documents, PDFs, text and anything
+under 64 KB. Each remaining file is identified against every radio the flasher knows, the most certain way first:
+
+| Step | How | Result |
+|---|---|---|
+| 1 | SHA-256 in a codec profile, the known files or the C-SKY profiles | the codec (and the key) |
+| 2 | A TYT/Baofeng container (`OutSecurityBin`) no profile knows: every known bootloader key is tried, the chosen radio's first. A key that decrypts it names the radio, and the decrypted application is searched for the codec's signature word | the key; "the codec, no recipe for this build" |
+| 3 | The C-SKY codec search: the codec's own hashes wherever the file or readout holds it (`c7000.js`) | the codec; "no recipe" when only the signature matches |
+| 4 | An STM32 readout, by the codec windows' hashes (`stockfw.fromFlash`) | the codec |
+
+The best file for the chosen radio is used:
+
+1. one with the codec;
+2. then one that gives the key;
+3. then the first by name.
+
+The page lists what each file is: used, for another radio, set aside and why. A codec found by its signature alone is
+never taken. Moving the codec needs that build's map, because its calls into the rest of the vendor firmware differ
+per build ([codec-placement.md](../spec/codec-placement.md)).
 
 ## Radio access backends
 

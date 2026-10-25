@@ -101,7 +101,7 @@ export async function identifyFile(data, fb, boardId = null) {
 		return { sha, board: null, known, why: "a TYT/Baofeng firmware file for a radio whose bootloader key RadioFoundry doesn't know" };
 	}
 	if (c) {
-		for (const id of Object.keys(c.boards)) {
+		for (const id of Object.keys(c.boards).sort((a, b) => (b === boardId) - (a === boardId))) {
 			try {
 				const codec = await c7.codecFromFile(data, c, id);
 				return { sha, board: id, kind: "codec", how: "codec hashes", known: codec.profile?.name, codec };
@@ -138,7 +138,7 @@ export function describe(opened, fb, boardId) {
 		const m = f.match;
 		const what = !m.board ? m.why
 			: m.board !== boardId ? `for the ${name(m.board)}, not this radio`
-			: m.kind === "codec" ? `${m.known || "known"}: the codec and the bootloader key`
+			: m.kind === "codec" ? `${m.known || "known"}: the codec${fb.boards[m.board]?.key_sha256 ? " and the bootloader key" : ""}`
 			: m.kind === "codec-unmapped" ? `${m.known || "a build"} with the codec, but RadioFoundry has no recipe for this build yet${m.key ? " (the bootloader key works)" : ""}`
 			: `${m.known || "a build"}: the bootloader key, not the codec`;
 		return `${f.path}: ${what}${f === opened.best ? " (used)" : ""}`;
