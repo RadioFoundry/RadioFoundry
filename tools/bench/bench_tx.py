@@ -17,10 +17,18 @@ bench's gateway service must not hold the bench modem while this runs; tools/ben
                                             (preamble CSBK train, then optionally one CSBK, e.g. 1F call alert, or
                                             24 --fid 10 --octet3 80 radio check request)
     bench_tx.py ... data  [--src ID] [--dst ID] [--confirmed] [--octets N | --tms TEXT [--tms-seq N] [--tms-no-ack]
-                           | --etsi TEXT [--etsi-no-response] [--group] | --ip-text TEXT]
-                          [--preambles N] [--family ...]
+                           | --etsi TEXT [--etsi-no-response] [--group] | --ip-text TEXT
+                           | --udp-port P [--udp-src-port P] [--udp-octets N | --udp-payload HEX]]
+                          [--preambles N] [--family ...] [--repeat N [--repeat-gap-ms MS]]
                                             (--tms: a Motorola TMS text message in IPv4 / UDP 4007 user data;
-                                            --ip-text: an ETSI IP text, UTF-16BE in IPv4 / UDP 5016)
+                                            --ip-text: an ETSI IP text, UTF-16BE in IPv4 / UDP 5016;
+                                            --udp-port: a UDP datagram to that port (SAP 4, the full IPv4 header,
+                                            12.<src> to 12.<dst>), its payload --udp-octets of filler or the hex given;
+                                            --repeat: N packets back to back, each with its own preambles and header,
+                                            in one key-up (--repeat-gap-ms 0) or that far apart; a UDP payload of 2
+                                            octets or more starts with the packet's index 0..N-1, big endian, and each
+                                            has its own IPv4 identification)
+    bench_tx.py selftest                    (no modem: builds UDP data packets and decodes them back)
     bench_tx.py [--ambe-out PREFIX] ... listen [--seconds N] [--json]
     bench_tx.py --listen-after S [--ambe-out PREFIX] voice|data|csbk ...  (send, then listen S seconds, JSON lines)
 
@@ -173,15 +181,18 @@ def ip_checksum(data: bytes) -> int:
     return ~s & 0xFFFF
 
 
-def udp_user_data(src: int, dst: int, port: int, payload: bytes) -> bytes:
-    """IPv4 / UDP port -> port with the payload, radio IDs as 12.x.x.x (the CAI network), checksums filled in."""
+def udp_user_data(src: int, dst: int, port: int, payload: bytes, src_port: int = None, ident: int = 1) -> bytes:
+    """IPv4 / UDP src_port (default port) -> port with the payload, radio IDs as 12.x.x.x (the CAI network),
+    checksums filled in; ident: the IPv4 identification."""
     sip, dip = bytes([12]) + src.to_bytes(3, "big"), bytes([12]) + dst.to_bytes(3, "big")
     udp_len = 8 + len(payload)
-    udp = port.to_bytes(2, "big") * 2 + udp_len.to_bytes(2, "big") + b"\0\0" + payload
+    sport = port if src_port is None else src_port
+    udp = sport.to_bytes(2, "big") + port.to_bytes(2, "big") + udp_len.to_bytes(2, "big") + b"\0\0" + payload
     csum = ip_checksum(sip + dip + bytes([0, 17]) + udp_len.to_bytes(2, "big") + udp) or 0xFFFF
     udp = udp[:6] + csum.to_bytes(2, "big") + udp[8:]
     total = 20 + udp_len
-    ip = bytes([0x45, 0]) + total.to_bytes(2, "big") + b"\0\x01\0\0" + bytes([64, 17]) + b"\0\0" + sip + dip
+    ip = bytes([0x45, 0]) + total.to_bytes(2, "big") + (ident & 0xFFFF).to_bytes(2, "big") + b"\0\0" + \
+        bytes([64, 17]) + b"\0\0" + sip + dip
     ip = ip[:10] + ip_checksum(ip).to_bytes(2, "big") + ip[12:]
     return ip + udp
 
@@ -246,7 +257,14 @@ def etsi_text_infos(src: int, dst: int, text: str, group: bool, response: bool, 
     return infos
 
 
-def data_items(args):
+def udp_payload(args, index: int) -> bytes:
+    """The UDP payload of packet index (0..repeat-1): --udp-payload or --udp-octets of filler, its first 2 octets
+    the index when it has 2 or more."""
+    base = bytes.fromhex(args.udp_payload) if args.udp_payload else bytes((i * 7 + 1) & 0xFF for i in range(args.udp_octets))
+    return index.to_bytes(2, "big") + base[2:] if len(base) >= 2 else base
+
+
+def data_items(args, index: int = 0):
     from rfoundry_sdrbench.dmr import packet
     if args.etsi is not None:
         infos = etsi_text_infos(args.src, args.dst, args.etsi, args.group, not args.etsi_no_response, args.preambles)
@@ -256,6 +274,9 @@ def data_items(args):
         user = tms_user_data(args.src, args.dst, args.tms, args.tms_seq, not args.tms_no_ack)
     elif args.ip_text is not None:
         user = ip_text_user_data(args.src, args.dst, args.ip_text)
+    elif args.udp_port is not None:
+        user = udp_user_data(args.src, args.dst, args.udp_port, udp_payload(args, index), args.udp_src_port,
+                             ident=1 + index)
     else:
         user = bytes((i * 7 + 1) & 0xFF for i in range(args.octets))
     if args.confirmed:
@@ -264,6 +285,48 @@ def data_items(args):
         infos = packet.unconfirmed_packet(args.src, args.dst, 4, user, preambles=args.preambles)
     sync = L2.data_sync(family_sync(args.family))
     return [(SYNC_DATA | dt, L2.data_burst(info, dt, args.burst_cc, sync)) for dt, info in infos]
+
+
+def data_lists(args):
+    """[items] of each of the --repeat packets, in order."""
+    return [data_items(args, k) for k in range(max(1, args.repeat))]
+
+
+def selftest() -> int:
+    """Offline: UDP data packets as `data --udp-port --repeat` builds them, each burst's info decoded back through the
+    BPTC, reassembled, its CRCs and IPv4 / UDP checked against what was asked. The largest one (412 octets of payload,
+    440 of IPv4) takes 2 preambles + 1 header + 37 blocks = 40 bursts: what a radio sends at its air MTU."""
+    ns = argparse.Namespace(src=9990301, dst=3101276, family="ms", burst_cc=2, confirmed=False, preambles=2, tms=None,
+                            etsi=None, ip_text=None, octets=40, udp_port=50001, udp_src_port=50000, udp_octets=412,
+                            udp_payload=None, repeat=3, tms_seq=1, tms_no_ack=False)
+    for octets, bursts_each in ((412, 40), (40, 9), (1, 6)):
+        ns.udp_octets = octets
+        lists = data_lists(ns)
+        assert len(lists) == ns.repeat
+        for k, items in enumerate(lists):
+            assert len(items) == bursts_each, (octets, len(items))
+            infos = []
+            for control, burst in items:
+                corrected, ok = fec.bptc196_decode(burst)
+                assert ok, "a burst that doesn't decode"
+                infos.append((control & 0x0F, bytes(corrected[:12])))
+            assert [dt for dt, _ in infos[:2]] == [pdu.DT_CSBK, pdu.DT_CSBK] and infos[2][0] == 6
+            head = infos[2][1]
+            assert fec.check_crc16(head, fec.MASK_DATA_HEADER) and head[1] >> 4 == 4 and head[0] & 0x0F == 2
+            blocks = head[8] & 0x7F
+            pad = (head[0] & 0x10) | (head[1] & 0x0F)
+            assert blocks == len(infos) - 3
+            data = b"".join(info for _, info in infos[3:])
+            body = data[:-4]
+            assert etsi_crc32(body) == int.from_bytes(data[-4:], "little"), "CRC-32"
+            ip = body[:len(body) - pad]
+            assert ip[0] == 0x45 and ip[9] == 17 and ip_checksum(ip[:20]) == 0
+            assert int.from_bytes(ip[2:4], "big") == len(ip) == 28 + octets and int.from_bytes(ip[4:6], "big") == 1 + k
+            udp = ip[20:]
+            assert int.from_bytes(udp[0:2], "big") == 50000 and int.from_bytes(udp[2:4], "big") == 50001
+            assert udp[8:] == udp_payload(ns, k) and (octets < 2 or udp[8:10] == k.to_bytes(2, "big"))
+    print("bench_tx: selftest passed (UDP data, --repeat, 40 bursts at 440 octets of IPv4)")
+    return 0
 
 
 def one_csbk(opcode: int, fid: int, src: int, dst: int, cc: int, octet3: int = 0) -> bytes:
@@ -521,6 +584,13 @@ def main() -> None:
     d.add_argument("--etsi-no-response", action="store_true", help="ETSI text without a response requested")
     d.add_argument("--group", action="store_true", help="--etsi to a talkgroup (--dst)")
     d.add_argument("--ip-text", default=None, help="an ETSI IP text (UTF-16BE on UDP 5016) with this text")
+    d.add_argument("--udp-port", type=int, default=None, help="a UDP datagram (SAP 4) to this port")
+    d.add_argument("--udp-src-port", type=int, default=None, help="its source port (default --udp-port)")
+    d.add_argument("--udp-octets", type=int, default=40, help="its payload: this many octets of filler")
+    d.add_argument("--udp-payload", default=None, help="its payload: these octets (hex)")
+    d.add_argument("--repeat", type=int, default=1, help="this many packets back to back")
+    d.add_argument("--repeat-gap-ms", type=int, default=0,
+                   help="0: the --repeat packets in one key-up; else this far apart, each its own key-up")
     c = sub.add_parser("csbk")
     common(c, 3101276)
     c.add_argument("--count", type=int, default=4, help="preamble CSBKs (opcode 0x3D)")
@@ -531,7 +601,10 @@ def main() -> None:
     li = sub.add_parser("listen")
     li.add_argument("--seconds", type=float, default=20)
     li.add_argument("--json", action="store_true")
+    sub.add_parser("selftest")
     args = ap.parse_args()
+    if args.cmd == "selftest":
+        raise SystemExit(selftest())
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(asctime)s %(message)s")
     if getattr(args, "burst_cc", None) is None:
         args.burst_cc = args.cc
@@ -564,7 +637,15 @@ def main() -> None:
                 send(modem, voice_call(args, src), headers, terminators)
                 logging.info("call %d from %d done", n + 1, src)
         elif args.cmd == "data":
-            send(modem, data_items(args), 1, 1)
+            lists = data_lists(args)
+            if args.repeat_gap_ms <= 0:
+                send(modem, [it for items in lists for it in items], 1, 1)
+            else:
+                for n, items in enumerate(lists):
+                    if n:
+                        time.sleep(args.repeat_gap_ms / 1000)
+                    send(modem, items, 1, 1)
+            logging.info("data: %d packet(s) sent", len(lists))
         elif args.cmd == "csbk":
             send(modem, csbk_items(args), 1, 1)
         else:
