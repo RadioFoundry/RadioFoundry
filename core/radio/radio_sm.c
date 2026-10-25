@@ -4340,10 +4340,7 @@ static const hal_audio_t *pcm_audio(void)
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 {
 	settings_t st;
-#if CONFIG_ZONE_EDIT
-	zone_edit_settle();	// a zone add or delete a power cut interrupted: the saved zone indexes match the zones
-#endif
-	settings_read(&st);
+	settings_read(&st);	// a zone add or delete a power cut interrupted is settled first (radio_core_start)
 
 	memset(sm, 0, sizeof(*sm));
 	sm->audio_out = -1;
