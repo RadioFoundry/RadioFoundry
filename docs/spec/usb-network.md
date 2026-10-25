@@ -62,17 +62,22 @@ mode can replace the link pair with a fixed one (5.3).
 
 - Host to air: IP for a radio ID or talkgroup, with a gateway ID any other unicast address (3.1), and datagrams to
   the raw port, go to the air ops registered with `hostlink_net_set_air()` (radio ID, IP to air, raw data as SAP 10).
-  They are called from the host link task and must not block. The default ones (`core/hostlink/hostlink_net_air.c`, registered by the radio core's data service glue in
-  `radio_sm.c`) copy the packet into a one-packet mailbox and return false while it is full. At the radio task's data
-  tick an IP packet goes to the data service (`dmrDataServiceSendIP`), which builds it (rate 1/2, 2 preamble CSBKs):
+  They are called from the host link task and must not block. The default ones (`core/hostlink/hostlink_net_air.c`,
+  registered by the radio core's data service glue in `radio_sm.c`) copy the packet, with its addresses and TTL, into
+  the data service's TX queue (`dmr-data.md` 12.6) and return false when it has no room. At the radio task's data
+  tick the oldest IP packet goes to the data service (`dmrDataServiceSendIP`), which builds it (rate 1/2, 2 preamble CSBKs):
   UDP with the compressed UDP/IPv4 header (SAP 3) when `udpCompress` allows it (default auto: ports outside
   4000-4099), else the full IPv4 header (SAP 4); confirmed data with retries when a confirmed rule names the
-  destination radio or a UDP port, else unconfirmed (`dmr-data.md` 11, 12). The mailbox stays taken until the service
-  is done with the packet (on air; confirmed: ACKed or failed after its tries). Raw data is built here as an unconfirmed
+  destination radio or a UDP port, else unconfirmed (`dmr-data.md` 11, 12). The packet stays at the head of the
+  queue until the service is done with it (on air; confirmed: ACKed or failed after its tries); packets the host sends
+  meanwhile queue behind it. Unconfirmed IP packets queued back to back for the same destination go in one transmission
+  (chaining, `dmr-data.md` 12.6.2); separate transmissions are spaced by the guard (12.6.3). Raw data is built here as an unconfirmed
   SAP 10 packet for `dmrDataServiceSendBursts`. A service that can't take the packet (another one going, not a DMR
-  channel, receive only) is tried again on every tick for up to 2 s, then the packet is dropped; one it took and
+  channel, receive only) is tried again on every tick for up to 2 s, then the packet is dropped, as is one still queued after 10 s; one it
+  took and
   couldn't deliver counts as `net.air_failed`. The host's address follows the radio's DMR ID. Refusals are counted
-  (`net.to_air_refused`, `net.air_busy`, `net.air_dropped`); only confirmed packets are retried over the air.
+  (`net.to_air_refused`, `net.air_full` for a full queue, `net.air_busy` for one given up or aged,
+  `net.air_dropped`); only confirmed packets are retried over the air.
 - Air to host: the data service hands every packet it receives to `hostlink_net_packet()` (its `dmrDataEnv_t.packet`
   hook). Two packets wait for the host link task, which delivers SAP 4 as IP (ICMP, UDP, SCTP) with the addresses of
   its header (3.1), SAP 3 as UDP, and anything else as raw data on port 40078; a packet that finds the IN endpoint
@@ -92,7 +97,8 @@ mode can replace the link pair with a fixed one (5.3).
   the radio's address, IP TTL 255, to the host's MAC, the broadcast MAC or a group's multicast MAC.
 - Debug link view, section `hotspot`: `usb.network usb.net_up usb.boot_network net.passthrough net.passthrough_active
   net.fixed_link net.link_ip net.link_in_force net.host_ip net.radio_ip net.frames_in net.to_air net.to_air_refused
-  net.packets_air net.packets_up net.packets_dropped net.air_sent net.air_busy net.air_dropped net.air_failed`; the
+  net.packets_air net.packets_up net.packets_dropped net.air_sent net.air_busy net.air_dropped net.air_failed
+  net.air_full`; the queue's depth, chaining and the guard are in the `air` section ([debuglink.md](debuglink.md)); the
   compression and confirmed delivery counters are in the `dmr_ip` section (`dmr-data.md` 12.5), the radio's own
   services' in the `net` section.
 - Test hook: the debug link's DMR_DATA IP_SEND hands a UDP datagram to `ipGatewayIPToAir`, the same path as a datagram
@@ -158,10 +164,10 @@ ARS, LRRP, text, SNMP): it goes to the host only.
 
 - Host: `tests/host/hostlinkNetTest.c` (the gateway with a fake interface and fake air ops: unicast, multicast and raw
   to air, refusals, UDP serial both ways with chunking and a busy endpoint, IP and short data from the air, link down;
-  then the default air side against a fake data service: the mailbox, the bursts decoded back by the codec's receiver
-  into the IP / SAP 10 packet, SAP 3 for ports outside 4000-4099 and SAP 4 for 4007, the mailbox held while the
+  then the default air side against a fake data service: the queue, the bursts decoded back by the codec's receiver
+  into the IP / SAP 10 packet, SAP 3 for ports outside 4000-4099 and SAP 4 for 4007, the head held while the
   service has the packet, a busy service retried, the 2 s give-up, the packet hook, the off-net destination and TTL
-  through the mailbox, a packet to our ID for another address passed to the host),
+  through the queue, a packet to our ID for another address passed to the host),
   and the gateway's own `ipGatewayTest*` with pcaps checked by tshark (`testOffNet`: the routing and addresses of
   3.1). Control station mode: section 5.6.
 - HIL: `tests/hil/test_usb_network.py` (`--allow-usb-switch`). `tests/hil/test_usb_network_services.py` runs the host

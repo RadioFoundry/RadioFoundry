@@ -412,6 +412,18 @@ static void test_busy_hook(void)
 	nand_sectors_stats_t st;
 	nand_sectors_get_stats(&ns, &st);
 	CHECK(st.gc_blocks > 0 && busy_calls > 0);
+	// Plain rewrites with room to spare, no collection: still once per sector erased and once per sector written. A
+	// codeplug import writes dozens back to back and starved the idle task's feed past the hang check without it
+	fresh(16, 16, 12);
+	for (uint32_t s = 0; s < 12; s++) {
+		CHECK(rewrite_both(s, 2000 + s));	// the erases find nothing to do: no hook
+	}
+	busy_calls = 0;
+	for (uint32_t s = 0; s < 12; s++) {
+		CHECK(rewrite_both(s, 3000 + s));
+	}
+	nand_sectors_get_stats(&ns, &st);
+	CHECK(st.gc_blocks == 0 && busy_calls >= 2 * 12);
 	dev.busy = NULL;
 	CHECK(remount() && matches_model());
 	dev.busy = sim_busy;

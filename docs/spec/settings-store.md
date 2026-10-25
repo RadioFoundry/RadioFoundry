@@ -73,7 +73,7 @@ so with two pages a sector is erased once every 64 saves.
 ### 2.1 Pages
 
 `settings_t` is longer than one slot's payload, so it is stored as pages: page k holds bytes `236 * k` on.
-`SETTINGS_PAGES` is the number its size needs (2 now, 280 bytes); the page field allows 16 (3776 bytes). Each page is
+`SETTINGS_PAGES` is the number its size needs (2 now, 392 bytes); the page field allows 16 (3776 bytes). Each page is
 a record with its own length, so `settings_t` grows by appending fields, and a short page fills the fields it has.
 
 | Rule | Why |
@@ -148,8 +148,9 @@ codeplug's callsign.
 | dual watch | `ui_flags` bit 7 (0x80) is talk back (Settings > Talk > Dual watch talk back; off = the bit clear, as in a record from before). Page 1: `dual_b`, the last B: 0 none, 1..1024 a codeplug channel number, 1025 the first VFO, 1026 the second. The UI looks the channel number up again at power-on, in A's zone first, then in the first zone that holds it; if it is gone, the picker opens ([dual-watch.md](../ux/dual-watch.md) 5). `dual_state` bit 0 (`SETTINGS_DUAL_ON`) says the watch was on: the UI starts it again at power-on, with `dual_b` as the channel that wasn't selected and bit 1 (`SETTINGS_DUAL_B_SEL`) set when B was the selected one |
 | second VFO | Page 1: `vfo_index` (the VFO in use at power off, 0 or 1) and `vfo2_rx_hz` (0 = never set), `vfo2_tx_hz`, `vfo2_talk` (the DMR talk target: ID in bits 0-23, bit 31 private call), tone values and types, `vfo2_mode`, `vfo2_bw`, `vfo2_power` (`SETTINGS_UNSET8` = default), `vfo2_cc`, `vfo2_ts`: the first VFO's fields, unpacked. Dual watch gives each channel its own VFO ([radio-features.md](radio-features.md) 2.1). A record without page 1 reads as the first VFO in use and no second VFO frequency |
 | dual watch wait | Page 1: `rs_dual_delay`, `radio_settings_t.dual_delay_ms` as n - 1 steps of 100 ms (1 = no wait, 11 = 1 s); 0 (never set, or no page 1) = the default, 1 s. Settings > Talk > Dual watch delay |
-| broadcast step | Page 1: `rs_bcast_step`, `radio_settings_t.bcast_step` + 1 (1 = 200 kHz on the odd tenths, 2 = 100 kHz); 0 (never set, or no page 1) = the default, 200 kHz. Three reserved bytes follow, then `ds_ip_gateway` (DMR data settings). Settings > Talk & listen > FM broadcast step ([airband-and-broadcast.md](airband-and-broadcast.md) 4.4) |
+| broadcast step | Page 1: `rs_bcast_step`, `radio_settings_t.bcast_step` + 1 (1 = 200 kHz on the odd tenths, 2 = 100 kHz); 0 (never set, or no page 1) = the default, 200 kHz. Settings > Talk & listen > FM broadcast step ([airband-and-broadcast.md](airband-and-broadcast.md) 4.4) |
 | zone journal | Page 1, appended for the zone editor: `zone_jrn_kind` (0 none, 1 add, 2 delete), `zone_jrn_index` (the index added at or deleted from), `zone_jrn_count` (the stored zone count before it, 0 with only the built-in zone). Written before a zone write that moves zone indexes and cleared in the record that moves `zone_index` and `roam_zones` to match; set at power on, the change is finished from the zone list (`zone_edit_settle`, [ui.md](ui.md) 2.2). 0 (no page 1, an older record) = none |
+| zone sharing | Page 1: `zs_offers` (0 Off, the default and what an older record reads as; 1 Ask), then two reserved bytes and `ds_ip_gateway` (DMR data settings). `zs_import[4]` (appended, after the zone journal): the last four zone imports, newest first, each a key (an FNV-1a hash of the sender's ID and the zone ID; 0 unused), the 16-byte name the zone got (not terminated at 16), `sig` (the XOR of the written channels' hashes) and `count` (how many it wrote), then three reserved bytes. Settings > Connections > Zone offers ([zone-share.md](zone-share.md) 5.1, 5.4) |
 | crash report | packed into spare bits, so an older record reads as off with no target: the mode (0 off, 1 ask, 2 send at once) in `accent` bits 4-5; the target's codeplug contact number (0 none, else 1..1024, 11 bits) bits 0-5 in `theme` bits 2-7 and bits 6-10 in `updown_home` bits 2-6. `theme` and `updown_home` keep their value in bits 0-1; read and write them through `settings_theme` / `settings_updown_home` and `settings_crash_*` (`settings.h`). Firmware from before reads a `theme` or `updown_home` with these bits as out of range: the dark theme and Up/Down = channel ([crash-log.md](crash-log.md) 5.2) |
 
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. Page 0
@@ -252,6 +253,11 @@ ring is possible later. The map has room after 0x01B000.
 calls, a settings save, a CPS commit. `storage_quick_lock()` guards only RAM: the live settings copy. The radio task
 takes only the quick lock on its own, so it never waits for an erase. A codeplug read from the radio task (a channel
 change) does take `storage_lock` and may wait out a sector rewrite (about 100 ms) during a CPS write.
+
+A run of writes (a zone import, a CPS commit) takes and gives `storage_lock` once per record, from a task above the
+waiters. A give alone only makes a lower-priority waiter ready, and the writer takes the lock again before it runs, so
+the waiter would wait out the whole run (6 s for a zone import on an SPI NOR radio). The last give therefore yields
+one tick when a task is waiting: each waiter waits one record at most.
 
 ## 5. Foreign region guard
 

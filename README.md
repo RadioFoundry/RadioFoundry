@@ -19,12 +19,12 @@ and the [manual steps](docs/user/02-installing.md) are for scripting and for bro
 <img src="docs/ux/screens/240x320i10x5/boot.png" width="200" alt="Boot screen">
 <img src="docs/ux/screens/240x320i10x5/home_dual_two_rx.png" width="200" alt="Dual watch with both channels receiving">
 <img src="docs/ux/screens/240x320i10x5/tools.png" width="200" alt="Tools: scan, position, hotspot, USB network, repeater, roaming, APRS">
-<img src="docs/ux/screens/240x320i10x5/channel.png" width="200" alt="The channel editor">
+<img src="docs/ux/screens/240x320i10x5/zone_offer.png" width="200" alt="A zone shared by another radio, offered for import">
 </p>
 <p>
 <img src="docs/ux/screens/160x120i5/rx_group.png" width="200" alt="A group call with the caller's name and location">
 <img src="docs/ux/screens/160x120i5/message_view.png" width="200" alt="A text message with quick replies">
-<img src="docs/ux/screens/160x120i5/quick_dmr.png" width="200" alt="The channel's quick settings">
+<img src="docs/ux/screens/160x120i5/zone_offer_preview.png" width="200" alt="Previewing a shared zone's channels">
 <img src="docs/ux/screens/160x120i5/emergency.png" width="200" alt="An emergency call">
 </p>
 <p>
@@ -77,7 +77,7 @@ by the UI simulator (`make -C tests/host ui-gallery`).</sub>
 | Feature | What it does |
 |---|---|
 | **DMR voice** | Group and private calls, talker alias, basic privacy ([dmr-voice](docs/spec/dmr-voice.md)) |
-| **DMR data** | Text messages, ARS, LRRP, call alert, radio check ([dmr-data](docs/spec/dmr-data.md)) |
+| **DMR data** | Text messages, wireless zone & channel sharing, ARS, LRRP, call alert, radio check ([dmr-data](docs/spec/dmr-data.md), [zone-share](docs/spec/zone-share.md)) |
 | **Emergency** | Alarm, emergency call with hot mic, alerts ([dmr-emergency](docs/spec/dmr-emergency.md)) |
 | **FM** | CTCSS/DCS, roger beep, 1750 Hz burst ([radio-features](docs/spec/radio-features.md)) |
 | **Dual watch, scan, VFO** | Two channels at once; zone, VFO and dual watch scan that stops for DMR calls in progress; any frequency by hand in FM or DMR ([radio-features](docs/spec/radio-features.md)) |

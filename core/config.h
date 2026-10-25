@@ -47,6 +47,9 @@
 #ifndef CONFIG_DMR_IP_GATEWAY
 #define CONFIG_DMR_IP_GATEWAY		1
 #endif
+#ifndef CONFIG_ZONE_SHARE
+#define CONFIG_ZONE_SHARE		CONFIG_DMR
+#endif
 #ifndef CONFIG_DMR_UDP_COMPRESS
 #define CONFIG_DMR_UDP_COMPRESS		CONFIG_DMR
 #endif
@@ -166,6 +169,9 @@
 #ifndef CONFIG_ZONE_EDIT
 #define CONFIG_ZONE_EDIT		CONFIG_CHANNEL_EDIT
 #endif
+// Zone writes that move zone indexes (core/codeplug/zone_edit.h): the zone editor's, and zone sharing's import of a
+// new zone. Whoever keeps a zone index (the radio core, dual watch, the open zone screens) follows them
+#define CONFIG_ZONE_WRITE		(CONFIG_ZONE_EDIT || CONFIG_ZONE_SHARE)
 #ifndef CONFIG_BEEP
 #define CONFIG_BEEP			1
 #endif
@@ -252,10 +258,18 @@
 #define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_USRP)
 #ifndef CONFIG_DMR_DATA_CORE
 #define CONFIG_DMR_DATA_CORE		(CONFIG_DMR_SMS || CONFIG_DMR_ARS || CONFIG_DMR_LRRP || CONFIG_DMR_SIGNALING || \
-					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY || CONFIG_CRASH_REPORT)
+					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT)
 #endif
+// The air queue (core/dmr/dmrAirQueue.c): what the IP gateway and zone sharing send, in order with the guard
+#define CONFIG_DMR_AIR_QUEUE		(CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE)
 
 // Numeric build values
+#ifndef CONFIG_DMR_AIR_QUEUE_BYTES
+#define CONFIG_DMR_AIR_QUEUE_BYTES	2048
+#endif
+#ifndef CONFIG_DMR_DATA_TX_GUARD_MS
+#define CONFIG_DMR_DATA_TX_GUARD_MS	250
+#endif
 #ifndef CONFIG_DISPLAY_INSET_TOP
 #define CONFIG_DISPLAY_INSET_TOP	0
 #endif
@@ -273,7 +287,7 @@
 #error "CONFIG_SUBTONE needs CONFIG_FM"
 #endif
 #if (CONFIG_DMR_PRIVACY || CONFIG_DMR_TALKER_ALIAS || CONFIG_DMR_GPS || CONFIG_DMR_DATA_CORE || CONFIG_DMR_ROAMING || CONFIG_SFR || \
-     CONFIG_HOTSPOT || CONFIG_DMR_UDP_COMPRESS || CONFIG_DMR_CONFIRMED) && !CONFIG_DMR
+     CONFIG_HOTSPOT || CONFIG_DMR_UDP_COMPRESS || CONFIG_DMR_CONFIRMED || CONFIG_ZONE_SHARE) && !CONFIG_DMR
 #error "a DMR feature is on without CONFIG_DMR"
 #endif
 #if CONFIG_HOTSPOT && !CONFIG_HOSTLINK

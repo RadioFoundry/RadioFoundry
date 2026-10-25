@@ -153,6 +153,14 @@ APP_SRC := $(filter-out core/crash/crash_trace.c,$(APP_SRC))
 ifeq ($(CONFIG_FAULT_TRACE),y)
 APP_SRC += core/crash/crash_trace.c
 endif
+# Zone sharing over DMR data: the record, the sender and the offers (its codeplug side is core/codeplug/zone_import.c)
+ifeq ($(CONFIG_ZONE_SHARE),y)
+APP_SRC += core/dmr/zoneShare.c core/dmr/zoneShareSvc.c
+endif
+# The air queue: the packets the IP gateway and zone sharing hand to the air, in order, one at a time
+ifneq ($(filter y,$(CONFIG_DMR_IP_GATEWAY) $(CONFIG_ZONE_SHARE)),)
+APP_SRC += core/dmr/dmrAirQueue.c
+endif
 # The IP gateway (the data service above carries its packets: CONFIG_DMR_DATA_CORE follows it)
 ifeq ($(CONFIG_DMR_IP_GATEWAY),y)
 APP_SRC += core/dmr/ipGateway.c

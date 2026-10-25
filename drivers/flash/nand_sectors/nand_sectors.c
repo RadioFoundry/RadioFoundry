@@ -872,6 +872,7 @@ bool nand_sectors_write(nand_sectors_t *ns, uint32_t addr, const void *buf, uint
 	while (len > 0) {
 		uint32_t off = addr % NAND_SECTORS_SECTOR;
 		uint32_t n = NAND_SECTORS_SECTOR - off < len ? NAND_SECTORS_SECTOR - off : len;
+		busy(ns);	// a run of sector writes (a codeplug import) busy-waits as long as a collection
 		if (!write_sector(ns, (uint16_t)(addr / NAND_SECTORS_SECTOR), off, p, n, false)) {
 			return false;
 		}
@@ -887,6 +888,7 @@ bool nand_sectors_replace(nand_sectors_t *ns, uint32_t addr, const void *buf)
 	if (!range_ok(ns, addr, NAND_SECTORS_SECTOR) || addr % NAND_SECTORS_SECTOR != 0) {
 		return false;
 	}
+	busy(ns);
 	return write_sector(ns, (uint16_t)(addr / NAND_SECTORS_SECTOR), 0, buf, NAND_SECTORS_SECTOR, true);
 }
 
@@ -899,6 +901,7 @@ bool nand_sectors_erase(nand_sectors_t *ns, uint32_t addr)
 	if (!is_data(ns->map[s])) {
 		return true;			// erased already
 	}
+	busy(ns);
 	return put_erased(ns, s, true);
 }
 

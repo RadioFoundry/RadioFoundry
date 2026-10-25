@@ -2170,7 +2170,7 @@ void ui_draw_banner(const ui_state_t *s)
 		gfx_text(f, 2, ty, title[i], gfx_bpp() == 1 ? fg : bn->warn ? ui_col.warn : ui_col.fg);
 	for (int i = 0; i < nx; i++, ty += f->h)
 		gfx_text(f, 2, ty, text[i], fg);
-	const char *act = bn->kind == UI_BANNER_MESSAGE ? "# Open" :
+	const char *act = (bn->kind == UI_BANNER_MESSAGE || bn->kind == UI_BANNER_ZONE_OFFER) ? "# Open" :
 		(bn->kind == UI_BANNER_CALL_ALERT || bn->kind == UI_BANNER_PRIVATE) ? "# Actions" : "Back hide";
 	gfx_text(f, 2, ty, act, gfx_bpp() == 1 ? fg : ui_col.dim);
 	char sec[8];

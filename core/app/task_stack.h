@@ -24,6 +24,8 @@ void task_stack_deleted(void *task);
 // Copy up to max tasks into out, in creation order; returns how many. *untracked: tasks created while the table was
 // full. Walks each task's stack with the scheduler suspended, one task at a time (firmware only)
 unsigned task_stack_snapshot(task_stack_t *out, unsigned max, unsigned *untracked);
+// The RTOS heap (every task stack and queue): its free bytes now and the least since start (firmware only)
+void task_stack_heap(uint32_t *free_now, uint32_t *least_free);
 // Slot i's handle (a TCB), NULL for an empty slot or i >= TASK_STACK_MAX. No lock: the crash capture
 // (core/crash/crash_capture.c) reads the table with interrupts off
 void *task_stack_handle(unsigned i);
