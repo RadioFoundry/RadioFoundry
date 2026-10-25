@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1701 keypad, side keys, PTT and encoder (docs/spec/hardware-dm1701.md section 10).
+// UV380 family keypad, side keys, PTT and encoder (docs/spec/hardware-dm1701.md section 10); the matrix is the board's
+// (uvf_key_matrix)
 // The keypad columns are the LCD data lines D0..D7: the shared scan (platform/stm32f4/fsmc_keypad) borrows them.
-#include "dm1701.h"
+#include "uvf.h"
 #include "pins.h"
 #include "hal_time.h"
 #include "fsmc_keypad/fsmc_keypad.h"
@@ -11,20 +12,13 @@
 #define ROW_COUNT	3
 #define NO_KEY		STM32_KEYPAD_NO_KEY
 
-// Matrix positions, [row][column D0..D7] (spec 10.1, DM-1701 / RT84 table)
-static const uint8_t matrix[ROW_COUNT][8] = {
-	{ KEY_1, KEY_4, KEY_7, KEY_STAR, KEY_UP, KEY_FN_RIGHT, KEY_FN_LEFT, NO_KEY },
-	{ KEY_2, KEY_5, KEY_8, KEY_0, KEY_DOWN, KEY_RED, KEY_GREEN, NO_KEY },
-	{ KEY_3, KEY_6, KEY_9, KEY_HASH, NO_KEY, KEY_SK1, KEY_SK3, KEY_SK2 },	// side keys: hardware-dm1701.md 20
-};
-
 static const stm32_fsmc_keypad_cfg_t keypad = {
 	.row_port = { PIN_PORT(PIN_KEY_ROW0), PIN_PORT(PIN_KEY_ROW1), PIN_PORT(PIN_KEY_ROW2) },
 	.row_pin = { PIN_MASK(PIN_KEY_ROW0), PIN_MASK(PIN_KEY_ROW1), PIN_MASK(PIN_KEY_ROW2) },
 	.rows = ROW_COUNT,
-	.matrix = matrix,
-	.lock = dm1701_lcdbus_lock,
-	.unlock = dm1701_lcdbus_unlock,
+	.matrix = uvf_key_matrix,
+	.lock = uvf_lcdbus_lock,
+	.unlock = uvf_lcdbus_unlock,
 };
 
 static uint32_t last_raw;
@@ -100,4 +94,4 @@ void EXTI15_10_IRQHandler(void)
 	}
 }
 
-const hal_input_t dm1701_input = { .init = init, .scan = scan, .encoder = encoder, .encoder_stats = encoder_stats };
+const hal_input_t uvf_input = { .init = init, .scan = scan, .encoder = encoder, .encoder_stats = encoder_stats };
