@@ -38,7 +38,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import counter_deltas
+from rfoundry_hil import counter_deltas, skip
 
 RPT_ROLES = (3, 4)  # sfrRole_t: RPT_STANDARD, RPT_MOTOROLA
 USER_ROLES = (1, 2)  # USER_STANDARD, USER_ERDM
@@ -63,10 +63,10 @@ def _sfr_channel(radio, hz, roles):
             continue
         d = radio.view(["dmr"])
         if d.get("dmr.sfr_role") is None:
-            pytest.skip("built without the SFR (dmr.sfr_role missing)")
+            skip("not_built", "built without the SFR (dmr.sfr_role missing)")
         if int(d["dmr.sfr_role"]) in roles:
             return d
-    pytest.skip(f"no channel with SFR role {roles} on {hz / 1e6:.5f} MHz in zone {radio.core().get('zone_name')!r}")
+    skip("state", f"no channel with SFR role {roles} on {hz / 1e6:.5f} MHz in zone {radio.core().get('zone_name')!r}")
 
 
 def _setting(radio, name, value):
@@ -102,6 +102,7 @@ def tx_allowed(radio):
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.feature("sfr")
 def test_sfr_repeater_quality(radio, sdr_bench, pytestconfig, tx_allowed):
     freq, cc, tg = _freq(pytestconfig)
     d = _sfr_channel(radio, round(freq * 1e6), RPT_ROLES)
@@ -126,6 +127,7 @@ def test_sfr_repeater_quality(radio, sdr_bench, pytestconfig, tx_allowed):
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.feature("sfr")
 def test_sfr_repeater_tx_inhibit(radio, sdr_bench, pytestconfig, tx_allowed):
     freq, cc, tg = _freq(pytestconfig)
     d = _sfr_channel(radio, round(freq * 1e6), RPT_ROLES)
@@ -144,6 +146,7 @@ def test_sfr_repeater_tx_inhibit(radio, sdr_bench, pytestconfig, tx_allowed):
 @pytest.mark.rf
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.feature("sfr_cwid")
 def test_sfr_cwid(radio, sdr_bench, pytestconfig, tx_allowed):
     freq, cc, tg = _freq(pytestconfig)
     d = _sfr_channel(radio, round(freq * 1e6), RPT_ROLES)
@@ -151,7 +154,7 @@ def test_sfr_cwid(radio, sdr_bench, pytestconfig, tx_allowed):
     try:
         _setting(radio, "sfr_cwid", 1)
     except Exception as e:  # the setting is refused without CONFIG_SFR_CWID
-        pytest.skip(f"built without the CW ID (CONFIG_SFR_CWID): {e}")
+        skip("not_built", f"built without the CW ID (CONFIG_SFR_CWID): {e}")
     try:
         radio.wait_for(lambda x: x.get("dmr.sfr_rpt") == "1", 5, sections=("dmr",), what="repeater role running")
         d0 = radio.view(["dmr"])
@@ -168,6 +171,7 @@ def test_sfr_cwid(radio, sdr_bench, pytestconfig, tx_allowed):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.feature("sfr")
 def test_sfr_user_modes(radio, sdr_bench, pytestconfig):
     freq, cc, tg = _freq(pytestconfig)
     d = _sfr_channel(radio, round(freq * 1e6), USER_ROLES)
@@ -198,7 +202,7 @@ PEAK_MIN = 1000             # as test_dmr_audio_smoke: decoded speech peaks at t
 def _bench_lease(request):
     """A bench lease when an SDR bench is configured (the radios transmit on a frequency it may be watching), else
     nothing: this test doesn't need the bench."""
-    try:
+    try:  # hil-skip: catches the fixture's skip
         bench = request.getfixturevalue("sdr_bench")
     except pytest.skip.Exception:
         return contextlib.nullcontext()
@@ -211,14 +215,14 @@ def _user_radio(port, hz, what):
     r = Radio(port)
     try:
         if "DMR" not in r.features():
-            pytest.skip(f"the {what} is built without DMR")
+            skip("not_built", f"the {what} is built without DMR")
         snap = r.snapshot()
         _sfr_channel(r, hz, USER_ROLES)
         d = r.view(["dmr", "dmr_stats"])
         if d.get("dmr.codec") != "1":
-            pytest.skip(f"the {what} has no vocoder merged (dmr.codec=0)")
+            skip("not_built", f"the {what} has no vocoder merged (dmr.codec=0)")
         if "voice.rx_repeats" not in d or "voice.tx_test" not in d:
-            pytest.skip(f"the {what}'s firmware lacks voice.rx_repeats or the voice test signal (an older build?)")
+            skip("not_built", f"the {what}'s firmware lacks voice.rx_repeats or the voice test signal (an older build?)")
         inhibit = int(r.view(["features"]).get("set.tx_inhibit", "0"))
         return r, snap, inhibit
     except BaseException:
@@ -228,11 +232,12 @@ def _user_radio(port, hz, what):
 
 @pytest.mark.rf
 @pytest.mark.radio_tx
+@pytest.mark.feature("sfr")
 def test_sfr_chain_rfoundry_user(radio, pytestconfig, request, tx_allowed):
     talker_port = pytestconfig.getoption("--sfr-talker-port")
     listener_port = pytestconfig.getoption("--sfr-listener-port")
     if not (talker_port and listener_port):
-        pytest.skip("needs a talker (--sfr-talker-port) and a listener (--sfr-listener-port) beside the repeater")
+        skip("opt_in", "needs a talker (--sfr-talker-port) and a listener (--sfr-listener-port) beside the repeater")
     freq, _, _ = _freq(pytestconfig)
     hz = round(freq * 1e6)
     modes = [int(m) for m in pytestconfig.getoption("--sfr-listen-modes").split(",")]

@@ -467,7 +467,7 @@
    "category": "Amateur and network",
    "scope": "user",
    "definition": "A station's callsign sent in Morse code. A standalone SFR repeater channel sends one in FM every few minutes after traffic (Settings > Talk & listen > SFR CW ID).",
-   "link": "user/13-hotspot.md",
+   "link": "user/14-hotspot.md",
    "preview": true
   },
   {

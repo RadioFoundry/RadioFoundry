@@ -173,6 +173,15 @@ spec = "docs/spec/dmr-data.md"
 switch = "SFR"
 spec = "docs/spec/sfr.md"
 
+[feature.sfr_voting]
+switch = "SFR_VOTING"
+spec = "docs/spec/sfr.md"
+planned_tests = ["tests/hil/test_sfr_standalone.py::test_sfr_user_voting"]
+
+[feature.sfr_cwid]
+switch = "SFR_CWID"
+spec = "docs/spec/sfr.md"
+
 [feature.aprs]
 switch = "APRS"
 spec = "docs/spec/aprs.md"

@@ -47,7 +47,7 @@
 
 #define HOSTLINK_TASK_PRIORITY	3	// with input and USB; above the UI (core/app/app.c task table)
 #if CONFIG_DEBUGLINK
-#define HOSTLINK_TASK_STACK	652	// words: MMDVM frames on the stack; debug link replies format diagnostics lines (deepest board: 2240 bytes)
+#define HOSTLINK_TASK_STACK	669	// words: MMDVM frames on the stack; debug link replies format diagnostics lines (deepest board: 2336 bytes)
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
 #endif
