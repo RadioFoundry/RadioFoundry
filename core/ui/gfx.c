@@ -365,27 +365,16 @@ static void icon_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)
 	}
 	int t = f->w >= 12 ? 2 : 1;			// line width
 	int l = x, r = x + f->w - 1 - (f->w >= 8 ? 1 : 0), tp = y + top, bt = y + top + rows - 1;
-	if (c == 0x84) {	// share: a dot on the left linked to one at the top right and one at the bottom right
-		int d = f->w >= 12 ? 4 : f->w >= 8 ? 3 : 2;	// dot size
-		int mid = tp + (bt - tp + 1 - d) / 2;
-		seg(l + d / 2, mid + d / 2, r - d / 2, tp + d / 2, t, fg);
-		seg(l + d / 2, mid + d / 2, r - d / 2, bt - d / 2, t, fg);
-		for (int k = 0; k < 3; k++) {
-			int dx = k == 0 ? l : r - d + 1, dy = k == 0 ? mid : k == 1 ? tp : bt - d + 1;
-			if (d > 2)
-				gfx_round_fill(dx, dy, d, d, fg);
-			else
-				gfx_fill(dx, dy, d, d, fg);	// gfx_round_fill draws nothing at 2x2
-		}
-	} else {		// download: an arrow down onto a tray
-		int cx = l + (r - l + 1 - t) / 2, tip = bt - 2 * t, head = (r - l) / 2 - (t - 1);
-		gfx_fill(l, bt - t + 1, r - l + 1, t, fg);			// the tray
-		gfx_fill(l, bt - t - head / 2, t, head / 2 + 1, fg);		// its sides
-		gfx_fill(r - t + 1, bt - t - head / 2, t, head / 2 + 1, fg);
-		gfx_fill(cx, tp, t, tip - tp, fg);				// the stem
-		seg(cx - head, tip - head, cx, tip, t, fg);			// the head
-		seg(cx + head, tip - head, cx, tip, t, fg);
-	}
+	// An arrow on a tray: up out of it for share, down onto it for download
+	int cx = l + (r - l + 1 - t) / 2, head = (r - l) / 2 - (t - 1);
+	gfx_fill(l, bt - t + 1, r - l + 1, t, fg);			// the tray
+	gfx_fill(l, bt - t - head / 2, t, head / 2 + 1, fg);		// its sides
+	gfx_fill(r - t + 1, bt - t - head / 2, t, head / 2 + 1, fg);
+	int tip = c == 0x84 ? tp : bt - 2 * t;			// where the arrow points
+	gfx_fill(cx, tp, t, bt - 2 * t - tp + (c == 0x84), fg);	// the stem
+	int back = c == 0x84 ? tip + head : tip - head;
+	seg(cx - head, back, cx, tip, t, fg);				// the head
+	seg(cx + head, back, cx, tip, t, fg);
 }
 
 // Extra glyphs a font lacks, drawn from primitives inside the cell at x, y
