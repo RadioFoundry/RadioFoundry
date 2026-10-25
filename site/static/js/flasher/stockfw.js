@@ -140,6 +140,33 @@ export async function extract(data, key, fb, profiles = fb.profiles) {
 	return { profile: prof, segments: await place(prof, out, fb) };
 }
 
+// The codec in a read of a radio's internal flash (stockfw.from_flash; the bytes from base, normally the whole 1 MB):
+// {profile, segments} as the merge writes them, or null. A radio on its stock firmware holds a build's windows plain at
+// their stock addresses (found by their SHA-256), placed here as a merge from the stock file places them; a radio
+// running RadioFoundry holds them placed, with the descriptor, and they are taken as they are. No key is needed.
+export async function fromFlash(flash, fb, profiles = fb.profiles, base = 0x08000000) {
+	const read = async (wins) => {
+		const parts = [];
+		for (const [a, n, want] of wins) {
+			const off = a - base;
+			if (off < 0 || off + n > flash.length) return null;
+			const d = flash.slice(off, off + n);
+			if ((await sha256(d)) !== want) return null;
+			parts.push([a, d]);
+		}
+		return u32le(parts[0][1], 0) === fb.codec_sig ? parts : null;
+	};
+	for (const prof of Object.values(profiles)) {
+		let parts = await read(prof.windows);
+		if (parts) return { profile: prof, segments: await place(prof, parts, fb) };
+		if (!prof.placement) continue;
+		const desc = descriptor(prof, fb);
+		parts = await read([...placedWindows(prof), [fb.descriptor.addr, fb.descriptor.len, await sha256(desc)]]);
+		if (parts) return { profile: prof, segments: parts };
+	}
+	return null;
+}
+
 // The whole application segment of a stock file, decrypted: what the stock firmware is in internal flash. Used to
 // put a radio back on stock firmware (restore). Returns [addr, bytes].
 export function stockApplication(data, key, board, fb) {

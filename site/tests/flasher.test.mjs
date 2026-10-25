@@ -70,6 +70,41 @@ test("key derivation from a real MD-380 updater file", { skip: !process.env.RFOU
 	assert.equal(await sha256(key), fb.boards.md380.key_sha256);
 });
 
+// A read of the internal flash of a radio on its stock firmware gives the codec without a key, placed as rfoundry places
+// it (fixtures.py flash_readout: a synthetic MD-UV380 V19.26 build); a changed byte or a blank flash gives nothing
+test("the codec from a flash readout matches rfoundry", async () => {
+	const r = fx.readout;
+	const rprofiles = { [r.stock_sha256]: r.profile };
+	const flash = bin("flash-mduv380.bin");
+	const got = await stockfw.fromFlash(flash, fb, rprofiles);
+	assert.equal(got.profile, r.profile);
+	assert.deepEqual(await Promise.all(got.segments.map(async ([a, d]) => [a, await sha256(d), d.length])), r.placed);
+	const fromStock = await stockfw.extract(bin("stock-mduv380.bin"), fromHex(r.key), fb, rprofiles);
+	assert.deepEqual(fromStock.segments, got.segments);
+	const bad = flash.slice();
+	bad[r.profile.windows[0][0] - 0x08000000 + 100] ^= 1;
+	assert.equal(await stockfw.fromFlash(bad, fb, rprofiles), null);
+	assert.equal(await stockfw.fromFlash(new Uint8Array(0x100000).fill(0xFF), fb), null);
+});
+
+// Every board with stock files: each file's profile in the flasher data, its codec the board's, its layout inside the
+// flash the board leaves to the codec and below the descriptor
+test("stock-file boards: profiles and layouts", () => {
+	for (const b of Object.values(fb.boards).filter((x) => Object.values(fb.profiles).some((p) => p.board === x.id))) {
+		const profs = Object.values(fb.profiles).filter((p) => p.board === b.id);
+		assert.deepEqual(profs.map((p) => p.name).sort(), [...b.codec.sources].sort(), b.id);
+		for (const p of profs) {
+			assert.equal(p.codec_profile, b.codec.id, p.name);
+			assert.equal(p.key_sha256, b.key_sha256, p.name);
+			const lay = stockfw.layoutWindows(p, fb);
+			for (const [a, n] of lay) assert.ok(a + n <= b.flash_end && b.codec.windows.some(([wa, wn]) => wa === a && wn === n), p.name);
+			if (p.placement) assert.ok(lay.slice(0, -1).every(([a, n]) => a + n <= fb.descriptor.addr), p.name);
+		}
+	}
+	const radio = json("radios.json").radios.find((r) => r.id === "mduv380");
+	assert.ok(radio.flash.bootloader.length > 0 && radio.flash.build_options.some((o) => o.name === "POWER"));
+});
+
 test("stock file from a vendor zip: the one .bin with the container header", async () => {
 	const plain = await stockfw.stockFile("x.bin", stock, fb);
 	assert.equal(plain.data, stock);	// a .bin passes through
