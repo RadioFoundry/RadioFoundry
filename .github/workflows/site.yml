@@ -1,144 +1,29 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 #
-# The web site (docs/dev/website.md), built from the repository with site/build.py, with the newest release's firmware
-# images for the flasher, and deployed to radiofoundry.org: the build is an artifact, and the `deploy` job uploads it
-# to Cloudflare Pages (project radiofoundry) from a GitHub-hosted runner.
+# The web site (docs/dev/website.md) is built and deployed by Cloudflare Pages on each push to main
+# (site/cloudflare-build.sh). This workflow only covers what a push doesn't: a published release changes the flasher's
+# firmware images, so it asks Pages to build main again through the project's deploy hook. Run by hand, it does the
+# same.
 #
-#   nightly              rebuilt and deployed only when something changed since the last deployment: a file the site
-#                        is built from (the paths below), or a release published after it
-#   by hand              (workflow_dispatch) always rebuilt and deployed
-# Pull requests don't run it: their unit-tests job (tools/ci.sh's Python step) builds the site with --strict and runs
-# the web flasher's tests already.
-#
-# Needs the site environment's CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets (docs/dev/website.md, Hosting).
+# Needs the site environment's CLOUDFLARE_DEPLOY_HOOK secret.
 name: Web site
 
 on:
-  schedule:
-    - cron: "17 7 * * *"   # 07:17 UTC, once a night
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  # one deployment at a time
-  group: site
-  cancel-in-progress: false
-
-env:
-  # what the site is built from: a change here since the last deployment means a rebuild. The radios come from the
-  # board registry (site/build.py runs tools/boards.py json --for site, which reads boards/, platform/, boot/, the
-  # Makefile and tests/hil/features.toml), the flasher's data from rfoundry
-  SITE_INPUTS: >-
-    site docs README.md boards platform boot config tests/hil/features.toml tools/boards.py tools/registry_docs.py
-    tools/rfoundry_python.sh tools/glossary.py tools/rfoundry/rfoundry Makefile .github/workflows/site.yml
-
 jobs:
-  changes:
-    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
-    permissions:
-      contents: read
-      deployments: read
-    outputs:
-      build: ${{ steps.check.outputs.build }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
-        with:
-          fetch-depth: 0   # the last deployment's commit must be here to diff against
-      - id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -u
-          decide() { echo "build=$1" >> "$GITHUB_OUTPUT"; echo "build=$1: $2"; exit 0; }
-          [ "${{ github.event_name }}" = workflow_dispatch ] && decide true "run by hand"
-          # the newest deployment of the site whose latest status is success
-          last="" at=""
-          for id in $(gh api "repos/$REPO/deployments?environment=site&per_page=20" --jq '.[].id' 2> /dev/null); do
-            state=$(gh api "repos/$REPO/deployments/$id/statuses?per_page=1" --jq '.[0].state' 2> /dev/null || true)
-            if [ "$state" = success ]; then
-              last=$(gh api "repos/$REPO/deployments/$id" --jq .sha || true)
-              at=$(gh api "repos/$REPO/deployments/$id" --jq .created_at || true)
-              break
-            fi
-          done
-          [ -n "$last" ] || decide true "no successful deployment yet"
-          git cat-file -e "$last^{commit}" 2> /dev/null || decide true "last deployed commit $last not in the history"
-          git diff --quiet "$last" HEAD -- $SITE_INPUTS || decide true "site inputs changed since $last"
-          rel=$(gh release view --repo "$REPO" --json publishedAt --jq .publishedAt 2> /dev/null || true)
-          if [ -n "$rel" ] && [ "$rel" \> "$at" ]; then decide true "release published $rel, after the deployment at $at"; fi
-          decide false "nothing changed since the deployment of $last at $at"
-
-  build:
-    needs: changes
-    # the nightly run builds only when `changes` says so
-    if: needs.changes.outputs.build == 'true'
-    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
-      # the self-hosted runner's image has Python with markdown-it and Node.js 22, and its proxy doesn't reach PyPI
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0   # v7.1.0
-        if: runner.environment != 'self-hosted'
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1   # v7.1.0
-        if: runner.environment != 'self-hosted'
-        with:
-          node-version: "22"
-      - name: Generator dependency
-        run: |
-          [ "${RFOUNDRY_CI_IMAGE:-}" = 1 ] || pip install -r site/requirements.txt
-      - name: Web flasher tests (against rfoundry)
-        run: site/tests/run.sh
-      - name: Newest release's firmware for the flasher
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p dist
-          # no release yet is fine: the flasher then offers local images only
-          gh release download --repo "${{ github.repository }}" --pattern 'rfoundry-*' --dir dist || echo "no release assets"
-      # site/build.py runs tools/boards.py json --for site itself (setup-python's 3.12, or the image's, through
-      # tools/rfoundry_python.sh), so the radios are always the checkout's registry
-      - name: Build
-        env:
-          # where the web tools send error reports (Sentry); unset: no reports leave the page
-          RFOUNDRY_SENTRY_DSN: ${{ vars.RFOUNDRY_SENTRY_DSN }}
-        run: |
-          python3 site/build.py --strict --out build/site --firmware dist \
-            --repo-url "${{ github.server_url }}/${{ github.repository }}" --ref "${{ github.sha }}"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
-        with:
-          name: site
-          path: build/site
-          retention-days: 7
-
-  deploy:
-    needs: build
-    if: needs.build.result == 'success'
-    # the Cloudflare token is a secret: GitHub's runners only. The site environment hands it only to main, and only
-    # this workflow's scheduled and manual runs get here, never a pull request
+  rebuild:
+    # the hook URL is a secret: GitHub's runners only. The site environment hands it only to main and release tags
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    environment:
-      name: site
-      url: https://radiofoundry.org
+    environment: site
     steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
-        with:
-          name: site
-          path: build/site
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1   # v7.1.0
-        with:
-          node-version: "22"
-      # a production deployment of the Pages project: Cloudflare switches radiofoundry.org to it in one step
-      - name: Deploy to Cloudflare Pages
+      - name: Ask Pages to build main
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          npx --yes wrangler@4.149.0 pages deploy build/site --project-name radiofoundry --branch main \
-            --commit-hash "$GITHUB_SHA" --commit-dirty=false
+          HOOK: ${{ secrets.CLOUDFLARE_DEPLOY_HOOK }}
+        run: curl -fsS -X POST "$HOOK" > /dev/null && echo "Pages build of main requested"
