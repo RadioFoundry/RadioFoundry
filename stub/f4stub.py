@@ -1141,6 +1141,10 @@ def self_test():
     check(rec.hex() == "fe010203007a12000800c0000044aa201d1e1f051c3eff00", "test board record %s" % rec.hex())
     check(config_record("dm1701")[2:4] == b"\x01\x00" and config_record("dm1701")[16:24] == bytes(
         [0x13, 0x14, 0x15, 5, 0x37, 0xFF, 0xFF, 0]), "dm1701 board record: SPI1 mode 0, PB3-PB5, PD7")
+    real = [bid for bid in BOARDS if bid != TEST_BOARD]
+    check(len({BOARDS[bid]["id"] for bid in real}) == len(real) and
+          all(config_record(bid)[0] == BOARDS[bid]["id"] for bid in real),
+          "every board's record starts with its own stub id %s" % sorted((bid, BOARDS[bid]["id"]) for bid in real))
     f = stock(11)
     fake = FakeF4(f)
     r = F4Radio(fake, log=quiet)
