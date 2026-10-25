@@ -9,9 +9,9 @@
 #if CONFIG_SFR
 #include "dmr/sfr.h"
 #endif
-#if CONFIG_SFR && CONFIG_SFR_DUALRX
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
 #include "dmr/ambe/ambeFec.h"
-#define SFR_DUAL_DEPTH	3	// bursts held: the repeat of the first comes 90 ms later, after the talker's next
+#define SFR_DUALPATH_DEPTH	3	// bursts held: the repeat of the first comes 90 ms later, after the talker's next
 #endif
 
 // RX trace into the debug link's log (see dmr_call.h). Host tests that don't link dlog build with DMR_RX_TRACE=0
@@ -91,7 +91,7 @@ static struct {
 #if CONFIG_SFR
 	sfrDedup_t sfr_dd;	// SFR user, both copies heard: the voice burst last taken, of either copy
 #endif
-#if CONFIG_SFR && CONFIG_SFR_DUALRX
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
 	uint8_t vq_n;		// bursts in vq
 #endif
 	uint32_t last_call_end_ms;
@@ -159,15 +159,15 @@ static struct {
 	dmr_data_rx_fn data_rx;
 	void *data_rx_ctx;
 } s;
-#if CONFIG_SFR && CONFIG_SFR_DUALRX
-// SFR user, dual RX: voice bursts taken but not played yet, oldest first (play order; s.vq_n of them). A burst waits
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
+// SFR user, dual-path RX: voice bursts taken but not played yet, oldest first (play order; s.vq_n of them). A burst waits
 // while one of its frames failed the FEC and the other copy may still fix it. CPU only, so in the board's CPU RAM
 static struct {
 	dmr_burst_t b;
 	uint32_t ms, slot;	// arrival, the modem's slot counter
 	uint8_t bad;		// bit f: frame f failed the FEC
 	bool wait;		// the other copy hasn't come yet
-} vq[SFR_DUAL_DEPTH] RFOUNDRY_CPU_RAM;
+} vq[SFR_DUALPATH_DEPTH] RFOUNDRY_CPU_RAM;
 #endif
 
 // --- RX trace: one entry per burst event, packed into lines for the debug link's log ---
@@ -338,16 +338,16 @@ static bool sfr_user(void)
 	return CONFIG_SFR && s.cfg.sfr_user && !s.cfg.rmo;
 }
 
-// SFR user hearing both copies (first arrival or dual RX), and dual RX
+// SFR user hearing both copies (first arrival or dual-path RX), and dual-path RX
 static bool sfr_both(void)
 {
 	return sfr_user() && s.cfg.sfr_rx != DMR_SFR_RX_REPEATER;
 }
 
-#if CONFIG_SFR && CONFIG_SFR_DUALRX
-static bool sfr_dualrx(void)
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
+static bool sfr_dualpath_rx(void)
 {
-	return sfr_user() && s.cfg.sfr_rx == DMR_SFR_RX_DUAL;
+	return sfr_user() && s.cfg.sfr_rx == DMR_SFR_RX_DUALPATH;
 }
 #endif
 
@@ -651,7 +651,7 @@ static void rx_play(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			s.sink->frame(&v[f * DMR_AMBE_FRAME_BYTES], s.sink->ctx);
 }
 
-#if CONFIG_SFR && CONFIG_SFR_DUALRX
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
 // Bit f set: frame f of a voice burst failed the FEC (its C0 word, the one the vocoder can't do without)
 static uint8_t frames_bad(const uint8_t v[DMR_VOICE_BYTES])
 {
@@ -678,7 +678,7 @@ static void dual_pop(void)
 // Play the held bursts that are ready, in order: the head's other copy came, or it waited long enough
 static void dual_drain(uint32_t now)
 {
-	while (s.vq_n && (!vq[0].wait || elapsed(now, vq[0].ms, true, DMR_SFR_DUAL_MS)))
+	while (s.vq_n && (!vq[0].wait || elapsed(now, vq[0].ms, true, DMR_SFR_DUALPATH_MS)))
 		dual_pop();
 }
 
@@ -699,7 +699,7 @@ static void dual_take(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 		rx_play(b, now, slot);
 		return;
 	}
-	if (s.vq_n == SFR_DUAL_DEPTH)
+	if (s.vq_n == SFR_DUALPATH_DEPTH)
 		dual_pop();
 	vq[s.vq_n].b = *b;
 	vq[s.vq_n].ms = now;
@@ -741,11 +741,11 @@ static void dual_flush(void)
 }
 #endif
 
-// A voice burst of a call being played: straight to the sink, or through the dual RX queue
+// A voice burst of a call being played: straight to the sink, or through the dual-path RX queue
 static void rx_voice(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 {
-#if CONFIG_SFR && CONFIG_SFR_DUALRX
-	if (sfr_dualrx()) {
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
+	if (sfr_dualpath_rx()) {
 		dual_take(b, now, slot);
 		return;
 	}
@@ -997,8 +997,8 @@ static void rx_burst(const dmr_burst_t *b, uint32_t now, uint32_t slot)
 			if (s.rx != RXC_NONE)
 				s.last_rx_ms = now;
 			stats.rx_sfr_dup++;
-#if CONFIG_SFR_DUALRX
-			if (s.rx == RXC_PLAY && sfr_dualrx())
+#if CONFIG_SFR_DUALPATH_RX
+			if (s.rx == RXC_PLAY && sfr_dualpath_rx())
 				dual_other(b, now);
 #endif
 			TR_WHAT('d');
@@ -1779,7 +1779,7 @@ void dmr_call_poll(uint32_t now_ms)
 		tr_flush();
 #endif
 
-#if CONFIG_SFR && CONFIG_SFR_DUALRX
+#if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
 	if (s.vq_n)
 		dual_drain(now_ms);
 #endif

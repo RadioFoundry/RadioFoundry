@@ -451,7 +451,7 @@ void ui_svc_apply(uint8_t id, int32_t value)
 		}
 		break;
 #if CONFIG_SFR
-	case UI_SET_SFR_RX:		// the radio core clamps (dual RX only with CONFIG_SFR_DUALRX)
+	case UI_SET_SFR_RX:		// the radio core clamps (dual-path RX only with CONFIG_SFR_DUALPATH_RX)
 		rs.sfr_rx = (uint8_t)(v16 > 2 ? 0 : v16);
 		break;
 #endif

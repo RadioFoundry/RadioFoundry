@@ -3467,11 +3467,11 @@ static const char *const n_netlink[] = { "By DMR ID", "192.168.10.x" };
 #endif
 #if CONFIG_SFR
 static const int16_t v_sfrrx[] = { 0, 1,	// dmr_sfr_rx_t
-#if CONFIG_SFR_DUALRX
+#if CONFIG_SFR_DUALPATH_RX
 				   2,
 #endif
 };
-static const char *const n_sfrrx[] = { "Repeater", "First copy", "Dual RX" };
+static const char *const n_sfrrx[] = { "Repeater", "First copy", "Dual-path RX" };
 #endif
 #if CONFIG_SFR_CWID
 static const int16_t v_sfrcwid[] = { 0, 1, 2, 3, 4 };	// radio_cwid_interval_ms codes
@@ -3527,7 +3527,7 @@ static const set_item_t s_talk[] = {
 	LIST("Dual watch delay", "resume wait reply A B", UI_SET_DUAL_DELAY_MS, v_dual_wait, n_dual_wait),
 #endif
 #if CONFIG_SFR
-	LIST("SFR receive", "single frequency repeater both copies dual rx", UI_SET_SFR_RX, v_sfrrx, n_sfrrx),
+	LIST("SFR receive", "single frequency repeater both copies dual-path rx", UI_SET_SFR_RX, v_sfrrx, n_sfrrx),
 #endif
 #if CONFIG_SFR_CWID
 	LIST("SFR CW ID", "single frequency repeater morse callsign identify", UI_SET_SFR_CWID, v_sfrcwid, n_sfrcwid),

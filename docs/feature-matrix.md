@@ -73,7 +73,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_udp_compress` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `sfr` | not recorded | pass (seed) | pass (seed) | not written | ✕ |
-| `sfr_dualrx` | not recorded | not recorded | not recorded | not written | ✕ |
+| `sfr_dualpath_rx` | not recorded | not recorded | not recorded | not written | ✕ |
 | `sfr_cwid` | not recorded | not recorded | not recorded | not written | ✕ |
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written |
@@ -180,7 +180,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DMR_CONTROL_STATION` | ● | ● | ● | ● | ● |
 | `SNMP` | ● | ● | ● | ● | ● |
 | `SFR` | ● | ● | ● | … | ✕ |
-| `SFR_DUALRX` | ● | ● | ● | … | ✕ |
+| `SFR_DUALPATH_RX` | ● | ● | ● | … | ✕ |
 | `SFR_CWID` | ● | ● | ● | … | ✕ |
 | `TASK_STACKS` | ● | ● | ● | ● | ● |
 | `USB` | ✕ | ● | ✕ | ✕ | ● |
@@ -274,7 +274,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Compressed UDP/IP headers on transmit (SAP 3) | `DMR_UDP_COMPRESS` | 408 | 356 | Auto: not for ports 4000-4099 or ETSI IP text |
 | Confirmed packet data | `DMR_CONFIRMED` | 2,880 | 2,920 |  |
 | Single frequency repeater: MMDVM SFR, and the standalone SFR (experimental) | `SFR` | 6,884 | — | MD-380: HR_C5000 lacks what the SFR glue uses |
-| Experimental: SFR user receive "dual RX": a voice frame whose FEC failed comes from the other copy | `SFR_DUALRX` | 696 | — | Needs `SFR`. DM-1701 figure with LTO (2026-10-22) |
+| Experimental: SFR user receive "dual-path RX": a voice frame whose FEC failed comes from the other copy | `SFR_DUALPATH_RX` | 696 | — | Needs `SFR`. DM-1701 figure with LTO (2026-10-22) |
 | Experimental: standalone SFR repeater's periodic CW ID (callsign in Morse, FM) | `SFR_CWID` | 900 | — | Needs `SFR`. DM-1701 figure with LTO (2026-10-22) |
 | APRS: AFSK positions, status, messages; DMR positions; KISS TNC | `APRS` | 26,568 | 26,628 | Includes APRS receive, KISS over TCP and APRS-IS where built. MD-380: AFSK TX needs the tone path (not written), DMR positions work |
 | APRS receive: demodulator, station list, digipeater | `APRS_RX` | 8,892 | — | DM-1701: FM receive audio on the I2S stream, squelch gated ([aprs](spec/aprs.md) 5.3). MD-380: not written |

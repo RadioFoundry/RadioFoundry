@@ -136,7 +136,7 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			(unsigned)c.rx_lost_frames);
 		dl_text(t, "call.rx_dup_dropped=%u\ncall.rx_enc_dropped=%u\ncall.rx_term_dropped=%u\n",
 			(unsigned)c.rx_dup_dropped, (unsigned)c.rx_enc_dropped, (unsigned)c.rx_term_dropped);
-		// SFR user: the other copy of a burst played, the talker's copy dropped, dual RX's held bursts and fixed frames
+		// SFR user: the other copy of a burst played, the talker's copy dropped, dual-path RX's held bursts and fixed frames
 		dl_text(t, "call.rx_sfr_dup=%u\ncall.rx_sfr_direct=%u\ncall.rx_sfr_held=%u\ncall.rx_sfr_fixed=%u\n",
 			(unsigned)c.rx_sfr_dup, (unsigned)c.rx_sfr_direct, (unsigned)c.rx_sfr_held, (unsigned)c.rx_sfr_fixed);
 		dl_text(t, "call.tx_calls=%u\ncall.tx_denied=%u\ncall.tx_underruns=%u\ncall.evq_overflows=%u\n",

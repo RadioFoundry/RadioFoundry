@@ -4265,10 +4265,10 @@ static void clamp_settings(radio_settings_t *s)
 	if (s->roam_survey > 2) {
 		s->roam_survey = 1;
 	}
-	// 0 repeat only, 1 both (first arrival), 2 both (dual RX, CONFIG_SFR_DUALRX; else first arrival)
+	// 0 repeat only, 1 both (first arrival), 2 both (dual-path RX, CONFIG_SFR_DUALPATH_RX; else first arrival)
 	if (s->sfr_rx > 2) {
 		s->sfr_rx = 0;
-	} else if (s->sfr_rx == 2 && !CONFIG_SFR_DUALRX) {
+	} else if (s->sfr_rx == 2 && !CONFIG_SFR_DUALPATH_RX) {
 		s->sfr_rx = 1;
 	}
 	if (s->sfr_cwid > 4 || !CONFIG_SFR_CWID) {

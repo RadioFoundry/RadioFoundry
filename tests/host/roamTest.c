@@ -1287,11 +1287,11 @@ static void test_rc_defaults_and_store(void)
 	rs.sfr_rx = 2;
 	radio_sm_set_settings(&sm, &rs, now);
 	settings_read(&s);
-	CHECK(sm.set.sfr_rx == (CONFIG_SFR_DUALRX ? 2 : 1) && sm.set.rpt_beacon);
-	CHECK(s.rpt_beacon == (CONFIG_SFR_DUALRX ? 0x05 : 0x03));
+	CHECK(sm.set.sfr_rx == (CONFIG_SFR_DUALPATH_RX ? 2 : 1) && sm.set.rpt_beacon);
+	CHECK(s.rpt_beacon == (CONFIG_SFR_DUALPATH_RX ? 0x05 : 0x03));
 	radio_sm_init(&sm, now);
 	run(100);
-	CHECK(sm.set.sfr_rx == (CONFIG_SFR_DUALRX ? 2 : 1) && sm.set.rpt_beacon);
+	CHECK(sm.set.sfr_rx == (CONFIG_SFR_DUALPATH_RX ? 2 : 1) && sm.set.rpt_beacon);
 	rs = sm.set;
 	rs.sfr_rx = 7;
 	rs.rpt_beacon = false;

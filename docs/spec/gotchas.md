@@ -568,7 +568,7 @@ in an open inbound call, voice headers and terminators are never echo-checked (t
 
 **14.12 An HR_C6000 SFR user hears one copy of a call (SDR bench, 2026-10-19).** In direct mode the chip
 decodes the voice stream of the slot it locked onto. Reports for the other slot during the call are stale status
-(class 0, the same values again and again), not the other copy. So the user modes "First copy" and "Dual RX" only fall
+(class 0, the same values again and again), not the other copy. So the user modes "First copy" and "Dual-path RX" only fall
 over from one copy to the other between calls or after a loss, never take frames from both. Not timing (the repeat
 sat 0.13 ms off the talker's slot grid) and not the repeat's sync (clean TS2 voice sync); a stronger repeat made it
 worse. Rule: don't count on both copies from an HR_C6000; hearing both needs the raw RX RAM path (sfr.md 3).

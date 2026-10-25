@@ -1957,8 +1957,8 @@ static void test_sfr_user(void)
 	CHECK(sink_log.begins == 1 && sink_log.frames == 18 && st.rx_cc_dropped == 1);
 }
 
-#if CONFIG_SFR_DUALRX
-// Dual RX needs real voice frames: frame n of the call is the FEC encoding of parameters made from n, and a bad copy of
+#if CONFIG_SFR_DUALPATH_RX
+// Dual-path RX needs real voice frames: frame n of the call is the FEC encoding of parameters made from n, and a bad copy of
 // it has four bits of its C0 word flipped (detected, not corrected: the vocoder would conceal it)
 static void dual_frame(unsigned n, bool bad, uint8_t out[9])
 {
@@ -2040,7 +2040,7 @@ static bool dual_played_good(unsigned frames)
 	return true;
 }
 
-static void test_sfr_dualrx(void)
+static void test_sfr_dualpath_rx(void)
 {
 	dmr_call_config_t c = base_cfg();
 	dmr_call_stats_t st;
@@ -2057,7 +2057,7 @@ static void test_sfr_dualrx(void)
 	c.sfr_user = true;
 	c.tx_sync = DMR_SYNC_TS1;
 	c.rx_sync = DMR_SYNC_TS2;
-	c.sfr_rx = DMR_SFR_RX_DUAL;
+	c.sfr_rx = DMR_SFR_RX_DUALPATH;
 
 	// Bursts B and E of the talker's copy have a bad frame, the repeat's are good: those frames come from the repeat
 	setup(&c);
@@ -2080,7 +2080,7 @@ static void test_sfr_dualrx(void)
 	dual_frame(3 * 3 + 1, true, b);
 	CHECK(sink_log.seq[3 * 3 + 1] == b[0]);
 
-	// No repeat heard: a bad burst waits DMR_SFR_DUAL_MS, then plays; the call keeps its order and every frame
+	// No repeat heard: a bad burst waits DMR_SFR_DUALPATH_MS, then plays; the call keeps its order and every frame
 	setup(&c);
 	sfr_dual_call(2, 1u << 1, 0, false);
 	dmr_call_get_stats(&st);
@@ -2135,8 +2135,8 @@ int main(void)
 	test_gps_lc();
 	test_gps_call();
 	test_sfr_user();
-#if CONFIG_SFR_DUALRX
-	test_sfr_dualrx();
+#if CONFIG_SFR_DUALPATH_RX
+	test_sfr_dualpath_rx();
 #endif
 	printf("# dmrCallTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

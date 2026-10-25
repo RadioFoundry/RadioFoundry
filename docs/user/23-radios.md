@@ -213,7 +213,7 @@ Tested on one DM-1701, on air against the SDR bench where RF is involved:
 | DMR data | Text messages, call alert, radio check, emergency, all both ways |
 | Scan | Zone scan (including stopping for DMR calls), VFO band scan, dual watch (the core alternating two channels of one zone; [dual watch](12-scan.md#dual-watch) with any zone and the VFO is not yet) |
 | Hotspot | Voice and data calls both ways. MMDVM SFR repeats a whole call, about 210 ms after the original instead of the intended 90 ms |
-| Standalone SFR | As a user: talks through a DM-32UV repeater and plays its calls whole. It hears one copy of a call at a time, so **SFR receive** "First copy" and "Dual RX" only switch to the other copy between calls, never mix them |
+| Standalone SFR | As a user: talks through a DM-32UV repeater and plays its calls whole. It hears one copy of a call at a time, so **SFR receive** "First copy" and "Dual-path RX" only switch to the other copy between calls, never mix them |
 | APRS | Packets sent on FM and over DMR decode off air |
 | Power | Battery saver: it cycles when idle, and monitor and an incoming call wake it |
 | Programming | Codeplug reads and writes with qdmr's protocol (`tools/cps_client.py`) |

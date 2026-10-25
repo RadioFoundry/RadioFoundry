@@ -44,10 +44,10 @@
 typedef enum {
 	DMR_SFR_RX_REPEATER,	// the repeat only: the talker's own copy is dropped
 	DMR_SFR_RX_FIRST,	// both: each voice burst played once, whichever copy comes first
-	DMR_SFR_RX_DUAL,	// both: a frame whose FEC failed is taken from the other copy when it decodes (CONFIG_SFR_DUALRX)
+	DMR_SFR_RX_DUALPATH,	// both: a frame whose FEC failed is taken from the other copy when it decodes (CONFIG_SFR_DUALPATH_RX)
 	DMR_SFR_RX_NUM
 } dmr_sfr_rx_t;
-#define DMR_SFR_DUAL_MS		120	// a burst with a failed frame waits this long for the other copy (90 ms behind)
+#define DMR_SFR_DUALPATH_MS		120	// a burst with a failed frame waits this long for the other copy (90 ms behind)
 
 #define DMR_CALL_ALIGN_MS		300	// DMO: reply aligned to a station heard this recently (within the modem's slot memory, 390 ms on the HR_C6000)
 #define DMR_CALL_TX_DONE_GUARD_MS	1500	// tx_done overdue after the last burst: force receive
@@ -249,7 +249,7 @@ typedef struct {
 	uint32_t tx_gps_lcs;		// superframes sent with our GPS Info instead of the voice LC
 	uint32_t rx_sfr_dup;		// SFR user: voice bursts dropped as the other copy of one already played
 	uint32_t rx_sfr_direct;		// SFR user, repeat only: bursts of the talker's own copy dropped
-	uint32_t rx_sfr_held;		// SFR user, dual RX: bursts held for the other copy (a frame's FEC failed)
+	uint32_t rx_sfr_held;		// SFR user, dual-path RX: bursts held for the other copy (a frame's FEC failed)
 	uint32_t rx_sfr_fixed;		// ... frames taken from the other copy
 } dmr_call_stats_t;
 void dmr_call_get_stats(dmr_call_stats_t *out);
