@@ -188,7 +188,8 @@ test("importStock: the editing model, references kept, A/B zones split, notes", 
 	const m = empty();
 	const { counts, notes } = importStock(m, uv380().b, "tyt-uv380");
 	assert.deepEqual(counts, { channels: 3, contacts: 4, rxLists: 2, zones: 3 });
-	assert.deepEqual(notes, [{ code: "scan_lists", n: 1 }, { code: "shortened", n: 1 }]);
+	// the stock 0 is "off", which takes the radio's TX timeout here (Simplex and Listen)
+	assert.deepEqual(notes, [{ code: "scan_lists", n: 1 }, { code: "tot_off", n: 2 }, { code: "shortened", n: 1 }]);
 	assert.deepEqual([m.general.dmrId, m.general.radioName, m.general.bootLine1], [3100123, "N0CALL R", "Hello"]);
 	const [r, f, l] = m.channels;
 	assert.deepEqual([r.number, r.power, r.contact.name, r.rxList.name, r.colorCode, r.timeslot], [1, 9, "TG 91", "Local", 7, 2]);
@@ -214,7 +215,7 @@ test("importStock: over the open-firmware limits, the records others refer to ar
 	const m = empty();
 	const { notes } = importStock(m, s.b, "tyt-uv380");
 	const n = Object.fromEntries(notes.map((x) => [x.code, x.n]));
-	assert.deepEqual(n, { bad_frequency: 1, too_many_channels: 6, too_many_rxLists: 4, too_many_contacts: 76 });
+	assert.deepEqual(n, { bad_frequency: 1, too_many_channels: 6, tot_off: 1024, too_many_rxLists: 4, too_many_contacts: 76 });
 	assert.equal(m.channels.length, 1024);
 	assert.equal(m.contacts.length, 1024);
 	assert.equal(m.channels[0].contact.name, "C1090");

@@ -125,7 +125,7 @@ skipping IDs that are already contacts. The editor remembers these choices in th
 | Item | Fields RadioFoundry uses |
 |---|---|
 | General settings | Your DMR ID. The callsign (radio name, 8 characters, sent as talker alias). The group and private call hang times (the reply window) |
-| Channels (up to 1024) | Name, receive and transmit frequency, mode (FM or DMR), bandwidth, receive and transmit tones, power, receive only, color code, timeslot, talk target contact, RX group list (listen list), a per-channel DMR ID, force direct mode, transmit timeout, talker alias, zone scan skip, VOX allowed, no beep, no battery saving |
+| Channels (up to 1024) | Name, receive and transmit frequency, mode (FM or DMR), bandwidth, receive and transmit tones, power, receive only, color code, timeslot, talk target contact, RX group list (listen list), a per-channel DMR ID, force direct mode, transmit timeout (Radio Default: the radio's own, [TX timeout](08-fm.md#transmit-timeout)), talker alias, zone scan skip, VOX allowed, no beep, no battery saving |
 | Zones | Name and channel list. Without zones, the radio shows one zone with all channels |
 | Contacts (up to 1024) | Name, DMR ID or talkgroup, private or group, timeslot override |
 | RX group lists | The talkgroups each channel listens to |

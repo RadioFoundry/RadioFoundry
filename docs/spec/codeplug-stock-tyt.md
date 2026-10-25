@@ -171,7 +171,7 @@ The Codeplug Editor and the Tools page build an open-firmware codeplug from a st
 | Stock | Open-firmware |
 |---|---|
 | Radio name, DMR ID, boot text | Radio tab. The name is cut to 8 characters |
-| Channels | Channels, numbered in table order. Power high = level "High" (9), low = "Low" (3). Squelch is the radio's default. Bandwidth only for FM |
+| Channels | Channels, numbered in table order. Power high = level "High" (9), low = "Low" (3). Squelch is the radio's default. Bandwidth only for FM. TX timeout as is, but the stock 0 (off) becomes the radio's TX timeout (note `tot_off`) |
 | Contacts | Contacts with time slot override off. The ring flag is dropped |
 | RX group lists | RX group lists, 32 contacts each at most |
 | Zones | A zone with a B list becomes two zones, "Name A" and "Name B", as for a qdmr import |
