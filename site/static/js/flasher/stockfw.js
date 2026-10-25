@@ -51,6 +51,19 @@ export async function stockFile(name, data, fb) {
 		if (path.startsWith("__MACOSX/") || base.startsWith("._") || !startsWith(body, fb.magic)) continue;
 		found.push({ name: base, data: body });
 	}
+	// A vendor zip can hold several builds of one radio (TYT's MD-UV380 zips: CSV and REC). Any one with a codec profile
+	// gives the same codec and key, so take the first by name, as long as they're all for the same radio
+	if (found.length > 1) {
+		const usable = [];
+		for (const f of found) {
+			const prof = fb.profiles?.[await sha256(f.data)];
+			if (prof) usable.push({ ...f, board: prof.board });
+		}
+		if (usable.length && usable.every((f) => f.board === usable[0].board)) {
+			const { board, ...pick } = usable.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))[0];
+			return pick;
+		}
+	}
 	if (found.length !== 1) throw new StockError(found.length ? `${name} holds ${found.length} firmware files: pick the .bin itself` : `no firmware file (.bin with an "OutSecurityBin" header) in ${name}`);
 	return found[0];
 }

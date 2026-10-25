@@ -122,6 +122,24 @@ test("stock file from a vendor zip: the one .bin with the container header", asy
 		stockfw.StockError);
 });
 
+test("stock file from a vendor zip with several builds of one radio: the first with a codec profile", async () => {
+	// TYT's MD-UV380 zips hold a CSV and a REC build; either gives the codec and the key
+	const other = stock.slice();
+	other[other.length - 1] ^= 0xFF;
+	const [sa, sb] = [await sha256(stock), await sha256(other)];
+	const prof = (board) => ({ board, name: "test" });
+	const two = await zip([{ name: "B-REC.bin", data: other }, { name: "A-CSV.bin", data: stock }, { name: "Upgrade.exe", data: "MZ" }]);
+	const got = await stockfw.stockFile("fw.zip", two, { ...fb, profiles: { [sa]: prof("x"), [sb]: prof("x") } });
+	assert.equal(got.name, "A-CSV.bin");
+	assert.equal(await sha256(got.data), sa);
+	// only one known: that one, whatever its name
+	const one = await stockfw.stockFile("fw.zip", two, { ...fb, profiles: { [sb]: prof("x") } });
+	assert.equal(one.name, "B-REC.bin");
+	// builds of two radios, or none known: the user picks the file
+	await assert.rejects(stockfw.stockFile("fw.zip", two, { ...fb, profiles: { [sa]: prof("x"), [sb]: prof("y") } }), /pick the .bin itself/);
+	await assert.rejects(stockfw.stockFile("fw.zip", two, { ...fb, profiles: {} }), /pick the .bin itself/);
+});
+
 test("codec extraction checks every window", async () => {
 	const { segments: segs } = await stockfw.extract(stock, fromHex(fx.key), fb, profiles);
 	assert.equal(segs.length, 3);	// code (moved), tables, descriptor
