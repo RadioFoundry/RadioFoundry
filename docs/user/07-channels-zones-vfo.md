@@ -46,7 +46,7 @@ nothing to save or discard. On a radio without **#**, hold **OK** wherever this 
   | 2 | Move down | swaps it with the channel below |
   | 3 | Copy here | opens a copy at the lowest free channel number, named with " 2" added. Change what differs and hold **OK**: the copy is saved and put after the channel in this zone |
   | 4 | Edit channel | opens the channel's settings ([Editing a channel](#editing-a-channel)) |
-  | 5 | Send channel to... | sends the channel to another radio or a talkgroup ([Sharing a zone](#sharing-a-zone)) |
+  | 5 | Share channel to... | sends the channel to another radio or a talkgroup ([Sharing a zone](#sharing-a-zone)) |
   | 6 | Remove from zone | takes it out of this zone. The channel stays in Channels and in any other zone |
 
 - **Zone options** (the last row):
@@ -55,7 +55,7 @@ nothing to save or discard. On a radio without **#**, hold **OK** wherever this 
   |---|---|---|
   | 1 | Rename | type the new name and press **OK** |
   | 2 | Copy as new zone | makes a new zone with the same channels, named with " 2" added |
-  | 3 | Send zone to... | sends the zone to another radio or a talkgroup ([Sharing a zone](#sharing-a-zone)) |
+  | 3 | Share zone to... | sends the zone to another radio or a talkgroup ([Sharing a zone](#sharing-a-zone)) |
   | 4 | Delete zone | asks first, with "No, keep it" focused. The zone's channels stay in Channels |
 
 <img src="../ux/screens/160x120i5/zone_options.png" width="200" alt="Zone options">
@@ -77,8 +77,8 @@ radio; sending a whole zone and receiving are tested only in the host tests so f
 
 1. Tune a DMR channel. The zone goes out on it.
 2. Press **OK**, **4** (Zones). Focus the zone and press **#**. Its channels open.
-3. For one channel: press **#** on it and pick **5 Send channel to...**. For the whole zone: pick **Zone options**
-   (the last row), then **3 Send zone to...**.
+3. For one channel: press **#** on it and pick **5 Share channel to...**, or pick **Share channel to...** in the
+   channel's settings. For the whole zone: pick **Zone options** (the last row), then **3 Share zone to...**.
 4. Pick a contact or talkgroup and press **OK**. A banner says "Sent to ..." when it is out.
 
 A zone too big for one send goes in part, and the radio says how much ("Sending 40 of 60 channels"). Scan lists,
@@ -148,7 +148,8 @@ The radio won't save a channel without a name, with RX outside its bands, with T
 instead), or a DMR channel without a TX contact. It says which.
 
 **Save as new channel** stores the edited copy at the lowest free number and leaves the original as it was.
-**Go to it** tunes the channel; save or discard your changes first.
+**Go to it** tunes the channel and **Share channel to...** sends it to another radio ([Sharing a zone](#sharing-a-zone));
+save or discard your changes first.
 
 ### Text entry
 

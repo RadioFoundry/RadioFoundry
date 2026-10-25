@@ -161,9 +161,11 @@ a refusal (3.3). An answer later than 60 s is not taken. No screen sends request
 
 ## 7. Sending
 
-In a zone's channel list, **#** opens "Send zone to..." and "Send channel to..." (the focused channel). With the
-zone editor (`CONFIG_ZONE_EDIT`), **#** on a channel opens its Channel actions, where "Send channel to..." is item 5,
-and "Send zone to..." is item 3 of Zone options ([ui.md](ui.md) 2.2). Then the contact list: a private contact gets confirmed packets, a talkgroup unconfirmed ones. The send works only on a DMR
+In a zone's channel list, **#** opens "Share zone to..." and "Share channel to..." (the focused channel). With the
+zone editor (`CONFIG_ZONE_EDIT`), **#** on a channel opens its Channel actions, where "Share channel to..." is item 5,
+and "Share zone to..." is item 3 of Zone options ([ui.md](ui.md) 2.2). The channel editor has "Share channel to..."
+after "Go to it" ([ui.md](ui.md) 2.1); it sends the stored channel, so unsaved changes must be saved first. The rows
+carry a share icon, and the offer's title and banner a download icon. Then the contact list (Share To): a private contact gets confirmed packets, a talkgroup unconfirmed ones. The send works only on a DMR
 channel; the banner says "Sent to <name>" or "Not sent to <name>". One send at a time.
 
 ## 8. Limits

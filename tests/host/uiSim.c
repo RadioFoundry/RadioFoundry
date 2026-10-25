@@ -87,9 +87,12 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "channel_contact", "ok 5 ok down down down down down down down down down ok" },
 	{ "channel_discard", "ok 5 ok down down down down down ok enc+ ok back" },
 	{ "channel_new", "ok 5 up up up ok" },
+#if CONFIG_ZONE_SHARE
+	{ "channel_share", "ok 5 ok up up" },	// the channel editor's Share channel to...
+#endif
 	{ "zone_channels", "ok 4 ctx" },
 #if CONFIG_ZONE_EDIT
-	{ "zone_share_to", "ok 4 ctx down down ctx 5" },	// Channel actions' Send channel to...
+	{ "zone_share_to", "ok 4 ctx down down ctx 5" },	// Channel actions' Share channel to...
 #else
 	{ "zone_share", "ok 4 ctx down down ctx" },
 	{ "zone_share_to", "ok 4 ctx down down ctx 1" },
@@ -107,7 +110,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "zone_add", "ok 4 ctx 2 ok" },
 	{ "zone_options", "ok 4 ctx up up up up ok" },
 #if CONFIG_ZONE_SHARE
-	{ "zone_delete", "ok 4 ctx up up up up ok 4" },	// after Send zone to...
+	{ "zone_delete", "ok 4 ctx up up up up ok 4" },	// after Share zone to...
 #else
 	{ "zone_delete", "ok 4 ctx up up up up ok 3" },
 #endif
