@@ -25,7 +25,7 @@ def pytest_addoption(parser):
                      "shared bench daemon: nothing is stopped there")
     g.addoption("--allow-usb-switch", action="store_true",
                 help="tests may switch the radio's USB personality to the network adapter (it re-enumerates; the "
-                     "test switches it back over UDP)")
+                     "test switches it back over UDP), or on a radio without one run pppd on its serial port")
     g.addoption("--tx-power", type=int, default=40, help="bench transmitter RF level 0-255 (bench: low)")
     g.addoption("--dmr-freq", type=float, default=461.6875,
                 help="MHz: the DMR test channel (Ch 15 of the bench's gateway configuration)")

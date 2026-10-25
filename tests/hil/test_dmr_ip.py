@@ -23,7 +23,7 @@ import warnings
 
 import pytest
 
-from rfoundry_hil import skip, usb_network
+from rfoundry_hil import skip, host_network
 import dmr_packet
 
 BENCH_ID = 9990301
@@ -290,7 +290,7 @@ def test_usb_network_udp_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars
     freq, cc, own, _ = _setup(radio, pytestconfig)
     radio.link.ip_settings("auto", "rules", 0, [])
     bench_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (BENCH_ID & 0xFFFFFF)))
-    with usb_network(radio, own) as (udp, host_ip, _):
+    with host_network(radio, own) as (udp, host_ip, _):
         before = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if str(v).isdigit()}
         heard_pkts = []
         with sdr_bench.lease():

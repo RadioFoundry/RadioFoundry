@@ -4,15 +4,16 @@
 back with no delay, each way, and the longest datagram one transmission carries, each way, with one octet more.
 
 Opt-in RF as test_dmr_ip.py: radio_tx + bench_service (--allow-rf --allow-service-stop), firmware with
-CONFIG_DMR_IP_GATEWAY. The tests that use this host's socket over the USB network are also usb_switch
-(--allow-usb-switch). The bench sends UDP with tools/bench/bench_tx.py's `data --udp-port` (run
+CONFIG_DMR_IP_GATEWAY. The tests that use this host's socket over the radio's IP link are also usb_switch
+(--allow-usb-switch): the USB network adapter, or on a radio without one PPP on its serial host port (pppd, as root or
+with passwordless sudo; rfoundry_hil.host_network). The bench sends UDP with tools/bench/bench_tx.py's `data --udp-port` (run
 tools/bench/dmr_bench.py sync first: an older copy on the bench has no UDP mode, and those tests skip).
 
 Pass criteria are the radio's own counters (the dmr_ip, air and hotspot view sections) and, from the air, what this
 host's socket got. What the bench modem heard of the radio is decoded by tools/bench/dmr_packet.py; the bench modem
 misses or garbles some bursts (test_dmr_ip.py), so a packet it didn't hear whole is a warning, never a failure; a
 packet it heard whole must be right (payload, order, header). The debug link's IP_SEND carries at most 64 octets of
-payload (DL_REQ_MAX), so the largest datagrams come from this host over the USB network.
+payload (DL_REQ_MAX), so the largest datagrams come from this host over that link.
 
 The air MTU (DMR_DATA_IP_MTU) is derived below from the firmware's limits, and checked against the radio's
 net.air_mtu: one transmission is at most DMR_DATA_MAX_BURSTS bursts = DMR_DATA_IP_PREAMBLES preamble CSBKs, the data
@@ -28,7 +29,7 @@ import warnings
 
 import pytest
 
-from rfoundry_hil import skip, usb_network, INDIVIDUAL_NET
+from rfoundry_hil import skip, host_network, host_network_kind, INDIVIDUAL_NET
 import dmr_packet
 # Shared with test_dmr_ip.py: its setup, views and fixtures (ip_settings and ars_off put the settings back)
 from test_dmr_ip import BENCH_ID, _ip_view, _ours, _setup, ars_off, ip_settings  # noqa: F401
@@ -75,8 +76,8 @@ def _ints(view):
 
 def _views(link):
     """The counters these tests read: the IP service (dmr_ip), the air queue (air), the gateway (hotspot), the data
-    service's receiver (dmr_data)."""
-    return _ints(link.view(["dmr_ip", "air", "hotspot", "dmr_data"]))
+    service's receiver (dmr_data_stats: data.rx_packets, data.rx_crc_errors; the dmr_data section has none)."""
+    return _ints(link.view(["dmr_ip", "air", "hotspot", "dmr_data_stats"]))
 
 
 def _delta(before, after, keys):
@@ -193,7 +194,7 @@ def test_udp_burst_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars_of
     radio.link.ip_settings("auto", "rules", 0, [])
     bench_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (BENCH_ID & 0xFFFFFF)))
     sent = [_payload(k, 40) for k in range(BURST)]
-    with usb_network(radio, own) as (udp, host_ip, _):
+    with host_network(radio, own) as (udp, host_ip, _):
         before = _views(udp)
         with sdr_bench.lease():
             lis = sdr_bench.listen_start(freq, cc, seconds=20)
@@ -237,7 +238,7 @@ def test_udp_burst_air_to_pc(radio, sdr_bench, pytestconfig):
     from the bench's address."""
     freq, cc, own, _ = _setup(radio, pytestconfig, tx=False)
     bench_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (BENCH_ID & 0xFFFFFF)))
-    with usb_network(radio, own) as (udp, host_ip, _):
+    with host_network(radio, own) as (udp, host_ip, _):
         before = _views(udp)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.bind((host_ip, HOST_PORT))
@@ -282,7 +283,7 @@ def test_udp_max_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars_off,
     radio.link.ip_settings(compress, "rules", 0, [])
     bench_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (BENCH_ID & 0xFFFFFF)))
     sent = [_payload(0, payload_len)]
-    with usb_network(radio, own) as (udp, host_ip, _):
+    with host_network(radio, own) as (udp, host_ip, _):
         before = _views(udp)
         _need_mtu_keys(before)
         with sdr_bench.lease():
@@ -318,7 +319,7 @@ def test_udp_max_air_to_pc(radio, sdr_bench, pytestconfig, payload_len):
     radio like this one sends at most), and one at the receiver's limit (DMR_DATA_MAX_PACKET: 40 blocks, 448 octets),
     each delivered intact."""
     freq, cc, own, _ = _setup(radio, pytestconfig, tx=False)
-    with usb_network(radio, own) as (udp, host_ip, _):
+    with host_network(radio, own) as (udp, host_ip, _):
         before = _views(udp)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.bind((host_ip, HOST_PORT))
@@ -340,7 +341,7 @@ def test_udp_over_receive_limit_air_to_pc(radio, sdr_bench, pytestconfig):
     """One block more than the receiver reassembles (41 blocks): dropped and counted (data.rx_crc_errors), nothing of
     it reaches this host, and a datagram right after it still does."""
     freq, cc, own, _ = _setup(radio, pytestconfig, tx=False)
-    with usb_network(radio, own) as (udp, host_ip, _):
+    with host_network(radio, own) as (udp, host_ip, _):
         before = _views(udp)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.bind((host_ip, HOST_PORT))
@@ -377,7 +378,7 @@ def test_udp_over_max_pc_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars
         skip("bench", "this host can't set DF on a UDP socket (IP_MTU_DISCOVER / IP_DONTFRAG)")
     s.close()
     over_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (OVERSIZE_ID & 0xFFFFFF)))
-    with usb_network(radio, own) as (udp, host_ip, _):
+    with host_network(radio, own) as (udp, host_ip, _):
         before = _views(udp)
         _need_mtu_keys(before)
         refused_here = False
@@ -430,7 +431,7 @@ def _host_mtu(host_ip):
         if sys.platform.startswith("linux"):
             out = subprocess.run(["ip", "-o", "-4", "addr", "show"], capture_output=True, text=True, timeout=5).stdout
             for line in out.splitlines():
-                if f" {host_ip}/" in line:
+                if f" {host_ip}/" in line or f" {host_ip} peer " in line:   # peer: a point-to-point link (PPP)
                     name = line.split()[1]
                     with open(f"/sys/class/net/{name}/mtu") as f:
                         return int(f.read())
@@ -450,14 +451,19 @@ def _host_mtu(host_ip):
 @pytest.mark.feature("dmr_ip_gateway")
 @pytest.mark.usb_switch
 def test_dhcp_mtu_on_host(radio, pytestconfig):
-    """The link MTU as the host took it: the radio says net.mtu (DHCP option 26); a host whose DHCP client applies the
-    option has it on the adapter (many do, macOS may not: a warning, not a failure)."""
+    """The link MTU as the host took it. USB network: the radio says net.mtu (DHCP option 26); a host whose DHCP client
+    applies the option has it on the adapter (many do, macOS may not: a warning, not a failure). PPP (no DHCP): the
+    host's interface takes the MRU the radio asked for (ppp.mru, docs/spec/ppp.md 2), and pppd always applies it."""
     _, _, own, _ = _setup(radio, pytestconfig, tx=False)
-    with usb_network(radio, own) as (udp, host_ip, _):
-        _need_mtu_keys(_views(udp))
+    ppp = host_network_kind(radio) == "ppp"
+    with host_network(radio, own) as (udp, host_ip, _):
+        v = _views(udp)
+        _need_mtu_keys(v)
         mtu = _host_mtu(host_ip)
-    print("host adapter MTU:", mtu)
-    if mtu != LINK_MTU:
+    print("host interface MTU:", mtu, "over PPP, ppp.mru:" if ppp else "over USB", v.get("ppp.mru", "") if ppp else "")
+    if ppp:
+        assert mtu == v["ppp.mru"], f"the host's PPP interface MTU is {mtu}, not the radio's MRU {v['ppp.mru']}"
+    elif mtu != LINK_MTU:
         warnings.warn(f"the host's adapter MTU is {mtu}, not the {LINK_MTU} DHCP gave (its client ignores option 26?)")
 
 
@@ -470,19 +476,22 @@ def test_frag_needed_received(radio, pytestconfig, ip_settings):
     a raw ICMP socket on this host (root) sees the reply."""
     _, _, own, _ = _setup(radio, pytestconfig, tx=False)
     radio.link.ip_settings("off", "rules", 0, [])
-    if _udp_socket(df=True) is None:
+    probe = _udp_socket(df=True)
+    if probe is None:
         skip("bench", "this host can't set DF on a UDP socket (IP_MTU_DISCOVER / IP_DONTFRAG)")
+    probe.close()
     icmp = _icmp_socket()
     over_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | ((OVERSIZE_ID + 1) & 0xFFFFFF)))
-    with icmp, usb_network(radio, own) as (udp, host_ip, radio_ip):
+    # The sending socket stays open until the reply is in: Linux applies a UDP datagram's fragmentation needed through
+    # the socket that sent it, and drops it when that socket is gone
+    with icmp, host_network(radio, own) as (udp, host_ip, radio_ip), _udp_socket(df=True) as s:
         before = _views(udp)
         _need_mtu_keys(before)
-        with _udp_socket(df=True) as s:
-            s.bind((host_ip, SRC_PORT))
-            try:
-                s.sendto(_payload(0, MAX_FULL + 1), (over_ip, DST_PORT))
-            except OSError as e:
-                skip("state", f"this host refused the datagram itself ({e}): it already knows the path MTU to {over_ip}")
+        s.bind((host_ip, SRC_PORT))
+        try:
+            s.sendto(_payload(0, MAX_FULL + 1), (over_ip, DST_PORT))
+        except OSError as e:
+            skip("state", f"this host refused the datagram itself ({e}): it already knows the path MTU to {over_ip}")
         reply, end = None, time.monotonic() + 3
         while reply is None and time.monotonic() < end:
             icmp.settimeout(max(0.05, end - time.monotonic()))
@@ -494,12 +503,21 @@ def test_frag_needed_received(radio, pytestconfig, ip_settings):
             m = pkt[ihl:]
             if addr[0] == radio_ip and len(m) >= 8 + 20 and m[0] == ICMP_UNREACHABLE:
                 reply = m
+        # What the host kept, while the link is up: Linux reports a connected socket's path MTU (IP_MTU) and locks it
+        # at net.ipv4.route.min_pmtu (552 by default) when the reply is below that (usb-network.md 3.2): a warning
+        kept = None
+        if sys.platform.startswith("linux"):
+            time.sleep(0.2)
+            s.connect((over_ip, DST_PORT))
+            kept = s.getsockopt(socket.IPPROTO_IP, getattr(socket, "IP_MTU", 14))
         after = _views(udp)
     d = _delta(before, after, ["net.air_too_big", "net.frag_needed", "net.to_air"])
-    print("radio deltas:", d, "reply:", reply[:36].hex() if reply else None)
+    print("radio deltas:", d, "reply:", reply[:36].hex() if reply else None, "path MTU the host kept:", kept)
     assert d["net.air_too_big"] == 1 and d["net.frag_needed"] == 1 and d["net.to_air"] == 0, d
     assert reply is not None, "no ICMP destination unreachable from the radio"
     assert reply[1] == ICMP_FRAG_NEEDED and int.from_bytes(reply[6:8], "big") == AIR_MTU, reply[:8].hex()
     quoted = reply[8:28]
     assert str(ipaddress.IPv4Address(quoted[12:16])) == host_ip and str(ipaddress.IPv4Address(quoted[16:20])) == over_ip
     assert int.from_bytes(quoted[2:4], "big") == FULL_HEADER + MAX_FULL + 1, quoted.hex()
+    if kept is not None and kept != AIR_MTU:
+        warnings.warn(f"the host kept a path MTU of {kept} to {over_ip}, not {AIR_MTU}: below net.ipv4.route.min_pmtu?")

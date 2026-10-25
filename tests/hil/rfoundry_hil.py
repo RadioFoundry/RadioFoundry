@@ -481,6 +481,75 @@ def usb_network(radio, own_id, timeout=30.0):
                 time.sleep(0.25)
 
 
+def host_network_kind(radio):
+    """The radio's IP link to this host: "usb" (USB_NETWORK, the network adapter), "ppp" (NET_PPP only: PPP on the
+    serial host port, docs/spec/ppp.md) or None."""
+    feats = radio.features()
+    return "usb" if "USB_NETWORK" in feats else "ppp" if "NET_PPP" in feats else None
+
+
+@contextlib.contextmanager
+def ppp_network(radio, own_id, timeout=30.0):
+    """PPP on the radio's serial host port for the duration, as usb_network yields (udp, host_ip, radio_ip): pppd on
+    radio.port through tools/rfoundry_ppp.sh (root, or passwordless sudo), which adds the routes to 12.0.0.0/8 and
+    225.0.0.0/8. Afterwards, also on failure, pppd hangs up (LCP Terminate) and radio.link is opened again. Skips where
+    this host can't run it (no pppd, no root, the radio not on a local serial port)."""
+    import ipaddress
+    import shutil
+    port = str(radio.port)
+    if not port.startswith("/dev/"):
+        skip("bench", f"PPP needs the radio's serial port on this host, not {port}")
+    if not (shutil.which("pppd") or os.path.exists("/usr/sbin/pppd")):
+        skip("bench", "no pppd on this host")
+    sudo = [] if os.geteuid() == 0 else ["sudo", "-n"]
+    if sudo and subprocess.run(sudo + ["true"], capture_output=True).returncode != 0:
+        skip("bench", "pppd needs root: run as root or with passwordless sudo")
+    script = os.path.join(ROOT, "tools", "rfoundry_ppp.sh")
+    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | (own_id & 0xFFFFFF))
+    radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
+    radio.link.close()
+    up, udp = False, None
+    try:
+        r = subprocess.run(sudo + ["sh", script, port], capture_output=True, text=True, timeout=timeout + 30)
+        assert r.returncode == 0, f"pppd didn't bring the link up: {r.stdout}{r.stderr}"
+        up = True
+        end = time.monotonic() + timeout
+        while udp is None and time.monotonic() < end:
+            try:
+                udp = DebugLink(f"udp:{radio_ip}", timeout=1.0)
+                udp.ping()
+            except (DebugLinkError, OSError):
+                udp = None
+                time.sleep(0.5)
+        assert udp is not None, f"no debug link over UDP at {radio_ip} over PPP"
+        yield udp, str(host_ip), radio_ip
+    finally:
+        if udp is not None:
+            udp.close()
+        if up:
+            subprocess.run(sudo + ["sh", script, "--stop"], capture_output=True, timeout=10)
+        # pppd waits for the radio's Terminate-Ack before it lets go of the port; the debug link's first frame also
+        # takes the port back from PPP (ppp.md 4)
+        for _ in range(80):
+            try:
+                radio.link = DebugLink(radio.port, timeout=1.5)
+                radio.link.ping()
+                break
+            except (DebugLinkError, OSError):
+                time.sleep(0.25)
+
+
+@contextlib.contextmanager
+def host_network(radio, own_id, timeout=30.0):
+    """The radio's IP link to this host for the duration (the test needs --allow-usb-switch): the USB network adapter,
+    or PPP on the serial host port on a radio without one (host_network_kind). Yields as usb_network."""
+    kind = host_network_kind(radio)
+    if kind is None:
+        skip("not_built", "no IP link to the host (neither CONFIG_USB_NETWORK nor CONFIG_NET_PPP)")
+    with (usb_network if kind == "usb" else ppp_network)(radio, own_id, timeout) as link:
+        yield link
+
+
 def counter_deltas(before, after, keys):
     return {k: after.get(k, 0) - before.get(k, 0) for k in keys}
 
