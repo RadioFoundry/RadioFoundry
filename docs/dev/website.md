@@ -64,17 +64,37 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Feature names, help, dependencies | `config/features.mk` (the comment above each switch, the `needs` checks) |
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
-| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height |
+| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The Screenshots page (`/screenshots/`) shows every screen each radio's build has, a section per board, under the `groups` headings of `screens.json`, in its order. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height |
 | Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/rfoundry/rfoundry/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
 
 The build fails when a source doesn't parse, and warns (an error with `--strict`) when a feature has no row in the
-feature matrix, a screen isn't in `screens.json`, a string is missing from the English catalog, or a page links to a
-file the build didn't write.
+feature matrix, a screen isn't in `screens.json` or names a group it doesn't list, a string is missing from the English
+catalog (a screen's caption included), the Screenshots page lacks a board or a screen that board's build has, or a page
+links to a file the build didn't write.
 
 `data/*.json` is what the pages read and doubles as a public API for other tools: `radios.json`, `features.json`,
 `variants.json`, `flash-boards.json`, `screens.json`, `releases.json`, `site.json`.
+
+## The Screenshots page
+
+`/screenshots/` has a section per board, from the registry in its order, and a link per board at the top. Each section
+shows every shot in the board's gallery whose `screens.json` entry needs only switches the board's full build has (the
+radio page's six use the same test). A board's screens are one width: a gallery 160 pixels wide or less at twice its
+size (`image-rendering: pixelated`), a wider one as it is. A color page's shots in other highlight colors and themes
+(`<page>__<color>`) follow the page, hidden until the visitor ticks "Also show other highlight colors and themes" (CSS
+`:has()`, no script). `site.js` switches sections without reloading and keeps the address `#<radio>`, so a link can
+name a radio (each radio page links to its own). Without the script, CSS shows the section the address names
+(`:target`), else the first.
+
+Nothing on the page names a screen, a group or a radio:
+
+| To add | Touch |
+|---|---|
+| A screen | `tests/host/uiSim.c` (`gallery[]`) and `make -C tests/host ui-gallery`; its entry in `site/data/screens.json` (group, needs); its caption `screen.<name>` in `site/i18n/en.json` |
+| A group | `groups` in `screens.json` and its heading `screens.group.<group>` in `en.json` |
+| A radio | `boards/<radio>/` as [Adding a radio](adding-a-radio.md) says; `board.toml` `hardware.gallery` must name a display class the gallery has (`tools/boards.py check`) |
 
 ## Layout
 
@@ -88,7 +108,7 @@ file the build didn't write.
 | `site/rfoundrysite/tmpl.py`, `site/templates/` | Page markup (below) |
 | `site/i18n/` | String catalogs (below) |
 | `site/static/css/tokens.css`, `site.css` | Design tokens, then layout and components |
-| `site/static/js/site.js` | Theme toggle, menu, features filter, screen overlay on radio pages, the home page's screenshot carousel |
+| `site/static/js/site.js` | Theme toggle, menu, features filter, screen overlay on radio pages, the home page's screenshot carousel, the Screenshots page's radio links |
 | `site/static/js/flasher/` | The web flasher (below) |
 | `site/static/js/codeplug/` | Codeplug decoding and encoding, CSV, the radio transport, contacts sources ([codeplug-editor.md](codeplug-editor.md)) |
 | `site/static/js/editor/` | The Codeplug Editor page |
