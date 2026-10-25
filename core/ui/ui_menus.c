@@ -2637,10 +2637,10 @@ static const char *about_text(void)
 	sb_str(&b, "\nRadio: ");
 	sb_str(&b, board.name);
 	sb_str(&b, "\nMIT License, (c) 2026 The RadioFoundry Authors\n");
-	sb_str(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? "Authors: " : "Author: ");
+	// one author per line, in AUTHORS order: a comma-joined list wraps mid-name on every display
+	sb_str(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? "Authors:" : "Author:");
 	for (unsigned i = 0; i < RFOUNDRY_ABOUT_AUTHOR_COUNT; i++) {
-		if (i)
-			sb_str(&b, ", ");
+		sb_chr(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? '\n' : ' ');
 		sb_str(&b, about_authors[i]);
 	}
 	for (unsigned i = 0; i < RFOUNDRY_ABOUT_THIRD_PARTY_COUNT; i++) {
