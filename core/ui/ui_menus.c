@@ -1126,7 +1126,7 @@ static void share_to_select(uint16_t i, bool hold)
 }
 
 static const ui_scr_def_t share_to_screen = {
-	.name = "zone_share_to", .flags = SF_LIST | SF_FILTER, .prefix = "Send to",
+	.name = "zone_share_to", .flags = SF_LIST | SF_FILTER, .prefix = "Send To",
 	.hint = "0-9 find  OK send  Back", .empty = "No contacts: add them in qdmr",
 	.count = ui_filter_count, .item = contacts_item, .select = share_to_select,
 	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
@@ -1308,7 +1308,7 @@ static void offer_zone_select(uint16_t i, bool hold)
 }
 
 static const ui_scr_def_t offer_zone_screen = {
-	.name = "zone_offer_zone", .flags = SF_LIST, .prefix = "Add to zone", .hint = "OK add  Back",
+	.name = "zone_offer_zone", .flags = SF_LIST, .prefix = "Add to Zone", .hint = "OK add  Back",
 	.empty = "No zones",
 	.count = offer_zone_count, .item = offer_zone_item, .select = offer_zone_select,
 };
@@ -1636,7 +1636,7 @@ static uint16_t chinfo_count(void)
 
 static const char *chinfo_title(void)
 {
-	return ced_ch.name[0] != 0 ? ced_ch.name : "New channel";
+	return ced_ch.name[0] != 0 ? ced_ch.name : "New Channel";
 }
 
 // The zones holding the channel, as much as fits: "Fav, Local, Ga" / "Fav +2" / "3 zones" (text alternates)
@@ -2191,7 +2191,7 @@ static void discard_select(uint16_t i, bool hold)
 static const char *discard_body(void) { return "Discard the changes to this channel?"; }
 
 static const ui_scr_def_t discard_screen = {
-	.name = "discard", .flags = SF_LIST, .prefix = "Unsaved changes", .hint = TEXT_ALT_OPEN "OK choose  Back keep editing" TEXT_ALT_NEXT "OK choose  Back" TEXT_ALT_CLOSE,
+	.name = "discard", .flags = SF_LIST, .prefix = "Unsaved Changes", .hint = TEXT_ALT_OPEN "OK choose  Back keep editing" TEXT_ALT_NEXT "OK choose  Back" TEXT_ALT_CLOSE,
 	.count = discard_count, .item = discard_item, .select = discard_select, .body = discard_body,
 };
 
@@ -2534,7 +2534,7 @@ static void zpick_select(uint16_t i, bool hold)
 }
 
 static const ui_scr_def_t zpick_screen = {
-	.name = "zpick", .flags = SF_LIST | SF_FILTER, .prefix = "Add channel",
+	.name = "zpick", .flags = SF_LIST | SF_FILTER, .prefix = "Add Channel",
 	.hint = TEXT_ALT_OPEN "OK add  0-9 find  Back" TEXT_ALT_NEXT "OK add  Back" TEXT_ALT_CLOSE,
 	.empty = "Every channel is in it",
 	.count = ui_filter_count, .item = zpick_item, .select = zpick_select,
@@ -2679,7 +2679,7 @@ static const char *zdel_body(void)
 }
 
 static const ui_scr_def_t zdel_screen = {
-	.name = "zonedel", .flags = SF_LIST, .prefix = "Delete zone", .hint = "OK choose  Back cancel",
+	.name = "zonedel", .flags = SF_LIST, .prefix = "Delete Zone", .hint = "OK choose  Back cancel",
 	.count = zdel_count, .item = zdel_item, .select = zdel_select, .body = zdel_body,
 };
 #endif
@@ -2779,7 +2779,7 @@ static void chpick_select(uint16_t i, bool hold)
 	ui_pop();
 }
 
-static const char *chpick_title(void) { return ui_frame()->arg == 0 ? "TX contact" : "RX group list"; }
+static const char *chpick_title(void) { return ui_frame()->arg == 0 ? "TX Contact" : "RX Group List"; }
 
 static const ui_scr_def_t chpick_screen = {
 	.name = "chpick", .flags = SF_LIST | SF_FILTER, .hint = "OK pick  0-9 find  Back", .empty = "None stored",
@@ -2795,8 +2795,8 @@ static const ui_scr_def_t chpick_screen = {
 enum { INFO_POSITION, INFO_HOTSPOT, INFO_BATTERY, INFO_FIRMWARE, INFO_CODEPLUG, INFO_MY_RADIO, INFO_USB_NET,
        INFO_SFR };
 
-static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "About", "Codeplug", "My radio",
-					   "USB network", "Single-freq repeater" };
+static const char *const info_titles[] = { "Position", "Hotspot", "Battery", "About", "Codeplug", "My Radio",
+					   "USB Network", "Single-Freq Repeater" };
 
 // The USB personality can be switched here (the host link's network adapter, CONFIG_USB_NETWORK)
 #define USB_NET_UI	(CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
@@ -3429,7 +3429,7 @@ static void crash_enter(void)
 }
 
 static const ui_scr_def_t crash_screen = {
-	.name = "crash", .flags = SF_LIST | SF_NUMBERED, .prefix = "Crash log", .hint = "OK pick  Back",
+	.name = "crash", .flags = SF_LIST | SF_NUMBERED, .prefix = "Crash Log", .hint = "OK pick  Back",
 	.count = crash_count, .item = crash_item, .select = crash_select, .body = crash_body, .enter = crash_enter,
 };
 
@@ -3455,7 +3455,7 @@ static void crash_to_select(uint16_t i, bool hold)
 }
 
 static const ui_scr_def_t crash_to_screen = {
-	.name = "crash_to", .flags = SF_LIST | SF_FILTER, .prefix = "Send to",
+	.name = "crash_to", .flags = SF_LIST | SF_FILTER, .prefix = "Send To",
 	.hint = "0-9 find  OK pick  Back", .empty = "No contacts: add them in qdmr",
 	.count = ui_filter_count, .item = contacts_item, .select = crash_to_select,
 	.raw_count = contacts_raw_count, .raw_label = contacts_raw_label,
@@ -3688,6 +3688,7 @@ typedef struct {
 
 typedef struct {
 	const char *name;
+	const char *title;	// the group's page title, in Title Case (the name is its row in Settings)
 	const set_item_t *items;
 	uint8_t count;
 } set_group_t;
@@ -3944,11 +3945,13 @@ static const set_item_t s_advanced[] = {
 #endif
 };
 
-#define GROUP(nm, a) { nm, a, sizeof a / sizeof a[0] }
+#define GROUP(nm, a)		{ nm, nm, a, sizeof a / sizeof a[0] }
+#define GROUP_T(nm, t, a)	{ nm, t, a, sizeof a / sizeof a[0] }
 static const set_group_t groups[] = {
-	GROUP("Sound", s_sound), GROUP("Display", s_display), GROUP("Talk & listen", s_talk),
+	GROUP("Sound", s_sound), GROUP("Display", s_display), GROUP_T("Talk & listen", "Talk & Listen", s_talk),
 	GROUP("Privacy", s_privacy), GROUP("Location", s_location), GROUP("Connections", s_connections),
-	GROUP("Power", s_power), GROUP("Keys", s_keys), GROUP("My radio", s_my_radio), GROUP("Advanced", s_advanced),
+	GROUP("Power", s_power), GROUP("Keys", s_keys), GROUP_T("My radio", "My Radio", s_my_radio),
+	GROUP("Advanced", s_advanced),
 };
 #define GROUPS	(sizeof groups / sizeof groups[0])
 
@@ -4294,7 +4297,11 @@ static bool group_key(const input_event_t *ev)
 
 static void group_enter(void) { set_editing = false; }
 
-static const char *group_title(void) { return ui_set_group_name((uint8_t)ui_frame()->arg); }
+static const char *group_title(void)
+{
+	uint8_t g = (uint8_t)ui_frame()->arg;
+	return g < GROUPS ? groups[g].title : "";
+}
 
 static const ui_scr_def_t group_screen = {
 	.name = "group", .flags = SF_LIST, .hint = "OK change  Back",
@@ -4332,7 +4339,7 @@ static const char *confirm_body(void)
 }
 
 static const ui_scr_def_t confirm_screen = {
-	.name = "confirm", .flags = SF_LIST, .prefix = "Factory reset", .hint = "OK choose  Back cancel",
+	.name = "confirm", .flags = SF_LIST, .prefix = "Factory Reset", .hint = "OK choose  Back cancel",
 	.count = confirm_count, .item = confirm_item, .select = confirm_select, .body = confirm_body,
 };
 #else

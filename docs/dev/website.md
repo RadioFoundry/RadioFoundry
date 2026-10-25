@@ -20,29 +20,34 @@ The generator needs one Python package, markdown-it-py (`pip install -r site/req
 command with `uv run --no-project --with-requirements site/requirements.txt`). The pages need no build step and no
 npm packages: plain HTML, CSS and ES modules. `tools/ci.sh` builds the site and runs the tests (Python step).
 
-`.github/workflows/site.yml` builds it and deploys it to radiofoundry.org (see [Hosting](#hosting)):
+Cloudflare Pages builds and deploys it (see [Hosting](#hosting)):
 
-| Run | Does |
+| Event | Does |
 |---|---|
-| Nightly (07:17 UTC) | Builds and deploys only if something changed since the last deployment: a file the site is built from (`SITE_INPUTS` in the workflow), or a release published after it. Otherwise stops after the check |
-| By hand (Actions > Web site > Run workflow) | Always builds and deploys |
-| Pull request | Not run: the pull request's unit tests job builds the site (`--strict`) and runs the flasher's tests (`tools/ci.sh`'s Python step) |
+| Push to `main` | Builds the site with `site/cloudflare-build.sh` and deploys it to radiofoundry.org |
+| Push to another branch of this repository | Builds a preview at its own `*.radiofoundry.pages.dev` address; a pull request shows the link. Pull requests from forks get no preview |
+| Release published | `.github/workflows/site.yml` calls the project's deploy hook, so `main` is built again with the new release's images for the flasher |
+| By hand | Actions > Web site > Run workflow (the same deploy hook), or Retry deployment in the Pages project |
 
-A merge or a release therefore shows on the site the next morning, or right away when the workflow is run by hand.
+The pull request's unit tests job also builds the site (`--strict`) and runs the flasher's tests (`tools/ci.sh`'s
+Python step).
 
 ## Hosting
 
-The site is static files. nginx serves them from `/var/www/radiofoundry/current`, a symlink to one directory under
-`releases/`. The workflow's `build` job uploads the finished site as an artifact. Its `deploy` job runs on a
-self-hosted runner labeled `rfoundry-deploy`, which sits on the host that serves the site. The job copies the build
-into a new `releases/<sha>-<run>` directory, swaps the symlink in one step and keeps the last three builds.
-Only the nightly and manual runs reach that runner, never a pull request.
+The site is static files on Cloudflare Pages, project `radiofoundry`, connected to this repository through
+Cloudflare's GitHub app. Pages builds in its own build image (Python and Node.js preinstalled) and switches the site to
+a new deployment in one step, so a deployment has no downtime.
 
 | Part | Setup |
 |---|---|
-| nginx | One server block on port 80 with `root /var/www/radiofoundry/current`. TLS and the public name are the reverse proxy's and the CDN's |
-| Runner | A user without sudo that owns `/var/www/radiofoundry`, with a runner registered for the repository with the label `rfoundry-deploy` |
-| Roll back | Point `current` at an earlier directory in `releases/` (`ln -sfn releases/<id> current.new && mv -T current.new current`) |
+| Build | Command `site/cloudflare-build.sh`, output directory `build/site`, root directory the repository root. The script installs `site/requirements.txt`, fetches the newest release's `rfoundry-*` images from the GitHub API and runs `site/build.py --strict`. A failed build leaves the last deployment up |
+| Branches | Production branch `main`; every other branch of this repository builds a preview |
+| Variables | `PYTHON_VERSION` `3.12` (both environments). `RFOUNDRY_SENTRY_DSN` in production only, so previews send no error reports |
+| Custom domain | `radiofoundry.org` on the project (Custom domains). The `www` name redirects to it |
+| Release rebuild | The project's deploy hook, as `CLOUDFLARE_DEPLOY_HOOK` in the `site` environment (main and release tags only), which `site.yml` calls |
+| Analytics | Cloudflare Web Analytics, turned on in the project's Metrics tab. Pages adds the beacon to each deployment; it sets no cookies |
+| 404 | Pages serves the build's `404.html` for a missing page |
+| Roll back | The project's Deployments list: Rollback on an earlier production deployment |
 
 ## Sources
 
@@ -59,7 +64,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Feature names, help, dependencies | `config/features.mk` (the comment above each switch, the `needs` checks) |
 | Feature groups, titles, flash cost, notes | The tables in [feature-matrix.md](../feature-matrix.md) |
 | Variants and why each leaves a feature out | `config/variants/<id>.mk` ([build-config.md](../build-config.md)) |
-| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has |
+| Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height |
 | Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/rfoundry/rfoundry/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
@@ -83,7 +88,7 @@ file the build didn't write.
 | `site/rfoundrysite/tmpl.py`, `site/templates/` | Page markup (below) |
 | `site/i18n/` | String catalogs (below) |
 | `site/static/css/tokens.css`, `site.css` | Design tokens, then layout and components |
-| `site/static/js/site.js` | Theme toggle, menu, features filter, screen overlay on radio pages |
+| `site/static/js/site.js` | Theme toggle, menu, features filter, screen overlay on radio pages, the home page's screenshot carousel |
 | `site/static/js/flasher/` | The web flasher (below) |
 | `site/static/js/codeplug/` | Codeplug decoding and encoding, CSV, the radio transport, contacts sources ([codeplug-editor.md](codeplug-editor.md)) |
 | `site/static/js/editor/` | The Codeplug Editor page |
@@ -195,8 +200,8 @@ Every error also goes to the browser console (`[rfoundry] <stage> failed:`). Fai
 (`static/js/report.js`). It downloads a zip with `report.json` (the log, the browser, the tool's state) and, if the
 user ticks them, the edited codeplug and the one last read from the radio.
 
-Automatic error reports go to Sentry when the build has `RFOUNDRY_SENTRY_DSN` set (`site.yml` takes it from the
-repository variable of the same name; `site.json` `reports.sentry_dsn`). Without it nothing is sent and the privacy
+Automatic error reports go to Sentry when the build has `RFOUNDRY_SENTRY_DSN` set (a production variable of the
+Pages project; `site.json` `reports.sentry_dsn`). Without it nothing is sent and the privacy
 note is left off the pages. With it:
 
 | Sent | When |
