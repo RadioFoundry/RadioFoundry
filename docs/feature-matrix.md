@@ -73,6 +73,8 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_udp_compress` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `sfr` | not recorded | pass (seed) | pass (seed) | not written | ✕ |
+| `sfr_voting` | not recorded | not recorded | not recorded | not written | ✕ |
+| `sfr_cwid` | not recorded | not recorded | not recorded | not written | ✕ |
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded |
 | `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written |
 | `aprs_igate` | not recorded | off | not recorded | not written | not written |
