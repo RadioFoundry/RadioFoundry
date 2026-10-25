@@ -183,6 +183,10 @@ Two limits, and the host learns both.
   sends an ICMP type 3 code 4 from the radio's address to the sender, next-hop MTU 440, quoting the IP header and the
   first 8 octets (`net.frag_needed`). The host then keeps 440 for that destination and sends shorter datagrams (or
   refuses them, EMSGSIZE).
+- Linux keeps no path MTU below `net.ipv4.route.min_pmtu` (552 by default). It takes the reply, but locks the
+  destination's path MTU at 552 (`ip route get` shows `mtu lock 552`), so datagrams of 441 to 552 octets still reach
+  the radio and are dropped (answered again with DF set). Seen on Linux 6.18 over PPP. For the host to keep 440:
+  `sysctl net.ipv4.route.min_pmtu=440`, or keep UDP to the air at 412 octets of payload.
 - DF clear: dropped and counted, no ICMP. A router would fragment it, but there are no fragments on the air, and code
   4 is defined only for DF (RFC 1191).
 - No ICMP for an ICMP message other than an echo or echo reply, or for a multicast or broadcast destination (RFC 1122

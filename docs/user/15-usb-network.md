@@ -278,7 +278,8 @@ so confirm only where it helps. The settings are saved in the radio.
 One packet on the air carries at most 440 bytes of IP: 412 bytes of UDP data with the full header, up to 431 with the
 compressed one. Longer packets are not split; the radio drops them. A computer that marks its packets "don't
 fragment" (most do for TCP, and many programs for UDP) gets an ICMP "fragmentation needed" back with the size
-and sends shorter ones from then on. For other programs, keep UDP packets to radios at 412 bytes or less.
+and sends shorter ones from then on. For other programs, keep UDP packets to radios at 412 bytes or less. Linux
+won't go below 552 bytes this way unless you lower its floor first: `sudo sysctl net.ipv4.route.min_pmtu=440`.
 
 The network link itself takes 586 bytes (the radio gives this size to the computer by DHCP, and to PPP as its MRU), so
 the radio's own services, such as programming by TFTP, use full-size packets.
