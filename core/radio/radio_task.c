@@ -22,6 +22,9 @@
 #if CONFIG_APRS
 #include "aprs/aprs.h"
 #endif
+#if CONFIG_ZONE_WRITE
+#include "codeplug/zone_edit.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -189,6 +192,11 @@ void radio_core_start(void)
 	view_lock = xSemaphoreCreateMutex();
 	requests = xQueueCreate(RADIO_QUEUE_LEN, sizeof(radio_req_t));
 	configASSERT(view_lock != NULL && requests != NULL);
+#if CONFIG_ZONE_WRITE
+	// A zone add or delete a power cut interrupted: the saved zone indexes match the zones before the radio core reads
+	// them. Here, not in radio_sm_init: its frame isn't live under the settings save down to the flash driver
+	zone_edit_settle();
+#endif
 	radio_sm_init(&sm, hal_millis());
 	shared_view = sm.view;
 	shared_serial = sm.serial;
