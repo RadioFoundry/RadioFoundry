@@ -129,7 +129,7 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 |---|---|---|
 | Toggle | the other value, at once | Mode (FM / DMR, with `CONFIG_DMR`), RX only, Bandwidth (FM), Timeslot (DMR), VOX (FM), Direct mode (DMR), Talk permit beeps (DMR), Talker alias TS1 / TS2 (DMR), Scan, Battery saver |
 | Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX tone and TX tone (None, the CTCSS (PL) tones, the DCS codes normal then inverted; in a build without `CONFIG_SUBTONE`, such as a small-flash board's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
-| Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16777215) |
+| Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16776415, `CODEPLUG_DMR_ID_MAX`) |
 | Text | opens Text entry | Name |
 | Pick | opens the List picker | TX contact, RX group list |
 | Read only | nothing | Number, Zones |
@@ -165,7 +165,8 @@ one, long OK keeps. Names stop at `CODEPLUG_NAME_LEN` (16).
 Typed rows (frequencies, the ID): BACK takes back the last digit, and with none typed closes the editor; OK keeps what
 is typed, and with nothing typed leaves the row as it was. A new RX frequency moves TX with it, keeping a repeater's
 offset. Where that offset would put TX outside every band, TX becomes the new RX (simplex). Own ID refuses a digit
-that would take it past 16777215, and takes at most 8 digits.
+that would take it past 16776415 (the IDs above it are the network's: gateways, all call), and takes at most 8
+digits.
 
 ### 2.2 Zone editor
 

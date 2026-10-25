@@ -1490,7 +1490,7 @@ static uint8_t ced_n;
 #if CONFIG_CHANNEL_EDIT
 #define CE_TOT_MAX	495
 #define CE_TOT_STEP	15
-#define CE_ID_MAX	16777215
+#define CE_ID_MAX	((int32_t)CODEPLUG_DMR_ID_MAX)
 #define CE_DIGITS	UI_ENTRY_MAX	// a frequency, or an ID (8 digits too)
 
 static channel_t ced_orig;		// what is stored
@@ -1961,7 +1961,7 @@ static void ced_digit(char d)
 		if (ced_len >= CE_DIGITS)
 			break;
 		if (v > CE_ID_MAX) {
-			ui_toast("IDs go up to 16777215");
+			ui_toast("IDs go up to 16776415");
 			break;
 		}
 		ced_val = v;
