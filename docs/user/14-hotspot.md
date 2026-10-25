@@ -103,6 +103,9 @@ The host turns MMDVM SFR on by running duplex with the receive and transmit freq
 The repeat timing measured on air is in the [Radio reference](23-radios.md).
 ## Standalone SFR
 
+Experimental: calls through a standalone SFR don't come through reliably yet, between some radios not at all. What
+fails, on which radio, and the workarounds are in [Known issues by radio](../spec/sfr.md#6-known-issues-by-radio).
+
 A channel can be a single frequency repeater, or a radio using one, without a host. Set the channel's SFR role in the
 Codeplug Editor. The channel must have one frequency (receive = transmit).
 

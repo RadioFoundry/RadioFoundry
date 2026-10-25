@@ -12,7 +12,7 @@ There are two kinds:
 | Name | What | State |
 |---|---|---|
 | **MMDVM SFR** | The hotspot repeats; an MMDVM host turns it on and links it to a network (section 2) | Built, passes on air |
-| **Standalone SFR** | A channel set up for SFR in the codeplug, no host: the repeater roles (Rpt, Rpt Moto) and the user roles (User, ERDM) | Built, host tested; not yet on air (section 4) |
+| **Standalone SFR** | A channel set up for SFR in the codeplug, no host: the repeater roles (Rpt, Rpt Moto) and the user roles (User, ERDM) | Experimental: built, host tested, on the SDR bench; not reliable end to end (section 6) |
 
 ## 1. Layers
 
@@ -197,3 +197,25 @@ is active the SFR stays off, and without a role the SFR works exactly as describ
 - HIL: `tests/hil/test_hotspot_sfr.py` (MMDVM SFR on and off through MMDVM on the radio's channel, no traffic sent;
   marked `radio_tx` because a call heard would be repeated). On-air repeat tests need the driver work of section 3
   and the SDR bench (`tools/bench/mmdvm_hotspot.py --sfr`, `tools/bench/sfr_call.sh`).
+  `tests/hil/test_sfr_standalone.py` runs the standalone roles from codeplug channels: the repeater's inbound quality
+  (`sfr.rx_fec`, `sfr.rx_fec_pos`), TX inhibit, the CW ID and the user's receive modes against the bench talker, and
+  `test_sfr_chain_rfoundry_user`, a whole chain of RadioFoundry radios (talker, repeater, listener) judged by what the
+  listener played (`voice.rx_in`, `voice.rx_peak`, `voice.rx_repeats`).
+
+## 6. Known issues by radio
+
+Standalone SFR is experimental. This section names radios on purpose (an owner-approved exception to the generic-docs
+rule, `tools/generic_allow.txt`); keep each radio's details on its hardware page. Unless noted: SDR bench, 461.1375
+MHz, CC 2, the bench's MMDVM talker sending a 4-superframe group call (72 voice frames). "Bits" are AMBE bits the
+receiving radio's Golay decoders corrected (`sfr.rx_fec`, by frame place `sfr.rx_fec_pos`).
+
+| Radio | Role | What fails | How often | Evidence | Workaround |
+|---|---|---|---|---|---|
+| Any | Whole chain (user, repeater, user) | A call through a RadioFoundry repeater between RadioFoundry users doesn't come through clean | Hand test 2026-10-20 (DM-1701 user, DM-1801 Pro repeater, DM-32UV user, live voice): about 1 clean call in 30. SDR bench, same radios, debug-link PTT: 9 of 11 calls played whole | PR hand test; `test_sfr_chain_rfoundry_user` | None. MMDVM SFR (a host) is not affected |
+| DM-1701 | Repeater | Inbound bit errors sit in the first frame of each burst, the one right after the radio's own outbound burst, and the repeat carries them on | Every call: 54-66 bits per 72 frames, 48-54 of them in the first frame, no frame lost (3 calls, 2026-10-25) | Switching back to RX earlier trades them against our own burst: 28.0 ms after the key, inbound 17-39 bits but the repeat's last frame took 45-61 bits on the SDR (the burst cut short); 28.8 ms, inbound 104-143 bits. The timeslot interrupt (30.25 ms) stays. Dropping only the PA earlier did nothing (`hardware-dm1701.md` 6) | None needed to play: the errors are corrected. A weak inbound signal adds to them |
+| DM-1701 | User | Hears one copy of a call at a time, so First copy and Dual RX only switch copies between calls | Always | Gotchas 14.12 | Receive mode Repeater (the default) |
+| DM-1801 Pro | Repeater | The repeat carries the inbound bit errors on (about 1.3 bits a frame) | Every call | Gotchas 14.13; SDR bench rerun of the chain, 2026-10-24 | None; it plays |
+| DM-1801 Pro, DM-32UV | User | The listener played the call's first decoded burst over and over (stale voice RAM: the voice-access flag on the wrong chip slot) | Hand test 2026-10-20: most calls | Gotchas 14.15; fixed in the driver, `hrc7000DmrTest` test_rx_sfr_both_copies; on-air recheck: below | Receive mode Repeater |
+| DM-32UV | Repeater | Repeat quality falls with a weak, fading inbound path | One site: 39 of 72 frames repeated | `hardware-dm32.md` 8.9 | Put the repeater where it hears the users well |
+| DB25-D PRO | Any | Not built (`CONFIG_SFR=n`): same-frequency TX needs the BK4819 without its per-burst VCO calibration | - | `boards/db25d/config.mk` | None |
+| MD-380 | Any | Not available: the HR_C5000 lacks what the SFR uses (section 3) | - | Gotchas 14.6 | None |

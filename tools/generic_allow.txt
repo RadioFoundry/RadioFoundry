@@ -130,3 +130,6 @@ tests/hil/test_split_duplex.py per-radio skip reasons and bench notes
 # Generic docs that still name radios (AGENTS.md, generic docs). Exact paths only: a glob can't excuse a generic doc.
 # Each is to rewrite: say what a board provides (CAP_*, board_t) and link feature-matrix.md; move the radio's facts to
 # its own page.
+
+# One section of a generic doc that names radios on purpose (owner-approved): path#anchor, that section only.
+docs/spec/sfr.md#6-known-issues-by-radio the per-radio known issues of the experimental standalone SFR
