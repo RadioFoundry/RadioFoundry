@@ -203,8 +203,8 @@ static const flow_t flows[] = {
 	// task-flows.md 21 and 22 (ui.md 2.1). On channel 3 (DMR) the timeslot is the ninth row, the TX contact the tenth
 	{ "21 timeslot of the channel in use, saved", "", "ok 5 ok down down down down down down down down ok long:ok", "writes=1 toast=Saved_channel_3",
 	  13, true },
-	{ "21 TX contact opens the picker", "ok 5 ok down down down down down down down down down", "ok", "screen=chpick", 1, false },
-	{ "21 a change asks before discarding", "ok 5 ok down down down down down down down down ok", "back", "screen=discard", 1, false },
+	{ "21 TX contact opens the picker", "ok 5 ok down down down down down down down down down", "ok", "screen=chpick shows=TX_Contact", 1, false },
+	{ "21 a change asks before discarding", "ok 5 ok down down down down down down down down ok", "back", "screen=discard shows=Unsaved_Changes", 1, false },
 	{ "21 keep editing", "ok 5 ok down down down down down down down down ok back", "ok", "screen=channel", 1, false },
 	{ "21 discard goes back to Channels", "ok 5 ok down down down down down down down down ok back", "down ok", "screen=channels", 2, false },
 	{ "21 the name opens text entry", "ok 5 ok", "ok", "screen=text", 1, false },
@@ -361,6 +361,9 @@ static const flow_t flows[] = {
 	{ "S VFO step: auto, wide", "vfokey", "up", "freq=146545000", 1, false },
 	{ "S VFO step: auto, narrow", "vfokey quick 8 back", "up", "freq=146532500", 1, false },
 	{ "S VFO step: 2.5 kHz", "ok 7 3 down down down ok long:back vfokey", "up", "freq=146522500", 1, false },
+	// Page titles are in Title Case; the row that opens the page keeps its sentence case (ui.md 1)
+	{ "S a group's title in Title Case", "", "ok 7 3", "screen=group shows=Talk_&_Listen hides=Talk_&_listen", 3, false },
+	{ "S the group's row as it was", "", "ok 7", "screen=settings shows=Talk_&_listen", 2, false },
 	// Quick settings in the FM VFO: tile 8 is Width, as on a channel
 	{ "Q FM VFO: Width on 8", "vfokey", "quick 8", "toast=Bandwidth", 2, false },
 	{ "S VFO mode back to FM", "ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_FM mode=fm temporary=0", 2, false },
@@ -412,7 +415,7 @@ static const flow_t flows[] = {
 	{ "A stations heard", "", "ok 6 8 up ok", "screen=aprs-heard count=2", 5, false },
 	{ "A not in this build", "aprs:off", "ok 6 8 2", "toast=APRS:_not aprs_auto=0", 4, false },
 	// The crash log and its report (docs/spec/crash-log.md): Settings > Advanced > Crash log, after the restart
-	{ "C crash log from Advanced", "crash:on", "ok 7 0 down down down down ok", "screen=crash shows=Fault_3 crash_seen=1",
+	{ "C crash log from Advanced", "crash:on", "ok 7 0 down down down down ok", "screen=crash shows=Fault_3 shows=Crash_Log crash_seen=1",
 	  8, false },
 	{ "C crash: Off neither asks nor sends", "crash:on wait:2500", "", "screen=home crash_sends=0 crash_seen=0", 0, false },
 	{ "C crash: Ask prompts after the restart", "crash:ask wait:2500", "", "screen=crash shows=USA?",
@@ -459,6 +462,20 @@ static const flow_t flows[] = {
 #if CONFIG_ZONE_EDIT
 	// The zone editor (task-flows.md 23-26, ui.md 2.2). The radio is on channel 3, position 3 of zone 0 "Local
 	// repeaters" (channels 1-16); a zone's list is "Add channel", the channels, "Zone options"
+	// With zone sharing, Channel actions has Send channel to... before Remove and Zone options Send zone to... before
+	// Delete zone (zone-share.md 7)
+#if CONFIG_ZONE_SHARE
+#define ZC_REMOVE_KEY	"6"
+#define ZO_DELETE_KEY	"4"
+	{ "Z send channel to... from Channel actions", "ok 4 ctx ctx", "5", "shows=Send_To zs_sends=0", 1, false },
+	{ "Z the channel goes, back on the zone's list", "ok 4 ctx ctx 5", "ok",
+	  "screen=zone zs_sends=1 zs_one=1 zs_zone=0 zs_pos=2", 1, false },
+	{ "Z send zone to... from Zone options", "ok 4 ctx up up up up ok", "3 ok",
+	  "screen=zone zs_sends=1 zs_one=0 zs_zone=0", 2, false },
+#else
+#define ZC_REMOVE_KEY	"5"
+#define ZO_DELETE_KEY	"3"
+#endif
 	{ "23 move the channel in use down", "", "ok 4 ctx ctx 2", "pos=4 writes=1 toast=Position_4_of_16 screen=zchannel",
 	  5, true },
 	{ "23 the menu stays: the digit again moves it on", "ok 4 ctx ctx 2", "2 2", "pos=6 writes=3 toast=Position_6_of_16",
@@ -477,15 +494,15 @@ static const flow_t flows[] = {
 	{ "25 add channel 20 after the channel in use", "", "ok 4 ctx 2 ok 2 0 ok",
 	  "screen=zone writes=1 toast=Added_to focus=04_", 8, true },
 	{ "25 add channel offers only what the zone doesn't hold", "ok 4 ctx 2", "ok", "screen=zpick count=24", 1, false },
-	{ "25 remove from zone", "ok 4 ctx ctx", "5", "screen=zone writes=1 toast=Removed_from_Local", 1, true },
+	{ "25 remove from zone", "ok 4 ctx ctx", ZC_REMOVE_KEY, "screen=zone writes=1 toast=Removed_from_Local", 1, true },
 	{ "26 copy the zone in use", "", "ok 4 ctx up up up up ok 2",
 	  "screen=zones count=5 writes=1 toast=Copied_as_Local_repeater_2", 9, true },
 	{ "26 rename a zone", "ok 4 ctx up up up up ok 1", "back 2 ok", "screen=zoneedit writes=1 toast=Renamed shows=repeaterA",
 	  3, true },
-	{ "26 delete asks first, No focused", "ok 4 ctx up up up up ok", "3", "screen=zonedel focus=No writes=0", 1, false },
-	{ "26 delete: No keeps it", "ok 4 ctx up up up up ok 3", "ok", "screen=zoneedit writes=0", 1, false },
+	{ "26 delete asks first, No focused", "ok 4 ctx up up up up ok", ZO_DELETE_KEY, "screen=zonedel focus=No writes=0", 1, false },
+	{ "26 delete: No keeps it", "ok 4 ctx up up up up ok " ZO_DELETE_KEY, "ok", "screen=zoneedit writes=0", 1, false },
 	{ "26 delete a zone ahead of the zone in use: the radio follows", "ok 4 down down ok",
-	  "ok 4 up ctx up ok 3 down ok", "screen=zones count=3 zone=1 writes=1 toast=Deleted_Simplex", 9, true },
+	  "ok 4 up ctx up ok " ZO_DELETE_KEY " down ok", "screen=zones count=3 zone=1 writes=1 toast=Deleted_Simplex", 9, true },
 	// Another task's zone delete (an import, through the same storage job) with a zone's screens open
 	{ "26 another task deletes the open zone: its screens close", "ok 4 down ctx", "zonejob:1",
 	  "screen=zones toast=That_zone_was_deleted", 0, true },
@@ -494,9 +511,9 @@ static const flow_t flows[] = {
 	{ "26 another task deletes a zone ahead: the open one stays", "ok 4 down down ctx", "zonejob:0",
 	  "screen=zone toast=none shows=Hotspots", 0, true },
 	{ "26 delete a zone ahead of dual watch's B: B follows its zone", "quick 7 ctx 1 zone+ zone+",
-	  "ok 4 up ctx up ok 3 down ok back wait:500", "dual=1 azone=0 bzone=1 writes=1", 11, true },
+	  "ok 4 up ctx up ok " ZO_DELETE_KEY " down ok back wait:500", "dual=1 azone=0 bzone=1 writes=1", 11, true },
 	{ "26 delete dual watch's B zone: B's channel is in no other zone, the watch ends", "quick 7 ctx 1 zone+",
-	  "ok 4 ctx up up ok 3 down ok back wait:500", "dual=0 zone=1 writes=1 toast=Dual_watch_off", 11, true },
+	  "ok 4 ctx up up ok " ZO_DELETE_KEY " down ok back wait:500", "dual=0 zone=1 writes=1 toast=Dual_watch_off", 11, true },
 #endif
 };
 
@@ -979,6 +996,28 @@ static void no_battery_checks(void)
 	}
 }
 
+// A page's title is centered on every display class. Where it shares the status strip (displays under UI_TALL_PX)
+// the battery gives way to it; on tall displays the strip above the title row keeps the battery
+static void title_row_checks(void)
+{
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		bool merged = sim_geoms[g].h - 2 * sim_geoms[g].inset_tb < UI_TALL_PX;	// as ui_draw_top's gfx_height()
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		snprintf(buf, sizeof buf, "ok 7 expect:screen=settings expect:centered=Settings expect:%s=%%", merged ? "hides" : "shows");
+		bool ok = sim_run(buf, err, sizeof err);
+		if (ok) {	// a group page, opened from its sentence case row
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			snprintf(buf, sizeof buf, "ok 7 3 expect:centered=Talk_&_Listen");
+			ok = sim_run(buf, err, sizeof err);
+		}
+		if (!ok) {
+			printf("FAIL title row [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+	}
+}
+
 // Home's talk target line drops a contact name that only repeats the ID ("TG 201 TG 201" on the DB25-D, 2026-10-17)
 static int check_name_is_id(void)
 {
@@ -1024,6 +1063,7 @@ int main(void)
 	about_checks();
 	call_screen_checks();
 	no_battery_checks();
+	title_row_checks();
 
 	crawl(sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	crawl(sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");

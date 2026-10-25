@@ -277,6 +277,14 @@ spec = "docs/spec/usb-network.md"
 switch = "DMR_IP_GATEWAY"
 spec = "docs/spec/dmr-data.md"
 
+[feature.dmr_tx_spacing]
+spec = "docs/spec/dmr-data.md"
+source = ["core/dmr/dmrAirQueue.c", "core/dmr/dmrDataService.c"]
+
+[feature.zone_share]
+switch = "ZONE_SHARE"
+spec = "docs/spec/zone-share.md"
+
 [feature.dmr_control_station]
 switch = "DMR_CONTROL_STATION"
 spec = "docs/spec/usb-network.md"

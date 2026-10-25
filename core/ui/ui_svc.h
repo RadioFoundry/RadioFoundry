@@ -34,6 +34,7 @@
 #define UI_FEAT_VIBRATE		(1u << 16)	// ui_svc_vibrate: CONFIG_VIBRATE and hal_power_t.vibrate
 #define UI_FEAT_VOLUME		(1u << 17)	// the volume is the radio's to set: no knob (radio_volume_soft), VOL key + Settings
 #define UI_FEAT_BCAST		(1u << 18)	// a broadcast FM receiver (radio_bcast_capable): its VFO step setting
+#define UI_FEAT_ZONE_SHARE	(1u << 19)	// ui_svc_zone_* (zone sharing over DMR data, CONFIG_ZONE_SHARE)
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -198,6 +199,36 @@ bool ui_svc_crash_send(void);
 // UI_CRASH_TX_*: the last report's progress; OK also marks the record sent
 uint8_t ui_svc_crash_tx_state(void);
 
+// --- Zone sharing (CONFIG_ZONE_SHARE; ui_svc_zone.c, docs/spec/zone-share.md). Weak stubs say "not in this build" ---
+// Send zone `zone`, or only its channel at position `pos` when one is true, to a contact or talkgroup on the channel
+// in use. The channels that went (a zone may not fit whole; 0: nothing went: a send still going, no DMR channel, or
+// it can't be read); *total, when not NULL, the zone's channels. The end comes as UI_EV_ZONE_SENT
+uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bool group, uint8_t *total);
+typedef struct {
+	bool channel;		// one channel, not a zone
+	uint32_t serial;	// which offer: the calls below act on this one only
+	uint32_t src;		// the sender's DMR ID
+	uint8_t channels;	// in the record
+	uint8_t in_band;	// of them, the ones this radio can receive (the rest are left out)
+	char name[17];		// the zone's (or channel's) name as sent
+	char from[17];		// the sender's contact name, "" when not a contact
+} ui_zone_offer_t;
+// The offer waiting for the user (false: none). Opening it stops it from expiring
+bool ui_svc_zone_offer(ui_zone_offer_t *out);
+void ui_svc_zone_offer_open(uint32_t serial);
+// Row i of the preview: name, receive frequency, DMR or FM, whether the radio can receive it
+typedef struct {
+	char name[17];
+	uint32_t rx_hz;
+	bool dmr;
+	bool in_band;
+} ui_zone_offer_ch_t;
+bool ui_svc_zone_offer_channel(uint32_t serial, uint16_t i, ui_zone_offer_ch_t *out);
+void ui_svc_zone_offer_reject(uint32_t serial);
+// Import it (a storage job): a zone record becomes a zone, or updates the one an earlier send made; a channel record
+// joins zone `zone`. False: a codeplug write is still going on. The end comes as UI_EV_ZONE_IMPORTED
+bool ui_svc_zone_offer_import(uint32_t serial, uint16_t zone);
+
 // UI_SET_DUAL_B: 0 none, a codeplug channel number 1..CODEPLUG_CHANNELS_MAX, or a VFO (UI_DUAL_B_VFO + 0 or 1); with
 // UI_DUAL_ON when the watch runs (it comes back at power on), and UI_DUAL_B_SEL when B is selected: the code is then
 // A's, the channel the radio isn't on at power on (settings_t.dual_b, dual_state)
@@ -256,6 +287,7 @@ typedef enum {
 	// The VFO's automatic step in the broadcast band (Settings > Talk, CONFIG_BCAST_FM; radio_settings_t.bcast_step) in
 	// kHz: 200 (the odd tenths) or 100
 	UI_SET_BCAST_STEP,
+	UI_SET_ZONE_OFFERS,	// zone share offers from other radios: 0 Off (the default), 1 Ask (settings_t.zs_offers)
 	UI_SET_COUNT
 } ui_setting_t;
 
@@ -289,6 +321,10 @@ typedef enum {
 	UI_EV_CALL_ALERT_RESULT,	// our call alert: ok = the radio answered, else no answer after the retries
 	UI_EV_SAVE_FAILED,	// a save to the codeplug the UI asked for failed later (text: what failed)
 	UI_EV_POWER_OFF_FAILED,	// auto power off dropped the power latch but the radio is still on (the knob holds it)
+	UI_EV_ZONE_OFFER,	// another radio (id, name) offers a zone or channel (index 1): text "Zone Club, 24 channels"
+	UI_EV_ZONE_SENT,	// our zone to id (index 1: a talkgroup): ok = it went out whole
+	UI_EV_ZONE_IMPORTED,	// the import ended: ok with name (the zone here), index (channels), id 1 for an update; else
+				// text says why
 } ui_event_kind_t;
 
 typedef struct {
@@ -305,6 +341,9 @@ void ui_svc_boot_text(char line1[17], char line2[17]);
 
 // Queue an event for the UI (copies it). False when the queue is full (the event is dropped)
 bool ui_notify(const ui_event_t *ev);
+// Zone sharing (ui_svc_zone.c): ui_svc_data.c hands it the data service's zone events (DMR_DATA_EV_ZONE_*) to make
+// into UI events; false: none
+bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev);
 // Every UI pass: a package whose state the UI polls (rather than one that calls ui_notify) turns changes into events
 void ui_svc_poll(void);
 // Every UI pass: the side key assignment follows a codeplug a CPS wrote, and a change made in Settings goes to the

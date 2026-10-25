@@ -2598,6 +2598,8 @@ bool ui_svc_ram_set(uint8_t id, int32_t v) { if (id >= UI_SET_COUNT) return fals
 static ui_event_t last_ev;
 static int n_ev;
 bool ui_notify(const ui_event_t *ev) { last_ev = *ev; n_ev++; return true; }
+// Zone sharing's events are formatted by ui_svc_zone.c, not built here: passed on as they are
+bool ui_svc_zone_event(uint8_t kind, uint32_t id, ui_event_t *ev) { (void)kind; ev->id = id; return true; }
 static int cp_writes;
 static bool cp_write_fails;
 bool codeplug_set_channel(uint16_t n, const channel_t *ch)
@@ -4082,7 +4084,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(320);	// the settings records (page 1: 60 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(432);	// the settings records (page 1: 172 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);

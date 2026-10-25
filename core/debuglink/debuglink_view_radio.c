@@ -16,10 +16,14 @@
 #include "settings/settings.h"
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
+#if CONFIG_ZONE_SHARE
+#include "dmr/zone_share_api.h"
+#endif
 #endif
 
 #define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
 #define DL_SETTING_ENC_OPTIONS	31u	// SETTING id of the vocoder's encode options (VOCODER_OPT_*)
+#define DL_SETTING_ZS_OFFERS	32u	// SETTING id of zone share offers (zone_share_api.h)
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
@@ -161,8 +165,8 @@ static bool set_one(radio_settings_t *s, uint8_t id, uint16_t v)
 	case 27: if (v > 2) return false; s->roam_survey = (uint8_t)v; break;
 	case 28: s->rpt_beacon = v != 0; break;
 	case 30: if (v > RADIO_DUAL_DELAY_MAX_MS) return false; s->dual_delay_ms = v; break;
-	case 32: if (v >= RADIO_CWID_CODES || !CONFIG_SFR_CWID) return false; s->sfr_cwid = (uint8_t)v; break;
-	case 33: if (v > 2 || (v == 2 && !CONFIG_SFR_DUALPATH_RX)) return false; s->sfr_rx = (uint8_t)v; break;
+	case 33: if (v >= RADIO_CWID_CODES || !CONFIG_SFR_CWID) return false; s->sfr_cwid = (uint8_t)v; break;
+	case 34: if (v > 2 || (v == 2 && !CONFIG_SFR_DUALPATH_RX)) return false; s->sfr_rx = (uint8_t)v; break;
 	default: return false;
 	}
 	return true;
@@ -354,6 +358,19 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			return DL_ST_OK;
 		}
 #endif
+		// Zone share offers (zone-share.md 5.1), not stored: a restart brings back the setting's. Lets a test take
+		// offers without walking the Settings menu
+		if (a[0] == DL_SETTING_ZS_OFFERS) {
+#if CONFIG_ZONE_SHARE
+			if (v > ZS_OFFERS_ASK) {
+				return DL_ST_BAD_ARG;
+			}
+			zone_share_set_offers((uint8_t)v);
+			return DL_ST_OK;
+#else
+			return DL_ST_UNAVAILABLE;
+#endif
+		}
 		radio_settings_t s;
 		radio_get_settings(&s);
 		if (!set_one(&s, a[0], v)) {

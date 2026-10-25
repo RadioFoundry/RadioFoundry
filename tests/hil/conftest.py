@@ -89,6 +89,9 @@ def pytest_addoption(parser):
                      "--sfr-freq)")
     g.addoption("--sfr-listen-modes", default="0,1",
                 help="test_sfr_chain_rfoundry_user: the listener's receive modes (setting sfr_rx), one call each")
+    g.addoption("--peer-port", default=os.environ.get("RFOUNDRY_PEER_PORT"),
+                help="a second RadioFoundry radio that receives from the --radio-port radio (test_zone_share's "
+                     "receiver; its codeplug is backed up and put back)")
     g.addoption("--split-out-mhz", type=float, default=None,
                 help="MHz: test_split_pair, the repeater output the TX half sends on (its input is --dmr-freq, where "
                      "the bench calls); no default: one you may transmit on, inside the SDR's shared window")
