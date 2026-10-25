@@ -125,6 +125,15 @@ static inline uint16_t fd6818_rssi_raw(uint16_t r67) { return (uint16_t)((r67 & 
 // RSSI in dBm: reg 0x67 bits 8:0 / 2 - 160 (programming guide, squelch section; reg 0x2C's external LNA gain is
 // already taken off by the chip)
 static inline int16_t fd6818_rssi_dbm(uint16_t r67) { return (int16_t)((int16_t)fd6818_rssi_raw(r67) - 160); }
+// A board's RSSI correction: the guide's formula reads 20-40 dB high behind a radio's front end, by an amount that
+// changes with frequency (hardware-dm1801pro.md 5.4). Points by frequency, sorted, one band after the other
+typedef struct {
+	uint16_t mhz;
+	int8_t db;	// added to fd6818_rssi_dbm
+} fd6818_rssi_cal_t;
+// The correction at hz: linear between the points of its band (a gap over 100 MHz between two points splits the
+// bands), the nearest point's value outside them; 0 with no table
+int8_t fd6818_rssi_cal_db(const fd6818_rssi_cal_t *t, uint8_t n, uint32_t hz);
 // Noise for the core's squelch (hal_radio_t status, larger = more noise): reg 0x65 bits 7:0 plus an offset. Without a
 // signal the raw value reads 43-63 (UHF 43-51 on most channels, VHF and 420 MHz 57-63), and a strong carrier reads 8 (on
 // the SDR bench). The core's levels open below 64 (loosest) down to 40 (tightest), so the raw floor

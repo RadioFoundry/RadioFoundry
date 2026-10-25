@@ -222,6 +222,14 @@ static void test_rx(void)
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 2 && b.sync == DMR_SYNC_BS);
 	deframe(rti(0, DMR_BURST_IDLE, 3, 0, 1, 0));	// MS sync on the other chip slot: TS 1 learned
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 1);
+	// TDMA direct mode sync names the slot too, and the voice after it on the same chip slot keeps that number (an SFR
+	// user tells the talker's copy from the repeat on bursts B-F, which carry no sync)
+	deframe(rti(1, 0, 3, 3, 0, 0));			// voice A, TS2 sync, chip slot 0
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 2 && b.sync == DMR_SYNC_TS2);
+	deframe(rti(2, 0, 3, 0, 0, 0));			// voice B, no sync of its own
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 2);
+	deframe(rti(0, DMR_BURST_IDLE, 3, 0, 1, 0));	// the other chip slot: TS 1
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 1);
 	// Slot lock
 	hrc7000_dmr_rx_lock_slot(&eng, 2);
 	deframe(rti(0, DMR_BURST_IDLE, 3, 0, 1, 0));
@@ -241,6 +249,79 @@ static void test_rx(void)
 	uint32_t t = eng.tick;
 	tick(true);
 	CHECK(eng.tick == t);
+}
+
+// An SFR user hears every call twice: the talker's copy on one chip slot, the repeat three slots (90 ms) later on the
+// other. The chip writes the voice RAM only for a slot decided with the voice-access flag, else the burst reads the
+// bytes of the last one decoded. Each burst here carries its own payload when the chip decodes it: every voice burst
+// of both copies must come out with its own bytes (the flag once followed the last voice burst, so it was always on
+// the other slot and the listener played one burst over and over, 2026-10-20)
+static void test_rx_sfr_both_copies(void)
+{
+	setup();
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_run(&eng);
+	count_kind(DMR_EV_SLOT_TICK, NULL);
+
+	enum { BURSTS = 3 + 12 };	// 3 headers, two superframes
+	unsigned fresh = 0, stale = 0, voice = 0;
+
+	for (int n = 0; n < 2 * BURSTS + 3; n++) {
+		uint8_t cs = (uint8_t)(n & 1);
+
+		// The interrupt decides the slot LAYER2_STATUS b30 shows (gotchas 14.16): chip slot cs comes next
+		REG(C7_LAYER2_STATUS) = (uint32_t)cs << 30;
+		tick(false);
+		bool flag = REG(C7_LAYER2_TXRX_CTRL) == 0x8040;
+		int k = cs == 0 ? n / 2 : (n - 3) / 2;	// direct copy on chip slot 0, the repeat on chip slot 1
+
+		if (k < 0 || (cs == 1 && n < 3) || k >= BURSTS) {
+			count_kind(DMR_EV_SLOT_TICK, NULL);
+			continue;
+		}
+		uint8_t fam = cs == 0 ? 2 : 3;	// TS1 sync on the talker's copy, TS2 on the repeat
+		if (k < 3) {
+			deframe(rti(0, DMR_BURST_VOICE_LC_HEADER, 2, fam, cs, 0));
+			count_kind(DMR_EV_BURST_RX, NULL);
+			continue;
+		}
+		int v = (k - 3) % 6;
+		uint8_t mark = (uint8_t)(0x40 + (k - 3) * 2 + cs);	// burst and copy
+
+		if (flag) {
+			memset(&buf[C7_VOICE_RAM], mark, 27);
+		}
+		deframe(rti((uint8_t)(v + 1), 0, 2, v == 0 ? fam : 0, cs, 0));
+		dmr_burst_t b;
+
+		CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.kind == DMR_BURST_VOICE && b.voice_index == v);
+		CHECK(b.ts == (cs == 0 ? 1 : 2));
+		voice++;
+		if (b.payload[0] == mark && b.payload[26] == mark) {
+			fresh++;
+		} else {
+			stale++;
+		}
+	}
+	CHECK(voice == 24 && fresh == 24 && stale == 0);
+	// One copy ends with its terminator: its slot loses the flag, the other keeps it
+	REG(C7_LAYER2_STATUS) = 0;
+	tick(false);
+	deframe(rti(0, DMR_BURST_TERMINATOR_LC, 2, 2, 0, 0));
+	count_kind(DMR_EV_BURST_RX, NULL);
+	REG(C7_LAYER2_STATUS) = 1u << 30;
+	tick(false);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x8040);	// chip slot 1, the repeat still running
+	REG(C7_LAYER2_STATUS) = 0;
+	tick(false);
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);	// chip slot 0, the talker's copy over
+	// And with nothing more, the repeat's slot loses it too after the voice-lost time
+	for (int i = 0; i < 16; i++) {
+		REG(C7_LAYER2_STATUS) = (uint32_t)(i & 1) << 30;
+		tick(false);
+	}
+	CHECK(REG(C7_LAYER2_TXRX_CTRL) == 0x40);
 }
 
 // The receiver drops its slot timing when it stops giving bursts: at the end of a reception and when the chip keeps
@@ -600,6 +681,35 @@ static void test_mic_gain(void)
 	CHECK(buf[C7_CODEC + C7_CODEC_GCR_ADCL] == 0x85u);
 }
 
+// Line out gain (GCR_DACL bits 5:0, bit 7 shared): dB to code both ways of 0 dB and clamped; a soft volume's steps (0 dB
+// at the default step, 3 dB a step below, top_db spread above); the gain survives power-on init and FM receive, which
+// wrote 0 dB over it before (the DB25-D's DMR voice ignored its volume)
+static void test_dac_gain(void)
+{
+	CHECK(hrc7000_dac_code(0) == 0 && hrc7000_dac_code(-7) == 7 && hrc7000_dac_code(-31) == 31);
+	CHECK(hrc7000_dac_code(-40) == 31 && hrc7000_dac_code(1) == 63 && hrc7000_dac_code(16) == 48);
+	CHECK(hrc7000_dac_code(32) == 32 && hrc7000_dac_code(50) == 32);
+	CHECK(hrc7000_volume_db(8, 8, 16, 12) == 0 && hrc7000_volume_db(7, 8, 16, 12) == -3);
+	CHECK(hrc7000_volume_db(1, 8, 16, 12) == -21 && hrc7000_volume_db(0, 8, 16, 12) == HRC7000_DAC_MIN_DB);
+	CHECK(hrc7000_volume_db(12, 8, 16, 12) == 6 && hrc7000_volume_db(16, 8, 16, 12) == 12);
+	CHECK(hrc7000_volume_db(40, 8, 16, 12) == 12 && hrc7000_volume_db(1, 16, 16, 0) == HRC7000_DAC_MIN_DB);
+	for (unsigned s = 2; s <= 16; s++) {
+		CHECK(hrc7000_volume_db(s, 8, 16, 12) > hrc7000_volume_db(s - 1u, 8, 16, 12));	// every step is louder
+	}
+	setup();
+	CHECK(dev.dac_gain == 0);
+	hrc7000_set_dac_gain(&dev, hrc7000_dac_code(-9));
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_DACL] == 0x89u && dev.dac_gain == 9);
+	buf[C7_CODEC + C7_CODEC_GCR_DACL] = 0;
+	hrc7000_power_on_init(&dev, 128, 20);
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_DACL] == 0x89u);
+	buf[C7_CODEC + C7_CODEC_GCR_DACL] = 0;
+	hrc7000_fm_rx(&dev, false);
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_DACL] == 0x89u);
+	hrc7000_set_dac_gain(&dev, hrc7000_dac_code(12));
+	CHECK(buf[C7_CODEC + C7_CODEC_GCR_DACL] == (0x80u | 52u));
+}
+
 // Codec mixer route for CPU-made FM TX audio: the last mixer write on is MIX_2 mix_rec (MIX_3 went first), the mic
 // mute bit is left alone (the mix zeroes the ADC's input instead), and off leaves the mixer disabled
 static void test_codec_dac_to_tx(void)
@@ -630,16 +740,19 @@ static void test_fm_tx_limit(void)
 	dev.fm_tx_limit[0] = dev.fm_tx_limit[1] = 0;
 }
 
-// RF_CONTROL at power-on: the RF TX interrupt 3.1 ms ahead unless the board set its lead, the other fields unchanged
+// RF_CONTROL: the RF TX interrupt 3.1 ms ahead unless the board set its lead, the other fields unchanged. The setter
+// reaches the chip after power-on (a board once set the field after it, and kept 3.1 ms), and power-on keeps it
 static void test_rf_tx_lead(void)
 {
 	setup();
 	hrc7000_power_on_init(&dev, 128, 20);
 	CHECK(REG(C7_RF_CONTROL) == 0x00041F1Au);
-	dev.rf_tx_lead = 20;	// one board's 2.0 ms
+	hrc7000_set_rf_tx_lead(&dev, 4);	// a board's 0.4 ms
+	CHECK(REG(C7_RF_CONTROL) == 0x0004041Au);
 	hrc7000_power_on_init(&dev, 128, 20);
-	CHECK(REG(C7_RF_CONTROL) == 0x0004141Au);
-	dev.rf_tx_lead = 0;
+	CHECK(REG(C7_RF_CONTROL) == 0x0004041Au);
+	hrc7000_set_rf_tx_lead(&dev, 0);
+	CHECK(REG(C7_RF_CONTROL) == 0x00041F1Au);
 }
 
 // FM TX tone: DTMF digit 1 with both tones at the step for hz, the DTMF deviation while it plays, everything back after
@@ -1096,6 +1209,7 @@ int main(void)
 {
 	test_pure();
 	test_rx();
+	test_rx_sfr_both_copies();
 	test_rx_slot_arg();
 	test_rx_voice_ram_call();
 	test_bs_mode_cleared();
@@ -1111,6 +1225,7 @@ int main(void)
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
 	test_mic_gain();
+	test_dac_gain();
 	test_codec_dac_to_tx();
 	test_audio_lock();
 	test_fm_tx_limit();

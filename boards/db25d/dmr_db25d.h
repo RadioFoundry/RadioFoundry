@@ -40,7 +40,7 @@ void db25d_dmr_tx_disarm(void);
 typedef void (*db25d_wait_fn)(uint32_t us);
 void db25d_burst_on(db25d_wait_fn wait);
 // elapsed_us after the burst's RF TX interrupt; now = no hold (an aborted transmission). Returns how late the ramp
-// down started against the stock point, in us
+// down started against its point (the burst's last symbol, db25d_dmr_off_at_us), in us
 uint32_t db25d_burst_off(db25d_wait_fn wait, uint32_t elapsed_us, bool now);
 // For the diagnostics page
 typedef struct {

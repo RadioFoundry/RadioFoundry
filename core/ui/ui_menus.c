@@ -20,6 +20,9 @@
 #include "hostlink/hostlink.h"
 #endif
 #include "rfoundry_about.h"
+#if CONFIG_SFR
+#include "dmr/sfr.h"
+#endif
 
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "host"
@@ -2926,10 +2929,36 @@ static const char *info_body(void)
 		sb_str(&b, "USB network: not in this build");
 #endif
 		break;
-	case INFO_SFR:
-		sb_str(&b, CONFIG_SFR ? "Runs in hotspot mode: the hotspot host turns it on. Repeater and user roles on a "
-			"channel: not built yet." : "Single-freq repeater: not in this build");
+	case INFO_SFR: {
+#if CONFIG_SFR
+		// The channel's SFR role and what it is doing now (docs/spec/sfr.md 4)
+		const radio_dmr_view_t *d = &ui_view()->dmr;
+		char in = d->sfr_inbound ? '2' : '1', out = d->sfr_inbound ? '1' : '2';
+
+		if (ui_view()->ch.mode != RADIO_MODE_DMR || d->sfr_role == SFR_ROLE_OFF) {
+			sb_str(&b, "This channel has no SFR role. Set Repeater or User in the Codeplug Editor, on a channel "
+				"with one frequency.");
+		} else if (d->sfr_role == SFR_ROLE_RPT_STANDARD || d->sfr_role == SFR_ROLE_RPT_MOTOROLA) {
+			sb_str(&b, d->sfr_role == SFR_ROLE_RPT_MOTOROLA ? "Repeater (ERDM style)\nIn TS" : "Repeater\nIn TS");
+			sb_chr(&b, in);
+			sb_str(&b, ", out TS");
+			sb_chr(&b, out);
+			sb_str(&b, !d->sfr_rpt ? "\nOff: transmit not allowed now" : d->sfr_cw ? "\nSending its CW ID" : d->sfr_busy ? "\nRepeating a call" :
+				d->sfr_keyed ? "\nHang time" : "\nListening");
+		} else {
+			sb_str(&b, d->sfr_role == SFR_ROLE_USER_ERDM ? "User of an ERDM repeater\nTalk on TS" :
+				"User of a repeater\nTalk on TS");
+			sb_chr(&b, in);
+			sb_str(&b, ", hear TS");
+			sb_chr(&b, in);
+			sb_str(&b, " and TS");
+			sb_chr(&b, out);
+		}
+#else
+		sb_str(&b, "Single-freq repeater: not in this build");
+#endif
 		break;
+	}
 	default:
 		break;
 	}
@@ -3954,6 +3983,18 @@ static const char *const n_zsoffers[] = { "Off", "Ask" };
 static const int16_t v_netlink[] = { 0, 1 };
 static const char *const n_netlink[] = { "By DMR ID", "192.168.10.x" };
 #endif
+#if CONFIG_SFR
+static const int16_t v_sfrrx[] = { 0, 1,	// dmr_sfr_rx_t
+#if CONFIG_SFR_DUALPATH_RX
+				   2,
+#endif
+};
+static const char *const n_sfrrx[] = { "Repeater", "First copy", "Dual-path RX" };
+#endif
+#if CONFIG_SFR_CWID
+static const int16_t v_sfrcwid[] = { 0, 1, 2, 3, 4 };	// radio_cwid_interval_ms codes
+static const char *const n_sfrcwid[] = { "Off", "5 min", "10 min", "15 min", "30 min" };
+#endif
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
 static const char *const n_ptype[] = { "Off", "Motorola", "Anytone" };
 
@@ -4002,6 +4043,12 @@ static const set_item_t s_talk[] = {
 #if CONFIG_DUAL_WATCH
 	TOGGLE("Dual watch talk back", "reply other channel A B", UI_SET_DUAL_TALK_BACK),
 	LIST("Dual watch delay", "resume wait reply A B", UI_SET_DUAL_DELAY_MS, v_dual_wait, n_dual_wait),
+#endif
+#if CONFIG_SFR
+	LIST("SFR receive", "single frequency repeater both copies dual-path rx", UI_SET_SFR_RX, v_sfrrx, n_sfrrx),
+#endif
+#if CONFIG_SFR_CWID
+	LIST("SFR CW ID", "single frequency repeater morse callsign identify", UI_SET_SFR_CWID, v_sfrcwid, n_sfrcwid),
 #endif
 };
 static const set_item_t s_privacy[] = {

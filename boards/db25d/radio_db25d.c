@@ -49,6 +49,12 @@
 #define DB25D_VOL_GAIN_TOP	15u
 #endif
 #define DB25D_VOL_GAIN_DEFAULT	3u
+// The same steps on the PCM path (DMR voice, beeps), which leaves the modem's codec line out and never passes the
+// BK4819's AF gain (4.5): the line out gain, 0 dB at the default step as before the volume reached it, 3 dB a step
+// below and up to this many dB at the top step (hrc7000_volume_db). Not measured at the speaker (INF)
+#ifndef DB25D_PCM_VOL_TOP_DB
+#define DB25D_PCM_VOL_TOP_DB	12
+#endif
 #define TX_RX_OFF_US		50u		// 3.2: RX paths off, then this long before the transmitter is tuned
 #define TX_SETTLE_MS		3u		// ours: the chip's VCO calibration, before the PA is selected. The stock has none beyond the page's delay
 #define TX_SUPPLY_US		200u		// 3.2: PA select and PTA23 low, then this long before the TX supply
@@ -70,12 +76,14 @@ static bool transmitting;
 static bool audio_open;		// what audio() was last asked, restored after a transmission
 static bool vol_muted;		// volume step 0: the chip output stays off whatever audio() asks
 static uint8_t vol_gain = DB25D_VOL_GAIN_DEFAULT;	// the AF DAC gain nibble the volume step selects
+static uint8_t vol_dac;		// the modem's line out gain code the volume step selects (0 = 0 dB, the default step)
 static bool tx_uhf;
 static uint16_t tx_pa;
 static uint16_t tx_off_us;
 static bool dmr_armed;		// DMR TX armed by tx(): the bursts key the RF (dmr_db25d.c)
 #if CONFIG_DMR && DB25D_DMR_TX
 static uint16_t tx_on_us;
+static uint8_t tx_lead;		// the RF TX interrupt's lead, 100 us steps (db25d_dmr_rf_tx_lead)
 static uint32_t tx_hz;
 static void dmr_disarm(void);
 #endif
@@ -180,6 +188,7 @@ static void init(void)
 
 	// The modem block powered as the DMR glue does, so the reference trim reaches the TCXO in FM builds too
 	hrc7000_attach(&modem, (volatile uint32_t *)HRC7000_REG_BASE, (volatile uint8_t *)HRC7000_BUF_BASE);
+	hrc7000_set_dac_gain(&modem, vol_dac);	// before the init, which writes it: a volume given before init() holds
 	hrc7000_power_on_init(&modem, db25d_cal_tx_center(), DB25D_MIC_GAIN_DB);
 	ref_trim(BIAS_DEFAULT_HZ);
 
@@ -218,10 +227,11 @@ static void speaker_source(void)
 
 // The speaker pins: on for an open squelch (audio()) or while the modem plays samples. DMR voice never opens the
 // squelch path (the radio core leaves the speaker to the PCM stream), so without the PCM term a call played silently.
+// Volume step 0 keeps the amplifier off: the line out's least gain (-31 dB) isn't silent.
 // Off: the amplifier first, so the source switch isn't heard; on: the source first
 static void speaker_pins(void)
 {
-	bool on = (audio_open || pcm_on) && !transmitting;
+	bool on = (audio_open || pcm_on) && !transmitting && !vol_muted;
 	uint32_t s = hrc_irq_save();	// also called from the audio task (db25d_speaker_pcm): the pin writes are read-modify-write
 	if (!on) {
 		hrc_pin_write(PIN_SPK_BODY, true);
@@ -322,9 +332,10 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_pa = plan.pa;
 	tx_on_us = plan.on_us;
-	tx_off_us = plan.off_us;
+	tx_lead = db25d_dmr_rf_tx_lead(plan.on_us);
 	tx_hz = hz;
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(db25d_cal_tx_center(), db25d_cal_mod(hz)));
+	hrc7000_set_rf_tx_lead(&modem, tx_lead);
 	bk4819_dmr_tx_prepare(&rf_main);
 	DAC_DATA_B = 0;
 	hrc_dac_b_power(true);
@@ -364,24 +375,23 @@ void db25d_burst_on(db25d_wait_fn wait)
 	apc_ramp(tx_pa, true);
 }
 
-// The stock TX off after a burst: the hold until the ramp-down point (db25d_dmr_hold_us; none when now), the ramp
-// down, supplies and PA selects off with PTA23 high, 300 us, the main chip back to the IF and the LO on again, 300 us,
-// the RX path of the band, 200 us. Returns how late the ramp down started, in us
+// TX off after a burst: the hold until the burst's last symbol (db25d_dmr_hold_us; none when now), the ramp down,
+// supplies and PA selects off with PTA23 high, the main chip back to the IF and the LO on again, the RX path of the
+// band. The stock's waits between these steps (300, 300 and 200 us) are left out: they kept the receiver off for the
+// start of the next slot's burst, which an SFR repeater has to hear (hardware-db25d.md 4.5). Returns how late the ramp
+// down started, in us
 uint32_t db25d_burst_off(db25d_wait_fn wait, uint32_t elapsed_us, bool now)
 {
-	uint32_t late = now ? 0 : db25d_dmr_late_us(elapsed_us, tx_off_us);
+	uint32_t late = now ? 0 : db25d_dmr_late_us(elapsed_us, tx_lead);
 	if (!now) {
-		wait(db25d_dmr_hold_us(elapsed_us, tx_off_us));
+		wait(db25d_dmr_hold_us(elapsed_us, tx_lead));
 	}
 	apc_ramp(tx_pa, false);
 	tx_paths_off();
 	hrc_pin_write(PIN_RX_SUPPLY, true);
-	wait(TX_END_PATH_US);
 	bk4819_burst_tune(&rf_main, IF_HZ, BK4819_STATE_RX);
 	bk4819_lo_resume(&rf_lo);
-	wait(TX_END_PATH_US);
 	rx_paths(rx_hz, true);
-	wait(TX_END_RX_US);
 	return late;
 }
 #endif
@@ -573,7 +583,8 @@ static void audio(bool on)
 
 // The speaker volume (the radio core passes the step as a percent, no knob here): the chip's AF DAC gain, register 0x48 bits
 // 3:0, stepping with DB25D_VOL_GAIN_TOP. Step 0 closes the chip output as well, as the gain alone isn't known to be
-// silent. DMR: the chip's output is the modem's input (4.5), so it keeps the stock gain; the volume comes back with FM
+// silent. DMR: the chip's output is the modem's input (4.5), so it keeps the stock gain; the volume comes back with FM.
+// The PCM path's gain (vol_dac) is set in volume() in every mode
 static void volume_apply(void)
 {
 	if (!supported || mode == RADIO_MODE_DMR || transmitting) {
@@ -591,6 +602,11 @@ static void volume(uint8_t percent)
 	}
 	vol_muted = step == 0;
 	vol_gain = step == 0 ? 0 : (uint8_t)(((step - 1u) * DB25D_VOL_GAIN_TOP + (RADIO_VOLUME_MAX - 1u) / 2u) / (RADIO_VOLUME_MAX - 1u));
+	vol_dac = hrc7000_dac_code(hrc7000_volume_db(step, RADIO_VOLUME_DEFAULT, RADIO_VOLUME_MAX, DB25D_PCM_VOL_TOP_DB));
+	if (modem.buf != NULL) {	// attached by init(), which applies vol_dac itself
+		hrc7000_set_dac_gain(&modem, vol_dac);
+		speaker_pins();		// step 0 and back: the amplifier
+	}
 	volume_apply();
 }
 
@@ -618,6 +634,7 @@ const hal_radio_t db25d_radio = {
 	.status = status,
 	.audio = audio,
 	.volume = volume,
+	.volume_pcm = true,	// the modem's line out gain scales DMR voice and beeps (vol_dac)
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,

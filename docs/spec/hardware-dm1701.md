@@ -656,10 +656,24 @@ Ordering:
   enable 1 high, PA band select, then PA enable 2 high. The DAC drive is set when the TX frequency is written.
 - Enter RX: PA enable 1 and 2 low first; RX supply for the band; AT1846S reg 0x30 to the RX value; HR_C6000 to FM RX or
   DMR.
-- Burst-by-burst DMR TX (the PA follows the bursts): to TX, reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX,
-  both RX supplies off, then the PA; back to RX, the PA enables low, reg 0x30 receiver off, the RX frequency if it
-  differs, the RX supply for the band, reg 0x30 RX on. The receiver must work between bursts (an SFR's inbound slot,
-  `sfr.md` 3). The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
+- Burst-by-burst DMR TX (the PA follows the bursts), keyed 1 ms after the RF TX interrupt (it comes about 1.28 ms
+  before the slot boundary; keyed at once, the PA cut the end of the inbound burst an SFR receives in the other slot).
+  Two sequences:
+  - Direct, when the synthesizer already holds the TX frequency (SFR, simplex) and the band is UHF: reg 0x30 straight
+    from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) = calibrated value + 42, both RX supplies off, then the PA. Back to
+    RX: the PA enables low, 4:0x04 = calibrated value, the RX supply, reg 0x30 RX on. RX straight to TX puts the
+    carrier about 3.07 kHz low, and a frequency write can't correct it (the AT1846S applies one only coming out of
+    idle); 42 steps of about 75 Hz put it back (measured at 461.1375 MHz: +16..+60 Hz). The idle step that the other
+    sequence takes every slot makes the synthesizer settle again, and an SFR lost the first and last frames of its
+    inbound bursts to it: about 190 bit errors and 5-10 lost frames per 72 repeated frames, against about 60 and none
+    direct (SDR bench, 2026-10-19).
+  - Through idle, otherwise (VHF, where 3.07 kHz is more steps than the register holds; RX and TX frequencies that
+    differ): reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX, both RX supplies off, then the PA. Back to RX,
+    the PA enables low, reg 0x30 receiver off, the RX frequency if it differs, the RX supply for the band, reg 0x30 RX
+    on. Going straight back to RX after a burst entered from idle leaves the receiver about 3 kHz off.
+
+  The receiver must work between bursts (an SFR's inbound slot, `sfr.md` 3). Dropping the PA earlier than the next
+  timeslot interrupt (28.5-30 ms after the RF TX interrupt) did not reduce the inbound errors. The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
   pins: the last burst of a call (the terminator) is still in flight after the PA logic has gone back to RX once.
 - Power-down: PA enables low, both RX supplies low, mic power optionally low, HR_C6000 PWD high, AT1846S reg 0x30 =
   receiver off value.
@@ -1440,6 +1454,12 @@ Verified on one radio with the new firmware; they override the unverified notes 
   decoded nothing; a wide-AFC SDR decoder still did). Retuning with the receiver off before every burst (as FM TX
   does) brings it to about +65 Hz, and the MMDVM_HS receiver decodes headers, all superframes with the embedded LC
   and the terminator. Burst spacing 60.000 ms (sd 0.002 ms), 31 ms PA per burst.
+
+### 20.1 SFR user (SDR bench, 2026-10-19)
+
+A bench call (TS1 sync) from the SDR bench through a standalone repeater was played whole, 24 of 24 voice bursts, no
+frame lost. The radio never reported the repeated copy during the call: its HR_C6000 decodes the voice of the slot it
+locked onto (gotchas 14.12). With `sfr_rx` 1 or 2 it falls over to the other copy only between calls or after a loss.
 
 ## 21. Audio paths for USB audio (bench study)
 

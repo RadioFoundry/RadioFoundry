@@ -2040,7 +2040,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	// "DMR modem off" only once it's been off a while: a channel or mode change (APRS on FM and back, a retune)
 	// turns the modem off for a moment, and a warning that flashes up for a few frames only worries
 	static uint32_t dmr_off_since;
-	if (v->ch.mode == RADIO_MODE_DMR && !v->dmr.active) {
+	if (v->ch.mode == RADIO_MODE_DMR && !v->dmr.active && !v->dmr.sfr_rpt) {	// an SFR repeater has the modem
 		if (dmr_off_since == 0)
 			dmr_off_since = now != 0 ? now : 1;
 	} else {

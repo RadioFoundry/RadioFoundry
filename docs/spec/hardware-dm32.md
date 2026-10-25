@@ -758,6 +758,22 @@ switch after the burst moves it back (`fd6818_dmr_burst_at`). A simplex channel 
 this (issue 72), `tx` tuned the synthesizer to the TX frequency at key-up and left it there: the radio was deaf to the
 hotspot's downlink, never aligned to it, and its bursts were not taken. The radio's own firmware retunes at every burst end too. The PLL lock time after each retune is not measured yet (HIL check open).
 
+RadioFoundry raises the RF TX interrupt **0.4 ms** before each burst (`hrc7000_t.rf_tx_lead` = 4), not the driver's 3.1 ms. At
+the interrupt the switch above leaves receive, and with a long lead it cut off the end of the inbound burst before
+ours. The same fault shows on other HR_C7000 boards. An SFR repeat sweep (SDR bench,
+2026-10-20, 72 inbound frames per call, the radio in another room from the bench, so with a weak signal):
+
+| Lead | Frames lost per call | Bits corrected per call in the frames before ours |
+|---|---|---|
+| 2.0 ms | 7, 9, 17 | 79-143 |
+| 1.2 ms | 4, 5, 8 | 44-96 |
+| 0.6 ms | 0, 0, 0, 0, 0, 6, 7 | 51-96 |
+| 0.4 ms | 0, 0, 0, 2, 2, 4, 6 | 22-46 |
+
+The radio's own repeated bursts decoded clean at every lead. The first frame of each inbound pair kept about 6 bits
+corrected per frame at every TX lead and at RF RX interrupt leads of 1.6, 2.6 and 4.8 ms. That is the weak signal, not
+the switch timing.
+
 Band for PA/LNA purposes: VHF below 280 MHz, UHF from 280 MHz (the 220 MHz range shares the VHF path).
 
 ### 8.6 DMR PA timer
@@ -834,6 +850,14 @@ The radio's own battery save, in order. RadioFoundry uses it in FM receive (the 
 | HR_C7000 | a low-power clock profile (CLK_MGR); WORK_MODE, ADC and DAC unchanged. RadioFoundry leaves the clocks alone | the receive profile, CLK_MGR 0x02C = 0xFFF0FF3C |
 
 The radio's sleep lengths are 12, 18 or 30 ticks of its receive service by the battery save level, with a busy detect waking it at once (the tick's length in ms is not known). RadioFoundry's lengths come from the core settings.
+
+### 8.9 SFR on air (SDR bench, 2026-10-19)
+
+As a standalone repeater (`sfr.md`) at 461.1375 MHz, CC 2: after a user's call the CW ID came 2 s after the hang,
+"N4NQV" at 20 wpm, 800 Hz, about 1.8 kHz deviation; the next one 5 min later after new traffic (interval 5 min). The
+repeat of a call sat 90.2 ms after the original on every voice burst (72 of 72). 212 of 216 repeated voice frames needed
+Golay corrections and 4 were uncorrectable, where the direct copy was clean: the receiver takes bit errors while it
+switches per burst. As a user it reports both copies of a call (gotchas 14.15).
 
 ## 9. Audio path
 
