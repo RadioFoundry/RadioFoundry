@@ -5,7 +5,8 @@
 //
 //   framing   flag 0x7E, control escape 0x7D, the async control character map (ACCM) both ways, FCS-16 (bitwise:
 //             the link is 115200 baud, so the 512 byte table buys nothing); full Address / Control and Protocol fields
-//   LCP       we ask for MRU PPP_MRU, ACCM 0 and a Magic-Number; we take the peer's MRU, ACCM and Magic-Number and
+//   LCP       we ask for MRU PPP_MRU (a smaller one the peer Naks to is taken), ACCM 0 and a Magic-Number; we take the
+//             peer's MRU, ACCM and Magic-Number and
 //             Configure-Reject everything else (authentication, quality, PFC, ACFC, ...); Echo-Request answered,
 //             Terminate both ways, Code-Reject for unknown codes, Protocol-Reject for unknown protocols (IPv6CP, CCP)
 //   IPCP      IP-Address only: ours is ppp_local_ip(), the peer is Nak'd to ppp_peer_ip() (the addresses of the USB
@@ -28,6 +29,7 @@
 #ifndef PPP_MRU
 #define PPP_MRU			584	// a received frame fits a 600 byte buffer (the IP gateway's frame size)
 #endif
+#define PPP_MIN_MRU		68	// a Configure-Nak of our MRU to less is not taken: the smallest IPv4 link MTU (RFC 791)
 #define PPP_RX_BUFFER		(PPP_HEADROOM + PPP_MRU + 2)	// headroom, information field, FCS
 #define PPP_RESTART_MS		3000u
 #define PPP_MAX_CONFIGURE	10
@@ -43,6 +45,8 @@ enum { PPP_INITIAL = 0, PPP_CLOSED = 2, PPP_STOPPED, PPP_CLOSING, PPP_STOPPING, 
 typedef struct {
 	uint32_t rx_frames, tx_frames, rx_errors;	// good frames in, frames out, bad FCS / too long / bad header
 	uint8_t lcp, ipcp;				// states
+	uint16_t mru;		// what the peer may send us: the MRU we asked for and it acked (1500 when it rejected the option)
+	uint16_t peer_mru;	// what we may send the peer: its MRU (1500 when it asked for none)
 } ppp_stats_t;
 
 // Start a link. active: send our Configure-Request now (asked for by the host through another protocol); passive:
