@@ -119,6 +119,35 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ch.dmr_id=%u\nch.dmo=%u\n", (unsigned)c->dmr_id, c->dmo);
 }
 
+// mtu_lines and ppp_lines are not inlined: hotspot_section is, into debuglink_view_section, which is on the host
+// task's deepest path (docs/dev/stack-check.md), and their locals would add to it
+#if CONFIG_DMR_IP_GATEWAY
+// MTUs (usb-network.md 3.2): the link's (DHCP option 26), the air's (the next-hop MTU of the ICMP replies)
+__attribute__((noinline)) static void mtu_lines(dl_text_t *t)
+{
+	ipGatewayStats_t gs;
+
+	ipGatewayGetStats(&gs);
+	dl_text(t, "net.mtu=%u\nnet.air_mtu=%u\nnet.air_too_big=%u\nnet.frag_needed=%u\n", (unsigned)IPGW_LINK_MTU,
+		(unsigned)DMR_DATA_IP_MTU, (unsigned)gs.airTooBig, (unsigned)gs.fragNeeded);
+}
+#endif
+
+#if CONFIG_NET_PPP
+// The PPP link on the serial host port (docs/spec/ppp.md): LCP / IPCP states as RFC 1661 numbers them (9 open), the
+// MRU each way (ppp.md 2)
+__attribute__((noinline)) static void ppp_lines(dl_text_t *t)
+{
+	ppp_stats_t ps;
+
+	ppp_stats(&ps);
+	dl_text(t, "ppp.running=%u\nppp.ip_up=%u\nppp.lcp=%u\nppp.ipcp=%u\n", ppp_running(), ppp_ip_up(), ps.lcp, ps.ipcp);
+	dl_text(t, "ppp.rx_frames=%u\nppp.tx_frames=%u\nppp.rx_errors=%u\n", (unsigned)ps.rx_frames,
+		(unsigned)ps.tx_frames, (unsigned)ps.rx_errors);
+	dl_text(t, "ppp.mru=%u\nppp.peer_mru=%u\n", ps.mru, ps.peer_mru);
+}
+#endif
+
 static void hotspot_section(dl_text_t *t)
 {
 	static const char *const modes[] = { "idle", "hotspot", "cps", "tnc" };
@@ -163,15 +192,10 @@ static void hotspot_section(dl_text_t *t)
 	dl_text(t, "net.air_sent=%u\nnet.air_busy=%u\nnet.air_dropped=%u\nnet.air_failed=%u\nnet.air_full=%u\n",
 		(unsigned)as.sent, (unsigned)as.dropped, (unsigned)(as.dropped + as.too_long),
 		(unsigned)as.failed, (unsigned)as.refused_full);
+	mtu_lines(t);
 #endif
 #if CONFIG_NET_PPP
-	// The PPP link on the serial host port (docs/spec/ppp.md): LCP / IPCP states as RFC 1661 numbers them (9 open)
-	ppp_stats_t ps;
-
-	ppp_stats(&ps);
-	dl_text(t, "ppp.running=%u\nppp.ip_up=%u\nppp.lcp=%u\nppp.ipcp=%u\n", ppp_running(), ppp_ip_up(), ps.lcp, ps.ipcp);
-	dl_text(t, "ppp.rx_frames=%u\nppp.tx_frames=%u\nppp.rx_errors=%u\n", (unsigned)ps.rx_frames,
-		(unsigned)ps.tx_frames, (unsigned)ps.rx_errors);
+	ppp_lines(t);
 #endif
 #if CONFIG_HOTSPOT
 	hotspot_view_t h;
