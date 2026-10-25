@@ -44,6 +44,9 @@ class Site:
 		self.git = repo.git("rev-parse", "--short=8", "HEAD", default="unknown")
 		# where the web tools send error reports (report.js); unset: none are sent
 		self.sentry_dsn = os.environ.get("RFOUNDRY_SENTRY_DSN", "")
+		# the branch this site is built from, for the flasher's default build ref: Cloudflare's, else the checked-out one
+		# (empty on a detached HEAD)
+		self.branch = os.environ.get("CF_PAGES_BRANCH") or repo.git("branch", "--show-current", default="")
 		self.git_dirty = bool(repo.git("status", "--porcelain", "--untracked-files=no"))
 		self.version = repo.git("describe", "--tags", "--always", "--dirty", default=self.git)
 		now = datetime.datetime.now(datetime.timezone.utc)
@@ -139,7 +142,7 @@ class Site:
 			    for f in self.features]
 		return {
 			"site.json": {"format": "rfoundry-site/1", "git": self.git, "version": self.version, "built": self.built,
-				      "repo": self.repo_url, "languages": self.i18n.languages, "default_language": self.i18n.default,
+				      "branch": self.branch, "repo": self.repo_url, "languages": self.i18n.languages, "default_language": self.i18n.default,
 				      "reports": {"sentry_dsn": self.sentry_dsn}},
 			"radios.json": {"radios": radios, "planned": planned},
 			"features.json": {"groups": self.groups, "features": features},

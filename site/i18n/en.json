@@ -332,7 +332,7 @@
  "flash.nav.build_version": "Build Version {ref}",
  "flash.version.title": "Version {ref}.",
  "flash.version.text": "This link installs this version instead of the latest release. Install it only if you were asked to test it.",
- "flash.version.bad": "This link requests version \"{ref}\", which could not be found. A version link requires a release name (for example v0.3.0) or a full 40-character commit hash. Request a new link or install the latest release.",
+ "flash.version.bad": "This link requests version \"{ref}\", which could not be found. A version link requires a release name (for example v0.3.0), a full 40-character commit hash or a branch name. Request a new link or install the latest release.",
  "flash.version.use_release": "Install Latest Release Instead",
  "flash.version.confirm_title": "Install Version {ref}?",
  "flash.version.confirm_text": "Version {ref} is not the latest release and may contain defects that the release does not. Install it only if you were asked to test it.",
