@@ -16,6 +16,7 @@ import { Dfu } from "../static/js/flasher/dfu.js";
 import { Link, crc16, frame, parseFrames, probe } from "../static/js/flasher/link.js";
 import { FakeRadio, simulation } from "../static/js/flasher/fake.js";
 import { zip, unzip } from "../static/js/flasher/zip.js";
+import * as vendorfile from "../static/js/flasher/vendorfile.js";
 import { readRadio, makeBundle, openBundle, bundleName } from "../static/js/flasher/backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
 import { Selection } from "../static/js/flasher/select.js";
@@ -65,8 +66,7 @@ test("key derivation refines a bad vote (MD-380-like file)", async () => {
 
 // Opt-in: a real TYT updater file (never in the repository), e.g. RFOUNDRY_MD380_STOCK="MD-380-D2.32(AD).bin" site/tests/run.sh
 test("key derivation from a real MD-380 updater file", { skip: !process.env.RFOUNDRY_MD380_STOCK && "set RFOUNDRY_MD380_STOCK" }, async () => {
-	const st = await stockfw.stockFile("stock", new Uint8Array(readFileSync(process.env.RFOUNDRY_MD380_STOCK)), fb);
-	const key = await stockfw.deriveKey(st.data, fb.boards.md380.key_sha256, fb);
+	const key = await stockfw.deriveKey(new Uint8Array(readFileSync(process.env.RFOUNDRY_MD380_STOCK)), fb.boards.md380.key_sha256, fb);
 	assert.equal(await sha256(key), fb.boards.md380.key_sha256);
 });
 
@@ -105,39 +105,67 @@ test("stock-file boards: profiles and layouts", () => {
 	assert.ok(radio.flash.bootloader.length > 0 && radio.flash.build_options.some((o) => o.name === "POWER"));
 });
 
-test("stock file from a vendor zip: the one .bin with the container header", async () => {
-	const plain = await stockfw.stockFile("x.bin", stock, fb);
-	assert.equal(plain.data, stock);	// a .bin passes through
+// vendorfile.js: whatever the user picks, every file in it identified against every radio
+const radioX = async (extra = {}) => ({ ...fb, profiles: {}, known_files: {}, c7000: null,
+	boards: { x: { id: "x", name: "Radio X", key_sha256: await sha256(fromHex(fx.key)), app_base: fx.profile.segments.at(-1)[0] } }, ...extra });
+const ole = () => { const d = new Uint8Array(70000); d.set([0xD0, 0xCF, 0x11, 0xE0]); return d; };
+
+test("vendor file: a .bin, or the firmware out of a zip with updaters, documents and macOS copies", async () => {
+	const fbX = await radioX({ profiles: { [fx.stock_sha256]: { ...fx.profile, board: "x" } } });
+	const plain = await vendorfile.openVendorFile("x.bin", stock, fbX, "x");
+	assert.equal(plain.best.data, stock);
+	assert.equal(plain.best.match.kind, "codec");
+	const exe = new Uint8Array(70000); exe.set([0x4D, 0x5A]);
 	const z = await zip([
-		{ name: "Firmware 2.32/Upgrade.exe", data: "MZ" },
+		{ name: "Firmware 2.32/Upgrade.exe", data: exe },
+		{ name: "Firmware 2.32/Operation.doc", data: ole() },
+		{ name: "Firmware 2.32/readme.txt", data: "x".repeat(70000) },
 		{ name: "Firmware 2.32/MD-380-D2.32(AD).bin", data: stock },
 		{ name: "__MACOSX/Firmware 2.32/._MD-380-D2.32(AD).bin", data: new Uint8Array(212) },
 	]);
-	const got = await stockfw.stockFile("TYT-Tytera-MD-380-FW-v232.zip", z, fb);
-	assert.equal(got.name, "MD-380-D2.32(AD).bin");
-	assert.deepEqual([...got.data.subarray(0, 64)], [...stock.subarray(0, 64)]);
-	assert.equal(got.data.length, stock.length);
-	await assert.rejects(stockfw.stockFile("none.zip", await zip([{ name: "readme.txt", data: "hi" }]), fb), stockfw.StockError);
-	await assert.rejects(stockfw.stockFile("two.zip", await zip([{ name: "a.bin", data: stock }, { name: "b.bin", data: stock }]), fb),
-		stockfw.StockError);
+	const got = await vendorfile.openVendorFile("TYT-Tytera-MD-380-FW-v232.zip", z, fbX, "x");
+	assert.equal(got.best.path, "Firmware 2.32/MD-380-D2.32(AD).bin");
+	assert.equal(got.files.length, 1);
+	assert.deepEqual(got.skipped.map((s) => s.why), ["a Windows program", "an Office document", "a text file"]);
+	const lines = vendorfile.describe(got, fbX, "x");
+	assert.ok(lines[0].endsWith("(used)") && lines.some((l) => /Upgrade\.exe: skipped, a Windows program/.test(l)), lines.join("\n"));
+	// a zip in a zip, as some dealers repack the vendor's
+	const nested = await vendorfile.openVendorFile("dealer.zip", await zip([{ name: "inner/fw.zip", data: z }]), fbX, "x");
+	assert.equal(nested.best.data.length, stock.length);
 });
 
-test("stock file from a vendor zip with several builds of one radio: the first with a codec profile", async () => {
-	// TYT's MD-UV380 zips hold a CSV and a REC build; either gives the codec and the key
+test("vendor file: several builds of one radio, the one with the codec first", async () => {
+	// TYT's MD-UV380 zips hold a CSV and a REC build
 	const other = stock.slice();
 	other[other.length - 1] ^= 0xFF;
-	const [sa, sb] = [await sha256(stock), await sha256(other)];
-	const prof = (board) => ({ board, name: "test" });
-	const two = await zip([{ name: "B-REC.bin", data: other }, { name: "A-CSV.bin", data: stock }, { name: "Upgrade.exe", data: "MZ" }]);
-	const got = await stockfw.stockFile("fw.zip", two, { ...fb, profiles: { [sa]: prof("x"), [sb]: prof("x") } });
-	assert.equal(got.name, "A-CSV.bin");
-	assert.equal(await sha256(got.data), sa);
-	// only one known: that one, whatever its name
-	const one = await stockfw.stockFile("fw.zip", two, { ...fb, profiles: { [sb]: prof("x") } });
-	assert.equal(one.name, "B-REC.bin");
-	// builds of two radios, or none known: the user picks the file
-	await assert.rejects(stockfw.stockFile("fw.zip", two, { ...fb, profiles: { [sa]: prof("x"), [sb]: prof("y") } }), /pick the .bin itself/);
-	await assert.rejects(stockfw.stockFile("fw.zip", two, { ...fb, profiles: {} }), /pick the .bin itself/);
+	const two = await zip([{ name: "B-REC.bin", data: other }, { name: "A-CSV.bin", data: stock }]);
+	const both = await radioX({ profiles: { [fx.stock_sha256]: { ...fx.profile, board: "x" }, [await sha256(other)]: { ...fx.profile, board: "x" } } });
+	assert.equal((await vendorfile.openVendorFile("fw.zip", two, both, "x")).best.path, "A-CSV.bin");
+	// only B mapped: B, whatever its name (A still gives the key)
+	const onlyB = await radioX({ profiles: { [await sha256(other)]: { ...fx.profile, board: "x" } } });
+	const got = await vendorfile.openVendorFile("fw.zip", two, onlyB, "x");
+	assert.equal(got.best.path, "B-REC.bin");
+	assert.equal(got.files.find((f) => f.path === "A-CSV.bin").match.kind, "codec-unmapped");
+});
+
+test("vendor file: an unknown build is told apart by the bootloader key, and its codec found without a recipe", async () => {
+	const fbX = await radioX();
+	const got = await vendorfile.openVendorFile("new.bin", stock, fbX, "x");
+	const m = got.best.match;
+	assert.equal(m.board, "x");
+	assert.equal(m.kind, "codec-unmapped");
+	assert.equal(toHex(m.key), fx.key);
+	assert.ok(m.codecAt >= fbX.boards.x.app_base);
+	assert.match(vendorfile.describe(got, fbX, "x")[0], /no recipe for this build yet \(the bootloader key works\) \(used\)/);
+	// the same file for another radio: named, not used
+	const fbY = { ...fbX, boards: { ...fbX.boards, y: { id: "y", name: "Radio Y" } } };
+	const y = await vendorfile.openVendorFile("new.bin", stock, fbY, "y");
+	assert.equal(y.best, null);
+	assert.match(vendorfile.describe(y, fbY, "y")[0], /for the Radio X, not this radio/);
+	// a container no known key opens
+	const z = await vendorfile.openVendorFile("new.bin", stock, { ...fbX, boards: {} }, "x");
+	assert.equal(z.best, null);
+	assert.match(z.files[0].match.why, /bootloader key RadioFoundry doesn't know/);
 });
 
 test("codec extraction checks every window", async () => {

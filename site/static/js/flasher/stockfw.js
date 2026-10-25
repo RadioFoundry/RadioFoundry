@@ -6,7 +6,6 @@
 
 import { u32le, sha256, startsWith, crc32 } from "./bytes.js";
 import { byCodeSha, moveCode, moveBranches, branchesIn, MapError } from "./codecmap.js";
-import { unzip } from "./zip.js";
 
 export class StockError extends Error {}
 
@@ -38,34 +37,6 @@ export function decrypt(data, off, length, key, fb) {
 	const out = new Uint8Array(length);
 	for (let i = 0; i < length; i++) out[i] = data[off + i] ^ key[(off + i - fb.header_len) % fb.key_len];
 	return out;
-}
-
-// A stock file as the user picked it: the updater .bin itself, or the vendor's zip with it inside (TYT ships the .bin
-// next to Upgrade.exe and its DLLs). From a zip: the one entry with the container header, macOS "._" copies skipped.
-// Returns {name, data}.
-export async function stockFile(name, data, fb) {
-	if (!(data.length > 4 && data[0] === 0x50 && data[1] === 0x4B && data[2] === 0x03 && data[3] === 0x04)) return { name, data };
-	const found = [];
-	for (const [path, body] of await unzip(data)) {
-		const base = path.split("/").pop();
-		if (path.startsWith("__MACOSX/") || base.startsWith("._") || !startsWith(body, fb.magic)) continue;
-		found.push({ name: base, data: body });
-	}
-	// A vendor zip can hold several builds of one radio (TYT's MD-UV380 zips: CSV and REC). Any one with a codec profile
-	// gives the same codec and key, so take the first by name, as long as they're all for the same radio
-	if (found.length > 1) {
-		const usable = [];
-		for (const f of found) {
-			const prof = fb.profiles?.[await sha256(f.data)];
-			if (prof) usable.push({ ...f, board: prof.board });
-		}
-		if (usable.length && usable.every((f) => f.board === usable[0].board)) {
-			const { board, ...pick } = usable.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))[0];
-			return pick;
-		}
-	}
-	if (found.length !== 1) throw new StockError(found.length ? `${name} holds ${found.length} firmware files: pick the .bin itself` : `no firmware file (.bin with an "OutSecurityBin" header) in ${name}`);
-	return found[0];
 }
 
 // What a file is: {sha, known: "DM-1701 V02.06 CSV" | null, profile | null}

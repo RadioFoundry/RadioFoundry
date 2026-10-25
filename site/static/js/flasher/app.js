@@ -18,6 +18,7 @@
 
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import * as stockfw from "./stockfw.js";
+import { openVendorFile, describe as describeVendorFile } from "./vendorfile.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
 import { validRef, refShort, defaultRef } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
@@ -401,15 +402,18 @@ async function codecFromRadio(link, probe, status) {
 	if (got) S.savedCodec = { ...got, from: "radio", stored: S.sim ? false : await saveCodec(S.board, got.segments) };
 }
 
-// A stock file the user picked (the .bin, or the vendor's zip with it inside), identified. A zip without exactly one
-// firmware file shows as an unrecognized file, with the reason in the console
+// A stock file the user picked (a .bin, a readout, or the vendor's zip with updaters and several builds inside),
+// opened by vendorfile.js: the best file for this radio, identified, and one line per file for the page (report)
 async function pickedStock(f) {
 	try {
-		const st = await stockfw.stockFile(f.name, f.data, fb());
-		return { ...st, info: await stockfw.identify(st.data, fb()) };
+		const opened = await openVendorFile(f.name, f.data, fb(), S.board.id);
+		const report = describeVendorFile(opened, fb(), S.board.id);
+		const b = opened.best;
+		if (!b) return { ...f, report, info: { sha: null, known: null, profile: null } };
+		return { name: b.path.split("/").pop(), data: b.data, report, match: b.match, info: await stockfw.identify(b.data, fb()) };
 	} catch (e) {
 		console.warn(e.message);
-		return { ...f, info: { sha: null, known: null, profile: null } };
+		return { ...f, report: [e.message], info: { sha: null, known: null, profile: null } };
 	}
 }
 
@@ -1068,11 +1072,17 @@ function codecView() {
 			: t(S.savedCodec.stored ? "flash.codec.codec_from_radio" : "flash.codec.codec_from_radio_unsaved");
 		const picker = S.sim ? button(t("flash.sim.use_stock"), async () => { await useStock({ name: "simulated-stock.bin", data: S.sim.stock }); })
 			: filePicker(t("flash.codec.stock_pick"), ".bin,.zip", useStock);
-		const loadedText = S.stock && t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known || t("flash.codec.stock_unknown") });
+		const loadedText = S.stock && t("flash.codec.stock_loaded", { name: S.stock.name, what: S.stock.info.known
+			|| (S.stock.match?.board === S.board.id ? t("flash.codec.stock_build", { radio: S.board.name }) : t("flash.codec.stock_unknown")) });
 		// a known file without a codec profile (MD-380 D2.30) gives the bootloader key, not the codec: say what it's good for
 		const keyOnly = S.stock?.info.known && !fb().profiles[S.stock.info.sha];
-		const loaded = !S.stock ? null : keyOnly ? notice(`${loadedText}. ${t("flash.codec.stock_key_only", { files: S.board.codec.sources.join(", ") })}`, "action")
-			: S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad");
+		// a build with the codec but no map yet, or a file for another radio: what each file in the pick is
+		const unmapped = S.stock?.match?.kind === "codec-unmapped" && t("flash.codec.stock_unmapped", { files: S.board.codec.sources.join(", ") });
+		const report = S.stock?.report?.length > 1 || (S.stock && !S.stock.info.profile)
+			? h("details", { class: "small", open: !S.stock.info.known }, h("summary", {}, t("flash.codec.stock_report")), h("ul", {}, S.stock.report.map((l) => h("li", {}, l)))) : null;
+		const loaded = !S.stock ? null : [keyOnly ? notice(`${loadedText}. ${t("flash.codec.stock_key_only", { files: S.board.codec.sources.join(", ") })}`, "action")
+			: unmapped ? notice(`${loadedText}. ${unmapped}`, "action")
+			: S.stock.info.known ? h("p", {}, "✓ ", loadedText) : notice(loadedText, "bad"), report];
 		// a download link only where there is a known one; no vague pointers
 		const where = h("p", {}, t("flash.codec.stock_files", { files: S.board.codec.sources.join(", ") }),
 			S.radio.flash.stock_download ? [" ", h("a", { href: S.radio.flash.stock_download, target: "_blank", rel: "noopener" }, t("flash.codec.stock_download"))] : null);
