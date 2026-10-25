@@ -109,7 +109,7 @@ nothing reaches the user. The setting is `zs_offers` in the settings record ([se
 | Group offers | a record sent to a talkgroup the radio listens to is offered like one sent to it |
 
 The offer shows as a banner, "Zone from <name or ID>" with "Zone <name>, <n> channels". **#** opens it. While it
-waits it is also under **Tools > Zone offer**. The offer screen reads "Zone <name>, <n> channels, from <ID>" and
+waits it is also under **Tools > Share received**. The offer screen (Zone Share Received, or Channel Share Received) reads "Zone <name>, <n> channels, from <ID>" and
 how many are not in this radio's bands, with three choices:
 
 - **Import** imports it (5.3).

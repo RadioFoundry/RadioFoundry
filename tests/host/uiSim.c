@@ -97,6 +97,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "banner_zone_offer", "zoneoffer:3101234" },
 	{ "zone_offer", "zoneoffer:3101234 ctx" },
 	{ "zone_offer_preview", "zoneoffer:3101234 ctx 2" },
+	{ "zone_offer_ch", "zoneoffer:3101234,c ctx" },
 	{ "zone_offer_channel", "zoneoffer:3101234,c ctx 1" },
 	{ "zone_imported", "zoneoffer:3101234 ctx 1 wait:300" },
 #if CONFIG_ZONE_EDIT

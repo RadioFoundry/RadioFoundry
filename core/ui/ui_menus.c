@@ -1228,10 +1228,20 @@ static const char *offer_body(void)
 	return body;
 }
 
+// The longest title that fits: a whole zone or one channel
+static const char *offer_title(void)
+{
+	if (offer_get() && offer.channel)
+		return TEXT_ALT_OPEN "Channel Share Received" TEXT_ALT_NEXT "Ch Share Received" TEXT_ALT_NEXT
+		       "Ch Received" TEXT_ALT_CLOSE;
+	return TEXT_ALT_OPEN "Zone Share Received" TEXT_ALT_NEXT "Zone Received" TEXT_ALT_CLOSE;
+}
+
 static const ui_scr_def_t offer_screen = {
-	.name = "zone_offer", .flags = SF_LIST | SF_NUMBERED, .prefix = "Zone offer", .hint = "OK pick  Back",
-	.empty = "No zone offer waiting",
+	.name = "zone_offer", .flags = SF_LIST | SF_NUMBERED, .hint = "OK pick  Back",
+	.empty = "No share waiting",
 	.count = offer_count, .item = offer_item, .select = offer_select, .body = offer_body, .enter = offer_enter,
+	.title = offer_title,
 };
 
 static uint16_t preview_count(void) { return offer_get() ? offer.channels : 0; }
@@ -3549,7 +3559,7 @@ static uint16_t tools_row(uint16_t row)
 static void tools_item(uint16_t row, ui_item_t *it)
 {
 	static const char *const names[] = { "Scan", "Position", "Hotspot", "USB network", "Single-freq repeater",
-					     "Roaming", "Diagnostics", "APRS", "Battery", "Zone offer" };
+					     "Roaming", "Diagnostics", "APRS", "Battery", "Share received" };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;

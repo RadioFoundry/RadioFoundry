@@ -266,6 +266,12 @@
     "ZONE_SHARE"
    ]
   },
+  "zone_offer_ch": {
+   "group": "messages",
+   "needs": [
+    "ZONE_SHARE"
+   ]
+  },
   "zone_offer_channel": {
    "group": "messages",
    "needs": [

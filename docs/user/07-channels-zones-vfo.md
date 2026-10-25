@@ -87,9 +87,9 @@ group lists and privacy keys are never sent.
 **Receive:** set **Settings > Connections > Zone offers** to **Ask**. It is **Off** at first, and with Off the radio
 ignores what others send.
 
-<img src="../ux/screens/160x120i5/zone_offer.png" width="200" alt="A zone offer: Import, Preview, Reject">
+<img src="../ux/screens/160x120i5/zone_offer.png" width="200" alt="Zone Share Received: Import, Preview, Reject">
 
-1. A banner says "Zone from ...". Press **#** to open it. It also waits under **Tools > Zone offer** for 10 minutes.
+1. A banner says "Zone from ...". Press **#** to open it. It also waits under **Tools > Share received** for 10 minutes. The screen is titled **Zone Share Received**, or **Channel Share Received** for one channel.
 2. The offer shows the zone's name, its channels, the sender and how many channels are outside your radio's bands.
 3. Pick **Preview** to see the channels, **Import** to add them, or **Reject**.
 
