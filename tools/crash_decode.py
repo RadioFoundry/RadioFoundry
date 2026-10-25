@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Read a crash report (docs/spec/crash-log.md) and, with the build's ELF, say where it happened.
 
-    tools/crash_decode.py REPORT [--elf build/dm1701/odr_dm1701.elf]
-    tools/crash_decode.py --hex 4f4301010103...  --elf odr_dm32.elf
-    tools/odr_debug.py crash | tools/crash_decode.py - --elf odr_dm1701.elf
+    tools/crash_decode.py REPORT [--elf build/dm1701/rfoundry_dm1701.elf]
+    tools/crash_decode.py --hex 4f4301010103...  --elf rfoundry_dm32.elf
+    tools/rfoundry_debug.py crash | tools/crash_decode.py - --elf rfoundry_dm1701.elf
     tools/crash_decode.py --self-test
 
 REPORT is the packed report as received (the UDP payload, section 4) in a binary file, the same as hex text, or the
-debug link's crash view (`odr_debug.py crash`: crash.* lines). '-' reads standard input. With --elf, pc, lr and the
+debug link's crash view (`rfoundry_debug.py crash`: crash.* lines). '-' reads standard input. With --elf, pc, lr and the
 return addresses go through addr2line: arm-none-eabi-addr2line for a Cortex-M4 record, csky-elf-addr2line for a
-CK803S one, or --addr2line / $ODR_ADDR2LINE. The record's build must match the ELF's commit.
+CK803S one, or --addr2line / $RFOUNDRY_ADDR2LINE. The record's build must match the ELF's commit.
 """
 import argparse
 import os
@@ -23,7 +23,7 @@ import sys
 ARCHS = {1: "Cortex-M4", 2: "CK803S"}
 ADDR2LINE = {1: "arm-none-eabi-addr2line", 2: "csky-elf-addr2line"}
 CODE = {1: [(0x08000000, 0x08100000)], 2: [(0x03000000, 0x04000000)]}  # flash (CK803S: XIP; RAM code isn't known here)
-KINDS = {1: "Fault", 2: "Stack overflow", 3: "Out of memory", 4: "Assert"}
+KINDS = {1: "Fault", 2: "Stack overflow", 3: "Out of memory", 4: "Assert", 5: "Hang"}
 FLAGS = [(0x01, "in an interrupt handler"), (0x02, "build had local changes"), (0x04, "stack copied"),
          (0x08, "seen"), (0x10, "sent")]
 CK803_VECTORS = {1: "misaligned access", 2: "access error", 3: "divide by zero", 4: "illegal instruction",
@@ -81,10 +81,15 @@ def from_view(text):
     arch = num("arch")
     stack = [int(w, 16) for w in v.get("stack", "").split(",") if w]
     rets = [w for w in stack if is_code(arch, w)][:12]
+    tasks = []
+    for k in range(num("tasks")):
+        name, _, where = v.get(f"t{k}", ",0").rpartition(",")
+        tasks.append((name.rstrip("\0 "), int(where, 16)))
     return dict(arch=arch, kind=num("kind"), flags=num("flags"), count=num("count"), build=int(v.get("build", "0"), 16),
                 uptime_ms=num("uptime_ms"), cause=num("cause"), pc=num("pc"), lr=num("lr"), sp=num("sp"),
                 psr=num("psr"), status=[int(w, 0) for w in v.get("status", "0,0,0,0").split(",")],
-                task=v.get("task", ""), r=[num(f"r{k}") for k in range(14)], returns=rets)
+                task=v.get("task", ""), r=[num(f"r{k}") for k in range(14)], returns=rets, tasks=tasks,
+                tasks_more=num("tasks_more"))
 
 
 def is_code(arch, addr):
@@ -130,6 +135,8 @@ def describe(rep, elf=None, addr2line=None):
         lines.append(f"  exception {cause}" + (f" ({why})" if why else ""))
     elif rep["kind"] == 4:
         lines.append(f"  assertion at line {cause} (configASSERT: see the caller below)")
+    elif rep["kind"] == 5:
+        lines.append(f"  no watchdog feed for {cause} ms: pc is where the tick found the task that kept the idle task out")
     task = rep["task"] or ("(an interrupt handler)" if rep["flags"] & 1 else "(none)")
     lines.append(f"  task {task}, after {rep['uptime_ms'] / 1000:.1f} s, {rep['count']} in a row")
     build = f"{rep['build']:08x}" if rep["build"] else "unknown"
@@ -152,8 +159,12 @@ def describe(rep, elf=None, addr2line=None):
     if is_code(arch, rep["lr"]):
         where.append(("lr", rep["lr"], (rep["lr"] & ~1) - 1))
     where += [(f"#{k}", a, (a & ~1) - 1) for k, a in enumerate(rep["returns"])]
+    # The other tasks (record version 2, the view only): bit 0 set, waiting in the kernel, the rest the return address
+    # of the code that waits; clear, ready, the rest its pc; 0 unknown
+    others = [(name, w) for name, w in rep.get("tasks", [])]
+    tool = None
     if elf:
-        tool = addr2line or os.environ.get("ODR_ADDR2LINE") or ADDR2LINE.get(arch, "addr2line")
+        tool = addr2line or os.environ.get("RFOUNDRY_ADDR2LINE") or ADDR2LINE.get(arch, "addr2line")
         if shutil.which(tool) is None:
             raise ReportError(f"{tool} not found: pass --addr2line")
         names = lookup(tool, elf, [q for _, _, q in where])
@@ -162,6 +173,16 @@ def describe(rep, elf=None, addr2line=None):
             lines.append(f"    {label:>3} {a:08x}  {name}")
     else:
         lines.append("  where (pass --elf to name them): " + " ".join(f"{label} {a:08x}" for label, a, _ in where))
+    if others:
+        known = [(n, w) for n, w in others if w]
+        names = dict(zip(known, lookup(tool, elf, [(w & ~1) - 1 if w & 1 else w for _, w in known]))) if tool else {}
+        lines.append("  other tasks (waiting: the call that waits; ready: where it was):")
+        for n, w in others:
+            state = "unknown" if not w else "waiting" if w & 1 else "ready"
+            at = f"  {w & ~1:08x}" if w else ""
+            lines.append(f"    {n or '?':<4} {state:<7}{at}" + (f"  {names[(n, w)]}" if (n, w) in names else ""))
+        if rep.get("tasks_more"):
+            lines.append(f"    and {rep['tasks_more']} more")
     return "\n".join(lines)
 
 
@@ -192,6 +213,15 @@ def self_test():
     assert r["arch"] == 2 and r["kind"] == 4 and r["cause"] == 712 and r["returns"] == [0x03001235, 0x03fffffe], r
     text = describe(r)
     assert "assertion at line 712" in text and "(an interrupt handler)" in text and "build unknown" in text, text
+    hang = view.replace("crash.kind=4", "crash.kind=5").replace("crash.cause=712", "crash.cause=3000")
+    hang += "\ncrash.tasks=3\ncrash.tasks_more=1\ncrash.t0=radi,03012a41\ncrash.t1=Tmr ,03001000\ncrash.t2=ui,00000000"
+    r = read_report(hang.encode())
+    assert r["tasks"] == [("radi", 0x03012a41), ("Tmr", 0x03001000), ("ui", 0)] and r["tasks_more"] == 1, r
+    text = describe(r)
+    for want in ("radi waiting  03012a40", "Tmr  ready    03001000", "ui   unknown", "and 1 more"):
+        assert want in text, (want, text)
+    text = describe(read_report(hang.replace("crash.flags=0x5", "crash.flags=0x4").replace("crash.task=", "crash.task=host").encode()))
+    assert "Hang on" in text and "no watchdog feed for 3000 ms" in text and "task host" in text, text
 
     for bad in (b"OC\x01", b"XX" + bytes(80), b"crash.built=1\ncrash.valid=0\n", b"not hex at all",
                 pkt[:-1], b"OC\x02" + bytes(80)):
@@ -207,7 +237,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("report", nargs="?", help="a file with the report (binary, hex or the crash view), or -")
     p.add_argument("--hex", help="the packed report as hex on the command line")
-    p.add_argument("--elf", help="the build's ELF (build/<board>/odr_<board>.elf), to name the addresses")
+    p.add_argument("--elf", help="the build's ELF (build/<board>/rfoundry_<board>.elf), to name the addresses")
     p.add_argument("--addr2line", help="the addr2line to use (default by the record's architecture)")
     p.add_argument("--self-test", action="store_true", help="check the decoder and exit")
     a = p.parse_args()

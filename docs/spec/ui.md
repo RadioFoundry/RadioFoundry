@@ -6,6 +6,13 @@ How `core/ui` implements the first-principles UX in `docs/ux` (`principles.md`, 
 `task-flows.md`, `wireframes/`, `usability-tests.md`). The UX documents say what the radio does; this page says how
 the code is laid out, who owns the data behind each screen, and how the UI is tested without a radio.
 
+| Contents | |
+|---|---|
+| 1, 2 | File layout, screens and the stack |
+| 3 | Key meanings and key assignment |
+| 4, 5, 6 | Data other packages own, build switches, debug link |
+| 7, 8 | Host simulator and tests, decisions and open points |
+
 ## 1. Layout
 
 | File | What |
@@ -13,7 +20,7 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 | `gfx.c`, `fonts.c`, `fmt.c` | drawing in a viewport inside the display's safe-area insets, fonts, number / text formatting |
 | `ui_screens.c` | drawing only: status strip, title, hint row, lists, Home, call screens, Quick tiles, banners, emergency |
 | `ui_app.c` | behavior without the RTOS: the navigation stack, global keys, Home and Quick keys, filters, Recent, events, banners |
-| `ui_menus.c` | every list screen and the screen table `ui_scr[]`: Hub, Actions, Compose, Contacts, Messages, Recent, Zones, Zone, Channels, Channel, Tools, Settings, Picker, Info, Confirm, Scan, Roaming |
+| `ui_menus.c` | every list screen and the screen table `ui_scr[]`: Hub, Actions, Compose, Contacts, Messages, Recent, Zones, Zone, the zone editor's (2.2), Channels, Channel, Tools, Settings, Picker, Info, Confirm, Scan, Roaming |
 | `ui_find.c` | type-to-find (T9 word starts, numbers, channel positions) |
 | `ui_svc.h`, `ui_svc_stub.c` | the thin interface to data other packages own, with weak "not in this build" stubs (section 4) |
 | `ui_svc_radio.c`, `ui_svc_data.c`, `ui_svc_storage.c` | the strong implementations on the radio core, the DMR data service and the settings store / codeplug editing |
@@ -25,8 +32,8 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip and, from 100 px high, each list row take
 one pixel more than the text cell, so lines never touch (easy to read comes before one more row; principles.md 5).
 The board's safe-area insets (`hal_display_t.inset_*`) are outside the drawing area (`gfx_width` / `gfx_height`),
-for panel edges hidden by the case (DM-1701: 5 px left and right under the lens, `hardware-dm1701.md` 9.1). At 160x120i5 a list shows 7 rows, at 160x128 7, at
-240x320i10x5 (the DM-32) 11, at 128x64 5. The 240 px class keeps 6 px between rows and a separate title row;
+for panel edges hidden by the case (for example 5 px left and right under a lens). At 160x120i5 a list shows 7 rows, at 160x128 7, at
+240x320i10x5 11, at 128x64 5. The 240 px class keeps 6 px between rows and a separate title row;
 `uiSim --layout` fails a class whose row pitch drops below these. A narrow portrait panel (120x160) keeps the 128 px
 class's small font (24 characters a line) and takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
 (name, then "TG 91 11s ago") where it has the rows for them, else one line where the name gives way first; a single
@@ -80,7 +87,12 @@ scrolling, numbered shortcuts (`SF_NUMBERED`), T9 filtering (`SF_FILTER`), and t
 | Find | `find` | a digit on Home |
 | Actions | `actions` | CONTEXT (`#`) on a person, a talkgroup, the last caller, a message |
 | Recent | `recent` | Hub 3 |
-| Zones | `zones` | Hub 4: the VFO, then every zone with its channel count. OK goes to the zone, CONTEXT opens its channels (`zone`) |
+| Zones | `zones` | Hub 4: the VFO, then every zone with its channel count. OK goes to the zone, CONTEXT opens its channels (`zone`; long OK on a radio without CONTEXT) |
+| Zone | `zone` | CONTEXT in Zones: the zone's channels in order, OK goes to one. With `CONFIG_ZONE_EDIT` also the zone's editor (2.2): "Add channel" first, "Zone options" last, CONTEXT on a channel opens Channel actions |
+| Channel actions | `zchannel` | CONTEXT (long OK without CONTEXT) on a channel in a zone's list (2.2) |
+| Add channel | `zpick` | "Add channel" in a zone's list: the stored channels the zone doesn't hold, T9 filtered (2.2) |
+| Zone options | `zoneedit` | "Zone options" in a zone's list: Rename, Copy as new zone, Delete zone (2.2) |
+| Delete zone | `zonedel` | Zone options 3: the confirmation, "No, keep it" first (P7) |
 | Channels | `channels` | Hub 5: every codeplug channel as number and name, in number order, filtered by T9. The value (also in a zone's list): RX frequency and talkgroup, "467.375 TG3100", or FM; beside a long name "467.375 3100", then "TG3100" (the name is never cut for it). The first row is "New from current", New channel from current settings (2.1). OK opens the channel (`channel`), CONTEXT goes to it |
 | Channel | `channel` | OK in Channels: the channel's settings, editable (2.1). The last rows go to it (in the zone in use if it holds the channel, else the first zone that does; in none, "Not in any zone"), save, and save as a new channel |
 | Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
@@ -103,7 +115,7 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 | Kind | OK does | Rows |
 |---|---|---|
 | Toggle | the other value, at once | Mode (FM / DMR, with `CONFIG_DMR`), RX only, Bandwidth (FM), Timeslot (DMR), VOX (FM), Direct mode (DMR), Talk permit beeps (DMR), Talker alias TS1 / TS2 (DMR), Scan, Battery saver |
-| Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX tone and TX tone (None, the CTCSS (PL) tones, the DCS codes normal then inverted; in a build without `CONFIG_SUBTONE`, such as the MD-380's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
+| Spin | opens the spinner: the knob or Up / Down step through the values, shown as they change; digits type where the value is a number; OK keeps, BACK cancels (the quick-tile and Settings-number editor) | Power (the board's levels, then "Radio's"), Color code (0-15), TX time-out (0 = "Radio's", 15-495 s in steps of 15), RX tone and TX tone (None, the CTCSS (PL) tones, the DCS codes normal then inverted; in a build without `CONFIG_SUBTONE`, such as a small-flash board's, the tone rows only show the stored tone and OK toasts "Tones: not in this build") |
 | Direct entry | opens an editor that takes digits | RX and TX frequency (as VFO entry: MHz digits, then decimals, refused out of band as typed), Own ID (0 = "Radio's", up to 16777215) |
 | Text | opens Text entry | Name |
 | Pick | opens the List picker | TX contact, RX group list |
@@ -121,8 +133,8 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   use when `codeplug_serial()` changes, so any save drops its temporary changes, whichever channel was written.
   Whether the written channel is the one in use is decided when the job is posted, on the UI task.
 - Save as new channel writes the copy to the lowest free number (`codeplug_free_channel`) and opens that channel.
-  "No free channel" when all 1024 are used. The new channel is in no zone until one is edited (issue #44 adds it to
-  the current zone).
+  "No free channel" when all 1024 are used. The new channel is in no zone until a zone's Add channel takes it (2.2);
+  Copy here makes a copy that goes in a zone as it is saved.
 - New from current (the first row in Channels: New channel from current settings) fills a copy from what the radio uses now: the channel in use
   with its temporary changes, or the VFO. It opens as an unsaved channel at the lowest free number, named after the
   source with a number appended (or the frequency, from the VFO).
@@ -141,6 +153,67 @@ Typed rows (frequencies, the ID): BACK takes back the last digit, and with none 
 is typed, and with nothing typed leaves the row as it was. A new RX frequency moves TX with it, keeping a repeater's
 offset. Where that offset would put TX outside every band, TX becomes the new RX (simplex). Own ID refuses a digit
 that would take it past 16777215, and takes at most 8 digits.
+
+### 2.2 Zone editor
+
+With `CONFIG_ZONE_EDIT` a zone's list (`zone`) edits the zone. Every change is written at once, as a storage job
+(`ui_svc_zone_edit`), so there is nothing to save or discard and the UI never waits for a flash erase. Changes made
+faster than the flash takes them (a digit pressed again in Channel actions) wait in a queue of 4 and are written in
+order by one job; a fifth is refused. The job runs `zone_edit_apply` (`core/codeplug/zone_edit.h`), the same layer an
+import uses. A failed change raises `UI_EV_SAVE_FAILED` with the reason ("Zone full", "No room for another zone",
+"Already at the end", "That zone is gone", "That channel is gone", "Couldn't write the codeplug") and drops the changes
+queued after it, since they were made on a list that didn't happen. A change is checked whole before anything is
+written: a new zone with a missing or repeated channel is refused, and a Copy here whose zone can't be written deletes
+the channel it wrote. The lists read the codeplug again when `codeplug_serial()` changes and the queue is empty, so
+they show the change within a fraction of a second.
+
+| Where | Row or key | Does |
+|---|---|---|
+| A zone's list | "Add channel" (first row) | opens Add channel (`zpick`): every stored channel the zone doesn't hold, number and name, T9 filtered. OK inserts it after the channel in use when this is the zone in use, else at the end |
+| | a channel, OK | goes to it (as before) |
+| | a channel, CONTEXT (long OK without CONTEXT) | opens Channel actions (`zchannel`) on it |
+| | "Zone options" (last row) | opens Zone options (`zoneedit`) |
+| Channel actions | 1 Move up, 2 Move down | swaps it with its neighbor. The menu stays open, so the digit again moves it on; the toast gives the position ("Position 4 of 16"), and "Already first" / "Already last" at the ends |
+| | 3 Copy here | the channel editor (2.1) on an unsaved copy at the lowest free number, named with " 2" appended (a copy of the channel in use keeps its temporary changes). Save writes it and inserts it after its source in one job (`ZONE_OP_ADD_NEW`); BACK asks as for any unsaved channel. Refused first with "No free channel" or "Zone full" |
+| | 4 Edit channel | the channel editor on the channel |
+| | 5 Remove from zone | takes it out of this zone at once, "Removed from <zone>". The channel stays in Channels and any other zone |
+| Zone options | 1 Rename | text entry on the zone's name (2.1); OK writes it, an empty name is refused |
+| | 2 Copy as new zone | a new zone with the same channels, named with " 2" appended, then back to Zones |
+| | 3 Delete zone | asks first (`zonedel`): "Delete <name>? Channels stay." with "No, keep it" focused (P7). Yes deletes it and returns to Zones |
+
+- Channel actions and Edit channel replace their menu on the stack, so the deepest path (Home, Hub, Zones, the zone,
+  the channel editor, text entry) fits the six frames.
+- A zone holds at most `codeplug_zone_capacity()` channels (80, or 16 with the old layout) and a channel once; there
+  are at most `CODEPLUG_ZONES_MAX` zones.
+- With no zones stored the radio shows one zone, "All channels", that holds every channel. The first change stores it
+  as a real zone 0, so the user keeps what they saw; it can't be deleted until then ("It holds every channel").
+- A new zone takes the lowest free slot, so it can come ahead of zones already there, and deleting a zone moves the
+  ones after it up. `zone_edit.c` logs each such shift (`zone_edit_shifts`, the last `ZONE_SHIFT_LOG` = 8 kept), and
+  every holder of a zone index maps it with `zone_edit_map` once no zone write is under way (`zone_edit_busy`). An
+  import that writes zones through the same layer is followed the same way. A reader more than 8 shifts behind keeps
+  its indexes.
+- The settings hold zone indexes too (the zone in use, the roaming zones). An add or delete that moves indexes is
+  noted in the settings before the codeplug write, and the saved indexes are moved in the settings record that clears
+  the note (`core/codeplug/zone_settle.c`). After a power cut anywhere in between, the next power on finishes the
+  note from the zone list (`zone_edit_settle`), so the radio comes back on the same zone. The radio core's own saves
+  leave the zone fields alone until it has followed.
+- What follows a moved zone, and what happens when the zone itself was deleted:
+
+  | Holder | Moved | Deleted |
+  |---|---|---|
+  | The zone in use (radio core, saved as the settings' zone) | follows; the radio stays on its channel | the zone that took its index (the last zone when it was the last), on the same channel if that zone holds it, else its first usable channel |
+  | Dual watch's channels (radio core and `ui_dual.c`) | follow | the pane's channel is found by number in another zone; when no zone holds it the watch ends ("Dual watch off") |
+  | The last B and A kept while the watch is off | found again by channel number | found again by channel number |
+  | Roaming zone flags (settings `roam_zones`) | follow, saved again | the flag is cleared |
+  | Open screens: Zones' focus, a zone's list, Zone options, Channel actions | follow | the zone's screens close, "That zone was deleted" |
+
+- Saved references by channel number (dual watch's B setting, scan lists) need no change.
+- A zone scan ends when the zone in use's channel list changes under it (its skipped channels are kept by position); a
+  rename doesn't end it.
+- Removing the channel in use from the zone in use moves the radio to the next usable channel in the zone. A move in
+  the zone in use keeps the radio on its channel at its new position.
+- The debug link's `zone.edits` counts the zone edits written since start-up and `zone.edit_last` is the last result
+  (`zone_edit_result_t`, 0 = OK).
 
 ## 3. Key meanings
 
@@ -164,16 +237,15 @@ toast until voice prompts exist).
 
 VFO_TOGGLE is the VFO / MR key's short press (a board key map entry, not a side key function): between the channel
 and the VFO, "VFO" and "Back to channels". Its long press, COPY_VFO, copies the channel to the VFO (`dmr-voice.md`
-2.2). The DM-1801 Pro's VFO/MR key is the only one so far; a board with such a key gives its long press to COPY_VFO,
+2.2). A board with a dedicated VFO/MR key gives its long press to COPY_VFO,
 and `keyassignTest` checks every board's key map for it. The key is a key map entry with fixed meanings (not one of the
 `board.side_keys`), so Settings > Keys doesn't change it.
 
 EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)
 whatever the long press time (`input_long_threshold`, core/input). Which key carries it is the board's key map
-(`board.keymap`): on the DM-1701 the top side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long
-USER_3 as above); the short press stays USER_3. A hold toggles:
+(`board.keymap`): for example a side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above), or a dedicated SOS key; the short press stays USER_3. A hold toggles:
 "EMERGENCY sent: hold again to cancel", "Emergency canceled" (`ui_svc_emergency_active` reads the radio core's state,
-so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (the DM-32UV: its top key isn't located yet).
+so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (for example a board whose third side key isn't located yet).
 
 PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
@@ -195,11 +267,13 @@ neither is drawn anywhere, and Tools > Battery, Settings > Power > Battery saver
 out of their lists, so the other Tools rows move up), and only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 
-### 3.1 Side key assignment
+### 3.1 Key assignment
 
-Switch: `CONFIG_KEY_ASSIGN`. The board lists the keys a user may reassign (`board.side_keys`, role order: side key 1,
-side key 2, top key; the DM-1701 has all three, the MD-380 and DM-32UV the first two). Each role has a press and a
-long press, and each takes one function:
+Switch: `CONFIG_KEY_ASSIGN`. The board lists the keys a user may reassign (`board.side_keys`, `side_key_count` of them,
+up to 9) and their names (`board.side_key_names`, as printed on the radio; without it the rows say "Key 1", "Key 2",
+...). The list holds every key with a function of its own: side keys first, numbered SK1, SK2, ... from the top, then
+any others. Keys the menus need (OK, Back, the arrows, digits, QUICK, CONTEXT, PTT, volume) are not on it. A key's
+position in the list is its role. Each role has a press and a long press, and each takes one function:
 
 | Function (`keyfn_t`) | Action sent | Press | Long press |
 |---|---|:-:|:-:|
@@ -225,17 +299,19 @@ function: the input engine sends DOWN, the LONG (value 1) at the threshold and U
 radio core then doesn't toggle digital monitor (RREQ_MONITOR 2), and the UI drops the LONG on FM.
 
 Storage: the open-firmware codeplug's ten quick-key slots (EEPROM 0x7524, 2 bytes LE each,
-`open-firmware-cps.md` 7.2). Slot 0 is the marker 0x4B01 ("K", layout 1); slot 1 + 2k is role k's press and slot
-2 + 2k its long press; slots 7-9 are spare. Without the marker the slots are another firmware's and every key is the
-board's; the first change clears them and writes the marker. A value that isn't a `keyfn_t`, or isn't allowed in its
+`open-firmware-cps.md` 7.2). Slot 0 is the marker 0x4B02 ("K", layout 2); slot 1 + k is role k, its press in the low
+byte and its long press in the high byte, for 9 roles. Layout 1 (marker 0x4B01: slot 1 + 2k role k's press, slot 2 + 2k
+its long press, 3 roles) is still read; the first change rewrites it as layout 2 with its roles kept. Without either
+marker the slots are another firmware's and every key is the board's; the first change clears them and writes the
+marker. A value that isn't a `keyfn_t`, or isn't allowed in its
 slot (monitor on a long press, emergency on a press), reads as Default. The values are append-only (gotchas 9.11).
 
 Both places edit the same slots, so there is one copy:
 
-- Settings > Keys (rows Side key 1, Side key 1 hold, ..., Top key hold): the change applies at once
+- Settings > Keys (rows SK1, SK1 hold, SK2, ...: a pair per role, named by `side_key_names`): the change applies at once
   (`keyassign_build`, then `input_set_keymap`, which the input task takes when no key is held) and a storage job
-  writes the slots. A failed write shows "Couldn't save the keys: for now only". A row for a key the radio doesn't
-  have is dimmed ("This radio has no such key"), and so is a hold row whose press is monitor.
+  writes the slots. A failed write shows "Couldn't save the keys: for now only". Rows past `side_key_count` are left
+  out of the list.
 - The codeplug (a CPS or TFTP write): `ui_svc_keys_poll` reads the slots again when `codeplug_serial()` changes and
   rebuilds the key map. qdmr has no editor for them; a CPS that writes back an old image brings back its keys.
 
@@ -249,7 +325,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 |---|---|---|
 | `ui_svc_talk_to` temporary / default | dmr-voice (radio core) | `ui_svc_radio.c`: `radio_req_dmr_target`, `radio_req_dmr_target_clear` |
 | `ui_svc_talk_to` permanent (`ui_svc_save_talk_target`), `ui_svc_save_channel`, `ui_svc_setting_get/set`, `ui_svc_feat_storage` | storage-cps | `ui_svc_storage.c`: the channel is rewritten with `codeplug_set_channel` (power, bandwidth, tones; a temporary squelch goes to the default squelch preference); settings are read from where they are kept: the radio core's settings (`radio_get_settings`, saved by the radio core), `settings_t` (brightness, default squelch, hotspot allowed), the data service's answers (`dmr_data_get_settings`); the reply window, mic gain, mic AGC and mic noise reduction (`accent` bits 6-7), auto lock, long press and repeat times, the GPS options, theme, Up/Down on Home, low battery level, auto power off and the `ui_flags` bits (large text, hint row, message tone, talker alias, PTT when locked, hear all by default, vibrate as an off bit) have `settings_t` fields (appended, settings-store.md); the talk permit tone is the radio core's (`radio_settings_t.talk_permit`); the privacy key type and key (Settings > Privacy) are key slot 1 of the key store (`privacy_type[0]`, `privacy_key[0]`, `privacy_active`), and a change while privacy is on goes to the radio core at once (`radio_req_dmr_privacy`); only the ones without a field stay in RAM (voice prompts). Both saves run as a storage job on the housekeeping task (`storage_job_post`), not on the UI task: the change takes effect for now at once, the temporary mark goes when the write lands, and a failed write raises `UI_EV_SAVE_FAILED` ("Couldn't save: still for now only"). Save to channel also writes the temporary mode, color code and timeslot |
-| `ui_svc_factory_reset` | storage-cps | `ui_svc_storage.c`, as a storage job: `settings_t` back to its defaults and saved, then `storage_native_erase` (the native area, only when it carries the `ODRN` magic or is already blank; never the open-firmware codeplug, calibration or a foreign region), then a restart (`board.system->reboot`), or a radio core reload where the board can't restart |
+| `ui_svc_factory_reset` | storage-cps | `ui_svc_storage.c`, as a storage job: `settings_t` back to its defaults and saved, then `storage_native_erase` (the native area, only when it carries the native magic or is already blank; never the open-firmware codeplug, calibration or a foreign region), then a restart (`board.system->reboot`), or a radio core reload where the board can't restart |
 | `ui_svc_focus_target` (one-shot PTT to the focused row), `ui_svc_dmr_timeslot`, `ui_svc_dmr_color_code`, `ui_svc_mode`, `ui_svc_hear_all` | dmr-voice / radio core | `ui_svc_radio.c` on the new requests `radio_req_dmr_focus`, `radio_req_dmr_timeslot`, `radio_req_dmr_color_code`, `radio_req_mode`, `radio_req_dmr_hear_all` (radio-features.md, dmr-voice.md). Timeslot, color code and mode are temporary changes (temp bits 0x20, 0x40, 0x80) that BACK on Home undoes and Save to channel keeps; the hear-all latch ends with the channel, a mode change or BACK on Home (not with the call) |
 | `ui_svc_privacy`, `ui_svc_monitor`, `ui_svc_vox` | radio core | `ui_svc_radio.c`: `radio_req_dmr_privacy` on the active privacy slot (else the first set one), `radio_req_monitor` as a latch, the `vox` setting (all / off) with `radio_view_t.vox_on` for the tile |
 | `ui_svc_emergency`, `ui_svc_feat_ext` | dmr-ext | weak seams: the EMERGENCY key action calls `ui_svc_emergency`, and dmr-ext reports `UI_FEAT_EMERGENCY` through its own strong `ui_svc_feat_ext`; without it the key says "Emergency isn't in this build" |
@@ -289,7 +365,8 @@ alert, alert answered, radio check answered (with the round trip) or not, privat
 | `CONFIG_FONT_XL` | n | the 16x32 font for 240 px and wider displays |
 | `CONFIG_FONT_AA` | n | the bitmap fonts (Spleen) on color panels; on, the sizes from 6x12 up are anti-aliased (JetBrains Mono Bold, coverage 0..3 a pixel, blended with what is under them; `gfx.c`). Mono radios leave it off. On a 4 bpp panel (every color board) the edge grays share the 16 palette entries with the screen's own colors; a screen that already uses many colors loses some of them, and some font sizes or colors can then be slightly harder to read |
 | `CONFIG_FONT_BIG` | n | on (needs `FONT_AA`), the 240 px class draws lists, labels, the status strip and hints in a 9x18 font instead of 8x16, and its small print in 8x16 instead of 6x12 |
-| `CONFIG_UI_COLOR` | y (DM-1801 Pro: n) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
+| `CONFIG_ZONE_EDIT` | = `CHANNEL_EDIT` | a zone's list only goes to its channels: no Add channel, Channel actions or Zone options (2.2). Needs `CONFIG_CHANNEL_EDIT` |
+| `CONFIG_UI_COLOR` | y (n on a board with a monochrome panel) | Settings > Display has no Theme, Highlight color or Filled status bar row and the screen keeps the dark theme's colors (about 600 B). For radios whose only screen is monochrome |
 
 Screens for features that are off (`CONFIG_DMR`, `CONFIG_HOTSPOT`, `CONFIG_VFO_FM`, `CONFIG_VFO_DMR`, `CONFIG_SCAN`, data features) are
 left out or dimmed with the feature. Some radios' default images have only a few KB free (`docs/feature-matrix.md`); the UI was about 50 KB when last measured (`gfx` + fonts about 11 KB, screens and behavior the rest). The frame buffer (40 KB by default) bounds the display: 240x320 at
@@ -298,7 +375,12 @@ left out or dimmed with the feature. Some radios' default images have only a few
 16 bpp. A mono board sizes the buffer to its panel (128x64 at 1 bpp is 1 KB). Drawing still takes RGB565 colors, and
 `gfx.c` keeps a 16-entry palette of the ones on the screen. An entry gets a new color
 only once nothing drawn since the last clear uses it; anti-aliased edges never take the last 4 free entries and
-otherwise get the nearest color already there. Screen captures (debug link, `/api/screen.bmp`) read it as RGB565.
+otherwise get the nearest color already there. The debug link's screen captures read it as RGB565; `/api/screen.bmp` sends the indexes with the palette.
+
+With `CONFIG_NET_WEBCTL` the web control page keeps a copy of the screen (`docs/spec/tcp-services.md` 5.1).
+`gfx_flush` marks each row it sends the panel, and `webctl.c` sends the marked rows and unmarks them. The UI task
+calls `gfx_frame_begin` before it draws and `gfx_flush` ends the frame, so the host link task, which runs above the UI,
+reads rows only between frames (`gfx_frame_idle`).
 
 Without `CONFIG_FONT_AA` a screen uses at most 9 colors (the gallery, all 93 screens), so 4 bpp renders it exactly as
 16 bpp does. With `CONFIG_FONT_AA` the edge grays add up to 20 colors on the busiest screen (Messages); on 14 of the
@@ -314,7 +396,7 @@ pixels, so they hold on any display.
 ## 7. Host simulator and tests
 
 `tests/host/sim/` runs the real `core/ui` files against a simulated board (any display geometry, any of the key
-maps K DM-1701, M GD-77 style, V MD-380 style, F few keys), radio core, the usability-test codeplug (3 zones,
+maps K for a three-key board, M for a GD-77 style map, V for a two-key map, F few keys), radio core, the usability-test codeplug (3 zones,
 40 channels, 30 contacts) and the services of section 4.
 
 ```
@@ -332,10 +414,10 @@ status bar), RX, TX, the Channels list and Settings > Display are also drawn in 
 `<screen>__light.png` and `<screen>__high_contrast.png` (color displays).
 
 
-Geometries: `160x120i5` (DM-1701: 160x120 visible, 5 px inset left and right), `160x128` (MD-380 class; both 160 px classes render through the 4 bpp frame buffer, as the boards do),
-`240x320i10x5` (DM-32: 16 colors, insets 10 px left and right, 5 px top and bottom), `128x64` (mono), `240x320`, `320x240` (GD-88: landscape, 16 colors), or any
+Geometries: `160x120i5` (160x120 visible, 5 px inset left and right), `160x128` (both 160 px classes render through the 4 bpp frame buffer, as the boards do),
+`240x320i10x5` (16 colors, insets 10 px left and right, 5 px top and bottom), `128x64` (mono), `240x320`, `320x240` (landscape, 16 colors), or any
 `WxH`, `WxHiN` (inset N all round), `WxHiNxM` (N left and right, M top and bottom), `WxHm` (mono). The 240 px classes
-draw the anti-aliased fonts (`CONFIG_FONT_AA`, as the DM-32 is built), and `240x320i10x5` and `320x240` the larger text too
+draw the anti-aliased fonts (`CONFIG_FONT_AA`), and `240x320i10x5` and `320x240` the larger text too
 (`CONFIG_FONT_BIG`); the others the bitmap ones. Script tokens:
 
 | Token | Meaning |
@@ -370,7 +452,7 @@ worst-case screens at every geometry, with ordinary and worst-case content. `gfx
 every text, fill and clear with its rectangle; the check fails on a text outside the safe area or cut by its clip box,
 overlapping texts, words with no space between them, a box over part of a text, an overlay cutting a line in half, an
 invisible text (its cells one color after it is drawn), and a middle ellipsis with ordinary content
-(`docs/ux/wireframes/README.md`). On color displays it runs in every theme. `ODR_LAYOUT_SHOTS=DIR` saves every screen
+(`docs/ux/wireframes/README.md`). On color displays it runs in every theme. `RFOUNDRY_LAYOUT_SHOTS=DIR` saves every screen
 checked.
 
 HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences on the radio over the debug link.

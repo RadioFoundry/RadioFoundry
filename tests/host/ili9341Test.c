@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ILI9341-class driver (drivers/display/ili9341): each variant's init stream is well formed and goes out between bus
 // begin / end with the reset pulses first, the window commands of both styles, and a 16-color row through the palette
 #include <stdio.h>

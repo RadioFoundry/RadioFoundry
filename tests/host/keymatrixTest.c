@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Key matrix decode with column-to-ground keys (DM-32 SK1 / SK2 on columns 3 / 4) (docs/spec/hardware-dm32.md 6.1,
 // 6.2; the encoder is quadratureTest's)
 #include <stdio.h>

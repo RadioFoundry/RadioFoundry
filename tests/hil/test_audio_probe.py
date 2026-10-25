@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """USB audio feasibility on the DM-1701: which HR_C6000 settings put FM audio on the I2S link between the chip and the
 MCU (docs/spec/hardware-dm1701.md 21.3). Needs firmware built with CONFIG_AUDIO_PROBE=y (skipped otherwise): the debug
 link's audio probe (docs/spec/debuglink.md 3.14) reads and writes HR_C6000 registers and reports the PCM levels of
@@ -45,7 +45,7 @@ import time
 
 import pytest
 
-from odr_hil import skip
+from rfoundry_hil import skip
 
 PAGE = 4
 TONE_HZ = 1000
@@ -159,7 +159,7 @@ def watch_text(w):
 
 @pytest.fixture
 def probe(radio):
-    from odr_debug import DebugLinkError
+    from rfoundry_debug import DebugLinkError
     try:
         radio.link.probe_status()
     except DebugLinkError as e:
@@ -1532,7 +1532,7 @@ def test_probe_fm_tx_linein2_loop(probe, sdr_bench, pytestconfig):
 
 
 def skip_without_pins(link):
-    from odr_debug import DebugLinkError
+    from rfoundry_debug import DebugLinkError
     try:
         link.probe_pin_scan(10)
     except DebugLinkError:
@@ -1652,7 +1652,7 @@ def test_probe_fm_tx_pin_pwm(probe, sdr_bench, pytestconfig):
     if "VFO_FM" not in probe.features():
         skip("not_built", "built without the FM VFO")
     L = probe.link
-    from odr_debug import DebugLinkError
+    from rfoundry_debug import DebugLinkError
     try:
         L.probe_pin_pwm(1023, 0, 0)
     except DebugLinkError:
@@ -1667,7 +1667,7 @@ def pwm_runs(probe, sdr_bench, pytestconfig, variants):
     """Key once per (name, top, tone Hz, amplitude per mille, [(register, set, clear)]) with MIC_P / MIC_N on and the
     PWM sine on PC8; the registers written while keyed are restored after each run."""
     L = probe.link
-    from odr_debug import DebugLinkError
+    from rfoundry_debug import DebugLinkError
     try:
         L.probe_pin_pwm(1023, 0, 0)
     except DebugLinkError:

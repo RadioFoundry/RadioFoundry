@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 APRS AFSK for the boards (hrc_afsk.c, hal_afsk.h, docs/spec/aprs.md 5): transmit through the modem's prompt
 // FIFO, receive from its FM receive audio (fm_rx_audio.h). The board supplies the audio routing.
 #ifndef HRC_AFSK_H

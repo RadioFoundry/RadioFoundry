@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 display: 320x240 ILI9341-class TFT on the SoC's i8080 LCD controller, backlight PWM0 on PTA15
 // (docs/spec/hardware-gd88.md 9.4). Full resolution in 16 colors, as in hardware-dm32.md: the core's frame buffer
 // holds a palette index per pixel (37.5 KB) and each row goes out as RGB565.

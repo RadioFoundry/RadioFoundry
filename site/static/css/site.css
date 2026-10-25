@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* Layout and components. Values come from tokens.css; this file holds structure only. */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -108,9 +108,17 @@ details.notice > summary { font-weight: 600; }
 /* hero */
 .hero { background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%); border-bottom: 1px solid var(--border); }
 .hero-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: var(--space-6); align-items: center; padding-top: var(--space-5); padding-bottom: var(--space-5); }
-.hero-device img { max-height: 380px; display: block; margin: 0 auto; filter: drop-shadow(0 18px 30px rgb(0 0 0 / 25%)); }
+.screens-strip { display: flex; gap: var(--space-3); overflow-x: auto; padding-bottom: var(--space-2); }
+.screens-strip img { height: 190px; width: auto; flex: none; border: 1px solid var(--border); border-radius: 6px; }
+.hero-device img { max-height: 440px; display: block; margin: 0 auto; filter: drop-shadow(0 18px 30px rgb(0 0 0 / 25%)); }
 .facts { display: flex; gap: var(--space-5); list-style: none; padding: 0; margin: 0; flex-wrap: wrap; color: var(--muted); }
 .facts b { color: var(--text); font-size: 1.3rem; }
+.feature-rows { margin: var(--space-4) 0 0; border-top: 1px solid var(--border); }
+.feature-rows > div { display: grid; grid-template-columns: 5.5rem 1fr; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.feature-rows dt { font-weight: 700; color: var(--accent); }
+.feature-rows dd { margin: 0; font-size: var(--text-sm); }
+.features-all { margin: var(--space-3) 0 0; font-weight: 600; }
+@media (max-width: 560px) { .feature-rows > div { grid-template-columns: 1fr; gap: var(--space-1); } }
 @media (max-width: 860px) { .hero-grid { grid-template-columns: 1fr; } .hero-device img { max-height: 360px; } }
 
 /* cards */
@@ -127,6 +135,15 @@ details.notice > summary { font-weight: 600; }
 .radio-card .badge { white-space: normal; }
 .radio-list td:nth-child(3), .radio-list td:nth-child(4) { min-width: 8.5rem; }
 .radio-card p { margin-bottom: var(--space-2); }
+.dev-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-4); align-items: start; }
+@media (max-width: 720px) { .dev-grid { grid-template-columns: 1fr; } }
+.dev-list { list-style: none; margin: 0; padding: 0; }
+.dev-list li { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+/* a long model list wraps, then clips after two lines */
+.dev-name { min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.dev-list .badge { flex: none; }
+.dev-list .dev-more { justify-content: flex-start; color: var(--muted); }
+.dev-list li:last-child { border-bottom: 0; }
 .badge { display: inline-block; font-size: var(--text-sm); font-weight: 600; padding: 0.1em 0.6em; border-radius: 999px; white-space: nowrap; }
 .badge-supported { background: var(--ok-soft); color: var(--ok); }
 .badge-testing { background: var(--warn-soft); color: var(--warn); }
@@ -168,12 +185,11 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .specs dd { margin: 0; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
 @media (max-width: 860px) { .radio-head, .two-col { grid-template-columns: 1fr; } }
-.shot-group h3 { margin-top: var(--space-5); }
-.shots { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+.shots { display: grid; grid-template-columns: repeat(3, minmax(0, 240px)); gap: var(--space-4); }
 .shot { margin: 0; text-align: center; }
-.shot-show { padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; display: block; }
+.shot-show { padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; display: block; width: 100%; }
 .shot-show:hover, .shot-show[aria-pressed="true"] { border-color: var(--accent); }
-.shot img { max-width: 240px;
+.shot img { width: 100%; box-sizing: border-box;
 	image-rendering: pixelated; border-radius: 6px; background: #000; padding: 6px; display: block; height: auto;
 }
 .shot figcaption { font-size: var(--text-sm); color: var(--muted); max-width: 22ch; margin: var(--space-1) auto 0; }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Air band AM receive helpers (radio_am.h; docs/spec/airband-and-broadcast.md 3)
 #include "board.h"
 #include "radio/radio_am.h"

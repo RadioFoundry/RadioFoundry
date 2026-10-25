@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR modem contract (docs/spec/dmr-modem.md section 6): the driver owns the chip, its interrupts and the per-slot
 // register work; the DMR stack (core/dmr) owns calls, filters and policy. They meet through a TX queue and RX events,
 // so the stack runs at task level and never inside the slot interrupt.

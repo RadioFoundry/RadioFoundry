@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Inside the UI: the navigation stack, the screen table and the helpers the screens share (ui_app.c, ui_menus.c,
 // ui_find.c). Not for other packages.
 #ifndef UI_NAV_H
@@ -22,6 +22,8 @@ typedef enum {
 	SCR_CRASH_TO,			// the crash report's target, picked from the contacts (CONFIG_CRASH_REPORT)
 	SCR_TEXT, SCR_CHPICK, SCR_DISCARD,	// the channel editor's name entry, contact / list picker, unsaved changes
 	SCR_DUAL, SCR_DUAL_PICK, SCR_DUAL_ZONE,	// dual watch: its actions, a channel for A or B (arg: the pane), a zone
+	SCR_ZCHANNEL, SCR_ZPICK, SCR_ZONEEDIT, SCR_ZONEDEL,	// the zone editor (ui.md 2.2): Channel actions, Add
+								// channel, Zone options, Delete zone
 	SCR_COUNT
 } ui_scr_t;
 
@@ -121,6 +123,14 @@ uint16_t ui_filter_raw(uint16_t i);
 const char *ui_filter_text(void);
 void ui_filter_reset(void);
 void ui_filter_rebuild(void);
+#if CONFIG_ZONE_EDIT
+// A list shows again, or the codeplug changed under it (ui_menus.c): the zone editor's focus follows its change
+void ui_menus_resume(void);
+// Zone indexes moved (zone_edit_map from..to): the stack's zone screens follow; returns the new top (sp)
+uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint32_t to);
+// The codeplug changed and no zone change of ours is queued: the editor's screens read their zone again
+void ui_menus_codeplug(void);
+#endif
 
 // T9 (ui_find.c): the key that types c (letters, digits; others 0xFF)
 uint8_t ui_t9_key(char c);

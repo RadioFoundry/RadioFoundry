@@ -29,12 +29,12 @@ has no cable and is reached through A. Two boards, two images: `gd88` and `gd88b
 Set up the build before the radio arrives:
 
 ```
-make BOARD=gd88 && make BOARD=gd88b        # build/gd88/odr_gd88_install.bin, build/gd88b/odr_gd88b_install.bin
+make BOARD=gd88 && make BOARD=gd88b        # build/gd88/rfoundry_gd88_install.bin, build/gd88b/rfoundry_gd88b_install.bin
 make BOARD=gd88 GD88_TX=1 BUILD=build/gd88-tx   # kept for step 15 only; never flash it before then
 ```
 
 The codec comes from the original files. Put them in `codecs/` as [codecs/README.md](../../codecs/README.md) says (the
-directory is ignored by git), and `make` writes `odr_gd88_codec.bin` and `odr_gd88b_codec.bin`: the install image with
+directory is ignored by git), and `make` writes `rfoundry_gd88_codec.bin` and `rfoundry_gd88b_codec.bin`: the install image with
 the codec merged in. Without the files, `tools/hrc7000_codec.py --board gd88 --stock A_FILE` and `--board gd88b
 --stock B_FILE` do the same. The web flasher can also take the codec from the radio (step 5). **Never commit, share or
 upload a merged image.**
@@ -50,7 +50,7 @@ upload a merged image.**
 3. **Transmit stays off** (`GD88_TX` unset, the default) until step 15. No PTT, no TX test, `--allow-rf` not passed. A's
    power control is not known; the `GD88_TX=1` build only ramps a DAC as the DB25-D does and may drive the PA wrongly.
 4. **Dummy load for every transmit**, lowest power, short keys. Never key into the antenna jack open.
-5. Back up before the first write (step 3 for A). B has no ODR route for a backup before its first stage (step 7): the
+5. Back up before the first write (step 3 for A). B has no RadioFoundry route for a backup before its first stage (step 7): the
    original B file is its backup.
 6. After a rejected or interrupted command, check what state the radio is in (a write may have run) before the next one.
 
@@ -71,7 +71,7 @@ them (`[flash.bootloader]` in `boards/gd88/board.toml` and `boards/gd88b/board.t
 ## 3. Step by step
 
 A note on ports: A's cable is `PORT` (for example `/dev/cu.usbserial-XXXX`). The debug link on A runs at 115200 on the
-same cable as the host link once ODR runs. Tools: `tools/odr_debug.py --port PORT ...`, `stub/stubtool.py PORT ...`.
+same cable as the host link once RadioFoundry runs. Tools: `tools/rfoundry_debug.py --port PORT ...`, `stub/stubtool.py PORT ...`.
 
 ### 1. Identify the cable
 
@@ -119,31 +119,31 @@ The console route works on build 021 only. If it fails, stop and look; do not tr
 
 ### 4. B's state
 
-B on its original firmware does not speak ODR's link, so ODR can't read it, and there is no ODR route to B's flash
+B on its original firmware does not speak RadioFoundry's link, so RadioFoundry can't read it, and there is no RadioFoundry route to B's flash
 until its first stage is on. Only this can be checked now: with the radio running its original firmware, the vendor
 CPS/updater show the B version (record it). Resolves nothing yet; it just fixes the file you will need to write back.
 
 ### 5. Install A
 
-Same page, with the install image. It writes `odr_gd88_codec.bin` (first stage at 0x0300C000, application at
+Same page, with the install image. It writes `rfoundry_gd88_codec.bin` (first stage at 0x0300C000, application at
 0x0300D000, codec at 0x030E8000) as changed 4 KB sectors, the first application sector last, each read back, then a
-final CRC pass, and restarts. From a terminal instead (A at power-on, or A running ODR with `CONFIG_STUB_ENTRY`):
+final CRC pass, and restarts. From a terminal instead (A at power-on, or A running RadioFoundry with `CONFIG_STUB_ENTRY`):
 
 ```
 python3 stub/stubtool.py PORT --board gd88 --probe
-python3 stub/stubtool.py PORT --board gd88 --write-app build/gd88/odr_gd88_codec.bin --boot reset
+python3 stub/stubtool.py PORT --board gd88 --write-app build/gd88/rfoundry_gd88_codec.bin --boot reset
 ```
 
 The boot ROM's serial window (UART0) is not known to be reachable on the GD-88 (hardware-gd88.md 4), so the first
-install goes through the console with the web flasher. After ODR is on A, `stubtool` works through it (`--odr-enter`
+install goes through the console with the web flasher. After RadioFoundry is on A, `stubtool` works through it (`--rfoundry-enter`
 instead of the power-on wait); the first stage then also offers the handshake at power-on. `--boot reset` after a write left some boards unresponsive
 on the DM-32 and DM-1801 Pro: if the host link is silent after the install, power-cycle (battery out if needed).
 
 Then:
 
 ```
-tools/odr_debug.py --port PORT version
-tools/odr_debug.py --port PORT diag
+tools/rfoundry_debug.py --port PORT version
+tools/rfoundry_debug.py --port PORT diag
 python3 -m pytest tests/hil -v -rs --radio-port PORT -k gd88
 ```
 
@@ -155,8 +155,8 @@ python3 -m pytest tests/hil -v -rs --radio-port PORT -k gd88
 
 ### 6. A: boot, display, keys, power, ADC, NAND, calibration
 
-Open the diagnostics page (Settings > Diagnostics) or `odr_debug.py diag`. Do these in order; each one that fails is
-fixed in the file named, then rebuild, reinstall (`stubtool --odr-enter --write-app`) and retest.
+Open the diagnostics page (Settings > Diagnostics) or `rfoundry_debug.py diag`. Do these in order; each one that fails is
+fixed in the file named, then rebuild, reinstall (`stubtool --rfoundry-enter --write-app`) and retest.
 
 **Display.** The Home screen, upright, readable, right colors, no tearing.
 
@@ -167,19 +167,19 @@ fixed in the file named, then rebuild, reinstall (`stubtool --odr-enter --write-
 | Washed out or too contrasty colors | Gamma sets 0xE0/0xE1: variants 0 and 2 use the controller's reset gamma. Try the DB25-D/vendor-like values on the display, compare with the original firmware's picture | gamma TODOs (variants 0, 2) |
 | Flicker, a torn first frame, or a hang in the LCD ready wait | `LCDC_CFG_VALUE` 0x303 (the DM-32UV's): try the neighbors | timing word |
 
-Take screenshots (`odr_debug.py screenshot -o /tmp/gd88.png`) of every variant tried. Record the panel variant, record
+Take screenshots (`rfoundry_debug.py screenshot -o /tmp/gd88.png`) of every variant tried. Record the panel variant, record
 bytes, timing word that worked.
 
-**Keys and encoder.** `odr_debug.py view --section input` shows the raw key bits; press every key.
+**Keys and encoder.** `rfoundry_debug.py view --section input` shows the raw key bits; press every key.
 
 | Check | If not / resolves |
 |---|---|
 | Digits, `*`, `#`, P1, P2, P3, P4 do what `board.c` says (P2 direct on PTB9, P1 PTB10, P3 PTB11; P4 on matrix PTB9 x PTB22). PTT is PTA9 low | Matrix map in `input_gd88.c`. PTT: check the line stays high with the cable idle |
 | The four navigation keys (matrix codes 1, 2, 5, 6) and the mode key (4): write down which physical key gives which code | Fix `keymap[]` in `board.c` (up/down/back/OK is a guess). TODO board.c |
-| Encoder: one event per detent, clockwise = up. `odr_debug.py`'s HIL: `pytest tests/hil -k encoder --manual` | Swap `PIN_ENC_A`/`PIN_ENC_B` if backwards; `ENC_STEPS` 1 vs 2 if a detent gives two events. TODO input_gd88.c |
+| Encoder: one event per detent, clockwise = up. `rfoundry_debug.py`'s HIL: `pytest tests/hil -k encoder --manual` | Swap `PIN_ENC_A`/`PIN_ENC_B` if backwards; `ENC_STEPS` 1 vs 2 if a detent gives two events. TODO input_gd88.c |
 | PTA30 (parked low): any key or effect | TODO pins.h |
 
-**Power key and latch.** Turn the radio off with the knob while ODR runs: it saves and powers down. If PTB12 is the knob's
+**Power key and latch.** Turn the radio off with the knob while RadioFoundry runs: it saves and powers down. If PTB12 is the knob's
 switch contact (high while on), power-off by the knob works and nothing else does; if PTB12 is a separate key, a press
 should power off after 3 polls (300 ms). Write down which one. Resolves TODO power_gd88.c (PTB12's role).
 
@@ -193,8 +193,8 @@ power_gd88.c (knob end readings) and `test_battery`.
 
 | Look for | If not / resolves |
 |---|---|
-| The NAND ID is a real chip; a settings change survives a power cycle | `nand_gd88.c` geometry: read the parameter page and compare with the TC58 numbers; `GD88_NAND_ODR_FIRST` 1920 and 32 blocks are the DB25-D's: check the top of the chip is not used by the original data. TODO nand_gd88.c, TODO gd88_rf.h range |
-| `cal flash #N` and `cal nand #N` found, the newer one used; the TX center, PA values not zero | Compare with the page in the backup (0x031FE000, `TUNE` + counter; the NAND copy at 0x280000). Wrong: `gd88_cal.h`. ODR only reads both and never writes them |
+| The NAND ID is a real chip; a settings change survives a power cycle | `nand_gd88.c` geometry: read the parameter page and compare with the TC58 numbers; `GD88_NAND_RFOUNDRY_FIRST` 1920 and 32 blocks are the DB25-D's: check the top of the chip is not used by the original data. TODO nand_gd88.c, TODO gd88_rf.h range |
+| `cal flash #N` and `cal nand #N` found, the newer one used; the TX center, PA values not zero | Compare with the page in the backup (0x031FE000, `TUNE` + counter; the NAND copy at 0x280000). Wrong: `gd88_cal.h`. RadioFoundry only reads both and never writes them |
 
 The calibration items 0x602, 0x606-0x60B are not used; if the page is on hand, record their values and which radio
 settings they match later (step 15). Resolves TODO gd88_cal.h.
@@ -210,7 +210,7 @@ fails until step 9.
 
 ### 7. B: first install through IAP_B
 
-B on its original firmware does not speak ODR's link and has no cable. Its first install is through the vendor IAP
+B on its original firmware does not speak RadioFoundry's link and has no cable. Its first install is through the vendor IAP
 loader's `IAP_B` target. The web flasher offers it: on the Install Receiver B step, A answers but reports B down, and
 the page offers Use Factory Update Mode with the `IAP_B` steps. It writes with the DB25-D's IAP packets (`iap.js`
 `Iap`), which are assumed, not known, to match. Try the web flasher first; the vendor updater below is the fallback.
@@ -220,46 +220,46 @@ First find out who answers in each mode. This is read only. Enter update mode wi
 Pi). Record the version banner and the page. Switch to `IAP_B` and repeat. A different banner or different NAND data
 means the cable reaches B's loader directly (hardware-gd88.md 4, "How IAP_B may reach B"). The same answers mean A
 answers both, and relays to B or switches it by another way. The loader's `Flash Read ` reads NAND only, so this
-gives no backup of B's program flash. Also check that A's PTT still works over the cable afterwards: ODR's B leaves
+gives no backup of B's program flash. Also check that A's PTT still works over the cable afterwards: RadioFoundry's B leaves
 PTA9 and PTA10 as inputs, as the original firmware does.
 
 1. Radio off, cable in, hold P2 and turn on. Long-press P2 until the top line reads `IAP_B`.
 2. In the web flasher, select Use Factory Update Mode and Install. If the loader does not answer or refuses, save the
-   page's log and use the vendor IAP updater instead: write `odr_gd88b_install.bin` (or its `_codec` version) as B's file. This is the
-   **unverified** part: the updater takes the vendor files; ODR's install image starts at 0x0300C000 like them, so it
+   page's log and use the vendor IAP updater instead: write `rfoundry_gd88b_install.bin` (or its `_codec` version) as B's file. This is the
+   **unverified** part: the updater takes the vendor files; RadioFoundry's install image starts at 0x0300C000 like them, so it
    should be accepted, but the loader's checks (header? checksum? size?) are not known. If it refuses, record the
    updater's message and the file sizes.
-3. Restore A: IAP mode with `IAP_A`, or switch the radio off. A keeps ODR (the loader only erases as far as the image
+3. Restore A: IAP mode with `IAP_A`, or switch the radio off. A keeps RadioFoundry (the loader only erases as far as the image
    reaches).
 
 | Look for | If not |
 |---|---|
 | The updater reports "Write Flash Successfully" and "IAP Checksum right" for `IAP_B` | The loader wants a header or another size. Write the original B file back to leave B usable, record the message and stop; this needs the IAP packet format (hardware-gd88.md 14 item 8) |
-| After power-on, B's LEDs (PTA16, PTB17) do something and `odr_debug.py rx2 info` shows `up` (step 8) | B is dead or never started the application: IAP_B again with the original B file |
+| After power-on, B's LEDs (PTA16, PTB17) do something and `rfoundry_debug.py rx2 info` shows `up` (step 8) | B is dead or never started the application: IAP_B again with the original B file |
 
 Settles hardware-gd88.md 5 question 1 in part (does the cable reach B when `IAP_B` is selected) and 14 item 8.
 
 ### 8. B: the link, HELLO, TUNE, status, LEDs
 
 ```
-tools/odr_debug.py --port PORT rx2 info
-tools/odr_debug.py --port PORT diag | grep '^b '
-tools/odr_debug.py --port PORT log --follow
+tools/rfoundry_debug.py --port PORT rx2 info
+tools/rfoundry_debug.py --port PORT diag | grep '^b '
+tools/rfoundry_debug.py --port PORT log --follow
 ```
 
 | Look for | Resolves / if not |
 |---|---|
 | `rx2 info` shows `present bridge restart up`; diag `b up vN` with B's firmware version text | Link is UART3 (PTA13/PTA14), 115200. `down`: wrong pins on A or B, B not running (step 7), or the mux. Dump `A5 5A` frames if a scope is on hand |
-| `dual.receivers` is 2 in `odr_debug.py view --section features` | `test_second_receiver` |
+| `dual.receivers` is 2 in `rfoundry_debug.py view --section features` | `test_second_receiver` |
 | HELLO flags: bit 0 set (B decodes DMR) | |
 | Put the radio on dual watch with two FM channels: B's status (RSSI, noise, active) follows a signal on its channel | TUNE/ACK/STATUS. `ACK` result nonzero: B refused (look at `LOG` messages in the log) |
 | The status LEDs: LED 1 (PTA16) while A transmits, LED 2 (PTB17) while it receives: which one lights, which color | Swap `PIN_LED1`/`PIN_LED2` in `gd88b/pins.h` if reversed. TODO gd88b/pins.h colors |
 | Pull B out of the link (restart it from the debug link: `rx2 restart`): A finds it again within a few seconds and re-sends TUNE/AUDIO/LED | the 1.5 s down rule and HELLO_REQ |
 
-Update test: with B on ODR, update it through A (this is how every later B install goes):
+Update test: with B on RadioFoundry, update it through A (this is how every later B install goes):
 
 ```
-python3 stub/stubtool.py PORT --board gd88b --write-app build/gd88b/odr_gd88b_codec.bin --boot reset
+python3 stub/stubtool.py PORT --board gd88b --write-app build/gd88b/rfoundry_gd88b_codec.bin --boot reset
 ```
 
 The host asks A for the bridge (`DL_CMD_RX2`), A sends `STUB`, B writes `STAY` and jumps to its first stage, the stub
@@ -337,7 +337,7 @@ Optional: `qdmr` or another CPS on the same port, and MMDVMHost, on the cable at
 Only after steps 6-14 pass. This is where the radio can hurt itself.
 
 1. Build the TX image: `make BOARD=gd88 GD88_TX=1 BUILD=build/gd88-tx`. Keep the same codec merge. Install it with
-   `stubtool --odr-enter --write-app` (A running ODR).
+   `stubtool --rfoundry-enter --write-app` (A running RadioFoundry).
 2. Dummy load on the antenna jack, a power meter if you have one, the bench SDR or a spectrum analyzer in a
    directional coupler path to the load. Lowest power level.
 3. FM TX, a few seconds, no modulation first (carrier only): measure the frequency (within a few hundred Hz), the
@@ -401,7 +401,7 @@ section 3 step that settles it.
 | 9 | `boards/gd88/power_gd88.c:15` | Whether PTB12 is the volume knob's switch contact or a separate key | Turn off with the knob and with a key press; watch `view --section input` | 6 |
 | 10 | `boards/gd88/power_gd88.c:24` | The volume knob's end readings (taken as 0 and 1023) | Knob fully down and up, read ADC channel 1 | 6 |
 | 11 | `boards/gd88/common/nand_gd88.c:8` | The NAND's geometry, and on B its chip select (PTA18 as on A) | Read the parameter page; `diag nand`; on B see #20 | 6, 7 |
-| 12 | `boards/gd88/common/gd88_rf.h:96` | The NAND's size and whether its top is used (ODR's blocks 1920-1951) | Compare with the backup's NAND map and the chip; settings survive | 6 |
+| 12 | `boards/gd88/common/gd88_rf.h:96` | The NAND's size and whether its top is used (RadioFoundry's blocks 1920-1951) | Compare with the backup's NAND map and the chip; settings survive | 6 |
 | 13 | `boards/gd88/common/gd88_cal.h:48` | The calibration page items 0x602 (4 bytes), 0x606, 0x607 (1 each), 0x608, 0x60B (3 each) | Record values from the page; match to modem fields at 0x100/0x104 by changing settings in the original firmware (needs the vendor tools) | 6, 15 |
 | 14 | `boards/gd88/common/radio_gd88.c:21` | DAC C's role on each SoC (DB25-D's 1762/1780 are used) | Try values; the RSSI, the sensitivity or the frequency should change | 9 |
 | 15 | `boards/gd88/common/radio_gd88.c:182` | Which RF chips are fitted (only a BK4819 pair is driven) | `diag rf ... lo ...` chip IDs | 6 |
@@ -425,7 +425,7 @@ Items without a mark that this plan also settles (from [hardware-gd88.md](../spe
 | The cable's converter chip (5 question 2) | 1 |
 | Whether `IAP_B` reaches B directly and the IAP packet format (5 question 1, 14 item 8) | 7 |
 | The cable's logic level (5 question 3), UART0 pads (5 question 4), any USB path (5 question 5) | needs the radio opened; not part of day one |
-| Link command ids of the original firmware (14 item 7) | not needed: ODR runs its own protocol |
+| Link command ids of the original firmware (14 item 7) | not needed: RadioFoundry runs its own protocol |
 
 ## 5. What to update afterwards
 

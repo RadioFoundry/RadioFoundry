@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The stub entry (CONFIG_STUB_ENTRY, docs/spec/stub-entry.md): load the host's flash-access RAM monitor into free RAM
 // and hand the SoC to it at run time, so the flashing tools update the radio with no key held at power-on. Its own
 // feature, apart from the debug link:

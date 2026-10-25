@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// A simulated ODR radio as the codeplug editor sees it: the debug link VERSION answer and the open-firmware CPS
+// Copyright (c) 2026 The RadioFoundry Authors
+// A simulated RadioFoundry radio as the codeplug editor sees it: the debug link VERSION answer and the open-firmware CPS
 // (reads, sector writes, C 5), on a data flash with the codeplug at a base address. Writes outside the codeplug's
 // room are refused as the radio refuses them (cps-protocol.md 2.3). For the tests and the page's #sim mode.
 

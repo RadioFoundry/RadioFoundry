@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR ID database over TFTP (tftp_iddb.h, docs/spec/tftp.md 5).
 //
 // A database is too big for the staging area (megabytes against 256 KB), and doesn't need it: a broken one only

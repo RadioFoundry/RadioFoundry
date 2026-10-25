@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Hardware watchdog
 
@@ -7,6 +7,10 @@
 it. The idle task runs only when every other task waits, so a feed says the whole system still gets through its work.
 A task that spins, a critical section that never ends, an interrupt storm or a hang with interrupts off stops the
 feeds, and the chip resets within a few seconds. Off: no watchdog runs, as before.
+
+With the crash log, the hang check in the tick interrupt keeps a record of the task that kept the idle task out, a
+quarter of the timeout before the reset would come, and restarts the radio itself ([crash-log.md](crash-log.md) 1.1).
+Only a hang with interrupts off still reaches the hardware reset.
 
 A watchdog reset is a chip reset: the radio starts as at power-on. The transmitter must be off by then, which is the
 early-boot RF-off step's job (`board_rf_safe`, [crash-log.md](crash-log.md)), not the watchdog's.
@@ -25,21 +29,21 @@ number shows how close legitimate work comes to the timeout.
 |---|---|
 | `main()`, before the scheduler | `main()` after the start, after `board_early_init()` and after `app_start()`; `hal_delay_ms()` once a millisecond while it busy-waits before the scheduler runs |
 | Scheduler running | the idle task |
-| A long busy operation that keeps the idle task out on purpose | the operation, once per block or step (4) |
+| A long busy operation that keeps the idle task out on purpose | the operation, once per block or step, by `watchdog_kick()`, so the hang check counts from that feed too (4) |
 | A CPU fault with the fault trace | `hrc_fault` once, before the 3 s trace ([crash-log.md](crash-log.md) 2.3) |
 
 ## 2. Timeout
 
 | Platform | Watchdog | Timeout | Start |
 |---|---|---|---|
-| STM32F4 (DM-1701, MD-380) | IWDG on the LSI RC oscillator, prescaler 64, reload 2500 | 5 s at the typical 32 kHz; 3.4 s at the data sheet's fastest LSI (47 kHz), 9.4 s at its slowest (17 kHz) | right after `stm32_sysboot_check()` |
-| HR_C7000 (DM-32UV, DM-1801 Pro, DB25-D) | the SoC watchdog at 0x14010000 ([hardware-dm32.md](hardware-dm32.md) 3.5) | 4 s (the 24 MHz crystal, measured; 2.1) | right after `hrc_clock_init()`, which turns off whatever the loader left |
+| STM32F4 | IWDG on the LSI RC oscillator, prescaler 64, reload 2500 | 5 s at the typical 32 kHz; 3.4 s at the data sheet's fastest LSI (47 kHz), 9.4 s at its slowest (17 kHz) | right after `stm32_sysboot_check()` |
+| HR_C7000 | the SoC watchdog at 0x14010000 (`WDT_BASE`, `platform/hrc7000/platform.h`) | 4 s (the 24 MHz crystal, measured; 2.1) | right after `hrc_clock_init()`, which turns off whatever the loader left |
 
 ### 2.1 The HR_C7000 counter
 
 OT_LOAD_H (bits 2:0) and OT_LOAD_L are one 35-bit start value. The counter counts up from it and the radio resets
-when it overflows at 2^35 ([hardware-dm32.md](hardware-dm32.md) 3.5), so the timeout is (2^35 - load) / f and a small
-load is the longest timeout. f is the 24 MHz crystal: on the DB25-D, H = 7, L = 0xF0000000 (2^28 counts) reset the
+when it overflows at 2^35, so the timeout is (2^35 - load) / f and a small
+load is the longest timeout. f is the 24 MHz crystal: on one HR_C7000 board, H = 7, L = 0xF0000000 (2^28 counts) reset the
 radio after 11.1 s (6.2, 2026-10-21). `WDT_LOAD` is 2^35 - 4 s x 24 MHz (H = 7, L = 0xFA472800). RST_LOAD is left at
 its reset value (0x03F80000: about 20 ms from the overflow to the reset, per the manual). The timeout must stay
 comfortably above 3 s: the fault trace takes that long with no feeds.
@@ -49,13 +53,13 @@ comfortably above 3 s: the fault trace takes that long with no feeds.
 Code that never feeds the watchdog must not run with it on.
 
 **The guarantee.** Flashing and backing up a radio, with `stub/stubtool.py`, `stub/f4stub.py` or the web flasher, never
-trips the watchdog unless the stub itself hangs. Every stub ODR can enter feeds the watchdog in every loop that can
-take time, and a watchdog build of ODR refuses to enter a stub that doesn't (3.1).
+trips the watchdog unless the stub itself hangs. Every stub RadioFoundry can enter feeds the watchdog in every loop that can
+take time, and a watchdog build of RadioFoundry refuses to enter a stub that doesn't (3.1).
 
 | Exit | HR_C7000 | STM32F4 |
 |---|---|---|
-| Reboot (`hal_system_t.reboot`, the debug link's REBOOT, a crash restart) | `hrc_soft_reset` turns it off first: whether a soft reset clears it is unknown, and the Baofeng bootloader's update mode never feeds it. If the soft reset doesn't happen, it turns the watchdog back on as the last way out | `NVIC_SystemReset`: a system reset stops the IWDG |
-| ROM DFU entry (REBOOT mode 1, [hardware-dm1701.md](hardware-dm1701.md) "Software entry to a bootloader") | not offered | the request resets first; `stm32_sysboot_check()` jumps to the ROM before `main()` starts the IWDG |
+| Reboot (`hal_system_t.reboot`, the debug link's REBOOT, a crash restart) | `hrc_soft_reset` turns it off first: whether a soft reset clears it is unknown, and the vendor bootloader's update mode never feeds it. If the soft reset doesn't happen, it turns the watchdog back on as the last way out | `NVIC_SystemReset`: a system reset stops the IWDG |
+| ROM DFU entry (REBOOT mode 1, STM32 boards) | not offered | the request resets first; `stm32_sysboot_check()` jumps to the ROM before `main()` starts the IWDG |
 | Runtime stub entry (STUB ENTER, [debuglink.md](debuglink.md) 3.18) | `hrc_watchdog_stretch()` gives it 32 s and a feed, and the stub feeds it from its start-up on (3.2) | the IWDG can't be stopped: ENTER is refused for a stub whose image header doesn't say it feeds; `stm32_watchdog_stretch()` sets the longest timeout (about 32 s, at least 22 s) for the jump, and the stub feeds it from its first instruction on (3.1) |
 | Power off | the supply goes; until it does the idle task feeds as usual (a knob that keeps the radio on leaves it running normally) | the same |
 
@@ -68,13 +72,13 @@ The IWDG runs until the next reset once started, so a stub entered at run time i
 | Don't start the IWDG on builds with `CONFIG_STUB_ENTRY` | the radios that update through the stub would lose the watchdog |
 | Start it late, only after a check | nothing at start-up knows a stub session will come |
 | Only stretch the timeout at the jump | 22-62 s is shorter than a whole application write |
-| **The stub feeds it** (chosen), **and ODR enters only a stub that does** | below |
+| **The stub feeds it** (chosen), **and RadioFoundry enters only a stub that does** | below |
 
 The stub (`stub/stm32f4`) feeds the IWDG:
 
 | Where | How often |
 |---|---|
-| `stub_main`, first | once, before anything else: ODR's stretch covered the copy and the jump |
+| `stub_main`, first | once, before anything else: RadioFoundry's stretch covered the copy and the jump |
 | `stub_ms()`, which every wait loop reads: the main loop's receive poll, the flash erase and program busy waits (a 128 KB sector: up to 2 s), the SPI flash's status polls, the USB transmit waits, the delays | every pass |
 | The protocol engine (`f4stub_port_t.feed`) | at every request, before each erase or program, once per 4 KB block in SUMS and READ (a 1 MB SUMS is 256 blocks) |
 
@@ -83,18 +87,18 @@ hanging, which is what the watchdog is for.
 
 Every such image starts with a header at offset 0x10 ([stub-stm32f4.md](stub-stm32f4.md) 3.1): a magic, the stub
 version and a flags word whose bit 0 says the stub feeds the IWDG. The first version that feeds is 3
-(`F4STUB_VERSION_FEEDS_IWDG`). While the IWDG runs, ODR checks the loaded image before ENTER fires
+(`F4STUB_VERSION_FEEDS_IWDG`). While the IWDG runs, RadioFoundry checks the loaded image before ENTER fires
 (`stm32_stub_image_ok`, through `stub_load_t.image_ok`) and again in `stm32_enter_stub`, with one rule: the magic, a
 version of at least 3 and the feed flag, all three. A stub built before has no header (garbage where the header would
 be): ENTER answers refused (7) with reason 1
-(`STUB_REFUSE_WATCHDOG`, [debuglink.md](debuglink.md) 3.18), ODR keeps running, and nothing is written. So an old
+(`STUB_REFUSE_WATCHDOG`, [debuglink.md](debuglink.md) 3.18), RadioFoundry keeps running, and nothing is written. So an old
 `stubtool.py` or a web flasher page that hasn't been redeployed gets a clear refusal, never a reset part way through a
 write. `stubtool.py` says to use a current stub; the page says to reload.
 
 The web flasher has no stub of its own: the site's build takes the image from `stub/f4stub.py` (`f4_stub()` in
-`site/odrsite/repo.py`, served as `data/f4-stub.json`), so the page and the repository can't drift apart. The site's
+`site/rfoundrysite/repo.py`, served as `data/f4-stub.json`), so the page and the repository can't drift apart. The site's
 tests and `f4stub.py --self-test` check the served and embedded images' headers (magic, version at least 3, the
-flag), and that their copies of the numbers match `stub/stm32f4/f4stub_header.h`, the one definition the stub and ODR
+flag), and that their copies of the numbers match `stub/stm32f4/f4stub_header.h`, the one definition the stub and RadioFoundry
 both include.
 
 ### 3.2 The HR_C7000 stub
@@ -102,19 +106,19 @@ both include.
 The watchdog keeps running while the stub runs, as on the STM32 radios, so a stub that hangs resets the radio. Before
 the jump, `enter_stub` calls `hrc_watchdog_stretch()` (RAM code, interrupts off): a load for 32 s, the STM32 IWDG's
 longest timeout, and a feed. The universal stub leaves the watchdog as it finds it (off under the boot ROM, running
-after ODR's entry) and feeds it with the same knock sequence on every pass of its receive wait and before every SPI read
+after RadioFoundry's entry) and feeds it with the same knock sequence on every pass of its receive wait and before every SPI read
 burst. An idle stub sits in its receive wait, so it feeds for as long as the host leaves it there. The flash erases and
 programs are host-driven SPI commands, one frame at a time, so the stub passes through its receive wait between them.
 A knock while the watchdog is off does nothing.
 
 The stub's reset (`--boot reset`, the web flasher's `resetChip`) turns the watchdog off over the stub's register write
-before `SYS_SOFT_RSTN`, as `hrc_soft_reset` does: a soft reset may keep it, and the bootloader never feeds it. ODR starts
+before `SYS_SOFT_RSTN`, as `hrc_soft_reset` does: a soft reset may keep it, and the bootloader never feeds it. RadioFoundry starts
 it again in `main()`.
 
-ODR needs no version check here. Every older HR_C7000 stub turns the watchdog off at its start-up, so it runs as before,
+RadioFoundry needs no version check here. Every older HR_C7000 stub turns the watchdog off at its start-up, so it runs as before,
 without the watchdog: never reset part way through a write. A watchdog build with no stub that feeds is the STM32 case
 (3.1) only. The web flasher takes this stub from
-`stub/stubtool.py` (`c7000_stub()` in `site/odrsite/repo.py`); the site's tests check it carries the feed.
+`stub/stubtool.py` (`c7000_stub()` in `site/rfoundrysite/repo.py`); the site's tests check it carries the feed.
 
 ## 4. Long operations
 
@@ -125,11 +129,11 @@ FreeRTOS call after the scheduler starts lets the idle task run and needs nothin
 |---|---|---|
 | Start-up before the scheduler (clocks, board early init, display, the radio chips' reset waits) | `platform/*/main.c`, `board_early_init` | `main()` feeds between steps; `hal_delay_ms()`'s busy wait feeds every millisecond before the scheduler runs |
 | SPI NOR erase and program (settings, journal, codeplug, CPS writes, TFTP) | `drivers/flash/spi_nor` | none needed: the busy polls are `hal_delay_ms(1)`, which sleeps once the scheduler runs |
-| SPI NAND mount, garbage collection, wear leveling (DB25-D storage) | `drivers/flash/nand_sectors` | busy waits of 10 µs: the layer calls `nand_dev_t.busy` once per block or sector, which the DB25-D points at `hal_watchdog_feed()` |
+| SPI NAND mount, garbage collection, wear leveling (boards with SPI NAND storage) | `drivers/flash/nand_sectors` | busy waits of 10 µs: the layer calls `nand_dev_t.busy` once per block or sector, which such a board points at `watchdog_kick()` |
 | A single NAND page read, program or block erase | `drivers/flash/spi_nand` | at most a few ms each, fed through the above around them |
 | Settings saves, codeplug sector rewrites, CPS sessions, fast codeplug commits | `core/settings`, `core/storage`, `core/cps` | through the flash drivers above |
 | The HR_C7000 codec load into RAM at the first DMR call | `platform/hrc7000/vocoder.c` | a memcpy of tens of KB: milliseconds |
-| Internal flash erase and program | the stubs only (`stub/stm32f4`, the HR_C7000 stubs) | ODR never writes its own program flash; the stubs run after the exits in 3 |
+| Internal flash erase and program | the stubs only (`stub/stm32f4`, the HR_C7000 stubs) | RadioFoundry never writes its own program flash; the stubs run after the exits in 3 |
 | Critical sections, `vTaskSuspendAll` | `core/input`, `core/radio`, `core/debuglink/dlog.c`, the audio drivers | microseconds; none loops |
 | A CPU fault: the fault trace, then the record and the restart | `platform/hrc7000/irq.c` | one feed before the 3 s trace; the restart turns the watchdog off |
 | A deliberate stop without the crash log (stack overflow or malloc-failed hook, a failed `configASSERT`) | `platform/*/main.c`, `FreeRTOSConfig.h` | none: they spin with interrupts off and the watchdog resets the radio, instead of leaving it stopped |
@@ -141,14 +145,14 @@ FreeRTOS call after the scheduler starts lets the idle task run and needs nothin
 - Whether the HR_C7000 soft reset, or a watchdog reset itself, leaves the watchdog running into the bootloader. The
   soft reset turns it off first; after a watchdog reset the bootloader's update mode must still be checked to stay up.
 - The STM32 LSI on these radios (the IWDG's timeout scales with it).
-- The longest legitimate idle gap on each radio, in particular the DB25-D's start-up with a full codeplug.
+- The longest legitimate idle gap on each radio, in particular the start-up of a SPI NAND board with a full codeplug.
 - A whole STM32 stub write on a watchdog build, and the refusal of a stub without the header (version 2), on the
   radio.
 
 ## 6. Bench tests
 
 The debug link's watchdog view section and command `0x1D` ([debuglink.md](debuglink.md) 3.21);
-`tools/odr_debug.py watchdog` drives them. Every test ends in a watchdog reset, and none starts while the radio
+`tools/rfoundry_debug.py watchdog` drives them. Every test ends in a watchdog reset, and none starts while the radio
 transmits.
 
 ### 6.1 The reset

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The STM32F4 stub's chip facts and its board record check (f4stub.h). Portable: the host tests run it too.
 #include "f4stub.h"
 

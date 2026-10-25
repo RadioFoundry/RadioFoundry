@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # The feature checklist (tests/hil/README.md, "Bring-up mode"): one table per feature, never a column per radio. The
 # tests say which feature they check (@pytest.mark.feature("<id>")), so this file lists no tests. A radio's state for
@@ -106,6 +106,10 @@ spec = "docs/spec/ui.md"
 
 [feature.channel_edit]
 switch = "CHANNEL_EDIT"
+spec = "docs/spec/ui.md"
+
+[feature.zone_edit]
+switch = "ZONE_EDIT"
 spec = "docs/spec/ui.md"
 
 [feature.key_assign]
@@ -284,6 +288,11 @@ spec = "docs/spec/tcp-services.md"
 switch = "NET_HTTP_GZIP"
 spec = "docs/spec/tcp-services.md"
 
+[feature.net_webctl]
+switch = "NET_WEBCTL"
+spec = "docs/spec/tcp-services.md"
+planned_tests = ["tests/hil/test_webctl.py::test_webctl_keys_ptt_audio"]
+
 [feature.net_rigctl]
 switch = "NET_RIGCTL"
 spec = "docs/spec/tcp-services.md"
@@ -368,7 +377,7 @@ spec = "docs/spec/nand-sectors.md"
 
 [feature.codec_check]
 spec = "docs/spec/codec-placement.md"
-source = ["tools/odrflash/odrflash"]
+source = ["tools/rfoundry/rfoundry"]
 
 # ── Bench ──
 

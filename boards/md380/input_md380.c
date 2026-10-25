@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 keypad, side keys, PTT and the 16-position channel switch (docs/spec/hardware-md380.md 9).
 //
 // The keypad is the shared scan (platform/stm32f4/fsmc_keypad): rows driven high one at a time, the LCD data lines

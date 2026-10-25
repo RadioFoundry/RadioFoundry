@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The feature checklist (tests/hil/features.toml) per radio: what each radio must pass, the bring-up run that
 checks it, and the records of those runs (docs/testing/results/<board>/). tests/hil/README.md, "Bring-up mode".
 
@@ -120,7 +120,7 @@ def collected(args, extra=()):
         return None
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "collect.json")
-        env = {k: v for k, v in os.environ.items() if k != "ODR_PORT"}
+        env = {k: v for k, v in os.environ.items() if k != "RFOUNDRY_PORT"}
         r = subprocess.run([py, "-m", "pytest", *args.tests, "--collect-only", "-q", "-p", "no:cacheprovider",
                             *args.pytest_arg, *extra, "--bringup-collect", out], cwd=ROOT, capture_output=True,
                            text=True, env=env)
@@ -427,22 +427,22 @@ def _pytest_python(arg):
 
 
 def lock_path(arg, pytest_args):
-    """The radio lock of this run's radio: --lock, else $ODR_RADIO_LOCK ("{port}" in it becomes the port), else
-    ~/.odr-radio-<port>.lock. The port is --radio-port, else $ODR_PORT, else "usb" (the radio found on USB), so a bench
+    """The radio lock of this run's radio: --lock, else $RFOUNDRY_RADIO_LOCK ("{port}" in it becomes the port), else
+    ~/.rfoundry-radio-<port>.lock. The port is --radio-port, else $RFOUNDRY_PORT, else "usb" (the radio found on USB), so a bench
     with two radios runs one bring-up on each."""
     if arg:
         return arg
-    port = os.environ.get("ODR_PORT") or "usb"
+    port = os.environ.get("RFOUNDRY_PORT") or "usb"
     for i, a in enumerate(pytest_args):
         if a == "--radio-port" and i + 1 < len(pytest_args):
             port = pytest_args[i + 1]
         elif a.startswith("--radio-port="):
             port = a.split("=", 1)[1]
     slug = re.sub(r"[^A-Za-z0-9.-]+", "_", port).strip("_.") or "usb"
-    env = os.environ.get("ODR_RADIO_LOCK")
+    env = os.environ.get("RFOUNDRY_RADIO_LOCK")
     if env:
         return env.replace("{port}", slug)
-    return os.path.expanduser(f"~/.odr-radio-{slug}.lock")
+    return os.path.expanduser(f"~/.rfoundry-radio-{slug}.lock")
 
 
 class RadioLock:
@@ -500,7 +500,7 @@ def cmd_run(args):
     print_owner(rows, "owner actions in this run" + ("" if "--manual" in pytest_args else
                                                      " (skipped without --manual; they don't verify the feature then)")
                 + ":")
-    tmp = tempfile.mkdtemp(prefix="odr-bringup-")
+    tmp = tempfile.mkdtemp(prefix="rfoundry-bringup-")
     out_path = os.path.join(tmp, "out.json")
     cmd = [_pytest_python(args.pytest_python), "-m", "pytest", *args.tests, "-v", "-rs", "-p", "no:cacheprovider",
            *args.pytest_arg, "--bringup", ",".join(names), "--bringup-out", out_path, *pytest_args]
@@ -710,8 +710,8 @@ def main(argv=None):
     p = sub.add_parser("run", parents=[py], help="run the radio's required tests and record the result")
     p.add_argument("--radio", required=True, help="board id (boards/<id>) of the radio on the debug link")
     p.add_argument("--feature", help="these features only (comma separated); default every required one")
-    p.add_argument("--lock", help="the radio lock file (default $ODR_RADIO_LOCK, \"{port}\" in it the port, else "
-                                  "~/.odr-radio-<port>.lock)")
+    p.add_argument("--lock", help="the radio lock file (default $RFOUNDRY_RADIO_LOCK, \"{port}\" in it the port, else "
+                                  "~/.rfoundry-radio-<port>.lock)")
     p.add_argument("--lock-wait", type=float, default=0, help="s to wait for the radio lock (default: fail at once)")
     p.add_argument("--no-record", action="store_true", help="run, but write no record")
     p.add_argument("--dry-run", action="store_true", help="print the pytest command, run nothing")

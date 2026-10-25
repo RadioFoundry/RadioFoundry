@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Internal interfaces between the GD-88 SoC A board files (the shared ones are in common/gd88_rf.h)
 #ifndef GD88_H
 #define GD88_H

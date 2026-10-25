@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// Release manifests (odr-release/1): checking one against its image and the radio. A port of verify() in
-// tools/odrflash/odrflash/manifest.py; the format is described in docs/dev/release.md.
+// Copyright (c) 2026 The RadioFoundry Authors
+// Release manifests (rfoundry-release/1): checking one against its image and the radio. A port of verify() in
+// tools/rfoundry/rfoundry/manifest.py; the format is described in docs/dev/release.md.
 
 import { hex, sha256, startsWith } from "./bytes.js";
 import { codecSectors } from "./plan.js";
@@ -32,13 +32,13 @@ function codecConflicts(board, lo, hi) {
 
 // Returns the board the image is for. fb: data/flash-boards.json
 export async function verify(m, image, fb, boardId = null) {
-	if (m.format !== fb.manifest_format)
+	if (m.format !== fb.manifest_format && m.format !== "odr-release/1")
 		throw new ManifestError(`unknown manifest format ${m.format} (this flasher reads ${fb.manifest_format}; reload the page)`);
 	const board = fb.boards[m.board];
 	if (!board) throw new ManifestError(`unknown radio ${m.board}`);
 	if (boardId && boardId !== board.id)
 		throw new ManifestError(`this image is for the ${board.name}, but the radio is a ${fb.boards[boardId]?.name || boardId}: refusing`);
-	if (startsWith(image, fb.magic)) throw new ManifestError("this is a stock firmware file, not an OpenDigitalRadio image");
+	if (startsWith(image, fb.magic)) throw new ManifestError("this is a stock firmware file, not a RadioFoundry image");
 	const img = m.image || {};
 	if (num(img.size) !== image.length) throw new ManifestError(`the image is ${image.length} bytes, the manifest says ${img.size}`);
 	const got = await sha256(image);
@@ -59,10 +59,10 @@ export async function verify(m, image, fb, boardId = null) {
 	return board;
 }
 
-// A manifest for a local build (developers: build/<board>/odr_<board>.bin)
+// A manifest for a local build (developers: build/<board>/rfoundry_<board>.bin)
 export async function forDevBuild(board, image) {
 	return {
-		format: "odr-release/1", board: board.id, board_name: board.name, version: "dev", git: "unknown", dev_build: true,
+		format: "rfoundry-release/1", board: board.id, board_name: board.name, version: "dev", git: "unknown", dev_build: true,
 		image: { file: "local", size: image.length, sha256: await sha256(image) },
 		ranges: [{ addr: hex(board.app_base), size: image.length }],
 		codec: { included: false, profile: board.codec.id, keep_supported: board.keep_codec_supported },

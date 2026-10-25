@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The UI host simulator (ui_sim.h). Everything core/ui needs from the firmware is simulated here: the board
 // descriptor, hal_millis, the radio core (radio_get_view / radio_req_*), the codeplug, the host link and the
 // services other packages own (ui_svc.h; the settings store is the weak one from ui_svc_stub.c).
@@ -24,6 +24,7 @@
 //   dlsel:a|b           the debug link selects A or B of the dual watch (view.dual_sel); no UI tick after it
 //   cpwrite, cpdel:<n>, zonesize:<z>,<n>   the codeplug is written: channel 40 first in zone 0, channel n deleted,
 //                       zone z cut to n channels
+//   zonejob:<z>         another task (an import) deletes zone z (0-based) through the zone storage job
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
@@ -221,7 +222,7 @@ void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int
 			// Two words run together. A mark of one glyph (the temporary dot) sits next to its value on purpose,
 			// and the wordmark is two colors of one word
 			bool mark = e - a == 1 || live[i].s[1] == 0;
-			bool wordmark = strcmp(live[i].s, "Open") == 0 && strcmp(s + a, "DigitalRadio") == 0;
+			bool wordmark = strcmp(live[i].s, "Radio") == 0 && strcmp(s + a, "Foundry") == 0;
 			if (!mark && !wordmark)
 				issue("no space between", s, x, y, w, h, live[i].s);
 		} else if (live[i].x0 < x1 && live[i].x1 > x0) {
@@ -272,14 +273,9 @@ const sim_geom_t *sim_geom_find(const char *name)
 
 // ---------------- the board ----------------
 
-enum { K_GREEN, K_RED, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_STAR, K_HASH, K_0, K_9 = K_0 + 9, K_SK1, K_SK2, K_TOP,
+enum { K_GREEN, K_RED, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_STAR, K_HASH, K_0, K_9 = K_0 + 9, K_SK1, K_SK2, K_SK3,
        K_FN1, K_FN2, K_PTT, K_P1, K_P2 };
 
-#if CONFIG_DUAL_WATCH
-#define SIM_SK2_SHORT	ACT_AB		// the DM-1701's SK2: A/B on a press, Dual watch held (boards/dm1701/board.c)
-#else
-#define SIM_SK2_SHORT	ACT_TALK_TARGET
-#endif
 static const keymap_entry_t map_k[] = {	// DM-1701 (7.1)
 	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
 	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
@@ -289,8 +285,8 @@ static const keymap_entry_t map_k[] = {	// DM-1701 (7.1)
 	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
 	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
 	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, SIM_SK2_SHORT, ACT_USER_2, false, false, 0 },
-	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false, 0 }, { K_FN1, ACT_USER_1, ACT_USER_1, false, false, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
+	{ K_SK3, ACT_USER_3, ACT_EMERGENCY, false, false, 0 }, { K_FN1, ACT_USER_1, ACT_USER_1, false, false, 0 },
 	{ K_FN2, ACT_USER_4, ACT_USER_4, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const keymap_entry_t map_m[] = {	// GD-77 (7.3)
@@ -303,8 +299,8 @@ static const keymap_entry_t map_m[] = {	// GD-77 (7.3)
 	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
 	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
 	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
-	{ K_TOP, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
+	{ K_SK3, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const keymap_entry_t map_v[] = {	// MD-9600 front panel + hand mic (7.4); the encoder sends ENC_STEP
 	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
@@ -316,15 +312,16 @@ static const keymap_entry_t map_v[] = {	// MD-9600 front panel + hand mic (7.4);
 	{ K_0 + 4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 }, { K_0 + 5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
 	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
 	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
-	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
-	{ K_TOP, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
+	{ K_SK3, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const keymap_entry_t map_f[] = {	// few keys (7.5): Up / Down / Select / Back, PTT
 	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
 	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
 	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
-static const uint8_t side_k[] = { K_SK1, K_SK2, K_TOP }, side_m[] = { K_SK1, K_SK2 };	// board.side_keys
+static const uint8_t side_k[] = { K_SK1, K_SK2, K_SK3 }, side_m[] = { K_SK1, K_SK2 };	// board.side_keys
+static const char *const side_names[] = { "SK1", "SK2", "SK3" };
 static const struct {
 	const keymap_entry_t *m;
 	uint8_t n;
@@ -501,11 +498,11 @@ static const sim_contact_t contacts[] = {
 	{ "SKYWARN", 3133, CONTACT_GROUP }, { "ARES", 31064, CONTACT_GROUP }, { "UK", 235, CONTACT_GROUP },
 	{ "Germany", 262, CONTACT_GROUP }, { "Canada", 302, CONTACT_GROUP }, { "Mexico", 334, CONTACT_GROUP },
 	{ "Main Ops", 201, CONTACT_GROUP }, { "Regional", 8, CONTACT_GROUP },
-	{ "Joe Smith", 3101234, CONTACT_PRIVATE }, { "Jodi Ruiz", 3105678, CONTACT_PRIVATE },
-	{ "Ann Lee", 3102222, CONTACT_PRIVATE }, { "Bob Kent", 3103333, CONTACT_PRIVATE },
-	{ "Carl Diaz", 3104444, CONTACT_PRIVATE }, { "Dana Wu", 3106666, CONTACT_PRIVATE },
-	{ "Eve Park", 3107777, CONTACT_PRIVATE }, { "Fred Ng", 3108888, CONTACT_PRIVATE },
-	{ "Gail Fox", 3109090, CONTACT_PRIVATE }, { "All call", 0xFFFFFF, CONTACT_ALL_CALL },
+	{ "K1ABC Joe", 3101234, CONTACT_PRIVATE }, { "W1XYZ Jodi", 3105678, CONTACT_PRIVATE },
+	{ "KD9ABC Ann", 3102222, CONTACT_PRIVATE }, { "K9XYZ Bob", 3103333, CONTACT_PRIVATE },
+	{ "N2ABC Carl", 3104444, CONTACT_PRIVATE }, { "N3XYZ Dana", 3106666, CONTACT_PRIVATE },
+	{ "W4ABC Eve", 3107777, CONTACT_PRIVATE }, { "W5XYZ Fred", 3108888, CONTACT_PRIVATE },
+	{ "K6ABC Gail", 3109090, CONTACT_PRIVATE }, { "All call", 0xFFFFFF, CONTACT_ALL_CALL },
 };
 #define N_CONTACTS	(sizeof contacts / sizeof contacts[0])
 
@@ -611,7 +608,16 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	return true;
 }
 
-uint16_t codeplug_zone_count(void) { return 3; }
+// Zones the zone editor wrote (ui_svc_zone_edit, the real zone_edit.c on these fakes): once one is written, every
+// zone is a copy here, which the editor changes
+#define SIM_ZONES	6
+static zone_t sim_z[SIM_ZONES];
+static uint16_t sim_zn;
+static bool sim_zones_edited;
+static uint16_t sim_zone_written;
+static bool sim_zone_builtin(uint16_t index, zone_t *out);
+
+uint16_t codeplug_zone_count(void) { return sim_zones_edited ? sim_zn : 3; }
 
 // A codeplug written while the radio runs (cpwrite, cpdel:N, zonesize:Z,N): codeplug_serial() moves on
 static uint32_t sim_cp_serial;
@@ -621,6 +627,17 @@ static uint8_t sim_zone_size[3];	// zonesize:Z,N: zone Z has its first N channel
 uint32_t codeplug_serial(void) { return sim_cp_serial; }
 
 bool codeplug_zone(uint16_t index, zone_t *out)
+{
+	if (sim_zones_edited) {
+		if (index >= sim_zn)
+			return false;
+		*out = sim_z[index];
+		return true;
+	}
+	return sim_zone_builtin(index, out);
+}
+
+static bool sim_zone_builtin(uint16_t index, zone_t *out)
 {
 	if (index >= 3)
 		return false;
@@ -640,6 +657,103 @@ bool codeplug_zone(uint16_t index, zone_t *out)
 	for (uint16_t i = 0; i < n; i++)
 		if (zones[index].first + i != sim_cp_deleted)
 			out->channels[out->count++] = (uint16_t)(zones[index].first + i);
+	return true;
+}
+
+static void sim_zones_take(void)
+{
+	if (sim_zones_edited)
+		return;
+	for (sim_zn = 0; sim_zn < 3; sim_zn++)
+		sim_zone_builtin(sim_zn, &sim_z[sim_zn]);
+	sim_zones_edited = true;
+}
+
+bool codeplug_zones_stored(void) { return true; }
+uint16_t codeplug_zone_capacity(void) { return CODEPLUG_ZONE_MAX; }
+uint16_t codeplug_zone_written(void) { return sim_zone_written; }
+uint16_t codeplug_zone_add_index(void) { return codeplug_zone_count(); }
+// The sim keeps no settings record: nothing to note for a power cut (zone_settle.c, zoneEditTest covers it)
+void zone_settle_begin(bool deleted, uint16_t index) { (void)deleted; (void)index; }
+void zone_edit_settle(void) {}
+
+// A new zone (index = the count) goes last: the sim has no slots to reuse
+bool codeplug_set_zone(uint16_t index, const zone_t *z)
+{
+	sim_zones_take();
+	if (index > sim_zn || (index == sim_zn && sim_zn >= SIM_ZONES))
+		return false;
+	sim_z[index] = *z;
+	if (index == sim_zn)
+		sim_zn++;
+	sim_zone_written = index;
+	sim_cp_serial++;
+	sim_rec.codeplug_writes++;
+	return true;
+}
+
+bool codeplug_delete_zone(uint16_t index)
+{
+	sim_zones_take();
+	if (index >= sim_zn)
+		return false;
+	memmove(&sim_z[index], &sim_z[index + 1u], (size_t)(sim_zn - index - 1u) * sizeof sim_z[0]);
+	sim_zn--;
+	sim_cp_serial++;
+	sim_rec.codeplug_writes++;
+	return true;
+}
+
+bool codeplug_set_channel(uint16_t number, const channel_t *ch) { return ui_svc_write_channel(number, ch); }
+// Only a channel the editor wrote (Copy here's rollback when its zone write fails)
+bool codeplug_delete_channel(uint16_t number)
+{
+	for (uint8_t i = 0; i < n_edits; i++) {
+		if (sim_edits[i].number == number) {
+			sim_edits[i] = sim_edits[--n_edits];
+			return true;
+		}
+	}
+	return false;
+}
+void storage_lock(void) { }
+void storage_unlock(void) { }
+
+static radio_view_t view;
+static void load_channel(void);
+static ui_dual_ref_t sim_dual[2];
+
+// The zone editor's job, run at once. The radio follows its zone through zone_edit's log as the radio core's reload
+// does, and stays on its channel (by number); a refusal is the job's failure toast
+bool ui_svc_zone_edit(const zone_op_t *op)
+{
+	uint32_t from = zone_edit_shifts();
+	zone_edit_result_t r = zone_edit_apply(op, NULL);
+	if (r != ZONE_EDIT_OK) {
+		ui_event_t ev;
+		memset(&ev, 0, sizeof ev);
+		ev.kind = UI_EV_SAVE_FAILED;
+		snprintf(ev.text, sizeof ev.text, "Zone edit refused (%d)", (int)r);
+		ui_notify(&ev);
+		return true;
+	}
+	uint16_t to;
+	for (int i = 0; i < 2; i++) {
+		// Dual watch's channels follow their zones as in the radio core; the UI finds a deleted one's channel again
+		if (!sim_dual[i].vfo && zone_edit_map(from, zone_edit_shifts(), sim_dual[i].zone, &to) != ZONE_MAP_LOST)
+			sim_dual[i].zone = to;
+	}
+	if (view.vfo)
+		return true;
+	zone_t z;
+	if (zone_edit_map(from, zone_edit_shifts(), view.zone_index, &to) == ZONE_MAP_GONE)
+		view.zone_pos = 0;
+	view.zone_index = to < codeplug_zone_count() ? to : (uint16_t)(codeplug_zone_count() - 1u);
+	if (codeplug_zone(view.zone_index, &z) && zone_list_find(&z, view.channel_number) >= 0)
+		view.zone_pos = (uint16_t)zone_list_find(&z, view.channel_number);
+	uint16_t pos = view.zone_pos;
+	load_channel();
+	view.zone_pos = pos;
 	return true;
 }
 
@@ -747,7 +861,6 @@ static void sim_vfo_use(uint8_t idx)
 	vfo_talk_private = t.talk_private;
 	view.vfo_index = idx;
 }
-static ui_dual_ref_t sim_dual[2];
 static uint8_t sim_sel;
 static uint32_t reply_until;
 static uint32_t ptt_up_at;
@@ -1076,11 +1189,16 @@ static uint16_t n_inbox;
 // The volume feature (a radio without a knob: the VOL key, Settings > Sound > Volume) only with the "softvol" token, so
 // the other screens look as on the radios with a knob
 static bool soft_volume;
-uint32_t ui_svc_features(void) { return soft_volume ? 0xFFFFFFFFu : 0xFFFFFFFFu & ~UI_FEAT_VOLUME; }
+// The broadcast receiver (Settings > Talk & listen > FM broadcast step) only with the "bcast" token, the same way
+static bool bcast_rx;
+uint32_t ui_svc_features(void)
+{
+	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST);
+}
 void ui_svc_boot_text(char line1[17], char line2[17])
 {
 	strcpy(line1, "N0CALL");
-	strcpy(line2, "Your Name");	// placeholders: the codeplug's boot text is the user's own
+	strcpy(line2, "Jamie Thompson");	// placeholders: the codeplug's boot text is the user's own
 }
 bool ui_svc_talk_to(uint32_t id, bool private_call, uint8_t life)
 {
@@ -1559,6 +1677,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
 	board.side_keys = maps[map].side;
+	board.side_key_names = side_names;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
 	power.supply_mv = NULL;
@@ -1595,6 +1714,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	sim_cp_insert = false;
 	sim_cp_deleted = 0;
 	memset(sim_zone_size, 0, sizeof sim_zone_size);
+	sim_zones_edited = false;
+	sim_zn = 0;
 	focus_id = 0;
 	check_due = 0;
 	ptt_up_at = 0;
@@ -1602,6 +1723,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	now_ms = 1000;
 	load_channel();
 	soft_volume = false;
+	bcast_rx = false;
 	ui_svc_setting_set(UI_SET_VOLUME, RADIO_VOLUME_DEFAULT);
 	ui_svc_setting_set(UI_SET_HINTS, 1);
 	ui_svc_setting_set(UI_SET_LARGE_TEXT, 0);
@@ -1617,7 +1739,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_UPDOWN_HOME, 0);
 	ui_svc_setting_set(UI_SET_VFO_STEP, 0);
 	sim_step = 0;
-	for (uint8_t k = UI_SET_KEY_SIDE1; k <= UI_SET_KEY_TOP_HOLD; k++)
+	for (uint8_t k = UI_SET_KEY_FIRST; k <= UI_SET_KEY_LAST; k++)
 		ui_svc_setting_set(k, 0);	// the side keys as the board has them
 	ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 0);
 	ui_svc_setting_set(UI_SET_LOW_BATTERY, 15);
@@ -2043,6 +2165,17 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(300);
 		return true;
 	}
+#if CONFIG_ZONE_EDIT
+	if (strcmp(t, "zonejob") == 0 && arg != NULL) {	// not the UI's own edit: its screens learn of it from the log
+		zone_op_t op;
+		memset(&op, 0, sizeof op);
+		op.kind = ZONE_OP_DELETE;
+		op.zone = (uint16_t)atoi(arg);
+		ui_svc_zone_edit(&op);
+		advance(300);
+		return true;
+	}
+#endif
 	if (strcmp(t, "dlpos") == 0 && arg != NULL) {	// the debug link (or any other task) asks for channel position N
 		radio_req_zone_pos((uint16_t)(atoi(arg) - 1));
 		advance(100);
@@ -2233,6 +2366,10 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "softvol") == 0) {	// this radio has no volume knob: the board sets the speaker volume
 		soft_volume = true;
 		advance(200);
+		return true;
+	}
+	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
+		bcast_rx = true;
 		return true;
 	}
 	if (strcmp(t, "worst") == 0) {		// worst-case codeplug content from here on (sim_worst)

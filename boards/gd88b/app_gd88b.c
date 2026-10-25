@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SoC B: the second receiver's application (docs/spec/rx2-link.md, hardware-gd88.md 10). There is no radio core
 // here: app_start (called by platform/hrc7000/main.c) starts one task that runs the link's receiver side (core/rx2) on
 // UART3, the shared radio code (boards/gd88/common) on B's own BK4819 pair, the FM squelch and, on DMR channels, the
@@ -235,7 +235,7 @@ static void task_fn(void *arg)
 #endif
 	IO_DIPLEX0 |= DIPLEX0_UART3;
 	hrc_link_uart_init(UART3_BASE, IRQ_UART3, LINK_BAUD);
-	rx2_recv_init(&link, send, &ops, CONFIG_DMR ? RX2_HELLO_DMR : 0u, ODR_GIT);
+	rx2_recv_init(&link, send, &ops, CONFIG_DMR ? RX2_HELLO_DMR : 0u, RFOUNDRY_GIT);
 	rx2_recv_log(&link, "gd88b up");
 	uint8_t buf[32];
 	for (;;) {

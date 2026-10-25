@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Bell 202 AFSK, 1200 baud, mark 1200 Hz / space 2200 Hz (docs/spec/aprs.md 4), on PCM samples:
 //   - the modulator turns a tone sequence (hdlc.h) into phase continuous audio at any sample rate; boards that send
 //     PCM to their modulator use it, and the host tests use it to make test signals and WAV files
@@ -10,8 +10,8 @@
 //     paths run side by side, one on the audio as received and one after a high pass that removes audio under the
 //     tones; a frame either finds is delivered once
 // Integer only (radios without an FPU run it at 8 kHz: the CK803S of the HR_C7000). No RTOS, no board.
-#ifndef ODR_AFSK_H
-#define ODR_AFSK_H
+#ifndef RFOUNDRY_AFSK_H
+#define RFOUNDRY_AFSK_H
 
 #include <stdint.h>
 #include <stdbool.h>

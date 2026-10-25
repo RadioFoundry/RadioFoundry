@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 factory calibration, the "TUNE" page (docs/spec/hardware-gd88.md 7): PA drive, RX front-end tuning, TX center
 // and modulation, TX switching delays, squelch thresholds. Each SoC has its own page, in the layout of
 // hardware-db25d.md 6.

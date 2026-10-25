@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Vector table and PIC (docs/spec/hardware-dm32.md 4). The CPU takes vector = PIC source + 32 from the table at VBR.
 // Every user vector goes to the common entry (freertos/portasm.S), which acks the PIC and calls hrc_irq_table[source];
 // the CPU exceptions go to hrc_fault_entry. The table is in RAM, 1 KB aligned (VBR), filled at start-up.
@@ -8,6 +8,13 @@
 #include "hal_watchdog.h"
 #if CONFIG_FAULT_TRACE
 #include "crash/crash.h"
+#endif
+#if CONFIG_CRASH_LOG
+#include "hal_crash.h"
+#if CONFIG_WATCHDOG
+#include "FreeRTOS.h"
+#include "task.h"
+#endif
 #endif
 
 #define VECTORS		128u	// 32 exceptions + 64 PIC sources, padded
@@ -122,10 +129,27 @@ void hrc_fault(const uint32_t *frame, uint32_t vector)
 	fault_trace(frame, vector);
 #endif
 #if CONFIG_CRASH_LOG
-	hrc_crash_fault(frame, vector);	// keeps the record and restarts
+	hrc_crash_frame(frame, CRASH_KIND_FAULT, vector);	// keeps the record and restarts
 #endif
 	hrc_soft_reset();	// without the crash log: restart too, rather than stay crashed
 }
+
+#if CONFIG_WATCHDOG && CONFIG_CRASH_LOG
+// The hang check (core/app/watchdog.c), from the tick interrupt. hrc_irq_entry saved the interrupted task's registers
+// in a frame like hrc_fault's and wrote its address to the task's TCB, whose first word is the saved stack pointer
+// (pxTopOfStack). Interrupts don't nest, so that task is the one that kept the idle task out. The fault trace marks a
+// hang with vector 0
+void hal_crash_hang(uint32_t ms)
+{
+	__asm__ volatile ("psrclr ie");
+	hrc_rf_safe();
+	const uint32_t *frame = *(const uint32_t *const *)xTaskGetCurrentTaskHandle();
+#if CONFIG_FAULT_TRACE
+	fault_trace(frame, 0);
+#endif
+	hrc_crash_frame(frame, CRASH_KIND_HANG, ms);
+}
+#endif
 
 void hrc_irq_init(void)
 {

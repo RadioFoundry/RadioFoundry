@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A TFTP server (RFC 1350, octet mode only) with the option extension (RFC 2347): blksize (RFC 2348), tsize and
 // timeout (RFC 2349). One transfer at a time, from a fixed table of files (docs/spec/tftp.md). CONFIG_TFTP.
 //
 // No RTOS here: the user feeds the datagrams for port 69 and for the transfer's own port in, calls tftpTick every few
 // ms, and sends through tftp_io_t (core/net/net_services.c is the firmware glue, tests/host/tftpTest.c the fake).
-#ifndef ODR_TFTP_H
-#define ODR_TFTP_H
+#ifndef RFOUNDRY_TFTP_H
+#define RFOUNDRY_TFTP_H
 
 #include <stdint.h>
 #include <stdbool.h>

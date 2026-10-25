@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ST7567 monochrome LCD driver (docs/spec/hardware-dm1801pro.md 3)
 #include "st7567.h"
 

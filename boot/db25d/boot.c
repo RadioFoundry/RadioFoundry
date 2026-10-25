@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D first stage (boot/README.md): holds the power latch and drives the transmitter off, then offers the boot ROM's
 // handshake on UART1 (the K1 programming cable; boot/hrc7000/stage.c). Without a host it goes on to the application. On
 // that path only the power latch and the transmitter pins are changed, to the levels the application drives them to

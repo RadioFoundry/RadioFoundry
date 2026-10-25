@@ -30,6 +30,6 @@ The drawings are the design intent. What the firmware draws is in `../screens/<g
 - a text drawn invisibly: its cells one color after it is drawn (text the color of what is under it, or a blank glyph);
 - a text shortened in the middle with an ellipsis on ordinary content (worst-case content may be shortened; a message preview cut at its end is fine).
 
-`ODR_LAYOUT_SHOTS=DIR uiSim --layout` saves every screen it checked; `uiSim --ellipsis` lists every shortened text.
+`RFOUNDRY_LAYOUT_SHOTS=DIR uiSim --layout` saves every screen it checked; `uiSim --ellipsis` lists every shortened text.
 
 Screens drawn in each file: Home idle (DMR and FM), RX, TX, dual watch Home, incoming message banner and message view, quick settings, Find (contact search), caller actions, Hub, talk target picker.

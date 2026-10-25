@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* Radioddity GD-88 without DMR (CONFIG_DMR=n, config.mk selects this script; memory.ld is the DMR build's), SoC A or
- * B (boards/gd88b uses it too), HR_C7000 (CK803S), application behind the IAP loader and ODR's first stage
+ * B (boards/gd88b uses it too), HR_C7000 (CK803S), application behind the IAP loader and RadioFoundry's first stage
  * (docs/spec/hardware-gd88.md 2, 8).
  *
- * Program flash (XIP at 0x03000000): the loader below 0x0300C000 (never written), ODR's first stage
+ * Program flash (XIP at 0x03000000): the loader below 0x0300C000 (never written), RadioFoundry's first stage
  * 0x0300C000..0x0300D000 (board.mk APP_BASE, BOOT_SIZE), the application from __app_start (0x0300D000) up to
  * 0x0310C000, where the data area starts; the calibration copy at 0x031FE000 and the display record at 0x031FD000 are
  * above it.

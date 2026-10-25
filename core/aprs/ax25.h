@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // AX.25 2.2 UI frames as APRS uses them (docs/spec/aprs.md 3): addresses, frame build and parse, the FCS, and the
-// TNC2 text form ("N0CALL-7>APZODR,WIDE1-1*:payload") the APRS-IS servers and KISS monitors use. No RTOS, no board:
+// TNC2 text form ("N0CALL-7>APZRDF,WIDE1-1*:payload") the APRS-IS servers and KISS monitors use. No RTOS, no board:
 // the host tests run it as is.
-#ifndef ODR_AX25_H
-#define ODR_AX25_H
+#ifndef RFOUNDRY_AX25_H
+#define RFOUNDRY_AX25_H
 
 #include <stdint.h>
 #include <stdbool.h>

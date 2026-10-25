@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // PCM audio over I2S3 to an HR_C6000 / HR_C5000 codec (i2s_pcm.h; docs/spec/hardware-dm1701.md 3.2, 4.4, 8,
 // hardware-md380.md 6.2, hardware-md9600.md 4.3).
 //

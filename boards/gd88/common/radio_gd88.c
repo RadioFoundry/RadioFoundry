@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 radio, either SoC: two BK4819 on one bit-banged 3-wire bus, the superhet's RX paths and analog FM
 // (docs/spec/hardware-gd88.md 11). The same scheme and chip set-up as hardware-db25d.md 4.
 //

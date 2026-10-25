@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Radioddity GD-88 (Kydera DR-880UV) hardware
 
-Status: bring-up, 2026-10-21. ODR builds for both SoCs (`boards/gd88`, `boards/gd88b`; section 13) but has not run
+Status: bring-up, 2026-10-21. RadioFoundry builds for both SoCs (`boards/gd88`, `boards/gd88b`; section 13) but has not run
 on a GD-88 yet. Sections 1-5 record how the GD-88 programs and updates (a USB-serial cable, not native USB). Sections
 6-12 are the hardware facts the port is written from. The survey entry is in [radios.md](radios.md); the HR_C7000 facts it builds
 on (UART registers, USB core, clock gates) are in [hardware-dm32.md](hardware-dm32.md).
@@ -30,18 +30,18 @@ and fills 0x10000–0x34763 (BIN).
 
 ## 1. SoC pair and roles
 
-| Item | Finding | Tag |
-|---|---|---|
-| SoCs | Two HR_C7000 (C-SKY CK803S core each), called A and B. Both images are CK803S code with the same start-up as the DM-32UV stock image, and both link the HR_C7000 vocoder library | BIN |
-| A | Master: display, keys, GPS, FM broadcast receiver, menus, the PC programming protocol, and resetting B ("Reset BandB") | BIN |
-| B | Second transceiver (VFO B). It has no GPS or PC programming protocol. Its UART1 only carries a factory tuning / flash-copy command set | BIN |
-| A↔B link | UART3 (0x14090000) at 115200 on both chips, interrupt vector 45 on both | BIN |
-| GPS (A only) | UART2 (0x14050000), interrupt vector 43. It starts at 9600; the firmware sends the receiver a `$CFGPRT` port-configuration sentence | BIN |
-| UART0 (0x14030000) | Not used by either application: no literal, no `movih`, and vector 44 is never registered. On the DM-32UV this is the programming-cable UART | BIN |
-| Storage | One SPI NAND per SoC (TC58 family strings in both images); part per earlier notes: Toshiba TC58CVG1S3HRAIJ | BIN, COM |
+| Item | Finding |
+| --- | --- |
+| SoCs | Two HR_C7000 (C-SKY CK803S core each), called A and B, with the same start-up as the DM-32UV and the HR_C7000 vocoder library in both |
+| A | Master: display, keys, GPS, FM broadcast receiver, menus, the PC programming protocol, and resetting B |
+| B | Second transceiver (VFO B). It has no GPS or PC programming protocol. Its UART1 only carries a factory tuning and flash-copy command set |
+| A↔B link | UART3 (0x14090000) at 115200 on both chips, interrupt vector 45 on both |
+| GPS (A only) | UART2 (0x14050000), interrupt vector 43. It starts at 9600 and the firmware sends the receiver a port-configuration sentence |
+| UART0 (0x14030000) | Not used by either application. On the DM-32UV this is the programming-cable UART |
+| Storage | One SPI NAND per SoC, TC58 family (Toshiba TC58CVG1S3HRAIJ) (unverified) |
 
 UART vectors follow the PIC table: UART1 source 10 / vector 42, UART2 11 / 43, UART0 12 / 44, UART3 13 / 45,
-USB 21 / 53 (DS).
+USB 21 / 53 (datasheet).
 
 ## 2. Programming and update link
 
@@ -55,38 +55,26 @@ USB 21 / 53 (DS).
 | Electrical level | Not stated for the K1 jack. The DB40-D's RJ-45 programming port, on the same platform, is documented as 3.3 V, 115.2 kbaud | COM; INF for the GD-88 level |
 | B's own UART1 | Set to 115200 with a receive handler, but it carries only factory tuning / flash-copy commands. Whether it is wired to the K1 jack (directly or through a switch), to test pads, or to nothing is unknown | BIN, INF |
 
-### PC tools (installers inspected as data, never run)
+### PC tools
 
-| Item | Finding | Tag |
-|---|---|---|
-| IAP updater installers | `IAP(setup).exe` (2020 build, shipped 2022–2024) and `IAP 24.11.30(setup).exe` (v1.0.54): Setup Factory 6 run-time with a Setup Factory 7 project. Payload: a VB6 program `IAP+Flash.exe`, plus `mscomm32.ocx`, `comdlg32.ocx`, `msstdfmt.dll`, `ComCat.dll`, `stdole2.tlb`. **No driver**: no INF, no SYS, no CAT, and no VID/PID | COM |
-| How the updater finds the radio | It uses the MSComm serial control, lists ports from `HARDWARE\DEVICEMAP\SERIALCOMM` and filters names with the substrings "COM", "USB", "VCP" and "SER". Up to v1.0.51 it only offered COM1–COM8; v1.0.54 removed that limit | COM |
-| CPS installer | `DRS CPS_V3.3 25.1.15(Setup).exe`: the same installer family. Payload is the CPS program, radio .ini files, VB6 run-time and OCX controls. **No driver** either | COM |
-| Updater messages | "IAP Successfully" after connecting; "Write/Read/IAP Checksum right/error", "Erase ok", "Write Flash Successfully"; per-page progress ("Current Page", "End Page", "Addr(Hex)"). It also takes a separate `*.flash` file for the data flash ("Open Flash File", "Write Flash", "Read Flash") | COM |
-
-A native USB device would come with a vendor INF, or would rely on a class driver plus a known VID/PID. Neither
-installer has either, and the manual says the cable holds the converter chip (INF).
+The vendor's IAP updater and CPS are Windows programs that list the serial ports and need no driver of their own: they
+use the cable's virtual COM port. The updater writes the application and takes a separate `*.flash` file for the data
+flash. A native USB device would ship a vendor INF or rely on a class driver and a known VID/PID; neither installer has
+one, and the manual says the cable holds the converter chip.
 
 ## 3. USB controller use
 
-**No.** Neither SoC's application uses the HR_C7000 USB core.
+**None.** Neither SoC's application accesses the HR_C7000 USB core: no address in the USB register range is built, the
+USB interrupt (source 21, vector 53) is never registered, and no USB descriptor or USB string exists in any image from
+2022 to 2025. The clock manager's USB gates (CLK_MGR 0x02C bits 16/17) are switched off at start-up, and the 48 MHz USB
+divider (0x028) is never written.
 
-| Check (same method as the DM-32 in [hardware-dm32.md](hardware-dm32.md) 3.11) | A (2025, 2023) | B (2025, 2023) | Tag |
-|---|---|---|---|
-| `lrw` literal or `movih` building an address in 0x13000000–0x1303FFFF | None that is code. The `lrw` hits (three in A 2025, two in A 2023, one in B 2025) land in byte tables or mid-instruction decodes. No `movih` 0x1300–0x1303 exists | Same | BIN |
-| USB interrupt (PIC source 21, vector 53) registered | No | No | BIN |
-| Device descriptor (`12 01 ..`), configuration descriptor (`09 02 ..`), USB UTF-16 strings | None (all six images, 2022–2025) | None | BIN |
-| "USB", "usb", "VCOM", "CDC-ACM" strings | None ("CDC" appears only in "CDCSS") | None | BIN |
-| CLK_MGR 0x02C (USB clock gates, bits 16/17) | Start-up writes 0x00800200 (USB gates off). Some later clock paths write 0xFFFFFFFF (every gate on, USB included); one of them clears bits 16 and 17 again straight after. The USB core is never accessed either way | B: start-up 0x00800200; other paths write 0xFFF00000 (USB gates off) or 0xFFFFFFFF | BIN |
-| CLK_MGR 0x028 (48 MHz USB divider) written | No | No | BIN |
+### SoC pins (datasheet)
 
-### SoC pins (DS)
-
-The USB data pins are the dedicated balls F1 (USB_DP) and F2 (USB_DM), with USB_AVDD33 on G3 (DS, as on the
-DM-32UV). The 2016 user manual's pin-mux table also lists USB_DM / USB_DP as function 4 of PTA13 / PTA14 (balls
-L16 / M14, which are UART3 RXD / TXD). But the IO-mux register for those pins (uart3_rxd_sel / uart3_txd_sel) marks
-the matching value 2 as reserved (DS, conflicting). On the GD-88 those balls carry the A↔B link (BIN), so they are
-not available for USB.
+The USB data pins are the dedicated balls F1 (USB_DP) and F2 (USB_DM), with USB_AVDD33 on G3 (as on the DM-32UV). The
+2016 user manual's pin-mux table also lists USB_DM / USB_DP as function 4 of PTA13 / PTA14 (balls L16 / M14, which are
+UART3 RXD / TXD), but the IO-mux register for those pins marks the matching value 2 as reserved (conflicting). On the
+GD-88 those balls carry the A↔B link, so they are not available for USB.
 
 ## 4. IAP bootloader entry
 
@@ -95,7 +83,7 @@ not available for USB.
 | Entry | Radio off, cable connected, CPS closed. Hold the upper side key P2 and turn the radio on with the volume knob. The status LED lights red and a special screen shows "IAP_A" or "IAP_B" on the top line. Then release P2. It can take more than one try | COM (update guide v2.2, release notes 2024-06) |
 | A or B target | In IAP mode, long-press P2 to switch between IAP_A and IAP_B. The A file goes to IAP_A and the B file to IAP_B. Write the codeplug after updating both | COM |
 | Bootloader code | Not in the update files: they start at the 0x0300C000 application base, so the bootloader sits below it, as on the DM-32UV. No dump is available, so how IAP_B reaches SoC B (A relaying over the UART3 link, or a switch moving the cable to B's UART) is not known | BIN, INF |
-| How IAP_B may reach B | The updater's form has no A or B choice and sends the same commands for both: the target is picked on the radio only. Both applications use the same pads for UART1, PTA9 (RXD, also the K1 PTT line) and PTA10 (TXD), and both have the same release (IO_DIPLEX0 bits 9 and 10 set, both pins GPIO inputs). B releases them at boot. A tells B to release them at the start of every PC session (link id 0x6200) and to listen to PTA9 again at its end (0x6201). That points to the cable's two lines reaching both SoCs, with one owner at a time, so in IAP_B B's loader would answer the cable itself while A's lets go. A relaying (the applications already pass frames both ways over the link) is the other candidate. No reset or boot-strap line from A to B is in either application. ODR's B releases the pads at start-up as the original firmware does. A continuity check from the K1 pads to both SoCs, or a `Flash Read ` probe in IAP_A and in IAP_B, settles it | BIN, INF |
+| How IAP_B may reach B | The updater's form has no A or B choice and sends the same commands for both: the target is picked on the radio only. Both applications use the same pads for UART1, PTA9 (RXD, also the K1 PTT line) and PTA10 (TXD), and both have the same release (IO_DIPLEX0 bits 9 and 10 set, both pins GPIO inputs). B releases them at boot. A tells B to release them at the start of every PC session (link id 0x6200) and to listen to PTA9 again at its end (0x6201). That points to the cable's two lines reaching both SoCs, with one owner at a time, so in IAP_B B's loader would answer the cable itself while A's lets go. A relaying (the applications already pass frames both ways over the link) is the other candidate. No reset or boot-strap line from A to B is in either application. RadioFoundry's B releases the pads at start-up as the original firmware does. A continuity check from the K1 pads to both SoCs, or a `Flash Read ` probe in IAP_A and in IAP_B, settles it | BIN, INF |
 | Software entry | The string "BLL_IAP_Flash" is a function-name tag in a log call (line constant 1445). That the routine hands over to the bootloader is not shown | BIN, INF |
 | ROM serial boot | The HR_C7000 boot ROM offers serial (UART0) boot or SPI-flash boot, no USB boot (DS). The datasheet names UART0 as the debug and boot-upgrade port. Where A's and B's UART0 balls go on the GD-88 board is unknown | DS, INF |
 
@@ -109,7 +97,7 @@ not available for USB.
 3. The K1 data level (3.3 V like the DB40-D's RJ-45, or something else).
 4. Where the UART0 balls of A and B go (test pads?), for ROM serial-boot recovery.
 5. Is there any USB data path at all, for example test pads on the F1/F2 nets? Nothing public suggests one. The
-   FCC filing 2AN62-GD88 internal photos were not reachable this time.
+   FCC filing 2AN62-GD88 internal photos were not reachable.
 
 ## 6. Start-up, clocks and the PC command layer
 
@@ -120,7 +108,7 @@ All facts from the same A and B images (BIN). Detail and addresses are kept outs
 | Start-up | PSR 0x80000100, stack 0x00050000, VBR 0x00010000 (vector table in SRAM, copied from flash). Cache controller 0xE000F000 set as on the DM-32UV (cacheable 0x03000000, size code 0x2D). Start-up copies a fast block to 0x18000800, a code and table block to 0x10000, then clears bss |
 | Clock modes | A has three: 24 MHz oscillator, 168 MHz (PLL 24 MHz / 1 x 28 / 2 / 2) and 192 MHz (24 MHz / 2 x 64 / 2 / 2). The XIP flash divider is 2 at 168 MHz and 4 at 192 MHz. B has the same register pattern |
 | PC command words | `Erase`, `Flash Write`, `Flash Read `, `Record Read` (first 11 bytes), the same words as the DB25-D. `Record Read` returns an identification block: firmware version string, build date, build time, `+DRS-880plus`, `+136-480MHZ+` and two 6-byte fields |
-| USMART console | Only the 2025 A build (`.021`) carries the USMART V3.1 debug console: the banner `USMART V3.1`, the `USMART_ENTIMX_SCAN` runtime message and an `@AT` string. The older A builds and the B images do not. The DB25-D's vendor firmware has the same console, and ODR loads its RAM stub through it without the bootloader ([hardware-db25d.md](hardware-db25d.md)). The GD-88 route is not traced yet: UART, frame format and hook address are unchecked |
+| USMART console | Only the 2025 A build (`.021`) carries the USMART V3.1 debug console: the banner `USMART V3.1`, the `USMART_ENTIMX_SCAN` runtime message and an `@AT` string. The older A builds and the B images do not. The DB25-D's vendor firmware has the same console, and RadioFoundry loads its RAM stub through it without the bootloader ([hardware-db25d.md](hardware-db25d.md)). The GD-88 route is not traced yet: UART, frame format and hook address are unchecked |
 | Other models | The A image carries the handshake strings of sibling models (`+DR-850`, `+DR-320`, `+DR-330`, `+DR-350`, `+DR-360`, `+DR-500Plus`, `+DR-F24`) |
 
 ## 7. Storage
@@ -129,13 +117,13 @@ All facts from the same A and B images (BIN). Detail and addresses are kept outs
 |---|---|
 | NAND | SPI NAND on SPI0, chip select PTA18, standard SPI-NAND opcodes; geometry is read from the chip at run time. Each SoC has its own |
 | Partition table | Names and NAND byte bases: font 0x040000, debug 0x100000, userop 0x280000, LinkMan 0x2C0000, xiepin1 0x380000, xiepin2 0x3C0000, App 0x400000 |
-| Calibration | Primary copy is one 2 KB NAND page at 0x280000 starting with `TUNE` and a 32-bit counter (higher = newer). A backup copy sits in program flash at 0x031FE000 (4 KB). The firmware compares the two at boot and copies the newer over the older. Same layout and rule as the DB25-D: ODR reads both and never writes them |
+| Calibration | Primary copy is one 2 KB NAND page at 0x280000 starting with `TUNE` and a 32-bit counter (higher = newer). A backup copy sits in program flash at 0x031FE000 (4 KB). The firmware compares the two at boot and copies the newer over the older. Same layout and rule as the DB25-D: RadioFoundry reads both and never writes them |
 
 ## 8. Memory map and the codec
 
 | Item | Finding |
 |---|---|
-| Program flash | 2 MB at 0x03000000 on each SoC. The IAP loader is below 0x0300C000. ODR's first stage takes 0x0300C000-0x0300D000 and the application starts at 0x0300D000 ([boot/README.md](../../boot/README.md)) |
+| Program flash | 2 MB at 0x03000000 on each SoC. The IAP loader is below 0x0300C000. RadioFoundry's first stage takes 0x0300C000-0x0300D000 and the application starts at 0x0300D000 ([boot/README.md](../../boot/README.md)) |
 | Data in program flash | The display record at 0x031FD000 (`lcd` and a type byte) and the calibration copy at 0x031FE000 (section 7) |
 | Codec slot | 0x030E8000-0x03100000 on each SoC. The codec is merged there on the user's machine from that SoC's own vendor image (`tools/hrc7000_codec.py`, boards `gd88` and `gd88b`) |
 | Codec RAM | The code runs at 0x44E00-0x58000. Its tables go to modem SRAM: A 0x18001204-0x18004324, B 0x18000B40-0x18003B10. Each SoC links with its own `memory.ld` (`boards/gd88`, `boards/gd88b`); both keep the union of the two table windows free |
@@ -201,7 +189,7 @@ The chain is eight bytes. Byte 0 bit 0 is shifted first; a rising edge on PTB3 l
 |---|---|---|
 | 0 (speaker), 1 (headset) | 0-3 | the source: bit 2 x (class - 1) + vfo. Class 1 is analog FM, class 2 DMR (INF). Vfo 0 is A's receiver, 1 is B's |
 | 0, 1 | 5 | amplifier enable |
-| 0, 1 | 6 | another source; ODR uses it for the broadcast FM tuner (INF) |
+| 0, 1 | 6 | another source; RadioFoundry uses it for the broadcast FM tuner (INF) |
 | 2-5 | 4 | the receive path in use, one-hot: byte 2 DMR A, 3 DMR B, 4 FM A, 5 FM B |
 | 2-5 | 7 | the other VFO during TX |
 | 6, 7 | 0-3 | the transmit route, the source bit of the transmitting class and vfo (byte 6 at volume 6 or less, else byte 7) |
@@ -244,7 +232,7 @@ B has no display, keys, power latch or GPS. Pin index as in section 9.
 
 ## 12. The vendor's A to B link (UART3, 115200 8N1)
 
-ODR does not use this protocol. It runs its own on the same UART ([rx2-link.md](rx2-link.md)).
+RadioFoundry does not use this protocol. It runs its own on the same UART ([rx2-link.md](rx2-link.md)).
 
 
 | Byte | Meaning |
@@ -258,7 +246,7 @@ ODR does not use this protocol. It runs its own on the same UART ([rx2-link.md](
 Header bytes time out after 100 ms and the payload after 1 s. Replies normally echo the id with no payload. Ids are
 grouped by range (0x0000-0x9006 A to B, 0xB000-0xDB03 B to A). Most meanings are not decoded.
 
-## 13. The ODR port
+## 13. The RadioFoundry port
 
 Two boards, one per SoC. Both use `boards/gd88/common`: the BK4819 pair, the calibration page, DMR on the modem and
 the SPI NAND. Neither has run on a radio yet.
@@ -273,7 +261,7 @@ the SPI NAND. Neither has run on a radio yet.
 | LEDs | sent to B (`RX2_LED`) | PTA16, PTB17 |
 | Storage | settings on the SPI NAND, blocks 1920-1951 | none |
 | Calibration | both copies read, never written | the program-flash copy |
-| Update | the cable, through ODR's first stage | through A's bridge (rx2-link.md 4): `stubtool.py --board gd88b` |
+| Update | the cable, through RadioFoundry's first stage | through A's bridge (rx2-link.md 4): `stubtool.py --board gd88b` |
 | Broadcast FM | the RDA5807-class tuner (`CONFIG_BCAST_FM`, on by default, `bcast_gd88.c`): the shared driver on PTA7 / PTA8, its audio on chain bit 6 with the amplifier | - |
 
 Not supported yet: the IMU, the headset path on its own, the RTC.
@@ -300,7 +288,5 @@ The code marks each with `TODO(gd88)`. The first-day plan that settles them is [
   <https://radioddity.s3.amazonaws.com/2023-03-30%20How%20to%20update%20firmware%20on%20DB25-D%20and%20GD-88%20v2.2.pdf>
 - Radioddity GD-88 product page (in the box: charging base, AC adaptor, programming cable; K1 connection):
   <https://www.radioddity.com/products/radioddity-gd-88>
-- Radioddity GD-88 firmware packages 2022-10-28, 2023-03-30, 2024-06-20 and 2025-02-10 (support downloads; images,
-  release notes, IAP updater and CPS installers)
 - HR_C7000 user manual (2016) and software application manual V2: UART and USB memory map, pin list and pin mux,
   PIC table, CLK_MGR USB fields

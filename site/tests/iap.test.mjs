@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The IAP route of the web flasher (the stock console and the vendor IAP loader): the codec carved from a plain stock file against hrc7000_codec.py (fixtures
 // from site/tests/fixtures.py), the stub loaded through the stock console and the IAP write against simulated radios, and the stub choice by RAM span.
 
@@ -17,7 +17,7 @@ import {
 	IapError,
 } from "../static/js/flasher/iap.js";
 
-const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
+const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
 const bin = (n) => new Uint8Array(readFileSync(join(DIR, n)));
 const C = json("flash-boards.json").c7000;
@@ -67,7 +67,7 @@ test("codec carved from a plain stock file is byte-identical to hrc7000_codec.py
 	await assert.rejects(c7.codecFromFile(plain, c, "dm32"), c7.CodecError, "another radio's file");
 });
 
-test("a real stock file gives the slot hrc7000_codec.py gives", { skip: !fx.real && "set ODR_DB25D_STOCK when making the fixtures" }, async () => {
+test("a real stock file gives the slot hrc7000_codec.py gives", { skip: !fx.real && "set RFOUNDRY_DB25D_STOCK when making the fixtures" }, async () => {
 	const data = new Uint8Array(readFileSync(fx.real.path));
 	const got = await c7.codecFromFile(data, C, "db25d");
 	assert.ok(equal(c7.slotBytes(C, "db25d", got), bin("db25d_real_slot.bin")));
@@ -148,15 +148,15 @@ test("a radio whose stock build carries a codec without a recipe is told apart f
 	assert.equal(a.codec, null);
 	assert.equal(a.firmware, "unknown");
 	assert.equal(a.otherCodec, true);
-	await assert.rejects(c7.codecFromFile(other, c, "db25d"), /backup holds a stock codec build OpenDigitalRadio has no recipe for/);
+	await assert.rejects(c7.codecFromFile(other, c, "db25d"), /backup holds a stock codec build RadioFoundry has no recipe for/);
 	const none = new Uint8Array(0x200000).fill(0xFF);
 	none.set(plain.subarray(0, 0x1000), 0xC000);
 	assert.equal((await c7.analyze(none, c, "db25d")).otherCodec, false);
 	await assert.rejects(c7.codecFromFile(none, c, "db25d"), /contains no codec recognized/);
-	// ODR's own code may hold the signature words as constants: that is not a stock codec
-	const odr = progmem(otherBuild(plain));
-	odr.set(new TextEncoder().encode("OpenDigitalRadio"), 0xD000);
-	assert.equal((await c7.analyze(odr, c, "db25d")).otherCodec, false);
+	// RadioFoundry's own code may hold the signature words as constants: that is not a stock codec
+	const rfoundry = progmem(otherBuild(plain));
+	rfoundry.set(new TextEncoder().encode("RadioFoundry"), 0xD000);
+	assert.equal((await c7.analyze(rfoundry, c, "db25d")).otherCodec, false);
 });
 
 test("the stock version string is read from the program flash wherever the build put it", () => {
@@ -434,12 +434,12 @@ test("the universal stub loads into every span a running DB25-D offers and runs 
 	const r = new FakeC7000({ progmem: randomFlash(0x200000), dataSize: 0x200000, speed: 200, romWindow: 400, bootTime: 200,
 		board: "DB25-D", stubSpan: [0x1D000, 0x12000] });
 	t.after(() => r.stop());
-	r.progmem.set(new TextEncoder().encode("OpenDigitalRadio"), 0xD000);
+	r.progmem.set(new TextEncoder().encode("RadioFoundry"), 0xD000);
 	r.stubEntry = true;
 	r.powerOn();
 	await new Promise((ok) => setTimeout(ok, 800));
 	const s = new Stub(r.stream, { log: () => {} });
-	await s.enterFromOdr(stubs.image);
+	await s.enterFromRFoundry(stubs.image);
 	assert.equal(r.state, "stub");
 	assert.ok(s.v6 && s.v6.run === 0x30000, "HELLO v6 reports the run address");
 	await s.configure(C.boards.db25d.stub_board, C.led);

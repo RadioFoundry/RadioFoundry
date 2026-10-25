@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Radioddity DB25-D PRO: board descriptor, IO mux and reset-time pin levels, key map (docs/spec/hardware-db25d.md)
 #include "board.h"
 #include "config.h"
@@ -28,7 +28,7 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_P1, ACT_QUICK, ACT_QUICK, false, false, 0 },
 	{ KEY_P2, ACT_CONTEXT, ACT_CONTEXT, false, false, 0 },
 	{ KEY_P3, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
-	{ KEY_TONE, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ KEY_TONE, ACT_AB, ACT_USER_2, false, false, 0 },
 	{ KEY_VOL, ACT_VOLUME, ACT_VOLUME, false, false, 0 },
 	{ KEY_MIC_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },
 	{ KEY_MIC_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
@@ -64,6 +64,10 @@ static const hal_cps_t cps = {
 };
 #endif
 
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the keys with a function of their own. P1, P2 and the mic's P6, P7 are QUICK and CONTEXT, which the menus need
+static const uint8_t side_keys[] = { KEY_P3, KEY_TONE, KEY_MIC_P4, KEY_MIC_P5 };
+static const char *const side_key_names[] = { "P3", "TONE", "Mic P4", "Mic P5" };
+
 const board_t board = {
 	.name = "DB25-D",
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
@@ -76,6 +80,9 @@ const board_t board = {
 	.input = &db25d_input,
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
+	.side_keys = side_keys,
+	.side_key_names = side_key_names,
+	.side_key_count = sizeof(side_keys),
 	.radio = &db25d_radio,
 	.power = &db25d_power,
 #if CONFIG_GPS

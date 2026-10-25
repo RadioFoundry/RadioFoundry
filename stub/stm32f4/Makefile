@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The STM32F4 flash stub (docs/spec/stub-stm32f4.md): one image for every STM32F405 radio behind the AnyRoad / TYT
-# bootloader. No board code: it keeps the pin levels ODR left, and the host sends the board
+# bootloader. No board code: it keeps the pin levels RadioFoundry left, and the host sends the board
 # facts (SPI flash wiring, crystal, bootloader end) in a CONFIG record. The protocol engine is shared with other stubs
 # (stub/common).
 #
-#   make -C stub/stm32f4                 build/stub-stm32f4/f4stub.bin (loaded by stub/stubtool.py --odr-enter)
+#   make -C stub/stm32f4                 build/stub-stm32f4/f4stub.bin (loaded by stub/stubtool.py --rfoundry-enter)
 #   make -C stub/stm32f4 BUILD=DIR       elsewhere
 #   make -C stub/stm32f4 check           build, then fail if the copy embedded in stub/f4stub.py differs (ci.sh runs it)
 ROOT := ../..
@@ -16,7 +16,7 @@ OBJCOPY := $(CROSS)objcopy
 SIZE := $(CROSS)size
 BUILD ?= $(ROOT)/build/stub-stm32f4
 
-# Soft float: the stub has no floating point, and ODR may hand over with the FPU context flag in any state
+# Soft float: the stub has no floating point, and RadioFoundry may hand over with the FPU context flag in any state
 CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -std=gnu11 -ffreestanding -fno-builtin -ffunction-sections \
 	-fdata-sections -fno-common -Wall -Wextra -Wshadow -Wstrict-prototypes -DSTM32F405xx \
 	-I../common -I$(ROOT)/third_party/cmsis-device-f4/Include -I$(ROOT)/third_party/cmsis-core/Include

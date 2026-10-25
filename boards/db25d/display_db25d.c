@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D display: 1.77" 160x128 ST7735S-class TFT on a 4-wire serial bus (docs/spec/hardware-db25d.md 3.1, 5). ADC 2
 // is a board strap: 50 or more, the bus is bit-banged with data on PTC7; below 50, it's the SPI2 controller with data on
 // PTC8. Clock (PTC4), CS, D/C and reset are the same on both. The backlight is PWM1 on PTA16 and needs PTA15 high.
@@ -22,7 +22,7 @@
 #define DIPLEX2_MOSI_MASK	(3u << 11)
 #define DIPLEX2_MOSI_SPI2	(1u << 11)
 // SPI2 clock divider: the stock value is 2 (18 MHz at the loader's 36 MHz APB). 6 keeps the clock below the ST7735S's
-// 15 MHz write limit at any APB clock up to 90 MHz: 14 MHz at ODR's 84 MHz, 6 MHz at 36 MHz
+// 15 MHz write limit at any APB clock up to 90 MHz: 14 MHz at RadioFoundry's 84 MHz, 6 MHz at 36 MHz
 #define LCD_SPI_BAUDR	6u
 _Static_assert(HRC_APB_HZ / LCD_SPI_BAUDR <= 15000000u, "SPI2 is too fast for the ST7735S");
 

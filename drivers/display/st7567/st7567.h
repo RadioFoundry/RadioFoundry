@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ST7567 / UC1701-class 128x64 monochrome LCD controller on a byte-wide serial bus with a data/command line
 // (docs/spec/hardware-dm1801pro.md 3). Generic: the board supplies the bus and the panel's orientation. The controller
 // is page addressed: a page is 8 pixel rows, one byte per column with the top row in bit 0. The core's 1 bpp frame

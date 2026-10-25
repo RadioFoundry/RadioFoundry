@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* Baofeng DM-1701, STM32F405VG, application behind the stock bootloader (docs/spec/hardware-dm1701.md 1.4, 1.5).
  * Codec (docs/spec/codec-placement.md, "STM32 radios"): the merge on the user's machine puts the stock V02.06 CSV
  * codec's tables at their stock address 0x080D19F0..0x080E3A72 (sectors 10 and 11), its code right after them at

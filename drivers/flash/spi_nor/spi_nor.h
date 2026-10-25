@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Generic SPI NOR flash (W25Q / GD25Q class, 3-byte addresses). The board supplies the bus (chip select and a
 // full-duplex transfer) and any locking; the driver only builds the command sequences.
 #ifndef SPI_NOR_H

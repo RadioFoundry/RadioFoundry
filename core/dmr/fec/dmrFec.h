@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR forward error correction used by the data, hotspot and SFR code, from ETSI TS 102 361-1 annex B:
  * BPTC(196,96) (B.1.1) with its Hamming(15,11,3) row and Hamming(13,9,3) column codes (B.3.4, B.3.5), the
@@ -10,8 +10,8 @@
  * 98-107 and 156-165.
  */
 
-#ifndef ODR_DMR_FEC_H
-#define ODR_DMR_FEC_H
+#ifndef RFOUNDRY_DMR_FEC_H
+#define RFOUNDRY_DMR_FEC_H
 
 #include <stdbool.h>
 #include <stdint.h>

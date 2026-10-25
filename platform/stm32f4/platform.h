@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // STM32F4 platform services for boards built on it
 #ifndef PLATFORM_STM32F4_H
 #define PLATFORM_STM32F4_H
@@ -40,7 +40,7 @@ bool stm32_enter_stub(uint32_t entry);
 // the stub feeds the IWDG. Otherwise true
 bool stm32_stub_image_ok(const uint8_t *img, uint32_t len);
 // CONFIG_WATCHDOG (watchdog.c): the IWDG can't be stopped, so before the stub entry it gets its longest timeout (about
-// 32 s) and a feed. The stub feeds it from then on; ODR refuses a stub that doesn't
+// 32 s) and a feed. The stub feeds it from then on; RadioFoundry refuses a stub that doesn't
 void stm32_watchdog_stretch(void);
 
 // Enable the clock of a GPIO port by its base address

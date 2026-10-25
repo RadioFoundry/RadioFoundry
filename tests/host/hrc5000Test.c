@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C5000 driver (drivers/modem/hrc5000; docs/spec/hardware-md380.md 4) on its own with the shared code, no
 // HR_C6000 driver linked: the set-ups' register traffic, and the slot engine on this chip (configuration page 0, the
 // registers that differ, the chip-made CRCs), against a fake configuration port that logs every transfer by the page

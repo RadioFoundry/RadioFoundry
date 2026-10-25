@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // newlib hooks: no file system or console, no heap (FreeRTOS has its own). The csky-elf newlib from
 // tools/build-csky-toolchain.sh calls the plain names (close, write, ...) from its reentrant wrappers, the newlib of
 // the ARM toolchain the underscore names, so both are defined; without them snprintf's stdio pulls in libnosys,

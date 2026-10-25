@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 baseband: power-on set-up, FM, sub-audio, audio paths (docs/spec/modem-hrc7000.md 4, 5.1, 8)
 #include <stddef.h>
 #include "hrc7000.h"

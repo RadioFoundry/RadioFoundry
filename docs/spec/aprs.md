@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # APRS
 
-APRS (Automatic Packet Reporting System) on OpenDigitalRadio: our position, status and messages as AX.25 UI frames in
+APRS (Automatic Packet Reporting System) on RadioFoundry: our position, status and messages as AX.25 UI frames in
 Bell 202 AFSK on FM; positions over DMR to an APRS gateway ID; automatic beaconing from several trigger sources; a
 KISS TNC on the host port (and on TCP port 8001 in USB network mode); the iGate rules, with the APRS-IS connection
 held by a host helper or by the radio's own client (`tcp-services.md` 4, 7); and, on radios that can sample their
@@ -37,22 +37,24 @@ aprx can stand in.
 | Feature | Needs |
 |---|---|
 | FM AFSK transmit | `board.afsk->tx_*` (5.1) |
-| FM AFSK receive, station list, digipeater, messages to us | `CONFIG_APRS_RX` and receive audio: `board.afsk->rx_*`, or FM receive audio on the PCM stream (`AUDIO_TAP_FM_RX`, the DM-1701) (5.3) |
+| FM AFSK receive, station list, digipeater, messages to us | `CONFIG_APRS_RX` and receive audio: `board.afsk->rx_*`, or FM receive audio on the PCM stream (`AUDIO_TAP_FM_RX`) (5.3) |
 | Positions over DMR (LRRP / UDT) | a DMR radio, on a DMR channel |
 | KISS TNC on the host port (UDP 3334 and TCP 8001 in network mode) | nothing more (TX path; RX frames only with RX) |
 | iGate | RX for RF -> IS; IS -> RF messages only once RX exists |
 | GPS | `CAP_GPS` boards feed `aprs_nmea(..., gps=true)`; otherwise host NMEA or the fixed position. `CONFIG_GPS=n` leaves out the board's GPS driver and `CAP_GPS`, so the radio behaves as one without a receiver. Settings > Location > GPS (`settings_t.gps`, default off) goes through `ui_svc_apply` at start-up and on each change to `board_t.gps_enable` (the module's power; the board probes the module at start-up whatever the setting says, so `board_has_gps()` stays true) and to `aprs_gps_enable`: off drops the board fix at once and ignores later sentences, so the position falls back to the computer or the fixed one |
 
-What the boards provide today:
+What a board provides:
 
-| Radio | AFSK transmit | AFSK receive | GPS |
+| Path | AFSK transmit | AFSK receive | GPS |
 |---|---|---|---|
-| DM-1701 | yes: the AT1846S tone generator retuned per symbol (`hardware-dm1701.md` 5.10) | not yet: FM audio reaches the MCU (`hardware-dm1701.md` 21), no `rx_start` | none |
-| MD-380 | not yet: needs a TX tone path (`boards/md380/config.mk`) | no | G models (`hardware-md380.md` 13) |
-| DM-32UV | yes: 8 kHz PCM through the HR_C7000's prompt FIFO into the FM modulator (`modem-hrc7000.md` 8.4) | yes: the HR_C7000's FM receive audio, ungated (`modem-hrc7000.md` 8.5) | `CAP_GPS` (`hardware-dm32.md` 12) |
+| RF chip with a tone generator (AT1846S) | The tone generator retuned per symbol | FM receive audio on the PCM stream (`AUDIO_TAP_FM_RX`, 5.3) | `CAP_GPS` |
+| HR_C7000 | 8 kHz PCM through the modem's prompt FIFO into the FM modulator ([modem-hrc7000.md](modem-hrc7000.md) 8.4) | The modem's FM receive audio, ungated (8.5) | `CAP_GPS` |
+| No tone path written | None (DMR positions still work) | None | `CAP_GPS` |
 
-Everything is host tested. On the SDR bench (section 13, measured on the DM-1701): positions over DMR (LRRP and UDT)
-decode, and FM AFSK decodes with a valid FCS since the voice source fix (`hardware-dm1701.md` 5.10).
+[feature-matrix.md](../feature-matrix.md) shows which radios have AFSK transmit (`APRS`) and receive (`APRS_RX`).
+
+Everything is host tested. On the SDR bench (section 13): positions over DMR (LRRP and UDT) decode, and FM AFSK
+decodes with a valid FCS.
 
 ## 2. Model
 
@@ -99,7 +101,7 @@ fake board whose AFSK output is demodulated back to frames.
 
 ### 4.2 Tocall
 
-Destination `APZODR`: the APZ block is the experimental range anyone may use. A registered tocall (APxxxx from the
+Destination `APZRDF`: the APZ block is the experimental range anyone may use. A registered tocall (APxxxx from the
 tocalls list) is an open decision.
 
 ### 4.3 Received (RX builds)
@@ -130,12 +132,12 @@ section 1).
 
 Received FM audio comes from one of two places (`aprs.c`, `rx_service`):
 
-1. The board's own AFSK receive path: `hal_afsk_t.rx_start`, `rx_read`, `rx_stop` at `rx_rate_hz`. The DM-32UV and
-   the DM-1801 Pro have one (shared `hrc_afsk`): the HR_C7000's FM receive audio at 8 kHz, not squelch gated
-   (`modem-hrc7000.md` 8.5). While it runs the
-   speaker plays FM through the HR_C7000 instead of straight from the FD6818 (`hardware-dm32.md` 9).
+1. The board's own AFSK receive path: `hal_afsk_t.rx_start`, `rx_read`, `rx_stop` at `rx_rate_hz`. The HR_C7000 boards
+   have one (shared `hrc_afsk`): the modem's FM receive audio at 8 kHz, not squelch gated
+   ([modem-hrc7000.md](modem-hrc7000.md) 8.5). While it runs the
+   speaker plays FM through the HR_C7000 instead of straight from the RF chip.
 2. Otherwise FM receive audio on the board's PCM stream, when its audio tap has `AUDIO_TAP_FM_RX` (`hal_audio_tap.h`):
-   8 kHz, de-emphasized, squelch gated. The DM-1701's HR_C6000 puts it on I2S (`hardware-dm1701.md` 21.3.1); that stream exists only while the FM
+   8 kHz, de-emphasized, squelch gated. An HR_C6000 puts it on I2S; that stream exists only while the FM
    feed-through is on, so the volume knob at zero mutes the amp but leaves the feed-through and the RX gain alone. The
    shared stream (`core/usbaudio/audio_mux.c`) gives APRS a ring of its own (1024 samples, 128 ms) next to a USRP
    session's, keeps the stream running while APRS asks for it, and drops whole 20 ms blocks when the radio task reads
@@ -145,7 +147,7 @@ The path runs while the receive setting is on, the radio receives FM on the APRS
 region's, or the custom one) and no APRS transmission is under way. Anywhere else the stream is left alone: a
 repeater channel's audio isn't APRS, and battery saving would be blocked for nothing. While it runs, battery saving
 (`radio-features.md`) stays off: a sleeping receiver misses packets, and the squelch closes only after 300 ms of
-noise readings over the line (`RADIO_SQL_CLOSE_POLLS_APRS`) instead of 50 ms. On air (2026-10-13) a packet's tones
+noise readings over the line (`RADIO_SQL_CLOSE_POLLS_APRS`) instead of 50 ms. On air, a packet's tones
 at full deviation pushed the AT1846S noise reading over the line for a poll or two, the squelch closed, and the
 squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
 says whether the path runs.
@@ -155,16 +157,16 @@ The receive setting and messaging default to on when the radio can receive (`apr
 
 The demodulator (`afsk.c`): 8-48 kHz samples, a correlator per tone with hysteresis and a PLL that tightens once a
 flag is seen. Integer arithmetic only: the float version's soft-float square roots and divisions took most of the
-DM-32UV's CPU (no FPU) at 8 kHz.
+CPU of an HR_C7000 board (no FPU) at 8 kHz.
 
 Two decision paths run side by side on the same samples, each with its own correlators, clock and HDLC decoder: one
 on the audio as received, one after a high pass (two first-order stages at 700 Hz). A frame either path finds is
 delivered once: the second copy (same length and FCS within a quarter second) is dropped. The correlators span one bit,
-so their passbands are wide, and audio under the tones leaks into the mark correlator. A DM-32UV receiving a flat
+so their passbands are wide, and audio under the tones leaks into the mark correlator. A receiver on an HR_C7000 board getting a flat
 transmitter at a strong level had 320-400 Hz 1-10 dB under the tones in its receive audio and decoded 50-80 % of
-the frames with one path; with both, 12 of 12 (BENCH, 2026-10-16). The high pass alone costs weak signals (its phase
+the frames with one path; with both, 12 of 12 (measured). The high pass alone costs weak signals (its phase
 shift between the tones moves the tone edges), which is why the received path stays. Both paths together take about
-6 % of the DM-32UV's CPU at 8 kHz (BENCH).
+6 % of that CPU at 8 kHz.
 
 Host sweep (`aprsTest --sweep`, frames decoded of 100, noise over the full band):
 
@@ -178,7 +180,7 @@ Squelch gated audio loses the start of a transmission until the squelch opens; t
 the frame) covers that. The debug link's `aprs.rx_peak`, `rx_bits` and HDLC counters
 tell missing audio from a demodulator that finds no frame.
 
-Later on the DM-1701: the HR_C6000's RX RAM carries the same audio ungated (`hardware-dm1701.md` 21.3.1), so packets
+A possible later step on an HR_C6000 board: its RX RAM carries the same audio ungated so packets
 below the squelch could be decoded. That needs a board receive path (1 above) reading the RAM 31 times a second.
 
 ## 6. RF transmission
@@ -255,7 +257,7 @@ in the radio's own APRS-IS client (`CONFIG_NET_APRSIS`, `tcp-services.md` 7), wh
   packet once per 30 s.
 - IS -> RF (`igate_tx`, off): only messages and acks, to a station heard directly in the last 30 minutes, from a
   station not heard on RF in the last 10 minutes, not seen in the last 30 s; sent as `}SRC>DST,TCPIP,OURCALL*:info`.
-- Our own beacons to APRS-IS (`to_is`): `CALL>APZODR,TCPIP*:info` over the same channel.
+- Our own beacons to APRS-IS (`to_is`): `CALL>APZRDF,TCPIP*:info` over the same channel.
 - Digipeater (RX builds, off): fill-in (WIDE1-1 only) or wide (WIDE1-1 and WIDE2-N), also our own call in the path;
   our call inserted before the WIDE entry, marked used (traced), the hop count decremented; duplicates suppressed
   for 30 s.
@@ -281,7 +283,7 @@ OK saves with the places not typed as zeros. The editor starts with the stored v
 Find knows the page as "APRS position".
 
 The rest (symbol, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
-debug link (`odr_debug.py aprs set`) and later by qdmr through the native codeplug.
+debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native codeplug.
 
 ## 11. Settings
 
@@ -308,17 +310,10 @@ Defaults: TX off, region N America, SSID 7, symbol `/[`, path WIDE1-1,WIDE2-1, c
 SmartBeaconing on, level 50, TX delay 300 ms, via Radio, destination 5057; messaging and RX only on boards with a
 receive path.
 
-## 12. Size (measured on the DM-1701 build, arm-none-eabi-gcc 13.3 -Os)
+## 12. Size
 
-| Build | Flash | RAM |
-|---|---|---|
-| `CONFIG_APRS=n` | 224.6 KB | 114.0 KB |
-| default (APRS, no RX) | 247.5 KB | 116.8 KB |
-| `CONFIG_APRS_RX=y` | 257.9 KB | 120.9 KB |
-
-APRS costs about 21 KB flash and 2.8 KB RAM with its UI and debug link; RX about 10 KB flash and 4 KB RAM more. With
-the receive audio wired (2026-10-13, LTO): RX costs 8.9 KB flash, 2.0 KB RAM and 3.6 KB CCM RAM on the DM-1701.
-`CONFIG_DMR_GPS` about 2.2 KB flash.
+The flash and RAM cost of `CONFIG_APRS` and `CONFIG_APRS_RX` per radio is in [feature-matrix.md](../feature-matrix.md).
+`CONFIG_DMR_GPS` costs about 2.2 KB flash.
 
 ## 13. Tests
 
@@ -343,43 +338,33 @@ saved and put back once the queued frames and message retries have gone out on t
 1. Position, status, message: the bench's RTL-SDR records I/Q while the radio sends; `tools/aprs_afsk_check.py`
    FM demodulates it on the bench and decodes Bell 202 / AX.25 (its own demodulator: tone envelopes, a bit clock PLL,
    NRZI, HDLC, the X.25 CRC; `--self-test` checks it on synthesized I/Q and on `aprsTest --wav`). Asserted: a valid
-   FCS, `CALL-SSID>APZODR` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
+   FCS, `CALL-SSID>APZRDF` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
    `:ADDRESSEE:text{N`), `aprs.rf_sent` +1, the radio back on its channel, deviation peak 2.0-4.5 kHz, twist under
    6 dB. Printed: mark and space deviation, TX delay (flags before the frame, and carrier to first frame bit), the
    phase residual at tone changes after the fitted switching delay (continuous phase: about 10 degrees RMS; random
    restarts: about 100). The position is sent from the DMR channel and from the FM VFO.
 2. Digital: on the DMR test channel the position goes to `--aprs-dmr-dst` as an LRRP report and as a UDT location;
    the bench modem's listener hears the header and blocks, the test checks the CRCs, the IPv4 / UDP 4001 / LRRP or
-   UDT NMEA layers and the position (within 2e-5 degree). Passed on air (DM-1701, 467.375 MHz CC 2, 50 mW).
+   UDT NMEA layers and the position (within 2e-5 degree). Passed on air (a 70 cm DMR channel, color code 2, 50 mW).
 3. Still manual: BrandMeister (`aprs set via dmr` through a BrandMeister repeater or hotspot; the position on aprs.fi
    with the 5057 SSID, else `dmr_udt 1`, and the LRRP request ID question, 8.1) and KISS (`aprs set kiss 1`,
    `tools/aprs_gate.py --port PORT --kiss-tcp 8001`, or in USB network mode the radio's own KISS port 8001; a position
    from APRSdroid / Xastir goes out on RF).
 
-Results so far: DMR LRRP and UDT pass. AFSK from 23469a2 / 0229a72 keyed a 0.59 s carrier on 145.090 MHz with no
-tones (about 25 Hz RMS deviation; the 1750 Hz burst likewise silent while CTCSS on the same carrier deviated 2 kHz):
-the voice source bug in `hardware-dm1701.md` 5.10, fixed in 694249b. On ff6268b (HIL 2026-10-10) AFSK decoded off air with a valid FCS,
-twist 0.4-1.4 dB, continuous phase (6.5 degrees residual), but 7.2 kHz peak deviation at tone level 0x40; 237211a set
-0x1C (about 3.1 kHz, `hardware-dm1701.md`).
-
-DM-32UV (2026-10-16, 467.375 MHz, 25 kHz, lowest power, a canned frame through `hal_afsk_t.tx_start`): decoded off
-air with a valid FCS at every level tried, 29 flags of TX delay, twist about -1.1 dB, 14-15 degrees phase residual.
-Level 50 (PCM amplitude 2750): 3.1 kHz peak, 2.2 / 2.5 kHz mark / space. Level 75: 4.5 kHz peak. PCM amplitude 5850
-and up is limited in the transmitter at 5.1 kHz peak (4.5 kHz on the tones). `test_aprs.py` itself is still to run
-there: it transmits on 2 m amateur. Receive decoded off air there too (commit d3269062, 2026-10-16).
-
-DM-1801 Pro (2026-10-16): the shared AFSK through the codec mixer decodes off air with a valid FCS, and `test_aprs`
-passes at amplitude 46 (3.25 kHz peak, `hardware-dm1801pro.md`). Its receive is the DM-32UV's code and is unchecked.
+Results (SDR bench): DMR LRRP and UDT pass. AFSK decodes off air with a valid FCS on each kind of board with a tone
+path, with twist under 1.5 dB and continuous phase (about 6 to 15 degrees residual); the tone level is set per board so
+the peak deviation stays near 3 kHz (a transmitter limits at 5.1 kHz peak). `test_aprs.py` on the 2 m amateur band
+is still to run on the HR_C7000 boards. Per-radio levels and results are in the hardware specs.
 
 ## 14. Open decisions
 
 - Default triggers: SmartBeaconing on with a 10 min interval fallback, after-PTT and boot off.
-- A registered tocall instead of APZODR.
+- A registered tocall instead of APZRDF.
 - The LRRP request ID and token for unsolicited reports to BrandMeister; whether LRRP answers should use the APRS
   position when there is no GPS; whether Settings > Location > Send position should drive APRS.
 - APRS messages merged into the Messages inbox (now: Stations heard and the debug link only).
 - The codeplug APRS record's fixed position and frequency encodings.
-- DM-1701 receive from the FM audio paths the bench found (`hardware-dm1701.md` 21).
+- Receive from the HR_C6000's ungated RX RAM (5.3).
 - Settings and debug link section / command numbers may need renumbering when merged with other branches.
 
 Future, not done:

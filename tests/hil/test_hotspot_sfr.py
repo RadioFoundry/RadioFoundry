@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The MMDVM hotspot's SFR mode without transmitting (a CONFIG_SFR=y build): GET_VERSION announces the SFR, the
 duplex flag with RX = TX turns it on (GET_STATUS grows to 121 bytes, both space bytes carry the outbound slot's
 space, the debug link shows sfr.on=1), the simplex flag turns it off again (docs/spec/mmdvm-protocol.md 6,
@@ -32,7 +32,7 @@ import time
 
 import pytest
 
-from odr_hil import skip
+from rfoundry_hil import skip
 
 GET_VERSION, GET_STATUS, SET_CONFIG, SET_FREQ = 0x00, 0x01, 0x02, 0x04
 SFR_DEBUG = 0xD5

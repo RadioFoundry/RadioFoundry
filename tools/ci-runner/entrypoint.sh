@@ -1,11 +1,11 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # The runner container's entrypoint (README.md).
 #
-#   odr-ci-entrypoint run        one job: the runner's registration from /state (read-only), `run.sh --once`
-#   odr-ci-entrypoint register   one-time registration: a registration token on stdin, writes the runner's
+#   rfoundry-ci-entrypoint run        one job: the runner's registration from /state (read-only), `run.sh --once`
+#   rfoundry-ci-entrypoint register   one-time registration: a registration token on stdin, writes the runner's
 #                                configuration and credentials to /state (mounted writable for this only)
 #
 # runner-loop.sh starts a new container for every job, so each job starts from the image. /work is the only other
@@ -13,7 +13,7 @@
 # before every use). The runner, $HOME and the job's workspace live there.
 set -eu
 MODE=${1:-run}
-[ "$(id -u)" != 0 ] || { echo "odr-ci-entrypoint: refusing to run as root" >&2; exit 2; }
+[ "$(id -u)" != 0 ] || { echo "rfoundry-ci-entrypoint: refusing to run as root" >&2; exit 2; }
 # the runner's registration files
 STATE_FILES=".runner .credentials .credentials_rsaparams"
 
@@ -35,26 +35,26 @@ cd /work/runner
 
 case "$MODE" in
 register)
-	: "${ODR_CI_REPO:?}" "${ODR_CI_NAME:?}" "${ODR_CI_LABELS:?}"
+	: "${RFOUNDRY_CI_REPO:?}" "${RFOUNDRY_CI_NAME:?}" "${RFOUNDRY_CI_LABELS:?}"
 	IFS= read -r token
 	# --disableupdate: every job starts from the image, so an update would be downloaded again for every job;
 	# update RUNNER_VERSION in the Dockerfile instead
-	./config.sh --unattended --url "https://github.com/$ODR_CI_REPO" --token "$token" --name "$ODR_CI_NAME" \
-		--labels "$ODR_CI_LABELS" --work _work --disableupdate --replace
+	./config.sh --unattended --url "https://github.com/$RFOUNDRY_CI_REPO" --token "$token" --name "$RFOUNDRY_CI_NAME" \
+		--labels "$RFOUNDRY_CI_LABELS" --work _work --disableupdate --replace
 	for f in $STATE_FILES; do cp "$f" /state/; done
 	chmod 600 /state/.runner /state/.credentials*
-	echo "odr-ci-entrypoint: registered $ODR_CI_NAME"
+	echo "rfoundry-ci-entrypoint: registered $RFOUNDRY_CI_NAME"
 	;;
 run)
 	for f in $STATE_FILES; do
-		[ -f "/state/$f" ] || { echo "odr-ci-entrypoint: /state/$f missing: register first (README.md)" >&2; exit 2; }
+		[ -f "/state/$f" ] || { echo "rfoundry-ci-entrypoint: /state/$f missing: register first (README.md)" >&2; exit 2; }
 		cp "/state/$f" .
 	done
 	# one job, then exit: runner-loop.sh starts the next container
 	exec ./run.sh --once
 	;;
 *)
-	echo "odr-ci-entrypoint: unknown mode $MODE (run, register)" >&2
+	echo "rfoundry-ci-entrypoint: unknown mode $MODE (run, register)" >&2
 	exit 2
 	;;
 esac

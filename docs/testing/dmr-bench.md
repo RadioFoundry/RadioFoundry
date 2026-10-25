@@ -17,8 +17,8 @@ the HIL tests don't script yet.
 
 | Part | What | Normally run by |
 |---|---|---|
-| Radio under test | A radio with OpenDigitalRadio, on the bench, on USB (so far the DM-1701: HR_C6000 modem, I2S audio): driven by the debug link (`tools/odr_debug.py`, the HIL tests) or its keys; the board's diagnostics page (on the DM-1701 a long press of the top side key) | the user |
-| SDR bench (`ssh $ODR_SDR_BENCH_HOST`, default `sdr-bench`: an ssh alias for the bench board) | a small ARM Linux board, 824 MB RAM, Debian, the odr_sdrbench package in `/opt/odr-sdrbench/.venv` | the gateway service (`$ODR_SDR_BENCH_SERVICE`) |
+| Radio under test | A radio with RadioFoundry, on the bench, on USB (so far the DM-1701: HR_C6000 modem, I2S audio): driven by the debug link (`tools/rfoundry_debug.py`, the HIL tests) or its keys; the board's diagnostics page (on the DM-1701 a long press of SK3) | the user |
+| SDR bench (`ssh $RFOUNDRY_SDR_BENCH_HOST`, default `sdr-bench`: an ssh alias for the bench board) | a small ARM Linux board, 824 MB RAM, Debian, the rfoundry_sdrbench package in `/opt/rfoundry-sdrbench/.venv` | the gateway service (`$RFOUNDRY_SDR_BENCH_SERVICE`) |
 | MMDVM_HS dual modem board | `/dev/ttyS0`, two ADF7021 (simplex or duplex), firmware MMDVM_HS. The other DMR station | the gateway (one of its receivers in the current config) |
 | RTL-SDR | RTL2832U + R820T on USB, bias tee powering an LNA. The instrument | the gateway's receivers SDR02..SDR15 (461-462 MHz group, tuner center 461.52875 MHz). SDR15 = 461.6875 MHz |
 | MQTT broker | the gateway publishes what its SDR receivers decode (`DMR/<receiver>/sdr/...`); `sdr_watch.py` reads it | the owner |
@@ -28,12 +28,12 @@ The easiest setup is an ssh config alias `Host sdr-bench` pointing at the bench 
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ODR_SDR_BENCH_HOST` | `sdr-bench` | ssh host or alias of the SDR bench |
-| `ODR_SDR_BENCH_SERVICE` | `odr-sdrbench@$(hostname)` | the gateway service holding the modem and the SDR (expanded on the bench) |
-| `ODR_SDR_BENCH_DIR` | `odr-bench` | the bench tools' directory under the bench user's home |
-| `ODR_SDR_BENCH_PY` | `/opt/odr-sdrbench/.venv/bin/python` | the bench's Python with the odr_sdrbench package |
-| `ODR_SDR_BENCH_ENV_FILE` | `/etc/odr-sdrbench/env` | the gateway's environment file on the bench: the MQTT login `sdr_watch.py` uses (`ODR_SDR_BENCH_MQTT_HOST`, `_USER`, `_PASSWORD`) |
-| `ODR_SDRBENCH` | none | an odr_sdrbench checkout on the Mac, for the Mac-side tools when the package isn't installed there |
+| `RFOUNDRY_SDR_BENCH_HOST` | `sdr-bench` | ssh host or alias of the SDR bench |
+| `RFOUNDRY_SDR_BENCH_SERVICE` | `rfoundry-sdrbench@$(hostname)` | the gateway service holding the modem and the SDR (expanded on the bench) |
+| `RFOUNDRY_SDR_BENCH_DIR` | `rfoundry-bench` | the bench tools' directory under the bench user's home |
+| `RFOUNDRY_SDR_BENCH_PY` | `/opt/rfoundry-sdrbench/.venv/bin/python` | the bench's Python with the rfoundry_sdrbench package |
+| `RFOUNDRY_SDR_BENCH_ENV_FILE` | `/etc/rfoundry-sdrbench/env` | the gateway's environment file on the bench: the MQTT login `sdr_watch.py` uses (`RFOUNDRY_SDR_BENCH_MQTT_HOST`, `_USER`, `_PASSWORD`) |
+| `RFOUNDRY_SDRBENCH` | none | an rfoundry_sdrbench checkout on the Mac, for the Mac-side tools when the package isn't installed there |
 
 Test channel used so far: 461.6875 MHz, color code 2 (Ch 15). The radio's codeplug also has DMR channels; any free
 channel works as long as it sits well away from the SDR's tuner center (section 3).
@@ -45,30 +45,30 @@ config; that is a config change and needs the owner.
 
 ## 2. The tools
 
-All in `tools/bench/`, MIT. They build and decode bursts with the `odr_sdrbench` package, which lives in its own
+All in `tools/bench/`, MIT. They build and decode bursts with the `rfoundry_sdrbench` package, which lives in its own
 repository and is installed on the SDR bench (and on the Mac for the Mac-side tools, or found through
-`$ODR_SDRBENCH`). What the tools import from it:
+`$RFOUNDRY_SDRBENCH`). What the tools import from it:
 
 | Module | Used for | By |
 |---|---|---|
-| `odr_sdrbench.dmr.fec`, `.pdu`, `.packet`, `.ambe` | DMR FEC, burst and PDU layouts, data packets, AMBE FEC | `bench_tx`, `bench_repeater`, `sdrmon`, `hotspot_cases`, `mmdvm_hotspot` |
-| `odr_sdrbench.mmdvm.modem`, `.radio`, `.bursts`, `.repeater` | the MMDVM modem driver, tuning, burst framing, the duplex repeater | `bench_tx`, `bench_repeater` |
-| `odr_sdrbench.layer2`, `.sim` | sync patterns, slot type and EMB decoding, call simulation | `bench_tx`, `sdrmon`, `sdr_watch`, `hotspot_cases`, `mmdvm_hotspot` |
-| `odr_sdrbench.channelizer`, `.dsp`, `.source`, `.demod` | channelizer, FM demodulator, IQ input, slicer | `sdrmon` |
+| `rfoundry_sdrbench.dmr.fec`, `.pdu`, `.packet`, `.ambe` | DMR FEC, burst and PDU layouts, data packets, AMBE FEC | `bench_tx`, `bench_repeater`, `sdrmon`, `hotspot_cases`, `mmdvm_hotspot` |
+| `rfoundry_sdrbench.mmdvm.modem`, `.radio`, `.bursts`, `.repeater` | the MMDVM modem driver, tuning, burst framing, the duplex repeater | `bench_tx`, `bench_repeater` |
+| `rfoundry_sdrbench.layer2`, `.sim` | sync patterns, slot type and EMB decoding, call simulation | `bench_tx`, `sdrmon`, `sdr_watch`, `hotspot_cases`, `mmdvm_hotspot` |
+| `rfoundry_sdrbench.channelizer`, `.dsp`, `.source`, `.demod` | channelizer, FM demodulator, IQ input, slicer | `sdrmon` |
 
-The DMR codec in `odr_sdrbench.dmr` is also the reference several host tests cite for their vectors (`dmrDataTest`,
+The DMR codec in `rfoundry_sdrbench.dmr` is also the reference several host tests cite for their vectors (`dmrDataTest`,
 `lrrpTest`, `dmrDataServiceTest`). Copy the bench-side
-tools with `dmr_bench.py sync` (to `$ODR_SDR_BENCH_HOST:~/odr-bench/`).
+tools with `dmr_bench.py sync` (to `$RFOUNDRY_SDR_BENCH_HOST:~/rfoundry-bench/`).
 
 | Tool | Runs on | What | Needs |
 |---|---|---|---|
 | `dmr_bench.py` | Mac | Runs a named test case end to end: service lease, captures, bench modem, prompts for the user, analysis, automatic checks, report. `list`, `show`, `sync`, `run [--dry-run]`, `check` | ssh to the SDR bench, python3 |
-| `bench_tx.py` | SDR bench | The bench modem as a DMR subscriber (simplex): `voice` (group / private, headers, superframes, late entry, back to back, no terminator, sync family ms/bs/ts1/ts2, real speech from an `.ambe` file, talker alias, PI bit, service options, wrong burst CC), `csbk` (preambles, then e.g. a call alert), `data` (unconfirmed / confirmed), `listen --json` (per burst, embedded LC and talker alias per superframe, a summary per call, AMBE files), `--listen-after S` (send, then listen for the radio's answer) | odr_sdrbench, bench modem free |
-| `bench_repeater.py` | SDR bench | The dual modem as a local duplex repeater (no network): wakes on the radio's BS_Dwn_Act CSBK, BS sync, CACH with short LC, both slots, call hang; JSON log of wakeups, key-ups and every burst heard on the input | odr_sdrbench, bench modem free, a split frequency pair |
-| `sdrmon.py` | SDR bench | Raw IQ capture (`capture`, stops / restarts the gateway itself unless `--service ''`) and burst analysis (`analyze`): every burst incl. idle with time to 0.01 ms, slot phase, sync family and bit errors, CC, data type, LCs (header, terminator, embedded), power, frequency offset, key-up / key-down edges and ramps, ADC clipping, `--json` | odr_sdrbench, numpy, SoapySDR |
-| `sdr_watch.py` | SDR bench | The gateway's own decode of one SDR receiver from MQTT, with the sync family read from the burst bits. No service stop | odr_sdrbench, paho-mqtt, the MQTT login |
-| `mmdvm_hotspot.py` | Mac | The radio as an MMDVM modem over USB CDC (or the optional MMDVM UDP transport): configure simplex or SFR, poll status, log what it sends up, send a network call; our extensions: command 0xD5 (SFR experiment switches) and the SFR counters at the end of GET_STATUS | pyserial; odr_sdrbench for `--send` |
-| `hotspot_cases.py` | Mac | The automated `rf_*` / `net_*` hotspot cases (bench modem sends, radio reports over MMDVM; MMDVM sends, bench modem listens) | odr_sdrbench |
+| `bench_tx.py` | SDR bench | The bench modem as a DMR subscriber (simplex): `voice` (group / private, headers, superframes, late entry, back to back, no terminator, sync family ms/bs/ts1/ts2, real speech from an `.ambe` file, talker alias, PI bit, service options, wrong burst CC), `csbk` (preambles, then e.g. a call alert), `data` (unconfirmed / confirmed), `listen --json` (per burst, embedded LC and talker alias per superframe, a summary per call, AMBE files), `--listen-after S` (send, then listen for the radio's answer) | rfoundry_sdrbench, bench modem free |
+| `bench_repeater.py` | SDR bench | The dual modem as a local duplex repeater (no network): wakes on the radio's BS_Dwn_Act CSBK, BS sync, CACH with short LC, both slots, call hang; JSON log of wakeups, key-ups and every burst heard on the input | rfoundry_sdrbench, bench modem free, a split frequency pair |
+| `sdrmon.py` | SDR bench | Raw IQ capture (`capture`, stops / restarts the gateway itself unless `--service ''`) and burst analysis (`analyze`): every burst incl. idle with time to 0.01 ms, slot phase, sync family and bit errors, CC, data type, LCs (header, terminator, embedded), power, frequency offset, key-up / key-down edges and ramps, ADC clipping, `--json` | rfoundry_sdrbench, numpy, SoapySDR |
+| `sdr_watch.py` | SDR bench | The gateway's own decode of one SDR receiver from MQTT, with the sync family read from the burst bits. No service stop | rfoundry_sdrbench, paho-mqtt, the MQTT login |
+| `mmdvm_hotspot.py` | Mac | The radio as an MMDVM modem over USB CDC (or the optional MMDVM UDP transport): configure simplex or SFR, poll status, log what it sends up, send a network call; our extensions: command 0xD5 (SFR experiment switches) and the SFR counters at the end of GET_STATUS | pyserial; rfoundry_sdrbench for `--send` |
+| `hotspot_cases.py` | Mac | The automated `rf_*` / `net_*` hotspot cases (bench modem sends, radio reports over MMDVM; MMDVM sends, bench modem listens) | rfoundry_sdrbench |
 | `sfr_call.sh` | Mac | One SFR call: radio as SFR over MMDVM + bench modem voice + the gateway's SDR decode | the bench modem out of the gateway's config |
 
 Where they came from: `bench_tx.py`, `sdrmon.py`, `sdr_watch.py`, `hotspot_cases.py` (from `hs_normal.py`),
@@ -124,14 +124,14 @@ The dry run lists the exact commands, including the service stop and start. Get 
 first real run of a case that keys a transmitter (the bench modem, or the repeater) or stops the service.
 
 The **lease**: a case that needs the bench modem or the raw SDR starts one detached process on the SDR bench that runs
-`sudo systemctl stop $ODR_SDR_BENCH_SERVICE`, waits while `~/odr-bench/hold` exists (at most `--lease-max`, 300 s
-by default), then runs `sudo systemctl start $ODR_SDR_BENCH_SERVICE` and logs it to `~/odr-bench/lease.log`. The
+`sudo systemctl stop $RFOUNDRY_SDR_BENCH_SERVICE`, waits while `~/rfoundry-bench/hold` exists (at most `--lease-max`, 300 s
+by default), then runs `sudo systemctl start $RFOUNDRY_SDR_BENCH_SERVICE` and logs it to `~/rfoundry-bench/lease.log`. The
 script removes the hold file in a `finally` block and checks that the service is active again. If the Mac, the
 script or the ssh link dies, the service still comes back when the lease expires. Ctrl-C at a prompt ends the case
 and restores the service. T0 needs no lease.
 
 Results: `bench-results/<date>_<case>/` on the Mac (`report.md`, `report.json`, the sdrmon JSON and text, the bench modem
-listen JSON lines, the repeater log); the captures stay on the SDR bench in `~/odr-bench/runs/<run>/` (about 50 MB per
+listen JSON lines, the repeater log); the captures stay on the SDR bench in `~/rfoundry-bench/runs/<run>/` (about 50 MB per
 16 s; nothing is deleted automatically).
 
 **Report format** (`report.json`): `case`, `title`, `run`, `args`, `steps` (each bench modem command and outcome),
@@ -147,7 +147,7 @@ The hotspot cases (H, S) cover the modem driver and the call stack better, becau
 back over USB and every burst it sends is under our control: run H1 after every driver change. Most of these cases
 are now also automated in `tests/hil` ([README.md](README.md) section 3).
 
-Note the diagnostics counters (the page, or `odr_debug.py diag`) before each case; the cases ask for the new values.
+Note the diagnostics counters (the page, or `rfoundry_debug.py diag`) before each case; the cases ask for the new values.
 
 ### 5.0 Setup
 
@@ -179,7 +179,7 @@ To check the stimulus itself, run the same `bench_tx.py` command during an `sdrm
 | R11 TS1/TS2 sync | `voice --family ts1`, then `ts2` | Sync family TS1, then TS2 | Both reported |
 | R12 long call | `voice --superframes 50` (18 s) | One call, +300 voice bursts | No restart, no SYNC_LOST, CRC errors unchanged |
 | R13 emergency / privacy | `voice --emergency`; `voice --service-options 40 --pi` | Emergency shown; PI call not played without a key | As stated |
-| R14 talker alias | `voice --superframes 8 --talker-alias 'ODR bench modem'` | Alias shown | Within ~2 s; the call LC stays right |
+| R14 talker alias | `voice --superframes 8 --talker-alias 'RadioFoundry bench modem'` | Alias shown | Within ~2 s; the call LC stays right |
 
 ### 5.2 The radio transmits (b)
 
@@ -250,7 +250,7 @@ BS outbound, wakeup retries when the repeater is off (radio sends BS_Dwn_Act eve
 
 Covered in part by R3 (late entry), R13 (PI bit and privacy flag), R14 (talker alias received), R7-R9 (CSBK, data). To
 add as the features land: the radio sending talker alias and GPS (sdrmon decodes the embedded LC at each voice E, FLCO
-4-8); basic privacy both ways (needs AMBE scrambling in `bench_tx.py`; `odr_sdrbench.dmr` would need a basic privacy
+4-8); basic privacy both ways (needs AMBE scrambling in `bench_tx.py`; `rfoundry_sdrbench.dmr` would need a basic privacy
 decoder to check the radio's encrypted TX off air); SMS both ways (`bench_tx.py data` sends a 40-octet test payload; a
 real SMS payload builder is still to write; the radio's SMS is heard by `bench_tx.py listen` as a data header +
 blocks).

@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Dual watch
 
-Design for dual watch on Home ([#96](https://github.com/sfowlr/OpenDigitalRadio/issues/96)). Built with
+Design for dual watch on Home ([#96](https://github.com/radiofoundry/radiofoundry/issues/96)). Built with
 `CONFIG_DUAL_WATCH` (on with `CONFIG_SCAN`; [build-config.md](../build-config.md)). Code: `core/ui/ui_dual.c` (behavior and
 its screens), `ui_draw_home_dual` in `core/ui/ui_screens.c` (Home), `ui_svc_dual` (the radio).
 
@@ -152,9 +152,9 @@ back ("Talking on A"). **#** **1**, the A/B key or Left / Right go back at once 
 
 ### 4.1 Per radio
 
-SK2 held is Dual watch on every radio, and the DM-1801 Pro's A/B key is A/B (press) and Dual watch (hold). On the
-DM-1701 a press of SK2 is A/B, so the pair is on one key; the talk target picker stays on hold #. Every side key can
-take A/B or Dual watch in Settings › Keys (press or hold).
+SK2 held is Dual watch on every radio, and the DM-1801 Pro's A/B key is A/B (press) and Dual watch (hold). A press of SK2
+is A/B on every radio (the DB25-D PRO's tone key too), so the pair is on one key; the talk target picker stays on
+hold #. Every side key can take A/B or Dual watch in Settings › Keys (press or hold).
 
 | Radio | Switch A / B | Start / stop |
 |---|---|---|
@@ -170,7 +170,7 @@ take A/B or Dual watch in Settings › Keys (press or hold).
 - Dual watch is a kind of scan to the radio: starting it stops a zone scan, and a zone scan (Tools › Scan, the Scan
   key) stops it.
 - Only the user stops it: Back twice, `*` `7`, hold SK2, the Dual watch key, # 5, a zone scan, or a scan stop over the
-  debug link (`odr_debug.py radio scan stop`). Everything else keeps it going:
+  debug link (`rfoundry_debug.py radio scan stop`). Everything else keeps it going:
 
   | Event | Dual watch |
   |---|---|
@@ -218,7 +218,7 @@ Asked in this design's first round and decided by the owner (2026-10-21):
 3. A call on B keeps PTT on A by default; talk back (section 4.2) is a setting.
 4. The last B is kept across power off.
 5. The DM-1801 Pro's A/B key is A/B on a press and Dual watch on a hold (it was Next zone).
-6. The DM-1701's SK2 press is A/B (it was Talk target, which is also hold #). The A/B key with the watch off says
+6. The SK2 press is A/B on every radio (it was Talk target, which is also hold #; owner, 2026-10-23). The A/B key with the watch off says
    "Turn on dual watch first" instead of starting it (owner, 2026-10-22).
 7. The zone keys move the selected channel to another zone; they no longer end the watch (owner, 2026-10-22).
 8. Nothing ends the watch but a deliberate stop, and power on resumes it (owner, 2026-10-22).

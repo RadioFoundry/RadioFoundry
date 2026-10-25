@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""Builds the OpenDigitalRadio web site from the repository (docs/dev/website.md).
+# Copyright (c) 2026 The RadioFoundry Authors
+"""Builds the RadioFoundry web site from the repository (docs/dev/website.md).
 
     python3 site/build.py                         build/site/
     python3 site/build.py --out DIR --strict      fail on any warning (CI)
@@ -20,15 +20,15 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from odrsite import repo  # noqa: E402
+from rfoundrysite import repo  # noqa: E402
 
-DEFAULT_REPO = "https://github.com/sfowlr/OpenDigitalRadio"
+DEFAULT_REPO = "https://github.com/radiofoundry/radiofoundry"
 
 
 def main(argv=None):
 	ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
 	ap.add_argument("--out", default=repo.path("build", "site"))
-	ap.add_argument("--repo-url", default=os.environ.get("ODR_REPO_URL", DEFAULT_REPO),
+	ap.add_argument("--repo-url", default=os.environ.get("RFOUNDRY_REPO_URL", DEFAULT_REPO),
 			help="the repository's web address, for links to files outside docs/")
 	ap.add_argument("--ref", default=None, help="branch or tag those links point at (default: main)")
 	ap.add_argument("--firmware", help="a directory of release images and manifests (tools/release.py --out)")
@@ -42,7 +42,7 @@ def main(argv=None):
 		print("site/build.py: markdown-it-py is missing. pip install -r site/requirements.txt, or run:\n"
 		      "  uv run --no-project --with-requirements site/requirements.txt python3 site/build.py", file=sys.stderr)
 		return 2
-	from odrsite.build import Site
+	from rfoundrysite.build import Site
 	site = Site(args.out, args.repo_url, args.ref or "main", firmware=args.firmware)
 	try:
 		warnings = site.build()

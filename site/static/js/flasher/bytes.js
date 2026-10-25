@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Byte helpers shared by the flasher modules. Runs in browsers and in Node (site/tests).
 
 export const hex = (n, width = 8) => "0x" + (n >>> 0).toString(16).toUpperCase().padStart(width, "0");

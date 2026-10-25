@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ILI9341-class 320x240 color TFT controllers on an 8-bit 8080 bus, in the variants one radio may be fitted with
 // (docs/spec/hardware-gd88.md 5): three command-style (ILI9341) init sets and one register-style (ILI932x) panel.
 // Generic: the board supplies the bus and picks the variant. The frame buffer is 16 colors (4 bits a pixel) with a

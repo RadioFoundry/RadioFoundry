@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ILI9341-class 320x240 TFT controllers (ili9341.h). The command-style variants share the window commands (CASET 0x2A,
 // RASET 0x2B, RAMWR 0x2C). The register-style panel takes a 16-bit register index and 16-bit values (two bytes each on
 // the 8-bit bus) and has its own window (R50-R53) and frame memory address (R20 / R21) registers.

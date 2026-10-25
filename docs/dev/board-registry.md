@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# The board registry
+# The Board Registry
 
 The registry holds every fact about a radio that the build itself doesn't need: its identity, status, build options,
 flashing route, codec route and the web site's data. The tools, CI, the docs and the site read it. The build reads no
@@ -8,7 +8,7 @@ TOML: make keeps its own facts in `board.mk`, `config.mk` and `memory.ld`, and t
 make.
 
 `tools/boards.py` loads and checks the registry. It needs Python 3.11 or later (`tomllib`); scripts find one with
-`tools/odr_python.sh`.
+`tools/rfoundry_python.sh`.
 
 ## Where each fact lives
 
@@ -37,7 +37,7 @@ Derived values:
 | Stub board record (STM32F4) | `spi` and `idle_cs`, the `PIN_FLASH_*` pins, the bus's alternate function from the platform's `board_stub.spi_af`, `HSE_VALUE` and `APP_BASE` |
 | Debug link names | The `board_t` names, each build option value's `board_name`, `debuglink_aliases`, the id |
 | Codec windows of a linker slot | The `__codec_slot` symbols |
-| Codec windows of a stock file | The stock file's profile in `tools/odrflash/odrflash/stockfw.py` |
+| Codec windows of a stock file | The stock file's profile in `tools/rfoundry/rfoundry/stockfw.py` |
 
 ## board.toml
 
@@ -86,7 +86,7 @@ One-line summaries for the site and the generated tables; the facts stay in `doc
 |---|---|---|
 | `level` | `bring-up`, `testing`, `supported` | How far the port is |
 | `summary` | string | What works, then what is open, in one sentence or two; Markdown links allowed. The README, the user manual and the web site show it |
-| `release` | `stable`, `testing` | `stable`: release images are built and odrflash fetches them |
+| `release` | `stable`, `testing` | `stable`: release images are built and rfoundry fetches them |
 
 ### [[build_options]]
 
@@ -97,11 +97,11 @@ example). `board.mk` holds the build's side: `BUILD_OPTIONS := BAND` and `BAND_V
 | Key | Meaning |
 |---|---|
 | `name` | The make variable (`BAND`) |
-| `title`, `help` | The question the site and odrflash ask, and how to tell the answer |
+| `title`, `help` | The question the site and rfoundry ask, and how to tell the answer |
 | `values` | A list of `{ id, title, text, board_name }`: the make value, its label and description, the name the radio reports on the debug link |
 
-The Makefile defines `ODR_<NAME>_<VALUE>` as 1 or 0 for every value. A value other than the default adds `-<value>`
-to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<id>-vhf/odr_<id>-vhf.bin`.
+The Makefile defines `RFOUNDRY_<NAME>_<VALUE>` as 1 or 0 for every value. A value other than the default adds `-<value>`
+to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<id>-vhf/rfoundry_<id>-vhf.bin`.
 [Building](building.md#hardware-build-options) has the user side.
 
 ### [ci]
@@ -119,7 +119,7 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 | `sectors` | Optional: a geometry of the platform other than its `default_sectors` |
 | `stock_download` | Optional: where the stock firmware can be downloaded |
 | `stock_versions` | The stock versions the tools know |
-| `backup` | `{ stock, odr, spi_size }`: what a backup reads from stock firmware and from ODR (`none` or `full`), and the SPI flash size |
+| `backup` | `{ stock, rfoundry, spi_size }`: what a backup reads from stock firmware and from RadioFoundry (`none` or `full`), and the SPI flash size |
 
 `[flash.bootloader]`:
 
@@ -148,7 +148,7 @@ A key of another platform's stub fails the check.
 | Key | Meaning |
 |---|---|
 | `tool` | The tool that extracts or merges it: `codec_extract` or `hrc7000_codec` |
-| `stock` | A list of SHA-256 digests: the stock files odrflash merges the codec from (stock-file placement) |
+| `stock` | A list of SHA-256 digests: the stock files rfoundry merges the codec from (stock-file placement) |
 | `profile` | The codec id the firmware reports, for a codec in a linker slot |
 | `sources` | Where a slot codec comes from, for messages |
 | `installed` | Stock versions that leave exactly this codec in place |
@@ -183,7 +183,7 @@ How the site draws the radio: `shape`, `body` and `accent` colors, `lens` size.
 | `build` | The script that installs or builds it |
 | `version` | The release CI and releases build with |
 | `sha256` | Optional: the SHA-256 of the archive the script downloads |
-| `image` | Optional: the container image that holds the toolchain (`ODR_CSKY_IMAGE` overrides it) |
+| `image` | Optional: the container image that holds the toolchain (`RFOUNDRY_CSKY_IMAGE` overrides it) |
 
 The toolchain scripts read these values with `tools/platform_toolchain.sh`, which needs no Python. `check` fails when
 a script, Dockerfile or workflow under `tools/` or `.github/` sets `<ID>_GCC_VERSION` or `<ID>_GCC_SHA256` (for
@@ -197,12 +197,12 @@ example `ARM_GCC_VERSION`) to a literal other than the pin: take it from `platfo
 | `tools/boards.py get <id> [key.path]` | One value; a list prints one item per line |
 | `tools/boards.py platform <p> [key.path]` | One platform value |
 | `tools/boards.py builds <id> [--extra]` | The board's builds besides the default, or its `[ci]` extras |
-| `tools/boards.py json [--for all\|odrflash\|build]` | A merged view, below |
+| `tools/boards.py json [--for all\|rfoundry\|build]` | A merged view, below |
 | `tools/boards.py check` | Every inconsistency, and every radio named outside its own places ([Radio names](#radio-names)); ci.sh's registry step runs it |
 | `tools/boards.py docs [--check] [--floor REF]` | Writes the generated blocks of the README, the user manual's radio pages, the feature matrix (its Built by default table, and its Checked on each radio table from the bring-up records in `docs/testing/results/`), the bug report form's and the pull request template's radio lists, and the survey's Port cells (`tools/registry_docs.py`). `--check` lists the stale ones instead; `--floor REF` fails when a radio's marks or status in the README read lower than at commit `REF`. ci.sh runs `--check --floor origin/main` |
 | `tools/boards.py self-test` | The loader's own tests |
 
-`make registry` regenerates `tools/odrflash/odrflash/registry.json` when a source changed. `make` does too, before
+`make registry` regenerates `tools/rfoundry/rfoundry/registry.json` when a source changed. `make` does too, before
 every build.
 
 ## The views
@@ -210,8 +210,8 @@ every build.
 | View | Format | For |
 |---|---|---|
 | `--for all` | none (the TOML with a `derived` table) | Scripts in this tree |
-| `--for odrflash` | `odr-board-registry/2` | odrflash, the release tool and the site. Committed as `registry.json`, so they run on any Python 3 and inside the odrflash executable |
-| `--for build` | `odr-build-matrix/1` | Tools that build from a checkout |
+| `--for rfoundry` | `rfoundry-board-registry/2` | rfoundry, the release tool and the site. Committed as `registry.json`, so they run on any Python 3 and inside the rfoundry executable |
+| `--for build` | `rfoundry-build-matrix/1` | Tools that build from a checkout |
 
 ### The build view
 
@@ -220,7 +220,7 @@ from outside the tree. It is a stable interface: a change that breaks a reader c
 
 | Key | Contents |
 |---|---|
-| `format` | `odr-build-matrix/1` |
+| `format` | `rfoundry-build-matrix/1` |
 | `variants` | The release variants: `full`, then each `config/variants/<name>.mk` |
 | `platforms.<p>` | `isa`, `cpu`, `toolchain` (the id), `cc`, `version`, `image` (null: no container), `install`, `sha256` (null when none) |
 | `boards.<id>` | `name`, `platform`, `release`, `released` (true for `stable`), `first_stage`, `build_options`, `builds` |
@@ -236,11 +236,11 @@ Each build:
 | `release` | `["--board", "<id>", "--build-option", "BAND=vhf"]`: the `tools/release.py` arguments; add `--variant <name>` |
 | `image_id` | `<id>-vhf` |
 | `build_dir` | `build/<id>{variant}-vhf` |
-| `image` | `build/<id>{variant}-vhf/odr_<id>-vhf.bin`: what make writes and the release carries |
-| `release_image`, `release_manifest` | `odr-<id>{variant}-vhf-{version}.bin` and `.json`: what `tools/release.py` writes |
+| `image` | `build/<id>{variant}-vhf/rfoundry_<id>-vhf.bin`: what make writes and the release carries |
+| `release_image`, `release_manifest` | `rfoundry-<id>{variant}-vhf-{version}.bin` and `.json`: what `tools/release.py` writes |
 
 In the names, `{variant}` is empty for the full build and `-<name>` for a variant; `{version}` is the release tag. One
-rule makes all of these names: `tools/odrflash/odrflash/names.py`. The Makefile follows it too, and `check` compares
+rule makes all of these names: `tools/rfoundry/rfoundry/names.py`. The Makefile follows it too, and `check` compares
 make's `BUILD` and `TARGET` with the view for every build.
 
 ## Radio names

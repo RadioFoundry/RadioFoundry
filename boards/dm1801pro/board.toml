@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The DM-1801 Pro's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and
 # the web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/dm1801pro/memory.ld.
 
@@ -10,7 +10,7 @@ model = "DM-1801 Pro"
 also = ["Baofeng DM-1801"]
 kind = "handheld"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
-order = 2
+order = 3
 # Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
 # build option value's board_name), and the id always counts
 debuglink_aliases = ["DM-1801Pro"]
@@ -41,7 +41,7 @@ release = "stable"
 family = "serial-loader"
 keep_codec = false
 stock_versions = []
-backup = { stock = "full", odr = "full", spi_size = 0x1000000 }
+backup = { stock = "full", rfoundry = "full", spi_size = 0x1000000 }
 
 # The loader stays in update mode while PTB11 (PTT) and PTB26 both read low; which key PTB26 is isn't known. The web
 # flasher has no steps for it yet

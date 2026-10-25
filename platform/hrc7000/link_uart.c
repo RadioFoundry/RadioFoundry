@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A link to another SoC on one of the UARTs (platform.h hrc_link_uart_*): a board's two SoCs talk at 115200 8N1
 // (docs/spec/rx2-link.md). Receive by interrupt into a ring buffer with a
 // semaphore for the reading task; transmit by polling the TX FIFO, with a spin limit so a stalled UART drops the rest

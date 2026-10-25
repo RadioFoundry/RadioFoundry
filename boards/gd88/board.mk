@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # Radioddity GD-88, SoC A: HR_C7000 SoC (C-SKY CK803S + DMR modem) + two BK4819 (receiver / transmitter and the
 # superhet LO) + a 320x240 ILI9341-class panel on the i8080 LCD controller (docs/spec/hardware-gd88.md). The PC link is
 # UART1; SoC B, the second receiver, is on UART3 (boards/gd88b). Code both SoCs share is in boards/gd88/common
 PLATFORM   := hrc7000
-# The IAP loader leaves the PLL at 72 MHz; ODR re-programs it to 168 MHz CPU / 84 MHz APB at start-up and puts the
+# The IAP loader leaves the PLL at 72 MHz; RadioFoundry re-programs it to 168 MHz CPU / 84 MHz APB at start-up and puts the
 # loader's clocks back before it hands over to the runtime stub or resets (platform/hrc7000/clock.c), as on the other
 # radios with a first stage (boot/README.md)
 MCU_DEFS   := -DHRC_HOST_UART=1 -DHRC_LOADER_CPU_HZ=72000000u

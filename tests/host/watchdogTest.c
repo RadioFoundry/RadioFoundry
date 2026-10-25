@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The hardware watchdog's portable side (docs/spec/watchdog.md): the idle task's feed, the longest idle gap, the bench
 // starve (core/app/watchdog.c), and the debug link's watchdog section and DL_CMD_WATCHDOG
 // (core/debuglink/debuglink_watchdog.c, docs/spec/debuglink.md 3.21). The platform (hal_watchdog.h), the clock, the
 // radio's view and the log are faked
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,6 +12,7 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "hal_watchdog.h"
+#include "hal_crash.h"
 
 static int failures, checks;
 
@@ -34,7 +36,32 @@ static radio_state_t fake_state = RS_RX;
 uint32_t hal_millis(void) { return now_ms; }
 void hal_delay_ms(uint32_t ms) { delayed_ms += ms; now_ms += ms; }
 void hal_watchdog_feed(void) { feeds++; }
-uint32_t hal_watchdog_timeout_ms(void) { return 4000; }
+static uint32_t timeout_ms = 4000;
+uint32_t hal_watchdog_timeout_ms(void) { return timeout_ms; }
+
+// The platform's hang capture never returns: back to the test that ticked
+static jmp_buf hang_jmp;
+static unsigned hangs;
+static uint32_t hang_ms;
+// The restart cause's uptime (core/crash/crash.c): what the tick last kept
+static uint32_t alive_ms;
+void crash_alive(uint32_t ms) { alive_ms = ms; }
+
+void hal_crash_hang(uint32_t ms)
+{
+	hangs++;
+	hang_ms = ms;
+	longjmp(hang_jmp, 1);
+}
+
+// One RTOS tick at the clock's time; true if the hang check fired
+static bool tick(void)
+{
+	if (setjmp(hang_jmp) != 0)
+		return true;
+	watchdog_tick();
+	return false;
+}
 
 uint8_t hal_watchdog_regs(uint32_t *out)
 {
@@ -110,6 +137,7 @@ static void test_idle_feeds(void)
 {
 	const watchdog_state_t *s = watchdog_state();
 	CHECK(!s->seen && s->feeds == 0);
+	CHECK(!watchdog_hung(500000, 4000));		// the idle task hasn't run yet: no feed to count from
 	now_ms = 1000;
 	vApplicationIdleHook();			// through the FreeRTOS hook, at hal_millis()
 	CHECK(feeds == 1 && s->feeds == 1 && s->seen && s->last_idle_ms == 1000 && s->max_gap_ms == 0);
@@ -129,6 +157,44 @@ static void test_idle_feeds(void)
 	watchdog_idle(0x00000064u);
 	CHECK(s->max_gap_ms == 0x164);
 	now_ms = 0x64;
+}
+
+// The hang check (crash-log.md 1.1): three quarters of the timeout after the last feed, from the idle task or a long
+// job's kick, the tick hands the time since to the platform's capture; never before the idle task's first pass, never
+// with the watchdog stopped
+static void test_hang_check(void)
+{
+	uint32_t saved_now = now_ms;
+	now_ms = 10000;
+	watchdog_idle(now_ms);
+	now_ms += 2999;
+	CHECK(!tick() && hangs == 0);
+	CHECK(alive_ms == now_ms);	// every tick keeps the uptime, so a watchdog reset still says how long the run was
+	now_ms += 1;
+	CHECK(tick() && hangs == 1 && hang_ms == 3000);	// 4 s timeout: a record at 3 s, a second before the reset
+	watchdog_idle(now_ms);
+	now_ms += 2000;
+	unsigned before = feeds;
+	watchdog_kick(now_ms);				// a long job feeds: the count starts again there
+	CHECK(feeds == before + 1 && watchdog_state()->last_fed_ms == now_ms);
+	now_ms += 2999;
+	CHECK(!tick());
+	now_ms += 1;
+	CHECK(tick() && hangs == 2 && hang_ms == 3000);
+	timeout_ms = 5000;				// the STM32 IWDG: 3.75 s
+	CHECK(!watchdog_hung(now_ms + 749, 5000) && watchdog_hung(now_ms + 750, 5000));
+	timeout_ms = 0;					// not running: no hang
+	now_ms += 60000;
+	CHECK(!tick() && hangs == 2);
+	timeout_ms = 4000;
+	// The millisecond clock wraps between the feed and the tick
+	now_ms = 0xFFFFFF00u;
+	watchdog_idle(now_ms);
+	now_ms = 0x00000B00u;				// 0xC00 = 3072 ms later
+	CHECK(tick() && hang_ms == 0xC00u);
+	now_ms = saved_now;
+	watchdog_idle(now_ms);
+	watchdog_clear_gap();				// the gaps above aren't the next test's
 }
 
 // The view: the keys a HIL test reads
@@ -207,6 +273,12 @@ static void test_load_then_starve(void)
 	watchdog_idle(now_ms + 4000);
 	CHECK(feeds == before && watchdog_state()->feeds == counted);	// starving: no feed, the gap still measured
 	CHECK(watchdog_state()->max_gap_ms == 3995);
+	watchdog_kick(now_ms + 4001);			// a long job's kick doesn't feed a starve either
+	CHECK(feeds == before);
+	unsigned hangs_before = hangs;
+	now_ms += 10000;
+	CHECK(!tick() && hangs == hangs_before);	// the starve times the hardware reset: no hang record ahead of it
+	now_ms -= 10000;
 	char buf[512];
 	now_ms += 2500;
 	view(buf, sizeof buf);
@@ -220,6 +292,7 @@ int main(void)
 	test_view();
 	test_refusals();
 	test_ptt_cancels();
+	test_hang_check();
 	test_load_then_starve();	// last: the starve is for good
 	printf("watchdogTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The hotspot's CW ID (MMDVM SEND_CWID, docs/spec/mmdvm-protocol.md 2.11) on a radio whose board keys the FM tone
 (the DM-1701, hal_radio_t tx_tone_key): the radio leaves DMR, keys an FM carrier on the hotspot's TX frequency with
 the tone keyed in Morse at the settings' speed (20 wpm by default), then the hotspot's DMR set-up is back.
@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from odr_hil import skip
+from rfoundry_hil import skip
 from test_fm_tx import parse_fm
 
 GET_VERSION, GET_STATUS, SET_CONFIG, SET_MODE, SET_FREQ, SEND_CWID = 0x00, 0x01, 0x02, 0x03, 0x04, 0x0A

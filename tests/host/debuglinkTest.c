@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's portable parts: the printf subset, the CRC, the frame parser and dispatcher, the dlog ring
 // (core/debuglink, docs/spec/debuglink.md)
 #include <stdio.h>

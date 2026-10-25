@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The codec read back from a radio that runs ODR and kept in this browser (IndexedDB), so that a later install needs
-// no stock file: where an update erases part of it (the MD-380: ODR's image shares a flash sector with the codec,
+// Copyright (c) 2026 The RadioFoundry Authors
+// The codec read back from a radio that runs RadioFoundry and kept in this browser (IndexedDB), so that a later install needs
+// no stock file: where an update erases part of it (the MD-380: RadioFoundry's image shares a flash sector with the codec,
 // keep_codec_supported false), and on every other radio for when it can't be kept (a radio back on stock firmware, an
 // install that stopped halfway, a radio in its bootloader). Every codec window is read over the debug link (READ_MEM,
 // docs/spec/debuglink.md 3.10) and checked against the stock profile's SHA-256, either where stock firmware keeps it or
 // where the merge placed it (stockfw.placedWindows: the DM-1701's code in sector 11). It is checked again when loaded.
-// The same rules as odrflash/codecsave.py.
+// The same rules as rfoundry/codecsave.py.
 
 import { sha256, u32le } from "./bytes.js";
 import { descriptor, place, placedWindows } from "./stockfw.js";
@@ -55,7 +55,7 @@ export async function codecSegments(prof, segments, fb) {
 
 // --- the copy in this browser: one record per board and codec, the windows concatenated in profile order
 
-const DB = "odr-flasher", STORE = "codecs";
+const DB = "rfoundry-flasher", STORE = "codecs";
 const recordId = (board) => `${board.id}-${board.codec.id}`;
 
 function open() {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 DMR engine (drivers/modem/hrc7000/hrc7000_dmr.c) on plain arrays standing in for the modem registers and
 // buffers: RX_TYPE_INFO decode, send types, the receive path (events, slot numbers, voice access flag, CRC policy,
 // late entry), the transmit schedule (one burst every other tick, PA one-shot, RF switch, drain, TX_DONE), polite

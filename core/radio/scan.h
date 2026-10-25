@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The scan engine (docs/spec/radio-features.md 2): when to move on, where to go next, nuisance delete. No hardware and
 // no channel reading here: the radio core (radio_sm.c) tunes, reads the codeplug and tells the engine what it hears.
 //

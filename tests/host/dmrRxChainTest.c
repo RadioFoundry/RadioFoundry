@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR receive chain end to end on the host: a model of the HR_C6000's receive reports (the bench call of
 // 2026-10-10: 8 voice LC headers, 16 superframes, 3 terminators, CC 2, MS sync, direct mode) drives the real slot engine
 // (drivers/modem/hrc_common/hrc6000_dmr.c) through its interrupt entry points; a board-like task drains the engine's

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # GD-88 SoC B feature defaults. B runs no radio core: analog FM and DMR receive, the link to A and the watchdog. Every
 # other switch is off and listed as unsupported, one a line with the reason: B has no display, keys, host port,
 # transmitter or storage, so what needs one runs on A. ci's maximal configuration is this one.

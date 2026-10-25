@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // PTT on a pin shared with the serial line (shared_ptt.h)
 #include "input/sharedptt/shared_ptt.h"
 

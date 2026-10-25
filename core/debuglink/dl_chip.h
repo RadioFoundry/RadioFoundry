@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's chip commands, the portable parts (host tested): option byte decoding, the READ_MEM address
 // whitelist, the REBOOT safety gate (docs/spec/debuglink.md 3.9-3.11). STM32F4 memory map.
 #ifndef DL_CHIP_H

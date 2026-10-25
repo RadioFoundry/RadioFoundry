@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The MD-380's bit-banged RF bus (boards/md380/rfbus_md380.c, built against the real pins.h and a stub platform.h)
 // against fake chips wired as the hardware is (hardware-md380.md 4.2, 5.2): an HR_C5000 on C13 / E5 / E3 / E2 and a
 // SKY72310 on E4 / E5 / D11. The wiring below is written out here, not taken from pins.h, so a wrong pin in pins.h or a

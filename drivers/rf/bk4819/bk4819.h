@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Beken BK4819 VHF/UHF transceiver: chip driver, independent of the board (docs/spec/hardware-db25d.md 4).
 //
 // One instance per chip. A superhet radio can have two on one 3-wire bus with separate enables: the "main" chip receives at
@@ -98,7 +98,7 @@ typedef struct {
 #define BK4819_AF_MUTE		0x6042u
 #define BK4819_AF_FM		0x6140u
 // The stock word is 0x6042 | select << 8 | digital: its FM audio on is 0x6142 (bit 1 kept), and a digital channel
-// adds bit 0. ODR's FM keeps 0x6140 (heard working); DMR uses the stock value
+// adds bit 0. RadioFoundry's FM keeps 0x6140 (heard working); DMR uses the stock value
 #define BK4819_AF_DMR		0x6143u
 // The digital set's AF gain word: AF DAC gain nibble 4, RX gain field (bits 9:4) 0x17 (analog: 0xB3B3)
 #define BK4819_AF_GAIN_DMR	0xB174u

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The storage locks on FreeRTOS: recursive mutexes, created on first use (storage_init, from the start-up task
 // before the other tasks exist). Before the scheduler runs the lock is a no-op
 #include "storage/storage.h"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // netSvcTest's cases: each TCP service against the scripted peer, with fakes for the APRS engine and the radio core
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +14,9 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/dl_fmt.h"
 #include "settings/settings.h"
+#include "ui/ui.h"
+#include "input/input.h"
+#include "net/webctl.h"
 #include "aprs/aprs.h"
 #include "net/aprsis.h"
 #include "net/http_assets.h"
@@ -125,6 +128,25 @@ static int holds;
 static bool big_view;
 const void *gfx_framebuffer(void) { return fb; }
 void gfx_hold(uint32_t until) { (void)until; holds++; }
+color_t gfx_palette(uint8_t i) { return (color_t)(0x0841u * i); }
+// The rows the UI changed (gfx.h), and a frame being drawn
+static bool rows_new[128], drawing;
+bool gfx_frame_idle(uint32_t *frames) { *frames = 0; return !drawing; }
+int gfx_row_next(int from)
+{
+	for (int y = from; y < 128; y++)
+		if (rows_new[y])
+			return y;
+	return -1;
+}
+void gfx_rows_take(int from, int to) { for (int y = from; y <= to; y++) rows_new[y] = false; }
+void gfx_rows_mark_all(void) { memset(rows_new, 1, sizeof rows_new); }
+// The audio linking and PPP the web control asks about: built in, PPP not running unless a case says so
+void usrp_net_start(void) {}
+void usrp_net_poll(uint32_t t, bool link_up) { (void)t; (void)link_up; }
+static bool fake_ppp;
+bool ppp_running(void) { return fake_ppp; }
+extern hal_display_t fake_display;
 void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n)
 {
 	for (size_t i = 0; i < n; i++, off++)
@@ -228,6 +250,31 @@ static void test_http(void)
 	CHECK(bmp[10] == 66 && bmp[18] == 160 && bmp[28] == 16 && bmp[30] == 3);
 	CHECK(bmp[22] == 0x80 && bmp[23] == 0xFF && bmp[24] == 0xFF && bmp[25] == 0xFF);	// -128: top-down
 	CHECK(memcmp(bmp + 66, fb, sizeof(fb)) == 0);
+
+	// At the panel's own depth: bpp 4, the frame buffer's rows after a 16-entry palette
+	fake_display.bpp = 4;
+	CHECK(http_get(&a, 51017, "GET /api/screen.bmp HTTP/1.0\r\n\r\n") > 0);
+	bmp = (const uint8_t *)body_of(&a);
+	blen = a.rxn - (int)(bmp - a.rx);
+	CHECK(blen == 118 + 80 * 128 && bmp[10] == 118 && bmp[28] == 4 && bmp[30] == 0 && bmp[46] == 16);
+	CHECK(bmp[54 + 4 * 2] == 0x10 && bmp[54 + 4 * 2 + 1] == 0x10 && bmp[54 + 4 * 2 + 2] == 0x10);	// 0x1082: B, G, R
+	CHECK(memcmp(bmp + 118, fb, 80 * 128) == 0);
+	// bpp 1, a width whose rows need padding to 4 bytes: 13 bytes of pixels, 3 of zeros; the gallery's paper and ink
+	fake_display.bpp = 1;
+	fake_display.width = 100;
+	CHECK(http_get(&a, 51018, "GET /api/screen.bmp HTTP/1.0\r\n\r\n") > 0);
+	bmp = (const uint8_t *)body_of(&a);
+	blen = a.rxn - (int)(bmp - a.rx);
+	CHECK(blen == 62 + 16 * 128 && bmp[10] == 62 && bmp[18] == 100 && bmp[28] == 1 && bmp[46] == 2);
+	CHECK(bmp[54] == 0 && bmp[58] == 0x08 && bmp[59] == 0x08 && bmp[60] == 0x08);	// gfx_palette's 0, 0x0841
+	bool rows_ok = true;
+	for (int y = 0; y < 128; y++) {
+		const uint8_t *r = bmp + 62 + 16 * y;
+		rows_ok &= memcmp(r, (const uint8_t *)fb + 13 * y, 13) == 0 && r[13] == 0 && r[14] == 0 && r[15] == 0;
+	}
+	CHECK(rows_ok);
+	fake_display.bpp = 16;
+	fake_display.width = 160;
 
 	// Errors
 	CHECK(http_get(&a, 51008, "POST / HTTP/1.0\r\n\r\n") > 0 && strstr((char *)a.rx, " 405 "));
@@ -355,7 +402,7 @@ static void test_rigctl(void)
 	CHECK(strcmp(rig(&a, "V VFOA\n"), "RPRT 0\n") == 0);
 	CHECK(strcmp(rig(&a, "V VFOB\n"), "RPRT -1\n") == 0);
 	CHECK(strcmp(rig(&a, "s\n"), "0\nVFOA\n") == 0);
-	CHECK(strcmp(rig(&a, "\\get_info\n"), "OpenDigitalRadio fake\n") == 0);
+	CHECK(strcmp(rig(&a, "\\get_info\n"), "RadioFoundry fake\n") == 0);
 	CHECK(strcmp(rig(&a, "\\chk_vfo\n"), "0\n") == 0);
 	const char *ds = rig(&a, "\\dump_state\n");
 	CHECK(strncmp(ds, "0\n2\n2\n136000000.000000 174000000.000000 0x20 -1 -1", 49) == 0);
@@ -441,7 +488,7 @@ static void test_aprsis(void)
 	run_for(2000);
 	CHECK(srv.syns == 1 && srv.established);
 	srv.rx[srv.rxn] = 0;
-	CHECK(strcmp((char *)srv.rx, "user N0CALL-7 pass 13023 vers OpenDigitalRadio unknown filter m/50\r\n") == 0);
+	CHECK(strcmp((char *)srv.rx, "user N0CALL-7 pass 13023 vers RadioFoundry unknown filter m/50\r\n") == 0);
 	CHECK(!net_tnc_taken());
 	static const char hello[] = "# aprsc 2.1.14\r\n# logresp N0CALL-7 verified, server T2TEST\r\n";
 	peer_send(&srv, hello, sizeof(hello) - 1);
@@ -449,14 +496,14 @@ static void test_aprsis(void)
 
 	// The engine's lines for APRS-IS go to the server; other frames don't
 	peer_clear(&srv);
-	static const uint8_t g[] = { 0xC0, 0x06, 'G', 'N', '0', 'C', 'A', 'L', 'L', '-', '7', '>', 'A', 'P', 'Z', 'O', 'D',
-				     'R', ',', 'T', 'C', 'P', 'I', 'P', '*', ':', '>', 'h', 'i', 0xC0 };
+	static const uint8_t g[] = { 0xC0, 0x06, 'G', 'N', '0', 'C', 'A', 'L', 'L', '-', '7', '>', 'A', 'P', 'Z', 'R', 'D',
+				     'F', ',', 'T', 'C', 'P', 'I', 'P', '*', ':', '>', 'h', 'i', 0xC0 };
 	static const uint8_t data[] = { 0xC0, 0x00, 'x', 0xC0 };
 	ring_put(data, sizeof(data));
 	ring_put(g, sizeof(g));
 	pump();
 	srv.rx[srv.rxn] = 0;
-	CHECK(ring_n == 0 && strcmp((char *)srv.rx, "N0CALL-7>APZODR,TCPIP*:>hi\r\n") == 0);
+	CHECK(ring_n == 0 && strcmp((char *)srv.rx, "N0CALL-7>APZRDF,TCPIP*:>hi\r\n") == 0);
 
 	// The server's lines go to the engine (its iGate rules decide); comments don't
 	is_lines = 0;
@@ -498,7 +545,7 @@ static void test_aprsis(void)
 	run_for(5000);
 }
 
-// ---- mutated input to every service (fuzz.h; ODR_FUZZ_ITERS) ----
+// ---- mutated input to every service (fuzz.h; RFOUNDRY_FUZZ_ITERS) ----
 
 // KISS: frames with escapes at the ends, cut, doubled FENDs, over the decoder's buffer; HTTP: mutated requests, each
 // on its own connection, always answered with a status line and closed; rigctld: mutated command lines on one
@@ -635,10 +682,412 @@ static void test_fuzz(void)
 	       got_frames - frames0, iters / 3, answered, iters);
 }
 
+#if CONFIG_NET_WEBCTL
+// ---- fake UI and input task (the web control's keys) ----
+static uint32_t ui_draws;
+void ui_get_status(ui_app_status_t *s) { memset(s, 0, sizeof(*s)); s->draws = ui_draws; }
+uint8_t ui_backlight(void) { return 80; }
+static uint32_t inj_mask, inj_hold, inj_released;
+static bool inj_ptt, inj_busy;
+static uint32_t inj_ptt_max, inj_ptt_downs;
+static int inj_enc;
+input_inject_t input_inject_keys(uint32_t mask, uint32_t hold_ms)
+{
+	if (inj_busy || inj_mask != 0) {
+		return INPUT_INJ_BUSY;
+	}
+	inj_mask = mask;
+	inj_hold = hold_ms;
+	return INPUT_INJ_OK;
+}
+void input_inject_release(uint32_t mask) { inj_released |= mask; inj_mask &= ~mask; }
+input_inject_t input_inject_ptt(bool down, uint32_t max_ms)
+{
+	inj_ptt_downs += down && !inj_ptt;
+	inj_ptt = down;
+	inj_ptt_max = max_ms;
+	return INPUT_INJ_OK;
+}
+input_inject_t input_inject_action(uint8_t action, uint8_t gesture, int8_t value)
+{
+	if (action == ACT_ENC_STEP && gesture == GESTURE_DOWN) {
+		inj_enc += value;
+		return INPUT_INJ_OK;
+	}
+	return INPUT_INJ_BAD;
+}
+
+// A client frame, masked (RFC 6455 5.3)
+static void ws_send(peer_t *p, uint8_t op, const void *data, int len)
+{
+	uint8_t f[200];
+	static const uint8_t mask[4] = { 0x12, 0x34, 0x56, 0x78 };
+	f[0] = (uint8_t)(0x80 | op);
+	f[1] = (uint8_t)(0x80 | len);
+	memcpy(f + 2, mask, 4);
+	for (int i = 0; i < len; i++) {
+		f[6 + i] = ((const uint8_t *)data)[i] ^ mask[i & 3];
+	}
+	peer_send(p, f, 6 + len);
+}
+
+static void ws_text(peer_t *p, const char *s)
+{
+	ws_send(p, 0x1, s, (int)strlen(s));
+}
+
+// The server's frames in p->rx from *at on: the next one's opcode (-1: none complete), its payload copied to out
+static int ws_next(peer_t *p, int *at, char *out, int max, int *len)
+{
+	const uint8_t *b = p->rx + *at;
+	int n = p->rxn - *at;
+	if (n < 2) {
+		return -1;
+	}
+	CHECK((b[0] & 0x80) && !(b[1] & 0x80));	// final, unmasked
+	int l = b[1] & 0x7F, h = 2;
+	if (l == 126) {
+		if (n < 4) {
+			return -1;
+		}
+		l = (b[2] << 8) | b[3];
+		h = 4;
+	}
+	if (n < h + l) {
+		return -1;
+	}
+	int c = l < max - 1 ? l : max - 1;
+	memcpy(out, b + h, (size_t)c);
+	out[c] = 0;
+	*len = l;
+	*at += h + l;
+	return b[0] & 0x0F;
+}
+
+// The last text frame holding needle since *at (frames before it skipped); false when none
+static bool ws_find(peer_t *p, int *at, const char *needle, char *out, int max)
+{
+	int op, len;
+	bool found = false;
+	char tmp[1024];
+	while ((op = ws_next(p, at, tmp, sizeof tmp, &len)) >= 0) {
+		if (op == 0x1 && strstr(tmp, needle)) {
+			snprintf(out, (size_t)max, "%s", tmp);
+			found = true;
+		}
+	}
+	return found;
+}
+
+static bool ws_open(peer_t *p, uint32_t ip, uint16_t port, const char *extra)
+{
+	char req[300];
+	snprintf(req, sizeof req, "GET /ws HTTP/1.1\r\nHost: radio\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+		 "sec-WebSocket-KEY:  dGhlIHNhbXBsZSBub25jZQ==\r\n%sSec-WebSocket-Version: 13\r\n\r\n", extra);
+	if (!peer_connect(p, ip, port, NET_HTTP_PORT)) {
+		return false;
+	}
+	peer_send(p, req, (int)strlen(req));
+	run_for(20);
+	p->rx[p->rxn] = 0;
+	return strncmp((char *)p->rx, "HTTP/1.1 101 Switching Protocols\r\n", 34) == 0;
+}
+
+// The screen frames from *at drawn into img (rows of raw bytes, as the frame buffer's); the frame count, -1 for a
+// bad one. *raw: rows sent raw
+static int screen_frames(peer_t *p, int *at, uint8_t *img, int *rows, int *raw)
+{
+	static char m[1024];
+	int op, len, frames = 0, bpp = fake_display.bpp, rb = (fake_display.width * bpp + 7) / 8;
+
+	while ((op = ws_next(p, at, m, sizeof m, &len)) >= 0) {
+		const uint8_t *f = (const uint8_t *)m;
+		if (op != 0x2 || f[0] != 'S' || f[1] != (bpp == 16 ? 0 : 1 << bpp))
+			continue;
+		frames++;
+		int last = f[1] - 1;
+		if (bpp != 16 && (f[2 + 2 * last] | f[3 + 2 * last] << 8) != 0x0841 * last)
+			return -1;	// the palette, as gfx_palette has it
+		for (int i = 2 + 2 * f[1]; i < len;) {
+			int y = f[i] | f[i + 1] << 8;
+			uint8_t *r = img + (y & 0x7FFF) * rb;
+			i += 2;
+			(*rows)++;
+			if (y & 0x8000) {
+				(*raw)++;
+				memcpy(r, f + i, (size_t)rb);
+				i += rb;
+				continue;
+			}
+			memset(r, 0, (size_t)rb);
+			for (int x = 0; x < fake_display.width;) {
+				int c = f[i] >> 4, ix = f[i] & 15, n = c < 15 ? c + 1 : 16 + f[i + 1];
+				i += c < 15 ? 1 : 2;
+				for (; n > 0; n--, x++)
+					r[x * bpp / 8] |= (uint8_t)(bpp == 4 ? ix << ((x & 1) ? 0 : 4) : ix << (7 - (x & 7)));
+				if (x > fake_display.width)
+					return -1;
+			}
+		}
+	}
+	return frames;
+}
+
+// The screen over /ws: after "s1" every row, then only the rows marked changed, never during a frame; runs or raw rows
+static void test_webctl_screen(void)
+{
+	static peer_t a;
+	static uint8_t img[160 * 128 * 2];
+	char m[1024];
+	int at, len, rows = 0, raw = 0;
+	uint8_t *f8 = (uint8_t *)fb;
+
+	fake_display.bpp = 4;
+	memset(fb, 0x11, sizeof fb);
+	for (int x = 0; x < 80; x++) {
+		for (int y = 20; y < 40; y++)
+			f8[80 * y + x] = (uint8_t)(x * 37 + y);	// rows 20 to 39: noise, raw (more than a frame holds)
+		f8[80 * 9 + x] = (uint8_t)(x < 40 ? 0x22 : 0x33);	// row 9: two runs past 15 pixels
+	}
+	memset(rows_new, 0, sizeof rows_new);
+	CHECK(ws_open(&a, net_test_host_ip(), 53021, ""));
+	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1 && strstr(m, "\"screen\":[160,128,4,0,0,160,128]}"));
+	run_for(300);
+	CHECK(screen_frames(&a, &at, img, &rows, &raw) == 0);	// not asked for
+	ws_text(&a, "s1");
+	run_for(300);
+	int frames = screen_frames(&a, &at, img, &rows, &raw);
+	CHECK(frames > 1 && rows == 128 && raw == 20 && memcmp(img, fb, 80 * 128) == 0);
+	// One row changed: that row alone; none while a frame is being drawn
+	f8[80 * 50 + 3] = 0x5A;
+	rows_new[50] = true;
+	drawing = true;
+	rows = raw = 0;
+	run_for(300);
+	CHECK(screen_frames(&a, &at, img, &rows, &raw) == 0);
+	drawing = false;
+	run_for(300);
+	CHECK(screen_frames(&a, &at, img, &rows, &raw) == 1 && rows == 1 && memcmp(img, fb, 80 * 128) == 0);
+	// "s0": no more
+	ws_text(&a, "s0");
+	rows_new[51] = true;
+	run_for(300);
+	CHECK(screen_frames(&a, &at, img, &rows, &raw) == 0);
+	peer_close(&a);
+	run_for(3000);
+
+	// bpp 1, a width that isn't a whole number of bytes
+	fake_display.bpp = 1;
+	fake_display.width = 100;
+	memset(fb, 0, sizeof fb);
+	f8[13 * 4 + 1] = 0xF0;
+	f8[13 * 4 + 12] = 0x80;	// the last pixel of row 4
+	CHECK(ws_open(&a, net_test_host_ip(), 53022, ""));
+	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1 && strstr(m, "\"screen\":[100,128,1,0,0,100,128]}"));
+	ws_text(&a, "s1");
+	rows = raw = 0;
+	memset(img, 0xEE, sizeof img);
+	run_for(300);
+	frames = screen_frames(&a, &at, img, &rows, &raw);
+	CHECK(frames >= 1 && rows == 128 && memcmp(img, fb, 13 * 128) == 0);
+	peer_close(&a);
+	run_for(3000);
+	fake_display.bpp = 16;
+	fake_display.width = 160;
+}
+
+static void test_webctl(void)
+{
+	static peer_t a, b, far;
+	char m[1024];
+	int at, op, len;
+
+	memset(&fake_view, 0, sizeof(fake_view));
+	fake_view.ch.rx_hz = 446006250;
+	fake_view.leds = RADIO_LED_GREEN;
+
+	// The handshake (RFC 6455 1.3's example key, the header name in any case), then the hello and the status
+	CHECK(ws_open(&a, net_test_host_ip(), 53000, ""));
+	CHECK(strstr((char *)a.rx, "\r\nUpgrade: websocket\r\n") && strstr((char *)a.rx, "\r\nConnection: Upgrade\r\n"));
+	CHECK(strstr((char *)a.rx, "\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"));
+	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1);
+	CHECK(strcmp(m, "{\"hello\":1,\"control\":true,\"audio\":true,\"keys\":[3,7],\"ptt\":7,\"encoder\":true,"
+		"\"screen\":[160,128,16,0,0,160,128]}") == 0);
+	run_for(300);
+	CHECK(ws_find(&a, &at, "\"rx_hz\":446006250", m, sizeof m));
+	CHECK(strstr(m, "\"led_green\":true,\"led_red\":false,\"backlight\":80,\"draws\":0"));
+	// Unchanged: not sent again; a change goes out within one status period
+	run_for(600);
+	CHECK(!ws_find(&a, &at, "\"rx_hz\"", m, sizeof m) || strstr(m, "\"uptime_s\":11"));	// only the second ticking
+	ui_draws = 5;
+	fake_view.leds = RADIO_LED_RED;
+	run_for(300);
+	CHECK(ws_find(&a, &at, "\"draws\":5", m, sizeof m) && strstr(m, "\"led_red\":true"));
+	// /status has the same fields
+	CHECK(http_get(&b, 53001, "GET /status HTTP/1.0\r\n\r\n") > 0 && strstr(body_of(&b), "\"led_red\":true"));
+
+	// One client: a second gets 503; a request that is no handshake 400
+	CHECK(http_get(&b, 53002, "GET /ws HTTP/1.1\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n") > 0);
+	CHECK(strstr((char *)b.rx, "HTTP/1.0 503 Service Unavailable"));
+	CHECK(http_get(&b, 53003, "GET /ws HTTP/1.1\r\n\r\n") > 0 && strstr((char *)b.rx, " 400 "));
+	CHECK(http_get(&b, 53004, "GET /ws HTTP/1.1\r\nSec-WebSocket-Key: short==\r\n\r\n") > 0 && strstr((char *)b.rx, " 400 "));
+
+	// Keys: down holds (capped by the input task), up releases; one at a time; keys not on the radio refused
+	ws_text(&a, "d3");
+	CHECK(inj_mask == 8u && inj_hold == INPUT_INJECT_MAX_MS);
+	ws_text(&a, "u3");
+	CHECK(inj_mask == 0 && inj_released == 8u);
+	inj_released = 0;
+	inj_busy = true;
+	ws_text(&a, "d3");
+	CHECK(inj_mask == 0);
+	ws_text(&a, "u3");
+	CHECK(inj_released == 0);	// it never went down
+	inj_busy = false;
+	ws_text(&a, "d4");
+	ws_text(&a, "d99");
+	ws_text(&a, "dx");
+	ws_text(&a, "z1");
+	CHECK(inj_mask == 0);
+	ws_text(&a, "e-2");
+	ws_text(&a, "e3");
+	CHECK(inj_enc == 1);
+
+	// PTT: held for WEBCTL_PTT_HOLD_MS, re-armed by each repeat, released at WEBCTL_PTT_MAX_MS and not again until
+	// the page lets go
+	ws_text(&a, "d7");
+	CHECK(inj_ptt && inj_ptt_max == WEBCTL_PTT_HOLD_MS && inj_ptt_downs == 1);
+	for (int i = 0; i < 91; i++) {
+		run_for(2000);
+		ws_text(&a, "d7");
+	}
+	CHECK(!inj_ptt && inj_ptt_downs == 1);
+	ws_text(&a, "u7");
+	ws_text(&a, "d7");
+	CHECK(inj_ptt && inj_ptt_downs == 2);
+	ws_text(&a, "u7");
+	CHECK(!inj_ptt);
+
+	// A ping is answered with its payload
+	at = a.rxn;
+	ws_send(&a, 0x9, "hi", 2);
+	run_for(10);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0xA && len == 2 && strcmp(m, "hi") == 0);
+
+	// The server pings; a client that answers nothing for WEBCTL_IDLE_MS is dropped, with its keys released
+	ws_text(&a, "d3");
+	ws_text(&a, "d7");
+	CHECK(inj_mask == 8u && inj_ptt);
+	at = a.rxn;
+	run_for(WEBCTL_PING_MS + 10);
+	bool pinged = false;
+	while ((op = ws_next(&a, &at, m, sizeof m, &len)) >= 0) {
+		pinged |= op == 0x9;
+	}
+	CHECK(pinged);
+	run_for(WEBCTL_IDLE_MS);
+	CHECK(a.reset && inj_mask == 0 && !inj_ptt);
+	run_for(3000);
+
+	// Receive audio: only after "a1", only while the squelch is open, 20 ms little-endian frames
+	int16_t pcm[WEBCTL_AUDIO_SAMPLES];
+	for (int i = 0; i < (int)WEBCTL_AUDIO_SAMPLES; i++) {
+		pcm[i] = (int16_t)(i * 300 - 20000);
+	}
+	CHECK(ws_open(&a, net_test_host_ip(), 53010, ""));
+	run_for(300);
+	at = a.rxn;
+	webctl_audio(pcm, WEBCTL_AUDIO_SAMPLES, true);
+	run_for(10);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) < 0);
+	ws_text(&a, "a1");
+	at = a.rxn;
+	webctl_audio(pcm, WEBCTL_AUDIO_SAMPLES, false);
+	webctl_audio(pcm, WEBCTL_AUDIO_SAMPLES, true);
+	run_for(10);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x2 && len == 2 + 2 * (int)WEBCTL_AUDIO_SAMPLES);
+	CHECK(m[0] == 'A' && m[1] == 0);
+	CHECK((uint8_t)m[2] == (uint8_t)(pcm[0] & 0xFF) && (uint8_t)m[3] == (uint8_t)((uint16_t)pcm[0] >> 8));
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) < 0);
+	peer_close(&a);
+	run_for(3000);
+
+	test_webctl_screen();
+
+	// Over PPP: no audio offered and "a1" refused (128 kbit/s doesn't fit the serial link), keys still work
+	fake_ppp = true;
+	CHECK(ws_open(&a, net_test_host_ip(), 53020, ""));
+	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1 && strstr(m, "\"control\":true,\"audio\":false,"));
+	ws_text(&a, "a1");
+	ws_text(&a, "d3");
+	CHECK(inj_mask == 8u);
+	ws_text(&a, "u3");
+	inj_released = 0;
+	at = a.rxn;
+	webctl_audio(pcm, WEBCTL_AUDIO_SAMPLES, true);
+	run_for(10);
+	bool audio_frame = false;
+	while ((op = ws_next(&a, &at, m, sizeof m, &len)) >= 0) {
+		audio_frame |= op == 0x2;
+	}
+	CHECK(!audio_frame && inj_mask == 0);
+	fake_ppp = false;
+
+	// The client closes (code 1001): the code comes back and the connection ends; /ws is free again
+	ws_text(&a, "d3");
+	at = a.rxn;
+	ws_send(&a, 0x8, "\x03\xe9", 2);
+	run_for(20);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x8 && len == 2 && (uint8_t)m[0] == 0x03 && (uint8_t)m[1] == 0xE9);
+	CHECK(a.fin && inj_mask == 0);
+	peer_close(&a);
+	run_for(3000);
+
+	// The tab closes without a close frame (TCP FIN): keys released
+	CHECK(ws_open(&a, net_test_host_ip(), 53011, ""));
+	ws_text(&a, "d7");
+	CHECK(inj_ptt);
+	peer_close(&a);
+	run_for(20);
+	CHECK(!inj_ptt && a.fin);
+	run_for(3000);
+
+	// A protocol error (an unmasked frame): close 1002
+	CHECK(ws_open(&a, net_test_host_ip(), 53012, ""));
+	run_for(300);
+	at = a.rxn;
+	peer_send(&a, "\x81\x02u3", 4);
+	run_for(20);
+	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x8 && len == 2 && (uint8_t)m[0] == 0x03 && (uint8_t)m[1] == 0xEA);
+	CHECK(a.fin);
+	peer_close(&a);
+	run_for(3000);
+
+	// From beyond the host: status only, no keys
+	CHECK(ws_open(&far, 0xC0000201u, 53013, ""));
+	at = (int)(strstr((char *)far.rx, "\r\n\r\n") + 4 - (char *)far.rx);
+	CHECK(ws_next(&far, &at, m, sizeof m, &len) == 0x1 && strstr(m, "\"control\":false"));
+	ws_text(&far, "d3");
+	ws_text(&far, "d7");
+	ws_text(&far, "e1");
+	CHECK(inj_mask == 0 && !inj_ptt && inj_enc == 1);
+	peer_close(&far);
+	run_for(3000);
+	CHECK(tcp_open_count() == 0);
+}
+#endif
+
 void tests_run(void)
 {
 	test_kiss();
 	test_http();
+#if CONFIG_NET_WEBCTL
+	test_webctl();
+#endif
 	test_rigctl();
 	test_aprsis();
 	test_fuzz();

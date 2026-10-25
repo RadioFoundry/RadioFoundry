@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C6000's two MCU ports on the STM32F4 radios with one: the configuration port bit-banged on four GPIO
 // lines of one port, and the voice port on an SPI peripheral with its own chip select (docs/spec/modem-hrc6000.md 1,
 // 1.1). hrc_bus.c gives the hrc_bus_t the chip driver runs on. Both transfers mask interrupts up to the RTOS syscall

@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """MD-380 RF bus check (docs/testing/md380-bringup.md, issue #3), radio only, never transmits: after boot the bit-banged
 HR_C5000 port reads its register 0x10 back as 0x80 and the SKY72310 synthesizer locks, which only happens when the pin
 map and the clock edges in boards/md380/rfbus_md380.c are right. boards/md380/tests/md380RfbusTest.c checks the code
 against the documented wiring; this is what checks the wiring. A board's own test: skipped other_board on any other
 radio (tests/hil/hil_plugin.py)."""
-from odr_hil import diag_lines, find
+from rfoundry_hil import diag_lines, find
 
 
 def test_c5000_register_reads_back(radio):

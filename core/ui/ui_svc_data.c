@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The ui_svc.h calls for text messages, call alert and radio check, on the DMR data service's API
 // (core/dmr/dmr_data_api.h, safe from any task). Its events are polled (dmr_data_serial) and handed to the UI as
 // ui_notify events, which become banners. Built only with the data core; otherwise the weak stubs stay.

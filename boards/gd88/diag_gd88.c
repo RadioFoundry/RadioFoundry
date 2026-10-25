@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SoC A diagnostics page lines: what the bring-up needs to see: the RF chips' IDs, the raw key scan (to name
 // the keys), the ADC channels, the serial chain's outputs, the host UART's overruns, the calibration page and the PA
 // values it gives, the NAND, the link to SoC B, the storage and the settings, the GPS and the DMR modem
@@ -201,7 +201,7 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 	case 15:
 	case 16:
 	case 17: {
-		// The storage layer over ODR's NAND range : blocks in use, free and bad; then records
+		// The storage layer over RadioFoundry's NAND range : blocks in use, free and bad; then records
 		// written, block erases, blocks emptied by garbage collection and pages that read back wrong since boot;
 		// then torn pages the mount set aside, blocks retired since boot and the next sequence number
 		nand_sectors_stats_t st;
@@ -209,9 +209,9 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		put(&o, "nst ");
 		if (gd88_flash.size == 0) {
 			if (st.status == NAND_SECTORS_FOREIGN && i == 15) {
-				// Data ODR didn't write in its range: nothing touched, no storage. The physical block and how many
+				// Data RadioFoundry didn't write in its range: nothing touched, no storage. The physical block and how many
 				put(&o, "foreign ");
-				put_u(&o, GD88_NAND_ODR_FIRST + st.foreign_block);
+				put_u(&o, GD88_NAND_RFOUNDRY_FIRST + st.foreign_block);
 				put(&o, " n");
 				put_u(&o, st.foreign);
 			} else if (i == 15) {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Microphone gain (mic_gain.h; docs/spec/radio-features.md 3.6)
 #include "radio/mic_gain.h"
 #if CONFIG_DMR

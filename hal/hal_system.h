@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The MCU itself: chip identity and option bytes, raw memory reads, reboot (the debug link's INFO_CHIP, READ_MEM and
 // REBOOT, docs/spec/debuglink.md). Optional: board.system is NULL where the platform has none.
 #ifndef HAL_SYSTEM_H
@@ -37,7 +37,7 @@ typedef struct {
 	// *size, or NULL if unsupported. enter_stub quiesces the SoC (interrupts masked, watchdog off, DMA stopped, flash
 	// controller handed back) and jumps to entry; it does not return on success, and returns false only if it could
 	// not jump. stub_run_addr is where the image runs: 0 means where it is loaded (the HR_C7000), otherwise
-	// enter_stub copies the span there first (the STM32: SRAM base, which ODR's own data holds until the jump)
+	// enter_stub copies the span there first (the STM32: SRAM base, which RadioFoundry's own data holds until the jump)
 	uint8_t *(*stub_region)(uint32_t *size);
 	bool (*enter_stub)(uint32_t entry);
 #if defined(CONFIG_STUB_ENTRY) && CONFIG_STUB_ENTRY

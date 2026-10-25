@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SoC B RF and audio paths (common/gd88_rf.h): direct GPIO pairs (pins.h, docs/spec/hardware-gd88.md 10). B is a
 // receiver only: the TX switches stay low, and the TX calls only make sure of it. Its audio goes to A, which routes it
 // to the speaker; gd88b_path_mute() holds the source pair off while A hasn't given B the speaker.

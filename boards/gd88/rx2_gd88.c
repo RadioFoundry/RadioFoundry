@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SoC A: SoC B as the second receiver (hal_rx2_t, docs/spec/rx2-link.md) over UART3 at 115200 (PTA13 / PTA14).
 // The link's main side is core/rx2/rx2_link.c; this file moves its bytes, runs it from a task of its own, and routes
 // B's audio to the speaker. Text B sends (RX2_LOG) goes to the debug link's log.

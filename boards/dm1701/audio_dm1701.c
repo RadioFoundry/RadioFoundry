@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 PCM audio: the shared I2S3 stream to the HR_C6000's built-in codec (platform/stm32f4/hrc/i2s_pcm.c,
 // docs/spec/hardware-dm1701.md 3.2, 4.4, 8) with the board's speaker routing, the FM transmit audio for USRP and the
 // audio probe.

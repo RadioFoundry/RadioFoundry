@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # This board's host tests, and those of the GD-88's second SoC (boards/gd88b), included by tests/host/Makefile and run
 # from there. HERE is this directory, read while the file is included; recipes use $< (the test, first) and $^ instead,
 # which keep the paths they were given

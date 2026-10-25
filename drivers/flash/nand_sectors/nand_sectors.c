@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // NOR-like 4 KB sectors over NAND (nand_sectors.h, docs/spec/nand-sectors.md).
 //
 // A record is the content of one sector at one moment: two pages (half 0, half 1), or one page that says the sector is

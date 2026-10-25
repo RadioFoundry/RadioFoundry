@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR ID database over TFTP (docs/spec/tftp.md 5): iddb.bin, the database alone (its 12-byte header, then the
 // records back to back, as a CPS would upload them), and the database part of a combined codeplug.bin. Written
 // straight into its areas, no staging: the header is erased first and programmed last, so a transfer that stops
 // leaves no database, never a broken one. CONFIG_TFTP.
-#ifndef ODR_TFTP_IDDB_H
-#define ODR_TFTP_IDDB_H
+#ifndef RFOUNDRY_TFTP_IDDB_H
+#define RFOUNDRY_TFTP_IDDB_H
 
 #include <stdint.h>
 #include <stdbool.h>

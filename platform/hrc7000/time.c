@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Time base (docs/spec/hardware-dm32.md 3.4): timer 2 runs free at APB 84 MHz with its interrupt masked and is read as
 // a cycle counter, so the millisecond clock works before the scheduler and inside critical sections. Its 32-bit count
 // wraps every 51 s; it is folded into a 64-bit count on every read and the RTOS tick hook reads it every millisecond.

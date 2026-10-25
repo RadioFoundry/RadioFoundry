@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The radio's TCP services in the USB network personality (opt-in: --allow-usb-switch; firmware with CONFIG_NET_TCP,
 docs/spec/tcp-services.md): the HTTP status page and JSON, KISS over TCP, rigctld, and (only with
-ODR_HIL_APRSIS_SERVER=a.b.c.d[:port] and NAT on the host, spec 7.1) the APRS-IS client.
+RFOUNDRY_HIL_APRSIS_SERVER=a.b.c.d[:port] and NAT on the host, spec 7.1) the APRS-IS client.
 
 The radio switches to the network adapter for the module and back to serial at the end, as test_usb_network does.
 Nothing is transmitted: the KISS frame sent has a foreign source callsign, which the APRS engine refuses (counted, not
@@ -21,7 +21,7 @@ import urllib.request
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FEND, FESC, TFEND, TFESC = 0xC0, 0xDB, 0xDC, 0xDD
@@ -143,7 +143,7 @@ def _ax25_addr(call, ssid, last):
 
 
 def _ui_frame(src, ssid, info):
-    return _ax25_addr("APZODR", 0, False) + _ax25_addr(src, ssid, True) + b"\x03\xf0" + info
+    return _ax25_addr("APZRDF", 0, False) + _ax25_addr(src, ssid, True) + b"\x03\xf0" + info
 
 
 @pytest.mark.feature("net_kiss")
@@ -162,7 +162,7 @@ def test_kiss_tcp(net):
             time.sleep(0.3)
             assert _net_view(link)["kiss.client"] == "1"
             # A frame from a foreign callsign: taken by the TNC, refused by the APRS engine (nothing transmitted)
-            s.sendall(_kiss(_ui_frame("N0CALL", 0, b">ODR HIL KISS-TCP")))
+            s.sendall(_kiss(_ui_frame("N0CALL", 0, b">RFOUNDRY HIL KISS-TCP")))
             time.sleep(0.5)
             after = link.view(["aprs"])
             assert int(after["aprs.host_in"]) == int(before["aprs.host_in"]) + 1, (before, after)
@@ -196,7 +196,7 @@ def test_rigctl(net):
         assert rx_hz == int(core["ch.rx_hz"]), (rx_hz, core)
         assert _rig(s, "m").split()[0] == "FM"
         assert _rig(s, "t").strip() in ("0", "1")
-        assert _rig(s, "\\get_info").startswith("OpenDigitalRadio")
+        assert _rig(s, "\\get_info").startswith("RadioFoundry")
         assert _rig(s, "+f").startswith("get_freq:\nFrequency: ")
         assert _rig(s, "xyz").strip() == "RPRT -4"
         # Set the VFO 12.5 kHz up and read it back, then return
@@ -226,8 +226,8 @@ def test_rigctl(net):
 @pytest.mark.feature("net_aprsis")
 @pytest.mark.usb_switch
 def test_aprsis(net):
-    server = os.environ.get("ODR_HIL_APRSIS_SERVER")
-    why = "needs CONFIG_NET_APRSIS, ODR_HIL_APRSIS_SERVER=a.b.c.d[:port] and NAT on the host (spec 7.1)"
+    server = os.environ.get("RFOUNDRY_HIL_APRSIS_SERVER")
+    why = "needs CONFIG_NET_APRSIS, RFOUNDRY_HIL_APRSIS_SERVER=a.b.c.d[:port] and NAT on the host (spec 7.1)"
     if "NET_APRSIS" not in net["features"]:
         skip("not_built", why)
     if not server:

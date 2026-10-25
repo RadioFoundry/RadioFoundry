@@ -8,14 +8,18 @@ read and write our radios. It covers wire formats and stored data formats only. 
 is a separate decision. The shim can translate between the image described here and our own storage, or it can keep
 this image as the storage.
 
-Sources:
-- The aftermarket firmware trees as of 2026-10-09 (build `bf08887`): the STM32 radios (DM-1701/MD-UV380, MD-9600, MD-380), the MK22
-  GD-77 tree, and the DM-32 port.
-- The upstream releases R20260131 that those trees are based on.
-- qdmr (GPL-3, github.com/hmatuschek/qdmr, its GD-77 and UV380 open-firmware driver sources). Only protocol facts were taken from it.
-
-The open-firmware CPS is closed source. What it reads and writes is inferred from what the firmware accepts and from what
+Sources: qdmr's open-firmware drivers for the GD-77 and the UV380 family (GPL-3, github.com/hmatuschek/qdmr; only protocol
+facts were taken from it) and the behavior of RadioFoundry's own implementation (`core/cps/cps_openfw.c`,
+`core/codeplug/`). The open-firmware CPS is closed source. What it reads and writes is what the radio accepts and what
 qdmr does.
+
+| Contents | |
+|---|---|
+| 1, 2, 3 | Transports and framing, requests, memory areas |
+| 4 | Radio info and radio types |
+| 5, 6 | The `D` data service commands, the hotspot mode switch |
+| 7 | The codeplug image: address mapping, EEPROM map, records, DMR ID database, voice prompts, settings block |
+| 8, 9, 10 | Byte order, version differences, open questions |
 
 Conventions: "BE" is big endian and "LE" is little endian. Offsets are hexadecimal unless they are plainly decimal
 counts. "Image address" means the address the PC tool puts on the wire. Strings in the codeplug are padded with 0xFF,
@@ -25,15 +29,14 @@ not NUL terminated, unless stated otherwise.
 
 | Radio family | Transport | Framing of a request |
 | --- | --- | --- |
-| STM32F405 (DM-1701 / RT-84, MD-UV380 / RT-3S, MD-9600, MD-380, MD-2017) | USB full speed CDC-ACM, VID 0x1FC9 PID 0x0094, manufacturer string "www." + the aftermarket firmware's project domain + ".com", product string per model (for example "OpenDM1701 Transceiver", "OpenMDUV380 Transceiver", "OpenMD9600 Transceiver") | USB bulk packets (64 bytes max), reassembled as below |
-| NXP MK22 (GD-77, GD-77S, DM-1801, DM-1801A, RD-5R) | USB full speed CDC-ACM, VID 0x1FC9 PID 0x0094 | as STM32 |
-| DM-32UV (HR_C7000) | Programming cable on UART0 at 115200 8N1, through a USB-serial adapter. No USB on the radio | A request ends after 3 ms without a received byte |
-| Radioddity DB25-D PRO (HR_C7000, our build only) | The side K1 programming cable on UART1 at 115200 8N1, through a USB-serial adapter. No USB on the radio | As the DM-32: the host link takes a request when its header gives the length, or after 3 ms of quiet. Image at the STM32 addresses; radio type 6 |
+| STM32F405 radios | USB full speed CDC-ACM, VID 0x1FC9 PID 0x0094; qdmr matches on the VID and PID only | USB bulk packets (64 bytes max), reassembled as below |
+| NXP MK22 radios | USB full speed CDC-ACM, VID 0x1FC9 PID 0x0094 | as STM32 |
+| HR_C7000 radios with no USB | Programming cable on a UART at 115200 8N1, through a USB-serial adapter. No USB on the radio | A request ends after 3 ms without a received byte, or when the header gives the length. Image at the STM32 addresses |
+
 | STM32 radios in our USB network mode | USB CDC-NCM (VID 0x1FC9 PID 0x0096, no serial port). The serial protocol is carried in UDP datagrams to port 3334 at the radio's address | one datagram is one USB packet. Replies go back to the address and port that sent last. One client at a time |
 | MK22 radios in our USB network mode | Composite device VID 0x1FC9 PID 0x0095: CDC-ACM (interfaces 0-1) plus CDC-NCM (interfaces 2-3) | as USB |
 
-qdmr finds radios only by VID 0x1FC9 and PID 0x0094. A radio in network mode, or a DM-32 behind a generic USB-serial
-adapter, has to be picked by port.
+qdmr finds radios only by VID 0x1FC9 and PID 0x0094. A radio in network mode, or one behind a generic USB-serial adapter, has to be picked by port.
 
 ### 1.1 USB reassembly (STM32 and MK22)
 
@@ -53,7 +56,7 @@ while a request is being handled are dropped. The PC waits for each reply before
 - The radio clears the request buffer before each new request. The text command (`C` 2) relies on this for NUL
   termination.
 
-### 1.2 UART framing (DM-32)
+### 1.2 UART framing (radios without USB)
 
 - The receive interrupt appends bytes to a 2048 byte request buffer. While a request is being handled, received
   bytes are dropped.
@@ -64,8 +67,7 @@ while a request is being handled are dropped. The PC waits for each reply before
   session, so it can never land in the middle of a reply.
 - In hotspot mode the bytes go to a separate 1024 byte ring instead, and are split into MMDVM frames by the frame
   length byte (section 6).
-- The radio info reports radioType 11. This matches the OpenDM32 builds and the CPS E2026.07.13, which lists the
-  DM-32 as type 11.
+- The radio info reports the board's radio type (4); a board without a `radio_type` hook reports 6.
 
 ### 1.3 Addresses and lengths
 
@@ -79,10 +81,10 @@ The first byte of a request selects the command.
 | Byte 0 | Meaning | Radios |
 | --- | --- | --- |
 | `R` (0x52) | Read from a memory area | all |
-| `W` (0x57) | Write. On the MK22 this is the real write command. On the STM32 radios and the DM-32 it is a "fake write": the radio acknowledges it (echoes bytes 0-1) and does nothing | all |
-| `X` (0x58) | Write, on the STM32 radios and the DM-32 (sub commands as for `W`) | STM32, DM-32 |
+| `W` (0x57) | Write. On the MK22 this is the real write command. On the STM32 radios and the HR_C7000 radios it is a "fake write": the radio acknowledges it (echoes bytes 0-1) and does nothing | all |
+| `X` (0x58) | Write, on the STM32 radios and the HR_C7000 radios (sub commands as for `W`) | STM32, HR_C7000 |
 | `C` (0x43) | Control command | all |
-| `D` (0x44) | Our DMR data service host commands (section 5). On the MD-380 2023 tree, a `D` followed by a zero byte enters an HRC register debug console instead. A firmware built with USB debug commands uses `D` for the debug console | all of our builds |
+| `D` (0x44) | Our DMR data service host commands (section 5). A build with USB debug commands uses `D` for the debug console | all of our builds |
 | 0xE0 | First byte of an MMDVM frame: switches to hotspot mode (section 6) | all, when a hotspot type is set |
 | anything else | Answered with `-` | |
 
@@ -107,9 +109,9 @@ Reply on success:
 | 3 | n | Data |
 
 On failure the reply is a single `-`. The original firmware clips the length to its reply buffer size minus 3 (2045).
-ODR streams the reply in small pieces instead of building it in a buffer, so it clips at 32768: a client that reads
+RadioFoundry streams the reply in small pieces instead of building it in a buffer, so it clips at 32768: a client that reads
 large areas (the web flasher's backup) asks for 32 KB at a time and takes what comes back, which is 2045 bytes from
-the original firmware and older ODR builds. qdmr checks that the returned length equals the requested one, and asks
+the original firmware and older RadioFoundry builds. qdmr checks that the returned length equals the requested one, and asks
 for 2045 or less. The radio info area always returns its own structure length, whatever length was asked for.
 
 Send the header and the first data in one USB write. qdmr (0.15) reads a reply as soon as part of it has arrived and
@@ -124,7 +126,7 @@ fits a single full-speed USB packet, as the original firmware sends it.
 | 1 | Sector number, 3 bytes BE (image address / 4096) | Prepare a 4 KB flash sector: the radio reads the sector into a RAM buffer. Fails if a sector is already pending |
 | 2 | Address 4 bytes BE, length 2 bytes BE, data | Merge data into the pending sector buffer. Bytes outside the pending sector are ignored. Fails if no sector is pending |
 | 3 | none | Commit: erase the sector and program it as 16 pages of 256 bytes. Clears the pending state |
-| 4 | Address 4 bytes BE, length 2 bytes BE, data | EEPROM write. Real only on the MK22 (I2C EEPROM). On the STM32 radios and the DM-32 the "EEPROM" is emulated in flash: the radio acknowledges and does nothing, and the PC writes the EEPROM image with sub commands 1-3 instead (section 7.1) |
+| 4 | Address 4 bytes BE, length 2 bytes BE, data | EEPROM write. Real only on the MK22 (I2C EEPROM). On the STM32 radios and the HR_C7000 radios the "EEPROM" is emulated in flash: the radio acknowledges and does nothing, and the PC writes the EEPROM image with sub commands 1-3 instead (section 7.1) |
 | 7 | Address 4 bytes BE, length 2 bytes BE, data | Write into the audio (WAV) buffer at that offset (section 3). The buffered sample count becomes (address + length) / 160 |
 | 9, other | | Refused: reply `-` |
 
@@ -135,13 +137,13 @@ Special cases the radio applies to sub commands 1-3 (and 4 on the MK22). An inte
 
 | Case | Behavior |
 | --- | --- |
-| Calibration window, flash image 0x10000..0x101FF (STM32 radios and DM-32) | Preparing sector 0x10 succeeds without reading flash. Data inside the window goes to the radio's working calibration copy. The commit saves that copy. Reads of the window are served from the copy (2.1). On the DM-32 the copy is the MD-UV380-format table: the DM-32's own factory calibration lives in the stock pages and is not exposed. The GD-77 has no window: its calibration is plain flash at 0xF000 (working copy) and 0x8F000 (factory) |
-| Quick-key slots, EEPROM image 0x7524..0x7537 (10 entries of 2 bytes) | Written like the rest of the codeplug. ODR keeps the side key assignment there (`ui.md` 3.1); values another firmware left are ignored |
+| Calibration window, flash image 0x10000..0x101FF (STM32 and HR_C7000 radios) | Preparing sector 0x10 succeeds without reading flash. Data inside the window goes to the radio's working calibration copy. The commit saves that copy. Reads of the window are served from the copy (2.1). On an HR_C7000 radio the copy is the UV380-format table: the radio's own factory calibration is not exposed, and the CPS has no calibration window of its own (the sector is plain data). The GD-77 has no window: its calibration is plain flash at 0xF000 (working copy) and 0x8F000 (factory) |
+| Quick-key slots, EEPROM image 0x7524..0x7537 (10 entries of 2 bytes) | Written like the rest of the codeplug. RadioFoundry keeps the key assignment there (`ui.md` 3.1); values another firmware left are ignored |
 | Channel bank 0 rewritten (a write that falls entirely inside EEPROM image 0x3780..0x538F) | Remembered. At "save and reboot" (`C` 6 0) the radio re-reads the zones and channels, selects the All Channels zone, and points it at its last used channel, or else the first channel in use |
 | LUCZ rewritten (a write inside 0x6000..0x6049) | Remembered. The radio then doesn't overwrite the LUCZ with its own copy at "save and reboot" |
 | Voice prompt header written | If a sub command 2 write starts at the voice prompt header address (new or old location, section 7.6) and its first 8 bytes carry a valid magic and version, the radio switches announcements to voice level 1 |
 | DMR ID database upload | Preparing the sector at image 0x30000 marks a DMR ID upload. On Close (`C` 5) the radio re-reads the database header. The check uses the address without the 128 KB offset, so on STM32 radios it doesn't match the real database location (0x50000). A new implementation should re-read the database after any write that touches it |
-| VFO overlay on read (STM32 radios, DM-32) | When a flash read starts at or before 0x7590 and runs past the VFO pair, the radio replaces those 112 bytes in the reply with its live VFO settings in codeplug format. The check uses the radio's in-memory record size, so the read must extend somewhat beyond 0x75FF. A tool that reads 32-byte blocks never triggers it. A large-block CPS read does. The MK22 doesn't do this. The CPS sends `C` 6 2 first, so the VFOs are already saved |
+| VFO overlay on read (STM32 and HR_C7000 radios) | When a flash read starts at or before 0x7590 and runs past the VFO pair, the radio replaces those 112 bytes in the reply with its live VFO settings in codeplug format. The check uses the radio's in-memory record size, so the read must extend somewhat beyond 0x75FF. A tool that reads 32-byte blocks never triggers it. A large-block CPS read does. The MK22 doesn't do this. The CPS sends `C` 6 2 first, so the VFOs are already saved |
 
 ### 2.3 `C`: control
 
@@ -177,7 +179,7 @@ request starts with a zero byte ([cps-protocol.md](cps-protocol.md) 2.1, `cps.ju
 | 10 | Wait 10 ms |
 | 8, 9, other | Ignored |
 
-ODR takes `C` 6 0 and `C` 6 1 only in programming mode: after a `C` 0, with no quiet longer than the session time
+RadioFoundry takes `C` 6 0 and `C` 6 1 only in programming mode: after a `C` 0, with no quiet longer than the session time
 (10 s) since. Without it the reply is `-` and nothing happens (`cps.reboots_ignored` on the debug link). On a radio
 whose debug link shares the CPS's serial port, any three bytes "C 6 1" would otherwise reboot it (bench 2026-10-15).
 qdmr sends `C` 0 first (the typical session below).
@@ -191,10 +193,10 @@ A typical session, as qdmr does it:
 
 | Area | Name | Address space | Notes |
 | --- | --- | --- | --- |
-| 1 | Flash | Image address in the external SPI flash (section 7) | STM32 radios and DM-32: the calibration window is served from the working copy, and the VFO overlay applies (2.2). DM-32: image addresses are offset by +0x700000 physically (section 7.4) |
-| 2 | EEPROM | EEPROM image address, 0x0000..0xFFFF | MK22: the 64 KB I2C EEPROM. STM32 and DM-32: emulated in the external flash at flash image 0x00000 (same bytes as area 1 at the same address) |
-| 5 | MCU ROM | Offset into the MCU's program flash | STM32: offset from 0x08000000. MK22: absolute address from 0. DM-32: offset from 0x03000000, bounds-checked to 1 MB (other builds don't check bounds) |
-| 6 | Display buffer | Byte offset into the frame buffer | MK22: 128x64 mono, 1 bit per pixel (1024 bytes, 8-pixel pages). STM32 and DM-32: 160x128 RGB565, 2 bytes per pixel. DM-1701 and DM-32 panels have an 8-row top offset: the DM-1701 returns 0xFF (white) for the first 8 rows. Used for screenshots |
+| 1 | Flash | Image address in the external SPI flash (section 7) | STM32 and HR_C7000 radios: the calibration window is served from the working copy, and the VFO overlay applies (2.2). HR_C7000: image addresses are offset by +0x700000 physically (section 7.4) |
+| 2 | EEPROM | EEPROM image address, 0x0000..0xFFFF | MK22: the 64 KB I2C EEPROM. STM32 and HR_C7000: emulated in the external flash at flash image 0x00000 (same bytes as area 1 at the same address) |
+| 5 | MCU ROM | Offset into the MCU's program flash | STM32: offset from 0x08000000. MK22: absolute address from 0. HR_C7000: offset from 0x03000000, bounds-checked to 1 MB (other builds don't check bounds) |
+| 6 | Display buffer | Byte offset into the frame buffer | MK22: 128x64 mono, 1 bit per pixel (1024 bytes, 8-pixel pages). STM32 and HR_C7000: RGB565, 2 bytes per pixel (160x128 on the STM32 radios). Some panels have an 8-row top offset: the first 8 rows read 0xFF (white). Used for screenshots |
 | 7 | WAV buffer | Byte offset into the audio / hotspot buffer (2400 bytes on STM32) | Read or write raw PCM (8 kHz, 16 bit) |
 | 8 | AMBE compress | ignored | Encodes the PCM in the WAV buffer (960 bytes = 3 voice frames) and returns 27 bytes of AMBE+2, zero-padded to the requested length (the CPS asks for 32). Then clears 960 bytes of the WAV buffer. Used by the CPS to make voice prompts. **The new firmware carries no AMBE codec, so the shim should answer `-`** |
 | 9 | Radio info | ignored | Section 4 |
@@ -206,7 +208,7 @@ The structure is little endian, packed, 46 bytes in struct version 3.
 
 | Offset | Size | Field |
 | --- | --- | --- |
-| 0 | 4 | structVersion: 3. The MD-380 2023 tree reports 1, and its structure ends at offset 44 (no features field) |
+| 0 | 4 | structVersion: 3 |
 | 4 | 4 | radioType (table below) |
 | 8 | 16 | Git revision, ASCII, NUL padded |
 | 24 | 16 | Build date and time, ASCII `YYYYMMDDhhmmss`, NUL padded |
@@ -215,18 +217,18 @@ The structure is little endian, packed, 46 bytes in struct version 3.
 
 | radioType | Radio | qdmr's driver |
 | --- | --- | --- |
-| 0 | Radioddity GD-77 | the aftermarket firmware |
-| 1 | Radioddity GD-77S | the aftermarket firmware |
-| 2 | Baofeng DM-1801 / DM-860 | the aftermarket firmware |
-| 3 | Baofeng RD-5R / DM-5R Tier2 | the aftermarket firmware |
-| 4 | Baofeng DM-1801A | the aftermarket firmware |
-| 5 | TYT MD-9600 / Retevis RT-90 | OpenUV380 |
-| 6 | TYT MD-UV380 / MD-UV390 / Retevis RT-3S | OpenUV380 |
-| 7 | TYT MD-380 / MD-390 | OpenUV380 |
-| 8 | Baofeng DM-1701 / Retevis RT-84 with a BGR panel | OpenUV380 |
-| 9 | TYT MD-2017 / Retevis RT-82 | OpenUV380 |
-| 10 | DM-1701 with an RGB panel (the type follows the detected panel color order) | OpenUV380 |
-| 11 | Baofeng DM-32UV (OpenDM32 builds, open-firmware CPS E2026.07.13 and later) | **not known to qdmr**: it fails with an "Unknown ... variant" error |
+| 0 | GD-77 | qdmr (MK22 driver) |
+| 1 | GD-77S | qdmr (MK22 driver) |
+| 2 | MK22 radio (DM-860 family) | qdmr (MK22 driver) |
+| 3 | RD-5R / DM-5R Tier2 | qdmr (MK22 driver) |
+| 4 | MK22 radio (single band) | qdmr (MK22 driver) |
+| 5 | MD-9600 / RT-90 | qdmr (UV380 driver) |
+| 6 | UV380 family. Also what a board reports when it sets no radio type, such as the HR_C7000 boards | qdmr (UV380 driver) |
+| 7 | the HR_C5000 radio and its sibling model | qdmr (UV380 driver) |
+| 8 | a UV380-class radio with a BGR panel | qdmr (UV380 driver) |
+| 9 | MD-2017 / RT-82 | qdmr (UV380 driver) |
+| 10 | the same radio as 8 with an RGB panel (the type follows the detected panel color order) | qdmr (UV380 driver) |
+| 11 | an HR_C7000 radio (known to the open-firmware CPS since E2026.07.13) | **not known to qdmr**: it fails with an "Unknown ... variant" error |
 
 qdmr chooses its "extended callsign DB" layout when features bit 1 is set and bit 2 is clear.
 
@@ -277,7 +279,7 @@ The MMDVM protocol itself is public and is specified separately. The switch work
 - **USB (STM32, MK22).** From then on, every USB packet starting with 0xE0 and at least 3 bytes long is taken as one
   MMDVM frame. The radio does not parse the MMDVM length byte. A packet that doesn't fit in the frame ring is dropped
   and counted.
-- **UART (DM-32).** Bytes are split into frames by the MMDVM length byte, resynchronizing on 0xE0. MMDVMHost may
+- **UART (radios without USB).** Bytes are split into frames by the MMDVM length byte, resynchronizing on 0xE0. MMDVMHost may
   send frames back to back, so gaps can't be used. Bytes that came with the first request are split the same way.
 - **UDP 3334 (network mode).** A datagram is treated like a USB packet.
 - **Leaving.** In MMDVMHost mode the radio leaves after 20 s without traffic from the host. In BlueDV mode the user
@@ -287,7 +289,7 @@ The MMDVM protocol itself is public and is specified separately. The switch work
 ## 7. The codeplug image
 
 The PC tools see two images, "EEPROM" and "flash", in the GD-77's terms. The GD-77 has a 64 KB I2C EEPROM and a 1 MB
-SPI flash. The STM32 radios and the DM-32 have no EEPROM: both images live in one large SPI flash. The tools address
+SPI flash. The STM32 radios and the HR_C7000 radios have no EEPROM: both images live in one large SPI flash. The tools address
 it with the per-family offsets below. A new firmware can store the data any way it likes, as long as the shim
 presents these addresses.
 
@@ -297,7 +299,7 @@ presents these addresses.
 | --- | --- | --- | --- |
 | MK22 (GD-77 etc.) | Real EEPROM, address = EEPROM image address | Flash address = flash image address (offset 0) | `R` 2 / `W` 4 |
 | STM32 (radio types 5-10) | Flash address = EEPROM image address (offset 0; this occupies flash 0x00000..0x0FFFF) | Flash address = flash image address + 0x20000 (the "128 KB offset") | `R` 1 or 2 / `X` 1-3 (flash sector writes). qdmr's OpenUV380 driver puts everything in its flash bank |
-| DM-32 (radio type 11) | As STM32: flash 0x00000..0x0FFFF | Our current build compiles a flash offset of **0**, unlike the STM32 builds. See the open questions in 7.4 | `R` 1 or 2 / `X` 1-3 |
+| HR_C7000 | As STM32 at the physical offset EEPROM image + 0x700000 (7.4) | flash image + 0x20000 + 0x700000, the STM32 mapping | `R` 1 or 2 / `X` 1-3 |
 
 The rest of this section gives flash image addresses without the offset. For the STM32 family, add 0x20000 to get
 the address on the wire.
@@ -333,7 +335,7 @@ range without letting them corrupt the live settings. It can ignore the range, o
 | 0x7518 | 1 | Boot screen type: 0x01 text, 0x00 picture. This byte is also the start of the 7 byte boot PIN block read from 0x7518 |
 | 0x7519 | 1 | Bit 0: boot password (PIN) enabled |
 | 0x751C | 3 | Boot PIN as BCD digits, high nibble first. A nibble of 0xF ends the PIN. Up to 6 digits |
-| 0x7524 | 10 x 2 | Quick-key slots (LE). The aftermarket firmware keeps function ids there; their values aren't documented here. ODR uses the slots for its side key assignment: slot 0 the marker 0x4B01, slots 1-6 the press and long press of side key 1, side key 2 and the top key as `keyfn_t` values (`core/input/keyassign.h`, `ui.md` 3.1), slots 7-9 spare |
+| 0x7524 | 10 x 2 | Quick-key slots (LE). The CPS's function ids there aren't documented here. RadioFoundry uses the slots for its key assignment: slot 0 the marker 0x4B02, slots 1-9 one per assignable key, the press's `keyfn_t` in the low byte and the long press's in the high byte (`core/input/keyassign.h`, `ui.md` 3.1). Layout 1 (marker 0x4B01, a slot each for the press and long press of three keys) is read and rewritten as layout 2 on the first change |
 | 0x7540 | 16 | Boot text line 1 |
 | 0x7550 | 16 | Boot text line 2 |
 | 0x7590 | 0x38 | VFO A, channel record format (7.3.3) |
@@ -413,7 +415,7 @@ assuming 500 ms steps (`codeplug.c` `GEN_HANG_UNIT_MS`, `dmr-voice.md` 7); that 
 | 0x2E | 2 | TX contact index, LE, 1-based, 0 = none |
 | 0x30 | 1 | flag1: bits 0-1 talker alias TX on TS1, bits 2-3 on TS2 (0 off, 1 APRS, 2 text, 3 both) |
 | 0x31 | 1 | flag2: bit 6 = timeslot 2 (clear = TS1) |
-| 0x32 | 1 | flag3: bits 6-7 = 0b11 STE, bit 5 non-STE. On the MD-380 2023 tree, bit 5 means "disable all LEDs" |
+| 0x32 | 1 | flag3: bits 6-7 = 0b11 STE, bit 5 non-STE.  |
 | 0x33 | 1 | flag4: bit 7 power (vendor; superseded by 0x19), bit 6 VOX, bit 5 zone scan skip, bit 4 all-channel scan skip, bit 3 talkaround (unused), bit 2 RX only, bit 1 bandwidth 25 kHz (clear = 12.5 kHz), bit 0 squelch (vendor) |
 | 0x34 | 2 | VFO offset frequency (vendor; qdmr uses it as the VFO TX offset) |
 | 0x36 | 1 | VFO flags: bits 4-7 step index (2.5, 5, 6.25, 10, 12.5, 25, 30, 50 kHz); bits 2-3 offset mode (qdmr) |
@@ -430,7 +432,7 @@ Flag 1 (offset 0x26):
 | 7 | Per-channel DMR ID override present (0x27..0x29) |
 | 6 | No beep |
 | 5 | No power saving on this channel |
-| 4 | Out of band (MD-9600 only; set at run time, never saved) |
+| 4 | Out of band (set at run time on boards that have it, never saved) |
 | 3 | Use the fixed location |
 | 2 | Force DMO (direct mode on a duplex channel; qdmr calls it "simplex") |
 | 1 | SFR enabled for this channel (ours) |
@@ -504,7 +506,7 @@ but a 64th would overlap the channel bank 0 bitmap at 0x3780. Use 63.
 | 0x37 | 4 | TX frequency (unaligned, LE) |
 | 0x3B | 2 | Reserved |
 | 0x3D | 1 | Flags: bit 0 300 baud (else 1200); bit 1 use the fixed position; bit 2 transmit QSY info; bit 3 beacon silently; bits 5-7 position ambiguity |
-| 0x3E | 2 | Magic / version, LE: 0x4153 now. 0x4152 was the older layout, whose ambiguity field sat one bit lower; firmware upgrades a 0x4152 record by moving it and rewriting the magic. **Our DM-32 tree still uses 0x4152** |
+| 0x3E | 2 | Magic / version, LE: 0x4153 now. 0x4152 was the older layout, whose ambiguity field sat one bit lower; RadioFoundry accepts both and reads the ambiguity field at the matching position |
 
 #### 7.3.9 DTMF signaling (EEPROM 0x1400, 120 bytes)
 
@@ -538,9 +540,9 @@ The firmware uses only the five duration bytes at 114-118. qdmr reads this block
 | 4 + z | 1 | For real zone slot z = 0..67: the index within that zone (0-based) |
 | 4 + 68 | 2 | All Channels: channel number minus 1, LE |
 
-The MD-380 2023 tree has no LUCZ.
 
-### 7.4 Custom data, calibration and the DM-32 offsets
+
+### 7.4 Custom data, calibration and the data flash offset
 
 Flash image 0x00000 holds the custom data area:
 
@@ -560,24 +562,20 @@ Flash image 0x00000 holds the custom data area:
 
 A block's length can't change once written; the firmware rewrites a block only when the length is the same.
 
-Calibration: on the STM32 radios and the DM-32, the window at flash image 0x10000..0x101FF is the working calibration
+Calibration: on the STM32 and HR_C7000 radios, the window at flash image 0x10000..0x101FF is the working calibration
 copy (2.2). This address is physical, not offset. On the GD-77, calibration is at 0xF000 (working copy) and 0x8F000
-(factory; 0x6F000 on the DM-1801), read raw.
+(factory; 0x6F000 on type 2), read raw.
 
-DM-32 specifics:
+HR_C7000 specifics:
 - **Physical offset.** Every flash address the CPS uses (the EEPROM image, the flash image, the DMR ID DB, voice
-  prompts) is placed at +0x700000 in the 16 MB data flash. Below that are the stock Baofeng codeplug pages, the
-  factory calibration and the stock 50k contact DB, which are never touched. The window therefore covers 9 MB (to
-  0xFFFFFF).
-- **Collision with stock firmware.** The window sits inside a stock region (0x6DC000..0xFFFFFF) that stock firmware
-  049 probably uses for voice recording, and that L01 firmware uses for its extended contact DB. Going back to stock
-  and recording can overwrite our codeplug.
-- **Open question: the 128 KB flash image offset.** Our DM-32 build compiles a flash image offset of 0, unlike the
-  STM32 builds. Its EEPROM emulation also sits at flash 0. As built, the custom data area (flash image 0x00000..) and
-  the EEPROM image (flash 0x00000..0x0FFFF) occupy the same bytes. Which offset the CPS uses for radio type 11, and
-  which one OpenDM32 uses, has not been checked. If the CPS treats type 11 like the STM32 family (the likely case,
-  since `X 4` is a no-op there and the calibration window is at 0x10000), the new firmware must use the STM32
-  mapping: EEPROM image at 0, flash image at +0x20000.
+  prompts) is placed at +0x700000 in the 16 MB data flash (`board.openfw_eeprom` 0x700000, `board.openfw_flash`
+  0x720000, end 0xF00000). Below that is the radio's own data (settings, contacts, fonts, voice prompts,
+  recordings, factory calibration), which is never touched. The window therefore covers 9 MB (to 0xFFFFFF).
+- **Collision with the radio's own firmware.** The window sits inside a region (0x6DC000..0xFFFFFF) that the original
+  firmware may use for recording and extended contacts. Going back to the original firmware and recording can
+  overwrite the codeplug.
+- **Flash image offset.** The build uses the STM32 mapping: the EEPROM image at 0x700000 and the flash image at
+  +0x20000 from it, so the custom data area and the EEPROM image don't overlap.
 
 ### 7.5 DMR ID database
 
@@ -612,7 +610,7 @@ The radio looks IDs up by binary search, using a cache of 14 evenly spaced IDs o
 
 | Family | Header address (flash image) | Old address, still read | Version | TOC entries |
 | --- | --- | --- | --- | --- |
-| Color radios (STM32, DM-32) | 0x8F400 (+0x20000) | 0xE0000 (+0x20000) | 9 | 368 |
+| Color radios (STM32, HR_C7000) | 0x8F400 (+0x20000) | 0xE0000 (+0x20000) | 9 | 368 |
 | Mono radios (MK22) | 0x8F400 | 0xE0000 | 8 | 331 |
 
 Layout:
@@ -631,12 +629,11 @@ Prompt numbering, fixed part:
   phrases, power, channel mode, scan mode, timeslot mode, filter mode, zone mode, power mode, color code mode,
   hertz, settings update, star, hash, VOX, sweep scan mode, eco mode, duration, reverse repeater, distance, km/h,
   kilometers, then three unused slots.
-- That gives 88 fixed prompts. Entries from 88 onward follow the order of the aftermarket firmware's language strings; the
+- That gives 88 fixed prompts. Entries from 88 onward follow the order of the language strings of the firmware the CPS targets; the
   mono builds skip the theme strings.
 
 The voice prompt files are made with the AMBE codec, and the new firmware carries no codec. Whether the new firmware
-reads this file at all is a product decision. If it does, the language-string index list has to be carried over as
-interop data, which is an open question.
+reads this file at all is a product decision. If it does, the language-string index list has to be supplied as interop data, which is an open question.
 
 ### 7.7 The radio's own settings block
 
@@ -644,13 +641,13 @@ At EEPROM image 0x604B, right after the LUCZ, the firmware keeps its own non-vol
 CPS codeplug structure, and the CPS doesn't interpret it. The first field is a 32-bit LE magic, which changes whenever
 the layout changes; on a mismatch the radio resets the block to defaults.
 
-| Tree | Magic | Size |
+| Family | Magic | Size |
 | --- | --- | --- |
-| STM32 R20260131 base (DM-1701, MD-UV380) | 0x4780 | 0x74 |
-| MD-9600 (ours, with the DMR data settings) | 0x4781 | 0x80 |
-| MK22 R20260131 base (GD-77) | 0x4784 (0x4785 with GPS logging) | 112 |
-| DM-32 | 0x477C | |
-| MD-380 2023 tree | 0x4773 | |
+| STM32 base | 0x4780 | 0x74 |
+| STM32 with the DMR data settings | 0x4781 | 0x80 |
+| MK22 base | 0x4784 (0x4785 with GPS logging) | 112 |
+| HR_C7000 | 0x477C | |
+
 
 The new firmware should keep its settings elsewhere, and treat bytes 0x604B..0x605F of a codeplug write as noise
 (7.1).
@@ -670,16 +667,11 @@ The new firmware should keep its settings elsewhere, and treat bytes 0x604B..0x6
 
 ## 9. Version differences to handle
 
-- **structVersion.** Version 3 (46 bytes, with features) in all current builds. Version 1 (44 bytes) in the MD-380
-  2023 tree. qdmr reads both.
-- **radioType 11 (DM-32).** Known to the open-firmware CPS since E2026.07.13, unknown to qdmr (checked against its
-  current source). To use qdmr with a DM-32 today, the shim would have to report an STM32 type such as 6. That only
-  works if the image mapping matches (7.4), and qdmr would then show the wrong model.
-- **DM-1701 panel types 8 and 10.** The type follows the panel's color order. The CPS needs it only for screenshots.
+- **structVersion.** Version 3 (46 bytes, with features). qdmr reads version 1 (44 bytes, no features field) as well.
+- **radioType 11 (HR_C7000).** Known to the open-firmware CPS since E2026.07.13, unknown to qdmr (checked against its current source). RadioFoundry reports 6 on HR_C7000 boards, which qdmr accepts because the image mapping matches (7.4); qdmr then shows the UV380 model.
+- **Panel types 8 and 10.** The type follows the panel's color order. The CPS needs it only for screenshots.
   qdmr treats the two alike.
-- **MD-380 2023 tree.** No LUCZ, no contact timeslot override, flag3 bit 5 means "disable all LEDs", DTMF contacts
-  max 32, settings magic 0x4773.
-- **APRS magic.** 0x4153 now (0x4152 in the DM-32 tree, see 7.3.8).
+- **APRS magic.** 0x4153 now, 0x4152 in older records (7.3.8).
 - **Voice prompt versions.** 8 for mono radios, 9 for color radios. A version mismatch makes the radio fall back to
   beeps.
 - **Our additions.** The SFR bytes and flag 1 bit 1, the `D` commands, and the network mode USB identities
@@ -687,12 +679,9 @@ The new firmware should keep its settings elsewhere, and treat bytes 0x604B..0x6
 
 ## 10. Open questions
 
-1. Which flash image offset does the CPS use for radio type 11, and which does OpenDM32 use (7.4)? This could be
-   checked by sniffing the CPS against an OpenDM32 radio, or by disassembling OpenDM32.
-2. Which radio type should our radios report? The DM-1701 should keep 8/10 (both tools know it). For the DM-32: 11
-   for the open-firmware CPS, or an STM32 type so that qdmr works, or a qdmr patch upstream to add type 11.
+1. Which flash image offset does the open-firmware CPS use for radio type 11? RadioFoundry reports type 6 and uses the STM32 mapping (7.4), which works with qdmr.
+2. Which radio type the HR_C7000 boards should report: 11 for the open-firmware CPS, or an STM32 type (today 6) so that qdmr works, or a qdmr change to add type 11.
 3. Exactly which EEPROM and flash ranges the closed open-firmware CPS reads and writes, beyond the qdmr ranges above
    (themes, boot image, calibration, security registers). This needs a USB capture of a full CPS read and write.
-4. Whether to support voice prompt files (they need the language-string index list as carried-over data, and AMBE
-   playback).
+4. Whether to support voice prompt files (they need the language-string index list and AMBE playback).
 5. Whether the shim answers area 8 (AMBE compress) and area 10 (security registers) at all, or always with `-`.

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # STM32F4 feature defaults, read after the board's config.mk (a board's ?= wins) and before config/features.mk.
 # The fault trace needs a host UART: these radios' host port is USB, and their UART is taken (the GPS receive line)
 CONFIG_FAULT_TRACE ?= n

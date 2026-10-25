@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""Fixtures for the web flasher's tests, made with odrflash itself, so the JavaScript port is checked against the
+# Copyright (c) 2026 The RadioFoundry Authors
+"""Fixtures for the web flasher's tests, made with rfoundry itself, so the JavaScript port is checked against the
 Python it was ported from (site/tests/flasher.test.mjs):
 
-  - a synthetic DM-1701 stock file and its key (odrflash's stockfw.build_synthetic_stock), with its profile
+  - a synthetic DM-1701 stock file and its key (rfoundry's stockfw.build_synthetic_stock), with its profile
   - plans for a synthetic image in keep and merge mode, as plan.describe() prints them
   - a release manifest for that image (manifest.generate)
   - the site's data files (radios, features, variants, flash boards, the C7000 stub), as site/build.py writes them
@@ -27,18 +27,18 @@ import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-sys.path.insert(0, os.path.join(ROOT, "tools", "odrflash"))
+sys.path.insert(0, os.path.join(ROOT, "tools", "rfoundry"))
 
 sys.path.insert(0, os.path.join(ROOT, "site"))
 
-from odrflash import boards, codecmap, manifest, plan, stockfw  # noqa: E402
-from odrsite import repo  # noqa: E402
-from odrflash.fakedfu import synthetic_key  # noqa: E402
+from rfoundry import boards, codecmap, manifest, plan, stockfw  # noqa: E402
+from rfoundrysite import repo  # noqa: E402
+from rfoundry.fakedfu import synthetic_key  # noqa: E402
 
 
 def codec_map_vectors(out):
-	"""odrflash's shared codec map vectors with the map normalized, as data/flash-boards.json carries maps"""
-	with open(os.path.join(ROOT, "tools", "odrflash", "tests", "codecmap_vectors.json")) as f:
+	"""rfoundry's shared codec map vectors with the map normalized, as data/flash-boards.json carries maps"""
+	with open(os.path.join(ROOT, "tools", "rfoundry", "tests", "codecmap_vectors.json")) as f:
 		v = json.load(f)
 	v["map"] = codecmap.normalize(v["map"])
 	v["new_run"] = int(v["new_run"], 0)
@@ -79,7 +79,7 @@ def f4_vectors(out):
 
 def md380_like(out):
 	"""A stock file whose plain text is like Thumb code, 0x00 common but not dominant, as in the MD-380 image: the column
-	vote gets hundreds of key columns wrong and only the byte-pair refinement finds the key (odrflash's
+	vote gets hundreds of key columns wrong and only the byte-pair refinement finds the key (rfoundry's
 	test_derive_key_refines_a_bad_vote). Returns its fixture entry."""
 	rng = random.Random(1)
 	key = synthetic_key(380)
@@ -162,7 +162,7 @@ def c7000(out, rng):
 	import struct
 	import zlib
 	st, dc = repo._tool("stub", "stubtool.py"), repo._tool("tools", "hrc7000_codec.py")
-	sector = bytes(rng.choice(b"ODR flash  \x00\xff") for _ in range(st.SECTOR))
+	sector = bytes(rng.choice(b"RadioFoundry flash  \x00\xff") for _ in range(st.SECTOR))
 	real = next(p for p in dc.PROFILES.values() if p["board"] == "dm1801pro")
 	dump = bytearray(rng.getrandbits(8) for _ in range(dc.PROGMEM_SIZE))
 	code = bytearray(rng.getrandbits(8) for _ in range(real["code"][1]))
@@ -202,7 +202,7 @@ def c7000(out, rng):
 
 def db25d(out, rng):
 	"""The DB25-D's plain stock image (no header, no container), a synthetic one with the real profile's addresses, and
-	the merged image hrc7000_codec.merge() builds from it. With ODR_DB25D_STOCK=<one of the real 018 files> the expected
+	the merged image hrc7000_codec.merge() builds from it. With RFOUNDRY_DB25D_STOCK=<one of the real 018 files> the expected
 	result for that file is made as well, so the JavaScript can be checked on the real bytes (never kept in the repo)."""
 	import struct
 	dc = repo._tool("tools", "hrc7000_codec.py")
@@ -219,7 +219,7 @@ def db25d(out, rng):
 	merged = dc.merge(image, found, code, tables, maps)
 	files = {"db25d_stock.bin": plain, "db25d_image.bin": image, "db25d_merged.bin": merged}
 	doc = {"sha256": dc.sha256(plain), "size": len(plain), "code": caddr, "tables": taddr, "real": None}
-	path = os.environ.get("ODR_DB25D_STOCK")
+	path = os.environ.get("RFOUNDRY_DB25D_STOCK")
 	if path:
 		with open(path, "rb") as f:
 			data = f.read()

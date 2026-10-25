@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""dm32_migrate: move a Baofeng DM-32UV from its stock firmware to OpenDigitalRadio, keeping the channels, zones,
+# Copyright (c) 2026 The RadioFoundry Authors
+"""dm32_migrate: move a Baofeng DM-32UV from its stock firmware to RadioFoundry, keeping the channels, zones,
 contacts, RX group lists and your DMR ID, and adding the DMR ID (callsign) database. Untested on a radio.
 
-    dm32_migrate.py all --image odr_dm32_codec.bin           the whole migration
+    dm32_migrate.py all --image rfoundry_dm32_codec.bin           the whole migration
     dm32_migrate.py backup [--from FILE]       read the stock codeplug (or convert a file) and check the conversion
-    dm32_migrate.py flash --image FILE         flash ODR (or a stock BFUV32 file) through the Baofeng bootloader
-    dm32_migrate.py restore --workdir DIR      write the converted codeplug and the ID database to the radio on ODR
+    dm32_migrate.py flash --image FILE         flash RadioFoundry (or a stock BFUV32 file) through the Baofeng bootloader
+    dm32_migrate.py restore --workdir DIR      write the converted codeplug and the ID database to the radio on RadioFoundry
     dm32_migrate.py package OUTDIR --image FILE   a directory to hand to a tester
     dm32_migrate.py --self-test                the pure logic, the CPS writer and the flasher, no radio, no dmrconf
 
@@ -15,15 +15,15 @@ Every command takes --dry-run: offline steps (file conversion, image checks) run
 
 How the codeplug gets there (docs/spec/dm32-migration.md): qdmr's command line tool dmrconf (an external program,
 installed separately) reads the stock radio with its DM-32UV driver and turns the codeplug into qdmr's YAML, then
-encodes it offline for qdmr's open firmware family (OpenUV380), the open-firmware layout ODR's CPS shim serves. dmrconf
-can't write that to the DM-32 itself: ODR keeps the open-firmware image at +0x700000 in the radio's data flash and its
+encodes it offline for qdmr's open firmware family (OpenUV380), the open-firmware layout RadioFoundry's CPS shim serves. dmrconf
+can't write that to the DM-32 itself: RadioFoundry keeps the open-firmware image at +0x700000 in the radio's data flash and its
 shim takes physical addresses, so this tool writes dmrconf's encoded image over the programming cable with
 cps_client.py, adding 0x700000 to every address. The codeplug steps (RX group list clean-up, encode, TX contacts put
 back, CPS write and read back) are shared with the other radios' tools (codeplug_port.py,
 docs/spec/codeplug-port.md).
 
 Needs Python 3.8+, dmrconf (qdmr 0.15 or newer, with the dm32uv driver) on PATH and pyserial. The helpers
-(serial_loader.py, cps_client.py, codeplug_port.py, odr_debug.py, md380_migrate.py, hrc7000_codec.py) are loaded from this
+(serial_loader.py, cps_client.py, codeplug_port.py, rfoundry_debug.py, md380_migrate.py, hrc7000_codec.py) are loaded from this
 script's directory.
 """
 import argparse
@@ -45,9 +45,9 @@ if HERE not in sys.path:
 import codeplug_port as cp  # noqa: E402  (next to this script)
 
 STOCK_DRIVER = "dm32uv"       # dmrconf --radio for the stock radio
-ODR_DRIVER = "openuv380"      # dmrconf --radio for the open-firmware layout ODR serves (open-firmware-cps.md 7)
-CPS_OFFSET = 0x700000         # ODR's open-firmware image in the DM-32 data flash (boards/dm32/flash_dm32.c)
-WRITE_FLOOR = 0x700000        # ODR never writes below this (hardware-dm32.md 10.1)
+RFOUNDRY_DRIVER = "openuv380"      # dmrconf --radio for the open-firmware layout RadioFoundry serves (open-firmware-cps.md 7)
+CPS_OFFSET = 0x700000         # RadioFoundry's open-firmware image in the DM-32 data flash (boards/dm32/flash_dm32.c)
+WRITE_FLOOR = 0x700000        # RadioFoundry never writes below this (hardware-dm32.md 10.1)
 FLASH_SIZE = 0x1000000
 STOCK_PAGES = (0x000000, 0x0C9000)     # stock codeplug pages and the factory calibration page (hardware-dm32.md 10.1)
 NAME_MAX = 16                 # names in the open-firmware layout (open-firmware-cps.md 7.3)
@@ -119,17 +119,17 @@ def in_band(hz):
     return any(lo <= hz <= hi for lo, hi in BANDS)
 
 
-def conversion_report(stock_text, odr_text=None):
-    """What the stock codeplug has, what ODR gets and what is lost or changed on the way."""
+def conversion_report(stock_text, rfoundry_text=None):
+    """What the stock codeplug has, what RadioFoundry gets and what is lost or changed on the way."""
     m = cp
     ss = m.yaml_sections(stock_text)
     summary = m.codeplug_summary(stock_text)
     rep = {"stock": {k: len(ss.get(k) or []) for k in LIST_SECTIONS if ss.get(k)},
            "radio_ids": summary["radio_ids"], "over_limits": [], "long_names": [], "non_ascii": [],
-           "out_of_band": [], "lost_sections": [], "odr": None, "renamed": []}
+           "out_of_band": [], "lost_sections": [], "rfoundry": None, "renamed": []}
     for key, n, lim, dropped in m.limit_report(summary):
         rep["over_limits"].append({"section": key, "count": n, "limit": lim, "dropped": dropped})
-    for key in m.ODR_LIMITS:
+    for key in m.RFOUNDRY_LIMITS:
         for name in summary["names"][key]:
             if any(ord(c) > 126 for c in name):
                 rep["non_ascii"].append([key, name])
@@ -141,15 +141,15 @@ def conversion_report(stock_text, odr_text=None):
                if f is not None and not in_band(f)]
         if bad:
             rep["out_of_band"].append([name, "%.5f MHz" % (bad[0] / 1e6)])
-    if odr_text is not None:
-        so = m.yaml_sections(odr_text)
-        rep["odr"] = {k: len(so.get(k) or []) for k in LIST_SECTIONS if so.get(k) or ss.get(k)}
+    if rfoundry_text is not None:
+        so = m.yaml_sections(rfoundry_text)
+        rep["rfoundry"] = {k: len(so.get(k) or []) for k in LIST_SECTIONS if so.get(k) or ss.get(k)}
         for k, n in rep["stock"].items():
-            got = rep["odr"].get(k, 0)
-            if got < n and k not in m.ODR_LIMITS:
+            got = rep["rfoundry"].get(k, 0)
+            if got < n and k not in m.RFOUNDRY_LIMITS:
                 rep["lost_sections"].append([k, n, got])
-        oname = m.codeplug_summary(odr_text)["names"]
-        for key in m.ODR_LIMITS:
+        oname = m.codeplug_summary(rfoundry_text)["names"]
+        for key in m.RFOUNDRY_LIMITS:
             for a, b in zip(summary["names"][key], oname[key]):
                 if a != b:
                     rep["renamed"].append([key, a, b])
@@ -157,34 +157,34 @@ def conversion_report(stock_text, odr_text=None):
 
 
 def format_report(rep):
-    out = ["Conversion report: stock DM-32UV codeplug -> ODR (open-firmware UV380 layout)", ""]
-    out.append("%-16s %8s %8s" % ("section", "stock", "ODR"))
-    for k in sorted(set(rep["stock"]) | set(rep["odr"] or {})):
-        out.append("%-16s %8d %8s" % (k, rep["stock"].get(k, 0), "-" if rep["odr"] is None else rep["odr"].get(k, 0)))
+    out = ["Conversion report: stock DM-32UV codeplug -> RadioFoundry (open-firmware UV380 layout)", ""]
+    out.append("%-16s %8s %8s" % ("section", "stock", "RadioFoundry"))
+    for k in sorted(set(rep["stock"]) | set(rep["rfoundry"] or {})):
+        out.append("%-16s %8d %8s" % (k, rep["stock"].get(k, 0), "-" if rep["rfoundry"] is None else rep["rfoundry"].get(k, 0)))
     out.append("")
     out.append("radio IDs in the codeplug: %s" % (", ".join(map(str, rep["radio_ids"])) or "none"))
     for o in rep["over_limits"]:
         shown = ", ".join(o["dropped"][:12]) + (" and %d more" % (len(o["dropped"]) - 12) if len(o["dropped"]) > 12
                                                else "")
-        out.append("over ODR's limit: %s %d of %d kept, left out: %s" % (o["section"], o["limit"], o["count"], shown))
+        out.append("over RadioFoundry's limit: %s %d of %d kept, left out: %s" % (o["section"], o["limit"], o["count"], shown))
     for k, n, got in rep["lost_sections"]:
-        out.append("not carried over: %s (%d in the stock codeplug, %d for ODR)" % (k, n, got))
+        out.append("not carried over: %s (%d in the stock codeplug, %d for RadioFoundry)" % (k, n, got))
     if rep["long_names"]:
         out.append("names longer than %d characters (%d), cut to:" % (NAME_MAX, len(rep["long_names"])))
         out += ["  %s: %r -> %r" % tuple(x) for x in rep["long_names"]]
     if rep["non_ascii"]:
-        out.append("names with characters outside ASCII (%d), shown differently on ODR:" % len(rep["non_ascii"]))
+        out.append("names with characters outside ASCII (%d), shown differently on RadioFoundry:" % len(rep["non_ascii"]))
         out += ["  %s: %r" % tuple(x) for x in rep["non_ascii"]]
     if rep["renamed"]:
         out.append("names that differ after the conversion (%d):" % len(rep["renamed"]))
         out += ["  %s: %r -> %r" % tuple(x) for x in rep["renamed"][:50]]
     if rep["out_of_band"]:
-        out.append("channels outside the DM-32's bands 136-174 / 400-480 MHz (%d; they won't work on ODR):"
+        out.append("channels outside the DM-32's bands 136-174 / 400-480 MHz (%d; they won't work on RadioFoundry):"
                    % len(rep["out_of_band"]))
         out += ["  %s (%s)" % tuple(x) for x in rep["out_of_band"]]
     out.append("")
     out.append("Not carried over in any case: the stock menu, key and display settings, scan lists, roaming, GPS /")
-    out.append("APRS systems, encryption keys, the stock contact database. ODR's own settings start at defaults.")
+    out.append("APRS systems, encryption keys, the stock contact database. RadioFoundry's own settings start at defaults.")
     return "\n".join(out) + "\n"
 
 
@@ -198,7 +198,7 @@ def make_session(args):
         def open_workdir(self, path=None, create=True):
             if path is None:
                 stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-                path = os.path.join(os.path.expanduser("~"), "ODR-DM32-migration", stamp)
+                path = os.path.join(os.path.expanduser("~"), "RadioFoundry-DM32-migration", stamp)
             base.open_workdir(self, path, create)
 
         def dmr(self, *a, radio, check=True, capture=True):
@@ -212,8 +212,8 @@ def make_session(args):
                                    % (a[0], rc, self.path("dmrconf.log")))
             return rc, out
 
-        def odr_debug(self, *a, check=True, capture=True):
-            cmd = [sys.executable, os.path.join(HERE, "odr_debug.py")] + (["--port", self.port] if self.port else [])
+        def rfoundry_debug(self, *a, check=True, capture=True):
+            cmd = [sys.executable, os.path.join(HERE, "rfoundry_debug.py")] + (["--port", self.port] if self.port else [])
             return self.run(cmd + list(a), True, check, capture)
 
     return Dm32Session(args)
@@ -246,7 +246,7 @@ def check_dmrconf(sess):
                            "distribution's qdmr package; Windows: https://dm3mat.darc.de/qdmr/) or give --dmrconf PATH")
     keys = set(re.findall(r"^\s*([\w-]+)\s*\|", p.stdout or "", re.M))
     sess.say("dmrconf: %s (%s)" % (sess.dmrconf, (v.stdout or "").strip() or "version unknown"))
-    missing = [k for k in (STOCK_DRIVER, ODR_DRIVER) if k not in keys]
+    missing = [k for k in (STOCK_DRIVER, RFOUNDRY_DRIVER) if k not in keys]
     if missing:
         raise MigrateError("this dmrconf has no %s driver: install qdmr 0.15 or newer" % " / ".join(missing))
     sess.cache["dmrconf_ok"] = True
@@ -254,7 +254,7 @@ def check_dmrconf(sess):
 
 def resolve_port(sess, args):
     """The programming cable: --port, else the only USB-serial bridge. The stock CPS protocol, the bootloader and
-    ODR's host link all use it."""
+    RadioFoundry's host link all use it."""
     if sess.port or sess.cache.get("port_failed"):
         return sess.port
     try:
@@ -290,7 +290,7 @@ def bar(done, total, _last=[-1]):
 # step 1: backup and convert
 
 def step_backup(sess, args):
-    sess.step("1. Back up the stock codeplug and convert it for ODR")
+    sess.step("1. Back up the stock codeplug and convert it for RadioFoundry")
     check_dmrconf(sess)
     if args.source:
         src = os.path.abspath(args.source)
@@ -327,21 +327,21 @@ def step_backup(sess, args):
 
 
 def convert(sess, args, yaml_path):
-    """Clean up, encode for ODR offline, put back the TX contacts, decode again, report (codeplug_port.py). The
+    """Clean up, encode for RadioFoundry offline, put back the TX contacts, decode again, report (codeplug_port.py). The
     encoded file is exactly what restore writes."""
     if not os.path.exists(yaml_path):
         sess.say("   [dry run] the conversion (group list clean-up, encode, TX contacts put back) runs once the "
                  "codeplug has been read")
         return True
-    odr_dfu, odr_yaml, _ = cp.convert_for_odr(sess, yaml_path, ODR_DRIVER, cleanup=not args.no_cleanup)
-    need_file(sess, odr_yaml, "the codeplug converted for ODR")
-    with open(odr_dfu, "rb") as f:
+    rfoundry_dfu, rfoundry_yaml, _ = cp.convert_for_rfoundry(sess, yaml_path, RFOUNDRY_DRIVER, cleanup=not args.no_cleanup)
+    need_file(sess, rfoundry_yaml, "the codeplug converted for RadioFoundry")
+    with open(rfoundry_dfu, "rb") as f:
         targets = parse_dfuse(f.read())
     with open(yaml_path, encoding="utf-8") as f:
         stock_text = f.read()
-    with open(odr_yaml, encoding="utf-8") as f:
-        odr_text = f.read()
-    rep = conversion_report(stock_text, odr_text)
+    with open(rfoundry_yaml, encoding="utf-8") as f:
+        rfoundry_text = f.read()
+    rep = conversion_report(stock_text, rfoundry_text)
     text = format_report(rep)
     with open(sess.path("conversion-report.txt"), "w", encoding="utf-8") as f:
         f.write(text)
@@ -351,17 +351,17 @@ def convert(sess, args, yaml_path):
         sess.say("   " + line)
     sess.say("   (saved as conversion-report.txt)")
     regions = dfu_regions(targets)
-    sess.say("   encoded for ODR: %d bytes in %d regions" % (sum(e - s for s, e in regions), len(regions)))
+    sess.say("   encoded for RadioFoundry: %d bytes in %d regions" % (sum(e - s for s, e in regions), len(regions)))
     if rep["over_limits"]:
         sess.say("   To choose yourself, open %s in qdmr, remove what you don't need, save it as YAML, and run" % yaml_path)
         sess.say("   this step again with --from on the saved file.")
         if not args.accept_trim and not sess.ask("Continue with the items that fit?"):
             raise MigrateError("stopped before flashing; the backup is in %s" % sess.workdir)
-    after = cp.codeplug_summary(odr_text)
+    after = cp.codeplug_summary(rfoundry_text)
     if not rep["radio_ids"]:
-        sess.say("   ! the codeplug has no DMR ID: set yours in ODR's settings after the migration (or pass --id for "
+        sess.say("   ! the codeplug has no DMR ID: set yours in RadioFoundry's settings after the migration (or pass --id for "
                  "the ID database)")
-    sess.save_state(odr_yaml=odr_yaml, odr_dfu=odr_dfu, expected=after["counts"], radio_ids=rep["radio_ids"])
+    sess.save_state(rfoundry_yaml=rfoundry_yaml, rfoundry_dfu=rfoundry_dfu, expected=after["counts"], radio_ids=rep["radio_ids"])
     prepare_users(sess, args)
     sess.say("   backup done: %s" % sess.workdir)
     return True
@@ -397,8 +397,8 @@ def prepare_image(sess, args):
         elif getattr(args, "stock_image", False):
             sess.say("   flashing a stock firmware file (--stock-image)")
         else:
-            sess.say("   ! no ODR codec slot: if this is an ODR image, the radio will work on FM only (no DMR voice).")
-            sess.say("     Use the merged image (odr_dm32_codec.bin) or give --codec-from DM32.01.01.049.bin.")
+            sess.say("   ! no RadioFoundry codec slot: if this is a RadioFoundry image, the radio will work on FM only (no DMR voice).")
+            sess.say("     Use the merged image (rfoundry_dm32_codec.bin) or give --codec-from DM32.01.01.049.bin.")
             sess.say("     For a stock firmware file, pass --stock-image.")
             if not sess.ask("Flash it anyway?"):
                 raise MigrateError("stopped before flashing")
@@ -415,7 +415,7 @@ def preflight(sess, args):
         import serial  # noqa: F401
     except ImportError:
         missing.append("pyserial: pip install pyserial")
-    for helper in ("serial_loader", "cps_client", "odr_debug"):
+    for helper in ("serial_loader", "cps_client", "rfoundry_debug"):
         if not os.path.isfile(os.path.join(HERE, helper + ".py")):
             missing.append("%s.py next to this script" % helper)
     for m in missing:
@@ -428,7 +428,7 @@ def preflight(sess, args):
 
 
 def step_flash(sess, args):
-    sess.step("2. Flash OpenDigitalRadio")
+    sess.step("2. Flash RadioFoundry")
     raw = prepare_image(sess, args)
     fl = mod("serial_loader")
     resolve_port(sess, args)
@@ -460,14 +460,14 @@ def step_flash(sess, args):
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# step 3: ODR running, settings area, data flash backup
+# step 3: RadioFoundry running, settings area, data flash backup
 
-def wait_odr(sess, timeout):
+def wait_rfoundry(sess, timeout):
     if sess.dry:
-        sess.say("   [dry run] would wait for ODR's debug link on %s" % (sess.port or "the cable"))
+        sess.say("   [dry run] would wait for RadioFoundry's debug link on %s" % (sess.port or "the cable"))
         return
-    cmd = [sys.executable, os.path.join(HERE, "odr_debug.py"), "--port", sess.port, "ping"]
-    sess.say("   waiting for ODR on %s ..." % sess.port)
+    cmd = [sys.executable, os.path.join(HERE, "rfoundry_debug.py"), "--port", sess.port, "ping"]
+    sess.say("   waiting for RadioFoundry on %s ..." % sess.port)
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
@@ -481,37 +481,37 @@ def wait_odr(sess, timeout):
                        "remove the battery, enter update mode and flash again" % (sess.port, timeout))
 
 
-def step_prepare_odr(sess, args):
-    sess.step("3. Check ODR on the radio and give it its settings area")
+def step_prepare_rfoundry(sess, args):
+    sess.step("3. Check RadioFoundry on the radio and give it its settings area")
     resolve_port(sess, args)
     sess.wait_user("""
-        Radio: it should be running ODR now (the ODR Home screen). If the screen is dark, remove and refit the
+        Radio: it should be running RadioFoundry now (the RadioFoundry Home screen). If the screen is dark, remove and refit the
         battery and switch it on. Keep the cable connected.""")
-    wait_odr(sess, args.wait)
-    rc, out = sess.odr_debug("version")
+    wait_rfoundry(sess, args.wait)
+    rc, out = sess.rfoundry_debug("version")
     if not sess.dry and "DM-32" not in out:
         raise MigrateError("the radio does not report board=DM-32UV over its debug link (see above)")
-    rc, out = sess.odr_debug("storage", "info")
+    rc, out = sess.rfoundry_debug("storage", "info")
     region = re.search(r"region\s+(\w+)", out or "")
     region = region.group(1) if region else ("foreign" if sess.dry else "?")
     if region == "none":
-        raise MigrateError("ODR found no usable data flash, so it keeps no codeplug. Your backup is in %s"
+        raise MigrateError("RadioFoundry found no usable data flash, so it keeps no codeplug. Your backup is in %s"
                            % sess.workdir)
     if region == "foreign":
-        sess.say("   The flash area ODR keeps its settings in (0x711000..) holds the stock firmware's data. ODR")
+        sess.say("   The flash area RadioFoundry keeps its settings in (0x711000..) holds the stock firmware's data. RadioFoundry")
         sess.say("   doesn't overwrite it on its own. This saves the area (raw) into the work directory and then")
-        sess.say("   gives it to ODR. The stock codeplug and calibration below 0x700000 are not touched.")
-        if not sess.ask("Give the settings area to ODR now?"):
-            raise MigrateError("stopped: codeplug writes are refused until the area is ODR's")
-        sess.odr_debug("storage", "claim", "--out", sess.path("storage-before-claim"))
+        sess.say("   gives it to RadioFoundry. The stock codeplug and calibration below 0x700000 are not touched.")
+        if not sess.ask("Give the settings area to RadioFoundry now?"):
+            raise MigrateError("stopped: codeplug writes are refused until the area is RadioFoundry's")
+        sess.rfoundry_debug("storage", "claim", "--out", sess.path("storage-before-claim"))
     elif region != "ours":
         raise MigrateError("unexpected storage state %r" % region)
-    sess.say("   the settings area is ODR's")
+    sess.say("   the settings area is RadioFoundry's")
     return True
 
 
 def step_flash_backup(sess, args):
-    """Read the stock data below ODR's area through ODR's CPS reads (physical addresses), into the work directory."""
+    """Read the stock data below RadioFoundry's area through RadioFoundry's CPS reads (physical addresses), into the work directory."""
     mode = args.flash_backup
     if mode == "none":
         return True
@@ -541,7 +541,7 @@ def step_flash_backup(sess, args):
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# step 4 / 5: write the codeplug and the ID database through ODR's CPS shim
+# step 4 / 5: write the codeplug and the ID database through RadioFoundry's CPS shim
 
 def cps_write_dfu(sess, dfu_path, label, before_name, reboot=True):
     """Back up what the regions hold, write the DfuSe file's elements at +CPS_OFFSET, return (targets, image)."""
@@ -554,9 +554,9 @@ def step_restore(sess, args):
     check_dmrconf(sess)
     if args.yaml:
         convert(sess, args, os.path.abspath(args.yaml))
-    src = sess.state.get("odr_dfu")
+    src = sess.state.get("rfoundry_dfu")
     if sess.dry and not src:
-        sess.say("   [dry run] would write odr-codeplug.dfu at +0x%06X, then read it back and compare" % CPS_OFFSET)
+        sess.say("   [dry run] would write rfoundry-codeplug.dfu at +0x%06X, then read it back and compare" % CPS_OFFSET)
         return True
     if not src or (not sess.dry and not os.path.isfile(src)):
         raise MigrateError("no converted codeplug: run 'backup' first or give --yaml FILE")
@@ -566,8 +566,8 @@ def step_restore(sess, args):
         return True
     sess.say("   written; the radio restarts")
     time.sleep(3)
-    wait_odr(sess, args.wait)
-    cp.check_read_back(sess, lambda: open_cps(sess, CPS_OFFSET), targets, img, expected, ODR_DRIVER,
+    wait_rfoundry(sess, args.wait)
+    cp.check_read_back(sess, lambda: open_cps(sess, CPS_OFFSET), targets, img, expected, RFOUNDRY_DRIVER,
                        block=CPS_BLOCK, progress=bar)
     sess.save_state(restored=True)
     return True
@@ -599,7 +599,7 @@ def step_iddb(sess, args):
     if not ids:
         raise MigrateError("no DMR ID to choose the database around: give --id YOUR_ID, or --no-db")
     out = sess.path("iddb.dfu")
-    cmd = ["encode-db", "--radio", ODR_DRIVER, "--id",
+    cmd = ["encode-db", "--radio", RFOUNDRY_DRIVER, "--id",
            ",".join(str(i)[:3] if args.id_prefix else str(i) for i in ids)]
     users = args.users_json or sess.state.get("users_json")
     if users:
@@ -626,7 +626,7 @@ def step_iddb(sess, args):
             sess.dmr(*(cmd + ["--limit", str(fit), out]), radio=False)
             need_file(sess, out, "the encoded ID database")
     sess.say("   a large database takes many minutes at 115200 baud; don't unplug the cable")
-    wait_odr(sess, args.wait)
+    wait_rfoundry(sess, args.wait)
     cps_write_dfu(sess, out, "ID database", "iddb-area-before.bin")
     sess.say("   done: names show on the receive screen for IDs that are not contacts")
     return True
@@ -636,15 +636,15 @@ def step_iddb(sess, args):
 # package for a tester
 
 PACKAGE_README = """\
-OpenDigitalRadio for the Baofeng DM-32UV: migration kit (TESTING ONLY)
+RadioFoundry for the Baofeng DM-32UV: migration kit (TESTING ONLY)
 
-This kit backs up your stock codeplug, flashes OpenDigitalRadio over the programming cable and writes your
+This kit backs up your stock codeplug, flashes RadioFoundry over the programming cable and writes your
 channels, zones, contacts, RX group lists and the DMR ID database back. The DM-32 port is still in testing.
 Keep Baofeng's stock firmware file (DM32.01.01.049.bin) at hand to go back.
 
 Not for redistribution: the firmware image contains the codec from Baofeng's firmware.
 
-ODR never writes the data flash below 0x700000, where the stock codeplug and the factory calibration live, and never
+RadioFoundry never writes the data flash below 0x700000, where the stock codeplug and the factory calibration live, and never
 writes the bootloader. Update mode (PTT + SK1 at power-on, green LED) stays available whatever happens.
 
 Install once
@@ -659,7 +659,7 @@ Run
   python3 dm32_migrate.py all --image {image}
 
 The tool asks before each step that needs you at the radio. It keeps every file in
-~/ODR-DM32-migration/<date-time>/ and never deletes them; send that folder back with your report. If a step fails it
+~/RadioFoundry-DM32-migration/<date-time>/ and never deletes them; send that folder back with your report. If a step fails it
 stops and says how to go on; 'restore --workdir DIR' continues after the flash.
 
 Flash only (no codeplug):   python3 serial_loader.py {image}
@@ -673,16 +673,16 @@ in the source.
 def cmd_package(sess, args):
     out = os.path.abspath(args.outdir)
     files = {os.path.abspath(__file__): "dm32_migrate.py"}
-    for helper in ("serial_loader.py", "cps_client.py", "codeplug_port.py", "odr_debug.py", "md380_migrate.py",
+    for helper in ("serial_loader.py", "cps_client.py", "codeplug_port.py", "rfoundry_debug.py", "md380_migrate.py",
                    "hrc7000_codec.py"):
         files[os.path.join(HERE, helper)] = helper
-    # what serial_loader.py and hrc7000_codec.py import from odrflash: the board registry and the codec maps
-    pkg = os.path.join(HERE, "odrflash", "odrflash")
+    # what serial_loader.py and hrc7000_codec.py import from rfoundry: the board registry and the codec maps
+    pkg = os.path.join(HERE, "rfoundry", "rfoundry")
     for rel in ["__init__.py", "boards.py", "codecmap.py", "registry.json"] + sorted(
             os.path.join("codec_maps", d, f) for d in os.listdir(os.path.join(pkg, "codec_maps"))
             if os.path.isdir(os.path.join(pkg, "codec_maps", d)) for f in os.listdir(os.path.join(pkg, "codec_maps", d))
             if f.endswith(".json")):
-        files[os.path.join(pkg, rel)] = os.path.join("odrflash", "odrflash", rel)
+        files[os.path.join(pkg, rel)] = os.path.join("rfoundry", "rfoundry", rel)
     bringup = os.path.join(os.path.dirname(HERE), "docs", "testing", "dm32-bringup.md")
     if os.path.isfile(bringup):
         files[bringup] = "dm32-bringup.md"
@@ -728,7 +728,7 @@ def cmd_package(sess, args):
 # self-test
 
 class FakeCpsRadio:
-    """ODR's CPS shim on a DM-32 (cps-protocol.md 2, boards/dm32/flash_dm32.c map) as a cps_client transport:
+    """RadioFoundry's CPS shim on a DM-32 (cps-protocol.md 2, boards/dm32/flash_dm32.c map) as a cps_client transport:
     physical addresses, writes only inside the open-firmware EEPROM image (0x700000..0x710000) and flash image
     (0x720000..0xF00000), nothing below 0x700000."""
 
@@ -859,7 +859,7 @@ commercial:
 """
 
 
-def sample_odr_yaml():
+def sample_rfoundry_yaml():
     """What dmrconf's OpenUV380 round trip makes of SAMPLE_STOCK_YAML (names cut, zones and scan lists dropped)."""
     y = SAMPLE_STOCK_YAML.replace("Worldwide Talkgroup 91", "Worldwide Talkgr").replace(
         "Simplex FM 2m calling", "Simplex FM 2m ca")
@@ -912,10 +912,10 @@ def self_test():
     check(iddb_fit(iddb(fit + 1)) == fit, "one record more doesn't")
 
     # the conversion report
-    rep = conversion_report(SAMPLE_STOCK_YAML, sample_odr_yaml())
+    rep = conversion_report(SAMPLE_STOCK_YAML, sample_rfoundry_yaml())
     check(rep["stock"]["channels"] == 4 and rep["stock"]["zones"] == 70 and rep["stock"]["radioIDs"] == 2,
           "stock counts %r" % rep["stock"])
-    check(rep["odr"]["zones"] == 68 and rep["odr"].get("scanLists", 0) == 0, "ODR counts %r" % rep["odr"])
+    check(rep["rfoundry"]["zones"] == 68 and rep["rfoundry"].get("scanLists", 0) == 0, "RadioFoundry counts %r" % rep["rfoundry"])
     check([o["section"] for o in rep["over_limits"]] == ["zones"] and rep["over_limits"][0]["dropped"] == ["Z69", "Z70"],
           "zones over the limit")
     check(sorted(x[0] for x in rep["lost_sections"]) == ["radioIDs", "roamingZones", "scanLists"],
@@ -930,7 +930,7 @@ def self_test():
     check("left out: Z69, Z70" in text and "scanLists" in text and "6m FM" in text, "report text")
     check(parse_freq("462562.5 kHz") == 462562500 and parse_freq("441 MHz") == 441000000 and parse_freq("x") is None,
           "frequencies")
-    check(conversion_report(SAMPLE_STOCK_YAML)["odr"] is None, "report without the ODR side")
+    check(conversion_report(SAMPLE_STOCK_YAML)["rfoundry"] is None, "report without the RadioFoundry side")
 
     # the CPS writer against a simulated DM-32 shim: +0x700000, nothing below it
     cc = mod("cps_client")
@@ -938,7 +938,7 @@ def self_test():
     stock = bytearray(b"\x5a" * 0x10000)
     stock[0x3FFF] = 2           # the calibration page's ID byte (page 0x3000)
     radio.poke(0, stock)
-    radio.poke(0x700000 + 0x9B000, b"\x77" * 8192)      # whatever stock left in ODR's window
+    radio.poke(0x700000 + 0x9B000, b"\x77" * 8192)      # whatever stock left in RadioFoundry's window
     cps = cc.Cps(radio, timeout=0.1, offset=CPS_OFFSET)
     check(cps.info()["radio_type"] == 6, "radio info through the shim")
     before = cps.read_image(regions, image=bytearray(b"\xff" * len(img)))
@@ -970,12 +970,12 @@ def self_test():
 
 EPILOG = """\
 examples:
-  %(prog)s all --image odr_dm32_codec.bin --dry-run
-  %(prog)s all --image odr_dm32_codec.bin --port /dev/ttyUSB0 --users user.csv
+  %(prog)s all --image rfoundry_dm32_codec.bin --dry-run
+  %(prog)s all --image rfoundry_dm32_codec.bin --port /dev/ttyUSB0 --users user.csv
   %(prog)s backup --from my-dm32.yaml                     (convert and check only)
-  %(prog)s flash --image odr_dm32.bin --codec-from DM32.01.01.049.bin     (merges the codec)
+  %(prog)s flash --image rfoundry_dm32.bin --codec-from DM32.01.01.049.bin     (merges the codec)
   %(prog)s flash --image DM32.01.01.049.bin --stock-image                 (back to stock)
-  %(prog)s restore --workdir ~/ODR-DM32-migration/20261011-101500
+  %(prog)s restore --workdir ~/RadioFoundry-DM32-migration/20261011-101500
 
 The steps of 'all': backup (radio on stock firmware) -> flash (update mode) -> settings area -> data flash backup
 -> codeplug -> ID database. Each asks before anything happens at the radio; it stops at the first failure and never
@@ -987,7 +987,7 @@ def main(argv=None):
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--dry-run", action="store_true", help="run the offline steps; print what would touch the radio")
     common.add_argument("--yes", "-y", action="store_true", help="don't ask (physical steps are still announced)")
-    common.add_argument("--workdir", help="where backups and converted files go (default ~/ODR-DM32-migration/DATE)")
+    common.add_argument("--workdir", help="where backups and converted files go (default ~/RadioFoundry-DM32-migration/DATE)")
     common.add_argument("--port", help="the programming cable's serial port (default: the only USB-serial cable)")
     common.add_argument("--dmrconf", help="path of dmrconf (default: from PATH)")
     common.add_argument("--wait", type=int, default=120, help="seconds to wait for the radio (default 120)")
@@ -1008,7 +1008,7 @@ def main(argv=None):
                    "(by default lists that are empty or only repeat the channel's TX contact are dropped)")
 
     f = argparse.ArgumentParser(add_help=False)
-    f.add_argument("--image", required=True, help="the ODR image (odr_dm32_codec.bin, raw or _BFUV32.bin), or a "
+    f.add_argument("--image", required=True, help="the RadioFoundry image (rfoundry_dm32_codec.bin, raw or _BFUV32.bin), or a "
                                                   "stock BFUV32 file with --stock-image")
     f.add_argument("--codec-from", metavar="FILE", help="Baofeng's DM32.01.01.049.bin: merge its codec into an image "
                                                         "without one")
@@ -1017,7 +1017,7 @@ def main(argv=None):
     r = argparse.ArgumentParser(add_help=False)
     r.add_argument("--yaml", help="write this qdmr YAML instead of the converted backup")
     r.add_argument("--flash-backup", choices=("stock", "full", "none"), default="stock",
-                   help="before writing, save the data flash through ODR: 'stock' the stock codeplug and calibration "
+                   help="before writing, save the data flash through RadioFoundry: 'stock' the stock codeplug and calibration "
                         "pages 0x0-0xC9000 (default, about 2 minutes), 'full' all 16 MB (about 30 minutes)")
     r.add_argument("--id", type=int, help="your DMR ID, for choosing the ID database (default: from the codeplug)")
     r.add_argument("--id-prefix", action="store_true", help="choose the database by the ID's 3-digit prefix")
@@ -1025,12 +1025,12 @@ def main(argv=None):
     r.add_argument("--db-limit", type=int, help="at most this many database records")
     r.add_argument("--no-db", action="store_true", help="don't write the ID database")
 
-    ap = argparse.ArgumentParser(description="Move a Baofeng DM-32UV from stock firmware to OpenDigitalRadio, keeping "
+    ap = argparse.ArgumentParser(description="Move a Baofeng DM-32UV from stock firmware to RadioFoundry, keeping "
                                              "the codeplug.", epilog=EPILOG,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true", help="test the logic offline (no radio, no dmrconf)")
     sub = ap.add_subparsers(dest="cmd")
-    sub.add_parser("backup", parents=[common, b, t, u], help="read (or import) the codeplug and convert it for ODR")
+    sub.add_parser("backup", parents=[common, b, t, u], help="read (or import) the codeplug and convert it for RadioFoundry")
     sub.add_parser("import", parents=[common, b, t, u], help="same as backup --from FILE")
     sub.add_parser("flash", parents=[common, f], help="flash through the Baofeng bootloader")
     sub.add_parser("restore", parents=[common, r, t, u], help="settings area, data flash backup, codeplug, ID database")
@@ -1060,11 +1060,11 @@ def main(argv=None):
         if args.cmd == "restore":
             sess.open_workdir(args.workdir, create=args.workdir is None or args.yaml is not None)
             sess.port = sess.port or sess.state.get("port")
-            if not args.yaml and not sess.state.get("odr_dfu"):
+            if not args.yaml and not sess.state.get("rfoundry_dfu"):
                 raise MigrateError("no converted codeplug in %s: give --workdir of an earlier backup, or --yaml"
                                    % sess.workdir)
             prepare_users(sess, args)
-            step_prepare_odr(sess, args)
+            step_prepare_rfoundry(sess, args)
             step_flash_backup(sess, args)
             step_restore(sess, args)
             step_iddb(sess, args)
@@ -1075,11 +1075,11 @@ def main(argv=None):
             if args.cmd in ("backup", "import", "all"):
                 step_backup(sess, args)
             if args.cmd in ("flash", "all"):
-                if args.cmd == "all" and not sess.ask("The codeplug is backed up. Flash ODR now?"):
+                if args.cmd == "all" and not sess.ask("The codeplug is backed up. Flash RadioFoundry now?"):
                     raise MigrateError("stopped before flashing; the backup is in %s" % sess.workdir)
                 step_flash(sess, args)
             if args.cmd == "all":
-                step_prepare_odr(sess, args)
+                step_prepare_rfoundry(sess, args)
                 step_flash_backup(sess, args)
                 step_restore(sess, args)
                 step_iddb(sess, args)
@@ -1090,7 +1090,7 @@ def main(argv=None):
     except MigrateError as e:      # the shared codeplug steps and session code raise the same type
         sess.say("")
         sess.say("stopped: %s" % e)
-        if sess.state.get("flashed") and sess.state.get("odr_dfu") and args.cmd in ("all", "restore"):
+        if sess.state.get("flashed") and sess.state.get("rfoundry_dfu") and args.cmd in ("all", "restore"):
             sess.say("to continue once the cause is fixed: %s restore --workdir \"%s\""
                      % (os.path.basename(sys.argv[0]), sess.workdir))
         return 1

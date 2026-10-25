@@ -56,7 +56,7 @@ Per release, at least 6 people (more for major UI changes):
 
 - 2 new to DMR (have used an FM handheld or none),
 - 2 regular DMR users of another radio brand (Anytone, TYT, Motorola),
-- 1 existing OpenDigitalRadio user,
+- 1 existing RadioFoundry user,
 - 1 tester using voice prompts without looking (blindfold or a low-vision participant) for the accessibility tasks,
 - plus, for the MD-9600, one session in a parked car with the mic only (and never while driving).
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The settings store (settings.h, docs/spec/settings-store.md 2). The settings area is a ring of sectors, each split
 // into SLOT_SIZE slots:
 //   0   u32 magic "OSET"     4  u32 sequence number     8  u16 layout     10  u16 payload length n
@@ -27,7 +27,7 @@ _Static_assert(SETTINGS_PAGE_BYTES == PAYLOAD_MAX, "a page is a slot's payload")
 _Static_assert(SETTINGS_PAGES <= SETTINGS_PAGES_MAX, "settings_t outgrew its pages");
 _Static_assert(sizeof(settings_t) % 4 == 0, "settings_t has tail padding");
 _Static_assert(offsetof(settings_t, dual_b) == SETTINGS_PAGE_BYTES, "page 1 starts at its first field");
-_Static_assert(sizeof(settings_t) == 264, "settings_t changed size: update docs/spec/settings-store.md 3 and this");
+_Static_assert(sizeof(settings_t) == 280, "settings_t changed size: update docs/spec/settings-store.md 3 and this");
 
 static settings_t live;			// under the quick lock
 static settings_t saved;		// what the newest record holds (or the defaults)

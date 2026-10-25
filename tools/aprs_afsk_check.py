@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """APRS (Bell 202 AFSK / AX.25) decoder and transmitter checker for an RTL-SDR capture or a WAV file.
 
     tools/aprs_afsk_check.py CAPTURE.cs8 --offset -200000 [--bw 25] [--json]
@@ -475,9 +475,9 @@ def self_test(wav=None):
         if not cond:
             fails.append(what)
 
-    lines = [("N0TST-15", "APZODR", [], "!/5L!!<*e7>7P[ODR self test"),
-             ("N0TST-15", "APZODR", ["WIDE1-1"], ">status text"),
-             ("N0TST-15", "APZODR", [], ":K1ABC-9  :hello{42")]
+    lines = [("N0TST-15", "APZRDF", [], "!/5L!!<*e7>7P[RadioFoundry self test"),
+             ("N0TST-15", "APZRDF", ["WIDE1-1"], ">status text"),
+             ("N0TST-15", "APZRDF", [], ":K1ABC-9  :hello{42")]
     frames = [ax25_frame(*ln) for ln in lines]
     want = [f"{s}>{d}{''.join(',' + x for x in dg)}:{i}" for s, d, dg, i in lines]
     for f, ln in zip(frames, lines):
@@ -528,7 +528,7 @@ def self_test(wav=None):
         # the firmware's modulator (aprsTest --wav): as audio, and FM modulated into I/Q
         r = analyze_audio(wav)
         got = [f["tnc2"] for f in r["frames"]]
-        check(len(got) == 3 and all(g.startswith("N0CALL-7>APZODR") for g in got), f"firmware WAV: {got}")
+        check(len(got) == 3 and all(g.startswith("N0CALL-7>APZRDF") for g in got), f"firmware WAV: {got}")
         x, fs = read_wav(wav)
         path = os.path.join(tmp, "fw.cs8")
         synth_iq(path, x / np.max(np.abs(x)) * 3000.0, fs, offset)

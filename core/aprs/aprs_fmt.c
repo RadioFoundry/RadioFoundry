@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // APRS information fields (aprs_fmt.h). Written from the APRS Protocol Reference 1.0.1: chapter 6 (time and position
 // formats), 7 (data extensions, altitude), 8 (position reports), 9 (compressed), 10 (Mic-E), 11 (objects and items),
 // 14 (messages), 16 (status); the 1.1 addendum for the reply-ack form of message numbers.

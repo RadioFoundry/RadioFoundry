@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Check that every HIL skip names its kind (tests/hil/README.md, "Skip kinds").
 
     tools/check_hil_skips.py              tests/hil and every boards/<b>/hil
     tools/check_hil_skips.py FILE...      only these files
 
-A HIL test skips through odr_hil's skip(kind, reason), skip_mark(kind, reason) or skip_if(condition, kind, reason),
+A HIL test skips through rfoundry_hil's skip(kind, reason), skip_mark(kind, reason) or skip_if(condition, kind, reason),
 never pytest.skip, pytest.mark.skip(if) or pytest.importorskip: a bring-up run tells an expected skip from a gap by
-the kind. The kind must be a string literal from odr_hil.SKIP_KINDS. Only the helpers in odr_hil.py and their tests
+the kind. The kind must be a string literal from rfoundry_hil.SKIP_KINDS. Only the helpers in rfoundry_hil.py and their tests
 (test_skip_kinds.py) break these rules, on lines marked "# hil-skip:". Exit status 0 when every skip has a kind, 1
 otherwise.
 """
@@ -18,7 +18,7 @@ import os
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-HELPER = os.path.join(ROOT, "tests", "hil", "odr_hil.py")
+HELPER = os.path.join(ROOT, "tests", "hil", "rfoundry_hil.py")
 EXEMPT = (HELPER, os.path.join(ROOT, "tests", "hil", "test_skip_kinds.py"))   # where the pragma counts
 PRAGMA = "# hil-skip:"
 BARE = ("pytest.skip", "pytest.mark.skip", "pytest.mark.skipif", "pytest.importorskip")
@@ -26,7 +26,7 @@ KIND_ARG = {"skip": 0, "skip_mark": 0, "skip_if": 1}       # where the kind is i
 
 
 def skip_kinds(helper=HELPER):
-    """The kinds odr_hil.py defines: the keys of its SKIP_KINDS dict (read, not imported: no pyserial needed)."""
+    """The kinds rfoundry_hil.py defines: the keys of its SKIP_KINDS dict (read, not imported: no pyserial needed)."""
     for node in ast.parse(open(helper, encoding="utf-8").read(), helper).body:
         if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "SKIP_KINDS" for t in node.targets):
             return {k.value for k in node.value.keys}
@@ -58,14 +58,14 @@ def check_source(src, path, kinds, exempt=False):
         if isinstance(node, ast.Attribute):
             name = dotted(node)
             if name in BARE:       # pytest.skip.Exception too: its inner pytest.skip
-                bad(node, f"{name}: use odr_hil's skip / skip_mark / skip_if with a kind")
+                bad(node, f"{name}: use rfoundry_hil's skip / skip_mark / skip_if with a kind")
         elif isinstance(node, ast.ImportFrom) and node.module in ("pytest", "_pytest.outcomes"):
             for a in node.names:
                 if a.name in ("skip", "importorskip"):
-                    bad(node, f"from {node.module} import {a.name}: use odr_hil's skip with a kind")
+                    bad(node, f"from {node.module} import {a.name}: use rfoundry_hil's skip with a kind")
         elif isinstance(node, ast.Call):
             func = node.func.id if isinstance(node.func, ast.Name) else \
-                node.func.attr if isinstance(node.func, ast.Attribute) and dotted(node.func.value) == "odr_hil" \
+                node.func.attr if isinstance(node.func, ast.Attribute) and dotted(node.func.value) == "rfoundry_hil" \
                 else None
             if func not in KIND_ARG:
                 continue

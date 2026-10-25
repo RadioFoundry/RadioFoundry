@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // FreeRTOS for the HR_C7000 radios (CK803S; one interrupt level, no priorities: platform/hrc7000/freertos)
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H

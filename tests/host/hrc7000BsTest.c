@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 split duplex BS outbound (drivers/modem/hrc7000/hrc7000_bs.c): the takeover of the slot engine, the physical
 // layer set-up and its variants, the slot clock from either timeslot vector or PHY_RDY (one boundary per slot),
 // key-up on an outbound TS1 slot, per-slot queues in order with idle fill, the slots in TX RAM (both halves or

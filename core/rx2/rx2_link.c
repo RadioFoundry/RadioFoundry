@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The second receiver's link: frames, payloads, and both ends' state machines (rx2_link.h)
 #include <string.h>
 #include "rx2_link.h"

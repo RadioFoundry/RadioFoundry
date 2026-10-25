@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 display: 160x128 TFT on FSMC bank 1 (8-bit on D0-D7, RS on A17), wired as on the other STM32 radios; backlight on PC6
 // with TIM8 CH1 PWM (docs/spec/hardware-md380.md 7).
 //

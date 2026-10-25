@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-32UV keypad, side keys, PTT and encoder (docs/spec/hardware-dm32.md 6.1-6.3).
 // The keypad rows are LCD DB0-DB4: a scan takes them back from the LCD controller under the LCD bus lock. SK1 / SK2
 // pull columns 3 / 4 low with no row driven (keymatrix.h).

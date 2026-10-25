@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // BK4819 transceiver driver (docs/spec/hardware-db25d.md 4)
 #include <stddef.h>
 #include "bk4819.h"
@@ -254,7 +254,7 @@ void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain)
 }
 
 // 4.5 DMR receive: the stock digital mode set, in its order. 0x27 and 0x48 are saved for the end; the stock firmware
-// leaves its digital values there when it goes back to analog, ODR doesn't
+// leaves its digital values there when it goes back to analog, RadioFoundry doesn't
 static const regval_t dmr_rx_set[] = {
 	{ 0x2A, 0x4711 }, { BK4819_REG_SUBAUDIO, 0x0000 }, { 0x52, 0x028F }, { BK4819_REG_AF, 0x6943 },
 	{ BK4819_REG_AGC_DC, 0x3006 }, { BK4819_REG_BANDWIDTH, BK4819_BW_DMR }, { 0x40, 0x0000 }, { 0x27, 0x0430 },
@@ -274,7 +274,7 @@ void bk4819_dmr_rx_enter(bk4819_t *dev)
 	write_table(dev, &dmr_rx_set[2], sizeof(dmr_rx_set) / sizeof(dmr_rx_set[0]) - 2u);
 }
 
-// The stock analog mode set (it also turns the AFC back on and mutes the AF), then what ODR's analog receive had
+// The stock analog mode set (it also turns the AFC back on and mutes the AF), then what RadioFoundry's analog receive had
 void bk4819_dmr_rx_end(bk4819_t *dev)
 {
 	if (!dev->digital) {

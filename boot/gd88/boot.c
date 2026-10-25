@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SoC A first stage (boot/README.md): holds the power latch, drives the transmitter off and puts the serial
 // output chain in its power-on state, then offers the boot ROM's handshake on UART1 (the programming cable; boot/hrc7000/stage.c). Without a host it goes
 // on to the application.

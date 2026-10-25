@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Radioddity GD-88, SoC B: board descriptor, reset-time pin levels and the transmitter-off hook
 // (docs/spec/hardware-gd88.md 10). B is the second receiver: no display, keys, power control or PC link. A powers it
 // and talks to it over UART3.

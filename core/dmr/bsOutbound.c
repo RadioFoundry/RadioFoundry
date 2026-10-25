@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The split duplex TX half's continuous BS outbound (see bsOutbound.h; docs/spec/split-duplex.md 5)
 #include <string.h>
 #include "dmr/bsOutbound.h"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A host stand-in for platform/hrc7000/platform.h, enough to build a GD-88 board.c in a host test: the registers it
 // writes are plain variables and the pin calls are recorded by the test
 #ifndef PLATFORM_H

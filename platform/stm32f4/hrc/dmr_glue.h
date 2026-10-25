@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DMR modem glue shared by the STM32F4 radios with an HR_C6000 or HR_C5000: the slot engine
 // (drivers/modem/hrc_common/hrc6000_dmr.c) on the chip's three interrupt lines, the deferred event task that calls the
 // DMR stack, the hal_dmr_modem_t over them and the bring-up counters (docs/spec/dmr-modem.md 6). The three lines are

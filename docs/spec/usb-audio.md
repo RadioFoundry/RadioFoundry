@@ -6,8 +6,7 @@ A computer should be able to hear the radio's receiver, transmit through it, and
 over USB: as a USB sound card (optionally with a serial port beside it, like the commercial "data radio" interfaces),
 over the serial port, or over the USB network personality ([usb-network.md](usb-network.md)). This page is the
 feasibility study and the design. Built so far: USRP voice over UDP on the network personality (`CONFIG_NET_USRP`,
-9.1) with the stream sharing it needs (`core/usbaudio/audio_mux.c`, part of 5.1) and the DM-1701's FM transmit path
-(PWM into the microphone input), and a bench probe (`CONFIG_AUDIO_PROBE`) that measures a board's audio paths. The
+9.1) with the stream sharing it needs (`core/usbaudio/audio_mux.c`, part of 5.1) and an HR_C6000 board's FM transmit path (PWM into the microphone input), and a bench probe (`CONFIG_AUDIO_PROBE`) that measures a board's audio paths. The
 sound card, the serial transports and CAT are not built. Section 9 lists what is in the repository.
 
 ## Summary
@@ -19,6 +18,13 @@ sound card, the serial transports and CAT are not built. Section 9 lists what is
 | USB composite with a sound card | Fits on the STM32F405's OTG_FS: CDC-ACM + UAC1 or CDC-NCM + UAC1, not all three, and not serial + sound card + HID (3) |
 | Recommended protocols | IP: the USRP voice protocol over UDP (AllStarLink, DVSwitch Analog_Bridge, M17 and DMR bridges speak it) with PTT by its keyup flag; Hamlib's rigctld protocol, now on the radio (`CONFIG_NET_RIGCTL`, [tcp-services.md](tcp-services.md) 6). Serial: Kenwood-style CAT plus RTS/DTR PTT. Sound card: UAC1, PTT by the serial port's RTS/DTR (CM108-style HID as an alternative personality) (4) |
 | Effort | About 6 to 9 working weeks for everything, in five phases; phase 0 (the probe) and phase 2 (USRP on the network) are done, phase 1 in part (7) |
+
+| Section | Topic |
+|---|---|
+| 1, 2, 3 | Use cases, audio paths per radio family, USB limits |
+| 4, 5, 6 | Protocols, design, behavior and safety |
+| 7, 8 | Phased plan, risks |
+| 9, 10 | What is in the repository, owner questions |
 
 ## 1. Use cases and transports
 
@@ -37,12 +43,12 @@ Transports, as the task names them: (a) the USB network personality (UDP over CD
 
 What each radio offers the design. Radios not listed have not been studied.
 
-| Radio | Host port | DMR PCM | FM receive to the MCU | FM transmit from the MCU | Details |
+| Radio family | Host port | DMR PCM | FM receive to the MCU | FM transmit from the MCU | Details |
 |---|---|---|---|---|---|
-| DM-1701 (HR_C6000) | USB | I2S | the I2S stream (squelch gated) or the modem's RX RAM (ungated), 8 kHz | PWM into the mic input, or the modulator offset register (about 6 bits); AFSK from the modem's tone generator | [hardware-dm1701.md](hardware-dm1701.md) 21 |
-| MD-380 (HR_C5000) | USB | I2S | the discriminator on an MCU ADC, unused so far | through the modem's codec, as on the DM-1701; the C5000's FM registers are unconfirmed | [hardware-md380.md](hardware-md380.md) 6.1 |
-| MD-9600 (HR_C6000) | USB | I2S | the IF chip's discriminator on an MCU ADC; FM doesn't pass through the modem | as the DM-1701 | [hardware-md9600.md](hardware-md9600.md) 4.2, 6.1 |
-| DM-32UV (HR_C7000) | UART on the programming cable (no USB connector) | the SoC's mic and speaker PCM buffers | plausible (documented FM data interrupts and PCM bits), unverified | plausible, unverified | [hardware-dm32.md](hardware-dm32.md) 9.2 |
+| STM32 with an HR_C6000 | USB | I2S | the I2S stream (squelch gated) or the modem's RX RAM (ungated), 8 kHz | PWM into the mic input, or the modulator offset register (about 6 bits); AFSK from the modem's tone generator | the board's hardware page |
+| STM32 with an HR_C5000 | USB | I2S | the discriminator on an MCU ADC, unused so far | through the modem's codec, as with the HR_C6000; the C5000's FM registers are unconfirmed | the board's hardware page |
+| STM32 with an HR_C6000 and an IF chip | USB | I2S | the IF chip's discriminator on an MCU ADC; FM doesn't pass through the modem | as the HR_C6000 row | the board's hardware page |
+| HR_C7000 without USB | UART on the programming cable (no USB connector) | the SoC's mic and speaker PCM buffers | plausible (documented FM data interrupts and PCM bits), unverified | plausible, unverified | the board's hardware page |
 
 A discriminator signal is flat (before de-emphasis and the voice filters). Voice needs de-emphasis and a 300 Hz high
 pass in software; 9600 baud packet and AFSK use the flat signal directly. A timer-triggered ADC samples it at 8-48 kHz
@@ -67,7 +73,7 @@ On the STM32F4 radios only the buffers that DMA or USB touches need main RAM; th
 ## 3. USB: what fits
 
 The USB core of the STM32F405 radios (OTG_FS) has endpoint 0 plus 3 IN and 3 OUT endpoints and 1.25 KB of FIFO RAM
-([hardware-dm1701.md](hardware-dm1701.md) 16; `USB_OTG_FS_MAX_IN_ENDPOINTS` = 4 including EP0 and
+(`USB_OTG_FS_MAX_IN_ENDPOINTS` = 4 including EP0 and
 `USB_OTG_FS_TOTAL_FIFO_SIZE` = 1280 in ST's device header; TinyUSB's `dwc2_stm32.h`: 4 endpoints, 320 words).
 
 | Function | IN endpoints | OUT endpoints |
@@ -115,7 +121,7 @@ when the fill drifts a block away from its target. At 100 ppm that's one sample 
 harmless to AFSK and the FSK modes (host test: 200 ppm either way for 10 minutes with 15 ms of jitter, no underrun,
 no overflow). The same buffer serves USRP and serial audio, whose senders run on the host's clock too.
 
-**IDs**: the radios use NXP's VID with the aftermarket firmware's PIDs today (`board_usb_ids`; `platform/stm32f4/platform.h` says a
+**IDs**: the radios use NXP's VID with the PIDs that qdmr and the open-firmware CPS look for today (`board_usb_ids`; `platform/stm32f4/platform.h` says a
 release should move to an ID of its own). A composite personality changes the interface set, so it needs its own PID (Windows caches the
 driver binding per VID/PID). pid.codes (VID 0x1209) gives open-source projects PIDs for free; the AIOC adapter, an
 MIT-licensed STM32 sound card + serial + CM108-style HID cable, does that (1209:7388).
@@ -141,7 +147,7 @@ The rule: implement what existing software already speaks; add our own only wher
   software defaults to RTS; AIOC uses DTR=1 and RTS=0 after finding that CHIRP-style programmers toggle DTR) and a
   **Kenwood TS-480-style CAT subset** recognized beside the other protocols.
 - Over IP: **rigctld on the radio**. Built: port 4532 on the USB network link with a minimal TCP (`CONFIG_NET_RIGCTL`,
-  [tcp-services.md](tcp-services.md) 6), so the host bridge first planned here (`tools/odr_rig.py`) isn't needed.
+  [tcp-services.md](tcp-services.md) 6), so the host bridge first planned here (`tools/rfoundry_rig.py`) isn't needed.
 - In the sound-card-only personality: **CM108-compatible HID** report layout (PTT on GPIO 3 as an output report, COS
   as an input report bit), under our own VID/PID.
 
@@ -290,7 +296,7 @@ What flat means depends on the receive source (section 2):
 The setting lives with the other USB audio settings, and the host can change it on the control channel (a CAT
 extension and a debug link / rigctld command), so a modem program can switch to flat for a session. `hal_audio_tap_t`
 carries it: `fm_tx_inject()` takes the mode, and `caps` says which modes and rates a board has
-(`AUDIO_TAP_FM_RX_RAW`, `AUDIO_TAP_FM_TX_FLAT`). The DM-1701 offers voice only so far (9.1).
+(`AUDIO_TAP_FM_RX_RAW`, `AUDIO_TAP_FM_TX_FLAT`). An HR_C6000 board offers voice only so far (9.1).
 
 ### 5.6 DMR as a USB voice endpoint
 
@@ -362,9 +368,9 @@ Effort in working days for one developer who knows the code base, including host
 
 | Phase | Content | Switch | Flash / RAM (STM32F405 build) | Effort |
 |---|---|---|---|---|
-| 0 | the probe and a bench session per board family; done for the DM-1701 ([hardware-dm1701.md](hardware-dm1701.md) 21) | `CONFIG_AUDIO_PROBE` (diagnostic) | 6 KB / 2 KB, diagnostic builds only | 1 (bench) |
+| 0 | the probe and a bench session per board family; done for one HR_C6000 board | `CONFIG_AUDIO_PROBE` (diagnostic) | 6 KB / 2 KB, diagnostic builds only | 1 (bench) |
 | 1 | audio router (5.1) with the DMR voice and beep consumers moved onto it; each board's audio tap; APRS can build on it | (part of DMR / FM) | 1-2 KB / 0.5 KB | 4-6 |
-| 2 | network audio: USRP on the IP gateway's address, COS and keyup PTT with the watchdogs, the jitter buffer; a USRP reference client (rigctld is already on the radio, [tcp-services.md](tcp-services.md) 6) for tests; HIL test against the SDR bench. **Done** (9.1); the stream sharing it needed is the part of phase 1 that is built | `CONFIG_NET_USRP` (needs `CONFIG_DMR_IP_GATEWAY`) | 4.5 KB / 5.6 KB on the DM-1701 | 6-8 |
+| 2 | network audio: USRP on the IP gateway's address, COS and keyup PTT with the watchdogs, the jitter buffer; a USRP reference client (rigctld is already on the radio, [tcp-services.md](tcp-services.md) 6) for tests; HIL test against the SDR bench. **Done** (9.1); the stream sharing it needed is the part of phase 1 that is built | `CONFIG_NET_USRP` (needs `CONFIG_DMR_IP_GATEWAY`) | 4.5 KB / 5.6 KB | 6-8 |
 | 3 | sound card: the composite personalities with UAC1 (descriptors, alternate settings, resampler, adaptive OUT into the jitter buffer), CDC SERIAL_STATE, RTS/DTR PTT with its arming rules, the Kenwood CAT subset and the host link's second side protocol; HIL test with a host audio loopback | `CONFIG_USB_AUDIO` (needs `CONFIG_USB`) | 9-11 KB / 3 KB | 10-14 |
 | 4 | DMR as a voice endpoint over all three transports (5.6), metadata to the host | follows `CONFIG_DMR` | 1 KB | 3-4 |
 | 5 | options: audio fob personality (UAC1 + CM108-style HID), SLIP-framed USRP on the serial port or a UART host port (rigctld on the radio: done, `CONFIG_NET_RIGCTL`) | `CONFIG_USB_AUDIO_HID`, `CONFIG_USRP_SERIAL` | 2 / 1.5 KB | 3 + 3 |
@@ -394,10 +400,10 @@ over USB.
 | the shared stream (receive ring, transmit jitter buffer, DMR microphone replacement) | `core/usbaudio/audio_mux.h`, `audio_mux.c`; `radio_sm.c` hands the radio's users the wrapped stream | `tests/host/usrpNetTest.c`, `radioFeaturesTest.c` |
 | USRP on the network address | `core/usbaudio/usrp_net.h`, `usrp_net.c`; `tools/usrp_client.py` (reference peer) | `tests/host/usrpNetTest.c`, `tests/hil/test_usrp.py` |
 | host audio PTT in the radio core | `radio_req_ptt_host()`, `radio_sm.c` (`host_audio`, its watchdog) | `tests/host/radioFeaturesTest.c` |
-| audio tap: FM transmit audio from the MCU | `hal/hal_audio_tap.h`; DM-1701 `audio_dm1701.c` (PWM on PC8), `radio_dm1701.c` (`dm1701_fm_tx_inject`) | HIL `test_usrp.py` |
-| the probe: registers, PCM levels, HR_C6000 RAM, FM flag watch | `core/debuglink/debuglink_audio_probe.c`, `boards/dm1701/audio_dm1701.c` and `radio_dm1701.c` (`CONFIG_AUDIO_PROBE` parts), `hrc6000_ram()`, `tools/odr_debug.py aprobe` | `tests/hil/test_audio_probe.py` |
+| audio tap: FM transmit audio from the MCU | `hal/hal_audio_tap.h`; the HR_C6000 board's audio file (PWM) and radio file (`<id>_fm_tx_inject`) under `boards/` | HIL `test_usrp.py` |
+| the probe: registers, PCM levels, HR_C6000 RAM, FM flag watch | `core/debuglink/debuglink_audio_probe.c`, the board's audio and radio files (`CONFIG_AUDIO_PROBE` parts), `hrc6000_ram()`, `tools/rfoundry_debug.py aprobe` | `tests/hil/test_audio_probe.py` |
 
-Running the probe on a DM-1701: [hardware-dm1701.md](hardware-dm1701.md) 21.4.
+Running the probe: `tools/rfoundry_debug.py aprobe`, on a board with `CONFIG_AUDIO_PROBE`.
 
 ### 9.1 USRP on the network (CONFIG_NET_USRP)
 
@@ -414,8 +420,7 @@ What the radio does with the switch on, in the USB network personality (or PPP):
 | Refused | in hotspot mode, and FM on a board without the transmit tap (counted in `usrp.refused`) |
 | Debug link | view section `usrp` ([debuglink.md](debuglink.md) 3.7) |
 
-The DM-1701's FM transmit path is PWM on PC8 into the HR_C6000's differential microphone input (hardware-dm1701.md
-21.3.1): MIC_P / MIC_N on and the microphone (LINEIN1) off while the host transmits, TIM8 CH3 at 72 kHz with DMA,
+An HR_C6000 board's FM transmit path is PWM into the HR_C6000's differential microphone input: MIC_P / MIC_N on and the microphone (LINEIN1) off while the host transmits, a timer channel at 72 kHz with DMA,
 nine carrier periods a sample, linearly interpolated with the rounding error carried from period to period. Full
 scale is ±50 timer steps, about 2.6 kHz rms deviation for a full-scale sine before the chip's limiter;
 `fm_tx_nominal_peak` (13800) is about 60 % of the peak deviation. The chip's own FM chain does the rest
@@ -427,7 +432,7 @@ Known limits:
 
 - The receive audio is the speaker's FM feed-through, so it follows the volume knob (the HR_C6000's RX gain), stops
   at volume zero, and drops out while a beep plays (the feed-through is off for PCM). A tap independent of the
-  speaker (the RX RAM, hardware-dm1701.md 21.3.1) would fix all three.
+  speaker (the RX RAM, `modem-hrc6000.md` 8) would fix all three.
 - No flat mode: the PWM path stops at the codec's 3.5 kHz, so 9600 baud needs the 0x04 path or a modification.
 - Ports and peer are fixed; settings (UI, qdmr) come with phase 3's settings.
 - The wire format is from the public descriptions; a capture against a live AllStar node or Analog_Bridge is still
@@ -435,12 +440,7 @@ Known limits:
 
 ### 9.2 MMDVM FM frames
 
-MMDVMHost can carry FM audio to and from the modem (AllStar linking through its FM network). That frame layout is
-not in any public prose description we found (2026-10-13): the protocol write-ups predate FM, and the layout lives in
-the GPL modem firmware and MMDVMHost, which the clean-room rules keep us from reading. It can still be specified the
-way the rest of [mmdvm-protocol.md](mmdvm-protocol.md) was: by observing what an unmodified MMDVMHost sends to and
-expects from a stock MMDVM modem with FM configured (a serial capture on the bench), written up as black-box
-behavior. Until then the hotspot only ACKs FM_PARAMS (mmdvm-protocol.md 2.14) and USRP (9.1) is the FM network path.
+MMDVMHost can carry FM audio to and from the modem (AllStar linking through its FM network). That frame layout is not in any public prose description we found (2026-10-13): the protocol write-ups predate FM. It can be specified the way the rest of [mmdvm-protocol.md](mmdvm-protocol.md) was: by observing what an unmodified MMDVMHost sends to and expects from an MMDVM modem with FM configured (a serial capture on the bench), written up as black-box behavior. Until then the hotspot only ACKs FM_PARAMS (mmdvm-protocol.md 2.14) and USRP (9.1) is the FM network path.
 
 ## 10. Owner questions
 
@@ -448,7 +448,7 @@ behavior. Until then the hotspot only ACKs FM_PARAMS (mmdvm-protocol.md 2.14) an
    or keep NXP's VID for serial and network and use pid.codes only for the new ones?
 2. Default serial PTT line and polarity: RTS asserted (most software's default) or DTR=1 / RTS=0 (AIOC's choice,
    safe with CHIRP-style programmers)? Either way it only arms in audio sessions.
-3. Which personality should a stock radio boot into: serial (today), or serial + audio once phase 3 is done?
+3. Which personality should a radio boot into: serial (today), or serial + audio once phase 3 is done?
 4. USRP: confirm the wire format with a capture from the owner's AllStar node or Analog_Bridge before the firmware
    relies on it; which ports and peer address as defaults?
 5. ~~rigctld on the radio, or a host bridge?~~ Settled: on the radio (`CONFIG_NET_RIGCTL`, [tcp-services.md](tcp-services.md) 6).

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* STM32F4 application layout, INCLUDEd by each board's memory.ld after its MEMORY (FLASH, RAM, CCMRAM). The image
  * starts with the vector table at ORIGIN(FLASH) (board.mk APP_BASE, where the bootloader starts the application).
  *
@@ -58,8 +58,8 @@ SECTIONS
 		__bss_end__ = _ebss;
 	} >RAM
 
-	/* CCM: CPU only (no DMA can reach it). .ccmbss (ODR_CPU_RAM) is zeroed before main by board.c's .preinit_array
-	 * entry, like .bss; .ccmram (ODR_CPU_RAM_NOINIT: the RTOS heap with every task stack, the codec state) is left
+	/* CCM: CPU only (no DMA can reach it). .ccmbss (RFOUNDRY_CPU_RAM) is zeroed before main by board.c's .preinit_array
+	 * entry, like .bss; .ccmram (RFOUNDRY_CPU_RAM_NOINIT: the RTOS heap with every task stack, the codec state) is left
 	 * as it is and must be written before it's read */
 	.ccmbss (NOLOAD) : { . = ALIGN(4); _sccmbss = .; *(.ccmbss) *(.ccmbss*) . = ALIGN(4); _eccmbss = .; } >CCMRAM
 	.ccmram (NOLOAD) : { . = ALIGN(8); *(.ccmram) *(.ccmram*) . = ALIGN(4); } >CCMRAM

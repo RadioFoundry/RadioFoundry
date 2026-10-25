@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A simulated hal_dmr_modem_t with the split duplex operations (hal_dmr_modem.h, CONFIG_HOTSPOT_SPLIT) for host
 // tests: a virtual microsecond clock the test advances; the TX half's continuous BS outbound (a slot every 30 ms from
 // bs_start, two bursts queued per slot, each slot's burst and CACH recorded as "on air"); the RX half's slot clock,

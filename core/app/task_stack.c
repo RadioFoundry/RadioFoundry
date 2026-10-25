@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The task table behind the "tasks" view section (task_stack.h). The hooks run inside the kernel's critical section;
 // the snapshot reads the table with the scheduler suspended, so no task is deleted or freed while its stack is walked
 // (the idle task frees a deleted task's memory, and it can't run then).
@@ -32,6 +32,11 @@ void task_stack_deleted(void *task)
 			return;
 		}
 	}
+}
+
+void *task_stack_handle(unsigned i)
+{
+	return i < TASK_STACK_MAX ? tasks[i] : NULL;
 }
 
 unsigned task_stack_snapshot(task_stack_t *out, unsigned max, unsigned *untracked)

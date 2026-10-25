@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SoC A broadcast FM receiver: the RDA5807-class tuner at 7-bit 0x11 on the bit-banged I2C pair PTA7 / PTA8
 // (docs/spec/hardware-gd88.md 9) as the board's hal_bcast_t. The chip, its register shadows and the HAL are shared
 // (drivers/bcast/rda5807m); this file is the wiring only. The tuner has no enable line; its audio goes through the

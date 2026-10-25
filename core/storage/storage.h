@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: MIT Copyright (c) 2026 The OpenDigitalRadio Authors Safe writes to the board's data flash
+// SPDX-License-Identifier: MIT Copyright (c) 2026 The RadioFoundry Authors Safe writes to the board's data flash
 // (docs/spec/settings-store.md 4): a sector rewrite goes through a journal (a copy of the new sector and a header
 // saying where it goes), so a power cut in the middle of the erase or the program is finished at the next boot instead
 // of leaving a half-erased codeplug sector. Shared by the codeplug editor and the open-firmware CPS shim. No RTOS here:
 // storage_lock() / storage_unlock() come from storage_rtos.c in the firmware and from the test in host tests.
-#ifndef ODR_STORAGE_H
-#define ODR_STORAGE_H
+#ifndef RFOUNDRY_STORAGE_H
+#define RFOUNDRY_STORAGE_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -80,14 +80,14 @@ const hal_flash_map_t *storage_map(void);
 // The staging area (hal_flash_map_t.staging_*) is shared by the TFTP codeplug write (docs/spec/tftp.md 4) and the fast
 // codeplug protocol (docs/spec/cps-fast.md 7). The first word of its first sector says whose commit record is there;
 // each one's boot resume leaves the other's record alone, and neither starts while the other holds the area
-#define STORAGE_STAGE_MAGIC_TFTP	0x5452444Fu	// "ODRT" in memory order
-#define STORAGE_STAGE_MAGIC_CPSF	0x4652444Fu	// "ODRF"
+#define STORAGE_STAGE_MAGIC_TFTP	0x5452444Fu	// bytes 4F 44 52 54 in memory order
+#define STORAGE_STAGE_MAGIC_CPSF	0x4652444Fu	// bytes 4F 44 52 46
 // The staging area's size in whole sectors when the board has a usable one (on the flash, clear of the settings, the
 // journal, both open-firmware images, the native area and the calibration window), else 0
 uint32_t storage_staging_size(void);
 
 // --- The native codeplug area (docs/spec/codeplug-native.md 4) ---
-// Its header sector starts with this magic ("ODRN", little endian). Nothing writes the area yet; the magic is what
+// Its header sector starts with this magic (bytes 4F 44 52 4E, little endian). Nothing writes the area yet; the magic is what
 // tells our data from another firmware's there
 #define STORAGE_NATIVE_MAGIC	0x4E52444Fu
 typedef enum {

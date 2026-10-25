@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // RadioID.net, the DMR ID registry, as a contacts source: users from its user.csv (downloaded by the user) or from its
 // public API for a few regions at a time. Users come out as {id, call, name, last, city, state, country}; the editor
 // picks regions, filters them, and formats each user's text for the DMR ID database or a contact name.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // PTT on a pin the programming cable's serial line shares (docs/spec/hardware-dm32.md 6.2). Every 0 bit the host sends
 // pulls the pin low, so a pin read low while bytes are arriving is serial data, not a press. A real press holds the line
 // low, which the UART sees as a break, never as a good byte. A low pin counts as pressed only once no good byte has

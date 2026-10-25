@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """tools/cps_fast.py against cpsSim (the fast codeplug protocol on the debug link, beside the CPS shim, on a simulated
 DM-1701 flash): INFO, a read that matches the CPS's, delta reads from a cache, staged and direct writes of only the
 changed blocks, bytes outside the regions kept, the command line, and the bytes on the wire against the CPS's. Run by

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The programming cable's UART as the host port (hal_stream.h): 115200 8N1 (docs/spec/hardware-dm32.md 3.1). UART0 or
 // UART1, as the board sets HRC_HOST_UART. Receive by interrupt into a ring buffer; transmit by
 // polling the TX FIFO (the host link task is the only writer). The set-up and the receive interrupt's loop are shared

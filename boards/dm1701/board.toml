@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The DM-1701's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
 # web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/dm1701/memory.ld.
 
@@ -10,7 +10,7 @@ model = "DM-1701"
 also = ["Retevis RT84"]
 kind = "handheld"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
-order = 1
+order = 2
 
 [docs]
 hardware = "docs/spec/hardware-dm1701.md"
@@ -43,7 +43,7 @@ family = "usb-dfu"
 keep_codec = true
 stock_download = "https://github.com/daniel5600/BAOFENG-DM1701-Original-Firmware"
 stock_versions = ["V02.06 CSV", "V02.06 noCSV", "V02.03 CSV", "V02.03 noCSV", "V02.02 CSV", "V02.01 CSV"]
-backup = { stock = "none", odr = "full", spi_size = 0x1000000 }
+backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 
 [flash.bootloader]
 steps = [
@@ -71,9 +71,9 @@ tested = false
 spi = { bus = 1, mode = 0, hz = 4500000 }
 
 # The codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after them
-# and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file odrflash merges the codec
-# from (tools/odrflash/odrflash/stockfw.py PROFILES); stock firmware keeps its code in sectors 7 and 8, which are the
-# application's now, so no stock version leaves it in place and odrflash merges it from the stock file
+# and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file rfoundry merges the codec
+# from (tools/rfoundry/rfoundry/stockfw.py PROFILES); stock firmware keeps its code in sectors 7 and 8, which are the
+# application's now, so no stock version leaves it in place and rfoundry merges it from the stock file
 [codec]
 tool = "codec_extract"
 stock = ["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The codeplug as the core sees it: channels, zones, contacts and RX group lists, whatever format is stored
 // underneath. This is the editing model the UI and the CPS share (docs/spec/codeplug-native.md 2).
 // Today it is stored in the open-firmware layout (docs/spec/open-firmware-cps.md 7), read on demand and written through
@@ -90,12 +90,19 @@ uint16_t codeplug_free_channel(void);
 // exists, index 0 replaces it with a stored zone). Channels that aren't stored are refused
 bool codeplug_set_zone(uint16_t index, const zone_t *z);
 bool codeplug_delete_zone(uint16_t index);
+// The index of the zone the last successful codeplug_set_zone wrote. An added zone takes the lowest free record, so
+// it can land before zones that were there (core/codeplug/zone_edit.c follows it)
+uint16_t codeplug_zone_written(void);
+// The index a zone added now (codeplug_set_zone with index == count) would take
+uint16_t codeplug_zone_add_index(void);
+// Channels one zone can hold: CODEPLUG_ZONE_MAX, or 16 in a codeplug with the older 16-channel zone records
+uint16_t codeplug_zone_capacity(void);
 // The radio name (the open-firmware callsign field, 8 characters), "" if none
 void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]);
 bool codeplug_set_radio_name(const char *name);
 // The two boot screen text lines the CPS writes (empty when unset or not in this codeplug)
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]);
-// The quick-key slots (EEPROM 0x7524, 10 x 2 bytes LE): ODR keeps the side key assignment there
+// The quick-key slots (EEPROM 0x7524, 10 x 2 bytes LE): RadioFoundry keeps the side key assignment there
 // (core/input/keyassign.h). Read: all 0 and false without an open-firmware codeplug. Write: the first edit stores the
 // built-in set, as other edits do
 #define CODEPLUG_QUICK_KEYS	10

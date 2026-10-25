@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Hotspot packet data from the host: MMDVM data frames collected into burst lists for the radio's data TX
  */
 
-#ifndef ODR_HOTSPOTDATA_H
-#define ODR_HOTSPOTDATA_H
+#ifndef RFOUNDRY_HOTSPOTDATA_H
+#define RFOUNDRY_HOTSPOTDATA_H
 
 #include <stdbool.h>
 #include <stdint.h>

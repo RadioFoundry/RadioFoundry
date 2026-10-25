@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Sub-audio math shared by the RF chip drivers (AT1846S, FD6818)
 #ifndef SUBAUDIO_H
 #define SUBAUDIO_H

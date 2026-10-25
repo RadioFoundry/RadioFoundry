@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // drivers/flash/spi_nand against a model of an SPI NAND with on-die ECC at the SPI bus (the commands the driver uses:
 // FF reset, 9F ID after a dummy byte, 0F / 1F get / set feature, 13 page read into the cache, 03 read from the cache
 // after a two-byte column and a dummy byte, 06 write enable, 02 / 84 program load (02 clears the cache first), 10

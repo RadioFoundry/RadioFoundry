@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Beacon triggers and SmartBeaconing (aprs_beacon.h)
 #include <string.h>
 #include "aprs/aprs_beacon.h"

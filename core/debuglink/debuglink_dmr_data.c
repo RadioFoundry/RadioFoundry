@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR data parts of the debug link (docs/spec/debuglink.md 3.7 dmr_data, 3.12 DMR_DATA): the service's state and
 // counters as key=value text, and requests (send an SMS, call alert, radio check, settings, read the inbox) for the
 // HIL tests. Requests go through dmr_data_api.h, so they are handled by the radio task at its next tick.
@@ -66,6 +66,7 @@ static void ip_section(const dmrDataStats_t *s, const dmrDataSettings_t *set, dl
 	for (int i = 0; i < DMR_IPC_RULES_MAX; i++) {
 		rule_text(t, i, set->ipConfirmedRule[i]);
 	}
+	dl_text(t, "ip.gateway_id=%u\n", (unsigned)set->ipGatewayId);
 	dl_text(t, "ip.busy=%u\nip.result=%s\n", dmrDataServiceIpBusy(), req_key(dmrDataServiceIpResult()));
 	dl_text(t, "ip.sap3=%u\nip.sap4=%u\nip.octets_saved=%u\nip.blocks_saved=%u\n", (unsigned)x.sap3,
 		(unsigned)x.sap4, (unsigned)x.octetsSaved, (unsigned)x.blocksSaved);
@@ -285,18 +286,27 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		set.ipConfirmedTries = a[2] ? a[2] : DMR_IPC_TRIES_DEFAULT;
 		set.ipConfirmedRule[0] = get32(a + 3);
 		set.ipConfirmedRule[1] = get32(a + 7);
+		if (n >= 15) {	// the off-net route's gateway ID, appended (an older request leaves it)
+			set.ipGatewayId = get32(a + 11) & 0xFFFFFFu;
+		}
 		dmr_data_set_settings(&set);
 		break;
 	}
 	case DL_DATA_OP_IP_SEND: {
 #if CONFIG_DMR_IP_GATEWAY
 		uint8_t l4[8 + DL_REQ_MAX];
-		uint16_t pl = (uint16_t)(n - 9u);
+		// Flags bit 1: an IPv4 destination u32 follows the ports (the off-net case: another address than the ID's)
+		uint16_t head = (n >= 5 && (a[4] & 2u)) ? 13u : 9u;
+		uint16_t pl = (uint16_t)(n - head);
 
-		if (n < 9 || pl > DL_REQ_MAX) {
+		if (n < head || pl > DL_REQ_MAX) {
 			st = DL_ST_BAD_ARG;
 			break;
 		}
+		bool group = (a[4] & 1u) != 0;
+		uint32_t dst = get32(a) & 0xFFFFFFu;
+		uint32_t dst_ip = (head == 13u) ? get32(a + 9) : dmrDataIdAddress(group, dst);
+
 		l4[0] = a[6];	// the ports little endian in the request, big endian in the UDP header
 		l4[1] = a[5];
 		l4[2] = a[8];
@@ -305,9 +315,9 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		l4[5] = (uint8_t)(8u + pl);
 		l4[6] = 0;
 		l4[7] = 0;
-		memcpy(l4 + 8, a + 9, pl);
-		st = ipGatewayIPToAir((a[4] & 1u) != 0, get32(a) & 0xFFFFFFu, DMR_IP_PROTO_UDP, l4, 8 + pl) ? DL_ST_OK
-													    : DL_ST_BUSY;
+		memcpy(l4 + 8, a + head, pl);
+		st = ipGatewayIPToAir(group, dst, IPGW_AIR_SRC_OURS, dst_ip, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, 8 + pl)
+			     ? DL_ST_OK : DL_ST_BUSY;
 #else
 		st = DL_ST_UNAVAILABLE;
 #endif

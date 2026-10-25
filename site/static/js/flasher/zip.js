@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A small zip writer and reader for backup bundles: stored or deflated entries (the browser's CompressionStream),
 // no zip64, so a bundle stays under 4 GB (a full backup is about 17 MB before compression).
 

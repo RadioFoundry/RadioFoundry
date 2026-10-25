@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SPI NAND: a TC58-family chip on SPI0 of each SoC, chip select PTA18 by GPIO (docs/spec/hardware-gd88.md 7).
-// The factory calibration copy is read at boot; with CONFIG_NAND_STORAGE the core's storage lives in ODR's own block
-// range (GD88_NAND_ODR_FIRST), the only blocks the driver will program or erase. One recursive mutex serializes every
+// The factory calibration copy is read at boot; with CONFIG_NAND_STORAGE the core's storage lives in RadioFoundry's own block
+// range (GD88_NAND_RFOUNDRY_FIRST), the only blocks the driver will program or erase. One recursive mutex serializes every
 // NAND transaction once the scheduler runs: the storage layer holds it across a whole read-modify-program sequence.
 // The geometry is the TC58CVG1S3HRAIJ's (2 Gbit, 2 KB pages, 64 pages a block), as in hardware-db25d.md.
 // TODO(gd88): unknown, needs a radio: the chip's geometry (the factory set-up reads it from the parameter page) and,
@@ -17,7 +17,7 @@
 #include "task.h"
 
 #define DIPLEX1_SPI0		(0x3Fu << 3)	// SPI0 SCLK / MOSI / MISO to the SPI master (0 = peripheral)
-#define SPI0_BAUDR		4u		// APB / 4: 21 MHz at ODR's 84 MHz, 9 MHz at the loader's 36 (the chip takes 133)
+#define SPI0_BAUDR		4u		// APB / 4: 21 MHz at RadioFoundry's 84 MHz, 9 MHz at the loader's 36 (the chip takes 133)
 
 static void chip_select(bool active)
 {
@@ -41,11 +41,11 @@ static spi_nand_t nand = {
 #if CONFIG_NAND_STORAGE
 	// Feature 0xB0: ECC on, high speed read off (the internal data move needs it off, and random page reads are
 	// faster without it), block protection commands off. Every block locked (0xA0 = 0x38) except during a program
-	// or erase. Writes only in ODR's range
+	// or erase. Writes only in RadioFoundry's range
 	.config = 0x10,
 	.lock_all = 0x38,
-	.write_first = GD88_NAND_ODR_FIRST,
-	.write_blocks = GD88_NAND_ODR_BLOCKS,
+	.write_first = GD88_NAND_RFOUNDRY_FIRST,
+	.write_blocks = GD88_NAND_RFOUNDRY_BLOCKS,
 #endif
 };
 static bool ready;
@@ -104,11 +104,11 @@ bool gd88_nand_read(uint32_t addr, void *buf, uint32_t len)
 }
 
 #if CONFIG_NAND_STORAGE
-// ODR's range as the sector layer sees it (nand_dev_t): blocks and pages from GD88_NAND_ODR_FIRST. The driver's
+// RadioFoundry's range as the sector layer sees it (nand_dev_t): blocks and pages from GD88_NAND_RFOUNDRY_FIRST. The driver's
 // write window refuses anything outside it as well
 #define PPB		64u
-#define PAGES		(GD88_NAND_ODR_BLOCKS * PPB)
-#define FIRST_PAGE	((uint32_t)GD88_NAND_ODR_FIRST * PPB)
+#define PAGES		(GD88_NAND_RFOUNDRY_BLOCKS * PPB)
+#define FIRST_PAGE	((uint32_t)GD88_NAND_RFOUNDRY_FIRST * PPB)
 #define MAX_CHUNKS	2u
 
 static bool dev_read(void *ctx, uint32_t page, uint16_t column, void *buf, uint32_t len)
@@ -147,11 +147,11 @@ static nand_result_t dev_program(void *ctx, uint32_t page, uint32_t src, const n
 static nand_result_t dev_erase(void *ctx, uint16_t block)
 {
 	(void)ctx;
-	if (!ready || block >= GD88_NAND_ODR_BLOCKS) {
+	if (!ready || block >= GD88_NAND_RFOUNDRY_BLOCKS) {
 		return NAND_ERROR;
 	}
 	gd88_nand_lock();
-	spi_nand_result_t r = spi_nand_erase(&nand, GD88_NAND_ODR_FIRST + block);
+	spi_nand_result_t r = spi_nand_erase(&nand, GD88_NAND_RFOUNDRY_FIRST + block);
 	gd88_nand_unlock();
 	return result(r);
 }
@@ -160,7 +160,7 @@ static bool dev_block_bad(void *ctx, uint16_t block, bool *bad)
 {
 	(void)ctx;
 	gd88_nand_lock();
-	bool ok = ready && block < GD88_NAND_ODR_BLOCKS && spi_nand_block_bad(&nand, GD88_NAND_ODR_FIRST + block, bad);
+	bool ok = ready && block < GD88_NAND_RFOUNDRY_BLOCKS && spi_nand_block_bad(&nand, GD88_NAND_RFOUNDRY_FIRST + block, bad);
 	gd88_nand_unlock();
 	return ok;
 }
@@ -168,9 +168,9 @@ static bool dev_block_bad(void *ctx, uint16_t block, bool *bad)
 static void dev_mark_bad(void *ctx, uint16_t block)
 {
 	(void)ctx;
-	if (ready && block < GD88_NAND_ODR_BLOCKS) {
+	if (ready && block < GD88_NAND_RFOUNDRY_BLOCKS) {
 		gd88_nand_lock();
-		spi_nand_mark_bad(&nand, GD88_NAND_ODR_FIRST + block);
+		spi_nand_mark_bad(&nand, GD88_NAND_RFOUNDRY_FIRST + block);
 		gd88_nand_unlock();
 	}
 }
@@ -188,7 +188,7 @@ static void dev_busy(void *ctx)
 const nand_dev_t gd88_nand_dev = {
 	.ctx = NULL,
 	.pages_per_block = PPB,
-	.blocks = GD88_NAND_ODR_BLOCKS,
+	.blocks = GD88_NAND_RFOUNDRY_BLOCKS,
 	.spare_size = 64,
 	.read = dev_read,
 	.program = dev_program,

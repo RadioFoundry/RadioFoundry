@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Motorola LRRP (core/dmr/dmrLrrp.c) on its own: requests from a location server over the air decoded (every request
 // ID form, triggers, the tokens that are skipped, document lengths shorter and longer than the datagram, malformed
 // uintvars, request IDs empty / too long / past the end, unknown tokens), the answers built within LRRP_MAX_DOCUMENT
-// for the longest request ID and every optional field, the distance; then mutated requests (fuzz.h; ODR_FUZZ_ITERS),
-// each decoded one answered within bounds. Vectors are the token layouts dmrLrrp.h names (odr_sdrbench's codec).
+// for the longest request ID and every optional field, the distance; then mutated requests (fuzz.h; RFOUNDRY_FUZZ_ITERS),
+// each decoded one answered within bounds. Vectors are the token layouts dmrLrrp.h names (rfoundry_sdrbench's codec).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

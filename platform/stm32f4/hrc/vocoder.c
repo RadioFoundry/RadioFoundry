@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The stock AMBE+2 codec run in place from flash (vocoder.h; the calls: docs/spec/codec-dm1701.md, "Codec state init
 // and calls"). The code reaches its tables through absolute addresses, which the merge keeps; where it moves the code it
 // rewrites what points into it. Without a valid descriptor and codec, present() is false and the radio is FM only.
@@ -153,7 +153,7 @@ static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_S
 	memcpy(pcm, pcmbuf, sizeof pcmbuf);
 }
 
-// The id tools/odrflash and the release manifests use for the build found
+// The id tools/rfoundry and the release manifests use for the build found
 static const char *profile(void)
 {
 	return present() ? prof->id : NULL;

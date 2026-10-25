@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """GD-88 checks no other radio has a use for (docs/spec/hardware-gd88.md 13), SoC A only, read only: no transmit, no
 bridge to SoC B, no restart. The display, build features and battery are test_health.py's, from board.toml [hil]. The
 GD-88 has no USB: the debug link runs on the programming cable's UART1 at 115200, so give the cable's port with
 --radio-port. A board's own test: skipped other_board on any other radio (tests/hil/hil_plugin.py)."""
 import re
 
-import odr_hil
-from odr_hil import diag_lines, find
+import rfoundry_hil
+from rfoundry_hil import diag_lines, find
 
 # ILI9341 variants (drivers/display/ili9341/ili9341.h): 0-3
 PANEL_VARIANTS = range(4)
@@ -20,7 +20,7 @@ def test_panel_variant(radio):
     assert m, line
     assert int(m.group(1)) in PANEL_VARIANTS, line
     if m.group(2) == "dflt":
-        odr_hil.skip("no_hw", f"no panel record in program flash, the default variant is in use ({line})")
+        rfoundry_hil.skip("no_hw", f"no panel record in program flash, the default variant is in use ({line})")
 
 
 def test_second_receiver(radio):

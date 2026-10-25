@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Data flash (external SPI NOR on most radios)
 #ifndef HAL_FLASH_H
 #define HAL_FLASH_H

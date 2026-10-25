@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // What both GD-88 SoCs share (docs/spec/hardware-gd88.md 11): each has its own BK4819 pair (receiver / transmitter and
 // the superhet LO) on the same pins, its own HR_C7000 modem and its own NAND. The radio, DMR and NAND code in
 // boards/gd88/common runs on both. What differs is how the RF and audio switches are reached: the TX / RX line PTB2,
@@ -91,11 +91,11 @@ void gd88_dmr_tx_stats(gd88_dmr_tx_stats_t *st);
 #endif
 
 // --- SPI NAND (nand_gd88.c) ---
-// ODR's own block range, the only blocks it programs or erases: 32 blocks (4 MB) from block 1920, far above the
+// RadioFoundry's own block range, the only blocks it programs or erases: 32 blocks (4 MB) from block 1920, far above the
 // factory areas (0x40000 .. 0x400000 and the image areas after it)
 // TODO(gd88): unknown, needs a radio: the chip's size and whether the top of it is used; as hardware-db25d.md
-#define GD88_NAND_ODR_FIRST	1920u
-#define GD88_NAND_ODR_BLOCKS	32u
+#define GD88_NAND_RFOUNDRY_FIRST	1920u
+#define GD88_NAND_RFOUNDRY_BLOCKS	32u
 bool gd88_nand_init(void);
 bool gd88_nand_ready(void);
 uint16_t gd88_nand_id(void);

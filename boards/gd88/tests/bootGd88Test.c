@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The GD-88 first stages against a simulated UART and GPIO: built twice. A (boot/gd88/boot.c, -DSOC_B=0): UART1, the
 // power latch, the RF serial chain cleared to all zero before anything else. B (boot/gd88b/boot.c, -DSOC_B=1): UART3,
 // the transmitter pins off, the long window its application asks for with the STAY word, and that word cleared.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Taps on the radio's audio path beyond the microphone and speaker of hal_audio.h: receive audio to the MCU and MCU
  * audio into the transmitter, for the consumers that need raw audio instead of the radio's own analog path:

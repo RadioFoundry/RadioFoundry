@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The data flash of an STM32F4 radio: a SPI NOR chip (drivers/flash/spi_nor) on one of the SPI blocks, as hal_flash_t,
 // with its security registers. One mutex serializes every transaction once the scheduler runs. A board adds
 // platform/stm32f4/spi_flash and drivers/flash/spi_nor to BOARD_DIRS, calls stm32_spi_flash_init() from board_init

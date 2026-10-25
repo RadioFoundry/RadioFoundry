@@ -21,8 +21,8 @@ what each level is for and where a new test goes.
 | Also | Command | Details |
 |---|---|---|
 | Coverage | `tools/coverage.sh` (needs gcovr) | `build/coverage/index.html`; [CI, Coverage](ci.md#coverage) |
-| Sanitizers | `make -C tests/host clean && make -C tests/host SANITIZE=1` | ASan and UBSan; any report fails the test. `ODR_CI_SANITIZE=1 tools/ci.sh` adds it to the host step |
-| Fuzzing | `ODR_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1` | Seeded mutation loops over the parsers of untrusted input (`tests/host/fuzz.h`); `ODR_FUZZ_SEED` varies the seed |
+| Sanitizers | `make -C tests/host clean && make -C tests/host SANITIZE=1` | ASan and UBSan; any report fails the test. `RFOUNDRY_CI_SANITIZE=1 tools/ci.sh` adds it to the host step |
+| Fuzzing | `RFOUNDRY_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1` | Seeded mutation loops over the parsers of untrusted input (`tests/host/fuzz.h`); `RFOUNDRY_FUZZ_SEED` varies the seed |
 
 ## Host tests
 
@@ -68,9 +68,9 @@ The UI runs unchanged on the host. Three tools use it:
 | `make -C tests/host ui-gallery` | Renders every gallery screen at every display class into `docs/ux/screens/<class>/`, and one contact sheet per class into `docs/ux/screens/sheets/<class>.png` |
 | `make -C tests/host ui-sheets [GEOM=128x64]` | The contact sheets only, into `tests/host/out/sheets/` (not committed): every gallery screen at 2x under its name on one page, to audit a layout change at a glance. `GEOM` takes any geometry `--geom` does |
 
-The display classes are `160x120i5` (160x120 with 5 px hidden left and right, as on the DM-1701), `160x128`,
-`240x320i10x5` (the DM-32: 16 colors, anti-aliased fonts one size up, 10 px hidden left and right and 5 px top and bottom),
-`128x64`, `240x320` and `320x240` (the GD-88: landscape, the larger text); [the wireframes README](../ux/wireframes/README.md) says which radio uses which.
+The display classes are `160x120i5` (160x120 with 5 px hidden left and right), `160x128`,
+`240x320i10x5` (16 colors, anti-aliased fonts one size up, 10 px hidden left and right and 5 px top and bottom),
+`128x64`, `240x320` and `320x240` (landscape); [the wireframes README](../ux/wireframes/README.md) says which radio uses which.
 The user manual uses the `160x120i5` images.
 
 After a UI change, run `ui-gallery` and commit the PNGs with the change, so the review shows the difference. The
@@ -105,7 +105,7 @@ result in `docs/testing/results/` ([tests/hil/README.md](../../tests/hil/README.
 
 A second station for on-air tests: a DMR modem, an RTL-SDR and the bench scripts in `tools/bench/`. It sends calls,
 texts and data to the radio and checks what the radio transmits (IDs, color code, slot timing, ramps, carrier offset,
-FM tones and deviation). Its host and paths come from `ODR_SDR_BENCH_*` environment variables, never from files in
+FM tones and deviation). Its host and paths come from `RFOUNDRY_SDR_BENCH_*` environment variables, never from files in
 the repository. Setup and the manual cases: [docs/testing/dmr-bench.md](../testing/dmr-bench.md).
 
 A bug found on the bench should end as a host test, so it stays fixed without the bench.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SoC A pin map by GPIO pin index (0-31 bank A, 32-63 B, 64-95 C; docs/spec/hardware-gd88.md 9). The RF chips'
 // bus and the NAND's chip select are the same on both SoCs (common/gd88_rf.h)
 #ifndef GD88_PINS_H

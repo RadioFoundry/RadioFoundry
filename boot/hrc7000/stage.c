@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C7000 first stages' common part (boot/README.md): it answers on a UART the way the HR_C7000 serial boot ROM
 // answers on UART0, so stub/stubtool.py loads a stub through it exactly as on a radio whose boot ROM
 // answers on its cable. Runs from XIP

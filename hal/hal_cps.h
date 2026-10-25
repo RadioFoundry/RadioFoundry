@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT Copyright (c) 2026 The OpenDigitalRadio Authors What the open-firmware CPS protocol shim
+// SPDX-License-Identifier: MIT Copyright (c) 2026 The RadioFoundry Authors What the open-firmware CPS protocol shim
 // (core/cps, docs/spec/open-firmware-cps.md) needs to know about the radio beyond the flash map: its identity in the
 // radio info, and the memories behind the read-only areas. Optional: board.cps is NULL on radios without the shim
 #ifndef HAL_CPS_H

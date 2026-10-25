@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Stock TYT-family codeplugs (docs/spec/codeplug-stock-tyt.md): telling the layouts apart, reading the stock records,
 // the conversion into the editing model, and the editor's and the Tools page's handling of such files. Every fixture
 // is built here from the spec; no radio's data.
@@ -149,7 +149,7 @@ test("classify: a stock MD-UV380 codeplug, an MD-380 image and .rdt, blank, unkn
 	assert.equal(classify(noise).layout, "unknown");
 });
 
-test("classify: an ODR codeplug wins over stock bytes it hasn't overwritten", () => {
+test("classify: a RadioFoundry codeplug wins over stock bytes it hasn't overwritten", () => {
 	const m = empty();
 	m.general.dmrId = 3100123;
 	m.general.radioName = "N0CALL";
@@ -222,10 +222,10 @@ test("importStock: over the open-firmware limits, the records others refer to ar
 	assert.deepEqual(m.zones[0].channels.map((c) => c.name), ["Ch1"]);
 });
 
-test("importStock: after ODR erased its settings area, the zones are gone and nothing reads as garbage", () => {
+test("importStock: after RadioFoundry erased its settings area, the zones are gone and nothing reads as garbage", () => {
 	const s = uv380();
 	s.b.fill(0xFF, 0x11000, 0x1B000);
-	s.b.fill(0x5A, 0x11000, 0x11100);	// a settings record ODR wrote there (settings-store.md 2)
+	s.b.fill(0x5A, 0x11000, 0x11100);	// a settings record RadioFoundry wrote there (settings-store.md 2)
 	s.b.set([0x4F, 0x53, 0x45, 0x54], 0x11000);
 	assert.equal(classify(s.b).layout, "tyt-uv380");
 	const m = empty();
@@ -237,7 +237,7 @@ test("importStock: after ODR erased its settings area, the zones are gone and no
 
 // --- The editor's Open and the Tools page ---
 
-test("openFile: a stock dump or backup converts; an ODR image opens; other layouts are foreign", async () => {
+test("openFile: a stock dump or backup converts; a RadioFoundry image opens; other layouts are foreign", async () => {
 	const s = uv380();
 	const dump = new Uint8Array(0x1000000).fill(0xFF);
 	dump.set(s.b);
@@ -248,7 +248,7 @@ test("openFile: a stock dump or backup converts; an ODR image opens; other layou
 	assert.equal(decode(f.image).channels.length, 3);
 	assert.equal(f.model.channels[0].name, "Repeater");
 
-	const meta = { radio: { board: "dm1701", name: "Baofeng DM-1701" }, firmware_now: { kind: "odr" }, firmware_before: { kind: "stock" } };
+	const meta = { radio: { board: "dm1701", name: "Baofeng DM-1701" }, firmware_now: { kind: "rfoundry" }, firmware_before: { kind: "stock" } };
 	const zipped = await makeBundle(meta, [{ file: "spi-flash.bin", what: "spi-flash", addr: 0, data: dump, complete: true }]);
 	const b = await openFile("backup.zip", zipped);
 	assert.deepEqual([b.kind, b.from, b.board], ["converted", "tyt-uv380", "dm1701"]);
@@ -259,7 +259,7 @@ test("openFile: a stock dump or backup converts; an ODR image opens; other layou
 	rdt.set(md.b, 549);
 	assert.deepEqual([(await openFile("x.rdt", rdt)).kind, (await openFile("x.bin", md.b)).kind], ["converted", "converted"]);
 
-	assert.equal((await openFile("odr.bin", f.image.bytes)).kind, "image");
+	assert.equal((await openFile("rfoundry.bin", f.image.bytes)).kind, "image");
 	assert.equal((await openFile("blank.bin", new Uint8Array(0x120000).fill(0xFF))).kind, "image");
 	assert.deepEqual(await openFile("x.rdt", new Uint8Array(RDT_UV380)), { kind: "foreign", format: "tyt-uv380-rdt", board: null });
 	let x = 7;
@@ -267,13 +267,13 @@ test("openFile: a stock dump or backup converts; an ODR image opens; other layou
 	assert.deepEqual(await openFile("noise.bin", noise), { kind: "foreign", format: "unknown", board: null });
 });
 
-test("Tools page: a stock dump and an MD-380 file convert to an ODR codeplug image and to qdmr YAML", async () => {
+test("Tools page: a stock dump and an MD-380 file convert to a RadioFoundry codeplug image and to qdmr YAML", async () => {
 	const dump = new Uint8Array(0x1000000).fill(0xFF);
 	dump.set(uv380().b);
 	assert.equal(detect(dump, "spi.bin").id, "tyt-stock");
 	const [toImg, toYaml] = convertersFor("tyt-stock");
 	const img = await toImg.convert(dump, "spi.bin");
-	assert.equal(img.name, "spi-odr.bin");
+	assert.equal(img.name, "spi-rfoundry.bin");
 	assert.equal(classify(img.data).layout, "openfw");
 	assert.deepEqual(decode(CodeplugImage.from(img.data)).channels.map((c) => c.name), ["Repeater", "Simplex", "Listen"]);
 	const y = new TextDecoder().decode((await toYaml.convert(dump, "spi.bin")).data);
@@ -287,8 +287,8 @@ test("Tools page: a stock dump and an MD-380 file convert to an ODR codeplug ima
 	await assert.rejects(convertersFor("tyt-raw")[0].convert(new Uint8Array(0x40000), "x.bin"), /no stock codeplug/);
 	assert.equal(convertersFor("tyt-uv380-rdt").length, 0);
 
-	const meta = { radio: { board: "dm1701", name: "Baofeng DM-1701" }, firmware_now: { kind: "odr" } };
+	const meta = { radio: { board: "dm1701", name: "Baofeng DM-1701" }, firmware_now: { kind: "rfoundry" } };
 	const zipped = await makeBundle(meta, [{ file: "spi-flash.bin", what: "spi-flash", addr: 0, data: dump, complete: true }]);
-	const fromBackup = await convertersFor("odr-backup")[0].convert(zipped);
+	const fromBackup = await convertersFor("rfoundry-backup")[0].convert(zipped);
 	assert.equal(classify(fromBackup.data).layout, "openfw");
 });

@@ -1,6 +1,6 @@
 # The second receiver's link
 
-A radio with two SoCs, each with its own receiver, runs ODR on both. The main SoC (A) has the UI, PTT and
+A radio with two SoCs, each with its own receiver, runs RadioFoundry on both. The main SoC (A) has the UI, PTT and
 the transmitter; the other (B) is a second receiver. They talk over a UART with this protocol (`core/rx2/rx2_link.c`).
 The radio core sees B as `board.rx2` ([radio-features.md 2.2](radio-features.md#22-a-second-receiver)).
 

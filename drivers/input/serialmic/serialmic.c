@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Hand mic key frames on a shared UART line (serialmic.h)
 #include <string.h>
 #include "serialmic.h"

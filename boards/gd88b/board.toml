@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The GD-88's SoC B (tools/boards.py): the radio's second receiver, a firmware of its own that the GD-88 (boards/gd88)
 # flashes through SoC A's bridge. It is part of that radio, not a radio of its own: the site and the generated
 # tables list only the GD-88. Build facts stay in board.mk and config.mk, the memory layout in boards/gd88b/memory.ld.
@@ -34,7 +34,7 @@ release = "testing"
 family = "serial-iap"
 keep_codec = false
 stock_versions = []
-backup = { stock = "full", odr = "full", spi_size = 0 }
+backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 
 [flash.bootloader]
 steps = [

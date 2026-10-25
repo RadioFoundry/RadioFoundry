@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * USRP voice over UDP on the radio's network address (CONFIG_NET_USRP, docs/spec/usb-audio.md 4.2 and 5): the
  * receiver's audio to a peer (AllStarLink's USRP channel driver, DVSwitch Analog_Bridge, a bridge or our reference
@@ -10,8 +10,8 @@
  * frame, or at the host's address on the USB link until one has. These are the port pair AllStar and Analog_Bridge
  * set-ups commonly use, seen from the radio's side (the peer sends to 34001 and listens on 32001).
  */
-#ifndef ODR_USRP_NET_H
-#define ODR_USRP_NET_H
+#ifndef RFOUNDRY_USRP_NET_H
+#define RFOUNDRY_USRP_NET_H
 
 #include <stdbool.h>
 #include <stdint.h>

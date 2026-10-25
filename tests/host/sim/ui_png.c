@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The simulator's frame buffer as a PNG (zlib-compressed; 1 bpp panels as a 2-color palette image, RGB565 as RGB),
 // and contact sheets of many screens as one palette PNG
 #include <stdio.h>

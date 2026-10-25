@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 (Dahua DH4570) SoC with a C-SKY CK803S core: register map and platform services for boards built on it
 // (docs/spec/hardware-dm32.md 1-4). The modem / baseband registers are the driver's (drivers/modem/hrc7000).
 #ifndef PLATFORM_HRC7000_H
@@ -274,9 +274,9 @@ uint32_t hrc_micros(void);
 void hrc_soft_reset(void) __attribute__((noreturn));
 
 // Runtime RAM-monitor (stub) entry (CONFIG_STUB_ENTRY, docs/spec/hardware-dm32.md 17.2). The host loads the stub here
-// and ODR jumps to it without a power cycle. The span is the codec window at the top of SRAM, which ODR never links
+// and RadioFoundry jumps to it without a power cycle. The span is the codec window at the top of SRAM, which RadioFoundry never links
 // anything into (boards/dm32/memory.ld: 0x43A00..0x58000); the codec is parked before the load, so the whole window is free. Base is
-// 4 KB aligned inside it. The universal stub copies itself to 0x30000 (ODR's RAM, dead by then), clear of this span. A
+// 4 KB aligned inside it. The universal stub copies itself to 0x30000 (RadioFoundry's RAM, dead by then), clear of this span. A
 // board with another layout sets its own span in board.mk or config.mk
 #ifndef HRC_STUB_BASE
 #define HRC_STUB_BASE		0x00044000u
@@ -287,8 +287,19 @@ void hrc_soft_reset(void) __attribute__((noreturn));
 // codec's tables (from 0x18000800, at most to 0x18004F90 in any stock image) and the microphone PCM (0x18000000)
 // don't reach (hardware-dm32.md 2: free for software). Main SRAM is the bootloader's and the start-up's
 #define HRC_CRASH_STORE		0x18007F00u	// 256 bytes to the end, 0x18008000
-// hrc_fault's capture: the frame is hrc_fault_entry's (r0..r13, r15, EPSR, EPC); does not return
-void hrc_crash_fault(const uint32_t *frame, uint32_t vector) __attribute__((noreturn));
+#define HRC_CRASH_BOOT		0x18007EF0u	// the restart cause's words (crash_boot_t), just below the record; stub/
+						// stubtool.py's --boot reset writes .soft (CRASH_SOFT_MARK) by this address
+// Mark the reset to come as software's (hal_crash_soft_mark), by address: the RAM functions that reset can't call into
+// flash
+#if CONFIG_CRASH_LOG
+#define HRC_CRASH_SOFT_MARK()	(*(volatile uint32_t *)(HRC_CRASH_BOOT + 4u) = 0x54464F53u)	// crash_boot_t.soft
+#else
+#define HRC_CRASH_SOFT_MARK()	((void)0)
+#endif
+// The capture for a fault (hrc_fault: kind CRASH_KIND_FAULT, cause the vector) or a hang (hal_crash_hang: the tick's
+// interrupted task). The frame is the entries' (r0..r13, r15, EPSR, EPC): hrc_fault_entry's or hrc_irq_entry's. Does
+// not return
+void hrc_crash_frame(const uint32_t *frame, uint8_t kind, uint32_t cause) __attribute__((noreturn));
 
 // Code that must not run from XIP flash (flash controller set-up, the modem slot interrupts): the linker script
 // places .ramfunc in SRAM

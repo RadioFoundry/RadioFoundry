@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The sector journal (storage.h, docs/spec/settings-store.md 4). Two erase units at map->journal_addr:
 //   J0  header: magic, target address, CRC-32 of the copy, header CRC, then a "done" byte (0xFF = pending)
 //   J1  the new content of the target sector

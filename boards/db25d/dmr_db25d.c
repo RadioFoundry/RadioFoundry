@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D DMR: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the main BK4819 as the RF
 // front end (docs/spec/hardware-db25d.md 4.5, 9).
 //
@@ -183,7 +183,7 @@ static void rf_burst_start(void)
 	}
 }
 
-// RF RX interrupt (ISR). The stock firmware ends each burst here; ODR's engine ends it at the next slot tick too, so
+// RF RX interrupt (ISR). The stock firmware ends each burst here; RadioFoundry's engine ends it at the next slot tick too, so
 // whichever comes first wakes the TX-off, and the hold in it keeps the stock timing either way
 static void isr_rfrx(void)
 {

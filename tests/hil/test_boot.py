@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The radio is up and the debug link works: version and features, screenshot geometry, no stalls, error replies."""
 import struct
 import time
 
 import pytest
 
-from odr_hil import DebugLinkError, as_int
+from rfoundry_hil import DebugLinkError, as_int
 
 
 @pytest.mark.feature("debuglink")
@@ -91,7 +91,7 @@ def test_unknown_command_and_bad_crc(radio):
         radio.link.request(0x7E)
     assert e.value.status == 1
     # A frame with a broken CRC gets an error frame (command 0xFF, status 5)
-    from odr_debug import frame
+    from rfoundry_debug import frame
     f = bytearray(frame(0x01, 0x33, b"x"))
     f[-1] ^= 0xFF
     radio.link.s.write(bytes(f))

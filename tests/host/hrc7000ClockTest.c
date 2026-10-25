@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 clock arithmetic (platform/hrc7000/clock_math.h): the PLL words clock.c writes and the rates they give, the
 // UART divisor at every APB clock the boards run, and the bit-bang phase length. A board behind an IAP loader runs 168 / 84 MHz and hands
 // over to the runtime stub (built for 72 / 36 MHz) with the loader's clocks restored.

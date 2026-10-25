@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// GD-88 data flash for the core (hal_flash_t): 4 KB sectors with NOR semantics over ODR's own NAND block range
+// Copyright (c) 2026 The RadioFoundry Authors
+// GD-88 data flash for the core (hal_flash_t): 4 KB sectors with NOR semantics over RadioFoundry's own NAND block range
 // (drivers/flash/nand_sectors, docs/spec/nand-sectors.md). Every call holds the NAND's mutex
 // for the whole operation: a rewrite reads the old pages, then moves them inside the chip.
 #include "gd88.h"
@@ -31,9 +31,9 @@ static const hal_flash_map_t map = {
 
 // The layer's RAM: 2 bytes per sector, 6 per block (1408 bytes)
 static uint16_t sector_map[SECTORS];
-static uint8_t block_live[GD88_NAND_ODR_BLOCKS];
-static uint8_t block_flags[GD88_NAND_ODR_BLOCKS];
-static uint32_t block_order[GD88_NAND_ODR_BLOCKS];
+static uint8_t block_live[GD88_NAND_RFOUNDRY_BLOCKS];
+static uint8_t block_flags[GD88_NAND_RFOUNDRY_BLOCKS];
+static uint32_t block_order[GD88_NAND_RFOUNDRY_BLOCKS];
 static nand_sectors_t layer = {
 	.dev = &gd88_nand_dev,
 	.sectors = SECTORS,

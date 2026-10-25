@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SoC B first stage (boot/README.md): drives B's transmitter off, then offers the boot ROM's handshake on UART3,
-// B's link to A (boot/hrc7000/stage.c). B has no cable of its own: the host reaches this stage through ODR on A, which
+// B's link to A (boot/hrc7000/stage.c). B has no cable of its own: the host reaches this stage through RadioFoundry on A, which
 // bridges the programming cable to the link (docs/spec/rx2-link.md 4). Without a host it goes on to the application.
 //
 // The window: ten offers at power-on, as on the other stages. When B's application wants the stub (RX2_STUB from A), it

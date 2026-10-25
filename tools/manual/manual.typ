@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 //
 // Pandoc template for the PDF user manual (tools/build_manual.sh): a title page, the contents, one chapter per
 // docs/user file, each starting on a new page. Uses only the fonts typst carries, so the output is the same on every
@@ -19,7 +19,7 @@
   footer: context {
     if counter(page).get().first() > 1 {
       set text(size: 8.5pt, fill: luma(110))
-      [OpenDigitalRadio User Manual, $subtitle$]
+      [RadioFoundry User Manual, $subtitle$]
       h(1fr)
       counter(page).display("1")
     }

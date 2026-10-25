@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # A first stage in front of the application (boot/README.md), for a board whose board.mk sets BOOT_STAGE (the
 # directory under boot/), BOOT_SIZE (the stage's flash sector; the application starts right after it), BOOT_DEFS and
 # BOOT_SIGNATURE (the bytes its loader checks for, hex). The stage sits at APP_BASE: its linker script gets the address

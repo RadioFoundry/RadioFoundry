@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SoC A serial output chain (docs/spec/hardware-gd88.md 9.3): 64 outputs behind three pins. A write takes the
 // latch (PTB3) low, shifts the 64 bits with data on PTB1 and a PTB0 clock pulse per bit, bit 0 of byte 0 first, then
 // takes the latch high again. A shadow keeps the outputs, and every write sends all of them. All zero is the power-on

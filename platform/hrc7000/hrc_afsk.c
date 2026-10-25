@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 APRS AFSK (hrc_afsk.h, hal_afsk.h, docs/spec/aprs.md 5).
 //
 // Transmit: the tones as 8 kHz PCM (afsk_mod, phase continuous) through the prompt FIFO, which feeds the FM modulator

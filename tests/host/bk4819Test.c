@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // BK4819 driver: frames on two fake chips that share clock and data and have their own enables (the DB25-D's main
 // and LO transceivers), the init and LO sequences, and the pure helpers (docs/spec/hardware-db25d.md 4)
 #include <stdio.h>

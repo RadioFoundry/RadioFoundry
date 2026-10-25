@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* HR_C7000 first stage entry (boot/<radio>/boot.c, stage.c; boot/README.md): every HR_C7000 board with a first stage,
  * on each of its SoCs. The IAP
  * loader jumps to 0x0300C000, the first byte of this sector. On a normal power-on it does so only if the application's
@@ -8,7 +8,7 @@
  * same 6 bytes start this stage, with a harmless PSR (supervisor, interrupts off) in that literal.
  *
  * BOOT_WINDOW = 0: no application behind the stage, the handshake is offered forever.
- * BOOT_WINDOW > 0: boot_resume jumps to APP_RESUME, the application's first byte (ODR at 0x0300D000 sets up PSR,
+ * BOOT_WINDOW > 0: boot_resume jumps to APP_RESUME, the application's first byte (RadioFoundry at 0x0300D000 sets up PSR,
  * stack and RAM itself, platform/hrc7000/crt0.S). */
 	.section .entry, "ax"
 	.align	2

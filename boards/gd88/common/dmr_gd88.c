@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 DMR, either SoC: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the main BK4819
 // as the RF front end (docs/spec/hardware-gd88.md 11), the scheme of hardware-db25d.md 4.
 //
@@ -178,7 +178,7 @@ static void rf_burst_start(void)
 	}
 }
 
-// RF RX interrupt (ISR). Each burst ends here; ODR's engine ends it at the next slot tick too, so whichever comes
+// RF RX interrupt (ISR). Each burst ends here; RadioFoundry's engine ends it at the next slot tick too, so whichever comes
 // first wakes the TX-off, and the hold in it keeps the timing either way
 static void isr_rfrx(void)
 {

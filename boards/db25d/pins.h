@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D pin map by GPIO pin index (0-31 bank A, 32-63 B, 64-95 C; docs/spec/hardware-db25d.md 3)
 #ifndef DB25D_PINS_H
 #define DB25D_PINS_H

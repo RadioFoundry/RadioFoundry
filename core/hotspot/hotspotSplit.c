@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The split duplex extension of the MMDVM hotspot (see hotspotSplit.h; docs/spec/split-duplex.md)
 #if CONFIG_HOTSPOT_SPLIT	// the whole file
 
@@ -150,7 +150,7 @@ static void reply(uint8_t sub, uint8_t result, const uint8_t *data, uint8_t len)
 	if ((data != NULL) && (len > 0)) {
 		memcpy(p + 2, data, len);
 	}
-	mmdvm_send(MMDVM_ODR_SPLIT, p, (uint8_t)(2 + len));
+	mmdvm_send(MMDVM_RFOUNDRY_SPLIT, p, (uint8_t)(2 + len));
 }
 
 static uint8_t roles_offered(void)
@@ -942,7 +942,7 @@ static void rx_meta(const dmr_burst_t *b, bool timed, uint32_t t_slot, int8_t la
 	put16(d + 10, (uint16_t)b->rssi_dbm);
 	put16(d + 12, sp.meta_seq);
 	sp.meta_seq++;
-	mmdvm_send(MMDVM_ODR_SPLIT, p, sizeof(p));
+	mmdvm_send(MMDVM_RFOUNDRY_SPLIT, p, sizeof(p));
 }
 
 static void rx_burst(const dmr_burst_t *b, uint32_t arg, uint32_t now_ms)
@@ -1492,7 +1492,7 @@ static bool ext_frame(uint8_t command, const uint8_t *p, uint8_t len, uint32_t n
 
 	sp.now_ms = now_ms;
 	sp.last_host_ms = now_ms;
-	if (command == MMDVM_ODR_SPLIT) {
+	if (command == MMDVM_RFOUNDRY_SPLIT) {
 		split_command(p, len, t_rx, now_ms);
 		return true;
 	}

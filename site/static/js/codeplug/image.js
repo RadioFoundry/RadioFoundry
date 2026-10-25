@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The codeplug as one flat image: file offset = the STM32 wire address (docs/spec/open-firmware-cps.md 7.1), the
 // EEPROM image at 0 and the flash image at +0x20000, as tools/cps_client.py and backups store it. A radio whose
 // codeplug sits elsewhere in its data flash (the DM-32UV at 0x700000) adds its base on the wire only. The image keeps

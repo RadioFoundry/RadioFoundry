@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The minimal TCP (core/net/tcp.c) against a scripted peer: handshakes both ways, data both ways within the window and
 // the MSS, retransmission with backoff, zero window probes, in-order receive, RST for unknown ports, RFC 5961
 // challenge ACKs, orderly close from either side, TIME_WAIT reuse, slot exhaustion, keepalive. Every segment is also

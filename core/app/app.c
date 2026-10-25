@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The application: the start-up task brings up the board and starts the core tasks, then stays on as housekeeping
 // (power switch watch).
 //

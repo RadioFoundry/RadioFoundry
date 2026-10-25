@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The channel knob (docs/spec/hardware-dm1701.md 10.3, drivers/input/quadrature).
 
 test_knob_direction runs unattended: detents injected over the debug link go through the same UI code as the knob's,
@@ -10,8 +10,8 @@ import time
 
 import pytest
 
-from odr_hil import as_int, skip
-from odr_debug import DOWN
+from rfoundry_hil import as_int, skip
+from rfoundry_debug import DOWN
 
 
 def link(r):

@@ -1,0 +1,563 @@
+-- SPDX-License-Identifier: MIT
+-- Copyright (c) 2026 The RadioFoundry Authors
+--
+-- The RadioFoundry enterprise MIB (docs/spec/snmp.md). The enterprise number 32473 is the one IANA reserves for
+-- documentation (RFC 5612): a placeholder until the project has its own Private Enterprise Number. When it is
+-- assigned, change it here, in core/snmp/snmpMib.h (RFOUNDRY_SNMP_PEN) and in tools/rfoundry_snmp.py (PEN).
+
+RFOUNDRY-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, NOTIFICATION-TYPE, enterprises, Integer32, Unsigned32, Counter32, TimeTicks
+        FROM SNMPv2-SMI
+    DisplayString, TruthValue
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP, NOTIFICATION-GROUP
+        FROM SNMPv2-CONF;
+
+rfoundryMIB MODULE-IDENTITY
+    LAST-UPDATED "202610110000Z"
+    ORGANIZATION "The RadioFoundry Authors"
+    CONTACT-INFO "https://github.com/RadioFoundry"
+    DESCRIPTION
+        "Objects and notifications of a radio running RadioFoundry firmware: identity, power, the channel and
+        the DMR call state, the DMR data service, the USB network link and the agent's own settings."
+    REVISION     "202610110000Z"
+    DESCRIPTION  "First version."
+    ::= { rfoundry 2 }
+
+rfoundry                OBJECT IDENTIFIER ::= { enterprises 32473 }
+rfoundryProducts        OBJECT IDENTIFIER ::= { rfoundry 1 }
+-- sysObjectID of every RadioFoundry radio (the board is in rfoundryBoard)
+rfoundryRadioProduct    OBJECT IDENTIFIER ::= { rfoundryProducts 1 }
+
+rfoundryNotifications   OBJECT IDENTIFIER ::= { rfoundryMIB 0 }
+rfoundryObjects         OBJECT IDENTIFIER ::= { rfoundryMIB 1 }
+rfoundryConformance     OBJECT IDENTIFIER ::= { rfoundryMIB 2 }
+
+rfoundryIdentity        OBJECT IDENTIFIER ::= { rfoundryObjects 1 }
+rfoundryPower           OBJECT IDENTIFIER ::= { rfoundryObjects 2 }
+rfoundryRadio           OBJECT IDENTIFIER ::= { rfoundryObjects 3 }
+rfoundryDmr             OBJECT IDENTIFIER ::= { rfoundryObjects 4 }
+rfoundryData            OBJECT IDENTIFIER ::= { rfoundryObjects 5 }
+rfoundryNet             OBJECT IDENTIFIER ::= { rfoundryObjects 6 }
+rfoundryAgent           OBJECT IDENTIFIER ::= { rfoundryObjects 7 }
+rfoundryEvent           OBJECT IDENTIFIER ::= { rfoundryObjects 8 }
+
+-- Identity
+
+rfoundryDmrId OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The radio's own DMR ID (the settings' override, else the codeplug's)."
+    ::= { rfoundryIdentity 1 }
+
+rfoundryCallsign OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..16))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The radio name or callsign, the same as sysName."
+    ::= { rfoundryIdentity 2 }
+
+rfoundryBoard OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The radio model the firmware was built for (dm1701, md380, ...)."
+    ::= { rfoundryIdentity 3 }
+
+rfoundryFirmware OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The firmware version: its git commit, with -dirty for a modified tree."
+    ::= { rfoundryIdentity 4 }
+
+-- Power
+
+rfoundryBatteryVoltage OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "millivolts"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The battery voltage."
+    ::= { rfoundryPower 1 }
+
+rfoundryBatteryPercent OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..100)
+    UNITS       "percent"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The battery charge estimate, 0 when unknown."
+    ::= { rfoundryPower 2 }
+
+rfoundryBatteryState OBJECT-TYPE
+    SYNTAX      INTEGER { ok(1), low(2), critical(3) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The battery monitor's level: low warns, critical refuses to transmit."
+    ::= { rfoundryPower 3 }
+
+-- The channel
+
+rfoundryRadioState OBJECT-TYPE
+    SYNTAX      INTEGER { idle(1), receiving(2), transmitting(3), transmitDenied(4) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "What the radio is doing on its channel."
+    ::= { rfoundryRadio 1 }
+
+rfoundryRssi OBJECT-TYPE
+    SYNTAX      Integer32
+    UNITS       "dBm"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The received signal strength on the channel."
+    ::= { rfoundryRadio 2 }
+
+rfoundryMode OBJECT-TYPE
+    SYNTAX      INTEGER { fm(1), dmr(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The channel's mode."
+    ::= { rfoundryRadio 3 }
+
+rfoundryZoneName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..16))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The current zone."
+    ::= { rfoundryRadio 4 }
+
+rfoundryChannelNumber OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The codeplug channel number, 0 in the VFO."
+    ::= { rfoundryRadio 5 }
+
+rfoundryChannelName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..16))
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The channel's name (VFO in the VFO)."
+    ::= { rfoundryRadio 6 }
+
+rfoundryRxFrequency OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "Hz"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The receive frequency."
+    ::= { rfoundryRadio 7 }
+
+rfoundryTxFrequency OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "Hz"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The transmit frequency."
+    ::= { rfoundryRadio 8 }
+
+rfoundryTxPowerLevel OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The transmit power level in effect, 0 the lowest of the radio's levels."
+    ::= { rfoundryRadio 9 }
+
+rfoundryTxPowerName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The name of that power level."
+    ::= { rfoundryRadio 10 }
+
+rfoundryColorCode OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..15)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The DMR color code. No instance on an FM channel."
+    ::= { rfoundryRadio 11 }
+
+rfoundryTimeslot OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..2)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The DMR timeslot. No instance on an FM channel."
+    ::= { rfoundryRadio 12 }
+
+rfoundryTalkTarget OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Where PTT transmits to now: a talkgroup or a radio ID. No instance on an FM channel."
+    ::= { rfoundryRadio 13 }
+
+rfoundryTalkTargetType OBJECT-TYPE
+    SYNTAX      INTEGER { group(1), private(2) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Whether rfoundryTalkTarget is a talkgroup or a radio. No instance on an FM channel."
+    ::= { rfoundryRadio 14 }
+
+rfoundryRole OBJECT-TYPE
+    SYNTAX      INTEGER { radio(1), hotspot(2), sfr(3), splitTx(4), splitRx(5) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The radio's role: a radio on its channel, an MMDVM hotspot, the hotspot's single frequency repeater mode,
+        or the transmit or receive half of a split duplex repeater."
+    ::= { rfoundryRadio 15 }
+
+-- DMR calls
+
+rfoundryCallState OBJECT-TYPE
+    SYNTAX      INTEGER { idle(1), receiving(2), receivingOther(3), transmitWait(4), transmitting(5),
+                          transmitEnding(6), transmittingData(7) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The DMR side: receivingOther is a call on our slot not played (another talkgroup, encrypted);
+        transmitWait is PTT held while the channel or repeater is not ready."
+    ::= { rfoundryDmr 1 }
+
+rfoundryCallSource OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The current call's source ID, 0 when idle."
+    ::= { rfoundryDmr 2 }
+
+rfoundryCallDestination OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The current call's destination (talkgroup or radio), 0 when idle."
+    ::= { rfoundryDmr 3 }
+
+rfoundryLastSource OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The last call heard: its source ID, 0 if none yet."
+    ::= { rfoundryDmr 4 }
+
+rfoundryLastDestination OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The last call heard: its destination."
+    ::= { rfoundryDmr 5 }
+
+rfoundryLastGroup OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "The last call heard was a group call."
+    ::= { rfoundryDmr 6 }
+
+rfoundryLastAge OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Time since the last call heard ended. No instance until a call has been heard."
+    ::= { rfoundryDmr 7 }
+
+-- DMR data
+
+rfoundryDataRxPackets OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Complete data packets received."
+    ::= { rfoundryData 1 }
+
+rfoundryDataRxForUs OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Of those, addressed to us or a group we listen to."
+    ::= { rfoundryData 2 }
+
+rfoundrySmsReceived OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Text messages received and kept."
+    ::= { rfoundryData 3 }
+
+rfoundrySmsSent OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Text messages sent."
+    ::= { rfoundryData 4 }
+
+rfoundrySmsFailed OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Text messages not delivered."
+    ::= { rfoundryData 5 }
+
+rfoundrySmsInbox OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Messages in the inbox."
+    ::= { rfoundryData 6 }
+
+rfoundrySmsUnread OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Messages in the inbox not read yet."
+    ::= { rfoundryData 7 }
+
+rfoundryArsState OBJECT-TYPE
+    SYNTAX      INTEGER { off(1), registering(2), registered(3), refused(4), noAnswer(5) }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "ARS registration with the presence server (off: no server set)."
+    ::= { rfoundryData 8 }
+
+-- The USB network link (the gateway's other counters are on the debug link: docs/spec/usb-network.md 3)
+
+rfoundryUsbNetwork OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "USB is the network adapter personality (else the serial port)."
+    ::= { rfoundryNet 1 }
+
+
+rfoundryNetToAir OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Packets handed to the air side."
+    ::= { rfoundryNet 3 }
+
+
+
+rfoundryNetPacketsUp OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Of those, delivered to the host."
+    ::= { rfoundryNet 6 }
+
+
+
+
+-- The agent's settings (saved in the radio)
+
+rfoundryAgentRfManager OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "The DMR ID notifications are sent to over the air (to UDP 162 at its 12.x.y.z address), 0 = none
+        (the default)."
+    ::= { rfoundryAgent 1 }
+
+rfoundryAgentRfTrapInterval OBJECT-TYPE
+    SYNTAX      Unsigned32 (10..3600)
+    UNITS       "seconds"
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+        "At most one notification over the air per this many seconds; the others are dropped. Emergency
+        notifications are exempt. Default 60."
+    ::= { rfoundryAgent 2 }
+
+rfoundryAgentRfAnswers OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION "The agent answers requests received over the air (default true)."
+    ::= { rfoundryAgent 3 }
+
+rfoundryAgentRfWrite OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION "SET requests received over the air are carried out (with the write community; default false)."
+    ::= { rfoundryAgent 4 }
+
+rfoundryAgentUsbTraps OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION "Notifications go to the host over the USB network link (default true)."
+    ::= { rfoundryAgent 5 }
+
+rfoundryAgentRfCallTraps OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION "rfoundryCallStart and rfoundryCallEnd also go to the RF manager (default false: the host only)."
+    ::= { rfoundryAgent 6 }
+
+rfoundryAgentTrapsSent OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Notifications sent, to the host and over the air."
+    ::= { rfoundryAgent 7 }
+
+rfoundryAgentTrapsDropped OBJECT-TYPE
+    SYNTAX      Counter32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION "Notifications given up (the queue full, the RF rate limit, the channel busy too long)."
+    ::= { rfoundryAgent 8 }
+
+-- Notification objects
+
+rfoundryEventSource OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "The radio an event came from."
+    ::= { rfoundryEvent 1 }
+
+rfoundryEventDestination OBJECT-TYPE
+    SYNTAX      Unsigned32 (0..16777215)
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "The talkgroup or radio an event was addressed to."
+    ::= { rfoundryEvent 2 }
+
+rfoundryEventGroup OBJECT-TYPE
+    SYNTAX      TruthValue
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "The destination is a talkgroup."
+    ::= { rfoundryEvent 3 }
+
+rfoundryEventSlot OBJECT-TYPE
+    SYNTAX      Unsigned32 (1..2)
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "The DMR timeslot of a call."
+    ::= { rfoundryEvent 4 }
+
+rfoundryEventDuration OBJECT-TYPE
+    SYNTAX      TimeTicks
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "How long a call lasted."
+    ::= { rfoundryEvent 5 }
+
+rfoundryEventText OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (0..64))
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "A text message's text (Latin-1, cut at 64 characters)."
+    ::= { rfoundryEvent 6 }
+
+rfoundryEventValue OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  accessible-for-notify
+    STATUS      current
+    DESCRIPTION "rfoundryArsChange: the new rfoundryArsState; rfoundryLowBattery: the battery voltage in millivolts."
+    ::= { rfoundryEvent 7 }
+
+-- Notifications (coldStart and authenticationFailure from SNMPv2-MIB are also sent)
+
+rfoundryCallStart NOTIFICATION-TYPE
+    OBJECTS     { rfoundryEventSource, rfoundryEventDestination, rfoundryEventGroup, rfoundryEventSlot }
+    STATUS      current
+    DESCRIPTION "A DMR call started: received on our slot, or ours."
+    ::= { rfoundryNotifications 1 }
+
+rfoundryCallEnd NOTIFICATION-TYPE
+    OBJECTS     { rfoundryEventSource, rfoundryEventDestination, rfoundryEventGroup, rfoundryEventSlot, rfoundryEventDuration }
+    STATUS      current
+    DESCRIPTION "A DMR call ended."
+    ::= { rfoundryNotifications 2 }
+
+rfoundrySmsReceivedNotification NOTIFICATION-TYPE
+    OBJECTS     { rfoundryEventSource, rfoundryEventDestination, rfoundryEventText }
+    STATUS      current
+    DESCRIPTION "A text message for us arrived."
+    ::= { rfoundryNotifications 3 }
+
+rfoundryEmergency NOTIFICATION-TYPE
+    OBJECTS     { rfoundryEventSource, rfoundryEventDestination, rfoundryEventGroup }
+    STATUS      current
+    DESCRIPTION
+        "An emergency: an emergency alarm heard (destination 0), or a call with the emergency service option.
+        Exempt from the RF rate limit."
+    ::= { rfoundryNotifications 4 }
+
+rfoundryArsChange NOTIFICATION-TYPE
+    OBJECTS     { rfoundryEventValue }
+    STATUS      current
+    DESCRIPTION "The ARS registration state changed."
+    ::= { rfoundryNotifications 5 }
+
+rfoundryLowBattery NOTIFICATION-TYPE
+    OBJECTS     { rfoundryEventValue }
+    STATUS      current
+    DESCRIPTION "The battery went low or critical."
+    ::= { rfoundryNotifications 6 }
+
+-- Conformance
+
+rfoundryCompliances     OBJECT IDENTIFIER ::= { rfoundryConformance 1 }
+rfoundryGroups          OBJECT IDENTIFIER ::= { rfoundryConformance 2 }
+
+rfoundryCompliance MODULE-COMPLIANCE
+    STATUS      current
+    DESCRIPTION "What every RadioFoundry radio with the SNMP agent implements."
+    MODULE
+        MANDATORY-GROUPS { rfoundryStatusGroup, rfoundryAgentGroup, rfoundryEventGroupObjects, rfoundryNotificationGroup }
+    ::= { rfoundryCompliances 1 }
+
+rfoundryStatusGroup OBJECT-GROUP
+    OBJECTS {
+        rfoundryDmrId, rfoundryCallsign, rfoundryBoard, rfoundryFirmware,
+        rfoundryBatteryVoltage, rfoundryBatteryPercent, rfoundryBatteryState,
+        rfoundryRadioState, rfoundryRssi, rfoundryMode, rfoundryZoneName, rfoundryChannelNumber, rfoundryChannelName, rfoundryRxFrequency,
+        rfoundryTxFrequency, rfoundryTxPowerLevel, rfoundryTxPowerName, rfoundryColorCode, rfoundryTimeslot, rfoundryTalkTarget, rfoundryTalkTargetType,
+        rfoundryRole,
+        rfoundryCallState, rfoundryCallSource, rfoundryCallDestination, rfoundryLastSource, rfoundryLastDestination, rfoundryLastGroup, rfoundryLastAge,
+        rfoundryDataRxPackets, rfoundryDataRxForUs, rfoundrySmsReceived, rfoundrySmsSent, rfoundrySmsFailed, rfoundrySmsInbox, rfoundrySmsUnread,
+        rfoundryArsState,
+        rfoundryUsbNetwork, rfoundryNetToAir, rfoundryNetPacketsUp
+    }
+    STATUS      current
+    DESCRIPTION "The radio's state."
+    ::= { rfoundryGroups 1 }
+
+rfoundryAgentGroup OBJECT-GROUP
+    OBJECTS {
+        rfoundryAgentRfManager, rfoundryAgentRfTrapInterval, rfoundryAgentRfAnswers, rfoundryAgentRfWrite, rfoundryAgentUsbTraps,
+        rfoundryAgentRfCallTraps, rfoundryAgentTrapsSent, rfoundryAgentTrapsDropped
+    }
+    STATUS      current
+    DESCRIPTION "The agent's settings and counters."
+    ::= { rfoundryGroups 2 }
+
+rfoundryEventGroupObjects OBJECT-GROUP
+    OBJECTS {
+        rfoundryEventSource, rfoundryEventDestination, rfoundryEventGroup, rfoundryEventSlot, rfoundryEventDuration, rfoundryEventText,
+        rfoundryEventValue
+    }
+    STATUS      current
+    DESCRIPTION "The objects the notifications carry."
+    ::= { rfoundryGroups 3 }
+
+rfoundryNotificationGroup NOTIFICATION-GROUP
+    NOTIFICATIONS {
+        rfoundryCallStart, rfoundryCallEnd, rfoundrySmsReceivedNotification, rfoundryEmergency, rfoundryArsChange, rfoundryLowBattery
+    }
+    STATUS      current
+    DESCRIPTION "The radio's notifications."
+    ::= { rfoundryGroups 4 }
+
+END

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The GD-88's SoC B is a receiver only (boards/gd88b/board.c, docs/spec/hardware-gd88.md 10): every band of its
 // descriptor is receive only, so the shared radio code's tx() (board_in_band(hz, true), common/radio_gd88.c) refuses
 // every frequency it can tune, and it is built with GD88_TX=0 besides. Its transmitter-off hook drives every TX

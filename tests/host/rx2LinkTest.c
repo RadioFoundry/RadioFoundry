@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The second receiver's link (core/rx2): frames, payloads, and both ends back to back over a lossy wire
 #include <stdio.h>
 #include <string.h>
@@ -197,7 +197,7 @@ static void test_payloads(void)
 static void test_link(void)
 {
 	rx2_main_init(&m, send_main);
-	rx2_recv_init(&r, send_recv, &b_ops, RX2_HELLO_DMR, "odr-rx2 1.2");
+	rx2_recv_init(&r, send_recv, &b_ops, RX2_HELLO_DMR, "rfoundry-rx2 1.2");
 	rx2_status_t st;
 
 	// Down until the receiver answers; tune() refused meanwhile (the core alternates)
@@ -208,7 +208,7 @@ static void test_link(void)
 	CHECK(!rx2_main_tune(&m, &t, 0));
 	uint32_t now = run(0, 100, true);
 	rx2_main_status(&m, &st);
-	CHECK(m.up && st.up && !st.tuned && m.flags == RX2_HELLO_DMR && strcmp(m.fw, "odr-rx2 1.2") == 0);
+	CHECK(m.up && st.up && !st.tuned && m.flags == RX2_HELLO_DMR && strcmp(m.fw, "rfoundry-rx2 1.2") == 0);
 
 	// Tune: acknowledged, tuned
 	CHECK(rx2_main_tune(&m, &t, now));
@@ -265,11 +265,11 @@ static void test_link(void)
 	int tunes = b_tunes;
 	rx2_main_audio(&m, true, 70);
 	rx2_main_led(&m, 2);	// while it is down: kept, sent when it is back
-	rx2_recv_init(&r, send_recv, &b_ops, RX2_HELLO_DMR, "odr-rx2 1.3");
+	rx2_recv_init(&r, send_recv, &b_ops, RX2_HELLO_DMR, "rfoundry-rx2 1.3");
 	b_audio = false;
 	now = run(now, RX2_HELLO_EVERY_MS + 200u, true);
 	rx2_main_status(&m, &st);
-	CHECK(st.up && st.tuned && b_tunes == tunes + 1 && b_audio && b_volume == 70 && strcmp(m.fw, "odr-rx2 1.3") == 0);
+	CHECK(st.up && st.tuned && b_tunes == tunes + 1 && b_audio && b_volume == 70 && strcmp(m.fw, "rfoundry-rx2 1.3") == 0);
 	CHECK(b_leds == 2);
 	rx2_main_led(&m, 3);
 	now = run(now, 40, true);

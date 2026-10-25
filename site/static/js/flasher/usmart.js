@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // USMART, the debug console a stock firmware answers on the programming cable (a board's radios.json
 // flash.stock_console "usmart"; the DB25-D PRO's, docs/spec/hardware-db25d.md 7). It reads and writes single words of
 // memory, which is enough to put the universal stub (stub.js) into a free stretch of RAM and start it. The stub then
 // reads and writes the program flash as on every other HR_C7000 radio. The console writes RAM only, never flash. The
 // stock builds it knows are below (BUILDS), by their versions; a board's flash.stock_versions names the ones it runs.
 //
-// Once ODR runs, the radio is reached the way the other HR_C7000 radios are (stub.js, c7000.js).
+// Once RadioFoundry runs, the radio is reached the way the other HR_C7000 radios are (stub.js, c7000.js).
 
 import { sleep } from "./bytes.js";
 import { univFits } from "./stub.js";

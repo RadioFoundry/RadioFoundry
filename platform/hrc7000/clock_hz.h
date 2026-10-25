@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 clock rates, without the register map, so FreeRTOSConfig.h can read them. APB peripherals run from sys / 2
 // (hardware-dm32.md 1.1). HRC_CPU_HZ is the clock the application runs at: 168 MHz unless the board sets it in board.mk.
 // The loader in front of it may leave the PLL at another rate: HRC_LOADER_CPU_HZ (default the same). The Baofeng

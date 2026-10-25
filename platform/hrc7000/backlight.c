@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // LCD backlight on a PWM channel whose output pin doubles as a GPIO (docs/spec/hardware-dm32.md 3.6). Most boards
 // wire it to PTA15 / PWM0; one with another channel passes its hrc_backlight_t (docs/spec/hardware-db25d.md 5).
 #include "platform.h"

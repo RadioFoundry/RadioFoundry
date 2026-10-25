@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 SoC B: what its own files share (docs/spec/hardware-gd88.md 10)
 #ifndef GD88B_H
 #define GD88B_H

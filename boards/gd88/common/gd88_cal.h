@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-88 factory calibration (calibration_gd88.c, docs/spec/hardware-gd88.md 7), shared by both SoCs' builds. The page
 // has the layout of hardware-db25d.md 6: two halves (UHF, VHF at +0x400), 8 points a band.
 #ifndef GD88_CAL_H

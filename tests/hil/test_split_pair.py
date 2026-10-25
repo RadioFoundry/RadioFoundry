@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Two radios as one split duplex repeater (docs/spec/split-duplex.md 10.2): the --radio-port radio is the TX half,
 the --split-rx-port radio the RX half, each a CONFIG_HOTSPOT_SPLIT=y build. split_duplex_host.Pair runs the host
 side (time sync, epoch relay, AT relay) and repeats every burst heard into the TX half, as a duplex host does.
@@ -12,7 +12,7 @@ side (time sync, epoch relay, AT relay) and repeats every burst heard into the T
   right (TC alternating) and no underrun in STATUS. The repeat delay (the first header on the input to the first on
   the output) and the RX half's residual are printed.
 
-- test_split_pair_handheld (radio_tx, codeplug_write: also --split-ms-port): an ODR radio as the subscriber, the one
+- test_split_pair_handheld (radio_tx, codeplug_write: also --split-ms-port): a RadioFoundry radio as the subscriber, the one
   thing the bench can't be. Its current DMR channel is edited for the run (codeplug_edited puts it back) to receive
   the outbound and transmit on the input, on TS1 and then TS2 (--split-ms-ts). It hears the outbound, takes its slot
   from the CACH and keys 4 s. Asserted per slot: the RX half sends the call up under that slot's label only, every
@@ -32,7 +32,7 @@ import time
 
 import pytest
 
-from odr_hil import skip
+from rfoundry_hil import skip
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -180,7 +180,7 @@ def test_split_pair_handheld(radio, sdr_bench, pytestconfig, backup_dir):
     if "HOTSPOT_SPLIT" not in radio.features():
         skip("not_built", "built without the split duplex extension (make CONFIG_HOTSPOT_SPLIT=y)")
     import split_duplex_host as sdh
-    from odr_hil import Radio
+    from rfoundry_hil import Radio
     from test_cps import codeplug_edited
     fin, cc = pytestconfig.getoption("--dmr-freq"), pytestconfig.getoption("--dmr-cc")
     slots = [int(x) for x in pytestconfig.getoption("--split-ms-ts").split(",")]

@@ -1,7 +1,7 @@
 /*
  * SPDX-License-Identifier: MIT
  * Copyright (C) 2017 C-SKY Microsystems Co., Ltd. All rights reserved.
- * Copyright (c) 2026 The OpenDigitalRadio Authors
+ * Copyright (c) 2026 The RadioFoundry Authors
  *
  * FreeRTOS port for the C-SKY CK803S in the HR_C7000, adapted from FreeRTOS-Kernel
  * portable/ThirdParty/CDK/T-HEAD_CK802 (MIT). Changes: no CSI headers; the context switch requested from an interrupt

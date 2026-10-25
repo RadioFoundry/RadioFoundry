@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's everyday features (docs/spec/radio-features.md): the scan, beep and battery modules on their own,
 // then scan, TX time-out warning, busy channel lockout, roger beep, 1750 Hz burst, VOX, battery monitor, receiver
 // battery saving and the DMR beeps through radio_sm.c, against a fake board whose receiver hears signals per frequency
@@ -289,6 +289,7 @@ bool codeplug_channel(uint16_t n, channel_t *out)
 static zone_t zone2;		// dual watch: a second zone when nzones is 2
 static uint16_t nzones;
 uint16_t codeplug_zone_count(void) { return nzones; }
+bool codeplug_zones_stored(void) { return true; }
 bool codeplug_zone(uint16_t i, zone_t *out)
 {
 	if (i >= nzones) {

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The HIL tests' hooks and fixtures (README.md): the radio and the SDR bench, the radio restored after every test,
 opt-in skips, skip kinds on the reports, and the boards' own tests (boards/<id>/hil) skipped on other radios.
 conftest.py registers this module as a plugin, so all of it reaches tests outside tests/hil too."""
@@ -8,7 +8,7 @@ import os
 import pytest
 
 import bringup_plugin
-from odr_hil import DebugLinkError, Radio, SdrBench, board_id, find_ports, skip, skip_kind, skip_mark
+from rfoundry_hil import DebugLinkError, Radio, SdrBench, board_id, find_ports, skip, skip_kind, skip_mark
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
@@ -40,7 +40,7 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_makereport(item, call):
-    """A skip's kind (odr_hil.skip) on its report (report.skip_kind) and in the test's user properties, which the
+    """A skip's kind (rfoundry_hil.skip) on its report (report.skip_kind) and in the test's user properties, which the
     JUnit XML writes: what a bring-up run and its result records read."""
     report = yield
     if report.skipped and not hasattr(report, "wasxfail"):
@@ -68,7 +68,7 @@ def radio(pytestconfig):
                                               f"CONFIG_DEBUGLINK?): {e}")
     bringup_plugin.remember_firmware(pytestconfig, r)
     if r.auto_lock_off():
-        print("odr-hil: auto lock was on (a run cut short in test_auto_lock?): set back to Off")
+        print("rfoundry-hil: auto lock was on (a run cut short in test_auto_lock?): set back to Off")
     yield r
     r.close()
 
@@ -145,10 +145,10 @@ def bench_station(pytestconfig, sdr_bench):
     """The name of the bench station to use as the second radio (--bench-station); skips without one."""
     name = pytestconfig.getoption("--bench-station")
     if not name:
-        skip("opt_in", "no bench station: give --bench-station NAME (odr-bench info on the bench lists them)")
+        skip("opt_in", "no bench station: give --bench-station NAME (rfoundry-bench info on the bench lists them)")
     st = next((s for s in sdr_bench.info().get("stations", []) if s["name"] == name), None)
     if st is None or not st.get("present"):
-        skip("bench", f"bench station {name} is not on the bench (or the bench has no benchd)")
+        skip("bench", f"bench station {name} is not on the bench (or the bench has no rfoundry-benchd)")
     return name
 
 
