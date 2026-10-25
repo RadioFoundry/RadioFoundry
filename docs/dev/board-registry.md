@@ -54,6 +54,7 @@ neighbor on the same platform.
 | `kind` | `handheld` or `mobile` | |
 | `part_of` | string, optional | Another board this one is a build of |
 | `debuglink_aliases` | list, optional | Names older firmware reported on the debug link |
+| `looks` | list of tables, optional | Other bodies the board ships in that look too different to share its picture: `{ id, name, also }`. Each is its own radio card on the site, drawn in `site/static/img/radios/src/<id>-<look id>.svg` (the site build refuses a missing drawing), and links to the board's page. `name` and every entry of `also` (the radios in that body) must be in the board's `also`; the board's own card lists the rest |
 
 ### [docs]
 
@@ -119,6 +120,7 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 | `stock_download` | Optional: where the stock firmware can be downloaded |
 | `stock_versions` | The stock versions the tools know |
 | `backup` | `{ stock, rfoundry, spi_size }`: what a backup reads from stock firmware and from RadioFoundry (`none` or `full`), and the SPI flash size |
+| `notice` | Optional: a warning the web flasher shows on every step once the radio is picked, for a choice the radio can't check itself (two images that differ in hardware the radio can't report, for example) |
 
 `[flash.bootloader]`:
 
