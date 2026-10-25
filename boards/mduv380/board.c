@@ -58,7 +58,9 @@ static const char *tx_block(void)
 // The G models' module (hardware-mduv380.md 9): NMEA on USART1 RX (PA10), power on PA9, high = on. The same board ships
 // without it, so the module is powered for the listen window only and switched off again when nothing is heard. A
 // sentence keeps it on, and every sentence goes to the APRS position source (CONFIG_APRS)
-static const uint32_t gps_rates[] = { 9600 };
+// The TYT images ask for 14400, which a clock library built for a 12 MHz crystal turns into 9600 on this 8 MHz one
+// (14400 x 8 / 12); unconfirmed, so the hunt tries both, 9600 first (hardware-mduv380.md 9)
+static const uint32_t gps_rates[] = { 9600, 14400 };
 
 static void gps_absent(void)
 {
@@ -68,7 +70,7 @@ static void gps_absent(void)
 static const stm32_gps_cfg_t gps = {
 	.uart = USART1, .irq = USART1_IRQn,
 	.rx_port = PIN_PORT(PIN_GPS_RX), .rx_pin = PIN_MASK(PIN_GPS_RX), .rx_af = GPIO_AF7_USART1,
-	.rates = gps_rates, .n_rates = 1, .listen_ms = 5000,
+	.rates = gps_rates, .n_rates = 2, .listen_ms = 5000,
 	.absent = gps_absent,
 };
 

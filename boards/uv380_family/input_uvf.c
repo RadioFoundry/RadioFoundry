@@ -70,7 +70,8 @@ static uint32_t scan(void)
 // Detents since the last call (the running total is one 32-bit word the interrupt writes: no lock needed)
 static int8_t encoder(void)
 {
-	return quad_take(&enc, &enc_taken);
+	int8_t n = quad_take(&enc, &enc_taken);
+	return uvf_variant.enc_reverse ? (int8_t)-n : n;
 }
 
 static void encoder_stats(hal_encoder_stats_t *st)

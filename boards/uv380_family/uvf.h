@@ -28,6 +28,8 @@ typedef struct {
 	uint16_t frac[2][4];
 	// Factory to working copy power conversion (12.1), per mille, k0..k3 (very low, low, mid, high), [VHF, UHF]
 	uint16_t cal_k[2][4];
+	// The channel knob counts the other way: the same pins, the A and B phases swapped on the board (10.3)
+	bool enc_reverse;
 	// Board start-up after the shared one (board_init), or NULL: GPS and the radio's own checks
 	void (*init)(void);
 	// Why the transmitter must stay off on this radio, or NULL to allow it (asked on every tx()): a build for the
