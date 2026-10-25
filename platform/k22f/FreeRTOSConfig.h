@@ -18,7 +18,7 @@ extern uint32_t SystemCoreClock;
 #define configTICK_RATE_HZ			1000
 #define configMAX_PRIORITIES			7
 #if CONFIG_CRASH_LOG
-#define configMINIMAL_STACK_SIZE		144	// the idle task: a configASSERT in the kernel captures on it (make stack-check)
+#define configMINIMAL_STACK_SIZE		149	// the idle task: a configASSERT in the kernel captures on it (make stack-check); CI reads 592 bytes deepest, +4 spare
 #else
 #define configMINIMAL_STACK_SIZE		128
 #endif
