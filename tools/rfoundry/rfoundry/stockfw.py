@@ -17,6 +17,7 @@ import zlib
 
 from . import codecmap
 
+FLASH_BASE = 0x08000000      # internal flash: the bootloader, then the application from APP_BASE
 APP_BASE = 0x0800C000
 FLASH_END = 0x08100000
 KEY_LEN = 1024
@@ -334,6 +335,42 @@ def extract(stock, key, profiles=None):
     if struct.unpack_from("<I", out[0][1], 0)[0] != CODEC_SIG:
         raise StockError("codec first word is not 0x%08X" % CODEC_SIG)
     return prof, place(prof, out)
+
+
+def is_container(data):
+    """True for a stock firmware file (the OutSecurityBin container); a flash readout is plain bytes."""
+    return data.startswith(MAGIC)
+
+
+def from_flash(flash, base=FLASH_BASE, profiles=None):
+    """The codec in a readout of a radio's internal flash (stub/f4stub.py --progmem: the bytes from base, normally the
+    whole 1 MB from 0x08000000), as the merge writes it: (profile, segments in layout() order), or None when no
+    supported codec is in it. A radio on its stock firmware holds the build's code and tables plain at their stock
+    addresses: the build is found by the code window's SHA-256 there, every window is checked, and the codec is placed
+    as a merge from the stock file places it. A radio running RadioFoundry holds it where the merge put it, with its
+    descriptor, and is taken as it is. No key is needed: the flash holds the codec decrypted."""
+    profiles = PROFILES if profiles is None else profiles
+
+    def read(wins):
+        parts = []
+        for a, n, want in wins:
+            off = a - base
+            d = flash[off:off + n] if off >= 0 else b""
+            if len(d) != n or sha256(d) != want:
+                return None
+            parts.append((a, bytes(d)))
+        return parts if struct.unpack_from("<I", parts[0][1], 0)[0] == CODEC_SIG else None
+
+    for prof in profiles.values():
+        parts = read(windows(prof))
+        if parts:
+            return prof, place(prof, parts)
+        if prof.get("placement"):
+            desc = descriptor(prof)
+            parts = read(placed_windows(prof) + [(DESC_ADDR, DESC_LEN, sha256(desc))])
+            if parts:
+                return prof, parts
+    return None
 
 
 def codec_segments(prof, segments):

@@ -1011,6 +1011,8 @@ def rfoundry_view(boards):
             "codec_tables": list(b.window("__codec_tab_lo", "__codec_tab_hi") or ()) or None,
             "loader_id": fl["bootloader"].get("id"), "loader_keys": fl["bootloader"].get("keys"),
             "loader_sign": fl["bootloader"].get("sign", ""),
+            # what rfoundry tells the user: how to reach the bootloader, where the stock files come from
+            "bootloader_steps": list(fl["bootloader"].get("steps", [])), "stock_download": fl.get("stock_download"),
             "key_sha256": dfu["key_sha256"] if dfu else None, "key_prefix": dfu["key_prefix"] if dfu else None,
             "dfu_ids": [dfu["vid"], dfu["pid"]] if dfu else None,
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,

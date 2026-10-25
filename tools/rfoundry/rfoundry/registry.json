@@ -78,6 +78,11 @@
    "loader_id": null,
    "loader_keys": null,
    "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold P1 and press power. The red LED lights and the display stays blank."
+   ],
+   "stock_download": null,
    "key_sha256": null,
    "key_prefix": null,
    "dfu_ids": null,
@@ -189,6 +194,13 @@
    "loader_id": null,
    "loader_keys": null,
    "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold PTT and SK1 (the side key just above PTT).",
+    "Turn the radio on with the volume knob while you hold both keys. The screen stays dark.",
+    "Release the keys."
+   ],
+   "stock_download": "https://github.com/daniel5600/BAOFENG-DM1701-Original-Firmware",
    "key_sha256": "d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb3deff",
    "key_prefix": "3A0474AD",
    "dfu_ids": [
@@ -289,6 +301,8 @@
    "loader_id": "BF1801-V1",
    "loader_keys": "PTT and the key on PTB26 (probably SK1)",
    "loader_sign": "",
+   "bootloader_steps": [],
+   "stock_download": null,
    "key_sha256": null,
    "key_prefix": null,
    "dfu_ids": null,
@@ -379,6 +393,13 @@
    "loader_id": "BFUV32-V2",
    "loader_keys": "PTT and SK1 (the side key just below PTT)",
    "loader_sign": "The green LED lights",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold PTT and SK1.",
+    "Turn the radio on while you hold both keys. The green LED lights.",
+    "Release the keys."
+   ],
+   "stock_download": null,
    "key_sha256": null,
    "key_prefix": null,
    "dfu_ids": null,
@@ -491,6 +512,13 @@
    "loader_id": null,
    "loader_keys": null,
    "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold PTT and the side key just above it.",
+    "Turn the radio on while you hold both keys. The LED blinks; the screen stays dark.",
+    "Release the keys."
+   ],
+   "stock_download": "https://md380.org/firmware/orig/",
    "key_sha256": "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd",
    "key_prefix": "2EDF40B5",
    "dfu_ids": [
@@ -637,6 +665,13 @@
    "loader_id": null,
    "loader_keys": null,
    "loader_sign": "",
+   "bootloader_steps": [
+    "Turn the radio off and connect the programming cable.",
+    "Hold PTT and the side key just above it (SK1).",
+    "Turn the radio on with the volume knob while you hold both keys. The screen stays dark.",
+    "Release the keys."
+   ],
+   "stock_download": "https://passion-radio.com/dmr-equipment/tyt-md380-321.html",
    "key_sha256": "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991",
    "key_prefix": "00AA8989",
    "dfu_ids": [
