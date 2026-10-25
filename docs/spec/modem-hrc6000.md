@@ -246,7 +246,7 @@ The interrupt comes before each burst the chip is about to send. The handler key
 TX. On a board without the RF RX interrupt the MCU ends each TX burst itself. At the next timeslot interrupt, if the PA
 has been on for more than 20 ms, the MCU turns it off and puts the RF chip back in RX. After the last burst of a
 transmission, a one-shot 29 ms timer does the same. Keying takes the PA enables high and writes AT1846S register
-0x30 = 0x60C6 (digital TX). Un-keying takes them low and writes 0x30 = 0x7026 (25 kHz) or 0x6026 (12.5 kHz).
+0x30 = 0x60C6 (digital TX). Un-keying takes them low and writes 0x30 = 0x7026 (25 kHz) or 0x6026 (12.5 kHz). A board may key a fixed delay after the interrupt (a timer, 1 ms on one board) and switch from RX straight to TX or through idle; its hardware page has the sequences.
 
 On such a board the RF chip's "transmitting" state therefore goes on and off **burst by burst**. Code that needs to
 know whether a transmission is in progress must use the modem slot state (section 7.5), not the PA.

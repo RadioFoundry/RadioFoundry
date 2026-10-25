@@ -11,7 +11,7 @@ BOARD_DIRS := boards/dm1701 boards/uv380_family platform/stm32f4/hrc platform/st
 	drivers/input/quadrature
 # The HAL's I2C driver besides the platform's modules
 BOARD_HAL_MODULES := hal_i2c
-# The 160x120 panel in 16 colors (display_dm1701.c): the 4 bpp frame buffer is 9600 B and 120 rows, not the 40 KB / 160 row
+# The 160x120 panel in 16 colors (boards/uv380_family/display_uvf.c): the 4 bpp frame buffer is 9600 B and 120 rows, not the 40 KB / 160 row
 # RGB565 default. A screen has at most 16 colors (core/ui/gfx.h); with CONFIG_FONT_AA the edge grays compete for them
 MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=9600u -DGFX_MAX_ROWS=120u
 # The lens hides the panel's last 8 rows (boards/uv380_family/display_uvf.c)

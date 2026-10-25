@@ -30,6 +30,8 @@ def pytest_addoption(parser):
     g.addoption("--dmr-freq", type=float, default=461.6875,
                 help="MHz: the DMR test channel (Ch 15 of the bench's gateway configuration)")
     g.addoption("--dmr-cc", type=int, default=2)
+    g.addoption("--sfr-freq", type=float, default=None,
+                help="MHz: the SFR test channels' frequency (test_sfr_standalone); default --dmr-freq")
     g.addoption("--dmr-tg", type=int, default=9,
                 help="talkgroup the bench transmitter calls (in the radio channel's RX group list)")
     g.addoption("--ambe", default=os.environ.get("RFOUNDRY_HIL_AMBE"),
@@ -56,6 +58,9 @@ def pytest_addoption(parser):
     g.addoption("--codeplug-backup-dir", default=None,
                 help="keep the codeplug backups the codeplug_write tests take here (default: the test's tmp "
                      "directory, which pytest prunes after a few runs); outside the repository")
+    g.addoption("--codeplug-image", default=os.environ.get("RFOUNDRY_HIL_CODEPLUG_IMAGE"),
+                help="the radio's codeplug as a file (env RFOUNDRY_HIL_CODEPLUG_IMAGE): the codeplug_write tests take it "
+                     "as the backup instead of reading the radio, and restore and verify it afterwards")
     g.addoption("--manual", action="store_true",
                 help="a person is at the radio: run the tests that ask for something done by hand (marker manual)")
     g.addoption("--mic-inject", action="store_true",
@@ -76,6 +81,14 @@ def pytest_addoption(parser):
                 help="test_split_pair_handheld: a third radio, the subscriber calling into the pair (its current "
                      "DMR channel is edited for the run and put back)")
     g.addoption("--split-ms-ts", default="1,2", help="test_split_pair_handheld: the subscriber's slots, in turn")
+    g.addoption("--sfr-talker-port", default=os.environ.get("RFOUNDRY_SFR_TALKER_PORT"),
+                help="test_sfr_chain_rfoundry_user: a RadioFoundry radio as the SFR user that talks (a user-role channel on "
+                     "--sfr-freq); the --radio-port radio is the repeater")
+    g.addoption("--sfr-listener-port", default=os.environ.get("RFOUNDRY_SFR_LISTENER_PORT"),
+                help="test_sfr_chain_rfoundry_user: a RadioFoundry radio as the SFR user that listens (a user-role channel on "
+                     "--sfr-freq)")
+    g.addoption("--sfr-listen-modes", default="0,1",
+                help="test_sfr_chain_rfoundry_user: the listener's receive modes (setting sfr_rx), one call each")
     g.addoption("--peer-port", default=os.environ.get("RFOUNDRY_PEER_PORT"),
                 help="a second RadioFoundry radio that receives from the --radio-port radio (test_zone_share's "
                      "receiver; its codeplug is backed up and put back)")
@@ -110,6 +123,8 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    if config.getoption("--codeplug-image"):    # test_cps.codeplug_edited reads it from there
+        os.environ["RFOUNDRY_HIL_CODEPLUG_IMAGE"] = os.path.expanduser(config.getoption("--codeplug-image"))
     # The hooks and fixtures are a plugin, not this conftest, so they also reach the boards' own tests
     # (boards/<id>/hil), which lie outside this directory
     config.pluginmanager.register(hil_plugin, "rfoundry-hil")

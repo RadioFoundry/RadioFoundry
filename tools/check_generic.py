@@ -17,12 +17,15 @@ optional hyphen and an optional letter suffix ("XR-100UV", "XR100", "xr100"). Al
   file references              a path or a file name in the text ("docs/spec/hardware-dm32.md 3.7"): the page it
                                points to is the radio's own
   ALLOW (generic_allow.txt)    a glob and the reason it may name radios; an entry nothing needs is an error
+  ALLOW section                "<path>#<anchor> reason": one section of one file, from the heading with that anchor
+                               to the next heading of its level or above. Exact path only; the heading must exist and
+                               the section must name a radio, or the entry is an error
 
 Docs (AGENTS.md, generic docs) are stricter. A generic doc (GENERIC_DOCS: docs/spec/ but hardware-*, docs/user/ but
 23-radios.md, docs/dev/, docs/build-config.md, and no radio's own page) names no radio, not even in a link to the
 radio's page: it says what a board provides and links feature-matrix.md. A radio's own page under those directories
 links to the shared spec, not to another radio's page. ALLOW excuses a generic doc only by its exact path, one file
-at a time.
+at a time, or one section of it.
 
 Everything else counts, in code, comments and docs alike, tests/ included. A file whose own path names a radio counts
 too (a tool or test named after the radio that first needed it).
@@ -48,6 +51,8 @@ TEXT_EXT = (".c", ".h", ".S", ".ld", ".py", ".js", ".mjs", ".sh", ".mk", ".md", 
 # every marker style tools/registry_docs.py writes (MARKERS: html, yaml, bare)
 GEN_BLOCK = re.compile(r"^[ \t]*(?:<!-- |# )?generated: tools/boards\.py docs [\w-]+;[^\n]*$.*?"
                        r"^[ \t]*(?:<!-- |# )?end generated(?: -->)?$", re.M | re.S)
+HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t#]*$")
+FENCE = re.compile(r"^[ \t]*(```|~~~)")
 FILE_REF = re.compile(r"[\w.+<>*-]*(?:/[\w.+<>*-]+)+/?|[\w+<>-]+\.(?:md|c|h|S|py|json|ld|mk|bin|js|mjs|toml|sh|elf|"
                       r"txt|html|map|log|csv|zip)\b")
 
@@ -142,8 +147,32 @@ def tracked_files(root):
         return sorted(files)
 
 
+def anchor(title):
+    """The anchor a Markdown heading gets: lower case, punctuation dropped, spaces to hyphens."""
+    return re.sub(r"[^\w\- ]", "", title.strip().lower()).replace(" ", "-")
+
+
+def section_lines(text, name):
+    """(first, last) line numbers (1-based) of the section whose heading has anchor name, or None. It runs to the line
+    before the next heading of its level or above; headings in fenced code don't count."""
+    start, level, fenced = None, 0, False
+    lines = text.split("\n")
+    for n, line in enumerate(lines, 1):
+        if FENCE.match(line):
+            fenced = not fenced
+        m = None if fenced else HEADING.match(line)
+        if not m:
+            continue
+        if start is not None and len(m.group(1)) <= level:
+            return start, n - 1
+        if start is None and anchor(m.group(2)) == name:
+            start, level = n, len(m.group(1))
+    return (start, len(lines)) if start is not None else None
+
+
 def read_allow(root):
-    """[(glob, reason)] from ALLOW; a line without a reason is an error."""
+    """[(glob, reason)] from ALLOW; a line without a reason is an error. A section entry (path#anchor) must be an exact
+    path."""
     path = os.path.join(root, ALLOW)
     entries, problems = [], []
     if not os.path.isfile(path):
@@ -156,6 +185,8 @@ def read_allow(root):
             glob, _, reason = line.partition(" ")
             if not reason.strip():
                 problems.append("%s:%d: %s has no reason" % (ALLOW, n, glob))
+            elif "#" in glob and any(c in glob for c in "*?["):
+                problems.append("%s:%d: %s: a section entry takes an exact path, not a glob" % (ALLOW, n, glob))
             else:
                 entries.append((glob, reason.strip()))
     return entries, problems
@@ -193,6 +224,10 @@ def check(root, radios, docs, part_of=None):
     pats = patterns(radios)
     family = families(list(radios), part_of or {})
     allow, problems = read_allow(root)
+    sections = {}
+    for g, _ in allow:
+        if "#" in g:
+            sections.setdefault(g.partition("#")[0], []).append(g)
     used = set()
     shared_docs = {}
     for pages in docs.values():
@@ -216,6 +251,11 @@ def check(root, radios, docs, part_of=None):
         except (OSError, UnicodeDecodeError):
             continue
         text = GEN_BLOCK.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+        exempt = {}	# line number: the section entry that excuses it
+        for g in sections.get(path, ()):
+            span = section_lines(text, g.partition("#")[2])
+            if span:
+                exempt.update((n, g) for n in range(span[0], span[1] + 1))
         for n, line in enumerate(text.split("\n"), 1):
             # in docs a link names the radio whose page it is: a generic doc links feature-matrix.md, a radio's page
             # the shared spec
@@ -223,10 +263,13 @@ def check(root, radios, docs, part_of=None):
                 line = FILE_REF.sub(" ", line)
             for bid, pat in pats.items():
                 if pat.search(line) and not own(path, bid, pages, shared_docs, family):
-                    hits.append((n, bid))
+                    if n in exempt:
+                        used.add(exempt[n])
+                    else:
+                        hits.append((n, bid))
         if not hits:
             continue
-        match = [g for g, _ in allow if fnmatch.fnmatchcase(path, g) and (g == path or not generic)]
+        match = [g for g, _ in allow if "#" not in g and fnmatch.fnmatchcase(path, g) and (g == path or not generic)]
         if match:
             used.update(match)
             continue
@@ -239,7 +282,10 @@ def check(root, radios, docs, part_of=None):
                            ", ".join(names), why, ALLOW))
     for g, _ in allow:
         if g not in used:
-            problems.append("%s: %s matches no file that names a radio: remove it" % (ALLOW, g))
+            if "#" in g:
+                problems.append("%s: %s: no such section, or it names no radio: remove it" % (ALLOW, g))
+            else:
+                problems.append("%s: %s matches no file that names a radio: remove it" % (ALLOW, g))
     return problems
 
 
@@ -326,6 +372,25 @@ def self_test():
         put(ALLOW, "docs/spec/audio.md to rewrite\n")
         got = check(tmp, radios, docs, {"xr100b": "xr100"})
         ok(got == [], "its exact path does: %s" % got)
+        put("docs/spec/audio.md", "# Audio\n\nThe amplifier.\n\n## 2. Known issues\n\nOn the QB-7 it is slow.\n```\n# not a "
+                                  "heading\n```\nThe XR-100UV too.\n\n### Detail\n\nQB-7 again.\n\n## 3. More\n\nThe QB-7.\n")
+        put(ALLOW, "docs/spec/audio.md#2-known-issues the owner's per-radio issue list\n")
+        got = check(tmp, radios, docs, {"xr100b": "xr100"})
+        ok(len(got) == 1 and got[0].startswith("docs/spec/audio.md:19:"),
+           "a section entry excuses its section and subsections only, past fenced code: %s" % got)
+        put("docs/spec/audio.md", "# Audio\n\n## 2. Known issues\n\nOn the QB-7 it is slow.\n")
+        got = check(tmp, radios, docs, {"xr100b": "xr100"})
+        ok(got == [], "the section alone passes: %s" % got)
+        put("docs/spec/audio.md", "# Audio\n\n## 2. Known issues\n\nNone.\n")
+        got = check(tmp, radios, docs, {"xr100b": "xr100"})
+        ok(len(got) == 1 and "no such section" in got[0], "a section that names no radio is an unused entry: %s" % got)
+        put("docs/spec/audio.md", "# Audio\n\nThe QB-7.\n")
+        got = check(tmp, radios, docs, {"xr100b": "xr100"})
+        ok(len(got) == 2 and got[0].startswith("docs/spec/audio.md:3:") and "no such section" in got[1],
+           "a missing section excuses nothing and is an error: %s" % got)
+        put(ALLOW, "docs/spec/*.md#2-known-issues a glob\n")
+        got = check(tmp, radios, docs, {"xr100b": "xr100"})
+        ok(any("not a glob" in p for p in got), "a section entry with a glob fails: %s" % got)
     finally:
         shutil.rmtree(tmp)
     print("check_generic self-test %s (%d failure%s)" % ("PASSED" if not fails else "FAILED", len(fails),

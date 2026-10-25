@@ -41,6 +41,11 @@ typedef struct {
 	bool no_beep;		// no DMR talk permit / call end beeps on this channel
 	bool no_eco;		// no receiver battery saving on this channel
 	bool roam;		// a roaming site (the open-firmware Roaming flag; docs/spec/dmr-roaming.md 5.2), read only
+	// SFR (docs/spec/sfr.md 4): flag 1 bit 1 and the two SFR bytes as stored, for sfrChannelDecode(); read only
+	// (the encoder keeps them as read), all 0 when the channel has none
+	uint8_t sfr_flag1;
+	uint8_t sfr_a;
+	uint8_t sfr_b;
 } channel_t;
 
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)

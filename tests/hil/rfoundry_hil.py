@@ -97,8 +97,10 @@ def skip_kind(skipped):
 # (VERSION display=), features (VERSION features the build must have), no_features (ones it must not), flash_jedec
 # (accepted data flash JEDEC ids), calibration (true: the diagnostics show the factory calibration), battery_mv
 # ([low, high] a sane reading lies in), supply_mv (the same for a radio that measures its DC input instead), codec
-# (accepted stock codec versions)
-HIL_KEYS = ("display", "features", "no_features", "flash_jedec", "calibration", "battery_mv", "supply_mv", "codec")
+# (accepted stock codec versions), limits (a test's pass limit this radio is held to instead of the default, by name,
+# with the reason: tools/boards.py HIL_LIMITS)
+HIL_KEYS = ("display", "features", "no_features", "flash_jedec", "calibration", "battery_mv", "supply_mv", "codec",
+            "limits")
 _ENTRIES = {}
 
 

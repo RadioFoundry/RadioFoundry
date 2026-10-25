@@ -162,8 +162,11 @@ typedef struct {
 	// (the microphone, the codec mixer). The board sets it; 0 = HRC7000_FM_TX_LIMIT_DEF (8.1)
 	uint8_t fm_tx_limit[2];
 	// The RF TX interrupt's lead on each TX burst, RF_CONTROL b13:8 in 100 us steps: the board's time to switch its RF
-	// chip to TX. The board sets it before power_on_init; 0 = HRC7000_RF_TX_LEAD_DEF (3.1 ms)
+	// chip to TX. Set with hrc7000_set_rf_tx_lead; 0 = HRC7000_RF_TX_LEAD_DEF (3.1 ms)
 	uint8_t rf_tx_lead;
+	// The speaker line out gain, GCR_DACL bits 5:0 (hrc7000_set_dac_gain; 0 = 0 dB). Power-on init and FM receive write
+	// this one, so a board's soft volume on the PCM path survives them
+	uint8_t dac_gain;
 } hrc7000_t;
 
 #define HRC7000_RF_TX_LEAD_DEF	31u	// 3.1 ms (gotchas 2.4)
@@ -206,6 +209,9 @@ static inline uint32_t hrc7000_mod_bias_dc(uint8_t tx_center, uint16_t modcal)
 // FM (WORK_MODE 0x80) with every DMR register written once, the modem system interrupts enabled at the chip and
 // mic_gain (0..42 dB) in GCR_ADCL
 void hrc7000_power_on_init(hrc7000_t *d, uint8_t tx_center, uint8_t mic_gain_db);
+// The RF TX interrupt's lead (rf_tx_lead), written to RF_CONTROL at once. Call it after power_on_init, which writes the
+// stored lead again. A plain field write after power_on_init never reached the chip on one board
+void hrc7000_set_rf_tx_lead(hrc7000_t *d, uint8_t lead);
 // GCR_ADCL bits 5:0 (0..42 dB, clamped). The stock firmware writes one value for FM at each FM transmit start and
 // another for DMR at each DMR entry and DMR transmit start (modem-hrc7000.md 4 step 32, 5.1 step 2)
 #define HRC7000_MIC_GAIN_MAX_DB	42u
@@ -217,8 +223,16 @@ static inline uint8_t hrc7000_mic_db(uint8_t base_db, int8_t offset_db)
 	return (uint8_t)(v < 0 ? 0 : v > (int)HRC7000_MIC_GAIN_MAX_DB ? (int)HRC7000_MIC_GAIN_MAX_DB : v);
 }
 // Speaker line out gain, GCR_DACL bits 5:0: 0..31 = 0..-31 dB, 32..63 = +32..+1 dB (hardware-dm32.md 9.1; the
-// direction checked at bring-up: code 0 and code 48 both louder than code 7)
+// direction checked at bring-up: code 0 and code 48 both louder than code 7). Kept in dac_gain
 void hrc7000_set_dac_gain(hrc7000_t *d, uint8_t code);
+// The GCR_DACL code for a gain in dB, clamped to the register's -31..+32 dB
+#define HRC7000_DAC_MIN_DB	(-31)
+#define HRC7000_DAC_MAX_DB	32
+uint8_t hrc7000_dac_code(int db);
+// A soft volume on the line out (radios without a knob, whose DMR voice and beeps play through the codec DAC): volume
+// step 1..steps as dB, 0 dB at def_step (the level before the volume reached the DAC), 3 dB a step below it and top_db
+// spread over the steps above. Step 0 gives the least gain; the board mutes it elsewhere
+int hrc7000_volume_db(unsigned step, unsigned def_step, unsigned steps, int top_db);
 
 // FM receive / transmit (8.2). wide = 25 kHz. FM receive turns the FM audio path to the speaker on
 void hrc7000_fm_rx(hrc7000_t *d, bool wide);

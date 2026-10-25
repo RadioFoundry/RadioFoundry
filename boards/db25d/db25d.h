@@ -77,20 +77,34 @@ uint16_t db25d_apc_level(uint16_t target, uint16_t step);
 // Squelch open threshold for level 0..9, in dB below 0 dBm at the main chip (bk4819_squelch_rssi(-v, 2))
 uint8_t db25d_cal_squelch_db(uint32_t hz, uint8_t level);
 
-// --- DMR burst end (hardware-db25d.md 4.5) ---
-// The stock firmware starts a burst's TX-off at the modem's RF RX interrupt, which RF_CONTROL 0x00041F1A puts 30 ms +
-// 3.1 ms - 2.6 ms after the RF TX interrupt that keyed the burst, then waits the page's TX-off delay before the ramp
-// down: the ramp ends about 0.2 ms before the next slot. How long to wait still, elapsed_us after the RF TX interrupt
-// (0 once that point is past), and by how much it was missed (0 when on time)
-#define DB25D_DMR_RFRX_AFTER_RFTX_US	30500u
-static inline uint32_t db25d_dmr_hold_us(uint32_t elapsed_us, uint16_t off_us)
+// --- DMR burst timing (hardware-db25d.md 4.5) ---
+// The modem raises the RF TX interrupt rf_tx_lead (100 us steps, RF_CONTROL b13:8) before its TX burst, and the burst's
+// first symbol is on air 0.85 ms after that point. The TX on sequence has the PA fully up 2.4 ms after the interrupt
+// plus the page's TX-on delay. The lead is the shortest that has the PA up for the first symbol: every 100 us more
+// switches the receiver off earlier in the slot before ours, where an SFR repeater hears the inbound burst (measured on
+// the SDR bench, 2026-10-25)
+#define DB25D_DMR_SYMBOL_AFTER_LEAD_US	850u
+#define DB25D_DMR_PA_UP_US		2400u
+#define DB25D_DMR_BURST_US		27500u
+static inline uint8_t db25d_dmr_rf_tx_lead(uint16_t on_us)
 {
-	uint32_t at = DB25D_DMR_RFRX_AFTER_RFTX_US + off_us;
+	return (uint8_t)((DB25D_DMR_PA_UP_US + on_us - DB25D_DMR_SYMBOL_AFTER_LEAD_US + 99u) / 100u);
+}
+// The ramp down starts with the burst's last symbol, lead + 0.85 ms + 27.5 ms after the RF TX interrupt, so the
+// receiver is back for the slot after ours. How long to wait still, elapsed_us after the RF TX interrupt (0 once that
+// point is past), and by how much it was missed (0 when on time)
+static inline uint32_t db25d_dmr_off_at_us(uint8_t lead)
+{
+	return lead * 100u + DB25D_DMR_SYMBOL_AFTER_LEAD_US + DB25D_DMR_BURST_US;
+}
+static inline uint32_t db25d_dmr_hold_us(uint32_t elapsed_us, uint8_t lead)
+{
+	uint32_t at = db25d_dmr_off_at_us(lead);
 	return elapsed_us < at ? at - elapsed_us : 0;
 }
-static inline uint32_t db25d_dmr_late_us(uint32_t elapsed_us, uint16_t off_us)
+static inline uint32_t db25d_dmr_late_us(uint32_t elapsed_us, uint8_t lead)
 {
-	uint32_t at = DB25D_DMR_RFRX_AFTER_RFTX_US + off_us;
+	uint32_t at = db25d_dmr_off_at_us(lead);
 	return elapsed_us > at ? elapsed_us - at : 0;
 }
 

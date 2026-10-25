@@ -40,6 +40,15 @@
 #define DMR_CALL_LBT_DMO_MS		120	// machine traffic: quiet needed before sending (gotcha 3.6)
 #define DMR_CALL_LBT_RMO_MS		180
 #define DMR_CALL_RMO_HANG_MS		3000	// machine traffic waits this long after a call through a repeater
+// SFR user: which copies of a call are heard (dmr_call_config_t.sfr_rx)
+typedef enum {
+	DMR_SFR_RX_REPEATER,	// the repeat only: the talker's own copy is dropped
+	DMR_SFR_RX_FIRST,	// both: each voice burst played once, whichever copy comes first
+	DMR_SFR_RX_DUALPATH,	// both: a frame whose FEC failed is taken from the other copy when it decodes (CONFIG_SFR_DUALPATH_RX)
+	DMR_SFR_RX_NUM
+} dmr_sfr_rx_t;
+#define DMR_SFR_DUALPATH_MS		120	// a burst with a failed frame waits this long for the other copy (90 ms behind)
+
 #define DMR_CALL_ALIGN_MS		300	// DMO: reply aligned to a station heard this recently (within the modem's slot memory, 390 ms on the HR_C6000)
 #define DMR_CALL_TX_DONE_GUARD_MS	1500	// tx_done overdue after the last burst: force receive
 #define DMR_CALL_TX_MAX_INFLIGHT	4	// bursts queued ahead of the air at most
@@ -94,6 +103,15 @@ typedef struct {
 	void *privacy_ctx;
 	char tx_alias[DMR_TA_TEXT_MAX + 1];	// our talker alias, "" = none (CONFIG_DMR_TALKER_ALIAS)
 	uint8_t tx_alias_format;	// DMR_TA_7BIT or DMR_TA_ISO8
+	// A user of a single frequency repeater (CONFIG_SFR, docs/spec/sfr.md 4; never with rmo): ts is the inbound slot.
+	// Each call is on air twice: the talker's copy on the inbound slot, the repeat on the other one. sfr_rx says which
+	// are heard. PTT sends on the inbound slot with tx_sync, in step with the repeater's slots when they were heard
+	// recently (DMR_CALL_ALIGN_MS), else on our own timing (the repeater follows us)
+	bool sfr_user;
+	uint8_t tx_sync;		// dmr_sync_family_t of our bursts: DMR_SYNC_TS1 / TS2 / MS (DMR_SYNC_NONE = MS)
+	uint8_t rx_sync;		// the repeat's sync: DMR_SYNC_TS1 / TS2 (TS framing), BS, or MS (the copies look alike)
+	uint8_t sfr_rx;			// dmr_sfr_rx_t
+	int8_t cc2;			// a second color code heard (an ERDM repeater's outbound), -1 = none
 } dmr_call_config_t;
 
 // Caller info for the UI
@@ -229,6 +247,10 @@ typedef struct {
 	uint32_t tx_alias_lcs;		// superframes sent with a talker alias block instead of the voice LC
 	uint32_t rx_gps;		// GPS Info LCs decoded on our call
 	uint32_t tx_gps_lcs;		// superframes sent with our GPS Info instead of the voice LC
+	uint32_t rx_sfr_dup;		// SFR user: voice bursts dropped as the other copy of one already played
+	uint32_t rx_sfr_direct;		// SFR user, repeat only: bursts of the talker's own copy dropped
+	uint32_t rx_sfr_held;		// SFR user, dual-path RX: bursts held for the other copy (a frame's FEC failed)
+	uint32_t rx_sfr_fixed;		// ... frames taken from the other copy
 } dmr_call_stats_t;
 void dmr_call_get_stats(dmr_call_stats_t *out);
 // The talker alias our calls send now ("" = none: off for the channel, no callsign, or built without it)

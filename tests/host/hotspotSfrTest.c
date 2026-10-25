@@ -14,6 +14,7 @@
 #include "dmr/dmrData.h"
 #include "dmr/fec/dmrFec.h"
 #include "dmr/call/dmr_lc.h"
+#include "dmr/ambe/ambeFec.h"
 #include "sim/dmr_sim_modem.h"
 #if CONFIG_HOTSPOT_SPLIT
 #include "hotspot/hotspotSplit.h"
@@ -191,6 +192,8 @@ static void rx_lc(uint8_t kind, const uint8_t *lc, int8_t ts, uint8_t sync)
 	sim_rx(&b);
 }
 
+static const uint8_t *voice_payload;	// the voice bursts' payload, NULL = a pattern from the seed
+
 static void rx_voice(uint8_t index, uint8_t seed, const uint8_t *lc_at_f, int8_t ts)
 {
 	dmr_burst_t b;
@@ -206,7 +209,7 @@ static void rx_voice(uint8_t index, uint8_t seed, const uint8_t *lc_at_f, int8_t
 	b.len = DMR_VOICE_BYTES;
 	b.rssi_dbm = -80;
 	for (int i = 0; i < DMR_VOICE_BYTES; i++) {
-		b.payload[i] = (uint8_t)(seed + i);
+		b.payload[i] = voice_payload != NULL ? voice_payload[i] : (uint8_t)(seed + i);
 	}
 	if ((index == 5) && (lc_at_f != NULL)) {
 		b.lc_valid = true;
@@ -692,6 +695,49 @@ static void test_beacon(void)
 	hotspot_sfr_set_beacon(0, 2);
 }
 
+// The repeated voice's AMBE FEC as heard (sfr.rx_fec): a clean frame, one with 2 bit errors in C0, one whose C0 has 4
+// (detected, lost). The bits go out as heard
+static void test_rx_fec(void)
+{
+	uint8_t payload[DMR_VOICE_BYTES], bits[AMBE_PARAM_BITS];
+	hotspot_sfr_view_t v0, v;
+
+	for (int i = 0; i < AMBE_PARAM_BITS; i++) {
+		bits[i] = (uint8_t)((i * 7 + 3) % 5 == 0);
+	}
+	for (int f = 0; f < 3; f++) {
+		ambeFecEncode(bits, &payload[f * AMBE_FRAME_BYTES]);
+	}
+	payload[9] ^= 0x88;		// frame 1: air bits 0 and 4 = C0 bits 0 and 1
+	payload[18] ^= 0x88;		// frame 2: C0 bits 0-3
+	payload[19] ^= 0x88;
+	sfr_on();
+	hotspot_sfr_get_view(&v0);
+	rx_lc(DMR_BURST_VOICE_LC_HEADER, LC1, 1, DMR_SYNC_TS1);
+	rx_then_wait();
+	voice_payload = payload;
+	for (uint8_t i = 0; i < 6; i++) {
+		rx_voice(i, 0, LC1, 1);
+		rx_then_wait();
+	}
+	voice_payload = NULL;
+	rx_lc(DMR_BURST_TERMINATOR_LC, LC1, 1, DMR_SYNC_TS1);
+	slots(6);
+	hotspot_sfr_get_view(&v);
+	CHECK(v.stats.rx_repeated - v0.stats.rx_repeated == 8);
+	CHECK(v.stats.rx_fec_frames - v0.stats.rx_fec_frames == 18);
+	CHECK(v.stats.rx_fec_bits - v0.stats.rx_fec_bits == 12);
+	CHECK(v.stats.rx_fec_lost - v0.stats.rx_fec_lost == 6);
+	CHECK(v.stats.rx_fec_pos[0] == v0.stats.rx_fec_pos[0] && v.stats.rx_fec_pos[1] - v0.stats.rx_fec_pos[1] == 12 &&
+	      v.stats.rx_fec_pos[2] == v0.stats.rx_fec_pos[2]);
+	int n = 0;
+	for (unsigned i = 0; i < sim.air_count; i++) {
+		n += sim.air[i].kind == DMR_BURST_VOICE && memcmp(sim.air[i].payload, payload, sizeof(payload)) == 0;
+	}
+	CHECK(n == 6);			// repeated as heard
+	slots(60);
+}
+
 int main(void)
 {
 	test_trigger();
@@ -699,6 +745,7 @@ int main(void)
 	test_net_stream();
 	test_rf_priority();
 	test_silent_call();
+	test_rx_fec();
 	test_echo_and_late_entry();
 	test_vendor();
 	test_beacon();

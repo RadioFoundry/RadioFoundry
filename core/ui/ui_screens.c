@@ -252,7 +252,9 @@ static const char *mode_word(const radio_view_t *v)
 // it. Either way the title is centered. Returns the y where content starts.
 uint32_t ui_strip_draws;
 
-int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, const char *name)
+// The pill shows st instead of v->state: the hotspot screen shows what the hotspot does without a copy of the whole
+// view on the UI task's stack (the UI task's deepest path, stack check)
+static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t *s, const char *prefix, const char *name)
 {
 	ui_strip_draws++;
 	const ui_layout_t *L = &ui_layout;
@@ -265,7 +267,6 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	color_t pbg = ui_col.idle, pfg = ui_col.pill_fg;
 	// FM with the monitor holding the squelch open shows RX, as the green LED does (radio_sm.c outputs()); MON stays
 	// beside the mode
-	radio_state_t st = v->state;
 	if (st == RS_IDLE && v->monitor && v->ch.mode != RADIO_MODE_DMR)
 		st = RS_RX;
 #if CONFIG_DUAL_WATCH
@@ -430,6 +431,11 @@ int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, 
 	ui_draw_title(f, 0, y + 1, w, prefix, name, ui_col.fg);
 	gfx_hline(0, y + f->h + 1, w, ui_col.line);
 	return y + f->h + 2;
+}
+
+int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, const char *name)
+{
+	return draw_top_as(v, v->state, s, prefix, name);
 }
 
 // The prefix (dim when a name follows) and the name, centered on the screen and moved as little as needed to stay
@@ -998,6 +1004,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_NO_ID: sb_str(&b, "No DMR ID in codeplug"); break;
 	case TXDENY_AM: sb_str(&b, "Air band: receive only"); break;
 	case TXDENY_BCAST: sb_str(&b, "Broadcast: receive only"); break;
+	case TXDENY_SFR_RPT: sb_str(&b, "Repeater channel: PTT off"); break;
 	default: sb_str(&b, "Not allowed here"); break;
 	}
 	return buf;
@@ -1017,6 +1024,7 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_NO_ID: return "Set your DMR ID in qdmr";
 	case TXDENY_AM:
 	case TXDENY_BCAST: return v->vfo ? "Tune out of the band" : "Pick another channel";
+	case TXDENY_SFR_RPT: return "Pick a user channel to talk";
 	default: return "Pick another channel";
 	}
 }
@@ -1166,6 +1174,8 @@ static void draw_talk_dmr(const radio_view_t *v)
 	if (v->ch.rx_only) {
 		sb_str(&b, "RX only");
 		c = ui_col.warn;
+	} else if (d->sfr_rpt) {
+		sb_str(&b, d->sfr_cw ? "Sending ID" : d->sfr_busy ? "Repeating" : "SFR repeater");	// the channel's repeater role has the modem
 	} else if (!d->active && ui_st_dmr_off) {
 		sb_str(&b, "DMR modem off");
 		c = ui_col.warn;
@@ -2535,11 +2545,10 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 	int w = gfx_width();
 	char buf[48];
 	sbuf_t b;
-	radio_view_t pill = *v;		// the strip's pill shows what the hotspot does
-	pill.state = h->transmitting ? RS_TX : h->receiving ? RS_RX : RS_IDLE;
 
 	gfx_clear(ui_col.bg);
-	int y = ui_draw_top(&pill, s, "Hotspot", NULL) + 1;
+	// the strip's pill shows what the hotspot does
+	int y = draw_top_as(v, h->transmitting ? RS_TX : h->receiving ? RS_RX : RS_IDLE, s, "Hotspot", NULL) + 1;
 	const char *word = !h->running ? "STARTING" : h->transmitting ? "TX NET" : h->receiving ? "RX RF" : "READY";
 	const font_t *big = gfx_text_width(L->large, word) <= w ? L->large : L->medium;
 	gfx_text(big, 0, y, word, h->transmitting ? ui_col.tx : h->receiving ? ui_col.rx : ui_col.fg);

@@ -146,6 +146,16 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_REPLY_S:
 		radio_get_settings(&rs);
 		return ui_svc_reply_shown(&rs);
+#if CONFIG_SFR
+	case UI_SET_SFR_RX:
+		radio_get_settings(&rs);
+		return rs.sfr_rx;
+#endif
+#if CONFIG_SFR_CWID
+	case UI_SET_SFR_CWID:
+		radio_get_settings(&rs);
+		return rs.sfr_cwid;
+#endif
 #if CONFIG_DUAL_WATCH
 	case UI_SET_DUAL_DELAY_MS:
 		radio_get_settings(&rs);
@@ -308,6 +318,12 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_BATTERY_SAVER:
 	case UI_SET_REPLY_S:
 	case UI_SET_TALK_PERMIT:
+#if CONFIG_SFR
+	case UI_SET_SFR_RX:
+#endif
+#if CONFIG_SFR_CWID
+	case UI_SET_SFR_CWID:
+#endif
 #if CONFIG_DUAL_WATCH
 	case UI_SET_DUAL_DELAY_MS:
 #endif

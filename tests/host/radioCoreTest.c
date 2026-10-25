@@ -6,6 +6,7 @@
 #include <string.h>
 #include "board.h"
 #include "radio/radio_sm.h"
+#include "radio/radio_sfr.h"
 #include "radio/tones.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/call/dmr_lc.h"
@@ -4153,6 +4154,275 @@ static void test_fm_rssi_raw(void)
 	}
 }
 
+#if CONFIG_SFR
+// Standalone SFR (docs/spec/sfr.md 4): a channel's SFR role in the codeplug. Repeater: the runner takes the modem
+// instead of the call stack and repeats the inbound slot on the other one. User: the call stack on the inbound slot
+static void test_sfr_roles(void)
+{
+	dmr_start(true);
+	CHECK(sm.view.dmr.active && !sm.sfr_rpt && sm.view.dmr.sfr_role == SFR_ROLE_OFF);
+
+	// Repeater, inbound TS1, TS framing (Auto): the keying armed on the channel's frequency, the stack stopped
+	int tx0 = hw.tx_calls, off0 = hw.tx_off_calls;
+	chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
+	chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
+	reload_channel();
+	CHECK(sm.sfr_rpt && sm.view.dmr.sfr_rpt && !sm.view.dmr.active && !sm.dmr_running);
+	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
+	CHECK(sim.started && sim.cb != NULL && sim.locked_ts == 0 && sim.cc_filter == 2 && !sim.cfg.repeater);
+	CHECK(hw.tx_calls > tx0 && hw.tx_hz == 438500000 && sm.dmr_keyed);
+
+	// A call on the inbound slot: repeated on TS2 with the TS2 direct mode sync; the radio shows it as receiving
+	unsigned air0 = sim.air_count;
+	uint8_t lc[9];
+	mk_lc(lc, true, 201, 3101999);
+	for (int h = 0; h < 3; h++) {
+		burst_lc(lc, 2, false);
+		run(60);
+	}
+	CHECK(sm.view.dmr.sfr_busy && sm.view.state == RS_RX);
+	for (int i = 0; i < 6; i++) {
+		burst_voice((uint8_t)i, 2, i == 5 ? lc : NULL);
+		run(60);
+	}
+	CHECK(sm.view.dmr.sfr_keyed && sim.tx_begins >= 1 && sim.tx_listens >= 1);
+	burst_lc(lc, 2, true);
+	run(400);
+	unsigned voice = 0;
+	for (unsigned i = air0; i < sim.air_count; i++) {
+		CHECK(sim.air[i].sync == DMR_SYNC_TS2);
+		if (sim.air[i].kind == DMR_BURST_VOICE) {
+			voice++;
+		}
+	}
+	CHECK(voice == 6);
+	radio_sfr_view_t v;
+	radio_sfr_get_view(&v);
+	CHECK(v.on && v.stats.rx_repeated >= 10 && v.inbound_slot == 0 && v.framing == SFR_FRAMING_TS);
+	run(3000);		// the hang ends
+	CHECK(!sm.view.dmr.sfr_keyed && !sm.view.dmr.sfr_busy && sm.view.state == RS_IDLE);
+
+	// The RSSI shown is the held peak, as with the call stack: half the readings fall in empty slots or our own
+	rssi_alt = true;
+	run(600);
+	CHECK(sm.view.rssi_dbm == -70);
+	rssi_alt = false;
+
+	// PTT does nothing on the repeater
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_SFR_RPT);
+	req(RREQ_PTT, 0);
+	run(50);
+	CHECK(sm.view.state == RS_IDLE && sm.sfr_rpt);
+
+	// Hotspot mode takes the modem from the role; leaving it starts the role again
+	req(RREQ_HS_ENTER, 0);
+	CHECK(sm.hotspot && !sm.sfr_rpt && !sm.dmr_keyed && !sim.started);
+	req(RREQ_HS_LEAVE, 0);
+	run(50);
+	CHECK(!sm.hotspot && sm.sfr_rpt && sm.dmr_keyed);
+
+	// A scan visits the channel to listen: the role waits, and starts again once the scan ends there
+	req(RREQ_SCAN, RSCAN_ZONE);
+	bool visited = false;
+	for (int i = 0; i < 300 && sm.view.scan != 0; i++) {
+		run(20);
+		CHECK(!sm.sfr_rpt);
+		visited |= sm.view.zone_pos == 3;
+	}
+	CHECK(sm.view.scan != 0 && visited);
+	req(RREQ_SCAN, RSCAN_CANCEL);
+	run(50);
+	CHECK(sm.view.scan == 0 && sm.view.zone_pos == 3 && sm.sfr_rpt && sm.dmr_keyed);
+
+	// The board won't key: an ordinary channel, not a repeater that can't send
+	tx_fail = true;
+	reload_channel();
+	CHECK(!sm.sfr_rpt && !sm.dmr_keyed && sm.view.dmr.active);
+	tx_fail = false;
+	reload_channel();
+	CHECK(sm.sfr_rpt && sm.dmr_keyed);
+
+	// TX inhibit: an ordinary channel again (the keying released, the stack back)
+	radio_settings_t set = sm.set;
+	set.tx_inhibit = true;
+	radio_sm_set_settings(&sm, &set, now);
+	run(50);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.active && hw.tx_off_calls > off0 && !sm.dmr_keyed);
+	run(500);
+	CHECK(!sm.sfr_rpt && sm.sfr_denied);
+	set.tx_inhibit = false;	// the role back by itself, no channel change
+	radio_sm_set_settings(&sm, &set, now);
+	run(50);
+	CHECK(sm.sfr_rpt && !sm.sfr_denied && sm.dmr_keyed && !sm.view.dmr.active);
+	set.tx_inhibit = true;	// a repeater channel selected while inhibited waits, then starts
+	radio_sm_set_settings(&sm, &set, now);
+	run(50);
+	reload_channel();
+	CHECK(!sm.sfr_rpt && sm.sfr_denied && sm.view.dmr.active);
+	set.tx_inhibit = false;
+	radio_sm_set_settings(&sm, &set, now);
+	run(50);
+	CHECK(sm.sfr_rpt);
+
+	// A repeater role on a two-frequency channel is refused: the channel is an ordinary repeater channel
+	chans[4].tx_hz = 433500000;
+	reload_channel();
+	CHECK(!sm.sfr_rpt && sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_OFF && sm.view.dmr.rmo);
+	chans[4].tx_hz = 438500000;
+
+	// User, inbound TS2 (the channel says TS1): PTT on TS2 with the TS2 direct mode sync, both slots heard
+	chans[4].sfr_a = SFR_ROLE_USER_STANDARD | 0x20;
+	reload_channel();
+	CHECK(!sm.sfr_rpt && sm.view.dmr.active && sm.view.dmr.sfr_role == SFR_ROLE_USER_STANDARD);
+	CHECK(dmr_call_view()->ts == 2);
+	air0 = sim.air_count;
+	tx_once();
+	CHECK(sim.air_count > air0 + 4 && sim.last_ts == 2);
+	for (unsigned i = air0; i < sim.air_count; i++) {
+		CHECK(sim.air[i].sync == DMR_SYNC_TS2);
+	}
+
+	// No SFR flag: the bytes are not read
+	chans[4].sfr_flag1 = 0;
+	reload_channel();
+	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_OFF && dmr_call_view()->ts == 1);
+	chans[4].sfr_a = 0;
+}
+#if CONFIG_SFR_CWID
+// A call through the repeater role: the repeater transmits, its hang ends and it goes quiet
+static void sfr_call_through(void)
+{
+	uint8_t lc[9];
+	mk_lc(lc, true, 201, 3101999);
+	for (int h = 0; h < 3; h++) {
+		burst_lc(lc, 2, false);
+		run(60);
+	}
+	for (int i = 0; i < 6; i++) {
+		burst_voice((uint8_t)i, 2, i == 5 ? lc : NULL);
+		run(60);
+	}
+	burst_lc(lc, 2, true);
+	run(60);
+}
+
+// The standalone SFR repeater's CW ID (docs/spec/sfr.md 4.6): the schedule, the callsign, and through the radio core
+// an ID after traffic, in FM on the channel's frequency, then the repeater role again
+static void test_sfr_cwid(void)
+{
+	// The schedule: the first ID once the repeater has transmitted and gone quiet, then at most one per interval,
+	// and none without new traffic
+	radio_cwid_t c;
+	memset(&c, 0, sizeof(c));
+	CHECK(radio_cwid_interval_ms(0) == 0 && radio_cwid_interval_ms(1) == 300000u);
+	CHECK(radio_cwid_interval_ms(4) == 1800000u && radio_cwid_interval_ms(RADIO_CWID_CODES) == 0);
+	CHECK(!radio_cwid_due(&c, 600000u, false, 1000));	// no traffic yet
+	CHECK(!radio_cwid_due(&c, 600000u, true, 2000));	// transmitting
+	CHECK(!radio_cwid_due(&c, 600000u, false, 3999));	// not quiet long enough
+	CHECK(!radio_cwid_due(&c, 0, false, 4000));		// off
+	CHECK(radio_cwid_due(&c, 600000u, false, 4000));	// the first one at once
+	radio_cwid_sent(&c, 4000);
+	CHECK(!radio_cwid_due(&c, 600000u, false, 700000));	// no traffic since
+	CHECK(!radio_cwid_due(&c, 600000u, true, 10000));
+	CHECK(!radio_cwid_due(&c, 600000u, false, 600000));	// traffic, the interval not over
+	CHECK(radio_cwid_due(&c, 600000u, false, 604000));
+
+	// The callsign: the name's first word, an SSID dropped, upper case, cut to fit
+	char cs[8];
+	CHECK(radio_cwid_callsign("  n4abc-7 Base", cs, sizeof(cs)) == 5 && strcmp(cs, "N4ABC") == 0);
+	CHECK(radio_cwid_callsign("W1AW/P", cs, sizeof(cs)) == 4 && strcmp(cs, "W1AW") == 0);
+	CHECK(radio_cwid_callsign("VE3ABC", cs, sizeof(cs)) == 6 && strcmp(cs, "VE3ABC") == 0);
+	// Only something that clearly is one: 4 to 7 letters and digits, at least one of each
+	CHECK(radio_cwid_callsign("Test Radio", cs, sizeof(cs)) == 0 && cs[0] == '\0');	// no digit
+	CHECK(radio_cwid_callsign("1234", cs, sizeof(cs)) == 0 && cs[0] == '\0');		// no letter
+	CHECK(radio_cwid_callsign("W1A", cs, sizeof(cs)) == 0);				// too short
+	CHECK(radio_cwid_callsign("KD2ABCD", cs, sizeof(cs)) == 7 && strcmp(cs, "KD2ABCD") == 0);
+	CHECK(radio_cwid_callsign("KD2ABCDE", cs, sizeof(cs)) == 0 && cs[0] == '\0');	// too long
+	CHECK(radio_cwid_callsign("N4.ABC", cs, sizeof(cs)) == 0);				// not letters and digits
+	CHECK(radio_cwid_callsign("N4ABC", cs, 5) == 0);					// no room
+	CHECK(radio_cwid_callsign("", cs, sizeof(cs)) == 0 && cs[0] == '\0');
+
+	// The radio core: a repeater role with the ID every 5 min and the name "ab1cd"
+	dmr_start(true);
+	chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
+	chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
+	reload_channel();
+	char name0[sizeof(sm.radio_name)];
+	memcpy(name0, sm.radio_name, sizeof(name0));
+	strcpy(sm.radio_name, "ab1cd");
+	radio_settings_t set = sm.set;
+	set.sfr_cwid = 1;
+	radio_sm_set_settings(&sm, &set, now);
+	CHECK(sm.set.sfr_cwid == 1);
+	CHECK(sm.sfr_rpt && sm.dmr_keyed);
+	run(5000);
+	CHECK(sm.cw_phase == 0 && sm.view.dmr.sfr_cwid_sent == 0);	// nothing transmitted, no ID
+
+	// A call, the hang, two quiet seconds: the ID in FM on the channel's frequency, the runner stopped
+	sfr_call_through();
+	memset(&tone, 0, sizeof(tone));
+	int modes = hw.set_mode_calls;
+	for (int i = 0; i < 2000 && sm.cw_phase == 0; i++) {
+		run(5);
+	}
+	radio_sfr_view_t v;
+	radio_sfr_get_view(&v);
+	CHECK(v.stats.rx_repeated >= 10);	// (the runner's counters, kept while it is stopped)
+	CHECK(sm.cw_phase != 0 && sm.view.dmr.sfr_cw && sm.sfr_rpt && !v.on && !sm.dmr_keyed);
+	CHECK(hw_mode == RADIO_MODE_FM && hw.set_mode_calls == modes + 1 && hw.tx_hz == 438500000 && tone.hz == 800);
+	req(RREQ_PTT, 1);		// PTT still refused
+	CHECK(sm.view.tx_deny == TXDENY_SFR_RPT && sm.cw_phase != 0);
+	req(RREQ_PTT, 0);
+	// "AB1CD": 18 elements; 61 units at 20 wpm (3660 ms) plus the lead and tail
+	run(4500);
+	CHECK(tone.changes == 36 && tone.hz == 0);
+	CHECK(sm.cw_phase == 0 && !sm.view.dmr.sfr_cw && sm.view.dmr.sfr_cwid_sent == 1 && sm.view.dmr.sfr_cwid_cut == 0);
+	radio_sfr_view_t v0 = v;
+	radio_sfr_get_view(&v);
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.set_mode_calls == modes + 2 && v.on && sm.sfr_rpt && sm.dmr_keyed);
+	CHECK(v.stats.rx_repeated >= 10 && v.stats.rx_repeated == v0.stats.rx_repeated);	// the counters carried on
+	run(100);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// No traffic: no ID. Traffic inside the interval: the ID waits for its end
+	run(20000);
+	CHECK(sm.view.dmr.sfr_cwid_sent == 1 && sm.cw_phase == 0);
+	sfr_call_through();
+	run(10000);
+	CHECK(sm.view.dmr.sfr_cwid_sent == 1 && sm.cw_phase == 0);
+	for (int i = 0; i < 300 && sm.cw_phase == 0; i++) {
+		run(1000);
+	}
+	CHECK(sm.cw_phase != 0 && hw_mode == RADIO_MODE_FM);
+
+	// The channel retuned in the middle: the ID cut, an ordinary DMR channel
+	chans[4].sfr_flag1 = 0;
+	reload_channel();
+	CHECK(sm.cw_phase == 0 && !sm.view.dmr.sfr_cw && tone.hz == 0 && sm.view.dmr.sfr_cwid_cut == 1);
+	CHECK(!sm.sfr_rpt && sm.view.dmr.active && hw_mode == RADIO_MODE_DMR);
+
+	// No callsign in the radio name (a personal name): nothing keyed, counted as skipped, the role goes on
+	strcpy(sm.radio_name, "Base 1");
+	chans[4].sfr_flag1 = SFR_CHANNEL_FLAG1_ENABLED;
+	reload_channel();
+	CHECK(sm.sfr_rpt);
+	sfr_call_through();
+	run(6000);
+	CHECK(sm.cw_phase == 0 && sm.view.dmr.sfr_cwid_cut == 2 && sm.sfr_rpt && hw_mode == RADIO_MODE_DMR);
+
+	memcpy(sm.radio_name, name0, sizeof(name0));
+	set = sm.set;
+	set.sfr_cwid = 0;
+	radio_sm_set_settings(&sm, &set, now);
+	chans[4].sfr_flag1 = 0;
+	chans[4].sfr_a = 0;
+	reload_channel();
+	CHECK(!sm.sfr_rpt);
+}
+#endif
+#endif
+
 int main(void)
 {
 	test_startup();
@@ -4198,6 +4468,12 @@ int main(void)
 	test_hotspot();
 	test_hotspot_session();
 	test_hotspot_cwid();
+#if CONFIG_SFR
+	test_sfr_roles();
+#endif
+#if CONFIG_SFR_CWID
+	test_sfr_cwid();
+#endif
 	test_dmr_emergency();
 	test_power_off_ars();
 #if CONFIG_VFO_DMR

@@ -201,11 +201,14 @@ T1 pass criteria (all automatic):
 - every burst MS sync (direct mode), color code = the channel's;
 - at least one voice LC header (three expected, `docs/spec/dmr-modem.md` 2.5), header and terminator LC with
   source = the radio's ID, destination = the TG, FLCO 0;
-- voice A-F in order, whole superframes; the embedded LC from B-E decodes and equals the header's;
+- voice A-F in order, whole superframes; the embedded LC from B-E decodes and its call LCs (FLCO 0 or 3, not talker
+  alias or GPS) equal the header's;
 - at least one terminator with LC after the last voice burst;
 - same-slot spacing 60.00 +- 0.05 ms, standard deviation < 0.1 ms;
 - median frequency offset within +-500 Hz (the FM carrier was within 50 Hz);
-- the carrier keyed per burst (off in the other slot), each burst on 27-31.5 ms, key-up and key-down ramps < 1.5 ms;
+- the carrier keyed per burst (off in the other slot), each burst on 27-31.5 ms, key-up and key-down ramps < 1.5 ms (the ramp regions of the power mask in ETSI TS
+  102 361-1 clause 10.2.3.1.1, figure 10.3; a board can be held to another limit with a reason, `board.toml`
+  `[hil.limits] dmr_tx_ramp_ms`, and the check then names it);
 - no overlapping bursts, no power step inside a burst, no carrier without a decoded burst;
 - the bench modem hears one call, started by its header, ended by its terminator, AMBE FEC corrections 0 on the bench.
 

@@ -262,6 +262,20 @@ bool uvf_cal_at(uint32_t hz, uvf_cal_point_t *out)
 	return true;
 }
 
+bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out)
+{
+	// UHF only: at VHF the same carrier shift would need about three times as many steps, past the register's range
+	if (hz <= 300000000u) {
+		return false;
+	}
+	int v = ref_offset + UVF_DIRECT_TX_REF_STEPS;
+	if (v > 127) {
+		return false;
+	}
+	*out = (int8_t)v;
+	return true;
+}
+
 const char *uvf_cal_source(void)
 {
 	return source == CAL_WORKING ? "working" : source == CAL_FACTORY ? "factory" : "none";
