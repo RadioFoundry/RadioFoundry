@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1701 APRS AFSK (hal_afsk.h, docs/spec/aprs.md 5.2): the AT1846S FM TX tone generator as the voice source (as for
+// UV380 family APRS AFSK (hal_afsk.h, docs/spec/aprs.md 5.2): the AT1846S FM TX tone generator as the voice source (as for
 // the roger beep), retuned at every symbol boundary by the TIM6 interrupt (hardware-dm1701.md 3.1, 3.3: TIM6 is the
 // AFSK bit clock, priority 5). One AT1846S register write per tone change (reg 0x35, about 0.1 ms on I2C3 at
 // 400 kHz) out of an 833 us symbol; the radio core keeps the I2C3 bus free meanwhile (status() returns its cached
@@ -13,7 +13,7 @@
 // level gives, and the flatness of mark vs space (aprs.md 13 HIL steps).
 #include "config.h"
 #if CONFIG_APRS
-#include "dm1701.h"
+#include "uvf.h"
 #include "stm32f4xx_hal.h"
 
 #define AFSK_IRQ_PRIORITY	5	// hardware-dm1701.md 3.1 (no RTOS calls from the handler)
@@ -70,7 +70,7 @@ void TIM6_DAC_IRQHandler(void)
 	}
 	uint16_t hz = symbol(i) ? mark_hz : space_hz;
 	if (hz != cur_hz) {
-		if (dm1701_afsk_tone(hz)) {
+		if (uvf_afsk_tone(hz)) {
 			cur_hz = hz;
 		} else {
 			skipped++;
@@ -89,7 +89,7 @@ static bool tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark,
 	mark_hz = mark;
 	space_hz = space;
 	cur_hz = symbol(0) ? mark : space;
-	if (!dm1701_afsk_begin(cur_hz, level)) {	// the first symbol's tone, at task level
+	if (!uvf_afsk_begin(cur_hz, level)) {	// the first symbol's tone, at task level
 		return false;
 	}
 	pos = 1;
@@ -107,10 +107,10 @@ static void tx_stop(void)
 {
 	timer_stop();
 	busy = false;
-	dm1701_afsk_end();
+	uvf_afsk_end();
 }
 
-const hal_afsk_t dm1701_afsk = {
+const hal_afsk_t uvf_afsk = {
 	.tx_start = tx_start,
 	.tx_busy = tx_busy,
 	.tx_stop = tx_stop,

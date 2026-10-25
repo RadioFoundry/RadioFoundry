@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1701 radio: AT1846S (I2C3) + HR_C6000 (bit-banged config SPI, voice SPI2) + RF path GPIOs + APC DAC +
+// UV380 family radio: AT1846S (I2C3) + HR_C6000 (bit-banged config SPI, voice SPI2) + RF path GPIOs + APC DAC +
 // calibration. FM receive and transmit (docs/spec/hardware-dm1701.md 4-8, 12; docs/spec/modem-hrc6000.md 3, 8), and the
 // RF side of DMR (modem-hrc6000.md 3.1, 4.3; hardware-dm1701.md 5.3, 6): set_mode(DMR) puts both chips in DMR and starts
 // the slot engine (platform/stm32f4/hrc/dmr_glue.c); tx() in DMR only arms the per-burst keying (TX frequency and PA drive) and the PA
-// then follows the bursts from the modem interrupts through dm1701_rf_dmr_switch(), which writes AT1846S reg 0x30
+// then follows the bursts from the modem interrupts through uvf_rf_dmr_switch(), which writes AT1846S reg 0x30
 // directly over I2C3 (never through the task-level driver and its cache, which is resynced when DMR TX ends).
 // tx_off() in DMR belongs after DMR_EV_TX_DONE; called while a transmission runs it drops it.
 //
 // TX switching sequence (gotchas 3.5): the TX frequency is written with the receiver off (reg 0x30 idle, then the
 // synthesizer words) and the chip goes straight from idle to FM TX, never through RX on. With this sequence the old
-// on-air measurement found no offset, so DM1701_TX_OFFSET_HZ_* default to 0. Measure the carrier with this exact
+// on-air measurement found no offset, so UVF_TX_OFFSET_HZ_* default to 0. Measure the carrier with this exact
 // sequence and put the measured correction there; do not copy the +3 kHz of the other sequence.
 #include <stddef.h>
 #include "config.h"
-#include "dm1701.h"
+#include "uvf.h"
 #include "pins.h"
 #include "hal_time.h"
 #include "hal_dtmf.h"
@@ -22,17 +22,17 @@
 #include "modem/hrc6000/hrc6000.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "hrc/hrc_bus.h"
-#include "dmr_dm1701.h"
+#include "dmr_uvf.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
 
 // Measured TX carrier correction for the sequence above, per bandwidth (Hz, added to the TX frequency)
-#define DM1701_TX_OFFSET_HZ_12K5	0
-#define DM1701_TX_OFFSET_HZ_25K		0
+#define UVF_TX_OFFSET_HZ_12K5	0
+#define UVF_TX_OFFSET_HZ_25K		0
 
 // APC DAC value when no calibration is loaded: deliberately very low, never an uncalibrated high drive
-#define DM1701_DAC_UNCALIBRATED		300u
+#define UVF_DAC_UNCALIBRATED		300u
 #define DAC_MAX				4095u
 
 #define UHF_MIN_HZ		300000000u
@@ -49,9 +49,6 @@
 // Voice SPI2 (hardware-dm1701.md 4.3): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C6000_VCS
 #define VOICE_SPI_PINS		(GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15)
 
-// DM-1701 power interpolation fractions (hardware-dm1701.md 7), per mille: f0 f1 f2 f3
-static const uint16_t frac_vhf[4] = { 450, 750, 250, 530 };
-static const uint16_t frac_uhf[4] = { 460, 730, 140, 360 };
 
 static struct {
 	at1846s_t rf;
@@ -64,13 +61,13 @@ static struct {
 	radio_bw_t rx_bw;
 	subtone_t rx_tone;
 	uint32_t bus_errors;	// I2C failures and failed chip operations since start (debug)
-	dm1701_radio_diag_t diag;
+	uvf_radio_diag_t diag;
 	radio_status_t last_status;	// returned without bus traffic while DMR transmits
 	uint16_t tone_hz;		// FM TX tone in place of the microphone (tx_tone), 0 = none
 	uint16_t saved_59, saved_79;	// AT1846S tone deviation and tone select before the tone
 	uint16_t saved_3a, saved_7a;	// AT1846S voice source (0x3A bits 14:12) and single tone enable before the tone
 	bool asleep;			// rx_sleep(true): receiver off
-	volatile bool afsk;		// APRS AFSK running (afsk_dm1701.c): the TIM6 interrupt owns I2C3
+	volatile bool afsk;		// APRS AFSK running (afsk_uvf.c): the TIM6 interrupt owns I2C3
 	bool inject;			// FM TX audio from the MCU (fm_tx_inject) instead of the microphone
 
 	// DMR per-burst keying (shared with the modem ISRs)
@@ -244,10 +241,10 @@ static int32_t lerp(int32_t a, int32_t b, uint16_t per_mille)
 	return a + (b - a) * (int32_t)per_mille / 1000;
 }
 
-// Board power level -> DAC value from the four calibrated curves (hardware-dm1701.md 7, DM-1701 fractions)
-static uint32_t power_to_dac(const dm1701_cal_point_t *cal, uint8_t level, bool uhf)
+// Board power level -> DAC value from the four calibrated curves (hardware-dm1701.md 7, the radio's fractions)
+static uint32_t power_to_dac(const uvf_cal_point_t *cal, uint8_t level, bool uhf)
 {
-	const uint16_t *f = uhf ? frac_uhf : frac_vhf;
+	const uint16_t *f = uvf_variant.frac[uhf ? 1 : 0];
 	int32_t vl = cal->power_dac[0], lo = cal->power_dac[1], mid = cal->power_dac[2], hi = cal->power_dac[3];
 	int32_t v;
 	switch (level) {
@@ -360,9 +357,9 @@ static bool rf_key(void)
 	uint32_t hz = r.dmr_tx_hz;
 	r.rf_isr_dirty = true;
 	int8_t ref;
-	if (!r.rf_rx_pending && r.rf_tuned_hz == hz && dm1701_direct_tx_ref(hz, r.rf_ref, &ref)) {
+	if (!r.rf_rx_pending && r.rf_tuned_hz == hz && uvf_direct_tx_ref(hz, r.rf_ref, &ref)) {
 		// Direct (SFR, simplex): the receiver on the TX frequency goes straight to DMR TX, which puts the carrier
-		// about 3.07 kHz low; the raised MOD1 offset puts it back (dm1701_direct_tx_ref)
+		// about 3.07 kHz low; the raised MOD1 offset puts it back (uvf_direct_tx_ref)
 		if (!rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_DMR_TX))) {
 			r.rf_skipped++;
 			return false;
@@ -429,7 +426,7 @@ void TIM7_IRQHandler(void)
 
 // The RF TX interrupt arms the key timer (the engine counts the burst as keyed from here: the PA drop at the timeslot
 // interrupt more than 20 ms later is unchanged); the timeslot interrupt drops the PA, a key still pending included
-bool dm1701_rf_dmr_switch(bool tx)
+bool uvf_rf_dmr_switch(bool tx)
 {
 	if (!tx) {
 		key_timer_stop();
@@ -447,7 +444,7 @@ bool dm1701_rf_dmr_switch(bool tx)
 	return true;
 }
 
-void dm1701_rf_dmr_service(void)
+void uvf_rf_dmr_service(void)
 {
 	if (r.rf_rx_pending) {
 		r.rf_rx_retries++;
@@ -455,7 +452,7 @@ void dm1701_rf_dmr_service(void)
 	}
 }
 
-void dm1701_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_retries)
+void uvf_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_retries)
 {
 	*skipped = r.rf_skipped;
 	*unarmed = r.rf_unarmed;
@@ -465,9 +462,9 @@ void dm1701_rf_dmr_counters(uint32_t *skipped, uint32_t *unarmed, uint32_t *rx_r
 // The shared DMR glue's view of this board: the modem's interrupt lines are PC0-PC2
 static const stm32_hrc_dmr_board_t dmr_board = {
 	.int_port = GPIOC,
-	.rf_switch = dm1701_rf_dmr_switch,
-	.ts_service = dm1701_rf_dmr_service,
-	.rf_counters = dm1701_rf_dmr_counters,
+	.rf_switch = uvf_rf_dmr_switch,
+	.ts_service = uvf_rf_dmr_service,
+	.rf_counters = uvf_rf_dmr_counters,
 };
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
@@ -503,8 +500,8 @@ static void rf_resync(void)
 // HR_C6000 into DMR (modem-hrc6000.md 3.1) with the DMR modulation pair for the frequency, then the slot engine
 static void dmr_enter(void)
 {
-	dm1701_cal_point_t cal;
-	dm1701_cal_at(r.rx_valid ? r.rx_hz : board.bands[0].lo_hz, &cal);	// on false it fills safe defaults
+	uvf_cal_point_t cal;
+	uvf_cal_at(r.rx_valid ? r.rx_hz : board.bands[0].lo_hz, &cal);	// on false it fills safe defaults
 #if CONFIG_DMR
 	count(hrc6000_dmr_enter(&r.modem, cal.dmr_i, cal.dmr_q, DMR_MIC_GAIN));
 #endif
@@ -514,7 +511,7 @@ static void dmr_enter(void)
 // --- hal_radio_t ---
 
 // The speaker serves two requests: the core's FM squelch (audio(), radio task) and DMR voice PCM
-// (dm1701_speaker_pcm(), from the audio task's block callback or the radio task). The amp is on for either; while
+// (uvf_speaker_pcm(), from the audio task's block callback or the radio task). The amp is on for either; while
 // PCM plays the FM feed-through (4:0x36) is off and the HR_C6000 codec DAC drives the line out. A mutex keeps the two
 // callers' register and pin writes from interleaving.
 static bool audio_wanted;	// the core wants the FM speaker on
@@ -573,8 +570,8 @@ static void audio(bool on)
 }
 
 #if CONFIG_DMR
-// Overrides the fallback in audio_dm1701.c (hal_audio_t.speaker_pcm)
-void dm1701_speaker_pcm(bool on)
+// Overrides the fallback in audio_uvf.c (hal_audio_t.speaker_pcm)
+void uvf_speaker_pcm(bool on)
 {
 	if (on == pcm_wanted) {
 		return;
@@ -670,14 +667,14 @@ static void inject_stop(void)
 		return;
 	}
 	r.inject = false;
-	dm1701_pwm_audio(NULL);
+	uvf_pwm_audio(NULL);
 	uint8_t e0;
 	if (hrc_read(&r.modem, 4, 0xE0, &e0)) {
 		count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)((e0 | 0x40u) & ~0x06u)));	// the microphone again
 	}
 }
 
-bool dm1701_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode)
+bool uvf_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode)
 {
 	if (pull == NULL) {
 		inject_stop();
@@ -691,7 +688,7 @@ bool dm1701_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode)
 		count(false);
 		return false;
 	}
-	dm1701_pwm_audio(pull);
+	uvf_pwm_audio(pull);
 	count(hrc_write(&r.modem, 4, 0xE0, (uint8_t)((e0 & ~0x40u) | 0x06u)));
 	r.inject = true;
 	return true;
@@ -733,8 +730,8 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	r.rf_isr_dirty = false;
 	r.rf_rx_pending = false;
 
-	dm1701_cal_point_t cal;
-	dm1701_cal_at(hz, &cal);	// on false it fills safe defaults
+	uvf_cal_point_t cal;
+	uvf_cal_at(hz, &cal);	// on false it fills safe defaults
 	count(hrc6000_set_ref_offset(&r.modem, cal.ref_offset, false));
 	r.rf_ref = cal.ref_offset;
 	r.rf_direct = false;
@@ -758,19 +755,22 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	if (band == NULL || !band->tx) {
 		return false;
 	}
+	if (uvf_variant.tx_block != NULL && uvf_variant.tx_block() != NULL) {
+		return false;	// an image for another hardware version: its PA band select may be this radio's backlight
+	}
 	bool uhf = hz >= UHF_MIN_HZ;
 	if (board.power_count > 0 && power >= board.power_count) {
 		power = (uint8_t)(board.power_count - 1);
 	}
 
-	dm1701_cal_point_t cal;
-	bool calibrated = dm1701_cal_at(hz, &cal) && cal.valid;
-	uint32_t drive = calibrated ? power_to_dac(&cal, power, uhf) : DM1701_DAC_UNCALIBRATED;
+	uvf_cal_point_t cal;
+	bool calibrated = uvf_cal_at(hz, &cal) && cal.valid;
+	uint32_t drive = calibrated ? power_to_dac(&cal, power, uhf) : UVF_DAC_UNCALIBRATED;
 
 	if (r.mode == RADIO_MODE_DMR) {
 		// Arm only: the receiver stays on the RX frequency (a repeater's slot timing is followed until our first
-		// burst); each burst is keyed from the modem's RF TX interrupt (dm1701_rf_dmr_switch)
-		int32_t dmr_offset = bw == RADIO_BW_25K ? DM1701_TX_OFFSET_HZ_25K : DM1701_TX_OFFSET_HZ_12K5;
+		// burst); each burst is keyed from the modem's RF TX interrupt (uvf_rf_dmr_switch)
+		int32_t dmr_offset = bw == RADIO_BW_25K ? UVF_TX_OFFSET_HZ_25K : UVF_TX_OFFSET_HZ_12K5;
 		count(hrc_set_mod_gain(&r.modem, cal.dmr_i, cal.dmr_q));
 		r.dmr_tx_hz = (uint32_t)((int32_t)hz + dmr_offset);
 		r.dmr_drive = drive;
@@ -783,7 +783,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 
 	uint16_t tone_value;
 	at1846s_tone_t tone = rf_tone(tx_tone, &tone_value);
-	int32_t offset = bw == RADIO_BW_25K ? DM1701_TX_OFFSET_HZ_25K : DM1701_TX_OFFSET_HZ_12K5;
+	int32_t offset = bw == RADIO_BW_25K ? UVF_TX_OFFSET_HZ_25K : UVF_TX_OFFSET_HZ_12K5;
 
 	rx_supply(false, false);
 
@@ -964,10 +964,10 @@ static bool tx_tone_key(bool down)
 }
 
 #if CONFIG_APRS
-// APRS AFSK (afsk_dm1701.c, docs/spec/aprs.md 5.2): the FM TX tone generator as for tx_tone, at hz with the deviation
+// APRS AFSK (afsk_uvf.c, docs/spec/aprs.md 5.2): the FM TX tone generator as for tx_tone, at hz with the deviation
 // from level (50 = the tone deviation tx_tone uses), then the TIM6 interrupt retunes tone1 (reg 0x35) every symbol
 // with single I2C3 writes. status() keeps off I2C3 meanwhile. Unverified on the bench, like tx_tone
-bool dm1701_afsk_begin(uint16_t hz, uint8_t level)
+bool uvf_afsk_begin(uint16_t hz, uint8_t level)
 {
 	if (!tx_tone(hz)) {
 		return false;
@@ -982,12 +982,12 @@ bool dm1701_afsk_begin(uint16_t hz, uint8_t level)
 }
 
 // From the TIM6 interrupt: tone1 to hz. False when the write didn't happen
-bool dm1701_afsk_tone(uint16_t hz)
+bool uvf_afsk_tone(uint16_t hz)
 {
 	return r.afsk && rf_isr_write(0x35, (uint16_t)(hz * 10u));
 }
 
-void dm1701_afsk_end(void)
+void uvf_afsk_end(void)
 {
 	if (r.afsk) {
 		r.afsk = false;
@@ -1014,7 +1014,7 @@ static void rx_sleep(bool sleep)
 	}
 }
 
-const hal_radio_t dm1701_radio = {
+const hal_radio_t uvf_radio = {
 	.init = init,
 	.set_mode = set_mode,
 	.rx = rx,
@@ -1033,24 +1033,24 @@ const hal_radio_t dm1701_radio = {
 	.rx_sleep = rx_sleep,
 };
 
-void dm1701_radio_diag(dm1701_radio_diag_t *d)
+void uvf_radio_diag(uvf_radio_diag_t *d)
 {
 	*d = r.diag;
 	d->bus_errors = r.bus_errors;
 }
 
 #if CONFIG_AUDIO_PROBE
-// The audio probe's register access (hal_audio_tap_t.modem_reg, audio_dm1701.c): one HR_C6000 register, any task.
+// The audio probe's register access (hal_audio_tap_t.modem_reg, audio_uvf.c): one HR_C6000 register, any task.
 // Each access is one masked transaction (modem_transfer), so it can't tear a driver's; it can of course change state
 // under the driver's feet, which is what the probe is for
-bool dm1701_modem_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write)
+bool uvf_modem_reg(uint8_t page, uint8_t reg, uint8_t *val, bool write)
 {
 	return write ? hrc_write(&r.modem, page, reg, *val) : hrc_read(&r.modem, page, reg, val);
 }
 
 // RAM access (hal_audio_tap_t.modem_ram), in 64-byte transactions so interrupts are masked for well under a
 // millisecond at a time
-bool dm1701_modem_ram(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, bool write)
+bool uvf_modem_ram(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, bool write)
 {
 	bool ok = true;
 	while (ok && len > 0) {
@@ -1065,7 +1065,7 @@ bool dm1701_modem_ram(uint8_t page, uint16_t addr, uint8_t *buf, uint16_t len, b
 
 // A burst write over the config port (hal_audio_tap_t.modem_burst): page 3 goes to the chip's prompt tone FIFO here,
 // not through the voice port as the vocoder's frames do
-bool dm1701_modem_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t len)
+bool uvf_modem_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t len)
 {
 	return hrc_write_burst(&r.modem, page, reg, buf, len);
 }

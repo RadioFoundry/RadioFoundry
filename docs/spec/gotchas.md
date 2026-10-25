@@ -584,8 +584,8 @@ worse. Rule: don't count on both copies from an HR_C6000; hearing both needs the
 TX/RX every burst: on air 212 of 216 repeated voice frames needed Golay corrections and 4 were uncorrectable, where
 the talker's direct copy was clean. It plays, but it is the reason a user would want the direct copy (sfr.md 4).
 
-**14.14 An AT1846S SFR keys straight from RX (SDR bench, 2026-10-19).** For any AT1846S + HR_C6000 radio (GD-77
-family, MD-UV380):
+**14.14 An AT1846S SFR keys straight from RX (SDR bench, 2026-10-19).** For any radio with an AT1846S and an HR_C6000
+([feature-matrix.md](../feature-matrix.md)):
 - Going through idle (reg 0x30) at every switch (14.9) makes the synthesizer settle again each slot. The repeat then
   lost 5-10 of 72 inbound frames, with about 190 bit errors. With RX and TX on one frequency, switching 0x30 straight
   between RX and DMR TX keeps it locked: no frames lost, 48-68 bits. The band's RX supply still follows the PA.

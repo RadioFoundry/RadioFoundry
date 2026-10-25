@@ -242,15 +242,18 @@ To have someone install a version that isn't a release (a commit to try out), se
 https://<site>/flash/?version=<full 40-character commit hash>
 https://<site>/flash/?version=<full commit hash>#radio=<id>
 https://<site>/flash/?version=v0.3.0
+https://<site>/flash/?version=feature/my_radio
 ```
 
 | Behavior | Detail |
 |---|---|
-| What it builds | The build request sends that ref in place of the newest release tag. The build service takes a release tag, `main` or a full commit hash, and the commit has to be pushed. A short hash shows a "can't find" banner and builds nothing. |
+| What it builds | The build request sends that ref in place of the newest release tag. The build service takes a release tag, a branch of the main repository (`main` included) or a full commit hash, and the commit has to be pushed. A branch name passes the service's rule: up to four `/`-separated parts of letters, digits, `_`, `.` and `-`, no `..`, no part ending in `.lock` (`version.js`). A short hash shows a "can't find" banner and builds nothing. |
 | How long it lasts | The tab keeps it in `sessionStorage` for the session: reloads and visits to other pages keep it, a new browser session doesn't. `?version=` (empty) drops it. |
 | On every step | A banner names the version and has "Install the latest release instead", which drops it. |
 | Before the build | The build step's button says "Get version <hash>", and a dialog asks for confirmation. The dialog can also switch to the latest release and continue with it. |
 | `#radio=` | Picks the radio, as on any flasher link. |
+
+Without a link, a radio with no release is built from `main`. On a preview of another branch (`data/site.json` `branch`, from `CF_PAGES_BRANCH` or the checked-out branch), it is built from that branch instead, so a radio that exists only there can be tried.
 
 The feature list comes from the site's own release data. A commit with other feature names makes the build fail with
 the service's error.

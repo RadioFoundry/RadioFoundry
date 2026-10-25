@@ -45,13 +45,11 @@ assert all([(s.addr, s.size) for s in b.sectors] == REGIONS and (b.app_base, b.f
 # boards' come from the registry ([flash.dfu]); STOCK_ONLY are radios with this bootloader and no RadioFoundry board yet
 # (planned, docs/spec/radios.md), for flashing their stock firmware back.
 STOCK_ONLY = {
-    "mduv380": ("739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991", bytes.fromhex("00AA8989")),
     "md9600": ("c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae", bytes.fromhex("A2FABB4B")),
 }
 KEYS = dict({b.id: (b.key_sha256, b.key_prefix) for b in RFOUNDRY_BOARDS}, **STOCK_ONLY)
 ALIASES = dict({b.id: b.id for b in RFOUNDRY_BOARDS}, **{
     "rt84": "dm1701",      # spec: same key as the DM-1701, unverified
-    "mduv380": "mduv380",
     "mduv390": "mduv380",
     "md2017": "mduv380",
     "md9600": "md9600",

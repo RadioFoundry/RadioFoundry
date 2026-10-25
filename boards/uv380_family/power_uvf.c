@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1701 power latch, battery, volume knob, LEDs (docs/spec/hardware-dm1701.md sections 10.4 and 11).
+// UV380 family power latch, battery, volume knob, LEDs (docs/spec/hardware-dm1701.md sections 10.4 and 11).
 // ADC1 scans volume, battery, mic level and the temperature sensor continuously; DMA2 Stream4 keeps the last
 // SCANS results in a circular buffer, so a reading is a short average with no interrupt and no locking.
-#include "dm1701.h"
+#include "uvf.h"
 #include "FreeRTOS.h"
 #include "pins.h"
 #include "hal_time.h"
@@ -16,10 +16,11 @@ enum { CH_VOLUME, CH_BATTERY, CH_MIC, CH_TEMP, CH_COUNT };
 #define SETTLE_MS		1500		// readings settle after power-up (spec 11.1)
 #define FILTER_MS		10000		// time constant of the displayed battery voltage
 
-// Volume pot (spec 11.2, DM-1701): log taper, the breakpoint sits near the middle of the rotation
-#define VOL_MIN			26	// measured on the bench: 26 at the bottom, 2063 at the top (spec 29..2075)
-#define VOL_BREAK		318
-#define VOL_MAX			2060
+// Volume pot (spec 11.2): log taper, the breakpoint sits near the middle of the rotation; the ends and the break are the
+// radio's (uvf_variant)
+#define VOL_MIN			((int32_t)uvf_variant.vol_min)
+#define VOL_BREAK		((int32_t)uvf_variant.vol_break)
+#define VOL_MAX			((int32_t)uvf_variant.vol_max)
 #define VOL_MUTE_ZONE		5		// counts above the minimum that still read 0
 #define VOL_HYSTERESIS		5
 
@@ -94,10 +95,11 @@ static bool settled(void)
 	return started && (uint32_t)(hal_millis() - start_ms) >= SETTLE_MS;
 }
 
-// Battery in mV from the latest readings: raw / 37.5 in 0.1 V units (spec 11.1) = raw * 8 / 3 mV
+// Battery in mV from the latest readings, by the radio's divider (spec 11.1: the DM-1701 reads raw / 37.5 in 0.1 V
+// units, raw * 8 / 3 mV)
 static uint32_t battery_now_mv(void)
 {
-	return (uint32_t)adc_read(CH_BATTERY) * 8u / 3u;
+	return (uint32_t)adc_read(CH_BATTERY) * uvf_variant.bat_mul / uvf_variant.bat_div;
 }
 
 static void latch(bool on)
@@ -193,13 +195,13 @@ static void led(uint8_t which, bool on)
 }
 
 // Mic level (spec 11.3), raw 0..4095, for VOX in the core (dB conversion there)
-uint16_t dm1701_mic_level_raw(void)
+uint16_t uvf_mic_level_raw(void)
 {
 	return adc_read(CH_MIC);
 }
 
 // Internal temperature in 0.1 C, coarse and uncalibrated (spec 11.4: 943 counts at 25 C, 3.1 counts per C)
-int16_t dm1701_temperature_c10(void)
+int16_t uvf_temperature_c10(void)
 {
 	int32_t raw = adc_read(CH_TEMP);
 	return (int16_t)(250 + (raw - 943) * 100 / 31);
@@ -212,7 +214,7 @@ static uint8_t mic_level(void)
 	return miclevel_log(adc_read(CH_MIC), 12);
 }
 
-const hal_power_t dm1701_power = {
+const hal_power_t uvf_power = {
 	.init = init,
 	.latch = latch,
 	.battery_mv = battery_mv,
@@ -223,7 +225,7 @@ const hal_power_t dm1701_power = {
 	.mic_level = mic_level,
 };
 
-uint16_t dm1701_adc_raw(uint8_t ch)
+uint16_t uvf_adc_raw(uint8_t ch)
 {
 	return ch < CH_COUNT ? adc_read(ch) : 0;
 }

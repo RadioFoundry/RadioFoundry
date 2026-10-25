@@ -164,6 +164,28 @@ class StockPlacement(unittest.TestCase):
                                 "%s: codec window 0x%08X+0x%X outside the flash the linker keeps free" % (b.id, a, n))
 
 
+    def test_firmware_knows_every_placement(self):
+        """boards/<radio>/vocoder_<radio>.c pins each stock build where the merge puts it: its tag, the code's address,
+        length and CRC, the tables' address, length and CRC, and the codec id the board reports."""
+        import re
+        root = os.path.join(HERE, "..", "..", "..")
+        for b in [b for b in boards.BOARDS.values() if b.codec_stock]:
+            voc = open(os.path.join(root, "boards", b.id, "vocoder_%s.c" % b.id)).read()
+            nums = {int(x, 16) for x in re.findall(r"0x([0-9A-Fa-f]+)u", voc)}
+            self.assertIn('"%s"' % b.codec.id, voc)
+            for h in b.codec_stock:
+                prof = stockfw.PROFILES[h]
+                if not prof.get("placement"):
+                    continue
+                pl, pd = prof["placement"], prof["placed"]
+                for what, v in (("tag", pl["tag"]), ("code", pl["code"]), ("code length", prof["code"][1]),
+                                ("code CRC", pd["code"][0]), ("tables", prof["tables"][0]),
+                                ("tables length", pl.get("tables_len", prof["tables"][1])),
+                                ("tables CRC", pd["tables"][0])):
+                    self.assertIn(v, nums, "%s %s: %s 0x%X is not in vocoder_%s.c" % (b.id, prof["version"], what, v,
+                                                                                       b.id))
+
+
 class TwoStockFiles(unittest.TestCase):
     """A board whose codec comes from either of two stock files ([codec] stock lists both): the same codec, its tables
     at different addresses. The board's windows are the union of both layouts; each merge plans against its own."""
@@ -787,6 +809,147 @@ class StockLibrary(unittest.TestCase):
         w = m["table_windows"][0]
         self.assertEqual((w["min_start"], w["min_len"]), (p["tables"][0], p["placement"]["tables_len"]))
         self.assertEqual(codecmap.branches_in(m, p["tables"][0], p["placement"]["tables_len"]), len(m["branches"]))
+
+
+def flash_readout(stock, key, profiles, placed_image=None):
+    """A synthetic stub readout of the internal flash (1 MB from 0x08000000): a radio on its stock firmware (the
+    application segment decrypted at its address), or with placed_image (a merged image) at 0x0800C000."""
+    out = bytearray(stockfw.random_bytes(random.Random(4), 0xC000)) + b"\xFF" * (0x100000 - 0xC000)
+    if placed_image is not None:
+        out[0xC000:0xC000 + len(placed_image)] = placed_image
+        return bytes(out)
+    off = stockfw.HEADER_LEN
+    for a, n in stockfw.parse_container(stock):
+        if a >= stockfw.FLASH_BASE:
+            out[a - stockfw.FLASH_BASE:a - stockfw.FLASH_BASE + n] = stockfw.decrypt(stock, off, n, key)
+        off += n
+    return bytes(out)
+
+
+class MdUv380(unittest.TestCase):
+    """The MD-UV380 family: four TYT 19.26 stock files, one codec, each build's tables at its own address."""
+
+    B = boards.get("mduv380")
+    V1926 = "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e"
+
+    def test_board(self):
+        b = self.B
+        self.assertEqual(b.codec.id, "mduv380-1926-s11")
+        self.assertEqual(len(b.codec_stock), 4)
+        self.assertEqual([s.index for s in b.codec_sectors()], [10, 11])
+        self.assertEqual(b.app_region, (0x0800C000, 0x080C0000))
+        self.assertEqual(b.key_prefix, bytes.fromhex("00AA8989"))
+        self.assertEqual(b.key_sha256, stockfw.MDUV380_KEY_SHA256)
+        self.assertEqual(b.image_id({"POWER": "10w"}), "mduv380-10w")
+        self.assertEqual(b.image_id({}), "mduv380")
+        self.assertEqual(b.options_for_name("MD-UV380 10W"), {"POWER": "10w"})
+        self.assertIs(boards.from_debuglink_name("MD-UV380"), b)
+        self.assertTrue(any("PTT" in s for s in b.bootloader_steps))
+        self.assertIn("PTT", cli.bootloader_steps(b))
+        hint = cli.stock_hint(b)
+        for h in b.codec_stock:
+            self.assertIn(stockfw.PROFILES[h]["name"], hint)
+            self.assertIn("MD-UV380", stockfw.KNOWN_FILES[h])
+
+    def test_placements(self):
+        """Each file's tables at their stock address cut to the codec's data, the code right after them, word aligned,
+        everything inside sectors 10 and 11 below the descriptor; each its own tag; its map found by the code's hash."""
+        maps = codecmap.load_maps()
+        tags = set()
+        for h in self.B.codec_stock:
+            prof = stockfw.PROFILES[h]
+            pl = prof["placement"]
+            tab = prof["tables"][0]
+            self.assertEqual(pl["code"], (tab + pl["tables_len"] + 3) & ~3, prof["name"])
+            self.assertLessEqual(pl["code"] + prof["code"][1], stockfw.DESC_ADDR, prof["name"])
+            self.assertGreaterEqual(tab, 0x080C0000)
+            tags.add(pl["tag"])
+            m = codecmap.by_code_sha(maps, prof["code"][2])
+            self.assertEqual(len(m), 1, prof["name"])
+            self.assertEqual(m[0]["stock"]["sha256"], h)
+            self.assertEqual((m[0]["code"]["flash"], m[0]["code"]["len"]), prof["code"][:2])
+            tw = m[0]["table_windows"][0]
+            self.assertEqual((tw["flash"], tw["len"], tw["sha256"]), prof["tables"])
+            self.assertEqual(tw["min_len"], pl["tables_len"])
+            wins = stockfw.layout(prof)
+            self.assertEqual(wins[-1][:2], (stockfw.DESC_ADDR, stockfw.DESC_LEN))
+        self.assertEqual(len(tags), 4)
+
+    def synthetic(self):
+        return stockfw.build_synthetic_stock(KEY, random.Random(19), self.V1926)
+
+    def test_synthetic_merge(self):
+        stock, profiles, code, _ = self.synthetic()
+        prof, segs = stockfw.extract(stock, KEY, profiles)
+        self.assertEqual([a for a, _ in segs], [0x080EB300, 0x080D8C94, stockfw.DESC_ADDR])
+        self.assertEqual(len(segs[1][1]), 0x1266A)
+        merged = stockfw.merge(app_image(0x080C0000 - 0x0800C000), prof, segs)
+        self.assertEqual(stockfw.split_merged(merged, profiles)[1], prof)
+
+    def test_codec_from_a_flash_readout(self):
+        """A stub readout of a radio still on its stock firmware gives the codec as the stock file's merge does; so does
+        one of a radio running RadioFoundry with the codec placed. Anything else gives nothing."""
+        stock, profiles, _, _ = self.synthetic()
+        want = stockfw.extract(stock, KEY, profiles)
+        flash = flash_readout(stock, KEY, profiles)
+        self.assertEqual(stockfw.from_flash(flash, profiles=profiles), want)
+        merged = stockfw.merge(app_image(5000), *want)
+        self.assertEqual(stockfw.from_flash(flash_readout(None, None, None, merged), profiles=profiles), want)
+        bad = bytearray(flash)
+        bad[0x0807B830 - stockfw.FLASH_BASE + 0x400] ^= 1
+        self.assertIsNone(stockfw.from_flash(bytes(bad), profiles=profiles))
+        self.assertIsNone(stockfw.from_flash(flash[:0x80000], profiles=profiles))
+        self.assertIsNone(stockfw.from_flash(flash))			# not the real build
+        # the DM-1701 the same way
+        dstock, dprofiles, _, _ = synthetic_stock()
+        self.assertEqual(stockfw.from_flash(flash_readout(dstock, KEY, dprofiles), profiles=dprofiles),
+                         stockfw.extract(dstock, KEY, dprofiles))
+
+    def test_cli_merge_and_flash_from_a_readout(self):
+        stock, profiles, _, _ = self.synthetic()
+        prof, segs = stockfw.extract(stock, KEY, profiles)
+        img = app_image(60000)
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(stockfw.PROFILES, profiles):
+            fp, ip, op = (os.path.join(d, n) for n in ("flash.bin", "rfoundry_mduv380.bin", "out.bin"))
+            open(fp, "wb").write(flash_readout(stock, KEY, profiles))
+            open(ip, "wb").write(img)
+            rc, out, err = run_cli(["merge", ip, "--stock", fp, "-o", op])
+            self.assertEqual(rc, 0, out + err)
+            self.assertEqual(open(op, "rb").read(), stockfw.merge(img, prof, segs))
+            rc, out, err = run_cli(["key", "--stock", fp])
+            self.assertEqual(rc, 2)
+            self.assertIn("never from a flash readout", err)
+            rc, out, err = run_cli(["flash", ip, "--board", "mduv380", "--simulate", "rfoundry-nocodec", "--stock", fp,
+                                    "--yes"])
+            self.assertEqual(rc, 0, out + err)
+            self.assertIn("a flash readout of a radio with V19.26 CSV", out)
+            self.assertIn("ERASE + WRITE codec", out)
+            self.assertIn("sim      PASS", out)
+            # the 10 W release image, its build option in the manifest, onto a radio in its bootloader
+            m = dict(mf.generate(self.B, img, "v0.0.1", "e" * 40), build_options={"POWER": "10w"})
+            rp = os.path.join(d, "rfoundry-mduv380-10w-v0.0.1.bin")
+            open(rp, "wb").write(img)
+            open(rp[:-4] + ".json", "w").write(mf.dumps(m))
+            rc, out, err = run_cli(["flash", rp, "--simulate", "blank", "--option", "POWER=10w", "--stock", fp, "--yes"])
+            self.assertEqual(rc, 0, out + err)
+            self.assertIn("ERASE + WRITE codec", out)
+            self.assertIn("sim      PASS", out)
+            rc, out, err = run_cli(["flash", rp, "--simulate", "blank", "--option", "POWER=5w", "--stock", fp, "--yes"])
+            self.assertEqual(rc, 2, out + err)
+            open(fp, "wb").write(b"\xFF" * 0x100000)
+            rc, out, err = run_cli(["merge", ip, "--stock", fp, "-o", op, "--board", "mduv380"])
+            self.assertEqual(rc, 2)
+            self.assertIn("flash readout", err)
+
+    def test_simulated_flash_from_a_stock_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            bp = os.path.join(d, "rfoundry_mduv380.bin")
+            open(bp, "wb").write(app_image(0x080C0000 - 0x0800C000 - 100))
+            rc, out, err = run_cli(["flash", bp, "--board", "mduv380", "--simulate", "rfoundry-nocodec", "--stock",
+                                    "synthetic", "--yes"])
+            self.assertEqual(rc, 0, out + err)
+            self.assertIn("MERGE", out)
+            self.assertIn("sim      PASS", out)
 
 
 class CodecDecision(unittest.TestCase):

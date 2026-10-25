@@ -16,7 +16,10 @@ def tune(radio, hz):
     return radio.wait_for(lambda v: v.get("rx_hz") == str(hz), 3.0, what=f"VFO at {hz}")
 
 
-def need_vfo(radio):
+def need_vfo(radio, switch):
+    # the feature marker only files the test under its checklist feature (bringup_plugin.py); the switch decides
+    if switch not in radio.features():
+        skip("not_built", f"built without CONFIG_{switch} (no such receiver on this radio, or switched off)")
     if "VFO_FM" not in radio.features():
         skip("not_built", "built without the FM VFO")
     radio.go_home()
@@ -26,7 +29,7 @@ def need_vfo(radio):
 
 @pytest.mark.feature("am_rx")
 def test_air_band_am(radio):
-    need_vfo(radio)
+    need_vfo(radio, "AM_RX")
     with radio.vfo_session():
         v = tune(radio, AIR_HZ)
         assert v.get("am") == "1" and v.get("bcast") == "0", v
@@ -35,7 +38,7 @@ def test_air_band_am(radio):
 
 @pytest.mark.feature("bcast_fm")
 def test_broadcast_receiver(radio):
-    need_vfo(radio)
+    need_vfo(radio, "BCAST_FM")
     with radio.vfo_session():
         v = tune(radio, BCAST_HZ)
         assert v.get("bcast") == "1" and v.get("am") == "0", v

@@ -57,10 +57,11 @@ FILE_REF = re.compile(r"[\w.+<>*-]*(?:/[\w.+<>*-]+)+/?|[\w+<>-]+\.(?:md|c|h|S|py
                       r"txt|html|map|log|csv|zip)\b")
 
 
-def name_pattern(name):
+def name_pattern(name, strict_suffix=False, whole=False):
     """A loose pattern for one radio name: "XR-100UV" matches XR-100UV, XR100UV, XR-100, xr100; a maker in front is
     dropped (a first word without a digit: "Acme ZT-7"), and only the model's first word counts ("XR-200 Pro":
-    XR-200, xr200pro)."""
+    XR-200, xr200pro). Where two radios' names differ only by such a suffix ("ZT-7" and "ZT-7S"), strict_suffix keeps
+    the longer one's suffix required and whole keeps the shorter one from matching inside the longer."""
     words = name.split()
     if len(words) > 1 and not re.search(r"\d", words[0]):
         words = words[1:]
@@ -70,15 +71,27 @@ def name_pattern(name):
             out.append(("-?" if out else "") + part)
             number = True
         elif number:
-            out.append("(?:-?%s)?" % part)	# a suffix after the number: optional
+            out.append(("-?%s" if strict_suffix else "(?:-?%s)?") % part)	# a suffix after the number: optional
         else:
             out.append(("-?" if out else "") + part)
-    return r"(?<![A-Za-z0-9])" + "".join(out) + r"(?![0-9])"
+    return r"(?<![A-Za-z0-9])" + "".join(out) + (r"(?![A-Za-z0-9])" if whole else r"(?![0-9])")
 
 
 def patterns(radios):
-    """{id: compiled pattern} from {id: [names]}."""
-    return {bid: re.compile("|".join(dict.fromkeys(name_pattern(n) for n in [bid] + list(names))), re.I)
+    """{id: compiled pattern} from {id: [names]}. A name whose loose form also matches another radio's name keeps its
+    suffix, and the other's pattern stops at a letter (name_pattern strict_suffix, whole): "ZT-7S" doesn't name the
+    ZT-7 of another board, nor "ZT-7" the ZT-7S."""
+    def others(bid):
+        return [o.split()[-1] for other, names in radios.items() if other != bid for o in [other] + list(names)]
+
+    def pattern(bid, n):
+        loose = re.compile(name_pattern(n), re.I)
+        shorter = any(loose.fullmatch(o) and not re.compile(name_pattern(o), re.I).fullmatch(n.split()[-1])
+                      for o in others(bid))
+        longer = any(re.compile(name_pattern(o), re.I).fullmatch(n.split()[-1]) and not loose.fullmatch(o)
+                     for o in others(bid))
+        return name_pattern(n, strict_suffix=shorter, whole=longer)
+    return {bid: re.compile("|".join(dict.fromkeys(pattern(bid, n) for n in [bid] + list(names))), re.I)
             for bid, names in radios.items()}
 
 
@@ -90,11 +103,31 @@ def registry_radios(root=ROOT):
     names, docs, part_of = {}, {}, {}
     for bid in boards.board_dirs(root):
         data = boards._read_toml(os.path.join(root, "boards", bid, "board.toml"))
+        # code the radio shares with others of its board family (a boards/<dir> its BOARD_DIRS builds, with no
+        # board.mk): one of its own places
+        docs[bid] = set()
         names[bid] = [data["model"]] + list(data.get("also", []))
-        docs[bid] = set(data.get("docs", {}).values())
+        docs[bid] = set(data.get("docs", {}).values()) | {d + "/" for d in shared_dirs(root, bid)}
         if data.get("part_of"):
             part_of[bid] = data["part_of"]
     return names, docs, part_of
+
+
+def shared_dirs(root, bid):
+    """The boards/<dir> directories without a board.mk that boards/<bid>/board.mk lists in BOARD_DIRS (read as text)."""
+    try:
+        with open(os.path.join(root, "boards", bid, "board.mk"), encoding="utf-8") as f:
+            mk = f.read().replace("\\\n", " ")
+    except OSError:
+        return []
+    out = []
+    for m in re.finditer(r"(?m)^\s*BOARD_DIRS\s*[:+]?=(.*)$", mk):
+        for d in m.group(1).split():
+            d = d.strip("/")
+            if (re.fullmatch(r"boards/[\w-]+", d) and d != "boards/" + bid and os.path.isdir(os.path.join(root, d))
+                    and not os.path.isfile(os.path.join(root, d, "board.mk"))):
+                out.append(d)
+    return out
 
 
 def families(ids, part_of):
@@ -165,6 +198,8 @@ def own(path, bid, docs, shared_docs, family=None):
         return any(own(path, b, docs, shared_docs) for b in family.get(bid, {bid}))
     if path.startswith("boards/%s/" % bid):
         return True
+    if any(p.endswith("/") and path.startswith(p) for p in docs.get(bid, ())):
+        return True	# a board family directory (shared_dirs)
     if path in docs.get(bid, ()) and shared_docs.get(path, 0) == 1:
         return True
     parts = path.split("/")

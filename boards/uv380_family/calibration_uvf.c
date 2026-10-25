@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1701 factory calibration reader (docs/spec/hardware-dm1701.md section 12).
+// UV380 family factory calibration reader (docs/spec/hardware-dm1701.md section 12).
 // Read only: the working copy at 0x010000 is used when it carries the marker, otherwise the factory table in the
 // SPI flash security registers 1-2 is converted in RAM the way a working copy would be. Nothing is ever written.
 #include <string.h>
-#include "dm1701.h"
+#include "uvf.h"
 #include "radio/cal_curve.h"
 
 #define CAL_SIZE		512u
@@ -40,12 +40,12 @@ static const uint32_t POWER_STEP[BAND_COUNT] = { 1000000u, 1000000u };
 static const uint32_t GAIN_FIRST[BAND_COUNT] = { 13600000u, 40000000u };
 static const uint32_t GAIN_STEP[BAND_COUNT] = { 950000u, 1000000u };
 
-// Working-copy conversion of the factory power rows (12.1, DM-1701 rows), per mille: very low = low x k0,
-// low x= k1, mid x= k2, high x= k3
-static const uint16_t K_VLOW[BAND_COUNT] = { 610, 650 };
-static const uint16_t K_LOW[BAND_COUNT] = { 1000, 1000 };
-static const uint16_t K_MID[BAND_COUNT] = { 850, 860 };
-static const uint16_t K_HIGH[BAND_COUNT] = { 1300, 1700 };
+// Working-copy conversion of the factory power rows (12.1), the radio's factors per mille (uvf_variant.cal_k):
+// very low = low x k0, low x= k1, mid x= k2, high x= k3
+#define K_VLOW(band)	(uvf_variant.cal_k[band][0])
+#define K_LOW(band)	(uvf_variant.cal_k[band][1])
+#define K_MID(band)	(uvf_variant.cal_k[band][2])
+#define K_HIGH(band)	(uvf_variant.cal_k[band][3])
 
 static const uint8_t MARKER[8] = { 0x00, 0x25, 0x00, 0x40, 0x00, 0x45, 0x01, 0x40 };
 
@@ -133,10 +133,10 @@ static void derive_working(void)
 		uint8_t *vlow = &table[ROW_VLOW.at[band]], *low = &table[ROW_LOW.at[band]];
 		uint8_t *mid = &table[ROW_MID.at[band]], *high = &table[ROW_HIGH.at[band]];
 		for (uint8_t i = 0; i < POINTS[band]; i++) {
-			vlow[i] = scale(low[i], K_VLOW[band]);
-			low[i] = scale(low[i], K_LOW[band]);
-			mid[i] = scale(mid[i], K_MID[band]);
-			high[i] = scale(high[i], K_HIGH[band]);
+			vlow[i] = scale(low[i], K_VLOW(band));
+			low[i] = scale(low[i], K_LOW(band));
+			mid[i] = scale(mid[i], K_MID(band));
+			high[i] = scale(high[i], K_HIGH(band));
 		}
 	}
 	memcpy(&table[CAL_MARKER_OFFSET], MARKER, sizeof(MARKER));
@@ -194,7 +194,7 @@ static bool load_factory(void)
 	return check_bands();
 }
 
-bool dm1701_cal_load(void)
+bool uvf_cal_load(void)
 {
 	source = CAL_NONE;
 	if (load_working()) {
@@ -236,11 +236,11 @@ static uint8_t gain_at(const row_t *r, int band, uint32_t f10)
 	return (uint8_t)clamp(v, 255);
 }
 
-bool dm1701_cal_at(uint32_t hz, dm1701_cal_point_t *out)
+bool uvf_cal_at(uint32_t hz, uvf_cal_point_t *out)
 {
 	int band = hz > 300000000u ? BAND_UHF : BAND_VHF;
 	if (!band_ok[band]) {
-		*out = (dm1701_cal_point_t){
+		*out = (uvf_cal_point_t){
 			.valid = false,
 			.power_dac = { SAFE_DAC, SAFE_DAC, SAFE_DAC, SAFE_DAC },
 			.fm_i = SAFE_GAIN, .fm_q = SAFE_GAIN, .dmr_i = SAFE_GAIN, .dmr_q = SAFE_GAIN,
@@ -262,13 +262,13 @@ bool dm1701_cal_at(uint32_t hz, dm1701_cal_point_t *out)
 	return true;
 }
 
-bool dm1701_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out)
+bool uvf_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out)
 {
 	// UHF only: at VHF the same carrier shift would need about three times as many steps, past the register's range
 	if (hz <= 300000000u) {
 		return false;
 	}
-	int v = ref_offset + DM1701_DIRECT_TX_REF_STEPS;
+	int v = ref_offset + UVF_DIRECT_TX_REF_STEPS;
 	if (v > 127) {
 		return false;
 	}
@@ -276,13 +276,13 @@ bool dm1701_direct_tx_ref(uint32_t hz, int8_t ref_offset, int8_t *out)
 	return true;
 }
 
-const char *dm1701_cal_source(void)
+const char *uvf_cal_source(void)
 {
 	return source == CAL_WORKING ? "working" : source == CAL_FACTORY ? "factory" : "none";
 }
 
 // "w:mark f:UO3" plus the working copy's marker bytes, for the diagnostics page
-void dm1701_cal_why(char *out, uint8_t len, uint8_t marker[8])
+void uvf_cal_why(char *out, uint8_t len, uint8_t marker[8])
 {
 	uint8_t n = 0;
 	for (const char *s = why_working; *s && n + 1 < len; s++)
@@ -296,7 +296,7 @@ void dm1701_cal_why(char *out, uint8_t len, uint8_t marker[8])
 }
 
 // Raw byte of the table in RAM (the last copy read), for the diagnostics page
-uint8_t dm1701_cal_byte(uint16_t offset)
+uint8_t uvf_cal_byte(uint16_t offset)
 {
 	return offset < CAL_SIZE ? table[offset] : 0;
 }

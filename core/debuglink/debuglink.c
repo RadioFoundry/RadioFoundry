@@ -173,6 +173,12 @@ static const char features[] = "features="
 #if CONFIG_VFO_DMR
 	"VFO_DMR,"
 #endif
+#if CONFIG_AM_RX
+	"AM_RX,"
+#endif
+#if CONFIG_BCAST_FM
+	"BCAST_FM,"
+#endif
 #if CONFIG_DIAG
 	"DIAG,"
 #endif

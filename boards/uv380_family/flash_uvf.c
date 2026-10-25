@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1701 data flash: W25Q128 on SPI1 (PB3 SCK, PB4 MISO, PB5 MOSI, AF5), mode 0, APB2/16, chip select PD7
+// UV380 family data flash: W25Q128 on SPI1 (PB3 SCK, PB4 MISO, PB5 MOSI, AF5), mode 0, APB2/16, chip select PD7
 // (docs/spec/hardware-dm1701.md 13), through the shared driver (platform/stm32f4/spi_flash).
-#include "dm1701.h"
+#include "uvf.h"
 #include "pins.h"
 #include "spi_flash/spi_flash_board.h"
 
@@ -38,7 +38,7 @@ static const stm32_spi_flash_cfg_t cfg = {
 	.map = &map,
 };
 
-bool dm1701_flash_init(void)
+bool uvf_flash_init(void)
 {
 	return stm32_spi_flash_init(&cfg);
 }

@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# The MD-UV380's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
+# web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/mduv380/memory.ld.
+
+id = "mduv380"
+name = "TYT MD-UV380"
+maker = "TYT"
+model = "MD-UV380"
+also = ["TYT MD-UV390", "Retevis RT3S", "TYT MD-UV390 Plus 10 W"]
+kind = "handheld"
+# where the radio appears in the site's lists (the lowest: the home page's radio)
+order = 6
+
+[docs]
+hardware = "docs/spec/hardware-mduv380.md"
+codec = "docs/spec/codec-mduv380.md"
+install = "docs/user/02-installing.md"
+bringup = "docs/testing/mduv380-bringup.md"
+
+# One-line summaries for the site and the generated tables; the facts are in docs.hardware
+[hardware]
+bands = "136-174 / 400-480 MHz"
+power = "1 / 2 / 5 W (Plus: 10 W)"
+display = "1.77\" color, 160 × 128"
+gallery = "160x128"
+clock = { rtc = "unknown", note = "STM32 RTC on a 32.768 kHz crystal, as on the UV380 family; no backup supply known (docs/spec/hardware-mduv380.md)" }
+
+[status]
+level = "bring-up"
+summary = """\
+Built on the UV380 family code with the MD-UV380's keys, display, power tables and GPS; nothing has run on a radio yet. \
+Open: every function on air."""
+release = "testing"
+
+# The Plus 10 W swaps two pins and has its own power tables (hardware-mduv380.md 3, 7), a build choice (board.mk POWER).
+# The first value is the default build; ci and the release build the other one too. board_name: what the radio
+# reports as board= on the debug link
+[[build_options]]
+name = "POWER"
+title = "Power"
+help = "The MD-UV380, MD-UV390 and RT3S are 5 W radios. Choose 10 W only for an MD-UV390 Plus, whose box and label say 10 W."
+values = [
+	{ id = "5w", title = "5 W", text = "MD-UV380, MD-UV390, RT3S", board_name = "MD-UV380" },
+	{ id = "10w", title = "10 W", text = "MD-UV390 Plus 10 W", board_name = "MD-UV380 10W" },
+]
+
+[flash]
+family = "usb-dfu"
+keep_codec = true
+stock_download = "https://passion-radio.com/dmr-equipment/tyt-md380-321.html"
+stock_versions = ["V19.26 CSV", "D19.26 REC", "P19.26 CSV-GPS", "S19.26 GPS-REC"]
+backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
+notice = "MD-UV390 Plus 10 W owners: choose the 10 W image, and everyone else the 5 W one. The two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart, so a wrong choice isn't caught: it drives the wrong pins. Check the label on the radio or its box."
+
+[flash.bootloader]
+steps = [
+	"Turn the radio off and connect the programming cable.",
+	"Hold PTT and the side key just above it (SK1).",
+	"Turn the radio on with the volume knob while you hold both keys. The screen stays dark.",
+	"Release the keys.",
+]
+
+# The TYT bootloader takes the same DFU protocol and sector order as the other STM32 radios', with its own key
+# (hardware-mduv380.md 11; the MD-UV390 and the MD-2017 use the same key)
+[flash.dfu]
+vid = 0x0483
+pid = 0xDF11
+string1 = "AnyRoad Technology"
+product = "Digital Radio in USB mode"
+key_sha256 = "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991"
+key_prefix = "00AA8989"
+
+# The STM32F4 stub's board record (stub/f4stub.py, stub-stm32f4.md 5.2): its board id (HELLO echoes it), whether
+# protocol 4 has run on a radio, and the SPI flash's bus, mode and clock (its pins: pins.h PIN_FLASH_*)
+[flash.stub]
+id = 5
+tested = false
+spi = { bus = 1, mode = 0, hz = 4500000 }
+
+# The codec where the merge puts it (docs/spec/codec-placement.md): tables at their stock address, the code after them
+# and the descriptor, all in sectors 10 and 11. stock lists the SHA-256 of each stock file rfoundry merges the codec
+# from (tools/rfoundry/rfoundry/stockfw.py PROFILES)
+[codec]
+tool = "codec_extract"
+stock = [
+	"75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e",	# V19.26 CSV
+	"7dec4b751e8a0f44cf7d54d0ebc3b439a9f49899eadd7c8ff14d2804edbe8ac2",	# D19.26 REC
+	"84331dbc9bccf5021122b715dcb77d7589dba0745694bf3a249aae6e7c383ef1",	# P19.26 CSV-GPS
+	"77923d67aa75a07f7601a1c53ae1d5f5af37bd4367d52a50c8aeff89b834eceb",	# S19.26 GPS-REC
+]
+
+# How the site draws the radio
+[frame]
+shape = "handheld"
+body = "#1b1c1f"
+accent = "#e07a1f"
+lens = [30, 30]
+
+# The open-firmware CPS radio types qdmr knows the radio by (docs/spec/cps-protocol.md 2.2), as board.c's hal_cps_t
+# reports them
+[cps]
+radio_types = [6]
+
+# The RT3S is this board in Retevis's own body, which looks nothing like TYT's: its own card and drawing on the site
+[[looks]]
+id = "rt3s"
+name = "Retevis RT3S"

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1701 PCM audio: the shared I2S3 stream to the HR_C6000's built-in codec (platform/stm32f4/hrc/i2s_pcm.c,
+// UV380 family PCM audio: the shared I2S3 stream to the HR_C6000's built-in codec (platform/stm32f4/hrc/i2s_pcm.c,
 // docs/spec/hardware-dm1701.md 3.2, 4.4, 8) with the board's speaker routing, the FM transmit audio for USRP and the
 // audio probe.
-#include "dm1701.h"
+#include "uvf.h"
 #include "config.h"
 
 #if CONFIG_DMR	// the whole file: DMR only
@@ -40,15 +40,15 @@ static const stm32_i2s_pcm_cfg_t i2s_cfg = {
 
 // --- speaker routing ---
 
-// The amp, its mute and the RX audio mux are shared with the FM path in radio_dm1701.c. A board-level
-// dm1701_speaker_pcm() there (combining FM squelch and PCM requests) overrides this fallback, which saves the pins on
+// The amp, its mute and the RX audio mux are shared with the FM path in radio_uvf.c. A board-level
+// uvf_speaker_pcm() there (combining FM squelch and PCM requests) overrides this fallback, which saves the pins on
 // and restores them on off.
-void dm1701_speaker_pcm(bool on);
+void uvf_speaker_pcm(bool on);
 
 static uint32_t saved_odr_b, saved_odr_d;
 static bool pcm_on;
 
-__attribute__((weak)) void dm1701_speaker_pcm(bool on)
+__attribute__((weak)) void uvf_speaker_pcm(bool on)
 {
 	const uint32_t mask_b = PIN_MASK(PIN_SPK_MUTE) | PIN_MASK(PIN_AMP_EN);
 	const uint32_t mask_d = PIN_MASK(PIN_RX_AUDIO_MUX);
@@ -70,7 +70,7 @@ __attribute__((weak)) void dm1701_speaker_pcm(bool on)
 
 static void speaker_pcm(bool on)
 {
-	dm1701_speaker_pcm(on);
+	uvf_speaker_pcm(on);
 }
 
 // --- hal_audio_t ---
@@ -80,12 +80,12 @@ static bool start(audio_block_cb_t cb, void *ctx)
 	return stm32_i2s_pcm_start(&i2s_cfg, cb, ctx);
 }
 
-const hal_audio_t dm1701_audio = { .start = start, .stop = stm32_i2s_pcm_stop, .speaker_pcm = speaker_pcm };
+const hal_audio_t uvf_audio = { .start = start, .stop = stm32_i2s_pcm_stop, .speaker_pcm = speaker_pcm };
 
 #if CONFIG_NET_USRP
 // --- FM transmit audio: PWM on PC8 into the HR_C6000's microphone input (hardware-dm1701.md 21.3.1, "PWM audio") ---
 //
-// PC8 (the stock beep PWM, TIM8 CH3 on AF3) reaches MIC_P / MIC_N; radio_dm1701.c switches those inputs on and the
+// PC8 (the stock beep PWM, TIM8 CH3 on AF3) reaches MIC_P / MIC_N; radio_uvf.c switches those inputs on and the
 // microphone (LINEIN1) off. The chip's codec samples at 8 kHz behind its own filter, so a carrier of 72 kHz (nine
 // periods a sample) needs no filter of ours. The duty follows the samples, linearly interpolated over the nine periods,
 // with the rounding error carried from period to period: the codec averages the periods, so this gains about three
@@ -155,8 +155,8 @@ static void pwm_stop(void)
 	stm32_pin_out(PIN_PORT(PIN_BEEP_PWM), PIN_MASK(PIN_BEEP_PWM), false, false);	// back to the low output
 }
 
-// pull non-NULL: start the PWM audio; NULL: stop it. Radio task (radio_dm1701.c's fm_tx_inject)
-void dm1701_pwm_audio(audio_tap_pull_t pull)
+// pull non-NULL: start the PWM audio; NULL: stop it. Radio task (radio_uvf.c's fm_tx_inject)
+void uvf_pwm_audio(audio_tap_pull_t pull)
 {
 	pwm_stop();
 	if (pull == NULL) {
@@ -313,19 +313,19 @@ static uint8_t probe_pin_scan(uint16_t ms, uint16_t *changed, uint8_t max)
 #endif
 
 #if CONFIG_AUDIO_PROBE || CONFIG_NET_USRP || CONFIG_APRS_RX
-const hal_audio_tap_t dm1701_audio_tap = {
+const hal_audio_tap_t uvf_audio_tap = {
 	.caps = AUDIO_TAP_DMR | AUDIO_TAP_FM_RX
 #if CONFIG_NET_USRP
 		| AUDIO_TAP_FM_TX,
-	.fm_tx_inject = dm1701_fm_tx_inject,
+	.fm_tx_inject = uvf_fm_tx_inject,
 	.fm_tx_nominal_peak = 13800,	// 21 of PWM_AMP_STEPS: about 1.5 kHz peak deviation (bench 2026-10-12, 4 % = 1 kHz rms)
 #else
 		,
 #endif
 #if CONFIG_AUDIO_PROBE
-	.modem_reg = dm1701_modem_reg,
-	.modem_ram = dm1701_modem_ram,
-	.modem_burst = dm1701_modem_burst,
+	.modem_reg = uvf_modem_reg,
+	.modem_ram = uvf_modem_ram,
+	.modem_burst = uvf_modem_burst,
 	.last_block = probe_last_block,
 	.pin_tone = probe_pin_tone,
 	.pin_scan = probe_pin_scan,

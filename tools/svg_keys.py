@@ -43,7 +43,7 @@ UNDRAWN = re.compile(r"<svg\b[^>]*\bdata-undrawn=\"([^\"]*)\"")
 def key_names(board):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import gen_webctl_assets
-    return sorted(gen_webctl_assets.key_bits(os.path.join(ROOT, "boards", board, board + ".h")))
+    return sorted(gen_webctl_assets.key_bits(gen_webctl_assets.key_header(board)))
 
 
 def problems(text, keys):
