@@ -1339,6 +1339,39 @@ static const ui_scr_def_t zone_screen = {
 	.title = zone_title, .enter = zone_enter, .raw_count = zone_raw_count, .raw_label = zone_raw_label,
 };
 
+#if CONFIG_ZONE_WRITE
+// Zone indexes moved (zone_edit.h): the stack's zone screens follow them. Zones keeps its focus on the same zone, a
+// zone's list and the editor's screens on their zone; a list whose zone was deleted closes, with what is above it.
+// Returns the new top of the stack
+uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint32_t to)
+{
+	uint16_t out;
+#if CONFIG_ZONE_EDIT
+	bool ze_ok = zone_edit_map(from, to, ze_zone, &out) == ZONE_MAP_KEPT;
+	if (ze_ok)
+		ze_zone = out;
+#endif
+	for (uint8_t i = 1; i <= sp; i++) {
+		ui_frame_t *f = &stack[i];
+		if (f->scr == SCR_ZONES && f->focus >= CH_VFO) {
+			if (zone_edit_map(from, to, (uint16_t)(f->focus - CH_VFO), &out) != ZONE_MAP_LOST)
+				f->focus = (uint16_t)(out + CH_VFO);	// a deleted one: the next zone, clamped by the list
+		} else if (f->scr == SCR_ZONE) {
+			if (zone_edit_map(from, to, f->arg, &out) != ZONE_MAP_KEPT)
+				return (uint8_t)(i - 1u);
+			f->arg = out;
+		}
+#if CONFIG_ZONE_EDIT
+		else if (f->scr == SCR_ZCHANNEL || f->scr == SCR_ZPICK || f->scr == SCR_ZONEEDIT || f->scr == SCR_ZONEDEL) {
+			if (!ze_ok)
+				return (uint8_t)(i - 1u);
+		}
+#endif
+	}
+	return sp;
+}
+#endif
+
 #if CONFIG_CHANNEL_LIST
 // ======================= Channels: every codeplug channel by number (hub 5) =======================
 // The raw row is the channel number - 1 (with CONFIG_CHANNEL_EDIT, raw 0 is "New from current" and the raw
@@ -2684,38 +2717,6 @@ static const ui_scr_def_t zdel_screen = {
 };
 #endif
 
-#if CONFIG_ZONE_WRITE
-// Zone indexes moved (zone_edit.h): the stack's zone screens follow them. Zones keeps its focus on the same zone, a
-// zone's list and the editor's screens on their zone; a list whose zone was deleted closes, with what is above it.
-// Returns the new top of the stack
-uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint32_t to)
-{
-	uint16_t out;
-#if CONFIG_ZONE_EDIT
-	bool ze_ok = zone_edit_map(from, to, ze_zone, &out) == ZONE_MAP_KEPT;
-	if (ze_ok)
-		ze_zone = out;
-#endif
-	for (uint8_t i = 1; i <= sp; i++) {
-		ui_frame_t *f = &stack[i];
-		if (f->scr == SCR_ZONES && f->focus >= CH_VFO) {
-			if (zone_edit_map(from, to, (uint16_t)(f->focus - CH_VFO), &out) != ZONE_MAP_LOST)
-				f->focus = (uint16_t)(out + CH_VFO);	// a deleted one: the next zone, clamped by the list
-		} else if (f->scr == SCR_ZONE) {
-			if (zone_edit_map(from, to, f->arg, &out) != ZONE_MAP_KEPT)
-				return (uint8_t)(i - 1u);
-			f->arg = out;
-		}
-#if CONFIG_ZONE_EDIT
-		else if (f->scr == SCR_ZCHANNEL || f->scr == SCR_ZPICK || f->scr == SCR_ZONEEDIT || f->scr == SCR_ZONEDEL) {
-			if (!ze_ok)
-				return (uint8_t)(i - 1u);
-		}
-#endif
-	}
-	return sp;
-}
-#endif
 
 #if CONFIG_DMR
 // ======================= A channel's TX contact or RX group list (arg 0 / 1) =======================
