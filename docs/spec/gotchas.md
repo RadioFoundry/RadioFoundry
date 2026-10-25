@@ -509,6 +509,13 @@ duration: the baseline build failed on `FreeRTOS.h`, and git refuses most operat
 path not to be a symbolic link"). The pop put them back. Build a baseline from `git archive HEAD` into a scratch
 directory with its own `third_party` symlinks instead, and delete it afterwards.
 
+**13.10 Link order changes LTO code.** `$(wildcard)` returns files in an order that depends on the make: GNU make 4.3
+(CI) sorts it, macOS's make 3.81 doesn't. With LTO the object order on the link line steers partitioning and
+inlining, so the same commit and the same Arm GNU Toolchain release gave different code on the two: `make stack-check`
+disagreed by 8 to 16 bytes on a task (CI's ui task over its stack while the Mac's passed). Rule: sort every
+`$(wildcard)` that feeds the build (sources, generated tables); `tools/stack_check.py` reads its `.ci` files in name
+order for the same reason. The figures then match CI byte for byte.
+
 ## 14. SFR (single frequency repeater)
 
 **14.1 The HR_C6000's RX status is unreliable while it transmits.** CRC flag, color code (reg 0x52), sync type
