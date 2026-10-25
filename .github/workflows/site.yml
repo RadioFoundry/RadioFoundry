@@ -2,8 +2,8 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 #
 # The web site (docs/dev/website.md), built from the repository with site/build.py, with the newest release's firmware
-# images for the flasher, and deployed to radiofoundry.org: the build is an artifact, and the `deploy` job runs on the
-# self-hosted runner labeled rfoundry-deploy (on the host that serves the site), which swaps it into nginx's web root.
+# images for the flasher, and deployed to radiofoundry.org: the build is an artifact, and the `deploy` job uploads it
+# to Cloudflare Pages (project radiofoundry) from a GitHub-hosted runner.
 #
 #   nightly              rebuilt and deployed only when something changed since the last deployment: a file the site
 #                        is built from (the paths below), or a release published after it
@@ -11,7 +11,7 @@
 # Pull requests don't run it: their unit-tests job (tools/ci.sh's Python step) builds the site with --strict and runs
 # the web flasher's tests already.
 #
-# Needs the rfoundry-deploy runner (docs/dev/website.md, Hosting); without it the deploy job waits in the queue.
+# Needs the site environment's CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets (docs/dev/website.md, Hosting).
 name: Web site
 
 on:
@@ -118,9 +118,9 @@ jobs:
   deploy:
     needs: build
     if: needs.build.result == 'success'
-    # the host that serves the site: it writes the web root directly, no keys and no network crossing. Only this
-    # workflow's scheduled and manual runs reach it, never a pull request
-    runs-on: [self-hosted, rfoundry-deploy]
+    # the Cloudflare token is a secret: GitHub's runners only. The site environment hands it only to main, and only
+    # this workflow's scheduled and manual runs get here, never a pull request
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     environment:
@@ -130,16 +130,15 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
         with:
           name: site
-          path: site-out
-      - name: Swap the new build in
+          path: build/site
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1   # v7.1.0
+        with:
+          node-version: "22"
+      # a production deployment of the Pages project: Cloudflare switches radiofoundry.org to it in one step
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          set -eu
-          root=/var/www/radiofoundry
-          id="${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
-          rsync -a --delete site-out/ "$root/releases/$id/"
-          touch "$root/releases/$id"   # rsync -a keeps the build's old mtime, and the prune below sorts by mtime
-          ln -sfn "$root/releases/$id" "$root/current.new"
-          mv -T "$root/current.new" "$root/current"   # atomic: nginx never sees a half-written site
-          # keep the last three builds to roll back to
-          find "$root/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn | tail -n +4 | cut -d' ' -f2- | grep -vxF "$root/releases/$id" | xargs -r rm -rf
-          echo "deployed $id"
+          npx --yes wrangler@4.149.0 pages deploy build/site --project-name radiofoundry --branch main \
+            --commit-hash "$GITHUB_SHA" --commit-dirty=false

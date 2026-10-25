@@ -4,4 +4,3 @@
 self-hosted-runner:
   labels:
     - rfoundry-hil
-    - rfoundry-deploy
