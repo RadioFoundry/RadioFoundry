@@ -57,6 +57,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 |---|---|
 | Radios, their order and status | The board registry, `boards/<radio>/board.toml` (`tools/boards.py json --for site`). `order` sorts them; the lowest is the home page's radio |
 | Planned radios | The rows of the [radio survey](../spec/radios.md) "Summary table" that name no board, by their Port cell (`tools/registry_docs.py`): `Planned`, `Planned, hardware needed`, `In progress, #N` (badge "In progress", linked to the pull request) or `Not planned` (not listed), each with an optional `. note` |
+| A radio's cards | One card per board, then one per `looks` entry of its board.toml (another body the board ships in), each with its own drawing and the radios in that body; a look's card links to the board's page. The board's card lists the radios not moved to a look |
 | A radio's one-line note for visitors | board.toml `[status] summary`, the same line the README and the user manual show; a catalog may translate it as `radio.note.<radio>`. A planned radio's: the note of its Port cell, which a catalog may translate as `planned.note.<slug of the survey name>` |
 | A radio's name, bands, processor, screen, bootloader steps, flash backend, codeplug location | board.toml, the CPU from `platform/<p>/platform.toml`, the backend from the `[flash] family`, the codeplug location from the board's `hal_flash_map_t` |
 | A radio's status badge (Supported, In development) | board.toml `[status] level`: `supported` reads Supported, `testing` and `bring-up` read In development |
@@ -201,10 +202,23 @@ photos (the photos stay outside the repository: product photos are not ours to p
   the same `key-` rule, the ids counted once across both files, and gradient ids of its own (the page puts both
   drawings in one document).
 
+A look (board.toml `looks`) has its drawing in `<radio>-<look id>.svg` beside the board's, under the same rules and
+with the same keys. The build writes its frame and boot-screen files like the board's, and fails when the drawing is
+missing.
+
 The build writes `static/img/radios/<radio>-frame.svg` (screen black), `<radio>.svg` (with the boot screen) and the
 screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages), so any screenshot can be
 laid over the frame; the radio pages do that when a screenshot is clicked. A radio without an illustration gets a
 generic drawing from board.toml `[frame]`.
+
+## Flasher notices
+
+Two notices show on every step of the web flasher once a radio is picked, above the step:
+
+| Notice | Shown when | Text from |
+|---|---|---|
+| Pre-release | The radio's `[status] level` is below `supported`. Says the build is in development, that not every feature may work or has been tried on a radio, and links to the project's GitHub issues to report a bug | The `flash.prerelease.*` strings of `site/i18n/<code>.json` |
+| Board | The board sets `[flash] notice`: a warning for a choice the radio can't check itself | board.toml ([board-registry.md](board-registry.md)) |
 
 ## Error logging and bug reports
 

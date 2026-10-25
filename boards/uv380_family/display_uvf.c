@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// DM-1701 display: 160x128 TFT on FSMC bank 1 (8-bit on D0-D7), 8 hidden rows, PWM backlight on PD8
-// (docs/spec/hardware-dm1701.md 2.4, 2.5, 3.2, 3.3, 9, 10.1)
+// UV380 family display: 160x128 TFT on FSMC bank 1 (8-bit on D0-D7), PWM backlight (docs/spec/hardware-dm1701.md 2.4,
+// 2.5, 3.2, 3.3, 9, 10.1). The DM-1701's lens hides 8 rows, the MD-UV380 shows all 128 (hardware-mduv380.md 4): board.mk
+// says how many with UVF_LCD_HIDDEN_ROWS. The backlight pin is the board's (PD8, or PC6 on the 10 W radio)
 //
-// The LCD data lines D0-D7 are also the keypad columns. Every LCD burst holds dm1701_lcdbus_lock(), and starts by
-// calling dm1701_lcd_pins_fsmc() itself, so the keypad scan may leave the lines in GPIO mode when it unlocks. Each
+// The LCD data lines D0-D7 are also the keypad columns. Every LCD burst holds uvf_lcdbus_lock(), and starts by
+// calling uvf_lcd_pins_fsmc() itself, so the keypad scan may leave the lines in GPIO mode when it unlocks. Each
 // burst ends with CS high and a 0x00 write to the data address so the lines rest low for the next key scan.
-#include "dm1701.h"
+#include "uvf.h"
 #include "FreeRTOS.h"
 #include "config.h"
 #include "pins.h"
@@ -17,9 +18,12 @@
 #define LCD_AF		12	// GPIO_AF12_FSMC
 #define LCD_CTRL_PORTD	(GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_12)	// NOE, NWE, A17 (RS)
 
+#ifndef UVF_LCD_HIDDEN_ROWS
+#error "board.mk: UVF_LCD_HIDDEN_ROWS (the panel rows the radio's lens hides)"
+#endif
 #define VISIBLE_W	160
-#define VISIBLE_H	120
-#define HIDDEN_ROWS	8
+#define VISIBLE_H	(128 - UVF_LCD_HIDDEN_ROWS)
+#define HIDDEN_ROWS	UVF_LCD_HIDDEN_ROWS
 
 // ---- FSMC bus ----
 
@@ -51,7 +55,7 @@ static void set_af12(GPIO_TypeDef *port, uint16_t pins)
 }
 
 // (Re)connect D0-D7 to the FSMC. Called at the start of every LCD burst, with the bus lock held
-void dm1701_lcd_pins_fsmc(void)
+void uvf_lcd_pins_fsmc(void)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();	// the port registers are shared with other pins on PD and PE
@@ -70,8 +74,8 @@ static void bus_settle(void)
 
 static void bus_begin(void)
 {
-	dm1701_lcdbus_lock();
-	dm1701_lcd_pins_fsmc();
+	uvf_lcdbus_lock();
+	uvf_lcd_pins_fsmc();
 	PIN_WRITE(PIN_LCD_CS, false);
 }
 
@@ -82,7 +86,7 @@ static void bus_end(void)
 	__DSB();
 	*LCD_DATA_ADDR = 0x00;	// panel deselected: only parks the shared lines low
 	bus_settle();
-	dm1701_lcdbus_unlock();
+	uvf_lcdbus_unlock();
 }
 
 static void bus_cmd(uint8_t c)
@@ -137,8 +141,8 @@ static st7735_t panel = {
 
 static bool ready;
 
-// ---- Backlight: TIM1 CC1 paces DMA2 Stream1 channel 6, which copies a 100-word table to GPIOD BSRR ----
-// Entry 0 sets PD8, entry N clears it, the rest are 0: N % duty at about 101 Hz (72 MHz / 7100 / 100)
+// ---- Backlight: TIM1 CC1 paces DMA2 Stream1 channel 6, which copies a 100-word table to the backlight port's BSRR ----
+// Entry 0 sets the pin, entry N clears it, the rest are 0: N % duty at about 101 Hz (72 MHz / 7100 / 100)
 
 #define BL_STEPS	100
 #define BL_MASK		PIN_MASK(PIN_LCD_BACKLIGHT)
@@ -227,13 +231,10 @@ static void init(void)
 	if (!stm32_spi_flash_read_security(3, 0x1D, &type, 1)) {
 		type = 0;
 	}
-	panel.type = type & 3;
-	// hardware-dm1701.md 9.2, DM-1701 column: type 2 is "vertically flipped; treated as type 3 with RGB order" (the
-	// bench radio reports 2, and the type 2 MADCTL showed the picture mirrored top to bottom)
-	if (panel.type == 2) {
-		panel.type = 3;
-		panel.force_rgb = true;
-	}
+	// hardware-dm1701.md 9.2: what each factory type means is the radio's (the DM-1701 runs its type 2 as type 3 in RGB
+	// order, the MD-UV380 keeps every type and is always RGB)
+	panel.type = uvf_variant.panel_type[type & 3] & 3;
+	panel.force_rgb = uvf_variant.panel_rgb[type & 3];
 	st7735_init(&panel);
 	ready = true;
 }
@@ -246,8 +247,8 @@ static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t
 	st7735_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 }
 
-const hal_display_t dm1701_display = {
-	// Safe area from the build (boards/dm1701/config.mk: the lens hides about 5 px at each edge)
+const hal_display_t uvf_display = {
+	// Safe area from the build (the board's config.mk)
 	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
 	.inset_left = CONFIG_DISPLAY_INSET_LEFT, .inset_right = CONFIG_DISPLAY_INSET_RIGHT,
 	.width = VISIBLE_W,
@@ -258,7 +259,7 @@ const hal_display_t dm1701_display = {
 	.set_backlight = set_backlight,
 };
 
-uint8_t dm1701_display_panel_type(void)
+uint8_t uvf_display_panel_type(void)
 {
 	return panel.type;
 }

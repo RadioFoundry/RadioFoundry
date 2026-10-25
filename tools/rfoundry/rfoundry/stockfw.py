@@ -17,6 +17,7 @@ import zlib
 
 from . import codecmap
 
+FLASH_BASE = 0x08000000      # internal flash: the bootloader, then the application from APP_BASE
 APP_BASE = 0x0800C000
 FLASH_END = 0x08100000
 KEY_LEN = 1024
@@ -34,6 +35,10 @@ DESC_WINDOWS = 5
 DM1701_KEY_SHA256 = "d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb3deff"
 # MD-380 / MD-390 / RT3 (docs/spec/hardware-md380.md 14.2, as tools/stm32_dfu.py's md380 model)
 MD380_KEY_SHA256 = "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd"
+# MD-UV380 / MD-UV390 / RT3S (docs/spec/hardware-mduv380.md 11, as tools/stm32_dfu.py's mduv380 model)
+MDUV380_KEY_SHA256 = "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991"
+# The id the firmware reports for any of the four 19.26 codecs placed in sector 11: the same codec in each build
+MDUV380_CODEC = "mduv380-1926-s11"
 # The count word of the single-segment container form (the MD-380 D002.032 file: one segment, count 0xFFFFFFFF)
 SINGLE_SEGMENT = 0xFFFFFFFF
 
@@ -87,6 +92,69 @@ PROFILES = {
                    "tables": (0x2A5C9EE1, "8c704a9606ec19fbe4af275de4fbd1ded64e2ab644e0115ec34bff86cb3d21a9"),
                    "extra": [0x7AAFE1D3, 0x33E82E70, 0xFFF0E930, 0xDA18C5EF]},
     },
+    # TYT MD-UV380 / MD-UV390 19.26, the four builds (codec-mduv380.md). One codec, placed as the DM-1701's: the tables
+    # at their stock address cut to the codec's data, the code right after them in sector 11, word aligned
+    # (boards/mduv380/vocoder_mduv380.c). Each build keeps both at its own addresses, so each has its own tag
+    "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e": {
+        "name": "MD-UV380(CSV)-V19.26.bin",
+        "version": "V19.26 CSV",
+        "board": "mduv380",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MDUV380_CODEC,
+        "size": 1303040,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xE0C00)],
+        "code": (0x0807B830, 0xF4BA, "5de390664c831412f37ae9ec1f8aadaf77d93112bded424e5bfc9d6b77a64aa1"),
+        "tables": (0x080D8C94, 0x12850, "6ea640d8da93215d6b3c9d7ce8db3663c32743a83c9478b1e9997e0905edc53c"),
+        # the codec's data ends at 0x080EB2FE; the code leaves 22470 bytes below the descriptor
+        "placement": {"code": 0x080EB300, "tables_len": 0x1266A, "tag": 0x00561926},
+        "placed": {"code": (0x10AC40E0, "1b7a30bb218c85a7ad626217d26a9158283c9e87393167acaf984e986e25a5d6"),
+                   "tables": (0xCE661968, "fd9447e5d97289fee35e734ba10651be8cbb9505ed3bea24d81f15e45f040724")},
+    },
+    "7dec4b751e8a0f44cf7d54d0ebc3b439a9f49899eadd7c8ff14d2804edbe8ac2": {
+        "name": "MD-UV380(REC)-D19.26.bin",
+        "version": "D19.26 REC",
+        "board": "mduv380",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MDUV380_CODEC,
+        "size": 1315328,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xE3C00)],
+        "code": (0x0807E3C0, 0xF4AA, "7e885b7f6f96bd433a310c7b1bea4ae9db55a71d74bcc102e8684bf0b1e88e96"),
+        "tables": (0x080DBC1C, 0x12850, "96331ad1617b965e2b59a633767bfcc505c4840f3924e8fb82d5e522ff699599"),
+        # the codec's data ends at 0x080EE28E; the code leaves 10310 bytes below the descriptor
+        "placement": {"code": 0x080EE290, "tables_len": 0x12672, "tag": 0x00441926},
+        "placed": {"code": (0x3367A6D0, "608d2fef64ebcd6ed2ef6d5491572808641fa8505675023004b059450e87d7a0"),
+                   "tables": (0x7E080ADE, "32c841f3e768dc1dd148810b01ae6754c7f8cf0cca14889e1eef160779d586b4")},
+    },
+    "84331dbc9bccf5021122b715dcb77d7589dba0745694bf3a249aae6e7c383ef1": {
+        "name": "MD-UV390(CSV-GPS)-P19.26.bin",
+        "version": "P19.26 CSV-GPS",
+        "board": "mduv380",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MDUV380_CODEC,
+        "size": 1312256,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xE3000)],
+        "code": (0x0807DBF0, 0xF4BA, "bb8035df0a200c827b65128a3f24358fafd1c10601626bd54888595173bb6ae8"),
+        "tables": (0x080DB054, 0x12850, "1f19c01eb5c0e9bcf10f2aeb7bfaee68580b19f4933448d3742d5aef2e6aadea"),
+        # the codec's data ends at 0x080ED75E; the code leaves 13158 bytes below the descriptor
+        "placement": {"code": 0x080ED760, "tables_len": 0x1270A, "tag": 0x00501926},
+        "placed": {"code": (0x0AEE6C4A, "d7cc254326d9f4a0c2d7f7702cb2c0bdf8cec95d4ba1ac083a059d103524034a"),
+                   "tables": (0x06DB6E3C, "e251afc5bc00609a05f266d29111adfefe934f77151a7b40a974f93ce0147546")},
+    },
+    "77923d67aa75a07f7601a1c53ae1d5f5af37bd4367d52a50c8aeff89b834eceb": {
+        "name": "MD-UV390(GPS-REC)-S19.26.bin",
+        "version": "S19.26 GPS-REC",
+        "board": "mduv380",
+        "key_sha256": MDUV380_KEY_SHA256,
+        "codec_profile": MDUV380_CODEC,
+        "size": 1324544,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xE6000)],
+        "code": (0x080807B4, 0xF4B6, "96c018bc0956b86a7ac4a90713eb53fb457cebb9f2584b927d785fefa2085613"),
+        "tables": (0x080DE01C, 0x12850, "08adbdac3d3c95e2b5e2e895e77e045aee15a7839933d328727310b517a854f1"),
+        # the codec's data ends at 0x080F072E; the code leaves 922 bytes below the descriptor
+        "placement": {"code": 0x080F0730, "tables_len": 0x12712, "tag": 0x00531926},
+        "placed": {"code": (0x11E43041, "c9b49028c2ef65fb4a216ec244e60b96ef8e8584b91421c4a4fb7afba0f2fc6c"),
+                   "tables": (0xDED111EF, "b699e0277eb179426a00b763cdff96a8753593f9cad1cf4a6aa7b67568eef66a")},
+    },
 }
 
 # Stock files that are not codec donors but are known DM-1701 files: the key can be derived from them (any of them;
@@ -101,6 +169,10 @@ KNOWN_FILES = {
     "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43": "MD-380 D002.032",
     # the bootloader key and a restore to stock only: no codec profile (the codec comes from D002.032)
     "1c903d440e35917e8a16906ccae1cbbd539230a5a3352e3eb896ffc3e96eccc6": "MD-380 D002.030",
+    "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e": "MD-UV380 V19.26 CSV",
+    "7dec4b751e8a0f44cf7d54d0ebc3b439a9f49899eadd7c8ff14d2804edbe8ac2": "MD-UV380 D19.26 REC",
+    "84331dbc9bccf5021122b715dcb77d7589dba0745694bf3a249aae6e7c383ef1": "MD-UV380 P19.26 CSV-GPS",
+    "77923d67aa75a07f7601a1c53ae1d5f5af37bd4367d52a50c8aeff89b834eceb": "MD-UV380 S19.26 GPS-REC",
 }
 
 
@@ -263,6 +335,42 @@ def extract(stock, key, profiles=None):
     if struct.unpack_from("<I", out[0][1], 0)[0] != CODEC_SIG:
         raise StockError("codec first word is not 0x%08X" % CODEC_SIG)
     return prof, place(prof, out)
+
+
+def is_container(data):
+    """True for a stock firmware file (the OutSecurityBin container); a flash readout is plain bytes."""
+    return data.startswith(MAGIC)
+
+
+def from_flash(flash, base=FLASH_BASE, profiles=None):
+    """The codec in a readout of a radio's internal flash (stub/f4stub.py --progmem: the bytes from base, normally the
+    whole 1 MB from 0x08000000), as the merge writes it: (profile, segments in layout() order), or None when no
+    supported codec is in it. A radio on its stock firmware holds the build's code and tables plain at their stock
+    addresses: the build is found by the code window's SHA-256 there, every window is checked, and the codec is placed
+    as a merge from the stock file places it. A radio running RadioFoundry holds it where the merge put it, with its
+    descriptor, and is taken as it is. No key is needed: the flash holds the codec decrypted."""
+    profiles = PROFILES if profiles is None else profiles
+
+    def read(wins):
+        parts = []
+        for a, n, want in wins:
+            off = a - base
+            d = flash[off:off + n] if off >= 0 else b""
+            if len(d) != n or sha256(d) != want:
+                return None
+            parts.append((a, bytes(d)))
+        return parts if struct.unpack_from("<I", parts[0][1], 0)[0] == CODEC_SIG else None
+
+    for prof in profiles.values():
+        parts = read(windows(prof))
+        if parts:
+            return prof, place(prof, parts)
+        if prof.get("placement"):
+            desc = descriptor(prof)
+            parts = read(placed_windows(prof) + [(DESC_ADDR, DESC_LEN, sha256(desc))])
+            if parts:
+                return prof, parts
+    return None
 
 
 def codec_segments(prof, segments):

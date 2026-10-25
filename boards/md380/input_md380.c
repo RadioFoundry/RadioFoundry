@@ -3,7 +3,7 @@
 // MD-380 keypad, side keys, PTT and the 16-position channel switch (docs/spec/hardware-md380.md 9).
 //
 // The keypad is the shared scan (platform/stm32f4/fsmc_keypad): rows driven high one at a time, the LCD data lines
-// D0-D7 read back as columns under the LCD bus lock. The matrix positions are the MD-UV380's (the nearest documented relative); they are
+// D0-D7 read back as columns under the LCD bus lock. The matrix positions are those of hardware-mduv380.md 5 (the nearest documented relative); they are
 // unconfirmed on the MD-380, and md380_input_raw() shows the raw row bits on the diagnostics page so a bench session
 // can correct the table.
 //
@@ -23,7 +23,7 @@
 #define ROW_COUNT	3
 #define NO_KEY		STM32_KEYPAD_NO_KEY
 
-// [row][column D0..D7] (hardware-md380.md 9.1, MD-UV380 positions: unconfirmed on the MD-380)
+// [row][column D0..D7] (hardware-md380.md 9.1, the positions of hardware-mduv380.md 5: unconfirmed on the MD-380)
 static const uint8_t matrix[ROW_COUNT][8] = {
 	{ KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_0, KEY_STAR },
 	{ KEY_GREEN, KEY_UP, KEY_DOWN, KEY_7, KEY_8, KEY_9, KEY_HASH, KEY_RED },

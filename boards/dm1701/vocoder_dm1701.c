@@ -10,7 +10,7 @@
 // that stock keeps in the table window back into the code (the codec map). None of it is part of this repository or a
 // release. The calls and the checks are the shared ones (platform/stm32f4/hrc/vocoder.c); this file says which build and
 // where. Without a valid descriptor and codec, present() is false and the radio is FM only.
-#include "dm1701.h"
+#include "../uv380_family/uvf.h"
 #include "config.h"
 
 #if CONFIG_DMR	// the whole file: DMR only

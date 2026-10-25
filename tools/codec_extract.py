@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""Merge a radio's own stock AMBE+2 codec into a RadioFoundry image, on your machine (DM-1701, MD-380).
+"""Merge a radio's own stock AMBE+2 codec into a RadioFoundry image, on your machine (the STM32 radios whose
+board.toml says [codec] tool = "codec_extract").
 
-Recipes from docs/spec/codec-dm1701.md ("Extraction recipe (V02.06 CSV)") and docs/spec/codec-md380.md ("Extraction
-recipe"):
-  1. check the stock file ("OutSecurityBin" container: Baofeng DM-1701 V02.06 CSV or TYT MD-380 D002.032) by SHA-256
-     and its segment table; the file picks the radio;
+Recipes from each radio's codec page (docs/spec/codec-<radio>.md, "Extraction recipe"):
+  1. check the stock file ("OutSecurityBin" container, one of rfoundry/stockfw.py PROFILES) by SHA-256 and its segment
+     table; the file picks the radio. Or take a read of the radio's internal flash made while it ran its stock firmware
+     (stub/stubtool.py PORT --progmem FILE): the codec is plain there, found by the code window's SHA-256, no key;
   2. decrypt every codec window: plain = file[off] XOR key[(off - 0x100) mod 1024], with the radio's 1024-byte key
      (a key file checked by SHA-256 as tools/stm32_dfu.py does, or derived from the stock file and checked the same
      way);
   3. check each window's SHA-256 and the code's first word 0x4FF0E92D;
   4. write a new image: the built application from 0x0800C000, then the codec where its profile places it, 0xFF between
-     (docs/spec/codec-placement.md): the tables at their stock address, the code moved as one block into sector 11 (the
-     DM-1701's right after its tables, the MD-380's at the start of the sector), with the addresses the build's codec
-     map lists rewritten, and the descriptor at 0x080FFF80 that tells the firmware where the code is.
+     (docs/spec/codec-placement.md): the tables at their stock address, the code moved as one block into sector 11
+     (right after the tables, or at the start of the sector), with the addresses the build's codec map lists
+     rewritten, and the descriptor at 0x080FFF80 that tells the firmware where the code is.
 
 The codec is DVSI's and the radio maker's, not ours: it is never stored in this repository or in a release. This tool
 reads your stock file and your key file and writes the merged image to a file you choose (by default next to the
@@ -31,32 +32,37 @@ import stm32_dfu  # noqa: E402  (key table and key file check, hardware-dm1701.m
 
 # The container, decryption, profiles and merge live in the rfoundry package (one implementation for both tools)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
-from rfoundry.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_END, HEADER_LEN, KEY_LEN, MAGIC,  # noqa: E402,F401
-                              PROFILES, SYN_BL, SYN_SELF_REF, StockError as ExtractError, app_file_offset, build_synthetic_stock, decrypt,
-                              derive_key, descriptor, extract, find_profile, layout, merge, parse_container, sha256,
-                              windows)
+from rfoundry.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_BASE, FLASH_END, HEADER_LEN, KEY_LEN,  # noqa: E402,F401
+                              MAGIC, PROFILES, SYN_BL, SYN_SELF_REF, StockError as ExtractError, app_file_offset,
+                              build_synthetic_stock, decrypt, derive_key, descriptor, extract, find_profile, from_flash,
+                              is_container, layout, merge, parse_container, profile_for_board, sha256, windows)
 from rfoundry.codecmap import bl_target  # noqa: E402
 from rfoundry import boards  # noqa: E402  (the board registry: the boards this tool serves)
 import zlib  # noqa: E402
 
 DM1701_V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
 MD380_D2032 = "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
+MDUV380_V1926 = "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e"
 
 EPILOG = """\
 examples:
   %(prog)s --stock "DM-1701(CSV)-V02.06.bin"                       (the key is derived from the stock file)
   %(prog)s --stock "DM-1701(CSV)-V02.06.bin" --key ~/keys/dm1701.key
   %(prog)s --stock "MD-380-D2.32(AD).bin"                          (MD-380: image build/md380/rfoundry_md380.bin)
+  %(prog)s --stock flash.bin --board mduv380                       (a stub read of a radio on its stock firmware)
   %(prog)s --stock stock.bin --key dm1701.key --image build/dm1701/rfoundry_dm1701.bin -o build/dm1701/rfoundry_dm1701_codec.bin
   %(prog)s --self-test
 
 then flash:  tools/stm32_dfu.py --model dm1701 --key ~/keys/dm1701.key build/dm1701/rfoundry_dm1701_codec.bin
 
-Supported stock files: Baofeng's DM-1701 V02.06 CSV firmware (sha256 0314efd4...) and TYT's MD-380 "Firmware 2.32"
-D002.032 (sha256 e1a1a11a...). The key file is the radio's 1024-byte firmware key (DM-1701 sha256 d983ce95...,
-MD-380 5254139c...); without --key it is derived from the stock file and checked by that hash. Neither is in this
-repository. For flashing release images, tools/rfoundry does all of this in one step.
-"""
+Supported stock files: rfoundry/stockfw.py PROFILES (--help lists them below). The key file is the radio's
+1024-byte firmware key (its SHA-256 is in the board's board.toml [flash.dfu]); without --key it is derived from the
+stock file and checked by that hash. Neither is in this repository. For flashing release images, tools/rfoundry does
+all of this in one step.
+
+supported stock files:
+""" + "".join("  %-34s %-14s %s (sha256 %s...)\n" % (p["name"], p["board"], p["version"], h[:8])
+              for h, p in PROFILES.items())
 
 
 def repo_root():
@@ -187,6 +193,23 @@ def self_test():
     expect_error(lambda: extract(mstock, bad_key, mprofiles), "MD-380 wrong key refused")
     check(find_profile(mstock, mprofiles)["board"] == "md380", "MD-380 profile found by SHA-256")
 
+    # MD-UV380 V19.26 CSV: two-segment container, the DM-1701's placement at its own addresses; and the same codec from
+    # a read of the internal flash of a radio on its stock firmware (the application plain at 0x0800C000)
+    ustock, uprofiles, ucode, _ = build_synthetic_stock(key, rng, MDUV380_V1926)
+    up, uwins = extract(ustock, key, uprofiles)
+    check([(a, len(d)) for a, d in uwins] == [(0x080EB300, len(ucode)), (0x080D8C94, 0x1266A), (DESC_ADDR, 0x80)],
+          "MD-UV380: code at 0x080EB300 after the tables cut at 0x080EB2FE, then the descriptor")
+    check(struct.unpack_from("<I", uwins[2][1], 8)[0] == 0x00561926, "MD-UV380 V19.26 descriptor tag")
+    usegs = parse_container(ustock)
+    flash = bytearray(b"\xFF" * (FLASH_END - FLASH_BASE))
+    flash[APP_BASE - FLASH_BASE:APP_BASE - FLASH_BASE + usegs[1][1]] = decrypt(
+        ustock, app_file_offset(usegs, APP_BASE), usegs[1][1], key)
+    check(from_flash(bytes(flash), profiles=uprofiles) == (up, uwins), "MD-UV380: the codec from a flash readout")
+    flash[0x0807B830 - FLASH_BASE + 8] ^= 1
+    check(from_flash(bytes(flash), profiles=uprofiles) is None, "a readout with a changed code byte gives nothing")
+    umerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), up, uwins)
+    check(not stm32_dfu.check_image(umerged, "mduv380"), "stm32_dfu accepts the MD-UV380 merged image")
+
     # main() end to end on the synthetic file
     import contextlib
     import io
@@ -227,15 +250,16 @@ def self_test():
 
 
 def test_desc(path, board="dm1701"):
-    """Write the codec sectors as the merge leaves them for a synthetic codec, for tests/host/codecDescTest.c (the
-    firmware's descriptor checks and this writer must agree): the DM-1701's sectors 10 and 11 (0x080C0000..0x08100000),
-    the MD-380's sectors 8-11 (0x08080000..0x08100000)"""
+    """Write the codec sectors as the merge leaves them for a synthetic codec of the board's first stock file, for
+    tests/host/codecDescTest.c (the firmware's descriptor checks and this writer must agree): from the end of the
+    board's application region (the DM-1701's sectors 10 and 11, 0x080C0000..0x08100000; the MD-380's sectors 8-11,
+    0x08080000..0x08100000) to the end of flash"""
     import random
     rng = random.Random(1701)
     key = bytes(rng.randrange(256) for _ in range(KEY_LEN))
-    stock, profiles, _, _ = build_synthetic_stock(key, rng, MD380_D2032 if board == "md380" else DM1701_V0206)
+    stock, profiles, _, _ = build_synthetic_stock(key, rng, profile_for_board(board))
     p, wins = extract(stock, key, profiles)
-    lo = 0x08080000 if board == "md380" else 0x080C0000
+    lo = boards.get(board).app_region[1]
     out = bytearray(b"\xFF" * (FLASH_END - lo))
     for a, d in wins:
         out[a - lo:a - lo + len(d)] = d
@@ -247,7 +271,8 @@ def test_desc(path, board="dm1701"):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0], epilog=EPILOG,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--stock", help="the radio's stock firmware file (DM-1701 V02.06 CSV or MD-380 D002.032)")
+    ap.add_argument("--stock", help="the radio's stock firmware file (one listed below), or a read of its internal "
+                    "flash while it ran its stock firmware (stubtool.py PORT --progmem FILE)")
     ap.add_argument("--key", help="the radio's firmware key file (1024 bytes); derived from the stock file when left out")
     ap.add_argument("--board", choices=sorted(b for b, t in boards.BOARDS.items() if t.codec_tool == "codec_extract"),
                     help="refuse a stock file for another radio (the stock file picks the board otherwise)")
@@ -269,17 +294,23 @@ def main():
     try:
         with open(os.path.expanduser(args.stock), "rb") as f:
             stock = f.read()
-        prof = find_profile(stock)
+        readout = None if is_container(stock) else from_flash(stock)
+        if not is_container(stock) and readout is None:
+            raise ExtractError("%s is neither a supported stock file nor a flash readout (from 0x%08X) holding a "
+                               "supported codec" % (args.stock, FLASH_BASE))
+        prof = readout[0] if readout else find_profile(stock)
         board = prof["board"]
         if args.board and args.board != board:
             raise ExtractError("%s is a %s stock file, not a %s one" % (args.stock, board, args.board))
-        key = stm32_dfu.load_key(args.key, board) if args.key else derive_key(stock, prof["key_sha256"])
+        key = None
+        if readout is None:
+            key = stm32_dfu.load_key(args.key, board) if args.key else derive_key(stock, prof["key_sha256"])
         image_path = args.image or os.path.join(repo_root(), "build", board, "rfoundry_%s.bin" % board)
         out = args.output or os.path.splitext(image_path)[0] + "_codec.bin"
         with open(os.path.expanduser(image_path), "rb") as f:
             image = f.read()
         check_output_path(out)
-        prof, wins = extract(stock, key)
+        prof, wins = readout or extract(stock, key)
         merged = merge(image, prof, wins)
         for w in stm32_dfu.check_image(merged, board):
             print("warning: %s" % w)
@@ -289,7 +320,7 @@ def main():
         print("error: %s" % e, file=sys.stderr)
         return 1
     print("stock  %s (%s), %s codec: %s verified"
-          % (prof["name"], sha256(stock)[:8], board,
+          % (prof["name"] if readout is None else "flash readout with " + prof["version"], sha256(stock)[:8], board,
              ", ".join("0x%08X+0x%X" % (a, n) for a, n, _ in layout(prof))))
     print("wrote  %s (%d bytes; contains the proprietary codec: keep it to yourself)" % (out, len(merged)))
     return 0

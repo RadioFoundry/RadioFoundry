@@ -132,6 +132,9 @@ static void gps_task(void *arg)
 			break;
 		case GPS_BAUD_ABSENT:
 			uart_on(false);		// no module: nothing more to do
+			if (cfg->absent != NULL) {
+				cfg->absent();
+			}
 			task = NULL;
 			vTaskDelete(NULL);
 			break;

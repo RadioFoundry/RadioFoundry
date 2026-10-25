@@ -19,6 +19,7 @@
 import { hex, sha256, toHex, fromHex, startsWith, sleep } from "./bytes.js";
 import * as stockfw from "./stockfw.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
+import { validRef, refShort, defaultRef } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
 import { Link, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, serialSupported } from "./link.js";
@@ -85,10 +86,9 @@ const API = "https://api.radiofoundry.org/v1/";
 // ?reporting=0
 const FLASH_LOG = new URLSearchParams(location.search).get("reporting") !== "0";
 
-// A version link (/flash/?version=<full commit hash or tag>) builds that version instead of the latest release. The tab keeps
+// A version link (/flash/?version=<tag, full commit hash or branch name>) builds that version instead of the latest release. The tab keeps
 // it for the session, so a reload or a visit to another page doesn't lose it; ?version= (empty) or the banner drops it.
 const VERSION_STORE = "rfoundry-flash-version";
-const VERSION_RE = /^(v[0-9][0-9A-Za-z.\-+]{0,31}|[0-9a-f]{40})$/;
 let VERSION_REF = (() => {
 	const q = new URLSearchParams(location.search).get("version");
 	const ref = q && /^[0-9A-Fa-f]+$/.test(q) ? q.toLowerCase() : q;
@@ -98,7 +98,7 @@ let VERSION_REF = (() => {
 		return sessionStorage.getItem(VERSION_STORE);
 	} catch (e) { return ref || null; }
 })();
-const versionShort = () => (/^[0-9a-f]{40}$/.test(VERSION_REF) ? VERSION_REF.slice(0, 7) : VERSION_REF);
+const versionShort = () => refShort(VERSION_REF);
 
 // redraw = false: the caller keeps its view (a build about to start), only the banner goes
 function dropVersion(redraw = true) {
@@ -132,7 +132,7 @@ function confirmVersion() {
 // on every step while a version link is in use: what gets built, and the way back to the release
 function versionBanner() {
 	if (!VERSION_REF) return null;
-	const ok = VERSION_RE.test(VERSION_REF);
+	const ok = validRef(VERSION_REF);
 	return h("div", { class: `notice ${ok ? "warn" : "bad"} version-banner` },
 		h("p", {}, ok ? [h("b", {}, t("flash.version.title", { ref: versionShort() })), " ", t("flash.version.text")] : t("flash.version.bad", { ref: VERSION_REF })),
 		h("p", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); dropVersion(); } }, t("flash.version.use_release"))));
@@ -442,6 +442,7 @@ function render() {
 	render.stepper = () => { const n = stepper(); shown.replaceWith(n); shown = n; };
 	if (S.sim) app.append(h("p", { class: "small muted sim-line" }, t("flash.sim.banner")));
 	if (VERSION_REF && S.task === "install") app.append(versionBanner());
+	if (S.radio && S.radio.status !== "supported" && S.step > 0) app.append(prereleaseNotice());
 	// One bar of buttons under every step: back, start over, and the step's own next action, which the view sets (and
 	// changes when it redraws) through S.forward. The main action is always there, at the right; a step never puts a
 	// second one in its panel. S.forward also takes [alternative, ..., main].
@@ -461,6 +462,15 @@ function render() {
 			S.step > 0 ? button("← " + t("flash.back"), () => { S.step--; render(); }) : null,
 			h("button", { class: "btn btn-quiet", type: "button", onclick: () => reset() }, t("flash.start_over"))),
 		info, fwd));
+}
+
+// A radio still in development (board.toml [status] below supported): on every step after it is picked
+function prereleaseNotice() {
+	const repo = S.data.site.repo;
+	return h("div", { class: "notice prerelease", role: "note" },
+		h("p", {}, h("strong", {}, t("flash.prerelease.title")), " ", t("flash.prerelease.text", { radio: S.radio.name })),
+		S.radio.flash.notice ? h("p", {}, h("strong", {}, S.radio.flash.notice)) : null,
+		repo ? h("p", {}, h("a", { href: `${repo}/issues/new/choose`, target: "_blank", rel: "noopener" }, t("flash.prerelease.link"))) : null);
 }
 
 function next() {
@@ -571,7 +581,7 @@ function buildView() {
 	};
 	// Continue gets the image first: built on request, then on to the next step
 	const go = async () => {
-		if (!S.firmware && VERSION_REF && VERSION_RE.test(VERSION_REF)) {
+		if (!S.firmware && VERSION_REF && validRef(VERSION_REF)) {
 			const yes = await confirmVersion();
 			if (!yes) return;
 			if (yes === "release") dropVersion(false);	// and go on with the release
@@ -757,8 +767,8 @@ async function requestBuild(redraw) {
 	redraw();
 	try {
 		const rels = S.data.releases.filter((x) => x.board === S.radio.id);
-		if (VERSION_REF && !VERSION_RE.test(VERSION_REF)) throw new Error(t("flash.version.bad", { ref: VERSION_REF }));
-		let b = await api("POST", "builds", { board: S.radio.id, ref: VERSION_REF || (rels.length ? rels[rels.length - 1].version : "main"), features: [...sel.on].sort(),
+		if (VERSION_REF && !validRef(VERSION_REF)) throw new Error(t("flash.version.bad", { ref: VERSION_REF }));
+		let b = await api("POST", "builds", { board: S.radio.id, ref: VERSION_REF || (rels.length ? rels[rels.length - 1].version : defaultRef(S.data.site.branch)), features: [...sel.on].sort(),
 			options: S.buildOptions || {}, tool: "web", tool_version: S.data.site.version || "", task: "install", id: useId() });
 		while (b.status === "queued" || b.status === "running") {
 			if (!current()) return;

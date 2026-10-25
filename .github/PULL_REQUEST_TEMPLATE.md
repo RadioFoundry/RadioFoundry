@@ -9,7 +9,7 @@
 
 <!-- Which radios this touches, from this list, or all (core only), or none (tools, docs):
 generated: tools/boards.py docs radios; edit boards/*/board.toml
-DM-32UV, DM-1701, DM-1801 Pro, DB25-D PRO, MD-380
+DM-32UV, DM-1701, DM-1801 Pro, DB25-D PRO, MD-380, MD-UV380
 end generated
 -->
 

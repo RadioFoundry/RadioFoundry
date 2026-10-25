@@ -49,14 +49,17 @@ def attr(tag, name):
 	return float(m.group(1))
 
 
-def render(radio, label):
+def render(radio, label, look=None):
 	"""{"frame": the drawing with its screen black, "boot": the same with the boot screen in it, "geometry": where the
 	screen is}. geometry: {"viewbox": [x, y, w, h], "screen": {x, y, w, h} in viewBox units, "screen_pct": {left,
 	top, width, height} as percentages of the image}, so any screenshot can be laid over the frame (data/radios.json,
 	the radio pages)."""
 	with open(repo.path("docs", "ux", "screens", radio["gallery"], "boot.png"), "rb") as f:
 		png = f.read()
-	src = repo.path("site", "static", "img", "radios", "src", radio["id"] + ".svg")
+	# a look (board.toml looks): the same radio in another body, drawn in <id>-<look>.svg, with the same keys
+	src = repo.path("site", "static", "img", "radios", "src", radio["id"] + ("-" + look if look else "") + ".svg")
+	if look and not os.path.isfile(src):
+		raise repo.SourceError("boards/%s/board.toml looks %s: no drawing %s" % (radio["id"], look, src))
 	if os.path.isfile(src):
 		with open(src, encoding="utf-8") as f:
 			frame = f.read()

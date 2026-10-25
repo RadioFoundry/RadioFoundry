@@ -38,6 +38,21 @@ The board's own files:
 | `boards/<b>/pins.h`, `<b>.h` | Pin assignments and the board's private declarations. The registry reads the pins the flash stub uses from `pins.h` (`[flash.stub]` in [The board registry](board-registry.md#boardtoml)) |
 | `boards/<b>/*_<b>.c` | One file per interface: radio, DMR, audio, vocoder, display, input, flash, power, calibration, diagnostics, USB |
 
+### A board family
+
+Radios that are one board design with different data (other key positions, panel types, power tables, a battery
+divider) share their board code in `boards/<family>/`, which each radio lists in `BOARD_DIRS`. The family directory
+holds the interface files (`*_<prefix>.c`), the family's header and a pin map, and declares what it reads from each
+radio: a variant table and the key matrix, defined in the radio's own `board.c`. Each radio's directory keeps
+`board.mk`, `config.mk`, `board.toml`, `memory.ld`, a `pins.h` that includes the family's (and changes what differs),
+`board.c` and the files that really differ (USB identity, vocoder profiles). Differences the build can't detect, such
+as a higher power version with swapped pins, are a `BUILD_OPTIONS` choice in `board.mk`.
+
+The registry and the tools treat the family directories a board's `BOARD_DIRS` lists as that board's sources: the
+`board_t` name, the flash map, the key enum for the web control page and the stub's pins are found there, and
+`tools/check_generic.py` lets the family's files name the radios that build them. The family's host tests are in
+`boards/<family>/tests/`. [radios.md](../spec/radios.md) says which radios share a family.
+
 Look at the boards on your platform for a model (`tools/boards.py list --platform <p>`; their chips are in
 [radios.md](../spec/radios.md)).
 

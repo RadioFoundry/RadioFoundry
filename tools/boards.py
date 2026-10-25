@@ -133,6 +133,11 @@ BOARD_SCHEMA = {
     "kind": _req(KINDS),
     "order": _req(int),		# where the radio appears in the site's lists; the lowest is the home page's radio
     "part_of": _opt(str),
+    # other bodies the same board ships in that look too different to share its picture: each is its own card on the
+    # site, drawn in site/static/img/radios/src/<id>-<look id>.svg (the site build refuses a missing one), and links to
+    # the board's page. name is one of also;
+    # also lists the radios in that body (each one of the board's also too)
+    "looks": _opt(("list", {"id": _req(str), "name": _req(str), "also": _opt(STR_LIST)})),
     "debuglink_aliases": _opt(STR_LIST),
     "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
     # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
@@ -154,6 +159,8 @@ BOARD_SCHEMA = {
         "keep_codec": _req(bool),
         "sectors": _opt(str),
         "stock_download": _opt(str),
+        # a warning the web flasher shows on every step once the radio is picked: a choice the radio can't check itself
+        "notice": _opt(str),
         "stock_versions": _req(STR_LIST),
         "backup": _req({"stock": _req(("none", "full")), "rfoundry": _req(("none", "full")), "spi_size": _req(int)}),
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str)}),
@@ -316,10 +323,24 @@ def _braced(text, start):
 
 
 def _c_sources(board_dir):
-    for f in sorted(os.listdir(board_dir)):
-        if f.endswith(".c"):
-            with open(os.path.join(board_dir, f), encoding="utf-8") as fh:
-                yield f, _strip_c_comments(fh.read())
+    """(name, text) of the *.c in a board directory, or in each of a list of them (the board's own and the board family
+    directories its BOARD_DIRS lists, shared_board_dirs)."""
+    for d in [board_dir] if isinstance(board_dir, str) else board_dir:
+        for f in sorted(os.listdir(d)):
+            if f.endswith(".c"):
+                with open(os.path.join(d, f), encoding="utf-8") as fh:
+                    yield f, _strip_c_comments(fh.read())
+
+
+def shared_board_dirs(root, bid, mk):
+    """The directories under boards/ besides boards/<bid> that the board's BOARD_DIRS builds: code a family of radios
+    shares (boards/uv380_family), which has no board.mk of its own."""
+    out = []
+    for d in mk.get("BOARD_DIRS", "").split():
+        parts = d.strip("/").split("/")
+        if parts[0] == "boards" and len(parts) == 2 and parts[1] != bid and os.path.isdir(os.path.join(root, d)):
+            out.append(os.path.join(root, d))
+    return out
 
 
 def source_volts(board_dir):
@@ -421,8 +442,13 @@ def pin_defines(path):
         return {}
     with open(path, encoding="utf-8") as f:
         text = _strip_c_comments(f.read())
-    out = {m.group(1): int(m.group(2), 0)
-           for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)}
+    # A board's pins.h may take a family's pin map (#include "../uv380_family/pins.h"): its defines first, the file's
+    # own after them
+    out = {}
+    for inc in re.findall(r'(?m)^\s*#\s*include\s+"([^"]+/pins\.h)"', text):
+        out.update(pin_defines(os.path.normpath(os.path.join(os.path.dirname(path), inc))))
+    out.update({m.group(1): int(m.group(2), 0)
+                for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)})
     out.update({m.group(1): "P%s%d" % (m.group(2), int(m.group(3)))
                 for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+GPIO([A-K])\s*,\s*GPIO_PIN_(\d+)\s*$", text)})
     return out
@@ -678,13 +704,14 @@ def load(root=ROOT, only=None):
         plat = platforms.get(mk.get("PLATFORM", ""))
         if plat is None:
             raise RegistryError("boards/%s: PLATFORM %r has no platform/<p>/platform.toml" % (bid, mk.get("PLATFORM")))
-        out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(bdir),
+        srcs = [bdir] + shared_board_dirs(root, bid, mk)
+        out[bid] = Board(data, plat, mk, _layout(root, bid, mk), board_t_names(srcs),
                          pin_defines(os.path.join(bdir, "pins.h")),
                          # the platform's config.mk adds its own switches (no USB on a platform without it); the
                          # board's reason wins for a switch both list
                          {**unsupported_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
-                          **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(bdir))
-        out[bid].volts = source_volts(bdir)
+                          **unsupported_reasons(os.path.join(bdir, "config.mk"))}, flash_map(srcs))
+        out[bid].volts = source_volts(srcs)
         nw = {**not_written_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
               **not_written_reasons(os.path.join(bdir, "config.mk"))}
         out[bid].not_written = {s: nw.get(s, "") for s in mk.get("BOARD_NOT_WRITTEN", "").split()}
@@ -812,6 +839,10 @@ def check(root=ROOT):
         for k, p in d["docs"].items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
+        for lk in d.get("looks", []):
+            for n in [lk["name"]] + lk.get("also", []):
+                if n not in d["also"]:
+                    bad("looks %s: %r is not in also" % (lk["id"], n))
         if d.get("part_of") is not None and d["part_of"] not in boards:
             bad("part_of %r is not a board" % d["part_of"])
         if not b.source_names:
@@ -1001,6 +1032,8 @@ def rfoundry_view(boards):
             "codec_tables": list(b.window("__codec_tab_lo", "__codec_tab_hi") or ()) or None,
             "loader_id": fl["bootloader"].get("id"), "loader_keys": fl["bootloader"].get("keys"),
             "loader_sign": fl["bootloader"].get("sign", ""),
+            # what rfoundry tells the user: how to reach the bootloader, where the stock files come from
+            "bootloader_steps": list(fl["bootloader"].get("steps", [])), "stock_download": fl.get("stock_download"),
             "key_sha256": dfu["key_sha256"] if dfu else None, "key_prefix": dfu["key_prefix"] if dfu else None,
             "dfu_ids": [dfu["vid"], dfu["pid"]] if dfu else None,
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
@@ -1091,6 +1124,8 @@ def site_view(boards, root=ROOT):
                  "build_options": json.loads(json.dumps(d.get("build_options", [])))}
         if "stock_download" in fl:
             flash["stock_download"] = fl["stock_download"]
+        if "notice" in fl:
+            flash["notice"] = fl["notice"]
         if stub:
             flash["stub_tested"] = stub["tested"]
         out.append({
@@ -1099,6 +1134,7 @@ def site_view(boards, root=ROOT):
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
+            "looks": json.loads(json.dumps(d.get("looks", []))),
             "unsupported": dict(b.unsupported), "not_written": dict(b.not_written), "volts": b.volts,
             "clock": hw["clock"]["rtc"]})
     # the survey's radios without a board, planned or in progress (docs/spec/radios.md Port cells)

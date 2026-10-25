@@ -5,6 +5,8 @@
 Python it was ported from (site/tests/flasher.test.mjs):
 
   - a synthetic DM-1701 stock file and its key (rfoundry's stockfw.build_synthetic_stock), with its profile
+  - a synthetic MD-UV380 stock file and a read of the internal flash of a radio running it, with the codec rfoundry's
+    stockfw.from_flash finds in the read
   - plans for a synthetic image in keep and merge mode, as plan.describe() prints them
   - a release manifest for that image (manifest.generate)
   - the site's data files (radios, features, variants, flash boards, the C7000 stub), as site/build.py writes them
@@ -107,6 +109,32 @@ def md380_like(out):
 		"vote_wrong": sum(a != b for a, b in zip(vote, key))}
 
 
+def flash_readout(out, rng):
+	"""A synthetic MD-UV380 V19.26 stock file, and a read of the internal flash of a radio running it (the application
+	decrypted at 0x0800C000, as stockfw.from_flash takes it): what stockfw.js fromFlash must find, and the codec it must
+	give, as rfoundry places it. Returns the fixture entry."""
+	key = synthetic_key(380)
+	sha = next(h for h, p in stockfw.PROFILES.items() if p["board"] == "mduv380")
+	stock, profiles, _, _ = stockfw.build_synthetic_stock(key, rng, sha)
+	(ssha, prof), = profiles.items()
+	segs = stockfw.parse_container(stock)
+	flash = bytearray(b"\xFF" * (stockfw.FLASH_END - stockfw.FLASH_BASE))
+	app = segs[-1]
+	flash[app[0] - stockfw.FLASH_BASE:app[0] - stockfw.FLASH_BASE + app[1]] = stockfw.decrypt(
+		stock, stockfw.app_file_offset(segs, app[0]), app[1], key)
+	got, codec = stockfw.from_flash(bytes(flash), profiles=profiles)
+	assert got is prof
+	with open(os.path.join(out, "flash-mduv380.bin"), "wb") as f:
+		f.write(flash)
+	with open(os.path.join(out, "stock-mduv380.bin"), "wb") as f:
+		f.write(stock)
+	q = dict(prof, segments=[list(x) for x in prof["segments"]], windows=[list(w) for w in stockfw.windows(prof)])
+	for k in ("code", "tables", "extra"):
+		q.pop(k, None)
+	return {"key": key.hex(), "stock_sha256": ssha, "profile": q,
+		"placed": [[a, stockfw.sha256(d), len(d)] for a, d in codec]}
+
+
 def main(out):
 	os.makedirs(out, exist_ok=True)
 	codec_map_vectors(out)
@@ -137,6 +165,7 @@ def main(out):
 		# the codec as the merge places it (code moved, tables cut, descriptor): what stockfw.js must give
 		"placed": [[a, stockfw.sha256(d), len(d)] for a, d in codec],
 		"md380like": md380_like(out),
+		"readout": flash_readout(out, random.Random(380)),
 	}
 	for k in ("code", "tables", "extra"):
 		doc["profile"].pop(k, None)
