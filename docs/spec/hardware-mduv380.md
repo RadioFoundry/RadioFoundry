@@ -12,7 +12,10 @@ This file lists **only what differs from the DM-1701**. Everything not mentioned
 [hardware-dm1701.md](hardware-dm1701.md) (RadioFoundry's working board, `boards/dm1701`), and that file's section 17 already
 holds a variants table this file expands.
 
-Status: **nothing in this file has been checked on an MD-UV380.**
+Status: **nothing in this file has been checked on an MD-UV380.** The port is `boards/mduv380` on the family's shared
+code in `boards/uv380_family`: every difference below is an entry of `uvf_variant` or `uvf_key_matrix` in
+`boards/mduv380/board.c`, a pin in `boards/uv380_family/pins.h`, or the `POWER` build option. The order to check them on
+a radio is [mduv380-bringup.md](../testing/mduv380-bringup.md).
 
 Values marked `(unverified)` are not confirmed on a radio or in a datasheet; `?` means not found or contradictory. As nothing
 in this file has been checked on an MD-UV380, treat every value as unverified until a radio confirms it. Sources: the
