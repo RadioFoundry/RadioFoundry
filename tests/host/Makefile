@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 ## Host unit tests for the hardware independent parts of the firmware
 ##
 ##   make -C tests/host
@@ -48,7 +48,7 @@ hotspotDataTest: $(HSDATA) $(CORE)/hotspot/hotspotData.h
 hotspotUplinkTest: hotspotUplinkTest.c $(CORE)/hotspot/hotspotUplink.c $(CORE)/hotspot/hotspotUplink.h
 	$(CC) $(CFLAGS) -o $@ hotspotUplinkTest.c $(CORE)/hotspot/hotspotUplink.c
 
-IPGW    := ipGatewayTest.c $(CORE)/dmr/ipGateway.c
+IPGW    := ipGatewayTest.c $(CORE)/dmr/ipGateway.c $(DATA)
 
 ipGatewayTest: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -o $@ $(IPGW)
@@ -135,8 +135,9 @@ CORE_HAL := -I$(ROOT)/hal -Wshadow
 TESTS   += radioCoreTest inputTest quadratureTest serialmicTest
 
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
-RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c \
-           $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/codeplug/codeplug_talk.c
+RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
+           $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
+           $(CORE)/codeplug/zone_settle.c
 RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEAT) $(CORE)/dmr/call/dmr_call.c \
            $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/ambe/ambeFec.c \
            $(CORE)/dmr/dmrPrivacy.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
@@ -147,7 +148,7 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(RFEA
            $(CORE)/hotspot/hotspotSfr.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c \
            $(CORE)/ui/ui_svc_radio.c $(CORE)/ui/ui_svc_storage.c $(CORE)/ui/ui_svc_data.c \
            $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c \
-           $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c
+           $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
@@ -199,26 +200,20 @@ TESTS   += aprsRadioTest
 FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_DMR_SMS=0 -DCONFIG_DMR_ARS=0 \
            -DCONFIG_DMR_LRRP=0 -DCONFIG_DMR_SIGNALING=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=0 -DCONFIG_HOTSPOT=0
 APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/radio/tones.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c \
-           $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c \
+           $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
-           $(CORE)/radio/radio_am.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
+           $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
            $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c
 
 aprsRadioTest: $(APRSRT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/aprs/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. $(FMONLY) -o $@ $(APRSRT) -lm
 
 # Air band AM receive through the radio core (docs/spec/airband-and-broadcast.md 3), a fake board with CAP_AM_RX
-TESTS   += radioAmTest
-AMTEST  := radioAmTest.c $(filter-out radioFeaturesTest.c,$(RFTEST))
+TESTS   += radioListenBandsTest
+AMTEST  := radioListenBandsTest.c $(filter-out radioFeaturesTest.c,$(RFTEST))
 
-radioAmTest: $(AMTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h)
+radioListenBandsTest: $(AMTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 -o $@ $(AMTEST) -lm
-
-# The broadcast FM receiver's behavior (core/bcast, docs/spec/airband-and-broadcast.md 4) on a fake receiver
-TESTS   += bcastTest
-
-bcastTest: bcastTest.c $(CORE)/bcast/bcast.c $(CORE)/bcast/bcast.h $(ROOT)/hal/hal_bcast.h
-	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ bcastTest.c $(CORE)/bcast/bcast.c
 
 inputTest: inputTest.c $(CORE)/input/input_engine.c $(CORE)/input/input_engine.h $(CORE)/input/input.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ inputTest.c $(CORE)/input/input_engine.c
@@ -258,7 +253,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioAmTest bcastTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest aprsRadioTest quadratureTest serialmicTest miclevelTest \
           rx2LinkTest keyassignTest powerSwitchTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
@@ -266,8 +261,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioFeaturesTest radioFeaturesTes
 	./radioFeaturesTest
 	./radioFeaturesTestNoDual
 	./roamTest
-	./radioAmTest
-	./bcastTest
+	./radioListenBandsTest
 	./inputTest
 	./quadratureTest
 	./serialmicTest
@@ -398,7 +392,7 @@ UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/ui_sc
 TESTS   += gfxTest
 
 gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -o $@ gfxTest.c $(UI)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -o $@ gfxTest.c $(UI)
 
 # The UI host simulator (tests/host/sim/ui_sim.c): the whole of core/ui against a simulated radio, codeplug and
 # board at any display geometry and key map. uiFlowTest runs the task flows of docs/ux/task-flows.md against their
@@ -407,10 +401,10 @@ gfxTest: gfxTest.c $(UI) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
 UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
-           $(CORE)/codeplug/codeplug_talk.c \
-           sim/ui_sim.c sim/ui_png.c
+           $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
+           $(CORE)/radio/radio_bcast.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
-ABOUT_H := out/gen/odr_about.h
+ABOUT_H := out/gen/rfoundry_about.h
 $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
 UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
            '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE
@@ -488,18 +482,18 @@ crashTest: $(CRASHT) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(CORE)/ui/ui
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(CRASHT)
 
 # The crash capture (core/crash/crash_capture.c) on a stand-in RTOS (stubs/crash_rtos/): the transmitter off first, with
-# interrupts off, on every way in, before the store and the restart (docs/spec/crash-log.md 8)
+# interrupts off, on every way in, before the store and the restart (docs/spec/crash-log.md 8); the task snapshot
 TESTS   += crashCaptureTest
 CRASHC  := crashCaptureTest.c $(CORE)/crash/crash_capture.c $(CORE)/crash/crash.c $(CORE)/debuglink/dl_fmt.c
 crashCaptureTest: $(CRASHC) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(ROOT)/hal/board.h $(wildcard stubs/crash_rtos/*.h)
-	$(CC) $(CFLAGS) -Istubs/crash_rtos -I$(ROOT)/hal -Wshadow -o $@ $(CRASHC)
+	$(CC) $(CFLAGS) -Istubs/crash_rtos -I$(ROOT)/hal -DCONFIG_TASK_STACKS=1 -Wshadow -o $@ $(CRASHC)
 
 run: run-crash
 run-crash: crashTest crashCaptureTest
 	./crashTest
 	./crashCaptureTest
-	@if command -v python3 > /dev/null; then python3 $(ROOT)/tools/odr_fault_trace.py --selftest; \
-	else echo "# odr_fault_trace selftest: skipped (no python3)"; fi
+	@if command -v python3 > /dev/null; then python3 $(ROOT)/tools/rfoundry_fault_trace.py --selftest; \
+	else echo "# rfoundry_fault_trace selftest: skipped (no python3)"; fi
 .PHONY: run-crash
 
 run: run-ambe
@@ -713,6 +707,17 @@ run-debuglinkRx2: debuglinkRx2Test
 	./debuglinkRx2Test
 .PHONY: run-debuglinkRx2
 
+# DL_CMD_DMR_DATA's IP operations (core/debuglink/debuglink_dmr_data.c): the settings' gateway ID and IP_SEND's parsing
+DLDATA  := debuglinkDmrDataTest.c $(CORE)/debuglink/debuglink_dmr_data.c $(CORE)/debuglink/dl_fmt.c $(DATA)
+TESTS   += debuglinkDmrDataTest
+debuglinkDmrDataTest: $(DLDATA) $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/debuglink_proto.h $(CORE)/dmr/ipGateway.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_DMR_EMERGENCY=0 -o $@ $(DLDATA)
+
+run: run-debuglinkDmrData
+run-debuglinkDmrData: debuglinkDmrDataTest
+	./debuglinkDmrDataTest
+.PHONY: run-debuglinkDmrData
+
 # The flash stubs' shared protocol engine (stub/common/stubeng.c) with the STM32F4 target's board record check
 # (stub/stm32f4/f4stub_board.c, docs/spec/stub-stm32f4.md)
 F4STUB_SRC := $(ROOT)/stub/common/stubeng.c $(ROOT)/stub/stm32f4/f4stub_board.c
@@ -855,9 +860,9 @@ run-hlnet: hostlinkNetTest
 .PHONY: run-hlnet
 
 # PPP on the serial host link (core/net/ppp.c) and its glue to the real gateway (core/hostlink/hostlink_ppp.c), against
-# a scripted peer, with a seeded fuzz loop (ODR_FUZZ_ITERS); pppPeer runs the same on a pseudo-terminal for pppd
-# (tools/odr_ppp_interop.sh)
-PPPT    := $(CORE)/net/ppp.c $(CORE)/hostlink/hostlink_ppp.c $(CORE)/dmr/ipGateway.c
+# a scripted peer, with a seeded fuzz loop (RFOUNDRY_FUZZ_ITERS); pppPeer runs the same on a pseudo-terminal for pppd
+# (tools/rfoundry_ppp_interop.sh)
+PPPT    := $(CORE)/net/ppp.c $(CORE)/hostlink/hostlink_ppp.c $(CORE)/dmr/ipGateway.c $(DATA)
 TESTS   += pppTest
 
 pppTest: pppTest.c fuzz.h $(PPPT) $(CORE)/net/ppp.h $(CORE)/hostlink/hostlink_ppp.h $(CORE)/dmr/ipGateway.h
@@ -877,8 +882,8 @@ run-ppp: pppTest pppPeer
 
 # The radio's own services on the USB network link, behind the real gateway (core/net): the mDNS responder, and the
 # TFTP server with codeplug.bin on a simulated flash. Their frames go to pcaps that tshark checks when it's there
-MDNST   := mdnsTest.c $(CORE)/net/mdns.c $(CORE)/dmr/ipGateway.c
-TFTPT   := tftpTest.c $(CORE)/net/tftp.c $(CORE)/net/tftp_codeplug.c $(CORE)/net/tftp_iddb.c $(CORE)/dmr/ipGateway.c \
+MDNST   := mdnsTest.c $(CORE)/net/mdns.c $(CORE)/dmr/ipGateway.c $(DATA)
+TFTPT   := tftpTest.c $(CORE)/net/tftp.c $(CORE)/net/tftp_codeplug.c $(CORE)/net/tftp_iddb.c $(CORE)/dmr/ipGateway.c $(DATA) \
            $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c sim/sim_flash.c
 TESTS   += mdnsTest tftpTest
 
@@ -960,6 +965,20 @@ run-cpedit: codeplugEditTest
 	./codeplugEditTest
 .PHONY: run-cpedit
 
+# Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
+# rename, delete, a new channel added in one step, the limits
+ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c $(CPEDIT) \
+           $(CORE)/settings/settings.c
+TESTS   += zoneEditTest
+
+zoneEditTest: zoneEditTest.c $(ZEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ zoneEditTest.c $(ZEDIT)
+
+run: run-zedit
+run-zedit: zoneEditTest
+	./zoneEditTest
+.PHONY: run-zedit
+
 # The open-firmware CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
 CPS     := $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
            sim/sim_flash.c
@@ -1005,7 +1024,7 @@ else
 endif
 .PHONY: run-cpsclient
 
-# DMR Tier III prototype: the PDU layouts, tables and authentication vectors behind docs/spec/dmr-tier3-plan.md
+# DMR Tier III prototype: the PDU layouts, tables and authentication vectors behind the ETSI TS 102 361-4 clauses it cites
 TESTS   += tier3ProtoTest
 
 tier3ProtoTest: tier3ProtoTest.c $(CORE)/dmr/call/dmr_lc.c $(CORE)/dmr/call/dmr_lc.h $(CORE)/dmr/fec/dmrFec.c
@@ -1058,12 +1077,12 @@ endif
 # The TCP services (core/net) through the real gateway and TCP, against a scripted TCP peer and fakes of the APRS
 # engine and the radio core; tshark checks netSvcTest.pcap
 NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/net/tcp.c $(CORE)/net/kiss_tcp.c $(CORE)/aprs/kiss.c \
-           $(CORE)/net/http.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c \
-           $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c
+           $(CORE)/net/http.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c $(CORE)/net/webctl.c $(CORE)/net/ws.c \
+           $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c $(DATA)
 TESTS   += netSvcTest
 
 netSvcTest: $(NETSVC) netSvcFakes.h $(wildcard $(CORE)/net/*.h) $(CORE)/dmr/ipGateway.h gen/gz/http_assets_gen.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Igen/gz -Wshadow -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 -DCONFIG_NET_USRP=0 -o $@ $(NETSVC)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Igen/gz -Wshadow -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 -DCONFIG_NET_USRP=1 -DCONFIG_NET_PPP=1 -DGFX_INDEXED=1 -o $@ $(NETSVC)
 
 run: run-netsvc
 run-netsvc: netSvcTest
@@ -1074,8 +1093,19 @@ ifneq ($(TSHARK),)
 	@if [ -s netSvcTest.expert ]; then echo "# tshark found problems in netSvcTest.pcap"; cat netSvcTest.expert; exit 1; else echo "# tshark: netSvcTest.pcap has no malformed segments or bad checksums"; fi
 endif
 .PHONY: run-netsvc
+
+# WebSocket pieces for the HTTP server's /ws (core/net/ws.c): SHA-1, base64, the handshake, frame headers
+TESTS   += wsTest
+wsTest: wsTest.c $(CORE)/net/ws.c $(CORE)/net/ws.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ wsTest.c $(CORE)/net/ws.c
+
+run: run-ws
+run-ws: wsTest
+	./wsTest
+.PHONY: run-ws
+
 # The SNMP agent (docs/spec/snmp.md): the BER codec against hand-worked X.690 encodings, SNMPv2c processing, the MIB and
-# the notifications (snmpTest); then the agent on a loopback UDP socket against tools/odr_snmp.py and, when installed,
+# the notifications (snmpTest); then the agent on a loopback UDP socket against tools/rfoundry_snmp.py and, when installed,
 # the system's SNMP command line tools (snmp_peer_check.sh)
 SNMPLIB := $(CORE)/snmp/snmp.c $(CORE)/snmp/snmpBer.c $(CORE)/snmp/snmpMib.c
 TESTS   += snmpTest snmpPeer
@@ -1089,9 +1119,9 @@ snmpPeer: snmpPeer.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
 # The agent's firmware glue (snmp_agent.c: the USB and RF request paths, the RF mailbox and limits, settings, traps)
 # on fakes of the radio, the settings and the gateway
 TESTS   += snmpAgentTest
-snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
+snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(SNMPLIB) $(DATA) $(wildcard $(CORE)/snmp/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_SNMP=1 -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_HOTSPOT=0 -o $@ \
-		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(SNMPLIB)
+		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(SNMPLIB) $(DATA)
 
 run: run-snmp
 run-snmp: snmpTest snmpPeer snmpAgentTest
@@ -1146,3 +1176,29 @@ check-run:
 		grep -qE "(^|[[:space:];&|(])\./$$t([[:space:];>|)]|$$)" $(MAKEFILE_LIST) || \
 			{ echo "tests/host: no run group runs $$t (add it to one, or to HELPERS)"; exit 1; }; done
 .PHONY: check-run
+
+# The web control page's set (CONFIG_NET_WEBCTL) in its own table: its index.html replaces the plain one, so the two
+# can't share a table. A radio with a drawing, and a hand mic's if one has it, gives it its keys.json, radio.svg and
+# mic.svg
+WEBCTL_SVGS   := $(wildcard $(ROOT)/site/static/img/radios/src/*.svg)
+WEBCTL_MIC    := $(firstword $(filter %-mic.svg,$(WEBCTL_SVGS)))
+WEBCTL_BOARD  := $(if $(WEBCTL_MIC),$(notdir $(WEBCTL_MIC:-mic.svg=)),$(notdir $(basename $(firstword $(WEBCTL_SVGS)))))
+WEBCTL_ASSETS := $(sort $(wildcard $(ROOT)/core/net/webctl_assets/*)) gen/webctl/keys.json gen/webctl/radio.svg \
+	$(if $(WEBCTL_MIC),gen/webctl/mic.svg)
+TESTS   += httpAssetsTestWebctl
+
+gen/webctl/keys.json: $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_SVGS) $(ROOT)/boards/$(WEBCTL_BOARD)/$(WEBCTL_BOARD).h
+	@python3 -I $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_BOARD) gen/webctl > /dev/null
+gen/webctl/radio.svg gen/webctl/mic.svg: gen/webctl/keys.json
+gen/webctl/http_assets_gen.h: $(WEBCTL_ASSETS) $(ROOT)/tools/gen_http_assets.py
+	@python3 -I $(ROOT)/tools/gen_http_assets.py --gzip $@ $(WEBCTL_ASSETS) > /dev/null
+	@touch $@
+httpAssetsTestWebctl: httpAssetsTest.c $(CORE)/net/http_assets.h gen/webctl/http_assets_gen.h
+	$(CC) $(CFLAGS) -Igen/webctl -o $@ httpAssetsTest.c
+
+run: run-webctlassets
+run-webctlassets: httpAssetsTestWebctl
+	@mkdir -p out/http_webctl
+	./httpAssetsTestWebctl out/http_webctl
+	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_webctl $(WEBCTL_ASSETS)
+.PHONY: run-webctlassets

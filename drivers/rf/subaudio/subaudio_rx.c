@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Software CTCSS and DCS detection (subaudio_rx.h)
 #include <string.h>
 #include "subaudio_rx.h"

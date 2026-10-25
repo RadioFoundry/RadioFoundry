@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Merge the codec into a freshly built image when the radio's stock firmware is in codecs/ (run by make).
 
 Looks through codecs/ for a stock firmware file the board's codec tool supports (checked by SHA-256, so file names
@@ -16,8 +16,8 @@ import sys
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
-sys.path.insert(0, os.path.join(TOOLS, "odrflash"))
-from odrflash import boards  # noqa: E402  (the board registry)
+sys.path.insert(0, os.path.join(TOOLS, "rfoundry"))
+from rfoundry import boards  # noqa: E402  (the board registry)
 
 # Board -> codec tool, the registry's [codec] tool (each takes --stock, --image, -o and keeps its supported stock files
 # in PROFILES)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 data flash: the map the core gets and the board's own record sector (docs/spec/hardware-md9600.md 12.2).
 //
 // The factory calibration and the hardware options are in the flash's security registers 1-3, outside the main

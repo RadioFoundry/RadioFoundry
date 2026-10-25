@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D front keys, encoder and the mic's PTT (docs/spec/hardware-db25d.md 3.3).
 //
 // Five drive lines and three sense lines make a 15-position matrix. The front keys' positions were found on the radio

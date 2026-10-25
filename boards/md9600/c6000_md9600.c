@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 HR_C6000: power-up, the DMR receive path, the PCM audio stream and the speaker routing
 // (docs/spec/hardware-md9600.md 4, 6). The chip and its glue are the shared STM32 code: the configuration and voice
 // ports (platform/stm32f4/hrc/hrc_bus.c; MOSI is PE5 and MISO PE4 here, the voice port SPI1), the slot engine and its

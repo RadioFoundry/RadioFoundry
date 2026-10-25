@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The site generator's only dependency (MIT licensed, pure Python): Markdown for docs/
 markdown-it-py==3.0.0
 mdurl==0.1.2

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The MD-9600's data flash map under core/storage and core/settings, and its board record sector
 // (boards/md9600/store_md9600.c), on the SPI NOR chip model of tests/host/spiNorTest.c: the areas don't overlap, the
 // record survives a power cut at every operation of a change, and no test sends a command that could touch the

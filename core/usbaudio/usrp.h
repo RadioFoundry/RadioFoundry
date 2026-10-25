@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * The "USRP" voice-over-UDP framing that AllStarLink's USRP channel driver, DVSwitch Analog_Bridge and their clients
  * exchange, and the radio side's link state (docs/spec/usb-audio.md 4.2). Hardware independent, host tested
@@ -21,8 +21,8 @@
  * little endian hosts, puts on the wire). Both orders are taken from the public descriptions of the format and must be
  * confirmed against a live peer on the bench (spec 4.2, owner question 6); USRP_SAMPLES_BIG_ENDIAN flips the samples.
  */
-#ifndef ODR_USRP_H
-#define ODR_USRP_H
+#ifndef RFOUNDRY_USRP_H
+#define RFOUNDRY_USRP_H
 
 #include <stdbool.h>
 #include <stddef.h>

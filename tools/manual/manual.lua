@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT
--- Copyright (c) 2026 The OpenDigitalRadio Authors
+-- Copyright (c) 2026 The RadioFoundry Authors
 --
 -- Pandoc filter for the PDF user manual (tools/build_manual.sh). The chapters in docs/user/ are written for GitHub,
 -- so they use HTML <img> tags for sized screenshots and relative links between files. This filter makes them work in
@@ -9,13 +9,13 @@
 --   - other raw HTML (<p>, </p>, <br>, <sub>) is dropped, keeping the text pandoc parsed around it;
 --   - a link to a whole chapter ("#03-first-bootmd" after --file-scope) goes to the chapter's first heading;
 --   - a link to a file outside the manual (../dev/..., ../spec/..., ../../tools/...) points at the repository web
---     page when ODR_REPO_URL is set (for example https://github.com/OWNER/REPO/blob/v1.0), else becomes plain text.
--- Environment: ODR_MANUAL_DIR, the chapters' directory relative to the repository root (default docs/user);
--- ODR_REPO_ROOT, the repository root, to leave out images that don't exist (with a warning).
+--     page when RFOUNDRY_REPO_URL is set (for example https://github.com/OWNER/REPO/blob/v1.0), else becomes plain text.
+-- Environment: RFOUNDRY_MANUAL_DIR, the chapters' directory relative to the repository root (default docs/user);
+-- RFOUNDRY_REPO_ROOT, the repository root, to leave out images that don't exist (with a warning).
 
-local manual_dir = os.getenv("ODR_MANUAL_DIR") or "docs/user"
-local repo_root = os.getenv("ODR_REPO_ROOT")
-local repo_url = os.getenv("ODR_REPO_URL")
+local manual_dir = os.getenv("RFOUNDRY_MANUAL_DIR") or "docs/user"
+local repo_root = os.getenv("RFOUNDRY_REPO_ROOT")
+local repo_url = os.getenv("RFOUNDRY_REPO_URL")
 local px_per_inch = 110	-- a 200 px wide screenshot on GitHub prints about 1.8 in wide
 
 -- "a/b/../c" -> "a/c"

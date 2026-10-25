@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Codeplug files for the editor: what a file holds and the image in it (a codeplug image, a radio backup bundle, the
 // USB network codeplug.bin), and the draft the page keeps in the browser between visits. A file in another layout (a
 // stock TYT-family codeplug, docs/spec/codeplug-stock-tyt.md) is converted, or reported as foreign.
@@ -90,7 +90,7 @@ export { recordSize };
 
 // --- The draft: the working codeplug kept in this browser (IndexedDB), so a reload doesn't lose edits ---
 
-const DB = "odr-codeplug-editor", STORE = "draft";
+const DB = "rfoundry-codeplug-editor", STORE = "draft";
 
 function db() {
 	return new Promise((resolve, reject) => {

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // What layout a codeplug image or SPI flash dump holds (docs/spec/codeplug-stock-tyt.md 2): the open-firmware layout
 // (open-firmware-cps.md 7), a stock TYT-family codeplug, nothing (blank), or something else. Decided from the
-// records each layout marks as in use, so stock bytes ODR hasn't overwritten yet don't hide an ODR codeplug.
+// records each layout marks as in use, so stock bytes RadioFoundry hasn't overwritten yet don't hide a RadioFoundry codeplug.
 
 import {
 	LIMITS, CH_SIZE, bankBitmap, channelAddr, decodeChannel, zoneLayout, ZONE_BITMAP, ZONE_DATA, CONTACTS,

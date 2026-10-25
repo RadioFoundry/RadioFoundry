@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT Copyright (c) 2026 The OpenDigitalRadio Authors The TFTP server (core/net/tftp.c) behind
+// SPDX-License-Identifier: MIT Copyright (c) 2026 The RadioFoundry Authors The TFTP server (core/net/tftp.c) behind
 // the real IP gateway, driven by a small client in this file: reads with and without options, blksize negotiation and
 // clamping, tsize, the empty last block, block number roll-over, timeouts and retransmits, duplicate ACKs, foreign
 // TIDs, busy, refusals, writes with a slow commit, the dally, a client's error. Then codeplug.bin
@@ -59,7 +59,7 @@ bool ipGatewaySendFrame(const uint8_t *frame, int length)
 }
 uint32_t ipGatewayRadioId(void) { return RADIO_ID; }
 void ipGatewaySerialIn(const uint8_t *data, int length) { (void)data; (void)length; }
-bool ipGatewayIPToAir(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length) { return true; }
+bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol, const uint8_t *l4, int length) { return true; }
 bool ipGatewayRawToAir(bool group, uint32_t dst, const uint8_t *data, int length) { return true; }
 
 // ---- the server's io ----

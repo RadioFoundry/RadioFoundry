@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # Builds a csky-elf cross toolchain for the hrc7000 platform (C-SKY CK803S): binutils, GCC (C only) and newlib, into
 # ~/toolchains/csky-elf. Tested on Ubuntu 22.04 arm64 (4 cores, about 45 minutes):
 #   sudo apt install build-essential libgmp-dev libmpfr-dev libmpc-dev libisl-dev texinfo bison flex

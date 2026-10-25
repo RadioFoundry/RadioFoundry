@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DMR voice link control: full LC, RS(12,9), embedded LC, CRC-CCITT, talker alias, GPS Info (see dmr_lc.h)
 #include <string.h>
 #include "dmr/call/dmr_lc.h"

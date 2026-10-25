@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # Builder image for the csky-elf toolchain: Ubuntu 24.04 with what binutils, GCC 14 and newlib need to build.
 # build.sh runs it with a host work directory on /work and tools/build-csky-toolchain.sh on /build.sh, so the build
 # tree (peak about 4 GB) stays on the host's scratch disk instead of in image layers; the result goes into the CI
 # image (Dockerfile). Build by hand:
-#   docker build -t odr/csky-builder -f tools/docker/csky-toolchain/Dockerfile.build tools/docker/csky-toolchain
-#   docker run --rm -v /scratch/odr-csky:/work -v $PWD/tools/build-csky-toolchain.sh:/build.sh:ro \
-#       -e PREFIX=/work/csky-elf -e SRC=/work/src -e CLEAN=1 odr/csky-builder
+#   docker build -t rfoundry/csky-builder -f tools/docker/csky-toolchain/Dockerfile.build tools/docker/csky-toolchain
+#   docker run --rm -v /scratch/rfoundry-csky:/work -v $PWD/tools/build-csky-toolchain.sh:/build.sh:ro \
+#       -e PREFIX=/work/csky-elf -e SRC=/work/src -e CLEAN=1 rfoundry/csky-builder
 FROM ubuntu:24.04
 RUN apt-get update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \

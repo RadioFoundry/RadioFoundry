@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The IP gateway's air side on the DMR data service (CONFIG_DMR_IP_GATEWAY): the default hostlink_net_air_t.
 //
 //   host link task   ip_to_air / raw_to_air copy the packet into a one-packet mailbox and return (never block)
@@ -11,8 +11,8 @@
 //   packets heard    the data service's packet hook (dmrDataEnv_t.packet) = hostlink_net_air_packet
 //
 // The radio core calls the three radio task functions from its data service glue (radio_sm.c).
-#ifndef ODR_HOSTLINK_NET_AIR_H
-#define ODR_HOSTLINK_NET_AIR_H
+#ifndef RFOUNDRY_HOSTLINK_NET_AIR_H
+#define RFOUNDRY_HOSTLINK_NET_AIR_H
 
 #include <stdint.h>
 #include <stdbool.h>

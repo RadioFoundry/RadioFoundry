@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 diagnostics page lines: the board revision in use and where it came from, then raw readings for the first
 // power-up (docs/spec/hardware-md9600.md 19): calibration and option blocks, band edges, the synthesizer's last LO,
 // ADC channels, keys, flash. The debug link's board view (view_md9600.c) carries the same and more

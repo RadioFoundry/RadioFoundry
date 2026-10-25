@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The board descriptor: everything the core may know about the radio it runs on.
 // Core code reads this at run time; it never tests a radio define.
 #ifndef HAL_BOARD_H
@@ -60,8 +60,11 @@ typedef struct {
 	const keymap_entry_t *keymap;
 	uint8_t keymap_len;
 	// The keys the user may reassign (Settings > Keys, the codeplug's quick-key slots; core/input/keyassign.h), as key
-	// map bits in role order: side key 1, side key 2, top key. Fewer roles than 3: the last ones are missing
+	// map bits in role order, up to KEYASSIGN_ROLES: every key with a function of its own (side keys, numbered SK1,
+	// SK2, ... from the top, then programmable and function keys), not the keys the menus need (select, back, QUICK,
+	// CONTEXT, digits, PTT). side_key_names: each one's name as printed on the radio, for Settings ("SK1", "P1")
 	const uint8_t *side_keys;
+	const char *const *side_key_names;
 	uint8_t side_key_count;
 	// Optional: what the screen hints call the keys that send QUICK and CONTEXT on a radio without * and # keys
 	// ("P1", "P2"; docs/spec/ui.md 1); NULL: "*" and "#"

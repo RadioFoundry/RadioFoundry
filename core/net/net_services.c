@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Glue between the IP gateway and the radio's own UDP services (net_services.h): mDNS (core/net/mdns.c) and TFTP
 // (core/net/tftp.c with codeplug.bin from tftp_codeplug.c and info.txt here).
 #include <string.h>
@@ -22,8 +22,8 @@
 #include "net/tftp_iddb.h"
 #endif
 
-#ifndef ODR_GIT
-#define ODR_GIT "unknown"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "unknown"
 #endif
 
 static uint8_t *payload(int *max)
@@ -65,7 +65,7 @@ static void read_callsign(char *out, size_t size)
 // One line per service the radio offers on its address; other services add theirs here
 static const mdns_service_t services[] = {
 #if CONFIG_DEBUGLINK
-	{ "_odr-debug._udp", IPGW_SERIAL_PORT },
+	{ "_rfoundry-debug._udp", IPGW_SERIAL_PORT },
 #endif
 #if CONFIG_HOTSPOT
 	{ "_mmdvm._udp", IPGW_SERIAL_PORT },
@@ -95,7 +95,7 @@ static void mdns_identity(mdns_identity_t *id)
 	id->dmr_id = ipGatewayRadioId();
 	memcpy(id->callsign, call, sizeof(id->callsign));
 	id->board = board.name;
-	id->firmware = ODR_GIT;
+	id->firmware = RFOUNDRY_GIT;
 }
 
 static bool mdns_send(uint32_t ip, uint16_t port, const uint8_t *msg, int length)
@@ -168,7 +168,7 @@ static void info_text(char *b)
 	b[0] = '\0';
 	add(b, INFO_MAX, "board: ");
 	add(b, INFO_MAX, board.name != NULL ? board.name : "?");
-	add(b, INFO_MAX, "\nfirmware: " ODR_GIT "\ndmr_id: ");
+	add(b, INFO_MAX, "\nfirmware: " RFOUNDRY_GIT "\ndmr_id: ");
 	add_u32(b, INFO_MAX, ipGatewayRadioId());
 	add(b, INFO_MAX, "\ncallsign: ");
 	add(b, INFO_MAX, call);

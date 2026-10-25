@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The external SPI NOR flash for the flash stub (f4stub_spi.c), wired as the board record says. The protocol engine
 // (stub/common/stubeng.c) has already checked ranges and erased bytes; these functions only drive the chip.
 #ifndef F4STUB_SPI_H

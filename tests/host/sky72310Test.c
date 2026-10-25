@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // SKY72310 synthesizer: divider arithmetic against the data sheet's worked example (SKY72310-11 data sheet 203639L,
 // figure 4 case 1), the serial word layout and write order against a model of the chip's registers, and the MD-380
 // frequency plan's ratios (docs/spec/hardware-md380.md 5.2)

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The DM-32UV's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
 # web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/dm32/memory.ld.
 
@@ -10,7 +10,7 @@ model = "DM-32UV"
 also = []
 kind = "handheld"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
-order = 3
+order = 1
 # Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
 # build option value's board_name), and the id always counts
 debuglink_aliases = ["DM-32"]
@@ -44,7 +44,7 @@ release = "stable"
 family = "serial-loader"
 keep_codec = false
 stock_versions = ["DM32.01.01.049", "DM32.00.01.046"]
-backup = { stock = "full", odr = "full", spi_size = 0x1000000 }
+backup = { stock = "full", rfoundry = "full", spi_size = 0x1000000 }
 
 # Baofeng's update mode: keys is the short form tools print, steps the web flasher's and the manual's, id the string
 # the loader answers (also the magic of its firmware files), sign what the radio shows in update mode
@@ -69,7 +69,7 @@ hold_power = false
 progmem = 0x100000
 tested = true
 
-# The codec slot and windows come from boards/dm32/memory.ld (__codec_*); profile is the id odrflash gives a merged codec
+# The codec slot and windows come from boards/dm32/memory.ld (__codec_*); profile is the id rfoundry gives a merged codec
 [codec]
 tool = "hrc7000_codec"
 profile = "dm32-049"

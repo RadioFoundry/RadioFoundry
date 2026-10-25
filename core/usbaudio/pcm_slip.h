@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * A PCM jitter buffer between two free-running 8 kHz clocks (docs/spec/usb-audio.md 5.3): audio the host produces at
  * its clock (USB audio OUT, USRP datagrams, serial frames) and the radio consumes at its codec's clock (the HR_C6000's
@@ -12,8 +12,8 @@
  * first can run against a consumer in an interrupt without a lock (core/usbaudio/audio_mux.c). Host tested
  * (tests/host/usrpTest.c).
  */
-#ifndef ODR_PCM_SLIP_H
-#define ODR_PCM_SLIP_H
+#ifndef RFOUNDRY_PCM_SLIP_H
+#define RFOUNDRY_PCM_SLIP_H
 
 #include <stdbool.h>
 #include <stddef.h>

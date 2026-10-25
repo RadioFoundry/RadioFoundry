@@ -1,11 +1,17 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Settings store and safe flash writes
 
 How the radio keeps its own state across power cycles (`core/settings`) and how the codeplug's flash sectors are
 rewritten without a power cut corrupting them (`core/storage`). Both live in the board's SPI NOR. Both are generic:
 the board gives the addresses in its `hal_flash_map_t` (`board.flash->map`) and core code never names a radio.
+
+| Section | Topic |
+|---|---|
+| 1, 2, 3 | Areas, settings records, fields and the append-only rule |
+| 4, 5 | The sector journal, the foreign region guard |
+| 6 | Testing |
 
 ## 1. Areas
 
@@ -23,20 +29,12 @@ settings start from the defaults at every boot and nothing can be written.
 | `native_addr` / `native_size` | reserved for the native codeplug (`codeplug-native.md` 4) |
 | `staging_addr` / `staging_size` | a new codeplug image waits here, checked, before it replaces the stored one (the TFTP write, `tftp.md` 4); never written by the open-firmware CPS (above `openfw_end`); 0 when the board has none |
 
-The settings ring and journal go where no open-firmware tool reads or writes, and the CPS shim refuses to write there. The
-boards' maps:
-
-| Field | DM-1701, MD-380 (16 MB part) | DM-32UV | DB25-D PRO (NAND, 2.375 MB logical) |
-|---|---|---|---|
-| `settings_addr` / `settings_size` | 0x011000, 32 KB (8 sectors) | 0x711000, 32 KB (8 sectors) | 0x011000, 32 KB (8 sectors) |
-| `journal_addr` | 0x019000 | 0x719000 | 0x019000 |
-| `openfw_eeprom` | 0x000000 | 0x700000 | 0x000000 |
-| `openfw_flash` | 0x020000 | 0x720000 | 0x020000 |
-| `openfw_end` | 0xE00000 | 0xF00000 | 0x120000 |
-| `calibration_addr` / `_size` | DM-1701 0x010000, 512 B; MD-380 none | none | none |
-| `native_addr` / `native_size` | 0xE00000, 1 MB | 0xF00000, 1 MB | 0x120000, 1 MB |
-| `staging_addr` / `staging_size` | 0xF00000, 256 KB | none | 0x220000, 256 KB |
-| Details | `hardware-dm1701.md` 13.2, `hardware-md380.md` 12.2 | `hardware-dm32.md` 10.1, 17 | `hardware-db25d.md` 6.6 |
+The settings ring and journal go where no open-firmware tool reads or writes, and the CPS shim refuses to write there.
+Each board fixes the values in its `hal_flash_map_t`, and its hardware page lists the map. The usual order, low to
+high, is the open-firmware EEPROM image, the settings ring (32 KB, 8 sectors), the journal (2 sectors), the
+open-firmware flash image (up to `openfw_end`), the native codeplug (1 MB) and, on boards with room, a 256 KB staging
+area. A board that keeps its calibration in the vendor layout lists no calibration window. The boards are in
+[feature-matrix.md](../feature-matrix.md).
 
 The core works in 4 KB erase units (`STORAGE_SECTOR`). A board whose flash erases in other units gets no writes. A
 NAND board puts `drivers/flash/nand_sectors` in between, which gives NOR behavior in 4 KB sectors
@@ -75,7 +73,7 @@ so with two pages a sector is erased once every 64 saves.
 ### 2.1 Pages
 
 `settings_t` is longer than one slot's payload, so it is stored as pages: page k holds bytes `236 * k` on.
-`SETTINGS_PAGES` is the number its size needs (2 now, 264 bytes); the page field allows 16 (3776 bytes). Each page is
+`SETTINGS_PAGES` is the number its size needs (2 now, 280 bytes); the page field allows 16 (3776 bytes). Each page is
 a record with its own length, so `settings_t` grows by appending fields, and a short page fills the fields it has.
 
 | Rule | Why |
@@ -135,7 +133,7 @@ codeplug's callsign.
 | identity | `dmr_id` (0 = the codeplug's), `radio_name[16]` ("" = the codeplug's callsign) |
 | privacy keys | `privacy_key[4]`, `privacy_type[4]`, `privacy_active` (appended for dmr-voice) |
 | radio core settings | `rs_tot_s rs_tot_warn_s rs_bcl rs_flags` (roger beep, TX inhibit, scan priority, scan beep, key beep, no talk permit tone: 0 = on, as before) `rs_scan_resume rs_scan_hold_s rs_beep_level rs_scan_delay_ms rs_scan_dwell_ms rs_vox rs_vox_level rs_vox_tail_ms rs_rx_save rs_stored rs_rx_save_idle_s rs_battery_off_s rs_backlight_dim_s rs_backlight_off_s` (appended for radio-features) |
-| DMR data settings | `ds_ars_server ds_flags` (radio check reply, call alert ACK, LRRP reply, SMS format ETSI short data, radio check ETSI form, UDP compression off, UDP compression all, SMS format ETSI IP text) `ds_stored` (appended for dmr-data; the ETSI bits for dmr-ext and dispatch, 0 = as before: a record with neither SMS format bit sends TMS, while the default without a record is ETSI IP text, `dmr-data.md` 8), `ds_ip_cnf` (in the old reserved4: confirmed IP tries in bits 0-3, 0 = the default 4; bits 4-5 0 rules, 1 off, 2 all) and `ds_ip_rule[2]` (appended at the end for sap3: 0 unused, a radio ID, or 0x80000000 \| a UDP port); the two compression bits 0 = auto ([dmr-data.md](dmr-data.md) 11, 12) |
+| DMR data settings | `ds_ars_server ds_flags` (radio check reply, call alert ACK, LRRP reply, SMS format ETSI short data, radio check ETSI form, UDP compression off, UDP compression all, SMS format ETSI IP text) `ds_stored` (appended for dmr-data; the ETSI bits for dmr-ext and dispatch, 0 = as before: a record with neither SMS format bit sends TMS, while the default without a record is ETSI IP text, `dmr-data.md` 8), `ds_ip_cnf` (in the old reserved4: confirmed IP tries in bits 0-3, 0 = the default 4; bits 4-5 0 rules, 1 off, 2 all) and `ds_ip_rule[2]` (appended at the end for sap3: 0 unused, a radio ID, or 0x80000000 \| a UDP port); the two compression bits 0 = auto ([dmr-data.md](dmr-data.md) 11, 12). Page 1: `ds_ip_gateway`, the IP gateway's off-net route (`ipGatewayId`: a gateway radio's DMR ID in bits 0-23, 0 = off-net packets dropped; a record without it reads 0, as before; [usb-network.md](usb-network.md) 3.1) |
 | UI settings | `rs_reply_s` (the reply window in s, 0..30; `SETTINGS_UNSET8` = the codeplug's hang times; a radio core setting), `mic_gain` (0..10, default 5 = the board's levels; `radio_set_mic_gain`, radio-features.md 3.6), `auto_lock_s` (0 = off), `long_press_ms`, `repeat_ms` (0 = the input layer's defaults), `gps` (Settings > Location > GPS: `ui_svc_apply` hands it to `board_gps_enable` and `aprs_gps_enable`, at start-up and on each change, see aprs.md 4), `pos_format`, `pos_send_s` (stored for a GPS owner, act on nothing yet) (appended for glue) |
 | DMR emergency | `em_dst em_mode em_flags` (target is a radio, ETSI alarm FID, no alert tone) `em_alarm_tries em_hot_mic_s em_stored` (appended for dmr-ext, `dmr-emergency.md` 5) |
 | hotspot CW ID | `cw_wpm cw_tone_hz` (0 = 20 wpm / 800 Hz; appended for dmr-ext) |
@@ -150,6 +148,8 @@ codeplug's callsign.
 | dual watch | `ui_flags` bit 7 (0x80) is talk back (Settings > Talk > Dual watch talk back; off = the bit clear, as in a record from before). Page 1: `dual_b`, the last B: 0 none, 1..1024 a codeplug channel number, 1025 the first VFO, 1026 the second. The UI looks the channel number up again at power-on, in A's zone first, then in the first zone that holds it; if it is gone, the picker opens ([dual-watch.md](../ux/dual-watch.md) 5). `dual_state` bit 0 (`SETTINGS_DUAL_ON`) says the watch was on: the UI starts it again at power-on, with `dual_b` as the channel that wasn't selected and bit 1 (`SETTINGS_DUAL_B_SEL`) set when B was the selected one |
 | second VFO | Page 1: `vfo_index` (the VFO in use at power off, 0 or 1) and `vfo2_rx_hz` (0 = never set), `vfo2_tx_hz`, `vfo2_talk` (the DMR talk target: ID in bits 0-23, bit 31 private call), tone values and types, `vfo2_mode`, `vfo2_bw`, `vfo2_power` (`SETTINGS_UNSET8` = default), `vfo2_cc`, `vfo2_ts`: the first VFO's fields, unpacked. Dual watch gives each channel its own VFO ([radio-features.md](radio-features.md) 2.1). A record without page 1 reads as the first VFO in use and no second VFO frequency |
 | dual watch wait | Page 1: `rs_dual_delay`, `radio_settings_t.dual_delay_ms` as n - 1 steps of 100 ms (1 = no wait, 11 = 1 s); 0 (never set, or no page 1) = the default, 1 s. Settings > Talk > Dual watch delay |
+| broadcast step | Page 1: `rs_bcast_step`, `radio_settings_t.bcast_step` + 1 (1 = 200 kHz on the odd tenths, 2 = 100 kHz); 0 (never set, or no page 1) = the default, 200 kHz. Three reserved bytes follow, then `ds_ip_gateway` (DMR data settings). Settings > Talk & listen > FM broadcast step ([airband-and-broadcast.md](airband-and-broadcast.md) 4.4) |
+| zone journal | Page 1, appended for the zone editor: `zone_jrn_kind` (0 none, 1 add, 2 delete), `zone_jrn_index` (the index added at or deleted from), `zone_jrn_count` (the stored zone count before it, 0 with only the built-in zone). Written before a zone write that moves zone indexes and cleared in the record that moves `zone_index` and `roam_zones` to match; set at power on, the change is finished from the zone list (`zone_edit_settle`, [ui.md](ui.md) 2.2). 0 (no page 1, an older record) = none |
 | crash report | packed into spare bits, so an older record reads as off with no target: the mode (0 off, 1 ask, 2 send at once) in `accent` bits 4-5; the target's codeplug contact number (0 none, else 1..1024, 11 bits) bits 0-5 in `theme` bits 2-7 and bits 6-10 in `updown_home` bits 2-6. `theme` and `updown_home` keep their value in bits 0-1; read and write them through `settings_theme` / `settings_updown_home` and `settings_crash_*` (`settings.h`). Firmware from before reads a `theme` or `updown_home` with these bits as out of range: the dark theme and Up/Down = channel ([crash-log.md](crash-log.md) 5.2) |
 
 All of these are still layout 1: they were appended before any firmware with the settings store shipped. Page 0
@@ -169,7 +169,7 @@ storage jobs: `storage_job_post(fn, ctx)` hands a function to the housekeeping t
 the UI keeps drawing during the flash write; the job reports back through `ui_notify`.
 
 Factory reset (a job): `settings_defaults` into the live copy and save it at once, then `storage_native_erase`.
-That erases the native area only when its first word is the native magic `STORAGE_NATIVE_MAGIC` (0x4E52444F, "ODRN")
+That erases the native area only when its first word is the native magic `STORAGE_NATIVE_MAGIC` (0x4E52444F, bytes 4F 44 52 4E)
 or when it is blank already; anything else is reported as foreign and left alone. The open-firmware codeplug, the
 calibration and the foreign-guarded regions (section 5) are never touched; a reset of those would need its own
 second confirmation and is not offered.
@@ -239,7 +239,7 @@ been erased yet, so it is merged with the data from J0 again; a staged one is co
 in the shared 4 KB buffer, which is shared with the CPS shim's pending sector (`storage_buffer_acquire`), so an edit
 while a CPS write is going on fails cleanly instead of waiting.
 
-A flash that is copy on write underneath offers `hal_flash_t.replace` (the DB25-D's NAND, `nand-sectors.md` 5): the
+A flash that is copy on write underneath offers `hal_flash_t.replace` (a NAND flash, `nand-sectors.md` 5): the
 sector rewrite then calls it and checks the result. There is no journal on such a flash (J0 and J1 stay blank), because
 the replace is one atomic record, and the replay at boot finds nothing to finish. The patch transaction of
 `storage_write` (up to 4 KB across one or two sectors) still uses the journal.
@@ -255,9 +255,8 @@ change) does take `storage_lock` and may wait out a sector rewrite (about 100 ms
 
 ## 5. Foreign region guard
 
-The flash of a radio that ran other firmware may hold that firmware's data where our settings ring and journal go
-(on the DM-1701, 0x011000-0x01AFFF has never been checked on a used radio; on the DM-32UV the region is OpenDM32's
-data area, `hardware-dm32.md` 10.1). Before anything is erased or programmed
+The flash of a radio that ran other firmware may hold that firmware's data where our settings ring and journal go.
+Before anything is erased or programmed
 there, `storage_init()` classifies the region:
 
 | Part | Ours | Anything else |
@@ -294,18 +293,18 @@ send it:
   included), when `STORAGE INFO` reports the region foreign. The Codeplug Editor checks before every write and, on a
   foreign region, explains and claims only when the user confirms. Both poll INFO until the region is ours (20 s
   limit).
-- `odr_debug.py storage claim`:
+- `rfoundry_debug.py storage claim --out DIR`:
 
 
-1. `odr_debug.py storage claim` reads the settings ring, the journal and the calibration copy through the debug
-   link's read-only SPI flash window (twice, compared) into `the external reference folder` (refused inside any git
+1. `rfoundry_debug.py storage claim` reads the settings ring, the journal and the calibration copy through the debug
+   link's read-only SPI flash window (twice, compared) into `--out DIR` (refused inside any git
    work tree), then sends the claim with the token.
 2. The firmware notes the request (`storage.claim_pending`). The housekeeping task (`settings_poll`) erases every
    settings sector and both journal sectors, checks they read blank, marks the region ours and writes the
    ownership mark, then saves the settings the radio is running with.
 3. The tool polls until `storage.region=ours`.
 
-`odr_debug.py storage dump` saves the same files without claiming; `storage info` shows the state and addresses.
+`rfoundry_debug.py storage dump` saves the same files without claiming; `storage info` shows the state and addresses.
 
 ## 6. Testing
 

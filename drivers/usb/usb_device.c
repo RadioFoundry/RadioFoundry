@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // USB device on TinyUSB: descriptors, the stack's task and the CDC-ACM stream (see usb_device.h)
 #include <string.h>
 #include "usb/usb_device.h"

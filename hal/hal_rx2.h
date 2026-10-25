@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A second receiver: radios with a receiver per dual watch channel (the GD-88's SoC B). The radio core keeps it on the
 // dual watch channel that isn't selected, so both channels are heard at once instead of in turn; the main receiver
 // (hal_radio_t) stays on the selected one, which is also the one PTT transmits on. Without it (board.rx2 NULL, or

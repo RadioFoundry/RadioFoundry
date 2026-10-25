@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A factory calibration block: the bytes a radio keeps its calibration in, read once and kept whole, the parts
 // nobody has decoded yet included, and rows of measured points read from it by frequency. The board says where the
 // bytes are (one or more pieces behind its own reader: SPI flash, security registers, an EEPROM) and where each row

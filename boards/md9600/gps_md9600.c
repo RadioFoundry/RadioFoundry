@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 GPS: an optional module's NMEA on USART1 RX (PA10), detected at run time (docs/spec/hardware-md9600.md 13),
 // through the shared STM32 GPS receiver (platform/stm32f4/gps_uart). The module's supply is PA9, which also powers the
 // hand mic, so it stays on whatever the GPS setting says; the setting only stops the sentences reaching the position

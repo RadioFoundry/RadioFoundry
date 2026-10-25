@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's state machine (core/radio/radio_sm.c) against a fake board and a fake codeplug
 #include "input/keyassign.h"
 #include <stdio.h>
@@ -1742,7 +1742,7 @@ static void mm_write(const uint8_t *buf, size_t len)
 	memcpy(mm_last, buf, len < sizeof(mm_last) ? len : sizeof(mm_last));
 }
 
-static const mmdvm_io_t mm_io = { .write = mm_write, .description = "OpenDigitalRadio fake" };
+static const mmdvm_io_t mm_io = { .write = mm_write, .description = "RadioFoundry fake" };
 
 static void mm_cmd(uint8_t cmd, const uint8_t *p, uint8_t n)
 {
@@ -1964,14 +1964,29 @@ static void test_persist(void)
 	ds.arsServer = 3100999;
 	ds.radioCheckReply = true;
 	ds.callAlertAck = false;
+	CHECK(ds.ipGatewayId == 0);		// no off-net route by default
+	ds.ipGatewayId = 3100500;
 	dmr_data_set_settings(&ds);
 	run(50);
 	settings_read(&cur);
 	CHECK(cur.ds_stored == 1 && cur.ds_ars_server == 3100999 && cur.ds_flags == (SETTINGS_DS_RADIO_CHECK_REPLY |
 											SETTINGS_DS_LRRP_REPLY | SETTINGS_DS_SMS_ETSI_IP));
+	CHECK(cur.ds_ip_gateway == 3100500);
 	boot();
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 3100999 && ds.radioCheckReply && !ds.callAlertAck && ds.lrrpReply);
+	CHECK(ds.ipGatewayId == 3100500);
+	// Only the ID's 24 bits are read back; a record from before the gateway ID has 0 there: off
+	settings_begin()->ds_ip_gateway = 0xFF000000u | 3100501;
+	settings_end(now);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.ipGatewayId == (3100501 & 0xFFFFFFu));
+	settings_begin()->ds_ip_gateway = 0;
+	settings_end(now);
+	boot();
+	dmrDataServiceGetSettings(&ds);
+	CHECK(ds.ipGatewayId == 0);
 	// A record from before ETSI IP text (no format bit) keeps TMS: only the default changed
 	settings_begin()->ds_flags = SETTINGS_DS_CALL_ALERT_ACK | SETTINGS_DS_LRRP_REPLY;
 	settings_end(now);
@@ -2506,7 +2521,8 @@ void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
 void radio_req_scan_dual(uint16_t pos) { (void)pos; }
-void radio_req_zone_pos(uint16_t pos) { (void)pos; }
+void radio_req_zone_pos(uint16_t pos) { req(RREQ_ZONE_POS, pos); }
+void radio_req_zone(uint16_t index) { req(RREQ_ZONE, index); }
 void radio_req_scan_vfo(uint32_t lo, uint32_t hi) { (void)lo; (void)hi; }
 void radio_req_tone_burst(bool on) { (void)on; }
 void radio_req_dtmf(char digit, bool down) { req(RREQ_DTMF, (uint8_t)digit | (down ? 0x100 : 0)); }
@@ -2591,6 +2607,49 @@ bool codeplug_set_channel(uint16_t n, const channel_t *ch)
 	chans[n] = *ch;
 	used[n] = true;
 	cp_writes++;
+	cp_serial++;
+	return true;
+}
+
+bool codeplug_delete_channel(uint16_t n)
+{
+	if (n < 1 || n > NCH) {
+		return false;
+	}
+	used[n] = false;
+	cp_serial++;
+	return true;
+}
+
+// Zone writes (the zone editor's job, zone_edit.c on these fakes)
+static int zone_writes;
+static uint16_t zone_written;
+bool codeplug_zones_stored(void) { return nzones > 0; }
+uint16_t codeplug_zone_capacity(void) { return CODEPLUG_ZONE_MAX; }
+uint16_t codeplug_zone_written(void) { return zone_written; }
+uint16_t codeplug_zone_add_index(void) { return nzones; }	// these fakes append
+bool codeplug_set_zone(uint16_t i, const zone_t *z)
+{
+	if (i > nzones || i >= 3) {
+		return false;
+	}
+	zones[i] = *z;
+	if (i == nzones) {
+		nzones++;
+	}
+	zone_written = i;
+	zone_writes++;
+	cp_serial++;
+	return true;
+}
+bool codeplug_delete_zone(uint16_t i)
+{
+	if (i >= nzones) {
+		return false;
+	}
+	memmove(&zones[i], &zones[i + 1u], (size_t)(nzones - i - 1u) * sizeof(zones[0]));
+	nzones--;
+	zone_writes++;
 	cp_serial++;
 	return true;
 }
@@ -2799,6 +2858,148 @@ static void test_ui_glue(void)
 	req(RREQ_CLEAR_TEMP, 0);
 	run(50);
 	CHECK(sm.view.ch.mode == RADIO_MODE_DMR);
+#if CONFIG_ZONE_EDIT
+	{
+		// The zone editor's queue (ui_svc_zone_edit, ui.md 2.2): nothing is written by the call; what is queued runs in
+		// order in one job; a refusal drops what was queued after it; a full queue refuses
+		zone_t keep[3];
+		uint16_t nkeep = nzones;
+		memcpy(keep, zones, sizeof keep);
+		zone_op_t op, q[4];
+		memset(q, 0, sizeof q);
+		uint16_t num = sm.view.channel_number, pos = sm.view.zone_pos;
+		CHECK(sm.view.zone_index == 0 && pos > 0);
+		q[0].kind = ZONE_OP_MOVE;	// up
+		q[0].pos = pos;
+		q[0].dir = -1;
+		q[1] = q[0];			// and back down
+		q[1].pos = (uint16_t)(pos - 1u);
+		q[1].dir = 1;
+		q[2].kind = ZONE_OP_INSERT;	// refused: it is in the zone
+		q[2].channel = num;
+		q[3] = q[0];			// dropped
+		int zw = zone_writes;
+		n_ev = 0;
+		for (int i = 0; i < 4; i++) {
+			CHECK(ui_svc_zone_edit(&q[i]));
+		}
+		CHECK(!ui_svc_zone_edit(&q[0]) && zone_writes == zw && ui_svc_zone_pending());
+		storage_job_poll();
+		run(100);
+		CHECK(zone_writes == zw + 2 && zones[0].channels[pos] == num && !ui_svc_zone_pending());
+		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "Already") != NULL);
+		uint32_t applied;
+		uint8_t last;
+		zone_edit_stats(&applied, &last);
+		CHECK(applied >= 2 && last == ZONE_EDIT_IN_ZONE);
+		// A move in the zone in use keeps the radio on its channel at its new position
+		CHECK(ui_svc_zone_edit(&q[0]));
+		storage_job_poll();
+		run(100);
+		CHECK(zones[0].channels[pos - 1u] == num);
+		CHECK(sm.view.channel_number == num && sm.view.zone_pos == pos - 1u && sm.view.zone_index == 0);
+		// Removing the channel in use: the radio goes to the one that took its place (the next usable one)
+		memset(&op, 0, sizeof op);
+		op.kind = ZONE_OP_REMOVE;
+		op.pos = (uint16_t)(pos - 1u);
+		CHECK(ui_svc_zone_edit(&op));
+		storage_job_poll();
+		run(100);
+		CHECK(sm.view.zone_index == 0 && sm.view.channel_number != num && sm.view.zone_pos >= pos - 1u &&
+		      zones[0].channels[sm.view.zone_pos] == sm.view.channel_number);
+		memcpy(zones, keep, sizeof keep);
+		cp_serial++;
+		run(100);
+
+		// Deleting a zone ahead of the zone in use: the radio follows its zone to the index it moved to, and so do dual
+		// watch's channels and the roaming zones; a deleted roaming zone loses its flag
+		req(RREQ_ZONE, 2);
+		run(50);
+		CHECK(sm.view.zone_index == 2 && sm.view.channel_number == 7);
+		req(RREQ_ZONE_POS, 1);
+		run(50);
+#if CONFIG_SCAN
+		radio_dual_ref_t dual_keep[2] = { sm.dual[0], sm.dual[1] };
+		sm.dual[0] = (radio_dual_ref_t){ .vfo = false, .zone = 2, .pos = 0 };
+		sm.dual[1] = (radio_dual_ref_t){ .vfo = false, .zone = 0, .pos = 1 };
+#endif
+#if CONFIG_DMR_ROAMING
+		st = settings_begin();
+		st->roam_zones[0] = 0x05;	// zones 0 and 2
+		settings_end(0);
+#endif
+		memset(&op, 0, sizeof op);
+		op.kind = ZONE_OP_DELETE;
+		op.zone = 0;
+		CHECK(ui_svc_zone_edit(&op));
+		storage_job_poll();
+		run(100);
+		CHECK(nzones == 2 && sm.view.zone_index == 1 && sm.view.channel_number == 8 && sm.view.zone_pos == 1);
+#if CONFIG_SCAN
+		CHECK(sm.dual[0].zone == 1 && sm.dual[1].zone == 0);	// the deleted one's index: the zone that took it
+		sm.dual[0] = dual_keep[0];
+		sm.dual[1] = dual_keep[1];
+#endif
+#if CONFIG_DMR_ROAMING
+		settings_t saved;
+		settings_read(&saved);
+		CHECK(sm.roam_zones[0] == 0x02 && saved.roam_zones[0] == 0x02);	// zone 2 is zone 1; zone 0's flag is gone
+		st = settings_begin();
+		st->roam_zones[0] = 0;
+		settings_end(0);
+#endif
+		// Deleting the zone in use, the last one: the radio goes to the zone before it, on its first channel (it
+		// doesn't hold channel 8)
+		op.zone = 1;
+		CHECK(ui_svc_zone_edit(&op));
+		storage_job_poll();
+		run(100);
+		CHECK(nzones == 1 && sm.view.zone_index == 0 && sm.view.channel_number == 6 && sm.view.zone_pos == 0);
+		// An outside writer's entries (an import), seen only when its write is done: zone_edit_busy holds the reload
+		memcpy(zones, keep, sizeof keep);
+		nzones = nkeep;
+		zone_shift_busy(true);
+		zone_shift_note(false, 0);	// as if zone 0 (Local) had come in ahead of Two and Tones
+		cp_serial++;
+		run(100);
+		CHECK(sm.view.zone_index == 0 && sm.view.channel_number == 6);	// held
+		zone_shift_busy(false);
+		run(100);
+		CHECK(sm.view.zone_index == 1 && sm.view.channel_number == 6);	// Two is zone 1
+		CHECK(sm.view.zone_index == 1);
+#if CONFIG_SCAN
+		// A zone scan ends when the zone in use's list changes under it (its skips are by position); a rename doesn't
+		req(RREQ_ZONE, 0);
+		run(50);
+		req(RREQ_SCAN, RSCAN_ZONE);
+		run(200);
+		CHECK(sm.scan.kind == SCAN_ZONE);
+		memset(&op, 0, sizeof op);
+		op.kind = ZONE_OP_RENAME;
+		strcpy(op.name, "Renamed");
+		CHECK(ui_svc_zone_edit(&op));
+		storage_job_poll();
+		run(100);
+		CHECK(sm.scan.kind == SCAN_ZONE && strcmp(zones[0].name, "Renamed") == 0);
+		op.kind = ZONE_OP_MOVE;
+		op.pos = 0;
+		op.dir = 1;
+		CHECK(ui_svc_zone_edit(&op));
+		storage_job_poll();
+		run(100);
+		CHECK(sm.scan.kind == SCAN_OFF);
+#endif
+		memcpy(zones, keep, sizeof keep);
+		nzones = nkeep;
+		cp_serial++;
+		run(100);
+		req(RREQ_ZONE, 0);
+		run(50);
+		req(RREQ_ZONE_POS, pos);
+		run(50);
+		CHECK(sm.view.zone_index == 0 && sm.view.channel_number == num);
+	}
+#endif
 
 	// Privacy: no key stored, nothing to turn on; then the first valid slot is used
 	CHECK(!ui_svc_privacy(true) && !d->privacy);
@@ -2958,9 +3159,20 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_vox(true));
 	run(5);
 	CHECK(sm.set.vox == RADIO_VOX_ALL);
+	// A change made elsewhere (the debug link's SETTING op, a host, the radio core) survives the UI's next one: the
+	// UI changes its own field only (issue 178: the VOX toggle put back a TX inhibit cleared over the debug link)
+	CHECK(!sm.set.tx_inhibit && sm.set.tot_s != 77);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 5, 1, 0 }, 3) == DL_ST_OK);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 1, 77, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.set.tx_inhibit && sm.set.tot_s == 77);
 	ui_svc_vox(false);
 	run(5);
-	CHECK(sm.set.vox == RADIO_VOX_OFF);
+	CHECK(sm.set.vox == RADIO_VOX_OFF && sm.set.tx_inhibit && sm.set.tot_s == 77);
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 5, 0, 0 }, 3) == DL_ST_OK);
+	ui_svc_apply(UI_SET_KEY_TONES, 1);
+	CHECK(!sm.set.tx_inhibit && sm.set.tot_s == 77 && sm.set.key_beep);
+	ui_svc_apply(UI_SET_TOT_S, 180);
+	CHECK(!sm.set.tx_inhibit && sm.set.tot_s == 180 && sm.set.key_beep);
 	fake_power.mic_level = NULL;
 
 	// Messages: delete through the data service
@@ -3379,35 +3591,44 @@ static void test_side_keys(void)
 	keymap_sets = 0;
 	ui_svc_keys_poll();
 	CHECK(keymap_sets == 1 && got_keymap[1].raw_edges && got_keymap[1].short_action == ACT_MONITOR);
-	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_DEFAULT);
-	CHECK(ui_svc_setting_set(UI_SET_KEY_SIDE1, KEYFN_POWER));
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_DEFAULT);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST, KEYFN_POWER));
 	CHECK(keymap_sets == 2 && got_keymap[1].short_action == ACT_POWER && !got_keymap[1].raw_edges);
-	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_POWER);
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_POWER);
 	CHECK(cp_quick[0] == 0);		// not yet: the job does it
-	CHECK(!ui_svc_setting_set(UI_SET_KEY_TOP, KEYFN_SCAN));	// this radio has two side keys
-	CHECK(!ui_svc_setting_set(UI_SET_KEY_SIDE2, KEYFN_COUNT));
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_SCAN));	// this radio has two side keys
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 2, KEYFN_COUNT));
 	uint32_t ser = cp_serial;
 	ui_svc_keys_poll();
 	storage_job_poll();
 	CHECK(cp_quick[0] == KEYASSIGN_MARKER && cp_quick[1] == KEYFN_POWER && cp_serial == ser + 1u);
 	ui_svc_keys_poll();			// our own write read back: the same
-	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_POWER && got_keymap[1].short_action == ACT_POWER);
-	// A CPS wrote the slots
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_POWER && got_keymap[1].short_action == ACT_POWER);
+	// A CPS wrote the slots: role 0's press, role 1's long press
 	cp_quick[1] = KEYFN_SCAN;
-	cp_quick[4] = KEYFN_ZONE_UP;
+	cp_quick[2] = KEYFN_ZONE_UP << 8;
 	cp_serial++;
 	ui_svc_keys_poll();
-	CHECK(ui_svc_setting_get(UI_SET_KEY_SIDE1) == KEYFN_SCAN && got_keymap[1].short_action == ACT_SCAN);
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && got_keymap[1].short_action == ACT_SCAN);
 	CHECK(got_keymap[2].short_action == ACT_TALK_TARGET && got_keymap[2].long_action == ACT_ZONE_UP);
 	// A write that fails is reported; the key works for now
 	cp_quick_fail = true;
 	n_ev = 0;
-	CHECK(ui_svc_setting_set(UI_SET_KEY_SIDE2_HOLD, KEYFN_ZONE_DOWN));
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 3, KEYFN_ZONE_DOWN));
 	ui_svc_keys_poll();
 	storage_job_poll();
 	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "save the keys") != NULL);
-	CHECK(got_keymap[2].long_action == ACT_ZONE_DOWN && cp_quick[4] == KEYFN_ZONE_UP);
+	CHECK(got_keymap[2].long_action == ACT_ZONE_DOWN && cp_quick[2] == KEYFN_ZONE_UP << 8);
 	cp_quick_fail = false;
+	// Layout 1 (three roles, a slot per gesture), as an older build wrote it: read as it is
+	memset(cp_quick, 0, sizeof(cp_quick));
+	cp_quick[0] = KEYASSIGN_MARKER_V1;
+	cp_quick[1] = KEYFN_SCAN;
+	cp_quick[4] = KEYFN_ZONE_UP;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && ui_svc_setting_get(UI_SET_KEY_FIRST + 3) == KEYFN_ZONE_UP);
+	CHECK(got_keymap[2].long_action == ACT_ZONE_UP);
 	memset(cp_quick, 0, sizeof(cp_quick));	// leave the board's key map for what follows
 	cp_serial++;
 	ui_svc_keys_poll();
@@ -3459,6 +3680,126 @@ static void test_power_off_ars(void)
 	run(10000);
 	CHECK(!dmrDataServiceIsBusy() && dmrDataServiceArsState() == DMR_ARS_STATE_OFF);
 }
+
+#if CONFIG_VFO_DMR
+// Data from a DMR VFO (docs/spec/dmr-data.md 6): ARS, an IP packet as the IP gateway's air path sends it and a CSBK
+// answer go out as on a DMR channel, with the VFO's own color code, and an emergency starts. A retune re-registers once
+// it has settled, not on every step. Nothing goes out from an FM VFO, nor on a frequency outside the transmit bands
+static void test_vfo_dmr_data(void)
+{
+	dmrDataSettings_t ds;
+	uint8_t kind;
+	uint32_t dst;
+
+	dmr_start(true);
+	req(RREQ_VFO_SET, 446000000);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DMR && sim.started && sm.view.dmr.cc == 1);
+
+	// ARS: the power-on registration (5-15 s on)
+	dmrDataServiceGetSettings(&ds);
+	ds.arsServer = 9990100;
+	dmr_data_set_settings(&ds);
+	unsigned n0 = sim.air_count;
+	run(20000);
+	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) == 1);
+	// Turning the knob: nothing while the frequency keeps changing, one registration once it has held still
+	n0 = sim.air_count;
+	for (int i = 0; i < 4; i++) {
+		req(RREQ_VFO_STEP, 1);
+		run(1000);
+	}
+	CHECK(sm.view.ch.rx_hz == 446050000 && air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) == 0);
+	run(6000);
+	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) == 1);
+	ds.arsServer = 0;
+	dmr_data_set_settings(&ds);
+	run(10000);
+	CHECK(!dmrDataServiceIsBusy());
+
+	// An IP packet through the IP gateway's air path (dmrDataServiceSendIP): on air from the VFO
+	static const uint8_t l4[12] = { 0x13, 0x88, 0x13, 0x88, 0, 12, 0, 0, 'p', 'i', 'n', 'g' };
+	n0 = sim.air_count;
+	int tx0 = hw.tx_calls;
+	CHECK(dmrDataServiceSendIP(false, 3101234, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4,
+				   sizeof(l4)));
+	run(3000);
+	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
+	CHECK(air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) >= 1 && hw.tx_calls > tx0 && hw.tx_hz == 446050000);
+
+	// A CSBK answer: a call alert to us on the VFO's color code is acknowledged
+	n0 = sim.air_count;
+	csbk_rx(DMR_CSBKO_CALL_ALERT, 3101276, 3109876, 1);
+	run(1000);
+	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT_ACK) == 1);
+	// ... and our own call alert goes out
+	n0 = sim.air_count;
+	CHECK(dmr_signal_call_alert(3101234));
+	run(600);
+	CHECK(air_count(n0, DMR_BURST_CSBK, DMR_CSBKO_CALL_ALERT) >= 1);
+	csbk_rx(DMR_CSBKO_CALL_ALERT_ACK, 3101276, 3101234, 1);
+	run(1000);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_OK);
+
+	// An emergency starts here too (it is gated as data is): the hot mic keys the VFO's talk target (TG 9)
+	dmr_emergency_settings_t es, es0;
+	dmr_emergency_get_settings_now(&es0);
+	dmr_emergency_settings_default(&es);
+	es.mode = DMR_EMERGENCY_MODE_CALL;
+	es.hot_mic_s = 1;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	dmr_lc_t l;
+	n0 = sim.air_count;
+	CHECK(dmr_emergency_start());
+	run(600);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_HOT_MIC && sm.em_keyed && hw.tx_hz == 446050000);
+	air_lc(n0, &l);
+	CHECK(sim.air[n0].kind == DMR_BURST_VOICE_LC_HEADER && (l.svc & DMR_SVC_EMERGENCY) && l.dst == 9);
+	dmr_emergency_cancel();
+	run(2000);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE && !sm.em_keyed && sm.view.state == RS_IDLE);
+	dmr_emergency_set_settings(&es0);
+	run(20);
+
+	// Outside the transmit bands (a receive only band): nothing on air, the transmitter never keyed
+	req(RREQ_VFO_SET, 125000000);
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DMR && sm.view.ch.tx_hz == 125000000);
+	n0 = sim.air_count;
+	tx0 = hw.tx_calls;
+	dmr_signal_call_alert(3101234);
+	csbk_rx(DMR_CSBKO_CALL_ALERT, 3101276, 3109876, 1);
+	run(3000);
+	CHECK(air_count(n0, DMR_BURST_CSBK, 0xFF) == 0 && air_count(n0, DMR_BURST_DATA_HEADER, 0xFF) == 0 &&
+	      hw.tx_calls == tx0);
+
+	// An FM VFO: no data at all
+	req(RREQ_VFO_SET, 446000000);
+	req(RREQ_MODE, RADIO_MODE_FM);
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_FM && !sim.started);
+	n0 = sim.air_count;
+	tx0 = hw.tx_calls;
+	dmr_signal_call_alert(3101234);
+	CHECK(!dmrDataServiceSendIP(false, 3101234, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT,
+				    DMR_IP_PROTO_UDP, l4, sizeof(l4)));
+	run(3000);
+	dmr_emergency_start();		// queued, then refused by the tick
+	run(3000);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_FAILED && !sm.em_keyed);
+	CHECK(sim.air_count == n0 && hw.tx_calls == tx0);
+	dmr_emergency_cancel();
+
+	// Leave the VFO the way the other tests expect it
+	req(RREQ_VFO, 0);
+	run(30000);	// any request left fails out
+	settings_defaults(settings_begin());
+	settings_end(now);
+	setup_codeplug();
+}
+#endif
 
 static void test_dmr_data_glue(void)
 {
@@ -3709,7 +4050,7 @@ static void test_factory_reset(void)
 	dmr_start(true);
 	memset(&sim_flash_data[0x20000u], 0x42, 64);		// an open-firmware codeplug byte or two
 	memset(&sim_flash_data[0x10000u], 0x24, 64);		// the calibration copy
-	static const uint8_t magic[4] = { 'O', 'D', 'R', 'N' };
+	static const uint8_t magic[4] = { 0x4F, 0x44, 0x52, 0x4E };
 	CHECK(sim_flash.write(reset_map.native_addr, magic, 4));
 	settings_begin()->squelch = 2;
 	settings_end(now);
@@ -3740,7 +4081,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(304);	// the settings records (page 1: 44 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(320);	// the settings records (page 1: 60 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
@@ -3857,6 +4198,9 @@ int main(void)
 	test_hotspot_cwid();
 	test_dmr_emergency();
 	test_power_off_ars();
+#if CONFIG_VFO_DMR
+	test_vfo_dmr_data();
+#endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

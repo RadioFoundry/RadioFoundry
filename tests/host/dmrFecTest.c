@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Host test for core/dmr/fec: Hamming, BPTC(196,96), Golay(20,8), the slot type and the EMB's QR(16,7,6)
  *

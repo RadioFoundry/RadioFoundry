@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The gesture engine behind core/input, without the RTOS: physical key masks and encoder counts in, logical
 // events out through a callback. input_task.c runs it every INPUT_SCAN_MS; the host tests drive it directly.
 #ifndef INPUT_ENGINE_H

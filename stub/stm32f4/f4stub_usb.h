@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flash stub's USB device: a polled CDC-ACM serial port on the STM32F4 OTG_FS core (no interrupts, no DMA), with
-// the endpoints ODR uses (docs/spec/hardware-dm1701.md 16: bulk OUT 0x01 / IN 0x81, 64 bytes; interrupt IN 0x82).
+// the endpoints RadioFoundry uses (docs/spec/hardware-dm1701.md 16: bulk OUT 0x01 / IN 0x81, 64 bytes; interrupt IN 0x82).
 #ifndef F4STUB_USB_H
 #define F4STUB_USB_H
 
 #include <stdbool.h>
 #include <stdint.h>
 
-// Start the device. adopt: ODR left the core configured as its CDC-ACM serial port, so keep the address and the
+// Start the device. adopt: RadioFoundry left the core configured as its CDC-ACM serial port, so keep the address and the
 // endpoints and carry on without the host noticing. Returns true if it adopted; false means it disconnected, reset
 // the core and is enumerating again (the host sees an unplug and a new port with the same serial number)
 bool usb_start(bool adopt, const char *serial);

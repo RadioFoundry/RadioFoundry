@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // codeplug.bin over TFTP (tftp_codeplug.h, docs/spec/tftp.md 3-4).
 //
 // The staging area (hal_flash_map_t.staging_*): sector 0 is the commit record, written only once the whole image is

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // TYT MD-380 / MD-390 / Retevis RT3: board descriptor, clocks, reset-time pin levels, key map
 // (docs/spec/hardware-md380.md)
 #include "board.h"
@@ -22,9 +22,9 @@
 // The RTOS heap, and with it every task stack, in the CCM: zero wait states and off the bus the audio and ADC DMA
 // use. Nothing on a stack or from pvPortMalloc may be a DMA buffer (DMA can't reach the CCM): the DMA buffers are
 // statics in main RAM, checked where each stream is set up (md380.h DMA_RAM_OK)
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] RFOUNDRY_CPU_RAM_NOINIT __attribute__((aligned(8)));
 
-// Zero the CCM's .ccmbss (ODR_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
+// Zero the CCM's .ccmbss (RFOUNDRY_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
 extern uint32_t _sccmbss[], _eccmbss[];
 static void ccm_zero(void)
 {
@@ -34,7 +34,7 @@ static void ccm_zero(void)
 __attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
 
 // One band per radio (hardware-md380.md 5.1), chosen at build time (board.mk BAND)
-#if ODR_BAND_VHF
+#if RFOUNDRY_BAND_VHF
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 };
@@ -69,12 +69,13 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
 	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
 	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
-	{ KEY_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ KEY_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 
-// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): side key 1, side key 2
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom
 static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
+static const char *const side_key_names[] = { "SK1", "SK2" };
 
 #if CONFIG_CPS_OPENFW
 // open-firmware-cps.md 4: type 7 is the MD-380
@@ -107,6 +108,7 @@ const board_t board = {
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
 	.side_keys = side_keys,
+	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
 	.radio = &md380_radio,
 	.power = &md380_power,

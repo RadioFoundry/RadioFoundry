@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 front panel: the 4 x 3 key matrix, the channel encoder and the hand mic's PTT (docs/spec/hardware-md9600.md
 // 9). Rows K0-K3 are open-drain outputs, driven low one at a time; columns K6, K5, K4 are inputs with pull-ups, low =
 // pressed. The encoder's two lines interrupt on both edges and feed the shared quadrature decoder. The power key is a

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's tasks view section (core/debuglink/debuglink_view_tasks.c, docs/spec/debuglink.md 3.7): every
 // task's least free stack as keys, the least of them, names made into keys. The kernel side (core/app/task_stack.c)
 // is faked: the host tests have no RTOS

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// Sector planning: which flash sectors to erase and write. A port of tools/odrflash/odrflash/plan.py (keep, merge),
-// plus one mode odrflash doesn't have yet:
+// Copyright (c) 2026 The RadioFoundry Authors
+// Sector planning: which flash sectors to erase and write. A port of tools/rfoundry/rfoundry/plan.py (keep, merge),
+// plus one mode rfoundry doesn't have yet:
 //
 //   restore  put back a whole flash image exactly (a backup's internal flash, or a stock application): every
 //            sector the image spans is erased, and written where the image has data. Codec windows may be inside

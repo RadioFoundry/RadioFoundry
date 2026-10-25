@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR repeater roaming engine (docs/spec/dmr-roaming.md): the sites, the current site's average, the triggers,
 // the search sequence, the beacon survey and the choice. No hardware and no codeplug here: the radio core
 // (radio_sm.c) builds the site list, tunes, applies the block list and tells the engine what it hears. CONFIG_DMR_ROAMING.

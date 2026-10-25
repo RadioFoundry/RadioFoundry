@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Host simulator for the UI (docs/spec/ui.md 7): the real core/ui code against a simulated board (any display
 // geometry, any of the reference key maps), radio core, codeplug (the usability-test codeplug) and the services of
 // other packages. Key sequences are scripts of logical actions; screens are saved as PNG.

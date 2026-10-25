@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """MMDVM hotspot mode without transmitting: GET_VERSION and GET_STATUS answered (tools/mmdvm_probe.py's framing), the
 hotspot takes the DMR modem, the debug link still answers in hotspot mode, and hotspot mode is left through the debug
 link.
@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from odr_hil import skip
+from rfoundry_hil import skip
 
 GET_VERSION, GET_STATUS = 0x00, 0x01
 
@@ -28,7 +28,7 @@ def test_hotspot_version_status(radio):
         try:
             kind, f = link.request(GET_VERSION, timeout=2.0)
             assert kind == "reply" and len(f) > 4, f"GET_VERSION: {kind} {f!r}"
-            assert b"OpenDigitalRadio" in f, f
+            assert b"RadioFoundry" in f, f
             # The first frame takes the modem; once it has, GET_STATUS reports DMR slot 2 space (frame byte 8)
             space = 0
             for _ in range(6):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Flash a plain application image to a TYT/Baofeng/Retevis STM32 radio (DM-1701, RT84, MD-UV380/390, MD-2017,
 MD-380, MD-9600) through the stock AnyRoad DFU bootloader.
 
@@ -22,34 +22,34 @@ import struct
 import sys
 import time
 
-# the board registry (tools/boards.py generates it): the ODR boards on this bootloader, their sectors, keys and codecs
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "odrflash"))
-from odrflash import boards  # noqa: E402
+# the board registry (tools/boards.py generates it): the RadioFoundry boards on this bootloader, their sectors, keys and codecs
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
+from rfoundry import boards  # noqa: E402
 
-ODR_BOARDS = [b for b in boards.BOARDS.values() if b.key_sha256]
+RFOUNDRY_BOARDS = [b for b in boards.BOARDS.values() if b.key_sha256]
 BLOCK = 1024
 FIRST_BLOCK = 2
 KEY_LEN = 1024
 
-DFU_VID, DFU_PID = ODR_BOARDS[0].dfu_ids
+DFU_VID, DFU_PID = RFOUNDRY_BOARDS[0].dfu_ids
 
 # (sector address, size) in the order the bootloader expects them (15.2 step 4/5), the same on every radio it runs
 # on. The loader also lists 0x08100000, which is past the end of the 1 MB flash; it is never erased or written here.
-REGIONS = [(s.addr, s.size) for s in ODR_BOARDS[0].sectors]
-APP_BASE = ODR_BOARDS[0].app_base
-FLASH_END = ODR_BOARDS[0].flash_end
+REGIONS = [(s.addr, s.size) for s in RFOUNDRY_BOARDS[0].sectors]
+APP_BASE = RFOUNDRY_BOARDS[0].app_base
+FLASH_END = RFOUNDRY_BOARDS[0].flash_end
 assert all([(s.addr, s.size) for s in b.sectors] == REGIONS and (b.app_base, b.flash_end) == (APP_BASE, FLASH_END)
-           and b.dfu_ids == (DFU_VID, DFU_PID) for b in ODR_BOARDS), "the registry's DFU boards disagree on the flash map"
+           and b.dfu_ids == (DFU_VID, DFU_PID) for b in RFOUNDRY_BOARDS), "the registry's DFU boards disagree on the flash map"
 
-# Per-model key identity (15.3). The key bytes are not reproduced; only their hash and first four bytes. The ODR
-# boards' come from the registry ([flash.dfu]); STOCK_ONLY are radios with this bootloader and no ODR board yet
+# Per-model key identity (15.3). The key bytes are not reproduced; only their hash and first four bytes. The RadioFoundry
+# boards' come from the registry ([flash.dfu]); STOCK_ONLY are radios with this bootloader and no RadioFoundry board yet
 # (planned, docs/spec/radios.md), for flashing their stock firmware back.
 STOCK_ONLY = {
     "mduv380": ("739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991", bytes.fromhex("00AA8989")),
     "md9600": ("c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae", bytes.fromhex("A2FABB4B")),
 }
-KEYS = dict({b.id: (b.key_sha256, b.key_prefix) for b in ODR_BOARDS}, **STOCK_ONLY)
-ALIASES = dict({b.id: b.id for b in ODR_BOARDS}, **{
+KEYS = dict({b.id: (b.key_sha256, b.key_prefix) for b in RFOUNDRY_BOARDS}, **STOCK_ONLY)
+ALIASES = dict({b.id: b.id for b in RFOUNDRY_BOARDS}, **{
     "rt84": "dm1701",      # spec: same key as the DM-1701, unverified
     "mduv380": "mduv380",
     "mduv390": "mduv380",
@@ -61,8 +61,8 @@ ALIASES = dict({b.id: b.id for b in ODR_BOARDS}, **{
 # into the top sector), and where its code starts: the board's codec windows (the union over its stock files) and the
 # code address of each stock file's placement. An image that reaches into a window must carry a merged codec,
 # recognized by its first word at one of those addresses.
-CODEC_WINDOWS = {b.id: sorted((a, a + n) for a, n in b.codec.windows) for b in ODR_BOARDS}
-CODEC_SIG_ADDRS = {b.id: b.codec_codes for b in ODR_BOARDS}
+CODEC_WINDOWS = {b.id: sorted((a, a + n) for a, n in b.codec.windows) for b in RFOUNDRY_BOARDS}
+CODEC_SIG_ADDRS = {b.id: b.codec_codes for b in RFOUNDRY_BOARDS}
 CODEC_SIG = 0x4FF0E92D
 
 STOCK_MAGIC = b"OutSecurityBin"
@@ -77,8 +77,8 @@ STATE_NAMES = {0: "appIDLE", 1: "appDETACH", 2: "dfuIDLE", 3: "dfuDNLOAD-SYNC", 
 EPILOG = """\
 examples:
   %(prog)s --list
-  %(prog)s --model dm1701 --key ~/keys/dm1701.key build/dm1701/odr_dm1701.bin
-  %(prog)s --model dm1701 --key ~/keys/dm1701.key --dry-run -o enc.bin build/dm1701/odr_dm1701.bin
+  %(prog)s --model dm1701 --key ~/keys/dm1701.key build/dm1701/rfoundry_dm1701.bin
+  %(prog)s --model dm1701 --key ~/keys/dm1701.key --dry-run -o enc.bin build/dm1701/rfoundry_dm1701.bin
   %(prog)s --self-test
 
 models: dm1701 (also rt84), mduv380 (also mduv390, md2017), md380, md9600
@@ -625,7 +625,7 @@ def main(argv=None):
                 nranges = 0
             if nranges > 1:
                 raise DfuError("%s lists %d flash ranges (application and sector 9 data in one file); this tool writes "
-                               "one contiguous image. Use tools/odrflash" % (os.path.basename(man), nranges))
+                               "one contiguous image. Use tools/rfoundry" % (os.path.basename(man), nranges))
         for w in warnings:
             print("warning: " + w, file=sys.stderr)
         print("image %s: %d bytes, 0x%08X..0x%08X, model %s, SHA-256 %s"

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Convert a fixed-cell BDF bitmap font, or a monospaced TrueType font, into the C data the UI draws with
 (core/ui/font.h).
 

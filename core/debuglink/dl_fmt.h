@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A tiny printf subset for the debug link's text replies and dlog(): no libc printf (flash, stack, reentrancy).
 //
 //   %d %i %u %x %X %s %c %%   with an optional '0' flag, a width (1..20) and an ignored 'l' modifier (32-bit values;

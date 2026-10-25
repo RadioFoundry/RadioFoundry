@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The split duplex TX half's continuous BS outbound on the HR_C6000 (CONFIG_HOTSPOT_SPLIT; docs/spec/split-duplex.md
 // 5.4, 10.1; modem-hrc6000.md 4.1, 6). While it runs it owns the chip in place of the slot engine of hrc6000_dmr.c,
 // whose three ISRs and watchdog hand over to it (e->bs set): own timing (0x40 = 0xE3) gives a free-running slot clock,

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The VOX mic level (drivers/audio/miclevel): the log scale the STM32 boards' analog taps use, the peak of a PCM
 // block from its mean, the envelope, and where tones of known level land against the core's VOX threshold
 // (100 - 8 x sensitivity, radio-features.md 3.4)

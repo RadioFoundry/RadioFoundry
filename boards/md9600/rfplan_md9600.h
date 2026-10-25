@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 board revisions and frequency plan (docs/spec/hardware-md9600.md 5, 16). Pure: no pins and no RTOS, so the
 // host tests (tests/host/md9600RfplanTest.c) run it unchanged.
 //

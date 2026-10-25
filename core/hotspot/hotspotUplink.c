@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Hotspot uplink: what the simplex MMDVM hotspot hears on RF, as MMDVMHost wants it (see hotspotUplink.h)
  */

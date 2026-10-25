@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A factory calibration curve: values measured at a few frequencies, linear in between. Every radio's calibration
 // reader uses it for PA drive, front-end tuning and the like; what differs between radios is only the rounding and what
 // happens past the last point, so those are flags.

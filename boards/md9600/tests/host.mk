@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # This board's host tests, included by tests/host/Makefile and run from there (paths are relative to tests/host)
 
 MD9600   := $(ROOT)/boards/md9600

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* HR_C7000 (CK803S) application layout with a codec slot, INCLUDEd by each board's memory.ld after its codec symbols
  * and its MEMORY (docs/spec/codec-placement.md).
  *
@@ -7,8 +7,8 @@
  * ORIGIN(FLASH) (board.mk APP_BASE, after the first stage when there is one), then the codec slot __codec_slot ..
  * __codec_slot_end: the stock codec code and tables are merged there on the user's machine and never linked into.
  *
- * SRAM: one region for ODR from ORIGIN(RAM) (the vector table, .ramfunc: interrupt entry and the modem slot engine, the
- * zeroed .ram_lo state the core marks ODR_CPU_RAM and the interrupt stack, then data, bss with the RTOS heap, and the
+ * SRAM: one region for RadioFoundry from ORIGIN(RAM) (the vector table, .ramfunc: interrupt entry and the modem slot engine, the
+ * zeroed .ram_lo state the core marks RFOUNDRY_CPU_RAM and the interrupt stack, then data, bss with the RTOS heap, and the
  * start-up stack), and above it the codec window __codec_run_lo .. __codec_run_hi: the slot's code is copied there at
  * boot and its address words moved. No DMA on these radios, so any of it can hold any buffer. The modem SRAM window
  * the codec's tables are copied to, __codec_tab_lo .. __codec_tab_hi, is reserved by not being in the script at all. */

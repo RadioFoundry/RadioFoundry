@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The ui_svc.h calls storage-cps answers (docs/spec/settings-store.md, core/codeplug editing):
 //   - settings: each UI setting is read from where it is kept across power cycles. The radio core's own settings
 //     (key tones, tone volume, TX timeout, backlight time, battery saver) from radio_get_settings, which the radio
@@ -107,16 +107,12 @@ int32_t ui_svc_setting_get(uint8_t id)
 {
 	radio_settings_t rs;
 	settings_t st;
-	switch (id) {
 #if CONFIG_KEY_ASSIGN
-	case UI_SET_KEY_SIDE1:
-	case UI_SET_KEY_SIDE1_HOLD:
-	case UI_SET_KEY_SIDE2:
-	case UI_SET_KEY_SIDE2_HOLD:
-	case UI_SET_KEY_TOP:
-	case UI_SET_KEY_TOP_HOLD:
+	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {
 		return key_get(id);
+	}
 #endif
+	switch (id) {
 	case UI_SET_KEY_TONES:
 	case UI_SET_TONE_VOLUME:
 	case UI_SET_TOT_S:
@@ -151,6 +147,11 @@ int32_t ui_svc_setting_get(uint8_t id)
 	case UI_SET_DUAL_DELAY_MS:
 		radio_get_settings(&rs);
 		return rs.dual_delay_ms;
+#endif
+#if CONFIG_BCAST_FM
+	case UI_SET_BCAST_STEP:
+		radio_get_settings(&rs);
+		return rs.bcast_step == RADIO_BCAST_STEP_100 ? 100 : 200;
 #endif
 	case UI_SET_MIC_GAIN:
 		settings_read(&st);
@@ -286,16 +287,12 @@ int32_t ui_svc_setting_get(uint8_t id)
 bool ui_svc_setting_set(uint8_t id, int32_t value)
 {
 	settings_t *st;
-	switch (id) {
 #if CONFIG_KEY_ASSIGN
-	case UI_SET_KEY_SIDE1:
-	case UI_SET_KEY_SIDE1_HOLD:
-	case UI_SET_KEY_SIDE2:
-	case UI_SET_KEY_SIDE2_HOLD:
-	case UI_SET_KEY_TOP:
-	case UI_SET_KEY_TOP_HOLD:
+	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {
 		return key_set(id, value);
+	}
 #endif
+	switch (id) {
 	case UI_SET_KEY_TONES:
 	case UI_SET_TONE_VOLUME:
 	case UI_SET_TOT_S:
@@ -305,6 +302,9 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_TALK_PERMIT:
 #if CONFIG_DUAL_WATCH
 	case UI_SET_DUAL_DELAY_MS:
+#endif
+#if CONFIG_BCAST_FM
+	case UI_SET_BCAST_STEP:
 #endif
 #if CONFIG_DMR_ROAMING
 	case UI_SET_ROAM_SURVEY:
@@ -611,6 +611,75 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
 	return storage_job_post(write_channel_job, NULL);
 }
 
+#if CONFIG_ZONE_EDIT
+// The zone editor's changes (ui.md 2.2), queued: Move up pressed again while the last move is still being written
+// waits its turn instead of being refused. The UI task adds at zq_head, the job takes from zq_tail. A new zone ahead
+// of others or a deleted zone moves zone indexes: the radio core and dual watch follow them through zone_edit's log
+// when they see the codeplug change, so the job only writes
+#define ZONE_QUEUE	4u
+static zone_op_t zq[ZONE_QUEUE];
+static volatile uint8_t zq_head, zq_tail;
+
+static const char *zone_edit_text(zone_edit_result_t r)
+{
+	switch (r) {
+	case ZONE_EDIT_FULL: return "Zone full: not saved";
+	case ZONE_EDIT_ZONES_FULL: return "No room for another zone";
+	case ZONE_EDIT_IN_ZONE: return "Already in this zone";
+	case ZONE_EDIT_NO_FREE: return "No free channel";
+	case ZONE_EDIT_NO_NAME: return "Give it a name first";
+	case ZONE_EDIT_EDGE: return "Already at the end";
+	case ZONE_EDIT_NO_ZONE: return "That zone is gone";
+	case ZONE_EDIT_NO_CHANNEL: return "That channel is gone";
+	default: return "Couldn't write the codeplug: not saved";
+	}
+}
+
+// A refusal drops the changes queued after it: they were made on the zone as the UI saw it with this one done
+static void zone_edit_job(void *ctx)
+{
+	(void)ctx;
+	while (zq_tail != zq_head) {
+		zone_edit_result_t r = zone_edit_apply(&zq[zq_tail % ZONE_QUEUE], NULL);
+		if (r != ZONE_EDIT_OK) {
+			save_failed(zone_edit_text(r));
+			zq_tail = zq_head;
+			break;
+		}
+		zq_tail = (uint8_t)(zq_tail + 1u);
+	}
+}
+
+// The job, unless one (this or another write) is running: then ui_svc_zone_poll posts it later
+static void zone_kick(void)
+{
+	if (zq_tail != zq_head && !storage_job_busy()) {
+		storage_job_post(zone_edit_job, NULL);
+	}
+}
+
+bool ui_svc_zone_edit(const zone_op_t *op)
+{
+	if ((uint8_t)(zq_head - zq_tail) >= ZONE_QUEUE) {
+		return false;
+	}
+	zq[zq_head % ZONE_QUEUE] = *op;
+	zq_head = (uint8_t)(zq_head + 1u);
+	zone_kick();
+	return true;
+}
+
+void ui_svc_zone_poll(void)
+{
+	zone_kick();
+}
+
+bool ui_svc_zone_pending(void)
+{
+	return zq_tail != zq_head;
+}
+#endif
+
 #if CONFIG_DMR
 // The first stored contact with this ID and kind becomes the channel's talk target. Searching the contacts reads up
 // to 1024 records, so it is part of the job too. Until it is done the target is a temporary one (ui_svc_talk_to)
@@ -699,6 +768,7 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 // built from them handed to the input task. A codeplug a CPS wrote is read again; a change made in Settings is
 // written by a storage job, and until it lands the copy here is the one that counts ---
 
+_Static_assert(UI_KEY_ROLES == KEYASSIGN_ROLES, "a setting pair per role");
 static uint16_t key_slots[KEYASSIGN_SLOTS];
 static uint16_t key_job_slots[KEYASSIGN_SLOTS];	// what the job writes (filled only while no job is pending)
 static uint32_t key_serial;
@@ -753,13 +823,13 @@ static int32_t key_get(uint8_t id)
 	if (!key_loaded) {
 		key_load();
 	}
-	uint8_t k = (uint8_t)(id - UI_SET_KEY_SIDE1);
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
 	return keyassign_get(key_slots, k / 2u, (k & 1u) != 0);
 }
 
 static bool key_set(uint8_t id, int32_t value)
 {
-	uint8_t k = (uint8_t)(id - UI_SET_KEY_SIDE1);
+	uint8_t k = (uint8_t)(id - UI_SET_KEY_FIRST);
 	if (k / 2u >= board.side_key_count || value < 0 || value >= KEYFN_COUNT) {
 		return false;
 	}

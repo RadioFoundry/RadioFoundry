@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C6000 split duplex BS outbound (drivers/modem/hrc_common/hrc6000_bs.c): the takeover of the slot engine, key-up on
 // an outbound TS1 slot, per-slot queues in order with idle fill, the PA keyed once and dropped at unkey, the framing
 // experiment's register writes and their restore, the embedded LC rewrite, the stall watchdog and the way back to the

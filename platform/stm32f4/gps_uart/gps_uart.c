@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GPS NMEA on a receive-only STM32F4 USART (gps_uart.h; docs/spec/hardware-md380.md 13, hardware-md9600.md 13)
 #include <stddef.h>
 #include "gps_uart/gps_uart.h"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 radio: the hal_radio_t on top of the RF sequencer (rfseq_md9600.c), for every board revision
 // (docs/spec/hardware-md9600.md 5, 6, 16, 19).
 //

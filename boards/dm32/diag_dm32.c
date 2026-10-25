@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-32UV diagnostics page lines: raw readings for bench checks (cached values only, no bus traffic)
 #include <stddef.h>
 #include "dm32.h"

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The docs blocks generated from the board registry (tools/boards.py docs), and the radio survey's rows.
 
 A generated block sits between two markers and is rewritten whole:
@@ -16,16 +16,23 @@ a board is generated from the board's [status]. Every other row's Port cell says
 
     Planned[. note]                     Planned, ○ marks
     Planned, hardware needed[. note]    Planned, hardware needed
-    In progress, #N[. note]             In progress, linked to pull request N
+    In progress, #N[, MARKS][. note]    In progress, linked to pull request N
     Not planned[. note]                 not listed outside the survey
 
+MARKS says what pull request N already has, as a comma list of builds, host tests and on the radio. The README shows
+each as ◐ ("in the pull request, not on main yet") until the board merges and its own [status] takes over. In
+progress rows come before planned ones.
+
 The note is the text the README and the user manual show after the status, so no second summary is written.
+
+A board's "On the radio" mark: ● supported, ◐ when its bring-up records (docs/testing/results/<board>/) hold a pass,
+○ when nothing has passed on a radio yet.
 """
 import os
 import re
 import subprocess
 
-REPO_URL = "https://github.com/sfowlr/OpenDigitalRadio"
+REPO_URL = "https://github.com/radiofoundry/radiofoundry"
 SURVEY = "docs/spec/radios.md"
 SURVEY_HEADING = "Summary table"
 PORT_COLUMN = "Port"
@@ -34,10 +41,11 @@ END = "<!-- end generated -->"
 # a block's marker style: (begin, end), each "%s" for the marker text
 MARKERS = {"html": ("<!-- %s -->", "<!-- %s -->"), "yaml": ("# %s", "# %s"), "bare": ("%s", "%s")}
 BEGIN_RE = re.compile(r"^<!-- generated: tools/boards.py docs ([\w-]+);.*-->$")
-PORT_RE = re.compile(r"^(planned, hardware needed|planned|in progress, #(\d+)|not planned)(?:\.\s+(.*))?$", re.I)
-# how a board's [status] level reads: in the survey's Port cell, and as the README's "On the radio" mark
+PR_MARKS = ("builds", "host tests", "on the radio")
+PORT_RE = re.compile(r"^(planned, hardware needed|planned|in progress, #(\d+)((?:, (?:%s))*)|not planned)"
+                     r"(?:\.\s+(.*))?$" % "|".join(PR_MARKS), re.I)
+# how a board's [status] level reads in the survey's Port cell
 LEVEL_WORD = {"supported": "Supported", "testing": "Testing", "bring-up": "Bring-up"}
-LEVEL_MARK = {"supported": "●", "testing": "◐", "bring-up": "◐"}
 # the README's marks and statuses, lowest first: the floor check compares by these
 MARK_RANK = {"○": 0, "◐": 1, "●": 2}
 STATUS_RANK = {"planned": 1, "in_progress": 2, "board": 3}
@@ -146,9 +154,9 @@ def port_cell(b):
 
 def survey(root, boards):
     """(rows, problems). rows: the survey's radios in its order, {radio, board (id or None), status ("board",
-    "planned", "in_progress" or None for not planned), pr, hardware_needed, note (Markdown, links as the survey
-    writes them)}. problems: a Port cell outside the fixed set, a row that names two boards, a board named by two
-    rows, a hand-written status on a board's row (check 5)."""
+    "planned", "in_progress" or None for not planned), pr, pr_marks (what the pull request has, of PR_MARKS),
+    hardware_needed, note (Markdown, links as the survey writes them)}. problems: a Port cell outside the fixed set,
+    a row that names two boards, a board named by two rows, a hand-written status on a board's row (check 5)."""
     text = open(os.path.join(root, SURVEY), encoding="utf-8").read()
     _, head, rows = survey_table(text)
     col, out, problems, seen = head.index(PORT_COLUMN), [], [], {}
@@ -171,25 +179,27 @@ def survey(root, boards):
                 problems.append("%s:%d: %s names boards/%s, but its Port cell %r is a planned radio's: a board's "
                                 "cell comes from its board.toml (tools/boards.py docs)" % (SURVEY, line + 1,
                                                                                          plain(radio), b.id, cell))
-            out.append({"radio": plain(radio), "board": b.id, "status": "board", "pr": None,
+            out.append({"radio": plain(radio), "board": b.id, "status": "board", "pr": None, "pr_marks": [],
                         "hardware_needed": False, "note": ""})
             continue
         m = PORT_RE.match(cell)
         if not m:
-            problems.append("%s:%d: Port cell %r is none of: planned, planned, hardware needed, in progress, #N, not "
-                            "planned (then an optional '. note')" % (SURVEY, line + 1, cell))
+            problems.append("%s:%d: Port cell %r is none of: planned, planned, hardware needed, in progress, #N[, "
+                            "%s], not planned (then an optional '. note')" % (SURVEY, line + 1, cell,
+                                                                             ", ".join(PR_MARKS)))
             continue
         kind = m.group(1).lower()
         status = None if kind == "not planned" else "in_progress" if kind.startswith("in progress") else "planned"
+        marks = [x.strip().lower() for x in (m.group(3) or "").split(",") if x.strip()]
         out.append({"radio": plain(radio), "board": None, "status": status,
-                    "pr": int(m.group(2)) if m.group(2) else None, "hardware_needed": kind.endswith("hardware needed"),
-                    "note": (m.group(3) or "").strip()})
+                    "pr": int(m.group(2)) if m.group(2) else None, "pr_marks": marks,
+                    "hardware_needed": kind.endswith("hardware needed"), "note": (m.group(4) or "").strip()})
     return out, problems
 
 
 def planned(rows):
-    """The survey's radios without a board that are planned or in progress."""
-    return [r for r in rows if r["board"] is None and r["status"]]
+    """The survey's radios without a board that are in progress, then those planned, each in the survey's order."""
+    return sorted((r for r in rows if r["board"] is None and r["status"]), key=lambda r: r["status"] != "in_progress")
 
 
 def planned_status(r, dst_dir):
@@ -204,13 +214,31 @@ def planned_status(r, dst_dir):
 
 # ── blocks ──────────────────────────────────────────────────────────────────
 
-def readme_radios(boards, rows):
+def ran_on_radio(rec):
+    """True when a board's bring-up records ({"runs", "seed"}, tools/bringup.py load_records) hold any pass."""
+    if any(t.get("outcome") == "passed" for r in rec.get("runs", []) for t in r.get("tests", [])):
+        return True
+    return any(isinstance(v, dict) and v.get("result") == "pass"
+               for v in ((rec.get("seed") or {}).get("features") or {}).values())
+
+
+def on_radio_mark(b, records):
+    """A board's README "On the radio" mark: ● supported, ◐ something passed on a radio, ○ nothing yet."""
+    if b.data["status"]["level"] == "supported":
+        return "●"
+    return "◐" if ran_on_radio(records.get(b.id, {})) else "○"
+
+
+def readme_radios(root, boards, rows):
+    import bringup
+    records = bringup.load_records(os.path.join(root, "docs", "testing", "results"))
     out = ["| Radio | Builds | Host tests | On the radio | Support |", "|---|:---:|:---:|:---:|---|"]
     for b in ordered(boards):
-        out.append("| %s | ● | ● | %s | %s |" % (board_title(b, ""), LEVEL_MARK[b.data["status"]["level"]],
+        out.append("| %s | ● | ● | %s | %s |" % (board_title(b, ""), on_radio_mark(b, records),
                                                b.data["status"]["summary"]))
     for r in planned(rows):
-        out.append("| %s | ○ | ○ | ○ | %s |" % (r["radio"], planned_status(r, "")))
+        marks = ["◐" if m in r["pr_marks"] else "○" for m in PR_MARKS]
+        out.append("| %s | %s | %s |" % (r["radio"], " | ".join(marks), planned_status(r, "")))
     return out
 
 
@@ -335,7 +363,7 @@ def checked_on_radio(root, boards):
 # file, block, source the marker names, generator(root, boards, rows)[, marker style (MARKERS), default html]
 BLOCKS = (
     ("README.md", "radios", "boards/*/board.toml [status] and docs/spec/radios.md",
-     lambda root, boards, rows: readme_radios(boards, rows)),
+     lambda root, boards, rows: readme_radios(root, boards, rows)),
     ("docs/user/23-radios.md", "radios", "boards/*/board.toml [status]",
      lambda root, boards, rows: manual_radios(boards, rows)),
     ("docs/user/23-radios.md", "planned", "the Port cells of docs/spec/radios.md",

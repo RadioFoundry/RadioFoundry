@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ADC1 continuous scan into a circular DMA buffer (periph_md9600.h): DMA2 Stream0 channel 0 keeps the last scans of
 // every rank, so a reading is a short average with no interrupt and no locking. 480-cycle sampling at PCLK2 / 8 on
 // every rank: slow sources (supply, RSSI, noise, keypad ladders), about 0.4 ms per eight-channel scan at 72 MHz

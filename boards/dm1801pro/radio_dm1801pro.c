@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro radio: FD6818 RF transceiver (bit-banged, its own register set), the HR_C7000 baseband for analog FM,
 // separate RX and TX band paths and the PA drive on DAC channel B (docs/spec/hardware-dm1801pro.md 5; modem-hrc7000.md
 // 4, 5.1, 8) for analog FM and DMR. The DMR slot engine, PA one-shot and PCM audio are the shared HR_C7000 glue
@@ -54,6 +54,7 @@ static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
 static bool have_rx;
+static bool rx_am_on;		// the FD6818 plays its AM demodulator (rx_am, the air band)
 static bool asleep;		// rx_sleep(true): the receiver is off until rx_sleep(false) or the next rx()
 static bool transmitting;
 static uint32_t tx_hz;		// TX frequency (FM: also the TX tone deviation, with tx_wide; DMR: the burst TX path)
@@ -150,7 +151,7 @@ uint16_t dm1801pro_pa_drive(uint32_t hz, uint8_t power)
 }
 
 // RF_MOD_BIAS_CTRL: TX center + 384 in the high half, the band's modulation byte x 0x0101 in the low half. The radio
-// multiplies the byte by 1.8 (Wide) or 0.9 (Narrow) on an FM channel; ODR doesn't, since its FM deviations were set on
+// multiplies the byte by 1.8 (Wide) or 0.9 (Narrow) on an FM channel; RadioFoundry doesn't, since its FM deviations were set on
 // the bench without the factor (hardware-dm1801pro.md 10)
 static uint32_t mod_bias(uint32_t hz)
 {
@@ -254,12 +255,14 @@ static void set_mode(radio_mode_t m)
 		hrc7000_fm_idle(&modem);
 		mode = RADIO_MODE_FM;
 	}
+	rx_am_on = false;	// both mode tables write the FM AF word
 	have_rx = false;	// the next rx() retunes everything
 }
 
-static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
+// FM (or DMR) receive, or AM in FM mode: the same set-up, only the FD6818's AF output differs
+static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am)
 {
-	if (!board_in_band(hz, false)) {
+	if (!board_in_band(hz, false) || (am && mode != RADIO_MODE_FM)) {
 		return false;
 	}
 	DAC_DATA_B = 0;
@@ -281,6 +284,10 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 		// HR_C7000's detector has no input (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
 		hrc7000_set_subtone(&modem, false, HRC7000_TONE_NONE, 0);	// the modem's tone bits off (left on by a TX)
+		if (am != rx_am_on) {
+			fd6818_set_am(&fd, am);
+			rx_am_on = am;
+		}
 	}
 	rx_hz = hz;
 	rx_bw = bw;
@@ -290,6 +297,27 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
 	transmitting = false;
 	speaker_source();
 	return true;
+}
+
+static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *tone)
+{
+	return rx_tune(hz, bw, tone, false);
+}
+
+#if CONFIG_AM_RX
+// Air band AM (docs/spec/airband-and-broadcast.md 3.3): FM receive with the FD6818's AF output on its AM demodulator,
+// played straight to the speaker as in FM receive; no sub-audio. 108-136 MHz comes in on the VHF receive path
+static bool rx_am(uint32_t hz, radio_bw_t bw)
+{
+	return rx_tune(hz, bw, NULL, true);
+}
+#endif
+
+// Back on the frequency, mode and demodulator the receiver had (after a transmission or the receiver's sleep)
+static void retune(void)
+{
+	subtone_t t = rx_tone;
+	(void)rx_tune(rx_hz, rx_bw, &t, rx_am_on);
 }
 
 // 5.4 "Enter TX": RX path off, frequency, the RF state sequence, 0x50, the TX path, then the PA ramp. The radio's
@@ -374,8 +402,7 @@ static void tx_off(void)
 		if (mode == RADIO_MODE_FM) {
 			hrc7000_fm_idle(&modem);
 		}
-		subtone_t t = rx_tone;
-		rx(rx_hz, rx_bw, &t);
+		retune();
 	}
 	transmitting = false;
 	uint32_t irq = hrc_irq_save();
@@ -446,8 +473,7 @@ static void rx_sleep(bool sleep)
 		rx_path(rx_hz, false);
 		asleep = true;
 	} else {
-		subtone_t tone = rx_tone;
-		(void)rx(rx_hz, rx_bw, &tone);
+		retune();
 	}
 }
 
@@ -605,5 +631,8 @@ const hal_radio_t dm1801pro_radio = {
 	.audio = audio,
 	.volume = NULL,
 	.rx_sleep = rx_sleep,
+#if CONFIG_AM_RX
+	.rx_am = rx_am,
+#endif
 	.mic_gain = mic_gain,
 };

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Internal interfaces between the MD-380 board files (docs/spec/hardware-md380.md)
 #ifndef MD380_H
 #define MD380_H
@@ -107,7 +107,7 @@ bool md380_diag_line(uint8_t i, char *buf, uint8_t len);
 void md380_diag_reset(void);
 
 // A DMA stream's memory address must be in main SRAM (0x2000_0000): the DMA controllers can't reach the CCM, where
-// ODR_CPU_RAM state and every task stack live
+// RFOUNDRY_CPU_RAM state and every task stack live
 #define DMA_RAM_OK(p)	configASSERT(((uintptr_t)(p) >> 24) == 0x20u)
 
 #endif

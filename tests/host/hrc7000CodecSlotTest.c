@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C7000 codec slot (platform/hrc7000/codec_slot.h): the code moves to the window's start and the listed words
 // are rewritten; a version 1 slot (from before the move) and every malformed slot are refused. Synthetic slots, no codec.
 // With a file argument, also checks the slot tools/hrc7000_codec.py writes for its synthetic codec (--test-slot), so

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C7000 watchdog (hal_watchdog.h, CONFIG_WATCHDOG; docs/spec/hardware-dm32.md 3.5, docs/spec/watchdog.md 3.2).
 // Every register write goes through LOCK: the unlock key first, LOCK = 0 after. The counter counts up from the load
 // and the timeout is its overflow (see WDT_LOAD).

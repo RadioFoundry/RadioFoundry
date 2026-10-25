@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Keys read as two analog levels: a keypad whose rows pull one ADC input and whose columns pull another to a level
 // per position through resistor ladders (a hand microphone's keypad, for example). One key at a
 // time. Generic and pure: the board reads the two levels, this maps them to a key and holds it until it has read the

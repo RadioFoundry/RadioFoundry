@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // AMBE+2 3600x2450 air frame FEC and interleaving (see ambeFec.h for the definition)
 #include "ambeFec.h"
 

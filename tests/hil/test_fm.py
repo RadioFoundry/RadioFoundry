@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """FM receive, no transmission: the VFO on NOAA weather radio (162.550 MHz by default) opens the squelch or shows an
 RSSI above the floor within a few seconds. Depends on reception at the bench.
 
@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from odr_hil import skip
+from rfoundry_hil import skip
 
 
 @pytest.mark.feature("fm", "vfo_fm")

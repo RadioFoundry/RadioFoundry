@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A simulated split duplex modem for host tests (see split_sim_modem.h)
 #include <string.h>
 #include "split_sim_modem.h"

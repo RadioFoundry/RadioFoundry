@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # CI on main (docs/dev/ci.md): everything that takes a few minutes, on every push to main that changes firmware
 # sources, tests, build tools or this workflow (docs-only changes run only the manual workflow), and by hand on any
@@ -12,13 +12,13 @@
 #   firmware   one job per toolchain (Arm, C-SKY): every board built with it, from the registry (tools/ci.sh
 #              --toolchain), each build option value too, with zero warnings, the size report and the app region fit.
 #              The compiler comes from .github/actions/toolchain (platform.toml's pin); C-SKY builds run in the
-#              csky-elf image (repository variable ODR_CSKY_IMAGE, default platform.toml's image) unless the runner has
+#              csky-elf image (repository variable RFOUNDRY_CSKY_IMAGE, default platform.toml's image) unless the runner has
 #              csky-elf GCC, and are skipped with a notice where that image isn't available (GitHub's runners until
 #              it is in a registry)
 # The feature matrix and the other long builds run nightly (nightly.yml), the radio tests by hand (hil.yml).
 # Runs on Gitea Actions (the self-hosted runner) and GitHub Actions alike; a newer push to the same branch cancels
-# the run in progress. On GitHub the repository variable ODR_CI_RUNNER (a runner label) moves the jobs from the
-# hosted runners to the self-hosted one in tools/ci-runner/, whose image has every tool installed (ODR_CI_IMAGE=1).
+# the run in progress. On GitHub the repository variable RFOUNDRY_CI_RUNNER (a runner label) moves the jobs from the
+# hosted runners to the self-hosted one in tools/ci-runner/, whose image has every tool installed (RFOUNDRY_CI_IMAGE=1).
 name: CI
 
 on:
@@ -54,18 +54,18 @@ concurrency:
 jobs:
   unit-tests:
     name: unit tests
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false   # the host tests use none of third_party
 
       - name: Install gcovr, tshark
         run: |
           set -eu
-          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+          if [ "${RFOUNDRY_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
             sudo apt-get update -qq
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcovr tshark
           fi
@@ -83,7 +83,7 @@ jobs:
           mkdir -p build/ci   # uiSim makes only the last directory
           tests/host/uiSim --gallery build/ci/gallery > build/ci/gallery.log || { grep FAIL build/ci/gallery.log; exit 1; }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         if: always()
         with:
           name: host-logs
@@ -91,7 +91,7 @@ jobs:
             build/ci/*.log
             build/ci/gallery/
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         if: always()
         with:
           name: coverage-report
@@ -100,23 +100,23 @@ jobs:
 
   checks:
     name: checks   # Python and license checks, beside the unit tests
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false
       - name: Install numpy, pytest, pyserial
         run: |
           set -eu
-          if [ "${ODR_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
+          if [ "${RFOUNDRY_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
             sudo apt-get update -qq
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
               python3-numpy python3-pytest python3-serial
           fi
-          # reuse lint only when the tree is expected to pass it (repository variable ODR_CI_REUSE=true)
-          if [ "${{ vars.ODR_CI_REUSE }}" = true ]; then
+          # reuse lint only when the tree is expected to pass it (repository variable RFOUNDRY_CI_REUSE=true)
+          if [ "${{ vars.RFOUNDRY_CI_REUSE }}" = true ]; then
             if [ -x /opt/reuse/bin/reuse ]; then echo /opt/reuse/bin >> "$GITHUB_PATH"   # the self-hosted runner's image
             else pipx install reuse && echo "$HOME/.local/bin" >> "$GITHUB_PATH"; fi
           fi
@@ -127,8 +127,8 @@ jobs:
     # one job per toolchain, not per radio or platform: one checkout and one compiler for every board built with it
     # (tools/ci.sh --toolchain takes them from the registry, so a new radio joins with no edit here); 4 cores each
     name: firmware (${{ matrix.name }})
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -142,7 +142,7 @@ jobs:
       contents: read
       packages: read   # pulling a private ghcr.io csky-elf image with the job token
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       - name: third_party submodules
@@ -152,12 +152,12 @@ jobs:
         uses: ./.github/actions/toolchain
         with:
           toolchain: ${{ matrix.toolchain }}
-          image: ${{ vars.ODR_CSKY_IMAGE }}
-          registry: ${{ vars.ODR_CSKY_REGISTRY }}
+          image: ${{ vars.RFOUNDRY_CSKY_IMAGE }}
+          registry: ${{ vars.RFOUNDRY_CSKY_REGISTRY }}
           # a read-only registry token (secret); on GitHub a ghcr.io package linked to this repository takes the job's
           # own token (packages: read)
-          registry-user: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
-          registry-token: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
+          registry-user: ${{ vars.RFOUNDRY_CSKY_REGISTRY_USER || github.actor }}
+          registry-token: ${{ secrets.RFOUNDRY_CSKY_REGISTRY_TOKEN || github.token }}
       - name: Default builds, warnings, size and app region fit
         env:
           RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
@@ -167,17 +167,17 @@ jobs:
           rc=0
           $RUN tools/ci.sh --quick --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
           if [ "$rc" = 3 ]; then
-            echo "::notice::$TOOLCHAIN builds skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::$TOOLCHAIN builds skipped: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         if: always()
         with:
           name: firmware-${{ matrix.toolchain }}
           path: |
             build/ci/size-report.md
             build/ci/*.log
-            build/ci/*/odr_*.bin
+            build/ci/*/rfoundry_*.bin
           if-no-files-found: ignore

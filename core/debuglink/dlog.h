@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // dlog(): printf-style log lines into a small RAM ring that the debug link reads (GET_LOG, docs/spec/debuglink.md).
 // Cheap: formats with dl_fmt (no libc printf) into a line on the caller's stack (DLOG_LINE_MAX), then copies it into
 // the ring under a short critical section. From tasks only, never from an interrupt. Each line gets the ms clock.

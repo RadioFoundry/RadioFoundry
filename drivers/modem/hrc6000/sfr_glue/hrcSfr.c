@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR single frequency repeater (SFR): the HR-C6000 glue for functions/sfr.h, see hrcSfr.h. The radio provides the RF
  * side (radioSfrSwitch() etc., hrcSfr.h); the rest is the same on the STM32 radios and the GD-77 (MK22)

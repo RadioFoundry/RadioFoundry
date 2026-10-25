@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The MD-9600's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
 # web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in memory.ld.
 
@@ -44,7 +44,7 @@ extra = [
 family = "usb-dfu"
 keep_codec = true
 stock_versions = ["V06.09 CSV (boards V1-V3)", "V16.45 CSV (V4 boards)"]
-backup = { stock = "none", odr = "full", spi_size = 0x1000000 }
+backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 
 [flash.bootloader]
 steps = [

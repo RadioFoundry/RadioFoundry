@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 radio: SKY72310 synthesizer + GT3136 receiver + HR_C5000 (the HR_C6000 driver in its C5000 variant) + RF path
 // GPIOs + the two DACs + calibration (docs/spec/hardware-md380.md 4-8, 11). Nothing here has run on a radio.
 //
@@ -40,7 +40,7 @@
 #ifndef MD380_IF_HZ
 #define MD380_IF_HZ		49950000u
 #endif
-#if ODR_BAND_VHF
+#if RFOUNDRY_BAND_VHF
 #define MD380_RX_LO_ABOVE	1	// LO = f + IF
 #define MD380_VCO_MULT		2u	// the VCO runs at twice the LO / carrier
 #else
@@ -612,7 +612,7 @@ static void init(void)
 	while ((uint32_t)(hal_millis() - pwd_ms) < C5000_PWD_WAIT_MS) {
 		hal_delay_ms(1);
 	}
-	hrc5000_attach(&r.modem, &modem_bus, ODR_BAND_VHF);
+	hrc5000_attach(&r.modem, &modem_bus, RFOUNDRY_BAND_VHF);
 	r.mode = RADIO_MODE_FM;
 	count(hrc5000_power_on(&r.modem));		// the clock, then FM receive
 	audio(false);

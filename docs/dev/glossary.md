@@ -70,7 +70,7 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-tc"></a>TC | TDMA channel: the TACT bit that names the timeslot, so a radio can tell TS1 from TS2. |
 | <a id="t-tdma"></a>TDMA | Time division multiple access. A DMR channel carries two conversations by alternating them in 30 ms slots. |
 | <a id="t-tier-ii"></a>Tier II | The conventional DMR tier of the standard (TS 102 361-2): repeaters and direct mode without trunking. |
-| <a id="t-tier-iii"></a>Tier III | The trunked DMR tier of the standard (TS 102 361-4): a control channel assigns traffic channels. [More](../spec/dmr-tier3-plan.md) |
+| <a id="t-tier-iii"></a>Tier III | The trunked DMR tier of the standard (TS 102 361-4): a control channel assigns traffic channels. |
 | <a id="t-tsc"></a>TSC | The controller of a Tier III system: the infrastructure side the radio talks to. |
 | <a id="t-tscc"></a>TSCC | Trunked station control channel: the Tier III channel that carries control signaling. |
 | <a id="t-tsccas"></a>TSCCAS | TSCC alternate slot: a second control slot of a Tier III site. |
@@ -95,8 +95,8 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-fifo"></a>FIFO | First in, first out: a queue of data between a producer and a consumer. |
 | <a id="t-fsk"></a>FSK | Frequency shift keying: data as frequency steps. DMR uses 4-level FSK. |
 | <a id="t-gpio"></a>GPIO | General purpose input/output: a pin the firmware can read or drive. |
-| <a id="t-hr-c6000"></a>HR_C6000 (HRC6000, C6000) | The HRC6000 family: the baseband chip that codes and decodes DMR bursts in the DM-1701 and MD-380 class radios. |
-| <a id="t-hr-c7000"></a>HR_C7000 (HRC7000, C7000) | The HRC7000 family: the baseband chip of the DM-32UV and DM-1801 Pro class radios. |
+| <a id="t-hr-c6000"></a>HR_C6000 (HRC6000, C6000) | The HRC6000 family: the baseband chip that codes and decodes DMR bursts. The radios that use it are in the radio survey. |
+| <a id="t-hr-c7000"></a>HR_C7000 (HRC7000, C7000) | The HRC7000 family: the baseband chip of the C-SKY class radios. The radios that use it are in the radio survey. |
 | <a id="t-i2c"></a>I2C (I²C) | Inter-integrated circuit: a 2-wire bus for small chips such as the RF transceiver. |
 | <a id="t-i2s"></a>I2S | Inter-IC sound: the bus audio samples travel on between chips. |
 | <a id="t-jtag"></a>JTAG | A debug and test port of many processors. |
@@ -114,7 +114,7 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-snr"></a>SNR | Signal to noise ratio. |
 | <a id="t-spi"></a>SPI | Serial peripheral interface: the 4-wire bus the processor uses to talk to chips such as the modem. |
 | <a id="t-sram"></a>SRAM | Static RAM: the processor's fast working memory. |
-| <a id="t-stm32"></a>STM32 (STM32F4, STM32F405) | STMicroelectronics' family of ARM microcontrollers. The DM-1701 and MD-380 class radios use them. |
+| <a id="t-stm32"></a>STM32 (STM32F4, STM32F405) | STMicroelectronics' family of ARM microcontrollers. The radios that use it are in the radio survey. |
 | <a id="t-swd"></a>SWD | Serial wire debug: the two-wire debug port of ARM processors. |
 | <a id="t-synthesizer"></a>Synthesizer | The part that makes the radio's transmit and receive frequencies. |
 | <a id="t-tcxo"></a>TCXO | Temperature compensated crystal oscillator: the stable clock the radio's frequency is derived from. |
@@ -148,7 +148,7 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-tnc"></a>TNC | Terminal node controller: the modem that turns packet data into audio tones and back. |
 | <a id="t-udp"></a>UDP | User Datagram Protocol: IP packets with no delivery guarantee. |
 
-## ODR and firmware
+## RadioFoundry and firmware
 
 | Term | Meaning |
 |---|---|
@@ -156,14 +156,14 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-bcd"></a>BCD | Binary coded decimal: each decimal digit in 4 bits. |
 | <a id="t-board"></a>Board | The code and description of one radio model's hardware wiring: pins, chips, memory map. [More](architecture.md) |
 | <a id="t-ci"></a>CI | Continuous integration: the checks every change must pass (tools/ci.sh). |
-| <a id="t-debug-link"></a>Debug link | ODR's USB serial protocol for reading state and driving the radio from a computer. [More](debug-link.md) |
+| <a id="t-debug-link"></a>Debug link | RadioFoundry's USB serial protocol for reading state and driving the radio from a computer. [More](debug-link.md) |
 | <a id="t-feature-switch"></a>Feature switch | A CONFIG_ option that turns a feature's code in or out of the build. [More](../build-config.md) |
-| <a id="t-gpl"></a>GPL | GNU General Public License. ODR does not use GPL code. |
+| <a id="t-gpl"></a>GPL | GNU General Public License. RadioFoundry does not use GPL code. |
 | <a id="t-hal"></a>HAL | Hardware abstraction layer: the interfaces the core uses instead of touching a chip. [More](architecture.md) |
 | <a id="t-hil"></a>HIL | Hardware in the loop: tests that run against a real radio, and a bench radio or SDR for the other side. [More](testing.md) |
 | <a id="t-kb"></a>KB (MB) | Kilobytes (1024 bytes). |
 | <a id="t-lto"></a>LTO | Link-time optimization: the compiler optimizes across files. It shrinks the firmware. |
-| <a id="t-mit"></a>MIT | The permissive license ODR uses. |
+| <a id="t-mit"></a>MIT | The permissive license RadioFoundry uses. |
 | <a id="t-msb"></a>MSB (LSB) | Most significant bit (or byte): the first, highest-value one. |
 | <a id="t-os"></a>OS | Operating system. |
 | <a id="t-rtos"></a>RTOS | Real-time operating system: the scheduler that runs the firmware's tasks. |
@@ -173,6 +173,6 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-soc"></a>SoC | System on chip: the processor and its on-chip peripherals. |
 | <a id="t-st"></a>ST | STMicroelectronics, the maker of the STM32 processors. |
 | <a id="t-stub"></a>Stub | A small program that runs on the radio in place of the firmware so the computer can read or write flash without the stock bootloader. |
-| <a id="t-usrp"></a>USRP | The UDP stream that carries a call's audio between ODR and a network gateway. |
+| <a id="t-usrp"></a>USRP | The UDP stream that carries a call's audio between RadioFoundry and a network gateway. |
 | <a id="t-xip"></a>XIP | Execute in place: running code straight from flash. |
 | <a id="t-xor"></a>XOR | Exclusive or: a bit operation that flips bits where the other operand has a 1. |

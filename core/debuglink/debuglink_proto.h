@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's commands and their operations (docs/spec/debuglink.md 3). The framing, the reply status and the
 // commands the stub entry shares (PING, VERSION, STUB) are in dl_frame.h.
 #ifndef DEBUGLINK_PROTO_H
@@ -74,7 +74,9 @@ enum {
 	DL_CRASH_OP_CLEAR = 0,	// -> status: forget the kept record
 	DL_CRASH_OP_TEST = 1,	// kind u8 (DL_CRASH_TEST_*), token u32 -> status; the crash comes after the reply
 };
-enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2 };
+// HANG: the host link's task spins with interrupts on and the watchdog fed as usual, so the hang check (crash-log.md
+// 1.1) keeps the record; unavailable without CONFIG_WATCHDOG
+enum { DL_CRASH_TEST_TRAP = 1, DL_CRASH_TEST_ASSERT = 2, DL_CRASH_TEST_HANG = 3 };
 // The test's guard, little endian in the payload: bytes 'C' 'R' 'S' 'H' (as CRASH_MAGIC), so a stray frame can't crash
 // the radio
 #define DL_CRASH_TOKEN		0x48535243u
@@ -92,9 +94,11 @@ enum {
 	DL_DATA_OP_EMERGENCY_SETTINGS,	// mode u8, dst u32 (0 the channel's), flags u8 (bit 0 dst is a radio, 1 ETSI FID,
 					// 2 no alert tone), alarm tries u8, hot mic s u8
 	DL_DATA_OP_IP_SETTINGS,		// compression u8 (0 off, 1 auto, 2 all), confirmed u8 (0 off, 1 rules, 2 all), tries u8
-					// (0 the default, 1-8), rule u32 x 2 (0 unused, a radio ID, or 0x80000000 | a UDP port)
-	DL_DATA_OP_IP_SEND,		// dst u32, flags u8 (bit 0 group), source port u16, destination port u16, payload: a UDP
-					// datagram into the IP gateway's air path as if from the host (CONFIG_DMR_IP_GATEWAY)
+					// (0 the default, 1-8), rule u32 x 2 (0 unused, a radio ID, or 0x80000000 | a UDP port),
+					// optional off-net gateway ID u32 (0 none; left as it is when absent)
+	DL_DATA_OP_IP_SEND,		// dst u32, flags u8 (bit 0 group, bit 1 an IPv4 destination follows), source port u16,
+					// destination port u16, with bit 1 the IPv4 destination u32, payload: a UDP datagram
+					// into the IP gateway's air path as if from the host (CONFIG_DMR_IP_GATEWAY)
 };
 
 // DL_CMD_STORAGE operations (first payload byte; docs/spec/debuglink.md 3.13)

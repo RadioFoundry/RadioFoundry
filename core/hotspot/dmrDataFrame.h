@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Conversion between DMR data bursts (info bits) and 33 byte DMR frames, as used by MMDVM
  */
 
-#ifndef ODR_DMRDATAFRAME_H
-#define ODR_DMRDATAFRAME_H
+#ifndef RFOUNDRY_DMRDATAFRAME_H
+#define RFOUNDRY_DMRDATAFRAME_H
 
 #include "dmr/dmrData.h"
 

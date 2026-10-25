@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The fault trace line (docs/spec/crash-log.md 2.3): what a platform's fault handler prints on the host port before it
-// restarts, framed so a tool finds it among whatever else the port carries (tools/odr_fault_trace.py). Pure: the
+// restarts, framed so a tool finds it among whatever else the port carries (tools/rfoundry_fault_trace.py). Pure: the
 // handler passes its own polled writer, and nothing here waits or allocates.
 #include "crash.h"
 

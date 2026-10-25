@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // TYT MD-9600 / Retevis RT90: board descriptor, clocks, reset-time pin levels, key map, the SPI2 lock
 // (docs/spec/hardware-md9600.md)
 #include "board.h"
@@ -18,9 +18,9 @@
 
 // The RTOS heap, and with it every task stack, in the CCM (as on the other STM32F4 radios): nothing on a stack or from
 // pvPortMalloc may be a DMA buffer
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] RFOUNDRY_CPU_RAM_NOINIT __attribute__((aligned(8)));
 
-// Zero the CCM's .ccmbss (ODR_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
+// Zero the CCM's .ccmbss (RFOUNDRY_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
 extern uint32_t _sccmbss[], _eccmbss[];
 static void ccm_zero(void)
 {
@@ -78,6 +78,7 @@ static const keymap_entry_t keymap[] = {
 
 // Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): P3, P4, the orange key
 static const uint8_t side_keys[] = { KEY_P3, KEY_P4, KEY_ALARM };
+static const char *const side_key_names[] = { "P3", "P4", "Orange" };
 
 #if CONFIG_CPS_OPENFW
 // open-firmware-cps.md 4: type 5 is the MD-9600
@@ -110,6 +111,7 @@ const board_t board = {
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
 	.side_keys = side_keys,
+	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
 	// No * or # on the front panel: the hints name P1 and P2 instead (docs/spec/ui.md 1)
 	.quick_label = "P1",

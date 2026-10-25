@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # DB25-D feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-db25d.md 9): analog FM
 # on the BK4819s and the host link on UART1, settings stored on the SPI NAND, DMR receive and transmit on the shared
 # modem glue with the codec recipe. The open-firmware CPS (qdmr, tools/cps_client.py) runs on the host link over the
-# stored codeplug (hardware-db25d.md 6.6, 9). RAM is the limit, as on the other HR_C7000 boards: ODR has 216,576 B below the codec
+# stored codeplug (hardware-db25d.md 6.6, 9). RAM is the limit, as on the other HR_C7000 boards: RadioFoundry has 216,576 B below the codec
 # window (memory.ld). The switches that are off are listed below; USB, PPP and TCP_CONNS follow the platform
 # (platform/hrc7000/config.mk)
-# The core's storage over ODR's NAND block range (hardware-db25d.md 6.6)
+# The core's storage over RadioFoundry's NAND block range (hardware-db25d.md 6.6)
 CONFIG_NAND_STORAGE ?= y
 # DMR (hardware-db25d.md 4.5, 9): receive and transmit checked on the SDR bench. Voice needs the codec merged (8). With
 # it the hotspot (the MMDVM host port on UART1) is on: simplex whole calls through the same per-burst TX path as a call
@@ -59,7 +59,8 @@ endif
 # the runtime stub's begins (fm_only.ld), and the CPS's request buffer needs the room (2 KB)
 CONFIG_APRS_RX ?= n
 CONFIG_APRS_IGATE ?= n
-# The RDA5802N (CAP_BCAST_FM) isn't wired yet; the radio has no air band receive
+# The RDA5802N (CAP_BCAST_FM) isn't wired yet (the shared glue, platform/hrc7000 hrc_bcast, would carry it); the
+# radio has no air band receive
 CONFIG_BCAST_FM ?= n
 CONFIG_AM_RX ?= n
 # VOX reads the microphone level through hal_power_t.mic_level, which this board doesn't have yet

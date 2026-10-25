@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Hardware options: facts about the radio that software can't read and a person has to state, such as which board
 // revision a radio with several revisions has. The board keeps them itself, outside the settings record, so a
 // settings reset doesn't lose them. Settings > Advanced > Hardware lists them and the debug link reads and sets them

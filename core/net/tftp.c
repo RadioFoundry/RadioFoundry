@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // TFTP server (tftp.h, docs/spec/tftp.md), written from RFC 1350, 2347, 2348 and 2349. Lock step: one DATA (read)
 // or ACK (write) outstanding, resent after the timeout, a duplicate ACK never answered with a DATA (the "Sorcerer's
 // Apprentice" rule of RFC 1123 4.2.3.1). Block numbers roll over from 65535 to 0, as most clients expect.

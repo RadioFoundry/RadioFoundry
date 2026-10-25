@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // "PLL1590" synthesizer words (pll1590.h; docs/spec/hardware-md9600.md 5.3)
 #include <stddef.h>
 #include "pll1590.h"

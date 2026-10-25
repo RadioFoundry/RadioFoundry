@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Side key assignment (keyassign.h, docs/spec/ui.md 3.1)
 #include "config.h"
 #if CONFIG_KEY_ASSIGN
@@ -27,12 +27,19 @@ bool keyassign_allowed(uint8_t fn, bool hold)
 	return hold ? fn != KEYFN_MONITOR : fn != KEYFN_EMERGENCY;
 }
 
+#define V1_ROLES	3
+
 uint8_t keyassign_get(const uint16_t slots[KEYASSIGN_SLOTS], uint8_t role, bool hold)
 {
-	if (slots[0] != KEYASSIGN_MARKER || role >= KEYASSIGN_ROLES) {
+	uint16_t v;
+
+	if (slots[0] == KEYASSIGN_MARKER && role < KEYASSIGN_ROLES) {
+		v = hold ? slots[1u + role] >> 8 : slots[1u + role] & 0xFFu;
+	} else if (slots[0] == KEYASSIGN_MARKER_V1 && role < V1_ROLES) {
+		v = slots[1u + 2u * role + (hold ? 1u : 0u)];
+	} else {
 		return KEYFN_DEFAULT;
 	}
-	uint16_t v = slots[1u + 2u * role + (hold ? 1u : 0u)];
 	return v < KEYFN_COUNT && keyassign_allowed((uint8_t)v, hold) ? (uint8_t)v : KEYFN_DEFAULT;
 }
 
@@ -42,10 +49,17 @@ void keyassign_set(uint16_t slots[KEYASSIGN_SLOTS], uint8_t role, bool hold, uin
 		return;
 	}
 	if (slots[0] != KEYASSIGN_MARKER) {
-		memset(slots, 0, KEYASSIGN_SLOTS * sizeof(slots[0]));
-		slots[0] = KEYASSIGN_MARKER;
+		uint16_t v2[KEYASSIGN_SLOTS] = { KEYASSIGN_MARKER };
+
+		for (uint8_t r = 0; r < V1_ROLES; r++) {	// layout 1's roles carried over; another firmware's: none
+			v2[1u + r] = (uint16_t)(keyassign_get(slots, r, false) | (keyassign_get(slots, r, true) << 8));
+		}
+		memcpy(slots, v2, sizeof(v2));
 	}
-	slots[1u + 2u * role + (hold ? 1u : 0u)] = keyassign_allowed(fn, hold) ? fn : KEYFN_DEFAULT;
+	uint8_t v = keyassign_allowed(fn, hold) ? fn : KEYFN_DEFAULT;
+
+	slots[1u + role] = hold ? (uint16_t)((slots[1u + role] & 0xFFu) | (v << 8)) :
+				  (uint16_t)((slots[1u + role] & 0xFF00u) | v);
 }
 
 void keyassign_build(const keymap_entry_t *base, uint8_t base_len, const uint8_t *side_keys, uint8_t side_key_count,

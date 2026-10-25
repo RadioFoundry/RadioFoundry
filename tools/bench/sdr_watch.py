@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """
 Adapted from our earlier bench tool sdr_watch.py.
 
@@ -12,9 +12,9 @@ power): use sdrmon.py for those.
 
     sdr_watch.py [--receiver SDR15] [--seconds 60] [--json] [--host HOST]
 
-Runs on the SDR bench with the odr_sdrbench package (odr_sdrbench.layer2) and paho-mqtt. The broker comes from
---host or $ODR_SDR_BENCH_MQTT_HOST (default localhost), the login from $ODR_SDR_BENCH_MQTT_USER and
-$ODR_SDR_BENCH_MQTT_PASSWORD. On the bench they are in $ODR_SDR_BENCH_ENV_FILE (default /etc/odr-sdrbench/env, root
+Runs on the SDR bench with the rfoundry_sdrbench package (rfoundry_sdrbench.layer2) and paho-mqtt. The broker comes from
+--host or $RFOUNDRY_SDR_BENCH_MQTT_HOST (default localhost), the login from $RFOUNDRY_SDR_BENCH_MQTT_USER and
+$RFOUNDRY_SDR_BENCH_MQTT_PASSWORD. On the bench they are in $RFOUNDRY_SDR_BENCH_ENV_FILE (default /etc/rfoundry-sdrbench/env, root
 only), which dmr_bench.py exports before it runs this.
 SDR15 is the 461.6875 MHz receiver on the SDR bench (2026-10).
 """
@@ -26,7 +26,7 @@ import time
 
 import paho.mqtt.client as mqtt
 
-from odr_sdrbench import layer2 as L2
+from rfoundry_sdrbench import layer2 as L2
 
 FAMILIES = [(name, voice, L2.data_sync(voice)) for name, voice, _ in L2.FAMILIES]
 
@@ -43,7 +43,7 @@ def family(burst: bytes) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--host", default=os.environ.get("ODR_SDR_BENCH_MQTT_HOST", "localhost"))
+    ap.add_argument("--host", default=os.environ.get("RFOUNDRY_SDR_BENCH_MQTT_HOST", "localhost"))
     ap.add_argument("--receiver", default="SDR15")
     ap.add_argument("--seconds", type=float, default=60)
     ap.add_argument("--json", action="store_true", help="one JSON object per burst")
@@ -66,8 +66,8 @@ def main() -> None:
 
     c = mqtt.Client()
     # Auth is optional: a localhost bench broker typically runs with none. Only set it when both are present.
-    mqtt_user = os.environ.get("ODR_SDR_BENCH_MQTT_USER")
-    mqtt_password = os.environ.get("ODR_SDR_BENCH_MQTT_PASSWORD")
+    mqtt_user = os.environ.get("RFOUNDRY_SDR_BENCH_MQTT_USER")
+    mqtt_password = os.environ.get("RFOUNDRY_SDR_BENCH_MQTT_PASSWORD")
     if mqtt_user and mqtt_password:
         c.username_pw_set(mqtt_user, mqtt_password)
     c.on_message = on_message

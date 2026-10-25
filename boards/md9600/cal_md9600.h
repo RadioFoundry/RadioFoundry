@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 factory calibration and hardware option block: what the radio code may ask (docs/spec/hardware-md9600.md
 // 11). Both are read once at start-up from the SPI flash security registers (calibration: registers 1-2, 512 bytes;
 // options: register 3, 64 bytes) and never written. The layout is unverified, so every accessor says when it has no

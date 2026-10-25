@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 calibration as the RF code uses it (md9600.h; docs/spec/hardware-md9600.md 11, 19.8): the PA drive per power
 // level and the squelch thresholds, on top of the row reader (cal_md9600.h). The layout is unverified, so a row group
 // counts only when it looks plausible: PA drive present at every point and rising with the level, squelch thresholds

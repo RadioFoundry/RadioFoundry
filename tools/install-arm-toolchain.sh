@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Installs the pinned Arm GNU Toolchain (Linux x86_64) into ~/opt, where the Makefile looks first, trimmed to what the
 # STM32F4 boards use: the Cortex-M4 hard-float multilib (thumb/v7e-m+fp), C and LTO only, no documentation, no

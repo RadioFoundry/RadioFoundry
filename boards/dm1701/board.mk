@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # Baofeng DM-1701: STM32F405VG + HR_C6000 + AT1846S
 PLATFORM   := stm32f4
 MCU        := stm32f405

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's printf subset (see dl_fmt.h)
 #include "debuglink/dl_fmt.h"
 

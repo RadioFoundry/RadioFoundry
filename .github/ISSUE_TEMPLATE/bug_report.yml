@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 name: Bug report
 description: Something on the radio, in a tool or on the web site doesn't work as documented.
 labels: ["bug"]
@@ -15,9 +15,9 @@ body:
       label: Radio
       options:
         # generated: tools/boards.py docs radios; edit boards/*/board.toml
+        - Baofeng DM-32UV
         - Baofeng DM-1701 / Retevis RT84
         - Baofeng DM-1801 Pro / DM-1801
-        - Baofeng DM-32UV
         - Radioddity DB25-D PRO / Kydera CDR-300UV
         - TYT MD-380 / MD-390 / Retevis RT3
         - TYT MD-9600 / Retevis RT90
@@ -30,7 +30,7 @@ body:
     id: version
     attributes:
       label: Firmware version
-      description: Settings > Advanced > About shows the version and commit. Or `tools/odr_debug.py version`.
+      description: Settings > Advanced > About shows the version and commit. Or `tools/rfoundry_debug.py version`.
       placeholder: v0.1.0 (3029db9)
     validations:
       required: true
@@ -57,7 +57,7 @@ body:
         - Channels, zones, contacts, codeplug (qdmr, CPS)
         - Hotspot, SFR, USB network
         - Battery, power, boot
-        - Installing (odrflash, web flasher)
+        - Installing (rfoundry, web flasher)
         - Web site or docs
         - Other
     validations:
@@ -102,19 +102,28 @@ body:
       label: The other side
       description: For calls and data, the other radio or system (model and firmware, repeater, hotspot, network such as BrandMeister).
   - type: textarea
+    id: crash-log
+    attributes:
+      label: Crash log
+      description: |
+        If the radio restarted or froze, open Settings > Advanced > Crash log before you switch it off (switching off
+        may lose the record) and copy what it shows, or attach a photo of the screen. With the radio on USB,
+        `tools/rfoundry_debug.py crash` prints the same record. "No crash recorded" is worth saying too.
+        [How the crash log works](https://github.com/radiofoundry/radiofoundry/blob/main/docs/user/17-settings.md#crash-log).
+  - type: textarea
     id: debug
     attributes:
       label: Debug link output
       description: |
-        With the radio on USB: `tools/odr_debug.py view` and `tools/odr_debug.py log`, taken right after the problem.
-        A screenshot: `tools/odr_debug.py screenshot -o shot.png`. Check the output for callsigns or IDs you don't want public.
+        With the radio on USB: `tools/rfoundry_debug.py view` and `tools/rfoundry_debug.py log`, taken right after the problem.
+        A screenshot: `tools/rfoundry_debug.py screenshot -o shot.png`. Check the output for callsigns or IDs you don't want public.
       render: text
   - type: checkboxes
     id: confirm
     attributes:
       label: Before you send
       options:
-        - label: I searched the open issues and [docs/spec/gotchas.md](https://github.com/sfowlr/OpenDigitalRadio/blob/main/docs/spec/gotchas.md).
+        - label: I searched the open issues and [docs/spec/gotchas.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/spec/gotchas.md).
           required: true
         - label: Nothing attached is a codec, stock firmware, key, dump or recording.
           required: true

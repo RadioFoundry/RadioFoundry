@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The split duplex extension of the MMDVM hotspot (CONFIG_HOTSPOT_SPLIT, docs/spec/split-duplex.md): two radios act as
 // one duplex repeater, the TX half sending the continuous BS outbound (core/dmr/bsOutbound.c on the modem's bs_*
 // operations), the RX half receiving both inbound slots and labeling them from the TX half's slot clock, relayed by
@@ -7,8 +7,8 @@
 // role ends (SET_ROLE 0, the end of the session, the role lease), the radio is the simplex hotspot (or the SFR).
 // Registered as mmdvm.c's priority extension (command 0xD6, the version suffix " SPLIT1", the standard commands while
 // in a role) and as hotspot.c's priority other mode.
-#ifndef ODR_HOTSPOT_SPLIT_H
-#define ODR_HOTSPOT_SPLIT_H
+#ifndef RFOUNDRY_HOTSPOT_SPLIT_H
+#define RFOUNDRY_HOTSPOT_SPLIT_H
 
 #include <stdbool.h>
 #include <stdint.h>

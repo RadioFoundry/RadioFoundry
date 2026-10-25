@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 frequency plan: band, LO and the synthesizer and IF words per board revision (rfplan_md9600.h;
 // docs/spec/hardware-md9600.md 5.2-5.4). Each revision's synthesizer code is built only with its switch.
 #include <stddef.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 TIM8 PWM outputs besides the backlight (docs/spec/hardware-md9600.md 3, 19.9): CH2 on PC7 is the sub-audio
 // tone into the modulator, CH3 on PC8 the beep. TIM8 runs for the backlight (display_md9600.c: / 10 / 256, about
 // 28 kHz); these only add a compare channel. A tone or beep generator changes the duty at its sample rate. Duty 0 hands

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """serial_loader: write a firmware image through a radio's own update loader (update mode at power-on), over the
 programming cable. The protocol is docs/spec/hardware-dm32.md 13.2. Every radio that speaks it is a board with
 [flash.bootloader] id in its board.toml (the ID string its loader answers, also the magic of its firmware files);
 --model picks one.
 
-    serial_loader.py --model M odr_M_codec.bin            a raw application image (linked for the board's app base)
+    serial_loader.py --model M rfoundry_M_codec.bin            a raw application image (linked for the board's app base)
     serial_loader.py FILE                                  a vendor firmware file (its ID names the radio; the 256-byte
                                                            header is stripped)
     serial_loader.py --stock FILE                          back to the stock firmware (same code path)
@@ -30,8 +30,8 @@ import sys
 import time
 
 # the board registry (tools/boards.py generates it): which radios speak this protocol, and their flash maps
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "odrflash"))
-from odrflash import boards as odrboards  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
+from rfoundry import boards as rfoundryboards  # noqa: E402
 
 SLOT_MAGIC = 0x43524444                 # "DDRC", first word of the slot header
 FILE_END = b"END"                       # a vendor firmware file: the loader ID (board.toml [flash.bootloader] id),
@@ -44,7 +44,7 @@ HEADER_BLOCK = 128
 class Model:
     """What differs between the radios that share this loader: the ID the radio answers at step 3 (also the magic of
     its firmware files), the key combination, what the radio shows in update mode, and its flash map (from the board
-    registry: the application base, the end of flash, ODR's codec slot)."""
+    registry: the application base, the end of flash, RadioFoundry's codec slot)."""
 
     def __init__(self, id, name, magic, keys, sign, app_base, flash_end, slot):
         self.id = id
@@ -54,7 +54,7 @@ class Model:
         self.sign = sign			# what the radio shows in update mode ("" if not known)
         self.app_base = app_base
         self.flash_end = flash_end
-        self.slot = slot			# ODR's codec slot address, or None
+        self.slot = slot			# RadioFoundry's codec slot address, or None
 
     @property
     def app_max(self):
@@ -71,7 +71,7 @@ class Model:
 
 MODELS = {b.id: Model(b.id, b.model, b.loader_id.encode("ascii"), b.loader_keys, b.loader_sign, b.app_base,
                       b.flash_end, b.codec_slot[0] if b.codec_slot else None)
-          for b in odrboards.BOARDS.values() if b.loader_id}
+          for b in rfoundryboards.BOARDS.values() if b.loader_id}
 
 ACK, NAK, CRC_REQ, SOH, STX, EOT = 0x06, 0x15, 0x43, 0x01, 0x02, 0x04
 STEP_TIMEOUT = 2.0                      # steps 1-6 and every 1 KB block
@@ -157,7 +157,7 @@ def check_image(raw, model):
     notes = ["%d bytes, 0x%08X..0x%08X, %d blocks of 1 KB, sha256 %s"
              % (len(raw), model.app_base, model.app_base + len(raw), blocks_needed(len(raw)), sha256(raw))]
     if model.codec_slot and has_codec_slot(raw, model):
-        notes.append("ODR codec slot at 0x%08X: present (DMR voice)" % model.slot)
+        notes.append("RadioFoundry codec slot at 0x%08X: present (DMR voice)" % model.slot)
     return notes
 
 
@@ -503,14 +503,14 @@ def self_test():
             print("FAIL: " + what)
 
     quiet = lambda *a: None
-    # two radios of the registry on this loader: one with ODR's codec slot, and another one
+    # two radios of the registry on this loader: one with RadioFoundry's codec slot, and another one
     M0 = next(m for m in MODELS.values() if m.slot and m.sign)
     F = lambda *a, **k: Flasher(*a, **dict({"model": M0}, **k))
     FB = lambda **k: FakeBootloader(**dict({"model": M0}, **k))
     check(crc16_xmodem(b"123456789") == 0x31C3, "CRC-16/XMODEM check value")
     check(crc16_xmodem(b"") == 0, "CRC of nothing")
-    hb = header_block("/x/odr_dm32_codec.bin", 870000)
-    check(len(hb) == 128 and hb.startswith(b"odr_dm32_codec.bin\x00870000\x00"), "header block %r" % hb[:32])
+    hb = header_block("/x/rfoundry_dm32_codec.bin", 870000)
+    check(len(hb) == 128 and hb.startswith(b"rfoundry_dm32_codec.bin\x00870000\x00"), "header block %r" % hb[:32])
     f = data_frame(256, b"\x01\x02")
     check(f[:2] == b"\x00\xFF" and len(f) == 1028 and f[4:1026] == bytes(1022), "block number wraps, zero padding")
 
@@ -547,10 +547,10 @@ def self_test():
 
     fake = FB(corrupt={3, 255, 0})
     seen = []
-    F(fake, log=quiet, progress=lambda d, t: seen.append(d), step_timeout=0.2).flash(raw, "odr.bin")
+    F(fake, log=quiet, progress=lambda d, t: seen.append(d), step_timeout=0.2).flash(raw, "rfoundry.bin")
     check(not fake.errors, "bootloader saw errors: %s" % fake.errors)
     fake18 = FB(model=m18)
-    F(fake18, log=quiet, step_timeout=0.2, model=m18).flash(raw[:5000], "odr18.bin")
+    F(fake18, log=quiet, step_timeout=0.2, model=m18).flash(raw[:5000], "rfoundry18.bin")
     check(not fake18.errors and fake18.image() == raw[:5000], "%s flash through its own ID" % m18.name)
     try:
         F(FB(), log=quiet, step_timeout=0.2, model=m18).flash(raw[:1024])
@@ -558,7 +558,7 @@ def self_test():
     except FlashError as e:
         check("step 3 (model)" in str(e), "wrong model stops at step 3: %s" % e)
     check(m18.keys in update_mode_hint(m18) and M0.sign[1:] in update_mode_hint(M0), "update mode hints per radio")
-    check(fake.header == ("odr.bin", len(raw)), "header name and size %r" % (fake.header,))
+    check(fake.header == ("rfoundry.bin", len(raw)), "header name and size %r" % (fake.header,))
     check(fake.image() == raw, "image written byte for byte (block numbers 1..255, 0, 1..)")
     check(len(fake.blocks) == 301 and fake.naks == 3, "three damaged blocks NAKed and resent (%d NAKs)" % fake.naks)
     check(fake.done and seen[-1] == 301, "EOT sent, progress to the end")
@@ -630,9 +630,9 @@ def run(image_path, model, port=None, dry_run=False, yes=False, log=print, stock
     for line in check_image(raw, model):
         log("   " + line)
     if stock and has_codec_slot(raw, model):
-        log("   ! --stock, but this is an ODR image (it has the ODR codec slot)")
+        log("   ! --stock, but this is a RadioFoundry image (it has the RadioFoundry codec slot)")
     if not stock and model.codec_slot and not has_codec_slot(raw, model):
-        log("   no ODR codec slot: fine for a stock file; an ODR image without it has no DMR voice "
+        log("   no RadioFoundry codec slot: fine for a stock file; a RadioFoundry image without it has no DMR voice "
             "(tools/hrc7000_codec.py merges it)")
     if dry_run:
         try:

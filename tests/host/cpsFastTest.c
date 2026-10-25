@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The fast codeplug protocol (core/cps/cps_fast.c, docs/spec/cps-fast.md) on a simulated flash with the DM-1701's
 // layout: the LZ4 encoder and streaming decoder against a reference decoder and a second encoder, blank blocks, CRC
 // sums and DIFF, READ windows, the range refusals, direct and staged writes, the session time-out, power cuts all

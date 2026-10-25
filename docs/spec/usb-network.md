@@ -12,19 +12,19 @@ without USB (`ppp.md`).
 ## 1. One personality at a time
 
 CDC-ACM needs two IN endpoints (notification, bulk IN) and CDC-NCM needs two. The USB cores in the radios with USB
-have three IN endpoints besides EP0 (the STM32F405's OTG_FS, `hardware-dm1701.md` 16, `hardware-md380.md` 15), so a
+have three IN endpoints besides EP0 (the STM32F405's OTG_FS), so a
 composite ACM + NCM device does not fit: the radio is either a serial port (`board_usb_ids.pid_serial`) or a network
-adapter (`pid_network`), with the descriptors of `hardware-dm1701.md` 16. Switching drops the D+ pull-up for
+adapter (`pid_network`), with their own descriptors. Switching drops the D+ pull-up for
 100 ms, so the host sees an unplug and enumerates the other personality.
 
 - Boot is serial unless the stored setting `usb_mode` is 1 (Settings > Connections > USB network at start, debug link
   radio op 27, view key `usb.boot_network`): then the personality is chosen before the USB stack starts, and the radio
   enumerates as the adapter straight away. At run time the switch is a request: debug link radio op 25
-  (`odr_debug.py radio usb network`) or Tools > USB network, carried out after its reply has gone out; it doesn't
+  (`rfoundry_debug.py radio usb network`) or Tools > USB network, carried out after its reply has gone out; it doesn't
   change the stored setting.
 - In network mode the serial protocols stay reachable over UDP: datagrams to the radio's own address, port 3334,
   carry the same byte stream as the serial port (debug link, MMDVM, CPS), and the replies go back to the address and
-  port that last sent there, in datagrams of at most 512 bytes. `odr_debug.py --port udp:<radio IP>` uses it, and so
+  port that last sent there, in datagrams of at most 512 bytes. `rfoundry_debug.py --port udp:<radio IP>` uses it, and so
   can MMDVMHost (`Protocol=udp`, `ModemAddress=<radio IP>`, `ModemPort=3334`). The MMDVM session's DTR rule does not
   apply (there is no DTR); the 20 s idle timeout does.
 - Windows 10 binds NCM through Microsoft OS 1.0 descriptors (string 0xEE "MSFT100", vendor code 0x47, extended compat
@@ -60,9 +60,9 @@ Addressing, ARP, DHCP, ping and the raw and monitor ports are as `core/dmr/ipGat
 12.<DMR ID>/32 by DHCP, the radio is that address xor 1, radios are 12.x.y.z and talkgroups 225.x.y.z. Control station
 mode can replace the link pair with a fixed one (5.3).
 
-- Host to air: IP for a radio ID or talkgroup, and datagrams to the raw port, go to the air ops registered with
-  `hostlink_net_set_air()` (radio ID, IP to air, raw data as SAP 10). They are called from the host link task and must
-  not block. The default ones (`core/hostlink/hostlink_net_air.c`, registered by the radio core's data service glue in
+- Host to air: IP for a radio ID or talkgroup, with a gateway ID any other unicast address (3.1), and datagrams to
+  the raw port, go to the air ops registered with `hostlink_net_set_air()` (radio ID, IP to air, raw data as SAP 10).
+  They are called from the host link task and must not block. The default ones (`core/hostlink/hostlink_net_air.c`, registered by the radio core's data service glue in
   `radio_sm.c`) copy the packet into a one-packet mailbox and return false while it is full. At the radio task's data
   tick an IP packet goes to the data service (`dmrDataServiceSendIP`), which builds it (rate 1/2, 2 preamble CSBKs):
   UDP with the compressed UDP/IPv4 header (SAP 3) when `udpCompress` allows it (default auto: ports outside
@@ -74,9 +74,9 @@ mode can replace the link pair with a fixed one (5.3).
   couldn't deliver counts as `net.air_failed`. The host's address follows the radio's DMR ID. Refusals are counted
   (`net.to_air_refused`, `net.air_busy`, `net.air_dropped`); only confirmed packets are retried over the air.
 - Air to host: the data service hands every packet it receives to `hostlink_net_packet()` (its `dmrDataEnv_t.packet`
-  hook). Two packets wait for the host link task, which delivers SAP 4 as IP (ICMP, UDP, SCTP), SAP 3 as UDP, and
-  anything else as raw data on port 40078; a packet that finds the IN endpoint busy goes on the next pass, and packets
-  are dropped while the link is down. Confirmed data responses are the data service's and don't go up.
+  hook). Two packets wait for the host link task, which delivers SAP 4 as IP (ICMP, UDP, SCTP) with the addresses of
+  its header (3.1), SAP 3 as UDP, and anything else as raw data on port 40078; a packet that finds the IN endpoint
+  busy goes on the next pass, and packets are dropped while the link is down. Confirmed data responses are the data service's and don't go up.
 - The radio's own services (`core/net`, `core/snmp`; `ipGateway.h` "The radio's own services"). The `core/net` ones run
   in the host link task, started and polled by `core/net/net.c` (`net_start` / `net_poll` from `hostlink_net.c`); the
   SNMP agent is started by `hostlink.c` (it answers over the air in either USB personality). Receive: TCP segments to
@@ -84,7 +84,7 @@ mode can replace the link pair with a fixed one (5.3).
   datagrams to the radio's address, or to the link-local block 224.0.0.0/24, on a port in the gateway's one table
   (`ipGatewayUdpBind`, at most `IPGW_UDP_PORTS` = 8) go to that service, from any source address on the link.
   224.0.0.0/24 never goes over the air, bound or not. A port bound with `ipGatewayUdpBindAir` also takes UDP received
-  over the air for our own DMR ID (SAP 4 UDP or SAP 3, handed to `ipGatewayUdpFromAir` by `hostlink_net_packet` in the
+  over the air for our own DMR ID and its address (SAP 4 UDP or SAP 3, handed to `ipGatewayUdpFromAir` by `hostlink_net_packet` in the
   radio task, link up or not) instead of the host, with the sender's DMR ID and `fromAir` set; the service answers
   over the air itself. Bound now: mDNS on 5353 (`mdns.md`), TFTP on 69 and its transfer's own port (`tftp.md`), SNMP on
   161, from the air too ([snmp.md](snmp.md)). Send to the link: one buffer and one path for TCP and UDP, layer 4 built
@@ -104,14 +104,66 @@ The radio's own TCP services on its address (status page, KISS TNC, rigctld, APR
 Voice over the network personality (USRP audio, host PTT, COS) is designed in [usb-audio.md](usb-audio.md) 4.2;
 not built yet.
 
+### 3.1 Routing and IP addresses
+
+A data packet carries DMR IDs, and with the full IPv4 header (SAP 4) also IPv4 addresses. The two need not agree:
+a packet to a gateway radio's DMR ID may carry the address of a host behind that radio. The compressed header (SAP 3)
+has no addresses, so a receiver rebuilds them from the IDs as 12.x.y.z (radio) and 225.x.y.z (talkgroup). A packet
+goes compressed only when both of its addresses are these ([dmr-data.md](dmr-data.md) 11.1).
+
+Host to air, by the IPv4 destination, first match:
+
+| Destination | DMR destination | IP destination on the air | TTL on the air |
+|---|---|---|---|
+| the all call, 255.255.255.255, the link broadcast (UDP to 4000-4099 or the raw port only) | all call 16777215, group | 225.255.255.255 | 1 |
+| the group range, the multicast range | the talkgroup | 225.x.y.z | 1 |
+| the individual range | the radio | 12.x.y.z | the host's |
+| any other unicast address, with a gateway ID set | the gateway ID, individual | the address as sent | the host's less 1; dropped at 1 or 0 |
+| anything else | not sent | | |
+
+- The IP source on the air is always our own ID's address (12.x.y.z of the channel's DMR ID): the host's link
+  address means nothing on the air, and an answer must come back to this radio.
+- "Any other unicast address" excludes 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 224.0.0.0 and up, the gateway's own
+  ranges, the radio's and the host's addresses, and on a fixed link the link's /24. Datagrams to the raw port never
+  take the off-net route: raw data has no header to carry the address.
+- No ICMP time exceeded goes back for a packet dropped at TTL 1. A packet with TTL 0 is dropped on every route.
+- Group packets always go with TTL 1: the air is the group's one hop, so no gateway that hears one routes it on.
+- The host routes the off-net prefixes through the radio itself (for example a route to 192.168.10.0/24 via the
+  radio's address). DHCP option 121 routes only the gateway's ranges.
+- The gateway ID is the data setting `ipGatewayId` ([dmr-data.md](dmr-data.md) 8), 0 by default: off-net packets are
+  dropped, as before it existed.
+
+Air to host: the IP addresses come from the header (SAP 4) or from the IDs (SAP 3).
+
+| IP destination | Delivered to |
+|---|---|
+| the CAI address of the DMR destination (exactly 12.x.y.z / 225.x.y.z) | as before: our ID's to the host's address and MAC, a talkgroup's to its multicast group, the all call to the broadcast, another radio's to its address in the individual range at the monitor MAC |
+| our own ID's address in another form (12.x.y.z or the individual range) | the host's address and MAC |
+| a multicast group, 255.255.255.255 | its multicast MAC, the broadcast |
+| another unicast address, in a packet to our DMR ID | the host's MAC, the address kept: we are the gateway, the host routes it on |
+| another unicast address, between other radios | the monitor MAC, the address kept |
+| 0.0.0.0/8, 127.0.0.0/8 | dropped |
+
+The source is the sender's address in the individual range when it is the sender ID's CAI address, else kept as it is.
+A kept source must be an off-net address: one in the individual range or 12.0.0.0/8 would pass for another radio, and
+the host's, the radio's, the link's or a group's isn't from the air. The packet is dropped otherwise.
+
+The packet reaches the host with the TTL it had on the air (TTL 1 for a talkgroup, 64 for SAP 3 to a radio), so a
+packet that goes round a loop of gateway radios runs out. One with TTL 0 is dropped.
+
+A packet to our DMR ID whose IP destination is not our ID's address is never taken by the radio's own services (TMS,
+ARS, LRRP, text, SNMP): it goes to the host only.
+
 ## 4. Tests
 
 - Host: `tests/host/hostlinkNetTest.c` (the gateway with a fake interface and fake air ops: unicast, multicast and raw
   to air, refusals, UDP serial both ways with chunking and a busy endpoint, IP and short data from the air, link down;
   then the default air side against a fake data service: the mailbox, the bursts decoded back by the codec's receiver
   into the IP / SAP 10 packet, SAP 3 for ports outside 4000-4099 and SAP 4 for 4007, the mailbox held while the
-  service has the packet, a busy service retried, the 2 s give-up, the packet hook),
-  and the gateway's own `ipGatewayTest*` with pcaps checked by tshark. Control station mode: section 5.6.
+  service has the packet, a busy service retried, the 2 s give-up, the packet hook, the off-net destination and TTL
+  through the mailbox, a packet to our ID for another address passed to the host),
+  and the gateway's own `ipGatewayTest*` with pcaps checked by tshark (`testOffNet`: the routing and addresses of
+  3.1). Control station mode: section 5.6.
 - HIL: `tests/hil/test_usb_network.py` (`--allow-usb-switch`). `tests/hil/test_usb_network_services.py` runs the host
   port's protocols over UDP 3334: the split duplex extension (protocol, and the RX half's labels against a bench call
   with `--allow-rf --allow-service-stop`) and the KISS TNC (TNC mode, a host position from SetHardware 'N'). All pass
@@ -203,7 +255,7 @@ vendor control head.
 | `net_link_ip` | 0 = 192.168.10.1 | (the default only) | op 27 IP, `net.link_ip`, `net.link_in_force` |
 
 Radio op 27 (`debuglink.md` 3.8): flags u8, link IP u32 little endian; stored, and applied at once
-(`hostlink_settings_changed`). `odr_debug.py radio usb-settings [boot] [passthrough] [fixed[=IP]]`; no words: all off.
+(`hostlink_settings_changed`). `rfoundry_debug.py radio usb-settings [boot] [passthrough] [fixed[=IP]]`; no words: all off.
 
 ### 5.5 Not done
 

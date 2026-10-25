@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // qdmr's YAML codeplug (docs/spec/qdmr-yaml.md) to and from the editing model (model.js). An import replaces every
 // table of the model and the general settings qdmr has, as one change; an export writes what the model holds in the
 // form qdmr 0.15 writes for this codeplug. Both return notes: what the other side can't hold, so the page can say what

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // "PLL1590" fractional-N synthesizer (the boards that carry it document it in their hardware specs). The exact part is
 // not identified, so this driver knows only the word layout: 24-bit words, MSB first, 20 data bits on top and the
 // 4-bit register number in the low nibble. Six registers are written per frequency, in the order 5, 6, 3, 4, 1, 2:

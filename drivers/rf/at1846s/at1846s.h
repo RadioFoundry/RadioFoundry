@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // AT1846S RF transceiver: chip driver, independent of the board (docs/spec/hardware-dm1701.md section 5).
 // The board supplies a bus (one 16-bit register write / read, I2C on the STM32 radios); this driver handles the
 // register page (reg 0x7F) and keeps a per-page cache of the values written so unchanged writes are skipped.

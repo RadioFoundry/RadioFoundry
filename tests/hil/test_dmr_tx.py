@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Radio DMR transmit checked off air by the SDR bench (opt-in: --allow-rf --allow-service-stop; the radio and the
 bench's receivers only, the bench never transmits here).
 
@@ -62,7 +62,7 @@ import warnings
 
 import pytest
 
-from odr_hil import DebugLinkError, skip
+from rfoundry_hil import DebugLinkError, skip
 
 PTT_S = 3.0
 # dmr_bench.check_tx items that judge the waveform, meaningless in a capture whose ADC clipped

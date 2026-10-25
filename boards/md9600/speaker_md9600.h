@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 speaker routing as pin levels (docs/spec/hardware-md9600.md 6.1). Two sources reach the volume control and
 // the amplifier: FM audio from the band's IF chip (U_V_AF_SW picks the band, FM_MUTE high lets it through) and the
 // HR_C6000's line out (DMR voice, beeps, prompts), which is always connected. The amplifier mute is AF_SW. PCM wins

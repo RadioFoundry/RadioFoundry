@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""split_duplex_host: the host side of the split duplex repeater (docs/spec/split-duplex.md): two OpenDigitalRadio
+# Copyright (c) 2026 The RadioFoundry Authors
+"""split_duplex_host: the host side of the split duplex repeater (docs/spec/split-duplex.md): two RadioFoundry
 radios, each an MMDVM modem on its own USB port, run as one duplex repeater; the TX half sends the continuous BS
 outbound, the RX half receives both inbound slots and labels them from the TX half's slot clock, which this host
 relays (time sync, epoch). Reference implementation of the host contract (split-duplex.md 8) and bench tool.
@@ -21,7 +21,7 @@ relays (time sync, epoch). Reference implementation of the host contract (split-
 
 PORT is a USB serial port, or udp:<radio IP>[:3334] for a radio in USB network mode (usb-network.md).
 
-Only the standard MMDVM commands and the vendor command 0xD6 (ODR_SPLIT) are used; a radio without " SPLIT1" in
+Only the standard MMDVM commands and the vendor command 0xD6 (RFOUNDRY_SPLIT) are used; a radio without " SPLIT1" in
 its GET_VERSION description is refused. Needs pyserial for the radios (pip install pyserial); the classes below
 (ClockSync, epoch_for_rx, VirtualStatus, the frame codecs) have no dependencies and are what tests/host/sim/
 splitPairTest.py runs against two simulated radios.
@@ -42,7 +42,7 @@ GET_VERSION, GET_STATUS, SET_CONFIG, SET_MODE, SET_FREQ = 0x00, 0x01, 0x02, 0x03
 DMR_DATA1, DMR_LOST1, DMR_DATA2, DMR_LOST2 = 0x18, 0x19, 0x1A, 0x1B
 DMR_SHORTLC, DMR_START, DMR_ABORT = 0x1C, 0x1D, 0x1E
 ACK, NAK = 0x70, 0x7F
-ODR_SPLIT = 0xD6
+RFOUNDRY_SPLIT = 0xD6
 SUB_INFO, SUB_SET_ROLE, SUB_TIME, SUB_GET_EPOCH, SUB_SET_EPOCH, SUB_SET_AT, SUB_STATUS, SUB_ALIGN, SUB_TX_SCHED = range(9)
 EV_RX_META = 0x89       # events (3.10): sent by the radio unasked, sub 0x80 and up
 OPT_RX_META = 0x01      # SET_ROLE byte 7
@@ -68,7 +68,7 @@ def frame(cmd, payload=b""):
 
 
 def split_frame(sub, data=b""):
-    return frame(ODR_SPLIT, bytes([sub]) + bytes(data))
+    return frame(RFOUNDRY_SPLIT, bytes([sub]) + bytes(data))
 
 
 def config_payload(cc, simplex=False):
@@ -364,7 +364,7 @@ class Radio:
         self.on_uplink = on_uplink      # called from the reader thread with (host µs, frame) for each uplink frame
         self.wlock = threading.Lock()   # one frame at a time on the port (the reader thread may send too)
         if str(port).startswith("udp:"):        # udp:<radio IP>[:port], a radio in USB network mode
-            from odr_debug import UdpPort
+            from rfoundry_debug import UdpPort
             host, _, udp_port = port[4:].partition(":")
             self.ser = UdpPort(host, int(udp_port or 3334))
         else:
@@ -409,7 +409,7 @@ class Radio:
             self.buf += chunk
             for f in self._frames():
                 up = f[2] in (DMR_DATA1, DMR_DATA2, DMR_LOST1, DMR_LOST2)
-                ev = f[2] == ODR_SPLIT and len(f) >= 5 + 16 and f[3] == EV_RX_META
+                ev = f[2] == RFOUNDRY_SPLIT and len(f) >= 5 + 16 and f[3] == EV_RX_META
                 with self.lock:
                     if ev:
                         self.meta.append((t, parse_rx_meta(f[5:])))
@@ -448,8 +448,8 @@ class Radio:
     def split(self, sub, data=b"", timeout=1.0):
         """0xD6 request: (t1, t4, result, data)"""
         t1, t4, r = self.request(split_frame(sub, data),
-                                 lambda r: (r[2] == ODR_SPLIT and len(r) >= 5 and r[3] == sub) or
-                                 (r[2] == NAK and len(r) >= 4 and r[3] == ODR_SPLIT), timeout)
+                                 lambda r: (r[2] == RFOUNDRY_SPLIT and len(r) >= 5 and r[3] == sub) or
+                                 (r[2] == NAK and len(r) >= 4 and r[3] == RFOUNDRY_SPLIT), timeout)
         if r[2] == NAK:
             raise RuntimeError(f"{self.name}: 0xD6 NAKed: firmware without the split extension")
         return t1, t4, r[4], r[5:]
@@ -651,11 +651,11 @@ def run_pair(a):
 
 def run_exp(a):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import odr_debug
+    import rfoundry_debug
     fout = round(a.freq_out * 1e6)
     regs = [tuple(int(x, 0) for x in r.split("=", 1)) for r in a.reg]
     # The debug link shares the port (its frames start A5 5A, never E0): set the variant first, then close it
-    with odr_debug.DebugLink(a.tx, 2.0) as link:
+    with rfoundry_debug.DebugLink(a.tx, 2.0) as link:
         link.split_variant(a.exp, regs)
     tx = Radio(a.tx, "tx")
     try:
@@ -686,7 +686,7 @@ def run_exp(a):
         set_role(tx, ROLE_NORMAL)
     finally:
         tx.close()
-    with odr_debug.DebugLink(a.tx, 2.0) as link:
+    with rfoundry_debug.DebugLink(a.tx, 2.0) as link:
         for k, v in link.split_view().items():
             print(f"{k}={v}")
     return 0

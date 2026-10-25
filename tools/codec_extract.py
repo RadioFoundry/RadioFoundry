@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""Merge a radio's own stock AMBE+2 codec into an OpenDigitalRadio image, on your machine (DM-1701, MD-380).
+# Copyright (c) 2026 The RadioFoundry Authors
+"""Merge a radio's own stock AMBE+2 codec into a RadioFoundry image, on your machine (DM-1701, MD-380).
 
 Recipes from docs/spec/codec-dm1701.md ("Extraction recipe (V02.06 CSV)") and docs/spec/codec-md380.md ("Extraction
 recipe"):
@@ -29,14 +29,14 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stm32_dfu  # noqa: E402  (key table and key file check, hardware-dm1701.md 15.3)
 
-# The container, decryption, profiles and merge live in the odrflash package (one implementation for both tools)
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "odrflash"))
-from odrflash.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_END, HEADER_LEN, KEY_LEN, MAGIC,  # noqa: E402,F401
+# The container, decryption, profiles and merge live in the rfoundry package (one implementation for both tools)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
+from rfoundry.stockfw import (APP_BASE, CODEC_SIG, DESC_ADDR, FLASH_END, HEADER_LEN, KEY_LEN, MAGIC,  # noqa: E402,F401
                               PROFILES, SYN_BL, SYN_SELF_REF, StockError as ExtractError, app_file_offset, build_synthetic_stock, decrypt,
                               derive_key, descriptor, extract, find_profile, layout, merge, parse_container, sha256,
                               windows)
-from odrflash.codecmap import bl_target  # noqa: E402
-from odrflash import boards  # noqa: E402  (the board registry: the boards this tool serves)
+from rfoundry.codecmap import bl_target  # noqa: E402
+from rfoundry import boards  # noqa: E402  (the board registry: the boards this tool serves)
 import zlib  # noqa: E402
 
 DM1701_V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
@@ -48,18 +48,18 @@ EPILOG = """\
 examples:
   %(prog)s --stock "DM-1701(CSV)-V02.06.bin"                       (the key is derived from the stock file)
   %(prog)s --stock "DM-1701(CSV)-V02.06.bin" --key ~/keys/dm1701.key
-  %(prog)s --stock "MD-380-D2.32(AD).bin"                          (MD-380: image build/md380/odr_md380.bin)
-  %(prog)s --stock "MD9600-CSV-V06.09.bin"                         (MD-9600: image build/md9600/odr_md9600.bin)
-  %(prog)s --stock stock.bin --key dm1701.key --image build/dm1701/odr_dm1701.bin -o build/dm1701/odr_dm1701_codec.bin
+  %(prog)s --stock "MD-380-D2.32(AD).bin"                          (MD-380: image build/md380/rfoundry_md380.bin)
+  %(prog)s --stock "MD9600-CSV-V06.09.bin"                         (MD-9600: image build/md9600/rfoundry_md9600.bin)
+  %(prog)s --stock stock.bin --key dm1701.key --image build/dm1701/rfoundry_dm1701.bin -o build/dm1701/rfoundry_dm1701_codec.bin
   %(prog)s --self-test
 
-then flash:  tools/stm32_dfu.py --model dm1701 --key ~/keys/dm1701.key build/dm1701/odr_dm1701_codec.bin
+then flash:  tools/stm32_dfu.py --model dm1701 --key ~/keys/dm1701.key build/dm1701/rfoundry_dm1701_codec.bin
 
 Supported stock files: Baofeng's DM-1701 V02.06 CSV firmware (sha256 0314efd4...), TYT's MD-380 "Firmware 2.32"
 D002.032 (sha256 e1a1a11a...) and TYT's MD-9600 06.09 CSV (79a561ed...) and 16.45 CSV (de368437...). The key file is
 the radio's 1024-byte firmware key (DM-1701 sha256 d983ce95..., MD-380 5254139c..., MD-9600 c3d665b2...); without --key
 it is derived from the stock file and checked by that hash. Neither is in this
-repository. For flashing release images, tools/odrflash does all of this in one step.
+repository. For flashing release images, tools/rfoundry does all of this in one step.
 """
 
 
@@ -218,7 +218,7 @@ def self_test():
     import tempfile
     from unittest import mock
     with tempfile.TemporaryDirectory() as d:
-        sp, ip, op = (os.path.join(d, n) for n in ("stock.bin", "odr_dm1701.bin", "out.bin"))
+        sp, ip, op = (os.path.join(d, n) for n in ("stock.bin", "rfoundry_dm1701.bin", "out.bin"))
         for path, blob in ((sp, stock), (ip, image)):
             with open(path, "wb") as f:
                 f.write(blob)
@@ -241,7 +241,7 @@ def self_test():
     expect_error(lambda: check_output_path(os.path.join(repo_root(), "tools", "x_codec.img")),
                  "output inside the tree and not ignored refused")
     try:
-        check_output_path(os.path.join(repo_root(), "build", "dm1701", "odr_dm1701_codec.bin"))
+        check_output_path(os.path.join(repo_root(), "build", "dm1701", "rfoundry_dm1701_codec.bin"))
         check(True, "output under build/ allowed")
     except ExtractError:
         check(False, "output under build/ allowed")
@@ -278,7 +278,7 @@ def main():
     ap.add_argument("--key", help="the radio's firmware key file (1024 bytes); derived from the stock file when left out")
     ap.add_argument("--board", choices=sorted(b for b, t in boards.BOARDS.items() if t.codec_tool == "codec_extract"),
                     help="refuse a stock file for another radio (the stock file picks the board otherwise)")
-    ap.add_argument("--image", help="built OpenDigitalRadio image (default: build/<board>/odr_<board>.bin)")
+    ap.add_argument("--image", help="built RadioFoundry image (default: build/<board>/rfoundry_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image to write (default: <image>_codec.bin next to the image)")
     ap.add_argument("--self-test", action="store_true", help="check the tool's logic on a synthetic file and key")
     ap.add_argument("--test-desc", metavar="FILE", help="write the codec sectors for a synthetic codec, as merged "
@@ -301,7 +301,7 @@ def main():
         if args.board and args.board != board:
             raise ExtractError("%s is a %s stock file, not a %s one" % (args.stock, board, args.board))
         key = stm32_dfu.load_key(args.key, board) if args.key else derive_key(stock, prof["key_sha256"])
-        image_path = args.image or os.path.join(repo_root(), "build", board, "odr_%s.bin" % board)
+        image_path = args.image or os.path.join(repo_root(), "build", board, "rfoundry_%s.bin" % board)
         out = args.output or os.path.splitext(image_path)[0] + "_codec.bin"
         with open(os.path.expanduser(image_path), "rb") as f:
             image = f.read()

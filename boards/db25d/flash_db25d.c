@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// DB25-D data flash for the core (hal_flash_t): 4 KB sectors with NOR semantics over ODR's own NAND block range
+// Copyright (c) 2026 The RadioFoundry Authors
+// DB25-D data flash for the core (hal_flash_t): 4 KB sectors with NOR semantics over RadioFoundry's own NAND block range
 // (drivers/flash/nand_sectors, docs/spec/nand-sectors.md; hardware-db25d.md 6.6). Every call holds the NAND's mutex
 // for the whole operation: a rewrite reads the old pages, then moves them inside the chip.
 #include "db25d.h"
@@ -31,9 +31,9 @@ static const hal_flash_map_t map = {
 
 // The layer's RAM: 2 bytes per sector, 6 per block (1408 bytes)
 static uint16_t sector_map[SECTORS];
-static uint8_t block_live[DB25D_NAND_ODR_BLOCKS];
-static uint8_t block_flags[DB25D_NAND_ODR_BLOCKS];
-static uint32_t block_order[DB25D_NAND_ODR_BLOCKS];
+static uint8_t block_live[DB25D_NAND_RFOUNDRY_BLOCKS];
+static uint8_t block_flags[DB25D_NAND_RFOUNDRY_BLOCKS];
+static uint32_t block_order[DB25D_NAND_RFOUNDRY_BLOCKS];
 static nand_sectors_t layer = {
 	.dev = &db25d_nand_dev,
 	.sectors = SECTORS,

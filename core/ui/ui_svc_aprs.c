@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The UI's APRS services over core/aprs (ui_svc_aprs.h)
 #include "config.h"
 #if CONFIG_APRS

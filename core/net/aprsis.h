@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio's own APRS-IS client (CONFIG_NET_APRSIS, docs/spec/tcp-services.md 7): a TCP connection out through the
 // host to an APRS-IS server, logged in with the APRS callsign and its passcode, carrying the APRS engine's lines for
 // APRS-IS (our beacons and messages, RF packets the iGate rules pass) and the server's lines back to the engine. Off
 // unless a server address is set and the APRS callsign is.
-#ifndef ODR_APRSIS_H
-#define ODR_APRSIS_H
+#ifndef RFOUNDRY_APRSIS_H
+#define RFOUNDRY_APRSIS_H
 
 #include <stdbool.h>
 #include <stddef.h>

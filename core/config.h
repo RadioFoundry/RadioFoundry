@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Feature switches (config/features.mk sets them for firmware builds; everything defaults on here, e.g. for host
 // tests). Always defined to 0 or 1: test with #if CONFIG_X, never #ifdef. See docs/build-config.md.
-#ifndef ODR_CONFIG_H
-#define ODR_CONFIG_H
+#ifndef RFOUNDRY_CONFIG_H
+#define RFOUNDRY_CONFIG_H
 
 #ifndef CONFIG_FM
 #define CONFIG_FM			1
@@ -61,6 +61,9 @@
 #endif
 #ifndef CONFIG_NET_HTTP_GZIP
 #define CONFIG_NET_HTTP_GZIP		CONFIG_NET_HTTP
+#endif
+#ifndef CONFIG_NET_WEBCTL
+#define CONFIG_NET_WEBCTL		CONFIG_NET_HTTP
 #endif
 #ifndef CONFIG_NET_RIGCTL
 #define CONFIG_NET_RIGCTL		CONFIG_NET_TCP
@@ -160,6 +163,9 @@
 #ifndef CONFIG_CHANNEL_EDIT
 #define CONFIG_CHANNEL_EDIT		CONFIG_CHANNEL_LIST
 #endif
+#ifndef CONFIG_ZONE_EDIT
+#define CONFIG_ZONE_EDIT		CONFIG_CHANNEL_EDIT
+#endif
 #ifndef CONFIG_BEEP
 #define CONFIG_BEEP			1
 #endif
@@ -228,17 +234,17 @@
 #endif
 
 // Large state that only the CPU touches (never a DMA buffer) can go in RAM the board keeps for that, the STM32F4's
-// CCM: faster, and off the bus the DMA uses. ODR_CPU_RAM is zeroed at start-up like .bss; ODR_CPU_RAM_NOINIT isn't
+// CCM: faster, and off the bus the DMA uses. RFOUNDRY_CPU_RAM is zeroed at start-up like .bss; RFOUNDRY_CPU_RAM_NOINIT isn't
 // (for state written before it's read). Without the board's sections both are ordinary RAM
-#ifdef ODR_CPU_RAM_SECTION
-#define ODR_CPU_RAM		__attribute__((section(ODR_CPU_RAM_SECTION)))
+#ifdef RFOUNDRY_CPU_RAM_SECTION
+#define RFOUNDRY_CPU_RAM		__attribute__((section(RFOUNDRY_CPU_RAM_SECTION)))
 #else
-#define ODR_CPU_RAM
+#define RFOUNDRY_CPU_RAM
 #endif
-#ifdef ODR_CPU_RAM_NOINIT_SECTION
-#define ODR_CPU_RAM_NOINIT	__attribute__((section(ODR_CPU_RAM_NOINIT_SECTION)))
+#ifdef RFOUNDRY_CPU_RAM_NOINIT_SECTION
+#define RFOUNDRY_CPU_RAM_NOINIT	__attribute__((section(RFOUNDRY_CPU_RAM_NOINIT_SECTION)))
 #else
-#define ODR_CPU_RAM_NOINIT
+#define RFOUNDRY_CPU_RAM_NOINIT
 #endif
 
 // Derived: the shared packet data / CSBK code

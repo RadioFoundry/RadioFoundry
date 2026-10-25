@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The subset of the ASN.1 Basic Encoding Rules (ITU-T X.690) that SNMP messages use (RFC 3416, RFC 3417): one-octet
 // tags, definite lengths up to 0xFFFF, INTEGER, OCTET STRING, NULL, OBJECT IDENTIFIER, SEQUENCE and the application
 // and context types SNMP defines. No hardware dependencies (tests/host/snmpTest.c).
@@ -7,8 +7,8 @@
 // Reading: a berReader_t over one TLV's contents; every call checks the remaining length and sets err on anything
 // malformed (later calls then fail too). Writing: forward into a buffer, a constructed value's length patched by
 // berEnd (shortest form: the contents move up when the length needs more than one octet); err on overflow.
-#ifndef ODR_SNMP_BER_H
-#define ODR_SNMP_BER_H
+#ifndef RFOUNDRY_SNMP_BER_H
+#define RFOUNDRY_SNMP_BER_H
 
 #include <stdbool.h>
 #include <stdint.h>

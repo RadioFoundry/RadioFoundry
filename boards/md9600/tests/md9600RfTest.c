@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 RF: the synthesizer and IF receiver drivers (rf/pll1590, rf/lmx2571, rf/ak2365a, the SKY72310 programming
 // sequence) and the board's revision and frequency plan (boards/md9600/rev_md9600.c, rfplan_md9600.c) against the
 // words in docs/spec/hardware-md9600.md 5.3 / 5.4 and the LMX2571 and AK2365 data sheets. Built with every revision

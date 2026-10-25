@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // netSvcTest's scripted TCP peer (netSvcTest.c) for the service cases (netSvcCases.c)
 #ifndef NET_SVC_FAKES_H
 #define NET_SVC_FAKES_H

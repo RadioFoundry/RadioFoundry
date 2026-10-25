@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The stub entry's own listener's commands (see stub_link.h)
 #include <string.h>
 #include "stubentry/stub_link.h"

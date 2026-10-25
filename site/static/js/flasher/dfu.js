@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The AnyRoad (TYT / Baofeng STM32) DFU bootloader over WebUSB. Protocol: docs/spec/hardware-dm1701.md 15.1-15.3, as
-// tools/odrflash/odrflash/dfu.py drives it: only the plan's sectors are erased and written, each 1024-byte block
+// tools/rfoundry/rfoundry/dfu.py drives it: only the plan's sectors are erased and written, each 1024-byte block
 // XORed with the model key (every sector starts a multiple of 1024 bytes after the application base, so each block
 // starts at key index 0). The bootloader can't read flash back (the radios are at read protection level 1).
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR link control for voice calls (ETSI TS 102 361-1 annex B, TS 102 361-2 clause 7):
  *
@@ -16,8 +16,8 @@
  * No board or modem knowledge: modems that build the embedded signaling themselves only need the 9 LC octets;
  * a software modem or a host test uses the fragment functions.
  */
-#ifndef ODR_DMR_LC_H
-#define ODR_DMR_LC_H
+#ifndef RFOUNDRY_DMR_LC_H
+#define RFOUNDRY_DMR_LC_H
 
 #include <stdint.h>
 #include <stdbool.h>

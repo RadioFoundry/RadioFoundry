@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """f4stub: the host side of the STM32F4 flash stub (every STM32F4 board). docs/spec/stub-stm32f4.md.
 
-The stub (stub/stm32f4, built with `make -C stub/stm32f4`) is loaded by a running ODR built with CONFIG_STUB_ENTRY=y
+The stub (stub/stm32f4, built with `make -C stub/stm32f4`) is loaded by a running RadioFoundry built with CONFIG_STUB_ENTRY=y
 through the debug link's STUB command, over the radio's USB serial port. It then answers on the same port (or, if it
 had to enumerate again, on a port with the same serial number). stubtool.py hands STM32 radios to this module:
 
-    stubtool.py PORT --odr-enter --write-app build/dm1701/odr_dm1701.bin   install a build
-    stubtool.py PORT --odr-enter --write-app build/dm1701/odr_dm1701_codec.bin   a build merged with the codec
-    stubtool.py PORT --odr-enter --progmem flash.bin                      back up the whole internal flash (1 MB)
-    stubtool.py PORT --odr-enter --verify-progmem flash.bin               compare by CRC
-    stubtool.py PORT --odr-enter --q128 spi.bin                           back up the external SPI flash (16 MB)
-    stubtool.py PORT --odr-enter --write-q128 spi.bin                     put it back (changed 4 KB sectors only)
+    stubtool.py PORT --rfoundry-enter --write-app build/dm1701/rfoundry_dm1701.bin   install a build
+    stubtool.py PORT --rfoundry-enter --write-app build/dm1701/rfoundry_dm1701_codec.bin   a build merged with the codec
+    stubtool.py PORT --rfoundry-enter --progmem flash.bin                      back up the whole internal flash (1 MB)
+    stubtool.py PORT --rfoundry-enter --verify-progmem flash.bin               compare by CRC
+    stubtool.py PORT --rfoundry-enter --q128 spi.bin                           back up the external SPI flash (16 MB)
+    stubtool.py PORT --rfoundry-enter --write-q128 spi.bin                     put it back (changed 4 KB sectors only)
     stubtool.py PORT --attach --board md380 --boot reset                  restart into the firmware
     f4stub.py --self-test                                                 against a simulated radio, no hardware
     f4stub.py --embed build/stub-stm32f4/f4stub.bin                       put a new stub build into this file
     f4stub.py --check-embedded build/stub-stm32f4/f4stub.bin              exit 1 when the build differs from it
 
 The tool sends the stub embedded below (checked by its SHA-256), so the host tools and the web flasher send the same
-bytes; `--odr-stub FILE` sends another build instead. After a change to stub/stm32f4, rebuild and run --embed; CI
+bytes; `--rfoundry-stub FILE` sends another build instead. After a change to stub/stm32f4, rebuild and run --embed; CI
 fails while the embedded copy and a fresh build differ.
 
 Framing and the debug link loader are stubtool.Radio's; what differs is here: the ops (ERASE / PROGRAM / RESET are
@@ -30,7 +30,7 @@ and kept (no radio has such a sector since the codec moved).
 One stub image serves every radio. The board facts (SPI flash wiring, crystal, bootloader end) come from the board
 registry (board.toml [flash.stub], pins.h, board.mk; tools/boards.py) into BOARDS below and go to the stub as a CONFIG
 record (config_record) right after HELLO; the stub writes nothing until it has one, and the
-tool checks its echo in the next HELLO. The board comes from the running ODR's VERSION reply, or from --board.
+tool checks its echo in the next HELLO. The board comes from the running RadioFoundry's VERSION reply, or from --board.
 """
 import base64
 import hashlib
@@ -43,95 +43,96 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stubtool  # noqa: E402  (the shared framing, LZ4 decoder and debug link loader)
-from stubtool import odrboards  # noqa: E402  (the board registry, tools/odrflash/odrflash/registry.json)
+from stubtool import rfoundryboards  # noqa: E402  (the board registry, tools/rfoundry/rfoundry/registry.json)
 
 # --- F4STUB begin (f4stub.py --embed rewrites everything up to the end marker)
-F4STUB_SHA256 = "793a115995dbc0ef7b183e7b344d01f3fc10a17e85fef4aaba60929f56c33467"
+F4STUB_SHA256 = "b08a2dfd15b8085a770b5bc155d5a3931f4f5c6bbd77d5b559defde933579a1f"
 F4STUB_B64 = (
-    "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"
+    "eNp1eQtYU1e28N7nnLyRBKIthtdJgorEtpFoa9UO4QBHSFQQnKk6vTMBHecAtqalD8a216Cl2nFasXEchWmHqe3ctlYELB3R0tAyzu08"
+    "7kwi9RbUfuXOVI+VOk0gmFMInH/tYPt///f9F76dtZ9rr/deex9c9iKPwmt7EaJYBH/8sqpSjAyIgTqGcofLL9DhJJqxzQnNdacJqe42"
+    "waRUXkx1DYzTRmOxUVKvHnJ616htc0NVwmbKFdC5klypgjFcgHXB7qnI2MD4fsPAOC7CjoqiH6LOqfHwFZEpvSSiAFpBOR/KRuyfMhGL"
+    "cqJI3SPH/lPunNi1OydQHt3VQOZS7hWkXpHmUfeFyxFLuV233raYPN41sN6OnGo+hTfxOFzwgRp+0z74to2/q8XPkZHz50gbh//jrKGn"
+    "KEtbfIhDIUNfioTdtITLY6IB5sqxSGA/Z+jBoxStGqSKD3CqoFHC6ygokshlHftuDTW7pgffTxW3cDiEWMUI3Qgj5cc5HExLN/Rh+5hI"
+    "FdO8H9Z418Ae6d+ISe45ZYR6e4/JA1JyJwmbBKOg9mjX6cro4vT0XCFJOD0VjaiLmakUR67H6LH3ER6/Ar6vQwG1jHwBkMjB3rOvk3BU"
+    "x2eA/pbMKHipK8WNW00eOfYXWY5tlqk2K9Sz5VckbMc2nbtVSAp8NM7lfzS+x0LnYf65AL0y5BR4JqKmcLgr7vHk8qpO2DFAdEJ0s6KH"
+    "AZm8Livg97dyUfpxbnJwRR8CPX3M4vDCybmsHLspp7hTykw7uLCv0rTNtEMrcFHfY1qPqR6gxbQ1vV7n1rkGJMYcGC8/SIqmTOP+s0BF"
+    "R2qMRX/xkB4UmBbJfsiLnMhJOavK+Y3oJhph0KTC17MqofEjnSbP/e6VLhWPzH7uR4MrXPevuyDF7UVhX8NHAO91I8sWj0ngwpgiMhie"
+    "weHfT+a7812O0gw+pVGjoRyFD9ESlZEKusBhPX6bI22cEQ4hq/XJPLdt/eZfCPwL3TtAno9N6/+qjBgU+vNWweZZ4GbLflirCmOUrn1e"
+    "WmzH4be/ye06IuXB7ph+HmBGWWZp5jrwo2/kWJLMAIbAjNOsfBOHN3xD8RVdyrdyoa8KRqdnGP5rsUhi0ttEOXZrBqV/nCsOk9EV33wt"
+    "ztq0APJ/3Qs6ABlk7JKzid5JnwHqZ4ivAFQTHa2mnM8RKKCz4A8TvqpMh/fdV9JQzgnOGCJtasHmJzec3byXNmc8tfmpzCdp4Uod9G9Q"
+    "5qcJaUutvPf9tDVg4TuXFX/R/YWILHLsSsDQk8TjJSk8Ekw81aYIMTuQ8Drfd93g9Kxh6pHQvgazhj76YV0XEtLWeNcYexgr6Z8zSlMw"
+    "dpTqNICNGHp0a/uLiJ/hUH9RwmtWbXKisJ7eKFnte28YjHRYjzZKLPLdMBpGxYwsxN71ZbgQWVukJB/FZ/JZ/NGSecOHBWZ0gEHmdyVm"
+    "RDXyoPCJhPoD6e+XaIa2F+OlL5UoRjEaH8IOBS+KuUBluInivT1IuONpZH2V0wz/UlDA+u9LjorX9/+Co4bxlAJ5+zTpiikGYcdN0d6j"
+    "gJmvcHgIsaqR58hu1Mv7fw4zN0oOZO97wYQdX4uAMWJQMrwdPOEdWd3L1nr7irPMifZ/ymZekagNy7nFYyJe7AW/mQfyy+JTQmiHt4uZ"
+    "cG587eELXefHdehM7y85xVBlevcoXbAkgFnEevvo2k9MfxjXMWt7WznNoBz7WG6GOc70zlFlwVciYm+KLD8qEukoeT3sUy+jHB9fXEKF"
+    "ysOyfc7ILB175TOcZugB02zLDzioC2xCInjZdZH48hy+aMxDIbMc655e4AFPnvBVVtVau9CEs2KgDjsGapC1qtq7BnYq1/EHO43FDE8f"
+    "Uvth3vfpNnWrn6NC+k7AeLC+dmsv3ZraSOWpg8Bd5SCsHqyh27CD9n8pbsmoq6ZbrcWpjaZH62oVeWPDW3fRtjuCbCbN44Vgb9nUYiqI"
+    "7+3mpNDL6U3z5VjxdH0twdOWXl89i+sf4ruSsr11svXWe92FY2r6VU45nGxmifxnkLW++mPxdKafOz+ELExEg418S3cnyA5Z6qotu1o5"
+    "bVCbmHtk5l0RLE9PF1/uxvlfibDHg4clRcu5OlbAjnM1cqxt5q2IgaZtTESrZoZ+Jdntut4U84ioicgOow2N/XTv59eN4bno7+gn9Oy/"
+    "Hv+EfgnP1isSvxT1APVnKkw9g6wCM+Gr2CwoLVl2OfbnuEUw7mqWcuwGa7O0wK6G34X2qtpj2oHxfUXN0iJ7s5RreBkiSjMUsvfLUp6h"
+    "8MZASjNAuuvph5ulu+3zk5slm2F+UrO0xDBf2yzdZTDuoLvOwVi+3QRj97AmGLOzzEThBpOWmWiqaJaWshlLaYsRaNgfB7zsR12/gtnN"
+    "0r12LdSWss3SfTDfuYHMzl+aBvMej/8S+kz5ioTchqfTRCN/TSwPI8BYWLFPsrcnWTbwc2Hm4XhDVrZtn7S0nRk6vsvYZRUu79D1zjHz"
+    "4pzIEs0GPslSChia4qzg5oPS2nYk5POFfHANyv0qCN7b+Zm0pF0HMt/Ap/GMHyx1Bmd9/hnTlgarzDN7SoZDlyXW3lpycfDYdRVSRTbS"
+    "ewECtRUETz5QkBXHVtjfA1TZFWateHaif+cHoWsvPHn2ve6GrDawFxXl53qGnIDx0elFwqeSwdfEr4BW+syHJXiwqUQ5/CuQPLIe4AyD"
+    "evOX19pHNeh5LjoE2qvMyv9UsvtWCA6+jO9fk88/Ie6qo0YHUKXkYA+VKAc54VAJPfTaqIY6wl0bxo4rif0bgmcnRnbujj59yvoMthXc"
+    "eurUtRcYP6HovYl1uwtu7TyF7i6I7jhFaFo07eApnjnWxBNZi9OKFpRbEP3RKc2o0qHyMxOGKqDjwUWOrPs00EJVuQ5WUPpBF2o5VjT9"
+    "mTS3fYAvj/q2Ij9zTNmmGdVRBI91GuXCydV0NoL0c4Jk3SIH+NopTWsrtzD0dkSmLkSQ1jVKaZ288hisB+tfMq2b8NWfm/D92MdfDNHJ"
+    "q7x00tNeWnvOq2qTvJoJ32Z3yT6JaVdFFKrekHL0eepf15D1kHg2IuuDQWIdQwnuf3qb+3jHomfwPQW3pI7DUnJLL1BSEB3rIDyfjLt5"
+    "JXB9f4Lnh6cJx1c7lKOaFUDpFrDDzZqIQqON5GhZQY4F40BfFfLn8+7bK96NE+7oJphZxRC+Aq0ldwfPAR0SoUMH8yvLeAQZyUdxOvnE"
+    "U3TS6FM0eAtrL7/hpg+Esa5ZskBdl4+s8JveLJlRs2TtJN6pSli9csL3Azn2ULyzpC907Cpa9Ip4IiLTgxGkc4/Sur8Bn+3A4YEOJqJD"
+    "cqwkDrbs+92uISnJfpTbHb3SoY4YtBVA6a/jz3OB6FMdS3nSOhPf/fAZTo7+teP+RDtjupNTBu/niUxq4ti+OxroIBw/GLcKS/kt9WlC"
+    "C3iKOlDGpwUU5l9fhV1ajkmZdlPmEcCytoP53ntT42P0VGoNytsdLe54D3RXcMuZkPHUVOfsGO3jkW13dHnHsGQA6uSovaM0QZmvpOBW"
+    "XsfCMK1rH1WjvdCydjz98NESOfpMhwbonw80KsAn/xTHPNNC6N0UZ46pEpTXxQeKVcU/LlG0KS/M5wk+KkH/jzvKbxzRAE4lE0lW8cUD"
+    "PDdm0iaPbCb59BS26yKMbjdQfj+vGtUiBnKM700y950uYYWbITl2eYqFmIkq90EG4eZz8wv5M2sa4cRED+bc11lSENV3FPJEPn+delBi"
+    "Co5y6gijHgsazPqrZycQ6GPgJOH836eUkMcmg15+NrVImBKIRowd2JrPz09Yz/I4sbeTJ0kMeG0qIekd30raYC4TG7Jbu7tBkoFo20mQ"
+    "ePslyXnbev0nzz6M8gqiBxP7uKZauL18wa39J5nvpZqOcAW39p6EzF13etRQsDv67ElCd+59mHfwlySEVvIfww5vEl+sXJRv5CHzzJYX"
+    "747+8eRx8M6Fq9LTX+XGh9oT/D04tUlK1jkgYpa2IIHjNyfW/jzICqTPCX0rb/f5giQOEk4C36Dc3dGfnXoGZOEDWbQmaJQmISInJPDy"
+    "SZZXwGlvBI4vJSzrri905se+uJ0vIvCbGsqjcO3xOMdo7gVqTxPtKvRQ1eRu9QzkY5CNq9MW3/WlVA7ndhCxtSOoEeVOBjc34sWx0JVn"
+    "0ZJoyOB9tfEHXr9Et+yRqBa/ZPTtkWhfWiZoTK7wKHg6ogat/FFu8dCRJKh9KAc9fsnQvgeKX0oZ2QPFL6X274GS8ewnj//42Tuf8Et3"
+    "dO6R5nW+MfG40eQ6PmHY6ucCQ9tP8zc0Svrus0NnInr974fmuY9y7w6fjRzUdw19AL8dQ+/D74mhg0veGpLvwcGD97wxROIDBVHioP43"
+    "Q6+VvBL8XUlb8PWSY8H3uV8F3x3VoTTIwPquSwfV/BTk3r6ucvyb5zEK92jXkbMBDYb77oYsGOUYuhZOMrF9G9OWMEGcf4iDOxMDp4UD"
+    "sjMDqkAT7Sy2h3sQjXKoUZx0mEu9gKzb0zJ5emR7CUiAVgXvkPDTaTbVJB0ruaFSjIcUHmbZDTHcR7sZl6ma3FsYLnGr1aEKEDtoxSgU"
+    "RZHR6LkgoXxS+wggjGtQhdE9t9QkoLwPAmRdC6wzCZYoAjgoIQvKOxMgkJ5Aj74fIOMD0NIKrIPM2ctpPSMhhQtZjV7GZfQSXbOA0wfl"
+    "ENw5WryJPHyNj0/izadxpIBu08xbX3xjoMhR7RCKwkyRw4MWvMFlXfhpuvOe3IBzEZzgkipCa/bw5TeOaU7XtnW7SzSD6lEFXpmIx17Z"
+    "ufyaiK2X4b7z71I7xID83NFhyCL3EV6QWQ02+8eAN3HXfEQqD7dDNu2otXJMUI5tl5zp2tzYsLcP+ovKo8/VmKpZwHk9IPUogMI7Yc1G"
+    "ScnbBJgP0WS95Es/w8WGpT6SwxJchzqfqL3OmC+S86ShWo5Vy12urrVGwRqd2Wr0WIEjtJXck/8uG1g7jJ+TT7jKb8kNfs9xj7/meI1/"
+    "2/Ft/u3Ht8uxPPktRn9xlg5UuaX6t6ChneNa2uiplOKri6K+Bg5gnoL5dk7Nlupja4+VGxYQOhpqLyvLLtrr4Aak6R/XpvWPFzn3ZjG2"
+    "B4ZIflmO2/A8tBopUCGvXpwbUCeysHMzZyJq/ZLhNyNqTCR5embhyGGITocl3PKuRPngTtT5P/vl2Gcz2rCHRhbWttJ7d6g3YtbnBBVD"
+    "vRFWrwUZXprRjbwVsWh6I1gfG5JjvEyPYOsq7+Nukwc/0B16xP1IGXD8WKuntebnnp/X7HSlNqI8Z9jblJLI9VWL60tzAyqII+Mz10Rk"
+    "uwg76PQXhvDxKmlx+NFUxL4I5X9S/i+cAqgyztbfAjgBJXsuYiPQNoWz9ZtKkwLYiqy0l1oMMYgu8uYGKPPfRG04W3s2QunfCZ2B2PtW"
+    "SAe3dHcWZXt9KD3s0+MI2zAnWOr4Ie6N0HqTcEfAEm6q5KIoNfH24DkkbvpfxhJ9nqYghti7+9RKN7KYvLvEe0B/wrgWPOxxsfxGmgXn"
+    "MaHUxQ7gNdW8X6Sg5V68FFpuc5NIw1m75VRaWFYnh+5yl4eZpC1ejWUv3EVbvXslur+Jyw1gfmHpDvEM7JUZPBNh9AW3Ck9Z3VVSbv/7"
+    "iZNk5aks8Loj/DE+AyLkpgzCIw6yNm3IiWjrS3BevCRh+7B4pxu8t/8LEeIpiaUtNE/lXxU1bl1peiPtxWAd2LxCRGrwHYgVxIf2g89y"
+    "UIqhEB/2ZCM2Wj7ry+MQx98ksRzqhwEeBngGLCE5tNa91mWqgbJtrWtAYi1rE3Jxu4Er3+g1iN/T16+VlSLrH0RyEt4RWuNeUwqUtf85"
+    "4tQNlOQGBuA8qiiWY8L0m6M6TPKBrdPfc2uhPt9z4RqxtiWgR6f+Qz43UB52asp4AeZsgNmahDWvnV7m+lz6pB/KSD3fBGf9mY4U4Qrs"
+    "/ttRNe6aQHAan4IeyPUOfDiehLE9WcK+FAEvTfGIYiH/xDVC17zQ59JR31EJ2eu7stzpgtLGDGeWWUpVlpmYFm6K+2GE8AJn9/S+BFVU"
+    "ICXBqe+avkzbSLKoAx2pLoOQ6koVKDipU00FebtvNUGfaaupLhGXa7BV533qGpG101eapvb9Is3pU6e13JY3kTWRfSmUONQl8lZXMasT"
+    "oguI54jEq5nYzLRmvbac4R11yIYvY5YZkWNvT69q1PXCqr6Z2L+mUfqb3NfDMRHdjsdw+hapINvf5Z0D0rsiM3xaL8oh93ppr2F9SRRZ"
+    "HVsddYm4XDMT+9u0IkKrmyASH1Wfrm/rLipRDOZBBo1B3u/E/ynOxPqmyV2HvLH+azjxBgv7hHt0bt36pHIK4nUTRweXCxnCGxwKhfsy"
+    "hD+MJzGr/23uxgwBL8vwYPu/YA3hL36bR6nH4M5qVEEs/mMvWmjnpb7qdCfYqNPcCPf6dhnljgedy9/gxgfRkq+Dc8MF+KsQ0O4kUf9Q"
+    "AC2IAD7CJ8T+QJV7o4u8csz3wOnkqXQxvNEDeVuwAvRqjM7sXBksX2erMzH3XlzvTq9LZ/IvriuHyNVoE5DNeMkm3M2TaM5L6lUKi9NM"
+    "XkG+itsgwvuKbB6FhUr0/DN+XlL72OV93D/hvPgkvsr9gCu97rLe6F3txmAVy11VcO62b62CM2FpfPb9xL7+3tIGAaJ4CcopClN0g0dr"
+    "gbhV+A7MORe31ZJXQFs1kfGv47MjeaVyrCPeIMzOXuQe9cxnZ2IPTpdHGeOJrbT1vITWOzw+a30NPeEznqhh3eclZmk2/KqXyrEX4gY2"
+    "F86iJ+LGMqNrWTU5jx6vjlYf8Pg9B2r8NQe2+bcd2O7fXh6WHfXVye53qjO8Ovc2NsM7E1sw3SBYE7u2i8TXv9OVejZWkJjhAfit7RoQ"
+    "2HQaggTTiYKQzBA7TQZLfSuuAzudEi7Tyk+mBGN4TJ+UeK2S+pK75FhFfCZ2NE5s9eYw2D+xo9WUU+0mechIDclHuGh/5WxeQiDIhDMl"
+    "8koyb0UPNiuITXvI69lcN9t7SbhA44uIXdE3brnkMdXq16K8QCDZtcVDRfbnb/FYa5Ht68vOMcpadOM8ba221sJ567BWk9djbJ7F9JoM"
+    "uxRZq6+IZA8r/mmJ1HOn+4owN+pbRni6M5HDSrd3IPgN3+En7TDgBwsAPb7PoSDbq3bPUn1V/AHcEUugJN6qzVrQ8w4ZLxv9bh+D29uT"
+    "ISCrn1OEMOvtww9QIcROirp1vxPeU8Uubuo6/9CCBjW0bqlUFxc8fbMbd/3XRuy4JsoLxkT8wFhIFNtBF+2Qe8q59p7soMEFeQKDNPPq"
+    "sRmBhfgceBKF26jcIsNWPMmEU+uPVm8RLDcQtcXDTOKwSaBznnNabjBUk1NbZCLfDVZQTuJLWXyq+zMpzZe5/07e4Jor2Bgtf7yavAG+"
+    "Lq/oImdQSpCDCEF8o03WgAY1bhTG6JCgUeKLeNVk6I3qxBsiGxZbgcZfEzpv05rd86KUhNRJZWdPSskG5bEXpTkIHaLfZMwkz1d0/pvE"
+    "TGX3oByl9UUp2Y4OW3kLj81z4J72oqR3yrFTsq9LYcXmxOghKz8noqfmJG5xr8lpXa9IetQ/7kRMp6Ev3NPcSeLnj6YUCyFPXARSOYSs"
+    "386H9R7A6JVjz8ubyDr7ZZX64kxszRSxUGqI3ImuiohVdIYBU2Y5pflUsvfjhdSEb55ykhrjbiRRK7eurO8f76d8y19G1GizJSH/sAqd"
+    "oHxoXp1+0T5nk3MBZO5ziubVbBF+B7JWguxbBQ+izU1OKocB/VhuYIoqavVcEkjtErH+RI/JE/5WH0XI2tzp91Z5jd6K8nk817jKy4Bt"
+    "mnoJdSDnvTjvc2lJk9v9RMjt+lhC7JYdXNRXuWXbD3eMPLPGRWvohDW0URAZw3oKW/3OIpfRB3Fthn1Wjo3MeJ4l+eBhyBvYZ8pAp/tk"
+    "TwLuldsTcLeMrP8Q5vPYsXCShrtB5dAQnJBoYZbnR57XGrkbH1JctPCxhAeHnZTJc1lAR04k9PcbuE0TXentROYOwPX3GQxR7atJ2or8"
+    "eXDnJbrVg/YGZlDukaCtsehcfSOyHQqeaNTbXhrGOeQUWw1aSpNPNN5pOxxggILysM/bJBrLqDyjSx3Q8oRn0465AcifCyFnLwRr3pa+"
+    "wyeqbMdD8/k3Rdn2aai+UbZ9EvqJePS2LSa+Hdmxk9hma6INwWw1cqrcRrhVpDXau9DLyKrladZMvmfNEPsmXynIeoM7vZHMsoIGvu0n"
+    "dMqx88BFFPLnVwGGgwh4NPFmntw+9kKPGJyd1T3zzwQdJvddX44X+iF7IW/083jiWQtD5M3OyVNEs03R7j9M+B5/hysPa1FuYAlQchjw"
+    "3IQdHgb4ZRAdXsUjy1Kegh0qoWckSCLNHqhdDi4sXlR8Vzq660roU4i1ZD/70nzHsuX33rfi/kKuqLiER5iiGaVKreGXVW38Pocqq7fV"
+    "7uR3PvHItsd+9v802O07qhsEtuHxJ2r+t3624SeP1VbvIJ+D0TbD7zM/Zh9Z9Y59eGFL4ZUnoxvq6zdVd69b/aiigt175maxXx++fvy/"
+    "//sXp6v/0vnRtrZPLgw+3/gPbXvGWF8fQnK2nXy/6pezDVAAHXv7OzMcO9gAWkp8ZyZfmnECUkiFZv+GMhF7lXzrgr9pgBrKjSiM+vPV"
+    "OkRRFEIaWAnOhRhFDmKxIgdQMDkUpchRIqxS7KHVyKBhQJ9aQKBSYLAQAE0EpELv1xR2/in7MEK7QW749p4h2IfQw1Ut49H/5++hrNnx"
+    "UeCD5LBXAV6GspxCbAjgX6B8CKUXxroIr6m7EPqIYFej/wO4lNOC"
 )
 # --- F4STUB end
 
@@ -152,7 +153,7 @@ APP_BASE = 0x0800C000                  # sector 3: the bootloader starts the app
 SUM_MAX = 800                          # SUMS records per request (the stub allows 820)
 READ_PACK = 16                         # blocks per READ request
 ERASE_TIMEOUT = 6.0                    # 128 KB: 2 s worst case in the data sheet, the stub gives up at 4 s
-RUN_ADDR = 0x20000000                  # the stub's link address, which ODR reports as STUB INFO's load_addr
+RUN_ADDR = 0x20000000                  # the stub's link address, which RadioFoundry reports as STUB INFO's load_addr
 SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the stack use all of it after the jump
 
 # Flash the firmware owns on each radio: the application region of its linker script (the board registry,
@@ -169,7 +170,7 @@ SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the st
 BOARDS = {b.id: {"name": b.name, "names": tuple(b.debuglink_names), "owned": [b.app_region],
                  "codec": (b.app_region[1], b.flash_end), "id": b.stub["id"], "hse": b.stub["hse"],
                  "boot_end": b.stub["boot_end"], "spi": b.stub["spi"]}
-          for b in odrboards.BOARDS.values() if b.stub and b.stub["tool"] == "f4stub"}
+          for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "f4stub"}
 # The tool installs at one application base, which every profile's record must give
 for _bid, _b in BOARDS.items():
     if _b["boot_end"] != APP_BASE:
@@ -232,7 +233,7 @@ class F4Error(stubtool.DumpError):
     pass
 
 
-STUB_USB_ID = (0x1FC9, 0x0094)	# ODR's and the stub's USB identity (same serial number too)
+STUB_USB_ID = (0x1FC9, 0x0094)	# RadioFoundry's and the stub's USB identity (same serial number too)
 PORT_FALLBACK_S = 10.0		# how long the original port name gets before a look-alike is tried
 PORT_WAIT_S = 20.0		# how long attach() waits in all for the stub's port after a fresh enumeration
 
@@ -250,7 +251,7 @@ def usb_ports():
 
 def pick_port(ports, orig):
     """The port the stub came back on, when the one it left is gone or stale. ports: PortInfo list; orig: the PortInfo
-    of the port ODR was on (None if it's unknown). The radio keeps its USB serial number, but a re-enumeration can give
+    of the port RadioFoundry was on (None if it's unknown). The radio keeps its USB serial number, but a re-enumeration can give
     it the next ttyACM number while Linux still holds the old one, so the name is no proof. When the original's USB
     location is known (the physical port, what /dev/serial/by-path encodes) only a port there counts. Otherwise the
     same serial number if only one port has it, else the only port with the stub's USB ID. None when that is not
@@ -339,7 +340,7 @@ def inside_git_tree(path):
 
 def load_segments(path, board_id):
     """[(addr, bytes)] for a build: the application .bin at 0x0800C000, and for an image merged with the codec
-    (odr_<board>_codec.bin, which runs to the end of flash) the codec sectors as a second segment."""
+    (rfoundry_<board>_codec.bin, which runs to the end of flash) the codec sectors as a second segment."""
     data = open(path, "rb").read()
     codec = BOARDS[board_id]["codec"]
     if codec is None or APP_BASE + len(data) <= codec[0]:
@@ -392,7 +393,7 @@ class F4Radio(stubtool.Radio):
 
     def configure(self, board_id):
         """Send the board's record (CONFIG) and check the echo in the next HELLO; the stub writes nothing before. Also
-        what stubtool.Radio.odr_enter calls once the stub answers (board_id None there unless run() passed one). A stub
+        what stubtool.Radio.rfoundry_enter calls once the stub answers (board_id None there unless run() passed one). A stub
         already configured with exactly this record is left as it is. board_id None: keep what a configured stub has
         (an --attach without --board), else stay unconfigured (reads of the internal flash only). A stub before version
         4 (2, or 3 with only the image header) has no CONFIG: its wiring is built in (V2_WIRING), so it is refused for a
@@ -428,7 +429,7 @@ class F4Radio(stubtool.Radio):
                 BOARDS[board_id]["name"] if board_id else "a radio (pass --board)"))
 
     def attach(self):
-        """After ENTER: the stub either adopted ODR's USB device (same port, answers at once) or enumerated again (the
+        """After ENTER: the stub either adopted RadioFoundry's USB device (same port, answers at once) or enumerated again (the
         port goes away and comes back with the same serial number)."""
         end = time.monotonic() + 2.0
         while time.monotonic() < end:
@@ -455,14 +456,14 @@ class F4Radio(stubtool.Radio):
                 except (stubtool.DumpError, OSError):
                     if time.monotonic() > end:
                         raise F4Error("the stub's USB port did not come back within %d s: power-cycle the radio "
-                                      "(ODR starts again) and check the cable" % PORT_WAIT_S)
+                                      "(RadioFoundry starts again) and check the cable" % PORT_WAIT_S)
                     time.sleep(0.3)
         self.log("STM32F4 stub v%d: %d KB flash, RDP byte 0x%02X, %s, USB %s" % (
             self.version, self.flash_kb, self.rdp,
             "configured for the %s" % BOARDS[self.board]["name"] if self.board else
             ("SPI flash %d KB (JEDEC %s)" % (self.spi_size // 1024, self.spi_id) if self.spi_size else
              "not configured yet" if self.version >= CONFIG_VERSION else "no SPI flash"),
-            "adopted from ODR" if self.adopted else "enumerated again"))
+            "adopted from RadioFoundry" if self.adopted else "enumerated again"))
 
     def peek(self, addr, n):
         return self.request(OP_PEEK, addr.to_bytes(4, "big") + n.to_bytes(2, "big"))
@@ -682,7 +683,7 @@ class F4Radio(stubtool.Radio):
 
 
 def board_from_version(radio):
-    """The board id from a running ODR's debug link VERSION reply (board=...), or None."""
+    """The board id from a running RadioFoundry's debug link VERSION reply (board=...), or None."""
     r = radio.dl_request(0x02, b"")
     if not r or r[0] != 0:
         return None
@@ -704,21 +705,21 @@ def stub_stack_top(image):
 
 
 def check_stub_fits(image, load, size):
-    """Refuse an image that is not the STM32F4 stub, or a span ODR reports that is not where the stub runs. ODR stages
+    """Refuse an image that is not the STM32F4 stub, or a span RadioFoundry reports that is not where the stub runs. RadioFoundry stages
     the image in an 8 KB buffer and copies it to its link address before the jump (docs/spec/debuglink.md 3.18), so
     the HR_C7000 rule (bss and stack inside the span) does not apply: after the jump the stub owns all of SRAM."""
     top = stub_stack_top(image)
     if top is None or b"F4STUB" not in image:
         raise F4Error("this does not look like the STM32F4 stub image (no f4stub_entry code at its start)")
     if load != RUN_ADDR:
-        raise F4Error("ODR reports its stub span at 0x%X; the STM32F4 stub runs at 0x%X" % (load, RUN_ADDR))
+        raise F4Error("RadioFoundry reports its stub span at 0x%X; the STM32F4 stub runs at 0x%X" % (load, RUN_ADDR))
     if not RUN_ADDR + len(image) < top <= RUN_ADDR + SRAM_SIZE:
         raise F4Error("this stub image's stack top 0x%X is outside the SRAM it runs in (0x%X-0x%X)"
                       % (top, RUN_ADDR, RUN_ADDR + SRAM_SIZE))
 
 
 # The image header (stub/stm32f4/f4stub_header.h, docs/spec/stub-stm32f4.md 3.1): 16 bytes at offset 0x10, little
-# endian. ODR started with CONFIG_WATCHDOG enters only a stub whose header has the magic, a version of at least
+# endian. RadioFoundry started with CONFIG_WATCHDOG enters only a stub whose header has the magic, a version of at least
 # HDR_VERSION_FEEDS_IWDG and the feed flag. --self-test checks these numbers against f4stub_header.h
 HDR_OFFSET, HDR_MAGIC, HDR_LAYOUT, HDR_SIZE = 0x10, 0x48533446, 1, 16
 HDR_VERSION_FEEDS_IWDG, HDR_FLAG_FEEDS_IWDG = 3, 0x1
@@ -773,15 +774,15 @@ def run(a, port, reopen, log=print):
     """stubtool.py's STM32 branch: a is its parsed arguments, port the open serial port."""
     radio = F4Radio(port, log=log, retries=a.retries, reopen=reopen)
     board = a.board
-    if a.odr_enter:
+    if a.rfoundry_enter:
         found = board_from_version(radio)
         if board is None:
             board = found
         elif found is not None and found != board:
             raise F4Error("the radio says it is a %s, not a %s" % (found, board))
-        image = open(a.odr_stub, "rb").read() if a.odr_stub else stub_image()
+        image = open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else stub_image()
         log(describe_stub(image))
-        radio.odr_enter(image, RUN_ADDR, board=board)
+        radio.rfoundry_enter(image, RUN_ADDR, board=board)
     else:
         radio.attach()
         if board is None and radio.board is not None:
@@ -985,7 +986,7 @@ def self_test():
             print("FAIL: " + what)
 
     quiet = lambda *a: None
-    # The image header: ODR with CONFIG_WATCHDOG enters only a stub whose header says it feeds the IWDG
+    # The image header: RadioFoundry with CONFIG_WATCHDOG enters only a stub whose header says it feeds the IWDG
     # (docs/spec/watchdog.md 3.1). The numbers here match f4stub_header.h, and the embedded image has the header
     import re
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1029,7 +1030,7 @@ def self_test():
         return bytes(d)
 
     import tempfile
-    tmpdir = tempfile.TemporaryDirectory(prefix="odr-f4stub-")
+    tmpdir = tempfile.TemporaryDirectory(prefix="rfoundry-f4stub-")
     tmp = tmpdir.name
 
     # DM-1701: the application in sectors 3-9; codec sectors 10 and 11 and the bootloader never touched
@@ -1064,7 +1065,7 @@ def self_test():
     merged[0xD19F0 - 0xC000:0xD19F0 - 0xC000 + 0x12082] = app(0x12082, 13)
     merged[0xE3A74 - 0xC000:0xE3A74 - 0xC000 + 0x1021C] = app(0x1021C, 17)
     merged[0xFFF80 - 0xC000:] = app(0x80, 19)
-    mp = os.path.join(tmp, "odr_dm1701_codec.bin")
+    mp = os.path.join(tmp, "rfoundry_dm1701_codec.bin")
     open(mp, "wb").write(merged)
     msegs = load_segments(mp, "dm1701")
     check([(a, len(d)) for a, d in msegs] == [(APP_BASE, 300000), (0x080C0000, 0x40000)], "merged image split in two")
@@ -1166,7 +1167,7 @@ def self_test():
     r2 = F4Radio(fake, log=quiet)          # --attach without --board: the stub's own record says which radio
     r2.hello()
     check(r2.board == TEST_BOARD, "attach: the configured board read back from HELLO")
-    mp = os.path.join(tmp, "odr_spi2test_codec.bin")
+    mp = os.path.join(tmp, "rfoundry_spi2test_codec.bin")
     merged = bytearray(b"\xff" * (0x100000 - 0xC000))
     merged[:400000] = app(400000, 7)
     merged[0xE0000 - 0xC000:0xE0000 - 0xC000 + 0x9000] = app(0x9000, 5)
@@ -1266,40 +1267,40 @@ def self_test():
 
     check(len(stub_image()) > 4096 and stub_image()[:4] != b"\xff" * 4, "the embedded stub decodes and checks")
 
-    # Entering the stub from a running ODR: the debug link reports the SRAM base and the 8 KB staging buffer
+    # Entering the stub from a running RadioFoundry: the debug link reports the SRAM base and the 8 KB staging buffer
     # (docs/spec/debuglink.md 3.18). The HR_C7000 image check must not reject the STM32F4 stub, and the reverse.
     top = stub_stack_top(stub_image())
     check(top == RUN_ADDR + SRAM_SIZE, "the embedded stub's entry code loads the stack top 0x%X" % (top or 0))
-    odr = stubtool.FakeODR((RUN_ADDR, 8192))
-    r = F4Radio(odr, log=quiet)
+    rfoundry = stubtool.FakeRFoundry((RUN_ADDR, 8192))
+    r = F4Radio(rfoundry, log=quiet)
     r.attach = lambda: None
     try:
-        r.odr_enter(stub_image(), RUN_ADDR, board="dm1701")
+        r.rfoundry_enter(stub_image(), RUN_ADDR, board="dm1701")
     except stubtool.DumpError as e:
-        check(False, "odr_enter refused the embedded STM32F4 stub: %s" % e)
-    check(odr.entered and bytes(odr.mem[:len(stub_image())]) == stub_image(), "odr_enter sends the embedded STM32F4 stub")
-    c7 = stubtool.odr_stubs()[0x17000][1]
+        check(False, "rfoundry_enter refused the embedded STM32F4 stub: %s" % e)
+    check(rfoundry.entered and bytes(rfoundry.mem[:len(stub_image())]) == stub_image(), "rfoundry_enter sends the embedded STM32F4 stub")
+    c7 = stubtool.rfoundry_stubs()[0x17000][1]
     noise = bytes((i * 37 + 11) & 0xFF for i in range(4096))
     fake_top = stub_image()[:8] + (RUN_ADDR + 0x100).to_bytes(4, "little") + stub_image()[12:]
     for what, img, span in (("an HR_C7000 stub", c7, (RUN_ADDR, 8192)), ("a file that is not a stub", noise, (RUN_ADDR, 8192)),
                             ("the stub on a span that is not the SRAM base", stub_image(), (0x2001C000, 8192)),
                             ("a stub whose stack is inside its own image", fake_top, (RUN_ADDR, 8192))):
-        odr = stubtool.FakeODR(span)
-        r = F4Radio(odr, log=quiet)
+        rfoundry = stubtool.FakeRFoundry(span)
+        r = F4Radio(rfoundry, log=quiet)
         r.attach = lambda: None
         try:
-            r.odr_enter(img, RUN_ADDR, board="dm1701")
-            check(False, "STM32F4 odr_enter refuses %s" % what)
+            r.rfoundry_enter(img, RUN_ADDR, board="dm1701")
+            check(False, "STM32F4 rfoundry_enter refuses %s" % what)
         except stubtool.DumpError:
-            check(not odr.entered and odr.total is None, "STM32F4 odr_enter refuses %s before BEGIN" % what)
-    odr = stubtool.FakeODR((0x17000, 0x18000))
-    r = stubtool.Radio(odr, log=quiet)
+            check(not rfoundry.entered and rfoundry.total is None, "STM32F4 rfoundry_enter refuses %s before BEGIN" % what)
+    rfoundry = stubtool.FakeRFoundry((0x17000, 0x18000))
+    r = stubtool.Radio(rfoundry, log=quiet)
     r.attach = lambda: None
     try:
-        r.odr_enter(stub_image())
+        r.rfoundry_enter(stub_image())
         check(False, "the HR_C7000 path refuses the STM32F4 stub")
     except stubtool.DumpError:
-        check(odr.total is None, "the HR_C7000 path refuses the STM32F4 stub before BEGIN")
+        check(rfoundry.total is None, "the HR_C7000 path refuses the STM32F4 stub before BEGIN")
 
     # Finding the stub's port again: it came back as ttyACM1 while ttyACM0 is still held, or not at all
     ID = STUB_USB_ID

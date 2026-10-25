@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 board revisions: the descriptor table, the stored record and the choice between record, probe and build
 // default (rfplan_md9600.h; docs/spec/hardware-md9600.md 16)
 #include <stddef.h>

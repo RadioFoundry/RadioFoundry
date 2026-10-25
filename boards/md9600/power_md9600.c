@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 power: the power key, "off" as standby, the supply reading and the ADC1 scan (docs/spec/hardware-md9600.md
 // 10).
 //

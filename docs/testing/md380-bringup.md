@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # MD-380 bring-up checklist
 
@@ -18,7 +18,7 @@ change when one fails.
 
 ## Status (2026-10-18)
 
-On-air results from a tester's radio (1 W, against an AnyTone 878, [issue 3](https://github.com/sfowlr/OpenDigitalRadio/issues/3)):
+On-air results from a tester's radio (1 W, against an AnyTone 878, [issue 3](https://github.com/radiofoundry/radiofoundry/issues/3)):
 
 | Test | Result |
 |---|---|
@@ -34,8 +34,8 @@ audio path to the speaker, issue 2, and the features the board leaves off. The d
 
 ## 0. Before anything
 
-1. **Back up the radio** with the stock CPS (or `tools/md380_migrate.py backup`, [md380-migration.md](../spec/md380-migration.md)): the codeplug (ODR's open-firmware layout overwrites it, hardware-md380.md 12.2)
-   and, if the CPS offers it, the calibration view (ODR only reads the calibration, never writes it).
+1. **Back up the radio** with the stock CPS (or `tools/md380_migrate.py backup`, [md380-migration.md](../spec/md380-migration.md)): the codeplug (RadioFoundry's open-firmware layout overwrites it, hardware-md380.md 12.2)
+   and, if the CPS offers it, the calibration view (RadioFoundry only reads the calibration, never writes it).
 2. Check that the bootloader works with the stock firmware: hold **PTT and the upper side key** while switching on;
    the LED blinks and the radio appears as USB 0483:DF11 (`tools/stm32_dfu.py --list`). This is the recovery path for
    every stage: reload the stock firmware with TYT's updater.
@@ -43,12 +43,12 @@ audio path to the speaker, issue 2, and the features the board leaves off. The d
 
    ```
    make BOARD=md380                          # UHF; BAND=vhf for a VHF radio
-   tools/stm32_dfu.py --model md380 --key ~/keys/md380.key build/md380/odr_md380.bin
+   tools/stm32_dfu.py --model md380 --key ~/keys/md380.key build/md380/rfoundry_md380.bin
    ```
 
    The plain image fills flash sectors 3-7 only and leaves the codec sectors (8, 10, 11) alone. Coming from stock
    firmware there is no codec there yet, so the first flash for DMR voice is the merged image: with
-   `MD-380-D2.32(AD).bin` in `codecs/`, the build also writes `build/md380/odr_md380_codec.bin`, which moves the codec
+   `MD-380-D2.32(AD).bin` in `codecs/`, the build also writes `build/md380/rfoundry_md380_codec.bin`, which moves the codec
    code to sector 11 (no key file needed; [codec-md380.md](../spec/codec-md380.md)). After that the plain image is
    enough for an update.
 4. Antenna on, **no PTT** until stage 6, and then only into a dummy load.
@@ -62,7 +62,7 @@ Knobs for the DMR and audio bring-up (issue 3):
 
 | Knob | Does |
 |---|---|
-| `-DMD380_I2S_PROBE` | logs `i2s ck N ws N blk N` once a second (`odr_debug.py log`): edges on the HR_C5000's I2S clock and word select, read from the GPIO inputs, and the audio block count. `ck 0 ws 0` = the chip isn't driving I2S |
+| `-DMD380_I2S_PROBE` | logs `i2s ck N ws N blk N` once a second (`rfoundry_debug.py log`): edges on the HR_C5000's I2S clock and word select, read from the GPIO inputs, and the audio block count. `ck 0 ws 0` = the chip isn't driving I2S |
 | `-DIN_STEP_MAX_US=40000u -DOUT_OF_STEP_US=40000u` | widens the DMR engine's report window (1-12 ms after the timeslot tick, out of step from 22 ms): the HR_C5000's reports come 22 ms or later, and the HR_C6000 window drops them all |
 | `-DMD380_I2S_MASTER` | the STM32 generates CK and WS (SPI3 master receive at 8 kHz from PLLI2S), but only if both lines follow a pull-up and a pull-down first; it logs `i2s: ck free/driven, ws free/driven`. On the bench both were driven: the HR_C5000 holds them |
 | `-DHRC5000_INT_LOG` | records the first 40 system interrupts (flags 0x82, 0x51, 0x52, 0x42, microseconds after the tick) and writes them to the log once a second (needs `MD380_I2S_PROBE`, whose task prints them) |
@@ -82,7 +82,7 @@ With SNMP off by default (`boards/md380/config.mk`) all of them fit together.
 |---|---|---|
 | The radio stays on after the knob is turned on (power latch) | vector table at 0x0800C000, `board_early_init` | Nothing ran: check the .bin starts with a stack pointer in SRAM and a reset vector in 0x0800Cxxx; re-enter the bootloader |
 | USB serial enumerates ("MD-380 serial") | 8 MHz HSE, the PLL, OTG_FS | No USB but the backlight: HSE didn't start (`board.c` falls back to bypass, then HSI without USB). Unknown 1 |
-| `tools/odr_debug.py --port PORT version` says `board=MD-380` (or `MD-380 VHF`) | the debug link | |
+| `tools/rfoundry_debug.py --port PORT version` says `board=MD-380` (or `MD-380 VHF`) | the debug link | |
 
 ## 2. Display
 
@@ -94,7 +94,7 @@ With SNMP off by default (`boards/md380/config.mk`) all of them fit together.
 
 ## 3. Keys, channel switch, power, flash
 
-Open Diagnostics (Menu > Settings > Diagnostics, or `odr_debug.py diag`). The board lines follow the DMR counters.
+Open Diagnostics (Menu > Settings > Diagnostics, or `rfoundry_debug.py diag`). The board lines follow the DMR counters.
 
 | Check | If not |
 |---|---|
@@ -147,7 +147,7 @@ With `CONFIG_SUBTONE` (on by default; sub-audio, [hardware-md380.md](../spec/har
 
 ## 7. DMR receive
 
-Needs the codec merged: put `MD-380-D2.32(AD).bin` in `codecs/`, build, and flash `build/md380/odr_md380_codec.bin`
+Needs the codec merged: put `MD-380-D2.32(AD).bin` in `codecs/`, build, and flash `build/md380/rfoundry_md380_codec.bin`
 ([codec-md380.md](../spec/codec-md380.md)); the debug link VERSION line then reports `codec=md380-d2032-s11`. Without
 it the radio is FM only; the slot engine can still be checked without voice:
 

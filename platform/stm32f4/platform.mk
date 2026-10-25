@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # STM32F4: arm-none-eabi GCC, Cortex-M4F hard float, ST HAL + CMSIS, FreeRTOS CM4F port
 ARM_GCC_DIR ?= $(firstword $(wildcard $(HOME)/opt/arm-gnu-toolchain-*-arm-none-eabi/bin/) /usr/bin/)
 CROSS ?= $(ARM_GCC_DIR)arm-none-eabi-
@@ -31,8 +31,8 @@ $(if $(APP_BASE),,$(error boards/$(BOARD)/board.mk: APP_BASE, the image address,
 # The vector table is the image's first word: SystemInit sets VTOR = FLASH_BASE | VECT_TAB_OFFSET (FLASH_BASE is the
 # CMSIS device header's; - binds tighter than |). No parentheses or spaces: the flags file is written by a shell echo
 MCU_DEFS += -DHSE_VALUE=$(HSE_VALUE) -DUSER_VECT_TAB_ADDRESS -DVECT_TAB_OFFSET=$(APP_BASE)u-FLASH_BASE
-# common.ld's CPU-only RAM (CCM: no DMA): zeroed at start-up for ODR_CPU_RAM, left alone for _NOINIT
-MCU_DEFS += -DODR_CPU_RAM_SECTION='".ccmbss"' -DODR_CPU_RAM_NOINIT_SECTION='".ccmram"'
+# common.ld's CPU-only RAM (CCM: no DMA): zeroed at start-up for RFOUNDRY_CPU_RAM, left alone for _NOINIT
+MCU_DEFS += -DRFOUNDRY_CPU_RAM_SECTION='".ccmbss"' -DRFOUNDRY_CPU_RAM_NOINIT_SECTION='".ccmram"'
 LDSCRIPT ?= boards/$(BOARD)/memory.ld
 
 # The USB device stack, built only with CONFIG_USB

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A simulated SPI NOR flash for host tests, as a hal_flash_t: programming only clears bits (old & new), erase sets a
 // 4 KB sector to 0xFF, and a power cut can be armed after a number of "units" (one programmed byte or one erase):
 // the operation in progress is torn (the bytes after the cut are not programmed; a torn erase leaves the sector

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The fast codeplug protocol engine (cps_fast.h, docs/spec/cps-fast.md).
 //
 // Addresses on the wire are image offsets: 0 is the open-firmware EEPROM image (hal_flash_map_t.openfw_eeprom), the

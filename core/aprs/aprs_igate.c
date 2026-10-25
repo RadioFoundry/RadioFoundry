@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // iGate rules and the digipeater (aprs_igate.h)
 #include <string.h>
 #include "aprs/aprs_igate.h"

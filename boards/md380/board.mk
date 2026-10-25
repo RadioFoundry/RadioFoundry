@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # TYT MD-380 / MD-390, Retevis RT3 (with or without GPS): STM32F405VG + HR_C5000 + SKY72310 synthesizer + GT3136 FM
 # receiver, one band per radio (docs/spec/hardware-md380.md). The band is a build option: BAND=uhf (default,
-# 400-480 MHz) or BAND=vhf (136-174 MHz); C sees ODR_BAND_UHF / ODR_BAND_VHF (the Makefile, "Hardware build options")
+# 400-480 MHz) or BAND=vhf (136-174 MHz); C sees RFOUNDRY_BAND_UHF / RFOUNDRY_BAND_VHF (the Makefile, "Hardware build options")
 PLATFORM   := stm32f4
 BUILD_OPTIONS := BAND
 BAND_VALUES   := uhf vhf

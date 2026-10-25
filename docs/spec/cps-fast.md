@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Fast codeplug protocol
 
@@ -37,7 +37,7 @@ Why the debug link and not a mode of the CPS port:
 | Request boundary | length field | the header, or 3 ms of quiet |
 | Lost answer | sequence number: the host tells a late answer from a new one | none |
 | Status | a status byte and a reason | `-` for both "done" and "error" |
-| Hosts | `odr_debug.py`, `tests/hil`, the web flasher's `link.js` already speak it, over USB, a UART cable and UDP | needs its own parser |
+| Hosts | `rfoundry_debug.py`, `tests/hil`, the web flasher's `link.js` already speak it, over USB, a UART cable and UDP | needs its own parser |
 
 The debug link's limits shape the operations: a request carries at most 64 payload bytes, a reply at most 1024. Both
 come from buffers the firmware already has, so the protocol adds none. Writes therefore move in pieces of 61 stream
@@ -107,7 +107,7 @@ older than the command) or 4 (built without `CONFIG_CPS_FAST`): the host falls b
 ### 3.2 SUMS
 
 Up to 16 consecutive blocks from addr. For each, the CRC-32 of its 4096 bytes (section 4) and, in the mask, bit i set
-when block i is all 0xFF. The radio reads and hashes 64 KB at most per request (some 30 ms on the DM-1701). The whole
+when block i is all 0xFF. The radio reads and hashes 64 KB at most per request (some 30 ms on an STM32F4 radio). The whole
 request is refused when any of its blocks is outside the image.
 
 A host compares the CRCs with its own image: a block whose CRC matches is not read (a delta read) or not written (a
@@ -191,12 +191,12 @@ already: `stub/stubtool.py` (`lz4_block`, `lz4_encode`) and `site/static/js/flas
 
 Both. The cost decided it:
 
-| Part | Flash (DM-1701) | RAM |
+| Part | Flash (STM32F4 radio) | RAM |
 |---|---|---|
 | Decoder (writes) | about 300 B | none: a streaming decoder writes each DATA's bytes straight into the storage sector buffer, matches copy from what it already decoded there |
 | Encoder (reads) | about 300 B | 128 B of stack (64 hash entries); it writes the requested window of the stream straight into the debug link's reply buffer |
 
-Neither needs a buffer of its own, which is why the protocol fits the DM-1701's RAM (section 9). The encoder's table
+Neither needs a buffer of its own, which is why the protocol fits a small RAM (section 9). The encoder's table
 is small because codeplug blocks repeat over short distances (records of 56, 24 or 80 bytes, padding runs): on a
 33-block codeplug read from a bench radio (135,168 bytes), a 64-entry table gives 3,618 bytes of LZ4, a 4096-entry one
 3,692, a full search about 3,500. Runs of one byte only (no table at all) give 17,397: the table pays for itself on
@@ -244,13 +244,13 @@ the calibration window's and the staging area's included.
 Each block is written at END through the sector journal (`storage_sector_write`, `settings-store.md` 4): a copy of
 the new block and a header go to the journal first, so a power cut during the erase or the program is finished at the
 next boot. Each block is old or new after a cut. A session cut halfway leaves some blocks new and some old, as a CPS
-write cut halfway does. Radios without a staging area (the DM-32UV, the DM-1801 Pro) write this way, and every radio
+write cut halfway does. Boards without a staging area write this way, and every radio
 uses it for writes larger than the staging area (a DMR ID database: write its header block last, so a cut leaves the
 old header pointing at old records).
 
 ### 7.2 Staged mode
 
-Where the board has a staging area (`hal_flash_map_t.staging_*`, 256 KB on the DM-1701, the MD-380 and the DB25-D),
+Where the board has a staging area (`hal_flash_map_t.staging_*`, typically 256 KB),
 the whole session's blocks change together or not at all, as a TFTP codeplug write does (`tftp.md` 4):
 
 1. END puts the block in its slot of the staging area (slot k at `staging_addr` + (k + 1) x 4096; a block sent
@@ -264,7 +264,7 @@ The record:
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 4 | magic 0x4652444F ("ODRF" in memory order) |
+| 0 | 4 | magic 0x4652444F (bytes 4F 44 52 46 in memory order) |
 | 4 | 4 | version: 1 |
 | 8 | 4 | count: staged blocks (1 to stage_max) |
 | 12 | 4 | CRC-32 of the staged slots, in slot order |
@@ -294,7 +294,7 @@ changed blocks fit, direct mode otherwise or with `--direct`.
 ### 7.3 The staging area is shared
 
 The TFTP server's codeplug write (`tftp.md` 4) uses the same area. The first word of its first sector says whose
-record is there (`STORAGE_STAGE_MAGIC_TFTP` "ODRT", `STORAGE_STAGE_MAGIC_CPSF` "ODRF"):
+record is there (`STORAGE_STAGE_MAGIC_TFTP`, `STORAGE_STAGE_MAGIC_CPSF`):
 
 - At boot `cps_fast_resume` runs first and leaves a TFTP record alone; `tftp_codeplug_resume` leaves ours alone.
 - BEGIN staged is refused (reason 5) while a TFTP write is open or a record of either kind is there.
@@ -314,10 +314,10 @@ Both run in the host link task, so the checks don't race.
 | READ | at most 1000 stream bytes per reply (15 header bytes) |
 | DATA | at most 61 stream bytes |
 | LZ4 stream | 1 to 4128 bytes per block |
-| staged blocks | stage_max: (staging size / 4096) - 1, at most 64 (63 on the DM-1701) |
+| staged blocks | stage_max: (staging size / 4096) - 1, at most 64 (63 for a 256 KB area) |
 | session time-out | 10 s after the last request |
-| RAM | about 200 B of state on the DM-1701; the 4 KB storage sector buffer and the debug link's buffers are shared |
-| flash | about 3.9 KB on the DM-1701 with the switch on, nothing with it off |
+| RAM | about 200 B of state (STM32F4 radio); the 4 KB storage sector buffer and the debug link's buffers are shared |
+| flash | about 3.9 KB (STM32F4 radio) with the switch on, nothing with it off |
 
 ## 9. Example exchange
 
@@ -363,8 +363,8 @@ What a transfer costs, on a 33-block codeplug (the bench radio's, 135 KB in bloc
 | fast, read from a cache, nothing changed | 3 SUMS, about 0.3 KB | a few round trips | a few ms |
 | fast, write one changed channel | one block: about 0.8 KB of stream | under 0.1 s on the wire | |
 
-Writes are limited by the flash, not the link. A 4 KB sector erase and program take some 60 ms on the DM-1701's
-W25Q128 (the erase alone up to 400 ms at worst). A direct block costs two of them (journal and target), a staged block
+Writes are limited by the flash, not the link. A 4 KB sector erase and program take some 60 ms on a
+W25Q128 SPI NOR (the erase alone up to 400 ms at worst). A direct block costs two of them (journal and target), a staged block
 three (slot, journal, target). Only changed blocks are written, where a CPS write rewrites every sector of its regions
 (qdmr) or every sector with a change (the web editor).
 
@@ -376,8 +376,8 @@ the application. It was not chosen:
 
 | | In the application (this protocol) | Through the RAM stub |
 |---|---|---|
-| Flash (DM-1701) | about 3.9 KB | about 0.8 KB for `CONFIG_STUB_ENTRY` (on by default) |
-| RAM (DM-1701) | about 0.2 KB | 8 KB: the stub's staging buffer (`CONFIG_STUB_ENTRY` takes RAM from 87 % to 94 %) |
+| Flash (STM32F4 radio) | about 3.9 KB | about 0.8 KB for `CONFIG_STUB_ENTRY` (on by default) |
+| RAM (STM32F4 radio) | about 0.2 KB | 8 KB: the stub's staging buffer (`CONFIG_STUB_ENTRY` takes RAM from 87 % to 94 %) |
 | The radio meanwhile | keeps working; the codeplug is re-read at the end | stops (the stub owns the SoC); a restart at the end |
 | Power-cut safety | the journal and the staged commit | the stub writes sectors in place: a cut mid-write leaves a broken sector |
 | Refusals | the radio enforces its areas | the host must; the stub writes any sector |

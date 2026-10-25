@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // LZ4 block encoder and streaming decoder (cps_lz4.h, docs/spec/cps-fast.md 5)
 #include <string.h>
 #include "cps/cps_lz4.h"

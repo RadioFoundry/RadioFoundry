@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """tools/cps_client.py against cpsSim (the CPS shim on a simulated DM-1701 flash): info, a qdmr-region read, an edited
 write with save-and-reboot, read back, verify, and the flash dump checked byte for byte. Run by `make -C tests/host`."""
 import os
@@ -32,7 +32,7 @@ def test_channels(sim):
         rc = cps_client.main(["test-channels", path, "--id", "3101276", "--call", "N4NQV"])
         check(rc == 0 and os.path.getsize(path) == cps_client.IMAGE_SIZE, "test-channels makes an image")
         img = cps_client.load_image(path)
-        check(cps_client.decode_channel(img, 1) == {"name": "ODR FM 461.4625", "rx_hz": 461462500, "tx_hz": 461462500},
+        check(cps_client.decode_channel(img, 1) == {"name": "Test FM 461.4625", "rx_hz": 461462500, "tx_hz": 461462500},
               "FM channel in the image")
         cps = cps_client.open_cps(exec_cmd=f"{sim} --dump {dump}")
         cps.write_image(img, regions, reboot=False)
@@ -40,11 +40,11 @@ def test_channels(sim):
         cps.close()
         out = subprocess.run([sim, "--image", dump, "--list"], capture_output=True, text=True).stdout.splitlines()
         check("source 2 channels 2" in out, f"two channels stored: {out[:2]}")
-        check('channel 1 "ODR FM 461.4625" rx 461462500 tx 461462500 mode 0 bw 0 cc 0 ts 1 contact 0' in out,
+        check('channel 1 "Test FM 461.4625" rx 461462500 tx 461462500 mode 0 bw 0 cc 0 ts 1 contact 0' in out,
               f"FM channel: {out}")
-        check('channel 2 "ODR DMR TG201" rx 461462500 tx 461462500 mode 1 bw 0 cc 2 ts 1 contact 1' in out,
+        check('channel 2 "Test DMR TG201" rx 461462500 tx 461462500 mode 1 bw 0 cc 2 ts 1 contact 1' in out,
               f"DMR channel: {out}")
-        check('zone 0 "ODR test" 2: 1 2' in out, f"zone: {out}")
+        check('zone 0 "Test zone" 2: 1 2' in out, f"zone: {out}")
         check('contact 1 "TG 201" id 201 type 0' in out, f"contact: {out}")
 
 

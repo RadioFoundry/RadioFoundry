@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """MD-9600 bring-up checks (docs/spec/hardware-md9600.md 19), radio only, never transmits. They read the debug link's
 `board` view section (19.6), which only this radio has: the board revision record, the clock that started, the data
 flash map and the record sector beside it, the calibration and option blocks, idle keys, the ADC scan, the
@@ -9,7 +9,7 @@ on any other radio (tests/hil/hil_plugin.py). Their feature markers are optional
 nothing."""
 import pytest
 
-from odr_hil import skip
+from rfoundry_hil import skip
 
 KEYS = ["rev", "rev.source", "rev.usable", "rev.confirmed", "rev.stored", "probe", "clock", "sysclk_hz", "flash.id",
         "flash.size", "flash.map", "cal", "opt", "opt.backlight_switched", "opt.vhf_hz", "opt.uhf_hz", "keys", "ptt",

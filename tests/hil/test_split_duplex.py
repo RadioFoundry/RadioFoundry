@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The split duplex extension on one radio (a CONFIG_HOTSPOT_SPLIT=y build; docs/spec/split-duplex.md 10). Every
 test skips on a build without it.
 
@@ -10,7 +10,7 @@ test skips on a build without it.
   still NAKed 1; the debug link's SPLIT view answers.
 - test_split_tx_half_off_air (radio_tx, bench_service: --allow-rf --allow-service-stop): the radio as the TX half on
   --dmr-freq at its lowest power for 10 s, idle bursts with a short LC, SET_AT toggled every 2 s, the framing variant
-  from $ODR_SPLIT_VARIANT (default 0, ours; on the DM-1701 1 is the chip's, whose CACH is empty; on the HR_C7000
+  from $RFOUNDRY_SPLIT_VARIANT (default 0, ours; on the DM-1701 1 is the chip's, whose CACH is empty; on the HR_C7000
   radios a bit field of physical layer options, modem-hrc7000.md 2.10). The SDR bench captures and decodes it
   (sdrmon.py analyze --cach). Asserted: BS sync only, one burst every 30 ms on both slots (same-slot spacing 60 ms),
   one key-up edge for the whole outbound, the channel's color code, no driver underruns in STATUS; with our framing
@@ -44,7 +44,7 @@ import time
 
 import pytest
 
-from odr_hil import skip
+from rfoundry_hil import skip
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -248,9 +248,9 @@ def test_split_tx_half_off_air(radio, sdr_bench, pytestconfig):
     need_split(radio)
     import split_duplex_host as sdh
     cc = pytestconfig.getoption("--dmr-cc")
-    variant = int(os.environ.get("ODR_SPLIT_VARIANT", "0"), 0)
-    regs = [tuple(int(x, 0) for x in kv.split("=")) for kv in os.environ.get("ODR_SPLIT_REGS", "").split()]
-    sdr, st, end = tx_half_run(radio, sdr_bench, pytestconfig, variant, regs)   # $ODR_SPLIT_REGS: "REG=VAL ..."
+    variant = int(os.environ.get("RFOUNDRY_SPLIT_VARIANT", "0"), 0)
+    regs = [tuple(int(x, 0) for x in kv.split("=")) for kv in os.environ.get("RFOUNDRY_SPLIT_REGS", "").split()]
+    sdr, st, end = tx_half_run(radio, sdr_bench, pytestconfig, variant, regs)   # $RFOUNDRY_SPLIT_REGS: "REG=VAL ..."
     print(f"STATUS keyed: {st}\nSTATUS after unkey: {end}")
     assert st["flags"] & sdh.FLAG_KEYED and not end["flags"] & sdh.FLAG_KEYED
     assert st["underruns1"] == 0 and st["underruns2"] == 0, st

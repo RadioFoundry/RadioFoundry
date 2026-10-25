@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The STM32F4 flash stub's target facts (docs/spec/stub-stm32f4.md): what every STM32F405 has (the flash map, the
 // readable memory ranges) and the board record the host sends in CONFIG. The protocol engine is shared
 // (stub/common/stubeng.h); f4stub_main.c is the glue, f4stub_board.c checks a board record (portable, host tested).
@@ -20,7 +20,7 @@
 #define F4_MIN_APP_BASE		0x08004000u
 
 // HELLO flags (the target's bits)
-#define F4_HELLO_USB_ADOPTED	0x01u	// the stub took over ODR's configured USB device (no re-enumeration)
+#define F4_HELLO_USB_ADOPTED	0x01u	// the stub took over RadioFoundry's configured USB device (no re-enumeration)
 
 // The board record (CONFIG payload, 24 bytes, big endian). Pins are port << 4 | pin (port 0 = A ... 8 = I), 0xFF for
 // none. The host keeps one profile per radio (stub/f4stub.py BOARDS)

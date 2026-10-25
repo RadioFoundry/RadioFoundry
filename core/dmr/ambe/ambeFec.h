@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * AMBE+2 3600x2450 air frame (DMR full rate vocoder frame, 20 ms): 49 voice parameter bits <-> 72 bits on the air.
  *
@@ -20,8 +20,8 @@
  * (docs/spec/dmr-modem.md 1.2). With the middle 48 bits taken out, as the HR_C6000 voice port and the dmr_modem HAL
  * deliver them, the 27 bytes are simply the three 9-byte frames in a row.
  */
-#ifndef ODR_AMBE_FEC_H
-#define ODR_AMBE_FEC_H
+#ifndef RFOUNDRY_AMBE_FEC_H
+#define RFOUNDRY_AMBE_FEC_H
 
 #include <stdbool.h>
 #include <stdint.h>

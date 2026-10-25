@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The temporary version 1 slot rebuild (c7000v1.js): a slot from before the codec moved becomes hrc7000_codec.py's
 // version 2 slot for the same build, and the install writes it. Goes when c7000v1.js goes.
 
@@ -12,7 +12,7 @@ import { crc32, equal } from "../static/js/flasher/bytes.js";
 import * as c7 from "../static/js/flasher/c7000.js";
 import { upgradeSlot } from "../static/js/flasher/c7000v1.js";
 
-const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
+const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
 const bin = (n) => new Uint8Array(readFileSync(join(DIR, n)));
 const C = json("flash-boards.json").c7000;

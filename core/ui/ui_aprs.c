@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Tools > APRS (docs/spec/aprs.md 10): what APRS is doing (callsign, frequency, position, next beacon, or why nothing
 // can be sent) and the everyday choices, one row each: send now, automatic beacons, the frequency (region), the RF
 // power (as the channel, or a level of its own), the digipeater path (the hops), the interval, SmartBeaconing, the
 // way out (radio / DMR / both), the position source, our position in DMR voice calls (ETSI GPS Info, CONFIG_DMR_GPS),
 // KISS on the host port, and the stations heard (receive builds). Position opens its own page: the source and the fixed
 // latitude and longitude, typed with the digits. The rest (symbol, comment, digital destination, iGate, digipeater) is
-// set with qdmr, the debug link or tools/odr_debug.py (aprs.md 11).
+// set with qdmr, the debug link or tools/rfoundry_debug.py (aprs.md 11).
 #include <string.h>
 #include "ui_nav.h"
 #include "ui_svc_aprs.h"

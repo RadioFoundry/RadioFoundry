@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Two-level analog keypad decode (adckeys.h)
 #include <stddef.h>
 #include "adckeys.h"

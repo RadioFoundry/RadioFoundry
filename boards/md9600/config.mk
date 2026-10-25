@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # MD-9600 feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-md9600.md 19):
 # display, keys, encoder, power key and standby, supply reading, data flash, USB host link and the FM receive path for
 # every board revision. Nothing has run on a radio yet. Transmit is refused until the revision is confirmed and the

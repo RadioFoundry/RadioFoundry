@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DMR ID database lookup (see dmr_iddb.h). Layout from docs/spec/open-firmware-cps.md 7.5: a 12-byte header
 // ("Id", format, record size + 0x4A, version, LE record count) at the start of area 1, records sorted by ID, area 1
 // holding as many whole records as fit in 256 KB with the header, the rest from the start of area 2.

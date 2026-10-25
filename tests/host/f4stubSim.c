@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The STM32F4 flash stub's real protocol engine (stub/common/stubeng.c) and board record check
 // (stub/stm32f4/f4stub_board.c) on a simulated 1 MB flash, speaking its wire protocol on stdin / stdout, so the host
 // tool (stub/f4stub.py) can be checked against it end to end (f4stub_wire_check.py). Usage: f4stubSim FLASH_IN

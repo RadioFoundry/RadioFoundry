@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Bring-up mode for the HIL tests (README.md, "Bring-up mode"): pytest --bringup FEATURE[,FEATURE]|all runs the
 tests marked @pytest.mark.feature("<id>") for those features, and a required test that skips for a reason its needs
 don't excuse fails instead. tools/bringup.py run drives it and turns the results it writes (--bringup-out) into a
@@ -9,7 +9,7 @@ The marker: @pytest.mark.feature("<id>"[, "<id>" ...][, optional=True][, owner="
 carry several (required for one feature, optional for another). A test's needs come from its markers and fixtures
 (MARKER_NEEDS, FIXTURE_NEEDS).
 
-Which skips are excused (the skip kinds are odr_hil.SKIP_KINDS):
+Which skips are excused (the skip kinds are rfoundry_hil.SKIP_KINDS):
 - other_board: always (a test for another board).
 - bench: only when the test needs the SDR bench. A run without a radio is never excused: the radio fixture fails in
   bring-up mode (no_radio below).
@@ -25,7 +25,7 @@ import re
 
 import pytest
 
-from odr_hil import skip, skip_kind
+from rfoundry_hil import skip, skip_kind
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -56,7 +56,7 @@ RECORD_OPTIONS = ("--allow-rf", "--allow-service-stop", "--allow-usb-switch", "-
 
 def add_options(parser):
     """conftest.py's pytest_addoption calls this; conftest.py's pytest_configure registers Plugin."""
-    g = parser.getgroup("odr-bringup", "OpenDigitalRadio bring-up mode (tools/bringup.py)")
+    g = parser.getgroup("rfoundry-bringup", "RadioFoundry bring-up mode (tools/bringup.py)")
     g.addoption("--bringup", default=None, metavar="FEATURES",
                 help="bring-up mode: run the tests marked for these features (comma separated, or all); a "
                      "required test that skips for a reason its needs don't excuse fails")
@@ -195,7 +195,7 @@ class Plugin:
                                 "run first in bring-up mode, its other required tests fail unless it passes")
         config.addinivalue_line("markers", "second_radio: needs a second radio (--split-rx-port or --bench-station)")
         if config.getoption("--bringup", default=None):
-            config._odr_bringup = BringUp(config)
+            config._rfoundry_bringup = BringUp(config)
 
     def pytest_collection_modifyitems(self, session, config, items):
         out = config.getoption("--bringup-collect", default=None)
@@ -208,28 +208,28 @@ class Plugin:
                                                      for f, o, w, g in feature_marks(item)]}
             with open(out, "w") as f:
                 json.dump(found, f, indent=1, sort_keys=True)
-        bu = getattr(config, "_odr_bringup", None)
+        bu = getattr(config, "_rfoundry_bringup", None)
         if bu is None:
             return
         keep, drop = [], []
         for item in items:
             nid = node_id(item)
             if bu.select(item, nid):
-                item._odr_bringup_id = nid
+                item._rfoundry_bringup_id = nid
                 keep.append(item)
             else:
                 drop.append(item)
         if drop:
             config.hook.pytest_deselected(items=drop)
         # capability gates first, the rest in collection order
-        items[:] = [i for i in keep if bu.tests[i._odr_bringup_id]["gates"]] + [
-            i for i in keep if not bu.tests[i._odr_bringup_id]["gates"]]
+        items[:] = [i for i in keep if bu.tests[i._rfoundry_bringup_id]["gates"]] + [
+            i for i in keep if not bu.tests[i._rfoundry_bringup_id]["gates"]]
 
     @pytest.hookimpl(tryfirst=True)
     def pytest_runtest_setup(self, item):
         """A required test of a feature whose capability gate didn't pass fails without running."""
-        bu = getattr(item.config, "_odr_bringup", None)
-        nid = getattr(item, "_odr_bringup_id", None)
+        bu = getattr(item.config, "_rfoundry_bringup", None)
+        nid = getattr(item, "_rfoundry_bringup_id", None)
         if bu is None or nid is None:
             return
         shut = [f for f in bu.tests[nid]["required"] if f in bu.gate_failed and bu.gates.get(f) != nid]
@@ -242,8 +242,8 @@ class Plugin:
         """In bring-up mode, a required test's skip that its features don't excuse becomes a failure. tryfirst: it
         wraps hil_plugin's wrapper, which has put the kind on the report by then."""
         report = yield
-        bu = getattr(item.config, "_odr_bringup", None)
-        nid = getattr(item, "_odr_bringup_id", None)
+        bu = getattr(item.config, "_rfoundry_bringup", None)
+        nid = getattr(item, "_rfoundry_bringup_id", None)
         if bu is None or nid is None:
             return report
         if not hasattr(report, "skip_kind") and report.skipped and not hasattr(report, "wasxfail"):
@@ -268,7 +268,7 @@ class Plugin:
 
     def pytest_sessionfinish(self, session, exitstatus):
         config = session.config
-        bu = getattr(config, "_odr_bringup", None)
+        bu = getattr(config, "_rfoundry_bringup", None)
         out = config.getoption("--bringup-out", default=None)
         if bu is None or not out:
             return
@@ -277,7 +277,7 @@ class Plugin:
             v = config.getoption(opt, default=None)
             if v not in (None, False):
                 options[opt.lstrip("-")] = v
-        fw = getattr(config, "_odr_firmware", None) or {}
+        fw = getattr(config, "_rfoundry_firmware", None) or {}
         doc = {
             "features": bu.features,
             "granted": sorted(bu.granted),
@@ -294,9 +294,9 @@ class Plugin:
 
 def remember_firmware(config, radio):
     """The radio fixture hands over the firmware's VERSION for the record (bring-up mode only)."""
-    if getattr(config, "_odr_bringup", None) is not None:
+    if getattr(config, "_rfoundry_bringup", None) is not None:
         try:
-            config._odr_firmware = dict(radio.version())
+            config._rfoundry_firmware = dict(radio.version())
         except Exception:      # a record without the firmware is still a record; the tests show what went wrong
-            config._odr_firmware = None
+            config._rfoundry_firmware = None
 

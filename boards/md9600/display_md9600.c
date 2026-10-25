@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 display: 128x64 monochrome ST7567 on SPI2, shared with the data flash (chip select PD14, A0 PD13, reset PD12;
 // docs/spec/hardware-md9600.md 7), and the backlight PWM on TIM8 CH1 (PC6).
 #include "md9600.h"

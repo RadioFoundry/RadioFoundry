@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """DMR data services (docs/spec/dmr-data.md): packet data and text messages received, CSBK call alert and radio check
 answered, and the radio's own call alert, radio check and text message on air.
 
@@ -24,7 +24,7 @@ import warnings
 
 import pytest
 
-from odr_hil import skip
+from rfoundry_hil import skip
 
 BENCH_SRC = 9990301
 CSBK_CALL_ALERT, CSBK_CALL_ALERT_ACK, CSBK_RADIO_CHECK = 0x1F, 0x20, 0x24
@@ -220,7 +220,7 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     TMS ACK sent back."""
     freq, cc, own, feats = _setup(radio, pytestconfig)
     _need(feats, "DMR_SMS")
-    text = f"ODR HIL {int(time.time()) % 10000}"
+    text = f"RadioFoundry HIL {int(time.time()) % 10000}"
     before = radio.data_view()
     with sdr_bench.lease():
         heard = sdr_bench.data(freq, cc, own, tms=text, tms_seq=(int(time.time()) % 31) + 1, src=BENCH_SRC,
@@ -365,7 +365,7 @@ def test_sms_tx(radio, sdr_bench, pytestconfig):
         assert after["data.sms_state"] == "ok" and d["data.sms_sent"] == 1 and \
             d["data.tx_ok"] == 1 + d["data.ars_sent"], (after, d)
 
-    send_until_heard(radio, sdr_bench, freq, cc, lambda: radio.link.sms(BENCH_SRC, "ODR HIL TX", ack=False),
+    send_until_heard(radio, sdr_bench, freq, cc, lambda: radio.link.sms(BENCH_SRC, "RadioFoundry HIL TX", ack=False),
                      lambda v: v.get("data.sms_state") in ("ok", "failed"), check,
                      lambda b: int.from_bytes(b[2:5], "big") == BENCH_SRC, "text message")
 
@@ -391,7 +391,7 @@ def test_etsi_sms_rx(radio, sdr_bench, pytestconfig):
     as ETSI, the ETSI response (ACK, SAP 10) goes back."""
     freq, cc, own, feats = _setup(radio, pytestconfig)
     _need(feats, "DMR_SMS")
-    text = f"ODR ETSI {int(time.time()) % 10000}"
+    text = f"RadioFoundry ETSI {int(time.time()) % 10000}"
     before, xb = radio.data_view(), _ext(radio)
     with sdr_bench.lease():
         heard = sdr_bench.data(freq, cc, own, etsi=text, src=BENCH_SRC, listen_after=3)
@@ -426,7 +426,7 @@ def test_etsi_sms_tx(radio, sdr_bench, pytestconfig):
         xb[0] = xa
 
     send_until_heard(radio, sdr_bench, freq, cc,
-                     lambda: radio.link.sms(BENCH_SRC, "ODR HIL ETSI", ack=False, fmt="etsi"),
+                     lambda: radio.link.sms(BENCH_SRC, "RadioFoundry HIL ETSI", ack=False, fmt="etsi"),
                      lambda v: v.get("data.sms_state") in ("ok", "failed"), check,
                      lambda b: (b[0] & 0x0F) == 13 and (b[1] >> 4) == 10 and
                      int.from_bytes(b[2:5], "big") == BENCH_SRC, "ETSI text message")

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 RF sequencing (rfseq_md9600.h; docs/spec/hardware-md9600.md 5.5, 19.8)
 #include <stddef.h>
 #include "rfseq_md9600.h"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR voice call stack (see dmr_call.h). Two independent halves share this file: the RX side (rx_*: is a call
 // on our slot, and do we play it) and the TX side (tx_*: from PTT to the modem's tx_done). RX bursts are ignored while
 // the modem transmits (their status can't be trusted then, docs/spec/dmr-modem.md 6.5).

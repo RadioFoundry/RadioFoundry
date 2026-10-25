@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 data flash layout and the board's own record sector (store_md9600.h, docs/spec/hardware-md9600.md 12.2).
 // Pure: it works through the hal_flash_t operations, so tests/host/spiNorTest.c runs it on the SPI NOR model with
 // power cuts.

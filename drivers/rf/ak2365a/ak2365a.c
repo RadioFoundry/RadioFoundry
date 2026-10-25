@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // AK2365A IF receiver set-up (ak2365a.h)
 #include <stddef.h>
 #include "ak2365a.h"

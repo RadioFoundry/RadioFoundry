@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // RDA5807M single-chip broadcast FM receiver: chip driver, independent of the board. From the public RDA5807M
 // datasheet (RDA Microelectronics, "RDA5807M Single-Chip Broadcast FM Radio Tuner", rev 1.1); register summary in
 // docs/spec/airband-and-broadcast.md 4.2.

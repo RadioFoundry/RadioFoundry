@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
-# The web site (docs/dev/website.md), built from the repository with site/build.py and deployed to GitHub Pages with
-# the newest release's firmware images for the flasher.
+# The web site (docs/dev/website.md), built from the repository with site/build.py, with the newest release's firmware
+# images for the flasher, and deployed to radiofoundry.org: the build is an artifact, and the `deploy` job runs on the
+# self-hosted runner labeled rfoundry-deploy (on the host that serves the site), which swaps it into nginx's web root.
 #
 #   nightly              rebuilt and deployed only when something changed since the last deployment: a file the site
 #                        is built from (the paths below), or a release published after it
@@ -10,8 +11,7 @@
 # Pull requests don't run it: their unit-tests job (tools/ci.sh's Python step) builds the site with --strict and runs
 # the web flasher's tests already.
 #
-# Needs Pages enabled with "GitHub Actions" as the source (repository Settings > Pages); until then the nightly and
-# manual runs stop after the check.
+# Needs the rfoundry-deploy runner (docs/dev/website.md, Hosting); without it the deploy job waits in the queue.
 name: Web site
 
 on:
@@ -24,28 +24,27 @@ permissions:
 
 concurrency:
   # one deployment at a time
-  group: pages
+  group: site
   cancel-in-progress: false
 
 env:
   # what the site is built from: a change here since the last deployment means a rebuild. The radios come from the
   # board registry (site/build.py runs tools/boards.py json --for site, which reads boards/, platform/, boot/, the
-  # Makefile and tests/hil/features.toml), the flasher's data from odrflash
+  # Makefile and tests/hil/features.toml), the flasher's data from rfoundry
   SITE_INPUTS: >-
     site docs README.md boards platform boot config tests/hil/features.toml tools/boards.py tools/registry_docs.py
-    tools/odr_python.sh tools/glossary.py tools/odrflash/odrflash Makefile .github/workflows/site.yml
+    tools/rfoundry_python.sh tools/glossary.py tools/rfoundry/rfoundry Makefile .github/workflows/site.yml
 
 jobs:
   changes:
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: read
       deployments: read
-      pages: read
     outputs:
       build: ${{ steps.check.outputs.build }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           fetch-depth: 0   # the last deployment's commit must be here to diff against
       - id: check
@@ -55,11 +54,10 @@ jobs:
         run: |
           set -u
           decide() { echo "build=$1" >> "$GITHUB_OUTPUT"; echo "build=$1: $2"; exit 0; }
-          gh api "repos/$REPO/pages" > /dev/null 2>&1 || decide false "GitHub Pages isn't enabled (Settings > Pages, source GitHub Actions)"
           [ "${{ github.event_name }}" = workflow_dispatch ] && decide true "run by hand"
-          # the newest github-pages deployment whose latest status is success
+          # the newest deployment of the site whose latest status is success
           last="" at=""
-          for id in $(gh api "repos/$REPO/deployments?environment=github-pages&per_page=20" --jq '.[].id' 2> /dev/null); do
+          for id in $(gh api "repos/$REPO/deployments?environment=site&per_page=20" --jq '.[].id' 2> /dev/null); do
             state=$(gh api "repos/$REPO/deployments/$id/statuses?per_page=1" --jq '.[0].state' 2> /dev/null || true)
             if [ "$state" = success ]; then
               last=$(gh api "repos/$REPO/deployments/$id" --jq .sha || true)
@@ -78,22 +76,22 @@ jobs:
     needs: changes
     # the nightly run builds only when `changes` says so
     if: needs.changes.outputs.build == 'true'
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
       # the self-hosted runner's image has Python with markdown-it and Node.js 22, and its proxy doesn't reach PyPI
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
         if: runner.environment != 'self-hosted'
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020   # v4.4.0
         if: runner.environment != 'self-hosted'
         with:
           node-version: "22"
       - name: Generator dependency
         run: |
-          [ "${ODR_CI_IMAGE:-}" = 1 ] || pip install -r site/requirements.txt
-      - name: Web flasher tests (against odrflash)
+          [ "${RFOUNDRY_CI_IMAGE:-}" = 1 ] || pip install -r site/requirements.txt
+      - name: Web flasher tests (against rfoundry)
         run: site/tests/run.sh
       - name: Newest release's firmware for the flasher
         env:
@@ -101,30 +99,47 @@ jobs:
         run: |
           mkdir -p dist
           # no release yet is fine: the flasher then offers local images only
-          gh release download --repo "${{ github.repository }}" --pattern 'odr-*' --dir dist || echo "no release assets"
+          gh release download --repo "${{ github.repository }}" --pattern 'rfoundry-*' --dir dist || echo "no release assets"
       # site/build.py runs tools/boards.py json --for site itself (setup-python's 3.12, or the image's, through
-      # tools/odr_python.sh), so the radios are always the checkout's registry
+      # tools/rfoundry_python.sh), so the radios are always the checkout's registry
       - name: Build
         env:
           # where the web tools send error reports (Sentry); unset: no reports leave the page
-          ODR_SENTRY_DSN: ${{ vars.ODR_SENTRY_DSN }}
+          RFOUNDRY_SENTRY_DSN: ${{ vars.RFOUNDRY_SENTRY_DSN }}
         run: |
           python3 site/build.py --strict --out build/site --firmware dist \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" --ref "${{ github.sha }}"
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         with:
+          name: site
           path: build/site
+          retention-days: 7
 
   deploy:
     needs: build
     if: needs.build.result == 'success'
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    # the host that serves the site: it writes the web root directly, no keys and no network crossing. Only this
+    # workflow's scheduled and manual runs reach it, never a pull request
+    runs-on: [self-hosted, rfoundry-deploy]
     permissions:
-      pages: write
-      id-token: write
+      contents: read
     environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      name: site
+      url: https://radiofoundry.org
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
+        with:
+          name: site
+          path: site-out
+      - name: Swap the new build in
+        run: |
+          set -eu
+          root=/var/www/radiofoundry
+          id="${GITHUB_SHA::12}-${GITHUB_RUN_ID}"
+          rsync -a --delete site-out/ "$root/releases/$id/"
+          touch "$root/releases/$id"   # rsync -a keeps the build's old mtime, and the prune below sorts by mtime
+          ln -sfn "$root/releases/$id" "$root/current.new"
+          mv -T "$root/current.new" "$root/current"   # atomic: nginx never sees a half-written site
+          # keep the last three builds to roll back to
+          find "$root/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn | tail -n +4 | cut -d' ' -f2- | grep -vxF "$root/releases/$id" | xargs -r rm -rf
+          echo "deployed $id"

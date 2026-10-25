@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The SNMP agent's pure parts: the BER codec (core/snmp/snmpBer.c) against encodings worked out by hand from ITU-T
 // X.690, the SNMPv2c processing (core/snmp/snmp.c) with requests built byte by byte here (RFC 3416 / RFC 1901), the
 // radio's MIB (core/snmp/snmpMib.c) on a filled snapshot, and the notifications (detection, queue, RF rate limit,
@@ -314,8 +314,8 @@ static const uint8_t SYS_DESCR[] = { 0x2B, 6, 1, 2, 1, 1, 1, 0 };
 static const uint8_t SYS_NAME[] = { 0x2B, 6, 1, 2, 1, 1, 5, 0 };
 static const uint8_t SYS_UPTIME[] = { 0x2B, 6, 1, 2, 1, 1, 3, 0 };
 static const uint8_t SYSTEM[] = { 0x2B, 6, 1, 2, 1, 1 };
-static const uint8_t ODR_DMR_ID[] = { 0x2B, 6, 1, 4, 1, 0x81, 0xFD, 0x59, 2, 1, 1, 1, 0 };
-static const uint8_t ODR_RF_MANAGER[] = { 0x2B, 6, 1, 4, 1, 0x81, 0xFD, 0x59, 2, 1, 7, 1, 0 };
+static const uint8_t RFOUNDRY_DMR_ID[] = { 0x2B, 6, 1, 4, 1, 0x81, 0xFD, 0x59, 2, 1, 1, 1, 0 };
+static const uint8_t RFOUNDRY_RF_MANAGER[] = { 0x2B, 6, 1, 4, 1, 0x81, 0xFD, 0x59, 2, 1, 7, 1, 0 };
 
 static void test_get(void)
 {
@@ -332,19 +332,19 @@ static void test_get(void)
 	int n = process(false, req, sizeof(req), out, sizeof(out), &auth);
 	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE));
 	CHECK(r.requestId == 0x12345678 && r.status == 0 && r.count == 1);
-	CHECK(r.vb[0].tag == BER_OCTETS && r.vb[0].valLen == 32 &&
-	      memcmp(r.vb[0].val, "OpenDigitalRadio board1 abcdef12", 32) == 0);
-	// The whole answer as bytes: 30 49 02 01 01 04 06 public A2 3C 02 04 12345678 02 01 00 02 01 00 30 2E 30 2C 06 08
-	// <sysDescr.0> 04 20 <text>
-	CHECK(n == 75 && out[0] == 0x30 && out[1] == 0x49 && out[13] == 0xA2 && out[14] == 0x3C && out[27] == 0x30 &&
-	      out[28] == 0x2E && out[29] == 0x30 && out[30] == 0x2C && out[41] == 0x04 && out[42] == 32);
+	CHECK(r.vb[0].tag == BER_OCTETS && r.vb[0].valLen == 28 &&
+	      memcmp(r.vb[0].val, "RadioFoundry board1 abcdef12", 28) == 0);
+	// The whole answer as bytes: 30 45 02 01 01 04 06 public A2 38 02 04 12345678 02 01 00 02 01 00 30 2A 30 28 06 08
+	// <sysDescr.0> 04 1C <text>
+	CHECK(n == 71 && out[0] == 0x30 && out[1] == 0x45 && out[13] == 0xA2 && out[14] == 0x38 && out[27] == 0x30 &&
+	      out[28] == 0x2A && out[29] == 0x30 && out[30] == 0x28 && out[41] == 0x04 && out[42] == 28);
 	CHECK(stats.inPkts == 1 && stats.outPkts == 1 && stats.gets == 1);
 
 	// Several at once, one missing object and one missing instance
 	const uint8_t noObj[] = { 0x2B, 6, 1, 2, 1, 99, 0 };
 	const uint8_t noInst[] = { 0x2B, 6, 1, 2, 1, 1, 1, 1 };
-	const uint8_t *oids[] = { SYS_UPTIME, ODR_DMR_ID, noObj, noInst };
-	const int lens[] = { sizeof(SYS_UPTIME), sizeof(ODR_DMR_ID), sizeof(noObj), sizeof(noInst) };
+	const uint8_t *oids[] = { SYS_UPTIME, RFOUNDRY_DMR_ID, noObj, noInst };
+	const int lens[] = { sizeof(SYS_UPTIME), sizeof(RFOUNDRY_DMR_ID), sizeof(noObj), sizeof(noInst) };
 	uint8_t q[300];
 	int qn = request(q, 1, "public", SNMP_PDU_GET, 0, 0, oids, lens, 4);
 	n = process(true, q, qn, out, sizeof(out), &auth);
@@ -427,7 +427,7 @@ static void test_walk(void)
 		count++;
 	}
 	CHECK(ordered);
-	CHECK(count == mib.count - 1);	// every instance but odrLastAge, which has no value until a call is heard
+	CHECK(count == mib.count - 1);	// every instance but rfoundryLastAge, which has no value until a call is heard
 	uint8_t a[SNMP_OID_MAX], b[SNMP_OID_MAX];
 	for (int i = 1; i < mib.count; i++) {
 		int an = snmpObjectOid(&mib, i - 1, a), bn = snmpObjectOid(&mib, i, b);
@@ -442,7 +442,7 @@ static void test_walk(void)
 	int qn = request(q, 1, "public", SNMP_PDU_GETNEXT, 0, 0, o1, l1, 1);
 	int n = process(false, q, qn, out, sizeof(out), &auth);
 	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.count == 1 && r.vb[0].tag != BER_END_OF_MIB_VIEW &&
-	      r.vb[0].oidLen > 8 && memcmp(r.vb[0].oid, ODR_DMR_ID, 8) == 0);
+	      r.vb[0].oidLen > 8 && memcmp(r.vb[0].oid, RFOUNDRY_DMR_ID, 8) == 0);
 }
 
 static void test_bulk(void)
@@ -533,8 +533,8 @@ static void test_set(void)
 	uint8_t q[300], out[512];
 	bool auth;
 	resp_t r;
-	const uint8_t *oids[] = { SYS_NAME, ODR_RF_MANAGER };
-	const int lens[] = { sizeof(SYS_NAME), sizeof(ODR_RF_MANAGER) };
+	const uint8_t *oids[] = { SYS_NAME, RFOUNDRY_RF_MANAGER };
+	const int lens[] = { sizeof(SYS_NAME), sizeof(RFOUNDRY_RF_MANAGER) };
 	const uint8_t tags[] = { BER_OCTETS, BER_GAUGE32 };
 	const uint8_t mgr[] = { 0x0F, 0x42, 0x40 };	// 1000000
 	const uint8_t *vals[] = { (const uint8_t *)"W1AW", mgr };
@@ -588,7 +588,7 @@ static void test_set(void)
 	qn = setRequest(q, "private", o3, l1, t1, v3, vl3, 1);
 	n = process(false, q, qn, out, sizeof(out), &auth);
 	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.status == SNMP_ERR_WRONG_LENGTH);
-	const uint8_t gap[] = { 0x05 };	// odrAgentRfTrapInterval 5 s: below 10
+	const uint8_t gap[] = { 0x05 };	// rfoundryAgentRfTrapInterval 5 s: below 10
 	const uint8_t gapOid[] = { 0x2B, 6, 1, 4, 1, 0x81, 0xFD, 0x59, 2, 1, 7, 2, 0 };
 	const uint8_t *o4[] = { gapOid };
 	const int l4[] = { sizeof(gapOid) };
@@ -642,7 +642,7 @@ static void test_events(void)
 	      e.q[0].group && e.q[0].slot == 2);
 	CHECK(e.q[1].kind == SNMP_EV_CALL_END && e.q[1].durationMs == 4500);
 
-	// The trap on the wire: v2c, community public, SNMPv2-Trap-PDU, sysUpTime, snmpTrapOID = odrCallStart
+	// The trap on the wire: v2c, community public, SNMPv2-Trap-PDU, sysUpTime, snmpTrapOID = rfoundryCallStart
 	uint8_t out[300];
 	resp_t r;
 	int n = snmpEventEncode(&e.q[0], 5, out, sizeof(out));
@@ -962,8 +962,8 @@ static void test_malformed(void)
 	cfg.writeHash = snmpCommunityHash((const uint8_t *)"private", 7);
 	c = rcfg(true);
 	const uint8_t g6[] = { 0, 0, 0, 0, 0, 1 }, gneg[] = { 0x80 }, i5[] = { 0, 0, 0, 0, 1 };
-	const uint8_t *oG[] = { ODR_RF_MANAGER };
-	const int lG[] = { sizeof(ODR_RF_MANAGER) };
+	const uint8_t *oG[] = { RFOUNDRY_RF_MANAGER };
+	const int lG[] = { sizeof(RFOUNDRY_RF_MANAGER) };
 	const uint8_t tG[] = { BER_GAUGE32 };
 	const uint8_t *vG[] = { g6 };
 	const int vlG[] = { 6 };
@@ -1021,7 +1021,7 @@ static void test_malformed(void)
 }
 
 // Seeded mutations of good requests of every kind; the answer is always none or a well-formed message within cap,
-// and the counters add up (ODR_FUZZ_ITERS for longer runs, under make SANITIZE=1)
+// and the counters add up (RFOUNDRY_FUZZ_ITERS for longer runs, under make SANITIZE=1)
 static void test_fuzz(void)
 {
 	setup();
@@ -1029,13 +1029,13 @@ static void test_fuzz(void)
 	uint8_t seeds[6][300];
 	int seedLen[6];
 	const uint8_t start[] = { 0x2B }, sysDescr[] = { 0x2B, 6, 1, 2, 1, 1, 1, 0 };
-	const uint8_t *o3[] = { SYS_UPTIME, ODR_DMR_ID, start };
-	const int l3[] = { sizeof(SYS_UPTIME), sizeof(ODR_DMR_ID), 1 };
+	const uint8_t *o3[] = { SYS_UPTIME, RFOUNDRY_DMR_ID, start };
+	const int l3[] = { sizeof(SYS_UPTIME), sizeof(RFOUNDRY_DMR_ID), 1 };
 	seedLen[0] = request(seeds[0], 1, "public", SNMP_PDU_GET, 0, 0, o3, l3, 3);
 	seedLen[1] = request(seeds[1], 1, "public", SNMP_PDU_GETNEXT, 0, 0, o3, l3, 3);
 	seedLen[2] = request(seeds[2], 1, "public", SNMP_PDU_GETBULK, 1, 10, o3, l3, 3);
-	const uint8_t *oS[] = { SYS_NAME, ODR_RF_MANAGER };
-	const int lS[] = { sizeof(SYS_NAME), sizeof(ODR_RF_MANAGER) };
+	const uint8_t *oS[] = { SYS_NAME, RFOUNDRY_RF_MANAGER };
+	const int lS[] = { sizeof(SYS_NAME), sizeof(RFOUNDRY_RF_MANAGER) };
 	const uint8_t tS[] = { BER_OCTETS, BER_GAUGE32 };
 	const uint8_t mgr[] = { 0x0F, 0x42, 0x40 };
 	const uint8_t *vS[] = { (const uint8_t *)"W1AW", mgr };

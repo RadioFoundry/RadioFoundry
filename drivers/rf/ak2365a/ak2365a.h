@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // AKM AK2365A FM IF receiver (mixer, band-pass filter, AGC, limiter, discriminator, RSSI) on a three-wire bus
 // (docs/spec/hardware-md9600.md 5.4). Register map and frame from the AK2365 data sheet (MS1453-E-02); the A part is
 // taken to be the same (unverified).

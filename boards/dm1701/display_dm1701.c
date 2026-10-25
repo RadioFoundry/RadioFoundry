@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 display: 160x128 TFT on FSMC bank 1 (8-bit on D0-D7), 8 hidden rows, PWM backlight on PD8
 // (docs/spec/hardware-dm1701.md 2.4, 2.5, 3.2, 3.3, 9, 10.1)
 //

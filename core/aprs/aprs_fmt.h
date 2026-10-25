@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // APRS information fields (APRS Protocol Reference 1.0.1, chapters 5-14, and the 1.1 / 1.2 addenda; docs/spec/aprs.md
 // 5): our position reports (uncompressed and compressed, symbol, course / speed, altitude, comment, ambiguity),
 // status, messages and acks built; positions (uncompressed, compressed, Mic-E, objects, items), status and messages
 // parsed from what is heard. Positions are integers in 1e-7 degree. Distance and bearing for the station list.
-#ifndef ODR_APRS_FMT_H
-#define ODR_APRS_FMT_H
+#ifndef RFOUNDRY_APRS_FMT_H
+#define RFOUNDRY_APRS_FMT_H
 
 #include <stdint.h>
 #include <stdbool.h>

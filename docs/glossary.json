@@ -4,7 +4,7 @@
   "RF and hardware",
   "Vendor terms",
   "Amateur and network",
-  "ODR and firmware"
+  "RadioFoundry and firmware"
  ],
  "excluded": [],
  "entries": [
@@ -240,7 +240,7 @@
    ],
    "category": "DMR",
    "scope": "user",
-   "definition": "A DMR header that announces encryption with a changing key. ODR never plays such calls.",
+   "definition": "A DMR header that announces encryption with a changing key. RadioFoundry never plays such calls.",
    "link": "",
    "preview": true
   },
@@ -290,8 +290,7 @@
    "category": "DMR",
    "scope": "dev",
    "definition": "The trunked DMR tier of the standard (TS 102 361-4): a control channel assigns traffic channels.",
-   "link": "spec/dmr-tier3-plan.md",
-   "preview": true
+   "preview": false
   },
   {
    "term": "TSCC",
@@ -359,7 +358,7 @@
    ],
    "category": "DMR",
    "scope": "user",
-   "definition": "DVSI's voice codec used by DMR. Not part of ODR. Taken from each radio's stock firmware.",
+   "definition": "DVSI's voice codec used by DMR. Not part of RadioFoundry. Taken from each radio's stock firmware.",
    "link": "dev/codec.md",
    "preview": true
   },
@@ -607,7 +606,7 @@
    ],
    "category": "RF and hardware",
    "scope": "dev",
-   "definition": "The HRC6000 family: the baseband chip that codes and decodes DMR bursts in the DM-1701 and MD-380 class radios.",
+   "definition": "The HRC6000 family: the baseband chip that codes and decodes DMR bursts. The radios that use it are in the radio survey.",
    "link": "",
    "preview": true
   },
@@ -619,7 +618,7 @@
    ],
    "category": "RF and hardware",
    "scope": "dev",
-   "definition": "The HRC7000 family: the baseband chip of the DM-32UV and DM-1801 Pro class radios.",
+   "definition": "The HRC7000 family: the baseband chip of the C-SKY class radios. The radios that use it are in the radio survey.",
    "link": "",
    "preview": true
   },
@@ -719,8 +718,8 @@
    "aliases": [],
    "category": "Vendor terms",
    "scope": "user",
-   "definition": "Customer programming software: the program that writes the codeplug. ODR uses qdmr.",
-   "link": "user/15-programming-qdmr.md",
+   "definition": "Customer programming software: the program that writes the codeplug. RadioFoundry uses qdmr.",
+   "link": "user/04-programming.md",
    "preview": true
   },
   {
@@ -772,7 +771,7 @@
    "category": "Amateur and network",
    "scope": "user",
    "definition": "A small DMR modem that connects radios nearby to a DMR network over the internet.",
-   "link": "user/13-hotspot.md",
+   "link": "user/14-hotspot.md",
    "preview": true
   },
   {
@@ -781,7 +780,7 @@
    "category": "Amateur and network",
    "scope": "user",
    "definition": "Automatic Packet Reporting System: positions and short messages shared between amateur stations.",
-   "link": "user/17-aprs.md",
+   "link": "user/13-aprs.md",
    "preview": true
   },
   {
@@ -899,7 +898,7 @@
    "aliases": [
     "codeplugs"
    ],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "The radio's programming: channels, zones, contacts, talkgroup lists, DMR ID.",
    "link": "dev/cps-and-codeplug.md",
@@ -908,10 +907,10 @@
   {
    "term": "qdmr",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "A free, open source codeplug editor for DMR radios.",
-   "link": "user/15-programming-qdmr.md",
+   "link": "user/04-programming.md",
    "preview": true
   },
   {
@@ -919,7 +918,7 @@
    "aliases": [
     "zones"
    ],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "A named list of channels.",
    "link": "",
@@ -930,7 +929,7 @@
    "aliases": [
     "contacts"
    ],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "A person in the codeplug: name and DMR ID.",
    "link": "",
@@ -941,7 +940,7 @@
    "aliases": [
     "RX group list"
    ],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "The talkgroups a channel listens to. The codeplug calls it the RX group list.",
    "link": "",
@@ -952,7 +951,7 @@
    "aliases": [
     "talk targets"
    ],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "Where PTT goes: a talkgroup, a person or all call.",
    "link": "",
@@ -961,7 +960,7 @@
   {
    "term": "One-shot",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "A talk target used for one call and its reply window.",
    "link": "",
@@ -970,7 +969,7 @@
   {
    "term": "Reply window",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "The time after a call during which PTT answers it.",
    "link": "",
@@ -981,7 +980,7 @@
    "aliases": [
     "temporary changes"
    ],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "A change that lasts until the channel changes or you press Back on Home. Hold OK to keep it.",
    "link": "",
@@ -990,7 +989,7 @@
   {
    "term": "Monitor",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "Opening the squelch (FM) or hearing all talkgroups (DMR) while a key is held.",
    "link": "",
@@ -999,25 +998,25 @@
   {
    "term": "Digital monitor",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "Playing every talkgroup on the timeslot (promiscuous mode; \"hear all\" in older ODR builds).",
+   "definition": "Playing every talkgroup on the timeslot (promiscuous mode; \"hear all\" in older RadioFoundry builds).",
    "link": "",
    "preview": true
   },
   {
    "term": "Recent",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "ODR's list of stations heard and calls made.",
+   "definition": "RadioFoundry's list of stations heard and calls made.",
    "link": "",
    "preview": false
   },
   {
    "term": "PTT",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "Push to talk: the key that transmits.",
    "link": "",
@@ -1026,7 +1025,7 @@
   {
    "term": "HIL",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Hardware in the loop: tests that run against a real radio, and a bench radio or SDR for the other side.",
    "link": "dev/testing.md",
@@ -1035,7 +1034,7 @@
   {
    "term": "SIL",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Software in the loop: tests that run the firmware's core on the host with a simulated radio.",
    "link": "",
@@ -1044,7 +1043,7 @@
   {
    "term": "SDR",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Software defined radio: a receiver that digitizes the radio spectrum so software can decode it. The SDR bench uses one.",
    "link": "",
@@ -1053,9 +1052,9 @@
   {
    "term": "Debug link",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
-   "definition": "ODR's USB serial protocol for reading state and driving the radio from a computer.",
+   "definition": "RadioFoundry's USB serial protocol for reading state and driving the radio from a computer.",
    "link": "dev/debug-link.md",
    "preview": true
   },
@@ -1065,7 +1064,7 @@
     "boot stub",
     "stubs"
    ],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "A small program that runs on the radio in place of the firmware so the computer can read or write flash without the stock bootloader.",
    "link": "",
@@ -1076,7 +1075,7 @@
    "aliases": [
     "boards"
    ],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "The code and description of one radio model's hardware wiring: pins, chips, memory map.",
    "link": "dev/architecture.md",
@@ -1085,7 +1084,7 @@
   {
    "term": "HAL",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Hardware abstraction layer: the interfaces the core uses instead of touching a chip.",
    "link": "dev/architecture.md",
@@ -1094,7 +1093,7 @@
   {
    "term": "SoC",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "System on chip: the processor and its on-chip peripherals.",
    "link": "",
@@ -1106,7 +1105,7 @@
     "build switch",
     "feature switches"
    ],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "A CONFIG_ option that turns a feature's code in or out of the build.",
    "link": "build-config.md",
@@ -1115,9 +1114,9 @@
   {
    "term": "Stock firmware",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "The firmware a radio shipped with, before ODR. Each ODR radio takes its voice codec from it.",
+   "definition": "The firmware a radio shipped with, before RadioFoundry. Each RadioFoundry radio takes its voice codec from it.",
    "link": "",
    "preview": false
   },
@@ -1290,7 +1289,7 @@
   {
    "term": "RTOS",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Real-time operating system: the scheduler that runs the firmware's tasks.",
    "link": "",
@@ -1407,7 +1406,7 @@
   {
    "term": "YAML",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "A text file format. qdmr stores its codeplug as YAML.",
    "link": "",
@@ -1416,16 +1415,16 @@
   {
    "term": "CSV",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "Comma separated values: a table as plain text, as the stock programming software exports it.",
+   "definition": "Comma separated values: a table as plain text, as programming software exports it.",
    "link": "",
    "preview": true
   },
   {
    "term": "UI",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "User interface: the screen, keys and menus.",
    "link": "",
@@ -1445,7 +1444,7 @@
    "aliases": [],
    "category": "Vendor terms",
    "scope": "user",
-   "definition": "A Chinese maker of DMR radios (MD-380, MD-UV380). \"Stock\" for those radios means TYT's firmware.",
+   "definition": "A Chinese maker of DMR radios.",
    "link": "",
    "preview": true
   },
@@ -1542,9 +1541,9 @@
   {
    "term": "USRP",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
-   "definition": "The UDP stream that carries a call's audio between ODR and a network gateway.",
+   "definition": "The UDP stream that carries a call's audio between RadioFoundry and a network gateway.",
    "link": "",
    "preview": true
   },
@@ -1580,7 +1579,7 @@
   {
    "term": "LTO",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Link-time optimization: the compiler optimizes across files. It shrinks the firmware.",
    "link": "",
@@ -1589,7 +1588,7 @@
   {
    "term": "XIP",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Execute in place: running code straight from flash.",
    "link": "",
@@ -1616,7 +1615,7 @@
   {
    "term": "PC",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "Personal computer.",
    "link": "",
@@ -1638,7 +1637,7 @@
    "aliases": [
     "LSB"
    ],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Most significant bit (or byte): the first, highest-value one.",
    "link": "",
@@ -1647,7 +1646,7 @@
   {
    "term": "BCD",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Binary coded decimal: each decimal digit in 4 bits.",
    "link": "",
@@ -1656,7 +1655,7 @@
   {
    "term": "ASCII",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "The 7-bit character set of plain text.",
    "link": "",
@@ -1665,7 +1664,7 @@
   {
    "term": "XOR",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Exclusive or: a bit operation that flips bits where the other operand has a 1.",
    "link": "",
@@ -1676,7 +1675,7 @@
    "aliases": [
     "MB"
    ],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Kilobytes (1024 bytes).",
    "link": "",
@@ -1685,7 +1684,7 @@
   {
    "term": "OS",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Operating system.",
    "link": "",
@@ -1694,7 +1693,7 @@
   {
    "term": "CI",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Continuous integration: the checks every change must pass (tools/ci.sh).",
    "link": "",
@@ -1703,34 +1702,34 @@
   {
    "term": "GPL",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
-   "definition": "GNU General Public License. ODR does not use GPL code.",
+   "definition": "GNU General Public License. RadioFoundry does not use GPL code.",
    "link": "",
    "preview": true
   },
   {
    "term": "MIT",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
-   "definition": "The permissive license ODR uses.",
+   "definition": "The permissive license RadioFoundry uses.",
    "link": "",
    "preview": false
   },
   {
-   "term": "ODR",
+   "term": "RadioFoundry",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
-   "definition": "OpenDigitalRadio, this firmware.",
+   "definition": "RadioFoundry, this firmware.",
    "link": "",
    "preview": false
   },
   {
    "term": "ID",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "Identifier: a number or name that picks out one thing.",
    "link": "",
@@ -1739,7 +1738,7 @@
   {
    "term": "OK",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "user",
    "definition": "The key that selects or confirms.",
    "link": "",
@@ -1748,7 +1747,7 @@
   {
    "term": "ST",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "STMicroelectronics, the maker of the STM32 processors.",
    "link": "",
@@ -1762,14 +1761,14 @@
    ],
    "category": "RF and hardware",
    "scope": "dev",
-   "definition": "STMicroelectronics' family of ARM microcontrollers. The DM-1701 and MD-380 class radios use them.",
+   "definition": "STMicroelectronics' family of ARM microcontrollers. The radios that use it are in the radio survey.",
    "link": "",
    "preview": true
   },
   {
    "term": "SD",
    "aliases": [],
-   "category": "ODR and firmware",
+   "category": "RadioFoundry and firmware",
    "scope": "dev",
    "definition": "Secure Digital: removable memory card.",
    "link": "",

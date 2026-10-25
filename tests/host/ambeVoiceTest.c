@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DMR voice glue (core/dmr/ambe/ambeVoice.c) against a fake audio driver and a fake vocoder
 #include <stdio.h>
 #include <string.h>

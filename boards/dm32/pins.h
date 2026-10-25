@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-32UV pin map by GPIO pin index (0-31 bank A, 32-63 B, 64-95 C; docs/spec/hardware-dm32.md 5)
 #ifndef DM32_PINS_H
 #define DM32_PINS_H
@@ -12,6 +12,8 @@
 #define PIN_POWER_LATCH		0x11	// 1 = stay on
 #define PIN_FLASH_CS		0x12	// data flash chip select, low = selected
 #define PIN_FD_CS		0x18	// FD6818 chip select, low = selected
+#define PIN_BCAST_SDA		0x19	// RDA5807M broadcast FM receiver I2C data (hardware-dm32.md 5)
+#define PIN_BCAST_SCL		0x1A	// its clock
 
 // The two LEDs, high = on. Colors checked on the radio at bring-up (hardware-dm32.md 5)
 #define PIN_LED_GREEN		0x20

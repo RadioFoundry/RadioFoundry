@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // TI LMX2571 synthesizer in PLL mode with an external VCO (TI data sheet SNAS654A; docs/spec/hardware-md9600.md 5.3).
 //
 // Serial interface (data sheet 7.5): 24-bit words, MSB first, clocked in on the rising edge while LE is low and

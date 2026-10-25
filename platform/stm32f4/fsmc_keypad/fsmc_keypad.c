@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A key matrix on the FSMC data lines (fsmc_keypad.h; docs/spec/hardware-dm1701.md 10.1)
 #include "fsmc_keypad.h"
 #include "hal_time.h"

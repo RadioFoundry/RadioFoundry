@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 clock arithmetic as pure functions, so the host tests can check what clock.c, uart.c and the boards derive
 // from the PLL (docs/spec/hardware-dm32.md 1.1). No register access here.
 #ifndef PLATFORM_HRC7000_CLOCK_MATH_H

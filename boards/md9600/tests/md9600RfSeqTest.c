@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 RF sequencing (boards/md9600/rfseq_md9600.c) and calibration rows (cal_md9600.c) against a fake board: every
 // line change, bus word, DAC write and delay is logged, and the tests check the order of the receive, transmit and
 // return sequences per board revision, the transmit gates, the error paths and the receiver probe. Nothing here

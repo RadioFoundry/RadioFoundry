@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Host stand-in for platform/stm32f4/platform.h, for md380RfbusTest only: just enough for the real boards/md380/pins.h
 // and rfbus_md380.c to compile. The ports and GPIO_PIN_n are fake; every PIN_* definition still comes from pins.h
 #ifndef MD380_STUB_PLATFORM_H

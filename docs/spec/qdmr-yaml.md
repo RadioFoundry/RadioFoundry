@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 The OpenDigitalRadio Authors -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # qdmr YAML codeplug
 
@@ -97,6 +97,8 @@ codeplug image doesn't hold in the editor's model; the import ignores them and t
 uses its defaults.
 
 ### 3.2 Contacts
+
+`openGD77` is the name qdmr gives its block of per-contact and per-channel extension keys for the open-firmware radios.
 
 | qdmr | Editor |
 |---|---|

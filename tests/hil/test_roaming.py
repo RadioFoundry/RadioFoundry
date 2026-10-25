@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """DMR repeater roaming (docs/spec/dmr-roaming.md) on a CONFIG_DMR_ROAMING build. Everything is read from the view's
 `roam` section (debuglink.md 3.7) and driven by RADIO op 26 (roam) and the roaming settings 21-24 (SETTING op 24,
 RAM only). The roaming zone flag is stored by the radio: each test puts back the zone flag it found, and the
@@ -52,8 +52,8 @@ import time
 
 import pytest
 
-from odr_hil import skip
-from odr_debug import as_int
+from rfoundry_hil import skip
+from rfoundry_debug import as_int
 
 ROAM_KEYS = ("roam.built", "roam.zone_on", "roam.state", "roam.why", "roam.pending", "roam.blocked", "roam.sites",
              "roam.site", "roam.home", "roam.channel", "roam.rssi_dbm", "roam.weak", "roam.searches", "roam.roams",

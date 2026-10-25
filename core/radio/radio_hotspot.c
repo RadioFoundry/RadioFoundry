@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's side of the hotspot (see radio_hotspot.h)
 #include "config.h"
 #if CONFIG_HOTSPOT	// the whole file

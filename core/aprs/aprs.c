@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The APRS engine (aprs.h). One state block, a: the radio task changes it in aprs_tick / aprs_rf_* / aprs_rx_*, other
 // tasks through the any-task calls; every access is under LOCK() (the scheduler held: short copies only). Settings
 // and codeplug reads take the storage mutex, so they happen outside LOCK().
@@ -115,7 +115,7 @@ static struct {
 	int16_t rxbuf[160];
 	char gate[AX25_TNC2_MAX + 20];
 #endif
-} a ODR_CPU_RAM;	// CPU only
+} a RFOUNDRY_CPU_RAM;	// CPU only
 
 static void changed(void);
 static uint8_t rf_block(void);
@@ -640,7 +640,7 @@ static void host_is_line(const char *line, size_t n)
 	host_emit(KISS_CMD_SETHW, buf, n + 1u);
 }
 
-// Our own packet straight to APRS-IS: "CALL>APZODR,TCPIP*:info"
+// Our own packet straight to APRS-IS: "CALL>APZRDF,TCPIP*:info"
 static void own_to_is(const char *info, size_t n)
 {
 	if (!a.cfg.to_is || !a.cfg.kiss || !a.me_ok) {

@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """APRS (docs/spec/aprs.md 13): the debug link side on the radio alone, and on air with the SDR bench as the receiver.
 
 Radio only (no flags): the aprs / aprs_set view sections, a setting round trip, the RAM test callsign, host NMEA as
 the position source. Nothing transmits.
 
-On air, AFSK (radio_tx + bench_service: --allow-rf --allow-service-stop, and --aprs-call / $ODR_APRS_CALL, a licensed
+On air, AFSK (radio_tx + bench_service: --allow-rf --allow-service-stop, and --aprs-call / $RFOUNDRY_APRS_CALL, a licensed
 operator's callsign; the transmissions are amateur ones). The radio sends a position, a status and a message on the
 70 cm band at its lowest power while the bench's RTL-SDR records I/Q (the gateway service stopped through the lease and
 started again afterwards). tools/aprs_afsk_check.py FM demodulates the capture on the bench, decodes Bell 202 / AX.25
@@ -23,7 +23,7 @@ Where and how it transmits, so that nothing reaches the APRS network:
   transmission keys at) is 0 before keying, and skip on firmware without that key: it used to key APRS at the
   settings' default power (1 W on the DM-1701) whatever the radio was set to.
 - Callsign: --aprs-call as the RAM-only test call (never saved) with SSID --aprs-ssid (default 15). Destination
-  APZODR.
+  APZRDF.
 - Every APRS setting a test changes (transmit, region, custom frequency, SSID, path, send via, position source, fixed
   position, digital destination, UDT) is put back afterwards, after the queued frames and message retries are on
   air (still on the test frequency). If they don't drain, the region stays on the test frequency and the test fails
@@ -37,7 +37,7 @@ location to --aprs-dmr-dst; the bench modem's listener (bench_tx.py listen) hear
 the test reassembles and decodes them here.
 
 Pass criteria:
-- test_aprs_on_air_position: one frame with a valid FCS from <call>-<ssid> to APZODR, no digipeaters, control 0x03,
+- test_aprs_on_air_position: one frame with a valid FCS from <call>-<ssid> to APZRDF, no digipeaters, control 0x03,
   PID 0xF0, a position within 1e-4 degree of 33.7490, -84.3880; aprs.rf_sent +1; afterwards aprs.rf_active=0, the
   radio idle on its channel (ch.rx_hz, rx_hz, mode unchanged). Deviation peak (99.9th percentile of the
   demodulated audio over the transmission) 2.0-4.5 kHz; |twist| (mark / space tone amplitudes) under 6 dB. Printed,
@@ -57,7 +57,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLinkError, skip
+from rfoundry_hil import DebugLinkError, skip
 
 POS = (33.7490, -84.3880)
 APRS_HZ = {144390000, 144800000, 145175000, 144575000, 144660000, 144640000}
@@ -275,7 +275,7 @@ def aprs_air(radio, pytestconfig, request):
     _need_aprs(radio)
     call = pytestconfig.getoption("--aprs-call")
     if not call:
-        skip("opt_in", "give --aprs-call (or $ODR_APRS_CALL): a licensed operator's callsign (amateur transmission)")
+        skip("opt_in", "give --aprs-call (or $RFOUNDRY_APRS_CALL): a licensed operator's callsign (amateur transmission)")
     if "FM" not in radio.features():
         skip("not_built", "built without FM")
     hz = round(pytestconfig.getoption("--aprs-test-mhz") * 1e6)
@@ -344,7 +344,7 @@ def send_and_capture(radio, sdr_bench, s, tag, send):
     assert len(ours) == 1, f"expected one frame from {s.call}-{s.ssid} with a valid FCS, got {res['frames']} " \
                            f"(capture ~/{sdr_bench.dir}/{rdir}/cap0.cs8, segments {res.get('segments')})"
     f = ours[0]
-    assert f["fcs_ok"] and f["dst"] == "APZODR" and f["digis"] == [], f
+    assert f["fcs_ok"] and f["dst"] == "APZRDF" and f["digis"] == [], f
     assert f["control"] == 0x03 and f["pid"] == 0xF0, f
     return f
 
@@ -388,7 +388,7 @@ def test_aprs_on_air_position(radio, sdr_bench, aprs_air):
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
 def test_aprs_on_air_status(radio, sdr_bench, aprs_air):
-    text = "ODR HIL status test"
+    text = "RadioFoundry HIL status test"
     f = send_and_capture(radio, sdr_bench, aprs_air, "hil_aprs_status", lambda: radio.link.aprs_status(text))
     assert f["info"] == ">" + text, f
     check_tones(f)
@@ -400,7 +400,7 @@ def test_aprs_on_air_status(radio, sdr_bench, aprs_air):
 @pytest.mark.sdr_rx
 def test_aprs_on_air_message(radio, sdr_bench, aprs_air):
     """A message with a message number; then its two retries (no ack can come back to the DM-1701)."""
-    to, text = f"{aprs_air.call}-1", "ODR HIL message test"
+    to, text = f"{aprs_air.call}-1", "RadioFoundry HIL message test"
     aprs_air.message = True
     f = send_and_capture(radio, sdr_bench, aprs_air, "hil_aprs_msg", lambda: radio.link.aprs_message(to, text))
     m = re.fullmatch(r":(.{9}):(.*)\{(\d{1,5})", f["info"])
@@ -443,7 +443,7 @@ def test_aprs_tx_link_answers(radio, aprs_air, over, pytestconfig):
                 stack.callback(lambda: radio.link.aprs_set("kiss", 0))
             s = stack.enter_context(socket.create_connection((ip, 8001), timeout=5))
             time.sleep(0.3)
-            frame = _kiss(_ui_frame(aprs_air.call, aprs_air.ssid, b">ODR HIL KISS-TCP"))
+            frame = _kiss(_ui_frame(aprs_air.call, aprs_air.ssid, b">RFOUNDRY HIL KISS-TCP"))
             send = lambda: s.sendall(frame)  # noqa: E731
         _link_answers(radio, aprs_air, send)
 

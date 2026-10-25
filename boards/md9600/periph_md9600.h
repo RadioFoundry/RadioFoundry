@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Two STM32F4 peripheral helpers only this board uses so far: the synthesizers' and IF receivers' three-wire bus on
 // GPIO (wire3_md9600.c) and the ADC1 scan (adc_md9600.c). They move to platform/stm32f4 when a second radio needs them.
 // Firmware only: the host tests include md9600.h, not this file.

@@ -1,7 +1,39 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
-# Code owners: a pull request that touches these paths needs the owner's review before it merges. The workflows run
-# with the repository's trust (pr-tests.yml runs main's copy against every pull request, docs/dev/ci.md), so they and
-# this file are the owner's.
+# Code owners: a pull request that touches these paths needs the owner's review before it merges (the main ruleset
+# requires code owner review). The workflows run with the repository's trust (pr-tests.yml runs main's copy against
+# every pull request, docs/dev/ci.md), and so do the scripts they call from main, the self-hosted runner and its job
+# gate, and the pins that decide which compiler and which submodules a build trusts. They and this file are the owner's.
+
+# the workflows, their actions, Dependabot and this file
 /.github/ @sfowlr
+
+# the self-hosted runner, its job gate and the CI images
+/tools/ci-runner/ @sfowlr
+/tools/docker/ @sfowlr
+
+# what the workflows run
+/tools/ci.sh @sfowlr
+/tools/coverage.sh @sfowlr
+/tools/checkout-submodules.sh @sfowlr
+/tools/install-arm-toolchain.sh @sfowlr
+/tools/platform_toolchain.sh @sfowlr
+/tools/rfoundry_python.sh @sfowlr
+/tools/release.py @sfowlr
+/tools/release_build.sh @sfowlr
+/tools/build_manual.sh @sfowlr
+/tools/ui_gallery_compare.py @sfowlr
+
+# the toolchain pins (version and SHA-256) and the submodules' sources
+/platform/*/platform.toml @sfowlr
+/.gitmodules @sfowlr
+
+# what keeps the codec, stock images and keys out of the tree
+/.gitignore @sfowlr
+/codecs/ @sfowlr
+
+# the CI and release documentation
+/docs/dev/ci.md @sfowlr
+/docs/dev/ci-runners.md @sfowlr
+/docs/dev/release.md @sfowlr

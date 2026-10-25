@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Bring-up mode without a radio (bringup_plugin.py, tools/bringup.py): a fake radio that lacks a feature, run
 through pytest with this directory's conftest. A required test that skips on it fails the bring-up run; the same
 test only skips in a plain run; an excused skip and an optional test's skip stay skips; a run that finds no radio
-fails. The tools/bringup.py parts need Python 3.11 or later ($ODR_PYTHON, else the newest python3.N on PATH)."""
+fails. The tools/bringup.py parts need Python 3.11 or later ($RFOUNDRY_PYTHON, else the newest python3.N on PATH)."""
 import fcntl
 import glob
 import json
@@ -13,14 +13,14 @@ import shutil
 import subprocess
 import sys
 
-from odr_hil import skip
+from rfoundry_hil import skip
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 BRINGUP = os.path.join(ROOT, "tools", "bringup.py")
 
 FAKE_TESTS = '''import pytest
-from odr_hil import skip
+from rfoundry_hil import skip
 
 
 class FakeLink:
@@ -100,14 +100,14 @@ def fake_tree(tmp_path):
 
 
 def env():
-    e = {k: v for k, v in os.environ.items() if k != "ODR_PORT"}
+    e = {k: v for k, v in os.environ.items() if k != "RFOUNDRY_PORT"}
     e["PYTHONPATH"] = os.pathsep.join([HERE, os.environ.get("PYTHONPATH", "")])
     return e
 
 
 def pytest_run(tmp_path, *args, python=None):
     return subprocess.run([python or sys.executable, "-m", "pytest", "-p", "conftest", "-p", "no:cacheprovider",
-                           "-rs", "--rootdir", str(tmp_path), "--radio-port", "/nonexistent/odr-fake-port",
+                           "-rs", "--rootdir", str(tmp_path), "--radio-port", "/nonexistent/rfoundry-fake-port",
                            *args], cwd=tmp_path, env=env(), capture_output=True, text=True, timeout=120)
 
 
@@ -161,9 +161,9 @@ def test_no_radio_fails_in_bringup_mode(tmp_path):
 
 
 def python311():
-    """A Python 3.11 or later for tools/bringup.py: $ODR_PYTHON, this one, or the newest python3.N on PATH."""
-    if os.environ.get("ODR_PYTHON"):
-        return os.environ["ODR_PYTHON"]
+    """A Python 3.11 or later for tools/bringup.py: $RFOUNDRY_PYTHON, this one, or the newest python3.N on PATH."""
+    if os.environ.get("RFOUNDRY_PYTHON"):
+        return os.environ["RFOUNDRY_PYTHON"]
     if sys.version_info >= (3, 11):
         return sys.executable
     best = None
@@ -173,7 +173,7 @@ def python311():
             if m and int(m.group(1)) >= 11 and os.access(p, os.X_OK) and (best is None or int(m.group(1)) > best[0]):
                 best = (int(m.group(1)), p)
     if best is None:
-        skip("bench", "no Python 3.11 or later on PATH for tools/bringup.py (set $ODR_PYTHON)")
+        skip("bench", "no Python 3.11 or later on PATH for tools/bringup.py (set $RFOUNDRY_PYTHON)")
     return best[1]
 
 
@@ -247,7 +247,7 @@ def test_bringup_without_git(tmp_path):
     rows = {x["id"]: (x["status"], x["basis"]) for x in json.loads(lst.stdout)}
     assert rows["fake_split"] == ("pass", "seed"), rows
     r = bringup(*common, "run", "--radio", board, "--lock", str(t / "radio.lock"), *collect_args(t), "--",
-                "--radio-port", "/nonexistent/odr-fake-port", extra_env=nogit)
+                "--radio-port", "/nonexistent/rfoundry-fake-port", extra_env=nogit)
     assert r.returncode != 0 and "not a git checkout" in r.stderr and "--no-record" in r.stderr, r.stdout + r.stderr
     assert [p.name for p in (results / board).iterdir()] == ["seed.json"]
 
@@ -273,7 +273,7 @@ def test_bringup_run_records_and_status(tmp_path):
     results, lock, board = t / "results", t / "radio.lock", a_board()
     common = ["--features", str(t / "features.toml"), "--results", str(results)]
     run = ["run", "--radio", board, "--lock", str(lock), *collect_args(t), "--", "--radio-port",
-           "/nonexistent/odr-fake-port"]
+           "/nonexistent/rfoundry-fake-port"]
 
     # the radio lock held by someone else: nothing runs
     with open(lock, "w") as held:
@@ -366,7 +366,7 @@ def test_the_lock_follows_the_port(tmp_path):
     common = ["--features", str(t / "features.toml"), "--results", str(t / "results")]
 
     def lock(*pytest_args, **env_over):
-        e = {k: v for k, v in env().items() if k not in ("ODR_RADIO_LOCK", "ODR_PORT")}
+        e = {k: v for k, v in env().items() if k not in ("RFOUNDRY_RADIO_LOCK", "RFOUNDRY_PORT")}
         e.update(HOME=str(t), **env_over)
         # --no-record: only the lock is checked, so a tree without git history (a `git archive` export) runs it too
         r = subprocess.run([python311(), BRINGUP, *common, "run", "--radio", a_board(), "--dry-run", "--no-record",
@@ -375,11 +375,11 @@ def test_the_lock_follows_the_port(tmp_path):
         assert r.returncode == 0, r.stdout + r.stderr
         return next(x for x in r.stdout.splitlines() if x.startswith("lock: "))[len("lock: "):]
 
-    assert lock() == str(t / ".odr-radio-usb.lock")
-    assert lock("--radio-port", "/dev/cu.one") == str(t / ".odr-radio-dev_cu.one.lock")
-    assert lock("--radio-port=/dev/cu.two") == str(t / ".odr-radio-dev_cu.two.lock")
-    assert lock(ODR_PORT="/dev/ttyS3") == str(t / ".odr-radio-dev_ttyS3.lock")
-    assert lock("--radio-port", "/dev/cu.one", ODR_RADIO_LOCK=str(t / "bench-{port}.lock")) == str(
+    assert lock() == str(t / ".rfoundry-radio-usb.lock")
+    assert lock("--radio-port", "/dev/cu.one") == str(t / ".rfoundry-radio-dev_cu.one.lock")
+    assert lock("--radio-port=/dev/cu.two") == str(t / ".rfoundry-radio-dev_cu.two.lock")
+    assert lock(RFOUNDRY_PORT="/dev/ttyS3") == str(t / ".rfoundry-radio-dev_ttyS3.lock")
+    assert lock("--radio-port", "/dev/cu.one", RFOUNDRY_RADIO_LOCK=str(t / "bench-{port}.lock")) == str(
         t / "bench-dev_cu.one.lock")
 
 

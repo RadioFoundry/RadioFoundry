@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Baofeng DM-1801 Pro: board descriptor, IO mux and reset-time pin levels, key map
 #include "board.h"
 #include "boot_pins.h"
@@ -10,6 +10,7 @@
 #include "cal/baofeng/baofeng_cal.h"
 #if CONFIG_BCAST_FM
 #include "bcast/rda5807m/rda5807m_hal.h"
+#include "hrc_bcast.h"
 #endif
 #if CONFIG_APRS
 #include "hrc_afsk.h"
@@ -21,6 +22,12 @@
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 470000000, true },
+#if CONFIG_AM_RX
+	{ 108000000, 136000000, false },	// the air band, AM receive only (docs/spec/airband-and-broadcast.md 3)
+#endif
+#if CONFIG_BCAST_FM
+	{ 65000000, 108000000, false },		// the broadcast band, on the tuner (airband-and-broadcast.md 4)
+#endif
 };
 
 // The factory calibration holds PA drive points for three power levels (hardware-dm1801pro.md 6.4): low, middle, high
@@ -53,17 +60,19 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
 	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
 	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
-	{ KEY_SK2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ KEY_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
 	{ KEY_SOS, ACT_NONE, ACT_EMERGENCY, false, false, 0 },
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 
-// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): side key 1, side key 2
-static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom, then the function keys
+static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2, KEY_SOS, KEY_AB, KEY_VFO_MR };
+static const char *const side_key_names[] = { "SK1", "SK2", "SOS", "A/B", "VFO/MR" };
 
 const board_t board = {
 	.name = "DM-1801 Pro",
-	.caps = CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
+	.caps = CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0) |
+		(CONFIG_AM_RX ? CAP_AM_RX : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -74,6 +83,7 @@ const board_t board = {
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
 	.side_keys = side_keys,
+	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
 	.radio = &dm1801pro_radio,
 	.power = &dm1801pro_power,
@@ -165,6 +175,21 @@ void board_early_init(void)
 	io_init();
 }
 
+#if CONFIG_BCAST_FM
+// The broadcast tuner (hardware-dm1801pro.md 7): RDA5807 class on PTA25 / PTA26, enabled by PTA29 low (from the order
+// of the stock start and stop code, not measured). Its audio needs the speaker amplifier, which the channel shares
+static void bcast_audio(bool on)
+{
+	dm1801pro_amp(DM1801PRO_AMP_BCAST, on);
+}
+
+static const hrc_bcast_cfg_t bcast_cfg = {
+	.sda_pin = PIN_BCAST_SDA, .scl_pin = PIN_BCAST_SCL,
+	.enable_pin = PIN_BCAST_EN, .enable_level = false,
+	.audio_path = bcast_audio,
+};
+#endif
+
 void board_init(void)
 {
 	hrc_flash_spi0_configure(&flash_cfg);
@@ -173,6 +198,6 @@ void board_init(void)
 	hrc_flash_spi0.init();
 	bf_cal_load(&hrc_flash_spi0, 0);	// no decoded copy on this radio
 #if CONFIG_BCAST_FM
-	dm1801pro_bcast_init();
+	hrc_bcast_init(&bcast_cfg);
 #endif
 }

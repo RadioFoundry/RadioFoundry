@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Read and write the radio's codeplug over the open-firmware CPS protocol (docs/spec/open-firmware-cps.md, our shim in
 docs/spec/cps-protocol.md 2), the way qdmr's open-firmware UV380 driver does it.
 
@@ -10,7 +10,7 @@ docs/spec/cps-protocol.md 2), the way qdmr's open-firmware UV380 driver does it.
   cps_client.py verify image.bin                     read back and compare
   cps_client.py test-channels image.bin              put an FM and a DMR test channel (and a zone) into an image
 
-Transport: the radio's USB serial port (--port, $ODR_PORT, or the only 1FC9:0094 device), or a command speaking
+Transport: the radio's USB serial port (--port, $RFOUNDRY_PORT, or the only 1FC9:0094 device), or a command speaking
 the protocol on stdin / stdout (--exec "tests/host/cpsSim --populate", for tests). The DM-32UV and the DB25-D PRO have
 no USB: give the programming cable's port with --port (for example /dev/ttyUSB1; needs pyserial). The DB25-D's image
 sits at the STM32 addresses, so it takes no --offset.
@@ -149,7 +149,7 @@ class Cps:
     def opening(self, writing):
         self.control(0)
         self.control(1)
-        self.text(0, "OpenDigitalRadio")
+        self.text(0, "RadioFoundry")
         self.text(16, "Writing" if writing else "Reading")
         self.control(3)
         self.control(6, bytes([4 if writing else 3]))
@@ -397,8 +397,8 @@ def make_test_codeplug(img, rx_mhz=461.4625, tg=201, cc=2, ts=1, dmr_id=None, ca
     2 (DMR on the same frequency, color code cc, timeslot ts, talk target group tg = contact 1) and zone 1 holding both.
     Everything else in img stays; zone slot 0 and contact 1 are replaced. dmr_id and callsign set the radio's own."""
     hz = round(rx_mhz * 1e6)
-    for number, rec in ((1, _channel_record(f"ODR FM {rx_mhz:.4f}", hz, hz, False)),
-                        (2, _channel_record(f"ODR DMR TG{tg}", hz, hz, True, cc, ts, contact=1))):
+    for number, rec in ((1, _channel_record(f"Test FM {rx_mhz:.4f}", hz, hz, False)),
+                        (2, _channel_record(f"Test DMR TG{tg}", hz, hz, True, cc, ts, contact=1))):
         _, a = channel_addr(number)
         img[a:a + CHANNEL_SIZE] = rec
         i = number - 1
@@ -406,7 +406,7 @@ def make_test_codeplug(img, rx_mhz=461.4625, tg=201, cc=2, ts=1, dmr_id=None, ca
     name = f"TG {tg}".encode("ascii")[:16]
     img[CONTACT_BASE:CONTACT_BASE + 24] = (name + b"\xff" * (16 - len(name)) + _bcd_id(tg) +
                                            bytes([0, 0, 0, 0xFF]))
-    zone = b"ODR test".ljust(16, b"\xff") + (1).to_bytes(2, "little") + (2).to_bytes(2, "little") + bytes(156)
+    zone = b"Test zone".ljust(16, b"\xff") + (1).to_bytes(2, "little") + (2).to_bytes(2, "little") + bytes(156)
     img[ZONE_DATA:ZONE_DATA + len(zone)] = zone     # the zeros after the list also select the 80-channel layout
     img[ZONE_BITMAP] |= 1
     if callsign:
@@ -420,7 +420,7 @@ def make_test_codeplug(img, rx_mhz=461.4625, tg=201, cc=2, ts=1, dmr_id=None, ca
 def open_cps(port=None, exec_cmd=None, timeout=2.0, offset=0):
     if exec_cmd:
         return Cps(ExecTransport(exec_cmd), timeout, offset)
-    port = port or os.environ.get("ODR_PORT") or find_port()
+    port = port or os.environ.get("RFOUNDRY_PORT") or find_port()
     if not port:
         raise CpsError("no radio found (1FC9:0094): give --port")
     return Cps(SerialTransport(port), timeout, offset)

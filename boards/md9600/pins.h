@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // TYT MD-9600 / RT90 pin map (docs/spec/hardware-md9600.md section 2). The same on every board revision, except that
 // on V5 PE11-PE14 are IF filter and route lines instead of the AK2365A bus and PE15's use is unknown. Nothing here has
 // been checked on a radio yet.

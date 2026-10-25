@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // BER subset for SNMP (see snmpBer.h). Written from ITU-T X.690 clauses 8.1 (identifier and length octets), 8.3
 // (integer), 8.7 (octet string), 8.8 (null) and 8.19 (object identifier).
 #include <string.h>

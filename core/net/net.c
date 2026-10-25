@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio's own services' entry point from the host link task (see net.h): the TCP services' glue to the IP gateway
 // here, the UDP services' in net_services.c
 #include "config.h"

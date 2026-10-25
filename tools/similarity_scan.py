@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Token-shingle similarity scan of this tree against reference trees (docs/CLEANROOM.md).
 
     tools/similarity_scan.py [options] REF [REF...]

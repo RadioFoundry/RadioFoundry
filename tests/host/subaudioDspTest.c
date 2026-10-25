@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Software CTCSS / DCS detection and the tone generators (drivers/rf/subaudio): synthetic signals with a DC offset,
 // noise, neighboring tones, a phase reversal, dropouts, and the generator fed back into the detector
 #include <math.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 RF sequencing: the order of supply, VCO, synthesizer, IF and PA steps for receive, transmit and the way back,
 // per board revision (docs/spec/hardware-md9600.md 5.5, 19.8). Pure: the lines, both three-wire buses, the DAC, the
 // ADC, the calibration and the delays come in through md9600_rf_ops_t, so the host test (tests/host/md9600RfSeqTest.c)

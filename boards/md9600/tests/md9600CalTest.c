@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // drivers/cal/calblock and the MD-9600's calibration and option block reader (boards/md9600/cal_md9600.c) on
 // synthetic blocks: loading from pieces, read failures, blank blocks and rows, the row layout and interpolation of
 // docs/spec/hardware-md9600.md 11, the band edges and the backlight bit. No real calibration data.

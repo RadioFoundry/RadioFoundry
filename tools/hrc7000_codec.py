@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""Merge an HR_C7000 radio's own stock AMBE+2 codec into an OpenDigitalRadio image, on your machine.
+# Copyright (c) 2026 The RadioFoundry Authors
+"""Merge an HR_C7000 radio's own stock AMBE+2 codec into a RadioFoundry image, on your machine.
 
 The radios differ only in where things are (BOARDS: the slot and the windows its linker script reserves; PROFILES: where
 a stock file keeps the codec). The recipe, for the DM-32UV from docs/spec/codec-dm32.md ("Where the codec is",
@@ -27,8 +27,8 @@ import struct
 import sys
 import zlib
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "odrflash"))
-from odrflash import boards, codecmap  # noqa: E402  (the board registry; the codec maps: which words of each build hold addresses)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry"))
+from rfoundry import boards, codecmap  # noqa: E402  (the board registry; the codec maps: which words of each build hold addresses)
 
 APP_BASE = 0x0300C000
 STOCK_HEADER = 0x100
@@ -42,7 +42,7 @@ CODEC_SIG = (0x152514D8, 0x74C776CD)
 # Per radio, from the board registry (the __codec_* symbols of the board's linker script, its [flash.stub]): the codec
 # slot in program flash, the codec window at the top of SRAM (the slot's code runs at its start; sized for the largest
 # code among the board's maps), the modem SRAM table window (docs/spec/codec-placement.md), and what the web flasher
-# needs beyond the codec (site/odrsite/repo.py c7000_flash): the program flash size, whether the SPI0 chip select the
+# needs beyond the codec (site/rfoundrysite/repo.py c7000_flash): the program flash size, whether the SPI0 chip select the
 # data flash sits on has one (not on a radio with the SPI NAND there). The image starts at app_base.
 BOARDS = {b.id: {"slot": b.codec_slot, "run": b.codec_run, "tables": b.codec_tables, "app_base": b.app_base,
                  "progmem_size": b.stub["progmem"] if b.stub else 0x100000,
@@ -228,10 +228,10 @@ PROGMEM_SIZE = 0x100000
 EPILOG = """\
 examples:
   %(prog)s --stock DM32.01.01.049.bin
-  %(prog)s --stock DM32.01.01.049.bin --image build/dm32/odr_dm32.bin -o build/dm32/odr_dm32_codec.bin
+  %(prog)s --stock DM32.01.01.049.bin --image build/dm32/rfoundry_dm32.bin -o build/dm32/rfoundry_dm32_codec.bin
   %(prog)s --self-test
 
-then:  tools/serial_loader.py --model dm32 build/dm32/odr_dm32_codec.bin --wrap build/dm32/odr_dm32_codec_BFUV32.bin
+then:  tools/serial_loader.py --model dm32 build/dm32/rfoundry_dm32_codec.bin --wrap build/dm32/rfoundry_dm32_codec_BFUV32.bin
        and load that file with the Baofeng updater (docs/testing/dm32-bringup.md)
 """
 
@@ -616,7 +616,7 @@ def main():
     ap.add_argument("--stock", help="your radio's stock firmware file (DM-32UV: 049 or 046; DM-1801 Pro: a program "
                     "flash dump, stub/stubtool.py --progmem; DB25-D PRO: 018, 2024-05-09 or later, or a program flash read of a "
                     "radio with 020)")
-    ap.add_argument("--image", help="the built raw application image (default: build/<board>/odr_<board>.bin)")
+    ap.add_argument("--image", help="the built raw application image (default: build/<board>/rfoundry_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image (default: <image>_codec.bin)")
     ap.add_argument("--self-test", action="store_true", help="run the built-in checks on synthetic data")
     ap.add_argument("--test-slot", metavar="FILE", help="write a synthetic version 2 slot, its windows and the moved "
@@ -638,7 +638,7 @@ def main():
         if board is None:
             raise ExtractError("unsupported stock file (sha256 %s): give --board to see what that radio takes"
                                % sha256(stock))
-        args.image = args.image or os.path.join(repo_root(), "build", board, "odr_%s.bin" % board)
+        args.image = args.image or os.path.join(repo_root(), "build", board, "rfoundry_%s.bin" % board)
         out = args.output or os.path.splitext(args.image)[0] + "_codec.bin"
         check_output_path(out)
         prof, code, tables = extract(stock, board=board)

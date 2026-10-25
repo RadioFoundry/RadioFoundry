@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 vocoder: the stock D002.032 AMBE+2 codec run in place from flash (docs/spec/codec-placement.md, "STM32
 // radios"; the codec: docs/spec/codec-md380.md, "State init and calls").
 //
-// The merge on the user's machine (odrflash, tools/codec_extract.py, the web flasher) writes the codec's main table
+// The merge on the user's machine (rfoundry, tools/codec_extract.py, the web flasher) writes the codec's main table
 // window at its stock address (0x0808FC64..0x0809AC5C, sector 8) and its four small table windows at theirs (sectors
 // 10 and 11), its code at the start of sector 11 (0x080E0000), and the descriptor at the end of sector 11
 // (platform/stm32f4/codec_desc.h). The code reaches its tables through absolute addresses, which don't change. The
@@ -20,7 +20,7 @@
 #define CODEC_TAG		0x2032u		// the descriptor's tag for stock D002.032
 #define CODEC_FLASH_LO		0x08080000u	// sectors 8-11: the flash boards/md380/memory.ld leaves to the codec
 
-// The D002.032 codec as the merge places it (tools/odrflash/odrflash/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of
+// The D002.032 codec as the merge places it (tools/rfoundry/rfoundry/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of
 // the code and the main table window after the rewrites, and of the small windows (unchanged). The descriptor must
 // carry exactly these
 #define CODEC_CODE		0x080E0000u
@@ -36,8 +36,8 @@ static const codec_desc_window_t tables[CODEC_WINDOWS] = {
 	{ 0x080FD490u, 0x20u, 0xDA18C5EFu },
 };
 
-// The id tools/odrflash and the release manifests use for this codec: D002.032 placed as above (the descriptor and
-// every CRC matched). A build from before the move reports "md380-d2032", which tells odrflash that the codec isn't
+// The id tools/rfoundry and the release manifests use for this codec: D002.032 placed as above (the descriptor and
+// every CRC matched). A build from before the move reports "md380-d2032", which tells rfoundry that the codec isn't
 // where this layout keeps it
 static const stm32_codec_profile_t d2032 = {
 	.tag = CODEC_TAG, .id = "md380-d2032-s11", .flash_lo = CODEC_FLASH_LO,

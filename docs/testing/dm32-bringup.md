@@ -25,21 +25,21 @@ change when one fails.
 
    ```
    make BOARD=dm32                                   # csky-elf GCC: tools/build-csky-toolchain.sh
-   tools/serial_loader.py --model dm32 build/dm32/odr_dm32.bin --wrap build/dm32/odr_dm32_BFUV32.bin
+   tools/serial_loader.py --model dm32 build/dm32/rfoundry_dm32.bin --wrap build/dm32/rfoundry_dm32_BFUV32.bin
    ```
 
    For DMR voice, merge your own stock codec first (never commit or share the result):
 
    ```
-   tools/hrc7000_codec.py --stock DM32.01.01.049.bin    # writes build/dm32/odr_dm32_codec.bin
-   tools/serial_loader.py --model dm32 build/dm32/odr_dm32_codec.bin --wrap build/dm32/odr_dm32_codec_BFUV32.bin
+   tools/hrc7000_codec.py --stock DM32.01.01.049.bin    # writes build/dm32/rfoundry_dm32_codec.bin
+   tools/serial_loader.py --model dm32 build/dm32/rfoundry_dm32_codec.bin --wrap build/dm32/rfoundry_dm32_codec_BFUV32.bin
    ```
 
-4. Load the image in update mode: `tools/serial_loader.py --model dm32 build/dm32/odr_dm32_codec.bin` (a raw
+4. Load the image in update mode: `tools/serial_loader.py --model dm32 build/dm32/rfoundry_dm32_codec.bin` (a raw
    image, or the `_BFUV32.bin` file without `--model`, over the programming cable; `--stock DM32.01.01.049.bin` goes back), or the Baofeng updater
-   with the `_BFUV32.bin` file. To keep the stock codeplug and get it onto ODR, run `tools/dm32_migrate.py all
-   --image build/dm32/odr_dm32_codec.bin` instead: it backs the codeplug up with qdmr, flashes, and writes it back
-   once ODR runs ([dm32-migration.md](../spec/dm32-migration.md), users:
+   with the `_BFUV32.bin` file. To keep the stock codeplug and get it onto RadioFoundry, run `tools/dm32_migrate.py all
+   --image build/dm32/rfoundry_dm32_codec.bin` instead: it backs the codeplug up with qdmr, flashes, and writes it back
+   once RadioFoundry runs ([dm32-migration.md](../spec/dm32-migration.md), users:
    [the manual](../user/19-moving-from-stock-dm32.md)). Both tools are untested on a radio: run them with `--dry-run`
    first, and the codeplug part only after step 2 works.
 
@@ -49,7 +49,7 @@ Run the first boots with the antenna on and **no PTT**. Transmit only into a dum
 
 | Look for | Proves | If not |
 |---|---|---|
-| Radio stays on after you let go of the knob (power latch) | crt0 ran, clocks, `board_early_init` (latch first) | Nothing ran at all: check the image starts with `psrclr ie` at 0x0300C000 (`csky-elf-objdump -d build/dm32/odr_dm32.elf | head`); re-enter update mode |
+| Radio stays on after you let go of the knob (power latch) | crt0 ran, clocks, `board_early_init` (latch first) | Nothing ran at all: check the image starts with `psrclr ie` at 0x0300C000 (`csky-elf-objdump -d build/dm32/rfoundry_dm32.elf | head`); re-enter update mode |
 | Backlight on, then the Home screen | RTOS tick (Timer 1), LCD controller, ST7789 init | Backlight but no picture: `display_dm32.c` (LCDC_CFG 0x303, IO_DIPLEX2 hand-over). Picture upside down or mirrored: MADCTL in `display_dm32.c` (0xC0 now; try 0x00, 0x40, 0x80) |
 | Colors right (black background, not white) | inversion on | `st7789_t.invert` |
 | Picture fills the panel, no tearing seams | 2x scaling, window | `st7789_write_rows` |
@@ -61,9 +61,9 @@ The DM-32 has no USB: the host link (debug link, CPS, MMDVM hotspot) runs on UAR
 programming cable (CH340 or FTDI).
 
 ```
-tools/odr_debug.py --port /dev/cu.usbserial-XXXX version
-tools/odr_debug.py --port /dev/cu.usbserial-XXXX diag
-tools/odr_debug.py --port /dev/cu.usbserial-XXXX screenshot -o /tmp/dm32.png
+tools/rfoundry_debug.py --port /dev/cu.usbserial-XXXX version
+tools/rfoundry_debug.py --port /dev/cu.usbserial-XXXX diag
+tools/rfoundry_debug.py --port /dev/cu.usbserial-XXXX screenshot -o /tmp/dm32.png
 python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "health or boot or ui"
 ```
 
@@ -76,7 +76,7 @@ python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "healt
 
 | Check | If not |
 |---|---|
-| Every keypad key moves the UI as its label says (6.1 table); `odr_debug.py view --section input` shows the physical key bits | Rows / columns or the matrix map in `input_dm32.c`; phantom keys: raise the 5 us settle delay |
+| Every keypad key moves the UI as its label says (6.1 table); `rfoundry_debug.py view --section input` shows the physical key bits | Rows / columns or the matrix map in `input_dm32.c`; phantom keys: raise the 5 us settle delay |
 | SK1 (below PTT) = monitor, SK2 = talk target; holding SK1 doesn't kill the column 3 keys' neighbors | `direct[]` in `input_dm32.c` |
 | Encoder: one step per detent, right direction | `keymatrix_encoder_step` sign; one count per edge of B (6.3): if a detent gives two, count one edge only (`hrc_pin_irq` in `input_dm32.c`) |
 | PTT shows as key bit 20 | GPIO 0x2B |
@@ -153,19 +153,21 @@ late entry and color code 2 all counted.
 An hour on a busy DMR channel and an hour of FM scanning: `uo`, `ov` (event overflow), `aud ov / un` stay near 0,
 no stalls (`st`), no resets.
 
-## 11. Air band AM and broadcast FM (once the board glue exists)
+## 11. Air band AM and broadcast FM
 
-The glue isn't written yet ([airband-and-broadcast.md](../spec/airband-and-broadcast.md), parked). When it is:
+The design is [airband-and-broadcast.md](../spec/airband-and-broadcast.md); the open questions are
+[hardware-dm32.md](../spec/hardware-dm32.md) 8.7. `tests/hil/test_listen_bands.py` checks the view keys without
+keying.
 
 | Check | Settles |
 |---|---|
-| The stock radio (or a scanner) on the local ATIS; ODR on the same frequency: AM audio, `am=1` in the view, read back FD6818 0x47 / 0x30 | which chip demodulates AM, the 0x47 AF type (spec 2.3 A1) |
+| The stock radio (or a scanner) on the local ATIS; RadioFoundry on the same frequency: AM audio, `am=1` in the view, read back FD6818 0x47 / 0x30 | which chip demodulates AM, the 0x47 AF type (A1) |
 | No audio: FD6818 0x47 (0x0140 gives FM audio), then the speaker source switch (GPIO 0x2F high) | AM audio route (A2) |
 | A strong and a weak station; a generator at -100 dBm with `rssi` on the link | AM AGC and filter (A3), the AM squelch offset (A4) |
 | PTT on an air channel and on a split channel with TX in 108-137 MHz | deny screen, red LED off, nothing on the SDR |
 | The RDA5807M chip ID (0x58xx at 0x11) on PTA25 / PTA26 | it is there, the SDA pull-up (B1, B3) |
 | A strong local station with each reference clock setting; with and without the headset | reference clock (B2), audio path (B4), antenna (B5) |
-| A call on the channel while listening | the broadcast mutes and comes back 2 s after |
+| The VFO on 100.1 MHz, then a local station: `bcast=1`, `bcast_fault=0`, the signal meter moves; the knob steps 200 kHz on the odd tenths | the tuner glue, the squelch threshold |
 
 ## 12. GPS
 
@@ -184,7 +186,7 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 
 | Check | Expected | If not |
 |---|---|---|
-| The debug link's `aprs` view on 144.390 | `aprs.rx_listening=1`, `rx_bits` rising by about 1200 a second on noise, `rx_peak` above 0 | `rx_listening=0`: the receive setting (`odr_debug.py aprs set rx 1`) or the frequency. Bits not rising: SYS_INTERP_MASK bit 14 (0x1100039C) clear, or GPIO 0x2F high |
+| The debug link's `aprs` view on 144.390 | `aprs.rx_listening=1`, `rx_bits` rising by about 1200 a second on noise, `rx_peak` above 0 | `rx_listening=0`: the receive setting (`rfoundry_debug.py aprs set rx 1`) or the frequency. Bits not rising: SYS_INTERP_MASK bit 14 (0x1100039C) clear, or GPIO 0x2F high |
 | A packet on the air | `rx_hdlc_frames` and `stations` go up | `rx_fcs_errors` rising with packets present: the half read (FM_ADDR_SW), the level (noise reaches full scale), audio under the tones (below) |
 | An FM signal on 144.390 with the squelch open | heard on the speaker, through the C7000's FM playback | AUDIO_CONTROL bit 6, the codec line out |
 | A packet sent at level 50, recorded by the SDR bench (`aprs.md` 13) | decodes with a valid FCS, about 3 kHz peak deviation, twist within 2 dB | no tones: AUDIO_CONTROL bit 7 during the transmission, Timer 4 (vector 36) not firing. Deviation: `amp_per_level` in `radio_dm32.c` |
@@ -222,7 +224,7 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
   answered that morning failed the same way, so the build wasn't the cause. Power-key cycles didn't help. A battery
   pull left the radio dead (flat battery); after charging and a cold start the link answered. Cause unknown: the
   battery or the full power cut. If it happens again, read `bat` on the diagnostics page first.
-- Boot stub, `stubtool.py --attach --boot reset` (warm reset into the new image): ODR came up but its host link never
+- Boot stub, `stubtool.py --attach --boot reset` (warm reset into the new image): RadioFoundry came up but its host link never
   answered, every time on the DM-32 (2026-10-16; 3 of 4 times on the DM-1801 Pro). A power cycle after the write
   works. Until the reset path is fixed, power-cycle instead.
 - Boot stub LED: after a write finished and was verified by CRC, with no tool on the port, the LED kept blinking fast

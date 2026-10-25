@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A byte stream to a host computer: a USB CDC-ACM port, a UART (programming cable) or, later, a UDP socket on the
 // network adapter. The core's host link (core/hostlink) owns it and dispatches the bytes to the MMDVM hotspot or the
 // CPS protocol. All calls are from one task, the host link's.

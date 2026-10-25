@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // qdmr YAML in the Codeplug Editor: Save offers the codeplug as a qdmr YAML file, and Open File takes one. An import
 // replaces the channels, zones, contacts, lists and APRS configurations as one undoable change; what neither side can
 // hold is listed afterwards.

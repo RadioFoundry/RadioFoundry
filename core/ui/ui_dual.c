@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Dual watch (docs/ux/dual-watch.md): two channels on Home, A and B, each a channel of any zone or the VFO. One of
 // them is selected: PTT transmits on it and the watch goes on after, and Home's keys (Up / Down, the knob, digits,
 // quick settings) act on it as they act on the one channel of the single Home. The A/B key, Left / Right or # 1
@@ -32,6 +32,11 @@ static uint32_t cp_serial;	// the codeplug the panes were found in
 static bool resume;		// power on: the watch comes back if it ran at power off (UI_DUAL_ON)
 static ui_dual_ref_t chan[2];	// a pane's channel before it became the VFO: the VFO key goes back to it
 static bool chan_ok[2];
+#if CONFIG_ZONE_EDIT
+static uint16_t chan_num[2];	// its channel number: found again by it when the codeplug changes
+static uint32_t zones_seen;	// zone_edit_shifts() when the zone indexes here were last followed
+static uint32_t serial_seen;	// codeplug_serial() then (the watch on: find_again keeps its own)
+#endif
 static uint8_t stops_seen, sel_seen;	// the view's dual_stops and dual_sel at the last tick (seen_ok: once read)
 static bool seen_ok;
 static uint32_t off_ms;		// the UI stopped the watch (the radio view may still show it this soon after)
@@ -68,6 +73,10 @@ void ui_dual_reset(void)
 	resume = true;
 	memset(snap, 0, sizeof snap);
 	memset(chan_ok, 0, sizeof chan_ok);
+#if CONFIG_ZONE_EDIT
+	zones_seen = zone_edit_shifts();
+	serial_seen = codeplug_serial();
+#endif
 	seen_ok = false;
 	off_ms = 0;
 	dual()->back_to = UI_DUAL_NONE;
@@ -561,6 +570,11 @@ static void pane_changed(uint8_t pane, const ui_dual_ref_t *old)
 	if (!old->vfo && ref[pane].vfo) {
 		chan[pane] = *old;	// the VFO key goes back to it
 		chan_ok[pane] = true;
+#if CONFIG_ZONE_EDIT
+		static zone_t z;	// static: not on the UI task's stack
+		chan_num[pane] = codeplug_zone(old->zone, &z) && old->pos < z.count ? z.channels[old->pos] : 0;
+		chan_ok[pane] = chan_num[pane] != 0;
+#endif
 	}
 	snap[pane].valid = false;
 	if (d->last == pane)
@@ -857,6 +871,38 @@ static bool watch_again(ui_dual_t *d, const radio_view_t *v)
 	return true;
 }
 
+#if CONFIG_ZONE_EDIT
+// The zone editor moved zone indexes (zone_edit.h) or changed a zone: the references kept here follow. The panes'
+// zones are mapped (find_again then finds their channels by number, starting there); the VFO key's channel is found
+// again by number from its mapped zone; the last B and A, kept while the watch is off, are dropped when their zone
+// was deleted or the codeplug changed, and B is then found again from the saved setting (a channel number, b_last)
+static void follow_zones(const ui_dual_t *d)
+{
+	uint32_t to = zone_edit_shifts();
+	bool changed = codeplug_serial() != serial_seen;
+	if ((to == zones_seen && !changed) || zone_edit_busy())
+		return;
+	serial_seen = codeplug_serial();
+	uint16_t out;
+	for (uint8_t i = 0; i < 2; i++) {
+		if (!ref[i].vfo && zone_edit_map(zones_seen, to, ref[i].zone, &out) != ZONE_MAP_LOST)
+			ref[i].zone = out;
+		if (chan_ok[i]) {
+			if (zone_edit_map(zones_seen, to, chan[i].zone, &out) != ZONE_MAP_LOST)
+				chan[i].zone = out;
+			chan_ok[i] = find_code(chan_num[i], chan[i].zone, &chan[i]);
+		}
+	}
+	if (zone_edit_map(zones_seen, to, pick_zone, &out) != ZONE_MAP_LOST)
+		pick_zone = out;
+	zones_seen = to;
+	if (!d->on) {
+		b_known = false;	// b_last finds it again by its number
+		a_known = false;
+	}
+}
+#endif
+
 // The codeplug changed (the CPS, a channel edit): the panes' channels are found again by number. False: one is gone
 // and the watch ended
 static bool find_again(ui_dual_t *d)
@@ -962,6 +1008,11 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 	stops_seen = v->dual_stops;
 	sel_seen = v->dual_sel;
 	seen_ok = true;
+#if CONFIG_ZONE_EDIT
+	if (zone_edit_busy())
+		return false;	// a zone write under way: the codeplug and the zone indexes are read once it is done
+	follow_zones(d);
+#endif
 	if (!d->on)
 		return resume_poll(d, v) || adopt_poll(d, v);
 	if (v->hotspot)

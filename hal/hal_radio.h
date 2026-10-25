@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Radio: what the core asks of the RF side, whatever chips the board has.
 // The board composes its RF chip, modem / audio chip, band and PA switching and calibration behind this.
 #ifndef HAL_RADIO_H

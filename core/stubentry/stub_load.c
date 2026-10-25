@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The runtime RAM-monitor loader's portable core (see stub_load.h).
 #include <string.h>
 #include "stubentry/stub_load.h"

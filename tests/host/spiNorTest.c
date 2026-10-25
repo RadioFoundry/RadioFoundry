@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // drivers/flash/spi_nor against a model of a W25Q / GD25Q class chip at the SPI bus (the command set of the Winbond
 // W25Q128JV and GigaDevice GD25Q128 data sheets: 03 read, 02 page program, 20 sector erase, 06 write enable,
 // 05 / 35 / 15 status, 9F JEDEC ID, 48 security register read, 4B unique ID). The model keeps what the driver must get right:
@@ -497,7 +497,7 @@ static void test_store_16mb(void)
 	fill(a, 1);
 	CHECK(storage_sector_write(0xFFF000u, a) && memcmp(&chip.mem[0xFFF000u], a, sizeof(a)) == 0);
 	CHECK(chip.mem[0] == 0xFF && chip.mem[0xFFF] == 0xFF);	// no wrap to the bottom
-	static const uint8_t magic[4] = { 'O', 'D', 'R', 'N' };
+	static const uint8_t magic[4] = { 0x4F, 0x44, 0x52, 0x4E };
 	CHECK(f_write(map16.native_addr, magic, 4) && f_write(map16.native_addr + 0xFF000u, a, 64));
 	CHECK(storage_native_erase() == STORAGE_NATIVE_ERASED);
 	CHECK(chip.mem[map16.native_addr] == 0xFF && chip.mem[map16.native_addr + 0xFF000u] == 0xFF);

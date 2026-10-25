@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ST7789 driver: reset and init command stream (MADCTL after 0x35, inversion, clear, display on), bus begin / end
 // pairing, and frame buffer rows sent at 2x scale and from a 16-color frame buffer (docs/spec/hardware-dm32.md 7)
 #include <stdio.h>

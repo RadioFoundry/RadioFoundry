@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Generic SPI NAND flash with on-die ECC (the common command set: FF reset, 9F ID, 0F / 1F get / set feature, 13 page
 // read to the chip's cache, 03 read from cache, 06 write enable, 02 / 84 program load, 10 program execute, D8 block
 // erase). The board supplies the bus, any locking and the geometry from the chip's data sheet; the driver builds the

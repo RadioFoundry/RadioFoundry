@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Display: the core draws into a frame buffer it owns and hands rows to the board to show
 #ifndef HAL_DISPLAY_H
 #define HAL_DISPLAY_H

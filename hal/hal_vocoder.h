@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // AMBE+2 vocoder as a platform service. The vocoder itself is the radio's own stock-firmware codec, merged on the
 // user's machine and never shipped (README, docs/spec/codec-*.md). Frames here are the 49 voice parameter bits; the
 // AMBE+2 3600x2450 FEC and interleaving to and from the 72-bit air frame are done in core/dmr.
@@ -29,7 +29,7 @@ typedef struct {
 	// Optional (may be NULL): the id of the codec profile the board recognized in flash, e.g. "<radio>-v0206-csv", or
 	// NULL when that check failed. It stays valid while a board has stopped its codec (present() false after the HR_C7000
 	// stub entry parks it): it describes flash, not whether voice can run now. Reported by the debug link's VERSION
-	// (codec=) so the flashing tool knows whether the codec in flash can be kept (docs/dev/release.md, tools/odrflash).
+	// (codec=) so the flashing tool knows whether the codec in flash can be kept (docs/dev/release.md, tools/rfoundry).
 	// Read only: it never changes flash
 	const char *(*profile)(void);
 	// Optional (both NULL without encode options): the VOCODER_OPT_* bits this codec takes, and the options for every

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Internal interfaces between the MD-9600 board files (docs/spec/hardware-md9600.md)
 #ifndef MD9600_H
 #define MD9600_H

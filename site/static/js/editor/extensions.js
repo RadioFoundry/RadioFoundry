@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Where the editor's optional parts plug in (CSV, qdmr YAML, contact sources): each registers what it adds to the
 // Save menu, to a table's actions, to opening a text file, and to the DMR ID Database tab. The page asks this module
 // and imports only parts.js, the list of parts, so a part can be added without touching the page.

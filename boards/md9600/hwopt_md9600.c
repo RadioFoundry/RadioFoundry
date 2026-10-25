@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 hardware options (hal_hwopt.h): the board revision, which nothing on the radio reports (docs/spec/
 // hardware-md9600.md 16, 19.3), stored in the board's record sector; with CONFIG_MD9600_TX, the transmit arm for this
 // power cycle (RAM only: every start is safe again)

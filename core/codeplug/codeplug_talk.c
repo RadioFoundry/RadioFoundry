@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A channel's default talk target (codeplug.h, docs/spec/dmr-voice.md 2). Only codeplug_contact() and
 // codeplug_listen_list() underneath, so the host tests' codeplug fakes serve it too
 #include "config.h"

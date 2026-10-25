@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Bell 202 AFSK on PCM (afsk.h)
 #include <string.h>
 #include "aprs/afsk.h"

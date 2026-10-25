@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 diagnostics page lines: raw readings for bench checks (no bus traffic; everything is cached elsewhere)
 #include <stddef.h>
 #include "dm1701.h"

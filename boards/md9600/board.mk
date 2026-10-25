@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # TYT MD-9600 / Retevis RT90 (mobile): STM32F405VG + HR_C6000 + two RF chains (VHF, UHF), each with its own synthesizer
 # (SKY72310 on V1-V3, "PLL1590" on V4, LMX2571 on V4A / V5) and IF receiver (AK2365A on V1-V4) + ST7567 128x64 LCD and
 # 25Q128 flash on SPI2 (docs/spec/hardware-md9600.md). One image for every board revision: the revision is chosen at

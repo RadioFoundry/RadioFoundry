@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR ID Database tab: build the database, or private-call contacts, from RadioID.net users. Users come from a
 // user.csv the user downloads, or from RadioID's API for a few regions. The user picks regions, filters and the text
 // each record shows. The choices and the user's own RadioID API key are kept in this browser (localStorage), never
@@ -11,8 +11,8 @@ import * as radioid from "../codeplug/sources/radioid.js";
 import { writeIddb, eraseIddb, addContacts, iddbEnd, iddbSize } from "../codeplug/sources/output.js";
 import { TEXT_LENGTHS } from "../codeplug/iddb.js";
 
-const PREFS = "odr-editor-radioid";
-const KEY = "odr-radioid-api-key";
+const PREFS = "rfoundry-editor-radioid";
+const KEY = "rfoundry-radioid-api-key";
 
 const DEFAULTS = {
 	mode: "file",	// "file" (user.csv) or "api"

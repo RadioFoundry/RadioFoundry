@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D hand mic capture for the bring-up. The hand mic has its own MCU: while a key is held it sends a short frame
 // every 2.5 ms at 115200 baud on PTA9, the PC link's RXD (hardware-db25d.md 3.4), so the host UART receives it. This
 // logs those frames from the UART's receive interrupt: a gap of more than 0.5 ms between bytes ends a frame, and a

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 power latch, battery, LEDs and the ADC (docs/spec/hardware-md380.md section 10).
 // ADC1 scans the volume knob position, battery, mic level, RSSI, the noise level and the temperature sensor
 // continuously; DMA2 Stream4 keeps the last SCANS results in a circular buffer, so a reading is a short average with

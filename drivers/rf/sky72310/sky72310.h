@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Skyworks SKY72310 fractional-N frequency synthesizer (docs/spec/hardware-md380.md 5.2, from the Skyworks
 // SKY72310-11 data sheet 203639L): register words, the divider arithmetic, and a write sequence over a board-supplied
 // three-wire bus. Generic: the board knows the reference oscillator, the VCO and how its pins are shared.

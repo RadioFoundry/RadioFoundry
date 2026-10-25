@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // This board's own build switches (config.mk passes them; a host test passes the ones it builds with). They aren't
 // feature switches: no other radio has them, so they stay out of config/features.mk and core/config.h
 #ifndef CONFIG_MD9600_H

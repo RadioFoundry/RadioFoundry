@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A minimal PPP (RFC 1661) in HDLC-like framing (RFC 1662) with IPCP (RFC 1332), for IPv4 over a serial host link
 // (CONFIG_NET_PPP, docs/spec/ppp.md). One link, the radio as the peer that knows both addresses.
 //
@@ -17,8 +17,8 @@
 //
 // No RTOS calls and no hardware: the host link task feeds bytes (ppp_input) and time (ppp_poll); the host tests do
 // the same against scripted peers and pppd.
-#ifndef ODR_PPP_H
-#define ODR_PPP_H
+#ifndef RFOUNDRY_PPP_H
+#define RFOUNDRY_PPP_H
 
 #include <stdbool.h>
 #include <stddef.h>

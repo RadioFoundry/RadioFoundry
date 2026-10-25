@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // KISS framing (Chepponis and Karn, "The KISS TNC", 1987; docs/spec/aprs.md 8): FEND 0xC0 frames, FESC escapes, a
 // type byte (port in the high nibble, command in the low) and the data. Data frames (command 0) carry an AX.25 frame
 // without its FCS. Our own frames use command 6 (SetHardware, "specific to each TNC") with a tag byte: 'G' an
 // APRS-IS line for the iGate helper (both ways), 'N' an NMEA sentence from the host.
-#ifndef ODR_KISS_H
-#define ODR_KISS_H
+#ifndef RFOUNDRY_KISS_H
+#define RFOUNDRY_KISS_H
 
 #include <stdint.h>
 #include <stdbool.h>

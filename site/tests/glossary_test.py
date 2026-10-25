@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""The glossary markup of the docs pages (site/odrsite/docs.py): which words get an <abbr>, and which never do.
+# Copyright (c) 2026 The RadioFoundry Authors
+"""The glossary markup of the docs pages (site/rfoundrysite/docs.py): which words get an <abbr>, and which never do.
 
     python3 site/tests/glossary_test.py      (needs markdown-it-py)
 """
@@ -10,7 +10,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from odrsite import docs  # noqa: E402
+from rfoundrysite import docs  # noqa: E402
 
 
 class Marking(unittest.TestCase):

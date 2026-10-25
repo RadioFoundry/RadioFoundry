@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Volume knob power switch from the battery sense line (power_switch.h)
 #include "radio/power_switch.h"
 

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* TYT MD-9600 / RT90, STM32F405VGT6, application behind the 48 KB TYT bootloader (docs/spec/hardware-md9600.md 1.3).
  * The bootloader starts the application at 0x0800C000 like the other STM32F4 radios' bootloaders, so the vector table, stack
  * rule and start-up are the same (platform/stm32f4/common.ld).

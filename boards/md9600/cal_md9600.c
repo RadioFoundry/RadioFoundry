@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 factory calibration and hardware option block (cal_md9600.h, docs/spec/hardware-md9600.md 11). Both blocks
 // are kept whole as read (drivers/cal/calblock), so the bytes nobody has decoded yet are there for the diagnostics and
 // for a later layout; only the rows the spec lists are read, each only when it isn't blank. Transmit stays refused

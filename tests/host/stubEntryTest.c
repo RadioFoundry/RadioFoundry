@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The runtime RAM-monitor loader's portable state machine (core/stubentry/stub_load.c, docs/spec/debuglink.md 3.18):
 // arming, chunked load, the magic / length / CRC-32 guards and the verified ENTER, and the STM32F4 stub image header
 // rule ENTER applies while the IWDG runs (stub/stm32f4/f4stub_header.h).

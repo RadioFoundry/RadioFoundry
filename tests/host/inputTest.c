@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The input gesture engine (core/input/input_engine.c): press, long, repeat, raw edges, encoder, held keys
 #include <stdio.h>
 #include <string.h>

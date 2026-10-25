@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A write-only three-wire serial bus (clock, data, a chip select per device) as the synthesizer and IF receiver drivers
 // see it (rf/pll1590, rf/lmx2571, rf/ak2365a). The board wires it to GPIO bit-banging or a peripheral and keeps any
 // locking; a driver only builds words. Frames are MSB first and latched when the chip select goes high.

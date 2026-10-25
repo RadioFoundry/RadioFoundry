@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Internal interfaces between the DM-32UV board files
 #ifndef DM32_H
 #define DM32_H
@@ -44,6 +44,7 @@ void dm32_lcdbus_unlock(void);
 
 // DMR PCM to the speaker instead of the FM path (radio_dm32.c; the hal_audio_t speaker_pcm hook of hrc_audio_pcm)
 void dm32_speaker_pcm(bool on);
+void dm32_bcast_audio(bool on);	// the broadcast receiver's audio path (CONFIG_BCAST_FM)
 
 // --- Diagnostics (diag_dm32.c) ---
 typedef struct {

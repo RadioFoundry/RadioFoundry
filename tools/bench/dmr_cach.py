@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """dmr_cach: the DMR CACH and short LC coding (ETSI TS 102 361-1 6.3, 9.1.4, B.3.5, B.3.7, B.4.1), the Python twin of
 core/dmr/fec/dmrCach.c: TACT Hamming(7,4,3), the CACH interleave of figure B.9, the short LC's CRC-8 and its BPTC of
 three Hamming(17,12,3) rows plus a column parity row sent by columns (figure B.6), and a decoder that assembles short

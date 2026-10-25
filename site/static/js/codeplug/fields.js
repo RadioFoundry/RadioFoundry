@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Field encodings of the open-firmware codeplug (docs/spec/open-firmware-cps.md 7.3): BCD frequencies, DMR IDs and
 // tones, 0xFF-padded names, 24-bit locations. The C reference is core/codeplug/codeplug.c. Runs in browsers and Node.
 

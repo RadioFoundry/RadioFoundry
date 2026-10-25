@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The SNMP agent in the firmware (CONFIG_SNMP, docs/spec/snmp.md): the glue between the message processing and MIB
 // (snmp.c, snmpMib.c) and the radio. Runs in the host link task:
 //
@@ -13,8 +13,8 @@
 //
 // Settings (communities as hashes, the RF manager, flags) live in settings_t snmp_*; SET (USB, or RF when allowed)
 // and the debug link's SNMP command change them.
-#ifndef ODR_SNMP_AGENT_H
-#define ODR_SNMP_AGENT_H
+#ifndef RFOUNDRY_SNMP_AGENT_H
+#define RFOUNDRY_SNMP_AGENT_H
 
 #include <stdbool.h>
 #include <stdint.h>

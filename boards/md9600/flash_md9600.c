@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 data flash: a 25Q128-class SPI NOR (16 MB) on SPI2 with the LCD, chip select PB12 (docs/spec/hardware-md9600.md
 // 12), through the shared driver (platform/stm32f4/spi_flash) under the board's SPI2 lock. The map and the board's
 // record sector are in store_md9600.c. The security registers hold the factory calibration (1-2) and the hardware

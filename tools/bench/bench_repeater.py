@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """
 A local DMR repeater on the SDR bench's MMDVM_HS dual modem board, with no network: the radio under test, on a repeater channel
 (its TX = our --rx, its RX = our --tx), must wake it with the downlink activate CSBK (BS_Dwn_Act) and then talk
 through it. This is how we test the radio's repeater mode (RMO): BS activation, slot alignment to the outbound (CACH
 TC), BS sync reception, hang time, the radio hearing its own call repeated, and late entry on a BS outbound.
 
-New tool (no earlier bench tool did this). It wraps odr_sdrbench's Repeater (odr_sdrbench.mmdvm.repeater: the
+New tool (no earlier bench tool did this). It wraps rfoundry_sdrbench's Repeater (rfoundry_sdrbench.mmdvm.repeater: the
 MMDVMHost DMRSlot behavior on a duplex modem: BS sync, CACH with short LC, 3 headers, terminators repeated for the
 call hang, AMBE FEC regenerated) with no network link. Needs the dual modem (two ADF7021s; a single one can't run
-duplex) and the odr_sdrbench package. The bench's gateway service must not hold the bench modem.
+duplex) and the rfoundry_sdrbench package. The bench's gateway service must not hold the bench modem.
 
     bench_repeater.py --rx 466.6875 --tx 461.6875 [--cc 2] [--seconds 60] [--hang 4] [--call-hang 3]
                     [--slots 1,2] [--power 255] [--json] [--beacon S --beacon-len S [--beacon-phase S]]
@@ -36,10 +36,10 @@ import logging
 import threading
 import time
 
-from odr_sdrbench.dmr import pdu
-from odr_sdrbench.mmdvm.modem import CONTROL_IDLE, Modem, ModemConfig, SYNC_AUDIO, SYNC_DATA
-from odr_sdrbench.mmdvm.radio import ModemTuner, Radio
-from odr_sdrbench.mmdvm.repeater import Repeater
+from rfoundry_sdrbench.dmr import pdu
+from rfoundry_sdrbench.mmdvm.modem import CONTROL_IDLE, Modem, ModemConfig, SYNC_AUDIO, SYNC_DATA
+from rfoundry_sdrbench.mmdvm.radio import ModemTuner, Radio
+from rfoundry_sdrbench.mmdvm.repeater import Repeater
 
 BS_DWN_ACT = 0x38
 

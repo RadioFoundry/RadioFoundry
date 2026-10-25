@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The list screens and the screen table (information-architecture.md 4, 6, 8): the Hub with its six destinations,
 // actions on a station, Contacts, Messages, Recent, Channels, Tools, Settings grouped by intent, the talk target
 // picker, information pages and the one confirmation (factory reset, P7).
@@ -14,14 +14,15 @@
 #include "hal_time.h"
 #include "radio/tones.h"
 #include "radio/mic_gain.h"
+#include "radio/radio_am.h"
 #include "input/keyassign.h"
 #if CONFIG_HOTSPOT || CONFIG_USB_NETWORK
 #include "hostlink/hostlink.h"
 #endif
-#include "odr_about.h"
+#include "rfoundry_about.h"
 
-#ifndef ODR_GIT
-#define ODR_GIT "host"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "host"
 #endif
 
 extern const ui_scr_def_t ui_find_screen;
@@ -748,11 +749,16 @@ static void chans_item(uint16_t i, ui_item_t *it)
 	sb_str(&vb, TEXT_ALT_CLOSE);
 }
 
+static void chans_context(uint16_t i);
+
 static void chans_select(uint16_t i, bool hold)
 {
 	static char msg[CODEPLUG_NAME_LEN + 8];
 	static zone_t z;
-	(void)hold;
+	if (hold && !ui_has_action(ACT_CONTEXT)) {
+		chans_context(i);	// few-key boards: long OK opens what CONTEXT would (information-architecture 7.5)
+		return;
+	}
 	const radio_view_t *v = ui_view();
 	uint16_t raw = ui_filter_raw(i);
 	if (chans_is_vfo(raw)) {
@@ -812,7 +818,7 @@ static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 	} else
 #endif
 	{
-		sb_str(&wb, ch->mode == RADIO_MODE_DMR ? "DMR" : "FM");
+		sb_str(&wb, ch->mode == RADIO_MODE_DMR ? "DMR" : radio_am_channel(ch) ? "AM" : "FM");
 	}
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_freq(b, ch->rx_hz);
@@ -832,6 +838,45 @@ static void sb_channel_row(sbuf_t *b, const channel_t *ch)
 static zone_t zone_cache;
 static uint16_t zone_cached = 0xFFFF;
 
+// With the zone editor (ui.md 2.2) the list's raw rows are "Add channel", the channels, "Zone options"
+#define ZE_ADD		(CONFIG_ZONE_EDIT ? 1u : 0u)
+#if CONFIG_ZONE_EDIT
+#if !CONFIG_CHANNEL_EDIT
+#error "CONFIG_ZONE_EDIT needs CONFIG_CHANNEL_EDIT"
+#endif
+static uint16_t zone_focus_num;		// the channel the zone's list focuses when it shows again (ui_menus_resume)
+static uint16_t ze_zone;		// the zone the editor's screens work on (the zone list's index)
+static zone_op_t ze_op;			// the change handed to the storage job (ui_svc_zone_edit)
+static char ze_msg[CODEPLUG_NAME_LEN + 24];	// the editor's toasts
+
+static zone_op_t *ze_op_new(uint8_t kind, uint16_t pos)
+{
+	memset(&ze_op, 0, sizeof ze_op);
+	ze_op.kind = kind;
+	ze_op.zone = ze_zone;
+	ze_op.pos = pos;
+	return &ze_op;
+}
+
+static bool ze_post(void)
+{
+	if (ui_svc_zone_edit(&ze_op))
+		return true;
+	ui_toast("Couldn't save now: try again");
+	return false;
+}
+
+// "<text><name>" in ze_msg, as a toast
+static void ze_toast(const char *text, const char *name)
+{
+	sbuf_t b;
+	sb_init(&b, ze_msg, sizeof ze_msg);
+	sb_str(&b, text);
+	sb_str(&b, name);
+	ui_toast(ze_msg);
+}
+#endif
+
 static const zone_t *zone_of_frame(void)
 {
 	uint16_t zi = ui_frame()->arg;
@@ -846,37 +891,84 @@ static const zone_t *zone_of_frame(void)
 static uint16_t zone_raw_count(void)
 {
 	zone_cached = 0xFFFF;	// a fresh read when the list opens or the filter changes
-	return zone_of_frame()->count;
+	return (uint16_t)(zone_of_frame()->count + 2u * ZE_ADD);
 }
+
+#if CONFIG_ZONE_EDIT
+// The editor's rows: their label, NULL for a channel's row
+static const char *zone_edit_row(uint16_t raw)
+{
+	if (raw == 0)
+		return "Add channel";
+	return raw > zone_of_frame()->count ? "Zone options" : NULL;
+}
+#endif
 
 static bool zone_raw_label(uint16_t raw, char *buf, uint8_t len)
 {
 	static channel_t ch;
 	const zone_t *z = zone_of_frame();
-	if (raw >= z->count || !codeplug_channel(z->channels[raw], &ch))
-		return false;
 	sbuf_t b;
 	sb_init(&b, buf, len);
-	sb_u32(&b, raw + 1u, 1);
+#if CONFIG_ZONE_EDIT
+	if (zone_edit_row(raw) != NULL) {
+		sb_str(&b, zone_edit_row(raw));
+		return true;
+	}
+#endif
+	uint16_t pos = (uint16_t)(raw - ZE_ADD);
+	if (pos >= z->count || !codeplug_channel(z->channels[pos], &ch))
+		return false;
+	sb_u32(&b, pos + 1u, 1);
 	sb_chr(&b, ' ');
 	sb_str(&b, ch.name);
 	return true;
 }
 
-static void zone_enter(void)
+// Focus the row of channel number num (0: the channel in use, when this is the zone in use)
+static void zone_focus(uint16_t num)
 {
 	const radio_view_t *v = ui_view();
-	if (!v->vfo && v->zone_index == ui_frame()->arg)
-		for (uint16_t i = 0; i < ui_filter_count(); i++)
-			if (ui_filter_raw(i) == v->zone_pos)
-				ui_frame()->focus = i;
+	const zone_t *z = zone_of_frame();
+	for (uint16_t i = 0; i < ui_filter_count(); i++) {
+		uint16_t pos = (uint16_t)(ui_filter_raw(i) - ZE_ADD);
+		if (pos >= z->count)
+			continue;
+		if (num != 0 ? z->channels[pos] == num : !v->vfo && v->zone_index == ui_frame()->arg && pos == v->zone_pos)
+			ui_frame()->focus = i;
+	}
 }
+
+static void zone_enter(void)
+{
+#if CONFIG_ZONE_EDIT
+	zone_focus_num = 0;
+#endif
+	zone_focus(0);
+}
+
+#if CONFIG_ZONE_EDIT
+// The list shows again (a menu above it closed) or the codeplug changed under it: the rows are read again
+// (ui_filter_rebuild), and the focus follows the channel just moved or added
+void ui_menus_resume(void)
+{
+	if (ui_frame()->scr == SCR_ZONE && zone_focus_num != 0)
+		zone_focus(zone_focus_num);
+}
+#endif
 
 static void zone_item(uint16_t i, ui_item_t *it)
 {
 	static channel_t ch;
 	const zone_t *z = zone_of_frame();
 	uint16_t raw = ui_filter_raw(i);
+#if CONFIG_ZONE_EDIT
+	if (zone_edit_row(raw) != NULL) {
+		strcpy(it->label, zone_edit_row(raw));
+		return;
+	}
+#endif
+	raw = (uint16_t)(raw - ZE_ADD);		// the position in the zone
 	if (raw >= z->count || !codeplug_channel(z->channels[raw], &ch))
 		return;
 	sbuf_t b;
@@ -891,16 +983,39 @@ static void zone_item(uint16_t i, ui_item_t *it)
 		it->flags |= UI_ITEM_TEMP;	// the channel we are on
 }
 
+#if CONFIG_ZONE_EDIT
+static void zone_context(uint16_t i)
+{
+	uint16_t raw = ui_filter_raw(i);
+	if (zone_edit_row(raw) != NULL)
+		return;
+	ze_zone = ui_frame()->arg;
+	ui_push(SCR_ZCHANNEL, (uint16_t)(raw - ZE_ADD));
+}
+#endif
+
 static void zone_select(uint16_t i, bool hold)
 {
-	(void)hold;
 	const radio_view_t *v = ui_view();
 	uint16_t zi = ui_frame()->arg;
+	uint16_t raw = ui_filter_raw(i);
+#if CONFIG_ZONE_EDIT
+	if (zone_edit_row(raw) != NULL) {
+		ze_zone = zi;
+		ui_push(raw == 0 ? SCR_ZPICK : SCR_ZONEEDIT, zi);
+		return;
+	}
+	if (hold && !ui_has_action(ACT_CONTEXT)) {
+		zone_context(i);	// few-key boards: long OK opens what CONTEXT would (information-architecture 7.5)
+		return;
+	}
+#endif
+	(void)hold;
 	if (v->vfo)
 		radio_req_vfo(false);
 	if (v->zone_index != zi)
 		radio_req_zone(zi);
-	radio_req_zone_pos(ui_filter_raw(i));
+	radio_req_zone_pos((uint16_t)(raw - ZE_ADD));
 	ui_go_home();
 }
 
@@ -911,7 +1026,13 @@ static const char *zone_title(void)
 
 static const ui_scr_def_t zone_screen = {
 	.name = "zone", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = NULL,
-	.hint = "OK go  0-9 find  Back", .empty = "Empty zone",
+#if CONFIG_ZONE_EDIT
+	.hint = TEXT_ALT_OPEN "OK go  # edit  0-9 find" TEXT_ALT_NEXT "OK go  # edit" TEXT_ALT_CLOSE,
+	.context = zone_context,
+#else
+	.hint = "OK go  0-9 find  Back",
+#endif
+	.empty = "Empty zone",
 	.count = ui_filter_count, .item = zone_item, .select = zone_select, .title = zone_title,
 	.enter = zone_enter, .raw_count = zone_raw_count, .raw_label = zone_raw_label,
 };
@@ -924,6 +1045,11 @@ static const ui_scr_def_t zone_screen = {
 #define CHLIST_NUM(raw)	((uint16_t)((raw) + 1u - CHLIST_NEW))
 #if CONFIG_CHANNEL_EDIT
 static bool ced_from_current;		// the next push of the channel opens a copy of what the radio uses now
+#endif
+#if CONFIG_ZONE_EDIT
+static uint16_t ced_copy_of;		// the next push of the channel opens a copy of this one (Copy here, ui.md 2.2)
+static bool ced_into;			// saving the copy puts it in zone ze_zone at ced_into_pos
+static uint16_t ced_into_pos;
 #endif
 
 // The channel the radio is on, 0 in the VFO or when its zone can't be read
@@ -1124,15 +1250,13 @@ static void ced_from_view(void)
 	if (v->temp & RADIO_TEMP_POWER)
 		ced_ch.power = v->power;
 	ced_ch.roam = false;
-	sbuf_t b;
 	char name[CODEPLUG_NAME_LEN + 1];
-	sb_init(&b, name, sizeof name);
 	if (v->vfo) {
+		sbuf_t b;
+		sb_init(&b, name, sizeof name);
 		sb_freq(&b, ced_ch.rx_hz);
 	} else {
-		ced_ch.name[CODEPLUG_NAME_LEN - 2] = 0;	// room for " 2"
-		sb_str(&b, ced_ch.name);
-		sb_str(&b, " 2");
+		zone_copy_name(name, ced_ch.name);	// "Name 2", cut to fit
 	}
 	strcpy(ced_ch.name, name);
 }
@@ -1168,6 +1292,25 @@ static void chinfo_enter(void)
 	ced_edit = CE_NONE;
 	ced_new = ced_from_current;
 	ced_from_current = false;
+#if CONFIG_ZONE_EDIT
+	// Copy here: the channel in use with its temporary changes, as New from current; another one as stored
+	uint16_t src = ced_copy_of;
+	const radio_view_t *v = ui_view();
+	ced_into = src != 0;
+	ced_copy_of = 0;
+	if (ced_into && (v->vfo || v->channel_number != src)) {
+		ced_new = true;
+		if (!codeplug_channel(src, &ced_ch))
+			ced_num = 0;
+		ced_ch.roam = false;
+		char name[CODEPLUG_NAME_LEN + 1];
+		zone_copy_name(name, ced_ch.name);
+		strcpy(ced_ch.name, name);
+		ced_orig = ced_ch;
+		return;
+	}
+	ced_new = ced_new || ced_into;
+#endif
 	if (ced_new) {
 		ced_from_view();
 		ced_orig = ced_ch;
@@ -1427,6 +1570,24 @@ static const char *ced_problem(void)
 	return NULL;
 }
 
+// Write the copy: as a channel, or for Copy here as a channel put in its zone in the same job (ZONE_OP_ADD_NEW)
+static bool ced_write(uint16_t num, bool as_new)
+{
+#if CONFIG_ZONE_EDIT
+	if (ced_into && ced_new && !as_new) {
+		ze_op_new(ZONE_OP_ADD_NEW, ced_into_pos)->channel = num;
+		ze_op.ch = ced_ch;
+		if (!ui_svc_zone_edit(&ze_op))
+			return false;
+		ced_into = false;
+		zone_focus_num = num;	// the zone's list shows it when the editor closes
+		return true;
+	}
+#endif
+	(void)as_new;
+	return ui_svc_write_channel(num, &ced_ch);
+}
+
 static void ced_save(bool as_new)
 {
 	static char msg[32];
@@ -1444,7 +1605,7 @@ static void ced_save(bool as_new)
 		ui_toast("No free channel");
 		return;
 	}
-	if (!ui_svc_write_channel(num, &ced_ch)) {
+	if (!ced_write(num, as_new)) {
 		ui_toast("Couldn't save now: try again");
 		return;
 	}
@@ -1670,7 +1831,11 @@ static void chinfo_select(uint16_t i, bool hold)
 	case CE_SCAN: c->scan_skip = !c->scan_skip; break;
 	case CE_ECO: c->no_eco = !c->no_eco; break;
 	case CE_NUMBER: ui_toast("Save as new channel to use another number"); break;
+#if CONFIG_ZONE_EDIT
+	case CE_ZONES: ui_toast("Zones: add it from a zone's list"); break;
+#else
 	case CE_ZONES: ui_toast("Zones: change them with qdmr for now"); break;
+#endif
 	case CE_GO:
 		if (ced_changed(CE_COUNT))
 			ui_toast("Save first: hold OK");
@@ -1739,6 +1904,7 @@ static const ui_scr_def_t discard_screen = {
 #define TEXT_MULTI_MS	1000u
 
 static char *text_target;
+static void (*text_done)(void);		// called once the text is kept (NULL: none)
 static uint8_t text_max;
 static char text_buf[CODEPLUG_NAME_LEN + 1];
 static uint8_t text_len;
@@ -1751,6 +1917,7 @@ static uint8_t text_mode;
 static void ui_text_open(char *target, uint8_t max)
 {
 	text_target = target;
+	text_done = NULL;
 	text_max = max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN;
 	ui_push(SCR_TEXT, 0);
 }
@@ -1873,6 +2040,8 @@ static bool text_key_fn(const input_event_t *ev)
 		} else {
 			strcpy(text_target, text_buf);
 			ui_pop();
+			if (text_done != NULL)
+				text_done();
 		}
 		ui_dirty();
 		return true;
@@ -1892,6 +2061,315 @@ static const ui_scr_def_t text_screen = {
 	.hint = TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE,
 	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
 };
+
+#if CONFIG_ZONE_EDIT
+// ======================= The zone editor (ui.md 2.2) =======================
+// Channel actions (arg: the position), Add channel, Zone options and Delete zone work on zone ze_zone. ze_z is the
+// zone as these screens show it, read when one opens and changed as the change is posted, so it is right before the
+// job has run
+
+static zone_t ze_z;
+
+static void ze_read(void)
+{
+	if (!codeplug_zone(ze_zone, &ze_z))
+		memset(&ze_z, 0, sizeof ze_z);
+}
+
+static const char *ze_title(void) { return ze_z.name; }
+
+// --- Channel actions ---
+enum { ZC_UP, ZC_DOWN, ZC_COPY, ZC_EDIT, ZC_REMOVE, ZC_COUNT };
+static char zc_name[CODEPLUG_NAME_LEN + 1];
+
+static void zchan_enter(void)
+{
+	static channel_t ch;
+	ze_read();
+	uint16_t pos = ui_frame()->arg;
+	zc_name[0] = 0;
+	if (pos < ze_z.count && codeplug_channel(ze_z.channels[pos], &ch))
+		strcpy(zc_name, ch.name);
+}
+
+static uint16_t zchan_count(void) { return ZC_COUNT; }
+
+static void zchan_item(uint16_t i, ui_item_t *it)
+{
+	static const char *const names[ZC_COUNT] = { "Move up", "Move down", "Copy here", "Edit channel",
+						     "Remove from zone" };
+	strcpy(it->label, names[i]);
+	item_num(it, (uint16_t)(i + 1u));
+	if (i == ZC_REMOVE)
+		it->flags |= UI_ITEM_WARN;
+}
+
+static void zchan_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	uint16_t pos = ui_frame()->arg;
+	if (pos >= ze_z.count)
+		return;
+	uint16_t num = ze_z.channels[pos];
+	if (i == ZC_UP || i == ZC_DOWN) {
+		int dir = i == ZC_UP ? -1 : 1;
+		if (zone_list_move(&ze_z, pos, dir) != ZONE_EDIT_OK) {
+			ui_toast(dir < 0 ? "Already first" : "Already last");
+			return;
+		}
+		ze_op_new(ZONE_OP_MOVE, pos)->dir = (int8_t)dir;
+		if (!ze_post()) {
+			zone_list_move(&ze_z, (uint16_t)(pos + dir), -dir);
+			return;
+		}
+		pos = (uint16_t)(pos + dir);
+		ui_frame()->arg = pos;		// the menu stays on the channel: the digit again moves it on
+		zone_focus_num = num;
+		sbuf_t b;
+		sb_init(&b, ze_msg, sizeof ze_msg);
+		sb_str(&b, "Position ");
+		sb_u32(&b, pos + 1u, 1);
+		sb_str(&b, " of ");
+		sb_u32(&b, ze_z.count, 1);
+		ui_toast(ze_msg);
+	} else if (i == ZC_COPY) {
+		uint16_t free = codeplug_free_channel();
+		if (free == 0) {
+			ui_toast("No free channel");
+		} else if (ze_z.count >= codeplug_zone_capacity()) {
+			ui_toast("Zone full");
+		} else {
+			ced_copy_of = num;
+			ced_into_pos = (uint16_t)(pos + 1u);
+			ui_pop();	// the editor takes the menu's place: the stack stays within its six frames
+			ui_push(SCR_CHANNEL, free);
+		}
+	} else if (i == ZC_EDIT) {
+		ui_pop();
+		ui_push(SCR_CHANNEL, num);
+	} else if (i == ZC_REMOVE) {
+		ze_op_new(ZONE_OP_REMOVE, pos);
+		if (ze_post()) {
+			ui_pop();
+			ze_toast("Removed from ", ze_z.name);
+		}
+	}
+}
+
+static const char *zchan_title(void) { return zc_name; }
+
+static const ui_scr_def_t zchan_screen = {
+	.name = "zchannel", .flags = SF_LIST | SF_NUMBERED, .hint = "1-5 pick  Back",
+	.count = zchan_count, .item = zchan_item, .select = zchan_select, .title = zchan_title, .enter = zchan_enter,
+};
+
+// --- Add channel: the stored channels the zone doesn't hold (raw r: channel r + 1) ---
+static uint16_t zpick_raw_count(void)
+{
+	ze_read();
+	return codeplug_channel_count();
+}
+
+static channel_t zpick_ch;	// the channel zpick_raw_label read last
+
+static bool zpick_raw_label(uint16_t raw, char *buf, uint8_t len)
+{
+	uint16_t num = (uint16_t)(raw + 1u);
+	if (zone_list_find(&ze_z, num) >= 0 || !codeplug_channel(num, &zpick_ch))
+		return false;
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	sb_u32(&b, num, 1);
+	sb_chr(&b, ' ');
+	sb_str(&b, zpick_ch.name);
+	return true;
+}
+
+static void zpick_item(uint16_t i, ui_item_t *it)
+{
+	if (!zpick_raw_label(ui_filter_raw(i), it->label, sizeof it->label))
+		return;
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	sb_channel_row(&b, &zpick_ch);
+}
+
+static void zpick_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	uint16_t num = (uint16_t)(ui_filter_raw(i) + 1u);
+	const radio_view_t *v = ui_view();
+	if (ze_z.count >= codeplug_zone_capacity()) {
+		ui_toast("Zone full");
+		return;
+	}
+	// After the channel in use when this is the zone in use, else at the end
+	bool here = !v->vfo && v->zone_index == ze_zone && v->zone_pos < ze_z.count;
+	ze_op_new(ZONE_OP_INSERT, here ? (uint16_t)(v->zone_pos + 1u) : ze_z.count)->channel = num;
+	if (!ze_post())
+		return;
+	zone_focus_num = num;
+	ui_pop();
+	ui_filter_reset();	// the whole list again (the 2 typed to find Add channel), on the channel added
+	ui_menus_resume();
+	ze_toast("Added to ", ze_z.name);
+}
+
+static const ui_scr_def_t zpick_screen = {
+	.name = "zpick", .flags = SF_LIST | SF_FILTER, .prefix = "Add channel",
+	.hint = TEXT_ALT_OPEN "OK add  0-9 find  Back" TEXT_ALT_NEXT "OK add  Back" TEXT_ALT_CLOSE,
+	.empty = "Every channel is in it",
+	.count = ui_filter_count, .item = zpick_item, .select = zpick_select,
+	.raw_count = zpick_raw_count, .raw_label = zpick_raw_label,
+};
+
+// --- Zone options ---
+enum { ZO_RENAME, ZO_COPY, ZO_DELETE, ZO_COUNT };
+static char ze_name[CODEPLUG_NAME_LEN + 1];
+
+static uint16_t zopt_count(void) { return ZO_COUNT; }
+
+static void zopt_item(uint16_t i, ui_item_t *it)
+{
+	static const char *const names[ZO_COUNT] = { "Rename", "Copy as new zone", "Delete zone" };
+	strcpy(it->label, names[i]);
+	item_num(it, (uint16_t)(i + 1u));
+	if (i == ZO_DELETE)
+		it->flags |= UI_ITEM_WARN;
+}
+
+static void ze_renamed(void)
+{
+	if (ze_name[0] == 0) {
+		ui_toast("Give it a name first");
+		return;
+	}
+	strcpy(ze_op_new(ZONE_OP_RENAME, 0)->name, ze_name);
+	if (ze_post()) {
+		strcpy(ze_z.name, ze_name);
+		ui_toast("Renamed");
+	}
+}
+
+static void zopt_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (i == ZO_RENAME) {
+		strcpy(ze_name, ze_z.name);
+		ui_text_open(ze_name, CODEPLUG_NAME_LEN);
+		text_done = ze_renamed;
+	} else if (i == ZO_COPY) {
+		if (codeplug_zone_count() >= CODEPLUG_ZONES_MAX) {
+			ui_toast("No room for another zone");
+			return;
+		}
+		ze_op_new(ZONE_OP_COPY, 0);
+		if (!ze_post())
+			return;
+		// Back to Zones: the copy can take a slot ahead of this zone and move its index
+		ui_pop();
+		ui_pop();
+		char name[CODEPLUG_NAME_LEN + 1];
+		zone_copy_name(name, ze_z.name);
+		ze_toast("Copied as ", name);
+	} else if (!codeplug_zones_stored()) {
+		ui_toast("It holds every channel: it stays");
+	} else {
+		ui_push(SCR_ZONEDEL, 0);
+	}
+}
+
+static const ui_scr_def_t zopt_screen = {
+	.name = "zoneedit", .flags = SF_LIST | SF_NUMBERED, .prefix = "Zone", .hint = "1-3 pick  Back",
+	.count = zopt_count, .item = zopt_item, .select = zopt_select, .title = ze_title, .enter = ze_read,
+};
+
+// --- Delete zone (destructive: asks, defaults to No; P7) ---
+static uint16_t zdel_count(void) { return 2; }
+
+static void zdel_item(uint16_t i, ui_item_t *it)
+{
+	strcpy(it->label, i == 0 ? "No, keep it" : "Yes, delete");
+	if (i == 1)
+		it->flags |= UI_ITEM_WARN;
+}
+
+static void zdel_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	ui_pop();		// this question
+	if (i == 0)
+		return;
+	ze_op_new(ZONE_OP_DELETE, 0);
+	if (!ze_post())
+		return;
+	ui_pop();		// Zone options
+	ui_pop();		// and the zone's list: back to Zones
+	ze_toast("Deleted ", ze_z.name);
+}
+
+// Zone indexes moved (zone_edit.h): the stack's zone screens follow them. Zones keeps its focus on the same zone, a
+// zone's list and the editor's screens on their zone; a list whose zone was deleted closes, with what is above it.
+// Returns the new top of the stack
+uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint32_t to)
+{
+	uint16_t out;
+	bool ze_ok = zone_edit_map(from, to, ze_zone, &out) == ZONE_MAP_KEPT;
+	if (ze_ok)
+		ze_zone = out;
+	for (uint8_t i = 1; i <= sp; i++) {
+		ui_frame_t *f = &stack[i];
+		if (f->scr == SCR_ZONES && f->focus >= CH_VFO) {
+			if (zone_edit_map(from, to, (uint16_t)(f->focus - CH_VFO), &out) != ZONE_MAP_LOST)
+				f->focus = (uint16_t)(out + CH_VFO);	// a deleted one: the next zone, clamped by the list
+		} else if (f->scr == SCR_ZONE) {
+			if (zone_edit_map(from, to, f->arg, &out) != ZONE_MAP_KEPT)
+				return (uint8_t)(i - 1u);
+			f->arg = out;
+		} else if (f->scr == SCR_ZCHANNEL || f->scr == SCR_ZPICK || f->scr == SCR_ZONEEDIT || f->scr == SCR_ZONEDEL) {
+			if (!ze_ok)
+				return (uint8_t)(i - 1u);
+		}
+	}
+	return sp;
+}
+
+// The codeplug changed and nothing of ours is queued (our last change written, or refused, or a CPS write): the
+// editor's screens show the zone as stored. Channel actions stay on their channel, found by number; it closes when
+// the channel is no longer in the zone
+void ui_menus_codeplug(void)
+{
+	ui_frame_t *f = ui_frame();
+	if (f->scr != SCR_ZCHANNEL && f->scr != SCR_ZPICK && f->scr != SCR_ZONEEDIT && f->scr != SCR_ZONEDEL)
+		return;
+	uint16_t num = f->scr == SCR_ZCHANNEL && f->arg < ze_z.count ? ze_z.channels[f->arg] : 0;
+	ze_read();
+	if (f->scr == SCR_ZCHANNEL) {
+		int at = zone_list_find(&ze_z, num);
+		if (at < 0) {
+			ui_pop();
+			return;
+		}
+		f->arg = (uint16_t)at;
+		zone_focus_num = num;
+	}
+}
+
+static const char *zdel_body(void)
+{
+	sbuf_t b;
+	sb_init(&b, ze_msg, sizeof ze_msg);
+	sb_str(&b, "Delete ");
+	sb_str(&b, ze_z.name);
+	sb_str(&b, "? Channels stay.");
+	return ze_msg;
+}
+
+static const ui_scr_def_t zdel_screen = {
+	.name = "zonedel", .flags = SF_LIST, .prefix = "Delete zone", .hint = "OK choose  Back cancel",
+	.count = zdel_count, .item = zdel_item, .select = zdel_select, .body = zdel_body,
+};
+#endif
 
 #if CONFIG_DMR
 // ======================= A channel's TX contact or RX group list (arg 0 / 1) =======================
@@ -2140,12 +2618,12 @@ static const ui_scr_def_t info_screen = {
 };
 
 // ======================= About (Settings > Advanced) =======================
-// A text page, every word shown (nothing shortened), no status strip while idle: the version, ODR's license, the
+// A text page, every word shown (nothing shortened), no status strip while idle: the version, RadioFoundry's license, the
 // authors, the third-party code and fonts in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
 // through the header make generates (tools/gen_about.py)
 
-static const char *const about_authors[] = ODR_ABOUT_AUTHORS;
-static const char *const about_third[][2] = ODR_ABOUT_THIRD_PARTY;
+static const char *const about_authors[] = RFOUNDRY_ABOUT_AUTHORS;
+static const char *const about_third[][2] = RFOUNDRY_ABOUT_THIRD_PARTY;
 static uint16_t about_first;	// first line shown
 static uint16_t about_max;	// the largest first line (from the last draw)
 
@@ -2154,18 +2632,18 @@ static const char *about_text(void)
 	static char t[400];
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
-	sb_str(&b, "OpenDigitalRadio ");
-	sb_str(&b, ODR_GIT);
+	sb_str(&b, "RadioFoundry ");
+	sb_str(&b, RFOUNDRY_GIT);
 	sb_str(&b, "\nRadio: ");
 	sb_str(&b, board.name);
-	sb_str(&b, "\nMIT License, (c) 2026 The OpenDigitalRadio Authors\n");
-	sb_str(&b, ODR_ABOUT_AUTHOR_COUNT > 1 ? "Authors: " : "Author: ");
-	for (unsigned i = 0; i < ODR_ABOUT_AUTHOR_COUNT; i++) {
-		if (i)
-			sb_str(&b, ", ");
+	sb_str(&b, "\nMIT License, (c) 2026 The RadioFoundry Authors\n");
+	// one author per line, in AUTHORS order: a comma-joined list wraps mid-name on every display
+	sb_str(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? "Authors:" : "Author:");
+	for (unsigned i = 0; i < RFOUNDRY_ABOUT_AUTHOR_COUNT; i++) {
+		sb_chr(&b, RFOUNDRY_ABOUT_AUTHOR_COUNT > 1 ? '\n' : ' ');
 		sb_str(&b, about_authors[i]);
 	}
-	for (unsigned i = 0; i < ODR_ABOUT_THIRD_PARTY_COUNT; i++) {
+	for (unsigned i = 0; i < RFOUNDRY_ABOUT_THIRD_PARTY_COUNT; i++) {
 		sb_chr(&b, '\n');
 		sb_str(&b, about_third[i][0]);
 		sb_str(&b, ": ");
@@ -2175,7 +2653,7 @@ static const char *about_text(void)
 #if CONFIG_FONT_AA
 	sb_str(&b, "\nJetBrains Mono font: OFL-1.1");
 #endif
-	sb_str(&b, "\nAMBE+2 codec: DVSI (stock)");	// from the radio's own firmware, not part of ODR
+	sb_str(&b, "\nAMBE+2 codec: DVSI (stock)");	// from the radio's own firmware, not part of RadioFoundry
 	return t;
 }
 
@@ -2936,6 +3414,10 @@ static const int16_t v_step[] = { 0, 250, 500, 625, 833, 1000, 1250, 2000, 2500,
 static const char *const n_step[] = { "Auto", "2.5 kHz", "5 kHz", "6.25 kHz", "8.33 kHz", "10 kHz", "12.5 kHz",
 				      "20 kHz", "25 kHz", "50 kHz", "100 kHz" };
 #endif
+#if CONFIG_VFO && CONFIG_BCAST_FM
+static const int16_t v_bcast_step[] = { 200, 100 };	// kHz
+static const char *const n_bcast_step[] = { "200 kHz", "100 kHz" };
+#endif
 #if CONFIG_DUAL_WATCH
 static const int16_t v_dual_wait[] = { 500, 1000, 1500, 2000, 3000, 5000 };	// ms
 static const char *const n_dual_wait[] = { "0.5 s", "1 s", "1.5 s", "2 s", "3 s", "5 s" };
@@ -2991,6 +3473,9 @@ static const set_item_t s_talk[] = {
 #if CONFIG_VFO
 	LIST("VFO step", "frequency tuning channel spacing", UI_SET_VFO_STEP, v_step, n_step),
 #endif
+#if CONFIG_VFO && CONFIG_BCAST_FM
+	LIST("FM broadcast step", "VFO tuning radio station 200 kHz odd", UI_SET_BCAST_STEP, v_bcast_step, n_bcast_step),
+#endif
 	NUMBER("Mic gain", NULL, UI_SET_MIC_GAIN, 0, 10, 1, NULL),
 	TOGGLE("Mic AGC", "automatic gain level", UI_SET_MIC_AGC),
 	TOGGLE("Mic noise reduction", "noise suppression background", UI_SET_NOISE_REDUCTION),
@@ -3036,17 +3521,43 @@ static const set_item_t s_power[] = {
 	LIST("Auto power off", NULL, UI_SET_AUTO_OFF_MIN, v_autooff, n_autooff),
 	NUMBER("Low battery warning", NULL, UI_SET_LOW_BATTERY, 5, 30, 5, "%"),
 };
+#if CONFIG_KEY_ASSIGN
+// Settings > Keys: a row pair per key the board lets the user reassign, named as on the radio ("SK1", "SK1 hold")
+_Static_assert(UI_KEY_ROLES == 9, "KEY_ROWS below");
+static char key_label[2 * UI_KEY_ROLES][20];
+
+static void key_labels(void)
+{
+	sbuf_t b;
+
+	if (key_label[0][0] != 0)
+		return;
+	for (uint8_t r = 0; r < UI_KEY_ROLES; r++) {
+		for (uint8_t h = 0; h < 2; h++) {
+			sb_init(&b, key_label[2 * r + h], sizeof key_label[0]);
+			if (board.side_key_names != NULL && r < board.side_key_count) {
+				sb_str(&b, board.side_key_names[r]);
+			} else {
+				sb_str(&b, "Key ");
+				sb_i32(&b, r + 1);
+			}
+			if (h)
+				sb_str(&b, " hold");
+		}
+	}
+}
+#endif
 static const set_item_t s_keys[] = {
 	NUMBER("Long press time", NULL, UI_SET_LONG_PRESS_MS, 400, 1200, 100, " ms"),
 	NUMBER("Key repeat", NULL, UI_SET_REPEAT_MS, 60, 300, 20, " ms"),
 	LIST("Up/Down on Home", NULL, UI_SET_UPDOWN_HOME, v_updown, n_updown),
 #if CONFIG_KEY_ASSIGN
-	LIST("Side key 1", "button programmable", UI_SET_KEY_SIDE1, v_keyfn_press, n_keyfn_press),
-	LIST("Side key 1 hold", "button programmable long press", UI_SET_KEY_SIDE1_HOLD, v_keyfn_hold, n_keyfn_hold),
-	LIST("Side key 2", "button programmable", UI_SET_KEY_SIDE2, v_keyfn_press, n_keyfn_press),
-	LIST("Side key 2 hold", "button programmable long press", UI_SET_KEY_SIDE2_HOLD, v_keyfn_hold, n_keyfn_hold),
-	LIST("Top key", "button programmable", UI_SET_KEY_TOP, v_keyfn_press, n_keyfn_press),
-	LIST("Top key hold", "button programmable long press", UI_SET_KEY_TOP_HOLD, v_keyfn_hold, n_keyfn_hold),
+#define KEY_ROWS(r) \
+	LIST(key_label[2 * (r)], "button programmable", UI_SET_KEY_FIRST + 2 * (r), v_keyfn_press, n_keyfn_press), \
+	LIST(key_label[2 * (r) + 1], "button programmable long press", UI_SET_KEY_FIRST + 2 * (r) + 1, v_keyfn_hold, \
+	     n_keyfn_hold)
+	KEY_ROWS(0), KEY_ROWS(1), KEY_ROWS(2), KEY_ROWS(3), KEY_ROWS(4), KEY_ROWS(5), KEY_ROWS(6), KEY_ROWS(7),
+	KEY_ROWS(8),
 #endif
 };
 static const set_item_t s_my_radio[] = {
@@ -3076,13 +3587,22 @@ static const set_group_t groups[] = {
 uint8_t ui_set_group_count(void) { return GROUPS; }
 const char *ui_set_group_name(uint8_t g) { return g < GROUPS ? groups[g].name : ""; }
 
-// Settings a radio without a battery doesn't have are left out of the list, not shown disabled
+// Settings a radio without a battery (or a broadcast receiver, or the key) doesn't have are left out of the list, not
+// shown disabled
 static bool set_hidden(const set_item_t *s)
 {
 	if (s->type == ST_ACTION && s->id == SA_HARDWARE)
 		return board.hwopts == NULL || board.hwopt_count == 0;
+#if CONFIG_KEY_ASSIGN
+	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
+		key_labels();
+		return (s->id - UI_SET_KEY_FIRST) / 2 >= board.side_key_count;	// a key this radio doesn't have
+	}
+#endif
 	if (s->type != ST_ACTION && s->id == UI_SET_VOLUME)
 		return !(feats() & UI_FEAT_VOLUME);	// a knob sets the volume on the other radios
+	if (s->type != ST_ACTION && s->id == UI_SET_BCAST_STEP)
+		return !(feats() & UI_FEAT_BCAST);
 	return !board_has_battery() && s->type != ST_ACTION &&
 	       (s->id == UI_SET_BATTERY_SAVER || s->id == UI_SET_LOW_BATTERY);
 }
@@ -3205,17 +3725,6 @@ static const char *set_why_not(const set_item_t *s)
 	switch (s->id) {
 	case UI_SET_VOICE_PROMPTS:
 		return "Voice prompts: not in this build";
-#if CONFIG_KEY_ASSIGN
-	case UI_SET_KEY_SIDE1:
-	case UI_SET_KEY_SIDE1_HOLD:
-	case UI_SET_KEY_SIDE2:
-	case UI_SET_KEY_SIDE2_HOLD:
-	case UI_SET_KEY_TOP:
-	case UI_SET_KEY_TOP_HOLD:
-		if ((s->id - UI_SET_KEY_SIDE1) / 2 >= board.side_key_count)
-			return "This radio has no such key";
-		return NULL;
-#endif
 	case UI_SET_TALK_PERMIT:
 		return CONFIG_DMR && CONFIG_BEEP ? NULL : "Talk permit tone: not in this build";
 	case UI_SET_MESSAGE_TONE:
@@ -3754,6 +4263,10 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,
 #if CONFIG_CHANNEL_EDIT
 	[SCR_TEXT] = &text_screen, [SCR_DISCARD] = &discard_screen,
+#if CONFIG_ZONE_EDIT
+	[SCR_ZCHANNEL] = &zchan_screen, [SCR_ZPICK] = &zpick_screen, [SCR_ZONEEDIT] = &zopt_screen,
+	[SCR_ZONEDEL] = &zdel_screen,
+#endif
 #if CONFIG_DMR
 	[SCR_CHPICK] = &chpick_screen,
 #endif

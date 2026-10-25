@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // SKY72310 synthesizer (sky72310.h; docs/spec/hardware-md380.md 5.2)
 #include <stddef.h>
 #include "sky72310.h"
