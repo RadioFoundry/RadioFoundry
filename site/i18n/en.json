@@ -559,7 +559,7 @@
  "home.f_voice": "Voice",
  "home.f_voice_text": "Tier II DMR, Analog FM, Airband AM, Broadcast FM, CTCSS/DCS, VOX, DTMF, Scan, VFO, Dual watch, Privacy, Roaming, Single-Frequency Repeater",
  "home.f_data": "Data",
- "home.f_data_text": "Text messages, talker alias, ARS, location (LRRP, DMR GPS, T/A, NMEA), emergency, call alert, radio check, ARP, ICMP ping, UDP",
+ "home.f_data_text": "Text messages, wireless zone & channel sharing, talker alias, ARS, location (LRRP, DMR GPS, T/A, NMEA), emergency, call alert, radio check, ARP, ICMP ping, UDP",
  "home.f_network": "Network",
  "home.f_network_text": "USB-DMR IP Network, Web-based control, APRS TNC, MMDVM Hotspot, USRP, SNMP, TFTP, rigctld, and more",
  "home.f_tools": "Tools",
