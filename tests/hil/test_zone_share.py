@@ -13,6 +13,8 @@ a fragment of a valid record header.
 
 Opt-in RF: radio_tx + bench_service + bench_modem (--allow-rf), a DMR channel on --dmr-freq in the current zone and at
 least one contact in the codeplug. Import is not tested on air: the bench doesn't send zones."""
+import time
+
 import pytest
 
 from rfoundry_hil import skip
@@ -90,3 +92,166 @@ def test_send_channel_heard(radio, sdr_bench, pytestconfig):
     record = payload[6:]
     assert record[0] == 1 and int.from_bytes(record[1:3], "big") == len(record), record.hex()
     assert record[7] & 0x01, "a one-channel record has the channel flag"
+
+
+# ── Two radios: a zone and a channel sent from the --radio-port radio, offered on and imported by the --peer-port one ──
+CONTACT_BASE, CONTACT_SIZE = 0xA7620, 24        # contact 1 in the CPS image (tools/cps_client.py, open-firmware-cps.md)
+ZONE_BITMAP, ZONE_DATA, ZONE_SIZE, ZONE_SLOTS = 0x8010, 0x8030, 0xB0, 68
+
+
+def _zones(img):
+    """{name: [channel numbers]} of the zones in a CPS image (open-firmware-cps.md 7.3.4)."""
+    out = {}
+    for slot in range(ZONE_SLOTS):
+        if img[ZONE_BITMAP + slot // 8] & (1 << (slot % 8)):
+            rec = img[ZONE_DATA + slot * ZONE_SIZE:ZONE_DATA + (slot + 1) * ZONE_SIZE]
+            name = bytes(rec[:16]).split(b"\xff")[0].decode("ascii", "replace")
+            nums = [int.from_bytes(rec[16 + 2 * i:18 + 2 * i], "little") for i in range(80)]
+            out[name] = nums[:nums.index(0)] if 0 in nums else nums
+    return out
+
+
+def _private_contact_1(dmr_id):
+    """A CPS edit: contact 1 becomes a private contact for dmr_id, the first row of the Send to list."""
+    def edit(img):
+        name = b"HIL zone peer"
+        img[CONTACT_BASE:CONTACT_BASE + CONTACT_SIZE] = (name + b"\xff" * (16 - len(name)) +
+                                                        int(f"{dmr_id:08d}", 16).to_bytes(4, "big") +
+                                                        bytes([1, 0, 0, 0xFF]))
+    return edit
+
+
+def _open_zone(radio):
+    """Hub > Zones > the current zone's list (CONTEXT on it)."""
+    radio.go_home()
+    radio.press("ok")
+    radio.press("4")
+    _screen(radio, "zones")
+    radio.press("hash")
+    _screen(radio, "zone")
+
+
+def _send(radio, before, what):
+    """On Send to: OK on the first contact; wait for the send to end and return the view."""
+    _screen(radio, "zone_share_to")
+    radio.press("ok")
+    v = radio.wait_for(lambda x: int(x.get("zs.sends", 0)) > int(before["zs.sends"]) and
+                       x.get("zs.send_state") in ("2", "3"), timeout=60, sections=("air",), what=f"{what}: the send ended")
+    radio.go_home()
+    return v
+
+
+def _take_offer(peer, before, what):
+    """Wait for the offer on the peer, open it from the banner (CONTEXT) and pick Import."""
+    v = peer.wait_for(lambda x: int(x.get("zs.offered", 0)) > int(before["zs.offered"]) and
+                      x.get("zs.offer_pending") == "1", timeout=30, sections=("air",), what=f"{what}: the offer")
+    peer.go_home()
+    peer.press("hash")
+    _screen(peer, "zone_offer")
+    peer.press("1")
+    return v
+
+
+@pytest.mark.feature("zone_share")
+@pytest.mark.second_radio
+@pytest.mark.rf
+@pytest.mark.radio_tx
+@pytest.mark.codeplug_write
+def test_zone_and_channel_between_radios(radio, pytestconfig, backup_dir):
+    """The --radio-port radio sends its current zone, then one channel of it, to the --peer-port radio over a private
+    contact (contact 1, written for the run and put back); the peer takes each offer from the banner and imports it.
+    Both radios on the first channel on --dmr-freq, the sender at its lowest power, offers turned on in the peer's RAM
+    (debug link SETTING 32). Asserted from the peer's codeplug, read over CPS before and after: a new zone named as
+    the sender's, holding the sender's channels that are in the peer's bands, and the channel added to the peer's
+    first zone. The peer's codeplug is put back afterwards."""
+    peer_port = pytestconfig.getoption("--peer-port")
+    if not peer_port:
+        skip("opt_in", "needs a second radio to receive (--peer-port)")
+    from rfoundry_hil import Radio
+    from test_cps import QDMR, codeplug_edited, codeplug_kept, cps_session
+    _zs(radio)
+    freq = round(pytestconfig.getoption("--dmr-freq") * 1e6)
+    peer = Radio(peer_port)
+    snap_r, snap_p = radio.snapshot(), peer.snapshot()
+    try:
+        _zs(peer)
+        peer_id = int(peer.view(["dmr"])["dmr.own_id"])
+        if peer_id == 0:
+            skip("state", "the peer has no DMR ID (dmr.own_id=0)")
+        for r in (radio, peer):
+            r.go_home()
+            r.find_channel(freq, "dmr")
+        radio.lowest_power()
+        peer.lowest_power()
+        sender_zone = radio.view(["core"])
+        with codeplug_edited(radio, backup_dir, _private_contact_1(peer_id), "zs_sender") as (sent_img, _), \
+                codeplug_kept(peer, backup_dir, "zs_peer") as peer_before:
+            for r in (radio, peer):      # the CPS sessions left both on their channel; make sure
+                r.go_home()
+                r.find_channel(freq, "dmr")
+            peer.link.setting("zs_offers", 1)
+            zones_before = _zones(peer_before)
+            sender_zones = _zones(sent_img)
+            # The sender's current zone: a stored zone of its size that holds the channel it is on
+            here = int(sender_zone["channel_number"])
+            zone_name = next((n for n, ch in sender_zones.items()
+                              if len(ch) == int(sender_zone["zone_size"]) and here in ch), None)
+            if zone_name is None:
+                skip("state", "the sender's channel on --dmr-freq is in no stored zone (only All channels)")
+            # 1. The whole zone, from Zone options > Send zone to...
+            b_r, b_p = radio.view(["air"]), peer.view(["air"])
+            _open_zone(radio)
+            for _ in range(90):         # Zone options is the list's last row
+                v = radio.view(["link"])
+                if v["ui.focus"] == str(int(v["ui.count"]) - 1):
+                    break
+                radio.press("down")
+            else:
+                raise AssertionError(f"Zone options never focused: {v}")
+            radio.press("ok")
+            _screen(radio, "zoneedit")
+            radio.press("3")
+            sent = _send(radio, b_r, "zone")
+            assert sent["zs.send_state"] == "2", f"the zone send failed: {sent}"
+            _take_offer(peer, b_p, "zone")
+            peer.wait_for(lambda x: "Imported" in x.get("ui.banner", "") or "Updated" in x.get("ui.banner", ""),
+                          timeout=30, sections=("link",), what="the zone import's banner")
+            print("peer banner:", peer.view(["link"]).get("ui.banner"))
+            # 2. One channel, from the channel's actions > Send channel to...
+            b_r, b_p = radio.view(["air"]), peer.view(["air"])
+            _open_zone(radio)
+            radio.press("hash")
+            radio.press(_send_channel_menu(radio))
+            sent = _send(radio, b_r, "channel")
+            assert sent["zs.send_state"] == "2", f"the channel send failed: {sent}"
+            _take_offer(peer, b_p, "channel")
+            _screen(peer, "zone_offer_zone")
+            peer.press("ok")            # into the peer's first zone
+            peer.wait_for(lambda x: x.get("ui.screen") == "home" and "Importing" not in x.get("ui.toast", ""),
+                          timeout=30, sections=("link",), what="the channel import done")
+            time.sleep(2)
+            peer_after = cps_session(peer, lambda c: c.read_image(QDMR))
+            zones_after = _zones(peer_after)
+            print("sender zone:", zone_name, sender_zones[zone_name])
+            print("peer zones before:", {n: len(c) for n, c in zones_before.items()})
+            print("peer zones after:", {n: len(c) for n, c in zones_after.items()})
+            new = [n for n in zones_after if n not in zones_before]
+            assert new, "the peer has no new zone after the import"
+            assert any(n.startswith(zone_name[:12]) for n in new), f"new zones {new}, sent {zone_name!r}"
+            assert len(new) == 1, f"new zones {new}"
+            imported = zones_after[new[0]]
+            # The channel went to the end of the first zone in the list, which may be the new one (a new zone takes
+            # the lowest free slot). Either way the zones hold the zone import's channels plus one more entry
+            added = sum(map(len, zones_after.values())) - sum(map(len, zones_before.values()))
+            n_zone = added - 1
+            assert 0 < n_zone <= len(sender_zones[zone_name]), \
+                f"{added} zone entries added for a zone of {len(sender_zones[zone_name])} channels and one channel"
+            assert len(imported) in (n_zone, n_zone + 1), f"the new zone holds {len(imported)}, the import wrote {n_zone}"
+    finally:
+        for r, s in ((radio, snap_r), (peer, snap_p)):
+            try:
+                r.go_home()
+                r.restore(s)
+            except Exception as e:      # the codeplug restore matters more; report and go on
+                print(f"restore: {e}")
+        peer.close()

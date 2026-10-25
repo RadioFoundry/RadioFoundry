@@ -76,6 +76,9 @@ def pytest_addoption(parser):
                 help="test_split_pair_handheld: a third radio, the subscriber calling into the pair (its current "
                      "DMR channel is edited for the run and put back)")
     g.addoption("--split-ms-ts", default="1,2", help="test_split_pair_handheld: the subscriber's slots, in turn")
+    g.addoption("--peer-port", default=os.environ.get("RFOUNDRY_PEER_PORT"),
+                help="a second RadioFoundry radio that receives from the --radio-port radio (test_zone_share's "
+                     "receiver; its codeplug is backed up and put back)")
     g.addoption("--split-out-mhz", type=float, default=None,
                 help="MHz: test_split_pair, the repeater output the TX half sends on (its input is --dmr-freq, where "
                      "the bench calls); no default: one you may transmit on, inside the SDR's shared window")
