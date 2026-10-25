@@ -37,6 +37,7 @@ import contextlib
 import time
 
 import pytest
+from _pytest.outcomes import Skipped
 
 from rfoundry_hil import counter_deltas, skip
 
@@ -202,9 +203,9 @@ PEAK_MIN = 1000             # as test_dmr_audio_smoke: decoded speech peaks at t
 def _bench_lease(request):
     """A bench lease when an SDR bench is configured (the radios transmit on a frequency it may be watching), else
     nothing: this test doesn't need the bench."""
-    try:  # hil-skip: catches the fixture's skip
+    try:
         bench = request.getfixturevalue("sdr_bench")
-    except pytest.skip.Exception:
+    except Skipped:	# the fixture's own skip
         return contextlib.nullcontext()
     return bench.lease()
 
