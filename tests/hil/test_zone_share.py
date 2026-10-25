@@ -147,8 +147,8 @@ def _send(radio, before, what):
 
 
 def _wait_import(peer, pred, timeout, what):
-    """Wait on the peer through an import: its debug link may not answer while the import holds the storage, so a
-    missed answer is retried until timeout. Prints how long the import took and the longest silence."""
+    """Wait on the peer through an import. A missed answer is retried until timeout; the longest silence must stay
+    under 2 s. Prints how long the import took and the longest silence."""
     from rfoundry_hil import DebugLinkError
     start = time.monotonic()
     silent_since, longest = None, 0.0
@@ -163,6 +163,8 @@ def _wait_import(peer, pred, timeout, what):
             silent_since = None
         if pred(v):
             print(f"{what}: {time.monotonic() - start:.1f} s, the debug link silent {longest:.1f} s at most")
+            # A lower-priority task waiting for the storage lock gets it between records (settings-store.md, Locks)
+            assert longest < 2.0, f"{what}: the debug link was silent {longest:.1f} s while the import ran"
             return v
         time.sleep(0.2)
     raise AssertionError(f"{what}: not within {timeout} s (silent {longest:.1f} s at most; last {silent_since})")

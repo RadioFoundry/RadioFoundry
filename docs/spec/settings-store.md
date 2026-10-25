@@ -254,6 +254,11 @@ calls, a settings save, a CPS commit. `storage_quick_lock()` guards only RAM: th
 takes only the quick lock on its own, so it never waits for an erase. A codeplug read from the radio task (a channel
 change) does take `storage_lock` and may wait out a sector rewrite (about 100 ms) during a CPS write.
 
+A run of writes (a zone import, a CPS commit) takes and gives `storage_lock` once per record, from a task above the
+waiters. A give alone only makes a lower-priority waiter ready, and the writer takes the lock again before it runs, so
+the waiter would wait out the whole run (6 s for a zone import on an SPI NOR radio). The last give therefore yields
+one tick when a task is waiting: each waiter waits one record at most.
+
 ## 5. Foreign region guard
 
 The flash of a radio that ran other firmware may hold that firmware's data where our settings ring and journal go.
