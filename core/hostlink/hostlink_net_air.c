@@ -8,9 +8,12 @@
 #include "hostlink/hostlink_net.h"
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"
+#include "dmr/ipGateway.h"
 
 #include "dmr/dmrAirQueue.h"
 #include "debuglink/dlog.h"
+
+_Static_assert(IPGW_AIR_SRC_OURS == DMR_DATA_IP_OURS, "the gateway's source goes to the service as is");
 
 #define MAX_AGE_MS	10000U	// a packet still queued after this is dropped: what it was for has likely moved on
 
@@ -18,15 +21,16 @@ static volatile uint32_t own;
 static hostlink_net_air_stats_t stats;
 
 // The host link task: into the air queue, in order behind what is there (#154: a host's datagrams in a row all go)
-static bool put(bool raw, bool group, uint32_t dst, uint8_t protocol, const uint8_t *data, int length)
+static bool put(bool raw, bool group, uint32_t dst, uint32_t src_ip, uint32_t dst_ip, uint8_t ttl, uint8_t protocol,
+		const uint8_t *data, int length)
 {
 	if ((length <= 0) || (length > HOSTLINK_NET_AIR_MAX)) {
 		stats.too_long++;
 		return false;
 	}
 	airqItem_t it = { .kind = raw ? AIRQ_RAW : AIRQ_IP, .owner = AIRQ_OWNER_GATEWAY, .protocol = protocol,
-			  .delivery = DMR_IPS_SETTINGS, .group = group, .dst = dst, .waitMs = HOSTLINK_NET_AIR_GIVE_UP_MS,
-			  .maxAgeMs = MAX_AGE_MS, .data = data, .length = (uint16_t)length };
+			  .delivery = DMR_IPS_SETTINGS, .group = group, .dst = dst, .srcIp = src_ip, .dstIp = dst_ip,
+			  .ttl = ttl, .waitMs = HOSTLINK_NET_AIR_GIVE_UP_MS, .maxAgeMs = MAX_AGE_MS, .data = data, .length = (uint16_t)length };
 	if (!airqPut(&it)) {
 		stats.refused_full++;
 		dlog("net: to air dropped, queue full, %d octets to %u", length, (unsigned)dst);
@@ -66,14 +70,15 @@ static uint32_t air_radio_id(void)
 	return own;
 }
 
-static bool air_ip(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+static bool air_ip(bool group, uint32_t dst, uint32_t src_ip, uint32_t dst_ip, uint8_t ttl, uint8_t protocol,
+		   const uint8_t *l4, int length)
 {
-	return put(false, group, dst, protocol, l4, length);
+	return put(false, group, dst, src_ip, dst_ip, ttl, protocol, l4, length);
 }
 
 static bool air_raw(bool group, uint32_t dst, const uint8_t *data, int length)
 {
-	return put(true, group, dst, 0, data, length);
+	return put(true, group, dst, 0, 0, 0, 0, data, length);
 }
 
 static const hostlink_net_air_t air = { .radio_id = air_radio_id, .ip_to_air = air_ip, .raw_to_air = air_raw };

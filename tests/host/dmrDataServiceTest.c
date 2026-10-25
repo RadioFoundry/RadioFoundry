@@ -1022,8 +1022,8 @@ static void testIpTx(void)
 	// Unconfirmed, compressed: the SAP 3 packet on air, done as soon as it has gone
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
 	udpDatagram(50000, 161, 60);
-	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
-	CHECK(!dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));// one at a time
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	CHECK(!dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));// one at a time
 	CHECK(dmrDataServiceIpBusy());
 	runMainTask(SEND_MS);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
@@ -1032,7 +1032,7 @@ static void testIpTx(void)
 
 	// Confirmed for UDP port 161: C_HEAD with F and N(S), the blocks, the data terminator (direct mode); the ACK ends it
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, DMR_IPC_PORT | 161, RADIO_B);
-	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
 	const dmrBurst_t *h = txHeader();
 	CHECK(h != NULL && (h->payload[0] & 0x4F) == (0x40 | DMR_DPF_CONFIRMED) && (h->payload[8] & 0x80) &&
@@ -1048,7 +1048,7 @@ static void testIpTx(void)
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 
 	// The next one to the same radio takes the next N(S); a selective ACK has blocks 1 and 6 sent again (F clear)
-	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
 	CHECK(((txHeader()->payload[9] >> 4) & 7) == ((ns + 1) & 7));
 	ns = (ns + 1) & 7;
@@ -1062,7 +1062,7 @@ static void testIpTx(void)
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 
 	// N(S) out of sequence (the receiver last had VI 3): the packet again as number 4, a first try
-	CHECK(dmrDataServiceSendIP(false, RADIO_B, DMR_IP_PROTO_ICMP, ipL4, 24));// the rule for RADIO_B
+	CHECK(dmrDataServiceSendIP(false, RADIO_B, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_ICMP, ipL4, 24));// the rule for RADIO_B
 	runMainTask(SEND_MS);
 	ns = (txHeader()->payload[9] >> 4) & 7;
 	CHECK((txHeader()->payload[1] >> 4) == DMR_SAP_IP);
@@ -1074,7 +1074,7 @@ static void testIpTx(void)
 
 	// No answer: DMR_IPC_TRIES_DEFAULT transmissions DMR_IPC_RESPONSE_MS apart (the retries whole, F clear), then failed
 	int lists = txLists;
-	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
 	CHECK(txHeader()->payload[8] & 0x80);
 	runMainTask(DMR_IPC_RESPONSE_MS);
@@ -1086,7 +1086,7 @@ static void testIpTx(void)
 	ipSettings(DMR_UDPC_OFF, DMR_IPC_ALL, 2, 0, 0);
 	ch.rmo = true;
 	lists = txLists;
-	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
 	CHECK(lastTx[lastTxCount - 1].dataType == DT_RATE_12_DATA && (txHeader()->payload[1] >> 4) == DMR_SAP_IP);
 	runMainTask(3 * DMR_IPC_RESPONSE_MS);
@@ -1094,22 +1094,22 @@ static void testIpTx(void)
 	ch.rmo = false;
 
 	// Never confirmed to a group; too long for one confirmed packet (64 blocks, the list): sent unconfirmed
-	CHECK(dmrDataServiceSendIP(true, 9, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	CHECK(dmrDataServiceSendIP(true, 9, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	runMainTask(SEND_MS);
 	CHECK((txHeader()->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED && dmrDataServiceIpResult() == DMR_REQ_OK);
 	static uint8_t big[400];
 	big[4] = 400 >> 8; big[5] = 400 & 0xFF;
-	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, big, sizeof(big)));
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, big, sizeof(big)));
 	runMainTask(SEND_MS);
 	CHECK((txHeader()->payload[0] & 0x0F) == DMR_DPF_UNCONFIRMED && dmrDataServiceIpResult() == DMR_REQ_OK);
 
 	// Not a channel we may send on: refused; a channel that stops being one: given up after IP_QUEUE_TIMEOUT_MS
 	ch.canTransmit = false;
 	runMainTask(20);
-	CHECK(!dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	CHECK(!dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	ch.canTransmit = true;
 	runMainTask(20);
-	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
 	ch.canTransmit = false;
 	runMainTask(IP_QUEUE_TIMEOUT_MS + 100);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_FAILED);
@@ -1123,6 +1123,79 @@ static void testIpTx(void)
 	CHECK(st.ipCnfRetries - st0.ipCnfRetries == 2 + (DMR_IPC_TRIES_DEFAULT - 1) + 1);
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
 	decodeTx = true;
+}
+
+// The packet in lastTx, decoded by the codec's receiver; NULL if none
+static const dmrDataPacket_t *txPacket(void)
+{
+	const dmrDataPacket_t *got = NULL;
+
+	dmrDataRxReset();
+	for (int i = 0; i < lastTxCount; i++)
+	{
+		if (dmrDataRxBurst(&lastTx[i]) == DMR_DATA_RX_PACKET)
+		{
+			got = &dmrDataRxPacket;
+		}
+	}
+	return got;
+}
+
+// Real IP addresses (docs/spec/dmr-data.md 11.1): an IP destination other than the ID's goes with the full header in
+// every compression mode, with the TTL given; to us, a packet for another address is passed on, not answered
+static void testIpAddresses(void)
+{
+	const uint32_t OFF_NET = 0xC0A80A05u;		// 192.168.10.5
+	dmrDataUDP_t udp;
+	reset();
+	decodeTx = false;
+
+	ipSettings(DMR_UDPC_ALL, DMR_IPC_OFF, 0, 0, 0);
+	udpDatagram(50000, 161, 20);
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, OFF_NET, 30, DMR_IP_PROTO_UDP, ipL4, 8 + 20));
+	runMainTask(SEND_MS);
+	const dmrDataPacket_t *p = txPacket();
+	CHECK(p != NULL && p->sap == DMR_SAP_IP && p->dst == RADIO_A && p->src == OUR_ID && p->data[8] == 30);
+	CHECK(p != NULL && dmrDataGetUDP(p, &udp) && udp.dstIp == OFF_NET && udp.srcIp == dmrDataIdAddress(false, OUR_ID));
+	// The IDs' addresses, as the service's own packets have: compressed, the TTL not on the air
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP,
+							   ipL4, 8 + 20));
+	runMainTask(SEND_MS);
+	p = txPacket();
+	CHECK(p != NULL && p->sap == DMR_SAP_UDPIP_COMPRESSION);
+	CHECK(p != NULL && dmrDataGetUDP(p, &udp) && udp.dstIp == dmrDataIdAddress(false, RADIO_A));
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
+	decodeTx = true;
+
+	// An LRRP request to our ID: answered when its IP destination is our ID's address, only passed on when it is
+	// another's (we route it, the host answers), also one with our ID's 24 bits under another first octet
+	settings.hasGps = true;
+	haveLocation = true;
+	static const uint8_t request[] = { 0x05, 0x09, 0x22, 0x04, 0x0a, 0x0b, 0x0c, 0x0d, 0x51, 0x62, 0x57 };
+	uint8_t l4[8 + sizeof(request)] = { DMR_UDP_PORT_LRRP >> 8, DMR_UDP_PORT_LRRP & 0xFF, DMR_UDP_PORT_LRRP >> 8,
+										DMR_UDP_PORT_LRRP & 0xFF, 0, sizeof(l4), 0, 0 };
+	memcpy(&l4[8], request, sizeof(request));
+	static const uint32_t to[3] = { OFF_NET, 0x0A0003E8u, 0 };// 10.0.3.232: an off-net host, ID 1000's 24 bits
+	static const int answers[3] = { 0, 0, 1 };
+	for (int i = 0; i < 3; i++)
+	{
+		const uint8_t *pdu;
+		uint8_t sap;
+		dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+		uint32_t dstIp = to[i] ? to[i] : dmrDataIdAddress(false, OUR_ID);
+		int n = dmrDataEncodeIP(false, OUR_ID, LRRP_SERVER, dstIp, dmrDataIdAddress(false, LRRP_SERVER), DMR_IP_TTL_DEFAULT,
+								DMR_IP_PROTO_UDP, l4, sizeof(l4), false, 1, &pdu, &sap);
+		int count = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, false, OUR_ID, LRRP_SERVER, pdu, n, DT_RATE_12_DATA, 1,
+									   bursts, DMR_DATA_MAX_BURSTS);
+		int heard = packetsHeard;
+
+		sentCount = 0;
+		rxBursts(bursts, count);
+		runMainTask(3000);
+		CHECK(packetsHeard == heard + 1);
+		CHECK(countLrrp(0x07) == answers[i]);
+	}
+	reset();
 }
 
 // Confirmed data to us: a bad block asked for again with a selective ACK, the retry completes the packet (passed on
@@ -1582,7 +1655,7 @@ static int chainRead(uint8_t *first, bool *group, uint32_t *dst, bool *cbfOk)
 static uint32_t expChains, expChained;
 static int chainSend(bool group, uint32_t dst, const dmrDataChainPacket_t *p, int n)
 {
-	int taken = dmrDataServiceSendIPChain(group, dst, p, n);
+	int taken = dmrDataServiceSendIPChain(group, dst, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, p, n);
 
 	expChains += (taken > 1) ? 1u : 0u;
 	expChained += (taken > 1) ? (uint32_t)(taken - 1) : 0u;
@@ -1653,6 +1726,34 @@ static void testChain(void)
 	runMainTask(SEND_MS);
 	dmrDataServiceSetTxSpacing(DMR_DATA_TX_GUARD_MS, true);
 
+	// The gateway's off-net route: a chain with an IP destination of its own and a TTL. Each packet in it has the full
+	// header with them, and the list is counted with that longer header: of eight 20-octet datagrams fewer fit than
+	// with the compressed one, and one more wouldn't have fit
+	chainMake(8, 20, DMR_IPS_UNCONFIRMED);
+	int ours = chainSend(false, RADIO_A, chainPk, 8);
+	runMainTask(SEND_MS);
+	chainMake(8, 20, DMR_IPS_UNCONFIRMED);
+	int offNet = dmrDataServiceSendIPChain(false, RADIO_A, DMR_DATA_IP_OURS, 0xC0A80A05u, 30, chainPk, 8);
+	expChains += (offNet > 1) ? 1u : 0u;
+	expChained += (offNet > 1) ? (uint32_t)(offNet - 1) : 0u;
+	runMainTask(SEND_MS);
+	CHECK(offNet >= 2 && offNet < ours && lastTxCount <= DMR_DATA_MAX_BURSTS);
+	CHECK(lastTxCount + (lastTxCount - 2) / offNet > DMR_DATA_MAX_BURSTS);
+	int heard = 0, full = 0;
+	dmrDataRxReset();
+	for (int i = 0; i < lastTxCount; i++)
+	{
+		dmrDataUDP_t u;
+
+		if ((dmrDataRxBurst(&lastTx[i]) == DMR_DATA_RX_PACKET) && dmrDataGetUDP(&dmrDataRxPacket, &u))
+		{
+			heard++;
+			full += (dmrDataRxPacket.sap == DMR_SAP_IP) && (u.dstIp == 0xC0A80A05u) && (u.ttl == 30) &&
+					(u.srcIp == dmrDataIdAddress(false, OUR_ID));
+		}
+	}
+	CHECK(heard == offNet && full == offNet);
+
 	dmrDataServiceGetStats(&st);
 	CHECK(st.ipChains - st0.ipChains == expChains && st.ipChained - st0.ipChained == expChained);
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
@@ -1705,10 +1806,10 @@ static void testTxGuard(void)
 	uint32_t guarded = stats.txGuarded;
 	int lists = txLists;
 
-	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, ipL4, 8 + 20));
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, 8 + 20));
 	runMainTask(20);
 	CHECK(txLists == lists + 1 && !dmrDataServiceIpBusy());
-	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, ipL4, 8 + 20));
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, 8 + 20));
 	runMainTask(DMR_DATA_TX_GUARD_MS - 30);
 	CHECK(txLists == lists + 1 && dmrDataServiceIpBusy());
 	CHECK(stats.txGuarded == guarded + 1);		// counted once per list held, not once per tick
@@ -1726,7 +1827,7 @@ static void testTxGuard(void)
 	// After the guard time: no wait
 	runMainTask(DMR_DATA_TX_GUARD_MS + 10);
 	lists = txLists;
-	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_IP_PROTO_UDP, ipL4, 8 + 20));
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, 8 + 20));
 	runMainTask(20);
 	CHECK(txLists == lists + 1 && stats.txGuarded == guarded + 1);
 }
@@ -1807,6 +1908,7 @@ int main(void)
 	testNotOnChannel();
 #endif
 	testIpTx();
+	testIpAddresses();
 	testConfirmedRx();
 	testIpText();
 	testPassthrough();

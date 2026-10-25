@@ -371,8 +371,11 @@ static struct
 	uint8_t sap;
 	uint8_t ns;
 	uint8_t tries;
+	uint8_t ttl;						// DMR_IP_TTL_DEFAULT: ours
 	uint16_t ipId;
 	uint32_t dst;
+	uint32_t srcIp;						// DMR_DATA_IP_OURS: the IDs' CAI addresses
+	uint32_t dstIp;
 	const uint8_t *l4;
 	int length;
 	uint64_t blocks;					// a selective retry's blocks (0: all of them)
@@ -537,8 +540,11 @@ static void ipFinish(uint8_t result)
 static void ipTransmit(void)
 {
 	const uint8_t *pdu;
-	int n = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, ipx.protocol, ipx.l4, ipx.length, ipx.compress, ipx.ipId, &pdu,
-							&ipx.sap);
+	// Our own address follows the channel's ID (sent from the channel's ID, as the gateway's packets are)
+	uint32_t srcIp = (ipx.srcIp != DMR_DATA_IP_OURS) ? ipx.srcIp : dmrDataIdAddress(false, channel.ownId);
+	uint32_t dstIp = (ipx.dstIp != DMR_DATA_IP_OURS) ? ipx.dstIp : dmrDataIdAddress(ipx.group, ipx.dst);
+	int n = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, dstIp, srcIp, ipx.ttl, ipx.protocol, ipx.l4, ipx.length,
+							ipx.compress, ipx.ipId, &pdu, &ipx.sap);
 	int count = 0;
 
 	if (n <= 0)
@@ -574,8 +580,9 @@ static void ipTransmit(void)
 		for (int i = 0; (count > 0) && (i < ipx.more); i++)
 		{
 			uint8_t sap;
-			int m = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, ipx.chain[i].protocol, ipx.chain[i].l4,
-									ipx.chain[i].length, ipx.chain[i].compress, ipx.chain[i].ipId, &pdu, &sap);
+			int m = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, dstIp, srcIp, ipx.ttl, ipx.chain[i].protocol,
+									ipx.chain[i].l4, ipx.chain[i].length, ipx.chain[i].compress, ipx.chain[i].ipId, &pdu,
+									&sap);
 
 			c = (m > 0) ? dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, ipx.group, ipx.dst, channel.ownId, pdu, m,
 											DT_RATE_12_DATA, 0, &txBursts[count], DMR_DATA_MAX_BURSTS - count) : 0;
@@ -599,8 +606,8 @@ static void ipTransmit(void)
 				stats.ipChained += ipx.more;
 			}
 			// The first packet's octets again for its own count below (the encoder's buffer now holds the last)
-			n = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, ipx.protocol, ipx.l4, ipx.length, ipx.compress, ipx.ipId,
-								&pdu, &ipx.sap);
+			n = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, dstIp, srcIp, ipx.ttl, ipx.protocol, ipx.l4, ipx.length,
+								ipx.compress, ipx.ipId, &pdu, &ipx.sap);
 		}
 	}
 	if (!queueTx(count, TXK_IP))
@@ -647,7 +654,8 @@ static void ipStart(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l
 #endif
 }
 
-bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length, uint8_t delivery)
+static bool ipSend(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol, const uint8_t *l4,
+					int length, uint8_t delivery)
 {
 	if ((ipx.state != IPX_IDLE) || !canTransmit() || (l4 == NULL) || (length <= 0) || (dst == 0))
 	{
@@ -659,23 +667,38 @@ bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, co
 			(CONFIG_DMR_CONFIRMED && !group && (delivery == DMR_IPS_CONFIRMED));
 
 	ipStart(group, dst, protocol, l4, length, (protocol == DMR_IP_PROTO_UDP) && dmrDataUdpCompress(srcPort, dstPort), confirmed);
+	ipx.srcIp = srcIp;
+	ipx.dstIp = dstIp;
+	ipx.ttl = ttl;
 	stats.ipPackets++;
 	return true;
 }
 
-// The bursts an unconfirmed IP packet takes (header and blocks), 0 when it can't go
-static int ipPacketBursts(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length, bool compress, uint16_t ipId)
+bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length, uint8_t delivery)
+{
+	return ipSend(group, dst, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, protocol, l4, length, delivery);
+}
+
+// The bursts an unconfirmed IP packet takes (header and blocks), 0 when it can't go. srcIp, dstIp, ttl as
+// dmrDataServiceSendIP's: the full header (SAP 4) is longer than the compressed one
+static int ipPacketBursts(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
+							const uint8_t *l4, int length, bool compress, uint16_t ipId)
 {
 	const uint8_t *pdu;
 	uint8_t sap;
-	int n = dmrDataEncodeIP(group, dst, channel.ownId, protocol, l4, length, compress, ipId, &pdu, &sap);
+	int n = dmrDataEncodeIP(group, dst, channel.ownId,
+							(dstIp != DMR_DATA_IP_OURS) ? dstIp : dmrDataIdAddress(group, dst),
+							(srcIp != DMR_DATA_IP_OURS) ? srcIp : dmrDataIdAddress(false, channel.ownId), ttl, protocol, l4,
+							length, compress, ipId, &pdu, &sap);
 
 	return (n > 0) ? dmrDataPacketBursts(n, DT_RATE_12_DATA) : 0;
 }
 
-int dmrDataServiceSendIPChain(bool group, uint32_t dst, const dmrDataChainPacket_t *p, int count)
+int dmrDataServiceSendIPChain(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
+								const dmrDataChainPacket_t *p, int count)
 {
-	if ((p == NULL) || (count <= 0) || !dmrDataServiceSendIPDelivery(group, dst, p[0].protocol, p[0].l4, p[0].length, p[0].delivery))
+	if ((p == NULL) || (count <= 0) ||
+			!ipSend(group, dst, srcIp, dstIp, ttl, p[0].protocol, p[0].l4, p[0].length, p[0].delivery))
 	{
 		return 0;
 	}
@@ -683,7 +706,8 @@ int dmrDataServiceSendIPChain(bool group, uint32_t dst, const dmrDataChainPacket
 	{
 		return 1;// a confirmed packet waits for its response alone
 	}
-	int bursts = IP_PREAMBLES + ipPacketBursts(group, dst, ipx.protocol, ipx.l4, ipx.length, ipx.compress, ipx.ipId);
+	int bursts = IP_PREAMBLES + ipPacketBursts(group, dst, srcIp, dstIp, ttl, ipx.protocol, ipx.l4, ipx.length,
+												ipx.compress, ipx.ipId);
 	int taken = 1;
 
 	for (int i = 1; (i < count) && (taken < DMR_DATA_CHAIN_MAX); i++)
@@ -701,7 +725,7 @@ int dmrDataServiceSendIPChain(bool group, uint32_t dst, const dmrDataChainPacket
 		}
 		bool compress = (q->protocol == DMR_IP_PROTO_UDP) && dmrDataUdpCompress(srcPort, dstPort);
 		uint16_t ipId = dmrDataNextIpId();
-		int b = ipPacketBursts(group, dst, q->protocol, q->l4, q->length, compress, ipId);
+		int b = ipPacketBursts(group, dst, srcIp, dstIp, ttl, q->protocol, q->l4, q->length, compress, ipId);
 
 		if ((b <= 0) || (bursts + b > DMR_DATA_MAX_BURSTS))
 		{
@@ -736,9 +760,10 @@ bool dmrDataServiceTxChain(void)
 	return txChain;
 }
 
-bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
+							const uint8_t *l4, int length)
 {
-	return dmrDataServiceSendIPDelivery(group, dst, protocol, l4, length, DMR_IPS_SETTINGS);
+	return ipSend(group, dst, srcIp, dstIp, ttl, protocol, l4, length, DMR_IPS_SETTINGS);
 }
 
 bool dmrDataServiceIpBusy(void)
@@ -2128,6 +2153,13 @@ static void handlePacket(const dmrDataPacket_t *packet)
 			((packet->sap == DMR_SAP_IP) || (packet->sap == DMR_SAP_UDPIP_COMPRESSION));
 
 	stats.ptYielded += toPc ? 1 : 0;
+
+	// UDP whose IP destination isn't the address of the ID it came to (we are the DMR destination of a packet for an
+	// off-net host: the gateway) is the PC's, through env.packet, never the radio's own TMS, ARS, LRRP or text
+	if (isUDP && !dmrDataIpIsId(udp.dstIp, packet->group, packet->dst))
+	{
+		isUDP = false;
+	}
 
 #if CONFIG_ZONE_SHARE
 	// A zone offered to us, or our directory request's answer (docs/spec/zone-share.md)

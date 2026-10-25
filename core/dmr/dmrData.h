@@ -137,8 +137,22 @@ int dmrDataPacketBursts(int length, uint8_t blockType);
 // CSBK Blocks to Follow is the preambles after it plus `follow` (7.2.7: the count leaves out the CSBK itself). For
 // several packets in one transmission `follow` covers them all
 int dmrDataBuildPreambles(bool group, uint32_t dst, uint32_t src, int count, int follow, dmrBurst_t *out);
+// IPv4 addresses (srcIp, dstIp) are uint32_t in host byte order everywhere in the DMR data code: 12.0.39.21 is
+// 0x0C002715. A packet's IP addresses are the Motorola CAI addresses of its DMR IDs (dmrDataIdAddress) unless a caller
+// gives others: the full header (SAP 4) carries any address, so the IP destination may be an off-net host while the
+// DMR destination is the radio that routes to it (TS 102 361-3 5.6)
+// The CAI address of a DMR ID: 12.x.y.z for a radio, 225.x.y.z for a talkgroup (the ID's 24 bits). The compressed
+// header (SAP 3) has no addresses: a receiver rebuilds these from the source and destination IDs
+uint32_t dmrDataIdAddress(bool group, uint32_t id);
+// On receive: true when an address is the ID's CAI address (dmrDataIdAddress), so a packet with it is for the ID
+// itself, not for a host the ID routes to. Exact: an off-net address may have the same 24 bits under another first
+// octet
+bool dmrDataIpIsId(uint32_t ip, bool group, uint32_t id);
+// ttl argument: the radio's own value, 64. A talkgroup always gets 1, whatever is asked: the air is the group's one
+// hop, and no radio may route a group packet on (a receiving gateway delivers it to its link with TTL 1)
+#define DMR_IP_TTL_DEFAULT			0
 // UDP and IP packets go with the compressed UDP/IPv4 header (SAP 3) when the compression setting allows it for their
-// ports (dmrDataUdpCompress), else with the full IPv4 header (SAP 4)
+// ports (dmrDataUdpCompress), else with the full IPv4 header (SAP 4). Both carry the IDs' CAI addresses
 int dmrDataBuildUDP(bool group, uint32_t dst, uint32_t src, uint16_t srcPort, uint16_t dstPort,
 						const uint8_t *payload, int length, uint8_t blockType, int preambles, dmrBurst_t *out, int maxBursts);
 // An IPv4 packet of any protocol from layer 4 on (the header and its checksum included; a UDP checksum is redone)
@@ -155,19 +169,24 @@ int dmrDataBuildIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, con
 #define DMR_APP_PORT_LAST			4099
 void dmrDataSetUdpCompression(uint8_t mode);
 uint8_t dmrDataGetUdpCompression(void);
-// True when a datagram between these ports goes compressed under the current mode (false when built without it)
+// True when a datagram between these ports may go compressed under the current mode (false when built without it).
+// The mode decides by the ports only: a packet whose addresses aren't its IDs' CAI addresses still goes with the full
+// header, whatever the mode, all included (dmrDataEncodeIP)
 bool dmrDataUdpCompress(uint16_t srcPort, uint16_t dstPort);
 // The compressed header (Table 7.14) into out: IPv4 identification, SAID 0 (radio network: the source is the source
 // LLID), DAID 0 or 2 (group network), opcode 00, the port IDs (1 = 5016, 2 = 5017, 98 = 4007 as MOTOTRBO uses it) and
 // the ports without an ID in extended headers 1 / 2. Returns its length: 5, 7 or 9
 #define DMR_UDPC_HEADER_MAX			9
 int dmrDataCompressUDPHeader(uint16_t ipId, bool group, uint16_t srcPort, uint16_t dstPort, uint8_t out[DMR_UDPC_HEADER_MAX]);
-// The user data of an IP packet (layer 4 from l4) in the module's IP buffer: with the compressed header (SAP 3) when
-// compress is set and it is UDP with a consistent length, else with the full IPv4 header (SAP 4, Motorola CAI
-// addresses). ipId: the IPv4 identification (a retry keeps it; dmrDataNextIpId() for a new packet). Returns the length
-// (0: too long or malformed), *pdu points at it (valid until the next build) and *sap says which
-int dmrDataEncodeIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, const uint8_t *l4, int length, bool compress,
-					uint16_t ipId, const uint8_t **pdu, uint8_t *sap);
+// The user data of an IP packet (layer 4 from l4) in the module's IP buffer, from DMR ID src to dst (group: a
+// talkgroup) with the IP addresses srcIp and dstIp. With the compressed header (SAP 3) when compress is set, it is UDP
+// with a consistent length, and both addresses are the IDs' CAI addresses (dmrDataIdAddress(false, src) and
+// dmrDataIdAddress(group, dst): what a receiver rebuilds); else with the full IPv4 header (SAP 4) and the addresses as
+// given. ttl: the IPv4 TTL, DMR_IP_TTL_DEFAULT for the radio's own. ipId: the IPv4 identification (a retry keeps it;
+// dmrDataNextIpId() for a new packet). Returns the length (0: too long or malformed), *pdu points at it (valid until
+// the next build) and *sap says which
+int dmrDataEncodeIP(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint32_t srcIp, uint8_t ttl, uint8_t protocol,
+					const uint8_t *l4, int length, bool compress, uint16_t ipId, const uint8_t **pdu, uint8_t *sap);
 uint16_t dmrDataNextIpId(void);
 // What the compression saved, for the debug link (wrap freely)
 typedef struct
@@ -296,6 +315,9 @@ typedef struct
 	uint16_t srcPort;
 	uint16_t dstPort;
 	uint16_t appPort;					// the well known one of the two (LRRP, ARS, TMS), else the destination port
+	uint32_t srcIp;						// the IPv4 addresses (host byte order): SAP 4 from its header, SAP 3
+	uint32_t dstIp;						// the IDs' CAI addresses (dmrDataIdAddress), as a receiver rebuilds them
+	uint8_t ttl;						// SAP 4 its header's, SAP 3 the sender's default (64, a talkgroup 1)
 	const uint8_t *payload;
 	int length;
 } dmrDataUDP_t;
@@ -306,6 +328,9 @@ bool dmrDataGetUDP(const dmrDataPacket_t *packet, dmrDataUDP_t *udp);
 typedef struct
 {
 	uint8_t protocol;
+	uint32_t srcIp;						// the header's IPv4 addresses (host byte order)
+	uint32_t dstIp;
+	uint8_t ttl;						// the header's TTL
 	const uint8_t *payload;
 	int length;
 } dmrDataIP_t;

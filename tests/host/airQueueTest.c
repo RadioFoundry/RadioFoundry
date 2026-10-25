@@ -52,8 +52,14 @@ static const uint8_t *chainHeld[DMR_DATA_CHAIN_MAX];
 static uint8_t chainCopy[DMR_DATA_CHAIN_MAX][DMR_DATA_MAX_PACKET];
 static int chainLength[DMR_DATA_CHAIN_MAX];
 static int chainHeldCount;
-int dmrDataServiceSendIPChain(bool group, uint32_t dst, const dmrDataChainPacket_t *p, int n)
+static uint32_t chainSrcIp, chainDstIp;	// the last chain's addresses and TTL
+static uint8_t chainTtl;
+int dmrDataServiceSendIPChain(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
+								const dmrDataChainPacket_t *p, int n)
 {
+	chainSrcIp = srcIp;
+	chainDstIp = dstIp;
+	chainTtl = ttl;
 	if ((n <= 0) || !dmrDataServiceSendIPDelivery(group, dst, p[0].protocol, p[0].l4, p[0].length, p[0].delivery))
 	{
 		return 0;
@@ -447,6 +453,27 @@ static void test_chain(void)
 	CHECK(chainOffered == 1);
 	drain(0);
 	CHECK(doneCount[AIRQ_SENT] == 2);
+
+	// Packets with other IP addresses or another TTL (the gateway's off-net route) don't join a chain of ours, and
+	// the service gets each one's own
+	reset();
+	chainTake = DMR_DATA_CHAIN_MAX;
+	airqItem_t o = item(7, 50);
+	o.dstIp = 0xC0A80A05u;
+	o.ttl = 30;
+	airqItem_t t = item(7, 50);
+	t.ttl = 5;
+	CHECK(put(7, 50) && airqPut(&o) && airqPut(&o) && airqPut(&t));
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	CHECK(chainOffered == 1 && chainSrcIp == 0 && chainDstIp == 0 && chainTtl == 0);
+	serviceDone();
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	CHECK(chainOffered == 2 && chainSrcIp == 0 && chainDstIp == 0xC0A80A05u && chainTtl == 30);
+	serviceDone();
+	airqTick(RADIO_ID_FOR_TEST, 0);
+	CHECK(chainOffered == 1 && chainDstIp == 0 && chainTtl == 5);
+	drain(0);
+	CHECK(doneCount[AIRQ_SENT] == 4);
 }
 
 // A packet in two pieces (a zone share fragment: its headers, then its slice of the record) goes as one

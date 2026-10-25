@@ -23,7 +23,7 @@ payload and a CRC-16/CCITT-FALSE. Requests carry at most 64 bytes, replies at mo
 | Hook into the host port | `core/hostlink/hostlink.c` |
 | Chip commands | `core/debuglink/dl_chip.c`, `hal/hal_system.h`, `platform/stm32f4/sysboot.c` |
 | Host tool and Python module | `tools/rfoundry_debug.py` |
-| Host tests | `tests/host/debuglinkTest.c` |
+| Host tests | `tests/host/debuglinkTest.c`; `debuglinkDmrDataTest.c` for the DMR data IP operations |
 
 ## tools/rfoundry_debug.py
 

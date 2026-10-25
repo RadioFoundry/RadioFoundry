@@ -206,6 +206,9 @@ typedef struct {
 	uint8_t rs_bcast_step;		// radio_settings_t.bcast_step + 1, 0 = the default (200 kHz on the odd tenths)
 	uint8_t zs_offers;		// zone share offers: 0 Off (the default), 1 Ask (docs/spec/zone-share.md 5)
 	uint8_t reserved8[2];
+	// The IP gateway's off-net route (dmrDataSettings_t.ipGatewayId, docs/spec/usb-network.md 3.1; appended for
+	// ip-addr), taken with the other ds_ fields: the gateway radio's DMR ID, 0 = off-net packets dropped
+	uint32_t ds_ip_gateway;
 	// Zone share: the zones imported last, so the same zone sent again updates its import instead of adding a copy
 	// (docs/spec/zone-share.md 5.4); key 0 = unused, the oldest replaced first
 	settings_zs_import_t zs_import[SETTINGS_ZS_IMPORTS];

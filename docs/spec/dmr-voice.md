@@ -81,7 +81,7 @@ tones. In DMR it works like a DMR channel that has no codeplug record behind it:
 | Heard | The talk target's group, all call, private calls to our ID, the reply window, and everything with digital monitor. The VFO has no RX group list, so no other talkgroup is played (it is shown as busy), as on a DMR channel whose list is empty |
 | Power, TOT, privacy key | The radio's, as on a channel (the VFO's power level, the radio's TOT, the radio-wide privacy key) |
 
-Not in the VFO: talker alias (a channel's setting), the data service and emergency (`dmr-data.md`: not a VFO), roaming, the "hear all by default" setting, saving to a channel.
+Not in the VFO: talker alias (a channel's setting), roaming, the "hear all by default" setting, saving to a channel.
 
 These are the VFO's own settings, so they are not temporary changes: no dot on Home, BACK on Home doesn't undo them,
 they stay while the radio is on a channel, and they are kept across power cycles with the VFO's frequency

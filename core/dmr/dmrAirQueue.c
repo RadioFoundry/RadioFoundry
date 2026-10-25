@@ -24,12 +24,14 @@ typedef struct
 	uint8_t  group;
 	uint8_t  stamped;					// queuedAt is set (at the first tick after the put)
 	uint8_t  canceled;
-	uint8_t  spare;
+	uint8_t  ttl;
 	uint32_t dst;
 	uint32_t tag;
 	uint32_t queuedAt;
 	uint16_t waitMs;
 	uint16_t maxAgeMs;
+	uint32_t srcIp;
+	uint32_t dstIp;
 } record_t;
 
 _Static_assert(sizeof(record_t) == AIRQ_RECORD_HEADER, "record header size");
@@ -175,6 +177,9 @@ bool airqPutBatch(const airqItem_t *items, int n)
 		r->stamped = 0;
 		r->canceled = 0;
 		r->dst = items[i].dst;
+		r->srcIp = items[i].srcIp;
+		r->dstIp = items[i].dstIp;
+		r->ttl = items[i].ttl;
 		r->tag = items[i].tag;
 		r->queuedAt = 0;
 		r->waitMs = items[i].waitMs;
@@ -293,7 +298,8 @@ static void finish(airqResult_t result)
 	}
 }
 
-// The oldest IP packet and those right after it to the same destination and call type, as a chain for the service
+// The oldest IP packet and those right after it to the same destination and call type, with the same addresses and
+// TTL, as a chain for the service
 // (it takes those that go unconfirmed and fit one transmission). Stops at anything else, so the order stays
 static int gather(uint32_t nowMs, dmrDataChainPacket_t *chain)
 {
@@ -309,6 +315,7 @@ static int gather(uint32_t nowMs, dmrDataChainPacket_t *chain)
 		const record_t *r = recAt(off);
 
 		if ((i > 0) && ((r->kind != AIRQ_IP) || (r->group != head->group) || (r->dst != head->dst) || r->canceled ||
+				(r->srcIp != head->srcIp) || (r->dstIp != head->dstIp) || (r->ttl != head->ttl) ||
 				((r->maxAgeMs != 0) && ((nowMs - r->queuedAt) > r->maxAgeMs))))
 		{
 			break;
@@ -389,7 +396,7 @@ void airqTick(uint32_t ownId, uint32_t nowMs)
 			// same transmission, and reads them in place until it's done
 			dmrDataChainPacket_t chain[DMR_DATA_CHAIN_MAX];
 			int c = gather(nowMs, chain);
-			int taken = dmrDataServiceSendIPChain(r->group != 0, r->dst, chain, c);
+			int taken = dmrDataServiceSendIPChain(r->group != 0, r->dst, r->srcIp, r->dstIp, r->ttl, chain, c);
 
 			if (taken > 0)
 			{

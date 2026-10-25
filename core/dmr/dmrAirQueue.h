@@ -12,8 +12,8 @@
  *               once; false when it doesn't fit. A record never wraps: when the end of the buffer has no room for it,
  *               the end is left unused and it goes at the start, so the service can read the oldest in place
  *   radio task  airqTick, with the data service's tick: the oldest packet goes to the service. An IP packet goes to
- *               dmrDataServiceSendIPChain with the IP packets right after it to the same destination; the service
- *               takes those that fit one transmission and reads them in place until dmrDataServiceIpBusy() is
+ *               dmrDataServiceSendIPChain with the IP packets right after it to the same destination, with the
+ *               same addresses and TTL; the service takes those that fit one transmission and reads them in place until dmrDataServiceIpBusy() is
  *               false. Raw data goes as an unconfirmed SAP 10 packet. While the service refuses the oldest (busy, not
  *               a DMR channel we may send on), it is tried again until its wait is over; a packet older than its
  *               maximum age is dropped unsent. Each packet's end goes to its owner's done function, in the radio task
@@ -27,7 +27,7 @@
 
 // The buffer is CONFIG_DMR_AIR_QUEUE_BYTES; each packet takes its own length rounded up to 4 plus AIRQ_RECORD_HEADER.
 // No limit on the number of packets but the bytes: a put is refused only when the packet doesn't fit
-#define AIRQ_RECORD_HEADER		28
+#define AIRQ_RECORD_HEADER		36
 
 // What a packet is
 #define AIRQ_IP					0		// an IP packet from layer 4 on (the service builds the header)
@@ -58,6 +58,11 @@ typedef struct
 	uint8_t  delivery;					// IP: DMR_IPS_* (dmrDataService.h)
 	bool     group;
 	uint32_t dst;
+	// IP: the IPv4 addresses and TTL, as dmrDataServiceSendIP takes them. 0 (DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT) is
+	// ours, so an item that leaves them out is a packet of our own
+	uint32_t srcIp;
+	uint32_t dstIp;
+	uint8_t  ttl;
 	uint32_t tag;						// the owner's (zone share: the transfer)
 	uint16_t waitMs;					// the oldest packet is offered to the service this long
 	uint16_t maxAgeMs;					// dropped unsent when queued longer than this; 0: no limit

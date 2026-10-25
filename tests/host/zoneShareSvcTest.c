@@ -48,8 +48,11 @@ bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, co
 }
 // As the service: unconfirmed packets after an unconfirmed first go in the same transmission
 static int chains;
-int dmrDataServiceSendIPChain(bool group, uint32_t dst, const dmrDataChainPacket_t *p, int n)
+static int foreignAddresses;			// chains not from our own addresses and TTL: zone sharing sends none
+int dmrDataServiceSendIPChain(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
+								const dmrDataChainPacket_t *p, int n)
 {
+	foreignAddresses += (srcIp != DMR_DATA_IP_OURS) || (dstIp != DMR_DATA_IP_OURS) || (ttl != DMR_IP_TTL_DEFAULT);
 	if ((n <= 0) || !dmrDataServiceSendIPDelivery(group, dst, p[0].protocol, p[0].l4, p[0].length, p[0].delivery))
 	{
 		return 0;
@@ -289,6 +292,7 @@ static void testSend(void)
 	result = DMR_REQ_FAILED;
 	tick(100);
 	result = DMR_REQ_OK;
+	CHECK(foreignAddresses == 0);
 	CHECK(sentCount == frags && chains == 1 && sent[0].group && sent[0].dst == 91 && sent[0].delivery == DMR_IPS_UNCONFIRMED);
 	CHECK(zone_share_send_state() == ZS_SEND_FAILED && events[DMR_DATA_EV_ZONE_FAILED] == 1);
 	airqGetStats(&q);

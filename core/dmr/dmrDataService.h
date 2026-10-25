@@ -70,6 +70,9 @@ typedef struct
 	uint8_t  ipConfirmed;					// DMR_IPC_OFF / RULES / ALL: which IP packets go as confirmed data
 	uint8_t  ipConfirmedTries;				// transmissions per confirmed packet, 1-DMR_IPC_TRIES_MAX (0: the default)
 	uint32_t ipConfirmedRule[DMR_IPC_RULES_MAX];	// 0 unused, a radio ID (that destination), or DMR_IPC_PORT | a UDP port
+	// The IP gateway's off-net route (docs/spec/usb-network.md 3.1): the DMR ID that gets the host's unicast IP for an
+	// address outside the radio and talkgroup ranges, with the real address in the full header; 0: dropped
+	uint32_t ipGatewayId;
 } dmrDataSettings_t;
 
 // Events for the UI (dmr_data_api.h: dmr_data_last_event)
@@ -232,19 +235,27 @@ bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count);
 // An IP packet from layer 4 on (ICMP, UDP, SCTP; the IP gateway's packets from the host): built with the compressed
 // UDP/IPv4 header when the setting allows it, sent as confirmed data with retries when a confirmed rule matches (an
 // individual destination), else unconfirmed; rate 1/2, 2 preamble CSBKs. l4 is not copied: it must stay unchanged
-// until dmrDataServiceIpBusy() is false. False when one is still going or it can't be sent now
-bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length);
-// The same with the delivery chosen by the caller: DMR_IPS_SETTINGS (the confirmed rules, as above), DMR_IPS_CONFIRMED
-// (an individual destination; a group goes unconfirmed) or DMR_IPS_UNCONFIRMED
+// until dmrDataServiceIpBusy() is false. False when one is still going or it can't be sent now.
+// The IPv4 addresses (host byte order, dmrData.h): srcIp DMR_DATA_IP_OURS is ours, the CAI address of the channel's
+// own ID; dstIp DMR_DATA_IP_OURS is the destination ID's (dmrDataIdAddress). Another dstIp (an off-net host behind the
+// radio dst) or srcIp goes in the full header (SAP 4) whatever the compression setting. ttl: the IPv4 TTL,
+// DMR_IP_TTL_DEFAULT for the radio's own (64); a talkgroup always gets 1
+#define DMR_DATA_IP_OURS			0u
+bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
+							const uint8_t *l4, int length);
+// The same from us, with the IDs' own addresses and our TTL (DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT), and the delivery
+// chosen by the caller: DMR_IPS_SETTINGS (the confirmed rules, as above), DMR_IPS_CONFIRMED (an individual
+// destination; a group goes unconfirmed) or DMR_IPS_UNCONFIRMED
 #define DMR_IPS_SETTINGS			0
 #define DMR_IPS_CONFIRMED			1
 #define DMR_IPS_UNCONFIRMED			2
 bool dmrDataServiceSendIPDelivery(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length, uint8_t delivery);
-// Several IP packets to one destination: the first as dmrDataServiceSendIPDelivery; when it goes unconfirmed, the
-// ones after it that also go unconfirmed follow in the same transmission (preamble CSBKs once, then each packet's
+// Several IP packets to one destination, with the same addresses and TTL (srcIp, dstIp, ttl as for
+// dmrDataServiceSendIP): the first goes as dmrDataServiceSendIP would with its own delivery; when it goes unconfirmed,
+// the ones after it that also go unconfirmed follow in the same transmission (preamble CSBKs once, then each packet's
 // header and blocks), as many as the list holds, up to DMR_DATA_CHAIN_MAX. Returns how many it took (0: none; the
-// first is refused as by dmrDataServiceSendIPDelivery). The service reads all of them in place until
-// dmrDataServiceIpBusy() is false; dmrDataServiceIpResult() is the transmission's, the same for each
+// first is refused as by dmrDataServiceSendIP). The service reads all of them in place until dmrDataServiceIpBusy()
+// is false; dmrDataServiceIpResult() is the transmission's, the same for each
 #define DMR_DATA_CHAIN_MAX			8
 typedef struct
 {
@@ -253,7 +264,8 @@ typedef struct
 	const uint8_t *l4;
 	int length;
 } dmrDataChainPacket_t;
-int dmrDataServiceSendIPChain(bool group, uint32_t dst, const dmrDataChainPacket_t *packets, int count);
+int dmrDataServiceSendIPChain(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
+							const dmrDataChainPacket_t *packets, int count);
 bool dmrDataServiceIpBusy(void);
 // The last one's outcome: DMR_REQ_OK (on air; confirmed: acknowledged) or DMR_REQ_FAILED
 uint8_t dmrDataServiceIpResult(void);

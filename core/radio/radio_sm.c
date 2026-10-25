@@ -37,6 +37,7 @@
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net_air.h"	// the IP gateway's air side (the data service's packet hook)
 #include "hostlink/hostlink_net.h"	// control station passthrough
+#include "dmr/ipGateway.h"		// the off-net route's gateway ID
 #endif
 #if CONFIG_DMR_AIR_QUEUE
 #include "dmr/dmrAirQueue.h"	// what the gateway and zone sharing send, in order (docs/spec/dmr-data.md 12)
@@ -1532,13 +1533,15 @@ static void data_rx(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 	dmrDataServiceRxBurst(&d, now_ms);
 }
 
+// A DMR VFO sends data as a DMR channel does: it has its own color code, slot and talk target, and tx_check covers its
+// frequency. An FM VFO is out by the mode
 static bool data_can_send(const radio_sm_t *sm)
 {
 	bool roaming = false;
 #if CONFIG_DMR_ROAMING
 	roaming = roam_searching(&sm->roam);	// never on a site being looked at
 #endif
-	return sm->dmr_running && !sm->hotspot && sm->view.ch.mode == RADIO_MODE_DMR && !sm->view.vfo &&
+	return sm->dmr_running && !sm->hotspot && sm->view.ch.mode == RADIO_MODE_DMR &&
 		tx_check(sm) == TXDENY_NONE && sm->view.dmr.own_id != 0 && !roaming;
 }
 
@@ -1597,7 +1600,7 @@ static void data_save_settings(uint32_t now_ms)
 	    cur.callAlertAck == data_saved.callAlertAck && cur.lrrpReply == data_saved.lrrpReply &&
 	    cur.smsFormat == data_saved.smsFormat && cur.radioCheckEtsi == data_saved.radioCheckEtsi &&
 	    cur.udpCompress == data_saved.udpCompress && cur.ipConfirmed == data_saved.ipConfirmed &&
-	    cur.ipConfirmedTries == data_saved.ipConfirmedTries &&
+	    cur.ipConfirmedTries == data_saved.ipConfirmedTries && cur.ipGatewayId == data_saved.ipGatewayId &&
 	    memcmp(cur.ipConfirmedRule, data_saved.ipConfirmedRule, sizeof(cur.ipConfirmedRule)) == 0) {
 		return;
 	}
@@ -1616,6 +1619,7 @@ static void data_save_settings(uint32_t now_ms)
 				  ((cur.ipConfirmed == DMR_IPC_OFF ? SETTINGS_DS_IPC_OFF :
 				    cur.ipConfirmed == DMR_IPC_ALL ? SETTINGS_DS_IPC_ALL : 0u) << SETTINGS_DS_IPC_SHIFT));
 	memcpy(st->ds_ip_rule, cur.ipConfirmedRule, sizeof(st->ds_ip_rule));
+	st->ds_ip_gateway = cur.ipGatewayId;
 	st->ds_stored = 1;
 	settings_end(now_ms);
 }
@@ -1728,6 +1732,7 @@ static void data_init(radio_sm_t *sm)
 				  DMR_IPC_RULES;
 		set.ipConfirmedTries = (st->ds_ip_cnf & 0x0F) ? (st->ds_ip_cnf & 0x0F) : DMR_IPC_TRIES_DEFAULT;
 		memcpy(set.ipConfirmedRule, st->ds_ip_rule, sizeof(set.ipConfirmedRule));
+		set.ipGatewayId = st->ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
 	}
 	data_saved = set;
 	data_tx.list = NULL;
@@ -1776,6 +1781,9 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->power_off_req && sm->power_off_busy) {
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
 	}
+#if CONFIG_DMR_IP_GATEWAY
+	ipGatewaySetOffNetId(data_saved.ipGatewayId);	// the setting in force (data_save_settings above follows it)
+#endif
 }
 #endif
 

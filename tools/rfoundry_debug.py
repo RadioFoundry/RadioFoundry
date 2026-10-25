@@ -51,6 +51,7 @@ The port is found by its USB ID 1FC9:0094 (the only one present); --port or $RFO
 import argparse
 import json
 import os
+import socket
 import struct
 import sys
 import time
@@ -891,21 +892,29 @@ class DebugLink:
         self.data_request(DATA_OP_EMERGENCY_SETTINGS, struct.pack("<BIBBB", EMERGENCY_MODES[mode],
                                                                   int(dst) & 0xFFFFFF, flags, tries, hot_mic_s))
 
-    def ip_settings(self, compress="auto", confirmed="rules", tries=0, rules=()):
+    def ip_settings(self, compress="auto", confirmed="rules", tries=0, rules=(), gateway_id=None):
         """IP packets over DMR (docs/spec/dmr-data.md 11, 12): compressed headers off / auto / all, confirmed delivery
         off / rules / all, tries per confirmed packet (0 = the default), up to 2 rules: a radio ID (int) or
-        ("port", N). State: the dmr_ip view section."""
+        ("port", N). gateway_id: the DMR ID off-net unicast goes to (0 = dropped); None leaves it as it is.
+        State: the dmr_ip view section."""
         r = [0, 0]
         for i, x in enumerate(list(rules)[:2]):
             r[i] = (IP_RULE_PORT | (int(x[1]) & 0xFFFF)) if isinstance(x, tuple) else (int(x) & 0xFFFFFF)
-        self.data_request(DATA_OP_IP_SETTINGS, struct.pack("<BBBII", IP_COMPRESS[compress], IP_CONFIRMED[confirmed],
-                                                           int(tries), r[0], r[1]))
+        req = struct.pack("<BBBII", IP_COMPRESS[compress], IP_CONFIRMED[confirmed], int(tries), r[0], r[1])
+        if gateway_id is not None:
+            req += struct.pack("<I", int(gateway_id) & 0xFFFFFF)
+        self.data_request(DATA_OP_IP_SETTINGS, req)
 
-    def ip_send(self, dst, src_port, dst_port, payload, group=False):
+    def ip_send(self, dst, src_port, dst_port, payload, group=False, dst_ip=None):
         """A UDP datagram into the IP gateway's air path, as if from the host on the USB network (needs
-        CONFIG_DMR_IP_GATEWAY); payload at most IP_SEND_MAX bytes."""
-        self.data_request(DATA_OP_IP_SEND, struct.pack("<IBHH", int(dst) & 0xFFFFFF, 1 if group else 0,
-                                                       int(src_port), int(dst_port)) + bytes(payload)[:IP_SEND_MAX])
+        CONFIG_DMR_IP_GATEWAY). dst: the DMR ID it goes to; dst_ip: its IPv4 destination ("a.b.c.d" or an int) when
+        not the ID's own address (the off-net case). Payload at most IP_SEND_MAX bytes, 4 less with dst_ip."""
+        flags = (1 if group else 0) | (2 if dst_ip is not None else 0)
+        req = struct.pack("<IBHH", int(dst) & 0xFFFFFF, flags, int(src_port), int(dst_port))
+        if dst_ip is not None:
+            ip = dst_ip if isinstance(dst_ip, int) else int.from_bytes(socket.inet_aton(dst_ip), "big")
+            req += struct.pack("<I", ip & 0xFFFFFFFF)
+        self.data_request(DATA_OP_IP_SEND, req + bytes(payload)[:REQ_MAX - 1 - len(req)])
 
     def tx_spacing(self, guard_ms, chain=True):
         """The data service's spacing of our transmissions (docs/spec/dmr-data.md 12.6), RAM only: the guard after
@@ -1326,19 +1335,22 @@ def cmd_data(link, a):
         link.emergency(what)
     elif a.op == "ip-settings":
         if not args or args[0] not in IP_COMPRESS:
-            print("data ip-settings: off|auto|all [off|rules|all] [tries=N] [id=ID] [port=N] (two rules at most)",
-                  file=sys.stderr)
+            print("data ip-settings: off|auto|all [off|rules|all] [tries=N] [id=ID] [port=N] [gateway=ID] (two rules "
+                  "at most)", file=sys.stderr)
             return 2
         mode = next((x for x in args[1:] if x in IP_CONFIRMED), "rules")
         kv = [x.split("=", 1) for x in args[1:] if "=" in x]
         tries = next((int(v) for k, v in kv if k == "tries"), 0)
         rules = [int(v, 0) if k == "id" else ("port", int(v, 0)) for k, v in kv if k in ("id", "port")]
-        link.ip_settings(args[0], mode, tries, rules)
+        gateway = next((int(v, 0) for k, v in kv if k == "gateway"), None)
+        link.ip_settings(args[0], mode, tries, rules, gateway_id=gateway)
     elif a.op == "ip-send":
         if len(args) < 3:
-            print("data ip-send: ID SRC_PORT DST_PORT [TEXT] [--group]", file=sys.stderr)
+            print("data ip-send: ID[@A.B.C.D] SRC_PORT DST_PORT [TEXT] [--group]", file=sys.stderr)
             return 2
-        link.ip_send(int(args[0], 0), int(args[1], 0), int(args[2], 0), " ".join(args[3:]).encode(), group=a.group)
+        dst, _, dst_ip = args[0].partition("@")
+        link.ip_send(int(dst, 0), int(args[1], 0), int(args[2], 0), " ".join(args[3:]).encode(), group=a.group,
+                     dst_ip=dst_ip or None)
     elif a.op == "tx-spacing":
         if not args or not args[0].isdigit() or (args[1:] and args[1] not in ("chain", "no-chain")):
             print("data tx-spacing: GUARD_MS [chain|no-chain]", file=sys.stderr)
@@ -1750,8 +1762,8 @@ def main(argv=None):
                    "alert / check: ID; settings: ARS_ID [check-reply] [no-alert-ack] [no-lrrp] [sms-etsi|sms-tms] "
                    "[check-etsi]; inbox / read: [INDEX]; emergency: start|cancel|dismiss; em-settings: "
                    "alarm|alarm_call|call [DST] [private] [etsi] [no-tone] [tries=N] [hot=S]; ip-settings: off|auto|all "
-                   "[off|rules|all] [tries=N] [id=ID] [port=N]; ip-send: ID SRC_PORT DST_PORT [TEXT] [--group]; tx-spacing: "
-                   "GUARD_MS [chain|no-chain]")
+                   "[off|rules|all] [tries=N] [id=ID] [port=N] [gateway=ID]; ip-send: ID[@A.B.C.D] SRC_PORT DST_PORT "
+                   "[TEXT] [--group]; tx-spacing: GUARD_MS [chain|no-chain]")
     p.add_argument("--format", choices=["tms", "etsi", "etsi_ip", "default"], default="default")
     p.add_argument("--group", action="store_true")
     p.add_argument("--no-ack", action="store_true")

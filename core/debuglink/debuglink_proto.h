@@ -87,9 +87,11 @@ enum {
 	DL_DATA_OP_EMERGENCY_SETTINGS,	// mode u8, dst u32 (0 the channel's), flags u8 (bit 0 dst is a radio, 1 ETSI FID,
 					// 2 no alert tone), alarm tries u8, hot mic s u8
 	DL_DATA_OP_IP_SETTINGS,		// compression u8 (0 off, 1 auto, 2 all), confirmed u8 (0 off, 1 rules, 2 all), tries u8
-					// (0 the default, 1-8), rule u32 x 2 (0 unused, a radio ID, or 0x80000000 | a UDP port)
-	DL_DATA_OP_IP_SEND,		// dst u32, flags u8 (bit 0 group), source port u16, destination port u16, payload: a UDP
-					// datagram into the IP gateway's air path as if from the host (CONFIG_DMR_IP_GATEWAY)
+					// (0 the default, 1-8), rule u32 x 2 (0 unused, a radio ID, or 0x80000000 | a UDP port),
+					// optional off-net gateway ID u32 (0 none; left as it is when absent)
+	DL_DATA_OP_IP_SEND,		// dst u32, flags u8 (bit 0 group, bit 1 an IPv4 destination follows), source port u16,
+					// destination port u16, with bit 1 the IPv4 destination u32, payload: a UDP datagram
+					// into the IP gateway's air path as if from the host (CONFIG_DMR_IP_GATEWAY)
 	DL_DATA_OP_TX_SPACING,		// guard ms u16, chain u8 (0 off, 1 on): the data service's spacing of our transmissions,
 					// RAM only, for the SDR bench's comparison (docs/spec/dmr-data.md 12.6)
 };

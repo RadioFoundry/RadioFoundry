@@ -220,7 +220,7 @@ DMR ones:
   show as "Other TG: not played". To hear everything on the slot, turn on digital monitor.
 - Home shows the frequency, the talk target, the timeslot and the color code. Changes here don't show a dot and
   **Back** doesn't undo them.
-- The VFO sends no talker alias and no data messages, and an emergency can't start in it.
+- The DMR VFO sends data messages and can start an emergency, as a DMR channel does. It sends no talker alias.
 
 <img src="../ux/screens/160x120i5/home_vfo_dmr.png" width="200" alt="Home in the DMR VFO">
 

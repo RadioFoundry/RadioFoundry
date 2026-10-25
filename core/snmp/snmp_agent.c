@@ -298,7 +298,8 @@ static void rf_stage(uint32_t dst, uint16_t dst_port, int n, uint32_t now)
 static void rf_poll(uint32_t now)
 {
 	if (rf_out.pending) {
-		if (ipGatewayIPToAir(false, rf_out.dst, UDP_PROTO, rf_out.data, rf_out.len)) {
+		if (ipGatewayIPToAir(false, rf_out.dst, IPGW_AIR_SRC_OURS, dmrDataIdAddress(false, rf_out.dst),
+				     DMR_IP_TTL_DEFAULT, UDP_PROTO, rf_out.data, rf_out.len)) {
 			rf_out.pending = false;
 		} else if ((now - rf_out.since) >= SNMP_RF_GIVE_UP_MS) {
 			rf_out.pending = false;

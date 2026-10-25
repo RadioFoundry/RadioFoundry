@@ -48,6 +48,27 @@ static void putU16(uint8_t *p, uint16_t v)
 	p[1] = v & 0xFF;
 }
 
+static void putU32(uint8_t *p, uint32_t v)
+{
+	putU16(p, v >> 16);
+	putU16(&p[2], v & 0xFFFF);
+}
+
+static uint32_t getU32(const uint8_t *p)
+{
+	return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+}
+
+uint32_t dmrDataIdAddress(bool group, uint32_t id)
+{
+	return ((uint32_t)(group ? CAI_NETWORK_GROUP : CAI_NETWORK_INDIVIDUAL) << 24) | (id & 0xFFFFFF);
+}
+
+bool dmrDataIpIsId(uint32_t ip, bool group, uint32_t id)
+{
+	return ip == dmrDataIdAddress(group, id);
+}
+
 // Clause B.3.9: the octets are taken in pairs, least significant octet of each 16 bit word first,
 // MSB first, generator 0x04C11DB7, initial remainder zero.
 // A zero initial value makes the direct form equivalent to the spec's augmented form.
@@ -355,9 +376,16 @@ static uint16_t getU16(const uint8_t *p)
 	return (uint16_t)((p[0] << 8) | p[1]);
 }
 
-// The IPv4 header (Motorola CAI addresses) in front of the length bytes of layer 4 already at ipPacket[20]. A UDP
-// checksum covers the addresses, so it is worked out here; ICMP and SCTP checksums don't, they are kept
-static int ipHeader(bool group, uint32_t dst, uint32_t src, uint8_t protocol, int length, uint16_t ipId)
+// The TTL on the air: 1 to a talkgroup whatever was asked (the air is the group's one hop: a receiving gateway must not
+// route it on), else the one given or the radio's own, 64
+static uint8_t ipTtl(bool group, uint8_t ttl)
+{
+	return group ? 1 : (ttl != DMR_IP_TTL_DEFAULT) ? ttl : 64;
+}
+
+// The IPv4 header in front of the length bytes of layer 4 already at ipPacket[20]. A UDP checksum covers the addresses,
+// so it is worked out here over the ones in the header; ICMP and SCTP checksums don't, they are kept
+static int ipHeader(uint32_t dstIp, uint32_t srcIp, uint8_t ttl, uint8_t protocol, int length, uint16_t ipId)
 {
 	int total = 20 + length;
 
@@ -365,12 +393,10 @@ static int ipHeader(bool group, uint32_t dst, uint32_t src, uint8_t protocol, in
 	ipPacket[0] = 0x45;// IPv4, 20 byte header
 	putU16(&ipPacket[2], total);
 	putU16(&ipPacket[4], ipId);
-	ipPacket[8] = group ? 1 : 64;// TTL
+	ipPacket[8] = ttl;
 	ipPacket[9] = protocol;
-	ipPacket[12] = CAI_NETWORK_INDIVIDUAL;
-	putId(&ipPacket[13], src);
-	ipPacket[16] = group ? CAI_NETWORK_GROUP : CAI_NETWORK_INDIVIDUAL;
-	putId(&ipPacket[17], dst);
+	putU32(&ipPacket[12], srcIp);
+	putU32(&ipPacket[16], dstIp);
 	putU16(&ipPacket[10], ~onesComplementSum(0, ipPacket, 20));
 
 	if (protocol == DMR_IP_PROTO_UDP)
@@ -463,12 +489,20 @@ uint16_t dmrDataNextIpId(void)
 	return ipIdentification++;
 }
 
+// The compressed header has no addresses, the receiver rebuilds the IDs' CAI addresses: only a packet that has those
+// may go compressed. Another address (an off-net destination behind a gateway radio) needs the full header, in every
+// compression mode
+static bool addressesFromIds(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint32_t srcIp)
+{
+	return (dstIp == dmrDataIdAddress(group, dst)) && (srcIp == dmrDataIdAddress(false, src));
+}
+
 // UDP into ipPacket: compressed header and payload, or the IPv4 and UDP headers and payload. payload may not be in
 // ipPacket. Returns the length, 0 when it doesn't fit
-static int encodeUDP(bool group, uint32_t dst, uint32_t src, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload,
-						int length, bool compress, uint16_t ipId, uint8_t *sap)
+static int encodeUDP(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint32_t srcIp, uint8_t ttl, uint16_t srcPort,
+						uint16_t dstPort, const uint8_t *payload, int length, bool compress, uint16_t ipId, uint8_t *sap)
 {
-	if (CONFIG_DMR_UDP_COMPRESS && compress)
+	if (CONFIG_DMR_UDP_COMPRESS && compress && addressesFromIds(group, dst, src, dstIp, srcIp))
 	{
 		uint8_t h[DMR_UDPC_HEADER_MAX];
 		int n = dmrDataCompressUDPHeader(ipId, group, srcPort, dstPort, h);
@@ -492,11 +526,11 @@ static int encodeUDP(bool group, uint32_t dst, uint32_t src, uint16_t srcPort, u
 	putU16(&ipPacket[22], dstPort);
 	putU16(&ipPacket[24], 8 + length);
 	*sap = DMR_SAP_IP;
-	return ipHeader(group, dst, src, DMR_IP_PROTO_UDP, 8 + length, ipId);
+	return ipHeader(dstIp, srcIp, ipTtl(group, ttl), DMR_IP_PROTO_UDP, 8 + length, ipId);
 }
 
-int dmrDataEncodeIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, const uint8_t *l4, int length, bool compress,
-					uint16_t ipId, const uint8_t **pdu, uint8_t *sap)
+int dmrDataEncodeIP(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint32_t srcIp, uint8_t ttl, uint8_t protocol,
+					const uint8_t *l4, int length, bool compress, uint16_t ipId, const uint8_t **pdu, uint8_t *sap)
 {
 	*pdu = ipPacket;
 	if (protocol == DMR_IP_PROTO_UDP)
@@ -509,10 +543,11 @@ int dmrDataEncodeIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, co
 
 		// The compressed header has no length: the receiver takes it from the packet, so only a datagram whose UDP
 		// length agrees with what we have goes compressed (octets past the UDP length are dropped, as padding)
-		bool fits = CONFIG_DMR_UDP_COMPRESS && compress && (udpLength >= 8) && (udpLength <= length);
+		bool fits = CONFIG_DMR_UDP_COMPRESS && compress && (udpLength >= 8) && (udpLength <= length) &&
+				addressesFromIds(group, dst, src, dstIp, srcIp);
 
-		return encodeUDP(group, dst, src, getU16(&l4[0]), getU16(&l4[2]), &l4[8], fits ? (udpLength - 8) : (length - 8),
-							fits, ipId, sap);
+		return encodeUDP(group, dst, src, dstIp, srcIp, ttl, getU16(&l4[0]), getU16(&l4[2]), &l4[8],
+							fits ? (udpLength - 8) : (length - 8), fits, ipId, sap);
 	}
 
 	if ((length < 1) || ((20 + length) > IP_PDU_MAX))
@@ -521,7 +556,7 @@ int dmrDataEncodeIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, co
 	}
 	memmove(&ipPacket[20], l4, length);
 	*sap = DMR_SAP_IP;
-	return ipHeader(group, dst, src, protocol, length, ipId);
+	return ipHeader(dstIp, srcIp, ipTtl(group, ttl), protocol, length, ipId);
 }
 
 static int blocksFor(int length, int perBlock)
@@ -566,7 +601,8 @@ int dmrDataBuildIP(bool group, uint32_t dst, uint32_t src, uint8_t protocol, con
 	const uint8_t *pdu;
 	uint8_t sap;
 	bool compress = (protocol == DMR_IP_PROTO_UDP) && (length >= 8) && dmrDataUdpCompress(getU16(&l4[0]), getU16(&l4[2]));
-	int n = dmrDataEncodeIP(group, dst, src, protocol, l4, length, compress, dmrDataNextIpId(), &pdu, &sap);
+	int n = dmrDataEncodeIP(group, dst, src, dmrDataIdAddress(group, dst), dmrDataIdAddress(false, src), DMR_IP_TTL_DEFAULT,
+							protocol, l4, length, compress, dmrDataNextIpId(), &pdu, &sap);
 
 	if (n <= 0)
 	{
@@ -589,8 +625,9 @@ int dmrDataBuildUDP(bool group, uint32_t dst, uint32_t src, uint16_t srcPort, ui
 	{
 		return 0;
 	}
-	int n = encodeUDP(group, dst, src, srcPort, dstPort, payload, length,
-						CONFIG_DMR_UDP_COMPRESS && dmrDataUdpCompress(srcPort, dstPort), dmrDataNextIpId(), &sap);
+	int n = encodeUDP(group, dst, src, dmrDataIdAddress(group, dst), dmrDataIdAddress(false, src), DMR_IP_TTL_DEFAULT,
+						srcPort, dstPort, payload, length, CONFIG_DMR_UDP_COMPRESS && dmrDataUdpCompress(srcPort, dstPort),
+						dmrDataNextIpId(), &sap);
 	if (n <= 0)
 	{
 		return 0;
@@ -914,7 +951,9 @@ int dmrDataBuildIPText(bool group, uint32_t dst, uint32_t src, const char *text,
 	uint8_t sap;
 	int length = dmrDataIPTextUDP(text, l4);
 	// Always the full header, whatever the compression setting (docs/spec/dmr-data.md 5.3)
-	int n = (length > 0) ? dmrDataEncodeIP(group, dst, src, DMR_IP_PROTO_UDP, l4, length, false, dmrDataNextIpId(), &pdu, &sap) : 0;
+	int n = (length > 0) ? dmrDataEncodeIP(group, dst, src, dmrDataIdAddress(group, dst), dmrDataIdAddress(false, src),
+											DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, length, false, dmrDataNextIpId(),
+											&pdu, &sap) : 0;
 
 	if (n <= 0)
 	{
@@ -1537,6 +1576,9 @@ bool dmrDataGetIP(const dmrDataPacket_t *packet, dmrDataIP_t *ip)
 	}
 
 	ip->protocol = d[9];
+	ip->srcIp = getU32(&d[12]);
+	ip->dstIp = getU32(&d[16]);
+	ip->ttl = d[8];
 	ip->payload = &d[ihl];
 	ip->length = ((total < len) ? total : len) - ihl;// the blocks may be padded
 	return true;
@@ -1563,6 +1605,9 @@ bool dmrDataGetUDP(const dmrDataPacket_t *packet, dmrDataUDP_t *udp)
 
 		udp->srcPort = (d[ihl] << 8) | d[ihl + 1];
 		udp->dstPort = (d[ihl + 2] << 8) | d[ihl + 3];
+		udp->srcIp = getU32(&d[12]);
+		udp->dstIp = getU32(&d[16]);
+		udp->ttl = d[8];
 		udp->payload = &d[ihl + 8];
 		udp->length = len - ihl - 8;
 		if ((udpLen >= 8) && ((udpLen - 8) < udp->length))
@@ -1581,6 +1626,10 @@ bool dmrDataGetUDP(const dmrDataPacket_t *packet, dmrDataUDP_t *udp)
 		const uint8_t *ptr = &d[5];
 		udp->srcPort = compressedPort(d[3] & 0x7F, &ptr);
 		udp->dstPort = compressedPort(d[4] & 0x7F, &ptr);
+		// No addresses in the header: SAID 0 / DAID 0 or 2, the source and destination IDs' (TS 102 361-3 7.2)
+		udp->srcIp = dmrDataIdAddress(false, packet->src);
+		udp->dstIp = dmrDataIdAddress(packet->group, packet->dst);
+		udp->ttl = ipTtl(packet->group, DMR_IP_TTL_DEFAULT);
 		udp->payload = ptr;
 		udp->length = len - (ptr - d);
 		if (udp->length < 0)
