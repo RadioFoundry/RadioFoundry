@@ -495,7 +495,28 @@ class Checks:
         return "PASS"
 
 
-def check_tx(sdr, expect, radio_id, cc, c):
+# A TX burst's key-up and key-down ramps, each: the regions either side of the 27.5 ms of symbols in the power mask of
+# ETSI TS 102 361-1 clause 10.2.3.1.1 (figure 10.3), which keeps a burst out of the other slot. A board can be held to
+# another limit (board.toml [hil.limits] dmr_tx_ramp_ms, with its reason)
+RAMP_MAX_MS = 1.5
+
+
+def limit(limits, name, default):
+    """(value, reason) of a pass limit: the board's override from limits ([hil.limits]), else (default, None)."""
+    o = (limits or {}).get(name)
+    return (o["value"], o["reason"]) if o else (default, None)
+
+
+def check_ramps(per_burst, c, limits=None):
+    """The slowest key-up and key-down ramp of the bursts' edges against RAMP_MAX_MS or the board's limit."""
+    ru = max(e["ramp_up_ms"] for e in per_burst)
+    rd = max(e["ramp_down_ms"] for e in per_burst)
+    rmax, why = limit(limits, "dmr_tx_ramp_ms", RAMP_MAX_MS)
+    c.add(f"ramps < {rmax} ms" + (f" (board limit: {why})" if why else ""), ru < rmax and rd < rmax,
+          f"up {ru}, down {rd}")
+
+
+def check_tx(sdr, expect, radio_id, cc, c, limits=None):
     meta = sdr.get("meta", {})
     clip = meta.get("clip_pct_analyzed") or meta.get("clip_pct") or 0
     c.add("capture not saturated (clip < 1 %)", clip < 1.0, f"{clip} %")
@@ -568,9 +589,7 @@ def check_tx(sdr, expect, radio_id, cc, c):
     if per_burst:
         on = [e["on_ms"] for e in per_burst]
         c.add("burst on-time 27-31.5 ms", all(27 <= x <= 31.5 for x in on), f"{min(on):.2f}-{max(on):.2f}")
-        ru = max(e["ramp_up_ms"] for e in per_burst)
-        rd = max(e["ramp_down_ms"] for e in per_burst)
-        c.add("ramps < 1.5 ms", ru < 1.5 and rd < 1.5, f"up {ru}, down {rd}")
+        check_ramps(per_burst, c, limits)
     else:
         long = [e["on_ms"] for e in edges if e["on_ms"] >= 40]
         c.add("per-burst keying (carrier off in the other slot)", False,

@@ -137,8 +137,9 @@ What the docs claim for a radio comes from its records, so each step above ends 
 
 - Add host tests for each new driver against a simulated chip (`tests/host/*Test.c`; see the existing driver tests).
   Tests of the board's own code go in `boards/<b>/tests/` with a `host.mk` ([Testing](testing.md#host-tests)).
-- HIL tests ([tests/hil](../../tests/hil/README.md#tests)): the health checks' numbers go in `board.toml` `[hil]`, the
-  CPS radio types in `[cps]`, and a check only this radio can use in `boards/<b>/hil/test_*.py`.
+- HIL tests ([tests/hil](../../tests/hil/README.md#tests)): the health checks' numbers go in `board.toml` `[hil]`, a
+  pass limit the radio is held to instead of a test's default in `[hil.limits]` (with the reason), the CPS radio types
+  in `[cps]`, and a check only this radio can use in `boards/<b>/hil/test_*.py`.
 - `tools/ci.sh` finds the board by its `board.mk` and builds its feature matrix when the compiler is installed. A
   board without its compiler is skipped with a notice.
 - Run `tools/boards.py docs`: it writes the radio into the README's radio table, the user manual's radio index

@@ -206,7 +206,9 @@ T1 pass criteria (all automatic):
 - at least one terminator with LC after the last voice burst;
 - same-slot spacing 60.00 +- 0.05 ms, standard deviation < 0.1 ms;
 - median frequency offset within +-500 Hz (the FM carrier was within 50 Hz);
-- the carrier keyed per burst (off in the other slot), each burst on 27-31.5 ms, key-up and key-down ramps < 1.5 ms;
+- the carrier keyed per burst (off in the other slot), each burst on 27-31.5 ms, key-up and key-down ramps < 1.5 ms (the ramp regions of the power mask in ETSI TS
+  102 361-1 clause 10.2.3.1.1, figure 10.3; a board can be held to another limit with a reason, `board.toml`
+  `[hil.limits] dmr_tx_ramp_ms`, and the check then names it);
 - no overlapping bursts, no power step inside a burst, no carrier without a decoded burst;
 - the bench modem hears one call, started by its header, ended by its terminator, AMBE FEC corrections 0 on the bench.
 

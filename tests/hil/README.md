@@ -381,7 +381,9 @@ SDR clips, and the bench modem's tries counted with a minimum of one. An attenua
   `tools/ci.sh`) fails on a skip without one.
 - Document the pass criteria and tolerances in the module docstring and in the table above.
 - Write tests for every radio, with the board's numbers in its `board.toml` `[hil]` table (`rfoundry_hil.board_hil`) or
-  other registry tables (`rfoundry_hil.board_entry`). A check only one board can use goes in `boards/<id>/hil/test_*.py`:
+  other registry tables (`rfoundry_hil.board_entry`). A pass limit one radio can't meet is a `[hil.limits]` entry,
+  `name = { value, reason }`, not a looser default: the names a board may override are `tools/boards.py` `HIL_LIMITS`,
+  the check reads the override (`dmr_bench.limit`) and prints the reason beside its result. A check only one board can use goes in `boards/<id>/hil/test_*.py`:
   `conftest.py` adds those files to a run of this directory and `hil_plugin.py` skips them `other_board` on other
   radios. Give the file a name no other board's test has (pytest imports test files by their base name).
 - Mark the test with its feature: `@pytest.mark.feature("<id>")`, `optional=True` when it shouldn't gate, `owner=`
