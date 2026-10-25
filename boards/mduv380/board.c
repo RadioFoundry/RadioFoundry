@@ -20,9 +20,10 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
-// The Plus 10 W check (hardware-mduv380.md 4): security register 3 byte 0x1C reads 0xF4 on that radio. An image for the
-// other version would drive the PA band select through the backlight pin, so tx() refuses on a mismatch. 0 skips the
-// check (a bench knob, board.mk MDUV380_DEFS) while the marker is unconfirmed on a radio
+// The Plus 10 W check (hardware-mduv380.md 4): security register 3 byte 0x1C is said to read 0xF4 on that radio, but the
+// TYT images never read it, so the marker is unconfirmed. A 5 W image refuses to transmit on a radio that has it (it would
+// drive the PA band select through the backlight pin); a 10 W image doesn't require it, or a Plus without the marker
+// could never transmit. 0 skips the check (a bench knob, board.mk MDUV380_DEFS)
 #ifndef MDUV380_10W_CHECK
 #define MDUV380_10W_CHECK	1
 #endif
@@ -41,11 +42,7 @@ static uint8_t mark_10w;	// security register 3 byte 0x1C, read at start-up (0xF
 static const char *tx_block(void)
 {
 #if MDUV380_10W_CHECK
-#if RFOUNDRY_POWER_10W
-	if (mark_10w != MARK_10W) {
-		return "not a 10 W radio";
-	}
-#else
+#if !RFOUNDRY_POWER_10W
 	if (mark_10w == MARK_10W) {
 		return "10 W radio, 5 W image";
 	}

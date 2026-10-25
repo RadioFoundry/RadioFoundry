@@ -58,7 +58,7 @@ Not run on a radio.
 | Volume 0 at the stop, 100 at the top | `diag` "vol raw" at both ends | unknown 7: `vol_min`, `vol_break`, `vol_max` |
 | SPI flash JEDEC 0xEF4018 | `info` | `flash_uvf.c` (`device`) |
 | Calibration read | `diag` "cal" factory or working | the k factors `uvf_variant.cal_k`, the reader `calibration_uvf.c` |
-| 10 W check | `diag` "TX ok"; "TX off: ..." means the image is for the other power version | unknown 3: security register 3 byte 0x1C; `MDUV380_DEFS=-DMDUV380_10W_CHECK=0` only once the radio's version is known |
+| 10 W marker | read security register 3 byte 0x1C on a 5 W and on a Plus 10 W radio (`rfoundry backup` keeps the security registers); `diag` "TX off: 10 W radio, 5 W image" means a 5 W image found the marker | unknown 3: the TYT images never read the byte, so the marker is unconfirmed; a 10 W image doesn't require it. `MDUV380_DEFS=-DMDUV380_10W_CHECK=0` skips it |
 
 ## 4. AT1846S, HR_C6000
 
