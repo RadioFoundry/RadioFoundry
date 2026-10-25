@@ -41,7 +41,8 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
    features one by one. Features the radio can't have are marked. A custom build is made when you continue and takes
    under a minute.
 3. **Current firmware.** Say what the radio runs now: RadioFoundry (connect it and turn it on), the original firmware, or
-   not sure. The installer asks for the stock firmware file when it needs the codec or the key.
+   **Other / Not sure** (another firmware, such as another open firmware project, or you don't know). The installer
+   asks for the stock firmware file when it needs the codec or the key.
 4. **Back up.** The installer saves a backup file (a `.zip`) on your computer: the firmware, the channels and settings
    and the calibration. Keep it. Where the original firmware can't be read first, the installer backs the radio up
    right after the installation, before anything else changes.
