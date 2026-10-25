@@ -206,9 +206,13 @@ typedef struct {
 } radio_roam_view_t;
 #endif
 
+#define RADIO_LED_GREEN		0x01u	// radio_view_t.leds
+#define RADIO_LED_RED		0x02u
+
 typedef struct {
 	radio_state_t state;
 	uint8_t tx_deny;	// tx_deny_t, while RS_TX_DENIED
+	uint8_t leds;		// RADIO_LED_* bits: what the radio core drives its LEDs to (board.power->led)
 	bool vfo;		// tuning a frequency by hand rather than a channel
 	uint8_t vfo_index;	// which VFO: 0, or 1 the second (dual watch gives each channel its own)
 	uint16_t zone_index;
@@ -446,7 +450,9 @@ uint8_t radio_volume_percent(uint8_t step);
 uint8_t radio_volume_step(uint8_t stored);
 uint8_t radio_volume_stored(uint8_t step);
 
-// Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them
+// Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them. get answers
+// with the last ones set until the radio task has taken them in, so a caller that reads, changes one field and sets
+// (the UI, the debug link) keeps every other caller's change, its own earlier ones included
 void radio_settings_default(radio_settings_t *s);
 void radio_set_settings(const radio_settings_t *s);
 void radio_get_settings(radio_settings_t *s);

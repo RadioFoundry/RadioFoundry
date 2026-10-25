@@ -17,7 +17,7 @@ the HIL tests don't script yet.
 
 | Part | What | Normally run by |
 |---|---|---|
-| Radio under test | A radio with RadioFoundry, on the bench, on USB (so far the DM-1701: HR_C6000 modem, I2S audio): driven by the debug link (`tools/rfoundry_debug.py`, the HIL tests) or its keys; the board's diagnostics page (on the DM-1701 a long press of the top side key) | the user |
+| Radio under test | A radio with RadioFoundry, on the bench, on USB (so far the DM-1701: HR_C6000 modem, I2S audio): driven by the debug link (`tools/rfoundry_debug.py`, the HIL tests) or its keys; the board's diagnostics page (on the DM-1701 a long press of SK3) | the user |
 | SDR bench (`ssh $RFOUNDRY_SDR_BENCH_HOST`, default `sdr-bench`: an ssh alias for the bench board) | a small ARM Linux board, 824 MB RAM, Debian, the rfoundry_sdrbench package in `/opt/rfoundry-sdrbench/.venv` | the gateway service (`$RFOUNDRY_SDR_BENCH_SERVICE`) |
 | MMDVM_HS dual modem board | `/dev/ttyS0`, two ADF7021 (simplex or duplex), firmware MMDVM_HS. The other DMR station | the gateway (one of its receivers in the current config) |
 | RTL-SDR | RTL2832U + R820T on USB, bias tee powering an LNA. The instrument | the gateway's receivers SDR02..SDR15 (461-462 MHz group, tuner center 461.52875 MHz). SDR15 = 461.6875 MHz |

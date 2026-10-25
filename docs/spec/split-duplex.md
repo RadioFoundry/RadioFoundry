@@ -346,7 +346,7 @@ TX(23..0) = AT  P16 P15 P14  TC  P13 P12 P11  LS1 P10 P9 P8  LS0 P7  H2 P6 P5 P4
   LCSS first fragment (01), continuation (11), continuation (11), last (10). One short LC per 4 CACH = 120 ms.
   Without a short LC from the host the TX half sends the Null message (SLCO 0000, -1 4.6.1, TS 102 361-2 7.1.3).
 
-The encoders are `core/dmr/fec/dmrCach.c` (no hardware), shared with the Tier III plan (`dmr-tier3-plan.md`, a TSCC
+The encoders are `core/dmr/fec/dmrCach.c` (no hardware), shared with a Tier III control channel (a TSCC
 outbound needs the same CACH with C_SYS_Parms).
 
 ### 5.3 DMR_SHORTLC

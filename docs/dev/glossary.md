@@ -70,7 +70,7 @@ Protocol, hardware and firmware terms of the specs and developer docs. Terms the
 | <a id="t-tc"></a>TC | TDMA channel: the TACT bit that names the timeslot, so a radio can tell TS1 from TS2. |
 | <a id="t-tdma"></a>TDMA | Time division multiple access. A DMR channel carries two conversations by alternating them in 30 ms slots. |
 | <a id="t-tier-ii"></a>Tier II | The conventional DMR tier of the standard (TS 102 361-2): repeaters and direct mode without trunking. |
-| <a id="t-tier-iii"></a>Tier III | The trunked DMR tier of the standard (TS 102 361-4): a control channel assigns traffic channels. [More](../spec/dmr-tier3-plan.md) |
+| <a id="t-tier-iii"></a>Tier III | The trunked DMR tier of the standard (TS 102 361-4): a control channel assigns traffic channels. |
 | <a id="t-tsc"></a>TSC | The controller of a Tier III system: the infrastructure side the radio talks to. |
 | <a id="t-tscc"></a>TSCC | Trunked station control channel: the Tier III channel that carries control signaling. |
 | <a id="t-tsccas"></a>TSCCAS | TSCC alternate slot: a second control slot of a Tier III site. |

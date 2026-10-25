@@ -2,12 +2,12 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Baofeng HR_C7000 factory calibration: TX I/Q center, modulation balance and PA drive (docs/spec/hardware-dm32.md 11).
 // Every Baofeng HR_C7000 radio keeps it in the same page with the same field offsets (hardware-dm1801pro.md 6.4).
-// bf_cal_tx_byte reads a row the stock firmware's way, at the page's own TX points instead of OpenDM32's even steps.
+// bf_cal_tx_byte reads a row the stock firmware's way, at the page's own TX points, not at even steps.
 //
 // The factory data is the 4 KB page of the stock codeplug area (0x1000..0xC8000) whose last byte is 2. Three pieces
 // of it make a 0x175-byte working image: 0x108 bytes from its start, 0x15 from +0x200 and 0x50 (four tables of five BCD
 // frequencies) from +0x300. It's only read: this firmware never writes below 0x700000. Without a factory page, the
-// decoded copy OpenDM32 keeps at the board's copy address (board.toml) is used when its header is right.
+// decoded copy that another firmware may leave at the board's copy address (board.toml) is used when its header is right.
 #include <string.h>
 #include "baofeng_cal.h"
 
@@ -229,7 +229,7 @@ bool bf_cal_power(uint32_t hz, bf_cal_power_points_t *p)
 		uint32_t base = uhf ? 40000000u : 13600000u;
 		uint32_t step = uhf ? 1750000u : 950000u;
 		const uint8_t *t = image + (uhf ? OFF_UHF_POWER : OFF_VHF_POWER);
-		// Below the UHF base the first point is used (OpenDM32's unsigned subtraction picked the last: 11.3)
+		// Below the UHF base the first point is used (an unsigned subtraction would wrap to the last: 11.3)
 		uint32_t d = f > base ? f - base : 0;
 		uint32_t idx = d / step;
 		uint32_t rem = d % step;

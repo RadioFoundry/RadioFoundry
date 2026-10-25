@@ -39,6 +39,10 @@
 static radio_sm_t sm RFOUNDRY_CPU_RAM;	// owned by the radio task; CPU only
 static radio_settings_t pending_settings;	// radio_set_settings -> the radio task, under view_lock
 static radio_settings_t shared_settings;	// the published copy, under view_lock
+// Settings generations, under view_lock: radio_set_settings counts sent, the radio task notes the one it copied
+// (taken) and publish() the one shared_settings now holds (published). While published lags sent, the last sent
+// settings are the ones in force soon, so radio_get_settings answers with them
+static uint32_t settings_sent, settings_taken, settings_published;
 static radio_view_t shared_view;	// the published copy, under view_lock
 static volatile bool dtmf_ready;	// shared_view.dtmf_ready, read without the lock (radio_dtmf_ready)
 #if CONFIG_DUAL_WATCH
@@ -84,6 +88,7 @@ static void publish(void)
 	radio_sm_shown_view(&sm, &shared_view);	// a roaming survey visit: the screens keep the site it left
 	shared_serial = sm.serial;
 	shared_settings = sm.set;
+	settings_published = settings_taken;
 #if CONFIG_DUAL_WATCH
 	shared_vfo[sm.vfo_idx & 1u] = sm.vfo_ch;
 	shared_vfo_ok[sm.vfo_idx & 1u] = sm.vfo_seeded;
@@ -127,6 +132,7 @@ static void radio_task(void *arg)
 					radio_settings_t set;
 					xSemaphoreTake(view_lock, portMAX_DELAY);
 					set = pending_settings;
+					settings_taken = settings_sent;
 					xSemaphoreGive(view_lock);
 					radio_sm_set_settings(&sm, &set, hal_millis());
 				} else {
@@ -379,6 +385,7 @@ void radio_set_settings(const radio_settings_t *s)
 	}
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	pending_settings = *s;
+	settings_sent++;
 	xSemaphoreGive(view_lock);
 	post(RREQ_SETTINGS, 0, pdMS_TO_TICKS(50));
 }
@@ -390,7 +397,7 @@ void radio_get_settings(radio_settings_t *s)
 		return;
 	}
 	xSemaphoreTake(view_lock, portMAX_DELAY);
-	*s = shared_settings;
+	*s = settings_published == settings_sent ? shared_settings : pending_settings;
 	xSemaphoreGive(view_lock);
 }
 
