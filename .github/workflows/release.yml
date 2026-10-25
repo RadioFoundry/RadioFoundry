@@ -1,17 +1,18 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Firmware releases (docs/dev/release.md): on a v* tag, build the codec-less firmware for every releasable radio
 # (board.toml [status] release = "stable", each build option value's image too) with the toolchains platform.toml
 # pins, one job per toolchain (C-SKY in the csky-elf image, never built from source), write a manifest and SHA256SUMS
-# for each image, build odrflash as single-file executables for Linux, macOS and Windows, and attach everything to
+# for each image, build rfoundry as single-file executables for Linux, macOS and Windows, and attach everything to
 # the GitHub release (created when missing; the user manual workflow attaches its PDF to the same release). The AMBE
 # codec is never part of any of it.
 #
 # Pull requests touching the release tooling build everything as workflow artifacts and publish nothing; the release
 # gate (tools/ci.sh) runs for a tag only, since a pull request's own checks already ran it. With the repository
-# variable ODR_CI_RUNNER set, the Linux jobs run on that self-hosted runner, and only a v* tag also builds odrflash on
-# GitHub's macOS and Windows runners (docs/dev/ci.md).
+# variable RFOUNDRY_CI_RUNNER set, a push's Linux jobs run on that self-hosted runner, and only a v* tag also builds
+# rfoundry on GitHub's macOS and Windows runners (docs/dev/ci.md). A pull request's jobs always run on GitHub's runners:
+# the self-hosted runner takes only main's and v* tags' workflows (tools/ci-runner/job-gate.sh).
 name: Release
 
 on:
@@ -19,13 +20,13 @@ on:
     tags: ["v*"]
   pull_request:
     paths:
-      - "tools/odrflash/**"
+      - "tools/rfoundry/**"
       - "tools/release.py"
       - "tools/serial_loader.py"
       - "tools/hrc7000_codec.py"
       - "tools/boards.py"
       - "tools/registry_docs.py"
-      - "tools/odr_python.sh"
+      - "tools/rfoundry_python.sh"
       - "tools/platform_toolchain.sh"
       - "tools/install-arm-toolchain.sh"
       - "tools/release_build.sh"
@@ -47,25 +48,26 @@ env:
 
 jobs:
   version:
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     outputs:
       version: ${{ steps.v.outputs.version }}
       publish: ${{ steps.v.outputs.publish }}
-      odrflash: ${{ steps.v.outputs.odrflash }}
+      rfoundry: ${{ steps.v.outputs.rfoundry }}
     steps:
       - id: v
         env:
-          # never for a fork's pull request: its code stays on GitHub's runners
-          RUNNER_LABEL: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER) || '' }}
+          # never for a pull request: its workflow file is its own, and the self-hosted runner refuses those
+          # (tools/ci-runner/job-gate.sh), so a pull request's jobs run on GitHub's runners
+          RUNNER_LABEL: ${{ (github.event_name != 'pull_request' && vars.RFOUNDRY_CI_RUNNER) || '' }}
         run: |
-          # odrflash's runners: all four for a release or without the self-hosted runner; otherwise Linux only, there
+          # rfoundry's runners: all four for a release or without the self-hosted runner; otherwise Linux only, there
           if [ "${GITHUB_REF_TYPE}" = tag ] || [ -z "$RUNNER_LABEL" ]; then
             m='[{"os":"ubuntu-22.04","name":"linux-x86_64"},{"os":"macos-14","name":"macos-arm64"},'
             m="$m"'{"os":"macos-15-intel","name":"macos-x86_64"},{"os":"windows-2022","name":"windows-x86_64","ext":".exe"}]'
           else
             m="[{\"os\":\"$RUNNER_LABEL\",\"name\":\"linux-x86_64\"}]"
           fi
-          echo "odrflash=$m" >> "$GITHUB_OUTPUT"
+          echo "rfoundry=$m" >> "$GITHUB_OUTPUT"
           if [ "${GITHUB_REF_TYPE}" = tag ] && [ "${GITHUB_REF_NAME#v}" != "${GITHUB_REF_NAME}" ]; then
             echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
@@ -80,7 +82,7 @@ jobs:
     # with no edit here. One artifact per toolchain
     name: firmware (${{ matrix.name }})
     needs: version
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04   # a write token: GitHub's runners only (docs/dev/ci-runners.md)
     strategy:
       fail-fast: false
       matrix:
@@ -93,7 +95,7 @@ jobs:
       contents: read
       packages: read   # pulling a private ghcr.io csky-elf image with the job token
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
           fetch-depth: 0
@@ -106,10 +108,10 @@ jobs:
         uses: ./.github/actions/toolchain
         with:
           toolchain: ${{ matrix.toolchain }}
-          image: ${{ vars.ODR_CSKY_IMAGE }}
-          registry: ${{ vars.ODR_CSKY_REGISTRY }}
-          registry-user: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
-          registry-token: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
+          image: ${{ vars.RFOUNDRY_CSKY_IMAGE }}
+          registry: ${{ vars.RFOUNDRY_CSKY_REGISTRY }}
+          registry-user: ${{ vars.RFOUNDRY_CSKY_REGISTRY_USER || github.actor }}
+          registry-token: ${{ secrets.RFOUNDRY_CSKY_REGISTRY_TOKEN || github.token }}
 
       # the host tests and Python checks on the runner (the csky-elf image has no host compiler), the builds with the
       # toolchain's compiler
@@ -123,7 +125,7 @@ jobs:
           tools/ci.sh --quick --steps registry,host,python,licenses
           rc=0
           $RUN tools/ci.sh --quick --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
-          [ "$rc" != 3 ] || echo "::error::no $TOOLCHAIN compiler: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+          [ "$rc" != 3 ] || echo "::error::no $TOOLCHAIN compiler: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
           exit "$rc"
 
       - name: Build and package every releasable board
@@ -135,17 +137,17 @@ jobs:
           set -u
           rc=0
           $RUN tools/release_build.sh --toolchain "$TOOLCHAIN" --version "$VERSION" --out dist || rc=$?
-          [ "$rc" != 3 ] || echo "::error::no $TOOLCHAIN compiler: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+          [ "$rc" != 3 ] || echo "::error::no $TOOLCHAIN compiler: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
           exit "$rc"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         if: hashFiles('dist/*') != ''
         with:
           name: firmware-${{ matrix.toolchain }}
           path: dist/
           if-no-files-found: error
 
-  odrflash:
+  rfoundry:
     needs: version
     strategy:
       fail-fast: false
@@ -153,16 +155,16 @@ jobs:
       # macos-14, macos-15-intel (macos-13 is retired; the last Intel image) and windows-2022, or the self-hosted
       # runner alone
       matrix:
-        include: ${{ fromJSON(needs.version.outputs.odrflash) }}
+        include: ${{ fromJSON(needs.version.outputs.rfoundry) }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
         if: runner.environment != 'self-hosted'
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -174,39 +176,39 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "pyinstaller==${PYINSTALLER_VERSION}" ./tools/odrflash
+          python -m pip install "pyinstaller==${PYINSTALLER_VERSION}" ./tools/rfoundry
       - name: Test
-        run: python -W ignore -m unittest discover -s tools/odrflash/tests -v
+        run: python -W ignore -m unittest discover -s tools/rfoundry/tests -v
       - name: Build the executable
         run: |
           set -eu
-          out="odrflash-${{ needs.version.outputs.version }}-${{ matrix.name }}"
-          # the serial route (odrflash/serialflash.py) imports these tools from the checkout; bundle them
-          pyinstaller --onefile --clean --name "$out" --paths tools/odrflash --paths tools --paths stub \
+          out="rfoundry-${{ needs.version.outputs.version }}-${{ matrix.name }}"
+          # the serial route (rfoundry/serialflash.py) imports these tools from the checkout; bundle them
+          pyinstaller --onefile --clean --name "$out" --paths tools/rfoundry --paths tools --paths stub \
             --hidden-import serial_loader --hidden-import hrc7000_codec --hidden-import stubtool \
             --collect-binaries libusb_package --collect-data certifi --hidden-import usb.backend.libusb1 \
-            --add-data "tools/odrflash/odrflash/codec_maps:odrflash/codec_maps" \
-            --add-data "tools/odrflash/odrflash/registry.json:odrflash" \
-            tools/odrflash/odrflash/__main__.py
+            --add-data "tools/rfoundry/rfoundry/codec_maps:rfoundry/codec_maps" \
+            --add-data "tools/rfoundry/rfoundry/registry.json:rfoundry" \
+            tools/rfoundry/rfoundry/__main__.py
           "./dist/$out${{ matrix.ext }}" --version
           "./dist/$out${{ matrix.ext }}" --help > /dev/null
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         with:
-          name: odrflash-${{ matrix.name }}
-          path: dist/odrflash-*
+          name: rfoundry-${{ matrix.name }}
+          path: dist/rfoundry-*
           if-no-files-found: error
 
   publish:
-    needs: [version, firmware, odrflash]
-    if: needs.version.outputs.publish == 'true'   # and every toolchain's firmware and every odrflash passed
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    needs: [version, firmware, rfoundry]
+    if: needs.version.outputs.publish == 'true'   # and every toolchain's firmware and every rfoundry passed
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4.3.0
         with:
           path: artifacts
       - name: Collect the files and one SHA256SUMS
@@ -216,7 +218,7 @@ jobs:
           find artifacts -type f ! -name SHA256SUMS -exec cp {} out/ \;
           (cd out && sha256sum * > SHA256SUMS && cat SHA256SUMS)
           # the manifests' own image hashes must agree with the files
-          for j in out/odr-*.json; do
+          for j in out/rfoundry-*.json; do
             python3 - "$j" <<'EOF'
           import hashlib, json, os, sys
           m = json.load(open(sys.argv[1]))
@@ -232,11 +234,11 @@ jobs:
         run: |
           set -eu
           TAG="${GITHUB_REF_NAME}"
-          NOTES="Firmware images for the radios listed below, without the AMBE codec, and odrflash for Linux, macOS and
-          Windows. Flash with: odrflash flash --release ${TAG}. odrflash keeps the codec already in your radio when
+          NOTES="Firmware images for the radios listed below, without the AMBE codec, and rfoundry for Linux, macOS and
+          Windows. Flash with: rfoundry flash --release ${TAG}. rfoundry keeps the codec already in your radio when
           that is known to be safe, or writes it from your radio's stock firmware file (--stock). See
           docs/user/02-installing.md."
           gh release view "$TAG" > /dev/null 2>&1 || \
-            gh release create "$TAG" --verify-tag --title "OpenDigitalRadio $TAG" --notes "$NOTES" || \
+            gh release create "$TAG" --verify-tag --title "RadioFoundry $TAG" --notes "$NOTES" || \
             gh release view "$TAG" > /dev/null   # created meanwhile by the manual workflow
           gh release upload "$TAG" out/* --clobber

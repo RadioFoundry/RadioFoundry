@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // I2C master on two GPIO pins (bit-banged), for chips wired to plain pins (the board names them).
 // Standard mode timing from the I2C-bus specification (NXP UM10204): START, 7-bit address + R/W, ACK per byte,
 // repeated START for a register read, STOP. No clock stretching and a single master: SCL may be driven push-pull.

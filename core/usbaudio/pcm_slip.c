@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // PCM jitter buffer with sample slipping between two 8 kHz clocks (pcm_slip.h)
 #include "pcm_slip.h"
 

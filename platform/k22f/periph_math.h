@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // K22F peripheral arithmetic, pure so the host tests check it: the I2C clock divider (I2C_F), the DSPI chip select
 // delays (CTAR PCSSCK/CSSCK, PASC/ASC, PDT/DT) and the FTM's PWM period and duty.
 #ifndef K22F_PERIPH_MATH_H

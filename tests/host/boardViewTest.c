@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's board view section (core/debuglink/debuglink_view_board.c): the board's key=value lines under
 // "board.", a bound on a board that never ends, a long line cut. Built twice: with a fake board hook, and with
 // -DNO_HOOK for a board without one ("board.built=0")

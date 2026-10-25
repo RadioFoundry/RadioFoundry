@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// K22F: place a radio's own AMBE+2 codec where ODR wants it, and build the update file the page sends
-// (docs/spec/codec-gd77.md, docs/spec/update-gd77.md). A port of tools/odrflash/odrflash/k22fcodec.py and of
-// odrflash's hid_update_file (cli.py); site/tests/hidboot.test.mjs checks them against the Python byte for byte.
+// Copyright (c) 2026 The RadioFoundry Authors
+// K22F: place a radio's own AMBE+2 codec where RadioFoundry wants it, and build the update file the page sends
+// (docs/spec/codec-gd77.md, docs/spec/update-gd77.md). A port of tools/rfoundry/rfoundry/k22fcodec.py and of
+// rfoundry's hid_update_file (cli.py); site/tests/hidboot.test.mjs checks them against the Python byte for byte.
 //
 // The merge moves the codec's main block to CODE_BASE and its low block after it, leaves the table window where it is,
 // rewrites the code addresses and the branches the spec lists, and writes a descriptor at DESC_ADDR. G is
@@ -146,7 +146,7 @@ export async function readDonor(G, data) {
 	return { file, flat, spec: await findSpec(G, flat) };
 }
 
-// odrflash's hid_update_file: the image with the codec merged in (codec "auto"), or without it ("keep"), written into
+// rfoundry's hid_update_file: the image with the codec merged in (codec "auto"), or without it ("keep"), written into
 // a copy of the donor. {file: the update file's bytes, image: the flat image, profile: the codec's build or null}
 export async function updateFile(G, donor, app, { codec = "auto" } = {}) {
 	let image = app, profile = null;
@@ -162,7 +162,7 @@ export async function updateFile(G, donor, app, { codec = "auto" } = {}) {
 	return { file: packFile(image, donor.file), image, profile };
 }
 
-// A user's own image: a build with the codec already merged (make's odr_<board>_codec.bin, with a descriptor at DESC_ADDR)
+// A user's own image: a build with the codec already merged (make's rfoundry_<board>_codec.bin, with a descriptor at DESC_ADDR)
 // gives back its application part, since the codec comes from the update file anyway. Anything else is returned as is.
 export function ownImage(G, data) {
 	const at = G.desc_addr - G.flash_base;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flash stubs' external SPI NOR flash, bus-independent: the common 25-series command set (JEDEC ID 0x9F, read 0x03
 // with three address bytes, write enable 0x06, status 0x05, 4 KB sector erase 0x20, page program 0x02, release from
 // power-down 0xAB), so parts up to 16 MB work. The target wires the bus (nor_hw_*: a SPI block on the STM32F4, GPIO
@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 // Wake the chip on a bus the target has set up: its size in bytes (0 when no chip answers) and its JEDEC ID. Waits
-// for an erase ODR may have left running
+// for an erase RadioFoundry may have left running
 uint32_t stubnor_probe(uint8_t id[3]);
 bool stubnor_read(uint32_t addr, uint8_t *dst, uint32_t n);
 bool stubnor_erase(uint32_t addr);

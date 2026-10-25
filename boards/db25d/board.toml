@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The DB25-D PRO's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and
 # the web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/db25d/fm_only.ld and
 # boards/db25d/memory.ld.
@@ -34,14 +34,14 @@ FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, 
 storage work on the radio. Open: the older FD6818 batches and the Retevis RT73."""
 release = "stable"
 
-# The vendor IAP loader (0x03000000..0x0300BFFF) is never written. ODR's first stage fills the sector at 0x0300C000
+# The vendor IAP loader (0x03000000..0x0300BFFF) is never written. RadioFoundry's first stage fills the sector at 0x0300C000
 # (board.mk BOOT_*), the application follows it, the codec slot is the other HR_C7000 boards' (boards/db25d/memory.ld). The web flasher (IAP
-# loader, or the stub from ODR) and stub/stubtool.py flash it
+# loader, or the stub from RadioFoundry) and stub/stubtool.py flash it
 [flash]
 family = "serial-iap"
 keep_codec = false
 stock_versions = ["909E.DBB.EARSAB.018", "909E.DBB.EARSAB.020"]
-backup = { stock = "full", odr = "full", spi_size = 0 }
+backup = { stock = "full", rfoundry = "full", spi_size = 0 }
 
 [flash.bootloader]
 steps = [
@@ -50,10 +50,10 @@ steps = [
 ]
 
 # The universal HR_C7000 stub's board profile (CONFIG, stub/stubtool.py): the stub holds the power latch (pins.h:
-# PTB13 latch, PTB12 power key, hardware-db25d.md 3.3, the same pins under ODR, its first stage and the stock firmware);
+# PTB13 latch, PTB12 power key, hardware-db25d.md 3.3, the same pins under RadioFoundry, its first stage and the stock firmware);
 # 2 MB of program flash (Boya, JEDEC 68 40 15).
 # stock_console: the stock firmware answers a debug console (USMART) the web flasher loads the stub through before
-# ODR is installed (stock_versions: the builds it knows). read_rate: bytes a second of a program flash read
+# RadioFoundry is installed (stock_versions: the builds it knows). read_rate: bytes a second of a program flash read
 # through the stub (2 MB in about 45 s on the radio, 2026-10-17: blank sectors and LZ4 beat the 9 KB/s wire)
 [flash.stub]
 id = 3

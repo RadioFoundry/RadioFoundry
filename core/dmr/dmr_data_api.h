@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR data features for the UI (and the debug link): text messages, call alert, radio check, ARS state. Safe
 // from any task: requests go through a mailbox the radio task empties at its next tick (10 ms), reads are copies
 // taken under the service's lock. Built without the data features (CONFIG_DMR_DATA_CORE=0) every call is a no-op
@@ -12,8 +12,8 @@
 //     sms_inbox_delete(i)
 //   - send: sms_send() then watch sms_send_state() (or the SMS_SENT / SMS_FAILED events)
 //   - dmr_signal_call_alert() / dmr_signal_radio_check() then dmr_signal_state() (or the events)
-#ifndef ODR_DMR_DATA_API_H
-#define ODR_DMR_DATA_API_H
+#ifndef RFOUNDRY_DMR_DATA_API_H
+#define RFOUNDRY_DMR_DATA_API_H
 
 #include <stdbool.h>
 #include <stddef.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // An I2C master as a board's chip glue sees it: whole transactions to a 7-bit address. The software master
 // (bus/i2c_gpio) and an SoC's I2C controller both fit behind it, so a board can move a bus from one to the other
 // without touching the code that talks to the chips. Locking stays with the board.

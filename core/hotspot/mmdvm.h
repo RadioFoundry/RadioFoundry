@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The MMDVM modem protocol (public; written from its description): frames E0 <length> <command> <payload>, the
 // length counting the whole frame. The radio answers as a protocol 1 modem with DMR only, simplex on slot 2
 // (MMDVMHost Duplex=0, the SDR bench tools). Other modes' commands are refused (NAK), except
@@ -11,8 +11,8 @@
 // The framer splits a byte stream (USB CDC, a UART, UDP datagrams) into frames by the length byte, resynchronizing
 // on 0xE0 (docs/spec/gotchas.md 8.10). The responder answers them and runs the DMR side through hotspot.c.
 // No RTOS here: the host link task feeds it and the host tests drive it directly.
-#ifndef ODR_MMDVM_H
-#define ODR_MMDVM_H
+#ifndef RFOUNDRY_MMDVM_H
+#define RFOUNDRY_MMDVM_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -57,10 +57,10 @@
 #define MMDVM_DEBUG1		0xF1
 // Ours, in a range MMDVM leaves unused: the SFR on-air debug switches (core/dmr/sfr.h, hrcSfr.h); answered through
 // the extension hooks below, NAKed until the SFR is ported
-#define MMDVM_ODR_SFR_DEBUG	0xD5
+#define MMDVM_RFOUNDRY_SFR_DEBUG	0xD5
 // Ours: the split duplex extension (docs/spec/split-duplex.md 3), answered by core/hotspot/hotspotSplit.c through its
 // frame hook below when CONFIG_HOTSPOT_SPLIT is built; NAKed with reason 1 (unknown) otherwise, like any command
-#define MMDVM_ODR_SPLIT		0xD6
+#define MMDVM_RFOUNDRY_SPLIT		0xD6
 
 // NAK reasons
 #define MMDVM_NAK_UNKNOWN	1	// not a command this modem knows
@@ -125,7 +125,7 @@ uint16_t mmdvm_framer_byte(mmdvm_framer_t *f, uint8_t b);
 typedef struct {
 	// Bytes to the host (one whole frame per call)
 	void (*write)(const uint8_t *buf, size_t len);
-	const char *description;	// GET_VERSION text, e.g. "OpenDigitalRadio <model> ba226121"
+	const char *description;	// GET_VERSION text, e.g. "RadioFoundry <model> ba226121"
 } mmdvm_io_t;
 
 // Optional extension (the SFR, when ported): our vendor command, GET_STATUS bytes after byte 12, a GET_VERSION

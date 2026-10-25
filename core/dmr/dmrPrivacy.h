@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR voice privacy (static keystream "basic privacy" schemes)
  */
 
-#ifndef ODR_DMRPRIVACY_H
-#define ODR_DMRPRIVACY_H
+#ifndef RFOUNDRY_DMRPRIVACY_H
+#define RFOUNDRY_DMRPRIVACY_H
 
 #include <stdbool.h>
 #include <stdint.h>

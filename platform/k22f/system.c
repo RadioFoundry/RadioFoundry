@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The MCU for the debug link and the core (hal_system.h): chip identity from the SIM, memory reads, reset, and with
 // CONFIG_STUB_ENTRY the hand-over to the flash stub (stub_entry.c). The K22F has no ROM bootloader to reboot into, so
 // HAL_REBOOT_ROM_DFU is refused

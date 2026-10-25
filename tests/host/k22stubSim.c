@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The K22F flash stub's real protocol engine (stub/common/stubeng.c) and board record check (stub/k22f/k22stub_board.c)
 // on a simulated 512 KB flash and a 2 MB SPI flash, speaking its wire protocol on stdin / stdout, so the host tool
 // (stub/k22stub.py) can be checked against it end to end (k22stub_wire_check.py). Usage: k22stubSim FLASH_IN FLASH_OUT;

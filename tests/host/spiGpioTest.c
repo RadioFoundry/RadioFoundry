@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The bit-banged SPI master (drivers/bus/spi_gpio) against a model of a slave on fake pins, in all four modes: the
 // slave takes MOSI on its sampling edge and puts its next bit out on the other edge, as the mode says; every clock
 // edge is counted and the clock must end at its idle level

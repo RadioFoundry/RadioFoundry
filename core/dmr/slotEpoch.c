@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The split duplex RX half's slot labels (see slotEpoch.h; docs/spec/split-duplex.md 7)
 #include <string.h>
 #include "dmr/slotEpoch.h"

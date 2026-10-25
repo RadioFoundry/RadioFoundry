@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """k22stub: the host side of the Kinetis K22F flash stub. docs/spec/stub-k22f.md.
 
-The stub (stub/k22f, built with `make -C stub/k22f`) is loaded by a running ODR built with CONFIG_STUB_ENTRY=y through
+The stub (stub/k22f, built with `make -C stub/k22f`) is loaded by a running RadioFoundry built with CONFIG_STUB_ENTRY=y through
 the debug link's STUB command, over the radio's USB serial port, and answers on the same port (or, if it had to
 enumerate again, on a port with the same serial number). It runs the protocol engine the STM32F4 stub runs
 (stub/common/stubeng.c), so the radio class, the install order and the checks are f4stub.py's, given this chip
 (K22). stubtool.py hands the K22F radios to it:
 
-    stubtool.py PORT --odr-enter --write-app build/BOARD/odr_BOARD.bin       install a build
-    stubtool.py PORT --odr-enter --write-app build/BOARD/odr_BOARD_codec.bin a build merged with the codec
-    stubtool.py PORT --odr-enter --progmem flash.bin                         back up the whole program flash (512 KB)
-    stubtool.py PORT --odr-enter --verify-progmem flash.bin                  compare by CRC
-    stubtool.py PORT --odr-enter --q128 spi.bin                              back up the SPI flash
-    stubtool.py PORT --odr-enter --write-q128 spi.bin --q128-range 0x100000:  put ODR's part back (changed sectors)
+    stubtool.py PORT --rfoundry-enter --write-app build/BOARD/rfoundry_BOARD.bin       install a build
+    stubtool.py PORT --rfoundry-enter --write-app build/BOARD/rfoundry_BOARD_codec.bin a build merged with the codec
+    stubtool.py PORT --rfoundry-enter --progmem flash.bin                         back up the whole program flash (512 KB)
+    stubtool.py PORT --rfoundry-enter --verify-progmem flash.bin                  compare by CRC
+    stubtool.py PORT --rfoundry-enter --q128 spi.bin                              back up the SPI flash
+    stubtool.py PORT --rfoundry-enter --write-q128 spi.bin --q128-range 0x100000:  put RadioFoundry's part back (changed sectors)
     stubtool.py PORT --attach --board BOARD --boot reset                     restart into the firmware
     k22stub.py --self-test                                                   against a simulated radio, no hardware
     k22stub.py --embed build/stub-k22f/k22stub.bin                           put a new stub build into this file
@@ -145,7 +145,7 @@ ERASE_TIMEOUT = 1.0                    # 2 KB: 114 ms worst case in the data she
 BOARDS = {b.id: {"id": b.stub["id"], "name": b.name, "names": tuple(b.debuglink_names), "owned": [b.app_region],
                  "codec": b.codec_slot, "codec_image_end": b.stub["codec_image_end"], "app_end": b.stub["app_end"],
                  "spi": b.stub["spi"], "spi_floor": b.stub["spi_floor"]}
-          for b in stubtool.odrboards.BOARDS.values() if b.stub and b.stub["tool"] == "k22stub"}
+          for b in stubtool.rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "k22stub"}
 # The tool installs at one application base, which every profile must give
 for _bid, _b in BOARDS.items():
     if _b["owned"][0][0] != APP_BASE:
@@ -259,7 +259,7 @@ def self_test():
 
     quiet = lambda *a: None
     import tempfile
-    tmpdir = tempfile.TemporaryDirectory(prefix="odr-k22stub-")
+    tmpdir = tempfile.TemporaryDirectory(prefix="rfoundry-k22stub-")
     tmp = tmpdir.name
     loader = bytes((i * 7 + 1) & 0xFF for i in range(APP_BASE))
     last = bytes((i * 3 + 5) & 0xFF for i in range(SECTOR))
@@ -327,7 +327,7 @@ def self_test():
     merged[:len(img)] = img
     merged[0x55D00 - APP_BASE:0x55D00 - APP_BASE + 0x11F58] = app(0x11F58, 13)
     merged[0x7B700 - APP_BASE:] = app(0x80, 17)
-    mp = os.path.join(tmp, "odr_%s_codec.bin" % TB)
+    mp = os.path.join(tmp, "rfoundry_%s_codec.bin" % TB)
     open(mp, "wb").write(merged)
     segs = f4stub.load_segments(mp, TB, K22)
     check([(a, len(d)) for a, d in segs] == [(APP_BASE, len(img)), (0x55D00, 0x7B800 - 0x55D00)],
@@ -386,42 +386,42 @@ def self_test():
     upper = bytearray(spi[0x100000:])
     upper[0x11000:0x11020] = b"\x00" * 32
     nw, nk = r.spi_write(bytes(upper), 0x100000)
-    check((nw, nk) == (1, 255) and bytes(fake.spi[0x100000:]) == bytes(upper), "SPI: ODR's part, one sector (%d)" % nw)
+    check((nw, nk) == (1, 255) and bytes(fake.spi[0x100000:]) == bytes(upper), "SPI: RadioFoundry's part, one sector (%d)" % nw)
     try:
         r.request(f4stub.OP_XERASE, (0x0F000).to_bytes(4, "big") + MAGIC.to_bytes(4, "big"), retries=0)
         check(False, "the stub refuses an erase below the floor")
     except stubtool.DumpError:
         pass
 
-    # Entering from a running ODR: the debug link reports SRAM_L's base and the 8 KB staging buffer; the image checks
+    # Entering from a running RadioFoundry: the debug link reports SRAM_L's base and the 8 KB staging buffer; the image checks
     # keep the STM32F4 stub and this one apart
     if K22STUB_B64:
         image = stub_image()
         top = f4stub.stub_stack_top(image)
         check(top == RUN_ADDR + SRAM_SIZE, "the embedded stub's entry code loads the stack top 0x%X" % (top or 0))
-        odr = stubtool.FakeODR((RUN_ADDR, 8192))
-        r = f4stub.F4Radio(odr, log=quiet, chip=K22)
+        rfoundry = stubtool.FakeRFoundry((RUN_ADDR, 8192))
+        r = f4stub.F4Radio(rfoundry, log=quiet, chip=K22)
         r.attach = r.configure = lambda *a: None
-        r.odr_enter(image, RUN_ADDR, board=TB)
-        check(odr.entered and bytes(odr.mem[:len(image)]) == image, "odr_enter sends the embedded K22F stub")
+        r.rfoundry_enter(image, RUN_ADDR, board=TB)
+        check(rfoundry.entered and bytes(rfoundry.mem[:len(image)]) == image, "rfoundry_enter sends the embedded K22F stub")
         for what, img_, span in (("the STM32F4 stub", f4stub.stub_image(), (RUN_ADDR, 8192)),
                                  ("the stub on the STM32 span", image, (0x20000000, 8192))):
-            odr = stubtool.FakeODR(span)
-            r = f4stub.F4Radio(odr, log=quiet, chip=K22)
+            rfoundry = stubtool.FakeRFoundry(span)
+            r = f4stub.F4Radio(rfoundry, log=quiet, chip=K22)
             r.attach = r.configure = lambda *a: None
             try:
-                r.odr_enter(img_, RUN_ADDR, board=TB)
-                check(False, "K22F odr_enter refuses %s" % what)
+                r.rfoundry_enter(img_, RUN_ADDR, board=TB)
+                check(False, "K22F rfoundry_enter refuses %s" % what)
             except stubtool.DumpError:
-                check(not odr.entered and odr.total is None, "K22F odr_enter refuses %s before BEGIN" % what)
-        odr = stubtool.FakeODR((0x20000000, 8192))
-        r = f4stub.F4Radio(odr, log=quiet)
+                check(not rfoundry.entered and rfoundry.total is None, "K22F rfoundry_enter refuses %s before BEGIN" % what)
+        rfoundry = stubtool.FakeRFoundry((0x20000000, 8192))
+        r = f4stub.F4Radio(rfoundry, log=quiet)
         r.attach = lambda: None
         try:
-            r.odr_enter(image, 0x20000000, board=next(iter(f4stub.BOARDS)))
+            r.rfoundry_enter(image, 0x20000000, board=next(iter(f4stub.BOARDS)))
             check(False, "the STM32F4 path refuses the K22F stub")
         except stubtool.DumpError:
-            check(odr.total is None, "the STM32F4 path refuses the K22F stub before BEGIN")
+            check(rfoundry.total is None, "the STM32F4 path refuses the K22F stub before BEGIN")
     else:
         check(False, "no K22F stub embedded (k22stub.py --embed)")
 

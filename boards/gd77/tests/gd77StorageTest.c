@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 storage and calibration (docs/spec/hardware-gd77.md 6.2-6.4): the map per NOR size, the guard that keeps every
 // write out of the first megabyte, the logical space split across the EEPROM and the NOR, and core/storage and
 // core/settings running on a simulated NOR through the guard, with a power cut at every unit of a codeplug sector
@@ -88,7 +88,7 @@ static void test_map(void)
 	const hal_flash_map_t *m2 = gd77_storage_map(2u << 20);
 	const hal_flash_map_t *m4 = gd77_storage_map(4u << 20);
 	CHECK(m2 != NULL && m4 != NULL && gd77_storage_map(16u << 20) == m4 && gd77_storage_map(8u << 20) == m4);
-	CHECK(gd77_storage_map(GD77_ODR_STAGING + GD77_ODR_STAGING_SIZE - 1u) == m2);
+	CHECK(gd77_storage_map(GD77_RFOUNDRY_STAGING + GD77_RFOUNDRY_STAGING_SIZE - 1u) == m2);
 	CHECK(m2->native_size == 0 && m2->staging_size == 0 && m4->native_size != 0 && m4->staging_size != 0);
 
 	const hal_flash_map_t *maps[] = { m2, m4 };
@@ -145,7 +145,7 @@ static void test_logical(void)
 	CHECK(gd77_logical_piece(0x1FFFF, 1, &p) && !p.eeprom && p.addr == 0x8FFFFu);
 	CHECK(!gd77_logical_piece(0x1FFFF, 2, &p) && !gd77_logical_piece(0x20000, 1, &p) &&
 	      !gd77_logical_piece(0, 0, &p) && !gd77_logical_piece(0x10, 0xFFFFFFFFu, &p));
-	// The radio's own logical space is all in the region ODR never writes
+	// The radio's own logical space is all in the region RadioFoundry never writes
 	CHECK(GD77_LOGICAL_SIZE - 1u + GD77_LOGICAL_NOR_OFFSET < GD77_NOR_FACTORY_END);
 	CHECK(GD77_REWRITE_SCRATCH + STORAGE_SECTOR <= GD77_NOR_FACTORY_END);
 }
@@ -219,7 +219,7 @@ static void test_foreign(void)
 {
 	part_create(2u << 20);
 	for (uint32_t i = 0; i < 64; i++) {
-		sim_flash_data[GD77_ODR_SETTINGS + i] = (uint8_t)(0x30 + i);
+		sim_flash_data[GD77_RFOUNDRY_SETTINGS + i] = (uint8_t)(0x30 + i);
 	}
 	uint32_t u0 = sim_flash_units();
 	CHECK(!storage_init() && storage_region() == STORAGE_REGION_FOREIGN);

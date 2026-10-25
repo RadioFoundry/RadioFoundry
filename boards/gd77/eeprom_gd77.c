@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 EEPROM: a 24C512-class part at 0x50 on I2C bus A, shared with the AT1846S (docs/spec/hardware-gd77.md 6.3).
-// ODR only reads it: the factory calibration (6.4) and the radio's own logical codeplug space. Reads go in 64-byte
+// RadioFoundry only reads it: the factory calibration (6.4) and the radio's own logical codeplug space. Reads go in 64-byte
 // transactions so the AT1846S never waits long for the bus.
 #include "gd77.h"
 #include "storage_gd77.h"

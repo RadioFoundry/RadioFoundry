@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flasher's steps for the radios of the "sgl-hid" backend. Two routes: the radio's own update mode over USB HID
-// (hidboot.js, k22fcodec.js, docs/spec/update-gd77.md), which every radio has, and, on a radio that already runs ODR
-// built with CONFIG_STUB_ENTRY, the cable route: ODR hands over to the K22F stub on its debug link, which writes only
+// (hidboot.js, k22fcodec.js, docs/spec/update-gd77.md), which every radio has, and, on a radio that already runs RadioFoundry
+// built with CONFIG_STUB_ENTRY, the cable route: RadioFoundry hands over to the K22F stub on its debug link, which writes only
 // the changed flash sectors (k22stub.js, docs/spec/stub-k22f.md).
 //
-//   connect       the radio running ODR answers on its debug link and offers stub entry: the cable route; otherwise
+//   connect       the radio running RadioFoundry answers on its debug link and offers stub entry: the cable route; otherwise
 //                 (or when the user chooses it) update mode
 //   update_file   update mode: the user's own stock update file (.sgl): its header is kept, its codec is placed into the
-//                 ODR image, and the image is written into a copy of it (as odrflash's flash --board BOARD --stock FILE
+//                 RadioFoundry image, and the image is written into a copy of it (as rfoundry's flash --board BOARD --stock FILE
 //                 does). The cable route: the file is optional; with it the codec is merged as above, without it only
 //                 the application is written and the codec in the radio stays
 //   write         update mode (the board's keys held at power-on), then the file through WebHID; or the stub: CONFIG,
@@ -24,7 +24,7 @@ import { register } from "./backends.js";
 import { UpdateFile, Updater, HidLink, hidSupported } from "./hidboot.js";
 import { readDonor, updateFile, ownImage, merge, pack } from "./k22fcodec.js";
 import { FakeHid, loaderFor } from "./fakehid.js";
-import { Link, SerialStream, ODR_USB, probe, serialSupported } from "./link.js";
+import { Link, SerialStream, RFOUNDRY_USB, probe, serialSupported } from "./link.js";
 import { Stub } from "./stub.js";
 import { f4Image } from "./f4stub.js";
 import { k22Board, k22Stub, k22Install } from "./k22stub.js";
@@ -38,13 +38,13 @@ export function init(context) {
 }
 
 function session() {
-	// route: "cable" (the stub on a radio running ODR) or "update" (update mode); link: ODR's debug link while held
+	// route: "cable" (the stub on a radio running RadioFoundry) or "update" (update mode); link: RadioFoundry's debug link while held
 	return (S().hid ||= { donor: null, out: null, error: null, noVoice: false, original: false, log: logBox(), route: null, link: null, result: null });
 }
 
 const kb = (n) => Math.ceil(n / 1024);
 const simulated = () => !!S().sim?.hidDonor;
-const simOdr = () => S().sim?.hidOdr || null;
+const simRFoundry = () => S().sim?.hidRFoundry || null;
 // the cable route only on a plain install: the help task's reinstall and the original firmware go through update mode
 const cable = () => session().route === "cable" && !session().original && !S().recovering;
 
@@ -76,9 +76,9 @@ function message(e) {
 	return t(key, { detail: e.message });
 }
 
-// The update file for what this run installs: ODR with the codec, ODR without it (the user's choice for a stock build
+// The update file for what this run installs: RadioFoundry with the codec, RadioFoundry without it (the user's choice for a stock build
 // the page doesn't know), or the stock file unchanged (back to the original firmware). The cable route needs no update
-// file: ODR merged with the codec of the user's file, or without a file ODR alone (the radio's codec stays).
+// file: RadioFoundry merged with the codec of the user's file, or without a file RadioFoundry alone (the radio's codec stays).
 async function build() {
 	const g = session();
 	g.out = null;
@@ -99,7 +99,7 @@ async function build() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// connect: a radio running ODR with stub entry takes the cable route, any other one update mode
+// connect: a radio running RadioFoundry with stub entry takes the cable route, any other one update mode
 
 async function closeLink() {
 	const g = session();
@@ -107,29 +107,29 @@ async function closeLink() {
 	g.link = null;
 }
 
-// The radio's ODR port: the simulated one, one this page was allowed before, or the one the user picks
+// The radio's RadioFoundry port: the simulated one, one this page was allowed before, or the one the user picks
 async function openLink() {
 	const g = session();
 	if (g.link) return g.link;
 	let stream;
-	if (simulated() && !simOdr()) throw new Error(t("flash.hid.connect.no_answer"));	// the practice radio is in update mode
-	if (simOdr()) stream = simOdr().serialStream();
+	if (simulated() && !simRFoundry()) throw new Error(t("flash.hid.connect.no_answer"));	// the practice radio is in update mode
+	if (simRFoundry()) stream = simRFoundry().serialStream();
 	else {
-		const granted = await odrPorts();
+		const granted = await rfoundryPorts();
 		stream = granted.length ? await SerialStream.open(granted[0]) : await SerialStream.request();
 	}
 	return (g.link = new Link(stream));
 }
 
-const odrPorts = async () => (await navigator.serial.getPorts()).filter((p) => {
+const rfoundryPorts = async () => (await navigator.serial.getPorts()).filter((p) => {
 	const i = p.getInfo();
-	return i.usbVendorId === ODR_USB.usbVendorId && i.usbProductId === ODR_USB.usbProductId;
+	return i.usbVendorId === RFOUNDRY_USB.usbVendorId && i.usbProductId === RFOUNDRY_USB.usbProductId;
 });
 
 // The stub's port after it enumerated again: the same USB IDs and serial number, so the browser lists it as granted
 async function reopen() {
-	if (simOdr()) return simOdr().serialStream();
-	const ports = await odrPorts();
+	if (simRFoundry()) return simRFoundry().serialStream();
+	const ports = await rfoundryPorts();
 	if (!ports.length) throw new Error("not back yet");
 	return SerialStream.open(ports[ports.length - 1]);
 }
@@ -157,7 +157,7 @@ function connectView() {
 			const board = k22Board(G().stub, p.board);
 			if (board !== S().radio.flash.board) throw new Error(t("flash.hid.connect.other_radio", { board: p.board }));
 			const rows = h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git));
-			if (!(await Stub.odrOffer(link))) {
+			if (!(await Stub.rfoundryOffer(link))) {
 				await closeLink();
 				g.route = "update";
 				await build();
@@ -250,7 +250,7 @@ function fileView() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// write over the cable: ODR hands over to the K22F stub, which writes the changed sectors and restarts the radio
+// write over the cable: RadioFoundry hands over to the K22F stub, which writes the changed sectors and restarts the radio
 
 let k22Json = null;
 const stubJson = async () => (k22Json ||= await (await fetch(`${ROOT}data/k22-stub.json`)).json());
@@ -294,7 +294,7 @@ function cableView() {
 				const json = await stubJson();
 				stub = k22Stub(link.s, G().stub, S().radio.flash.board, { log: g.log.add, reopen });
 				g.link = null;		// the port belongs to the loader from here
-				await stub.enterFromOdr(f4Image(json), (d, n) => prog.set(d, n, t("flash.hid.cable.sending")), { entry: json.run });
+				await stub.enterFromRFoundry(f4Image(json), (d, n) => prog.set(d, n, t("flash.hid.cable.sending")), { entry: json.run });
 			}
 			prog.set(0, 1, t("flash.hid.cable.reading"));
 			const r = await k22Install(stub, g.out.image, {
@@ -320,7 +320,7 @@ function cableView() {
 			prog.el.hidden = true;
 			go.disabled = false;
 			if (!stub?.jumped) {
-				// ODR did not hand over: nothing changed on the radio
+				// RadioFoundry did not hand over: nothing changed on the radio
 				stub = null;
 				await closeLink();
 				status.replaceChildren(notice(t("flash.hid.cable.enter_failed", { error: ctx.errorText(e) }), "bad"));
@@ -329,7 +329,7 @@ function cableView() {
 				// the loader came up on a port this page can't open without asking: one click picks it
 				const pick = button(t("flash.hid.cable.repick_button"), async () => {
 					try {
-						stub.s = await (simOdr() ? reopen() : SerialStream.request());
+						stub.s = await (simRFoundry() ? reopen() : SerialStream.request());
 						await stub.helloWithin(2000, t("flash.hid.cable.lost"));
 						stub.attached();
 						await run();

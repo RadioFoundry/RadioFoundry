@@ -2,53 +2,34 @@
 
 # Specifications
 
-What the firmware does and what the hardware needs. Behavior specs are radio-independent; per-radio facts are on
-the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
+What the firmware does and what the hardware needs: one page per subsystem, written before the code and kept true to
+it. Behavior specs are radio-independent. A radio's own facts (pins, chips, quirks, measurements) are on its pages,
+named by the board id: `hardware-<id>.md`, `codec-<id>.md` and, for some, `<id>-migration.md`. The radios and their
+chips are in [radios.md](radios.md); which radio has which feature is in [feature-matrix.md](../feature-matrix.md).
+Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](../dev/README.md) for process.
 
-## Behavior
+## Radio features and the user interface
 
 | Spec | Covers |
 |---|---|
+| [capabilities.md](capabilities.md) | What a radio can do, by area, with the switch and spec behind each |
 | [radio-features.md](radio-features.md) | Scan, the FM transmit extras (tones, burst, roger beep), beeps, battery and power management |
-| [rx2-link.md](rx2-link.md) | The link to a second receiver on another SoC (GD-88): frames, messages, timing |
+| [airband-and-broadcast.md](airband-and-broadcast.md) | Air band AM receive and broadcast FM receive, chosen by the frequency |
+| [aprs.md](aprs.md) | APRS on FM and over DMR |
 | [ui.md](ui.md) | The user interface as built: screens, keys, the drawing layer ([docs/ux](../ux/) has the design) |
+
+## DMR
+
+| Spec | Covers |
+|---|---|
 | [dmr-voice.md](dmr-voice.md) | DMR voice calls |
 | [dmr-data.md](dmr-data.md) | DMR data services: text messages, ARS, LRRP, call alert, radio check |
 | [dmr-emergency.md](dmr-emergency.md) | DMR emergency |
 | [dmr-roaming.md](dmr-roaming.md) | DMR repeater roaming |
 | [sfr.md](sfr.md) | Single frequency repeater |
 | [split-duplex.md](split-duplex.md) | Two radios as one duplex MMDVM modem |
-| [aprs.md](aprs.md) | APRS on FM and over DMR |
-| [airband-and-broadcast.md](airband-and-broadcast.md) | Air band AM receive and broadcast FM receive (parked) |
-| [settings-store.md](settings-store.md) | Settings store and safe flash writes |
-| [crash-log.md](crash-log.md) | The crash log: fault capture on each platform, the record kept across the restart, the fault trace, the packed report |
-| [watchdog.md](watchdog.md) | The hardware watchdog: the idle task's feed, timeouts, long operations, leaving the application, bench tests |
-| [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |
-| [codeplug-native.md](codeplug-native.md) | Native codeplug (draft) |
 
-## Host link and network
-
-| Spec | Covers |
-|---|---|
-| [cps-protocol.md](cps-protocol.md) | The host port's protocols and how they share it; the CPS protocol |
-| [cps-fast.md](cps-fast.md) | The fast codeplug protocol: block sums, LZ4, staged commit |
-| [open-firmware-cps.md](open-firmware-cps.md) | The open-firmware codeplug format qdmr writes |
-| [qdmr-yaml.md](qdmr-yaml.md) | qdmr's YAML codeplug file and how the Codeplug Editor maps it |
-| [codeplug-stock-tyt.md](codeplug-stock-tyt.md) | Stock TYT-family codeplugs (DM-1701, MD-UV380, MD-380) in SPI flash: detection and conversion |
-| [codeplug-port.md](codeplug-port.md) | Stock codeplug to ODR: the clean-up, contacts, CPS write shared by the migration tools |
-| [debuglink.md](debuglink.md) | The debug link: commands, the view, key injection |
-| [stub-entry.md](stub-entry.md) | The stub entry: loading the flashing tools' RAM monitor at run time, with or without the debug link |
-| [stub-stm32f4.md](stub-stm32f4.md) | The STM32F4 flash stub: entry from ODR, USB, protocol, safety rules, update order |
-| [mmdvm-protocol.md](mmdvm-protocol.md) | The MMDVM modem protocol (hotspot mode) |
-| [usb-network.md](usb-network.md) | USB network personality, the IP gateway, control station mode |
-| [ppp.md](ppp.md) | PPP on the serial host link |
-| [tcp-services.md](tcp-services.md) | TCP, HTTP, rigctld, KISS over TCP, APRS-IS |
-| [tftp.md](tftp.md) | TFTP codeplug access |
-| [mdns.md](mdns.md) | mDNS and DNS-SD |
-| [snmp.md](snmp.md) | SNMP agent ([ODR-MIB.txt](ODR-MIB.txt)) |
-| [usb-audio.md](usb-audio.md) | Analog and DMR voice over USB: design |
-
-## DMR modems
+## DMR modem chips
 
 | Spec | Covers |
 |---|---|
@@ -56,27 +37,75 @@ the radio's hardware page. Past bugs, by subsystem: [gotchas.md](gotchas.md).
 | [modem-hrc6000.md](modem-hrc6000.md) | HR_C6000 as a DMR modem (also the HR_C5000's base) |
 | [hrc6000-registers.md](hrc6000-registers.md) | HR_C6000 register reference |
 | [modem-hrc7000.md](modem-hrc7000.md) | HR_C7000 as a DMR modem |
+| [rx2-link.md](rx2-link.md) | The link to a second receiver on another SoC: frames, messages, timing |
 
-## Radios
-
-[radios.md](radios.md) surveys the radios, their chips and the port order; [capabilities.md](capabilities.md) shows
-what the aftermarket firmware does on each (ODR's own state: [feature matrix](../feature-matrix.md)). Where ODR places each radio's
-stock codec: [codec-placement.md](codec-placement.md). Per radio:
-
-| Radio | Hardware | Codec | Moving from stock |
-|---|---|---|---|
-| Baofeng DM-1701 | [hardware-dm1701.md](hardware-dm1701.md) | [codec-dm1701.md](codec-dm1701.md) | |
-| TYT MD-UV380 | [hardware-mduv380.md](hardware-mduv380.md) | [codec-mduv380.md](codec-mduv380.md) | |
-| TYT MD-380 | [hardware-md380.md](hardware-md380.md) | [codec-md380.md](codec-md380.md) | [md380-migration.md](md380-migration.md) |
-| TYT MD-9600 | [hardware-md9600.md](hardware-md9600.md) | [codec-md9600.md](codec-md9600.md) | |
-| Baofeng DM-32UV | [hardware-dm32.md](hardware-dm32.md) | [codec-dm32.md](codec-dm32.md) | [dm32-migration.md](dm32-migration.md), [dm32-stock-cps.md](dm32-stock-cps.md) |
-| Radioddity DB25-D PRO | [hardware-db25d.md](hardware-db25d.md) | | |
-| Radioddity GD-77 | [hardware-gd77.md](hardware-gd77.md) | | |
-| Radioddity GD-88 | [hardware-gd88.md](hardware-gd88.md) | | |
-| Anytone AT-D868UV / D878UV / D578UV | [hardware-anytone.md](hardware-anytone.md) | | |
-
-## Plans
+## Host link and network
 
 | Spec | Covers |
 |---|---|
-| [dmr-tier3-plan.md](dmr-tier3-plan.md) | DMR Tier III trunking: scope, architecture, work packages (planning only) |
+| [debuglink.md](debuglink.md) | The debug link: commands, the view, key injection |
+| [cps-protocol.md](cps-protocol.md) | The host port's protocols and how they share it; the CPS protocol |
+| [cps-fast.md](cps-fast.md) | The fast codeplug protocol: block sums, LZ4, staged commit |
+| [mmdvm-protocol.md](mmdvm-protocol.md) | The MMDVM modem protocol (hotspot mode) |
+| [usb-network.md](usb-network.md) | USB network personality, the IP gateway, control station mode |
+| [ppp.md](ppp.md) | PPP on the serial host link |
+| [tcp-services.md](tcp-services.md) | TCP, HTTP, rigctld, KISS over TCP, APRS-IS |
+| [tftp.md](tftp.md) | TFTP codeplug access |
+| [mdns.md](mdns.md) | mDNS and DNS-SD |
+| [snmp.md](snmp.md) | SNMP agent ([RFOUNDRY-MIB.txt](RFOUNDRY-MIB.txt)) |
+| [usb-audio.md](usb-audio.md) | Analog and DMR voice over USB: design |
+
+## Codeplug and storage
+
+| Spec | Covers |
+|---|---|
+| [open-firmware-cps.md](open-firmware-cps.md) | The open-firmware codeplug format qdmr writes |
+| [qdmr-yaml.md](qdmr-yaml.md) | qdmr's YAML codeplug file and how the Codeplug Editor maps it |
+| [codeplug-native.md](codeplug-native.md) | The editing model and the native codeplug (draft) |
+| [settings-store.md](settings-store.md) | Settings store and safe flash writes |
+| [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |
+
+## Codecs
+
+DMR voice needs each radio's own codec; the process is in [docs/dev](../dev/codec.md).
+
+| Spec | Covers |
+|---|---|
+| [codec-placement.md](codec-placement.md) | Where RadioFoundry places the codec on each SoC family, descriptors, slots, codec maps |
+| `codec-<id>.md` | One radio's codec: the stock files accepted, their format, the code and table windows, entry points |
+
+## Migrating from stock
+
+Reading a vendor codeplug and moving a radio from the vendor firmware. User steps are in
+[docs/user](../user/README.md).
+
+| Spec | Covers |
+|---|---|
+| [codeplug-stock-tyt.md](codeplug-stock-tyt.md) | The vendor codeplug layout of the TYT-family radios in SPI flash: detection and conversion |
+| [codeplug-port.md](codeplug-port.md) | Stock codeplug to RadioFoundry: the clean-up, contacts, CPS write shared by the migration tools |
+| `<id>-migration.md` | One radio's flashing and migration procedure, where a migration tool exists |
+| `<id>-stock-cps.md` | One radio's vendor programming protocol, for interoperability |
+
+## Flashing and updates
+
+| Spec | Covers |
+|---|---|
+| [stub-entry.md](stub-entry.md) | The stub entry: loading the flashing tools' RAM monitor at run time, with or without the debug link |
+| [stub-stm32f4.md](stub-stm32f4.md) | The STM32F4 flash stub: entry from RadioFoundry, USB, protocol, safety rules, update order |
+
+## Reliability
+
+| Spec | Covers |
+|---|---|
+| [crash-log.md](crash-log.md) | The crash log: fault capture on each platform, the record kept across the restart, the fault trace, the packed report |
+| [watchdog.md](watchdog.md) | The hardware watchdog: the idle task's feed, timeouts, long operations, leaving the application, bench tests |
+| [gotchas.md](gotchas.md) | Past bugs and traps, by subsystem |
+
+## Radios
+
+| Spec | Covers |
+|---|---|
+| [radios.md](radios.md) | The hardware survey: every radio's chips and the port order |
+| `hardware-<id>.md` | One radio: MCU and memory map, pins, chips, keys, display, power, bootloader and image format, calibration |
+
+The bring-up records for each radio are in [docs/testing](../testing/README.md).

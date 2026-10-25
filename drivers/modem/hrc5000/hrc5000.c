@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C5000 driver (hrc5000.h). Register meanings are the user manual's where it has them; the manual has no entry
 // for 0x25, 0x26, 0x37, 0x39, 0x3D, 0x41, 0x45, 0x47, 0x48 or 0xB9-0xBB, whose values are the stock firmware's.
 // The chip's registers are on page 0 (HRC_PAGE_SYS, which the chip description maps there) and page 1 (HRC_PAGE_AUX).

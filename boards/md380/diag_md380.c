@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // MD-380 diagnostics page lines: raw readings for bench checks (no bus traffic; everything is cached elsewhere)
 #include <stddef.h>
 #include "md380.h"

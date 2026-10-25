@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // USB port glue for TinyUSB on the K22F's full-speed USB controller (portable/chipidea/ci_fs, the buffer descriptor
 // table driver), docs/spec/hardware-gd77.md 13: device only, the dedicated USB0_DP / USB0_DM pins, the USB0 interrupt
 // at priority 6. No PLL plan gives 48 MHz exactly (49.152 and 95.232 MHz), so the controller runs from the internal

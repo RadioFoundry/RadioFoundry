@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Nightly CI (docs/dev/ci.md): the long builds the per-push workflow leaves out, on the default branch.
 #   matrix       one job per toolchain (Arm, C-SKY), every board built with it from the registry: a build per feature
@@ -29,14 +29,14 @@ concurrency:
 
 jobs:
   changes:
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       run: ${{ steps.decide.outputs.run }}
       reuse: ${{ steps.decide.outputs.reuse }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           fetch-depth: 0   # the last passed commit must be here to diff against
           submodules: false
@@ -44,7 +44,7 @@ jobs:
       - name: Look up the last nightly pass
         id: tested
         if: github.event_name == 'schedule'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830   # v4.3.0
         with:
           path: .nightly-ok
           key: nightly-ok-${{ github.sha }}
@@ -73,7 +73,7 @@ jobs:
         if: steps.decide.outputs.mark == 'true'
         run: mkdir -p .nightly-ok && echo "$GITHUB_SHA" > .nightly-ok/sha
       - if: steps.decide.outputs.mark == 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830   # v4.3.0
         with:
           path: .nightly-ok
           key: nightly-ok-${{ github.sha }}
@@ -83,8 +83,8 @@ jobs:
     # checkout, submodules and compiler are set up once per toolchain, not once per radio
     name: matrix (${{ matrix.name }})
     needs: changes
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -98,7 +98,7 @@ jobs:
       contents: read
       packages: read   # pulling a private ghcr.io csky-elf image with the job token
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       - name: third_party submodules
@@ -108,15 +108,15 @@ jobs:
         uses: ./.github/actions/toolchain
         with:
           toolchain: ${{ matrix.toolchain }}
-          image: ${{ vars.ODR_CSKY_IMAGE }}
-          registry: ${{ vars.ODR_CSKY_REGISTRY }}
+          image: ${{ vars.RFOUNDRY_CSKY_IMAGE }}
+          registry: ${{ vars.RFOUNDRY_CSKY_REGISTRY }}
           # a read-only registry token (secret); on GitHub a ghcr.io package linked to this repository takes the job's
           # own token (packages: read)
-          registry-user: ${{ vars.ODR_CSKY_REGISTRY_USER || github.actor }}
-          registry-token: ${{ secrets.ODR_CSKY_REGISTRY_TOKEN || github.token }}
+          registry-user: ${{ vars.RFOUNDRY_CSKY_REGISTRY_USER || github.actor }}
+          registry-token: ${{ secrets.RFOUNDRY_CSKY_REGISTRY_TOKEN || github.token }}
       - name: Feature matrix of every board on the toolchain
         env:
-          ODR_CI_PRUNE: "1"   # keep the logs and images, not the build trees (about 65 MB each)
+          RFOUNDRY_CI_PRUNE: "1"   # keep the logs and images, not the build trees (about 65 MB each)
           RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
           TOOLCHAIN: ${{ matrix.toolchain }}
         run: |
@@ -124,12 +124,12 @@ jobs:
           rc=0
           $RUN tools/ci.sh --matrix --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
           if [ "$rc" = 3 ]; then
-            echo "::notice::$TOOLCHAIN matrix skipped: the image ${ODR_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
+            echo "::notice::$TOOLCHAIN matrix skipped: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
           fi
           [ -f build/ci/size-report.md ] && cat build/ci/size-report.md >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         if: always()
         with:
           name: matrix-${{ matrix.toolchain }}
@@ -140,11 +140,11 @@ jobs:
 
   reuse:
     needs: changes
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true') && (needs.changes.outputs.reuse == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true') && (needs.changes.outputs.reuse == 'true')
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           submodules: false
       - name: reuse lint (a warning until the tree passes)
@@ -158,13 +158,13 @@ jobs:
 
   mark:
     needs: [matrix]
-    if: (github.server_url != 'https://github.com' || vars.ODR_CI_GITHUB == 'true')
-    runs-on: ${{ vars.ODR_CI_RUNNER || 'ubuntu-24.04' }}
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
+    runs-on: ${{ vars.RFOUNDRY_CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - name: Remember that this commit passed
         run: mkdir -p .nightly-ok && echo "$GITHUB_SHA" > .nightly-ok/sha   # the next run diffs against it
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830   # v4.3.0
         with:
           path: .nightly-ok
           key: nightly-ok-${{ github.sha }}

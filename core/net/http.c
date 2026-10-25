@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // An HTTP/1.0 status server on port 80 (RFC 1945; docs/spec/tcp-services.md 5): static files (http_assets.h), the
 // radio's state as JSON, the debug link's view sections as JSON, the screen as a BMP. GET and HEAD, one request per
-// connection (Connection: close), no keep-alive, no chunking. Responses are streamed into TCP as its buffer frees up:
+// connection (Connection: close), no keep-alive, no chunking. With CONFIG_NET_WEBCTL, GET /ws upgrades to a WebSocket
+// (RFC 6455 4.2) and the connection is handed to webctl.c. Responses are streamed into TCP as its buffer frees up:
 // the files from flash, the screen straight from the frame buffer, JSON from one shared buffer (a second JSON request
 // waits for it).
 #include "config.h"
@@ -21,11 +22,16 @@
 #if CONFIG_NET_APRSIS
 #include "net/aprsis.h"
 #endif
+#include "ui/ui.h"
+#if CONFIG_NET_WEBCTL
+#include "net/ws.h"
+#include "net/webctl.h"
+#endif
 #include "net/http_assets.h"
 #include "http_assets_gen.h"	// the build's gen directory: core/net/http_assets/* (tools/gen_http_assets.py)
 
-#ifndef ODR_GIT
-#define ODR_GIT "unknown"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "unknown"
 #endif
 
 #define LINE_MAX	96	// request line ("GET /api/view?section=dmr_data_stats HTTP/1.1" and room)
@@ -33,10 +39,10 @@
 #define BUF_MAX		1536	// JSON bodies; a view section's text is rendered into its upper part first
 #define VIEW_AT		512	// where the section's text goes (the JSON written from 0 never catches up with it)
 #define REQ_TIMEOUT_MS	10000u
-#define BMP_HEADER	66	// file header 14, BITMAPINFOHEADER 40, the three BI_BITFIELDS masks 12
+#define BMP_HEADER_MAX	118	// file header 14, BITMAPINFOHEADER 40, then 16 palette entries (bpp 4) at most
 #define SHOT_HOLD_MS	1000u	// UI redraws are held while the screen goes out, so it is one frame
 
-enum { H_FREE, H_REQ, H_WAIT, H_SEND };
+enum { H_FREE, H_REQ, H_WAIT, H_SEND, H_WS };	// H_WS: webctl.c has the connection
 enum { SRC_NONE, SRC_MEM, SRC_BUF, SRC_BMP };
 
 typedef struct {
@@ -46,6 +52,11 @@ typedef struct {
 	bool line_done;		// the request line is in
 	bool at_bol;		// at the start of a header line (an empty one ends the request)
 	uint8_t ln;
+#if CONFIG_NET_WEBCTL
+	bool ws;		// the 101 is going out: the connection is webctl's once it's sent
+	uint8_t hn;		// the header line under way, in hdr (free until the response)
+	char key[WS_KEY_LEN + 1];	// Sec-WebSocket-Key, "" = none
+#endif
 	char line[LINE_MAX];
 	uint16_t hlen, hoff;
 	char hdr[HDR_MAX];
@@ -100,7 +111,7 @@ static const char *bool_s(bool b)
 	return b ? "true" : "false";
 }
 
-static void status_json(dl_text_t *t)
+void http_status_json(dl_text_t *t)
 {
 	static const char *const states[] = { "idle", "rx", "tx", "tx_denied" };
 	const radio_view_t *v = net_radio_view();
@@ -109,7 +120,7 @@ static void status_json(dl_text_t *t)
 	dl_text(t, "{\"radio\":");
 	json_str(t, board.name);
 	dl_text(t, ",\"version\":\"%s\",\"uptime_s\":%u,\"state\":\"%s\",\"vfo\":%s,\"zone\":%u,\"channel_number\":%u,"
-		"\"channel\":", ODR_GIT, (unsigned)(hal_millis() / 1000u), (v->state < 4) ? states[v->state] : "?",
+		"\"channel\":", RFOUNDRY_GIT, (unsigned)(hal_millis() / 1000u), (v->state < 4) ? states[v->state] : "?",
 		bool_s(v->vfo), v->zone_index, v->channel_number);
 	json_str(t, ch->name);
 	dl_text(t, ",\"rx_hz\":%u,\"tx_hz\":%u,\"mode\":\"%s\",\"bw\":\"%s\",\"power\":", (unsigned)ch->rx_hz,
@@ -129,6 +140,11 @@ static void status_json(dl_text_t *t)
 			bool_s(v->dmr.target_private), (unsigned)v->dmr.call.src);
 	}
 #endif
+	ui_app_status_t ui;
+
+	ui_get_status(&ui);
+	dl_text(t, ",\"led_green\":%s,\"led_red\":%s,\"backlight\":%u,\"draws\":%u", bool_s((v->leds & RADIO_LED_GREEN) != 0),
+		bool_s((v->leds & RADIO_LED_RED) != 0), ui_backlight(), (unsigned)ui.draws);
 	dl_text(t, ",\"tcp_open\":%u}\n", (unsigned)tcp_open_count());
 }
 
@@ -230,12 +246,14 @@ static bool view_json(dl_text_t *t, const char *query)
 static const char *reason(int code)
 {
 	switch (code) {
+	case 101: return "Switching Protocols";
 	case 200: return "OK";
 	case 400: return "Bad Request";
 	case 403: return "Forbidden";
 	case 404: return "Not Found";
 	case 405: return "Method Not Allowed";
 	case 414: return "URI Too Long";
+	case 503: return "Service Unavailable";
 	default: return "Error";
 	}
 }
@@ -273,57 +291,93 @@ static void fail(int c, int code)
 	respond(c, code, "text/plain", SRC_MEM, NULL, 0);	// the status line says it all
 }
 
-static bool screen_ok(void)
+bool http_screen_ok(void)
 {
 	const hal_display_t *d = board.display;
 
-	return (d != NULL) && (gfx_framebuffer() != NULL) &&
-	       ((GFX_INDEXED && d->bpp == 4) || ((d->bpp == 16) && ((uint32_t)d->width * d->height * 2u <= GFX_FB_BYTES)));
+	return (d != NULL) && (gfx_framebuffer() != NULL) && ((d->bpp == 1) || (GFX_INDEXED && d->bpp == 4) ||
+	       ((d->bpp == 16) && ((uint32_t)d->width * d->height * 2u <= GFX_FB_BYTES)));
+}
+
+// The screen goes out at the panel's own depth, so a 1 or 4 bpp frame is 16 or 4 times smaller than as RGB565
+// (over PPP at 115200 baud a 240x320 screen takes about 4 s instead of 15): file header, BITMAPINFOHEADER, then the
+// palette (bpp 1, 4) or the three BI_BITFIELDS masks (bpp 16)
+static uint32_t bmp_header(void)
+{
+	uint8_t bpp = board.display->bpp;
+
+	return 54u + ((bpp == 16) ? 12u : (4u << bpp));
 }
 
 static uint32_t bmp_row(void)
 {
-	return ((uint32_t)board.display->width * 2u + 3u) & ~3u;
+	return (((uint32_t)board.display->width * board.display->bpp + 31u) / 32u) * 4u;
 }
 
-// Bytes of the BMP at off: a top-down (negative height) 16-bit BI_BITFIELDS bitmap of the RGB565 frame buffer
+static uint32_t bmp_size(void)
+{
+	return bmp_header() + bmp_row() * board.display->height;
+}
+
+static void put_bgr(uint8_t *p, color_t c)
+{
+	p[0] = (uint8_t)((c & 0x1Fu) << 3);
+	p[1] = (uint8_t)(((c >> 5) & 0x3Fu) << 2);
+	p[2] = (uint8_t)((c >> 11) << 3);
+	p[3] = 0;
+}
+
+// Bytes of the BMP at off: a top-down (negative height) bitmap of the frame buffer. bpp 1 and 4: its rows as they
+// are (both pack the leftmost pixel in the high bits, as BMP does), with gfx_palette. bpp 16: BI_BITFIELDS RGB565
 static void bmp_bytes(uint32_t off, uint8_t *out, size_t n)
 {
 	const hal_display_t *d = board.display;
-	uint32_t row = bmp_row(), raw = (uint32_t)d->width * 2u;
-	uint8_t h[BMP_HEADER];
+	uint32_t head = bmp_header(), row = bmp_row(), raw = ((uint32_t)d->width * d->bpp + 7u) / 8u;
+	const uint8_t *fb = gfx_framebuffer();
+	uint8_t h[BMP_HEADER_MAX];
 
-	if (off < BMP_HEADER) {
+	if (off < head) {
 		memset(h, 0, sizeof(h));
 		h[0] = 'B';
 		h[1] = 'M';
-		put32le(h + 2, BMP_HEADER + row * d->height);
-		put32le(h + 10, BMP_HEADER);
+		put32le(h + 2, bmp_size());
+		put32le(h + 10, head);
 		put32le(h + 14, 40);
 		put32le(h + 18, d->width);
 		put32le(h + 22, (uint32_t)-(int32_t)d->height);
 		put16le(h + 26, 1);
-		put16le(h + 28, 16);
-		put32le(h + 30, 3);	// BI_BITFIELDS
+		put16le(h + 28, d->bpp);
 		put32le(h + 34, row * d->height);
-		put32le(h + 54, 0xF800u);
-		put32le(h + 58, 0x07E0u);
-		put32le(h + 62, 0x001Fu);
-	}
-	for (size_t i = 0; i < n; i++, off++) {
-		if (off < BMP_HEADER) {
-			out[i] = h[off];
+		if (d->bpp == 16) {
+			put32le(h + 30, 3);	// BI_BITFIELDS
+			put32le(h + 54, 0xF800u);
+			put32le(h + 58, 0x07E0u);
+			put32le(h + 62, 0x001Fu);
 		} else {
-			uint32_t p = off - BMP_HEADER, y = p / row, x = p % row;
-
-			if (x < raw) {
-				gfx_read_rgb565(y * raw + x, &out[i], 1);
-			} else {
-				out[i] = 0;
+			put32le(h + 46, 1u << d->bpp);	// colors used
+			for (uint8_t i = 0; i < (1u << d->bpp); i++) {
+				put_bgr(h + 54 + 4u * i, gfx_palette(i));
 			}
 		}
 	}
-	gfx_hold(hal_millis() + SHOT_HOLD_MS);
+	for (size_t i = 0; i < n; i++, off++) {
+		if (off < head) {
+			out[i] = h[off];
+		} else {
+			uint32_t p = off - head, y = p / row, x = p % row;
+
+			if (x >= raw) {
+				out[i] = 0;
+			} else if (d->bpp == 16) {
+				gfx_read_rgb565(y * raw + x, &out[i], 1);
+			} else {
+				out[i] = fb[y * raw + x];
+			}
+		}
+	}
+	// Held while it goes out; the last byte lets the UI draw again at once (a page polling the screen would
+	// otherwise keep it frozen)
+	gfx_hold((off >= bmp_size()) ? 0 : hal_millis() + SHOT_HOLD_MS);
 }
 
 static bool claim_buf(int c)
@@ -377,12 +431,36 @@ static void dispatch(int c)
 			return;
 		}
 	}
+#if CONFIG_NET_WEBCTL
+	if (strcmp(path, "/ws") == 0) {
+		char acc[WS_ACCEPT_LEN + 1];
+
+		if (h->head || !ws_accept(h->key, strlen(h->key), acc)) {
+			fail(c, 400);	// not a WebSocket handshake
+			return;
+		}
+		if (webctl_conn() >= 0) {
+			fail(c, 503);	// one client at a time
+			return;
+		}
+		h->hlen = (uint16_t)dl_fmt(h->hdr, sizeof(h->hdr), "HTTP/1.1 101 %s\r\nUpgrade: websocket\r\n"
+					   "Connection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", reason(101), acc);
+		h->hoff = 0;
+		h->src = SRC_NONE;
+		h->blen = 0;
+		h->boff = 0;
+		h->ws = true;
+		h->state = H_SEND;
+		st.ok++;
+		return;
+	}
+#endif
 	if (strcmp(path, "/api/screen.bmp") == 0) {
-		if (!screen_ok()) {
+		if (!http_screen_ok()) {
 			fail(c, 404);
 			return;
 		}
-		respond(c, 200, "image/bmp", SRC_BMP, NULL, BMP_HEADER + bmp_row() * board.display->height);
+		respond(c, 200, "image/bmp", SRC_BMP, NULL, bmp_size());
 		return;
 	}
 	bool status = strcmp(path, "/status") == 0;
@@ -412,7 +490,7 @@ static void dispatch(int c)
 
 	dl_text_init(&t, buf, BUF_MAX);
 	if (status) {
-		status_json(&t);
+		http_status_json(&t);
 	} else if (viewp) {
 #if CONFIG_DEBUGLINK
 		ok = view_json(&t, query);
@@ -457,6 +535,13 @@ static void send_more(int c)
 			continue;
 		}
 		if (h->boff >= h->blen) {
+#if CONFIG_NET_WEBCTL
+			if (h->ws) {
+				h->state = H_WS;
+				webctl_open(c, hal_millis());
+				return;
+			}
+#endif
 			tcp_close(c);
 			release(c);
 			return;
@@ -484,10 +569,49 @@ static void h_opened(int c)
 	hc[c].since = hal_millis();
 }
 
+#if CONFIG_NET_WEBCTL
+// A header line is in: keep Sec-WebSocket-Key (field names are case-insensitive, RFC 9110 5.1)
+static void header_line(hconn_t *h)
+{
+	static const char name[] = "sec-websocket-key:";
+	size_t n = sizeof(name) - 1;
+
+	h->hdr[h->hn] = '\0';
+	h->hn = 0;
+	for (size_t i = 0; i < n; i++) {
+		char ch = h->hdr[i];
+
+		if ((ch >= 'A') && (ch <= 'Z')) {
+			ch = (char)(ch - 'A' + 'a');
+		}
+		if (ch != name[i]) {
+			return;
+		}
+	}
+	const char *v = h->hdr + n;
+
+	while (*v == ' ' || *v == '\t') {
+		v++;
+	}
+	size_t vn = strcspn(v, " \t");
+
+	if (vn <= WS_KEY_LEN) {
+		memcpy(h->key, v, vn);
+		h->key[vn] = '\0';
+	}
+}
+#endif
+
 static void h_recv(int c, const uint8_t *d, int n)
 {
 	hconn_t *h = &hc[c];
 
+#if CONFIG_NET_WEBCTL
+	if (h->state == H_WS) {
+		webctl_recv(c, d, n);
+		return;
+	}
+#endif
 	for (int i = 0; (i < n) && (h->state == H_REQ); i++) {
 		char ch = (char)d[i];
 
@@ -501,6 +625,11 @@ static void h_recv(int c, const uint8_t *d, int n)
 				}
 				h->ln = (uint8_t)((h->ln < LINE_MAX) ? (h->ln + 1u) : LINE_MAX);
 			}
+#if CONFIG_NET_WEBCTL
+			else if (h->hn < HDR_MAX - 1) {
+				h->hdr[h->hn++] = ch;
+			}
+#endif
 			h->at_bol = false;	// header lines are skipped
 			continue;
 		}
@@ -519,17 +648,33 @@ static void h_recv(int c, const uint8_t *d, int n)
 			return;
 		} else {
 			h->at_bol = true;
+#if CONFIG_NET_WEBCTL
+			header_line(h);
+#endif
 		}
 	}
 }
 
 static void h_sent(int c)
 {
+#if CONFIG_NET_WEBCTL
+	if (hc[c].state == H_WS) {
+		webctl_sent(c);
+		return;
+	}
+#endif
 	send_more(c);
 }
 
 static void h_peer_closed(int c)
 {
+#if CONFIG_NET_WEBCTL
+	if (hc[c].state == H_WS) {
+		webctl_peer_closed(c);	// closes it
+		hc[c].state = H_FREE;
+		return;
+	}
+#endif
 	if (hc[c].state != H_SEND) {
 		tcp_close(c);
 		release(c);
@@ -539,6 +684,11 @@ static void h_peer_closed(int c)
 static void h_closed(int c, bool error_)
 {
 	(void)error_;
+#if CONFIG_NET_WEBCTL
+	if (hc[c].state == H_WS) {
+		webctl_closed(c);
+	}
+#endif
 	release(c);
 }
 
@@ -555,9 +705,17 @@ void http_start(void)
 
 void http_poll(uint32_t now_ms)
 {
+#if CONFIG_NET_WEBCTL
+	webctl_poll(now_ms);
+#endif
 	for (int c = 0; c < TCP_CONNS; c++) {
 		hconn_t *h = &hc[c];
 
+#if CONFIG_NET_WEBCTL
+		if ((h->state == H_WS) && (webctl_conn() != c)) {
+			h->state = H_FREE;	// webctl.c closed it
+		}
+#endif
 		if ((h->state == H_REQ) && ((now_ms - h->since) > REQ_TIMEOUT_MS)) {
 			tcp_abort(c);
 			release(c);
@@ -574,6 +732,9 @@ void http_view(dl_text_t *t)
 {
 	dl_text(t, "http.requests=%u\nhttp.ok=%u\nhttp.not_found=%u\nhttp.bad=%u\nhttp.busy_waits=%u\n",
 		(unsigned)st.requests, (unsigned)st.ok, (unsigned)st.not_found, (unsigned)st.bad, (unsigned)st.busy_waits);
+#if CONFIG_NET_WEBCTL
+	webctl_view(t);
+#endif
 }
 
 #endif	// CONFIG_NET_HTTP

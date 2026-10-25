@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A simulated radio in a vendor loader's USB HID update mode, for the tests and the page's practice mode (#sim=<board>
 // on a board of the sgl-hid backend): the loader as docs/spec/update-gd77.md reads it (a port of
 // hidboot.FakeBootloader), a WebHID model to reach it through, and a synthetic stock update file with a made-up codec in
-// the shape of a real build (a port of the odrflash tests' synthetic image and update file). No vendor data. Also such
-// a radio running ODR with stub entry: its debug link, the hand-over and the K22F stub's protocol and interlock as stub/f4stub.py's FakeF4 has them.
+// the shape of a real build (a port of the rfoundry tests' synthetic image and update file). No vendor data. Also such
+// a radio running RadioFoundry with stub entry: its debug link, the hand-over and the K22F stub's protocol and interlock as stub/f4stub.py's FakeF4 has them.
 
 import { UpdateFile, forward, PERIOD, BODY_AT, INFO_LEN, REPORT, parse } from "./hidboot.js";
 import { encodeBranch } from "./k22fcodec.js";
@@ -197,19 +197,19 @@ export async function hidSimulation(G, model) {
 export const loaderFor = (file, opts) => new FakeHidLoader(new UpdateFile(file), opts);
 
 // ---------------------------------------------------------------------------------------------------------------
-// a radio running ODR with stub entry, and the K22F stub it hands over to (#sim=<board>)
+// a radio running RadioFoundry with stub entry, and the K22F stub it hands over to (#sim=<board>)
 
 const be32 = (n) => new Uint8Array([(n >>> 24) & 0xFF, (n >>> 16) & 0xFF, (n >>> 8) & 0xFF, n & 0xFF]);
 const u32be = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
 const blank = (b) => b.every((x) => x === 0xFF);
 const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, BADARG = 0x0D, REFUSED = 0x0F, NOCONFIG = 0x11;
 
-// The radio: its loader below the application base, an ODR already installed, a codec in its area, radio data in the
+// The radio: its loader below the application base, an RadioFoundry already installed, a codec in its area, radio data in the
 // last sector, the SPI flash's first megabyte the radio's own. st: flash-boards.json hid.stub; board: one of its boards (the first by default).
 //   codecId    what the debug link reports as the codec (the board's id by default)
-//   stubEntry  ODR built with CONFIG_STUB_ENTRY        adopt     the stub keeps ODR's USB device (else a new port)
+//   stubEntry  RadioFoundry built with CONFIG_STUB_ENTRY        adopt     the stub keeps RadioFoundry's USB device (else a new port)
 //   cutAfter   programs before the cable is pulled     badAt     a flash address that programs wrong (verify fails)
-export class FakeHidOdr {
+export class FakeHidRFoundry {
 	constructor(st, { board = Object.keys(st.boards)[0], spiSize = 0x200000, stubEntry = true, adopt = true, cutAfter = null, badAt = null, codecId = board, seed = 77 } = {}) {
 		this.st = st;
 		this.b = st.boards[board];
@@ -223,7 +223,7 @@ export class FakeHidOdr {
 		this.flash.set(randomBytes(r, st.sector), this.flash.length - st.sector);
 		this.spi = new Uint8Array(spiSize).fill(0xFF);
 		this.spi.set(randomBytes(r, 0x100000), 0);
-		this.mode = "odr";		// "odr", "stub", or "loader" (no application committed: no serial port)
+		this.mode = "rfoundry";		// "rfoundry", "stub", or "loader" (no application committed: no serial port)
 		this.record = new Uint8Array(0);
 		this.git = "1c2d3e4f";
 		Object.assign(this, { board, stubEntry, adopt, cutAfter, badAt, codecId });
@@ -234,7 +234,7 @@ export class FakeHidOdr {
 
 	word(addr) { return u32le(this.flash, addr - this.st.flash_base); }
 
-	// ---- the serial port, as a link.js stream (the same USB identity for ODR and the stub)
+	// ---- the serial port, as a link.js stream (the same USB identity for RadioFoundry and the stub)
 
 	serialStream() {
 		const radio = this, port = this.port;
@@ -249,16 +249,16 @@ export class FakeHidOdr {
 					s.inb = radio.stubFeed(concat(s.inb, data), (b) => { s.buf = concat(s.buf, b); });
 					return;
 				}
-				if (radio.mode !== "odr") throw new Error("no serial port: the radio isn't running ODR");
-				s.buf = concat(s.buf, radio.odrAnswer(data));
+				if (radio.mode !== "rfoundry") throw new Error("no serial port: the radio isn't running RadioFoundry");
+				s.buf = concat(s.buf, radio.rfoundryAnswer(data));
 			},
 			async close() {},
 		};
 		return s;
 	}
 
-	// ODR's debug link: VERSION, and STUB (0x1A) with the K22F's run address as the load address
-	odrAnswer(req) {
+	// RadioFoundry's debug link: VERSION, and STUB (0x1A) with the K22F's run address as the load address
+	rfoundryAnswer(req) {
 		const f = parseFrames(req)[0];
 		if (!f) return new Uint8Array(0);
 		const ok = (p) => dlFrame(f.cmd | 0x80, f.seq, concat(new Uint8Array([0]), p));
@@ -276,7 +276,7 @@ export class FakeHidOdr {
 				if (!this.loaded || crc32(this.loaded) !== this.stubCrc || this.stubEntryAt !== this.st.run) return fail(4);
 				this.mode = "stub";
 				this.record = new Uint8Array(0);
-				this.events.push("stub (from ODR)");
+				this.events.push("stub (from RadioFoundry)");
 				if (!this.adopt) this.port++;	// the old port is gone; serialStream() is the new one
 				return ok(new Uint8Array(0));
 			}
@@ -398,11 +398,11 @@ export class FakeHidOdr {
 		return reply(BADOP);
 	}
 
-	// A reset or power cycle: ODR when the application's first word is there; else the loader finds no application
+	// A reset or power cycle: RadioFoundry when the application's first word is there; else the loader finds no application
 	powerOn() {
 		this.port++;
 		this.record = new Uint8Array(0);
-		this.mode = this.word(this.st.app_base) === 0xFFFFFFFF ? "loader" : "odr";
+		this.mode = this.word(this.st.app_base) === 0xFFFFFFFF ? "loader" : "rfoundry";
 	}
 }
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // K22F entry (from startup.c): time base, the board's early init (pins, clocks), then the core under FreeRTOS
 #include "platform.h"
 #include "board.h"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The band check every radio layer shares (hal/board.h board_in_band): edges, gaps, receive-only ranges, and a
 // frequency in two overlapping bands where only the second may transmit
 #include <stdio.h>

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The GD-77's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
 # web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/gd77/memory.ld.
 
@@ -37,7 +37,7 @@ keep_codec = false
 # The last 2 KB sector holds radio data that must survive (memory.ld)
 protect = [[0x7F800, 0x80000]]
 stock_versions = ["V3.2.1", "V3.2.2", "V4.2.8", "V4.3.3", "V4.3.6", "V4.3.9", "V6.0.1"]
-backup = { stock = "none", odr = "none", spi_size = 0 }
+backup = { stock = "none", rfoundry = "none", spi_size = 0 }
 
 [flash.bootloader]
 steps = [

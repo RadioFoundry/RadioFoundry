@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """USB network personality (opt-in: --allow-usb-switch; firmware built with CONFIG_DMR_IP_GATEWAY): the radio
 re-enumerates as a CDC-NCM adapter, gives the host its address by DHCP (12.<DMR ID>), answers ping at the host's
 address xor 1, and its debug link answers over UDP port 3334 there; then it switches back to the serial port.
@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from odr_hil import DebugLink, DebugLinkError, find_ports, skip
+from rfoundry_hil import DebugLink, DebugLinkError, find_ports, skip
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 

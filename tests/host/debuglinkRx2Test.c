@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DL_CMD_RX2 (core/debuglink/debuglink_rx2.c, docs/spec/debuglink.md 3.22): INFO's flags, the token and on-air checks,
 // the bridge starting only from the service hook after the reply, and a board without a second receiver. The board,
 // the clock, the radio's view and the log are faked

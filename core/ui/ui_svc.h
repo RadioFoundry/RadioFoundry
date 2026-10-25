@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // What the UI needs from packages it doesn't own, as thin calls. ui_svc_stub.c defines every one weakly with a
 // harmless "not in this build" behavior, so the UI builds and runs alone; the owning package defines the real one
 // (a strong definition replaces the weak one at link time). docs/spec/ui.md lists who owns what.
@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include "config.h"
 #include "radio/radio.h"
+#include "codeplug/zone_edit.h"
 
 // --- What is available (screens gray out what isn't, and say why on SELECT) ---
 #define UI_FEAT_TALK_TARGET	(1u << 0)	// ui_svc_talk_to / ui_svc_focus_target (dmr-voice)
@@ -32,6 +33,7 @@
 #define UI_FEAT_ROAMING		(1u << 15)	// ui_svc_roam (DMR repeater roaming, the radio core)
 #define UI_FEAT_VIBRATE		(1u << 16)	// ui_svc_vibrate: CONFIG_VIBRATE and hal_power_t.vibrate
 #define UI_FEAT_VOLUME		(1u << 17)	// the volume is the radio's to set: no knob (radio_volume_soft), VOL key + Settings
+#define UI_FEAT_BCAST		(1u << 18)	// a broadcast FM receiver (radio_bcast_capable): its VFO step setting
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -70,6 +72,13 @@ bool ui_svc_save_channel(void);
 // Store a whole channel (the channel editor, ui.md 2.1) at number 1..CODEPLUG_CHANNELS_MAX, as a storage job like
 // ui_svc_save_channel. false: a write is still going on, or no codeplug storage in this build
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch);
+// The zone editor (ui.md 2.2): op is queued and runs as a storage job (zone_edit_apply), in order; the radio follows
+// zone indexes it moves. A refusal in the job raises UI_EV_SAVE_FAILED and drops what was queued after it. false:
+// the queue is full, or no codeplug storage in this build. ui_svc_zone_poll (every UI tick) starts the job when
+// another write held it back; ui_svc_zone_pending: changes not yet written
+bool ui_svc_zone_edit(const zone_op_t *op);
+void ui_svc_zone_poll(void);
+bool ui_svc_zone_pending(void);
 // Write the talk target into the channel (UI_TALK_PERMANENT): false if it isn't a stored contact or can't be written
 bool ui_svc_save_talk_target(uint32_t id, bool private_call);
 
@@ -198,6 +207,8 @@ uint8_t ui_svc_crash_tx_state(void);
 #define UI_DUAL_ON	0x10000
 #define UI_DUAL_B_SEL	0x20000
 
+#define UI_KEY_ROLES	9	// KEYASSIGN_ROLES (core/input/keyassign.h)
+
 // --- Settings persistence (storage-cps). The stub keeps them in RAM (lost at power off) ---
 typedef enum {
 	UI_SET_KEY_TONES, UI_SET_TONE_VOLUME, UI_SET_TALK_PERMIT, UI_SET_VOICE_PROMPTS, UI_SET_MESSAGE_TONE,
@@ -219,10 +230,10 @@ typedef enum {
 	// USB network (usb-network.md 1, 5): the network personality at power-on, control station passthrough (the PC
 	// answers the radio's data), the fixed link pair (192.168.10.x) instead of the address by DMR ID
 	UI_SET_USB_BOOT_NET, UI_SET_PC_ENDPOINT, UI_SET_USB_FIXED_LINK,
-	// Side keys (Settings > Keys, CONFIG_KEY_ASSIGN; core/input/keyassign.h): a KEYFN_* each, kept in the codeplug's
-	// quick-key slots. Press and long press of side key 1, side key 2 and the top key, in this order
-	UI_SET_KEY_SIDE1, UI_SET_KEY_SIDE1_HOLD, UI_SET_KEY_SIDE2, UI_SET_KEY_SIDE2_HOLD, UI_SET_KEY_TOP,
-	UI_SET_KEY_TOP_HOLD,
+	// Reassignable keys (Settings > Keys, CONFIG_KEY_ASSIGN; core/input/keyassign.h): a KEYFN_* each, kept in the
+	// codeplug's quick-key slots. Press and long press of board.side_keys[0], then [1], ...: UI_SET_KEY_FIRST + 2 *
+	// role (+ 1 for the long press), UI_KEY_ROLES roles
+	UI_SET_KEY_FIRST, UI_SET_KEY_LAST = UI_SET_KEY_FIRST + 2 * UI_KEY_ROLES - 1,
 	UI_SET_VIBRATE,		// vibrate for alerts (Settings > Sound, CONFIG_VIBRATE; settings_t.ui_flags)
 	UI_SET_ACCENT,		// the highlight color, UI_ACCENT_* (Settings > Display; settings_t.accent bits 0-2)
 	UI_SET_STRIP,		// the status strip filled with it (Settings > Display; settings_t.accent bit 3)
@@ -240,6 +251,9 @@ typedef enum {
 	UI_SET_DUAL_DELAY_MS,
 	UI_SET_NOISE_REDUCTION,	// the vocoder's mic noise reduction on DMR TX (Settings > Talk & listen; accent bits 6-7)
 	UI_SET_MIC_AGC,		// the vocoder's mic AGC on DMR TX (accent bits 6-7); while on, mic gain is step 5 and dimmed
+	// The VFO's automatic step in the broadcast band (Settings > Talk, CONFIG_BCAST_FM; radio_settings_t.bcast_step) in
+	// kHz: 200 (the odd tenths) or 100
+	UI_SET_BCAST_STEP,
 	UI_SET_COUNT
 } ui_setting_t;
 

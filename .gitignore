@@ -2,6 +2,13 @@
 codec/
 *.codec
 stock/
+# Keys, dumps and recordings (AGENTS.md rule 2): never commit
+*.key
+*.pem
+*.dfu
+*.ambe
+*.wav
+*.raw
 # Build output and images (images can contain a merged codec)
 build/
 *.bin
@@ -27,8 +34,9 @@ __pycache__/
 # Personal README drafts; never committed
 personal_notes.md
 
-
-local-notes.md
-
 # Browser automation output (Playwright screenshots and snapshots)
 .playwright-mcp/
+
+# Local agent notes and settings (machine-specific; may name private hosts)
+*.local.md
+.claude/

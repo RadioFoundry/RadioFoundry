@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // What the codeplug editor shows for each kind of record: table columns, the full form of a record, and the
 // membership editor for zones and RX group lists. Setters parse what was typed and return an error text, or
 // nothing when the value was taken.

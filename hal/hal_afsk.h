@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Audio frequency shift keying for APRS (docs/spec/aprs.md 5): the board sends a prepared tone sequence through its
 // FM transmitter, and, where it can sample received FM audio, hands that audio to the core's demodulator.
 //

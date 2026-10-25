@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The automated UI checks of docs/ux/usability-tests.md 2, in the host simulator:
 // - press budgets: each task flow of docs/ux/task-flows.md as a script on the reference key maps, at most its budget
 //   (impossible on a key map that should have it = failure);
@@ -13,6 +13,7 @@
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "config.h"
 
 static int fails, flows_run;
 
@@ -92,6 +93,8 @@ static const flow_t flows[] = {
 	{ "11 dual watch: Tools > Scan, a zone scan instead", "quick 7 ctx 3 5 ok", "ok 6 1", "dual=0 scanning=1", 3, false },
 	{ "11 dual watch: the last B after power off", "quick 7 ctx 3 5 ok back back reboot", "quick 7", "dual=1 sel=A bpos=5",
 	  2, false },
+	{ "S FM broadcast step on a radio with the receiver", "bcast", "ok 7 3 down down down down", "shows=FM_broadcast_step",
+	  7, false },
 	{ "11 dual watch talk back on", "", "ok 7 3 down down down down down down down down down ok", "shows=Dual_watch_talk_back", 13,
 	  false },
 	{ "11 dual watch talk back: a call on B", TALK_BACK, "tune:b call:3101234,91,g wait:4000", "dual=1 sel=B", 0,
@@ -189,11 +192,14 @@ static const flow_t flows[] = {
 	{ "11 dual watch: the zone key on the VFO", "quick 7 ctx 1 vfokey ctx 1 ctx 1", "zone+", "dual=1 sel=B bvfo=0 bzone=0 bpos=1", 1, false },
 	{ "11 dual watch: Up/Down on zone moves the selected", "ok 7 8 down down ok long:back quick 7 ctx 3 5 ok", "up",
 	  "dual=1 azone=1 bzone=0", 1, false },
+#if CONFIG_CHANNEL_LIST
 	// task-flows.md 12 says 3: the VFO row is first but Channels opens on the current zone (flow 2), so one Up
 	{ "C channels: every channel", "", "ok 5", "screen=channels focus=3_", 2, false },
 	{ "C a channel's settings", "", "ok 5 ok", "screen=channel", 3, false },
 	// The channel's last rows are Go to it and Save as new channel: two Ups from the first row (lists wrap)
 	{ "C go to it from its settings", "ok 5 down down ok", "up up ok", "screen=home pos=5", 3, false },
+#endif
+#if CONFIG_CHANNEL_EDIT
 	// task-flows.md 21 and 22 (ui.md 2.1). On channel 3 (DMR) the timeslot is the ninth row, the TX contact the tenth
 	{ "21 timeslot of the channel in use, saved", "", "ok 5 ok down down down down down down down down ok long:ok", "writes=1 toast=Saved_channel_3",
 	  13, true },
@@ -257,7 +263,10 @@ static const flow_t flows[] = {
 	{ "E save as new takes the next free number", "ok 5 ok up ok", "ok", "toast=Saved_as_channel_42 writes=2", 1, true },
 	{ "E the new channel is in the list", "ok 5 up up up ok long:ok", "back up", "focus=41_COUNTY_DMR_2", 2, true },
 	{ "E new from the VFO is named by its frequency", "ok 4 up ok", "ok 5 ok", "shows=146.520 shows=41", 3, false },
+#endif
+#if CONFIG_CHANNEL_LIST
 	{ "C go to it from the list", "ok 5 down", "ctx", "screen=home pos=4", 1, false },
+#endif
 	{ "12 into the VFO", "", "ok 4 up ok", "vfo=1 screen=home", 4, false },
 	{ "12 446.000 in the VFO", "ok 4 up ok", "4 4 6 0 0 0 ok", "freq=446000000", 7, false },
 	{ "13 lock", "", "long:quick", "locked=1", 1, false },
@@ -319,9 +328,9 @@ static const flow_t flows[] = {
 	{ "S Up/Down: back to the default", "ok 7 8 down down ok ok long:back up", "down", "talk=3100", 1, false },
 	{ "S hear all by default", "ok 7 3 down down down down down down down ok long:back", "up up", "hearall=1 pos=5", 2, false },
 	{ "S hear all by default: BACK", "ok 7 3 down down down down down down down ok long:back up up", "back", "hearall=0", 1, false },
-	{ "S mic noise reduction off", "", "ok 7 3 down down down down down down ok", "set58=0", 10, false },
+	{ "S mic noise reduction off", "", "ok 7 3 down down down down down down ok", "set70=0", 10, false },
 	// Mic AGC on: Mic gain (the row above) shows "AGC", is dimmed and says why
-	{ "S mic AGC on", "", "ok 7 3 down down down down down ok", "set59=1 shows=AGC", 9, false },
+	{ "S mic AGC on", "", "ok 7 3 down down down down down ok", "set71=1 shows=AGC", 9, false },
 	{ "S mic gain while AGC is on", "ok 7 3 down down down down down ok", "up ok", "toast=Mic_AGC_sets set13=5", 2, false },
 	{ "S message tone", "", "msg:3101234,Hi", "beep=2", 0, false },
 	// Vibrate (Settings > Sound, radio-features.md 4.1): ui_vibe_t 0 message, 1 call, 2 emergency
@@ -345,6 +354,10 @@ static const flow_t flows[] = {
 	{ "S VFO/MR key: channel to VFO and back", "", "vfokey vfokey", "vfo=0 toast=Back_to_channels", 2, false },
 	{ "S VFO/MR key: into the VFO", "", "vfokey", "vfo=1", 1, false },
 	// The VFO's step: Auto follows the width (12.5 kHz narrow, 25 kHz wide); one set in Settings > Talk stays
+	{ "S VFO entry: OK tunes the typed frequency", "vfokey", "1 4 6 5 2 ok", "freq=146520000", 6, false },
+	{ "S VFO entry: # tunes it too", "vfokey", "1 4 6 5 2 ctx", "freq=146520000", 6, false },
+	{ "S VFO entry: # tunes it with a banner up", "vfokey msg:3101234,Meet_at_the_north_lot", "1 4 6 5 2 ctx",
+	  "freq=146520000 screen=home", 6, false },
 	{ "S VFO step: auto, wide", "vfokey", "up", "freq=146545000", 1, false },
 	{ "S VFO step: auto, narrow", "vfokey quick 8 back", "up", "freq=146532500", 1, false },
 	{ "S VFO step: 2.5 kHz", "ok 7 3 down down down ok long:back vfokey", "up", "freq=146522500", 1, false },
@@ -443,16 +456,60 @@ static const flow_t flows[] = {
 	{ "T after the transmission a digit opens Find again", "down pttdown pttup", "5", "screen=find", 1, false },
 	{ "T a transmission without PTT (beacon) leaves the digits alone", "down autotx", "5", "screen=find", 1, false },
 	{ "T a refused transmission (RX only) leaves the digits alone", "ok 4 down ok up up up up up up up up pttdown", "5", "zone=1 pos=9 screen=find", 1, false },
+#if CONFIG_ZONE_EDIT
+	// The zone editor (task-flows.md 23-26, ui.md 2.2). The radio is on channel 3, position 3 of zone 0 "Local
+	// repeaters" (channels 1-16); a zone's list is "Add channel", the channels, "Zone options"
+	{ "23 move the channel in use down", "", "ok 4 ctx ctx 2", "pos=4 writes=1 toast=Position_4_of_16 screen=zchannel",
+	  5, true },
+	{ "23 the menu stays: the digit again moves it on", "ok 4 ctx ctx 2", "2 2", "pos=6 writes=3 toast=Position_6_of_16",
+	  2, true },
+	{ "23 back on the list, on the moved channel", "ok 4 ctx ctx 2", "back", "screen=zone focus=04_COUNTY_DMR", 1,
+	  true },
+	{ "23 move up", "ok 4 ctx", "ctx 1", "pos=2 writes=1 toast=Position_2_of_16", 2, true },
+	{ "23 the first can't move up", "ok 4 ctx up up", "ctx 1", "writes=0 toast=Already_first", 2, false },
+	{ "24 copy here, saved unchanged", "", "ok 4 ctx ctx 3 long:ok", "writes=2 toast=Saved_as_channel_41", 6, true },
+	{ "24 the copy follows its source", "ok 4 ctx ctx 3 long:ok", "back", "screen=zone focus=04_COUNTY_DMR_2", 1,
+	  true },
+	{ "24 copy here opens an unsaved copy", "ok 4 ctx ctx 3", "", "screen=channel shows=COUNTY_DMR_2 writes=0", 0,
+	  false },
+	{ "24 copy here asks before discarding", "ok 4 ctx ctx 3", "back", "screen=discard writes=0", 1, false },
+	{ "24 edit channel opens the editor", "ok 4 ctx ctx", "4", "screen=channel shows=COUNTY_DMR depth=4", 1, false },
+	{ "25 add channel 20 after the channel in use", "", "ok 4 ctx 2 ok 2 0 ok",
+	  "screen=zone writes=1 toast=Added_to focus=04_", 8, true },
+	{ "25 add channel offers only what the zone doesn't hold", "ok 4 ctx 2", "ok", "screen=zpick count=24", 1, false },
+	{ "25 remove from zone", "ok 4 ctx ctx", "5", "screen=zone writes=1 toast=Removed_from_Local", 1, true },
+	{ "26 copy the zone in use", "", "ok 4 ctx up up up up ok 2",
+	  "screen=zones count=5 writes=1 toast=Copied_as_Local_repeater_2", 9, true },
+	{ "26 rename a zone", "ok 4 ctx up up up up ok 1", "back 2 ok", "screen=zoneedit writes=1 toast=Renamed shows=repeaterA",
+	  3, true },
+	{ "26 delete asks first, No focused", "ok 4 ctx up up up up ok", "3", "screen=zonedel focus=No writes=0", 1, false },
+	{ "26 delete: No keeps it", "ok 4 ctx up up up up ok 3", "ok", "screen=zoneedit writes=0", 1, false },
+	{ "26 delete a zone ahead of the zone in use: the radio follows", "ok 4 down down ok",
+	  "ok 4 up ctx up ok 3 down ok", "screen=zones count=3 zone=1 writes=1 toast=Deleted_Simplex", 9, true },
+	// Another task's zone delete (an import, through the same storage job) with a zone's screens open
+	{ "26 another task deletes the open zone: its screens close", "ok 4 down ctx", "zonejob:1",
+	  "screen=zones toast=That_zone_was_deleted", 0, true },
+	{ "26 another task deletes the open zone: from Zone options too", "ok 4 down ctx up ok", "zonejob:1",
+	  "screen=zones toast=That_zone_was_deleted", 0, true },
+	{ "26 another task deletes a zone ahead: the open one stays", "ok 4 down down ctx", "zonejob:0",
+	  "screen=zone toast=none shows=Hotspots", 0, true },
+	{ "26 delete a zone ahead of dual watch's B: B follows its zone", "quick 7 ctx 1 zone+ zone+",
+	  "ok 4 up ctx up ok 3 down ok back wait:500", "dual=1 azone=0 bzone=1 writes=1", 11, true },
+	{ "26 delete dual watch's B zone: B's channel is in no other zone, the watch ends", "quick 7 ctx 1 zone+",
+	  "ok 4 ctx up up ok 3 down ok back wait:500", "dual=0 zone=1 writes=1 toast=Dual_watch_off", 11, true },
+#endif
 };
 
-// GD-77 key map on its 128x64 monochrome screen only
+// GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
+	{ "2 Right steps to the next zone on Home", "", "right", "zone=1 screen=home", 1, false },
+	{ "2 Left steps back a zone", "right", "left", "zone=0 screen=home", 1, false },
 #if CONFIG_UI_COLOR
 	{ "S theme on a monochrome screen: dimmed", "", "ok 7 2 down down ok", "toast=Colors_are_for set7=0", 6, false },
 	{ "S highlight color on a monochrome screen: dimmed", "", "ok 7 2 down down down ok",
-	  "toast=Colors_are_for set49=0", 7, false },
+	  "toast=Colors_are_for set61=0", 7, false },
 	{ "S filled status bar on a monochrome screen: dimmed", "", "ok 7 2 down down down down ok",
-	  "toast=Colors_are_for set50=1", 8, false },	// unchanged: on by default
+	  "toast=Colors_are_for set62=1", 8, false },	// unchanged: on by default
 #else
 	{ "S no color rows on a monochrome screen", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
 #endif
@@ -472,14 +529,14 @@ static const flow_t flows_k[] = {
 	  "dual=1 azone=0 apos=4", 1, false },
 #if CONFIG_UI_COLOR
 	{ "S theme light (color screens)", "", "ok 7 2 down down ok", "set7=1", 6, false },
-	{ "S highlight color red (the first after Default)", "", "ok 7 2 down down down ok", "set49=1", 7, false },
-	{ "S filled status bar off (on by default)", "", "ok 7 2 down down down down ok", "set50=0", 8, false },
+	{ "S highlight color red (the first after Default)", "", "ok 7 2 down down down ok", "set61=1", 7, false },
+	{ "S filled status bar off (on by default)", "", "ok 7 2 down down down down ok", "set62=0", 8, false },
 #else
 	// Built without CONFIG_UI_COLOR: Display has no color rows; the third row is Large text
 	{ "S no color rows in this build", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
 	{ "S large text is the third row", "", "ok 7 2 down down ok", "set8=1", 6, false },
 #endif
-#if CONFIG_SUBTONE
+#if CONFIG_SUBTONE && CONFIG_CHANNEL_EDIT
 	{ "E TX tone spinner, the knob", "ok 5 up up ok down down down down down down down down down", "ok enc+ enc+ ok",
 	  "shows=107.2", 4, false },
 #endif
@@ -537,7 +594,7 @@ static const flow_t flows_k[] = {
 	{ "K call back: a private call talks to the caller", "call:3101234,1,p wait:11000", "cbkey ptt",
 	  "txid=3101234 txpriv=1", 2, false },
 	{ "K call back: a caller in Contacts by its saved name", "call:3101234,1,p wait:11000", "cbkey",
-	  "talk=3101234 toast=Talking_to_Joe_Smith", 1, false },
+	  "talk=3101234 toast=Talking_to_K1ABC_Joe", 1, false },
 	{ "K call back: a caller not in Contacts by its ID", "call:3109999,1,p wait:11000", "cbkey ptt",
 	  "txid=3109999 txpriv=1", 2, false },
 	{ "K call back: a group call names its talkgroup", CALLER, "cbkey", "talk=91 toast=Talking_to", 1, false },
@@ -584,14 +641,21 @@ static const flow_t flows_f[] = {
 	{ "F key lock unlocks on a long press", "lockkey", "long:lockkey", "locked=0", 1, false },
 	{ "F locked: long Back unlocks", "lockkey", "long:back", "locked=0", 1, false },
 	{ "F locked: call back is ignored", CALLER "lockkey", "cbkey", "talk=3100 toast=Keys_locked", 1, false },
+#if CONFIG_CHANNEL_EDIT
 	// Text entry without a keypad (ui.md 2.1): Down steps the last character, OK adds one, long OK keeps; long OK on
 	// the channel saves
 	{ "F text entry by Up / Down", "ok down down down down down ok ok ok", "down ok long:ok",
 	  "screen=channel shows=COUNTY_DMQQ", 3, false },
 	{ "F long OK saves the channel", "ok down down down down down ok ok ok down ok long:ok", "long:ok",
 	  "writes=1 toast=Saved_channel_3", 1, true },
-	{ "F no side keys to set","ok up ok up up up ok", "down down down ok", "toast=This_radio_has_no set42=0", 4,
-	  false },
+#endif
+	// No programmable keys: the Keys group ends at its three general rows (ui.md 3.1)
+	{ "F no key rows without keys", "ok up ok up up up ok", "down down down", "focus=Long hides=Key_1", 3, false },
+#if CONFIG_ZONE_EDIT
+	// No CONTEXT: long OK opens a zone's list in Zones and Channel actions in the list (information-architecture 7.5)
+	{ "F 23 move the channel in use down", "", "ok down down down down ok long:ok long:ok down ok",
+	  "pos=4 writes=1 toast=Position_4_of_16", 10, true },
+#endif
 };
 
 static void run_flow(const flow_t *f, const sim_geom_t *g, sim_map_t map, const char *mapname)
@@ -832,7 +896,7 @@ static void about_checks(void)
 static void call_screen_checks(void)
 {
 	static const struct { const char *name, *script, *expect; } cases[] = {
-		{ "private to a contact", "3 1 0 1 2 3 4 ok wait:5000 pttdown", "txpriv=1 shows=Joe_Smith shows=Private_310" },
+		{ "private to a contact", "3 1 0 1 2 3 4 ok wait:5000 pttdown", "txpriv=1 shows=K1ABC_Joe shows=Private_310" },
 		{ "private, long name", "worst 3 1 0 9 9 9 9 ok wait:5000 pttdown",
 		  "txpriv=1 shows=Christo shows=Wood shows=Private_310" },
 		{ "private, no contact", "3 1 0 5 5 5 5 down ok wait:5000 pttdown", "txpriv=1 shows=3105555 shows=Private_310" },

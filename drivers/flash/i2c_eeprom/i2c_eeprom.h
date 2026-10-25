@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Generic I2C serial EEPROM of the 24-series class with a 16-bit memory address (24C32 to 24C512): random and
 // sequential reads, page writes split at page boundaries, then the internal write cycle waited out by a fixed delay or
 // by acknowledge polling. The board supplies the bus (bus/i2c_bus.h) and any locking.

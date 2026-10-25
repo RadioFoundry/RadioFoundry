@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 USB identity (docs/spec/hardware-gd77.md 13)
 #include "config.h"
 #if CONFIG_USB	// the whole file
@@ -7,7 +7,7 @@
 #include "usb/usb_port.h"
 #include "k22f_usb_regs.h"
 
-// The same IDs as every other ODR radio with USB, so the host tools (odr_debug.py, the HIL tests, qdmr, MMDVMHost)
+// The same IDs as every other RadioFoundry radio with USB, so the host tools (rfoundry_debug.py, the HIL tests, qdmr, MMDVMHost)
 // find it the same way. 0x1FC9 is NXP's vendor ID, not ours: a release should move to an ID of its own (for example a
 // pid.codes PID under 0x1209) once the host tools know it
 #define USB_VID			0x1FC9
@@ -26,7 +26,7 @@ const usb_ids_t board_usb_ids = {
 	.pid_serial = USB_PID_SERIAL,
 	.pid_network = USB_PID_NETWORK,
 	.bcd_device = 0x0100,
-	.manufacturer = "OpenDigitalRadio",
+	.manufacturer = "RadioFoundry",
 	.product = "GD-77",
 	.serial_interface = "GD-77 serial",
 	.serial_number = serial_number,

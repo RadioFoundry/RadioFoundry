@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // STM32F4 system services (hal_system.h): chip identity and option bytes, memory reads, reboot, and the software
 // entry to the MCU's ROM bootloader (docs/spec/hardware-dm1701.md "Software entry to a bootloader").
 //
@@ -14,6 +14,9 @@
 #include "platform.h"
 #include "board.h"
 #include "hal_system.h"
+#if CONFIG_CRASH_LOG
+#include "hal_crash.h"
+#endif
 
 #define SYSBOOT_MAGIC		0xB007DF11u	// in RTC_BKP19R: enter the ROM bootloader on the next start
 #define SYSMEM_BASE		0x1FFF0000u
@@ -64,6 +67,9 @@ static bool reboot(uint8_t mode)
 	}
 	__disable_irq();
 	board_rf_safe();	// a reset leaves the pins floating until the next start drives them: transmitter off first
+#if CONFIG_CRASH_LOG
+	hal_crash_soft_mark();	// asked for: not the watchdog (crash-log.md 1.3)
+#endif
 	NVIC_SystemReset();
 	return false;	// not reached
 }

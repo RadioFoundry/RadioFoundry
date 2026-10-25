@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""Merge a K22F radio's own AMBE+2 codec into an OpenDigitalRadio image, on your machine (docs/spec/codec-gd77.md).
+# Copyright (c) 2026 The RadioFoundry Authors
+"""Merge a K22F radio's own AMBE+2 codec into an RadioFoundry image, on your machine (docs/spec/codec-gd77.md).
 
 The codec belongs to DVSI and the radio maker: this repository and its releases never contain it. The tool reads the
 radio's stock firmware as a flat flash image (the program flash from address 0x4000: byte 0 of the file is the vector
 table) and writes the application image with the codec placed behind it, to a file you choose (by default next to the
 built image, in build/, which git ignores).
 
-    k22f_codec.py --board BOARD --stock stock-flash.bin          (image build/<board>/odr_<board>.bin)
-    k22f_codec.py --stock stock.bin --image build/<board>/odr_<board>.bin -o build/<board>/odr_<board>_codec.bin
+    k22f_codec.py --board BOARD --stock stock-flash.bin          (image build/<board>/rfoundry_<board>.bin)
+    k22f_codec.py --stock stock.bin --image build/<board>/rfoundry_<board>.bin -o build/<board>/rfoundry_<board>_codec.bin
     k22f_codec.py --self-test
 
-Supported stock builds: one codec pack each (tools/odrflash/odrflash/codec_packs/<board>/); the file is recognized by
+Supported stock builds: one codec pack each (tools/rfoundry/rfoundry/codec_packs/<board>/); the file is recognized by
 the hashes of the codec's three parts, not by its name. The result is a flat image from 0x4000, to be packaged for the
 radio's update path (README, docs/spec/hardware-gd77.md 10).
 """
@@ -23,8 +23,8 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "odrflash"))
-from odrflash import k22fcodec as G  # noqa: E402
+sys.path.insert(0, os.path.join(HERE, "rfoundry"))
+from rfoundry import k22fcodec as G  # noqa: E402
 
 PROFILES = {}		# tools/codec_auto.py reads this; the stock files are recognized by identify() instead
 
@@ -72,7 +72,7 @@ def merge_file(stock, image, specs=None, board=None):
 
 
 def self_test():
-    sys.path.insert(0, os.path.join(HERE, "odrflash", "tests"))
+    sys.path.insert(0, os.path.join(HERE, "rfoundry", "tests"))
     import test_k22fcodec as T
     img, spec = T.synthetic(random.Random(77))
     fails = []
@@ -102,7 +102,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--stock", help="the radio's stock firmware as a flat flash image from 0x4000")
     ap.add_argument("--board", help="the radio: refuse a stock file for another one, and find the built image")
-    ap.add_argument("--image", help="built OpenDigitalRadio image (default: build/<board>/odr_<board>.bin)")
+    ap.add_argument("--image", help="built RadioFoundry image (default: build/<board>/rfoundry_<board>.bin)")
     ap.add_argument("-o", "--output", help="merged image to write (default: <image>_codec.bin next to the image)")
     ap.add_argument("--self-test", action="store_true", help="check the tool's logic on a synthetic file")
     args = ap.parse_args()
@@ -112,7 +112,7 @@ def main():
         ap.error("--stock is required")
     if not args.image and not args.board:
         ap.error("--image or --board is required")
-    image_path = args.image or os.path.join(repo_root(), "build", args.board, "odr_%s.bin" % args.board)
+    image_path = args.image or os.path.join(repo_root(), "build", args.board, "rfoundry_%s.bin" % args.board)
     out_path = args.output or os.path.splitext(image_path)[0] + "_codec.bin"
     try:
         with open(args.stock, "rb") as f:

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The split duplex TX half's continuous BS outbound on the HR_C7000 (see hrc7000_bs.h)
 #include <string.h>
 #include "hrc7000_bs.h"

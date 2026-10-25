@@ -3,14 +3,14 @@
 
 The GD-77 (also sold as the TYT MD-760) pairs an NXP Kinetis K22F microcontroller with the HR_C6000 DMR chip and the
 AT1846S transceiver, the same two radio chips as the DM-1701 ([hardware-dm1701.md](hardware-dm1701.md)). This page
-records the hardware facts the port uses. ODR has not run on a GD-77 yet, so every fact here is unverified until a
+records the hardware facts the port uses. RadioFoundry has not run on a GD-77 yet, so every fact here is unverified until a
 radio is on the bench. The family and its rebadges are in [radios.md](radios.md#radioddity-gd-77-family).
 
 | Tag | Meaning |
 |---|---|
-| **U** | Unverified: the port relies on it, nobody has checked it on a radio running ODR |
+| **U** | Unverified: the port relies on it, nobody has checked it on a radio running RadioFoundry |
 | **I** | Inferred from other facts on this page or from a datasheet; the reasoning is stated |
-| **R** | Checked on a radio running ODR (none yet) |
+| **R** | Checked on a radio running RadioFoundry (none yet) |
 | **?** | Open: two readings conflict, or the role isn't known (section 11) |
 
 ## 1. Block diagram
@@ -52,7 +52,7 @@ One 12.288 MHz reference feeds the K22F's EXTAL0 and the HR_C6000's XTALI (I). T
 - The K22F's PLL needs a reference of 2 to 4 MHz after its divider. 12.288 MHz divided by 4 gives 3.072 MHz and by 6
   gives 2.048 MHz, both in range. A 24.576 MHz source would need a divider the target clock doesn't allow.
 - The HR_C6000 manual's clock table lists a 12.288 MHz XTALI row (PLL words 0x0B = 0x40, 0x0C = 0x32, dividers
-  0xB9 = 5, 0xBA = 4, 0xBB = 2). ODR uses that row (`hrc6000_clock_12m288`); the DM-1701 keeps its 29.4912 MHz row.
+  0xB9 = 5, 0xBA = 4, 0xBB = 2). RadioFoundry uses that row (`hrc6000_clock_12m288`); the DM-1701 keeps its 29.4912 MHz row.
 - PTA19 is the data flash's chip select (section 3), and PTA19 is also XTAL0. A crystal would need that pin, so the
   reference is a clock on EXTAL0 alone, with the oscillator off (`crystal = false` in the plan).
 
@@ -78,7 +78,7 @@ clock change; every plan has a whole number of cycles per millisecond.
 
 ### 3.1 Pins
 
-"Level" is the start-up level ODR sets. Every row is **U**; rows with a **?** have an open role (section 11).
+"Level" is the start-up level RadioFoundry sets. Every row is **U**; rows with a **?** have an open role (section 11).
 
 | Port, pin | Dir | Level | Function | Tag |
 |---|---|---|---|---|
@@ -275,12 +275,12 @@ signaling but no voice, and FM is unaffected. Beeps and tones use the PCM stream
 | Range | Use | Tag |
 |---|---|---|
 | 0x00000000..0x00003FFF | the radio's bootloader; never written | U |
-| 0x00004000..0x00055CFF | the ODR application, vector table first (`boards/gd77/memory.ld`) | U |
+| 0x00004000..0x00055CFF | the RadioFoundry application, vector table first (`boards/gd77/memory.ld`) | U |
 | 0x00055D00..0x0007B77F | the radio's AMBE+2 codec, merged in on the user's machine: code, table window, descriptor at 0x7B700 ([codec-gd77.md](codec-gd77.md)) | U |
 | 0x0007B780..0x0007F7FF | not used (the rest of sector 0x7B000 is left erased) | U |
 | 0x0007F800..0x0007FFFF | the last 2 KB sector: radio data that must survive; never linked into or written | U |
 | 0x1FFF0000..0x1FFFFFFF | SRAM_L: .data, .bss, newlib's small heap | U |
-| 0x20000000..0x2000FEEF | SRAM_U: `ODR_CPU_RAM` state, the RTOS heap with every task stack, the main stack | U |
+| 0x20000000..0x2000FEEF | SRAM_U: `RFOUNDRY_CPU_RAM` state, the RTOS heap with every task stack, the main stack | U |
 | 0x2000FEF0..0x2000FFFF | left unused: margin for anything the bootloader keeps there | U |
 
 The initial stack pointer is 0x2000FEF0.
@@ -291,14 +291,14 @@ The initial stack pointer is 0x2000FEF0.
 |---|---|---|
 | Part | 25-series SPI NOR, 16 to 128 Mbit (capacity code 0x15 to 0x18 in the JEDEC ID); the fitted part is not known | U |
 | Commands | 0x9F JEDEC ID, 0x05 status, 0x06 write enable, 0x0B fast read (one dummy byte), 0x02 page program (256 bytes), 0x20 4 KB erase, 0xD8 64 KB erase, 0xC7 chip erase | U |
-| ODR's driver | `drivers/flash/spi_nor` with `fast_read` set, through `gd77_nor_bus` (section 4) | |
+| RadioFoundry's driver | `drivers/flash/spi_nor` with `fast_read` set, through `gd77_nor_bus` (section 4) | |
 
 The first megabyte holds the factory header (magic "TYT" at 0x000000) and the radio's codeplug as it came, the part
-above the EEPROM's share at 0x07B1B0-0x08FFFF (U). ODR never erases or programs below 0x100000: `flash_gd77.c`
+above the EEPROM's share at 0x07B1B0-0x08FFFF (U). RadioFoundry never erases or programs below 0x100000: `flash_gd77.c`
 refuses it whatever asks, and counts the refusals (diagnostics line 8, `nor-`). Going back to the radio's original
 firmware therefore finds all of that as it was.
 
-ODR's areas follow the STM32 radios' layout ([settings-store.md](settings-store.md) 1), moved up by 1 MB
+RadioFoundry's areas follow the STM32 radios' layout ([settings-store.md](settings-store.md) 1), moved up by 1 MB
 (`boards/gd77/storage_gd77.h`):
 
 | Range | Area | Parts |
@@ -312,7 +312,7 @@ ODR's areas follow the STM32 radios' layout ([settings-store.md](settings-store.
 | 0x200000-0x2FFFFF | native codeplug | 4 MB and up |
 | 0x300000-0x33FFFF | codeplug staging | 4 MB and up |
 
-The flash image is 128 KB after the EEPROM image, as on the STM32 radios, so ODR's own tools (fast CPS, TFTP) see the
+The flash image is 128 KB after the EEPROM image, as on the STM32 radios, so RadioFoundry's own tools (fast CPS, TFTP) see the
 same image offsets. The core gets this map only when the probed part holds it: a part under 2 MB, or one whose JEDEC
 ID gives no size, gets no map, and the radio then runs its settings from RAM. The settings ring, the journal, the
 foreign region guard, the first-boot ownership mark, record versions and CRCs are the core's
@@ -324,9 +324,9 @@ foreign region guard, the first-boot ownership mark, record versions and CRCs ar
 |---|---|---|
 | Part | 24C512 class: 64 KB, 16-bit memory address, 64-byte write page, 5 ms write cycle, erased value 0xFF | U |
 | Address | 7-bit 0x50 (0xA0 / 0xA1) on I2C bus A, shared with the AT1846S | U |
-| ODR's driver | `drivers/flash/i2c_eeprom`, acknowledge polling, reads in 64-byte transactions so the AT1846S never waits long | |
+| RadioFoundry's driver | `drivers/flash/i2c_eeprom`, acknowledge polling, reads in 64-byte transactions so the AT1846S never waits long | |
 
-ODR only reads the EEPROM: the factory calibration (6.4) and, for diagnostics and a future import, the radio's own
+RadioFoundry only reads the EEPROM: the factory calibration (6.4) and, for diagnostics and a future import, the radio's own
 logical codeplug space (`gd77_logical_read`):
 
 | Logical address | Stored in | Tag |
@@ -335,7 +335,7 @@ logical codeplug space (`gd77_logical_read`):
 | 0x0B1B0-0x1FFFF | data flash at logical + 0x70000 (0x07B1B0-0x08FFFF) | U |
 
 EEPROM 0x0B1B0-0x0B1B3 holds the target address of an interrupted rewrite of a data flash sector of that codeplug (0 or
-0xFFFFFFFF when none), to be rebuilt from the copy at data flash 0x00D000 (U). ODR leaves both alone.
+0xFFFFFFFF when none), to be rebuilt from the copy at data flash 0x00D000 (U). RadioFoundry leaves both alone.
 
 Settings stay on the data flash, not in the EEPROM's free top (0xB1B4-0xFFFF). The core's settings ring already
 spreads wear over 128 slots. At the bus's 100 kHz, reading even a 2-sector ring (8 KB) from the EEPROM takes about
@@ -344,7 +344,7 @@ spreads wear over 128 slots. At the bus's 100 kHz, reading even a 2-sector ring 
 ### 6.4 Factory calibration
 
 Two blocks in the EEPROM, one per band, 0x70 bytes each: an 8-byte header, 103 bytes of fields in table order and one
-spare byte. ODR reads both at start-up (`board_init`, before the radio is set up), twice each and compared, and
+spare byte. RadioFoundry reads both at start-up (`board_init`, before the radio is set up), twice each and compared, and
 never writes them (`boards/gd77/cal_blocks_gd77.h`, on the generic loader `drivers/cal/cal_block`).
 
 | Block | EEPROM | Used for | Tag |
@@ -375,7 +375,7 @@ Fields (offsets from the block start), all U. "Per node" fields hold one value p
 | 0x43 | 0x3F | 20 | 8 squelch base bytes per node on the RX range; then three (high, low) pairs for 25 kHz and three for 12.5 kHz | the pairs: AT1846S regs 0x48, 0x60, 0x3F = high << 7 \| low; the base: not applied (squelch is the core's) | a pair with high or low 0x7F or above, or high below low: 0x213F, 0x1930, 0x29D0 |
 | 0x44 | 0x53 | 2 | two squelch table bytes | not used (?) | - |
 | 0x01 | 0x55 | 8 | modulation amplitude per node | HR_C6000 4:0x46, FM and DMR | - |
-| 0x30 | 0x5D | 1 | codec DAC level | not applied: ODR sets 4:0x37 itself | - |
+| 0x30 | 0x5D | 1 | codec DAC level | not applied: RadioFoundry sets 4:0x37 itself | - |
 | 0x31 | 0x5E | 1 | unknown | not used (?) | - |
 | 0x32 | 0x5F | 1 | voice gain for tone and DTMF transmit | not applied | - |
 | 0x33 | 0x60 | 2 | CTCSS deviation, 25 / 12.5 | AT1846S reg 0x59 bits 5:0 with CTCSS or no tone | 0x40 and up: 0x0B |
@@ -385,7 +385,7 @@ Fields (offsets from the block start), all U. "Per node" fields hold one value p
 
 The register writes keep the other bits of each register. Reg 0x0A has no default in this radio's profile, so its
 other bits are read from the chip first. DMR transmits with the 12.5 kHz values. 4:0x45, the HR_C6000's other
-modulation register, has no calibration: ODR reads it once after the chip's power-on sequence and writes that value
+modulation register, has no calibration: RadioFoundry reads it once after the chip's power-on sequence and writes that value
 back with every 4:0x46.
 
 Frequency nodes. The frequency is taken in 100 kHz units, rounded down. The node layout depends on the TX range (ids
@@ -409,7 +409,7 @@ count from 135.0 MHz, and the first stands at 136.0.
 | Id 0x41 at or above its last node | the last node is the range's high end, so the value is the last byte |
 | Id 0x01 above its last node, up to the high end | the line through the last two node values spread over [last node, high end], plus their difference; saturated to 0..255 |
 | Id 0x43 | the byte of the node at or below the frequency, no interpolation |
-| Outside the range | ids 0x41 and 0x01: no TX point (the block's own rule for id 0x41 there is the byte 0xA0, which ODR doesn't use); id 0x43: no squelch base |
+| Outside the range | ids 0x41 and 0x01: no TX point (the block's own rule for id 0x41 there is the byte 0xA0, which RadioFoundry doesn't use); id 0x43: no squelch base |
 
 The calibration point. `gd77_cal_at(hz, out)` (`boards/gd77/cal_gd77.c`) picks the block by frequency and converts
 it (`gd77_cal_convert`, pure, host tested in `tests/host/gd77CalTest.c`). Its validity:
@@ -490,15 +490,15 @@ power-off sequence is in 15.3.
 ## 10. Update path and image packaging
 
 Holding both side keys at power-on starts the radio's update mode (U). `make BOARD=gd77` produces the raw application
-image (`odr_gd77.bin`, linked for flash 0x4000) with its `.elf` and `.map`, and, with a stock firmware file in
-`codecs/`, `odr_gd77_codec.bin`: the same image with the codec merged in (`tools/k22f_codec.py`), a flat image from
-flash 0x4000 up to 0x7B780, the codec descriptor's end. The radio's loader takes an update file over USB HID: odrflash
+image (`rfoundry_gd77.bin`, linked for flash 0x4000) with its `.elf` and `.map`, and, with a stock firmware file in
+`codecs/`, `rfoundry_gd77_codec.bin`: the same image with the codec merged in (`tools/k22f_codec.py`), a flat image from
+flash 0x4000 up to 0x7B780, the codec descriptor's end. The radio's loader takes an update file over USB HID: rfoundry
 and the web flasher write the image into a copy of an update file the user supplies and send it
 ([update-gd77.md](update-gd77.md)). Unverified on a radio.
 
-A radio already running an ODR build with `CONFIG_STUB_ENTRY=y` can be updated without update mode, through the K22F
-flash stub (section 16): `stub/stubtool.py PORT --odr-enter --write-app odr_gd77_codec.bin` (or the
-plain `odr_gd77.bin`, which keeps the codec in place). It writes only the 2 KB sectors that changed, never below 0x4000
+A radio already running an RadioFoundry build with `CONFIG_STUB_ENTRY=y` can be updated without update mode, through the K22F
+flash stub (section 16): `stub/stubtool.py PORT --rfoundry-enter --write-app rfoundry_gd77_codec.bin` (or the
+plain `rfoundry_gd77.bin`, which keeps the codec in place). It writes only the 2 KB sectors that changed, never below 0x4000
 or the last sector, and backs up or restores the whole flash and the SPI NOR above its first megabyte. Unverified: it
 has not run on a radio.
 
@@ -526,8 +526,8 @@ Each needs a radio on the bench.
 | Backlight PWM (4.2, 7) | FTM0 channel 3 on PTC4 ALT4, or another timer | the data sheet's pin mux table, then `GD77_BACKLIGHT_PWM=1` |
 | HSRUN target (2.2) | 95.232 MHz in HSRUN | `GD77_CLOCK_TARGET=1`: `board.clk.hsrun=1` and the core clock in the board view (14) |
 | USB clock (13) | IRC48M with clock recovery | enumeration, then `board.usb.trim_error=0` |
-| Crash record (15.4) | kept across a reset in SRAM_U | a test crash (`odr_debug.py crash test`) and the record shown after the restart |
-| Data flash size | 16 to 128 Mbit; ODR needs 2 MB for its areas (6.2) | the `nor` diagnostics line's JEDEC ID |
+| Crash record (15.4) | kept across a reset in SRAM_U | a test crash (`rfoundry_debug.py crash test`) and the record shown after the restart |
+| Data flash size | 16 to 128 Mbit; RadioFoundry needs 2 MB for its areas (6.2) | the `nor` diagnostics line's JEDEC ID |
 | EEPROM | 24C512 class at 0x50 | the `eep` diagnostics line |
 | Calibration blocks | 0x7C00 / 0x7C70 hold valid blocks on a factory radio | the `cal` diagnostics line shows `oo` |
 | Calibration fields | the field table in 6.4: power flag 0 = low, sub-index 0 = 25 kHz, +4 = TX range, +0 = RX range; ids 0x31, 0x42, 0x44 and byte 2 of 0x51 unused | with a factory block loaded, compare the AT1846S and HR_C6000 registers and DAC0 with the table at each power level and bandwidth, then measure power and deviation on a dummy load |
@@ -552,7 +552,7 @@ Each needs a radio on the bench.
 | Storage: settings and codeplug on the data flash (6.2), EEPROM read only (6.3) | written, host tested, unverified |
 | Factory calibration: both blocks loaded and checked, converted and applied (6.4) | written, host tested, unverified |
 | USB serial: host link, debug link, board view (13, 14) | written, unverified; the network adapter off |
-| Update image packaging and flashing (odrflash, web flasher) | written and host tested; unverified on a radio |
+| Update image packaging and flashing (rfoundry, web flasher) | written and host tested; unverified on a radio |
 | Flash stub entry and the K22F stub (10, 16) | written, host tested, unverified; `CONFIG_STUB_ENTRY` on by default |
 
 ## 13. USB
@@ -566,7 +566,7 @@ buffer descriptor table driver (`portable/chipidea/ci_fs`) behind the repository
 | Clock | IRC48M, the internal 48 MHz oscillator, as the USB clock (SIM_SOPT2 PLLFLLSEL = 3, USBSRC = 1, CLKDIV2 = 0); the controller's clock recovery trims it to the host's start-of-frame packets. No PLL plan gives 48 MHz | I |
 | Regulator | the controller's regulator on (SIM_SOPT1 USBREGEN, after SOPT1CFG URWE) | U |
 | Interrupt | USB0 (IRQ 53) at priority 6 | U |
-| Identity | 1FC9:0094 serial, 1FC9:0096 network, the same as the other ODR radios with USB; product "GD-77"; serial number: the low 96 bits of the chip's unique ID as 24 hex digits | |
+| Identity | 1FC9:0094 serial, 1FC9:0096 network, the same as the other RadioFoundry radios with USB; product "GD-77"; serial number: the low 96 bits of the chip's unique ID as 24 hex digits | |
 | Personality | CDC-ACM: the host link (`core/hostlink`), with the open-firmware CPS, and the debug link on it. The network adapter (CDC-NCM) is off in this build | |
 | Endpoints | interrupt IN 0x82 (8 bytes), bulk OUT 0x01 / IN 0x81 (64 bytes), control 64 bytes | |
 
@@ -612,7 +612,7 @@ build calls the API yet; it is for an update path and the radio's data sector, b
 
 ### 15.2 Watchdog and standby
 
-The watchdog is switched off at start-up and stays off, as on the other ODR radios: the debug link, flash commands
+The watchdog is switched off at start-up and stays off, as on the other RadioFoundry radios: the debug link, flash commands
 and bring-up waits block for long stretches, and a watchdog would need a policy for the whole tree first. Standby is
 the same RUN step as 15.1 (the core at the bus clock, no peripheral change); no core hook calls it yet. Wait and stop
 modes aren't used: the cycle counter the millisecond clock runs on doesn't count while the core sleeps.
@@ -634,7 +634,7 @@ decides: a record it overwrote is ignored, never shown wrong.
 
 ## 16. Flash stub
 
-The K22F flash stub ([stub-k22f.md](stub-k22f.md)) installs builds and backs up the flash through a running ODR. This
+The K22F flash stub ([stub-k22f.md](stub-k22f.md)) installs builds and backs up the flash through a running RadioFoundry. This
 section holds the GD-77's profile: `boards/gd77/board.toml` `[flash.stub]`, read by `stub/k22stub.py` `BOARDS`.
 `tests/host/k22stub_wire_check.py` checks it against `memory.ld`, `board.mk`, `pins.h` and `storage_gd77.h`.
 Unverified: the stub has not run on a radio.
@@ -652,6 +652,6 @@ The board record (hex): `01 01 01 01 00004000 0007F800 00100000 85 84 86 13 0000
 
 The stub never writes below 0x4000 (the radio's loader) or the last sector 0x7F800. Sector 171 (0x55800) holds both
 the application's end and the codec's start: the tool reads it back, saves it to the backup directory and keeps the
-codec bytes. `--board gd77` selects the profile with `--attach`; with `--odr-enter` the VERSION reply names it.
+codec bytes. `--board gd77` selects the profile with `--attach`; with `--rfoundry-enter` the VERSION reply names it.
 
 Open: whether the radio's loader checks anything at 0x4000 besides the stack pointer and reset vector.

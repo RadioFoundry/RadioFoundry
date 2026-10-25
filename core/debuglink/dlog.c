@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The dlog() ring (see dlog.h). Lines are kept as text, "<ms> message\n", in a byte ring; overflow drops whole lines
 // from the old end.
 #include <stdarg.h>

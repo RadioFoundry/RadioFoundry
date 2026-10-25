@@ -3,7 +3,7 @@
 # mDNS and DNS-SD on the USB network link
 
 In USB network mode (`usb-network.md`) the radio answers Multicast DNS for its own name and advertises its services,
-so a host finds it as `odr-<DMR ID>.local` and browses its services (debug link, MMDVM modem, TFTP, SNMP, HTTP, KISS,
+so a host finds it as `rfoundry-<DMR ID>.local` and browses its services (debug link, MMDVM modem, TFTP, SNMP, HTTP, KISS,
 rigctld: section 2) with Bonjour or Avahi. Switch: `CONFIG_MDNS` (= `CONFIG_DMR_IP_GATEWAY`, the IP stack it runs on). Code: `core/net/mdns.c` (the
 responder, no RTOS), `core/net/net_services.c` (the glue to the gateway). Written from RFC 6762 and RFC 6763. IPv4
 only; there is no IPv6 on the link.
@@ -12,9 +12,9 @@ only; there is no IPv6 on the link.
 
 | Name | Value |
 |---|---|
-| Host | `odr-<DMR ID>.local`, e.g. `odr-3101234.local`. The DMR ID is the radio's own (the one the gateway's addresses come from) |
-| Instance | `<callsign> <board> (<DMR ID>)`, e.g. `N0CALL DM-1701 (3101234)`. `<board>` is `board.name`. The call sign is the settings' radio name, else the codeplug's, first word only; left out when there is none |
-| After a conflict | host `odr-3101234-2`, instance `... (3101234) (2)`, counting up |
+| Host | `rfoundry-<DMR ID>.local`, e.g. `rfoundry-3101234.local`. The DMR ID is the radio's own (the one the gateway's addresses come from) |
+| Instance | `<callsign> <board> (<DMR ID>)`, e.g. `N0CALL XR-100UV (3101234)`. `<board>` is `board.name`. The call sign is the settings' radio name, else the codeplug's, first word only; left out when there is none |
+| After a conflict | host `rfoundry-3101234-2`, instance `... (3101234) (2)`, counting up |
 
 | Owner | Type | Data | TTL | Kind |
 |---|---|---|---|---|
@@ -35,7 +35,7 @@ One table in `core/net/net_services.c`, one line per service, built in when its 
 
 | Type | Port | When |
 |---|---|---|
-| `_odr-debug._udp` | 3334 | `CONFIG_DEBUGLINK` (the serial protocols over UDP, `usb-network.md` 1) |
+| `_rfoundry-debug._udp` | 3334 | `CONFIG_DEBUGLINK` (the serial protocols over UDP, `usb-network.md` 1) |
 | `_mmdvm._udp` | 3334 | `CONFIG_HOTSPOT` |
 | `_tftp._udp` | 69 | `CONFIG_TFTP` (`tftp.md`) |
 | `_snmp._udp` | 161 | `CONFIG_SNMP` (`snmp.md`) |
@@ -94,8 +94,8 @@ delays them. The identity is read once a second (the call sign comes from storag
   host is first heard, malformed messages (short, pointer loop, label past the end, counts past the end), and the
   gateway's port table (any source, link-local never to the air, unbound ports still to the air, the table full,
   TTL 255 and checksums). `mdnsTest.pcap` is checked by tshark's DNS dissector.
-- HIL: `tests/hil/test_net_services.py` (`--allow-usb-switch`): `dns-sd -G v4 odr-<id>.local` resolves to the radio's
-  address, `dns-sd -B _odr-debug._udp` finds the instance and `dns-sd -L` gives port 3334 and the TXT record; with
+- HIL: `tests/hil/test_net_services.py` (`--allow-usb-switch`): `dns-sd -G v4 rfoundry-<id>.local` resolves to the radio's
+  address, `dns-sd -B _rfoundry-debug._udp` finds the instance and `dns-sd -L` gives port 3334 and the TXT record; with
   python zeroconf instead of `dns-sd` where that is installed. Debug link view keys (section `net`): `mdns.state`
   (0 off, 1 probing, 2 announcing, 3 running) `mdns.name mdns.queries mdns.answered mdns.sent mdns.busy
   mdns.conflicts mdns.bad`.

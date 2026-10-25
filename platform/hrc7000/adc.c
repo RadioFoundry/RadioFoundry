@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ADC (0x140D0000): one single-scan conversion of channel A..H (0..7), 10 bits (docs/spec/hardware-dm32.md 3.7).
 // A mutex serializes the readers once the scheduler runs.
 #include "platform.h"

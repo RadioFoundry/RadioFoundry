@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's state machine, without the RTOS: it takes requests and the time, polls board.radio and keeps
 // the view. radio_task.c runs it in a task; the host tests run it against a fake board.
 #ifndef RADIO_SM_H
@@ -245,6 +245,11 @@ typedef struct {
 	uint8_t rssi_ring_pos;
 #endif
 	int8_t audio_out;		// last speaker / LED settings sent to the board, -1 = not yet
+#if CONFIG_BCAST_FM
+	bool bcast_on;			// the broadcast receiver is powered (radio_bcast.h)
+	int8_t bcast_audio_out;		// last board.bcast audio / volume sent, -1 = not yet
+	int8_t bcast_volume_out;
+#endif
 	int8_t green_out;
 	int8_t red_out;
 	bool hotspot;			// hotspot mode: the host link owns the modem
@@ -300,6 +305,9 @@ typedef struct {
 	uint32_t save_ms;		// start of the current sleep / wake
 #endif
 	uint32_t codeplug_serial;	// codeplug_serial() when the zone and channel were last read
+#if CONFIG_ZONE_EDIT
+	uint32_t zone_shifts;		// zone_edit_shifts() when the zone indexes below were last followed (zone_edit.h)
+#endif
 	bool reload_pending;		// RREQ_RELOAD came while busy
 	bool power_off_req;		// RREQ_POWER_OFF seen
 	bool power_off_busy;		// still sending what has to go out before the supply drops

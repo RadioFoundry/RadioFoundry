@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Facts for the stack check (tools/stack_check.py, docs/dev/stack-check.md) that the call graph and the sources
 # don't show. One file for every board: a target a build doesn't have is ignored.
@@ -26,7 +26,7 @@ lib stm32_codec_call 4104
 extern hrc_codec 4096
 file platform/hrc7000/vocoder.c @hrc_codec
 
-# The stub entry (core/stubentry) jumps into the flash stub with interrupts off; ODR never resumes, so what the stub does
+# The stub entry (core/stubentry) jumps into the flash stub with interrupts off; RadioFoundry never resumes, so what the stub does
 # with the stack doesn't matter
 extern flash_stub 0
 call enter_stub @flash_stub
@@ -35,13 +35,13 @@ call enter_stub @flash_stub
 # bus calls look like a cycle through i2c_bus_t. Bus A itself is the software master: there is no recursion
 recursion i2c_a_write i2c_a_write_read ee_bus_write ee_bus_write_read
 
-# The C library, where its worst path needs arguments ODR never passes. Each cuts that function out of the disassembly
+# The C library, where its worst path needs arguments RadioFoundry never passes. Each cuts that function out of the disassembly
 # walk: check the reason still holds when adding a call.
 # vPortYield (C-SKY port, assembly): saves the 17-word frame the port overhead already counts
 lib vPortYield 0
 # newlib's strstr takes its table-driven path (1 KB of stack on C-SKY) only for needles of 32 characters or more;
-# every strstr in ODR searches for a short literal
+# every strstr in RadioFoundry searches for a short literal
 lib two_way_long_needle 0
-# Floating point conversions (%e %f %g) only: ODR formats with %d and %s (snprintf in core/dmr). Without them the
+# Floating point conversions (%e %f %g) only: RadioFoundry formats with %d and %s (snprintf in core/dmr). Without them the
 # C-SKY newlib's snprintf needs about 0.6 KB, with them 2 KB
 lib _dtoa_r 0

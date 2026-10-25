@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The K22F USB controller's register bits (reference manual chapter 47) under the names TinyUSB's full-speed driver
 // uses (portable/chipidea/ci_fs), and how a token's STAT value picks its buffer descriptor. Pure: the host tests check
 // the bits against the driver's buffer descriptor table layout (tests/host/k22fUsbTest.c).

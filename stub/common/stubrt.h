@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flash stubs' Cortex-M runtime (docs/spec/stub-stm32f4.md 13): what every stub target needs and no chip
 // register decides. The freestanding C library pieces the compiler may call, the millisecond clock on the core's
 // cycle counter (DWT CYCCNT, at the core clock the target names), .bss zeroing, hex formatting for the USB serial
@@ -22,7 +22,7 @@ void stubrt_clock_rate(uint32_t core_hz);
 // the delays), so stub_ms() also feeds the target's watchdog
 uint32_t stub_ms(void);
 void stub_delay_ms(uint32_t ms);
-// The target's: feed its watchdog (the STM32F4's IWDG, which ODR may have started); empty where none runs
+// The target's: feed its watchdog (the STM32F4's IWDG, which RadioFoundry may have started); empty where none runs
 void stub_feed(void);
 
 // Zero the image's .bss (the linker script's _sbss.._ebss)

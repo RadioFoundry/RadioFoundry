@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The standard sub-audio lists (50 CTCSS tones, 104 DCS codes) and stepping through them for a tone picker.
 // Picker order: none, CTCSS low to high, DCS normal by code, DCS inverted by code.
 #ifndef RADIO_TONES_H

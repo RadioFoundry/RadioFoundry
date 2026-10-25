@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 key map (docs/ux/information-architecture.md 7.3): the physical keys of keys.h to the logical actions. The
 // roles are the board's configuration and stay provisional until a radio shows which matrix position is which key
 // (hardware-gd77.md 9.1, the manual key test in boards/gd77/hil/test_gd77.py): the names of the six navigation keys follow

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // K22F start-up: the vector table at the start of the application image, and the reset entry. The radio's bootloader
 // starts the application at its vector table; nothing here assumes what it left set, so the reset entry sets the stack,
 // switches the watchdog off, points VTOR at this table, turns the FPU on and lays out RAM before main()
@@ -8,7 +8,7 @@
 extern uint32_t _estack[];			// the linker script: top of the main stack
 extern uint32_t _sidata[], _sdata[], _edata[];	// .data: load address, run span
 extern uint32_t _sbss[], _ebss[];		// .bss
-extern uint32_t _sramu_bss[], _eramu_bss[];	// ODR_CPU_RAM in the upper SRAM, zeroed like .bss
+extern uint32_t _sramu_bss[], _eramu_bss[];	// RFOUNDRY_CPU_RAM in the upper SRAM, zeroed like .bss
 
 int main(void);
 void __libc_init_array(void);

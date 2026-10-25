@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 RF data and pure rules (rf_gd77.h, docs/spec/hardware-gd77.md 5.1, 5.4). Unverified on a radio.
 #include "rf_gd77.h"
 

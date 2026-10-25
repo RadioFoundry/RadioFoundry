@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The K22F platform's registry entry (tools/boards.py): what the tools and CI need to know about every board on it.
 # The build itself reads platform.mk, never this file.
 

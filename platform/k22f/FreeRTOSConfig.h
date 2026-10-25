@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // FreeRTOS for the K22F radios (Cortex-M4F; the STM32 radios' settings: kernel at the lowest priority, max syscall 5)
 #ifndef FREERTOS_CONFIG_H
 #define FREERTOS_CONFIG_H

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # HR_C7000 feature defaults, read after the board's config.mk (a board's ?= wins) and before config/features.mk.
 # The platform has no USB device driver: the host link (CPS, hotspot, debug link) runs on the programming cable's UART
 CONFIG_USB ?= n

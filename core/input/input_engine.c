@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Gestures from key masks (docs/ux/information-architecture.md section 2): PRESS on release before the long-press
 // threshold, LONG once at the threshold, REPEAT while held after LONG for repeating keys, DOWN / UP for raw-edge keys,
 // ENC_STEP (DOWN, value = detents) for the encoder. Several keys may be held at once; each is tracked on its own.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DesignWare SSI master (SPI0 0x140A0000, SPI2 0x140E0000; hardware-dm32.md 3.2): 8-bit frames, mode 0, polled one byte
 // at a time, no FIFO depth assumed. Chip selects are GPIOs the board drives, so SER only gates the clock.
 #include <stddef.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Millisecond clock from the DWT cycle counter, so it runs before the scheduler and inside critical sections.
 // The 32-bit cycle counter wraps every 59 s at 72 MHz; it is folded into a 64-bit count on every read, and the RTOS
 // tick hook reads it every millisecond, so no wrap is missed.
@@ -7,6 +7,9 @@
 #include "platform.h"
 #include "hal_time.h"
 #include "hal_watchdog.h"
+#if CONFIG_WATCHDOG && CONFIG_CRASH_LOG
+#include "app/watchdog.h"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -87,4 +90,17 @@ void HAL_Delay(uint32_t Delay)
 void vApplicationTickHook(void)
 {
 	(void)cycles_now();
+}
+
+// The tick interrupt: the hang check first (crash-log.md 1.1), here rather than in the tick hook, which xTaskResumeAll
+// also calls from a task for ticks that came while the scheduler was suspended; the check needs the interrupted
+// task's frame on the PSP
+void xPortSysTickHandler(void);
+void SysTick_Handler(void);
+void SysTick_Handler(void)
+{
+#if CONFIG_WATCHDOG && CONFIG_CRASH_LOG
+	watchdog_tick();
+#endif
+	xPortSysTickHandler();
 }

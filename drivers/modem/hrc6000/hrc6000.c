@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C6000 driver: register access, power-on init and FM modes (docs/spec/modem-hrc6000.md 1.1, 3, 8;
 // docs/spec/hardware-dm1701.md 12.4, 12.5). Values marked (trace) in the spec are kept as given.
 #include <stddef.h>

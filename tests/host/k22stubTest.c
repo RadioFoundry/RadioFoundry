@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flash stubs' shared protocol engine (stub/common/stubeng.c) with the K22F target's facts and board record check
 // (stub/k22f/k22stub_board.c, docs/spec/stub-k22f.md) against a simulated 512 KB flash and a 2 MB SPI flash: the
 // test profile's record and the records refused, the 2 KB map and 8-byte units, the loader below 0x4000 and the last sector

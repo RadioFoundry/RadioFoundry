@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // SPI master on the registers, byte at a time (platform.h): no HAL time base or DMA needed, so it works before the
 // scheduler, and tx / rx may be NULL. Shared by the boards' SPI flash and LCD glue
 #include "platform.h"

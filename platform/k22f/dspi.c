@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DSPI master (reference manual chapter 51), polled, 8-bit frames, FIFOs off: one byte out, one byte in. The chip
 // select is either a GPIO the caller drives, so a transaction of any length stays selected without the CONT bit, or
 // one of the module's PCS outputs: then every byte but the transaction's last carries CONT, which keeps it selected

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DTMF digits and their tone pairs (ITU-T Q.23), shared by the radio core and the boards' tx_dtmf hooks
 // (docs/spec/radio-features.md 3.7)
 #ifndef HAL_DTMF_H

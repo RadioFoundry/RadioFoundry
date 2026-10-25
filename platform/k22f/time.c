@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Millisecond clock from the DWT cycle counter, as on the STM32 radios: it runs before the scheduler and inside
 // critical sections. Every read folds the cycles since the last one into whole milliseconds plus a remainder, so the
 // 32-bit counter's wrap (every 45 s at 95 MHz) is never missed as long as something reads it more often (the RTOS

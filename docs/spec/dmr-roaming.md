@@ -9,6 +9,14 @@ strongest one it can use, from the survey data when that is fresh, else after a 
 to the site it is on, or ask for a search at once. Switch: `CONFIG_DMR_ROAMING`, a child of `CONFIG_DMR`, on by
 default (`docs/build-config.md`). Roaming itself is off until the user turns it on for a zone.
 
+| Section | Topic |
+|---|---|
+| 1, 2, 3 | Standards position, the roam list, what the radio measures |
+| 4 | Behavior |
+| 5, 6 | Storage, interfaces |
+| 7, 8 | Repeater beacons, timings and constants |
+| 9, 10 | Tests, open decisions |
+
 ## 1. Legal and standards position
 
 ETSI TS 102 361-1..4 define no roaming procedure for Tier II conventional operation: a repeater neither announces its
@@ -24,7 +32,7 @@ radio-side feature, and this one uses only:
 
 It does not implement, imitate or interoperate with any vendor's multi-site signaling: no Motorola IP Site Connect,
 Capacity Plus or Linked Capacity Plus site beacons, rest channel or site announcements, no Hytera XPT, and no
-about 2030-2032; nothing here decodes or sends what those systems send. Picking the strongest of several programmed
+proprietary CSBK or data opcodes. Picking the strongest of several programmed
 channels by signal strength, and waking a repeater with the standard activation burst, are generic radio behavior
 that predates those systems (scan with priority, "strongest signal" selection in analog trunked and conventional
 radios).
@@ -60,9 +68,9 @@ the radio powers up on the site it was on.
 
 Why a zone and not a new list: the open-firmware codeplug layout that qdmr and the open-firmware CPS write
 (`open-firmware-cps.md` 7) has no roaming list or roaming zone record, and the native codeplug
-(`codeplug-native.md`) is not built yet. A zone whose channels share their talkgroups is what a user of a multi-site
+(`codeplug-native.md`) is a draft. A zone whose channels share their talkgroups is what a user of a multi-site
 system already programs, so it is the natural roam list; the per-channel Roaming flag the open-firmware layout does have
-narrows it when a zone mixes sites with other channels. When the native codeplug exists, the zone record gets a
+narrows it when a zone mixes sites with other channels. When the native codeplug is built, the zone record gets a
 "roaming zone" flag and the threshold values (section 10, decision 1), and the settings store bits become its default.
 
 ## 3. What the radio measures
@@ -71,8 +79,7 @@ narrows it when a zone mixes sites with other channels. When the native codeplug
   300 ms (`DMR_CALL_REPEATER_HOLD_MS`). Bursts with another color code are dropped by the call stack before they
   count, so a co-channel repeater with another color code is never taken for ours.
 - **Signal**: `hal_radio_t.status().rssi_dbm`, read every poll (25 ms) while the site is heard. The board picks the
-  source: the receiver's RSSI, not the DMR modem's (DM-1701: the AT1846S, `hardware-dm1701.md` 5.9; MD-380: the
-  IF chain's RSSI on an ADC, `hardware-md380.md` 5.5).
+  source: the receiver's RSSI, not the DMR modem's.
 - **Current site average**: an exponential average of those readings (weight 1/8 per reading), restarted on every
   site change. Readings taken while the radio isn't hearing the site don't count, so a silent repeater keeps its last
   average until it is too old (`ROAM_FRESH_MS`, 60 s): then the site's signal is **unknown**.
@@ -90,8 +97,8 @@ narrows it when a zone mixes sites with other channels. When the native codeplug
 Why 420 ms per visit and not less: all sites share the color code, and the call stack keeps a repeater "up" for 300
 ms after its last burst, so the first 300 ms after a retune can't tell the new site from the old one. A visit could
 be about 250 ms if the stack forgot the last site on a retune, but then a PTT that ends a visit would always go
-through a repeater wake-up on the way back (section 4.9). On the DM-1701, the AT1846S RSSI and the HR_C6000's sync
-acquisition need well under 100 ms on a continuous BS outbound (a burst every 30 ms); four 25 ms readings follow.
+through a repeater wake-up on the way back (section 4.9). A board's receiver RSSI and modem sync acquisition
+should need well under 100 ms on a continuous BS outbound (a burst every 30 ms); four 25 ms readings follow.
 
 A conventional repeater only transmits while it carries traffic (plus its hang time), when it beacons, or when
 something wakes it. Passive measurement therefore only sees sites that are busy or beaconing; section 4.5 covers
@@ -337,7 +344,7 @@ deletes zones moves the flags with the indices (section 10, decision 2).
 
 The open-firmware channel record's flag 1 bit 0 "Roaming" (`open-firmware-cps.md` 7, offset 0x26) is read into
 `channel_t.roam`. It is never written by the radio (the encoder keeps the bit as read). When any channel of a roaming
-zone has it, only those channels are sites. Whether qdmr exposes this bit for the open-firmware layout is not checked yet
+zone has it, only those channels are sites. Whether qdmr exposes this bit for the open-firmware layout is open
 (section 10, decision 3).
 
 ## 6. Interfaces
@@ -394,7 +401,7 @@ complement), 22 `roam_hyst_db`, 23 `roam_probe`, 24 `roam_check_s`, 25 `roam_bea
 
 ## 7. Our repeaters' beacons
 
-The SFR runner (`docs/spec/sfr.md`: today MMDVM SFR, later Standalone SFR's repeater roles) can send
+The SFR runner (`docs/spec/sfr.md`: MMDVM SFR today; Standalone SFR's repeater roles are not built) can send
 the beacon itself: with `rpt_beacon` on (debug link setting 28, off by default by P7), the runner keys its outbound with idle bursts for
 `roam_beacon_len_s` every `roam_beacon_s` while it carries nothing (`sfrRunnerSetBeacon`, counted in
 `sfr.tx_beacons` in the debug link's `sfr` section). Traffic always has priority: a beacon due during a call is skipped, and a call that starts during a

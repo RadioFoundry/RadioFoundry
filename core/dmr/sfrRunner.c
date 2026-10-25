@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The SFR repeater roles on hal_dmr_modem_t (see sfrRunner.h)
 #if CONFIG_SFR || defined(HAS_SFR)	// the whole file
 

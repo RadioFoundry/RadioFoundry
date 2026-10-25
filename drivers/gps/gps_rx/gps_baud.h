@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Finding a GPS module's baud rate: listen at each rate of a list in turn until a checksum-valid sentence comes
 // (gps_rx.h), for boards whose module rate isn't settled (docs/spec/hardware-md9600.md 13). A line that stays silent
 // for a whole window means no module at all: there is nothing to try other rates on, so the hunt ends there and a

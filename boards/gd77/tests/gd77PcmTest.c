@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 PCM framing (boards/gd77/pcm_gd77.c, docs/spec/hardware-gd77.md 8): slot 0 kept from the receive frames, the
 // speaker sample duplicated into both transmit slots, two 10 ms DMA halves per 20 ms block, the block hand-over
 // between the DMA side and the audio task, dropped blocks and transmit underruns

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Radioddity GD-77 (TYT MD-760): board descriptor, clocks, start-up pin levels, key map (docs/spec/hardware-gd77.md).
 // Bring-up state: display, keys, power, FM receive; transmit refused, DMR, USB and storage not wired yet (12).
 #include "board.h"
@@ -15,7 +15,7 @@
 #endif
 
 // The RTOS heap, with every task stack, in the upper SRAM; data and bss are in the lower half (platform/k22f/common.ld)
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] RFOUNDRY_CPU_RAM_NOINIT __attribute__((aligned(8)));
 
 // Receive only unless built with CONFIG_GD77_TX (boards/gd77/config.mk); radio_gd77.c tx() also wants calibration
 static const band_t bands[] = {

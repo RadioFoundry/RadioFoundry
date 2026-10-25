@@ -1,36 +1,36 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio's MIB and its notifications (see snmpMib.h). Object names and numbers: RFC 3418 (system, snmp),
-// docs/spec/ODR-MIB.txt (the enterprise subtree).
+// docs/spec/RFOUNDRY-MIB.txt (the enterprise subtree).
 #include <stddef.h>
 #include <string.h>
 #include "snmp/snmpMib.h"
 #include "dmr/dmrDataService.h"
 
 // The enterprise number as OID contents (base 128, X.690 8.19)
-#if ODR_SNMP_PEN >= 2097152u
-#error "ODR_SNMP_PEN: at most 21 bits here"
-#elif ODR_SNMP_PEN >= 16384u
-#define PEN_BER		(0x80u | ((ODR_SNMP_PEN >> 14) & 0x7Fu)), (0x80u | ((ODR_SNMP_PEN >> 7) & 0x7Fu)), (ODR_SNMP_PEN & 0x7Fu)
+#if RFOUNDRY_SNMP_PEN >= 2097152u
+#error "RFOUNDRY_SNMP_PEN: at most 21 bits here"
+#elif RFOUNDRY_SNMP_PEN >= 16384u
+#define PEN_BER		(0x80u | ((RFOUNDRY_SNMP_PEN >> 14) & 0x7Fu)), (0x80u | ((RFOUNDRY_SNMP_PEN >> 7) & 0x7Fu)), (RFOUNDRY_SNMP_PEN & 0x7Fu)
 #define PEN_LEN		3
-#elif ODR_SNMP_PEN >= 128u
-#define PEN_BER		(0x80u | ((ODR_SNMP_PEN >> 7) & 0x7Fu)), (ODR_SNMP_PEN & 0x7Fu)
+#elif RFOUNDRY_SNMP_PEN >= 128u
+#define PEN_BER		(0x80u | ((RFOUNDRY_SNMP_PEN >> 7) & 0x7Fu)), (RFOUNDRY_SNMP_PEN & 0x7Fu)
 #define PEN_LEN		2
 #else
-#define PEN_BER		ODR_SNMP_PEN
+#define PEN_BER		RFOUNDRY_SNMP_PEN
 #define PEN_LEN		1
 #endif
 
 #define TRUTH(b)	((b) ? 1u : 2u)		// TruthValue (RFC 2579); also up(1) / down(2)
 #define SYS_SERVICES	(4u + 64u)		// internet (routes IP over DMR) and applications (RFC 3418)
 
-// The prefixes (each led by its length): system, snmp (RFC 3418) and odrObjects. The interfaces group is left out
-// for the flash it would cost (the smallest images); odrNet has the link's counters
-enum { P_SYSTEM, P_SNMP, P_ODR };
+// The prefixes (each led by its length): system, snmp (RFC 3418) and rfoundryObjects. The interfaces group is left out
+// for the flash it would cost (the smallest images); rfoundryNet has the link's counters
+enum { P_SYSTEM, P_SNMP, P_RFOUNDRY };
 static const uint8_t PFX_SYSTEM[] = { 6, 0x2B, 6, 1, 2, 1, 1 };
 static const uint8_t PFX_SNMP[] = { 6, 0x2B, 6, 1, 2, 1, 11 };
-static const uint8_t PFX_ODR[] = { 7 + PEN_LEN, 0x2B, 6, 1, 4, 1, PEN_BER, 2, 1 };
-static const uint8_t *const prefixes[] = { PFX_SYSTEM, PFX_SNMP, PFX_ODR };
+static const uint8_t PFX_RFOUNDRY[] = { 7 + PEN_LEN, 0x2B, 6, 1, 4, 1, PEN_BER, 2, 1 };
+static const uint8_t *const prefixes[] = { PFX_SYSTEM, PFX_SNMP, PFX_RFOUNDRY };
 
 // The instances in OID order; the enum is their index (the id the callbacks get)
 enum {
@@ -55,7 +55,7 @@ enum {
 #define CNT		BER_COUNTER32
 #define SYS(n, t, f)	{ P_SYSTEM, { n, 0 }, 2, t, f }
 #define SNMPG(n, t, f)	{ P_SNMP, { n, 0 }, 2, t, f }
-#define ODR(g, n, t, f)	{ P_ODR, { g, n, 0 }, 3, t, f }
+#define RFOUNDRY(g, n, t, f)	{ P_RFOUNDRY, { g, n, 0 }, 3, t, f }
 
 // Sorted by OID (tests/host/snmpTest.c checks it)
 static const snmpObject_t objects[OBJECT_COUNT] = {
@@ -74,54 +74,54 @@ static const snmpObject_t objects[OBJECT_COUNT] = {
 	[SN_AUTH_TRAPS] = SNMPG(30, INT, W),
 	[SN_SILENT_DROPS] = SNMPG(31, CNT, R),
 	[SN_PROXY_DROPS] = SNMPG(32, CNT, R),
-	[ID_DMR_ID] = ODR(1, 1, U32, R),
-	[ID_CALLSIGN] = ODR(1, 2, STR, R),
-	[ID_BOARD] = ODR(1, 3, STR, R),
-	[ID_FIRMWARE] = ODR(1, 4, STR, R),
-	[PW_MV] = ODR(2, 1, U32, R),
-	[PW_PCT] = ODR(2, 2, U32, R),
-	[PW_STATE] = ODR(2, 3, INT, R),
-	[RD_STATE] = ODR(3, 1, INT, R),
-	[RD_RSSI] = ODR(3, 2, INT, R),
-	[RD_MODE] = ODR(3, 3, INT, R),
-	[RD_ZONE] = ODR(3, 4, STR, R),
-	[RD_CH_NUMBER] = ODR(3, 5, U32, R),
-	[RD_CH_NAME] = ODR(3, 6, STR, R),
-	[RD_RX_HZ] = ODR(3, 7, U32, R),
-	[RD_TX_HZ] = ODR(3, 8, U32, R),
-	[RD_POWER] = ODR(3, 9, U32, R),
-	[RD_POWER_NAME] = ODR(3, 10, STR, R),
-	[RD_CC] = ODR(3, 11, U32, R),
-	[RD_TS] = ODR(3, 12, U32, R),
-	[RD_TARGET] = ODR(3, 13, U32, R),
-	[RD_TARGET_TYPE] = ODR(3, 14, INT, R),
-	[RD_ROLE] = ODR(3, 15, INT, R),
-	[DM_STATE] = ODR(4, 1, INT, R),
-	[DM_SRC] = ODR(4, 2, U32, R),
-	[DM_DST] = ODR(4, 3, U32, R),
-	[DM_LAST_SRC] = ODR(4, 4, U32, R),
-	[DM_LAST_DST] = ODR(4, 5, U32, R),
-	[DM_LAST_GROUP] = ODR(4, 6, INT, R),
-	[DM_LAST_AGE] = ODR(4, 7, BER_TIMETICKS, R),
-	[DA_RX_PACKETS] = ODR(5, 1, CNT, R),
-	[DA_RX_FOR_US] = ODR(5, 2, CNT, R),
-	[DA_SMS_RX] = ODR(5, 3, CNT, R),
-	[DA_SMS_TX] = ODR(5, 4, CNT, R),
-	[DA_SMS_FAILED] = ODR(5, 5, CNT, R),
-	[DA_INBOX] = ODR(5, 6, U32, R),
-	[DA_UNREAD] = ODR(5, 7, U32, R),
-	[DA_ARS] = ODR(5, 8, INT, R),
-	[NT_USB] = ODR(6, 1, INT, R),
-	[NT_TO_AIR] = ODR(6, 3, CNT, R),
-	[NT_PACKETS_UP] = ODR(6, 6, CNT, R),
-	[AG_RF_MANAGER] = ODR(7, 1, U32, W),
-	[AG_RF_GAP] = ODR(7, 2, U32, W),
-	[AG_RF_ANSWERS] = ODR(7, 3, INT, W),
-	[AG_RF_WRITE] = ODR(7, 4, INT, W),
-	[AG_USB_TRAPS] = ODR(7, 5, INT, W),
-	[AG_RF_CALL_TRAPS] = ODR(7, 6, INT, W),
-	[AG_TRAPS_SENT] = ODR(7, 7, CNT, R),
-	[AG_TRAPS_DROPPED] = ODR(7, 8, CNT, R),
+	[ID_DMR_ID] = RFOUNDRY(1, 1, U32, R),
+	[ID_CALLSIGN] = RFOUNDRY(1, 2, STR, R),
+	[ID_BOARD] = RFOUNDRY(1, 3, STR, R),
+	[ID_FIRMWARE] = RFOUNDRY(1, 4, STR, R),
+	[PW_MV] = RFOUNDRY(2, 1, U32, R),
+	[PW_PCT] = RFOUNDRY(2, 2, U32, R),
+	[PW_STATE] = RFOUNDRY(2, 3, INT, R),
+	[RD_STATE] = RFOUNDRY(3, 1, INT, R),
+	[RD_RSSI] = RFOUNDRY(3, 2, INT, R),
+	[RD_MODE] = RFOUNDRY(3, 3, INT, R),
+	[RD_ZONE] = RFOUNDRY(3, 4, STR, R),
+	[RD_CH_NUMBER] = RFOUNDRY(3, 5, U32, R),
+	[RD_CH_NAME] = RFOUNDRY(3, 6, STR, R),
+	[RD_RX_HZ] = RFOUNDRY(3, 7, U32, R),
+	[RD_TX_HZ] = RFOUNDRY(3, 8, U32, R),
+	[RD_POWER] = RFOUNDRY(3, 9, U32, R),
+	[RD_POWER_NAME] = RFOUNDRY(3, 10, STR, R),
+	[RD_CC] = RFOUNDRY(3, 11, U32, R),
+	[RD_TS] = RFOUNDRY(3, 12, U32, R),
+	[RD_TARGET] = RFOUNDRY(3, 13, U32, R),
+	[RD_TARGET_TYPE] = RFOUNDRY(3, 14, INT, R),
+	[RD_ROLE] = RFOUNDRY(3, 15, INT, R),
+	[DM_STATE] = RFOUNDRY(4, 1, INT, R),
+	[DM_SRC] = RFOUNDRY(4, 2, U32, R),
+	[DM_DST] = RFOUNDRY(4, 3, U32, R),
+	[DM_LAST_SRC] = RFOUNDRY(4, 4, U32, R),
+	[DM_LAST_DST] = RFOUNDRY(4, 5, U32, R),
+	[DM_LAST_GROUP] = RFOUNDRY(4, 6, INT, R),
+	[DM_LAST_AGE] = RFOUNDRY(4, 7, BER_TIMETICKS, R),
+	[DA_RX_PACKETS] = RFOUNDRY(5, 1, CNT, R),
+	[DA_RX_FOR_US] = RFOUNDRY(5, 2, CNT, R),
+	[DA_SMS_RX] = RFOUNDRY(5, 3, CNT, R),
+	[DA_SMS_TX] = RFOUNDRY(5, 4, CNT, R),
+	[DA_SMS_FAILED] = RFOUNDRY(5, 5, CNT, R),
+	[DA_INBOX] = RFOUNDRY(5, 6, U32, R),
+	[DA_UNREAD] = RFOUNDRY(5, 7, U32, R),
+	[DA_ARS] = RFOUNDRY(5, 8, INT, R),
+	[NT_USB] = RFOUNDRY(6, 1, INT, R),
+	[NT_TO_AIR] = RFOUNDRY(6, 3, CNT, R),
+	[NT_PACKETS_UP] = RFOUNDRY(6, 6, CNT, R),
+	[AG_RF_MANAGER] = RFOUNDRY(7, 1, U32, W),
+	[AG_RF_GAP] = RFOUNDRY(7, 2, U32, W),
+	[AG_RF_ANSWERS] = RFOUNDRY(7, 3, INT, W),
+	[AG_RF_WRITE] = RFOUNDRY(7, 4, INT, W),
+	[AG_USB_TRAPS] = RFOUNDRY(7, 5, INT, W),
+	[AG_RF_CALL_TRAPS] = RFOUNDRY(7, 6, INT, W),
+	[AG_TRAPS_SENT] = RFOUNDRY(7, 7, CNT, R),
+	[AG_TRAPS_DROPPED] = RFOUNDRY(7, 8, CNT, R),
 };
 
 // Where each value comes from: a kind and an offset (into snmpData_t, snmpStats_t, or a small constant)
@@ -153,7 +153,7 @@ static const uint8_t fields[OBJECT_COUNT][2] = {
 	[NT_USB] = D(K_TRUTH, usbNetwork), [NT_TO_AIR] = D(K_U32, netToAir), [NT_PACKETS_UP] = D(K_U32, netPacketsUp),
 };
 
-// sysObjectID: odrProducts.1, an ODR radio
+// sysObjectID: rfoundryProducts.1, a RadioFoundry radio
 static const uint8_t PRODUCT_OID[] = { 0x2B, 6, 1, 4, 1, PEN_BER, 1, 1 };
 
 static void str(snmpValue_t *v, const char *s)
@@ -236,7 +236,7 @@ static bool get(const snmpMib_t *mib, uint8_t id, snmpValue_t *v)
 		case SYS_DESCR: {
 			char *p = c->text, *end = c->text + sizeof(c->text) - 1;
 
-			p = append(p, end, "OpenDigitalRadio ");
+			p = append(p, end, "RadioFoundry ");
 			p = append(p, end, d->board);
 			p = append(p, end, " ");
 			p = append(p, end, d->firmware);
@@ -546,11 +546,11 @@ void snmpEventsDetect(snmpEvents_t *e, const snmpData_t *d, const snmpConfig_t *
 	}
 }
 
-// Notification OIDs: SNMPv2-MIB's coldStart and authenticationFailure (odrNotifications.n for the others)
+// Notification OIDs: SNMPv2-MIB's coldStart and authenticationFailure (rfoundryNotifications.n for the others)
 static const uint8_t TRAP_COLD_START[] = { 0x2B, 6, 1, 6, 3, 1, 1, 5, 1 };
 static const uint8_t TRAP_AUTH_FAIL[] = { 0x2B, 6, 1, 6, 3, 1, 1, 5, 5 };
 
-// Per kind: the odrNotifications number (0: an SNMPv2-MIB one), how many objects, and which (odrEvent.n: 1 source,
+// Per kind: the rfoundryNotifications number (0: an SNMPv2-MIB one), how many objects, and which (rfoundryEvent.n: 1 source,
 // 2 destination, 3 group, 4 slot, 5 duration, 6 text, 7 value)
 static const uint8_t EVENT_OBJECTS[][7] = {
 	[SNMP_EV_COLD_START] = { 0, 0 },
@@ -571,7 +571,7 @@ int snmpEventEncode(const snmpEvent_t *ev, int32_t requestId, uint8_t *out, int 
 	const uint8_t *row = EVENT_OBJECTS[ev->kind];
 	const uint8_t *oid = trap;
 	int oidLen = sizeof(trap);
-	int base = PFX_ODR[0];
+	int base = PFX_RFOUNDRY[0];
 
 	if (row[0] == 0) {
 		oid = (ev->kind == SNMP_EV_COLD_START) ? TRAP_COLD_START : TRAP_AUTH_FAIL;
@@ -583,8 +583,8 @@ int snmpEventEncode(const snmpEvent_t *ev, int32_t requestId, uint8_t *out, int 
 		uint8_t k = row[2 + i];
 		snmpValue_t *v = &vb[i].v;
 
-		memcpy(oids[i], PFX_ODR + 1, (size_t)base);
-		oids[i][base] = 8;	// odrEvent.k.0
+		memcpy(oids[i], PFX_RFOUNDRY + 1, (size_t)base);
+		oids[i][base] = 8;	// rfoundryEvent.k.0
 		oids[i][base + 1] = k;
 		oids[i][base + 2] = 0;
 		vb[i].oid = oids[i];

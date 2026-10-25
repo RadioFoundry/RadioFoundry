@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Microphone level for VOX (hal_power_t.mic_level, docs/spec/radio-features.md 3.4). miclevel_log() is the hal's
 // scale for every board: a mic level tap on a 12-bit ADC passes its reading straight in. Radios whose microphone
 // reaches the CPU only as PCM (HR_C7000: the codec ADC's 10 ms blocks, modem-hrc7000.md 3) use the block functions.

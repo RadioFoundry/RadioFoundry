@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Screen drawing (docs/ux/wireframes): layout from the display size, no task or input code, so host tests and the
 // host simulator can render any screen at any geometry
 #ifndef UI_SCREENS_H

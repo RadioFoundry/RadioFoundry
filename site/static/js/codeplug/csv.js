@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Codeplug tables as CSV (RFC 4180): one file per table, a header row of fixed English names, references by name
 // (a channel's contact, a zone's channels). Import matches rows to the records already there by number, then by
 // name, so references from other tables follow an edited record; records missing from the file are removed and

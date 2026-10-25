@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Radio access backends: how the page reaches one family of radios. radios.json flash.backend names the backend; app.js
 // runs the tasks (install, backup, restore, help) and asks the radio's backend which steps each task takes and which
 // views draw the steps it owns. The steps every radio shares (radio, build, bundle, symptom, recover) stay in app.js.
 // A new way to install or back up a radio (another bootloader protocol, a stock read-back protocol) is a new module
-// that calls register(); the task flow doesn't change. docs/dev/website.md "Radio access backends" has the contract.
+// that calls register(); the task flow doesn't change. docs/dev/web-flasher.md "Radio access backends" has the contract.
 //
 //   id                      radios.json flash.backend
 //   available(radio, fb, task)  the page can run task ("install" | "backup") on this radio

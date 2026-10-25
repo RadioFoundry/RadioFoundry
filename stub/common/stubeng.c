@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flash stubs' shared protocol engine (stubeng.h, docs/spec/stub-stm32f4.md 13). Portable: no register access.
 // The safety rules are listed in stubeng.h.
 #include <string.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 power latch, battery, volume knob, LEDs (docs/spec/hardware-dm1701.md sections 10.4 and 11).
 // ADC1 scans volume, battery, mic level and the temperature sensor continuously; DMA2 Stream4 keeps the last
 // SCANS results in a circular buffer, so a reading is a short average with no interrupt and no locking.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flash stubs' CDC-ACM function, controller-independent (stubusb.h): the descriptors, the standard and class
 // control requests (USB 2.0 chapter 9, CDC 1.2, PSTN), the configured state and the receive ring the engine reads
 // through usb_read. The target's controller driver hands it every SETUP packet and control OUT data stage, and
@@ -17,9 +17,9 @@
 #define STUBCDC_EP_NOTIFY	2u	// interrupt IN 0x82
 #define STUBCDC_RING_SIZE	8192u	// received bytes waiting for the protocol engine (a power of two)
 
-extern bool stubcdc_configured;		// SET_CONFIGURATION 1 seen, or the device adopted from ODR
+extern bool stubcdc_configured;		// SET_CONFIGURATION 1 seen, or the device adopted from RadioFoundry
 
-// The USB serial number string (ODR's, so the host's port keeps its name across a re-enumeration)
+// The USB serial number string (RadioFoundry's, so the host's port keeps its name across a re-enumeration)
 void stubcdc_init(const char *serial);
 // One SETUP packet: answered through the cdc_hw_* calls
 void stubcdc_setup(const uint8_t setup[8]);

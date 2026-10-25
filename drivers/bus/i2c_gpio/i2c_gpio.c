@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Bit-banged I2C master (i2c_gpio.h). SDA only changes while SCL is low, except for START and STOP.
 #include "i2c_gpio.h"
 

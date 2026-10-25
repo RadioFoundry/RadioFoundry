@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The MMDVM modem protocol: framer and responder (see mmdvm.h)
 #include <string.h>
 #include "hotspot/mmdvm.h"
@@ -171,7 +171,7 @@ static void get_version(void)
 {
 	uint8_t p[1 + DESCRIPTION_MAX];
 	uint8_t n = 0;
-	const char *d = (io->description != NULL) ? io->description : "OpenDigitalRadio";
+	const char *d = (io->description != NULL) ? io->description : "RadioFoundry";
 
 	p[0] = MMDVM_PROTOCOL_VERSION;
 	while ((d[n] != '\0') && (n < DESCRIPTION_MAX)) {
@@ -442,7 +442,7 @@ void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms)
 	case MMDVM_ACK:
 	case MMDVM_NAK:
 		break;		// dropped silently, never answered (spec 2.12)
-	case MMDVM_ODR_SFR_DEBUG:
+	case MMDVM_RFOUNDRY_SFR_DEBUG:
 		if ((EXT != NULL) && (EXT->vendor != NULL)) {
 			uint8_t r = EXT->vendor(command, p, plen);
 

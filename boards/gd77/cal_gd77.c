@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 calibration point for the radio code (cal_gd77.h) from the factory blocks (cal_blocks_gd77.h,
 // docs/spec/hardware-gd77.md 6.4). Pure conversion: no platform code, so the host tests run it on synthetic blocks.
 // Unverified on a radio.

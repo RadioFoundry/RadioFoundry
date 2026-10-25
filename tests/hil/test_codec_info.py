@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""VERSION's codec= key (docs/spec/debuglink.md 3.1), which tools/odrflash reads to decide whether a firmware update
+# Copyright (c) 2026 The RadioFoundry Authors
+"""VERSION's codec= key (docs/spec/debuglink.md 3.1), which tools/rfoundry reads to decide whether a firmware update
 can leave the codec sectors alone. Read only."""
 import os
 import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "odrflash"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "rfoundry"))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools"))
-from odrflash import boards  # noqa: E402
+from rfoundry import boards  # noqa: E402
 import hrc7000_codec  # noqa: E402
 
 
@@ -39,9 +39,9 @@ def test_codec_key_agrees_with_dmr_view(radio):
 
 
 @pytest.mark.feature("codec_check")
-def test_odrflash_probe_reads_it(radio):
-    """odrflash's own minimal debug-link client parses the same reply (frame, CRC, key=value)."""
-    from odrflash import debuglink
+def test_rfoundry_probe_reads_it(radio):
+    """rfoundry's own minimal debug-link client parses the same reply (frame, CRC, key=value)."""
+    from rfoundry import debuglink
     reply = radio.link.request(debuglink.CMD_VERSION)[1].decode("ascii", "replace")
     kv = debuglink.parse_kv(reply)
     assert kv.get("codec") == radio.version(fresh=True).get("codec")

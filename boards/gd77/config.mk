@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # GD-77 feature defaults (config/features.mk lists them all). Bring-up state (docs/spec/hardware-gd77.md 12): the UI on
 # the 128x64 display, keys, power and FM receive. DMR: the HR_C6000 slot engine, the voice port (SPI1) and the PCM
 # stream are wired; the codec is the radio's own, merged on the user's machine (docs/spec/codec-gd77.md)
@@ -10,6 +10,8 @@ MCU_DEFS += -DCONFIG_GD77_TX=$(if $(filter y,$(CONFIG_GD77_TX)),1,0)
 # USB serial (CDC-ACM) with the host link, the debug link and the open-firmware CPS (docs/spec/hardware-gd77.md 13)
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): off by default, and off in ci's maximal configuration
+CONFIG_AM_RX ?= n
+CONFIG_BCAST_FM ?= n
 CONFIG_GPS ?= n
 CONFIG_FAULT_TRACE ?= n
 CONFIG_FONT_XL ?= n

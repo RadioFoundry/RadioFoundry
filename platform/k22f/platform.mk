@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # NXP Kinetis K22F (Cortex-M4F): arm-none-eabi GCC, hard float, CMSIS core headers, FreeRTOS CM4F port. No vendor SDK:
 # the registers are in k22f.h, start-up and vector table in startup.c. USB on TinyUSB's driver for the full-speed
 # controller (usb.c)
@@ -26,8 +26,8 @@ TUSB_SRC := $(TUSB)/tusb.c $(TUSB)/common/tusb_fifo.c $(TUSB)/device/usbd.c $(TU
 	$(if $(filter y,$(CONFIG_USB_NETWORK)),$(TUSB)/class/net/ncm_device.c)
 
 $(if $(APP_BASE),,$(error boards/$(BOARD)/board.mk: APP_BASE, the image address, is missing))
-# common.ld's upper SRAM half: zeroed at start-up for ODR_CPU_RAM, left alone for _NOINIT
-MCU_DEFS += -DODR_CPU_RAM_SECTION='".ramu_bss"' -DODR_CPU_RAM_NOINIT_SECTION='".ramu_noinit"'
+# common.ld's upper SRAM half: zeroed at start-up for RFOUNDRY_CPU_RAM, left alone for _NOINIT
+MCU_DEFS += -DRFOUNDRY_CPU_RAM_SECTION='".ramu_bss"' -DRFOUNDRY_CPU_RAM_NOINIT_SECTION='".ramu_noinit"'
 LDSCRIPT ?= boards/$(BOARD)/memory.ld
 # The USB device stack, built only with CONFIG_USB
 BOARD_USB_DIRS ?= drivers/usb

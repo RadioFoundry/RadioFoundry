@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The shared calibration curve (core/radio/cal_curve.c): edges, both roundings, extension past the last point, the
 // even-grid form, and equality with the per-board interpolators it replaced (the MD-380's and the DM-1701's, kept
 // here as references)

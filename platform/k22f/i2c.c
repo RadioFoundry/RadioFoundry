@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // I2C0 as a polled master (reference manual chapter 52) behind the generic i2c_bus_t: whole transactions to a 7-bit
 // address, a write, or a write and a repeated START into a read. Every wait is bounded; a stuck bus reports an error
 // instead of hanging the caller. The pins and their mux are the board's (it calls this once they carry I2C0).

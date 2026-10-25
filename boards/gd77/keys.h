@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 keys (docs/spec/hardware-gd77.md 9.1): the physical key bits input_gd77.c reports and the matrix positions.
 // The digits and * # are placed by the keypad's layout; the six other matrix keys and the four direct keys have
 // provisional names until a radio shows which is which. Pure data: tests/host/gd77KeysTest.c checks the decode. The

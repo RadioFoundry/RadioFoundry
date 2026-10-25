@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Prints one value of a platform's [toolchain] table (platform/<platform>/platform.toml), for the shell scripts that
 # install or run a toolchain. They can run before any Python 3.11 is there, so this reads the file with awk: a value

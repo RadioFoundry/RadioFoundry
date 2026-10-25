@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // K22F clock set-up (reference manual 24.5.3, mode transitions). The loader in front of the application may leave any
 // MCG mode running, so the switch goes through the fast internal reference first (FBI), then to the external clock
 // with the FLL bypassed (FBE), the PLL locked in PLL-bypassed mode (PBE), and the PLL last (PEE). Every wait is

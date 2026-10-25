@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // USRP voice-over-UDP framing and the radio side's link state (usrp.h, docs/spec/usb-audio.md 4.2)
 #include "usrp.h"
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The SGL update file (.sgl) and the vendor bootloader's USB HID update protocol (docs/spec/update-gd77.md). A port of
-// tools/odrflash/odrflash/updatefile.py and hidboot.py; site/tests/hidboot.test.mjs checks the two agree byte for byte.
+// tools/rfoundry/rfoundry/updatefile.py and hidboot.py; site/tests/hidboot.test.mjs checks the two agree byte for byte.
 //
 // An update file is a 1 KB header, then the flash image and one zero byte, byte-scrambled. A new image keeps the header
 // of the file it is written into (the donor, a stock update file the user supplies): same names, same tag, same stream.
@@ -22,7 +22,7 @@ export const STEP_TIMEOUT = 2000;		// ms
 export const ERASE_TIMEOUT = 10000;
 const KEY = [0x53, 0x47, 0x4C, 0x21];		// "SGL!"
 
-// code: a stable name for the page's message (hidui.js); message: what odrflash says
+// code: a stable name for the page's message (hidui.js); message: what rfoundry says
 export class UpdateFileError extends Error {
 	constructor(code, message) {
 		super(message);

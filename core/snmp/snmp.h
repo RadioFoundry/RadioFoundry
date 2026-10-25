@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // SNMPv2c message processing (RFC 3416 operations, RFC 3417 / RFC 1901 community-based messages): one request
 // datagram in, one response datagram out, against a MIB given as a sorted table of scalar instances with get / test /
 // commit callbacks. Get, GetNext, GetBulk and Set; SNMPv2-Trap messages for notifications. No hardware dependencies
 // and no state of its own (counters live in the caller's snmpStats_t), so the host tests run it as it is
 // (tests/host/snmpTest.c). docs/spec/snmp.md.
-#ifndef ODR_SNMP_H
-#define ODR_SNMP_H
+#ifndef RFOUNDRY_SNMP_H
+#define RFOUNDRY_SNMP_H
 
 #include <stdbool.h>
 #include <stdint.h>

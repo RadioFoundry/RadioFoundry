@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Codeplug editing on a simulated NOR flash with the DM-1701 map: the open-firmware record encoder against the decoder,
 // bytes the model doesn't own kept, the built-in set turned into a stored codeplug by the first edit, zones,
 // contacts and RX group lists, and the round trip read -> write -> read (model and image), with power cuts.

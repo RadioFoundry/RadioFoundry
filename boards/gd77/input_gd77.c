@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 keys (docs/spec/hardware-gd77.md 9.1): a matrix of 4 columns (PTC0-PTC3, driven low one at a time) by 5 rows
 // (PTB19-PTB23, read with pull-ups, low = closed), and four direct inputs (PTB9, PTB1, PTA2, PTA1, low = pressed).
 // The key positions are in keys.h; the roles of the six navigation keys and the four direct keys are provisional

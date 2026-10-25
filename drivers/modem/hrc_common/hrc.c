@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Configuration port access and the operations the HR_C6000 and HR_C5000 drivers share (hrc.h)
 #include <stddef.h>
 #include "hrc.h"

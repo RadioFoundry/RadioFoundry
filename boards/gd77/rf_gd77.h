@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 RF facts as data and pure rules (docs/spec/hardware-gd77.md 5): the AT1846S register profile, the band split of
 // the RF path lines, the order of the transmit and receive switch sequences and the DAC0 ramp. No hardware access:
 // radio_gd77.c drives the pins and the chips from these, and tests/host/gd77RfTest.c checks them. Every value is

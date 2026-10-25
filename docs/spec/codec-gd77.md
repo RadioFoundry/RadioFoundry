@@ -28,7 +28,7 @@ a code address.
 
 ## Placement
 
-The low block's place is the start of ODR's application, so the merge moves the code and leaves the tables.
+The low block's place is the start of RadioFoundry's application, so the merge moves the code and leaves the tables.
 
 | Part | Where it goes |
 |---|---|
@@ -41,7 +41,7 @@ The application ends at 0x55D00 (`boards/gd77/memory.ld`): 335,104 bytes. The co
 the whole codec footprint is the region plus the 80 KB the table windows of the seven builds span. The merged image is
 0x77800 bytes from flash 0x4000, which is inside every stock build's own image length.
 
-What the merge rewrites (the pack spec of each build, `tools/odrflash/odrflash/codec_packs/gd77/<profile>.json`):
+What the merge rewrites (the pack spec of each build, `tools/rfoundry/rfoundry/codec_packs/gd77/<profile>.json`):
 
 | What | Count | Rewritten to |
 |---|---|---|
@@ -81,7 +81,7 @@ About 30 million instructions a second at 8 kHz, a third of the 95 MHz core cloc
 ## The merge
 
 `tools/k22f_codec.py --board gd77 --stock FLAT.bin` (also run by `make BOARD=gd77` when a stock file is in `codecs/`) reads the
-stock firmware as a flat flash image, places the codec as above and writes `build/gd77/odr_gd77_codec.bin`, a flat image
+stock firmware as a flat flash image, places the codec as above and writes `build/gd77/rfoundry_gd77_codec.bin`, a flat image
 from flash 0x4000 for the radio's update path ([hardware-gd77.md](hardware-gd77.md) 10). The tool refuses a file that is
 not one of the seven builds, writes only under `build/` or outside the tree, and never stores the codec anywhere else.
 Unpacking the radio's update file into the flat image is a separate step that this repository does not provide yet.
@@ -91,7 +91,7 @@ Unpacking the radio's update file into the flat image is a separate step that th
 The seven builds were run on the host in a Cortex-M4 model: the stock-address codec against the placed codec, 60 frames
 of tone, noise and silence through encode, encode ECC, FEC decode and decode. The air bits and the PCM are identical for
 every build, and identical between builds. The placed CRC-32s above come from that same pipeline
-(`tools/odrflash/tests/test_k22fcodec.py` pins the arithmetic with a synthetic image).
+(`tools/rfoundry/tests/test_k22fcodec.py` pins the arithmetic with a synthetic image).
 
 ## Open items
 

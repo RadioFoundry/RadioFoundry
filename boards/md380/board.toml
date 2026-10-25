@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The MD-380's registry entry (tools/boards.py, docs/dev/adding-a-radio.md): everything the tools, CI, the docs and the
 # web site know about this radio. Build facts stay in board.mk and config.mk, the memory layout in boards/md380/memory.ld.
 
@@ -49,7 +49,7 @@ family = "usb-dfu"
 keep_codec = true
 stock_download = "https://md380.org/firmware/orig/"
 stock_versions = ["D002.032"]
-backup = { stock = "none", odr = "full", spi_size = 0x1000000 }
+backup = { stock = "none", rfoundry = "full", spi_size = 0x1000000 }
 
 [flash.bootloader]
 steps = [
@@ -78,8 +78,8 @@ spi = { bus = 1, mode = 0, hz = 4500000 }
 # The codec where the merge puts it (docs/spec/codec-placement.md): the main table window at its stock address in
 # sector 8, the small ones in sectors 10 and 11, the code moved to the start of sector 11 and the descriptor. The
 # application has sectors 3-7, so an update leaves the codec sectors alone. Stock firmware keeps the code in sectors 6
-# and 7, so no stock version leaves it in place and odrflash merges it from the stock file. stock lists the SHA-256
-# of each stock file odrflash merges the codec from (tools/odrflash/odrflash/stockfw.py PROFILES)
+# and 7, so no stock version leaves it in place and rfoundry merges it from the stock file. stock lists the SHA-256
+# of each stock file rfoundry merges the codec from (tools/rfoundry/rfoundry/stockfw.py PROFILES)
 [codec]
 tool = "codec_extract"
 stock = ["e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"]

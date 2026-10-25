@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The external SPI NOR flash's bus for the K22F stub (k22stub_spi.c), wired as the board record says. Reads, erases and
 // programs go through the shared command layer (stub/common/stubnor.h).
 #ifndef K22STUB_SPI_H

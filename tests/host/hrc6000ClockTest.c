@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C6000 power-on clock step with each preset (drivers/modem/hrc6000; modem-hrc6000.md 1.2, 3 step 1): run from
 // XTALI, the PLL words, then the PLL and the three dividers, in that order, before anything else is written
 #include <stdio.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 DMR modem: the shared STM32 HR_C6000 glue (platform/stm32f4/hrc/dmr_glue.h) runs the slot engine, the
 // interrupts and the deferred event task; radio_dm1701.c gives it the per-burst RF switch below.
 #ifndef DMR_DM1701_H

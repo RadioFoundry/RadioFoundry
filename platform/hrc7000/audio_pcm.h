@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 PCM audio shared by the boards (audio_pcm.c): the modem's two 10 ms PCM buffers in the shared SRAM as
 // hal_audio_t, paced by the microphone interrupt
 #ifndef HRC_AUDIO_PCM_H

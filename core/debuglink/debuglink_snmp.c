@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The SNMP agent on the debug link (docs/spec/debuglink.md 3.17, docs/spec/snmp.md 7): the snmp view section (the
 // flags and the transport counters; the protocol counters and the other settings are in the MIB itself) and the
 // SNMP command (settings, communities, the host's notification port, a test notification). Both run in the host link

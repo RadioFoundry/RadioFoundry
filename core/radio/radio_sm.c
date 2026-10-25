@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's state machine: channel / zone / VFO selection, software squelch, PTT checks and the TX timer,
 // and the everyday features around them (docs/spec/radio-features.md): scan, busy channel lockout, roger beep and
 // 1750 Hz burst, VOX, beeps, the battery monitor and receiver battery saving.
@@ -11,6 +11,14 @@
 #include "settings/settings.h"
 #include "config.h"
 #include "hal_dtmf.h"
+#if CONFIG_ZONE_EDIT
+#include "codeplug/zone_edit.h"
+#define ZONE_WRITE_BUSY()	zone_edit_busy()
+#define ZONES_MOVED(sm)		(zone_edit_shifts() != (sm)->zone_shifts)
+#else
+#define ZONE_WRITE_BUSY()	false
+#define ZONES_MOVED(sm)		false
+#endif
 #if CONFIG_DMR
 #include "dmr/call/dmr_call.h"
 #include "dmr/ambe/ambeVoice.h"
@@ -37,9 +45,13 @@
 #if CONFIG_DMR_IP_GATEWAY
 #include "hostlink/hostlink_net_air.h"	// the IP gateway's air side (the data service's packet hook)
 #include "hostlink/hostlink_net.h"	// control station passthrough
+#include "dmr/ipGateway.h"		// the off-net route's gateway ID
 #endif
 #if CONFIG_AM_RX
 #include "radio/radio_am.h"	// air band AM receive (docs/spec/airband-and-broadcast.md 3)
+#endif
+#if CONFIG_BCAST_FM
+#include "radio/radio_bcast.h"	// broadcast FM receive (docs/spec/airband-and-broadcast.md 4)
 #endif
 #if CONFIG_APRS
 #include "aprs/afsk.h"			// AFSK_BAUD, the tones
@@ -58,12 +70,17 @@
 
 static const uint32_t vfo_start_hz[] = { 146520000, 145500000, 446000000, 433500000 };
 
-// The VFO's step in use: auto follows the width (the air band's channels are 25 kHz apart)
+// The VFO's step in use: auto follows the width (the air band's channels are 25 kHz apart); in the broadcast band
+// it is the broadcast step setting's
 static void step_update(radio_sm_t *sm)
 {
 	uint32_t hz = sm->vfo_step_set;
 	if (hz == 0)
 		hz = sm->view.ch.bw == RADIO_BW_25K || sm->view.am ? 25000u : RADIO_VFO_STEP_HZ;
+#if CONFIG_BCAST_FM
+	if (sm->vfo_step_set == 0 && sm->view.bcast)
+		hz = radio_bcast_step_hz(sm->set.bcast_step);
+#endif
 	sm->view.vfo_step_hz = hz;
 	sm->view.vfo_step_auto = sm->vfo_step_set == 0;
 }
@@ -236,11 +253,9 @@ static bool clear_temporary(radio_sm_t *sm)
 // (DMR channels never use one)
 static bool tone_needed(const radio_sm_t *sm)
 {
-#if CONFIG_AM_RX
-	if (sm->view.am) {
-		return false;	// AM: sub-audio ignored
+	if (sm->view.am || sm->view.bcast) {
+		return false;	// AM and broadcast: sub-audio ignored
 	}
-#endif
 	return sm->view.ch.rx_tone.type != TONE_NONE && sm->view.ch.mode == RADIO_MODE_FM;
 }
 
@@ -269,6 +284,25 @@ static void reset_tone(radio_sm_t *sm)
 	sm->tone_count = 0;
 }
 
+// The APRS job's phases (aprs_phase)
+enum { APRS_RF_OFF = 0, APRS_RF_LISTEN, APRS_RF_KEYUP, APRS_RF_SEND };
+
+// A broadcast station is listened to, not squelched: the state stays RX (so the screen shows the level and the LED is on)
+// whatever the signal, and the audio plays. A scan keeps the squelch to stop on stations
+static bool bcast_listening(const radio_sm_t *sm)
+{
+#if CONFIG_BCAST_FM
+	bool own_rx = true;	// an APRS job has the channel receiver on its own frequency
+#if CONFIG_APRS
+	own_rx = sm->aprs_phase == APRS_RF_OFF;
+#endif
+	return own_rx && sm->view.bcast && !sm->view.bcast_fault && !scan_on(&sm->scan);
+#else
+	(void)sm;
+	return false;
+#endif
+}
+
 // Speaker and LEDs follow the state; only changes go to the board
 // FM: the board's speaker path follows the squelch (or the monitor). DMR voice goes out as PCM from the vocoder
 // (core/dmr/ambe routes the speaker itself); the green LED shows a call being played
@@ -292,9 +326,19 @@ static void outputs(radio_sm_t *sm)
 	}
 #endif
 
-	if (sm->audio_out != (int8_t)open) {
-		sm->audio_out = (int8_t)open;
-		board.radio->audio(open);
+	// The broadcast receiver plays instead of the channel receiver while the channel is a broadcast one
+	bool bcast = false;
+#if CONFIG_BCAST_FM
+	bcast = sm->view.bcast;
+	bool bcast_play = bcast && !tx && bcast_listening(sm);
+	if (sm->bcast_on && sm->bcast_audio_out != (int8_t)((open || bcast_play) && bcast)) {
+		sm->bcast_audio_out = (int8_t)((open || bcast_play) && bcast);
+		board.bcast->audio((open || bcast_play) && bcast);
+	}
+#endif
+	if (sm->audio_out != (int8_t)(open && !bcast)) {
+		sm->audio_out = (int8_t)(open && !bcast);
+		board.radio->audio(open && !bcast);
 	}
 	if (sm->green_out != (int8_t)green) {
 		sm->green_out = (int8_t)green;
@@ -314,6 +358,7 @@ static void outputs(radio_sm_t *sm)
 		sm->red_out = (int8_t)tx;
 		board.power->led(LED_RED, tx);
 	}
+	sm->view.leds = (uint8_t)((green ? RADIO_LED_GREEN : 0u) | (tx ? RADIO_LED_RED : 0u));
 }
 
 static void end_reception(radio_sm_t *sm, uint32_t now_ms)
@@ -328,6 +373,57 @@ static void end_reception(radio_sm_t *sm, uint32_t now_ms)
 // Receive on what view.ch says now
 static void dmr_begin(radio_sm_t *sm);
 static void dmr_end(radio_sm_t *sm);
+
+#if CONFIG_BCAST_FM
+// The broadcast receiver on or off. Off mutes it first
+static void bcast_power(radio_sm_t *sm, bool on)
+{
+	if (on == sm->bcast_on) {
+		return;
+	}
+	if (on) {
+		sm->bcast_on = board.bcast->power(true);
+		sm->bcast_audio_out = -1;
+		sm->bcast_volume_out = -1;
+		return;
+	}
+	board.bcast->audio(false);
+	board.bcast->power(false);
+	sm->bcast_on = false;
+}
+
+// Broadcast or not for what view.ch says now (radio_bcast.h): on a broadcast channel the receiver is switched on and
+// tuned; view.bcast_fault says it didn't answer. Never in hotspot mode, where the host link owns the radio
+static void bcast_tune(radio_sm_t *sm)
+{
+	sm->view.bcast = !sm->view.am && !sm->hotspot && radio_bcast_channel(&sm->view.ch);
+	if (!sm->view.bcast) {
+		bcast_power(sm, false);
+		sm->view.bcast_fault = false;
+		return;
+	}
+	bcast_power(sm, true);
+	sm->view.bcast_fault = !sm->bcast_on || !board.bcast->tune(radio_bcast_khz(sm->view.ch.rx_hz));
+}
+
+// The squelch and the meter on the broadcast receiver's signal strength; its volume follows the radio's
+static void bcast_status(radio_sm_t *sm, radio_status_t *st)
+{
+	bcast_status_t bs;
+	bool got = sm->bcast_on && board.bcast->status(&bs);
+	uint8_t rssi = got ? bs.rssi : 0;
+	sm->view.bcast_khz = got ? bs.khz : 0;
+	st->rssi_dbm = (int16_t)(rssi + RADIO_BCAST_DBUV_DBM);
+	st->noise = radio_bcast_noise(rssi);
+	st->carrier = false;
+	st->tone_ok = true;
+	uint8_t vol = radio_bcast_volume(board.radio->volume != NULL ? sm->volume_sent : -1);
+	if (sm->bcast_on && sm->bcast_volume_out != (int8_t)vol) {
+		sm->bcast_volume_out = (int8_t)vol;
+		board.bcast->volume(vol);
+	}
+}
+#endif
 
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -354,10 +450,13 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->view.am && !board.radio->rx_am(sm->view.ch.rx_hz, (radio_bw_t)sm->view.ch.bw)) {
 		sm->view.am = false;	// the board refused: FM as before (TX stays refused in the air band)
 	}
-	if (!sm->view.am)
 #endif
-	board.radio->rx(sm->view.ch.rx_hz, (radio_bw_t)sm->view.ch.bw,
-			mode == RADIO_MODE_DMR ? &no_tone : &sm->view.ch.rx_tone);
+#if CONFIG_BCAST_FM
+	bcast_tune(sm);		// the channel receiver keeps its last frequency, muted, while the broadcast one plays
+#endif
+	if (!sm->view.am && !sm->view.bcast)
+		board.radio->rx(sm->view.ch.rx_hz, (radio_bw_t)sm->view.ch.bw,
+				mode == RADIO_MODE_DMR ? &no_tone : &sm->view.ch.rx_tone);
 	if (mode == RADIO_MODE_DMR) {
 		dmr_begin(sm);		// after set_mode(DMR): the modem only starts in DMR mode
 	}
@@ -587,6 +686,11 @@ static void vfo_step(radio_sm_t *sm, int dir, uint32_t now_ms)
 #else
 	int64_t hz = (int64_t)sm->view.ch.rx_hz + (int64_t)dir * sm->view.vfo_step_hz;
 #endif
+#if CONFIG_BCAST_FM
+	if (sm->view.bcast && sm->vfo_step_set == 0) {
+		hz = radio_bcast_step(sm->view.ch.rx_hz, dir, sm->set.bcast_step);	// 200 kHz lands on the odd tenths
+	}
+#endif
 	uint32_t next;
 	if (hz > 0 && hz <= (int64_t)UINT32_MAX && board_in_band((uint32_t)hz, false)) {
 		next = (uint32_t)hz;
@@ -637,6 +741,11 @@ static uint8_t tx_check(const radio_sm_t *sm)
 #if CONFIG_AM_RX
 	if (sm->view.am || radio_am_tx_refused(ch->tx_hz)) {
 		return TXDENY_AM;	// the air band is receive only, whatever the codeplug says
+	}
+#endif
+#if CONFIG_BCAST_FM
+	if (sm->view.bcast || radio_bcast_tx_refused(ch->tx_hz)) {
+		return TXDENY_BCAST;	// so is the broadcast band
 	}
 #endif
 	if (ch->tx_hz == 0) {
@@ -1423,13 +1532,15 @@ static void data_rx(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 	dmrDataServiceRxBurst(&d, now_ms);
 }
 
+// A DMR VFO sends data as a DMR channel does: it has its own color code, slot and talk target, and tx_check covers its
+// frequency. An FM VFO is out by the mode
 static bool data_can_send(const radio_sm_t *sm)
 {
 	bool roaming = false;
 #if CONFIG_DMR_ROAMING
 	roaming = roam_searching(&sm->roam);	// never on a site being looked at
 #endif
-	return sm->dmr_running && !sm->hotspot && sm->view.ch.mode == RADIO_MODE_DMR && !sm->view.vfo &&
+	return sm->dmr_running && !sm->hotspot && sm->view.ch.mode == RADIO_MODE_DMR &&
 		tx_check(sm) == TXDENY_NONE && sm->view.dmr.own_id != 0 && !roaming;
 }
 
@@ -1488,7 +1599,7 @@ static void data_save_settings(uint32_t now_ms)
 	    cur.callAlertAck == data_saved.callAlertAck && cur.lrrpReply == data_saved.lrrpReply &&
 	    cur.smsFormat == data_saved.smsFormat && cur.radioCheckEtsi == data_saved.radioCheckEtsi &&
 	    cur.udpCompress == data_saved.udpCompress && cur.ipConfirmed == data_saved.ipConfirmed &&
-	    cur.ipConfirmedTries == data_saved.ipConfirmedTries &&
+	    cur.ipConfirmedTries == data_saved.ipConfirmedTries && cur.ipGatewayId == data_saved.ipGatewayId &&
 	    memcmp(cur.ipConfirmedRule, data_saved.ipConfirmedRule, sizeof(cur.ipConfirmedRule)) == 0) {
 		return;
 	}
@@ -1507,6 +1618,7 @@ static void data_save_settings(uint32_t now_ms)
 				  ((cur.ipConfirmed == DMR_IPC_OFF ? SETTINGS_DS_IPC_OFF :
 				    cur.ipConfirmed == DMR_IPC_ALL ? SETTINGS_DS_IPC_ALL : 0u) << SETTINGS_DS_IPC_SHIFT));
 	memcpy(st->ds_ip_rule, cur.ipConfirmedRule, sizeof(st->ds_ip_rule));
+	st->ds_ip_gateway = cur.ipGatewayId;
 	st->ds_stored = 1;
 	settings_end(now_ms);
 }
@@ -1616,6 +1728,7 @@ static void data_init(radio_sm_t *sm)
 				  DMR_IPC_RULES;
 		set.ipConfirmedTries = (st.ds_ip_cnf & 0x0F) ? (st.ds_ip_cnf & 0x0F) : DMR_IPC_TRIES_DEFAULT;
 		memcpy(set.ipConfirmedRule, st.ds_ip_rule, sizeof(set.ipConfirmedRule));
+		set.ipGatewayId = st.ds_ip_gateway & 0xFFFFFFu;	// 0 in a record from before it (off)
 	}
 	data_saved = set;
 	data_tx.list = NULL;
@@ -1652,6 +1765,7 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 		sm->power_off_busy = dmrDataServicePowerOff();	// ARS deregistration, until it has gone out
 	}
 #if CONFIG_DMR_IP_GATEWAY
+	ipGatewaySetOffNetId(data_saved.ipGatewayId);	// the setting in force (data_save_settings above follows it)
 	hostlink_net_air_tick(sm->view.dmr.own_id, now_ms);
 #endif
 }
@@ -2838,7 +2952,18 @@ static void roam_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 		uint8_t bit = (uint8_t)(1u << (zi % 8u));
 		sm->roam_zones[zi / 8u] = (uint8_t)(on ? sm->roam_zones[zi / 8u] | bit : sm->roam_zones[zi / 8u] & ~bit);
 		settings_t *s = settings_begin();
-		memcpy(s->roam_zones, sm->roam_zones, sizeof(s->roam_zones));
+		// Only this zone's flag: the others are the zone writes' to move (zone_settle.c), and a reload not done yet
+		// leaves this zone's index the old one
+		uint16_t saved = zi;
+#if CONFIG_ZONE_EDIT
+		if (zone_edit_map(sm->zone_shifts, zone_edit_shifts(), zi, &saved) != ZONE_MAP_KEPT) {
+			saved = SETTINGS_ROAM_ZONE_BYTES * 8u;	// gone or lost: the reload reads the saved flags again
+		}
+#endif
+		if (saved < SETTINGS_ROAM_ZONE_BYTES * 8u) {
+			uint8_t sb = (uint8_t)(1u << (saved % 8u));
+			s->roam_zones[saved / 8u] = (uint8_t)(on ? s->roam_zones[saved / 8u] | sb : s->roam_zones[saved / 8u] & ~sb);
+		}
 		settings_end(now_ms);
 		roam_rebuild(sm, now_ms, true);
 		break;
@@ -2877,12 +3002,11 @@ void radio_sm_shown_view(const radio_sm_t *sm, radio_view_t *v) { (void)sm; (voi
 #define APRS_PERSIST		63	// p = (63 + 1) / 256 per clear slot
 #define APRS_KEYUP_MS		25	// carrier up before the tones (the preamble flags follow)
 #define APRS_SEND_MAX_MS	6000u	// longer than any tone buffer (4096 symbols = 3.4 s)
-enum { APRS_RF_OFF = 0, APRS_RF_LISTEN, APRS_RF_KEYUP, APRS_RF_SEND };
 
 static bool aprs_can_start(const radio_sm_t *sm)
 {
-	if (sm->aprs_phase != APRS_RF_OFF || sm->ptt || sm->hotspot || sm->view.state != RS_IDLE || sm->view.monitor ||
-	    sm->power_off_req || sm->set.tx_inhibit || sm->batt.level == BATT_CRITICAL || board.afsk == NULL ||
+	if (sm->aprs_phase != APRS_RF_OFF || sm->ptt || sm->hotspot || (sm->view.state != RS_IDLE && !(sm->view.state == RS_RX && bcast_listening(sm))) ||
+	    sm->view.monitor || sm->power_off_req || sm->set.tx_inhibit || sm->batt.level == BATT_CRITICAL || board.afsk == NULL ||
 	    board.afsk->tx_start == NULL) {
 		return false;
 	}
@@ -3428,6 +3552,11 @@ bool radio_sm_hotspot_freq_ok(uint32_t rx_hz, uint32_t tx_hz)
 		return false;	// never a transmitter in the air band
 	}
 #endif
+#if CONFIG_BCAST_FM
+	if (radio_bcast_tx_refused(tx_hz)) {
+		return false;	// nor in the broadcast band
+	}
+#endif
 	return rx_hz != 0 && tx_hz != 0 && board_in_band(rx_hz, false) && board_in_band(tx_hz, true);
 }
 
@@ -3573,6 +3702,10 @@ static void hotspot_enter(radio_sm_t *sm, uint32_t rx_hz, uint32_t now_ms)
 	}
 	scan_stop(sm, false, now_ms);
 	end_reception(sm, now_ms);
+#if CONFIG_BCAST_FM
+	bcast_power(sm, false);
+	sm->view.bcast = sm->view.bcast_fault = false;
+#endif
 	if (sm->board_mode == RADIO_MODE_DMR) {
 		dmr_end(sm);	// the modem is free for the hotspot
 	}
@@ -3865,7 +3998,9 @@ static void persist(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	st->vfo = vfo;
-	if (z != NULL) {
+	// Zones moved and not followed yet: the indexes here are the old ones, and the zone write saved the new ones
+	// (zone_settle.c). Checked under the settings lock, so a write can't come between
+	if (z != NULL && !ZONES_MOVED(sm)) {
 		st->zone_index = zone;
 		st->zone_pos = pos;
 		st->channel = pos < z->count ? z->channels[pos] : 0;
@@ -3908,6 +4043,9 @@ static void clamp_settings(radio_settings_t *s)
 	}
 	if (s->dual_delay_ms > RADIO_DUAL_DELAY_MAX_MS) {
 		s->dual_delay_ms = RADIO_DUAL_DELAY_MAX_MS;
+	}
+	if (s->bcast_step > RADIO_BCAST_STEP_100) {
+		s->bcast_step = RADIO_BCAST_STEP_200_ODD;
 	}
 	if (s->roam_rssi_dbm < -125) {
 		s->roam_rssi_dbm = -125;
@@ -3960,6 +4098,10 @@ static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 	// Page 1: 0 (never set, or a page 0 alone) keeps the default
 	if (st->rs_dual_delay != 0) {
 		s->dual_delay_ms = (uint16_t)((st->rs_dual_delay - 1u) * 100u);
+		clamp_settings(s);
+	}
+	if (st->rs_bcast_step != 0) {
+		s->bcast_step = (uint8_t)(st->rs_bcast_step - 1u);
 		clamp_settings(s);
 	}
 	if (st->rs_stored != 1) {
@@ -4016,6 +4158,7 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->rs_backlight_off_s = s->backlight_off_s;
 	st->rs_reply_s = s->reply_s;
 	st->rs_dual_delay = (uint8_t)(s->dual_delay_ms / 100u + 1u);
+	st->rs_bcast_step = (uint8_t)(s->bcast_step + 1u);
 	st->rs_stored = 1;
 	st->roam_rssi_dbm = s->roam_rssi_dbm;
 	st->roam_hyst_db = s->roam_hyst_db;
@@ -4067,6 +4210,47 @@ void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t n
 
 // The codeplug changed underneath (an edit, a CPS write) or the preferences did: read them again, keep the zone and
 // the channel if they still exist
+#if CONFIG_ZONE_EDIT
+// A zone added ahead of others or a zone deleted moves the indexes after it (zone_edit.h). Followed here: the zone in
+// use (in the VFO too: the zone it goes back to) and dual watch's two channels. The saved roaming zones were moved by
+// the zone write itself (zone_settle.c; a deleted one loses its flag) and the reload reads them. Returns the zone in
+// use's index now; *gone: it was deleted, and the index is the zone that took its place
+static uint16_t follow_zones(radio_sm_t *sm, bool *gone, uint32_t now_ms)
+{
+	uint32_t from = sm->zone_shifts, to = zone_edit_shifts();
+	uint16_t zi = sm->view.zone_index, out;
+	sm->zone_shifts = to;
+	*gone = false;
+	if (from == to) {
+		return zi;
+	}
+	zone_map_t m = zone_edit_map(from, to, zi, &out);
+	if (m != ZONE_MAP_LOST) {
+		zi = out;
+		*gone = m == ZONE_MAP_GONE;
+	}
+#if CONFIG_SCAN
+	for (uint8_t i = 0; i < 2; i++) {
+		if (!sm->dual[i].vfo && zone_edit_map(from, to, sm->dual[i].zone, &out) != ZONE_MAP_LOST) {
+			sm->dual[i].zone = out;		// a deleted one: the UI finds its channel again or ends the watch
+		}
+	}
+#endif
+	(void)now_ms;
+	return zi;
+}
+
+// A checksum of the zone in use and its channel list: an edit of it ends a zone scan (its skips are by position)
+static uint32_t zone_sum(const radio_sm_t *sm)
+{
+	uint32_t h = sm->have_channels ? 2166136261u ^ sm->zone.count : 0;
+	for (uint16_t i = 0; sm->have_channels && i < sm->zone.count; i++) {
+		h = (h ^ sm->zone.channels[i]) * 16777619u;
+	}
+	return h ^ sm->view.zone_index;
+}
+#endif
+
 static void reload(radio_sm_t *sm, uint32_t now_ms)
 {
 	static settings_t st;	// off the radio task's stack: its deepest path goes through here (stack-check.md)
@@ -4087,7 +4271,26 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 #endif
 	uint16_t number = sm->have_channels && sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
 	bool vfo = sm->view.vfo;
-	select_position(sm, sm->view.zone_index, number, sm->view.zone_pos);
+	uint16_t zi = sm->view.zone_index, pos = sm->view.zone_pos;
+#if CONFIG_ZONE_EDIT
+	uint32_t sum = zone_sum(sm);
+	bool gone;
+	zi = follow_zones(sm, &gone, now_ms);
+	if (gone) {
+		// The zone in use was deleted: the zone that took its place (the last one when it was the last), on the
+		// same channel when that zone holds it, else its first channel
+		uint16_t n = codeplug_zone_count();
+		zi = n > 0 && zi >= n ? (uint16_t)(n - 1u) : zi;
+		pos = 0;
+	}
+	sm->view.zone_index = zi;
+#endif
+	select_position(sm, zi, number, pos);
+#if CONFIG_ZONE_EDIT && CONFIG_SCAN
+	if (sm->scan.kind == SCAN_ZONE && zone_sum(sm) != sum) {
+		scan_stop(sm, false, now_ms);
+	}
+#endif
 	apply_prefs(sm, &st);
 	radio_settings_t rs;
 	settings_to_radio(&st, &rs);
@@ -4137,11 +4340,15 @@ static const hal_audio_t *pcm_audio(void)
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 {
 	settings_t st;
-	settings_read(&st);
+	settings_read(&st);	// a zone add or delete a power cut interrupted is settled first (radio_core_start)
 
 	memset(sm, 0, sizeof(*sm));
 	sm->audio_out = -1;
 	sm->green_out = -1;
+#if CONFIG_BCAST_FM
+	sm->bcast_audio_out = -1;
+	sm->bcast_volume_out = -1;
+#endif
 	sm->red_out = -1;
 #if CONFIG_DUAL_WATCH
 	sm->rx2_audio_out = -1;
@@ -4171,6 +4378,9 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	step_update(sm);
 	sm->view.source = codeplug_source();
 	sm->codeplug_serial = codeplug_serial();
+#if CONFIG_ZONE_EDIT
+	sm->zone_shifts = zone_edit_shifts();
+#endif
 
 #if CONFIG_DUAL_WATCH
 	vfo_defaults(&sm->vfo_ch);	// the second VFO first, then moved to vfo_other
@@ -4692,7 +4902,7 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 #if CONFIG_APRS
 		aprs_reload();
 #endif
-		if (busy || sm->ptt) {
+		if (busy || sm->ptt || ZONE_WRITE_BUSY()) {
 			sm->reload_pending = true;	// after the transmission or the hotspot (radio_sm_poll)
 		} else {
 			reload(sm, now_ms);
@@ -4858,7 +5068,7 @@ static void battery_poll(radio_sm_t *sm, uint32_t now_ms)
 static bool save_allowed(const radio_sm_t *sm, uint32_t now_ms)
 {
 	if (sm->set.rx_save == 0 || board.radio->rx_sleep == NULL || sm->view.ch.mode != RADIO_MODE_FM || sm->hotspot ||
-			sm->view.state != RS_IDLE || sm->view.monitor || sm->ptt || sm->view.ch.no_eco) {
+			sm->view.state != RS_IDLE || sm->view.monitor || sm->ptt || sm->view.ch.no_eco || sm->view.bcast) {
 		return false;
 	}
 #if CONFIG_APRS
@@ -5023,8 +5233,9 @@ static int16_t rssi_held(radio_sm_t *sm, int16_t rssi_dbm)
 void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
-	if ((sm->reload_pending || codeplug_serial() != sm->codeplug_serial) && !sm->hotspot && !sm->ptt &&
-	    sm->view.state != RS_TX) {
+	// codeplug_serial() before zone_edit_busy(): a zone write that moved indexes has its log entry by then
+	if ((sm->reload_pending || codeplug_serial() != sm->codeplug_serial || ZONES_MOVED(sm)) && !ZONE_WRITE_BUSY() &&
+	    !sm->hotspot && !sm->ptt && sm->view.state != RS_TX) {
 		reload(sm, now_ms);
 		persist(sm, now_ms);
 	}
@@ -5055,9 +5266,20 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #endif
+	// An APRS job has the channel receiver on its own frequency in FM: its carrier sense reads that receiver as is
+	bool own_rx = true;
+#if CONFIG_APRS
+	own_rx = sm->aprs_phase == APRS_RF_OFF;
+#endif
+	(void)own_rx;
+#if CONFIG_BCAST_FM
+	if (sm->view.bcast && own_rx)
+		bcast_status(sm, &st);
+	else
+#endif
 	board.radio->status(&st);
 #if CONFIG_AM_RX
-	if (sm->view.am) {
+	if (sm->view.am && own_rx) {
 		st.noise = radio_am_noise(st.rssi_dbm);	// AM: the squelch (and scan) work on the signal strength
 		st.tone_ok = true;
 	}
@@ -5177,8 +5399,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	follow_tone(sm, st.tone_ok);
 	uint8_t sq = sm->view.squelch;
 	uint8_t open_below = radio_sm_squelch_open_below(sq);
-	bool opens = sm->view.tone_ok && (sq == 0 || st.noise < open_below) && !dual_peeking(sm);
-	bool holds = sm->view.tone_ok && (sq == 0 || st.noise < open_below + RADIO_SQL_HYST_DB);
+	bool listening = bcast_listening(sm);
+	bool opens = (listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below))) && !dual_peeking(sm);
+	bool holds = listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below + RADIO_SQL_HYST_DB));
 
 	if (sm->view.state == RS_IDLE) {
 		if (opens) {

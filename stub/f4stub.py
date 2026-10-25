@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """f4stub: the host side of the STM32F4 flash stub (every STM32F4 board). docs/spec/stub-stm32f4.md.
 
-The stub (stub/stm32f4, built with `make -C stub/stm32f4`) is loaded by a running ODR built with CONFIG_STUB_ENTRY=y
+The stub (stub/stm32f4, built with `make -C stub/stm32f4`) is loaded by a running RadioFoundry built with CONFIG_STUB_ENTRY=y
 through the debug link's STUB command, over the radio's USB serial port. It then answers on the same port (or, if it
 had to enumerate again, on a port with the same serial number). stubtool.py hands STM32 radios to this module:
 
-    stubtool.py PORT --odr-enter --write-app build/dm1701/odr_dm1701.bin   install a build
-    stubtool.py PORT --odr-enter --write-app build/dm1701/odr_dm1701_codec.bin   a build merged with the codec
-    stubtool.py PORT --odr-enter --progmem flash.bin                      back up the whole internal flash (1 MB)
-    stubtool.py PORT --odr-enter --verify-progmem flash.bin               compare by CRC
-    stubtool.py PORT --odr-enter --q128 spi.bin                           back up the external SPI flash (16 MB)
-    stubtool.py PORT --odr-enter --write-q128 spi.bin                     put it back (changed 4 KB sectors only)
+    stubtool.py PORT --rfoundry-enter --write-app build/dm1701/rfoundry_dm1701.bin   install a build
+    stubtool.py PORT --rfoundry-enter --write-app build/dm1701/rfoundry_dm1701_codec.bin   a build merged with the codec
+    stubtool.py PORT --rfoundry-enter --progmem flash.bin                      back up the whole internal flash (1 MB)
+    stubtool.py PORT --rfoundry-enter --verify-progmem flash.bin               compare by CRC
+    stubtool.py PORT --rfoundry-enter --q128 spi.bin                           back up the external SPI flash (16 MB)
+    stubtool.py PORT --rfoundry-enter --write-q128 spi.bin                     put it back (changed 4 KB sectors only)
     stubtool.py PORT --attach --board md380 --boot reset                  restart into the firmware
     f4stub.py --self-test                                                 against a simulated radio, no hardware
     f4stub.py --embed build/stub-stm32f4/f4stub.bin                       put a new stub build into this file
     f4stub.py --check-embedded build/stub-stm32f4/f4stub.bin              exit 1 when the build differs from it
 
 The tool sends the stub embedded below (checked by its SHA-256), so the host tools and the web flasher send the same
-bytes; `--odr-stub FILE` sends another build instead. After a change to stub/stm32f4, rebuild and run --embed; CI
+bytes; `--rfoundry-stub FILE` sends another build instead. After a change to stub/stm32f4, rebuild and run --embed; CI
 fails while the embedded copy and a fresh build differ.
 
 Framing and the debug link loader are stubtool.Radio's; what differs is here: the ops (ERASE / PROGRAM / RESET are
@@ -30,7 +30,7 @@ and kept (no radio has such a sector since the codec moved).
 One stub image serves every radio. The board facts (SPI flash wiring, crystal, bootloader end) come from the board
 registry (board.toml [flash.stub], pins.h, board.mk; tools/boards.py) into BOARDS below and go to the stub as a CONFIG
 record (config_record) right after HELLO; the stub writes nothing until it has one, and the
-tool checks its echo in the next HELLO. The board comes from the running ODR's VERSION reply, or from --board.
+tool checks its echo in the next HELLO. The board comes from the running RadioFoundry's VERSION reply, or from --board.
 """
 import base64
 import hashlib
@@ -43,7 +43,7 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stubtool  # noqa: E402  (the shared framing, LZ4 decoder and debug link loader)
-from stubtool import odrboards  # noqa: E402  (the board registry, tools/odrflash/odrflash/registry.json)
+from stubtool import rfoundryboards  # noqa: E402  (the board registry, tools/rfoundry/rfoundry/registry.json)
 
 # --- F4STUB begin (f4stub.py --embed rewrites everything up to the end marker)
 F4STUB_SHA256 = "b699b9397efb419215eedb0fe090d702a8e02f759cb1d8789e5197a3a4268bc8"
@@ -153,7 +153,7 @@ APP_BASE = 0x0800C000                  # sector 3: the bootloader starts the app
 SUM_MAX = 800                          # SUMS records per request (the stub allows 820)
 READ_PACK = 16                         # blocks per READ request
 ERASE_TIMEOUT = 6.0                    # 128 KB: 2 s worst case in the data sheet, the stub gives up at 4 s
-RUN_ADDR = 0x20000000                  # the stub's link address, which ODR reports as STUB INFO's load_addr
+RUN_ADDR = 0x20000000                  # the stub's link address, which RadioFoundry reports as STUB INFO's load_addr
 SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the stack use all of it after the jump
 
 # Flash the firmware owns on each radio: the application region of its linker script (the board registry,
@@ -170,7 +170,7 @@ SRAM_SIZE = 128 * 1024                 # stub/stm32f4/f4stub.ld: .bss and the st
 BOARDS = {b.id: {"name": b.name, "names": tuple(b.debuglink_names), "owned": [b.app_region],
                  "codec": (b.app_region[1], b.flash_end), "id": b.stub["id"], "hse": b.stub["hse"],
                  "boot_end": b.stub["boot_end"], "spi": b.stub["spi"]}
-          for b in odrboards.BOARDS.values() if b.stub and b.stub["tool"] == "f4stub"}
+          for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "f4stub"}
 # The tool installs at one application base, which every profile's record must give
 for _bid, _b in BOARDS.items():
     if _b["boot_end"] != APP_BASE:
@@ -283,7 +283,7 @@ class F4Error(stubtool.DumpError):
     pass
 
 
-STUB_USB_ID = (0x1FC9, 0x0094)	# ODR's and the stub's USB identity (same serial number too)
+STUB_USB_ID = (0x1FC9, 0x0094)	# RadioFoundry's and the stub's USB identity (same serial number too)
 PORT_FALLBACK_S = 10.0		# how long the original port name gets before a look-alike is tried
 PORT_WAIT_S = 20.0		# how long attach() waits in all for the stub's port after a fresh enumeration
 
@@ -301,7 +301,7 @@ def usb_ports():
 
 def pick_port(ports, orig):
     """The port the stub came back on, when the one it left is gone or stale. ports: PortInfo list; orig: the PortInfo
-    of the port ODR was on (None if it's unknown). The radio keeps its USB serial number, but a re-enumeration can give
+    of the port RadioFoundry was on (None if it's unknown). The radio keeps its USB serial number, but a re-enumeration can give
     it the next ttyACM number while Linux still holds the old one, so the name is no proof. When the original's USB
     location is known (the physical port, what /dev/serial/by-path encodes) only a port there counts. Otherwise the
     same serial number if only one port has it, else the only port with the stub's USB ID. None when that is not
@@ -390,7 +390,7 @@ def inside_git_tree(path):
 
 def load_segments(path, board_id, chip=None):
     """[(addr, bytes)] for a build: the application .bin at the application base (0x0800C000 on the STM32F4), and for
-    an image merged with the codec (odr_<board>_codec.bin) the codec area as a second segment. The merged image runs
+    an image merged with the codec (rfoundry_<board>_codec.bin) the codec area as a second segment. The merged image runs
     to the codec area's end, or to the profile's "codec_image_end" (the GD-77's ends with the descriptor), the rest of
     the area then counted erased."""
     chip = chip or F4
@@ -454,7 +454,7 @@ class F4Radio(stubtool.Radio):
 
     def configure(self, board_id):
         """Send the board's record (CONFIG) and check the echo in the next HELLO; the stub writes nothing before. Also
-        what stubtool.Radio.odr_enter calls once the stub answers (board_id None there unless run() passed one). A stub
+        what stubtool.Radio.rfoundry_enter calls once the stub answers (board_id None there unless run() passed one). A stub
         already configured with exactly this record is left as it is. board_id None: keep what a configured stub has
         (an --attach without --board), else stay unconfigured (reads of the internal flash only). A stub before version
         4 (2, or 3 with only the image header) has no CONFIG: its wiring is built in (Chip.v2_wiring), so it is refused
@@ -491,7 +491,7 @@ class F4Radio(stubtool.Radio):
                 self.chip.boards[board_id]["name"] if board_id else "a radio (pass --board)"))
 
     def attach(self):
-        """After ENTER: the stub either adopted ODR's USB device (same port, answers at once) or enumerated again (the
+        """After ENTER: the stub either adopted RadioFoundry's USB device (same port, answers at once) or enumerated again (the
         port goes away and comes back with the same serial number)."""
         end = time.monotonic() + 2.0
         while time.monotonic() < end:
@@ -518,14 +518,14 @@ class F4Radio(stubtool.Radio):
                 except (stubtool.DumpError, OSError):
                     if time.monotonic() > end:
                         raise F4Error("the stub's USB port did not come back within %d s: power-cycle the radio "
-                                      "(ODR starts again) and check the cable" % PORT_WAIT_S)
+                                      "(RadioFoundry starts again) and check the cable" % PORT_WAIT_S)
                     time.sleep(0.3)
         self.log("%s stub v%d: %d KB flash, security byte 0x%02X, %s, USB %s" % (
             self.chip.title, self.version, self.flash_kb, self.rdp,
             "configured for the %s" % self.chip.boards[self.board]["name"] if self.board else
             ("SPI flash %d KB (JEDEC %s)" % (self.spi_size // 1024, self.spi_id) if self.spi_size else
              "not configured yet" if self.version >= CONFIG_VERSION else "no SPI flash"),
-            "adopted from ODR" if self.adopted else "enumerated again"))
+            "adopted from RadioFoundry" if self.adopted else "enumerated again"))
 
     def peek(self, addr, n):
         return self.request(OP_PEEK, addr.to_bytes(4, "big") + n.to_bytes(2, "big"))
@@ -817,7 +817,7 @@ class F4Radio(stubtool.Radio):
 
 
 def board_from_version(radio, chip=None):
-    """The board id from a running ODR's debug link VERSION reply (board=...), or None."""
+    """The board id from a running RadioFoundry's debug link VERSION reply (board=...), or None."""
     r = radio.dl_request(0x02, b"")
     if not r or r[0] != 0:
         return None
@@ -843,7 +843,7 @@ def stub_stack_top(image):
 
 
 def check_stub_fits(image, load, size, chip=None):
-    """Refuse an image that is not this chip's stub, or a span ODR reports that is not where the stub runs. ODR stages
+    """Refuse an image that is not this chip's stub, or a span RadioFoundry reports that is not where the stub runs. RadioFoundry stages
     the image in an 8 KB buffer and copies it to its link address before the jump (docs/spec/debuglink.md 3.18), so
     the HR_C7000 rule (bss and stack inside the span) does not apply: after the jump the stub owns its SRAM."""
     chip = chip or F4
@@ -852,13 +852,13 @@ def check_stub_fits(image, load, size, chip=None):
         raise F4Error("this does not look like the %s stub image (no stub entry code at its start)" % chip.title)
     run, end = chip.run_addr, chip.run_addr + chip.sram_size
     if load != run:
-        raise F4Error("ODR reports its stub span at 0x%X; the %s stub runs at 0x%X" % (load, chip.title, run))
+        raise F4Error("RadioFoundry reports its stub span at 0x%X; the %s stub runs at 0x%X" % (load, chip.title, run))
     if not run + len(image) < top <= end:
         raise F4Error("this stub image's stack top 0x%X is outside the SRAM it runs in (0x%X-0x%X)" % (top, run, end))
 
 
 # The image header (stub/stm32f4/f4stub_header.h, docs/spec/stub-stm32f4.md 3.1): 16 bytes at offset 0x10, little
-# endian. ODR started with CONFIG_WATCHDOG enters only a stub whose header has the magic, a version of at least
+# endian. RadioFoundry started with CONFIG_WATCHDOG enters only a stub whose header has the magic, a version of at least
 # HDR_VERSION_FEEDS_IWDG and the feed flag. --self-test checks these numbers against f4stub_header.h
 HDR_OFFSET, HDR_MAGIC, HDR_LAYOUT, HDR_SIZE = 0x10, 0x48533446, 1, 16
 HDR_VERSION_FEEDS_IWDG, HDR_FLAG_FEEDS_IWDG = 3, 0x1
@@ -921,16 +921,16 @@ def run(a, port, reopen, log=print, chip=None):
     chip = chip or F4
     radio = F4Radio(port, log=log, retries=a.retries, reopen=reopen, chip=chip)
     board = a.board
-    if a.odr_enter:
+    if a.rfoundry_enter:
         found = board_from_version(radio, chip)
         if board is None:
             board = found
         elif found is not None and found != board:
             raise F4Error("the radio says it is a %s, not a %s" % (found, board))
-        image = open(a.odr_stub, "rb").read() if a.odr_stub else chip.stub_image()
+        image = open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else chip.stub_image()
         if chip is F4:
             log(describe_stub(image))          # the image header (the K22F stub has none)
-        radio.odr_enter(image, chip.run_addr, board=board)
+        radio.rfoundry_enter(image, chip.run_addr, board=board)
     else:
         radio.attach()
         if board is None and radio.board is not None:
@@ -1153,7 +1153,7 @@ def self_test():
             print("FAIL: " + what)
 
     quiet = lambda *a: None
-    # The image header: ODR with CONFIG_WATCHDOG enters only a stub whose header says it feeds the IWDG
+    # The image header: RadioFoundry with CONFIG_WATCHDOG enters only a stub whose header says it feeds the IWDG
     # (docs/spec/watchdog.md 3.1). The numbers here match f4stub_header.h, and the embedded image has the header
     import re
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1197,7 +1197,7 @@ def self_test():
         return bytes(d)
 
     import tempfile
-    tmpdir = tempfile.TemporaryDirectory(prefix="odr-f4stub-")
+    tmpdir = tempfile.TemporaryDirectory(prefix="rfoundry-f4stub-")
     tmp = tmpdir.name
 
     # DM-1701: the application in sectors 3-9; codec sectors 10 and 11 and the bootloader never touched
@@ -1232,7 +1232,7 @@ def self_test():
     merged[0xD19F0 - 0xC000:0xD19F0 - 0xC000 + 0x12082] = app(0x12082, 13)
     merged[0xE3A74 - 0xC000:0xE3A74 - 0xC000 + 0x1021C] = app(0x1021C, 17)
     merged[0xFFF80 - 0xC000:] = app(0x80, 19)
-    mp = os.path.join(tmp, "odr_dm1701_codec.bin")
+    mp = os.path.join(tmp, "rfoundry_dm1701_codec.bin")
     open(mp, "wb").write(merged)
     msegs = load_segments(mp, "dm1701")
     check([(a, len(d)) for a, d in msegs] == [(APP_BASE, 300000), (0x080C0000, 0x40000)], "merged image split in two")
@@ -1334,7 +1334,7 @@ def self_test():
     r2 = F4Radio(fake, log=quiet)          # --attach without --board: the stub's own record says which radio
     r2.hello()
     check(r2.board == TEST_BOARD, "attach: the configured board read back from HELLO")
-    mp = os.path.join(tmp, "odr_spi2test_codec.bin")
+    mp = os.path.join(tmp, "rfoundry_spi2test_codec.bin")
     merged = bytearray(b"\xff" * (0x100000 - 0xC000))
     merged[:400000] = app(400000, 7)
     merged[0xE0000 - 0xC000:0xE0000 - 0xC000 + 0x9000] = app(0x9000, 5)
@@ -1434,40 +1434,40 @@ def self_test():
 
     check(len(stub_image()) > 4096 and stub_image()[:4] != b"\xff" * 4, "the embedded stub decodes and checks")
 
-    # Entering the stub from a running ODR: the debug link reports the SRAM base and the 8 KB staging buffer
+    # Entering the stub from a running RadioFoundry: the debug link reports the SRAM base and the 8 KB staging buffer
     # (docs/spec/debuglink.md 3.18). The HR_C7000 image check must not reject the STM32F4 stub, and the reverse.
     top = stub_stack_top(stub_image())
     check(top == RUN_ADDR + SRAM_SIZE, "the embedded stub's entry code loads the stack top 0x%X" % (top or 0))
-    odr = stubtool.FakeODR((RUN_ADDR, 8192))
-    r = F4Radio(odr, log=quiet)
+    rfoundry = stubtool.FakeRFoundry((RUN_ADDR, 8192))
+    r = F4Radio(rfoundry, log=quiet)
     r.attach = lambda: None
     try:
-        r.odr_enter(stub_image(), RUN_ADDR, board="dm1701")
+        r.rfoundry_enter(stub_image(), RUN_ADDR, board="dm1701")
     except stubtool.DumpError as e:
-        check(False, "odr_enter refused the embedded STM32F4 stub: %s" % e)
-    check(odr.entered and bytes(odr.mem[:len(stub_image())]) == stub_image(), "odr_enter sends the embedded STM32F4 stub")
-    c7 = stubtool.odr_stubs()[0x17000][1]
+        check(False, "rfoundry_enter refused the embedded STM32F4 stub: %s" % e)
+    check(rfoundry.entered and bytes(rfoundry.mem[:len(stub_image())]) == stub_image(), "rfoundry_enter sends the embedded STM32F4 stub")
+    c7 = stubtool.rfoundry_stubs()[0x17000][1]
     noise = bytes((i * 37 + 11) & 0xFF for i in range(4096))
     fake_top = stub_image()[:8] + (RUN_ADDR + 0x100).to_bytes(4, "little") + stub_image()[12:]
     for what, img, span in (("an HR_C7000 stub", c7, (RUN_ADDR, 8192)), ("a file that is not a stub", noise, (RUN_ADDR, 8192)),
                             ("the stub on a span that is not the SRAM base", stub_image(), (0x2001C000, 8192)),
                             ("a stub whose stack is inside its own image", fake_top, (RUN_ADDR, 8192))):
-        odr = stubtool.FakeODR(span)
-        r = F4Radio(odr, log=quiet)
+        rfoundry = stubtool.FakeRFoundry(span)
+        r = F4Radio(rfoundry, log=quiet)
         r.attach = lambda: None
         try:
-            r.odr_enter(img, RUN_ADDR, board="dm1701")
-            check(False, "STM32F4 odr_enter refuses %s" % what)
+            r.rfoundry_enter(img, RUN_ADDR, board="dm1701")
+            check(False, "STM32F4 rfoundry_enter refuses %s" % what)
         except stubtool.DumpError:
-            check(not odr.entered and odr.total is None, "STM32F4 odr_enter refuses %s before BEGIN" % what)
-    odr = stubtool.FakeODR((0x17000, 0x18000))
-    r = stubtool.Radio(odr, log=quiet)
+            check(not rfoundry.entered and rfoundry.total is None, "STM32F4 rfoundry_enter refuses %s before BEGIN" % what)
+    rfoundry = stubtool.FakeRFoundry((0x17000, 0x18000))
+    r = stubtool.Radio(rfoundry, log=quiet)
     r.attach = lambda: None
     try:
-        r.odr_enter(stub_image())
+        r.rfoundry_enter(stub_image())
         check(False, "the HR_C7000 path refuses the STM32F4 stub")
     except stubtool.DumpError:
-        check(odr.total is None, "the HR_C7000 path refuses the STM32F4 stub before BEGIN")
+        check(rfoundry.total is None, "the HR_C7000 path refuses the STM32F4 stub before BEGIN")
 
     # Finding the stub's port again: it came back as ttyACM1 while ttyACM0 is still held, or not at all
     ID = STUB_USB_ID

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HDLC framing for 1200 baud packet (docs/spec/aprs.md 4): flags, bit stuffing, the FCS, NRZI. The encoder turns
 // frames into the tone sequence a board's AFSK modulator plays (one bit per symbol, 1 = mark 1200 Hz, 0 = space
 // 2200 Hz); the decoder takes the demodulator's tone decisions and hands back frames whose FCS checks. Bits go out
 // least significant first (AX.25 2.2 3.4, 3.6, 3.8; ISO 3309).
-#ifndef ODR_HDLC_H
-#define ODR_HDLC_H
+#ifndef RFOUNDRY_HDLC_H
+#define RFOUNDRY_HDLC_H
 
 #include <stdint.h>
 #include <stdbool.h>

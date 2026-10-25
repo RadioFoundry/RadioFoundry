@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 PCM audio (hal_audio_t): I2S0 as a slave of the HR_C6000's codec, with one DMA ring each way
 // (docs/spec/hardware-gd77.md 8). Beeps and DMR voice use it; FM receive audio doesn't (the HR_C6000 passes it to the
 // line out itself).

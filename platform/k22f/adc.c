@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ADC0 / ADC1 (reference manual chapter 35): 12-bit single-ended conversions, software triggered and polled, with the
 // hardware average of 8 samples. The calibration at init is the manual's: run CAL, then the plus and minus side gains
 // are the sums of the CLPS, CLP4..CLP0 (CLMS, CLM4..CLM0) results, halved, with bit 15 set

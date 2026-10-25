@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """
-APRS host helper for an OpenDigitalRadio radio in KISS mode (docs/spec/aprs.md 9): the APRS-IS connection for the
+APRS host helper for a RadioFoundry radio in KISS mode (docs/spec/aprs.md 9): the APRS-IS connection for the
 radio's iGate, a KISS TCP port for APRS programs (APRSdroid, Xastir, YAAC ...), and NMEA forwarding from a GPS on the
 computer.
 
@@ -21,7 +21,7 @@ The radio gates and decides (the iGate rules are in the firmware, aprs_igate.c);
 - NMEA: $GPRMC / $GPGGA lines from a serial GPS or a file go to the radio as SetHardware 'N' frames (the radio's
   "Computer" position source).
 
-Turn KISS on first: Tools > APRS > KISS on USB, or `odr_debug.py aprs set kiss 1`. The radio must not be in hotspot
+Turn KISS on first: Tools > APRS > KISS on USB, or `rfoundry_debug.py aprs set kiss 1`. The radio must not be in hotspot
 mode. The passcode is computed from the callsign when not given (the public APRS-IS hash); without --call the tool
 logs in receive-only ("-1"), which APRS-IS takes for reading but not for gating.
 """
@@ -36,7 +36,7 @@ import time
 FEND, FESC, TFEND, TFESC = 0xC0, 0xDB, 0xDC, 0xDD
 CMD_DATA, CMD_SETHW = 0x00, 0x06
 TAG_IS, TAG_NMEA = ord("G"), ord("N")
-VERSION = "ODR-aprs_gate 1.0"
+VERSION = "RadioFoundry-aprs_gate 1.0"
 
 
 def kiss_encode(cmd: int, payload: bytes) -> bytes:
@@ -203,7 +203,7 @@ class AprsIs:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", default=os.environ.get("ODR_PORT"), help="radio serial port, or udp:<radio ip>[:port]")
+    ap.add_argument("--port", default=os.environ.get("RFOUNDRY_PORT"), help="radio serial port, or udp:<radio ip>[:port]")
     ap.add_argument("--call", help="callsign for APRS-IS (the radio's own, with the SSID it uses)")
     ap.add_argument("--passcode", type=int, help="APRS-IS passcode (default: computed from --call)")
     ap.add_argument("--server", default="rotate.aprs2.net:14580")
@@ -217,7 +217,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO, format="%(asctime)s %(message)s")
     if not a.port:
-        ap.error("--port (or $ODR_PORT) is required")
+        ap.error("--port (or $RFOUNDRY_PORT) is required")
 
     radio = Radio(a.port)
     sel = selectors.DefaultSelector()

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Host stand-in for FreeRTOS.h, for md380RfbusTest only: the interrupt mask macros rfbus_md380.c uses
 #ifndef MD380_STUB_FREERTOS_H
 #define MD380_STUB_FREERTOS_H

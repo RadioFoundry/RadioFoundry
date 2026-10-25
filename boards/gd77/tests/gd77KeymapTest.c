@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The GD-77 key map (boards/gd77/keymap_gd77.h) against the rules every board's map follows
 // (docs/ux/information-architecture.md 2, 7.3): every physical key mapped once, the required actions there, raw edges
 // only for PTT and monitor, repeat only on the navigation keys, the reassignable roles on mapped keys. Built with and

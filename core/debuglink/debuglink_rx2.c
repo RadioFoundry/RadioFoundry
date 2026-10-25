@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DL_CMD_RX2 (docs/spec/debuglink.md 3.22): the second receiver's SoC on a radio with two (board.rx2). INFO says what is
 // there; BRIDGE hands the PC cable to the second SoC so the host can load its stub and write its flash
 // (docs/spec/rx2-link.md 4); RESTART restarts it. The bridge starts after the reply has gone out, as cmd_reboot's reset

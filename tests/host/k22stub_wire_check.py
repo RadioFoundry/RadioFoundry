@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The host tool (stub/k22stub.py, with f4stub.py's radio class) against the K22F stub's real protocol engine
 (k22stubSim, built from stub/common/stubeng.c and stub/k22f/k22stub_board.c): the test profile's board record, installs
 of a plain and a merged build on a simulated flash of that layout, the refusals (the loader, the last sector, the SPI flash's first
@@ -28,7 +28,7 @@ k22stub.BOARDS[TB] = k22stub.test_board()
 
 
 def run(sim, flash, job, board=TB):
-    with tempfile.TemporaryDirectory(prefix="odr-k22wire-") as d:
+    with tempfile.TemporaryDirectory(prefix="rfoundry-k22wire-") as d:
         fin, fout = os.path.join(d, "in.bin"), os.path.join(d, "out.bin")
         open(fin, "wb").write(flash)
         proc = subprocess.Popen([sim, fin, fout], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -76,7 +76,7 @@ def main():
     merged[:len(app)] = app
     merged[0x55D00 - APP:0x7B780 - APP] = bytes((i * 11) & 0xFF for i in range(0x7B780 - 0x55D00))
     with tempfile.TemporaryDirectory() as d:
-        mp = os.path.join(d, "odr_%s_codec.bin" % TB)
+        mp = os.path.join(d, "rfoundry_%s_codec.bin" % TB)
         open(mp, "wb").write(merged)
         segs = f4stub.load_segments(mp, TB, K22)
     out, _, res, log = run(sim, bytes(flash), lambda r, d: r.write_image(TB, segs, backup_dir=d))
@@ -109,7 +109,7 @@ def main():
     out, _, got, log = run(sim, bytes(flash), lambda r, d: raw(r, d, refused[:1]), board=None)
     check(got and "status 0x11" in got[0], "unconfigured: writes refused %s" % got)
 
-    # The SPI flash: the radio's first megabyte refused by the tool, ODR's part written by changed sector
+    # The SPI flash: the radio's first megabyte refused by the tool, RadioFoundry's part written by changed sector
     spi = bytes((i * 13 + (i >> 12)) & 0xFF for i in range(0x200000))
     upper = bytearray(spi[0x100000:])
     upper[0x11000:0x11020] = b"\x00" * 32
@@ -128,7 +128,7 @@ def main():
     out, spi_out, (first, refused_low, res), log = run(sim, bytes(flash), spi_job)
     check(first == spi[:0x10000], "SPI read through the real engine")
     check(refused_low and res == (1, 255) and log.count("xerase") == 1, "SPI: first MB refused, one sector above %s" % (res,))
-    check(spi_out[:0x100000] == spi[:0x100000] and spi_out[0x100000:] == bytes(upper), "SPI flash holds ODR's new part")
+    check(spi_out[:0x100000] == spi[:0x100000] and spi_out[0x100000:] == bytes(upper), "SPI flash holds RadioFoundry's new part")
 
     # Every K22F board's profile against the firmware's sources
     root = os.path.join(HERE, "..", "..")

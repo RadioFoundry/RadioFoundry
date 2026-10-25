@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The editor's RadioID source (static/js/codeplug/sources/): user.csv parsing, the API client against a fake fetch
 // (direct, then the proxy; the user's key never sent through it; pages; cache), region selection, text templates, and
 // the outputs (ID database, contacts). Nothing here reaches the network.

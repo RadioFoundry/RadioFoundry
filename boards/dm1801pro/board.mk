@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # Baofeng DM-1801 Pro: HR_C7000 SoC (C-SKY CK803S + DMR modem) + FD6818 + 128x64 monochrome ST7567-class LCD on a
 # bit-banged serial bus (docs/spec/hardware-dm1801pro.md). The PC link is UART0 on the programming cable
 PLATFORM   := hrc7000

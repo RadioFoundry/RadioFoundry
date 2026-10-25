@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Program flash self-programming, the pure part (ftfa.c runs the commands): which addresses the API may touch, and the
 // FTFA command object for an erase or a longword program. Pure: tests/host/k22fSystemTest.c checks it.
 #ifndef K22F_FTFA_MATH_H

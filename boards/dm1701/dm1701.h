@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Internal interfaces between the DM-1701 board files
 #ifndef DM1701_H
 #define DM1701_H
@@ -50,7 +50,7 @@ bool dm1701_modem_burst(uint8_t page, uint8_t reg, const uint8_t *buf, uint16_t 
 enum {
 	KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
 	KEY_STAR, KEY_HASH, KEY_UP, KEY_DOWN, KEY_GREEN, KEY_RED,
-	KEY_FN_LEFT, KEY_FN_RIGHT, KEY_TOP, KEY_SK1, KEY_SK2, KEY_PTT,
+	KEY_FN_LEFT, KEY_FN_RIGHT, KEY_SK1, KEY_SK2, KEY_SK3, KEY_PTT,	// side keys top to bottom
 	KEY_COUNT
 };
 
@@ -97,7 +97,7 @@ bool dm1701_cal_load(void);
 bool dm1701_cal_at(uint32_t hz, dm1701_cal_point_t *out);
 
 // A DMA stream's memory address must be in main SRAM (0x2000_0000): the DMA controllers can't reach the CCM, where
-// ODR_CPU_RAM state and every task stack live. Stops here, at set-up, instead of a silent transfer error later
+// RFOUNDRY_CPU_RAM state and every task stack live. Stops here, at set-up, instead of a silent transfer error later
 #define DMA_RAM_OK(p)	configASSERT(((uintptr_t)(p) >> 24) == 0x20u)
 
 #endif

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D DMR (dmr_db25d.c, CONFIG_DMR; docs/spec/hardware-db25d.md 4.5): what the board files share
 #ifndef DB25D_DMR_H
 #define DB25D_DMR_H

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 factory calibration (docs/spec/hardware-gd77.md 6.4): two blocks in the EEPROM, one per band, read once at
 // start-up and never written: pick the block by frequency, read a field by id. Every field comes back as raw bytes;
 // what the fields mean and the values they give at a frequency is cal_gd77.h.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 radio: the AT1846S (I2C bus A) with the radio's own register profile, the HR_C6000 (SPI0) as the FM audio chain
 // and DMR modem, the RF path lines, DAC0 and the calibration (docs/spec/hardware-gd77.md 5, 8). The structure
 // of boards/dm1701/radio_dm1701.c with this radio's wiring.

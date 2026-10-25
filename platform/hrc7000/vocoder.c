@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 vocoder: the radio's own stock AMBE+2 codec, run from RAM in the board's codec window
 // (docs/spec/codec-placement.md, "HR_C7000 radios"; the codec itself: docs/spec/codec-dm32.md, "C. Codec state init
 // tables"). Shared by the HR_C7000 radios that carry this codec build; what differs between them (the slot, the windows)
@@ -11,7 +11,7 @@
 // tables are copied to their stock modem SRAM address. Without a valid slot, present() is false: FM only.
 //
 // The board's linker script gives the slot (__codec_slot..__codec_slot_end) and the windows a slot may name
-// (__codec_run_lo/hi, __codec_tab_lo/hi); the profile prefix is the board's id (ODR_BOARD_ID, from the Makefile; board.toml [codec] profile starts with it).
+// (__codec_run_lo/hi, __codec_tab_lo/hi); the profile prefix is the board's id (RFOUNDRY_BOARD_ID, from the Makefile; board.toml [codec] profile starts with it).
 //
 // Not reentrant: one task (the audio task, through the audio block callback) makes all calls. The codec runs on the
 // caller's stack.
@@ -26,8 +26,8 @@
 #include "task.h"
 #include "vocoder/ambe2_flags.h"
 
-#ifndef ODR_BOARD_ID
-#error "the Makefile defines ODR_BOARD_ID (the board's id, the codec profile prefix)"
+#ifndef RFOUNDRY_BOARD_ID
+#error "the Makefile defines RFOUNDRY_BOARD_ID (the board's id, the codec profile prefix)"
 #endif
 
 #define CODEC_SIG0		0x152514D8u	// first two words of the codec code (every build)
@@ -222,18 +222,18 @@ void hrc_vocoder_park(void)
 	}
 }
 
-// The id tools/odrflash and the release manifests use: which stock file the slot was carved from, "<board>-<tag>" with
+// The id tools/rfoundry and the release manifests use: which stock file the slot was carved from, "<board>-<tag>" with
 // the tag in at least three digits (<board>-049)
 static const char *profile(void)
 {
-	static char id[sizeof ODR_BOARD_ID + 8];
+	static char id[sizeof RFOUNDRY_BOARD_ID + 8];
 	(void)present();
 	if (presence != 1) {
 		return NULL;
 	}
 	uint32_t tag = slot->stock_tag;
 	if (tag == 0 || tag > 99999u) {
-		return ODR_BOARD_ID "-unknown";
+		return RFOUNDRY_BOARD_ID "-unknown";
 	}
 	char digits[6];
 	uint32_t n = 0;
@@ -241,7 +241,7 @@ static const char *profile(void)
 		digits[n++] = (char)('0' + v % 10);
 	}
 	uint32_t o = 0;
-	for (const char *b = ODR_BOARD_ID; *b != '\0'; b++) {
+	for (const char *b = RFOUNDRY_BOARD_ID; *b != '\0'; b++) {
 		id[o++] = *b;
 	}
 	id[o++] = '-';

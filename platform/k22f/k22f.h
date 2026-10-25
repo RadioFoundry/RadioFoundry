@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // NXP Kinetis K22F (MK22FN512, Cortex-M4F): the registers the platform drivers touch, by address and bit, with the
-// names of the K22F reference manual (K22P121M120SF7RM). Only what ODR uses; add fields as drivers need them.
+// names of the K22F reference manual (K22P121M120SF7RM). Only what RadioFoundry uses; add fields as drivers need them.
 #ifndef K22F_H
 #define K22F_H
 
@@ -240,7 +240,7 @@ typedef enum IRQn {
 #define FTM_CSC_MSB		0x20u
 #define FTM_CSC_ELSB		0x08u	// with MSB: high-true pulses
 
-// --- USB0 (chapter 47): TinyUSB drives the controller in ODR; the flash stub and the hand-over to it
+// --- USB0 (chapter 47): TinyUSB drives the controller in RadioFoundry; the flash stub and the hand-over to it
 // (platform/k22f/stub_entry.c) use the registers below. Each is 8 bits wide, 4 bytes apart; the bits are in
 // k22f_usb_regs.h ---
 #define USB0_BASE		0x40072000u

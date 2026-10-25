@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 display: a UC1701 / ST7567-class 128x64 monochrome LCD on a write-only serial bus on port C (chip select PTC8,
 // reset PTC9, A0 PTC10, clock PTC11, data PTC12; docs/spec/hardware-gd77.md 7), reached through gd77_lcd_bus. The
 // controller driver is the shared one (drivers/display/st7567). The backlight on PTC4 is on or off; a build with

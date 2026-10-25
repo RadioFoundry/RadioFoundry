@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C7000 flasher modules: LZ4 and the codec slot against stubtool.py and hrc7000_codec.py (fixtures from
 // site/tests/fixtures.py), and the stub protocol end to end against the simulated radio (fakec7000.js): the boot-ROM
-// load, entry from ODR, reads with damaged frames, writes of changed sectors only, the reset back into the firmware.
+// load, entry from RadioFoundry, reads with damaged frames, writes of changed sectors only, the reset back into the firmware.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -17,7 +17,7 @@ import * as c7 from "../static/js/flasher/c7000.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "../static/js/flasher/fakec7000.js";
 import { stockVersion } from "../static/js/flasher/usmart.js";
 
-const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
+const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
 const bin = (n) => new Uint8Array(readFileSync(join(DIR, n)));
 const C = json("flash-boards.json").c7000;
@@ -29,10 +29,10 @@ test("the universal stub decodes to its SHA-256 and fits every way in", async ()
 	assert.equal(stubs.load, 0x10000);
 	assert.deepEqual(univLayout(stubs.image), [stubs.run, stubs.end]);
 	assert.equal(stubs.run, 0x30000);
-	// The stub feeds the watchdog in its wait and read loops; ODR leaves it running (docs/spec/watchdog.md 3.2): the
+	// The stub feeds the watchdog in its wait and read loops; RadioFoundry leaves it running (docs/spec/watchdog.md 3.2): the
 	// feed value 0x55AADD22 is in the image
 	assert.ok(Buffer.from(stubs.image).includes(Buffer.from([0x22, 0xDD, 0xAA, 0x55])), "the stub feeds the watchdog");
-	// boot ROM / first stage, ODR on the DM-32UV and DM-1801 Pro, the DB25-D with and without DMR, a stock DB25-D's console
+	// boot ROM / first stage, RadioFoundry on the DM-32UV and DM-1801 Pro, the DB25-D with and without DMR, a stock DB25-D's console
 	for (const [load, win] of [[0x10000, null], [0x17000, [0x17000, 0x18000]], [0x1D000, [0x1D000, 0x12000]], [0x30000, [0x30000, 0x20000]], [0x54000, null]])
 		univFits(stubs.image, load, win);
 	assert.throws(() => univFits(stubs.image, 0x30800), StubError);		// overlaps its run copy
@@ -96,14 +96,21 @@ async function radio(firmware = "stock", opts = {}) {
 	const sim = await c7000Simulation(C, "dm1801pro");
 	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 400, bootTime: 200, ...opts });
 	if (firmware !== "stock") {
-		const odr = sim.progmem.slice(0x30000, 0x70000);
-		odr.set(new TextEncoder().encode("OpenDigitalRadio"), 0x1000);
-		r.progmem.set(odr, 0xC000);
+		const rfoundry = sim.progmem.slice(0x30000, 0x70000);
+		rfoundry.set(new TextEncoder().encode("RadioFoundry"), 0x1000);
+		r.progmem.set(rfoundry, 0xC000);
 		r.progmem.set(c7.slotBytes(sim.c, "dm1801pro", await c7.locateCodec(sim.progmem, sim.c, "dm1801pro")), 0xE8000);
-		r.stubEntry = firmware === "odr";
+		r.stubEntry = firmware === "rfoundry";
 	}
 	return { sim, r };
 }
+
+test("firmware flashed before the project was renamed is still recognized as RadioFoundry", async () => {
+	const sim = await c7000Simulation(C, "dm1801pro");
+	const image = sim.progmem.slice();
+	image.set(new TextEncoder().encode("OpenDigitalRadio"), C.app_start + 0x1000);
+	assert.equal((await c7.analyze(image, sim.c, "dm1801pro")).firmware, "rfoundry");
+});
 
 test("a sector record that belongs to another sector is caught by the radio's checksums and read again", async (t) => {
 	const { sim, r } = await radio("stock", { faults: { misplace: [0x41000, 0x9F000] } });
@@ -118,7 +125,7 @@ test("a sector record that belongs to another sector is caught by the radio's ch
 	assert.ok(s.retried >= 2, "the two sectors were read again");
 });
 
-test("boot ROM path: load, read with damaged frames, write, reset into ODR", async (t) => {
+test("boot ROM path: load, read with damaged frames, write, reset into RadioFoundry", async (t) => {
 	const { sim, r } = await radio("stock", { faults: { flip: 0.05 } });
 	t.after(() => r.stop());
 	const s = new Stub(r.stream, { log: quiet });
@@ -138,7 +145,7 @@ test("boot ROM path: load, read with damaged frames, write, reset into ODR", asy
 	const d = await c7.decide(sim.c, "dm1801pro", { flashCodec: what.codec });
 	assert.equal(d.mode, "write");
 	const image = sim.progmem.slice(0x40000, 0x70000);
-	image.set(new TextEncoder().encode("OpenDigitalRadio"), 0x2000);
+	image.set(new TextEncoder().encode("RadioFoundry"), 0x2000);
 	const [start, data] = c7.target(sim.c, "dm1801pro", image, d.slot);
 	const states = new Map();
 	r.faults.flip = 0;
@@ -149,8 +156,8 @@ test("boot ROM path: load, read with damaged frames, write, reset into ODR", asy
 	assert.equal(states.get(0xC000), "written");
 	await s.ledSequence(DONE_LED);
 	await s.resetChip();
-	const ev = r.events.filter((e) => e === "wdt-off" || e === "reset");
-	assert.deepEqual(ev.slice(-2), ["wdt-off", "reset"], "the watchdog goes off before the soft reset");
+	const ev = r.events.filter((e) => e === "soft-mark" || e === "wdt-off" || e === "reset");
+	assert.deepEqual(ev.slice(-3), ["soft-mark", "wdt-off", "reset"], "the restart-cause mark, then the watchdog off, then the soft reset");
 	await new Promise((ok) => setTimeout(ok, 1500));
 	assert.equal(r.state, "firmware");
 	const p = await probe(new Link(r.stream));
@@ -159,15 +166,15 @@ test("boot ROM path: load, read with damaged frames, write, reset into ODR", asy
 });
 
 test("simulated radio: after the stub's reset the host link stays silent until a power cycle, as on the real radios", async (t) => {
-	const { r } = await radio("odr", { faults: { silentAfterReset: true } });
+	const { r } = await radio("rfoundry", { faults: { silentAfterReset: true } });
 	t.after(() => r.stop());
 	const s = new Stub(r.stream, { log: quiet });
 	setTimeout(() => r.powerOn(), 50);
 	await s.waitForRom(5000);
 	await s.loadThroughRom(stubs.image, stubs.load);
 	await s.resetChip();
-	const ev = r.events.filter((e) => e === "wdt-off" || e === "reset");
-	assert.deepEqual(ev.slice(-2), ["wdt-off", "reset"], "the watchdog goes off before the soft reset");
+	const ev = r.events.filter((e) => e === "soft-mark" || e === "wdt-off" || e === "reset");
+	assert.deepEqual(ev.slice(-3), ["soft-mark", "wdt-off", "reset"], "the restart-cause mark, then the watchdog off, then the soft reset");
 	await new Promise((ok) => setTimeout(ok, 1500));
 	assert.equal(r.state, "firmware");
 	assert.equal(await probe(new Link(r.stream, { timeout: 500 })), null, "no answer after the soft reset");
@@ -177,17 +184,17 @@ test("simulated radio: after the stub's reset the host link stays silent until a
 	assert.equal((await probe(new Link(r.stream))).board, "DM-1801 Pro", "answers after the power cycle");
 });
 
-test("ODR path: no buttons, keep the codec, write only what changed", async (t) => {
-	const { sim, r } = await radio("odr");
+test("RadioFoundry path: no buttons, keep the codec, write only what changed", async (t) => {
+	const { sim, r } = await radio("rfoundry");
 	t.after(() => r.stop());
 	r.powerOn();
 	await new Promise((ok) => setTimeout(ok, 800));
 	assert.equal(r.state, "firmware");
 	const link = new Link(r.stream);
 	assert.equal((await probe(link)).codec, "dm1801pro-049");
-	assert.ok(await Stub.odrOffer(link));
+	assert.ok(await Stub.rfoundryOffer(link));
 	const s = new Stub(r.stream, { log: quiet });
-	await s.enterFromOdr(stubs.image);
+	await s.enterFromRFoundry(stubs.image);
 	assert.equal(r.state, "stub");
 	assert.ok(s.v6 && s.v6.run === 0x30000, "HELLO v6 reports the run address");
 	const image0 = r.progmem.slice(0xC000, 0xC000 + 0x40000);
@@ -205,14 +212,14 @@ test("ODR path: no buttons, keep the codec, write only what changed", async (t) 
 	assert.ok(equal(r.progmem.subarray(0xE8000), before), "codec slot kept");
 });
 
-test("ODR without stub entry says so; the stub refuses writes outside the application", async (t) => {
-	const { r } = await radio("odr-nostub");
+test("RadioFoundry without stub entry says so; the stub refuses writes outside the application", async (t) => {
+	const { r } = await radio("rfoundry-nostub");
 	t.after(() => r.stop());
 	r.powerOn();
 	await new Promise((ok) => setTimeout(ok, 800));
-	assert.equal(await Stub.odrOffer(new Link(r.stream)), null);
+	assert.equal(await Stub.rfoundryOffer(new Link(r.stream)), null);
 	const s = new Stub(r.stream, { log: quiet });
-	await assert.rejects(s.enterFromOdr(stubs.image), StubError);
+	await assert.rejects(s.enterFromRFoundry(stubs.image), StubError);
 	await assert.rejects(s.writeProgram(new Uint8Array(4096), 0x8000, { appStart: C.app_start, appEnd: C.app_end }), /outside the application/);
 });
 

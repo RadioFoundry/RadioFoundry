@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The codeplug editor's table: one row per record, cells shown as text and edited in place (double-click, Enter or
 // typing on a focused cell), sorting by a column, a filter, row selection for bulk edits, and keyboard movement
 // between cells. Only the cell being edited holds an input, so a table of 1024 channels stays light.

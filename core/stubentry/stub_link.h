@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The stub entry's own listener, for a build without the debug link (docs/spec/stub-entry.md 2): the commands the
 // flashing tools send before the hand-over, on the debug link's framing (dl_frame.h) and with its bytes, so the same
 // tools work with either listener. PING echoes, VERSION says what the radio is, STUB loads and enters the RAM monitor;

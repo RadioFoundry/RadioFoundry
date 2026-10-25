@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The K22F USB glue's pure parts (platform/k22f/k22f_usb_regs.h): every token's STAT value selects the buffer
 // descriptor the full-speed driver set up for that endpoint, direction and even / odd half; the bit masks of each
 // register don't overlap; the serial number string; a buffer descriptor's first word; and the data toggles the flash

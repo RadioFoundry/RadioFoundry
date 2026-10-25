@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // SNMPv2c message processing (see snmp.h). Written from RFC 3416 4.2 (the PDU processing rules), RFC 3417 (the
 // message over UDP), RFC 1901 (the community-based message) and RFC 3418 (the snmp group's counters).
 #include <string.h>

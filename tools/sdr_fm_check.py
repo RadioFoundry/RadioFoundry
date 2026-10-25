@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """FM transmit checker for an RTL-SDR capture (rtl_sdr raw unsigned-centered int8 I/Q, "CS8").
 
     tools/sdr_fm_check.py CAPTURE.cs8 --offset -25000 [--center 461887500 --ppm P] [--bw 12.5]

@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The Kinetis K22F flash stub (docs/spec/stub-k22f.md): one image for K22F radios behind their own loader. No board
-# code: it keeps the pin levels ODR left, and the host sends the board facts (SPI flash wiring, the
+# code: it keeps the pin levels RadioFoundry left, and the host sends the board facts (SPI flash wiring, the
 # writable flash range, the SPI flash's write floor) in a CONFIG record. The protocol engine and the runtime are shared
 # with the STM32F4 stub (stub/common); the register names, the FTFA command object and the software SPI master are
-# ODR's own (platform/k22f, drivers/bus/spi_gpio).
+# RadioFoundry's own (platform/k22f, drivers/bus/spi_gpio).
 #
-#   make -C stub/k22f                 build/stub-k22f/k22stub.bin (loaded by stub/stubtool.py --odr-enter)
+#   make -C stub/k22f                 build/stub-k22f/k22stub.bin (loaded by stub/stubtool.py --rfoundry-enter)
 #   make -C stub/k22f BUILD=DIR       elsewhere
 #   make -C stub/k22f check           build, then fail if the copy embedded in stub/k22stub.py differs (ci.sh runs it)
 ROOT := ../..
@@ -16,7 +16,7 @@ CC := $(CROSS)gcc
 OBJCOPY := $(CROSS)objcopy
 BUILD ?= $(ROOT)/build/stub-k22f
 
-# Soft float: the stub has no floating point, and ODR hands over with the FPU context flag cleared. Link time
+# Soft float: the stub has no floating point, and RadioFoundry hands over with the FPU context flag cleared. Link time
 # optimization inlines the shared pieces across files
 CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -std=gnu11 -ffreestanding -fno-builtin -ffunction-sections \
 	-fdata-sections -fno-common -Wall -Wextra -Wshadow -Wstrict-prototypes \

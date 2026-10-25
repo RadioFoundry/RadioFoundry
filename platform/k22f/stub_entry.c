@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Runtime entry to the K22F flash stub (CONFIG_STUB_ENTRY, docs/spec/debuglink.md 3.18, docs/spec/stub-k22f.md).
 //
-// The debug link loads the stub image into a staging buffer in ODR's .bss while ODR runs. The image is linked to run
-// at SRAM_L's base, which ODR's .data and .bss hold until the jump, so enter_stub masks everything, stops what writes
+// The debug link loads the stub image into a staging buffer in RadioFoundry's .bss while RadioFoundry runs. The image is linked to run
+// at SRAM_L's base, which RadioFoundry's .data and .bss hold until the jump, so enter_stub masks everything, stops what writes
 // into RAM on its own (the eDMA with the I2S audio streams, the USB controller), copies the staging buffer down and
 // jumps there. The code is in flash and the task stack in SRAM_U, so the copy overwrites nothing still needed. The
 // clocks (stepped down to RUN, which the flash controller needs), the pin levels (the power hold) and the USB device
@@ -25,14 +25,14 @@
 #include "tusb.h"
 #endif
 
-#ifndef ODR_CPU_RAM_SECTION
-#error "the K22F stub entry parks the USB controller's table in SRAM_U: the board must name ODR_CPU_RAM_SECTION"
+#ifndef RFOUNDRY_CPU_RAM_SECTION
+#error "the K22F stub entry parks the USB controller's table in SRAM_U: the board must name RFOUNDRY_CPU_RAM_SECTION"
 #endif
 
 #define PARK_SETTLE_US		1000u	// a packet in flight when the table moves is 64 bytes at 12 Mbit/s: about 50 us
 
 static uint8_t stage[K22F_STUB_STAGE_SIZE] __attribute__((aligned(8)));
-static uint8_t park[512] __attribute__((aligned(512), section(ODR_CPU_RAM_SECTION)));
+static uint8_t park[512] __attribute__((aligned(512), section(RFOUNDRY_CPU_RAM_SECTION)));
 
 uint8_t *k22f_stub_region(uint32_t *size)
 {

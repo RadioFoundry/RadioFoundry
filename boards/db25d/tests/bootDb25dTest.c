@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DB25-D first stage (boot/db25d/boot.c) against a simulated UART1: the stub load stubtool performs, frames that must
 // be dropped, the window running out to the application, a dead UART, the UART set-up on a cold start, and the
 // transmitter pins driven off before anything else.

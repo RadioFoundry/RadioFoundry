@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # actionlint configuration: the self-hosted runner labels the workflows use (docs/dev/ci.md)
 self-hosted-runner:
   labels:
-    - odr-hil
+    - rfoundry-hil
+    - rfoundry-deploy

@@ -1,16 +1,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 
-# Adding a radio
+# Adding a Radio
 
 A new radio is a new `boards/<b>/` directory, drivers for any chip the tree doesn't have yet, and a platform if its SoC
 is new. The core doesn't change. If it seems to need a change, the difference belongs in `board_t` or a `hal_*`
 interface instead, used through a field that other radios leave at its default.
 
 Before writing code, the facts go into a hardware spec, `docs/spec/hardware-<b>.md`, written by the spec side under
-the [clean-room rules](contributing.md#clean-room). Use [hardware-dm1701.md](../spec/hardware-dm1701.md) and
-[hardware-dm32.md](../spec/hardware-dm32.md) as the model: MCU and memory map, pins, chips, keys, display, power,
+the [clean-room rules](contributing.md#clean-room). Use the hardware spec of a radio on the same platform (`hardware-<id>.md`, [radios.md](../spec/radios.md)) as the model: MCU and memory map, pins, chips, keys, display, power,
 bootloader and image format, calibration, codec location. Start from the radio's entry in
-[radios.md](../spec/radios.md): its chip list, sources, confidence tags and which ODR drivers it can reuse.
+[radios.md](../spec/radios.md): its chip list and which RadioFoundry drivers it can reuse.
 
 ## The files
 
@@ -33,15 +32,14 @@ The board's own files:
 | `boards/<b>/board.mk` | `PLATFORM`, `APP_BASE` (where the image starts: the first byte the bootloader runs), `BOARD_DIRS` (the board directory and each driver it uses) and any `MCU_DEFS` of its own. STM32: `MCU` (the part, which picks the CMSIS define and start-up file) and `HSE_VALUE` (the crystal in Hz); optional `BOARD_HAL_MODULES` (HAL modules beyond the platform's, such as `hal_i2c`) |
 | `boards/<b>/board.toml` | The board registry entry: identity, status, flashing, codec route, the site's data. `tools/boards.py check` validates it against `board.mk`, the linker script and `board_t`. Every key is in [The board registry](board-registry.md). Copy a neighbor on the same platform |
 | `boards/<b>/config.mk` | Feature defaults where this radio differs from `platform/<p>/config.mk`, with `?=` (for example `CONFIG_USB ?= n` on a radio without USB, `CONFIG_DISPLAY_INSET`), each with the reason. Also `BOARD_UNSUPPORTED` (switches its hardware can't do, one a line with the reason: `BOARD_UNSUPPORTED += AM_RX  # no air band receiver`), `BOARD_NOT_WRITTEN` (the same form: the hardware can, the driver or glue isn't written yet, with `CONFIG_X ?= n`; ci.sh's maximal build leaves both lists off, [the rule](../build-config.md#unsupported-not-written-unconfirmed)), `BOARD_REQUIRED` (switches it can't build without; ci.sh skips their `no-` build) and `MAXIMAL_VARS` (make variables for that build, e.g. `LTO=1`) |
-| `boards/<b>/memory.ld` | The memory map: the codec symbols, then `MEMORY` (the application's `FLASH` region from `__app_start`, which the Makefile defines from `APP_BASE`, and the RAM regions), then `INCLUDE common.ld`, the platform's sections. Keep the region's end below the codec. Keep the application out of every flash sector the codec touches (not only the codec bytes), so odrflash can update the firmware without erasing the codec. The flashing tools read the region and the codec symbols from it, and derive the erasable sectors and the protected range ([release.md](release.md#sector-maps)) |
+| `boards/<b>/memory.ld` | The memory map: the codec symbols, then `MEMORY` (the application's `FLASH` region from `__app_start`, which the Makefile defines from `APP_BASE`, and the RAM regions), then `INCLUDE common.ld`, the platform's sections. Keep the region's end below the codec. Keep the application out of every flash sector the codec touches (not only the codec bytes), so rfoundry can update the firmware without erasing the codec. The flashing tools read the region and the codec symbols from it, and derive the erasable sectors and the protected range ([release.md](release.md#sector-maps)) |
 | `boards/<b>/freertos_board.h` | Optional: RTOS settings that differ from `platform/<p>/FreeRTOSConfig.h` (the heap size, for example), read before its defaults |
 | `boards/<b>/board.c` | The `board_t` descriptor, the key map, bands, power level names |
 | `boards/<b>/pins.h`, `<b>.h` | Pin assignments and the board's private declarations. The registry reads the pins the flash stub uses from `pins.h` (`[flash.stub]` in [The board registry](board-registry.md#boardtoml)) |
 | `boards/<b>/*_<b>.c` | One file per interface: radio, DMR, audio, vocoder, display, input, flash, power, calibration, diagnostics, USB |
 
-Look at `boards/dm1701/` (STM32F405, HR_C6000, AT1846S, USB), `boards/md380/` (the same platform with an HR_C5000,
-GPS, link time optimization to fit), `boards/dm32/` (HR_C7000 SoC, FD6818, UART host link) and `boards/db25d/` (the
-same SoC with two BK4819).
+Look at the boards on your platform for a model (`tools/boards.py list --platform <p>`; their chips are in
+[radios.md](../spec/radios.md)).
 
 ## board_t
 
@@ -78,7 +76,7 @@ Each `keymap_entry_t` (`hal/hal_input.h`) maps one bit of the board's key scan t
 Map keys to the logical actions of `input_action_t` (`ACT_SELECT`, `ACT_BACK`, `ACT_QUICK`, `ACT_CONTEXT`, `ACT_USER_1` to `ACT_USER_4`, `ACT_MONITOR`, `ACT_TALK_TARGET`, ...)
 so the five key rules of [docs/ux/principles.md](../ux/principles.md) hold on the new radio. A radio without a keypad
 or with fewer keys must still reach every task; [docs/spec/ui.md](../spec/ui.md) section 3 says how. Give some key
-`ACT_EMERGENCY` if the radio has one: no current board does.
+`ACT_EMERGENCY` if the radio has one.
 
 ## The display
 
@@ -90,6 +88,15 @@ The frame buffer is sized to the panel in `board.mk` `MCU_DEFS`: `GFX_FB_BYTES` 
 over 8), `GFX_MAX_ROWS` (the height) and `GFX_INDEXED=1` for a 16-color panel. Without them the build reserves the
 40 KB RGB565 default. `boards.py check` requires the buffer to hold the board's `hardware.gallery` class.
 
+## The drawing
+
+The site and the web control page show the radio as a drawing, `site/static/img/radios/src/<b>.svg`; until it has
+one, a generic drawing from `board.toml` `[frame]` stands in. Its rules are in
+[Radio images](website.md#radio-images). Once the board's key enum is written, run `tools/svg_keys.py tag <b>`: it tags
+the keys it finds by their labels and prints the rest. Tag those by hand, with `data-edge` on side and top keys, or
+list them in `data-undrawn`. `tools/svg_keys.py check <b>` must pass; the site build fails CI otherwise. Run `tag`
+again after any redraw, so the tags follow the new shapes.
+
 ## Bring-up order
 
 1. Platform: start-up, clocks, a time base, a UART or USB for logging. Blink something.
@@ -99,13 +106,13 @@ over 8), `GFX_MAX_ROWS` (the height) and `GFX_INDEXED=1` for a 16-color panel. W
    data: send back-to-back 0x00 bytes and watch the raw PTT pin. If it goes low, gate PTT on UART traffic
    (`drivers/input/sharedptt`, [gotchas.md](../spec/gotchas.md) 16.2) before anything transmits. Then run
    `tests/hil/test_ptt_host_traffic.py`: host polling must make no PTT press.
-4. Flash, settings and calibration reads. Check the foreign-region guard on a radio from stock firmware
+4. Flash, settings and calibration reads. Check the foreign-region guard on a radio that still runs the vendor firmware
    ([settings-store.md](../spec/settings-store.md) 5).
 5. RF chip: FM receive, then FM transmit into a dummy load.
 6. DMR modem and the codec: receive, then transmit, checked on the SDR bench.
 7. CPS, so qdmr can program it.
 
-[docs/testing/dm32-bringup.md](../testing/dm32-bringup.md) is this list made concrete for one radio.
+A bring-up page under [docs/testing/](../testing/README.md) is this list made concrete for one radio.
 
 ## Bring-up records
 
@@ -142,7 +149,7 @@ What the docs claim for a radio comes from its records, so each step above ends 
 - The web site lists the radio from `board.toml`: `order` places it, `[status] level` and `summary` give its badge and
   its line for visitors. A survey row that names a board is the board's row, so the site doesn't list it as planned.
 - Before it can be released: its `board.toml` `[flash]` and `[codec]` tables, `[status] release = "stable"` and the
-  regenerated `tools/odrflash/odrflash/registry.json` (`tools/boards.py json --for odrflash --out ...`). The release
+  regenerated `tools/rfoundry/rfoundry/registry.json` (`tools/boards.py json --for rfoundry --out ...`). The release
   workflow's job for its toolchain then builds and packages it, with each build option value
   ([release.md](release.md#the-release-workflow)); CI and the nightly pick it up from the registry too
   ([ci.md](ci.md)). The jobs are grouped by toolchain (`platform.toml` `[toolchain] id`), so neither a new radio nor

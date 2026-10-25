@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The web flasher's codec map port (static/js/flasher/codecmap.js) against odrflash's: the same synthetic vectors
-// (tools/odrflash/tests/codecmap_vectors.json, normalized by site/tests/fixtures.py) must give the same bytes.
+// Copyright (c) 2026 The RadioFoundry Authors
+// The web flasher's codec map port (static/js/flasher/codecmap.js) against rfoundry's: the same synthetic vectors
+// (tools/rfoundry/tests/codecmap_vectors.json, normalized by site/tests/fixtures.py) must give the same bytes.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -11,11 +11,11 @@ import { join } from "node:path";
 import { fromHex, toHex, u32le } from "../static/js/flasher/bytes.js";
 import * as cm from "../static/js/flasher/codecmap.js";
 
-const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
+const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const V = JSON.parse(readFileSync(join(DIR, "codecmap.json"), "utf8"));
 const CODE = fromHex(V.code);
 
-test("moving the code gives odrflash's bytes", async () => {
+test("moving the code gives rfoundry's bytes", async () => {
 	const out = await cm.moveCode(CODE, V.map, V.new_run);
 	assert.equal(toHex(out), V.moved);
 	assert.equal(u32le(out, 0x40), V.new_run + 0x10);
@@ -33,7 +33,7 @@ test("another build or a stale word is refused", async () => {
 	await assert.rejects(cm.moveCode(stale, noHash, V.new_run), cm.MapError);
 });
 
-test("moving tables gives odrflash's bytes, and groups move together", () => {
+test("moving tables gives rfoundry's bytes, and groups move together", () => {
 	const moves = Object.fromEntries(Object.entries(V.table_moves).map(([k, v]) => [Number(k), v]));
 	assert.equal(toHex(cm.moveTables(CODE, V.map, moves)), V.tables_moved);
 	assert.equal(toHex(cm.moveTables(CODE, V.map, {})), V.code);
@@ -41,7 +41,7 @@ test("moving tables gives odrflash's bytes, and groups move together", () => {
 	assert.equal(cm.byCodeSha({ a: V.map }, V.map.code.sha256)[0].profile, "test-csky");
 });
 
-test("Thumb-2: movw/movt self references and island calls move as odrflash moves them", async () => {
+test("Thumb-2: movw/movt self references and island calls move as rfoundry moves them", async () => {
 	const T = V.thumb;
 	const code = fromHex(T.code), win = fromHex(T.window);
 	const delta = T.new_run - T.map.code.run;

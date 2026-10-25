@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The STM32F4 stub over WebSerial: updating an STM32F4 radio that already runs ODR without its
+// Copyright (c) 2026 The RadioFoundry Authors
+// The STM32F4 stub over WebSerial: updating an STM32F4 radio that already runs RadioFoundry without its
 // bootloader, ported from stub/f4stub.py (its protocol, its write order, its checks; docs/spec/stub-stm32f4.md). A
-// running ODR built with CONFIG_STUB_ENTRY=y takes the stub over its debug link and jumps to it; the stub then reads
+// running RadioFoundry built with CONFIG_STUB_ENTRY=y takes the stub over its debug link and jumps to it; the stub then reads
 // and writes the internal flash from the application base (0x0800C000) up and the SPI flash. The bootloader's sectors
 // 0 to 2 are never written, so the bootloader route (dfu.js) always works afterwards, and a stock radio still needs it
 // first.
@@ -44,7 +44,7 @@ export function f4Image(json) {
 	return Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
 }
 
-// The image header (stub/stm32f4/f4stub_header.h): 16 bytes at 0x10, little endian. A watchdog build of ODR enters
+// The image header (stub/stm32f4/f4stub_header.h): 16 bytes at 0x10, little endian. A watchdog build of RadioFoundry enters
 // only a stub whose header has the magic, a version of at least 3 and the feed flag. null: no header (before version 3)
 export const HDR = { OFFSET: 0x10, MAGIC: 0x48533446, LAYOUT: 1, SIZE: 16, VERSION_FEEDS_IWDG: 3, FLAG_FEEDS_IWDG: 0x1 };
 export function f4StubHeader(image) {
@@ -112,10 +112,10 @@ export class F4Stub extends Stub {
 	}
 
 	// The STM32F4 image's header (3.1 of stub-stm32f4.md) is logged before the jump; the K22F stub has none
-	async enterFromOdr(image, progress = () => {}, opts = {}) {
+	async enterFromRFoundry(image, progress = () => {}, opts = {}) {
 		const h = this.chip === F4 ? f4StubHeader(image) : undefined;
 		if (h !== undefined) this.log(h ? `STM32F4 stub image v${h.version}${h.feedsIwdg ? ", feeds the watchdog" : ""}` : "STM32F4 stub image without a header (older than version 3)");
-		return super.enterFromOdr(image, progress, opts);
+		return super.enterFromRFoundry(image, progress, opts);
 	}
 
 	async hello({ retries = 0 } = {}) {
@@ -181,7 +181,7 @@ export class F4Stub extends Stub {
 		if (this.info?.version >= CONFIG_VERSION && !this.configured) throw new StubError(`the loader is not configured for ${this.board ? `the ${this.board.name}` : "this radio"}: nothing was written`);
 	}
 
-	// After the jump the stub either adopted ODR's USB device (the same port answers at once) or enumerated again (the
+	// After the jump the stub either adopted RadioFoundry's USB device (the same port answers at once) or enumerated again (the
 	// port goes away and comes back with the same serial number)
 	async afterJump() {
 		const until = Date.now() + 2000;
@@ -204,7 +204,7 @@ export class F4Stub extends Stub {
 				await this.hello();
 				return this.attached();
 			} catch (e) {
-				if (Date.now() > end) throw new StubError("the loader's USB port did not come back within 20 s: switch the radio off and on (ODR starts again) and check the cable");
+				if (Date.now() > end) throw new StubError("the loader's USB port did not come back within 20 s: switch the radio off and on (RadioFoundry starts again) and check the cable");
 				await sleep(300);
 			}
 		}
@@ -213,7 +213,7 @@ export class F4Stub extends Stub {
 	attached() {
 		const i = this.info;
 		const spi = i.spiSize ? `SPI flash ${i.spiSize / 1024} KB (JEDEC ${i.spiId})` : i.version >= CONFIG_VERSION && !this.configured ? "not configured yet" : "no SPI flash";
-		this.log(`${this.chip.title} stub v${i.version}: ${i.flashKb} KB flash, ${spi}, USB ${i.adopted ? "adopted from ODR" : "enumerated again"}`);
+		this.log(`${this.chip.title} stub v${i.version}: ${i.flashKb} KB flash, ${spi}, USB ${i.adopted ? "adopted from RadioFoundry" : "enumerated again"}`);
 		return i;
 	}
 

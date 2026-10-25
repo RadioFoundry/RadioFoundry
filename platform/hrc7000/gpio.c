@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GPIO by pin index 0-95 (docs/spec/hardware-dm32.md 3.9). DesignWare APB GPIO: DR / DDR are whole-bank registers, so
 // every change is a read-modify-write with interrupts off (the modem interrupts switch PA and LNA pins).
 #include "platform.h"

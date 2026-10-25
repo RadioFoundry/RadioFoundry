@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Generic 24-series I2C EEPROM (i2c_eeprom.h): the protocol of the Microchip 24LC512 / 24AA512 data sheet. A write is
 // the device address, two memory address bytes (high first) and up to one page of data; bytes past the page end would
 // wrap to the start of the same page, so the driver never sends them. During the write cycle the device doesn't

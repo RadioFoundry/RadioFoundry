@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* Radioddity DB25-D without DMR (CONFIG_DMR=n, config.mk selects this script; memory.ld is the DMR build's), HR_C7000
  * (CK803S), application behind the vendor IAP loader (docs/spec/hardware-db25d.md 2).
  *
  * Program flash (XIP at 0x03000000): the loader 0x03000000..0x0300C000 (never written), then the application region
  * up to 0x0310C000, where the stock firmware's data area starts; the stock calibration copy at 0x031FE000 is far above
- * it. The loader jumps to 0x0300C000. ODR's first 4 KB sector there is the first stage (docs/spec/hardware-db25d.md 7):
+ * it. The loader jumps to 0x0300C000. RadioFoundry's first 4 KB sector there is the first stage (docs/spec/hardware-db25d.md 7):
  * it answers a stub load on the PC cable as the serial boot ROM does on UART0, then jumps here, to 0x0300D000
  * (__app_start: board.mk APP_BASE + BOOT_SIZE).
  *

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // FD6818 set-up of the Baofeng DM-1801 Pro (docs/spec/hardware-dm1801pro.md 5): the same chip family as the platform's other FD6818 board
 // with other register tables, an extra 0x0200 step in the 0x30 sequences and no band-word table. The values are
 // unverified on a bench; the 12.5 kHz word in particular is the one the spec lists second (hardware-dm1801pro.md 5.2)

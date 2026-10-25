@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DAC0 (reference manual chapter 37): 12-bit, VDDA reference, the output follows each write (buffer off)
 #include "platform.h"
 

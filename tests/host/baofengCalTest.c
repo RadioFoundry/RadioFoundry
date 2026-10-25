@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The Baofeng factory calibration decoder (drivers/cal/baofeng) on a synthetic factory page in a fake data flash:
 // page search, the three pieces, BCD frequency tables, K values, modulation balance, PA drive interpolation and
 // power levels, the L / M / H diagnostics text, and the fallbacks (docs/spec/hardware-dm32.md 11); the DM-1801 Pro's
@@ -12,7 +12,7 @@ static int failures;
 
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
 
-// --- Fake data flash: one factory page and an optional OpenDM32 copy, 0xFF elsewhere ---
+// --- Fake data flash: one factory page and an optional decoded copy, 0xFF elsewhere ---
 
 #define PAGE_ADDR	0x5000u
 #define COPY_ADDR	0x710000u
@@ -196,7 +196,7 @@ int main(void)
 	CHECK(bf_cal_load(&flash, COPY_ADDR) && strcmp(bf_cal_source(), "factory") == 0);
 	test_values();
 
-	// No factory page: OpenDM32's decoded copy, only with the right header
+	// No factory page: the decoded copy, only with the right header
 	have_page = false;
 	uint8_t img[BF_CAL_LEN];
 	bf_cal_parse(page, sizeof page, img);

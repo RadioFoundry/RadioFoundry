@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The K22F platform's pure parts: the clock arithmetic and limit check (platform/k22f/clock_math.h) with the GD-77's
 // two clock plans (boards/gd77/clock_gd77.h), the DSPI and PIT dividers, and the pin encoding and PORT control
 // register values (platform/k22f/k22f_pin.h)

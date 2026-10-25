@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 PCM framing between the I2S0 DMA rings and 20 ms blocks (pcm_gd77.h)
 #include <string.h>
 #include "pcm_gd77.h"

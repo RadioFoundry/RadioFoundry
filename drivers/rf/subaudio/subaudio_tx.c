@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // CTCSS and DCS generators (subaudio_tx.h)
 #include "subaudio_tx.h"
 #include "subaudio.h"

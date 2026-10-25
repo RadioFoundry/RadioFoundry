@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 bus implementations (docs/spec/hardware-gd77.md 4.1): for each bus, software (bit-banged on GPIO) or the
 // K22F's hardware peripheral, and what the hardware choice would need on those pins. The chip glue sees every bus
 // through the generic interfaces (bus/i2c_bus.h, bus/spi_bus.h), so changing an entry here changes no chip code.

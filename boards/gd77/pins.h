@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 pin map (docs/spec/hardware-gd77.md 3). Nothing here has been checked on a radio yet: every role is unverified,
 // and the ones marked "candidate" are the likeliest reading of a pin whose role is still open (hardware-gd77.md 11).
 #ifndef GD77_PINS_H

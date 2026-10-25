@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 factory calibration blocks (cal_blocks_gd77.h, docs/spec/hardware-gd77.md 6.4). No platform code here, so the host
 // tests run it against synthetic blocks.
 #include <stddef.h>

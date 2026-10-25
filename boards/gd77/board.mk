@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # Radioddity GD-77 / TYT MD-760: NXP MK22FN512 (Kinetis K22F, Cortex-M4F) + HR_C6000 + AT1846S + 128x64 monochrome
 # UC1701 / ST7567-class LCD on a bit-banged serial bus (docs/spec/hardware-gd77.md). Bring-up: the image is the raw
 # application for flash 0x4000, and with the radio's stock firmware in codecs/ the image with the codec merged in

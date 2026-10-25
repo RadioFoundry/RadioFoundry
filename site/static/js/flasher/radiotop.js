@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio as the page wants the user to see it: a handheld with its antenna, knobs, LED on top, PTT, speaker grille,
 // screen and keypad. The LED blinks the way the real one does in each state (the stub's status blink: half-second
 // phases while waiting, an eighth of a second while data moves, three green flashes when done), a callout names the
@@ -63,7 +63,7 @@ export function radioTop(radio, initial = {}) {
 		el.dataset.screen = sc;
 		el.dataset.knob = knob || "";
 		label.textContent = l === "off" ? "" : t(`flash.c7.visual.tag_${l}`);
-		screenText.textContent = sc === "loader" ? "PC Loader" : sc === "on" ? "ODR" : "";
+		screenText.textContent = sc === "loader" ? "PC Loader" : sc === "on" ? "RadioFoundry" : "";
 		screenText2.textContent = sc === "loader" ? "Connected" : "";
 		const words = [knob === "cycle" ? t("flash.c7.visual.cycle") : knob === "on" ? t("flash.c7.visual.on") : null,
 			note || t(`flash.c7.visual.led_${l}`), sc === "any" ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);

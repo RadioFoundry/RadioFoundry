@@ -3,7 +3,7 @@
 # K22F flash stub
 
 A small RAM monitor for the Kinetis K22F radios behind their own loader. It installs, checks and
-backs up the internal flash, and reads and writes the external SPI NOR. A running ODR loads it through the debug link
+backs up the internal flash, and reads and writes the external SPI NOR. A running RadioFoundry loads it through the debug link
 ([debuglink.md](debuglink.md) 3.18) and jumps to it with no power cycle. It is the STM32F4 stub's sibling
 ([stub-stm32f4.md](stub-stm32f4.md)): the same wire protocol, the same protocol engine, the same host tool class, the
 same install order. This page covers only what differs.
@@ -13,7 +13,7 @@ stub and the entry code is unverified.
 
 | Part | Where |
 |---|---|
-| ODR side: staging buffer, quiesce, USB park, copy, jump | `platform/k22f/stub_entry.c`, `stub_handoff.h`; `hal_system_t.stub_region / enter_stub / stub_run_addr` in `platform/k22f/system.c` |
+| RadioFoundry side: staging buffer, quiesce, USB park, copy, jump | `platform/k22f/stub_entry.c`, `stub_handoff.h`; `hal_system_t.stub_region / enter_stub / stub_run_addr` in `platform/k22f/system.c` |
 | The stub | `stub/k22f/` (`make -C stub/k22f` writes `build/stub-k22f/k22stub.bin`) |
 | Shared with the STM32F4 stub | `stub/common/`: `stubeng` (protocol engine), `stubrt` (runtime, main loop, reset), `stubcdc` (CDC-ACM descriptors and control requests), `stubnor` (SPI NOR commands) |
 | The K22F target's facts and board record check (portable) | `stub/k22f/k22stub.h`, `k22stub_board.c`; host test `tests/host/k22stubTest.c` |
@@ -28,17 +28,17 @@ stub and the entry code is unverified.
 | Flash commands | FTFA erase sector (0x09), program longword (0x06), run from the stub's RAM with no flash access, 300 ms / 5 ms time-outs; refused in HSRUN; the flash cache invalidated after each |
 | Never written | sector 0 always (the engine's `min_app_base` 0x800: vector table and the flash configuration field at 0x400); also everything below the application base and from the application end up, as the board record gives them |
 | Run address | 0x1FFF0000, SRAM_L's base; stack top 0x20000000; image at most 8 KB, stack 4 KB (both checked by the linker script) |
-| Clock | what ODR left, in RUN; r2 carries the core clock in Hz for the cycle counter timing |
-| Float | soft float: the stub has none, and ODR clears the FPU context flag before the jump |
+| Clock | what RadioFoundry left, in RUN; r2 carries the core clock in Hz for the cycle counter timing |
+| Float | soft float: the stub has none, and RadioFoundry clears the FPU context flag before the jump |
 | HELLO | name `K2STUB`, protocol 4, magic `K2SB` 0x4B325342; byte 11 is `FTFA_FSEC`; flags bit 0: USB adopted |
-| Serial number | ODR's: the low 96 bits of the unique ID (UIDMH, UIDML, UIDL) as 24 hex digits |
+| Serial number | RadioFoundry's: the low 96 bits of the unique ID (UIDMH, UIDML, UIDL) as 24 hex digits |
 | PEEK | SRAM 0x1FFF0000..0x2000FFFF, the SIM's ID registers 0x40048024..0x40048063 (one word at a time), the FTFA registers 0x40020000..0x40020013, the internal flash. Never the USB controller (its status registers change when read) |
 
 ## 2. Entry
 
-`k22f_enter_stub` (ODR side), in order:
+`k22f_enter_stub` (RadioFoundry side), in order:
 
-1. Check the entry lies in the run span and the staging buffer (8 KB in ODR's `.bss`, SRAM_L) lies above the run
+1. Check the entry lies in the run span and the staging buffer (8 KB in RadioFoundry's `.bss`, SRAM_L) lies above the run
    address, so a forward word copy is safe.
 2. `board_rf_safe` ([crash-log.md](crash-log.md) 8): the board's transmitter off. The power hold and the display stay as they are.
 3. Step the clock down from HSRUN to RUN (`k22f_clock_step_down`): the FTFA runs no command in HSRUN.
@@ -50,16 +50,16 @@ stub and the entry code is unverified.
 
 | Register | Meaning |
 |---|---|
-| r0 | bit 0: adopt the USB device (ODR's device was configured in serial mode) |
+| r0 | bit 0: adopt the USB device (RadioFoundry's device was configured in serial mode) |
 | r1 | USB data toggles: bit 0 IN 0x81 next DATA1, bit 1 IN 0x82, bit 2 OUT 0x01; bit 31 valid |
 | r2 | the core clock, Hz |
 
 ### 2.1 Parking the USB controller
 
-The controller writes received packets wherever its buffer descriptor table points, and ODR's table and buffers are in
-the SRAM_L the copy overwrites. Before the copy, ODR points `BDTPAGE1-3` at a zeroed 512-byte table in SRAM_U
-(`ODR_CPU_RAM_SECTION`). The CPU owns every descriptor in it, so the controller answers each token with NAK and the
-host retries. ODR then waits 1 ms for a packet already in flight to finish.
+The controller writes received packets wherever its buffer descriptor table points, and RadioFoundry's table and buffers are in
+the SRAM_L the copy overwrites. Before the copy, RadioFoundry points `BDTPAGE1-3` at a zeroed 512-byte table in SRAM_U
+(`RFOUNDRY_CPU_RAM_SECTION`). The CPU owns every descriptor in it, so the controller answers each token with NAK and the
+host retries. RadioFoundry then waits 1 ms for a packet already in flight to finish.
 
 The toggles come from the USB driver's state, read from the old table before the copy (`k22f_stub_toggles`). The
 driver keeps 8 bytes per endpoint and direction 512 bytes after the table: the packet size in bits 0-10 and the next
@@ -72,14 +72,14 @@ enumerate as a serial port again.
 
 A polled driver for the full-speed controller (`stub/k22f/k22stub_usb.c`), written from the reference manual. It
 keeps its own table and buffers, double-buffered on endpoint 1. Descriptors and control requests are the shared
-`stubcdc`: the same IDs (1FC9:0094), product "ODR flash stub", the same endpoints as on the STM32F4 stub.
+`stubcdc`: the same IDs (1FC9:0094), product "RadioFoundry flash stub", the same endpoints as on the STM32F4 stub.
 
 | Start | When | What the host sees |
 |---|---|---|
 | Adopt | r0 bit 0 set and the controller still has an address | nothing: the same port keeps working. `CTL.ODDRST` puts every endpoint to its even half; the address and endpoint registers are kept |
 | Enumerate again | otherwise | the port disappears briefly and comes back with the same IDs and serial number |
 
-Toggles at adoption: with r1 bit 31 set, the stub carries on with ODR's. Without it, IN starts at DATA0 (if wrong,
+Toggles at adoption: with r1 bit 31 set, the stub carries on with RadioFoundry's. Without it, IN starts at DATA0 (if wrong,
 the host drops one reply and the tool asks again) and OUT takes either toggle (DTS off). A bus reset at any time
 restarts enumeration. The address from SET_ADDRESS is applied after the status stage.
 
@@ -111,8 +111,8 @@ The self-tests and host tests use a test profile with the same layout and id 0xF
 ## 5. Host side
 
 `stub/k22stub.py` defines `K22Chip` (a `f4stub.Chip`) and `K22`, passed as `chip=` to `f4stub.F4Radio`, `run`,
-`load_segments` and `board_from_version`. `stubtool.py` routes a board in `k22stub.BOARDS` to it, found from ODR's
-VERSION `board=` with `--odr-enter`, or `--board BOARD` with `--attach`.
+`load_segments` and `board_from_version`. `stubtool.py` routes a board in `k22stub.BOARDS` to it, found from RadioFoundry's
+VERSION `board=` with `--rfoundry-enter`, or `--board BOARD` with `--attach`.
 
 | Profile key (`BOARDS[board_id]`) | Value |
 |---|---|
@@ -135,7 +135,7 @@ For a web flasher: `k22stub.APP_BASE`, `BOARDS`, `K22STUB_SHA256`, `stub_image()
 - Every K22F fact: run on a radio with the debug link and a backup of the whole flash first.
 - Whether a radio's loader checks anything at the application base besides the stack pointer and reset vector.
 - The toggle hand-over against TinyUSB's driver on the radio.
-- The FTFA time-outs with the clock ODR leaves.
+- The FTFA time-outs with the clock RadioFoundry leaves.
 
 Sources: Kinetis K22F reference manual (FTFA, USB OTG, SIM, eDMA, DMAMUX, I2S chapters), the K22F data sheet (flash
 timing), USB 2.0 chapter 9, USB CDC 1.2.

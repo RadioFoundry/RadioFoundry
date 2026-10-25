@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The K22F stub over WebSerial: updating a K22F radio that already runs ODR without its update mode, ported from
+// Copyright (c) 2026 The RadioFoundry Authors
+// The K22F stub over WebSerial: updating a K22F radio that already runs RadioFoundry without its update mode, ported from
 // stub/k22stub.py (docs/spec/stub-k22f.md). The stub runs the shared protocol engine, so the client is f4stub.js's
 // F4Stub with this chip; what is here is the chip, the radio's segments and the install.
 //

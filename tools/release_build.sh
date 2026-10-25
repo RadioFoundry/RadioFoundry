@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # Builds and packages every releasable board of one toolchain (docs/dev/release.md): each board whose board.toml has
 # [status] release = "stable", its default image and each build option value's image (tools/boards.py builds), each
@@ -22,7 +22,7 @@ while [ $# -gt 0 ]; do
 	esac
 done
 [ -n "$TOOLCHAIN" ] && [ -n "$VERSION" ] && [ -n "$OUT" ] || { echo "usage: $0 --toolchain T --version V --out DIR" >&2; exit 2; }
-PY=$(tools/odr_python.sh)	# the registry reads TOML
+PY=$(tools/rfoundry_python.sh)	# the registry reads TOML
 JOBS=${JOBS:-$(nproc 2>/dev/null || echo 4)}
 
 boards=$("$PY" tools/boards.py list --toolchain "$TOOLCHAIN" --release stable --comma)

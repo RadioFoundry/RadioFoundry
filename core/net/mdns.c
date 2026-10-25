@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Multicast DNS responder and DNS-SD advertiser (mdns.h, docs/spec/mdns.md), written from RFC 1035, RFC 6762 and
 // RFC 6763. The records it owns:
 //   <host>.local                        A      the radio's address                     unique, TTL 120
@@ -10,7 +10,7 @@
 //   <instance>.<type>.local             TXT    board=, id=, call=, fw=                 unique, TTL 4500
 //   _services._dns-sd._udp.local        PTR    <type>.local                            shared, TTL 4500
 //   <instance>.<type>.local             NSEC   "only SRV and TXT here"                 unique, TTL 120
-// The host is "odr-<DMR ID>", the instance "<callsign> <board> (<DMR ID>)". Names are compared against the message
+// The host is "rfoundry-<DMR ID>", the instance "<callsign> <board> (<DMR ID>)". Names are compared against the message
 // in place (no decode buffers: the host link task's stack is small). Replies wait in record sets and go out from
 // mdnsTick, so a busy USB endpoint only delays them.
 #include <string.h>
@@ -607,7 +607,7 @@ static void make_labels(void)
 {
 	char num[11];
 
-	strcpy(host_label, "odr-");
+	strcpy(host_label, "rfoundry-");
 	utoa10(num, id.dmr_id);
 	cat(host_label, sizeof(host_label), num);
 	inst_label[0] = '\0';
@@ -615,7 +615,7 @@ static void make_labels(void)
 		cat(inst_label, sizeof(inst_label), id.callsign);
 		cat(inst_label, sizeof(inst_label), " ");
 	}
-	cat(inst_label, sizeof(inst_label), id.board != NULL ? id.board : "ODR");
+	cat(inst_label, sizeof(inst_label), id.board != NULL ? id.board : "RadioFoundry");
 	cat(inst_label, sizeof(inst_label), " (");
 	cat(inst_label, sizeof(inst_label), num);
 	cat(inst_label, sizeof(inst_label), ")");

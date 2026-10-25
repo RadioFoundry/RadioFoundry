@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The host link's network personality (core/hostlink/hostlink_net.c) with the real IP gateway (core/dmr/ipGateway.c)
 // and packet codec (core/dmr/dmrData.c), against a fake USB network interface (board.netif) and fake air ops: frames
 // from the host reach the air ops, packets from the air reach the host, UDP serial both ways; control station mode
@@ -73,13 +73,16 @@ static struct {
 	int ip_calls, raw_calls;
 	bool group;
 	uint32_t dst;
+	uint32_t src_ip, dst_ip;
+	uint8_t ttl;
 	uint8_t protocol;
 	uint8_t data[600];
 	int len;
 	bool refuse;
 } air;
 static uint32_t radio_id(void) { return RADIO_ID; }
-static bool ip_to_air(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+static bool ip_to_air(bool group, uint32_t dst, uint32_t src_ip, uint32_t dst_ip, uint8_t ttl, uint8_t protocol,
+					  const uint8_t *l4, int length)
 {
 	if (air.refuse) {
 		return false;
@@ -87,6 +90,9 @@ static bool ip_to_air(bool group, uint32_t dst, uint8_t protocol, const uint8_t 
 	air.ip_calls++;
 	air.group = group;
 	air.dst = dst;
+	air.src_ip = src_ip;
+	air.dst_ip = dst_ip;
+	air.ttl = ttl;
 	air.protocol = protocol;
 	memcpy(air.data, l4, length);
 	air.len = length;
@@ -150,13 +156,24 @@ bool dmrDataServiceSendBursts(const dmrBurst_t *bursts, int count)
 // The service's IP path: built by the codec as the service builds an unconfirmed packet (the compression setting
 // applied; confirmed delivery is dmrDataServiceTest's), done at once unless ip_pending says otherwise
 static bool ip_pending;
+static uint16_t get16(const uint8_t *p);
 static uint8_t ip_result = DMR_REQ_OK;
-bool dmrDataServiceSendIP(bool group, uint32_t dst, uint8_t protocol, const uint8_t *l4, int length)
+bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
+						  const uint8_t *l4, int length)
 {
+	const uint8_t *pdu;
+	uint8_t sap;
+
 	if (service_busy) {
 		return false;
 	}
-	svc_count = dmrDataBuildIP(group, dst, RADIO_ID, protocol, l4, length, DT_RATE_12_DATA, 2, svc_bursts, DMR_DATA_MAX_BURSTS);
+	srcIp = (srcIp == DMR_DATA_IP_OURS) ? dmrDataIdAddress(false, RADIO_ID) : srcIp;
+	dstIp = (dstIp == DMR_DATA_IP_OURS) ? dmrDataIdAddress(group, dst) : dstIp;
+	bool compress = (protocol == DMR_IP_PROTO_UDP) && (length >= 8) && dmrDataUdpCompress(get16(&l4[0]), get16(&l4[2]));
+	int n = dmrDataEncodeIP(group, dst, RADIO_ID, dstIp, srcIp, ttl, protocol, l4, length, compress, dmrDataNextIpId(),
+							&pdu, &sap);
+	svc_count = (n > 0) ? dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, sap, group, dst, RADIO_ID, pdu, n, DT_RATE_12_DATA, 2,
+											 svc_bursts, DMR_DATA_MAX_BURSTS) : 0;
 	svc_lists++;
 	return svc_count > 0;
 }
@@ -411,6 +428,50 @@ int main(void)
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
 	CHECK(local.calls == 2 && sent_count == 2);
+	// ... nor when its IP destination is another address (we are the gateway to it): to the host, the address kept
+	p.dst = RADIO_ID;
+	put32(pip + 16, 0xC0A80A05u);
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
+	sent_count = 0;
+	hostlink_net_packet(&p);
+	hostlink_net_poll(now_ms);
+	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
+	      get32(sent[0] + 14 + 16) == 0xC0A80A05u);
+	// ... also an off-net address with our ID's 24 bits under another first octet (10.x.y.z), with its TTL kept
+	put32(pip + 16, 0x0A000000u | RADIO_ID);
+	pip[8] = 9;
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
+	sent_count = 0;
+	hostlink_net_packet(&p);
+	hostlink_net_poll(now_ms);
+	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
+	      get32(sent[0] + 14 + 16) == (0x0A000000u | RADIO_ID) && sent[0][14 + 8] == 9);
+	pip[8] = 64;
+	put32(pip + 16, 0xC0A80A05u);
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
+	// ... and ICMP to our ID for an off-net address: to the host as it came, never a local service's
+	uint8_t saved[64];
+	memcpy(saved, pip, sizeof(saved));
+	static const uint8_t echo[12] = { 8, 0, 0x06, 0xF3, 0x12, 0x34, 0, 8, 'p', 'i', 'n', 'g' };
+	pip[9] = 1;
+	put16(pip + 2, (uint16_t)(20 + sizeof(echo)));
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
+	memcpy(pip + 20, echo, sizeof(echo));
+	p.length = (uint16_t)(20 + sizeof(echo));
+	sent_count = 0;
+	hostlink_net_packet(&p);
+	hostlink_net_poll(now_ms);
+	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 && sent[0][14 + 9] == 1 &&
+	      get32(sent[0] + 14 + 16) == 0xC0A80A05u && memcmp(sent[0] + 34, echo, sizeof(echo)) == 0);
+	memcpy(pip, saved, sizeof(saved));
+	p.length = (uint16_t)(28 + sizeof(hello));
+	put32(pip + 16, IPGW_INDIVIDUAL_NET | RADIO_ID);
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
 	// A port bound for the link only (TFTP, mDNS) never takes datagrams from the air: they go to the host
 	CHECK(ipGatewayUdpBind(69, local_udp));
 	p.dst = RADIO_ID;
@@ -490,6 +551,17 @@ int main(void)
 	hostlink_net_air_stats_t as;
 	hostlink_net_air_stats(&as);
 	CHECK(as.queued == 4 && as.sent == 2 && as.failed == 1 && as.dropped == 1 && as.refused_busy == 3);
+	// Off-net through the gateway ID: the mailbox carries the real destination and the TTL to the service, which
+	// sends the full header to the gateway radio from our ID's address
+	ipGatewaySetOffNetId(3100500);
+	from_host(f, host_udp(f, 0xC0A80A05u, 5000, 5001, hello, sizeof(hello)));
+	hostlink_net_air_tick(RADIO_ID, now_ms);
+	CHECK(svc_lists == 3);
+	pk = svc_packet();
+	CHECK(pk != NULL && pk->sap == DMR_SAP_IP && pk->dst == 3100500 && !pk->group && pk->data[8] == 63);
+	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.dstIp == 0xC0A80A05u && u.srcIp == dmrDataIdAddress(false, RADIO_ID));
+	ipGatewaySetOffNetId(0);
+	hostlink_net_air_tick(RADIO_ID, now_ms);
 	// The packet hook passes what the service hears on to the host
 	memset(&p, 0, sizeof(p));
 	p.sap = DMR_SAP_SHORT_DATA;

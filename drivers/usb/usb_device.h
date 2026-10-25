@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio as a USB device, on TinyUSB: descriptors from the board's IDs (usb_port.h), the device stack task, and
 // the serial mode's CDC-ACM port as a hal_stream_t for the host link.
 //
 // One personality at a time (docs/spec/hardware-dm1701.md 16): serial (CDC-ACM), or with CONFIG_USB_NETWORK network
 // (CDC-NCM, usb_ncm.h), a second set of descriptors with its own PID. The F405's three IN endpoints can't hold both
 // functions (ACM and NCM need two each), so a composite device isn't possible there; switching re-enumerates.
-#ifndef ODR_USB_DEVICE_H
-#define ODR_USB_DEVICE_H
+#ifndef RFOUNDRY_USB_DEVICE_H
+#define RFOUNDRY_USB_DEVICE_H
 
 #include <stdint.h>
 #include <stdbool.h>

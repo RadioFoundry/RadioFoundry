@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // K22F clock arithmetic (reference manual 24.4.3, data sheet operating limits), pure so the host tests check every
 // board's clock plan. The PLL takes the external reference divided by PRDIV0 + 1 (2-4 MHz) and multiplies it by
 // VDIV0 + 24; MCGOUTCLK is the PLL output, and SIM_CLKDIV1 divides it for the core, bus, FlexBus and flash clocks.

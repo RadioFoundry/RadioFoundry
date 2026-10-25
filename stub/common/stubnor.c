@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The external SPI NOR flash for the flash stubs (stubnor.h). Every wait polls USB, so the host's control requests
 // keep being answered while the chip is busy.
 #include <stddef.h>
@@ -70,7 +70,7 @@ uint32_t stubnor_probe(uint8_t id[3])
 		return 0;
 	}
 	up = true;
-	(void)wait_ready(ERASE_MS);	// ODR may have handed over in the middle of an erase
+	(void)wait_ready(ERASE_MS);	// RadioFoundry may have handed over in the middle of an erase
 	return id[2] >= 0x18u ? 0x1000000u : 1u << id[2];	// 3 address bytes reach 16 MB
 }
 

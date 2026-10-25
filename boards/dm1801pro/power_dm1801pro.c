@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1801 Pro power latch and key, battery on ADC channel C, status LEDs (docs/spec/hardware-dm1801pro.md 3, 9.2, 9.4).
 // The battery scale is measured on one radio (103 counts per volt, hardware-dm1801pro.md 9.2). The power key's polarity
 // is provisional: the level it has at start-up counts as "on".

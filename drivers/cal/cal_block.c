@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Generic factory calibration blocks (cal_block.h)
 #include <string.h>
 #include "cal_block.h"

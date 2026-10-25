@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 diagnostics page: the raw readings the first radio session needs to settle the open pin roles
 // (docs/spec/hardware-gd77.md 11): key bits, the battery channel, the chips' answers, the clock
 #include <stdio.h>

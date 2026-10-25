@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The K22F codec descriptor: where the merge put the radio's stock codec in internal flash (docs/spec/codec-gd77.md).
-// 128 bytes at 0x7B700, written with the codec by the merge tool (tools/odrflash/odrflash/k22fcodec.py); keep the two
+// 128 bytes at 0x7B700, written with the codec by the merge tool (tools/rfoundry/rfoundry/k22fcodec.py); keep the two
 // in step. Same layout as the STM32 radios' descriptor (platform/stm32f4/codec_desc.h). The codec runs in place
 // from flash, so the firmware only needs to know where its code is and that the bytes there are what the merge wrote.
 // No hardware here: the host tests run it (tests/host/codecDescTest.c).
-#ifndef ODR_K22F_CODEC_DESC_H
-#define ODR_K22F_CODEC_DESC_H
+#ifndef RFOUNDRY_K22F_CODEC_DESC_H
+#define RFOUNDRY_K22F_CODEC_DESC_H
 
 #include <stdbool.h>
 #include <stddef.h>

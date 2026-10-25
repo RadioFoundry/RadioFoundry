@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // drivers/flash/i2c_eeprom against a model of a 24-series EEPROM at the I2C bus (the Microchip 24LC512 data sheet).
 // The model keeps what the driver must get right: a write sets the address pointer from two bytes, data past the end
 // of the page wraps to the start of the same page, the write cycle starts at the STOP and lasts a while, during which

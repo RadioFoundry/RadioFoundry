@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // I2S0 (the SAI, reference manual chapter 54) as a slave of the codec, with one DMA ring each way. The codec drives
 // the bit clock and frame sync into the receiver's pins; the transmitter runs synchronous to the receiver, so one
 // pair of clock pins serves both. DMA channel 0 drains the receive FIFO into rx_ring, channel 1 fills the transmit FIFO

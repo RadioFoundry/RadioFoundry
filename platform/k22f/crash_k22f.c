@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The crash log on the K22F (hal_crash.h, docs/spec/crash-log.md 2.1): the same Cortex-M4 capture as the STM32F4's.
 // The fault entry takes the exception frame from the stack the CPU pushed it on (MSP or a task's PSP), moves to a stack
 // of its own and fills the record with the frame, r4-r11 and the fault status registers. The K22F has no backup RAM,

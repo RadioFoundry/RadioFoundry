@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Pins from a board's table (k22f_pin.h): the PORT control register for function, pull, drive and interrupt edge,
 // and for GPIO outputs the level before the direction
 #include "platform.h"

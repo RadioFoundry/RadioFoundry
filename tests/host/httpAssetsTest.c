@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The HTTP status server's asset table as the firmware compiles it (tools/gen_http_assets.py, gzip or plain): each
 // entry's bytes go to DUMP/<index>.bin and its path, type and gzip flag to DUMP/table.txt, which
 // `gen_http_assets.py --check` holds against core/net/http_assets (every entry decompresses to its source)

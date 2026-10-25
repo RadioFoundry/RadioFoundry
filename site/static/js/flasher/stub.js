@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The C7 stub over WebSerial: flash access for the HR_C7000 radios (DM-32UV, DM-1801 Pro, DB25-D) through the RAM
 // monitor stub/stubtool.py loads, ported from that tool (its protocol, its retries, its checks). One image, the universal
 // stub, serves every radio: it copies itself to its run address wherever it was loaded, and the page sends it the
 // board's profile (CONFIG) after HELLO and checks the echo before any write. Two ways to get the stub running:
 //
 //   boot ROM   radio off, cable in, then switched on: the SoC's serial boot ROM greets the host and takes the stub
-//   from ODR   a running ODR built with CONFIG_STUB_ENTRY=y takes it over its debug link (docs/spec/debuglink.md 3.18)
+//   from RadioFoundry   a running RadioFoundry built with CONFIG_STUB_ENTRY=y takes it over its debug link (docs/spec/debuglink.md 3.18)
 //
 // Then the stub reads both flash chips (every 4 KB sector checked against the radio's own CRC-32) and writes the
 // program flash's application area, 0xC000 up; the bootloader below it is never written, and the boot ROM is in the
@@ -25,6 +25,8 @@ export const OK = 0x05, BADSUM = 0x0A, BADOP = 0x0B, TOOLONG = 0x0E;
 export const SSI_PROG = 0x04000000, SSI_DATA = 0x140A0000;
 export const QUAD_ENABLE = 0x1100005C, LCSFC_BAUDR = 0x11000030, SYS_SOFT_RSTN = 0x11000000, TIMER2_VALUE = 0x14000018;
 export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
+// RadioFoundry's restart-cause mark (docs/spec/crash-log.md 1.3; stubtool.py CRASH_SOFT_MARK): the reset was asked for
+export const CRASH_SOFT_MARK = 0x18007EF4, CRASH_BOOT_SOFT = 0x54464F53;
 export const STUB_MAGIC = 0x42533743, DL_STUB = 0x1A;
 const ROM_HELLO = [0x02, 0x24, 0x00, 0x03], ROM_ACK = [0x02, 0x05, 0x00, 0x03];
 // memory: SSI base, the GPIO chip select (the data flash's is PTA18), size
@@ -146,10 +148,10 @@ export class Stub {
 		await this.helloWithin(3000, "the stub was started but does not answer");
 	}
 
-	// ---- entry from ODR (debug link STUB, docs/spec/debuglink.md 3.18)
+	// ---- entry from RadioFoundry (debug link STUB, docs/spec/debuglink.md 3.18)
 
-	// {load, size, chunk} when the running ODR offers stub entry, null when it doesn't (built without CONFIG_STUB_ENTRY)
-	static async odrOffer(link) {
+	// {load, size, chunk} when the running RadioFoundry offers stub entry, null when it doesn't (built without CONFIG_STUB_ENTRY)
+	static async rfoundryOffer(link) {
 		let r;
 		try {
 			r = await link.request(DL_STUB, new Uint8Array([0]));
@@ -160,8 +162,8 @@ export class Stub {
 		return { load: u32le(r, 4), size: u32le(r, 8), chunk: Math.min(r[12] | (r[13] << 8), 59) };
 	}
 
-	// entry: where ODR jumps (the offered load address unless the stub runs elsewhere, as the STM32F4 one does)
-	async enterFromOdr(image, progress = () => {}, { entry = null } = {}) {
+	// entry: where RadioFoundry jumps (the offered load address unless the stub runs elsewhere, as the STM32F4 one does)
+	async enterFromRFoundry(image, progress = () => {}, { entry = null } = {}) {
 		const link = new Link(this.s);
 		const dl = async (payload, what) => {
 			let last;
@@ -173,13 +175,13 @@ export class Stub {
 					if (!(e instanceof LinkError) || /status/.test(e.message)) break;
 				}
 			}
-			throw new StubError(`ODR refused ${what} (${last?.message})`);
+			throw new StubError(`RadioFoundry refused ${what} (${last?.message})`);
 		};
-		const offer = await Stub.odrOffer(link);
-		if (!offer) throw new StubError("this ODR build cannot hand over to the loader (built without CONFIG_STUB_ENTRY)");
-		if (image.length > offer.size) throw new StubError(`the stub (${image.length} bytes) does not fit ODR's free RAM (${offer.size} bytes)`);
+		const offer = await Stub.rfoundryOffer(link);
+		if (!offer) throw new StubError("this RadioFoundry build cannot hand over to the loader (built without CONFIG_STUB_ENTRY)");
+		if (image.length > offer.size) throw new StubError(`the stub (${image.length} bytes) does not fit RadioFoundry's free RAM (${offer.size} bytes)`);
 		if (entry === null) univFits(image, offer.load, [offer.load, offer.size]);
-		this.log(`ODR offers ${offer.size} bytes of RAM at 0x${offer.load.toString(16)}; sending the ${image.length}-byte stub`);
+		this.log(`RadioFoundry offers ${offer.size} bytes of RAM at 0x${offer.load.toString(16)}; sending the ${image.length}-byte stub`);
 		await dl(concat(new Uint8Array([1]), le32(STUB_MAGIC), le32(image.length), le32(crc32(image)), le32(entry ?? offer.load)), "the stub transfer");
 		for (let off = 0; off < image.length; off += offer.chunk) {
 			await dl(concat(new Uint8Array([2]), le32(off), image.subarray(off, off + offer.chunk)), `the chunk at ${off}`);
@@ -187,7 +189,7 @@ export class Stub {
 		}
 		// Refused (7) with reason 1: the radio's watchdog runs and this loader doesn't feed it (an older copy of the site)
 		await dl(concat(new Uint8Array([3]), le32(STUB_MAGIC)), "to start the loader (image incomplete or CRC mismatch; status 7: this firmware needs a newer loader, reload the page)");
-		this.log("ODR is jumping to the stub");
+		this.log("RadioFoundry is jumping to the stub");
 		this.jumped = true;
 		await this.afterJump();
 	}
@@ -195,7 +197,7 @@ export class Stub {
 	async afterJump() {
 		await sleep(300);
 		await this.drain(300);
-		await this.helloWithin(3000, "ODR jumped to the stub but it does not answer: switch the radio off and on, then connect again");
+		await this.helloWithin(3000, "RadioFoundry jumped to the stub but it does not answer: switch the radio off and on, then connect again");
 	}
 
 	// ---- stub frames: 02 op len(2) chk 03 payload -> 02 status len(2) chk 03 payload
@@ -243,7 +245,7 @@ export class Stub {
 
 	// Send the board's profile to the universal stub (CONFIG, op 0x0D: clock, power latch and key pins, LEDs, board id,
 	// flags, the UART this request came in on) and check the echo in the next HELLO. Writes wait for this. The clock is
-	// the APB clock, measured (24 MHz under the boot ROM, 36 MHz on the DB25-D, 84 MHz under ODR on the DM-32UV and
+	// the APB clock, measured (24 MHz under the boot ROM, 36 MHz on the DB25-D, 84 MHz under RadioFoundry on the DM-32UV and
 	// DM-1801 Pro). An older stub has no CONFIG.
 	async configure(profile, led = { red: 33, green: 32 }) {
 		if (!this.v6) return;
@@ -502,10 +504,12 @@ export class Stub {
 	}
 
 	// Soft-reset the SoC: XIP quad off and the reset divider (the soft reset keeps it, and the ROM can't read flash at
-	// ODR's), then SYS_SOFT_RSTN = 0. The boot ROM runs again and starts the firmware: a power cycle without the cycle.
-	// The watchdog goes off first: ODR leaves it running while the stub feeds it, a soft reset may keep it, and the
-	// bootloader never feeds it. ODR starts it again
+	// RadioFoundry's), then SYS_SOFT_RSTN = 0. The boot ROM runs again and starts the firmware: a power cycle without the cycle.
+	// The watchdog goes off first: RadioFoundry leaves it running while the stub feeds it, a soft reset may keep it, and the
+	// bootloader never feeds it. RadioFoundry starts it again. The restart-cause mark goes first, so RadioFoundry's next start reports a
+	// software restart, not the watchdog
 	async resetChip() {
+		await this.poke(CRASH_SOFT_MARK, le32(CRASH_BOOT_SOFT));
 		await this.poke(WDT_LOCK, le32(WDT_KEY));
 		await this.poke(WDT_EN, le32(0));
 		await this.poke(WDT_LOCK, le32(0));

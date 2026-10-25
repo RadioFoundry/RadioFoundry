@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* Radioddity GD-77, MK22FN512 (512 KB flash, 128 KB SRAM), application behind the radio's bootloader
  * (docs/spec/hardware-gd77.md 6.1). The sections are the platform's (platform/k22f/common.ld).
  *

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 # The HR_C7000 platform's registry entry (tools/boards.py): what the tools and CI need to know about every board on it.
 # The build itself reads platform.mk, never this file.
 
@@ -25,7 +25,7 @@ default_sectors = "app+slot"
 
 # The toolchain CI and releases build with. version is the GCC release tools/build-csky-toolchain.sh builds (it keeps
 # the binutils and newlib releases beside their checksums). image is the container that holds it:
-# tools/docker/csky-toolchain/build.sh makes it, run.sh runs a command in it, ODR_CSKY_IMAGE overrides it. id and name:
+# tools/docker/csky-toolchain/build.sh makes it, run.sh runs a command in it, RFOUNDRY_CSKY_IMAGE overrides it. id and name:
 # the toolchain's CI job (firmware (C-SKY)) and its .github/actions/toolchain set-up; every platform with this id
 # builds in that job and must pin the same toolchain
 [toolchain]
@@ -34,4 +34,4 @@ name = "C-SKY"
 cc = "csky-elf-gcc"
 build = "tools/build-csky-toolchain.sh"
 version = "14.2.0"
-image = "odr/csky-gcc14:latest"
+image = "rfoundry/csky-gcc14:latest"

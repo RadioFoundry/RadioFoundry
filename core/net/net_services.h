@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio's own services on the USB network link (CONFIG_MDNS, CONFIG_TFTP): their ports in the IP gateway's table
 // (ipGatewayUdpBind), their replies through ipGatewayUdpSend, the mDNS service table and identity, the TFTP files.
 // net.c (the services' one entry point from the host link task) calls these.
-#ifndef ODR_NET_SERVICES_H
-#define ODR_NET_SERVICES_H
+#ifndef RFOUNDRY_NET_SERVICES_H
+#define RFOUNDRY_NET_SERVICES_H
 
 #include <stdint.h>
 #include <stdbool.h>

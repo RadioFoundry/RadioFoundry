@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 buses (docs/spec/hardware-gd77.md 4). Each is built from its entry in bus_cfg.h and handed to the chip glue as
 // a generic interface: I2C bus A (AT1846S, EEPROM) and B as i2c_bus_t, the data flash, the display and the HR_C6000
 // port as spi_bus_t. Software buses run on GPIO through bus/i2c_gpio and bus/spi_gpio. The hardware choices: I2C0 for

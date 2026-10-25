@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The open-firmware power byte (qdmr's 10-step scale) on radios with POWER_COUNT levels: decode, and encode back
 #include <stdio.h>
 #include <string.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Baofeng DM-1701: board descriptor, clocks, reset-time pin levels, key map
 #include "board.h"
 #include "config.h"
@@ -25,9 +25,9 @@ static const band_t bands[] = {
 // The RTOS heap, and with it every task stack, in the CCM: zero wait states and no contention with the audio,
 // ADC and backlight DMA on the main SRAM. Nothing on a stack or from pvPortMalloc may be a DMA buffer (DMA can't
 // reach the CCM): the DMA buffers are statics in main RAM, checked where each stream is set up (dm1701.h DMA_RAM_OK)
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] ODR_CPU_RAM_NOINIT __attribute__((aligned(8)));
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] RFOUNDRY_CPU_RAM_NOINIT __attribute__((aligned(8)));
 
-// Zero the CCM's .ccmbss (ODR_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
+// Zero the CCM's .ccmbss (RFOUNDRY_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
 // (the CCM clock is on from reset)
 extern uint32_t _sccmbss[], _eccmbss[];
 static void ccm_zero(void)
@@ -39,21 +39,13 @@ __attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_en
 
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
-// The top side key (above PTT, row 2 D5): short = power level; held 1.5 s = emergency where it is built
-// (information-architecture.md 7.1), else speak status. Held with PTT at power-on it is the bootloader combination,
-// which the running firmware never sees
+// The side keys are SK1 (above PTT, row 2 D5; held with PTT at power-on it is the bootloader combination, which the
+// running firmware never sees), SK2 and SK3 (below PTT), top to bottom (hardware-dm1701.md 20). SK3: short = power
+// level; held 1.5 s = emergency where it is built (information-architecture.md 7.1), else speak status
 #if CONFIG_DMR_EMERGENCY
-#define TOP_LONG	ACT_EMERGENCY
+#define SK3_LONG	ACT_EMERGENCY
 #else
-#define TOP_LONG	ACT_USER_3
-#endif
-
-// SK2 (the lowest side key): A/B on a press and Dual watch held (docs/ux/dual-watch.md), the pair on one key. Without
-// dual watch a press is the talk target picker (also long #)
-#if CONFIG_DUAL_WATCH
-#define SK2_SHORT	ACT_AB
-#else
-#define SK2_SHORT	ACT_TALK_TARGET
+#define SK3_LONG	ACT_USER_3
 #endif
 
 // docs/ux/information-architecture.md 7.1
@@ -75,15 +67,16 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
 	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
 	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
-	{ KEY_SK2, SK2_SHORT, ACT_USER_2, false, false, 0 },
-	{ KEY_TOP, ACT_USER_3, TOP_LONG, false, false, 0 },
+	{ KEY_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
+	{ KEY_SK3, ACT_USER_3, SK3_LONG, false, false, 0 },
 	{ KEY_FN_LEFT, ACT_USER_1, ACT_USER_1, false, false, 0 },
 	{ KEY_FN_RIGHT, ACT_USER_4, ACT_USER_4, false, false, 0 },
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 
-// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): side key 1, side key 2, top key
-static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2, KEY_TOP };
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom, then P1 and P2
+static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2, KEY_SK3, KEY_FN_LEFT, KEY_FN_RIGHT };
+static const char *const side_key_names[] = { "SK1", "SK2", "SK3", "P1", "P2" };
 
 #if CONFIG_CPS_OPENFW
 // open-firmware-cps.md 4: type 8 is the DM-1701 with a BGR panel, 10 with an RGB one (the factory panel type 2 is
@@ -119,6 +112,7 @@ const board_t board = {
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
 	.side_keys = side_keys,
+	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
 	.radio = &dm1701_radio,
 	.power = &dm1701_power,

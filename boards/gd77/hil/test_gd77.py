@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """GD-77 bring-up checks (docs/spec/hardware-gd77.md 14), radio only, never transmits. Everything is read from the
 debug link's board view section (board.* keys: pin levels, the clock plan, the reset cause, ADC readings, what the chip
 drivers found) and the diagnostics lines; nothing writes a pin or a chip register. The manual test asks a person to
@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from odr_hil import as_int, skip
+from rfoundry_hil import as_int, skip
 
 PLANS = {49152000: False, 95232000: True}      # core clock -> HSRUN (boards/gd77/clock_gd77.h)
 RESET_NAMES = {"por", "pin", "lvd", "wakeup", "sw", "wdog", "lockup", "lol", "loc", "mdm", "jtag", "ezport",

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flash stubs' Cortex-M runtime (stubrt.h). Architecture registers only: the Armv7-M addresses of DEMCR, the DWT
 // cycle counter and AIRCR are the same on every Cortex-M3 / M4.
 #include <stddef.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 factory calibration as the radio code consumes it (docs/spec/hardware-gd77.md 6.4): the values of the block
 // for a frequency, converted to the register values they set on the AT1846S, the HR_C6000 and DAC0. The storage side
 // (cal_blocks_gd77.h) reads the blocks; gd77_cal_at() picks the block and converts. radio_gd77.c holds a weak stand-in
@@ -18,7 +18,7 @@
 
 // The safe drive when nothing is loaded: none at all
 #define GD77_CAL_SAFE_DRIVE	0u
-// The drive byte the block's own rule gives outside its range. ODR never transmits there (the point is invalid), but
+// The drive byte the block's own rule gives outside its range. RadioFoundry never transmits there (the point is invalid), but
 // gd77_cal_drive() reports it so the rule stays visible and tested
 #define GD77_CAL_DRIVE_OUTSIDE	0xA0u
 // The largest two-point bias a block may hold; above it the TX point is invalid

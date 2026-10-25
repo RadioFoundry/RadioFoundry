@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 data flash: an SPI NOR chip on PTE4 (MOSI), PTE5 (SCK), PTE6 (MISO) with its chip select on PTA19, reached
-// through gd77_nor_bus (docs/spec/hardware-gd77.md 6.2). The core gets the chip with the map of storage_gd77.c: ODR's
+// through gd77_nor_bus (docs/spec/hardware-gd77.md 6.2). The core gets the chip with the map of storage_gd77.c: RadioFoundry's
 // settings, journal and codeplug images from the second megabyte up. Every erase and program below 1 MB is refused
 // here, whatever asks for it, so the radio's own data and factory header stay as they are. One mutex serializes every
 // transaction once the scheduler runs.
@@ -31,7 +31,7 @@ static void give(void)
 	}
 }
 
-// A part too small for ODR's areas (or of unknown size) is still read for the diagnostics, but the core sees no flash
+// A part too small for RadioFoundry's areas (or of unknown size) is still read for the diagnostics, but the core sees no flash
 static bool init(void)
 {
 	if (lock == NULL) {
@@ -105,7 +105,7 @@ static bool er(uint32_t addr)
 
 hal_flash_t gd77_flash = {
 	.init = init,
-	.size = 0,		// set by init: the part's size when ODR's areas fit, else 0
+	.size = 0,		// set by init: the part's size when RadioFoundry's areas fit, else 0
 	.erase_size = SPI_NOR_SECTOR_SIZE,
 	.read = rd,
 	.write = wr,

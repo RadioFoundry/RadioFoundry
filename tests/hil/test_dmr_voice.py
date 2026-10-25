@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
-"""DMR voice path end to end (opt-in RF: --allow-rf --allow-service-stop, and --ambe FILE / $ODR_HIL_AMBE): the SDR
+# Copyright (c) 2026 The RadioFoundry Authors
+"""DMR voice path end to end (opt-in RF: --allow-rf --allow-service-stop, and --ambe FILE / $RFOUNDRY_HIL_AMBE): the SDR
 bench sends one call carrying a real speech recording; every frame must reach the speaker path.
 
 Pass criteria (README.md): the AMBE voice layer takes in every frame the bench sent (the file padded to whole
@@ -17,7 +17,7 @@ import time
 
 import pytest
 
-from odr_hil import counter_deltas, skip
+from rfoundry_hil import counter_deltas, skip
 
 PRIME = 3   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
 # Decoded speech peaks at thousands; a decoder fed the wrong bits gave 6 with every counter clean (DB25-D, 2026-10-17)
@@ -31,7 +31,7 @@ PEAK_MIN = 1000
 def test_dmr_voice_speech(radio, sdr_bench, pytestconfig):
     ambe = pytestconfig.getoption("--ambe")
     if not ambe:
-        skip("opt_in", "give --ambe FILE (or $ODR_HIL_AMBE): a 9-byte-frame .ambe speech recording")
+        skip("opt_in", "give --ambe FILE (or $RFOUNDRY_HIL_AMBE): a 9-byte-frame .ambe speech recording")
     if not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
         pytest.fail(f"{ambe}: not a 9-byte-frame .ambe file")
     if "DMR" not in radio.features():

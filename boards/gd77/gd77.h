@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Internal interfaces between the GD-77 board files (docs/spec/hardware-gd77.md)
 #ifndef GD77_H
 #define GD77_H
@@ -72,7 +72,7 @@ bool gd77_backlight_pwm(void);		// the backlight runs on the FTM channel (GD77_B
 
 // --- Data flash (flash_gd77.c) ---
 uint32_t gd77_flash_jedec(void);	// manufacturer << 16 | device, 0 when nothing answered
-uint32_t gd77_flash_refusals(void);	// erases and programs refused outside ODR's areas
+uint32_t gd77_flash_refusals(void);	// erases and programs refused outside RadioFoundry's areas
 // Any part of the chip, the first megabyte included (read only: diagnostics, the logical space below)
 bool gd77_flash_raw_read(uint32_t addr, void *buf, uint32_t len);
 

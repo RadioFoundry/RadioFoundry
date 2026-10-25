@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The stub entry's firmware glue (see stub_entry.h, docs/spec/stub-entry.md): load the host's RAM-monitor image into a
 // free RAM span and, once it verifies, hand the SoC to it at run time with no power cycle. The portable state machine
 // is stub_load.c, the listener of a build without the debug link stub_link.c; this file finds the span through
@@ -21,8 +21,8 @@
 #include "hotspot/hotspot.h"
 #endif
 
-#ifndef ODR_GIT
-#define ODR_GIT "unknown"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "unknown"
 #endif
 
 #define STUB_ENTER_DELAY_MS	100u	// let the ENTER reply leave the UART before interrupts are masked
@@ -42,7 +42,7 @@ static void show_banner(void)
 	if (board.display == NULL || gfx_framebuffer() == NULL || gfx_width() <= 0) {
 		return;
 	}
-	ui_draw_splash(board.name, ODR_GIT, "PC Loader Connected", "Power-cycle to exit");
+	ui_draw_splash(board.name, RFOUNDRY_GIT, "PC Loader Connected", "Power-cycle to exit");
 	gfx_flush();
 	// Full backlight: the UI's idle timeout may have dimmed or switched it off, and the UI never runs again while the
 	// monitor has the radio, so the splash would otherwise sit on a dark panel
@@ -187,7 +187,7 @@ void stub_entry_start(void)
 	dl_parser_init(&parser);
 	parser.reply_cap = STUB_LINK_REPLY_MAX;
 	ident.board = board.name;
-	ident.git = ODR_GIT;
+	ident.git = RFOUNDRY_GIT;
 	ident.codec = codec_id;
 	ident.stub = stub_entry_request;
 	hostlink_set_side_protocol(&side);

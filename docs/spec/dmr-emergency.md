@@ -2,7 +2,7 @@
 
 What the emergency key does, and what the radio shows when it hears someone else's emergency. Status: built and
 host-tested (`dmrDataChainTest`, `dmrCallTest`, `radioCoreTest`); the alarm and the emergency call, in and out, on
-air against the SDR bench, measured on the DM-1701 (`tests/hil/test_dmr_emergency.py`, `docs/testing/on-air-coverage.md`).
+air against the SDR bench (`tests/hil/test_dmr_emergency.py`, `docs/testing/on-air-coverage.md` for the radios and results).
 
 Sources: ETSI TS 102 361-2 (the service options octet of the voice LC, 7.2.1: bit 7 emergency), TS 102 361-1 (CSBK
 layout and CRC), the public descriptions of Motorola's emergency alarm (a CSBK with the Motorola FID 0x10 that the
@@ -64,7 +64,7 @@ access. The radio core reconfigures the call stack when the emergency starts, en
 (`dmr_emergency_config_serial`); it takes effect at the next call.
 
 It can't start (state `failed`, until the next start) when the channel is not a DMR channel we may transmit on (the
-data service's rule: not RX only, in band, not a VFO, not in hotspot mode, an own ID) or there is no target.
+data service's rule: not RX only, in band, not in hotspot mode, an own ID; a DMR VFO counts) or there is no target.
 
 ## 4. Alerts heard
 
@@ -97,7 +97,7 @@ user didn't ask for; holding the emergency key is that request).
 
 Debug link view section `dmr_ext` (`debuglink.md` 3.7): `em.state em.mode em.dst ...`, the newest alert
 `em.alert*`, the counters `em.started ... em.tones`, and `data.emergency_alarms_heard / received / sent`.
-`odr_debug.py data emergency start|cancel|dismiss`, `odr_debug.py data em-settings alarm|alarm_call|call [DST]
+`rfoundry_debug.py data emergency start|cancel|dismiss`, `rfoundry_debug.py data em-settings alarm|alarm_call|call [DST]
 [private] [etsi] [no-tone] [tries=N] [hot=S]`.
 
 ## 7. Tests

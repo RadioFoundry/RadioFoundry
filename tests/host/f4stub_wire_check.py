@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The host tool (stub/f4stub.py) against the stub's real protocol engine (f4stubSim, built from stub/common/stubeng.c
 and stub/stm32f4/f4stub_board.c): the board records, installs on a simulated DM-1701 and MD-380 flash and on f4stub's test
 profile (other SPI wiring), a read-back and the refusals, all over the stub's wire protocol. The profiles come from the
@@ -46,7 +46,7 @@ class PipePort:
 
 
 def run(sim, flash, job, want_spi=False, board="dm1701"):
-    with tempfile.TemporaryDirectory(prefix="odr-f4wire-") as d:
+    with tempfile.TemporaryDirectory(prefix="rfoundry-f4wire-") as d:
         fin, fout = os.path.join(d, "in.bin"), os.path.join(d, "out.bin")
         open(fin, "wb").write(flash)
         proc = subprocess.Popen([sim, fin, fout], stdin=subprocess.PIPE, stdout=subprocess.PIPE,

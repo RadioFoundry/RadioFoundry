@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The Tools page: codeplug conversion (the framework in flasher/codeplug.js). Files are read in the page only.
 
 import { detect, convertersFor } from "./flasher/codeplug.js";

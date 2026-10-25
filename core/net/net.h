@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The radio's own services on the USB network link (CONFIG_NET_LOCAL): the TCP of core/net/tcp.c on the IP gateway's
 // IPv4 layer (ipGatewaySetTCP / ipGatewaySendLocal) and the services on it (CONFIG_NET_TCP, docs/spec/tcp-services.md),
 // and the UDP services of net_services.c (mDNS, TFTP: ipGatewayUdpBind / ipGatewayUdpSend). Everything runs in the host
 // link task, from hostlink_net_init / hostlink_net_poll; never over RF.
-#ifndef ODR_NET_H
-#define ODR_NET_H
+#ifndef RFOUNDRY_NET_H
+#define RFOUNDRY_NET_H
 
 #include <stdbool.h>
 #include <stdint.h>

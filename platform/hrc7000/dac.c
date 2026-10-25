@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DAC (3 channels, 12 bits; docs/spec/hardware-dm32.md 3.8) as the radios use it: channel B is the PA drive, C a
 // bias the board picks, A unused. The modem's analog set-up is modem-hrc7000.md section 4 steps 1-3.
 #include "platform.h"

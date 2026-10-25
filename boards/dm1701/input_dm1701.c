@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 keypad, side keys, PTT and encoder (docs/spec/hardware-dm1701.md section 10).
 // The keypad columns are the LCD data lines D0..D7: the shared scan (platform/stm32f4/fsmc_keypad) borrows them.
 #include "dm1701.h"
@@ -15,7 +15,7 @@
 static const uint8_t matrix[ROW_COUNT][8] = {
 	{ KEY_1, KEY_4, KEY_7, KEY_STAR, KEY_UP, KEY_FN_RIGHT, KEY_FN_LEFT, NO_KEY },
 	{ KEY_2, KEY_5, KEY_8, KEY_0, KEY_DOWN, KEY_RED, KEY_GREEN, NO_KEY },
-	{ KEY_3, KEY_6, KEY_9, KEY_HASH, NO_KEY, KEY_TOP, KEY_SK2, KEY_SK1 },
+	{ KEY_3, KEY_6, KEY_9, KEY_HASH, NO_KEY, KEY_SK1, KEY_SK3, KEY_SK2 },	// side keys: hardware-dm1701.md 20
 };
 
 static const stm32_fsmc_keypad_cfg_t keypad = {

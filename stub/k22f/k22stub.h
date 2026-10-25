@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The Kinetis K22F flash stub's target facts (docs/spec/stub-k22f.md): what every MK22FN512 has (the flash map, the
 // readable memory ranges) and the board record the host sends in CONFIG. The protocol engine is shared
 // (stub/common/stubeng.h); k22stub_main.c is the glue, k22stub_board.c checks a board record (portable, host tested).
@@ -23,11 +23,11 @@
 // byte and the protection bits). No board record opens it for writing; each board's own loader end comes in its record
 #define K22_MIN_APP_BASE	0x00000800u
 
-// What ODR passes at the jump (r0 flags, r1 USB data toggles, r2 the core clock) and where the stub runs:
+// What RadioFoundry passes at the jump (r0 flags, r1 USB data toggles, r2 the core clock) and where the stub runs:
 // platform/k22f/stub_handoff.h
 
 // HELLO flags (the target's bits)
-#define K22_HELLO_USB_ADOPTED	0x01u	// the stub took over ODR's configured USB device (no re-enumeration)
+#define K22_HELLO_USB_ADOPTED	0x01u	// the stub took over RadioFoundry's configured USB device (no re-enumeration)
 
 // The board record (CONFIG payload, 24 bytes, big endian). Pins are port * 32 + pin (port 0 = A ... 4 = E, as
 // platform/k22f/k22f_pin.h), 0xFF for none. The host keeps one profile per radio (stub/k22stub.py BOARDS)

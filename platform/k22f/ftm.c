@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // FTM edge-aligned PWM on one channel (reference manual chapter 39), for a dimmable backlight. The counter runs from
 // the bus clock up to MOD; the channel is high from 0 until CnV. Written in the FTM's basic mode (FTMEN = 0), where a
 // new CnV takes effect at the next period, so a change never makes a short or long pulse.

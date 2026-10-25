@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The K22F flash stub's entry and glue (docs/spec/stub-k22f.md). ODR copies the image to SRAM_L's base and jumps to
+// Copyright (c) 2026 The RadioFoundry Authors
+// The K22F flash stub's entry and glue (docs/spec/stub-k22f.md). RadioFoundry copies the image to SRAM_L's base and jumps to
 // k22stub_entry with interrupts masked, every NVIC source off, DMA and I2S stopped, the clock in RUN, the USB
 // controller parked, r0 = the hand-over flags, r1 = the USB data toggles and r2 = the core clock
-// (platform/k22f/stub_entry.c, platform/k22f/stub_handoff.h). The pins keep the levels ODR left (the power hold
+// (platform/k22f/stub_entry.c, platform/k22f/stub_handoff.h). The pins keep the levels RadioFoundry left (the power hold
 // among them). The stub never enables an interrupt: it polls the USB controller and runs until a RESET request or a
 // power cycle.
 //
-// Nothing here is a board fact. USB is the chip's full-speed controller on its dedicated pins with ODR's serial number
+// Nothing here is a board fact. USB is the chip's full-speed controller on its dedicated pins with RadioFoundry's serial number
 // (the unique ID). The SPI flash wiring, the writable flash range and the SPI flash's write floor come from the host's
 // board record (CONFIG, k22stub.h); until then the stub reads the internal flash and writes nothing
 // (stub/common/stubeng.h).
@@ -41,7 +41,7 @@ __attribute__((naked, section(".entry"))) void k22stub_entry(void)
 		".ltorg\n\t");
 }
 
-// The watchdog (stubrt.h): ODR's start-up switches the K22F's WDOG off (platform/k22f/startup.c) and nothing turns it
+// The watchdog (stubrt.h): RadioFoundry's start-up switches the K22F's WDOG off (platform/k22f/startup.c) and nothing turns it
 // on again, so there is nothing to feed
 void stub_feed(void)
 {
@@ -141,7 +141,7 @@ void stub_main(uint32_t flags, uint32_t toggles, uint32_t core_hz)
 	stubrt_clock_start(core_hz >= 1000000u && core_hz <= 120000000u ? core_hz : FEI_HZ);
 
 	k22flash_init();
-	// ODR's USB serial number (boards/gd77/usb_gd77.c): the low 96 bits of the unique ID, words high to low, each
+	// RadioFoundry's USB serial number (boards/gd77/usb_gd77.c): the low 96 bits of the unique ID, words high to low, each
 	// high nibble first. The same string keeps the host's port name when the stub has to enumerate again
 	const uint32_t uid[3] = { SIM_UIDMH, SIM_UIDML, SIM_UIDL };
 	uint8_t be[12];

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """The board registry: one place for every fact about a radio that isn't the build itself (issue #106).
 
 Sources, each fact in one of them:
@@ -26,15 +26,15 @@ for the stub's board record.
                                                   no board)
     tools/boards.py platform P [key.path]        one platform value
     tools/boards.py get <id> [key.path]          one value (a list: one item per line), for shell scripts
-    tools/boards.py json [--for odrflash|site|build] [--out FILE | --check FILE]   the merged, derived view; --for
+    tools/boards.py json [--for rfoundry|site|build] [--out FILE | --check FILE]   the merged, derived view; --for
                                                   build is the stable view for tools that build from a checkout
     tools/boards.py check                         registry consistency
     tools/boards.py docs [--check] [--floor REF]  the docs blocks generated from the registry (tools/registry_docs.py);
                                                   --floor: fail when a radio reads lower than the README at REF
     tools/boards.py self-test                     the loader's own tests, on fixtures
 
-Needs Python 3.11 or later (tomllib). Scripts find one with tools/odr_python.sh. The tools that flash radios read the
-generated view (tools/odrflash/odrflash/registry.json), so they run on any Python 3 and inside the odrflash executable.
+Needs Python 3.11 or later (tomllib). Scripts find one with tools/rfoundry_python.sh. The tools that flash radios read the
+generated view (tools/rfoundry/rfoundry/registry.json), so they run on any Python 3 and inside the rfoundry executable.
 """
 import argparse
 import json
@@ -53,7 +53,7 @@ KINDS = ("handheld", "mobile")
 # [hardware] clock rtc: a real-time clock that keeps time through power-off (a backup supply), one that keeps it only
 # while the radio has power, none, or not known yet
 CLOCKS = ("backed", "unbacked", "none", "unknown")
-# The flashing routes, named by protocol (odrflash cli.py, site/static/js/flasher): the cable they need, and the
+# The flashing routes, named by protocol (rfoundry cli.py, site/static/js/flasher): the cable they need, and the
 # board.toml keys a board on the route must have
 # web: the web flasher's backend for the family (site/static/js/flasher/backends.js); update_mode: the vendor loader's
 # update mode the page can write through when nothing else answers (iap.js), or None
@@ -66,13 +66,13 @@ FAMILIES = {
     "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
     # loader on the cable, through the RAM stub
     "usb-hid-sgl": {"link": "usb", "needs": (), "web": "sgl-hid", "update_mode": None},	# a vendor loader's USB HID
-    # update mode, taking the image inside a stock update file (.sgl) as its envelope (odrflash hidboot.py, updatefile.py)
+    # update mode, taking the image inside a stock update file (.sgl) as its envelope (rfoundry hidboot.py, updatefile.py)
 }
 # [flash.stub] stock_console: the debug console a stock firmware answers on the cable, by protocol (the web flasher
-# loads the stub through it before ODR is installed: site/static/js/flasher/usmart.js)
+# loads the stub through it before RadioFoundry is installed: site/static/js/flasher/usmart.js)
 STOCK_CONSOLES = ("usmart",)
 CODEC_TOOLS = ("codec_extract", "hrc7000_codec", "k22f_codec")
-ODRFLASH_JSON = "tools/odrflash/odrflash/registry.json"	# the flashing tools' view, generated and committed
+RFOUNDRY_JSON = "tools/rfoundry/rfoundry/registry.json"	# the flashing tools' view, generated and committed
 # hal_flash_map_t fields the site reads (the codeplug editor): the open-firmware image's data flash address, the end of
 # the room for it and the DMR ID database, the TFTP staging area. The open-firmware flash image follows the EEPROM image
 # at a fixed offset (docs/spec/cps-fast.md)
@@ -105,7 +105,7 @@ def _tomllib():
         import tomllib
     except ImportError:
         raise RegistryError("tools/boards.py needs Python 3.11 or later (tomllib); this is %d.%d. Run it with "
-                            "$(tools/odr_python.sh) or set ODR_PYTHON" % sys.version_info[:2])
+                            "$(tools/rfoundry_python.sh) or set RFOUNDRY_PYTHON" % sys.version_info[:2])
     return tomllib
 
 
@@ -158,7 +158,7 @@ BOARD_SCHEMA = {
         "protect": _opt(("list", RANGE)),
         "stock_download": _opt(str),
         "stock_versions": _req(STR_LIST),
-        "backup": _req({"stock": _req(("none", "full")), "odr": _req(("none", "full")), "spi_size": _req(int)}),
+        "backup": _req({"stock": _req(("none", "full")), "rfoundry": _req(("none", "full")), "spi_size": _req(int)}),
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str)}),
         "dfu": _opt({"vid": _req(int), "pid": _req(int), "string1": _req(str), "product": _req(str),
                      "key_sha256": _req(str), "key_prefix": _req(str)}),
@@ -481,7 +481,7 @@ class Board:
             if not mk.get("BOOT_SIZE") or not mk.get("BOOT_SIGNATURE"):
                 raise RegistryError("%s: BOOT_STAGE without BOOT_SIZE and BOOT_SIGNATURE in board.mk" % self.id)
             self.first_stage = (int(mk["BOOT_SIZE"], 0), bytes.fromhex(mk["BOOT_SIGNATURE"]))
-        # the image odrflash writes starts at app_base: the first stage, when there is one, then the application
+        # the image rfoundry writes starts at app_base: the first stage, when there is one, then the application
         self.app_base = self.app_region[0] - (self.first_stage[0] if self.first_stage else 0)
 
     def get(self, path, default=None):
@@ -600,7 +600,7 @@ class Board:
 
     def codec(self):
         """{"profile", "windows": [(addr, length)], "sources", "installed", "code"} for a codec in a linker slot, or
-        None for a stock-file placement ([codec] stock, the SHA-256 of each stock file the codec merges from: odrflash
+        None for a stock-file placement ([codec] stock, the SHA-256 of each stock file the codec merges from: rfoundry
         reads each file's windows from its stock-file tables, and the board's are their union)."""
         c = self.data["codec"]
         if c.get("stock"):
@@ -900,7 +900,7 @@ def check(root=ROOT):
         if not os.path.isfile(os.path.join(root, "tools", d["codec"]["tool"] + ".py")):
             bad("codec.tool tools/%s.py doesn't exist" % d["codec"]["tool"])
         if codec is not None and not codec["profile"].startswith(bid + "-"):
-            bad("codec.profile %r must start with %r: the firmware reports <id>-<stock tag> (ODR_BOARD_ID)"
+            bad("codec.profile %r must start with %r: the firmware reports <id>-<stock tag> (RFOUNDRY_BOARD_ID)"
                 % (codec["profile"], bid + "-"))
         for sym in b.platform.data["codec_symbols"]:
             if sym not in b.symbols:
@@ -995,24 +995,24 @@ def check(root=ROOT):
         except registry_docs.DocsError as e:
             problems.append(str(e))
     if not problems:
-        path = os.path.join(root, ODRFLASH_JSON)
+        path = os.path.join(root, RFOUNDRY_JSON)
         try:
             with open(path, encoding="utf-8") as f:
-                current = f.read() == dumps(odrflash_view(boards))
+                current = f.read() == dumps(rfoundry_view(boards))
         except OSError:
             current = False
         if not current:
-            problems.append("%s is out of date: run tools/boards.py json --for odrflash --out %s"
-                            % (ODRFLASH_JSON, ODRFLASH_JSON))
+            problems.append("%s is out of date: run tools/boards.py json --for rfoundry --out %s"
+                            % (RFOUNDRY_JSON, RFOUNDRY_JSON))
     return problems
 
 
 # ---------------------------------------------------------------------------------------------------------------
 # derived views
 
-def odrflash_view(boards):
-    """What the flashing tools read (tools/odrflash/odrflash/registry.json): plain JSON, every address a number.
-    Its keys are the attribute names of odrflash.boards.Board, which reads it as is."""
+def rfoundry_view(boards):
+    """What the flashing tools read (tools/rfoundry/rfoundry/registry.json): plain JSON, every address a number.
+    Its keys are the attribute names of rfoundry.boards.Board, which reads it as is."""
     out = {}
     for bid, b in sorted(boards.items()):
         d, fl = b.data, b.data["flash"]
@@ -1027,7 +1027,7 @@ def odrflash_view(boards):
             "keep_codec_supported": fl["keep_codec"],
             "first_stage": [b.first_stage[0], b.first_stage[1].hex()] if b.first_stage else None,
             "codec_tool": d["codec"]["tool"], "codec_stock": list(d["codec"].get("stock", [])),
-            # a stock-file placement has no id or windows here: odrflash reads them from its stock-file tables
+            # a stock-file placement has no id or windows here: rfoundry reads them from its stock-file tables
             "codec": {"id": codec["profile"] if codec else None,
                       "windows": [list(w) for w in codec["windows"]] if codec else None,
                       "installed": d["codec"].get("installed", []), "sources": d["codec"].get("sources")},
@@ -1041,24 +1041,24 @@ def odrflash_view(boards):
             "dfu_ids": [dfu["vid"], dfu["pid"]] if dfu else None,
             "dfu_string1": dfu["string1"] if dfu else None, "dfu_product": dfu["product"] if dfu else None,
             "stub": b.stub(),
-            "build_options": d.get("build_options", []),		# odrflash asks with the same words as the site
+            "build_options": d.get("build_options", []),		# rfoundry asks with the same words as the site
         }
         out[bid] = e
-    return {"format": "odr-board-registry/2",
-            "_about": "Generated by tools/boards.py json --for odrflash from boards/*/board.toml, platform/*/platform.toml "
+    return {"format": "rfoundry-board-registry/2",
+            "_about": "Generated by tools/boards.py json --for rfoundry from boards/*/board.toml, platform/*/platform.toml "
                       "and the boards' build files. Don't edit: change the sources and run it again.",
             "boards": out}
 
 
-BUILD_FORMAT = "odr-build-matrix/1"
+BUILD_FORMAT = "rfoundry-build-matrix/1"
 
 
 def _names():
-    """odrflash/names.py, the one naming rule for build directories, images and release files. It imports nothing, so
+    """rfoundry/names.py, the one naming rule for build directories, images and release files. It imports nothing, so
     loading it doesn't load the generated registry."""
-    sys.path.insert(0, os.path.join(ROOT, "tools", "odrflash"))
+    sys.path.insert(0, os.path.join(ROOT, "tools", "rfoundry"))
     try:
-        from odrflash import names
+        from rfoundry import names
     finally:
         sys.path.pop(0)
     return names
@@ -1112,7 +1112,7 @@ def _product(opts):
         combos = [c + [(n, v)] for c in combos for v in vals]
     return combos
 def site_view(boards, root=ROOT):
-    """What the web site and the web flasher read (site/odrsite/repo.py), in the boards' order. The radio entries keep
+    """What the web site and the web flasher read (site/rfoundrysite/repo.py), in the boards' order. The radio entries keep
     the keys the pages' scripts use (site/data/radios.json)."""
     out = []
     for bid, b in sorted(boards.items(), key=lambda kv: kv[1].data["order"]):
@@ -1143,7 +1143,7 @@ def site_view(boards, root=ROOT):
         raise RegistryError("; ".join(problems))
     planned = [{"radio": r["radio"], "status": r["status"], "pr": r["pr"], "hardware_needed": r["hardware_needed"],
                 "note": registry_docs.plain(r["note"])} for r in registry_docs.planned(rows)]
-    return {"format": "odr-site-boards/1", "boards": out, "planned": planned}
+    return {"format": "rfoundry-site-boards/1", "boards": out, "planned": planned}
 
 
 def full_view(boards, root=ROOT):
@@ -1152,7 +1152,7 @@ def full_view(boards, root=ROOT):
     for bid, b in sorted(boards.items()):
         e = json.loads(json.dumps(b.data))
         e["platform"] = b.platform.id
-        e["derived"] = odrflash_view({bid: b})["boards"][bid]
+        e["derived"] = rfoundry_view({bid: b})["boards"][bid]
         e["derived"]["cpu"] = b.cpu
         out[bid] = e
     return {"boards": out, "platforms": {p: pl.data for p, pl in sorted(load_platforms(root).items())}}
@@ -1277,7 +1277,7 @@ def self_test():
         except RegistryError as e:
             ok(what in str(e), "select refuses an unknown platform or toolchain (%s)" % e)
     # one pin per toolchain: a second platform with the same id and another version, a copy that differs
-    tmpp = tempfile.mkdtemp(prefix="odr-boards-pin-")
+    tmpp = tempfile.mkdtemp(prefix="rfoundry-boards-pin-")
     try:
         tc = {"id": "arm", "name": "Arm", "cc": "gcc", "build": "x.sh", "version": "13.3.rel1", "sha256": "ab12"}
         pl = {"p1": NS(data={"toolchain": tc}), "p2": NS(data={"toolchain": dict(tc)})}
@@ -1299,7 +1299,7 @@ def self_test():
     finally:
         shutil.rmtree(tmpp)
 
-    tmpc = tempfile.mkdtemp(prefix="odr-boards-c-")
+    tmpc = tempfile.mkdtemp(prefix="rfoundry-boards-c-")
     with open(os.path.join(tmpc, "board.c"), "w", encoding="utf-8") as f:
         f.write('static const x_t other = { .name = "no" };\n// board_t b = { .name = "commented" };\n'
                 'const board_t board = {\n  .caps = 1,\n    .name   =  "Radio X", /* { */ .y = { 1 },\n};\n'
@@ -1352,7 +1352,7 @@ def self_test():
         except RegistryError:
             ok(True, "validate refuses: " + what)
     ok(lookup({"v": [{"id": "a"}, {"id": "b"}]}, "v.id") == ["a", "b"], "lookup maps over lists")
-    tmpm = tempfile.mkdtemp(prefix="odr-boards-mk-")
+    tmpm = tempfile.mkdtemp(prefix="rfoundry-boards-mk-")
     with open(os.path.join(tmpm, "config.mk"), "w", encoding="utf-8") as f:
         f.write("# BOARD_UNSUPPORTED += NO\nBOARD_UNSUPPORTED += USB\t# no USB port\nBOARD_UNSUPPORTED += AM_RX\n"
                 "BOARD_UNSUPPORTED += X Y\t# two on a line\n")
@@ -1376,7 +1376,7 @@ def self_test():
             ok(True, "validate refuses " + what)
 
     # the voltage a board measures, from its sources
-    tmpv = tempfile.mkdtemp(prefix="odr-boards-volts-")
+    tmpv = tempfile.mkdtemp(prefix="rfoundry-boards-volts-")
     try:
         def volts_of(src):
             with open(os.path.join(tmpv, "board.c"), "w", encoding="utf-8") as f:
@@ -1424,7 +1424,7 @@ def self_test():
         def __init__(self, bid, model, level="supported"):
             self.id, self.data = bid, {"model": model, "status": {"level": level},
                                        "docs": {"hardware": "docs/spec/hardware-%s.md" % bid}}
-    tmps = tempfile.mkdtemp(prefix="odr-boards-survey-")
+    tmps = tempfile.mkdtemp(prefix="rfoundry-boards-survey-")
     try:
         os.makedirs(os.path.join(tmps, "docs", "spec"))
         def survey_of(rows):
@@ -1438,7 +1438,24 @@ def self_test():
            [("a", "board", None, False, ""), (None, "in_progress", 12, False, "Its note"),
             (None, "planned", None, True, ""), (None, None, None, False, "No")],
            "survey: a board's row, in progress with its PR, planned, not planned %r" % (probs or rows))
+        rows, probs = survey_of([("Maker EF-1", "Planned"), ("Maker CD-9", "In progress, #12, builds, host tests. N"),
+                                 ("Maker GH-2", "In progress, #13")])
+        ok(probs == [] and [(r["radio"], r["pr_marks"], r["note"]) for r in registry_docs.planned(rows)] ==
+           [("Maker CD-9", ["builds", "host tests"], "N"), ("Maker GH-2", [], ""), ("Maker EF-1", [], "")],
+           "survey: what a pull request has, and in progress before planned %r" % (probs or rows))
+        ok(registry_docs.readme_radios(tmps, {}, rows)[2:] ==
+           ["| Maker CD-9 | ◐ | ◐ | ○ | In progress ([#12](%s/pull/12)). N. |" % registry_docs.REPO_URL,
+            "| Maker GH-2 | ○ | ○ | ○ | In progress ([#13](%s/pull/13)). |" % registry_docs.REPO_URL,
+            "| Maker EF-1 | ○ | ○ | ○ | Planned. |"], "readme_radios: a pull request's marks read ◐")
+        for lvl, rec, mark in (("supported", {}, "●"), ("bring-up", {}, "○"),
+                               ("bring-up", {"a": {"runs": [], "seed": {"features": {}}}}, "○"),
+                               ("bring-up", {"a": {"runs": [], "seed": {"features": {"fm": {"result": "pass"}}}}}, "◐"),
+                               ("testing", {"a": {"runs": [{"tests": [{"outcome": "failed"}]}], "seed": None}}, "○"),
+                               ("testing", {"a": {"runs": [{"tests": [{"outcome": "passed"}]}], "seed": None}}, "◐")):
+            got = registry_docs.on_radio_mark(Stub("a", "AB-100", lvl), rec)
+            ok(got == mark, "on_radio_mark: %s with %r reads %s (got %s)" % (lvl, rec, mark, got))
         for cells, what in ((("Maker AB-100", "Planned"),), "a planned row for an existing board"), \
+                           ((("Maker CD-9", "In progress, #12, soon"),), "a pull request mark outside the set"), \
                            ((("Maker CD-9", "In progress"),), "in progress without a PR number"), \
                            ((("Maker CD-9", "Soon"),), "a Port cell outside the set"), \
                            ((("Maker AB-100", "Supported"), ("Maker AB-100 GPS", "Supported")), "two rows for a board"):
@@ -1481,7 +1498,7 @@ def self_test():
         shutil.rmtree(tmps)
 
     # a fixture tree: the real registry copied, then broken one way at a time
-    tmp = tempfile.mkdtemp(prefix="odr-boards-")
+    tmp = tempfile.mkdtemp(prefix="rfoundry-boards-")
     try:
         # boards and platforms with what make print-vars reads (the Makefile, config/, boot/boot.mk), pins.h and the
         # headers whose macros a flash map may use
@@ -1492,7 +1509,7 @@ def self_test():
         shutil.copy(os.path.join(ROOT, "Makefile"), tmp)
         os.makedirs(os.path.join(tmp, "boot"))
         shutil.copy(os.path.join(ROOT, "boot", "boot.mk"), os.path.join(tmp, "boot"))
-        shutil.copytree(os.path.join(ROOT, "tools", "odrflash", "odrflash"), os.path.join(tmp, "tools", "odrflash", "odrflash"))
+        shutil.copytree(os.path.join(ROOT, "tools", "rfoundry", "rfoundry"), os.path.join(tmp, "tools", "rfoundry", "rfoundry"))
         for t in CODEC_TOOLS:
             open(os.path.join(tmp, "tools", t + ".py"), "w").close()
         os.makedirs(os.path.dirname(os.path.join(tmp, UI_SIM)))
@@ -1602,13 +1619,13 @@ def self_test():
         mkf = os.path.join(tmp, "Makefile")
         mkf_good = open(mkf, encoding="utf-8").read()
         with open(mkf, "w", encoding="utf-8") as f:
-            f.write(mkf_good.replace("TARGET := $(BUILD)/odr_", "TARGET := $(BUILD)/odr-", 1))
+            f.write(mkf_good.replace("TARGET := $(BUILD)/rfoundry_", "TARGET := $(BUILD)/rfoundry-", 1))
         ok(any("the build view says" in p for p in check(tmp)), "check finds a Makefile image name the build view lacks")
         with open(mkf, "w", encoding="utf-8") as f:
             f.write(mkf_good)
         with open(path, "w", encoding="utf-8") as f:
             f.write(good.replace('name = "', 'name = "Renamed ', 1))
-        ok(any("out of date" in p for p in check(tmp)), "check finds a stale %s" % ODRFLASH_JSON)
+        ok(any("out of date" in p for p in check(tmp)), "check finds a stale %s" % RFOUNDRY_JSON)
         os.remove(path)
         ok(any("no board.toml" in p for p in check(tmp)), "check finds a board directory without board.toml")
     finally:
@@ -1647,8 +1664,8 @@ def main(argv=None):
     p.add_argument("board")
     p.add_argument("--extra", action="store_true", help="the [ci] extra configurations instead")
     p = sub.add_parser("json", help="the merged view")
-    p.add_argument("--for", dest="view", choices=("all", "odrflash", "site", "build"), default="all",
-                   help="all: every field; odrflash: the flashing tools' registry.json; site: the web site's boards; "
+    p.add_argument("--for", dest="view", choices=("all", "rfoundry", "site", "build"), default="all",
+                   help="all: every field; rfoundry: the flashing tools' registry.json; site: the web site's boards; "
                         "build: the build view")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--out", metavar="FILE")
@@ -1716,7 +1733,7 @@ def main(argv=None):
             for name, args in (b.ci_extra() if a.extra else b.builds()):
                 print(" ".join([name] + args))
         elif a.cmd == "json":
-            text = dumps({"odrflash": odrflash_view, "site": site_view, "build": build_view,
+            text = dumps({"rfoundry": rfoundry_view, "site": site_view, "build": build_view,
                           "all": full_view}[a.view](boards))
             if a.check:
                 try:

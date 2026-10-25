@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Kinetis pins as one byte (port * 32 + pin, port 0..4 = A..E) and a pin table entry that says how a board wants each
 // pin: function, direction, level at start-up, pull, drive, interrupt edge. Pure: the host tests include it.
 #ifndef K22F_PIN_H

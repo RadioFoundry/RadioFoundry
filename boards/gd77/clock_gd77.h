@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 clock plans (docs/spec/hardware-gd77.md 2.2). One 12.288 MHz reference feeds the K22F's EXTAL0 and the
 // HR_C6000 (unverified; a clock, not a crystal: XTAL0 is the data flash's chip select). Pure data: tests/host checks
 // both plans against the K22F's limits (platform/k22f/clock_math.h).

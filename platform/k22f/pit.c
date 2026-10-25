@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Periodic interrupt timer (reference manual chapter 41): four channels counting the bus clock down
 #include "platform.h"
 

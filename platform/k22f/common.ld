@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: MIT */
-/* Copyright (c) 2026 The OpenDigitalRadio Authors */
+/* Copyright (c) 2026 The RadioFoundry Authors */
 /* K22F application layout, INCLUDEd by each board's memory.ld after its MEMORY (FLASH, SRAM_L, SRAM_U). The image
  * starts with the vector table at ORIGIN(FLASH) (board.mk APP_BASE, where the radio's bootloader starts the
  * application; startup.c points VTOR at it).
  *
  * SRAM is two 64 KB halves that meet at 0x20000000; no object may straddle the boundary, so they are two regions.
- * SRAM_L (0x1FFF0000) holds .data and .bss; SRAM_U (0x20000000) holds what the core marks ODR_CPU_RAM (.ramu_bss,
- * zeroed at start-up), the RTOS heap with every task stack (.ramu_noinit, ODR_CPU_RAM_NOINIT) and the main stack
+ * SRAM_L (0x1FFF0000) holds .data and .bss; SRAM_U (0x20000000) holds what the core marks RFOUNDRY_CPU_RAM (.ramu_bss,
+ * zeroed at start-up), the RTOS heap with every task stack (.ramu_noinit, RFOUNDRY_CPU_RAM_NOINIT) and the main stack
  * (start-up and interrupts) at the top of the board's SRAM_U region.
  *
  * The board's FLASH region ends where the codec starts: the flashing tools read the region from memory.ld
@@ -15,7 +15,7 @@
 ENTRY(Reset_Handler)
 
 _estack = ORIGIN(SRAM_U) + LENGTH(SRAM_U);
-_Min_Heap_Size = 0x400;		/* newlib's heap (nothing in ODR allocates from it) */
+_Min_Heap_Size = 0x400;		/* newlib's heap (nothing in RadioFoundry allocates from it) */
 _Min_Stack_Size = 0x800;	/* main stack: start-up and interrupts */
 
 SECTIONS

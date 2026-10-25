@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 power hold (PTE26) and power knob switch (PTA13), battery on ADC0, LEDs (docs/spec/hardware-gd77.md 9). The
 // battery channel and its scale are unverified: the reading is the ADC pin voltage times a provisional divider, and the
 // board sets no low-battery thresholds until a radio has been measured. The LED pins are the likelier pair of two

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 calibration point (boards/gd77/cal_gd77.c, docs/spec/hardware-gd77.md 6.4) from synthetic blocks: the node
 // layout per range and the interpolation between nodes (both ends, the last node, above it, outside), both power
 // levels, both bandwidths, every destination value and its fallback, the band split at 180 MHz, invalid blocks, the

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """
 DMR packet data from what the bench modem heard: reassembles the packets in `bench_tx.py listen --json` lines (data
 headers and rate 1/2 blocks, their "info" octets) and decodes the IP in them, the compressed UDP/IPv4 header (SAP 3)
@@ -11,7 +11,7 @@ firmware's code, so the HIL tests (tests/hil/test_dmr_ip.py) check the radio aga
     python3 -m ... / import dmr_packet: packets(lines) -> list of dicts
 
 Only rate 1/2 blocks: the listener reports the info octets of those (bench_tx.py); a packet at rate 3/4 or 1 shows as
-incomplete. Pure Python, no odr_sdrbench package: runs on the test host.
+incomplete. Pure Python, no rfoundry_sdrbench package: runs on the test host.
 """
 import json
 import sys
@@ -162,7 +162,7 @@ def _self_test():
     p, = packets(lines)
     assert p["complete"] and p["crc_ok"] and p["dpf"] == DPF_CONFIRMED and p["ns"] == 5, p
     assert p["sap"] == SAP_UDPIP_COMPRESSION and p["src_port"] == 5016 and p["dst_port"] == 5016, p
-    assert bytes.fromhex(p["payload"]) == b"ODR" and p["header_octets"] == 5, p
+    assert bytes.fromhex(p["payload"]) == bytes.fromhex("4f4452") and p["header_octets"] == 5, p
     assert decode_udp(3, bytes.fromhex("1234000000c35000a1") + b"x") == (50000, 161, b"x", 9)
     print("dmr_packet: self test passed")
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Version 1 codec slots, from before the codec moved (docs/spec/codec-placement.md, "HR_C7000 radios"): the code ran at
 // its stock address, with no relocation list. The firmware accepts only version 2 (platform/hrc7000/codec_slot.h), so
 // a radio with a version 1 slot reports no codec. Only a few developer radios have one. This module rebuilds such a

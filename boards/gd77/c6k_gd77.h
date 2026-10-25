@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 HR_C6000 board values (docs/spec/hardware-gd77.md 5.2, 8): what this radio sets on top of the shared power-on
 // sequence (modem-hrc6000.md 3) and how it switches the codec for PCM. Unverified on a radio.
 #ifndef GD77_C6K_H

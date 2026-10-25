@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The rules for passing packets between RF and APRS-IS, and the digipeater (docs/spec/aprs.md 9, 10). Pure functions
 // on frames; aprs.c owns the state and the transport (KISS SetHardware 'G' frames to the host helper,
 // tools/aprs_gate.py, which keeps the APRS-IS connection).
@@ -12,8 +12,8 @@
 // IS -> RF: only messages (and their acks), to a station heard directly on RF in the last 30 min, from a station not
 // heard on RF lately, not from us, not seen in the last 30 s; sent as a third-party packet
 // "}SRC>DST,TCPIP,OURCALL*:info" from our call on the APRS frequency.
-#ifndef ODR_APRS_IGATE_H
-#define ODR_APRS_IGATE_H
+#ifndef RFOUNDRY_APRS_IGATE_H
+#define RFOUNDRY_APRS_IGATE_H
 
 #include <stdint.h>
 #include <stdbool.h>

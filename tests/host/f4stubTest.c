@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flash stubs' shared protocol engine (stub/common/stubeng.c) with the STM32F4 target's facts and board record
 // check (stub/stm32f4/f4stub_board.c, docs/spec/stub-stm32f4.md) against a simulated 1 MB flash and a 1 MB SPI flash:
 // framing and resync, the board record (refusals, the echo, nothing written before it), every op's checks, the

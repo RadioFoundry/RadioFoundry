@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The flash stubs' CDC-ACM function (stubcdc.h), written from USB 2.0 chapter 9 and the CDC 1.2 / PSTN class
-// documents. The descriptors give ODR's serial port identity, so the host binds the same driver as for ODR.
+// documents. The descriptors give RadioFoundry's serial port identity, so the host binds the same driver as for RadioFoundry.
 #include <stddef.h>
 #include <string.h>
 #include "stubcdc.h"
@@ -13,8 +13,8 @@ static const uint8_t dev_desc[18] = {
 	18, 1, 0x00, 0x02,	// bLength, DEVICE, bcdUSB 2.00
 	0xEF, 0x02, 0x01,	// miscellaneous class, common subclass, interface association
 	STUBCDC_EP0_SIZE,
-	0xC9, 0x1F, 0x94, 0x00,	// VID 0x1FC9, PID 0x0094: ODR's serial-port identity (boards/*/usb_*.c)
-	0x00, 0x7F,		// bcdDevice 0x7F00: not an ODR firmware version
+	0xC9, 0x1F, 0x94, 0x00,	// VID 0x1FC9, PID 0x0094: RadioFoundry's serial-port identity (boards/*/usb_*.c)
+	0x00, 0x7F,		// bcdDevice 0x7F00: not an RadioFoundry firmware version
 	1, 2, 3, 1,		// iManufacturer, iProduct, iSerialNumber, one configuration
 };
 
@@ -33,7 +33,7 @@ static const uint8_t cfg_desc[CFG_LEN] = {
 	7, 5, 0x80 | STUBCDC_EP_DATA, 0x02, STUBCDC_DATA_SIZE, 0, 0,	// bulk IN 0x81
 };
 
-static const char *const strings[] = { NULL, "OpenDigitalRadio", "ODR flash stub", NULL, "ODR flash stub serial" };
+static const char *const strings[] = { NULL, "RadioFoundry", "RadioFoundry flash stub", NULL, "RadioFoundry flash stub serial" };
 
 // ---- state
 

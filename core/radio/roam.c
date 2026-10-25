@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR repeater roaming engine (roam.h, docs/spec/dmr-roaming.md 4)
 #include <string.h>
 #include "radio/roam.h"

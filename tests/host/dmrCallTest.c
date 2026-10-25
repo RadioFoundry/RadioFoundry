@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The DMR voice call stack (core/dmr/call) against a simulated modem (sim/dmr_sim_modem.c), plus its link control
 // coding checked against references written here from the ETSI TS 102 361-1 definitions and against the older
 // clean-tree checkers (sfr.c's RS(12,9) / CRC check, dmrData.c's CSBK builder)

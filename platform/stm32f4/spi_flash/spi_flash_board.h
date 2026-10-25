@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // What a board gives the STM32F4 data flash (spi_flash.h): the chip's wiring, the parts it accepts and the core's areas
 #ifndef STM32_SPI_FLASH_BOARD_H
 #define STM32_SPI_FLASH_BOARD_H

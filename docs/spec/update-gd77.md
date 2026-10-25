@@ -5,7 +5,7 @@ Status: written for the host side, tested against a model loader only, 2026-10-2
 radio. Every line marked unverified needs a first run on a bench radio.
 
 The radio's loader sits below flash 0x4000 and is never written. It takes the application from a PC over USB HID. The
-file the radio's own update tool uses is a `.sgl` file. odrflash writes ODR into a copy of a `.sgl` file the user
+file the radio's own update tool uses is a `.sgl` file. rfoundry writes RadioFoundry into a copy of a `.sgl` file the user
 already has, and sends it with the same protocol.
 
 ## 1. Entering update mode
@@ -40,7 +40,7 @@ Body scrambling: each byte is rotated right by 3, then XORed with a stream K. K 
 `K[j] = K[j-1] ^ K[j-8] ^ K[j-9] ^ K[j-15] ^ K[j-16]` (period 32767). The last 32 bytes of a file are zero before
 scrambling, so they show 16 bytes of the stream and the rest follows. A file gives its own stream; no key is needed.
 
-Writing an image: odrflash keeps the header of a file the user supplies (company, model, version, tag, widths,
+Writing an image: rfoundry keeps the header of a file the user supplies (company, model, version, tag, widths,
 length) and replaces the body and the sum. The image is padded with 0xFF to the file's length, the last 32 bytes stay
 zero. An image longer than the file holds is refused.
 
@@ -67,9 +67,9 @@ The radio restarts by itself afterwards (unverified).
 
 | Piece | Where |
 |---|---|
-| File format, pack and unpack | `tools/odrflash/odrflash/updatefile.py` |
-| The protocol, and a model loader for tests | `tools/odrflash/odrflash/hidboot.py` |
-| Command line | `odrflash flash IMAGE --board gd77 --stock FILE.sgl`; `odrflash merge ... -o OUT.sgl` writes the update file |
+| File format, pack and unpack | `tools/rfoundry/rfoundry/updatefile.py` |
+| The protocol, and a model loader for tests | `tools/rfoundry/rfoundry/hidboot.py` |
+| Command line | `rfoundry flash IMAGE --board gd77 --stock FILE.sgl`; `rfoundry merge ... -o OUT.sgl` writes the update file |
 | Web flasher | WebHID in the browser, same steps |
 
 The codec comes from the same stock file: [codec-gd77.md](codec-gd77.md).

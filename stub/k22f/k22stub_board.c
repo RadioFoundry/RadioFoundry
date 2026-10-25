@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The K22F stub's chip facts and its board record check (k22stub.h). Portable: the host tests run it too.
 #include "k22stub.h"
 

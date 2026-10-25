@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 RF side (boards/gd77/rf_gd77.c, c6k_gd77.c; docs/spec/hardware-gd77.md 5): the AT1846S driver with the radio's
 // profile against a fake bus (init list, bandwidth table, reg 0x30 per state, the reg 0x05 rule), the band split of
 // the path lines, the order of the switch sequences, the DAC0 ramp, the HR_C6000 board values and microphone wiring,

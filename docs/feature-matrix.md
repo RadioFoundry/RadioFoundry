@@ -36,66 +36,68 @@ treated as unverified. "off" is off in the default build, ✕ not available. A r
 is `tools/bringup.py list --radio <id>`.
 
 <!-- generated: tools/boards.py docs checked; edit docs/testing/results/<board>/ (tools/bringup.py run) -->
-| Feature | DM-1701 | DM-1801 Pro | DM-32UV | DB25-D PRO | MD-380 | GD-77 |
+| Feature | DM-32UV | DM-1701 | DM-1801 Pro | DB25-D PRO | MD-380 | GD-77 |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
 | `fm` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded |
 | `subtone` | pass (seed) | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded |
-| `fm_tx_tones` | pass (seed) | not recorded | not recorded | not recorded | not written | not written |
+| `fm_tx_tones` | not recorded | pass (seed) | not recorded | not recorded | not written | not written |
 | `dtmf` | not recorded | not recorded | not recorded | not recorded | not written | not written |
-| `vox` | not recorded | not recorded | not written | not written | not recorded | not written |
-| `battery_save` | pass (seed) | not recorded | pass (seed) | not recorded | not recorded | not recorded |
-| `am_rx` | ✕ | not written | not written | ✕ | ✕ | ✕ |
-| `bcast_fm` | ✕ | not recorded | not written | not written | ✕ | ✕ |
+| `vox` | not written | not recorded | not recorded | not written | not recorded | not written |
+| `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ |
+| `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `dmr_talker_alias` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `dmr_gps` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `dmr_emergency` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `dmr_emergency` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded |
 | `dmr_roaming` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `dmr_signaling` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `dmr_signaling` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded |
 | `vfo` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `vfo_fm` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `vfo_dmr` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded |
 | `channel_list` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `channel_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `zone_edit` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `key_assign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `scan` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `dual_watch` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `scan` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded |
+| `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded |
 | `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `vibrate` | ✕ | not recorded | off | ✕ | ✕ | ✕ |
-| `gps` | ✕ | ✕ | pass (seed) | not recorded | not recorded | ✕ |
-| `dmr_data_rx` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded |
-| `dmr_sms` | pass (seed) | pass (seed) | not recorded | not recorded | pass (seed) | not recorded |
+| `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ |
+| `gps` | pass (seed) | ✕ | ✕ | not recorded | not recorded | ✕ |
+| `dmr_data_rx` | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | not recorded |
+| `dmr_sms` | not recorded | pass (seed) | pass (seed) | not recorded | pass (seed) | not recorded |
 | `dmr_tms` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_ars` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_lrrp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_udp_compress` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_confirmed` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `sfr` | pass (seed) | pass (seed) | not recorded | not written | ✕ | not recorded |
-| `aprs` | not recorded | not recorded | pass (seed) | not recorded | not recorded | not written |
-| `aprs_rx` | not recorded | not recorded | pass (seed) | not written | not written | not written |
-| `aprs_igate` | off | not recorded | not recorded | not written | not written | not written |
-| `usb` | pass (seed) | ✕ | ✕ | ✕ | not recorded | not recorded |
+| `sfr` | not recorded | pass (seed) | pass (seed) | not written | ✕ | not recorded |
+| `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not written |
+| `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not written |
+| `aprs_igate` | not recorded | off | not recorded | not written | not written | not written |
+| `usb` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not recorded |
 | `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not written |
 | `split_duplex` | pass (seed) | pass (seed) | pass (seed) | not written | not written | not written |
 | `debuglink` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded |
 | `task_stacks` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `cps_openfw` | pass (seed) | not recorded | not recorded | pass (seed) | pass (seed) | not recorded |
+| `cps_openfw` | not recorded | pass (seed) | not recorded | pass (seed) | pass (seed) | not recorded |
 | `cps_fast` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `stub_entry` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `crash_log` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `crash_screen` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `crash_report` | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
-| `fault_trace` | ✕ | not recorded | not recorded | not recorded | ✕ | ✕ |
-| `usb_network` | pass (seed) | ✕ | ✕ | ✕ | not recorded | not written |
-| `dmr_ip_gateway` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not written |
+| `fault_trace` | not recorded | ✕ | not recorded | not recorded | ✕ | ✕ |
+| `usb_network` | ✕ | pass (seed) | ✕ | ✕ | not recorded | not written |
+| `dmr_ip_gateway` | not recorded | not recorded | pass (seed) | not recorded | not recorded | not written |
 | `dmr_control_station` | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
-| `net_tcp` | not recorded | pass (seed) | not recorded | pass (seed) | not recorded | not written |
+| `net_tcp` | not recorded | not recorded | pass (seed) | pass (seed) | not recorded | not written |
 | `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
+| `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `net_usrp` | not recorded | not recorded | not recorded | not written | not recorded | not written |
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
@@ -103,20 +105,20 @@ is `tools/bringup.py list --radio <id>`.
 | `tftp` | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `tftp_iddb` | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
 | `snmp` | not recorded | not recorded | not recorded | not recorded | not recorded | not written |
-| `net_ppp` | off | pass (seed) | not recorded | pass (seed) | off | not written |
+| `net_ppp` | not recorded | off | pass (seed) | pass (seed) | off | not written |
 | `ui_navigation` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `channel_knob` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `ui_settings` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `diag` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `ui_color` | not recorded | ✕ | not recorded | not recorded | not recorded | ✕ |
-| `font_xl` | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ |
-| `font_aa` | off | off | not recorded | off | off | ✕ |
-| `font_big` | off | off | not recorded | off | off | ✕ |
+| `ui_color` | not recorded | not recorded | ✕ | not recorded | not recorded | ✕ |
+| `font_xl` | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ |
+| `font_aa` | not recorded | off | off | off | off | ✕ |
+| `font_big` | not recorded | off | off | off | off | ✕ |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ |
 | `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `audio_probe` | off | not written | not written | not written | not written | not written |
+| `audio_probe` | not written | off | not written | not written | not written | not written |
 <!-- end generated -->
 
 What the records don't hold yet: limits and known problems from the bring-up pages.
@@ -144,7 +146,7 @@ switches. Voltage reading: what the radio measures, its battery, its DC input (S
 clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](spec/radio-features.md) 5.6).
 
 <!-- generated: tools/boards.py docs feature-defaults; edit config/features.mk and boards/*/config.mk -->
-| Feature switch | DM-1701 | DM-1801 Pro | DM-32UV | DB25-D PRO | MD-380 | GD-77 |
+| Feature switch | DM-32UV | DM-1701 | DM-1801 Pro | DB25-D PRO | MD-380 | GD-77 |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
 | `FM` | ● | ● | ● | ● | ● | ● |
 | `SUBTONE` | ● | ● | ● | ● | ● | ● |
@@ -166,6 +168,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_KISS` | ● | ● | ● | ● | ● | … |
 | `NET_HTTP` | ● | ● | ● | ● | ● | … |
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | … |
+| `NET_WEBCTL` | ● | ● | ● | ● | ● | ○ |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● | … |
 | `NET_APRSIS` | ● | ● | ● | ● | ● | … |
 | `NET_USRP` | ● | ● | ● | … | ● | … |
@@ -176,10 +179,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `SNMP` | ● | ● | ● | ● | ● | … |
 | `SFR` | ● | ● | ● | … | ✕ | ● |
 | `TASK_STACKS` | ● | ● | ● | ● | ● | ● |
-| `USB` | ● | ✕ | ✕ | ✕ | ● | ● |
+| `USB` | ✕ | ● | ✕ | ✕ | ● | ● |
 | `HOSTLINK` | ● | ● | ● | ● | ● | ● |
-| `USB_NETWORK` | ● | ✕ | ✕ | ✕ | ● | … |
-| `NET_PPP` | ○ | ● | ● | ● | ○ | … |
+| `USB_NETWORK` | ✕ | ● | ✕ | ✕ | ● | … |
+| `NET_PPP` | ● | ○ | ● | ● | ○ | … |
 | `HOTSPOT` | ● | ● | ● | ● | ● | … |
 | `HOTSPOT_SPLIT` | ● | ● | ● | … | … | … |
 | `DEBUGLINK` | ● | ● | ● | ● | ● | ● |
@@ -189,38 +192,39 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `VFO_FM` | ● | ● | ● | ● | ● | ● |
 | `VFO_DMR` | ● | ● | ● | ● | ● | ● |
 | `DIAG` | ● | ● | ● | ● | ● | ● |
-| `FONT_XL` | ✕ | ✕ | ● | ✕ | ✕ | ✕ |
-| `FONT_AA` | ○ | ○ | ● | ○ | ○ | ✕ |
-| `FONT_BIG` | ○ | ○ | ● | ○ | ○ | ✕ |
-| `UI_COLOR` | ● | ✕ | ● | ● | ● | ✕ |
+| `FONT_XL` | ● | ✕ | ✕ | ✕ | ✕ | ✕ |
+| `FONT_AA` | ● | ○ | ○ | ○ | ○ | ✕ |
+| `FONT_BIG` | ● | ○ | ○ | ○ | ○ | ✕ |
+| `UI_COLOR` | ● | ● | ✕ | ● | ● | ✕ |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● |
 | `SCAN` | ● | ● | ● | ● | ● | ● |
 | `DUAL_WATCH` | ● | ● | ● | ● | ● | ● |
 | `BEEP` | ● | ● | ● | ● | ● | ● |
 | `FM_TX_TONES` | ● | ● | ● | ● | … | … |
 | `DTMF` | ● | ● | ● | ● | … | … |
-| `VOX` | ● | ● | … | … | ● | … |
+| `VOX` | … | ● | ● | … | ● | … |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● |
-| `VIBRATE` | ✕ | ● | ? | ✕ | ✕ | ✕ |
-| `GPS` | ✕ | ✕ | ● | ● | ● | ✕ |
-| `AUDIO_PROBE` | ○ | … | … | … | … | … |
+| `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ |
+| `GPS` | ● | ✕ | ✕ | ● | ● | ✕ |
+| `AUDIO_PROBE` | … | ○ | … | … | … | … |
 | `STUB_ENTRY` | ● | ● | ● | ● | ● | ● |
 | `NAND_STORAGE` | ✕ | ✕ | ✕ | ● | ✕ | ✕ |
 | `CRASH_LOG` | ● | ● | ● | ● | ● | ● |
 | `CRASH_SCREEN` | ● | ● | ● | ● | ● | ● |
 | `CRASH_REPORT` | ● | ● | ● | ● | ● | … |
 | `WATCHDOG` | ● | ● | ● | ● | ● | … |
-| `FAULT_TRACE` | ✕ | ● | ● | ● | ✕ | ✕ |
-| `AM_RX` | ✕ | … | … | ✕ | ✕ | ✕ |
-| `BCAST_FM` | ✕ | ● | … | … | ✕ | ✕ |
+| `FAULT_TRACE` | ● | ✕ | ● | ● | ✕ | ✕ |
+| `AM_RX` | ● | ✕ | ● | ✕ | ✕ | ✕ |
+| `BCAST_FM` | ● | ✕ | ● | … | ✕ | ✕ |
 | `APRS` | ● | ● | ● | ● | ● | … |
 | `APRS_RX` | ● | ● | ● | … | … | … |
-| `APRS_IGATE` | ○ | ● | ● | … | … | … |
+| `APRS_IGATE` | ● | ○ | ● | … | … | … |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● | ● |
+| `ZONE_EDIT` | ● | ● | ● | ● | ● | ● |
 | Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery | Battery |
-| Clock kept through power-off (board, no switch) | ? | Yes | Yes | ? | ? | ? |
+| Clock kept through power-off (board, no switch) | Yes | ? | Yes | ? | ? | ? |
 <!-- end generated -->
 
 ## Radio and voice
@@ -247,11 +251,12 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 144 | 104 | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |
 | Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | 1,536 | 2,140 |  |
 | Channel editor: edit a channel, New channel from current settings, text entry | `CHANNEL_EDIT` | 4,656 | 4,252 | Needs `CHANNEL_LIST`. Without it a channel's settings are read only. Measured 2026-10-17 |
-| Side key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 1,344 | — |  |
+| Zone editor: move, add, copy and remove channels in a zone; rename, copy and delete a zone | `ZONE_EDIT` | 6,580 | 6,928 | Needs `CHANNEL_EDIT`. Measured 2026-10-24 on the default builds, LTO as each has it; also about 1.3 KB of RAM |
+| Key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 2,120 | 2,188 | Up to 9 keys. Measured 2026-10-24 |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 |  |
 | Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
 | Beeps and alert tones | `BEEP` | 1,552 | 1,800 |  |
-| Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one ODR drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
+| Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
 | GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | — | 1,196 | Needs a GPS receiver. Off, DMR GPS, LRRP and APRS keep the fixed position and report no fix. MD-380 measured 2026-10-22 (LTO, 58f2cebe); the DM-1701 has no receiver |
 
 ## DMR data
@@ -299,10 +304,11 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | KISS over TCP, port 8001 | `NET_KISS` | 700 | 752 |  |
 | HTTP status page and JSON, port 80 | `NET_HTTP` | 4,796 | 4,860 |  |
 | HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -64 | -96 | Negative: saves flash |
+| Web control: the front panel page, keys, status and receive audio over `/ws` | `NET_WEBCTL` | 9,620 | 9,332 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
 | rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 |  |
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet). DM-32UV: DMR only until its board code has the FM audio paths |
 | APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | Needs NAT on the host |
-| mDNS / DNS-SD (odr-<id>.local) | `MDNS` | 6,744 | 6,504 |  |
+| mDNS / DNS-SD (rfoundry-<id>.local) | `MDNS` | 6,744 | 6,504 |  |
 | TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | Without the ID database below |
 | DMR ID database over TFTP (`iddb.bin`, combined `codeplug.bin`) | `TFTP_IDDB` | 2,184 | 2,264 | Follows `TFTP` |
 | SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 |  |
@@ -360,20 +366,20 @@ the hotspot off.
 
 The DM-32UV has 880 KB of code space, so RAM limits it: 165,612 bytes above the stock codec's RAM window and 27,868
 below it (RAM_LO). Its network is PPP on the programming cable (`NET_PPP`), on by default with the IP gateway and
-every service, `TCP_CONNS=3` (`boards/dm32/config.mk`). It fits because the state the core marks `ODR_CPU_RAM` lives
+every service, `TCP_CONNS=3` (`boards/dm32/config.mk`). It fits because the state the core marks `RFOUNDRY_CPU_RAM` lives
 in RAM_LO ([hardware-dm32.md](spec/hardware-dm32.md) 17.1). Measured with csky-elf GCC 14 (bytes of the image, RAM
 of the linker's regions; the RTOS heap, 40 KB with every task stack, is inside the used part):
 
 | DM-32UV build | Image | RAM (165,612 B) | RAM_LO (27,868 B) |
 |---|---:|---:|---:|
-| before the network (`ODR_CPU_RAM` in main RAM) | 313,804 | 153,740 (11,872 free) | 8,800 |
+| before the network (`RFOUNDRY_CPU_RAM` in main RAM) | 313,804 | 153,740 (11,872 free) | 8,800 |
 | default (PPP, gateway, every service, 3 TCP connections) | 365,236 | 154,428 (11,184 free) | 24,392 (3,476 free) |
 | default, `TCP_CONNS=4` | 365,236 | 155,956 (9,656 free) | 24,392 |
 | default, `TCP_CONNS=2` | 365,276 | 152,892 (12,720 free) | 24,392 |
 | maximal (also `AUDIO_PROBE`, `FONT_XL`) | 372,856 | 155,740 (9,872 free) | 24,392 |
 
 The margin kept, about 11 KB of main RAM, is what the image had before the network went in. RAM_LO has 3.5 KB left
-for the RAM code (`.ramfunc`) and the core's `ODR_CPU_RAM` state to grow.
+for the RAM code (`.ramfunc`) and the core's `RFOUNDRY_CPU_RAM` state to grow.
 
 Flash each network switch costs on the DM-32UV (default minus the build with it off): the gateway with PPP and every
 service 51,428 (`NET_PPP` or `DMR_IP_GATEWAY` off), TCP and what runs on it 17,028, SNMP 9,116, mDNS 7,220, TFTP

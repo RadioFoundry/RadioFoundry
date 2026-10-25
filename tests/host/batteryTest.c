@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The battery average and charge estimate (drivers/power/battery): the first reading fills the average, readings come
 // at most every BATTERY_AVG_MS, a step moves the average by 1/8 per reading, and the percent's ends and middle
 #include <stdio.h>

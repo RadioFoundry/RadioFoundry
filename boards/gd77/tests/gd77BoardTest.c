@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The GD-77 board's pure data (docs/spec/hardware-gd77.md 3.2, 9.1): the start-up pin table (boards/gd77/pin_table.h)
 // and the key matrix decode with its map (boards/gd77/keys.h, drivers/input/keymatrix)
 #include <stdio.h>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // What TinyUSB's Kinetis glue for the full-speed USB controller (portable/chipidea/ci_fs) takes from the device
 // header it includes by this name: the controller's base and interrupt, the CMSIS core functions, the core clock, and
 // the register bit masks its driver uses (k22f_usb_regs.h). This directory is on the include path of the USB build

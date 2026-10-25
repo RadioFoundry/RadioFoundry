@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Program flash self-programming with the FTFA controller: erase a 2 KB sector, program longwords. The flash can't be
 // read while a command runs, so the launch and the wait run from RAM (.ramfunc, copied there with .data at start-up)
 // with interrupts off, and the FMC's cache and prefetch buffer are invalidated afterwards. The controller doesn't run

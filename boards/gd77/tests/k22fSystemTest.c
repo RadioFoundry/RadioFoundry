@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The K22F platform's system and peripheral arithmetic: the flash self-programming window and command object
 // (platform/k22f/ftfa_math.h), the reset cause names, the HSRUN plan's RUN step and the time base across clock
 // changes (clock_math.h), the I2C divider, the DSPI chip select delays and the FTM PWM (periph_math.h), and the pin

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The sgl-hid backend's pieces of the web flasher against odrflash (fixtures from site/tests/fixtures.py): the update file read,
+// Copyright (c) 2026 The RadioFoundry Authors
+// The sgl-hid backend's pieces of the web flasher against rfoundry (fixtures from site/tests/fixtures.py): the update file read,
 // written and repacked, the codec placed and merged, and every frame the updater sends, byte for byte as updatefile.py,
 // k22fcodec.py and hidboot.py make them. Then the updater over the WebHID link against the model loader, and the
 // refusals (wrong model, a bad sum, an image too large, a stock build the page can't take the codec from).
@@ -15,7 +15,7 @@ import * as g from "../static/js/flasher/hidboot.js";
 import * as gc from "../static/js/flasher/k22fcodec.js";
 import { FakeHidLoader, FakeHid, synthetic, makeUpdateFile, hidSimulation } from "../static/js/flasher/fakehid.js";
 
-const DIR = process.env.ODR_SITE_FIXTURES || "build/site-tests";
+const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
 const json = (n) => JSON.parse(readFileSync(join(DIR, n), "utf8"));
 const bin = (n) => new Uint8Array(readFileSync(join(DIR, n)));
 const FB = json("flash-boards.json");
@@ -67,7 +67,7 @@ test("codec placement and merge are byte-identical to k22fcodec.py", async () =>
 	assert.equal(u32le(merged, G.desc_addr - G.flash_base), G.desc_magic);
 });
 
-test("the update file the page sends is byte-identical to odrflash's, with and without the codec", async () => {
+test("the update file the page sends is byte-identical to rfoundry's, with and without the codec", async () => {
 	const donor = await gc.readDonor(GS, bin("hid_donor.sgl"));
 	const out = await gc.updateFile(GS, donor, bin("hid_app.bin"));
 	assert.equal(out.profile, "synthetic");
@@ -189,7 +189,7 @@ test("the page's practice radio: a synthetic file the page merges and installs",
 });
 
 const real = fx.real;
-test("a real stock update file gives what odrflash gives (ODR_SGL_STOCK)", { skip: !real || !existsSync(real?.path || "") }, async () => {
+test("a real stock update file gives what rfoundry gives (RFOUNDRY_SGL_STOCK)", { skip: !real || !existsSync(real?.path || "") }, async () => {
 	const donor = await gc.readDonor(G, new Uint8Array(readFileSync(real.path)));
 	assert.equal(donor.file.label(), real.label);
 	assert.equal(donor.spec?.profile ?? null, real.profile);

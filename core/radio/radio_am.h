@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Air band AM receive (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3). AM is not stored in the codeplug: an FM
 // channel or the VFO tuned inside the aeronautical band is received in AM on a radio that can (CAP_AM_RX and
 // board.radio->rx_am), and it never transmits there. The helpers are pure (the board descriptor aside) so the radio
@@ -23,9 +23,10 @@
 
 // AM squelch: there is no useful noise reading in AM, so the squelch works on the signal strength. The RSSI is turned
 // into the FM noise scale (radio_sm_squelch_open_below, 1 dB units, larger = quieter channel) so the same squelch
-// levels and hysteresis apply: level 1 opens above -124 dBm, level 5 (the default) above -112 dBm, level 9 above
-// -100 dBm
-#define RADIO_AM_SQL_REF_DBM	(-60)
+// levels and hysteresis apply: level 1 opens above -82 dBm, level 5 (the default) above -70 dBm, level 9 above
+// -58 dBm. Set from a radio's readings on empty air band channels (-76 to -86 dBm): the RSSI the boards report in AM
+// isn't calibrated, so level 5 sits about 8 dB above that floor
+#define RADIO_AM_SQL_REF_DBM	(-18)
 
 // hz is in the air band
 bool radio_am_band(uint32_t hz);

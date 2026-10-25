@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Watchdog, PLL, peripheral clocks and the XIP flash cache (docs/spec/hardware-dm32.md 1.1, 1.3, 3.5).
 //
 // The Baofeng bootloader starts us with the chip already running (it drives a display and the UART) on the 168 MHz PLL.

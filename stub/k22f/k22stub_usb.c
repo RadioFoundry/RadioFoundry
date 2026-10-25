@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Polled CDC-ACM device on the K22F full-speed USB controller (stub/common/stubusb.h), written from the reference
 // manual's USB chapter: a buffer descriptor table in RAM, each endpoint direction with an even and an odd descriptor
 // the controller uses in turn, ISTAT / STAT polled for tokens, bus resets and stalls. The descriptors and the control
 // requests are shared (stub/common/stubcdc.c). The USB interrupt stays off.
 //
 // The stub keeps its own table and its own idea of the even / odd turn: at the start (adopted or not) CTL.ODDRST puts
-// every endpoint back to even. Adopting ODR's device keeps the address and the endpoint registers; the data toggles
-// come from ODR (r1, platform/k22f/stub_handoff.h). Without them the IN endpoints start at DATA0 (if that is wrong the
+// every endpoint back to even. Adopting RadioFoundry's device keeps the address and the endpoint registers; the data toggles
+// come from RadioFoundry (r1, platform/k22f/stub_handoff.h). Without them the IN endpoints start at DATA0 (if that is wrong the
 // host drops one reply and asks again) and the OUT endpoint takes either toggle.
 #include <stddef.h>
 #include <string.h>
@@ -350,7 +350,7 @@ void usb_flush(uint32_t ms)
 
 // ---- start
 
-// Take over ODR's configured device. ODR parked the controller on a table of descriptors the CPU owns, so every token
+// Take over RadioFoundry's configured device. RadioFoundry parked the controller on a table of descriptors the CPU owns, so every token
 // since was answered NAK: what completed before that is dropped, the table becomes the stub's own
 static bool adopt(uint32_t toggles)
 {
@@ -380,8 +380,8 @@ static bool adopt(uint32_t toggles)
 	return true;
 }
 
-// Start over: the host sees an unplug, then a new device with the same serial number. The clock set-up is ODR's
-// (platform/k22f/usb.c), repeated so this path works whatever ODR left
+// Start over: the host sees an unplug, then a new device with the same serial number. The clock set-up is RadioFoundry's
+// (platform/k22f/usb.c), repeated so this path works whatever RadioFoundry left
 static void cold_start(void)
 {
 	SIM_SCGC4 |= SIM_SCGC4_USBOTG;

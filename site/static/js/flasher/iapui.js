@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The flasher's stock-side steps for an HR_C7000 radio that does not run ODR yet, as its radios.json flash data names
-// them (the DB25-D PRO's: docs/spec/hardware-db25d.md 7). The radio is otherwise handled by c7000ui.js (ODR's stub
+// Copyright (c) 2026 The RadioFoundry Authors
+// The flasher's stock-side steps for an HR_C7000 radio that does not run RadioFoundry yet, as its radios.json flash data names
+// them (the DB25-D PRO's: docs/spec/hardware-db25d.md 7). The radio is otherwise handled by c7000ui.js (RadioFoundry's stub
 // hand-over, the first stage's power-on window). Two things are added:
 //
 //   stock    flash.stock_console: the radio runs its original firmware, and the universal stub goes into its RAM
 //            through the stock debug console (usmart.js) and starts there. From then on the radio is handled as any
 //            HR_C7000 radio with the stub running: the backup, the install and a restore all go through the stub
-//   update   flash.update_mode "iap": the vendor update mode (iap.js) takes an install image (first stage, ODR and the
+//   update   flash.update_mode "iap": the vendor update mode (iap.js) takes an install image (first stage, RadioFoundry and the
 //            codec slot) or a backup's application area. The recovery route, for a radio that answers neither the
-//            console, ODR nor the first stage's power-on window
+//            console, RadioFoundry nor the first stage's power-on window
 //
 // Neither ever writes the vendor loader, so update mode always remains.
 
@@ -99,12 +99,12 @@ export function makeStockRoutes(host) {
 		act(button(t("flash.iap.none.again"), onAgain, { primary: true }), onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode, { quiet: true }));
 	}
 
-	// Nothing on the cable answered: the radio is off, in update mode already, or runs ODR with a silent link
+	// Nothing on the cable answered: the radio is off, in update mode already, or runs RadioFoundry with a silent link
 	function nothing({ show, act, onUpdateMode, onPowerOn, onAgain }) {
 		show({ led: "off", screen: "any" },
 			notice(t("flash.iap.none.lead"), "info"),
 			h("ul", {}, h("li", {}, t("flash.iap.none.on")), h("li", {}, t("flash.iap.none.cable")), h("li", {}, t("flash.iap.none.stock"))),
-			h("p", { class: "small muted" }, t("flash.iap.none.odr")));
+			h("p", { class: "small muted" }, t("flash.iap.none.rfoundry")));
 		act(button(t("flash.iap.none.again"), onAgain, { primary: true }), onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode),
 			button(t("flash.iap.none.power_on"), onPowerOn, { quiet: true }));
 	}

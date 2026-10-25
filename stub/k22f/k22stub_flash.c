@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // K22F program flash: sector erase (FTFA command 0x09) and longword program (0x06), from the reference manual's FTFA
 // chapter: wait for CCIF, clear the error flags, fill the command object, launch by writing CCIF, wait. The stub runs
 // from SRAM, so the CPU keeps going while the flash is busy; the erase wait services USB meanwhile (nothing on that
-// path reads the flash). The command object and the writable window are shared with ODR's own driver
+// path reads the flash). The command object and the writable window are shared with RadioFoundry's own driver
 // (platform/k22f/ftfa_math.h). Nothing here writes the flash configuration field, FPROT or the security byte.
 #include "k22f.h"
 #include "ftfa_math.h"
@@ -31,7 +31,7 @@ static bool wait_ccif(uint32_t ms, bool poll_usb)
 
 static bool command(uint8_t cmd, uint32_t addr, uint32_t word, uint32_t ms, bool poll_usb)
 {
-	// The controller refuses commands in HSRUN; ODR steps down to RUN before the jump, so this only catches a hand-over
+	// The controller refuses commands in HSRUN; RadioFoundry steps down to RUN before the jump, so this only catches a hand-over
 	// that didn't
 	if (SMC_PMSTAT & SMC_PMSTAT_HSRUN) {
 		return false;

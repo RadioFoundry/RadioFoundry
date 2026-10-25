@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Factory calibration of the Baofeng HR_C7000 radios (docs/spec/radios.md): where it is, what it holds and the
 // values derived from it (docs/spec/hardware-dm32.md 11, hardware-dm1801pro.md 6.4). Never writes.
 #ifndef BAOFENG_CAL_H

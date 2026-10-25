@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Find (information-architecture.md 6, task-flows.md 1, 3, 5): digits typed on Home search everything at once.
 // The keys are read both as a number and as T9 letters (2 = abc ... 9 = wxyz), matched against the start of each
 // word. Order of the results:

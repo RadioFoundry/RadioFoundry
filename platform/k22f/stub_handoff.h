@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
-// The hand-over from a running ODR to the K22F flash stub (CONFIG_STUB_ENTRY, docs/spec/stub-k22f.md 3): where the
-// stub runs, what ODR passes in r0..r2 at the jump, and how ODR reads the USB data toggles the stub continues with.
+// Copyright (c) 2026 The RadioFoundry Authors
+// The hand-over from a running RadioFoundry to the K22F flash stub (CONFIG_STUB_ENTRY, docs/spec/stub-k22f.md 3): where the
+// stub runs, what RadioFoundry passes in r0..r2 at the jump, and how RadioFoundry reads the USB data toggles the stub continues with.
 // Shared by platform/k22f/stub_entry.c and stub/k22f. Pure: tests/host/k22fUsbTest.c checks the toggle reading.
 #ifndef K22F_STUB_HANDOFF_H
 #define K22F_STUB_HANDOFF_H
@@ -11,11 +11,11 @@
 #include <string.h>
 
 #define K22F_STUB_RUN_ADDR	0x1FFF0000u	// SRAM_L's base: the stub's link address (stub/k22f/k22stub.ld)
-#define K22F_STUB_SPAN		0x00010000u	// the stub keeps to SRAM_L; SRAM_U is ODR's until the jump
-#define K22F_STUB_STAGE_SIZE	(8u * 1024u)	// the biggest stub image ODR accepts
+#define K22F_STUB_SPAN		0x00010000u	// the stub keeps to SRAM_L; SRAM_U is RadioFoundry's until the jump
+#define K22F_STUB_STAGE_SIZE	(8u * 1024u)	// the biggest stub image RadioFoundry accepts
 
 // r0: flags
-#define K22F_STUB_USB_ADOPT	0x1u		// the controller is ODR's configured CDC-ACM device
+#define K22F_STUB_USB_ADOPT	0x1u		// the controller is RadioFoundry's configured CDC-ACM device
 // r1: the data toggles the endpoints carry on with (DATA1 next when set)
 #define K22F_STUB_TOGGLE_IN1	(1u << 0)	// bulk IN 0x81
 #define K22F_STUB_TOGGLE_IN2	(1u << 1)	// interrupt IN 0x82
@@ -24,7 +24,7 @@
 						// DATA0 and doesn't check the OUT toggle
 // r2: the core clock in Hz
 
-// The USB driver ODR runs (TinyUSB's full-speed controller driver, portable/chipidea/ci_fs) keeps its endpoint state
+// The USB driver RadioFoundry runs (TinyUSB's full-speed controller driver, portable/chipidea/ci_fs) keeps its endpoint state
 // right after the 512-byte buffer descriptor table: per endpoint and direction 8 bytes, the first word with the max
 // packet size in bits 10:0 and the half (even 0, odd 1) its next transfer goes to in bit 16. Each descriptor's DATA1
 // bit is fixed when the endpoint opens and the two halves alternate, so the next toggle is the DATA1 bit of the half

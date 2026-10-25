@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The APRS engine (docs/spec/aprs.md): who we are, where we are, when to beacon, what to send, and what was heard.
 // It runs in the radio task (aprs_tick from radio_sm_poll); the radio core does the RF part of a transmission
 // (aprs_rf_*: CSMA on the APRS frequency, keying, back to the user's channel). The UI, the debug link and the host
@@ -7,8 +7,8 @@
 //
 // Nothing is transmitted until the user turns APRS transmit on (or presses "send now"), the callsign is set and the
 // APRS frequency is in an amateur band the radio may transmit in (docs/spec/aprs.md 3).
-#ifndef ODR_APRS_H
-#define ODR_APRS_H
+#ifndef RFOUNDRY_APRS_H
+#define RFOUNDRY_APRS_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -16,7 +16,7 @@
 #include "config.h"
 #include "aprs/ax25.h"
 
-#define APRS_TOCALL		"APZODR"	// destination: the experimental APZ block (docs/spec/aprs.md 4.2)
+#define APRS_TOCALL		"APZRDF"	// destination: the experimental APZ block (docs/spec/aprs.md 4.2)
 #define APRS_SSID_DEFAULT	7		// handheld
 #define APRS_DMR_DST_DEFAULT	5057u		// BrandMeister's APRS location service, "person" icon
 #define APRS_LEVEL_DEFAULT	50

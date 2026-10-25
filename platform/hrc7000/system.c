@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // hal_system_t for the HR_C7000: chip identity, memory reads and reboot. No chip identity registers are known (the eFuse
 // behind SPI master 3 is not mapped out), so the UID is the board's data flash's unique ID (hrc_chip_set_uid), and
 // chip() reports nothing until the board has read it.
@@ -67,6 +67,7 @@ HRC_RAMFUNC void hrc_rf_safe(void)
 HRC_RAMFUNC void hrc_soft_reset(void)
 {
 	__asm__ volatile ("psrclr ie");
+	HRC_CRASH_SOFT_MARK();	// asked for: not the watchdog (crash-log.md 1.3)
 	hrc_rf_safe();
 	// Watchdog off: whether a soft reset clears it is unknown, and the bootloader (its update mode, which waits for the
 	// PC) never feeds it

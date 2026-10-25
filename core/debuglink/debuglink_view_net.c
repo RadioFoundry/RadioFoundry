@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The net view section: the radio's own services, TCP and its services (docs/spec/tcp-services.md), mDNS and TFTP
 // (mdns.md, tftp.md); "net.built=0" without any of them
 #include "config.h"

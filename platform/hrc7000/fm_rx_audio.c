@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 FM receive audio (fm_rx_audio.h, modem-hrc7000.md 8.5). In FM the modem writes its demodulated audio into
 // two 256-sample halves of its RX RAM in turn and raises system interrupt bit 14 as each fills (every 32 ms). The DMR
 // glue owns that interrupt and calls half_ready for the bit; it copies the half into the ring. The radio task polls

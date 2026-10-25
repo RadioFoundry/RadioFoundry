@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // DM-1701 APRS AFSK (hal_afsk.h, docs/spec/aprs.md 5.2): the AT1846S FM TX tone generator as the voice source (as for
 // the roger beep), retuned at every symbol boundary by the TIM6 interrupt (hardware-dm1701.md 3.1, 3.3: TIM6 is the
 // AFSK bit clock, priority 5). One AT1846S register write per tone change (reg 0x35, about 0.1 ms on I2C3 at

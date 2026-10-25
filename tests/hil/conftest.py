@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """pytest set-up for the hardware-in-the-loop tests (README.md): the options, the markers, and the boards' own
 tests (boards/<id>/hil) added to a run of this directory. The hooks and fixtures (the radio, the SDR bench, the
 restore after every test, the opt-in skips) are in hil_plugin.py."""
@@ -14,9 +14,9 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
 
 def pytest_addoption(parser):
-    g = parser.getgroup("odr-hil", "OpenDigitalRadio hardware-in-the-loop")
-    g.addoption("--radio-port", default=os.environ.get("ODR_PORT"),
-                help="the radio's serial port (default: the only USB 1FC9:0094 device, or $ODR_PORT)")
+    g = parser.getgroup("rfoundry-hil", "RadioFoundry hardware-in-the-loop")
+    g.addoption("--radio-port", default=os.environ.get("RFOUNDRY_PORT"),
+                help="the radio's serial port (default: the only USB 1FC9:0094 device, or $RFOUNDRY_PORT)")
     g.addoption("--allow-rf", action="store_true",
                 help="tests may transmit (the SDR bench's transmitter; the radio only in tests marked radio_tx)")
     g.addoption("--allow-service-stop", action="store_true",
@@ -32,17 +32,17 @@ def pytest_addoption(parser):
     g.addoption("--dmr-cc", type=int, default=2)
     g.addoption("--dmr-tg", type=int, default=9,
                 help="talkgroup the bench transmitter calls (in the radio channel's RX group list)")
-    g.addoption("--ambe", default=os.environ.get("ODR_HIL_AMBE"),
-                help="a 9-byte-frame .ambe speech recording on this Mac for test_dmr_voice ($ODR_HIL_AMBE); never "
+    g.addoption("--ambe", default=os.environ.get("RFOUNDRY_HIL_AMBE"),
+                help="a 9-byte-frame .ambe speech recording on this Mac for test_dmr_voice ($RFOUNDRY_HIL_AMBE); never "
                      "commit recordings")
     g.addoption("--noaa-mhz", type=float, default=162.550, help="NOAA weather radio frequency for test_fm")
     g.addoption("--rssi-floor", type=int, default=-115, help="dBm: test_fm passes above this")
     g.addoption("--shots", default=None, help="directory for screenshots taken by the tests")
-    g.addoption("--bench-wait-max", type=float, default=float(os.environ.get("ODR_SDR_BENCH_WAIT_MAX", "900")),
-                help="s: a test that would wait longer for a shared SDR bench (benchd) is skipped")
-    g.addoption("--bench-station", default=os.environ.get("ODR_BENCH_STATION"),
-                help="a shared bench's station (an ODR radio on the bench host) as the second radio of the tests "
-                     "that use one (bench_station fixture); odr-bench info lists them")
+    g.addoption("--bench-wait-max", type=float, default=float(os.environ.get("RFOUNDRY_SDR_BENCH_WAIT_MAX", "900")),
+                help="s: a test that would wait longer for a shared SDR bench (rfoundry-benchd) is skipped")
+    g.addoption("--bench-station", default=os.environ.get("RFOUNDRY_BENCH_STATION"),
+                help="a shared bench's station (a RadioFoundry radio on the bench host) as the second radio of the tests "
+                     "that use one (bench_station fixture); rfoundry-bench info lists them")
     g.addoption("--sdr-gain", type=float, default=5.0, help="RTL-SDR gain for raw captures (dmr_bench.py C0 picks it)")
     g.addoption("--sdr-ppm", type=float, default=None,
                 help="the SDR's own frequency error in ppm for FM carrier offsets (default: the SDR bench's calibration, "
@@ -70,9 +70,9 @@ def pytest_addoption(parser):
                      "(bench_repeater.py --tx); no default: a pair you are licensed for")
     g.addoption("--roam-tx", type=float, default=None,
                 help="MHz: the radio's transmit frequency of that site (bench_repeater.py --rx)")
-    g.addoption("--split-rx-port", default=os.environ.get("ODR_SPLIT_RX_PORT"),
+    g.addoption("--split-rx-port", default=os.environ.get("RFOUNDRY_SPLIT_RX_PORT"),
                 help="test_split_pair: the second radio's port, the RX half (the --radio-port radio is the TX half)")
-    g.addoption("--split-ms-port", default=os.environ.get("ODR_SPLIT_MS_PORT"),
+    g.addoption("--split-ms-port", default=os.environ.get("RFOUNDRY_SPLIT_MS_PORT"),
                 help="test_split_pair_handheld: a third radio, the subscriber calling into the pair (its current "
                      "DMR channel is edited for the run and put back)")
     g.addoption("--split-ms-ts", default="1,2", help="test_split_pair_handheld: the subscriber's slots, in turn")
@@ -89,8 +89,8 @@ def pytest_addoption(parser):
                 help="s: test_roaming's beacon tests, the bench repeater's beacon interval (set on the radio too)")
     g.addoption("--roam-beacon-len", type=int, default=3,
                 help="s: their beacon duration (bench_repeater.py --beacon-len, the radio's roam_beacon_len_s)")
-    g.addoption("--aprs-call", default=os.environ.get("ODR_APRS_CALL"),
-                help="test_aprs on air: the licensed operator's callsign ($ODR_APRS_CALL), set as the RAM-only test "
+    g.addoption("--aprs-call", default=os.environ.get("RFOUNDRY_APRS_CALL"),
+                help="test_aprs on air: the licensed operator's callsign ($RFOUNDRY_APRS_CALL), set as the RAM-only test "
                      "call (never saved)")
     g.addoption("--aprs-ssid", type=int, default=15, help="test_aprs on air: the SSID sent (restored afterwards)")
     g.addoption("--aprs-test-mhz", type=float, default=446.050,
@@ -109,8 +109,8 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     # The hooks and fixtures are a plugin, not this conftest, so they also reach the boards' own tests
     # (boards/<id>/hil), which lie outside this directory
-    config.pluginmanager.register(hil_plugin, "odr-hil")
-    config.pluginmanager.register(bringup_plugin.Plugin(config), "odr-bringup")
+    config.pluginmanager.register(hil_plugin, "rfoundry-hil")
+    config.pluginmanager.register(bringup_plugin.Plugin(config), "rfoundry-bringup")
     # A run of this whole directory also runs every board's own HIL tests; each skips other_board on other radios
     if any(os.path.abspath(str(a).split("::")[0]) == HERE for a in config.args):
         config.args += sorted(d for d in glob.glob(os.path.join(ROOT, "boards", "*", "hil"))

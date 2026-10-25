@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 DMR modem: the shared HR_C6000 slot engine (drivers/modem/hrc_common/hrc6000_dmr.c) on the board's four modem
 // interrupt lines, the voice port on SPI1 and the deferred event task that calls the DMR stack
 // (docs/spec/dmr-modem.md 6, docs/spec/hardware-gd77.md 5.3). The structure is that of boards/dm1701/dmr_dm1701.c; what
@@ -41,7 +41,7 @@ static const k22f_dspi_cfg_t vspi_cfg = { .inst = 1, .cpol = false, .cpha = true
 #define MODEM_PINS	(k22f_pin_bit(PIN_C6K_RF_RX) | k22f_pin_bit(PIN_C6K_RF_TX) | k22f_pin_bit(PIN_C6K_SYS) | \
 			 k22f_pin_bit(PIN_C6K_SLOT))
 
-static hrc6000_dmr_t eng ODR_CPU_RAM;
+static hrc6000_dmr_t eng RFOUNDRY_CPU_RAM;
 static TaskHandle_t task;
 static volatile bool active;
 static volatile bool sys_poke;		// the task saw the system line held low: service it without an edge

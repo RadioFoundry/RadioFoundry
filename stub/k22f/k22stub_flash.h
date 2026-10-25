@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // K22F program flash erase and program for the flash stub (k22stub_flash.c). The protocol engine
 // (stub/common/stubeng.c) has already applied the safety rules; these functions only drive the FTFA controller.
 #ifndef K22STUB_FLASH_H

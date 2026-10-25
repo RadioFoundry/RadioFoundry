@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 HR_C6000 board values (c6k_gd77.h). The shared power-on sequence leaves the chip in DMR layer 2 receive with
 // the values the HR_C6000 radios have in common; this radio then sets its own RF timing advances, signal levels,
 // auxiliary tables and codec defaults. Registers the mode functions own (0x01, 0x10, 0x26, 0x34-0x37, 0x40, 0x41,

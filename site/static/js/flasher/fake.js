@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // A simulated radio for the tests and the flasher's "simulated radio" mode: the AnyRoad bootloader with a model of
-// the STM32F405 flash (a port of tools/odrflash/odrflash/fakedfu.py: erase sets a sector to 0xFF, programming only
-// clears bits), and ODR's USB serial port answering the debug link and the CPS reads from the same flash and an SPI
-// flash. A synthetic stock firmware file and key stand in for the real ones, which are never part of ODR. A radio
-// running ODR also hands over to the STM32F4 stub (debug link STUB, then the stub's protocol, its board record
+// the STM32F405 flash (a port of tools/rfoundry/rfoundry/fakedfu.py: erase sets a sector to 0xFF, programming only
+// clears bits), and RadioFoundry's USB serial port answering the debug link and the CPS reads from the same flash and an SPI
+// flash. A synthetic stock firmware file and key stand in for the real ones, which are never part of RadioFoundry. A radio
+// running RadioFoundry also hands over to the STM32F4 stub (debug link STUB, then the stub's protocol, its board record
 // (CONFIG) and its interlock as stub/f4stub.py's FakeF4 and docs/spec/stub-stm32f4.md 5.2 have them).
 
 import { BLOCK, FIRST_BLOCK } from "./plan.js";
@@ -38,7 +38,7 @@ export function randomBytes(r, n) {
 
 // A synthetic stock file shaped like a real profile, the board and profiles made to accept it. Returns
 // {fb, board, key, stock, codecSegments, stockSegments}: fb is a copy of flash-boards.json whose board and profile
-// match the key; codecSegments: the codec as ODR's merge places it (the profile's placement), stockSegments: where
+// match the key; codecSegments: the codec as RadioFoundry's merge places it (the profile's placement), stockSegments: where
 // the stock firmware keeps it. Where the profile moves the code, the synthetic codec gets what stockfw.py's
 // build_synthetic_stock plants (a self reference, an island's call into the code) and a codec map for them.
 const SYN_SELF_REF = 0x40, SYN_BL = 0x110;
@@ -76,7 +76,7 @@ export async function simulation(fbReal, boardId, seed = 1701) {
 	if (real.placement) {
 		const [[, code], [tabAddr, tables]] = stockSegments;
 		const pl = real.placement;
-		prof.map = { format: "odr-codec-map/1", profile: "sim-" + boardId, board: boardId, isa: "thumb2",
+		prof.map = { format: "rfoundry-codec-map/1", profile: "sim-" + boardId, board: boardId, isa: "thumb2",
 			code: { flash: run, len: code.length, run, sha256: windows[0][2] }, entries: {},
 			self_refs: [{ kind: "word", off: SYN_SELF_REF, value: run + 0x201 }], island_ptrs: [], table_refs: [], island_refs: [],
 			islands: [{ start: tabAddr + SYN_BL - 0x10, len: 0x40 }], branches: [{ at: tabAddr + SYN_BL, target: run + 0x200, kind: "bl" }],
@@ -94,8 +94,8 @@ export async function simulation(fbReal, boardId, seed = 1701) {
 // ---------------------------------------------------------------------------------------------------------------
 
 export class FakeRadio {
-	// state: "stock" (stock firmware: codec in place, no serial port), "odr", "odr-nocodec", "bootloader".
-	// stubEntry: ODR built with CONFIG_STUB_ENTRY; adopt: the stub keeps ODR's USB device (else the port goes away
+	// state: "stock" (stock firmware: codec in place, no serial port), "rfoundry", "rfoundry-nocodec", "bootloader".
+	// stubEntry: RadioFoundry built with CONFIG_STUB_ENTRY; adopt: the stub keeps RadioFoundry's USB device (else the port goes away
 	// and serialStream() gives the new one); cutAfter: stub programs before the "cable" is pulled. stubVersion: the
 	// STM32F4 stub's protocol (4: CONFIG and the record echo; 2 and 3: the DM-1701's wiring built in); stubConfig: what the
 	// stub does with a record it would accept ("ok", "refuse": answers bad argument, "garble": accepts it but HELLO
@@ -107,10 +107,10 @@ export class FakeRadio {
 		this.flash = new Uint8Array(FLASH_SIZE);
 		const r = rng(380);
 		for (let i = 0; i < FLASH_SIZE; i += 4096) this.flash.set(randomBytes(r, 64), i);	// "stock code"
-		// stock keeps its codec in its stock place; ODR (with its codec) where the merge put it
+		// stock keeps its codec in its stock place; RadioFoundry (with its codec) where the merge put it
 		for (const [a, d] of state === "stock" || state === "bootloader" ? sim.stockSegments : sim.codecSegments) this.flash.set(d, a - FLASH_BASE);
 		this.spi = new Uint8Array(spiSize).fill(0xFF);
-		this.spi.set(randomBytes(r, 0x40000), 0);		// a stock codeplug where ODR's settings go
+		this.spi.set(randomBytes(r, 0x40000), 0);		// a stock codeplug where RadioFoundry's settings go
 		this.spi.set(randomBytes(r, 0x5D400), 0x60000);		// stock resources
 		this.flash.set(this.key, 0x2340);		// the bootloader holds its key (anywhere: found by its hash)
 		this.security = randomBytes(r, 0x300);
@@ -188,9 +188,9 @@ export class FakeRadio {
 				if (this.addr !== 0x08000000) throw new Error("exit without set address 0x08000000");
 				this.exited = true;
 				this.mode = "normal";
-				// what boots next: ODR unless a test says it wrote stock firmware back
-				this.running = this.afterExit || "odr";
-				if (this.running === "odr" && this.codecReport() === "absent") this.running = "odr-nocodec";
+				// what boots next: RadioFoundry unless a test says it wrote stock firmware back
+				this.running = this.afterExit || "rfoundry";
+				if (this.running === "rfoundry" && this.codecReport() === "absent") this.running = "rfoundry-nocodec";
 			} else if (data[0] === 0x91) {
 				this.vendor.push(data[1]);
 				this.busy = 0;
@@ -221,7 +221,7 @@ export class FakeRadio {
 		return data.length;
 	}
 
-	// ---- ODR's serial port, as a link.js stream
+	// ---- RadioFoundry's serial port, as a link.js stream
 
 	serialStream() {
 		const radio = this;
@@ -239,7 +239,7 @@ export class FakeRadio {
 					s.inb = radio.stubFeed(s.inb, (b) => { s.buf = concat(s.buf, b); });
 					return;
 				}
-				if (radio.mode !== "normal" || !radio.running.startsWith("odr")) throw new Error("no serial port: the radio isn't running ODR");
+				if (radio.mode !== "normal" || !radio.running.startsWith("rfoundry")) throw new Error("no serial port: the radio isn't running RadioFoundry");
 				s.buf = concat(s.buf, radio.serialAnswer(data));
 			},
 			async close() {},
@@ -374,7 +374,7 @@ export class FakeRadio {
 		this.port++;
 		if (this.word(APP_BASE) === 0xFFFFFFFF) { this.mode = "bootloader"; this.resetDfu(); return; }
 		this.mode = "normal";
-		this.running = this.codecReport() === "absent" ? "odr-nocodec" : "odr";
+		this.running = this.codecReport() === "absent" ? "rfoundry-nocodec" : "rfoundry";
 	}
 
 	serialAnswer(req) {
@@ -399,7 +399,7 @@ export class FakeRadio {
 					if (!this.loaded || crc32(this.loaded) !== this.stubCrc || this.stubEntryAt !== 0x20000000) return frame(f.cmd | 0x80, f.seq, new Uint8Array([4]));
 					this.mode = "stub";
 					this.stubRecord = null;		// a fresh stub: no board record yet
-					this.events.push("stub (from ODR)");
+					this.events.push("stub (from RadioFoundry)");
 					if (!this.adopt) this.port++;	// the old port is gone; serialStream() is the new one
 					return ok(new Uint8Array(0));
 				}
@@ -426,7 +426,7 @@ export class FakeRadio {
 			return frame(f.cmd | 0x80, f.seq, new Uint8Array([1]));
 		}
 		if (req[0] === 0x52) {
-			// ODR answers up to 32 KB per read, older builds 2045 bytes (open-firmware-cps.md 2.1)
+			// RadioFoundry answers up to 32 KB per read, older builds 2045 bytes (open-firmware-cps.md 2.1)
 			const area = req[1], addr = (req[2] << 24 | req[3] << 16 | req[4] << 8 | req[5]) >>> 0, len = Math.min(u16be(req, 6), this.readMax || 32768);
 			let src = null, a = addr;
 			if (area === 1) src = this.spi;

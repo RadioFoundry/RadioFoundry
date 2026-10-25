@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The USB debug link (docs/spec/debuglink.md): framed commands on the host port, beside the MMDVM hotspot and the CPS
 // protocol (core/hostlink), for bench automation: version, diagnostics and counters, the radio view as key=value
 // text, screenshots, key and PTT injection, radio requests, a log ring. CONFIG_DEBUGLINK.
@@ -42,6 +42,7 @@ enum {
 	DL_VIEW_TASKS,		// every task's least free stack (debuglink_view_tasks.c)
 	DL_VIEW_CRASH,		// the crash log's record from before this start (debuglink_crash.c)
 	DL_VIEW_WATCHDOG,	// the hardware watchdog: timeout, feeds, longest idle gap, raw registers (debuglink_watchdog.c)
+	DL_VIEW_RESET,		// why this start happened: the crash log's restart cause (debuglink_crash.c)
 	DL_VIEW_BOARD,		// the board's own bring-up readings, board.view_line (debuglink_view_board.c)
 	DL_VIEW_COUNT
 };
@@ -120,6 +121,7 @@ void debuglink_view_split(dl_text_t *t);
 // The crash log (debuglink_crash.c, docs/spec/debuglink.md 3.19): the crash section, DL_CMD_CRASH and the service hook
 // that crashes on purpose after the reply has gone out. Without CONFIG_CRASH_LOG: "crash.built=0", unavailable, empty
 void debuglink_view_crash(dl_text_t *t);
+void debuglink_view_reset(dl_text_t *t);	// the reset section; "reset.built=0" without CONFIG_CRASH_LOG
 size_t debuglink_cmd_crash(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_crash_service(void);
 

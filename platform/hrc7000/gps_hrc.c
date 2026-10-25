@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // An HR_C7000 radio's GPS: the module's NMEA output on a receive-only UART, 9600 8N1 (docs/spec/hardware-dm32.md 12,
 // hardware-db25d.md 3.1). The board gives the UART, its interrupt, the power pin with its polarity and, if its io init
 // hasn't, the RXD pad's mux (hrc_gps_cfg_t).

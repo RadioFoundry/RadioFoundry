@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 DMR modem glue between radio_gd77.c (RF side, mode changes) and dmr_gd77.c (HR_C6000 interrupts, the shared
 // slot engine, the deferred event task), plus its counters for the diagnostics page (docs/spec/hardware-gd77.md 5.3).
 #ifndef DMR_GD77_H

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Generic factory calibration blocks: a radio keeps one block per band in its own storage, each a fixed header and
 // then fields packed in table order. The radio's glue describes the layout (field ids and sizes) and the bands; this
 // code reads the blocks through a read callback, checks they are readable and not blank, picks the block for a

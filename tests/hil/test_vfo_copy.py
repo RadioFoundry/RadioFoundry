@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 """Copy to VFO (docs/spec/dmr-voice.md 2.2), radio only, nothing transmitted: RADIO op 32 copies the channel on view to
 the VFO and opens it. The channel's frequencies, mode, bandwidth and tones show in the VFO afterwards, the channel is
 as it was, and the VFO's values stay across a channel and back. The VFO's frequency, bandwidth and tones are put back
 afterwards, and its mode when it was DMR (an FM channel leaves the VFO's DMR color code, slot and target alone)."""
 import pytest
 
-from odr_hil import DebugLinkError, skip
+from rfoundry_hil import DebugLinkError, skip
 
 
 def _channel(radio):

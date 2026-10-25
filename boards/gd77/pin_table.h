@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // GD-77 start-up pin table (docs/spec/hardware-gd77.md 3.2): every pin the firmware uses, with its function and the
 // level it starts at. Chip selects idle inactive, the HR_C6000 stays powered down, and every output whose role is
 // still open starts inactive, so nothing keys up before the radio code chooses. The power hold is driven high before

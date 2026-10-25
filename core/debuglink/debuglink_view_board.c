@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The board view section (docs/spec/debuglink.md 3.7): what the board reports about its own hardware through
 // board.view_line, for bring-up and the HIL tests of a radio being ported (pin levels, the clock plan, chip IDs). The
 // keys are the board's, under "board."; the core knows nothing of them.

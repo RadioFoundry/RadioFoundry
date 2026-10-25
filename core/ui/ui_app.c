@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The UI's behavior (docs/ux/information-architecture.md, docs/spec/ui.md): the navigation stack, the keys with
 // one meaning everywhere (P3), Home, quick settings, banners and interruptions, key lock, Recent. No RTOS: ui.c
 // runs it in the UI task and the host simulator runs it on a PC.
@@ -167,6 +167,9 @@ void ui_pop(void)
 		sp--;
 	if (ui_scr[stack[sp].scr]->flags & SF_FILTER)
 		ui_filter_rebuild();
+#if CONFIG_ZONE_EDIT
+	ui_menus_resume();
+#endif
 	ui_st.quick_edit = false;
 	update_focus_target();
 	dirty = true;
@@ -670,7 +673,7 @@ uint32_t ui_freq_entry_hz(const char *digits, uint8_t len)
 static void entry_digit(char d)
 {
 	if (ui_st.entry_len >= UI_ENTRY_MAX) {
-		ui_toast("All digits typed: OK tunes");
+		ui_toast("All digits typed: OK or # tunes");
 		return;
 	}
 	if (!ui_freq_entry_digit(ui_st.entry_digits, &ui_st.entry_len, d))
@@ -998,7 +1001,9 @@ bool ui_home_key(const input_event_t *ev)
 		ui_push(SCR_QUICK, 0);
 		return true;
 	case ACT_CONTEXT:
-		if (ui_st.scanning)
+		if (ui_st.entry)
+			entry_commit();		// # tunes the typed frequency, like OK
+		else if (ui_st.scanning)
 			ui_push(SCR_SCAN, 0);	// skip / stay / always skip (task-flows.md 11)
 		else
 			open_caller_actions();
@@ -1007,8 +1012,12 @@ bool ui_home_key(const input_event_t *ev)
 	case ACT_USER_4:
 		zone_step(ev->action == ACT_USER_4 ? 1 : -1);	// "Zone picker" side keys
 		return true;
+	case ACT_NAV_LEFT:
+	case ACT_NAV_RIGHT:
+		zone_step(ev->action == ACT_NAV_RIGHT ? 1 : -1);	// the arrow keys left of the menus: Home steps the zone
+		return true;
 	case ACT_USER_3:
-		radio_req_power(1);	// top key: power cycle (information-architecture.md 7.1)
+		radio_req_power(1);	// power cycle (information-architecture.md 7.1)
 		return true;
 	default:
 		return false;
@@ -1812,8 +1821,8 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 	// In text entry * and # are the typewriter's keys, not quick settings or a banner's
-	// A banner up: CONTEXT opens what it is about
-	if (!typing && ui_st.banner.kind != UI_BANNER_NONE && ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS &&
+	// A banner up: CONTEXT opens what it is about (not while a VFO frequency is typed: # tunes it, as OK)
+	if (!typing && !ui_st.entry && ui_st.banner.kind != UI_BANNER_NONE && ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS &&
 			ui_st.banner.kind != UI_BANNER_RESULT && ui_st.banner.kind != UI_BANNER_INFO) {
 		banner_open();
 		return;
@@ -1931,6 +1940,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	ui_st.now_ms = now_ms;
 	ui_svc_poll();
 	ui_svc_keys_poll();
+#if CONFIG_ZONE_EDIT
+	ui_svc_zone_poll();
+#endif
 #if CONFIG_CRASH_SCREEN
 	ui_crash_tick(now_ms);
 #endif
@@ -1948,6 +1960,40 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ev_tail = (uint8_t)((ev_tail + 1u) % UI_EVENTS);
 		handle_event(&ev);
 	}
+#if CONFIG_ZONE_EDIT
+	// The codeplug changed (a zone edit's job, a CPS write): the screens holding a zone index follow it when zones
+	// moved (zone_edit.h), a filtered list reads its rows again, so the zone editor's lists show the change, and the
+	// editor's screens read their zone again once our queued changes are written (or one was refused). Not while a
+	// zone write is under way: codeplug_serial() first, then zone_edit_busy(), as the radio core does
+	static uint32_t codeplug_seen, shifts_seen;
+	static bool zone_queued;
+	bool queued = ui_svc_zone_pending();
+	if ((codeplug_serial() != codeplug_seen || zone_edit_shifts() != shifts_seen || (zone_queued && !queued)) &&
+	    !zone_edit_busy()) {
+		codeplug_seen = codeplug_serial();
+		uint32_t to = zone_edit_shifts();
+		if (to != shifts_seen) {
+			uint8_t top = ui_menus_zones_moved(stack, sp, shifts_seen, to);
+			shifts_seen = to;
+			if (top < sp) {
+				sp = (uint8_t)(top + 1u);
+				ui_pop();	// down to the screen below the first one whose zone was deleted
+				ui_toast("That zone was deleted");
+			}
+		}
+		ui_frame_t *f = &stack[sp];
+		if (ui_scr[f->scr]->flags & SF_FILTER) {
+			ui_filter_rebuild();
+			if (f->focus >= ui_filter_count())
+				f->focus = ui_filter_count() > 0 ? (uint16_t)(ui_filter_count() - 1u) : 0;
+			ui_menus_resume();
+		}
+		if (!queued)
+			ui_menus_codeplug();
+		dirty = true;
+	}
+	zone_queued = queued;
+#endif
 #if CONFIG_DMR
 	recent_update(v);
 	// "DMR modem off" only once it's been off a while: a channel or mode change (APRS on FM and back, a retune)

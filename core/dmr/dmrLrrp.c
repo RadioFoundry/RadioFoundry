@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Motorola LRRP (Location Request / Response Protocol, UDP 4001), the radio's side, see dmrLrrp.h
  */
@@ -238,7 +238,7 @@ bool lrrpDecodeRequest(const uint8_t *payload, int length, lrrpRequest_t *reques
 			case 0x76:
 				break;
 			default:
-				r.i = r.end;// a token we don't know: what came before is still used, as odr_sdrbench does
+				r.i = r.end;// a token we don't know: what came before is still used, as rfoundry_sdrbench does
 				break;
 		}
 	}

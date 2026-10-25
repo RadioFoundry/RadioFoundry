@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 The OpenDigitalRadio Authors
+# Copyright (c) 2026 The RadioFoundry Authors
 #
 # The self-hosted GitHub Actions runner image (README.md): a fresh container per job with everything tools/ci.sh and
 # the workflows need, so jobs install nothing. Built on the C-SKY image (tools/docker/csky-toolchain), which brings
 # Ubuntu 24.04 and csky-elf GCC in /opt/csky-elf; that image itself is not changed.
 #
-#   docker build -t odr/ci-runner:latest --build-arg BASE=odr/csky-gcc14:latest \
+#   docker build -t rfoundry/ci-runner:latest --build-arg BASE=rfoundry/csky-gcc14:latest \
 #       --build-arg ARM_GCC_VERSION="$(tools/platform_toolchain.sh stm32f4 version)" \
 #       --build-arg ARM_GCC_SHA256="$(tools/platform_toolchain.sh stm32f4 sha256)" \
 #       -f tools/ci-runner/Dockerfile tools
@@ -13,7 +13,7 @@
 # The build context is tools/ (install-arm-toolchain.sh and ci-runner/). Every download is pinned and checksummed.
 # The Arm toolchain's pin is platform/stm32f4/platform.toml's, passed in as build arguments: this file has no copy
 # (tools/boards.py check fails on one that differs), and the build stops without them.
-ARG BASE=odr/csky-gcc14:latest
+ARG BASE=rfoundry/csky-gcc14:latest
 FROM ${BASE}
 
 ARG RUNNER_VERSION=2.338.0
@@ -28,7 +28,7 @@ ARG ARM_GCC_SHA256
 ARG RUNNER_UID=1000
 
 # What ci.sh, coverage.sh, the manual and the site steps use; the apt installs in the workflows are skipped here.
-# libpython3.12t64: PyInstaller (release.yml's odrflash) needs the shared libpython, which python3 alone lacks
+# libpython3.12t64: PyInstaller (release.yml's rfoundry) needs the shared libpython, which python3 alone lacks
 RUN apt-get update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 		gcc libc6-dev zlib1g-dev make curl xz-utils zstd unzip jq ca-certificates git \
@@ -76,20 +76,25 @@ https://github.com/STMicroelectronics/cmsis-device-f4.git \
 https://github.com/STMicroelectronics/cmsis-core.git \
 https://github.com/FreeRTOS/FreeRTOS-Kernel.git \
 https://github.com/hathach/tinyusb.git"
-ENV ODR_GIT_CACHE=/opt/odr-git
+ENV RFOUNDRY_GIT_CACHE=/opt/rfoundry-git
 # owned by the runner, so git's safe.directory check never refuses them
 RUN set -eu; for url in $SUBMODULE_URLS; do \
-		dir="$ODR_GIT_CACHE/$(printf '%s\n' "$url" | sed -E 's#^[a-z]+://##; s#\.git$##').git"; \
+		dir="$RFOUNDRY_GIT_CACHE/$(printf '%s\n' "$url" | sed -E 's#^[a-z]+://##; s#\.git$##').git"; \
 		git clone -q --bare "$url" "$dir"; \
 	done; \
-	chown -R "${RUNNER_UID}" "$ODR_GIT_CACHE"; du -sh "$ODR_GIT_CACHE"
+	chown -R "${RUNNER_UID}" "$RFOUNDRY_GIT_CACHE"; du -sh "$RFOUNDRY_GIT_CACHE"
 
 RUN useradd --create-home --uid "${RUNNER_UID}" --shell /bin/bash runner 2>/dev/null \
 	|| { userdel -r "$(id -nu "${RUNNER_UID}")" && useradd --create-home --uid "${RUNNER_UID}" --shell /bin/bash runner; }
-COPY ci-runner/entrypoint.sh /usr/local/bin/odr-ci-entrypoint
-# ODR_CI_IMAGE tells the workflows that the tools are already installed (they skip their apt and download steps)
-ENV ODR_CI_IMAGE=1 RUNNER_ALLOW_RUNASROOT=0 DOTNET_CLI_TELEMETRY_OPTOUT=1
+COPY ci-runner/entrypoint.sh /usr/local/bin/rfoundry-ci-entrypoint
+# the job-started hook: only main's (or a v* tag's) workflows run here (README.md "Which jobs it takes"). Root-owned,
+# so a job can't change it (each job gets a fresh container anyway); chmod in a RUN, since COPY --chmod needs BuildKit
+COPY ci-runner/job-gate.sh /usr/local/lib/rfoundry/job-gate.sh
+RUN chmod 755 /usr/local/lib/rfoundry/job-gate.sh && touch /usr/local/lib/rfoundry/job-gate.kill
+# RFOUNDRY_CI_IMAGE tells the workflows that the tools are already installed (they skip their apt and download steps)
+ENV RFOUNDRY_CI_IMAGE=1 RUNNER_ALLOW_RUNASROOT=0 DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+	ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/lib/rfoundry/job-gate.sh
 USER runner
 WORKDIR /work
-ENTRYPOINT ["/usr/local/bin/odr-ci-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/rfoundry-ci-entrypoint"]
 CMD ["run"]

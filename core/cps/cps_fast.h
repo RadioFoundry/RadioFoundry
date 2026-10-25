@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The fast codeplug protocol (docs/spec/cps-fast.md): the debug link's CODEPLUG command reads and writes the
 // open-firmware codeplug image (the same bytes the open-firmware CPS shows, open-firmware-cps.md 7) in 4 KB blocks.
 // Blank blocks are reported, not sent; the host compares CRC-32s so only changed blocks move; blocks travel LZ4
@@ -8,8 +8,8 @@
 //
 // The engine has no RTOS: the debug link hands it each request (cps_fast_cmd), the host link task ticks it (the
 // session time-out, the commit's sector copies), and the host tests drive both directly.
-#ifndef ODR_CPS_FAST_H
-#define ODR_CPS_FAST_H
+#ifndef RFOUNDRY_CPS_FAST_H
+#define RFOUNDRY_CPS_FAST_H
 
 #include <stdint.h>
 #include <stdbool.h>

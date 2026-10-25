@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The host link task (see hostlink.h)
 #include "config.h"
 #include "hostlink/hostlink.h"
@@ -47,7 +47,7 @@
 
 #define HOSTLINK_TASK_PRIORITY	3	// with input and USB; above the UI (core/app/app.c task table)
 #if CONFIG_DEBUGLINK
-#define HOSTLINK_TASK_STACK	640	// words: MMDVM frames on the stack; debug link replies format diagnostics lines
+#define HOSTLINK_TASK_STACK	652	// words: MMDVM frames on the stack; debug link replies format diagnostics lines (deepest board: 2240 bytes)
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
 #endif
@@ -56,8 +56,8 @@
 #define CPS_GAP_MS		3	// a new CPS request starts after this much quiet (open-firmware-cps.md 1.2)
 #define PPP_FLAG		0x7E	// starts every PPP frame (RFC 1662); no other protocol here starts a request with it
 
-#ifndef ODR_GIT
-#define ODR_GIT "unknown"
+#ifndef RFOUNDRY_GIT
+#define RFOUNDRY_GIT "unknown"
 #endif
 
 static volatile hostlink_mode_t mode = HOSTLINK_IDLE;
@@ -173,8 +173,8 @@ static const mmdvm_io_t mmdvm_io = {
 
 static void make_description(void)
 {
-	static const char prefix[] = "OpenDigitalRadio ";
-	const char *parts[3] = { prefix, board.name, " " ODR_GIT };
+	static const char prefix[] = "RadioFoundry ";
+	const char *parts[3] = { prefix, board.name, " " RFOUNDRY_GIT };
 	size_t n = 0;
 
 	for (int p = 0; p < 3; p++) {

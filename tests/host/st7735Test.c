@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // ST7735 driver: rows from a 16-color frame buffer (st7735_write_rows_indexed) against the same rows from RGB565
 #include <stdio.h>
 #include <string.h>

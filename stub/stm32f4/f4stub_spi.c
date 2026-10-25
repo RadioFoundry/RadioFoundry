@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The external SPI NOR flash, for the flash stub. The wiring comes from the board record (f4stub.h): the SPI block,
 // SCK / MISO / MOSI and their alternate function, the chip select, the SPI mode, and the other chip selects on the
-// same bus, which are held high (a display on the flash's bus). The bus is set up from scratch, since ODR may
+// same bus, which are held high (a display on the flash's bus). The bus is set up from scratch, since RadioFoundry may
 // have left it mid-use. Commands are the common SPI NOR set (JEDEC 0x9F, read 0x03 with 3 address bytes, write enable
 // 0x06, status 0x05, 4 KB sector erase 0x20, page program 0x02, release from power-down 0xAB), so parts up to 16 MB
 // work, in mode 0 or 3.
@@ -164,7 +164,7 @@ uint32_t f4spi_init(const f4_board_t *b, uint32_t pclk_hz, uint8_t id[3])
 		br++;
 	}
 	spi->CR1 = 0;
-	spi->CR2 = 0;		// ODR may have left DMA requests on
+	spi->CR2 = 0;		// RadioFoundry may have left DMA requests on
 	spi->CR1 = SPI_CR1_MSTR | SPI_CR1_SSM | SPI_CR1_SSI | (br << SPI_CR1_BR_Pos) | b->spi_mode;
 	spi->CR1 |= SPI_CR1_SPE;
 	(void)spi->DR;
@@ -179,7 +179,7 @@ uint32_t f4spi_init(const f4_board_t *b, uint32_t pclk_hz, uint8_t id[3])
 		return 0;
 	}
 	up = true;
-	(void)wait_ready(ERASE_MS);	// ODR may have handed over in the middle of an erase
+	(void)wait_ready(ERASE_MS);	// RadioFoundry may have handed over in the middle of an erase
 	return id[2] >= 0x18u ? 0x1000000u : 1u << id[2];	// 3 address bytes reach 16 MB
 }
 

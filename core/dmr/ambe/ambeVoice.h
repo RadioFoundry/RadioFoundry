@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * DMR voice between the call stack (core/dmr/call, 72-bit air frames) and the board's PCM audio and vocoder
  * (hal_audio_t, hal_vocoder_t, 49 parameter bits).
@@ -19,8 +19,8 @@
  * Audio streams from the first begin until ambeVoiceStop() (leaving DMR); the speaker PCM route is on only while a
  * call plays.
  */
-#ifndef ODR_AMBE_VOICE_H
-#define ODR_AMBE_VOICE_H
+#ifndef RFOUNDRY_AMBE_VOICE_H
+#define RFOUNDRY_AMBE_VOICE_H
 
 #include <stdint.h>
 #include <stdbool.h>

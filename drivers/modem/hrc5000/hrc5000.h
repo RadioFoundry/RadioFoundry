@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // HR_C5000 DMR / FM baseband chip driver (docs/spec/hardware-md380.md 4). Its register facts
 // are the HR_C5000 user manual (datasheets/C5000/hrc5000.pdf) and the stock firmware's bring-up sequences; what neither
 // confirms is marked (?) in the spec. Register access, the DMR slot engine and the DMR ID / modulation helpers are

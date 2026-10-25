@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 /*
  * Host test stubs for functions/dmrDataService.c: just enough of the firmware (trx, HR-C6000, settings, UI, sound,
  * USB) for the service to compile on the host. Every header the service includes from the firmware trees is a file in

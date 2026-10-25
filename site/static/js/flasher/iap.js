@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // IAP, a vendor loader's update mode on the programming cable (a board's radios.json flash.update_mode "iap"; the
 // DB25-D PRO's, entered with P1 held at power-on, docs/spec/hardware-db25d.md 7). It writes an image to the
-// application area: the recovery route when neither a stock console, ODR nor the first stage's power-on window answers.
+// application area: the recovery route when neither a stock console, RadioFoundry nor the first stage's power-on window answers.
 // The loader starts what it wrote at a power-on when it begins with the board's first stage signature
 // (flash.first_stage, from board.mk BOOT_SIZE and BOOT_SIGNATURE).
 
@@ -18,7 +18,7 @@ const latin = (b) => {
 };
 
 const hex8 = (n) => (n >>> 0).toString(16).padStart(8, "0");
-// ODR's application starts with its reset handler (psrclr ie), right after the first stage
+// RadioFoundry's application starts with its reset handler (psrclr ie), right after the first stage
 export const APP_ENTRY = [0x80, 0xC0, 0x20, 0x70];
 const headBytes = (fs) => fs.head.match(/../g).map((x) => parseInt(x, 16));
 
@@ -55,16 +55,16 @@ export const readPacket = (addr, pages) => concat(new TextEncoder().encode("Flas
 export const erasePacket = (n) => concat(new TextEncoder().encode("Erase      "), be32(0), be32(n));
 
 // What the loader takes: the first stage (firstStage.size bytes, starting with its signature so the loader boots it at
-// a normal power-on) and ODR's application (starting with its reset handler), as the image builder checks
+// a normal power-on) and RadioFoundry's application (starting with its reset handler), as the image builder checks
 export function checkInstallImage(image, firstStage) {
 	const { size } = firstStage, head = headBytes(firstStage);
 	if (image.length <= size) throw new IapError("this file holds only the first stage; the install image is the first stage and the application");
 	if (!head.every((b, i) => image[i] === b)) throw new IapError(`this is not an install image for this radio (it does not start with the first stage's ${firstStage.head.toUpperCase()})`);
-	if (!APP_ENTRY.every((b, i) => image[size + i] === b)) throw new IapError("the application after the first stage does not start with ODR's reset handler");
+	if (!APP_ENTRY.every((b, i) => image[size + i] === b)) throw new IapError("the application after the first stage does not start with RadioFoundry's reset handler");
 }
 
 // A program memory backup's application area put back through the loader (a backup of the original firmware, or of
-// ODR): it must start with the entry the loader checks at power-on, or the radio would stay in update mode
+// RadioFoundry): it must start with the entry the loader checks at power-on, or the radio would stay in update mode
 export function checkRestoreImage(image, firstStage) {
 	if (image.length <= firstStage.size || !headBytes(firstStage).every((b, i) => image[i] === b))
 		throw new IapError("the backup's application area does not start with an application the loader would start");

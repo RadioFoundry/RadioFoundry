@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // Small text builders for the UI (no printf: less flash and stack)
 #ifndef UI_FMT_H
 #define UI_FMT_H

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 The OpenDigitalRadio Authors
+// Copyright (c) 2026 The RadioFoundry Authors
 // The network personality's frames (CDC-NCM on TinyUSB, usb_device.c; docs/spec/hardware-dm1701.md 16): Ethernet
 // frames to and from the host, for the IP gateway (core/dmr/ipGateway.c through core/hostlink/hostlink_net.c).
 // Built with CONFIG_USB_NETWORK; every call is safe from any task (the USB stack's own work is deferred to its task).
-#ifndef ODR_USB_NCM_H
-#define ODR_USB_NCM_H
+#ifndef RFOUNDRY_USB_NCM_H
+#define RFOUNDRY_USB_NCM_H
 
 #include <stdbool.h>
 #include <stdint.h>
