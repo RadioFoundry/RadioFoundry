@@ -63,7 +63,8 @@ static const gd77_codec_profile_t profiles[] = {
 
 // CCM-less part: ordinary SRAM, not zeroed by start-up for the states (reset() clears them)
 static uint32_t dec_state[DEC_STATE_BYTES / 4] __attribute__((aligned(8)));
-static uint32_t enc_state[ENC_STATE_BYTES / 4] __attribute__((aligned(8)));
+// In the upper SRAM (RFOUNDRY_CPU_RAM): only the CPU runs the codec, and SRAM_L is full to the last kilobytes
+static uint32_t enc_state[ENC_STATE_BYTES / 4] RFOUNDRY_CPU_RAM __attribute__((aligned(8)));
 static uint32_t fec_state[FEC_STATE_BYTES / 4] __attribute__((aligned(8)));
 static int16_t bitbuf[72] __attribute__((aligned(4)));	// one bit per halfword
 static int16_t pcmbuf[VOCODER_FRAME_SAMPLES] __attribute__((aligned(4)));
