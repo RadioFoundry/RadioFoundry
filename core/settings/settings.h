@@ -195,6 +195,9 @@ typedef struct {
 	uint8_t rs_dual_delay;		// radio_settings_t.dual_delay_ms: n - 1 steps of 100 ms, 0 = the default
 	uint8_t rs_bcast_step;		// radio_settings_t.bcast_step + 1, 0 = the default (200 kHz on the odd tenths)
 	uint8_t reserved8[3];
+	// The IP gateway's off-net route (dmrDataSettings_t.ipGatewayId, docs/spec/usb-network.md 3.1; appended for
+	// ip-addr), taken with the other ds_ fields: the gateway radio's DMR ID, 0 = off-net packets dropped
+	uint32_t ds_ip_gateway;
 	// A zone add or delete under way (core/codeplug/zone_settle.c): written before the codeplug's zone write, cleared
 	// with zone_index and roam_zones moved to match. Found set at power on, it is finished from the zone list
 	uint16_t zone_jrn_index;	// the index the zone was added at or deleted from
