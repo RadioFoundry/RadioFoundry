@@ -235,8 +235,8 @@ jobs:
     name: PR checks status
     needs: [changes, unit-tests, firmware, checks]
     if: always()
-    # a few seconds of gh at the end: the UI gallery's runner, which runs no pull request's code
-    runs-on: ${{ github.event.pull_request.head.repo.full_name == github.repository && (vars.RFOUNDRY_UI_RUNNER || vars.RFOUNDRY_CI_RUNNER) || 'ubuntu-24.04' }}
+    # a few seconds of gh at the end
+    runs-on: ubuntu-24.04   # a write token: GitHub's runners only (docs/dev/ci-runners.md)
     timeout-minutes: 5
     permissions:
       statuses: write   # the PR checks status on the head commit; this job runs none of the pull request's code

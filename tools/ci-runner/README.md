@@ -98,9 +98,8 @@ Size `MEMORY` so the runners together fit the host's RAM. A job peaked at about 
 the limit reclaims first, so six runners at 1200m fit an 8 GB host with no swap. `CPUS` is a cap, so runners can share
 the cores.
 
-One runner can be kept for the UI gallery: give it `LABELS=rfoundry-ui` and set the repository variable `RFOUNDRY_UI_RUNNER` to
-`rfoundry-ui` ([docs/dev/ci-runners.md](../../docs/dev/ci-runners.md#the-github-self-hosted-runner)). Labels are set when the runner
-registers; to change a registered runner's, re-register it or set them in the repository's Settings, Actions, Runners.
+Labels are set when the runner registers; to change a registered runner's, re-register it or set them in the
+repository's Settings, Actions, Runners.
 
 ```sh
 cd ~/rfoundry-ci-runner
