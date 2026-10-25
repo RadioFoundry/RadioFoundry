@@ -349,6 +349,13 @@
     "CHANNEL_EDIT"
    ]
   },
+  "channel_share": {
+   "group": "channels",
+   "needs": [
+    "CHANNEL_LIST",
+    "ZONE_SHARE"
+   ]
+  },
   "zone_channels": {
    "group": "channels",
    "needs": []

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
  * The air queue (CONFIG_DMR_AIR_QUEUE): the packets the IP gateway (from the host) and zone sharing (the user's
- * "Send zone to...") hand to the air, kept in order and sent through the data service. Unconfirmed IP packets to the
+ * "Share zone to...") hand to the air, kept in order and sent through the data service. Unconfirmed IP packets to the
  * same destination, one after another in the queue, go in one transmission; the service keeps its guard between
  * transmissions. One queue and one guard for every producer, so a zone being sent and the host's datagrams don't
  * race each other for the service. docs/spec/dmr-data.md 12.
