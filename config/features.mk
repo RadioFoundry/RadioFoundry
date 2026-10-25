@@ -65,6 +65,9 @@ CONFIG_NET_HTTP ?= $(CONFIG_NET_TCP)
 # the status server's static files (core/net/http_assets) stored gzip compressed at build time and served with
 # Content-Encoding: gzip; off: stored and served as they are (needs NET_HTTP; tools/gen_http_assets.py)
 CONFIG_NET_HTTP_GZIP ?= $(CONFIG_NET_HTTP)
+# web control on the status server: /ws (WebSocket) for the radio's front panel page, keys, status and receive audio
+# (needs NET_HTTP; core/net/ws.c, docs/spec/tcp-services.md 5)
+CONFIG_NET_WEBCTL ?= $(CONFIG_NET_HTTP)
 # Hamlib rigctld on port 4532: frequency, mode, PTT, S meter for loggers and SDR programs (needs NET_TCP;
 # core/net/rigctld.c)
 CONFIG_NET_RIGCTL ?= $(CONFIG_NET_TCP)
@@ -150,7 +153,7 @@ CONFIG_SCAN ?= y
 # the dual watch screens: two channels on Home, which one PTT uses and which one a call came in on; the radio core's
 # dual watch across zones and with the VFO, PTT on the selected channel (needs SCAN; docs/ux/dual-watch.md)
 CONFIG_DUAL_WATCH ?= $(CONFIG_SCAN)
-# side key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's side keys do
+# key assignment: Settings > Keys and the codeplug's quick-key slots say what the board's programmable keys do
 # (core/input/keyassign.c, docs/spec/ui.md 3.1)
 CONFIG_KEY_ASSIGN ?= y
 # the hub's Channels list: every codeplug channel by number, and a channel's settings (read only; core/ui/ui_menus.c,
@@ -228,7 +231,7 @@ CONFIG_APRS_RX ?= $(CONFIG_APRS)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
 
 
-FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR TASK_STACKS \
+FEATURES := FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS DMR_CONFIRMED NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB DMR_CONTROL_STATION SNMP SFR TASK_STACKS \
 	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES DTMF \
 	VOX BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_RX APRS_IGATE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT
 
@@ -308,7 +311,7 @@ ifneq ($(call feature_on,NET_TCP),)
     $(error CONFIG_NET_TCP=y needs CONFIG_DMR_IP_GATEWAY=y)
   endif
 endif
-$(foreach f,NET_HTTP_GZIP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_HTTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_HTTP=y)))
+$(foreach f,NET_HTTP_GZIP NET_WEBCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_HTTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_HTTP=y)))
 $(foreach f,NET_HTTP NET_RIGCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_TCP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y)))
 $(foreach f,NET_KISS NET_APRSIS,$(if $(call feature_on,$(f)),$(if $(and $(call feature_on,NET_TCP),$(call feature_on,APRS)),,$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y and CONFIG_APRS=y))))
 $(foreach f,MDNS TFTP NET_USRP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_IP_GATEWAY),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_IP_GATEWAY=y)))

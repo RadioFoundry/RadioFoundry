@@ -43,17 +43,15 @@ uint32_t ui_svc_feat_voice(void)
 	return f;
 }
 
-// The radio core's settings as the UI last sent them: a run of changes (ui_svc_apply, ui_svc_vox) works on this copy,
-// so it never reads back a value the radio task hasn't taken in yet
+// The radio core's settings, read again for every change so one made elsewhere (the debug link, a host, the radio
+// core) is kept. radio_get_settings answers with the last ones set until the radio task has taken them in, so a run
+// of changes (ui_svc_apply, ui_svc_vox) never reads back a value from before its own last one. Static: off the UI
+// task's stack
 static radio_settings_t rs;
-static bool rs_have;
 
 static radio_settings_t *rs_copy(void)
 {
-	if (!rs_have) {
-		radio_get_settings(&rs);
-		rs_have = true;
-	}
+	radio_get_settings(&rs);
 	return &rs;
 }
 
@@ -392,7 +390,7 @@ static void apply_mic_gain(int32_t step, bool agc)
 
 // The UI's settings that live in radio_settings_t. The radio core saves them (settings store) and restores them at
 // start-up, so ui_svc_setting_get reads them back from it (ui_svc_storage.c) and a value it already has is not sent
-// again. A local copy, so a run of changes doesn't read back one the radio task hasn't taken in yet
+// again. Only the field the setting names changes (rs_copy)
 void ui_svc_apply(uint8_t id, int32_t value)
 {
 	radio_settings_t was = *rs_copy();

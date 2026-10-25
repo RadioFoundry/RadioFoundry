@@ -230,6 +230,8 @@ bool ui_svc_zone_offer_import(uint32_t serial, uint16_t zone);
 #define UI_DUAL_ON	0x10000
 #define UI_DUAL_B_SEL	0x20000
 
+#define UI_KEY_ROLES	9	// KEYASSIGN_ROLES (core/input/keyassign.h)
+
 // --- Settings persistence (storage-cps). The stub keeps them in RAM (lost at power off) ---
 typedef enum {
 	UI_SET_KEY_TONES, UI_SET_TONE_VOLUME, UI_SET_TALK_PERMIT, UI_SET_VOICE_PROMPTS, UI_SET_MESSAGE_TONE,
@@ -251,10 +253,10 @@ typedef enum {
 	// USB network (usb-network.md 1, 5): the network personality at power-on, control station passthrough (the PC
 	// answers the radio's data), the fixed link pair (192.168.10.x) instead of the address by DMR ID
 	UI_SET_USB_BOOT_NET, UI_SET_PC_ENDPOINT, UI_SET_USB_FIXED_LINK,
-	// Side keys (Settings > Keys, CONFIG_KEY_ASSIGN; core/input/keyassign.h): a KEYFN_* each, kept in the codeplug's
-	// quick-key slots. Press and long press of side key 1, side key 2 and the top key, in this order
-	UI_SET_KEY_SIDE1, UI_SET_KEY_SIDE1_HOLD, UI_SET_KEY_SIDE2, UI_SET_KEY_SIDE2_HOLD, UI_SET_KEY_TOP,
-	UI_SET_KEY_TOP_HOLD,
+	// Reassignable keys (Settings > Keys, CONFIG_KEY_ASSIGN; core/input/keyassign.h): a KEYFN_* each, kept in the
+	// codeplug's quick-key slots. Press and long press of board.side_keys[0], then [1], ...: UI_SET_KEY_FIRST + 2 *
+	// role (+ 1 for the long press), UI_KEY_ROLES roles
+	UI_SET_KEY_FIRST, UI_SET_KEY_LAST = UI_SET_KEY_FIRST + 2 * UI_KEY_ROLES - 1,
 	UI_SET_VIBRATE,		// vibrate for alerts (Settings > Sound, CONFIG_VIBRATE; settings_t.ui_flags)
 	UI_SET_ACCENT,		// the highlight color, UI_ACCENT_* (Settings > Display; settings_t.accent bits 0-2)
 	UI_SET_STRIP,		// the status strip filled with it (Settings > Display; settings_t.accent bit 3)

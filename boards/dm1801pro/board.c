@@ -65,8 +65,9 @@ static const keymap_entry_t keymap[] = {
 	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 
-// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): side key 1, side key 2
-static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom, then the function keys
+static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2, KEY_SOS, KEY_AB, KEY_VFO_MR };
+static const char *const side_key_names[] = { "SK1", "SK2", "SOS", "A/B", "VFO/MR" };
 
 const board_t board = {
 	.name = "DM-1801 Pro",
@@ -82,6 +83,7 @@ const board_t board = {
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
 	.side_keys = side_keys,
+	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
 	.radio = &dm1801pro_radio,
 	.power = &dm1801pro_power,

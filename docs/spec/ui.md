@@ -9,7 +9,7 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 | Contents | |
 |---|---|
 | 1, 2 | File layout, screens and the stack |
-| 3 | Key meanings and side key assignment |
+| 3 | Key meanings and key assignment |
 | 4, 5, 6 | Data other packages own, build switches, debug link |
 | 7, 8 | Host simulator and tests, decisions and open points |
 
@@ -182,9 +182,9 @@ and `keyassignTest` checks every board's key map for it. The key is a key map en
 
 EMERGENCY is hold-to-activate (principles P2): a key whose long action is EMERGENCY needs `INPUT_HOLD_MS` (1.5 s)
 whatever the long press time (`input_long_threshold`, core/input). Which key carries it is the board's key map
-(`board.keymap`): for example the top side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above), or a dedicated SOS key; the short press stays USER_3. A hold toggles:
+(`board.keymap`): for example a side key's long action in builds with `CONFIG_DMR_EMERGENCY` (else long USER_3 as above), or a dedicated SOS key; the short press stays USER_3. A hold toggles:
 "EMERGENCY sent: hold again to cancel", "Emergency canceled" (`ui_svc_emergency_active` reads the radio core's state,
-so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (a board whose top key isn't located yet).
+so a cancel from elsewhere counts). A board whose key map has no EMERGENCY entry has no emergency key (for example a board whose third side key isn't located yet).
 
 PTT while the keys are locked works unless Settings > Privacy > PTT when locked is off: the UI then tells the input
 layer (`ui_svc_ptt_block`, `input_set_ptt_block`), which keeps PTT DOWN from the radio core (UP always passes), and the
@@ -206,11 +206,13 @@ neither is drawn anywhere, and Tools > Battery, Settings > Power > Battery saver
 out of their lists, so the other Tools rows move up), and only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 
-### 3.1 Side key assignment
+### 3.1 Key assignment
 
-Switch: `CONFIG_KEY_ASSIGN`. The board lists the keys a user may reassign (`board.side_keys`, role order: side key 1,
-side key 2, top key; boards have two or three, see the board's `side_keys`). Each role has a press and a
-long press, and each takes one function:
+Switch: `CONFIG_KEY_ASSIGN`. The board lists the keys a user may reassign (`board.side_keys`, `side_key_count` of them,
+up to 9) and their names (`board.side_key_names`, as printed on the radio; without it the rows say "Key 1", "Key 2",
+...). The list holds every key with a function of its own: side keys first, numbered SK1, SK2, ... from the top, then
+any others. Keys the menus need (OK, Back, the arrows, digits, QUICK, CONTEXT, PTT, volume) are not on it. A key's
+position in the list is its role. Each role has a press and a long press, and each takes one function:
 
 | Function (`keyfn_t`) | Action sent | Press | Long press |
 |---|---|:-:|:-:|
@@ -236,17 +238,19 @@ function: the input engine sends DOWN, the LONG (value 1) at the threshold and U
 radio core then doesn't toggle digital monitor (RREQ_MONITOR 2), and the UI drops the LONG on FM.
 
 Storage: the open-firmware codeplug's ten quick-key slots (EEPROM 0x7524, 2 bytes LE each,
-`open-firmware-cps.md` 7.2). Slot 0 is the marker 0x4B01 ("K", layout 1); slot 1 + 2k is role k's press and slot
-2 + 2k its long press; slots 7-9 are spare. Without the marker the slots are another firmware's and every key is the
-board's; the first change clears them and writes the marker. A value that isn't a `keyfn_t`, or isn't allowed in its
+`open-firmware-cps.md` 7.2). Slot 0 is the marker 0x4B02 ("K", layout 2); slot 1 + k is role k, its press in the low
+byte and its long press in the high byte, for 9 roles. Layout 1 (marker 0x4B01: slot 1 + 2k role k's press, slot 2 + 2k
+its long press, 3 roles) is still read; the first change rewrites it as layout 2 with its roles kept. Without either
+marker the slots are another firmware's and every key is the board's; the first change clears them and writes the
+marker. A value that isn't a `keyfn_t`, or isn't allowed in its
 slot (monitor on a long press, emergency on a press), reads as Default. The values are append-only (gotchas 9.11).
 
 Both places edit the same slots, so there is one copy:
 
-- Settings > Keys (rows Side key 1, Side key 1 hold, ..., Top key hold): the change applies at once
+- Settings > Keys (rows SK1, SK1 hold, SK2, ...: a pair per role, named by `side_key_names`): the change applies at once
   (`keyassign_build`, then `input_set_keymap`, which the input task takes when no key is held) and a storage job
-  writes the slots. A failed write shows "Couldn't save the keys: for now only". A row for a key the radio doesn't
-  have is dimmed ("This radio has no such key"), and so is a hold row whose press is monitor.
+  writes the slots. A failed write shows "Couldn't save the keys: for now only". Rows past `side_key_count` are left
+  out of the list.
 - The codeplug (a CPS or TFTP write): `ui_svc_keys_poll` reads the slots again when `codeplug_serial()` changes and
   rebuilds the key map. qdmr has no editor for them; a CPS that writes back an old image brings back its keys.
 
@@ -309,7 +313,12 @@ left out or dimmed with the feature. Some radios' default images have only a few
 16 bpp. A mono board sizes the buffer to its panel (128x64 at 1 bpp is 1 KB). Drawing still takes RGB565 colors, and
 `gfx.c` keeps a 16-entry palette of the ones on the screen. An entry gets a new color
 only once nothing drawn since the last clear uses it; anti-aliased edges never take the last 4 free entries and
-otherwise get the nearest color already there. Screen captures (debug link, `/api/screen.bmp`) read it as RGB565.
+otherwise get the nearest color already there. The debug link's screen captures read it as RGB565; `/api/screen.bmp` sends the indexes with the palette.
+
+With `CONFIG_NET_WEBCTL` the web control page keeps a copy of the screen (`docs/spec/tcp-services.md` 5.1).
+`gfx_flush` marks each row it sends the panel, and `webctl.c` sends the marked rows and unmarks them. The UI task
+calls `gfx_frame_begin` before it draws and `gfx_flush` ends the frame, so the host link task, which runs above the UI,
+reads rows only between frames (`gfx_frame_idle`).
 
 Without `CONFIG_FONT_AA` a screen uses at most 9 colors (the gallery, all 93 screens), so 4 bpp renders it exactly as
 16 bpp does. With `CONFIG_FONT_AA` the edge grays add up to 20 colors on the busiest screen (Messages); on 14 of the

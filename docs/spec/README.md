@@ -29,7 +29,6 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [dmr-roaming.md](dmr-roaming.md) | DMR repeater roaming |
 | [sfr.md](sfr.md) | Single frequency repeater |
 | [split-duplex.md](split-duplex.md) | Two radios as one duplex MMDVM modem |
-| [dmr-tier3-plan.md](dmr-tier3-plan.md) | DMR Tier III trunking: scope, architecture, work packages (planning only) |
 
 ## DMR modem chips
 

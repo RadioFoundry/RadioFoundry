@@ -292,6 +292,11 @@ spec = "docs/spec/tcp-services.md"
 switch = "NET_HTTP_GZIP"
 spec = "docs/spec/tcp-services.md"
 
+[feature.net_webctl]
+switch = "NET_WEBCTL"
+spec = "docs/spec/tcp-services.md"
+planned_tests = ["tests/hil/test_webctl.py::test_webctl_keys_ptt_audio"]
+
 [feature.net_rigctl]
 switch = "NET_RIGCTL"
 spec = "docs/spec/tcp-services.md"

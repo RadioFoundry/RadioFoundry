@@ -272,7 +272,7 @@ const sim_geom_t *sim_geom_find(const char *name)
 
 // ---------------- the board ----------------
 
-enum { K_GREEN, K_RED, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_STAR, K_HASH, K_0, K_9 = K_0 + 9, K_SK1, K_SK2, K_TOP,
+enum { K_GREEN, K_RED, K_UP, K_DOWN, K_LEFT, K_RIGHT, K_STAR, K_HASH, K_0, K_9 = K_0 + 9, K_SK1, K_SK2, K_SK3,
        K_FN1, K_FN2, K_PTT, K_P1, K_P2 };
 
 static const keymap_entry_t map_k[] = {	// DM-1701 (7.1)
@@ -285,7 +285,7 @@ static const keymap_entry_t map_k[] = {	// DM-1701 (7.1)
 	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
 	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
 	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
-	{ K_TOP, ACT_USER_3, ACT_EMERGENCY, false, false, 0 }, { K_FN1, ACT_USER_1, ACT_USER_1, false, false, 0 },
+	{ K_SK3, ACT_USER_3, ACT_EMERGENCY, false, false, 0 }, { K_FN1, ACT_USER_1, ACT_USER_1, false, false, 0 },
 	{ K_FN2, ACT_USER_4, ACT_USER_4, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const keymap_entry_t map_m[] = {	// GD-77 (7.3)
@@ -299,7 +299,7 @@ static const keymap_entry_t map_m[] = {	// GD-77 (7.3)
 	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
 	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
 	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
-	{ K_TOP, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+	{ K_SK3, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const keymap_entry_t map_v[] = {	// MD-9600 front panel + hand mic (7.4); the encoder sends ENC_STEP
 	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
@@ -312,14 +312,15 @@ static const keymap_entry_t map_v[] = {	// MD-9600 front panel + hand mic (7.4);
 	{ K_0 + 6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 }, { K_0 + 7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
 	{ K_0 + 8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 }, { K_0 + 9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
 	{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 }, { K_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
-	{ K_TOP, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
+	{ K_SK3, ACT_USER_3, ACT_USER_3, false, false, 0 }, { K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
 static const keymap_entry_t map_f[] = {	// few keys (7.5): Up / Down / Select / Back, PTT
 	{ K_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 }, { K_RED, ACT_BACK, ACT_BACK, false, false, 0 },
 	{ K_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 }, { K_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
 	{ K_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
 };
-static const uint8_t side_k[] = { K_SK1, K_SK2, K_TOP }, side_m[] = { K_SK1, K_SK2 };	// board.side_keys
+static const uint8_t side_k[] = { K_SK1, K_SK2, K_SK3 }, side_m[] = { K_SK1, K_SK2 };	// board.side_keys
+static const char *const side_names[] = { "SK1", "SK2", "SK3" };
 static const struct {
 	const keymap_entry_t *m;
 	uint8_t n;
@@ -1624,6 +1625,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.keymap = maps[map].m;
 	board.keymap_len = maps[map].n;
 	board.side_keys = maps[map].side;
+	board.side_key_names = side_names;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
 	power.supply_mv = NULL;
@@ -1683,7 +1685,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_UPDOWN_HOME, 0);
 	ui_svc_setting_set(UI_SET_VFO_STEP, 0);
 	sim_step = 0;
-	for (uint8_t k = UI_SET_KEY_SIDE1; k <= UI_SET_KEY_TOP_HOLD; k++)
+	for (uint8_t k = UI_SET_KEY_FIRST; k <= UI_SET_KEY_LAST; k++)
 		ui_svc_setting_set(k, 0);	// the side keys as the board has them
 	ui_svc_setting_set(UI_SET_AUTO_OFF_MIN, 0);
 	ui_svc_setting_set(UI_SET_LOW_BATTERY, 15);

@@ -64,6 +64,10 @@ static const hal_cps_t cps = {
 };
 #endif
 
+// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the keys with a function of their own. P1, P2 and the mic's P6, P7 are QUICK and CONTEXT, which the menus need
+static const uint8_t side_keys[] = { KEY_P3, KEY_TONE, KEY_MIC_P4, KEY_MIC_P5 };
+static const char *const side_key_names[] = { "P3", "TONE", "Mic P4", "Mic P5" };
+
 const board_t board = {
 	.name = "DB25-D",
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
@@ -76,6 +80,9 @@ const board_t board = {
 	.input = &db25d_input,
 	.keymap = keymap,
 	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
+	.side_keys = side_keys,
+	.side_key_names = side_key_names,
+	.side_key_count = sizeof(side_keys),
 	.radio = &db25d_radio,
 	.power = &db25d_power,
 #if CONFIG_GPS

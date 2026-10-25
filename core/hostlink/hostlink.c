@@ -47,9 +47,7 @@
 
 #define HOSTLINK_TASK_PRIORITY	3	// with input and USB; above the UI (core/app/app.c task table)
 #if CONFIG_DEBUGLINK
-// words: MMDVM frames on the stack; debug link replies format diagnostics lines. 642: the deepest chain (CPS read >
-// the VFO overlay's settings copy) left 16 bytes on one radio with the macOS toolchain; the CI's reads up to 16 deeper
-#define HOSTLINK_TASK_STACK	642
+#define HOSTLINK_TASK_STACK	648	// words: MMDVM frames on the stack; debug link replies format diagnostics lines
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
 #endif

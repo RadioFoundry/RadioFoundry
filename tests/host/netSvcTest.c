@@ -61,11 +61,22 @@ static int n_receive(uint8_t *buf, int max) { (void)buf; (void)max; return 0; }
 static void n_tick(uint32_t t) { (void)t; }
 static void n_macs(uint8_t host[6], uint8_t radio[6]) { memcpy(host, HOST_MAC, 6); memcpy(radio, RADIO_MAC, 6); }
 static const hal_netif_t fake_netif = { n_select, n_selected, n_up, n_send, n_receive, n_tick, n_macs, NULL, 600 };
-static const hal_display_t fake_display = { .width = 160, .height = 128, .bpp = 16 };
+hal_display_t fake_display = { .width = 160, .height = 128, .bpp = 16 };	// netSvcCases.c changes the depth
 static const char *const power_names[] = { "Low", "High" };
 static const band_t bands[] = { { 136000000u, 174000000u, true }, { 400000000u, 480000000u, true } };
-const board_t board = { .name = "fake", .netif = &fake_netif, .display = &fake_display, .power_count = 2,
-			.power_names = power_names, .bands = bands, .band_count = 2 };
+// Two keys for the web control: bit 3 up, bit 7 the PTT
+static const keymap_entry_t keymap[] = {
+	{ 3, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
+	{ 7, ACT_PTT, ACT_PTT, true, false, 0 },
+};
+static int8_t fake_encoder(void)
+{
+	return 0;
+}
+
+static const hal_input_t fake_input = { .encoder = fake_encoder };	// the web control's hello says it has one
+const board_t board = { .name = "fake", .input = &fake_input, .netif = &fake_netif, .display = &fake_display, .power_count = 2,
+			.power_names = power_names, .bands = bands, .band_count = 2, .keymap = keymap, .keymap_len = 2 };
 
 // ---- what the gateway needs from its user ----
 bool ipGatewaySendFrame(const uint8_t *f, int length) { return board.netif->send(f, length); }

@@ -281,8 +281,7 @@ input_inject_t input_inject_keys(uint32_t mask, uint32_t hold_ms)
 	return r;
 }
 
-// Release injected keys in mask now (the task notices at its next scan)
-static void release_keys(uint32_t mask)
+void input_inject_release(uint32_t mask)
 {
 	taskENTER_CRITICAL();
 	if (inj.active && (inj.mask & mask) != 0) {
@@ -364,7 +363,7 @@ input_inject_t input_inject_action(uint8_t action, uint8_t gesture, int8_t value
 			if (gesture == GESTURE_DOWN) {
 				return input_inject_keys(1u << m->bit, INPUT_INJECT_MAX_MS);
 			}
-			release_keys(1u << m->bit);
+			input_inject_release(1u << m->bit);
 			return INPUT_INJ_OK;
 		}
 		break;
