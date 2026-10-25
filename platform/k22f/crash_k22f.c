@@ -48,6 +48,65 @@ bool hal_crash_code_addr(uint32_t a)
 	return a >= FLASH_LO && a < FLASH_HI;
 }
 
+// The instruction before pc ends a kernel wait: the yield's ISB (portmacro.h), or the MSR BASEPRI of a critical
+// section's exit, where a yield the section held back is taken (the same port as the STM32F4's)
+static bool after_yield(uint32_t pc)
+{
+	pc &= ~1u;
+	if (!hal_crash_code_addr(pc - 4u))
+		return false;
+	const volatile uint16_t *h = (const volatile uint16_t *)(uintptr_t)(pc - 4u);
+	return (h[0] == 0xF3BFu && h[1] == 0x8F6Fu) || ((h[0] & 0xFFF0u) == 0xF380u && h[1] == 0x8811u);
+}
+
+uint32_t hal_crash_task_where(const void *task)
+{
+	// pxTopOfStack: what the PendSV handler pushed, low to high r4-r11 and EXC_RETURN, s16-s31 if the task used the
+	// FPU, then the CPU's frame (r0-r3, r12, lr, pc, xPSR, with s0-s15 and FPSCR after it for the FPU)
+	const uint32_t f = *(const uint32_t *)task;
+	if ((f & 3u) || !hal_crash_ram_addr(f) || !hal_crash_ram_addr(f + 35u))
+		return 0;
+	const uint32_t exc_return = ((const uint32_t *)(uintptr_t)f)[8];
+	const uint32_t hw = f + 36u + ((exc_return & FRAME_FPU_BIT) ? 0u : 64u);
+	if (!hal_crash_ram_addr(hw + 31u))
+		return 0;
+	const uint32_t *frame = (const uint32_t *)(uintptr_t)hw;
+	const uint32_t pc = frame[6];
+	if (!after_yield(pc))
+		return pc & ~1u;	// an interrupt took it while ready
+	const uint32_t above = hw + ((exc_return & FRAME_FPU_BIT) ? 32u : 104u) + ((frame[7] & XPSR_ALIGN_BIT) ? 4u : 0u);
+	const uint32_t ret = crash_stack_return(above, CRASH_TASK_SCAN_WORDS);
+	return ((ret != 0 ? ret : pc) & ~1u) | 1u;
+}
+
+// The restart cause's words (hal_crash.h), in the same kept RAM as the record
+static crash_boot_t boot_words __attribute__((section(".crash_noinit"), used));
+
+crash_boot_t *hal_crash_boot(void)
+{
+	return &boot_words;
+}
+
+// RCM_SRS0 / SRS1 (reference manual chapter 17): the sources of the last reset, kept until the next one, so nothing
+// to clear. A power-on also sets the low voltage flag, so power before brown-out. The bootloader runs first and is
+// not known to add to them
+uint8_t hal_crash_reset_flags(uint32_t *raw)
+{
+	const uint32_t srs0 = RCM_SRS0, srs1 = RCM_SRS1;
+	*raw = srs0 | (srs1 << 8);
+	if (srs0 & 0x20u)		// WDOG
+		return CRASH_RESET_WATCHDOG;
+	if (srs1 & 0x04u)		// SW (SYSRESETREQ)
+		return CRASH_RESET_SOFTWARE;
+	if (srs0 & 0x80u)		// POR
+		return CRASH_RESET_POWER;
+	if (srs0 & 0x02u)		// LVD
+		return CRASH_RESET_BROWNOUT;
+	if (srs0 & 0x40u)		// PIN
+		return CRASH_RESET_PIN;
+	return CRASH_RESET_UNKNOWN;
+}
+
 void hal_crash_restart(void)
 {
 	k22f_reset();
