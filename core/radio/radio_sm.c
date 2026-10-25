@@ -3996,7 +3996,7 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 
 // --- Settings: what the radio was set to, back at power-on (core/settings), and saved when it changes ---
 
-// The preferences the radio core uses: base squelch, master power, VFO step, the own DMR ID override
+// The preferences the radio core uses: base squelch, master power, VFO step. The own DMR ID is the codeplug's
 static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 {
 	master_power = st->master_power;
@@ -4013,7 +4013,7 @@ static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 	sm->vfo_step_set = st->vfo_step_hz >= 1000u && st->vfo_step_hz <= 1000000u ? st->vfo_step_hz : 0;
 	step_update(sm);
 #if CONFIG_DMR
-	sm->own_id = st->dmr_id != 0 && st->dmr_id <= 0xFFFFFFu ? st->dmr_id : codeplug_dmr_id();
+	sm->own_id = codeplug_dmr_id();	// set on the radio in Settings > My radio, which writes the codeplug
 	if (sm->own_id == 0) {
 		sm->own_id = RADIO_DMR_ID_DEFAULT;
 	}

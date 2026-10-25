@@ -201,6 +201,9 @@ export function importStock(m, bytes, format) {
 		stockChannels = stockChannels.slice(0, LIMITS.channels);
 	}
 	if (stockChannels.some((c) => c.scanList)) note("scan_lists");
+	// the stock 0 is "off"; RadioFoundry's 0 is the radio's TX timeout
+	const totOff = stockChannels.filter((c) => !c.tot).length;
+	if (totOff) note("tot_off", totOff);
 	if (s.claimed) note("settings_area");
 
 	// RX group lists, then contacts: the ones kept channels and lists refer to come first when a table is too long

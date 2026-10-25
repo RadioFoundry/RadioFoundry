@@ -65,7 +65,7 @@ typedef struct {
 	uint8_t accent;			// color displays (docs/spec/ui.md 8): SETTINGS_ACCENT_* (was reserved1's first byte;
 					// 0 = the defaults: the theme's highlight, the strip filled)
 	uint8_t vfo_talk_lo;		// the DMR VFO's talk target ID, bits 0-7 (was reserved1's second byte; see below)
-	uint32_t dmr_id;		// own DMR ID override, 0 = the codeplug's
+	uint32_t unused_dmr_id;		// was an own DMR ID override: ignored (the ID is the codeplug's), kept for the layout
 	char radio_name[SETTINGS_NAME_LEN];	// NUL padded, "" = the codeplug's callsign
 	// DMR basic privacy keys (the key store dmr-voice's privacy uses; docs/spec/settings-store.md 3). A channel's
 	// choice of key will be a slot number in the native codeplug

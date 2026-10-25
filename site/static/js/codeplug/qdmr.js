@@ -267,6 +267,8 @@ export function importQdmr(m, yamlText) {
 		const o = v.openGD77 && typeof v.openGD77 === "object" ? v.openGD77 : {};
 		const loc = fromLocator(text(o.location));
 		const tot = parseDuration(v.timeout);
+		// no per-channel "never": an explicit infinite or 0 takes the radio's TX timeout, like !default
+		if (tot === 0) note("tot_off");
 		const c = {
 			number: null, name: shorten(v.name, LIMITS.name), rxHz, txHz, mode: dmr ? "dmr" : "fm",
 			power: POWER[text(v.power)] ?? 0, tot: tot ? Math.min(Math.ceil(tot / 15000) * 15, 255 * 15) : 0,
@@ -415,7 +417,7 @@ export function exportQdmr(m) {
 		if (c.power && !powerName) note("power_level");
 		const common = {
 			id: chRef(c), name: c.name, rxFrequency: frequencyText(c.rxHz), txFrequency: frequencyText(c.txHz),
-			timeout: c.tot ? seconds(c.tot * 1000) : "infinite", rxOnly: c.rxOnly, vox: c.vox ? 1 : "off", openGD77: og,
+			timeout: c.tot ? seconds(c.tot * 1000) : new Tag("!default", ""), rxOnly: c.rxOnly, vox: c.vox ? 1 : "off", openGD77: og,
 		};
 		const aprsRef = c.aprs && typeof c.aprs === "object" && an.has(c.aprs) ? `aprs${an.get(c.aprs)}` : undefined;
 		const power = powerName || new Tag("!default", "");

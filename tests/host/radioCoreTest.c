@@ -238,6 +238,12 @@ static const contact_t contacts[] = {
 	{ "Local", 9, CONTACT_GROUP, 0 },
 };
 uint32_t codeplug_dmr_id(void) { return own_dmr_id; }
+bool codeplug_set_dmr_id(uint32_t id)
+{
+	own_dmr_id = id;
+	cp_serial++;
+	return true;
+}
 void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_NAME_LEN + 1]) { line1[0] = line2[0] = 0; }
 bool codeplug_contact(uint16_t index, contact_t *out)
 {
@@ -1900,7 +1906,8 @@ static void test_persist(void)
 	CHECK(sm.view.ch.rx_hz == 145600000);	// the VFO kept its frequency while on the channel
 	req(RREQ_VFO, 0);
 
-	// Temporary changes are not saved; the base squelch, master power and DMR ID override are preferences
+	// Temporary changes are not saved; the base squelch and master power are preferences. The old DMR ID override's
+	// bytes are ignored: the own ID is the codeplug's
 	req(RREQ_SQUELCH, 2);
 	CHECK(sm.view.temporary);
 	boot();
@@ -1908,15 +1915,15 @@ static void test_persist(void)
 	settings_t *st = settings_begin();
 	st->squelch = 2;
 	st->master_power = 0;
-	st->dmr_id = 1234567;
+	st->unused_dmr_id = 1234567;
 	settings_end(now);
 	req(RREQ_RELOAD, 0);
 	CHECK(sm.view.squelch == 2 && !sm.view.temporary);
-	CHECK(sm.view.dmr.own_id == 1234567);
+	CHECK(sm.view.dmr.own_id == 3101276);
 	req(RREQ_ZONE_POS, 0);			// "Simplex": default power = the master power now
 	CHECK(sm.view.power == 0);
 	boot();
-	CHECK(sm.view.squelch == 2 && sm.view.power == 0 && sm.view.dmr.own_id == 1234567);
+	CHECK(sm.view.squelch == 2 && sm.view.power == 0 && sm.view.dmr.own_id == 3101276);
 
 	// The codeplug changes underneath: the channel is deleted, the radio moves on to the next one in the zone
 	req(RREQ_ZONE_POS, 3);
