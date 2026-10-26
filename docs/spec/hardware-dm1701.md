@@ -1222,9 +1222,10 @@ Owners fit a small 3.3 V NMEA module (an ATGM336H or a GP-02, reported by users)
 PA9 and PA10 sit next to each other on the side of the package that holds pins 51-75. A module without an enable pin
 runs from 3.3 V all the time and leaves PA9 unconnected. Nothing goes to the module's RX: the firmware only listens.
 
-RadioFoundry builds GPS by default (`CONFIG_GPS`). At start-up it drives PA9 high and listens on PA10 for 5 s at each
-rate in the family's list (9600, then 14400). One checksum-valid NMEA sentence marks the module present. If none
-arrives, it switches USART1 off and drives PA9 low again. A stock radio loses only that listen window. The code is
+RadioFoundry builds GPS by default (`CONFIG_GPS`). At start-up it drives PA9 high and listens on PA10 in 5 s windows,
+9600 first. One checksum-valid NMEA sentence marks the module present. Characters without a valid sentence move on to
+the next rate (14400). A window of silence means no module: USART1 goes off, PA9 goes low, and the listening task ends
+and frees its stack. The task runs at low priority in the background, so start-up doesn't wait for it. The code is
 `boards/uv380_family/gps_uvf.c`, shared with the MD-UV380 G models ([hardware-mduv380.md](hardware-mduv380.md) 9).
 Untested with a module on a DM-1701.
 
