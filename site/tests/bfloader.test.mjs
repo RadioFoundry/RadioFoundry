@@ -137,6 +137,26 @@ test("Baofeng updater: listening passes over other answers until the loader ackn
 	await assert.rejects(loaderOn(bench({ silent: true }).s).listen(5000, { signal: stop.signal }), /stopped/);
 });
 
+test("Baofeng updater: steps 1-3 once per power-on; the instance that did them writes, a new one finds nothing", async () => {
+	// the radio (hardware-dm32.md 13.2): after step 3 it ignores step 1 and waits for step 4 until switched off
+	const { s, fake } = bench();
+	const first = loaderOn(s);
+	assert.deepEqual(await first.listen(1000), { id: fx.id });
+	const sent = s.sent.length;
+	await assert.rejects(loaderOn(s).listen(300), /did not report update mode/, "a second handshake goes unanswered");
+	assert.ok(fake.ignored > 0 && fake.state === 4 && !fake.errors.length, "step 1 passed over, the loader still waits for step 4");
+	assert.equal(await loaderOn(s).probe(200), null);
+	s.clear();
+	const n = s.sent.length;
+	assert.deepEqual(await first.listen(1000), { id: fx.id }, "found already: nothing sent");
+	assert.deepEqual(await first.hello(), { id: fx.id });
+	assert.equal(s.sent.length, n);
+	assert.ok(n > sent);
+	const img = new Uint8Array(3000).map((_, i) => (i * 13 + 1) & 0xFF);
+	assert.equal(await first.write(img), 3);
+	assert.ok(fake.done && !fake.errors.length && equal(fake.image(), img));
+});
+
 // ---- the install the page writes that way
 
 async function withFile() {
@@ -180,9 +200,10 @@ test("practice radio: switched on with its keys held it enters the updater, whic
 	assert.ok(equal(r.progmem.subarray(C.app_start, C.app_start + data.length), data));
 	assert.ok(r.progmem.subarray(C.app_start + data.length + 1024).every((b) => b === 0xFF), "the rest of the area erased");
 	assert.ok(equal(r.progmem.subarray(0, C.app_start), sim.progmem.subarray(0, C.app_start)), "the loader is never written");
-	r.powerOff();
-	r.powerOn();
+	// the radio starts what was written by itself after the end of transfer, no power cycle (13.2)
 	await new Promise((ok) => setTimeout(ok, 300));
+	assert.ok(r.events.includes("restart"));
+	assert.equal(r.state, "firmware");
 	assert.equal(r.firmware(), "rfoundry");
 	assert.notEqual(r.codecReport(), "absent", "RadioFoundry finds its codec slot");
 	// without the keys the radio boots its application, and the updater never answers

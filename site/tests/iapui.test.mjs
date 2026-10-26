@@ -27,6 +27,8 @@ class El {
 	addEventListener(ev, f) { (this.listeners[ev] ||= []).push(f); }
 	click() { for (const f of this.listeners.click || []) f({ preventDefault() {} }); }
 	get textContent() { return this.children.map((c) => (c instanceof El ? c.textContent : c.text)).join(""); }
+	set textContent(v) { this.children = [{ text: String(v) }]; }
+	get firstChild() { return this.children[0]; }
 }
 const strings = readFileSync(fileURLToPath(new URL("../i18n/en.json", import.meta.url)), "utf8");
 globalThis.Node = El;
@@ -46,14 +48,21 @@ function route() {
 	const forwards = [];
 	const S = () => state;
 	state.forward = (b) => forwards.push(b);
-	const calls = { listen: 0, write: 0, aborted: false, done: 0 };
-	const loader = () => ({
-		listen: (ms, { signal }) => new Promise((_, reject) => {
-			calls.listen++;
-			signal.addEventListener("abort", () => { calls.aborted = true; reject(new Error("stopped")); });
-		}),
-		write: async () => { calls.write++; },
-	});
+	// found: resolves the listening as the radio entering update mode does (bfloader.js ready)
+	const calls = { made: 0, listen: 0, write: 0, aborted: false, found: null };
+	const loader = () => {
+		calls.made++;
+		const l = {
+			s: state.c7.stream, ready: false,
+			listen: (ms, { signal }) => new Promise((resolve, reject) => {
+				calls.listen++;
+				calls.found = () => { l.ready = true; resolve({ id: "x" }); };
+				signal.addEventListener("abort", () => { calls.aborted = true; reject(new Error("stopped")); });
+			}),
+			write: async () => { calls.write++; l.ready = false; },
+		};
+		return l;
+	};
 	const ctx = { flashStarted: () => 0, flashFinished() {}, errorText: (e) => e.message, helpLink: () => null, next() {} };
 	const routes = makeStockRoutes({ S, ctx, C: () => C, boardId: () => radio.flash.board, session: () => state.c7, busy: async () => {},
 		loader, fill: (el, ...p) => el.replaceChildren(...p.flat().filter(Boolean)), stubImage: async () => new Uint8Array(0) });
@@ -106,4 +115,34 @@ test("factory update mode: on the page, Cancel stops the listening and offers th
 	await sleep(50);
 	assert.ok(calls.aborted && calls.write === 0);
 	assert.match(forwards.at(-1).textContent, /\S/, "a button to start again");
+});
+
+test("factory update mode: a loader that identified itself is kept for the next try, never listened for again", async () => {
+	// the radio answers steps 1-3 once per power-on (hardware-dm32.md 13.2)
+	const { state, forwards, calls, routes } = route();
+	const box = routes.iapRestoreView(backup(), null, () => {});
+	box.isConnected = true;
+	forwards.at(-1).click();
+	await sleep(10);
+	box.isConnected = false;	// Back, as the radio reports update mode
+	calls.found();
+	await sleep(50);
+	assert.equal(calls.write, 0, "nothing written from a step no longer on the page");
+	assert.ok(state.c7.loader.ready);
+	// the step again, same session: the kept loader writes, nothing listens
+	let done = 0;
+	const again = routes.iapRestoreView(backup(), null, () => done++);
+	again.isConnected = true;
+	forwards.at(-1).click();
+	await sleep(1500);
+	assert.deepEqual([calls.made, calls.listen, calls.write, done], [1, 1, 1, 1]);
+	// after a write the next try makes a new loader and listens (the user switches the radio off and on with the keys)
+	forwards.length = 0;
+	const third = routes.iapRestoreView(backup(), null, () => {});
+	third.isConnected = true;
+	forwards.at(-1).click();
+	await sleep(10);
+	assert.deepEqual([calls.made, calls.listen], [2, 2]);
+	third.isConnected = false;
+	await sleep(300);
 });

@@ -70,7 +70,10 @@ export class BfLoader {
 		this.eraseTimeout = eraseTimeout;
 		this.retries = retries;
 		this.poll = poll;
-		this.ready = false;	// steps 1-3 done: the loader waits for step 4
+		// steps 1-3 done: the loader waits for step 4. It answers them once per power-on and then ignores step 1 until it
+		// is switched off (hardware-dm32.md 13.2), so this instance, not a new one, must go on to the write
+		this.ready = false;
+		this.identity = null;
 	}
 
 	// What arrived, up to n bytes, once n are there or the time is up (serial_loader read_exact)
@@ -94,7 +97,7 @@ export class BfLoader {
 		const got = await this.readExactAfter([ACK], this.id.length);
 		if (got.length === this.id.length && got.every((b, i) => b === this.id[i])) {
 			this.ready = true;
-			return { id: text(this.id) };
+			return (this.identity = { id: text(this.id) });
 		}
 		if (!got.length) throw new BfError(`step 3 (model): no answer within ${Math.round(this.stepTimeout / 1000)} s`);
 		throw new BfError(`step 3 (model): the radio's loader is ${JSON.stringify(text(got))}, not ${text(this.id)}: this is another radio`);
@@ -108,6 +111,7 @@ export class BfLoader {
 	// Steps 1-3 as serial_loader's handshake: step 1 a few times (the radio may still be starting), and an answer other
 	// than the acknowledgement means the radio runs its firmware, not the loader
 	async hello() {
+		if (this.ready) return this.identity;
 		this.s.clear();
 		for (let attempt = 0; attempt < 3; attempt++) {
 			await this.s.write(Uint8Array.of(0x52));
@@ -122,6 +126,7 @@ export class BfLoader {
 	// loader acknowledges, then steps 2 and 3. Anything else that answers (the boot ROM's greeting, a firmware) is
 	// passed over. Nothing in the radio changes before step 7's erase.
 	async listen(timeout, { signal } = {}) {
+		if (this.ready) return this.identity;	// found already: step 1 again would go unanswered
 		const until = Date.now() + timeout;
 		let other = false;
 		while (Date.now() < until) {
@@ -138,7 +143,8 @@ export class BfLoader {
 		throw new BfError("the radio did not report update mode");
 	}
 
-	// Is the loader on the cable now? Steps 1-3 for a short time; null when nothing answers as the loader does
+	// Is the loader on the cable now? Steps 1-3 for a short time; null when nothing answers as the loader does. A loader
+	// found waits for step 4 from this instance
 	async probe(timeout = 1500) {
 		try {
 			return await this.listen(timeout);

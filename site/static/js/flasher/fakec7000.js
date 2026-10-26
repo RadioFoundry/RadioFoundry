@@ -49,9 +49,10 @@ export function fakeC7000Options(radio, fb) {
 // FakeBootloader: checks every step, the header CRC, each block's number (with the 0xFF -> 0x00 wrap), complement and
 // CRC. send(bytes, delayMs) carries its answers to the host. Faults: corrupt, block numbers whose first transfer
 // arrives damaged (the radio NAKs); silent, never answers; badStep2, a wrong answer at step 2; eraseMs, how long the
-// erase takes before step 7's answer. onErase() and onBlock(k, data) (k from 0) let a radio model keep what is written.
+// erase takes before step 7's answer; onEnd(), the end of transfer acknowledged. After step 3 it ignores step 1 (0x52) and waits for step 4, until the radio is
+// switched off (a new FakeBfLoader at the next power-on), as the radio does (hardware-dm32.md 13.2). onErase() and onBlock(k, data) (k from 0) let a radio model keep what is written.
 export class FakeBfLoader {
-	constructor({ id, send, corrupt = [], silent = false, badStep2 = false, eraseMs = 0, onErase = () => {}, onBlock = () => {} }) {
+	constructor({ id, send, corrupt = [], silent = false, badStep2 = false, eraseMs = 0, onErase = () => {}, onBlock = () => {}, onEnd = () => {} }) {
 		this.magic = new TextEncoder().encode(id);
 		this.send = send;
 		this.corrupt = new Set(corrupt);
@@ -60,12 +61,14 @@ export class FakeBfLoader {
 		this.eraseMs = eraseMs;
 		this.onErase = onErase;
 		this.onBlock = onBlock;
+		this.onEnd = onEnd;
 		this.inbuf = new Uint8Array(0);
 		this.state = 1;
 		this.expectN = 1;
 		this.blocks = [];
 		this.header = null;
 		this.naks = 0;
+		this.ignored = 0;	// step 1 bytes passed over after step 3
 		this.done = false;
 		this.errors = [];
 	}
@@ -85,6 +88,11 @@ export class FakeBfLoader {
 	step() {
 		const s = this.state, ib = this.inbuf;
 		if (!ib.length) return false;
+		if (s === 4 && ib[0] === 0x52) {
+			this.inbuf = ib.slice(1);
+			this.ignored++;
+			return true;
+		}
 		const fixed = { 1: [[0x52], [0x06]], 2: [[0x4D, 0, 0, 0, 1], [0x4D, 0x01, this.magic.length]], 3: [[0x06], [...this.magic]],
 			4: [[0x45, 0, 0, 0, 0], [0x06]], 5: [[0x31], [0x43]], 6: [[0x01], [0x43]] };
 		if (fixed[s]) {
@@ -128,6 +136,7 @@ export class FakeBfLoader {
 				this.send(Uint8Array.of(ACK));
 				this.done = true;
 				this.state = 10;
+				this.onEnd();
 			} else this.errors.push(`expected 02 or 04, got ${c.toString(16)}`);
 			return true;
 		}
@@ -326,7 +335,8 @@ export class FakeC7000 {
 		}, this.romWindow);
 	}
 
-	// The Baofeng updater: its erase and writes go to the program flash model (the loader below 0xC000 is never written)
+	// The Baofeng updater: its erase and writes go to the program flash model (the loader below 0xC000 is never written).
+	// After the end of transfer the radio starts what was written by itself, its link up (hardware-dm32.md 13.2)
 	updateMode() {
 		this.state = "bfloader";
 		this.inb = new Uint8Array(0);
@@ -342,7 +352,14 @@ export class FakeC7000 {
 				const at = app + k * BLOCK;
 				if (at < end) this.progmem.set(data.subarray(0, Math.min(BLOCK, end - at)), at);
 				this.writes++;
-			} });
+			},
+			onEnd: () => setTimeout(() => {
+				if (this.state !== "bfloader") return;
+				this.keysHeld = false;
+				this.softReset = false;
+				this.events.push("restart");
+				this.boot();
+			}, 100 / this.speed) });
 	}
 
 	// ---- what arrives from the host

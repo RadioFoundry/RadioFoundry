@@ -219,10 +219,13 @@ export function makeStockRoutes(host) {
 			const watch = setInterval(() => { if (!writing && left()) stop.abort(); }, 250);
 			const started = ctx.flashStarted(report);
 			try {
-				const loader = makeLoader(c);
+				// A loader that identified itself (bfloader.js ready) answers that once per power-on: the session keeps it
+				// for the next try. After a write started, a try needs the radio switched off and into update mode again
+				// (flash.iap.retry_how), which a new listen waits for
+				const loader = c.loader?.ready && c.loader.s === c.stream ? c.loader : (c.loader = makeLoader(c));
 				// a loader that answered the probe is waiting already: its banner was printed before the page asked
 				if (c.iapReady) c.iapReady = false;
-				else await loader.listen(LISTEN_MS, { signal: stop.signal });
+				else if (!loader.ready) await loader.listen(LISTEN_MS, { signal: stop.signal });
 				if (left()) throw new Error("stopped");
 				writing = true;
 				await busy(true);
