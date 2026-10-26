@@ -7,18 +7,18 @@ import assert from "node:assert/strict";
 import { logId } from "../static/js/flasher/vendorfile.js";
 
 test("a recognized file", () => {
-	assert.equal(logId({ match: { kind: "codec", board: "dm1701", known: "DM-1701 V02.06 CSV" } }), "codec:DM-1701 V02.06 CSV");
-	assert.equal(logId({ match: { kind: "codec", board: "dm1701", how: "sha256" } }), "codec:sha256");
+	assert.equal(logId({ match: { kind: "codec", board: "radio-a", known: "Build A 1.0" } }), "codec:Build A 1.0");
+	assert.equal(logId({ match: { kind: "codec", board: "radio-a", how: "sha256" } }), "codec:sha256");
 });
 
 test("a build with no recipe, or only the key", () => {
-	assert.equal(logId({ match: { kind: "codec-unmapped", board: "md380" } }), "no-recipe:md380");
-	assert.equal(logId({ match: { kind: "key", board: "md380" } }), "key:md380");
+	assert.equal(logId({ match: { kind: "codec-unmapped", board: "radio-b" } }), "no-recipe:radio-b");
+	assert.equal(logId({ match: { kind: "key", board: "radio-b" } }), "key:radio-b");
 });
 
 test("no usable file inside, then what the page knows of the picked one", () => {
 	assert.equal(logId({ problem: { problem: "wrong-key" }, info: {} }), "problem:wrong-key");
-	assert.equal(logId({ info: { known: "RT3S V1.2" } }), "known:RT3S V1.2");
+	assert.equal(logId({ info: { known: "Build B 2.0" } }), "known:Build B 2.0");
 	assert.equal(logId({ info: {} }), "unknown");
 });
 
