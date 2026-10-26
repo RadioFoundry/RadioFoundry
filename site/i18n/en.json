@@ -791,6 +791,7 @@
  "flash.key.ptt": "PTT",
  "flash.key.sk1": "SK1",
  "flash.key.p1": "P1",
+ "flash.key.p2": "P2",
  "flash.c7.visual.tag_wait": "Slow orange blink",
  "flash.c7.visual.tag_busy": "Fast orange blink",
  "flash.c7.visual.tag_done": "Three green flashes",
