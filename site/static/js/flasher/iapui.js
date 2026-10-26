@@ -211,12 +211,20 @@ export function makeStockRoutes(host) {
 			prog.el.hidden = true;
 			const stop = new AbortController();
 			S().forward(button(t("flash.c7.connect.cancel"), () => stop.abort(), { quiet: true }));
+			// The user left this step (Back, Start over) while the page listens: stop listening, or a radio switched on
+			// with its keys later, for anything else, would be erased by a step no longer on the page. Nothing is drawn
+			// then. A write that started runs to its end
+			const left = () => S().c7 !== c || !box.isConnected;
+			let writing = false;
+			const watch = setInterval(() => { if (!writing && left()) stop.abort(); }, 250);
 			const started = ctx.flashStarted(report);
 			try {
 				const loader = makeLoader(c);
 				// a loader that answered the probe is waiting already: its banner was printed before the page asked
 				if (c.iapReady) c.iapReady = false;
 				else await loader.listen(LISTEN_MS, { signal: stop.signal });
+				if (left()) throw new Error("stopped");
+				writing = true;
 				await busy(true);
 				fill(status, h("p", { class: "muted c7-big" }, t("flash.iap.erasing")));
 				prog.el.hidden = false;
@@ -229,10 +237,11 @@ export function makeStockRoutes(host) {
 				await busy(false);
 				fill(status, notice(done, "ok"));
 				await sleep(800);
-				onDone();
+				if (!left()) onDone();
 			} catch (e) {
 				ctx.flashFinished(started, e);
 				await busy(false);
+				if (left()) return;
 				const stopped = e.message === "stopped";
 				fill(status, (stopped ? notice(t("flash.iap.cancelled"), "info") : errorNotice(t("flash.iap.failed", { error: ctx.errorText(e) }))),
 					stopped ? null : h("div", { class: "notice info" }, h("p", {}, t("flash.iap.retry_safe")), h("p", { class: "small" }, t("flash.iap.retry_how"))),
@@ -240,6 +249,8 @@ export function makeStockRoutes(host) {
 				prog.el.hidden = true;
 				go.disabled = false;
 				S().forward(button(t("flash.c7.write.again"), () => run(), { primary: true }));
+			} finally {
+				clearInterval(watch);
 			}
 		}
 		return box;
