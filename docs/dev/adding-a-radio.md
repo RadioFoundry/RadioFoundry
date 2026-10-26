@@ -105,8 +105,8 @@ over 8), `GFX_MAX_ROWS` (the height) and `GFX_INDEXED=1` for a 16-color panel. W
 
 ## The drawing
 
-The site and the web control page show the radio as a drawing, `site/static/img/radios/src/<b>.svg`; until it has
-one, a generic drawing from `board.toml` `[frame]` stands in. Its rules are in
+The site, the web control page and the web flasher's update mode steps show the radio as a drawing,
+`site/static/img/radios/src/<b>.svg`; until it has one, a generic drawing from `board.toml` `[frame]` stands in. Its rules are in
 [Radio images](website.md#radio-images). Once the board's key enum is written, run `tools/svg_keys.py tag <b>`: it tags
 the keys it finds by their labels and prints the rest. Tag those by hand, with `data-edge` on side and top keys, or
 list them in `data-undrawn`. `tools/svg_keys.py check <b>` must pass; the site build fails CI otherwise. Run `tag`

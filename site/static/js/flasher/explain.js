@@ -3,8 +3,8 @@
 // Why a vendor file can't be used, as one of a few problems the page explains with what happened, why and what to do
 // (docs/dev/web-flasher.md, "When a file can't be used"). The modules under the page say exactly what failed (stockfw.js
 // StockError and c7000.js CodecError carry a code; vendorfile.js marks every file it opened); this sorts that into a
-// problem. The exact message stays for the technical details and the error report. No DOM here, so the host tests
-// check it.
+// problem. The exact message stays for the technical details and the error report. Also what the codec step says about
+// it, and the "current firmware" step's choices. No DOM here, so the host tests check it.
 
 // other-radio  a file for another radio RadioFoundry knows (board names it)
 // wrong-key    a vendor container this radio's bootloader key doesn't open: another model, or a modified build
@@ -42,22 +42,48 @@ export function pickProblem(opened, boardId, { need = "codec" } = {}) {
 	return { problem: "not-vendor", file: base(opened.files[0]?.path || opened.skipped[0]?.path || "") };
 }
 
-// The stock files the codec can be taken from on boardId, by name, for the "select one of these instead" list: an STM32
-// radio's codec sources (rfoundry boards.py), else the C-SKY profiles that describe a whole stock file
+// What the codec can be taken from on boardId, for the "select one of these instead" list: {files, also}. files: stock
+// file names. A C-SKY radio (fb.c7000.boards) lists the profiles that describe a whole stock file first, then any other
+// file its codec sources name; an STM32 radio its codec sources (rfoundry boards.py). also: the sources that aren't a
+// file, such as a program flash read of the radio, for a sentence of their own
+const FILE_NAME = /\.[A-Za-z0-9]{2,4}\)?$/;
 export function supportedFiles(fb, boardId) {
-	const sources = fb.boards?.[boardId]?.codec?.sources;
-	if (sources?.length) return [...sources];
-	return (fb.c7000?.profiles || []).filter((p) => p.board === boardId && p.stock_file).map((p) => p.name);
+	const sources = fb.boards?.[boardId]?.codec?.sources || [];
+	const profiles = fb.c7000?.boards?.[boardId]
+		? (fb.c7000.profiles || []).filter((p) => p.board === boardId && p.stock_file).map((p) => p.name) : [];
+	const files = [...profiles];
+	for (const n of sources) if (FILE_NAME.test(n) && !files.includes(n)) files.push(n);
+	return { files, also: sources.filter((n) => !FILE_NAME.test(n) && !files.includes(n)) };
 }
+
+// The supported file list is folded above this many (the user is choosing one, so it is never cut short)
+export const SUPPORTED_OPEN_MAX = 12;
+export const foldSupported = (files) => files.length > SUPPORTED_OPEN_MAX;
 
 // What the codec step says when the picked file gives no codec (problem "unmapped") but the install goes on anyway
 // (decide.js decision), as the suffix of its flash.codec.keep_* strings: "unverified" when the codec already in the
-// radio is kept without being checked, so DMR voice depends on it; "none" when the radio reported no codec and keeping
-// was selected anyway; "ok" when the radio reported its codec; null when the file isn't the issue (no problem, no
-// decision yet, or the codec comes from elsewhere)
-export function keepNote(problem, decision) {
+// radio is kept without being checked, so DMR voice depends on it; "none" when the radio has no codec where RadioFoundry
+// uses it: it reported none and keeping was selected anyway, or the user chose its original firmware and no version of
+// that keeps the codec there (board.codec.installed is empty); "ok" when the radio reported its codec; null when the file
+// isn't the issue (no problem, no decision yet, or the codec comes from elsewhere). now: what the user said the radio
+// runs (the page's S.now)
+export function keepNote(problem, decision, { board = null, now = null } = {}) {
 	if (problem?.problem !== "unmapped" || !decision || decision.mode !== "keep") return null;
-	return !decision.expectCodec ? "none" : decision.risk ? "unverified" : "ok";
+	if (!decision.expectCodec || (now?.kind === "stock" && board && !board.codec?.installed?.length)) return "none";
+	return decision.risk ? "unverified" : "ok";
+}
+
+// The "current firmware" step's choices, by id. "openfw" (another open firmware) and "unknown" (any other firmware, or
+// not known) both leave the install with the same question unanswered, so both are kind "unknown" for the codec
+// decision and the steps; openfw only marks which button was pressed (and goes into the error report)
+export const NOW_CHOICES = ["rfoundry", "stock", "openfw", "unknown"];
+export function nowFor(id) {
+	return id === "stock" ? { kind: "stock", version: null } : id === "openfw" ? { kind: "unknown", openfw: true } : { kind: "unknown" };
+}
+// Which choice now (S.now) is, or null when there is none yet
+export function nowChoice(now) {
+	if (!now?.kind) return null;
+	return now.kind === "unknown" && now.openfw ? "openfw" : now.kind;
 }
 
 // The problem behind a thrown error, or null when it isn't a file problem (a cable, a radio, a user's choice)

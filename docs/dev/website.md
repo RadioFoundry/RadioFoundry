@@ -211,6 +211,13 @@ screen's position in `data/radios.json` (`frame_geometry`: viewBox units and per
 laid over the frame; the radio pages do that when a screenshot is clicked. A radio without an illustration gets a
 generic drawing from board.toml `[frame]`.
 
+The web flasher shows the same frame (`frame_image`) beside every update mode step, for every radio
+(`flasher/radiotop.js`): the bootloader entry steps as the picture alone, the HR_C7000 steps with what the screen shows
+laid over it at `frame_geometry` and an LED swatch that blinks as the real LED does, with a caption in words. Nothing
+in the flasher names a radio: a new board's picture appears with no flasher change. `site/tests/radio_images_test.py`
+(run by `site/tests/run.sh`) renders every board's picture and fails a board without a usable one. The bootloader
+steps highlight no keys: `[flash.bootloader]` says which keys to hold only in prose, not as key names.
+
 ## Flasher notices
 
 Two notices show on every step of the web flasher once a radio is picked, above the step:

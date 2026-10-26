@@ -8,7 +8,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import * as diag from "../static/js/diag.js";
-import { SerialStream, Link, probe, silence, whyNoAnswer, parseRadioInfo, browserErrorKey } from "../static/js/flasher/link.js";
+import { SerialStream, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, browserErrorKey } from "../static/js/flasher/link.js";
 import { CpsSerial, TransportError } from "../static/js/codeplug/transport.js";
 import { openFile, FileError } from "../static/js/editor/files.js";
 
@@ -176,6 +176,39 @@ test("the radio info is read only when it has that structure", () => {
 	const tail = radioInfo();
 	tail[22] = 0x41;
 	assert.equal(parseRadioInfo(tail), null, "text after the padding");
+	// our shim fills both; one of them is enough, neither is not the structure (46 zero bytes after struct version 1)
+	assert.equal(parseRadioInfo(radioInfo({ git: "", built: "" })), null, "no revision, no build date");
+	const zeros = new Uint8Array(46);
+	zeros[0] = 1;
+	assert.equal(parseRadioInfo(zeros), null, "all zeros");
+	assert.equal(parseRadioInfo(radioInfo({ git: "" })).built, "20260101120000");
+	assert.equal(parseRadioInfo(radioInfo({ built: "" })).git, "abc1234");
+});
+
+// A RadioFoundry build without the debug link answers like another open firmware; right after the installer wrote it,
+// its revision or its feature list says it is that build
+test("a RadioFoundry build without the debug link is told apart right after it was written", async () => {
+	const info = { git: "1a4901ae-dirty" };
+	const full = "1a4901ae7c0ffee0000000000000000000000000";
+	assert.equal(writtenWithoutLink(info, { git: full, features: "" }), true, "the same commit");
+	assert.equal(writtenWithoutLink({ git: "1A4901AE" }, { git: full, features: "" }), true);
+	assert.equal(writtenWithoutLink(info, { git: "ffff" + full.slice(4), features: "FM,DMR" }), true, "no DEBUGLINK in its features");
+	assert.equal(writtenWithoutLink(info, { git: "ffff" + full.slice(4), features: "FM,DMR,DEBUGLINK" }), false);
+	assert.equal(writtenWithoutLink(info, { git: "unknown", features: "" }), false, "a local build: not known");
+	assert.equal(writtenWithoutLink({ git: "v1.2" }, { git: full, features: "" }), false);
+	assert.equal(writtenWithoutLink(info, null), false);
+	const link = new Link(openFw(radioInfo({ git: "1a4901ae" })), { timeout: 30 });
+	await probe(link);
+	assert.equal((await whyNoAnswer(link, { written: { git: full, features: "FM,DMR,DEBUGLINK" } })).kind, "rfoundry-nodebug");
+	const other = new Link(openFw(radioInfo({ git: "1a4901ae" })), { timeout: 30 });
+	await probe(other);
+	assert.equal((await whyNoAnswer(other)).kind, "openfw");
+	// each kind's message
+	assert.equal(noAnswerKey({ kind: "openfw" }), "flash.err.openfw");
+	assert.equal(noAnswerKey({ kind: "rfoundry-nodebug" }), "flash.err.rfoundry_nodebug");
+	assert.equal(noAnswerKey({ kind: "other" }), "flash.err.not_rfoundry");
+	assert.equal(noAnswerKey({ kind: "silent" }), "flash.err.no_answer");
+	assert.equal(noAnswerKey({ kind: "link" }), "flash.err.no_answer");
 });
 
 test("another open firmware is recognized by its refusal and its radio info, with reads only", async () => {

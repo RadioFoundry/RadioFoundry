@@ -40,10 +40,18 @@ Open the [web installer](https://radiofoundry.org/flash/index.html), choose **In
 2. **Build.** Pick **Full** (every feature the radio supports), **Amateur**, **Commercial**, or **Custom** to choose
    features one by one. Features the radio can't have are marked. A custom build is made when you continue and takes
    under a minute.
-3. **Current firmware.** Say what the radio runs now: RadioFoundry (connect it and turn it on), the original firmware, or
-   **Another open firmware** (another open firmware project, or you don't know what it runs). The installer
-   asks for the stock firmware file when it needs the codec or the key. If you choose RadioFoundry and the radio runs
-   an OpenGD77-family firmware, the installer says so and offers **Another open firmware** instead.
+3. **Current firmware.** Say what the radio runs now:
+
+   | Choice | When |
+   | --- | --- |
+   | **RadioFoundry** | Connect the radio and turn it on. The installer reads the installed version. |
+   | **Original firmware** | The firmware installed at the factory. |
+   | **Another open firmware** | Another open firmware project, such as one of the OpenGD77 family. |
+   | **Other / Not sure** | Any other firmware, or you don't know what the radio runs. |
+
+   The installer asks for the stock firmware file only when it needs it for the codec or the key. If you choose
+   RadioFoundry and the radio runs an OpenGD77-family firmware, the installer says so and offers **Another open
+   firmware** instead. A RadioFoundry build without the debug link answers the same way.
 4. **Back up.** The installer saves a backup file (a `.zip`) on your computer: the firmware, the channels and settings
    and the calibration. Keep it. Where the original firmware can't be read first, the installer backs the radio up
    right after the installation, before anything else changes.

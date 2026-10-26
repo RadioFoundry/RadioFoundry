@@ -18,6 +18,7 @@ import { FakeRadio, simulation } from "../static/js/flasher/fake.js";
 import { zip, unzip } from "../static/js/flasher/zip.js";
 import * as vendorfile from "../static/js/flasher/vendorfile.js";
 import * as explain from "../static/js/flasher/explain.js";
+import { pictureSrc } from "../static/js/flasher/radiotop.js";
 import { readRadio, makeBundle, openBundle, bundleName } from "../static/js/flasher/backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug } from "../static/js/flasher/restore.js";
 import { Selection } from "../static/js/flasher/select.js";
@@ -287,14 +288,27 @@ test("a known build without a codec map: the version named, the file offered, th
 	assert.equal(explain.pickProblem(opened, "x", { need: "key" }), null);
 	// the full list, a copy of the board's
 	const got = explain.supportedFiles(fbX, "x");
-	assert.deepEqual(got, sources);
-	got.push("z");
+	assert.deepEqual(got, { files: sources, also: [] });
+	got.files.push("z");
 	assert.equal(fbX.boards.x.codec.sources.length, 2);
-	// C-SKY radios: the profiles that describe a whole stock file; none for an unknown radio
-	const c = { c7000: { profiles: [{ name: "B 001", board: "b", stock_file: {} }, { name: "B readout", board: "b", stock_file: null },
-		{ name: "C 001", board: "c", stock_file: {} }] }, boards: {} };
-	assert.deepEqual(explain.supportedFiles(c, "b"), ["B 001"]);
-	assert.deepEqual(explain.supportedFiles({ boards: {} }, "q"), []);
+	// C-SKY radios: the profiles that describe a whole stock file first, then the other files the sources name; a source
+	// that isn't a file (a program flash read) on its own; none for an unknown radio
+	const c = { c7000: { boards: { b: {}, d: {} }, profiles: [{ name: "B 001 build", board: "b", stock_file: {} },
+		{ name: "B readout", board: "b", stock_file: null }, { name: "C 001", board: "c", stock_file: {} }] },
+	boards: { b: { codec: { sources: ["b-002.bin", "B 001 build", "a program flash read of the radio"] } },
+		d: { codec: { sources: ["a program flash read of the radio"] } } } };
+	assert.deepEqual(explain.supportedFiles(c, "b"), { files: ["B 001 build", "b-002.bin"], also: ["a program flash read of the radio"] });
+	assert.deepEqual(explain.supportedFiles(c, "d"), { files: [], also: ["a program flash read of the radio"] });
+	assert.deepEqual(explain.supportedFiles({ boards: {} }, "q"), { files: [], also: [] });
+	// every C-SKY radio in the data lists at least one stock file, profiles first
+	for (const id of Object.keys(fb.c7000?.boards || {})) {
+		const { files } = explain.supportedFiles(fb, id);
+		const named = (fb.c7000.profiles || []).filter((p) => p.board === id && p.stock_file).map((p) => p.name);
+		assert.deepEqual(files.slice(0, named.length), named, id);
+	}
+	// the notice folds a long list, never a short one
+	assert.equal(explain.foldSupported(Array(explain.SUPPORTED_OPEN_MAX).fill("f")), false);
+	assert.equal(explain.foldSupported(Array(explain.SUPPORTED_OPEN_MAX + 1).fill("f")), true);
 });
 
 // The install goes on without the picked file's codec (decide.js): what the codec step says DMR voice depends on
@@ -309,11 +323,69 @@ test("keeping the radio's codec with a file that gives none is spelled out", () 
 	// the radio reported its codec, or that it has none and keeping was forced
 	assert.equal(keep({ probe: { board: "a", codec: "a-codec" } }), "ok");
 	assert.equal(keep({ requested: KEEP, probe: { board: "a", codec: null } }), "none");
+	// the original firmware, version not given: "unverified" where a stock version keeps the codec in place, "none" on
+	// a radio whose stock firmware never does (board.codec.installed empty)
+	const stockNow = { kind: "stock", version: null };
+	assert.equal(explain.keepNote(un, decideCodec(board, manifest, { requested: KEEP }), { board, now: stockNow }), "unverified");
+	const never = { ...board, codec: { ...board.codec, installed: [] } };
+	assert.equal(explain.keepNote(un, decideCodec(never, manifest, { requested: KEEP }), { board: never, now: stockNow }), "none");
+	assert.equal(explain.keepNote(un, decideCodec(never, manifest, { requested: KEEP }), { board: never, now: { kind: "unknown" } }), "unverified");
 	// the codec comes from elsewhere, nothing was decided, or the file is not the issue
 	assert.equal(explain.keepNote(un, { mode: MERGE, source: "saved", expectCodec: true }), null);
 	assert.equal(explain.keepNote(un, null), null);
 	assert.equal(explain.keepNote(null, decideCodec(board, manifest, { requested: KEEP })), null);
 	assert.equal(explain.keepNote({ problem: "not-vendor" }, decideCodec(board, manifest, { requested: KEEP })), null);
+});
+
+// The "current firmware" step: four choices; "Another open firmware" and "Other / Not sure" are both kind "unknown" to
+// the install (the codec decision, the steps), told apart only for the pressed button and the report
+test("the current firmware choices: four, two of them the same to the install", () => {
+	assert.deepEqual(explain.NOW_CHOICES, ["rfoundry", "stock", "openfw", "unknown"]);
+	assert.equal(explain.nowChoice(null), null);
+	for (const id of ["stock", "openfw", "unknown"]) assert.equal(explain.nowChoice(explain.nowFor(id)), id);
+	assert.equal(explain.nowChoice({ kind: "rfoundry", probe: {} }), "rfoundry");
+	assert.deepEqual(explain.nowFor("stock"), { kind: "stock", version: null });
+	assert.equal(explain.nowFor("openfw").kind, "unknown");
+	assert.equal(explain.nowFor("unknown").kind, "unknown");
+	// the same decision either way
+	const b = { name: "Radio A", keep_codec_supported: true, debuglink_names: ["a"], codec: { id: "a-codec", installed: [] } };
+	const decide = (now) => decideCodec(b, { codec: { profile: "a-codec" } }, { haveStock: true, probe: null,
+		stockInstalled: now.kind === "stock" ? now.version : null });
+	assert.deepEqual(decide(explain.nowFor("openfw")), decide(explain.nowFor("unknown")));
+	// every choice has its title and help line
+	const en = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url), "utf8"));
+	for (const id of explain.NOW_CHOICES) assert.ok(en[`flash.now.${id}`] && en[`flash.now.${id}_text`], id);
+});
+
+// The update mode steps show the radio's own picture from the data (radiotop.js), never a list of radios: every radio
+// gets one from the site build (site/tests/radio_images_test.py renders each)
+test("the update mode picture comes from the radio's data", () => {
+	assert.equal(pictureSrc({ id: "q", frame_image: "static/img/radios/q-frame.svg" }), "static/img/radios/q-frame.svg");
+	assert.equal(pictureSrc({ id: "q" }), null);
+	assert.equal(pictureSrc(null), null);
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	// every bootloader step list sits beside the picture
+	const lists = [...src.matchAll(/S\.radio\.flash\.bootloader\.map/g)].length;
+	assert.ok(lists >= 3);
+	assert.equal([...src.matchAll(/withPicture\(h\("ol", \{ class: "steps[^"]*" \}, S\.radio\.flash\.bootloader\.map/g)].length, lists);
+});
+
+// app.js needs the DOM, so what it must keep is checked in its source: whyNoAnswer() is async, so a noAnswer() that
+// isn't awaited throws a Promise and the user reads "[object Promise]"; a radio that answered with the open-firmware
+// CPS gets the next step, not the cable and driver tips; every string it picks exists
+test("the flasher page awaits noAnswer and explains an open-firmware answer", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	const en = JSON.parse(readFileSync(new URL("../i18n/en.json", import.meta.url), "utf8"));
+	const calls = [...src.matchAll(/(\S+)\s+noAnswer\(/g)].filter((m) => m[1] !== "function");
+	assert.ok(calls.length >= 4, "noAnswer calls found");
+	for (const m of calls) assert.equal(m[1], "await", `noAnswer() not awaited: ${m[0]}`);
+	// the connect failures outside the current firmware step go through connectHelp, with a key that exists
+	const helps = [...src.matchAll(/connectHelp\(e, "([\w.]+)"\)/g)].map((m) => m[1]);
+	assert.deepEqual(helps.sort(), ["flash.backup.openfw_next", "flash.done.openfw_next", "flash.radio.openfw_next"]);
+	for (const k of [...helps, "flash.err.rfoundry_nodebug_next", "flash.now.openfw_switch", "flash.now.openfw_use",
+		"flash.problem.unmapped.also", "flash.problem.unmapped.only"]) assert.ok(en[k], k);
+	// the done step names the build it just wrote, so RadioFoundry without the debug link is told apart
+	assert.match(src, /noAnswer\(link, \{ written: S\.firmware\?\.manifest \}\)/);
 });
 
 // A file known to hold no codec (stockfw.NO_CODEC_FILES), bare or zipped with small language files: named by its

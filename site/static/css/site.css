@@ -362,26 +362,21 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .feature-group > summary:hover .group-name { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .feature-group > summary .group-name::before { transition: none; } }
 
-/* flasher, HR_C7000 radios: the radio's top with its LED, the program memory map, the checklist (c7000ui.js) */
-.c7-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--space-5); align-items: start; }
-@media (max-width: 760px) { .c7-grid { grid-template-columns: 1fr; } .c7-grid .radio-top { order: -1; max-width: 240px; margin: 0 auto; } .c7-grid .rt-svg { max-width: 170px; } }
+/* flasher: the radio's own picture beside update mode steps, with its screen and LED (radiotop.js); the HR_C7000
+   pages' program memory map and checklist (c7000ui.js) */
+.c7-grid, .radio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--space-5); align-items: start; }
+@media (max-width: 760px) { .c7-grid, .radio-grid { grid-template-columns: 1fr; } .c7-grid .radio-top, .radio-grid .radio-top { order: -1; max-width: 240px; margin: 0 auto; } .rt-pic, .radio-pic .rt-img { max-width: 170px; } }
 .radio-top { margin: 0; text-align: center; }
-.rt-svg { width: 100%; max-width: 210px; height: auto; display: block; margin: 0 auto; }
-.rt-label { font: 700 14px var(--font-sans); fill: var(--text); }
-.radio-top[data-led="off"] .rt-led-callout { display: none; }
-.rt-callout { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 3 3; }
-.rt-screen { fill: #0b0d10; stroke: #000; }
-.radio-top[data-screen="loader"] .rt-screen { fill: #c9d6c2; }
-.radio-top[data-screen="on"] .rt-screen { fill: #1d3550; }
-.rt-screen-text { font: 700 12px var(--font-sans); fill: #1b1e22; }
-.rt-screen-text.small { font-weight: 500; font-size: 10px; }
-.radio-top[data-screen="on"] .rt-screen-text { fill: #e8f0f8; font-size: 13px; }
+.rt-pic { position: relative; max-width: 220px; margin: 0 auto; }
+.rt-img { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
+.rt-screen { position: absolute; display: grid; place-content: center; font: 700 12px var(--font-sans); line-height: 1.2; color: #1b1e22; }
+.rt-screen .small { font-weight: 500; font-size: 10px; }
+.radio-top[data-screen="loader"] .rt-screen { background: #c9d6c2; }
+.radio-top[data-screen="on"] .rt-screen { background: #1d3550; color: #e8f0f8; }
+.rt-lamp { display: flex; justify-content: center; align-items: center; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--text-sm); }
+.radio-top[data-led="off"] .rt-lamp { display: none; }
 .rt-led { fill: #3a3d42; stroke: #000; stroke-width: 1; }
 .rt-glow { fill: transparent; }
-.rt-arrow { stroke: var(--accent); }
-.rt-arrow-head { fill: var(--accent); }
-.rt-knob-turn { opacity: 0; }
-.radio-top[data-knob="cycle"] .rt-knob-turn, .radio-top[data-knob="on"] .rt-knob-turn { opacity: 1; animation: rt-pulse 1.6s ease-in-out infinite; }
 .rt-caption { display: grid; gap: var(--space-1); font-size: var(--text-sm); margin: var(--space-2) 0 0; }
 .rt-caption span:first-child { font-weight: 600; }
 .radio-top[data-led="wait"] .rt-led, .radio-top[data-led="wait"] .rt-glow { animation: rt-orange 1s steps(1) infinite; }
@@ -399,7 +394,7 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 @keyframes rt-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) {
 	/* no blinking on the page: the LED shows its color and the caption says how the real one blinks */
-	.radio-top .rt-led, .radio-top .rt-glow, .rt-knob-turn { animation: none !important; }
+	.radio-top .rt-led, .radio-top .rt-glow { animation: none !important; }
 	.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="busy"] .rt-led { fill: #ff8a1f; }
 	.radio-top[data-led="done"] .rt-led { fill: #3fe060; }
 }

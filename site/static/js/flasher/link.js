@@ -359,7 +359,8 @@ export function silence(link) {
 
 // The open-firmware CPS's radio info (open-firmware-cps.md 4: area 9, little endian): {structVersion, radioType, git,
 // built, flashId, features}, or null when the bytes aren't that structure. Checked field by field, so a reply of another
-// protocol that happens to start with "R" isn't taken for it
+// protocol that happens to start with "R" isn't taken for it. The revision or the build date must be there: our shim
+// (core/cps/cps_openfw.c) always fills both, so all zeros after the struct version is not that structure
 export const RADIO_INFO_LEN = 46;
 export function parseRadioInfo(b) {
 	if (!b || b.length < 40) return null;
@@ -372,6 +373,7 @@ export function parseRadioInfo(b) {
 	};
 	const structVersion = u32le(b, 0), radioType = u32le(b, 4), git = text(8, 16), built = text(24, 16);
 	if (structVersion < 1 || structVersion > 15 || radioType > 63 || git === null || built === null) return null;
+	if (!git && !built) return null;
 	if (built && !/^\d{8,14}$/.test(built)) return null;
 	return { structVersion, radioType, git, built, flashId: b.length >= 44 ? u32le(b, 40) : null,
 		features: b.length >= 46 ? u16le(b, 44) : null };
@@ -391,10 +393,31 @@ export async function openFirmwareInfo(link) {
 	}
 }
 
+// Whether a radio that answers like another open firmware runs the RadioFoundry build just written (manifest: its
+// manifest), so without the debug link: its revision is that build's commit (the radio info carries the version the
+// Makefile stamps, 8 hex digits and maybe "-dirty"), or the build's feature list leaves DEBUGLINK out. A build whose
+// features aren't known (a local image: "") and another commit can't be told from another open firmware
+export function writtenWithoutLink(info, manifest) {
+	if (!info || !manifest) return false;
+	const feats = String(manifest.features || "").split(",").filter(Boolean);
+	if (feats.length && !feats.includes("DEBUGLINK")) return true;
+	const head = String(info.git || "").split("-")[0].toLowerCase();
+	return /^[0-9a-f]{7,}$/.test(head) && String(manifest.git || "").toLowerCase().startsWith(head);
+}
+
 // silence(), told apart further where the port can be asked: kind "openfw" for a radio on another open firmware (one that
-// answers the open-firmware CPS protocol), with its radio type and revision
-export async function whyNoAnswer(link) {
+// answers the open-firmware CPS protocol), with its radio type and revision. A RadioFoundry build without the debug link
+// answers the same way; written: the manifest of the build just written, so that it is told apart (kind
+// "rfoundry-nodebug") right after installing it
+export async function whyNoAnswer(link, { written = null } = {}) {
 	const why = silence(link);
 	const info = await openFirmwareInfo(link);
-	return info ? { ...why, kind: "openfw", radioType: info.radioType, git: info.git } : why;
+	if (!info) return why;
+	return { ...why, kind: writtenWithoutLink(info, written) ? "rfoundry-nodebug" : "openfw", radioType: info.radioType, git: info.git };
+}
+
+// The message for whyNoAnswer()'s kind (site/i18n/en.json)
+export function noAnswerKey(why) {
+	return { openfw: "flash.err.openfw", "rfoundry-nodebug": "flash.err.rfoundry_nodebug", other: "flash.err.not_rfoundry" }[why?.kind]
+		|| "flash.err.no_answer";
 }
