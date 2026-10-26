@@ -201,7 +201,9 @@ manual are this size.
 
 ### What the DM-1701 lacks
 
-- No GPS. LRRP location requests get "no fix". APRS positions come from a computer or a fixed position.
+- No GPS from the factory. LRRP location requests get "no fix". APRS positions come from a computer or a fixed
+  position. If you fit a GPS module yourself, wire its NMEA output to PA10 (STM32 pin 69). The radio finds it at
+  start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module)).
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
 - No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.

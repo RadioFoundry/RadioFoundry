@@ -1208,6 +1208,27 @@ Up to the syscall level fix, a radio with this part boots to a black screen: the
 `board_early_init` when the scheduler starts, so no beep, no USB and no picture. The update mode, the vendor
 bootloader's, still works.
 
+### 14.2 GPS module
+
+No module is fitted at the factory, but the GPS pins are there: USART1 RX on PA10 and the power switch on PA9.
+Owners fit a small 3.3 V NMEA module (an ATGM336H or a GP-02, reported by users) and wire it like this:
+
+| Module pin | Board | STM32 pin (LQFP100) |
+|---|---|---|
+| TX (NMEA out) | PA10, USART1 RX | 69 |
+| power enable (where the module has one) | PA9 | 68 |
+| 3.3 V, GND | a 3.3 V point on the board, such as the SPI flash's supply | |
+
+PA9 and PA10 sit next to each other on the side of the package that holds pins 51-75. A module without an enable pin
+runs from 3.3 V all the time and leaves PA9 unconnected. Nothing goes to the module's RX: the firmware only listens.
+
+RadioFoundry builds GPS by default (`CONFIG_GPS`). At start-up it drives PA9 high and listens on PA10 in 5 s windows,
+9600 first. One checksum-valid NMEA sentence marks the module present. Characters without a valid sentence move on to
+the next rate (14400). A window of silence means no module: USART1 goes off, PA9 goes low, and the listening task ends
+and frees its stack. The task runs at low priority in the background, so start-up doesn't wait for it. The code is
+`boards/uv380_family/gps_uvf.c`, shared with the MD-UV380 G models ([hardware-mduv380.md](hardware-mduv380.md) 9).
+Untested with a module on a DM-1701.
+
 ---
 
 ## 15. Bootloader and firmware images
@@ -1318,7 +1339,7 @@ Untested risks of route 1, found while writing it (they matter only on an RDP 0 
   DFU on the F405 and may set it up in crystal mode. If that doesn't start, USB DFU never enumerates.
 - **Interface probing.** The ROM also listens on USART1 (PA9 / PA10, wired to GPS power and GPS RX on GPS-fitted
   siblings) and on USART3 / CAN2. Activity on those pins can capture the loader before USB. The DM-1701 has no GPS
-  fitted, so PA10 is idle on it.
+  fitted from the factory, so PA10 is idle on it. An owner-fitted module (14.2) talks on PA10 from power-up.
 - **Leaving.** Where the ROM's DfuSe leave command jumps, and with which memory mapping, is unverified. A battery
   pull always returns to the normal start (bootloader, then the application).
 
