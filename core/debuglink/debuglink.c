@@ -29,6 +29,9 @@
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "unknown"
 #endif
+#ifndef RFOUNDRY_RELEASE
+#define RFOUNDRY_RELEASE ""
+#endif
 
 #define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
 #define SHOT_TAIL_MS		250	// after the last chunk: long enough for the host's check pass to start
@@ -364,6 +367,9 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	dl_text_init(&t, (char *)out + 1, cap - 1);
 	dl_text(&t, "proto=%u\nview=%u\n", DL_PROTO_VERSION, DL_VIEW_VERSION);
 	dl_text_kv_str(&t, "git", RFOUNDRY_GIT);
+	if (RFOUNDRY_RELEASE[0] != '\0') {
+		dl_text_kv_str(&t, "release", RFOUNDRY_RELEASE);
+	}
 	dl_text_kv_str(&t, "board", board.name);
 	dl_text(&t, "%s", features);
 	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));

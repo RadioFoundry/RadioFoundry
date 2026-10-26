@@ -21,6 +21,10 @@
 #include "radio/radio.h"
 #include "config.h"
 
+#ifndef RFOUNDRY_RELEASE
+#define RFOUNDRY_RELEASE ""
+#endif
+
 #define UI_TASK_PRIORITY	(tskIDLE_PRIORITY + 1)	// below the radio and input tasks
 // List screens and Find: about 1.2 KB measured on the host, plus the driver. The static stack check's deepest chain
 // (ui_task > ui_quick_draw > ui_draw_list > crash_item, down to a crash report taken in a setting's key load) needs
@@ -92,7 +96,8 @@ static void ui_task(void *arg)
 		ui_layout_init();
 		char line1[17], line2[17];
 		ui_svc_boot_text(line1, line2);
-		ui_draw_splash(board.name, RFOUNDRY_GIT, line1, line2);
+		// the release name when this is one (v26.11), else the commit
+		ui_draw_splash(board.name, RFOUNDRY_RELEASE[0] != '\0' ? RFOUNDRY_RELEASE : RFOUNDRY_GIT, line1, line2);
 		gfx_flush();
 	}
 	ui_app_init();

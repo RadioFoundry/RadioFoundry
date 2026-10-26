@@ -27,6 +27,9 @@
 #ifndef RFOUNDRY_GIT
 #define RFOUNDRY_GIT "host"
 #endif
+#ifndef RFOUNDRY_RELEASE
+#define RFOUNDRY_RELEASE ""
+#endif
 
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_pos_screen;	// ui_aprs.c
@@ -3143,7 +3146,7 @@ static const ui_scr_def_t dmr_id_screen = {
 #endif
 
 // ======================= About (Settings > Advanced) =======================
-// A text page, every word shown (nothing shortened), no status strip while idle: the version, RadioFoundry's license, the
+// A text page, every word shown (nothing shortened), no status strip while idle: the release and the commit, RadioFoundry's license, the
 // authors, the third-party code and fonts in this image and the codec. From AUTHORS and platform/<platform>/THIRD_PARTY,
 // through the header make generates (tools/gen_about.py)
 
@@ -3158,6 +3161,11 @@ static const char *about_text(void)
 	sbuf_t b;
 	sb_init(&b, t, sizeof t);
 	sb_str(&b, "RadioFoundry ");
+	// a release: its name, then the commit it was built from
+	if (RFOUNDRY_RELEASE[0] != '\0') {
+		sb_str(&b, RFOUNDRY_RELEASE);
+		sb_str(&b, "\nBuild ");
+	}
 	sb_str(&b, RFOUNDRY_GIT);
 	sb_str(&b, "\nRadio: ");
 	sb_str(&b, board.name);

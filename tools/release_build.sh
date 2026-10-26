@@ -7,7 +7,7 @@
 # packaged by tools/release.py into OUT. release.yml runs it once per toolchain, through the csky-elf image's run.sh
 # for C-SKY, so it needs only sh, make, git and a Python 3.11 or later.
 #
-#   tools/release_build.sh --toolchain arm --version v1.2.0 --out dist
+#   tools/release_build.sh --toolchain arm --version v26.11 --out dist
 #
 # Prints "no releasable board" and exits 0 when the toolchain has none.
 set -eu
@@ -23,6 +23,12 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$TOOLCHAIN" ] && [ -n "$VERSION" ] && [ -n "$OUT" ] || { echo "usage: $0 --toolchain T --version V --out DIR" >&2; exit 2; }
 PY=$(tools/rfoundry_python.sh)	# the registry reads TOML
+# A tag must be a release name (tools/release_version.py: vYY.M[.N][-beta.N]); the image shows it (RELEASE=, the
+# Makefile's RFOUNDRY_RELEASE). A pull request's or a manual run's dev-<commit> builds show the commit
+case $VERSION in
+dev-*) RELEASE="" ;;
+*) "$PY" tools/release_version.py check "$VERSION" || exit 2; RELEASE=$VERSION ;;
+esac
 JOBS=${JOBS:-$(nproc 2>/dev/null || echo 4)}
 
 boards=$("$PY" tools/boards.py list --toolchain "$TOOLCHAIN" --release stable --comma)
@@ -38,7 +44,7 @@ for b in $(echo "$boards" | tr , ' '); do
 		for a in $args; do opts="$opts --build-option $a"; done
 		echo "== $b $name"
 		# shellcheck disable=SC2086
-		make BOARD="$b" $args -j"$JOBS"
+		make BOARD="$b" RELEASE="$RELEASE" $args -j"$JOBS"
 		# shellcheck disable=SC2086
 		"$PY" tools/release.py --board "$b" $opts --version "$VERSION" --out "$OUT"
 	done 3< "$builds"

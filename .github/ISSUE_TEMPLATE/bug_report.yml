@@ -31,7 +31,7 @@ body:
     attributes:
       label: Firmware version
       description: Settings > Advanced > About shows the version and commit. Or `tools/rfoundry_debug.py version`.
-      placeholder: v0.1.0 (3029db9)
+      placeholder: v26.11 (3029db9)
     validations:
       required: true
   - type: dropdown

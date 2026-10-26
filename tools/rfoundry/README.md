@@ -23,8 +23,8 @@ radio flashes over USB, the others over their programming cable (below). A radio
 
 ```
 rfoundry flash --release latest                         newest release, downloaded and checked
-rfoundry flash --release v0.1.0 --dry-run               show exactly which sectors would be erased and written
-rfoundry flash rfoundry-dm1701-v0.1.0.bin                    a downloaded image (its .json manifest next to it)
+rfoundry flash --release v26.11 --dry-run               show exactly which sectors would be erased and written
+rfoundry flash rfoundry-dm1701-v26.11.bin                    a downloaded image (its .json manifest next to it)
 rfoundry flash rfoundry_dm1701_codec.bin                     an image with the codec already merged in (see below)
 rfoundry flash build/dm1701/rfoundry_dm1701.bin --board dm1701   a local build
 rfoundry flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
@@ -32,7 +32,7 @@ rfoundry flash --release latest --stock "DM-1701(CSV)-V02.06.bin"
 rfoundry probe                                          radio running RadioFoundry: can its codec be kept?
 rfoundry detect                                         what's connected: RadioFoundry, and/or the bootloader
 rfoundry key --stock "DM-1701(CSV)-V02.06.bin" --save   derive the bootloader key once and keep it
-rfoundry download --release v0.1.0 -o DIR               just fetch and verify the files
+rfoundry download --release v26.11 -o DIR               just fetch and verify the files
 rfoundry merge rfoundry-dm1701.bin --stock FILE -o merged.bin  a merged image for other flashing tools
 rfoundry flash build/dm1801pro/rfoundry_dm1801pro.bin --board dm1801pro --port /dev/ttyUSB0
                                                         a DM-1801 Pro over its programming cable (below)

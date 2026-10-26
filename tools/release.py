@@ -3,11 +3,11 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """Package built firmware images as release artifacts (docs/dev/release.md "Release artifacts").
 
-    tools/release.py --board ID --version v0.1.0 [--bin build/ID/rfoundry_ID.bin] [--out dist]
-    tools/release.py --board ID --variant amateur --version v0.1.0     a release variant (make VARIANT=amateur)
-    tools/release.py --board ID --version v0.1.0     on an HR_C7000 radio build/ID/rfoundry_ID.bin is the image without
+    tools/release.py --board ID --version v26.11 [--bin build/ID/rfoundry_ID.bin] [--out dist]
+    tools/release.py --board ID --variant amateur --version v26.11     a release variant (make VARIANT=amateur)
+    tools/release.py --board ID --version v26.11     on an HR_C7000 radio build/ID/rfoundry_ID.bin is the image without
                                                      the codec slot (never the _codec.bin)
-    tools/release.py --board ID --build-option BAND=vhf --version v0.1.0   a build option's image (board.toml
+    tools/release.py --board ID --build-option BAND=vhf --version v26.11   a build option's image (board.toml
                                                      [[build_options]]): build/ID-vhf/rfoundry_ID-vhf.bin, rfoundry-ID-vhf-<version>
 
 Writes, into --out:
@@ -71,7 +71,7 @@ def check_no_codec(board, image):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--board", required=True)
-    ap.add_argument("--version", required=True, help="the release tag, e.g. v0.1.0")
+    ap.add_argument("--version", required=True, help="the release tag, e.g. v26.11")
     ap.add_argument("--variant", help="a release variant (config/variants/<name>.mk); default: the full build")
     ap.add_argument("--build-option", action="append", default=[], metavar="NAME=VALUE",
                     help="a board build option's value other than its default (boards/<board>/board.toml "

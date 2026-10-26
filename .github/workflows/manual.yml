@@ -83,8 +83,11 @@ jobs:
         run: |
           set -eu
           TAG="${GITHUB_REF_NAME}"
+          # a -beta.N tag is a pre-release: the site's default install (the latest release) skips it
+          PRE=""
+          if python3 tools/release_version.py prerelease "$TAG"; then PRE=--prerelease; fi
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "RadioFoundry $TAG" \
+            gh release create "$TAG" --verify-tag $PRE --generate-notes --title "RadioFoundry $TAG" \
               --notes "Firmware images (without the AMBE codec), rfoundry and the user manual. Flash with: rfoundry flash --release ${TAG} (docs/user/02-installing.md)."
           fi
           gh release upload "$TAG" "$MANUAL_PDF" --clobber
