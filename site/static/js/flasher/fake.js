@@ -231,6 +231,8 @@ export class FakeRadio {
 		const s = {
 			buf: new Uint8Array(0),
 			inb: new Uint8Array(0),
+			received: 0,
+			first: new Uint8Array(0),
 			clear() { s.buf = new Uint8Array(0); },
 			take(n) { const o = s.buf.slice(0, n); s.buf = s.buf.slice(n); return o; },
 			async write(data) {
@@ -242,7 +244,11 @@ export class FakeRadio {
 					return;
 				}
 				if (radio.mode === "normal" && radio.running === "openfw") {
-					s.buf = concat(s.buf, radio.openfwAnswer(data));
+					// what came in, as SerialStream counts it: link.js silence() tells this firmware by its first byte
+					const a = radio.openfwAnswer(data);
+					s.buf = concat(s.buf, a);
+					s.received += a.length;
+					if (s.first.length < 16) s.first = concat(s.first, a.subarray(0, 16 - s.first.length));
 					return;
 				}
 				if (radio.mode !== "normal" || !radio.running.startsWith("rfoundry")) throw new Error("no serial port: the radio isn't running RadioFoundry");
