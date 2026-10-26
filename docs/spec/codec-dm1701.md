@@ -17,15 +17,16 @@ The V02.01 to V02.03 files are downloadable from Radioddity's bucket `dm-1701.s3
 | version | file | size | sha256 | codec start | codec source |
 |---|---|---|---|---|---|
 | **V02.06 CSV (primary)** | `DM-1701(CSV)-V02.06.bin` | 1272320 | `0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d` | 0x08074714 | yes, map `dm1701-v0206-csv` |
-| V02.06 noCSV | `DM-1701(noCSV)-V02.06.bin` | 1283584 | `4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9` | 0x080770F0 | no map yet (key only) |
+| V02.06 noCSV | `DM-1701(noCSV)-V02.06.bin` | 1283584 | `4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9` | 0x080770F0 | yes, map `dm1701-v0206-nocsv` |
 | V02.03 CSV | `DM-1701(CSV)-V02.03 Only for Radioddity.bin` | 1272320 | `35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948` | 0x080746D4 | yes, map `dm1701-v0203-csv` |
-| V02.03 without CSV | `DM-1701-V02.03 Only for Radioddity.bin` | 1283584 | `0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a` | 0x080770B0 | no map yet (key only) |
+| V02.03 noCSV | `DM-1701-V02.03 Only for Radioddity.bin` | 1283584 | `0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a` | 0x080770B0 | yes, map `dm1701-v0203-nocsv` |
 | V02.02 CSV | `DM-1701(CSV)-V02.02.bin` | 1272320 | `643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7` | 0x080746D4 | yes, map `dm1701-v0203-csv` |
 | V02.01 CSV | `Firmware-DM-1701(CSV)-V02.01.bin` | 1272320 | `cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713` | 0x080746D4 | yes, map `dm1701-v0203-csv` |
 
 V02.01, V02.02 and V02.03 CSV have byte-identical codec code and table windows, so one codec map serves all three
 (`tools/rfoundry/rfoundry/codec_maps/dm1701/dm1701-v0203-csv.json`, found by the code window's SHA-256). The noCSV
-files keep the codec at other addresses; they give the bootloader key but not the codec.
+files keep the codec at other addresses, each with its own map (`dm1701-v0206-nocsv.json`, `dm1701-v0203-nocsv.json`).
+These six files are every DM-1701 stock build known (2026-10-25); all six are codec sources.
 
 ### Files without the codec
 
@@ -98,6 +99,20 @@ pointers, 70 table references, 4 island references, 2 islands, 12 island calls a
 every address 0x40 lower in V02.01 to V02.03. Three objects' trimmed lengths differ, because their bound is the next
 address that stock code outside the codec loads; the minimal table window (0x12082 bytes) is the same.
 
+The noCSV files have a larger application segment (0xDC000) and the codec higher up:
+
+| file | code window (address, length, sha256) | table window (address, length 0x12850, sha256) | codec data |
+|---|---|---|---|
+| V02.06 noCSV | 0x080770F0, 0x10200, `c34e4588...0b870566` | 0x080D4794, `de6e8494...d1683acf` | 0x080D4794..0x080E6826 (0x12092) |
+| V02.03 noCSV | 0x080770B0, 0x10200, `4fccfdda...f756a3ce` | 0x080D4754, `b5a73a19...425f537a` | 0x080D4754..0x080E67E6 (0x12092) |
+
+The noCSV code is the CSV code of its version with 0x1C bytes fewer at offset 0x4A00, past every entry point. The
+entry offsets are the same. Inside the table window, other data between the codec's objects is sized differently, so
+the codec's objects sit at +0x2DA4, +0x2E20 and +0x2DB4 from the CSV file's, and the codec data is 0x10 bytes longer.
+The noCSV maps agree with the CSV maps site for site: every reference in the code points to the same object at the
+same offset, and every island call to the same code offset. V02.03 noCSV is V02.06 noCSV 0x40 lower, the same
+relation as between the CSV files.
+
 ### Position dependence
 
 * Calls and branches inside the codec are PC-relative. The three entry points make no calls outside the window.
@@ -114,7 +129,8 @@ address that stock code outside the codec loads; the minimal table window (0x120
 3. Decrypt the table window file[0x122EF0 .. +0x12850] the same way. Expect sha256 `b99f14e7...`.
 4. Place them as [codec-placement.md](codec-placement.md) "STM32 radios" says: the tables, cut to 0x12082 bytes,
    stay at 0x080D19F0; the code moves to 0x080E3A74 (V02.01 to V02.03: every address 0x40 lower, map
-   `dm1701-v0203-csv.json`). Rewrite the one literal in the code that points into the code
+   `dm1701-v0203-csv.json`; noCSV: the table below "Hosting", maps `dm1701-v0206-nocsv.json` and
+   `dm1701-v0203-nocsv.json`). Rewrite the one literal in the code that points into the code
    and the 12 calls (BL) from the islands in the table window back into the code (the codec map
    `tools/rfoundry/rfoundry/codec_maps/dm1701/dm1701-v0206-csv.json`, `self_refs` and `branches`).
 5. Write the descriptor at 0x080FFF80 (`platform/stm32f4/codec_desc.h`): code and table window with their CRC-32s.
@@ -128,14 +144,14 @@ address, so the code's 63 table literals stay as they are.
 
 * `boards/dm1701/memory.ld` keeps the application out of every flash sector the codec uses:
 
-  | region | sectors | V02.06 CSV | V02.01, V02.02, V02.03 CSV |
-  |---|---|---|---|
-  | application | 3-9 | 0x0800C000..0x080BFFFF (720 KB) | the same |
-  | table window | 10, 11 | 0x080D19F0..0x080E3A72 | 0x080D19B0..0x080E3A32 |
-  | code window | 11 | 0x080E3A74..0x080F3C90 | 0x080E3A34..0x080F3C50 |
-  | descriptor | 11 | 0x080FFF80, 128 bytes | the same |
+  | region | sectors | V02.06 CSV | V02.01, V02.02, V02.03 CSV | V02.06 noCSV | V02.03 noCSV |
+  |---|---|---|---|---|---|
+  | application | 3-9 | 0x0800C000..0x080BFFFF (720 KB) | the same | the same | the same |
+  | table window | 10, 11 | 0x080D19F0..0x080E3A72 | 0x080D19B0..0x080E3A32 | 0x080D4794..0x080E6826 | 0x080D4754..0x080E67E6 |
+  | code window | 11 | 0x080E3A74..0x080F3C90 | 0x080E3A34..0x080F3C50 | 0x080E6828..0x080F6A28 | 0x080E67E8..0x080F69E8 |
+  | descriptor | 11 | 0x080FFF80, 128 bytes | the same | the same | the same |
 
-  The board's codec windows are the union of both layouts; a merge writes the layout of the file it merges.
+  The board's codec windows are the union of the layouts; a merge writes the layout of the file it merges.
 
   A firmware update then erases and writes only sectors 3-9 and leaves the codec in place (hardware-dm1701.md 1.4,
   docs/dev/release.md "Codec handling").
@@ -150,11 +166,13 @@ address, so the code's 63 table literals stay as they are.
   |---|---|---|---|
   | V02.06 CSV | 0x0206 | 0x080D19F0, 0x12082, 0xC1EEFA8B | 0x080E3A74, 0x1021C, 0x485BFC13 |
   | V02.01, V02.02, V02.03 CSV | 0x0203 | 0x080D19B0, 0x12082, 0x811EC3C0 | 0x080E3A34, 0x1021C, 0x99B02204 |
+  | V02.06 noCSV | 0x10206 | 0x080D4794, 0x12092, 0x3EDE91FF | 0x080E6828, 0x10200, 0xAF82F7D0 |
+  | V02.03 noCSV | 0x10203 | 0x080D4754, 0x12092, 0x217E610A | 0x080E67E8, 0x10200, 0x96264D90 |
 
   The three older files put the same bytes at the same addresses, so they share one tag. A release accepts only the
   tags it was built with: a release from before 0x0203 finds no codec in a radio merged from V02.01 to V02.03 and runs
-  FM only until the codec is merged again.
-* The noCSV variants sit at other addresses and would need their own windows and codec map.
+  FM only until the codec is merged again. The same holds for the noCSV tags (bit 16 set) and releases from before
+  them.
 
 ## Open items
 
@@ -167,6 +185,9 @@ address, so the code's 63 table literals stay as they are.
   re-encoded), a 300 frame stress run gives air bits and decoded PCM bit-identical to the V02.06 codec's, and the FEC
   decode results agree. Each real file decrypts, places and matches the profile's hashes in rfoundry and
   `tools/codec_extract.py`.
+* V02.06 and V02.03 noCSV (2026-10-25): checked the same way, in a host emulator only, not yet on the radio. Placed
+  (code at 0x080E6828 and 0x080E67E8), the 300 frame stress run gives air bits and decoded PCM bit-identical to the
+  V02.06 CSV codec's; each real file decrypts, places and matches its profile's hashes.
 
 ## Codec state init and calls
 

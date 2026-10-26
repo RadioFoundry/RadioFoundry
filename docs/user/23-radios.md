@@ -139,7 +139,7 @@ Follow [Installing](02-installing.md) with these values:
 
 | Item | DM-1701 |
 |---|---|
-| Stock firmware file | Baofeng's `DM-1701(CSV)-V02.06.bin` (V02.06 CSV), or Radioddity's V02.01, V02.02 or V02.03 CSV file (`Firmware-DM-1701(CSV)-V02.01.bin`, `DM-1701(CSV)-V02.02.bin`, `DM-1701(CSV)-V02.03 Only for Radioddity.bin`). It gives the bootloader key and the voice codec. An archive of V02.06 is at github.com/daniel5600/BAOFENG-DM1701-Original-Firmware. The noCSV files give the key but not the codec ([the list](../spec/codec-dm1701.md#firmware-files)) |
+| Stock firmware file | Baofeng's `DM-1701(CSV)-V02.06.bin` or `DM-1701(noCSV)-V02.06.bin` (V02.06), or Radioddity's V02.01, V02.02 or V02.03 file (`Firmware-DM-1701(CSV)-V02.01.bin`, `DM-1701(CSV)-V02.02.bin`, `DM-1701(CSV)-V02.03 Only for Radioddity.bin`, `DM-1701-V02.03 Only for Radioddity.bin`). Each gives the bootloader key and the voice codec. An archive of V02.06 is at github.com/daniel5600/BAOFENG-DM1701-Original-Firmware ([the list](../spec/codec-dm1701.md#firmware-files)) |
 | `--stock-installed` | The version the radio runs, e.g. `"V02.06 CSV"` |
 | Bootloader keys | Hold **PTT** and **SK1** together while you turn the radio on with the volume knob |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) |

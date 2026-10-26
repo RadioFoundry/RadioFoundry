@@ -8,9 +8,10 @@
 // 0x080E3A74, and the descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h). The code reaches its tables
 // through absolute addresses, which don't change. The merge rewrites what does: one pointer into the code and the 12
 // calls from the code that stock keeps in the table window back into the code (the codec map). V02.01, V02.02 and
-// V02.03 CSV carry the same codec 0x40 lower, and the merge places it the same way, 0x40 lower. None of it is part of
-// this repository or a release. The calls and the checks are the shared ones (platform/stm32f4/hrc/vocoder.c); this
-// file says which build and where. Without a valid descriptor and codec, present() is false and the radio is FM only.
+// V02.03 CSV carry the same codec 0x40 lower, and the merge places it the same way, 0x40 lower. The V02.06 and V02.03
+// noCSV files carry it higher (tables from 0x080D4794 and 0x080D4754), and the merge places it the same way after
+// its tables. None of it is part of this repository or a release. The calls and the checks are the shared ones
+// (platform/stm32f4/hrc/vocoder.c); this file says which build and where. Without a valid descriptor and codec, present() is false and the radio is FM only.
 #include "../uv380_family/uvf.h"
 #include "config.h"
 
@@ -57,7 +58,23 @@ static const stm32_codec_profile_t v0203 = {
 	.at = ENTRIES,
 };
 
-static const stm32_codec_profile_t *const profiles[] = { &v0206, &v0203 };
-const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 2 };
+// V02.06 and V02.03 noCSV: the codec 0x29DC (code) and 0x2DA4 (tables) above the CSV file's of the same version, the
+// code 0x1C bytes shorter, the tables' codec data 0x10 longer; the same entry offsets. Tag bit 16 marks noCSV
+static const codec_desc_window_t v0206n_tables[] = { { 0x080D4794u, 0x12092u, 0x3EDE91FFu } };
+static const stm32_codec_profile_t v0206n = {
+	.tag = 0x10206u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E6828u, .code_len = 0x10200u, .code_crc = 0xAF82F7D0u, .tables = v0206n_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t v0203n_tables[] = { { 0x080D4754u, 0x12092u, 0x217E610Au } };
+static const stm32_codec_profile_t v0203n = {
+	.tag = 0x10203u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E67E8u, .code_len = 0x10200u, .code_crc = 0x96264D90u, .tables = v0203n_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const stm32_codec_profile_t *const profiles[] = { &v0206, &v0203, &v0206n, &v0203n };
+const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 4 };
 
 #endif	// CONFIG_DMR

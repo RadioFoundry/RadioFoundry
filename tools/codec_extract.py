@@ -46,6 +46,7 @@ MD380_D2032 = "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43"
 MDUV380_V1926 = "75e4d470b451cb5d191a647c0836c71801433b826cc4a7fe2c48d750036bd98e"
 RT3S_V21960 = "447ed4e09482c45661cd6e4c83d1e9f777463993ab7dd48b0e0597bb14f519ee"
 DM1701_V0201 = "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713"
+DM1701_V0206_NOCSV = "4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9"
 
 EPILOG = """\
 examples:
@@ -227,6 +228,16 @@ def self_test():
     check(struct.unpack_from("<I", owins[2][1], 8)[0] == 0x0203, "DM-1701 V02.01 descriptor tag")
     omerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), op, owins)
     check(not stm32_dfu.check_image(omerged, "dm1701"), "stm32_dfu accepts the DM-1701 V02.01 merged image")
+    # DM-1701 V02.06 noCSV (V02.03 noCSV alike, 0x40 lower): a larger application segment, the codec higher up, the
+    # code 0x1C bytes shorter; still after the tables in sector 11, below the descriptor
+    nstock, nprofiles, ncode, _ = build_synthetic_stock(key, rng, DM1701_V0206_NOCSV)
+    np_, nwins = extract(nstock, key, nprofiles)
+    check([(a, len(d)) for a, d in nwins] == [(0x080E6828, 0x10200), (0x080D4794, 0x12092), (DESC_ADDR, 0x80)]
+          and len(ncode) == 0x10200 and 0x080E6828 + 0x10200 <= DESC_ADDR,
+          "DM-1701 V02.06 noCSV: code at 0x080E6828 after the tables cut at 0x080E6826, then the descriptor")
+    check(struct.unpack_from("<I", nwins[2][1], 8)[0] == 0x10206, "DM-1701 V02.06 noCSV descriptor tag")
+    nmerged = merge(struct.pack("<II", 0x2001FFFC, 0x0800C1C1) + bytes(0x080C0000 - APP_BASE - 8), np_, nwins)
+    check(not stm32_dfu.check_image(nmerged, "dm1701"), "stm32_dfu accepts the DM-1701 V02.06 noCSV merged image")
 
     # main() end to end on the synthetic file
     import contextlib

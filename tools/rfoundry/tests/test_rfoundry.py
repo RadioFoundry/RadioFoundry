@@ -907,9 +907,12 @@ class StockLibrary(unittest.TestCase):
     def test_real_profile_table(self):
         p = stockfw.PROFILES["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
         self.assertEqual(p["codec_profile"], DM1701.codec.id)
-        # the board's windows: V02.06's layout, then V02.01 to V02.03's (one layout for the three), 0x40 lower
+        # the board's windows: V02.06's layout, then V02.01 to V02.03's (one layout for the three), 0x40 lower, then
+        # V02.06 noCSV's and V02.03 noCSV's
         self.assertEqual(DM1701.codec.windows, [(0x080E3A74, 0x1021C), (0x080D19F0, 0x12082), (0x080FFF80, 0x80),
-                                                (0x080E3A34, 0x1021C), (0x080D19B0, 0x12082)])
+                                                (0x080E3A34, 0x1021C), (0x080D19B0, 0x12082),
+                                                (0x080E6828, 0x10200), (0x080D4794, 0x12092),
+                                                (0x080E67E8, 0x10200), (0x080D4754, 0x12092)])
         self.assertEqual(DM1701.merge_windows(p), [(0x080E3A74, 0x1021C), (0x080D19F0, 0x12082), (0x080FFF80, 0x80)])
         # the real map covers the real code, and the placement keeps the move whole words
         m = stockfw.code_map(p)
@@ -977,20 +980,37 @@ class FirmwareProfiles(unittest.TestCase):
 
 class Dm1701Builds(unittest.TestCase):
     """The DM-1701's stock files: V02.06 CSV, and V02.01, V02.02 and V02.03 CSV, which hold one codec 0x40 below
-    V02.06's (codec-dm1701.md "Firmware files"): one map and one placement for the three."""
+    V02.06's (codec-dm1701.md "Firmware files"): one map and one placement for the three. V02.06 and V02.03 noCSV hold
+    it higher up, its code 0x1C bytes shorter: a map and a placement each."""
 
     V0206 = "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"
     V0201 = "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713"
     V0202 = "643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7"
     V0203 = "35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948"
+    V0206N = "4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9"
+    V0203N = "0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a"
 
     def test_board(self):
-        self.assertEqual(DM1701.codec_stock, [self.V0206, self.V0201, self.V0202, self.V0203])
+        self.assertEqual(DM1701.codec_stock, [self.V0206, self.V0201, self.V0202, self.V0203, self.V0206N, self.V0203N])
         self.assertEqual(DM1701.codec.id, "dm1701-v0206-csv-s11")
         self.assertEqual([s.index for s in DM1701.codec_sectors()], [10, 11])
         for h in DM1701.codec_stock:
-            self.assertRegex(stockfw.KNOWN_FILES[h], r"^DM-1701 V02\.0[1236] CSV$")
-            self.assertIn(stockfw.PROFILES[h]["name"], DM1701.codec.sources)
+            p = stockfw.PROFILES[h]
+            self.assertRegex(stockfw.KNOWN_FILES[h], r"^DM-1701 V02\.0[1236] (no)?CSV$")
+            self.assertEqual(stockfw.KNOWN_FILES[h], "DM-1701 " + p["version"])
+            self.assertIn(p["name"], DM1701.codec.sources)
+        # every known DM-1701 file is a codec source
+        self.assertEqual({h for h, v in stockfw.KNOWN_FILES.items() if v.startswith("DM-1701 ")}, set(DM1701.codec_stock))
+        # one tag per layout, and every layout in sectors 10 and 11, the code below the descriptor
+        tags = {}
+        for h in DM1701.codec_stock:
+            p = stockfw.PROFILES[h]
+            tags.setdefault(p["placement"]["tag"], set()).add(tuple(DM1701.merge_windows(p)))
+            for a, n in DM1701.merge_windows(p):
+                self.assertTrue(0x080C0000 <= a and a + n <= 0x08100000, p["name"])
+            self.assertLessEqual(p["placement"]["code"] + p["code"][1], stockfw.DESC_ADDR)
+        self.assertEqual(sorted(tags), [0x0203, 0x0206, 0x10203, 0x10206])
+        self.assertTrue(all(len(v) == 1 for v in tags.values()), tags)
 
     def test_one_map_for_three_files(self):
         """The three older files: one code window (by its hash), the dm1701-v0203-csv map, one placement and tag."""
@@ -1017,9 +1037,13 @@ class Dm1701Builds(unittest.TestCase):
     def test_map_is_v0206_relinked(self):
         """The V02.03 map is the V02.06 one with every address 0x40 lower: the same entries, the same sites in the code
         and in the islands, every target and value shifted, the same object lengths except where a bound depends on
-        the stock code around it. A map that disagrees with the V02.06 one anywhere else is wrong."""
+        the stock code around it. A map that disagrees with the V02.06 one anywhere else is wrong. The same holds for
+        the two noCSV maps."""
         maps = codecmap.load_maps()
-        a, b, d = maps["dm1701-v0203-csv"], maps["dm1701-v0206-csv"], -0x40
+        self.relinked(maps["dm1701-v0203-csv"], maps["dm1701-v0206-csv"], -0x40)
+        self.relinked(maps["dm1701-v0203-nocsv"], maps["dm1701-v0206-nocsv"], -0x40)
+
+    def relinked(self, a, b, d):
         self.assertEqual(a["entries"], b["entries"])
         self.assertEqual((a["code"]["flash"] - b["code"]["flash"], a["code"]["len"], a["code"]["reachable_len"]),
                          (d, b["code"]["len"], b["code"]["reachable_len"]))
@@ -1039,6 +1063,44 @@ class Dm1701Builds(unittest.TestCase):
         ta, tb = a["table_windows"][0], b["table_windows"][0]
         self.assertEqual((ta["min_start"] - d, ta["min_len"], ta["len"]), (tb["min_start"], tb["min_len"], tb["len"]))
         self.assertEqual(a["outside_refs"], [])
+
+    def test_nocsv_map_matches_csv(self):
+        """The noCSV maps against the CSV map of the same version, site for site: the same entries and counts; every
+        site in the code at the same offset, 0x1C lower past the 0x1C bytes the noCSV code lacks (stock offset 0x4A00);
+        every reference into the tables to the same object at the same offset in it, every island call to the same code
+        offset. A map that finds another site or target anywhere is wrong."""
+        maps = codecmap.load_maps()
+        for n, c in (("dm1701-v0206-nocsv", "dm1701-v0206-csv"), ("dm1701-v0203-nocsv", "dm1701-v0203-csv")):
+            a, b = maps[n], maps[c]
+            self.assertEqual(a["entries"], b["entries"])
+            self.assertEqual((a["code"]["len"], a["code"]["reachable_len"]),
+                             (b["code"]["len"] - 0x1C, b["code"]["reachable_len"] - 0x1C))
+            self.assertEqual([o["len"] for o in a["objects"][:43]], [o["len"] for o in b["objects"][:43]])
+
+            def norm(m, nocsv):
+                code, n_ = m["code"]["flash"], m["code"]["len"]
+                def off(o):		# a code offset as the CSV code has it
+                    self.assertFalse(nocsv and 0x4A00 <= o < 0x4A1C, o)
+                    return o + 0x1C if nocsv and o >= 0x4A00 else o
+                def at(v):		# where an address points: code offset, or (object or island, index, offset in it)
+                    if code <= v < code + n_:
+                        return ("code", off(v - code))
+                    for kind in ("objects", "islands"):
+                        for i, o in enumerate(m[kind]):
+                            if o["start"] <= v < o["start"] + max(o["len"], 1):
+                                return (kind, i, v - o["start"])
+                    self.fail("0x%08X is in no window of %s" % (v, m["profile"]))
+                out = {}
+                for k in ("self_refs", "island_ptrs", "table_refs", "island_refs", "branches"):
+                    out[k] = [tuple(sorted((f, (off(x[f]) if f in ("off", "off2") else
+                                                at(x[f] & ~1 if f == "value" or k == "island_ptrs" else x[f])
+                                                if f not in ("kind", "reachable") else x[f])) for f in x))
+                              for x in m[k]]
+                return out
+            na, nb = norm(a, True), norm(b, False)
+            for k in na:
+                self.assertEqual(na[k], nb[k], (n, k))
+            self.assertEqual(a["outside_refs"], [])
 
     def test_synthetic_merge(self):
         """A V02.01 file merges, splits and reads back from a readout like V02.06; its descriptor carries tag 0x0203."""

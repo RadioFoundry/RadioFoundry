@@ -120,6 +120,38 @@ PROFILES = {
         "placed": {"code": (0x99B02204, "a24f6b793b2d725401cdeaad7bba728f0ed01e45a6f2cc89e5fe726757ce1531"),
                    "tables": (0x811EC3C0, "a6045020e11c0d2c9cccff08074d5b259c6023dc9d3e968da13e3a91f813fe35")},
     },
+    # DM-1701 V02.06 and V02.03 noCSV: a larger application (0xDC000), the codec 0x29DC (code) and 0x2DA4 (tables)
+    # above the CSV file's of the same version, its code 0x1C bytes shorter (codec-dm1701.md "Firmware files"). Each
+    # has its own map and placement: the tables at their stock address cut to the codec's data, the code right after
+    # them, word aligned. Tag bit 16 marks noCSV; V02.03 noCSV is V02.06 noCSV 0x40 lower, as for CSV
+    "4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9": {
+        "name": "DM-1701(noCSV)-V02.06.bin",
+        "version": "V02.06 noCSV",
+        "board": "dm1701",
+        "key_sha256": DM1701_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1283584,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xDC000)],
+        "code": (0x080770F0, 0x10200, "c34e45885ccd422d57f0f009b5bcc2eb741fc3c765a57c2016e0ce07b0870566"),
+        "tables": (0x080D4794, 0x12850, "de6e8494159b7f089cfd97b5724ddde57c99b4480fc61249c41ac3cad1683acf"),
+        "placement": {"code": 0x080E6828, "tables_len": 0x12092, "tag": 0x10206},
+        "placed": {"code": (0xAF82F7D0, "1493b162933e3877d926e1154ac85ee8e784de4ceb4ccf1762df616bd025fe30"),
+                   "tables": (0x3EDE91FF, "a5297282ec421fa155ff9319430f0e98be61b5c9dd89a920a461fc1ff2c723f9")},
+    },
+    "0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a": {
+        "name": "DM-1701-V02.03 Only for Radioddity.bin",
+        "version": "V02.03 noCSV",
+        "board": "dm1701",
+        "key_sha256": DM1701_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1283584,
+        "segments": [(0x00060000, 0x5D400), (0x0800C000, 0xDC000)],
+        "code": (0x080770B0, 0x10200, "4fccfdda199e239464bc7a2622af20e99eb7885bcf8bffa2df1e4bc0f756a3ce"),
+        "tables": (0x080D4754, 0x12850, "b5a73a199e91a6d684d9d1bfe46261a6f6aeb0fe65a907c781b809d0425f537a"),
+        "placement": {"code": 0x080E67E8, "tables_len": 0x12092, "tag": 0x10203},
+        "placed": {"code": (0x96264D90, "238692b07a37e97964e72bd9c0569aaf4555ff877ab8307fa4cd32da3375e96f"),
+                   "tables": (0x217E610A, "32c75144218f0e95541bfc375d1330f248ed66cccf09a02fe2a00e4e92628f2e")},
+    },
     # TYT MD-380 "Firmware 2.32" (D002.032), single-segment container. Stock keeps the code in sectors 6 and 7
     "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43": {
         "name": "MD-380-D2.32(AD).bin",
@@ -649,7 +681,7 @@ KNOWN_FILES = {
     "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d": "DM-1701 V02.06 CSV",
     "4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9": "DM-1701 V02.06 noCSV",
     "35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948": "DM-1701 V02.03 CSV",
-    "0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a": "DM-1701 V02.03 without CSV",
+    "0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a": "DM-1701 V02.03 noCSV",
     "643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7": "DM-1701 V02.02 CSV",
     "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713": "DM-1701 V02.01 CSV",
     "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43": "MD-380 D002.032",

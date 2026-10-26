@@ -70,6 +70,8 @@ in place from sectors 10 and 11, where the merge puts it ([codec-placement.md](c
 [codec-dm1701.md](codec-dm1701.md)): tables at their original address 0x080D19F0..0x080E3A72, code moved from its original
 address 0x08074714 to 0x080E3A74..0x080F3C90, and the descriptor at 0x080FFF80. The codec from a V02.01, V02.02 or
 V02.03 CSV file sits 0x40 lower in the same sectors: tables 0x080D19B0..0x080E3A32, code 0x080E3A34..0x080F3C50.
+The codec from a noCSV file sits higher, still in sectors 10 and 11: V02.06 noCSV tables 0x080D4794..0x080E6826, code
+0x080E6828..0x080F6A28; V02.03 noCSV 0x40 lower.
 
 | Sector | Address | Size | Holds |
 |---|---|---|---|
@@ -77,8 +79,8 @@ V02.03 CSV file sits 0x40 lower in the same sectors: tables 0x080D19B0..0x080E3A
 | 3 | 0x0800C000..0x0800FFFF | 16 KB | RadioFoundry (vector table first) |
 | 4 | 0x08010000..0x0801FFFF | 64 KB | RadioFoundry |
 | 5-9 | 0x08020000..0x080BFFFF | 5 x 128 KB | RadioFoundry |
-| 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0; V02.01 to V02.03: 0x080D19B0) |
-| 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E3A71), codec code (0x080E3A74..0x080F3C8F), descriptor (0x080FFF80..0x080FFFFF); V02.01 to V02.03: tables to 0x080E3A31, code 0x080E3A34..0x080F3C4F |
+| 10 | 0x080C0000..0x080DFFFF | 128 KB | codec tables (from 0x080D19F0; V02.01 to V02.03: 0x080D19B0; noCSV: 0x080D4794, 0x080D4754) |
+| 11 | 0x080E0000..0x080FFFFF | 128 KB | codec tables (to 0x080E3A71), codec code (0x080E3A74..0x080F3C8F), descriptor (0x080FFF80..0x080FFFFF); V02.01 to V02.03: tables to 0x080E3A31, code 0x080E3A34..0x080F3C4F; V02.06 noCSV: tables to 0x080E6825, code 0x080E6828..0x080F6A27 (V02.03 noCSV 0x40 lower) |
 
 A flash sector can only be erased whole, so `boards/dm1701/memory.ld` gives the application sectors 3-9
 (0x0800C000..0x080BFFFF, 720 KB in one piece) and asserts that everything it loads into flash ends before 0x080C0000.
@@ -1237,7 +1239,7 @@ The key tables are identified by hash only. A key is derived on the user's machi
 **Derived from a firmware file, DM-1701.** The key falls out of any DM-1701 firmware file from the manufacturer. The payload is plain XOR key[i mod 1024], and in a firmware image 0x00 is the most common plain byte in every
 key column, so the most common cipher byte of column j is key[j] for all but a few columns; those are settled by
 trying each close runner-up byte until the SHA-256 of the result matches the table above. On every firmware file in
-`codec-dm1701.md` ("Firmware files": V02.01, V02.02, V02.03 with and without CSV, V02.06 CSV and noCSV) this gives the key
+`codec-dm1701.md` ("Firmware files": V02.01, V02.02 and V02.03 CSV, V02.03 noCSV, V02.06 CSV and noCSV) this gives the key
 with hash `d983ce95...` in under 0.1 s, needing at most a few hundred hash checks. `tools/rfoundry/rfoundry/stockfw.py`
 (`derive_key`) does this on the user's machine; only the hash is in the repository. The same method should work for the
 other models' files (unverified: no MD-UV380, MD-380 or MD-9600 file was tried).

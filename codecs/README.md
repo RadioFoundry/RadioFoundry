@@ -16,6 +16,8 @@ and the release images never contain it. Each radio uses the codec from its own 
    | DM-1701 | Radioddity `Firmware-DM-1701(CSV)-V02.01.bin` | `cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713` |
    | DM-1701 | Radioddity `DM-1701(CSV)-V02.02.bin` | `643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7` |
    | DM-1701 | Radioddity `DM-1701(CSV)-V02.03 Only for Radioddity.bin` | `35a045d7a71164183b164d6ecfdd9e349c757b3539be67a16fecd68ca6f65948` |
+   | DM-1701 | Baofeng `DM-1701(noCSV)-V02.06.bin` | `4230c8d0aabf15f3f165c29a118a5f8f9b906a2d9b7d215c1d8a7bc0e3978bd9` |
+   | DM-1701 | Radioddity `DM-1701-V02.03 Only for Radioddity.bin` | `0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a` |
    | DM-32 | Baofeng `DM32.01.01.049.bin` | `03107b6f600e7fa95105af8324cff349c0f17fe30db249c14d11e79baa8da97a` |
    | DM-32 | Baofeng `DM32.00.01.046HRVocoder.bin` | `f8484c13c994e920649d7b7bc2b98a98a76cfd0836865e5995a00627fc0c2887` |
    | DB25-D PRO | Radioddity `DB25-D PRO 909E.Dx.EARSAB.018_2025-01-21.bin` | `341536cbac0c1b2471f8198ebc456946e5fe026d96d153df14d6aa5566304f8b` |
