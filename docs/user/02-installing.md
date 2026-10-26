@@ -65,8 +65,8 @@ settings stay: they live in separate flash that installing never touches.
 
 **Back Up** saves a file with the radio's firmware, codec, channels and settings. **Restore** takes that file and
 writes back the whole radio, only the firmware, or only the channels and settings. It can also return the radio to its
-original firmware, from your stock firmware file. A restore from the update mode works even when the firmware is
-damaged.
+original firmware, from your stock firmware file. Any version of the manufacturer's file for your radio works, not only
+the one the installer needs for the codec. A restore from the update mode works even when the firmware is damaged.
 
 If the backup holds the original firmware's codeplug, open the file in the
 [Codeplug Editor](04-programming.md#the-codeplug-editor). It converts the channels, zones and contacts to the
@@ -167,6 +167,22 @@ the stock firmware file, or from a terminal:
 rfoundry flash --release latest --codec merge --stock STOCK.bin
 ```
 
+## When the installer can't use a file
+
+If a firmware file can't be used, the installer says what it found and what to do:
+
+| It says | Do this |
+|---|---|
+| The file is for another radio | Pick your radio's file, or open the installer for the radio the file is for |
+| The file isn't the manufacturer's firmware | Pick the manufacturer's original file. Another open firmware project's build doesn't serve |
+| Your radio's bootloader key doesn't open it | It is for another model, or a modified build. Pick the manufacturer's file for your radio |
+| No recipe for this version yet | Pick one of the versions listed, or send the file so it can be added |
+| The file is damaged | Download it again |
+| A fault in the installer | Nothing is wrong with the file. The installer reports the fault, or shows how to report it; you can send the file to help |
+
+**Technical details** shows the exact message. Sending the file is offered only for the manufacturer's firmware file,
+and only when you click. An automatic error report names the file (name, size and checksum), never its contents.
+
 ## If something goes wrong
 
 The bootloader lives in a part of the flash the installer never erases, so you can always start over: put the radio in
@@ -177,7 +193,9 @@ page walks through the update mode. See also [Troubleshooting](20-troubleshootin
 
 1. Put the radio in its bootloader.
 2. In the web installer choose **Restore**, load your backup and pick the original firmware, with your stock firmware
-   file. Or run the manufacturer's firmware upgrade tool and load the stock file.
+   file (any version for your radio). On a radio whose original firmware is backed up before the first installation,
+   load that backup, or the manufacturer's firmware file if you don't have it. Or run the manufacturer's firmware
+   upgrade tool and load the stock file.
 3. Write your codeplug backup with the manufacturer's CPS. The stock firmware can't read the codeplug RadioFoundry used.
 
 Your radio's section in the [Radio reference](23-radios.md) says which way applies.
