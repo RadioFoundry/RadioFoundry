@@ -420,6 +420,7 @@
  "flash.codec.image": "Firmware: {what}, {size} bytes.",
  "flash.codec.mode.keep": "Keep the codec in the radio",
  "flash.codec.mode.merge": "Use the codec from my stock firmware file",
+ "flash.codec.mode.merge_saved": "Use the codec saved from the radio",
  "flash.codec.stock_title": "Stock Firmware File",
  "flash.codec.key_from_radio": "The radio's update key was read from the radio.",
  "flash.codec.stock_pick": "Select Stock Firmware File",

@@ -1383,7 +1383,9 @@ function codecView() {
 		if (!S.decision && !haveStock) needs.push(`${err} ${t("flash.codec.need_codec")}`);
 		if (S.decision && !keyKnown && !haveStock) needs.push(t("flash.codec.need_key"));
 		const ready = S.decision && (keyKnown || haveStock);
-		const plan = S.decision ? `${t(`flash.codec.mode.${S.decision.mode}`)}: ${S.decision.why}.` : null;
+		// a merge from the copy saved from the radio isn't one from the stock file: its own label
+		const modeKey = S.decision?.mode === MERGE && S.decision.source === "saved" ? "merge_saved" : S.decision?.mode;
+		const plan = S.decision ? `${t(`flash.codec.mode.${modeKey}`)}: ${S.decision.why}.` : null;
 		const keyLine = S.keyFromRadio ? t("flash.codec.key_from_radio") : keyStored && !S.sim ? t("flash.codec.key_saved") : null;
 		const fromSaved = S.decision?.source === "saved";
 		const codecLine = !fromSaved ? null : S.savedCodec.from === "browser" ? t("flash.codec.codec_saved")
@@ -2075,11 +2077,12 @@ async function main() {
 	}
 	c7ui.init({ S, next, render, reset, helpLink, fb, flashStarted, flashFinished, noteReadout, errorText, analysisOffer, problemNotice, failureNotice,
 		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	// #sim=<board>[-stock|-openfw]: that board, running RadioFoundry, its stock firmware or another open firmware (a board
-	// the page backs up from one: openfw.js); #sim: the first radio on stock firmware
-	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-openfw)?)?(?:&|$)/);
+	// #sim=<board>[-stock|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another open
+	// firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
+	// fallback); #sim: the first radio on stock firmware
+	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-openfw(?:-nocodec)?)?)?(?:&|$)/);
 	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
-	const simOpen = simAsk?.[2] === "-openfw" && openfw.supported(S.data.fb.boards[simRadio?.flash.board]);
+	const simOpen = !!simAsk?.[2]?.startsWith("-openfw") && openfw.supported(S.data.fb.boards[simRadio?.flash.board]);
 	const simStock = !!simAsk && (!simAsk[1] || (!!simAsk[2] && !simOpen));
 	if (simRadio && c7ui.isC7000(simRadio, S.data.fb)) {
 		// on its cable: stock firmware (a stock console answers if the board has one), or RadioFoundry with the stub hand-over
@@ -2097,7 +2100,8 @@ async function main() {
 		S.fakeC7.powerOn();
 	} else if (simRadio) {
 		S.sim = await simulation(S.data.fb, simRadio.id);
-		S.fakeRadio = new FakeRadio(S.sim, { state: simOpen ? "openfw" : simStock ? "stock" : "rfoundry", spiSize: 0x400000 });
+		S.fakeRadio = new FakeRadio(S.sim, { state: simOpen ? "openfw" : simStock ? "stock" : "rfoundry", spiSize: 0x400000,
+			openfw: { codec: simAsk[2] !== "-openfw-nocodec" } });
 		await S.fakeRadio.ready;
 		// a smaller SPI flash keeps the simulated backup quick
 		simRadio.backup = { ...simRadio.backup, spi_size: 0x400000 };
