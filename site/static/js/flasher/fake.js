@@ -76,11 +76,14 @@ export async function simulation(fbReal, boardId, seed = 1701) {
 	if (real.placement) {
 		const [[, code], [tabAddr, tables]] = stockSegments;
 		const pl = real.placement;
+		const cut = tables.slice(0, pl.tables_len ?? tables.length);	// the codec's own data, the map's cut
 		prof.map = { format: "rfoundry-codec-map/1", profile: "sim-" + boardId, board: boardId, isa: "thumb2",
 			code: { flash: run, len: code.length, run, sha256: windows[0][2] }, entries: {},
 			self_refs: [{ kind: "word", off: SYN_SELF_REF, value: run + 0x201 }], island_ptrs: [], table_refs: [], island_refs: [],
 			islands: [{ start: tabAddr + SYN_BL - 0x10, len: 0x40 }], branches: [{ at: tabAddr + SYN_BL, target: run + 0x200, kind: "bl" }],
-			objects: [], groups: [], outside_refs: [] };
+			objects: [], groups: [], outside_refs: [],
+			table_windows: [{ id: "tables", flash: tabAddr, run: tabAddr, len: tables.length, min_start: tabAddr, min_len: cut.length,
+				min_sha256: await sha256(cut) }] };
 		const mc = await moveCode(code, prof.map, pl.code);
 		const mt = moveBranches(tabAddr, tables.slice(0, pl.tables_len ?? tables.length), prof.map, pl.code);
 		prof.placed = { code: [crc32(mc), await sha256(mc)], tables: [crc32(mt), await sha256(mt)] };

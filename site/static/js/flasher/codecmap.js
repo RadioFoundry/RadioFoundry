@@ -155,6 +155,94 @@ export function unmoveBranches(addr, data, m) {
 
 export const branchesIn =(m, addr, len) => (m.branches || []).filter((b) => addr <= b.at && b.at < addr + len).length;
 
+// [start, length] of the table window a whole-window move carries, the map's cut (codecmap.table_window): every table
+// ref, island pointer, island ref, island and branch must lie in it
+export function tableWindow(m) {
+	const tw = (m.table_windows || [])[0];
+	if (!tw || tw.min_len === undefined) throw new MapError(`${m.profile}: no cut table window`);
+	const lo = tw.min_start ?? tw.run, n = tw.min_len;
+	const inside = [...(m.table_refs || []), ...(m.island_ptrs || []), ...(m.island_refs || [])].map((r) => r.target)
+		.concat((m.island_refs || []).map((r) => r.at), (m.branches || []).map((b) => b.at),
+			(m.islands || []).flatMap((i) => [i.start, i.start + i.len - 1]));
+	if (inside.some((a) => a < lo || a >= lo + n)) throw new MapError(`${m.profile}: the codec refers outside its table window; the window can't move as one block`);
+	return [lo, n];
+}
+
+// The codec moved as two blocks (codecmap.move_window): the code to run at codeRun, its table window (the cut, as
+// the stock build has it) to tablesRun. Self refs move with the code; island pointers, table refs and island refs
+// with the tables; the islands' calls into the code are re-encoded for both moves. [code, tables]
+export async function moveWindow(code, tables, m, codeRun, tablesRun) {
+	const [lo, n] = tableWindow(m);
+	if (tables.length !== n) throw new MapError(`${m.profile}: tables are ${tables.length} bytes, the map's window ${n}`);
+	if ((tablesRun - lo) % 4) throw new MapError(`${m.profile}: a table move by ${tablesRun - lo} breaks the tables' alignment`);
+	const moved = await moveCode(code, m, codeRun);
+	const dc = codeRun - m.code.run, dt = tablesRun - lo;
+	for (const r of m.table_refs || []) {
+		if (read(moved, r) !== r.target >>> 0) throw new MapError(`${m.profile}: site +${hex(r.off, 1)} doesn't hold ${hex(r.target)}`);
+	}
+	for (const r of [...(m.island_ptrs || []), ...(m.table_refs || [])]) write(moved, r, (r.target + dt) >>> 0);
+	const tab = tables.slice();
+	for (const r of m.island_refs || []) {
+		if (u32le(tab, r.at - lo) !== r.target >>> 0) throw new MapError(`${m.profile}: island ref at ${hex(r.at)} doesn't hold ${hex(r.target)}`);
+		put32(tab, r.at - lo, r.target + dt);
+	}
+	for (const b of m.branches || []) {
+		if (blTarget(tab, b.at - lo, b.at) !== b.target >>> 0) throw new MapError(`${m.profile}: no bl to ${hex(b.target)} at ${hex(b.at)}`);
+		putBl(tab, b.at - lo, b.at + dt, b.target + dc);
+	}
+	return [moved, tab];
+}
+
+// The reverse of moveWindow for a copy in a flash read (flash: bytes from address base) whose code starts at codeAt
+// (codecmap.unmove_window): [code, tables, tablesAt] as the stock build has them, or null when this isn't the map's
+// build. The moves are read from the copy: the code's from its self refs, the tables' from its table refs and island
+// pointers, which must agree. The islands' calls into the code may point anywhere, all moved by one amount. Both parts
+// are checked by their SHA-256. Never throws for a candidate that isn't one
+export async function unmoveWindow(flash, base, m, codeAt) {
+	let lo, n;
+	try {
+		[lo, n] = tableWindow(m);
+	} catch (e) {
+		return null;
+	}
+	const c = m.code, tw = m.table_windows[0];
+	const off = codeAt - base;
+	if (off < 0 || off + c.len > flash.length || !tw.min_sha256) return null;
+	const code = flash.slice(off, off + c.len);
+	const dc = (codeAt - c.run) >>> 0;
+	for (const r of m.self_refs || []) {
+		const got = read(code, r);
+		if (got === null || ((got - r.value) >>> 0) !== dc) return null;
+		write(code, r, r.value >>> 0);
+	}
+	const deltas = new Set();
+	for (const r of [...(m.island_ptrs || []), ...(m.table_refs || [])]) {
+		const got = read(code, r);
+		if (got === null) return null;
+		deltas.add((got - r.target) >>> 0);
+	}
+	if (deltas.size > 1) return null;
+	const dt = deltas.size ? [...deltas][0] | 0 : 0;	// a code that holds no address in its tables: they are where stock had them
+	for (const r of [...(m.island_ptrs || []), ...(m.table_refs || [])]) write(code, r, r.target >>> 0);
+	if ((await sha256(code)) !== c.sha256) return null;
+	const t0 = lo + dt - base;
+	if (t0 < 0 || t0 + n > flash.length) return null;
+	const tab = flash.slice(t0, t0 + n);
+	for (const r of m.island_refs || []) {
+		if (u32le(tab, r.at - lo) !== ((r.target + dt) >>> 0)) return null;
+		put32(tab, r.at - lo, r.target);
+	}
+	const bd = new Set();
+	for (const b of m.branches || []) {
+		const got = blTarget(tab, b.at - lo, b.at + dt);
+		if (got === null) return null;
+		bd.add((got - b.target) | 0);
+		putBl(tab, b.at - lo, b.at, b.target);
+	}
+	if (bd.size > 1 || (await sha256(tab)) !== tw.min_sha256) return null;
+	return [code, tab, lo + dt];
+}
+
 // The code with its table refs rewritten for moved objects (codecmap.move_tables). moves: Map or object of
 // {object start: new start}
 export function moveTables(code, m, moves) {

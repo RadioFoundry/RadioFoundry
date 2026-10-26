@@ -51,6 +51,9 @@ def codec_map_vectors(out):
 	t = v["thumb"]
 	t["map"] = codecmap.normalize(t["map"])
 	t["new_run"], t["window_addr"] = int(t["new_run"], 0), int(t["window_addr"], 0)
+	w = v["window"]
+	w["map"] = codecmap.normalize(w["map"])
+	w["code_run"], w["tables_run"] = int(w["code_run"], 0), int(w["tables_run"], 0)
 	with open(os.path.join(out, "codecmap.json"), "w") as f:
 		json.dump(v, f, indent=1)
 

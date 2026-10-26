@@ -5,7 +5,7 @@
 // both read the same table. The codec and the key are only ever handled on the user's machine.
 
 import { u32le, sha256, startsWith, crc32 } from "./bytes.js";
-import { byCodeSha, moveCode, moveBranches, branchesIn, MapError } from "./codecmap.js";
+import { byCodeSha, moveCode, moveBranches, branchesIn, moveWindow, unmoveWindow, tableWindow, MapError } from "./codecmap.js";
 
 // code: what kind of problem it is, for the page's explanation (explain.js) and the error report: "not-vendor" (not a
 // vendor firmware file), "damaged", "other-radio" (a file for another radio; params.board names it), "wrong-key" (it
@@ -64,7 +64,7 @@ export async function identify(data, fb) {
 export function placedWindows(prof) {
 	if (!prof.placement) return prof.windows;
 	const pl = prof.placement, pd = prof.placed, tab = prof.windows[1];
-	return [[pl.code, prof.windows[0][1], pd.code[1]], [tab[0], pl.tables_len ?? tab[1], pd.tables[1]], ...prof.windows.slice(2)];
+	return [[pl.code, prof.windows[0][1], pd.code[1]], [pl.tables ?? tab[0], pl.tables_len ?? tab[1], pd.tables[1]], ...prof.windows.slice(2)];
 }
 
 // The windows a merge of this profile writes, [[addr, length]] (stockfw.layout): the placed windows and the descriptor
@@ -97,16 +97,21 @@ export async function place(prof, segs, fb) {
 	const pl = prof.placement;
 	const m = prof.map || byCodeSha(fb.codec_maps, prof.windows[0][2])[0];
 	if (!m) throw new StockError(`no codec map for ${prof.name}: its code can't be moved`, "unmapped");
-	const [[, code], [tabAddr, tables], ...extra] = segs;
-	let moved, tab;
+	const [[, code], [stockTab, tables], ...extra] = segs;
+	let moved, tab, tabAddr = stockTab;
 	try {
-		moved = await moveCode(code, m, pl.code);
-		tab = moveBranches(tabAddr, tables.slice(0, pl.tables_len ?? tables.length), m, pl.code);
+		if (pl.tables !== undefined) {
+			[moved, tab] = await moveWindow(code, tables, m, pl.code, pl.tables);
+			tabAddr = pl.tables;
+		} else {
+			moved = await moveCode(code, m, pl.code);
+			tab = moveBranches(tabAddr, tables.slice(0, pl.tables_len ?? tables.length), m, pl.code);
+		}
 	} catch (e) {
 		if (e instanceof MapError) throw new StockError(`can't move the codec: ${e.message}`);
 		throw e;
 	}
-	if (branchesIn(m, tabAddr, tab.length) !== (m.branches || []).length) throw new StockError("a branch into the code lies outside the tables the merge keeps");
+	if (pl.tables === undefined && branchesIn(m, tabAddr, tab.length) !== (m.branches || []).length) throw new StockError("a branch into the code lies outside the tables the merge keeps");
 	const want = placedWindows(prof);
 	const got = [moved, tab, ...extra.map(([, d]) => d)];
 	for (const [i, d] of got.entries()) {
@@ -134,6 +139,8 @@ export async function extract(data, key, fb, profiles = fb.profiles, boardId = n
 			"other-radio", { board: prof.board, file: prof.name });
 	}
 	if (data.length !== prof.size) throw new StockError(`size ${data.length}, expected ${prof.size}`);
+	// a file for another radio that gives this one's codec (file_radio) is encrypted with that radio's key: derived here
+	if (prof.file_radio) key = await deriveKey(data, prof.key_sha256, fb);
 	const segs = parseContainer(data, fb);
 	if (JSON.stringify(segs) !== JSON.stringify(prof.segments)) throw new StockError("unexpected segment table");
 	const out = [];
@@ -170,6 +177,51 @@ export async function fromFlash(flash, fb, profiles = fb.profiles, base = 0x0800
 		const desc = descriptor(prof, fb);
 		parts = await read([...placedWindows(prof), [fb.descriptor.addr, fb.descriptor.len, await sha256(desc)]]);
 		if (parts) return { profile: prof, segments: parts };
+	}
+	return null;
+}
+
+// Why a codec source can't give the radio's bootloader key (stockfw.codec_only), or null when it can
+export const codecOnly = (prof) => (prof?.file_radio
+	? `${prof.name} is ${prof.file_radio} firmware: it gives the codec only, not the bootloader key. The key comes from a stock file for the radio itself, a key file or the radio`
+	: null);
+
+// The codec in a read where another firmware moved it (stockfw.from_moved): {profile, segments, at} or null. Every
+// word-aligned codec signature is a candidate start; for every profile whose map's table window moves as one block,
+// the moves are read from the copy and undone (unmoveWindow), the stock SHA-256s checked, then placed as a merge from
+// the stock file places it. fromFlash first: this is for what it doesn't find
+export async function fromMoved(flash, fb, profiles = fb.profiles, base = 0x08000000) {
+	const cands = [];
+	for (const prof of Object.values(profiles)) {
+		const m = prof.placement ? prof.map || byCodeSha(fb.codec_maps, prof.windows[0][2])[0] : null;
+		if (!m || m.code.len !== prof.windows[0][1]) continue;
+		try {
+			tableWindow(m);
+		} catch (e) {
+			continue;
+		}
+		cands.push([prof, m]);
+	}
+	if (!cands.length) return null;
+	for (let o = 0; o + 4 <= flash.length; o += 4) {
+		if (u32le(flash, o) !== fb.codec_sig) continue;
+		for (const [prof, m] of cands) {
+			const got = await unmoveWindow(flash, base, m, base + o);
+			if (!got) continue;
+			const parts = [[prof.windows[0][0], got[0]], [prof.windows[1][0], got[1]]];
+			let ok = true;
+			for (const [a, n, want] of prof.windows.slice(2)) {
+				const d = flash.slice(a - base, a - base + n);
+				if (a < base || d.length !== n || (await sha256(d)) !== want) { ok = false; break; }
+				parts.push([a, d]);
+			}
+			if (!ok) continue;
+			try {
+				return { profile: prof, segments: await place(prof, parts, fb), at: base + o };
+			} catch (e) {
+				if (!(e instanceof StockError)) throw e;
+			}
+		}
 	}
 	return null;
 }

@@ -17,11 +17,10 @@
 // Which radios: a board with CPS radio types ([cps] in board.toml) that installs through its USB bootloader with a
 // known key (family usb-dfu, key_sha256). Everything else about the radio comes from the board data.
 
-import { hex, sha256, u32le } from "./bytes.js";
+import { hex, sha256 } from "./bytes.js";
 import { LinkError, parseRadioInfo, RADIO_INFO_LEN } from "./link.js";
 import { findKey } from "./bootkey.js";
-import { fromFlash, place } from "./stockfw.js";
-import { byCodeSha, unmoveCode, unmoveBranches } from "./codecmap.js";
+import { fromFlash, fromMoved } from "./stockfw.js";
 import { profilesFor } from "./codecsave.js";
 
 export const CLIP = 2045;			// the most an R request asks (open-firmware-cps.md 2.1)
@@ -171,67 +170,19 @@ export async function keyFromImage(img, board, keyLen) {
 	return key && (await sha256(key)) === board.key_sha256 ? key : null;
 }
 
-// The table windows of a copy whose code runs elsewhere: at their stock address, as stock has them, or with the
-// islands' calls into the code re-encoded for wherever a tool put the code. The full window's SHA-256, or (for a
-// profile whose merge cuts the tables, placement.tables_len) the codec's own data at its start; the rest isn't written
-async function tablesAt(img, base, prof, m) {
-	const [ta, tl, tsha] = prof.windows[1];
-	const raw = img.subarray(ta - base, ta - base + tl);
-	if (ta < base || raw.length !== tl) return null;
-	const tw = (m.table_windows || [])[0];
-	const cut = prof.placement?.tables_len;
-	for (const t of [raw.slice(), unmoveBranches(ta, raw, m)]) {
-		if (!t) continue;
-		if ((await sha256(t)) === tsha) return t;
-		if (cut && tw?.min_len && tw.min_start === ta && cut <= tw.min_len && (await sha256(t.subarray(0, tw.min_len))) === tw.min_sha256) {
-			const out = new Uint8Array(tl);
-			out.set(t.subarray(0, tw.min_len));
-			return out;
-		}
-	}
-	return null;
-}
-
 // The codec in a read of the MCU flash (img from base): {profile, segments (as the merge writes them), save (what
 // codecsave.js keeps), where}, or null. First the forms stockfw.fromFlash knows (stock addresses, RadioFoundry's
-// placement); then a copy another firmware moved anywhere: found by the codec's first word at a word boundary, the
-// move undone with the codec map, the stock SHA-256s checked, then placed and checked as a merge from the stock file
+// placement); then a copy another firmware moved anywhere (stockfw.fromMoved: the code at any word boundary, the
+// tables at their stock address or moved, the move undone with the codec map, the stock SHA-256s checked), placed as a
+// merge from the stock file places it. Every profile for the radio is tried, a codec from another radio's file too
+// (the MD-9600 codec an open-firmware install leaves on a DM-1701)
 export async function codecFromImage(img, base, board, fb) {
 	const profs = profilesFor(board, fb);
 	const save = (prof, segs) => segs.filter(([a]) => !(prof.placement && a === fb.descriptor.addr));
 	const known = await fromFlash(img, fb, profs, base);
 	if (known) return { ...known, save: save(known.profile, known.segments), where: "known" };
-	const sig = fb.codec_sig;
-	for (const prof of profs) {
-		const m = prof.map || byCodeSha(fb.codec_maps, prof.windows[0][2])[0];
-		if (!m) continue;
-		const len = prof.windows[0][1];
-		for (let o = 0; o + len <= img.length; o += 4) {
-			if (u32le(img, o) !== sig) continue;
-			const code = await unmoveCode(img.subarray(o, o + len), m, base + o);
-			if (!code) continue;
-			const tables = await tablesAt(img, base, prof, m);
-			if (!tables) continue;
-			const segs = [[prof.windows[0][0], code], [prof.windows[1][0], tables]];
-			let extraOk = true;
-			for (const [a, n, want] of prof.windows.slice(2)) {
-				const d = img.slice(a - base, a - base + n);
-				if (d.length !== n || (await sha256(d)) !== want) { extraOk = false; break; }
-				segs.push([a, d]);
-			}
-			if (!extraOk) continue;
-			let segments = segs;
-			if (prof.placement) {
-				try {
-					segments = await place(prof, segs, fb);
-				} catch (e) {
-					continue;
-				}
-			} else if ((await sha256(tables)) !== prof.windows[1][2]) continue;
-			return { profile: prof, segments, save: save(prof, segments), where: hex(base + o) };
-		}
-	}
-	return null;
+	const moved = await fromMoved(img, fb, profs, base);
+	return moved ? { profile: moved.profile, segments: moved.segments, save: save(moved.profile, moved.segments), where: hex(moved.at) } : null;
 }
 
 // The key and the codec from a backup's MCU flash read (as far as it got)

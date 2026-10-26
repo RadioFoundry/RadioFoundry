@@ -401,9 +401,9 @@ def unmove_window(flash, base, m, code_at):
         if got is None:
             return None
         deltas.add((got - r["target"]) & 0xFFFFFFFF)
-    if len(deltas) != 1:
+    if len(deltas) > 1:
         return None
-    dt = deltas.pop()
+    dt = deltas.pop() if deltas else 0	# a code that holds no address in its tables: they are where stock had them
     dt = dt - (1 << 32) if dt >= 1 << 31 else dt
     for r in m["island_ptrs"] + m["table_refs"]:
         _write(code, r, r["target"])

@@ -117,7 +117,9 @@ test("stock-file boards: profiles and layouts", () => {
 		assert.deepEqual(profs.map((p) => p.name).sort(), [...b.codec.sources].sort(), b.id);
 		for (const p of profs) {
 			assert.equal(p.codec_profile, b.codec.id, p.name);
-			assert.equal(p.key_sha256, b.key_sha256, p.name);
+			// a file for another radio (file_radio) gives the codec only, encrypted with that radio's key
+			if (p.file_radio) assert.notEqual(p.key_sha256, b.key_sha256, p.name);
+			else assert.equal(p.key_sha256, b.key_sha256, p.name);
 			const lay = stockfw.layoutWindows(p, fb);
 			for (const [a, n] of lay) assert.ok(a + n <= b.flash_end && b.codec.windows.some(([wa, wn]) => wa === a && wn === n), p.name);
 			if (p.placement) assert.ok(lay.slice(0, -1).every(([a, n]) => a + n <= fb.descriptor.addr), p.name);
