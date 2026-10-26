@@ -45,7 +45,7 @@ DM-1701 spec ([hardware-dm1701.md](hardware-dm1701.md)) and the codec spec ([cod
 | AT1846S DMR AF gain | needs 0x44 = 0x07FF | less AF gain is enough ([hardware-dm1701.md](hardware-dm1701.md) 5.5) | | 2 |
 | GPS | not fitted | G models: USART1 RX PA10, power PA9 | G models | 9 |
 | DFU key | DM-1701 key | MD-UV380 key | same | 11 |
-| Stock codec | V02.06 at 0x08074714 | four 19.26 builds, same codec, different addresses | ? | 12 |
+| Stock codec | V02.06 at 0x08074714 | TYT and Retevis builds 18.11 to 219.74, same codec, different addresses | 10 W builds of 19.74 and 219.74, same codec | 12 |
 | Wake from the alarm / sleep | orange key | SK2 + PTT held together | as 5 W | 5 |
 | Open-firmware CPS radio type | 8 (BGR) / 10 (RGB) | 6 | 6 | 10 |
 
@@ -274,7 +274,12 @@ Entering the bootloader: hold PTT and the top side key (SK1) at power on (unveri
 loader, protocol and sector list are the DM-1701's ([hardware-dm1701.md](hardware-dm1701.md) 15.2). The image is XOR-encrypted with the MD-UV380 key, SHA-256
 `739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991`, first bytes 00 AA 89 89, the same key for the
 MD-UV390 and the MD-2017 ([hardware-dm1701.md](hardware-dm1701.md) 15.3). `stockfw.derive_key` recovers exactly this
-key from each of the four 19.26 vendor files (measured).
+key from every vendor file listed in [codec-mduv380.md](codec-mduv380.md), TYT's and Retevis's (measured).
+
+**Retevis RT3S.** Its bootloader takes the same key. Every RT3S file Retevis publishes (18.11, 18.16, 19.06, 219.60) is
+encrypted with it, its 18.11 and 18.16 files are TYT's byte for byte, Retevis ships TYT's updater (the same file, by
+SHA-256), and its instructions give the same entry keys (side key 1 and PTT at power on). That settles what the RT3S
+updater sends; the RT3S bootloader itself has not been dumped (its USB strings and GPIO check, ?).
 
 The application carries the text "Digital Radio in USB mode" and the string "AnyRoad Technology" and no USB VID / PID
 literal (images). It is plain and executed in place from 0x0800C000, so a flash readout equals the decrypted
@@ -302,17 +307,19 @@ application at 0x0800C000), blank model field. TYT names four builds per release
 | P | CSV-GPS | GPS |
 | S | GPS-REC | GPS |
 
-The 19.26 file names and hashes are in
-[codec-mduv380.md](codec-mduv380.md). Plus 10 W stock files exist but none was found at a reputable source (?).
+Every supported file's name and hash is in [codec-mduv380.md](codec-mduv380.md), the Plus 10 W builds of 19.74 and
+219.74 among them. TYT's release notes number the lines: 019.xx without AES, 119.xx AES with 16 groups, 219.xx AES with
+255 groups.
 
 ---
 
 ## 12. Codec
 
 The AMBE+2 codec is in every MD-UV380 stock application, the same library as the DM-1701's with the DM-1701's entry
-offsets, relinked, at a different address in each of the four 19.26 builds. Its output is bit-identical to the
-DM-1701 codec's in the emulator for all four. The merge places it like the DM-1701's: tables at their stock address,
-the code after them, the descriptor at the end of sector 11; the application has sectors 3-9 and "keep codec" works.
+offsets, relinked, at a different address in each build (TYT 18.11 to 219.74, Retevis RT3S 19.06 and 219.60). Its
+output is bit-identical to the DM-1701 codec's in the emulator for every build. The merge places it like the
+DM-1701's: tables at their stock address, the code after them (or at the start of sector 10 where it doesn't fit),
+the descriptor at the end of sector 11; the application has sectors 3-9 and "keep codec" works.
 Addresses, tags and checksums, and the extraction recipe: [codec-mduv380.md](codec-mduv380.md).
 
 ---

@@ -22,14 +22,17 @@ change when one fails.
 
 ## Status
 
-Not run on a radio.
+Not run on a radio. The codec builds were checked on a host only (untested on the radio): every TYT 19.26 and 19.74
+build (5 W and 10 W), TYT and Retevis 18.11 and 18.16, Retevis RT3S 19.06 and 219.60, TYT 219.74. A first DMR test
+should use a 19.26 file and one whose code goes to the start of sector 10 (RT3S 219.60, any 219.74, S19.74).
 
 ## 0. Before anything
 
 1. Back up the radio: the codeplug with the stock CPS, then the whole SPI flash and the internal flash through the
    stub (`rfoundry backup`). The factory calibration is in the SPI flash security registers; RadioFoundry only reads it.
-2. Build: `make BOARD=mduv380` (5 W) or `make BOARD=mduv380 POWER=10w` (Plus 10 W). With one of the four TYT 19.26
-   files in `codecs/`, the build also writes `_codec.bin` with the codec merged in.
+2. Build: `make BOARD=mduv380` (5 W) or `make BOARD=mduv380 POWER=10w` (Plus 10 W). With a supported TYT or Retevis
+   file in `codecs/` ([codec-mduv380.md](../spec/codec-mduv380.md), "Stock files"), the build also writes `_codec.bin`
+   with the codec merged in.
 3. Flash with `rfoundry flash` through the TYT bootloader (PTT and SK1 held at power on) or the web flasher.
 
 ## 1. It boots

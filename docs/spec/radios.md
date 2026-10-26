@@ -87,8 +87,9 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
   It needs a key map, no LCD row offset and its own panel-type table, battery and volume ADC scaling, power tables
   (5 W and Plus 10 W, whose PA band select and backlight pins are swapped), its own DFU key and GPS on USART1 (PA10,
   power PA9; an earlier note here said USART3, which is the MD-380's). No new drivers.
-- Codec: the TYT 19.26 files (V/D non-GPS, P/S GPS) carry the same codec library as the DM-1701, with the same entry
-  offsets, in the same flash sectors ([codec-mduv380.md](codec-mduv380.md)).
+- Codec: the TYT and Retevis files from 18.11 to 219.74 (V/D non-GPS, P/S GPS) carry the same codec library as the
+  DM-1701, with the same entry offsets, placed in the same flash sectors ([codec-mduv380.md](codec-mduv380.md)). The
+  RT3S takes the TYT key.
 
 ### TYT MD-9600 / Retevis RT90
 

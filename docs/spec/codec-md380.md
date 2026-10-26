@@ -1,7 +1,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 # MD-380: hosting the AMBE+2 codec
 
-The merge moves the code to sector 11 (Hosting); the placed layout is checked on a host.
+The merge moves the code to sector 11 (Hosting), or for a 35.14 file next to its tables in sector 10; the placed
+layout is checked on a host.
 
 Rule: the radio runs exactly the codec its own TYT firmware shipped. The user's machine extracts it from a firmware
 file the user supplies. No codec bytes go in this repository or in released binaries.
@@ -10,9 +11,14 @@ file the user supplies. No codec bytes go in this repository or in released bina
 
 | version | file | size | sha256 | code window |
 |---|---|---|---|---|
-| **D002.032 (the only supported one)** | `MD-380-D2.32(AD).bin` (TYT "Firmware 2.32", model string "JST51") | 994816 (0xF2E00) | `e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43` | 0x08050C44 |
+| **D002.032** | `MD-380-D2.32(AD).bin` (TYT "Firmware 2.32", model string "JST51") | 994816 (0xF2E00) | `e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43` | 0x08050C44 |
+| D35.14 | `TYT-72310-11-MD380-D35.14.bin` (MD-380) | 947712 (0xE7400) | `ff6c3d79b205391c9c2096f8e4367c514c1e1e4dac7d421ed69077e5b42eaf2f` | 0x08087A10 |
+| S35.14 | `TYT-72310-11-MD390-S35.14.bin` (MD-390, GPS) | 951808 (0xE8400) | `167e79f18e78d7d31460dc577c4efd0cb881344f5ee44a4c9a30798ead0fb79d` | 0x08088AC4 |
 
-Other versions (for example the D13.20 / S13.20 family) sit at other addresses and need their own profile.
+Both 35.14 files use the MD-380 key and the single-segment container. They carry a different codec build from
+D002.032's: the MD-UV380 family's, with its entry offsets ([codec-mduv380.md](codec-mduv380.md), "Entry points"; FEC
+decode +0xB78), behaving bit-identically to it, and three table windows (35.14, below). Other versions (for example the
+D13.20 / S13.20 family) sit at other addresses and need their own profile.
 
 ## Container and encryption
 
@@ -183,8 +189,24 @@ its original address ([codec-placement.md](codec-placement.md), "STM32 radios").
   and with the CRCs above), then the signature word 0x4FF0E92D at 0x080E0000, then the CRC-32 of every window (about
   112 KB). Otherwise the vocoder reports no codec and the radio is FM only. Entry points are offsets from the code start (encode +0x14C, decode +0x604, the rest in
   `vocoder_md380.c`), the same offsets as in the original layout.
-* **Profile id.** `md380-d2032-s11` (debug link VERSION `codec=`). A build from before the move reports
-  `md380-d2032`, so the tools know the codec isn't where the new layout keeps it and ask for the firmware file.
+* **Profile id.** `md380-d2032-s11` (debug link VERSION `codec=`), for a codec from any supported file: the descriptor's
+  tag tells the builds apart. A build from before the move reports `md380-d2032`, so the tools know the codec isn't
+  where the new layout keeps it and ask for the firmware file.
+
+### 35.14
+
+The main table window stays at its original address in sector 9, the code goes right after it, the two small windows
+stay at their original addresses in sector 11 (`stockfw.py` PROFILES, `boards/md380/vocoder_md380.c`):
+
+| build | tag | code (address, length, CRC-32) | tables (address, length, CRC-32) | small tables (address, length, CRC-32) |
+|---|---|---|---|---|
+| D35.14 | 0x00443514 | 0x080C45D0, 0x10366, 0x83A0361F | 0x080B7868, 0xCD68, 0x810CC7B3 | 0x080ECC98, 0x87C, 0xA5F0D272; 0x080F0C14, 0xE, 0xEFDB66A5 |
+| S35.14 | 0x00533514 | 0x080C5710, 0x10372, 0xD953C7A8 | 0x080B8928, 0xCDE8, 0x68B2CC40 | 0x080EDDD8, 0x87C, 0xA2B85A33; 0x080F1D54, 0xE, 0xEFDB66A5 |
+
+* Sectors 9, 10 and 11 (sector 8 stays empty); the application keeps sectors 3-7, so "keep codec" works the same way.
+  An update keeps sectors 8-11 whichever build the codec came from.
+* Code and tables as placed were checked on a host over a 300 frame stress run: the same hash as D002.032's and the
+  DM-1701's codec, from the whole image, from the windows only and from the placed layout.
 * **Calls.** Through the generic veneer `platform/stm32f4/codec_call.c`, as on the DM-1701, with the init sequence and
   per-frame calls above. The state blocks live in CCM.
 
@@ -232,6 +254,7 @@ other access faults.
   1 kHz tone and a DTMF key into the mic, received on a second radio or the SDR bench. AGC (0x3840): a quiet and a
   loud talker, levels and pumping between words; whether the parameter block's values after init are usable.
 
-* Other firmware versions (D13.20 and similar) need their own profile; only D002.032 is supported.
+* Other firmware versions (D13.20 and similar) need their own profile; D002.032, D35.14 and S35.14 are supported.
+* On a radio: voice through a 35.14 codec as placed (untested on the radio).
 * Moving the table windows too (rewriting the `table_refs`) would free sector 8 and pack the codec into sector 11
   ([codec-placement.md](codec-placement.md)). The application has 464 KB and doesn't need it yet.
