@@ -469,6 +469,16 @@ dialog.confirm h2 { margin-top: 0; }
 	border-radius: var(--radius-sm); background: var(--bg); color: var(--text); resize: vertical; }
 .report-check { display: flex; gap: var(--space-2); align-items: baseline; margin-bottom: var(--space-2); }
 
+/* the manual install kit (static/js/flasher/manual.js): the panel in place of a step, the line under a failure */
+.kit-list { list-style: none; padding: 0; margin: var(--space-3) 0; display: grid; gap: var(--space-2); }
+.kit-list li { position: relative; padding-left: 1.5em; }
+.kit-list li::before { content: "▸"; position: absolute; left: 0.25em; color: var(--accent); }
+.kit-list .file-pick { margin: var(--space-2) 0 0; }
+.kit-line { margin-top: var(--space-3); }
+.kit-line p { margin: 0; }
+.kit-line .actions { margin: var(--space-2) 0 0; align-items: center; }
+.kit-error { color: var(--bad); }
+
 /* codeplug editor (static/js/editor/): toolbar, tabs, the table, forms */
 .page-codeplug .wrap { max-width: 1400px; }
 .editor { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }

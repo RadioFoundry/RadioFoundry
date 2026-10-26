@@ -324,7 +324,7 @@ function connectPanel(onReady, { onUpdateMode = null } = {}) {
 		} catch (e) {
 			clearInterval(tick);
 			if (ac.signal.aborted && e.message === "stopped") return;
-			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.no_rom"), "bad"), powerHints(), reportLine());
+			show({ led: "off", screen: "off" }, notice(t("flash.c7.connect.no_rom"), "bad"), powerHints(), ctx.manualKitLine?.(), reportLine());
 			act(button(t("flash.c7.connect.try_again"), () => powerCycle(), { primary: true }));
 		}
 	};
