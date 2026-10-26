@@ -230,6 +230,10 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
     d = _deltas(before, after, ["data.sms_received", "data.tms_acks_sent", "data.tx_ok", "data.tx_failed"])
     print("radio deltas:", d, "event:", after["data.event"], after["data.event_id"])
     assert d["data.sms_received"] == 1 and d["data.tms_acks_sent"] == 1 and d["data.tx_failed"] == 0, d
+    # The ACK was the radio's own transmission: named in the data view, and not one that lights the screen
+    if "data.tx_last_kind" in after:
+        assert after["data.tx_last_kind"] == "reply" and after["data.tx_last_ms"] != before["data.tx_last_ms"], after
+        assert radio.view(["core"]).get("tx_auto") == "1"
     m = radio.link.inbox(0)
     assert m is not None and m["text"] == text and m["src"] == BENCH_SRC and m["unread"], m
     radio.link.mark_read(0)

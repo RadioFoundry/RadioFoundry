@@ -87,7 +87,8 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "squelch=%u\nmonitor=%u\ntone_ok=%u\n", v->squelch, v->monitor, v->tone_ok);
 	dl_text(t, "rssi_dbm=%d\nnoise=%u\n", v->rssi_dbm, v->noise);
 	dl_text(t, "tx_elapsed_ms=%u\ntot_s=%u\n", (unsigned)v->tx_elapsed_ms, v->tot_s);
-	dl_text(t, "last_rx_ms=%u\n", (unsigned)v->last_rx_ms);
+	dl_text(t, "last_rx_ms=%u\nlast_tx_ms=%u\ntx_auto=%u\nwakes=%u\n", (unsigned)v->last_rx_ms,
+		(unsigned)v->last_tx_ms, v->tx_auto, radio_view_wakes(v));
 	dl_text(t, "vfo_step_hz=%u\n", (unsigned)v->vfo_step_hz);
 	dl_text(t, "codeplug=%s\n", v->source < 3 ? sources[v->source] : "?");
 	dl_text(t, "hotspot=%u\n", v->hotspot);
@@ -263,7 +264,7 @@ static void link_section(dl_text_t *t)
 		(unsigned)u.count, (unsigned)u.locked);
 	dl_text(t, "ui.banner=%s\nui.toast=%s\nui.query=%s\nui.draws=%u\n", u.banner, u.toast, u.query,
 		(unsigned)u.draws);
-	dl_text(t, "input.idle_ms=%u\n", (unsigned)input_idle_ms());
+	dl_text(t, "input.idle_ms=%u\nui.backlight=%u\n", (unsigned)input_idle_ms(), ui_backlight());
 	dl_text(t, "input.source=%s\n", input_last_source() == INPUT_SRC_HOST ? "host" : "keys");
 	dl_text(t, "input.raw_keys=0x%08x\ninput.injected=0x%08x\n", (unsigned)input_raw_keys(),
 		(unsigned)input_injected_keys());

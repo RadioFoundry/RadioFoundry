@@ -241,6 +241,9 @@ typedef struct {
 	int16_t rssi_dbm;
 	uint8_t noise;
 	uint32_t tx_elapsed_ms;	// time in TX, while RS_TX
+	bool tx_auto;		// that TX is the radio's own, not the user's: a data list (ARS, an ACK), a roaming probe, an
+				// APRS beacon. It doesn't light the screen (radio_view_wakes)
+	uint32_t last_tx_ms;	// hal_millis() when the last transmission began, 0 = none yet
 	uint16_t tot_s;		// TX time-out, 0 = none
 	uint32_t last_rx_ms;	// hal_millis() at the end of the last reception, 0 = none yet
 	uint32_t vfo_step_hz;	// the VFO's step in use: as set, or with vfo_step_auto the width's (12.5 or 25 kHz)
@@ -481,6 +484,11 @@ bool radio_power_off_busy(void);
 void radio_req_power_off_cancel(void);
 // The backlight percent for the UI: batt_backlight_pct with the settings and the current battery level
 uint8_t radio_backlight_pct(uint8_t brightness, uint32_t idle_ms);
+// The radio does something the user would want to see, so the backlight comes on: a transmission they keyed, a
+// refused PTT, a call that plays (DMR) or an open squelch (FM). Not the radio's own traffic: ARS, ACKs, location
+// answers, roaming probes, APRS beacons, data or calls it receives but doesn't play, a broadcast program, a hotspot.
+// What reaches the user as a message, a call alert or an emergency wakes it through the UI (its banner)
+bool radio_view_wakes(const radio_view_t *v);
 #if CONFIG_HOTSPOT
 // Bumped when the hotspot engine reports a change (hotspot_radio_ops_t.changed), for the UI's hotspot screen
 uint32_t radio_hotspot_serial(void);

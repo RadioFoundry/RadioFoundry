@@ -171,6 +171,13 @@ typedef struct
 	uint32_t txFailed;						// ... dropped by the stack (no repeater, refused, time-out)
 	uint32_t txGaveUp;						// lists never started: no clear channel in time
 	uint8_t  txLastError;					// dmr_tx_error_t of the last list
+	uint8_t  txLastKind;					// what the last list started was for (dmrDataServiceTxKindName)
+	uint32_t txLastMs;						// when it started (the service's clock), 0 = none yet
+	// ARS timing, so that an unattended transmission can be told apart. Not counters: these and the two above survive
+	// dmrDataServiceResetStats
+	uint32_t arsLastMs;						// the last registration or deregistration given to the air, 0 = none
+	uint32_t arsNextMs;						// when the next registration is due, 0 = none pending
+	uint8_t  arsAttempts;					// registrations sent since the last change of channel, ID or server
 	uint32_t txGuarded;						// lists held back by the guard after our last one
 	uint32_t ipChains;						// transmissions that carried more than one IP packet
 	uint32_t ipChained;						// ... the packets in them after the first
@@ -309,6 +316,10 @@ int dmrDataServiceMessageCount(void);
 const dmrDataMessage_t *dmrDataServiceMessage(int index);	// 0: the newest
 
 void dmrDataServiceGetStats(dmrDataStats_t *stats);
+// A short name for dmrDataStats_t.txLastKind: "other" "sms" "signal" "ars" "reply" "emergency" "ip" "udp"
+const char *dmrDataServiceTxKindName(uint8_t kind);
+// What the list being started now is for, as dmrDataServiceTxKindName gives it (the host's txStart may log it)
+const char *dmrDataServiceTxStartingName(void);
 void dmrDataServiceResetStats(void);
 
 #endif
