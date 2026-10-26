@@ -84,12 +84,24 @@ anything set aside).
 | `other-radio` | The file is identified for another radio the flasher knows (its SHA-256, a key that opens it, the codec's hashes). `extract()` refuses it by name before decrypting it, here and in rfoundry | pick this radio's file, or open the other radio's page |
 | `wrong-key` | A vendor container no known bootloader key opens: another model, or a modified build | pick the manufacturer's file for this radio |
 | `not-vendor` | No vendor container: a plain image, another firmware project's build, a zip without a firmware file | pick the manufacturer's file, not another project's |
-| `unmapped` | This radio's build, but no codec map for it yet | pick a listed version, or send the file |
+| `unmapped` | This radio's build, but no codec map for it yet: a known build without a profile (kind `key`), an unknown one whose codec was found (`codec-unmapped`), or a C-SKY codec no profile describes | pick one of the supported files, which the notice lists in full (`supportedFiles()`), or send the file |
 | `damaged` | A cut-short file or a damaged zip | download it again |
 | `internal` | A check that fails after the file was identified: a fault in the page or its data, not the file | nothing: it has been reported (or report it, without error reports) |
 
+For `unmapped` the notice names the version when the file is known, says when the file's bootloader key still works,
+and lists every supported file (folded above 12). When the install goes on without the file's codec (a kept codec),
+`keepNote()` picks a second notice on the codec step that says what DMR voice then depends on: the radio's verified
+codec, an unverified one, or none.
+
 Each notice gives what happened, why and what to do. The exact message is under **Technical details** and in the error
 report. The same notices come on the HR_C7000 pages (`c7000ui.js` gets `problemNotice` and `failureNotice`).
+
+A radio that doesn't answer the debug link probe is told apart by what its port gave (`link.js` `silence()`,
+`whyNoAnswer()`): nothing (`silent`), debug link frames that weren't the reply (`link`), or other bytes (`other`). When
+the first byte is `-`, the open-firmware CPS's refusal ([open-firmware-cps.md](../spec/open-firmware-cps.md) 2), the
+page reads the radio info (area 9, section 4) and checks its structure: a match is `openfw`, a radio on another open
+firmware (the OpenGD77 family), and the "current firmware" step offers **Other / Not sure**. Only that read is sent,
+never a `C` control command. A RadioFoundry build with the CPS shim but without the debug link answers the same way.
 
 The browser's own USB and serial errors (`NetworkError`, `InvalidStateError`, a failed `fetch`) say little. `errorText()`
 puts what to do in front of them: close the program that holds the port, check the cable, the Windows driver or the

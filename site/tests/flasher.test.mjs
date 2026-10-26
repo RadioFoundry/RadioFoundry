@@ -243,7 +243,7 @@ test("a file that can't be used is explained: another radio, not a vendor file, 
 	const fbY = { ...fbX, boards: { ...fbX.boards, y: { id: "y", name: "Radio Y" } } };
 	const pick = async (name, data, f = fbX, board = "x", opts) => explain.pickProblem(await vendorfile.openVendorFile(name, data, f, board), board, opts);
 	// a build of this radio without a codec map: the codec can't be taken, but a restore of the original firmware can use it
-	assert.deepEqual(await pick("new.bin", stock), { problem: "unmapped", file: "new.bin", known: null });
+	assert.deepEqual(await pick("new.bin", stock), { problem: "unmapped", file: "new.bin", known: null, key: true });
 	assert.equal(await pick("new.bin", stock, fbX, "x", { need: "key" }), null);
 	// a mapped build: nothing wrong
 	assert.equal(await pick("x.bin", stock, await radioX({ profiles: { [fx.stock_sha256]: { ...fx.profile, board: "x" } } })), null);
@@ -270,6 +270,50 @@ test("a file that can't be used is explained: another radio, not a vendor file, 
 	// errors that aren't about a file stay as they are
 	assert.equal(explain.errorProblem(new Error("stopped")), null);
 	assert.equal(explain.errorProblem(new stockfw.StockError("x", "internal")).problem, "internal");
+});
+
+// A known build of this radio without a codec map (stockfw KNOWN_FILES only): named, its key used, the codec refused
+// with the version, the file offered for analysis, and every supported file listed to pick instead
+test("a known build without a codec map: the version named, the file offered, the supported files listed", async () => {
+	const sources = ["Radio A V1 (a-v1.bin)", "Radio A V2 (a-v2.bin)"];
+	const fbX = await radioX({ known_files: { [fx.stock_sha256]: "Radio A V0.9" } });
+	fbX.boards.x.codec = { sources };
+	const opened = await vendorfile.openVendorFile("a-v09.bin", stock, fbX, "x");
+	assert.equal(opened.best.match.kind, "key");
+	const p = explain.pickProblem(opened, "x");
+	assert.deepEqual(p, { problem: "unmapped", file: "a-v09.bin", known: "Radio A V0.9", key: true });
+	assert.ok(explain.OFFER.has(p.problem));
+	assert.equal(vendorfile.analysisCandidate(opened, fbX, "x").file, opened.best);
+	assert.equal(explain.pickProblem(opened, "x", { need: "key" }), null);
+	// the full list, a copy of the board's
+	const got = explain.supportedFiles(fbX, "x");
+	assert.deepEqual(got, sources);
+	got.push("z");
+	assert.equal(fbX.boards.x.codec.sources.length, 2);
+	// C-SKY radios: the profiles that describe a whole stock file; none for an unknown radio
+	const c = { c7000: { profiles: [{ name: "B 001", board: "b", stock_file: {} }, { name: "B readout", board: "b", stock_file: null },
+		{ name: "C 001", board: "c", stock_file: {} }] }, boards: {} };
+	assert.deepEqual(explain.supportedFiles(c, "b"), ["B 001"]);
+	assert.deepEqual(explain.supportedFiles({ boards: {} }, "q"), []);
+});
+
+// The install goes on without the picked file's codec (decide.js): what the codec step says DMR voice depends on
+test("keeping the radio's codec with a file that gives none is spelled out", () => {
+	const board = { name: "Radio A", keep_codec_supported: true, debuglink_names: ["a"], codec: { id: "a-codec", installed: ["V1"] } };
+	const manifest = { codec: { profile: "a-codec" } };
+	const un = { problem: "unmapped", file: "a.bin", known: "Radio A V0.9", key: true };
+	const keep = (opts) => explain.keepNote(un, decideCodec(board, manifest, opts));
+	// nothing verified it: selected, or a version the user named
+	assert.equal(keep({ requested: KEEP }), "unverified");
+	assert.equal(keep({ stockInstalled: "V1" }), "unverified");
+	// the radio reported its codec, or that it has none and keeping was forced
+	assert.equal(keep({ probe: { board: "a", codec: "a-codec" } }), "ok");
+	assert.equal(keep({ requested: KEEP, probe: { board: "a", codec: null } }), "none");
+	// the codec comes from elsewhere, nothing was decided, or the file is not the issue
+	assert.equal(explain.keepNote(un, { mode: MERGE, source: "saved", expectCodec: true }), null);
+	assert.equal(explain.keepNote(un, null), null);
+	assert.equal(explain.keepNote(null, decideCodec(board, manifest, { requested: KEEP })), null);
+	assert.equal(explain.keepNote({ problem: "not-vendor" }, decideCodec(board, manifest, { requested: KEEP })), null);
 });
 
 // A file known to hold no codec (stockfw.NO_CODEC_FILES), bare or zipped with small language files: named by its
@@ -350,9 +394,10 @@ test("codec extraction checks every window", async () => {
 });
 
 test("keep and merge plans match plan.py", async () => {
-	const { segments: codec } = await stockfw.extract(stock, fromHex(fx.key), fb, profiles);
+	const { profile, segments: codec } = await stockfw.extract(stock, fromHex(fx.key), fb, profiles);
 	assert.deepEqual(makePlan(board, [[board.app_base, image]], KEEP).describe(), fx.keep);
-	assert.deepEqual(makePlan(board, [[board.app_base, image]], MERGE, codec).describe(), fx.merge);
+	assert.deepEqual(makePlan(board, [[board.app_base, image]], MERGE, codec, stockfw.layoutWindows(profile, fb)).describe(),
+		fx.merge);
 	assert.throws(() => makePlan(board, [[board.app_base, image]], MERGE), PlanError);
 	assert.throws(() => makePlan(board, [[0x08074000, image]], KEEP), PlanError);
 });
@@ -455,8 +500,11 @@ test("first install on stock: the codec merged from the stock file, then back up
 	assert.throws(() => decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV" }), DecisionError);
 	const d = decideCodec(sim.board, m, { stockInstalled: "V02.06 CSV", haveStock: true });
 	const { profile, segments: codec } = await stockfw.extract(sim.stock, sim.key, sim.fb);
-	// the merge plans against the merged file's layout; with one stock file that is the board's windows
-	assert.deepEqual(stockfw.layoutWindows(profile, sim.fb), sim.board.codec.windows);
+	// the merge plans against the merged file's layout, one of the board's (its windows are the union of every stock
+	// file's layout)
+	const lay = stockfw.layoutWindows(profile, sim.fb);
+	assert.ok(lay.every(([a, n]) => sim.board.codec.windows.some(([wa, wn]) => wa === a && wn === n)));
+	assert.ok(sim.board.codec.windows.length > lay.length);
 	assert.deepEqual(codec.map(([a, d]) => [a, d.length]), stockfw.layoutWindows(profile, sim.fb));
 	const plan = makePlan(sim.board, segments(m, image), d.mode, codec, stockfw.layoutWindows(profile, sim.fb));
 	radio.enterBootloader();
@@ -557,11 +605,12 @@ test("merge on a radio without a codec, then restore stock from the bundle's sto
 	const p = await probe(link);
 	assert.equal(p.codec, "absent");
 	const key = await stockfw.deriveKey(sim.stock, sim.board.key_sha256, sim.fb);
-	const { segments: codec } = await stockfw.extract(sim.stock, key, sim.fb);
+	const { profile, segments: codec } = await stockfw.extract(sim.stock, key, sim.fb);
 	const d = decideCodec(sim.board, fx.manifest, { probe: p, haveStock: true });
 	assert.equal(d.mode, MERGE);
 	radio.enterBootloader();
-	await new Dfu(radio.dfuTransport(), noWait).run(makePlan(sim.board, segments(fx.manifest, image), MERGE, codec), key);
+	await new Dfu(radio.dfuTransport(), noWait).run(makePlan(sim.board, segments(fx.manifest, image), MERGE, codec,
+		stockfw.layoutWindows(profile, sim.fb)), key);
 	assert.equal((await probe(new Link(radio.serialStream()))).codec, sim.board.codec.id);
 	// back to stock: the whole stock application, codec included, through a restore plan
 	const plan = planStock(sim.stock, key, sim.board, sim.fb);

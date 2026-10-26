@@ -28,7 +28,8 @@ export function pickProblem(opened, boardId, { need = "codec" } = {}) {
 	// an STM32 flash readout (vendorfile.js kind "readout") is named, but neither the codec nor the restore takes one
 	if (best && best.match.kind !== "readout") {
 		if (need === "key" || best.match.kind === "codec") return null;
-		return { problem: "unmapped", file: base(best.path), known: best.match.known || null };
+		// key: the radio's bootloader key opens it, so it still unlocks update mode (STM32 kinds "key", "codec-unmapped")
+		return { problem: "unmapped", file: base(best.path), known: best.match.known || null, ...(best.match.key ? { key: true } : {}) };
 	}
 	if (best) return { problem: "not-vendor", file: base(best.path), known: best.match.known || null };
 	const other = opened.files.find((f) => f.match.board && f.match.board !== boardId);
@@ -39,6 +40,24 @@ export function pickProblem(opened, boardId, { need = "codec" } = {}) {
 	if (!opened.files.length && opened.skipped.some((s) => s.problem === "damaged" || s.problem === "too-deep"))
 		return { problem: "damaged", file: base(opened.skipped.find((s) => s.problem !== "not-firmware").path) };
 	return { problem: "not-vendor", file: base(opened.files[0]?.path || opened.skipped[0]?.path || "") };
+}
+
+// The stock files the codec can be taken from on boardId, by name, for the "select one of these instead" list: an STM32
+// radio's codec sources (rfoundry boards.py), else the C-SKY profiles that describe a whole stock file
+export function supportedFiles(fb, boardId) {
+	const sources = fb.boards?.[boardId]?.codec?.sources;
+	if (sources?.length) return [...sources];
+	return (fb.c7000?.profiles || []).filter((p) => p.board === boardId && p.stock_file).map((p) => p.name);
+}
+
+// What the codec step says when the picked file gives no codec (problem "unmapped") but the install goes on anyway
+// (decide.js decision), as the suffix of its flash.codec.keep_* strings: "unverified" when the codec already in the
+// radio is kept without being checked, so DMR voice depends on it; "none" when the radio reported no codec and keeping
+// was selected anyway; "ok" when the radio reported its codec; null when the file isn't the issue (no problem, no
+// decision yet, or the codec comes from elsewhere)
+export function keepNote(problem, decision) {
+	if (problem?.problem !== "unmapped" || !decision || decision.mode !== "keep") return null;
+	return !decision.expectCodec ? "none" : decision.risk ? "unverified" : "ok";
 }
 
 // The problem behind a thrown error, or null when it isn't a file problem (a cable, a radio, a user's choice)

@@ -356,3 +356,45 @@ export function silence(link) {
 	return { kind, cause: link.probeError ? String(link.probeError.message || link.probeError) : null,
 		received: s.received ?? null, first: first.length ? toHex(first) : null };
 }
+
+// The open-firmware CPS's radio info (open-firmware-cps.md 4: area 9, little endian): {structVersion, radioType, git,
+// built, flashId, features}, or null when the bytes aren't that structure. Checked field by field, so a reply of another
+// protocol that happens to start with "R" isn't taken for it
+export const RADIO_INFO_LEN = 46;
+export function parseRadioInfo(b) {
+	if (!b || b.length < 40) return null;
+	// ASCII, NUL padded: printable characters, then only NULs
+	const text = (o, n) => {
+		const f = b.subarray(o, o + n);
+		const end = f.indexOf(0) < 0 ? n : f.indexOf(0);
+		if (f.subarray(0, end).some((c) => c < 0x20 || c > 0x7E) || f.subarray(end).some((c) => c !== 0)) return null;
+		return String.fromCharCode(...f.subarray(0, end));
+	};
+	const structVersion = u32le(b, 0), radioType = u32le(b, 4), git = text(8, 16), built = text(24, 16);
+	if (structVersion < 1 || structVersion > 15 || radioType > 63 || git === null || built === null) return null;
+	if (built && !/^\d{8,14}$/.test(built)) return null;
+	return { structVersion, radioType, git, built, flashId: b.length >= 44 ? u32le(b, 40) : null,
+		features: b.length >= 46 ? u16le(b, 44) : null };
+}
+
+// A radio whose port refused the debug link probe with the open-firmware CPS's "-" (open-firmware-cps.md 2: the reply to
+// any request it doesn't know) is asked for its radio info, a read that changes nothing on the radio; never a C control
+// command (some save settings or restart the radio). The info, or null when the port isn't that protocol. A
+// RadioFoundry build with the CPS shim but without the debug link (CONFIG_DEBUGLINK=n) answers the same way
+export async function openFirmwareInfo(link) {
+	const first = link.s?.first;
+	if (silence(link).kind !== "other" || first?.[0] !== 0x2D) return null;
+	try {
+		return parseRadioInfo(await link.cpsRead(9, 0, RADIO_INFO_LEN, 1));
+	} catch (e) {
+		return null;
+	}
+}
+
+// silence(), told apart further where the port can be asked: kind "openfw" for a radio on another open firmware (the
+// OpenGD77 family), with its radio type and revision
+export async function whyNoAnswer(link) {
+	const why = silence(link);
+	const info = await openFirmwareInfo(link);
+	return info ? { ...why, kind: "openfw", radioType: info.radioType, git: info.git } : why;
+}
