@@ -13,11 +13,42 @@ import { h, svg, t, ROOT } from "./dom.js";
 // The picture's address in the site, or null when the data has none
 export const pictureSrc = (radio) => radio?.frame_image || null;
 
+// The keys held to enter update mode, by key name (board.toml [flash.bootloader] hold): [] when the data has none
+export const holdKeys = (radio) => radio?.flash?.bootloader_hold || [];
+
+// A key as the radio's label names it (flash.key.<name>), else its name in capitals
+export function keyLabel(name, tr = t) {
+	const k = `flash.key.${name}`, s = tr(k);
+	return s && s !== k ? s : name.toUpperCase();
+}
+
+// "Hold PTT and SK1": the keys in words, in the page's language, or "" for none. The steps stay the instructions;
+// this names what the marks on the picture show, and the keys the picture doesn't (a front view without side keys)
+export function holdCaption(names, tr = t, lang = globalThis.document?.documentElement.lang || "en") {
+	if (!names.length) return "";
+	const labels = names.map((n) => keyLabel(n, tr));
+	return tr("flash.keys.hold", { keys: new Intl.ListFormat(lang, { type: "conjunction" }).format(labels) });
+}
+
+// Where each of those keys is on the picture, as percentages of it (the site build's frame_geometry.keys from the
+// drawing's key-<name> shapes): only the keys the picture shows
+export function keyMarks(radio, names) {
+	const boxes = radio?.frame_geometry?.keys || {};
+	return names.filter((n) => boxes[n]).map((n) => ({ name: n, ...boxes[n] }));
+}
+
 // The radio's picture alone, for steps that say nothing about the LED or the screen (the bootloader entry: what a
-// radio shows there is in its steps' words, not in the data), or null without one
-export function radioPicture(radio) {
+// radio shows there is in its steps' words, not in the data), or null without one. keys: names of keys to mark on it
+// (holdKeys), each ringed where the picture shows it, and named in a caption. The marks are decoration: the caption
+// and the steps say the same in words.
+export function radioPicture(radio, { keys = [] } = {}) {
 	const src = pictureSrc(radio);
-	return src ? h("figure", { class: "radio-top radio-pic" }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" })) : null;
+	if (!src) return null;
+	const marks = keyMarks(radio, keys).map((m) => h("span", { class: "rt-key", "aria-hidden": "true",
+		"data-key": m.name, style: `left:${m.left}%;top:${m.top}%;width:${m.width}%;height:${m.height}%` }));
+	const caption = keys.length ? h("figcaption", { class: "rt-caption" }, h("span", {}, holdCaption(keys))) : null;
+	return h("figure", { class: "radio-top radio-pic" },
+		h("div", { class: "rt-pic" }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" }), ...marks), caption);
 }
 
 // led: off | wait (slow orange) | busy (fast orange) | done (three green flashes) | green (steady)

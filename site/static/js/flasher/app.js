@@ -22,7 +22,7 @@ import * as stockfw from "./stockfw.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate, offerFile, logId } from "./vendorfile.js";
 import { pickProblem, errorProblem, vendorContext, supportedFiles, foldSupported, keepNote, nowFor, nowChoice, OFFER } from "./explain.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
-import { radioPicture } from "./radiotop.js";
+import { radioPicture, holdKeys } from "./radiotop.js";
 import { validRef, refShort, defaultRef } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
@@ -1307,10 +1307,11 @@ function planTable(plan) {
 					: st.action === "erase" ? t("flash.plan.erase") : st.action === "keep" ? t("flash.plan.keep") : t("flash.plan.skip")))))));
 }
 
-// Update mode steps beside the radio's own picture (radiotop.js). The picture makes no claim about the LED or the
-// screen: what a radio shows in its bootloader is in its steps' words (board.toml [flash.bootloader]), not in the data
+// Update mode steps beside the radio's own picture (radiotop.js), with the keys to hold marked on it and named under
+// it (board.toml [flash.bootloader] hold). The picture makes no claim about the LED or the screen: what a radio shows in
+// its bootloader is in its steps' words, not in the data
 function withPicture(steps) {
-	const pic = radioPicture(S.radio);
+	const pic = radioPicture(S.radio, { keys: holdKeys(S.radio) });
 	return pic ? h("div", { class: "radio-grid" }, steps, pic) : steps;
 }
 

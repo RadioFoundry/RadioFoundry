@@ -112,6 +112,13 @@ the keys it finds by their labels and prints the rest. Tag those by hand, with `
 list them in `data-undrawn`. `tools/svg_keys.py check <b>` must pass; the site build fails CI otherwise. Run `tag`
 again after any redraw, so the tags follow the new shapes.
 
+The keys held to enter the bootloader go in `board.toml` `[flash.bootloader] hold` by key name (`["ptt", "sk1"]`),
+beside the prose `steps`, and only from a documented source (the radio's hardware page). The web flasher rings them on
+the drawing and names them in a caption, so tag those keys in the drawing when it shows them, and add a
+`flash.key.<name>` label to `site/i18n/en.json` for a key no other radio holds. `tools/boards.py check` and
+`site/tests/radio_images_test.py` fail a key the board doesn't have, one in neither the drawing nor `data-undrawn`, or
+one without a label.
+
 ## Bring-up order
 
 1. Platform: start-up, clocks, a time base, a UART or USB for logging. Blink something.

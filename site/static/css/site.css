@@ -371,6 +371,11 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .rt-img { width: 100%; max-width: 220px; height: auto; display: block; margin: 0 auto; }
 .rt-screen { position: absolute; display: grid; place-content: center; font: 700 12px var(--font-sans); line-height: 1.2; color: #1b1e22; }
 .rt-screen .small { font-weight: 500; font-size: 10px; }
+/* a key to hold, ringed where the picture shows it (frame_geometry.keys): bright on the dark radio, a dark halo for the
+   page around it; the caption under the picture names the keys */
+.rt-key { position: absolute; border-radius: 4px; pointer-events: none; outline: 3px solid #ffb020; outline-offset: 2px;
+	box-shadow: 0 0 0 7px rgb(0 0 0 / 35%), 0 0 14px 7px rgb(255 176 32 / 50%); animation: rt-key 1.2s ease-in-out infinite; }
+@keyframes rt-key { 50% { outline-color: rgb(255 176 32 / 40%); } }
 .radio-top[data-screen="loader"] .rt-screen { background: #c9d6c2; }
 .radio-top[data-screen="on"] .rt-screen { background: #1d3550; color: #e8f0f8; }
 .rt-lamp { display: flex; justify-content: center; align-items: center; gap: var(--space-2); margin-top: var(--space-2); font-size: var(--text-sm); }
@@ -394,7 +399,7 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 @keyframes rt-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) {
 	/* no blinking on the page: the LED shows its color and the caption says how the real one blinks */
-	.radio-top .rt-led, .radio-top .rt-glow { animation: none !important; }
+	.radio-top .rt-led, .radio-top .rt-glow, .rt-key { animation: none !important; }
 	.radio-top[data-led="wait"] .rt-led, .radio-top[data-led="busy"] .rt-led { fill: #ff8a1f; }
 	.radio-top[data-led="done"] .rt-led { fill: #3fe060; }
 }

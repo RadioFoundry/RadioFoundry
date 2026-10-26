@@ -19,6 +19,7 @@ import * as c7 from "./c7000.js";
 import { Usmart, stockName } from "./usmart.js";
 import { trimTail } from "./iap.js";
 import { errorNotice } from "../report.js";
+import { radioPicture, holdKeys } from "./radiotop.js";
 
 const LISTEN_MS = 180000;	// how long the page waits for update mode
 const WORD_RATE = 14;		// console frames per second, written or read back (radio, 2026-10-18: 3,470 in 242 s)
@@ -27,6 +28,12 @@ const WORD_RATE = 14;		// console frames per second, written or read back (radio
 // update mode's protocol object
 export function makeStockRoutes(host) {
 	const { S, ctx, C, boardId, session, busy, iap, fill, stubImage } = host;
+
+	// update mode steps beside the radio's picture, the keys to hold marked on it (radiotop.js; app.js does the same)
+	const withPicture = (steps) => {
+		const pic = radioPicture(S().radio, { keys: holdKeys(S().radio) });
+		return pic ? h("div", { class: "radio-grid" }, steps, pic) : steps;
+	};
 
 	// ---- the original firmware: the stub through its console
 
@@ -166,7 +173,7 @@ export function makeStockRoutes(host) {
 		const box = panel(title,
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
 			h("p", {}, lead || t(restore ? "flash.iap.restore_lead" : "flash.iap.lead")),
-			h("ol", { class: "steps c7-big" }, h("li", {}, t(restore ? "flash.iap.restore_step_go" : "flash.iap.step_go")), ...steps.map((x) => h("li", {}, x))),
+			withPicture(h("ol", { class: "steps c7-big" }, h("li", {}, t(restore ? "flash.iap.restore_step_go" : "flash.iap.step_go")), ...steps.map((x) => h("li", {}, x)))),
 			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t("flash.iap.careful_text"))),
 			prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		prog.el.hidden = true;
