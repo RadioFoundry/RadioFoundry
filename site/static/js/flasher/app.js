@@ -23,7 +23,7 @@ import { openVendorFile, describe as describeVendorFile, analysisCandidate, offe
 import { pickProblem, errorProblem, vendorContext, supportedFiles, foldSupported, keepNote, nowFor, nowChoice, OFFER } from "./explain.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
 import { radioPicture, holdKeys } from "./radiotop.js";
-import { validRef, refShort, defaultRef } from "./version.js";
+import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
 import { Link, LinkError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, browserErrorKey } from "./link.js";
@@ -624,7 +624,7 @@ function render() {
 	S.openfwAbort?.abort();	// a backup of another open firmware stops when its step is left (openfwBackupNow)
 	app.replaceChildren();
 	document.querySelector(".page-head")?.classList.toggle("compact", !!S.task);
-	if (!S.task) return app.append(...[versionBanner(), startView()].filter(Boolean));
+	if (!S.task) return app.append(...[versionBanner() || betaNotice(), startView()].filter(Boolean));
 	const steps = stepsFor();
 	const label = (s) => (S.radio && backend().stepLabel?.(s, S.task)) || s;
 	const stepper = () => h("ol", { class: "stepper" }, stepsFor().map((s, i) =>
@@ -634,6 +634,7 @@ function render() {
 	render.stepper = () => { const n = stepper(); shown.replaceWith(n); shown = n; };
 	if (S.sim) app.append(h("p", { class: "small muted sim-line" }, t("flash.sim.banner")));
 	if (VERSION_REF && S.task === "install") app.append(versionBanner());
+	else if (S.task === "install" && S.step === 0) app.append(...[betaNotice()].filter(Boolean));
 	if (S.radio && S.radio.status !== "supported" && S.step > 0) app.append(prereleaseNotice());
 	// One bar of buttons under every step: back, start over, and the step's own next action, which the view sets (and
 	// changes when it redraws) through S.forward. The main action is always there, at the right; a step never puts a
@@ -656,6 +657,16 @@ function render() {
 			S.step > 0 ? button("← " + t("flash.back"), () => { S.step--; render(); }) : null,
 			h("button", { class: "btn btn-quiet", type: "button", onclick: () => reset() }, t("flash.start_over"))),
 		info, fwd));
+}
+
+// A pre-release newer than the release (site.json beta, site/cloudflare-build.sh): offered as a version link, never
+// installed by default. Not while a version link is in use
+function betaNotice() {
+	const beta = S.data?.site?.beta, href = betaLink(beta, location.href, VERSION_REF);
+	if (!href) return null;
+	return h("div", { class: "notice info beta-notice", role: "note" },
+		h("p", {}, h("strong", {}, t("flash.beta.title", { ref: beta })), " ", t("flash.beta.text")),
+		h("p", {}, h("a", { href }, t("flash.beta.link", { ref: beta }))));
 }
 
 // A radio still in development (board.toml [status] below supported): on every step after it is picked
@@ -1054,7 +1065,7 @@ function nowView() {
 			const p = S.now.probe;
 			detail.append(h("dl", { class: "kv-list" },
 				h("dt", {}, t("flash.now.board")), h("dd", {}, p.board),
-				h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git),
+				h("dt", {}, t("flash.now.firmware")), h("dd", {}, firmwareName(p)),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, codecText(p.codec))),
 			S.backupDone ? notice(t("flash.backup.done_before"), "ok") : backupNow({ when: "before", onDone: draw, actions: (b) => { runBackup = b; } }));
 		} else if (S.now?.kind === "stock") {
@@ -1738,7 +1749,7 @@ function doneView() {
 			S.reportResult = good ? "problem" : "failed";
 			intro.replaceChildren();	// "the radio restarts" is over: what it says now replaces it
 			status.replaceChildren(h("dl", { class: "kv-list" },
-				h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git),
+				h("dt", {}, t("flash.now.firmware")), h("dd", {}, firmwareName(p)),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, codecText(p.codec))),
 			notice(good ? t("flash.done.ready") : t("flash.done.no_codec"), good ? "ok" : "bad"), ...(good ? [] : [helpLink(), reportLine()]));	// the DOM writes a null as "null"
 			if (!S.backupDone) {
@@ -1779,7 +1790,7 @@ function backupView() {
 			if (!p) throw await noAnswer(link);
 			if (!S.board.debuglink_names.includes(p.board)) throw new Error(t("flash.err.wrong_board", { board: p.board, name: S.board.name }));
 			S.now = await rfoundryNow(link, p);
-			status.replaceChildren(h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, p.git),
+			status.replaceChildren(h("dl", { class: "kv-list" }, h("dt", {}, t("flash.now.firmware")), h("dd", {}, firmwareName(p)),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, p.codec || "?")),
 			h("details", { class: "small" }, h("summary", {}, t("flash.backup.add_stock")),
 				filePicker(t("flash.codec.stock_pick"), ".bin,.zip", async (f) => { S.stock = await pickedStock(f); })),
