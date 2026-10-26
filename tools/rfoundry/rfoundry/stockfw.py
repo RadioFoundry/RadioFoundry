@@ -37,6 +37,8 @@ DM1701_KEY_SHA256 = "d983ce95fbc19fc78b913d9afc0381e3ba4ffedb480798865292d05a2fb
 MD380_KEY_SHA256 = "5254139c6b596d9413d106e6b7c0685ec245d69555cb28df98f061d6b879c4cd"
 # MD-UV380 / MD-UV390 / RT3S (docs/spec/hardware-mduv380.md 11, as tools/stm32_dfu.py's mduv380 model)
 MDUV380_KEY_SHA256 = "739ce35cc8db6e72f95598effac1a01ae71dbe2a5792c1a69acaee5dbf634991"
+# TYT MD-9600 (docs/spec/codec-md9600.md, "Container and encryption"): its files are codec sources for the DM-1701 only
+MD9600_KEY_SHA256 = "c3d665b297651b52310ec098e87440b147136241359c1154d474e517b048c9ae"
 # The id the firmware reports for a placed codec, one per radio: every build the radio's firmware accepts (each by its
 # descriptor tag) reports it, so a radio keeps its codec across updates whichever build it came from. That holds going
 # forward only: a release older than the one that added a build's profile doesn't know its tag and finds no codec, so
@@ -52,10 +54,13 @@ SINGLE_SEGMENT = 0xFFFFFFFF
 # "Codec in the stock image"). Window = (flash address, length, SHA-256 of the decrypted bytes): "code" (its first word
 # is CODEC_SIG), "tables", and "extra" for profiles whose codec has further small table windows. "codec_profile" is
 # the id the firmware reports (debug link VERSION codec=) and the release manifests carry; "board" the radio it is
-# for; "key_sha256" the identity of that radio's bootloader key. "placement" (docs/spec/codec-placement.md): where the
-# merge puts the code ("code"), how much of the table window it keeps ("tables_len": the codec's own data, from the
-# codec map; the tables stay at their stock address) and the descriptor's tag; "placed": the CRC-32 and SHA-256 of the
-# code and tables as placed (the code's self references and the islands' calls into it rewritten for the new address),
+# for; "key_sha256" the identity of the key the file is encrypted with, which is that radio's bootloader key unless
+# "file_radio" names another radio the file is for (a codec source only, never the key). "placement"
+# (docs/spec/codec-placement.md): where the merge puts the code ("code"), how much of the table window it keeps
+# ("tables_len": the codec's own data, from the codec map; the tables stay at their stock address) or where the
+# tables move to ("tables": the window is the codec's own data and moves as one block, codecmap.move_window) and the
+# descriptor's tag; "placed": the CRC-32 and SHA-256 of the code and tables as placed (the code's self references and
+# the islands' calls into it rewritten for the new address, and with "tables" every reference into the tables too),
 # which the descriptor carries and the firmware checks, and the CRC-32 of each "extra" window (written unchanged).
 PROFILES = {
     "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d": {
@@ -151,6 +156,134 @@ PROFILES = {
         "placement": {"code": 0x080E67E8, "tables_len": 0x12092, "tag": 0x10203},
         "placed": {"code": (0x96264D90, "238692b07a37e97964e72bd9c0569aaf4555ff877ab8307fa4cd32da3375e96f"),
                    "tables": (0x217E610A, "32c75144218f0e95541bfc375d1330f248ed66cccf09a02fe2a00e4e92628f2e")},
+    },
+    # TYT MD-9600 files as codec sources for the DM-1701 (codec-dm1701.md "MD-9600 files"; their codec: codec-md9600.md).
+    # An open-firmware install on the DM-1701 starts from the MD-9600 V4 firmware, so its radios carry this codec. It is
+    # the DM-1701's codec in function (the same entries, state and calls), linked elsewhere. These files give the codec
+    # only: they are encrypted with the MD-9600's key ("file_radio" names the radio they are for), never the
+    # DM-1701's bootloader key. The table window is the codec's own data (the map's cut) and moves with the code
+    # ("placement" "tables"; codecmap.move_window): the tables to 0x080D0000 plus their stock offset in a 4 KB page,
+    # the code to the page after them at its own stock page offset. Tag: 0x96 in the top byte, the variant (0 CSV,
+    # 1 CSV-GPS, 2 REC, 3 GPS-REC) in the next, the version in BCD below
+    "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532": {
+        "name": "MD9600-CSV(V4)-V16.45.bin",
+        "version": "MD-9600 V16.45 CSV",
+        "board": "dm1701",
+        "file_radio": "MD-9600",
+        "key_sha256": MD9600_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1099264,
+        "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB2C00)],
+        "code": (0x08075C98, 0xF214, "4bcfec3e1113d17bb53bee1543039894db00c00c32d1b7dfd258f224043f52cd"),
+        "tables": (0x080AC2BC, 0x11036, "a101749f26c6df7d784130c45570e25abc5c88e02bee6f2510beb0a6c3ad4dfa"),
+        "placement": {"code": 0x080E2C98, "tables": 0x080D02BC, "tag": 0x96001645},
+        "placed": {"code": (0x07D97C60, "c7b27f64e8af74601fe2e21e530a1eacfdf61e7a174e0839ec2313b131a6e39e"),
+                   "tables": (0xD4FB8040, "1e4af02d48b8753a52d18ed139832638fded1f0707797a417c96588d36d8da9c")},
+    },
+    "7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f": {
+        "name": "MD9600-CSV-GPS(V4)-P16.45.bin",
+        "version": "MD-9600 P16.45 CSV-GPS",
+        "board": "dm1701",
+        "file_radio": "MD-9600",
+        "key_sha256": MD9600_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1105408,
+        "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB4400)],
+        "code": (0x08077434, 0xF238, "70bbb7beaa426dbefa080af083c51b263945818f935533c619aad9675a5f91b9"),
+        "tables": (0x080ADA7C, 0x110B6, "b29494898a4a96c5333c57d0681ed76b571e0aaeb460a8208479a0d700d2a225"),
+        "placement": {"code": 0x080E2434, "tables": 0x080D0A7C, "tag": 0x96011645},
+        "placed": {"code": (0xDB9C6525, "4dd26d6754499fd23e6646c04190971c237c9ca9ddf1cbac0654113fb6aa12f9"),
+                   "tables": (0x53687A8C, "9545849603782fad13bb6467eafbeeb0003b987187ceb89a36c9d9362c15ed98")},
+    },
+    "d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c": {
+        "name": "MD9600-REC(V4)-D16.45.bin",
+        "version": "MD-9600 D16.45 REC",
+        "board": "dm1701",
+        "file_radio": "MD-9600",
+        "key_sha256": MD9600_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1108480,
+        "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB5000)],
+        "code": (0x08077E38, 0xF234, "c870d2b5b9bf77e139544de24331f4cac2ca439bb0e9e24cc92b3a87a3f6e2c5"),
+        "tables": (0x080AE820, 0x11046, "e1baec7419b42d6f420d64c639a5b92d2a6e3b7410a5648b17acaeddd93c71e3"),
+        "placement": {"code": 0x080E2E38, "tables": 0x080D0820, "tag": 0x96021645},
+        "placed": {"code": (0x5C29A9B4, "430f6bd7aac566b7570e1c0ceb498914835d52cb4cbd90634b0663cda9ff5337"),
+                   "tables": (0x407C8912, "de5cf1bb053d5bd514901a2e0daf29f52bb856ae32d790e769000f1537e1e88d")},
+    },
+    "3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff": {
+        "name": "MD9600-GPS-REC(V4)-S16.45.bin",
+        "version": "MD-9600 S16.45 GPS-REC",
+        "board": "dm1701",
+        "file_radio": "MD-9600",
+        "key_sha256": MD9600_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1114624,
+        "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB6800)],
+        "code": (0x08079630, 0xF1FC, "5a7f1d52b1aac95abf7f2f79f3db58cd35188f5bc0b35374f10f74aa17db2c1a"),
+        "tables": (0x080AFFE0, 0x110C6, "2172ecdd60f3217a28b1549d935c8870051f01d39f7ed8b7264712a14d9b9d31"),
+        "placement": {"code": 0x080E3630, "tables": 0x080D0FE0, "tag": 0x96031645},
+        "placed": {"code": (0x7E5C1170, "6cbc0ba6461d0604a9389c60257d6b0012cf3d8df96858fc9ff484f80ea11656"),
+                   "tables": (0x2E4B09C6, "43b741257138fb1aa92c039df79ede3acf2f1a7d5a33cb33a2432e68bb33b2d6")},
+    },
+    "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09": {
+        "name": "MD9600-CSV-V06.09.bin",
+        "version": "MD-9600 V06.09 CSV",
+        "board": "dm1701",
+        "file_radio": "MD-9600",
+        "key_sha256": MD9600_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1094144,
+        "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB1800)],
+        "code": (0x08074B18, 0xF214, "c729480a47c7444c03eff1ec6b176a76d071f72b64d2f0fe3965e517c85a1215"),
+        "tables": (0x080AB13C, 0x10FE6, "0b431c14ef7e32fe8a0915976c250f127a757ed4cc5af2bc7f867ae261c6f1ca"),
+        "placement": {"code": 0x080E2B18, "tables": 0x080D013C, "tag": 0x96000609},
+        "placed": {"code": (0x51334F80, "a5477fe55360f3c17af52d84c051d5f4d2ebbdb8d48ecb6be4896e059647fd4e"),
+                   "tables": (0x028B006A, "5767b06b023d726747c76b40de73bf5e9ea028223a224eb03862890dda7d07f2")},
+    },
+    "9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5": {
+        "name": "MD9600-CSV-GPS-P06.09.bin",
+        "version": "MD-9600 P06.09 CSV-GPS",
+        "board": "dm1701",
+        "file_radio": "MD-9600",
+        "key_sha256": MD9600_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1100288,
+        "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB3000)],
+        "code": (0x080760B8, 0xF234, "1836c0870ef9333d022c495fbaf2d989f64f6a26dd5d762d8c730cce82e300b6"),
+        "tables": (0x080AC6FC, 0x11066, "f2b8bda5a65f2da7bba0d525347dd1896242f3ead77db03b9af44ba971a12b9e"),
+        "placement": {"code": 0x080E20B8, "tables": 0x080D06FC, "tag": 0x96010609},
+        "placed": {"code": (0x7C7A0876, "073882891ef1e478bc25c4795ec753efb499287fec99f06b4443e2e7ffe8d2b3"),
+                   "tables": (0x9E0642E5, "595983acfbe27e378e082bdb0e27f47ed8db9c4c61a512219825ea6d65dd157c")},
+    },
+    "7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f": {
+        "name": "MD9600-REC-D06.09.bin",
+        "version": "MD-9600 D06.09 REC",
+        "board": "dm1701",
+        "file_radio": "MD-9600",
+        "key_sha256": MD9600_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1103360,
+        "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB3C00)],
+        "code": (0x08076C9C, 0xF210, "75a937300cda4cc1802453e7352686511ca427888b4cc95732f45894b3e14a50"),
+        "tables": (0x080AD660, 0x10FF6, "d61403ecd01634b9054e41f32c32085db2b3e0f2e998b83a102fd7a77f55431f"),
+        "placement": {"code": 0x080E2C9C, "tables": 0x080D0660, "tag": 0x96020609},
+        "placed": {"code": (0x53A7AF3B, "b128d37ea14fbb54e88843eae18fdef33dd912e02f8177d9efaf4da0f28e5358"),
+                   "tables": (0x8EFB3BDF, "eb2dd965b483f6a2ec382016ec2eaafa76651cc7b8b70c6261d308227e3fa953")},
+    },
+    "4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7": {
+        "name": "MD9600-GPS-REC-S06.09.bin",
+        "version": "MD-9600 S06.09 GPS-REC",
+        "board": "dm1701",
+        "file_radio": "MD-9600",
+        "key_sha256": MD9600_KEY_SHA256,
+        "codec_profile": DM1701_CODEC,
+        "size": 1109504,
+        "segments": [(0x00060000, 0x59800), (0x0800C000, 0xB5400)],
+        "code": (0x08078280, 0xF22C, "a3d768224197cdd4f72db9024149e38f1c33a965ce44bca33a1904bb9e6c82b5"),
+        "tables": (0x080AEC60, 0x11076, "2fe79fad2e2688e78ce892d52121874ba623df8f2ec73f44e4740413f356dfa3"),
+        "placement": {"code": 0x080E2280, "tables": 0x080D0C60, "tag": 0x96030609},
+        "placed": {"code": (0xB54871EE, "18387dc3dd41d93697f5f2d9221fea5e97889de79c99007c2281511865c9cff2"),
+                   "tables": (0x4758C9EE, "439b8b855b1c53fe3c8c03bd988df7491c516aa191a06eb4929f27bbc8215070")},
     },
     # TYT MD-380 "Firmware 2.32" (D002.032), single-segment container. Stock keeps the code in sectors 6 and 7
     "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43": {
@@ -684,6 +817,14 @@ KNOWN_FILES = {
     "0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a": "DM-1701 V02.03 noCSV",
     "643650e821db3adf3e0b203437fcdd776d6a7754bc01c0359bd30785ff2478f7": "DM-1701 V02.02 CSV",
     "cd9ff4bdb7ba1c464299f3e366bfe72f2e948f3505a8fe54ac19047bff4d6713": "DM-1701 V02.01 CSV",
+    "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532": "MD-9600 V16.45 CSV",
+    "7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f": "MD-9600 P16.45 CSV-GPS",
+    "d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c": "MD-9600 D16.45 REC",
+    "3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff": "MD-9600 S16.45 GPS-REC",
+    "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09": "MD-9600 V06.09 CSV",
+    "9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5": "MD-9600 P06.09 CSV-GPS",
+    "7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f": "MD-9600 D06.09 REC",
+    "4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7": "MD-9600 S06.09 GPS-REC",
     "e1a1a11a84d9afd2d2ceed61be8395e32a8034785abd0be0236478f7d8609f43": "MD-380 D002.032",
     # the bootloader key and a restore to stock only: no codec profile (the codec comes from D002.032)
     "1c903d440e35917e8a16906ccae1cbbd539230a5a3352e3eb896ffc3e96eccc6": "MD-380 D002.030",
@@ -807,7 +948,7 @@ def placed_windows(prof):
     pl, pd = prof["placement"], prof["placed"]
     tab = prof["tables"]
     return [(pl["code"], prof["code"][1], pd["code"][1]),
-            (tab[0], pl.get("tables_len", tab[1]), pd["tables"][1])] + list(prof.get("extra", ()))
+            (pl.get("tables", tab[0]), pl.get("tables_len", tab[1]), pd["tables"][1])] + list(prof.get("extra", ()))
 
 
 def descriptor(prof):
@@ -846,12 +987,16 @@ def place(prof, segments):
         raise StockError("no codec map for %s: its code can't be moved" % prof["name"])
     (_, code), (tab_addr, tables) = segments[0], segments[1]
     try:
-        moved = codecmap.move_code(code, m, pl["code"])
-        tab = codecmap.move_branches(tab_addr, tables[:pl.get("tables_len", len(tables))], m, pl["code"])
+        if "tables" in pl:
+            moved, tab = codecmap.move_window(code, tables, m, pl["code"], pl["tables"])
+            tab_addr = pl["tables"]
+        else:
+            moved = codecmap.move_code(code, m, pl["code"])
+            tab = codecmap.move_branches(tab_addr, tables[:pl.get("tables_len", len(tables))], m, pl["code"])
+            if codecmap.branches_in(m, tab_addr, len(tab)) != len(m["branches"]):
+                raise StockError("a branch into the code lies outside the tables the merge keeps")
     except codecmap.MapError as e:
         raise StockError("can't move the codec: %s" % e)
-    if codecmap.branches_in(m, tab_addr, len(tab)) != len(m["branches"]):
-        raise StockError("a branch into the code lies outside the tables the merge keeps")
     extra = list(segments[2:])
     for (_, n, want), got, what in zip(placed_windows(prof), [moved, tab] + [d for _, d in extra],
                                        ["code", "tables"] + ["table 0x%08X" % a for a, _ in extra]):
@@ -888,6 +1033,8 @@ def extract(stock, key, profiles=None, board=None):
     prof = find_profile(stock, profiles)
     if board is not None and prof["board"] != board:
         raise StockError("%s is a firmware file for the %s, not the %s" % (prof["name"], prof["board"], board))
+    if prof.get("file_radio"):
+        key = file_key(stock, prof)
     if len(stock) != prof["size"]:
         raise StockError("size %d, expected %d" % (len(stock), prof["size"]))
     segs = parse_container(stock)
@@ -904,6 +1051,20 @@ def extract(stock, key, profiles=None, board=None):
     if struct.unpack_from("<I", out[0][1], 0)[0] != CODEC_SIG:
         raise StockError("codec first word is not 0x%08X" % CODEC_SIG)
     return prof, place(prof, out)
+
+
+def codec_only(prof):
+    """Why a codec source can't give the radio's bootloader key, or None when it can: a file for another radio is
+    encrypted with that radio's key"""
+    if not prof.get("file_radio"):
+        return None
+    return ("%s is %s firmware: it gives the codec only, not the bootloader key. The key comes from a stock file for "
+            "the radio itself, a key file or the radio" % (prof["name"], prof["file_radio"]))
+
+
+def file_key(stock, prof):
+    """The key a codec source for another radio (file_radio) is encrypted with, derived from the file itself"""
+    return derive_key(stock, prof["key_sha256"])
 
 
 def is_container(data):
@@ -939,6 +1100,47 @@ def from_flash(flash, base=FLASH_BASE, profiles=None):
             parts = read(placed_windows(prof) + [(DESC_ADDR, DESC_LEN, sha256(desc))])
             if parts:
                 return prof, parts
+    return None
+
+
+def from_moved(flash, base=FLASH_BASE, profiles=None):
+    """The codec in a readout where another firmware moved it (an open firmware runs it at an address of its own):
+    (profile, segments in layout() order, code address), or None. Every word-aligned CODEC_SIG is a candidate start;
+    for every profile with a codec map whose table window moves as one block (codecmap.table_window), the move is read
+    from the copy and undone (codecmap.unmove_window: the code anywhere, the tables at their stock address or moved,
+    the islands' calls into the code pointing anywhere), and the stock SHA-256s must match. The result is placed as a
+    merge from the stock file places it. from_flash() first: this is for what it doesn't find"""
+    profiles = PROFILES if profiles is None else profiles
+    sig = struct.pack("<I", CODEC_SIG)
+    cands = []
+    for prof in profiles.values():
+        m = code_map(prof) if prof.get("placement") else None
+        if m is not None and prof["code"][1] == m["code"]["len"]:
+            try:
+                codecmap.table_window(m)
+            except codecmap.MapError:
+                continue
+            cands.append((prof, m))
+    at = flash.find(sig)
+    while at >= 0:
+        if at % 4 == 0:
+            for prof, m in cands:
+                got = codecmap.unmove_window(flash, base, m, base + at)
+                if got is None:
+                    continue
+                code, tables, _ = got
+                extra, ok = [], True
+                for a, n, want in prof.get("extra", ()):
+                    d = bytes(flash[a - base:a - base + n]) if a >= base else b""
+                    ok = ok and len(d) == n and sha256(d) == want
+                    extra.append((a, d))
+                if not ok:
+                    continue
+                try:
+                    return prof, place(prof, [(prof["code"][0], code), (prof["tables"][0], tables)] + extra), base + at
+                except StockError:
+                    continue
+        at = flash.find(sig, at + 1)
     return None
 
 
@@ -1139,7 +1341,8 @@ SYN_BL = 0x110
 def build_synthetic_stock(key, rng, profile_sha=None):
     """A synthetic stock file with the layout of a real profile (default the DM-1701 V02.06 CSV), for tests:
     random key-independent content with the statistics of a firmware image (mostly zero bytes), random codec windows
-    at the stock addresses. Returns (stock bytes, profiles dict for it, code, tables)."""
+    at the stock addresses. A codec-only profile (file_radio) gets key as its own key. Returns (stock bytes, profiles
+    dict for it, code, tables)."""
     real = PROFILES[profile_sha or "0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
     segs = real["segments"]
     payload_len = sum(length for _, length in segs)
@@ -1169,6 +1372,8 @@ def build_synthetic_stock(key, rng, profile_sha=None):
     enc = bytes(a ^ b for a, b in zip(plain, stream))
     stock = bytes(header) + enc + random_bytes(rng, 0x100)	# trailer, as the real files
     prof = dict(real, code=wins[0][:3], tables=wins[1][:3], size=len(stock))
+    if real.get("file_radio"):
+        prof["key_sha256"] = sha256(key)
     if "extra" in real:
         prof["extra"] = [w[:3] for w in wins[2:]]
     if real.get("placement"):	# its own codec map (a self reference, an island with a call into the code), placed
@@ -1179,10 +1384,16 @@ def build_synthetic_stock(key, rng, profile_sha=None):
             "isa": "thumb2", "code": {"flash": run, "len": len(code), "run": run, "sha256": sha256(code)},
             "entries": {}, "self_refs": [{"off": SYN_SELF_REF, "value": run + 0x201}],
             "islands": [{"start": isl, "len": 0x40}],
-            "branches": [{"at": wins[1][0] + SYN_BL, "target": run + 0x200}]})
-        at, n = real["placement"]["code"], real["placement"].get("tables_len", len(tab))
-        mc = codecmap.move_code(code, prof["map"], at)
-        mt = codecmap.move_branches(wins[1][0], tab[:n], prof["map"], at)
+            "branches": [{"at": wins[1][0] + SYN_BL, "target": run + 0x200}],
+            "table_windows": [{"flash": wins[1][0], "run": wins[1][0], "len": len(tab), "min_start": wins[1][0],
+                               "min_len": len(tab), "min_sha256": sha256(tab)}]})
+        pl = real["placement"]
+        at, n = pl["code"], pl.get("tables_len", len(tab))
+        if "tables" in pl:
+            mc, mt = codecmap.move_window(code, tab, prof["map"], at, pl["tables"])
+        else:
+            mc = codecmap.move_code(code, prof["map"], at)
+            mt = codecmap.move_branches(wins[1][0], tab[:n], prof["map"], at)
         prof["placed"] = {"code": (zlib.crc32(mc) & 0xFFFFFFFF, sha256(mc)),
                           "tables": (zlib.crc32(mt) & 0xFFFFFFFF, sha256(mt))}
         if "extra" in real:

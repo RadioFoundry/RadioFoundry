@@ -10,7 +10,8 @@
 // calls from the code that stock keeps in the table window back into the code (the codec map). V02.01, V02.02 and
 // V02.03 CSV carry the same codec 0x40 lower, and the merge places it the same way, 0x40 lower. The V02.06 and V02.03
 // noCSV files carry it higher (tables from 0x080D4794 and 0x080D4754), and the merge places it the same way after
-// its tables. None of it is part of this repository or a release. The calls and the checks are the shared ones
+// its tables. The MD-9600 files carry the same codec; the merge moves their tables into sector 10 with the code (below).
+// None of it is part of this repository or a release. The calls and the checks are the shared ones
 // (platform/stm32f4/hrc/vocoder.c); this file says which build and where. Without a valid descriptor and codec,
 // present() is false and the radio is FM only.
 #include "../uv380_family/uvf.h"
@@ -75,7 +76,70 @@ static const stm32_codec_profile_t v0203n = {
 	.at = ENTRIES,
 };
 
-static const stm32_codec_profile_t *const profiles[] = { &v0206, &v0203, &v0206n, &v0203n };
-const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 4 };
+// The TYT MD-9600 files (stockfw.py, "file_radio"): the same codec, linked elsewhere; an open-firmware install leaves
+// it on the radio. Its stock tables sit in this radio's application flash, so the merge moves them with the code
+// (codecmap.move_window): the tables from 0x080D0000, the code after them. Tag 0x96VVxxxx: VV the variant (0 CSV,
+// 1 CSV-GPS, 2 REC, 3 GPS-REC), xxxx the version. The same entry offsets (the FEC decode differs; it isn't used)
+static const codec_desc_window_t md1645_tables[] = { { 0x080D02BCu, 0x11036u, 0xD4FB8040u } };
+static const stm32_codec_profile_t md1645 = {
+	.tag = 0x96001645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2C98u, .code_len = 0xF214u, .code_crc = 0x07D97C60u, .tables = md1645_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md1645p_tables[] = { { 0x080D0A7Cu, 0x110B6u, 0x53687A8Cu } };
+static const stm32_codec_profile_t md1645p = {
+	.tag = 0x96011645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2434u, .code_len = 0xF238u, .code_crc = 0xDB9C6525u, .tables = md1645p_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md1645d_tables[] = { { 0x080D0820u, 0x11046u, 0x407C8912u } };
+static const stm32_codec_profile_t md1645d = {
+	.tag = 0x96021645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2E38u, .code_len = 0xF234u, .code_crc = 0x5C29A9B4u, .tables = md1645d_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md1645s_tables[] = { { 0x080D0FE0u, 0x110C6u, 0x2E4B09C6u } };
+static const stm32_codec_profile_t md1645s = {
+	.tag = 0x96031645u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E3630u, .code_len = 0xF1FCu, .code_crc = 0x7E5C1170u, .tables = md1645s_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md0609_tables[] = { { 0x080D013Cu, 0x10FE6u, 0x028B006Au } };
+static const stm32_codec_profile_t md0609 = {
+	.tag = 0x96000609u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2B18u, .code_len = 0xF214u, .code_crc = 0x51334F80u, .tables = md0609_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md0609p_tables[] = { { 0x080D06FCu, 0x11066u, 0x9E0642E5u } };
+static const stm32_codec_profile_t md0609p = {
+	.tag = 0x96010609u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E20B8u, .code_len = 0xF234u, .code_crc = 0x7C7A0876u, .tables = md0609p_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md0609d_tables[] = { { 0x080D0660u, 0x10FF6u, 0x8EFB3BDFu } };
+static const stm32_codec_profile_t md0609d = {
+	.tag = 0x96020609u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2C9Cu, .code_len = 0xF210u, .code_crc = 0x53A7AF3Bu, .tables = md0609d_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const codec_desc_window_t md0609s_tables[] = { { 0x080D0C60u, 0x11076u, 0x4758C9EEu } };
+static const stm32_codec_profile_t md0609s = {
+	.tag = 0x96030609u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080E2280u, .code_len = 0xF22Cu, .code_crc = 0xB54871EEu, .tables = md0609s_tables, .windows = 1,
+	.at = ENTRIES,
+};
+
+static const stm32_codec_profile_t *const profiles[] = {
+	&v0206, &v0203, &v0206n, &v0203n,
+	&md1645, &md1645p, &md1645d, &md1645s, &md0609, &md0609p, &md0609d, &md0609s,
+};
+const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 12 };
 
 #endif	// CONFIG_DMR

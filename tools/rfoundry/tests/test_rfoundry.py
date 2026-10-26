@@ -17,6 +17,7 @@ import struct
 import sys
 import tempfile
 import unittest
+import zlib
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -159,7 +160,10 @@ class StockPlacement(unittest.TestCase):
                 prof = stockfw.PROFILES[h]
                 self.assertEqual(prof["board"], b.id)
                 self.assertEqual(prof["codec_profile"], b.codec.id, "%s: every stock file holds the board's codec" % b.id)
-                self.assertEqual(prof["key_sha256"], b.key_sha256, "%s: the DFU key is the stock file's" % b.id)
+                if stockfw.codec_only(prof):
+                    self.assertNotEqual(prof["key_sha256"], b.key_sha256, "%s: a codec-only file" % b.id)
+                else:
+                    self.assertEqual(prof["key_sha256"], b.key_sha256, "%s: the DFU key is the stock file's" % b.id)
             for a, n in b.codec.windows:
                 self.assertTrue(b.app_region[1] <= a and a + n <= b.flash_end,
                                 "%s: codec window 0x%08X+0x%X outside the flash the linker keeps free" % (b.id, a, n))
@@ -180,7 +184,7 @@ class StockPlacement(unittest.TestCase):
                     continue
                 pl, pd = prof["placement"], prof["placed"]
                 for what, v in (("tag", pl["tag"]), ("code", pl["code"]), ("code length", prof["code"][1]),
-                                ("code CRC", pd["code"][0]), ("tables", prof["tables"][0]),
+                                ("code CRC", pd["code"][0]), ("tables", pl.get("tables", prof["tables"][0])),
                                 ("tables length", pl.get("tables_len", prof["tables"][1])),
                                 ("tables CRC", pd["tables"][0])):
                     self.assertIn(v, nums, "%s %s: %s 0x%X is not in vocoder_%s.c" % (b.id, prof["version"], what, v,
@@ -919,11 +923,14 @@ class StockLibrary(unittest.TestCase):
         p = stockfw.PROFILES["0314efd4c62625661a2d693261ae682dff8a1b075a30620f3dbda4be065de32d"]
         self.assertEqual(p["codec_profile"], DM1701.codec.id)
         # the board's windows: V02.06's layout, then V02.01 to V02.03's (one layout for the three), 0x40 lower, then
-        # V02.06 noCSV's and V02.03 noCSV's
+        # V02.06 noCSV's and V02.03 noCSV's, then the MD-9600 files' (code and tables moved)
+        md = [w for h in DM1701.codec_stock if stockfw.codec_only(stockfw.PROFILES[h])
+              for w in DM1701.merge_windows(stockfw.PROFILES[h])[:2]]
+        self.assertEqual(len(md), 16)
         self.assertEqual(DM1701.codec.windows, [(0x080E3A74, 0x1021C), (0x080D19F0, 0x12082), (0x080FFF80, 0x80),
                                                 (0x080E3A34, 0x1021C), (0x080D19B0, 0x12082),
                                                 (0x080E6828, 0x10200), (0x080D4794, 0x12092),
-                                                (0x080E67E8, 0x10200), (0x080D4754, 0x12092)])
+                                                (0x080E67E8, 0x10200), (0x080D4754, 0x12092)] + md)
         self.assertEqual(DM1701.merge_windows(p), [(0x080E3A74, 0x1021C), (0x080D19F0, 0x12082), (0x080FFF80, 0x80)])
         # the real map covers the real code, and the placement keeps the move whole words
         m = stockfw.code_map(p)
@@ -1002,16 +1009,18 @@ class Dm1701Builds(unittest.TestCase):
     V0203N = "0a23d563fba04a1874c1e4eb4c0c23bf86e1d17da37cd3681f06ea71ad9c800a"
 
     def test_board(self):
-        self.assertEqual(DM1701.codec_stock, [self.V0206, self.V0201, self.V0202, self.V0203, self.V0206N, self.V0203N])
+        own = [self.V0206, self.V0201, self.V0202, self.V0203, self.V0206N, self.V0203N]
+        self.assertEqual(DM1701.codec_stock[:6], own)
+        self.assertEqual(DM1701.codec_stock[6:], list(Md9600Files.FILES))
         self.assertEqual(DM1701.codec.id, "dm1701-v0206-csv-s11")
         self.assertEqual([s.index for s in DM1701.codec_sectors()], [10, 11])
-        for h in DM1701.codec_stock:
+        for h in own:
             p = stockfw.PROFILES[h]
             self.assertRegex(stockfw.KNOWN_FILES[h], r"^DM-1701 V02\.0[1236] (no)?CSV$")
             self.assertEqual(stockfw.KNOWN_FILES[h], "DM-1701 " + p["version"])
             self.assertIn(p["name"], DM1701.codec.sources)
         # every known DM-1701 file is a codec source
-        self.assertEqual({h for h, v in stockfw.KNOWN_FILES.items() if v.startswith("DM-1701 ")}, set(DM1701.codec_stock))
+        self.assertEqual({h for h, v in stockfw.KNOWN_FILES.items() if v.startswith("DM-1701 ")}, set(own))
         # one tag per layout, and every layout in sectors 10 and 11, the code below the descriptor
         tags = {}
         for h in DM1701.codec_stock:
@@ -1020,7 +1029,7 @@ class Dm1701Builds(unittest.TestCase):
             for a, n in DM1701.merge_windows(p):
                 self.assertTrue(0x080C0000 <= a and a + n <= 0x08100000, p["name"])
             self.assertLessEqual(p["placement"]["code"] + p["code"][1], stockfw.DESC_ADDR)
-        self.assertEqual(sorted(tags), [0x0203, 0x0206, 0x10203, 0x10206])
+        self.assertEqual(sorted(tags), [0x0203, 0x0206, 0x10203, 0x10206] + sorted(Md9600Files.FILES.values()))
         self.assertTrue(all(len(v) == 1 for v in tags.values()), tags)
 
     def test_readout_named_by_layout(self):
@@ -1164,6 +1173,123 @@ class Dm1701Builds(unittest.TestCase):
                 self.assertEqual([a for a, _ in segs], [a for a, _ in DM1701.merge_windows(prof)])
                 found.add(h)
         self.assertEqual(found, set(DM1701.codec_stock))
+
+
+class Md9600Files(unittest.TestCase):
+    """The TYT MD-9600 files as codec sources for the DM-1701 (codec-dm1701.md "MD-9600 files"): an open-firmware
+    install leaves their codec on the radio. They give the codec only, encrypted with the MD-9600's key; the merge
+    moves the codec's table window with the code into sector 10, since its stock address is the application's."""
+
+    FILES = {	# file SHA-256: descriptor tag
+        "de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532": 0x96001645,	# MD-9600 V16.45 CSV
+        "7f4d760288f0c1875c7c5dc83dcdf3f355f5188becde2b505eedf609fdbe665f": 0x96011645,	# MD-9600 P16.45 CSV-GPS
+        "d2ef7a7e9c484dc1a8777488816f4da47181899ff8b7299a0ead7d141d55e10c": 0x96021645,	# MD-9600 D16.45 REC
+        "3d71b4358267fe5fdae8980f340b6a158e7b229c9d32c8ab894c4985964e8aff": 0x96031645,	# MD-9600 S16.45 GPS-REC
+        "79a561eda2f5843334ea5974f5de511b6e172a1643f9163806d54a94404f0f09": 0x96000609,	# MD-9600 V06.09 CSV
+        "9454eb221ae1f206fca5a15ec1b540bf06b3db4991f466b1626a3a3073ca91d5": 0x96010609,	# MD-9600 P06.09 CSV-GPS
+        "7b1b1b33e661766a5b0c0b3ddab9c31c96e3855b09f4e280b07f4990b563b68f": 0x96020609,	# MD-9600 D06.09 REC
+        "4610ed115e80efa04be554a94915ec2e053ae00f6b64dfa4815451966840dba7": 0x96030609,	# MD-9600 S06.09 GPS-REC
+    }
+
+    def test_profiles(self):
+        maps = codecmap.load_maps()
+        for h, tag in self.FILES.items():
+            p = stockfw.PROFILES[h]
+            with self.subTest(p["name"]):
+                self.assertEqual((p["board"], p["file_radio"], p["codec_profile"]), ("dm1701", "MD-9600", DM1701.codec.id))
+                self.assertEqual(p["key_sha256"], stockfw.MD9600_KEY_SHA256)
+                self.assertNotEqual(p["key_sha256"], DM1701.key_sha256)
+                self.assertIn("not the bootloader key", stockfw.codec_only(p))
+                self.assertEqual(stockfw.KNOWN_FILES[h], p["version"])
+                self.assertTrue(p["version"].startswith("MD-9600 "))
+                m = codecmap.by_code_sha(maps, p["code"][2])
+                self.assertEqual(len(m), 1)
+                m = m[0]
+                self.assertEqual((m["board"], m["stock"]["sha256"]), ("md9600", h))
+                self.assertEqual((m["code"]["flash"], m["code"]["len"]), p["code"][:2])
+                # the profile's table window is the map's cut, which holds everything the codec refers to
+                tw = m["table_windows"][0]
+                self.assertEqual((tw["min_start"], tw["min_len"], tw["min_sha256"]), p["tables"])
+                self.assertEqual(codecmap.table_window(m), p["tables"][:2])
+                # placed in sectors 10 and 11, the tables from 0x080D0000 at their stock page offset, the code in the
+                # page after them at its own, below the descriptor
+                pl = p["placement"]
+                self.assertEqual(pl["tag"], tag)
+                self.assertNotIn("tables_len", pl)
+                self.assertEqual(pl["tables"], 0x080D0000 + (p["tables"][0] & 0xFFF))
+                self.assertEqual(pl["code"] & 0xFFF, p["code"][0] & 0xFFF)
+                self.assertLessEqual(pl["tables"] + p["tables"][1], pl["code"] - 0x1000 + 0x1000)
+                self.assertLess(pl["code"] - (pl["tables"] + p["tables"][1]), 0x2000)
+                self.assertLessEqual(pl["code"] + p["code"][1], stockfw.DESC_ADDR)
+                for a, n in DM1701.merge_windows(p):
+                    self.assertTrue(0x080C0000 <= a and a + n <= 0x08100000)
+                self.assertEqual(stockfw.placed_windows(p)[1][:2], (pl["tables"], p["tables"][1]))
+
+    def synthetic(self):
+        """A synthetic codec-only profile and its file: the shared Thumb vector's code and table window (codecmap_vectors
+        "window") in a container encrypted with a key other than the radio's"""
+        with open(os.path.join(HERE, "codecmap_vectors.json")) as f:
+            w = json.load(f)["window"]
+        m = codecmap.normalize(w["map"])
+        code, tables = bytes.fromhex(w["code"]), bytes.fromhex(w["tables"])
+        lo, n = codecmap.table_window(m)
+        other = bytes(random.Random(9600).randrange(256) for _ in range(1024))
+        app = bytearray(0x80000)
+        app[m["code"]["run"] - 0x08060000:m["code"]["run"] - 0x08060000 + len(code)] = code
+        app[lo - 0x08060000:lo - 0x08060000 + n] = tables
+        hdr = bytearray(stockfw.HEADER_LEN)
+        hdr[:len(stockfw.MAGIC)] = stockfw.MAGIC
+        struct.pack_into("<III", hdr, 0x7C, 1, 0x08060000, len(app))
+        stock = bytes(hdr) + bytes(b ^ other[i % 1024] for i, b in enumerate(app)) + bytes(0x100)
+        CR, TR = 0x080E2C00, 0x080D0230
+        mc, mt = codecmap.move_window(code, tables, m, CR, TR)
+        prof = {"name": "synthetic-md9600.bin", "version": "MD-9600 synthetic", "board": "dm1701", "file_radio": "MD-9600",
+                "key_sha256": hashlib.sha256(other).hexdigest(), "codec_profile": DM1701.codec.id, "size": len(stock),
+                "segments": [(0x08060000, len(app))], "code": (m["code"]["run"], len(code), m["code"]["sha256"]),
+                "tables": (lo, n, hashlib.sha256(tables).hexdigest()), "map": m,
+                "placement": {"code": CR, "tables": TR, "tag": 0x96FF0000},
+                "placed": {"code": (zlib.crc32(mc), hashlib.sha256(mc).hexdigest()),
+                           "tables": (zlib.crc32(mt), hashlib.sha256(mt).hexdigest())}}
+        return prof, stock, code, tables, mc, mt
+
+    def test_extract_with_the_files_own_key(self):
+        prof, stock, _, _, mc, mt = self.synthetic()
+        profiles = {hashlib.sha256(stock).hexdigest(): prof}
+        got, segs = stockfw.extract(stock, KEY, profiles, board="dm1701")	# the radio's key is not the file's
+        self.assertIs(got, prof)
+        self.assertEqual(segs[:2], [(0x080E2C00, mc), (0x080D0230, mt)])
+        self.assertEqual(segs[2], (stockfw.DESC_ADDR, stockfw.descriptor(prof)))
+        d = struct.unpack_from("<10I", segs[2][1])
+        self.assertEqual(d[2:10], (0x96FF0000, 0x080E2C00, len(mc), zlib.crc32(mc), 1, 0x080D0230, len(mt), zlib.crc32(mt)))
+
+    def test_found_wherever_another_firmware_put_it(self):
+        """stockfw.from_moved: the codec in a flash read, its code anywhere, its tables at their stock address or
+        moved, the islands' calls into the code moved or not; placed as a merge from the file places it"""
+        prof, stock, code, tables, mc, mt = self.synthetic()
+        profiles = {hashlib.sha256(stock).hexdigest(): prof}
+        want = stockfw.place(prof, [(prof["code"][0], code), (prof["tables"][0], tables)])
+        m, lo = prof["map"], prof["tables"][0]
+        for cr, tr, verbatim in ((0x0807537C, lo, False), (0x0807537C, lo, True), (0x0807537C, lo - 0x91C, False),
+                                 (prof["code"][0], lo, False), (0x08060004, 0x08098010, False)):
+            with self.subTest(code=hex(cr), tables=hex(tr), verbatim=verbatim):
+                c2, t2 = codecmap.move_window(code, tables, m, cr, tr)
+                flash = bytearray(b"\xff" * 0x100000)
+                flash[cr - 0x08000000:cr - 0x08000000 + len(c2)] = c2
+                flash[tr - 0x08000000:tr - 0x08000000 + len(t2)] = tables if verbatim else t2
+                got = stockfw.from_moved(bytes(flash), profiles=profiles)
+                self.assertIsNotNone(got)
+                self.assertEqual((got[0], got[1], got[2]), (prof, want, cr))
+                flash[cr - 0x08000000 + 0x123] ^= 0x10
+                self.assertIsNone(stockfw.from_moved(bytes(flash), profiles=profiles), "a changed byte")
+        self.assertIsNone(stockfw.from_moved(b"\xff" * 0x100000, profiles=profiles))
+
+    def test_no_key_from_it(self):
+        """The CLI never derives the DM-1701 key from an MD-9600 file, and says why"""
+        prof = stockfw.PROFILES[next(iter(self.FILES))]
+        self.assertIn("MD-9600", stockfw.codec_only(prof))
+        hint = cli.stock_hint(DM1701)
+        self.assertIn("for the codec only, one of 8 MD-9600 firmware files", hint)
+        self.assertNotIn(prof["name"], hint)
 
 
 class MdUv380(unittest.TestCase):
