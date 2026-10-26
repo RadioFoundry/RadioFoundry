@@ -36,9 +36,10 @@ entering the bootloader: rfoundry says how for the radio (the steps are each rad
 
 
 
-def stock_hint(board=None):
+def stock_hint(board=None, key=False):
     """Which stock files give the codec (and the key): the board's, or every radio's when the board isn't known. Files
-    for another radio that give the codec only (an MD-9600 file for the DM-1701) are named by radio and count"""
+    for another radio that give the codec only (an MD-9600 file for the DM-1701) are named by radio and count, unless
+    the hint is for the key (key=True), which they never give"""
     bs = [board] if board else [b for _, b in sorted(boards.BOARDS.items()) if b.codec_stock]
     parts = []
     for b in bs:
@@ -49,7 +50,7 @@ def stock_hint(board=None):
                                                                if getattr(b, "stock_download", None) else ""))
         other = sorted({p["file_radio"] for _, p in profs if stockfw.codec_only(p)})
         n = sum(1 for _, p in profs if stockfw.codec_only(p))
-        if other:
+        if other and not key:
             parts.append("for the codec only, one of %d %s firmware files" % (n, " or ".join(other)))
     return "; ".join(parts) or "a supported stock firmware file"
 
@@ -345,7 +346,7 @@ def get_key(args, board, stock, sim_key=None):
     raise UsageError("the %s bootloader needs its 1024-byte key. Start the radio with RadioFoundry and connect it (rfoundry reads "
                      "the key from it), or give --stock with %s (rfoundry derives the key from it), or --key FILE, or "
                      "save it once with: rfoundry key --stock FILE --save"
-                     % (board.name, stock_hint(board)))
+                     % (board.name, stock_hint(board, key=True)))
 
 
 def get_saved_codec(args, board, probe):

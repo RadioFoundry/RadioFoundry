@@ -1290,6 +1290,7 @@ class Md9600Files(unittest.TestCase):
         hint = cli.stock_hint(DM1701)
         self.assertIn("for the codec only, one of 8 MD-9600 firmware files", hint)
         self.assertNotIn(prof["name"], hint)
+        self.assertNotIn("MD-9600", cli.stock_hint(DM1701, key=True), "the key's hint names only files that give it")
 
 
 class MdUv380(unittest.TestCase):
