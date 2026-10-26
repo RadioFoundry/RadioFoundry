@@ -458,6 +458,13 @@ same for every target; only the HELLO name, the op magic and the board record's 
 | `xsreg` | the SPI flash's security registers, or NULL: reg 0 reads status register 2; reg 1-3 reads a register, or with a source erases and programs it. The engine has checked the maker, the magic and the lock bit | `f4spi_sreg` |
 | `configure` | check and apply the board record (1 to 32 bytes, first byte the nonzero board id); fill `stubeng_config_t`: `app_base`, and the SPI flash's `xsize` and `xid` | `f4_board_parse`, then the clock and `f4spi_init` |
 
+The flash size register can read less than the flash the chip has. On one field radio it read 512 KB on a part whose
+top sectors hold the codec (seen 2026-10). The stub then refuses READ, SUMS and writes past that size with status
+0x0D. INFO_CHIP's flash size over the debug link is the same register, so the web flasher's backup compares it with
+the board's flash end before the hand-over. When it reads short, RadioFoundry reads the internal flash in place, up to
+the board's `rom_size`, and the loader reads only the SPI flash (`site/static/js/flasher/backup.js`). An install that
+reaches past the register's size still needs the bootloader route.
+
 The engine checks the application base `configure` returns: a sector start, not sector 0, at or above
 `min_app_base`. The commit word is at that base, and the commit sector (the interlock's) is the sector holding it. The
 engine keeps 2 x 4 KB frame buffers and a 4 KB word buffer (`stubeng_t`, about 12.3 KB of RAM) and needs no heap. It

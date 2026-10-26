@@ -382,6 +382,8 @@ const grantedRFoundryPorts = async () => (await navigator.serial.getPorts()).fil
 });
 
 async function connectSerial() {
+	// a radio switched off, restarted or put in update mode since: its old port is gone, the browser lists it afresh
+	if (S.link?.s.lost) await dropSerial();
 	if (S.link) return S.link;
 	let stream;
 	if (S.fakeRadio) stream = S.fakeRadio.serialStream();

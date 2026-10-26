@@ -88,6 +88,7 @@ export class SerialStream {
 		this.port = port;
 		this.buf = new Uint8Array(0);
 		this.closed = false;
+		this.lost = false;	// the pump ended without close(): the device is gone
 		// what came in since the port opened, for a report when nothing answered as expected (silence())
 		this.received = 0;
 		this.first = new Uint8Array(0);
@@ -146,6 +147,8 @@ export class SerialStream {
 				this.reader.releaseLock();
 			}
 		}
+		// the device went away (or its port stopped reading): a page that kept this stream would talk to nothing
+		if (!this.closed) this.lost = true;
 	}
 
 	async write(data) {
