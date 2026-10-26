@@ -283,6 +283,17 @@ class SectorMap(unittest.TestCase):
         self.assertIn("__codec_slot = 0x030E8000;", ld)
         self.assertIs(boards.from_debuglink_name("DM-1801 Pro"), b)
 
+    def test_open_firmware_cps_data(self):
+        """Every board carries the MCU flash's base (area 5's origin in the open-firmware CPS) and its CPS radio
+        types from board.toml [cps]; the base is where the protected bootloader range starts"""
+        for b in boards.BOARDS.values():
+            with self.subTest(board=b.id):
+                self.assertEqual(b.rom_base, b.protected[0][0])
+                self.assertLess(b.rom_base, b.app_base)
+                self.assertTrue(all(isinstance(t, int) and 0 <= t < 64 for t in b.cps_radio_types))
+                toml = open(os.path.join(HERE, "..", "..", "..", "boards", b.id, "board.toml")).read()
+                self.assertEqual(bool(b.cps_radio_types), "[cps]" in toml)
+
 
 class Planning(unittest.TestCase):
     def test_keep_small_image(self):

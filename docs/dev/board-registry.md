@@ -161,6 +161,13 @@ codec windows are the union of every file's layout. The image must stay out of a
 all of them. A merge writes and checks the layout of the file it merges
 ([codec-placement.md](../spec/codec-placement.md)).
 
+### [cps]
+
+`radio_types`: the radio types the open-firmware CPS radio info reports for this radio
+([open-firmware-cps.md](../spec/open-firmware-cps.md) 4). RadioFoundry's CPS shim reports them, and the web flasher
+checks them before it backs up a radio that runs another open firmware. The registry carries them as
+`cps_radio_types`, with `rom_base` (the platform's `flash_base`, where the CPS's area 5 offsets start).
+
 ### [frame]
 
 How the site draws the radio: `shape`, `body` and `accent` colors, `lens` size.

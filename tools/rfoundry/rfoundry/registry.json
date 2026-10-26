@@ -17,6 +17,7 @@
     "DB25-D PRO",
     "db25d"
    ],
+   "rom_base": 50331648,
    "app_base": 50380800,
    "flash_end": 51380224,
    "app_region": [
@@ -98,7 +99,10 @@
     "progmem": 2097152,
     "stock_console": "usmart"
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": [
+    6
+   ]
   },
   "dm1701": {
    "id": "dm1701",
@@ -116,6 +120,7 @@
     "DM-1701",
     "dm1701"
    ],
+   "rom_base": 134217728,
    "app_base": 134266880,
    "flash_end": 135266304,
    "app_region": [
@@ -232,7 +237,11 @@
      "idle": []
     }
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": [
+    8,
+    10
+   ]
   },
   "dm1801pro": {
    "id": "dm1801pro",
@@ -249,6 +258,7 @@
     "DM-1801Pro",
     "dm1801pro"
    ],
+   "rom_base": 50331648,
    "app_base": 50380800,
    "flash_end": 51380224,
    "app_region": [
@@ -323,7 +333,8 @@
     "progmem": 1048576,
     "stock_console": null
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": []
   },
   "dm32": {
    "id": "dm32",
@@ -340,6 +351,7 @@
     "DM-32",
     "dm32"
    ],
+   "rom_base": 50331648,
    "app_base": 50380800,
    "flash_end": 51380224,
    "app_region": [
@@ -420,7 +432,8 @@
     "progmem": 1048576,
     "stock_console": null
    },
-   "build_options": []
+   "build_options": [],
+   "cps_radio_types": []
   },
   "md380": {
    "id": "md380",
@@ -439,6 +452,7 @@
     "MD-380 VHF",
     "md380"
    ],
+   "rom_base": 134217728,
    "app_base": 134266880,
    "flash_end": 135266304,
    "app_region": [
@@ -572,6 +586,9 @@
       }
      ]
     }
+   ],
+   "cps_radio_types": [
+    7
    ]
   },
   "mduv380": {
@@ -591,6 +608,7 @@
     "MD-UV380 10W",
     "mduv380"
    ],
+   "rom_base": 134217728,
    "app_base": 134266880,
    "flash_end": 135266304,
    "app_region": [
@@ -751,6 +769,9 @@
       }
      ]
     }
+   ],
+   "cps_radio_types": [
+    6
    ]
   }
  }
