@@ -88,7 +88,7 @@ export async function simulation(fbReal, boardId, seed = 1701) {
 	fb.profiles[sha] = prof;
 	fb.known_files[sha] = real.version + " (simulated)";
 	const codecSegments = await place(prof, stockSegments, fb);
-	return { fb, board, key, stock, codecSegments, stockSegments };
+	return { fb, board, key, stock, codecSegments, stockSegments, profile: prof };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -99,8 +99,9 @@ export class FakeRadio {
 	// and serialStream() gives the new one); cutAfter: stub programs before the "cable" is pulled. stubVersion: the
 	// STM32F4 stub's protocol (5: the security register ops, which this fake and the page leave out; 4: CONFIG and the
 	// record echo; 2 and 3: the DM-1701's wiring built in); stubConfig: what the stub does with a record it would
-	// accept ("ok", "refuse": answers bad argument, "garble": accepts it but HELLO echoes different bytes)
-	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok" } = {}) {
+	// accept ("ok", "refuse": answers bad argument, "garble": accepts it but HELLO echoes different bytes).
+	// state "openfw": another open firmware runs (installOpenFirmware; await radio.ready before using it), options in openfw
+	constructor(sim, { state = "stock", spiSize = 0x1000000, stubEntry = true, adopt = true, cutAfter = null, stubVersion = 5, stubConfig = "ok", openfw = {} } = {}) {
 		this.sim = sim;
 		this.board = sim.board;
 		this.key = sim.key;
@@ -130,6 +131,7 @@ export class FakeRadio {
 		this.port = 0;
 		this.resetDfu();
 		this.log = [];
+		this.ready = state === "openfw" ? this.installOpenFirmware(openfw) : Promise.resolve();
 	}
 
 	resetDfu() {
@@ -237,6 +239,10 @@ export class FakeRadio {
 					if (radio.cutAfter !== null && radio.programs >= radio.cutAfter) throw new Error("the device has been lost");
 					s.inb = concat(s.inb, data);
 					s.inb = radio.stubFeed(s.inb, (b) => { s.buf = concat(s.buf, b); });
+					return;
+				}
+				if (radio.mode === "normal" && radio.running === "openfw") {
+					s.buf = concat(s.buf, radio.openfwAnswer(data));
 					return;
 				}
 				if (radio.mode !== "normal" || !radio.running.startsWith("rfoundry")) throw new Error("no serial port: the radio isn't running RadioFoundry");
@@ -375,6 +381,79 @@ export class FakeRadio {
 		if (this.word(APP_BASE) === 0xFFFFFFFF) { this.mode = "bootloader"; this.resetDfu(); return; }
 		this.mode = "normal";
 		this.running = this.codecReport() === "absent" ? "rfoundry-nocodec" : "rfoundry";
+	}
+
+	// Another open firmware on the radio, as far as docs/spec/open-firmware-cps.md says and as a radio was seen to behave:
+	// its own code where the stock firmware was, the stock codec moved to codecAt (its self references and, with tables
+	// "patched", the islands' calls into it rewritten by the codec map; "stock": the tables as stock left them), or no
+	// codec at all (codec false). Its CPS port: R 1 / R 2 clipped to clip bytes with the VFO overlay (0xEE here) on a read
+	// that spans it; R 5 the MCU flash with no bounds check (a read past the end faults the radio: silent until
+	// powerCycle()); R 9 the radio info; R 10 no answer; C and anything else "-". hangAfter N: the Nth read goes
+	// unanswered, then hangFor more requests (0: until powerCycle()). Every request is logged in openfwLog
+	async installOpenFirmware({ codecAt = null, tables = "patched", codec = true, radioType = null, git = "sim-open1", clip = 2045,
+		hangAfter = 0, hangFor = 0 } = {}) {
+		const r = rng(77);
+		for (const [a, d] of [...this.sim.codecSegments, ...this.sim.stockSegments]) this.flash.set(randomBytes(r, d.length), a - FLASH_BASE);
+		this.openfw = { radioType: radioType ?? this.board.cps_radio_types?.[0] ?? 6, git, clip, hangAfter, hangFor, reads: 0, silent: 0, dead: false, controls: 0 };
+		this.openfwLog = [];
+		if (!codec) return;
+		const m = this.sim.profile.map;
+		if (!m) {
+			for (const [a, d] of this.sim.stockSegments) this.flash.set(d, a - FLASH_BASE);
+			return;
+		}
+		const [[run, code], [tabAddr, tabs], ...extra] = this.sim.stockSegments;
+		const at = codecAt ?? this.board.app_base + 0x1000 + (run & 3);
+		this.openfw.codecAt = at;
+		this.flash.set(await moveCode(code, m, at), at - FLASH_BASE);
+		this.flash.set(tables === "patched" ? moveBranches(tabAddr, tabs, m, at) : tabs, tabAddr - FLASH_BASE);
+		for (const [a, d] of extra) this.flash.set(d, a - FLASH_BASE);
+	}
+
+	powerCycle() {
+		if (this.openfw) Object.assign(this.openfw, { dead: false, silent: 0, hangAfter: 0 });
+	}
+
+	openfwAnswer(req) {
+		const o = this.openfw, none = new Uint8Array(0), refuse = new Uint8Array([0x2D]);
+		if (req[0] !== 0x52) {
+			if (req[0] === 0x43) o.controls++;
+			this.openfwLog.push(req[0] === 0x43 ? `C ${req[1]}` : `other 0x${req[0].toString(16)}`);
+			return o.dead ? none : refuse;
+		}
+		const area = req[1], addr = u32be(req, 2), len = u16be(req, 6);
+		this.openfwLog.push(`R ${area} 0x${addr.toString(16)} ${len}`);
+		o.reads++;
+		if (o.dead) return none;
+		if (o.silent) { o.silent--; return none; }
+		if (o.hangAfter && o.reads === o.hangAfter) {
+			if (o.hangFor) o.silent = o.hangFor;
+			else o.dead = true;
+			return none;
+		}
+		const n = Math.min(len, o.clip);
+		const reply = (d) => concat(new Uint8Array([0x52, d.length >> 8, d.length & 0xFF]), d);
+		if (area === 1 || area === 2) {
+			if (area === 2 && addr + n > 0x10000) return refuse;
+			if (addr + n > this.spi.length) return refuse;
+			const d = this.spi.slice(addr, addr + n);
+			if (addr <= 0x7590 && addr + n > 0x7600 + 8) d.fill(0xEE, 0x7590 - addr, 0x7600 - addr);
+			return reply(d);
+		}
+		if (area === 5) {
+			if (addr + n > this.flash.length) { o.dead = true; return none; }
+			return reply(this.flash.slice(addr, addr + n));
+		}
+		if (area === 9) {
+			const d = new Uint8Array(46);
+			d.set(le32(3), 0); d.set(le32(o.radioType), 4);
+			d.set(new TextEncoder().encode(o.git.slice(0, 16)), 8);
+			d.set(new TextEncoder().encode("20261025120000"), 24);
+			d.set(le32(0x4018), 40);
+			return reply(d);
+		}
+		if (area === 10) return none;
+		return refuse;
 	}
 
 	serialAnswer(req) {

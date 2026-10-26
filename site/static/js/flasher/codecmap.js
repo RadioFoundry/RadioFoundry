@@ -117,7 +117,43 @@ export function moveBranches(addr, data, m, newRun) {
 	return out;
 }
 
-export const branchesIn = (m, addr, len) => (m.branches || []).filter((b) => addr <= b.at && b.at < addr + len).length;
+// The inverse of moveCode, for a copy found running at `run` (another firmware moved it there): the code as the stock
+// build has it, or null when this isn't that build moved by this map (a listed site that doesn't hold its value plus
+// the move, an island pointer that changed, or a SHA-256 that doesn't match). Never throws for a candidate that
+// isn't one: the caller tries every place the codec's first word appears
+export async function unmoveCode(code, m, run) {
+	const c = m.code;
+	if (code.length !== c.len) return null;
+	const delta = run - c.run;
+	if (delta % (c.move_alignment || 4)) return null;
+	const out = code.slice();
+	for (const r of m.self_refs || []) {
+		if (read(out, r) !== ((r.value + delta) >>> 0)) return null;
+		write(out, r, r.value >>> 0);
+	}
+	for (const r of m.island_ptrs || []) if (read(out, r) !== r.target >>> 0) return null;
+	return c.sha256 && (await sha256(out)) === c.sha256 ? out : null;
+}
+
+// The inverse of moveBranches: data (at addr, a table window) with every listed BL that calls the code re-encoded
+// for the code at its stock address. All of them must call one moved copy (one delta: wherever some tool put the
+// code); a BL that isn't there or a mix of deltas gives null. Unchanged data is returned when no call was moved
+export function unmoveBranches(addr, data, m) {
+	const out = data.slice();
+	let delta = null;
+	for (const b of m.branches || []) {
+		if (b.at < addr || b.at > addr + data.length - 4) continue;
+		const got = blTarget(out, b.at - addr, b.at);
+		if (got === null) return null;
+		const d = (got - b.target) | 0;
+		if (delta === null) delta = d;
+		if (d !== delta) return null;
+		putBl(out, b.at - addr, b.at, b.target);
+	}
+	return out;
+}
+
+export const branchesIn =(m, addr, len) => (m.branches || []).filter((b) => addr <= b.at && b.at < addr + len).length;
 
 // The code with its table refs rewritten for moved objects (codecmap.move_tables). moves: Map or object of
 // {object start: new start}

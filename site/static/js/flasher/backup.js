@@ -7,12 +7,14 @@
 //                            size, SHA-256 and whether the read was complete
 //   internal-flash.bin       the MCU flash from the application base (the bootloader is never read or written)
 //   spi-flash.bin            the external SPI flash: codeplug, calibration, the stock firmware's resources
-//   security-registers.bin   the SPI flash's security registers (the factory calibration on the DM-1701)
+//   security-registers.bin   the SPI flash's security registers (the factory calibration on the DM-1701); not in a
+//                            backup taken over another open firmware's CPS (openfw.js), which never asks area 10
 //   radio-info.bin           the CPS radio info block (open-firmware-cps.md 4)
 //   stock-firmware.bin       the user's stock firmware file, when they gave one (puts stock firmware back)
 //   README.txt               the same in words
 //
-// Nothing here leaves the user's computer: the bundle is built in the page and saved as a download.
+// firmware_now.kind: "rfoundry", or "openfw" for a radio backed up on another open firmware before the install
+// (openfw.js: radio_type, git, built, flash_id from its radio info). Nothing here leaves the user's computer: the bundle is built in the page and saved as a download.
 
 import { hex, sha256 } from "./bytes.js";
 import { zip, unzip } from "./zip.js";
@@ -105,6 +107,8 @@ export function describeFirmware(f) {
 	if (!f) return "unknown";
 	if (f.kind === "rfoundry") return `RadioFoundry ${f.git || ""} (codec ${f.codec || "?"})`.trim();
 	if (f.kind === "stock") return `stock ${f.version || "(version unknown)"}`;
+	// another open firmware, backed up over its CPS (openfw.js)
+	if (f.kind === "openfw") return `another open firmware ${f.git || "?"} (built ${f.built || "?"}, CPS radio type ${f.radio_type ?? "?"})`;
 	return "unknown";
 }
 
